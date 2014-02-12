@@ -581,6 +581,31 @@ let bigarray_set _loc var newval =
 	  GLOBAL: str_item  sequence do_sequence expr ctyp opt_rec;
     
       (******************** external kernels **********************)
+    expr: LEVEL "."
+      [ 
+	[ e1 = SELF; ":="; e2 = expr LEVEL "top" ->
+        <:expr< $e1$ := $e2$ >>
+	|
+	    e1 = SELF; "<-"; e2 = expr LEVEL "top" ->
+            begin
+              match bigarray_set _loc e1 e2 with
+	        Some e -> e
+              | None ->  ExAss (_loc, e1, e2)
+            end
+(*         |e1 = SELF; "<~"; e2 = expr LEVEL "top" ->
+          begin
+            match e1 with
+            | ExAcc(_loc, e1_, e2_) -> 
+              (* TODO : bypass useless copy *)
+              <:expr< 
+                      let sarek_temp = $e1_$  in 
+                      sarek_tmp.x <- $e2$;
+                      $e1_$ <- sarek_tmp
+              >>
+            | _ -> failwith "Wrong use of \"<~\""
+          end *)
+	] ];
+
     expr:  LEVEL "."
       [
 	LEFTA
@@ -593,16 +618,6 @@ let bigarray_set _loc var newval =
 	  <:expr< $e0$ .[ $e1$ ] >>
 	  ]
       ];
-    expr: LEVEL "."
-      [ 
-	[ e1 = SELF; ":="; e2 = expr LEVEL "top" ->
-        <:expr< $e1$ := $e2$ >>
-	|
-	    e1 = SELF; "<-"; e2 = expr LEVEL "top" ->
-            match bigarray_set _loc e1 e2 with
-	      Some e -> e
-            | None ->  ExAss (_loc, e1, e2)
-	] ];
     
     str_item: 
       [ [ "kernel"; lid = ident; ":";  typ = ctyp; "=";  file_name = STRING; func_name = STRING  -> 

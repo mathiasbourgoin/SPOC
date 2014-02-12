@@ -1,49 +1,57 @@
-(******************************************************************************
-* Mathias Bourgoin, Université Pierre et Marie Curie (2011)
-*
-* Mathias.Bourgoin@gmail.com
-*
-* This software is a computer program whose purpose is to allow
-* GPU programming with the OCaml language.
-*
-* This software is governed by the CeCILL - B license under French law and
-* abiding by the rules of distribution of free software. You can use,
-* modify and / or redistribute the software under the terms of the CeCILL - B
-* license as circulated by CEA, CNRS and INRIA at the following URL
-* "http://www.cecill.info".
-*
-* As a counterpart to the access to the source code and rights to copy,
-* modify and redistribute granted by the license, users are provided only
-* with a limited warranty and the software's author, the holder of the
-* economic rights, and the successive licensors have only limited
-* liability.
-*
-* In this respect, the user's attention is drawn to the risks associated
-* with loading, using, modifying and / or developing or reproducing the
-* software by the user in light of its specific status of free software,
-* that may mean that it is complicated to manipulate, and that also
-* therefore means that it is reserved for developers and experienced
-* professionals having in - depth computer knowledge. Users are therefore
-* encouraged to load and test the software's suitability as regards their
-* requirements in conditions enabling the security of their systems and / or
-* data to be ensured and, more generally, to use and operate it in the
-* same conditions as regards security.
-*
-* The fact that you are presently reading this means that you have had
-* knowledge of the CeCILL - B license and that you accept its terms.
-*******************************************************************************)
+ (******************************************************************************
+ * Mathias Bourgoin, Université Pierre et Marie Curie (2011)
+ *
+ * Mathias.Bourgoin@gmail.com
+ *
+ * This software is a computer program whose purpose is to allow
+ * GPU programming with the OCaml language.
+ *
+ * This software is governed by the CeCILL - B license under French law and
+ * abiding by the rules of distribution of free software. You can use,
+ * modify and / or redistribute the software under the terms of the CeCILL - B
+ * license as circulated by CEA, CNRS and INRIA at the following URL
+ * "http://www.cecill.info".
+ *
+ * As a counterpart to the access to the source code and rights to copy,
+ * modify and redistribute granted by the license, users are provided only
+ * with a limited warranty and the software's author, the holder of the
+ * economic rights, and the successive licensors have only limited
+ * liability.
+ *
+ * In this respect, the user's attention is drawn to the risks associated
+ * with loading, using, modifying and / or developing or reproducing the
+ * software by the user in light of its specific status of free software,
+ * that may mean that it is complicated to manipulate, and that also
+ * therefore means that it is reserved for developers and experienced
+ * professionals having in - depth computer knowledge. Users are therefore
+ * encouraged to load and test the software's suitability as regards their
+ * requirements in conditions enabling the security of their systems and / or
+ * data to be ensured and, more generally, to use and operate it in the
+ * same conditions as regards security.
+ *
+ * The fact that you are presently reading this means that you have had
+ * knowledge of the CeCILL - B license and that you accept its terms.
+ *******************************************************************************)
 
-type device_vec
+ type device_vec
 
-type customarray
+ type customarray
 
-type 'a custom =
-  {
-    elt :'a;
-    size : int ;
-    get: customarray -> int -> 'a;
-    set: customarray -> int -> 'a -> unit
+ type 'a custom =
+   {
+     size : int ;
+     get: customarray -> int -> 'a;
+     set: customarray -> int -> 'a -> unit
+   }
+
+ type ('a,'b) ctypes_custom =
+   {
+     c_elt : 'b Ctypes.typ;
+     c_size : int ;
+     c_get: 'b Ctypes.ptr -> int -> 'a;
+     c_set: 'b Ctypes.ptr -> int -> 'a -> unit
   }
+
 
 type ('a,'b) couple = 'a*'b
 
@@ -55,8 +63,9 @@ type ('a, 'b) kind =
   | Int64 of ('a, 'b) Bigarray.kind
   | Complex32 of ('a, 'b) Bigarray.kind
   | Custom of 'a custom
-	| Unit of ('a, 'b) couple
-	| Dummy of ('a, 'b) couple
+  | Ccustom of ('a,'b) ctypes_custom
+  | Unit of ('a, 'b) couple
+  | Dummy of ('a, 'b) couple
 
 (* shortcuts *)
 let int = Int32 (Bigarray.int)
@@ -70,6 +79,7 @@ let complex32 = Complex32 (Bigarray.complex32)
 type ('a,'b) spoc_vec =
   | Bigarray of ('a, 'b, Bigarray.c_layout)Bigarray.Array1.t
   | CustomArray of (customarray * 'a custom)
+  | CcustomArray of ('b Ctypes.ptr)
 
 external float32_of_float : float -> float = "float32_of_float"
 external float_of_float32 : float -> float = "float_of_float32"
@@ -152,6 +162,20 @@ let create (kind: ('a,'b) kind) ?dev size =
         is_sub = None;
         sub = [];
         vec_id = !vec_id; seek = 0; }
+  | Ccustom c -> {
+        device = -1;
+        vector = 
+          CcustomArray 
+            (Ctypes.allocate_n (c.c_elt) ~count:size);
+        cuda_device_vec = Array.create (Devices.cuda_devices() +1) (init_cuda_device_vec ());
+        opencl_device_vec = Array.create (Devices.opencl_devices() +1) (init_opencl_device_vec ());
+        length = size;
+        dev = No_dev;
+        kind = kind;
+        is_sub = None;
+        sub = [];
+        vec_id = !vec_id; seek = 0; }
+
 	in
 	(match dev with 
 	| None  ->  ()
@@ -175,7 +199,7 @@ let create (kind: ('a,'b) kind) ?dev size =
 		 with
 		 | _  ->  Gc.full_major (); alloc_on_dev ());
 		vec.dev <- Dev dev;
-	);
+ );
 	vec   
 
 let length v =

@@ -359,6 +359,8 @@ in
 a>>
 ]
 ];
+
+ 
 k_patt:
   [
     [l = patt -> l
@@ -535,7 +537,24 @@ kexpr:
       ]
 
   ];
-
-
+expr: LEVEL "."
+    [LEFTA
+       [ e1 = expr ; "<~"; e2 = expr LEVEL "top" -> 
+         begin
+           let arg_of_app e =
+             match e with 
+               ExApp (_, ExApp (_, _,e1), e2) -> <:expr< Mem.set  $e1$ $e2$ sarek_temp >>
+           in
+           match e1 with
+      | ExAcc(_loc, e1_, e2_) ->
+        (* TODO : bypass useless copy *)
+        <:expr< 
+                let sarek_temp = $e1_$ in
+                sarek_temp.x <- $e2$;
+                $arg_of_app e1_$;
+        >>
+      | _ -> failwith "Wrong use of \"<~\""
+    end
+] ];
 
 END

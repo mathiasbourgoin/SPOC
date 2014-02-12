@@ -1,4 +1,5 @@
 version = "0.1-alpha"
-requires = "camlp4"
+requires = "camlp4,ctypes"
 
+archive(syntax,preprocessor) = "kernels_int.cma"
 archive(syntax,toploop)      = "kernels_int.cma"

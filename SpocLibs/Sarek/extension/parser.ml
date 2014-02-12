@@ -1627,28 +1627,59 @@ let gen_ctypes _loc kt name  =
       | t1::q1, t2::q2 -> 
         let nexts = content acc (q1,q2) in
         let field_name  =  (sarek_type_name^"_"^(string_of_ident t2)) in
-        <:str_item<   let $lid:field_name$  = field $lid:sarek_type_name$ $lid:string_of_ctyp t1$ ;;
+        <:str_item<   let $lid:field_name$  = Ctypes.field $lid:sarek_type_name$ $str:string_of_ident t2$ Ctypes.$lid:string_of_ctyp t1$ ;;
         $nexts$ >>
       | _ -> assert false 
     in
     let fields =
       content <:str_item< >> (l1,l2) in    
+    let ctype_fields_set = 
+      Ast.exSem_of_list (List.map 
+                           (fun field -> 
+                              <:expr< Ctypes.setf sarek_temp  $lid:(sarek_type_name^"_"^(string_of_ident field))$ t.$lid:(string_of_ident field)$ >>)
+                           l2)
+    in
+    let ocaml_type_fields_set  = 
+      (List.fold_left 
+                           (fun bi field -> 
+                              <:rec_binding< $bi$;
+                                             $lid:(string_of_ident field)$ = Ctypes.getf t $lid:(sarek_type_name^"_"^(string_of_ident field))$  >>)
+                           <:rec_binding< >>l2)
+    in
+
+    let ctype_of_type =
+      <:expr< 
+              fun t -> 
+              let sarek_temp = Ctypes.make  $lid:sarek_type_name$ in
+              $ctype_fields_set$;
+              sarek_temp >>
+    in 
+    let type_of_ctype =
+      <:expr<
+        fun t ->
+         {$ocaml_type_fields_set$} >>
+    in
     <:str_item< 
                 type $lid:name$ = { $t1$ };;
-                open Ctypes;;
                 type $lid:sarek_type_name$ ;;
-                let $lid:sarek_type_name$ : $lid:sarek_type_name$ structure typ = structure $lid:sarek_type_name$ ;;
+                let $lid:sarek_type_name$ : $lid:sarek_type_name$ Ctypes.structure Ctypes.typ = Ctypes.structure $str:sarek_type_name$ ;;
                 $fields$;;
-                let () = seal $lid:sarek_type_name$;;
+                let () = Ctypes.seal $lid:sarek_type_name$;;
                 let $lid:"custom_"^name$ = 
+                let open Vector in
                 {
-                 size = Ctypes.sizeof $lid:sarek_type_name$;
-                 get = (fun c i -> 
-                  let x = Ctypes.Array.get c i in
-                  {x = 1});
-                set = (fun c i elt -> 
-                  let x = { x = 1}
-                in Ctypes.Array.set c i x)
+                c_elt =  $lid:sarek_type_name$;
+                c_size = Ctypes.sizeof $lid:sarek_type_name$;
+                c_get = (fun c i -> 
+                  let c_elt = 
+                    let open Ctypes in
+                     !@ (c +@ i) in
+                  ($type_of_ctype$) c_elt);
+                c_set = (fun c i elt -> 
+                  let c_elt = ($ctype_of_type$) elt
+                in 
+                let open Ctypes in 
+                (c +@ i) <-@ c_elt)
                 };;
     >>
       

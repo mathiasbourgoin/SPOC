@@ -1,5 +1,4 @@
 S .
 B .
-PKG camlp4
 PKG ctypes
-PKG spoc
+PKG bigarray

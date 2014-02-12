@@ -11,4 +11,4 @@ kernels_ext.cma:kernels_ext.ml
 	 ocamlfind ocamlc -a kernels_ext.cmo -o kernels_ext.cma
 
 clean:
-	rm -rf *.cmo *,cmx *.out *~ *.cmi camlprog.exe
+	rm -rf *.cmo *,cmx *.out *~ *.cmi camlprog.exe *.cma
