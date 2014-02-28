@@ -543,7 +543,9 @@ expr: LEVEL "."
          begin
            let arg_of_app e =
              match e with 
-               ExApp (_, ExApp (_, _,e1), e2) -> <:expr< Mem.set  $e1$ $e2$ sarek_temp >>
+             | ExApp (_, ExApp (_, _,e1), e2) -> <:expr< Mem.set  $e1$ $e2$ sarek_temp >>
+             | ExAcc (_, e1, e2) -> <:expr< Mem.set $e1$ $e2$ sarek_temp >> 
+             | _ -> assert false
            in
            match e1 with
       | ExAcc(_loc, e1_, e2_) ->

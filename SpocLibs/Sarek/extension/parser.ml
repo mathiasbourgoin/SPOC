@@ -1627,7 +1627,7 @@ let gen_ctypes _loc kt name  =
       | t1::q1, t2::q2 -> 
         let nexts = content acc (q1,q2) in
         let field_name  =  (sarek_type_name^"_"^(string_of_ident t2)) in
-        <:str_item<   let $lid:field_name$  = Ctypes.field $lid:sarek_type_name$ $str:string_of_ident t2$ Ctypes.$lid:string_of_ctyp t1$ ;;
+        <:str_item<   let $lid:field_name$  = let open Ctypes in field $lid:sarek_type_name$ $str:string_of_ident t2$ $lid:string_of_ctyp t1$ ;;
         $nexts$ >>
       | _ -> assert false 
     in
@@ -1665,7 +1665,7 @@ let gen_ctypes _loc kt name  =
                 let $lid:sarek_type_name$ : $lid:sarek_type_name$ Ctypes.structure Ctypes.typ = Ctypes.structure $str:sarek_type_name$ ;;
                 $fields$;;
                 let () = Ctypes.seal $lid:sarek_type_name$;;
-                let $lid:"custom_"^name$ = 
+                let $lid:name$ = 
                 let open Vector in
                 {
                 c_elt =  $lid:sarek_type_name$;
@@ -1681,6 +1681,7 @@ let gen_ctypes _loc kt name  =
                 let open Ctypes in 
                 (c +@ i) <-@ c_elt)
                 };;
+(*                let $lid:name$ () = $lid:"custom_"^name$;;*)
     >>
       
 

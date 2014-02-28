@@ -20,11 +20,11 @@ grammar.cmo:grammar.ml typer.cmo parser.cmo
 
 
 compile: kernels_int.cma test.ml
-	ocamlfind ocamlopt -thread -package sarek,spoc -linkpkg -package sarek_syntax -syntax camlp4o -o test.asm test.ml
+	ocamlfind ocamlopt -thread -package spoc,sarek -linkpkg -package sarek_syntax,spoc_external_kernels -syntax camlp4o -o test.asm test.ml
 
 
 compile_pp: test_pp.ml
-	ocamlfind ocamlopt -thread -package spoc,sarek -linkpkg -package sarek_syntax -syntax camlp4o -o test_pp.asm test_pp.ml
+	ocamlfind ocamlopt -thread -package spoc,sarek -linkpkg -package sarek_syntax,spoc_external_kernels -syntax camlp4o -o test_pp.asm test_pp.ml
 
 test: kernels_int.cma test.ml
 	@echo "(** ORIGINAL **)"
