@@ -14,8 +14,8 @@ doc : uninstall install
 	echo "open Spoc" > tmp/$$i; \
 	cat $$i >> tmp/$$i; \
 	done
-	mkdir -p docs
-	ocamlfind ocamldoc -thread  -html -package spoc -d docs  tmp/*.mli
+	mkdir -p ocamldoc
+	ocamlfind ocamldoc -thread  -html -package spoc -d ocamldoc  tmp/*.mli
 	rm -rf tmp
 
 install : uninstall
