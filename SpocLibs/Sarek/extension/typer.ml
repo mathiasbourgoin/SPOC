@@ -3,9 +3,14 @@ open Syntax
 open Ast
 
 
+let debug = false
 
-let my_eprintf s = output_string stderr s
-let my_eprintf a = () 
+
+let my_eprintf s = 
+  if debug then
+    output_string stderr s
+  else ()
+
 
 type customtypes =
   | KRecord of ctyp list * ident list
@@ -64,6 +69,7 @@ let new_kernel = ref false
 exception ArgumentError
 exception Unbound_value of string * Loc.t
 exception Unbound_module of string * Loc.t
+exception Immutable of string * Loc.t
 exception TypeError of ktyp * ktyp * Loc.t
 
 
@@ -454,6 +460,8 @@ let math = {
     [
     ];
   mod_functions = [
+    (TApp ((TApp (TInt, TInt)), TInt), "pow", 2, "pow", "pow");
+    (TApp ((TApp (TInt, TInt)), TInt), "logical_and", 2, "logical_and", "logical_and");
   ];
   mod_modules = 
     let m = Hashtbl.create 0 in
@@ -505,14 +513,14 @@ let rec  typer_app e1 (e2 : kexpr list) t =
        App ( l , e1, (t::(tt::qq as q) as e2))) ->
       aux2 t2 e2;
       typer e1 t1;
-      if e1.t <> t1  then ( assert false; raise (TypeError (t1, e1.t, l)) );
+      if e1.t <> t1  then ( assert (not debug); raise (TypeError (t1, e1.t, l)) );
       e1.t <- t1;
     | ((TApp (TApp(t1, t3) as t, t2)), 
        (App (l, e1, e2::[]))) ->
       assert (t3 = t2);
       ret := t2;
       typer e2 t1;			
-      if e2.t <> t1 && e2.t <> TUnknown then ( assert false; raise (TypeError (t1, e2.t, l)) );
+      if e2.t <> t1 && e2.t <> TUnknown then ( assert (not debug); raise (TypeError (t1, e2.t, l)) );
       e2.t <- t1;
       e1.t <- t;
     | (TApp(t1, t2), App(_, _, e2::[] ) )->   
@@ -523,7 +531,7 @@ let rec  typer_app e1 (e2 : kexpr list) t =
       my_eprintf (Printf.sprintf"(* typ %s +++-> %s *)\n%!" (k_expr_to_string e2.e) (ktyp_to_string e2.t)) ; 
       ret := t1;
       typer e2 t1;
-    | _ -> assert false;
+    | _ -> assert (not debug);
   in aux typ (App (loc,e1,e2));
   let rec aux typ =
     match typ with
@@ -536,7 +544,9 @@ let rec  typer_app e1 (e2 : kexpr list) t =
   t
 
 and typer body t = 
-  my_eprintf (Printf.sprintf"(* typ %s -> %s  ??? %s *)\n%!" (k_expr_to_string body.e) (ktyp_to_string t)  (ktyp_to_string body.t)); 
+  my_eprintf (Printf.sprintf"(* typ %s -> %s  ??? %s *)\n%!" 
+                (k_expr_to_string body.e) (ktyp_to_string t)  
+                (ktyp_to_string body.t)); 
   match body.e with
   | Bind (_loc, var,y, z, is_mutable)  ->
     (
@@ -751,7 +761,7 @@ and typer body t =
              body.t <- t)
           else
           if t <> var.var_type then
-            (  raise (TypeError (t, var.var_type, _loc)))
+            (  assert (not debug); raise (TypeError (t, var.var_type, _loc)))
           else 
             body.t <- t
       with Not_found ->
@@ -760,7 +770,7 @@ and typer body t =
           if t = TUnknown then
             (body.t <- c_const.typ;)
           else if t <> c_const.typ then
-            (assert false; raise (TypeError (c_const.typ, t, _loc)))
+            (assert (not debug); raise (TypeError (c_const.typ, t, _loc)))
         with _ -> 
           try ignore(Hashtbl.find !intrinsics_fun (string_of_ident s) )
           with _ ->
@@ -774,7 +784,7 @@ and typer body t =
   | CastId (tt, Id(_loc,s)) -> 
     ( let var = 
       ( try Hashtbl.find !current_args (string_of_ident s) 
-        with _  -> assert false; raise (Unbound_value ((string_of_ident s),_loc))) in
+        with _  -> assert (not debug); raise (Unbound_value ((string_of_ident s),_loc))) in
       var.var_type <- t;
       body.t <- t)
   | Int (_loc, i)  -> body.t <- TInt 
@@ -784,7 +794,7 @@ and typer body t =
   | Float32 (_loc, f) -> body.t <- TFloat32
   | Float64 (_loc, f) -> body.t <- TFloat64
   | Seq (_loc, x, y) -> 
-    (typer x TUnit;
+    ((*typer x TUnit;*)
      typer y t; 
      body.t <- y.t)
   | Seqs exprs ->
@@ -792,12 +802,22 @@ and typer body t =
       | [] -> ()
       | e::[] ->
         typer e TUnknown
-      | e::q -> typer e TUnit; aux q
+      | e::q -> (*typer e TUnit;*) aux q
     in 
     aux exprs
   | End(_loc, x)  -> ()
 
   | Acc (_loc, var, value) ->
+    (match var.e with
+     | Id (_loc,s) -> (
+         let var =
+           ( try Hashtbl.find !current_args (string_of_ident s)
+             with
+             | _ -> assert false)
+         in
+         if not var.is_mutable then 
+           raise (Immutable (string_of_ident s,_loc)))
+     | _ -> assert false );
     typer var TUnknown;
     (match var.t with
      | TVec _ -> 
@@ -806,11 +826,11 @@ and typer body t =
          e = (VecSet (_loc, var, value));
          loc = body.loc} 
          t;
-       body.t <- TUnit
+       (*body.t <- TUnit*)
      | _ -> 
        typer var TUnknown; 
        typer value var.t;
-       body.t <- TUnit
+       (*body.t <- TUnit*)
     )
 
   | VecSet (_loc, vector, value)  -> 
@@ -818,10 +838,10 @@ and typer body t =
         | Id (_loc, s) ->
           let var = 
             ( try Hashtbl.find !current_args (string_of_ident s)
-              with _ -> assert false; raise (Unbound_value ((string_of_ident s),_loc))) in
+              with _ -> assert (not debug); raise (Unbound_value ((string_of_ident s),_loc))) in
           typer value var.var_type;
           typer vector (value.t)
-        | _ -> typer value t);
+        | _ -> () ); (*typer value t);*)
      typer vector ( value.t);
      (match vector.e with
       | VecGet(_,v,_) -> 
@@ -829,12 +849,12 @@ and typer body t =
          | Id (_loc,s)  -> 
            ( let var = 
              ( try Hashtbl.find !current_args (string_of_ident s)
-               with _ -> assert false; raise (Unbound_value ((string_of_ident s), _loc))) in
+               with _ -> assert (not debug); raise (Unbound_value ((string_of_ident s), _loc))) in
              var.var_type <- TVec value.t)
          | _  -> () )
       | _  -> () );
      vector.t <- value.t;
-     body.t <- TUnit;)        
+    (* body.t <- TUnit;*))        
   | VecGet(_loc, vector, index)  -> 
     (typer vector (TVec t);
      typer index TInt;
@@ -843,7 +863,7 @@ and typer body t =
         ( let var = 
           ( try Hashtbl.find !current_args (string_of_ident s)
             with 
-            | _ -> assert false; raise (Unbound_value ((string_of_ident s), _loc))) in
+            | _ -> assert (not debug); raise (Unbound_value ((string_of_ident s), _loc))) in
           var.var_type <- TVec t)
       | _  ->  () );
      vector.t <- TVec t;
@@ -854,7 +874,7 @@ and typer body t =
         | Id (_loc, s) ->
           let var = 
             ( try Hashtbl.find !current_args (string_of_ident s)
-              with _ -> assert false; raise (Unbound_value ((string_of_ident s),_loc))) in
+              with _ -> assert (not debug); raise (Unbound_value ((string_of_ident s),_loc))) in
           typer value var.var_type;
           typer array (value.t)
         | _ -> typer value t);
@@ -865,12 +885,12 @@ and typer body t =
          | Id (_loc,s)  -> 
            ( let var = 
              ( try Hashtbl.find !current_args (string_of_ident s)
-               with _ -> assert false; raise (Unbound_value ((string_of_ident s), _loc))) in
+               with _ -> assert (not debug); raise (Unbound_value ((string_of_ident s), _loc))) in
              var.var_type <- TArr value.t)
          | _  -> () )
       | _  -> () );
      array.t <- value.t;
-     body.t <- TUnit;)        
+     (*body.t <- TUnit;*))        
   | ArrGet(_loc, array, index)  -> 
     (typer array (TArr t);
      typer index TInt;
@@ -879,34 +899,37 @@ and typer body t =
         ( let var = 
           ( try Hashtbl.find !current_args (string_of_ident s)
             with 
-            | _ -> assert false; raise (Unbound_value ((string_of_ident s), _loc))) in
+            | _ -> assert (not debug); raise (Unbound_value ((string_of_ident s), _loc))) in
           var.var_type <- TArr t)
       | _  ->  () );
      array.t <- TArr t;
      body.t <- t) 
-
   | VecSet (_loc, vector, value)  -> 
-    ((match value.e with
+    begin 
+      begin
+        match value.e with
         | Id (_loc, s) ->
           let var = 
             ( try Hashtbl.find !current_args (string_of_ident s)
-              with _ -> assert false; raise (Unbound_value ((string_of_ident s),_loc))) in
+              with _ -> assert (not debug); raise (Unbound_value ((string_of_ident s),_loc))) in
           typer value var.var_type;
           typer vector (value.t)
-        | _ -> typer value t);
-     typer vector ( value.t);
-     (match vector.e with
-      | VecGet(_,v,_) -> 
-        (match v.e with 
-         | Id (_loc,s)  -> 
-           ( let var = 
-             ( try Hashtbl.find !current_args (string_of_ident s)
-               with _ -> assert false; raise (Unbound_value ((string_of_ident s), _loc))) in
+        | _ -> () (*typer value t *)
+      end;
+      typer vector (value.t);
+      (match vector.e with
+       | VecGet(_,v,_) -> 
+         (match v.e with 
+          | Id (_loc,s)  -> 
+            ( let var = 
+              ( try Hashtbl.find !current_args (string_of_ident s)
+                with _ -> assert (not debug); raise (Unbound_value ((string_of_ident s), _loc))) in
              var.var_type <- TVec value.t)
-         | _  -> () )
-      | _  -> () );
-     vector.t <- value.t;
-     body.t <- TUnit;)        
+          | _  -> () )
+       | _  -> () );
+      vector.t <- value.t;
+      (*body.t <- TUnit;*) 
+    end        
   | VecGet(_loc, vector, index)  -> 
     (typer vector (TVec t);
      typer index TInt;
@@ -915,7 +938,7 @@ and typer body t =
         ( let var = 
           ( try Hashtbl.find !current_args (string_of_ident s)
             with 
-            | _ -> assert false; raise (Unbound_value ((string_of_ident s), _loc))) in
+            | _ -> assert (not debug); raise (Unbound_value ((string_of_ident s), _loc))) in
           var.var_type <- TVec t)
       | _  ->  () );
      vector.t <- TVec t;
@@ -1039,7 +1062,7 @@ and typer body t =
       | _, TUnknown -> cons2.t <- cons1.t
       | tt1, tt2 -> 
         if tt1 != tt2 then 
-          ( assert false; raise (TypeError (tt1, tt2, cons2.loc)))
+          ( assert (not debug); raise (TypeError (tt1, tt2, cons2.loc)))
         else ());
      body.t <- cons1.t;
     )
@@ -1073,11 +1096,11 @@ and typer body t =
     typer min TInt;
     typer max TInt;
     typer body t;
-    body.t <- TUnit;
+    (*body.t <- TUnit;*)
   | While (l, cond, body) ->
     typer cond TBool;
-    typer body TUnit;
-    body.t <- TUnit;
+    (*typer body TUnit;*)
+    (*body.t <- TUnit;*)
   | App (l, e1, e2) -> 
     let t = typer_app e1 e2 t in
     body.t <- t
@@ -1127,7 +1150,7 @@ and open_module m_ident  _loc =
   let m =
     try Hashtbl.find modules (m_ident)
     with
-    | _ -> assert false; raise (Unbound_module (m_ident, _loc))
+    | _ -> assert (not debug); raise (Unbound_module (m_ident, _loc))
   in
   List.iter (fun (typ,s,nb_args,cuda_s, opencl_s) ->
       (Hashtbl.add !intrinsics_fun (s) {nb_args=2; cuda_val = cuda_s; opencl_val = opencl_s; typ=typ})) m.mod_functions;

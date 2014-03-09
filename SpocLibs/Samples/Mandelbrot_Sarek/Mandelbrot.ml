@@ -49,7 +49,7 @@ let mandelbrot_recompile = kern img ->
   let mutable y2 = 0. in
   let a = 4. *. ((float x0) /. (float !width)) /. !zoom  -. 2. in
   let b = 4. *. ((float y0) /. (float !height)) /. !zoom -. 2. in
-  
+ 
   let mutable norm = x1 *. x1 +. y1 *. y1
   in
   while ((cpt < !max_iter) && (norm <=. 4.)) do

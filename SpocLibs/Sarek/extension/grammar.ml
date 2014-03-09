@@ -97,7 +97,10 @@ let gen_kernel ()= ()
           (Printf.eprintf "%s\n%!" ("\027[31m Unbound Value \027[00m : \027[33m"^
                                     (value)^"\027[00m in position : "^(Loc.to_string loc)^"");
            exit 2;)
-
+        | Immutable (value, loc) ->
+          (Printf.eprintf "%s\n%!" ("\027[31m Immutable Value \027[00m : \027[33m"^
+                                    (value)^"\027[00m used as mutable in position : "^(Loc.to_string loc)^"");
+           exit 2;)
        );  
        let new_hash_args = Hashtbl.create (Hashtbl.length !current_args) in
        Hashtbl.iter (Hashtbl.add new_hash_args) !current_args;
@@ -117,6 +120,10 @@ let gen_kernel ()= ()
                  (Printf.eprintf "%s\n%!" ("\027[31m Unbound Value \027[00m : \027[33m"^
                  (value)^"\027[00m in position : "^(Loc.to_string loc)^"");
                  exit 2;)
+                 | Immutable (value, loc) ->
+                 (Printf.eprintf "%s\n%!" ("\027[31m Immutable Value \027[00m : \027[33m"^
+                 (value)^"\027[00m used as mutable in position : "^(Loc.to_string loc)^"");
+                 exit 2;)
                  $>>
        in
        let b_body = 
@@ -132,6 +139,10 @@ let gen_kernel ()= ()
           | Unbound_value (value, loc) ->
             (Printf.eprintf "%s\n%!" ("\027[31m Unbound Value \027[00m : \027[33m"^
                                       (value)^"\027[00m in position : "^(Loc.to_string loc)^"");
+             exit 2;)
+          | Immutable (value, loc) ->
+            (Printf.eprintf "%s\n%!" ("\027[31m Immutable Value \027[00m : \027[33m"^
+                                      (value)^"\027[00m used as mutable in position : "^(Loc.to_string loc)^"");
              exit 2;))
        in
        let n_body2 = <:expr<params $List.fold_left 
@@ -295,7 +306,11 @@ expr:
         (
           failwith ("Type Error : expecting : "^
                     (ktyp_to_string expected)^" but given : "^
-                    (ktyp_to_string given)^" in position : "^(Loc.to_string loc))));  
+                    (ktyp_to_string given)^" in position : "^(Loc.to_string loc)))
+        | Immutable (value, loc) ->
+          (Printf.eprintf "%s\n%!" ("\027[31m Immutable Value \027[00m : \027[33m"^
+                                    (value)^"\027[00m used as mutable in position : "^(Loc.to_string loc)^"");
+           exit 2;));  
      let new_hash_args = Hashtbl.create (Hashtbl.length !current_args) in
      Hashtbl.iter (Hashtbl.add new_hash_args) !current_args;
      Hashtbl.clear !current_args;
@@ -316,7 +331,11 @@ expr:
         | TypeError(expected, given, loc) -> 
           failwith ("Type Error : expecting : "^
                     (ktyp_to_string expected)^" but given : "^
-                    (ktyp_to_string given)^" in position : "^(Loc.to_string loc)) )
+                    (ktyp_to_string given)^" in position : "^(Loc.to_string loc)) 
+        | Immutable (value, loc) ->
+          (Printf.eprintf "%s\n%!" ("\027[31m Immutable Value \027[00m : \027[33m"^
+                                    (value)^"\027[00m used as mutable in position : "^(Loc.to_string loc)^"");
+           exit 2;))
      in
      let n_body2 = <:expr<params $List.fold_left 
                           (fun a b -> <:expr<concat $b$ $a$>>) 
@@ -396,7 +415,8 @@ do_sequence:
   ];
 kexpr:
   [ 
-    ["let"; opt_mutable = OPT "mutable";  var = ident; "="; y = SELF; "in"; z = sequence  ->  
+ "let"
+  ["let"; opt_mutable = OPT "mutable";  var = ident; "="; y = SELF; "in"; z = sequence  ->  
      {t=TUnknown; 
       e=  Bind(_loc, 
                {t= TUnknown; 
@@ -406,8 +426,8 @@ kexpr:
           | None -> false
           | _ -> true)
               );
-      loc = _loc}
-                                                                          |"let"; "open"; i = module_longident; "in"; s = sequence ->
+      loc = _loc};
+     |"let"; "open"; i = module_longident; "in"; s = sequence ->
      {
        t = TUnknown;
        e = Open (_loc, i, s);
@@ -420,96 +440,86 @@ kexpr:
               | "if"; cond=SELF; "then"; cons1 = sequence -> 
         {t=TUnknown; e= If(_loc,cond,cons1); loc = _loc}
       ]
-  | "+" LEFTA
-      [ x = SELF; "+!"; y = SELF -> {t=TInt32; e = Plus32(_loc, x,y); loc = _loc}
-                      | x = SELF; "+!!"; y = SELF -> {t=TInt64; e = Plus64(_loc, x,y); loc = _loc}
-                                       | x = SELF; "+"; y = SELF -> {t=TInt; e = Plus(_loc, x,y); loc = _loc}
-                                                      | x = SELF; "+."; y = SELF -> {t=TFloat32; e = PlusF32(_loc, x,y); loc = _loc}]
-  | "-" LEFTA
-      [ x = SELF; "-!"; y = SELF -> {t=TInt32; e = Min32(_loc, x,y); loc = _loc}
-                      | x = SELF; "-!!"; y = SELF -> {t=TInt64; e = Min64(_loc, x,y); loc = _loc}
-                                       | x = SELF; "-"; y = SELF -> {t=TInt; e = Min(_loc, x,y); loc = _loc}
-                                                      | x = SELF; "-."; y = SELF -> {t=TFloat32; e = MinF32(_loc, x,y); loc = _loc}]
-
-  | "*" LEFTA
-      [ x = SELF; "*!"; y = SELF -> {t=TInt32; e = Mul32(_loc, x,y); loc = _loc}
-                      | x = SELF; "*!!"; y = SELF -> {t=TInt64; e = Mul64(_loc, x,y); loc = _loc}
-                                       | x = SELF; "*"; y = SELF -> {t=TInt; e = Mul(_loc, x,y); loc = _loc}
-                                                      | x = SELF; "*."; y = SELF -> {t=TFloat32; e = MulF32(_loc, x,y); loc = _loc}]
-  | "mod" LEFTA
-      [ x = SELF; "mod"; y = SELF -> {t=TInt; e = Mod(_loc, x,y); loc = _loc}]
-  | "/" LEFTA
-      [ x = SELF; "/!"; y = SELF -> {t=TInt32; e = Div32(_loc, x,y); loc = _loc}
-                      | x = SELF; "/!!"; y = SELF -> {t=TInt64; e = Div64(_loc, x,y); loc = _loc}
-                                       | x = SELF; "/"; y = SELF -> {t=TInt; e = Div(_loc, x,y); loc = _loc}
-                                                      | x = SELF; "/."; y = SELF -> {t=TFloat32; e = DivF32(_loc, x,y); loc = _loc}]
-
-  | "||" LEFTA	
-      [x = SELF; "||"; y = SELF -> {t=TBool; 
-                                    e = BoolOr (_loc, x, y); loc = _loc} ]
-
-  | "&&" RIGHTA	
-      [x = SELF; "&&"; y = SELF -> {t=TBool; e = BoolAnd (_loc, x, y); loc = _loc} ]
-
-
-  | "apply" LEFTA
-      [ e1 = SELF; e2 = SELF -> {t=(TUnknown); e= App(_loc, e1, [e2]); loc = _loc}
-      ]	
-
-  | "." RIGHTA
-      [x = SELF; "."; "[<"; y=SELF; ">]"  -> {t=(TUnknown); 
-                                              e = VecGet (_loc, x, y); loc = _loc}
-                                  | x = SELF; "."; "("; y=SELF; ")"  -> {t=(TUnknown); 
-                                                                         e = ArrGet (_loc, x, y); loc = _loc}
-                                                              |l = UIDENT ; "."; e = SELF -> {t=(TUnknown); 
-                                                                                              e = ModuleAccess (_loc, l, e); 
-                                                                                              loc = _loc}
+  | "mod"  RIGHTA
+    [ x = SELF; "mod"; y = SELF -> {t=TInt; e = Mod(_loc, x,y); loc = _loc}]
+  | ":=" 
+      [ x = SELF; ":="; y= SELF  -> {t=(TUnit); e = Acc (_loc, x, y); loc = _loc}
       ]
+  | "apply" LEFTA
+    [ e1 = SELF; e2 = SELF -> {t=(TUnknown); e= App(_loc, e1, [e2]); loc = _loc}
+    ]	 
+
+  | "+" LEFTA
+    [ x = SELF; "+!"; y = SELF -> {t=TInt32; e = Plus32(_loc, x,y); loc = _loc};
+      | x = SELF; "+!!"; y = SELF -> {t=TInt64; e = Plus64(_loc, x,y); loc = _loc};
+      | x = SELF; "+"; y = SELF -> {t=TInt; e = Plus(_loc, x,y); loc = _loc};
+      | x = SELF; "+."; y = SELF -> {t=TFloat32; e = PlusF32(_loc, x,y); loc = _loc}]
+  | "-" LEFTA
+    [ x = SELF; "-!"; y = SELF -> {t=TInt32; e = Min32(_loc, x,y); loc = _loc};
+      | x = SELF; "-!!"; y = SELF -> {t=TInt64; e = Min64(_loc, x,y); loc = _loc};
+      | x = SELF; "-"; y = SELF -> {t=TInt; e = Min(_loc, x,y); loc = _loc};
+      | x = SELF; "-."; y = SELF -> {t=TFloat32; e = MinF32(_loc, x,y); loc = _loc}]
+    
+  | "*" LEFTA
+    [ x = SELF; "*!"; y = SELF -> {t=TInt32; e = Mul32(_loc, x,y); loc = _loc};
+      | x = SELF; "*!!"; y = SELF -> {t=TInt64; e = Mul64(_loc, x,y); loc = _loc};
+      | x = SELF; "*"; y = SELF -> {t=TInt; e = Mul(_loc, x,y); loc = _loc};
+      | x = SELF; "*."; y = SELF -> {t=TFloat32; e = MulF32(_loc, x,y); loc = _loc}]
+  | "/" LEFTA
+    [ x = SELF; "/!"; y = SELF -> {t=TInt32; e = Div32(_loc, x,y); loc = _loc};
+      | x = SELF; "/!!"; y = SELF -> {t=TInt64; e = Div64(_loc, x,y); loc = _loc};
+      | x = SELF; "/"; y = SELF -> {t=TInt; e = Div(_loc, x,y); loc = _loc};
+      | x = SELF; "/."; y = SELF -> {t=TFloat32; e = DivF32(_loc, x,y); loc = _loc}]
+    
+  | "||" LEFTA	
+    [x = SELF; "||"; y = SELF -> {t=TBool; 
+                                  e = BoolOr (_loc, x, y); loc = _loc} ]
+    
+  | "&&" RIGHTA	
+    [x = SELF; "&&"; y = SELF -> {t=TBool; e = BoolAnd (_loc, x, y); loc = _loc} ]
+    
+
+
+    
   | "loop"
-      [ "for"; x = ident; "="; y=SELF; "to"; z = SELF; "do";  body=do_sequence -> 
-        {t = TUnit; e = DoLoop (_loc, 
+    [ "for"; x = ident; "="; y=SELF; "to"; z = SELF; "do";  body=do_sequence -> 
+        {t = TUnknown; e = DoLoop (_loc, 
                                 {t= TInt; 
                                  e= Id (_loc, x);
                                  loc = _loc}
-                               ,y,z,body); loc = _loc}
-                                                            | "while"; cond = sequence; "do"; body = do_sequence -> 
-        {t = TUnit; e = While (_loc,cond, body); loc = _loc}] 
-
+                               ,y,z,body); loc = _loc};
+      | "while"; cond = sequence; "do"; body = do_sequence -> 
+      {t = TUnknown; e = While (_loc,cond, body); loc = _loc}] 
+    
   | "="
-      [ x=SELF; "="; y=SELF -> {t=TBool; e= BoolEq(_loc,x,y); loc = _loc}
-                   | x=SELF; "=!"; y=SELF -> {t=TBool; e= BoolEq32(_loc,x,y); loc = _loc}
-                                 | x=SELF; "=!!"; y=SELF -> {t=TBool; e= BoolEq64(_loc,x,y); loc = _loc}
-                                                | x=SELF; "=."; y=SELF -> {t=TBool; e= BoolEqF(_loc,x,y); loc = _loc}]
-  | "<"
-      [ x=SELF; "<"; y=SELF -> {t=TBool; e= BoolLt(_loc,x,y); loc = _loc}
-                   | x=SELF; "<!"; y=SELF -> {t=TBool; e= BoolLt32(_loc,x,y); loc = _loc}
-                                 | x=SELF; "<!!"; y=SELF -> {t=TBool; e= BoolLt64(_loc,x,y); loc = _loc}
-                                                | x=SELF; "<."; y=SELF -> {t=TBool; e= BoolLtF(_loc,x,y); loc = _loc}]
-
+    [ x=SELF; "="; y=SELF -> {t=TBool; e= BoolEq(_loc,x,y); loc = _loc};
+      | x=SELF; "=!"; y=SELF -> {t=TBool; e= BoolEq32(_loc,x,y); loc = _loc};
+      | x=SELF; "=!!"; y=SELF -> {t=TBool; e= BoolEq64(_loc,x,y); loc = _loc};
+      | x=SELF; "=."; y=SELF -> {t=TBool; e= BoolEqF(_loc,x,y); loc = _loc}]
+  | "<" 
+    [ x=SELF; "<"; y=SELF -> {t=TBool; e= BoolLt(_loc,x,y); loc = _loc};
+      | x=SELF; "<!"; y=SELF -> {t=TBool; e= BoolLt32(_loc,x,y); loc = _loc};
+      | x=SELF; "<!!"; y=SELF -> {t=TBool; e= BoolLt64(_loc,x,y); loc = _loc};
+      | x=SELF; "<."; y=SELF -> {t=TBool; e= BoolLtF(_loc,x,y); loc = _loc}]
+    
   | "<="
-      [ x=SELF; "<="; y=SELF -> {t=TBool; e= BoolLtE(_loc,x,y); loc = _loc}
-                    | x=SELF; "<=!"; y=SELF -> {t=TBool; e= BoolLtE32(_loc,x,y); loc = _loc}
-                                   | x=SELF; "<=!!"; y=SELF -> {t=TBool; e= BoolLtE64(_loc,x,y); loc = _loc}
-                                                   | x=SELF; "<=."; y=SELF -> {t=TBool; e= BoolLtEF(_loc,x,y); loc = _loc}]
+    [ x=SELF; "<="; y=SELF -> {t=TBool; e= BoolLtE(_loc,x,y); loc = _loc};
+      | x=SELF; "<=!"; y=SELF -> {t=TBool; e= BoolLtE32(_loc,x,y); loc = _loc};
+      | x=SELF; "<=!!"; y=SELF -> {t=TBool; e= BoolLtE64(_loc,x,y); loc = _loc};
+      | x=SELF; "<=."; y=SELF -> {t=TBool; e= BoolLtEF(_loc,x,y); loc = _loc}]
 
-  | ">"
-      [ x=SELF; ">"; y=SELF -> {t=TBool; e= BoolGt(_loc,x,y); loc = _loc}
-                   | x=SELF; ">!"; y=SELF -> {t=TBool; e= BoolGt32(_loc,x,y); loc = _loc}
-                                 | x=SELF; ">!!"; y=SELF -> {t=TBool; e= BoolGt64(_loc,x,y); loc = _loc}
-                                                | x=SELF; ">."; y=SELF -> {t=TBool; e= BoolGtF(_loc,x,y); loc = _loc}]
+  |  ">" RIGHTA
+      [ x=SELF; ">"; y=SELF -> {t=TBool; e= BoolGt(_loc,x,y); loc = _loc};
+        | x=SELF; ">!"; y=SELF -> {t=TBool; e= BoolGt32(_loc,x,y); loc = _loc};
+        | x=SELF; ">!!"; y=SELF -> {t=TBool; e= BoolGt64(_loc,x,y); loc = _loc};
+        | x=SELF; ">."; y=SELF -> {t=TBool; e= BoolGtF(_loc,x,y); loc = _loc}]
 
   | ">="
-      [ x=SELF; ">="; y=SELF -> {t=TBool; e= BoolGtE(_loc,x,y); loc = _loc}
-                    | x=SELF; ">=!"; y=SELF -> {t=TBool; e= BoolGtE32(_loc,x,y); loc = _loc}
-                                   | x=SELF; ">=!!"; y=SELF -> {t=TBool; e= BoolGtE64(_loc,x,y); loc = _loc}
-                                                   | x=SELF; ">=."; y=SELF -> {t=TBool; e= BoolGtEF(_loc,x,y); loc = _loc}]
-  | "simple"
-      ["(" ;  x= sequence; ")"  ->  x
-                         | "("; ")" -> {t=TUnit; e = Noop; loc = _loc}
-                              | x = FLOAT-> {t=TFloat; e = Float32 (_loc, x); loc = _loc}
-                              |x = LIDENT  -> {t=TUnknown; e = Id (_loc, IdLid(_loc,x)); loc = _loc}
-                              |x = INT32  ->{t=TInt32; e = Int32 (_loc, x); loc = _loc}
-                              |x = INT  ->{t=TInt; e = Int (_loc, x); loc = _loc}] 				
+      [ x=SELF; ">="; y=SELF -> {t=TBool; e= BoolGtE(_loc,x,y); loc = _loc};
+        | x=SELF; ">=!"; y=SELF -> {t=TBool; e= BoolGtE32(_loc,x,y); loc = _loc};
+        | x=SELF; ">=!!"; y=SELF -> {t=TBool; e= BoolGtE64(_loc,x,y); loc = _loc};
+        | x=SELF; ">=."; y=SELF -> {t=TBool; e= BoolGtEF(_loc,x,y); loc = _loc}]
+		
   | "<-" 
       [ x = SELF; "<-"; y= SELF  -> 
         begin
@@ -523,9 +533,7 @@ kexpr:
           | _ -> assert false
         end
       ]
-  | ":=" 
-      [ x = SELF; ":="; y= SELF  -> {t=(TUnit); e = Acc (_loc, x, y); loc = _loc}
-      ]
+
   | "!"
       [ "!"; x = ident -> 
         {t=TUnknown; 
@@ -534,8 +542,26 @@ kexpr:
               ); loc = _loc}
       ]
 
-  ];
+  | "." RIGHTA
+    [x = SELF; "."; "[<"; y=SELF; ">]"  -> {t=(TUnknown); 
+                                            e = VecGet (_loc, x, y); loc = _loc};
+     | x = SELF; "."; "("; y=SELF; ")"  -> {t=(TUnknown); 
+                                            e = ArrGet (_loc, x, y); loc = _loc};
+     |l = UIDENT ; "."; e = SELF -> {t=(TUnknown); 
+                                     e = ModuleAccess (_loc, l, e); 
+                                     loc = _loc}
+    ]
+  | "simple" NONA
+      ["(" ;  x= sequence; ")"  ->  x;
+       |"begin" ;  x= sequence; "end"  ->  x;
+       | "("; ")" -> {t=TUnit; e = Noop; loc = _loc};
+       | x = FLOAT-> {t=TFloat32; e = Float32 (_loc, x); loc = _loc};
+       |x = LIDENT  -> {t=TUnknown; e = Id (_loc, IdLid(_loc,x)); loc = _loc};
+       |x = INT32  ->{t=TInt32; e = Int32 (_loc, x); loc = _loc};
+       |x = INT  ->{t=TInt; e = Int (_loc, x); loc = _loc}] 		
 
+
+  ];
 
 
 END

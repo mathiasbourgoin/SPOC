@@ -1,13 +1,48 @@
-all :
-	ocamlfind ocamlopt -thread -package spoc,sarek -linkpkg -package sarek_syntax -syntax camlp4o -o Bitonic_sort.asm Bitonic_sort.ml
+DIR=$(notdir $(CURDIR))
+
+MLSRC=$(DIR).ml
+ASM=$(MLSRC:.ml=.asm)
+BYTE=$(MLSRC:.ml=.byte)
+PACKAGES=spoc,sarek
+SYNTAX_PACKAGES=spoc_external_kernels,sarek_syntax
+
+CAMLC=ocamlfind ocamlc
+CAMLOPT=ocamlfind ocamlopt
+
+SYNTAX_INCLUDES:=-I ` ocamlfind query spoc_external_kernels` \
+		 -I `ocamlfind query sarek_syntax`
 
 
-test:
-	camlp4 -I +camlp4 -I ~/.opam/4.01.0/lib/spoc -I ~/.opam/4.01.0/lib/sarek_syntax -parser o -parser op -printer o kernels_int.cma -printer kernels_ext.cma Bitonic_sort.ml
+all : $(KERNELS) $(ASM) $(BYTE)
 
-pp:
-	camlp4 -I +camlp4 -I ~/.opam/4.01.0/lib/spoc_external_kernels -I ~/.opam/4.01.0/lib/sarek_syntax -parser o -parser op -printer o kernels_int.cma -printer kernels_ext.cma Bitonic_sort.ml > Bitonic_sort_pp.ml
-	ocamlfind ocamlopt -thread -package spoc,sarek,graphics -linkpkg -package sarek_syntax -syntax camlp4o -o Bitonic_sort_pp.asm Bitonic_sort_pp.ml
+
+
+$(ASM): $(MLSRC)
+	$(CAMLOPT) -thread -package $(PACKAGES) -linkpkg \
+	-package $(SYNTAX_PACKAGES) -syntax camlp4o -o $@ $<
+
+
+$(BYTE) : $(MLSRC)
+	$(CAMLC) -thread -package $(PACKAGES) -linkpkg \
+	-package $(SYNTAX_PACKAGES) -syntax camlp4o -o $@ $<
+
+test: $(MLSRC)
+	camlp4 -I +camlp4 $(SYNTAX_INCLUDES) -parser o -parser op \
+	-printer o kernels_int.cma -printer kernels_ext.cma $<
+
+pp: $(DIR)_pp.asm
+
+$(DIR)_pp.asm : $(DIR)_pp.ml
+	$(CAMLOPT) -thread -package $(PACKAGES),graphics -linkpkg \
+	-package $(SYNTAX_PACKAGES) -syntax camlp4o -o $@ $<
+
+
+$(DIR)_pp.ml: $(MLSRC)
+	camlp4 -I +camlp4 $(SYNTAX_INCLUDES)  -parser o -parser op \
+	-printer o kernels_int.cma -printer kernels_ext.cma $<	> $@
 
 clean:
 	rm -f *.asm *.byte *.cm* *pp.ml *~ \#*\# *.o
+
+
+.PHONY:clean test all pp
