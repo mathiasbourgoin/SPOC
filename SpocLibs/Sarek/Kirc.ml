@@ -61,7 +61,10 @@ let opencl_head = (
   "float spoc_fadd ( float a, float b ) { return (a + b);}\n"^
   "float spoc_fminus ( float a, float b ) { return (a - b);}\n"^
   "float spoc_fmul ( float a, float b ) { return (a * b);}\n"^
-  "float spoc_fdiv ( float a, float b ) { return (a / b);}\n"
+  "float spoc_fdiv ( float a, float b ) { return (a / b);}\n"^
+  "int logical_and (int a, int b ) { return (a & b);}\n"^
+  "int spoc_powint (int a, int b ) { return ((int) pow (((float) a), ((float) b)));}\n"^
+  "int spoc_xor (int a, int b ) { return (a^b);}\n"
 )
 let opencl_float64 = (
   "#ifndef __FLOAT64_EXTENSION__ \n"^
@@ -97,7 +100,10 @@ let cuda_head = (
   "__device__ float spoc_fadd ( float a, float b ) { return (a + b);}\n"^
   "__device__ float spoc_fminus ( float a, float b ) { return (a - b);}\n"^
   "__device__ float spoc_fmul ( float a, float b ) { return (a * b);}\n"^
-  "__device__ float spoc_fdiv ( float a, float b ) { return (a / b);}\n"
+  "__device__ float spoc_fdiv ( float a, float b ) { return (a / b);}\n"^
+  "__device__ int logical_and (int a, int b ) { return (a & b);}\n"^
+  "__device__ int spoc_powint (int a, int b ) { return ((int) pow (((double) a), ((double) b)));}\n"^
+  "__device__ int spoc_xor (int a, int b ) { return (a^b);}\n"
 )
 
 let new_var i = IdName ("spoc_var"^(string_of_int i))
@@ -532,6 +538,7 @@ struct
       b * b * (if n mod 2 = 0 then 1 else a)
 
   let logical_and = fun a b -> a land b
+  let xor = fun a b -> a lxor b
 
   module Float32 =
   struct

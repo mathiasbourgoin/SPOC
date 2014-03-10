@@ -460,8 +460,9 @@ let math = {
     [
     ];
   mod_functions = [
-    (TApp ((TApp (TInt, TInt)), TInt), "pow", 2, "pow", "pow");
+    (TApp ((TApp (TInt, TInt)), TInt), "pow", 2, "spoc_powint", "spoc_powint");
     (TApp ((TApp (TInt, TInt)), TInt), "logical_and", 2, "logical_and", "logical_and");
+    (TApp ((TApp (TInt, TInt)), TInt), "xor", 2, "spoc_xor", "spoc_xor");
   ];
   mod_modules = 
     let m = Hashtbl.create 0 in

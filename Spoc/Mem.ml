@@ -40,7 +40,12 @@ open OpenCL
 
 let auto = ref true
 
+let unsafe = ref false
+
+
 let auto_transfers b = auto := b
+
+let unsafe_rw b = unsafe := b
 
 let unsafe_set vect idx value =
   Vector.unsafe_set vect idx value
@@ -54,25 +59,29 @@ let rec flush_and_transfer_to_cpu d vect =
   Devices.flush d ()
 
 and set vect (idx : int) (value : 'a) =
-  (if (idx < 0) || (idx >= Vector.length vect)
-   then raise (Invalid_argument "index out of bounds");
-   if !auto
-   then
-     (match Vector.dev vect with
-      | Vector.Dev d  | Vector.Transferring d -> 
-        (flush_and_transfer_to_cpu d vect)
-      | Vector.No_dev -> ());
-   match Vector.is_sub vect with
-   | Some (1, start, ok_r, 0, v2) -> unsafe_set v2 (start + idx) value
-   | Some (1, start, ok_r, ko_r, v2) ->
-     unsafe_set v2
-       ((start + ((idx / ok_r) * (ko_r + ok_r))) + (idx mod ok_r)) value
-   | Some (_, start, ok_r, ko_r, v2) ->
-     set v2 ((start + ((idx / ok_r) * (ko_r + ok_r))) + (idx mod ok_r))
-       value
-   | None -> unsafe_set vect idx value)
-
+  if !unsafe then unsafe_set vect idx value
+  else
+    (if (idx < 0) || (idx >= Vector.length vect)
+     then raise (Invalid_argument "index out of bounds");
+     if !auto
+     then
+       (match Vector.dev vect with
+        | Vector.Dev d  | Vector.Transferring d -> 
+          (flush_and_transfer_to_cpu d vect)
+        | Vector.No_dev -> ());
+     match Vector.is_sub vect with
+     | Some (1, start, ok_r, 0, v2) -> unsafe_set v2 (start + idx) value
+     | Some (1, start, ok_r, ko_r, v2) ->
+       unsafe_set v2
+         ((start + ((idx / ok_r) * (ko_r + ok_r))) + (idx mod ok_r)) value
+     | Some (_, start, ok_r, ko_r, v2) ->
+       set v2 ((start + ((idx / ok_r) * (ko_r + ok_r))) + (idx mod ok_r))
+         value
+     | None -> unsafe_set vect idx value)
+    
 and get vect idx =
+  if !unsafe then unsafe_get vect idx 
+  else
   (if (idx < 0) || (idx >= Vector.length vect)
    then raise (Invalid_argument "index out of bounds");
    if !auto

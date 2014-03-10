@@ -145,6 +145,7 @@ module Math :
 sig
   val pow : int -> int -> int
   val logical_and : int -> int -> int
+  val xor : int -> int -> int
   module Float32 :
   sig
     val add : float -> float -> float
