@@ -1,3 +1,5 @@
+[![Build Status](https://secure.travis-ci.org/mathiasbourgoin/spoc.png)](http://travis-ci.org/mathiasbourgoin/
+
 SPOC is a set of tools for GPGPU programming with OCaml.
 
 The SPOC library enables the detection and use of GPGPU devices with OCaml using Cuda and OpenCL. 
