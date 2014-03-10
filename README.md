@@ -1,4 +1,5 @@
-[![Build Status](https://secure.travis-ci.org/mathiasbourgoin/spoc.png)](http://travis-ci.org/mathiasbourgoin/
+[![Build Status](https://travis-ci.org/mathiasbourgoin/SPOC.png?branch=master)](https://travis-ci.org/mathiasbourgoin/SPOC)
+
 
 SPOC is a set of tools for GPGPU programming with OCaml.
 
