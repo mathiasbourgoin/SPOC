@@ -1,37 +1,37 @@
 (******************************************************************************
-* Mathias Bourgoin, Université Pierre et Marie Curie (2011)
-*
-* Mathias.Bourgoin@gmail.com
-*
-* This software is a computer program whose purpose is to allow
-* GPU programming with the OCaml language.
-*
-* This software is governed by the CeCILL - B license under French law and
-* abiding by the rules of distribution of free software. You can use,
-* modify	and / or redistribute the software under the terms of the CeCILL - B
-* license as circulated by CEA, CNRS and INRIA at the following URL
-* "http://www.cecill.info".
-*
-* As a counterpart to the access to the source code and rights to copy,
-* modify and redistribute granted by the license, users are provided only
-* with a limited warranty and the software's author, the holder of the
-* economic rights, and the successive licensors have only limited
-* liability.
-*
-* In this respect, the user's attention is drawn to the risks associated
-* with loading, using, modifying and / or developing or reproducing the
-* software by the user in light of its specific status of free software,
-* that may mean that it is complicated to manipulate, and that also
-* therefore means that it is reserved for developers and experienced
-* professionals having in - depth computer knowledge. Users are therefore
-* encouraged to load and test the software's suitability as regards their
-* requirements in conditions enabling the security of their systems and / or
-* data to be ensured and, more generally, to use and operate it in the
-* same conditions as regards security.
-*
-* The fact that you are presently reading this means that you have had
-* knowledge of the CeCILL - B license and that you accept its terms.
-*******************************************************************************)
+ * Mathias Bourgoin, Université Pierre et Marie Curie (2011)
+ *
+ * Mathias.Bourgoin@gmail.com
+ *
+ * This software is a computer program whose purpose is to allow
+ * GPU programming with the OCaml language.
+ *
+ * This software is governed by the CeCILL - B license under French law and
+ * abiding by the rules of distribution of free software. You can use,
+ * modify	and / or redistribute the software under the terms of the CeCILL - B
+ * license as circulated by CEA, CNRS and INRIA at the following URL
+ * "http://www.cecill.info".
+ *
+ * As a counterpart to the access to the source code and rights to copy,
+ * modify and redistribute granted by the license, users are provided only
+ * with a limited warranty and the software's author, the holder of the
+ * economic rights, and the successive licensors have only limited
+ * liability.
+ *
+ * In this respect, the user's attention is drawn to the risks associated
+ * with loading, using, modifying and / or developing or reproducing the
+ * software by the user in light of its specific status of free software,
+ * that may mean that it is complicated to manipulate, and that also
+ * therefore means that it is reserved for developers and experienced
+ * professionals having in - depth computer knowledge. Users are therefore
+ * encouraged to load and test the software's suitability as regards their
+ * requirements in conditions enabling the security of their systems and / or
+ * data to be ensured and, more generally, to use and operate it in the
+ * same conditions as regards security.
+ *
+ * The fact that you are presently reading this means that you have had
+ * knowledge of the CeCILL - B license and that you accept its terms.
+ *******************************************************************************)
 external cuda_init : unit -> unit = "spoc_cuInit"
 external cl_init : unit -> unit = "spoc_clInit"
 
@@ -198,19 +198,19 @@ let init ?only: (s = Both) () =
   begin
     match	s with
     | Both -> (
-          cuda_init ();
-          cuda_compatible_devices := get_cuda_compatible_devices ();
-          cl_init ();
-          opencl_compatible_devices := get_opencl_compatible_devices();
-        )
+        cuda_init ();
+        cuda_compatible_devices := get_cuda_compatible_devices ();
+        cl_init ();
+        opencl_compatible_devices := get_opencl_compatible_devices();
+      )
     | Cuda -> (
-          cuda_init ();
-          cuda_compatible_devices := get_cuda_compatible_devices ();
-        )
+        cuda_init ();
+        cuda_compatible_devices := get_cuda_compatible_devices ();
+      )
     | OpenCL -> (
-          cl_init ();
-          opencl_compatible_devices := get_opencl_compatible_devices();
-        )
+        cl_init ();
+        opencl_compatible_devices := get_opencl_compatible_devices();
+      )
   end;
   total_num_devices := !cuda_compatible_devices + !opencl_compatible_devices;
   let devList = ref [] in
@@ -244,27 +244,26 @@ let flush dev ?queue_id () =
   | CudaInfo _, None -> cuda_flush_all dev.general_info dev 
   | CudaInfo _, Some q -> cuda_flush dev.general_info dev q
   | OpenCLInfo _, None ->
-      opencl_flush dev.general_info 0
-	| OpenCLInfo _, Some q ->
-      opencl_flush dev.general_info q
+    opencl_flush dev.general_info 0
+  | OpenCLInfo _, Some q ->
+    opencl_flush dev.general_info q
 
 let hasCLExtension dev ext =
   match dev.specific_info with
   | OpenCLInfo cli ->
-      begin
-        try
-          ignore(Str.search_forward (Str.regexp ext) cli.extensions 0);
-          true
-        with
-        | _ -> false
-      end
+    begin
+      try
+        ignore(Str.search_forward (Str.regexp ext) cli.extensions 0);
+        true
+      with
+      | _ -> false
+    end
   | _ -> false
 
 
 let allowDouble dev =
-match dev.specific_info with
+  match dev.specific_info with
   | OpenCLInfo cli -> 
-			hasCLExtension dev "cl_khr_fp64" || hasCLExtension dev "cl_amd_fp64"
-	| CudaInfo ci -> ci.major > 1 || ci.minor >= 3
-		
-				
+    hasCLExtension dev "cl_khr_fp64" || hasCLExtension dev "cl_amd_fp64"
+  | CudaInfo ci -> ci.major > 1 || ci.minor >= 3
+

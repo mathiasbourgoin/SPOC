@@ -124,96 +124,99 @@ val compile_kernel_to_files :
   string ->
   ('a, 'b) Spoc.Kernel.spoc_kernel * ('c, 'd, 'e) kirc_kernel -> unit
 module Std :
-  sig
-    val thread_idx_x : int
-    val thread_idx_y : int
-    val thread_idx_z : int
-    val block_idx_x : int
-    val block_idx_y : int
-    val block_idx_z : int
-    val block_dim_x : int
-    val block_dim_y : int
-    val block_dim_z : int
-    val global_thread_id : int
-    val return : unit -> unit
-    val float64 : int -> float
-    val int_of_float64 : float -> int
-    val block_barrier : unit -> unit
-    val make_shared : int -> int array
-  end
+sig
+  val thread_idx_x : int
+  val thread_idx_y : int
+  val thread_idx_z : int
+  val block_idx_x : int
+  val block_idx_y : int
+  val block_idx_z : int
+  val block_dim_x : int
+  val block_dim_y : int
+  val block_dim_z : int
+  val global_thread_id : int
+  val return : unit -> unit
+  val float64 : int -> float
+  val int_of_float64 : float -> int
+  val block_barrier : unit -> unit
+  val make_shared : int -> int array
+end
 module Math :
+sig
+  val pow : int -> int -> int
+  val logical_and : int -> int -> int
+  val xor : int -> int -> int
+  module Float32 :
   sig
-    module Float32 :
-      sig
-        val add : float -> float -> float
-        val minus : float -> float -> float
-        val mul : float -> float -> float
-        val div : float -> float -> float
-        val pow : float -> float -> float
-        val sqrt : float -> float
-        val exp : float -> float
-        val log : float -> float
-        val log10 : float -> float
-        val expm1 : float -> float
-        val log1p : float -> float
-        val acos : float -> float
-        val cos : float -> float
-        val cosh : float -> float
-        val asin : float -> float
-        val sin : float -> float
-        val sinh : float -> float
-        val tan : float -> float
-        val tanh : float -> float
-        val atan : float -> float
-        val atan2 : float -> float -> float
-        val hypot : float -> float -> float
-        val ceil : float -> float
-        val floor : float -> float
-        val abs_float : float -> float
-        val copysign : float -> float -> float
-        val modf : float -> float * float
-        val zero : float
-        val one : float
-        val of_float : float -> float
-        val to_float : float -> float
-        val make_shared : int -> float array
-      end
-    module Float64 :
-      sig
-        val add : float -> float -> float
-        val minus : float -> float -> float
-        val mul : float -> float -> float
-        val div : float -> float -> float
-        val pow : float -> float -> float
-        val sqrt : float -> float
-        val exp : float -> float
-        val log : float -> float
-        val log10 : float -> float
-        val expm1 : float -> float
-        val log1p : float -> float
-        val acos : float -> float
-        val cos : float -> float
-        val cosh : float -> float
-        val asin : float -> float
-        val sin : float -> float
-        val sinh : float -> float
-        val tan : float -> float
-        val tanh : float -> float
-        val atan : float -> float
-        val atan2 : float -> float -> float
-        val hypot : float -> float -> float
-        val ceil : float -> float
-        val floor : float -> float
-        val abs_float : float -> float
-        val copysign : float -> float -> float
-        val modf : float -> float * float
-        val zero : float
-        val one : float
-        val of_float : float -> float
-        val to_float : float -> float
-        val make_shared : int -> float array
-      end
+    val add : float -> float -> float
+    val minus : float -> float -> float
+    val mul : float -> float -> float
+    val div : float -> float -> float
+    val pow : float -> float -> float
+    val sqrt : float -> float
+    val exp : float -> float
+    val log : float -> float
+    val log10 : float -> float
+    val expm1 : float -> float
+    val log1p : float -> float
+    val acos : float -> float
+    val cos : float -> float
+    val cosh : float -> float
+    val asin : float -> float
+    val sin : float -> float
+    val sinh : float -> float
+    val tan : float -> float
+    val tanh : float -> float
+    val atan : float -> float
+    val atan2 : float -> float -> float
+    val hypot : float -> float -> float
+    val ceil : float -> float
+    val floor : float -> float
+    val abs_float : float -> float
+    val copysign : float -> float -> float
+    val modf : float -> float * float
+    val zero : float
+    val one : float
+    val of_float : float -> float
+    val to_float : float -> float
+    val make_shared : int -> float array
   end
+  module Float64 :
+  sig
+    val add : float -> float -> float
+    val minus : float -> float -> float
+    val mul : float -> float -> float
+    val div : float -> float -> float
+    val pow : float -> float -> float
+    val sqrt : float -> float
+    val exp : float -> float
+    val log : float -> float
+    val log10 : float -> float
+    val expm1 : float -> float
+    val log1p : float -> float
+    val acos : float -> float
+    val cos : float -> float
+    val cosh : float -> float
+    val asin : float -> float
+    val sin : float -> float
+    val sinh : float -> float
+    val tan : float -> float
+    val tanh : float -> float
+    val atan : float -> float
+    val atan2 : float -> float -> float
+    val hypot : float -> float -> float
+    val ceil : float -> float
+    val floor : float -> float
+    val abs_float : float -> float
+    val copysign : float -> float -> float
+    val modf : float -> float * float
+    val zero : float
+    val one : float
+    val of_float : float -> float
+    val to_float : float -> float
+    val make_shared : int -> float array
+  end
+end
 val a_to_vect : Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val a_to_return_vect :
   Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext

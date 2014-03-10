@@ -35,6 +35,7 @@
 (** Manages memory transfers *)
 (**/**)
 val auto : bool ref
+val unsafe : bool ref
 (**/**)
  
 (** By default Spoc wiil automatically handle memory transfers
@@ -46,6 +47,7 @@ val auto : bool ref
 	
 	default is : [auto_transfers true] *)
 val auto_transfers : bool -> unit
+val unsafe_rw : bool -> unit
 
 (** Explicit transfer to a device
 
