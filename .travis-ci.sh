@@ -23,7 +23,8 @@ opam --git-version
 
 opam init
 eval `opam config env`
-opam install ocp-build
+opam repository add ocamllabs-repo-dev https://github.com/ocamllabs/opam-repo-dev.git
+opam update
 opam install ${OPAM_DEPENDS}
 
 make check
