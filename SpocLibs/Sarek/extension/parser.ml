@@ -60,21 +60,21 @@ let rec parse_int i t=
             match var.var_type with
             | TUnknown -> var.var_type <- t
             | x when x = t  -> ()
-            | _  -> assert false; raise (TypeError (t, var.var_type, _loc)));
+            | _  -> assert (not debug); raise (TypeError (t, var.var_type, _loc)));
         with Not_found -> 
           (
             try 
               let c_const = Hashtbl.find !intrinsics_const (string_of_ident s) in
               (match c_const.typ with
                | x when x = t -> ()
-               | _  -> assert false; raise (TypeError (t, c_const.typ, _loc)))
+               | _  -> assert (not debug); raise (TypeError (t, c_const.typ, _loc)))
             with Not_found ->
-              (assert false; raise (Unbound_value ((string_of_ident s), _loc)))));
+              (assert (not debug); raise (Unbound_value ((string_of_ident s), _loc)))));
       (match i.t with
        | x when x = t -> () 
 
        | TUnknown  ->  i.t <- t; 
-       | _ -> assert false; raise (TypeError (t, i.t, i.loc)));
+       | _ -> assert (not debug); raise (TypeError (t, i.t, i.loc)));
       if !is_mutable then
         <:expr< $(ExId (_loc, s))$.contents>>
       else
@@ -82,16 +82,16 @@ let rec parse_int i t=
   | Int (_loc, s) -> 
     ( match i.t with 
       | TInt | TInt32 -> <:expr< $(ExInt (_loc, s))$>>
-      | _ -> assert false; raise (TypeError (t, i.t, i.loc)))
+      | _ -> assert (not debug); raise (TypeError (t, i.t, i.loc)))
   | Int32 (_loc, s) -> 
     ( match i.t with 
       | TInt32 | TInt32 -> <:expr< $(ExInt32 (_loc, s))$>>
-      | _ -> assert false; raise (TypeError (t, i.t, i.loc)))
+      | _ -> assert (not debug); raise (TypeError (t, i.t, i.loc)))
 
   | Int64 (_loc, s) -> 
     ( match i.t with 
       | TInt64  -> <:expr< $(ExInt64 (_loc, s))$>>
-      | _ -> assert false; raise (TypeError (t, i.t, i.loc)))
+      | _ -> assert (not debug); raise (TypeError (t, i.t, i.loc)))
   | Plus (_loc, a, b) |Plus32 (_loc, a, b) | Plus64 (_loc, a, b)  -> 
     parse_body i
   | Min (_loc, a, b) |Min32 (_loc, a, b) | Min64 (_loc, a, b)  -> 
@@ -114,7 +114,7 @@ let rec parse_int i t=
   | VecGet (_loc, vector, index)  -> 
     ( match i.t with
       | x when x = t -> ()
-      | _  -> assert false; raise (TypeError (t, i.t , _loc)));
+      | _  -> assert (not debug); raise (TypeError (t, i.t , _loc)));
     (match vector.e with
      | Id (_loc,s)  -> 
        let var = (Hashtbl.find !current_args (string_of_ident s)) in
@@ -124,7 +124,7 @@ let rec parse_int i t=
            | TInt32  -> <:ctyp<(int32, Bigarray.int32_elt) Spoc.Vector.vector>>
            | TInt64  -> <:ctyp<(int64, Bigarray.int64_elt) Spoc.Vector.vector>>
            | TInt ->  <:ctyp<(int, Bigarray.int_elt) Spoc.Vector.vector>>
-           |  _  ->  assert false 
+           |  _  ->  assert false
          in
          (match var.var_type with
           | TVec k when k = t  -> (
@@ -132,12 +132,13 @@ let rec parse_int i t=
             )
           | TVec TUnknown -> var.var_type <- TVec t;
             vec_typ_to_e t
-          | _  -> assert false; raise (TypeError (TVec t, var.var_type, _loc)))
+          | _  -> assert (not debug); raise (TypeError (TVec t, var.var_type, _loc)))
        in
        <:expr<Spoc.Mem.get ($ExId(_loc,s)$:$type_constraint$) $parse_body index$>>
-     | _  ->  assert false; failwith "Unknwown vector");
-  | _ -> assert false; raise (TypeError (t, i.t, i.loc))
-
+     | _  ->  assert (not debug); failwith "Unknwown vector");
+  | App (_loc, e1, e2) -> parse_body i
+  | _ -> assert (not debug); raise (TypeError (t, i.t, i.loc))
+                             
 
 and parse_float f t = 
   match f.e with
@@ -147,38 +148,38 @@ and parse_float f t =
     (if t = tt then
        (( let var = (
            ( try Hashtbl.find !current_args (string_of_ident s) 
-             with _ -> assert false; raise (Unbound_value ((string_of_ident s), _loc)))) in
+             with _ -> assert (not debug); raise (Unbound_value ((string_of_ident s), _loc)))) in
            match var.var_type with
            | TUnknown ->
              ( try 
                  (Hashtbl.find !current_args (string_of_ident s)).var_type <- t  
-               with _ -> assert false; raise (Unbound_value ((string_of_ident s),_loc)))
+               with _ -> assert (not debug); raise (Unbound_value ((string_of_ident s),_loc)))
            | x when x = t  -> ()
-           | _  -> assert false; raise (TypeError (t, var.var_type, _loc)));
+           | _  -> assert (not debug); raise (TypeError (t, var.var_type, _loc)));
         match f.t with
         | x when x = t ->  <:expr<$(ExId (_loc, s))$>>
         | TUnknown  ->  f.t <- t; 
           <:expr< $(ExId (_loc, s))$>>
-        | _ -> assert false; raise (TypeError (t, f.t, f.loc)))
+        | _ -> assert (not debug); raise (TypeError (t, f.t, f.loc)))
      else 
-       (assert false; raise (TypeError (t, f.t, f.loc))))
+       (assert (not debug); raise (TypeError (t, f.t, f.loc))))
   | Id (_loc,s)  ->
     (let is_mutable = ref false in
      ( let var = (
         ( try Hashtbl.find !current_args (string_of_ident s) 
-          with _ -> assert false; raise (Unbound_value ((string_of_ident s),_loc)))) in
+          with _ -> assert (not debug); raise (Unbound_value ((string_of_ident s),_loc)))) in
        is_mutable := var.is_mutable;
        match var.var_type with
        | TUnknown ->
          ( try 
              (Hashtbl.find !current_args (string_of_ident s)).var_type <- t  
-           with _ -> assert false; raise (Unbound_value ((string_of_ident s),_loc)))
+           with _ -> assert (not debug); raise (Unbound_value ((string_of_ident s),_loc)))
        | x when x = t  -> ()
-       | _  -> assert false; raise (TypeError (t, var.var_type, _loc)));
+       | _  -> assert (not debug); raise (TypeError (t, var.var_type, _loc)));
      (match f.t with
       | x when x = t -> ()
       | TUnknown  ->  f.t <- t
-      | _ -> assert false; raise (TypeError (t, f.t, f.loc))) ;
+      | _ -> assert (not debug); raise (TypeError (t, f.t, f.loc))) ;
      if !is_mutable then
        <:expr< $(ExId (_loc, s))$.contents>>
      else
@@ -188,20 +189,20 @@ and parse_float f t =
   | Float (_loc, s)  -> 
     ( match f.t with 
       | TFloat  -> <:expr<$(ExFlo(_loc, s))$>>
-      | _ -> assert false; raise (TypeError (t, f.t, f.loc)))
+      | _ -> assert (not debug); raise (TypeError (t, f.t, f.loc)))
   | Float32 (_loc, s) -> 
     ( match f.t with 
       | TFloat32  -> <:expr< $(ExFlo (_loc, s))$>>
-      | _ -> assert false; raise (TypeError (t, f.t, f.loc)))
+      | _ -> assert (not debug); raise (TypeError (t, f.t, f.loc)))
   | Float64 (_loc, s) -> 
     ( match f.t with 
       | TFloat64  -> <:expr< $(ExFlo (_loc, s))$>>
-      | _ -> assert false; raise (TypeError (t, f.t, f.loc)))
+      | _ -> assert (not debug); raise (TypeError (t, f.t, f.loc)))
   | PlusF (_loc, a, b) | PlusF32 (_loc, a, b) | PlusF64  (_loc, a, b)-> 
     parse_body f 
   | MinF (_loc, a, b) | MinF32 (_loc, a, b) | MinF64  (_loc, a, b)-> 
     parse_body f 
-  | MulF (_loc, a, b) | MulF32 (_loc, a, b) | MulF64  (_loc, a, b)-> 
+  | MulF _ | MulF32 _  | MulF64 _-> 
     parse_body f 
   | DivF (_loc, a, b) | DivF32 (_loc, a, b) | DivF64  (_loc, a, b)-> 
     parse_body f 
@@ -209,7 +210,7 @@ and parse_float f t =
   | VecGet (_loc, vector, index)  -> 
     ( match f.t with
       | x when x = t -> ()
-      | _  -> assert false; raise (TypeError (t, f.t , _loc)));
+      | _  -> assert (not debug); raise (TypeError (t, f.t , _loc)));
     (match vector.e with
      | Id (_loc,s)  -> 
        let var = (Hashtbl.find !current_args (string_of_ident s)) in
@@ -219,15 +220,17 @@ and parse_float f t =
                | TFloat -> <:ctyp<(float, Bigarray.float32_elt) Spoc.Vector.vector>>
                | TFloat32 -> <:ctyp<(float, Bigarray.float32_elt) Spoc.Vector.vector>>
                | TFloat64 -> <:ctyp<(float, Bigarray.float64_elt) Spoc.Vector.vector>>
-               |  _  ->  assert false 
+               |  _  ->  assert false
              )
-           | _  -> assert false; raise (TypeError (TVec t, var.var_type, _loc))
+           | _  -> assert (not debug); raise (TypeError (TVec t, var.var_type, _loc))
          ) in
        <:expr<Spoc.Mem.get ($ExId(_loc,s)$:$type_constraint$) $parse_body index$>>
-     | _  ->  assert false; failwith "Unknwown vector");
+     | _  ->  assert (not debug); failwith "Unknwown vector");
   | ModuleAccess _ -> parse_body f
-  | _ ->   my_eprintf (Printf.sprintf "(* val %s *)\n%!" (k_expr_to_string f.e));
-    raise (TypeError (t, f.t, f.loc))
+  | Acc _ -> parse_body f
+  | _ ->   
+    my_eprintf (Printf.sprintf "(* val %s *)\n%!" (k_expr_to_string f.e));
+    assert (not debug); raise (TypeError (t, f.t, f.loc))
 
 and  parse_int2 i t= 
   match i.e with
@@ -236,7 +239,7 @@ and  parse_int2 i t=
        let var = (Hashtbl.find !current_args (string_of_ident s)) in
        (match var.var_type with
         | x when x = t ->  ()
-        | _  ->  assert false; raise (TypeError (t, var.var_type, _loc)));
+        | _  ->  assert (not debug); raise (TypeError (t, var.var_type, _loc)));
        if var.is_global then
          <:expr<global_int_var $ExId(_loc,s)$>>
        else
@@ -248,9 +251,9 @@ and  parse_int2 i t=
          match c_const.typ with
          | x when x = t -> 
            <:expr< intrinsics $ExStr(_loc, c_const.cuda_val)$ $ExStr(_loc, c_const.opencl_val)$>>
-         | _  -> assert false; raise (TypeError (t, c_const.typ, _loc))
+         | _  -> assert (not debug); raise (TypeError (t, c_const.typ, _loc))
        with Not_found ->
-         (assert false; raise (Unbound_value ((string_of_ident s),_loc))))
+         (assert (not debug); raise (Unbound_value ((string_of_ident s),_loc))))
   | Ref (_, {loc=_; e=Id(_loc,s); t=_}) ->
     <:expr<global_int_var (fun () -> ! $ExId(_loc, s)$)>>
   | Int (_loc, s)  -> <:expr<spoc_int $(ExInt (_loc, s))$>>
@@ -271,17 +274,17 @@ and  parse_int2 i t=
   | VecGet (_loc, vector, index)  -> 
     ( match i.t with
       | x when x = t -> ()
-      | _  -> assert false; raise (TypeError (t, i.t , _loc)));
+      | _  -> assert (not debug); raise (TypeError (t, i.t , _loc)));
     (match vector.e with
      | Id (_loc,s)  -> 
        let var = (Hashtbl.find !current_args (string_of_ident s)) in
        (match var.var_type with
         | TVec x when x = t  -> ()
-        | _  -> assert false; raise (TypeError (TVec t, var.var_type, _loc))
+        | _  -> assert (not debug); raise (TypeError (TVec t, var.var_type, _loc))
        );
      | _  ->  failwith "Unknwown vector");
     <:expr<get_vec $parse_int2 vector (TVec t)$ $parse_int2 index TInt$>>
-  | _ -> assert false; raise (TypeError (t, i.t, i.loc))
+  | _ -> assert (not debug); raise (TypeError (t, i.t, i.loc))
 
 and  parse_float2 f t= 
   match f.e with
@@ -293,7 +296,7 @@ and  parse_float2 f t=
        let var = (Hashtbl.find !current_args (string_of_ident s)) in
        (match var.var_type with
         | x when x = t ->  ()
-        | _  ->  assert false; raise (TypeError (t, var.var_type, _loc)));
+        | _  ->  assert (not debug); raise (TypeError (t, var.var_type, _loc)));
        if var.is_global then
          <:expr<global_float_var $ExId(_loc,s)$>>
        else
@@ -305,9 +308,9 @@ and  parse_float2 f t=
          match c_const.typ with
          | x when x = t -> 
            <:expr< intrinsics $ExStr(_loc, c_const.cuda_val)$ $ExStr(_loc, c_const.opencl_val)$>>
-         | _  -> assert false; raise (TypeError (t, c_const.typ, _loc))
+         | _  -> assert (not debug); raise (TypeError (t, c_const.typ, _loc))
        with Not_found ->
-         (assert false; raise (Unbound_value ((string_of_ident s),_loc))))
+         (assert (not debug); raise (Unbound_value ((string_of_ident s),_loc))))
   | Ref (_, {loc=_; e=Id(_loc,s); t=_}) ->
     <:expr<global_float_var (fun () -> ! $ExId(_loc, s)$)>>
   | Float (_loc, s)  -> <:expr<spoc_float $(ExFlo(_loc, s))$>>
@@ -324,19 +327,19 @@ and  parse_float2 f t=
   | VecGet (_loc, vector, index)  -> 
     ( match f.t with
       | x when x = t -> ()
-      | _  -> assert false; raise (TypeError (t, f.t , _loc)));
+      | _  -> assert (not debug); raise (TypeError (t, f.t , _loc)));
     (match vector.e with
      | Id (_loc,s)  -> 
        let var = (Hashtbl.find !current_args (string_of_ident s)) in
        (match var.var_type with
         | TVec x when x = t  -> ()
-        | _  -> assert false; raise (TypeError (TVec t, var.var_type, _loc))
+        | _  -> assert (not debug); raise (TypeError (TVec t, var.var_type, _loc))
        );
      | _  ->  failwith "Unknwown vector");
     <:expr<get_vec $parse_float2 vector (TVec t)$ $parse_int2 index TInt$>>
   | ModuleAccess _ -> parse_body2 f false
   | _  -> ( my_eprintf (Printf.sprintf "(* val %s *)\n%!" (k_expr_to_string f.e));
-            raise (TypeError (t, f.t, f.loc));
+            assert (not debug); raise (TypeError (t, f.t, f.loc));
             failwith "error parse_float2")	
 
 and parse_modacc m =
@@ -361,7 +364,8 @@ and parse_app_ml a modu =
       | App (l, e1, e2::[]) -> ExApp (_loc, aux e1 modu, parse_body e2)
       | ModuleAccess (_loc, s, e) -> 
         ExAcc(_loc, modu, (parse_body a))
-      | _ -> my_eprintf (Printf.sprintf "(* app %s *)\n%!" (k_expr_to_string a.e)); assert false 
+      | _ -> my_eprintf (Printf.sprintf "(* app %s *)\n%!" (k_expr_to_string a.e)); 
+        assert false 
     in
     ExApp(_loc, aux e1 modu, parse_body e2)
   | _ -> parse_body a 
@@ -396,17 +400,17 @@ and parse_body body =
     let a_ = (parse_float a TFloat32) in
     let b_ = (parse_float b TFloat32) in
     (if (a.t <> TFloat32 && a.t <> TUnknown) then
-       raise (TypeError (TFloat32, a.t, a.loc)));
+       (assert (not debug); raise (TypeError (TFloat32, a.t, a.loc))));
     (if (b.t <> TFloat32 && b.t <> TUnknown) then
-       raise (TypeError (TFloat32, b.t, b.loc)));
+       (assert (not debug); raise (TypeError (TFloat32, b.t, b.loc))));
     ( <:expr<$a_$ +. $b_$>>)
   | PlusF64 (_loc, a,b) -> 
     let a_ = (parse_float a TFloat64) in
     let b_ = (parse_float b TFloat64) in
     (if (a.t <> TFloat64 && a.t <> TUnknown) then
-       raise (TypeError (TFloat64, a.t, a.loc)));
+       (assert (not debug); raise (TypeError (TFloat64, a.t, a.loc))));
     (if (b.t <> TFloat64 && b.t <> TUnknown) then
-       raise (TypeError (TFloat64, b.t, b.loc)));
+       (assert (not debug); raise (TypeError (TFloat64, b.t, b.loc))));
     ( <:expr<$a_$ +. $b_$>>)
 
   | Min (_loc, a,b) -> 
@@ -421,17 +425,17 @@ and parse_body body =
     let a_ = (parse_float a TFloat32) in
     let b_ = (parse_float b TFloat32) in
     (if (a.t <> TFloat32 && a.t <> TUnknown) then
-       raise (TypeError (TFloat32, a.t, a.loc)));
+       (assert (not debug); raise (TypeError (TFloat32, a.t, a.loc))));
     (if (b.t <> TFloat32 && b.t <> TUnknown) then
-       raise (TypeError (TFloat32, b.t, b.loc)));
+       (assert (not debug); raise (TypeError (TFloat32, b.t, b.loc))));
     ( <:expr<$a_$ -. $b_$>>)
   | MinF64 (_loc, a,b) -> 
     let a_ = (parse_float a TFloat64) in
     let b_ = (parse_float b TFloat64) in
     (if (a.t <> TFloat64 && a.t <> TUnknown) then
-       raise (TypeError (TFloat64, a.t, a.loc)));
+       (assert (not debug); raise (TypeError (TFloat64, a.t, a.loc))));
     (if (b.t <> TFloat64 && b.t <> TUnknown) then
-       raise (TypeError (TFloat64, b.t, b.loc)));
+       (assert (not debug); raise (TypeError (TFloat64, b.t, b.loc))));
     ( <:expr<$a_$ -. $b_$>>)
 
 
@@ -447,17 +451,17 @@ and parse_body body =
     let a_ = (parse_float a TFloat32) in
     let b_ = (parse_float b TFloat32) in
     (if (a.t <> TFloat32 && a.t <> TUnknown) then
-       raise (TypeError (TFloat32, a.t, a.loc)));
+       (assert (not debug); raise (TypeError (TFloat32, a.t, a.loc))));
     (if (b.t <> TFloat32 && b.t <> TUnknown) then
-       raise (TypeError (TFloat32, b.t, b.loc)));
+       (assert (not debug); raise (TypeError (TFloat32, b.t, b.loc))));
     ( <:expr<$a_$ *. $b_$>>)
   | MulF64 (_loc, a,b) -> 
     let a_ = (parse_float a TFloat64) in
     let b_ = (parse_float b TFloat64) in
     (if (a.t <> TFloat64 && a.t <> TUnknown) then
-       raise (TypeError (TFloat64, a.t, a.loc)));
+       (assert (not debug); raise (TypeError (TFloat64, a.t, a.loc))));
     (if (b.t <> TFloat64 && b.t <> TUnknown) then
-       raise (TypeError (TFloat64, b.t, b.loc)));
+       (assert (not debug); raise (TypeError (TFloat64, b.t, b.loc))));
     ( <:expr<$a_$ *. $b_$>>)
 
   | Div (_loc, a,b) -> 
@@ -472,17 +476,17 @@ and parse_body body =
     let a_ = (parse_float a TFloat32) in
     let b_ = (parse_float b TFloat32) in
     (if (a.t <> TFloat32 && a.t <> TUnknown) then
-       raise (TypeError (TFloat32, a.t, a.loc)));
+       (assert (not debug); raise (TypeError (TFloat32, a.t, a.loc))));
     (if (b.t <> TFloat32 && b.t <> TUnknown) then
-       raise (TypeError (TFloat32, b.t, b.loc)));
+       (assert (not debug); raise (TypeError (TFloat32, b.t, b.loc))));
     ( <:expr<$a_$ /. $b_$>>)
   | DivF64 (_loc, a,b) -> 
     let a_ = (parse_float a TFloat64) in
     let b_ = (parse_float b TFloat64) in
     (if (a.t <> TFloat64 && a.t <> TUnknown) then
-       raise (TypeError (TFloat64, a.t, a.loc)));
+       (assert (not debug); raise (TypeError (TFloat64, a.t, a.loc))));
     (if (b.t <> TFloat64 && b.t <> TUnknown) then
-       raise (TypeError (TFloat64, b.t, b.loc)));
+       (assert (not debug); raise (TypeError (TFloat64, b.t, b.loc))));
     ( <:expr<$a_$ /. $b_$>>)
 
 
@@ -530,7 +534,7 @@ and parse_body body =
           | TFloat -> <:ctyp<(float, Bigarray.float32_elt) Spoc.Vector.vector>>
           | TFloat32 -> <:ctyp<(float, Bigarray.float32_elt) Spoc.Vector.vector>>
           | TFloat64 -> <:ctyp<(float, Bigarray.float64_elt) Spoc.Vector.vector>>
-          |  _  ->  assert false 
+          |  _  ->  assert false
          ) in
        (match v.e with
         | Id (_loc,s)  -> 
@@ -542,7 +546,7 @@ and parse_body body =
              | _ ->   
                (match value.t, var.var_type with
                 | TUnknown, TUnknown ->
-                  (assert false; raise (TypeError (TVec value.t, var.var_type, _loc)))
+                  (assert (not debug); raise (TypeError (TVec value.t, var.var_type, _loc)))
                 | TUnknown, TVec tt ->
                   (var.var_type <- TVec tt;
                    vec_typ_to_e tt)
@@ -550,7 +554,7 @@ and parse_body body =
                   (var.var_type <- TVec tt;
                    vec_typ_to_e tt)
                 | _ ->
-                  (assert false; raise (TypeError (TVec value.t, var.var_type, _loc))))
+                  (assert (not debug); raise (TypeError (TVec value.t, var.var_type, _loc))))
             )
           in
 
@@ -572,7 +576,7 @@ and parse_body body =
           | TFloat -> <:ctyp<float array>>
           | TFloat32 -> <:ctyp<float array>>
           | TFloat64 -> <:ctyp<float array>>
-          |  _  ->  assert false 
+          |  _  ->  assert false
          ) in
        (match a.e with
         | Id (_loc,s)  -> 
@@ -584,7 +588,7 @@ and parse_body body =
              | _ ->   
                (match value.t, var.var_type with
                 | TUnknown, TUnknown ->
-                  (assert false; raise (TypeError (TArr value.t, var.var_type, _loc)))
+                  (assert (not debug); raise (TypeError (TArr value.t, var.var_type, _loc)))
                 | TUnknown, TArr tt ->
                   (var.var_type <- TArr tt;
                    arr_typ_to_e tt)
@@ -592,7 +596,7 @@ and parse_body body =
                   (var.var_type <- TArr tt;
                    arr_typ_to_e tt)
                 | _ ->
-                  (assert false; raise (TypeError (TArr value.t, var.var_type, _loc))))
+                  (assert (not debug); raise (TypeError (TArr value.t, var.var_type, _loc))))
             )
           in	
           <:expr<($parse_body a$:$type_constaint$).($parse_body idx$) <- $gen_value$>>
@@ -615,14 +619,14 @@ and parse_body body =
              | TFloat -> <:ctyp<(float, Bigarray.float32_elt) Spoc.Vector.vector>>
              | TFloat32 -> <:ctyp<(float, Bigarray.float32_elt) Spoc.Vector.vector>>
              | TFloat64 -> <:ctyp<(float, Bigarray.float64_elt) Spoc.Vector.vector>>
-             | TBool | TVec _ ->  assert false 
-             | TUnknown ->  assert false 
-             |	_  ->  assert false 
+             | TBool | TVec _ 
+             | TUnknown 
+             |	_  ->  assert false
             )
-          | _  -> assert false; failwith "strange vector"
+          | _  -> assert (not debug); failwith "strange vector"
          )in
        <:expr<Spoc.Mem.get ($ExId(_loc,s)$:$type_constraint$) $parse_body index$>>
-     | _  -> assert false; failwith "strange vector")
+     | _  -> assert (not debug); failwith "strange vector")
 
   | ArrGet(_loc, array, index)  -> 
     ignore(parse_body array);
@@ -639,14 +643,14 @@ and parse_body body =
              | TFloat -> <:ctyp<float array>>
              | TFloat32 -> <:ctyp<float array>>
              | TFloat64 -> <:ctyp<float array>>
-             | TBool | TVec _ ->  assert false 
-             | TUnknown ->  assert false 
-             |	_  ->  assert false 
+             | TBool | TVec _ 
+             | TUnknown 
+             |	_  ->  assert false
             )
-          | _  -> assert false; raise (TypeError (TArr TUnknown, var.var_type, _loc));
+          | _  -> (assert (not debug); raise (TypeError (TArr TUnknown, var.var_type, _loc)));
          )in
        <:expr<($ExId(_loc,s)$:$type_constraint$).($parse_body index$)>>
-     | _  -> assert false; failwith "strange vector")
+     | _  -> assert (not debug); failwith "strange vector")
 
   | BoolEq (_loc, a, b) ->
     (<:expr<$parse_int a TInt$ = $parse_int b TInt$>>)
@@ -726,7 +730,7 @@ and parse_body body =
     let string_of_id id =
       match id with
       | Id (_,s ) -> string_of_ident s
-      | _ ->  assert false 
+      | _ ->  assert false
     in
     (<:expr<for $(string_of_id id.e)$ = $min$ to $max$ do $body$ done>>)
   | While (_loc, cond, body) ->
@@ -754,14 +758,14 @@ and parse_body body =
     let rec aux = function
       | IdAcc (l,a,b) -> aux a; aux b
       | IdUid (l,s) -> open_module s l
-      | _ -> assert false
+      | _ -> assert (not debug)
     in
     aux id;
     let e = <:expr<let open $id$ in $parse_body e$>> in
     let rec aux = function
       | IdAcc (l,a,b) -> aux a; aux b
       | IdUid (l,s) -> close_module s
-      | _ -> assert false
+      | _ -> assert (not debug)
     in
     aux id;
     e
@@ -783,7 +787,7 @@ and parse_body body =
   | ModuleAccess (_loc, s, e) -> 
     let e = parse_app_ml e <:expr< $uid:s$>> in
     e
-  | _ -> assert false; failwith "unimplemented yet"
+  | _ -> assert (not debug); failwith "unimplemented yet"
 
 
 
@@ -812,12 +816,12 @@ and parse_app a =
         let e = aux e3 in
         close_module s;
         e
-      | _ 	-> assert false; 
+      | _  -> assert false;
     in 
     let intr = aux e1 in
     res := (parse_body2 e2 false) :: !res ; 
     (match !res with
-     | [] -> assert false 
+     | [] -> assert false
      | t::[] -> 
        <:expr< app $intr$ [| ($t$) |]>>
      | t::q ->
@@ -838,7 +842,7 @@ and expr_of_app t _loc gen_var y =
      | TFloat32 -> <:expr<(new_float_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(parse_body2 y false)
      | TFloat64 -> <:expr<(new_double_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (parse_body2 y false)
      | _  ->  failwith "unknown var type")
-  | _ -> assert false 
+  | _ -> assert false
 
 and parse_body2 body bool = 
   let rec aux ?return_bool:(r=false) body =
@@ -864,15 +868,15 @@ and parse_body2 body bool =
                    ( var.t <- gen_var.var_type;
                      f ();)
                  else
-                   (raise (TypeError (TUnknown, gen_var.var_type , _loc));
-                    assert false; failwith "unknown var type")
+                   (assert (not debug); raise (TypeError (TUnknown, gen_var.var_type , _loc));
+                    assert (not debug); failwith "unknown var type")
                | TArr TInt -> <:expr<(new_int_array $ExInt(_loc,string_of_int gen_var.n)$) ($aux y$)>>,(aux y)
                | TArr TInt32 -> <:expr<(new_int32_array $ExInt(_loc,string_of_int gen_var.n)$) ($aux y$)>>,(aux y)
                | TArr TInt64 -> <:expr<(new_int64_array $ExInt(_loc,string_of_int gen_var.n)$) ($aux y$)>>,(aux y)
                | TArr TFloat32 -> <:expr<(new_float32_array $ExInt(_loc,string_of_int gen_var.n)$) ($aux y$)>>,(aux y)
                | TArr TFloat64 -> <:expr<(new_float64_array $ExInt(_loc,string_of_int gen_var.n)$ ($aux y$))>>,(aux y)
-               | _  ->  ( raise (TypeError (TUnknown, gen_var.var_type , _loc));
-                          assert false; failwith "unknown var type")
+               | _  ->  ( assert (not debug); raise (TypeError (TUnknown, gen_var.var_type , _loc));
+                          assert (not debug); failwith "unknown var type")
              in
              let ex1, ex2 = f () in
              arg_list := <:expr<(spoc_declare $ex1$)>>:: !arg_list)
@@ -987,7 +991,7 @@ and parse_body2 body bool =
          let var = 
            (Hashtbl.find !current_args (string_of_ident s))  in
          ( match var.var_type with 
-           | TUnit -> body.t <- TUnit; <:expr< Unit>>
+           | TUnit -> (*body.t <- TUnit;*) <:expr< Unit>>
            | _ -> 
              body.t <- var.var_type;
              if var.is_global then
@@ -995,7 +999,7 @@ and parse_body2 body bool =
                | TFloat32 ->
                  <:expr<global_float_var (fun () -> $ExId(_loc,s)$)>>
                | TInt -> <:expr<global_int_var (fun () -> $ExId(_loc,s)$)>>
-               | _ -> assert false 
+               | _ -> assert false
              else
                <:expr<var  $ExInt(_loc, string_of_int var.n)$>>)
        with _  ->  
@@ -1005,14 +1009,14 @@ and parse_body2 body bool =
              if body.t = TUnknown then
                body.t <- c_const.typ
              else
-               (assert false; raise (TypeError (c_const.typ, body.t, _loc)));
+               (assert (not debug); raise (TypeError (c_const.typ, body.t, _loc)));
            <:expr<intrinsics $ExStr(_loc, c_const.cuda_val)$ $ExStr(_loc, c_const.opencl_val)$>>
          with _ -> 
            (try 
               let intr = 
                 Hashtbl.find !intrinsics_fun (string_of_ident s) in
               <:expr< intrinsics $ExStr(_loc, intr.cuda_val)$ $ExStr(_loc, intr.opencl_val)$>>
-            with Not_found -> raise (Unbound_value ((string_of_ident s), _loc))));
+            with Not_found -> (assert (not debug); raise (Unbound_value ((string_of_ident s), _loc)))));
     | CastId (t, Id(_loc,s))  -> 
       let var = (Hashtbl.find !current_args (string_of_ident s)) in
       (match t with 
@@ -1063,7 +1067,7 @@ and parse_body2 body bool =
        | TVec ty->
          ();
        | _ ->
-         assert false);
+         assert (not debug));
       e
 
     | ArrSet (_loc, array, value)  -> 
@@ -1089,7 +1093,7 @@ and parse_body2 body bool =
        | TArr ty->
          ();
        | _ ->
-         assert false);
+         assert (not debug));
       e
 
     | BoolOr(_loc, a, b) ->
@@ -1199,14 +1203,14 @@ and parse_body2 body bool =
       let rec aux2 = function
         | IdAcc (l,a,b) -> aux2 a; aux2 b
         | IdUid (l,s) -> open_module s l
-        | _ -> assert false
+        | _ -> assert (not debug)
       in
       aux2 id;
       let ex = <:expr< $aux e$>> in
       let rec aux2 = function
         | IdAcc (l,a,b) -> aux2 a; aux2 b
         | IdUid (l,s) -> close_module s
-        | _ -> assert false
+        | _ -> assert (not debug)
       in
       aux2 id;
       ex
@@ -1234,11 +1238,11 @@ and parse_body2 body bool =
         | TFloat32 ->
           <:expr<global_float_var (fun _ -> ! $ExId(_loc,s)$)>>
         | TInt -> <:expr<global_int_var (fun _ -> ! $ExId(_loc,s)$)>>
-        | _ -> assert false 
+        | _ -> assert false
       else
-        assert false 
+        assert false
 
-    | _ -> assert false; failwith "unimplemented yet"
+    | _ -> assert (not debug); failwith "unimplemented yet"
   in
   let _loc = body.loc in
   if bool then 
@@ -1258,7 +1262,7 @@ and parse_body2 body bool =
                 | TFloat32 -> <:expr<(new_float_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
                 | TFloat64 -> <:expr<(new_double_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
                 | TUnit -> <:expr<Unit>>,aux y; 
-                | _  -> assert false; failwith "unknown var type"
+                | _  -> assert (not debug); failwith "unknown var type"
               in
               match var.t with
               |  TUnit ->
@@ -1273,10 +1277,10 @@ and parse_body2 body bool =
                 | TInt64 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (aux y)
                 | TFloat32 -> <:expr<(new_double_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
                 | TFloat64 -> <:expr<(new_double_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
-                | _  -> assert false; failwith "unknown var type"
+                | _  -> assert (not debug); failwith "unknown var type"
               in
               arg_list := <:expr<spoc_set $ex1$ $ex2$>>:: !arg_list);
-           | _  ->  assert false; failwith "strange vector" );
+           | _  ->  assert (not debug); failwith "strange vector" );
           let res = <:expr<$parse_body2 z true$>>
           in remove_int_var var;
           res)
@@ -1359,7 +1363,7 @@ let patt_is_vector p =
     match var.var_type with
     | TVec _ ->true
     | _ -> false
-    | _ -> assert false 
+    | _ -> assert false
 
 
 let gen_arg_from_patt3 p =  
@@ -1483,7 +1487,7 @@ let gen_arg_from_patt3 p =
                         IdUid(_loc, "VFloat64"))),
             <:ctyp< Spoc.Vector.vfloat64>>
           | _  -> failwith "Forbidden vector  type in kernel declaration")
-       | _ -> failwith "Forbidden vector  type in kernel declaration"; assert false; failwith "unimplemented yet"
+       | _ -> failwith "Forbidden vector  type in kernel declaration"; assert (not debug); failwith "unimplemented yet"
      in
      match var.var_type with
      | TVec _ ->
@@ -1520,7 +1524,7 @@ let rec float32_expr f =
      | TVec TFloat
      | TVec TFloat32 -> f.t <- TVec TFloat32
      | TFloat32-> ()
-     | _ -> assert false; raise (TypeError (TFloat32, f.t, f.loc)))
+     | _ -> assert (not debug); raise (TypeError (TFloat32, f.t, f.loc)))
   in f32_typer f;
 
   (match f.e with
@@ -1533,7 +1537,7 @@ let rec float32_expr f =
    | VecGet (l,a,b) -> ()
    | Seq (l, a, b) -> f.e <- Seq (l,a, float32_expr b)
    | Id  (l, id) -> ()
-   | _ -> assert false; raise (TypeError (TFloat32, f.t, f.loc)));
+   | _ -> assert (not debug); raise (TypeError (TFloat32, f.t, f.loc)));
   f
 
 let rec float64_expr f = 
@@ -1598,7 +1602,7 @@ let rec float64_expr f =
      f.e <- DoLoop (l, id, min, max, 	float64_expr (body))
    | Open (l, m, e) -> 
      f.e <- Open (l, m, float64_expr e)
-   | _ -> raise (TypeError (TFloat64, f.t, f.loc));
+   | _ -> assert (not debug); raise (TypeError (TFloat64, f.t, f.loc));
      ());
   f
 
@@ -1629,7 +1633,7 @@ let gen_ctypes _loc kt name  =
         let field_name  =  (sarek_type_name^"_"^(string_of_ident t2)) in
         <:str_item<   let $lid:field_name$  = let open Ctypes in field $lid:sarek_type_name$ $str:string_of_ident t2$ $lid:string_of_ctyp t1$ ;;
         $nexts$ >>
-      | _ -> assert false 
+      | _ -> assert false
     in
     let fields =
       content <:str_item< >> (l1,l2) in    

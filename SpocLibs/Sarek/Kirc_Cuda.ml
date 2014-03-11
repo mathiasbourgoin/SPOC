@@ -1,5 +1,5 @@
 (******************************************************************************
-* Mathias Bourgoin, Université Pierre et Marie Curie (2013)
+ * Mathias Bourgoin, Université Pierre et Marie Curie (2013)
  *
  * Mathias.Bourgoin@gmail.com
  *
@@ -31,7 +31,7 @@
  *
  * The fact that you are presently reading this means that you have had
  * knowledge of the CeCILL-B license and that you accept its terms.
-*******************************************************************************)
+ *******************************************************************************)
 open Kirc_Ast
 
 let space i =
@@ -49,15 +49,15 @@ let rec parse i = function
      in
      (pargs ^ pbody)^ "\n}\n#ifdef __cplusplus\n}\n#endif")
   | Local (x,y)  -> (space (i))^"{"^
-    (parse i x)^";\n"^
-    (space (i))^(parse i y)^
-    ";\n"^(space (i))^"}\n"
+                    (parse i x)^";\n"^
+                    (space (i))^(parse i y)^
+                    ";\n"^(space (i))^"}\n"
   | VecVar (t,i)  -> 
     (match t with
-    | Int _ ->"int"
-    | Float _ -> "float"
-    | Double _ -> "double"
-    | _ -> assert false
+     | Int _ ->"int"
+     | Float _ -> "float"
+     | Double _ -> "double"
+     | _ -> assert false
     )^("* spoc_var"^(string_of_int (i)))
   | IdName s  ->  s
   | IntVar s -> ("int spoc_var"^(string_of_int s))
@@ -66,38 +66,38 @@ let rec parse i = function
   | CastDoubleVar s -> ("(double) spoc_var"^(string_of_int s))
   | DoubleVar s -> ("double spoc_var"^(string_of_int s))
   | IntArr (s,l) -> ("__shared__ int spoc_var"^
-			(string_of_int s)^"["^
-			(parse i l)^"]")
+                     (string_of_int s)^"["^
+                     (parse i l)^"]")
   | Int32Arr (s,l) -> ("__shared__ int spoc_var"^
-			(string_of_int s)^"["^
-			(parse i l)^"]")
+                       (string_of_int s)^"["^
+                       (parse i l)^"]")
   | Int64Arr (s,l) -> ("__shared__ long spoc_var"^
-			(string_of_int s)^"["^
-			(parse i l)^"]")
+                       (string_of_int s)^"["^
+                       (parse i l)^"]")
   | Float32Arr (s,l) -> ("__shared__ float spoc_var"^
-			(string_of_int s)^"["^
-			(parse i l)^"]")
+                         (string_of_int s)^"["^
+                         (parse i l)^"]")
   | Float64Arr (s,l) -> ("__shared__ double spoc_var"^
-			(string_of_int s)^"["^
-			(parse i l)^"]")
-(*   | IntArr (s,l) ->
-   | IntArr (s,l) ->
-   | IntArr (s,l) ->
-   | IntArr (s,l) ->*)
+                         (string_of_int s)^"["^
+                         (parse i l)^"]")
+  (*   | IntArr (s,l) ->
+       | IntArr (s,l) ->
+       | IntArr (s,l) ->
+       | IntArr (s,l) ->*)
   | Params k -> 
     ("#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n__global__ void spoc_dummy ( "^
-	(if (fst !return_v) <> "" then
-	    (fst !return_v)^", " else "")^(parse i k)^" ) {\n")
+     (if (fst !return_v) <> "" then
+        (fst !return_v)^", " else "")^(parse i k)^" ) {\n")
   (*    let rec aux acc = function
-	| t::[]  ->  acc^", " ^(parse t)
-	| t::q  -> aux (acc^","^parse t) q
-	in
-	"f (" ^(List.fold_left (fun a b -> (a^(parse b))) "" l) ^ ")\n{"*)
+        	| t::[]  ->  acc^", " ^(parse t)
+        	| t::q  -> aux (acc^","^parse t) q
+        	in
+        	"f (" ^(List.fold_left (fun a b -> (a^(parse b))) "" l) ^ ")\n{"*)
   |Concat (a,b)  ->  
     (match b with 
-    | Empty  -> (parse i a)
-    | Concat (c,d)  ->  ((parse i a)^", "^(parse i b))
-    | _  -> failwith "parse concat"
+     | Empty  -> (parse i a)
+     | Concat (c,d)  ->  ((parse i a)^", "^(parse i b))
+     | _  -> failwith "parse concat"
     )
   | Plus  (a,b) -> ("("^(parse_int i a)^" + "^(parse_int i b)^")")
   | Plusf  (a,b) -> ("("^(parse_float i a)^" + "^(parse_float i b)^")")
@@ -113,24 +113,24 @@ let rec parse i = function
   | Set (var,value) 
   | Acc (var,value) -> 
     ((parse i var)^" = "^
-        (parse i value)^";")
+     (parse i value)^";")
   | Decl (var) ->
     (parse i var)
   | SetLocalVar (v,gv,k) -> 
     ((parse i v)^" = "^
-	(match gv with
-	| Intrinsics i -> ((parse_intrinsics i)^";")
-	| _ -> (parse i gv))^";\n"^(space i)^(parse i k))
+     (match gv with
+      | Intrinsics i -> ((parse_intrinsics i)^";")
+      | _ -> (parse i gv))^";\n"^(space i)^(parse i k))
   | Return k -> 
     (if (snd !return_v) <> "" then
-	snd !return_v
+       snd !return_v
      else
-	"")^
-      (parse i k)
+       "")^
+    (parse i k)
   | Unit  -> ""
   | IntVecAcc (vec,idx)  -> (parse i vec)^"["^(parse i idx)^"]"
   | SetV (vecacc,value)  -> (
-    (parse i vecacc)^" = "^(parse i value)^";") 
+      (parse i vecacc)^" = "^(parse i value)^";") 
   | Int  a  -> string_of_int a
   | GInt  a  -> string_of_int (a ())
   | GFloat  a  -> (string_of_float (a ()))^"f"
@@ -161,13 +161,13 @@ let rec parse i = function
   | App (a,b) ->
     let f = parse i a in
     let rec aux = function
-			| t::[] -> parse i t
+      | t::[] -> parse i t
       | t::q -> (parse i t)^","^(aux q)
-			| [] -> assert false
+      | [] -> assert false
     in 
-		(match a with 
-		| Intrinsics ("return","return") -> f^" "^(aux (Array.to_list b))^" "
-		|  _ -> f^" ("^(aux (Array.to_list b))^") ")
+    (match a with 
+     | Intrinsics ("return","return") -> f^" "^(aux (Array.to_list b))^" "
+     |  _ -> f^" ("^(aux (Array.to_list b))^") ")
   | Empty  -> ""
 
 and parse_int n = function

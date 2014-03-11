@@ -1,5 +1,5 @@
 (******************************************************************************
-* Mathias Bourgoin, Université Pierre et Marie Curie (2013)
+ * Mathias Bourgoin, Université Pierre et Marie Curie (2013)
  *
  * Mathias.Bourgoin@gmail.com
  *
@@ -31,7 +31,7 @@
  *
  * The fact that you are presently reading this means that you have had
  * knowledge of the CeCILL-B license and that you accept its terms.
-*******************************************************************************)
+ *******************************************************************************)
 val space : int -> string
 val return_v : (string * string) ref
 val parse : int -> Kirc_Ast.k_ext -> string

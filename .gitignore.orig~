@@ -1,0 +1,9 @@
+<<<<<<< HEAD
+ocp_build.root*
+*.cmo
+*.cmx
+*.cma
+=======
+.merlin
+ocp-buid.root*
+>>>>>>> master

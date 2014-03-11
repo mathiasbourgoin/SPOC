@@ -31,39 +31,39 @@
  *
  * The fact that you are presently reading this means that you have had
  * knowledge of the CeCILL-B license and that you accept its terms.
-*******************************************************************************)
+ *******************************************************************************)
 open Devices
-  
+
 open Vector
-  
+
 exception No_Cuda_Device
-  
+
 exception ERROR_DEINITIALIZED
-  
+
 exception ERROR_NOT_INITIALIZED
-  
+
 exception ERROR_INVALID_CONTEXT
-  
+
 exception ERROR_INVALID_VALUE
-  
+
 exception ERROR_OUT_OF_MEMORY
-  
+
 exception ERROR_INVALID_DEVICE
-  
+
 exception ERROR_NOT_FOUND
-  
+
 exception ERROR_FILE_NOT_FOUND
-  
+
 exception ERROR_UNKNOWN
-  
+
 exception ERROR_LAUNCH_FAILED
-  
+
 exception ERROR_LAUNCH_OUT_OF_RESOURCES
-  
+
 exception ERROR_LAUNCH_TIMEOUT
-  
+
 exception ERROR_LAUNCH_INCOMPATIBLE_TEXTURING
-  
+
 let _ =
   (Callback.register_exception "no_cuda_device" No_Cuda_Device;
    Callback.register_exception "cuda_error_deinitialized" ERROR_DEINITIALIZED;
@@ -86,100 +86,100 @@ let _ =
    Callback.register_exception "cuda_error_launch_incompatible_texturing"
      ERROR_LAUNCH_INCOMPATIBLE_TEXTURING;
    Callback.register_exception "cuda_error_unknown" ERROR_UNKNOWN)
-  
+
 external cuda_custom_alloc_vect :
   ('a, 'b) Vector.vector -> int -> generalInfo -> unit =
   "spoc_cuda_custom_alloc_vect"
-  
+
 external cuda_alloc_vect :
   ('a, 'b) Vector.vector -> int -> generalInfo -> unit =
   "spoc_cuda_alloc_vect"
-  
+
 external cuda_free_vect : ('a, 'b) Vector.vector -> int -> unit =
   "spoc_cuda_free_vect"
-  
+
 external cuda_part_cpu_to_device :
   ('a, 'b) vector ->
-    ('a, 'b) Vector.vector ->
-      int -> generalInfo -> gcInfo -> int -> int -> int -> int -> int -> unit =
+  ('a, 'b) Vector.vector ->
+  int -> generalInfo -> gcInfo -> int -> int -> int -> int -> int -> unit =
   "spoc_cuda_part_cpu_to_device_b" "spoc_cuda_part_cpu_to_device_n"
-  
+
 external cuda_cpu_to_device :
   ('a, 'b) vector -> int -> generalInfo -> gcInfo -> int -> unit =
   "spoc_cuda_cpu_to_device"
-  
+
 external cuda_device_to_device : ('a, 'b) vector -> int -> device -> unit =
   "spoc_cuda_device_to_device"
-  
+
 external cuda_device_to_cpu :
   ('a, 'b) vector -> int -> generalInfo -> device -> int -> unit =
   "spoc_cuda_device_to_cpu"
-  
+
 external cuda_custom_part_cpu_to_device :
   ('a, 'b) vector ->
-    ('a, 'b) Vector.vector ->
-      int ->
-        generalInfo ->
-          Devices.gcInfo -> int -> int -> int -> int -> int -> unit =
+  ('a, 'b) Vector.vector ->
+  int ->
+  generalInfo ->
+  Devices.gcInfo -> int -> int -> int -> int -> int -> unit =
   "spoc_cuda_custom_part_cpu_to_device_b"
-  "spoc_cuda_custom_part_cpu_to_device_n"
-  
+    "spoc_cuda_custom_part_cpu_to_device_n"
+
 external cuda_custom_cpu_to_device :
   ('a, 'b) vector -> int -> generalInfo -> int -> unit =
   "spoc_cuda_custom_cpu_to_device"
-  
+
 external cuda_custom_device_to_cpu :
   ('a, 'b) vector -> int -> generalInfo -> int -> unit =
   "spoc_cuda_custom_device_to_cpu"
-  
+
 external cuda_part_device_to_cpu :
   ('a, 'b) Vector.vector ->
-    ('a, 'b) Vector.vector ->
-      int ->
-        Devices.generalInfo ->
-          Devices.gcInfo -> int -> int -> int -> int -> int -> unit =
+  ('a, 'b) Vector.vector ->
+  int ->
+  Devices.generalInfo ->
+  Devices.gcInfo -> int -> int -> int -> int -> int -> unit =
   "spoc_cuda_part_device_to_cpu_b" "spoc_cuda_part_device_to_cpu_n"
-  
+
 external cuda_custom_part_device_to_cpu :
   ('a, 'b) Vector.vector ->
-    ('a, 'b) Vector.vector ->
-      int ->
-        Devices.generalInfo ->
-          Devices.gcInfo -> int -> int -> int -> int -> int -> unit =
+  ('a, 'b) Vector.vector ->
+  int ->
+  Devices.generalInfo ->
+  Devices.gcInfo -> int -> int -> int -> int -> int -> unit =
   "spoc_cuda_custom_part_device_to_cpu_b"
-  "spoc_cuda_custom_part_device_to_cpu_n"
-  
+    "spoc_cuda_custom_part_device_to_cpu_n"
+
 external cuda_vector_copy :
   ('a, 'b) Vector.vector ->
-    int ->
-      ('a, 'b) Vector.vector ->
-        int -> int -> Devices.generalInfo -> int -> unit =
+  int ->
+  ('a, 'b) Vector.vector ->
+  int -> int -> Devices.generalInfo -> int -> unit =
   "spoc_cuda_vector_copy_b" "spoc_cuda_vector_copy_n"
-  
+
 external cuda_custom_vector_copy :
   ('a, 'b) Vector.vector ->
-    int ->
-      ('a, 'b) Vector.vector ->
-        int -> int -> Devices.generalInfo -> int -> unit =
+  int ->
+  ('a, 'b) Vector.vector ->
+  int -> int -> Devices.generalInfo -> int -> unit =
   "spoc_cuda_custom_vector_copy_b" "spoc_cuda_custom_vector_copy_n"
-  
+
 external cuda_matrix_copy :
   ('a, 'b) Vector.vector ->
-    int ->
-      int ->
-        int ->
-          ('a, 'b) Vector.vector ->
-            int ->
-              int -> int -> int -> int -> Devices.generalInfo -> int -> unit =
+  int ->
+  int ->
+  int ->
+  ('a, 'b) Vector.vector ->
+  int ->
+  int -> int -> int -> int -> Devices.generalInfo -> int -> unit =
   "spoc_cuda_matrix_copy_b" "spoc_cuda_matrix_copy_n"
-  
+
 external cuda_custom_matrix_copy :
   ('a, 'b) Vector.vector ->
-    int ->
-      int ->
-        int ->
-          ('a, 'b) Vector.vector ->
-            int ->
-              int -> int -> int -> int -> Devices.generalInfo -> int -> unit =
+  int ->
+  int ->
+  int ->
+  ('a, 'b) Vector.vector ->
+  int ->
+  int -> int -> int -> int -> Devices.generalInfo -> int -> unit =
   "spoc_cuda_custom_matrix_copy_b" "spoc_cuda_custom_matrix_copy_n"
-  
+
