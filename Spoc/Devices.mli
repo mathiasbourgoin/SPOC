@@ -1,51 +1,51 @@
 (******************************************************************************
-* Mathias Bourgoin, Université Pierre et Marie Curie (2011)
-*
-* Mathias.Bourgoin@gmail.com
-*
-* This software is a computer program whose purpose is to allow
-* GPU programming with the OCaml language.
-*
-* This software is governed by the CeCILL - B license under French law and
-* abiding by the rules of distribution of free software. You can use,
-* modify and / or redistribute the software under the terms of the CeCILL - B
-* license as circulated by CEA, CNRS and INRIA at the following URL
-* "http://www.cecill.info".
-*
-* As a counterpart to the access to the source code and rights to copy,
-* modify and redistribute granted by the license, users are provided only
-* with a limited warranty and the software's author, the holder of the
-* economic rights, and the successive licensors have only limited
-* liability.
-*
-* In this respect, the user's attention is drawn to the risks associated
-* with loading, using, modifying and / or developing or reproducing the
-* software by the user in light of its specific status of free software,
-* that may mean that it is complicated to manipulate, and that also
-* therefore means that it is reserved for developers and experienced
-* professionals having in - depth computer knowledge. Users are therefore
-* encouraged to load and test the software's suitability as regards their
-* requirements in conditions enabling the security of their systems and / or
-* data to be ensured and, more generally, to use and operate it in the
-* same conditions as regards security.
-*
-* The fact that you are presently reading this means that you have had
-* knowledge of the CeCILL - B license and that you accept its terms.
-*******************************************************************************)
+ * Mathias Bourgoin, Université Pierre et Marie Curie (2011)
+ *
+ * Mathias.Bourgoin@gmail.com
+ *
+ * This software is a computer program whose purpose is to allow
+ * GPU programming with the OCaml language.
+ *
+ * This software is governed by the CeCILL - B license under French law and
+ * abiding by the rules of distribution of free software. You can use,
+ * modify and / or redistribute the software under the terms of the CeCILL - B
+ * license as circulated by CEA, CNRS and INRIA at the following URL
+ * "http://www.cecill.info".
+ *
+ * As a counterpart to the access to the source code and rights to copy,
+ * modify and redistribute granted by the license, users are provided only
+ * with a limited warranty and the software's author, the holder of the
+ * economic rights, and the successive licensors have only limited
+ * liability.
+ *
+ * In this respect, the user's attention is drawn to the risks associated
+ * with loading, using, modifying and / or developing or reproducing the
+ * software by the user in light of its specific status of free software,
+ * that may mean that it is complicated to manipulate, and that also
+ * therefore means that it is reserved for developers and experienced
+ * professionals having in - depth computer knowledge. Users are therefore
+ * encouraged to load and test the software's suitability as regards their
+ * requirements in conditions enabling the security of their systems and / or
+ * data to be ensured and, more generally, to use and operate it in the
+ * same conditions as regards security.
+ *
+ * The fact that you are presently reading this means that you have had
+ * knowledge of the CeCILL - B license and that you accept its terms.
+ *******************************************************************************)
 
 (** Manages gpgpu devices compatible with Spoc
-within the system *)
+    within the system *)
 
 type dim3 = { x : int; y : int; z : int; }
 
 (** Different frameworks Spoc can use
-(currently Nvidia Cuda and OpenCL) *)
+    (currently Nvidia Cuda and OpenCL) *)
 type specificLibrary = Cuda | OpenCL | Both
 
 type context
 
 (** General informations shared
-by all devices (managed by Cuda or OpenCL) *)
+    by all devices (managed by Cuda or OpenCL) *)
 type generalInfo = {
   name : string; (**name of the device *)
   totalGlobalMem : int; (** the total amount of global memory on the device *)
@@ -59,7 +59,7 @@ type generalInfo = {
 }
 
 (** Specific information depending on the framework
-used to manage the device *)
+    used to manage the device *)
 
 (** Specific informations for Cuda-managed devices*)
 type cudaInfo = {
@@ -88,32 +88,32 @@ type cudaInfo = {
 (** Informations about the OpenCL platform *)
 type platformInfo = {
   platform_profile : string; (** OpenCL profile string. Returns the profile name
-  supported by the implementation.
-  The profile name returned can be one of the
-  following strings:
-  - FULL_PROFILE - if the implementation
-  supports the OpenCL specification
-  (functionality defined as part of the
-  core specification and does not require
-  any extensions to be supported).
-  - EMBEDDED_PROFILE - if the implementation
-  supports the OpenCL embedded profile.
-  The embedded profile is defined to be a
-  subset for each version of OpenCL.
-  *)
+                                 supported by the implementation.
+                                 The profile name returned can be one of the
+                                 following strings:
+                                 - FULL_PROFILE - if the implementation
+                                 supports the OpenCL specification
+                                 (functionality defined as part of the
+                                 core specification and does not require
+                                 any extensions to be supported).
+                                 - EMBEDDED_PROFILE - if the implementation
+                                 supports the OpenCL embedded profile.
+                                 The embedded profile is defined to be a
+                                 subset for each version of OpenCL.
+                             *)
   platform_version : string; (** OpenCL version string. Returns the OpenCL
-  version supported by the implementation.
-  This version string has the following format:
-  OpenCL < space >< major_version.minor_version >< space >< platform - specific information >
-  The major_version.minor_version value returned will be 1.1. *)
+                                 version supported by the implementation.
+                                 This version string has the following format:
+                                 OpenCL < space >< major_version.minor_version >< space >< platform - specific information >
+                                 The major_version.minor_version value returned will be 1.1. *)
   platform_name : string; (** Platform name string *)
   platform_vendor : string; (** Platform vendor string *)
   platform_extensions : string; (** Returns a space - separated list of extension
-  names (the extension names themselves do not
-  contain any spaces) supported by the
-  platform. Extensions defined here must be
-  supported by all devices associated with
-  this platform. *)
+                                    names (the extension names themselves do not
+                                    contain any spaces) supported by the
+                                    platform. Extensions defined here must be
+                                    supported by all devices associated with
+                                    this platform. *)
   num_devices : int; (** Number of devices associated with this platform *)
 }
 
@@ -153,20 +153,20 @@ type openCLInfo = {
   platform_info : platformInfo;
   device_type : deviceType;
   profile : string; (** OpenCL profile string. Returns the profile name supported by the device (see note). The profile name returned can be one of the following strings:
-  - FULL_PROFILE - if the device supports the OpenCL specification (functionality defined as part of the core specification and does not require any extensions to be supported).
-  - EMBEDDED_PROFILE - if the device supports the OpenCL embedded profile. *)
+                        - FULL_PROFILE - if the device supports the OpenCL specification (functionality defined as part of the core specification and does not require any extensions to be supported).
+                        - EMBEDDED_PROFILE - if the device supports the OpenCL embedded profile. *)
   version : string; (** OpenCL version string. Returns the OpenCL version supported by the device. This version string has the following format:
-  OpenCL < space >< major_version.minor_version >< space >< vendor - specific information >
-  The major_version.minor_version value returned will be 1.1. *)
+                        OpenCL < space >< major_version.minor_version >< space >< vendor - specific information >
+                        The major_version.minor_version value returned will be 1.1. *)
   vendor : string; (** Vendor name string *)
   extensions : string; (** Returns a space - separated list of extension names (the extension names themselves do not contain any spaces). The list of extension names returned currently can include one or more of the following approved extension names:
-  - cl_khr_fp64
-  - cl_khr_int64_base_atomics
-  - cl_khr_int64_extended_atomics
-  - cl_khr_fp16
-  - cl_khr_gl_sharing
-  - cl_khr_gl_event
-  - cl_khr_d3d10_sharing *)
+                           - cl_khr_fp64
+                           - cl_khr_int64_base_atomics
+                           - cl_khr_int64_extended_atomics
+                           - cl_khr_fp16
+                           - cl_khr_gl_sharing
+                           - cl_khr_gl_event
+                           - cl_khr_d3d10_sharing *)
   vendor_id : int; (** A unique device vendor identifier. An example of a unique device identifier could be the PCIe ID*)
   max_work_item_dimensions : int; (** Maximum dimensions that specify the global and local work-item IDs used by the data parallel execution model. (Refer to clEnqueueNDRangeKernel). The minimum value is 3 *)
   address_bits : int; (** The default compute device address space size specified as an unsigned integer value in bits. Currently supported values are 32 or 64 bits. *)
@@ -184,42 +184,42 @@ type openCLInfo = {
   available : bool; (** Is true if the device is available from Spoc *)
   compiler_available : bool; (** Is false if the implementation does not have a compiler available to compile the program source. Is true if the compiler is available. This can be false for the embedded platform profile only. *)
   single_fp_config : clDeviceFPConfig; (** Describes single precision floating - point capability of the device. This is a bit - field that describes one or more of the following values:
-  - CL_FP_DENORM - denorms are supported
-  - CL_FP_INF_NAN - INF and quiet NaNs are supported
-  - CL_FP_ROUND_TO_NEAREST - round to nearest even rounding mode supported
-  - CL_FP_ROUND_TO_ZERO - round to zero rounding mode supported
-  - CL_FP_ROUND_TO_INF - round to + ve and - ve infinity rounding modes supported
-  - CL_FP_FMA - IEEE754 -2008 fused multiply - add is supported
-  - CL_FP_SOFT_FLOAT - Basic floating - point operations (such as addition, subtraction, multiplication) are implemented in software.
-  The mandated minimum floating - point capability is CL_FP_ROUND_TO_NEAREST | CL_FP_INF_NAN. *)
+                                           - CL_FP_DENORM - denorms are supported
+                                           - CL_FP_INF_NAN - INF and quiet NaNs are supported
+                                           - CL_FP_ROUND_TO_NEAREST - round to nearest even rounding mode supported
+                                           - CL_FP_ROUND_TO_ZERO - round to zero rounding mode supported
+                                           - CL_FP_ROUND_TO_INF - round to + ve and - ve infinity rounding modes supported
+                                           - CL_FP_FMA - IEEE754 -2008 fused multiply - add is supported
+                                           - CL_FP_SOFT_FLOAT - Basic floating - point operations (such as addition, subtraction, multiplication) are implemented in software.
+                                           The mandated minimum floating - point capability is CL_FP_ROUND_TO_NEAREST | CL_FP_INF_NAN. *)
   global_mem_cache_type : clDeviceGlobalMemCacheType; (** Type of global memory cache supported. Valid values are: CL_NONE, CL_READ_ONLY_CACHE, and CL_READ_WRITE_CACHE. *)
   queue_properties : clDeviceQueueProperties;  (** Describes the command - queue properties supported by the device. This is a bit - field that describes one or more of the following values:
-  - CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE
-  - CL_QUEUE_PROFILING_ENABLE
-  These properties are described in the table for clCreateCommandQueue. The mandated minimum capability is CL_QUEUE_PROFILING_ENABLE. *)
+                                                   - CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE
+                                                   - CL_QUEUE_PROFILING_ENABLE
+                                                   These properties are described in the table for clCreateCommandQueue. The mandated minimum capability is CL_QUEUE_PROFILING_ENABLE. *)
   local_mem_type : clDeviceLocalMemType; (** Type of local memory supported. This can be set to CL_LOCAL implying dedicated local memory storage such as SRAM, or CL_GLOBAL. *)
   double_fp_config : clDeviceFPConfig; (** Describes the OPTIONAL double precision floating - point capability of the OpenCL device. This is a bit - field that describes one or more of the following values:
-  - CL_FP_DENORM - denorms are supported.
-  - CL_FP_INF_NAN - INF and NaNs are supported.
-  - CL_FP_ROUND_TO_NEAREST - round to nearest even rounding mode supported.
-  - CL_FP_ROUND_TO_ZERO - round to zero rounding mode supported.
-  - CL_FP_ROUND_TO_INF - round to + ve and - ve infinity rounding modes supported.
-  - CP_FP_FMA - IEEE754 -2008 fused multiply - add is supported.
-  The mandated minimum double precision floating - point capability is CL_FP_FMA | CL_FP_ROUND_TO_NEAREST | CL_FP_ROUND_TO_ZERO | CL_FP_ROUND_TO_INF | CL_FP_INF_NAN | CL_FP_DENORM.*)
+                                           - CL_FP_DENORM - denorms are supported.
+                                           - CL_FP_INF_NAN - INF and NaNs are supported.
+                                           - CL_FP_ROUND_TO_NEAREST - round to nearest even rounding mode supported.
+                                           - CL_FP_ROUND_TO_ZERO - round to zero rounding mode supported.
+                                           - CL_FP_ROUND_TO_INF - round to + ve and - ve infinity rounding modes supported.
+                                           - CP_FP_FMA - IEEE754 -2008 fused multiply - add is supported.
+                                           The mandated minimum double precision floating - point capability is CL_FP_FMA | CL_FP_ROUND_TO_NEAREST | CL_FP_ROUND_TO_ZERO | CL_FP_ROUND_TO_INF | CL_FP_INF_NAN | CL_FP_DENORM.*)
   max_constant_buffer_size : int; (** Max size in bytes of a constant buffer allocation. The minimum value is 64 KB. *)
   execution_capabilities : clDeviceExecutionCapabilities; (** Describes the execution capabilities of the device. This is a bit - field that describes one or more of the following values:
-  - CL_EXEC_KERNEL - The OpenCL device can execute OpenCL kernels.
-  - CL_EXEC_NATIVE_KERNEL - The OpenCL device can execute native kernels.
-  The mandated minimum capability is CL_EXEC_KERNEL.*)
+                                                              - CL_EXEC_KERNEL - The OpenCL device can execute OpenCL kernels.
+                                                              - CL_EXEC_NATIVE_KERNEL - The OpenCL device can execute native kernels.
+                                                              The mandated minimum capability is CL_EXEC_KERNEL.*)
   half_fp_config : clDeviceFPConfig; (** Describes the OPTIONAL half precision floating - point capability of the OpenCL device. This is a bit - field that describes one or more of the following values:
-  - CL_FP_DENORM - denorms are supported.
-  - CL_FP_INF_NAN - INF and NaNs are supported.
-  - CL_FP_ROUND_TO_NEAREST - round to nearest even rounding mode supported.
-  - CL_FP_ROUND_TO_ZERO - round to zero rounding mode supported.
-  - CL_FP_ROUND_TO_INF - round to + ve and - ve infinity rounding modes supported.
-  - CP_FP_FMA - IEEE754 -2008 fused multiply - add is supported.
-  - CL_FP_SOFT_FLOAT - Basic floating - point operations (such as addition, subtraction, multiplication) are implemented in software.
-  The required minimum half precision floating - point capability as implemented by this extension is CL_FP_ROUND_TO_ZERO or CL_FP_ROUND_TO_INF | CL_FP_INF_NAN. *)
+                                         - CL_FP_DENORM - denorms are supported.
+                                         - CL_FP_INF_NAN - INF and NaNs are supported.
+                                         - CL_FP_ROUND_TO_NEAREST - round to nearest even rounding mode supported.
+                                         - CL_FP_ROUND_TO_ZERO - round to zero rounding mode supported.
+                                         - CL_FP_ROUND_TO_INF - round to + ve and - ve infinity rounding modes supported.
+                                         - CP_FP_FMA - IEEE754 -2008 fused multiply - add is supported.
+                                         - CL_FP_SOFT_FLOAT - Basic floating - point operations (such as addition, subtraction, multiplication) are implemented in software.
+                                         The required minimum half precision floating - point capability as implemented by this extension is CL_FP_ROUND_TO_ZERO or CL_FP_ROUND_TO_INF | CL_FP_INF_NAN. *)
   max_work_group_size : int; (** Maximum number of work-items in a work-group executing a kernel using the data parallel execution model. The minimum value is 1. *)
   image2D_max_height : int; (** Max height of 2D image in pixels. The minimum value is 8192 if image_support is true. *)
   image2D_max_width : int; (** Max width of 2D image in pixels. The minimum value is 8192 if image_support is true. *)
@@ -229,7 +229,7 @@ type openCLInfo = {
   max_parameter_size : int; (** Max size in bytes of the arguments that can be passed to a kernel. The minimum value is 1024. For this minimum value, only a maximum of 128 arguments can be passed to a kernel. *)
   max_work_item_size : dim3; (** Maximum number of work-items that can be specified in each dimension of the work-group to clEnqueueNDRangeKernel.  The minimum value is (1, 1, 1). *)
   prefered_vector_width_char : int; (** Preferred native vector width size for built - in scalar types that can be put into vectors. The vector width is defined as the number of scalar elements that can be stored in the vector.
-  If the cl_khr_fp16 extension is not supported, CL_DEVICE_PREFERRED_VECTOR_WIDTH_HALF must return 0. *)
+                                        If the cl_khr_fp16 extension is not supported, CL_DEVICE_PREFERRED_VECTOR_WIDTH_HALF must return 0. *)
   prefered_vector_width_short : int; (** see prefered_vector_width_char *)
   prefered_vector_width_int : int; (** see prefered_vector_width_char *)
   prefered_vector_width_long : int; (** see prefered_vector_width_char *)
@@ -257,14 +257,14 @@ type device = {
 }
 
 external get_cuda_compatible_devices : unit -> int
-= "spoc_getCudaDevicesCount"
+  = "spoc_getCudaDevicesCount"
 external get_opencl_compatible_devices : unit -> int
-= "spoc_getOpenCLDevicesCount"
+  = "spoc_getOpenCLDevicesCount"
 (**/**)
 
 (** Mandatory function to use Spoc
-@param only allows to specify which library to use, by default, Spoc will search any device on the system
-@return an array containing every compatible device found on the system *)
+    @param only allows to specify which library to use, by default, Spoc will search any device on the system
+    @return an array containing every compatible device found on the system *)
 val init : ?only: specificLibrary -> unit -> device array
 
 (** @return the number of Cuda compatible devices found *)
@@ -277,7 +277,7 @@ val opencl_devices : unit -> int
 val gpgpu_devices : unit -> int
 
 (** Waits the command queues of a device to end
-@param queue_id allows to specify only a specific command queue *)
+    @param queue_id allows to specify only a specific command queue *)
 val flush : device -> ?queue_id: int -> unit -> unit
 
 (** Checks if a device offers an extension *)

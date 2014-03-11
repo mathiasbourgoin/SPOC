@@ -79,10 +79,10 @@ let map f kind vect =
 
 let trueCustom =
   { Vector.size = sizeofbool (); Vector.get = boolget; Vector.set = boolset; }
-  
+
 let falseCustom =
   { Vector.size = sizeofbool (); Vector.get = boolget; Vector.set = boolset; }
-  
+
 let fold_left f seed vect =
   ((match Vector.dev vect with
       | Vector.No_dev -> ()

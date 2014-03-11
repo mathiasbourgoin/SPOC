@@ -31,7 +31,7 @@
  * 
  * The fact that you are presently reading this means that you have had
  * knowledge of the CeCILL-B license and that you accept its terms.
-*******************************************************************************)
+ *******************************************************************************)
 (** This Module contains various iterators over vectors computed by the CPU *)
 (**/**)
 external sizeofbool : unit -> int = "custom_getsizeofbool"

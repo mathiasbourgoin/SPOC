@@ -78,26 +78,26 @@ and set vect (idx : int) (value : 'a) =
        set v2 ((start + ((idx / ok_r) * (ko_r + ok_r))) + (idx mod ok_r))
          value
      | None -> unsafe_set vect idx value)
-    
+
 and get vect idx =
   if !unsafe then unsafe_get vect idx 
   else
-  (if (idx < 0) || (idx >= Vector.length vect)
-   then raise (Invalid_argument "index out of bounds");
-   if !auto
-   then
-     (match Vector.dev vect with
-      | Vector.Dev d | Vector.Transferring d ->
-        (flush_and_transfer_to_cpu d vect)
-      | Vector.No_dev -> ());
-   match Vector.is_sub vect with
-   | Some (1, start, ok_r, 0, v2) -> unsafe_get v2 (start + idx)
-   | Some (1, start, ok_r, ko_r, v2) ->
-     unsafe_get v2
-       ((start + ((idx / ok_r) * (ko_r + ok_r))) + (idx mod ok_r))
-   | Some (_, start, ok_r, ko_r, v2) ->
-     get v2 ((start + ((idx / ok_r) * (ko_r + ok_r))) + (idx mod ok_r))
-   | None -> unsafe_get vect idx)
+    (if (idx < 0) || (idx >= Vector.length vect)
+     then raise (Invalid_argument "index out of bounds");
+     if !auto
+     then
+       (match Vector.dev vect with
+        | Vector.Dev d | Vector.Transferring d ->
+          (flush_and_transfer_to_cpu d vect)
+        | Vector.No_dev -> ());
+     match Vector.is_sub vect with
+     | Some (1, start, ok_r, 0, v2) -> unsafe_get v2 (start + idx)
+     | Some (1, start, ok_r, ko_r, v2) ->
+       unsafe_get v2
+         ((start + ((idx / ok_r) * (ko_r + ok_r))) + (idx mod ok_r))
+     | Some (_, start, ok_r, ko_r, v2) ->
+       get v2 ((start + ((idx / ok_r) * (ko_r + ok_r))) + (idx mod ok_r))
+     | None -> unsafe_get vect idx)
 
 and temp_vector vect =
   Vector.temp_vector vect
