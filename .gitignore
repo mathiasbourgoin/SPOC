@@ -3,3 +3,7 @@ ocp_build.root*
 *.cmx
 *.cma
 .merlin
+
+*.root
+
+*.out
