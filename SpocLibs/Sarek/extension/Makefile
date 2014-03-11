@@ -1,4 +1,4 @@
-all:kernels_int.cma
+ll:kernels_int.cma
 
 install: kernels_int.cma
 	ocamlfind install sarek_syntax *.cm* META
@@ -45,3 +45,4 @@ pp: kernels_int.cma test.ml
 
 clean:
 	rm -rf *.cmo *.cmx *.out *~ *.cmi camlprog.exe *.cma *_pp.* *.o 
+

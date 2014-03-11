@@ -50,6 +50,7 @@
      c_size : int ;
      c_get: 'b Ctypes.ptr -> int -> 'a;
      c_set: 'b Ctypes.ptr -> int -> 'a -> unit
+
   }
 
 
@@ -90,7 +91,7 @@ type vec_device =
   | Transferring of Devices.device
 
 type ('a,'b) sub = int * int * int * int * ('a,'b) vector
-  (* sub_vector depth * start * ok range * ko range * parent vector *)
+(* sub_vector depth * start * ok range * ko range * parent vector *)
 
 and ('a,'b) vector = {
   mutable device : int; (* -1 -> CPU, 0+ -> device *)
@@ -103,7 +104,7 @@ and ('a,'b) vector = {
   mutable is_sub: (('a,'b) sub) option;(*('a, 'b) sub;*)
   sub : ('a, 'b) vector list;
   vec_id: int;
-	mutable seek:int
+  mutable seek:int
 }
 
 external init_cuda_device_vec: unit -> device_vec = "spoc_init_cuda_device_vec"
@@ -115,43 +116,43 @@ external create_custom : 'a custom -> int -> customarray = "spoc_create_custom"
 external cuda_custom_alloc_vect :
   ('a, 'b) vector -> int -> Devices.generalInfo -> unit =
   "spoc_cuda_custom_alloc_vect"
-  
+
 external cuda_alloc_vect :
   ('a, 'b) vector -> int -> Devices.generalInfo -> unit =
   "spoc_cuda_alloc_vect"
-	
+
 external opencl_alloc_vect :
   ('a, 'b) vector -> int -> Devices.generalInfo -> unit =
   "spoc_opencl_alloc_vect"
 external opencl_custom_alloc_vect :
   ('a, 'b) vector -> int -> Devices.generalInfo -> unit =
   "spoc_opencl_alloc_vect"
-	
+
 let vec_id = ref 0
 
 let create (kind: ('a,'b) kind) ?dev size =
   incr vec_id;
   let vec = 
     match kind with
-		| Unit x | Dummy x-> assert false
+    | Unit x | Dummy x-> assert false
     |  Float32 x | Char x | Float64 x
     | Int32 x | Int64 x | Complex32 x -> {
-      device = -1;
-      vector =
-        (let res = (Bigarray.Array1.create x Bigarray.c_layout size)
-         in
-         Bigarray res);
-      cuda_device_vec = Array.create (Devices.cuda_devices() +1) (init_cuda_device_vec ());
-      opencl_device_vec = Array.create (Devices.opencl_devices() +1) (init_opencl_device_vec ());
-      length = size;
-      dev = No_dev;
-      kind = kind;
-      is_sub = None;
-      sub = [];
-      vec_id = !vec_id;
-      seek = 0; }
-      
-  | Custom c -> {
+        device = -1;
+        vector =
+          (let res = (Bigarray.Array1.create x Bigarray.c_layout size)
+           in
+           Bigarray res);
+        cuda_device_vec = Array.create (Devices.cuda_devices() +1) (init_cuda_device_vec ());
+        opencl_device_vec = Array.create (Devices.opencl_devices() +1) (init_opencl_device_vec ());
+        length = size;
+        dev = No_dev;
+        kind = kind;
+        is_sub = None;
+        sub = [];
+        vec_id = !vec_id;
+        seek = 0; }
+
+    | Custom c -> {
         device = -1;
         vector = CustomArray ((create_custom c size), c);
         cuda_device_vec = Array.create (Devices.cuda_devices() +1) (init_cuda_device_vec ());
@@ -202,6 +203,7 @@ let create (kind: ('a,'b) kind) ?dev size =
  );
 	vec   
 
+
 let length v =
   v.length
 
@@ -229,13 +231,13 @@ let set_device v device dev =
 
 let equals v1 v2 =
   v1.vec_id = v2.vec_id
-	
-	
+
+
 let vseek v s =
-	v.seek <- s
+  v.seek <- s
 
 let get_seek v =
-	v.seek
+  v.seek
 
 let device_vec v framework id =
   match framework with
@@ -244,12 +246,12 @@ let device_vec v framework id =
 
 let update_device_array vect new_vect =
   (for i = 0 to (Array.length new_vect.cuda_device_vec) - 2 do
-      new_vect.cuda_device_vec.(i) <- vect.cuda_device_vec.(i)
-    done;
-    for i = 0 to (Array.length new_vect.opencl_device_vec) - 2 do
-      new_vect.opencl_device_vec.(i) <-
-      vect.opencl_device_vec.(i)
-    done)
+     new_vect.cuda_device_vec.(i) <- vect.cuda_device_vec.(i)
+   done;
+   for i = 0 to (Array.length new_vect.opencl_device_vec) - 2 do
+     new_vect.opencl_device_vec.(i) <-
+       vect.opencl_device_vec.(i)
+   done)
 
 let unsafe_set vect idx value =
   match vect.vector with
@@ -264,13 +266,13 @@ let unsafe_get vect idx =
 let temp_vector vect =
   match vect.is_sub with
   | Some (a, _, _, _, v) ->
-  (* sub sub vector, contiguity cannot be assured *)
-      let new_v = create (vect.kind) (vect.length)
-      in
-      (new_v.device <- vect.device;
-        new_v.dev <- vect.dev;
-        update_device_array vect new_v;
-        new_v)
+    (* sub sub vector, contiguity cannot be assured *)
+    let new_v = create (vect.kind) (vect.length)
+    in
+    (new_v.device <- vect.device;
+     new_v.dev <- vect.dev;
+     update_device_array vect new_v;
+     new_v)
   | None -> vect
 
 let copy_sub vect1 vect2 =
@@ -282,40 +284,40 @@ external sub_custom_array : customarray -> 'a custom -> int -> customarray =
 let sub_vector (vect : ('a, 'b) vector) _start _len =
   incr vec_id;
   (match vect.vector with
-    | Bigarray b ->
-        {
-          device = (-1);
-          vector = Bigarray (Bigarray.Array1.sub b _start _len);
-          cuda_device_vec =
-            Array.create ((Devices.cuda_devices ()) + 1) (init_cuda_device_vec ());
-          opencl_device_vec =
-            Array.create ((Devices.opencl_devices ()) + 1)
-              (init_opencl_device_vec ());
-          length = _len;
-          dev = No_dev;
-          kind = vect.kind;
-          is_sub = None;
-          sub = [];
-          vec_id = !vec_id;
-					seek = _start;
-        }
-    | CustomArray (cA, c) ->
-        {
-          device = (-1);
-          vector = CustomArray ((sub_custom_array cA c _start), c);
-          cuda_device_vec =
-            Array.create ((Devices.cuda_devices ()) + 1) (init_cuda_device_vec ());
-          opencl_device_vec =
-            Array.create ((Devices.opencl_devices ()) + 1)
-              (init_opencl_device_vec ());
-          length = _len;
-          dev = No_dev;
-          kind = vect.kind;
-          is_sub = None;
-          sub = [];
-          vec_id = !vec_id;
-					seek = 0;
-        })
+   | Bigarray b ->
+     {
+       device = (-1);
+       vector = Bigarray (Bigarray.Array1.sub b _start _len);
+       cuda_device_vec =
+         Array.create ((Devices.cuda_devices ()) + 1) (init_cuda_device_vec ());
+       opencl_device_vec =
+         Array.create ((Devices.opencl_devices ()) + 1)
+           (init_opencl_device_vec ());
+       length = _len;
+       dev = No_dev;
+       kind = vect.kind;
+       is_sub = None;
+       sub = [];
+       vec_id = !vec_id;
+       seek = _start;
+     }
+   | CustomArray (cA, c) ->
+     {
+       device = (-1);
+       vector = CustomArray ((sub_custom_array cA c _start), c);
+       cuda_device_vec =
+         Array.create ((Devices.cuda_devices ()) + 1) (init_cuda_device_vec ());
+       opencl_device_vec =
+         Array.create ((Devices.opencl_devices ()) + 1)
+           (init_opencl_device_vec ());
+       length = _len;
+       dev = No_dev;
+       kind = vect.kind;
+       is_sub = None;
+       sub = [];
+       vec_id = !vec_id;
+       seek = 0;
+     })
 
 let dep = function | None -> 0 | Some (a, _, _, _, _) -> a
 
@@ -323,62 +325,62 @@ let sub_vector (vect : ('a, 'b) vector) _start _ok_r
     _ko_r _len =
   incr vec_id;
   (match vect.vector with
-    | Bigarray b ->
-        {
-          device = (-1);
-          vector = vect.vector;
-          cuda_device_vec =
-            Array.create ((Devices.cuda_devices ()) + 1) (init_cuda_device_vec ());
-          opencl_device_vec =
-            Array.create ((Devices.opencl_devices ()) + 1)
-              (init_opencl_device_vec ());
-          length = _len;
-          dev = No_dev;
-          kind = vect.kind;
-          is_sub =
-            Some (((dep vect.is_sub) + 1), _start, _ok_r, _ko_r, vect);
-          sub = [];
-          vec_id = !vec_id;
-					seek = 0;
-        }
-    | CustomArray (cA, c) ->
-        {
-          device = (-1);
-          vector = vect.vector;
-          cuda_device_vec =
-            Array.create ((Devices.cuda_devices ()) + 1) (init_cuda_device_vec ());
-          opencl_device_vec =
-            Array.create ((Devices.opencl_devices ()) + 1)
-              (init_opencl_device_vec ());
-          length = _len;
-          dev = No_dev;
-          kind = vect.kind;
-          is_sub =
-            Some (((dep vect.is_sub) + 1), _start, _ok_r, _ko_r, vect);
-          sub = [];
-          vec_id = !vec_id;
-					seek = 0;
-        })
+   | Bigarray b ->
+     {
+       device = (-1);
+       vector = vect.vector;
+       cuda_device_vec =
+         Array.create ((Devices.cuda_devices ()) + 1) (init_cuda_device_vec ());
+       opencl_device_vec =
+         Array.create ((Devices.opencl_devices ()) + 1)
+           (init_opencl_device_vec ());
+       length = _len;
+       dev = No_dev;
+       kind = vect.kind;
+       is_sub =
+         Some (((dep vect.is_sub) + 1), _start, _ok_r, _ko_r, vect);
+       sub = [];
+       vec_id = !vec_id;
+       seek = 0;
+     }
+   | CustomArray (cA, c) ->
+     {
+       device = (-1);
+       vector = vect.vector;
+       cuda_device_vec =
+         Array.create ((Devices.cuda_devices ()) + 1) (init_cuda_device_vec ());
+       opencl_device_vec =
+         Array.create ((Devices.opencl_devices ()) + 1)
+           (init_opencl_device_vec ());
+       length = _len;
+       dev = No_dev;
+       kind = vect.kind;
+       is_sub =
+         Some (((dep vect.is_sub) + 1), _start, _ok_r, _ko_r, vect);
+       sub = [];
+       vec_id = !vec_id;
+       seek = 0;
+     })
 
 
 
 let of_bigarray_shr kind b = 
-    incr vec_id;
-    let open Devices in 
-     {
-      device = (-1);
-      vector = Bigarray b;
-      cuda_device_vec = Array.create (cuda_devices() +1) (init_cuda_device_vec ());
-      opencl_device_vec = Array.create (opencl_devices() +1) (init_opencl_device_vec ());
-      length =  Bigarray.Array1.dim b;
-      dev = No_dev;
-      kind = kind;
-      is_sub = None;
-      sub = [];
-      vec_id = !vec_id;
-			seek = 0 }
-      
+  incr vec_id;
+  let open Devices in 
+  {
+    device = (-1);
+    vector = Bigarray b;
+    cuda_device_vec = Array.create (cuda_devices() +1) (init_cuda_device_vec ());
+    opencl_device_vec = Array.create (opencl_devices() +1) (init_opencl_device_vec ());
+    length =  Bigarray.Array1.dim b;
+    dev = No_dev;
+    kind = kind;
+    is_sub = None;
+    sub = [];
+    vec_id = !vec_id;
+    seek = 0 }
+
 let to_bigarray_shr v =
   match v.vector with
-    | Bigarray b -> b
-    | _  ->  raise (Invalid_argument "v")
+  | Bigarray b -> b
+  | _  ->  raise (Invalid_argument "v")
