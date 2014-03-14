@@ -1,6 +1,13 @@
 //Cuda functions
 var noCuda = 1
 
+
+//Provides: caml_sys_system_command
+function caml_sys_system_command() {
+    console.log("caml_sys_system_command");
+    return 0;
+}
+
 //Provides: spoc_cuInit
  function spoc_cuInit() {
     console.log(" spoc_cuInit");
@@ -59,11 +66,6 @@ function spoc_clInit() {
 }
 
 
-//Provides: spoc_debug_opencl_compile
-function spoc_debug_opencl_compile() {
-    console.log(" spoc_debug_opencl_compile");
-    return 0;
-}
 
 
 //Provides: spoc_getOpenCLDevice
@@ -154,9 +156,11 @@ function spoc_getOpenCLDevice(relative_i, absolute_i) {
 	    for (var d in devices){
 		// looking at current device
 		var dev = devices[d];
-		if (current == relative_i){
+		if (current == relative_i ){
+		    console.log("current ----------"+current);
 		    //general info
 		    general_info[1] = caml_new_string(dev.getInfo(WebCL.DEVICE_NAME));
+		    console.log (general_info[1]);
 		    general_info[2] = dev.getInfo(WebCL.DEVICE_GLOBAL_MEM_SIZE);
 		    general_info[3] = dev.getInfo(WebCL.DEVICE_LOCAL_MEM_SIZE);
 		    general_info[4] = dev.getInfo(WebCL.DEVICE_MAX_CLOCK_FREQUENCY);
@@ -165,7 +169,10 @@ function spoc_getOpenCLDevice(relative_i, absolute_i) {
 		    general_info[7] = dev.getInfo(WebCL.DEVICE_ERROR_CORRECTION_SUPPORT);
 		    general_info[8] = absolute_i;
 
-		    var context = 0; //todo!
+		    var context = new Array(3); //cl_contex + 2 queues
+		    context[0] = webcl.createContext (dev);
+		    context[1] = context[0].createCommandQueue();
+		    context[2] = context[0].createCommandQueue();
 		    general_info[9] = context;
 
 
@@ -224,7 +231,12 @@ function spoc_getOpenCLDevice(relative_i, absolute_i) {
 		    specific_info[35] = dev.getInfo(WebCL.DEVICE_IMAGE3D_MAX_HEIGHT);
 		    specific_info[36] = dev.getInfo(WebCL.DEVICE_IMAGE3D_MAX_WIDTH);
 		    specific_info[37] = dev.getInfo(WebCL.DEVICE_MAX_PARAMETER_SIZE);
-		    specific_info[38] = dev.getInfo(WebCL.DEVICE_MAX_WORK_ITEM_SIZES);
+		    specific_info[38] = [0]
+		    var dim_sizes = dev.getInfo(WebCL.DEVICE_MAX_WORK_ITEM_SIZES);
+		    specific_info[38][1] = dim_sizes[0];
+		    specific_info[38][2] = dim_sizes[1];
+		    specific_info[38][3] = dim_sizes[2];
+
 		    specific_info[39] = dev.getInfo(WebCL.DEVICE_PREFERRED_VECTOR_WIDTH_CHAR);
 		    specific_info[40] = dev.getInfo(WebCL.DEVICE_PREFERRED_VECTOR_WIDTH_SHORT);
 		    specific_info[41] = dev.getInfo(WebCL.DEVICE_PREFERRED_VECTOR_WIDTH_INT);
@@ -233,7 +245,7 @@ function spoc_getOpenCLDevice(relative_i, absolute_i) {
 //		    specific_info[44] = dev.getInfo(WebCL.DEVICE_PREFERRED_VECTOR_WIDTH_DOUBLE );
 		    specific_info[45] = dev.getInfo(WebCL.DEVICE_PROFILING_TIMER_RESOLUTION);
 		    specific_info[46] = caml_new_string(dev.getInfo(WebCL.DRIVER_VERSION));
-
+		    current++;
 
 		    break;
 		}
@@ -253,7 +265,7 @@ function spoc_getOpenCLDevice(relative_i, absolute_i) {
     opencl_info[1] = specific_info;
     dev[1] = general_info;
     dev[2] = opencl_info;
- 
+
     return dev;
     
 }

@@ -42,7 +42,21 @@ $(DIR)_pp.ml: $(MLSRC)
 	-printer o kernels_int.cma -printer kernels_ext.cma $<	> $@
 
 clean:
-	rm -f *.asm *.byte *.cm* *pp.ml *~ \#*\# *.o
+	rm -f *.asm *.byte *.cm* *pp.ml *~ \#*\# *.o *.js
+
+
+
+js:$(DIR).js
+
+$(DIR).js: $(MLSRC) Printf_js.ml
+	cat Printf_js.ml > $(DIR)_js.ml
+	cat $(MLSRC) >> $(DIR)_js.ml
+	ocamlfind ocamlc -thread -package $(PACKAGES),js_of_ocaml,lwt \
+	-linkpkg -package $(SYNTAX_PACKAGES),js_of_ocaml.syntax \
+	-syntax camlp4o $(DIR)_js.ml  -o $(DIR).js.byte
+	js_of_ocaml \
+	`ocamlfind query spoc`/spoc_lib.js \
+	$(DIR).js.byte -o $(DIR).js
 
 
 .PHONY:clean test all pp

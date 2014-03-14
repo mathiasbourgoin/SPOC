@@ -620,7 +620,10 @@ value spoc_opencl_cpu_to_device(value vector, value nb_device, value gi, value q
 
 	OPENCL_GET_CONTEXT;
 
-	OPENCL_CHECK_CALL1(opencl_error, clEnqueueWriteBuffer(queue[Int_val(queue_id)], d_A, CL_FALSE, 0, size*type_size, h_A, 0, NULL, NULL));
+	OPENCL_CHECK_CALL1(
+			   opencl_error, clEnqueueWriteBuffer
+			   (queue[Int_val(queue_id)], d_A, CL_FALSE, 
+			    0, size*type_size, h_A, 0, NULL, NULL));
 	OPENCL_RESTORE_CONTEXT;
 
 	Store_field(dev_vec, 1, Val_cl_mem(d_A));

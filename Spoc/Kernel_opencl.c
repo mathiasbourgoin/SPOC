@@ -276,7 +276,10 @@ CAMLprim value spoc_opencl_launch_grid(value ker, value grid, value block, value
 	  }
    	q = queue[Int_val(queue_id)];
 	OPENCL_CHECK_CALL1(opencl_error, clRetainCommandQueue(queue[Int_val(queue_id)]));
-	OPENCL_CHECK_CALL1(opencl_error, clEnqueueNDRangeKernel(q, kernel, 3, NULL, (size_t*) global_dimension, (size_t*)work_size, 0, NULL, NULL));
+	OPENCL_CHECK_CALL1(opencl_error, clEnqueueNDRangeKernel
+			   (q, kernel, 3, NULL, (size_t*) 
+			    global_dimension, (size_t*)work_size, 
+			    0, NULL, NULL));
 	OPENCL_CHECK_CALL1(opencl_error, clReleaseCommandQueue(queue[Int_val(queue_id)]));
 	
 	OPENCL_RESTORE_CONTEXT;
