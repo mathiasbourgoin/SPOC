@@ -12,3 +12,5 @@ clean:
 
 install:spoc_lib.js
 	cp spoc_lib.js `ocamlfind query spoc`
+uninstall:
+	rm -f `ocamlfind query spoc`/spoc_lib.js
