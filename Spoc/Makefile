@@ -1,10 +1,12 @@
 all :
 	ocp-build -init
 	cd extension && make
+	cd Js && make
 
 clean :
 	ocp-build clean
 	cd extension && make clean
+	cd Js && make clean
 	rm -rf tmp docs ocp-build.root.* ~*
 
 doc : uninstall install
@@ -22,7 +24,9 @@ install : uninstall
 	ocp-build install
 	cp _obuild/spoc/*.cmi `ocamlfind query spoc`
 	cd extension && make install
+	cd Js && make install
 
 uninstall :
 	ocamlfind remove spoc
 	cd extension && make uninstall
+	cd Js && make uninstall
