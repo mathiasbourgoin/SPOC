@@ -29,7 +29,7 @@ under Windows (32bit or 64bit) and Linux (Ubuntu 13.10) 32bit.
 
 The plugin currently fails with Ubuntu 64bit and Mac OS/X 64bit 
 
-[**Bitonic sort**][1]
+## [**Bitonic sort**][1]
 
 
 #I - How to Build SPOC
