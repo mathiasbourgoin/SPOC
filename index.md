@@ -27,7 +27,9 @@ SPOC currently lacks a real tutorial, it comes with some examples and I strongly
 This has been tested with Firefox 26 and [this plugin](http://webcl.nokiaresearch.com/)
 under Windows (32bit or 64bit) and Linux (Ubuntu 13.10) 32bit.
 
-Nokia's plugin currently fails with Ubuntu 64bit and Mac OS/X 64bit 
+Nokia's plugin currently fails with Ubuntu 64bit and Mac OS/X 64bit.
+
+Of course, you'll also need to have OpenCL on your system.
 
 ## [**Bitonic sort**][1]
 
