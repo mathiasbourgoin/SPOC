@@ -116,8 +116,8 @@ let measure_time s f =
 
 
 let () = 
-  let devid = ref 0 
-  and size = ref 1024 
+  let devid = ref 1 
+  and size = ref (1024*2*2*2*2*2*2*2*2*2*2*2*2*2*2*2)
   and check = ref true
   and compare = ref true
   in
@@ -134,8 +134,8 @@ let () =
   Arg.parse ([arg1;arg2; arg3; arg4]) (fun s -> ()) "";
   let devs = Spoc.Devices.init () in
   let dev = ref devs.(!devid) in
-  Printf.printf "Will use device : %s\n%!"
-    (!dev).Spoc.Devices.general_info.Spoc.Devices.name;
+  Printf.printf "Will use device : %s  to sort %d floats\n%!"
+    (!dev).Spoc.Devices.general_info.Spoc.Devices.name !size;
   let size = !size 
   and check = !check 
   and compare = !compare in
@@ -176,13 +176,14 @@ let () =
 		Spoc.Kernel.blockY = 1; Spoc.Kernel.blockZ = 1}
   and grid0= {Spoc.Kernel.gridX = blocksPerGrid;
 	      Spoc.Kernel.gridY = 1; Spoc.Kernel.gridZ = 1} in
-  ignore(Kirc.gen gpu_bitonic);
+  ignore(Kirc.gen ~only:Devices.OpenCL
+           gpu_bitonic);
   let j,k = ref 0,ref 2 in
   measure_time "Parallel Bitonic" (fun () ->
       while !k <= size do
         j := !k lsr 1;
         while !j > 0 do
-          Kirc.run gpu_bitonic (gpu_vect,!j,!k) (block0,grid0) 0 !dev;
+(*          Kirc.run gpu_bitonic (gpu_vect,!j,!k) (block0,grid0) 0 !dev;*)
           j := !j lsr 1;
         done;
         k := !k lsl 1 ;

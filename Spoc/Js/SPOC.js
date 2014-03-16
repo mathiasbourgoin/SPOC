@@ -57,7 +57,7 @@ function spoc_clInit() {
     }
     else 
     {
-        alert("CONGRATULATIONS! Your system supports WebCL");
+        /*alert("CONGRATULATIONS! Your system supports WebCL");*/
 	console.log ("INIT OPENCL");
 	noCL = 0;
     }

@@ -63,11 +63,6 @@ function spoc_opencl_launch_grid(kern, grid, block, gi, queue_id) {
     return 0;
 }
 
-//Provides: spoc_opencl_device_to_cpu
-function spoc_opencl_device_to_cpu() {
-    console.log("spoc_opencl_device_to_cpu");
-    return 0;
-}
 
 //Provides: spoc_debug_opencl_compile
 function spoc_debug_opencl_compile(src, fname, gi) {
