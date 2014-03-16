@@ -22,7 +22,7 @@ SPOC currently lacks a real tutorial, it comes with some examples and I strongly
 
 # Demos in your browser (experimental)
 
-## Using WebCL and js _ of _ ocaml :
+## Using WebCL and js\_of\_ocaml :
 
 This has been tested with Firefox 26 and [this plugin](http://webcl.nokiaresearch.com/)
 under Windows (32bit or 64bit) and Linux (Ubuntu 13.10) 32bit.
