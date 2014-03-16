@@ -175,7 +175,7 @@ let go _ =
   
 
   let body =
-    Js.Opt.get (document##getElementById (Js.string "BitonicSort"))
+    Js.Opt.get (document##getElementById (Js.string "section1"))
       (fun () -> assert false) in
 
   Dom.appendChild body (nodeText "This sample computes a bitonic sort over a vector of float");
