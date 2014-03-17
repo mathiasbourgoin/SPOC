@@ -32,6 +32,7 @@ Nokia's plugin currently fails with Ubuntu 64bit and Mac OS/X 64bit.
 Of course, you'll also need to have OpenCL on your system.
 
 ## [**Bitonic sort**][1]
+## [**Image filter**][2]
 
 
 #I - How to Build SPOC
@@ -91,3 +92,4 @@ The "SpocLibs" directory contains few libraries based on Spoc.
 The Sample directory contains few samples using those libraries
 
 [1]: docs/bitonic.html
+[2]: docs/imageFilter.html
