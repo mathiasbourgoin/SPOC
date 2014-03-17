@@ -389,7 +389,7 @@ let load_file f =
   close_in ic;
   (s)
 
-let gen ?only:(o=Devices.Both) ((kir: ('a, 'b) spoc_kernel),(k: ('c,'d,'e) kirc_kernel)) = 
+let gen ?return:(r=false) ?only:(o=Devices.Both) ((kir: ('a, 'b) spoc_kernel),(k: ('c,'d,'e) kirc_kernel)) = 
   let (k1,k2,k3) = (k.ml_kern, k.body,k.ret_val) in
   return_v := "","";
   let k' = ((Kirc_Cuda.parse 0 (fst k3)),
@@ -407,9 +407,12 @@ let gen ?only:(o=Devices.Both) ((kir: ('a, 'b) spoc_kernel),(k: ('c,'d,'e) kirc_
                           extensions = k.extensions});  Pervasives.flush stdout; assert false) ))
   in
 
-  Kirc_Cuda.return_v := k';
-  Kirc_OpenCL.return_v := k';
-
+  if r then
+    (
+      Kirc_Cuda.return_v := k';
+      Kirc_OpenCL.return_v := k';
+    );
+  
   let gen_cuda () =
     let cuda_head = 
       Array.fold_left 

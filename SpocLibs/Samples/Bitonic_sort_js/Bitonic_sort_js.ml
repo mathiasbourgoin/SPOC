@@ -169,9 +169,6 @@ open Spoc
 
 let go _ =
   let devs = Devices.init ~only:Devices.OpenCL () in
-  let dev = ref devs.(0) in
-  let tbl = Hashtbl.create (Array.length devs) in
-  Array.iteri (fun i dev -> Hashtbl.add tbl dev.Devices.general_info.Devices.name i) devs;
   
 
   let body =

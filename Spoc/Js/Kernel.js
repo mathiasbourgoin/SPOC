@@ -49,17 +49,13 @@ function spoc_opencl_launch_grid(kern, grid, block, gi, queue_id) {
 
     var queue = ctx[queue_id+1];
 
-    console.log(grid);    
-    console.log(block);
-    console.log(global_dimension);
-    console.log(work_size);
-    console.log("spoc_opencl_launch_grid----------");
-    console.log(kern);
-    queue.finish();
-    queue.enqueueNDRangeKernel(kern, work_size.length, null, global_dimension, 
-			       work_size);
+    if ((blockX == 1) && (blockY == 1) && (blockZ == 1))
+	queue.enqueueNDRangeKernel(kern, work_size.length, null, global_dimension);
+    else
+	
+	queue.enqueueNDRangeKernel(kern, work_size.length, null, global_dimension, 
+				   work_size);
 
-    console.log("spoc_opencl_launch_grid+++++++++++++");
     return 0;
 }
 

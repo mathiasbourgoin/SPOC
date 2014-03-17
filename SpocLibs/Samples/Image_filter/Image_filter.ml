@@ -19,27 +19,19 @@ open Kirc
 
 
 
-let gpu_bitonic = kern v j k ->
+let gpu_to_gray = kern v ->
   let open Std in
-  let i = thread_idx_x + block_dim_x * block_idx_x in
-  let ixj = Math.xor i j in
-  let mutable temp = 0. in
-  if ixj < i then
-    () else
-    begin
-      if (Math.logical_and i k) = 0  then
-        (
-          if  v.[<i>] >. v.[<ixj>] then
-            (temp := v.[<ixj>];
-             v.[<ixj>] <- v.[<i>];
-             v.[<i>] <- temp)
-        )
-      else 
-      if v.[<i>] <. v.[<ixj>] then
-        (temp := v.[<ixj>];
-         v.[<ixj>] <- v.[<i>];
-         v.[<i>] <- temp);
-    end
+  let tid = thread_idx_x + block_dim_x * block_idx_x in
+  if tid > (512*512) then
+    ()
+  else
+    (
+      let i = (tid*4) in
+      let res = (v.[<i>] + v.[<i+1>] + v.[<i+2>]) / 3 in
+      v.[<i>] <- res;
+      v.[<i+1>] <- res;
+      v.[<i+2>] <- res
+    )
 
 let append_text e s = Dom.appendChild e (document##createTextNode (Js.string s))
 
@@ -50,51 +42,25 @@ let button action =
   b
 ;;  
 
-
-
-let text  name default cols = 
-  let b = createInput ~_type:(Js.string "text")  document in
-  b##value <- (Js.string default);
-  b##size <-  4;
-  b
-
-let cpt = ref 0
-
-let tot_time = ref 0.
-
 let measure_time s f =
   let t0 = Unix.gettimeofday () in
   let a = f () in
   let t1 = Unix.gettimeofday () in
-  Printf.printf "time %s : %Fs\n%!" s (t1 -. t0);
-  tot_time := !tot_time +.  (t1 -. t0);
-  incr cpt;
+  Printf.printf "Time %s : %Fs\n%!" s (t1 -. t0);
   a;;
   
 
-let compute size devid devs = 
+let compute devid devs data imageData c= 
   let dev = devs.(devid) in
-  Printf.printf "Will use device : %s  to sort %d floats\n%!"
-    (dev).Spoc.Devices.general_info.Spoc.Devices.name size;
-  
-  let gpu_vect = Spoc.Vector.create Vector.float32 size
-  and base_vect = Spoc.Vector.create Vector.float32 size
-  and vect_as_array = Array.create size 0.
+  Printf.printf "Will use device : %s!"
+		(dev).Spoc.Devices.general_info.Spoc.Devices.name;
+  let gpu_vect = Spoc.Vector.create Vector.int32 (512*512*4)
   in
   Random.self_init ();
-  (* fill vectors with randmo values... *)
   for i = 0 to Vector.length gpu_vect - 1 do
-    let v = Random.float 255. in
-    gpu_vect.[<i>] <- v;
-    base_vect.[<i>] <- v;
-    vect_as_array.(i) <- v;
+    gpu_vect.[<i>] <- Int32.of_int (pixel_get data i);
   done;
-  
-
-  begin
-    measure_time "Sequential Array.sort" 
-      (fun () -> Array.sort Pervasives.compare vect_as_array);
-  end;
+ 
   let threadsPerBlock = match dev.Devices.specific_info with
     | Devices.OpenCLInfo clI -> 
       (match clI.Devices.device_type with
@@ -102,56 +68,30 @@ let compute size devid devs =
        | _  ->   256)
     | _  -> 256 in
   let blocksPerGrid =
-    (size + threadsPerBlock -1) / threadsPerBlock
+    ((512*512) + threadsPerBlock -1) / threadsPerBlock
   in
   let block0 = {Spoc.Kernel.blockX = threadsPerBlock;
 		Spoc.Kernel.blockY = 1; Spoc.Kernel.blockZ = 1}
   and grid0= {Spoc.Kernel.gridX = blocksPerGrid;
 	      Spoc.Kernel.gridY = 1; Spoc.Kernel.gridZ = 1} in
   ignore(Kirc.gen ~only:Devices.OpenCL
-           gpu_bitonic);
-  let j,k = ref 0,ref 2 in
-  measure_time "Parallel Bitonic" (fun () ->
-      while !k <= size do
-        j := !k lsr 1;
-        while !j > 0 do
-          Kirc.run gpu_bitonic (gpu_vect,!j,!k) (block0,grid0) 0 dev;
-          j := !j lsr 1;
-        done;
-        k := !k lsl 1 ;
-      done;
-    );
-
-  (
-    let r = ref (-. infinity) in
-    for i = 0 to size - 1 do
-      if gpu_vect.[<i>] < !r then
-        failwith (Printf.sprintf "error, %g <  %g" gpu_vect.[<i>] !r)
-      else
-        r := gpu_vect.[<i>]; 
-    done;
-    Printf.printf "Check OK\n";
-  )
+		  gpu_to_gray);
+  measure_time "" 
+	       (fun () -> Kirc.run gpu_to_gray (gpu_vect) (block0,grid0) 0 dev);
+  
+  for i = 0 to Vector.length gpu_vect - 1 do
+    let t = Int32.to_int gpu_vect.[<i>] in 
+    pixel_set data i t
+  done;
+  c##putImageData (imageData, 0., 0.);
 ;;
 
 
-let pow2 n = 
-  let rec aux acc n = 
-    if n = 1 then 
-      acc
-    else
-      aux (acc*2) (n-1)
-  in
-  aux 2 n
-
-let f size_text select_devices devs = 
+let f select_devices devs data imageData c= 
   (fun _ ->
-     let size = 
-       pow2 (int_of_string (Js.to_string size_text##value))
-     in
-     let select = select_devices##selectedIndex + 0 in
-     compute size select devs;
-     Js._true)
+   let select = select_devices##selectedIndex + 0 in
+   compute select devs data imageData c;
+   Js._true)
 ;;
 
 let newLine _ = Dom_html.createBr document
@@ -169,17 +109,11 @@ open Spoc
 
 let go _ =
   let devs = Devices.init ~only:Devices.OpenCL () in
-  let dev = ref devs.(0) in
-  let tbl = Hashtbl.create (Array.length devs) in
-  Array.iteri (fun i dev -> Hashtbl.add tbl dev.Devices.general_info.Devices.name i) devs;
-  
 
   let body =
-    Js.Opt.get (document##getElementById (Js.string "BitonicSort"))
+    Js.Opt.get (document##getElementById (Js.string "section1"))
       (fun () -> assert false) in
 
-  Dom.appendChild body (nodeText "This sample computes a bitonic sort over a vector of float");
-  Dom.appendChild body (newLine ());
   Dom.appendChild body (newLine ());
   let select_devices = createSelect document in
   Dom.appendChild body (nodeText "Choose a computing device : ");
@@ -194,14 +128,24 @@ let go _ =
   Dom.appendChild body select_devices;
   Dom.appendChild body (newLine ());
 
-  let size_text = (text "size" "10" 4) in
-  Dom.appendChild body (nodeText "Vector size :  2^"); 
-  Dom.appendChild body size_text;
 
+  let canvas = createCanvas document in
+  canvas##width <- 512;
+  canvas##height <- 512;
+  
+  let image : imageElement Js.t = createImg document in
+  image##src <- Js.string "lena.png";
 
+  let c = canvas##getContext (Dom_html._2d_) in
+  c##drawImage (image, 0., 0.);
   Dom.appendChild body (newLine ());
-  Dom.appendChild body (button (f size_text select_devices devs));
+  Dom.appendChild body canvas;
 
+  let imageData = c##getImageData (0., 0., 512., 512.) in
+  let data = imageData##data in
+  
+  Dom.appendChild body (newLine ());
+  Dom.appendChild body (button (f select_devices devs data imageData c));
 
   Js._false
 

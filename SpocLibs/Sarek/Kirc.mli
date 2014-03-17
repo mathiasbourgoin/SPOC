@@ -112,6 +112,7 @@ val return_v : (string * string) ref
 val save : string -> string -> unit
 val load_file : string -> string
 val gen :
+  ?return:bool ->
   ?only:Spoc.Devices.specificLibrary ->
   ('a, 'b) Spoc.Kernel.spoc_kernel * ('c, 'd, 'e) kirc_kernel ->
   ('a, 'b) Spoc.Kernel.spoc_kernel * ('c, 'd, 'e) kirc_kernel

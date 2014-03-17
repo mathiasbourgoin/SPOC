@@ -21,7 +21,8 @@ function spoc_init_opencl_device_vec() {
 function typesize (b) {
     if ((b[1] instanceof Float32Array) || (b[1].constructor.name == "Float32Array"))
 	return 4;
-    else
+    if ((b[1] instanceof Int32Array) || (b[1].constructor.name == "Int32Array"))
+	return 4;
     {
 	console.log ("unimplemented vector type");
 	console.log(b[1].constructor.name);
