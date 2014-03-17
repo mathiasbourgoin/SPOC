@@ -17,7 +17,7 @@ open Spoc
 
 open Kirc
 
-
+let (>>=) = Lwt.bind
 
 let gpu_to_gray = kern v ->
   let open Std in
@@ -108,7 +108,7 @@ let nodeText t =
 open Spoc
 
 let go _ =
-  let devs = Devices.init ~only:Devices.OpenCL () in
+
 
   let body =
     Js.Opt.get (document##getElementById (Js.string "section1"))
@@ -118,12 +118,7 @@ let go _ =
   let select_devices = createSelect document in
   Dom.appendChild body (nodeText "Choose a computing device : ");
 
-  Array.iter
-    (fun (n) ->
-       let option = createOption document in
-       append_text option n.Devices.general_info.Devices.name;
-       Dom.appendChild select_devices  option)
-    devs;
+
   
   Dom.appendChild body select_devices;
   Dom.appendChild body (newLine ());
@@ -137,18 +132,31 @@ let go _ =
   image##src <- Js.string "lena.png";
 
   let c = canvas##getContext (Dom_html._2d_) in
-  c##drawImage (image, 0., 0.);
-  Dom.appendChild body (newLine ());
-  Dom.appendChild body canvas;
+  image##onload <- 
+    handler (fun _ -> 
+	     c##drawImage (image, 0., 0.); 
+	     Dom.appendChild body (newLine ());
+	     Dom.appendChild body canvas;
+	     let devs =
+	       Devices.init ~only:Devices.OpenCL () in	     
+	     let imageData = c##getImageData (0., 0., 512., 512.) in
+	     let data = imageData##data in
+	     
+	     Dom.appendChild body (newLine ());
+	     
 
-  let imageData = c##getImageData (0., 0., 512., 512.) in
-  let data = imageData##data in
+	     Array.iter
+	       (fun (n) ->
+		let option = createOption document in
+		append_text option n.Devices.general_info.Devices.name;
+		Dom.appendChild select_devices  option)
+	       devs;
+	     
+	     Dom.appendChild body (button (f select_devices devs data imageData c)
+				  );Js._true);
   
-  Dom.appendChild body (newLine ());
-  Dom.appendChild body (button (f select_devices devs data imageData c));
-
   Js._false
-
+    
     
 let _ = 
   window##onload <- handler go
