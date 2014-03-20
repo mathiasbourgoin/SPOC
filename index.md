@@ -22,9 +22,9 @@ SPOC currently lacks a real tutorial, it comes with some examples and I strongly
 
 # Demos in your browser (experimental)
 
-## Using WebCL and [js\_of\_ocaml][js_of_ocaml] :
+## Using WebCL and [js\_of\_ocaml][3] :
 
-This has been tested with Firefox 26-28 and [this plugin][nokia]
+This has been tested with Firefox 26-28 and [this plugin][5]
 under Windows (32bit or 64bit) and Linux (Ubuntu 13.10) 32bit.
 It also works with Linux 64bit and a 32bit Firefox.
 
@@ -37,10 +37,10 @@ Of course, you'll also need to have OpenCL on your system.
 
 You should install/have :
 
-* [Firefox 28-32bit][firefox]
+* [Firefox 28-32bit][4]
 on your system,
-* [Nokia's plugin][nokia]
-* an OpenCL implementation for your sytem ([AMD's one][amd]
+* [Nokia's plugin][5]
+* an OpenCL implementation for your sytem ([AMD's one][6]
 should work for most multicore x86 CPUs)
 
 ### Samples :
@@ -107,7 +107,7 @@ The Sample directory contains few samples using those libraries
 
 [1]: docs/bitonic.html
 [2]: docs/imageFilter.html
-[firefox]: http://ftp.mozilla.org/pub/mozilla.org/firefox/releases/28.0/
-[js_of_ocaml]: (http://ocsigen.org/js_of_ocaml/) :
-[nokia]: (http://webcl.nokiaresearch.com/)
-[amd]: (http://developer.amd.com/tools-and-sdks/heterogeneous-computing/amd-accelerated-parallel-processing-app-sdk/downloads/)
+[3]: http://ocsigen.org/js_of_ocaml/ 
+[4]: http://ftp.mozilla.org/pub/mozilla.org/firefox/releases/28.0/
+[5]: http://webcl.nokiaresearch.com/
+[6]: http://developer.amd.com/tools-and-sdks/heterogeneous-computing/amd-accelerated-parallel-processing-app-sdk/downloads/
