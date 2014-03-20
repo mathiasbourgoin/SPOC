@@ -22,14 +22,28 @@ SPOC currently lacks a real tutorial, it comes with some examples and I strongly
 
 # Demos in your browser (experimental)
 
-## Using WebCL and [js\_of\_ocaml](http://ocsigen.org/js_of_ocaml/) :
+## Using WebCL and [js\_of\_ocaml][js_of_ocaml] :
 
-This has been tested with Firefox 26 and [this plugin](http://webcl.nokiaresearch.com/)
+This has been tested with Firefox 26-28 and [this plugin][nokia]
 under Windows (32bit or 64bit) and Linux (Ubuntu 13.10) 32bit.
+It also works with Linux 64bit and a 32bit Firefox.
 
-Nokia's plugin currently fails with Ubuntu 64bit and Mac OS/X 64bit.
+Nokia's plugin currently fails with Firefox 64bit (on Linux)
+and Mac OS/X 64bit.
 
 Of course, you'll also need to have OpenCL on your system.
+
+### How to test?
+
+You should install/have :
+
+* [Firefox 28-32bit][firefox]
+on your system,
+* [Nokia's plugin][nokia]
+* an OpenCL implementation for your sytem ([AMD's one][amd]
+should work for most multicore x86 CPUs)
+
+### Samples :
 
 ## [**Bitonic sort**][1]
 ## [**Image filter**][2]
@@ -93,3 +107,7 @@ The Sample directory contains few samples using those libraries
 
 [1]: docs/bitonic.html
 [2]: docs/imageFilter.html
+[firefox]: http://ftp.mozilla.org/pub/mozilla.org/firefox/releases/28.0/
+[js_of_ocaml]: (http://ocsigen.org/js_of_ocaml/) :
+[nokia]: (http://webcl.nokiaresearch.com/)
+[amd]: (http://developer.amd.com/tools-and-sdks/heterogeneous-computing/amd-accelerated-parallel-processing-app-sdk/downloads/)
