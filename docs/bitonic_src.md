@@ -1,5 +1,5 @@
 ---
-layout : index
+layout : index_sample
 ---
 
 # Bitonic Sort
