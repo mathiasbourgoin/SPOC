@@ -52,7 +52,6 @@ let gen_kernel ()= ()
     [[name=ident; ":"; typ=ident; "="; cu_value=STRING; cl_value=STRING -> 
       let typ =
         match string_of_ident typ with
-        | "int" -> TInt;
         | "int32" -> TInt32;
         | "float32" -> TFloat32;
         | "float64" -> TFloat64;
@@ -65,7 +64,6 @@ let gen_kernel ()= ()
     [[name=ident; ":"; typ=ident; "="; cu_value=STRING; cl_value=STRING -> 
       let typ =
         match string_of_ident typ with
-        | "int" -> TInt;
         | "int32" -> TInt32;
         | "float32" -> TFloat32;
         | "float64" -> TFloat64;
@@ -164,10 +162,10 @@ let ret =
   incr arg_idx;
   match !return_type with
   | TUnknown  -> <:expr<return_unknown (), Dummy>>
-  | TInt | TInt32 -> <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int32 >>
+  | TInt32 -> <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int32 >>
   | TInt64 ->  <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int64>>
-  | TVec TInt | TVec TInt32 | TVec TInt64 -> assert false
-  | TFloat | TFloat32 ->  <:expr<return_float $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float32>>
+  | TVec TInt32 | TVec TInt64 -> assert false
+  | TFloat32 ->  <:expr<return_float $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float32>>
   | TFloat64 ->  <:expr<return_double $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float64>>
   | TUnit  -> <:expr<return_unit (), Vector.Unit ((),())>>
   | TBool -> <:expr< return_bool $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.Dummy>>
@@ -179,30 +177,30 @@ and thd_ (a,b,c,d,e,f) = c
 and fth_ (a,b,c,d,e,f) = d 
 and ffh_ (a,b,c,d,e,f) = e in
 let tup_args, list_args, class_legacy , list_to_args1, list_to_args2= 
-  let args_fst_list = 
+  (let args_fst_list = 
     (List.map fst_ (List.map gen_arg_from_patt3 args)) in
   let args_com = paCom_of_list  args_fst_list in
-
-
+  
+  
   let args_list = 
     let l = (List.map snd_ (List.map gen_arg_from_patt3 args)) in
     exSem_of_list l
   in 
-
+  
   let args_thd_list = 
     (List.map thd_ (List.map gen_arg_from_patt3 args)) in
   let args_typ = tySta_of_list args_thd_list in
-
+  
   let lta1 = 
     paSem_of_list 
       (List.map fth_ (List.map gen_arg_from_patt3 args)) in
-
+  
   let args_ffth_list = 	     
     (new_kernel := true;
      List.map ffh_ (List.map gen_arg_from_patt3 args)) in
   let lta2 = 
     exCom_of_list args_ffth_list in	 
-
+  
   begin
     if List.length args_fst_list = 1 then
       List.hd args_fst_list
@@ -213,24 +211,24 @@ let tup_args, list_args, class_legacy , list_to_args1, list_to_args2=
   begin
     ExArr (_loc, args_list)
   end,
-
+  
   begin 
     if List.length args_thd_list = 1 then
       <:ctyp< $List.hd args_thd_list$,(('a,'b) Kernel.kernelArgs) array>>
     else
       <:ctyp< $TyTup (_loc, args_typ)$,(('a,'b) Kernel.kernelArgs) array>>
   end,
-
+  
   begin
     PaArr (_loc, lta1)
   end,
-
+  
   begin
     if List.length args_ffth_list = 1 then
       List.hd args_ffth_list
     else
       ExTup (_loc, lta2)
-  end
+  end)
 in
 let class_name = "kirc_class"^(string_of_int !nb_ker) in
 incr nb_ker;
@@ -355,9 +353,9 @@ let ret =
   incr arg_idx;
   match !return_type with
   | TUnknown  -> <:expr<return_unknown ()>>
-  | TInt | TInt32 | TInt64 ->  <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$>>
-  | TVec TInt | TVec TInt32 | TVec TInt64 -> <:expr<return_vector_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$>>
-  | TFloat | TFloat32 ->  <:expr<return_float $ExInt(Loc.ghost, string_of_int (!arg_idx))$>>
+  | TInt32 | TInt64 ->  <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$>>
+  | TVec TInt32 | TVec TInt64 -> <:expr<return_vector_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$>>
+  | TFloat32 ->  <:expr<return_float $ExInt(Loc.ghost, string_of_int (!arg_idx))$>>
   | TFloat64 ->  <:expr<return_double $ExInt(Loc.ghost, string_of_int (!arg_idx))$>>
   | TUnit  -> <:expr<return_unit ()>>
   | TBool -> <:expr< return_bool $ExInt(Loc.ghost, string_of_int (!arg_idx))$>>
@@ -441,7 +439,7 @@ kexpr:
         {t=TUnknown; e= If(_loc,cond,cons1); loc = _loc}
       ]
   | "mod"  RIGHTA
-    [ x = SELF; "mod"; y = SELF -> {t=TInt; e = Mod(_loc, x,y); loc = _loc}]
+    [ x = SELF; "mod"; y = SELF -> {t=TInt32; e = Mod(_loc, x,y); loc = _loc}]
   | ":=" 
       [ x = SELF; ":="; y= SELF  -> {t=(TUnit); e = Acc (_loc, x, y); loc = _loc}
       ]
@@ -450,25 +448,21 @@ kexpr:
     ]	 
 
   | "+" LEFTA
-    [ x = SELF; "+!"; y = SELF -> {t=TInt32; e = Plus32(_loc, x,y); loc = _loc};
-      | x = SELF; "+!!"; y = SELF -> {t=TInt64; e = Plus64(_loc, x,y); loc = _loc};
-      | x = SELF; "+"; y = SELF -> {t=TInt; e = Plus(_loc, x,y); loc = _loc};
+    [ x = SELF; "+"; y = SELF -> {t=TInt32; e = Plus32(_loc, x,y); loc = _loc};
+      | x = SELF; "+!"; y = SELF -> {t=TInt64; e = Plus64(_loc, x,y); loc = _loc};
       | x = SELF; "+."; y = SELF -> {t=TFloat32; e = PlusF32(_loc, x,y); loc = _loc}]
   | "-" LEFTA
-    [ x = SELF; "-!"; y = SELF -> {t=TInt32; e = Min32(_loc, x,y); loc = _loc};
-      | x = SELF; "-!!"; y = SELF -> {t=TInt64; e = Min64(_loc, x,y); loc = _loc};
-      | x = SELF; "-"; y = SELF -> {t=TInt; e = Min(_loc, x,y); loc = _loc};
+    [ x = SELF; "-"; y = SELF -> {t=TInt32; e = Min32(_loc, x,y); loc = _loc};
+      | x = SELF; "-!"; y = SELF -> {t=TInt64; e = Min64(_loc, x,y); loc = _loc};
       | x = SELF; "-."; y = SELF -> {t=TFloat32; e = MinF32(_loc, x,y); loc = _loc}]
-    
+
   | "*" LEFTA
-    [ x = SELF; "*!"; y = SELF -> {t=TInt32; e = Mul32(_loc, x,y); loc = _loc};
-      | x = SELF; "*!!"; y = SELF -> {t=TInt64; e = Mul64(_loc, x,y); loc = _loc};
-      | x = SELF; "*"; y = SELF -> {t=TInt; e = Mul(_loc, x,y); loc = _loc};
+    [ x = SELF; "*"; y = SELF -> {t=TInt32; e = Mul32(_loc, x,y); loc = _loc};
+      | x = SELF; "*!"; y = SELF -> {t=TInt64; e = Mul64(_loc, x,y); loc = _loc};
       | x = SELF; "*."; y = SELF -> {t=TFloat32; e = MulF32(_loc, x,y); loc = _loc}]
   | "/" LEFTA
-    [ x = SELF; "/!"; y = SELF -> {t=TInt32; e = Div32(_loc, x,y); loc = _loc};
-      | x = SELF; "/!!"; y = SELF -> {t=TInt64; e = Div64(_loc, x,y); loc = _loc};
-      | x = SELF; "/"; y = SELF -> {t=TInt; e = Div(_loc, x,y); loc = _loc};
+    [ x = SELF; "/"; y = SELF -> {t=TInt32; e = Div32(_loc, x,y); loc = _loc};
+      | x = SELF; "/!"; y = SELF -> {t=TInt64; e = Div64(_loc, x,y); loc = _loc};
       | x = SELF; "/."; y = SELF -> {t=TFloat32; e = DivF32(_loc, x,y); loc = _loc}]
     
   | "||" LEFTA	
@@ -484,7 +478,7 @@ kexpr:
   | "loop"
     [ "for"; x = ident; "="; y=SELF; "to"; z = SELF; "do";  body=do_sequence -> 
         {t = TUnknown; e = DoLoop (_loc, 
-                                {t= TInt; 
+                                {t= TInt32; 
                                  e= Id (_loc, x);
                                  loc = _loc}
                                ,y,z,body); loc = _loc};
@@ -492,32 +486,31 @@ kexpr:
       {t = TUnknown; e = While (_loc,cond, body); loc = _loc}] 
     
   | "="
-    [ x=SELF; "="; y=SELF -> {t=TBool; e= BoolEq(_loc,x,y); loc = _loc};
-      | x=SELF; "=!"; y=SELF -> {t=TBool; e= BoolEq32(_loc,x,y); loc = _loc};
-      | x=SELF; "=!!"; y=SELF -> {t=TBool; e= BoolEq64(_loc,x,y); loc = _loc};
+    [  x=SELF; "="; y=SELF -> {t=TBool; e= BoolEq32(_loc,x,y); loc = _loc};
+      | x=SELF; "=!"; y=SELF -> {t=TBool; e= BoolEq64(_loc,x,y); loc = _loc};
       | x=SELF; "=."; y=SELF -> {t=TBool; e= BoolEqF(_loc,x,y); loc = _loc}]
   | "<" 
-    [ x=SELF; "<"; y=SELF -> {t=TBool; e= BoolLt(_loc,x,y); loc = _loc};
-      | x=SELF; "<!"; y=SELF -> {t=TBool; e= BoolLt32(_loc,x,y); loc = _loc};
-      | x=SELF; "<!!"; y=SELF -> {t=TBool; e= BoolLt64(_loc,x,y); loc = _loc};
+    [ 
+       x=SELF; "<"; y=SELF -> {t=TBool; e= BoolLt32(_loc,x,y); loc = _loc};
+      | x=SELF; "<!"; y=SELF -> {t=TBool; e= BoolLt64(_loc,x,y); loc = _loc};
       | x=SELF; "<."; y=SELF -> {t=TBool; e= BoolLtF(_loc,x,y); loc = _loc}]
     
   | "<="
-    [ x=SELF; "<="; y=SELF -> {t=TBool; e= BoolLtE(_loc,x,y); loc = _loc};
-      | x=SELF; "<=!"; y=SELF -> {t=TBool; e= BoolLtE32(_loc,x,y); loc = _loc};
-      | x=SELF; "<=!!"; y=SELF -> {t=TBool; e= BoolLtE64(_loc,x,y); loc = _loc};
+    [ 
+       x=SELF; "<="; y=SELF -> {t=TBool; e= BoolLtE32(_loc,x,y); loc = _loc};
+      | x=SELF; "<=!"; y=SELF -> {t=TBool; e= BoolLtE64(_loc,x,y); loc = _loc};
       | x=SELF; "<=."; y=SELF -> {t=TBool; e= BoolLtEF(_loc,x,y); loc = _loc}]
 
   |  ">" RIGHTA
-      [ x=SELF; ">"; y=SELF -> {t=TBool; e= BoolGt(_loc,x,y); loc = _loc};
-        | x=SELF; ">!"; y=SELF -> {t=TBool; e= BoolGt32(_loc,x,y); loc = _loc};
-        | x=SELF; ">!!"; y=SELF -> {t=TBool; e= BoolGt64(_loc,x,y); loc = _loc};
+      [ 
+         x=SELF; ">"; y=SELF -> {t=TBool; e= BoolGt32(_loc,x,y); loc = _loc};
+        | x=SELF; ">!"; y=SELF -> {t=TBool; e= BoolGt64(_loc,x,y); loc = _loc};
         | x=SELF; ">."; y=SELF -> {t=TBool; e= BoolGtF(_loc,x,y); loc = _loc}]
 
   | ">="
-      [ x=SELF; ">="; y=SELF -> {t=TBool; e= BoolGtE(_loc,x,y); loc = _loc};
-        | x=SELF; ">=!"; y=SELF -> {t=TBool; e= BoolGtE32(_loc,x,y); loc = _loc};
-        | x=SELF; ">=!!"; y=SELF -> {t=TBool; e= BoolGtE64(_loc,x,y); loc = _loc};
+      [
+         x=SELF; ">="; y=SELF -> {t=TBool; e= BoolGtE32(_loc,x,y); loc = _loc};
+        | x=SELF; ">=!"; y=SELF -> {t=TBool; e= BoolGtE64(_loc,x,y); loc = _loc};
         | x=SELF; ">=."; y=SELF -> {t=TBool; e= BoolGtEF(_loc,x,y); loc = _loc}]
 		
   | "<-" 
@@ -558,7 +551,7 @@ kexpr:
        | x = FLOAT-> {t=TFloat32; e = Float32 (_loc, x); loc = _loc};
        |x = LIDENT  -> {t=TUnknown; e = Id (_loc, IdLid(_loc,x)); loc = _loc};
        |x = INT32  ->{t=TInt32; e = Int32 (_loc, x); loc = _loc};
-       |x = INT  ->{t=TInt; e = Int (_loc, x); loc = _loc}] 		
+       |x = INT  ->{t=TInt32; e = Int32 (_loc, x); loc = _loc}] 		
 
 
   ];

@@ -121,7 +121,7 @@ let spoc_unit () = Unit
 let spoc_int a = Int a
 let global_int_var a = GInt a
 let global_float_var a = GFloat a
-let spoc_int32 a = Int (Int32.to_int a)
+let spoc_int32 a = Int  a
 let spoc_float f = Float f
 let spoc_double d = Double d
 
@@ -156,7 +156,7 @@ let new_float64_var i = DoubleVar i
 let new_double_var i = DoubleVar i 
 let new_unit_var i = UnitVar i
 
-let new_int_vec_var v = VecVar (Int 0, v) 
+let new_int_vec_var v = VecVar (Int Int32.zero, v) 
 let new_float_vec_var v = VecVar (Float 0., v) 
 let new_double_vec_var v = VecVar (Double 0., v) 
 
@@ -507,41 +507,52 @@ let compile_kernel_to_files s ((kir: ('a, 'b) spoc_kernel),(k: ('c,'d,'e) kirc_k
 
 
 
+
+
+let set32 vec i  = Spoc.Mem.set vec  (Int32.to_int i) 
+
+let get32 vec i  = Spoc.Mem.get  vec (Int32.to_int i) 
+
 module Std =
 struct
-  let thread_idx_x = 1
-  let thread_idx_y = 1
-  let thread_idx_z = 1
-  let block_idx_x = 1
-  let block_idx_y = 1
-  let block_idx_z = 1
-  let block_dim_x = 1
-  let block_dim_y = 1
-  let block_dim_z = 1
+  let thread_idx_x = Int32.one
+  let thread_idx_y = Int32.one
+  let thread_idx_z = Int32.one
+  let block_idx_x = Int32.one
+  let block_idx_y = Int32.one
+  let block_idx_z = Int32.one
+  let block_dim_x = Int32.one
+  let block_dim_y = Int32.one
+  let block_dim_z = Int32.one
 
-  let global_thread_id = 0
+  let global_thread_id = Int32.zero
   let return () = ()
 
-  let float64 = float
-  let int_of_float64 = int_of_float
+  let float32 i = float (Int32.to_int i)
+  let float64  = float32 
 
+  let int_of_float64 f = Int32.of_int (int_of_float f)
+				      
   let block_barrier () = ()
 
-  let make_shared i = Array.make i 0
+  let make_shared i = Array.make  (Int32.to_int i)  Int32.zero 
 end
 
 module Math =
 struct
 
-  let rec pow a  = function
-    | 0 -> 1
-    | 1 -> a
-    | n -> 
-      let b = pow a (n / 2) in
-      b * b * (if n mod 2 = 0 then 1 else a)
+  let rec pow (a: Int32.t)  (q : Int32.t) : Int32.t = 
+    let rec aux a = function
+      | 0 -> 1
+      | 1 -> a
+      | n -> 
+	 let b = aux a (n / 2) in
+	 b * b * (if n mod 2 = 0 then 1 else a)
+    in
+    Int32.of_int (aux (Int32.to_int a) (Int32.to_int q))
 
-  let logical_and = fun a b -> a land b
-  let xor = fun a b -> a lxor b
+  let logical_and = fun a b -> Int32.of_int ((Int32.to_int a) land (Int32.to_int b))
+  let xor = fun a b -> Int32.of_int ((Int32.to_int a) lxor (Int32.to_int b))
 
   module Float32 =
   struct
@@ -582,7 +593,7 @@ struct
     let of_float (f:float) = f
     let to_float (f:float) = f
 
-    let make_shared i = Array.make i 0.
+    let make_shared i = Array.make (Int32.to_int i) 0.
   end
 
   module Float64 =
@@ -623,7 +634,7 @@ struct
     let one = 1.
     let of_float (f:float) = f
     let to_float (f:float) = f
-    let make_shared i = Array.make i 0.
+    let make_shared i = Array.make (Int32.to_int i) 0.
   end
 end
 

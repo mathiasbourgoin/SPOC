@@ -82,7 +82,7 @@ type  k_ext =
   | SetLocalVar of  k_ext *  k_ext *  k_ext
   | Intrinsics of intrinsics
   | IntId of string*int
-  | Int of int
+  | Int of Int32.t
   | Float of float
   | Double of float
   | IntVecAcc of  k_ext *  k_ext
@@ -100,7 +100,8 @@ type  k_ext =
   | DoLoop of  k_ext *  k_ext *  k_ext *  k_ext
   | While of  k_ext *  k_ext
   | App of  k_ext *  k_ext array
-  | GInt of (unit -> int)
+  | GInt of (unit -> Int32.t)
+  | RealInt of int
   | GFloat of (unit -> float)
   | Unit
 
@@ -215,7 +216,7 @@ let print_ast a =
     | IntId (s,ii) ->
       print i ("IntId "^s^" "^(string_of_int ii));
     | Int ii ->
-      print i ("Int "^(string_of_int ii));
+      print i ("Int "^(Int32.to_string ii));
     | Float f 
     | Double f ->
       print i ("Float "^(string_of_float f));

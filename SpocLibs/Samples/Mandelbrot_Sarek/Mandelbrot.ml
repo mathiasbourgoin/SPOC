@@ -18,14 +18,14 @@ open Spoc
 open Kirc
 
 
-let width = ref 1000;;
-let height = ref 1000;;
+let width = ref (Int32.of_int 1000);;
+let height = ref (Int32.of_int 1000);;
 
-let max_iter  = ref 50;;
+let max_iter  = ref (Int32.of_int 50);;
 
 let zoom = ref 1. 
-let shiftx = ref 0
-let shifty = ref 0 ;;
+let shiftx = ref Int32.zero
+let shifty = ref Int32.zero ;;
 
 let recompile = ref false
 
@@ -47,8 +47,10 @@ let mandelbrot_recompile = kern img ->
   let mutable y1 = 0. in
   let mutable x2 = 0. in
   let mutable y2 = 0. in
-  let a = 4. *. ((float x0) /. (float !width)) /. !zoom  -. 2. in
-  let b = 4. *. ((float y0) /. (float !height)) /. !zoom -. 2. in
+  let a = 4. 
+	  *. 
+	    ((float32 x0) /. (float32 !width)) /. !zoom  -. 2. in
+  let b = 4. *. ((float32 y0) /. (float32 !height)) /. !zoom -. 2. in
  
   let mutable norm = x1 *. x1 +. y1 *. y1
   in
@@ -78,8 +80,8 @@ let mandelbrot = kern img shiftx shifty zoom ->
   let mutable y1 = 0. in
   let mutable x2 = 0. in
   let mutable y2 = 0. in
-  let a = 4. *. ((float x0) /. (float !width)) /. zoom  -. 2. in
-  let b = 4. *. ((float y0) /. (float !height)) /. zoom -. 2. in
+  let a = 4. *. ((float32 x0) /. (float32 !width)) /. zoom  -. 2. in
+  let b = 4. *. ((float32 y0) /. (float32 !height)) /. zoom -. 2. in
   
   let mutable norm = x1 *. x1 +. y1 *. y1
   in
@@ -161,14 +163,14 @@ let get_min ar =
   Spoc.Mem.to_cpu ar ();
   let min = ref !max_iter in
   for i = 0 to (Spoc.Vector.length ar - 1) do
-    if (Int32.to_int (Spoc.Mem.unsafe_get ar i)) > 1 then
-      if (Int32.to_int (Spoc.Mem.unsafe_get ar i)) < !min then
-	min :=  (Int32.to_int (Spoc.Mem.unsafe_get ar i))
+    if (Spoc.Mem.unsafe_get ar i) > Int32.one then
+      if  (Spoc.Mem.unsafe_get ar i) < !min then
+	min :=  (Spoc.Mem.unsafe_get ar i)
   done;
   !min
     
 let couleur n = 
-  if n =  !max_iter then
+  if n =  Int32.to_int !max_iter then
     Graphics.rgb 196 200 200
   else let f n = 
 	 let i = float n in 
@@ -179,11 +181,11 @@ let couleur n =
 let main_mandelbrot () = 
   let arg1 = ("-device" , Arg.Int (fun i  -> dev := devices.(i)),
 	      "number of the device [0]")
-  and arg2 = ("-height" , Arg.Int (fun i  -> height := i),
+  and arg2 = ("-height" , Arg.Int (fun i  -> height := Int32.of_int i),
 	      "height of the image to compute [1000]")
-  and arg3 = ("-width" , Arg.Int (fun i  -> width := i),
+  and arg3 = ("-width" , Arg.Int (fun i  -> width := Int32.of_int i),
 	      "width of the image to compute [1000]")
-  and arg4 = ("-max_iter" , Arg.Int (fun b -> max_iter := b),
+  and arg4 = ("-max_iter" , Arg.Int (fun b -> max_iter := Int32.of_int b),
 	      "max number of iterations [50]") 
   and arg5 = ("-recompile" , Arg.Bool (fun b -> recompile := b),
 	      "Regenerates kernel at each redraw [false]") 
@@ -202,14 +204,14 @@ in
       | _  ->   256)
     | _  -> 256 in
 
-  let b_iter = Spoc.Vector.create Spoc.Vector.int32 (!width * !height)
+  let b_iter = Spoc.Vector.create Spoc.Vector.int32 (Int32.to_int (Int32.mul !width  !height))
   in
   let sub_b = Spoc.Mem.sub_vector b_iter 0 (Spoc.Vector.length b_iter)
   in
-  let img = Array.make_matrix !height !width Graphics.black in
+  let img = Array.make_matrix (Int32.to_int !height) (Int32.to_int !width) Graphics.black in
   
   let blocksPerGrid =
-    (!width* !height + threadsPerBlock -1) / threadsPerBlock
+    ((Int32.to_int (Int32.mul !width  !height)) + threadsPerBlock -1) / threadsPerBlock
   in
   let block0 = {Spoc.Kernel.blockX = threadsPerBlock;
 		Spoc.Kernel.blockY = 1; Spoc.Kernel.blockZ = 1}
@@ -223,9 +225,9 @@ in
       | _  ->   16)
     | _  -> 16  in
   let blocksPerGridx =
-    (!width + (threadsPerBlock) -1) / (threadsPerBlock) in
+    ((Int32.to_int !width) + (threadsPerBlock) -1) / (threadsPerBlock) in
   let blocksPerGridy =
-    (!height + (threadsPerBlock) -1) / (threadsPerBlock) in
+    ((Int32.to_int !height) + (threadsPerBlock) -1) / (threadsPerBlock) in
   let block = {Spoc.Kernel.blockX = threadsPerBlock;
 	       Spoc.Kernel.blockY = threadsPerBlock;
 	       Spoc.Kernel.blockZ = 1}
@@ -239,8 +241,8 @@ in
     else 
       ignore(Kirc.gen mandelbrot);
 
-  let l = string_of_int !width in
-  let h = string_of_int !height in
+  let l = string_of_int (Int32.to_int !width) in
+  let h = string_of_int (Int32.to_int !height) in
   let dim = " " ^l^"x"^h in
   
   Graphics.open_graph dim;

@@ -131,8 +131,8 @@ let rec parse i = function
   | IntVecAcc (vec,idx)  -> (parse i vec)^"["^(parse i idx)^"]"
   | SetV (vecacc,value)  -> (
       (parse i vecacc)^" = "^(parse i value)^";") 
-  | Int  a  -> string_of_int a
-  | GInt  a  -> string_of_int (a ())
+  | Int  a  -> Int32.to_string a
+  | GInt  a  -> Int32.to_string (a ())
   | GFloat  a  -> (string_of_float (a ()))^"f"
   | Float f -> (string_of_float f)^"f"
   | Double f -> string_of_float f
@@ -172,8 +172,8 @@ let rec parse i = function
 
 and parse_int n = function
   | IntId (s,_) -> s
-  | Int i  ->  string_of_int i
-  | GInt i  ->  string_of_int (i ())
+  | Int i  ->  Int32.to_string i
+  | GInt i  -> Int32.to_string   (i ())
   | IntVecAcc (s,i)  -> (parse n s)^"["^(parse_int n i)^"]"
   | Plus (a,b) as v ->  parse n v
   | Min (a,b) as v ->  parse n v

@@ -3,7 +3,7 @@ open Syntax
 open Ast
 
 
-let debug = true
+let debug = false
 
 
 let my_eprintf s = 
@@ -19,10 +19,8 @@ type customtypes =
 type ktyp =
   | TUnknown
   | TUnit
-  | TInt
   | TInt32
   | TInt64
-  | TFloat
   | TFloat32
   | TFloat64
   | TBool
@@ -32,10 +30,8 @@ type ktyp =
 
 let rec ktyp_to_string = function
   | TUnit -> "unit"
-  | TInt -> "int"
   | TInt32  -> "int32"
   | TInt64  -> "int64"
-  | TFloat  ->  "float"
   | TFloat32 -> "float32"
   | TFloat64 -> "float64"
   | TUnknown  -> "unknown"
@@ -121,33 +117,27 @@ type k_expr =
   | Float of Loc.t*string
   | Float32 of Loc.t*string
   | Float64 of Loc.t*string
-  | CastId of ktyp* k_expr
   | BoolAnd of Loc.t*kexpr*kexpr
   | BoolOr of Loc.t*kexpr*kexpr
-  | BoolEq of Loc.t*kexpr*kexpr
   | BoolEq32 of Loc.t*kexpr*kexpr
   | BoolEq64 of Loc.t*kexpr*kexpr
   | BoolEqF of Loc.t*kexpr*kexpr
   | BoolEqF64 of Loc.t*kexpr*kexpr
-  | BoolLt of Loc.t*kexpr*kexpr
   | BoolLt32 of Loc.t*kexpr*kexpr
   | BoolLt64 of Loc.t*kexpr*kexpr
   | BoolLtF of Loc.t*kexpr*kexpr
   | BoolLtF64 of Loc.t*kexpr*kexpr
 
-  | BoolLtE of Loc.t*kexpr*kexpr
   | BoolLtE32 of Loc.t*kexpr*kexpr
   | BoolLtE64 of Loc.t*kexpr*kexpr
   | BoolLtEF of Loc.t*kexpr*kexpr
   | BoolLtEF64 of Loc.t*kexpr*kexpr
 
-  | BoolGt of Loc.t*kexpr*kexpr
   | BoolGt32 of Loc.t*kexpr*kexpr
   | BoolGt64 of Loc.t*kexpr*kexpr
   | BoolGtF of Loc.t*kexpr*kexpr
   | BoolGtF64 of Loc.t*kexpr*kexpr
 
-  | BoolGtE of Loc.t*kexpr*kexpr
   | BoolGtE32 of Loc.t*kexpr*kexpr
   | BoolGtE64 of Loc.t*kexpr*kexpr
   | BoolGtEF of Loc.t*kexpr*kexpr
@@ -212,28 +202,22 @@ let rec k_expr_to_string = function
   | Float _ -> "Float"
   | Float32 _ -> "Float32"
   | Float64 _ -> "Float64"
-  | CastId _ -> "CastId"
-  | BoolEq _ -> "BoolEq"
   | BoolEq32 _ -> "BoolEq32"
   | BoolEq64 _ -> "BoolEq64"
   | BoolEqF _ -> "BoolEqF"
   | BoolEqF64 _ -> "BoolEqF64"
-  | BoolLt _ -> "BoolEq"
   | BoolLt32 _ -> "BoolEq32"
   | BoolLt64 _ -> "BoolEq64"
   | BoolLtF _ -> "BoolEqF"
   | BoolLtF64 _ -> "BoolEqF64"
-  | BoolGt _ -> "BoolGt"
   | BoolGt32 _ -> "BoolGt32"
   | BoolGt64 _ -> "BoolGt64"
   | BoolGtF _ -> "BoolGtF"
   | BoolGtF64 _ -> "BoolGtF64"
-  | BoolLtE _ -> "BoolLtE"
   | BoolLtE32 _ -> "BoolLtE32"
   | BoolLtE64 _ -> "BoolLtE64"
   | BoolLtEF _ -> "BoolLtEF"
   | BoolLtEF64 _ -> "BoolLtEF64"
-  | BoolGtE _ -> "BoolGtE"
   | BoolGtE32 _ -> "BoolGtE32"
   | BoolGtE64 _ -> "BoolGtE64"
   | BoolGtEF _ -> "BoolGtEF"
@@ -304,23 +288,23 @@ let std = {
   mod_name = "Std";
   mod_constants = 
     [
-      (TInt, "thread_idx_x", "threadIdx.x", "(get_local_id (0))");
-      (TInt, "thread_idx_y", "threadIdx.y", "(get_local_id (1))");
-      (TInt, "thread_idx_z", "threadIdx.z", "(get_local_id (2))");
+      (TInt32, "thread_idx_x", "threadIdx.x", "(get_local_id (0))");
+      (TInt32, "thread_idx_y", "threadIdx.y", "(get_local_id (1))");
+      (TInt32, "thread_idx_z", "threadIdx.z", "(get_local_id (2))");
 
-      (TInt, "block_idx_x", "blockIdx.x", "(get_group_id (0))");
-      (TInt, "block_idx_y", "blockIdx.y", "(get_group_id (1))");
-      (TInt, "block_idx_z", "blockIdx.z", "(get_group_id (2))");
+      (TInt32, "block_idx_x", "blockIdx.x", "(get_group_id (0))");
+      (TInt32, "block_idx_y", "blockIdx.y", "(get_group_id (1))");
+      (TInt32, "block_idx_z", "blockIdx.z", "(get_group_id (2))");
 
-      (TInt, "block_dim_x", "blockDim.x", "(get_local_size (0))");
-      (TInt, "block_dim_y", "blockDim.y", "(get_local_size (1))");
-      (TInt, "block_dim_z", "blockDim.z", "(get_local_size (2))");
+      (TInt32, "block_dim_x", "blockDim.x", "(get_local_size (0))");
+      (TInt32, "block_dim_y", "blockDim.y", "(get_local_size (1))");
+      (TInt32, "block_dim_z", "blockDim.z", "(get_local_size (2))");
 
-      (TInt, "grid_dim_x", "gridDim.x", "(get_num_groups (0))");
-      (TInt, "grid_dim_y", "gridDim.y", "(get_num_groups (1))");
-      (TInt, "grid_dim_z", "gridDim.z", "(get_num_groups (2))");
+      (TInt32, "grid_dim_x", "gridDim.x", "(get_num_groups (0))");
+      (TInt32, "grid_dim_y", "gridDim.y", "(get_num_groups (1))");
+      (TInt32, "grid_dim_z", "gridDim.z", "(get_num_groups (2))");
 
-      (TInt, "global_thread_id", "blockIdx.x*blockDim.x+threadIdx.x", 
+      (TInt32, "global_thread_id", "blockIdx.x*blockDim.x+threadIdx.x", 
        "get_global_id (0)");
 
       (TFloat64, "zero64", "0.", "0.");
@@ -329,15 +313,15 @@ let std = {
   mod_functions = [
     (TApp (TUnit, TUnit), "return", 1, "return", "return");
 
-    (TApp (TInt, TFloat32), "float_of_int", 1, "(float)", "(float)");
-    (TApp (TInt, TFloat32), "float", 1, "(float)", "(float)");
+    (TApp (TInt32, TFloat32), "float32_of_int", 1, "(float)", "(float)");
+    (TApp (TInt32, TFloat32), "float32", 1, "(float)", "(float)");
 
-    (TApp (TInt, TFloat64), "float64_of_int", 1, "(double)", "(double)");
-    (TApp (TInt, TFloat64), "float64", 1, "(double)", "(double)");
-    (TApp (TFloat, TFloat64), "float64_of_float", 1, "(double)", "(double)");
+    (TApp (TInt32, TFloat64), "float64_of_int", 1, "(double)", "(double)");
+    (TApp (TInt32, TFloat64), "float64", 1, "(double)", "(double)");
+    (TApp (TFloat32, TFloat64), "float64_of_float", 1, "(double)", "(double)");
 
-    (TApp (TFloat32, TInt), "int_of_float", 1, "(int)", "(int)");
-    (TApp (TFloat64, TInt), "int_of_float64", 1, "(int)", "(int)");
+    (TApp (TFloat32, TInt32), "int_of_float", 1, "(int)", "(int)");
+    (TApp (TFloat64, TInt32), "int_of_float64", 1, "(int)", "(int)");
     (TApp (TUnit, TUnit), "block_barrier", 1, "__syncthreads ", "");
 
     (TApp (TInt32, TArr TInt32), "make_shared", 1, "", "");
@@ -390,8 +374,8 @@ let mathf32 = {
     (TApp ((TApp (TFloat32, TFloat32)), TFloat32), "copysign", 2, "copysignf", "copysign");
     (TApp ((TApp (TFloat32, TFloat32)), TFloat32), "modf", 2, "fmodf", "fmod");
 
-    (TApp (TFloat, TFloat32), "of_float", 1, "(float)", "(float)");
-    (TApp (TFloat32, TFloat), "to_float", 1, "(float)", "(float)");
+    (TApp (TFloat32, TFloat32), "of_float", 1, "(float)", "(float)");
+    (TApp (TFloat32, TFloat32), "to_float", 1, "(float)", "(float)");
 
     (TApp (TInt32, TArr TFloat32), "make_shared", 1, "", "");
 
@@ -443,8 +427,8 @@ let mathf64 = {
     (TApp ((TApp (TFloat64, TFloat64)), TFloat64), "copysign", 2, "copysign", "copysign");
     (TApp ((TApp (TFloat64, TFloat64)), TFloat64), "modf", 2, "fmod", "fmod");
 
-    (TApp (TFloat, TFloat64), "of_float", 1, "(double)", "(double)");
-    (TApp (TFloat64, TFloat), "to_float", 1, "(double)", "(double)");
+    (TApp (TFloat32, TFloat64), "of_float", 1, "(double)", "(double)");
+    (TApp (TFloat64, TFloat32), "to_float", 1, "(double)", "(double)");
 
     (TApp (TInt32, TArr TFloat64), "make_shared", 1, "", "");
 
@@ -460,9 +444,9 @@ let math = {
     [
     ];
   mod_functions = [
-    (TApp ((TApp (TInt, TInt)), TInt), "pow", 2, "spoc_powint", "spoc_powint");
-    (TApp ((TApp (TInt, TInt)), TInt), "logical_and", 2, "logical_and", "logical_and");
-    (TApp ((TApp (TInt, TInt)), TInt), "xor", 2, "spoc_xor", "spoc_xor");
+    (TApp ((TApp (TInt32, TInt32)), TInt32), "pow", 2, "spoc_powint", "spoc_powint");
+    (TApp ((TApp (TInt32, TInt32)), TInt32), "logical_and", 2, "logical_and", "logical_and");
+    (TApp ((TApp (TInt32, TInt32)), TInt32), "xor", 2, "spoc_xor", "spoc_xor");
   ];
   mod_modules = 
     let m = Hashtbl.create 0 in
@@ -487,11 +471,6 @@ let rec  typer_app e1 (e2 : kexpr list) t =
       | Id (_l, s) -> (try (Hashtbl.find !intrinsics_fun (string_of_ident s)).typ , _l
                        with |_ -> 
                          typer e1 t; e1.t, _l); 
-      | CastId (typ, Id (_l, s)) -> 
-        (	let var  = Hashtbl.find !intrinsics_fun (string_of_ident s)
-          in
-          var.typ , _l 
-        )
       | ModuleAccess (_l, s, e) ->
         open_module s _l;
         let typ, loc = aux e in
@@ -562,30 +541,12 @@ and typer body t =
              write_only = false;
              is_global = false;}
          )
-       | CastId (tt, Id(_loc,s)) ->
-         let ty = match y.t with 
-           | TFloat -> TFloat64
-           | _ -> y.t in
-         (incr arg_idx;
-          Hashtbl.add !current_args (string_of_ident s) 
-            {n = !arg_idx; var_type = ty;
-             is_mutable = is_mutable;
-             read_only = false;
-             write_only = false;
-             is_global=false;})
        | _ -> (assert false)
       );
       var.t <- y.t;
       body.t <- y.t;
       typer z t;
     )   
-  | Plus (_loc, a,b) -> 
-    (match t with
-     | TUnknown | TInt -> ()
-     | _ -> assert false);
-    (typer a TInt; 
-     typer b TInt;
-     body.t <- TInt;)
   | Plus32 (_loc, a,b) -> 
     (match t with
      | TUnknown | TInt32 -> ()
@@ -621,13 +582,7 @@ and typer body t =
      typer b TFloat64;
      body.t <- TFloat64;) 
 
-  | Min (_loc, a,b) -> 
-    (match t with
-     | TUnknown | TInt -> ()
-     | _ -> assert false);
-    (typer a TInt; 
-     typer b TInt;
-     body.t <- TInt;)
+
   | Min32 (_loc, a,b) -> 
     (match t with
      | TUnknown | TInt32 -> ()
@@ -663,13 +618,6 @@ and typer body t =
      typer b TFloat64;
      body.t <- TFloat64;) 
 
-  | Mul (_loc, a,b) -> 
-    (match t with
-     | TUnknown | TInt -> ()
-     | _ -> assert false);
-    (typer a TInt; 
-     typer b TInt;
-     body.t <- TInt;)
   | Mul32 (_loc, a,b) -> 
     (match t with
      | TUnknown | TInt32 -> ()
@@ -705,13 +653,6 @@ and typer body t =
      typer b TFloat64;
      body.t <- TFloat64;) 
 
-  | Div (_loc, a,b) -> 
-    (match t with
-     | TUnknown | TInt -> ()
-     | _ -> assert false);
-    (typer a TInt; 
-     typer b TInt;
-     body.t <- TInt;)
   | Div32 (_loc, a,b) -> 
     (match t with
      | TUnknown | TInt32 -> ()
@@ -748,11 +689,11 @@ and typer body t =
      body.t <- TFloat64;) 
   | Mod (_loc, a,b) -> 
     (match t with
-     | TUnknown | TInt -> ()
+     | TUnknown | TInt32 -> ()
      | _ -> assert false);
-    (typer a TInt; 
-     typer b TInt;
-     body.t <- TInt;)
+    (typer a TInt32; 
+     typer b TInt32;
+     body.t <- TInt32;)
   | Id (_loc,s) ->  ( 
       try 
         let var = Hashtbl.find !current_args (string_of_ident s) in
@@ -782,16 +723,8 @@ and typer body t =
                write_only = false;
                is_global = true;}	    
     )
-  | CastId (tt, Id(_loc,s)) -> 
-    ( let var = 
-      ( try Hashtbl.find !current_args (string_of_ident s) 
-        with _  -> assert (not debug); raise (Unbound_value ((string_of_ident s),_loc))) in
-      var.var_type <- t;
-      body.t <- t)
-  | Int (_loc, i)  -> body.t <- TInt 
-  | Int32 (_loc, i)  -> body.t <- TInt32 
+    | Int32 (_loc, i)  -> body.t <- TInt32 
   | Int64 (_loc, i)  -> body.t <- TInt64 
-  | Float (_loc, f)  -> body.t <- TFloat32
   | Float32 (_loc, f) -> body.t <- TFloat32
   | Float64 (_loc, f) -> body.t <- TFloat64
   | Seq (_loc, x, y) -> 
@@ -858,7 +791,7 @@ and typer body t =
      body.t <- TUnit;)       
   | VecGet(_loc, vector, index)  -> 
     (typer vector (TVec t);
-     typer index TInt;
+     typer index TInt32;
      (match vector.e with
       | Id (_loc,s)  -> 
         ( let var = 
@@ -894,7 +827,7 @@ and typer body t =
      body.t <- TUnit;)       
   | ArrGet(_loc, array, index)  -> 
     (typer array (TArr t);
-     typer index TInt;
+     typer index TInt32;
      (match array.e with
       | Id (_loc,s)  -> 
         ( let var = 
@@ -933,7 +866,7 @@ and typer body t =
     end        
   | VecGet(_loc, vector, index)  -> 
     (typer vector (TVec t);
-     typer index TInt;
+     typer index TInt32;
      (match vector.e with
       | Id (_loc,s)  -> 
         ( let var = 
@@ -944,10 +877,7 @@ and typer body t =
       | _  ->  () );
      vector.t <- TVec t;
      body.t <- t) 
-  | BoolEq(_loc, a, b) ->
-    typer a TInt;
-    typer b TInt;
-    body.t <- TBool;
+
   | BoolEq32(_loc, a, b) ->
     typer a TInt32;
     typer b TInt32;
@@ -963,10 +893,6 @@ and typer body t =
   | BoolEqF64(_loc, a, b) ->
     typer a TFloat64;
     typer b TFloat64;
-    body.t <- TBool;
-  | BoolLt(_loc, a, b) ->
-    typer a TInt;
-    typer b TInt;
     body.t <- TBool;
   | BoolLt32(_loc, a, b) ->
     typer a TInt32;
@@ -985,10 +911,7 @@ and typer body t =
     typer b TFloat64;
     body.t <- TBool;  
 
-  | BoolGt(_loc, a, b) ->
-    typer a TInt;
-    typer b TInt;
-    body.t <- TBool;
+
   | BoolGt32(_loc, a, b) ->
     typer a TInt32;
     typer b TInt32;
@@ -1006,10 +929,7 @@ and typer body t =
     typer b TFloat64;
     body.t <- TBool;  
 
-  | BoolLtE(_loc, a, b) ->
-    typer a TInt;
-    typer b TInt;
-    body.t <- TBool;
+
   | BoolLtE32(_loc, a, b) ->
     typer a TInt32;
     typer b TInt32;
@@ -1028,10 +948,7 @@ and typer body t =
     body.t <- TBool;  
 
 
-  | BoolGtE(_loc, a, b) ->
-    typer a TInt;
-    typer b TInt;
-    body.t <- TBool;
+
   | BoolGtE32(_loc, a, b) ->
     typer a TInt32;
     typer b TInt32;
@@ -1077,25 +994,17 @@ and typer body t =
      | Id (_loc,s)  ->
        (incr arg_idx;
         Hashtbl.add !current_args (string_of_ident s) 
-          {n = !arg_idx; var_type = TInt;
+          {n = !arg_idx; var_type = TInt32;
            is_mutable = false;
            read_only = false;
            write_only = false;
            is_global = false;
           }) 
-     | CastId (tt, Id(_loc,s)) ->
-       (incr arg_idx;
-        Hashtbl.add !current_args (string_of_ident s) 
-          {n = !arg_idx; var_type = TInt;
-           is_mutable = false;
-           read_only = false;
-           write_only = false;
-           is_global = false;})
      | _  ->  ()
     );
-    typer id TInt;
-    typer min TInt;
-    typer max TInt;
+    typer id TInt32;
+    typer min TInt32;
+    typer max TInt32;
     typer body t;
     body.t <- TUnit;
   | While (l, cond, body) ->
