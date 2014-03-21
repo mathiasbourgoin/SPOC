@@ -1272,8 +1272,8 @@ let gen_arg_from_patt3 p =
          <:ctyp< 'a>>
        | TInt32 ->  
          <:ctyp< int>>, 
-         <:expr< Spoc.Kernel.Int32 Int32.of_int>>,
-         <:ctyp< int>>,
+         <:expr< Spoc.Kernel.Int32 >>,
+         <:ctyp< int>>, 
          IdAcc(_loc, 
                IdUid(_loc, "Spoc"), 
                IdAcc(_loc, 

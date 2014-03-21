@@ -156,7 +156,7 @@ let new_float64_var i = DoubleVar i
 let new_double_var i = DoubleVar i 
 let new_unit_var i = UnitVar i
 
-let new_int_vec_var v = VecVar (Int Int32.zero, v) 
+let new_int_vec_var v = VecVar (RealInt 0, v) 
 let new_float_vec_var v = VecVar (Float 0., v) 
 let new_double_vec_var v = VecVar (Double 0., v) 
 
