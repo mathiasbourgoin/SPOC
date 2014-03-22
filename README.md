@@ -21,33 +21,38 @@ SPOC currently lacks a real tutorial, it comes with some examples and I strongly
 #I - How to Build SPOC
 
 
-
 ## 1 - Dependencies 
 
 Requires :
-    
-    * ocaml >= 4.01.0
-    * camlp4
-    * ocamlfind 
-    * ocp-build
-    
+
+  * ocaml >= 4.01.0
+  * camlp4
+  * ocamlfind 
+  * ocp-build
+
 For cuda compilation :
 
-    * nvcc    
+  * nvcc    
+
+For easily installing SPOC's build dependencies, you can use [opam](http://opam.ocamlpro.com) :
+
+    $ opam switch 4.01.0
+    $ opam install ocamlfind ocp-build
 
 ## 2 - Compilation & Installation
 
 
 To compile SPOC:
-cd Spoc
-make
-make install
+
+    $ cd Spoc
+    $ make
+    $ make install
 
 
 ## 3 - Build Documentation
 
+    $ make htdoc
 
-make htdoc
 Will build the ocamldoc html pages in the Spoc/docs directory
 
 
@@ -57,8 +62,9 @@ Will build the ocamldoc html pages in the Spoc/docs directory
 The "Samples" directory contains few programs using SPOC.
 
 To compile those programs:
-cd Samples
-make
+
+    $ cd Samples
+    $ make
 
 Binaries will be located in the Samples/build folder
 
