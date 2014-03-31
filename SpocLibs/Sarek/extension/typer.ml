@@ -3,7 +3,7 @@ open Syntax
 open Ast
 
 
-let debug = false
+let debug = true
 
 
 let my_eprintf s = 
@@ -795,7 +795,7 @@ and typer body t =
   | Float32 (_loc, f) -> body.t <- TFloat32
   | Float64 (_loc, f) -> body.t <- TFloat64
   | Seq (_loc, x, y) -> 
-    ((*typer x TUnit;*)
+     (typer x TUnit;
      typer y t; 
      body.t <- y.t)
   | Seqs exprs ->
@@ -803,7 +803,7 @@ and typer body t =
       | [] -> ()
       | e::[] ->
         typer e TUnknown
-      | e::q -> (*typer e TUnit;*) aux q
+      | e::q -> typer e TUnit; aux q
     in 
     aux exprs
   | End(_loc, x)  -> ()
@@ -827,11 +827,11 @@ and typer body t =
          e = (VecSet (_loc, var, value));
          loc = body.loc} 
          t;
-       (*body.t <- TUnit*)
+       body.t <- TUnit
      | _ -> 
        typer var TUnknown; 
        typer value var.t;
-       (*body.t <- TUnit*)
+       body.t <- TUnit
     )
 
   | VecSet (_loc, vector, value)  -> 
@@ -855,7 +855,7 @@ and typer body t =
          | _  -> () )
       | _  -> () );
      vector.t <- value.t;
-    (* body.t <- TUnit;*))        
+     body.t <- TUnit;)       
   | VecGet(_loc, vector, index)  -> 
     (typer vector (TVec t);
      typer index TInt;
@@ -891,7 +891,7 @@ and typer body t =
          | _  -> () )
       | _  -> () );
      array.t <- value.t;
-     (*body.t <- TUnit;*))        
+     body.t <- TUnit;)       
   | ArrGet(_loc, array, index)  -> 
     (typer array (TArr t);
      typer index TInt;
@@ -929,7 +929,7 @@ and typer body t =
           | _  -> () )
        | _  -> () );
       vector.t <- value.t;
-      (*body.t <- TUnit;*) 
+      body.t <- TUnit; 
     end        
   | VecGet(_loc, vector, index)  -> 
     (typer vector (TVec t);
@@ -1097,11 +1097,11 @@ and typer body t =
     typer min TInt;
     typer max TInt;
     typer body t;
-    (*body.t <- TUnit;*)
+    body.t <- TUnit;
   | While (l, cond, body) ->
     typer cond TBool;
-    (*typer body TUnit;*)
-    (*body.t <- TUnit;*)
+    typer body TUnit;
+    body.t <- TUnit;
   | App (l, e1, e2) -> 
     let t = typer_app e1 e2 t in
     body.t <- t

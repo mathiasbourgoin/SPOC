@@ -13,7 +13,7 @@ SYNTAX_INCLUDES:=-I ` ocamlfind query spoc_external_kernels` \
 		 -I `ocamlfind query sarek_syntax`
 
 
-all : $(KERNELS) $(ASM) $(BYTE)
+all : js
 
 
 
@@ -42,7 +42,7 @@ $(DIR)_pp.ml: $(MLSRC)
 	-printer o kernels_int.cma -printer kernels_ext.cma $<	> $@
 
 clean:
-	rm -f *.asm *.byte *.cm* *pp.ml *~ \#*\# *.o *.js
+	rm -f *.asm *.byte *.cm* *pp.ml *~ \#*\# *.o *.js $(DIR)_js.ml
 
 
 
@@ -59,4 +59,4 @@ $(DIR).js: $(MLSRC) Printf_js.ml
 	$(DIR).js.byte -o $(DIR).js
 
 
-.PHONY:clean test all pp
+.PHONY:clean test all pp js

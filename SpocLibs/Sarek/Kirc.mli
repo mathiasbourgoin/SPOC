@@ -104,6 +104,7 @@ val return_unit : unit -> Kirc_Ast.k_ext
 val return_int : int -> Kirc_Ast.k_ext
 val return_float : int -> Kirc_Ast.k_ext
 val return_double : int -> Kirc_Ast.k_ext
+
 val print : string -> unit
 val debug_print :
   ('a, 'b) Spoc.Kernel.spoc_kernel * ('c, 'd, 'e) kirc_kernel -> unit
@@ -112,6 +113,7 @@ val return_v : (string * string) ref
 val save : string -> string -> unit
 val load_file : string -> string
 val gen :
+  ?return:bool ->
   ?only:Spoc.Devices.specificLibrary ->
   ('a, 'b) Spoc.Kernel.spoc_kernel * ('c, 'd, 'e) kirc_kernel ->
   ('a, 'b) Spoc.Kernel.spoc_kernel * ('c, 'd, 'e) kirc_kernel

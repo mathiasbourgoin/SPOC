@@ -541,20 +541,20 @@ kexpr:
                {t=TUnknown; e = Id (_loc, x); loc = _loc}
               ); loc = _loc}
       ]
-
+      
   | "." RIGHTA
-    [x = SELF; "."; "[<"; y=SELF; ">]"  -> {t=(TUnknown); 
-                                            e = VecGet (_loc, x, y); loc = _loc};
-     | x = SELF; "."; "("; y=SELF; ")"  -> {t=(TUnknown); 
-                                            e = ArrGet (_loc, x, y); loc = _loc};
-     |l = UIDENT ; "."; e = SELF -> {t=(TUnknown); 
-                                     e = ModuleAccess (_loc, l, e); 
+	[x = SELF; "."; "[<"; y=SELF; ">]"  -> {t=(TUnknown); 
+						e = VecGet (_loc, x, y); loc = _loc};
+	| x = SELF; "."; "("; y=SELF; ")"  -> {t=(TUnknown); 
+                                               e = ArrGet (_loc, x, y); loc = _loc};
+	|l = UIDENT ; "."; e = SELF -> {t=(TUnknown); 
+					e = ModuleAccess (_loc, l, e); 
                                      loc = _loc}
-    ]
+	]
   | "simple" NONA
       ["(" ;  x= sequence; ")"  ->  x;
        |"begin" ;  x= sequence; "end"  ->  x;
-       | "("; ")" -> {t=TUnit; e = Noop; loc = _loc};
+       | "("; ")" -> {t=TUnknown; e = Noop; loc = _loc};
        | x = FLOAT-> {t=TFloat32; e = Float32 (_loc, x); loc = _loc};
        |x = LIDENT  -> {t=TUnknown; e = Id (_loc, IdLid(_loc,x)); loc = _loc};
        |x = INT32  ->{t=TInt32; e = Int32 (_loc, x); loc = _loc};
