@@ -3,7 +3,7 @@ open Syntax
 open Ast
 
 
-let debug = true
+let debug = false
 
 
 let my_eprintf s = 

@@ -183,7 +183,7 @@ let () =
       while !k <= size do
         j := !k lsr 1;
         while !j > 0 do
-(*          Kirc.run gpu_bitonic (gpu_vect,!j,!k) (block0,grid0) 0 !dev;*)
+          Kirc.run gpu_bitonic (gpu_vect,!j,!k) (block0,grid0) 0 !dev;
           j := !j lsr 1;
         done;
         k := !k lsl 1 ;
