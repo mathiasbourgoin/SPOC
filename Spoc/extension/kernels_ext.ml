@@ -102,18 +102,18 @@ let rec parse_ctyp = function
   | TyCls _ -> failwith "TyCls";
   | TyLab _ -> failwith "TyLab";
   | (TyId (l,id)) as t -> let e,v =create_new_var l in
-			  begin
-			    match t with
-			    | TyId(_, id) when ((string_of_ident id) = "int32") 
-				-> ([ExTyc (l,e,TyId(l, ident_of_expr (expr_of_string l "int")))],[v],[t])
-			    | TyId(_, id) when ((string_of_ident id) = "int64")
-				-> ([ExTyc (l,e,TyId(l, ident_of_expr (expr_of_string l "int")))],[v],[t])
-			    | TyId(_, id) when ((string_of_ident id) = "float32")
-				-> ([ExTyc (l,e,TyId(l, ident_of_expr (expr_of_string l "float")))],[v],[t])
-			    | TyId(_, id) when ((string_of_ident id) = "float64")
-				-> ([ExTyc (l,e,TyId(l, ident_of_expr (expr_of_string l "float")))],[v],[t])		
-			    | _ ->  ([ExTyc (l,e,t)],[v],[t])
-			  end;
+    begin
+      match t with
+      | TyId(_, id) when ((string_of_ident id) = "int32") 
+	-> ([ExTyc (l,e,TyId(l, ident_of_expr (expr_of_string l "int")))],[v],[t])
+      | TyId(_, id) when ((string_of_ident id) = "int64")
+	-> ([ExTyc (l,e,TyId(l, ident_of_expr (expr_of_string l "int")))],[v],[t])
+      | TyId(_, id) when ((string_of_ident id) = "float32")
+	-> ([ExTyc (l,e,TyId(l, ident_of_expr (expr_of_string l "float")))],[v],[t])
+      | TyId(_, id) when ((string_of_ident id) = "float64")
+	-> ([ExTyc (l,e,TyId(l, ident_of_expr (expr_of_string l "float")))],[v],[t])		
+      | _ ->  ([ExTyc (l,e,t)],[v],[t])
+    end;
   | TyMan _ -> failwith "TyMan"
   | TyDcl _ -> failwith "TyDcl"
   | TyObj _ -> failwith "TyObj"
@@ -443,7 +443,12 @@ let  gen_ktyp loc type_list =
   let l = List.map concrete_type_to_type type_list in
   let l = List.tl (List.rev l) in
   let l = List.rev l in
-  TyTup (loc,	 Ast.tySta_of_list l)
+  match l with
+  | [] -> assert false
+  | [x] ->
+    x
+  | _ ->
+    TyTup (loc,	 Ast.tySta_of_list l)
 
 
 let ident_of_string loc s= IdLid (loc, s)
@@ -465,7 +470,11 @@ let gen_args loc type_list =
 	   (type_to_type t)
     ) 
   in
-  let tuple =  Ast.paCom_of_list (List.map (translate) l) in
+  let tuple = 
+    match l with 
+      [] -> assert false
+    | [x] -> idx := !idx + 1; translate x
+    | _ -> Ast.paCom_of_list (List.map (translate) l) in
   arg_string := "";				
   let array =	
     let arr_content =
@@ -482,7 +491,11 @@ let gen_args loc type_list =
     ExArr(loc, arr_content)
   in
   idx := 1 ;
-  PaTup(loc, tuple),array	
+  (match l with 
+     [] -> assert false
+   | [x] -> tuple
+   | _ -> 
+     PaTup(loc, tuple)),array	
 
 let first_vector = ref false
 
@@ -529,7 +542,12 @@ let gen_inv_args loc type_list =
 	   (concrete_type_to_type t)
     ) 
   in
-  let tuple =  Ast.exCom_of_list (List.map (translate) l) in
+ let tuple =
+   match l with 
+     [] -> assert false
+   | [x] -> translate x
+   | _ -> 
+     Ast.exCom_of_list (List.map (translate) l) in
   arg_string := "";
   let array =	
     let arr_content =
@@ -552,7 +570,11 @@ let gen_inv_args loc type_list =
     PaArr(loc, arr_content)
   in
   idx := 1 ;
-  ExTup(loc, tuple),array
+  (match l with 
+   | [] -> assert false
+   | [x] -> tuple
+   | _ -> 
+     ExTup(loc, tuple)),array
     
     
 let bigarray_set _loc var newval =
