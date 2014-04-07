@@ -2,7 +2,7 @@
 layout : index_sample
 ---
 
-# Image Filter
+# Mandelbrot
 
 <script type="text/javascript" src="../demo/mandelbrot/Mandelbrot_js.js">
  </script>
