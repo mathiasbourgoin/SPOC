@@ -2,7 +2,7 @@
 layout : index_sample
 ---
 
-# Image Filter
+# Mandelbrot
 
 
 ``` ocaml
