@@ -24,8 +24,7 @@ let gpu_bitonic = kern v j k ->
   let i = thread_idx_x + block_dim_x * block_idx_x in
   let ixj = Math.xor i j in
   let mutable temp = 0. in
-  if ixj < i then
-    () else
+  if ixj >= i then
     begin
       if (Math.logical_and i k) = 0  then
         (
