@@ -7,4 +7,4 @@ layout : index_sample
 <script type="text/javascript" src="../demo/mandelbrot/Mandelbrot_js.js">
  </script>
 
-[Source Code](imageFilter_src.html)
+[Source Code](mandelbrot_src.html)
