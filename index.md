@@ -25,11 +25,7 @@ SPOC currently lacks a real tutorial, it comes with some examples and I strongly
 ## Using WebCL and [js\_of\_ocaml][3] :
 
 This has been tested with Firefox 26-28 and [this plugin][5]
-under Windows (32bit or 64bit) and Linux (Ubuntu 13.10) 32bit.
-It also works with Linux 64bit and a 32bit Firefox.
-
-Nokia's plugin currently fails with Firefox 64bit (on Linux)
-and Mac OS/X 64bit.
+under Windows (32bit or 64bit), Linux (Ubuntu 13.10) (32bit and 64 bit) and Mac OS/X Mavericks.
 
 Of course, you'll also need to have OpenCL on your system.
 
@@ -37,7 +33,7 @@ Of course, you'll also need to have OpenCL on your system.
 
 You should install/have :
 
-* [Firefox 28-32bit][4]
+* [Firefox 28][4]
 on your system,
 * [Nokia's plugin][5]
 * an OpenCL implementation for your sytem ([AMD's one][6]
