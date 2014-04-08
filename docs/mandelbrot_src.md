@@ -10,39 +10,39 @@ open Spoc
 
 open Kirc
 
-let width = ref 1000;;
-let height = ref 1000;;
+let width = ref 1024;;
+let height = ref 1024;;
 
-let max_iter  = ref 5000;;
+let max_iter  = ref 50;;
 
 let mandelbrot = kern img -> 
   let open Std in
   let y = thread_idx_y + (block_idx_y * block_dim_y) in
   let x = thread_idx_x + (block_idx_x * block_dim_x) in
-  (if (y >= !height) || (x >= !width) then
-      return () ;
-  );
-  let x0 = x  in
-  let y0 = y  in
-  let mutable cpt = 0 in 
-  let mutable x1 = 0. in
-  let mutable y1 = 0. in
-  let mutable x2 = 0. in
-  let mutable y2 = 0. in
-  let a = 4. *. ((float x0) /. (float !width))   -. 2. in
-  let b = 4. *. ((float y0) /. (float !height)) -. 2. in
-  
-  let mutable norm = x1 *. x1 +. y1 *. y1
-  in
-  while ((cpt < !max_iter) && (norm <=. 4.)) do
-    cpt := (cpt + 1);
-    x2 := (x1 *. x1) -. (y1 *. y1) +. a;
-    y2 :=  (2. *. x1 *. y1 ) +. b;
-    x1 := x2;
-    y1 := y2;
-    norm := (x1 *. x1 ) +. ( y1 *. y1);
-  done;
-  img.[<y * !width + x>] <- cpt
+  if (y < !height) && (x < !width) then
+     begin  
+       let x0 = x  in
+       let y0 = y  in
+       let mutable cpt = 0 in 
+       let mutable x1 = 0. in
+       let mutable y1 = 0. in
+       let mutable x2 = 0. in
+       let mutable y2 = 0. in
+       let a = 4. *. ((float x0) /. (float !width))   -. 2. in
+       let b = 4. *. ((float y0) /. (float !height)) -. 2. in
+       
+       let mutable norm = x1 *. x1 +. y1 *. y1
+       in
+       while ((cpt < !max_iter) && (norm <=. 4.)) do
+         cpt := (cpt + 1);
+         x2 := (x1 *. x1) -. (y1 *. y1) +. a;
+         y2 :=  (2. *. x1 *. y1 ) +. b;
+         x1 := x2;
+         y1 := y2;
+         norm := (x1 *. x1 ) +. ( y1 *. y1);
+       done;
+       img.[<y * !width + x>] <- cpt
+     end
 ;;
 
 
@@ -91,25 +91,22 @@ let compute devid devs data imageData c=
   let blocksPerGridy =
     (!height + (threadsPerBlock) -1) / (threadsPerBlock) in
   let block = {Spoc.Kernel.blockX = threadsPerBlock;
-	       Spoc.Kernel.blockY = threadsPerBlock;
-	       Spoc.Kernel.blockZ = 1}
+         Spoc.Kernel.blockY = threadsPerBlock;
+	        Spoc.Kernel.blockZ = 1}
   and grid= {Spoc.Kernel.gridX = blocksPerGridx;
-	     Spoc.Kernel.gridY = blocksPerGridy;
-	     Spoc.Kernel.gridZ = 1} in
+       Spoc.Kernel.gridY = blocksPerGridy;
+            Spoc.Kernel.gridZ = 1} in
 
-  ignore(Kirc.gen ~only:Devices.OpenCL
-	   mandelbrot);
   measure_time "" 
     (fun () -> Kirc.run mandelbrot (gpu_vect) (block,grid) 0 dev;
-        
-        for i = 0 to Vector.length gpu_vect - 1 do
-          let t = Int32.to_int gpu_vect.[<i>] in 
-          let r,g,b = (color t) in 
-          pixel_set data (i*4) r; 
-          pixel_set data (i*4+1) g; 
-          pixel_set data (i*4+2) b; 
-          pixel_set data (i*4+3) 255; 
-        done;
+      for i = 0 to Vector.length gpu_vect - 1 do
+        let t = Int32.to_int gpu_vect.[<i>] in 
+        let r,g,b = (color t) in 
+        pixel_set data (i*4) r; 
+        pixel_set data (i*4+1) g; 
+        pixel_set data (i*4+2) b; 
+        pixel_set data (i*4+3) 255; 
+      done;
     );
   c##putImageData (imageData, 0., 0.);
 ;;
@@ -160,23 +157,26 @@ let go _ =
   canvas##height <- !height;
 
   let c = canvas##getContext (Dom_html._2d_) in
-	Dom.appendChild body (newLine ());
-	Dom.appendChild body canvas;
-	let devs =
-	  Devices.init ~only:Devices.OpenCL () in	     
-	let imageData = c##getImageData (0., 0., (float !width), (float !height)) in
-	let data = imageData##data in
+  Dom.appendChild body (newLine ());
+  Dom.appendChild body canvas;
+  let devs =
+    Devices.init ~only:Devices.OpenCL () in	     
+          ignore(Kirc.gen ~only:Devices.OpenCL
+	    mandelbrot);
+ 
+ let imageData = c##getImageData (0., 0., (float !width), (float !height)) in
+ let data = imageData##data in
 
-	Dom.appendChild body (newLine ());
+ Dom.appendChild body (newLine ());
 
         Array.iter
 	  (fun (n) ->
-	     let option = createOption document in
-	     append_text option n.Devices.general_info.Devices.name;
-	     Dom.appendChild select_devices  option)
-	  devs;
+	       let option = createOption document in
+	            append_text option n.Devices.general_info.Devices.name;
+		         Dom.appendChild select_devices  option)
+			   devs;
 
-	Dom.appendChild a (button (f select_devices devs data 
+			   Dom.appendChild a (button (f select_devices devs data 
                                         imageData c));
 
   Js._false
@@ -184,5 +184,4 @@ let go _ =
 
 let _ = 
   window##onload <- handler go
-
 ```
