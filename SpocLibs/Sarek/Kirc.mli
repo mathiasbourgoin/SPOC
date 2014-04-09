@@ -1,6 +1,12 @@
 type extension = ExFloat32 | ExFloat64
-
-type ('a, 'b, 'c, 'd, 'e) sarek_kernel 
+type ('a, 'b, 'c) kirc_kernel = {
+  ml_kern : 'a;
+  body : Kirc_Ast.k_ext;
+  ret_val : Kirc_Ast.k_ext * ('b, 'c) Spoc.Vector.kind;
+  extensions : extension array;
+}
+type ('a, 'b, 'c, 'd, 'e) sarek_kernel =
+    ('a, 'b) Spoc.Kernel.spoc_kernel * ('c, 'd, 'e) kirc_kernel
 val opencl_head : string
 val opencl_float64 : string
 val cuda_float64 : string
@@ -110,8 +116,7 @@ val gen :
   ?return:bool ->
   ?only:Spoc.Devices.specificLibrary ->
   ('a, 'b, 'c, 'd, 'e) sarek_kernel ->
-  ('a, 'b, 'c, 'd, 'e) sarek_kernel
-
+  ('a, 'b) Spoc.Kernel.spoc_kernel * ('c, 'd, 'e) kirc_kernel
 val run :
   ?recompile:bool ->
   ('a, 'b, 'c, 'd, 'e) sarek_kernel ->
