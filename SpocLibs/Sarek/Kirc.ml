@@ -423,7 +423,7 @@ let gen ?return:(r=false) ?only:(o=Devices.Both) ((kir: ('a, 'b) spoc_kernel),(k
     save "kirc_kernel.cu" (cuda_head^(Kirc_Cuda.parse 0 (rewrite k2))) ;
     ignore(Sys.command ("nvcc -m64 -arch=sm_10 -O3 -ptx kirc_kernel.cu -o kirc_kernel.ptx"));
     let s = (load_file "kirc_kernel.ptx") in
-    (*Printf.printf "%s\n%!" s;*)
+
     kir#set_cuda_sources s;
     ignore(Sys.command "rm kirc_kernel.cu kirc_kernel.ptx"); 
 
@@ -435,7 +435,7 @@ let gen ?return:(r=false) ?only:(o=Devices.Both) ((kir: ('a, 'b) spoc_kernel),(k
            | ExFloat32 -> header
            | ExFloat64 -> opencl_float64^header) opencl_head k.extensions in		
     kir#set_opencl_sources (opencl_head^(Kirc_OpenCL.parse 0 (rewrite k2)));
-    (* save "kirc_kernel.cl" (List.hd (kir#get_opencl_sources ())); *)      
+
   in
   begin
     match o with
@@ -782,10 +782,6 @@ let map ((ker2: ('a, 'b) spoc_kernel),(k: (('c -> 'd), 'e,'f) kirc_kernel)) ?dev
   in 
   let length = Vector.length vec_in in
   let vec_out =
-    (*    (match k3 with
-          | IntVar i -> Vector.create Vector.int32 ~dev:device (Vector.length vec_in)
-          | _ -> failwith "cul"
-          ) *)
     (Vector.create (snd k3)  ~dev:device length)
   in
   Mem.to_device vec_in device;
@@ -837,8 +833,6 @@ let map ((ker2: ('a, 'b) spoc_kernel),(k: (('c -> 'd), 'e,'f) kirc_kernel)) ?dev
      Kernel.OpenCL.opencl_load_arg offset device clFun 1 (arg_of_vec vec_out);
      Kernel.OpenCL.opencl_launch_grid clFun grid block device.Devices.general_info 0
   );					
-  (*		spoc_ker#run (Obj.magic(vec_in, vec_out)) (block,grid) 0 device; *)
-  (*	Devices.flush device (); *)
   vec_out
 
 let map2 ((ker2: ('a, 'b) spoc_kernel),(k: (('c -> 'd -> 'e), 'f,'g) kirc_kernel)) ?dev:(device=(Spoc.Devices.init ()).(0)) (vec_in1 : ('h, 'i) Vector.vector) (vec_in2 : ('j, 'k) Vector.vector) : ('l, 'm) Vector.vector = 
@@ -902,10 +896,6 @@ let map2 ((ker2: ('a, 'b) spoc_kernel),(k: (('c -> 'd -> 'e), 'f,'g) kirc_kernel
   in 
   let length = Vector.length vec_in1 in
   let vec_out =
-    (*    (match k3 with
-          | IntVar i -> Vector.create Vector.int32 ~dev:device (Vector.length vec_in)
-          | _ -> failwith "cul"
-          ) *)
     (Vector.create (snd k3)  ~dev:device length)
   in
   Mem.to_device vec_in1 device;
@@ -960,6 +950,9 @@ let map2 ((ker2: ('a, 'b) spoc_kernel),(k: (('c -> 'd -> 'e), 'f,'g) kirc_kernel
      Kernel.OpenCL.opencl_load_arg offset device clFun 2 (arg_of_vec vec_out);
      Kernel.OpenCL.opencl_launch_grid clFun grid block device.Devices.general_info 0
   );                  
-  (*      spoc_ker#run (Obj.magic(vec_in, vec_out)) (block,grid) 0 device; *)
-  (*  Devices.flush device (); *)
   vec_out		
+
+
+
+  
+let compose =
