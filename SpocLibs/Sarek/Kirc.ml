@@ -53,6 +53,9 @@ type ('a,'b,'c) kirc_kernel =
     extensions : extension array
   }
 
+type ('a,'b,'c,'d,'e) sarek_kernel =
+  ('a,'b) spoc_kernel * ('c,'d,'e) kirc_kernel
+
 let opencl_head = (
   "float spoc_fadd ( float a, float b );\n"^
   "float spoc_fminus ( float a, float b );\n"^
@@ -222,8 +225,8 @@ let return_double d = DoubleVar d
 
 let print s = Printf.printf "%s}\n" s 
 
-let debug_print ((kir : ('a, 'b) spoc_kernel),
-                 (k: ('c,'d,'e)  kirc_kernel)) =
+let debug_print ((ker : ('a, 'b,'c,'d,'e)  sarek_kernel)) =
+  let _,k=  ker in
   let (k1,k2,k3) = (k.ml_kern, k.body,k.ret_val) in 
   print_ast k2
 ;;
@@ -389,7 +392,8 @@ let load_file f =
   close_in ic;
   (s)
 
-let gen ?return:(r=false) ?only:(o=Devices.Both) ((kir: ('a, 'b) spoc_kernel),(k: ('c,'d,'e) kirc_kernel)) = 
+let gen ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) =
+  let kir,k = ker in
   let (k1,k2,k3) = (k.ml_kern, k.body,k.ret_val) in
   return_v := "","";
   let k' = ((Kirc_Cuda.parse 0 (fst k3)),
@@ -447,7 +451,8 @@ let gen ?return:(r=false) ?only:(o=Devices.Both) ((kir: ('a, 'b) spoc_kernel),(k
   kir,k
 
 
-let run ?recompile:(r=false) ((kir: ('a, 'b) spoc_kernel),(k: ('c,'d,'e) kirc_kernel)) a b q dev = 
+let run ?recompile:(r=false) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) a b q dev = 
+  let kir,k = ker in
   (match dev.Devices.specific_info with
    | Devices.CudaInfo _ ->
      if r then
@@ -470,7 +475,8 @@ let run ?recompile:(r=false) ((kir: ('a, 'b) spoc_kernel),(k: ('c,'d,'e) kirc_ke
   kir#run a b q dev
 
 
-let compile_kernel_to_files s ((kir: ('a, 'b) spoc_kernel),(k: ('c,'d,'e) kirc_kernel)) =
+let compile_kernel_to_files s ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) =
+  let kir,k = ker in 
   let (k1,k2,k3) = (k.ml_kern, k.body,k.ret_val) in
   return_v := "","";
   let k' = ((Kirc_Cuda.parse 0 (fst k3)),
@@ -730,7 +736,8 @@ let propagate f = function
   | GFloat foo -> GFloat foo
   | Unit -> Unit
 
-let map ((ker2: ('a, 'b) spoc_kernel),(k: (('c -> 'd), 'e,'f) kirc_kernel)) ?dev:(device=(Spoc.Devices.init ()).(0)) (vec_in : ('g, 'h) Vector.vector) : ('i, 'j) Vector.vector= 
+let map ((ker: ('a, 'b, ('c -> 'd), 'e,'f) sarek_kernel)) ?dev:(device=(Spoc.Devices.init ()).(0)) (vec_in : ('g, 'h) Vector.vector) : ('i, 'j) Vector.vector= 
+  let ker2,k = ker in 
   let (k1,k2,k3) = (k.ml_kern, k.body,k.ret_val) in 
   param_list := [];
   let rec aux = function
@@ -835,7 +842,8 @@ let map ((ker2: ('a, 'b) spoc_kernel),(k: (('c -> 'd), 'e,'f) kirc_kernel)) ?dev
   );					
   vec_out
 
-let map2 ((ker2: ('a, 'b) spoc_kernel),(k: (('c -> 'd -> 'e), 'f,'g) kirc_kernel)) ?dev:(device=(Spoc.Devices.init ()).(0)) (vec_in1 : ('h, 'i) Vector.vector) (vec_in2 : ('j, 'k) Vector.vector) : ('l, 'm) Vector.vector = 
+let map2 ((ker: ('a, 'b,('c -> 'd -> 'e), 'f,'g) sarek_kernel)) ?dev:(device=(Spoc.Devices.init ()).(0)) (vec_in1 : ('h, 'i) Vector.vector) (vec_in2 : ('j, 'k) Vector.vector) : ('l, 'm) Vector.vector = 
+  let ker2,k = ker in
   let (k1,k2,k3) = (k.ml_kern, k.body,k.ret_val) in 
   param_list := [];
   let rec aux = function
@@ -955,4 +963,3 @@ let map2 ((ker2: ('a, 'b) spoc_kernel),(k: (('c -> 'd -> 'e), 'f,'g) kirc_kernel
 
 
   
-let compose =
