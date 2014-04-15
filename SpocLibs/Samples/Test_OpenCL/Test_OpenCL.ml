@@ -35,6 +35,7 @@ let button name action =
   let b = createInput ~_type:(Js.string "button")  document in
   b##value <- (Js.string name);
   b##onclick <- handler action;
+  b##style##margin <- Js.string "10px";
   b
 ;;  
 
@@ -125,6 +126,7 @@ let go _ =
   let canvas = createCanvas document in
   canvas##width <- 512;
   canvas##height <- 512;
+  canvas##style##margin <- Js.string "10px";
 
   let image : imageElement Js.t = createImg document in
   image##src <- Js.string "lena.png";
@@ -149,7 +151,7 @@ let go _ =
             (List.hd 
                ((fst gpu_to_gray)#get_opencl_sources ()));
         Dom.appendChild body (newLine ());
-        tf##rows <- 36;
+        tf##rows <- 33;
         tf##cols <- 80;
 
         Array.iter
