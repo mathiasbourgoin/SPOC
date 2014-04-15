@@ -44,6 +44,7 @@ should work for most multicore x86 CPUs)
 ## [**Bitonic sort**][1]
 ## [**Image filter**][2]
 ## [**Mandelbrot**][7]
+## [**Test OpenCL**][8]
 
 
 #I - How to Build SPOC
@@ -145,6 +146,7 @@ Tel: 01 44 27 88 16, Mathias.Bourgoin (at) lip6.fr
 [1]: docs/bitonic.html
 [2]: docs/imageFilter.html
 [7]: docs/mandelbrot.html
+[8]: docs/testOpenCL.html
 [3]: http://ocsigen.org/js_of_ocaml/ 
 [4]: http://ftp.mozilla.org/pub/mozilla.org/firefox/releases/28.0/
 [5]: http://webcl.nokiaresearch.com/
