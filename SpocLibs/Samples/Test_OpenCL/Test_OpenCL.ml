@@ -21,19 +21,19 @@ let gpu_to_gray = kern v ->
   let open Std in
   let tid = thread_idx_x + block_dim_x * block_idx_x in
   if tid <= (512*512) then (
-      let i = (tid*4) in
-      let res = int_of_float ((0.21 *. (float (v.[<i>]))) +.
-                              (0.71 *. (float (v.[<i+1>]))) +.
-                              (0.07 *. (float (v.[<i+2>]))) ) in
-      v.[<i>] <- res;
-      v.[<i+1>] <- res;
-      v.[<i+2>] <- res )
+    let i = (tid*4) in
+    let res = int_of_float ((0.21 *. (float (v.[<i>]))) +.
+                            (0.71 *. (float (v.[<i+1>]))) +.
+                            (0.07 *. (float (v.[<i+2>]))) ) in
+    v.[<i>] <- res;
+    v.[<i+1>] <- res;
+    v.[<i+2>] <- res )
 
 let append_text e s = Dom.appendChild e (document##createTextNode (Js.string s))
 
-let button action = 
+let button name action = 
   let b = createInput ~_type:(Js.string "button")  document in
-  b##value <- (Js.string "Go");
+  b##value <- (Js.string name);
   b##onclick <- handler action;
   b
 ;;  
@@ -46,12 +46,14 @@ let measure_time s f =
   a;;
 
 
-let compute devid devs data imageData c= 
+let compute devid devs data imageData c tf = 
   let dev = devs.(devid) in
   Printf.printf "Will use device : %s!"
     (dev).Spoc.Devices.general_info.Spoc.Devices.name;
   let gpu_vect = Spoc.Vector.create Vector.int32 (512*512*4)
   in
+  let s = Printf.sprintf "%s" (Js.to_string tf##value) in
+  (fst gpu_to_gray)#set_opencl_sources s;
   Random.self_init ();
   for i = 0 to Vector.length gpu_vect - 1 do
     gpu_vect.[<i>] <- Int32.of_int (pixel_get data i);
@@ -63,15 +65,15 @@ let compute devid devs data imageData c=
        | Devices.CL_DEVICE_TYPE_CPU -> 1
        | _  ->   256)
     | _  -> 256 in
+
+
   let blocksPerGrid =
     ((512*512) + threadsPerBlock -1) / threadsPerBlock
   in
   let block0 = {Spoc.Kernel.blockX = threadsPerBlock;
-		Spoc.Kernel.blockY = 1; Spoc.Kernel.blockZ = 1}
+                Spoc.Kernel.blockY = 1; Spoc.Kernel.blockZ = 1}
   and grid0= {Spoc.Kernel.gridX = blocksPerGrid;
-	      Spoc.Kernel.gridY = 1; Spoc.Kernel.gridZ = 1} in
-  ignore(Kirc.gen ~only:Devices.OpenCL
-	   gpu_to_gray);
+              Spoc.Kernel.gridY = 1; Spoc.Kernel.gridZ = 1} in
   measure_time "" 
     (fun () -> Kirc.run gpu_to_gray (gpu_vect) (block0,grid0) 0 dev);
 
@@ -83,11 +85,11 @@ let compute devid devs data imageData c=
 ;;
 
 
-let f select_devices devs data imageData c= 
+let f select_devices devs data imageData c tf = 
   (fun _ ->
      let select = select_devices##selectedIndex + 0 in
-     compute select devs data imageData c;
-     Js._true)
+     compute select devs data imageData c tf;
+     Js._false)
 ;;
 
 let newLine _ = Dom_html.createBr document
@@ -127,28 +129,43 @@ let go _ =
   let image : imageElement Js.t = createImg document in
   image##src <- Js.string "lena.png";
 
+
   let c = canvas##getContext (Dom_html._2d_) in
   image##onload <- 
     handler (fun _ -> 
-	c##drawImage (image, 0., 0.); 
-	Dom.appendChild body (newLine ());
-	Dom.appendChild body canvas;
-	let devs =
-	  Devices.init ~only:Devices.OpenCL () in	     
-	let imageData = c##getImageData (0., 0., 512., 512.) in
-	let data = imageData##data in
+        c##drawImage (image, 0., 0.); 
+        Dom.appendChild body (newLine ());
+        Dom.appendChild body canvas;
+        let devs =
+          Devices.init ~only:Devices.OpenCL () in	     
+        let imageData = c##getImageData (0., 0., 512., 512.) in
+        let data = imageData##data in
+        ignore(Kirc.gen ~only:Devices.OpenCL
+                 gpu_to_gray);
+        let tf =  createTextarea document in
+        Dom.appendChild body tf;
 
-	Dom.appendChild body (newLine ());
+        tf##value <- Js.string 
+            (List.hd 
+               ((fst gpu_to_gray)#get_opencl_sources ()));
+        Dom.appendChild body (newLine ());
+        tf##rows <- 36;
+        tf##cols <- 80;
 
         Array.iter
-	  (fun n ->
-	     let option = createOption document in
-	     append_text option n.Devices.general_info.Devices.name;
-	     Dom.appendChild select_devices  option)
-	  devs;
+          (fun n ->
+             let option = createOption document in
+             append_text option n.Devices.general_info.Devices.name;
+             Dom.appendChild select_devices  option)
+          devs;
 
-	Dom.appendChild body (button (f select_devices devs data 
-                                        imageData c));Js._true);
+
+        Dom.appendChild body (button "GO" (f select_devices devs data 
+                                        imageData c tf ));
+
+
+        Dom.appendChild body (button "Reset picture" (fun _ -> c##drawImage (image, 0., 0.); Js._false) );
+        Js._false);
 
   Js._false
 
