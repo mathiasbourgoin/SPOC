@@ -90,7 +90,9 @@ function spoc_opencl_device_to_cpu(vector, nb_device, gi, si,
     var d_A = dev_vec[2];
     var h_A = bigarray.data;
     
-    queue.enqueueReadBuffer(d_A, false, 0, size*type_size, h_A);
+    queue.enqueueReadBuffer(d_A, true, 0, size*type_size, h_A);
+    console.log ("release buffer after transfer to CPU");
+    d_A.release();
 
     spoc_ctx[queue_id+1] = queue;
     spoc_ctx[0] = ctx;
