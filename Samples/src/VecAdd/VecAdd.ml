@@ -177,7 +177,7 @@ let _ =
 	  begin
             for i = 0 to (Spoc.Vector.length res - 1) do
               let tmp =  (Spoc.Mem.get a i) +. (Spoc.Mem.get b i) in
-              if ((tmp) -. (Spoc.Mem.get res i) > 1.e-6) then
+              if ((tmp) -. (Spoc.Mem.get res i) > 1.e-5) then
 		begin
 		  Printf.printf "ERROR Index: %d - %g <> %g ----> %g\n" i tmp (Spoc.Mem.get res i) (tmp -. (Spoc.Mem.get res i)) ;
 		  Printf.printf "a[%d] = %g, b[%d] = %g\n" i (Spoc.Mem.get a i) i (Spoc.Mem.get b i);
