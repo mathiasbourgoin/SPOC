@@ -1,3 +1,5 @@
 .merlin
 ocp-buid.root*
 *.root
+
+serve.sh
