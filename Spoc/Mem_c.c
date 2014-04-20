@@ -78,7 +78,10 @@ CAMLprim value spoc_init_cuda_device_vec(){
 
 void cl_free_vec (value v) {
 	cl_mem f = Cl_mem_val(Field(v, 1));
-	if (f) clReleaseMemObject(f);
+	if (f) {
+	  clReleaseMemObject(f);
+	  Store_field(v,1,NULL);
+	}
 }
 
 CAMLprim value spoc_init_opencl_device_vec(){
@@ -440,7 +443,10 @@ CAMLprim value spoc_opencl_free_vect(value vector, value nb_device){
 	dev_vec =Field(dev_vec_array, Int_val(nb_device));
 	d_A = Cl_mem_val(Field(dev_vec, 1));
 
-	clReleaseMemObject(d_A);
+	if (d_A) {
+	  clReleaseMemObject(d_A);
+	  Store_field(dev_vec,1,NULL);
+	}
 
 	Store_field(dev_vec, 1, Val_cl_mem(d_A));
 	CAMLreturn(Val_unit);
@@ -730,7 +736,10 @@ value spoc_opencl_device_to_device() {
 
 void  opencl_free_after_transfer(cl_event event, cl_int command_exec_status, void* data)
 {
-	if ((cl_mem)data) { clReleaseMemObject((cl_mem)data);}
+	cl_mem f = Cl_mem_val(Field(data, 1));
+	if (f) { 
+	  clReleaseMemObject((cl_mem)f);
+	  Store_field (data, 1, (value)NULL);}
 }
 
 CAMLprim value spoc_opencl_device_to_cpu(value vector, value nb_device, value gi, value si, value queue_id) {
@@ -759,7 +768,7 @@ CAMLprim value spoc_opencl_device_to_cpu(value vector, value nb_device, value gi
 	q = queue[Int_val(queue_id)];
 
 	OPENCL_CHECK_CALL1(opencl_error, clEnqueueReadBuffer(q, d_A, CL_FALSE, 0, size*type_size, h_A, 0, NULL, &event));
-	clSetEventCallback(event, CL_COMPLETE,opencl_free_after_transfer, d_A);
+	clSetEventCallback(event, CL_COMPLETE,opencl_free_after_transfer, dev_vec);
 	OPENCL_CHECK_CALL1(opencl_error, clFlush(queue[Int_val(queue_id)]));
 
 	OPENCL_RESTORE_CONTEXT;
