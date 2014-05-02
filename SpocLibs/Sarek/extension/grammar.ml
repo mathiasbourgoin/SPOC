@@ -448,6 +448,19 @@ kexpr:
   | "apply" LEFTA
     [ e1 = SELF; e2 = SELF -> {t=(TUnknown); e= App(_loc, e1, [e2]); loc = _loc}
     ]	 
+  | "<-" 
+      [ x = SELF; "<-"; y= SELF  -> 
+        begin
+          match x with 
+          | {t = _; e = VecGet _} ->
+            {t=(TUnit);
+             e = VecSet (_loc, x, y); loc = _loc}
+          | {t = _; e = ArrGet _ } ->
+            {t=(TUnit);
+             e = ArrSet (_loc, x, y); loc = _loc}
+          | _ -> assert false
+        end
+      ]
 
   | "+" LEFTA
     [ x = SELF; "+!"; y = SELF -> {t=TInt32; e = Plus32(_loc, x,y); loc = _loc};
@@ -520,19 +533,6 @@ kexpr:
         | x=SELF; ">=!!"; y=SELF -> {t=TBool; e= BoolGtE64(_loc,x,y); loc = _loc};
         | x=SELF; ">=."; y=SELF -> {t=TBool; e= BoolGtEF(_loc,x,y); loc = _loc}]
 		
-  | "<-" 
-      [ x = SELF; "<-"; y= SELF  -> 
-        begin
-          match x with 
-          | {t = _; e = VecGet _} ->
-            {t=(TUnit);
-             e = VecSet (_loc, x, y); loc = _loc}
-          | {t = _; e = ArrGet _ } ->
-            {t=(TUnit);
-             e = ArrSet (_loc, x, y); loc = _loc}
-          | _ -> assert false
-        end
-      ]
 
   | "!"
       [ "!"; x = ident -> 

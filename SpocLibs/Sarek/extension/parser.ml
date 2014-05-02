@@ -114,6 +114,7 @@ let rec parse_int i t=
   | VecGet (_loc, vector, index)  -> 
     ( match i.t with
       | x when x = t -> ()
+      | x when x = TUnknown -> i.t <- TVec t 
       | _  -> assert (not debug); raise (TypeError (t, i.t , _loc)));
     (match vector.e with
      | Id (_loc,s)  -> 
@@ -137,7 +138,7 @@ let rec parse_int i t=
        <:expr<Spoc.Mem.get ($ExId(_loc,s)$:$type_constraint$) $parse_body index$>>
      | _  ->  assert (not debug); failwith "Unknwown vector");
   | App (_loc, e1, e2) -> parse_body i
-  | _ -> assert (not debug); raise (TypeError (t, i.t, i.loc))
+  | _ -> my_eprintf (k_expr_to_string i.e); assert (not debug);  raise (TypeError (t, i.t, i.loc))
                              
 
 and parse_float f t = 
@@ -210,22 +211,31 @@ and parse_float f t =
   | VecGet (_loc, vector, index)  -> 
     ( match f.t with
       | x when x = t -> ()
-      | _  -> assert (not debug); raise (TypeError (t, f.t , _loc)));
+      | TUnknown ->f.t <-  t
+      | _  ->  assert (not debug); raise (TypeError (t, f.t , _loc)));
     (match vector.e with
      | Id (_loc,s)  -> 
        let var = (Hashtbl.find !current_args (string_of_ident s)) in
-       let type_constraint = (match var.var_type with
-           | TVec k when k = t  -> (
-               match k with 
-               | TFloat -> <:ctyp<(float, Bigarray.float32_elt) Spoc.Vector.vector>>
-               | TFloat32 -> <:ctyp<(float, Bigarray.float32_elt) Spoc.Vector.vector>>
-               | TFloat64 -> <:ctyp<(float, Bigarray.float64_elt) Spoc.Vector.vector>>
-               |  _  ->  assert false
-             )
-           | _  -> assert (not debug); raise (TypeError (TVec t, var.var_type, _loc))
-         ) in
-       <:expr<Spoc.Mem.get ($ExId(_loc,s)$:$type_constraint$) $parse_body index$>>
-     | _  ->  assert (not debug); failwith "Unknwown vector");
+       let type_constraint =
+         let rec aux () =
+           (match var.var_type with
+            | TUnknown ->
+              (var.var_type <- TVec t;
+               aux ())
+            | TVec k when k = t  -> (
+                match k with 
+                | TFloat -> <:ctyp<(float, Bigarray.float32_elt) Spoc.Vector.vector>>
+                | TFloat32 -> <:ctyp<(float, Bigarray.float32_elt) Spoc.Vector.vector>>
+                | TFloat64 -> <:ctyp<(float, Bigarray.float64_elt) Spoc.Vector.vector>>
+                |  _  ->  assert false
+              )
+            | _  ->
+              assert (not debug); raise (TypeError (TVec t, var.var_type, _loc))
+              
+           ) in aux () in
+         <:expr<Spoc.Mem.get ($ExId(_loc,s)$:$type_constraint$) $parse_body index$>>
+     | _  ->
+       assert (not debug); failwith "Unknwown vector");
   | ModuleAccess _ -> parse_body f
   | Acc _ -> parse_body f
   | _ ->   

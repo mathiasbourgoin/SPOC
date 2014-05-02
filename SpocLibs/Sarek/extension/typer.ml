@@ -544,10 +544,8 @@ let rec  typer_app e1 (e2 : kexpr list) t =
   my_eprintf (Printf.sprintf"(* >>>>>>>>>>>> typ %s *)\n%!" (ktyp_to_string t)) ;
   t
 
-and typer body t = 
-  my_eprintf (Printf.sprintf"(* typ %s -> %s  ??? %s *)\n%!" 
-                (k_expr_to_string body.e) (ktyp_to_string t)  
-                (ktyp_to_string body.t)); 
+and typer_ body t = 
+    
   match body.e with
   | Bind (_loc, var,y, z, is_mutable)  ->
     (
@@ -754,17 +752,19 @@ and typer body t =
      typer b TInt;
      body.t <- TInt;)
   | Id (_loc,s) ->  ( 
-      try 
+      try
         let var = Hashtbl.find !current_args (string_of_ident s) in
         if t <> TUnknown && t <> TVec TUnknown then
           if var.var_type = TUnknown || var.var_type = TVec TUnknown then
-            (var.var_type <- t;
+            (             var.var_type <- t;
              body.t <- t)
           else
           if t <> var.var_type then
             (  assert (not debug); raise (TypeError (t, var.var_type, _loc)))
           else 
-            body.t <- t
+            (
+              body.t <- t
+            )
       with Not_found ->
         try 
           let c_const = Hashtbl.find !intrinsics_const (string_of_ident s) in
@@ -1134,7 +1134,16 @@ and typer body t =
     close_module (s);
     body.t <- e.t;
   | _ -> assert false
-
+and   typer body t = 
+  my_eprintf (Printf.sprintf"(* typ %s -> expected  %s  ??? current %s *)\n%!" 
+                (k_expr_to_string body.e) (ktyp_to_string t)  
+                (ktyp_to_string body.t));
+  let b = typer_ body t in
+  my_eprintf (Printf.sprintf"(* +++ typ %s -> expected %s  ??? current %s *)\n%!" 
+                (k_expr_to_string body.e) (ktyp_to_string t)  
+                (ktyp_to_string body.t));
+  b
+  
 and open_module m_ident  _loc = 
   my_eprintf (Printf.sprintf "opening module %s\n%!" m_ident);
 
