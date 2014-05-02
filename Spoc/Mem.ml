@@ -309,11 +309,12 @@ and to_device vect ?queue_id:(q = 0) (dev : Devices.device) =
        ));  
     Vector.set_device vect (dev.Devices.general_info.Devices.id) (Vector.Dev dev)
 
-and free_vect_on_device vector dev =
+(*and free_vect_on_device vector dev =
   match dev.Devices.specific_info with
   | Devices.CudaInfo _ -> cuda_free_vect vector dev.Devices.general_info.Devices.id
   | Devices.OpenCLInfo _  -> opencl_free_vect vector  (dev.Devices.general_info.Devices.id - (Devices.cuda_devices ()))
-
+*)
+      
 and alloc_vect_on_device vector dev =
   match dev.Devices.specific_info with
   | Devices.CudaInfo _ -> 

@@ -734,13 +734,6 @@ value spoc_opencl_device_to_device() {
 }
 
 
-void  opencl_free_after_transfer(cl_event event, cl_int command_exec_status, void* data)
-{
-	cl_mem f = Cl_mem_val(Field(data, 1));
-	if (f) { 
-	  clReleaseMemObject((cl_mem)f);
-	  Store_field (data, 1, (value)NULL);}
-}
 
 CAMLprim value spoc_opencl_device_to_cpu(value vector, value nb_device, value gi, value si, value queue_id) {
 	CAMLparam5(vector, nb_device, gi, si, queue_id);
@@ -752,7 +745,6 @@ CAMLprim value spoc_opencl_device_to_cpu(value vector, value nb_device, value gi
 	int tag;
 	cl_device_id device_id;
 	cl_command_queue  q;
-	cl_event event;
 	bigArray = Field (Field(vector, 1), 0);
 	h_A = (void*)Data_bigarray_val(bigArray);
 
@@ -767,8 +759,8 @@ CAMLprim value spoc_opencl_device_to_cpu(value vector, value nb_device, value gi
 
 	q = queue[Int_val(queue_id)];
 
-	OPENCL_CHECK_CALL1(opencl_error, clEnqueueReadBuffer(q, d_A, CL_FALSE, 0, size*type_size, h_A, 0, NULL, &event));
-	clSetEventCallback(event, CL_COMPLETE,opencl_free_after_transfer, dev_vec);
+	OPENCL_CHECK_CALL1(opencl_error, clEnqueueReadBuffer(q, d_A, CL_FALSE, 0, size*type_size, h_A, 0, NULL, NULL));
+	clReleaseMemObject(d_A);
 	OPENCL_CHECK_CALL1(opencl_error, clFlush(queue[Int_val(queue_id)]));
 
 	OPENCL_RESTORE_CONTEXT;
