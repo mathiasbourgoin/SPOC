@@ -791,7 +791,7 @@ CAMLprim value spoc_opencl_custom_device_to_cpu(value vector, value nb_device, v
 
         OPENCL_TRY("clGetContextInfo", clGetContextInfo(ctx, CL_CONTEXT_DEVICES, (size_t)sizeof(cl_device_id), &device_id, NULL)) ;
         OPENCL_CHECK_CALL1(opencl_error, clEnqueueReadBuffer(queue[Int_val(queue_id)], d_A, CL_FALSE, 0, size*type_size, h_A, 0, NULL, NULL));
-
+	clReleaseMemObject(d_A);
         OPENCL_RESTORE_CONTEXT;
         CAMLreturn(Val_unit);
 }
