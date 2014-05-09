@@ -246,42 +246,35 @@ CAMLprim value spoc_opencl_launch_grid(value ker, value grid, value block, value
 	cl_kernel kernel;
 	unsigned int gridX, gridY, gridZ, blockX, blockY, blockZ;
 	unsigned int dimension;
-	size_t *work_size;
-	size_t *global_dimension;
+	size_t work_size [3];
+	size_t global_dimension [3];
 	cl_command_queue q;
 	gridX = Int_val(Field(grid,0));
 	gridY = Int_val(Field(grid,1));
 	gridZ = Int_val(Field(grid,2));
-	
+
 	blockX = Int_val(Field(block,0));
 	blockY = Int_val(Field(block,1));
 	blockZ = Int_val(Field(block,2));
 	OPENCL_GET_CONTEXT;
 
-	global_dimension = malloc (sizeof(size_t)*3);
 	kernel = (cl_kernel) ker;
 
 	global_dimension[0] = (size_t)gridX*blockX;
 	global_dimension[1] = (size_t)gridY*blockY;
 	global_dimension[2] =(size_t)gridZ*blockZ;
+  work_size[0] = (size_t)blockX;
+  work_size[1] = (size_t)blockY;
+  work_size[2] = (size_t)blockZ;
 
-	if ((blockX == 1) && (blockY == 1) && (blockZ == 1))
-	  work_size = (size_t*)NULL;
-	else
-	  {
-	    work_size = malloc (sizeof(size_t)*3);
-	    work_size[0] = (size_t)blockX;
-	    work_size[1] = (size_t)blockY;
-	    work_size[2] = (size_t)blockZ;
-	  }
-   	q = queue[Int_val(queue_id)];
+  q = queue[Int_val(queue_id)];
 	OPENCL_CHECK_CALL1(opencl_error, clRetainCommandQueue(queue[Int_val(queue_id)]));
 	OPENCL_CHECK_CALL1(opencl_error, clEnqueueNDRangeKernel
-			   (q, kernel, 3, NULL, (size_t*) 
-			    global_dimension, (size_t*)work_size, 
+			   (q, kernel, 3, NULL, global_dimension,
+          ((blockX == 1) && (blockY == 1) && (blockZ == 1)) ? (size_t *) NULL : work_size,
 			    0, NULL, NULL));
 	OPENCL_CHECK_CALL1(opencl_error, clReleaseCommandQueue(queue[Int_val(queue_id)]));
-	
+
 	OPENCL_RESTORE_CONTEXT;
 	CAMLreturn(Val_unit);
 }
