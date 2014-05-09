@@ -121,7 +121,7 @@ value spoc_opencl_is_available(value i)
 		}else device_id -=num_devices;
 	}
 
-
+	free(device_ids);
 	CAMLreturn(Val_bool(infoBool));
 
 
@@ -403,7 +403,7 @@ value spoc_getOpenCLDevice(value relative_i, value absolute_i)
            for (i = 0; i < infoDimension; i++)
         	   Store_field(maxWI ,i, Val_int(work_sizes[i]));
            Store_field(specific_info, 37, maxWI);
-
+	   free(work_sizes);
 
            OPENCL_TRY("clGetDeviceInfo", clGetDeviceInfo ( device_ids[device_id], CL_DEVICE_PREFERRED_VECTOR_WIDTH_CHAR , sizeof(infoUInt), &infoUInt, &infoLen ));
            Store_field(specific_info, 38, Val_int(infoUInt));
@@ -439,6 +439,7 @@ value spoc_getOpenCLDevice(value relative_i, value absolute_i)
 	Store_field(opencl_info, 0, specific_info);
 	Store_field(dev, 0, general_info);
 	Store_field(dev, 1, opencl_info);
+	free(device_ids);
 	CAMLreturn(dev);
 
 

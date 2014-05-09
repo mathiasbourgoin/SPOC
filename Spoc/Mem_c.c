@@ -313,7 +313,6 @@ CAMLprim value spoc_cuda_device_to_cpu(value vector, value nb_device, value gi, 
 	GET_TYPE_SIZE;
 
 
-	//evt = malloc (sizeof(cuda_event_list));
 
 	CUDA_CHECK_CALL(cuMemcpyDtoHAsync((void*)h_A+seek*type_size, d_A+seek*type_size, size*type_size, queue[Int_val(queue_id)]));
 	CUDA_CHECK_CALL(cuStreamAddCallback(queue[Int_val(queue_id)], cuda_free_after_transfer, (void*)d_A, 0));
@@ -375,12 +374,12 @@ CAMLprim value spoc_cuda_custom_alloc_vect(value vector, value nb_device, value 
 	dev_vec =Field(dev_vec_array, Int_val(nb_device));
 	cuv = (cu_vector*)Field(dev_vec, 1);
 	if (cuv){
-			if (cuv->cu_vector)
-				cuMemFree(cuv->cu_vector);
-			free(cuv);
-		}
+	  if (cuv->cu_vector)
+	    cuMemFree(cuv->cu_vector);
+	  free(cuv);
+	}
 	cuv = (cu_vector*)malloc(sizeof(cu_vector*));
-
+	
 	size = Int_val(Field(vector, 4));
 
 	CUDA_GET_CONTEXT;
@@ -411,12 +410,12 @@ CAMLprim value spoc_cuda_alloc_vect(value vector, value nb_device, value gi){
 	dev_vec =Field(dev_vec_array, Int_val(nb_device));
 	cuv = (cu_vector*)Field(dev_vec, 1);
 	if (cuv){
-		if (cuv->cu_vector)
-			cuMemFree(cuv->cu_vector);
-		free(cuv);
+	  if (cuv->cu_vector)
+	    cuMemFree(cuv->cu_vector);
+	  free(cuv);
 	}
 	cuv = (cu_vector*)malloc(sizeof(cu_vector*));
-	//d_A = cuv->cu_vector;
+
 	size = Int_val(Field(vector, 4));
 	cuv->cu_size = size;
 
@@ -424,7 +423,6 @@ CAMLprim value spoc_cuda_alloc_vect(value vector, value nb_device, value gi){
 
 	GET_TYPE_SIZE;
 
-	//if (&d_A)
 
 	CUDA_CHECK_CALL(cuMemAlloc(&cuv->cu_vector, size*type_size));
 
@@ -761,6 +759,7 @@ CAMLprim value spoc_opencl_device_to_cpu(value vector, value nb_device, value gi
 
 	OPENCL_CHECK_CALL1(opencl_error, clEnqueueReadBuffer(q, d_A, CL_FALSE, 0, size*type_size, h_A, 0, NULL, NULL));
 	clReleaseMemObject(d_A);
+	Store_field(dev_vec,1,NULL);
 	OPENCL_CHECK_CALL1(opencl_error, clFlush(queue[Int_val(queue_id)]));
 
 	OPENCL_RESTORE_CONTEXT;
@@ -792,6 +791,7 @@ CAMLprim value spoc_opencl_custom_device_to_cpu(value vector, value nb_device, v
         OPENCL_TRY("clGetContextInfo", clGetContextInfo(ctx, CL_CONTEXT_DEVICES, (size_t)sizeof(cl_device_id), &device_id, NULL)) ;
         OPENCL_CHECK_CALL1(opencl_error, clEnqueueReadBuffer(queue[Int_val(queue_id)], d_A, CL_FALSE, 0, size*type_size, h_A, 0, NULL, NULL));
 	clReleaseMemObject(d_A);
+	Store_field(dev_vec,1,NULL);
         OPENCL_RESTORE_CONTEXT;
         CAMLreturn(Val_unit);
 }

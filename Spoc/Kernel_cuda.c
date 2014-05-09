@@ -114,6 +114,7 @@ CAMLprim value spoc_cuda_compile(value moduleSrc, value function_name, value gi)
 
 	CUDA_CHECK_CALL(cuModuleLoadDataEx(&module, ptx_source, jitNumOptions, jitOptions, (void **)jitOptVals));
 	CUDA_CHECK_CALL(cuModuleGetFunction(kernel, module, functionN));
+	free(jitLogBuffer);
 	CUDA_RESTORE_CONTEXT;
 	//caml_leave_blocking_section();
 	CAMLreturn((value) kernel);
@@ -172,6 +173,7 @@ CAMLprim value spoc_cuda_debug_compile(value moduleSrc, value function_name, val
 		fflush (stdout);
 	}
 	BLOCKING_CUDA_RESTORE_CONTEXT;
+	free(jitLogBuffer);
 	CAMLreturn((value) kernel);
 }
 
@@ -407,6 +409,7 @@ CAMLprim value spoc_cuda_launch_grid(value off, value ker, value grid, value blo
 				 NULL, extra2));
 
   Store_field(off, 0, Val_int(offset));
+  free(extra);
   CUDA_RESTORE_CONTEXT;
   CAMLreturn(Val_unit);
 }

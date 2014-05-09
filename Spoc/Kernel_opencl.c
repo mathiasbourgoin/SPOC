@@ -74,10 +74,10 @@ CAMLprim value spoc_opencl_compile(value moduleSrc, value function_name, value g
 	OPENCL_CHECK_CALL1(ret_val, clBuildProgram(hProgram, 1, &device_id, 0, NULL, NULL));
 
 	paramValueSize = 1024 * 1024;
-	paramValue = (char*)malloc(paramValueSize* sizeof(char));
 
 	OPENCL_CHECK_CALL1(kernel, clCreateKernel(hProgram, functionN, &opencl_error));
 	OPENCL_RESTORE_CONTEXT;
+	
 	CAMLreturn((value) kernel);;
 
 }
@@ -115,7 +115,7 @@ CAMLprim value spoc_debug_opencl_compile(value moduleSrc, value function_name, v
 	                           &param_value_size_ret);
 
 	   fprintf(stdout, " %s" , paramValue);
-
+	   free(paramValue);
 	OPENCL_CHECK_CALL1(kernel, clCreateKernel(hProgram, functionN, &opencl_error));
 	OPENCL_RESTORE_CONTEXT;
 	CAMLreturn((value) kernel);;
