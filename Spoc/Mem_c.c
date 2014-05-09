@@ -78,6 +78,7 @@ CAMLprim value spoc_init_cuda_device_vec(){
 
 void cl_free_vec (value v) {
 	cl_mem f = Cl_mem_val(Field(v, 1));
+
 	if (f) {
 	  clReleaseMemObject(f);
 	  Store_field(v,1,NULL);
@@ -293,39 +294,43 @@ CAMLprim value spoc_cuda_device_to_cpu(value vector, value nb_device, value gi, 
 	int type_size;
 	int tag;
 	int seek;
-
+	int pinned;
+	
 	cuda_event_list *evt;
 	id = Int_val(Field(vector, 0));
 	seek = Int_val(Field(vector, 10));
-
-	bigArray = Field (Field(vector, 1), 0);
-	dev_vec_array = Field(vector, 2);
-	dev_vec =Field(dev_vec_array, Int_val(nb_device));
-	cuv = (cu_vector*)Field(dev_vec, 1);
-	d_A = cuv->cu_vector;
-	size = Int_val(Field(vector, 4))-seek;
-	
-	CUDA_GET_CONTEXT;
-	
-	CUDA_CHECK_CALL(cuDeviceGet(&dev, Int_val(nb_device)));
-
-	h_A = (void*)Data_bigarray_val(bigArray);
-	GET_TYPE_SIZE;
-
-
-
-	CUDA_CHECK_CALL(cuMemcpyDtoHAsync((void*)h_A+seek*type_size, d_A+seek*type_size, size*type_size, queue[Int_val(queue_id)]));
-	CUDA_CHECK_CALL(cuStreamAddCallback(queue[Int_val(queue_id)], cuda_free_after_transfer, (void*)d_A, 0));
-	/*
-	CUDA_CHECK_CALL(cuEventCreate(&(evt->evt), CU_EVENT_BLOCKING_SYNC));
-	evt->vec = d_A;
-	evt->next = (cuda_event_list*)(Field(device,3));
-	Store_field(device, 3 , (value) (evt));
-	CUDA_CHECK_CALL(cuEventRecord(evt->evt, queue[Int_val(queue_id)]));
-	 */
-	CUDA_RESTORE_CONTEXT;
-
-
+	pinned = Bool_val(Field(vector, 11));
+	if (!pinned){
+	  bigArray = Field (Field(vector, 1), 0);
+	  dev_vec_array = Field(vector, 2);
+	  dev_vec =Field(dev_vec_array, Int_val(nb_device));
+	  cuv = (cu_vector*)Field(dev_vec, 1);
+	  d_A = cuv->cu_vector;
+	  size = Int_val(Field(vector, 4))-seek;
+	  
+	  CUDA_GET_CONTEXT;
+	    
+	  CUDA_CHECK_CALL(cuDeviceGet(&dev, Int_val(nb_device)));
+	    
+	  h_A = (void*)Data_bigarray_val(bigArray);
+	  GET_TYPE_SIZE;
+	  
+	  
+	  
+	  CUDA_CHECK_CALL(cuMemcpyDtoHAsync((void*)h_A+seek*type_size, d_A+seek*type_size, size*type_size, queue[Int_val(queue_id)]));
+	  CUDA_CHECK_CALL(cuStreamAddCallback(queue[Int_val(queue_id)], cuda_free_after_transfer, (void*)d_A, 0));
+	  /*
+	    CUDA_CHECK_CALL(cuEventCreate(&(evt->evt), CU_EVENT_BLOCKING_SYNC));
+	    evt->vec = d_A;
+	    evt->next = (cuda_event_list*)(Field(device,3));
+	    Store_field(device, 3 , (value) (evt));
+	    CUDA_CHECK_CALL(cuEventRecord(evt->evt, queue[Int_val(queue_id)]));
+	  */
+	  CUDA_RESTORE_CONTEXT;
+	  
+	  
+	  
+	}
 	CAMLreturn(Val_unit);
 }
 
@@ -338,6 +343,10 @@ CAMLprim value spoc_cuda_free_vect(value vector, value nb_device){
 	CUdeviceptr d_A;
 	int id;
 	enum cudaError_enum cuda_error = 0;
+	int pinned;
+
+	pinned = Bool_val(Field(vector, 11));
+	if (!pinned){
 	id = Int_val(Field(vector, 0));
 
 	bigArray = Field (Field(vector, 1), 0);
@@ -350,8 +359,9 @@ CAMLprim value spoc_cuda_free_vect(value vector, value nb_device){
 	CUDA_CHECK_CALL(cuMemFree(d_A));
 
 	Store_field(dev_vec, 1, (value)NULL);
-
+	}
 	CAMLreturn(Val_unit);
+
 }
 
 CAMLprim value spoc_cuda_custom_alloc_vect(value vector, value nb_device, value gi){
@@ -365,7 +375,9 @@ CAMLprim value spoc_cuda_custom_alloc_vect(value vector, value nb_device, value 
 	int tag;
 	int size;
 	size_t size_left;
-
+	int pinned;
+	pinned = Bool_val(Field(vector, 11));
+	if (!pinned){
 	customArray = Field (Field(vector, 1), 0);
 
 	type_size = Int_val(Field(Field(customArray, 1),1))*sizeof(char);
@@ -389,7 +401,7 @@ CAMLprim value spoc_cuda_custom_alloc_vect(value vector, value nb_device, value 
 
 	CUDA_RESTORE_CONTEXT;
 	Store_field(dev_vec, 1, (value)cuv);
-
+	}
 	CAMLreturn(Val_unit);
 }
 
@@ -404,6 +416,11 @@ CAMLprim value spoc_cuda_alloc_vect(value vector, value nb_device, value gi){
 	int tag;
 	int size;
 	size_t size_left;
+	int pinned;
+	pinned = Bool_val(Field(vector, 11));
+
+	if (!pinned){
+	pinned = Bool_val(Field(vector, 11));
 	id = Int_val(Field(vector, 0));
 	bigArray = Field (Field(vector, 1), 0);
 	dev_vec_array = Field(vector, 2);
@@ -428,7 +445,7 @@ CAMLprim value spoc_cuda_alloc_vect(value vector, value nb_device, value gi){
 
 	CUDA_RESTORE_CONTEXT;
 	Store_field(dev_vec, 1, (value)cuv);
-
+	}
 	CAMLreturn(Val_unit);
 }
 
@@ -437,16 +454,19 @@ CAMLprim value spoc_opencl_free_vect(value vector, value nb_device){
 	CAMLlocal2(dev_vec_array, dev_vec);
 	void* h_A;
 	cl_mem d_A;
+	int pinned;
+	pinned = Bool_val(Field(vector, 11));
 	dev_vec_array = Field(vector, 3);
 	dev_vec =Field(dev_vec_array, Int_val(nb_device));
 	d_A = Cl_mem_val(Field(dev_vec, 1));
 
-	if (d_A) {
+	if (!pinned && d_A) {
 	  clReleaseMemObject(d_A);
 	  Store_field(dev_vec,1,NULL);
 	}
-
+	
 	Store_field(dev_vec, 1, Val_cl_mem(d_A));
+	
 	CAMLreturn(Val_unit);
 }
 
@@ -459,6 +479,9 @@ CAMLprim value spoc_opencl_alloc_vect(value vector, value nb_device, value gi){
 	cl_device_id device_id;
 	int type_size;
 	int tag;
+	int pinned;
+	pinned = Bool_val(Field(vector, 11));
+	if (!pinned){
 	bigArray = Field (Field(vector, 1), 0);
 	h_A = (void*)Data_bigarray_val(bigArray);
 	dev_vec_array = Field(vector, 3);
@@ -473,6 +496,7 @@ CAMLprim value spoc_opencl_alloc_vect(value vector, value nb_device, value gi){
 	OPENCL_RESTORE_CONTEXT;
 
 	Store_field(dev_vec, 1, Val_cl_mem(d_A));
+	}
 	CAMLreturn(Val_unit);
 }
 
@@ -485,8 +509,12 @@ CAMLprim value spoc_opencl_custom_alloc_vect(value vector, value nb_device, valu
         cl_device_id device_id;
         int type_size;
         int tag;
-        customArray = Field (Field(vector, 1), 0);
+	int pinned;
+	pinned = Bool_val(Field(vector, 11));
+	if (!pinned){
 
+        customArray = Field (Field(vector, 1), 0);
+	
         type_size = Int_val(Field(Field(customArray, 1),1))*sizeof(char);
         size = Int_val(Field(vector, 4));
         dev_vec_array = Field(vector, 3);
@@ -499,8 +527,9 @@ CAMLprim value spoc_opencl_custom_alloc_vect(value vector, value nb_device, valu
 
         OPENCL_CHECK_CALL1(d_A, clCreateBuffer(ctx, CL_MEM_READ_WRITE, size*type_size, NULL, &opencl_error));
         OPENCL_RESTORE_CONTEXT;
-
+	
         Store_field(dev_vec, 1, Val_cl_mem(d_A));
+	}
         CAMLreturn(Val_unit);
 }
 
@@ -515,6 +544,8 @@ CAMLprim value spoc_cuda_part_device_to_cpu(value vector, value sub_vector, valu
 	int type_size;
 	int tag;
 	spoc_cuda_gc_info* gcInfo;
+
+
 	bigArray = Field (Field(vector, 1), 0);
 	dev_vec_array = Field(sub_vector, 2);
 	dev_vec =Field(dev_vec_array, Int_val(nb_device));
@@ -613,6 +644,9 @@ value spoc_opencl_cpu_to_device(value vector, value nb_device, value gi, value q
 	cl_device_id device_id;
 	int type_size;
 	int tag;
+	int pinned;
+	pinned = Bool_val(Field(vector, 11));
+	if (!pinned) {
 	bigArray = Field (Field(vector, 1), 0);
 	h_A = (void*)Data_bigarray_val(bigArray);
 	dev_vec_array = Field(vector, 3);
@@ -632,6 +666,7 @@ value spoc_opencl_cpu_to_device(value vector, value nb_device, value gi, value q
 
 	Store_field(dev_vec, 1, Val_cl_mem(d_A));
 	Store_field(dev_vec_array, Int_val(nb_device), dev_vec);
+	}
 	CAMLreturn(Val_unit);
 }
 CAMLprim value spoc_opencl_custom_cpu_to_device(value vector, value nb_device, value gi, value queue_id) {
@@ -644,7 +679,9 @@ CAMLprim value spoc_opencl_custom_cpu_to_device(value vector, value nb_device, v
         int type_size;
         int tag;
         int seek;
-
+	int pinned;
+	pinned = Bool_val(Field(vector, 11));
+	if (!pinned) {
         customArray = Field (Field(vector, 1), 0);
         h_A = (void*)Field(Field(customArray, 0), 1);
         seek = Int_val(Field(vector, 10));
@@ -662,6 +699,7 @@ CAMLprim value spoc_opencl_custom_cpu_to_device(value vector, value nb_device, v
 
 
         OPENCL_RESTORE_CONTEXT;
+	}
         CAMLreturn(Val_unit);
 }
 
@@ -691,15 +729,15 @@ CAMLprim value spoc_opencl_part_cpu_to_device(value vector, value sub_vector, va
 
 	OPENCL_GET_CONTEXT;
 	OPENCL_CHECK_CALL1(opencl_error,
-					   clEnqueueWriteBuffer(queue[Int_val(queue_id)], d_A, CL_FALSE,
-							   	   	   	   	(Long_val(guest_offset)*type_size),
-							   	   	   	   	Long_val(part_size)*type_size,
-							   	   	   	   	h_A, 0, NULL, NULL));
-
+			   clEnqueueWriteBuffer(queue[Int_val(queue_id)], d_A, CL_FALSE,
+						(Long_val(guest_offset)*type_size),
+						Long_val(part_size)*type_size,
+						h_A, 0, NULL, NULL));
+	
 	OPENCL_RESTORE_CONTEXT;
 	Store_field(dev_vec, 1, Val_cl_mem(d_A));
 	Store_field(dev_vec_array, Int_val(nb_device), dev_vec);
-
+	
 	CAMLreturn(Val_unit);
 }
 
@@ -743,6 +781,9 @@ CAMLprim value spoc_opencl_device_to_cpu(value vector, value nb_device, value gi
 	int tag;
 	cl_device_id device_id;
 	cl_command_queue  q;
+	int pinned;
+	pinned = Bool_val(Field(vector, 11));
+
 	bigArray = Field (Field(vector, 1), 0);
 	h_A = (void*)Data_bigarray_val(bigArray);
 
@@ -758,8 +799,10 @@ CAMLprim value spoc_opencl_device_to_cpu(value vector, value nb_device, value gi
 	q = queue[Int_val(queue_id)];
 
 	OPENCL_CHECK_CALL1(opencl_error, clEnqueueReadBuffer(q, d_A, CL_FALSE, 0, size*type_size, h_A, 0, NULL, NULL));
-	clReleaseMemObject(d_A);
-	Store_field(dev_vec,1,NULL);
+	if (!pinned){
+	  clReleaseMemObject(d_A);
+	  Store_field(dev_vec,1,NULL);
+	}
 	OPENCL_CHECK_CALL1(opencl_error, clFlush(queue[Int_val(queue_id)]));
 
 	OPENCL_RESTORE_CONTEXT;
@@ -775,6 +818,8 @@ CAMLprim value spoc_opencl_custom_device_to_cpu(value vector, value nb_device, v
 	int type_size;
 	int tag;
         cl_device_id device_id;
+	int pinned;
+	pinned = Bool_val(Field(vector, 11));
 
         customArray = Field (Field(vector, 1), 0);
 
@@ -790,8 +835,10 @@ CAMLprim value spoc_opencl_custom_device_to_cpu(value vector, value nb_device, v
 
         OPENCL_TRY("clGetContextInfo", clGetContextInfo(ctx, CL_CONTEXT_DEVICES, (size_t)sizeof(cl_device_id), &device_id, NULL)) ;
         OPENCL_CHECK_CALL1(opencl_error, clEnqueueReadBuffer(queue[Int_val(queue_id)], d_A, CL_FALSE, 0, size*type_size, h_A, 0, NULL, NULL));
-	clReleaseMemObject(d_A);
-	Store_field(dev_vec,1,NULL);
+	if (!pinned){
+	  clReleaseMemObject(d_A);
+	  Store_field(dev_vec,1,NULL);
+	}
         OPENCL_RESTORE_CONTEXT;
         CAMLreturn(Val_unit);
 }

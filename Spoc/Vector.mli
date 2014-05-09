@@ -162,3 +162,11 @@ val of_bigarray_shr :
           
 val to_bigarray_shr :
   ('a, 'b) vector  ->   ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t
+
+(** experimental, pin vector to its current locatation *)
+val pin :
+  ('a, 'b) vector -> unit
+
+(** experimental, unpin vector *)
+val unpin :
+  ('a, 'b) vector -> unit

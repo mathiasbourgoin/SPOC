@@ -93,7 +93,8 @@ and ('a,'b) vector = {
   mutable is_sub: (('a,'b) sub) option;(*('a, 'b) sub;*)
   sub : ('a, 'b) vector list;
   vec_id: int;
-  mutable seek:int
+  mutable seek:int;
+  mutable pinned : bool
 }
 
 external init_cuda_device_vec: unit -> device_vec = "spoc_init_cuda_device_vec"
@@ -139,7 +140,9 @@ let create (kind: ('a,'b) kind) ?dev size =
         is_sub = None;
         sub = [];
         vec_id = !vec_id;
-        seek = 0; }
+        seek = 0; 
+        pinned = false;
+      }
 
     | Custom c -> {
         device = -1;
@@ -151,7 +154,9 @@ let create (kind: ('a,'b) kind) ?dev size =
         kind = kind;
         is_sub = None;
         sub = [];
-        vec_id = !vec_id; seek = 0; }
+        vec_id = !vec_id; seek = 0; 
+        pinned = false
+      }
   in
   (match dev with 
    | None  ->  ()
@@ -274,6 +279,7 @@ let sub_vector (vect : ('a, 'b) vector) _start _len =
        sub = [];
        vec_id = !vec_id;
        seek = _start;
+       pinned = false;
      }
    | CustomArray (cA, c) ->
      {
@@ -291,6 +297,7 @@ let sub_vector (vect : ('a, 'b) vector) _start _len =
        sub = [];
        vec_id = !vec_id;
        seek = 0;
+       pinned = false;
      })
 
 let dep = function | None -> 0 | Some (a, _, _, _, _) -> a
@@ -316,6 +323,7 @@ let sub_vector (vect : ('a, 'b) vector) _start _ok_r
        sub = [];
        vec_id = !vec_id;
        seek = 0;
+       pinned = false;
      }
    | CustomArray (cA, c) ->
      {
@@ -334,6 +342,7 @@ let sub_vector (vect : ('a, 'b) vector) _start _ok_r
        sub = [];
        vec_id = !vec_id;
        seek = 0;
+       pinned = false;
      })
 
 
@@ -352,9 +361,17 @@ let of_bigarray_shr kind b =
     is_sub = None;
     sub = [];
     vec_id = !vec_id;
-    seek = 0 }
+    seek = 0;
+    pinned = false;}
 
 let to_bigarray_shr v =
   match v.vector with
   | Bigarray b -> b
   | _  ->  raise (Invalid_argument "v")
+
+
+let pin v = 
+  v.pinned <- true
+
+let unpin v = 
+  v.pinned <- false

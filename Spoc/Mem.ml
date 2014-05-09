@@ -220,7 +220,7 @@ and transfer_part_to_cpu vect sub_vect q (dev : Devices.device) host_offset gues
      ) 
   )
 
-and to_device vect ?queue_id:(q = 0) (dev : Devices.device) =	
+and to_device  vect ?queue_id:(q = 0) (dev : Devices.device) =	
   (* if vector is a sub_vector then *)
   (*  if sub_vector depth = 1 then *)
   (*   sub_vector parts are contiguous *)
@@ -326,7 +326,8 @@ and alloc_vect_on_device vector dev =
      | Vector.Bigarray _  ->   opencl_alloc_vect vector  (dev.Devices.general_info.Devices.id - (Devices.cuda_devices ())) dev.Devices.general_info
      | Vector.CustomArray _  -> opencl_custom_alloc_vect vector (dev.Devices.general_info.Devices.id - (Devices.cuda_devices ())) dev.Devices.general_info)
 
-and to_cpu vect ?queue_id:(q = 0) () =
+and to_cpu  vect ?queue_id:(q = 0) () =
+
   match Vector.dev vect with
   | Vector.Transferring d  -> 
     (Devices.flush d ();
@@ -389,7 +390,7 @@ and to_cpu vect ?queue_id:(q = 0) () =
            set vect i (unsafe_get new_vect i)
          done			
        ));
-    Vector.set_device vect (dev.Devices.general_info.Devices.id) (Vector.No_dev)
+      Vector.set_device vect (dev.Devices.general_info.Devices.id) (Vector.No_dev)
 
 
 
