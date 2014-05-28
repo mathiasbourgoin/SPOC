@@ -46,6 +46,9 @@ should work for most multicore x86 CPUs)
 ## [**Mandelbrot**][7]
 ## [**Test OpenCL**][8]
 
+### Tutorials :
+
+## [**Mandelbrot**](tutos/mandel.html)
 
 #I - How to Build SPOC
 
