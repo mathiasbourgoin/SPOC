@@ -4,36 +4,36 @@ var noCuda = 1
 
 //Provides: caml_sys_system_command
 function caml_sys_system_command() {
-    console.log("caml_sys_system_command");
+    //console.log("caml_sys_system_command");
     return 0;
 }
 
 //Provides: spoc_cuInit
  function spoc_cuInit() {
-    console.log(" spoc_cuInit");
+    //console.log(" spoc_cuInit");
     return 0;
 }
 //Provides: spoc_cuda_compile
 function spoc_cuda_compile() {
-    console.log(" spoc_cuda_compile");
+    //console.log(" spoc_cuda_compile");
     return 0;
 }
 
 //Provides: spoc_cuda_debug_compile
 function spoc_cuda_debug_compile() {
-    console.log(" spoc_cuda_debug_compile");
+    //console.log(" spoc_cuda_debug_compile");
     return 0;
 }
 
 //Provides: spoc_getCudaDevice
 function spoc_getCudaDevice(i) {
-    console.log("spoc_getCudaDevice");
+    //console.log("spoc_getCudaDevice");
     return 0;
 }
 
 //Provides: spoc_getCudaDevicesCount
 function spoc_getCudaDevicesCount() {
-    console.log(" spoc_getCudaDevicesCount");
+    //console.log(" spoc_getCudaDevicesCount");
     return 0;
 }
 
@@ -58,7 +58,7 @@ function spoc_clInit() {
     else 
     {
         /*alert("CONGRATULATIONS! Your system supports WebCL");*/
-	console.log ("INIT OPENCL");
+	//console.log ("INIT OPENCL");
 	noCL = 0;
     }
 
@@ -71,7 +71,7 @@ function spoc_clInit() {
 //Provides: spoc_getOpenCLDevice
 
 function spoc_getOpenCLDevice(relative_i, absolute_i) {
-    console.log(" spoc_getOpenCLDevice");
+    //console.log(" spoc_getOpenCLDevice");
 
  var infos = [ [ "DEVICE_ADDRESS_BITS", WebCL.DEVICE_ADDRESS_BITS ],
       [ "DEVICE_AVAILABLE", WebCL.DEVICE_AVAILABLE ],
@@ -147,20 +147,20 @@ function spoc_getOpenCLDevice(relative_i, absolute_i) {
 
     platforms = webcl.getPlatforms ();
     for (var i in platforms) {
-	console.log("here "+i);
+	//console.log("here "+i);
 	var plat = platforms[i];
 	var devices = plat.getDevices ();
 	var num_devices = devices.length;
-	console.log("there "+current+" "+num_devices+" "+relative_i);
+	//console.log("there "+current+" "+num_devices+" "+relative_i);
 	if ( (current + num_devices) >= relative_i) {
 	    for (var d in devices){
 		// looking at current device
 		var dev = devices[d];
 		if (current == relative_i ){
-		    console.log("current ----------"+current);
+		    //console.log("current ----------"+current);
 		    //general info
 		    general_info[1] = caml_new_string(dev.getInfo(WebCL.DEVICE_NAME));
-		    console.log (general_info[1]);
+		    //console.log (general_info[1]);
 		    general_info[2] = dev.getInfo(WebCL.DEVICE_GLOBAL_MEM_SIZE);
 		    general_info[3] = dev.getInfo(WebCL.DEVICE_LOCAL_MEM_SIZE);
 		    general_info[4] = dev.getInfo(WebCL.DEVICE_MAX_CLOCK_FREQUENCY);
@@ -209,7 +209,7 @@ function spoc_getOpenCLDevice(relative_i, absolute_i) {
 		    specific_info[13] = dev.getInfo(WebCL.DEVICE_MAX_WRITE_IMAGE_ARGS);
 		    specific_info[14] = dev.getInfo(WebCL.DEVICE_MAX_SAMPLERS);
 		    specific_info[15] = dev.getInfo(WebCL.DEVICE_MEM_BASE_ADDR_ALIGN);
-		    //specific_info[16] = dev.getInfo(WebCL.DEVICE_MIN_DATA_TYPE_ALIGN_SIZE);
+		    specific_info[16] = 0;//dev.getInfo(WebCL.DEVICE_MIN_DATA_TYPE_ALIGN_SIZE);
 		    specific_info[17] = dev.getInfo(WebCL.DEVICE_GLOBAL_MEM_CACHELINE_SIZE);
 		    specific_info[18] = dev.getInfo(WebCL.DEVICE_GLOBAL_MEM_CACHE_SIZE);
 		    specific_info[19] = dev.getInfo(WebCL.DEVICE_MAX_CONSTANT_ARGS);
@@ -220,10 +220,10 @@ function spoc_getOpenCLDevice(relative_i, absolute_i) {
 		    specific_info[24] = dev.getInfo(WebCL.DEVICE_GLOBAL_MEM_CACHE_TYPE);
 		    specific_info[25] = dev.getInfo(WebCL.DEVICE_QUEUE_PROPERTIES);
 		    specific_info[26] = dev.getInfo(WebCL.DEVICE_LOCAL_MEM_TYPE);
-//		    specific_info[27] = dev.getInfo(WebCL.DEVICE_DOUBLE_FP_CONFIG);
+		    specific_info[27] = 0;//dev.getInfo(WebCL.DEVICE_DOUBLE_FP_CONFIG);
 		    specific_info[28] = dev.getInfo(WebCL.DEVICE_MAX_CONSTANT_BUFFER_SIZE);
 		    specific_info[29] = dev.getInfo(WebCL.DEVICE_EXECUTION_CAPABILITIES);
-		    //specific_info[30] = dev.getInfo(WebCL.DEVICE_HALF_FP_CONFIG);
+		    specific_info[30] = 0; //dev.getInfo(WebCL.DEVICE_HALF_FP_CONFIG);
 		    specific_info[31] = dev.getInfo(WebCL.DEVICE_MAX_WORK_GROUP_SIZE);
 		    specific_info[32] = dev.getInfo(WebCL.DEVICE_IMAGE2D_MAX_HEIGHT);
 		    specific_info[33] = dev.getInfo(WebCL.DEVICE_IMAGE2D_MAX_WIDTH);
@@ -242,7 +242,7 @@ function spoc_getOpenCLDevice(relative_i, absolute_i) {
 		    specific_info[41] = dev.getInfo(WebCL.DEVICE_PREFERRED_VECTOR_WIDTH_INT);
 		    specific_info[42] = dev.getInfo(WebCL.DEVICE_PREFERRED_VECTOR_WIDTH_LONG);
 		    specific_info[43] = dev.getInfo(WebCL.DEVICE_PREFERRED_VECTOR_WIDTH_FLOAT);
-//		    specific_info[44] = dev.getInfo(WebCL.DEVICE_PREFERRED_VECTOR_WIDTH_DOUBLE );
+		    specific_info[44] = 0; //dev.getInfo(WebCL.DEVICE_PREFERRED_VECTOR_WIDTH_DOUBLE );
 		    specific_info[45] = dev.getInfo(WebCL.DEVICE_PROFILING_TIMER_RESOLUTION);
 		    specific_info[46] = caml_new_string(dev.getInfo(WebCL.DRIVER_VERSION));
 		    current++;
@@ -274,7 +274,7 @@ function spoc_getOpenCLDevice(relative_i, absolute_i) {
 
 //Provides: spoc_getOpenCLDevicesCount
 function spoc_getOpenCLDevicesCount() {
-    console.log(" spoc_getOpenCLDevicesCount");
+    //console.log(" spoc_getOpenCLDevicesCount");
     var nb_devices = 0;
     var platforms = webcl.getPlatforms ();
     for (var i in platforms) {
@@ -287,13 +287,34 @@ function spoc_getOpenCLDevicesCount() {
 
 //Provides: spoc_opencl_compile
 function spoc_opencl_compile() {
-    console.log(" spoc_opencl_compile");
+    //console.log(" spoc_opencl_compile");
     return 0;
 }
 
 //Provides: spoc_opencl_is_available
 function spoc_opencl_is_available() {
-    console.log(" spoc_opencl_is_available");
+    //console.log(" spoc_opencl_is_available");
     return (!noCL);
 }
 
+
+
+//Provides: caml_thread_initialize
+function caml_thread_initialize() {
+    //console.log("caml_thread_initialize");
+    return 0;
+}
+
+
+//Provides: caml_mutex_new
+function caml_mutex_new() {
+    //console.log("caml_mutex_new");
+    return 0;
+}
+
+
+//Provides: caml_thread_cleanup
+function caml_thread_cleanup() {
+    //console.log("caml_thread_cleanup");
+    return 0;
+}

@@ -2,7 +2,7 @@
 
 //Provides: spoc_init_cuda_device_vec
 function spoc_init_cuda_device_vec() {
-    console.log("spoc_init_opencl_device_vec");
+    //console.log("spoc_init_opencl_device_vec");
     return 0;
 }
 
@@ -12,7 +12,7 @@ function spoc_init_cuda_device_vec() {
 
 //Provides: spoc_init_opencl_device_vec
 function spoc_init_opencl_device_vec() {
-    console.log("spoc_init_opencl_device_vec");
+    //console.log("spoc_init_opencl_device_vec");
     var ret = new Array (3);
     ret[0] = 0;
     return ret;
@@ -24,15 +24,15 @@ function typesize (b) {
     if ((b.data instanceof Int32Array) || (b.data.constructor.name == "Int32Array"))
 	return 4;
     {
-	console.log ("unimplemented vector type");
-	console.log(b.data.constructor.name);
+	//console.log ("unimplemented vector type");
+	//console.log(b.data.constructor.name);
 	return 4;
     }
 }
 
 //Provides: spoc_opencl_alloc_vect
 function spoc_opencl_alloc_vect(vector, nb_device, gi) {
-    console.log("spoc_opencl_alloc_vect");
+    //console.log("spoc_opencl_alloc_vect");
     var bigarray = vector[2][1];
     var dev_vec_array = vector[4];
     var dev_vec = dev_vec_array[nb_device+1];
@@ -54,7 +54,7 @@ function spoc_opencl_alloc_vect(vector, nb_device, gi) {
 
 //Provides: spoc_opencl_cpu_to_device
 function spoc_opencl_cpu_to_device(vector, nb_device, gi, queue_id) {
-    console.log("spoc_opencl_cpu_to_device");
+    //console.log("spoc_opencl_cpu_to_device");
     var bigarray = vector[2][1];
     var dev_vec_array = vector[4];
     var dev_vec = dev_vec_array[nb_device+1];
@@ -78,7 +78,7 @@ function spoc_opencl_cpu_to_device(vector, nb_device, gi, queue_id) {
 //Provides: spoc_opencl_device_to_cpu
 function spoc_opencl_device_to_cpu(vector, nb_device, gi, si, 
 				   queue_id) {
-    console.log("spoc_opencl_device_to_cpu");
+    //console.log("spoc_opencl_device_to_cpu");
     var bigarray = vector[2][1];
     var dev_vec_array = vector[4];
     var dev_vec = dev_vec_array[nb_device+1];
@@ -91,7 +91,7 @@ function spoc_opencl_device_to_cpu(vector, nb_device, gi, si,
     var h_A = bigarray.data;
     
     queue.enqueueReadBuffer(d_A, true, 0, size*type_size, h_A);
-    console.log ("release buffer after transfer to CPU");
+    //console.log ("release buffer after transfer to CPU");
     d_A.release();
 
     spoc_ctx[queue_id+1] = queue;

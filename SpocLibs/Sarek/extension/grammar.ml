@@ -3,7 +3,7 @@ open Syntax
 open Ast
 
 open Typer
-open Parser
+open Mparser
 
 let gen_kernel ()= () 
 

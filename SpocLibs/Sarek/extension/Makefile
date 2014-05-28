@@ -6,17 +6,17 @@ install: kernels_int.cma
 uninstall :
 	ocamlfind remove sarek_syntax
 
-kernels_int.cma:typer.cmo parser.cmo  grammar.cmo
-	ocamlfind ocamlc -a typer.cmo parser.cmo grammar.cmo -o kernels_int.cma
+kernels_int.cma:typer.cmo mparser.cmo  grammar.cmo
+	ocamlfind ocamlc -a typer.cmo mparser.cmo grammar.cmo -o kernels_int.cma
 
-parser.cmo:parser.ml typer.cmo 
+mparser.cmo:mparser.ml typer.cmo 
 	 ocamlfind ocamlc -I +camlp4 -pp camlp4of dynlink.cma camlp4lib.cma  typer.cmo $<
 
 typer.cmo:typer.ml
 	 ocamlfind ocamlc -I +camlp4 -pp camlp4of dynlink.cma camlp4lib.cma  $<
 
-grammar.cmo:grammar.ml typer.cmo parser.cmo
-	 ocamlfind ocamlc -I +camlp4 -pp camlp4of dynlink.cma camlp4lib.cma  typer.cmo parser.cmo $<
+grammar.cmo:grammar.ml typer.cmo mparser.cmo
+	 ocamlfind ocamlc -I +camlp4 -pp camlp4of dynlink.cma camlp4lib.cma  typer.cmo mparser.cmo $<
 
 
 test: kernels_int.cma test.ml
