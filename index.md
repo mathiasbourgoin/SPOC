@@ -39,18 +39,22 @@ on your system,
 * an OpenCL implementation for your sytem ([AMD's one][6]
 should work for most multicore x86 CPUs)
 
+___
+
 ## Samples :
 
-### [**<u>Bitonic sort</u>**][1]
-### [**<u>Image filter</u>**][2]
-### [**<u>Mandelbrot</u>**][7]
-### [**<u>Test OpenCL</u>**][8]
+#### [**<u>Bitonic sort</u>**][1]
+#### [**<u>Image filter</u>**][2]
+#### [**<u>Mandelbrot</u>**][7]
+#### [**<u>Test OpenCL</u>**][8]
+
+___
 
 ## Tutorials :
 
 #### [**<u>Mandelbrot</u>**](tutos/mandel.html)
-### [**<u>Sarek2CL</u>**](tutos/sarek2cl.html)
-### [**<u>ImageFilter</u>**](tutos/imageFilter.html)
+#### [**<u>Sarek2CL</u>**](tutos/sarek2cl.html)
+#### [**<u>ImageFilter</u>**](tutos/imageFilter.html)
 
 #I - How to Build SPOC
 
