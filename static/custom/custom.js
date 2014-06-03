@@ -1,3 +1,5 @@
+console.log("test");
+
 $([IPython.events]).on('notebook_loaded.Notebook', function(){
     // add here logic that should be run once per **notebook load**
     // (!= page load), like restarting a checkpoint
