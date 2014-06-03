@@ -41,7 +41,7 @@ should work for most multicore x86 CPUs)
 
 ## Samples :
 
-### [**Bitonic sort**][1]
+### [**<u>Bitonic sort</u>**][1]
 ### [**Image filter**][2]
 ### [**Mandelbrot**][7]
 ### [**Test OpenCL**][8]
