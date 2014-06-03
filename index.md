@@ -39,16 +39,16 @@ on your system,
 * an OpenCL implementation for your sytem ([AMD's one][6]
 should work for most multicore x86 CPUs)
 
-## **Samples** :
+## Samples :
 
 ### [**<u>Bitonic sort</u>**][1]
 ### [**<u>Image filter</u>**][2]
 ### [**<u>Mandelbrot</u>**][7]
 ### [**<u>Test OpenCL</u>**][8]
 
-## **Tutorials** :
+## Tutorials :
 
-### [**<u>Mandelbrot</u>**](tutos/mandel.html)
+#### [**<u>Mandelbrot</u>**](tutos/mandel.html)
 ### [**<u>Sarek2CL</u>**](tutos/sarek2cl.html)
 ### [**<u>ImageFilter</u>**](tutos/imageFilter.html)
 
