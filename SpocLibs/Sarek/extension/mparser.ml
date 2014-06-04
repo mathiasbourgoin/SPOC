@@ -136,7 +136,9 @@ let rec parse_int i t=
           | _  -> assert (not debug); raise (TypeError (TVec t, var.var_type, _loc)))
        in
        <:expr<Spoc.Mem.get ($ExId(_loc,s)$:$type_constraint$) $parse_body index$>>
-     | _  ->  assert (not debug); failwith "Unknwown vector");
+    | _  ->  assert (not debug); failwith "Unknwown vector");
+
+
   | App (_loc, e1, e2) -> parse_body i
   | _ -> my_eprintf (k_expr_to_string i.e); assert (not debug);  raise (TypeError (t, i.t, i.loc))
                              
@@ -578,10 +580,9 @@ and parse_body body =
 
   | ArrSet (_loc, array, value)  -> 								
     let gen_value = parse_body value in
-
     (match array.e with
      | ArrGet (_, a,idx)  -> 
-       let arr_typ_to_e t = 
+       (*let arr_typ_to_e t = 
          (match t with 
           | TInt -> <:ctyp<int array>>
           | TInt32  -> <:ctyp<int32 array>>
@@ -589,12 +590,12 @@ and parse_body body =
           | TFloat -> <:ctyp<float array>>
           | TFloat32 -> <:ctyp<float array>>
           | TFloat64 -> <:ctyp<float array>>
-          |  _  ->  assert false
-         ) in
+          |  _ ->  assert false
+    ) in *)
        (match a.e with
         | Id (_loc,s)  -> 
           let var = (Hashtbl.find !current_args (string_of_ident s)) in
-          let type_constaint = 
+          (*let type_constaint = 
             (match var.var_type with
              | TArr k when k = value.t  -> 
                arr_typ_to_e k
@@ -612,7 +613,8 @@ and parse_body body =
                   (assert (not debug); raise (TypeError (TArr value.t, var.var_type, _loc))))
             )
           in	
-          <:expr<($parse_body a$:$type_constaint$).($parse_body idx$) <- $gen_value$>>
+          <:expr<($parse_body a$:$type_constaint$).($parse_body idx$) <- $gen_value$>>*)
+          <:expr<($parse_body a$).($parse_body idx$) <- $gen_value$>>
         | _  ->  failwith "Unknwown array");
      | _  -> failwith (Printf.sprintf "erf_arr %s" (k_expr_to_string array.e)) ); 
 

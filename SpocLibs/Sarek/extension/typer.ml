@@ -3,13 +3,14 @@ open Syntax
 open Ast
 
 
-let debug = false
+let debug = true
 
 
 let my_eprintf s = 
   if debug then
     output_string stderr s
   else ()
+
 
 
 type customtypes =
@@ -29,6 +30,7 @@ type ktyp =
   | TVec of ktyp
   | TArr of ktyp
   | TApp of ktyp * ktyp
+
 
 let rec ktyp_to_string = function
   | TUnit -> "unit"
@@ -169,6 +171,9 @@ and kexpr = {
   mutable e: k_expr;
   loc: Loc.t}
 
+let update_type value t =
+  if t <> TUnknown && t <> TVec TUnknown && t <> TArr TUnknown then
+    value.t <- t
 
 let rec k_expr_to_string = function
   | App _ -> "App"
@@ -515,15 +520,15 @@ let rec  typer_app e1 (e2 : kexpr list) t =
       aux2 t2 e2;
       typer e1 t1;
       if e1.t <> t1  then ( assert (not debug); raise (TypeError (t1, e1.t, l)) );
-      e1.t <- t1;
+      update_type e1  t1;
     | ((TApp (TApp(t1, t3) as t, t2)), 
        (App (l, e1, e2::[]))) ->
       assert (t3 = t2);
       ret := t2;
       typer e2 t1;			
       if e2.t <> t1 && e2.t <> TUnknown then ( assert (not debug); raise (TypeError (t1, e2.t, l)) );
-      e2.t <- t1;
-      e1.t <- t;
+      update_type e2 t1;
+      update_type e1 t;
     | (TApp(t1, t2), App(_, _, e2::[] ) )->   
       my_eprintf (Printf.sprintf"(* typ %s +++-> %s *)\n%!" (k_expr_to_string e2.e) (ktyp_to_string e2.t)) ; 
       ret := e2.t;
@@ -573,8 +578,8 @@ and typer_ body t =
              is_global=false;})
        | _ -> (assert false)
       );
-      var.t <- y.t;
-      body.t <- y.t;
+      update_type var y.t;
+      update_type body y.t;
       typer z t;
     )   
   | Plus (_loc, a,b) -> 
@@ -583,41 +588,41 @@ and typer_ body t =
      | _ -> assert false);
     (typer a TInt; 
      typer b TInt;
-     body.t <- TInt;)
+     update_type body TInt;)
   | Plus32 (_loc, a,b) -> 
     (match t with
      | TUnknown | TInt32 -> ()
      | _ -> assert false);
     (typer a TInt32; 
      typer b TInt32;
-     body.t <- TInt32;)
+     update_type body TInt32;)
   | Plus64 (_loc, a,b) -> 
     (match t with
      | TUnknown | TInt64 -> ()
      | _ -> assert false);    (typer a TInt64; 
                                typer b TInt64;
-                               body.t <- TInt64;)
+                               update_type body TInt64;)
   | PlusF (_loc, a,b) -> 
     (match t with
      | TUnknown | TFloat32 -> ()
      | _ -> assert false);    
     (typer a TFloat32; 
      typer b TFloat32;
-     body.t <- TFloat32;)
+     update_type body TFloat32;)
   | PlusF32 (_loc, a,b) -> 
     (match t with
      | TUnknown | TFloat32 -> ()
      | _ -> assert false);
     (typer a TFloat32; 
      typer b TFloat32;
-     body.t <- TFloat32;)
+     update_type body TFloat32;)
   | PlusF64 (_loc, a,b) ->
     (match t with
      | TUnknown | TFloat64 -> ()
      | _ -> assert false); 
     (typer a TFloat64; 
      typer b TFloat64;
-     body.t <- TFloat64;) 
+     update_type body TFloat64;) 
 
   | Min (_loc, a,b) -> 
     (match t with
@@ -625,41 +630,41 @@ and typer_ body t =
      | _ -> assert false);
     (typer a TInt; 
      typer b TInt;
-     body.t <- TInt;)
+     update_type body TInt;)
   | Min32 (_loc, a,b) -> 
     (match t with
      | TUnknown | TInt32 -> ()
      | _ -> assert false);
     (typer a TInt32; 
      typer b TInt32;
-     body.t <- TInt32;)
+     update_type body TInt32;)
   | Min64 (_loc, a,b) -> 
     (match t with
      | TUnknown | TInt64 -> ()
      | _ -> assert false);    (typer a TInt64; 
                                typer b TInt64;
-                               body.t <- TInt64;)
+                               update_type body TInt64;)
   | MinF (_loc, a,b) -> 
     (match t with
      | TUnknown | TFloat32 -> ()
      | _ -> assert false);    
     (typer a TFloat32; 
      typer b TFloat32;
-     body.t <- TFloat32;)
+     update_type body TFloat32;)
   | MinF32 (_loc, a,b) -> 
     (match t with
      | TUnknown | TFloat32 -> ()
      | _ -> assert false);
     (typer a TFloat32; 
      typer b TFloat32;
-     body.t <- TFloat32;)
+     update_type body TFloat32;)
   | MinF64 (_loc, a,b) ->
     (match t with
      | TUnknown | TFloat64 -> ()
      | _ -> assert false); 
     (typer a TFloat64; 
      typer b TFloat64;
-     body.t <- TFloat64;) 
+     update_type body TFloat64;) 
 
   | Mul (_loc, a,b) -> 
     (match t with
@@ -667,41 +672,41 @@ and typer_ body t =
      | _ -> assert false);
     (typer a TInt; 
      typer b TInt;
-     body.t <- TInt;)
+     update_type body TInt;)
   | Mul32 (_loc, a,b) -> 
     (match t with
      | TUnknown | TInt32 -> ()
      | _ -> assert false);
     (typer a TInt32; 
      typer b TInt32;
-     body.t <- TInt32;)
+     update_type body TInt32;)
   | Mul64 (_loc, a,b) -> 
     (match t with
      | TUnknown | TInt64 -> ()
      | _ -> assert false);    (typer a TInt64; 
                                typer b TInt64;
-                               body.t <- TInt64;)
+                               update_type body TInt64;)
   | MulF (_loc, a,b) -> 
     (match t with
      | TUnknown | TFloat32 -> ()
      | _ -> assert false);    
     (typer a TFloat32; 
      typer b TFloat32;
-     body.t <- TFloat32;)
+     update_type body TFloat32;)
   | MulF32 (_loc, a,b) -> 
     (match t with
      | TUnknown | TFloat32 -> ()
      | _ -> assert false);
     (typer a TFloat32; 
      typer b TFloat32;
-     body.t <- TFloat32;)
+     update_type body TFloat32;)
   | MulF64 (_loc, a,b) ->
     (match t with
      | TUnknown | TFloat64 -> ()
      | _ -> assert false); 
     (typer a TFloat64; 
      typer b TFloat64;
-     body.t <- TFloat64;) 
+     update_type body TFloat64;) 
 
   | Div (_loc, a,b) -> 
     (match t with
@@ -709,67 +714,74 @@ and typer_ body t =
      | _ -> assert false);
     (typer a TInt; 
      typer b TInt;
-     body.t <- TInt;)
+     update_type body TInt;)
   | Div32 (_loc, a,b) -> 
     (match t with
      | TUnknown | TInt32 -> ()
      | _ -> assert false);
     (typer a TInt32; 
      typer b TInt32;
-     body.t <- TInt32;)
+     update_type body TInt32;)
   | Div64 (_loc, a,b) -> 
     (match t with
      | TUnknown | TInt64 -> ()
      | _ -> assert false);    (typer a TInt64; 
                                typer b TInt64;
-                               body.t <- TInt64;)
+                               update_type body TInt64;)
   | DivF (_loc, a,b) -> 
     (match t with
      | TUnknown | TFloat32 -> ()
      | _ -> assert false);    
     (typer a TFloat32; 
      typer b TFloat32;
-     body.t <- TFloat32;)
+     update_type body TFloat32;)
   | DivF32 (_loc, a,b) -> 
     (match t with
      | TUnknown | TFloat32 -> ()
      | _ -> assert false);
     (typer a TFloat32; 
      typer b TFloat32;
-     body.t <- TFloat32;)
+     update_type body TFloat32;)
   | DivF64 (_loc, a,b) ->
     (match t with
      | TUnknown | TFloat64 -> ()
      | _ -> assert false); 
     (typer a TFloat64; 
      typer b TFloat64;
-     body.t <- TFloat64;) 
+     update_type body TFloat64;) 
   | Mod (_loc, a,b) -> 
     (match t with
      | TUnknown | TInt -> ()
      | _ -> assert false);
     (typer a TInt; 
      typer b TInt;
-     body.t <- TInt;)
+     update_type body TInt;)
   | Id (_loc,s) ->  ( 
       try
         let var = Hashtbl.find !current_args (string_of_ident s) in
-        if t <> TUnknown && t <> TVec TUnknown then
-          if var.var_type = TUnknown || var.var_type = TVec TUnknown then
-            (             var.var_type <- t;
-             body.t <- t)
-          else
-          if t <> var.var_type then
-            (  assert (not debug); raise (TypeError (t, var.var_type, _loc)))
-          else 
-            (
-              body.t <- t
-            )
+        if t <> TUnknown && t <> TVec TUnknown && t <> TArr TUnknown then
+            if var.var_type = TUnknown || var.var_type = TVec TUnknown || var.var_type = TArr TUnknown then
+              ( var.var_type <- t;
+                update_type body t)
+            else
+            if t <> var.var_type then
+              match t, var.var_type with
+              | TInt, TInt32 
+              | TInt32, TInt 
+              | TVec TInt, TVec TInt32
+              | TVec TInt32, TVec TInt
+              | TArr TInt, TArr TInt32
+              | TArr TInt32, TArr TInt                -> 
+                ( update_type body TInt32 )
+              | _ ->
+              ( assert (not debug); raise (TypeError (t, var.var_type, _loc)))
+            else 
+              ( update_type body t )
       with Not_found ->
         try 
           let c_const = Hashtbl.find !intrinsics_const (string_of_ident s) in
           if t = TUnknown then
-            (body.t <- c_const.typ;)
+           ( update_type body c_const.typ;)
           else if t <> c_const.typ then
             (assert (not debug); raise (TypeError (c_const.typ, t, _loc)))
         with _ -> 
@@ -787,7 +799,7 @@ and typer_ body t =
       ( try Hashtbl.find !current_args (string_of_ident s) 
         with _  -> assert (not debug); raise (Unbound_value ((string_of_ident s),_loc))) in
       var.var_type <- t;
-      body.t <- t)
+      update_type body t)
   | Int (_loc, i)  -> body.t <- TInt 
   | Int32 (_loc, i)  -> body.t <- TInt32 
   | Int64 (_loc, i)  -> body.t <- TInt64 
@@ -797,7 +809,7 @@ and typer_ body t =
   | Seq (_loc, x, y) -> 
      (typer x TUnit;
      typer y t; 
-     body.t <- y.t)
+      update_type body y.t)
   | Seqs exprs ->
     let rec aux = function
       | [] -> ()
@@ -827,11 +839,11 @@ and typer_ body t =
          e = (VecSet (_loc, var, value));
          loc = body.loc} 
          t;
-       body.t <- TUnit
+       update_type body TUnit
      | _ -> 
        typer var TUnknown; 
        typer value var.t;
-       body.t <- TUnit
+       update_type body TUnit
     )
 
   | VecSet (_loc, vector, value)  -> 
@@ -854,8 +866,8 @@ and typer_ body t =
              var.var_type <- TVec value.t)
          | _  -> () )
       | _  -> () );
-     vector.t <- value.t;
-     body.t <- TUnit;)       
+     update_type vector value.t;
+     update_type body TUnit;)       
   | VecGet(_loc, vector, index)  -> 
     (typer vector (TVec t);
      typer index TInt;
@@ -867,11 +879,11 @@ and typer_ body t =
             | _ -> assert (not debug); raise (Unbound_value ((string_of_ident s), _loc))) in
           var.var_type <- TVec t)
       | _  ->  () );
-     vector.t <- TVec t;
-     body.t <- t) 
+     update_type vector (TVec t);
+     update_type body t) 
 
   | ArrSet (_loc, array, value)  -> 
-    ((match value.e with
+(*    ((match value.e with
         | Id (_loc, s) ->
           let var = 
             ( try Hashtbl.find !current_args (string_of_ident s)
@@ -879,7 +891,7 @@ and typer_ body t =
           (*          typer array (value.t);*)
           ( match  array.t with
           | TArr t -> typer value t);
-        | _ -> typer value t);
+        | _ -> ()); (*typer value t);*)
 (*     typer array ( value.t);*)
      (match array.e with
       | ArrGet(_,a,_) -> 
@@ -891,8 +903,31 @@ and typer_ body t =
              var.var_type <- TArr value.t)
          | _  -> () )
       | _  -> () );
-     array.t <- value.t;
-     body.t <- TUnit;)       
+      update_type array value.t;
+      update_type body TUnit;)  
+*)
+    ((match value.e with
+        | Id (_loc, s) ->
+          let var = 
+            ( try Hashtbl.find !current_args (string_of_ident s)
+              with _ -> assert (not debug); raise (Unbound_value ((string_of_ident s),_loc))) in
+          typer value var.var_type;
+          typer array (value.t)
+        | _ -> () ); (*typer value t);*)
+     typer array (value.t);
+     (match array.e with
+      | ArrGet(_,v,_) -> 
+        (match v.e with 
+         | Id (_loc,s)  -> 
+           ( let var = 
+             ( try Hashtbl.find !current_args (string_of_ident s)
+               with _ -> assert (not debug); raise (Unbound_value ((string_of_ident s), _loc))) in
+             var.var_type <- TArr value.t)
+         | _  -> () )
+      | _  -> () );
+     update_type array value.t;
+     update_type body TUnit;)        
+   
   | ArrGet(_loc, array, index)  -> 
     (typer array (TArr t);
      typer index TInt;
@@ -904,151 +939,164 @@ and typer_ body t =
             | _ -> assert (not debug); raise (Unbound_value ((string_of_ident s), _loc))) in
           var.var_type <- TArr t)
       | _  ->  () );
-     array.t <- TArr t;
-     body.t <- t) 
-  | VecSet (_loc, vector, value)  -> 
-    begin 
-      begin
-        match value.e with
-        | Id (_loc, s) ->
-          let var = 
-            ( try Hashtbl.find !current_args (string_of_ident s)
-              with _ -> assert (not debug); raise (Unbound_value ((string_of_ident s),_loc))) in
-          typer value var.var_type;
-          typer vector (value.t)
-        | _ -> () (*typer value t *)
-      end;
-      typer vector (value.t);
-      (match vector.e with
-       | VecGet(_,v,_) -> 
-         (match v.e with 
-          | Id (_loc,s)  -> 
-            ( let var = 
-              ( try Hashtbl.find !current_args (string_of_ident s)
-                with _ -> assert (not debug); raise (Unbound_value ((string_of_ident s), _loc))) in
-             var.var_type <- TVec value.t)
-          | _  -> () )
-       | _  -> () );
-      vector.t <- value.t;
-      body.t <- TUnit; 
-    end        
-  | VecGet(_loc, vector, index)  -> 
-    (typer vector (TVec t);
+     update_type array (TArr t);
+     update_type body t) 
+
+(*    (typer array (TArr t);
      typer index TInt;
-     (match vector.e with
+     (match array.e with
       | Id (_loc,s)  -> 
         ( let var = 
           ( try Hashtbl.find !current_args (string_of_ident s)
             with 
             | _ -> assert (not debug); raise (Unbound_value ((string_of_ident s), _loc))) in
-          var.var_type <- TVec t)
+          var.var_type <- TArr t)
       | _  ->  () );
-     vector.t <- TVec t;
-     body.t <- t) 
+      update_type array TArr t;
+      update_type body t) *)
+  (* | VecSet (_loc, vector, value)  ->  *)
+  (*   begin  *)
+  (*     begin *)
+  (*       match value.e with *)
+  (*       | Id (_loc, s) -> *)
+  (*         let var =  *)
+  (*           ( try Hashtbl.find !current_args (string_of_ident s) *)
+  (*             with _ -> assert (not debug); raise (Unbound_value ((string_of_ident s),_loc))) in *)
+  (*         typer value var.var_type; *)
+  (*         typer vector (value.t) *)
+  (*       | _ -> () (\*typer value t *\) *)
+  (*     end; *)
+  (*     typer vector (value.t); *)
+  (*     (match vector.e with *)
+  (*      | VecGet(_,v,_) ->  *)
+  (*        (match v.e with  *)
+  (*         | Id (_loc,s)  ->  *)
+  (*           ( let var =  *)
+  (*             ( try Hashtbl.find !current_args (string_of_ident s) *)
+  (*               with _ -> assert (not debug); raise (Unbound_value ((string_of_ident s), _loc))) in *)
+  (*            var.var_type <- TVec value.t) *)
+  (*         | _  -> () ) *)
+  (*      | _  -> () ); *)
+  (*    update_type      vector value.t; *)
+  (*    update_type      body TUnit;  *)
+  (*   end         *)
+  (* | VecGet(_loc, vector, index)  ->  *)
+  (*   (typer vector (TVec t); *)
+  (*    typer index TInt; *)
+  (*    (match vector.e with *)
+  (*     | Id (_loc,s)  ->  *)
+  (*       ( let var =  *)
+  (*         ( try Hashtbl.find !current_args (string_of_ident s) *)
+  (*           with  *)
+  (*           | _ -> assert (not debug); raise (Unbound_value ((string_of_ident s), _loc))) in *)
+  (*         var.var_type <- TVec t) *)
+  (*     | _  ->  () ); *)
+  (*    vector.t <- TVec t; *)
+  (*    body.t <- t)  *)
   | BoolEq(_loc, a, b) ->
     typer a TInt;
     typer b TInt;
-    body.t <- TBool;
+    update_type body TBool;
   | BoolEq32(_loc, a, b) ->
     typer a TInt32;
     typer b TInt32;
-    body.t <- TBool;
+    update_type body TBool;
   | BoolEq64(_loc, a, b) ->
     typer a TInt64;
     typer b TInt64;
-    body.t <- TBool;
+    update_type body TBool;
   | BoolEqF(_loc, a, b) ->
     typer a TFloat32;
     typer b TFloat32;
-    body.t <- TBool;
+    update_type body TBool;
   | BoolEqF64(_loc, a, b) ->
     typer a TFloat64;
     typer b TFloat64;
-    body.t <- TBool;
+    update_type body TBool;
   | BoolLt(_loc, a, b) ->
     typer a TInt;
     typer b TInt;
-    body.t <- TBool;
+    update_type body TBool;
   | BoolLt32(_loc, a, b) ->
     typer a TInt32;
     typer b TInt32;
-    body.t <- TBool;
+    update_type body TBool;
   | BoolLt64(_loc, a, b) ->
     typer a TInt64;
     typer b TInt64;
-    body.t <- TBool;
+    update_type body TBool;
   | BoolLtF(_loc, a, b) ->
     typer a TFloat32;
     typer b TFloat32;
-    body.t <- TBool;
+    update_type body TBool;
   | BoolLtF64(_loc, a, b) ->
     typer a TFloat64;
     typer b TFloat64;
-    body.t <- TBool;  
+    update_type body TBool;  
 
   | BoolGt(_loc, a, b) ->
     typer a TInt;
     typer b TInt;
-    body.t <- TBool;
+    update_type body TBool;
   | BoolGt32(_loc, a, b) ->
     typer a TInt32;
     typer b TInt32;
-    body.t <- TBool;
+    update_type body TBool;
   | BoolGt64(_loc, a, b) ->
     typer a TInt64;
     typer b TInt64;
-    body.t <- TBool;
+    update_type body TBool;
   | BoolGtF(_loc, a, b) ->
     typer a TFloat32;
     typer b TFloat32;
-    body.t <- TBool;
+    update_type body TBool;
   | BoolGtF64(_loc, a, b) ->
     typer a TFloat64;
     typer b TFloat64;
-    body.t <- TBool;  
+    update_type body TBool;  
 
   | BoolLtE(_loc, a, b) ->
     typer a TInt;
     typer b TInt;
-    body.t <- TBool;
+    update_type body TBool;
   | BoolLtE32(_loc, a, b) ->
     typer a TInt32;
     typer b TInt32;
-    body.t <- TBool;
+    update_type body TBool;
   | BoolLtE64(_loc, a, b) ->
     typer a TInt64;
     typer b TInt64;
-    body.t <- TBool;
+    update_type body TBool;
   | BoolLtEF(_loc, a, b) ->
     typer a TFloat32;
     typer b TFloat32;
-    body.t <- TBool;
+    update_type body TBool;
   | BoolLtEF64(_loc, a, b) ->
     typer a TFloat64;
     typer b TFloat64;
-    body.t <- TBool;  
+    update_type body TBool;  
 
 
   | BoolGtE(_loc, a, b) ->
     typer a TInt;
     typer b TInt;
-    body.t <- TBool;
+    update_type body TBool;
   | BoolGtE32(_loc, a, b) ->
     typer a TInt32;
     typer b TInt32;
-    body.t <- TBool;
+    update_type body TBool;
   | BoolGtE64(_loc, a, b) ->
     typer a TInt64;
     typer b TInt64;
-    body.t <- TBool;
+    update_type body TBool;
   | BoolGtEF(_loc, a, b) ->
     typer a TFloat32;
     typer b TFloat32;
-    body.t <- TBool;
+    update_type body TBool;
   | BoolGtEF64(_loc, a, b) ->
     typer a TFloat64;
     typer b TFloat64;
-    body.t <- TBool;  
+    update_type body TBool;  
 
   | Ife (_loc, cond, cons1, cons2) ->
     (typer cond  TBool;
@@ -1060,18 +1108,18 @@ and typer_ body t =
        typer cons2 cons1.t;
      (match cons1.t,cons2.t with
       | TUnknown, TUnknown -> ()
-      | TUnknown, _ -> cons1.t <- cons2.t
-      | _, TUnknown -> cons2.t <- cons1.t
+      | TUnknown, _ -> update_type cons1  cons2.t
+      | _, TUnknown -> update_type cons2 cons1.t
       | tt1, tt2 -> 
         if tt1 != tt2 then 
           ( assert (not debug); raise (TypeError (tt1, tt2, cons2.loc)))
         else ());
-     body.t <- cons1.t;
+     update_type body cons1.t;
     )
   | If (_loc, cond, cons1) ->
     (typer cond  TBool;
      typer cons1 TUnknown;	
-     body.t <- cons1.t;
+     update_type body cons1.t;
     )
   | DoLoop (l, id, min, max, body) ->
     (match id.e with
@@ -1098,14 +1146,14 @@ and typer_ body t =
     typer min TInt;
     typer max TInt;
     typer body t;
-    body.t <- TUnit;
+    update_type body TUnit;
   | While (l, cond, body) ->
     typer cond TBool;
     typer body TUnit;
-    body.t <- TUnit;
+    update_type body TUnit;
   | App (l, e1, e2) -> 
     let t = typer_app e1 e2 t in
-    body.t <- t
+    update_type body t
   | Open (l, id, e) ->
     let rec aux = function
       | IdAcc (l,a,b) -> aux a; aux b
@@ -1120,20 +1168,20 @@ and typer_ body t =
       | _ -> assert false
     in
     aux id;
-    body.t <- e.t
+    update_type body e.t
   | Noop -> ()
   | BoolAnd (l, e1, e2)  | BoolOr (l, e1, e2) ->
     typer e1 TBool;
     typer e2 TBool;
-    body.t <- TBool
+    update_type body TBool
   | Ref (l,i) ->
     typer i t;
-    body.t <- i.t
+    update_type body i.t
   | ModuleAccess(l,s,e) ->
     open_module s l;
     typer e TUnknown;
     close_module (s);
-    body.t <- e.t;
+    update_type body e.t;
   | _ -> assert false
 and   typer body t = 
   my_eprintf (Printf.sprintf"(* typ %s -> expected  %s  ??? current %s *)\n%!" 
