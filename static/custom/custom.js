@@ -1,5 +1,3 @@
-console.log("test");
-
 $([IPython.events]).on('notebook_loaded.Notebook', function(){
     // add here logic that should be run once per **notebook load**
     // (!= page load), like restarting a checkpoint
@@ -29,7 +27,7 @@ $([IPython.events]).on('app_initialized.NotebookApp', function(){
         'exception extern external for fun function functor if ' +
         'in include inherit inherit initializer lazy let match method ' +
         'method module mutable new of open open or private rec sig struct ' +
-        'then to try type val val virtual when while with kern'
+        'then to try type val val virtual when while with'
     ;
 
     var iocaml_builtins = 
@@ -200,10 +198,9 @@ $([IPython.events]).on('app_initialized.NotebookApp', function(){
                 .html(IPython.utils.autoLinkUrls(text)));
         };
 
-
     // replace the image
     var img = $('.container img')[0]
-    img.src = "/static/custom/iocamlnblogo.png"
+    img.src = "/static/custom/iocamljsnblogo.png"
 
 });
 
