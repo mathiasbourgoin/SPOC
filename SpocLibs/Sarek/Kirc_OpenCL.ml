@@ -65,19 +65,19 @@ let rec parse i = function
   | UnitVar v -> assert false
   | CastDoubleVar s -> ("(double) spoc_var"^(string_of_int s))
   | DoubleVar s -> ("double spoc_var"^(string_of_int s))
-  | IntArr (s,l) -> ("__shared__ int spoc_var"^
+  | IntArr (s,l) -> ("__local int spoc_var"^
                      (string_of_int s)^"["^
                      (parse i l)^"]")
-  | Int32Arr (s,l) -> ("__shared__ int spoc_var"^
+  | Int32Arr (s,l) -> ("__local int spoc_var"^
                        (string_of_int s)^"["^
                        (parse i l)^"]")
-  | Int64Arr (s,l) -> ("__shared__ long spoc_var"^
+  | Int64Arr (s,l) -> ("__local long spoc_var"^
                        (string_of_int s)^"["^
                        (parse i l)^"]")
-  | Float32Arr (s,l) -> ("__shared__ float spoc_var"^
+  | Float32Arr (s,l) -> ("__local float spoc_var"^
                          (string_of_int s)^"["^
                          (parse i l)^"]")
-  | Float64Arr (s,l) -> ("__shared__ double spoc_var"^
+  | Float64Arr (s,l) -> ("__local double spoc_var"^
                          (string_of_int s)^"["^
                          (parse i l)^"]")
   | Params k -> 
