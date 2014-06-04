@@ -1,17 +1,10 @@
-let gpu_to_gray = kern v ->
-  let open Std in
-  let i = thread_idx_x + block_dim_x * block_idx_x in
-  if i > (512*512) then
-    ()
-  else
-    (
-      let tab = make_shared 32 in
-      tab.(i) <- 
-        v.[<i>];
-      let real_i = (i*4) in
-      let res = 
-        (v.[<i>] + v.[<i+1>] + v.[<i+2>]) / 3 in
-      v.[<i>] <- res;
-      v.[<i+1>] <- res;
-      v.[<i+2>] <- res
-    )
+let filter = kern v ->  let open Std in
+  let tid = thread_idx_x + block_dim_x * block_idx_x in
+  if tid <= (512*512) then (
+    let i = (tid*4) in
+    let res = (int_of_float ((0.21 *. (float (v.[<i>]))) +.
+                           (0.71 *. (float (v.[<i+1>]))) +.
+                           (0.07 *. (float (v.[<i+2>]))) )) + 3 in
+    v.[<i>] <- res;
+    v.[<i+1>] <- res;
+    v.[<i+2>] <- res )

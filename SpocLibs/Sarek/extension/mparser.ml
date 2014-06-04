@@ -294,7 +294,10 @@ and  parse_int2 i t=
        );
      | _  ->  failwith "Unknwown vector");
     <:expr<get_vec $parse_int2 vector (TVec t)$ $parse_int2 index TInt$>>
-  | _ -> assert (not debug); raise (TypeError (t, i.t, i.loc))
+  | App _ -> parse_body2 i false
+  | _ -> ( my_eprintf (Printf.sprintf "--> (* val %s *)\n%!" (k_expr_to_string i.e));
+            assert (not debug); raise (TypeError (t, i.t, i.loc));
+            failwith "error parse_int2")
 
 and  parse_float2 f t= 
   match f.e with
