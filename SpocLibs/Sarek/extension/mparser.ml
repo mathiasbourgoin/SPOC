@@ -1183,7 +1183,7 @@ and parse_body2 body bool =
       and p2 = aux cons1
       and p3 = aux cons2 
       in
-      if not r then 
+      if  r then 
         return_type := cons2.t;
       (<:expr< spoc_ife $p1$ $p2$ $p3$>>)
     | If (_loc, cond, cons1) ->

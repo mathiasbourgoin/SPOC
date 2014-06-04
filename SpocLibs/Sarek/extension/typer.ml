@@ -843,7 +843,7 @@ and typer_ body t =
           typer value var.var_type;
           typer vector (value.t)
         | _ -> () ); (*typer value t);*)
-     typer vector ( value.t);
+     typer vector (value.t);
      (match vector.e with
       | VecGet(_,v,_) -> 
         (match v.e with 
@@ -876,10 +876,11 @@ and typer_ body t =
           let var = 
             ( try Hashtbl.find !current_args (string_of_ident s)
               with _ -> assert (not debug); raise (Unbound_value ((string_of_ident s),_loc))) in
-          typer value var.var_type;
-          typer array (value.t)
+          (*          typer array (value.t);*)
+          ( match  array.t with
+          | TArr t -> typer value t);
         | _ -> typer value t);
-     typer array ( value.t);
+(*     typer array ( value.t);*)
      (match array.e with
       | ArrGet(_,a,_) -> 
         (match a.e with 

@@ -1,4 +1,4 @@
-ll:kernels_int.cma
+all:kernels_int.cma
 
 install: kernels_int.cma
 	ocamlfind install sarek_syntax *.cm* META

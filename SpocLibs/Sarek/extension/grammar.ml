@@ -171,7 +171,7 @@ let ret =
   | TFloat64 ->  <:expr<return_double $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float64>>
   | TUnit  -> <:expr<return_unit (), Vector.Unit ((),())>>
   | TBool -> <:expr< return_bool $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.Dummy>>
-  | _  -> failwith "error ret"
+  | t  -> failwith (Printf.sprintf "error ret : %s" (ktyp_to_string t))
 in
 let fst_ (a,b,c,d,e,f) = a
 and snd_ (a,b,c,d,e,f) = b
