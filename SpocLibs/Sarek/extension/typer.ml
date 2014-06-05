@@ -3,7 +3,7 @@ open Syntax
 open Ast
 
 
-let debug = true
+let debug = false
 
 
 let my_eprintf s = 
@@ -915,6 +915,7 @@ and typer_ body t =
           typer array (value.t)
         | _ -> () ); (*typer value t);*)
      typer array (value.t);
+     typer value array.t;
      (match array.e with
       | ArrGet(_,v,_) -> 
         (match v.e with 

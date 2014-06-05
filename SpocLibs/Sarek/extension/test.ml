@@ -11,3 +11,13 @@ let filter = kern v ->  let open Std in
     v.[<i+1>] <- res;
     v.[<i+2>] <- res )
   
+
+
+
+let demo = kern a b c n -> 
+    let open Std in
+    let tab = make_shared 8 in
+    tab.(0) <- a.[<i>];
+    let i = global_thread_id in
+    if i < n then
+        c.[<i>] <- a.[<i>] + b.[<i>]

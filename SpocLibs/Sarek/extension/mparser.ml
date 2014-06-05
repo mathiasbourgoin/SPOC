@@ -634,14 +634,18 @@ and parse_body body =
              | TFloat -> <:ctyp<(float, Bigarray.float32_elt) Spoc.Vector.vector>>
              | TFloat32 -> <:ctyp<(float, Bigarray.float32_elt) Spoc.Vector.vector>>
              | TFloat64 -> <:ctyp<(float, Bigarray.float64_elt) Spoc.Vector.vector>>
-             | TBool | TVec _ 
-             | TUnknown 
+             | TBool -> assert false
+             | TVec _  -> assert false
+             | TUnknown  -> assert false
+             | TUnit  ->  assert false
+             | TArr _  ->  assert false
+             | TApp _  ->  assert false
              |	_  ->  assert false
             )
-          | _  -> assert (not debug); failwith "strange vector"
+          | _  -> assert (not debug); failwith (Printf.sprintf "strange vector %s" (ktyp_to_string var.var_type ))
          )in
        <:expr<Spoc.Mem.get ($ExId(_loc,s)$:$type_constraint$) $parse_body index$>>
-     | _  -> assert (not debug); failwith "strange vector")
+     | _  -> assert (not debug); failwith (Printf.sprintf "strange vector %s" (k_expr_to_string body.e )))
 
   | ArrGet(_loc, array, index)  -> 
     ignore(parse_body array);
@@ -665,7 +669,7 @@ and parse_body body =
           | _  -> (assert (not debug); raise (TypeError (TArr TUnknown, var.var_type, _loc)));
          )in
        <:expr<($ExId(_loc,s)$:$type_constraint$).($parse_body index$)>>
-     | _  -> assert (not debug); failwith "strange vector")
+     | _  -> assert (not debug); failwith "strange array")
 
   | BoolEq (_loc, a, b) ->
     (<:expr<$parse_int a TInt$ = $parse_int b TInt$>>)
