@@ -3,7 +3,7 @@ open Syntax
 open Ast
 
 
-let debug = false
+let debug = true
 
 
 let my_eprintf s = 
@@ -86,21 +86,21 @@ type k_expr =
   | Seq of Loc.t*kexpr*kexpr
   | Seqs of kexpr list
   | Bind of Loc.t*kexpr*kexpr*kexpr*bool
-  | Plus of Loc.t*kexpr*kexpr
+(*  | Plus of Loc.t*kexpr*kexpr*)
   | Plus32 of Loc.t*kexpr*kexpr
   | Plus64 of Loc.t*kexpr*kexpr
   | PlusF of Loc.t*kexpr*kexpr
   | PlusF32 of Loc.t*kexpr*kexpr
   | PlusF64 of Loc.t*kexpr*kexpr
 
-  | Min of Loc.t*kexpr*kexpr
+(*  | Min of Loc.t*kexpr*kexpr*)
   | Min32 of Loc.t*kexpr*kexpr
   | Min64 of Loc.t*kexpr*kexpr
   | MinF of Loc.t*kexpr*kexpr
   | MinF32 of Loc.t*kexpr*kexpr
   | MinF64 of Loc.t*kexpr*kexpr
 
-  | Mul of Loc.t*kexpr*kexpr
+(*  | Mul of Loc.t*kexpr*kexpr*)
   | Mul32 of Loc.t*kexpr*kexpr
   | Mul64 of Loc.t*kexpr*kexpr
   | MulF of Loc.t*kexpr*kexpr
@@ -109,7 +109,7 @@ type k_expr =
 
   | Mod of Loc.t*kexpr*kexpr
 
-  | Div of Loc.t*kexpr*kexpr
+(*  | Div of Loc.t*kexpr*kexpr*)
   | Div32 of Loc.t*kexpr*kexpr
   | Div64 of Loc.t*kexpr*kexpr
   | DivF of Loc.t*kexpr*kexpr
@@ -185,25 +185,25 @@ let rec k_expr_to_string = function
   | Seq _ -> "Seq"
   | Bind _ -> "Bind"
 
-  | Plus _ -> "Plus"
+(*  | Plus _ -> "Plus"*)
   | Plus32 _ -> "Plus32"
   | Plus64 _ -> "Plus64"
   | PlusF _ -> "PlusF"
   | PlusF32 _ -> "PlusF32"
   | PlusF64 _ -> "PlusF64"
-  | Min _ -> "Min"
+(*  | Min _ -> "Min"*)
   | Min32 _ -> "Min32"
   | Min64 _ -> "Min64"
   | MinF _ -> "MinF"
   | MinF32 _ -> "MinF32"
   | MinF64 _ -> "MinF64"
-  | Mul _ -> "Mul"
+(*  | Mul _ -> "Mul"*)
   | Mul32 _ -> "Mul32"
   | Mul64 _ -> "Mul64"
   | MulF _ -> "MulF"
   | MulF32 _ -> "MulF32"
   | MulF64 _ -> "MulF64"
-  | Div _ -> "Div"
+(*  | Div _ -> "Div"*)
   | Div32 _ -> "Div32"
   | Div64 _ -> "Div64"
   | DivF _ -> "DivF"
@@ -294,13 +294,14 @@ let return_type = ref TUnknown
 
 let arg_idx = ref 0
 
-let args () = 
-  let tbl = Hashtbl.create 10 in
-  tbl
+let args () =
+  let (tbl : (string, var) Hashtbl.t)  = Hashtbl.create 10 in
+  tbl 
+
 let current_args = ref (args ()) 
 
-let intrinsics_fun = ref (Hashtbl.create 100)
-let intrinsics_const = ref (Hashtbl.create 100)
+let intrinsics_fun = ref ((Hashtbl.create 100):(string,cfun) Hashtbl.t)
+let intrinsics_const = ref ((Hashtbl.create 100):(string,cfun) Hashtbl.t)
 
 let (arg_list : Camlp4.PreCast.Syntax.Ast.expr list ref ) = ref []
 
@@ -484,7 +485,7 @@ let modules =
   m
 
 
-
+(*
 let rec  typer_app e1 (e2 : kexpr list) t =
   let  typ, loc  = 
     let rec aux e1 =
@@ -582,13 +583,13 @@ and typer_ body t =
       update_type body y.t;
       typer z t;
     )   
-  | Plus (_loc, a,b) -> 
+(*  | Plus (_loc, a,b) -> 
     (match t with
      | TUnknown | TInt -> ()
      | _ -> assert false);
     (typer a TInt; 
      typer b TInt;
-     update_type body TInt;)
+     update_type body TInt;)*)
   | Plus32 (_loc, a,b) -> 
     (match t with
      | TUnknown | TInt32 -> ()
@@ -624,13 +625,13 @@ and typer_ body t =
      typer b TFloat64;
      update_type body TFloat64;) 
 
-  | Min (_loc, a,b) -> 
+(*  | Min (_loc, a,b) -> 
     (match t with
      | TUnknown | TInt -> ()
      | _ -> assert false);
     (typer a TInt; 
      typer b TInt;
-     update_type body TInt;)
+     update_type body TInt;)*)
   | Min32 (_loc, a,b) -> 
     (match t with
      | TUnknown | TInt32 -> ()
@@ -666,13 +667,13 @@ and typer_ body t =
      typer b TFloat64;
      update_type body TFloat64;) 
 
-  | Mul (_loc, a,b) -> 
+(*  | Mul (_loc, a,b) -> 
     (match t with
      | TUnknown | TInt -> ()
      | _ -> assert false);
     (typer a TInt; 
      typer b TInt;
-     update_type body TInt;)
+     update_type body TInt;)*)
   | Mul32 (_loc, a,b) -> 
     (match t with
      | TUnknown | TInt32 -> ()
@@ -708,13 +709,13 @@ and typer_ body t =
      typer b TFloat64;
      update_type body TFloat64;) 
 
-  | Div (_loc, a,b) -> 
+(*  | Div (_loc, a,b) -> 
     (match t with
      | TUnknown | TInt -> ()
      | _ -> assert false);
     (typer a TInt; 
      typer b TInt;
-     update_type body TInt;)
+     update_type body TInt;)*)
   | Div32 (_loc, a,b) -> 
     (match t with
      | TUnknown | TInt32 -> ()
@@ -1218,7 +1219,6 @@ and open_module m_ident  _loc =
       (Hashtbl.add !intrinsics_const (s) {nb_args=0; cuda_val = cuda_s; opencl_val = opencl_s; typ=typ})) m.mod_constants ;
   Hashtbl.iter (fun name intern_m-> Hashtbl.add modules name intern_m) m.mod_modules 
 
-
 and close_module m_ident = 
   my_eprintf (Printf.sprintf "closing module %s\n%!" m_ident);
   try
@@ -1232,3 +1232,26 @@ and close_module m_ident =
     Hashtbl.iter (fun name intern_m-> Hashtbl.remove modules name) m.mod_modules 
   with
   | _ -> () 
+         *)
+
+let open_module s l = ()
+let close_module s = ()
+let rec basic_check l expected_type current_type loc =
+    if expected_type <> current_type && expected_type <> TUnknown then
+      ( assert (not debug); raise (TypeError (expected_type, current_type, loc)) );
+    List.iter (fun e -> typer e expected_type)
+
+and  typer body t  =
+  my_eprintf (Printf.sprintf"(* >>>>>>>>>>>> typ %s *)\n%!" (ktyp_to_string t)) ;  
+  match body.e with
+  | Plus32 (l,e1,e2) | Min32 (l,e1,e2) 
+  | Mul32 (l,e1,e2) | Div32 (l,e1,e2) 
+  | Mod (l, e1, e2) -> 
+    basic_check [e1,e2] t TInt32 l;
+    body.t <- TInt32;
+  | PlusF32 (l,e1,e2) | MinF32 (l,e1,e2) | MulF32 (l,e1,e2) | DivF32 (l,e1,e2) ->
+    basic_check [e1,e2] t TFloat32 l;
+    body.t <- TFloat32;
+
+
+

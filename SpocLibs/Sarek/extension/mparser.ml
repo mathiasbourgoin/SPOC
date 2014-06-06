@@ -92,13 +92,13 @@ let rec parse_int i t=
     ( match i.t with 
       | TInt64  -> <:expr< $(ExInt64 (_loc, s))$>>
       | _ -> assert (not debug); raise (TypeError (t, i.t, i.loc)))
-  | Plus (_loc, a, b) |Plus32 (_loc, a, b) | Plus64 (_loc, a, b)  -> 
+  (* | Plus (_loc, a, b) *) |Plus32 (_loc, a, b) | Plus64 (_loc, a, b)  -> 
     parse_body i
-  | Min (_loc, a, b) |Min32 (_loc, a, b) | Min64 (_loc, a, b)  -> 
+  (* | Min (_loc, a, b) *) |Min32 (_loc, a, b) | Min64 (_loc, a, b)  -> 
     parse_body i
-  | Mul (_loc, a, b) |Mul32 (_loc, a, b) | Mul64 (_loc, a, b)  -> 
+  (* | Mul (_loc, a, b) *) |Mul32 (_loc, a, b) | Mul64 (_loc, a, b)  -> 
     parse_body i
-  | Div (_loc, a, b) |Div32 (_loc, a, b) | Div64 (_loc, a, b)  -> 
+  (* | Div (_loc, a, b) *) |Div32 (_loc, a, b) | Div64 (_loc, a, b)  -> 
     parse_body i
   | Mod (_loc, a, b) -> 
     parse_body i
@@ -272,15 +272,15 @@ and  parse_int2 i t=
   | Int32 (_loc, s)  -> <:expr<spoc_int32 $(ExInt32 (_loc, s))$>>
   | Int64 (_loc, s)  -> <:expr<spoc_int64 $(ExInt64 (_loc, s))$>>
 
-  | Plus (_loc, a, b) | Plus32 (_loc, a, b)| Plus64 (_loc, a, b)  -> 
+(*  | Plus (_loc, a, b) *) | Plus32 (_loc, a, b)| Plus64 (_loc, a, b)  -> 
     parse_body2 i false
-  | Min (_loc, a, b) | Min32 (_loc, a, b)| Min64 (_loc, a, b)  -> 
+(*  | Min (_loc, a, b) *) | Min32 (_loc, a, b)| Min64 (_loc, a, b)  -> 
     parse_body2 i false
-  | Mul (_loc, a, b) | Mul32 (_loc, a, b)| Mul64 (_loc, a, b)  -> 
+(*  | Mul (_loc, a, b) *) | Mul32 (_loc, a, b)| Mul64 (_loc, a, b)  -> 
     parse_body2 i false
   | Mod (_loc, a, b) -> 
     parse_body2 i false
-  | Div (_loc, a, b) | Div32 (_loc, a, b)| Div64 (_loc, a, b)  -> 
+(*  | Div (_loc, a, b) *) | Div32 (_loc, a, b)| Div64 (_loc, a, b)  -> 
     parse_body2 i false
   | Bind (_loc, var, y, z, is_mutable)  -> parse_body2 i false
   | VecGet (_loc, vector, index)  -> 
@@ -403,8 +403,8 @@ and parse_body body =
         else
           (<:expr<let $PaId(_loc,s)$ = $y$ in $gen_z$>>)
       | _ -> failwith "error parse_body Bind")
-  | Plus (_loc, a,b) -> 
-    ( <:expr<$(parse_int a TInt)$ + $(parse_int b TInt)$>>)
+(*  | Plus (_loc, a,b) -> 
+    ( <:expr<$(parse_int a TInt)$ + $(parse_int b TInt)$>>) *)
   | Plus32 (_loc, a,b) -> 
     ( <:expr<Int32.add $(parse_int a TInt32)$  $(parse_int b TInt32)$>>)
   | Plus64 (_loc, a, b) ->
@@ -428,8 +428,8 @@ and parse_body body =
        (assert (not debug); raise (TypeError (TFloat64, b.t, b.loc))));
     ( <:expr<$a_$ +. $b_$>>)
 
-  | Min (_loc, a,b) -> 
-    ( <:expr<$(parse_int a TInt)$ - $(parse_int b TInt)$>>)
+(*  | Min (_loc, a,b) -> 
+    ( <:expr<$(parse_int a TInt)$ - $(parse_int b TInt)$>>) *)
   | Min32 (_loc, a,b) -> 
     ( <:expr<Int32.min $(parse_int a TInt32)$  $(parse_int b TInt32)$>>)
   | Min64 (_loc, a, b) ->
@@ -454,8 +454,8 @@ and parse_body body =
     ( <:expr<$a_$ -. $b_$>>)
 
 
-  | Mul (_loc, a,b) -> 
-    ( <:expr<  $(parse_int a TInt)$ * $(parse_int b TInt)$>>)
+(*  | Mul (_loc, a,b) -> 
+    ( <:expr<  $(parse_int a TInt)$ * $(parse_int b TInt)$>>) *)
   | Mul32 (_loc, a,b) -> 
     ( <:expr<Int32.mul $(parse_int a TInt32)$  $(parse_int b TInt32)$>>)
   | Mul64 (_loc, a, b) ->
@@ -479,8 +479,8 @@ and parse_body body =
        (assert (not debug); raise (TypeError (TFloat64, b.t, b.loc))));
     ( <:expr<$a_$ *. $b_$>>)
 
-  | Div (_loc, a,b) -> 
-    ( <:expr<$(parse_int a TInt)$ / $(parse_int b TInt)$>>)
+(*  | Div (_loc, a,b) -> 
+    ( <:expr<$(parse_int a TInt)$ / $(parse_int b TInt)$>>) *)
   | Div32 (_loc, a,b) -> 
     ( <:expr<Int32.div $(parse_int a TInt32)$  $(parse_int b TInt32)$>>)
   | Div64 (_loc, a, b) ->
@@ -910,12 +910,12 @@ and parse_body2 body bool =
          in remove_int_var var;
          res))
 
-    | Plus (_loc, a,b) -> body.t <- TInt; 
+(*    | Plus (_loc, a,b) -> body.t <- TInt; 
       let p1 = (parse_int2 a TInt) 
       and p2 = (parse_int2 b TInt) in
       if not r then 
         return_type := TInt;
-      ( <:expr<spoc_plus $p1$ $p2$>>) 
+      ( <:expr<spoc_plus $p1$ $p2$>>) *)
     | Plus32 (_loc, a,b) -> body.t <- TInt32; 
       let p1 = (parse_int2 a TInt32) 
       and p2 = (parse_int2 b TInt32) in
@@ -946,12 +946,12 @@ and parse_body2 body bool =
       if not r then 
         return_type := TFloat64;
       ( <:expr<spoc_plus_float $p1$ $p2$>>) 
-    | Min (_loc, a,b) -> body.t <- TInt; 
+(*    | Min (_loc, a,b) -> body.t <- TInt; 
       let p1 = (parse_int2 a TInt) 
       and p2 = (parse_int2 b TInt) in
       if not r then 
         return_type := TInt;
-      ( <:expr<spoc_min $p1$ $p2$>>) 
+      ( <:expr<spoc_min $p1$ $p2$>>) *)
     | Min32 (_loc, a,b) -> body.t <- TInt32; 
       ( <:expr<spoc_min $(parse_int2 a TInt32)$ $(parse_int2 b TInt32)$>>)
     | Min64 (_loc, a,b) -> body.t <- TInt64; 
@@ -963,12 +963,12 @@ and parse_body2 body bool =
     | MinF64 (_loc, a,b) -> 
       ( <:expr<spoc_min_float $(parse_float2 a TFloat64)$ $(parse_float2 b TFloat64)$>>)
 
-    | Mul (_loc, a,b) -> body.t <- TInt; 
+(*    | Mul (_loc, a,b) -> body.t <- TInt; 
       let p1 = (parse_int2 a TInt) 
       and p2 = (parse_int2 b TInt) in
       if not r then 
         return_type := TInt;
-      ( <:expr<spoc_mul $p1$ $p2$>>) 
+      ( <:expr<spoc_mul $p1$ $p2$>>) *)
     | Mul32 (_loc, a,b) -> body.t <- TInt32; 
       ( <:expr<spoc_mul $(parse_int2 a TInt32)$ $(parse_int2 b TInt32)$>>)
     | Mul64 (_loc, a,b) -> body.t <- TInt64; 
@@ -980,13 +980,13 @@ and parse_body2 body bool =
     | MulF64 (_loc, a,b) -> 
       ( <:expr<spoc_mul_float $(parse_float2 a TFloat64)$ $(parse_float2 b TFloat64)$>>)
 
-    | Div (_loc, a,b) -> body.t <- TInt; 
+(*    | Div (_loc, a,b) -> body.t <- TInt; 
       let p1 = (parse_int2 a TInt) 
       and p2 = (parse_int2 b TInt) in
       if not r then 
         (return_type := TInt;
         );
-      ( <:expr<spoc_div $p1$ $p2$>>) 
+      ( <:expr<spoc_div $p1$ $p2$>>) *)
     | Div32 (_loc, a,b) -> body.t <- TInt32; 
       ( <:expr<spoc_div $(parse_int2 a TInt32)$ $(parse_int2 b TInt32)$>>)
     | Div64 (_loc, a,b) -> body.t <- TInt64; 
@@ -1607,7 +1607,7 @@ let rec float64_expr f =
    | Id  (l, id) -> f.e <- (CastId (TFloat64, Id  (l, id)))
    | Int _ | BoolEq _ | BoolEq32 _ | BoolEq64 _ -> () 
    | BoolLt _ | BoolLt32 _ | BoolLt64 _ 
-   | Plus _ | Min _ | Mul _ | Div _ ->() 
+(*   | Plus _ | Min _ | Mul _ | Div  _ *) ->() 
    | BoolEqF (l,a,b) ->
      f.e <- BoolEqF64 (l, float64_expr a, float64_expr b)
    | BoolLt64 _-> ()

@@ -1,4 +1,7 @@
-let filter = kern v ->  let open Std in
+let test = kern v ->
+ ( v + 2 ) mod v 
+
+(*let filter = kern v ->  let open Std in
   let tid = thread_idx_x + block_dim_x * block_idx_x in
   let tab = make_shared 32 in
   tab.(0) <- v.[<0>];
@@ -20,4 +23,4 @@ let demo = kern a b c n ->
     tab.(0) <- a.[<i>];
     let i = global_thread_id in
     if i < n then
-        c.[<i>] <- a.[<i>] + b.[<i>]
+        c.[<i>] <- a.[<i>] + b.[<i>]*)

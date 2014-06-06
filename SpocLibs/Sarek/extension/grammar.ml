@@ -441,7 +441,7 @@ kexpr:
         {t=TUnknown; e= If(_loc,cond,cons1); loc = _loc}
       ]
   | "mod"  RIGHTA
-    [ x = SELF; "mod"; y = SELF -> {t=TInt; e = Mod(_loc, x,y); loc = _loc}]
+    [ x = SELF; "mod"; y = SELF -> {t=TInt32; e = Mod(_loc, x,y); loc = _loc}]
   | ":=" 
       [ x = SELF; ":="; y= SELF  -> {t=(TUnit); e = Acc (_loc, x, y); loc = _loc}
       ]
@@ -465,23 +465,23 @@ kexpr:
   | "+" LEFTA
     [ x = SELF; "+!"; y = SELF -> {t=TInt32; e = Plus32(_loc, x,y); loc = _loc};
       | x = SELF; "+!!"; y = SELF -> {t=TInt64; e = Plus64(_loc, x,y); loc = _loc};
-      | x = SELF; "+"; y = SELF -> {t=TInt; e = Plus(_loc, x,y); loc = _loc};
+      | x = SELF; "+"; y = SELF -> {t=TInt32; e = Plus32(_loc, x,y); loc = _loc};
       | x = SELF; "+."; y = SELF -> {t=TFloat32; e = PlusF32(_loc, x,y); loc = _loc}]
   | "-" LEFTA
     [ x = SELF; "-!"; y = SELF -> {t=TInt32; e = Min32(_loc, x,y); loc = _loc};
       | x = SELF; "-!!"; y = SELF -> {t=TInt64; e = Min64(_loc, x,y); loc = _loc};
-      | x = SELF; "-"; y = SELF -> {t=TInt; e = Min(_loc, x,y); loc = _loc};
+      | x = SELF; "-"; y = SELF -> {t=TInt32; e = Min32(_loc, x,y); loc = _loc};
       | x = SELF; "-."; y = SELF -> {t=TFloat32; e = MinF32(_loc, x,y); loc = _loc}]
     
   | "*" LEFTA
     [ x = SELF; "*!"; y = SELF -> {t=TInt32; e = Mul32(_loc, x,y); loc = _loc};
       | x = SELF; "*!!"; y = SELF -> {t=TInt64; e = Mul64(_loc, x,y); loc = _loc};
-      | x = SELF; "*"; y = SELF -> {t=TInt; e = Mul(_loc, x,y); loc = _loc};
+      | x = SELF; "*"; y = SELF -> {t=TInt32; e = Mul32(_loc, x,y); loc = _loc};
       | x = SELF; "*."; y = SELF -> {t=TFloat32; e = MulF32(_loc, x,y); loc = _loc}]
   | "/" LEFTA
     [ x = SELF; "/!"; y = SELF -> {t=TInt32; e = Div32(_loc, x,y); loc = _loc};
       | x = SELF; "/!!"; y = SELF -> {t=TInt64; e = Div64(_loc, x,y); loc = _loc};
-      | x = SELF; "/"; y = SELF -> {t=TInt; e = Div(_loc, x,y); loc = _loc};
+      | x = SELF; "/"; y = SELF -> {t=TInt32; e = Div32(_loc, x,y); loc = _loc};
       | x = SELF; "/."; y = SELF -> {t=TFloat32; e = DivF32(_loc, x,y); loc = _loc}]
     
   | "||" LEFTA	
@@ -558,7 +558,7 @@ kexpr:
        | x = FLOAT-> {t=TFloat32; e = Float32 (_loc, x); loc = _loc};
        |x = LIDENT  -> {t=TUnknown; e = Id (_loc, IdLid(_loc,x)); loc = _loc};
        |x = INT32  ->{t=TInt32; e = Int32 (_loc, x); loc = _loc};
-       |x = INT  ->{t=TInt; e = Int (_loc, x); loc = _loc}] 		
+       |x = INT  ->{t=TInt32; e = Int32 (_loc, x); loc = _loc}] 		
 
 
   ];
