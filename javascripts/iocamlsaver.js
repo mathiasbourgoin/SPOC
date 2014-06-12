@@ -232,7 +232,7 @@ function save_as_ocaml () {
 
     var ocamlcode = "";
     for (i = 0; i < nodes.length; i++){
-	ocamlcode +=nodes[i].textContent.replace("        /g","\t").replace("  /g","\n");
+	ocamlcode +=nodes[i].textContent.replace(/        /g,"\t").replace(/  /g,"\n");
     }
     var blob = new Blob([ocamlcode], {type : "text/plain"});
     title = document.getElementsByClassName("text_cell_render border-box-sizing rendered_html")[0].textContent;
