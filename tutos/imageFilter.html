@@ -38,7 +38,7 @@ window.mathjax_url = 'http://cdn.mathjax.org/mathjax/latest/MathJax.js';
 
 </head>
 
-<body data-project="notebooks" data-base-project-url="/SPOC/" data-base-kernel-url="/" 
+<body data-project="notebooks" data-base-project-url="/" data-base-kernel-url="/" 
       data-notebook-id="Image_Filter.ipynb" 
       class="notebook_app">
 <noscript>
@@ -84,7 +84,7 @@ window.mathjax_url = 'http://cdn.mathjax.org/mathjax/latest/MathJax.js';
                 <li class="divider"> </li>
                 <li id="copy_notebook"><a href="#">Make a Copy...</a></li>
                 <li id="rename_notebook"><a href="#">Rename...</a></li>
-                <li id="save_checkpoint"><a   href="#" onclick="save_as_ocaml()"> Save OCaml code</a></li>
+                <li id="save_checkpoint"><a   href='javascript:save_as_ocaml();'> Save OCaml code (experimental)</a></li>
                 
                 <li class="divider"> </li>
                 <li id="restore_checkpoint" class="dropdown-submenu"><a href="#">Revert to Checkpoint</a>
@@ -287,7 +287,7 @@ window.mathjax_url = 'http://cdn.mathjax.org/mathjax/latest/MathJax.js';
 <script src="/SPOC/static/notebook/js/celltoolbarpresets/slideshow.js" type="text/javascript" charset="utf-8"> </script>
 
 <script src="/SPOC/static/custom/custom.js" type="text/javascript" charset="utf-8"> </script>
-<script  src="../javascripts/iocamlsaver.js" type="text/javascript"  charset="utf-8"></script>
+<script  src="../javascripts/FileSaver.js" type="text/javascript"  charset="utf-8"></script>
 </body>
 
 </html>
