@@ -50,11 +50,12 @@ ___
 
 ___
 
-## Tutorials :
+## **Tutorials :**
 
+#### [**<u>ImageFilter</u>**](tutos/imageFilter.html)
 #### [**<u>Mandelbrot</u>**](tutos/mandel.html)
 #### [**<u>Sarek2CL</u>**](tutos/sarek2cl.html)
-#### [**<u>ImageFilter</u>**](tutos/imageFilter.html)
+
 
 #I - How to Build SPOC
 
