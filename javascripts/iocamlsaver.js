@@ -231,7 +231,7 @@ function save_as_ocaml () {
     var nodes = document.getElementsByClassName("CodeMirror cm-s-ipython");
 
     var ocamlcode = "";
-    for (i = °; i < nodes.length; i++){
+    for (i = 0; i < nodes.length; i++){
 	ocamlcode +=nodes[i].textContent.replace("        /g","\t").replace("  /g","\n");
     }
     var blob = new Blob([ocamlcode], {type : "text/plain"});
