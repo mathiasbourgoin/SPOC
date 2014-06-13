@@ -199,8 +199,8 @@ $([IPython.events]).on('app_initialized.NotebookApp', function(){
         };
 
     // replace the image
-    var img = $('.container img')[0]
-    img.src = "/static/custom/iocamljsnblogo.png"
+    //var img = $('.container img')[0]
+    //img.src = "/static/custom/iocamljsnblogo.png"zzz
 
 });
 
