@@ -1,0 +1,97 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<link rel="stylesheet" href="style.css" type="text/css">
+<meta content="text/html; charset=iso-8859-1" http-equiv="Content-Type">
+<link rel="Start" href="index.html">
+<link rel="previous" href="Kernel.html">
+<link rel="next" href="OpenCL.html">
+<link rel="Up" href="index.html">
+<link title="Index of types" rel=Appendix href="index_types.html">
+<link title="Index of exceptions" rel=Appendix href="index_exceptions.html">
+<link title="Index of values" rel=Appendix href="index_values.html">
+<link title="Index of class attributes" rel=Appendix href="index_attributes.html">
+<link title="Index of class methods" rel=Appendix href="index_methods.html">
+<link title="Index of classes" rel=Appendix href="index_classes.html">
+<link title="Index of modules" rel=Appendix href="index_modules.html">
+<link title="Cuda" rel="Chapter" href="Cuda.html">
+<link title="Devices" rel="Chapter" href="Devices.html">
+<link title="Kernel" rel="Chapter" href="Kernel.html">
+<link title="Mem" rel="Chapter" href="Mem.html">
+<link title="OpenCL" rel="Chapter" href="OpenCL.html">
+<link title="Tools" rel="Chapter" href="Tools.html">
+<link title="Vector" rel="Chapter" href="Vector.html"><title>Mem</title>
+</head>
+<body>
+<div class="navbar"><a class="pre" href="Kernel.html" title="Kernel">Previous</a>
+&nbsp;<a class="up" href="index.html" title="Index">Up</a>
+&nbsp;<a class="post" href="OpenCL.html" title="OpenCL">Next</a>
+</div>
+<h1>Module <a href="type_Mem.html">Mem</a></h1>
+
+<pre><span class="keyword">module</span> Mem: <code class="code">sig</code> <a href="Mem.html">..</a> <code class="code">end</code></pre><div class="info module top">
+Manages memory transfers<br>
+</div>
+<hr width="100%">
+<br>
+Manages memory transfers<br>
+
+<pre><span id="VALauto_transfers"><span class="keyword">val</span> auto_transfers</span> : <code class="type">bool -> unit</code></pre><div class="info ">
+By default Spoc wiil automatically handle memory transfers
+	To make explicit transfers you have to stop auto_transfers 
+<p>
+
+	<code class="code">auto_transfers true</code> will make transfers automatic
+<p>
+
+	<code class="code">auto_transfers false</code> will stop Spoc to make automatic transfers 
+<p>
+
+	default is : <code class="code">auto_transfers true</code><br>
+</div>
+
+<pre><span id="VALunsafe_rw"><span class="keyword">val</span> unsafe_rw</span> : <code class="type">bool -> unit</code></pre>
+<pre><span id="VALto_device"><span class="keyword">val</span> to_device</span> : <code class="type">('a, 'b) Spoc.Vector.vector -> ?queue_id:int -> Spoc.Devices.device -> unit</code></pre><div class="info ">
+Explicit transfer to a device
+<p>
+
+	<code class="code">to_device v d</code> will transfer the vector v to the device d<br>
+</div>
+<div class="param_info"><code class="code">queue_id</code> : allows to specify which command queue to use for the transfer
+<p>
+
+	transfers are asynchronous, <code class="code">to_device</code> will return immediately, 
+<p>
+
+	use <code class="code">Devices.flush</code> to wait for the end of the command queue</div>
+
+<pre><span id="VALto_cpu"><span class="keyword">val</span> to_cpu</span> : <code class="type">('a, 'b) Spoc.Vector.vector -> ?queue_id:int -> unit -> unit</code></pre><div class="info ">
+Explicit transfer from a device
+<p>
+
+	<code class="code">to_cpu v </code> will transfer the vector v from its current location to the cpu<br>
+</div>
+<div class="param_info"><code class="code">queue_id</code> : allows to specify which command queue to use for the transfer
+<p>
+
+	transfers are asynchronous, <code class="code">to_cpu</code> will return immediately, 
+<p>
+
+	use <code class="code">Devices.flush</code> to wait for the end of the command queue</div>
+
+<pre><span id="VALset"><span class="keyword">val</span> set</span> : <code class="type">('a, 'b) Spoc.Vector.vector -> int -> 'a -> unit</code></pre>
+<pre><span id="VALget"><span class="keyword">val</span> get</span> : <code class="type">('a, 'b) Spoc.Vector.vector -> int -> 'a</code></pre>
+<pre><span id="VALsub_vector"><span class="keyword">val</span> sub_vector</span> : <code class="type">('a, 'b) Spoc.Vector.vector -><br>       int -> ?ok_rng:int -> ?ko_rng:int -> int -> ('a, 'b) Spoc.Vector.vector</code></pre><div class="info ">
+<b>Returns</b> a subvector from a given vector
+Subvectors share the same cpu memory space with the vector they are from. 
+They do not share the same memory space on gpgpu devices.
+<code class="code">sub_vector vec start len</code> will return a new vector of length <code class="code">len</code> sharing the
+same cpu memory space with <code class="code">a</code> starting from index <code class="code">start</code>.<br>
+</div>
+
+<pre><span id="VALsub_vector"><span class="keyword">val</span> sub_vector</span> : <code class="type">('a, 'b) Spoc.Vector.vector -><br>       int -> ?ok_rng:int -> ?ko_rng:int -> int -> ('a, 'b) Spoc.Vector.vector</code></pre>
+<pre><span id="VALvector_copy"><span class="keyword">val</span> vector_copy</span> : <code class="type">('a, 'b) Spoc.Vector.vector -><br>       int -> ('a, 'b) Spoc.Vector.vector -> int -> int -> unit</code></pre><div class="info ">
+experimental :<br>
+<b>Returns</b> a copy of a given vector, the copy takes place on the vector location (CPU/GPU)<br>
+</div>
+</body></html>
