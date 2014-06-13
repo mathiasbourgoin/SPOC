@@ -227,14 +227,62 @@ var saveAs = saveAs
 }*/
 
 
-function save_as_ocaml () {
+function saveAsOcaml () {
     var nodes = document.getElementsByClassName("CodeMirror cm-s-ipython");
 
-    var ocamlcode = "";
+/*    var ocamlcode = "";
     for (i = 0; i < nodes.length; i++){
 	ocamlcode +=nodes[i].textContent.replace(/        /g,"\t").replace(/  /g,"\n");
+    }*/
+    var code = "";
+    var cells = IPython.notebook.get_cells();
+    
+    for (i=0; i< cells.length; i++){
+	if (cells[i].cell_type === "code"){
+	    code += cells[i].get_text()+"\n";
+	}
+	else
+	{
+	    code += "(* cell_type : "+cells[i].cell_type+" *)\n";
+	    code += "(* " + cells[i].get_text() + " *)\n";
+	}
     }
-    var blob = new Blob([ocamlcode], {type : "text/plain"});
+    var blob = new Blob([code], {type : "text/plain"});
     title = document.getElementsByClassName("text_cell_render border-box-sizing rendered_html")[0].textContent;
     saveAs(blob, title+".ml");
+}
+
+function downloadIPYNB () {
+    var nodes = document.getElementsByClassName("CodeMirror cm-s-ipython");
+
+    var ipynb = JSON.stringify(IPython.notebook.toJSON());
+    var blob = new Blob([ipynb], {type : "text/plain"});
+    title = document.getElementsByClassName("text_cell_render border-box-sizing rendered_html")[0].textContent;
+    saveAs(blob, title+".ipynb");
+
+}
+
+
+
+
+function loadIPYNB (){
+    var input=document.createElement('input');
+    input.type="file";
+    input.size="1";
+
+    $(input).click();
+    input.addEventListener("change", handleFiles, false);
+    var fr = new FileReader();
+    function handleFiles() {
+	var files_read = input.files;    
+	fr.readAsText(files_read[0]);
+    };
+
+    fr.onload = function(e) {
+
+	var r = e.target.result;
+	IPython.notebook.fromJSON(JSON.parse(r))
+    };
+
+
 }
