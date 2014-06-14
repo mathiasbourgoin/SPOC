@@ -225,6 +225,9 @@ let return_double d = DoubleVar d
 
 let print s = Printf.printf "%s}\n" s 
 
+let print_ast = Kirc_Ast.print_ast
+
+
 let debug_print ((ker : ('a, 'b,'c,'d,'e)  sarek_kernel)) =
   let _,k=  ker in
   let (k1,k2,k3) = (k.ml_kern, k.body,k.ret_val) in 
