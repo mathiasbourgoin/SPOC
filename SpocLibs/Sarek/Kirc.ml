@@ -911,10 +911,16 @@ let map2 ((ker: ('a, 'b,('c -> 'd -> 'e), 'f,'g) sarek_kernel)) ?dev:(device=(Sp
   in
   Mem.to_device vec_in1 device;
   Mem.to_device vec_in2 device;
-  let spoc_ker, kir_ker = gen res in
+  let framework = 
+    let open Devices in
+      match device.Devices.specific_info with
+      | Devices.CudaInfo cI -> Devices.Cuda
+      | _ -> Devices.OpenCL in
+
+  let spoc_ker, kir_ker = gen ~only:framework res  in
   let block = {blockX = 1; blockY = 1; blockZ = 1}
   and grid = {gridX = 1; gridY = 1; gridZ = 1}
-  in spoc_ker#compile device;
+  in spoc_ker#compile  device;
   begin
     let open Devices in( 
       match device.Devices.specific_info with
