@@ -951,9 +951,9 @@ let map2 ((ker: ('a, 'b,('c -> 'd -> 'e), 'f,'g) sarek_kernel)) ?dev:(device=(Sp
   end;
   let bin = (Hashtbl.find (spoc_ker#get_binaries ()) device) in
   let offset = ref 0 in
-  let extra = Kernel.Cuda.cuda_create_extra 2 in
   (match device.Devices.specific_info with
    | Devices.CudaInfo cI ->
+     let extra = Kernel.Cuda.cuda_create_extra 2 in
      Kernel.Cuda.cuda_load_arg offset extra device bin 0 (arg_of_vec vec_in1);
      Kernel.Cuda.cuda_load_arg offset extra device bin 1 (arg_of_vec vec_in2);
      Kernel.Cuda.cuda_load_arg offset extra device bin 2 (arg_of_vec vec_out);
