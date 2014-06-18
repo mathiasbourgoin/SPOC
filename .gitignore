@@ -1,5 +1,6 @@
 .merlin
 ocp-buid.root*
 *.root
-
+_site
+Gemfile.lock
 serve.sh
