@@ -65,21 +65,22 @@ let rec parse i = function
   | UnitVar v -> assert false
   | CastDoubleVar s -> ("(double) spoc_var"^(string_of_int s))
   | DoubleVar s -> ("double spoc_var"^(string_of_int s))
-  | IntArr (s,l) -> ("__local int spoc_var"^
-                     (string_of_int s)^"["^
-                     (parse i l)^"]")
-  | Int32Arr (s,l) -> ("__local int spoc_var"^
+  | Arr (s,l,t,m) -> 
+    let memspace = 
+      match m with 
+      | Local -> ""
+      | Shared -> "__local"
+      | Global -> "__global"
+    and elttype = 
+      match t with
+      | EInt32 -> "int"
+      | EInt64 -> "long"
+      | EFloat32 -> "float"
+      | EFloat64 -> "double" 
+    in
+        (memspace^" "^elttype^" spoc_var"^
                        (string_of_int s)^"["^
                        (parse i l)^"]")
-  | Int64Arr (s,l) -> ("__local long spoc_var"^
-                       (string_of_int s)^"["^
-                       (parse i l)^"]")
-  | Float32Arr (s,l) -> ("__local float spoc_var"^
-                         (string_of_int s)^"["^
-                         (parse i l)^"]")
-  | Float64Arr (s,l) -> ("__local double spoc_var"^
-                         (string_of_int s)^"["^
-                         (parse i l)^"]")
   | Params k -> 
     ("__kernel void spoc_dummy ( "^
      (if (fst !return_v) <> "" then

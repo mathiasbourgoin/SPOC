@@ -13,11 +13,7 @@ val opencl_float64 : string
 val cuda_float64 : string
 val cuda_head : string
 val new_var : int -> Kirc_Ast.k_ext
-val new_int_array : int -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
-val new_int32_array : int -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
-val new_int64_array : int -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
-val new_float32_array : int -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
-val new_float64_array : int -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
+val new_array : int -> Kirc_Ast.k_ext -> Kirc_Ast.elttype -> Kirc_Ast.memspace -> Kirc_Ast.k_ext 
 val var : int -> Kirc_Ast.k_ext
 val spoc_gen_kernel : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val spoc_fun_kernel : 'a -> 'b -> unit
@@ -143,6 +139,7 @@ module Std :
     val int_of_float : float -> Int32.t
     val block_barrier : unit -> unit
     val make_shared : Int32.t -> Int32.t array
+    val make_local : Int32.t -> Int32.t array
   end
 module Math :
   sig
@@ -180,7 +177,8 @@ module Math :
         val modf : float -> float * float
         val zero : float
         val one : float
-        val make_shared : int -> float array
+        val make_shared : Int32.t -> float array
+        val make_local : Int32.t -> float array
       end
     module Float64 :
       sig
@@ -215,7 +213,8 @@ module Math :
         val one : float
         val of_float32 : float -> float
         val to_float32 : float -> float
-        val make_shared : int -> float array
+        val make_shared : Int32.t -> float array
+        val make_local : Int32.t -> float array
       end
   end
 val a_to_vect : Kirc_Ast.k_ext -> Kirc_Ast.k_ext

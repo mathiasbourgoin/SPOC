@@ -17,6 +17,12 @@ type customtypes =
   | KRecord of ctyp list * ident list
   | KSum of int list
 
+type memspace = 
+  | Local
+  | Global
+  | Shared
+  | Any
+
 type ktyp =
   | TUnknown
   | TUnit
@@ -26,7 +32,7 @@ type ktyp =
   | TFloat64
   | TBool
   | TVec of ktyp
-  | TArr of ktyp
+  | TArr of (ktyp*memspace)
   | TApp of ktyp * ktyp
 
 
@@ -41,7 +47,7 @@ let rec ktyp_to_string = function
   | TUnknown  -> "unknown"
   | TBool -> "bool"
   | TVec k -> (ktyp_to_string k)^" vector" 
-  | TArr k -> (ktyp_to_string k)^" array" 
+  | TArr (k,m) -> (ktyp_to_string k)^" array" 
   | TApp (k1,k2) -> (ktyp_to_string k1)^" -> "^(ktyp_to_string k2) 
 
 
@@ -168,19 +174,27 @@ and kexpr = {
   mutable e: k_expr;
   loc: Loc.t}
 
+let is_unknown t =
+  match t with
+  | TUnknown
+  | TVec TUnknown
+  | TArr (TUnknown, _) -> true
+  | _ -> false
+
+
 let update_type value t =
   match t,value.t with
   | TUnknown, t -> ()
   | _ , TUnknown -> value.t <- t
   | TVec TUnknown, TVec _ -> ()
-  | TArr TUnknown, TArr _ -> ()
+  | TArr (TUnknown,_), TArr _ -> ()
   | TVec t, TVec TUnknown -> value.t <- t
-  | TArr t, TArr TUnknown -> value.t <- t
+  | TArr (t,_), TArr (TUnknown, _) -> value.t <- t
   | t1, t2 ->
     (*if t1 <> t2 then
       ( assert (not debug); raise (TypeError (t, value.t, value.loc)) *)
-    if t <> TUnknown && t <> TVec TUnknown && t <> TArr TUnknown then
-      if value.t <> TUnknown && value.t <> TVec TUnknown && value.t <> TArr TUnknown && value.t <> t then
+    if not (is_unknown t) then
+      if not (is_unknown value.t)  && value.t <> t then
         ( assert (not debug); raise (TypeError (t, value.t, value.loc)) )
       else
         value.t <- t
@@ -356,7 +370,8 @@ let std = {
     (TApp (TFloat64, TInt32), "int_of_float64", 1, "(int)", "(int)");
     (TApp (TUnit, TUnit), "block_barrier", 1, "__syncthreads ", "");
 
-    (TApp (TInt32, TArr TInt32), "make_shared", 1, "", "");
+    (TApp (TInt32, TArr (TInt32, Shared)), "make_shared", 1, "", "");
+    (TApp (TInt32, TArr (TInt32, Local)), "make_local", 1, "", "");
   ];
   mod_modules = 
     let m = Hashtbl.create 2 in 
@@ -409,8 +424,8 @@ let mathf32 = {
 (*    (TApp (TFloat, TFloat32), "of_float", 1, "(float)", "(float)");
     (TApp (TFloat32, TFloat), "to_float", 1, "(float)", "(float)");
 *)
-    (TApp (TInt32, TArr TFloat32), "make_shared", 1, "", "");
-
+    (TApp (TInt32, TArr (TFloat32, Shared)), "make_shared", 1, "", "");
+    (TApp (TInt32, TArr (TFloat32, Local)), "make_local", 1, "", "");
 
   ];
   mod_modules = Hashtbl.create 0
@@ -462,7 +477,8 @@ let mathf64 = {
      (TApp (TFloat32, TFloat64), "of_float32", 1, "(double)", "(double)"); 
      (TApp (TFloat64, TFloat32), "to_float32", 1, "(double)", "(double)"); 
 
-    (TApp (TInt32, TArr TFloat64), "make_shared", 1, "", "");
+    (TApp (TInt32, TArr (TFloat64, Shared)), "make_shared", 1, "", "");
+    (TApp (TInt32, TArr (TFloat64, Local)), "make_local", 1, "", "");
 
 
   ];
@@ -544,11 +560,17 @@ and elt_check body t l =
     (assert (not debug); raise (TypeError (t, body.t, l)) );
   body.t <- t
 
-and is_unknown t =
-  t = TUnknown || t = TVec TUnknown || t = TArr TUnknown
+and equal_types t1 t2 =
+  if t1 = t2 then
+    true
+  else
+    match t1,t2 with
+    | TArr (t1_, _), TArr (t2_, _) ->
+      equal_types  t1_ t2_
+    | _ -> false
 
 and check t1 t2 l=
-  if t1 <> t2 &&( not (is_unknown t1) || not (is_unknown t2)) then
+  if not (equal_types t1 t2) &&( not (is_unknown t1) || not (is_unknown t2)) then
     (assert (not debug); raise (TypeError (t1, t2, l)) )
     
 and typer body t =
@@ -559,8 +581,8 @@ and typer body t =
     (try
        let var = Hashtbl.find !current_args (string_of_ident s) in
        my_eprintf ((string_of_ident s)^ " of type " ^(ktyp_to_string t)^"\n");
-       if t <> TUnknown && t <> TVec TUnknown && t <> TArr TUnknown then
-         if var.var_type = TUnknown || var.var_type = TVec TUnknown || var.var_type = TArr TUnknown then
+       if not (is_unknown t) then 
+         if is_unknown var.var_type  then
            (var.var_type <- t;
             update_type body t)
          else
@@ -591,11 +613,11 @@ and typer body t =
     typer e2 e1.t;
     update_type body TUnit
   | ArrGet (l, e1, e2) ->
-    typer e1 (TArr t);
+    typer e1 (TArr (t, Any));
     typer e2 TInt32;
     update_type body (
       match e1.t with
-      | TArr tt -> tt
+      | TArr (tt,_) -> tt
       | _ -> my_eprintf (ktyp_to_string e1.t); 
         assert false;)
   | VecSet (l, e1, e2) ->

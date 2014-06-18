@@ -110,11 +110,7 @@ let cuda_head = (
 )
 
 let new_var i = IdName ("spoc_var"^(string_of_int i))
-let new_int_array i l = IntArr (i, l)
-let new_int32_array i l = Int32Arr (i, l)
-let new_int64_array i l = Int64Arr (i, l)
-let new_float32_array i l = Float32Arr (i, l)
-let new_float64_array i l = Float64Arr (i, l)
+let new_array i l t m = Arr (i, l, t, m)
 let var i = IntId (("spoc_var"^(string_of_int i)), i)
 let spoc_gen_kernel args body = Kern (args,body)
 let spoc_fun_kernel a b = () 
@@ -359,11 +355,7 @@ let rewrite ker =
       GtEBool (aux k1, aux k2)
     | DoLoop (k1, k2, k3, k4) ->
       DoLoop (aux k1, aux k2, aux k3, aux k4)
-    | IntArr (k1,k2) -> IntArr (k1,k2)
-    | Int32Arr (k1,k2) -> Int32Arr (k1,k2)
-    | Int64Arr (k1,k2) -> Int64Arr (k1,k2)
-    | Float32Arr (k1,k2) -> Float32Arr (k1,k2)
-    | Float64Arr (k1,k2) -> Float64Arr (k1,k2)
+    | Arr (l,t,s,m) -> Arr (l,t,s,m)
     | While (k1, k2) ->
       While (aux k1, aux k2)
     | App (a,b) -> App (aux a, (Array.map aux b))
@@ -539,6 +531,7 @@ struct
   let block_barrier () = ()
 
   let make_shared i = Array.make (Int32.to_int i) 0l
+  let make_local i = Array.make (Int32.to_int i) 0l
 end
 
 module Math =
@@ -594,7 +587,8 @@ struct
     let zero = 0.
     let one = 1.
 
-    let make_shared i = Array.make i 0.
+    let make_shared i = Array.make (Int32.to_int i) 0.
+    let make_local i = Array.make (Int32.to_int i) 0.
   end
 
   module Float64 =
@@ -635,7 +629,8 @@ struct
     let one = 1.
     let of_float32 f = f
     let to_float32 f = f
-    let make_shared i = Array.make i 0.
+    let make_shared i = Array.make (Int32.to_int i) 0.
+    let make_local i = Array.make (Int32.to_int i) 0.
   end
 end
 
@@ -711,11 +706,7 @@ let propagate f = function
   | UnitVar i -> UnitVar i
   | CastDoubleVar i -> assert false
   | DoubleVar i -> DoubleVar i
-  | IntArr (i, a) -> IntArr (i, f a)
-  | Int32Arr (i, a) -> Int32Arr (i, f a)
-  | Int64Arr (i, a) -> Int64Arr (i, f a)
-  | Float32Arr (i, a) -> Float32Arr (i, f a)
-  | Float64Arr (i, a) -> Float64Arr (i, f a)
+  | Arr (i, s, t, m) -> Arr (i, f s, t, m)
   | VecVar (a, i) -> VecVar (f a, i)
   | Concat (a, b) -> Concat (f a, f b)
   | Empty -> Empty

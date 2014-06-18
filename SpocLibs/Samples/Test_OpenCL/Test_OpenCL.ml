@@ -20,7 +20,9 @@ open Kirc
 let gpu_to_gray = kern v ->
   let open Std in
   let tid = thread_idx_x + block_dim_x * block_idx_x in
-  let tab = make_shared 32 in
+  let tab = make_local 32 in
+  let tab2 = make_shared 32 in
+  tab2.(0) <- tab.(0) +  v.[<0>];
   if tid <= (512*512) then (
     let i = (tid*4) in
     let res = int_of_float ((0.21 *. (float (v.[<i>]))) +.

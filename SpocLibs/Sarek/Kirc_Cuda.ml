@@ -65,25 +65,22 @@ let rec parse i = function
   | UnitVar v -> assert false
   | CastDoubleVar s -> ("(double) spoc_var"^(string_of_int s))
   | DoubleVar s -> ("double spoc_var"^(string_of_int s))
-  | IntArr (s,l) -> ("__shared__ int spoc_var"^
-                     (string_of_int s)^"["^
-                     (parse i l)^"]")
-  | Int32Arr (s,l) -> ("__shared__ int spoc_var"^
+  | Arr (s,l,t,m) -> 
+    let memspace = 
+      match m with 
+      | Local -> ""
+      | Shared -> "__shared__"
+      | Global -> "__device__"
+    and elttype = 
+      match t with
+      | EInt32 -> "int"
+      | EInt64 -> "long"
+      | EFloat32 -> "float"
+      | EFloat64 -> "double" 
+    in
+        (memspace^" "^elttype^" spoc_var"^
                        (string_of_int s)^"["^
                        (parse i l)^"]")
-  | Int64Arr (s,l) -> ("__shared__ long spoc_var"^
-                       (string_of_int s)^"["^
-                       (parse i l)^"]")
-  | Float32Arr (s,l) -> ("__shared__ float spoc_var"^
-                         (string_of_int s)^"["^
-                         (parse i l)^"]")
-  | Float64Arr (s,l) -> ("__shared__ double spoc_var"^
-                         (string_of_int s)^"["^
-                         (parse i l)^"]")
-  (*   | IntArr (s,l) ->
-       | IntArr (s,l) ->
-       | IntArr (s,l) ->
-       | IntArr (s,l) ->*)
   | Params k -> 
     ("#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n__global__ void spoc_dummy ( "^
      (if (fst !return_v) <> "" then

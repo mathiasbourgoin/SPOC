@@ -47,6 +47,17 @@ and kvect =
 
 type intrinsics = string*string
 
+type elttype = 
+  | EInt32
+  | EInt64
+  | EFloat32
+  | EFloat64
+
+type memspace =
+  | Local
+  | Global
+  | Shared
+
 type  k_ext =
   | Kern of  k_ext* k_ext
   | Params of  k_ext
@@ -66,11 +77,7 @@ type  k_ext =
   | UnitVar of int
   | CastDoubleVar of int
   | DoubleVar of int
-  | IntArr of int*k_ext
-  | Int32Arr of int*k_ext
-  | Int64Arr of int*k_ext
-  | Float32Arr of int*k_ext
-  | Float64Arr of int*k_ext
+  | Arr of int*k_ext*elttype*memspace
   | VecVar of  k_ext*int
   | Concat of  k_ext* k_ext
   | Empty
@@ -274,16 +281,20 @@ let print_ast a =
       print i "While";
       aux (i+1) a;
       aux (i+1) b;
-    | IntArr (s,l) ->
-      print i "IntArr";
-    | Int32Arr (s,l) ->
-      print i "Int32Arr";
-    | Int64Arr (s,l) ->
-      print i "Int64Arr";
-    | Float32Arr (s,l) ->
-      print i "Float32Arr";
-    | Float64Arr (s,l) ->
-      print i "Float64Arr";
+    | Arr (s,l,t,m) ->
+      let memspace = 
+        match m with 
+        | Local -> "__private"
+        | Shared -> "__local"
+        | Global -> "__global"
+      and elttype = 
+        match t with
+        | EInt32 -> "int"
+        | EInt64 -> "long"
+        | EFloat32 -> "float"
+        | EFloat64 -> "double" 
+      in
+      print i ("Arr" ^ memspace^" "^elttype);
     | App (a,b) ->
       print i "App";
       aux (i+1) a;
