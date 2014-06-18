@@ -515,39 +515,44 @@ let compile_kernel_to_files s ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) =
 
 module Std =
 struct
-  let thread_idx_x = 1
-  let thread_idx_y = 1
-  let thread_idx_z = 1
-  let block_idx_x = 1
-  let block_idx_y = 1
-  let block_idx_z = 1
-  let block_dim_x = 1
-  let block_dim_y = 1
-  let block_dim_z = 1
+  let thread_idx_x = 1l
+  let thread_idx_y = 1l
+  let thread_idx_z = 1l
+  let block_idx_x = 1l
+  let block_idx_y = 1l
+  let block_idx_z = 1l
+  let block_dim_x = 1l
+  let block_dim_y = 1l
+  let block_dim_z = 1l
 
-  let global_thread_id = 0
+  let global_thread_id = 0l
   let return () = ()
 
-  let float64 = float
-  let int_of_float64 = int_of_float
+  let float64 i = float (Int32.to_int i)
+  let float i = float (Int32.to_int i)
+  let int_of_float64 f = Int32.of_int (int_of_float f)
+  let int_of_float f = Int32.of_int (int_of_float f)
 
   let block_barrier () = ()
 
-  let make_shared i = Array.make i 0
+  let make_shared i = Array.make (Int32.to_int i) 0l
 end
 
 module Math =
 struct
 
-  let rec pow a  = function
-    | 0 -> 1
-    | 1 -> a
-    | n -> 
-      let b = pow a (n / 2) in
-      b * b * (if n mod 2 = 0 then 1 else a)
+  let rec pow a  b = 
+    let rec aux a = function
+      | 0 -> 1
+      | 1 -> a
+      | n -> 
+        let b = aux a (n / 2) in
+        b * b * (if n mod 2 = 0 then 1 else a)
+    in
+    Int32.of_int (aux (Int32.to_int a) (Int32.to_int b))
 
-  let logical_and = fun a b -> a land b
-  let xor = fun a b -> a lxor b
+  let logical_and = fun a b -> Int32.logand a b
+  let xor = fun a b -> Int32.logxor a b
 
   module Float32 =
   struct
@@ -585,8 +590,6 @@ struct
 
     let zero = 0.
     let one = 1.
-    let of_float (f:float) = f
-    let to_float (f:float) = f
 
     let make_shared i = Array.make i 0.
   end
@@ -627,8 +630,8 @@ struct
 
     let zero = 0.
     let one = 1.
-    let of_float (f:float) = f
-    let to_float (f:float) = f
+    let of_float32 f = f
+    let to_float32 f = f
     let make_shared i = Array.make i 0.
   end
 end

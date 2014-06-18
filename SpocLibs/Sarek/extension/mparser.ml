@@ -81,7 +81,7 @@ let rec parse_int i t=
         <:expr< $(ExId (_loc, s))$>>)
   | Int (_loc, s) -> 
     ( match i.t with 
-      | TInt | TInt32 -> <:expr< $(ExInt (_loc, s))$>>
+      | TInt32 | TInt32 -> <:expr< $(ExInt (_loc, s))$>>
       | _ -> assert (not debug); raise (TypeError (t, i.t, i.loc)))
   | Int32 (_loc, s) -> 
     ( match i.t with 
@@ -124,7 +124,7 @@ let rec parse_int i t=
            match k with 
            | TInt32  -> <:ctyp<(int32, Bigarray.int32_elt) Spoc.Vector.vector>>
            | TInt64  -> <:ctyp<(int64, Bigarray.int64_elt) Spoc.Vector.vector>>
-           | TInt ->  <:ctyp<(int, Bigarray.int_elt) Spoc.Vector.vector>>
+           (*| TInt ->  <:ctyp<(int, Bigarray.int_elt) Spoc.Vector.vector>>*)
            |  _  ->  assert false
          in
          (match var.var_type with
@@ -135,10 +135,9 @@ let rec parse_int i t=
             vec_typ_to_e t
           | _  -> assert (not debug); raise (TypeError (TVec t, var.var_type, _loc)))
        in
-       <:expr<Spoc.Mem.get ($ExId(_loc,s)$:$type_constraint$) $parse_body index$>>
-    | _  ->  assert (not debug); failwith "Unknwown vector");
-
-
+       <:expr<Spoc.Mem.get ($ExId(_loc,s)$:$type_constraint$) (Int32.to_int $parse_body index$)>>
+     | _  ->  assert (not debug); failwith "Unknwown vector");
+  | ArrGet _ -> parse_body i
   | App (_loc, e1, e2) -> parse_body i
   | _ -> my_eprintf (k_expr_to_string i.e); assert (not debug);  raise (TypeError (t, i.t, i.loc))
                              
@@ -191,7 +190,7 @@ and parse_float f t =
     <:expr< ! $parse_body id$>>
   | Float (_loc, s)  -> 
     ( match f.t with 
-      | TFloat  -> <:expr<$(ExFlo(_loc, s))$>>
+      | TFloat32  -> <:expr<$(ExFlo(_loc, s))$>>
       | _ -> assert (not debug); raise (TypeError (t, f.t, f.loc)))
   | Float32 (_loc, s) -> 
     ( match f.t with 
@@ -226,7 +225,7 @@ and parse_float f t =
                aux ())
             | TVec k when k = t  -> (
                 match k with 
-                | TFloat -> <:ctyp<(float, Bigarray.float32_elt) Spoc.Vector.vector>>
+                (*| TFloat -> <:ctyp<(float, Bigarray.float32_elt) Spoc.Vector.vector>>*)
                 | TFloat32 -> <:ctyp<(float, Bigarray.float32_elt) Spoc.Vector.vector>>
                 | TFloat64 -> <:ctyp<(float, Bigarray.float64_elt) Spoc.Vector.vector>>
                 |  _  ->  assert false
@@ -235,7 +234,7 @@ and parse_float f t =
               assert (not debug); raise (TypeError (TVec t, var.var_type, _loc))
               
            ) in aux () in
-         <:expr<Spoc.Mem.get ($ExId(_loc,s)$:$type_constraint$) $parse_body index$>>
+         <:expr<Spoc.Mem.get ($ExId(_loc,s)$:$type_constraint$) (Int32.to_int $parse_body index$)>>
      | _  ->
        assert (not debug); failwith "Unknwown vector");
   | ModuleAccess _ -> parse_body f
@@ -249,9 +248,9 @@ and  parse_int2 i t=
   | Id (_loc,s) -> 
     (try 
        let var = (Hashtbl.find !current_args (string_of_ident s)) in
-       (match var.var_type with
+       (*(match var.var_type with
         | x when x = t ->  ()
-        | _  ->  assert (not debug); raise (TypeError (t, var.var_type, _loc)));
+        | _  ->  assert (not debug); raise (TypeError (t, var.var_type, _loc)));*)
        if var.is_global then
          <:expr<global_int_var $ExId(_loc,s)$>>
        else
@@ -268,7 +267,7 @@ and  parse_int2 i t=
          (assert (not debug); raise (Unbound_value ((string_of_ident s),_loc))))
   | Ref (_, {loc=_; e=Id(_loc,s); t=_}) ->
     <:expr<global_int_var (fun () -> ! $ExId(_loc, s)$)>>
-  | Int (_loc, s)  -> <:expr<spoc_int $(ExInt (_loc, s))$>>
+  | Int (_loc, s)  -> <:expr<spoc_int32 $(ExInt32 (_loc, s))$>>
   | Int32 (_loc, s)  -> <:expr<spoc_int32 $(ExInt32 (_loc, s))$>>
   | Int64 (_loc, s)  -> <:expr<spoc_int64 $(ExInt64 (_loc, s))$>>
 
@@ -295,7 +294,20 @@ and  parse_int2 i t=
         | _  -> assert (not debug); raise (TypeError (TVec t, var.var_type, _loc))
        );
      | _  ->  failwith "Unknwown vector");
-    <:expr<get_vec $parse_int2 vector (TVec t)$ $parse_int2 index TInt$>>
+    <:expr<get_vec $parse_int2 vector (TVec t)$ $parse_int2 index TInt32$>>
+  | ArrGet (_loc, array, index)  -> 
+    (*( match i.t with
+      | x when x = t -> ()
+      | _  -> assert (not debug); raise (TypeError (t, i.t , _loc)));*)
+    (match array.e with
+     | Id (_loc,s)  -> 
+       let var = (Hashtbl.find !current_args (string_of_ident s)) in
+       (match var.var_type with
+        | TArr x when x = t  -> ()
+        | _  -> assert (not debug); raise (TypeError (TArr t, var.var_type, _loc))
+       );
+     | _  ->  failwith "Unknwown vector");
+    <:expr<get_arr $parse_int2 array (TVec t)$ $parse_int2 index TInt32$>>
   | App _ -> parse_body2 i false
   | _ -> ( my_eprintf (Printf.sprintf "--> (* val %s *)\n%!" (k_expr_to_string i.e));
             assert (not debug); raise (TypeError (t, i.t, i.loc));
@@ -351,7 +363,7 @@ and  parse_float2 f t=
         | _  -> assert (not debug); raise (TypeError (TVec t, var.var_type, _loc))
        );
      | _  ->  failwith "Unknwown vector");
-    <:expr<get_vec $parse_float2 vector (TVec t)$ $parse_int2 index TInt$>>
+    <:expr<get_vec $parse_float2 vector (TVec t)$ $parse_int2 index TInt32$>>
   | ModuleAccess _ -> parse_body2 f false
   | _  -> ( my_eprintf (Printf.sprintf "(* val %s *)\n%!" (k_expr_to_string f.e));
             assert (not debug); raise (TypeError (t, f.t, f.loc));
@@ -435,7 +447,7 @@ and parse_body body =
   | Min64 (_loc, a, b) ->
     ( <:expr<Int64.min $(parse_int a TInt64)$  $(parse_int b TInt64)$>>)
   | MinF (_loc, a,b) -> 
-    ( <:expr<$(parse_float a TFloat)$ -. $(parse_float b TFloat)$>>)
+    ( <:expr<$(parse_float a TFloat32)$ -. $(parse_float b TFloat32)$>>)
   | MinF32 (_loc, a,b) -> 
     let a_ = (parse_float a TFloat32) in
     let b_ = (parse_float b TFloat32) in
@@ -506,7 +518,7 @@ and parse_body body =
 
 
   | Mod (_loc, a,b) -> 
-    ( <:expr<$(parse_int a TInt)$ mod $(parse_int b TInt)$>>)
+    ( <:expr<$(parse_int a TInt32)$ mod $(parse_int b TInt32)$>>)
 
 
   | Id (_loc,s) -> 
@@ -543,10 +555,10 @@ and parse_body body =
      | VecGet (_, v,idx)  -> 
        let vec_typ_to_e t = 
          (match t with 
-          | TInt -> <:ctyp<(int, Bigarray.int_elt) Spoc.Vector.vector>>
+          (*| TInt -> <:ctyp<(int, Bigarray.int_elt) Spoc.Vector.vector>>*)
           | TInt32  -> <:ctyp<(int32, Bigarray.int32_elt) Spoc.Vector.vector>>
           | TInt64  -> <:ctyp<(int64, Bigarray.int64_elt) Spoc.Vector.vector>>
-          | TFloat -> <:ctyp<(float, Bigarray.float32_elt) Spoc.Vector.vector>>
+          (*| TFloat -> <:ctyp<(float, Bigarray.float32_elt) Spoc.Vector.vector>>*)
           | TFloat32 -> <:ctyp<(float, Bigarray.float32_elt) Spoc.Vector.vector>>
           | TFloat64 -> <:ctyp<(float, Bigarray.float64_elt) Spoc.Vector.vector>>
           |  _  ->  assert false
@@ -574,7 +586,7 @@ and parse_body body =
           in
 
           <:expr<Spoc.Mem.set ($parse_body v$:$type_constaint$)
-                 	  $parse_body idx$ $gen_value$>>
+                 	  (Int32.to_int $parse_body idx$) $gen_value$>>
         | _  ->  failwith "Unknwown vector");
      | _  -> failwith (Printf.sprintf "erf %s" (k_expr_to_string vector.e)) ); 
 
@@ -614,7 +626,7 @@ and parse_body body =
             )
           in	
           <:expr<($parse_body a$:$type_constaint$).($parse_body idx$) <- $gen_value$>>*)
-          <:expr<($parse_body a$).($parse_body idx$) <- $gen_value$>>
+          <:expr<($parse_body a$).(Int32.to_int $parse_body idx$) <- $gen_value$>>
         | _  ->  failwith "Unknwown array");
      | _  -> failwith (Printf.sprintf "erf_arr %s" (k_expr_to_string array.e)) ); 
 
@@ -628,10 +640,10 @@ and parse_body body =
          (match var.var_type with
           | TVec k -> 
             (match k with 
-             | TInt -> <:ctyp<(int, Bigarray.int_elt) Spoc.Vector.vector>>
+             (*| TInt -> <:ctyp<(int, Bigarray.int_elt) Spoc.Vector.vector>>*)
              | TInt32  -> <:ctyp<(int32, Bigarray.int32_elt) Spoc.Vector.vector>>
              | TInt64  -> <:ctyp<(int64, Bigarray.int64_elt) Spoc.Vector.vector>>
-             | TFloat -> <:ctyp<(float, Bigarray.float32_elt) Spoc.Vector.vector>>
+             (*| TFloat -> <:ctyp<(float, Bigarray.float32_elt) Spoc.Vector.vector>>*)
              | TFloat32 -> <:ctyp<(float, Bigarray.float32_elt) Spoc.Vector.vector>>
              | TFloat64 -> <:ctyp<(float, Bigarray.float64_elt) Spoc.Vector.vector>>
              | TBool -> assert false
@@ -644,7 +656,7 @@ and parse_body body =
             )
           | _  -> assert (not debug); failwith (Printf.sprintf "strange vector %s" (ktyp_to_string var.var_type ))
          )in
-       <:expr<Spoc.Mem.get ($ExId(_loc,s)$:$type_constraint$) $parse_body index$>>
+       <:expr<Spoc.Mem.get ($ExId(_loc,s)$:$type_constraint$) (Int32.to_int $parse_body index$)>>
      | _  -> assert (not debug); failwith (Printf.sprintf "strange vector %s" (k_expr_to_string body.e )))
 
   | ArrGet(_loc, array, index)  -> 
@@ -656,10 +668,10 @@ and parse_body body =
          (match var.var_type with
           | TArr k -> 
             (match k with 
-             | TInt -> <:ctyp<int array>>
+             (*| TInt -> <:ctyp<int array>>*)
              | TInt32  -> <:ctyp<int32 array>>
              | TInt64  -> <:ctyp<int64 array>>
-             | TFloat -> <:ctyp<float array>>
+             (*| TFloat -> <:ctyp<float array>>*)
              | TFloat32 -> <:ctyp<float array>>
              | TFloat64 -> <:ctyp<float array>>
              | TBool | TVec _ 
@@ -668,11 +680,11 @@ and parse_body body =
             )
           | _  -> (assert (not debug); raise (TypeError (TArr TUnknown, var.var_type, _loc)));
          )in
-       <:expr<($ExId(_loc,s)$:$type_constraint$).($parse_body index$)>>
+       <:expr<($ExId(_loc,s)$:$type_constraint$).(Int32.to_int $parse_body index$)>>
      | _  -> assert (not debug); failwith "strange array")
 
-  | BoolEq (_loc, a, b) ->
-    (<:expr<$parse_int a TInt$ = $parse_int b TInt$>>)
+  | BoolEq32 (_loc, a, b) ->
+    (<:expr<$parse_int a TInt32$ = $parse_int b TInt32$>>)
   | BoolEq32 (_loc, a, b) ->
     (<:expr<$parse_int a TInt32$ = $parse_int b TInt32$>>)
   | BoolEq64 (_loc, a, b) ->
@@ -683,7 +695,7 @@ and parse_body body =
     (<:expr<$parse_float a TFloat64$ = $parse_float b TFloat64$>>)
 
   | BoolLt (_loc, a, b) ->
-    (<:expr<$parse_int a TInt$ < $parse_int b TInt$>>)
+    (<:expr<$parse_int a TInt32$ < $parse_int b TInt32$>>)
   | BoolLt32 (_loc, a, b) ->
     (<:expr<$parse_int a TInt32$ < $parse_int b TInt32$>>)
   | BoolLt64 (_loc, a, b) ->
@@ -694,7 +706,7 @@ and parse_body body =
     (<:expr<$parse_float a TFloat64$ < $parse_float b TFloat64$>>)
 
   | BoolGt (_loc, a, b) ->
-    (<:expr<$parse_int a TInt$ > $parse_int b TInt$>>)
+    (<:expr<$parse_int a TInt32$ > $parse_int b TInt32$>>)
   | BoolGt32 (_loc, a, b) ->
     (<:expr<$parse_int a TInt32$ > $parse_int b TInt32$>>)
   | BoolGt64 (_loc, a, b) ->
@@ -705,7 +717,7 @@ and parse_body body =
     (<:expr<$parse_float a TFloat64$ > $parse_float b TFloat64$>>)
 
   | BoolLtE (_loc, a, b) ->
-    (<:expr<$parse_int a TInt$ <= $parse_int b TInt$>>)
+    (<:expr<$parse_int a TInt32$ <= $parse_int b TInt32$>>)
   | BoolLtE32 (_loc, a, b) ->
     (<:expr<$parse_int a TInt32$ <= $parse_int b TInt32$>>)
   | BoolLtE64 (_loc, a, b) ->
@@ -716,7 +728,7 @@ and parse_body body =
     (<:expr<$parse_float a TFloat64$ <= $parse_float b TFloat64$>>)
 
   | BoolGtE (_loc, a, b) ->
-    (<:expr<$parse_int a TInt$ >= $parse_int b TInt$>>)
+    (<:expr<$parse_int a TInt32$ >= $parse_int b TInt32$>>)
   | BoolGtE32 (_loc, a, b) ->
     (<:expr<$parse_int a TInt32$ >= $parse_int b TInt32$>>)
   | BoolGtE64 (_loc, a, b) ->
@@ -742,7 +754,7 @@ and parse_body body =
     (<:expr<if $cond$ then $cons1$>>)
   | DoLoop (_loc, ({t=_;e=Id(_,s) ;loc=_} as id), min, max, body) ->
     let var = (Hashtbl.find !current_args (string_of_ident s)) in
-    var.var_type <- TInt;
+    var.var_type <- TInt32;
     let min = (parse_body min) in
     let max = (parse_body max) in
     let body = parse_body body in
@@ -756,14 +768,14 @@ and parse_body body =
     let cond = parse_body cond in
     let body = parse_body body in
     (<:expr< while $cond$ do $body$ done>>)
-  | Seqs exprs ->
-    let _loc = body.loc in
-    List.fold_left     
-      (fun s e ->
-         let e2 = parse_body e in
-         <:expr< $e2$; $s$>>) 
-      <:expr< >>     
-      exprs
+  (* | Seqs exprs -> *)
+  (*   let _loc = body.loc in *)
+  (*   List.fold_left      *)
+  (*     (fun s e -> *)
+  (*        let e2 = parse_body e in *)
+  (*        <:expr< $e2$; $s$>>)  *)
+  (*     <:expr< >>      *)
+  (*     exprs *)
   | App (_loc, e1, e2) ->
     let rec aux e2 = 
       match e2 with
@@ -855,7 +867,7 @@ and expr_of_app t _loc gen_var y =
     expr_of_app tt _loc gen_var y
   | TApp (t1,t2) -> 
     (match t2 with
-     | TInt -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (parse_body2 y false)
+     (*| TInt -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (parse_body2 y false)*)
      | TInt32 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (parse_body2 y false)
      | TInt64 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (parse_body2 y false)
      | TFloat32 -> <:expr<(new_float_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(parse_body2 y false)
@@ -877,7 +889,7 @@ and parse_body2 body bool =
               with _ -> assert false in
              let rec f () = 
                match var.t with
-               | TInt -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (aux y)
+               (*| TInt -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (aux y)*)
                | TInt32 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (aux y)
                | TInt64 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (aux y)
                | TFloat32 -> <:expr<(new_float_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
@@ -889,7 +901,7 @@ and parse_body2 body bool =
                  else
                    (assert (not debug); raise (TypeError (TUnknown, gen_var.var_type , _loc));
                     assert (not debug); failwith "unknown var type")
-               | TArr TInt -> <:expr<(new_int_array $ExInt(_loc,string_of_int gen_var.n)$) ($aux y$)>>,(aux y)
+               (*| TArr TInt -> <:expr<(new_int_array $ExInt(_loc,string_of_int gen_var.n)$) ($aux y$)>>,(aux y)*)
                | TArr TInt32 -> <:expr<(new_int32_array $ExInt(_loc,string_of_int gen_var.n)$) ($aux y$)>>,(aux y)
                | TArr TInt64 -> <:expr<(new_int64_array $ExInt(_loc,string_of_int gen_var.n)$) ($aux y$)>>,(aux y)
                | TArr TFloat32 -> <:expr<(new_float32_array $ExInt(_loc,string_of_int gen_var.n)$) ($aux y$)>>,(aux y)
@@ -998,11 +1010,11 @@ and parse_body2 body bool =
     | DivF64 (_loc, a,b) -> 
       ( <:expr<spoc_div_float $(parse_float2 a TFloat64)$ $(parse_float2 b TFloat64)$>>)
 
-    | Mod (_loc, a,b) -> body.t <- TInt; 
-      let p1 = (parse_int2 a TInt) 
-      and p2 = (parse_int2 b TInt) in
+    | Mod (_loc, a,b) -> body.t <- TInt32; 
+      let p1 = (parse_int2 a TInt32) 
+      and p2 = (parse_int2 b TInt32) in
       if not r then 
-        return_type := TInt;
+        return_type := TInt32;
       ( <:expr<spoc_mod $p1$ $p2$>>) 
 
     | Id (_loc,s)  -> 
@@ -1017,7 +1029,7 @@ and parse_body2 body bool =
                match var.var_type with
                | TFloat32 ->
                  <:expr<global_float_var (fun () -> $ExId(_loc,s)$)>>
-               | TInt -> <:expr<global_int_var (fun () -> $ExId(_loc,s)$)>>
+               | TInt32 -> <:expr<global_int_var (fun () -> $ExId(_loc,s)$)>>
                | _ -> assert false
              else
                <:expr<var  $ExInt(_loc, string_of_int var.n)$>>)
@@ -1067,10 +1079,10 @@ and parse_body2 body bool =
       let gen_value = aux (~return_bool:true) value in
       let gen_value = 
         match vector.t, value.e with
-        | TInt, (Int _) -> <:expr<( $gen_value$)>>
+        (*| TInt, (Int _) -> <:expr<( $gen_value$)>>*)
         | TInt32, (Int32 _) -> <:expr<( $gen_value$)>> 
         | TInt64, (Int64 _) -> <:expr<( $gen_value$)>> 
-        | TFloat, (Float _) -> <:expr<( $gen_value$)>> 
+        (*| TFloat, (Float _) -> <:expr<( $gen_value$)>> *)
         | TFloat32, (Float32 _) -> <:expr<( $gen_value$)>> 
         | TFloat64, (Float64 _) -> <:expr<( $gen_value$)>> 
         | _ -> gen_value
@@ -1081,7 +1093,7 @@ and parse_body2 body bool =
       e
     | VecGet(_loc, vector, index)  -> 
       let e =
-        <:expr<get_vec $aux vector$ $parse_int2 index TInt$>> in
+        <:expr<get_vec $aux vector$ $parse_int2 index TInt32$>> in
       (match vector.t with
        | TVec ty->
          ();
@@ -1093,10 +1105,10 @@ and parse_body2 body bool =
       let gen_value = aux (~return_bool:true) value in
       let gen_value = 
         match array.t, value.e with
-        | TInt, (Int _) -> <:expr<( $gen_value$)>>
+(*        | TInt, (Int _) -> <:expr<( $gen_value$)>>*)
         | TInt32, (Int32 _) -> <:expr<( $gen_value$)>> 
         | TInt64, (Int64 _) -> <:expr<( $gen_value$)>> 
-        | TFloat, (Float _) -> <:expr<( $gen_value$)>> 
+(*        | TFloat, (Float _) -> <:expr<( $gen_value$)>> *)
         | TFloat32, (Float32 _) -> <:expr<( $gen_value$)>> 
         | TFloat64, (Float64 _) -> <:expr<( $gen_value$)>> 
         | _ -> gen_value
@@ -1107,7 +1119,7 @@ and parse_body2 body bool =
       e
     | ArrGet(_loc, array, index)  -> 
       let e =
-        <:expr<get_arr $aux array$ $parse_int2 index TInt$>> in
+        <:expr<get_arr $aux array$ $parse_int2 index TInt32$>> in
       (match array.t with
        | TArr ty->
          ();
@@ -1119,8 +1131,8 @@ and parse_body2 body bool =
       <:expr< b_or $aux a$ $aux b$>>
     | BoolAnd(_loc, a, b) ->
       <:expr< b_and $aux a$ $aux b$>>
-    | BoolEq(_loc, a, b) ->
-      <:expr< equals $aux a$ $aux b$>>
+    | BoolEq32 (_loc, a, b) ->
+      <:expr< equals32 $aux a$ $aux b$>>
     | BoolEq32(_loc, a, b) ->
       <:expr< equals32 $aux a$ $aux b$>>
     | BoolEq64(_loc, a, b) ->
@@ -1130,10 +1142,10 @@ and parse_body2 body bool =
     | BoolEqF64(_loc, a, b) ->
       <:expr< equalsF64 $aux a$ $aux b$>>
     | BoolLt(_loc, a, b) ->
-      let p1 = (parse_int2 a TInt) 
-      and p2 = (parse_int2 b TInt) in
+      let p1 = (parse_int2 a TInt32) 
+      and p2 = (parse_int2 b TInt32) in
       if not r then 
-        return_type := TInt;
+        return_type := TInt32;
       ( <:expr<lt $p1$ $p2$>>) 
     | BoolLt32(_loc, a, b) ->
       let p1 = (parse_int2 a TInt32) 
@@ -1148,10 +1160,10 @@ and parse_body2 body bool =
     | BoolLtF64(_loc, a, b) ->
       <:expr< ltF64 $aux a$ $aux b$>>
     | BoolGt(_loc, a, b) ->
-      let p1 = (parse_int2 a TInt) 
-      and p2 = (parse_int2 b TInt) in
+      let p1 = (parse_int2 a TInt32) 
+      and p2 = (parse_int2 b TInt32) in
       if not r then 
-        return_type := TInt;
+        return_type := TInt32;
       ( <:expr<gt $p1$ $p2$>>) 
     | BoolGt32(_loc, a, b) ->
       let p1 = (parse_int2 a TInt32) 
@@ -1203,18 +1215,18 @@ and parse_body2 body bool =
       let cond = aux cond in
       let body = aux body in
       (<:expr<spoc_while $cond$ $body$>>)
-    | Seqs exprs ->
-      let _loc = body.loc in
-      let rec aux = function
-        | [] -> <:expr< Unit>>
-        | t::[] -> 
-          let e2 = parse_body2 t false in
-          e2
-        | t::q -> 
-          let q = aux q in
-          let e2 =  (parse_body2 t true) in
-          <:expr< (seq $e2$ $q$)>>
-      in aux exprs
+    (* | Seqs exprs -> *)
+    (*   let _loc = body.loc in *)
+    (*   let rec aux = function *)
+    (*     | [] -> <:expr< Unit>> *)
+    (*     | t::[] ->  *)
+    (*       let e2 = parse_body2 t false in *)
+    (*       e2 *)
+    (*     | t::q ->  *)
+    (*       let q = aux q in *)
+    (*       let e2 =  (parse_body2 t true) in *)
+    (*       <:expr< (seq $e2$ $q$)>> *)
+    (*   in aux exprs *)
     | App (_loc, e1, e2) ->
       let e = <:expr< $parse_app body$>> in
       e
@@ -1256,7 +1268,7 @@ and parse_body2 body bool =
         match var.var_type with
         | TFloat32 ->
           <:expr<global_float_var (fun _ -> ! $ExId(_loc,s)$)>>
-        | TInt -> <:expr<global_int_var (fun _ -> ! $ExId(_loc,s)$)>>
+        | TInt32 -> <:expr<global_int_var (fun _ -> ! $ExId(_loc,s)$)>>
         | _ -> assert false
       else
         assert false
@@ -1275,7 +1287,7 @@ and parse_body2 body bool =
              (let gen_var = (Hashtbl.find !current_args (string_of_ident s)) in
               let ex1,ex2 = 
                 match var.t with
-                | TInt -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (aux y)
+                | TInt32 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (aux y)
                 | TInt32 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
                 | TInt64 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (aux y)
                 | TFloat32 -> <:expr<(new_float_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
@@ -1291,7 +1303,7 @@ and parse_body2 body bool =
              (let gen_var = (Hashtbl.find !current_args (string_of_ident s)) in
               let ex1,ex2 = 
                 match var.t with
-                | TInt -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
+                | TInt32 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
                 | TInt32 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
                 | TInt64 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (aux y)
                 | TFloat32 -> <:expr<(new_double_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
@@ -1356,16 +1368,16 @@ let gen_arg_from_patt2 p =
     (let var = (Hashtbl.find !current_args x) in   
      match var.var_type with
      | TUnknown  -> <:expr<(new_unknown_var $ExInt(_loc2,  string_of_int var.n)$)>>
-     | TInt | TInt32 | TInt64 ->                                                 
+     | TInt32 | TInt32 | TInt64 ->                                                 
        <:expr<(new_int_var $ExInt(_loc2,  string_of_int var.n)$)>>
-     | TFloat32 | TFloat -> 
+     | TFloat32 | TFloat32 -> 
        <:expr<(new_float_var $ExInt(_loc2,  string_of_int var.n)$)>>
      | TFloat64  -> 
        <:expr<(new_float64_var $ExInt(_loc2,  string_of_int var.n)$)>>
      | TVec k -> 
        (match k with
-        | TInt | TInt32 | TInt64  ->   <:expr<(new_int_vec_var $ExInt(_loc2,  string_of_int var.n)$)>>
-        | TFloat | TFloat32 ->   <:expr<(new_float_vec_var $ExInt(_loc2,  string_of_int var.n)$)>>
+        | TInt32 | TInt32 | TInt64  ->   <:expr<(new_int_vec_var $ExInt(_loc2,  string_of_int var.n)$)>>
+        | TFloat32 | TFloat32 ->   <:expr<(new_float_vec_var $ExInt(_loc2,  string_of_int var.n)$)>>
         | TFloat64 ->   <:expr<(new_double_vec_var $ExInt(_loc2,  string_of_int var.n)$)>>
         | _  -> failwith "Forbidden vector  type in kernel declaration")
      | _ ->  failwith "unimplemented yet"
@@ -1403,20 +1415,20 @@ let gen_arg_from_patt3 p =
                      IdUid (_loc, "Kernel"), 
                      IdLid(_loc, "abs"))),
          <:ctyp< 'a>>
-       | TInt -> 
+(*       | TInt32 -> 
          <:ctyp< int>>, 
          <:expr< Spoc.Kernel.Int32>>,
-         <:ctyp< int>>,
+         <:ctyp< int32>>,
          IdAcc(_loc, 
                IdUid(_loc, "Spoc"), 
                IdAcc(_loc, 
                      IdUid (_loc, "Kernel"), 
                      IdUid(_loc, "Int32"))),
-         <:ctyp< int>>
+         <:ctyp< int>>*)
        | TInt32 ->  
-         <:ctyp< int32>>, 
-         <:expr< Spoc.Kernel.Int32>>,
-         <:ctyp< int32>>,
+         <:ctyp< int>>, 
+         <:expr< Spoc.Kernel.Int32 >>,
+         <:ctyp< int>>,
          IdAcc(_loc, 
                IdUid(_loc, "Spoc"), 
                IdAcc(_loc, 
@@ -1433,7 +1445,7 @@ let gen_arg_from_patt3 p =
                      IdUid (_loc, "Kernel"), 
                      IdUid(_loc, "Int64"))),
          <:ctyp< int64>>
-       | TFloat | TFloat32 | TFloat64 ->  
+       | TFloat32 | TFloat32 | TFloat64 ->  
          <:ctyp< float>>,
          <:expr< Spoc.Kernel.Float32>>,
          <:ctyp< float>>,
@@ -1445,7 +1457,7 @@ let gen_arg_from_patt3 p =
          <:ctyp< float>>
        | TVec k -> 
          (match k with
-          | TInt -> 
+          | TInt32 -> 
             <:ctyp< (('spoc_a, 'spoc_b) Vector.vector)>>, 
             <:expr< Spoc.Kernel.VInt32>>,
             <:ctyp< ((int32, Bigarray.int32_elt) Vector.vector)>> ,
@@ -1475,7 +1487,7 @@ let gen_arg_from_patt3 p =
                         IdUid (_loc, "Kernel"), 
                         IdUid(_loc, "VInt64"))),
             <:ctyp< Spoc.Vector.vint64>>
-          | TFloat -> 
+(*          | TFloat32 -> 
             <:ctyp< (('spoc_g, 'spoc_h) Vector.vector)>>, 
             <:expr< Spoc.Kernel.VFloat32>>,
             <:ctyp< ((float, Bigarray.float32_elt) Vector.vector)>>,
@@ -1484,7 +1496,7 @@ let gen_arg_from_patt3 p =
                   IdAcc(_loc, 
                         IdUid (_loc, "Kernel"), 
                         IdUid(_loc, "VFloat32"))),
-            <:ctyp< Spoc.Vector.vfloat32>>
+            <:ctyp< Spoc.Vector.vfloat32>>*)
           | TFloat32 -> 
             <:ctyp< (('spoc_i, 'spoc_j) Vector.vector)>>, 
             <:expr< Spoc.Kernel.VFloat32>>,
@@ -1539,8 +1551,8 @@ let rec float32_expr f =
   let rec f32_typer f =
     (match f.t with
      | TUnknown -> f.t <- TFloat32
-     | TFloat -> f.t <- TFloat32
-     | TVec TFloat
+     | TFloat32 -> f.t <- TFloat32
+     | TVec TFloat32
      | TVec TFloat32 -> f.t <- TVec TFloat32
      | TFloat32-> ()
      | _ -> assert (not debug); raise (TypeError (TFloat32, f.t, f.loc)))
@@ -1563,8 +1575,8 @@ let rec float64_expr f =
   let rec f64_typer f =
     (match f.t with
      | TUnknown -> ()
-     | TFloat -> f.t <- TFloat64
-     | TVec TFloat
+(*     | TFloat -> f.t <- TFloat64
+     | TVec TFloat*)
      | TVec TFloat64 -> f.t <- TVec TFloat64
      | TFloat64-> ()
      | _ ->() ) 
@@ -1605,7 +1617,7 @@ let rec float64_expr f =
      f.e <- VecSet (l,float64_expr a, float64_expr b)
    | Seq (l, a, b) -> f.e <- Seq (l,a, float64_expr b)
    | Id  (l, id) -> f.e <- (CastId (TFloat64, Id  (l, id)))
-   | Int _ | BoolEq _ | BoolEq32 _ | BoolEq64 _ -> () 
+   | Int _ | BoolEq32 _ | BoolEq32 _ | BoolEq64 _ -> () 
    | BoolLt _ | BoolLt32 _ | BoolLt64 _ 
 (*   | Plus _ | Min _ | Mul _ | Div  _ *) ->() 
    | BoolEqF (l,a,b) ->

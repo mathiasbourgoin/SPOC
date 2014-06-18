@@ -52,7 +52,6 @@ let gen_kernel ()= ()
     [[name=ident; ":"; typ=ident; "="; cu_value=STRING; cl_value=STRING -> 
       let typ =
         match string_of_ident typ with
-        | "int" -> TInt;
         | "int32" -> TInt32;
         | "float32" -> TFloat32;
         | "float64" -> TFloat64;
@@ -65,7 +64,6 @@ let gen_kernel ()= ()
     [[name=ident; ":"; typ=ident; "="; cu_value=STRING; cl_value=STRING -> 
       let typ =
         match string_of_ident typ with
-        | "int" -> TInt;
         | "int32" -> TInt32;
         | "float32" -> TFloat32;
         | "float64" -> TFloat64;
@@ -84,7 +82,12 @@ let gen_kernel ()= ()
        Hashtbl.clear !current_args;
        List.iter new_arg_of_patt args;
        (try 
-          typer body TUnknown
+          retype := 1;
+          while !retype <> 0  do
+            retype := 0;
+            typer body TUnknown;
+            my_eprintf (Printf.sprintf "Unknown : %d \n%!" !retype)
+          done;
         with
         | TypeError(expected, given, loc) -> 
           (
@@ -164,10 +167,10 @@ let ret =
   incr arg_idx;
   match !return_type with
   | TUnknown  -> <:expr<return_unknown (), Dummy>>
-  | TInt | TInt32 -> <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int32 >>
+  | TInt32 | TInt32 -> <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int32 >>
   | TInt64 ->  <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int64>>
-  | TVec TInt | TVec TInt32 | TVec TInt64 -> assert false
-  | TFloat | TFloat32 ->  <:expr<return_float $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float32>>
+  | TVec TInt32 | TVec TInt32 | TVec TInt64 -> assert false
+  | TFloat32 | TFloat32 ->  <:expr<return_float $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float32>>
   | TFloat64 ->  <:expr<return_double $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float64>>
   | TUnit  -> <:expr<return_unit (), Vector.Unit ((),())>>
   | TBool -> <:expr< return_bool $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.Dummy>>
@@ -355,9 +358,9 @@ let ret =
   incr arg_idx;
   match !return_type with
   | TUnknown  -> <:expr<return_unknown ()>>
-  | TInt | TInt32 | TInt64 ->  <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$>>
-  | TVec TInt | TVec TInt32 | TVec TInt64 -> <:expr<return_vector_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$>>
-  | TFloat | TFloat32 ->  <:expr<return_float $ExInt(Loc.ghost, string_of_int (!arg_idx))$>>
+  | TInt32 | TInt32 | TInt64 ->  <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$>>
+  | TVec TInt32 | TVec TInt32 | TVec TInt64 -> <:expr<return_vector_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$>>
+  | TFloat32 | TFloat32 ->  <:expr<return_float $ExInt(Loc.ghost, string_of_int (!arg_idx))$>>
   | TFloat64 ->  <:expr<return_double $ExInt(Loc.ghost, string_of_int (!arg_idx))$>>
   | TUnit  -> <:expr<return_unit ()>>
   | TBool -> <:expr< return_bool $ExInt(Loc.ghost, string_of_int (!arg_idx))$>>
@@ -497,7 +500,7 @@ kexpr:
   | "loop"
     [ "for"; x = ident; "="; y=SELF; "to"; z = SELF; "do";  body=do_sequence -> 
         {t = TUnknown; e = DoLoop (_loc, 
-                                {t= TInt; 
+                                {t= TInt32; 
                                  e= Id (_loc, x);
                                  loc = _loc}
                                ,y,z,body); loc = _loc};
@@ -505,30 +508,30 @@ kexpr:
       {t = TUnknown; e = While (_loc,cond, body); loc = _loc}] 
     
   | "="
-    [ x=SELF; "="; y=SELF -> {t=TBool; e= BoolEq(_loc,x,y); loc = _loc};
+    [ x=SELF; "="; y=SELF -> {t=TBool; e= BoolEq32(_loc,x,y); loc = _loc};
       | x=SELF; "=!"; y=SELF -> {t=TBool; e= BoolEq32(_loc,x,y); loc = _loc};
       | x=SELF; "=!!"; y=SELF -> {t=TBool; e= BoolEq64(_loc,x,y); loc = _loc};
       | x=SELF; "=."; y=SELF -> {t=TBool; e= BoolEqF(_loc,x,y); loc = _loc}]
   | "<" 
-    [ x=SELF; "<"; y=SELF -> {t=TBool; e= BoolLt(_loc,x,y); loc = _loc};
+    [ x=SELF; "<"; y=SELF -> {t=TBool; e= BoolLt32(_loc,x,y); loc = _loc};
       | x=SELF; "<!"; y=SELF -> {t=TBool; e= BoolLt32(_loc,x,y); loc = _loc};
       | x=SELF; "<!!"; y=SELF -> {t=TBool; e= BoolLt64(_loc,x,y); loc = _loc};
       | x=SELF; "<."; y=SELF -> {t=TBool; e= BoolLtF(_loc,x,y); loc = _loc}]
     
   | "<="
-    [ x=SELF; "<="; y=SELF -> {t=TBool; e= BoolLtE(_loc,x,y); loc = _loc};
+    [ x=SELF; "<="; y=SELF -> {t=TBool; e= BoolLtE32(_loc,x,y); loc = _loc};
       | x=SELF; "<=!"; y=SELF -> {t=TBool; e= BoolLtE32(_loc,x,y); loc = _loc};
       | x=SELF; "<=!!"; y=SELF -> {t=TBool; e= BoolLtE64(_loc,x,y); loc = _loc};
       | x=SELF; "<=."; y=SELF -> {t=TBool; e= BoolLtEF(_loc,x,y); loc = _loc}]
 
   |  ">" RIGHTA
-      [ x=SELF; ">"; y=SELF -> {t=TBool; e= BoolGt(_loc,x,y); loc = _loc};
+      [ x=SELF; ">"; y=SELF -> {t=TBool; e= BoolGt32(_loc,x,y); loc = _loc};
         | x=SELF; ">!"; y=SELF -> {t=TBool; e= BoolGt32(_loc,x,y); loc = _loc};
         | x=SELF; ">!!"; y=SELF -> {t=TBool; e= BoolGt64(_loc,x,y); loc = _loc};
         | x=SELF; ">."; y=SELF -> {t=TBool; e= BoolGtF(_loc,x,y); loc = _loc}]
 
   | ">="
-      [ x=SELF; ">="; y=SELF -> {t=TBool; e= BoolGtE(_loc,x,y); loc = _loc};
+      [ x=SELF; ">="; y=SELF -> {t=TBool; e= BoolGtE32(_loc,x,y); loc = _loc};
         | x=SELF; ">=!"; y=SELF -> {t=TBool; e= BoolGtE32(_loc,x,y); loc = _loc};
         | x=SELF; ">=!!"; y=SELF -> {t=TBool; e= BoolGtE64(_loc,x,y); loc = _loc};
         | x=SELF; ">=."; y=SELF -> {t=TBool; e= BoolGtEF(_loc,x,y); loc = _loc}]

@@ -30,11 +30,12 @@ test: $(MLSRC)
 	camlp4 -I +camlp4 $(SYNTAX_INCLUDES) -parser o -parser op \
 	-printer o kernels_int.cma -printer kernels_ext.cma $<
 
-pp: $(DIR)_pp.asm
+pp: $(DIR)_pp.byte
 
-$(DIR)_pp.asm : $(DIR)_pp.ml
-	$(CAMLOPT) -thread -package $(PACKAGES),graphics -linkpkg \
-	-package $(SYNTAX_PACKAGES) -syntax camlp4o -o $@ $<
+$(DIR)_pp.byte : $(DIR)_pp.ml
+	$(CAMLCT) -thread -package $(PACKAGES),graphics,js_of_ocaml,lwt \
+	 -linkpkg -package $(SYNTAX_PACKAGES),js_of_ocaml.syntax \
+	 -syntax camlp4o -o $@ $<
 
 
 $(DIR)_pp.ml: $(MLSRC)

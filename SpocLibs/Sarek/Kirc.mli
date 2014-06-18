@@ -24,7 +24,7 @@ val seq : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val app : Kirc_Ast.k_ext -> Kirc_Ast.k_ext array -> Kirc_Ast.k_ext
 val spoc_unit : unit -> Kirc_Ast.k_ext
 val spoc_int : int -> Kirc_Ast.k_ext
-val global_int_var : (unit -> int) -> Kirc_Ast.k_ext
+val global_int_var : (unit -> int32) -> Kirc_Ast.k_ext
 val global_float_var : (unit -> float) -> Kirc_Ast.k_ext
 val spoc_int32 : int32 -> Kirc_Ast.k_ext
 val spoc_float : float -> Kirc_Ast.k_ext
@@ -125,27 +125,29 @@ val compile_kernel_to_files :
   string -> ('a, 'b, 'c, 'd, 'e) sarek_kernel -> unit
 module Std :
   sig
-    val thread_idx_x : int
-    val thread_idx_y : int
-    val thread_idx_z : int
-    val block_idx_x : int
-    val block_idx_y : int
-    val block_idx_z : int
-    val block_dim_x : int
-    val block_dim_y : int
-    val block_dim_z : int
-    val global_thread_id : int
+    val thread_idx_x : Int32.t
+    val thread_idx_y : Int32.t
+    val thread_idx_z : Int32.t
+    val block_idx_x : Int32.t
+    val block_idx_y : Int32.t
+    val block_idx_z : Int32.t
+    val block_dim_x : Int32.t
+    val block_dim_y : Int32.t
+    val block_dim_z : Int32.t
+    val global_thread_id : Int32.t
     val return : unit -> unit
-    val float64 : int -> float
-    val int_of_float64 : float -> int
+    val float64 : Int32.t -> float
+    val int_of_float64 : float -> Int32.t
+    val float : Int32.t -> float
+    val int_of_float : float -> Int32.t
     val block_barrier : unit -> unit
-    val make_shared : int -> int array
+    val make_shared : Int32.t -> Int32.t array
   end
 module Math :
   sig
-    val pow : int -> int -> int
-    val logical_and : int -> int -> int
-    val xor : int -> int -> int
+    val pow : Int32.t -> Int32.t -> Int32.t
+    val logical_and : Int32.t -> Int32.t -> Int32.t
+    val xor : Int32.t -> Int32.t -> Int32.t
     module Float32 :
       sig
         val add : float -> float -> float
@@ -177,8 +179,6 @@ module Math :
         val modf : float -> float * float
         val zero : float
         val one : float
-        val of_float : float -> float
-        val to_float : float -> float
         val make_shared : int -> float array
       end
     module Float64 :
@@ -212,8 +212,8 @@ module Math :
         val modf : float -> float * float
         val zero : float
         val one : float
-        val of_float : float -> float
-        val to_float : float -> float
+        val of_float32 : float -> float
+        val to_float32 : float -> float
         val make_shared : int -> float array
       end
   end
