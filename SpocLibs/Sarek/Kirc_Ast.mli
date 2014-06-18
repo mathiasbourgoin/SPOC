@@ -55,7 +55,7 @@ type k_ext =
   | DoLoop of k_ext * k_ext * k_ext * k_ext
   | While of k_ext * k_ext
   | App of k_ext * k_ext array
-  | GInt of (unit -> int32)
+  | GInt of (unit -> int)
   | GFloat of (unit -> float)
   | Unit
 type kfun = KernFun of k_ext * k_ext

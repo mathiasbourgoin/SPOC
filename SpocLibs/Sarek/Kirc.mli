@@ -7,6 +7,7 @@ type ('a, 'b, 'c) kirc_kernel = {
 }
 type ('a, 'b, 'c, 'd, 'e) sarek_kernel =
     ('a, 'b) Spoc.Kernel.spoc_kernel * ('c, 'd, 'e) kirc_kernel
+val print_ast : Kirc_Ast.k_ext -> unit
 val opencl_head : string
 val opencl_float64 : string
 val cuda_float64 : string

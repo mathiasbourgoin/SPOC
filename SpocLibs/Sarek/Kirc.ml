@@ -225,6 +225,9 @@ let return_double d = DoubleVar d
 
 let print s = Printf.printf "%s}\n" s 
 
+let print_ast = Kirc_Ast.print_ast
+
+
 let debug_print ((ker : ('a, 'b,'c,'d,'e)  sarek_kernel)) =
   let _,k=  ker in
   let (k1,k2,k3) = (k.ml_kern, k.body,k.ret_val) in 
@@ -911,10 +914,16 @@ let map2 ((ker: ('a, 'b,('c -> 'd -> 'e), 'f,'g) sarek_kernel)) ?dev:(device=(Sp
   in
   Mem.to_device vec_in1 device;
   Mem.to_device vec_in2 device;
-  let spoc_ker, kir_ker = gen res in
+  let framework = 
+    let open Devices in
+      match device.Devices.specific_info with
+      | Devices.CudaInfo cI -> Devices.Cuda
+      | _ -> Devices.OpenCL in
+
+  let spoc_ker, kir_ker = gen ~only:framework res  in
   let block = {blockX = 1; blockY = 1; blockZ = 1}
   and grid = {gridX = 1; gridY = 1; gridZ = 1}
-  in spoc_ker#compile device;
+  in spoc_ker#compile  device;
   begin
     let open Devices in( 
       match device.Devices.specific_info with
@@ -945,9 +954,9 @@ let map2 ((ker: ('a, 'b,('c -> 'd -> 'e), 'f,'g) sarek_kernel)) ?dev:(device=(Sp
   end;
   let bin = (Hashtbl.find (spoc_ker#get_binaries ()) device) in
   let offset = ref 0 in
-  let extra = Kernel.Cuda.cuda_create_extra 2 in
   (match device.Devices.specific_info with
    | Devices.CudaInfo cI ->
+     let extra = Kernel.Cuda.cuda_create_extra 2 in
      Kernel.Cuda.cuda_load_arg offset extra device bin 0 (arg_of_vec vec_in1);
      Kernel.Cuda.cuda_load_arg offset extra device bin 1 (arg_of_vec vec_in2);
      Kernel.Cuda.cuda_load_arg offset extra device bin 2 (arg_of_vec vec_out);
