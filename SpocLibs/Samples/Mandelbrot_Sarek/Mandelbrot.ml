@@ -18,14 +18,14 @@ open Spoc
 open Kirc
 
 
-let width = ref 1000;;
-let height = ref 1000;;
+let width = ref 1000l;;
+let height = ref 1000l;;
 
-let max_iter  = ref 50;;
+let max_iter  = ref 50l;;
 
 let zoom = ref 1. 
-let shiftx = ref 0
-let shifty = ref 0 ;;
+let shiftx = ref 0l
+let shifty = ref 0l ;;
 
 let recompile = ref false
 
@@ -97,11 +97,11 @@ let mandelbrot = kern img shiftx shifty zoom ->
 
 let mandelbrot_double = kern img shiftx shifty zoom ->
   let open Std in
-	let open Math.Float64 in
+  let open Math.Float64 in
   let y = thread_idx_y + (block_idx_y * block_dim_y) in
   let x = thread_idx_x + (block_idx_x * block_dim_x) in
   (if (y >= !height) || (x >= !width) then
-      return () ;
+     return () ;
   );
   let x0 = (x + shiftx) in
   let y0 = (y + shifty) in
@@ -110,18 +110,18 @@ let mandelbrot_double = kern img shiftx shifty zoom ->
   let mutable y1 = zero in
   let mutable x2 = zero in
   let mutable y2 = zero in
-  let a = minus (div (mul (of_float 4.)
+  let a = minus (div (mul (of_float32 4.)
 			(div (float64 x0) (float64 !width)))
-		   (of_float zoom)) (of_float 2.) in
-  let b = minus (div (mul (of_float 4.)
+		   (of_float32 zoom)) (of_float32 2.) in
+  let b = minus (div (mul (of_float32 4.)
 			(div (float64 y0) (float64 !height)))
-		   (of_float zoom)) (of_float 2.) in
+		   (of_float32 zoom)) (of_float32 2.) in
   let mutable norm = add (mul x1 x1) (mul y1 y1)
   in
-  while ((cpt < !max_iter) && ((to_float norm) <=. 4.)) do
+  while ((cpt < !max_iter) && ((to_float32 norm) <=. 4.)) do
   cpt := (cpt + 1);
   x2 := add (minus (mul x1  x1) (mul y1 y1))  a;
-  y2 := add (mul (of_float 2.) (mul x1  y1 )) b;
+  y2 := add (mul (of_float32 2.) (mul x1  y1 )) b;
   x1 := x2;
   y1 := y2;
   norm := add (mul x1  x1 ) (mul  y1  y1);
@@ -162,28 +162,29 @@ let get_min ar =
   let min = ref !max_iter in
   for i = 0 to (Spoc.Vector.length ar - 1) do
     if (Int32.to_int (Spoc.Mem.unsafe_get ar i)) > 1 then
-      if (Int32.to_int (Spoc.Mem.unsafe_get ar i)) < !min then
-	min :=  (Int32.to_int (Spoc.Mem.unsafe_get ar i))
+      if ( (Spoc.Mem.unsafe_get ar i)) < !min then
+	min :=  ( (Spoc.Mem.unsafe_get ar i))
   done;
   !min
     
 let couleur n = 
-  if n =  !max_iter then
+  if n = !max_iter then
     Graphics.rgb 196 200 200
   else let f n = 
-	 let i = float n in 
-	 int_of_float (255. *. (0.5 +. 0.5 *. sin(i *. 0.1))) in
-       Graphics.rgb (f (n + 32))  (f(n + 16))  (f n)
-	 
+    let n = Int32.to_int n in
+    let i =  float n in 
+    int_of_float (255. *. (0.5 +. 0.5 *. sin(i *. 0.1))) in
+    Graphics.rgb (f (Int32.add n 32l))  (f(Int32.add n 16l))  (f n)
+      
 	 
 let main_mandelbrot () = 
   let arg1 = ("-device" , Arg.Int (fun i  -> dev := devices.(i)),
 	      "number of the device [0]")
-  and arg2 = ("-height" , Arg.Int (fun i  -> height := i),
+  and arg2 = ("-height" , Arg.Int (fun i  -> height := Int32.of_int i),
 	      "height of the image to compute [1000]")
-  and arg3 = ("-width" , Arg.Int (fun i  -> width := i),
+  and arg3 = ("-width" , Arg.Int (fun i  -> width := Int32.of_int i),
 	      "width of the image to compute [1000]")
-  and arg4 = ("-max_iter" , Arg.Int (fun b -> max_iter := b),
+  and arg4 = ("-max_iter" , Arg.Int (fun b -> max_iter := Int32.of_int b),
 	      "max number of iterations [50]") 
   and arg5 = ("-recompile" , Arg.Bool (fun b -> recompile := b),
 	      "Regenerates kernel at each redraw [false]") 
@@ -202,14 +203,14 @@ in
       | _  ->   256)
     | _  -> 256 in
 
-  let b_iter = Spoc.Vector.create Spoc.Vector.int32 (!width * !height)
+  let b_iter = Spoc.Vector.create Spoc.Vector.int32 ((Int32.to_int !width) * (Int32.to_int !height))
   in
   let sub_b = Spoc.Mem.sub_vector b_iter 0 (Spoc.Vector.length b_iter)
   in
-  let img = Array.make_matrix !height !width Graphics.black in
+  let img = Array.make_matrix (Int32.to_int !height) (Int32.to_int !width) Graphics.black in
   
   let blocksPerGrid =
-    (!width* !height + threadsPerBlock -1) / threadsPerBlock
+    ((Int32.to_int !width) * (Int32.to_int !height) + threadsPerBlock -1) / threadsPerBlock
   in
   let block0 = {Spoc.Kernel.blockX = threadsPerBlock;
 		Spoc.Kernel.blockY = 1; Spoc.Kernel.blockZ = 1}
@@ -223,9 +224,9 @@ in
       | _  ->   16)
     | _  -> 16  in
   let blocksPerGridx =
-    (!width + (threadsPerBlock) -1) / (threadsPerBlock) in
+    ((Int32.to_int !width) + (threadsPerBlock) -1) / (threadsPerBlock) in
   let blocksPerGridy =
-    (!height + (threadsPerBlock) -1) / (threadsPerBlock) in
+    ((Int32.to_int !height) + (threadsPerBlock) -1) / (threadsPerBlock) in
   let block = {Spoc.Kernel.blockX = threadsPerBlock;
 	       Spoc.Kernel.blockY = threadsPerBlock;
 	       Spoc.Kernel.blockZ = 1}
@@ -239,8 +240,8 @@ in
     else 
       ignore(Kirc.gen mandelbrot);
 
-  let l = string_of_int !width in
-  let h = string_of_int !height in
+  let l = Int32.to_string !width in
+  let h = Int32.to_string !height in
   let dim = " " ^l^"x"^h in
   
   Graphics.open_graph dim;
@@ -271,14 +272,14 @@ in
 	if not !simple then
 	  Kirc.run 
 	    mandelbrot_double 
-	    (sub_b, !shiftx, !shifty, !zoom) 
+	    (sub_b, (Int32.to_int !shiftx), (Int32.to_int !shifty), !zoom) 
 	    (block,grid) 
 	    0 
 	    !dev
 	else
 	  Kirc.run 
 	    mandelbrot 
-	    (sub_b, !shiftx, !shifty, !zoom) 
+	    (sub_b, (Int32.to_int !shiftx), (Int32.to_int !shifty), !zoom) 
 	    (block,grid) 
 	    0 
 	    !dev
@@ -288,11 +289,11 @@ in
 
     Spoc.Mem.to_cpu sub_b (); 
     Spoc.Devices.flush !dev (); 
-    for a = 0 to pred (!height )do    
-      for b = 0 to pred (!width ) do
+    for a = 0 to Int32.to_int (Int32.pred !height )do    
+      for b = 0 to Int32.to_int (Int32.pred !width ) do
 	img.(a).(b) <-
-	  (couleur (Int32.to_int
-		      ((Spoc.Mem.get b_iter (a * !width + b) )))) ;
+             (couleur 
+                (Spoc.Mem.get b_iter (a * (Int32.to_int !width) + b) ));
       done;
     done;
     Graphics.draw_image (Graphics.make_image img) 0 0;
@@ -304,21 +305,25 @@ in
 	let key = Graphics.read_key () 
 	in
 	match key  with
-	| 'w' -> shifty := !shifty + 10;
-	| 's' -> shifty := !shifty - 10;
-	| 'a' -> shiftx := !shiftx + 10;
-	| 'd' -> shiftx := !shiftx - 10;
+	| 'w' -> shifty := Int32.add !shifty  10l;
+	| 's' -> shifty := Int32.sub !shifty  10l;
+	| 'a' -> shiftx := Int32.add !shiftx 10l;
+	| 'd' -> shiftx := Int32.sub !shiftx  10l;
 	| '+' -> zoom := !zoom *. 1.1;
 	| '!' -> simple := not !simple;
-	  shifty := !shifty + ((int_of_float (!zoom *. 10.)) *
-				  !height / 200);
-	  shiftx := !shiftx + ((int_of_float (!zoom *. 10.)) *
-				  !width / 200);
+	  shifty := Int32.add !shifty (Int32.of_int
+                                  ((int_of_float (!zoom *. 10.)) *
+				  (Int32.to_int !height) / 200));
+	  shiftx := Int32.add !shiftx (Int32.of_int
+                                  ((int_of_float (!zoom *. 10.)) *
+				  (Int32.to_int !width) / 200));
 	| '-' -> zoom := !zoom *. 0.9;
-	  shifty := !shifty - ((int_of_float (!zoom *. 10.)) *
-				  !height / 200);
-	  shiftx := !shiftx - ((int_of_float (!zoom *. 10.)) *
-				  !width / 200);
+	  shifty := Int32.sub !shifty (Int32.of_int
+                                  ((int_of_float (!zoom *. 10.)) *
+				  (Int32.to_int !height) / 200));
+	  shiftx := Int32.sub !shiftx (Int32.of_int
+                                  ((int_of_float (!zoom *. 10.)) *
+				  (Int32.to_int !width) / 200));
 	| 'r' -> recompile := not !recompile;
 	|_ -> running := false;
       end
