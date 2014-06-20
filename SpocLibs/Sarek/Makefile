@@ -1,4 +1,6 @@
-all :
+all : build
+
+build :
 	ocp-build -init
 	cd extension && make
 

@@ -1,3 +1,5 @@
+authors=["mathias bourgoin <mathias.bourgoin@lip6.fr>"]
+descr=["High-level GPGPU programming library for OCaml"]
 begin library "spoc"
     files = [
         begin pack Spoc (sort = true) [
