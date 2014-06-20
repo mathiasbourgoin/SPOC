@@ -1,6 +1,5 @@
 [![Build Status](https://travis-ci.org/mathiasbourgoin/SPOC.png?branch=master)](https://travis-ci.org/mathiasbourgoin/SPOC)
 
-For more infos (with experimental web demos)  -> check the [github page](http://mathiasbourgoin.github.io/SPOC/)
 
 SPOC is a set of tools for GPGPU programming with OCaml.
 
@@ -19,64 +18,10 @@ SPOC should compile anyway as everything is dynamically linked, but you'll need 
 SPOC currently lacks a real tutorial, it comes with some examples and I strongly advise anyone interested to look into the slides and papers.
 
 
-#I - How to Build SPOC
-
-
-## 1 - Dependencies 
-
-Requires :
-
-  * ocaml >= 4.01.0
-  * camlp4
-  * ocamlfind 
-  * ocp-build
-
-For cuda compilation :
-
-  * nvcc    
-
-For easily installing SPOC's build dependencies, you can use [opam](http://opam.ocamlpro.com) :
-
-    $ opam switch 4.01.0
-    $ opam install ocamlfind ocp-build
-
-## 2 - Compilation & Installation
-
-
-To compile SPOC:
-
-    $ cd Spoc
-    $ make
-    $ make install
-
-
-## 3 - Build Documentation
-
-    $ make htdoc
-
-Will build the ocamldoc html pages in the Spoc/docs directory
-
-
-# II - Testing SPOC
-
-
-The "Samples" directory contains few programs using SPOC.
-
-To compile those programs:
-
-    $ cd Samples
-    $ make
-
-Binaries will be located in the Samples/build folder
-
-
-# III - SPOCLIBS
-
-
-The "SpocLibs" directory contains few libraries based on Spoc.
- - Compose allows basic composition over GPGPU kernels
- - Cublas allows to use some functions of the Cublas library 
-   (Cublas needs Cuda SDK to compile)
- - Sarek is a embedded DSL for OCaml to express kernels from the OCaml program
-
-The Sample directory contains few samples using those libraries
+check the [github page](http://mathiasbourgoin.github.io/SPOC/)
+      + more infos
+      + how to build spoc
+      + web examples
+      + web tutorials
+      + slides from past presentations
+      + publications references
