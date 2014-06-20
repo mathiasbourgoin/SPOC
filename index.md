@@ -69,6 +69,8 @@ Requires :
     * camlp4
     * ocamlfind 
     * ocp-build
+    * camlp4-extra (for ubuntu)
+    * m4
     
 For cuda compilation :
 
@@ -76,6 +78,19 @@ For cuda compilation :
 
 ## 2 - Compilation & Installation
 
+### From Opam
+
+Simply add our repository :
+
+    opam repository add spoc_repo git@github.com:mathiasbourgoin/opam_repo_dev.git
+
+then
+
+    opam update spoc_repo
+    opam install spoc
+    
+
+### From sources
 
 To compile SPOC:
 
@@ -86,7 +101,9 @@ To compile SPOC:
 
 ## 3 - Build Documentation
 
-    make htdoc
+From the sources : 
+
+    make doc
 
 Will build the ocamldoc html pages in the Spoc/docs directory
 
