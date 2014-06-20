@@ -18,10 +18,11 @@ SPOC should compile anyway as everything is dynamically linked, but you'll need 
 SPOC currently lacks a real tutorial, it comes with some examples and I strongly advise anyone interested to look into the slides and papers.
 
 
-check the [github page](http://mathiasbourgoin.github.io/SPOC/)
-      + more infos
-      + how to build spoc
-      + web examples
-      + web tutorials
-      + slides from past presentations
-      + publications references
+check the [github page](http://mathiasbourgoin.github.io/SPOC/) :
+
+      more infos
+      how to build spoc
+      web examples
+      web tutorials
+      slides from past presentations
+      publications references
