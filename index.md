@@ -82,7 +82,7 @@ For cuda compilation :
 
 Simply add our repository :
 
-    opam repository add spoc_repo git@github.com:mathiasbourgoin/opam_repo_dev.git
+    opam repository add spoc_repo https://github.com/mathiasbourgoin/opam_repo_dev.git
 
 then
 
