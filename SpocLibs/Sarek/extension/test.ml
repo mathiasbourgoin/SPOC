@@ -1,21 +1,18 @@
-(* default : color -> gray *)
-open Spoc
-
 let filter = kern v ->
   let open Std in
-  let tab = make_shared 32 in
   let tid = thread_idx_x + block_dim_x * block_idx_x in
+  let tab = make_shared 32 in
+  for i = 0 to 32 do
+      tab.(i) <- 1
+  done;
   if tid <= (512*512) then (
-    for i = 0 to 4 do
-      tab.(i) <- v.[<tid+i>]
-    done;
-    let ii = (tid*4) in
+    let i = (tid*4) in
     let res = int_of_float ((0.21 *. (float (v.[<i>]))) +.
                            (0.71 *. (float (v.[<i+1>]))) +.
                            (0.07 *. (float (v.[<i+2>]))) ) in
-    v.[<ii>] <- res;
-    v.[<ii+1>] <- res;
-    v.[<ii+2>] <- res )
+    v.[<i>] <- res;
+    v.[<i+1>] <- res;
+    v.[<i+2>] <- res )
 
 
 (*let gpu_bitonic = kern v j k ->

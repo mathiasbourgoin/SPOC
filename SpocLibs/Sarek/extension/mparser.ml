@@ -763,7 +763,7 @@ and parse_body body =
       | Id (_,s ) -> string_of_ident s
       | _ ->  assert false
     in
-    (<:expr<for $(string_of_id id.e)$ = $min$ to $max$ do $body$ done>>)
+    (<:expr<for $(string_of_id id.e)$ = (Int32.to_int $min$) to (Int32.to_int  $max$) do $body$ done>>)
   | While (_loc, cond, body) ->
     let cond = parse_body cond in
     let body = parse_body body in
