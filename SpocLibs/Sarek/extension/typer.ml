@@ -558,7 +558,7 @@ and close_module m_ident =
 let rec basic_check l expected_type current_type loc =
   if expected_type <> current_type && expected_type <> TUnknown then
     ( assert (not debug); raise (TypeError (expected_type, current_type, loc)) );
-  List.iter (fun e -> typer e expected_type)
+  List.iter (fun e -> typer e expected_type) l
 
 and elt_check body t l =
   if body.t <> t && body.t <> TUnknown then

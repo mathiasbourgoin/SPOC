@@ -1,3 +1,18 @@
+let filter = kern v ->
+  let open Std in
+  let tab = Std.make_shared 32 in
+  tab.(0) <- 1;
+  let tid = thread_idx_x + block_dim_x * block_idx_x in
+  if tid <= (512*512) then (
+    let i = (tid*4) in
+    let res = int_of_float ((0.21 *. (float (v.[<i>]))) +.
+                           (0.71 *. (float (v.[<i+1>]))) +.
+                           (0.07 *. (float (v.[<i+2>]))) ) in
+                           
+    v.[<i>] <- res;
+    v.[<i+1>] <- res;
+    v.[<i+2>] <- res )
+
 (*let gpu_bitonic = kern v j k ->
   let open Std in
   let i = thread_idx_x + block_dim_x * block_idx_x in
@@ -22,7 +37,7 @@
     end
 
     *)
-let test = kern v n ->
+(*let test = kern v n ->
   let open Std in
   let tid = thread_idx_x + block_dim_x * block_idx_x in
   let tab = make_shared 32 in
@@ -37,7 +52,7 @@ let test = kern v n ->
     v.[<i+1>] <- res;
     v.[<i+2>] <- res 
   )
-
+*)
 
 (*( v +. 2. ) *. v
   else
