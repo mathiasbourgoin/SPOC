@@ -82,12 +82,15 @@ let gen_kernel ()= ()
        Hashtbl.clear !current_args;
        List.iter new_arg_of_patt args;
        (try 
-          retype := 1;
-          while !retype <> 0  do
-            retype := 0;
+          retype := true;
+          while !retype do
+            retype := false;
+            unknown := 0;
             typer body TUnknown;
-            my_eprintf (Printf.sprintf "Unknown : %d \n%!" !retype)
+            my_eprintf (Printf.sprintf "Unknown : %d \n%!" !unknown)
           done;
+          if !unknown > 0 then 
+            failwith "unknown types in this kernel"
         with
         | TypeError(expected, given, loc) -> 
           (

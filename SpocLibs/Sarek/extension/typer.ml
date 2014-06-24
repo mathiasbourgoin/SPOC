@@ -2,7 +2,8 @@ open Camlp4.PreCast
 open Syntax
 open Ast
 
-let retype = ref 0
+let retype = ref false
+let unknown = ref 0
 let debug = false
 
 let my_eprintf s = 
@@ -197,7 +198,11 @@ let update_type value t =
       if not (is_unknown value.t)  && value.t <> t then
         ( assert (not debug); raise (TypeError (t, value.t, value.loc)) )
       else
-        value.t <- t
+        (
+          if value.t <> t then
+            (value.t <- t;
+             retype := true)
+        )
       
 let rec string_of_ident i = 
   let aux = function
@@ -558,7 +563,7 @@ let rec basic_check l expected_type current_type loc =
 and elt_check body t l =
   if body.t <> t && body.t <> TUnknown then
     (assert (not debug); raise (TypeError (t, body.t, l)) );
-  body.t <- t
+  update_type body  t;
 
 and equal_types t1 t2 =
   if t1 = t2 then
@@ -743,8 +748,7 @@ and typer body t =
     update_type body TUnit
   | _ -> my_eprintf  ((k_expr_to_string body.e)^"\n"); assert false);
   if is_unknown body.t then
-    ( my_eprintf  ("\nUNKNOWN :"^(k_expr_to_string body.e)^"\n");
-      incr retype )
+    incr unknown
            
 and typer_app e1 (e2 : kexpr list) t =
   let  typ, loc  = 
