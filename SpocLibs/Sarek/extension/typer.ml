@@ -715,6 +715,10 @@ and typer body t =
     typer cond TBool;
     typer loop_body TUnit;
     body.t <- TUnit;
+  | DoLoop (l, x, y, z, body) ->
+    basic_check [x;y;z] t TInt32;
+    typer body TUnit;
+    body.t <- TUnit;
   | App (l, e1, e2) -> 
     let t = typer_app e1 e2 t in
     update_type body t
