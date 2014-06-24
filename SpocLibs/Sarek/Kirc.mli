@@ -7,6 +7,15 @@ type ('a, 'b, 'c) kirc_kernel = {
 }
 type ('a, 'b, 'c, 'd, 'e) sarek_kernel =
     ('a, 'b) Spoc.Kernel.spoc_kernel * ('c, 'd, 'e) kirc_kernel
+
+val eint32 : Kirc_Ast.elttype
+val eint64 : Kirc_Ast.elttype
+val efloat32 : Kirc_Ast.elttype
+val efloat64 : Kirc_Ast.elttype
+val global : Kirc_Ast.memspace
+val local : Kirc_Ast.memspace
+val shared : Kirc_Ast.memspace
+
 val print_ast : Kirc_Ast.k_ext -> unit
 val opencl_head : string
 val opencl_float64 : string
