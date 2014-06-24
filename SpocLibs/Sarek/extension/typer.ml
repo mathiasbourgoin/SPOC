@@ -4,7 +4,7 @@ open Ast
 
 let retype = ref false
 let unknown = ref 0
-let debug = false
+let debug = true
 
 let my_eprintf s = 
   if debug then
@@ -186,11 +186,11 @@ let is_unknown t =
 let update_type value t =
   match t,value.t with
   | TUnknown, t -> ()
-  | _ , TUnknown -> value.t <- t
+  | _ , TUnknown -> (value.t <- t; retype := true)
   | TVec TUnknown, TVec _ -> ()
   | TArr (TUnknown,_), TArr _ -> ()
-  | TVec t, TVec TUnknown -> value.t <- t
-  | TArr (t,_), TArr (TUnknown, _) -> value.t <- t
+  | TVec t, TVec TUnknown -> (value.t <- t; retype := true)
+  | TArr (t,_), TArr (TUnknown, _) -> (value.t <- t; retype := true)
   | t1, t2 ->
     (*if t1 <> t2 then
       ( assert (not debug); raise (TypeError (t, value.t, value.loc)) *)
@@ -589,6 +589,7 @@ and typer body t =
        if not (is_unknown t) then 
          if is_unknown var.var_type  then
            (var.var_type <- t;
+            retype := true;
             update_type body t)
          else
            check var.var_type t l;
@@ -663,6 +664,7 @@ and typer body t =
            write_only = false;
            is_global = false;}
        )
+     | _ -> assert false
     );
     update_type var y.t;
 (*    update_type body y.t;*)
@@ -710,15 +712,29 @@ and typer body t =
     update_type body e2.t;
   | While (l, cond, loop_body) ->
     typer cond TBool;
-    basic_check [cond] cond.t TBool;
-    basic_check [loop_body] t TUnit;
+    basic_check [cond] cond.t TBool l;
+    basic_check [loop_body] t TUnit l;
     typer cond TBool;
     typer loop_body TUnit;
-    body.t <- TUnit;
-  | DoLoop (l, x, y, z, body) ->
-    basic_check [x;y;z] t TInt32;
-    typer body TUnit;
-    body.t <- TUnit;
+    update_type body TUnit;
+  | DoLoop (l, var, y, z, loop_body) ->
+    (match var.e with
+     | Id (_loc,s)  ->
+       (incr arg_idx;
+        Hashtbl.add !current_args (string_of_ident s) 
+          {n = !arg_idx; var_type = TInt32;
+           is_mutable = false;
+           read_only = false;
+           write_only = false;
+           is_global = false;}
+       )
+     | _ -> assert false
+    );
+    typer var TInt32;
+    typer y TInt32;
+    typer z TInt32;
+    typer loop_body TUnit;
+    update_type body TUnit;
   | App (l, e1, e2) -> 
     let t = typer_app e1 e2 t in
     update_type body t
