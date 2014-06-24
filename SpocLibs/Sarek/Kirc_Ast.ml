@@ -54,7 +54,7 @@ type elttype =
   | EFloat64
 
 type memspace =
-  | Local
+  | LocalSpace
   | Global
   | Shared
 
@@ -284,7 +284,7 @@ let print_ast a =
     | Arr (s,l,t,m) ->
       let memspace = 
         match m with 
-        | Local -> "__private"
+        | LocalSpace -> "__private"
         | Shared -> "__local"
         | Global -> "__global"
       and elttype = 

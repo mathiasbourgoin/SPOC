@@ -109,6 +109,15 @@ let cuda_head = (
   "__device__ int spoc_xor (int a, int b ) { return (a^b);}\n"
 )
 
+let eint32 = EInt32
+let eint64 = EInt32
+let efloat32 = EInt32
+let efloat64 = EInt32
+
+let global = Global
+let local = LocalSpace
+let shared = Shared
+
 let new_var i = IdName ("spoc_var"^(string_of_int i))
 let new_array i l t m = Arr (i, l, t, m)
 let var i = IntId (("spoc_var"^(string_of_int i)), i)
@@ -505,6 +514,7 @@ let compile_kernel_to_files s ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) =
          | ExFloat64 -> opencl_float64^header) opencl_head k.extensions in			
   save (s^".cu") (cuda_head^(Kirc_Cuda.parse 0 (rewrite k2))) ;
   save (s^".cl") (opencl_head^(Kirc_OpenCL.parse 0 (rewrite k2)))
+
 
 
 

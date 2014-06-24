@@ -909,15 +909,15 @@ and parse_body2 body bool =
                | TArr (t,s) -> 
                  let elttype = 
                    match t with
-                   | TInt32 -> <:expr<Kirc_Ast.EInt32>>
-                   | TInt64 -> <:expr<Kirc_Ast.EInt64>>
-                   | TFloat32 -> <:expr<Kirc_Ast.EFloat32>>
-                   | TFloat64 -> <:expr<Kirc_Ast.EFloat64>>
+                   | TInt32 -> <:expr<eint32>>
+                   | TInt64 -> <:expr<eint64>>
+                   | TFloat32 -> <:expr<efloat32>>
+                   | TFloat64 -> <:expr<efloat64>>
                  and memspace =
                    match s with
-                   | Local -> <:expr<Kirc_Ast.Local>>
-                   | Shared -> <:expr<Kirc_Ast.Shared>>
-                   | Global -> <:expr<Kirc_Ast.Global>> in
+                   | Local -> <:expr<local>>
+                   | Shared -> <:expr<shared>>
+                   | Global -> <:expr<global>> in
                  <:expr<(new_array $ExInt(_loc,string_of_int gen_var.n)$) ($aux y$) $elttype$ $memspace$>>,(aux y)
                (* | TArr TInt64 -> <:expr<(new_int64_array $ExInt(_loc,string_of_int gen_var.n)$) ($aux y$)>>,(aux y) *)
                (* | TArr TFloat32 -> <:expr<(new_float32_array $ExInt(_loc,string_of_int gen_var.n)$) ($aux y$)>>,(aux y) *)

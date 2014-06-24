@@ -9,7 +9,7 @@ type elttype =
   | EFloat64
 
 type memspace =
-  | Local
+  | LocalSpace
   | Global
   | Shared
 

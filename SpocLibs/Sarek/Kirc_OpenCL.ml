@@ -68,7 +68,7 @@ let rec parse i = function
   | Arr (s,l,t,m) -> 
     let memspace = 
       match m with 
-      | Local -> ""
+      | LocalSpace -> ""
       | Shared -> "__local"
       | Global -> "__global"
     and elttype = 
