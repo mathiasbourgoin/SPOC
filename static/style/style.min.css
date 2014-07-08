@@ -1548,8 +1548,9 @@ div.quickhelp{float:left;width:50%;}
 .rendered_html ol ol ol ol ol{list-style:decimal;margin:0em 2em;}
 .rendered_html hr{color:black;background-color:black;}
 .rendered_html pre{margin:1em 2em;}
-.rendered_html pre,.rendered_html code{border:0;background-color:#ffffff;color:#000000;font-size:100%;padding:0px;}
+.rendered_html pre,.rendered_html code{border:0;background-color:#ffffff;font-size:100%;padding:0px;}
 .rendered_html blockquote{margin:1em 2em;}
+div {background-color:white}
 .rendered_html table,.rendered_html tr,.rendered_html th,.rendered_html td{border:1px solid black;border-collapse:collapse;margin:1em 2em;}
 .rendered_html td,.rendered_html th{text-align:left;vertical-align:middle;padding:4px;}
 .rendered_html th{font-weight:bold;}
@@ -1559,7 +1560,7 @@ span#save_widget{padding:0px 5px;margin-top:12px;}
 span#checkpoint_status,span#autosave_status{font-size:small;}
 @media (max-width:767px){span#save_widget{font-size:small;} span#checkpoint_status,span#autosave_status{font-size:x-small;}}@media (max-width:767px){span#checkpoint_status,span#autosave_status{display:none;}}@media (min-width:768px) and (max-width:979px){span#checkpoint_status{display:none;} span#autosave_status{font-size:x-small;}}div.text_cell{padding:5px 5px 5px 5px;}
 div.text_cell_input{color:#000000;border:1px solid #cfcfcf;border-radius:4px;background:#f7f7f7;}
-div.text_cell_render{outline:none;resize:none;width:inherit;border-style:none;padding:5px;color:#000000;}
+div.text_cell_render{outline:none;resize:none;width:inherit;border-style:none;padding:5px;}
 a.anchor-link:link{text-decoration:none;padding:0px 20px;visibility:hidden;}
 h1:hover .anchor-link,h2:hover .anchor-link,h3:hover .anchor-link,h4:hover .anchor-link,h5:hover .anchor-link,h6:hover .anchor-link{visibility:visible;}
 .toolbar{padding:0px 10px;margin-top:-5px;}.toolbar select,.toolbar label{width:auto;height:26px;vertical-align:middle;margin-right:2px;margin-bottom:0px;display:inline;font-size:92%;margin-left:0.3em;margin-right:0.3em;padding:0px;padding-top:3px;}

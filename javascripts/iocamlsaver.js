@@ -228,7 +228,7 @@ var saveAs = saveAs
 
 
 function saveAsOcaml () {
-    var nodes = document.getElementsByClassName("CodeMirror cm-s-ipython");
+/*    var nodes = document.getElementsByClassName("CodeMirror cm-s-ipython");*/
 
 /*    var ocamlcode = "";
     for (i = 0; i < nodes.length; i++){
@@ -253,7 +253,7 @@ function saveAsOcaml () {
 }
 
 function downloadIPYNB () {
-    var nodes = document.getElementsByClassName("CodeMirror cm-s-ipython");
+/*    var nodes = document.getElementsByClassName("CodeMirror cm-s-ipython");*/
 
     var ipynb = JSON.stringify(IPython.notebook.toJSON());
     var blob = new Blob([ipynb], {type : "text/plain"});
@@ -286,3 +286,97 @@ function loadIPYNB (){
 
 
 }
+
+// (function () {
+//     var viewFullScreen = document.getElementById("slideshow");
+//     if (viewFullScreen) {
+//     }
+// }) ;
+
+var currentCell = 0;
+var fullScreenDiv;
+
+function press(evt) 
+{
+//    console.log(evt);
+
+    //evt = window.event;
+    var code = evt.which || evt.keyCode;
+    var viewFullScreen = document.getElementById("slideshow");
+    var cells = IPython.notebook.get_cells();
+    switch(code) 
+    {
+    case 27 /*Esc*/:
+	for (var i = 0; i < cells.length; i++){
+	    cells[i].element.show();
+	}
+	document.removeEventListener("keydown",press);
+	break;
+    case 112 /*f1*/: if (currentCell > 0){ 
+	cells[currentCell].element.hide(); 
+	currentCell--;  
+	IPython.notebook.select_prev();} break;
+    case 113 /*f2*/: if (currentCell < cells.length - 1 ) {
+	cells[currentCell].element.hide(); 
+	currentCell++; 
+	IPython.notebook.select_next();} break;
+    };
+    cells[currentCell].element.show();
+    return true;
+}
+
+
+function deepClone (elt){
+    var target = elt.cloneNode(true);
+    deepCopy(elt,target);
+    return target;
+}
+
+function deepCopy (elt,cloned){
+    var children = elt.childNodes;
+    var clonedChildren = cloned.childNodes;
+    for (var i = 0; i < children.length; i++){
+
+	if (children[i].nodeName == "CANVAS"){
+	    var context = clonedChildren[i].getContext('2d');
+	    clonedChildren[i].width = children[i].width;
+	    clonedChildren[i].height = children[i].height;
+	    context.drawImage(children[i], 0, 0);
+	}
+	deepCopy(children[i],clonedChildren[i]);
+    }
+}
+
+function lol () {
+    var cells = IPython.notebook.get_cells();
+    for (var i = 0; i < cells.length; i++){
+	cells[i].element.hide();
+    }
+    if (screenfull.enabled) {
+     	var cellElt = cells[currentCell].element[0];
+	document.addEventListener("keydown", press, false);
+	fullScreenDiv.appendChild(deepClone(cellElt));
+	cells[currentCell].element.show();
+	var app= document.getElementById("notebook");
+	screenfull.request(app);
+    }
+}
+
+(function () {
+    var viewFullScreen = document.getElementById("slideshow");
+    fullScreenDiv = document.createElement("div");
+    document.body.appendChild(fullScreenDiv);
+    if (viewFullScreen) {
+	viewFullScreen.addEventListener("click", lol, false);
+    }
+})();
+
+
+
+
+function loadSlideshow () {
+    var viewFullScreen = document.getElementById("slideshow");
+//    viewFullScreen.click();
+}
+ 
+
