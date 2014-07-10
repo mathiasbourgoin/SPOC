@@ -4,7 +4,7 @@ open Ast
 
 let retype = ref false
 let unknown = ref 0
-let debug = false
+let debug = true
 
 let my_eprintf s = 
   if debug then
@@ -330,6 +330,7 @@ let args () =
 let current_args = ref (args ()) 
 
 let intrinsics_fun = ref ((Hashtbl.create 100):(string,cfun) Hashtbl.t)
+let global_fun = ref ((Hashtbl.create 100):(string,cfun) Hashtbl.t)
 let intrinsics_const = ref ((Hashtbl.create 100):(string,cfun) Hashtbl.t)
 
 let (arg_list : Camlp4.PreCast.Syntax.Ast.expr list ref ) = ref []
@@ -776,7 +777,9 @@ and typer_app e1 (e2 : kexpr list) t =
       match e1.e with
       | Id (_l, s) -> (try (Hashtbl.find !intrinsics_fun (string_of_ident s)).typ , _l
                        with |_ -> 
-                         typer e1 t; e1.t, _l); 
+                         try (Hashtbl.find !global_fun (string_of_ident s)).typ , _l
+                         with |_ ->
+                           typer e1 t; e1.t, _l); 
       | ModuleAccess (_l, s, e) ->
         open_module s _l;
         let typ, loc = aux e in

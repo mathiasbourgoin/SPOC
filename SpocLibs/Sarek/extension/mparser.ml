@@ -787,7 +787,17 @@ and parse_body body =
       | t::q -> ExApp(_loc, (aux q), (parse_body t))
     in 
     let e2 = aux e2 in
-    let e1 = parse_body e1 in	
+    let e1 = 
+      match e1.e with
+      | Id (_loc, s) ->
+        (try 
+           let intr = Hashtbl.find !global_fun (string_of_ident s) in
+           <:expr<$parse_body e1$.ml_fun>>
+         with
+         | Not_found ->
+           parse_body e1) 
+      | _ -> parse_body e1
+    in
     <:expr<$e1$ $e2$>>
   | Open (_loc, id, e) ->
     let rec aux = function
@@ -841,7 +851,11 @@ and parse_app a =
            let intr = Hashtbl.find !intrinsics_fun (string_of_ident s) in
            <:expr< intrinsics $ExStr(_loc, intr.cuda_val)$ $ExStr(_loc, intr.opencl_val)$>> 
          with Not_found -> 
-           parse_body2 e1 false;)
+           try 
+             let intr = Hashtbl.find !global_fun (string_of_ident s) in
+             <:expr< global $id:s$>> 
+           with Not_found -> 
+             parse_body2 e1 false;)
       | App (_loc, e3, e4::[]) ->
         let e = aux e3 in
         res := <:expr< ($parse_body2 e4 false$)>> :: !res;
@@ -1063,7 +1077,13 @@ and parse_body2 body bool =
               let intr = 
                 Hashtbl.find !intrinsics_fun (string_of_ident s) in
               <:expr< intrinsics $ExStr(_loc, intr.cuda_val)$ $ExStr(_loc, intr.opencl_val)$>>
-            with Not_found -> (assert (not debug); raise (Unbound_value ((string_of_ident s), _loc)))));
+            with Not_found -> 
+              try 
+                let intr = 
+                  Hashtbl.find !global_fun (string_of_ident s) in
+                <:expr< global $id:s$>>
+              with Not_found -> 
+(assert (not debug); raise (Unbound_value ((string_of_ident s), _loc)))));
     | CastId (t, Id(_loc,s))  -> 
       let var = (Hashtbl.find !current_args (string_of_ident s)) in
       (match t with 

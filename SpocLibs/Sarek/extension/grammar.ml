@@ -297,9 +297,9 @@ else
           })>>
 ]
 ];
-expr:
+str_item:
   [
-    ["kfun"; args = LIST1 k_patt; "->"; body = kernel_body ->
+    ["klet"; name = ident; "="; "kfun"; args = LIST1 k_patt; "->"; body = kernel_body ->
      arg_idx := 0;
      return_type := TUnknown;
      arg_list := [];
@@ -343,6 +343,7 @@ expr:
                                     (value)^"\027[00m used as mutable in position : "^(Loc.to_string loc)^"");
            exit 2;))
      in
+     Hashtbl.iter (fun a b -> if b.var_type = TUnknown then assert false)  !current_args ;
      let n_body2 = <:expr<params $List.fold_left 
                           (fun a b -> <:expr<concat $b$ $a$>>) 
 <:expr<empty_arg()>> 
@@ -369,19 +370,27 @@ let ret =
   | TBool -> <:expr< return_bool $ExInt(Loc.ghost, string_of_int (!arg_idx))$>>
   | _  -> failwith "error ret"
 in
-<:expr< 
+let t = 
+  Hashtbl.fold (fun key value seed -> TApp (value.var_type, seed)) !current_args !return_type in
+my_eprintf ("....... "^ktyp_to_string t^"\n");
+Hashtbl.add !global_fun (string_of_ident name) 
+  {nb_args=0; 
+   cuda_val="";
+   opencl_val=""; typ=t};
+<:str_item< 
+let $id:name$ = 
         let open Kirc in 
         let a = {
-        ml_kern = $gen_args$;
-        body = $gen_body2$;
-        ret_val = $ret$;
-        extensions = [ $match !extensions with 
+        ml_fun = $gen_args$;
+        funbody = $gen_body2$;
+        fun_ret = $ret$;
+        fun_extensions = [ $match !extensions with 
         | [] -> <:expr<>>
 | t::[] -> t 
 | _ -> exSem_of_list  !extensions$];
 }
 in
-a>>
+a;;>>
 ]
 ];
 k_patt:
