@@ -4,7 +4,7 @@ open Ast
 
 let retype = ref false
 let unknown = ref 0
-let debug = true
+let debug = false
 
 let my_eprintf s = 
   if debug then
@@ -128,7 +128,6 @@ type k_expr =
   | Float of Loc.t*string
   | Float32 of Loc.t*string
   | Float64 of Loc.t*string
-  | CastId of ktyp* k_expr
   | BoolAnd of Loc.t*kexpr*kexpr
   | BoolOr of Loc.t*kexpr*kexpr
   | BoolEq32 of Loc.t*kexpr*kexpr
@@ -193,10 +192,10 @@ let update_type value t =
   | TArr (t,_), TArr (TUnknown, _) -> (value.t <- t; retype := true)
   | t1, t2 ->
     (*if t1 <> t2 then
-      ( assert (not debug); raise (TypeError (t, value.t, value.loc)) *)
+      (assert (not debug); raise (TypeError (t, value.t, value.loc)) *)
     if not (is_unknown t) then
       if not (is_unknown value.t)  && value.t <> t then
-        ( assert (not debug); raise (TypeError (t, value.t, value.loc)) )
+        (assert (not debug); raise (TypeError (t, value.t, value.loc)) )
       else
         (
           if value.t <> t then
@@ -256,7 +255,6 @@ let rec k_expr_to_string = function
   | Float _ -> "Float"
   | Float32 _ -> "Float32"
   | Float64 _ -> "Float64"
-  | CastId _ -> "CastId"
   | BoolEq32 _ -> "BoolEq32"
   | BoolEq64 _ -> "BoolEq64"
   | BoolEqF _ -> "BoolEqF"
@@ -557,7 +555,7 @@ and close_module m_ident =
   | _ -> () 
 
 let rec basic_check l expected_type current_type loc =
-  if expected_type <> current_type && expected_type <> TUnknown then
+if expected_type <> current_type && not (is_unknown expected_type) then
     ( assert (not debug); raise (TypeError (expected_type, current_type, loc)) );
   List.iter (fun e -> typer e expected_type) l
 
@@ -575,12 +573,12 @@ and equal_types t1 t2 =
       equal_types  t1_ t2_
     | _ -> false
 
-and check t1 t2 l=
-  if not (equal_types t1 t2) &&( not (is_unknown t1) || not (is_unknown t2)) then
+and check t1 t2 l =
+  if (not (equal_types t1 t2)) && (not (is_unknown t1)) && (not (is_unknown t2)) then
     (assert (not debug); raise (TypeError (t1, t2, l)) )
     
 and typer body t =
-  my_eprintf (Printf.sprintf"(* %s >>>>>>>>>>>> typ %s *)\n%!" (k_expr_to_string body.e) (ktyp_to_string t)) ;  
+  my_eprintf (Printf.sprintf"(* %s ############# typ %s *)\n%!" (k_expr_to_string body.e) (ktyp_to_string t)) ;  
   (match body.e with
   | Id (l, s) ->
     let tt = ref t in
@@ -628,7 +626,7 @@ and typer body t =
       | _ -> my_eprintf (ktyp_to_string e1.t); 
         assert false;)
   | VecSet (l, e1, e2) ->
-    (*check t TUnit l;*)
+    check t TUnit l;
     typer e1 e2.t;
     typer e2 e1.t;
     update_type body TUnit
@@ -668,7 +666,6 @@ and typer body t =
      | _ -> assert false
     );
     update_type var y.t;
-(*    update_type body y.t;*)
     typer z t;
     update_type body z.t
   | Plus32 (l,e1,e2) | Min32 (l,e1,e2) 
@@ -763,22 +760,24 @@ and typer body t =
   | Ref (l, e) ->
     typer e t;
     update_type body e.t;
+    decr unknown;
   | Acc (l, e1, e2) ->
     typer e2 e1.t;
     typer e1 e2.t;
     update_type body TUnit
   | _ -> my_eprintf  ((k_expr_to_string body.e)^"\n"); assert false);
   if is_unknown body.t then
-    incr unknown
-           
+  (my_eprintf  (("UNKNOWN : "^k_expr_to_string body.e)^"\n");
+	       incr unknown
+	       )        
 and typer_app e1 (e2 : kexpr list) t =
   let  typ, loc  = 
     let rec aux e1 =
       match e1.e with
       | Id (_l, s) -> (try (Hashtbl.find !intrinsics_fun (string_of_ident s)).typ , _l
                        with |_ -> 
-                         try (Hashtbl.find !global_fun (string_of_ident s)).typ , _l
-                         with |_ ->
+		       try (Hashtbl.find !global_fun (string_of_ident s)).typ , _l
+		       with |_ ->
                            typer e1 t; e1.t, _l); 
       | ModuleAccess (_l, s, e) ->
         open_module s _l;
@@ -786,7 +785,6 @@ and typer_app e1 (e2 : kexpr list) t =
         close_module s;
         typ, loc
       | _ ->  typer e1 t; e1.t, e1.loc
-      | _ ->  assert false 
     in 
     aux e1
   in

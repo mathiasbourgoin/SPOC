@@ -5,8 +5,8 @@ open Ast
 open Typer
 open Mparser
 
-let gen_kernel ()= () 
-
+let gen_kernel () = () 
+                    
     EXTEND Gram
     GLOBAL: str_item expr;
   str_item:
@@ -87,7 +87,7 @@ let gen_kernel ()= ()
             retype := false;
             unknown := 0;
             typer body TUnknown;
-            my_eprintf (Printf.sprintf "Unknown : %d \n%!" !unknown)
+            my_eprintf (Printf.sprintf "Unknown : %d \n\n\n%!" !unknown)
           done;
           if !unknown > 0 then 
             failwith "unknown types in this kernel"
@@ -361,17 +361,18 @@ in
 let ret =
   incr arg_idx;
   match !return_type with
-  | TUnknown  -> <:expr<return_unknown ()>>
-  | TInt32 | TInt32 | TInt64 ->  <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$>>
-  | TVec TInt32 | TVec TInt32 | TVec TInt64 -> <:expr<return_vector_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$>>
-  | TFloat32 | TFloat32 ->  <:expr<return_float $ExInt(Loc.ghost, string_of_int (!arg_idx))$>>
-  | TFloat64 ->  <:expr<return_double $ExInt(Loc.ghost, string_of_int (!arg_idx))$>>
-  | TUnit  -> <:expr<return_unit ()>>
-  | TBool -> <:expr< return_bool $ExInt(Loc.ghost, string_of_int (!arg_idx))$>>
-  | _  -> failwith "error ret"
+  | TUnknown  -> <:expr<return_unknown (), Dummy>>
+  | TInt32 | TInt32 -> <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int32 >>
+  | TInt64 ->  <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int64>>
+  | TVec TInt32 | TVec TInt32 | TVec TInt64 -> assert false
+  | TFloat32 | TFloat32 ->  <:expr<return_float $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float32>>
+  | TFloat64 ->  <:expr<return_double $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float64>>
+  | TUnit  -> <:expr<return_unit (), Vector.Unit ((),())>>
+  | TBool -> <:expr< return_bool $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.Dummy>>
+  | t  -> failwith (Printf.sprintf "error ret : %s" (ktyp_to_string t))
 in
 let t = 
-  Hashtbl.fold (fun key value seed -> TApp (value.var_type, seed)) !current_args !return_type in
+  Hashtbl.fold (fun _ value seed -> TApp (value.var_type, seed)) !current_args !return_type in
 my_eprintf ("....... "^ktyp_to_string t^"\n");
 Hashtbl.add !global_fun (string_of_ident name) 
   {nb_args=0; 
@@ -384,10 +385,10 @@ let $id:name$ =
         ml_fun = $gen_args$;
         funbody = $gen_body2$;
         fun_ret = $ret$;
-        fun_extensions = [ $match !extensions with 
+        fun_extensions = [| $match !extensions with 
         | [] -> <:expr<>>
 | t::[] -> t 
-| _ -> exSem_of_list  !extensions$];
+| _ -> exSem_of_list  !extensions$|];
 }
 in
 a;;>>

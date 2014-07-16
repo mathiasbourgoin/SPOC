@@ -43,8 +43,6 @@ let remove_int_var var =
   match var.e with 
   | Id (_loc, s)  -> 
     Hashtbl.remove !current_args (string_of_ident s);
-  | CastId (_,Id(_loc, s) ) -> 
-    Hashtbl.remove !current_args (string_of_ident s);
   | _ -> failwith "error new_var"
 
 let rec parse_int i t= 
@@ -146,25 +144,6 @@ and parse_float f t =
   match f.e with
   | App (_loc, e1, e2) ->
     parse_body f
-  | CastId (tt,Id(_loc,s)) ->
-    (if t = tt then
-       (( let var = (
-           ( try Hashtbl.find !current_args (string_of_ident s) 
-             with _ -> assert (not debug); raise (Unbound_value ((string_of_ident s), _loc)))) in
-           match var.var_type with
-           | TUnknown ->
-             ( try 
-                 (Hashtbl.find !current_args (string_of_ident s)).var_type <- t  
-               with _ -> assert (not debug); raise (Unbound_value ((string_of_ident s),_loc)))
-           | x when x = t  -> ()
-           | _  -> assert (not debug); raise (TypeError (t, var.var_type, _loc)));
-        match f.t with
-        | x when x = t ->  <:expr<$(ExId (_loc, s))$>>
-        | TUnknown  ->  f.t <- t; 
-          <:expr< $(ExId (_loc, s))$>>
-        | _ -> assert (not debug); raise (TypeError (t, f.t, f.loc)))
-     else 
-       (assert (not debug); raise (TypeError (t, f.t, f.loc))))
   | Id (_loc,s)  ->
     (let is_mutable = ref false in
      ( let var = (
@@ -317,7 +296,6 @@ and  parse_float2 f t=
   match f.e with
   | App (_loc, e1, e2) ->
     parse_body2 f false
-  | CastId(_, Id (_loc,s))  -> <:expr<double_var  ( $ExInt(_loc, string_of_int (Hashtbl.find !current_args (string_of_ident s)).n)$)>>
   | Id (_loc,s)  -> 
     (try 
        let var = (Hashtbl.find !current_args (string_of_ident s)) in
@@ -409,7 +387,7 @@ and parse_body body =
       let y = parse_body y in
       let gen_z = parse_body z in
       match var.e with
-      | Id (_loc,s) | CastId (_,Id(_loc,s)) ->
+      | Id (_loc,s)  ->
         if is_mutable then
           (<:expr<let $PaId(_loc,s)$ = ref $y$ in $gen_z$>>)
         else
@@ -533,8 +511,6 @@ and parse_body body =
         Not_found ->
         <:expr<$ExId(_loc,s)$>>
     end
-  | CastId (_,Id(_loc,s)) -> 
-    <:expr<$ExId(_loc,s)$>>
   | Int (_loc, i)  -> <:expr<$ExInt(_loc, i)$>>
   | Int32 (_loc, i)  -> <:expr<$ExInt32(_loc, i)$>>
   | Int64 (_loc, i)  -> <:expr<$ExInt64(_loc, i)$>>
@@ -853,7 +829,7 @@ and parse_app a =
          with Not_found -> 
            try 
              let intr = Hashtbl.find !global_fun (string_of_ident s) in
-             <:expr< global $id:s$>> 
+             <:expr< global_fun $id:s$>> 
            with Not_found -> 
              parse_body2 e1 false;)
       | App (_loc, e3, e4::[]) ->
@@ -1081,15 +1057,9 @@ and parse_body2 body bool =
               try 
                 let intr = 
                   Hashtbl.find !global_fun (string_of_ident s) in
-                <:expr< global $id:s$>>
+                <:expr< global_fun $id:s$>>
               with Not_found -> 
 (assert (not debug); raise (Unbound_value ((string_of_ident s), _loc)))));
-    | CastId (t, Id(_loc,s))  -> 
-      let var = (Hashtbl.find !current_args (string_of_ident s)) in
-      (match t with 
-       | TFloat64 -> 
-         <:expr<double_var  $ExInt(_loc, string_of_int var.n)$>>
-       | _ -> assert false )
     | Int (_loc, i)  -> <:expr<spoc_int $ExInt(_loc, i)$>>
     | Int32 (_loc, i)  -> <:expr<spoc_int32 $ExInt32(_loc, i)$>>
     | Int64 (_loc, i)  -> <:expr<spoc_int64 $ExInt64(_loc, i)$>>
@@ -1335,18 +1305,6 @@ and parse_body2 body bool =
               |  TUnit ->
                 arg_list := <:expr<Seq ($ex1$, $ex2$)>>::!arg_list
               | _ -> arg_list := <:expr<spoc_set $ex1$ $ex2$>>:: !arg_list);
-           | CastId (_,Id(_loc,s)) -> 
-             (let gen_var = (Hashtbl.find !current_args (string_of_ident s)) in
-              let ex1,ex2 = 
-                match var.t with
-                | TInt32 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
-                | TInt32 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
-                | TInt64 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (aux y)
-                | TFloat32 -> <:expr<(new_double_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
-                | TFloat64 -> <:expr<(new_double_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
-                | _  -> assert (not debug); failwith "unknown var type"
-              in
-              arg_list := <:expr<spoc_set $ex1$ $ex2$>>:: !arg_list);
            | _  ->  assert (not debug); failwith "strange vector" );
           let res = <:expr<$parse_body2 z true$>>
           in remove_int_var var;
@@ -1652,7 +1610,7 @@ let rec float64_expr f =
    | VecSet (l,a,b) -> 
      f.e <- VecSet (l,float64_expr a, float64_expr b)
    | Seq (l, a, b) -> f.e <- Seq (l,a, float64_expr b)
-   | Id  (l, id) -> f.e <- (CastId (TFloat64, Id  (l, id)))
+   | Id  (l, id) -> f.e <-  Id  (l, id)
    | Int _ | BoolEq32 _ | BoolEq32 _ | BoolEq64 _ -> () 
    | BoolLt _ | BoolLt32 _ | BoolLt64 _ 
 (*   | Plus _ | Min _ | Mul _ | Div  _ *) ->() 

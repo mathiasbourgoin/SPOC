@@ -5,6 +5,14 @@ type ('a, 'b, 'c) kirc_kernel = {
   ret_val : Kirc_Ast.k_ext * ('b, 'c) Spoc.Vector.kind;
   extensions : extension array;
 }
+type ('a,'b,'c) kirc_function =
+  { 
+    ml_fun : 'a;
+    funbody : Kirc_Ast.k_ext;
+    fun_ret : Kirc_Ast.k_ext* ('b,'c) Spoc.Vector.kind;
+    fun_extensions : extension array
+  }
+
 type ('a, 'b, 'c, 'd, 'e) sarek_kernel =
     ('a, 'b) Spoc.Kernel.spoc_kernel * ('c, 'd, 'e) kirc_kernel
 
@@ -22,6 +30,7 @@ val opencl_float64 : string
 val cuda_float64 : string
 val cuda_head : string
 val new_var : int -> Kirc_Ast.k_ext
+val global_fun : ('a,'b,'c) kirc_function -> Kirc_Ast.k_ext
 val new_array : int -> Kirc_Ast.k_ext -> Kirc_Ast.elttype -> Kirc_Ast.memspace -> Kirc_Ast.k_ext 
 val var : int -> Kirc_Ast.k_ext
 val spoc_gen_kernel : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext

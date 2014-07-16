@@ -72,6 +72,7 @@ type  k_ext =
   | Mod of  k_ext *  k_ext
   | Id of string
   | IdName of string
+  | GlobalFun of k_ext*string
   | IntVar of int
   | FloatVar of int
   | UnitVar of int
