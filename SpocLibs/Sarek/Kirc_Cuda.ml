@@ -37,9 +37,44 @@ open Kirc_Ast
 let space i =
   String.make i ' '
 
+let global_funs = Hashtbl.create 0
+
 let return_v = ref ("","")
 
-let rec parse i = function
+let global_fun_idx = ref 0 
+
+let rec parse_fun i a b = 
+ let rec aux name a =
+ let rec aux2 i a =
+  match a with 
+ | Kern  (args,body) -> 
+    (let pargs = aux2 i args  in
+     let pbody = 
+       match body with 
+       | Seq (_,_)  -> (aux2 i body )
+       | _  ->  ((aux2 i body )^"\n"^(space i))
+     in
+     (pargs ^ pbody)^ "}")
+  | Params k -> 
+    ("__device__ "^b^" "^name^"  ( "^
+     (if (fst !return_v) <> "" then
+        (fst !return_v)^", " else "")^(parse i k)^" ) {")
+  | a -> parse  i a
+in 
+aux2 i a in
+
+let name = 
+try snd (Hashtbl.find global_funs a) with
+| Not_found ->
+(let gen_name =  ("spoc_fun__"^(string_of_int !global_fun_idx)) in
+     let fun_src = aux gen_name a in
+     incr global_fun_idx;
+     Hashtbl.add global_funs a (fun_src,gen_name) ;
+     gen_name)
+in 
+name
+
+and parse i = function
   | Kern (args,body) -> 
     (let pargs = parse i args in
      let pbody = 
@@ -122,7 +157,7 @@ let rec parse i = function
     (if (snd !return_v) <> "" then
        snd !return_v
      else
-       "")^
+       (space i)^"return ")^
     (parse i k)
   | Unit  -> ""
   | IntVecAcc (vec,idx)  -> (parse i vec)^"["^(parse i idx)^"]"
@@ -134,7 +169,7 @@ let rec parse i = function
   | Float f -> (string_of_float f)^"f"
   | Double f -> string_of_float f
   | IntId (s,_) -> s
-  |Intrinsics gv -> parse_intrinsics gv
+  | Intrinsics gv -> parse_intrinsics gv
   | Seq (a,b)  -> (parse i a)^" ;\n"^(space i)^(parse i b)
   | Ife (a,b,c) -> "if ("^(parse i a)^"){\n"^(space (i+2))^(parse (i+2) b)^";}\n"^(space i)^"else{\n"^(space (i+2))^(parse (i+2) c)^";}\n"^(space i)
   | If (a,b) -> "if ("^(parse i a)^"){\n"^(space (i+2))^(parse (i+2) b)^";}\n"^(space i)
@@ -166,6 +201,10 @@ let rec parse i = function
      | Intrinsics ("return","return") -> f^" "^(aux (Array.to_list b))^" "
      |  _ -> f^" ("^(aux (Array.to_list b))^") ")
   | Empty  -> ""
+  | GlobalFun (a,b) -> 
+     let s = (parse_fun i a b) in
+     s
+
 
 and parse_int n = function
   | IntId (s,_) -> s

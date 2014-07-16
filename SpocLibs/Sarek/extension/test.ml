@@ -1,4 +1,9 @@
-let filter = kern v ->
+klet add = kfun y1 y2 -> y1 + y2;;
+
+let z = kern a -> add a 1
+;;
+
+(*let filter = kern v ->
   let open Std in
   let tid = thread_idx_x + block_dim_x * block_idx_x in
   let tab = make_shared 32 in
@@ -12,8 +17,8 @@ let filter = kern v ->
                            (0.07 *. (float (v.[<i+2>]))) ) in
     v.[<i>] <- res;
     v.[<i+1>] <- res;
-    v.[<i+2>] <- res )
-
+  v.[<i+2>] <- res )
+*)
 
 (*let gpu_bitonic = kern v j k ->
   let open Std in

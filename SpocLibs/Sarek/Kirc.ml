@@ -53,8 +53,19 @@ type ('a,'b,'c) kirc_kernel =
     extensions : extension array
   }
 
+type ('a,'b,'c) kirc_function =
+  { 
+    ml_fun : 'a;
+    funbody : Kirc_Ast.k_ext;
+    fun_ret : Kirc_Ast.k_ext* ('b,'c) Vector.kind;
+    fun_extensions : extension array
+  }
+
+
 type ('a,'b,'c,'d,'e) sarek_kernel =
   ('a,'b) spoc_kernel * ('c,'d,'e) kirc_kernel
+
+
 
 let opencl_head = (
   "float spoc_fadd ( float a, float b );\n"^
@@ -123,6 +134,10 @@ let new_array i l t m = Arr (i, l, t, m)
 let var i = IntId (("spoc_var"^(string_of_int i)), i)
 let spoc_gen_kernel args body = Kern (args,body)
 let spoc_fun_kernel a b = () 
+let global_fun a = GlobalFun (a.funbody, match snd a.fun_ret with
+					 | Vector.Int32 _  -> "int"
+					 | Vector.Float32 _  -> "float"
+					 | _ -> "void")
 let seq a b = Seq (a,b)
 let app a b = App (a,b)
 let spoc_unit () = Unit
@@ -368,6 +383,7 @@ let rewrite ker =
     | While (k1, k2) ->
       While (aux k1, aux k2)
     | App (a,b) -> App (aux a, (Array.map aux b))
+    | GlobalFun (a,b) -> GlobalFun (a,b)
     | Unit -> kern
 
   in
@@ -428,7 +444,10 @@ let gen ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('a, 'b, 'c,'d,'e) sarek
            match extension with
            | ExFloat32 -> header
            | ExFloat64 -> cuda_float64^header) cuda_head k.extensions in
-    save "kirc_kernel.cu" (cuda_head^(Kirc_Cuda.parse 0 (rewrite k2))) ;
+    let src = Kirc_Cuda.parse 0 (rewrite k2) in
+    let global_funs = ref "" in
+    Hashtbl.iter (fun _ a -> global_funs := !global_funs^(fst a)^"\n") Kirc_Cuda.global_funs;
+    save "kirc_kernel.cu" (cuda_head ^ !global_funs ^ src) ;
     ignore(Sys.command ("nvcc -m64 -arch=sm_10 -O3 -ptx kirc_kernel.cu -o kirc_kernel.ptx"));
     let s = (load_file "kirc_kernel.ptx") in
 
@@ -442,7 +461,11 @@ let gen ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('a, 'b, 'c,'d,'e) sarek
            match extension with
            | ExFloat32 -> header
            | ExFloat64 -> opencl_float64^header) opencl_head k.extensions in		
-    kir#set_opencl_sources (opencl_head^(Kirc_OpenCL.parse 0 (rewrite k2)));
+    let src = Kirc_OpenCL.parse 0 (rewrite k2) in
+    let global_funs = ref "" in
+    Hashtbl.iter (fun _ a -> global_funs := !global_funs^(fst a)^"\n") Kirc_OpenCL.global_funs;
+    save "kirc_kernel.cl" (opencl_head ^ !global_funs ^ src) ;
+    kir#set_opencl_sources (opencl_head ^ !global_funs ^ src);
 
   in
   begin

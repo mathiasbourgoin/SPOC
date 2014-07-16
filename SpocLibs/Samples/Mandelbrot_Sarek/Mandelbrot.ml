@@ -31,6 +31,8 @@ let recompile = ref false
 
 let simple = ref true
   
+klet normalize = kfun x y -> x *. x +. y *. y;;
+
 let mandelbrot_recompile = kern img ->
   let open Std in
   let y = thread_idx_y + (block_idx_y * block_dim_y) in
@@ -50,7 +52,7 @@ let mandelbrot_recompile = kern img ->
   let a = 4. *. ((float x0) /. (float !width)) /. !zoom  -. 2. in
   let b = 4. *. ((float y0) /. (float !height)) /. !zoom -. 2. in
  
-  let mutable norm = x1 *. x1 +. y1 *. y1
+  let mutable norm = normalize x1  y1
   in
   while ((cpt < !max_iter) && (norm <=. 4.)) do
     cpt := (cpt + 1);
@@ -81,7 +83,8 @@ let mandelbrot = kern img shiftx shifty zoom ->
   let a = 4. *. ((float x0) /. (float !width)) /. zoom  -. 2. in
   let b = 4. *. ((float y0) /. (float !height)) /. zoom -. 2. in
   
-  let mutable norm = x1 *. x1 +. y1 *. y1
+  let mutable norm = normalize x1  y1
+
   in
   while ((cpt < !max_iter) && (norm <=. 4.)) do
     cpt := (cpt + 1);
@@ -143,7 +146,7 @@ let measure_time f =
   incr cpt;
   a;;
 
-let devices = measure_time(Spoc.Devices.init);;
+let devices = measure_time(Spoc.Devices.init ~only:Devices.OpenCL);;
 
 (*let measure_time f = f () ;;*)
 
@@ -236,9 +239,9 @@ in
     
   if not !recompile then
     if not !simple then
-      ignore(Kirc.gen mandelbrot_double)
+      ignore(Kirc.gen ~only:Devices.OpenCL mandelbrot_double)
     else 
-      ignore(Kirc.gen mandelbrot);
+      ignore(Kirc.gen ~only:Devices.OpenCL mandelbrot);
 
   let l = Int32.to_string !width in
   let h = Int32.to_string !height in
@@ -258,7 +261,7 @@ in
 
     if !recompile then
       begin
-	Kirc.gen mandelbrot_recompile;
+	Kirc.gen ~only:Devices.OpenCL mandelbrot_recompile;
 
 	Kirc.run 
 	  mandelbrot_recompile 
