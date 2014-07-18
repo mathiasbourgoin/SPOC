@@ -463,7 +463,7 @@ let gen ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('a, 'b, 'c,'d,'e) sarek
            | ExFloat64 -> opencl_float64^header) opencl_head k.extensions in		
     let src = Kirc_OpenCL.parse 0 (rewrite k2) in
     let global_funs = ref "" in
-    Hashtbl.iter (fun _ a -> global_funs := !global_funs^(fst a)^"\n") Kirc_OpenCL.global_funs;
+    Hashtbl.iter (fun _ a -> global_funs := (fst a) ^ "\n" ^ !global_funs ^ "\n") Kirc_OpenCL.global_funs;
     save "kirc_kernel.cl" (opencl_head ^ !global_funs ^ src) ;
     kir#set_opencl_sources (opencl_head ^ !global_funs ^ src);
 

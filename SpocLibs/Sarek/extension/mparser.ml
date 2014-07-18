@@ -384,15 +384,21 @@ and parse_body body =
   match body.e with
   | Bind (_loc, var,y, z, is_mutable)  ->
     (
-      let y = parse_body y in
-      let gen_z = parse_body z in
       match var.e with
       | Id (_loc,s)  ->
-        if is_mutable then
-          (<:expr<let $PaId(_loc,s)$ = ref $y$ in $gen_z$>>)
-        else
-          (<:expr<let $PaId(_loc,s)$ = $y$ in $gen_z$>>)
-      | _ -> failwith "error parse_body Bind")
+	 (match y.e with
+	  | Fun (_loc,stri,tt,funv) ->
+	     parse_body z;
+	  | _ ->
+	     let y = parse_body y in
+	     let gen_z = parse_body z in
+             if is_mutable then
+               (<:expr<let $PaId(_loc,s)$ = ref $y$ in $gen_z$>>)
+             else
+               (<:expr<let $PaId(_loc,s)$ = $y$ in $gen_z$>>)
+	 )
+      | _ -> failwith "error parse_body Bind"
+    )
 (*  | Plus (_loc, a,b) -> 
     ( <:expr<$(parse_int a TInt)$ + $(parse_int b TInt)$>>) *)
   | Plus32 (_loc, a,b) -> 
@@ -771,7 +777,12 @@ and parse_body body =
            <:expr<$parse_body e1$.ml_fun>>
          with
          | Not_found ->
-           parse_body e1) 
+            (try 
+		let intr = Hashtbl.find !local_fun (string_of_ident s) in
+		<:expr<$parse_body e1$.ml_fun>>
+              with
+              | Not_found ->
+		 parse_body e1) )
       | _ -> parse_body e1
     in
     <:expr<$e1$ $e2$>>
@@ -831,6 +842,10 @@ and parse_app a =
              let intr = Hashtbl.find !global_fun (string_of_ident s) in
              <:expr< global_fun $id:s$>> 
            with Not_found -> 
+           try 
+             let intr = Hashtbl.find !local_fun (string_of_ident s) in
+             <:expr< global_fun $id:s$>> 
+           with Not_found -> 
              parse_body2 e1 false;)
       | App (_loc, e3, e4::[]) ->
         let e = aux e3 in
@@ -874,60 +889,57 @@ and parse_body2 body bool =
     my_eprintf (Printf.sprintf "(* val2 %s *)\n%!" (k_expr_to_string body.e));
     match body.e with
     | Bind (_loc, var,y, z, is_mutable)  ->             
-      (
-        (
-          match var.e with 
-          | Id (_loc, s)  -> 
-            (let gen_var = 
-              try (Hashtbl.find !current_args (string_of_ident s)) 
-              with _ -> assert false in
-             let rec f () = 
-               match var.t with
-               (*| TInt -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (aux y)*)
-               | TInt32 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (aux y)
-               | TInt64 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (aux y)
-               | TFloat32 -> <:expr<(new_float_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
-               | TFloat64 -> <:expr<(new_double_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
-               | TApp _ -> expr_of_app var.t _loc gen_var y
-               | TUnknown -> if gen_var.var_type <> TUnknown then 
-                   ( var.t <- gen_var.var_type;
-                     f ();)
-                 else
-                   (assert (not debug); raise (TypeError (TUnknown, gen_var.var_type , _loc));
-                    assert (not debug); failwith "unknown var type")
-               (*| TArr TInt -> <:expr<(new_int_array $ExInt(_loc,string_of_int gen_var.n)$) ($aux y$)>>,(aux y)*)
-               | TArr (t,s) -> 
-                 let elttype = 
-                   match t with
-                   | TInt32 -> <:expr<eint32>>
-                   | TInt64 -> <:expr<eint64>>
-                   | TFloat32 -> <:expr<efloat32>>
-                   | TFloat64 -> <:expr<efloat64>>
+       (match var.e with 
+        | Id (_loc, s)  -> 
+	   (match y.e with
+	    | Fun _ -> parse_body2 z bool;
+	    | _ ->
+	       (let gen_var = 
+		  try (Hashtbl.find !current_args (string_of_ident s)) 
+		  with _ -> assert false in
+		let rec f () = 
+		  match var.t with
+		  (*| TInt -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (aux y)*)
+		  | TInt32 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (aux y)
+		  | TInt64 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (aux y)
+		  | TFloat32 -> <:expr<(new_float_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
+		  | TFloat64 -> <:expr<(new_double_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
+		  | TApp _ -> expr_of_app var.t _loc gen_var y
+		  | TUnknown -> if gen_var.var_type <> TUnknown then 
+				  ( var.t <- gen_var.var_type;
+				    f ();)
+				else
+				  (assert (not debug); raise (TypeError (TUnknown, gen_var.var_type , _loc));
+				   assert (not debug); failwith "unknown var type")
+		  (*| TArr TInt -> <:expr<(new_int_array $ExInt(_loc,string_of_int gen_var.n)$) ($aux y$)>>,(aux y)*)
+		  | TArr (t,s) -> 
+                     let elttype = 
+                       match t with
+                       | TInt32 -> <:expr<eint32>>
+                       | TInt64 -> <:expr<eint64>>
+                       | TFloat32 -> <:expr<efloat32>>
+                       | TFloat64 -> <:expr<efloat64>>
                  and memspace =
                    match s with
                    | Local -> <:expr<local>>
                    | Shared -> <:expr<shared>>
                    | Global -> <:expr<global>> in
-                 <:expr<(new_array $ExInt(_loc,string_of_int gen_var.n)$) ($aux y$) $elttype$ $memspace$>>,(aux y)
-               (* | TArr TInt64 -> <:expr<(new_int64_array $ExInt(_loc,string_of_int gen_var.n)$) ($aux y$)>>,(aux y) *)
-               (* | TArr TFloat32 -> <:expr<(new_float32_array $ExInt(_loc,string_of_int gen_var.n)$) ($aux y$)>>,(aux y) *)
-               (* | TArr TFloat64 -> <:expr<(new_float64_array $ExInt(_loc,string_of_int gen_var.n)$ ($aux y$))>>,(aux y) *)
-               | _  ->  ( assert (not debug); raise (TypeError (TUnknown, gen_var.var_type , _loc));
-                          assert (not debug); failwith "unknown var type")
-             in
-             let ex1, ex2 = f () in
-             arg_list := <:expr<(spoc_declare $ex1$)>>:: !arg_list)
-          | _  ->  failwith "strange binding" );
-        (let var_ = parse_body2 var false in
-         let y = aux y in
-         let z = aux z in
-         let res = 
-           match var.t with
-             TArr _ ->  <:expr< $z$>>
-           | _ -> <:expr< seq (spoc_set $var_$ $y$) $z$>>
-         in remove_int_var var;
-         res))
-
+                     <:expr<(new_array $ExInt(_loc,string_of_int gen_var.n)$) ($aux y$) $elttype$ $memspace$>>,(aux y)
+		  | _  ->  ( assert (not debug); raise (TypeError (TUnknown, gen_var.var_type , _loc));
+                             assert (not debug); failwith "unknown var type")
+		in
+		let ex1, ex2 = f () in
+		arg_list := <:expr<(spoc_declare $ex1$)>>:: !arg_list;
+		(let var_ = parse_body2 var false in
+		 let y = aux y in
+		 let z = aux z in
+		 let res = 
+		   match var.t with
+		      TArr _ ->  <:expr< $z$>>
+		    | _ -> <:expr< seq (spoc_set $var_$ $y$) $z$>>
+		 in remove_int_var var;
+		     res)))
+        | _  ->  failwith "strange binding");
 (*    | Plus (_loc, a,b) -> body.t <- TInt; 
       let p1 = (parse_int2 a TInt) 
       and p2 = (parse_int2 b TInt) in
@@ -987,13 +999,17 @@ and parse_body2 body bool =
       if not r then 
         return_type := TInt;
       ( <:expr<spoc_mul $p1$ $p2$>>) *)
-    | Mul32 (_loc, a,b) -> body.t <- TInt32; 
+    | Mul32 (_loc, a,b) -> 
+       if not r then 
+        return_type := TInt32;
       ( <:expr<spoc_mul $(parse_int2 a TInt32)$ $(parse_int2 b TInt32)$>>)
     | Mul64 (_loc, a,b) -> body.t <- TInt64; 
       ( <:expr<spoc_mul $(parse_int2 a TInt64)$ $(parse_int2 b TInt64)$>>)
     | MulF (_loc, a,b) -> 
       ( <:expr<spoc_mul_float $(parse_float2 a TFloat32)$ $(parse_float2 b TFloat32)$>>)
     | MulF32 (_loc, a,b) -> 
+       if not r then 
+        return_type := TFloat32;
       ( <:expr<spoc_mul_float $(parse_float2 a TFloat32)$ $(parse_float2 b TFloat32)$>>)
     | MulF64 (_loc, a,b) -> 
       ( <:expr<spoc_mul_float $(parse_float2 a TFloat64)$ $(parse_float2 b TFloat64)$>>)
@@ -1050,16 +1066,21 @@ and parse_body2 body bool =
            <:expr<intrinsics $ExStr(_loc, c_const.cuda_val)$ $ExStr(_loc, c_const.opencl_val)$>>
          with _ -> 
            (try 
-              let intr = 
+               let intr = 
                 Hashtbl.find !intrinsics_fun (string_of_ident s) in
               <:expr< intrinsics $ExStr(_loc, intr.cuda_val)$ $ExStr(_loc, intr.opencl_val)$>>
-            with Not_found -> 
+             with Not_found -> 
               try 
                 let intr = 
                   Hashtbl.find !global_fun (string_of_ident s) in
                 <:expr< global_fun $id:s$>>
               with Not_found -> 
-(assert (not debug); raise (Unbound_value ((string_of_ident s), _loc)))));
+		try 
+                  let intr = 
+                    Hashtbl.find !local_fun (string_of_ident s) in
+                  <:expr< global_fun $id:s$>>
+		with Not_found -> 
+		  (assert (not debug); raise (Unbound_value ((string_of_ident s), _loc)))));
     | Int (_loc, i)  -> <:expr<spoc_int $ExInt(_loc, i)$>>
     | Int32 (_loc, i)  -> <:expr<spoc_int32 $ExInt32(_loc, i)$>>
     | Int64 (_loc, i)  -> <:expr<spoc_int64 $ExInt64(_loc, i)$>>
@@ -1067,16 +1088,16 @@ and parse_body2 body bool =
     | Float32 (_loc, f) -> <:expr<spoc_float $ExFlo(_loc, f)$>>
     | Float64 (_loc, f) -> <:expr<spoc_double $ExFlo(_loc, f)$>>
     | Seq (_loc, x, y) -> 
-      (match y.e with
+       (match y.e with
        | Seq _ ->
          let x = parse_body2 x false in
          let y = parse_body2 y false in
          <:expr<seq $x$ $y$>>
        | _ -> 
-         let e1 = parse_body2 x false in
+          let e1 = parse_body2 x false in
          let e2 = aux y
          in  <:expr<seq $e1$ $e2$>> 
-      )
+       )
     | End (_loc, x)  -> 
       let res = <:expr< $aux x$>> 
       in 
@@ -1290,25 +1311,30 @@ and parse_body2 body bool =
         (
           (match var.e with 
            | Id (_loc, s) ->
-             (let gen_var = (Hashtbl.find !current_args (string_of_ident s)) in
-              let ex1,ex2 = 
-                match var.t with
-                | TInt32 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (aux y)
-                | TInt32 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
-                | TInt64 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (aux y)
-                | TFloat32 -> <:expr<(new_float_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
-                | TFloat64 -> <:expr<(new_double_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
-                | TUnit -> <:expr<Unit>>,aux y; 
-                | _  -> assert (not debug); failwith "unknown var type"
-              in
-              match var.t with
-              |  TUnit ->
-                arg_list := <:expr<Seq ($ex1$, $ex2$)>>::!arg_list
-              | _ -> arg_list := <:expr<spoc_set $ex1$ $ex2$>>:: !arg_list);
-           | _  ->  assert (not debug); failwith "strange vector" );
-          let res = <:expr<$parse_body2 z true$>>
-          in remove_int_var var;
-          res)
+	      (match y.e with
+	       | Fun _ -> ()
+	       | _ ->
+		  (let gen_var = (
+		     try Hashtbl.find !current_args (string_of_ident s)
+		     with _ -> assert false) in
+		   let ex1,ex2 = 
+                     match var.t with
+                     | TInt32 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (aux y)
+                     | TInt32 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
+                     | TInt64 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (aux y)
+                     | TFloat32 -> <:expr<(new_float_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
+                     | TFloat64 -> <:expr<(new_double_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
+                     | TUnit -> <:expr<Unit>>,aux y; 
+                     | _  -> assert (not debug); failwith "unknown var type"
+		   in
+		   match var.t with
+		   |  TUnit ->
+                       arg_list := <:expr<Seq ($ex1$, $ex2$)>>::!arg_list
+		   | _ -> arg_list := <:expr<spoc_set $ex1$ $ex2$>>:: !arg_list);
+               | _  ->  assert (not debug); failwith "strange vector" );
+              let res = <:expr<$parse_body2 z true$>>
+              in remove_int_var var;
+		 res))
       | Seq (a,b,c)  -> aux body
       | _  -> 
         let e = {t=body.t; e =End(_loc, body); loc = _loc} in 
@@ -1336,17 +1362,6 @@ let parse_args params body=
 
 
 
-let new_arg_of_patt p =  
-
-  match p with
-  | <:patt< $lid:x$ >> ->  let i = !arg_idx in     incr arg_idx;
-
-    Hashtbl.add !current_args x {n=i; var_type=TUnknown;
-                                 is_mutable = false;
-                                 read_only = false;
-                                 write_only = false;
-                                 is_global = false;};
-  | _  -> failwith "error new_arg_of_patt"
 
 let gen_arg_from_patt p = 
   match p with

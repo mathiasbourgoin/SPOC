@@ -31,10 +31,11 @@ let recompile = ref false
 
 let simple = ref true
   
-klet normalize = kfun x y -> x *. x +. y *. y;;
+
 
 let mandelbrot_recompile = kern img ->
-  let open Std in
+let open Std in
+let normalize = fun x y -> x *. x +. y *. y in
   let y = thread_idx_y + (block_idx_y * block_dim_y) in
   let x = thread_idx_x + (block_idx_x * block_dim_x) in
   (if (y >= !height) || (x >= !width) then
@@ -82,7 +83,9 @@ let mandelbrot = kern img shiftx shifty zoom ->
   let mutable y2 = 0. in
   let a = 4. *. ((float x0) /. (float !width)) /. zoom  -. 2. in
   let b = 4. *. ((float y0) /. (float !height)) /. zoom -. 2. in
-  
+let normalize = fun x y -> 
+let pow2 = fun x -> x *. x in
+(pow2 x) +. (pow2 y) in  
   let mutable norm = normalize x1  y1
 
   in
@@ -100,6 +103,7 @@ let mandelbrot = kern img shiftx shifty zoom ->
 
 let mandelbrot_double = kern img shiftx shifty zoom ->
   let open Std in
+let normalize = fun x y -> x *. x +. y *. y in
   let open Math.Float64 in
   let y = thread_idx_y + (block_idx_y * block_dim_y) in
   let x = thread_idx_x + (block_idx_x * block_dim_x) in

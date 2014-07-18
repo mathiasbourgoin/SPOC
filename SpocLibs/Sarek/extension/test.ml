@@ -1,6 +1,10 @@
-klet add = kfun y1 y2 -> y1 + y2;;
-
-let z = kern a -> add a 1
+let z = kern a -> 
+let add = fun y1 y2 -> 
+let pow2 = fun x -> x = 0 in
+	(pow2 y1) + y2 in
+let open Std in
+let tid = thread_idx_x + block_dim_x * block_idx_x in
+ add (add a 1) tie
 ;;
 
 (*let filter = kern v ->
@@ -80,7 +84,7 @@ let z = kern a -> add a 1
   
 
 
-
+(*
 let demo = kern a b c n -> 
     let open Std in
     let tab = make_shared 8 in
@@ -88,3 +92,4 @@ let demo = kern a b c n ->
     let i = global_thread_id in
     if i < n then
         c.[<i>] <- a.[<i>] + b.[<i>]*)
+*)
