@@ -80,6 +80,13 @@ exception Immutable of string * Loc.t
 exception TypeError of ktyp * ktyp * Loc.t
 
 
+type cfun = 
+  { nb_args: int;
+    cuda_val : string;
+    opencl_val : string;
+    typ : ktyp 
+  }
+
 
 type k_expr = 
   | Open of Loc.t * ident * kexpr
@@ -90,6 +97,7 @@ type k_expr =
   | ArrSet of Loc.t*kexpr*kexpr
   | ArrGet of Loc.t*kexpr*kexpr
   | Seq of Loc.t*kexpr*kexpr
+  | Fun of Loc.t*expr*ktyp*cfun
   | Bind of Loc.t*kexpr*kexpr*kexpr*bool
 (*  | Plus of Loc.t*kexpr*kexpr*)
   | Plus32 of Loc.t*kexpr*kexpr
@@ -213,7 +221,9 @@ let rec string_of_ident i =
   in aux i
 
 
+
 let rec k_expr_to_string = function
+  | App (_,{t=_;e=Id(l,s);loc=_},_) -> ("App "^(string_of_ident s))
   | App _ -> "App"
   | Acc _ -> "Acc"
   | VecSet _ -> "VecSet"
@@ -222,6 +232,7 @@ let rec k_expr_to_string = function
   | ArrGet _ -> "ArrGet"
   | Seq _ -> "Seq"
   | Bind _ -> "Bind"
+  | Fun _ -> "Fun"
 
 (*  | Plus _ -> "Plus"*)
   | Plus32 _ -> "Plus32"
@@ -302,12 +313,6 @@ let expr_of_patt p =
 type k_patt 
 
 
-type cfun = 
-  { nb_args: int;
-    cuda_val : string;
-    opencl_val : string;
-    typ : ktyp 
-  }
 
 type spoc_module = {
   mod_name : string;
@@ -325,13 +330,29 @@ let args () =
   let (tbl : (string, var) Hashtbl.t)  = Hashtbl.create 10 in
   tbl 
 
+
 let current_args = ref (args ()) 
 
 let intrinsics_fun = ref ((Hashtbl.create 100):(string,cfun) Hashtbl.t)
-let global_fun = ref ((Hashtbl.create 100):(string,cfun) Hashtbl.t)
+let global_fun = ref ((Hashtbl.create 10):(string,cfun) Hashtbl.t)
+let local_fun = ref (Hashtbl.create 10)
 let intrinsics_const = ref ((Hashtbl.create 100):(string,cfun) Hashtbl.t)
 
 let (arg_list : Camlp4.PreCast.Syntax.Ast.expr list ref ) = ref []
+
+
+
+let new_arg_of_patt p =  
+
+  match p with
+  | <:patt< $lid:x$ >> ->  let i = !arg_idx in     incr arg_idx;
+
+    Hashtbl.add !current_args x {n=i; var_type=TUnknown;
+                                 is_mutable = false;
+                                 read_only = false;
+                                 write_only = false;
+                                 is_global = false;};
+  | _  -> failwith "error new_arg_of_patt"
 
 
 let std = {
@@ -554,15 +575,16 @@ and close_module m_ident =
   with
   | _ -> () 
 
-let rec basic_check l expected_type current_type loc =
-if expected_type <> current_type && not (is_unknown expected_type) then
+let rec basic_check l current_type expected_type loc =
+  if expected_type <> current_type && not (is_unknown current_type) then
     ( assert (not debug); raise (TypeError (expected_type, current_type, loc)) );
   List.iter (fun e -> typer e expected_type) l
-
+	    
 and elt_check body t l =
-  if body.t <> t && body.t <> TUnknown then
-    (assert (not debug); raise (TypeError (t, body.t, l)) );
-  update_type body  t;
+  if body.t <> t && not (is_unknown body.t) then
+    (assert (not debug); raise (TypeError (t, body.t, l)) )
+  else
+  update_type body t;
 
 and equal_types t1 t2 =
   if t1 = t2 then
@@ -652,22 +674,31 @@ and typer body t =
   | Float64 (l,s) -> 
     elt_check body TFloat64 l
   | Bind (_loc, var,y, z, is_mutable)  ->
-    typer y TUnknown;
-    (match var.e with
-     | Id (_loc,s)  ->
-       (incr arg_idx;
-        Hashtbl.add !current_args (string_of_ident s) 
-          {n = !arg_idx; var_type = y.t;
-           is_mutable = is_mutable;
-           read_only = false;
-           write_only = false;
-           is_global = false;}
-       )
-     | _ -> assert false
-    );
-    update_type var y.t;
-    typer z t;
-    update_type body z.t
+     (match var.e with
+      | Id (_loc,s)  ->
+	 (match y.e with
+	  | Fun (_loc,stri,tt,funv) ->
+	     my_eprintf ("ADDDD: "^(string_of_ident s));
+	     Hashtbl.add !local_fun (string_of_ident s) 
+			 (funv,<:str_item<
+			    let $id:s$ = 
+			      $stri$>>);
+	     update_type y tt;
+	  | _ -> typer y TUnknown;
+		 (incr arg_idx;
+		  Hashtbl.add !current_args (string_of_ident s) 
+			      {n = !arg_idx; var_type = y.t;
+			       is_mutable = is_mutable;
+			       read_only = false;
+			       write_only = false;
+			       is_global = false;}
+		 )
+	 );
+      | _ -> assert false
+     );
+     update_type var y.t;
+     typer z t;
+     update_type body z.t;
   | Plus32 (l,e1,e2) | Min32 (l,e1,e2) 
   | Mul32 (l,e1,e2) | Div32 (l,e1,e2) 
   | Mod (l, e1, e2) -> 
@@ -778,7 +809,10 @@ and typer_app e1 (e2 : kexpr list) t =
                        with |_ -> 
 		       try (Hashtbl.find !global_fun (string_of_ident s)).typ , _l
 		       with |_ ->
-                           typer e1 t; e1.t, _l); 
+		       try (fst(Hashtbl.find !local_fun (string_of_ident s))).typ , _l
+		       with |_ ->
+			      raise (Unbound_value (string_of_ident s,_l) ))
+
       | ModuleAccess (_l, s, e) ->
         open_module s _l;
         let typ, loc = aux e in
