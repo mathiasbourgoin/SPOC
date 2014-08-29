@@ -84,13 +84,12 @@ window.mathjax_url = 'http://cdn.mathjax.org/mathjax/latest/MathJax.js';
                 <!-- <li class="divider"> </li> -->
                 <!-- <li id="copy_notebook"><a href="#">Make a Copy...</a></li> -->
                 <!-- <li id="rename_notebook"><a href="#">Rename...</a></li> -->
-                <!-- <li id="rename_notebook"><a href="#">Rename...</a></li> -->
                 <!-- <li class="divider"> </li> -->
                 <li id="save_as_ocaml"><a   href='javascript:saveAsOcaml();'> Save OCaml code (experimental)</a></li>
                 <li id="save_as_ipynb"><a   href='javascript:downloadIPYNB();'> Download as .ipynb (experimental)</a></li>
                 <li id="load_ipynb"><a   href='javascript:loadIPYNB();'> Load .ipynb (experimental)</a></li>
-                
-
+                <li class="divider"> </li>
+                <li id="slideshow"><a href='javascript:loadSlideshow();'> Start slideshow (experimental)</a></li>
 
                 <!-- <li class="divider"> </li> -->
                 <!-- <li id="restore_checkpoint" class="dropdown-submenu"><a href="#">Revert to Checkpoint</a> -->
@@ -255,7 +254,6 @@ window.mathjax_url = 'http://cdn.mathjax.org/mathjax/latest/MathJax.js';
 <script src="/SPOC/static/components/codemirror/mode/markdown/markdown.js" charset="utf-8"> </script>
 <script src="/SPOC/static/components/codemirror/mode/gfm/gfm.js" charset="utf-8"> </script>
 <!-- <script src="/SPOC/static/components/codemirror/mode/python/python.js" charset="utf-8"> </script> -->
-<!-- <script src="/SPOC/static/components/codemirror/mode/ocaml/ocaml.js" charset="utf-8"> </script> -->
 <!-- <script src="/SPOC/static/notebook/js/codemirror-ipython.js" charset="utf-8"> </script> -->
 
 <script src="/SPOC/static/components/highlight.js/build/highlight.pack.js" charset="utf-8"> </script>
@@ -294,6 +292,7 @@ window.mathjax_url = 'http://cdn.mathjax.org/mathjax/latest/MathJax.js';
 <script src="/SPOC/static/notebook/js/celltoolbarpresets/slideshow.js" type="text/javascript" charset="utf-8"> </script>
 
 <script src="/SPOC/static/custom/custom.js" type="text/javascript" charset="utf-8"> </script>
+<script  src="/SPOC/javascripts/screenfull.min.js" type="text/javascript"  charset="utf-8"></script>
 <script  src="/SPOC/javascripts/iocamlsaver.js" type="text/javascript"  charset="utf-8"></script>
 
 </body>
