@@ -55,7 +55,7 @@ ___
 #### [**<u>ImageFilter</u>**](tutos/imageFilter.html)
 #### [**<u>Mandelbrot</u>**](tutos/mandel.html)
 #### [**<u>Sarek2CL</u>**](tutos/sarek2cl.html)
-#### [**<u>OCaml2014 Demo</u>**](tutos/OCaml2014.html)
+#### [**<u>OCaml-2014 Demo</u>**](tutos/OCaml2014.html)
 
 
 #I - How to Build SPOC
