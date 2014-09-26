@@ -10,13 +10,13 @@ kernels_int.cma:typer.cmo mparser.cmo  grammar.cmo
 	ocamlfind ocamlc -a typer.cmo mparser.cmo grammar.cmo -o kernels_int.cma
 
 mparser.cmo:mparser.ml typer.cmo 
-	 ocamlfind ocamlc -I +camlp4 -pp camlp4of dynlink.cma camlp4lib.cma  typer.cmo $<
+	 ocamlfind ocamlc -warn-error +a -I +camlp4 -pp camlp4of dynlink.cma camlp4lib.cma  typer.cmo $<
 
 typer.cmo:typer.ml
-	 ocamlfind ocamlc -I +camlp4 -pp camlp4of dynlink.cma camlp4lib.cma  $<
+	 ocamlfind ocamlc -warn-error +a -I +camlp4 -pp camlp4of dynlink.cma camlp4lib.cma  $<
 
 grammar.cmo:grammar.ml typer.cmo mparser.cmo
-	 ocamlfind ocamlc -I +camlp4 -pp camlp4of dynlink.cma camlp4lib.cma  typer.cmo mparser.cmo $<
+	 ocamlfind ocamlc -warn-error +a -I +camlp4 -pp camlp4of dynlink.cma camlp4lib.cma  typer.cmo mparser.cmo $<
 
 
 test: kernels_int.cma test.ml

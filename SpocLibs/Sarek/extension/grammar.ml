@@ -25,14 +25,18 @@ let gen_kernel () = ()
        module $name$ = struct
        end
        >>
-     | "ktyp"; name=LIDENT; "="; k = ktype_kind -> 
+     | "ktype"; name=LIDENT; "="; k = ktype_kind -> 
        gen_ctypes _loc k name;
       ]
     ];
   
   ktype_kind :
     [[ "{"; (t,l) = klabel_declaration_list; "}" ->
-       KRecord (t,l)
+       KRecord (t,l);
+     | t = fst_constructor -> KSum [t]
+     | t = fst_constructor; t2 = kconstructor_list -> 
+	KSum 
+	 (gen_constructors _loc t (Some t2));
      ]
     ];
   klabel_declaration_list:
@@ -48,6 +52,25 @@ let gen_kernel () = ()
     [[
       s=ident; ":";  t=type_kind -> (s,t)
     ]];
+
+  kconstructor_list :
+    [[ 
+	"|"; t1 = kconstructor; t2 = SELF ->
+	 gen_constructors _loc t1 (Some t2);
+      | "|";  t1 = kconstructor  -> 
+	 gen_constructors _loc t1 (None);
+    ]];
+  fst_constructor : 
+    [[
+	OPT "|"; t = kconstructor ->  t
+
+    ]];
+  kconstructor:
+    [[
+	c = UIDENT -> (c,None);
+      | c = UIDENT; "of" ; t = ctyp (* TODO: real types here! *) -> (c, Some t) ;
+    ]];
+
   mod_const_expr: 
     [[name=ident; ":"; typ=ident; "="; cu_value=STRING; cl_value=STRING -> 
       let typ =
@@ -172,10 +195,10 @@ let ret =
   incr arg_idx;
   match !return_type with
   | TUnknown  -> <:expr<return_unknown (), Dummy>>
-  | TInt32 | TInt32 -> <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int32 >>
+  | TInt32 -> <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int32 >>
   | TInt64 ->  <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int64>>
-  | TVec TInt32 | TVec TInt32 | TVec TInt64 -> assert false
-  | TFloat32 | TFloat32 ->  <:expr<return_float $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float32>>
+  | TVec TInt32 | TVec TInt64 -> assert false
+  | TFloat32 ->  <:expr<return_float $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float32>>
   | TFloat64 ->  <:expr<return_double $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float64>>
   | TUnit  -> <:expr<return_unit (), Vector.Unit ((),())>>
   | TBool -> <:expr< return_bool $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.Dummy>>
@@ -378,10 +401,10 @@ let ret =
   incr arg_idx;
   match !return_type with
   | TUnknown  -> <:expr<return_unknown (), Dummy>>
-  | TInt32 | TInt32 -> <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int32 >>
+  | TInt32 -> <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int32 >>
   | TInt64 ->  <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int64>>
-  | TVec TInt32 | TVec TInt32 | TVec TInt64 -> assert false
-  | TFloat32 | TFloat32 ->  <:expr<return_float $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float32>>
+  | TVec TInt32 | TVec TInt64 -> assert false
+  | TFloat32 ->  <:expr<return_float $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float32>>
   | TFloat64 ->  <:expr<return_double $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float64>>
   | TUnit  -> <:expr<return_unit (), Vector.Unit ((),())>>
   | TBool -> <:expr< return_bool $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.Dummy>>
@@ -541,10 +564,10 @@ let ret =
   incr arg_idx;
   match !return_type with
   | TUnknown  -> <:expr<return_unknown (), Dummy>>
-  | TInt32 | TInt32 -> <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int32 >>
+  | TInt32 -> <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int32 >>
   | TInt64 ->  <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int64>>
-  | TVec TInt32 | TVec TInt32 | TVec TInt64 -> assert false
-  | TFloat32 | TFloat32 ->  <:expr<return_float $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float32>>
+  | TVec TInt32 | TVec TInt64 -> assert false
+  | TFloat32 ->  <:expr<return_float $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float32>>
   | TFloat64 ->  <:expr<return_double $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float64>>
   | TUnit  -> <:expr<return_unit (), Vector.Unit ((),())>>
   | TBool -> <:expr< return_bool $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.Dummy>>

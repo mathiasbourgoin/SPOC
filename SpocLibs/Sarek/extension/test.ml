@@ -1,95 +1,14 @@
-let z = kern a -> 
-let add = fun y1 y2 -> 
-let pow2 = fun x -> x = 0 in
-	(pow2 y1) + y2 in
-let open Std in
-let tid = thread_idx_x + block_dim_x * block_idx_x in
- add (add a 1) tie
-;;
+ktype t1 = X | Y 
 
-(*let filter = kern v ->
-  let open Std in
-  let tid = thread_idx_x + block_dim_x * block_idx_x in
-  let tab = make_shared 32 in
-  for i = 0 to 32 do
-      tab.(i) <- 1
-  done;
-  if tid <= (512*512) then (
-    let i = (tid*4) in
-    let res = int_of_float ((0.21 *. (float (v.[<i>]))) +.
-                           (0.71 *. (float (v.[<i+1>]))) +.
-                           (0.07 *. (float (v.[<i+2>]))) ) in
-    v.[<i>] <- res;
-    v.[<i+1>] <- res;
-  v.[<i+2>] <- res )
-*)
+ktype t2 = 
+{
+  x : t1;
+}
 
-(*let gpu_bitonic = kern v j k ->
-  let open Std in
-  let i = thread_idx_x + block_dim_x * block_idx_x in
-  let ixj = Math.xor i j in
-  let mutable temp = 0. in
-  if ixj < i then
-    () 
-  else
-    begin
-      if (Math.logical_and i k) = 0  then
-        (
-          if  v.[<i>] >. v.[<ixj>] then
-            (temp := v.[<ixj>];
-             v.[<ixj>] <- v.[<i>];
-             v.[<i>] <- temp)
-        )
-      else 
-      if v.[<i>] <. v.[<ixj>] then
-        (temp := v.[<ixj>];
-         v.[<ixj>] <- v.[<i>];
-         v.[<i>] <- temp);
-    end
+ktype t3 = 
+ A
+| B of int
+| C of t2
 
-    *)
-(*let test = kern v n ->
-  let open Std in
-  let tid = thread_idx_x + block_dim_x * block_idx_x in
-  let tab = make_shared 32 in
-  tab.(0) <- v.[<0>];
-  v.[<0>] <- tab.(0);
-  if tid <= (512*512) then (
-    let i = (tid*4) in
-    let res = (int_of_float ((0.21 *. (float (v.[<i>]))) +.
-                             (0.71 *. (float (v.[<i+1>]))) +.
-                             (0.07 *. (float (v.[<i+2>]))) )) + 3 in
-    v.[<i>] <- res;
-    v.[<i+1>] <- res;
-    v.[<i+2>] <- res 
-  )
-*)
+  ;;
 
-(*( v +. 2. ) *. v
-  else
-    ( v +. 2. ) *. v
-*)
-(*let filter = kern v ->  let open Std in
-  let tid = thread_idx_x + block_dim_x * block_idx_x in
-  let tab = make_shared 32 in
-  tab.(0) <- v.[<0>];
-  if tid <= (512*512) then (
-    let i = (tid*4) in
-    let res = (int_of_float ((0.21 *. (float (v.[<i>]))) +.
-                             (0.71 *. (float (v.[<i+1>]))) +.
-                             (0.07 *. (float (v.[<i+2>]))) )) + 3 in
-    v.[<i>] <- res;
-    v.[<i+1>] <- res;
-    v.[<i+2>] <- res )
-  
-
-
-(*
-let demo = kern a b c n -> 
-    let open Std in
-    let tab = make_shared 8 in
-    tab.(0) <- a.[<i>];
-    let i = global_thread_id in
-    if i < n then
-        c.[<i>] <- a.[<i>] + b.[<i>]*)
-*)

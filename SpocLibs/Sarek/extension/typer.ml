@@ -16,7 +16,7 @@ let my_eprintf s =
 
 type customtypes =
   | KRecord of ctyp list * ident list
-  | KSum of int list
+  | KSum of (string *ctyp option ) list 
 
 type memspace = 
   | Local
@@ -35,14 +35,13 @@ type ktyp =
   | TVec of ktyp
   | TArr of (ktyp*memspace)
   | TApp of ktyp * ktyp
+  | Custom of customtypes
 
 
 let rec ktyp_to_string = function
   | TUnit -> "unit"
-  (* | TInt -> "int" *)
   | TInt32  -> "int32"
   | TInt64  -> "int64"
-  (* | TFloat  ->  "float" *)
   | TFloat32 -> "float32"
   | TFloat64 -> "float64"
   | TUnknown  -> "unknown"
@@ -50,7 +49,7 @@ let rec ktyp_to_string = function
   | TVec k -> (ktyp_to_string k)^" vector" 
   | TArr (k,m) -> (ktyp_to_string k)^" array" 
   | TApp (k1,k2) -> (ktyp_to_string k1)^" -> "^(ktyp_to_string k2) 
-
+  | Custom _ -> "Custom"
 
 
 let ex32 = 
@@ -827,11 +826,12 @@ and typer_app e1 (e2 : kexpr list) t =
     match typ, expr with
     | TApp (t1, t2), e::[] -> typer e t1; ret := t2
     | _ , [] -> assert false
+    | _ -> assert false
   in		
   let rec aux typ1 e =
     match typ1,e with
     | (TApp (t1, (TApp (_,_) as t2)), 
-       App ( l , e1, (t::(tt::qq as q) as e2))) ->
+       App ( l , e1, (t::(tt::qq) as e2))) ->
       aux2 t2 e2;
       typer e1 t1;
       if e1.t <> t1  then ( assert (not debug); raise (TypeError (t1, e1.t, l)) );
