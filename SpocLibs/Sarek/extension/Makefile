@@ -20,19 +20,22 @@ grammar.cmo:grammar.ml typer.cmo mparser.cmo
 
 
 test: kernels_int.cma test.ml
-	@echo "ORIGINAL"
-	@echo "--------"
-	@echo
+	@echo "(* ORIGINAL *)"
+	@echo "(************)"
+	@echo "(*"
 	@cat test.ml
+	@echo "*)"
 	@echo
+	@echo "(******************************************************************************)"
 	@echo
-	@echo "--------------------------------------------------------------------------------"
-	@echo
-	@echo "MODIFIED"
-	@echo "--------"
+	@echo "(* MODIFIED *)"
+	@echo "(************)"
 	@echo
 	@camlp4 -I +camlp4 -parser o -parser op -printer o kernels_int.cma test.ml
 
+pp: 
+	camlp4 -I +camlp4 -parser o -parser op -printer o kernels_int.cma test.ml > test_pp.ml
+	ocamlfind ocamlc -package ctypes -linkpkg test_pp.ml
 
 clean:
-	rm -rf *.cmo *,cmx *.out *~ *.cmi camlprog.exe *.cma *.asm
+	rm -rf *.cmo *,cmx *.out *~ *.cmi camlprog.exe *.cma *.asm *_pp.ml
