@@ -1502,8 +1502,10 @@ let gen_ctype t1 t2 name _loc =
                 ;; 
     >> 
   end
-;;
 
+let gen_ctype_repr t1 t2 name : string =
+  let field_name  = (string_of_ident t2^"_t") in
+  ((get_sarek_name (string_of_ctyp t1))^" "^field_name)
 
 
 type ktyp_repr = {
@@ -1564,48 +1566,57 @@ end
 end
 
 
+type managed_ktyp = 
+{
+  mk_name : string;
+  mk_crepr : string;
+}
+
+
+
 let gen_ctypes _loc kt name =
   let rec gen_repr _loc t name =
+    let managed_ktypes = Hashtbl.create 5 in
     let sarek_type_name = name^"_sarek" in
     Hashtbl.add sarek_types_tbl name sarek_type_name;
-    {
-      type_id = (incr type_id; !type_id);
-      name = name;
-      typ = t;
-      ml_typ = gen_mltyp _loc name t;
-      ctype = 
-	begin
-	  let fieldsML =
-	    match t with
-	    | Custom (KRecord (ctypes,idents)) -> 
-	      begin
-		let rec content acc l1 = 
-		  match (l1 : ctyp list) with
-		  | [] -> 
-		    acc
-		  | t1::q1 -> 
-		    content 
+    let ctype =
+      begin
+	let fieldsML =
+   match t with
+   | Custom (KRecord (ctypes,idents)) -> 
+     begin
+       let rec content acc l1 = 
+	 match (l1 : ctyp list) with
+  | [] -> 
+    acc
+  | t1::q1 -> 
+    content 
 		      (<:str_item< $acc$
-			           $gen_ctype t1 (IdLid(_loc,sarek_type_name)) sarek_type_name _loc$
-			           >>) q1
-		in
-		content (<:str_item< >>) ctypes
-	      end
-	    | Custom (KSum l) -> 
-	      begin
-		let gen_mlstruct accML (cstr,ty) = 
-		  let name = sarek_type_name^"_"^cstr in
-		  begin
+		     $gen_ctype t1 (IdLid(_loc,sarek_type_name)) sarek_type_name _loc$
+		     >>) q1
+       in
+       content (<:str_item< >>) ctypes
+     end
+   | Custom (KSum l) -> 
+     begin
+       let gen_mlstruct accML (cstr,ty) = 
+	 let name = sarek_type_name^"_"^cstr in
+  begin
 		    match ty with 
 		    | Some t -> 
-		      begin
-			<:str_item< 
+	begin
+   let ct = gen_ctype t (IdLid(_loc,name))  sarek_type_name _loc in 
+   let ctr = gen_ctype_repr 
+       t 
+       (IdLid(_loc,name))  sarek_type_name  in  
+   Hashtbl.add managed_ktypes cstr ctr;
+   <:str_item< 
 			            $accML$ ;; 
 			            type $lid:name$ ;;
 			            let $lid:name$ : $lid:name$ Ctypes.structure Ctypes.typ = 
 			            Ctypes.structure 
 			            $str:name$;;
-				    $gen_ctype t (IdLid(_loc,name))  sarek_type_name _loc$ ;;
+     $ct$;;
 			            let () = Ctypes.seal $lid:name$ ;; >>
 		      end  
 		    | None -> 
@@ -1639,8 +1650,46 @@ let gen_ctypes _loc kt name =
 		        >>
 	  end ;
 	end;
-
-      crepr = "int";
+    in 
+    {
+      type_id = (incr type_id; !type_id);
+      name = name;
+      typ = t;
+      ml_typ = gen_mltyp _loc name t;
+      ctype = 
+        ctype;
+      crepr = 
+        begin
+          match t with 
+          | Custom (KRecord _) -> "int"
+          | Custom (KSum l) ->
+            let rec has_of = function
+              | (_,Some t)::q -> true
+              | (_,None)::q -> has_of q
+              | [] -> false 
+            in
+            let gen_cstruct accC = function
+              | cstr,Some t -> accC ^ "\t\tstruct "^sarek_type_name^"_"^cstr^" {\n\t\t\t"^ 
+                               (Hashtbl.find managed_ktypes cstr)^"\n\t\t};\n"
+                               
+              | cstr,None -> accC ^ ""
+            in
+            let rec contents accC  = function
+              | t::q -> contents (gen_cstruct accC t) q
+              | [] -> accC
+            in
+            let fieldsC  =
+              let b = contents "" l in    
+              ("struct " ^ sarek_type_name ^ "= {\n\tint "^
+               sarek_type_name ^ "_tag;\n"^
+               (if has_of l then
+                 "\tunion "^sarek_type_name^"_union {\n"
+               ^b ^"\t}"
+                else "" )^
+               "\n}") 
+            in fieldsC 
+          | _ -> "int" ;
+        end;
       ml_to_c = <:expr< >>;
       c_to_ml = <:expr< >>;
     }
@@ -1650,6 +1699,7 @@ let gen_ctypes _loc kt name =
     <:str_item<
       $t.ml_typ$ ;;
       $t.ctype$ ;;
+      let $lid:t.name^"_c_repr"$ = $str:t.crepr$ ;;
       >>
   end
 
