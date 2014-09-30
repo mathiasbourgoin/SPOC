@@ -1,4 +1,4 @@
-ktype t1 = X | Y 
+ktype t1 = X | Y of int
 
 ktype t2 = 
 {
@@ -6,7 +6,7 @@ ktype t2 =
   y : int;
 }
 
-ktype t3 =
+ktype t3 = 
  A
 | B of int
 | C of t2

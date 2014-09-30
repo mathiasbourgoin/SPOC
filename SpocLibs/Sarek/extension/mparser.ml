@@ -1748,8 +1748,112 @@ let gen_ctypes _loc kt name =
         end;
       ml_to_c = 
         begin
-          <:expr< let x = Ctypes.make $lid:sarek_type_name$ in ()
-          >>;
+          match t with
+          | Custom (KRecord (l1,l2)) ->
+            let copy_to_c = 
+              List.fold_left2 
+                (fun a b c ->
+                   let field_name = 
+                     (sarek_type_name^"_"^(string_of_ident c)) in
+                   try 
+                     let get = (Hashtbl.find type_repr (string_of_ctyp b)).ml_to_c in
+                     <:expr< $a$;
+                             Ctypes.setf tmp $lid:field_name$ 
+                             ($get$ x.$lid:string_of_ident c$);>>
+                   with
+                   | _ ->
+                     <:expr< $a$;
+                             Ctypes.setf tmp $lid:field_name$ x.$lid:string_of_ident c$;>>)
+                
+                <:expr< >> l1 l2
+                
+            in
+            begin
+              <:expr< fun x -> 
+                      let tmp = 
+                      Ctypes.make $lid:sarek_type_name$ in
+                      $copy_to_c$ ;
+                      tmp
+              >>;
+            end
+            
+          | Custom (KSum l) -> 
+            let copy_to_c =
+              let gen_sum_rep  l = 
+                let rec aux acc tag = function
+                  | (cstr,of_) :: q ->
+                    aux ((cstr,tag,of_)::acc) (tag+1) q
+                  | [] -> acc
+                in
+                aux [] 0 l
+              in
+              let repr_ = gen_sum_rep l 	
+              in
+              let copy_content cstr (of_ :ctyp option) =
+                let copy_of _of = 
+                  try
+                    let get = 
+                      (Hashtbl.find type_repr (string_of_ctyp _of)).ml_to_c in
+                    <:expr< 
+                                 let  union =
+                                 Ctypes.make $lid:sarek_type_name^"_union_"$ in
+                                 let str = 
+                                 Ctypes.make $lid:sarek_type_name^"_"^cstr$ in
+                                 Ctypes.setf str $lid:sarek_type_name^"_"^cstr^"_"^sarek_type_name$ ($get$ sarek_tmp);
+                                 Ctypes.setf union 
+                                 $lid:sarek_type_name^"_"^cstr^"_val"$ str;
+                                 Ctypes.setf tmp
+                                 $lid:sarek_type_name^"_union"$ union ;
+                    >>
+                  with 
+                  | _ -> <:expr< 
+                                 let  union =
+                                 Ctypes.make $lid:sarek_type_name^"_union_"$ in
+                                 let str = 
+                                 Ctypes.make $lid:sarek_type_name^"_"^cstr$ in
+                                 Ctypes.setf str $lid:sarek_type_name^"_"^cstr^"_"^sarek_type_name$ sarek_tmp;
+                                 Ctypes.setf union 
+                                 $lid:sarek_type_name^"_"^cstr^"_val"$ str;
+                                 Ctypes.setf tmp
+                                 $lid:sarek_type_name^"_union"$ union ;
+                         >>
+                in
+                match of_ with
+                | Some x -> copy_of x
+                | None -> <:expr< >>
+              in
+              let match_cases = 
+                List.map 
+                  (fun (cstr,tag,of_) ->
+                     begin
+                       <:match_case< 
+                                      $uid:cstr$ $match of_ 
+                                     with Some _ -> 
+                                     <:patt< sarek_tmp>> | None -> <:patt< >>$ ->
+                                      begin
+                                     Ctypes.setf tmp $lid:sarek_type_name^"_tag"$
+                                     $int:string_of_int tag$ ;
+                                     $copy_content cstr of_$;
+                                     end
+                       >>
+                     end
+                  ) 
+                  repr_
+              in
+              <:expr< match x with 
+                      $list:(List.rev match_cases)$ >>
+                
+            in
+            begin
+              <:expr< fun x -> 
+                      let tmp = 
+                      Ctypes.make $lid:sarek_type_name$ in
+                      $copy_to_c$ ;
+                      tmp
+              >>;
+            end
+
+          | _ -> assert false
         end;
       c_to_ml =
         begin
@@ -1822,18 +1926,18 @@ let gen_ctypes _loc kt name =
             in
             let copy_to_caml = 
               let match_cases = 
-                List.map 
+                (<:match_case< _ -> failwith ("Sarek error : c to caml failed for type "^
+                               $str:name$)>>)::
+                (List.map 
                   (fun (cstr,tag,of_) ->
-                     (*let field_name =
-                       (sarek_type_name^"_"^cstr) in*)
-                     begin
-                       <:match_case< 
+                    begin
+                      <:match_case< 
                                      $int:string_of_int tag$ -> 
                                      $copy_content sarek_type_name cstr of_$
->>
-                     end
+                      >>
+                    end
                   ) 
-                  repr_
+                  repr_)
               in
               <:expr< let tag = Ctypes.getf x $lid:sarek_type_name^"_tag"$ in
                       match tag with 
@@ -1842,9 +1946,7 @@ let gen_ctypes _loc kt name =
             in
             <:expr< fun x -> $copy_to_caml$>>
           | _ -> 
-            <:expr< fun x -> 
-                      () ;
-            >>;
+            assert false
         end;
           
     }
