@@ -179,7 +179,7 @@ let gen_kernel () = ()
        let n_body2 = <:expr<params $List.fold_left 
                             (fun a b -> <:expr<concat $b$ $a$>>) 
 <:expr<empty_arg()>> 
-  (List.rev (List.map gen_arg_from_patt2 args))$>> in 
+  ((List.rev_map gen_arg_from_patt2 args))$>> in 
 let gen_body2 =  <:expr< 
                          spoc_gen_kernel 
                          $n_body2$
@@ -386,7 +386,7 @@ str_item:
      let n_body2 = <:expr<params $List.fold_left 
                           (fun a b -> <:expr<concat $b$ $a$>>) 
 <:expr<empty_arg()>> 
-  (List.rev (List.map gen_arg_from_patt2 args))$>> in 
+  ((List.rev_map gen_arg_from_patt2 args))$>> in 
 let gen_body2 =  <:expr< 
                          spoc_gen_kernel 
                          $n_body2$
@@ -550,7 +550,7 @@ kexpr:
      let n_body2 = <:expr<params $List.fold_left 
                           (fun a b -> <:expr<concat $b$ $a$>>) 
 <:expr<empty_arg()>> 
-  (List.rev (List.map gen_arg_from_patt2 args))$>> in 
+  ((List.rev_map gen_arg_from_patt2 args))$>> in 
 let gen_body2 =  <:expr< 
                          spoc_gen_kernel 
                          $n_body2$

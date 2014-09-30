@@ -303,7 +303,7 @@ and  parse_int2 i t=
   | App _ -> parse_body2 i false
   | _ -> (my_eprintf (Printf.sprintf "--> (* val %s *)\n%!" (k_expr_to_string i.e));
           raise (TypeError (t, i.t, i.loc));)
-         
+
 and  parse_float2 f t= 
   match f.e with
   | App (_loc, e1, e2) ->
@@ -345,7 +345,7 @@ and  parse_float2 f t=
   | ModuleAccess _ -> parse_body2 f false
   | _  -> ( my_eprintf (Printf.sprintf "(* val %s *)\n%!" (k_expr_to_string f.e));
             raise (TypeError (t, f.t, f.loc));)
-          
+
 and parse_modacc m =
   let res = ref m in
   let rec aux m = 
@@ -374,7 +374,7 @@ and parse_app_ml a modu =
     in
     ExApp(_loc, aux e1 modu, parse_body e2)
   | _ -> parse_body a 
-           
+
 
 and parse_body body = 
   my_eprintf (Printf.sprintf"(* val %s *)\n%!" (k_expr_to_string body.e));
@@ -384,16 +384,16 @@ and parse_body body =
       match var.e with
       | Id (_loc,s)  ->
 	(match y.e with
-   | Fun (_loc,stri,tt,funv) ->
-     parse_body z;
-   | _ ->
-     let y = parse_body y in
-     let gen_z = parse_body z in
-     if is_mutable then
-       (<:expr<let $PaId(_loc,s)$ = ref $y$ in $gen_z$>>)
-     else
-       (<:expr<let $PaId(_loc,s)$ = $y$ in $gen_z$>>)
- )
+         | Fun (_loc,stri,tt,funv) ->
+           parse_body z;
+         | _ ->
+           let y = parse_body y in
+           let gen_z = parse_body z in
+           if is_mutable then
+             (<:expr<let $PaId(_loc,s)$ = ref $y$ in $gen_z$>>)
+           else
+             (<:expr<let $PaId(_loc,s)$ = $y$ in $gen_z$>>)
+        )
       | _ -> failwith "error parse_body Bind"
     )
   | Plus32 (_loc, a,b) -> 
@@ -804,9 +804,9 @@ and parse_body2 body bool =
 		     f ();)
 		 else
 		   (assert (not debug); 
-      raise (TypeError (TUnknown, gen_var.var_type , _loc));)
-	| TArr (t,s) -> 
-   let elttype = 
+                    raise (TypeError (TUnknown, gen_var.var_type , _loc));)
+	       | TArr (t,s) -> 
+                 let elttype = 
                    match t with
                    | TInt32 -> <:expr<eint32>>
                    | TInt64 -> <:expr<eint64>>
@@ -822,9 +822,9 @@ and parse_body2 body bool =
 		 in
                  <:expr<(new_array $ExInt(_loc,string_of_int gen_var.n)$) ($aux y$) $elttype$ $memspace$>>,(aux y)
 	       | _  ->  ( assert (not debug); 
-                   raise (TypeError (TUnknown, gen_var.var_type , _loc));)
-      in
-      let ex1, ex2 = f () in
+                          raise (TypeError (TUnknown, gen_var.var_type , _loc));)
+             in
+             let ex1, ex2 = f () in
 	     arg_list := <:expr<(spoc_declare $ex1$)>>:: !arg_list;
 	     (let var_ = parse_body2 var false in
 	      let y = aux y in
@@ -946,7 +946,7 @@ and parse_body2 body bool =
                   <:expr< global_fun $id:s$>>
 		with Not_found -> 
 		  (assert (not debug); 
-     raise (Unbound_value ((string_of_ident s), _loc)))));
+                   raise (Unbound_value ((string_of_ident s), _loc)))));
     | Int (_loc, i)  -> <:expr<spoc_int $ExInt(_loc, i)$>>
     | Int32 (_loc, i)  -> <:expr<spoc_int32 $ExInt32(_loc, i)$>>
     | Int64 (_loc, i)  -> <:expr<spoc_int64 $ExInt64(_loc, i)$>>
@@ -1468,7 +1468,7 @@ let ctype_of_sarek_type  = function
   | "int32" -> "int"
   | "int64" -> "long"
   | "int" -> "int"
-  | a -> a 
+  | a -> a^"_sarek"
 
 
 let rec string_of_ctyp = function
@@ -1490,8 +1490,8 @@ let get_sarek_name t =
     with
     | _ -> print_endline t; assert false
 
-let gen_ctype t1 t2 name _loc = 
-  let field_name  = (string_of_ident t2^"_t") in
+let gen_ctype t1 t2 t3 name _loc = 
+  let field_name  = (string_of_ident t2^"_"^t3) in
   begin
     <:str_item< let $lid:field_name$ = 
 		let open Ctypes in
@@ -1567,11 +1567,19 @@ end
 
 
 type managed_ktyp = 
-{
-  mk_name : string;
-  mk_crepr : string;
-}
+  {
+    mk_name : string;
+    mk_crepr : string;
+  }
 
+
+let type_repr = Hashtbl.create 10
+
+let rec has_of = function
+  | (_,Some t)::q -> true
+  | (_,None)::q -> has_of q
+  | [] -> false 
+    
 
 
 let gen_ctypes _loc kt name =
@@ -1582,96 +1590,144 @@ let gen_ctypes _loc kt name =
     let ctype =
       begin
 	let fieldsML =
-   match t with
-   | Custom (KRecord (ctypes,idents)) -> 
-     begin
-       let rec content acc l1 = 
-	 match (l1 : ctyp list) with
-  | [] -> 
-    acc
-  | t1::q1 -> 
-    content 
-		      (<:str_item< $acc$
-		     $gen_ctype t1 (IdLid(_loc,sarek_type_name)) sarek_type_name _loc$
-		     >>) q1
+          match t with
+          | Custom (KRecord (ctypes,idents)) -> 
+            begin
+              let rec content acc l1 l2 = 
+	        match (l1 ,l2) with
+                | [],[] -> 
+                  acc
+                | t1::q1, t2::q2 -> 
+                  content 
+		    (<:str_item< $acc$
+		   $gen_ctype t1 (IdLid(_loc,sarek_type_name)) (string_of_ident t2) sarek_type_name _loc$
+		   >>) q1 q2
+                | _ -> assert false
+              in
+              content (<:str_item< >>) ctypes idents
+            end
+          | Custom (KSum l) -> 
+            begin
+              let gen_mlstruct accML (cstr,ty) = 
+	        let name = sarek_type_name^"_"^cstr in
+                begin
+		  match ty with 
+		  | Some t -> 
+	            begin
+                      let ct = gen_ctype t (IdLid(_loc,name))  sarek_type_name "" _loc in 
+                      let ctr = gen_ctype_repr 
+                          t 
+                          (IdLid(_loc,name))  sarek_type_name  in  
+                      Hashtbl.add managed_ktypes cstr ctr;
+
+                      <:str_item< 
+
+	                          $accML$ ;; 
+	                          type $lid:name$ ;;
+	                          let $lid:name$ : $lid:name$ Ctypes.structure Ctypes.typ = 
+	                          Ctypes.structure 
+	                          $str:name$;;
+                                  $ct$;;
+	                          let () = Ctypes.seal $lid:name$ ;; >>
+                    end  
+                  | None -> 
+	            begin
+                      let tag = sarek_type_name^"_tag" in
+                      <:str_item< 
+	                          let $lid:tag$ = 
+                                  Ctypes.field $lid:sarek_type_name$ $str:tag$ Ctypes.int ;;
+                      >>
+		    end
+		end 
+
+	      in	  
+	      let rec content (accML)  = function
+		| t::q -> content (gen_mlstruct accML t) q
+		| [] -> accML
        in
-       content (<:str_item< >>) ctypes
-     end
-   | Custom (KSum l) -> 
-     begin
-       let gen_mlstruct accML (cstr,ty) = 
-	 let name = sarek_type_name^"_"^cstr in
-  begin
-		    match ty with 
-		    | Some t -> 
-	begin
-   let ct = gen_ctype t (IdLid(_loc,name))  sarek_type_name _loc in 
-   let ctr = gen_ctype_repr 
-       t 
-       (IdLid(_loc,name))  sarek_type_name  in  
-   Hashtbl.add managed_ktypes cstr ctr;
+       let fields = content (<:str_item< >>) l
+       in
+       
+       if has_of l then
+         let union = sarek_type_name^"_union" in
+         let union_name = union^"_" in
+         let rec aux acc = function 
+           | (cstr, Some x)::q ->
+             let field_name_c = sarek_type_name^"_"^cstr in
+             let field_name = field_name_c^"_val" in
+             aux <:str_item<$acc$;;
+                            let $lid:field_name$ = let open Ctypes in
+                            Ctypes.field $lid:union_name$ $str:field_name_c$ $lid:field_name_c$;; >> q
+           | (_,None)::q -> aux acc q
+           | [] -> <:str_item< $acc$;;
+                               let () = Ctypes.seal $lid:union_name$;;
+                               let $lid:sarek_type_name^"_union"$ = 
+                               Ctypes.field 
+                               $lid:sarek_type_name$ 
+                               $str:union$ 
+                               $lid:union_name$;;
+                   >> 
+         in
+         aux <:str_item< $fields$;;
+                         type $lid:union_name$ ;;
+                         let $lid:union_name$ : ($lid:union_name$ Ctypes.union Ctypes.typ) =
+                         Ctypes.union $str:union_name$ ;;
+             >> l
+       else
+         fields
+	    end
+	  | _ -> assert false
+
+	in
+ begin
+
    <:str_item< 
-			            $accML$ ;; 
-			            type $lid:name$ ;;
-			            let $lid:name$ : $lid:name$ Ctypes.structure Ctypes.typ = 
-			            Ctypes.structure 
-			            $str:name$;;
-     $ct$;;
-			            let () = Ctypes.seal $lid:name$ ;; >>
-		      end  
-		    | None -> 
-		      begin
-			<:str_item< >>
-		      end
-		  end 
+	       (** open ctype **)
+	       type $lid:sarek_type_name$ ;;
+	       let ($lid:sarek_type_name$ :($lid:sarek_type_name$ 
+	       Ctypes.structure) 
+	       Ctypes.typ) = 
+	       Ctypes.structure $str:sarek_type_name$ ;;     
+               (** fill its fields **)
 
-		in	  
-		let rec content (accML)  = function
-		  | t::q -> content (gen_mlstruct accML t) q
-		  | [] -> accML
-		in
-		content (<:str_item< >>) l
-	      end
-	    | _ -> assert false
-
-	  in
-	  begin
-	    <:str_item< 
-	                (** open ctype **)
-	                type $lid:sarek_type_name$ ;;
-	                let ($lid:sarek_type_name$ :($lid:sarek_type_name$ 
-			Ctypes.structure) 
-			Ctypes.typ) = 
-	                Ctypes.structure $str:sarek_type_name$ ;;
-	                (** fill its fields **)
-	                $fieldsML$ ;;
-	                (** close ctype **)
-	                let () = Ctypes.seal $lid:sarek_type_name$ ;;
-		        >>
-	  end ;
-	end;
+     	       $fieldsML$ ;;
+	       (** close ctype **)
+	
+     
+               let () = Ctypes.seal $lid:sarek_type_name$ ;;
+	       >>
+ end ;
+      end;
     in 
     {
       type_id = (incr type_id; !type_id);
       name = name;
       typ = t;
       ml_typ = gen_mltyp _loc name t;
-      ctype = 
-        ctype;
+      ctype =  ctype;
       crepr = 
         begin
           match t with 
-          | Custom (KRecord _) -> "int"
-          | Custom (KSum l) ->
-            let rec has_of = function
-              | (_,Some t)::q -> true
-              | (_,None)::q -> has_of q
-              | [] -> false 
+          | Custom (KRecord (l1,l2)) -> 
+            let rec content (ctype) (l1,l2)= 
+              match (l1 : ctyp list), (l2 :ident list) with
+              | [],[] -> ctype
+              | t1::q1, t2::q2 -> 
+                content (ctype^"\n\t"^(ctype_of_sarek_type (string_of_ctyp t1)) ^ 
+                 "  " ^ (string_of_ident t2) ^ ";") (q1,q2)
+              | _ -> assert false
             in
+            
+            let fieldsC =
+              let a = content "" (l1,l2) in    
+              ("struct " ^ sarek_type_name ^ " {"
+                ^a ^"\n};")  in
+            fieldsC
+          | Custom (KSum l) ->
             let gen_cstruct accC = function
               | cstr,Some t -> accC ^ "\t\tstruct "^sarek_type_name^"_"^cstr^" {\n\t\t\t"^ 
                                (Hashtbl.find managed_ktypes cstr)^"\n\t\t};\n"
-                               
+
               | cstr,None -> accC ^ ""
             in
             let rec contents accC  = function
@@ -1683,23 +1739,126 @@ let gen_ctypes _loc kt name =
               ("struct " ^ sarek_type_name ^ "= {\n\tint "^
                sarek_type_name ^ "_tag;\n"^
                (if has_of l then
-                 "\tunion "^sarek_type_name^"_union {\n"
-               ^b ^"\t}"
+                  "\tunion "^sarek_type_name^"_union {\n"
+                  ^b ^"\t}"
                 else "" )^
                "\n}") 
             in fieldsC 
           | _ -> "int" ;
         end;
-      ml_to_c = <:expr< >>;
-      c_to_ml = <:expr< >>;
+      ml_to_c = 
+        begin
+          <:expr< let x = Ctypes.make $lid:sarek_type_name$ in ()
+          >>;
+        end;
+      c_to_ml =
+        begin
+          match t with 
+          | Custom (KRecord (l1,l2)) ->
+            let copy_to_caml = 
+              List.fold_left2 
+                (fun a b c -> 
+                   let field_name = 
+                     (sarek_type_name^"_"^(string_of_ident c)) in
+                   try 
+                     let get = (Hashtbl.find type_repr (string_of_ctyp b)).c_to_ml in
+                     <:rec_binding< $a$; 
+                                    $c$ = 
+                       $get$
+                            (Ctypes.getf x $lid:field_name$) >>
+                       
+                   with | _ ->
+                     <:rec_binding< $a$; 
+                                    $c$ = 
+                                    Ctypes.getf x $lid:field_name$ >>) 
+                <:rec_binding< >> l1 l2
+                
+          in
+          begin
+            <:expr< fun x -> {$copy_to_caml$} ;
+            >>;
+          end
+          | Custom (KSum l)  ->
+            let gen_sum_rep  l = 
+              let rec aux acc tag = function
+                | (cstr,of_) :: q ->
+                  aux ((cstr,tag,of_)::acc) (tag+1) q
+                | [] -> acc
+              in
+              aux [] 0 l
+                
+            in
+            
+            let copy_content sarek_type_name cstr (of_:ctyp option) =
+              let copy_of _of =
+                try
+                  let get = (Hashtbl.find type_repr (string_of_ctyp _of)).c_to_ml in
+                  
+                  <:expr< 
+                          $get$ (let union = 
+                          Ctypes.getf x $lid:sarek_type_name^"_union"$ in
+                          let $lid:"val"^cstr$ = 
+                          Ctypes.getf union 
+                          $lid:sarek_type_name^"_"^cstr^"_val"$ in
+                          Ctypes.getf $lid:"val"^cstr$ $lid:sarek_type_name^"_"^cstr^"_"^sarek_type_name$)
+                  >>
+                with
+                |_ ->
+                  <:expr< let union = 
+                          Ctypes.getf x $lid:sarek_type_name^"_union"$ in
+                          let $lid:"val"^cstr$ = 
+                          Ctypes.getf union 
+                          $lid:sarek_type_name^"_"^cstr^"_val"$ in
+                          Ctypes.getf $lid:"val"^cstr$ $lid:sarek_type_name^"_"^cstr^"_"^sarek_type_name$
+                  >>
+              in 
+              match of_ with
+              | Some x -> 
+                <:expr< $ExId(_loc,IdUid(_loc,cstr))$ ($copy_of x$) >>
+              | None ->
+                ExId(_loc,IdUid(_loc,cstr))
+            in
+            let repr_ = gen_sum_rep l 	
+            in
+            let copy_to_caml = 
+              let match_cases = 
+                List.map 
+                  (fun (cstr,tag,of_) ->
+                     (*let field_name =
+                       (sarek_type_name^"_"^cstr) in*)
+                     begin
+                       <:match_case< 
+                                     $int:string_of_int tag$ -> 
+                                     $copy_content sarek_type_name cstr of_$
+>>
+                     end
+                  ) 
+                  repr_
+              in
+              <:expr< let tag = Ctypes.getf x $lid:sarek_type_name^"_tag"$ in
+                      match tag with 
+                      $list:(List.rev match_cases)$ >>
+                
+            in
+            <:expr< fun x -> $copy_to_caml$>>
+          | _ -> 
+            <:expr< fun x -> 
+                      () ;
+            >>;
+        end;
+          
     }
   in
+  
   let t = gen_repr _loc (Custom kt) name in
+  Hashtbl.add type_repr name t;
   begin
     <:str_item<
       $t.ml_typ$ ;;
       $t.ctype$ ;;
       let $lid:t.name^"_c_repr"$ = $str:t.crepr$ ;;
+      let ml_to_c = $t.ml_to_c$;;
+      let c_to_ml = $t.c_to_ml$;;
       >>
   end
 
