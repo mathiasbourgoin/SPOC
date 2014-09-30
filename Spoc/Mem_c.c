@@ -195,7 +195,7 @@ CAMLprim value spoc_cuda_custom_part_cpu_to_device(value vector, value sub_vecto
 	h_A = (char*)Field(Field(customArray, 0),1);
 	seek = Int_val(Field(vector, 10));
 
-	type_size = Int_val(Field(Field(customArray, 1),1));
+	type_size = Int_val(Field(Field(customArray, 1),0));
 	size =Int_val(Field(vector, 4))-seek;
 
 	dev_vec_array = Field(sub_vector, 2);
@@ -245,7 +245,7 @@ CAMLprim value spoc_cuda_custom_cpu_to_device(value vector, value nb_device, val
 	h_A = (char*)Field(Field(customArray, 0),1);
 	seek = Int_val(Field(vector, 10));
 
-	type_size = Int_val(Field(Field(customArray, 1),1));
+	type_size = Int_val(Field(Field(customArray, 1),0));
 	size =Int_val(Field(vector, 4))-seek;
 
 	dev_vec_array = Field(vector, 2);
@@ -368,7 +368,7 @@ CAMLprim value spoc_cuda_custom_alloc_vect(value vector, value nb_device, value 
 
 	customArray = Field (Field(vector, 1), 0);
 
-	type_size = Int_val(Field(Field(customArray, 1),1))*sizeof(char);
+	type_size = Int_val(Field(Field(customArray, 1),0))*sizeof(char);
 	size = Int_val(Field(vector, 4));
 	dev_vec_array = Field(vector, 2);
 	dev_vec =Field(dev_vec_array, Int_val(nb_device));
@@ -487,7 +487,7 @@ CAMLprim value spoc_opencl_custom_alloc_vect(value vector, value nb_device, valu
         int tag;
         customArray = Field (Field(vector, 1), 0);
 
-        type_size = Int_val(Field(Field(customArray, 1),1))*sizeof(char);
+        type_size = Int_val(Field(Field(customArray, 1),0))*sizeof(char);
         size = Int_val(Field(vector, 4));
         dev_vec_array = Field(vector, 3);
         dev_vec =Field(dev_vec_array, Int_val(nb_device));
@@ -583,7 +583,7 @@ CAMLprim value spoc_cuda_custom_device_to_cpu(value vector, value nb_device, val
 	id = Int_val(Field(vector, 0));
 		customArray = Field (Field(vector, 1), 0);
 		h_A = (void*)Field(Field(customArray, 0), 1);
-		type_size = Int_val(Field(Field(customArray, 1),1))*sizeof(char);
+		type_size = Int_val(Field(Field(customArray, 1),0))*sizeof(char);
 		size = Int_val(Field(vector, 4));
 		dev_vec_array = Field(vector, 2);
 		dev_vec =Field(dev_vec_array, Int_val(nb_device));
@@ -649,7 +649,7 @@ CAMLprim value spoc_opencl_custom_cpu_to_device(value vector, value nb_device, v
         h_A = (void*)Field(Field(customArray, 0), 1);
         seek = Int_val(Field(vector, 10));
 
-        type_size = Int_val(Field(Field(customArray, 1),1));
+        type_size = Int_val(Field(Field(customArray, 1),0));
         size = Int_val(Field(vector, 4))-seek;
 
         dev_vec_array = Field(vector, 3);
@@ -784,7 +784,7 @@ CAMLprim value spoc_opencl_custom_device_to_cpu(value vector, value nb_device, v
         dev_vec =Field(dev_vec_array, Int_val(nb_device));
         d_A = Cl_mem_val(Field(dev_vec, 1));
         size =Long_val(Field(vector, 4));
-        type_size = Long_val(Field(Field(customArray, 1),1))*sizeof(char);
+        type_size = Long_val(Field(Field(customArray, 1),0))*sizeof(char);
 
 	OPENCL_GET_CONTEXT;
 

@@ -35,7 +35,7 @@ test: kernels_int.cma test.ml
 
 pp: 
 	camlp4 -I +camlp4 -parser o -parser op -printer o kernels_int.cma test.ml > test_pp.ml
-	ocamlfind ocamlc -package ctypes -linkpkg test_pp.ml
+	ocamlfind ocamlc -thread -package ctypes,spoc -linkpkg test_pp.ml
 
 clean:
 	rm -rf *.cmo *,cmx *.out *~ *.cmi camlprog.exe *.cma *.asm *_pp.ml

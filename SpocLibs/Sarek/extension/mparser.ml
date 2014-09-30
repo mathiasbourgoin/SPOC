@@ -1,3 +1,4 @@
+
 (******************************************************************************
  * Mathias Bourgoin, Université Pierre et Marie Curie (2013)
  *
@@ -1954,261 +1955,52 @@ let gen_ctypes _loc kt name =
   
   let t = gen_repr _loc (Custom kt) name in
   Hashtbl.add type_repr name t;
+  let sarek_type_name = name^"_sarek" in
+
+let custom = 
+    begin
+      <:expr<
+    { 
+(*elt = $t.c_to_ml$ (Ctypes.make $lid:sarek_type_name$) ;*)
+      size = Ctypes.sizeof $lid:sarek_type_name$ ;
+      get = (fun c i -> 
+               $t.c_to_ml$ 
+                (let open Ctypes in
+let cr = Obj.repr c in 
+                 let ptrcr = 
+             (Ctypes.from_voidp $lid:sarek_type_name$                 
+                (Ctypes.ptr_of_raw_address 
+                   (Obj.magic cr))) in
+        !@(ptrcr +@ i))) ;
+      set = (fun c i v -> 
+        let open Ctypes in
+let cr = Obj.repr c in 
+                 let ptrcr = 
+             (Ctypes.from_voidp $lid:sarek_type_name$                 
+                (Ctypes.ptr_of_raw_address 
+                   (Obj.magic cr))) in
+        (ptrcr +@ i) <-@ ($t.ml_to_c$ v)) ;
+}
+>>
+    end
+  in
   begin
     <:str_item<
       $t.ml_typ$ ;;
       $t.ctype$ ;;
+      open Spoc
+      open Vector
+
+      
+      let $lid:"custom"^(String.capitalize name)$ = $custom$ ;;
+      
       let $lid:t.name^"_c_repr"$ = $str:t.crepr$ ;;
-      let ml_to_c = $t.ml_to_c$;;
-      let c_to_ml = $t.c_to_ml$;;
+(*      let ml_to_c = $t.ml_to_c$;;
+      let c_to_ml = $t.c_to_ml$;;*)
       >>
   end
 
 
-
-
-
-(*		  
-
-let gen_ctypes _loc kt name  =
-  let sarek_type_name = name^"_sarek" in
-  match kt with
-  | KRecord (l1,l2) ->
-     begin
-       let t1 = List.fold_left 
-(fun elt liste_elt -> 
-<:ctyp< $elt$; $liste_elt$ >>) 
-<:ctyp< >> l1  in
-       (*let ident_of_string s =
-IdLid (_loc,s)
-       in   *)
-
-       let rec content (acc,ctype) (l1,l2)= 
-match (l1 : ctyp list), (l2 :ident list) with
-| [],[] -> 
-(acc,ctype)
-| t1::q1, t2::q2 -> 
-            let nextsML,nextsC = content (acc,ctype) (q1,q2) in
-
-             ((<:str_item< 
-$gen_ctype t1 t2 sarek_type_name _loc$
-$nextsML$ >>),
-("\n\t"^(ctype_of_sarek_type (string_of_ctyp t1)) ^ 
-"  " ^ (string_of_ident t2) ^ ";" ^ nextsC
-))
-| _ -> assert false
-       in
-
-       let fieldsML,fieldsC =
-let a,b = content (<:str_item< >>,"") (l1,l2) in    
-(a, 			
-("struct " ^ sarek_type_name ^ "= {"
-^b ^"\n}") ) in
-
-       let copy_to_caml = 
-List.fold_left 
-(fun a b -> 
-let field_name = 
-(sarek_type_name^"_"^(string_of_ident b)) in
-<:rec_binding< $a$; $b$ = 
-Ctypes.getf x $lid:field_name$ >>) <:rec_binding< >> l2
-       and copy_from_caml = 
-List.fold_left 
-(fun a b -> 
-let field_name = 
-(sarek_type_name^"_"^(string_of_ident b)) in
-<:expr< $a$; Ctypes.setf x
-$lid:field_name$ elt.$ExId(_loc,b)$ >>) <:expr< >> l2
-
-       in
-       <:str_item< 
-       type $lid:name$ = { $t1$ } ;;
-       type $lid:sarek_type_name$ ;;
-
-
-       let $lid:sarek_type_name$ : 
-$lid:sarek_type_name$ Ctypes.structure Ctypes.typ = 
-Ctypes.structure $str:sarek_type_name$ ;;
-         $fieldsML$ ;;
-let () = Ctypes.seal $lid:sarek_type_name$ ;;
-let $lid:"custom_"^name$ = 
-{
-size = Ctypes.sizeof $lid:sarek_type_name$ ; 
-get = (fun c i -> 
-let x = Ctypes.Array.get c i in
-{$copy_to_caml$}) ;
-set = (fun c i elt -> 
-let x = 
-Ctypes.make $lid:sarek_type_name$ in 
-$copy_from_caml$ ;
-Ctypes.Array.set c i x)
-} ;;
-let _ = Hashtbl.add ctypes 
-$lid:sarek_type_name$ $str:fieldsC$ ;;
->>
-     end
-
-
-  | KSum l ->
-     begin
-       let type_of_string s =
-TyId (_loc, (IdUid(_loc,s)) )
-       in
-       let typeof t1 t2 =
-TyOf(_loc, t1, t2)
-       in
-       let t1 = List.fold_left 
-(fun elt (liste_elt,t) ->
-match t with
-| Some (s:ctyp) -> 
-let t  =
-typeof (type_of_string liste_elt) s in 
-<:ctyp<  $elt$ | $t$ >>
-
-| None ->
-<:ctyp<  $elt$ | $type_of_string liste_elt$ >> )
-<:ctyp<  >> 
-l  in
-       let gen_mlstruct accML (cstr,ty) = 
-let name = sarek_type_name^"_"^cstr in
-begin
-match ty with 
-| Some t -> 
-begin
-
-<:str_item< 
-$accML$ ;; 
-type $lid:name$ ;;
-let $lid:name$ : $lid:name$ Ctypes.structure Ctypes.typ = 
-Ctypes.structure $str:name$;;
-$gen_ctype t (IdLid(_loc,name))  sarek_type_name _loc$ ;;
-let () = Ctypes.seal $lid:name$ ;; >>
-end  
-| None -> 
-begin
-<:str_item< >>
-end
-end ;
-       in
-       let gen_cstruct accC = function
-| cstr,Some t -> accC ^ "struct"
-| cstr,None -> accC ^ ""
-       in
-       let rec content (accML,accC)  = function
-| t::q -> content ((gen_mlstruct accML t), (gen_cstruct accC t)) q
-| [] -> accML,accC
-       in
-       let rec gen_union acc  = function
-| (cstr,Some o) :: q -> 
-gen_union 
-(	 let name = sarek_type_name^"_"^cstr in
-let union_name = sarek_type_name^"_union_" in
-<:str_item<
-$acc$ ;;
-let $lid:(name^"_val")$ = 
-Ctypes.field $lid:union_name$ $str:(name^"_val")$ $lid:name$;;
->>)
-q
-| (cstr,None):: q ->
-gen_union acc q
-| [] -> acc
-       in
-
-
-       let gen_sum_rep  l = 
-let rec aux acc tag = function
-| (cstr,of_) :: q ->
-aux ((cstr,tag,of_)::acc) (tag+1) q
-| [] -> acc
-in
-aux [] 0 l
-       in
-
-       let copy_content sarek_type_name cstr of_ =
-let copy_of _of = 
-<:expr< let union = 
-Ctypes.getf x $lid:sarek_type_name^"_union"$ in
-let $lid:"val"^cstr$ = 
-Ctypes.getf union 
-$lid:sarek_type_name^"_"^cstr^"_val"$ in
-Ctypes.getf $lid:"val"^cstr$ $lid:sarek_type_name^"_t"$
->>
-in 
-match of_ with
-| Some x -> 
-<:expr< $ExId(_loc,IdUid(_loc,cstr))$ ($copy_of x$) >>
-| None ->
-ExId(_loc,IdUid(_loc,cstr))
-in
-let repr_ = gen_sum_rep l 	
-       in
-       let copy_to_caml = 
-let match_cases = 
-List.map 
-(fun (cstr,tag,of_) ->
-(*let field_name =
-(sarek_type_name^"_"^cstr) in*)
-begin
-<:match_case< 
-$int:string_of_int tag$ -> 
-$copy_content sarek_type_name cstr of_$
->>
-end
-) 
-repr_
-in
-<:expr< let tag = Ctypes.getf x $lid:sarek_type_name^"_tag"$ in
-match tag with 
-$list:(List.rev match_cases)$ >>
-
-
-       in
-       let fieldsML,fieldsC =
-let a,b = content (<:str_item< >>,"") l in    
-(a, 			
-("struct " ^ sarek_type_name ^ "= {\nint "^
-sarek_type_name ^ "_tag;\n"
-^b ^"\n}") ) 
-       in
-
-       let tag = sarek_type_name^"_tag" in
-       let union_name = sarek_type_name^"_union_" in
-       <:str_item< 
-       type $lid:name$ = $t1$ ;;
-         $fieldsML$ ;;
-type $lid:union_name$ ;;
-let $lid:union_name$ : ($lid:union_name$ Ctypes.union Ctypes.typ) =
-Ctypes.union $str:union_name$ ;;
-$gen_union <:str_item< >> l$ ;;
-let () = Ctypes.seal $lid:union_name$ ;;
-type $lid:sarek_type_name$ ;;
-
-
-let $lid:sarek_type_name$ : $lid:sarek_type_name$ 
-Ctypes.structure Ctypes.typ = 
-Ctypes.structure $str:sarek_type_name$ ;;
-let $lid:tag$ = 
-Ctypes.field $lid:sarek_type_name$ $str:tag$ Ctypes.int ;;
-let $lid:(sarek_type_name^"_union")$ = 
-Ctypes.field $lid:sarek_type_name$ $str:sarek_type_name^"union"$ 
-$lid:sarek_type_name$ ;;
-             let () = Ctypes.seal $lid:sarek_type_name$ ;;
-let _ = Hashtbl.add ctypes 
-$lid:sarek_type_name$ $str:fieldsC$ ;;
-
-let $lid:"custom_"^name$ = 
-{
-size = Ctypes.sizeof $lid:sarek_type_name$ ; 
-get = (fun c i -> 		    
-let x = Ctypes.Array.get c i in
-$copy_to_caml$
-) ;
-
-set = (fun c i elt -> ()) ;
-} ;;
->>
-     end
- *)
 
 let gen_labels _loc (t1 : ident * ctyp) 
     (t2 : (ctyp list * ident list) option) 

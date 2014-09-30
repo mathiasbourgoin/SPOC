@@ -41,7 +41,6 @@ type customarray
 (** Spoc offers many predefined vectors types.
 Custom vectors can contain any kind of data types.*)
 type 'a custom = {
-  elt : 'a; (** an element of the vector*)
   size : int; (** the size of an element when transfered to a gpgpu device*)
   get : customarray -> int -> 'a; (** a function to access elements from the vector *)
   set : customarray -> int -> 'a -> unit; (** a function to modify an element of the vector *)
@@ -59,6 +58,7 @@ type ('a, 'b) kind =
   | Int64 of ('a, 'b) Bigarray.kind
   | Complex32 of ('a, 'b) Bigarray.kind
   | Custom of 'a custom
+
   | Unit  of ('a, 'b) couple
   | Dummy  of ('a, 'b) couple
 
@@ -76,6 +76,7 @@ val complex32 : (Complex.t, Bigarray.complex32_elt) kind
 type ('a, 'b) spoc_vec =
     Bigarray of ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t
   | CustomArray of (customarray * 'a custom)
+
 
 (**/**)
 external float32_of_float : float -> float = "float32_of_float"
