@@ -18,19 +18,30 @@ ktype t3 =
 
 *)
 
-let (x : ((t1,t1) Vector.vector)) = Vector.create (Custom customT1) 1024
-let (y : ((t2,t2) Vector.vector)) = Vector.create (Custom customT2) 1024
+
+let f = kern a ->
+  a.[<0>] <- X
+
 
 let _ =
   let devs = Spoc.Devices.init () in
+
+  let x = Vector.create (Custom customT1) 1024
+  and y =  Vector.create (Custom customT2) 1024
+  and dev = 
+    let i = 
+      try int_of_string (Sys.argv.(1)) with | _ -> 0
+    in devs.(i)
+  in
+
   for i = 0 to 1023 do
     let t = (if i mod 2 = 0 then X else Y i) in
     Mem.set x i t;
-    Mem.set y i {x = t; y = i}; 
+    Mem.set y i {x = t; y = i*i}; 
   done;
-  Mem.to_device x devs.(1);
-  Devices.flush devs.(1) ();
-  for i = 0 to 1024 do
+  Mem.to_device x dev;
+  Devices.flush dev ();
+  for i = 0 to 1023 do
     Printf.printf "%d \n%!" i;
     let t = Mem.get x i in
     begin

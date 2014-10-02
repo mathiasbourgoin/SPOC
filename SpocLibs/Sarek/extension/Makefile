@@ -33,7 +33,7 @@ test: kernels_int.cma test.ml
 	@echo
 	@camlp4 -I +camlp4 -parser o -parser op -printer o kernels_int.cma test.ml
 
-pp: 
+pp: kernels_int.cma
 	camlp4 -I +camlp4 -parser o -parser op -printer o kernels_int.cma test.ml > test_pp.ml
 	ocamlfind ocamlc -thread -package ctypes,spoc -linkpkg test_pp.ml
 

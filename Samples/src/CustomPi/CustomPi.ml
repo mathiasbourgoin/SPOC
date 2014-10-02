@@ -12,7 +12,6 @@ external extget: customarray -> int -> point = "custom_extget"
 external extset: customarray -> int -> point -> unit = "custom_extset"
 
 let customPoint = {
-  elt = { x = 0.; y = 0.};
   size = getsizeofpoint();
   get = extget;
   set = extset;

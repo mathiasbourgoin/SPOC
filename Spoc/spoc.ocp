@@ -1,6 +1,7 @@
 authors=["mathias bourgoin <mathias.bourgoin@lip6.fr>"]
 descr=["High-level GPGPU programming library for OCaml"]
-
+comp=["-g"]
+ccopt=["-g"]
 begin library "spoc"
     files = [
         begin pack Spoc (sort = true) [
@@ -10,5 +11,5 @@ begin library "spoc"
           "cuda_drvapi_dynlink.c"; "Custom.c"; "Kernel_cuda.c";
 	  "Kernel_opencl.c"; "Mem_c.c"; "Opencl_dynlink.c";
 	  "Spoc_c.c"; "Spoc_cu.c"]
-   requires = ["dynlink"; "bigarray"; "threads"; "unix"; "str"; "ctypes"]
+   requires = ["dynlink"; "bigarray"; "threads"; "unix"; "str"]
 end

@@ -52,12 +52,13 @@ void free_custom (value v) {
 	CAMLparam2(custom, size);
 	CAMLlocal2(customSize, ret);
 	char* res;
-	ret = alloc_final(2, free_custom, sizeof(char*), sizeof(char*)*1024);
+	ret = alloc_final(2, free_custom, 0, 1);
 	customSize = Field(custom, 0);
 	printf ("csize : %d\n", Int_val(customSize));
 	printf ("size : %d\n", Int_val (size));
-	fflush (stdout);
 	res = (char*)malloc(Int_val(size)*Int_val(customSize));
+	printf ("pointeur is %p\n", res);
+	fflush (stdout);
 	Store_field(ret, 1, (value)(res));
 	CAMLreturn(ret);
 }
@@ -69,7 +70,7 @@ CAMLprim value spoc_sub_custom_array(value customArray, value custom, value star
 	CAMLlocal2(customSize, ret);
 	char* res;
 	customSize = Int_val(Field(custom, 0))/sizeof(char);
-	ret = alloc_final(2, free_custom, sizeof(char*), sizeof(char*)*1024);
+	ret = alloc_final(2, free_custom, 0, 1);
 	res = (((char*)(Field(customArray,1)))+(customSize*Int_val(start)));
 	Store_field(ret, 1, (value)(res));
 	CAMLreturn(ret);

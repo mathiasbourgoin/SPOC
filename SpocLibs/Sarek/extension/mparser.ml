@@ -1992,7 +1992,7 @@ let cr = Obj.repr c in
       open Vector
 
       
-      let $lid:"custom"^(String.capitalize name)$ = $custom$ ;;
+      let $lid:"custom"^(String.capitalize name)$ : (($lid:name$,$lid:sarek_type_name$) Vector.custom) = $custom$ ;;
       
       let $lid:t.name^"_c_repr"$ = $str:t.crepr$ ;;
 (*      let ml_to_c = $t.ml_to_c$;;

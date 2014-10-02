@@ -738,7 +738,9 @@ let a = <:expr<
        | x = FLOAT-> {t=TFloat32; e = Float32 (_loc, x); loc = _loc};
        |x = LIDENT  -> {t=TUnknown; e = Id (_loc, IdLid(_loc,x)); loc = _loc};
        |x = INT32  ->{t=TInt32; e = Int32 (_loc, x); loc = _loc};
-       |x = INT  ->{t=TInt32; e = Int32 (_loc, x); loc = _loc}] 		
+       |x = INT  ->{t=TInt32; e = Int32 (_loc, x); loc = _loc}
+       | x = a_UIDENT -> {t=TUnknown; e = Id (_loc, IdUid(_loc,x)); loc = _loc};
+      ] 		
 
 
   ];
