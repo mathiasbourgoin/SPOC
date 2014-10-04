@@ -66,6 +66,7 @@ type ('a,'b,'c,'d,'e) sarek_kernel =
   ('a,'b) spoc_kernel * ('c,'d,'e) kirc_kernel
 
 
+let constructors = ref [] 
 
 let opencl_head = (
   "float spoc_fadd ( float a, float b );\n"^
@@ -170,6 +171,7 @@ let spoc_while a b = While (a,b)
 
 let params l = Params l
 let spoc_id i = Id ("")
+let spoc_constr t c params = Constr (t,c,params)
 let spoc_return k = Return k 
 let concat a b = Concat (a,b)
 let empty_arg () = Empty
@@ -182,6 +184,7 @@ let new_unit_var i = UnitVar i
 let new_int_vec_var v = VecVar (Int 0, v) 
 let new_float_vec_var v = VecVar (Float 0., v) 
 let new_double_vec_var v = VecVar (Double 0., v) 
+let new_custom_vec_var n v = VecVar (Custom n, v)  (* <--- *)
 
 let int_vect i = IntVect i 
 let set_vect_var vecacc value = 
@@ -307,6 +310,8 @@ let rewrite ker =
       VecVar (aux k, idx) 
     | Concat (k1,k2) -> 
       Concat (aux k1, aux k2)
+    | Constr (t,c,l) ->
+      Constr (t, c, List.map aux l)
     | Empty -> kern
     | Seq (k1,k2) -> 
       Seq (aux k1, aux k2)
@@ -352,6 +357,7 @@ let rewrite ker =
     | GFloat _ -> kern
     | Float _ -> kern
     | Double _ -> kern
+    | Custom _ -> kern
     | IntVecAcc (k1,k2) -> 
       (match k2 with
        |	Seq (k3,k4) ->
@@ -447,7 +453,8 @@ let gen ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('a, 'b, 'c,'d,'e) sarek
     let src = Kirc_Cuda.parse 0 (rewrite k2) in
     let global_funs = ref "" in
     Hashtbl.iter (fun _ a -> global_funs := !global_funs^(fst a)^"\n") Kirc_Cuda.global_funs;
-    save "kirc_kernel.cu" (cuda_head ^ !global_funs ^ src) ;
+    let constructors = List.fold_left (fun a b -> b^a) "\n\n" !constructors in
+    save "kirc_kernel.cu" (cuda_head ^ !global_funs ^ constructors ^ src) ;
     ignore(Sys.command ("nvcc -m64 -arch=sm_10 -O3 -ptx kirc_kernel.cu -o kirc_kernel.ptx"));
     let s = (load_file "kirc_kernel.ptx") in
 
@@ -464,8 +471,10 @@ let gen ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('a, 'b, 'c,'d,'e) sarek
     let src = Kirc_OpenCL.parse 0 (rewrite k2) in
     let global_funs = ref "" in
     Hashtbl.iter (fun _ a -> global_funs := (fst a) ^ "\n" ^ !global_funs ^ "\n") Kirc_OpenCL.global_funs;
-    save "kirc_kernel.cl" (opencl_head ^ !global_funs ^ src) ;
-    kir#set_opencl_sources (opencl_head ^ !global_funs ^ src);
+    let constructors = List.fold_left (fun a b -> b^a) "\n\n" !constructors in
+    let clkernel = (opencl_head ^ !global_funs ^ constructors ^ src)  in
+    save "kirc_kernel.cl" clkernel;
+    kir#set_opencl_sources clkernel;
 
   in
   begin

@@ -16,7 +16,7 @@ let my_eprintf s =
 
 type customtypes =
   | KRecord of ctyp list * ident list
-  | KSum of (string *ctyp option ) list 
+  | KSum of (string * ctyp option ) list 
 
 type memspace = 
   | Local
@@ -35,7 +35,7 @@ type ktyp =
   | TVec of ktyp
   | TArr of (ktyp*memspace)
   | TApp of ktyp * ktyp
-  | Custom of customtypes
+  | Custom of customtypes*string
 
 
 let rec ktyp_to_string = function
@@ -49,7 +49,7 @@ let rec ktyp_to_string = function
   | TVec k -> (ktyp_to_string k)^" vector" 
   | TArr (k,m) -> (ktyp_to_string k)^" array" 
   | TApp (k1,k2) -> (ktyp_to_string k1)^" -> "^(ktyp_to_string k2) 
-  | Custom _ -> "Custom"
+  | Custom (_,name) -> "Custom "^name
 
 
 let ex32 = 
@@ -98,21 +98,18 @@ type k_expr =
   | Seq of Loc.t*kexpr*kexpr
   | Fun of Loc.t*expr*ktyp*cfun
   | Bind of Loc.t*kexpr*kexpr*kexpr*bool
-(*  | Plus of Loc.t*kexpr*kexpr*)
   | Plus32 of Loc.t*kexpr*kexpr
   | Plus64 of Loc.t*kexpr*kexpr
   | PlusF of Loc.t*kexpr*kexpr
   | PlusF32 of Loc.t*kexpr*kexpr
   | PlusF64 of Loc.t*kexpr*kexpr
 
-(*  | Min of Loc.t*kexpr*kexpr*)
   | Min32 of Loc.t*kexpr*kexpr
   | Min64 of Loc.t*kexpr*kexpr
   | MinF of Loc.t*kexpr*kexpr
   | MinF32 of Loc.t*kexpr*kexpr
   | MinF64 of Loc.t*kexpr*kexpr
 
-(*  | Mul of Loc.t*kexpr*kexpr*)
   | Mul32 of Loc.t*kexpr*kexpr
   | Mul64 of Loc.t*kexpr*kexpr
   | MulF of Loc.t*kexpr*kexpr
@@ -121,7 +118,6 @@ type k_expr =
 
   | Mod of Loc.t*kexpr*kexpr
 
-(*  | Div of Loc.t*kexpr*kexpr*)
   | Div32 of Loc.t*kexpr*kexpr
   | Div64 of Loc.t*kexpr*kexpr
   | DivF of Loc.t*kexpr*kexpr
@@ -330,12 +326,20 @@ let args () =
   tbl 
 
 
+type cstr = {
+  name : string;
+  mutable nb_args : int;
+  typ : customtypes
+}
+
 let current_args = ref (args ()) 
 
 let intrinsics_fun = ref ((Hashtbl.create 100):(string,cfun) Hashtbl.t)
 let global_fun = ref ((Hashtbl.create 10):(string,cfun) Hashtbl.t)
 let local_fun = ref (Hashtbl.create 10)
 let intrinsics_const = ref ((Hashtbl.create 100):(string,cfun) Hashtbl.t)
+
+let constructors = ref ((Hashtbl.create 10):(string,cstr) Hashtbl.t)
 
 let (arg_list : Camlp4.PreCast.Syntax.Ast.expr list ref ) = ref []
 
@@ -578,14 +582,31 @@ let rec basic_check l current_type expected_type loc =
   if expected_type <> current_type && not (is_unknown current_type) then
     ( assert (not debug); raise (TypeError (expected_type, current_type, loc)) );
   List.iter (fun e -> typer e expected_type) l
-	    
+
 and elt_check body t l =
   if body.t <> t && not (is_unknown body.t) then
     (assert (not debug); raise (TypeError (t, body.t, l)) )
   else
-  update_type body t;
+    update_type body t;
+
+and equal_sum acc l1 l2 =
+  match l1,l2 with
+  | [],[] -> acc
+  | t1::q1,t2::q2 -> 
+    equal_sum (acc && t1 = t2) q1 q2
+  | _ -> false
+
+and check_custom c1 c2 =
+  match c1,c2 with
+  | KSum l1, KSum l2 -> equal_sum true l1 l2
+  | KSum _, _ | _, KSum _ -> false
+  | _ -> failwith "unimplemented yet\n"
 
 and equal_types t1 t2 =
+  match t1,t2 with
+  | Custom (x,_), Custom (y,_) -> check_custom x y
+  | Custom (_,_), _ | _, Custom (_,_) -> false
+  | _ ->
   if t1 = t2 then
     true
   else
@@ -597,221 +618,238 @@ and equal_types t1 t2 =
 and check t1 t2 l =
   if (not (equal_types t1 t2)) && (not (is_unknown t1)) && (not (is_unknown t2)) then
     (assert (not debug); raise (TypeError (t1, t2, l)) )
-    
+
 and typer body t =
   my_eprintf (Printf.sprintf"(* %s ############# typ %s *)\n%!" (k_expr_to_string body.e) (ktyp_to_string t)) ;  
   (match body.e with
-  | Id (l, s) ->
-    let tt = ref t in
-    (try
-       let var = Hashtbl.find !current_args (string_of_ident s) in
-       my_eprintf ((string_of_ident s)^ " of type " ^(ktyp_to_string t)^"\n");
-       if not (is_unknown t) then 
-         if is_unknown var.var_type  then
-           (var.var_type <- t;
-            retype := true;
-            update_type body t)
-         else
-           check var.var_type t l;
-       tt := var.var_type
-     with Not_found ->
-       try 
-         let c_const = Hashtbl.find !intrinsics_const (string_of_ident s) in
-         if t = TUnknown then
-           ( update_type body c_const.typ;)
-         else if t <> c_const.typ then
-           (assert (not debug); raise (TypeError (c_const.typ, t, l)))
-       with _ -> 
-         try ignore(Hashtbl.find !intrinsics_fun (string_of_ident s) )
-         with _ ->
-           (Hashtbl.add !current_args (string_of_ident s) 
-              {n = -1; var_type = t;
-               is_mutable = false;
-               read_only = true;
-               write_only = false;
-               is_global = true;};
-            tt := t;)
-    );
-    update_type body !tt
-  | ArrSet (l, e1, e2) ->
-    check t TUnit l;
-    typer e1 e2.t;
-    typer e2 e1.t;
-    update_type body TUnit
-  | ArrGet (l, e1, e2) ->
-    typer e1 (TArr (t, Any));
-    typer e2 TInt32;
-    update_type body (
-      match e1.t with
-      | TArr (tt,_) -> tt
-      | _ -> my_eprintf (ktyp_to_string e1.t); 
-        assert false;)
-  | VecSet (l, e1, e2) ->
-    check t TUnit l;
-    typer e1 e2.t;
-    typer e2 e1.t;
-    update_type body TUnit
-  | VecGet (l, e1, e2) ->
-    typer e1 (TVec t);
-    typer e2 TInt32;
-    update_type body (
-      match e1.t with
-      | TVec tt -> tt
-      | _ -> TVec TUnknown)
-      (*my_eprintf ((k_expr_to_string e1.e) ^" ++ "^(ktyp_to_string e1.t)^"\n"); 
-        assert false;)*)
-  | Seq (l, e1, e2) ->
-    typer e1 TUnit;
-    typer e2 t;
-    update_type body e2.t
-  | Int32 (l,s) -> 
-    elt_check body TInt32 l
-  | Int64 (l,s) -> 
-    elt_check body TInt64 l
-  | Float32 (l,s) -> 
-    elt_check body TFloat32 l
-  | Float64 (l,s) -> 
-    elt_check body TFloat64 l
-  | Bind (_loc, var,y, z, is_mutable)  ->
+   | Id (l, s) ->
+     let tt = ref t in
+     (try
+        let var = Hashtbl.find !current_args (string_of_ident s) in
+        my_eprintf ((string_of_ident s)^ " of type " ^(ktyp_to_string t)^"\n");
+        if not (is_unknown t) then 
+          if is_unknown var.var_type  then
+            (var.var_type <- t;
+             retype := true;
+             update_type body t)
+          else
+            check var.var_type t l;
+        tt := var.var_type
+      with Not_found ->
+        try 
+          let c_const = Hashtbl.find !intrinsics_const (string_of_ident s) in
+          if t = TUnknown then
+            ( update_type body c_const.typ;)
+          else if t <> c_const.typ then
+            (assert (not debug); raise (TypeError (c_const.typ, t, l)))
+        with _ -> 
+          try ignore(Hashtbl.find !intrinsics_fun (string_of_ident s) )
+          with _ ->
+            try 
+              let cstr = Hashtbl.find !constructors (string_of_ident s) in
+              my_eprintf ("Found a constructor : "^(string_of_ident s)
+                          ^" of type "^cstr.name^" with "
+                          ^(string_of_int cstr.nb_args)^" arguments\n");
+              tt := Custom (cstr.typ, cstr.name);
+            with 
+            | _ ->
+              (Hashtbl.add !current_args (string_of_ident s) 
+                 {n = -1; var_type = t;
+                  is_mutable = false;
+                  read_only = true;
+                  write_only = false;
+                  is_global = true;};
+               tt := t;)
+              
+     );
+     update_type body !tt
+   | ArrSet (l, e1, e2) ->
+     check t TUnit l;
+     typer e1 e2.t;
+     typer e2 e1.t;
+     update_type body TUnit
+   | ArrGet (l, e1, e2) ->
+     typer e1 (TArr (t, Any));
+     typer e2 TInt32;
+     update_type body (
+       match e1.t with
+       | TArr (tt,_) -> tt
+       | _ -> my_eprintf (ktyp_to_string e1.t); 
+         assert false;)
+   | VecSet (l, e1, e2) ->
+     check t TUnit l;
+     typer e1 e2.t;
+     typer e2 e1.t;
+     update_type body TUnit
+   | VecGet (l, e1, e2) ->
+     typer e1 (TVec t);
+     typer e2 TInt32;
+     update_type body (
+       match e1.t with
+       | TVec tt -> tt
+       | _ -> TVec TUnknown)
+   (*my_eprintf ((k_expr_to_string e1.e) ^" ++ "^(ktyp_to_string e1.t)^"\n"); 
+     assert false;)*)
+   | Seq (l, e1, e2) ->
+     typer e1 TUnit;
+     typer e2 t;
+     update_type body e2.t
+   | Int32 (l,s) -> 
+     elt_check body TInt32 l
+   | Int64 (l,s) -> 
+     elt_check body TInt64 l
+   | Float32 (l,s) -> 
+     elt_check body TFloat32 l
+   | Float64 (l,s) -> 
+     elt_check body TFloat64 l
+   | Bind (_loc, var,y, z, is_mutable)  ->
      (match var.e with
       | Id (_loc,s)  ->
-	 (match y.e with
-	  | Fun (_loc,stri,tt,funv) ->
-	     my_eprintf ("ADDDD: "^(string_of_ident s));
-	     Hashtbl.add !local_fun (string_of_ident s) 
-			 (funv,<:str_item<
-			    let $id:s$ = 
-			      $stri$>>);
-	     update_type y tt;
-	  | _ -> typer y TUnknown;
-		 (incr arg_idx;
-		  Hashtbl.add !current_args (string_of_ident s) 
-			      {n = !arg_idx; var_type = y.t;
-			       is_mutable = is_mutable;
-			       read_only = false;
-			       write_only = false;
-			       is_global = false;}
-		 )
-	 );
+	(match y.e with
+	 | Fun (_loc,stri,tt,funv) ->
+	   my_eprintf ("ADDDD: "^(string_of_ident s));
+	   Hashtbl.add !local_fun (string_of_ident s) 
+	     (funv,<:str_item<
+let $id:s$ = 
+$stri$>>);
+	   update_type y tt;
+	 | _ -> typer y TUnknown;
+	   (incr arg_idx;
+	    Hashtbl.add !current_args (string_of_ident s) 
+	      {n = !arg_idx; var_type = y.t;
+	       is_mutable = is_mutable;
+	       read_only = false;
+	       write_only = false;
+	       is_global = false;}
+	   )
+	);
       | _ -> assert false
      );
      update_type var y.t;
      typer z t;
      update_type body z.t;
-  | Plus32 (l,e1,e2) | Min32 (l,e1,e2) 
-  | Mul32 (l,e1,e2) | Div32 (l,e1,e2) 
-  | Mod (l, e1, e2) -> 
-    basic_check [e1;e2] t TInt32 l;
-    update_type body TInt32;
-  | PlusF32 (l,e1,e2) | MinF32 (l,e1,e2) | MulF32 (l,e1,e2) | DivF32 (l,e1,e2) ->
-    basic_check [e1;e2] t TFloat32 l;
-    update_type body TFloat32;
-  | If (l, e1, e2) ->
-    typer e1 TBool;
-    basic_check [e1] e1.t TBool l;
-    typer e2 TUnit;
-    update_type body TUnit
-  | Ife (l, e1, e2, e3) ->
-    typer e1 TBool;
-    basic_check [e1] e1.t TBool l;
-    typer e2 e3.t;
-    typer e3 e2.t;
-    if e2.t <> e3.t then
-      ( assert (not debug); raise (TypeError (e2.t, e3.t, l)) );
-    update_type body e2.t
-  | Noop ->
-    if t <> TUnit && t <> TUnknown then
-      assert false
-    else
-      update_type body TUnit
-  | Open (l, m_ident, e2) ->
-    let rec _open = function
-      | IdAcc (l,a,b) -> _open a; _open b
-      | IdUid (l,s) -> open_module s l
+   | Plus32 (l,e1,e2) | Min32 (l,e1,e2) 
+   | Mul32 (l,e1,e2) | Div32 (l,e1,e2) 
+   | Mod (l, e1, e2) -> 
+     basic_check [e1;e2] t TInt32 l;
+     update_type body TInt32;
+   | PlusF32 (l,e1,e2) | MinF32 (l,e1,e2) | MulF32 (l,e1,e2) | DivF32 (l,e1,e2) ->
+     basic_check [e1;e2] t TFloat32 l;
+     update_type body TFloat32;
+   | If (l, e1, e2) ->
+     typer e1 TBool;
+     basic_check [e1] e1.t TBool l;
+     typer e2 TUnit;
+     update_type body TUnit
+   | Ife (l, e1, e2, e3) ->
+     typer e1 TBool;
+     basic_check [e1] e1.t TBool l;
+     typer e2 e3.t;
+     typer e3 e2.t;
+     if e2.t <> e3.t then
+       ( assert (not debug); raise (TypeError (e2.t, e3.t, l)) );
+     update_type body e2.t
+   | Noop ->
+     if t <> TUnit && t <> TUnknown then
+       assert false
+     else
+       update_type body TUnit
+   | Open (l, m_ident, e2) ->
+     let rec _open = function
+       | IdAcc (l,a,b) -> _open a; _open b
+       | IdUid (l,s) -> open_module s l
+       | _ -> assert false
+     and _close = function
+       | IdAcc (l,a,b) -> _close a; _close b
+       | IdUid (l,s) -> close_module s
+       | _ -> assert false
+     in
+     _open m_ident;
+     typer e2 t;
+     _close m_ident;
+     update_type body e2.t;
+   | While (l, cond, loop_body) ->
+     typer cond TBool;
+     basic_check [cond] cond.t TBool l;
+     basic_check [loop_body] t TUnit l;
+     typer cond TBool;
+     typer loop_body TUnit;
+     update_type body TUnit;
+   | DoLoop (l, var, y, z, loop_body) ->
+     (match var.e with
+      | Id (_loc,s)  ->
+        (incr arg_idx;
+         Hashtbl.add !current_args (string_of_ident s) 
+           {n = !arg_idx; var_type = TInt32;
+            is_mutable = false;
+            read_only = false;
+            write_only = false;
+            is_global = false;}
+        )
       | _ -> assert false
-    and _close = function
-      | IdAcc (l,a,b) -> _close a; _close b
-      | IdUid (l,s) -> close_module s
-      | _ -> assert false
-    in
-    _open m_ident;
-    typer e2 t;
-    _close m_ident;
-    update_type body e2.t;
-  | While (l, cond, loop_body) ->
-    typer cond TBool;
-    basic_check [cond] cond.t TBool l;
-    basic_check [loop_body] t TUnit l;
-    typer cond TBool;
-    typer loop_body TUnit;
-    update_type body TUnit;
-  | DoLoop (l, var, y, z, loop_body) ->
-    (match var.e with
-     | Id (_loc,s)  ->
-       (incr arg_idx;
-        Hashtbl.add !current_args (string_of_ident s) 
-          {n = !arg_idx; var_type = TInt32;
-           is_mutable = false;
-           read_only = false;
-           write_only = false;
-           is_global = false;}
-       )
-     | _ -> assert false
-    );
-    typer var TInt32;
-    typer y TInt32;
-    typer z TInt32;
-    typer loop_body TUnit;
-    update_type body TUnit;
-  | App (l, e1, e2) -> 
-    let t = typer_app e1 e2 t in
-    update_type body t
-  | BoolEq32 (l, e1, e2) 
-  | BoolLt32 (l, e1, e2) 
-  | BoolLtE32 (l, e1, e2) 
-  | BoolGt32 (l, e1, e2) 
-  | BoolGtE32 (l, e1, e2) -> 
-    typer e1 TInt32;
-    typer e2 TInt32;
-    update_type body TBool
-  | BoolEqF (l, e1, e2) 
-  | BoolLtF (l, e1, e2) 
-  | BoolLtEF (l, e1, e2) 
-  | BoolGtF (l, e1, e2) 
-  | BoolGtEF (l, e1, e2) -> 
-    typer e1 TFloat32;
-    typer e2 TFloat32;
-    update_type body TBool
-  | BoolOr (l,e1,e2) 
-  | BoolAnd (l,e1,e2) ->
-    typer e1 TBool;
-    typer e2 TBool;
-    update_type body TBool
-  | Ref (l, e) ->
-    typer e t;
-    update_type body e.t;
-    decr unknown;
-  | Acc (l, e1, e2) ->
-    typer e2 e1.t;
-    typer e1 e2.t;
-    update_type body TUnit
-  | _ -> my_eprintf  ((k_expr_to_string body.e)^"\n"); assert false);
+     );
+     typer var TInt32;
+     typer y TInt32;
+     typer z TInt32;
+     typer loop_body TUnit;
+     update_type body TUnit;
+   | App (l, e1, e2) -> 
+     let t = typer_app e1 e2 t in
+     update_type body t
+   | BoolEq32 (l, e1, e2) 
+   | BoolLt32 (l, e1, e2) 
+   | BoolLtE32 (l, e1, e2) 
+   | BoolGt32 (l, e1, e2) 
+   | BoolGtE32 (l, e1, e2) -> 
+     typer e1 TInt32;
+     typer e2 TInt32;
+     update_type body TBool
+   | BoolEqF (l, e1, e2) 
+   | BoolLtF (l, e1, e2) 
+   | BoolLtEF (l, e1, e2) 
+   | BoolGtF (l, e1, e2) 
+   | BoolGtEF (l, e1, e2) -> 
+     typer e1 TFloat32;
+     typer e2 TFloat32;
+     update_type body TBool
+   | BoolOr (l,e1,e2) 
+   | BoolAnd (l,e1,e2) ->
+     typer e1 TBool;
+     typer e2 TBool;
+     update_type body TBool
+   | Ref (l, e) ->
+     typer e t;
+     update_type body e.t;
+     decr unknown;
+   | Acc (l, e1, e2) ->
+     typer e2 e1.t;
+     typer e1 e2.t;
+     update_type body TUnit
+   | _ -> my_eprintf  ((k_expr_to_string body.e)^"\n"); assert false);
   if is_unknown body.t then
-  (my_eprintf  (("UNKNOWN : "^k_expr_to_string body.e)^"\n");
-	       incr unknown
-	       )        
+    (my_eprintf  (("UNKNOWN : "^k_expr_to_string body.e)^"\n");
+     incr unknown
+    )        
 and typer_app e1 (e2 : kexpr list) t =
   let  typ, loc  = 
     let rec aux e1 =
       match e1.e with
-      | Id (_l, s) -> (try (Hashtbl.find !intrinsics_fun (string_of_ident s)).typ , _l
-                       with |_ -> 
-		       try (Hashtbl.find !global_fun (string_of_ident s)).typ , _l
-		       with |_ ->
-		       try (fst(Hashtbl.find !local_fun (string_of_ident s))).typ , _l
-		       with |_ ->
-			      raise (Unbound_value (string_of_ident s,_l) ))
-
+      | Id (_l, s) -> 
+        (try (Hashtbl.find !intrinsics_fun (string_of_ident s)).typ , _l
+         with |_ -> 
+	   try (Hashtbl.find !global_fun (string_of_ident s)).typ , _l
+    with |_ ->
+      try (fst(Hashtbl.find !local_fun (string_of_ident s))).typ , _l
+      with |_ ->
+        try 
+          let cstr = Hashtbl.find !constructors (string_of_ident s) in
+          my_eprintf ("Found a constructor : "^(string_of_ident s)
+                      ^" of type "^cstr.name^" with "
+                      ^(string_of_int cstr.nb_args)^" arguments\n");
+          Custom (cstr.typ, cstr.name),_l
+        with | _  -> 
+	  assert (not debug); raise (Unbound_value (string_of_ident s,_l) ))
+        
       | ModuleAccess (_l, s, e) ->
         open_module s _l;
         let typ, loc = aux e in

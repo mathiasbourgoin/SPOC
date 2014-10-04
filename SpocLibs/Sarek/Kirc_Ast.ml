@@ -81,6 +81,7 @@ type  k_ext =
   | Arr of int*k_ext*elttype*memspace
   | VecVar of  k_ext*int
   | Concat of  k_ext* k_ext
+  | Constr of string * string * k_ext list
   | Empty
   | Seq of  k_ext *  k_ext
   | Return of  k_ext
@@ -93,6 +94,7 @@ type  k_ext =
   | Int of int
   | Float of float
   | Double of float
+  | Custom of string
   | IntVecAcc of  k_ext *  k_ext
   | Local of  k_ext *  k_ext
   | Acc of  k_ext *  k_ext

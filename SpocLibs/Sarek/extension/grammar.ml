@@ -625,9 +625,6 @@ let a = <:expr<
   | ":=" 
       [ x = SELF; ":="; y= SELF  -> {t=(TUnit); e = Acc (_loc, x, y); loc = _loc}
       ]
-  | "apply" LEFTA
-    [ e1 = SELF; e2 = SELF -> {t=(TUnknown); e= App(_loc, e1, [e2]); loc = _loc}
-    ]	 
   | "<-" 
       [ x = SELF; "<-"; y= SELF  -> 
         begin
@@ -641,7 +638,9 @@ let a = <:expr<
           | _ -> assert false
         end
       ]
-
+  | "apply" LEFTA
+    [ e1 = SELF; e2 = SELF -> {t=(TUnknown); e= App(_loc, e1, [e2]); loc = _loc}
+    ]	 
   | "+" LEFTA
     [ x = SELF; "+!"; y = SELF -> {t=TInt32; e = Plus32(_loc, x,y); loc = _loc};
       | x = SELF; "+!!"; y = SELF -> {t=TInt64; e = Plus64(_loc, x,y); loc = _loc};
@@ -732,13 +731,13 @@ let a = <:expr<
                                      loc = _loc}
 	]
   | "simple" NONA
-      ["(" ;  x= sequence; ")"  ->  x;
-       |"begin" ;  x= sequence; "end"  ->  x;
+      [  "(" ;  x= sequence; ")"  ->  x;
+       | "begin" ;  x= sequence; "end"  ->  x;
        | "("; ")" -> {t=TUnknown; e = Noop; loc = _loc};
        | x = FLOAT-> {t=TFloat32; e = Float32 (_loc, x); loc = _loc};
-       |x = LIDENT  -> {t=TUnknown; e = Id (_loc, IdLid(_loc,x)); loc = _loc};
-       |x = INT32  ->{t=TInt32; e = Int32 (_loc, x); loc = _loc};
-       |x = INT  ->{t=TInt32; e = Int32 (_loc, x); loc = _loc}
+       | x = LIDENT  -> {t=TUnknown; e = Id (_loc, IdLid(_loc,x)); loc = _loc};
+       | x = INT32  ->{t=TInt32; e = Int32 (_loc, x); loc = _loc};
+       | x = INT  ->{t=TInt32; e = Int32 (_loc, x); loc = _loc}
        | x = a_UIDENT -> {t=TUnknown; e = Id (_loc, IdUid(_loc,x)); loc = _loc};
       ] 		
 

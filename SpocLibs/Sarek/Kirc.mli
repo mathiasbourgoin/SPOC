@@ -16,6 +16,8 @@ type ('a,'b,'c) kirc_function =
 type ('a, 'b, 'c, 'd, 'e) sarek_kernel =
     ('a, 'b) Spoc.Kernel.spoc_kernel * ('c, 'd, 'e) kirc_kernel
 
+val constructors : string list ref
+
 val eint32 : Kirc_Ast.elttype
 val eint64 : Kirc_Ast.elttype
 val efloat32 : Kirc_Ast.elttype
@@ -64,6 +66,7 @@ val spoc_do :
 val spoc_while : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val params : Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val spoc_id : 'a -> Kirc_Ast.k_ext
+val spoc_constr : string -> string -> Kirc_Ast.k_ext list -> Kirc_Ast.k_ext
 val spoc_return : Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val concat : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val empty_arg : unit -> Kirc_Ast.k_ext
@@ -75,6 +78,7 @@ val new_unit_var : int -> Kirc_Ast.k_ext
 val new_int_vec_var : int -> Kirc_Ast.k_ext
 val new_float_vec_var : int -> Kirc_Ast.k_ext
 val new_double_vec_var : int -> Kirc_Ast.k_ext
+val new_custom_vec_var : string -> int -> Kirc_Ast.k_ext
 val int_vect : int -> Kirc_Ast.kvect
 val set_vect_var : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val set_arr_var : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext

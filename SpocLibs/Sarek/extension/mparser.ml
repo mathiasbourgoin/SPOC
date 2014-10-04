@@ -490,7 +490,11 @@ and parse_body body =
           | TInt64  -> <:ctyp<(int64, Bigarray.int64_elt) Spoc.Vector.vector>>
           | TFloat32 -> <:ctyp<(float, Bigarray.float32_elt) Spoc.Vector.vector>>
           | TFloat64 -> <:ctyp<(float, Bigarray.float64_elt) Spoc.Vector.vector>>
-          |  _  ->  assert false
+          | Custom (_,name)  ->  
+            let name = TyId(_loc,IdLid(_loc,name)) 
+            and sarek_name = TyId(_loc, IdLid(_loc,name^"_sarek")) in
+            <:ctyp<($name$,$sarek_name$) Spoc.Vector.vector >> 
+          | _ -> assert false
          ) in
        (match v.e with
         | Id (_loc,s)  -> 
@@ -729,15 +733,16 @@ and parse_app a =
   | App (_loc, e1, e2::[]) ->
     let res = ref [] in
     let rec aux app =
+      my_eprintf (Printf.sprintf "(* val2 parse_app_app %s *)\n%!" (k_expr_to_string app.e));
       match app.e with
-      | 	Id (_loc, s) ->
+      | Id (_loc, s) ->
         (try 
            let intr = Hashtbl.find !intrinsics_fun (string_of_ident s) in
            <:expr< intrinsics $ExStr(_loc, intr.cuda_val)$ $ExStr(_loc, intr.opencl_val)$>> 
          with Not_found -> 
            try 
 	     ignore(Hashtbl.find !global_fun (string_of_ident s));
-             <:expr< global_fun $id:s$>> 
+              (<:expr< global_fun $id:s$>> )
            with Not_found -> 
              try 
 	       ignore(Hashtbl.find !local_fun (string_of_ident s));
@@ -945,8 +950,13 @@ and parse_body2 body bool =
 		try 
                   ignore(Hashtbl.find !local_fun (string_of_ident s)); 
                   <:expr< global_fun $id:s$>>
-		with Not_found -> 
-		  (assert (not debug); 
+  with Not_found -> 
+    try 
+      let t = Hashtbl.find !constructors (string_of_ident s) in
+      <:expr< spoc_constr $str:t.name$ $str:(string_of_ident s)$ [] >>
+with 
+| _  ->
+                   (assert (not debug); 
                    raise (Unbound_value ((string_of_ident s), _loc)))));
     | Int (_loc, i)  -> <:expr<spoc_int $ExInt(_loc, i)$>>
     | Int32 (_loc, i)  -> <:expr<spoc_int32 $ExInt32(_loc, i)$>>
@@ -1236,6 +1246,8 @@ let gen_arg_from_patt2 p =
         | TInt32 | TInt64  ->   <:expr<(new_int_vec_var $ExInt(_loc2,  string_of_int var.n)$)>>
         | TFloat32 ->   <:expr<(new_float_vec_var $ExInt(_loc2,  string_of_int var.n)$)>>
         | TFloat64 ->   <:expr<(new_double_vec_var $ExInt(_loc2,  string_of_int var.n)$)>>
+        | Custom (t,n) ->
+          <:expr<(new_custom_vec_var $str:n$ $ExInt(_loc2,  string_of_int var.n)$)>>
         | _  -> failwith "Forbidden vector  type in kernel declaration")
      | _ ->  failwith "unimplemented yet"
     )
@@ -1346,6 +1358,19 @@ let gen_arg_from_patt3 p =
                         IdUid (_loc, "Kernel"), 
                         IdUid(_loc, "VFloat64"))),
             <:ctyp< Spoc.Vector.vfloat64>>
+          | Custom (t,name) ->
+            let name = TyId(_loc,IdLid(_loc,name)) 
+            and sarek_name = TyId(_loc, IdLid(_loc,name^"_sarek")) in
+            <:ctyp< (('spoc_m, 'spoc_n) Vector.vector)>>, 
+            <:expr< Spoc.Kernel.VCustom>>,
+            <:ctyp< (($name$, $sarek_name$) Vector.vector)>>,
+            IdAcc(_loc, 
+                  IdUid(_loc, "Spoc"), 
+                  IdAcc(_loc, 
+                        IdUid (_loc, "Kernel"), 
+                        IdUid(_loc, "VCustom"))),
+            <:ctyp< Spoc.Vector.custom>>
+            
           | _  -> failwith "Forbidden vector  type in kernel declaration")
        | _ -> assert (not debug); 
          failwith "unimplemented yet"
@@ -1469,13 +1494,14 @@ let ctype_of_sarek_type  = function
   | "int32" -> "int"
   | "int64" -> "long"
   | "int" -> "int"
-  | a -> a^"_sarek"
+  | a -> "struct "^a^"_sarek"
 
 
 let rec string_of_ctyp = function
   | Ast.TyArr (_loc, t1, t2) -> (string_of_ctyp t1)^
 				" -> "^(string_of_ctyp t2)
   | (Ast.TyId (_, Ast.IdLid (_, s ))) -> s
+  | (Ast.TyId (_, Ast.IdUid (_, s ))) -> s
   | TyCol (l,t1,t2)-> string_of_ctyp t2
   | _ -> failwith "error in string_of_ctyp"
 
@@ -1506,7 +1532,7 @@ let gen_ctype t1 t2 t3 name _loc =
 
 let gen_ctype_repr t1 t2 name : string =
   let field_name  = (string_of_ident t2^"_t") in
-  ((get_sarek_name (string_of_ctyp t1))^" "^field_name)
+  ((ctype_of_sarek_type (string_of_ctyp t1))^" "^field_name)
 
 
 type ktyp_repr = {
@@ -1518,6 +1544,7 @@ type ktyp_repr = {
   crepr : string;
   ml_to_c : expr;
   c_to_ml : expr;
+  build_c : string list;
 }
 
 let type_id = ref 0
@@ -1526,17 +1553,17 @@ let type_id = ref 0
 let gen_mltyp _loc name t =
   begin
     match t with 
-    | Custom (KRecord (ctypes,idents)) -> 
+    | Custom (KRecord (ctypes,idents),_) -> 
       begin
 	<:str_item< 
-	            type $lid:name$ = {
-	            $List.fold_left 
-	            (fun elt liste_elt -> 
-	            <:ctyp< $elt$; $liste_elt$ >>) 
-<:ctyp< >> ctypes$
-} >>
-end
-| Custom (KSum l) -> 
+	     type $lid:name$ = {
+	     $List.fold_left 
+	     (fun elt liste_elt -> 
+	     <:ctyp< $elt$; $liste_elt$ >>) 
+             <:ctyp< >> ctypes$
+             } >>
+        end
+| Custom ((KSum l),_) -> 
   begin
     <:str_item< 
 	        type $lid:name$ = 
@@ -1547,15 +1574,20 @@ end
 		TyOf(_loc, t1, t2)
 	        in
 	        List.fold_left 
-		(fun elt (liste_elt,t) ->
-		match t with
+		(fun elt (list_elt,t) ->
+		Hashtbl.add !constructors (list_elt) ({name = name; nb_args = 0;
+                typ = KSum l});
+                      match t with
 		| Some (s:ctyp) -> 
-		let t  =
-		typeof (type_of_string liste_elt) s 
+                (Hashtbl.find !constructors list_elt).nb_args <- 1;
+                let t  =
+		typeof (type_of_string list_elt) s 
 		in 
-		<:ctyp<  $elt$ | $t$ >>
-  | None ->
-    <:ctyp<  $elt$ | $type_of_string liste_elt$ >> )
+		begin
+                 <:ctyp<  $elt$ | $t$ >>
+                end;
+                | None ->
+                  <:ctyp<  $elt$ | $type_of_string list_elt$ >> )
 <:ctyp<  >> 
   l$
 >>
@@ -1592,7 +1624,7 @@ let gen_ctypes _loc kt name =
       begin
 	let fieldsML =
           match t with
-          | Custom (KRecord (ctypes,idents)) -> 
+          | Custom (KRecord (ctypes,idents),_) -> 
             begin
               let rec content acc l1 l2 = 
 	        match (l1 ,l2) with
@@ -1607,7 +1639,7 @@ let gen_ctypes _loc kt name =
               in
               content (<:str_item< >>) ctypes idents
             end
-          | Custom (KSum l) -> 
+          | Custom ((KSum l),_) -> 
             begin
               let gen_mlstruct accML (cstr,ty) = 
 	        let name = sarek_type_name^"_"^cstr in
@@ -1709,7 +1741,7 @@ let gen_ctypes _loc kt name =
       crepr = 
         begin
           match t with 
-          | Custom (KRecord (l1,l2)) -> 
+          | Custom (KRecord (l1,l2),_) -> 
             let rec content (ctype) (l1,l2)= 
               match (l1 : ctyp list), (l2 :ident list) with
               | [],[] -> ctype
@@ -1723,12 +1755,13 @@ let gen_ctypes _loc kt name =
               let a = content "" (l1,l2) in    
               ("struct " ^ sarek_type_name ^ " {"
                 ^a ^"\n};")  in
-            fieldsC
-          | Custom (KSum l) ->
+            fieldsC^";\n"
+          | Custom ((KSum l),_) ->
             let gen_cstruct accC = function
-              | cstr,Some t -> accC ^ "\t\tstruct "^sarek_type_name^"_"^cstr^" {\n\t\t\t"^ 
-                               (Hashtbl.find managed_ktypes cstr)^"\n\t\t};\n"
-
+              | cstr,Some t -> 
+                accC ^ "\t\tstruct "^sarek_type_name^"_"^cstr^" {\n\t\t\t"^ 
+                (Hashtbl.find managed_ktypes cstr)^";\n\t\t} "^
+                sarek_type_name^"_"^cstr^";\n"
               | cstr,None -> accC ^ ""
             in
             let rec contents accC  = function
@@ -1737,20 +1770,20 @@ let gen_ctypes _loc kt name =
             in
             let fieldsC  =
               let b = contents "" l in    
-              ("struct " ^ sarek_type_name ^ "= {\n\tint "^
+              ("struct " ^ sarek_type_name ^ " {\n\tint "^
                sarek_type_name ^ "_tag;\n"^
                (if has_of l then
                   "\tunion "^sarek_type_name^"_union {\n"
-                  ^b ^"\t}"
+                  ^b ^"\t} "^sarek_type_name^"_union;"
                 else "" )^
                "\n}") 
-            in fieldsC 
+            in fieldsC^";\n" 
           | _ -> "int" ;
         end;
       ml_to_c = 
         begin
           match t with
-          | Custom (KRecord (l1,l2)) ->
+          | Custom (KRecord (l1,l2),_) ->
             let copy_to_c = 
               List.fold_left2 
                 (fun a b c ->
@@ -1778,7 +1811,7 @@ let gen_ctypes _loc kt name =
               >>;
             end
             
-          | Custom (KSum l) -> 
+          | Custom ((KSum l),_) -> 
             let copy_to_c =
               let gen_sum_rep  l = 
                 let rec aux acc tag = function
@@ -1859,7 +1892,7 @@ let gen_ctypes _loc kt name =
       c_to_ml =
         begin
           match t with 
-          | Custom (KRecord (l1,l2)) ->
+          | Custom (KRecord (l1,l2),_) ->
             let copy_to_caml = 
               List.fold_left2 
                 (fun a b c -> 
@@ -1883,7 +1916,7 @@ let gen_ctypes _loc kt name =
             <:expr< fun x -> {$copy_to_caml$} ;
             >>;
           end
-          | Custom (KSum l)  ->
+          | Custom ((KSum l),_)  ->
             let gen_sum_rep  l = 
               let rec aux acc tag = function
                 | (cstr,of_) :: q ->
@@ -1949,11 +1982,52 @@ let gen_ctypes _loc kt name =
           | _ -> 
             assert false
         end;
-          
+      build_c = 
+        match t with
+        | Custom (KRecord (l1,l2),n) -> 
+          let params =
+            let i = ref false in
+            List.fold_left2 (fun a b c ->
+                a ^( if !i then "," else (i := true; "")) ^
+                (ctype_of_sarek_type (string_of_ctyp b)) ^" "^(string_of_ident c))
+              "" l1 l2 in
+          let content = 
+            List.fold_left (fun a b ->
+                let i = (string_of_ident b) in
+                a^"\tsarek_tmp."^i^ " = " ^i^";\n")
+              "" l2
+          in 
+          ["struct "^sarek_type_name^" build_"^n^" ("^params^"){\n\t"^
+           "struct "^sarek_type_name^" sarek_tmp;\n"^
+           content^"\treturn sarek_tmp;\n}"];
+        | Custom ((KSum l),n) -> 
+          let rec content i = function
+            |cstr,None -> 
+              "struct "^sarek_type_name^" build_"^n^"_"^cstr^"(){\n\t"^
+              "struct "^sarek_type_name^" sarek_tmp;\n"^
+              "\tsarek_tmp."^sarek_type_name^"_tag = "^
+              (string_of_int i)^";\n\treturn sarek_tmp;\n}"
+            
+            |cstr,Some of_ -> 
+              let params = 
+                ctype_of_sarek_type (string_of_ctyp of_) in
+              "struct "^sarek_type_name^" build_"^n^"_"^cstr^"("
+              ^params^" "^(String.uncapitalize cstr)^"){\n\t"^
+              "struct "^sarek_type_name^" sarek_tmp;\n"^
+              "\tsarek_tmp."^sarek_type_name^"_tag = "^
+              (string_of_int i)^";\n"^
+              "\tstruct "^sarek_type_name^"_"^cstr^" t"^cstr^";\n"^
+              "\tt"^cstr^"."^sarek_type_name^"_"^cstr^"_t = "^
+              (String.uncapitalize cstr)^";\n"^
+              "\tsarek_tmp."^sarek_type_name^"_union."^
+              sarek_type_name^"_"^cstr^" = "^"t"^cstr^";\n"^
+              "\treturn sarek_tmp;\n}"
+          in
+          List.mapi content l
+        | _ -> assert false;
     }
   in
-  
-  let t = gen_repr _loc (Custom kt) name in
+  let t = gen_repr _loc (Custom (kt,name)) name in
   Hashtbl.add type_repr name t;
   let sarek_type_name = name^"_sarek" in
 
@@ -1995,6 +2069,9 @@ let cr = Obj.repr c in
       let $lid:"custom"^(String.capitalize name)$ : (($lid:name$,$lid:sarek_type_name$) Vector.custom) = $custom$ ;;
       
       let $lid:t.name^"_c_repr"$ = $str:t.crepr$ ;;
+      Kirc.constructors := $str:t.crepr$ :: !Kirc.constructors;
+      Kirc.constructors := $str:(List.fold_left (fun a b -> a^"\n\n"^b) "" t.build_c)$
+         :: !Kirc.constructors ;;
 (*      let ml_to_c = $t.ml_to_c$;;
       let c_to_ml = $t.c_to_ml$;;*)
       >>

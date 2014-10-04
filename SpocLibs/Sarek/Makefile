@@ -2,6 +2,7 @@ all : build
 
 build :
 	ocp-build -init
+	ocp-build
 	cd extension && make
 
 clean :

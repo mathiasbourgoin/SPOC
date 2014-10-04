@@ -93,6 +93,7 @@ and parse i = function
      | Int _ ->"__global int"
      | Float _ -> "__global float"
      | Double _ -> "__global double"
+     | Custom n -> ("__global struct "^n^"_sarek")
      | _ -> assert false
     )^("* spoc_var"^(string_of_int (i)))
   | IdName s  ->  s
@@ -100,7 +101,7 @@ and parse i = function
   | FloatVar s -> ("float spoc_var"^(string_of_int s))
   | UnitVar v -> assert false
   | CastDoubleVar s -> ("(double) spoc_var"^(string_of_int s))
-  | DoubleVar s -> ("double spoc_var"^(string_of_int s))
+  | DoubleVar s -> ("double spoc_var"^(string_of_int s)) 
   | Arr (s,l,t,m) -> 
     let memspace = 
       match m with 
@@ -132,6 +133,8 @@ and parse i = function
      | Concat (c,d)  ->  ((parse i a)^", "^(parse i b))
      | _  -> failwith "parse concat"
     )
+  | Constr (t,s,l) ->
+    "build_"^t^"_"^s^"("^(List.fold_left (fun a b -> a^parse i b) "" l)^")"
   | Plus  (a,b) -> ((parse_int i a)^" + "^(parse_int i b))
   | Plusf  (a,b) -> ((parse_float i a)^" + "^(parse_float i b))
   | Min  (a,b) -> ((parse_int i a)^" - "^(parse_int i b))
