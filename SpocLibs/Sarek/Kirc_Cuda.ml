@@ -204,6 +204,11 @@ and parse i = function
   | GlobalFun (a,b) -> 
      let s = (parse_fun i a b) in
      s
+  | Constr (t,s,l) ->
+    "build_"^t^"_"^s^"("^(List.fold_left (fun a b -> a^parse i b) "" l)^")"
+  | Custom  _ -> assert false
+  | Match (s,e,l) -> assert false
+
 
 
 and parse_int n = function

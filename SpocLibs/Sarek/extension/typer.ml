@@ -4,7 +4,7 @@ open Ast
 
 let retype = ref false
 let unknown = ref 0
-let debug = false
+let debug = true
 
 let my_eprintf s = 
   if debug then
@@ -163,6 +163,7 @@ type k_expr =
 
   | Ife of Loc.t * kexpr * kexpr * kexpr
   | If of Loc.t * kexpr * kexpr 
+  | Match of Loc.t * kexpr * (case list)
   | DoLoop of Loc.t * kexpr * kexpr * kexpr * kexpr
   | While of Loc.t * kexpr * kexpr
   | End of Loc.t*kexpr
@@ -171,6 +172,10 @@ type k_expr =
   | ModuleAccess of Loc.t * string * kexpr
 
   | Noop
+
+and case =  Loc.t * pattern * kexpr
+and pattern = 
+  | Constr of string * ident option 
 
 and kexpr = {
   mutable t : ktyp;
@@ -290,6 +295,7 @@ let rec k_expr_to_string = function
   | BoolOr _ -> "BoolOr"
   | Ife _ -> "Ife"
   | If _ -> "If"
+  | Match _ -> "Match"
   | DoLoop _ -> "DoLoop"
   | While _ -> "While"
   | End _ -> "End"
@@ -327,8 +333,10 @@ let args () =
 
 
 type cstr = {
+  id : int;
   name : string;
   mutable nb_args : int;
+  mutable ctyp : string;
   typ : customtypes
 }
 
@@ -619,6 +627,11 @@ and check t1 t2 l =
   if (not (equal_types t1 t2)) && (not (is_unknown t1)) && (not (is_unknown t2)) then
     (assert (not debug); raise (TypeError (t1, t2, l)) )
 
+
+and ktyp_of_typ = function
+  | <:ctyp< int >> | <:ctyp< int32 >> -> TInt32
+  | _ -> assert false
+
 and gen_app_from_constr t cstr = 
   match t.typ with
   | KRecord _ -> assert false
@@ -636,6 +649,7 @@ and gen_app_from_constr t cstr =
         | [] -> assert false
       in aux l
     end
+
 
 
 
@@ -739,7 +753,7 @@ $stri$>>);
 	   update_type y tt;
 	 | _ -> typer y TUnknown;
 	   (incr arg_idx;
-	    Hashtbl.add !current_args (string_of_ident s) 
+            Hashtbl.add !current_args (string_of_ident s) 
 	      {n = !arg_idx; var_type = y.t;
 	       is_mutable = is_mutable;
 	       read_only = false;
@@ -849,11 +863,30 @@ $stri$>>);
      typer e2 e1.t;
      typer e1 e2.t;
      update_type body TUnit
+   | Match (l,e,mc) ->
+     typer e TUnknown;
+     let rec aux tt = function
+       | (_,_,t)::q -> 
+         typer t tt; 
+         check tt t.t l;
+         aux t.t q
+       | [] -> ();
+     in
+     aux body.t mc;
+     let ttt = let (_,_,e) = List.hd mc in
+       e.t in
+     update_type body ttt
+(*   | Case (l,p,e) ->
+     typer e t;
+     update_type body e.t*)
    | _ -> my_eprintf  ((k_expr_to_string body.e)^"\n"); assert false);
   if is_unknown body.t then
     (my_eprintf  (("UNKNOWN : "^k_expr_to_string body.e)^"\n");
      incr unknown
     )        
+
+    
+
 and typer_app e1 (e2 : kexpr list) t =
   let  typ, loc  = 
     let rec aux e1 =

@@ -55,6 +55,7 @@ type k_ext =
   | Acc of k_ext * k_ext
   | Ife of k_ext * k_ext * k_ext
   | If of k_ext * k_ext
+  | Match of string*k_ext * case list
   | Or of k_ext * k_ext
   | And of k_ext * k_ext
   | EqBool of k_ext * k_ext
@@ -68,5 +69,7 @@ type k_ext =
   | GInt of (unit -> int32)
   | GFloat of (unit -> float)
   | Unit
+and case = int * (string*string*int) option * k_ext
+
 type kfun = KernFun of k_ext * k_ext
 val print_ast : k_ext -> unit

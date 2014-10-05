@@ -377,6 +377,16 @@ and parse_app_ml a modu =
   | _ -> parse_body a 
 
 
+
+and parse_case (_loc,patt,e) =
+  match patt with 
+  | Constr (s,Some i) ->
+    let patt = 
+      <:patt<$uid:s$ $lid:string_of_ident i$>> in
+    <:match_case< $patt$   -> $parse_body e$ >>
+  | Constr (s,None) ->
+    <:match_case< $uid:s$ -> $parse_body e$ >>
+
 and parse_body body = 
   my_eprintf (Printf.sprintf"(* val %s *)\n%!" (k_expr_to_string body.e));
   match body.e with
@@ -547,8 +557,12 @@ and parse_body body =
              | TInt64  -> <:ctyp<(int64, Bigarray.int64_elt) Spoc.Vector.vector>>
              | TFloat32 -> <:ctyp<(float, Bigarray.float32_elt) Spoc.Vector.vector>>
              | TFloat64 -> <:ctyp<(float, Bigarray.float64_elt) Spoc.Vector.vector>>
+             | Custom (_,name)  ->  
+               let name = TyId(_loc,IdLid(_loc,name)) 
+               and sarek_name = TyId(_loc, IdLid(_loc,name^"_sarek")) in
+               <:ctyp<($name$,$sarek_name$) Spoc.Vector.vector >> 
              | TBool | TVec _  | TUnknown | TUnit | TArr _ 
-             | TApp _  | Custom _ ->  assert false
+             | TApp _   ->  assert false
             )
           | _  -> assert (not debug); 
             failwith (Printf.sprintf "strange vector %s" (ktyp_to_string var.var_type ))
@@ -720,6 +734,10 @@ and parse_body body =
   | ModuleAccess (_loc, s, e) -> 
     let e = parse_app_ml e <:expr< $uid:s$>> in
     e
+  | Match (_loc, e, mc) ->
+    let e = parse_body e and
+    mc = List.map parse_case mc in
+    <:expr< match $e$ with $list:mc$ >>
   | _ -> assert (not debug); failwith "unimplemented yet"
 
 
@@ -795,6 +813,39 @@ and expr_of_app t _loc gen_var y =
      | TFloat64 -> <:expr<(new_double_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (parse_body2 y false)
      | _  ->  failwith "unknown var type")
   | _ -> assert false
+
+and ident_of_patt  _loc = function
+  | Constr (s,_) -> 
+    let cstr = Hashtbl.find !constructors s in
+    cstr.id
+
+and type_of_patt = function
+  | Constr (s,_) -> 
+    let cstr = Hashtbl.find !constructors s in
+    cstr.ctyp
+
+and parse_case2 mc _loc =
+  let l = List.fold_left 
+    (fun a (_loc,patt,e) -> 
+     let e =
+       match patt with
+       | Constr (_,None) ->
+         <:expr< spoc_case $`int:ident_of_patt _loc patt$ None $parse_body2 e false$>> 
+       | Constr (s,Some id) ->
+         incr arg_idx;
+         Hashtbl.add !current_args (string_of_ident id) 
+           {n = !arg_idx; var_type = ktyp_of_typ (TyId(_loc,IdLid(_loc,type_of_patt patt)));
+            is_mutable = false;
+            read_only = false;
+            write_only = false;
+            is_global = false;};
+         let e = <:expr< spoc_case $`int:ident_of_patt _loc patt$ 
+                         (Some ($str:type_of_patt patt$,$str:s$,$`int:!arg_idx$)) $parse_body2 e false$>> in
+         Hashtbl.remove !current_args (string_of_ident id);
+         e in
+      ExSem(_loc,a,e))            
+    <:expr< >> mc 
+  in <:expr< [$l$]>>
 
 and parse_body2 body bool = 
   let rec aux ?return_bool:(r=false) body =
@@ -1167,7 +1218,14 @@ with
         | _ -> assert false
       else
         assert false
-
+    | Match(_loc,e,
+            ((_,Constr (n,_),_)::q as mc )) ->
+      let e = parse_body2 e false 
+      and mc = parse_case2 mc _loc in
+      let name = (Hashtbl.find !constructors n).name in
+      
+      <:expr< spoc_match $str:name$ $e$ $mc$ >>
+    | Match _ -> assert false
     | _ -> assert (not debug); failwith "unimplemented yet"
   in
   let _loc = body.loc in
@@ -1587,13 +1645,20 @@ let gen_mltyp _loc name t =
 	        let typeof t1 t2 =
 		TyOf(_loc, t1, t2)
 	        in
+                let id = ref 0 in
 	        List.fold_left 
 		(fun elt (list_elt,t) ->
-		Hashtbl.add !constructors (list_elt) ({name = name; nb_args = 0;
-                typ = KSum l});
+		Hashtbl.add !constructors (list_elt) (
+                {id = (let i = !id in incr id; i);
+                name = name; 
+                nb_args = 0;
+                ctyp = "";
+                typ = KSum l}); 
                       match t with
 		| Some (s:ctyp) -> 
-                (Hashtbl.find !constructors list_elt).nb_args <- 1;
+                let c = (Hashtbl.find !constructors list_elt) in
+                c.nb_args <- 1;
+                c.ctyp <- ctype_of_sarek_type (string_of_ctyp s);
                 let t  =
 		typeof (type_of_string list_elt) s 
 		in 

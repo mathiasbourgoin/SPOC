@@ -166,6 +166,8 @@ let spoc_div_float a b = Divf (a,b)
 let spoc_mod a b = Mod (a,b)
 let spoc_ife a b c = Ife (a,b,c)
 let spoc_if a b  = If (a,b)
+let spoc_match s e l = Match (s,e,l)
+let spoc_case i o e : case = (i,o,e)
 let spoc_do a b c d = DoLoop (a,b,c,d)
 let spoc_while a b = While (a,b)
 
@@ -391,6 +393,9 @@ let rewrite ker =
     | App (a,b) -> App (aux a, (Array.map aux b))
     | GlobalFun (a,b) -> GlobalFun (a,b)
     | Unit -> kern
+    | Match (s,a,b) -> Match (s,aux a, 
+                              List.map (fun (i,ofid,e) -> (i,ofid,aux e)) b)
+    
 
   in
   let kern = ref (aux ker) in
@@ -413,7 +418,7 @@ let save file string =
 let load_file f =
   let ic = open_in f in
   let n = in_channel_length ic in
-  let s = String.create n in
+  let s = String.make  n ' ' in
   really_input ic s 0 n;
   close_in ic;
   (s)
@@ -774,6 +779,12 @@ let propagate f = function
   | GInt foo -> GInt foo
   | GFloat foo -> GFloat foo
   | Unit -> Unit
+  | GlobalFun (a,b) -> GlobalFun (f a, b)
+  | Constr (a,b,c) -> Constr (a,b,List.map f c)
+  | Custom s -> Custom s
+  | Match (s,a,b) -> Match (s,f a, 
+                            List.map (fun (i,ofid,e) -> (i,ofid,f e)) b)
+
 
 let map ((ker: ('a, 'b, ('c -> 'd), 'e,'f) sarek_kernel)) ?dev:(device=(Spoc.Devices.init ()).(0)) (vec_in : ('g, 'h) Vector.vector) : ('i, 'j) Vector.vector= 
   let ker2,k = ker in 

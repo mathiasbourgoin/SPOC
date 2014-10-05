@@ -36,6 +36,12 @@ open Kirc_Ast
 
 let space i =
   String.make i ' '
+and  indent i = 
+  let rec aux acc = function
+    | 0 -> acc
+    | i -> aux (acc^"\t") (i-1)
+  in aux "" i
+
 
 let global_funs = Hashtbl.create 0
 
@@ -74,20 +80,21 @@ let rec parse_fun i a b =
 	 gen_name)
   in 
   name
-    
+
+
 and parse i = function
   | Kern (args,body) -> 
     (let pargs = parse i args in
      let pbody = 
        match body with 
-       | Seq (_,_)  -> (parse i body)
-       | _  ->  ((parse i body)^"\n"^(space i))
+       | Seq (_,_)  -> (parse (i+1) body)
+       | _  ->  ((parse (i+1) body)^"\n"^(indent (i)))
      in
      (pargs ^ pbody)^"}")
-  | Local (x,y)  -> (space (i))^""^
+  | Local (x,y)  -> (indent (i))^""^
                     (parse i x)^";\n"^
-                    (space (i))^(parse i y)^
-                    "\n"^(space (i))^""
+                    (indent (i))^(parse i y)^
+                    "\n"^(indent (i))^""
   | VecVar (t,i)  -> 
     (match t with
      | Int _ ->"__global int"
@@ -156,7 +163,7 @@ and parse i = function
     ((parse i v)^" = "^
      (match gv with
       | Intrinsics i -> (parse_intrinsics i)
-      | _ -> (parse i gv))^";\n"^(space i)^(parse i k))
+      | _ -> (parse i gv))^";\n"^(indent i)^(parse i k))
   | Return k -> 
     (if (snd !return_v) <> "" then
        snd !return_v
@@ -174,9 +181,9 @@ and parse i = function
   | Double f -> string_of_float f
   | IntId (s,_) -> s
   |Intrinsics gv -> parse_intrinsics gv
-  | Seq (a,b)  -> (parse i a)^" ;\n"^(space i)^(parse i b)
-  | Ife(a,b,c) -> "if ("^(parse i a)^"){\n"^(space (i+2))^(parse (i+2) b)^";}\n"^(space i)^"else{\n"^(space (i+2))^(parse (i+2) c)^";}\n"^(space i)
-  | If (a,b) -> "if ("^(parse i a)^")\n"^(space i)^"{\n"^(space (i+2))^(parse (i+2) b)^";\n"^(space i)^"}"^(space i)
+  | Seq (a,b)  -> (parse i a)^" ;\n"^(indent i)^(parse i b)
+  | Ife(a,b,c) -> "if ("^(parse i a)^"){\n"^(indent (i+1))^(parse (i+1) b)^";}\n"^(indent i)^"else{\n"^(indent (i+1))^(parse (i+1) c)^";}\n"^(indent i)
+  | If (a,b) -> "if ("^(parse i a)^")\n"^(indent i)^"{\n"^(indent (i+1))^(parse (i+1) b)^";\n"^(indent i)^"}"^(indent i)
   | Or (a,b) -> (parse i a)^" || "^(parse i b)
   | And (a,b) -> (parse i a)^" && "^(parse i b)
   | EqBool (a,b) -> (parse i a)^" == "^(parse i b)
@@ -188,12 +195,12 @@ and parse i = function
     let id = parse i a in
     let min = parse i b in
     let max = parse i c in
-    let body = parse (i+2) d in
-    "for (int "^id^" = "^min^"; "^id^" <= "^max^"; "^id^"++){\n"^(space (i+2))^body^";}"
+    let body = parse (i+1) d in
+    "for (int "^id^" = "^min^"; "^id^" <= "^max^"; "^id^"++){\n"^(indent (i+1))^body^";}"
   | While (a,b) ->
     let cond = parse i a in
-    let body = parse (i+2) b in
-    "while ("^cond^"){\n"^(space (i+2))^body^";}"
+    let body = parse (i+1) b in
+    "while ("^cond^"){\n"^(indent (i+1))^body^";}"
   | App (a,b) ->
     let f = parse i a in
     let rec aux = function
@@ -208,6 +215,28 @@ and parse i = function
   | GlobalFun (a,b) -> 
      let s = (parse_fun i a b) in
      s
+  | Custom  _ -> assert false
+  | Match (s,e,l) ->
+    let match_e = parse 0 e in
+    let switch_content  = 
+      List.fold_left (fun a (j,of_i,b) ->              
+          let manage_of = 
+            match of_i with
+            | None -> ""
+            | Some (typ,cstr,varn) -> 
+              indent (i+1)^typ^
+              " spoc_var"^(string_of_int varn)^" = "^match_e^"."^
+              s^"_sarek_union."^s^"_sarek_"^cstr^"."^
+              s^"_sarek_"^cstr^"_t"^
+              ";\n"
+          in
+          a^"\n\tcase "^string_of_int j^":{\n"^
+          manage_of^indent (i+1)^parse (i+1) b^";\n"^
+          indent (i+1)^"break;}"
+        )
+        " " l in
+    ("switch ("^match_e^"."^s^"_sarek_tag"^"){"^switch_content^
+    "}") 
 
 
 and parse_int n = function

@@ -100,6 +100,7 @@ type  k_ext =
   | Acc of  k_ext *  k_ext
   | Ife of  k_ext *  k_ext  *  k_ext   
   | If of  k_ext *  k_ext
+  | Match of string* k_ext * case list
   | Or of  k_ext *  k_ext
   | And of  k_ext *  k_ext
   | EqBool of  k_ext *  k_ext
@@ -114,6 +115,8 @@ type  k_ext =
   | GFloat of (unit -> float)
   | Unit
 
+
+and case =  int * (string*string*int) option * k_ext
 
 type  kfun = 
   | KernFun of  k_ext* k_ext
@@ -308,5 +311,16 @@ let print_ast a =
       print i "GFloat"
     | Unit ->
       print i "Unit"
-
+    | GlobalFun (e,s) ->
+      print i ("Global Fun " ^s);
+      aux (i+1) e;
+    | Constr (s1,s2,l) ->
+      print i ("Constr "^s1^" "^s2);
+      List.iter (fun a -> aux (i+1) a) l
+    | Custom s -> 
+      print i ("Custom "^s)
+    | Match (s,e1,l) ->
+      print i ("Match "^s);
+      aux (i+1) e1;
+      List.iter (fun (_,_,a) -> aux (i+1) a) l
   in aux 0 a;;

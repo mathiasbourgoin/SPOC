@@ -23,7 +23,11 @@ let f = kern a ->
   let open Std in
   let i = thread_idx_x + block_dim_x * block_idx_x in
   a.[<i>] <- X;
-  a.[<i>] <- Y ;;
+  a.[<i>] <- Y i;
+  match a.[<i>] with
+  | X ->  (a.[<i>] <- Y i)
+  | Y x -> (a.[<i>] <- Y (x*2))
+;;
 
 
 
@@ -56,13 +60,6 @@ let _ =
     Mem.set x i t;
   done;
   Kirc.run f (x) (block,grid) 0 dev;
-(*  for i = 0 to 1023 do
-    let t = (if i mod 2 = 0 then X else Y i) in
-    Mem.set x i t;
-    Mem.set y i {x = t; y = i*i}; 
-  done;
-  Mem.to_device x dev;
-  Devices.flush dev (); *)
   for i = 0 to 1023 do
     Printf.printf "%d \n%!" i;
     let t = Mem.get x i in
@@ -72,7 +69,7 @@ let _ =
       | Y i -> print_endline ("Y of "^(Int32.to_string i))
     end;
   done;
-  
+
 
   
 

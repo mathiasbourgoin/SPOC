@@ -468,6 +468,26 @@ do_sequence:
     | "done" -> {t=TUnknown; e=Noop; loc=_loc}
     ]
   ];
+pattern :
+  [
+    [
+      cstr = a_UIDENT; s = OPT ident  -> 
+      Constr (cstr, s)
+    ]
+  ];
+first_case :
+  [ 
+    [ p = pattern; "->"; e = kexpr -> 
+      (_loc, p, e)
+    ]
+  ];
+match_cases :
+  [
+    [
+      "|"; p = pattern; "->"; e = kexpr -> 
+      (_loc, p, e)
+    ]
+  ];
 kexpr:
   [ 
  "let"
@@ -611,17 +631,27 @@ let a = <:expr<
     t = full_typ;
     e = Fun (_loc,res,full_typ,funv);
     loc = _loc
-  }  
-    ]
-  | "if"
+       }  
+]
+| "if"
       [ "if"; cond=SELF; "then"; cons1=sequence; 
         "else"; cons2=sequence -> 
         {t=TUnknown; e= Ife(_loc,cond,cons1,cons2); loc = _loc}
               | "if"; cond=SELF; "then"; cons1 = sequence -> 
         {t=TUnknown; e= If(_loc,cond,cons1); loc = _loc}
       ]
+  | "match"
+      [ 
+        "match"; x = SELF; "with"; m0 = OPT first_case; m = LIST0 match_cases 
+        ->
+        match m0 with
+        | Some m1 -> 
+          {t=TUnknown; e= Match (_loc, x, m1::m); loc = _loc}
+        | None -> 
+          {t=TUnknown; e= Match (_loc, x, m); loc = _loc}]
+
   | "mod"  RIGHTA
-    [ x = SELF; "mod"; y = SELF -> {t=TInt32; e = Mod(_loc, x,y); loc = _loc}]
+      [ x = SELF; "mod"; y = SELF -> {t=TInt32; e = Mod(_loc, x,y); loc = _loc}]
   | ":=" 
       [ x = SELF; ":="; y= SELF  -> {t=(TUnit); e = Acc (_loc, x, y); loc = _loc}
       ]
