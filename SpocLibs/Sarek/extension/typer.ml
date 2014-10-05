@@ -4,7 +4,7 @@ open Ast
 
 let retype = ref false
 let unknown = ref 0
-let debug = true
+let debug = false
 
 let my_eprintf s = 
   if debug then
@@ -619,6 +619,26 @@ and check t1 t2 l =
   if (not (equal_types t1 t2)) && (not (is_unknown t1)) && (not (is_unknown t2)) then
     (assert (not debug); raise (TypeError (t1, t2, l)) )
 
+and gen_app_from_constr t cstr = 
+  match t.typ with
+  | KRecord _ -> assert false
+  | KSum l ->
+    begin
+      let rec aux = function
+        | (c,Some s)::q -> 
+          (* for now Constructors only applies to single arguments *)
+          let rec aux2 = function
+            | <:ctyp< int >> | <:ctyp< int32 >> -> TInt32
+            | _ -> assert false
+          in
+          TApp ((aux2 s), Custom (t.typ,t.name))
+        | _::q -> aux q
+        | [] -> assert false
+      in aux l
+    end
+
+
+
 and typer body t =
   my_eprintf (Printf.sprintf"(* %s ############# typ %s *)\n%!" (k_expr_to_string body.e) (ktyp_to_string t)) ;  
   (match body.e with
@@ -650,7 +670,11 @@ and typer body t =
               my_eprintf ("Found a constructor : "^(string_of_ident s)
                           ^" of type "^cstr.name^" with "
                           ^(string_of_int cstr.nb_args)^" arguments\n");
-              tt := Custom (cstr.typ, cstr.name);
+              tt :=
+                if cstr.nb_args <> 0 then
+                  gen_app_from_constr cstr s
+                else
+                  Custom (cstr.typ, cstr.name);
             with 
             | _ ->
               (Hashtbl.add !current_args (string_of_ident s) 
@@ -843,10 +867,13 @@ and typer_app e1 (e2 : kexpr list) t =
       with |_ ->
         try 
           let cstr = Hashtbl.find !constructors (string_of_ident s) in
-          my_eprintf ("Found a constructor : "^(string_of_ident s)
+          my_eprintf ("App : Found a constructor : "^(string_of_ident s)
                       ^" of type "^cstr.name^" with "
                       ^(string_of_int cstr.nb_args)^" arguments\n");
-          Custom (cstr.typ, cstr.name),_l
+          (if cstr.nb_args <> 0 then
+             gen_app_from_constr cstr s
+           else
+             Custom (cstr.typ, cstr.name)),_l
         with | _  -> 
 	  assert (not debug); raise (Unbound_value (string_of_ident s,_l) ))
         

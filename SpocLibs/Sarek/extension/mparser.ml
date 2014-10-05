@@ -732,6 +732,7 @@ and parse_app a =
   match a.e with
   | App (_loc, e1, e2::[]) ->
     let res = ref [] in
+    let constr = ref false in
     let rec aux app =
       my_eprintf (Printf.sprintf "(* val2 parse_app_app %s *)\n%!" (k_expr_to_string app.e));
       match app.e with
@@ -748,7 +749,12 @@ and parse_app a =
 	       ignore(Hashtbl.find !local_fun (string_of_ident s));
                <:expr< global_fun $id:s$>> 
              with Not_found -> 
-               parse_body2 e1 false;)
+               try
+                 let t = Hashtbl.find !constructors (string_of_ident s) in
+                 constr := true;
+                 <:expr< spoc_constr $str:t.name$ $str:string_of_ident s$ [$parse_body2 e2 false$]>> 
+               with _ -> 
+                 parse_body2 e1 false;)
       | App (_loc, e3, e4::[]) ->
         let e = aux e3 in
         res := <:expr< ($parse_body2 e4 false$)>> :: !res;
@@ -761,13 +767,18 @@ and parse_app a =
       | _  -> assert false;
     in 
     let intr = aux e1 in
-    res := (parse_body2 e2 false) :: !res ; 
-    (match !res with
-     | [] -> assert false
-     | t::[] -> 
-       <:expr< app $intr$ [| ($t$) |]>>
-     | t::q ->
-       <:expr< app $intr$ [| $exSem_of_list (List.rev !res)$ |]>>)
+    if !constr then
+      <:expr< $intr$ >>
+    else
+      (
+        res := (parse_body2 e2 false) :: !res ; 
+        (match !res with
+         | [] -> assert false
+         | t::[] -> 
+           <:expr< app $intr$ [| ($t$) |]>>
+         | t::q ->
+           <:expr< app $intr$ [| $exSem_of_list (List.rev !res)$ |]>>)
+      )
   | _ -> parse_body2 a false
 
 
@@ -1510,7 +1521,10 @@ let sarek_types_tbl = Hashtbl.create 10
 
 let get_sarek_name t =
   match t with
-  | "int" | "float" | "int32" | "int64" | "float32" | "float64" -> t
+  | "int" | "int32" -> "int32_t"
+  | "int64" -> "long"
+  | "float" | "float32" -> "float"
+  | "float64" -> "double"
   | _ ->
     try 
       Hashtbl.find sarek_types_tbl t
@@ -1525,7 +1539,7 @@ let gen_ctype t1 t2 t3 name _loc =
 		Ctypes.field 
 		$lid:string_of_ident t2$ 
 		$str:field_name$
-		$lid:get_sarek_name (string_of_ctyp t1)$ 
+		$lid:get_sarek_name ((string_of_ctyp t1))$ 
                 ;; 
     >> 
   end

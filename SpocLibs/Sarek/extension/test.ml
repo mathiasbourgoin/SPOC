@@ -1,17 +1,17 @@
 open Spoc
 
-ktype t1 = X | Y of int
+ktype t1 = X | Y of int32
 
 ktype t2 = 
 {
   x : t1;
-  y : int;
+  y : int32;
 }
 
 
 ktype t3 = 
  A
-| B of int
+| B of int32
 | C of t2
 
   ;;
@@ -22,7 +22,9 @@ ktype t3 =
 let f = kern a ->
   let open Std in
   let i = thread_idx_x + block_dim_x * block_idx_x in
-  a.[<i>] <- X;;
+  a.[<i>] <- X;
+  a.[<i>] <- Y ;;
+
 
 
 
@@ -50,7 +52,7 @@ let _ =
   let block = { Spoc.Kernel.blockX = threadsPerBlock; Spoc.Kernel.blockY = 1 ; Spoc.Kernel.blockZ = 1;} in
   let grid = { Spoc.Kernel.gridX = blocksPerGrid; Spoc.Kernel.gridY = 1 ; Spoc.Kernel.gridZ = 1;} in
   for i = 0 to 1023 do
-    let t = (if i mod 2 = 0 then X else Y i) in
+    let t = (if i mod 2 = 0 then X else Y  (Int32.of_int i)) in
     Mem.set x i t;
   done;
   Kirc.run f (x) (block,grid) 0 dev;
@@ -67,7 +69,7 @@ let _ =
     begin
       match t with
       | X -> print_endline "X";
-      | Y i -> print_endline ("Y of "^(string_of_int i))
+      | Y i -> print_endline ("Y of "^(Int32.to_string i))
     end;
   done;
   
