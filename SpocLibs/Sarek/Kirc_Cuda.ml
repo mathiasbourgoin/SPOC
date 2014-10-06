@@ -206,6 +206,16 @@ and parse i = function
      s
   | Constr (t,s,l) ->
     "build_"^t^"_"^s^"("^(List.fold_left (fun a b -> a^parse i b) "" l)^")"
+  | Record (s,l) ->
+    let params = 
+      match l with
+      | t::q -> (parse i t)^(List.fold_left (fun a b -> a^parse i b) "," q)
+      | [] -> assert false in
+    "build_"^s^"("^params^")"
+  | RecGet (r,f) ->
+    (parse i r)^"."^f
+  | RecSet (r,v) ->
+    (parse i r)^" = "^(parse i v)
   | Custom  _ -> assert false
   | Match (s,e,l) -> assert false
 

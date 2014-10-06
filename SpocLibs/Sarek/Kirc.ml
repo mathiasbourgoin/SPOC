@@ -174,6 +174,7 @@ let spoc_while a b = While (a,b)
 let params l = Params l
 let spoc_id i = Id ("")
 let spoc_constr t c params = Constr (t,c,params)
+let spoc_record t params = Record (t,params)
 let spoc_return k = Return k 
 let concat a b = Concat (a,b)
 let empty_arg () = Empty
@@ -190,6 +191,8 @@ let new_double_vec_var v = VecVar (Double 0., v)
 let new_custom_vec_var n v = VecVar (Custom (n,0), v)  (* <--- *)
 
 let int_vect i = IntVect i 
+let spoc_rec_get r id = RecGet (r,id)
+let spoc_rec_set r v = RecSet (r,v)
 let set_vect_var vecacc value = 
   SetV (vecacc, value)
 let set_arr_var arracc value = 
@@ -315,6 +318,10 @@ let rewrite ker =
       Concat (aux k1, aux k2)
     | Constr (t,c,l) ->
       Constr (t, c, List.map aux l)
+    | Record (t,l) ->
+      Record (t, List.map aux l)
+    | RecGet (r,s) -> RecGet (aux r,s)
+    | RecSet (r,v) -> RecSet (aux r, aux v)
     | Empty -> kern
     | Seq (k1,k2) -> 
       Seq (aux k1, aux k2)
@@ -792,6 +799,9 @@ let propagate f = function
   | Unit -> Unit
   | GlobalFun (a,b) -> GlobalFun (f a, b)
   | Constr (a,b,c) -> Constr (a,b,List.map f c)
+  | Record (a,c) -> Record (a,List.map f c)
+  | RecGet (r,s) -> RecGet (f r, s)
+  | RecSet (r,v) -> RecSet (f r, f v)
   | Custom (s,i) -> Custom (s,i)
   | Match (s,a,b) -> Match (s,f a, 
                             List.map (fun (i,ofid,e) -> (i,ofid,f e)) b)

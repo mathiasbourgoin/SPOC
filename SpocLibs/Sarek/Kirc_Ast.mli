@@ -37,6 +37,9 @@ type k_ext =
   | VecVar of k_ext * int
   | Concat of k_ext * k_ext
   | Constr of string * string * k_ext list
+  | Record of string*k_ext list
+  | RecGet of k_ext * string
+  | RecSet of k_ext * k_ext
   | Empty
   | Seq of k_ext * k_ext
   | Return of k_ext

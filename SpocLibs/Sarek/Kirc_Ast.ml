@@ -82,6 +82,9 @@ type  k_ext =
   | VecVar of  k_ext*int
   | Concat of  k_ext* k_ext
   | Constr of string * string * k_ext list
+  | Record of string * k_ext list
+  | RecGet of k_ext * string
+  | RecSet of k_ext * k_ext
   | Empty
   | Seq of  k_ext *  k_ext
   | Return of  k_ext
@@ -317,6 +320,16 @@ let print_ast a =
     | Constr (s1,s2,l) ->
       print i ("Constr "^s1^" "^s2);
       List.iter (fun a -> aux (i+1) a) l
+    | Record (s,l) ->
+      print i ("Record "^s);
+      List.iter (fun a -> aux (i+1) a) l
+    | RecGet (r,s) ->
+      print i ("RecGet");
+      aux (i+1) r
+    | RecSet (r,v) ->
+      print i ("RecGet");
+      aux (i+1) r;
+      aux (i+1) v;
     | Custom (s,_) -> 
       print i ("Custom "^s)
     | Match (s,e1,l) ->

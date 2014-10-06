@@ -1,4 +1,8 @@
-all:kernels_int.cma
+P4FLAGS = -warn-error +a -I +camlp4 -pp camlp4of dynlink.cma camlp4lib.cma
+
+all:
+	make -j4 kernels_int.cma
+
 
 install: kernels_int.cma
 	ocamlfind install sarek_syntax *.cm* META
@@ -6,17 +10,26 @@ install: kernels_int.cma
 uninstall :
 	ocamlfind remove sarek_syntax
 
-kernels_int.cma:typer.cmo mparser.cmo  grammar.cmo
-	ocamlfind ocamlc -a typer.cmo mparser.cmo grammar.cmo -o kernels_int.cma
+kernels_int.cma:types.cmo typer.cmo gen_caml.cmo gen_kir.cmo mparser.cmo  grammar.cmo
+	ocamlfind ocamlc -a $^ -o kernels_int.cma
 
-mparser.cmo:mparser.ml typer.cmo 
-	 ocamlfind ocamlc -warn-error +a -I +camlp4 -pp camlp4of dynlink.cma camlp4lib.cma  typer.cmo $<
+gen_caml.cmo : types.cmo gen_caml.ml
+	 ocamlfind ocamlc $(P4FLAGS)  $^ -c
 
-typer.cmo:typer.ml
-	 ocamlfind ocamlc -warn-error +a -I +camlp4 -pp camlp4of dynlink.cma camlp4lib.cma  $<
+gen_kir.cmo : types.cmo gen_kir.ml
+	 ocamlfind ocamlc $(P4FLAGS) $^ -c
 
-grammar.cmo:grammar.ml typer.cmo mparser.cmo
-	 ocamlfind ocamlc -warn-error +a -I +camlp4 -pp camlp4of dynlink.cma camlp4lib.cma  typer.cmo mparser.cmo $<
+mparser.cmo:types.cmo mparser.ml
+	 ocamlfind ocamlc $(P4FLAGS) $^ -c
+
+types.cmo:types.ml
+	 ocamlfind ocamlc $(P4FLAGS)  $<
+
+typer.cmo:types.cmo typer.ml
+	 ocamlfind ocamlc $(P4FLAGS)  $^ -c 
+
+grammar.cmo:types.cmo typer.cmo gen_caml.cmo gen_kir.cmo mparser.cmo grammar.ml
+	 ocamlfind ocamlc $(P4FLAGS) $^ -c
 
 
 test: kernels_int.cma test.ml
@@ -33,7 +46,7 @@ test: kernels_int.cma test.ml
 	@echo
 	@camlp4 -I +camlp4 -parser o -parser op -printer o kernels_int.cma test.ml
 
-pp: kernels_int.cma
+pp: all
 	camlp4 -I +camlp4 -parser o -parser op -printer o kernels_int.cma test.ml > test_pp.ml
 	ocamlfind ocamlc -thread -package ctypes,spoc,sarek -linkpkg test_pp.ml
 

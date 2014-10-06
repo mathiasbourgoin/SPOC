@@ -69,6 +69,9 @@ val spoc_while : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val params : Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val spoc_id : 'a -> Kirc_Ast.k_ext
 val spoc_constr : string -> string -> Kirc_Ast.k_ext list -> Kirc_Ast.k_ext
+val spoc_record : string -> Kirc_Ast.k_ext list -> Kirc_Ast.k_ext
+val spoc_rec_get : Kirc_Ast.k_ext -> string -> Kirc_Ast.k_ext
+val spoc_rec_set : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val spoc_return : Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val concat : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val empty_arg : unit -> Kirc_Ast.k_ext

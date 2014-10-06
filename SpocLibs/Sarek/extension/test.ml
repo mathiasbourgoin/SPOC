@@ -4,10 +4,9 @@ ktype t1 = X | Y of int32
 
 ktype t2 = 
 {
-  x : t1;
+  mutable x : t1;
   y : int32;
 }
-
 
 ktype t3 = 
  A
@@ -16,14 +15,14 @@ ktype t3 =
 
   ;;
 
-
-
-
-let f = kern a   ->
+let f = kern a b  ->
   let open Std in
   let i = thread_idx_x + block_dim_x * block_idx_x in
-  a.[<i>] <-
-    (if (i mod 2l) = 0 then
+  b.[<i>] <- {x = Y 3l; y = i*3l};  
+  (if (i mod 3l) = 0l then
+    b.[<i>].x <- Y (b.[<i>].y));
+   a.[<i>] <-
+     (if (i mod 2l) = 0l then
       X
     else
       Y i);
@@ -32,10 +31,6 @@ let f = kern a   ->
      | X ->   Y i
      | Y x ->  Y (x*2))
 ;;
-
-
-
-
 
 let _ =
   let devs = Spoc.Devices.init () in
@@ -63,7 +58,7 @@ let _ =
     let t = (if i mod 2 = 0 then X else Y  (Int32.of_int i)) in
     Mem.set x i t;
   done;
-  Kirc.run f (x) (block,grid) 0 dev;
+  Kirc.run f (x,y) (block,grid) 0 dev;
   for i = 0 to 1023 do
     Printf.printf "%d \n%!" i;
     let t = Mem.get x i in

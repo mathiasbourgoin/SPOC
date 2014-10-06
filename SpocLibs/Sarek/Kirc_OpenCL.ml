@@ -58,14 +58,14 @@ let rec parse_fun i a b =
 	  let pbody = 
 	    match body with 
 	    | Seq (_,_)  -> (aux2 i body )
-	    | _  ->  ((aux2 i body )^"\n"^(space i))
+	    | _  ->  ((aux2 i body )^"\n"^(indent i))
 	  in
 	  (pargs ^ pbody)^ ";}")
       | Params k -> 
 	 (b^" "^name^"  ( "^
 	    (if (fst !return_v) <> "" then
-               (fst !return_v)^", " else "")^(parse i k)^" ) {")
-      | a -> parse  i a
+               (fst !return_v)^", " else "")^(parse (i+1) k)^" ) {")
+      | a -> (parse  i a)
     in 
     aux2 i a in
   
@@ -91,8 +91,7 @@ and parse i = function
        | _  ->  ((parse (i+1) body)^"\n"^(indent (i)))
      in
      (pargs ^ pbody)^"}")
-  | Local (x,y)  -> (indent (i))^""^
-                    (parse i x)^";\n"^
+  | Local (x,y)  -> (parse i x)^";\n"^
                     (indent (i))^(parse i y)^
                     "\n"^(indent (i))^""
   | VecVar (t,i)  -> 
@@ -129,12 +128,7 @@ and parse i = function
   | Params k -> 
     ("__kernel void spoc_dummy ( "^
      (if (fst !return_v) <> "" then
-        (fst !return_v)^", " else "")^(parse i k)^" ) \n{\n")
-  (*    let rec aux acc = function
-        	| t::[]  ->  acc^", " ^(parse t)
-        	| t::q  -> aux (acc^","^parse t) q
-        	in
-        	"f (" ^(List.fold_left (fun a b -> (a^(parse b))) "" l) ^ ")\n{"*)
+        (fst !return_v)^", " else "")^(parse i k)^" ) \n{\n"^(indent (i+1)))
   |Concat (a,b)  ->  
     (match b with 
      | Empty  -> (parse i a)
@@ -143,6 +137,16 @@ and parse i = function
     )
   | Constr (t,s,l) ->
     "build_"^t^"_"^s^"("^(List.fold_left (fun a b -> a^parse i b) "" l)^")"
+  | Record (s,l) ->
+    let params = 
+      match l with
+      | t::q -> (parse i t)^(List.fold_left (fun a b -> a^parse i b) "," q)
+      | [] -> assert false in
+    "build_"^s^"("^params^")"
+  | RecGet (r,f) ->
+    (parse i r)^"."^f
+  | RecSet (r,v) ->
+    (parse i r)^" = "^(parse i v)
   | Plus  (a,b) -> ((parse_int i a)^" + "^(parse_int i b))
   | Plusf  (a,b) -> ((parse_float i a)^" + "^(parse_float i b))
   | Min  (a,b) -> ((parse_int i a)^" - "^(parse_int i b))

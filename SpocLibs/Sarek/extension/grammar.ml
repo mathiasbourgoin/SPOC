@@ -2,6 +2,7 @@ open Camlp4.PreCast
 open Syntax
 open Ast
 
+open Types
 open Typer
 open Mparser
 
@@ -26,13 +27,15 @@ let gen_kernel () = ()
        end
        >>
      | "ktype"; name=LIDENT; "="; k = ktype_kind -> 
+       my_eprintf ("add "^name);
+       Hashtbl.add custom_types name k;
        gen_ctypes _loc k name;
       ]
     ];
   
   ktype_kind :
-    [[ "{"; (t,l) = klabel_declaration_list; "}" ->
-       KRecord (t,l);
+    [[ "{"; (t,l,m) = klabel_declaration_list; "}" ->
+        KRecord (t,l,m)  
      | t = fst_constructor -> KSum [t]
      | t = fst_constructor; t2 = kconstructor_list -> 
 	KSum 
@@ -50,7 +53,10 @@ let gen_kernel () = ()
   ;
   klabel_declaration:
     [[
-      s=ident; ":";  t=type_kind -> (s,t)
+      m = OPT "mutable"; s=ident; ":";  t=type_kind -> 
+      match m with
+        None -> (s,t,false)
+      |_ -> (s,t,true)
     ]];
 
   kconstructor_list :
@@ -132,6 +138,12 @@ let gen_kernel () = ()
           (Printf.eprintf "%s\n%!" ("\027[31m Immutable Value \027[00m : \027[33m"^
                                     (value)^"\027[00m used as mutable in position : "^(Loc.to_string loc)^"");
            exit 2;)
+        | FieldError (field, record,loc) ->
+          (Printf.eprintf "%s\n%!" ("\027[31m Type Error \027[00m field : \027[33m"^
+                                    (field)^"\027[00m doesn't exist in record type : \027[33m"^record^
+                                    "\027[00m in position : "^(Loc.to_string loc)^"");
+           exit 2;)
+
        );  
        let new_hash_args = Hashtbl.create (Hashtbl.length !current_args) in
        Hashtbl.iter (Hashtbl.add new_hash_args) !current_args;
@@ -139,7 +151,7 @@ let gen_kernel () = ()
        current_args := new_hash_args;  
        let gen_body = 
          <:expr< 
-                 $try parse_body body with
+                 $try Gen_caml.parse_body body with
                  | TypeError(expected, given, loc) -> 
                  (
                  Printf.eprintf "%s\n%!" ("\027[31m Type Error \027[00m : expecting : \027[33m"^
@@ -158,7 +170,7 @@ let gen_kernel () = ()
                  $>>
        in
        let b_body = 
-         (try parse_body2 body true
+         (try Gen_kir.parse_body2 body true
           with 
           | TypeError(expected, given, loc) -> 
             (
@@ -362,7 +374,7 @@ str_item:
      current_args := new_hash_args;  
      let gen_body = 
        <:expr< 
-               $try parse_body body
+               $try Gen_caml.parse_body body
                with 
                | TypeError(expected, given, loc) -> 
                (
@@ -371,7 +383,7 @@ str_item:
                (ktyp_to_string given)^" in position : "^(Loc.to_string loc)))$>>
      in
      let b_body = 
-       (try parse_body2 body true
+       (try Gen_kir.parse_body2 body true
         with 
         | TypeError(expected, given, loc) -> 
           failwith ("Type Error : expecting : "^
@@ -546,7 +558,7 @@ kexpr:
 
             let gen_body = 
        <:expr< 
-               $try parse_body body
+               $try Gen_caml.parse_body body
                with 
                | TypeError(expected, given, loc) -> 
                (
@@ -555,7 +567,7 @@ kexpr:
                (ktyp_to_string given)^" in position : "^(Loc.to_string loc)))$>>
      in
      let b_body = 
-       (try parse_body2 body true
+       (try Gen_kir.parse_body2 body true
         with 
         | TypeError(expected, given, loc) -> 
           failwith ("Type Error : expecting : "^
@@ -665,6 +677,9 @@ let a = <:expr<
           | {t = _; e = ArrGet _ } ->
             {t=(TUnit);
              e = ArrSet (_loc, x, y); loc = _loc}
+          | {t=_; e=RecGet _}->
+            {t=TUnit;
+             e = RecSet (_loc, x, y); loc = _loc}
           | _ -> assert false
         end
       ]
@@ -752,14 +767,22 @@ let a = <:expr<
       ]
       
   | "." RIGHTA
-	[x = SELF; "."; "[<"; y=SELF; ">]"  -> {t=(TUnknown); 
-						e = VecGet (_loc, x, y); loc = _loc};
-	| x = SELF; "."; "("; y=SELF; ")"  -> {t=(TUnknown); 
-                                               e = ArrGet (_loc, x, y); loc = _loc};
-	|l = UIDENT ; "."; e = SELF -> {t=(TUnknown); 
-					e = ModuleAccess (_loc, l, e); 
-                                     loc = _loc}
-	]
+	[
+   x = SELF; "."; "[<"; y=SELF; ">]"  -> {t=(TUnknown); 
+					  e = VecGet (_loc, x, y); loc = _loc};
+   | x = SELF; "."; "("; y=SELF; ")"  -> {t=(TUnknown); 
+                                          e = ArrGet (_loc, x, y); loc = _loc};
+   |l = UIDENT ; "."; e = SELF -> {t=(TUnknown); 
+				   e = ModuleAccess (_loc, l, e); 
+                                   loc = _loc};
+   | e1 = kexpr; "."; field = ident -> {t= TUnknown;
+                                         e= RecGet (_loc,e1,field);
+                                         loc = _loc}
+ ]
+  | "record"
+      [ "{";l = kfields_declaration_list; "}" -> 
+        {t=TUnknown; e=Record(_loc,l); loc=_loc};    
+      ]
   | "simple" NONA
       [  "(" ;  x= sequence; ")"  ->  x;
        | "begin" ;  x= sequence; "end"  ->  x;
@@ -773,6 +796,17 @@ let a = <:expr<
 
 
   ];
+  kfields_declaration_list:
+    [ [ t1 = kfield_declaration; ";"; t2 = SELF -> t1::t2
+        | t1 = kfield_declaration; ";" -> [t1]
+        | t1 = kfield_declaration ->  [t1]
+       ] ]
+  ;
+  kfield_declaration:
+    [[
+      s=ident; "=";  t=kexpr -> (_loc,s,t)
+    ]];
+
 
 
 END
