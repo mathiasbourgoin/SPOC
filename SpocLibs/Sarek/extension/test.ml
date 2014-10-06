@@ -19,14 +19,18 @@ ktype t3 =
 
 
 
-let f = kern a ->
+let f = kern a   ->
   let open Std in
   let i = thread_idx_x + block_dim_x * block_idx_x in
-  a.[<i>] <- X;
-  a.[<i>] <- Y i;
-  match a.[<i>] with
-  | X ->  (a.[<i>] <- Y i)
-  | Y x -> (a.[<i>] <- Y (x*2))
+  a.[<i>] <-
+    (if (i mod 2l) = 0 then
+      X
+    else
+      Y i);
+  a.[<i>] <- 
+    (match a.[<i>] with
+     | X ->   Y i
+     | Y x ->  Y (x*2))
 ;;
 
 
@@ -69,7 +73,7 @@ let _ =
       | Y i -> print_endline ("Y of "^(Int32.to_string i))
     end;
   done;
-
+  Printf.printf "%s\n%!" (List.hd ((fst f)#get_opencl_sources ()));
 
   
 

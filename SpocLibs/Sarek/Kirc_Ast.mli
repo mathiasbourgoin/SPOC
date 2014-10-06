@@ -49,7 +49,7 @@ type k_ext =
   | Int of int
   | Float of float
   | Double of float
-  | Custom of string
+  | Custom of string*int
   | IntVecAcc of k_ext * k_ext
   | Local of k_ext * k_ext
   | Acc of k_ext * k_ext

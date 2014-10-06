@@ -872,7 +872,7 @@ $stri$>>);
          aux t.t q
        | [] -> ();
      in
-     aux body.t mc;
+     aux t mc;
      let ttt = let (_,_,e) = List.hd mc in
        e.t in
      update_type body ttt

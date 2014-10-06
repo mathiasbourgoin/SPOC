@@ -100,12 +100,13 @@ and parse i = function
      | Int _ ->"__global int"
      | Float _ -> "__global float"
      | Double _ -> "__global double"
-     | Custom n -> ("__global struct "^n^"_sarek")
+     | Custom (n,_) -> ("__global struct "^n^"_sarek")
      | _ -> assert false
     )^("* spoc_var"^(string_of_int (i)))
   | IdName s  ->  s
   | IntVar s -> ("int spoc_var"^(string_of_int s))
   | FloatVar s -> ("float spoc_var"^(string_of_int s))
+  | Custom (n,s) -> ("struct "^n^"_sarek spoc_var"^(string_of_int s))
   | UnitVar v -> assert false
   | CastDoubleVar s -> ("(double) spoc_var"^(string_of_int s))
   | DoubleVar s -> ("double spoc_var"^(string_of_int s)) 
@@ -156,7 +157,7 @@ and parse i = function
   | Set (var,value) 
   | Acc (var,value) -> 
     ((parse i var)^" = "^
-     (parse_int i value))
+     (parse i value))
   | Decl (var) ->
     (parse i var)
   | SetLocalVar (v,gv,k) -> 
@@ -215,7 +216,6 @@ and parse i = function
   | GlobalFun (a,b) -> 
      let s = (parse_fun i a b) in
      s
-  | Custom  _ -> assert false
   | Match (s,e,l) ->
     let match_e = parse 0 e in
     let switch_content  = 

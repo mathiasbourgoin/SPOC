@@ -94,7 +94,7 @@ type  k_ext =
   | Int of int
   | Float of float
   | Double of float
-  | Custom of string
+  | Custom of string*int
   | IntVecAcc of  k_ext *  k_ext
   | Local of  k_ext *  k_ext
   | Acc of  k_ext *  k_ext
@@ -317,7 +317,7 @@ let print_ast a =
     | Constr (s1,s2,l) ->
       print i ("Constr "^s1^" "^s2);
       List.iter (fun a -> aux (i+1) a) l
-    | Custom s -> 
+    | Custom (s,_) -> 
       print i ("Custom "^s)
     | Match (s,e1,l) ->
       print i ("Match "^s);

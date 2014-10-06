@@ -77,6 +77,7 @@ val new_float_var : int -> Kirc_Ast.k_ext
 val new_float64_var : int -> Kirc_Ast.k_ext
 val new_double_var : int -> Kirc_Ast.k_ext
 val new_unit_var : int -> Kirc_Ast.k_ext
+val new_custom_var : string -> int -> Kirc_Ast.k_ext
 val new_int_vec_var : int -> Kirc_Ast.k_ext
 val new_float_vec_var : int -> Kirc_Ast.k_ext
 val new_double_vec_var : int -> Kirc_Ast.k_ext

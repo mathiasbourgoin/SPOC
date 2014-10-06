@@ -464,7 +464,7 @@ and parse_body body =
     let b_ = (parse_float b TFloat64) in
     ( <:expr<$a_$ /. $b_$>>)
   | Mod (_loc, a,b) -> 
-    ( <:expr<$(parse_int a TInt32)$ mod $(parse_int b TInt32)$>>)
+    ( <:expr<Int32.rem $(parse_int a TInt32)$ $(parse_int b TInt32)$>>)
   | Id (_loc,s) -> 
     begin
       try
@@ -807,10 +807,10 @@ and expr_of_app t _loc gen_var y =
     expr_of_app tt _loc gen_var y
   | TApp (t1,t2) -> 
     (match t2 with
-     | TInt32 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (parse_body2 y false)
-     | TInt64 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (parse_body2 y false)
-     | TFloat32 -> <:expr<(new_float_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(parse_body2 y false)
-     | TFloat64 -> <:expr<(new_double_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (parse_body2 y false)
+     | TInt32 -> <:expr<(new_int_var $`int:gen_var.n$)>>, (parse_body2 y false)
+     | TInt64 -> <:expr<(new_int_var $`int:gen_var.n$)>>, (parse_body2 y false)
+     | TFloat32 -> <:expr<(new_float_var $`int:gen_var.n$)>>,(parse_body2 y false)
+     | TFloat64 -> <:expr<(new_double_var $`int:gen_var.n$)>>, (parse_body2 y false)
      | _  ->  failwith "unknown var type")
   | _ -> assert false
 
@@ -862,11 +862,13 @@ and parse_body2 body bool =
 	      with _ -> assert false in
 	     let rec f () = 
 	       match var.t with
-	       | TInt32 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (aux y)
-	       | TInt64 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (aux y)
-	       | TFloat32 -> <:expr<(new_float_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
-	       | TFloat64 -> <:expr<(new_double_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
+	       | TInt32 -> <:expr<(new_int_var $`int:gen_var.n$)>>, (aux y)
+	       | TInt64 -> <:expr<(new_int_var $`int:gen_var.n$)>>, (aux y)
+	       | TFloat32 -> <:expr<(new_float_var $`int:gen_var.n$)>>,(aux y)
+	       | TFloat64 -> <:expr<(new_double_var $`int:gen_var.n$)>>,(aux y)
 	       | TApp _ -> expr_of_app var.t _loc gen_var y
+               | Custom (t,n) ->
+                 <:expr<(new_custom_var $str:n$ $`int:gen_var.n$)>>,(aux y)
 	       | TUnknown -> if gen_var.var_type <> TUnknown then 
 		   ( var.t <- gen_var.var_type;
 		     f ();)
@@ -888,7 +890,7 @@ and parse_body2 body bool =
                    | Global -> <:expr<global>> 
 		   | _ -> assert false 
 		 in
-                 <:expr<(new_array $ExInt(_loc,string_of_int gen_var.n)$) ($aux y$) $elttype$ $memspace$>>,(aux y)
+                 <:expr<(new_array $`int:gen_var.n$) ($aux y$) $elttype$ $memspace$>>,(aux y)
 	       | _  ->  ( assert (not debug); 
                           raise (TypeError (TUnknown, gen_var.var_type , _loc));)
              in
@@ -1226,7 +1228,7 @@ with
       
       <:expr< spoc_match $str:name$ $e$ $mc$ >>
     | Match _ -> assert false
-    | _ -> assert (not debug); failwith "unimplemented yet"
+    | _ -> assert (not debug); failwith "pb2 : unimplemented yet"
   in
   let _loc = body.loc in
   if bool then 
@@ -1245,10 +1247,10 @@ with
 		   with _ -> assert false) in
 		 let ex1,ex2 = 
                    match var.t with
-                   | TInt32 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (aux y)
-                   | TInt64 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (aux y)
-                   | TFloat32 -> <:expr<(new_float_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
-                   | TFloat64 -> <:expr<(new_double_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
+                   | TInt32 -> <:expr<(new_int_var $`int:gen_var.n$)>>, (aux y)
+                   | TInt64 -> <:expr<(new_int_var $`int:gen_var.n$)>>, (aux y)
+                   | TFloat32 -> <:expr<(new_float_var $`int:gen_var.n$)>>,(aux y)
+                   | TFloat64 -> <:expr<(new_double_var $`int:gen_var.n$)>>,(aux y)
                    | TUnit -> <:expr<Unit>>,aux y; 
                    | _  -> assert (not debug); 
                      failwith "unknown var type"
@@ -1303,22 +1305,24 @@ let gen_arg_from_patt2 p =
 
     (let var = (Hashtbl.find !current_args x) in   
      match var.var_type with
-     | TUnknown  -> <:expr<(new_unknown_var $ExInt(_loc2,  string_of_int var.n)$)>>
+     | TUnknown  -> <:expr<(new_unknown_var $`int:var.n$)>>
      | TInt32 | TInt64 ->                                                 
-       <:expr<(new_int_var $ExInt(_loc2,  string_of_int var.n)$)>>
+       <:expr<(new_int_var $`int:var.n$)>>
      | TFloat32 -> 
-       <:expr<(new_float_var $ExInt(_loc2,  string_of_int var.n)$)>>
+       <:expr<(new_float_var $`int:var.n$)>>
      | TFloat64  -> 
-       <:expr<(new_float64_var $ExInt(_loc2,  string_of_int var.n)$)>>
+       <:expr<(new_float64_var $`int:var.n$)>>
+     | Custom (t,n) ->
+       <:expr<(new_custom_var $str:n$ $`int:var.n$)>>
      | TVec k -> 
        (match k with
-        | TInt32 | TInt64  ->   <:expr<(new_int_vec_var $ExInt(_loc2,  string_of_int var.n)$)>>
-        | TFloat32 ->   <:expr<(new_float_vec_var $ExInt(_loc2,  string_of_int var.n)$)>>
-        | TFloat64 ->   <:expr<(new_double_vec_var $ExInt(_loc2,  string_of_int var.n)$)>>
+        | TInt32 | TInt64  ->   <:expr<(new_int_vec_var $`int:var.n$)>>
+        | TFloat32 ->   <:expr<(new_float_vec_var $`int:var.n$)>>
+        | TFloat64 ->   <:expr<(new_double_vec_var $`int:var.n$)>>
         | Custom (t,n) ->
-          <:expr<(new_custom_vec_var $str:n$ $ExInt(_loc2,  string_of_int var.n)$)>>
+          <:expr<(new_custom_vec_var $str:n$ $`int:var.n$)>>
         | _  -> failwith "Forbidden vector  type in kernel declaration")
-     | _ ->  failwith "unimplemented yet"
+     | _ ->  failwith "gap : unimplemented yet"
     )
   | _  -> failwith "error gen_arg_form_patt2"
 
@@ -1368,7 +1372,7 @@ let gen_arg_from_patt3 p =
        | TInt64 ->   
          <:ctyp< int64>>, 
          <:expr< Spoc.Kernel.Int64>>,
-         <:ctyp< int32>>,
+         <:ctyp< int64>>,
          IdAcc(_loc, 
                IdUid(_loc, "Spoc"), 
                IdAcc(_loc, 
@@ -1385,6 +1389,14 @@ let gen_arg_from_patt3 p =
                      IdUid (_loc, "Kernel"), 
                      IdUid(_loc, "Float32"))),
          <:ctyp< float>>
+       | Custom (t,name) ->
+         let namet = TyId(_loc,IdLid(_loc,name)) 
+         and sarek_namet = TyId(_loc, IdLid(_loc,name^"_sarek")) in
+         <:ctyp< $sarek_namet$>>, 
+         <:expr< $lid:name^"_sarek"$ >>,
+         <:ctyp< $namet$ >>,
+         <:ident< $lid:name^"_sarek"$>>,
+         <:ctyp<$sarek_namet$>>
        | TVec k -> 
          (match k with
           | TInt32 -> 

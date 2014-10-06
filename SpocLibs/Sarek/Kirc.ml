@@ -182,11 +182,12 @@ let new_float_var i = FloatVar i
 let new_float64_var i = DoubleVar i 
 let new_double_var i = DoubleVar i 
 let new_unit_var i = UnitVar i
+let new_custom_var n v = Custom (n,v)  (* <--- *)
 
 let new_int_vec_var v = VecVar (Int 0, v) 
 let new_float_vec_var v = VecVar (Float 0., v) 
 let new_double_vec_var v = VecVar (Double 0., v) 
-let new_custom_vec_var n v = VecVar (Custom n, v)  (* <--- *)
+let new_custom_vec_var n v = VecVar (Custom (n,0), v)  (* <--- *)
 
 let int_vect i = IntVect i 
 let set_vect_var vecacc value = 
@@ -334,6 +335,11 @@ let rewrite ker =
        | Seq (k1, k2) ->
          ( b:= true;
            Seq ( aux k1, aux (Return k2)))
+       | Match (s,a,bb) -> 
+         (b := true;
+          Match (s,aux a, 
+                 List.map (fun (i,ofid,e) -> 
+                     (i,ofid, aux (Return e))) bb))             
        | _ ->
          Return (aux k))
     | Acc (k1,k2) ->
@@ -348,6 +354,11 @@ let rewrite ker =
        | Ife(k3, k4, k5) ->
          (b := true;
           Ife (aux k3, SetV (aux k1, aux k4), SetV (aux k1, k5)))
+       | Match (s,a,bb) -> 
+         (b := true;
+          Match (s,aux a, 
+                 List.map (fun (i,ofid,e) -> 
+                     (i,ofid,SetV(aux k1, aux e))) bb))              
        | _ -> SetV (aux k1, aux k2)
       )
     | SetLocalVar (k1,k2,k3) -> 
@@ -781,7 +792,7 @@ let propagate f = function
   | Unit -> Unit
   | GlobalFun (a,b) -> GlobalFun (f a, b)
   | Constr (a,b,c) -> Constr (a,b,List.map f c)
-  | Custom s -> Custom s
+  | Custom (s,i) -> Custom (s,i)
   | Match (s,a,b) -> Match (s,f a, 
                             List.map (fun (i,ofid,e) -> (i,ofid,f e)) b)
 
