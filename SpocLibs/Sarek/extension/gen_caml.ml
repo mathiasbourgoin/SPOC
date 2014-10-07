@@ -285,9 +285,9 @@ and parse_body body =
     let b_ = (parse_float b TFloat64) in
     ( <:expr<$a_$ +. $b_$>>)
   | Min32 (_loc, a,b) -> 
-    ( <:expr<Int32.min $(parse_int a TInt32)$  $(parse_int b TInt32)$>>)
+    ( <:expr<Int32.sub $(parse_int a TInt32)$  $(parse_int b TInt32)$>>)
   | Min64 (_loc, a, b) ->
-    ( <:expr<Int64.min $(parse_int a TInt64)$  $(parse_int b TInt64)$>>)
+    ( <:expr<Int64.sub $(parse_int a TInt64)$  $(parse_int b TInt64)$>>)
   | MinF (_loc, a,b) -> 
     ( <:expr<$(parse_float a TFloat32)$ -. $(parse_float b TFloat32)$>>)
   | MinF32 (_loc, a,b) -> 
@@ -607,7 +607,7 @@ and parse_body body =
             <:rec_binding< $lid:string_of_ident id$ =  $parse_body e$>>)
         fl  in
     let recb = List.fold_left (fun a b -> <:rec_binding< $a$; $b$>>) 
-        <:rec_binding< >> fl in
+        (List.hd fl) (List.tl fl) in
     <:expr< { $recb$ } >>
   | RecGet (_loc,e,fld) ->
     <:expr< $parse_body e$.$lid:string_of_ident fld$>>

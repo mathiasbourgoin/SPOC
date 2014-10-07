@@ -27,7 +27,6 @@ let gen_kernel () = ()
        end
        >>
      | "ktype"; name=LIDENT; "="; k = ktype_kind -> 
-       my_eprintf ("add "^name);
        Hashtbl.add custom_types name k;
        gen_ctypes _loc k name;
       ]
@@ -784,14 +783,14 @@ let a = <:expr<
         {t=TUnknown; e=Record(_loc,l); loc=_loc};    
       ]
   | "simple" NONA
-      [  "(" ;  x= sequence; ")"  ->  x;
-       | "begin" ;  x= sequence; "end"  ->  x;
-       | "("; ")" -> {t=TUnknown; e = Noop; loc = _loc};
-       | x = FLOAT-> {t=TFloat32; e = Float32 (_loc, x); loc = _loc};
-       | x = LIDENT  -> {t=TUnknown; e = Id (_loc, IdLid(_loc,x)); loc = _loc};
-       | x = INT32  ->{t=TInt32; e = Int32 (_loc, x); loc = _loc};
-       | x = INT  ->{t=TInt32; e = Int32 (_loc, x); loc = _loc}
-       | x = a_UIDENT -> {t=TUnknown; e = Id (_loc, IdUid(_loc,x)); loc = _loc};
+      [ "("; ")" -> {t=TUnknown; e = Noop; loc = _loc};
+        |  "(" ;  x= sequence; ")"  ->  x;
+        | "begin" ;  x= sequence; "end"  ->  x;
+        | x = FLOAT-> {t=TFloat32; e = Float32 (_loc, x); loc = _loc};
+        | x = LIDENT  -> {t=TUnknown; e = Id (_loc, IdLid(_loc,x)); loc = _loc};
+        | x = INT32  ->{t=TInt32; e = Int32 (_loc, x); loc = _loc};
+        | x = INT  ->{t=TInt32; e = Int32 (_loc, x); loc = _loc}
+        | x = a_UIDENT -> {t=TUnknown; e = Id (_loc, IdUid(_loc,x)); loc = _loc};
       ] 		
 
 

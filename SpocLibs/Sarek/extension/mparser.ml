@@ -401,7 +401,11 @@ let gen_mltyp _loc name t =
              if list_mut then
              let list_elt = TyMut (_loc,list_elt)in
 	     <:ctyp< $elt$; $list_elt$ >>
-             else <:ctyp< $elt$; $list_elt$ >>)  <:ctyp< >> ctypes muts$} >>
+             else <:ctyp< $elt$; $list_elt$ >>)  
+(if List.hd muts then
+   TyMut (_loc, List.hd ctypes)
+ else
+   List.hd ctypes) (List.tl ctypes) (List.tl muts)$} >>
        end
 | Custom ((KSum l),_) -> 
   begin
@@ -414,9 +418,8 @@ let gen_mltyp _loc name t =
 		TyOf(_loc, t1, t2)
 	        in
                 let id = ref 0 in
-	        List.fold_left 
-		(fun elt (list_elt,t) ->
-		Hashtbl.add !constructors (list_elt) (
+                let aux (list_elt,t) = 
+                Hashtbl.add !constructors (list_elt) (
                 {id = (let i = !id in incr id; i);
                 name = name; 
                 nb_args = 0;
@@ -431,12 +434,10 @@ let gen_mltyp _loc name t =
 		typeof (type_of_string list_elt) s 
 		in 
 		begin
-                 <:ctyp<  $elt$ | $t$ >>
-                end;
+                 <:ctyp<  $t$ >>end
                 | None ->
-                  <:ctyp<  $elt$ | $type_of_string list_elt$ >> )
-<:ctyp<  >> 
-  l$
+                  <:ctyp< $type_of_string list_elt$ >>in
+                Ast.tyOr_of_list (List.map aux l)$
 >>
 end
 | TInt32 -> 
@@ -632,22 +633,21 @@ let gen_ctypes _loc kt name =
           match t with
           | Custom (KRecord (l1,l2,_),_) ->
             let copy_to_c = 
+              let aux b c = 
+                let field_name = 
+                  (sarek_type_name^"_"^(string_of_ident c)) in
+                try 
+                  let get = (Hashtbl.find type_repr (string_of_ctyp b)).ml_to_c in
+                  <:expr< Ctypes.setf tmp $lid:field_name$ 
+                             ($get$ x.$lid:string_of_ident c$);>>
+                with
+                | _ ->
+                  <:expr< Ctypes.setf tmp $lid:field_name$ x.$lid:string_of_ident c$;>>
+              in
               List.fold_left2 
                 (fun a b c ->
-                   let field_name = 
-                     (sarek_type_name^"_"^(string_of_ident c)) in
-                   try 
-                     let get = (Hashtbl.find type_repr (string_of_ctyp b)).ml_to_c in
-                     <:expr< $a$;
-                             Ctypes.setf tmp $lid:field_name$ 
-                             ($get$ x.$lid:string_of_ident c$);>>
-                   with
-                   | _ ->
-                     <:expr< $a$;
-                             Ctypes.setf tmp $lid:field_name$ x.$lid:string_of_ident c$;>>)
-                
-                <:expr< >> l1 l2
-                
+                   <:expr< $a$; $aux b c$>>)
+                (aux (List.hd l1) (List.hd l2)) (List.tl l1) (List.tl l2)
             in
             begin
               <:expr< fun x -> 
@@ -740,24 +740,26 @@ let gen_ctypes _loc kt name =
         begin
           match t with 
           | Custom (KRecord (l1,l2,_),_) ->
-            let copy_to_caml = 
-              List.fold_left2 
-                (fun a b c -> 
+            let copy_to_caml =
+              let aux b c =
                    let field_name = 
                      (sarek_type_name^"_"^(string_of_ident c)) in
                    try 
                      let get = (Hashtbl.find type_repr (string_of_ctyp b)).c_to_ml in
-                     <:rec_binding< $a$; 
+                     <:rec_binding<  
                                     $c$ = 
                        $get$
                             (Ctypes.getf x $lid:field_name$) >>
                        
                    with | _ ->
-                     <:rec_binding< $a$; 
+                     <:rec_binding< 
                                     $c$ = 
-                                    Ctypes.getf x $lid:field_name$ >>) 
-                <:rec_binding< >> l1 l2
-                
+                                    Ctypes.getf x $lid:field_name$ >>
+              in
+              List.fold_left2 
+                (fun a b c -> 
+                   <:rec_binding< $a$; $aux b c$>>)
+                (aux (List.hd l1) (List.hd l2)) (List.tl l1) (List.tl l2)                
           in
           begin
             <:expr< fun x -> {$copy_to_caml$} ;
@@ -807,8 +809,8 @@ let gen_ctypes _loc kt name =
             in
             let copy_to_caml = 
               let match_cases = 
-                (<:match_case< _ -> failwith ("Sarek error : c to caml failed for type "^
-                               $str:name$)>>)::
+                (<:match_case< a -> failwith ("Sarek error : c to caml failed for type "^
+                               $str:name$^" : "^(string_of_int a) )>>)::
                 (List.map 
                   (fun (cstr,tag,of_) ->
                     begin
@@ -879,49 +881,40 @@ let gen_ctypes _loc kt name =
   let sarek_type_name = name^"_sarek" in
 
 let custom = 
-    begin
-      <:expr<
-    { 
-(*elt = $t.c_to_ml$ (Ctypes.make $lid:sarek_type_name$) ;*)
-      size = Ctypes.sizeof $lid:sarek_type_name$ ;
-      get = (fun c i -> 
-               $t.c_to_ml$ 
-                (let open Ctypes in
-let cr = Obj.repr c in 
-                 let ptrcr = 
-             (Ctypes.from_voidp $lid:sarek_type_name$                 
-                (Ctypes.ptr_of_raw_address 
+  let l = [
+    <:rec_binding<size = Ctypes.sizeof $lid:sarek_type_name$>>;
+    <:rec_binding<get = 
+                  (fun c i -> 
+                  $t.c_to_ml$ 
+                  (let open Ctypes in
+                  let cr = Obj.repr c in 
+                  let ptrcr = 
+                  (Ctypes.from_voidp $lid:sarek_type_name$                 
+                  (Ctypes.ptr_of_raw_address 
                    (Obj.magic cr))) in
-        !@(ptrcr +@ i))) ;
-      set = (fun c i v -> 
-        let open Ctypes in
-let cr = Obj.repr c in 
-                 let ptrcr = 
-             (Ctypes.from_voidp $lid:sarek_type_name$                 
-                (Ctypes.ptr_of_raw_address 
-                   (Obj.magic cr))) in
-        (ptrcr +@ i) <-@ ($t.ml_to_c$ v)) ;
-}
->>
-    end
+                  !@(ptrcr +@ i)))>>;
+      <:rec_binding<set = (fun c i v -> 
+                    let open Ctypes in
+                    let cr = Obj.repr c in 
+                    let ptrcr = 
+                    (Ctypes.from_voidp $lid:sarek_type_name$                 
+                    (Ctypes.ptr_of_raw_address 
+                    (Obj.magic cr))) in
+                    (ptrcr +@ i) <-@ ($t.ml_to_c$ v)) >>]
+  in
+  <:expr<{$rbSem_of_list l$}  >>
   in
   begin
-    <:str_item<
-      $t.ml_typ$ ;;
-      $t.ctype$ ;;
-      open Spoc
-      open Vector
-
+    Ast.stSem_of_list [
+      <:str_item<open Vector>>;
+      t.ml_typ;
+      t.ctype;
+      <:str_item<let $lid:"custom"^(String.capitalize name)$ : (($lid:name$,$lid:sarek_type_name$) Vector.custom) = $custom$>>;
+      <:str_item<let $lid:t.name^"_c_repr"$ = $str:t.crepr$>>;
+      <:str_item<Kirc.constructors := $str:t.crepr$ :: !Kirc.constructors>>;
+      <:str_item<Kirc.constructors := $str:(List.fold_left (fun a b -> a^"\n\n"^b) "" t.build_c)$
+                 :: !Kirc.constructors>>]
       
-      let $lid:"custom"^(String.capitalize name)$ : (($lid:name$,$lid:sarek_type_name$) Vector.custom) = $custom$ ;;
-      
-      let $lid:t.name^"_c_repr"$ = $str:t.crepr$ ;;
-      Kirc.constructors := $str:t.crepr$ :: !Kirc.constructors;
-      Kirc.constructors := $str:(List.fold_left (fun a b -> a^"\n\n"^b) "" t.build_c)$
-         :: !Kirc.constructors ;;
-(*      let ml_to_c = $t.ml_to_c$;;
-      let c_to_ml = $t.c_to_ml$;;*)
-      >>
   end
 
 

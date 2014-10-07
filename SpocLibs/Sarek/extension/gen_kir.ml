@@ -218,9 +218,7 @@ and type_of_patt = function
     cstr.ctyp
 
 and parse_case2 mc _loc =
-  let l = List.fold_left 
-    (fun a (_loc,patt,e) -> 
-     let e =
+  let aux (_loc,patt,e) = 
        match patt with
        | Constr (_,None) ->
          <:expr< spoc_case $`int:ident_of_patt _loc patt$ None $parse_body2 e false$>> 
@@ -235,10 +233,11 @@ and parse_case2 mc _loc =
          let e = <:expr< spoc_case $`int:ident_of_patt _loc patt$ 
                          (Some ($str:type_of_patt patt$,$str:s$,$`int:!arg_idx$)) $parse_body2 e false$>> in
          Hashtbl.remove !current_args (string_of_ident id);
-         e in
-      ExSem(_loc,a,e))            
-    <:expr< >> mc 
-  in <:expr< [$l$]>>
+         e 
+  in 
+  let l = List.map aux mc
+      
+  in <:expr< [ $exSem_of_list l$ ]>>
 
 and parse_body2 body bool = 
   let rec aux ?return_bool:(r=false) body =

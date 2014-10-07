@@ -1,4 +1,4 @@
-P4FLAGS = -warn-error +a -I +camlp4 -pp camlp4of dynlink.cma camlp4lib.cma
+P4FLAGS =  -I +camlp4 -pp camlp4of dynlink.cma camlp4lib.cma
 
 all:
 	make -j4 kernels_int.cma
@@ -46,9 +46,27 @@ test: kernels_int.cma test.ml
 	@echo
 	@camlp4 -I +camlp4 -parser o -parser op -printer o kernels_int.cma test.ml
 
-pp: all
+%.pp.ml : %.ml kernels_int.cma
+	camlp4 -I +camlp4 -parser o -parser op -printer o kernels_int.cma $< > $@
+
+
+%.pp.byte: %.pp.ml
+	ocamlfind ocamlc -thread -package ctypes,spoc,sarek,graphics -linkpkg -o $@ $<
+
+%.pp.nat: %.pp.ml
+	ocamlfind ocamlopt -thread -package ctypes,spoc,sarek,graphics -linkpkg -o $@ $<
+
+%.nat : %.ml
+	ocamlfind ocamlopt -thread -package spoc,sarek,graphics \
+		-package sarek_syntax -syntax camlp4o -linkpkg -o $@ $<	
+
+%.byte : %.ml
+	ocamlfind ocamlc -thread -package spoc,sarek,graphics \
+		-package sarek_syntax -syntax camlp4o -linkpkg -o $@ $<	
+
+pp_asm: all
 	camlp4 -I +camlp4 -parser o -parser op -printer o kernels_int.cma test.ml > test_pp.ml
-	ocamlfind ocamlc -thread -package ctypes,spoc,sarek -linkpkg test_pp.ml
+	ocamlfind ocamlopt -thread -package ctypes,spoc,sarek,graphics -linkpkg test_pp.ml
 
 clean:
 	rm -rf *.cmo *,cmx *.out *~ *.cmi camlprog.exe *.cma *.asm *_pp.ml

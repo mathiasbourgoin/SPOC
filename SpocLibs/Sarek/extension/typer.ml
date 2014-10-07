@@ -282,9 +282,16 @@ $stri$>>);
      typer e1 e2.t;
      update_type body TUnit
    | Match (l,e,mc) ->
-     typer e TUnknown;
      let rec aux tt = function
-       | (_,_,t)::q -> 
+       | (ll,p,t)::q ->
+         (match p with
+          | Constr (s,_) ->
+            let cstr =
+             try
+               Hashtbl.find !constructors s
+             with | _ -> failwith "error in pattern matching"
+            in
+           typer e (Custom (cstr.typ,cstr.name)););
          typer t tt; 
          check tt t.t l;
          aux t.t q

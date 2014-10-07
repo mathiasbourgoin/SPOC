@@ -409,7 +409,7 @@ let rewrite ker =
     | While (k1, k2) ->
       While (aux k1, aux k2)
     | App (a,b) -> App (aux a, (Array.map aux b))
-    | GlobalFun (a,b) -> GlobalFun (a,b)
+    | GlobalFun (a,b) -> GlobalFun (aux a, b)
     | Unit -> kern
     | Match (s,a,b) -> Match (s,aux a, 
                               List.map (fun (i,ofid,e) -> (i,ofid,aux e)) b)
