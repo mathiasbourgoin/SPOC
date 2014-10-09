@@ -136,6 +136,7 @@ type k_expr =
   | Float64 of Loc.t*string
   | BoolAnd of Loc.t*kexpr*kexpr
   | BoolOr of Loc.t*kexpr*kexpr
+  | BoolEq of Loc.t*kexpr*kexpr
   | BoolEq32 of Loc.t*kexpr*kexpr
   | BoolEq64 of Loc.t*kexpr*kexpr
   | BoolEqF of Loc.t*kexpr*kexpr
@@ -173,7 +174,7 @@ type k_expr =
   | Ref of Loc.t*kexpr
 
   | ModuleAccess of Loc.t * string * kexpr
-
+  | True of Loc.t | False of Loc.t
   | Noop
 
 and case =  Loc.t * pattern * kexpr (* | patt -> e *)
@@ -271,6 +272,7 @@ let rec k_expr_to_string = function
   | Float _ -> "Float"
   | Float32 _ -> "Float32"
   | Float64 _ -> "Float64"
+  | BoolEq _ -> "BoolEq"
   | BoolEq32 _ -> "BoolEq32"
   | BoolEq64 _ -> "BoolEq64"
   | BoolEqF _ -> "BoolEqF"
@@ -311,6 +313,8 @@ let rec k_expr_to_string = function
   | Record _ -> "Record"
   | RecGet _ -> "RecGet"
   | RecSet _ -> "RecSet"
+  | True _ -> "true"
+  | False _-> "false"
 
 
 let expr_of_patt p =
@@ -341,6 +345,7 @@ let args () =
 
 type recrd_field = {
   id : int;
+  name : string;
   field : string;
   mutable ctyps : string list;
 }
@@ -647,3 +652,13 @@ let get_sarek_name t =
       Hashtbl.find sarek_types_tbl t
     with
     | _ -> print_endline t; assert false
+
+and ident_of_patt  _loc = function
+  | Constr (s,_) -> 
+    let cstr = Hashtbl.find !constructors s in
+    cstr.id
+
+and type_of_patt = function
+  | Constr (s,_) -> 
+    let cstr = Hashtbl.find !constructors s in
+    cstr.ctyp

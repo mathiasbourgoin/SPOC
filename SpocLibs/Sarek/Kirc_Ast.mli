@@ -15,6 +15,7 @@ type memspace =
 
 type k_ext =
     Kern of k_ext * k_ext
+  | Block of k_ext
   | Params of k_ext
   | Plus of k_ext * k_ext
   | Plusf of k_ext * k_ext
@@ -61,6 +62,7 @@ type k_ext =
   | Match of string*k_ext * case list
   | Or of k_ext * k_ext
   | And of k_ext * k_ext
+  | EqSum of string * k_ext * k_ext * (string*string) list
   | EqBool of k_ext * k_ext
   | LtBool of k_ext * k_ext
   | GtBool of k_ext * k_ext

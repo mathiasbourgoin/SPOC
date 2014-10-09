@@ -108,6 +108,7 @@ let rec parse_int i t=
      | _  ->  assert (not debug); 
        failwith "Unknwown vector");
   | ArrGet _ -> parse_body i
+  | RecGet _ -> parse_body i
   | App (_loc, e1, e2) -> parse_body i
   | _ -> my_eprintf (k_expr_to_string i.e); 
     assert (not debug);  
@@ -613,4 +614,7 @@ and parse_body body =
     <:expr< $parse_body e$.$lid:string_of_ident fld$>>
   | RecSet (_loc,e1,e2) ->
     <:expr< $parse_body e1$ <- $parse_body e2$>>
+  | True _loc ->  <:expr< true >>
+  | False _loc ->  <:expr< false >>
+  | BoolEq (_loc,e1,e2) -> <:expr< $parse_body e1$ = $parse_body e2$>>
   | _ -> assert (not debug); failwith "unimplemented yet"

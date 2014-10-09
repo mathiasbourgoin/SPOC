@@ -137,7 +137,7 @@ let gen_kernel () = ()
           (Printf.eprintf "%s\n%!" ("\027[31m Immutable Value \027[00m : \027[33m"^
                                     (value)^"\027[00m used as mutable in position : "^(Loc.to_string loc)^"");
            exit 2;)
-        | FieldError (field, record,loc) ->
+        | FieldError (record,field,loc) ->
           (Printf.eprintf "%s\n%!" ("\027[31m Type Error \027[00m field : \027[33m"^
                                     (field)^"\027[00m doesn't exist in record type : \027[33m"^record^
                                     "\027[00m in position : "^(Loc.to_string loc)^"");
@@ -224,17 +224,17 @@ let tup_args, list_args, class_legacy , list_to_args1, list_to_args2=
   let args_fst_list = 
     (List.map fst_ (List.map gen_arg_from_patt3 args)) in
   let args_com = paCom_of_list  args_fst_list in
-
-
+  
+  
   let args_list = 
     let l = (List.map snd_ (List.map gen_arg_from_patt3 args)) in
     exSem_of_list l
   in 
-
+  
   let args_thd_list = 
     (List.map thd_ (List.map gen_arg_from_patt3 args)) in
   let args_typ = tySta_of_list args_thd_list in
-
+  
   let lta1 = 
     paSem_of_list 
       (List.map fth_ (List.map gen_arg_from_patt3 args)) in
@@ -533,7 +533,7 @@ kexpr:
        List.iter new_arg_of_patt args;
        (try 
            typer body TUnknown
-	 with
+	with
 	 | TypeError(expected, given, loc) -> 
             (
               failwith ("Type Error : expecting : "^
@@ -548,17 +548,17 @@ kexpr:
        Hashtbl.iter (Hashtbl.add new_hash_args) !current_args;
        Hashtbl.clear !current_args;
        current_args := new_hash_args;  
-
+       
 
        (*restore kernel environment*)
        arg_idx := saved_arg_idx;
        return_type := saved_return_type;
        arg_list := List.map (fun a -> a) saved_arg_list;
-
-            let gen_body = 
-       <:expr< 
-               $try Gen_caml.parse_body body
-               with 
+       
+       let gen_body = 
+         <:expr< 
+                 $try Gen_caml.parse_body body
+                 with 
                | TypeError(expected, given, loc) -> 
                (
                failwith ("Type Error : expecting : "^
@@ -586,8 +586,8 @@ let gen_body2 =  <:expr<
                          spoc_gen_kernel 
                          $n_body2$
                          $
-b_body
-$>>
+                         b_body
+                         $>>
 in
 let gen_args = parse_args args gen_body
 in
@@ -607,7 +607,7 @@ in
 let full_typ = 
   Hashtbl.fold (fun _ value seed -> TApp (value.var_type, seed)) !current_args !return_type 
 in
-my_eprintf ("....... "^ktyp_to_string full_typ^"\n");
+my_eprintf ("/....... "^ktyp_to_string full_typ^"\n");
 let funv =  {nb_args=0; 
    cuda_val="";
    opencl_val=""; typ=full_typ} in
@@ -728,7 +728,7 @@ let a = <:expr<
       {t = TUnknown; e = While (_loc,cond, body); loc = _loc}] 
     
   | "="
-    [ x=SELF; "="; y=SELF -> {t=TBool; e= BoolEq32(_loc,x,y); loc = _loc};
+    [ x=SELF; "="; y=SELF -> {t=TBool; e= BoolEq(_loc,x,y); loc = _loc};
       | x=SELF; "=!"; y=SELF -> {t=TBool; e= BoolEq32(_loc,x,y); loc = _loc};
       | x=SELF; "=!!"; y=SELF -> {t=TBool; e= BoolEq64(_loc,x,y); loc = _loc};
       | x=SELF; "=."; y=SELF -> {t=TBool; e= BoolEqF(_loc,x,y); loc = _loc}]
@@ -791,6 +791,8 @@ let a = <:expr<
         | x = INT32  ->{t=TInt32; e = Int32 (_loc, x); loc = _loc};
         | x = INT  ->{t=TInt32; e = Int32 (_loc, x); loc = _loc}
         | x = a_UIDENT -> {t=TUnknown; e = Id (_loc, IdUid(_loc,x)); loc = _loc};
+        | "false" -> {t=TBool; e=False _loc; loc = _loc};
+        | "true" -> {t=TBool; e=True _loc; loc = _loc};
       ] 		
 
 

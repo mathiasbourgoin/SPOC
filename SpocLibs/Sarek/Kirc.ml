@@ -209,6 +209,7 @@ let float_var f = f
 let double_var d = CastDoubleVar d
 
 let equals a b = EqBool (a,b)
+let equals_sum s v1 v2 l = EqSum (s,v1,v2,l)
 let equals32 a b = EqBool (a,b)
 let equals64 a b = EqBool (a,b)
 let equalsF a b = EqBool (a,b)
@@ -270,6 +271,7 @@ let rewrite ker =
   let b = ref false in 
   let rec aux kern = 
     match kern with
+    | Block b -> Block (aux b)
     | Kern (k1,k2) -> 
       Kern (aux k1, aux k2)
     | Params k -> 
@@ -395,6 +397,8 @@ let rewrite ker =
       And (aux k1, aux k2)
     | EqBool (k1,k2) -> 
       EqBool (aux k1, aux k2)
+    | EqSum (n,k1,k2,l) -> 
+      EqSum (n,aux k1, aux k2,l)
     | LtBool (k1,k2) -> 
       LtBool (aux k1, aux k2)
     | GtBool (k1,k2) -> 
@@ -746,6 +750,7 @@ let arg_of_vec v  =
 
 
 let propagate f = function
+  | Block b -> Block (f b)
   | Return a  -> Return (f a)
   | Seq (a,b)  -> Seq (f a,  f b)
   | Local (a,b) -> Local (f a, f b)
@@ -789,6 +794,7 @@ let propagate f = function
   | Or (a, b) -> Or (f a, f b)
   | And (a, b) -> And (f a, f b)
   | EqBool (a, b) -> EqBool (f a, f b)
+  | EqSum (n,a, b,l) -> EqSum (n,f a, f b,l)
   | LtEBool (a, b) -> LtEBool (f a, f b)
   | GtEBool (a, b) -> GtEBool (f a, f b)
   | DoLoop (a, b, c, d) -> DoLoop (f a, f b, f c, f d)

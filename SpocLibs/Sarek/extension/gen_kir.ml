@@ -207,15 +207,6 @@ and expr_of_app t _loc gen_var y =
      | _  ->  failwith "unknown var type")
   | _ -> assert false
 
-and ident_of_patt  _loc = function
-  | Constr (s,_) -> 
-    let cstr = Hashtbl.find !constructors s in
-    cstr.id
-
-and type_of_patt = function
-  | Constr (s,_) -> 
-    let cstr = Hashtbl.find !constructors s in
-    cstr.ctyp
 
 and parse_case2 mc _loc =
   let aux (_loc,patt,e) = 
@@ -231,12 +222,11 @@ and parse_case2 mc _loc =
             write_only = false;
             is_global = false;};
          let e = <:expr< spoc_case $`int:ident_of_patt _loc patt$ 
-                         (Some ($str:type_of_patt patt$,$str:s$,$`int:!arg_idx$)) $parse_body2 e false$>> in
+                         (Some ($str:ctype_of_sarek_type (type_of_patt patt)$,$str:s$,$`int:!arg_idx$)) $parse_body2 e false$>> in
          Hashtbl.remove !current_args (string_of_ident id);
          e 
   in 
   let l = List.map aux mc
-      
   in <:expr< [ $exSem_of_list l$ ]>>
 
 and parse_body2 body bool = 
@@ -482,11 +472,59 @@ with
        | _ ->
          assert (not debug));
       e
+    | True _loc  -> 
+      if not r then 
+        return_type := TBool;
+      <:expr<spoc_int32 $(ExInt32 (_loc, "1"))$>>
+    | False _loc  -> 
+      if not r then 
+        return_type := TBool;
+      <:expr<spoc_int32 $(ExInt32 (_loc, "0"))$>>
+
     | BoolOr(_loc, a, b) ->
+      if not r then 
+        return_type := TBool;
       <:expr< b_or $aux a$ $aux b$>>
     | BoolAnd(_loc, a, b) ->
+      if not r then 
+        return_type := TBool;
       <:expr< b_and $aux a$ $aux b$>>
+    | BoolEq(_loc, a, b) ->
+      if not r then 
+        return_type := TBool;
+      (match a.t,b.t with
+       | Custom ((KSum l1),n), Custom ((KSum l2),_) ->
+         let gen_v = function
+           | Id (_loc,i) -> string_of_ident i
+           | App (_loc,{e=Id(_,i)},_) -> string_of_ident i
+           | VecGet (_,a,b) -> ""
+           | a ->  my_eprintf (Printf.sprintf "(* BoolEq test custom %s *)\n%!" (k_expr_to_string a));
+             assert false
+         in
+         let lst = 
+           let c = ref (-1) in
+           let rec aux (cstr,_) = 
+             incr c;
+             <:expr< ($str:string_of_int !c$,$str:cstr$)>>
+           in
+           List.map aux l1 in
+         let v1 = parse_body2 a false
+         and v2 = parse_body2 b false in
+         <:expr< (spoc_ife
+                     (equals32 (spoc_rec_get $v1$ $str:n^"_sarek_tag"$)
+                              (spoc_rec_get $v2$ $str:n^"_sarek_tag"$))
+                     (equals_sum $str:n$  (var $`int:max_int$) (var $`int:max_int - 1$) [$Ast.exSem_of_list lst$])
+                     (spoc_int32 0l))
+         >>
+           
+       | Custom (KRecord (_,i1,_),_), Custom (KRecord (_,i2,_),_) -> 
+         assert (not debug);
+         failwith "unimplemented yet"
+       | _ -> <:expr< equals $aux a$ $aux b$>>
+      )
     | BoolEq32 (_loc, a, b) ->
+      if not r then 
+        return_type := TBool;
       <:expr< equals32 $aux a$ $aux b$>>
     | BoolEq64(_loc, a, b) ->
       <:expr< equals64 $aux a$ $aux b$>>

@@ -5,7 +5,7 @@ ktype cell =
 | Dead
 
 
-(*let step = kern field next_field width height ->
+let step = kern field next_field width height ->
   let max = fun a  b ->
     if a > b then a else b 
   in
@@ -57,7 +57,7 @@ let _ =
     ("-height" , Arg.Int (fun i  -> h := i), "field height [1024]");
     ("-width" , Arg.Int (fun i  ->  w := i), "field width [1024]");
     ("-iter" , Arg.Int (fun i  ->  nb_iter := i), "nb steps [10 000]");
-    ("-bench" , Arg.Int (fun b  ->  bench := i), "run as benchmark [1024]")] 
+    ("-bench" , Arg.Bool (fun b  ->  bench := b), "run as benchmark [1024]")] 
     (fun s -> ()) "";
   let devs = Spoc.Devices.init ~only:Devices.OpenCL() in
   let dev = devs.(!devid) in
@@ -77,15 +77,15 @@ let _ =
   let grid = { Spoc.Kernel.gridX = blocksPerGrid; Spoc.Kernel.gridY = 1 ; Spoc.Kernel.gridZ = 1;} in
   for i = 0 to !h-1 do
     for j = 0 to !w-1 do
-      Mem.set x1 (i*!w+j) ( 
+      Mem.set x1 (i * !w + j) ( 
         if Random.int 255 mod 2 = 0 then 
           Alive else Dead)
     done;
   done;
   
-  let l = string_of_int !w in
-  let h = string_of_int !h in
-  let dim = " " ^l^"x"^h in
+  let l_ = string_of_int !w in
+  let h_ = string_of_int !h in
+  let dim = " " ^l_^"x"^h_ in
   let draw tab img = 
     Spoc.Tools.iteri (fun elt i -> 
 	let b = i / !h in
@@ -109,4 +109,4 @@ let _ =
   Graphics.close_graph ();;
 
  
-*)
+

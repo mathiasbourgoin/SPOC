@@ -102,6 +102,7 @@ and parse i = function
      | Custom (n,_) -> ("__global struct "^n^"_sarek")
      | _ -> assert false
     )^("* spoc_var"^(string_of_int (i)))
+  | Block b -> (indent i)^"{\n"^parse (i+1) b^"\n"^(indent i)^"}"
   | IdName s  ->  s
   | IntVar s -> ("int spoc_var"^(string_of_int s))
   | FloatVar s -> ("float spoc_var"^(string_of_int s))
@@ -191,6 +192,11 @@ and parse i = function
   | If (a,b) -> "if ("^(parse i a)^")\n"^(indent i)^"{\n"^(indent (i+1))^(parse (i+1) b)^";\n"^(indent i)^"}"^(indent i)
   | Or (a,b) -> (parse i a)^" || "^(parse i b)
   | And (a,b) -> (parse i a)^" && "^(parse i b)
+  | EqSum (n,v1,v2,lst) ->
+    let v1 = parse 0 v1
+    and v2 = parse 0 v2 in
+    (*"switch "^v1^"."^n^"_starek_tag"^*)
+    v1^" ==  "^v2
   | EqBool (a,b) -> (parse i a)^" == "^(parse i b)
   | LtBool (a,b) -> (parse i a)^" < "^(parse i b)
   | GtBool (a,b) -> (parse i a)^" > "^(parse i b)
