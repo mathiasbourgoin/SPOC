@@ -12,17 +12,19 @@ ktype carte =
   | Autre of coulval ;;
 
 let  calcul_valeur  = kern cartes atout valeurs  ->
+  let valeur = fun a atout->
+    match a with 
+    | As c -> 11
+    | Roi c -> 4
+    | Dame c -> 3
+    | Valet c -> if c = atout then 20 else 2
+    | Autre cv ->
+      if cv.v = 10 then 10 else if (cv.c = atout) && (cv.v = 9) then 14 else 0 
+  in
   let open Std in
   let i = thread_idx_x + block_dim_x * block_idx_x in
-  valeurs.[<i>] <- 
-    ( match cartes.[<i>] with 
-      | As c -> 11
-      | Roi c -> 4
-      | Dame c -> 3
-      | Valet c -> if c = atout.[<0>] then 20 else 2
-      | Autre cv -> 
-        if cv.v = 10 then 10 else if (cv.c = atout.[<0>]) && (cv.v = 9) then 14 else 0 )
-
+  valeurs.[<i>] <- valeur  cartes.[<i>] atout.[<0>]
+      
 
 
 

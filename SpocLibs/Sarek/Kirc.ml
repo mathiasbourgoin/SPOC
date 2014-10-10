@@ -481,7 +481,7 @@ let gen ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('a, 'b, 'c,'d,'e) sarek
     let global_funs = ref "" in
     Hashtbl.iter (fun _ a -> global_funs := !global_funs^(fst a)^"\n") Kirc_Cuda.global_funs;
     let constructors = List.fold_left (fun a b -> b^a) "\n\n" !constructors in
-    save "kirc_kernel.cu" (cuda_head ^ !global_funs ^ constructors ^ src) ;
+    save "kirc_kernel.cu" (cuda_head ^ constructors ^  !global_funs ^ src) ;
     ignore(Sys.command ("nvcc -m64 -arch=sm_10 -O3 -ptx kirc_kernel.cu -o kirc_kernel.ptx"));
     let s = (load_file "kirc_kernel.ptx") in
 
@@ -499,7 +499,7 @@ let gen ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('a, 'b, 'c,'d,'e) sarek
     let global_funs = ref "" in
     Hashtbl.iter (fun _ a -> global_funs := (fst a) ^ "\n" ^ !global_funs ^ "\n") Kirc_OpenCL.global_funs;
     let constructors = List.fold_left (fun a b -> b^a) "\n\n" !constructors in
-    let clkernel = (opencl_head ^ !global_funs ^ constructors ^ src)  in
+    let clkernel = (opencl_head ^ constructors ^ !global_funs ^  src)  in
     save "kirc_kernel.cl" clkernel;
     kir#set_opencl_sources clkernel;
 

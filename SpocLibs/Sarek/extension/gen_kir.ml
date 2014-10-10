@@ -215,13 +215,15 @@ and parse_case2 mc _loc =
          <:expr< spoc_case $`int:ident_of_patt _loc patt$ None $parse_body2 e false$>> 
        | Constr (s,Some id) ->
          incr arg_idx;
+         incr arg_idx;
          Hashtbl.add !current_args (string_of_ident id) 
            {n = !arg_idx; var_type = ktyp_of_typ (TyId(_loc,IdLid(_loc,type_of_patt patt)));
             is_mutable = false;
             read_only = false;
             write_only = false;
             is_global = false;};
-         let e = <:expr< spoc_case $`int:ident_of_patt _loc patt$ 
+         let e = 
+           <:expr< spoc_case $`int:ident_of_patt _loc patt$ 
                          (Some ($str:ctype_of_sarek_type (type_of_patt patt)$,$str:s$,$`int:!arg_idx$)) $parse_body2 e false$>> in
          Hashtbl.remove !current_args (string_of_ident id);
          e 
@@ -627,11 +629,12 @@ with
       else
         assert false
     | Match(_loc,e,
-            ((_,Constr (n,_),_)::q as mc )) ->
+            ((_,Constr (n,_),ec)::q as mc )) ->
       let e = parse_body2 e false 
       and mc = parse_case2 mc _loc in
       let name = (Hashtbl.find !constructors n).name in
-      
+      if not r then
+        return_type := ec.t;
       <:expr< spoc_match $str:name$ $e$ $mc$ >>
     | Match _ -> assert false
     | Record (_loc,fl) ->

@@ -422,7 +422,7 @@ let ret =
   | t  -> failwith (Printf.sprintf "error ret : %s" (ktyp_to_string t))
 in
 let t = 
-  Hashtbl.fold (fun _ value seed -> TApp (value.var_type, seed)) !current_args !return_type in
+  Hashtbl.fold (fun _ value seed -> TApp (seed , value.var_type)) !current_args !return_type in
 my_eprintf ("....... "^ktyp_to_string t^"\n");
 Hashtbl.add !global_fun (string_of_ident name) 
   {nb_args=0; 
@@ -605,7 +605,12 @@ let ret =
   | t  -> failwith (Printf.sprintf "error ret : %s" (ktyp_to_string t))
 in
 let full_typ = 
-  Hashtbl.fold (fun _ value seed -> TApp (value.var_type, seed)) !current_args !return_type 
+  List.fold_left (fun seed  p  -> 
+      match p with 
+      | (PaId(_,i)) ->
+        let value = (Hashtbl.find !current_args (string_of_ident i)) in
+        TApp (value.var_type, seed)
+      | _ -> assert false) !return_type  (List.rev args)
 in
 my_eprintf ("/....... "^ktyp_to_string full_typ^"\n");
 let funv =  {nb_args=0; 

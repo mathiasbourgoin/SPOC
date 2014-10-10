@@ -426,7 +426,9 @@ and parse_body body =
                and sarek_name = TyId(_loc, IdLid(_loc,name^"_sarek")) in
                <:ctyp<($name$,$sarek_name$) Spoc.Vector.vector >> 
              | TBool | TVec _  | TUnknown | TUnit | TArr _ 
-             | TApp _   ->  assert false
+             | TApp _   -> 
+               my_eprintf ("Unimplemented vecget : "^(ktyp_to_string var.var_type )^"\n"); 
+               assert false
             )
           | _  -> assert (not debug); 
             failwith (Printf.sprintf "strange vector %s" (ktyp_to_string var.var_type ))
