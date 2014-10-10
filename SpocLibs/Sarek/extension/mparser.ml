@@ -354,6 +354,7 @@ type ktyp_repr = {
   ml_to_c : expr;
   c_to_ml : expr;
   build_c : string list;
+  compare : string;
 }
 
 let type_id = ref 0
@@ -615,6 +616,70 @@ let gen_ctypes _loc kt name =
                 else "" )^
                "\n}") 
             in fieldsC^";\n" 
+          | _ -> "int" ;
+        end;
+      compare = 
+        begin
+          match t with 
+          | Custom (KRecord (l1,l2,_),_) -> 
+            let rec content (ctype) (l1,l2)= 
+              match (l1 : ctyp list), (l2 :ident list) with
+              | [],[] -> ctype
+              | t1::q1, t2::q2 -> 
+                (try 
+                   let tt = Hashtbl.find sarek_types_tbl (string_of_ctyp t1) in
+                   content (ctype^ "&& spoc_custom_compare_"^tt^
+                            " ( a."^(string_of_ident t2)^", b."^
+                            (string_of_ident t2)^")") (q1,q2)
+                 with
+                 | _ ->
+                   content (ctype^ " && ( a."^(string_of_ident t2)^
+                            " ==  b."^(string_of_ident t2)^")") (q1,q2)
+                )
+                | _ -> assert false
+            in
+            
+            let fieldsC =
+              let a = content "true " (l1,l2) in    
+              ("int spoc_custom_compare_"^sarek_type_name^"(struct " ^ sarek_type_name ^
+               " a, struct "^sarek_type_name ^" b) {\n\treturn ("
+               ^a ^");\n}")  in
+            fieldsC
+          | Custom ((KSum l),_) ->
+            let c = ref (-1) in
+            let gen_cstruct accC = function
+              | cstr,Some t -> 
+                incr c;
+                accC^"\tcase "^string_of_int !c^" :\n"^
+                let field = sarek_type_name^"_union."^
+                            sarek_type_name^"_"^cstr^"."^
+                            sarek_type_name^"_"^cstr^"_t" in
+                (try
+                   let tt = Hashtbl.find sarek_types_tbl (string_of_ctyp t) in
+                   ("\t\treturn spoc_custom_compare_"^tt^
+                    "( a."^field^", b."^field^");\n\t\tbreak;\n")
+                 with _ ->
+                   "\t\treturn (a."^field^" == b."^field^");\n\t\tbreak;\n"
+                )
+              | cstr,None -> 
+                incr c;
+                accC^"\tcase "^string_of_int !c^" :\n"^"\t\treturn 1;\n\t\tbreak;\n"
+            in
+            let rec contents accC  = function
+              | t::q -> contents (gen_cstruct accC t) q
+              | [] -> accC
+            in
+            let fieldsC  =
+              let b = contents "" l in    
+              ("int spoc_custom_compare_"^sarek_type_name^"(struct " ^ sarek_type_name ^
+               " a, struct "^sarek_type_name ^" b) {\n"^
+               (if has_of l then
+                  "\tif (a."^sarek_type_name^"_tag != b."^sarek_type_name^"_tag)\n"^
+                  "\t\treturn 0;\n"^
+                  ("\tswitch (a."^sarek_type_name^"_tag) {\n"^
+                   b ^"}\n\treturn 0;\n}")
+                else "\treturn (a."^sarek_type_name^"_tag == b."^sarek_type_name^"_tag);\n}"))
+            in fieldsC 
           | _ -> "int" ;
         end;
       ml_to_c = 
@@ -902,6 +967,7 @@ let gen_ctypes _loc kt name =
       <:str_item<let $lid:"custom"^(String.capitalize name)$ : (($lid:name$,$lid:sarek_type_name$) Vector.custom) = $custom$>>;
       <:str_item<let $lid:t.name^"_c_repr"$ = $str:t.crepr$>>;
       <:str_item<Kirc.constructors := $str:t.crepr$ :: !Kirc.constructors>>;
+      <:str_item<Kirc.constructors := $str:t.compare$ :: !Kirc.constructors>>;
       <:str_item<Kirc.constructors := $str:(List.fold_left (fun a b -> a^"\n\n"^b) "" t.build_c)$
                  :: !Kirc.constructors>>]
 

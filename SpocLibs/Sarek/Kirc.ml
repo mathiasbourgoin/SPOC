@@ -209,7 +209,7 @@ let float_var f = f
 let double_var d = CastDoubleVar d
 
 let equals a b = EqBool (a,b)
-let equals_sum s v1 v2 l = EqSum (s,v1,v2,l)
+let equals_custom s v1 v2 = EqCustom (s,v1,v2)
 let equals32 a b = EqBool (a,b)
 let equals64 a b = EqBool (a,b)
 let equalsF a b = EqBool (a,b)
@@ -397,8 +397,8 @@ let rewrite ker =
       And (aux k1, aux k2)
     | EqBool (k1,k2) -> 
       EqBool (aux k1, aux k2)
-    | EqSum (n,k1,k2,l) -> 
-      EqSum (n,aux k1, aux k2,l)
+    | EqCustom (n,k1,k2) -> 
+      EqCustom (n,aux k1, aux k2)
     | LtBool (k1,k2) -> 
       LtBool (aux k1, aux k2)
     | GtBool (k1,k2) -> 
@@ -794,7 +794,7 @@ let propagate f = function
   | Or (a, b) -> Or (f a, f b)
   | And (a, b) -> And (f a, f b)
   | EqBool (a, b) -> EqBool (f a, f b)
-  | EqSum (n,a, b,l) -> EqSum (n,f a, f b,l)
+  | EqCustom (n,a, b) -> EqCustom (n,f a, f b)
   | LtEBool (a, b) -> LtEBool (f a, f b)
   | GtEBool (a, b) -> GtEBool (f a, f b)
   | DoLoop (a, b, c, d) -> DoLoop (f a, f b, f c, f d)

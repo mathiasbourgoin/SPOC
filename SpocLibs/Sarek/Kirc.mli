@@ -99,7 +99,7 @@ val int32_var : 'a -> 'a
 val float_var : 'a -> 'a
 val double_var : int -> Kirc_Ast.k_ext
 val equals : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
-val equals_sum : string -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> (string*string) list -> Kirc_Ast.k_ext
+val equals_custom : string -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext ->  Kirc_Ast.k_ext
 val equals32 : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val equals64 : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val equalsF : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext

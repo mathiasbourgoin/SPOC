@@ -192,11 +192,11 @@ and parse i = function
   | If (a,b) -> "if ("^(parse i a)^")\n"^(indent i)^"{\n"^(indent (i+1))^(parse (i+1) b)^";\n"^(indent i)^"}"^(indent i)
   | Or (a,b) -> (parse i a)^" || "^(parse i b)
   | And (a,b) -> (parse i a)^" && "^(parse i b)
-  | EqSum (n,v1,v2,lst) ->
+  | EqCustom (n,v1,v2) ->
     let v1 = parse 0 v1
     and v2 = parse 0 v2 in
     (*"switch "^v1^"."^n^"_starek_tag"^*)
-    v1^" ==  "^v2
+    n^"("^v1^", "^v2^")"
   | EqBool (a,b) -> (parse i a)^" == "^(parse i b)
   | LtBool (a,b) -> (parse i a)^" < "^(parse i b)
   | GtBool (a,b) -> (parse i a)^" > "^(parse i b)

@@ -177,7 +177,7 @@ and parse i = function
   | Or (a,b) -> (parse i a)^" || "^(parse i b)
   | And (a,b) -> (parse i a)^" && "^(parse i b)
   | EqBool (a,b) -> (parse i a)^" == "^(parse i b)
-  | EqSum (n,a,b,l) -> (parse i a)^" == "^(parse i b)
+  | EqCustom (n,a,b) -> (parse i a)^" == "^(parse i b)
   | LtBool (a,b) -> (parse i a)^" < "^(parse i b)
   | GtBool (a,b) -> (parse i a)^" > "^(parse i b)
   | LtEBool (a,b) -> (parse i a)^" <= "^(parse i b)
