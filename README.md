@@ -6,8 +6,8 @@ SPOC is a set of tools for GPGPU programming with OCaml.
 The SPOC library enables the detection and use of GPGPU devices with OCaml using Cuda and OpenCL. 
 There is also a camlp4 syntax extension to handle external Cuda or OpenCL kernels, as well as a DSL to express GPGPU kernels from the OCaml code.
 
-This work was part of my PhD thesis and was partially funded by the opengpu project. 
-I'm currently in the UPMC-LIP6 laboratory.
+This work was part of my PhD thesis (UPMC-LIP6 laboratory, Paris, France) and was partially funded by the opengpu project. 
+I'm currently in the Verimag laboratory (Grenoble, France).
 
 It has currently been tested on multiple architectures and systems, mostly 64-bit Linux and 64-bit OSX systems. It should work with Windows too.
 
