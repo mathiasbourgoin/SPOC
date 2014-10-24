@@ -17,45 +17,25 @@ open Spoc
 
 open Kirc
 
-ktype color = Spades | Hearts | Diamonds | Clubs 
 
-ktype colval = {c:color; v : int32} 
 
-ktype card = 
-  Ace of color
-  | King of color
-  | Queen of color
-  | Jack of color 
-  | Other of colval
-
-      
-let gpu_bitonic = kern v j k trump ->
-  let value = fun a trump ->
-    match a with 
-    | Ace c -> 11
-    | King c -> 4
-    | Queen c -> 3
-    | Jack c -> if c = trump then 20 else 2
-    | Other cv ->
-      if cv.v = 10 then 10 else if (cv.c = trump) && (cv.v = 9) then 14 else 0 
-  in
+let gpu_bitonic = kern v j k ->
   let open Std in
   let i = thread_idx_x + block_dim_x * block_idx_x in
   let ixj = Math.xor i j in
-  let mutable temp = v.[<0>] in
+  let mutable temp = 0. in
   if ixj < i then
     () else
     begin
       if (Math.logical_and i k) = 0  then
         (
-          if  (value v.[<i>] trump.[<0>]) >
-               (value v.[<ixj>] trump.[<0>]) then
+          if  v.[<i>] >. v.[<ixj>] then
             (temp := v.[<ixj>];
              v.[<ixj>] <- v.[<i>];
              v.[<i>] <- temp)
         )
       else 
-      if (value v.[<i>] trump.[<0>]) < (value v.[<ixj>] trump.[<0>]) then
+      if v.[<i>] <. v.[<ixj>] then
         (temp := v.[<ixj>];
          v.[<ixj>] <- v.[<i>];
          v.[<i>] <- temp);
@@ -158,55 +138,32 @@ let () =
     (!dev).Spoc.Devices.general_info.Spoc.Devices.name !size;
   let size = !size 
   and check = !check 
-  and compare = !compare 
-  in    
-  let cards_c  = Array.create size (King Hearts) in
-(*  let cards = Spoc.Vector.create (Vector.Custom customCard)  size
-  and trump = Spoc.Vector.create (Vector.Custom customColor)  1
-  in*)
+  and compare = !compare in
+  let seq_vect  = Spoc.Vector.create Vector.float32 size
+      
+  and gpu_vect = Spoc.Vector.create Vector.float32 size
+  and base_vect = Spoc.Vector.create Vector.float32 size
+  and vect_as_array = Array.create size 0.
+  in
   Random.self_init ();
   (* fill vectors with randmo values... *)
-  for i = 0 to Array.length cards_c - 1 do
+  for i = 0 to Vector.length seq_vect - 1 do
     let v = Random.float 255. in
-        let c =  (let j = Random.int 12 + 1  in
-                     let c = 
-                       match Random.int 3 with
-                       | 0 -> Spades
-                       | 1 -> Hearts 
-                       | 2 -> Diamonds 
-                       | 3 -> Clubs
-                       | _ -> assert false in
-                     match j with
-                     | 11 -> Jack c
-                     | 12 -> Queen c
-                     | 13 ->  King c 
-                     | 1 -> Ace c 
-                     | a -> Other {c = c; v = Int32.of_int a}) in
-(*    Mem.set cards i c;*)
-    cards_c.(i) <- c;
+    seq_vect.[<i>] <- v;
+    gpu_vect.[<i>] <- v;
+    base_vect.[<i>] <- v;
+    vect_as_array.(i) <- v;
   done;
-(*  Mem.set trump 0 Spades;*)
+  
 
   if compare then
     begin
-(*      
-      for i = 0 to Vector.length cards - 1 do
-
-      done;*)
-      let value = fun a ->
-        let trump = Spades in
-        match a with 
-        | Ace c -> 11
-        | King c -> 4
-        | Queen c -> 3
-        | Jack c -> if c = trump then 20 else 2
-        | Other cv ->
-          if cv.v = 10l then 10 else if (cv.c = trump) && (cv.v = 9l) then 14 else 0 
-      in
+      measure_time "Sequential bitonic" 
+        (fun () -> Mem.unsafe_rw true; sortup seq_vect 0 (Vector.length seq_vect); Mem.unsafe_rw false);
       measure_time "Sequential Array.sort" 
-        (fun () -> Array.sort (fun a b -> Pervasives.compare (value a) (value b)) cards_c);
+        (fun () -> Array.sort Pervasives.compare vect_as_array);
     end;
-(*  let threadsPerBlock = match !dev.Devices.specific_info with
+  let threadsPerBlock = match !dev.Devices.specific_info with
     | Devices.OpenCLInfo clI -> 
       (match clI.Devices.device_type with
        | Devices.CL_DEVICE_TYPE_CPU -> 1
@@ -226,11 +183,22 @@ let () =
       while !k <= size do
         j := !k lsr 1;
         while !j > 0 do
-          Kirc.run gpu_bitonic (cards,!j,!k, trump) (block0,grid0) 0 !dev;
+          Kirc.run gpu_bitonic (gpu_vect,!j,!k) (block0,grid0) 0 !dev;
           j := !j lsr 1;
         done;
         k := !k lsl 1 ;
       done;
     );
-*)
+
+  if check then
+    (
+      let r = ref (-. infinity) in
+      for i = 0 to size - 1 do
+        if gpu_vect.[<i>] < !r then
+          failwith (Printf.sprintf "error, %g <  %g" gpu_vect.[<i>] !r)
+        else
+          r := gpu_vect.[<i>]; 
+      done;
+      Printf.printf "Check OK\n";
+    )
 ;;
