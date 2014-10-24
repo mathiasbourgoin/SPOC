@@ -1,4 +1,4 @@
-P4FLAGS =  -I +camlp4 -pp camlp4of dynlink.cma camlp4lib.cma
+P4FLAGS =  -I +camlp4 -pp camlp4of dynlink.cma camlp4lib.cma 
 
 all:
 	make -j4 kernels_int.cma
@@ -51,10 +51,10 @@ test: kernels_int.cma test.ml
 
 
 %.pp.byte: %.pp.ml
-	ocamlfind ocamlc -thread -package ctypes,spoc,sarek,graphics -linkpkg -o $@ $<
+	ocamlfind ocamlc -thread -package ctypes,spoc,sarek,graphics,tsdl, -linkpkg -o $@ $<
 
 %.pp.nat: %.pp.ml
-	ocamlfind ocamlopt -thread -package ctypes,spoc,sarek,graphics -linkpkg -o $@ $<
+	ocamlfind ocamlopt -thread -package ctypes,spoc,sarek,graphics,tsdl -linkpkg -o $@ $<
 
 %.nat : %.ml
 	ocamlfind ocamlopt -thread -package spoc,sarek,graphics \

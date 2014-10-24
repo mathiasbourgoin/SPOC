@@ -4,7 +4,7 @@ open Ast
 
 let retype = ref false
 let unknown = ref 0
-let debug = true
+let debug = false
 
 let my_eprintf s = 
   if debug then
@@ -471,7 +471,6 @@ let mathf32 = {
     (TApp ((TApp (TFloat32, TFloat32)), TFloat32), "atan2", 2, "atan2f", "atan2");
     (TApp ((TApp (TFloat32, TFloat32)), TFloat32), "hypot", 2, "hypotf", "hypot");
 
-
     (TApp (TFloat32, TFloat32), "ceil", 1, "ceilf", "ceil");
     (TApp (TFloat32, TFloat32), "floor", 1, "floorf", "floor");
 
@@ -627,7 +626,18 @@ let ctype_of_sarek_type  = function
   | "int32" -> "int"
   | "int64" -> "long"
   | "int" -> "int"
+  | "float32" -> "float"
+  | "float64" -> "double"
   | a -> "struct "^a^"_sarek"
+
+
+let mltype_of_sarek_type  = function
+  | "int32" -> "int"
+  | "int64" -> "int"
+  | "int" -> "int"
+  | "float32" -> "float"
+  | "float64" -> "float"
+  | a -> a
 
 
 let rec string_of_ctyp = function
@@ -651,7 +661,7 @@ let get_sarek_name t =
     try 
       Hashtbl.find sarek_types_tbl t
     with
-    | _ -> print_endline t; assert false
+    | _ -> my_eprintf  t; assert false
 
 and ident_of_patt  _loc = function
   | Constr (s,_) -> 

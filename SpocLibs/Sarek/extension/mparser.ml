@@ -368,7 +368,7 @@ let gen_mltyp _loc name t =
         let aux list_elt list_mut = 
           let idfield = 
             match list_elt with
-            | TyCol(_loc,TyId(_,IdLid(_,t)),_) -> t
+            | TyCol(_loc,TyId(_,IdLid(_,t)),_) -> mltype_of_sarek_type t
             | _ -> assert false 
           in
           (try 
@@ -960,17 +960,18 @@ let gen_ctypes _loc kt name =
     <:expr<{$rbSem_of_list l$}  >>
   in
   begin
-    Ast.stSem_of_list [
+    Ast.stSem_of_list ([
       <:str_item<open Vector>>;
       t.ml_typ;
       t.ctype;
       <:str_item<let $lid:"custom"^(String.capitalize name)$ : (($lid:name$,$lid:sarek_type_name$) Vector.custom) = $custom$>>;
       <:str_item<let $lid:t.name^"_c_repr"$ = $str:t.crepr$>>;
       <:str_item<Kirc.constructors := $str:t.crepr$ :: !Kirc.constructors>>;
-      <:str_item<Kirc.constructors := $str:t.compare$ :: !Kirc.constructors>>;
-      <:str_item<Kirc.constructors := $str:(List.fold_left (fun a b -> a^"\n\n"^b) "" t.build_c)$
-                 :: !Kirc.constructors>>]
-
+      <:str_item<Kirc.constructors := $str:t.compare$ :: !Kirc.constructors>>]
+      @
+      (List.map (fun a -> 
+                     <:str_item<Kirc.constructors := $str:a^"\n"$ :: !Kirc.constructors>>) t.build_c
+      ))
   end
 
 

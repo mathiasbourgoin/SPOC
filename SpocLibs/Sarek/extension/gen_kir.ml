@@ -93,7 +93,8 @@ let rec  parse_int2 i t=
     <:expr<get_arr $parse_int2 array (TVec t)$ 
            $parse_int2 index TInt32$>>
   | App _ -> parse_body2 i false
-  | _ -> (my_eprintf (Printf.sprintf "--> (* val %s *)\n%!" (k_expr_to_string i.e));
+  | RecGet _ -> parse_body2 i false
+  | _ -> (my_eprintf (Printf.sprintf "--> (*** val2 %s *)\n%!" (k_expr_to_string i.e));
           raise (TypeError (t, i.t, i.loc));)
 
 and  parse_float2 f t= 
@@ -135,7 +136,8 @@ and  parse_float2 f t=
   | VecGet (_loc, vector, index)  -> 
     <:expr<get_vec $parse_float2 vector (TVec t)$ $parse_int2 index TInt32$>>
   | ModuleAccess _ -> parse_body2 f false
-  | _  -> ( my_eprintf (Printf.sprintf "(* val %s *)\n%!" (k_expr_to_string f.e));
+  | RecGet _ ->  parse_body2 f false
+  | _  -> ( my_eprintf (Printf.sprintf "(*** val2 %s *)\n%!" (k_expr_to_string f.e));
             raise (TypeError (t, f.t, f.loc));)
 
 and parse_app a =
@@ -404,7 +406,7 @@ and parse_body2 body bool =
       <:expr< spoc_constr $str:t.name$ $str:(string_of_ident s)$ [] >>
 with 
 | _  ->
-                   (assert (not debug); 
+  (assert (not debug); 
                    raise (Unbound_value ((string_of_ident s), _loc)))));
     | Int (_loc, i)  -> <:expr<spoc_int $ExInt(_loc, i)$>>
     | Int32 (_loc, i)  -> <:expr<spoc_int32 $ExInt32(_loc, i)$>>

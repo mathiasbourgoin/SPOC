@@ -54,10 +54,7 @@ void free_custom (value v) {
 	char* res;
 	ret = alloc_final(2, free_custom, 0, 1);
 	customSize = Field(custom, 0);
-	printf ("csize : %d\n", Int_val(customSize));
-	printf ("size : %d\n", Int_val (size));
 	res = (char*)malloc(Int_val(size)*Int_val(customSize));
-	printf ("pointeur is %p\n", res);
 	fflush (stdout);
 	Store_field(ret, 1, (value)(res));
 	CAMLreturn(ret);

@@ -36,6 +36,11 @@ open Kirc_Ast
 
 let space i =
   String.make i ' '
+and  indent i = 
+  let rec aux acc = function
+    | 0 -> acc
+    | i -> aux (acc^"\t") (i-1)
+  in aux "" i
 
 let global_funs = Hashtbl.create 0
 
@@ -52,7 +57,7 @@ let rec parse_fun i a b =
      let pbody = 
        match body with 
        | Seq (_,_)  -> (aux2 i body )
-       | _  ->  ((aux2 i body )^"\n"^(space i))
+       | _  ->  ((aux2 i body )^"\n"^(indent i))
      in
      (pargs ^ pbody)^ "}")
   | Params k -> 
@@ -80,21 +85,22 @@ and parse i = function
      let pbody = 
        match body with 
        | Seq (_,_)  -> (parse i body)
-       | _  ->  ((parse i body)^"\n"^(space i))
+       | _  ->  ((parse i body)^"\n"^(indent i))
      in
      (pargs ^ pbody)^ "\n}\n#ifdef __cplusplus\n}\n#endif")
-  | Local (x,y)  -> (space (i))^"{"^
+  | Local (x,y)  -> (indent (i))^"{"^
                     (parse i x)^";\n"^
-                    (space (i))^(parse i y)^
-                    ";\n"^(space (i))^"}\n"
+                    (indent (i))^(parse i y)^
+                    ";\n"^(indent (i))^"}\n"
   | VecVar (t,i)  -> 
     (match t with
      | Int _ ->"int"
      | Float _ -> "float"
      | Double _ -> "double"
+     | Custom (n,_) -> ("struct "^n^"_sarek")
      | _ -> assert false
     )^("* spoc_var"^(string_of_int (i)))
-  | Block b -> (space i)^"{\n"^parse (i+1) b^"\n"^(space i)^"}"
+  | Block b -> (indent i)^"{\n"^parse (i+1) b^"\n"^(indent i)^"}"
   | IdName s  ->  s
   | IntVar s -> ("int spoc_var"^(string_of_int s))
   | FloatVar s -> ("float spoc_var"^(string_of_int s))
@@ -153,12 +159,12 @@ and parse i = function
     ((parse i v)^" = "^
      (match gv with
       | Intrinsics i -> ((parse_intrinsics i)^";")
-      | _ -> (parse i gv))^";\n"^(space i)^(parse i k))
+      | _ -> (parse i gv))^";\n"^(indent i)^(parse i k))
   | Return k -> 
     (if (snd !return_v) <> "" then
        snd !return_v
      else
-       (space i)^"return ")^
+       (indent i)^"return ")^
     (parse i k)
   | Unit  -> ""
   | IntVecAcc (vec,idx)  -> (parse i vec)^"["^(parse i idx)^"]"
@@ -171,13 +177,17 @@ and parse i = function
   | Double f -> string_of_float f
   | IntId (s,_) -> s
   | Intrinsics gv -> parse_intrinsics gv
-  | Seq (a,b)  -> (parse i a)^" ;\n"^(space i)^(parse i b)
-  | Ife (a,b,c) -> "if ("^(parse i a)^"){\n"^(space (i+2))^(parse (i+2) b)^";}\n"^(space i)^"else{\n"^(space (i+2))^(parse (i+2) c)^";}\n"^(space i)
-  | If (a,b) -> "if ("^(parse i a)^"){\n"^(space (i+2))^(parse (i+2) b)^";}\n"^(space i)
+  | Seq (a,b)  -> (parse i a)^" ;\n"^(indent i)^(parse i b)
+  | Ife (a,b,c) -> "if ("^(parse i a)^"){\n"^(indent (i+2))^(parse (i+2) b)^";}\n"^(indent i)^"else{\n"^(indent (i+2))^(parse (i+2) c)^";}\n"^(indent i)
+  | If (a,b) -> "if ("^(parse i a)^"){\n"^(indent (i+2))^(parse (i+2) b)^";}\n"^(indent i)
   | Or (a,b) -> (parse i a)^" || "^(parse i b)
   | And (a,b) -> (parse i a)^" && "^(parse i b)
   | EqBool (a,b) -> (parse i a)^" == "^(parse i b)
-  | EqCustom (n,a,b) -> (parse i a)^" == "^(parse i b)
+  | EqCustom (n,v1,v2) ->
+    let v1 = parse 0 v1
+    and v2 = parse 0 v2 in
+    (*"switch "^v1^"."^n^"_starek_tag"^*)
+    n^"("^v1^", "^v2^")"
   | LtBool (a,b) -> (parse i a)^" < "^(parse i b)
   | GtBool (a,b) -> (parse i a)^" > "^(parse i b)
   | LtEBool (a,b) -> (parse i a)^" <= "^(parse i b)
@@ -187,11 +197,11 @@ and parse i = function
     let min = parse i b in
     let max = parse i c in
     let body = parse (i+2) d in
-    "for (int "^id^" = "^min^"; "^id^" <= "^max^"; "^id^"++){\n"^(space (i+2))^body^"}"
+    "for (int "^id^" = "^min^"; "^id^" <= "^max^"; "^id^"++){\n"^(indent (i+2))^body^"}"
   | While (a,b) ->
     let cond = parse i a in
     let body = parse (i+2) b in
-    "while ("^cond^"){\n"^(space (i+2))^body^"}"
+    "while ("^cond^"){\n"^(indent (i+2))^body^"}"
   | App (a,b) ->
     let f = parse i a in
     let rec aux = function
@@ -218,8 +228,29 @@ and parse i = function
     (parse i r)^"."^f
   | RecSet (r,v) ->
     (parse i r)^" = "^(parse i v)
-  | Custom  _ -> assert false
-  | Match (s,e,l) -> assert false
+  | Custom (n,s) -> ("struct "^n^"_sarek spoc_var"^(string_of_int s))
+  | Match (s,e,l) ->
+    let match_e = parse 0 e in
+    let switch_content  = 
+      List.fold_left (fun a (j,of_i,b) ->              
+          let manage_of = 
+            match of_i with
+            | None -> ""
+            | Some (typ,cstr,varn) -> 
+              indent (i+1)^typ^
+              " spoc_var"^(string_of_int varn)^" = "^match_e^"."^
+              s^"_sarek_union."^s^"_sarek_"^cstr^"."^
+              s^"_sarek_"^cstr^"_t"^
+              ";\n"
+          in
+          a^"\n\tcase "^string_of_int j^":{\n"^
+          manage_of^indent (i+1)^parse (i+1) b^";\n"^
+          indent (i+1)^"break;}"
+        )
+        " " l in
+    ("switch ("^match_e^"."^s^"_sarek_tag"^"){"^switch_content^
+    "}") 
+
 
 
 

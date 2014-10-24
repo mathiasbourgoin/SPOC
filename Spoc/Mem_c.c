@@ -457,34 +457,18 @@ extern "C" {
     cl_device_id device_id;
     int type_size;
     int tag;
-    printf ("Starting\n");
-    fflush (stdout);
-
 
     customArray = Field (Field(vector, 1), 0);
-    printf ("Got customArray\n");
-    fflush (stdout);
-
 
     type_size = Int_val(Field(Field(customArray, 1),0))*sizeof(char);
-    printf ("Got type_size\n");
-    fflush (stdout);
 
     size = Int_val(Field(vector, 4));
-    printf ("Got size\n");
-    fflush (stdout);
 
     dev_vec_array = Field(vector, 3);
-    printf ("Got dev_veca\n");
-    fflush (stdout);
 
     dev_vec =Field(dev_vec_array, Int_val(nb_device));
-    printf ("Got dev_vec\n");
-    fflush (stdout);
 
     d_A = Cl_mem_val(Field(dev_vec, 1));
-    printf ("Got values\n");
-    fflush (stdout);
 
     size = Int_val(Field(vector, 4));
 

@@ -208,8 +208,9 @@ and parse_float f t =
        failwith "Unknwown vector");
   | ModuleAccess _ -> parse_body f
   | Acc _ -> parse_body f
+  | RecGet _ -> parse_body f
   | _ ->   
-    my_eprintf (Printf.sprintf "(* val %s *)\n%!" (k_expr_to_string f.e));
+    my_eprintf (Printf.sprintf "(*** val %s *)\n%!" (k_expr_to_string f.e));
     assert (not debug); 
     raise (TypeError (t, f.t, f.loc))
 

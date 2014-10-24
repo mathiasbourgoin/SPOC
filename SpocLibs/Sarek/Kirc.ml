@@ -79,8 +79,8 @@ let opencl_head = (
   "float spoc_fdiv ( float a, float b ) { return (a / b);}\n"^
   "int logical_and (int a, int b ) { return (a & b);}\n"^
   "int spoc_powint (int a, int b ) { return ((int) pow (((float) a), ((float) b)));}\n"^
-  "int spoc_xor (int a, int b ) { return (a^b);}\n"
-)
+  "int spoc_xor (int a, int b ) { return (a^b);}\n")
+
 let opencl_float64 = (
   "#ifndef __FLOAT64_EXTENSION__ \n"^
   "#define __FLOAT64_EXTENSION__ \n"^
@@ -480,7 +480,7 @@ let gen ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('a, 'b, 'c,'d,'e) sarek
     let src = Kirc_Cuda.parse 0 (rewrite k2) in
     let global_funs = ref "" in
     Hashtbl.iter (fun _ a -> global_funs := !global_funs^(fst a)^"\n") Kirc_Cuda.global_funs;
-    let constructors = List.fold_left (fun a b -> b^a) "\n\n" !constructors in
+    let constructors = List.fold_left (fun a b -> "__device__ "^b^a) "\n\n" !constructors in
     save "kirc_kernel.cu" (cuda_head ^ constructors ^  !global_funs ^ src) ;
     ignore(Sys.command ("nvcc -m64 -arch=sm_10 -O3 -ptx kirc_kernel.cu -o kirc_kernel.ptx"));
     let s = (load_file "kirc_kernel.ptx") in

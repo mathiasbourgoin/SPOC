@@ -3,7 +3,7 @@ DIR=$(notdir $(CURDIR))
 MLSRC=$(DIR).ml
 ASM=$(MLSRC:.ml=.asm)
 BYTE=$(MLSRC:.ml=.byte)
-PACKAGES=spoc,sarek
+PACKAGES=spoc,sarek,ctypes
 SYNTAX_PACKAGES=spoc_external_kernels,sarek_syntax
 
 CAMLC=ocamlfind ocamlc
