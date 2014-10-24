@@ -28,7 +28,7 @@ eval `opam config env`
 case $OCAML_VERSION in
     4.02) opam install camlp4;;
 esac
-opam install ocp-build 
+opam install ocp-build ctypes
 opam install ${OPAM_DEPENDS}
 
 make check
