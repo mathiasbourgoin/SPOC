@@ -104,7 +104,7 @@ type  k_ext =
   | Acc of  k_ext *  k_ext
   | Ife of  k_ext *  k_ext  *  k_ext   
   | If of  k_ext *  k_ext
-  | Match of string* k_ext * case list
+  | Match of string* k_ext * case array
   | Or of  k_ext *  k_ext
   | And of  k_ext *  k_ext
   | EqCustom of string * k_ext * k_ext 
@@ -344,5 +344,5 @@ let print_ast a =
     | Match (s,e1,l) ->
       print i ("Match "^s);
       aux (i+1) e1;
-      List.iter (fun (_,_,a) -> aux (i+1) a) l
+      Array.iter (fun (_,_,a) -> aux (i+1) a) l
   in aux 0 a;;

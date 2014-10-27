@@ -232,7 +232,7 @@ and parse i = function
   | Match (s,e,l) ->
     let match_e = parse 0 e in
     let switch_content  = 
-      List.fold_left (fun a (j,of_i,b) ->              
+      Array.fold_left (fun a (j,of_i,b) ->              
           let manage_of = 
             match of_i with
             | None -> ""

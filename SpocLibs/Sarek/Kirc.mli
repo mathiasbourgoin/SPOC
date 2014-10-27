@@ -60,7 +60,7 @@ val spoc_mod : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val spoc_ife :
   Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val spoc_if : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
-val spoc_match : string -> Kirc_Ast.k_ext -> Kirc_Ast.case list -> Kirc_Ast.k_ext
+val spoc_match : string -> Kirc_Ast.k_ext -> Kirc_Ast.case array -> Kirc_Ast.k_ext
 val spoc_case : int -> (string*string*int) option -> Kirc_Ast.k_ext -> Kirc_Ast.case
 val spoc_do :
   Kirc_Ast.k_ext ->

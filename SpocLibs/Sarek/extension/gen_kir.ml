@@ -231,7 +231,7 @@ and parse_case2 mc _loc =
          e 
   in 
   let l = List.map aux mc
-  in <:expr< [ $exSem_of_list l$ ]>>
+  in <:expr< [| $exSem_of_list l$ |]>>
 
 and parse_body2 body bool = 
   let rec aux ?return_bool:(r=false) body =

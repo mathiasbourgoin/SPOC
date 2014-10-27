@@ -347,7 +347,7 @@ let rewrite ker =
        | Match (s,a,bb) -> 
          (b := true;
           Match (s,aux a, 
-                 List.map (fun (i,ofid,e) -> 
+                 Array.map (fun (i,ofid,e) -> 
                      (i,ofid, aux (Return e))) bb))             
        | _ ->
          Return (aux k))
@@ -366,7 +366,7 @@ let rewrite ker =
        | Match (s,a,bb) -> 
          (b := true;
           Match (s,aux a, 
-                 List.map (fun (i,ofid,e) -> 
+                 Array.map (fun (i,ofid,e) -> 
                      (i,ofid,SetV(aux k1, aux e))) bb))              
        | _ -> SetV (aux k1, aux k2)
       )
@@ -416,7 +416,7 @@ let rewrite ker =
     | GlobalFun (a,b) -> GlobalFun (aux a, b)
     | Unit -> kern
     | Match (s,a,b) -> Match (s,aux a, 
-                              List.map (fun (i,ofid,e) -> (i,ofid,aux e)) b)
+                              Array.map (fun (i,ofid,e) -> (i,ofid,aux e)) b)
     
 
   in
@@ -810,7 +810,7 @@ let propagate f = function
   | RecSet (r,v) -> RecSet (f r, f v)
   | Custom (s,i) -> Custom (s,i)
   | Match (s,a,b) -> Match (s,f a, 
-                            List.map (fun (i,ofid,e) -> (i,ofid,f e)) b)
+                            Array.map (fun (i,ofid,e) -> (i,ofid,f e)) b)
 
 
 let map ((ker: ('a, 'b, ('c -> 'd), 'e,'f) sarek_kernel)) ?dev:(device=(Spoc.Devices.init ()).(0)) (vec_in : ('g, 'h) Vector.vector) : ('i, 'j) Vector.vector= 

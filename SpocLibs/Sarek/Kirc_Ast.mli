@@ -59,7 +59,7 @@ type k_ext =
   | Acc of k_ext * k_ext
   | Ife of k_ext * k_ext * k_ext
   | If of k_ext * k_ext
-  | Match of string*k_ext * case list
+  | Match of string*k_ext * case array
   | Or of k_ext * k_ext
   | And of k_ext * k_ext
   | EqCustom of string * k_ext * k_ext 

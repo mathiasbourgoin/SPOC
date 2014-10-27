@@ -65,7 +65,7 @@ let couleur n r =
 
     
 let init id h w bench = 
-  let devs = Spoc.Devices.init () in
+  let devs = Spoc.Devices.init ~only:Devices.OpenCL () in
   let dev = devs.(id) in
   let x1 = Vector.create (Custom customCell) (h * w) 
   and x2 = Vector.create (Custom customCell) (h * w) 
@@ -95,14 +95,14 @@ let init id h w bench =
 
 let gpu_compute x1 x2 dev h w nb_iter bench win = 
   Printf.printf "Will use device : %s\n%!" dev.Spoc.Devices.general_info.Spoc.Devices.name;
-  ignore(Kirc.gen step);
+  ignore(Kirc.gen ~only:Devices.OpenCL step);
   (*Printf.printf "%s\n%!" (List.hd ((fst step)#get_opencl_sources ()));*)
   let threadsPerBlock = match dev.Devices.specific_info with
     | Devices.OpenCLInfo clI ->
       (match clI.Devices.device_type with
        | Devices.CL_DEVICE_TYPE_CPU -> 1
-       | _ -> 1024)
-    | _ -> 1024
+       | _ -> 256)
+    | _ -> 256
   in
   let blocksPerGrid = ((h * w) + threadsPerBlock -1) / threadsPerBlock in
   let block = { Spoc.Kernel.blockX = threadsPerBlock; Spoc.Kernel.blockY = 1 ; Spoc.Kernel.blockZ = 1;} in

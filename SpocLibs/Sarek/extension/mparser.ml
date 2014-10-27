@@ -391,45 +391,46 @@ let gen_mltyp _loc name t =
           else 
             <:ctyp< $list_elt$ >> in
         <:str_item< 
-                    type $lid:name$ = {
-
-                    $List.fold_left2 
-                    (fun elt list_elt list_mut ->
-                    <:ctyp< $elt$; $aux list_elt list_mut$ >> )
-(aux (List.hd ctypes) (List.hd muts)) (List.tl ctypes) (List.tl muts)$} >>
-end
-| Custom ((KSum l),_) -> 
-  begin
-    <:str_item< 
-                	        type $lid:name$ = 
-                	        $let type_of_string s =
-                		TyId (_loc, (IdUid(_loc,s)) )
-                	        in
-                	        let typeof t1 t2 =
-                		TyOf(_loc, t1, t2)
-                	        in
-                let id = ref 0 in
-                let aux (list_elt,t) = 
-                Hashtbl.add !constructors (list_elt) (
-                {id = (let i = !id in incr id; i);
-                name = name; 
-                nb_args = 0;
-                ctyp = "";
-                typ = KSum l}); 
-                match t with
-                		| Some (s:ctyp) -> 
-                let c = (Hashtbl.find !constructors list_elt) in
-                c.nb_args <- 1;
-                c.ctyp <-  (string_of_ctyp s);
-                let t  =
-                		typeof (type_of_string list_elt) s 
-                		in 
-                		 begin
-                <:ctyp<  $t$ >>end
-| None ->
-  <:ctyp< $type_of_string list_elt$ >>in
-Ast.tyOr_of_list (List.map aux l)$
->>
+        type $lid:name$ = {
+	  
+          $List.fold_left2 
+             (fun elt list_elt list_mut ->
+              <:ctyp< $elt$; $aux list_elt list_mut$ >> )
+	     (aux (List.hd ctypes) (List.hd muts)) (List.tl ctypes) (List.tl muts)$} >>
+      end
+    | Custom ((KSum l),_) -> 
+       begin
+	 let type_of_string s =
+           TyId (_loc, (IdUid(_loc,s)) )
+         in
+         let typeof t1 t2 =
+           TyOf(_loc, t1, t2)
+         in
+         let id = ref 0 in
+         let aux (list_elt,t) = 
+           Hashtbl.add !constructors (list_elt) (
+			 {id = (let i = !id in incr id; i);
+			  name = name; 
+			  nb_args = 0;
+			  ctyp = "";
+			  typ = KSum l}); 
+           match t with
+           | Some (s:ctyp) -> 
+              let c = (Hashtbl.find !constructors list_elt) in
+              c.nb_args <- 1;
+              c.ctyp <-  (string_of_ctyp s);
+              let t  =
+                typeof (type_of_string list_elt) s 
+              in 
+                     begin
+                       <:ctyp<  $t$ >>end
+	   | None ->
+	      <:ctyp< $type_of_string list_elt$ >>
+	 in
+	 let ct =
+	   <:ctyp< $Ast.tyOr_of_list (List.map aux l)$>>
+	 in
+	 <:str_item< type $lid:name$ = $Ast.TySum (_loc, ct)$>>
 end
 | TInt32 -> 
   <:str_item< int >>
@@ -713,82 +714,84 @@ let gen_ctypes _loc kt name =
             end
 
           | Custom ((KSum l),_) -> 
-            let copy_to_c =
-              let gen_sum_rep  l = 
-                let rec aux acc tag = function
-                  | (cstr,of_) :: q ->
-                    aux ((cstr,tag,of_)::acc) (tag+1) q
-                  | [] -> acc
-                in
-                aux [] 0 l
-              in
-              let repr_ = gen_sum_rep l 	
-              in
-              let copy_content cstr (of_ :ctyp option) =
+             let copy_to_c =
+               let gen_sum_rep  l = 
+                 let rec aux acc tag = function
+                   | (cstr,of_) :: q ->
+                      aux ((cstr,tag,of_)::acc) (tag+1) q
+                   | [] -> acc
+                 in
+                 aux [] 0 l
+               in
+               let repr_ = gen_sum_rep l 	
+               in
+               let copy_content cstr (of_ :ctyp option) =
                 let copy_of _of = 
                   try
                     let get = 
                       (Hashtbl.find type_repr (string_of_ctyp _of)).ml_to_c in
                     <:expr< 
-                            let  union =
-                            Ctypes.make $lid:sarek_type_name^"_union_"$ in
-                            let str = 
-                            Ctypes.make $lid:sarek_type_name^"_"^cstr$ in
-                            Ctypes.setf str $lid:sarek_type_name^"_"^cstr^"_"^sarek_type_name$ ($get$ sarek_tmp);
-                            Ctypes.setf union 
-                            $lid:sarek_type_name^"_"^cstr^"_val"$ str;
-                            Ctypes.setf tmp
-                            $lid:sarek_type_name^"_union"$ union ;
-                    >>
+                     let  union =
+                     Ctypes.make $lid:sarek_type_name^"_union_"$ in
+                     let str = 
+                     Ctypes.make $lid:sarek_type_name^"_"^cstr$ in
+                     Ctypes.setf str $lid:sarek_type_name^"_"^cstr^"_"^sarek_type_name$ ($get$ sarek_tmp);
+                     Ctypes.setf union 
+                     $lid:sarek_type_name^"_"^cstr^"_val"$ str;
+                     Ctypes.setf tmp
+                     $lid:sarek_type_name^"_union"$ union ;
+                     >>
                   with 
                   | _ -> <:expr< 
-                                 let  union =
-                                 Ctypes.make $lid:sarek_type_name^"_union_"$ in
-                                 let str = 
-                                 Ctypes.make $lid:sarek_type_name^"_"^cstr$ in
-                                 Ctypes.setf str $lid:sarek_type_name^"_"^cstr^"_"^sarek_type_name$ sarek_tmp;
-                                 Ctypes.setf union 
-                                 $lid:sarek_type_name^"_"^cstr^"_val"$ str;
-                                 Ctypes.setf tmp
-                                 $lid:sarek_type_name^"_union"$ union ;
-                         >>
+                          let  union =
+                          Ctypes.make $lid:sarek_type_name^"_union_"$ in
+                          let str = 
+                          Ctypes.make $lid:sarek_type_name^"_"^cstr$ in
+                          Ctypes.setf str $lid:sarek_type_name^"_"^cstr^"_"^sarek_type_name$ sarek_tmp;
+                          Ctypes.setf union 
+                          $lid:sarek_type_name^"_"^cstr^"_val"$ str;
+                          Ctypes.setf tmp
+                          $lid:sarek_type_name^"_union"$ union ;
+                          >>
                 in
                 match of_ with
                 | Some x -> copy_of x
                 | None -> <:expr< >>
-              in
-              let match_cases = 
-                List.map 
-                  (fun (cstr,tag,of_) ->
-                     begin
-                       <:match_case< 
-                                     $uid:cstr$ $match of_ with 
-                                     | Some _ -> 
-                                                    <:patt< sarek_tmp>> 
-                     | None -> <:patt< >>$ ->
-                               begin
-                                 Ctypes.setf tmp $lid:sarek_type_name^"_tag"$
-                                                      $int:string_of_int tag$ ;
-                                                           $copy_content cstr of_$;
-                               end
-                       >>
-                     end
-                  ) 
-                  repr_
-              in
-              <:expr< match x with 
-                      $list:(List.rev match_cases)$ >>
-
-            in
-            begin
-              <:expr< fun x -> 
-                      let tmp = 
-                      Ctypes.make $lid:sarek_type_name$ in
-                      $copy_to_c$ ;
-                      tmp
-              >>;
-            end
-
+               in
+               let match_cases = 
+                 List.map 
+                   (fun (cstr,tag,of_) ->
+                    begin
+                      <:match_case< 
+		      $match of_ with 
+                       | Some _ -> 
+                          <:patt< $uid:cstr$ sarek_tmp>>
+		       | None -> <:patt< $uid:cstr$ >>$
+			 ->
+			  begin
+			    Ctypes.setf tmp $lid:sarek_type_name^"_tag"$
+						 $int:string_of_int tag$ ;
+                            $copy_content cstr of_$;
+			  end
+			  >>
+                    end
+                   ) 
+                   repr_
+               in
+	       let l =
+		 List.rev match_cases in
+	       <:expr< match x with 
+		$list:l$  >>
+	     in
+             begin
+	       <:expr< fun x -> 
+                let tmp = 
+                Ctypes.make $lid:sarek_type_name$ in
+                $copy_to_c$ ;
+                tmp
+		>>;
+             end
+	       
           | _ -> assert false
         end;
       c_to_ml =
@@ -949,29 +952,36 @@ let gen_ctypes _loc kt name =
                     (Obj.magic cr))) in
                     !@(ptrcr +@ i)))>>;
       <:rec_binding<set = (fun c i v -> 
-                    let open Ctypes in
-                    let cr = Obj.repr c in 
-                    let ptrcr = 
-                    (Ctypes.from_voidp $lid:sarek_type_name$                 
-                    (Ctypes.ptr_of_raw_address 
-                    (Obj.magic cr))) in
-                    (ptrcr +@ i) <-@ ($t.ml_to_c$ v)) >>]
+			   let open Ctypes in
+			   let cr = Obj.repr c in 
+			   let ptrcr = 
+			     (Ctypes.from_voidp $lid:sarek_type_name$
+						       (Ctypes.ptr_of_raw_address 
+							  (Obj.magic cr))) in
+			   Ctypes.(<-@) (Ctypes.(+@) ptrcr  i)
+					($t.ml_to_c$ v)) >>]
     in
-    <:expr<{$rbSem_of_list l$}  >>
+    ExRec(_loc, rbSem_of_list l, (Ast.ExNil _loc))
   in
   begin
-    Ast.stSem_of_list ([
-      <:str_item<open Vector>>;
-      t.ml_typ;
-      t.ctype;
-      <:str_item<let $lid:"custom"^(String.capitalize name)$ : (($lid:name$,$lid:sarek_type_name$) Vector.custom) = $custom$>>;
-      <:str_item<let $lid:t.name^"_c_repr"$ = $str:t.crepr$>>;
-      <:str_item<Kirc.constructors := $str:t.crepr$ :: !Kirc.constructors>>;
-      <:str_item<Kirc.constructors := $str:t.compare$ :: !Kirc.constructors>>]
-      @
-      (List.map (fun a -> 
-                     <:str_item<Kirc.constructors := $str:a^"\n"$ :: !Kirc.constructors>>) t.build_c
-      ))
+    Ast.stSem_of_list
+      ([
+	(<:str_item<open Vector>>) ;
+	t.ml_typ ;
+	t.ctype ;
+	(<:str_item<
+	   let $lid:"custom"^(String.capitalize name)$ : (($lid:name$,$lid:sarek_type_name$) Vector.custom) =
+	     $custom$>>) ;
+	(<:str_item<let $lid:t.name^"_c_repr"$ = $str:t.crepr$>>) ;
+	(<:str_item<Kirc.constructors := $str:t.crepr$ :: !Kirc.constructors>>) ;
+	(<:str_item<Kirc.constructors := $str:t.compare$ :: !Kirc.constructors>>)
+      ]
+       @
+	 (List.map (fun a -> 
+                    (<:str_item<Kirc.constructors := $str:a^"\n"$ :: !Kirc.constructors>>)
+		   ) t.build_c
+	 )
+      )
   end
 
 

@@ -57,7 +57,7 @@ test: kernels_int.cma test.ml
 	ocamlfind ocamlopt -thread -package ctypes,spoc,sarek,graphics,tsdl -linkpkg -o $@ $<
 
 %.nat : %.ml
-	ocamlfind ocamlopt -thread -package spoc,sarek,graphics \
+	ocamlfind ocamlopt -thread -package spoc,sarek,graphics,tsdl \
 		-package sarek_syntax -syntax camlp4o -linkpkg -o $@ $<	
 
 %.byte : %.ml
