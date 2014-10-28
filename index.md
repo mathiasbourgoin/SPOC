@@ -61,23 +61,24 @@ should work for most multicore x86 CPUs)
 
 ___
 
-## Samples :
+<div id="contentBox" style="margin:0px auto; width:100%">
+<div id="column1" style="float:left; margin:0; width:50%;">
+<h2>Samples:</h2>
+<h4><a href="docs/bitonic.html"><strong><u>Bitonic sort</u></strong></a></h4>
+<h4><a href="docs/imageFilter.html"><strong><u>Image filter</u></strong></a></h4>
+<h4><a href="docs/mandelbrot.html"><strong><u>Mandelbrot</u></strong></a></h4>
+<h4><a href="docs/testOpenCL.html"><strong><u>Test OpenCL</u></strong></a></h4>
+</div>
+<div id="column2" style="float:left; margin:0;width:50%;">
+<h2>Tutorials :</h2>
+<h4><a href="tutos/OCaml2014.html"><strong><u>OCaml-2014 Demo</u></strong></a></h4>
+<h4><a href="tutos/imageFilter.html"><strong><u>ImageFilter</u></strong></a></h4>
+<h4><a href="tutos/mandel.html"><strong><u>Mandelbrot</u></strong></a></h4>
+<h4><a href="tutos/sarek2cl.html"><strong><u>Sarek2CL</u></strong></a></h4>
+</div>
+</div>
 
-#### [**<u>Bitonic sort</u>**][1]
-#### [**<u>Image filter</u>**][2]
-#### [**<u>Mandelbrot</u>**][7]
-#### [**<u>Test OpenCL</u>**][8]
-
-___
-
-## **Tutorials :**
-
-#### [**<u>ImageFilter</u>**](tutos/imageFilter.html)
-#### [**<u>Mandelbrot</u>**](tutos/mandel.html)
-#### [**<u>Sarek2CL</u>**](tutos/sarek2cl.html)
-#### [**<u>OCaml-2014 Demo</u>**](tutos/OCaml2014.html)
-
-
+ 
 #I - How to Build SPOC
 
 

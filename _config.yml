@@ -1,2 +1,3 @@
 markdown: redcarpet
 path: http://mathiasbourgoin.github.io/SPOC
+baseurl: /SPOC
