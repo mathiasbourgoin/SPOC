@@ -60,6 +60,7 @@ type memspace =
 
 type  k_ext =
   | Kern of  k_ext* k_ext
+  | Block of k_ext
   | Params of  k_ext
   | Plus of  k_ext* k_ext
   | Plusf of  k_ext *  k_ext
@@ -81,6 +82,10 @@ type  k_ext =
   | Arr of int*k_ext*elttype*memspace
   | VecVar of  k_ext*int
   | Concat of  k_ext* k_ext
+  | Constr of string * string * k_ext list
+  | Record of string * k_ext list
+  | RecGet of k_ext * string
+  | RecSet of k_ext * k_ext
   | Empty
   | Seq of  k_ext *  k_ext
   | Return of  k_ext
@@ -93,13 +98,16 @@ type  k_ext =
   | Int of int
   | Float of float
   | Double of float
+  | Custom of string*int
   | IntVecAcc of  k_ext *  k_ext
   | Local of  k_ext *  k_ext
   | Acc of  k_ext *  k_ext
   | Ife of  k_ext *  k_ext  *  k_ext   
   | If of  k_ext *  k_ext
+  | Match of string* k_ext * case array
   | Or of  k_ext *  k_ext
   | And of  k_ext *  k_ext
+  | EqCustom of string * k_ext * k_ext 
   | EqBool of  k_ext *  k_ext
   | LtBool of  k_ext *  k_ext
   | GtBool of  k_ext *  k_ext
@@ -112,6 +120,8 @@ type  k_ext =
   | GFloat of (unit -> float)
   | Unit
 
+
+and case =  int * (string*string*int) option * k_ext
 
 type  kfun = 
   | KernFun of  k_ext* k_ext
@@ -130,6 +140,9 @@ let print_ast a =
       print i "Kern"; 
       (aux (i + 1) a);
       (aux (i + 1) b)
+    | Block b ->
+      print i "Kern"; 
+      (aux (i + 1) b);
     | Params p ->
       print i "Params";
       (aux (i+1) p)
@@ -248,6 +261,10 @@ let print_ast a =
       print i "EqBool";
       aux (i+1) a;
       aux (i+1) b;
+    | EqCustom(n,a,b) ->
+      print i "EqSum";
+      aux (i+1) a;
+      aux (i+1) b;
     | Or (a,b) ->
       print i "Or";
       aux (i+1) a;
@@ -306,5 +323,26 @@ let print_ast a =
       print i "GFloat"
     | Unit ->
       print i "Unit"
-
+    | GlobalFun (e,s) ->
+      print i ("Global Fun " ^s);
+      aux (i+1) e;
+    | Constr (s1,s2,l) ->
+      print i ("Constr "^s1^" "^s2);
+      List.iter (fun a -> aux (i+1) a) l
+    | Record (s,l) ->
+      print i ("Record "^s);
+      List.iter (fun a -> aux (i+1) a) l
+    | RecGet (r,s) ->
+      print i ("RecGet");
+      aux (i+1) r
+    | RecSet (r,v) ->
+      print i ("RecGet");
+      aux (i+1) r;
+      aux (i+1) v;
+    | Custom (s,_) -> 
+      print i ("Custom "^s)
+    | Match (s,e1,l) ->
+      print i ("Match "^s);
+      aux (i+1) e1;
+      Array.iter (fun (_,_,a) -> aux (i+1) a) l
   in aux 0 a;;

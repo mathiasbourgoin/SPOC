@@ -37,7 +37,6 @@ let devices = measure_time(Spoc.Devices.init);;
 let measure_time f = f () ;;
 
 let dev1 = ref devices.(0);;
-let dev2 = ref devices.(1);;
 
 let auto_transfers = ref true;;
 

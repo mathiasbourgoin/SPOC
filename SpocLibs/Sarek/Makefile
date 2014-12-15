@@ -1,15 +1,85 @@
-all : build
+MLSRC=Kirc_Ast.ml Kirc_Cuda.ml Kirc_OpenCL.ml Kirc.ml
+MLI=Kirc_Ast.mli Kirc.mli
+MLOBJ_B= $(MLSRC:.ml=.cmo) 
+MLOBJ_N=$(MLSRC:.ml=.cmx)
+EXTSRC=$(wildcard extension/*.ml)
 
-build :
+all : start | build extension/kernels_int.cma
+
+extension/kernels_int.cma: $(EXTSRC)
+	@echo "\033[43m\033[30mBuilding SPOC external kernel extension\033[0m"
+	@echo "\033[31m[kernels_ext.cma]\033[0m"
+	@cd extension && make 
+
+start :
+	@echo "\033[43m\033[30mBuilding Sarek\033[0m"
+
+%.cmo:%.ml
+	@echo  "\033[32m[$@]\033[0m" 
+	@ocamlfind ocamlc -thread -package spoc -c $< 2>>log
+
+%.cmx:%.ml
+	@echo  "\033[32m[$@]\033[0m" 
+	@ocamlfind ocamlopt -thread -package spoc -c $< 2>>log
+
+%.cmi:%.mli
+	@echo  "\033[32m[$@]\033[0m" 
+	@ocamlfind ocamlc -thread -package spoc -c $< 2>>log
+
+
+sarek.cma: $(MLOBJ_B)
+	@echo  "\033[31m[sarek.cma]\033[0m"
+	@ocamlfind ocamlc -thread -package spoc -a -o sarek.cma $(MLOBJ_B)
+
+libsarek.a:sarek.cma
+	@cp sarek.a libsarek.a	
+
+spoclevel-sarek : sarek.cma libsarek.a extension/kernels_int.cma
+	@echo   "\033[36m[spoclevel-sarek]\033[0m"
+	@ocamlmktop -custom -I +camlp4 -cclib -L. dynlink.cma \
+	-cclib -L`ocamlfind query spoc` -I `ocamlfind query spoc` \
+	camlp4o.cma extension/kernels_int.cma str.cma bigarray.cma \
+	-cclib -lcamlrun -cclib -lbigarray \
+	spoc.cma -cclib -lspoc \
+	-cclib -lsarek sarek.cma \
+	-o spoclevel-sarek 2>log
+
+#sarek.cma: sarek.cmo
+#	@echo  "\033[31m[sarek.cma]\033[0m"
+#	@ocamlmklib  -linkall -o sarek sarek.cmo -cclib -lcamlrun
+
+sarek.cmxa : $(MLOBJ_N)
+	@echo  "\033[31m[sarek.cmxa]\033[0m"
+	@ocamlfind ocamlopt -thread -package spoc -a  $(MLOBJ_N) -o sarek.cmxa
+#@ocamlmklib -linkall -o sarek $(MLOBJ_N)  -cclib -lasmrun
+
+build: sarek.cma sarek.cmxa spoclevel-sarek
+
+ocp:
 	ocp-build -init
+	ocp-build
 	cd extension && make
 
-clean :
-	ocp-build clean
-	cd extension && make clean
-	rm -rf _obuild ocp-build.root.* *~ 
+depend :
+	ocamldep *.ml *.mli > .depend
 
-install : uninstall
+include  .depend
+
+
+ocp-clean :
+	ocp-build clean	
+
+clean :
+	cd extension && make clean
+	rm -rf tmp docs ocp-build.root.* ~* *.cm* *.o *.so log a.out
+
+
+install : all uninstall
+	@echo "\033[43m\033[30mInstalling Sarek\033[0m"
+	@ocamlfind install sarek *.cma *.a  *.cmxa *.cmi META 2>> log
+	@cd extension && make install
+
+ocp-install:
 	ocp-build install
 	cp _obuild/sarek/*.cm* `ocamlfind query sarek`
 	cd extension && make install

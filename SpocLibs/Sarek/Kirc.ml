@@ -66,6 +66,7 @@ type ('a,'b,'c,'d,'e) sarek_kernel =
   ('a,'b) spoc_kernel * ('c,'d,'e) kirc_kernel
 
 
+let constructors = ref [] 
 
 let opencl_head = (
   "float spoc_fadd ( float a, float b );\n"^
@@ -78,8 +79,8 @@ let opencl_head = (
   "float spoc_fdiv ( float a, float b ) { return (a / b);}\n"^
   "int logical_and (int a, int b ) { return (a & b);}\n"^
   "int spoc_powint (int a, int b ) { return ((int) pow (((float) a), ((float) b)));}\n"^
-  "int spoc_xor (int a, int b ) { return (a^b);}\n"
-)
+  "int spoc_xor (int a, int b ) { return (a^b);}\n")
+
 let opencl_float64 = (
   "#ifndef __FLOAT64_EXTENSION__ \n"^
   "#define __FLOAT64_EXTENSION__ \n"^
@@ -165,11 +166,15 @@ let spoc_div_float a b = Divf (a,b)
 let spoc_mod a b = Mod (a,b)
 let spoc_ife a b c = Ife (a,b,c)
 let spoc_if a b  = If (a,b)
+let spoc_match s e l = Match (s,e,l)
+let spoc_case i o e : case = (i,o,e)
 let spoc_do a b c d = DoLoop (a,b,c,d)
 let spoc_while a b = While (a,b)
 
 let params l = Params l
 let spoc_id i = Id ("")
+let spoc_constr t c params = Constr (t,c,params)
+let spoc_record t params = Record (t,params)
 let spoc_return k = Return k 
 let concat a b = Concat (a,b)
 let empty_arg () = Empty
@@ -178,12 +183,16 @@ let new_float_var i = FloatVar i
 let new_float64_var i = DoubleVar i 
 let new_double_var i = DoubleVar i 
 let new_unit_var i = UnitVar i
+let new_custom_var n v = Custom (n,v)  (* <--- *)
 
 let new_int_vec_var v = VecVar (Int 0, v) 
 let new_float_vec_var v = VecVar (Float 0., v) 
 let new_double_vec_var v = VecVar (Double 0., v) 
+let new_custom_vec_var n v = VecVar (Custom (n,0), v)  (* <--- *)
 
 let int_vect i = IntVect i 
+let spoc_rec_get r id = RecGet (r,id)
+let spoc_rec_set r v = RecSet (r,v)
 let set_vect_var vecacc value = 
   SetV (vecacc, value)
 let set_arr_var arracc value = 
@@ -200,6 +209,7 @@ let float_var f = f
 let double_var d = CastDoubleVar d
 
 let equals a b = EqBool (a,b)
+let equals_custom s v1 v2 = EqCustom (s,v1,v2)
 let equals32 a b = EqBool (a,b)
 let equals64 a b = EqBool (a,b)
 let equalsF a b = EqBool (a,b)
@@ -261,6 +271,7 @@ let rewrite ker =
   let b = ref false in 
   let rec aux kern = 
     match kern with
+    | Block b -> Block (aux b)
     | Kern (k1,k2) -> 
       Kern (aux k1, aux k2)
     | Params k -> 
@@ -307,6 +318,12 @@ let rewrite ker =
       VecVar (aux k, idx) 
     | Concat (k1,k2) -> 
       Concat (aux k1, aux k2)
+    | Constr (t,c,l) ->
+      Constr (t, c, List.map aux l)
+    | Record (t,l) ->
+      Record (t, List.map aux l)
+    | RecGet (r,s) -> RecGet (aux r,s)
+    | RecSet (r,v) -> RecSet (aux r, aux v)
     | Empty -> kern
     | Seq (k1,k2) -> 
       Seq (aux k1, aux k2)
@@ -327,6 +344,11 @@ let rewrite ker =
        | Seq (k1, k2) ->
          ( b:= true;
            Seq ( aux k1, aux (Return k2)))
+       | Match (s,a,bb) -> 
+         (b := true;
+          Match (s,aux a, 
+                 Array.map (fun (i,ofid,e) -> 
+                     (i,ofid, aux (Return e))) bb))             
        | _ ->
          Return (aux k))
     | Acc (k1,k2) ->
@@ -341,6 +363,11 @@ let rewrite ker =
        | Ife(k3, k4, k5) ->
          (b := true;
           Ife (aux k3, SetV (aux k1, aux k4), SetV (aux k1, k5)))
+       | Match (s,a,bb) -> 
+         (b := true;
+          Match (s,aux a, 
+                 Array.map (fun (i,ofid,e) -> 
+                     (i,ofid,SetV(aux k1, aux e))) bb))              
        | _ -> SetV (aux k1, aux k2)
       )
     | SetLocalVar (k1,k2,k3) -> 
@@ -352,6 +379,7 @@ let rewrite ker =
     | GFloat _ -> kern
     | Float _ -> kern
     | Double _ -> kern
+    | Custom _ -> kern
     | IntVecAcc (k1,k2) -> 
       (match k2 with
        |	Seq (k3,k4) ->
@@ -369,6 +397,8 @@ let rewrite ker =
       And (aux k1, aux k2)
     | EqBool (k1,k2) -> 
       EqBool (aux k1, aux k2)
+    | EqCustom (n,k1,k2) -> 
+      EqCustom (n,aux k1, aux k2)
     | LtBool (k1,k2) -> 
       LtBool (aux k1, aux k2)
     | GtBool (k1,k2) -> 
@@ -383,8 +413,11 @@ let rewrite ker =
     | While (k1, k2) ->
       While (aux k1, aux k2)
     | App (a,b) -> App (aux a, (Array.map aux b))
-    | GlobalFun (a,b) -> GlobalFun (a,b)
+    | GlobalFun (a,b) -> GlobalFun (aux a, b)
     | Unit -> kern
+    | Match (s,a,b) -> Match (s,aux a, 
+                              Array.map (fun (i,ofid,e) -> (i,ofid,aux e)) b)
+    
 
   in
   let kern = ref (aux ker) in
@@ -407,7 +440,7 @@ let save file string =
 let load_file f =
   let ic = open_in f in
   let n = in_channel_length ic in
-  let s = String.create n in
+  let s = String.make  n ' ' in
   really_input ic s 0 n;
   close_in ic;
   (s)
@@ -447,7 +480,8 @@ let gen ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('a, 'b, 'c,'d,'e) sarek
     let src = Kirc_Cuda.parse 0 (rewrite k2) in
     let global_funs = ref "" in
     Hashtbl.iter (fun _ a -> global_funs := !global_funs^(fst a)^"\n") Kirc_Cuda.global_funs;
-    save "kirc_kernel.cu" (cuda_head ^ !global_funs ^ src) ;
+    let constructors = List.fold_left (fun a b -> "__device__ "^b^a) "\n\n" !constructors in
+    save "kirc_kernel.cu" (cuda_head ^ constructors ^  !global_funs ^ src) ;
     ignore(Sys.command ("nvcc -m64 -arch=sm_10 -O3 -ptx kirc_kernel.cu -o kirc_kernel.ptx"));
     let s = (load_file "kirc_kernel.ptx") in
 
@@ -464,8 +498,10 @@ let gen ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('a, 'b, 'c,'d,'e) sarek
     let src = Kirc_OpenCL.parse 0 (rewrite k2) in
     let global_funs = ref "" in
     Hashtbl.iter (fun _ a -> global_funs := (fst a) ^ "\n" ^ !global_funs ^ "\n") Kirc_OpenCL.global_funs;
-    save "kirc_kernel.cl" (opencl_head ^ !global_funs ^ src) ;
-    kir#set_opencl_sources (opencl_head ^ !global_funs ^ src);
+    let constructors = List.fold_left (fun a b -> b^a) "\n\n" !constructors in
+    let clkernel = (opencl_head ^ constructors ^ !global_funs ^  src)  in
+    save "kirc_kernel.cl" clkernel;
+    kir#set_opencl_sources clkernel;
 
   in
   begin
@@ -714,6 +750,7 @@ let arg_of_vec v  =
 
 
 let propagate f = function
+  | Block b -> Block (f b)
   | Return a  -> Return (f a)
   | Seq (a,b)  -> Seq (f a,  f b)
   | Local (a,b) -> Local (f a, f b)
@@ -757,6 +794,7 @@ let propagate f = function
   | Or (a, b) -> Or (f a, f b)
   | And (a, b) -> And (f a, f b)
   | EqBool (a, b) -> EqBool (f a, f b)
+  | EqCustom (n,a, b) -> EqCustom (n,f a, f b)
   | LtEBool (a, b) -> LtEBool (f a, f b)
   | GtEBool (a, b) -> GtEBool (f a, f b)
   | DoLoop (a, b, c, d) -> DoLoop (f a, f b, f c, f d)
@@ -765,6 +803,15 @@ let propagate f = function
   | GInt foo -> GInt foo
   | GFloat foo -> GFloat foo
   | Unit -> Unit
+  | GlobalFun (a,b) -> GlobalFun (f a, b)
+  | Constr (a,b,c) -> Constr (a,b,List.map f c)
+  | Record (a,c) -> Record (a,List.map f c)
+  | RecGet (r,s) -> RecGet (f r, s)
+  | RecSet (r,v) -> RecSet (f r, f v)
+  | Custom (s,i) -> Custom (s,i)
+  | Match (s,a,b) -> Match (s,f a, 
+                            Array.map (fun (i,ofid,e) -> (i,ofid,f e)) b)
+
 
 let map ((ker: ('a, 'b, ('c -> 'd), 'e,'f) sarek_kernel)) ?dev:(device=(Spoc.Devices.init ()).(0)) (vec_in : ('g, 'h) Vector.vector) : ('i, 'j) Vector.vector= 
   let ker2,k = ker in 

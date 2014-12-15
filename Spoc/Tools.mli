@@ -46,12 +46,12 @@ val iteri : ('a -> int -> 'b) -> ('a, 'c) Vector.vector -> unit
 val map :
   ('a -> 'b) ->
   ('b, 'c) Vector.kind -> ('a, 'd) Vector.vector -> ('b, 'c) Vector.vector
-val trueCustom : bool Vector.custom
-val falseCustom : bool Vector.custom
+val trueCustom : (bool,bool) Vector.custom
+val falseCustom : (bool,bool) Vector.custom
 val fold_left : ('a -> 'b -> 'a) -> 'a -> ('b, 'c) Vector.vector -> 'a
 val fold_right : ('a -> 'b -> 'b) -> ('a, 'c) Vector.vector -> 'b -> 'b
 (**/**)
-val vfalse : (bool, 'a) Vector.kind
-val vtrue : (bool, 'a) Vector.kind
-val spoc_bool : (bool, 'a) Vector.kind
+val vfalse : (bool, bool) Vector.kind
+val vtrue : (bool, bool) Vector.kind
+val spoc_bool : (bool, bool) Vector.kind
 (**/**)

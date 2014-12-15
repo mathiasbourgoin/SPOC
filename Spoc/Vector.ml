@@ -37,9 +37,8 @@ type device_vec
 
 type customarray
 
-type 'a custom =
+type ('a,'b) custom =
   {
-    elt :'a;
     size : int ;
     get: customarray -> int -> 'a;
     set: customarray -> int -> 'a -> unit
@@ -54,7 +53,8 @@ type ('a, 'b) kind =
   | Int32 of ('a, 'b) Bigarray.kind
   | Int64 of ('a, 'b) Bigarray.kind
   | Complex32 of ('a, 'b) Bigarray.kind
-  | Custom of 'a custom
+  | Custom of ('a,'b) custom
+
   | Unit of ('a, 'b) couple
   | Dummy of ('a, 'b) couple
 
@@ -69,7 +69,8 @@ let complex32 = Complex32 (Bigarray.complex32)
 
 type ('a,'b) spoc_vec =
   | Bigarray of ('a, 'b, Bigarray.c_layout)Bigarray.Array1.t
-  | CustomArray of (customarray * 'a custom)
+  | CustomArray of (customarray * ('a,'b) custom)
+
 
 external float32_of_float : float -> float = "float32_of_float"
 external float_of_float32 : float -> float = "float_of_float32"
@@ -99,7 +100,7 @@ and ('a,'b) vector = {
 external init_cuda_device_vec: unit -> device_vec = "spoc_init_cuda_device_vec"
 external init_opencl_device_vec : unit -> device_vec = "spoc_init_opencl_device_vec"
 
-external create_custom : 'a custom -> int -> customarray = "spoc_create_custom"
+external create_custom : ('a,'b) custom -> int ->  customarray = "spoc_create_custom"
 
 
 external cuda_custom_alloc_vect :
@@ -140,7 +141,6 @@ let create (kind: ('a,'b) kind) ?dev size =
         sub = [];
         vec_id = !vec_id;
         seek = 0; }
-
     | Custom c -> {
         device = -1;
         vector = CustomArray ((create_custom c size), c);
@@ -252,7 +252,7 @@ let temp_vector vect =
 let copy_sub vect1 vect2 =
   vect2.is_sub <- vect1.is_sub
 
-external sub_custom_array : customarray -> 'a custom -> int -> customarray =
+external sub_custom_array : customarray -> ('a,'b) custom -> int -> customarray =
   "spoc_sub_custom_array"
 
 let sub_vector (vect : ('a, 'b) vector) _start _len =

@@ -1,3 +1,4 @@
+
 (******************************************************************************
  * Mathias Bourgoin, Université Pierre et Marie Curie (2013)
  *
@@ -37,1318 +38,7 @@ open Camlp4.PreCast
 open Syntax
 open Ast
 
-open Typer
-
-let remove_int_var var = 
-  match var.e with 
-  | Id (_loc, s)  -> 
-    Hashtbl.remove !current_args (string_of_ident s);
-  | _ -> failwith "error new_var"
-
-let rec parse_int i t= 
-  match i.e with
-  | Id (_loc,s)  -> 
-    (
-      let is_mutable = ref false in
-      ( try 
-          let var = 
-            Hashtbl.find !current_args (string_of_ident s)  in
-          (
-            is_mutable := var.is_mutable;
-            match var.var_type with
-            | TUnknown -> var.var_type <- t
-            | x when x = t  -> ()
-            | _  -> assert (not debug); raise (TypeError (t, var.var_type, _loc)));
-        with Not_found -> 
-          (
-            try 
-              let c_const = Hashtbl.find !intrinsics_const (string_of_ident s) in
-              (match c_const.typ with
-               | x when x = t -> ()
-               | _  -> assert (not debug); raise (TypeError (t, c_const.typ, _loc)))
-            with Not_found ->
-              (assert (not debug); raise (Unbound_value ((string_of_ident s), _loc)))));
-      (match i.t with
-       | x when x = t -> () 
-
-       | TUnknown  ->  i.t <- t; 
-       | _ -> assert (not debug); raise (TypeError (t, i.t, i.loc)));
-      if !is_mutable then
-        <:expr< $(ExId (_loc, s))$.contents>>
-      else
-        <:expr< $(ExId (_loc, s))$>>)
-  | Int (_loc, s) -> 
-    ( match i.t with 
-      | TInt32 | TInt32 -> <:expr< $(ExInt (_loc, s))$>>
-      | _ -> assert (not debug); raise (TypeError (t, i.t, i.loc)))
-  | Int32 (_loc, s) -> 
-    ( match i.t with 
-      | TInt32 | TInt32 -> <:expr< $(ExInt32 (_loc, s))$>>
-      | _ -> assert (not debug); raise (TypeError (t, i.t, i.loc)))
-
-  | Int64 (_loc, s) -> 
-    ( match i.t with 
-      | TInt64  -> <:expr< $(ExInt64 (_loc, s))$>>
-      | _ -> assert (not debug); raise (TypeError (t, i.t, i.loc)))
-  (* | Plus (_loc, a, b) *) |Plus32 (_loc, a, b) | Plus64 (_loc, a, b)  -> 
-    parse_body i
-  (* | Min (_loc, a, b) *) |Min32 (_loc, a, b) | Min64 (_loc, a, b)  -> 
-    parse_body i
-  (* | Mul (_loc, a, b) *) |Mul32 (_loc, a, b) | Mul64 (_loc, a, b)  -> 
-    parse_body i
-  (* | Div (_loc, a, b) *) |Div32 (_loc, a, b) | Div64 (_loc, a, b)  -> 
-    parse_body i
-  | Mod (_loc, a, b) -> 
-    parse_body i
-  | Bind (_loc, var,y, z, is_mutable)  ->
-    (
-      let gen_z = parse_int z t in
-      match var.e with
-      | Id (_loc,s) ->  
-        (<:expr<let $PaId(_loc,s)$ = $(parse_body y)$ in $gen_z$>>)
-      | _ -> failwith "error parse_body Bind")
-  | Ref (_loc, id) -> 
-    <:expr< ! $parse_body id$>>
-  | VecGet (_loc, vector, index)  -> 
-    ( match i.t with
-      | x when x = t -> ()
-      | x when x = TUnknown -> i.t <- TVec t 
-      | _  -> assert (not debug); raise (TypeError (t, i.t , _loc)));
-    (match vector.e with
-     | Id (_loc,s)  -> 
-       let var = (Hashtbl.find !current_args (string_of_ident s)) in
-       let type_constraint = 
-         let vec_typ_to_e k =
-           match k with 
-           | TInt32  -> <:ctyp<(int32, Bigarray.int32_elt) Spoc.Vector.vector>>
-           | TInt64  -> <:ctyp<(int64, Bigarray.int64_elt) Spoc.Vector.vector>>
-           (*| TInt ->  <:ctyp<(int, Bigarray.int_elt) Spoc.Vector.vector>>*)
-           |  _  ->  assert false
-         in
-         (match var.var_type with
-          | TVec k when k = t  -> (
-              vec_typ_to_e k
-            )
-          | TVec TUnknown -> var.var_type <- TVec t;
-            vec_typ_to_e t
-          | _  -> assert (not debug); raise (TypeError (TVec t, var.var_type, _loc)))
-       in
-       <:expr<Spoc.Mem.get ($ExId(_loc,s)$:$type_constraint$) (Int32.to_int $parse_body index$)>>
-     | _  ->  assert (not debug); failwith "Unknwown vector");
-  | ArrGet _ -> parse_body i
-  | App (_loc, e1, e2) -> parse_body i
-  | _ -> my_eprintf (k_expr_to_string i.e); assert (not debug);  raise (TypeError (t, i.t, i.loc))
-                             
-
-and parse_float f t = 
-  match f.e with
-  | App (_loc, e1, e2) ->
-    parse_body f
-  | Id (_loc,s)  ->
-    (let is_mutable = ref false in
-     ( let var = (
-        ( try Hashtbl.find !current_args (string_of_ident s) 
-          with _ -> assert (not debug); raise (Unbound_value ((string_of_ident s),_loc)))) in
-       is_mutable := var.is_mutable;
-       match var.var_type with
-       | TUnknown ->
-         ( try 
-             (Hashtbl.find !current_args (string_of_ident s)).var_type <- t  
-           with _ -> assert (not debug); raise (Unbound_value ((string_of_ident s),_loc)))
-       | x when x = t  -> ()
-       | _  -> assert (not debug); raise (TypeError (t, var.var_type, _loc)));
-     (match f.t with
-      | x when x = t -> ()
-      | TUnknown  ->  f.t <- t
-      | _ -> assert (not debug); raise (TypeError (t, f.t, f.loc))) ;
-     if !is_mutable then
-       <:expr< $(ExId (_loc, s))$.contents>>
-     else
-       <:expr< $(ExId (_loc, s))$>>)
-  | Ref (_loc, id) -> 
-    <:expr< ! $parse_body id$>>
-  | Float (_loc, s)  -> 
-    ( match f.t with 
-      | TFloat32  -> <:expr<$(ExFlo(_loc, s))$>>
-      | _ -> assert (not debug); raise (TypeError (t, f.t, f.loc)))
-  | Float32 (_loc, s) -> 
-    ( match f.t with 
-      | TFloat32  -> <:expr< $(ExFlo (_loc, s))$>>
-      | _ -> assert (not debug); raise (TypeError (t, f.t, f.loc)))
-  | Float64 (_loc, s) -> 
-    ( match f.t with 
-      | TFloat64  -> <:expr< $(ExFlo (_loc, s))$>>
-      | _ -> assert (not debug); raise (TypeError (t, f.t, f.loc)))
-  | PlusF (_loc, a, b) | PlusF32 (_loc, a, b) | PlusF64  (_loc, a, b)-> 
-    parse_body f 
-  | MinF (_loc, a, b) | MinF32 (_loc, a, b) | MinF64  (_loc, a, b)-> 
-    parse_body f 
-  | MulF _ | MulF32 _  | MulF64 _-> 
-    parse_body f 
-  | DivF (_loc, a, b) | DivF32 (_loc, a, b) | DivF64  (_loc, a, b)-> 
-    parse_body f 
-
-  | VecGet (_loc, vector, index)  -> 
-    ( match f.t with
-      | x when x = t -> ()
-      | TUnknown ->f.t <-  t
-      | _  ->  assert (not debug); raise (TypeError (t, f.t , _loc)));
-    (match vector.e with
-     | Id (_loc,s)  -> 
-       let var = (Hashtbl.find !current_args (string_of_ident s)) in
-       let type_constraint =
-         let rec aux () =
-           (match var.var_type with
-            | TUnknown ->
-              (var.var_type <- TVec t;
-               aux ())
-            | TVec k when k = t  -> (
-                match k with 
-                (*| TFloat -> <:ctyp<(float, Bigarray.float32_elt) Spoc.Vector.vector>>*)
-                | TFloat32 -> <:ctyp<(float, Bigarray.float32_elt) Spoc.Vector.vector>>
-                | TFloat64 -> <:ctyp<(float, Bigarray.float64_elt) Spoc.Vector.vector>>
-                |  _  ->  assert false
-              )
-            | _  ->
-              assert (not debug); raise (TypeError (TVec t, var.var_type, _loc))
-              
-           ) in aux () in
-         <:expr<Spoc.Mem.get ($ExId(_loc,s)$:$type_constraint$) (Int32.to_int $parse_body index$)>>
-     | _  ->
-       assert (not debug); failwith "Unknwown vector");
-  | ModuleAccess _ -> parse_body f
-  | Acc _ -> parse_body f
-  | _ ->   
-    my_eprintf (Printf.sprintf "(* val %s *)\n%!" (k_expr_to_string f.e));
-    assert (not debug); raise (TypeError (t, f.t, f.loc))
-
-and  parse_int2 i t= 
-  match i.e with
-  | Id (_loc,s) -> 
-    (try 
-       let var = (Hashtbl.find !current_args (string_of_ident s)) in
-       (*(match var.var_type with
-        | x when x = t ->  ()
-        | _  ->  assert (not debug); raise (TypeError (t, var.var_type, _loc)));*)
-       if var.is_global then
-         <:expr<global_int_var $ExId(_loc,s)$>>
-       else
-         <:expr<var  $ExInt(_loc, string_of_int var.n)$>>
-     with
-     | Not_found ->
-       try 
-         let c_const = Hashtbl.find !intrinsics_const (string_of_ident s) in
-         match c_const.typ with
-         | x when x = t -> 
-           <:expr< intrinsics $ExStr(_loc, c_const.cuda_val)$ $ExStr(_loc, c_const.opencl_val)$>>
-         | _  -> assert (not debug); raise (TypeError (t, c_const.typ, _loc))
-       with Not_found ->
-         (assert (not debug); raise (Unbound_value ((string_of_ident s),_loc))))
-  | Ref (_, {loc=_; e=Id(_loc,s); t=_}) ->
-    <:expr<global_int_var (fun () -> ! $ExId(_loc, s)$)>>
-  | Int (_loc, s)  -> <:expr<spoc_int32 $(ExInt32 (_loc, s))$>>
-  | Int32 (_loc, s)  -> <:expr<spoc_int32 $(ExInt32 (_loc, s))$>>
-  | Int64 (_loc, s)  -> <:expr<spoc_int64 $(ExInt64 (_loc, s))$>>
-
-(*  | Plus (_loc, a, b) *) | Plus32 (_loc, a, b)| Plus64 (_loc, a, b)  -> 
-    parse_body2 i false
-(*  | Min (_loc, a, b) *) | Min32 (_loc, a, b)| Min64 (_loc, a, b)  -> 
-    parse_body2 i false
-(*  | Mul (_loc, a, b) *) | Mul32 (_loc, a, b)| Mul64 (_loc, a, b)  -> 
-    parse_body2 i false
-  | Mod (_loc, a, b) -> 
-    parse_body2 i false
-(*  | Div (_loc, a, b) *) | Div32 (_loc, a, b)| Div64 (_loc, a, b)  -> 
-    parse_body2 i false
-  | Bind (_loc, var, y, z, is_mutable)  -> parse_body2 i false
-  | VecGet (_loc, vector, index)  -> 
-    (*( match i.t with
-      | x when equal_types x t -> ()
-      | _  -> assert (not debug); raise (TypeError (t, i.t , _loc)));*)
-    (*(match vector.e with
-     | Id (_loc,s)  -> 
-       let var = (Hashtbl.find !current_args (string_of_ident s)) in
-       (match var.var_type with
-        | TVec x when x = t  -> ()
-        | _  -> assert (not debug); raise (TypeError (TVec t, var.var_type, _loc))
-       );
-     | _  ->  failwith "Unknwown vector");*)
-    <:expr<get_vec $parse_int2 vector (TVec t)$ $parse_int2 index TInt32$>>
-  | ArrGet (_loc, array, index)  -> 
-    (*( match i.t with
-      | x when x = t -> ()
-      | _  -> assert (not debug); raise (TypeError (t, i.t , _loc)));*)
-    (*(match array.e with
-     | Id (_loc,s)  -> 
-       let var = (Hashtbl.find !current_args (string_of_ident s)) in
-       (match var.var_type with
-        | TArr (x,_) when x = t  -> ()
-        | _  -> assert (not debug); raise (TypeError (TArr (t, Any), var.var_type, _loc))
-       );
-       | _  ->  failwith "Unknwown vector");*)
-       <:expr<get_arr $parse_int2 array (TVec t)$ $parse_int2 index TInt32$>>
-  | App _ -> parse_body2 i false
-  | _ -> ( my_eprintf (Printf.sprintf "--> (* val %s *)\n%!" (k_expr_to_string i.e));
-            assert (not debug); raise (TypeError (t, i.t, i.loc));
-            failwith "error parse_int2")
-
-and  parse_float2 f t= 
-  match f.e with
-  | App (_loc, e1, e2) ->
-    parse_body2 f false
-  | Id (_loc,s)  -> 
-    (try 
-       let var = (Hashtbl.find !current_args (string_of_ident s)) in
-       (*(match var.var_type with
-        | x when x = t ->  ()
-        | _  ->  assert (not debug); raise (TypeError (t, var.var_type, _loc)));*)
-       if var.is_global then
-         <:expr<global_float_var $ExId(_loc,s)$>>
-       else
-         <:expr<var  $ExInt(_loc, string_of_int var.n)$>>
-     with
-     | Not_found ->
-       try 
-         let c_const = Hashtbl.find !intrinsics_const (string_of_ident s) in
-         match c_const.typ with
-         | x when x = t -> 
-           <:expr< intrinsics $ExStr(_loc, c_const.cuda_val)$ $ExStr(_loc, c_const.opencl_val)$>>
-         | _  -> assert (not debug); raise (TypeError (t, c_const.typ, _loc))
-       with Not_found ->
-         (assert (not debug); raise (Unbound_value ((string_of_ident s),_loc))))
-  | Ref (_, {loc=_; e=Id(_loc,s); t=_}) ->
-    <:expr<global_float_var (fun () -> ! $ExId(_loc, s)$)>>
-  | Float (_loc, s)  -> <:expr<spoc_float $(ExFlo(_loc, s))$>>
-  | Float32 (_loc, s)  -> <:expr<spoc_float $(ExFlo(_loc, s))$>>
-  | Float64 (_loc, s)  -> <:expr<spoc_double $(ExFlo(_loc, s))$>>
-  | PlusF (_loc, a, b) |  PlusF32 (_loc, a, b) | PlusF64 (_loc, a, b)  -> 
-    parse_body2 f false
-  | MinF (_loc, a, b) |  MinF32 (_loc, a, b) | MinF64 (_loc, a, b)  -> 
-    parse_body2 f false
-  | MulF (_loc, a, b) |  MulF32 (_loc, a, b) | MulF64 (_loc, a, b)  -> 
-    parse_body2 f false
-  | DivF (_loc, a, b) |  DivF32 (_loc, a, b) | DivF64 (_loc, a, b)  -> 
-    parse_body2 f false
-  | VecGet (_loc, vector, index)  -> 
-    (*( match f.t with
-      | x when x = t -> ()
-      | _  -> assert (not debug); raise (TypeError (t, f.t , _loc)));
-    (match vector.e with
-     | Id (_loc,s)  -> 
-       let var = (Hashtbl.find !current_args (string_of_ident s)) in
-       (match var.var_type with
-        | TVec x when x = t  -> ()
-        | _  -> assert (not debug); raise (TypeError (TVec t, var.var_type, _loc))
-       );
-     | _  ->  failwith "Unknwown vector");*)
-    <:expr<get_vec $parse_float2 vector (TVec t)$ $parse_int2 index TInt32$>>
-  | ModuleAccess _ -> parse_body2 f false
-  | _  -> ( my_eprintf (Printf.sprintf "(* val %s *)\n%!" (k_expr_to_string f.e));
-            assert (not debug); raise (TypeError (t, f.t, f.loc));
-            failwith "error parse_float2")	
-
-and parse_modacc m =
-  let res = ref m in
-  let rec aux m = 
-    match m.e with
-    | ModuleAccess (_loc, e1, e2) -> ExAcc(_loc, <:expr< $uid:e1$>>, aux e2)
-    | Id _ -> parse_body m
-    | App (_loc, e1, e2::[]) -> res:=e2; aux e1
-  in
-  (aux m), !res
-
-and parse_app_ml a modu =
-  match a.e with
-  | Id (_loc,s) -> ExAcc(_loc, modu,ExId(_loc, s))
-  | ModuleAccess (_loc, s, e) ->
-    let e = parse_app_ml e (ExAcc(_loc, modu, ExId(_loc, IdUid(_loc,s)))) in e
-  | App (_loc, e1, e2::[]) ->
-    let rec aux a modu =
-      match a.e with
-      | Id (_loc,s) -> ExApp(_loc, ExAcc(_loc, modu,ExId(_loc, s)), parse_body e2)
-      | App (l, e1, e2::[]) -> ExApp (_loc, aux e1 modu, parse_body e2)
-      | ModuleAccess (_loc, s, e) -> 
-        ExAcc(_loc, modu, (parse_body a))
-      | _ -> my_eprintf (Printf.sprintf "(* app %s *)\n%!" (k_expr_to_string a.e)); 
-        assert false 
-    in
-    ExApp(_loc, aux e1 modu, parse_body e2)
-  | _ -> parse_body a 
-  | _ -> 
-    my_eprintf (Printf.sprintf"(* app %s *)\n%!" (k_expr_to_string a.e));
-    assert false
-
-
-and parse_body body = 
-  my_eprintf (Printf.sprintf"(* val %s *)\n%!" (k_expr_to_string body.e));
-  match body.e with
-  | Bind (_loc, var,y, z, is_mutable)  ->
-    (
-      match var.e with
-      | Id (_loc,s)  ->
-	 (match y.e with
-	  | Fun (_loc,stri,tt,funv) ->
-	     parse_body z;
-	  | _ ->
-	     let y = parse_body y in
-	     let gen_z = parse_body z in
-             if is_mutable then
-               (<:expr<let $PaId(_loc,s)$ = ref $y$ in $gen_z$>>)
-             else
-               (<:expr<let $PaId(_loc,s)$ = $y$ in $gen_z$>>)
-	 )
-      | _ -> failwith "error parse_body Bind"
-    )
-(*  | Plus (_loc, a,b) -> 
-    ( <:expr<$(parse_int a TInt)$ + $(parse_int b TInt)$>>) *)
-  | Plus32 (_loc, a,b) -> 
-    ( <:expr<Int32.add $(parse_int a TInt32)$  $(parse_int b TInt32)$>>)
-  | Plus64 (_loc, a, b) ->
-    ( <:expr<Int64.add $(parse_int a TInt64)$  $(parse_int b TInt64)$>>)
-  | PlusF (_loc, a,b) -> 
-    ( <:expr<$(parse_float a TFloat32)$ +. $(parse_float b TFloat32)$>>)
-  | PlusF32 (_loc, a,b) -> 
-    let a_ = (parse_float a TFloat32) in
-    let b_ = (parse_float b TFloat32) in
-    (*(if (a.t <> TFloat32 && a.t <> TUnknown) then
-       (assert (not debug); raise (TypeError (TFloat32, a.t, a.loc))));
-    (if (b.t <> TFloat32 && b.t <> TUnknown) then
-       (assert (not debug); raise (TypeError (TFloat32, b.t, b.loc))));*)
-    ( <:expr<$a_$ +. $b_$>>)
-  | PlusF64 (_loc, a,b) -> 
-    let a_ = (parse_float a TFloat64) in
-    let b_ = (parse_float b TFloat64) in
-    (*(if (a.t <> TFloat64 && a.t <> TUnknown) then
-       (assert (not debug); raise (TypeError (TFloat64, a.t, a.loc))));
-    (if (b.t <> TFloat64 && b.t <> TUnknown) then
-       (assert (not debug); raise (TypeError (TFloat64, b.t, b.loc))));*)
-    ( <:expr<$a_$ +. $b_$>>)
-
-(*  | Min (_loc, a,b) -> 
-    ( <:expr<$(parse_int a TInt)$ - $(parse_int b TInt)$>>) *)
-  | Min32 (_loc, a,b) -> 
-    ( <:expr<Int32.min $(parse_int a TInt32)$  $(parse_int b TInt32)$>>)
-  | Min64 (_loc, a, b) ->
-    ( <:expr<Int64.min $(parse_int a TInt64)$  $(parse_int b TInt64)$>>)
-  | MinF (_loc, a,b) -> 
-    ( <:expr<$(parse_float a TFloat32)$ -. $(parse_float b TFloat32)$>>)
-  | MinF32 (_loc, a,b) -> 
-    let a_ = (parse_float a TFloat32) in
-    let b_ = (parse_float b TFloat32) in
-    (*(if (a.t <> TFloat32 && a.t <> TUnknown) then
-       (assert (not debug); raise (TypeError (TFloat32, a.t, a.loc))));
-    (if (b.t <> TFloat32 && b.t <> TUnknown) then
-       (assert (not debug); raise (TypeError (TFloat32, b.t, b.loc))));*)
-    ( <:expr<$a_$ -. $b_$>>)
-  | MinF64 (_loc, a,b) -> 
-    let a_ = (parse_float a TFloat64) in
-    let b_ = (parse_float b TFloat64) in
-    (*(if (a.t <> TFloat64 && a.t <> TUnknown) then
-       (assert (not debug); raise (TypeError (TFloat64, a.t, a.loc))));
-    (if (b.t <> TFloat64 && b.t <> TUnknown) then
-       (assert (not debug); raise (TypeError (TFloat64, b.t, b.loc))));*)
-    ( <:expr<$a_$ -. $b_$>>)
-
-
-(*  | Mul (_loc, a,b) -> 
-    ( <:expr<  $(parse_int a TInt)$ * $(parse_int b TInt)$>>) *)
-  | Mul32 (_loc, a,b) -> 
-    ( <:expr<Int32.mul $(parse_int a TInt32)$  $(parse_int b TInt32)$>>)
-  | Mul64 (_loc, a, b) ->
-    ( <:expr<Int64.mul $(parse_int a TInt64)$  $(parse_int b TInt64)$>>)
-  | MulF (_loc, a,b) -> 
-    ( <:expr<$(parse_float a TFloat32)$ *. $(parse_float b TFloat32)$>>)
-  | MulF32 (_loc, a,b) -> 
-    let a_ = (parse_float a TFloat32) in
-    let b_ = (parse_float b TFloat32) in
-    (*(if (a.t <> TFloat32 && a.t <> TUnknown) then
-       (assert (not debug); raise (TypeError (TFloat32, a.t, a.loc))));
-    (if (b.t <> TFloat32 && b.t <> TUnknown) then
-       (assert (not debug); raise (TypeError (TFloat32, b.t, b.loc))));*)
-    ( <:expr<$a_$ *. $b_$>>)
-  | MulF64 (_loc, a,b) -> 
-    let a_ = (parse_float a TFloat64) in
-    let b_ = (parse_float b TFloat64) in
-    (*(if (a.t <> TFloat64 && a.t <> TUnknown) then
-       (assert (not debug); raise (TypeError (TFloat64, a.t, a.loc))));
-    (if (b.t <> TFloat64 && b.t <> TUnknown) then
-       (assert (not debug); raise (TypeError (TFloat64, b.t, b.loc))));*)
-    ( <:expr<$a_$ *. $b_$>>)
-
-(*  | Div (_loc, a,b) -> 
-    ( <:expr<$(parse_int a TInt)$ / $(parse_int b TInt)$>>) *)
-  | Div32 (_loc, a,b) -> 
-    ( <:expr<Int32.div $(parse_int a TInt32)$  $(parse_int b TInt32)$>>)
-  | Div64 (_loc, a, b) ->
-    ( <:expr<Int64.div $(parse_int a TInt64)$  $(parse_int b TInt64)$>>)
-  | DivF (_loc, a,b) -> 
-    ( <:expr<$(parse_float a TFloat32)$ /. $(parse_float b TFloat32)$>>)
-  | DivF32 (_loc, a,b) -> 
-    let a_ = (parse_float a TFloat32) in
-    let b_ = (parse_float b TFloat32) in
-    (*(if (a.t <> TFloat32 && a.t <> TUnknown) then
-       (assert (not debug); raise (TypeError (TFloat32, a.t, a.loc))));
-    (if (b.t <> TFloat32 && b.t <> TUnknown) then
-       (assert (not debug); raise (TypeError (TFloat32, b.t, b.loc))));*)
-    ( <:expr<$a_$ /. $b_$>>)
-  | DivF64 (_loc, a,b) -> 
-    let a_ = (parse_float a TFloat64) in
-    let b_ = (parse_float b TFloat64) in
-    (*(if (a.t <> TFloat64 && a.t <> TUnknown) then
-       (assert (not debug); raise (TypeError (TFloat64, a.t, a.loc))));
-    (if (b.t <> TFloat64 && b.t <> TUnknown) then
-       (assert (not debug); raise (TypeError (TFloat64, b.t, b.loc))));*)
-    ( <:expr<$a_$ /. $b_$>>)
-
-
-  | Mod (_loc, a,b) -> 
-    ( <:expr<$(parse_int a TInt32)$ mod $(parse_int b TInt32)$>>)
-
-
-  | Id (_loc,s) -> 
-    begin
-      try
-        let var = (Hashtbl.find !current_args (string_of_ident s)) in
-        if var.is_mutable then
-          <:expr< $ExId(_loc,s)$.contents>>
-        else
-          <:expr<$ExId(_loc,s)$>>
-      with 
-        Not_found ->
-        <:expr<$ExId(_loc,s)$>>
-    end
-  | Int (_loc, i)  -> <:expr<$ExInt(_loc, i)$>>
-  | Int32 (_loc, i)  -> <:expr<$ExInt32(_loc, i)$>>
-  | Int64 (_loc, i)  -> <:expr<$ExInt64(_loc, i)$>>
-  | Float (_loc, f)
-  | Float32 (_loc,f)
-  | Float64 (_loc,f)  -> <:expr<$ExFlo(_loc, f)$>>
-  | Seq (_loc, x, y) -> 
-    let x = parse_body x in
-    let y = parse_body y in
-    <:expr<$x$; $y$>>
-  | End(_loc, x)  -> 
-    let res = parse_body x in
-    <:expr<$res$>> 
-  | VecSet (_loc, vector, value)  -> 								
-    let gen_value = parse_body value in
-
-    (match vector.e with
-     | VecGet (_, v,idx)  -> 
-       let vec_typ_to_e t = 
-         (match t with 
-          (*| TInt -> <:ctyp<(int, Bigarray.int_elt) Spoc.Vector.vector>>*)
-          | TInt32  -> <:ctyp<(int32, Bigarray.int32_elt) Spoc.Vector.vector>>
-          | TInt64  -> <:ctyp<(int64, Bigarray.int64_elt) Spoc.Vector.vector>>
-          (*| TFloat -> <:ctyp<(float, Bigarray.float32_elt) Spoc.Vector.vector>>*)
-          | TFloat32 -> <:ctyp<(float, Bigarray.float32_elt) Spoc.Vector.vector>>
-          | TFloat64 -> <:ctyp<(float, Bigarray.float64_elt) Spoc.Vector.vector>>
-          |  _  ->  assert false
-         ) in
-       (match v.e with
-        | Id (_loc,s)  -> 
-          let var = (Hashtbl.find !current_args (string_of_ident s)) in
-          let type_constaint = 
-            (match var.var_type with
-             | TVec k when k = value.t  -> 
-               vec_typ_to_e k
-             | _ ->   
-               (match value.t, var.var_type with
-                | TUnknown, TUnknown ->
-                  (assert (not debug); raise (TypeError (TVec value.t, var.var_type, _loc)))
-                | TUnknown, TVec tt ->
-                  (var.var_type <- TVec tt;
-                   vec_typ_to_e tt)
-                | tt, TVec TUnknown ->
-                  (var.var_type <- TVec tt;
-                   vec_typ_to_e tt)
-                | _ ->
-                  (assert (not debug); raise (TypeError (TVec value.t, var.var_type, _loc))))
-            )
-          in
-
-          <:expr<Spoc.Mem.set ($parse_body v$:$type_constaint$)
-                 	  (Int32.to_int $parse_body idx$) $gen_value$>>
-        | _  ->  failwith "Unknwown vector");
-     | _  -> failwith (Printf.sprintf "erf %s" (k_expr_to_string vector.e)) ); 
-
-  | ArrSet (_loc, array, value)  -> 								
-    let gen_value = parse_body value in
-    (match array.e with
-     | ArrGet (_, a,idx)  -> 
-       (*let arr_typ_to_e t = 
-         (match t with 
-          | TInt -> <:ctyp<int array>>
-          | TInt32  -> <:ctyp<int32 array>>
-          | TInt64  -> <:ctyp<int64 array>>
-          | TFloat -> <:ctyp<float array>>
-          | TFloat32 -> <:ctyp<float array>>
-          | TFloat64 -> <:ctyp<float array>>
-          |  _ ->  assert false
-    ) in *)
-       (match a.e with
-        | Id (_loc,s)  -> 
-          let var = (Hashtbl.find !current_args (string_of_ident s)) in
-          (*let type_constaint = 
-            (match var.var_type with
-             | TArr k when k = value.t  -> 
-               arr_typ_to_e k
-             | _ ->   
-               (match value.t, var.var_type with
-                | TUnknown, TUnknown ->
-                  (assert (not debug); raise (TypeError (TArr value.t, var.var_type, _loc)))
-                | TUnknown, TArr tt ->
-                  (var.var_type <- TArr tt;
-                   arr_typ_to_e tt)
-                | tt, TArr TUnknown ->
-                  (var.var_type <- TArr tt;
-                   arr_typ_to_e tt)
-                | _ ->
-                  (assert (not debug); raise (TypeError (TArr value.t, var.var_type, _loc))))
-            )
-          in	
-          <:expr<($parse_body a$:$type_constaint$).($parse_body idx$) <- $gen_value$>>*)
-          <:expr<($parse_body a$).(Int32.to_int $parse_body idx$) <- $gen_value$>>
-        | _  ->  failwith "Unknwown array");
-     | _  -> failwith (Printf.sprintf "erf_arr %s" (k_expr_to_string array.e)) ); 
-
-
-  | VecGet(_loc, vector, index)  -> 
-    ignore(parse_body vector);
-    (match vector.e with
-     | Id (_loc, s)-> 
-       let var = (Hashtbl.find !current_args (string_of_ident s)) in
-       let type_constraint = 
-         (match var.var_type with
-          | TVec k -> 
-            (match k with 
-             (*| TInt -> <:ctyp<(int, Bigarray.int_elt) Spoc.Vector.vector>>*)
-             | TInt32  -> <:ctyp<(int32, Bigarray.int32_elt) Spoc.Vector.vector>>
-             | TInt64  -> <:ctyp<(int64, Bigarray.int64_elt) Spoc.Vector.vector>>
-             (*| TFloat -> <:ctyp<(float, Bigarray.float32_elt) Spoc.Vector.vector>>*)
-             | TFloat32 -> <:ctyp<(float, Bigarray.float32_elt) Spoc.Vector.vector>>
-             | TFloat64 -> <:ctyp<(float, Bigarray.float64_elt) Spoc.Vector.vector>>
-             | TBool -> assert false
-             | TVec _  -> assert false
-             | TUnknown  -> assert false
-             | TUnit  ->  assert false
-             | TArr _  ->  assert false
-             | TApp _  ->  assert false
-             |	_  ->  assert false
-            )
-          | _  -> assert (not debug); failwith (Printf.sprintf "strange vector %s" (ktyp_to_string var.var_type ))
-         )in
-       <:expr<Spoc.Mem.get ($ExId(_loc,s)$:$type_constraint$) (Int32.to_int $parse_body index$)>>
-     | _  -> assert (not debug); failwith (Printf.sprintf "strange vector %s" (k_expr_to_string body.e )))
-
-  | ArrGet(_loc, array, index)  -> 
-    ignore(parse_body array);
-    (match array.e with
-     | Id (_loc, s)-> 
-       let var = (Hashtbl.find !current_args (string_of_ident s)) in
-       let type_constraint = 
-         (match var.var_type with
-          | TArr k -> 
-            (match k with 
-             (*| TInt -> <:ctyp<int array>>*)
-             | TInt32,_  -> <:ctyp<int32 array>>
-             | TInt64,_  -> <:ctyp<int64 array>>
-             (*| TFloat -> <:ctyp<float array>>*)
-             | TFloat32,_ -> <:ctyp<float array>>
-             | TFloat64,_ -> <:ctyp<float array>>
-(*             | TBool,_ | (TVec _,_) 
-             | TUnknown,_ *)
-             |	_  ->  assert false
-            )
-          | _  -> (assert (not debug); raise (TypeError (TArr (TUnknown, Any), var.var_type, _loc)));
-         )in
-       <:expr<($ExId(_loc,s)$:$type_constraint$).(Int32.to_int $parse_body index$)>>
-     | _  -> assert (not debug); failwith "strange array")
-
-  | BoolEq32 (_loc, a, b) ->
-    (<:expr<$parse_int a TInt32$ = $parse_int b TInt32$>>)
-  | BoolEq32 (_loc, a, b) ->
-    (<:expr<$parse_int a TInt32$ = $parse_int b TInt32$>>)
-  | BoolEq64 (_loc, a, b) ->
-    (<:expr<$parse_int a TInt64$ = $parse_int b TInt64$>>)
-  | BoolEqF (_loc, a, b) ->
-    (<:expr<$parse_float a TFloat32$ = $parse_float b TFloat32$>>)
-  | BoolEqF64 (_loc, a, b) ->
-    (<:expr<$parse_float a TFloat64$ = $parse_float b TFloat64$>>)
-
-  | BoolLt (_loc, a, b) ->
-    (<:expr<$parse_int a TInt32$ < $parse_int b TInt32$>>)
-  | BoolLt32 (_loc, a, b) ->
-    (<:expr<$parse_int a TInt32$ < $parse_int b TInt32$>>)
-  | BoolLt64 (_loc, a, b) ->
-    (<:expr<$parse_int a TInt64$ < $parse_int b TInt64$>>)
-  | BoolLtF (_loc, a, b) ->
-    (<:expr<$parse_float a TFloat32$ < $parse_float b TFloat32$>>)
-  | BoolLtF64 (_loc, a, b) ->
-    (<:expr<$parse_float a TFloat64$ < $parse_float b TFloat64$>>)
-
-  | BoolGt (_loc, a, b) ->
-    (<:expr<$parse_int a TInt32$ > $parse_int b TInt32$>>)
-  | BoolGt32 (_loc, a, b) ->
-    (<:expr<$parse_int a TInt32$ > $parse_int b TInt32$>>)
-  | BoolGt64 (_loc, a, b) ->
-    (<:expr<$parse_int a TInt64$ > $parse_int b TInt64$>>)
-  | BoolGtF (_loc, a, b) ->
-    (<:expr<$parse_float a TFloat32$ > $parse_float b TFloat32$>>)
-  | BoolGtF64 (_loc, a, b) ->
-    (<:expr<$parse_float a TFloat64$ > $parse_float b TFloat64$>>)
-
-  | BoolLtE (_loc, a, b) ->
-    (<:expr<$parse_int a TInt32$ <= $parse_int b TInt32$>>)
-  | BoolLtE32 (_loc, a, b) ->
-    (<:expr<$parse_int a TInt32$ <= $parse_int b TInt32$>>)
-  | BoolLtE64 (_loc, a, b) ->
-    (<:expr<$parse_int a TInt64$ <= $parse_int b TInt64$>>)
-  | BoolLtEF (_loc, a, b) ->
-    (<:expr<$parse_float a TFloat32$ <= $parse_float b TFloat32$>>)
-  | BoolLtEF64 (_loc, a, b) ->
-    (<:expr<$parse_float a TFloat64$ <= $parse_float b TFloat64$>>)
-
-  | BoolGtE (_loc, a, b) ->
-    (<:expr<$parse_int a TInt32$ >= $parse_int b TInt32$>>)
-  | BoolGtE32 (_loc, a, b) ->
-    (<:expr<$parse_int a TInt32$ >= $parse_int b TInt32$>>)
-  | BoolGtE64 (_loc, a, b) ->
-    (<:expr<$parse_int a TInt64$ >= $parse_int b TInt64$>>)
-  | BoolGtEF (_loc, a, b) ->
-    (<:expr<$parse_float a TFloat32$ >= $parse_float b TFloat32$>>)
-  | BoolGtEF64 (_loc, a, b) ->
-    (<:expr<$parse_float a TFloat64$ >= $parse_float b TFloat64$>>)
-
-  | BoolOr (_loc, a, b) ->
-    (<:expr<$parse_body a$ || $parse_body b$>>)
-  | BoolAnd (_loc, a, b) ->
-    (<:expr<$parse_body a$ &&  $parse_body b$>>)
-
-  | Ife (_loc, cond, cons1, cons2) ->
-    let cond  = parse_body cond in 
-    let cons1 = parse_body cons1 in 
-    let cons2 = parse_body cons2 in 
-    (<:expr<if $cond$ then $cons1$ else $cons2$>>)
-  | If (_loc, cond, cons1) ->
-    let cond  = parse_body cond in 
-    let cons1 = parse_body cons1 in 
-    (<:expr<if $cond$ then $cons1$>>)
-  | DoLoop (_loc, ({t=_;e=Id(_,s) ;loc=_} as id), min, max, body) ->
-    let var = (Hashtbl.find !current_args (string_of_ident s)) in
-    var.var_type <- TInt32;
-    let min = (parse_body min) in
-    let max = (parse_body max) in
-    let body = parse_body body in
-    let string_of_id id =
-      match id with
-      | Id (_,s ) -> string_of_ident s
-      | _ ->  assert false
-    in
-    (<:expr<for $(string_of_id id.e)$ = (Int32.to_int $min$) to (Int32.to_int  $max$) do 
-            let $(PaId (_loc, IdLid(_loc, (string_of_id id.e))))$ = 
-            (Int32.of_int $(ExId (_loc, IdLid(_loc, (string_of_id id.e))))$) in
-            $body$ 
-            done>>)
-  | While (_loc, cond, body) ->
-    let cond = parse_body cond in
-    let body = parse_body body in
-    (<:expr< while $cond$ do $body$ done>>)
-  (* | Seqs exprs -> *)
-  (*   let _loc = body.loc in *)
-  (*   List.fold_left      *)
-  (*     (fun s e -> *)
-  (*        let e2 = parse_body e in *)
-  (*        <:expr< $e2$; $s$>>)  *)
-  (*     <:expr< >>      *)
-  (*     exprs *)
-  | App (_loc, e1, e2) ->
-    let rec aux e2 = 
-      match e2 with
-      | t::[] -> parse_body t
-      | t::q -> ExApp(_loc, (aux q), (parse_body t))
-    in 
-    let e2 = aux e2 in
-    let e1 = 
-      match e1.e with
-      | Id (_loc, s) ->
-        (try 
-           let intr = Hashtbl.find !global_fun (string_of_ident s) in
-           <:expr<$parse_body e1$.ml_fun>>
-         with
-         | Not_found ->
-            (try 
-		let intr = Hashtbl.find !local_fun (string_of_ident s) in
-		<:expr<$parse_body e1$.ml_fun>>
-              with
-              | Not_found ->
-		 parse_body e1) )
-      | _ -> parse_body e1
-    in
-    <:expr<$e1$ $e2$>>
-  | Open (_loc, id, e) ->
-    let rec aux = function
-      | IdAcc (l,a,b) -> aux a; aux b
-      | IdUid (l,s) -> open_module s l
-      | _ -> assert (not debug)
-    in
-    aux id;
-    let e = <:expr<let open $id$ in $parse_body e$>> in
-    let rec aux = function
-      | IdAcc (l,a,b) -> aux a; aux b
-      | IdUid (l,s) -> close_module s
-      | _ -> assert (not debug)
-    in
-    aux id;
-    e
-  | Noop -> 
-    let _loc = body.loc in
-    <:expr< ()>>
-  | Acc (_loc, var, value) ->
-    (match var.t with
-     | TVec _ ->
-       parse_body {
-         t = body.t; 
-         e = (VecSet (_loc, var, value));
-         loc = body.loc} 
-     | _ -> 
-       <:expr<$parse_body var$ <- $parse_body value$>>
-    )
-  | Ref (_, {loc=_; e=Id(_loc,s); t=_}) ->
-    <:expr< ! $ExId(_loc, s)$>>
-  | ModuleAccess (_loc, s, e) -> 
-    let e = parse_app_ml e <:expr< $uid:s$>> in
-    e
-  | _ -> assert (not debug); failwith "unimplemented yet"
-
-
-
-
-
-
-and parse_app a =
-  my_eprintf (Printf.sprintf "(* val2 parse_app %s *)\n%!" (k_expr_to_string a.e));
-  match a.e with
-  | App (_loc, e1, e2::[]) ->
-    let res = ref [] in
-    let rec aux app =
-      match app.e with
-      | 	Id (_loc, s) ->
-        (try 
-           let intr = Hashtbl.find !intrinsics_fun (string_of_ident s) in
-           <:expr< intrinsics $ExStr(_loc, intr.cuda_val)$ $ExStr(_loc, intr.opencl_val)$>> 
-         with Not_found -> 
-           try 
-             let intr = Hashtbl.find !global_fun (string_of_ident s) in
-             <:expr< global_fun $id:s$>> 
-           with Not_found -> 
-           try 
-             let intr = Hashtbl.find !local_fun (string_of_ident s) in
-             <:expr< global_fun $id:s$>> 
-           with Not_found -> 
-             parse_body2 e1 false;)
-      | App (_loc, e3, e4::[]) ->
-        let e = aux e3 in
-        res := <:expr< ($parse_body2 e4 false$)>> :: !res;
-        e
-      | ModuleAccess (_loc, s, e3) ->
-        open_module s _loc; 
-        let e = aux e3 in
-        close_module s;
-        e
-      | _  -> assert false;
-    in 
-    let intr = aux e1 in
-    res := (parse_body2 e2 false) :: !res ; 
-    (match !res with
-     | [] -> assert false
-     | t::[] -> 
-       <:expr< app $intr$ [| ($t$) |]>>
-     | t::q ->
-       <:expr< app $intr$ [| $exSem_of_list (List.rev !res)$ |]>>)
-  | _ -> parse_body2 a false
-
-
-
-and expr_of_app t _loc gen_var y =
-  match t with
-  | TApp (t1,((TApp (t2,t3)) as tt)) ->
-    expr_of_app tt _loc gen_var y
-  | TApp (t1,t2) -> 
-    (match t2 with
-     (*| TInt -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (parse_body2 y false)*)
-     | TInt32 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (parse_body2 y false)
-     | TInt64 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (parse_body2 y false)
-     | TFloat32 -> <:expr<(new_float_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(parse_body2 y false)
-     | TFloat64 -> <:expr<(new_double_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (parse_body2 y false)
-     | _  ->  failwith "unknown var type")
-  | _ -> assert false
-
-and parse_body2 body bool = 
-  let rec aux ?return_bool:(r=false) body =
-    my_eprintf (Printf.sprintf "(* val2 %s *)\n%!" (k_expr_to_string body.e));
-    match body.e with
-    | Bind (_loc, var,y, z, is_mutable)  ->             
-       (match var.e with 
-        | Id (_loc, s)  -> 
-	   (match y.e with
-	    | Fun _ -> parse_body2 z bool;
-	    | _ ->
-	       (let gen_var = 
-		  try (Hashtbl.find !current_args (string_of_ident s)) 
-		  with _ -> assert false in
-		let rec f () = 
-		  match var.t with
-		  (*| TInt -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (aux y)*)
-		  | TInt32 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (aux y)
-		  | TInt64 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (aux y)
-		  | TFloat32 -> <:expr<(new_float_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
-		  | TFloat64 -> <:expr<(new_double_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
-		  | TApp _ -> expr_of_app var.t _loc gen_var y
-		  | TUnknown -> if gen_var.var_type <> TUnknown then 
-				  ( var.t <- gen_var.var_type;
-				    f ();)
-				else
-				  (assert (not debug); raise (TypeError (TUnknown, gen_var.var_type , _loc));
-				   assert (not debug); failwith "unknown var type")
-		  (*| TArr TInt -> <:expr<(new_int_array $ExInt(_loc,string_of_int gen_var.n)$) ($aux y$)>>,(aux y)*)
-		  | TArr (t,s) -> 
-                     let elttype = 
-                       match t with
-                       | TInt32 -> <:expr<eint32>>
-                       | TInt64 -> <:expr<eint64>>
-                       | TFloat32 -> <:expr<efloat32>>
-                       | TFloat64 -> <:expr<efloat64>>
-                 and memspace =
-                   match s with
-                   | Local -> <:expr<local>>
-                   | Shared -> <:expr<shared>>
-                   | Global -> <:expr<global>> in
-                     <:expr<(new_array $ExInt(_loc,string_of_int gen_var.n)$) ($aux y$) $elttype$ $memspace$>>,(aux y)
-		  | _  ->  ( assert (not debug); raise (TypeError (TUnknown, gen_var.var_type , _loc));
-                             assert (not debug); failwith "unknown var type")
-		in
-		let ex1, ex2 = f () in
-		arg_list := <:expr<(spoc_declare $ex1$)>>:: !arg_list;
-		(let var_ = parse_body2 var false in
-		 let y = aux y in
-		 let z = aux z in
-		 let res = 
-		   match var.t with
-		      TArr _ ->  <:expr< $z$>>
-		    | _ -> <:expr< seq (spoc_set $var_$ $y$) $z$>>
-		 in remove_int_var var;
-		     res)))
-        | _  ->  failwith "strange binding");
-(*    | Plus (_loc, a,b) -> body.t <- TInt; 
-      let p1 = (parse_int2 a TInt) 
-      and p2 = (parse_int2 b TInt) in
-      if not r then 
-        return_type := TInt;
-      ( <:expr<spoc_plus $p1$ $p2$>>) *)
-    | Plus32 (_loc, a,b) -> body.t <- TInt32; 
-      let p1 = (parse_int2 a TInt32) 
-      and p2 = (parse_int2 b TInt32) in
-      if not r then 
-        return_type := TInt32;
-      ( <:expr<spoc_plus $p1$ $p2$>>) 
-    | Plus64 (_loc, a,b) -> body.t <- TInt64; 
-      let p1 = (parse_int2 a TInt64) 
-      and p2 = (parse_int2 b TInt64) in
-      if not r then 
-        return_type := TInt64;
-      ( <:expr<spoc_plus $p1$ $p2$>>) 
-    | PlusF (_loc, a,b) -> 
-      let p1 = (parse_float2 a TFloat32) 
-      and p2 = (parse_float2 b TFloat32) in
-      if not r then 
-        return_type := TFloat32;
-      ( <:expr<spoc_plus_float $p1$ $p2$>>) 
-    | PlusF32 (_loc, a,b) -> 
-      let p1 = (parse_float2 a TFloat32) 
-      and p2 = (parse_float2 b TFloat32) in
-      if not r then 
-        return_type := TFloat32;
-      ( <:expr<spoc_plus_float $p1$ $p2$>>) 
-    | PlusF64 (_loc, a,b) -> 
-      let p1 = (parse_float2 a TFloat64) 
-      and p2 = (parse_float2 b TFloat64) in
-      if not r then 
-        return_type := TFloat64;
-      ( <:expr<spoc_plus_float $p1$ $p2$>>) 
-(*    | Min (_loc, a,b) -> body.t <- TInt; 
-      let p1 = (parse_int2 a TInt) 
-      and p2 = (parse_int2 b TInt) in
-      if not r then 
-        return_type := TInt;
-      ( <:expr<spoc_min $p1$ $p2$>>) *)
-    | Min32 (_loc, a,b) -> body.t <- TInt32; 
-      ( <:expr<spoc_min $(parse_int2 a TInt32)$ $(parse_int2 b TInt32)$>>)
-    | Min64 (_loc, a,b) -> body.t <- TInt64; 
-      ( <:expr<spoc_min $(parse_int2 a TInt64)$ $(parse_int2 b TInt64)$>>)
-    | MinF (_loc, a,b) -> 
-      ( <:expr<spoc_min_float $(parse_float2 a TFloat32)$ $(parse_float2 b TFloat32)$>>)
-    | MinF32 (_loc, a,b) -> 
-      ( <:expr<spoc_min_float $(parse_float2 a TFloat32)$ $(parse_float2 b TFloat32)$>>)
-    | MinF64 (_loc, a,b) -> 
-      ( <:expr<spoc_min_float $(parse_float2 a TFloat64)$ $(parse_float2 b TFloat64)$>>)
-
-(*    | Mul (_loc, a,b) -> body.t <- TInt; 
-      let p1 = (parse_int2 a TInt) 
-      and p2 = (parse_int2 b TInt) in
-      if not r then 
-        return_type := TInt;
-      ( <:expr<spoc_mul $p1$ $p2$>>) *)
-    | Mul32 (_loc, a,b) -> 
-       if not r then 
-        return_type := TInt32;
-      ( <:expr<spoc_mul $(parse_int2 a TInt32)$ $(parse_int2 b TInt32)$>>)
-    | Mul64 (_loc, a,b) -> body.t <- TInt64; 
-      ( <:expr<spoc_mul $(parse_int2 a TInt64)$ $(parse_int2 b TInt64)$>>)
-    | MulF (_loc, a,b) -> 
-      ( <:expr<spoc_mul_float $(parse_float2 a TFloat32)$ $(parse_float2 b TFloat32)$>>)
-    | MulF32 (_loc, a,b) -> 
-       if not r then 
-        return_type := TFloat32;
-      ( <:expr<spoc_mul_float $(parse_float2 a TFloat32)$ $(parse_float2 b TFloat32)$>>)
-    | MulF64 (_loc, a,b) -> 
-      ( <:expr<spoc_mul_float $(parse_float2 a TFloat64)$ $(parse_float2 b TFloat64)$>>)
-
-(*    | Div (_loc, a,b) -> body.t <- TInt; 
-      let p1 = (parse_int2 a TInt) 
-      and p2 = (parse_int2 b TInt) in
-      if not r then 
-        (return_type := TInt;
-        );
-      ( <:expr<spoc_div $p1$ $p2$>>) *)
-    | Div32 (_loc, a,b) -> body.t <- TInt32; 
-      ( <:expr<spoc_div $(parse_int2 a TInt32)$ $(parse_int2 b TInt32)$>>)
-    | Div64 (_loc, a,b) -> body.t <- TInt64; 
-      ( <:expr<spoc_div $(parse_int2 a TInt64)$ $(parse_int2 b TInt64)$>>)
-    | DivF (_loc, a,b) -> 
-      ( <:expr<spoc_div_float $(parse_float2 a TFloat32)$ $(parse_float2 b TFloat32)$>>)
-    | DivF32 (_loc, a,b) -> 
-      ( <:expr<spoc_div_float $(parse_float2 a TFloat32)$ $(parse_float2 b TFloat32)$>>)
-    | DivF64 (_loc, a,b) -> 
-      ( <:expr<spoc_div_float $(parse_float2 a TFloat64)$ $(parse_float2 b TFloat64)$>>)
-
-    | Mod (_loc, a,b) -> body.t <- TInt32; 
-      let p1 = (parse_int2 a TInt32) 
-      and p2 = (parse_int2 b TInt32) in
-      if not r then 
-        return_type := TInt32;
-      ( <:expr<spoc_mod $p1$ $p2$>>) 
-
-    | Id (_loc,s)  -> 
-      (try 
-         let var = 
-           (Hashtbl.find !current_args (string_of_ident s))  in
-         ( match var.var_type with 
-           | TUnit -> (*body.t <- TUnit;*) <:expr< Unit>>
-           | _ -> 
-             body.t <- var.var_type;
-             if var.is_global then
-               match var.var_type with
-               | TFloat32 ->
-                 <:expr<global_float_var (fun () -> $ExId(_loc,s)$)>>
-               | TInt32 -> <:expr<global_int_var (fun () -> $ExId(_loc,s)$)>>
-               | _ -> assert false
-             else
-               <:expr<var  $ExInt(_loc, string_of_int var.n)$>>)
-       with _  ->  
-         try 
-           let c_const = (Hashtbl.find !intrinsics_const (string_of_ident s))  in
-           if body.t <> c_const.typ then
-             if body.t = TUnknown then
-               body.t <- c_const.typ
-             else
-               (assert (not debug); raise (TypeError (c_const.typ, body.t, _loc)));
-           <:expr<intrinsics $ExStr(_loc, c_const.cuda_val)$ $ExStr(_loc, c_const.opencl_val)$>>
-         with _ -> 
-           (try 
-               let intr = 
-                Hashtbl.find !intrinsics_fun (string_of_ident s) in
-              <:expr< intrinsics $ExStr(_loc, intr.cuda_val)$ $ExStr(_loc, intr.opencl_val)$>>
-             with Not_found -> 
-              try 
-                let intr = 
-                  Hashtbl.find !global_fun (string_of_ident s) in
-                <:expr< global_fun $id:s$>>
-              with Not_found -> 
-		try 
-                  let intr = 
-                    Hashtbl.find !local_fun (string_of_ident s) in
-                  <:expr< global_fun $id:s$>>
-		with Not_found -> 
-		  (assert (not debug); raise (Unbound_value ((string_of_ident s), _loc)))));
-    | Int (_loc, i)  -> <:expr<spoc_int $ExInt(_loc, i)$>>
-    | Int32 (_loc, i)  -> <:expr<spoc_int32 $ExInt32(_loc, i)$>>
-    | Int64 (_loc, i)  -> <:expr<spoc_int64 $ExInt64(_loc, i)$>>
-    | Float (_loc, f)  -> <:expr<spoc_float $ExFlo(_loc, f)$>>
-    | Float32 (_loc, f) -> <:expr<spoc_float $ExFlo(_loc, f)$>>
-    | Float64 (_loc, f) -> <:expr<spoc_double $ExFlo(_loc, f)$>>
-    | Seq (_loc, x, y) -> 
-       (match y.e with
-       | Seq _ ->
-         let x = parse_body2 x false in
-         let y = parse_body2 y false in
-         <:expr<seq $x$ $y$>>
-       | _ -> 
-          let e1 = parse_body2 x false in
-         let e2 = aux y
-         in  <:expr<seq $e1$ $e2$>> 
-       )
-    | End (_loc, x)  -> 
-      let res = <:expr< $aux x$>> 
-      in 
-      <:expr<$res$>> 
-    | VecSet (_loc, vector, value)  -> 
-      let gen_value = aux (~return_bool:true) value in
-      let gen_value = 
-        match vector.t, value.e with
-        (*| TInt, (Int _) -> <:expr<( $gen_value$)>>*)
-        | TInt32, (Int32 _) -> <:expr<( $gen_value$)>> 
-        | TInt64, (Int64 _) -> <:expr<( $gen_value$)>> 
-        (*| TFloat, (Float _) -> <:expr<( $gen_value$)>> *)
-        | TFloat32, (Float32 _) -> <:expr<( $gen_value$)>> 
-        | TFloat64, (Float64 _) -> <:expr<( $gen_value$)>> 
-        | _ -> gen_value
-      in
-      let v = aux  (~return_bool:true) vector in
-      let e = <:expr<set_vect_var $v$ $gen_value$>> in
-      return_type := TUnit; 
-      e
-    | VecGet(_loc, vector, index)  -> 
-      let e =
-        <:expr<get_vec $aux vector$ $parse_int2 index TInt32$>> in
-      (match vector.t with
-       | TVec ty->
-         ();
-       | _ ->
-         assert (not debug));
-      e
-
-    | ArrSet (_loc, array, value)  -> 
-      let gen_value = aux (~return_bool:true) value in
-      let gen_value = 
-        match array.t, value.e with
-(*        | TInt, (Int _) -> <:expr<( $gen_value$)>>*)
-        | TInt32, (Int32 _) -> <:expr<( $gen_value$)>> 
-        | TInt64, (Int64 _) -> <:expr<( $gen_value$)>> 
-(*        | TFloat, (Float _) -> <:expr<( $gen_value$)>> *)
-        | TFloat32, (Float32 _) -> <:expr<( $gen_value$)>> 
-        | TFloat64, (Float64 _) -> <:expr<( $gen_value$)>> 
-        | _ -> gen_value
-      in
-      let v = aux  (~return_bool:true) array in
-      let e = <:expr<set_arr_var $v$ $gen_value$>> in
-      return_type := TUnit; 
-      e
-    | ArrGet(_loc, array, index)  -> 
-      let e =
-        <:expr<get_arr $aux array$ $parse_int2 index TInt32$>> in
-      (match array.t with
-       | TArr ty->
-         ();
-       | _ ->
-         assert (not debug));
-      e
-
-    | BoolOr(_loc, a, b) ->
-      <:expr< b_or $aux a$ $aux b$>>
-    | BoolAnd(_loc, a, b) ->
-      <:expr< b_and $aux a$ $aux b$>>
-    | BoolEq32 (_loc, a, b) ->
-      <:expr< equals32 $aux a$ $aux b$>>
-    | BoolEq32(_loc, a, b) ->
-      <:expr< equals32 $aux a$ $aux b$>>
-    | BoolEq64(_loc, a, b) ->
-      <:expr< equals64 $aux a$ $aux b$>>
-    | BoolEqF(_loc, a, b) ->
-      <:expr< equalsF $aux a$ $aux b$>>
-    | BoolEqF64(_loc, a, b) ->
-      <:expr< equalsF64 $aux a$ $aux b$>>
-    | BoolLt(_loc, a, b) ->
-      let p1 = (parse_int2 a TInt32) 
-      and p2 = (parse_int2 b TInt32) in
-      if not r then 
-        return_type := TInt32;
-      ( <:expr<lt $p1$ $p2$>>) 
-    | BoolLt32(_loc, a, b) ->
-      let p1 = (parse_int2 a TInt32) 
-      and p2 = (parse_int2 b TInt32) in
-      if not r then 
-        return_type := TInt32;
-      ( <:expr<lt32 $p1$ $p2$>>) 
-    | BoolLt64(_loc, a, b) ->
-      <:expr< lt64 $aux a$ $aux b$>>
-    | BoolLtF(_loc, a, b) ->
-      <:expr< ltF $aux a$ $aux b$>>
-    | BoolLtF64(_loc, a, b) ->
-      <:expr< ltF64 $aux a$ $aux b$>>
-    | BoolGt(_loc, a, b) ->
-      let p1 = (parse_int2 a TInt32) 
-      and p2 = (parse_int2 b TInt32) in
-      if not r then 
-        return_type := TInt32;
-      ( <:expr<gt $p1$ $p2$>>) 
-    | BoolGt32(_loc, a, b) ->
-      let p1 = (parse_int2 a TInt32) 
-      and p2 = (parse_int2 b TInt32) in
-      if not r then 
-        return_type := TInt32;
-      ( <:expr<gt32 $p1$ $p2$>>) 
-    | BoolGt64(_loc, a, b) ->
-      <:expr< gt64 $aux a$ $aux b$>>
-    | BoolGtF(_loc, a, b) ->
-      <:expr< gtF $aux a$ $aux b$>>
-    | BoolGtF64(_loc, a, b) ->
-      <:expr< gtF64 $aux a$ $aux b$>>
-
-    | BoolLtE(_loc, a, b) ->
-      <:expr< lte $aux a$ $aux b$>>
-    | BoolLtE32(_loc, a, b) ->
-      <:expr< lte32 $aux a$ $aux b$>>
-    | BoolLtE64(_loc, a, b) ->
-      <:expr< lte64 $aux a$ $aux b$>>
-    | BoolLtEF(_loc, a, b) ->
-      <:expr< lteF $aux a$ $aux b$>>
-    | BoolLtEF64(_loc, a, b) ->
-      <:expr< lteF64 $aux a$ $aux b$>>
-
-    | BoolGtE(_loc, a, b) ->
-      <:expr< gte $aux a$ $aux b$>>
-    | BoolGtE32(_loc, a, b) ->
-      <:expr< gte32 $aux a$ $aux b$>>
-    | BoolGtE64(_loc, a, b) ->
-      <:expr< gte64 $aux a$ $aux b$>>
-    | BoolGtEF(_loc, a, b) ->
-      <:expr< gteF $aux a$ $aux b$>>
-    | BoolGtEF64(_loc, a, b) ->
-      <:expr< gteF64 $aux a$ $aux b$>>
-    | Ife (_loc, cond, cons1, cons2) ->
-      let p1 = aux cond
-      and p2 = aux cons1
-      and p3 = aux cons2 
-      in
-      if  r then 
-        return_type := cons2.t;
-      (<:expr< spoc_ife $p1$ $p2$ $p3$>>)
-    | If (_loc, cond, cons1) ->
-      (<:expr< spoc_if $aux cond$ $aux cons1$>>)
-    | DoLoop (_loc, id, min, max, body) ->
-      (<:expr<spoc_do $aux id$ $aux min$ $aux max$ $aux body$>>)
-    | While (_loc, cond, body) ->
-      let cond = aux cond in
-      let body = aux body in
-      (<:expr<spoc_while $cond$ $body$>>)
-    (* | Seqs exprs -> *)
-    (*   let _loc = body.loc in *)
-    (*   let rec aux = function *)
-    (*     | [] -> <:expr< Unit>> *)
-    (*     | t::[] ->  *)
-    (*       let e2 = parse_body2 t false in *)
-    (*       e2 *)
-    (*     | t::q ->  *)
-    (*       let q = aux q in *)
-    (*       let e2 =  (parse_body2 t true) in *)
-    (*       <:expr< (seq $e2$ $q$)>> *)
-    (*   in aux exprs *)
-    | App (_loc, e1, e2) ->
-      let e = <:expr< $parse_app body$>> in
-      e
-    | Open (_loc, id, e) ->
-      let rec aux2 = function
-        | IdAcc (l,a,b) -> aux2 a; aux2 b
-        | IdUid (l,s) -> open_module s l
-        | _ -> assert (not debug)
-      in
-      aux2 id;
-      let ex = <:expr< $aux e$>> in
-      let rec aux2 = function
-        | IdAcc (l,a,b) -> aux2 a; aux2 b
-        | IdUid (l,s) -> close_module s
-        | _ -> assert (not debug)
-      in
-      aux2 id;
-      ex
-    | ModuleAccess (_loc, s, e) ->
-      open_module s _loc;
-      let ex = <:expr< $aux e$>> in
-      close_module s;
-      ex
-    | Noop ->
-      let _loc = body.loc in
-      <:expr< spoc_unit () >>
-    | Acc (_loc, e1, e2) ->
-      let e1 = parse_body2 e1 false 
-      and e2 = parse_body2 e2 false
-      in
-      if not r then 
-        return_type := TUnit;
-      <:expr< spoc_acc $e1$ $e2$>>
-    | Ref (_loc, {t=_; e=Id(_loc2, s);loc=_}) ->
-      let var = 
-        Hashtbl.find !current_args (string_of_ident s)  in
-      body.t <- var.var_type;
-      if var.is_global then
-        match var.var_type with
-        | TFloat32 ->
-          <:expr<global_float_var (fun _ -> ! $ExId(_loc,s)$)>>
-        | TInt32 -> <:expr<global_int_var (fun _ -> ! $ExId(_loc,s)$)>>
-        | _ -> assert false
-      else
-        assert false
-
-    | _ -> assert (not debug); failwith "unimplemented yet"
-  in
-  let _loc = body.loc in
-  if bool then 
-    (
-      my_eprintf (Printf.sprintf"(* val2 %s *)\n%!" (k_expr_to_string body.e));
-      match body.e with
-      | Bind (_loc, var,y, z, is_mutable)  -> 
-        (
-          (match var.e with 
-           | Id (_loc, s) ->
-	      (match y.e with
-	       | Fun _ -> ()
-	       | _ ->
-		  (let gen_var = (
-		     try Hashtbl.find !current_args (string_of_ident s)
-		     with _ -> assert false) in
-		   let ex1,ex2 = 
-                     match var.t with
-                     | TInt32 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (aux y)
-                     | TInt32 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
-                     | TInt64 -> <:expr<(new_int_var $ExInt(_loc,string_of_int gen_var.n)$)>>, (aux y)
-                     | TFloat32 -> <:expr<(new_float_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
-                     | TFloat64 -> <:expr<(new_double_var $ExInt(_loc,string_of_int gen_var.n)$)>>,(aux y)
-                     | TUnit -> <:expr<Unit>>,aux y; 
-                     | _  -> assert (not debug); failwith "unknown var type"
-		   in
-		   match var.t with
-		   |  TUnit ->
-                       arg_list := <:expr<Seq ($ex1$, $ex2$)>>::!arg_list
-		   | _ -> arg_list := <:expr<spoc_set $ex1$ $ex2$>>:: !arg_list);
-               | _  ->  assert (not debug); failwith "strange vector" );
-              let res = <:expr<$parse_body2 z true$>>
-              in remove_int_var var;
-		 res))
-      | Seq (a,b,c)  -> aux body
-      | _  -> 
-        let e = {t=body.t; e =End(_loc, body); loc = _loc} in 
-        match body.t with 
-        | TUnit ->
-          let res = aux e in
-          return_type := TUnit;
-          <:expr< $res$ >>
-        |_ -> 
-          <:expr<spoc_return $aux e$>>
-    )
-  else
-    aux body
-
+open Types
 
 
 let parse_args params body= 
@@ -1376,20 +66,24 @@ let gen_arg_from_patt2 p =
 
     (let var = (Hashtbl.find !current_args x) in   
      match var.var_type with
-     | TUnknown  -> <:expr<(new_unknown_var $ExInt(_loc2,  string_of_int var.n)$)>>
-     | TInt32 | TInt32 | TInt64 ->                                                 
-       <:expr<(new_int_var $ExInt(_loc2,  string_of_int var.n)$)>>
-     | TFloat32 | TFloat32 -> 
-       <:expr<(new_float_var $ExInt(_loc2,  string_of_int var.n)$)>>
+     | TUnknown  -> <:expr<(new_unknown_var $`int:var.n$)>>
+     | TInt32 | TInt64 ->                                                 
+       <:expr<(new_int_var $`int:var.n$)>>
+     | TFloat32 -> 
+       <:expr<(new_float_var $`int:var.n$)>>
      | TFloat64  -> 
-       <:expr<(new_float64_var $ExInt(_loc2,  string_of_int var.n)$)>>
+       <:expr<(new_float64_var $`int:var.n$)>>
+     | Custom (t,n) ->
+       <:expr<(new_custom_var $str:n$ $`int:var.n$)>>
      | TVec k -> 
        (match k with
-        | TInt32 | TInt32 | TInt64  ->   <:expr<(new_int_vec_var $ExInt(_loc2,  string_of_int var.n)$)>>
-        | TFloat32 | TFloat32 ->   <:expr<(new_float_vec_var $ExInt(_loc2,  string_of_int var.n)$)>>
-        | TFloat64 ->   <:expr<(new_double_vec_var $ExInt(_loc2,  string_of_int var.n)$)>>
+        | TInt32 | TInt64  ->   <:expr<(new_int_vec_var $`int:var.n$)>>
+        | TFloat32 ->   <:expr<(new_float_vec_var $`int:var.n$)>>
+        | TFloat64 ->   <:expr<(new_double_vec_var $`int:var.n$)>>
+        | Custom (t,n) ->
+          <:expr<(new_custom_vec_var $str:n$ $`int:var.n$)>>
         | _  -> failwith "Forbidden vector  type in kernel declaration")
-     | _ ->  failwith "unimplemented yet"
+     | _ ->  failwith "gap : unimplemented yet"
     )
   | _  -> failwith "error gen_arg_form_patt2"
 
@@ -1400,10 +94,12 @@ let patt_is_vector p =
   match p with
   | PaId (_loc, IdLid (_loc2, x) ) -> 
     let var = (Hashtbl.find !current_args x) in   
-    match var.var_type with
-    | TVec _ ->true
-    | _ -> false
-    | _ -> assert false
+    begin
+      match var.var_type with
+      | TVec _ ->true
+      | _ -> false
+    end
+  | _ -> assert false
 
 
 let gen_arg_from_patt3 p =  
@@ -1424,16 +120,6 @@ let gen_arg_from_patt3 p =
                      IdUid (_loc, "Kernel"), 
                      IdLid(_loc, "abs"))),
          <:ctyp< 'a>>
-(*       | TInt32 -> 
-         <:ctyp< int>>, 
-         <:expr< Spoc.Kernel.Int32>>,
-         <:ctyp< int32>>,
-         IdAcc(_loc, 
-               IdUid(_loc, "Spoc"), 
-               IdAcc(_loc, 
-                     IdUid (_loc, "Kernel"), 
-                     IdUid(_loc, "Int32"))),
-         <:ctyp< int>>*)
        | TInt32 ->  
          <:ctyp< int>>, 
          <:expr< Spoc.Kernel.Int32 >>,
@@ -1447,14 +133,14 @@ let gen_arg_from_patt3 p =
        | TInt64 ->   
          <:ctyp< int64>>, 
          <:expr< Spoc.Kernel.Int64>>,
-         <:ctyp< int32>>,
+         <:ctyp< int64>>,
          IdAcc(_loc, 
                IdUid(_loc, "Spoc"), 
                IdAcc(_loc, 
                      IdUid (_loc, "Kernel"), 
                      IdUid(_loc, "Int64"))),
          <:ctyp< int64>>
-       | TFloat32 | TFloat32 | TFloat64 ->  
+       | TFloat32 | TFloat64 ->  
          <:ctyp< float>>,
          <:expr< Spoc.Kernel.Float32>>,
          <:ctyp< float>>,
@@ -1464,27 +150,21 @@ let gen_arg_from_patt3 p =
                      IdUid (_loc, "Kernel"), 
                      IdUid(_loc, "Float32"))),
          <:ctyp< float>>
+       | Custom (t,name) -> 
+         let namet = TyId(_loc,IdLid(_loc,name)) 
+         and sarek_namet = TyId(_loc, IdLid(_loc,name^"_sarek")) in
+         <:ctyp< $sarek_namet$>>, 
+         <:expr< Spoc.Kernel.Custom >>,
+         <:ctyp< $lid:name$ >>,
+         <:ident< Spoc.Kernel.Custom >>,
+         <:ctyp<$sarek_namet$>>
        | TVec k -> 
          (match k with
           | TInt32 -> 
             <:ctyp< (('spoc_a, 'spoc_b) Vector.vector)>>, 
             <:expr< Spoc.Kernel.VInt32>>,
             <:ctyp< ((int32, Bigarray.int32_elt) Vector.vector)>> ,
-            IdAcc(_loc, 
-                  IdUid(_loc, "Spoc"), 
-                  IdAcc(_loc, 
-                        IdUid (_loc, "Kernel"), 
-                        IdUid(_loc, "VInt32"))),
-            <:ctyp< Spoc.Vector.vint32>>
-          | TInt32 -> 
-            <:ctyp< (('spoc_c, 'spoc_d) Vector.vector)>>, 
-            <:expr< Spoc.Kernel.VInt32>>,
-            <:ctyp< ((int32, Bigarray.int32_elt) Vector.vector)>>,
-            IdAcc(_loc, 
-                  IdUid(_loc, "Spoc"), 
-                  IdAcc(_loc, 
-                        IdUid (_loc, "Kernel"), 
-                        IdUid(_loc, "VInt32"))),
+            <:ident< Spoc.Kernel.VInt32>>,
             <:ctyp< Spoc.Vector.vint32>>
           | TInt64  -> 
             <:ctyp< (('spoc_e, 'spoc_f) Vector.vector)>>, 
@@ -1496,16 +176,6 @@ let gen_arg_from_patt3 p =
                         IdUid (_loc, "Kernel"), 
                         IdUid(_loc, "VInt64"))),
             <:ctyp< Spoc.Vector.vint64>>
-(*          | TFloat32 -> 
-            <:ctyp< (('spoc_g, 'spoc_h) Vector.vector)>>, 
-            <:expr< Spoc.Kernel.VFloat32>>,
-            <:ctyp< ((float, Bigarray.float32_elt) Vector.vector)>>,
-            IdAcc(_loc, 
-                  IdUid(_loc, "Spoc"), 
-                  IdAcc(_loc, 
-                        IdUid (_loc, "Kernel"), 
-                        IdUid(_loc, "VFloat32"))),
-            <:ctyp< Spoc.Vector.vfloat32>>*)
           | TFloat32 -> 
             <:ctyp< (('spoc_i, 'spoc_j) Vector.vector)>>, 
             <:expr< Spoc.Kernel.VFloat32>>,
@@ -1526,8 +196,19 @@ let gen_arg_from_patt3 p =
                         IdUid (_loc, "Kernel"), 
                         IdUid(_loc, "VFloat64"))),
             <:ctyp< Spoc.Vector.vfloat64>>
+          | Custom (t,name) ->
+            let name = TyId(_loc,IdLid(_loc,name)) 
+            and sarek_name = TyId(_loc, IdLid(_loc,name^"_sarek")) in
+            <:ctyp< (($name$, $sarek_name$) Vector.vector)>>, 
+            <:expr< Spoc.Kernel.VCustom>>,
+            <:ctyp< (($name$, $sarek_name$) Vector.vector)>>,
+            <:ident< Spoc.Kernel.VCustom>>,
+            <:ctyp< Spoc.Vector.custom>>
+            
           | _  -> failwith "Forbidden vector  type in kernel declaration")
-       | _ -> failwith "Forbidden vector  type in kernel declaration"; assert (not debug); failwith "unimplemented yet"
+       | _ -> 
+         assert (not debug); 
+         failwith "unimplemented yet"
      in
      match var.var_type with
      | TVec _ ->
@@ -1539,7 +220,7 @@ let gen_arg_from_patt3 p =
               PaId(_loc,s)), 
        (if !new_kernel then
           ( new_kernel := false;
-            <:expr< ($id:s$: $e3$)>>)
+            <:expr< ($id:s$:$e3$)>>)
         else
           <:expr< ( Spoc.Kernel.relax_vector $id:s$: $e3$)>>), e5
      | _ ->
@@ -1561,9 +242,7 @@ let rec float32_expr f =
     (match f.t with
      | TUnknown -> f.t <- TFloat32
      | TFloat32 -> f.t <- TFloat32
-     | TVec TFloat32
      | TVec TFloat32 -> f.t <- TVec TFloat32
-     | TFloat32-> ()
      | _ -> assert (not debug); raise (TypeError (TFloat32, f.t, f.loc)))
   in f32_typer f;
 
@@ -1584,8 +263,6 @@ let rec float64_expr f =
   let rec f64_typer f =
     (match f.t with
      | TUnknown -> ()
-(*     | TFloat -> f.t <- TFloat64
-     | TVec TFloat*)
      | TVec TFloat64 -> f.t <- TVec TFloat64
      | TFloat64-> ()
      | _ ->() ) 
@@ -1626,12 +303,11 @@ let rec float64_expr f =
      f.e <- VecSet (l,float64_expr a, float64_expr b)
    | Seq (l, a, b) -> f.e <- Seq (l,a, float64_expr b)
    | Id  (l, id) -> f.e <-  Id  (l, id)
-   | Int _ | BoolEq32 _ | BoolEq32 _ | BoolEq64 _ -> () 
+   | Int _ | BoolEq32 _ | BoolEq64 _ -> () 
    | BoolLt _ | BoolLt32 _ | BoolLt64 _ 
-(*   | Plus _ | Min _ | Mul _ | Div  _ *) ->() 
+   (*   | Plus _ | Min _ | Mul _ | Div  _ *) ->() 
    | BoolEqF (l,a,b) ->
      f.e <- BoolEqF64 (l, float64_expr a, float64_expr b)
-   | BoolLt64 _-> ()
    | BoolLtF (l,a,b) -> 
      f.e <- BoolLtF64 (l, float64_expr a, float64_expr b)
    | Ife (l,cond,cons1,cons2) -> 
@@ -1643,69 +319,693 @@ let rec float64_expr f =
    | Open (l, m, e) -> 
      f.e <- Open (l, m, float64_expr e)
    | _ -> assert (not debug); raise (TypeError (TFloat64, f.t, f.loc));
-     ());
+  );
   f
 
 
 let nb_ker = ref 0
 
 
-let gen_ctypes _loc kt name  =
-  match kt with
-  | KRecord (l1,l2) ->
-    let t1 = List.fold_left 
-        (fun elt liste_elt -> <:ctyp< $elt$; $liste_elt$ >>  ) <:ctyp< >> l1  in
-    let ident_of_string s =
-      IdLid (_loc,s)
-    in   
-    let rec string_of_ctyp = function
-      | Ast.TyArr (_loc, t1, t2) -> (string_of_ctyp t1)^" -> "^(string_of_ctyp t2)
-      | (Ast.TyId (_, Ast.IdLid (_, s ))) -> s
-      | TyCol (l,t1,t2)-> string_of_ctyp t2
-      | _ -> failwith "error in string_of_ctyp"
-    in
-    let sarek_type_name = name^"_sarek" in
-    let rec content acc (l1,l2)= 
-      match (l1 : ctyp list), (l2 :ident list) with
-      | [],[] -> acc
-      | t1::q1, t2::q2 -> 
-        let nexts = content acc (q1,q2) in
-        let field_name  =  (sarek_type_name^"_"^(string_of_ident t2)) in
-        <:str_item<   let $lid:field_name$  = field $lid:sarek_type_name$ $lid:string_of_ctyp t1$ ;;
-        $nexts$ >>
-      | _ -> assert false
-    in
-    let fields =
-      content <:str_item< >> (l1,l2) in    
-    <:str_item< 
-                type $lid:name$ = { $t1$ };;
-                open Ctypes;;
-                type $lid:sarek_type_name$ ;;
-                let $lid:sarek_type_name$ : $lid:sarek_type_name$ structure typ = structure $lid:sarek_type_name$ ;;
-                $fields$;;
-                let () = seal $lid:sarek_type_name$;;
-                let $lid:"custom_"^name$ = 
-                {
-                 size = Ctypes.sizeof $lid:sarek_type_name$;
-                 get = (fun c i -> 
-                  let x = Ctypes.Array.get c i in
-                  {x = 1});
-                set = (fun c i elt -> 
-                  let x = { x = 1}
-                in Ctypes.Array.set c i x)
-                };;
-    >>
-      
+let gen_ctype t1 t2 t3 name _loc = 
+  let field_name  = (string_of_ident t2^"_"^t3) in
+  begin
+    <:str_item< let $lid:field_name$ = 
+                		let open Ctypes in
+                		Ctypes.field 
+                		$lid:string_of_ident t2$ 
+                		$str:field_name$
+                		$lid:get_sarek_name ((string_of_ctyp t1))$ 
+                ;; 
+    >> 
+  end
 
-  | _ -> assert false
-    
-let gen_labels _loc (t1 : ident * ctyp) (t2 : (ctyp list * ident list) option) : ctyp list * ident list =
-  let s,t = t1 in
+let gen_ctype_repr t1 t2 name : string =
+  let field_name  = (string_of_ident t2^"_t") in
+  ((ctype_of_sarek_type (string_of_ctyp t1))^" "^field_name)
+
+
+type ktyp_repr = {
+  type_id : int;
+  name : string;
+  typ : ktyp;
+  ml_typ : str_item;
+  ctype : str_item;
+  crepr : string;
+  ml_to_c : expr;
+  c_to_ml : expr;
+  build_c : string list;
+  compare : string;
+}
+
+let type_id = ref 0
+
+
+let gen_mltyp _loc name t =
+  begin
+    match t with 
+    | Custom (KRecord (ctypes,idents,muts),_) -> 
+      begin
+        let aux list_elt list_mut = 
+          let idfield = 
+            match list_elt with
+            | TyCol(_loc,TyId(_,IdLid(_,t)),_) -> mltype_of_sarek_type t
+            | _ -> assert false 
+          in
+          (try 
+             let rcr = Hashtbl.find !rec_fields idfield in
+             rcr.ctyps <- name::rcr.ctyps;
+           with
+           | Not_found ->
+             (let recrd_field = 
+               { id = (let i = !type_id in incr type_id; i);
+                 field = idfield;
+                 name = name;
+                 ctyps = [name];
+               }
+              in
+              my_eprintf ("Add field : "^(idfield)^"\n");
+              Hashtbl.add !rec_fields idfield recrd_field));
+          if list_mut then
+            let list_elt = TyMut (_loc,list_elt)in
+            <:ctyp< $list_elt$ >> 
+          else 
+            <:ctyp< $list_elt$ >> in
+        <:str_item< 
+        type $lid:name$ = {
+	  
+          $List.fold_left2 
+             (fun elt list_elt list_mut ->
+              <:ctyp< $elt$; $aux list_elt list_mut$ >> )
+	     (aux (List.hd ctypes) (List.hd muts)) (List.tl ctypes) (List.tl muts)$} >>
+      end
+    | Custom ((KSum l),_) -> 
+       begin
+	 let type_of_string s =
+           TyId (_loc, (IdUid(_loc,s)) )
+         in
+         let typeof t1 t2 =
+           TyOf(_loc, t1, t2)
+         in
+         let id = ref 0 in
+         let aux (list_elt,t) = 
+           Hashtbl.add !constructors (list_elt) (
+			 {id = (let i = !id in incr id; i);
+			  name = name; 
+			  nb_args = 0;
+			  ctyp = "";
+			  typ = KSum l}); 
+           match t with
+           | Some (s:ctyp) -> 
+              let c = (Hashtbl.find !constructors list_elt) in
+              c.nb_args <- 1;
+              c.ctyp <-  (string_of_ctyp s);
+              let t  =
+                typeof (type_of_string list_elt) s 
+              in 
+                     begin
+                       <:ctyp<  $t$ >>end
+	   | None ->
+	      <:ctyp< $type_of_string list_elt$ >>
+	 in
+	 let ct =
+	   <:ctyp< $Ast.tyOr_of_list (List.map aux l)$>>
+	 in
+	 <:str_item< type $lid:name$ = $Ast.TySum (_loc, ct)$>>
+end
+| TInt32 -> 
+  <:str_item< int >>
+| _ -> 
+  <:str_item<  >>
+end
+
+
+type managed_ktyp = 
+  {
+    mk_name : string;
+    mk_crepr : string;
+  }
+
+
+let type_repr = Hashtbl.create 10
+
+let rec has_of = function
+  | (_,Some t)::q -> true
+  | (_,None)::q -> has_of q
+  | [] -> false 
+
+
+
+let gen_ctypes _loc kt name =
+  let rec gen_repr _loc t name =
+    let managed_ktypes = Hashtbl.create 5 in
+    let sarek_type_name = name^"_sarek" in
+    Hashtbl.add sarek_types_tbl name sarek_type_name;
+    let ctype =
+      begin
+        let fieldsML =
+          match t with
+          | Custom (KRecord (ctypes,idents,_),_) -> 
+            begin
+              let rec content acc l1 l2 = 
+                match (l1 ,l2) with
+                | [],[] -> 
+                  acc
+                | t1::q1, t2::q2 -> 
+                  content 
+                    (<:str_item< $acc$
+                                 		                 $gen_ctype t1 (IdLid(_loc,sarek_type_name)) (string_of_ident t2) sarek_type_name _loc$
+                                 		>>) q1 q2
+                | _ -> assert false
+              in
+              content (<:str_item< >>) ctypes idents
+            end
+          | Custom ((KSum l),_) -> 
+            begin
+              let gen_mlstruct accML (cstr,ty) = 
+                let name = sarek_type_name^"_"^cstr in
+                begin
+                  match ty with 
+                  | Some t -> 
+                    begin
+                      let ct = gen_ctype t (IdLid(_loc,name))  sarek_type_name "" _loc in 
+                      let ctr = gen_ctype_repr 
+                          t 
+                          (IdLid(_loc,name))  sarek_type_name  in  
+                      Hashtbl.add managed_ktypes cstr ctr;
+                      <:str_item< 
+                        
+                                  $accML$ ;; 
+                                  type $lid:name$ ;;
+                                  let $lid:name$ : $lid:name$ Ctypes.structure Ctypes.typ = 
+                                  Ctypes.structure  $str:name$ ;;
+                                  $ct$ ;;
+                                  let () = Ctypes.seal $lid:name$ ;; >>
+                    end  
+                  | None -> 
+                    begin
+
+                      <:str_item< 
+                        $accML$
+                      >>
+                    end
+                end 
+
+              in	  
+              let rec content (accML)  = function
+                | t::q -> content (gen_mlstruct accML t) q
+                | [] -> accML
+              in
+              let tag = sarek_type_name^"_tag" in
+              let fields = content (<:str_item<let $lid:tag$ = 
+                                     Ctypes.field $lid:sarek_type_name$ $str:tag$ Ctypes.int ;;>>) l
+              in
+
+              if has_of l then
+                let union = sarek_type_name^"_union" in
+                let union_name = union^"_" in
+                let rec aux acc = function 
+                  | (cstr, Some x)::q ->
+                    let field_name_c = sarek_type_name^"_"^cstr in
+                    let field_name = field_name_c^"_val" in
+                    aux <:str_item<$acc$;;
+                                   let $lid:field_name$ = let open Ctypes in
+                                   Ctypes.field $lid:union_name$ $str:field_name_c$ $lid:field_name_c$;; >> q
+                  | (_,None)::q -> aux acc q
+                  | [] -> <:str_item< $acc$;;
+                                      let () = Ctypes.seal $lid:union_name$;;
+                                      let $lid:sarek_type_name^"_union"$ = 
+                                      Ctypes.field 
+                                      $lid:sarek_type_name$ 
+                                      $str:union$ 
+                                      $lid:union_name$;;
+                          >> 
+                in
+                aux <:str_item< $fields$;;
+                                type $lid:union_name$ ;;
+                                let $lid:union_name$ : ($lid:union_name$ Ctypes.union Ctypes.typ) =
+                                Ctypes.union $str:union_name$ ;;
+                    >> l
+              else
+                fields
+            end
+          | _ -> assert false
+
+        in
+        begin
+
+          <:str_item< 
+                      	              (** open ctype **)
+                      	              type $lid:sarek_type_name$ ;;
+                      	              let ($lid:sarek_type_name$ :($lid:sarek_type_name$ 
+                      	              Ctypes.structure) 
+                      	              Ctypes.typ) = 
+                      	              Ctypes.structure $str:sarek_type_name$ ;;     
+                      (** fill its fields **)
+
+                      	              $fieldsML$ ;;
+                      (** close ctype **)
+
+
+                      let () = Ctypes.seal $lid:sarek_type_name$ ;;
+                      	>>
+        end ;
+      end;
+    in 
+    {
+      type_id = (incr type_id; !type_id);
+      name = name;
+      typ = t;
+      ml_typ = gen_mltyp _loc name t;
+      ctype =  ctype;
+      crepr = 
+        begin
+          match t with 
+          | Custom (KRecord (l1,l2,_),_) -> 
+            let rec content (ctype) (l1,l2)= 
+              match (l1 : ctyp list), (l2 :ident list) with
+              | [],[] -> ctype
+              | t1::q1, t2::q2 -> 
+                content (ctype^"\n\t"^(ctype_of_sarek_type (string_of_ctyp t1)) ^ 
+                         "  " ^ (string_of_ident t2) ^ ";") (q1,q2)
+              | _ -> assert false
+            in
+
+            let fieldsC =
+              let a = content "" (l1,l2) in    
+              ("struct " ^ sarek_type_name ^ " {"
+               ^a ^"\n};")  in
+            fieldsC^";\n"
+          | Custom ((KSum l),_) ->
+            let gen_cstruct accC = function
+              | cstr,Some t -> 
+                accC ^ "\t\tstruct "^sarek_type_name^"_"^cstr^" {\n\t\t\t"^ 
+                (Hashtbl.find managed_ktypes cstr)^";\n\t\t} "^
+                sarek_type_name^"_"^cstr^";\n"
+              | cstr,None -> accC ^ ""
+            in
+            let rec contents accC  = function
+              | t::q -> contents (gen_cstruct accC t) q
+              | [] -> accC
+            in
+            let fieldsC  =
+              let b = contents "" l in    
+              ("struct " ^ sarek_type_name ^ " {\n\tint "^
+               sarek_type_name ^ "_tag;\n"^
+               (if has_of l then
+                  "\tunion "^sarek_type_name^"_union {\n"
+                  ^b ^"\t} "^sarek_type_name^"_union;"
+                else "" )^
+               "\n}") 
+            in fieldsC^";\n" 
+          | _ -> "int" ;
+        end;
+      compare = 
+        begin
+          match t with 
+          | Custom (KRecord (l1,l2,_),_) -> 
+            let rec content (ctype) (l1,l2)= 
+              match (l1 : ctyp list), (l2 :ident list) with
+              | [],[] -> ctype
+              | t1::q1, t2::q2 -> 
+                (try 
+                   let tt = Hashtbl.find sarek_types_tbl (string_of_ctyp t1) in
+                   content (ctype^ "&& spoc_custom_compare_"^tt^
+                            " ( a."^(string_of_ident t2)^", b."^
+                            (string_of_ident t2)^")") (q1,q2)
+                 with
+                 | _ ->
+                   content (ctype^ " && ( a."^(string_of_ident t2)^
+                            " ==  b."^(string_of_ident t2)^")") (q1,q2)
+                )
+                | _ -> assert false
+            in
+            
+            let fieldsC =
+              let a = content "true " (l1,l2) in    
+              ("int spoc_custom_compare_"^sarek_type_name^"(struct " ^ sarek_type_name ^
+               " a, struct "^sarek_type_name ^" b) {\n\treturn ("
+               ^a ^");\n}")  in
+            fieldsC
+          | Custom ((KSum l),_) ->
+            let c = ref (-1) in
+            let gen_cstruct accC = function
+              | cstr,Some t -> 
+                incr c;
+                accC^"\tcase "^string_of_int !c^" :\n"^
+                let field = sarek_type_name^"_union."^
+                            sarek_type_name^"_"^cstr^"."^
+                            sarek_type_name^"_"^cstr^"_t" in
+                (try
+                   let tt = Hashtbl.find sarek_types_tbl (string_of_ctyp t) in
+                   ("\t\treturn spoc_custom_compare_"^tt^
+                    "( a."^field^", b."^field^");\n\t\tbreak;\n")
+                 with _ ->
+                   "\t\treturn (a."^field^" == b."^field^");\n\t\tbreak;\n"
+                )
+              | cstr,None -> 
+                incr c;
+                accC^"\tcase "^string_of_int !c^" :\n"^"\t\treturn 1;\n\t\tbreak;\n"
+            in
+            let rec contents accC  = function
+              | t::q -> contents (gen_cstruct accC t) q
+              | [] -> accC
+            in
+            let fieldsC  =
+              let b = contents "" l in    
+              ("int spoc_custom_compare_"^sarek_type_name^"(struct " ^ sarek_type_name ^
+               " a, struct "^sarek_type_name ^" b) {\n"^
+               (if has_of l then
+                  "\tif (a."^sarek_type_name^"_tag != b."^sarek_type_name^"_tag)\n"^
+                  "\t\treturn 0;\n"^
+                  ("\tswitch (a."^sarek_type_name^"_tag) {\n"^
+                   b ^"}\n\treturn 0;\n}")
+                else "\treturn (a."^sarek_type_name^"_tag == b."^sarek_type_name^"_tag);\n}"))
+            in fieldsC 
+          | _ -> "int" ;
+        end;
+      ml_to_c = 
+        begin
+          match t with
+          | Custom (KRecord (l1,l2,_),_) ->
+            let copy_to_c = 
+              let aux b c = 
+                let field_name = 
+                  (sarek_type_name^"_"^(string_of_ident c)) in
+                try 
+                  let get = (Hashtbl.find type_repr (string_of_ctyp b)).ml_to_c in
+                  <:expr< Ctypes.setf tmp $lid:field_name$ 
+                          ($get$ x.$lid:string_of_ident c$);>>
+                with
+                | _ ->
+                  <:expr< Ctypes.setf tmp $lid:field_name$ x.$lid:string_of_ident c$;>>
+              in
+              List.fold_left2 
+                (fun a b c ->
+                   <:expr< $a$; $aux b c$>>)
+                (aux (List.hd l1) (List.hd l2)) (List.tl l1) (List.tl l2)
+            in
+            begin
+              <:expr< fun x -> 
+                      let tmp = 
+                      Ctypes.make $lid:sarek_type_name$ in
+                      $copy_to_c$ ;
+                      tmp
+              >>;
+            end
+
+          | Custom ((KSum l),_) -> 
+             let copy_to_c =
+               let gen_sum_rep  l = 
+                 let rec aux acc tag = function
+                   | (cstr,of_) :: q ->
+                      aux ((cstr,tag,of_)::acc) (tag+1) q
+                   | [] -> acc
+                 in
+                 aux [] 0 l
+               in
+               let repr_ = gen_sum_rep l 	
+               in
+               let copy_content cstr (of_ :ctyp option) =
+                let copy_of _of = 
+                  try
+                    let get = 
+                      (Hashtbl.find type_repr (string_of_ctyp _of)).ml_to_c in
+                    <:expr< 
+                     let  union =
+                     Ctypes.make $lid:sarek_type_name^"_union_"$ in
+                     let str = 
+                     Ctypes.make $lid:sarek_type_name^"_"^cstr$ in
+                     Ctypes.setf str $lid:sarek_type_name^"_"^cstr^"_"^sarek_type_name$ ($get$ sarek_tmp);
+                     Ctypes.setf union 
+                     $lid:sarek_type_name^"_"^cstr^"_val"$ str;
+                     Ctypes.setf tmp
+                     $lid:sarek_type_name^"_union"$ union ;
+                     >>
+                  with 
+                  | _ -> <:expr< 
+                          let  union =
+                          Ctypes.make $lid:sarek_type_name^"_union_"$ in
+                          let str = 
+                          Ctypes.make $lid:sarek_type_name^"_"^cstr$ in
+                          Ctypes.setf str $lid:sarek_type_name^"_"^cstr^"_"^sarek_type_name$ sarek_tmp;
+                          Ctypes.setf union 
+                          $lid:sarek_type_name^"_"^cstr^"_val"$ str;
+                          Ctypes.setf tmp
+                          $lid:sarek_type_name^"_union"$ union ;
+                          >>
+                in
+                match of_ with
+                | Some x -> copy_of x
+                | None -> <:expr< >>
+               in
+               let match_cases = 
+                 List.map 
+                   (fun (cstr,tag,of_) ->
+                    begin
+                      <:match_case< 
+		      $match of_ with 
+                       | Some _ -> 
+                          <:patt< $uid:cstr$ sarek_tmp>>
+		       | None -> <:patt< $uid:cstr$ >>$
+			 ->
+			  begin
+			    Ctypes.setf tmp $lid:sarek_type_name^"_tag"$
+						 $int:string_of_int tag$ ;
+                            $copy_content cstr of_$;
+			  end
+			  >>
+                    end
+                   ) 
+                   repr_
+               in
+	       let l =
+		 List.rev match_cases in
+	       <:expr< match x with 
+		$list:l$  >>
+	     in
+             begin
+	       <:expr< fun x -> 
+                let tmp = 
+                Ctypes.make $lid:sarek_type_name$ in
+                $copy_to_c$ ;
+                tmp
+		>>;
+             end
+	       
+          | _ -> assert false
+        end;
+      c_to_ml =
+        begin
+          match t with 
+          | Custom (KRecord (l1,l2,_),_) ->
+            let copy_to_caml =
+              let aux b c =
+                let field_name = 
+                  (sarek_type_name^"_"^(string_of_ident c)) in
+                try 
+                  let get = (Hashtbl.find type_repr (string_of_ctyp b)).c_to_ml in
+                  <:rec_binding<  
+                                  $c$ = 
+                                  $get$
+                                  (Ctypes.getf x $lid:field_name$) >>
+
+                with | _ ->
+                  <:rec_binding< 
+                                 $c$ = 
+                                 Ctypes.getf x $lid:field_name$ >>
+              in
+              List.fold_left2 
+                (fun a b c -> 
+                   <:rec_binding< $a$; $aux b c$>>)
+                (aux (List.hd l1) (List.hd l2)) (List.tl l1) (List.tl l2)                
+            in
+            begin
+              <:expr< fun x -> {$copy_to_caml$} ;
+              >>;
+            end
+          | Custom ((KSum l),_)  ->
+            let gen_sum_rep  l = 
+              let rec aux acc tag = function
+                | (cstr,of_) :: q ->
+                  aux ((cstr,tag,of_)::acc) (tag+1) q
+                | [] -> acc
+              in
+              aux [] 0 l
+
+            in
+
+            let copy_content sarek_type_name cstr (of_:ctyp option) =
+              let copy_of _of =
+                try
+                  let get = (Hashtbl.find type_repr (string_of_ctyp _of)).c_to_ml in
+
+                  <:expr< 
+                          $get$ (let union = 
+                          Ctypes.getf x $lid:sarek_type_name^"_union"$ in
+                          let $lid:"val"^cstr$ = 
+                          Ctypes.getf union 
+                          $lid:sarek_type_name^"_"^cstr^"_val"$ in
+                          Ctypes.getf $lid:"val"^cstr$ $lid:sarek_type_name^"_"^cstr^"_"^sarek_type_name$)
+                  >>
+                with
+                |_ ->
+                  <:expr< let union = 
+                          Ctypes.getf x $lid:sarek_type_name^"_union"$ in
+                          let $lid:"val"^cstr$ = 
+                          Ctypes.getf union 
+                          $lid:sarek_type_name^"_"^cstr^"_val"$ in
+                          Ctypes.getf $lid:"val"^cstr$ $lid:sarek_type_name^"_"^cstr^"_"^sarek_type_name$
+                  >>
+              in 
+              match of_ with
+              | Some x -> 
+                <:expr< $ExId(_loc,IdUid(_loc,cstr))$ ($copy_of x$) >>
+              | None ->
+                ExId(_loc,IdUid(_loc,cstr))
+            in
+            let repr_ = gen_sum_rep l 	
+            in
+            let copy_to_caml = 
+              let match_cases = 
+                (<:match_case< a -> failwith ("Sarek error : c to caml failed for type "^
+                               $str:name$^" : "^(string_of_int a) )>>)::
+                (List.map 
+                   (fun (cstr,tag,of_) ->
+                      begin
+                        <:match_case< 
+                                      $int:string_of_int tag$ -> 
+                                      $copy_content sarek_type_name cstr of_$
+                        >>
+                      end
+                   ) 
+                   repr_)
+              in
+              <:expr< let tag = Ctypes.getf x $lid:sarek_type_name^"_tag"$ in
+                      match tag with 
+                      $list:(List.rev match_cases)$ >>
+
+            in
+            <:expr< fun x -> $copy_to_caml$>>
+          | _ -> 
+            assert false
+        end;
+      build_c = 
+        match t with
+        | Custom (KRecord (l1,l2,_),n) -> 
+          let params =
+            let i = ref false in
+            List.fold_left2 (fun a b c ->
+                a ^( if !i then "," else (i := true; "")) ^
+                (ctype_of_sarek_type (string_of_ctyp b)) ^" "^(string_of_ident c))
+              "" l1 l2 in
+          let content = 
+            List.fold_left (fun a b ->
+                let i = (string_of_ident b) in
+                a^"\tsarek_tmp."^i^ " = " ^i^";\n")
+              "" l2
+          in 
+          ["struct "^sarek_type_name^" build_"^n^" ("^params^"){\n\t"^
+           "struct "^sarek_type_name^" sarek_tmp;\n"^
+           content^"\treturn sarek_tmp;\n}"];
+        | Custom ((KSum l),n) -> 
+          let rec content i = function
+            |cstr,None -> 
+              "struct "^sarek_type_name^" build_"^n^"_"^cstr^"(){\n\t"^
+              "struct "^sarek_type_name^" sarek_tmp;\n"^
+              "\tsarek_tmp."^sarek_type_name^"_tag = "^
+              (string_of_int i)^";\n\treturn sarek_tmp;\n}"
+
+            |cstr,Some of_ -> 
+              let params = 
+                ctype_of_sarek_type (string_of_ctyp of_) in
+              "struct "^sarek_type_name^" build_"^n^"_"^cstr^"("
+              ^params^" "^(String.uncapitalize cstr)^"){\n\t"^
+              "struct "^sarek_type_name^" sarek_tmp;\n"^
+              "\tsarek_tmp."^sarek_type_name^"_tag = "^
+              (string_of_int i)^";\n"^
+              "\tstruct "^sarek_type_name^"_"^cstr^" t"^cstr^";\n"^
+              "\tt"^cstr^"."^sarek_type_name^"_"^cstr^"_t = "^
+              (String.uncapitalize cstr)^";\n"^
+              "\tsarek_tmp."^sarek_type_name^"_union."^
+              sarek_type_name^"_"^cstr^" = "^"t"^cstr^";\n"^
+              "\treturn sarek_tmp;\n}"
+          in
+          List.mapi content l
+        | _ -> assert false;
+    }
+  in
+  let t = gen_repr _loc (Custom (kt,name)) name in
+  Hashtbl.add type_repr name t;
+  let sarek_type_name = name^"_sarek" in
+
+  let custom = 
+    let l = [
+      <:rec_binding<size = Ctypes.sizeof $lid:sarek_type_name$>>;
+      <:rec_binding<get = 
+                    (fun c i -> 
+                    $t.c_to_ml$ 
+                    (let open Ctypes in
+                    let cr = Obj.repr c in 
+                    let ptrcr = 
+                    (Ctypes.from_voidp $lid:sarek_type_name$                 
+                    (Ctypes.ptr_of_raw_address 
+                    (Obj.magic cr))) in
+                    !@(ptrcr +@ i)))>>;
+      <:rec_binding<set = (fun c i v -> 
+			   let open Ctypes in
+			   let cr = Obj.repr c in 
+			   let ptrcr = 
+			     (Ctypes.from_voidp $lid:sarek_type_name$
+						       (Ctypes.ptr_of_raw_address 
+							  (Obj.magic cr))) in
+			   Ctypes.(<-@) (Ctypes.(+@) ptrcr  i)
+					($t.ml_to_c$ v)) >>]
+    in
+    ExRec(_loc, rbSem_of_list l, (Ast.ExNil _loc))
+  in
+  begin
+    Ast.stSem_of_list
+      ([
+	(<:str_item<open Vector>>) ;
+	t.ml_typ ;
+	t.ctype ;
+	(<:str_item<
+	   let $lid:"custom"^(String.capitalize name)$ : (($lid:name$,$lid:sarek_type_name$) Vector.custom) =
+	     $custom$>>) ;
+	(<:str_item<let $lid:t.name^"_c_repr"$ = $str:t.crepr$>>) ;
+	(<:str_item<Kirc.constructors := $str:t.crepr$ :: !Kirc.constructors>>) ;
+	(<:str_item<Kirc.constructors := $str:t.compare$ :: !Kirc.constructors>>)
+      ]
+       @
+	 (List.map (fun a -> 
+                    (<:str_item<Kirc.constructors := $str:a^"\n"$ :: !Kirc.constructors>>)
+		   ) t.build_c
+	 )
+      )
+  end
+
+
+
+let gen_labels _loc (t1 : ident * ctyp * bool) 
+    (t2 : (ctyp list * ident list * bool list) option) 
+  : ctyp list * ident list * bool list =
+  let s,t,m = t1 in
   let t1 = 
     TyCol (_loc, (TyId (_loc, s)), t)
   in
   match t2 with 
-  | Some (t2,s2) -> 
-    t1::t2, s::s2
+  | Some (t2,s2,m2) -> 
+    t1::t2, s::s2, m::m2
   | None ->
-    t1::[], s::[]
+    t1::[], s::[],m::[]
+
+
+let gen_constructors _loc 
+    (t1 : string * ctyp option) 
+    (t2 : (string * ctyp option) list option) 
+  : (string *ctyp option) list =
+  match t2 with 
+  | Some t -> 
+    t1::t
+  | None ->
+    t1::[]

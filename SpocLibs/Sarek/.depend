@@ -1,0 +1,10 @@
+Kirc.cmo : Kirc_OpenCL.cmo Kirc_Cuda.cmo Kirc_Ast.cmi Kirc.cmi
+Kirc.cmx : Kirc_OpenCL.cmx Kirc_Cuda.cmx Kirc_Ast.cmx Kirc.cmi
+Kirc_Ast.cmo : Kirc_Ast.cmi
+Kirc_Ast.cmx : Kirc_Ast.cmi
+Kirc_Cuda.cmo : Kirc_Ast.cmi
+Kirc_Cuda.cmx : Kirc_Ast.cmx
+Kirc_OpenCL.cmo : Kirc_Ast.cmi
+Kirc_OpenCL.cmx : Kirc_Ast.cmx
+Kirc.cmi : Kirc_Ast.cmi
+Kirc_Ast.cmi :

@@ -15,6 +15,7 @@ type memspace =
 
 type k_ext =
     Kern of k_ext * k_ext
+  | Block of k_ext
   | Params of k_ext
   | Plus of k_ext * k_ext
   | Plusf of k_ext * k_ext
@@ -36,6 +37,10 @@ type k_ext =
   | Arr of int * k_ext * elttype * memspace
   | VecVar of k_ext * int
   | Concat of k_ext * k_ext
+  | Constr of string * string * k_ext list
+  | Record of string*k_ext list
+  | RecGet of k_ext * string
+  | RecSet of k_ext * k_ext
   | Empty
   | Seq of k_ext * k_ext
   | Return of k_ext
@@ -48,13 +53,16 @@ type k_ext =
   | Int of int
   | Float of float
   | Double of float
+  | Custom of string*int
   | IntVecAcc of k_ext * k_ext
   | Local of k_ext * k_ext
   | Acc of k_ext * k_ext
   | Ife of k_ext * k_ext * k_ext
   | If of k_ext * k_ext
+  | Match of string*k_ext * case array
   | Or of k_ext * k_ext
   | And of k_ext * k_ext
+  | EqCustom of string * k_ext * k_ext 
   | EqBool of k_ext * k_ext
   | LtBool of k_ext * k_ext
   | GtBool of k_ext * k_ext
@@ -66,5 +74,7 @@ type k_ext =
   | GInt of (unit -> int32)
   | GFloat of (unit -> float)
   | Unit
+and case = int * (string*string*int) option * k_ext
+
 type kfun = KernFun of k_ext * k_ext
 val print_ast : k_ext -> unit

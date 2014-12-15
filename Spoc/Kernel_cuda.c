@@ -218,6 +218,7 @@ CAMLprim value spoc_cuda_load_param_vec(value off, value ex, value A, value v, v
 
 	seek = Int_val(Field(v,10));
 	bigArray = Field (Field(v, 1), 0);
+	int custom = 0;
 	GET_TYPE_SIZE;
 	extra = (char*)ex;
 	offset = Int_val(Field(off, 0));

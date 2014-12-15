@@ -1,5 +1,7 @@
 authors=["Mathias Bourgoin <mathias.bourgoin@lip6.fr>"]
-descr=["GPGP kernels DSL for OCaml"]
+descr=["GPGPU kernels DSL for OCaml"]
+comp=["-g" "-warn-error" "+a"]
+ccopt=["-g"]
 begin library "sarek"
       files = ["Kirc_Ast.ml"
       	       "Kirc_Cuda.ml" "Kirc_OpenCL.ml"

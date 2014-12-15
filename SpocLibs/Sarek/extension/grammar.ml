@@ -2,6 +2,7 @@ open Camlp4.PreCast
 open Syntax
 open Ast
 
+open Types
 open Typer
 open Mparser
 
@@ -25,14 +26,19 @@ let gen_kernel () = ()
        module $name$ = struct
        end
        >>
-     | "ktyp"; name=LIDENT; "="; k = ktype_kind -> 
+     | "ktype"; name=LIDENT; "="; k = ktype_kind -> 
+       Hashtbl.add custom_types name k;
        gen_ctypes _loc k name;
       ]
     ];
   
   ktype_kind :
-    [[ "{"; (t,l) = klabel_declaration_list; "}" ->
-       KRecord (t,l)
+    [[ "{"; (t,l,m) = klabel_declaration_list; "}" ->
+        KRecord (t,l,m)  
+     | t = fst_constructor -> KSum [t]
+     | t = fst_constructor; t2 = kconstructor_list -> 
+	KSum 
+	 (gen_constructors _loc t (Some t2));
      ]
     ];
   klabel_declaration_list:
@@ -46,8 +52,30 @@ let gen_kernel () = ()
   ;
   klabel_declaration:
     [[
-      s=ident; ":";  t=type_kind -> (s,t)
+      m = OPT "mutable"; s=ident; ":";  t=type_kind -> 
+      match m with
+        None -> (s,t,false)
+      |_ -> (s,t,true)
     ]];
+
+  kconstructor_list :
+    [[ 
+	"|"; t1 = kconstructor; t2 = SELF ->
+	 gen_constructors _loc t1 (Some t2);
+      | "|";  t1 = kconstructor  -> 
+	 gen_constructors _loc t1 (None);
+    ]];
+  fst_constructor : 
+    [[
+	OPT "|"; t = kconstructor ->  t
+
+    ]];
+  kconstructor:
+    [[
+	c = UIDENT -> (c,None);
+      | c = UIDENT; "of" ; t = ctyp (* TODO: real types here! *) -> (c, Some t) ;
+    ]];
+
   mod_const_expr: 
     [[name=ident; ":"; typ=ident; "="; cu_value=STRING; cl_value=STRING -> 
       let typ =
@@ -109,6 +137,12 @@ let gen_kernel () = ()
           (Printf.eprintf "%s\n%!" ("\027[31m Immutable Value \027[00m : \027[33m"^
                                     (value)^"\027[00m used as mutable in position : "^(Loc.to_string loc)^"");
            exit 2;)
+        | FieldError (record,field,loc) ->
+          (Printf.eprintf "%s\n%!" ("\027[31m Type Error \027[00m field : \027[33m"^
+                                    (field)^"\027[00m doesn't exist in record type : \027[33m"^record^
+                                    "\027[00m in position : "^(Loc.to_string loc)^"");
+           exit 2;)
+
        );  
        let new_hash_args = Hashtbl.create (Hashtbl.length !current_args) in
        Hashtbl.iter (Hashtbl.add new_hash_args) !current_args;
@@ -116,7 +150,7 @@ let gen_kernel () = ()
        current_args := new_hash_args;  
        let gen_body = 
          <:expr< 
-                 $try parse_body body with
+                 $try Gen_caml.parse_body body with
                  | TypeError(expected, given, loc) -> 
                  (
                  Printf.eprintf "%s\n%!" ("\027[31m Type Error \027[00m : expecting : \027[33m"^
@@ -135,7 +169,7 @@ let gen_kernel () = ()
                  $>>
        in
        let b_body = 
-         (try parse_body2 body true
+         (try Gen_kir.parse_body2 body true
           with 
           | TypeError(expected, given, loc) -> 
             (
@@ -156,7 +190,7 @@ let gen_kernel () = ()
        let n_body2 = <:expr<params $List.fold_left 
                             (fun a b -> <:expr<concat $b$ $a$>>) 
 <:expr<empty_arg()>> 
-  (List.rev (List.map gen_arg_from_patt2 args))$>> in 
+  ((List.rev_map gen_arg_from_patt2 args))$>> in 
 let gen_body2 =  <:expr< 
                          spoc_gen_kernel 
                          $n_body2$
@@ -172,10 +206,10 @@ let ret =
   incr arg_idx;
   match !return_type with
   | TUnknown  -> <:expr<return_unknown (), Dummy>>
-  | TInt32 | TInt32 -> <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int32 >>
+  | TInt32 -> <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int32 >>
   | TInt64 ->  <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int64>>
-  | TVec TInt32 | TVec TInt32 | TVec TInt64 -> assert false
-  | TFloat32 | TFloat32 ->  <:expr<return_float $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float32>>
+  | TVec TInt32 | TVec TInt64 -> assert false
+  | TFloat32 ->  <:expr<return_float $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float32>>
   | TFloat64 ->  <:expr<return_double $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float64>>
   | TUnit  -> <:expr<return_unit (), Vector.Unit ((),())>>
   | TBool -> <:expr< return_bool $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.Dummy>>
@@ -190,17 +224,17 @@ let tup_args, list_args, class_legacy , list_to_args1, list_to_args2=
   let args_fst_list = 
     (List.map fst_ (List.map gen_arg_from_patt3 args)) in
   let args_com = paCom_of_list  args_fst_list in
-
-
+  
+  
   let args_list = 
     let l = (List.map snd_ (List.map gen_arg_from_patt3 args)) in
     exSem_of_list l
   in 
-
+  
   let args_thd_list = 
     (List.map thd_ (List.map gen_arg_from_patt3 args)) in
   let args_typ = tySta_of_list args_thd_list in
-
+  
   let lta1 = 
     paSem_of_list 
       (List.map fth_ (List.map gen_arg_from_patt3 args)) in
@@ -339,7 +373,7 @@ str_item:
      current_args := new_hash_args;  
      let gen_body = 
        <:expr< 
-               $try parse_body body
+               $try Gen_caml.parse_body body
                with 
                | TypeError(expected, given, loc) -> 
                (
@@ -348,7 +382,7 @@ str_item:
                (ktyp_to_string given)^" in position : "^(Loc.to_string loc)))$>>
      in
      let b_body = 
-       (try parse_body2 body true
+       (try Gen_kir.parse_body2 body true
         with 
         | TypeError(expected, given, loc) -> 
           failwith ("Type Error : expecting : "^
@@ -363,7 +397,7 @@ str_item:
      let n_body2 = <:expr<params $List.fold_left 
                           (fun a b -> <:expr<concat $b$ $a$>>) 
 <:expr<empty_arg()>> 
-  (List.rev (List.map gen_arg_from_patt2 args))$>> in 
+  ((List.rev_map gen_arg_from_patt2 args))$>> in 
 let gen_body2 =  <:expr< 
                          spoc_gen_kernel 
                          $n_body2$
@@ -378,17 +412,17 @@ let ret =
   incr arg_idx;
   match !return_type with
   | TUnknown  -> <:expr<return_unknown (), Dummy>>
-  | TInt32 | TInt32 -> <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int32 >>
+  | TInt32 -> <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int32 >>
   | TInt64 ->  <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int64>>
-  | TVec TInt32 | TVec TInt32 | TVec TInt64 -> assert false
-  | TFloat32 | TFloat32 ->  <:expr<return_float $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float32>>
+  | TVec TInt32 | TVec TInt64 -> assert false
+  | TFloat32 ->  <:expr<return_float $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float32>>
   | TFloat64 ->  <:expr<return_double $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float64>>
   | TUnit  -> <:expr<return_unit (), Vector.Unit ((),())>>
   | TBool -> <:expr< return_bool $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.Dummy>>
   | t  -> failwith (Printf.sprintf "error ret : %s" (ktyp_to_string t))
 in
 let t = 
-  Hashtbl.fold (fun _ value seed -> TApp (value.var_type, seed)) !current_args !return_type in
+  Hashtbl.fold (fun _ value seed -> TApp (seed , value.var_type)) !current_args !return_type in
 my_eprintf ("....... "^ktyp_to_string t^"\n");
 Hashtbl.add !global_fun (string_of_ident name) 
   {nb_args=0; 
@@ -445,6 +479,26 @@ do_sequence:
     | "done" -> {t=TUnknown; e=Noop; loc=_loc}
     ]
   ];
+pattern :
+  [
+    [
+      cstr = a_UIDENT; s = OPT ident  -> 
+      Constr (cstr, s)
+    ]
+  ];
+first_case :
+  [ 
+    [ p = pattern; "->"; e = kexpr -> 
+      (_loc, p, e)
+    ]
+  ];
+match_cases :
+  [
+    [
+      "|"; p = pattern; "->"; e = kexpr -> 
+      (_loc, p, e)
+    ]
+  ];
 kexpr:
   [ 
  "let"
@@ -479,7 +533,7 @@ kexpr:
        List.iter new_arg_of_patt args;
        (try 
            typer body TUnknown
-	 with
+	with
 	 | TypeError(expected, given, loc) -> 
             (
               failwith ("Type Error : expecting : "^
@@ -494,17 +548,17 @@ kexpr:
        Hashtbl.iter (Hashtbl.add new_hash_args) !current_args;
        Hashtbl.clear !current_args;
        current_args := new_hash_args;  
-
+       
 
        (*restore kernel environment*)
        arg_idx := saved_arg_idx;
        return_type := saved_return_type;
        arg_list := List.map (fun a -> a) saved_arg_list;
-
-            let gen_body = 
-       <:expr< 
-               $try parse_body body
-               with 
+       
+       let gen_body = 
+         <:expr< 
+                 $try Gen_caml.parse_body body
+                 with 
                | TypeError(expected, given, loc) -> 
                (
                failwith ("Type Error : expecting : "^
@@ -512,7 +566,7 @@ kexpr:
                (ktyp_to_string given)^" in position : "^(Loc.to_string loc)))$>>
      in
      let b_body = 
-       (try parse_body2 body true
+       (try Gen_kir.parse_body2 body true
         with 
         | TypeError(expected, given, loc) -> 
           failwith ("Type Error : expecting : "^
@@ -527,13 +581,13 @@ kexpr:
      let n_body2 = <:expr<params $List.fold_left 
                           (fun a b -> <:expr<concat $b$ $a$>>) 
 <:expr<empty_arg()>> 
-  (List.rev (List.map gen_arg_from_patt2 args))$>> in 
+  ((List.rev_map gen_arg_from_patt2 args))$>> in 
 let gen_body2 =  <:expr< 
                          spoc_gen_kernel 
                          $n_body2$
                          $
-b_body
-$>>
+                         b_body
+                         $>>
 in
 let gen_args = parse_args args gen_body
 in
@@ -541,19 +595,24 @@ let ret =
   incr arg_idx;
   match !return_type with
   | TUnknown  -> <:expr<return_unknown (), Dummy>>
-  | TInt32 | TInt32 -> <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int32 >>
+  | TInt32 -> <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int32 >>
   | TInt64 ->  <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int64>>
-  | TVec TInt32 | TVec TInt32 | TVec TInt64 -> assert false
-  | TFloat32 | TFloat32 ->  <:expr<return_float $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float32>>
+  | TVec TInt32 | TVec TInt64 -> assert false
+  | TFloat32 ->  <:expr<return_float $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float32>>
   | TFloat64 ->  <:expr<return_double $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float64>>
   | TUnit  -> <:expr<return_unit (), Vector.Unit ((),())>>
   | TBool -> <:expr< return_bool $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.Dummy>>
   | t  -> failwith (Printf.sprintf "error ret : %s" (ktyp_to_string t))
 in
 let full_typ = 
-  Hashtbl.fold (fun _ value seed -> TApp (value.var_type, seed)) !current_args !return_type 
+  List.fold_left (fun seed  p  -> 
+      match p with 
+      | (PaId(_,i)) ->
+        let value = (Hashtbl.find !current_args (string_of_ident i)) in
+        TApp (value.var_type, seed)
+      | _ -> assert false) !return_type  (List.rev args)
 in
-my_eprintf ("....... "^ktyp_to_string full_typ^"\n");
+my_eprintf ("/....... "^ktyp_to_string full_typ^"\n");
 let funv =  {nb_args=0; 
    cuda_val="";
    opencl_val=""; typ=full_typ} in
@@ -588,23 +647,30 @@ let a = <:expr<
     t = full_typ;
     e = Fun (_loc,res,full_typ,funv);
     loc = _loc
-  }  
-    ]
-  | "if"
+       }  
+]
+| "if"
       [ "if"; cond=SELF; "then"; cons1=sequence; 
         "else"; cons2=sequence -> 
         {t=TUnknown; e= Ife(_loc,cond,cons1,cons2); loc = _loc}
               | "if"; cond=SELF; "then"; cons1 = sequence -> 
         {t=TUnknown; e= If(_loc,cond,cons1); loc = _loc}
       ]
+  | "match"
+      [ 
+        "match"; x = SELF; "with"; m0 = OPT first_case; m = LIST0 match_cases 
+        ->
+        match m0 with
+        | Some m1 -> 
+          {t=TUnknown; e= Match (_loc, x, m1::m); loc = _loc}
+        | None -> 
+          {t=TUnknown; e= Match (_loc, x, m); loc = _loc}]
+
   | "mod"  RIGHTA
-    [ x = SELF; "mod"; y = SELF -> {t=TInt32; e = Mod(_loc, x,y); loc = _loc}]
+      [ x = SELF; "mod"; y = SELF -> {t=TInt32; e = Mod(_loc, x,y); loc = _loc}]
   | ":=" 
       [ x = SELF; ":="; y= SELF  -> {t=(TUnit); e = Acc (_loc, x, y); loc = _loc}
       ]
-  | "apply" LEFTA
-    [ e1 = SELF; e2 = SELF -> {t=(TUnknown); e= App(_loc, e1, [e2]); loc = _loc}
-    ]	 
   | "<-" 
       [ x = SELF; "<-"; y= SELF  -> 
         begin
@@ -615,10 +681,15 @@ let a = <:expr<
           | {t = _; e = ArrGet _ } ->
             {t=(TUnit);
              e = ArrSet (_loc, x, y); loc = _loc}
+          | {t=_; e=RecGet _}->
+            {t=TUnit;
+             e = RecSet (_loc, x, y); loc = _loc}
           | _ -> assert false
         end
       ]
-
+  | "apply" LEFTA
+    [ e1 = SELF; e2 = SELF -> {t=(TUnknown); e= App(_loc, e1, [e2]); loc = _loc}
+    ]	 
   | "+" LEFTA
     [ x = SELF; "+!"; y = SELF -> {t=TInt32; e = Plus32(_loc, x,y); loc = _loc};
       | x = SELF; "+!!"; y = SELF -> {t=TInt64; e = Plus64(_loc, x,y); loc = _loc};
@@ -662,7 +733,7 @@ let a = <:expr<
       {t = TUnknown; e = While (_loc,cond, body); loc = _loc}] 
     
   | "="
-    [ x=SELF; "="; y=SELF -> {t=TBool; e= BoolEq32(_loc,x,y); loc = _loc};
+    [ x=SELF; "="; y=SELF -> {t=TBool; e= BoolEq(_loc,x,y); loc = _loc};
       | x=SELF; "=!"; y=SELF -> {t=TBool; e= BoolEq32(_loc,x,y); loc = _loc};
       | x=SELF; "=!!"; y=SELF -> {t=TBool; e= BoolEq64(_loc,x,y); loc = _loc};
       | x=SELF; "=."; y=SELF -> {t=TBool; e= BoolEqF(_loc,x,y); loc = _loc}]
@@ -700,25 +771,48 @@ let a = <:expr<
       ]
       
   | "." RIGHTA
-	[x = SELF; "."; "[<"; y=SELF; ">]"  -> {t=(TUnknown); 
-						e = VecGet (_loc, x, y); loc = _loc};
-	| x = SELF; "."; "("; y=SELF; ")"  -> {t=(TUnknown); 
-                                               e = ArrGet (_loc, x, y); loc = _loc};
-	|l = UIDENT ; "."; e = SELF -> {t=(TUnknown); 
-					e = ModuleAccess (_loc, l, e); 
-                                     loc = _loc}
-	]
+	[
+   x = SELF; "."; "[<"; y=SELF; ">]"  -> {t=(TUnknown); 
+					  e = VecGet (_loc, x, y); loc = _loc};
+   | x = SELF; "."; "("; y=SELF; ")"  -> {t=(TUnknown); 
+                                          e = ArrGet (_loc, x, y); loc = _loc};
+   |l = UIDENT ; "."; e = SELF -> {t=(TUnknown); 
+				   e = ModuleAccess (_loc, l, e); 
+                                   loc = _loc};
+   | e1 = kexpr; "."; field = ident -> {t= TUnknown;
+                                         e= RecGet (_loc,e1,field);
+                                         loc = _loc}
+ ]
+  | "record"
+      [ "{";l = kfields_declaration_list; "}" -> 
+        {t=TUnknown; e=Record(_loc,l); loc=_loc};    
+      ]
   | "simple" NONA
-      ["(" ;  x= sequence; ")"  ->  x;
-       |"begin" ;  x= sequence; "end"  ->  x;
-       | "("; ")" -> {t=TUnknown; e = Noop; loc = _loc};
-       | x = FLOAT-> {t=TFloat32; e = Float32 (_loc, x); loc = _loc};
-       |x = LIDENT  -> {t=TUnknown; e = Id (_loc, IdLid(_loc,x)); loc = _loc};
-       |x = INT32  ->{t=TInt32; e = Int32 (_loc, x); loc = _loc};
-       |x = INT  ->{t=TInt32; e = Int32 (_loc, x); loc = _loc}] 		
+      [ "("; ")" -> {t=TUnknown; e = Noop; loc = _loc};
+        |  "(" ;  x= sequence; ")"  ->  x;
+        | "begin" ;  x= sequence; "end"  ->  x;
+        | x = FLOAT-> {t=TFloat32; e = Float32 (_loc, x); loc = _loc};
+        | x = LIDENT  -> {t=TUnknown; e = Id (_loc, IdLid(_loc,x)); loc = _loc};
+        | x = INT32  ->{t=TInt32; e = Int32 (_loc, x); loc = _loc};
+        | x = INT  ->{t=TInt32; e = Int32 (_loc, x); loc = _loc}
+        | x = a_UIDENT -> {t=TUnknown; e = Id (_loc, IdUid(_loc,x)); loc = _loc};
+        | "false" -> {t=TBool; e=False _loc; loc = _loc};
+        | "true" -> {t=TBool; e=True _loc; loc = _loc};
+      ] 		
 
 
   ];
+  kfields_declaration_list:
+    [ [ t1 = kfield_declaration; ";"; t2 = SELF -> t1::t2
+        | t1 = kfield_declaration; ";" -> [t1]
+        | t1 = kfield_declaration ->  [t1]
+       ] ]
+  ;
+  kfield_declaration:
+    [[
+      s=ident; "=";  t=kexpr -> (_loc,s,t)
+    ]];
+
 
 
 END

@@ -16,6 +16,8 @@ type ('a,'b,'c) kirc_function =
 type ('a, 'b, 'c, 'd, 'e) sarek_kernel =
     ('a, 'b) Spoc.Kernel.spoc_kernel * ('c, 'd, 'e) kirc_kernel
 
+val constructors : string list ref
+
 val eint32 : Kirc_Ast.elttype
 val eint64 : Kirc_Ast.elttype
 val efloat32 : Kirc_Ast.elttype
@@ -58,12 +60,18 @@ val spoc_mod : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val spoc_ife :
   Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val spoc_if : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
+val spoc_match : string -> Kirc_Ast.k_ext -> Kirc_Ast.case array -> Kirc_Ast.k_ext
+val spoc_case : int -> (string*string*int) option -> Kirc_Ast.k_ext -> Kirc_Ast.case
 val spoc_do :
   Kirc_Ast.k_ext ->
   Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val spoc_while : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val params : Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val spoc_id : 'a -> Kirc_Ast.k_ext
+val spoc_constr : string -> string -> Kirc_Ast.k_ext list -> Kirc_Ast.k_ext
+val spoc_record : string -> Kirc_Ast.k_ext list -> Kirc_Ast.k_ext
+val spoc_rec_get : Kirc_Ast.k_ext -> string -> Kirc_Ast.k_ext
+val spoc_rec_set : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val spoc_return : Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val concat : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val empty_arg : unit -> Kirc_Ast.k_ext
@@ -72,9 +80,11 @@ val new_float_var : int -> Kirc_Ast.k_ext
 val new_float64_var : int -> Kirc_Ast.k_ext
 val new_double_var : int -> Kirc_Ast.k_ext
 val new_unit_var : int -> Kirc_Ast.k_ext
+val new_custom_var : string -> int -> Kirc_Ast.k_ext
 val new_int_vec_var : int -> Kirc_Ast.k_ext
 val new_float_vec_var : int -> Kirc_Ast.k_ext
 val new_double_vec_var : int -> Kirc_Ast.k_ext
+val new_custom_vec_var : string -> int -> Kirc_Ast.k_ext
 val int_vect : int -> Kirc_Ast.kvect
 val set_vect_var : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val set_arr_var : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
@@ -89,6 +99,7 @@ val int32_var : 'a -> 'a
 val float_var : 'a -> 'a
 val double_var : int -> Kirc_Ast.k_ext
 val equals : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
+val equals_custom : string -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext ->  Kirc_Ast.k_ext
 val equals32 : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val equals64 : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val equalsF : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext

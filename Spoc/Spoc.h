@@ -319,8 +319,12 @@ typedef struct spoc_cu_context {
 int ae_load_file_to_memory(const char *filename, char **result);
 
 
-#define GET_TYPE_SIZE \
-	tag = Bigarray_val(bigArray)->flags & BIGARRAY_KIND_MASK; \
+#define GET_TYPE_SIZE 						  \
+  if (custom) { \
+  type_size = Int_val(Field(Field(bigArray, 1),0))*sizeof(char); \
+  }								 \
+  else { \
+  tag = Bigarray_val(bigArray)->flags & BIGARRAY_KIND_MASK;	\
 	switch (tag) { \
 	case BIGARRAY_UINT8 : \
 		printf("here\n"); \
@@ -341,6 +345,7 @@ int ae_load_file_to_memory(const char *filename, char **result);
 	case BIGARRAY_COMPLEX32: \
 		type_size = sizeof(float)*2;\
 		break; \
+		} \
 	}
 
 #define Val_cl_mem(x) (value)((cl_mem)x)

@@ -49,6 +49,7 @@ type ('a, 'b) kernelArgs =
   | Int64 of int (** 64-bit int *)
   | Float32 of float (** 32-bit float *)
   | Float64 of float (** 64-bit float *)
+  | Custom of ('a,'b) Vector.custom
   | Vector of ('a, 'b) Vector.vector  (** generic vector type *)
   | VCustom of ('a, 'b) Vector.vector (** custom data type vector, see examples *)
 
