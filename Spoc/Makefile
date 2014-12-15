@@ -105,6 +105,7 @@ ocp-install:
 	cd Js && make install
 
 uninstall :
+	@echo "\033[43m\033[30mRemoving Spoc\033[0m"
 	@cd extension && make uninstall
 	@cd Js && make uninstall
 	@ocamlfind remove spoc 2>>log
@@ -144,8 +145,10 @@ depend :
 
 include  .depend
 
-clean :
+ocp-clean:
 	ocp-build clean
+
+clean :
 	cd extension && make clean
 	cd Js && make clean
-	rm -rf tmp docs ocp-build.root.* ~* *.cm* *.o *.so
+	rm -rf tmp docs ocp-build.root.* ~* *.cm* *.o *.so log a.out spoclevel
