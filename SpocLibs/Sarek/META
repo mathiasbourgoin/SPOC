@@ -1,0 +1,6 @@
+version = "0.2-alpha"
+description = "sarek"
+requires = "spoc"
+archive(byte) = "sarek.cma"
+archive(native) = "sarek.cmxa"
+exists_if = "sarek.cma"
