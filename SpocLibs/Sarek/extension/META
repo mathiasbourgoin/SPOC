@@ -1,10 +1,4 @@
 version = "0.2-alpha"
-requires = "camlp4"
-
-# This line counts when the compiler is invoked with
-# ocamlfind ocamlc -syntax -package xstrp4
+requires = "camlp4 sarek"
 archive(syntax,preprocessor) = "kernels_int.cma"
-
-# This line counts when a toploop is running and
-# someone types #require "xstrp4".
 archive(syntax,toploop)      = "kernels_int.cma"
