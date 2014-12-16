@@ -47,7 +47,7 @@
 
 //#include "CL/cl.h"
 //#include "CL/opencl.h"
-#include "dependencies/CL/cl_platform.h"
+#include "../dependencies/CL/cl_platform.h"
 //#include "CL/cl_ext.h"
 //#include "CL/cl_gl.h"
 //#include "CL/cl_gl_ext.h"

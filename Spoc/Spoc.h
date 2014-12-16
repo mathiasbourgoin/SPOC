@@ -46,7 +46,7 @@
 #include <caml/bigarray.h>
 #include <caml/signals.h>
 
-#include "dependencies/Cuda/cuComplex.h"
+#include "../dependencies/Cuda/cuComplex.h"
 
 
 
