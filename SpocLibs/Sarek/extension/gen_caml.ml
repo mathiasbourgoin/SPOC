@@ -2,7 +2,7 @@ open Camlp4.PreCast
 open Syntax
 open Ast
 
-open Types
+open Sarek_types
 
 let rec parse_int i t= 
   match i.e with

@@ -1,3 +1,4 @@
+version = ["20141215"]
 authors=["Mathias Bourgoin <mathias.bourgoin@lip6.fr>"]
 descr=["GPGPU kernels DSL for OCaml"]
 comp=["-g" "-warn-error" "+a"]

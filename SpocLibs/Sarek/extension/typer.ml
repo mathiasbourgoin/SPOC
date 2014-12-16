@@ -3,7 +3,7 @@ open Syntax
 open Ast
 
 
-open Types
+open Sarek_types
 
 
 let rec basic_check l current_type expected_type loc =

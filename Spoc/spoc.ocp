@@ -1,3 +1,8 @@
+version = ["20141215"]
+version = ["20141215"]
+version = ["20141215"]
+version = ["20141215"]
+version = ["201401215"]
 authors=["mathias bourgoin <mathias.bourgoin@lip6.fr>"]
 descr=["High-level GPGPU programming library for OCaml"]
 comp=["-g"]

@@ -38,7 +38,7 @@ open Camlp4.PreCast
 open Syntax
 open Ast
 
-open Types
+open Sarek_types
 
 
 let parse_args params body= 

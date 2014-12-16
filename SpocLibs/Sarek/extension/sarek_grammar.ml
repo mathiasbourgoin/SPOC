@@ -2,7 +2,7 @@ open Camlp4.PreCast
 open Syntax
 open Ast
 
-open Types
+open Sarek_types
 open Typer
 open Mparser
 

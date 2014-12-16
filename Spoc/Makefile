@@ -151,4 +151,4 @@ ocp-clean:
 clean :
 	cd extension && make clean
 	cd Js && make clean
-	rm -rf tmp docs ocp-build.root.* ~* *.cm* *.o *.so log a.out spoclevel
+	rm -rf tmp docs ocp-build.root.* ~* *.cm* *.o *.so log a.out spoclevel *~ *.a

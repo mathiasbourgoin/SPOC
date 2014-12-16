@@ -37,7 +37,7 @@ open Camlp4.PreCast
 open Syntax
 open Ast
 
-open Types
+open Sarek_types
 
 let remove_int_var var = 
   match var.e with 

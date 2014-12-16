@@ -71,7 +71,7 @@ ocp-clean :
 
 clean :
 	cd extension && make clean
-	rm -rf tmp docs ocp-build.root.* ~* *.cm* *.o *.so log a.out
+	rm -rf tmp docs ocp-build.root.* ~* *.cm* *.o *.so log a.out spoclevel-sarek *~
 
 
 install : all uninstall
