@@ -7,5 +7,5 @@ begin library "sarek"
       files = ["Kirc_Ast.ml"
       	       "Kirc_Cuda.ml" "Kirc_OpenCL.ml"
       	       "Kirc.ml"]
-      requires = ["spoc"]
+      requires = ["spoc" "ctypes"]
 end
