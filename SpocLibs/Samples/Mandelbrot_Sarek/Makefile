@@ -10,4 +10,4 @@ pp:
 	ocamlfind ocamlopt -thread -package spoc,sarek,graphics -linkpkg -package sarek_syntax -syntax camlp4o -o Mandelbrot_pp.asm Mandelbrot_pp.ml
 
 clean:
-	rm -f *.asm *.byte *.cm* *pp.ml
+	rm -f *.asm *.byte *.cm* *pp.ml *.o *.cl

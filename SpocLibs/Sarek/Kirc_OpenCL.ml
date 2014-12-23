@@ -61,10 +61,14 @@ let rec parse_fun i a b =
 	    | _  ->  ((aux2 i body )^"\n"^(indent i))
 	  in
 	  (pargs ^ pbody)^ ";}")
-      | Params k -> 
-	 (b^" "^name^"  ( "^
+      | Params k ->
+	 let proto =
+	   	 (b^" "^name^"  ( "^
 	    (if (fst !return_v) <> "" then
-               (fst !return_v)^", " else "")^(parse (i+1) k)^" ) {")
+               (fst !return_v)^", " else "")^(parse (i+1) k)^" )")
+		  in
+		  proto^";\n"^
+		    proto^"{"
       | a -> (parse  i a)
     in 
     aux2 i a in
@@ -78,9 +82,9 @@ let rec parse_fun i a b =
 	 let fun_src = aux gen_name a in	 
 	 Hashtbl.add global_funs a (fun_src,gen_name) ;
 	 gen_name)
-  in 
+  in
   name
-
+    
 
 and parse i = function
   | Kern (args,body) -> 

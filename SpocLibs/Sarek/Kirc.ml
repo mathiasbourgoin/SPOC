@@ -73,6 +73,11 @@ let opencl_head = (
   "float spoc_fminus ( float a, float b );\n"^
   "float spoc_fmul ( float a, float b );\n"^
   "float spoc_fdiv ( float a, float b );\n"^
+  "int logical_and (int, int);\n"^
+  "int spoc_powint (int, int);\n"^
+  "int spoc_xor (int, int);\n"^
+		
+		    
   "float spoc_fadd ( float a, float b ) { return (a + b);}\n"^
   "float spoc_fminus ( float a, float b ) { return (a - b);}\n"^
   "float spoc_fmul ( float a, float b ) { return (a * b);}\n"^
@@ -484,7 +489,6 @@ let gen ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('a, 'b, 'c,'d,'e) sarek
     save "kirc_kernel.cu" (cuda_head ^ constructors ^  !global_funs ^ src) ;
     ignore(Sys.command ("nvcc -m64 -arch=sm_10 -O3 -ptx kirc_kernel.cu -o kirc_kernel.ptx"));
     let s = (load_file "kirc_kernel.ptx") in
-
     kir#set_cuda_sources s;
     ignore(Sys.command "rm kirc_kernel.cu kirc_kernel.ptx"); 
 
@@ -497,10 +501,10 @@ let gen ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('a, 'b, 'c,'d,'e) sarek
            | ExFloat64 -> opencl_float64^header) opencl_head k.extensions in		
     let src = Kirc_OpenCL.parse 0 (rewrite k2) in
     let global_funs = ref "" in
-    Hashtbl.iter (fun _ a -> global_funs := (fst a) ^ "\n" ^ !global_funs ^ "\n") Kirc_OpenCL.global_funs;
+    Hashtbl.iter (fun _ a -> global_funs := !global_funs ^ "\n" ^ (fst a) ^ "\n" ) Kirc_OpenCL.global_funs;
     let constructors = List.fold_left (fun a b -> b^a) "\n\n" !constructors in
     let clkernel = (opencl_head ^ constructors ^ !global_funs ^  src)  in
-    save "kirc_kernel.cl" clkernel;
+    (*save "kirc_kernel.cl" clkernel;*)
     kir#set_opencl_sources clkernel;
 
   in

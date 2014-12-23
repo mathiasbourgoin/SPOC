@@ -37,7 +37,7 @@ external cl_init : unit -> unit = "spoc_clInit"
 
 type dim3 = { x: int; y: int; z: int }
 
-type specificLibrary =
+type specificLibrary = 			 
   | Cuda
   | OpenCL
   | Both
@@ -196,7 +196,7 @@ external is_available : int -> bool = "spoc_opencl_is_available"
 
 let init ?only: (s = Both) () =
   begin
-    match	s with
+    match s with
     | Both -> (
         cuda_init ();
         cuda_compatible_devices := get_cuda_compatible_devices ();

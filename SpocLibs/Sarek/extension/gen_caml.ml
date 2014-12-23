@@ -531,14 +531,11 @@ and parse_body body =
       | Id (_,s ) -> string_of_ident s
       | _ ->  assert false
     in
-    (<:expr<for 
-            $PaId(_loc,
-            IdLid(_loc, (string_of_id id.e)))$ = 
+    <:expr<for spoc_tmp  = 
             (Int32.to_int $min$) to (Int32.to_int  $max$) do 
-            let $(PaId (_loc, IdLid(_loc, (string_of_id id.e))))$ = 
-            (Int32.of_int $(ExId (_loc, IdLid(_loc, (string_of_id id.e))))$) in
+            let $(PaId (_loc, IdLid(_loc, (string_of_id id.e))))$ = Int32.of_int spoc_tmp in
             $body$ 
-            done>>)
+      done>>
   | While (_loc, cond, body) ->
     let cond = parse_body cond in
     let body = parse_body body in
