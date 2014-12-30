@@ -4,7 +4,7 @@ COBJ=$(CSRC:.c=.o)
 MLOBJ_B=$(MLSRC:.ml=.cmo)
 MLOBJ_N=$(MLSRC:.ml=.cmx)
 JSSRC=$(filter-out Js/spoc_lib.js, $(wildcard Js/*.js))
-CC=ocamlopt
+CC=ocamlc
 
 
 all : start | build extension/kernels_ext.cma js
@@ -28,21 +28,21 @@ extension/kernels_ext.cma:extension/kernels_ext.ml
 
 %.cmo:%.ml
 	@echo  "\033[32m[$@]\033[0m" 
-	@ocamlc -for-pack Spoc -c $< #2>>log
+	@ocamlc -for-pack Spoc -c $< 2>>log
 
 %.cmx:%.ml
 	@echo  "\033[34m[$@]\033[0m" 
-	@ocamlopt -for-pack Spoc -c $< #2>>log
+	@ocamlopt -for-pack Spoc -c $< 2>>log
 
 
 
 %.cmi:%.mli
 	@echo  "\033[35m[$@]\033[0m" 
-	@ocamlc -for-pack Spoc -c $< #2>>log
+	@ocamlc -for-pack Spoc -c $< 2>>log
 
 %.o:%.c
 	@echo  "\033[33m[$@]\033[0m" 
-	@$(CC) -c $< #2>>log
+	@$(CC) -c $< 2>>log
 
 build : spoc.cma spoclevel spoc.cmxa spoc.o
 
@@ -108,7 +108,7 @@ uninstall :
 	@echo "\033[43m\033[30mRemoving Spoc\033[0m"
 	@cd extension && make uninstall
 	@cd Js && make uninstall
-	@ocamlfind remove spoc #2>>log
+	@ocamlfind remove spoc 2>>log
 
 
 
