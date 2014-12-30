@@ -4,7 +4,7 @@ COBJ=$(CSRC:.c=.o)
 MLOBJ_B=$(MLSRC:.ml=.cmo)
 MLOBJ_N=$(MLSRC:.ml=.cmx)
 JSSRC=$(filter-out Js/spoc_lib.js, $(wildcard Js/*.js))
-CC=ocamlc
+CC=ocamlopt
 
 
 all : start | build extension/kernels_ext.cma js
