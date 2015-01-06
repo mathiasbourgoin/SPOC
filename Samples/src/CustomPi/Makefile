@@ -22,17 +22,18 @@ endif
 all : $(KERNELS) $(ASM) $(BYTE)
 
 $(ASM): $(MLSRC) $(COBJS)
-	ocamlfind ocamlopt -thread -package spoc,graphics -linkpkg -package spoc_external_kernels -syntax camlp4o $(MLSRC) $(COBJS) -o $(ASM)
+	ocamlfind ocamlopt -thread -package spoc -linkpkg -package spoc_external_kernels -syntax camlp4o $(MLSRC) $(COBJS) -o $(ASM)
 
 $(BYTE): $(MLSRC) $(COBJS)
-	ocamlfind ocamlc -thread -package spoc,graphics -linkpkg -package spoc_external_kernels -syntax camlp4o $(MLSRC) $(COBJS) -o $(BYTE)
+	ocamlfind ocamlc -custom -thread -package spoc -linkpkg -package spoc_external_kernels -syntax camlp4o $(MLSRC) -cclib $(COBJS) -o $(BYTE)
+
 
 
 %ptx: %cu
 	$(NVCC) $(NVCCCFLAGS) $(NVCC_INCLUDES) -o $@ $<
 
-.c.o:
-	$(CC)  $(CCFLAGS) $(CINCLUDES) -c -o $@ $< 
+%.o : %.c
+	$(CC) -c $< -I `ocamlfind ocamlc -where`
 
 clean:
 	rm -rf *.o *.cm* *.a *.cmxa *~ *.exe *.nat *.byte *.obj *.asm kernels/*.ptx

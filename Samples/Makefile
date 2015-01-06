@@ -1,5 +1,6 @@
-MLSRCDIRS = CustomPi DeviceQuery Game Mandelbrot Mandelbrot2 VecAdd \
-			VecAdd_MultiGPU 
+MLSRCDIRS = CustomPi DeviceQuery VecAdd VecAdd_MultiGPU 
+
+MLSRCDIRSGR = Game Mandelbrot Mandelbrot2 
 
 KERNELDIR = ./kernels
 BINDIR=./build/
@@ -11,13 +12,23 @@ all:
 	mkdir -p $(BINDIR)/Native/$(KERNELDIR)
 	mkdir -p $(BINDIR)/Bytecode/$(KERNELDIR)
 	for i in $(MLSRCDIRS); do \
-	( cp src/$$i/*.byte* $(BINDIR)/Bytecode; cp src/$$i/*.asm* $(BINDIR)/Native; \
-	 rsync -a --exclude .svn src/$$i/kernels $(BINDIR)/Bytecode/; rsync -a --exclude .svn src/$$i/kernels $(BINDIR)/Native/; )\
+		( cp src/$$i/*.byte* $(BINDIR)/Bytecode; cp src/$$i/*.asm* $(BINDIR)/Native; \
+		if [ -e src/$$i/kernels ]; then \
+			rsync -a --exclude .svn src/$$i/kernels $(BINDIR)/Bytecode/;\
+	 		rsync -a --exclude .svn src/$$i/kernels $(BINDIR)/Native/;\
+		fi;)\
 	done
+	if (ocamlfind query graphics 1>/dev/null 2>&1); then \
+		for i in $(MLSRCDIRSGR); do \
+			( cp src/$$i/*.byte* $(BINDIR)/Bytecode; cp src/$$i/*.asm* $(BINDIR)/Native; \
+			if [ -e src/$$i/kernels ]; then \
+				rsync -a --exclude .svn src/$$i/kernels $(BINDIR)/Bytecode/;\
+	 		rsync -a --exclude .svn src/$$i/kernels $(BINDIR)/Native/;\
+			fi;)\
+		done;\
+	fi	
 	cp ../Spoc/*.ptx $(KERNELDIR)
 	cp ../Spoc/*.cl $(KERNELDIR)
-#	rsync -a --exclude .svn  $(KERNELDIR) $(BINDIR)/Bytecode/
-#	rsync -a --exclude .svn $(KERNELDIR) $(BINDIR)/Native/
 	cp -a $(KERNELDIR) $(BINDIR)/Bytecode/
 	cp -a $(KERNELDIR) $(BINDIR)/Native/
 

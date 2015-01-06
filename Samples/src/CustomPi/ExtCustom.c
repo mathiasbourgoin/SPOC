@@ -1,3 +1,7 @@
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -45,3 +49,7 @@ CAMLprim value custom_extset (value customArray, value idx, value v)
 	pt->y= (float)Double_field(v, 1);
 	CAMLreturn(Val_unit);
 }
+
+#ifdef __cplusplus
+extern }
+#endif

@@ -10,12 +10,12 @@ NVCC_PRESENT := $(shell nvcc --version 1>/dev/null 2>/dev/null;  echo $$?)
 all : $(ASM) $(BYTE)
 
 $(ASM): $(MLSRC)
-	ocamlfind ocamlopt -thread -package spoc,graphics -linkpkg \
+	ocamlfind ocamlopt -thread -package spoc -linkpkg \
 	-package spoc_external_kernels -syntax camlp4o $(MLSRC) \
 	-o $(ASM)
 
 $(BYTE): $(MLSRC)
-	ocamlfind ocamlc -thread -package spoc,graphics -linkpkg \
+	ocamlfind ocamlc -thread -package spoc -linkpkg \
 	-package spoc_external_kernels -syntax camlp4o $(MLSRC) \
 	-o $(BYTE)
 

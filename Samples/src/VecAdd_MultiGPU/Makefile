@@ -20,10 +20,10 @@ all : $(KERNELS) $(ASM) $(BYTE)
 
 $(ASM): $(MLSRC)
 
-	ocamlfind ocamlopt -thread -package spoc,graphics -linkpkg -package spoc_external_kernels -syntax camlp4o $(MLSRC) -o $(ASM)
+	ocamlfind ocamlopt -thread -package spoc -linkpkg -package spoc_external_kernels -syntax camlp4o $(MLSRC) -o $(ASM)
 
 $(BYTE): $(MLSRC)
-	ocamlfind ocamlc -thread -package spoc,graphics -linkpkg -package spoc_external_kernels -syntax camlp4o $(MLSRC) -o $(BYTE)
+	ocamlfind ocamlc -thread -package spoc -linkpkg -package spoc_external_kernels -syntax camlp4o $(MLSRC) -o $(BYTE)
 
 
 %ptx: %cu
