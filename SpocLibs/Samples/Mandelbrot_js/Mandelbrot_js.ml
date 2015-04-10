@@ -17,10 +17,10 @@ open Spoc
 
 open Kirc
 
-let width = ref 1024;;
-let height = ref 1024;;
+let width = ref 1024l;;
+let height = ref 1024l;;
 
-let max_iter  = ref 50;;
+let max_iter  = ref 10000l;;
 
 let mandelbrot = kern img -> 
   let open Std in
@@ -53,6 +53,34 @@ let mandelbrot = kern img ->
 ;;
 
 
+let cpu_compute img width height = 
+  for x = 0 to width -1 do 
+    for y = 0 to height - 1 do
+      let x0 = x  in
+      let y0 = y  in
+      let cpt = ref 0l in 
+      let x1 = ref 0. in
+      let y1 = ref 0. in
+      let x2 = ref 0. in
+      let y2 = ref 0. in
+      let a = 4. *. ((float x0) /. (float width))   -. 2. in
+      let b = 4. *. ((float y0) /. (float height)) -. 2. in
+      
+      let norm = ref (!x1 *. !x1 +. !y1 *. !y1)
+      in
+      while ((!cpt < !max_iter) && (!norm <= 4.)) do
+        cpt := (Int32.add !cpt 1l);
+        x2 := (!x1 *. !x1) -. (!y1 *. !y1) +. a;
+        y2 :=  (2. *. !x1 *. !y1 ) +. b;
+        x1 := !x2;
+        y1 := !y2;
+        norm := (!x1 *. !x1 ) +. ( !y1 *. !y1);
+      done;
+      img.[<y * width + x>] <- !cpt
+    done
+  done
+;;
+
 let append_text e s = Dom.appendChild e (document##createTextNode (Js.string s))
 
 let button action = 
@@ -70,7 +98,7 @@ let measure_time s f =
   a;;
 
 let color n = 
-  if n =  !max_iter then
+  if n = Int32.to_int !max_iter then
     (196, 200, 200)
   else 
     let f n = 
@@ -83,7 +111,7 @@ let compute devid devs data imageData c=
   let dev = devs.(devid) in
   Printf.printf "Will use device : %s!"
     (dev).Spoc.Devices.general_info.Spoc.Devices.name;
-  let gpu_vect = Spoc.Vector.create Vector.int32 (!width * !height)
+  let gpu_vect = Spoc.Vector.create Vector.int32 (Int32.to_int (Int32.mul !width  !height))
   in
   Random.self_init ();
 
@@ -94,9 +122,9 @@ let compute devid devs data imageData c=
       | _  ->   16)
     | _  -> 16  in
   let blocksPerGridx =
-    (!width + (threadsPerBlock) -1) / (threadsPerBlock) in
+    ((Int32.to_int !width) + (threadsPerBlock) -1) / (threadsPerBlock) in
   let blocksPerGridy =
-    (!height + (threadsPerBlock) -1) / (threadsPerBlock) in
+    ((Int32.to_int !height) + (threadsPerBlock) -1) / (threadsPerBlock) in
   let block = {Spoc.Kernel.blockX = threadsPerBlock;
 	       Spoc.Kernel.blockY = threadsPerBlock;
 	       Spoc.Kernel.blockZ = 1}
@@ -115,6 +143,18 @@ let compute devid devs data imageData c=
         pixel_set data (i*4+3) 255; 
       done;
     );
+  c##putImageData (imageData, 0., 0.);
+  measure_time "" (fun () -> cpu_compute gpu_vect (Int32.to_int !width) (Int32.to_int !height));
+      for i = 0 to Vector.length gpu_vect - 1 do
+        let t = Int32.to_int gpu_vect.[<i>] in 
+        let r,g,b = (color t) in 
+        pixel_set data (i*4) g; 
+        pixel_set data (i*4+1) r; 
+        pixel_set data (i*4+2) b; 
+        pixel_set data (i*4+3) 255; 
+      done;
+
+
   c##putImageData (imageData, 0., 0.);
 ;;
 
@@ -160,8 +200,8 @@ let go _ =
 
 
   let canvas = createCanvas document in
-  canvas##width <- !width;
-  canvas##height <- !height;
+  canvas##width <- Int32.to_int !width;
+  canvas##height <- Int32.to_int  !height;
 
   let c = canvas##getContext (Dom_html._2d_) in
 	Dom.appendChild body (newLine ());
@@ -171,7 +211,7 @@ let go _ =
           ignore(Kirc.gen ~only:Devices.OpenCL
 	  mandelbrot);
  
-	let imageData = c##getImageData (0., 0., (float !width), (float !height)) in
+	let imageData = c##getImageData (0., 0., (Int32.to_float !width), (Int32.to_float !height)) in
 	let data = imageData##data in
 
 	Dom.appendChild body (newLine ());

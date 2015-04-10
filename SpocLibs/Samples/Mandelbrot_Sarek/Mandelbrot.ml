@@ -21,7 +21,7 @@ open Kirc
 let width = ref 1000l;;
 let height = ref 1000l;;
 
-let max_iter  = ref 50l;;
+let max_iter  = ref 10000l;;
 
 let zoom = ref 1. 
 let shiftx = ref 0l
@@ -137,20 +137,49 @@ let normalize = fun x y -> x *. x +. y *. y in
 ;;
 
 
+let cpu_compute img width height = 
+  for x = 0 to width -1 do 
+    for y = 0 to height - 1 do
+      let x0 = x  in
+      let y0 = y  in
+      let cpt = ref 0l in 
+      let x1 = ref 0. in
+      let y1 = ref 0. in
+      let x2 = ref 0. in
+      let y2 = ref 0. in
+      let a = 4. *. ((float x0) /. (float width))   -. 2. in
+      let b = 4. *. ((float y0) /. (float height)) -. 2. in
+      
+      let norm = ref (!x1 *. !x1 +. !y1 *. !y1)
+      in
+      while ((!cpt < !max_iter) && (!norm <= 4.)) do
+        cpt := (Int32.add !cpt 1l);
+        x2 := (!x1 *. !x1) -. (!y1 *. !y1) +. a;
+        y2 :=  (2. *. !x1 *. !y1 ) +. b;
+        x1 := !x2;
+        y1 := !y2;
+        norm := (!x1 *. !x1 ) +. ( !y1 *. !y1);
+      done;
+      Mem.unsafe_set img (y * width + x)  !cpt
+    done
+  done
+;;
+
+
 let cpt = ref 0
 
 let tot_time = ref 0.
 
-let measure_time f =
+let measure_time f  s =
   let t0 = Unix.gettimeofday () in
   let a = f () in
   let t1 = Unix.gettimeofday () in
-  Printf.printf "time %d : %Fs\n%!" !cpt (t1 -. t0);
+  Printf.printf "%s time %d : %Fs\n%!" s !cpt (t1 -. t0);
   tot_time := !tot_time +.  (t1 -. t0);
   incr cpt;
   a;;
 
-let devices = measure_time(Spoc.Devices.init ~only:Devices.OpenCL);;
+let devices = measure_time(Spoc.Devices.init ~only:Devices.OpenCL) "init";;
 
 (*let measure_time f = f () ;;*)
 
@@ -284,18 +313,24 @@ in
 	    0 
 	    !dev
 	else
-	  Kirc.run 
+	  measure_time (fun () -> Kirc.run 
 	    mandelbrot 
 	    (sub_b, (Int32.to_int !shiftx), (Int32.to_int !shifty), !zoom) 
 	    (block,grid) 
 	    0 
-	    !dev
+	    !dev;
+
+                  Spoc.Mem.to_cpu sub_b (); 
+                  Spoc.Devices.flush !dev (); ) "Accelerator";
+                  
       end;
     
     
 
     Spoc.Mem.to_cpu sub_b (); 
     Spoc.Devices.flush !dev (); 
+    measure_time (fun () -> cpu_compute b_iter (Int32.to_int !width) (Int32.to_int !height)) "CPU";
+
     for a = 0 to Int32.to_int (Int32.pred !height )do    
       for b = 0 to Int32.to_int (Int32.pred !width ) do
 	img.(a).(b) <-

@@ -642,6 +642,8 @@ with
     | Record (_loc,fl) ->
       (*get Krecord from field list *)
       let t,name = 
+      if not r then
+        return_type := body.t;
        let rec aux (acc:string list) (flds : field list) : string list = 
          match flds with
          | (_loc,t,_)::q -> 

@@ -90,10 +90,10 @@ let compute size devid devs =
   done;
   
 
-  begin
-    measure_time "Sequential Array.sort" 
-      (fun () -> Array.sort Pervasives.compare vect_as_array);
-  end;
+  (* begin *)
+  (*   measure_time "Sequential Array.sort"  *)
+  (*     (fun () -> Array.sort Pervasives.compare vect_as_array); *)
+  (* end; *)
   let threadsPerBlock = match dev.Devices.specific_info with
     | Devices.OpenCLInfo clI -> 
       (match clI.Devices.device_type with
@@ -119,6 +119,8 @@ let compute size devid devs =
         done;
         k := !k lsl 1 ;
       done;
+      Mem.to_cpu gpu_vect;
+      Devices.flush dev ();
     );
 
   (

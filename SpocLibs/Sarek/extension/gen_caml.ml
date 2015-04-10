@@ -359,7 +359,13 @@ and parse_body body =
     let gen_value = parse_body value in
     (match vector.e with
      | VecGet (_, v,idx)  -> 
-       let vec_typ_to_e t = 
+       let rec vec_typ_to_e t =
+         my_eprintf ("type : "^(ktyp_to_string t)^"\n");
+         let rec app_return_type = function
+           | TApp (_,(TApp (a,b))) -> app_return_type b
+           | TApp (_,b) -> vec_typ_to_e b 
+           | a -> vec_typ_to_e a
+         in
          (match t with 
           | TInt32  -> <:ctyp<(int32, Bigarray.int32_elt) Spoc.Vector.vector>>
           | TInt64  -> <:ctyp<(int64, Bigarray.int64_elt) Spoc.Vector.vector>>
@@ -369,7 +375,9 @@ and parse_body body =
             let name = TyId(_loc,IdLid(_loc,name)) 
             and sarek_name = TyId(_loc, IdLid(_loc,name^"_sarek")) in
             <:ctyp<($name$,$sarek_name$) Spoc.Vector.vector >> 
-          | _ -> assert false
+          | TApp (a,b) -> (my_eprintf ("type : "^(ktyp_to_string t)^"\n");
+                             app_return_type b;)
+          | _ -> (my_eprintf (k_expr_to_string body.e); assert false)
          ) in
        (match v.e with
         | Id (_loc,s)  -> 

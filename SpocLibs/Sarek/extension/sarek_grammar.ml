@@ -213,6 +213,10 @@ let ret =
   | TFloat64 ->  <:expr<return_double $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float64>>
   | TUnit  -> <:expr<return_unit (), Vector.Unit ((),())>>
   | TBool -> <:expr< return_bool $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.Dummy>>
+  | Custom (_, name) ->
+    let sarek_name = name^"_sarek" in
+    <:expr< Kirc.return_custom1 $str:name$ $str:sarek_name$ >> 
+
   | t  -> failwith (Printf.sprintf "error ret : %s" (ktyp_to_string t))
 in
 let fst_ (a,b,c,d,e,f) = a
@@ -419,6 +423,10 @@ let ret =
   | TFloat64 ->  <:expr<return_double $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float64>>
   | TUnit  -> <:expr<return_unit (), Vector.Unit ((),())>>
   | TBool -> <:expr< return_bool $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.Dummy>>
+  | Custom (_, name) ->
+    let sarek_name = name^"_sarek" in
+    <:expr< Kirc.return_custom2 $str:name$ $str:sarek_name$ >> 
+
   | t  -> failwith (Printf.sprintf "error ret : %s" (ktyp_to_string t))
 in
 let t = 
@@ -501,85 +509,96 @@ match_cases :
   ];
 kexpr:
   [ 
- "let"
-  ["let"; opt_mutable = OPT "mutable";  var = ident; "="; y = SELF; "in"; z = sequence  ->  
-     {t=TUnknown; 
-      e=  Bind(_loc, 
-               {t= TUnknown; 
-                e= Id (_loc, var);
-                loc = _loc},
-               y, z, (match opt_mutable with
-          | None -> false
-          | _ -> true)
-              );
-      loc = _loc};
-     |"let"; "open"; i = module_longident; "in"; s = sequence ->
-     {
-       t = TUnknown;
-       e = Open(_loc, i, s);
-       loc = _loc
-     }]
+    "let"
+      ["let"; opt_mutable = OPT "mutable";  var = ident; "="; y = SELF; "in"; z = sequence  ->  
+       {t=TUnknown; 
+        e=  Bind(_loc, 
+                 {t= TUnknown; 
+                  e= Id (_loc, var);
+                  loc = _loc},
+                 y, z, (match opt_mutable with
+            | None -> false
+            | _ -> true)
+                );
+        loc = _loc};
+       |"let"; "open"; i = module_longident; "in"; s = sequence ->
+       {
+         t = TUnknown;
+         e = Open(_loc, i, s);
+         loc = _loc
+       }]
   | "fun"
-    [ "fun"; args = LIST1 k_patt; "->"; body = sequence ->
-       (*save current kernel environment*)      
-       let saved_arg_idx = !arg_idx;
-       and saved_return_type = !return_type;
-       and saved_arg_list = List.map (fun a -> a) !arg_list in
+      [ "fun"; args = LIST1 k_patt; "->"; body = sequence ->
+        (*save current kernel environment*)      
+        let saved_arg_idx = !arg_idx;
+        and saved_return_type = !return_type;
+        and saved_arg_list = List.map (fun a -> a) !arg_list 
+        and saved_retype = !retype 
+        and saved_unknown = !unknown in
+        arg_idx := 0;
+        return_type := TUnknown;
+        arg_list := [];
+        Hashtbl.clear !current_args;
 
-       arg_idx := 0;
-       return_type := TUnknown;
-       arg_list := [];
-       Hashtbl.clear !current_args;
-       List.iter new_arg_of_patt args;
-       (try 
-           typer body TUnknown
-	with
+        List.iter new_arg_of_patt args;
+
+        retype := true;
+        (try 
+           while !retype do
+             retype := false;
+             unknown := 0;
+             typer body (TApp (TUnknown, TUnknown));
+             my_eprintf (Printf.sprintf "\nUnknown : %d \n\n\n%!" !unknown)
+           done;
+	 with
 	 | TypeError(expected, given, loc) -> 
-            (
-              failwith ("Type Error : expecting : "^
-			  (ktyp_to_string expected)^" but given : "^
-			    (ktyp_to_string given)^" in position : "^(Loc.to_string loc)))
+           (
+             failwith ("Type Error : expecting : "^
+		       (ktyp_to_string expected)^" but given : "^
+		       (ktyp_to_string given)^" in position : "^(Loc.to_string loc)))
          | Immutable (value, loc) ->
-            (Printf.eprintf "%s\n%!" ("\027[31m Immutable Value \027[00m : \027[33m"^
-                                    (value)^"\027[00m used as mutable in position : "^(Loc.to_string loc)^"");
-             exit 2;));  
+           (Printf.eprintf "%s\n%!" ("\027[31m Immutable Value \027[00m : \027[33m"^
+                                     (value)^"\027[00m used as mutable in position : "^(Loc.to_string loc)^"");
+            exit 2;));  
 
-       let new_hash_args = Hashtbl.create (Hashtbl.length !current_args) in
-       Hashtbl.iter (Hashtbl.add new_hash_args) !current_args;
-       Hashtbl.clear !current_args;
-       current_args := new_hash_args;  
-       
+        my_eprintf ("fun_type : "^ktyp_to_string body.t^"\n");
 
-       (*restore kernel environment*)
-       arg_idx := saved_arg_idx;
-       return_type := saved_return_type;
-       arg_list := List.map (fun a -> a) saved_arg_list;
-       
-       let gen_body = 
-         <:expr< 
-                 $try Gen_caml.parse_body body
-                 with 
-               | TypeError(expected, given, loc) -> 
-               (
-               failwith ("Type Error : expecting : "^
-               (ktyp_to_string expected)^" but given : "^
-               (ktyp_to_string given)^" in position : "^(Loc.to_string loc)))$>>
-     in
-     let b_body = 
-       (try Gen_kir.parse_body2 body true
-        with 
-        | TypeError(expected, given, loc) -> 
-          failwith ("Type Error : expecting : "^
-                    (ktyp_to_string expected)^" but given : "^
-                    (ktyp_to_string given)^" in position : "^(Loc.to_string loc)) 
-        | Immutable (value, loc) ->
-          (Printf.eprintf "%s\n%!" ("\027[31m Immutable Value \027[00m : \027[33m"^
-                                    (value)^"\027[00m used as mutable in position : "^(Loc.to_string loc)^"");
-           exit 2;))
-     in
-     Hashtbl.iter (fun a b -> if b.var_type = TUnknown then assert false)  !current_args ;
-     let n_body2 = <:expr<params $List.fold_left 
-                          (fun a b -> <:expr<concat $b$ $a$>>) 
+        return_type := body.t;
+
+        let new_hash_args = Hashtbl.create (Hashtbl.length !current_args) in
+        Hashtbl.iter (Hashtbl.add new_hash_args) !current_args;
+        Hashtbl.clear !current_args;
+        current_args := new_hash_args;  
+
+
+
+        let gen_body = 
+          <:expr< 
+                  $try Gen_caml.parse_body body
+                  with 
+                  | TypeError(expected, given, loc) -> 
+                  (
+                  failwith ("Type Error : expecting : "^
+                  (ktyp_to_string expected)^" but given : "^
+                  (ktyp_to_string given)^" in position : "^(Loc.to_string loc)))$>>
+        in
+        let b_body = 
+          (try Gen_kir.parse_body2 body true
+           with 
+           | TypeError(expected, given, loc) -> 
+             failwith ("Type Error : expecting : "^
+                       (ktyp_to_string expected)^" but given : "^
+                       (ktyp_to_string given)^" in position : "^(Loc.to_string loc)) 
+           | Immutable (value, loc) ->
+             (Printf.eprintf "%s\n%!" ("\027[31m Immutable Value \027[00m : \027[33m"^
+                                       (value)^"\027[00m used as mutable in position : "^(Loc.to_string loc)^"");
+              exit 2;))
+        in
+          Hashtbl.iter (fun a b -> if b.var_type = TUnknown then 
+                           failwith ("Unknown argument type : "^a))  !current_args ;
+          
+          let n_body2 = <:expr<params $List.fold_left 
+                             (fun a b -> <:expr<concat $b$ $a$>>) 
 <:expr<empty_arg()>> 
   ((List.rev_map gen_arg_from_patt2 args))$>> in 
 let gen_body2 =  <:expr< 
@@ -602,6 +621,11 @@ let ret =
   | TFloat64 ->  <:expr<return_double $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float64>>
   | TUnit  -> <:expr<return_unit (), Vector.Unit ((),())>>
   | TBool -> <:expr< return_bool $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.Dummy>>
+  | Custom (_, name) ->
+    let sarek_name = name^"_sarek" in
+    let customType = ExId(_loc, (IdLid (_loc,("custom"^(String.capitalize name))))) in
+    <:expr< Kirc.return_custom $str:name$ $str:sarek_name$, Vector.Custom $customType$>> 
+
   | t  -> failwith (Printf.sprintf "error ret : %s" (ktyp_to_string t))
 in
 let full_typ = 
@@ -614,35 +638,44 @@ let full_typ =
 in
 my_eprintf ("/....... "^ktyp_to_string full_typ^"\n");
 let funv =  {nb_args=0; 
-   cuda_val="";
-   opencl_val=""; typ=full_typ} in
+             cuda_val="";
+             opencl_val=""; typ=full_typ} in
 
 let local =  
   Hashtbl.fold (fun key (funv,stri) init -> 
-		<:str_item<
-		$stri$ $init$>>) !local_fun
-  <:str_item<>>
+      <:str_item<
+$stri$ $init$>>) !local_fun
+    <:str_item<>>
 in
 let a = <:expr< 
-          let open Kirc in 
-          let a = {
-            ml_fun = $gen_args$;
-	    funbody = $gen_body2$;
-            fun_ret = $ret$;
-            fun_extensions = [| $match !extensions with 
-				 | [] -> <:expr<>>
-				 | t::[] -> t 
-				 | _ -> exSem_of_list  !extensions$|];
-	  }
-	  in a>>  in
-	  let res =
-	    <:expr< 
-	     let module Local_funs = struct
-	     $local$
-	     end
+                let open Kirc in 
+                let a = {
+                ml_fun = $gen_args$;
+	        funbody = $gen_body2$;
+                fun_ret = $ret$;
+                fun_extensions = [| $match !extensions with 
+		| [] -> <:expr<>>
+      | t::[] -> t 
+      | _ -> exSem_of_list  !extensions$|];
+}
+in a>>  in
+let res =
+  <:expr< 
+	  let module Local_funs = struct
+	  $local$
+	  end
 	     in let open Local_funs in
 	     $a$>>
-	      in
+in
+
+       (*restore kernel environment*)
+       arg_idx := saved_arg_idx;
+       return_type := saved_return_type;
+       arg_list := List.map (fun a -> a) saved_arg_list;
+       retype := saved_retype;
+       unknown := saved_unknown;
+
+
 	      {
     t = full_typ;
     e = Fun (_loc,res,full_typ,funv);
@@ -785,7 +818,8 @@ let a = <:expr<
  ]
   | "record"
       [ "{";l = kfields_declaration_list; "}" -> 
-        {t=TUnknown; e=Record(_loc,l); loc=_loc};    
+        (Printf.eprintf "RECORD\n%!";
+        {t=TUnknown; e=Record(_loc,l); loc=_loc};)
       ]
   | "simple" NONA
       [ "("; ")" -> {t=TUnknown; e = Noop; loc = _loc};

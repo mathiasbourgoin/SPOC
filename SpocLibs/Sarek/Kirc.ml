@@ -140,10 +140,16 @@ let new_array i l t m = Arr (i, l, t, m)
 let var i = IntId (("spoc_var"^(string_of_int i)), i)
 let spoc_gen_kernel args body = Kern (args,body)
 let spoc_fun_kernel a b = () 
-let global_fun a = GlobalFun (a.funbody, match snd a.fun_ret with
-					 | Vector.Int32 _  -> "int"
-					 | Vector.Float32 _  -> "float"
-					 | _ -> "void")
+let global_fun a = GlobalFun (
+    a.funbody, 
+    match snd a.fun_ret with
+    | Vector.Int32 _  -> "int"
+    | Vector.Float32 _  -> "float"
+    | Vector.Custom _ -> 
+      (match fst a.fun_ret with
+      | CustomVar (s,_) -> "struct "^s^"_sarek"
+      | _ -> assert false)
+    | _ -> "void")
 let seq a b = Seq (a,b)
 let app a b = App (a,b)
 let spoc_unit () = Unit
@@ -253,7 +259,7 @@ let return_unit () =  Unit
 let return_int i = IntVar i
 let return_float f = FloatVar f
 let return_double d = DoubleVar d
-
+let return_custom n sn = CustomVar (n, sn)
 
 
 
@@ -487,10 +493,10 @@ let gen ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('a, 'b, 'c,'d,'e) sarek
     Hashtbl.iter (fun _ a -> global_funs := !global_funs^(fst a)^"\n") Kirc_Cuda.global_funs;
     let constructors = List.fold_left (fun a b -> "__device__ "^b^a) "\n\n" !constructors in
     save "kirc_kernel.cu" (cuda_head ^ constructors ^  !global_funs ^ src) ;
-    ignore(Sys.command ("nvcc -m64 -arch=sm_10 -O3 -ptx kirc_kernel.cu -o kirc_kernel.ptx"));
+    ignore(Sys.command ("nvcc -m64  -O3 -ptx kirc_kernel.cu -o kirc_kernel.ptx"));
     let s = (load_file "kirc_kernel.ptx") in
     kir#set_cuda_sources s;
-    ignore(Sys.command "rm kirc_kernel.cu kirc_kernel.ptx"); 
+(*    ignore(Sys.command "rm kirc_kernel.cu kirc_kernel.ptx"); *)
 
   and gen_opencl () =
     let opencl_head = 

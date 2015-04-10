@@ -330,11 +330,11 @@ let gen_ctype t1 t2 t3 name _loc =
   let field_name  = (string_of_ident t2^"_"^t3) in
   begin
     <:str_item< let $lid:field_name$ = 
-                		let open Ctypes in
-                		Ctypes.field 
-                		$lid:string_of_ident t2$ 
-                		$str:field_name$
-                		$lid:get_sarek_name ((string_of_ctyp t1))$ 
+                let open Ctypes in
+                Ctypes.field 
+                $lid:string_of_ident t2$ 
+                $str:field_name$
+                $lid:get_sarek_name ((string_of_ctyp t1))$ 
                 ;; 
     >> 
   end
@@ -473,8 +473,9 @@ let gen_ctypes _loc kt name =
                 | t1::q1, t2::q2 -> 
                   content 
                     (<:str_item< $acc$
-                                 		                 $gen_ctype t1 (IdLid(_loc,sarek_type_name)) (string_of_ident t2) sarek_type_name _loc$
-                                 		>>) q1 q2
+                                 $gen_ctype t1 (IdLid(_loc,sarek_type_name)) 
+                                 (string_of_ident t2) sarek_type_name _loc$
+                     >>) q1 q2
                 | _ -> assert false
               in
               content (<:str_item< >>) ctypes idents
@@ -493,7 +494,6 @@ let gen_ctypes _loc kt name =
                           (IdLid(_loc,name))  sarek_type_name  in  
                       Hashtbl.add managed_ktypes cstr ctr;
                       <:str_item< 
-                        
                                   $accML$ ;; 
                                   type $lid:name$ ;;
                                   let $lid:name$ : $lid:name$ Ctypes.structure Ctypes.typ = 

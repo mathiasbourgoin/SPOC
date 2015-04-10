@@ -54,6 +54,7 @@ type k_ext =
   | Float of float
   | Double of float
   | Custom of string*int
+  | CustomVar of string*string
   | IntVecAcc of k_ext * k_ext
   | Local of k_ext * k_ext
   | Acc of k_ext * k_ext

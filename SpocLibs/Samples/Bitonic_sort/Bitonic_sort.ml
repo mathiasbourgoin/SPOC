@@ -24,8 +24,7 @@ let gpu_bitonic = kern v j k ->
   let i = thread_idx_x + block_dim_x * block_idx_x in
   let ixj = Math.xor i j in
   let mutable temp = 0. in
-  if ixj < i then
-    () else
+  if ixj >= i then
     begin
       if (Math.logical_and i k) = 0  then
         (
@@ -40,12 +39,9 @@ let gpu_bitonic = kern v j k ->
          v.[<ixj>] <- v.[<i>];
          v.[<i>] <- temp);
     end
-    (*  else
-        v.[<i>] <- 0.
-*)
-  
 
-;;
+ 
+
 
 
 
@@ -116,7 +112,7 @@ let measure_time s f =
 
 
 let () = 
-  let devid = ref 1 
+  let devid = ref 1
   and size = ref (1024*2*2*2*2*2*2*2*2*2*2*2*2*2*2*2)
   and check = ref true
   and compare = ref true
@@ -157,12 +153,12 @@ let () =
   
 
   if compare then
-    begin
-      measure_time "Sequential bitonic" 
-        (fun () -> Mem.unsafe_rw true; sortup seq_vect 0 (Vector.length seq_vect); Mem.unsafe_rw false);
-      measure_time "Sequential Array.sort" 
-        (fun () -> Array.sort Pervasives.compare vect_as_array);
-    end;
+(*    begin*)
+      (* measure_time "Sequential bitonic"  *)
+      (*   (fun () -> Mem.unsafe_rw true; sortup seq_vect 0 (Vector.length seq_vect); Mem.unsafe_rw false); *)
+    (*   measure_time "Sequential Array.sort"  *)
+    (*     (fun () -> Array.sort Pervasives.compare vect_as_array); *)
+    (* end; *)
   let threadsPerBlock = match !dev.Devices.specific_info with
     | Devices.OpenCLInfo clI -> 
       (match clI.Devices.device_type with
@@ -188,6 +184,8 @@ let () =
         done;
         k := !k lsl 1 ;
       done;
+      Mem.to_cpu gpu_vect;
+      Devices.flush !dev ();
     );
 
   if check then

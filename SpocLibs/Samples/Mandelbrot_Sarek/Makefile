@@ -1,5 +1,5 @@
 all :
-	ocamlfind ocamlopt -thread -package spoc,sarek,graphics -linkpkg -package sarek_syntax -syntax camlp4o -o Mandelbrot.asm Mandelbrot.ml
+	ocamlfind ocamlopt -unsafe -thread -package spoc,sarek,graphics -linkpkg -package sarek_syntax -syntax camlp4o -o Mandelbrot.asm Mandelbrot.ml
 
 
 test:

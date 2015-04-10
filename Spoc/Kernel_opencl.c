@@ -106,16 +106,16 @@ CAMLprim value spoc_debug_opencl_compile(value moduleSrc, value function_name, v
 
 	paramValueSize = 1024 * 1024;
 
-	   paramValue = (char*)calloc(paramValueSize, sizeof(char));
-	   ret_val = clGetProgramBuildInfo( hProgram,
-			   device_id,
-	                           CL_PROGRAM_BUILD_LOG,
-	                           paramValueSize,
+	paramValue = (char*)calloc(paramValueSize, sizeof(char));
+	ret_val = clGetProgramBuildInfo( hProgram,
+					 device_id,
+					 CL_PROGRAM_BUILD_LOG,
+					 paramValueSize,
 	                           paramValue,
-	                           &param_value_size_ret);
-
-	   fprintf(stdout, " %s" , paramValue);
-	   free(paramValue);
+					 &param_value_size_ret);
+	
+	fprintf(stdout, " %s" , paramValue);
+	free(paramValue);
 	OPENCL_CHECK_CALL1(kernel, clCreateKernel(hProgram, functionN, &opencl_error));
 	OPENCL_RESTORE_CONTEXT;
 	CAMLreturn((value) kernel);;
@@ -259,22 +259,22 @@ CAMLprim value spoc_opencl_launch_grid(value ker, value grid, value block, value
 	OPENCL_GET_CONTEXT;
 
 	kernel = (cl_kernel) ker;
-
+	
 	global_dimension[0] = (size_t)gridX*blockX;
 	global_dimension[1] = (size_t)gridY*blockY;
 	global_dimension[2] =(size_t)gridZ*blockZ;
-  work_size[0] = (size_t)blockX;
-  work_size[1] = (size_t)blockY;
-  work_size[2] = (size_t)blockZ;
-
-  q = queue[Int_val(queue_id)];
+	work_size[0] = (size_t)blockX;
+	work_size[1] = (size_t)blockY;
+	work_size[2] = (size_t)blockZ;
+	
+	q = queue[Int_val(queue_id)];
 	OPENCL_CHECK_CALL1(opencl_error, clRetainCommandQueue(queue[Int_val(queue_id)]));
 	OPENCL_CHECK_CALL1(opencl_error, clEnqueueNDRangeKernel
 			   (q, kernel, 3, NULL, global_dimension,
-          ((blockX == 1) && (blockY == 1) && (blockZ == 1)) ? (size_t *) NULL : work_size,
+			    ((blockX == 1) && (blockY == 1) && (blockZ == 1)) ? (size_t *) NULL : work_size,
 			    0, NULL, NULL));
 	OPENCL_CHECK_CALL1(opencl_error, clReleaseCommandQueue(queue[Int_val(queue_id)]));
-
+	
 	OPENCL_RESTORE_CONTEXT;
 	CAMLreturn(Val_unit);
 }

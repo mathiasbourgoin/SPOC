@@ -185,8 +185,8 @@ let cpu_compute x1 x2 h w nb_iter =
   let _ = 
     Random.self_init ();
     let devid = ref 0
-    and w = ref 1024
-    and h = ref 1024 
+    and w = ref 512
+    and h = ref 512 
     and nb_iter = ref 10_000 
     and bench = ref false 
     and cpu = ref false

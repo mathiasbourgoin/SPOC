@@ -132,6 +132,7 @@ val return_unit : unit -> Kirc_Ast.k_ext
 val return_int : int -> Kirc_Ast.k_ext
 val return_float : int -> Kirc_Ast.k_ext
 val return_double : int -> Kirc_Ast.k_ext
+val return_custom : string -> string -> Kirc_Ast.k_ext
 val rewrite : Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val return_v : (string * string) ref
 val save : string -> string -> unit

@@ -347,47 +347,67 @@ and typer body t =
        e.t in
      update_type body ttt
    | Record(l,fl) ->
+     let seed : string list = 
+       let (_loc, id, _) = (List.hd fl) in
+       try 
+         (Hashtbl.find !rec_fields (string_of_ident id)).ctyps
+       with 
+       | _ -> 
+         (assert (not debug);
+          raise (FieldError (string_of_ident id, "\"\"", _loc)))
+     in
+
+     (* get custom_type corresponding to the record*)
+     let rec_typ =
+       try 
+         Hashtbl.find custom_types (List.hd seed)
+       with
+       | _ ->
+         assert false;
+     in
+     let field_typ_list = 
+       match rec_typ with
+       | KRecord (typ, id, _) ->
+         List.combine  (List.map string_of_ident id) typ
+       | _ -> assert false
+     in
+     
      let t = 
        let rec aux (acc:string list) (flds : field list) : string list = 
          match flds with
-         | (_loc,t,_)::q -> 
+         | (_loc, id, e)::q -> 
            let rec_fld : recrd_field = 
-             try Hashtbl.find !rec_fields (string_of_ident t) 
+             try
+                typer e (ktyp_of_typ (List.assoc (string_of_ident id) field_typ_list));
+               Hashtbl.find !rec_fields (string_of_ident id) 
              with 
-             | _ -> 
+             | Not_found-> 
                (assert (not debug); 
-                raise (FieldError (string_of_ident t, List.hd acc, _loc)))
+                raise (FieldError (string_of_ident id, List.hd acc, _loc)))
            in
            aux 
              (let rec aux2 (res:string list) (acc_:string list) (flds_:string list) = 
-               match acc_,flds_ with
-               | (t1::q1),(t2::q2) ->
-                 if t1 = t2 then
-                   aux2 (t1::acc_) acc q2
-                 else
-                   aux2 (t1::acc_) q1 (t2::q2)
+                match acc_,flds_ with
+                | (t1::q1),(t2::q2) ->
+                  if t1 = t2 then
+                    aux2 (t1::acc_) acc q2
+                  else
+                    aux2 (t1::acc_) q1 (t2::q2)
 
-               | _,[] -> res
-               | [],q ->
-                 aux2 res acc q
+                | _,[] -> res
+                | [],q ->
+                  aux2 res acc q
               in aux2 [] acc rec_fld.ctyps) q
          | [] -> acc
        in
-       let start : string list = 
-         let (_loc,t,_) = (List.hd fl) in
-         try 
-           (Hashtbl.find !rec_fields (string_of_ident t)).ctyps 
-         with 
-         | _ -> 
-           (assert (not debug);
-            raise (FieldError (string_of_ident t, "\"\"", _loc)))
-       in
+
        let r : string list = 
-         aux start fl
+         aux seed fl
        in List.hd r
      in
      let _loc = Loc.ghost in
-     body.t <- ktyp_of_typ (TyId(_loc,IdLid(_loc,t)))
+     update_type body (ktyp_of_typ (TyId(_loc,IdLid(_loc,t))));
+     my_eprintf ("record_type : "^(ktyp_to_string body.t^"\n"))
    | RecSet (l, e1, e2) ->
      check t TUnit l;
      typer e1 e2.t;
@@ -405,11 +425,11 @@ and typer body t =
               | _ -> assert false 
          )
      in
-     typer e1 (Custom (Hashtbl.find custom_types t.name,t.name));
+     typer e1 (Custom (Hashtbl.find custom_types t.name, t.name));
      let tt =
        match e1.t with
        | TUnknown | TVec TUnknown | TArr (TUnknown,_) -> TUnknown;
-       | Custom (KRecord (l1,l2,_),n) -> 
+       | Custom (KRecord  (l1,l2,_),n) -> 
          let rec aux = function
            |t1::q1,t2::q2 ->
              if (string_of_ident t2) = (string_of_ident e2) then
@@ -426,8 +446,7 @@ and typer body t =
          aux (l1,l2)
        | _ -> 
          my_eprintf (ktyp_to_string e1.t); 
-         assert false 
-     in
+         assert false in
      update_type body tt
    | False _ | True _ -> 
      update_type  body TBool

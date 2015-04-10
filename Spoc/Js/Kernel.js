@@ -63,13 +63,13 @@ function spoc_opencl_launch_grid(kern, grid, block, gi, queue_id) {
 //Provides: spoc_debug_opencl_compile
 function spoc_debug_opencl_compile(src, fname, gi) {
     //console.log(" spoc_debug_opencl_compile");
-    //console.log(src.bytes);
+    //console.log(src.c);
     var spoc_ctx = gi[9];
     var ctx = spoc_ctx[0];
-    var program = ctx.createProgram(src.bytes);
+    var program = ctx.createProgram(src.c);
     var devs = program.getInfo(WebCL.PROGRAM_DEVICES);
     program.build(devs);
-    var kernel = program.createKernel(fname.bytes);
+    var kernel = program.createKernel(fname.c);
     
     spoc_ctx[0] = ctx;
     gi[9] = spoc_ctx;

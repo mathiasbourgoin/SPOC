@@ -49,34 +49,34 @@ let return_v = ref ("","")
 let global_fun_idx = ref 0 
 
 let rec parse_fun i a b = 
- let rec aux name a =
- let rec aux2 i a =
-  match a with 
- | Kern  (args,body) -> 
-    (let pargs = aux2 i args  in
+  let rec aux name a =
+    let rec aux2 i a =
+      match a with 
+      | Kern  (args,body) -> 
+        (let pargs = aux2 i args  in
      let pbody = 
        match body with 
        | Seq (_,_)  -> (aux2 i body )
        | _  ->  ((aux2 i body )^"\n"^(indent i))
-     in
-     (pargs ^ pbody)^ "}")
-  | Params k -> 
-    ("__device__ "^b^" "^name^"  ( "^
-     (if (fst !return_v) <> "" then
-        (fst !return_v)^", " else "")^(parse i k)^" ) {")
-  | a -> parse  i a
-in 
+         in
+         (pargs ^ pbody)^ "}")
+      | Params k -> 
+        ("__device__ "^b^" "^name^"  ( "^
+         (if (fst !return_v) <> "" then
+            (fst !return_v)^", " else "")^(parse i k)^" ) {")
+      | a -> parse  i a
+    in 
 aux2 i a in
 
 let name = 
-try snd (Hashtbl.find global_funs a) with
-| Not_found ->
-(let gen_name =  ("spoc_fun__"^(string_of_int !global_fun_idx)) in
+  try snd (Hashtbl.find global_funs a) with
+  | Not_found ->
+    (let gen_name =  ("spoc_fun__"^(string_of_int !global_fun_idx)) in
      let fun_src = aux gen_name a in
      incr global_fun_idx;
      Hashtbl.add global_funs a (fun_src,gen_name) ;
      gen_name)
-in 
+ in 
 name
 
 and parse i = function
@@ -124,6 +124,7 @@ and parse i = function
                        (string_of_int s)^"["^
                        (parse i l)^"]")
   | Params k -> 
+    
     ("#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n__global__ void spoc_dummy ( "^
      (if (fst !return_v) <> "" then
         (fst !return_v)^", " else "")^(parse i k)^" ) {\n")
@@ -165,7 +166,7 @@ and parse i = function
        snd !return_v
      else
        (indent i)^"return ")^
-    (parse i k)
+    (parse i k)^";"
   | Unit  -> ""
   | IntVecAcc (vec,idx)  -> (parse i vec)^"["^(parse i idx)^"]"
   | SetV (vecacc,value)  -> (

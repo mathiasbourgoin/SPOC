@@ -4,7 +4,7 @@ open Ast
 
 let retype = ref false
 let unknown = ref 0
-let debug = false
+let debug = true
 
 let my_eprintf s = 
   if debug then
@@ -188,11 +188,17 @@ and kexpr = {
   mutable e: k_expr;
   loc: Loc.t}
 
-let is_unknown t =
+let rec is_unknown t =
+    let rec app_return_type = function
+      | TApp (_,(TApp (a,b))) -> app_return_type b
+      | TApp (_,b) -> is_unknown b 
+      | a -> is_unknown a
+    in
   match t with
   | TUnknown
   | TVec TUnknown
   | TArr (TUnknown, _) -> true
+  | TApp (a,b) -> app_return_type b
   | _ -> false
 
 
@@ -626,7 +632,7 @@ let ctype_of_sarek_type  = function
   | "int32" -> "int"
   | "int64" -> "long"
   | "int" -> "int"
-  | "float32" -> "float"
+  | "float" | "float32" -> "float"
   | "float64" -> "double"
   | a -> "struct "^a^"_sarek"
 
