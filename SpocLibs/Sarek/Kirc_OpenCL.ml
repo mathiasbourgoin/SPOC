@@ -49,12 +49,14 @@ let return_v = ref ("","")
 
 let global_fun_idx = ref 0 
 
+let protos = ref []
+    
 let rec parse_fun i a b = 
   let rec aux name a =
     let rec aux2 i a =
       match a with 
       | Kern  (args,body) -> 
-	 (let pargs = aux2 i args  in
+	(let pargs = aux2 i args  in
 	  let pbody = 
 	    match body with 
 	    | Seq (_,_)  -> (aux2 i body )
@@ -66,9 +68,9 @@ let rec parse_fun i a b =
 	   	 (b^" "^name^"  ( "^
 	    (if (fst !return_v) <> "" then
                (fst !return_v)^", " else "")^(parse (i+1) k)^" )")
-		  in
-		  proto^";\n"^
-		    proto^"{"
+         in
+         protos := proto:: !protos;
+         proto^"{"
       | a -> (parse  i a)
     in 
     aux2 i a in
@@ -145,7 +147,7 @@ and parse i = function
   | Record (s,l) ->
     let params = 
       match l with
-      | t::q -> (parse i t)^(List.fold_left (fun a b -> a^parse i b) "," q)
+      | t::q -> (parse i t)^(List.fold_left (fun a b -> a^", "^parse i b) "" q)
       | [] -> assert false in
     "build_"^s^"("^params^")"
   | RecGet (r,f) ->
@@ -264,6 +266,7 @@ and parse_int n = function
   | Mod (a,b) as v ->  parse n v
   | Div (a,b) as v ->  parse n v
   | App (a,b) as v -> parse n v
+  | RecGet (r,f) as v -> parse n v
   | a -> parse_float n a
 (*  | _  -> failwith "error parse_int" *)
 
@@ -280,6 +283,7 @@ and parse_float n = function
   | Divf (a,b) as v ->  parse n v
   | App (a,b) as v -> parse n v
   | Intrinsics gv -> parse_intrinsics gv
+  | RecGet (r,f) as v -> parse n v
   | a  -> print_ast a; failwith "opencl error parse_float"
 
 and parse_vect = function

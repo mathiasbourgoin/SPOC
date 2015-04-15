@@ -642,8 +642,6 @@ with
     | Record (_loc,fl) ->
       (*get Krecord from field list *)
       let t,name = 
-      if not r then
-        return_type := body.t;
        let rec aux (acc:string list) (flds : field list) : string list = 
          match flds with
          | (_loc,t,_)::q -> 
@@ -684,16 +682,22 @@ with
      in
      
      (* sort fields *)
-     (match t with
-      | Custom (KRecord (l1,l2,_),n) ->
-        let fl = List.map
-            (fun x -> List.find (fun (_,y,_) -> 
-                 (string_of_ident y) = (string_of_ident x)) fl) l2 in 
-        let r = List.map 
-            (fun  (_,_,b) -> <:expr< $parse_body2 b false$>>)
-            fl
-        in <:expr< spoc_record $str:name$ [$Ast.exSem_of_list r$] >>
+     let res = 
+       (match t with
+        | Custom (KRecord (l1,l2,_),n) ->
+          let fl = List.map
+              (fun x -> List.find (fun (_,y,_) -> 
+                   (string_of_ident y) = (string_of_ident x)) fl) l2 in 
+          let r = List.map 
+              (fun  (_,_,b) -> <:expr< $parse_body2 b false$>>)
+              fl
+          in <:expr< spoc_record $str:name$ [$Ast.exSem_of_list r$] >>
       | _ -> assert false)
+     in
+     if not r then
+       return_type := body.t;
+      res;
+     
     | RecGet (_loc,r,fld) -> <:expr< spoc_rec_get $parse_body2 r false$ $str:string_of_ident fld$>>
     | RecSet (_loc,e1,e2) -> <:expr< spoc_rec_set $parse_body2 e1 false$ $parse_body2 e2 false$>>
     | _ -> assert (not debug); failwith "pb2 : unimplemented yet"

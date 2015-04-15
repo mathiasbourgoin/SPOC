@@ -506,11 +506,14 @@ let gen ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('a, 'b, 'c,'d,'e) sarek
            | ExFloat32 -> header
            | ExFloat64 -> opencl_float64^header) opencl_head k.extensions in		
     let src = Kirc_OpenCL.parse 0 (rewrite k2) in
-    let global_funs = ref "" in
+    let global_funs = ref "/************* FUNCTION DEFINITIONS ******************/\n"  in
     Hashtbl.iter (fun _ a -> global_funs := !global_funs ^ "\n" ^ (fst a) ^ "\n" ) Kirc_OpenCL.global_funs;
-    let constructors = List.fold_left (fun a b -> b^a) "\n\n" !constructors in
-    let clkernel = (opencl_head ^ constructors ^ !global_funs ^  src)  in
-    (*save "kirc_kernel.cl" clkernel;*)
+    let constructors =  "/************* CUSTOM TYPES ******************/\n" ^
+                        List.fold_left (fun a b -> b^a) "\n\n" !constructors in
+    let protos = "/************* FUNCTION PROTOTYPES ******************/\n" ^
+                 List.fold_left (fun a b -> b^";\n"^a) "" !Kirc_OpenCL.protos in
+    let clkernel = (opencl_head ^ constructors ^ protos ^ !global_funs ^  src)  in
+    save "kirc_kernel.cl" clkernel;
     kir#set_opencl_sources clkernel;
 
   in

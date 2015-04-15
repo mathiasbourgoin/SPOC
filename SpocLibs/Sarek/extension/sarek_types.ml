@@ -4,7 +4,7 @@ open Ast
 
 let retype = ref false
 let unknown = ref 0
-let debug = true
+let debug = false
 
 let my_eprintf s = 
   if debug then
