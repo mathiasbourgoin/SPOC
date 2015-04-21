@@ -132,7 +132,21 @@ let raytrace objects nb_objs width height rays eye lights ambiant bounce =
    b = c1.b *. c2.b}
   
   in
-  let applyLights = fun pos normal ->
+  let checkray = fun orig dir dist ->
+    let r = ref true in
+    let hit_ = ref false in
+    let i = ref 0 in
+    while not !hit_ && !i < nb_objs - 1 do
+      let hit = distance_to (Mem.get objects !i) orig dir in
+      match hit with
+      | MatchMiss -> r := false; incr i;
+      | MatchHit m ->  
+        r := (m.dist < dist);
+        hit_ := true;
+    done;
+    !r
+  in
+  let applyLights = fun pos normal dist_ ->
     let color = ref {r = 0.; g = 0.; b = 0.} in
     for i = 0 to Vector.length lights - 1  do
       let light = Mem.get lights i in
@@ -140,8 +154,9 @@ let raytrace objects nb_objs width height rays eye lights ambiant bounce =
       let dist = point_mag lp_p in
       let dir = point_mul lp_p (1.0 /. dist) in
       let mag = (dotprod normal dir) /. (dist *. dist) in
-      color := add_color !color {r= light.lcol.r *. mag; g= light.lcol.g *. mag; b = light.lcol.b *. mag};
-      (* checks in haskell *)
+      let refl = {r= light.lcol.r *. mag; g= light.lcol.g *. mag; b = light.lcol.b *. mag} in
+      if not (checkray pos dir dist) then
+        color := add_color !color refl
     done;
     !color
   in
@@ -163,20 +178,43 @@ let raytrace objects nb_objs width height rays eye lights ambiant bounce =
              | Sphere s ->
                unit_length (point_diff point s.spos), s.sshine,s.scol
              | Plane p ->    
-               p.norm,p.pshine, p.pcol)
+               p.norm,p.pshine,
+               let x_,z_ = point.x, point.z in
+               let v1 = (int_of_float (x_ /. 100.) + 1) mod 2 in
+               let v2 = (int_of_float (z_ /. 100.) + 1) mod 2 in
+               let v3 = (if x_ < 0.000 then 1 else 0) in
+               let v4 = (if z_ < 0.000 then 1 else 0) in
+               if v1 lxor v2 lxor v3 lxor v4 = 1 then
+                 p.pcol
+               else
+                 {r = 0.4; g=0.4; b=0.4}
+                 
+           )
            in
-           let colour = img.(y*width+x) in
            let newdir =  point_diff dir  (point_mul normal (2.0 *. (dotprod normal dir))) in
            Mem.set rays (y*width+x) {orig = point; dir =  newdir};
-           let direct = applyLights  point normal in
+
+(*            let y = height - y - 1  in 
+            let x = width - x - 1  in *)
+           let colour = img.(y*width+x) in
+           let direct = applyLights point normal m.dist in
            let lightning = add_color direct  (Mem.get ambiant 0) in
-           let light_in =
-             if !bce = bounce then
-               scale_colour lightning (1.0 -. shine)                
-               else
-             scale_colour lightning (shine)                      
+           let light_in = 
+             (*if !bce = bounce then
+               (*add_color (scale_colour colour (shine) )*)
+               (scale_colour lightning (1.0 -. shine))
+               else*)
+             add_color colour 
+               (scale_colour 
+                  (scale_colour lightning (1.0 -. shine))
+                  (shine ** (float (bounce - !bce))) 
+               )              
            in
-           img.(y*width+x) <- add_color col  (mul_colour light_in col) (* maybe clamp *);
+           let rescolour = (mul_colour light_in col) in
+           let clamped_colour = {r = min rescolour.r 1.; 
+                                g = min rescolour.g 1.; 
+                                b= min rescolour.b 1.;} in
+           img.(y*width+x) <- clamped_colour ;
            let r,g,b = 
              let c= img.(y*width+x) in
              c.r,c.g, c.b
@@ -193,23 +231,23 @@ let raytrace objects nb_objs width height rays eye lights ambiant bounce =
 
 
 
-let devid = 1
+let devid = 2
 
 
 let _ =
   let devs = Devices.init ~only:Devices.OpenCL () in
   let dev = devs.(devid) in
 
-  let width = 800 in
-  let height = 600 in
-  let fov = 100 in
+  let width = 640 in
+  let height = 480 in
+  let fov = 1. in
   let zoom = 1 in
   let bounces = 4 in 
   let framerate = 30 in
 
 
   let light = {
-    loc = {x=300.; y=(-300.); z=(-100.)};
+    loc = {x=(300.); y=(-300.); z=(-100.)};
     lcol = {r=150_000.; g=150_000.; b=150_000.};
   }
   in
@@ -226,7 +264,7 @@ let _ =
   
   let scene = Vector.create (Vector.Custom customObj) 5 in
 
-  Mem.set scene 0
+  Mem.set scene 1
     (Sphere {
         spos = {x=0.; y=80.; z=0.};
         radius = 20.;
@@ -234,83 +272,93 @@ let _ =
         sshine = 0.4;
       });
 
-  Mem.set scene 1
+  Mem.set scene 2
     (Sphere {
-        spos = {x=0.; y=(-40.); z=200.};
+        spos = {x=(-200.); y=(0.); z=200.};
         radius = 100.;
         scol = {r = 0.4; g=0.4; b=1.};
         sshine = 0.8;
       });
 
-  Mem.set scene 2
+  Mem.set scene 3
     (Sphere {
-        spos = {x=(0.); y=(-40.); z=(-200.)};
+        spos = {x=(200.); y=(0.); z=(-200.)};
         radius = 100.;
         scol = {r = 0.4; g=0.4; b=1.};
         sshine = 0.5;
       });
 
-  Mem.set scene 3
+  Mem.set scene 4
     (Sphere {
-        spos = {x=0.; y=(-150.); z=(-100.)};
+        spos = {x=(0.); y=(-150.); z=(-100.)};
         radius = 50.;
-        scol = {r = 1.; g=1.; b=1.};
+        scol = {r = 1.; g=1.; b=1.5};
         sshine = 0.8;
       });
 
-  Mem.set scene 4
+  Mem.set scene 0
     (Plane {
         ppos = {x=0.; y=100.; z=0.};
         norm = {x=0.; y=(-0.9805807); z=(-0.19611613)};
         pcol = {r=1.; g=1.; b=1.};
         pshine = 0.2;
       });
-
- let eye = {x=(0.); y=(-100.); z=(-700.)}
-  in
-  let cast_view_ray = kern width height fov eye rays ->
-    let point_diff  = fun x y ->
-      {x = x.x -. y.x;
-       y = x.y -. y.y;
-       z = x.z -. y.z;
-      }
-    in
-    let unit_length  = fun p ->
-      let point_mag = fun p ->
-        let dotprod  = fun a b ->
-          a.x *. b.x +. a.y *. b.y +. a.z *. b.z
-        in
-        Math.Float32.sqrt (dotprod p p)
-      in
-      let point_div = fun p s  ->
-        {x = p.x /. s;
-         y = p.y /. s;
-         z = p.z /.s;
-        }
-      in
-      point_div p (point_mag p)
-    in
-    let open Std in
-    let y = thread_idx_y + block_dim_y * block_idx_y in
-    let x = thread_idx_x + block_dim_x * block_idx_x in
-    if x < width && y < height then
-      let aspect = (float width) /. (float height) in
-      let fovX = (float fov) *. aspect in
-      let fovY = float fov in
-      let dir = 
-        unit_length (
-          point_diff
-            {x = (float x) *. fovX;
-             y = fovY *. (float (0 - y));
-             z = 0.}
-            eye.[<0>]) in
-      rays.[<y*width+x>] <- {orig = eye.[<0>];
-                             dir = dir}
-                             
+  let eye = {x=(50.); y=(-200.); z=(-700.)}
   in
   let rays = Vector.create (Vector.Custom customRay) (width*height) in
   let eyev = Vector.create (Vector.Custom customPoint3) 1 in
   Mem.set eyev 0 eye;
+  
+  let cast_view_ray = kern width height fov eye rays ->
+    let point_diff  = fun a b ->
+      {x = a.x -. b.x;
+       y = a.y -. b.y;
+       z = a.z -. b.z;
+      }
+    in
+    let normalise  = fun p ->
+      let mag = fun p ->
+        Math.Float32.sqrt (p.x *. p.x +. p.y *. p.y +. p.z *. p.z)
+      in
+      let mul = fun s p  ->
+        {x = p.x *. s;
+         y = p.y *. s;
+         z = p.z *. s;
+        }
+      in
+      mul (1.0 /. (mag p)) p
+    in
+    let open Std in
+    let y_ = thread_idx_y + block_dim_y * block_idx_y in
+    let x_ = thread_idx_x + block_dim_x * block_idx_x in
+    if x_ < width && y_ < height then
+      (
+        let aspect = (float width) /. (float height) in
+        let fovX = (fov) *. aspect in
+        let fovY = fov in
+        
+        (* let midx = (width / 2) in *)
+        (* let fsizex2 = (Std.float width) /. 2. in *)
+        (* let x = (Std.float (x_ - midx)) /. fsizex2 in *)
+
+        (* let midy = (height / 2) in *)
+        (* let fsizey2 = (Std.float height) /. 2. in *)
+        (* let y = (Std.float (y_ - midy)) /. fsizey2 in *)
+        let x = float ((width / 2) - x_) in
+        let y = float ((height / 2) - y_)in
+        
+        
+        let dir = 
+          normalise (
+            point_diff
+              {x = (x) *. fovX;
+               y = fovY *.  ( 0. -. y);
+               z = 0.}
+              eye.[<0>]) in
+        rays.[<y_*width+x_>] <- {orig = eye.[<0>];
+                                 dir = dir}
+      )
+  in
 
   let threadsPerBlock = match dev.Devices.specific_info with
     | Devices.OpenCLInfo clI ->
@@ -352,6 +400,6 @@ let _ =
   Graphics.resize_window width height;
   Graphics.draw_image (Graphics.make_image colors) 0 0 ;
   Graphics.synchronize ();
-  ignore (read_int ());
+  ignore (read_line ());
 
   
