@@ -1,16 +1,14 @@
 open Spoc
-let cpt = ref 0
 
 let tot_time = ref 0.
 
 let measure_time f s =
-  Printf.printf "Using : %s\n%!" s;
+  Printf.printf "Using : %s --> %!" s;
   let t0 = Unix.gettimeofday () in
   let a = f () in
   let t1 = Unix.gettimeofday () in
-  Printf.printf "%s : time %d : %Fs\n%!" s !cpt (t1 -. t0);
+  Printf.printf "   %Fs\n%!"  (t1 -. t0);
   tot_time := !tot_time +.  (t1 -. t0);
-  incr cpt;
   a;;
 
 ktype point3 = {x : float; y : float; z : float;}
@@ -36,7 +34,7 @@ ktype matchres =
   | MatchHit of hit
   | MatchMiss
 ktype ray = {orig : point3; dir: point3}
-
+ktype color_shine = {color : color; shine : float}
 
 let raytrace objects nb_objs width height rays eye lights ambiant bounce =
   let point_diff  = fun x y ->
@@ -82,7 +80,7 @@ let raytrace objects nb_objs width height rays eye lights ambiant bounce =
       let d_cp = point_mag (point_diff p s.spos) in
       let sep = point_diff p origin 
       in
-      Printf.printf "distance_to_sphere %g %g - %g %g\n" d_cp s.radius (dotprod sep direction) 0.;
+      (*Printf.printf "distance_to_sphere %g %g - %g %g\n" d_cp s.radius (dotprod sep direction) 0.;*)
       if d_cp >= s.radius || (dotprod sep direction) <= 0. then
         MatchMiss
       else
@@ -113,8 +111,6 @@ let raytrace objects nb_objs width height rays eye lights ambiant bounce =
             r := dist;
     done;
     !r
-   
-      
   in 
   let add_color c1 c2 =
     {r = c1.r +. c2.r;
@@ -160,86 +156,104 @@ let raytrace objects nb_objs width height rays eye lights ambiant bounce =
     done;
     !color
   in
-  let img = Array.init (width*height) (fun _ -> {r= 0.; g= 0.; b= 0.}) in
-  let bce = ref bounce in
-  while !bce > 0 do  
-    for y = 0 to height - 1 do
-      for x = 0 to width - 1 do
-        let r = (Mem.get rays (y*width+x)) in
+  let clamp_colour c =
+    let clamp x =
+      if x < 0. then 0.
+      else if x > 1. then 1.
+      else x in
+    {r = clamp c.r;
+     g = clamp c.g;
+     b = clamp c.b;}
+  in
+  let shine_colors = Array.init bounce
+				(fun _ ->
+				 Array.init (width*height)
+					    (fun _ ->
+					     {color = {r= 0.; g= 0.; b= 0.};
+					      shine = 0.})) in
+  let imgs = Array.init bounce
+			(fun _ -> Array.init (width*height)
+					     (fun _ ->
+					      {r= 0.; g= 0.; b= 0.})) in
+  for y = 0 to height - 1 do
+    for x = 0 to width - 1 do
+      let bce = ref bounce in
+      while !bce > 0 do
+	let img = imgs.(bounce - !bce) in
+	let shine_color = shine_colors.(bounce - !bce) in
+	let r = (Mem.get rays (y*width+x)) in
         let dir = r.dir in
         let orig = r.orig  in
         let hit = castray orig dir  in
         (match hit with
          | MatchMiss -> ()(*Printf.printf "MISS\n";*)
          | MatchHit m -> 
-           let point = point_add  orig (point_mul dir m.dist) in
-           let normal,shine,col = 
-           (match m.obj with
-             | Sphere s ->
-               unit_length (point_diff point s.spos), s.sshine,s.scol
-             | Plane p ->    
-               p.norm,p.pshine,
-               let x_,z_ = point.x, point.z in
-               let v1 = (int_of_float (x_ /. 100.) + 1) mod 2 in
-               let v2 = (int_of_float (z_ /. 100.) + 1) mod 2 in
-               let v3 = (if x_ < 0.000 then 1 else 0) in
-               let v4 = (if z_ < 0.000 then 1 else 0) in
-               if v1 lxor v2 lxor v3 lxor v4 = 1 then
-                 p.pcol
-               else
-                 {r = 0.4; g=0.4; b=0.4}
-                 
-           )
-           in
-           let newdir =  point_diff dir  (point_mul normal (2.0 *. (dotprod normal dir))) in
-           Mem.set rays (y*width+x) {orig = point; dir =  newdir};
-
-(*            let y = height - y - 1  in 
-            let x = width - x - 1  in *)
-           let colour = img.(y*width+x) in
-           let direct = applyLights point normal m.dist in
-           let lightning = add_color direct  (Mem.get ambiant 0) in
-           let light_in = 
-             (*if !bce = bounce then
-               (*add_color (scale_colour colour (shine) )*)
-               (scale_colour lightning (1.0 -. shine))
-               else*)
-             add_color colour 
-               (scale_colour 
-                  (scale_colour lightning (1.0 -. shine))
-                  (shine ** (float (bounce - !bce))) 
-               )              
-           in
-           let rescolour = (mul_colour light_in col) in
-           let clamped_colour = {r = min rescolour.r 1.; 
-                                g = min rescolour.g 1.; 
-                                b= min rescolour.b 1.;} in
-           img.(y*width+x) <- clamped_colour ;
-           let r,g,b = 
-             let c= img.(y*width+x) in
-             c.r,c.g, c.b
-           in
-           Printf.printf "(%d, %d) r : %g, g : %g, b : %g\n" x y r g b;      
-           
-        );
-      done
+            let point = point_add  orig (point_mul dir m.dist) in
+            let normal,shine,col = 
+	      (match m.obj with
+	       | Sphere s ->
+		  unit_length (point_diff point s.spos), s.sshine,s.scol
+	       | Plane p ->    
+		  p.norm,p.pshine,
+		  let x_,z_ = point.x, point.z in
+		  let v1 = (int_of_float (x_ /. 100.) + 1) mod 2 in
+		  let v2 = (int_of_float (z_ /. 100.) + 1) mod 2 in
+		  let v3 = (if x_ < 0.000 then 1 else 0) in
+		  let v4 = (if z_ < 0.000 then 1 else 0) in
+		  if v1 lxor v2 lxor v3 lxor v4 = 1 then
+                    p.pcol
+		  else
+                    {r = 0.4; g=0.4; b=0.4}
+		      
+	      )
+            in
+            let newdir =  point_diff dir  (point_mul normal (2.0 *. (dotprod normal dir))) in
+            Mem.set rays (y*width+x) {orig = point; dir =  newdir};
+	    
+            let colour = img.(y*width+x) in
+            let direct = applyLights point normal m.dist in
+            let lighting = add_color direct  (Mem.get ambiant 0) in
+	    img.(y*width+x) <- lighting;
+	    shine_color.(y*width+x) <- {color = col; shine = shine;};);
+	bce := !bce - 1;
+      done;
+      bce := bounce - 1;
+      (* recursion would be way more sexy *)
+      while !bce >= 0 do
+	let lighting = imgs.(!bce).(y*width+x) in
+	let shine = shine_colors.(!bce).(y*width+x).shine in
+	let col = shine_colors.(!bce).(y*width+x).color in
+	
+	let refl = 
+	  if !bce = bounce - 1 then
+	    {r = 0.; g = 0.; b = 0.}
+	  else
+	    imgs.(!bce+1).(y*width+x) in
+	let light_in =
+	  add_color
+	    (scale_colour refl shine)
+	    (scale_colour lighting (1.0 -. shine))
+	in 
+	let light_out = (mul_colour light_in col) in
+        imgs.(!bce).(y*width+x) <- clamp_colour light_out;
+      	bce := !bce -1;
+      done;
     done;
-    bce := !bce - 1;
   done;
-  img
+  imgs.(0)
+	 
+	 
 
 
-
-
-let devid = 2
+let devid = 0
 
 
 let _ =
   let devs = Devices.init ~only:Devices.OpenCL () in
   let dev = devs.(devid) in
 
-  let width = 640 in
-  let height = 480 in
+  let width = 1920 in
+  let height = 1080 in
   let fov = 1. in
   let zoom = 1 in
   let bounces = 4 in 
@@ -266,7 +280,7 @@ let _ =
 
   Mem.set scene 1
     (Sphere {
-        spos = {x=0.; y=80.; z=0.};
+        spos = {x=40.; y=80.; z=0.};
         radius = 20.;
         scol = {r = 1.; g=0.3; b=1.};
         sshine = 0.4;
@@ -386,20 +400,43 @@ let _ =
       Devices.flush dev ();) ("GPU "^name);
 
 
-  let rawimg = raytrace scene (Vector.length scene) width height rays eye lights ambiant bounces in
-  let colors = Array.init height 
+  let rawimg =
+    measure_time 
+      (fun () -> 
+       raytrace scene (Vector.length scene)
+		width height rays eye lights ambiant bounces)
+      "CPU to raytrace"
+  in
+  let colors =
+    measure_time
+      (fun () -> Array.init height 
       (fun y -> Array.init width 
           (fun x -> 
              let r,g,b = 
                let c= rawimg.(y*width+x) in
                c.r,c.g, c.b
              in
-             Printf.printf "r : %g, g : %g, b : %g\n" r g b;
-             Graphics.rgb (int_of_float (r *.255.) ) (int_of_float (g *. 255.)) (int_of_float (b *. 255.)))) in
+             (*Printf.printf "r : %g, g : %g, b : %g\n" r g b;*)
+             Graphics.rgb (int_of_float (r *.255.) ) (int_of_float (g *. 255.)) (int_of_float (b *. 255.))))
+      ) "CPU to convert into colors"
+  in
   Graphics.open_graph "";
   Graphics.resize_window width height;
   Graphics.draw_image (Graphics.make_image colors) 0 0 ;
   Graphics.synchronize ();
-  ignore (read_line ());
+  ignore(read_line ());
+  let image = Rgb24.make width height
+			 {Color.Rgb.r = 0; g=0; b=0; } in
+  for y = 0 to height - 1 do
+    for x = 0 to width - 1 do
+      let r,g,b =
+	let c= rawimg.(y*width+x) in
+	let i x = int_of_float (x *. 255.) in
+	i c.r, i c.g, i c.b
+      in
+      Rgb24.set image x y {Color.Rgb.r = r; g=g; b=b;}
+    done
+  done;
+  Png.save "ray.png" [] (Images.Rgb24 image)
 
   
