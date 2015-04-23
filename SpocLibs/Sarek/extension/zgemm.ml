@@ -146,7 +146,7 @@ let _ =
               Spoc.Kernel.gridZ = 1;} in
 
 (*  Kirc.gen matmul_gpu ;*)
-  Kirc.gen matmult_complex; 
+  Kirc.gen ~only:Devices.OpenCL matmult_complex; 
   let name = dev.Spoc.Devices.general_info.Spoc.Devices.name in
   measure_time (fun () ->
       Kirc.run matmult_complex (x,y,z,n) (block,grid) 0 dev;

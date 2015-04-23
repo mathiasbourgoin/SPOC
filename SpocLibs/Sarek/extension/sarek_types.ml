@@ -4,7 +4,7 @@ open Ast
 
 let retype = ref false
 let unknown = ref 0
-let debug = false
+let debug = true
 
 let my_eprintf s = 
   if debug then
@@ -134,6 +134,7 @@ type k_expr =
   | Float of Loc.t*string
   | Float32 of Loc.t*string
   | Float64 of Loc.t*string
+  | BoolNot of Loc.t*kexpr
   | BoolAnd of Loc.t*kexpr*kexpr
   | BoolOr of Loc.t*kexpr*kexpr
   | BoolEq of Loc.t*kexpr*kexpr
@@ -278,6 +279,7 @@ let rec k_expr_to_string = function
   | Float _ -> "Float"
   | Float32 _ -> "Float32"
   | Float64 _ -> "Float64"
+  | BoolNot _ -> "BoolNot"
   | BoolEq _ -> "BoolEq"
   | BoolEq32 _ -> "BoolEq32"
   | BoolEq64 _ -> "BoolEq64"
@@ -423,6 +425,7 @@ let std = {
     ];
   mod_functions = [
     (TApp (TUnit, TUnit), "return", 1, "return", "return");
+    (TApp (TBool, TBool), "not", 1, "!", "!");
 
     (TApp (TInt32, TFloat32), "float_of_int", 1, "(float)", "(float)");
     (TApp (TInt32, TFloat32), "float", 1, "(float)", "(float)");

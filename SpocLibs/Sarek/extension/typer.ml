@@ -63,20 +63,22 @@ and gen_app_from_constr t cstr =
   match t.typ with
   | KRecord _ -> assert false
   | KSum l ->
-    begin
-      let rec aux = function
-        | (c,Some s)::q -> 
+     begin
+       let rec aux = function
+         | (c,Some s)::q -> 
           (* for now Constructors only applies to single arguments *)
-          let rec aux2 = function
-            | <:ctyp< int >> | <:ctyp< int32 >> -> TInt32
-            | _ -> assert false
-          in
-          TApp ((aux2 s), 
-                ( Custom (t.typ,t.name)))
-        | _::q -> aux q
-        | [] -> assert false
-      in aux l
-    end
+            let rec aux2 = function
+              | <:ctyp< int >> | <:ctyp< int32 >> -> TInt32
+	      | <:ctyp< float >> | <:ctyp< float32 >> -> TFloat32 (*missing many types *)
+              | a -> Custom (t.typ, string_of_ctyp a)
+
+            in
+            TApp ((aux2 s), 
+                  ( Custom (t.typ,t.name)))
+         | _::q -> aux q
+         | [] -> assert false
+       in aux l
+     end
 
 
 
@@ -119,7 +121,8 @@ and typer body t =
                   Custom (cstr.typ, cstr.name);
             with 
             | _ ->
-              (Hashtbl.add !current_args (string_of_ident s) 
+               (incr arg_idx;
+		Hashtbl.add !current_args (string_of_ident s) 
                  {n = -1; var_type = t;
                   is_mutable = false;
                   read_only = true;
@@ -171,23 +174,33 @@ and typer body t =
    | Bind (_loc, var,y, z, is_mutable)  ->
      (match var.e with
       | Id (_loc,s)  ->
-        (match y.e with
-         | Fun (_loc,stri,tt,funv) ->
-           my_eprintf ("ADDDD: "^(string_of_ident s)^"\n%!");
-           Hashtbl.add !local_fun (string_of_ident s) 
-             (funv, (<:str_item<let $id:s$ = 
-                                $stri$>>));
-           update_type y tt;
-         | _ -> typer y TUnknown;
-           (incr arg_idx;
-            Hashtbl.add !current_args (string_of_ident s) 
-              {n = !arg_idx; var_type = y.t;
-               is_mutable = is_mutable;
-               read_only = false;
-               write_only = false;
-               is_global = false;}
-           )
-        );
+         (match y.e with
+          | Fun (_loc,stri,tt,funv) ->
+             my_eprintf ("ADDDD: "^(string_of_ident s)^"\n%!");
+             Hashtbl.add !local_fun (string_of_ident s) 
+			 (funv, (<:str_item<let $id:s$ = 
+					      $stri$>>));
+             update_type y tt;
+          | _ ->
+	     try
+	       let v = Hashtbl.find !current_args (string_of_ident s)
+	       in
+	       typer y v.var_type;
+	     with
+	     | Not_found ->
+		(*Printf.eprintf "Looking for %s in [" (string_of_ident s);
+		Hashtbl.iter (fun a b -> Printf.eprintf " %s;" a) !current_args;
+		Printf.eprintf " ]\n";*)
+		typer y TUnknown;
+		(incr arg_idx;
+		 Hashtbl.add !current_args (string_of_ident s) 
+			     {n = !arg_idx; var_type = y.t;
+			      is_mutable = is_mutable;
+			      read_only = false;
+			      write_only = false;
+			      is_global = false;}
+             )
+         );
       | _ -> assert false
      );
      update_type var y.t;
@@ -287,19 +300,21 @@ and typer body t =
      update_type body e.t;
      decr unknown;
    | Acc (l, e1, e2) ->
-     typer e2 e1.t;
-     typer e1 e2.t;
-     update_type body TUnit
+      typer e2 TUnknown;
+      typer e1 TUnknown;
+      typer e2 e1.t;
+      typer e1 e2.t;
+      update_type body TUnit
    | Match (l,e,mc) ->
      let get_patt_typ = function 
        | Constr (s,of_) ->
-         let cstr =
-           my_eprintf ("--------- type case :  "^s^"\n");
-           try
-             Hashtbl.find !constructors s
-           with | _ -> failwith "error in pattern matching"
-         in
-         (Custom (cstr.typ,cstr.name))
+          let cstr =
+            my_eprintf ("--------- type case :  "^s^"\n");
+            try
+              Hashtbl.find !constructors s
+            with | _ -> failwith "error in pattern matching"
+          in
+          (Custom (cstr.typ,cstr.name))
      in
      let type_patt f= 
        let t = get_patt_typ f in
@@ -308,51 +323,55 @@ and typer body t =
      in
      (match mc with
       | (_loc,(Constr (s,of_) as p), ee)::_ -> 
-        (type_patt p; 
-         (match of_ with 
-          |Some id ->
-            Hashtbl.add !current_args (string_of_ident id) 
-              {n = !arg_idx; var_type = ktyp_of_typ (TyId(_loc,IdLid(_loc,type_of_patt p)));
-               is_mutable = false;
-               read_only = false;
-               write_only = false;
-               is_global = false;};
-            typer ee t;
-            Hashtbl.remove !current_args (string_of_ident id);
-          | None -> typer ee t;
-         )
-        );
+         (type_patt p; 
+	  (*(match of_ with 
+           |Some id ->
+	     incr arg_idx;
+             Hashtbl.add !current_args (string_of_ident id) 
+			 {n = !arg_idx; var_type = ktyp_of_typ (TyId(_loc,IdLid(_loc,type_of_patt p)));
+			  is_mutable = false;
+			  read_only = false;
+			  write_only = false;
+			  is_global = false;};
+             typer ee t;
+             Hashtbl.remove !current_args (string_of_ident id);
+           | None -> typer ee t;
+          )
+          );*)
+	 )
       | _ -> failwith "No match cases in patern matching");
      let rec aux = function
        | (ll,(Constr (s,of_) as p),ee)::q ->
-         check (get_patt_typ p) e.t ll;
-         (match of_ with 
-          |Some id ->
-            Hashtbl.add !current_args (string_of_ident id) 
-              {n = !arg_idx; var_type = ktyp_of_typ (TyId(ll,IdLid(ll,type_of_patt p)));
-               is_mutable = false;
-               read_only = false;
-               write_only = false;
-               is_global = false;};
-            typer ee t;
-            Hashtbl.remove !current_args (string_of_ident id);
+          check (get_patt_typ p) e.t ll;
+	  (match of_ with 
+           |Some id ->
+	     incr arg_idx;
+             Hashtbl.replace !current_args (string_of_ident id) 
+			     {n = !arg_idx; var_type = ktyp_of_typ (TyId(ll,IdLid(ll,type_of_patt p)));
+			      is_mutable = false;
+			      read_only = false;
+			      write_only = false;
+			      is_global = false;};
+	     typer ee t;
+           Hashtbl.remove !current_args (string_of_ident id);
           | None -> typer ee t;
          );
          check ee.t t l;
          aux  q
        | [] -> ();
      in
-     aux (List.tl mc);
-     let ttt = let (_,_,e) = List.hd mc in
+     aux (mc);
+     let ttt =
+       let (_,_,e) = List.hd mc in
        e.t in
      update_type body ttt
    | Record(l,fl) ->
-     let seed : string list = 
-       let (_loc, id, _) = (List.hd fl) in
-       try 
-         (Hashtbl.find !rec_fields (string_of_ident id)).ctyps
-       with 
-       | _ -> 
+      let seed : string list = 
+	let (_loc, id, _) = (List.hd fl) in
+	try 
+          (Hashtbl.find !rec_fields (string_of_ident id)).ctyps
+	with 
+	| _ -> 
          (assert (not debug);
           raise (FieldError (string_of_ident id, "\"\"", _loc)))
      in
@@ -449,12 +468,20 @@ and typer body t =
          assert false in
      update_type body tt
    | False _ | True _ -> 
-     update_type  body TBool
+		update_type  body TBool
+   | BoolNot (_loc,e1) ->
+      typer e1 TBool;
+      check e1.t TBool _loc;
+      update_type body TBool;
    | BoolEq (_loc,e1,e2) ->
      typer e1 TUnknown;
      typer e2 e1.t;
      check e1.t e2.t _loc;
      update_type body TBool;
+   | ModuleAccess (l,m,e) ->
+      open_module  m l;
+      typer e t;
+      close_module m;
    | _ -> my_eprintf  ((k_expr_to_string body.e)^"\n"); assert false);
   if is_unknown body.t then
     (my_eprintf  (("UNKNOWN : "^k_expr_to_string body.e)^"\n");
@@ -473,8 +500,9 @@ and typer_app e1 (e2 : kexpr list) t =
            try (Hashtbl.find !global_fun (string_of_ident s)).typ , _l
            with |_ ->
              try (fst(Hashtbl.find !local_fun (string_of_ident s))).typ , _l
-             with |_ ->
-               try 
+             with
+	     |_ ->
+	       try 
                  let cstr = Hashtbl.find !constructors (string_of_ident s) in
                  my_eprintf ("App : Found a constructor : "^(string_of_ident s)
                              ^" of type "^cstr.name^" with "
@@ -483,9 +511,10 @@ and typer_app e1 (e2 : kexpr list) t =
                     gen_app_from_constr cstr s
                   else
                     Custom (cstr.typ, cstr.name)),_l
-               with | _  -> 
-                 assert (not debug); raise (Unbound_value (string_of_ident s,_l) ))
-
+               with
+	       | Not_found  -> 
+                  assert (not debug); raise (Unbound_value (string_of_ident s,_l) ))
+	  
       | ModuleAccess (_l, s, e) ->
         open_module s _l;
         let typ, loc = aux e in

@@ -79,6 +79,7 @@ type  k_ext =
   | UnitVar of int
   | CastDoubleVar of int
   | DoubleVar of int
+  | BoolVar of int
   | Arr of int*k_ext*elttype*memspace
   | VecVar of  k_ext*int
   | Concat of  k_ext* k_ext
@@ -108,6 +109,7 @@ type  k_ext =
   | Match of string* k_ext * case array
   | Or of  k_ext *  k_ext
   | And of  k_ext *  k_ext
+  | Not of  k_ext 
   | EqCustom of string * k_ext * k_ext 
   | EqBool of  k_ext *  k_ext
   | LtBool of  k_ext *  k_ext
@@ -195,6 +197,8 @@ let print_ast a =
       print i ("CastDoubleVar "^(string_of_int ii))
     | DoubleVar ii ->
       print i ("DoubleVar "^(string_of_int ii))
+    | BoolVar ii ->
+      print i ("BoolVar "^(string_of_int ii))
     | UnitVar ii ->
       print i ("UnitVar "^(string_of_int ii))
     | VecVar (t,ii) ->
@@ -274,6 +278,9 @@ let print_ast a =
       print i "And";
       aux (i+1) a;
       aux (i+1) b;
+    | Not (a) ->
+      print i "Or";
+      aux (i+1) a;
     | LtBool (a,b) ->
       print i "LtBool";
       aux (i+1) a;
