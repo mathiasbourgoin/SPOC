@@ -4,7 +4,7 @@ open Ast
 
 let retype = ref false
 let unknown = ref 0
-let debug = true
+let debug = false
 
 let my_eprintf s = 
   if debug then
@@ -425,7 +425,6 @@ let std = {
     ];
   mod_functions = [
     (TApp (TUnit, TUnit), "return", 1, "return", "return");
-    (TApp (TBool, TBool), "not", 1, "!", "!");
 
     (TApp (TInt32, TFloat32), "float_of_int", 1, "(float)", "(float)");
     (TApp (TInt32, TFloat32), "float", 1, "(float)", "(float)");
