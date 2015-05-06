@@ -38,6 +38,7 @@ look into our [live demos](#demos).
 Spoc and Sarek are still in development, here is a list of features we
 plan to add (bold ones are currently in development) :
 
+ - **Add a performance model to Sarek**
  - **Add custom types to Sarek (using Ctypes)** ->
    [example with Cards](https://github.com/mathiasbourgoin/SPOC/blob/master/SpocLibs/Sarek/extension/belote.ml)
  - **Allow recursive functions in Sarek**
@@ -106,7 +107,10 @@ For cuda compilation :
 
 ### From Opam
 
-Simply add our repository :
+SPOC and Sarek should be in the opam repository. 
+
+For development releases (more up to date but maybe instable),
+simply add our repository :
 
     opam repository add spoc_repo https://github.com/mathiasbourgoin/opam_repo_dev.git
 
@@ -163,6 +167,7 @@ The Sample directory contains few samples using those libraries
 #Publications#
 
 ### Talks ###
+---
 + 2013/09/24 - [OCaml 2013](http://ocaml.org/meetings/ocaml/2013/) [pdf](http://ocaml.org/meetings/ocaml/2013/slides/bourgoin.pdf)
 + 2013/07/02 - [OCaml Users In PariS (OUPS)](http://www.meetup.com/ocaml-paris/) [pdf](http://www.algo-prog.info/spoc/docs/oups_20130702.pdf)
 + 2013/07/01 - [HLPP 2013](https://sites.google.com/site/hlpp2013/) [pdf](http://www.algo-prog.info/spoc/docs/hlpp2013.pdf)
@@ -175,24 +180,37 @@ The Sample directory contains few samples using those libraries
 + 2011/06/08 - [Journee Calcul Hybride: le projet OpenGPU un an plus tard](http://www.association-aristote.fr/doku.php/public/seminaires/seminaire-2011-06-08) [pdf](http://www.algo-prog.info/spoc/docs/opengpu_20110608.pdf)
 
 ### Book Chapter ###
-
+---
 - *M. Bourgoin, E. Chailloux, J.\-L. Lamotte* : **"Experiments with Spoc."**,  In Patterns for parallel programming on GPUs, F. Magoules (Ed.), Saxe-Coburg Publications, 2015
 
 ### Peer Reviewed Papers ###
+---
+#### General Presentations ####
++ *M. Bourgoin, E. Chailloux, J.-L. Lamotte* : **"Efficient Abstractions for GPGPU Programming"**, International Journal of Parallel Programming, 2013.
 + *M. Bourgoin, E. Chailloux, J.\-L. Lamotte* : **"High-Performance GPGPU Programming with OCaml"**, OCaml 2013, 2013
-+ *M. Bourgoin, E. Chailloux, J.\-L. Lamotte* : **"Retour d'experience : portage d'une application haute-performance vers un langage de haut niveau"**, ComPas/RENPAR 2013, pp. 1-8 (2013)
-+ *M. Bourgoin, E. Chailloux, J.\-L. Lamotte* : **"Spoc: GPGPU Programming Through Stream Processing with OCAML"**, Parallel Processing Letters, vol. 22 (2), pp. 1-12 (2012)
-+ *M. Bourgoin, E. Chailloux, J.\-L. Lamotte* : **"Experiments with Spoc."**, Workshop OpenGPU, HIPEAC 2012., Paris, France (2012)
++ *M. Bourgoin, E. Chailloux, J.-L. Lamotte* : **"Efficient Abstractions for GPGPU Programming"**, International Symposium on High-level Parallel Programming and Applications (HLPP), 2013.
++ *M. Bourgoin, E. Chailloux, J.\-L. Lamotte* : **"SPOC: GPGPU Programming Through Stream Processing with OCAML"**, Parallel Processing Letters, vol. 22 (2), pp. 1-12 (2012)
 + *M. Bourgoin, E. Chailloux, J.\-L. Lamotte* : **"SPOC : GPGPU programming through Stream Processing with OCaml"**, HLPGPU2012 workshop, pp. 1-8 (2012)
+
+#### On Composition and Skeletons ####
++ *M. Bourgoin, E. Chailloux* : **"GPGPU Composition with OCaml"**, Array 2014, 2014.
++ *M. Bourgoin, E. Chailloux, J.\-L. Lamotte* : **"Experiments with Spoc."**, Workshop OpenGPU, HIPEAC 2012., Paris, France (2012)
+
+#### On Web Programming with SPOC and Sarek ####
++ *M. Bourgoin, E. Chailloux* : **"High-Level Accelerated Array Programming in the Web Browser"**, Array 2015, 2015.
++ *M. Bourgoin, E. Chailloux* : **"High Performance Client-Side Web Programming with SPOC and Js\_of_ocaml"**, OCaml 2014, 2014.
+
+#### On Applications ####
++ *M. Bourgoin, E. Chailloux, J.\-L. Lamotte* : **"Retour d'experience : portage d'une application haute-performance vers un langage de haut niveau"**, ComPas/RENPAR 2013, pp. 1-8 (2013)
+
 
 ##Contact##
 
-UPMC - LIP6  
-Boite courrier 169  
-Couloir 26-00, Etage 3, Bureau 325  
-4 place Jussieu  
-75252 PARIS CEDEX 05  
-Tel: 01 44 27 88 16, Mathias.Bourgoin (at) lip6.fr
+INPG - VERIMAG  
+Centre Equation  
+2 Avenue de Vignate  
+38610 GIERES, France  
+Mathias.Bourgoin (at) imag.fr
 
 
 
