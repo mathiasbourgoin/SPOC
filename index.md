@@ -168,7 +168,13 @@ The Sample directory contains few samples using those libraries
 
 ### Talks ###
 ---
-+ 2013/12/11 - PhD Defense (in french) [pdf]
++ 2015/03/10 - [Séminaire ParSys](https://www.lri.fr/seminaire.php?sem=623) [pdf](https://github.com/mathiasbourgoin/SPOC/blob/gh-pages/docs/talks/parsys-20150310.pdf)
++ 2014/09/19 - Séminaire Synchrone - Verimag [pdf](https://github.com/mathiasbourgoin/SPOC/blob/gh-pages/docs/talks/verimag-20140919.pdf)
++ 2014/07/02 - [Séminaire Compilation](http://compilfr.ens-lyon.fr/huitiemes-rencontres-de-la-communaute-francaise-de-compilation/) [pdf](https://github.com/mathiasbourgoin/SPOC/blob/gh-pages/docs/talks/compilnice2014.pdf)
++ 2014/06/13 - [Array 2014](http://www.sable.mcgill.ca/array/2014/index.html) [pdf](https://github.com/mathiasbourgoin/SPOC/blob/gh-pages/docs/talks/array2014.pdf)
++ 2014/06/11 - [GDR GPL PhD awward](http://gdr-gpl.cnrs.fr/node/132) [pdf](https://github.com/mathiasbourgoin/SPOC/blob/gh-pages/docs/talks/gdrgpl2014.pdf)
++ 2014/04/16 - [CompSys WorkGroup](http://www.ens-lyon.fr/LIP/COMPSYS/gpu-abstract/) [pdf](https://github.com/mathiasbourgoin/SPOC/blob/gh-pages/docs/talks/compsys-16042014.pdf)
++ 2013/12/11 - PhD defense (in french) [pdf](https://github.com/mathiasbourgoin/SPOC/blob/gh-pages/docs/talks/soutenance-11122013.pdf)
 + 2013/09/24 - [OCaml 2013](http://ocaml.org/meetings/ocaml/2013/) [pdf](http://ocaml.org/meetings/ocaml/2013/slides/bourgoin.pdf)
 + 2013/07/02 - [OCaml Users In PariS (OUPS)](http://www.meetup.com/ocaml-paris/) [pdf](http://www.algo-prog.info/spoc/docs/oups_20130702.pdf)
 + 2013/07/01 - [HLPP 2013](https://sites.google.com/site/hlpp2013/) [pdf](http://www.algo-prog.info/spoc/docs/hlpp2013.pdf)
