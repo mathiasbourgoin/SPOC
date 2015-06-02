@@ -952,22 +952,22 @@ let map ((ker: ('a, 'b, ('c -> 'd), 'e,'f) sarek_kernel)) ?dev:(device=(Spoc.Dev
   end;
   let bin = (Hashtbl.find (spoc_ker#get_binaries ()) device) in
   let offset = ref 0 in
-  let extra = Kernel.Cuda.cuda_create_extra 2 in
   (match device.Devices.specific_info with
    | Devices.CudaInfo cI ->
-     Kernel.Cuda.cuda_load_arg offset extra device bin 0 (arg_of_vec vec_in);
-     Kernel.Cuda.cuda_load_arg offset extra device bin 1 (arg_of_vec vec_out);
-     Kernel.Cuda.cuda_launch_grid offset bin grid block extra device.Devices.general_info 0;
+      let extra = Kernel.Cuda.cuda_create_extra 2 in
+      Kernel.Cuda.cuda_load_arg offset extra device bin 0 (arg_of_vec vec_in);
+      Kernel.Cuda.cuda_load_arg offset extra device bin 1 (arg_of_vec vec_out);
+      Kernel.Cuda.cuda_launch_grid offset bin grid block extra device.Devices.general_info 0;
    | Devices.OpenCLInfo _ ->
-     let clFun = bin in
-     let offset = ref 0
-     in
-     Kernel.OpenCL.opencl_load_arg offset device clFun 0 (arg_of_vec vec_in);
-     Kernel.OpenCL.opencl_load_arg offset device clFun 1 (arg_of_vec vec_out);
-     Kernel.OpenCL.opencl_launch_grid clFun grid block device.Devices.general_info 0
+      let clFun = bin in
+      let offset = ref 0
+      in
+      Kernel.OpenCL.opencl_load_arg offset device clFun 0 (arg_of_vec vec_in);
+      Kernel.OpenCL.opencl_load_arg offset device clFun 1 (arg_of_vec vec_out);
+      Kernel.OpenCL.opencl_launch_grid clFun grid block device.Devices.general_info 0
   );					
   vec_out
-
+    
 let map2 ((ker: ('a, 'b,('c -> 'd -> 'e), 'f,'g) sarek_kernel)) ?dev:(device=(Spoc.Devices.init ()).(0)) (vec_in1 : ('h, 'i) Vector.vector) (vec_in2 : ('j, 'k) Vector.vector) : ('l, 'm) Vector.vector = 
   let ker2,k = ker in
   let (k1,k2,k3) = (k.ml_kern, k.body,k.ret_val) in 
