@@ -1,13 +1,13 @@
 open Spoc
-
+7
 let tot_time = ref 0.
 
 let measure_time f s =
-  Printf.printf "Using : %s --> %!" s;
+  Printf.eprintf "Using : %s --> %!" s;
   let t0 = Unix.gettimeofday () in
   let a = f () in
   let t1 = Unix.gettimeofday () in
-  Printf.printf "   %Fs\n%!"  (t1 -. t0);
+  Printf.eprintf "   %Fs\n%!"  (t1 -. t0);
   tot_time := !tot_time +.  (t1 -. t0);
   a;;
 
@@ -131,40 +131,35 @@ klet mul_colour = kfun c1 c2 ->
 		  
 klet checkray = kfun orig dir dist objects nb_objs ->
   let mutable r = true in
-  let mutable hit_ =  false in
+  let mutable hit =  false in
   let mutable i =  0 in
-  while ! hit_  && 
+  while ! hit  && 
       	  (i < (nb_objs - 1)) do
-    let hit = distance_to (objects.[<i>]) orig dir in
-    match hit with
+    let hit2 = distance_to (objects.[<i>]) orig dir in
+    match hit2 with
     | MatchMiss -> (r := false;
 		    i := i + 1)
     | MatchHit m ->  
-       (r := (m.dist <. dist);
-        hit_ := true)
+      (r := (m.dist <. dist);
+       hit := true)
   done;
   r
     
 klet applyLights = kfun pos normal lights  objects nb_lights nb_objs ->
-       let mutable color = {r=0.; g=0.;  b=0.;} in
-       for i = 0 to nb_lights - 1 do
-	 let light = lights.[<i>] in
-	 let lp_p = point_diff light.loc pos in
-	 let dist = point_mag lp_p in
-	 let dir = point_mul lp_p (1.0 /. dist) in
-	 let mag = (dotprod normal dir) /. (dist *. dist) in
-	 let refl = {r= light.lcol.r *. mag;
-		     g= light.lcol.g *. mag;
-		     b = light.lcol.b *. mag} in
-	 if (!
-	       (checkray
-		  pos
-		  dir
-		  dist
-		  objects nb_objs)) then
-	   color := add_color refl color
-       done;
-       color
+  let mutable color = {r=0.; g=0.;  b=0.;} in
+  for i = 0 to nb_lights - 1 do
+    let light = lights.[<i>] in
+    let lp_p = point_diff light.loc pos in
+    let dist = point_mag lp_p in
+    let dir = point_mul lp_p (1.0 /. dist) in
+    let mag = (dotprod normal dir) /. (dist *. dist) in
+    let refl = {r= light.lcol.r *. mag;
+		g= light.lcol.g *. mag;
+	        b = light.lcol.b *. mag} in
+    if (! (checkray pos dir dist objects nb_objs)) then
+      color := add_color refl color
+  done;
+  color
 	   
 klet clamp = kfun x ->
   if x <. 0. then 0.
@@ -182,25 +177,25 @@ ktype nsc =
 	   c : color;
 	 }
 klet nsc_ = kfun o point ->
-   let open Std in
-   match o with
-   | Sphere s ->
+    let open Std in
+    match o with
+    | Sphere s ->
       {n = unit_length (point_diff point s.spos);
        s = s.sshine;
        c = s.scol;
       }
-   | Plane p ->
-      (let x = point.x in
-       let z = point.z in
-       let v1 = int_of_float (x /. 100.) mod 2 in
-       let v2 = int_of_float (z /. 100.)  mod 2 in
-       let v3 = (if x <. 0.000 then 1 else 0) in
-       let v4 = (if z <. 0.000 then 1 else 0) in
+    | Plane p ->
+      (let x1 = point.x in
+       let z1 = point.z in
+       let v1 = int_of_float (x1 /. 100.) mod 2 in
+       let v2 = int_of_float (z1 /. 100.)  mod 2 in
+       let v3 = (if x1 <. 0.000 then 1 else 0) in
+       let v4 = (if z1 <. 0.000 then 1 else 0) in
        let c =
  	 if ((Math.xor v1 (Math.xor v2 (Math.xor v3  v4))) = 1) then
-	   p.pcol
-	 else
-	   {r = 0.4; g=0.4; b=0.4} in 
+           p.pcol
+         else
+           {r = 0.4; g=0.4; b=0.4} in 
        {n = p.norm;
 	s = p.pshine;
 	c = c
@@ -213,53 +208,54 @@ let raytrace =
   let open Std in
   let y = thread_idx_y + block_dim_y * block_idx_y in
   let x = thread_idx_x + block_dim_x * block_idx_x in
-    if x < width && y < height then
-      (let mutable bce = bounce in
-      while bce > 0 do
-	let r = rays.[<y*width+x>] in
-        let dir = r.dir in
-        let orig = r.orig  in
-        let hit = castray orig dir objects nb_objs in
-        (match hit with
-         | MatchMiss -> ()(*Printf.printf "MISS\n";*)
-         | MatchHit m ->
-	    (let point = point_add  orig (point_mul dir m.dist) in
-	     let nsc =
-	       nsc_ m.obj point in
-	     let normal = nsc.n in
-	     let shine = nsc.s in
-	     let col = nsc.c in
-	     let newdir =  point_diff dir  (point_mul normal (2.0 *. (dotprod normal dir))) in
-	     rays.[<y*width+x>] <- {orig = point; dir =  newdir};
-	     let idx = (bounce - bce)*width*height in
-	     let direct = applyLights point normal lights objects 1 nb_objs in
-	     let lighting = add_color direct  (ambiant.[<0>]) in
-	     imgs.[<idx + (y*width+x)>] <- lighting;
-	     shine_colors.[<idx + (y*width+x)>] <- {color = col; shine = shine;};));
-	bce := bce - 1
-      done;
-      bce := bounce - 1;
-      (* recursion would be way more sexy *)
-      while bce >= 0 do
-	let idx_ = (bce)*width*height in
-	let pred = (bce+1)*width*height in
-	let lighting_ = imgs.[<idx_ + (y*width+x)>] in
-	let shine_ = (shine_colors.[<idx_ + (y*width+x)>]).shine in
-	let col_ = (shine_colors.[<idx_ + (y*width+x)>]).color in
-	let refl = 
-	  if (bce = (bounce - 1)) then
-	    {r = 0.; g = 0.; b = 0.}
-	  else
-	    imgs.[<pred + (y*width+x)>] in
-	let light_in =
-	  add_color
-	    (scale_colour refl shine_)
-	    (scale_colour lighting_ (1.0 -. shine_))
-	in 
-	let light_out = (mul_colour light_in col_) in
-        imgs.[<idx_ + (y*width+x)>] <-  (clamp_colour light_out);
-      	bce := bce - 1;
-      done)
+  if x < width && y < height then
+    (let mutable bce = bounce in
+     while bce > 0 do
+       let r = rays.[<y*width+x>] in
+       let dir = r.dir in
+       let orig = r.orig  in
+       let hit = castray orig dir objects nb_objs in
+       (match hit with
+        | MatchMiss -> ()(*Printf.printf "MISS\n";*)
+        | MatchHit m ->
+	  (let point = point_add  orig (point_mul dir m.dist) in
+	   let nsc =
+	     nsc_ m.obj point in
+	   let normal = nsc.n in
+	   let shine = nsc.s in
+	   let col = nsc.c in
+	   let newdir =  point_diff dir  (point_mul normal (2.0 *. (dotprod normal dir))) in
+	   rays.[<y*width+x>] <- {orig = point; dir =  newdir};
+	   let idx = ((bounce - bce)*width*height) + (y*width) + x in
+	   let direct = applyLights point normal lights objects 1 nb_objs in
+	   let lighting = add_color direct  (ambiant.[<0>]) in
+	   imgs.[<idx>] <- lighting;
+	   shine_colors.[<idx>] <- {color = col; shine = shine;};));
+       bce := bce - 1
+     done;
+     bce := bounce - 1;
+
+     (* recursion would be way more sexy *)
+     while bce >= 0 do
+       let idx_ = (bce)*width*height + (y*width) +x in
+       let pred = (bce+1)*width*height + (y*width) +x in
+       let lighting_ = imgs.[<idx_>] in
+       let shine_ = (shine_colors.[<idx_>]).shine in
+       let col_ = (shine_colors.[<idx_>]).color in
+       let refl = 
+	 if (bce = (bounce - 1)) then
+	   {r = 0.; g = 0.; b = 0.}
+	 else
+	   imgs.[<pred>] in
+       let light_in =
+	 add_color
+	   (scale_colour refl shine_)
+	   (scale_colour lighting_ (1.0 -. shine_))
+       in 
+       let light_out = (mul_colour light_in col_) in
+       imgs.[<idx_>] <-  (clamp_colour light_out);
+       bce := bce - 1;
+     done)
 	
 let devid = 2
 
@@ -268,11 +264,11 @@ let _ =
   let devs = Devices.init ~only:Devices.OpenCL () in
   let dev = devs.(devid) in
 
-  let width = 800 in
-  let height = 600 in
+  let width = 640 in
+  let height = 480 in
   let fov = 1. in
   let zoom = 1 in
-  let bounces = 1 in 
+  let bounces = 3 in 
   let framerate = 30 in
 
 
@@ -325,7 +321,7 @@ let _ =
         scol = {r = 1.; g=1.; b=1.5};
         sshine = 0.8;
       });
-
+  
   Mem.set scene 0
     (Plane {
         ppos = {x=0.; y=100.; z=0.};
@@ -401,8 +397,8 @@ in
     | Devices.OpenCLInfo clI ->
        (match clI.Devices.device_type with
 	| Devices.CL_DEVICE_TYPE_CPU -> 1
-	| _ -> 8)
-    | _ -> 8
+	| _ -> 16)
+    | _ -> 16
   in
   let blocksPerGridX = (width + threadsPerBlock -1) / threadsPerBlock in
   let blocksPerGridY = (height + threadsPerBlock -1) / threadsPerBlock in
@@ -415,13 +411,13 @@ in
               Spoc.Kernel.gridZ = 1;} in
   
   let name = dev.Spoc.Devices.general_info.Spoc.Devices.name in
+
   measure_time (fun () ->
 		Kirc.run  cast_view_ray
 			  (width, height, fov, eyev, rays) 
 			  (block,grid) 0 dev;
 		Mem.to_cpu rays ();
 		Devices.flush dev ();) ("GPU "^name);
-
 
   
   measure_time 
@@ -431,10 +427,10 @@ in
 		width, height, rays, lights,
 		ambiant, bounces, imgs, shine_colors)
 	       (block,grid) 0 dev;
+     Mem.to_cpu imgs ();
      Devices.flush dev ();)  "GPU to raytrace";
   
-  (*let rawimg = imgs.(0) in*)
-  
+
   let colors =
     measure_time
       (fun () -> Array.init height 

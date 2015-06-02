@@ -74,25 +74,25 @@ let raytrace objects nb_objs width height rays eye lights ambiant bounce imgs sh
   let distance_to obj origin direction =
     match obj with
     | Sphere s ->  
-       let p = point_add origin
-			 (point_mul direction (dotprod (point_diff s.spos origin) direction))
-       in 
-       let d_cp = point_mag (point_diff p s.spos) in
-       let sep = point_diff p origin 
-       in
-       (*Printf.printf "distance_to_sphere %g %g - %g %g\n" d_cp s.radius (dotprod sep direction) 0.;*)
-       if d_cp >= s.radius || (dotprod sep direction) <= 0. then
-         MatchMiss
-       else
-         MatchHit {dist = (point_mag sep) -. sqrt (s.radius *. s.radius -. d_cp *. d_cp);
-                   obj = obj;}         
+      let p = point_add origin
+	  (point_mul direction (dotprod (point_diff s.spos origin) direction))
+      in 
+      let d_cp = point_mag (point_diff p s.spos) in
+      let sep = point_diff p origin 
+      in
+      (*Printf.printf "distance_to_sphere %g %g - %g %g\n" d_cp s.radius (dotprod sep direction) 0.;*)
+      if d_cp >= s.radius || (dotprod sep direction) <= 0. then
+        MatchMiss
+      else
+        MatchHit {dist = (point_mag sep) -. sqrt (s.radius *. s.radius -. d_cp *. d_cp);
+                  obj = obj;}         
     | Plane p ->
-       let theta = dotprod direction p.norm in
-       if theta >= 0. then
-         MatchMiss
-       else
-         MatchHit {dist = (dotprod (point_diff p.ppos origin) p.norm) /. theta;
-                   obj = obj}
+      let theta = dotprod direction p.norm in
+      if theta >= 0. then
+        MatchMiss
+      else
+        MatchHit {dist = (dotprod (point_diff p.ppos origin) p.norm) /. theta;
+                  obj = obj}
 
 
 
@@ -104,11 +104,11 @@ let raytrace objects nb_objs width height rays eye lights ambiant bounce imgs sh
       match dist with
       | MatchMiss  -> (); (*do nothing *)
       | MatchHit m -> (* keep only the nearest hit *)
-         match !r with
-         | MatchMiss -> r := dist
-         | MatchHit old_d ->
-            if old_d.dist > m.dist then
-              r := dist;
+        match !r with
+        | MatchMiss -> r := dist
+        | MatchHit old_d ->
+          if old_d.dist > m.dist then
+            r := dist;
     done;
     !r
   in 
@@ -126,7 +126,7 @@ let raytrace objects nb_objs width height rays eye lights ambiant bounce imgs sh
     {r = c1.r *. c2.r;
      g = c1.g *. c2.g;
      b = c1.b *. c2.b}
-      
+
   in
   let checkray = fun orig dir dist ->
     let r = ref true in
@@ -135,10 +135,11 @@ let raytrace objects nb_objs width height rays eye lights ambiant bounce imgs sh
     while not !hit && (!i < nb_objs - 1 ) do
       let hit2 = distance_to (Mem.get objects !i) orig dir in
       match hit2 with
-      | MatchMiss -> r := false; 
+      | MatchMiss -> 
+        (r := false; incr i; )
       | MatchHit m ->  
-         (r := (m.dist < dist);
-          hit := true;)
+        (r := (m.dist < dist);
+         hit := true;)
     done;
     !r
   in
@@ -150,7 +151,9 @@ let raytrace objects nb_objs width height rays eye lights ambiant bounce imgs sh
       let dist = point_mag lp_p in
       let dir = point_mul lp_p (1.0 /. dist) in
       let mag = (dotprod normal dir) /. (dist *. dist) in
-      let refl = {r= light.lcol.r *. mag; g= light.lcol.g *. mag; b = light.lcol.b *. mag} in
+      let refl = {r= light.lcol.r *. mag; 
+                  g= light.lcol.g *. mag; 
+                  b = light.lcol.b *. mag} in
       if not (checkray pos dir dist) then
         color := add_color !color refl
     done;
@@ -169,8 +172,6 @@ let raytrace objects nb_objs width height rays eye lights ambiant bounce imgs sh
     for x = 0 to width - 1 do
       let bce = ref bounce in
       while !bce > 0 do
-(*	let img = imgs.(bounce - !bce) in
-	let shine_color = shine_colors.(bounce - !bce) in*)
 	let r = (Mem.get rays (y*width+x)) in
         let dir = r.dir in
         let orig = r.orig  in
@@ -178,34 +179,34 @@ let raytrace objects nb_objs width height rays eye lights ambiant bounce imgs sh
         (match hit with
          | MatchMiss -> ()(*Printf.printf "MISS\n";*)
          | MatchHit m -> 
-            let point = point_add  orig (point_mul dir m.dist) in
-            let normal,shine,col = 
-	      (match m.obj with
-	       | Sphere s ->
-		  unit_length (point_diff point s.spos), s.sshine,s.scol
-	       | Plane p ->    
-		  p.norm,p.pshine,
-		  let x_,z_ = point.x, point.z in
-		  let v1 = (int_of_float (x_ /. 100.) + 1) mod 2 in
-		  let v2 = (int_of_float (z_ /. 100.) + 1) mod 2 in
-		  let v3 = (if x_ < 0.000 then 1 else 0) in
-		  let v4 = (if z_ < 0.000 then 1 else 0) in
-		  if v1 lxor v2 lxor v3 lxor v4 = 1 then
-                    p.pcol
-		  else
-                    {r = 0.4; g=0.4; b=0.4}
-		      
-	      )
-            in
-            let newdir =  point_diff dir  (point_mul normal (2.0 *. (dotprod normal dir))) in
-            Mem.set rays (y*width+x) {orig = point; dir =  newdir};
-	    let idx = (bounce - !bce)*width*height in
-            let colour = imgs.(idx + y*width+x) in
-            let direct = applyLights point normal m.dist in
-            let lighting = add_color direct  (Mem.get ambiant 0) in
-	    imgs.(idx + y*width+x) <- lighting;
-	    shine_colors.(idx + y*width+x) <- {color = col; shine = shine;};);
-	bce := !bce - 1;
+           let point = point_add  orig (point_mul dir m.dist) in
+           let normal,shine,col = 
+	     (match m.obj with
+	      | Sphere s ->
+		unit_length (point_diff point s.spos), s.sshine,s.scol
+	      | Plane p ->    
+		p.norm,p.pshine,
+                let x_,z_ = point.x, point.z in
+                let v1 = (int_of_float (x_ /. 100.) + 1) mod 2 in
+                let v2 = (int_of_float (z_ /. 100.) + 1) mod 2 in
+                let v3 = (if x_ < 0.000 then 1 else 0) in
+                let v4 = (if z_ < 0.000 then 1 else 0) in
+                if v1 lxor v2 lxor v3 lxor v4 = 1 then
+                  p.pcol
+                else
+                  {r = 0.4; g=0.4; b=0.4}
+
+             )
+           in
+           let newdir =  point_diff dir  (point_mul normal (2.0 *. (dotprod normal dir))) in
+           Mem.set rays (y*width+x) {orig = point; dir =  newdir};
+	   let idx = (bounce - !bce)*width*height in
+           let colour = imgs.(idx + y*width+x) in
+           let direct = applyLights point normal m.dist in
+           let lighting = add_color direct  (Mem.get ambiant 0) in
+	   imgs.(idx + y*width+x) <- lighting;
+           shine_colors.(idx + y*width+x) <- {color = col; shine = shine;});
+	  bce := !bce - 1;
       done;
       bce := bounce - 1;
       (* recursion would be way more sexy *)
@@ -215,7 +216,7 @@ let raytrace objects nb_objs width height rays eye lights ambiant bounce imgs sh
 	let lighting = imgs.(idx + y*width+x) in
 	let shine = shine_colors.(idx + y*width+x).shine in
 	let col = shine_colors.(idx + y*width+x).color in
-	
+
 	let refl = 
 	  if !bce = bounce - 1 then
 	    {r = 0.; g = 0.; b = 0.}
@@ -237,7 +238,7 @@ let raytrace objects nb_objs width height rays eye lights ambiant bounce imgs sh
 	 
 
 
-let devid = 1
+let devid = 0
 
 
 let _ =
