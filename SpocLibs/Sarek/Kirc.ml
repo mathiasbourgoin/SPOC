@@ -756,13 +756,13 @@ end
 let a_to_vect = function
   | IntVar i  ->  (new_int_vec_var ( i))
   | FloatVar i -> (new_float_vec_var (i))
-  | a  -> print_ast a; failwith "a_to_vect"
+  | a  -> print_ast a; assert false; failwith "a_to_vect"
 
 let a_to_return_vect k1 k2 idx= 
   match k1 with
   | IntVar i  ->  (set_vect_var (get_vec (var i) idx) (k2))
   | FloatVar i  ->  (set_vect_var (get_vec (var i) idx) (k2))
-  | _  -> failwith "error a_to_return_vect"
+  | _  -> assert false; failwith "error a_to_return_vect"
 
 let param_list = ref []
 
@@ -869,11 +869,11 @@ let map ((ker: ('a, 'b, ('c -> 'd), 'e,'f) sarek_kernel)) ?dev:(device=(Spoc.Dev
         | Params p ->
           (match p with 
            | Concat (Concat _, _) ->
-             failwith "error multiple map args ";  
+             assert false; failwith "error multiple map args ";  
            | Concat (a, Empty)  ->
              params (concat (a_to_vect a) (concat (a_to_vect (fst k3)) (empty_arg ()))) 
-           | _ -> failwith "map type error")
-        | _  -> failwith "error map args"
+           | _ -> assert false; failwith "map type error")
+        | _  -> assert false; failwith "error map args"
       in let n_body =
         let rec aux curr =
           match curr with
@@ -888,6 +888,7 @@ let map ((ker: ('a, 'b, ('c -> 'd), 'e,'f) sarek_kernel)) ?dev:(device=(Spoc.Dev
           | LtBool (a,b)  -> LtBool (aux a, aux b)
           | GtBool (a,b)  -> GtBool (aux a, aux b)
           | Ife (a,b,c)  -> Ife (aux a, aux b, aux c)
+	  | Int a -> Int a
           | IntId (v,i)  -> 
             if i = 0 then
               IntVecAcc(IdName ("spoc_var"^(string_of_int i)), 
@@ -899,7 +900,7 @@ let map ((ker: ('a, 'b, ('c -> 'd), 'e,'f) sarek_kernel)) ?dev:(device=(Spoc.Dev
         aux body
       in
       Kern (new_args, n_body)
-    | _ -> failwith "malformed kernel for map"   
+    | _ -> assert false; failwith "malformed kernel for map"   
   in 
   let res =(ker2,
             { 
@@ -983,7 +984,7 @@ let map2 ((ker: ('a, 'b,('c -> 'd -> 'e), 'f,'g) sarek_kernel)) ?dev:(device=(Sp
            | Concat (a, Concat (b, Empty)) ->
              params (concat (a_to_vect a) (concat (a_to_vect b) (concat (a_to_vect (fst k3)) (empty_arg ()))))
            | Concat (a, Empty)  ->
-             failwith "error too fex map2 args ";  
+             failwith "error too few map2 args ";  
            | _ -> Printf.printf "+++++> "; print_ast args; failwith "map2 type error")
         | _  -> failwith "error map2 args"
       in let n_body =
