@@ -482,6 +482,7 @@ and typer body t =
       open_module  m l;
       typer e t;
       close_module m;
+      update_type body e.t;
    | _ -> my_eprintf  ((k_expr_to_string body.e)^"\n"); assert false);
   if is_unknown body.t then
     (my_eprintf  (("UNKNOWN : "^k_expr_to_string body.e)^"\n");
