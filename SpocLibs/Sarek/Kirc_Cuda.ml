@@ -266,6 +266,7 @@ and parse_int n = function
   | Mod (a,b) as v ->  parse n v
   | Div (a,b) as v ->  parse n v
   | App (a,b) as v -> parse n v
+  | RecGet (r,f) as v -> parse n v
   | a -> parse_float n a
 (*  | _  -> failwith "error parse_int" *)
 
@@ -283,6 +284,7 @@ and parse_float n = function
   | App (a,b) as v -> parse n v
   | SetV (a,b) as v -> parse n v
   | Intrinsics gv -> parse_intrinsics gv
+  | RecGet (r,f) as v -> parse n v
   | a  -> print_ast a; failwith "cuda error parse_float"
 
 and parse_vect = function

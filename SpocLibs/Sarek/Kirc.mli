@@ -106,6 +106,7 @@ val equalsF : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val equalsF64 : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val b_or : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val b_and : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
+val b_not : Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val lt : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val lt32 : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val lt64 : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
@@ -132,6 +133,7 @@ val return_unit : unit -> Kirc_Ast.k_ext
 val return_int : int -> Kirc_Ast.k_ext
 val return_float : int -> Kirc_Ast.k_ext
 val return_double : int -> Kirc_Ast.k_ext
+val return_bool : int -> Kirc_Ast.k_ext
 val return_custom : string -> string -> Kirc_Ast.k_ext
 val rewrite : Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val return_v : (string * string) ref

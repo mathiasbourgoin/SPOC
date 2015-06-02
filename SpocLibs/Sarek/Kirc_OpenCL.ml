@@ -49,12 +49,15 @@ let return_v = ref ("","")
 
 let global_fun_idx = ref 0 
 
+let protos = ref []
+
+
 let rec parse_fun i a b = 
   let rec aux name a =
     let rec aux2 i a =
       match a with 
       | Kern  (args,body) -> 
-	 (let pargs = aux2 i args  in
+	(let pargs = aux2 i args  in
 	  let pbody = 
 	    match body with 
 	    | Seq (_,_)  -> (aux2 i body )
@@ -66,9 +69,9 @@ let rec parse_fun i a b =
 	   	 (b^" "^name^"  ( "^
 	    (if (fst !return_v) <> "" then
                (fst !return_v)^", " else "")^(parse (i+1) k)^" )")
-		  in
-		  proto^";\n"^
-		    proto^"{"
+         in
+         protos := proto:: !protos;
+         proto^"{"
       | a -> (parse  i a)
     in 
     aux2 i a in
@@ -98,14 +101,15 @@ and parse i = function
   | Local (x,y)  -> (parse i x)^";\n"^
                     (indent (i))^(parse i y)^
                     "\n"^(indent (i))^""
-  | VecVar (t,i)  -> 
-    (match t with
-     | Int _ ->"__global int"
-     | Float _ -> "__global float"
-     | Double _ -> "__global double"
-     | Custom (n,_) -> ("__global struct "^n^"_sarek")
-     | _ -> assert false
-    )^("* spoc_var"^(string_of_int (i)))
+  | VecVar (t,i)  ->
+     (match t with
+      | Int _ ->"__global int"
+      | Float _ -> "__global float"
+      | Double _ -> "__global double"
+      | Custom (n,_) -> ("__global struct "^n^"_sarek")
+      | _ -> assert false
+     )^("* spoc_var"^(string_of_int (i)))
+	 
   | Block b -> (indent i)^"{\n"^parse (i+1) b^"\n"^(indent i)^"}"
   | IdName s  ->  s
   | IntVar s -> ("int spoc_var"^(string_of_int s))
@@ -113,7 +117,8 @@ and parse i = function
   | Custom (n,s) -> ("struct "^n^"_sarek spoc_var"^(string_of_int s))
   | UnitVar v -> assert false
   | CastDoubleVar s -> ("(double) spoc_var"^(string_of_int s))
-  | DoubleVar s -> ("double spoc_var"^(string_of_int s)) 
+  | DoubleVar s -> ("double spoc_var"^(string_of_int s))
+  | BoolVar s -> ("in spoc_var"^(string_of_int s)) 
   | Arr (s,l,t,m) -> 
     let memspace = 
       match m with 
@@ -145,13 +150,13 @@ and parse i = function
   | Record (s,l) ->
     let params = 
       match l with
-      | t::q -> (parse i t)^(List.fold_left (fun a b -> a^parse i b) "," q)
+      | t::q -> (parse i t)^(List.fold_left (fun a b -> a^", "^parse i b) "" q)
       | [] -> assert false in
     "build_"^s^"("^params^")"
   | RecGet (r,f) ->
     (parse i r)^"."^f
   | RecSet (r,v) ->
-    (parse i r)^" = "^(parse i v)
+    (parse i r)^"/*RECSET*/  = "^(parse i v)
   | Plus  (a,b) -> ((parse_int i a)^" + "^(parse_int i b))
   | Plusf  (a,b) -> ((parse_float i a)^" + "^(parse_float i b))
   | Min  (a,b) -> ((parse_int i a)^" - "^(parse_int i b))
@@ -165,12 +170,12 @@ and parse i = function
   | Id (s)  -> s
   | Set (var,value) 
   | Acc (var,value) -> 
-    ((parse i var)^" = "^
+    ((parse i var)^" /*ACC*/ = "^
      (parse i value))
   | Decl (var) ->
-    (parse i var)
+     (parse i var)
   | SetLocalVar (v,gv,k) -> 
-    ((parse i v)^" = "^
+    ((parse i v)^"/*SLV*/ = "^
      (match gv with
       | Intrinsics i -> (parse_intrinsics i)
       | _ -> (parse i gv))^";\n"^(indent i)^(parse i k))
@@ -183,7 +188,7 @@ and parse i = function
   | Unit  -> ""
   | IntVecAcc (vec,idx)  -> (parse i vec)^"["^(parse i idx)^"]"
   | SetV (vecacc,value)  -> (
-      (parse i vecacc)^" = "^(parse i value)^";") 
+      (parse i vecacc)^"/*SETV*/ = "^(parse i value)^";") 
   |Int  a  -> string_of_int a
   | Float f -> (string_of_float f)^"f"
   | GInt  a  -> Int32.to_string (a ())
@@ -196,6 +201,7 @@ and parse i = function
   | If (a,b) -> "if ("^(parse i a)^")\n"^(indent i)^"{\n"^(indent (i+1))^(parse (i+1) b)^";\n"^(indent i)^"}"^(indent i)
   | Or (a,b) -> (parse i a)^" || "^(parse i b)
   | And (a,b) -> (parse i a)^" && "^(parse i b)
+  | Not (a) -> "!"^(parse i a)
   | EqCustom (n,v1,v2) ->
     let v1 = parse 0 v1
     and v2 = parse 0 v2 in
@@ -264,6 +270,7 @@ and parse_int n = function
   | Mod (a,b) as v ->  parse n v
   | Div (a,b) as v ->  parse n v
   | App (a,b) as v -> parse n v
+  | RecGet (r,f) as v -> parse n v
   | a -> parse_float n a
 (*  | _  -> failwith "error parse_int" *)
 
@@ -280,6 +287,7 @@ and parse_float n = function
   | Divf (a,b) as v ->  parse n v
   | App (a,b) as v -> parse n v
   | Intrinsics gv -> parse_intrinsics gv
+  | RecGet (r,f) as v -> parse n v
   | a  -> print_ast a; failwith "opencl error parse_float"
 
 and parse_vect = function

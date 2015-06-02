@@ -212,7 +212,7 @@ let ret =
   | TFloat32 ->  <:expr<return_float $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float32>>
   | TFloat64 ->  <:expr<return_double $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float64>>
   | TUnit  -> <:expr<return_unit (), Vector.Unit ((),())>>
-  | TBool -> <:expr< return_bool $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.Dummy>>
+  | TBool -> <:expr< return_bool $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int32>>
   | Custom (_, name) ->
     let sarek_name = name^"_sarek" in
     <:expr< Kirc.return_custom1 $str:name$ $str:sarek_name$ >> 
@@ -224,6 +224,7 @@ and snd_ (a,b,c,d,e,f) = b
 and thd_ (a,b,c,d,e,f) = c 
 and fth_ (a,b,c,d,e,f) = d 
 and ffh_ (a,b,c,d,e,f) = e in
+
 let tup_args, list_args, class_legacy , list_to_args1, list_to_args2= 
   let args_fst_list = 
     (List.map fst_ (List.map gen_arg_from_patt3 args)) in
@@ -239,11 +240,11 @@ let tup_args, list_args, class_legacy , list_to_args1, list_to_args2=
     (List.map thd_ (List.map gen_arg_from_patt3 args)) in
   let args_typ = tySta_of_list args_thd_list in
   
-  let lta1 = 
+  let lta1 =
     paSem_of_list 
       (List.map fth_ (List.map gen_arg_from_patt3 args)) in
 
-  let args_ffth_list = 	     
+  let args_ffth_list =
     (new_kernel := true;
      List.map ffh_ (List.map gen_arg_from_patt3 args)) in
   let lta2 = 
@@ -359,22 +360,47 @@ str_item:
      arg_list := [];
      Hashtbl.clear !current_args;
      List.iter new_arg_of_patt args;
+
+     let cpt = ref 0 in
+     retype := true;
      (try 
-        typer body TUnknown
-      with
-      | TypeError(expected, given, loc) -> 
-        (
-          failwith ("Type Error : expecting : "^
-                    (ktyp_to_string expected)^" but given : "^
-                    (ktyp_to_string given)^" in position : "^(Loc.to_string loc)))
-        | Immutable (value, loc) ->
-          (Printf.eprintf "%s\n%!" ("\027[31m Immutable Value \027[00m : \027[33m"^
-                                    (value)^"\027[00m used as mutable in position : "^(Loc.to_string loc)^"");
-           exit 2;));  
+         while !retype  && !cpt < 3 do 
+           if debug  then
+	     incr cpt;
+	   retype := false;
+           unknown := 0;
+           typer body (TUnknown);
+           my_eprintf (Printf.sprintf "\nUnknown : %d \n\n\n%!" !unknown)
+         done;
+	 with
+	 | TypeError(expected, given, loc) -> 
+           (
+             failwith ("Type Error : expecting : "^
+		       (ktyp_to_string expected)^" but given : "^
+		       (ktyp_to_string given)^" in position : "^(Loc.to_string loc)))
+         | Immutable (value, loc) ->
+           (Printf.eprintf "%s\n%!" ("\027[31m Immutable Value \027[00m : \027[33m"^
+                                     (value)^"\027[00m used as mutable in position : "^(Loc.to_string loc)^"");
+            exit 2;));  
+
+     (* (try  *)
+     (*    typer body TUnknown *)
+     (*  with *)
+     (*  | TypeError(expected, given, loc) ->  *)
+     (*    ( *)
+     (*      failwith ("Type Error : expecting : "^ *)
+     (*                (ktyp_to_string expected)^" but given : "^ *)
+     (*                (ktyp_to_string given)^" in position : "^(Loc.to_string loc))) *)
+     (*    | Immutable (value, loc) -> *)
+     (*      (Printf.eprintf "%s\n%!" ("\027[31m Immutable Value \027[00m : \027[33m"^ *)
+     (*                                (value)^"\027[00m used as mutable in position : "^(Loc.to_string loc)^""); *)
+     (*       exit 2;));   *)
+     
      let new_hash_args = Hashtbl.create (Hashtbl.length !current_args) in
      Hashtbl.iter (Hashtbl.add new_hash_args) !current_args;
      Hashtbl.clear !current_args;
      current_args := new_hash_args;  
+
      let gen_body = 
        <:expr< 
                $try Gen_caml.parse_body body
@@ -397,8 +423,10 @@ str_item:
                                     (value)^"\027[00m used as mutable in position : "^(Loc.to_string loc)^"");
            exit 2;))
      in
-     Hashtbl.iter (fun a b -> if b.var_type = TUnknown then assert false)  !current_args ;
-     let n_body2 = <:expr<params $List.fold_left 
+     Hashtbl.iter (fun a b -> if b.var_type = TUnknown then 
+				failwith ("Unknown argument type : "^a))  !current_args ;
+
+	  let n_body2 = <:expr<params $List.fold_left 
                           (fun a b -> <:expr<concat $b$ $a$>>) 
 <:expr<empty_arg()>> 
   ((List.rev_map gen_arg_from_patt2 args))$>> in 
@@ -422,16 +450,27 @@ let ret =
   | TFloat32 ->  <:expr<return_float $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float32>>
   | TFloat64 ->  <:expr<return_double $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float64>>
   | TUnit  -> <:expr<return_unit (), Vector.Unit ((),())>>
-  | TBool -> <:expr< return_bool $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.Dummy>>
+  | TBool -> <:expr< return_bool $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int32>>
   | Custom (_, name) ->
-    let sarek_name = name^"_sarek" in
-    <:expr< Kirc.return_custom2 $str:name$ $str:sarek_name$ >> 
+     let sarek_name = name^"_sarek" in
+     let customType = ExId(_loc, (IdLid (_loc,("custom"^(String.capitalize name))))) in
+     <:expr< Kirc.return_custom $str:name$ $str:sarek_name$, Vector.Custom $customType$>> 
 
   | t  -> failwith (Printf.sprintf "error ret : %s" (ktyp_to_string t))
 in
-let t = 
-  Hashtbl.fold (fun _ value seed -> TApp (seed , value.var_type)) !current_args !return_type in
-my_eprintf ("....... "^ktyp_to_string t^"\n");
+let t =
+    List.fold_left (fun seed  p  -> 
+      match p with 
+      | (PaId(_,i)) ->
+        let value = (Hashtbl.find !current_args (string_of_ident i)) in
+        TApp (value.var_type, seed)
+      | _ -> assert false) !return_type  (List.rev args)
+(*
+  Hashtbl.fold (
+      fun _ value seed ->
+		TApp (seed , value.var_type)) !current_args !return_type in*)
+in
+my_eprintf ((string_of_ident name)^" ....... "^ktyp_to_string t^"\n");
 Hashtbl.add !global_fun (string_of_ident name) 
   {nb_args=0; 
    cuda_val="";
@@ -468,8 +507,9 @@ sequence':
     [ 
       ->fun e -> e
                | ";" -> fun e -> e
-                               | ";"; el = sequence -> fun e ->
-        {t=TUnknown; e=Seq(_loc, e, el); loc = _loc}
+               | ";"; el = sequence ->
+		  fun e ->
+		  {t=TUnknown; e=Seq(_loc, e, el); loc = _loc}
     ] 
   ]
 ;
@@ -620,7 +660,7 @@ let ret =
   | TFloat32 ->  <:expr<return_float $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float32>>
   | TFloat64 ->  <:expr<return_double $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float64>>
   | TUnit  -> <:expr<return_unit (), Vector.Unit ((),())>>
-  | TBool -> <:expr< return_bool $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.Dummy>>
+  | TBool -> <:expr< return_bool $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int32>>
   | Custom (_, name) ->
     let sarek_name = name^"_sarek" in
     let customType = ExId(_loc, (IdLid (_loc,("custom"^(String.capitalize name))))) in
@@ -683,15 +723,15 @@ in
        }  
 ]
 | "if"
-      [ "if"; cond=SELF; "then"; cons1=sequence; 
-        "else"; cons2=sequence -> 
-        {t=TUnknown; e= Ife(_loc,cond,cons1,cons2); loc = _loc}
-              | "if"; cond=SELF; "then"; cons1 = sequence -> 
-        {t=TUnknown; e= If(_loc,cond,cons1); loc = _loc}
-      ]
-  | "match"
-      [ 
-        "match"; x = SELF; "with"; m0 = OPT first_case; m = LIST0 match_cases 
+    [ "if"; cond=SELF; "then"; cons1=sequence; 
+      "else"; cons2=sequence -> 
+		    {t=TUnknown; e= Ife(_loc,cond,cons1,cons2); loc = _loc}
+    | "if"; cond=SELF; "then"; cons1 = sequence -> 
+       {t=TUnknown; e= If(_loc,cond,cons1); loc = _loc}
+    ]
+| "match"
+    [ 
+      "match"; x = SELF; "with"; m0 = OPT first_case; m = LIST0 match_cases 
         ->
         match m0 with
         | Some m1 -> 
@@ -751,7 +791,9 @@ in
     
   | "&&" RIGHTA	
     [x = SELF; "&&"; y = SELF -> {t=TBool; e = BoolAnd (_loc, x, y); loc = _loc} ]
-    
+
+  | "not"
+      ["!"; x = kexpr -> {t=TBool; e = BoolNot (_loc, x); loc = _loc} ]
 
 
     
@@ -832,6 +874,7 @@ in
         | x = a_UIDENT -> {t=TUnknown; e = Id (_loc, IdUid(_loc,x)); loc = _loc};
         | "false" -> {t=TBool; e=False _loc; loc = _loc};
         | "true" -> {t=TBool; e=True _loc; loc = _loc};
+
       ] 		
 
 

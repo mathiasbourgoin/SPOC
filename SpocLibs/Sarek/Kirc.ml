@@ -227,6 +227,7 @@ let equalsF a b = EqBool (a,b)
 let equalsF64 a b = EqBool (a,b)
 let b_or a b = Or (a,b)
 let b_and a b = And (a,b)
+let b_not a  = Not (a)
 
 let lt a b = LtBool (a,b)
 let lt32 a b = LtBool (a,b)
@@ -259,6 +260,7 @@ let return_unit () =  Unit
 let return_int i = IntVar i
 let return_float f = FloatVar f
 let return_double d = DoubleVar d
+let return_bool b = BoolVar b
 let return_custom n sn = CustomVar (n, sn)
 
 
@@ -325,6 +327,7 @@ let rewrite ker =
       Seq (kern, kern)
     | CastDoubleVar _ -> kern
     | DoubleVar _ -> kern
+    | BoolVar _ -> kern
     | VecVar (k,idx ) ->
       VecVar (aux k, idx) 
     | Concat (k1,k2) -> 
@@ -339,7 +342,8 @@ let rewrite ker =
     | Seq (k1,k2) -> 
       Seq (aux k1, aux k2)
     | Return k -> 
-      (match k with
+       (match k with
+	| Acc _ | Set _ -> aux k
        | Ife(k1, k2, k3) ->
          (b := true;
           Ife (aux k1, aux (Return k2), aux (Return k3)))
@@ -356,16 +360,42 @@ let rewrite ker =
          ( b:= true;
            Seq ( aux k1, aux (Return k2)))
        | Match (s,a,bb) -> 
-         (b := true;
-          Match (s,aux a, 
-                 Array.map (fun (i,ofid,e) -> 
-                     (i,ofid, aux (Return e))) bb))             
+          (b := true;
+           Match (s,aux a, 
+                  Array.map (fun (i,ofid,e) -> 
+			     (i,ofid, aux (Return e))) bb))             
        | _ ->
-         Return (aux k))
+          Return (aux k))
     | Acc (k1,k2) ->
-      Acc (aux k1, aux k2)
-    | Set (k1,k2) ->
-      Set (aux k1, aux k2)
+       
+       (match k2 with
+	| Ife(k1', k2', k3') ->
+           (b := true;
+            Ife (aux k1',
+		 aux (Acc (k1,k2')),
+		 aux (Acc (k1,k3'))))
+	| If(k1', k2') ->
+           (b := true;
+            If (aux k1', aux (Acc (k1,k2'))))
+	| DoLoop (k1',k2',k3',k4') ->
+          (b := true;
+           DoLoop (aux k1', aux k2', aux k3', aux (Acc (k1,k4'))))
+	| While (k1', k2') ->
+           (b:= true;
+            While (aux k1', aux (Acc (k1,k2'))))
+	| Seq (k1', k2') ->
+           ( b:= true;
+             Seq ( aux k1', aux (Acc (k1,k2'))))
+	| Match (s,a,bb) -> 
+           (b := true;
+            Match (s,aux a, 
+                   Array.map (fun (i,ofid,e) -> 
+			      (i,ofid, aux (Acc (k1, e)))) bb))
+	| Return _ -> assert false
+	|_ ->
+	  Acc (aux k1, aux k2))
+    | Set (k1,k2) -> aux (Acc (k1,k2))
+
     | Decl k1 -> aux k1
     | SetV (k1,k2) -> 
       (match k2 with
@@ -401,7 +431,9 @@ let rewrite ker =
     | Ife (k1,k2,k3) ->
       Ife (aux k1, aux k2, aux k3)   
     | If (k1,k2) ->
-      If (aux k1, aux k2)   
+       If (aux k1, aux k2)
+    | Not (k) ->
+       Not (aux k)
     | Or (k1,k2) -> 
       Or (aux k1, aux k2)
     | And (k1,k2) -> 
@@ -496,7 +528,7 @@ let gen ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('a, 'b, 'c,'d,'e) sarek
     ignore(Sys.command ("nvcc -m64  -O3 -ptx kirc_kernel.cu -o kirc_kernel.ptx"));
     let s = (load_file "kirc_kernel.ptx") in
     kir#set_cuda_sources s;
-(*    ignore(Sys.command "rm kirc_kernel.cu kirc_kernel.ptx"); *)
+    ignore(Sys.command "rm kirc_kernel.cu kirc_kernel.ptx"); 
 
   and gen_opencl () =
     let opencl_head = 
@@ -506,11 +538,14 @@ let gen ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('a, 'b, 'c,'d,'e) sarek
            | ExFloat32 -> header
            | ExFloat64 -> opencl_float64^header) opencl_head k.extensions in		
     let src = Kirc_OpenCL.parse 0 (rewrite k2) in
-    let global_funs = ref "" in
+    let global_funs = ref "/************* FUNCTION DEFINITIONS ******************/\n"  in
     Hashtbl.iter (fun _ a -> global_funs := !global_funs ^ "\n" ^ (fst a) ^ "\n" ) Kirc_OpenCL.global_funs;
-    let constructors = List.fold_left (fun a b -> b^a) "\n\n" !constructors in
-    let clkernel = (opencl_head ^ constructors ^ !global_funs ^  src)  in
-    (*save "kirc_kernel.cl" clkernel;*)
+    let constructors =  "/************* CUSTOM TYPES ******************/\n" ^
+                        List.fold_left (fun a b -> b^a) "\n\n" !constructors in
+    let protos = "/************* FUNCTION PROTOTYPES ******************/\n" ^
+                 List.fold_left (fun a b -> b^";\n"^a) "" !Kirc_OpenCL.protos in
+    let clkernel = (opencl_head ^ constructors ^ protos ^ !global_funs ^  src)  in
+    save "kirc_kernel.cl" clkernel;
     kir#set_opencl_sources clkernel;
 
   in

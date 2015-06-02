@@ -51,22 +51,22 @@ test: kernels_int.cma test.ml
 
 
 %.pp.byte: %.pp.ml
-	ocamlfind ocamlc -thread -package ctypes,spoc,sarek,graphics,tsdl, -linkpkg -o $@ $<
+	ocamlfind ocamlc -thread -package ctypes,spoc,sarek, -linkpkg -o $@ $<
 
 %.pp.nat: %.pp.ml
-	ocamlfind ocamlopt -thread -package ctypes,spoc,sarek,graphics,tsdl -linkpkg -o $@ $<
+	ocamlfind ocamlopt -nodynlink -thread  -package ctypes,spoc,sarek,graphics,camlimages,camlimages.png -linkpkg -o $@ $<
 
 %.nat : %.ml
-	ocamlfind ocamlopt -thread -package spoc,sarek,graphics,tsdl \
+	ocamlfind ocamlopt -unsafe -thread -package spoc,sarek \
 		-package sarek_syntax -syntax camlp4o -linkpkg -o $@ $<	
 
 %.byte : %.ml
-	ocamlfind ocamlc -thread -package spoc,sarek,graphics \
+	ocamlfind ocamlc -thread -package spoc,sarek \
 		-package sarek_syntax -syntax camlp4o -linkpkg -o $@ $<	
 
 pp_asm: all
 	camlp4 -I +camlp4 -parser o -parser op -printer o kernels_int.cma test.ml > test_pp.ml
-	ocamlfind ocamlopt -thread -package ctypes,spoc,sarek,graphics -linkpkg test_pp.ml
+	ocamlfind ocamlopt -thread -package ctypes,spoc,sarek -linkpkg test_pp.ml
 
 clean:
 	rm -rf *.cmo *,cmx *.out *~ *.cmi camlprog.exe *.cma *.asm *.pp.ml *.pp.nat *.pp.byte log

@@ -110,7 +110,8 @@ let gen_arg_from_patt3 p =
      let v = <:patt< $id:s$ >> in
      let e1, e2, e3, e4, e5 =
        match var.var_type with
-       | TUnknown  -> 
+       | TUnknown  ->
+	  failwith ("Could not infer type for argument "^ x);
          <:ctyp< 'a>>, 
          <:expr< Spoc.Kernel.abs>>,
          <:ctyp< 'a>>,
@@ -203,8 +204,7 @@ let gen_arg_from_patt3 p =
             <:expr< Spoc.Kernel.VCustom>>,
             <:ctyp< (($name$, $sarek_name$) Vector.vector)>>,
             <:ident< Spoc.Kernel.VCustom>>,
-            <:ctyp< Spoc.Vector.custom>>
-            
+            <:ctyp< Spoc.Vector.custom>>            
           | _  -> failwith "Forbidden vector  type in kernel declaration")
        | _ -> 
          assert (not debug); 

@@ -625,4 +625,5 @@ and parse_body body =
   | True _loc ->  <:expr< true >>
   | False _loc ->  <:expr< false >>
   | BoolEq (_loc,e1,e2) -> <:expr< $parse_body e1$ = $parse_body e2$>>
+  | BoolNot (_loc, e) -> <:expr< not $parse_body e$>>
   | _ -> assert (not debug); failwith "unimplemented yet"

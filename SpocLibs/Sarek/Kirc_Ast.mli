@@ -34,6 +34,7 @@ type k_ext =
   | UnitVar of int
   | CastDoubleVar of int
   | DoubleVar of int
+  | BoolVar of int
   | Arr of int * k_ext * elttype * memspace
   | VecVar of k_ext * int
   | Concat of k_ext * k_ext
@@ -63,6 +64,7 @@ type k_ext =
   | Match of string*k_ext * case array
   | Or of k_ext * k_ext
   | And of k_ext * k_ext
+  | Not of k_ext
   | EqCustom of string * k_ext * k_ext 
   | EqBool of k_ext * k_ext
   | LtBool of k_ext * k_ext
