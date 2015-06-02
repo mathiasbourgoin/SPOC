@@ -914,7 +914,11 @@ let map ((ker: ('a, 'b, ('c -> 'd), 'e,'f) sarek_kernel)) ?dev:(device=(Spoc.Dev
     (Vector.create (snd k3)  ~dev:device length)
   in
   Mem.to_device vec_in device;
-  let spoc_ker, kir_ker = gen res in
+  let target =
+    match device.Devices.specific_info with
+      Devices.CudaInfo _ -> Devices.Cuda
+    | Devices.OpenCLInfo _ -> Devices.OpenCL in
+  let spoc_ker, kir_ker = gen ~only:target res in
   let block = {blockX = 1; blockY = 1; blockZ = 1}
   and grid = {gridX = 1; gridY = 1; gridZ = 1}
   in spoc_ker#compile device;
