@@ -9,7 +9,7 @@ function spoc_opencl_flush(gi, queue_id) {
 
 //Provides: spoc_opencl_load_param_vec
 function spoc_opencl_load_param_vec(off, ker, idx, A, gi) {
-    //console.log("spoc_opencl_load_param_vec");
+    console.log("spoc_opencl_load_param_vec");
     var d_A = A[2];
     ker.setArg (off[1], d_A);
     off[1] = off[1]+1;
@@ -18,7 +18,7 @@ function spoc_opencl_load_param_vec(off, ker, idx, A, gi) {
 
 //Provides: spoc_opencl_load_param_int
 function spoc_opencl_load_param_int(off, ker, val, gi) {
-    //console.log("spoc_opencl_load_param_int");
+    console.log("spoc_opencl_load_param_int");
     ker.setArg (off[1], new Uint32Array([val]));
     off[1] = off[1]+1;
     return 0;
