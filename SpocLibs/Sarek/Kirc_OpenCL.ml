@@ -143,7 +143,7 @@ and parse i = function
     (match b with 
      | Empty  -> (parse i a)
      | Concat (c,d)  ->  ((parse i a)^", "^(parse i b))
-     | _  -> failwith "parse concat"
+     | _  -> assert false; failwith "parse concat"
     )
   | Constr (t,s,l) ->
     "build_"^t^"_"^s^"("^(List.fold_left (fun a b -> a^parse i b) "" l)^")"
@@ -272,7 +272,7 @@ and parse_int n = function
   | App (a,b) as v -> parse n v
   | RecGet (r,f) as v -> parse n v
   | a -> parse_float n a
-(*  | _  -> failwith "error parse_int" *)
+(*  | _  -> assert false; failwith "error parse_int" *)
 
 and parse_float n = function
   | IntId (s,_) -> s
@@ -288,10 +288,10 @@ and parse_float n = function
   | App (a,b) as v -> parse n v
   | Intrinsics gv -> parse_intrinsics gv
   | RecGet (r,f) as v -> parse n v
-  | a  -> print_ast a; failwith "opencl error parse_float"
+  | a  -> print_ast a; assert false; failwith "opencl error parse_float"
 
 and parse_vect = function
   | IntVect i  -> i
-  | _  -> failwith "error parse_vect"
+  | _  -> assert false; failwith "error parse_vect"
 
 and parse_intrinsics (cudas,opencls) = opencls
