@@ -1,18 +1,23 @@
 open Spoc
 open Vector 
 
-let gpu_gray = kern v width height ->
-    let gray = fun r g b ->
-    let open Std in
-      int_of_float
-       ((0.21 *. (float r)) +. 
-             (0.71 *. (float g)) +. 
-             (0.07 *. (float b)) ) 
-    in
-    let tid = Std.global_thread_id in 
-    if tid <= (width*height) then (
-    let i = (tid*4) in
-    let gr =  gray v.[<i>] v.[<i+1>] v.[<i+2>] in
-    v.[<i>] <- gr; 
-    v.[<i+1>] <-gr; 
-    v.[<i+2>] <-  gr)
+let devices = Spoc.Devices.init ~only:Devices.OpenCL ()
+let dev = devices.(1)
+       
+let double v1 v2  =
+  Kirc.map2 ~dev:dev (kern a b -> a + b) v1 v2
+
+let v1 = Vector.create Vector.int32 1024
+let v2 = Vector.create Vector.int32 1024
+
+let v2 =
+  for i = 0 to 1023 do
+    Mem.set v1 i (Int32.of_int i);
+    Mem.set v2 i (Int32.of_int (1023 -i));
+  done;
+  double v1 v2
+
+let _ = 
+  for i = 0 to 100 do
+    Printf.printf "%ld\n" (Mem.get v2 i);
+  done;

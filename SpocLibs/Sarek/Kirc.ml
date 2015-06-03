@@ -919,10 +919,12 @@ let map ((ker: ('a, 'b, ('c -> 'd), 'e,'f) sarek_kernel)) ?dev:(device=(Spoc.Dev
     match device.Devices.specific_info with
       Devices.CudaInfo _ -> Devices.Cuda
     | Devices.OpenCLInfo _ -> Devices.OpenCL in
-  let spoc_ker, kir_ker = gen ~only:target res in
+  (*spoc_ker, kir_ker =*)
+  ignore(gen ~only:target res);
+  let spoc_ker, kir_ker = res in
   let block = {blockX = 1; blockY = 1; blockZ = 1}
   and grid = {gridX = 1; gridY = 1; gridZ = 1}
-  in spoc_ker#compile device;
+  in spoc_ker#compile ~debug:true device;
   begin
     let open Devices in( 
       match device.Devices.specific_info with
@@ -961,8 +963,6 @@ let map ((ker: ('a, 'b, ('c -> 'd), 'e,'f) sarek_kernel)) ?dev:(device=(Spoc.Dev
       Kernel.Cuda.cuda_launch_grid offset bin grid block extra device.Devices.general_info 0;
    | Devices.OpenCLInfo _ ->
       let clFun = bin in
-      let offset = ref 0
-      in
       Kernel.OpenCL.opencl_load_arg offset device clFun 0 (arg_of_vec vec_in);
       Kernel.OpenCL.opencl_load_arg offset device clFun 1 (arg_of_vec vec_out);
       Kernel.OpenCL.opencl_launch_grid clFun grid block device.Devices.general_info 0
@@ -1044,7 +1044,7 @@ let map2 ((ker: ('a, 'b,('c -> 'd -> 'e), 'f,'g) sarek_kernel)) ?dev:(device=(Sp
   let spoc_ker, kir_ker = gen ~only:framework res  in
   let block = {blockX = 1; blockY = 1; blockZ = 1}
   and grid = {gridX = 1; gridY = 1; gridZ = 1}
-  in spoc_ker#compile  device;
+  in spoc_ker#compile ~debug:true  device;
   begin
     let open Devices in( 
       match device.Devices.specific_info with
