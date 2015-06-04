@@ -837,8 +837,8 @@ in
         | x=SELF; ">=."; y=SELF -> {t=TBool; e= BoolGtEF(_loc,x,y); loc = _loc}]
 		
 
-  | "!"
-      [ "!"; x = ident -> 
+  | "@"
+      [ "@"; x = ident -> 
         {t=TUnknown; 
          e=Ref(_loc,
                {t=TUnknown; e = Id (_loc, x); loc = _loc}

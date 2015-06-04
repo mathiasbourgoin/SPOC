@@ -1,23 +1,34 @@
 open Spoc
 open Vector 
 
-let devices = Spoc.Devices.init ~only:Devices.OpenCL ()
-let dev = devices.(1)
-       
-let double v1 v2  =
-  Kirc.map2 ~dev:dev (kern a b -> a + b) v1 v2
-
-let v1 = Vector.create Vector.int32 1024
-let v2 = Vector.create Vector.int32 1024
-
-let v2 =
-  for i = 0 to 1023 do
-    Mem.set v1 i (Int32.of_int i);
-    Mem.set v2 i (Int32.of_int (1023 -i));
-  done;
-  double v1 v2
-
-let _ = 
-  for i = 0 to 100 do
-    Printf.printf "%ld\n" (Mem.get v2 i);
-  done;
+(* not very original... *)
+let mandelbrot = kern img  -> 
+  let open Std in
+  (* 2D kernel *)
+  let y = thread_idx_y + (block_idx_y * block_dim_y) in
+  let x = thread_idx_x + (block_idx_x * block_dim_x) in
+  if (y < @height) && (x < @width) then 
+     begin  
+       let x0 = x  in
+       let y0 = y  in
+       let mutable cpt = 0 in 
+       let mutable x1 = 0. in
+       let mutable y1 = 0. in
+       let mutable x2 = 0. in
+       let mutable y2 = 0. in
+       let a = 4. *. ((float x0) /. (float @width))   -. 2. in
+       let b = 4. *. ((float y0) /. (float @height)) -. 2. in
+       let normal = fun x y ->
+           x *. x +. y *. y in
+       let mutable norm = 0. 
+       in
+       while ((cpt < @max_iter) && (norm <=. 4.)) do
+         cpt := (cpt + 1);
+         x2 := (x1 *. x1) -. (y1 *. y1) +. a;
+         y2 :=  (2. *. x1 *. y1 ) +. b;
+         x1 := x2;
+         y1 := y2;
+         norm := normal x1 y1;
+       done;
+       img.[<y * @width + x>] <- cpt
+     end
