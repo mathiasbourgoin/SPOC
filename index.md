@@ -7,14 +7,14 @@ layout: index
 SPOC is a set of tools for GPGPU programming with OCaml.
 
 The SPOC library enables the detection and use of GPGPU devices with
-OCaml using Cuda and OpenCL.  There is also a camlp4 syntax extension
+OCaml using Cuda and OpenCL. There is also a camlp4 syntax extension
 to handle external Cuda or OpenCL kernels, as well as a DSL (called
 Sarek) to express GPGPU kernels from the OCaml code.
 
 This work was part of my PhD thesis (done in
 [UPMC-LIP6](http://www.lip6.fr/?LANG=en), Paris, France) and was
 partially funded by the [OPENGPU project](http://opengpu.net/EN/).
-I'm currently in the [VERIMAG](http://www-verimag.imag.fr/?lang=en)
+I'm currently in the [Verimag](http://www-verimag.imag.fr/?lang=en)
 laboratory (Grenoble, France).
 
 It has currently been tested on multiple architectures and systems,
@@ -39,7 +39,7 @@ Spoc and Sarek are still in development, here is a list of features we
 plan to add (bold ones are currently in development) :
 
  - **Add a performance model to Sarek**
- - **Add custom types to Sarek (using Ctypes)** ->
+ - **Add custom types to Sarek (using Ctypes/Js_of_ocaml)** ->
    [example with Cards](https://github.com/mathiasbourgoin/SPOC/blob/master/SpocLibs/Sarek/extension/belote.ml)
  - **Allow recursive functions in Sarek**
  - Enable *List* handling with Spoc and Sarek
@@ -93,10 +93,9 @@ ___
 
 Requires :
     
-    * ocaml >= 4.01.0
+    * ocaml >= 4.01.0 (mainly tested with ocaml 4.02.1)
     * camlp4
     * ocamlfind 
-    * ocp-build
     * camlp4-extra (for ubuntu)
     * m4
     
