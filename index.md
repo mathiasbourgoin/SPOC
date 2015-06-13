@@ -49,8 +49,8 @@ plan to add (bold ones are currently in development) :
 
 ## Using WebCL and [js\_of\_ocaml][3] :
 
-This has been tested with Firefox 26-28 and [this plugin][5]
-under Windows (32bit or 64bit), Linux (Ubuntu 13.10) (32bit and 64 bit) and Mac OS/X Mavericks.
+This has been tested with Firefox 26-34 and [this plugin][5]
+under Windows 8.1 (32bit or 64bit), multiple Linux distributions (32bit and 64 bit) and Mac OS/X Mavericks and Yosemite.
 
 Of course, you'll also need to have OpenCL on your system.
 
@@ -58,7 +58,7 @@ Of course, you'll also need to have OpenCL on your system.
 
 You should install/have :
 
-* [Firefox 28+][4]
+* [Firefox 28-34][4]
 on your system,
 * [Nokia's plugin][5]
 * an OpenCL implementation for your sytem ([AMD's one][6]
@@ -76,6 +76,7 @@ ___
 </pre></div>
 <div id="column2" style="float:left; margin:7%;width:40%;">
 <pre><h2>Tutorials :</h2>
+<h4><a href="tutos/array2015.html"><strong><u>Array-2015 Demo</u></strong></a></h4>
 <h4><a href="tutos/OCaml2014.html"><strong><u>OCaml-2014 Demo</u></strong></a></h4>
 <h4><a href="tutos/imageFilter.html"><strong><u>ImageFilter</u></strong></a></h4>
 <h4><a href="tutos/mandel.html"><strong><u>Mandelbrot</u></strong></a></h4>
@@ -226,6 +227,6 @@ Mathias.Bourgoin (at) imag.fr
 [7]: docs/mandelbrot.html
 [8]: docs/testOpenCL.html
 [3]: http://ocsigen.org/js_of_ocaml/ 
-[4]: http://ftp.mozilla.org/pub/mozilla.org/firefox/releases/28.0/
+[4]: http://ftp.mozilla.org/pub/mozilla.org/firefox/releases/34.0/
 [5]: http://webcl.nokiaresearch.com/
 [6]: http://developer.amd.com/tools-and-sdks/heterogeneous-computing/amd-accelerated-parallel-processing-app-sdk/downloads/
