@@ -39,7 +39,7 @@ Spoc and Sarek are still in development, here is a list of features we
 plan to add (bold ones are currently in development) :
 
  - **Add a performance model to Sarek**
- - **Add custom types to Sarek (using Ctypes/Js_of_ocaml)** ->
+ - **Add custom types to Sarek (using Ctypes/Js\_of\_ocaml)** ->
    [example with Cards](https://github.com/mathiasbourgoin/SPOC/blob/master/SpocLibs/Sarek/extension/belote.ml)
  - **Allow recursive functions in Sarek**
  - Enable *List* handling with Spoc and Sarek
