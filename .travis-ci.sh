@@ -26,7 +26,7 @@ opam --git-version
 opam init
 eval `opam config env`
 case $OCAML_VERSION in
-    4.02) opam install camlp4;;
+    4.02|4.02.3) opam install camlp4;;
 esac
 #opam install ocp-build ctypes
 opam install ctypes
