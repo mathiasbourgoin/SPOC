@@ -31,7 +31,7 @@ start :
 
 sarek.cma: $(MLOBJ_B)
 	@echo  "\033[31m[sarek.cma]\033[0m"
-	@ocamlfind ocamlc -thread -package spoc -a -o sarek.cma $(MLOBJ_B)
+	ocamlfind ocamlc -thread -package spoc -a -o sarek.cma $(MLOBJ_B)
 
 libsarek.a:sarek.cma
 	@cp sarek.a libsarek.a	
@@ -73,7 +73,7 @@ ocp-clean :
 
 clean :
 	cd extension && make clean
-	rm -rf tmp docs ocp-build.root.* ~* *.cm* *.o *.so log a.out spoclevel-sarek *~
+	rm -rf tmp docs ocp-build.root.* ~* *.cm* *.o *.so log a.out spoclevel-sarek *~ sarek.a
 
 
 install : all uninstall
