@@ -31,6 +31,6 @@ case $OCAML_VERSION in
 esac
 #opam install ocp-build ctypes
 opam install ctypes
-opam install ${OPAM_DEPENDS}
+#opam install ${OPAM_DEPENDS}
 
 make check
