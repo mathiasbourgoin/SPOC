@@ -1,5 +1,9 @@
 MLSRC=$(shell ocamldep -sort *.ml)
 #Devices.ml Vector.ml OpenCL.ml Cuda.ml Mem.ml Tools.ml KernelOpenCL.ml KernelCuda.ml Kernel.ml
+mkfile_path=$(abspath $(lastword $(MAKEFILE_LIST)))
+PROJ=$(notdir $(patsubst %/,%,$(dir $(mkfile_path))))
+LIBNAME:=$(shell echo $(PROJ) | tr A-Z a-z)
+
 CSRC=$(wildcard *.c)
 COBJ=$(CSRC:.c=.o)
 MLOBJ_B=$(MLSRC:.ml=.cmo)
@@ -11,71 +15,70 @@ CC=ocamlc
 all : start | build extension/kernels_ext.cma js
 
 
-
 start :
-	@echo "\033[43m\033[30mBuilding SPOC\033[0m"
+	@echo "\033[43m\033[30mBuilding $(PROJ)\033[0m"
 
-js : Js/spoc_lib.js
+js : Js/$(LIBNAME)_lib.js
 
-Js/spoc_lib.js : $(JSSRC)
-	@echo "\033[43m\033[30mBuilding WebSPOC\033[0m"
-	@echo "\033[36m[spoc_lib.js]\033[0m"
+Js/$(LIBNAME)_lib.js : $(JSSRC)
+	@echo "\033[43m\033[30mBuilding Web$(PROJ)\033[0m"
+	@echo "\033[36m[$(LIBNAME)_lib.js]\033[0m"
 	@cd Js @@ make
 
 
 extension/kernels_ext.cma:extension/kernels_ext.ml
-	@echo "\033[43m\033[30mBuilding SPOC external kernel extension\033[0m"
+	@echo "\033[43m\033[30mBuilding $(PROJ) external kernel extension\033[0m"
 	@echo "\033[31m[kernels_ext.cma]\033[0m"
 	@cd extension && make 
 
 
 %.cmo:%.ml
 	@echo  "\033[32m[$@]\033[0m" 
-	@ocamlc -for-pack Spoc -c $< 2>>log
+	@ocamlc -for-pack $(PROJ) -c $< 2>>log
 
 %.cmx:%.ml
 	@echo  "\033[34m[$@]\033[0m" 
-	@ocamlopt -for-pack Spoc -c $< 2>>log
+	@ocamlopt -for-pack $(PROJ) -c $< 2>>log
 
 
 
 %.cmi:%.mli
 	@echo  "\033[35m[$@]\033[0m" 
-	@ocamlc -for-pack Spoc -c $< 2>>log
+	@ocamlc -for-pack $(PROJ) -c $< 2>>log
 
 %.o:%.c
 	@echo  "\033[33m[$@]\033[0m" 
 	@$(CC) -c $< 2>>log
 
-build : spoc.cma spoclevel spoc.cmxa spoc.o
+build : $(LIBNAME).cma $(LIBNAME)level $(LIBNAME).cmxa $(LIBNAME).o
 
-spoc.cmo : $(MLOBJ_B)  $(COBJ)
+$(LIBNAME).cmo : $(MLOBJ_B)  $(COBJ)
 	@echo  "\033[32m[spoc.cmo]\033[0m"
-	@ocamlc -pack  $(MLOBJ_B) $(COBJ) -o spoc.cmo
+	@ocamlc -pack  $(MLOBJ_B) $(COBJ) -o $(LIBNAME).cmo
 
-spoc.o : $(COBJ)
+$(LIBNAME).o : $(COBJ)
 	@echo  "\033[33m[$@]\033[0m" 
-	@$(CC) $(COBJ) -o spoc.o
+	@$(CC) $(COBJ) -o $(LIBNAME).o
 
 
-spoc.cma: spoc.o spoc.cmo $(COBJ)
-	@echo  "\033[31m[spoc.cma]\033[0m"
-	@ocamlmklib  -linkall -o spoc spoc.cmo $(COBJ) -cclib -lcamlrun
+$(LIBNAME).cma: $(LIBNAME).o $(LIBNAME).cmo $(COBJ)
+	@echo  "\033[31m[$(LIBNAME).cma]\033[0m"
+	@ocamlmklib  -linkall -o $(LIBNAME) $(LIBNAME).cmo $(COBJ) -cclib -lcamlrun
 
-spoc.cmx : spoc.o $(MLOBJ_N)  $(COBJ)
-	@echo  "\033[34m[spoc.cmx]\033[0m"	
-	@ocamlopt -pack $(MLOBJ_N) $(COBJ) -o spoc.cmx
+$(LIBNAME).cmx : $(LIBNAME).o $(MLOBJ_N)  $(COBJ)
+	@echo  "\033[34m[$(LIBNAME).cmx]\033[0m"	
+	@ocamlopt -pack $(MLOBJ_N) $(COBJ) -o $(LIBNAME).cmx
 
-spoc.cmxa : spoc.cmx spoc.o $(COBJ)
-	@echo  "\033[31m[spoc.cmxa]\033[0m"
-	@ocamlmklib -linkall -o spoc spoc.cmx $(COBJ) -cclib -lasmrun
+$(LIBNAME).cmxa : $(LIBNAME).cmx $(LIBNAME).o $(COBJ)
+	@echo  "\033[31m[$(LIBNAME).cmxa]\033[0m"
+	@ocamlmklib -linkall -o $(LIBNAME) $(LIBNAME).cmx $(COBJ) -cclib -lasmrun
 
-spoclevel : spoc.cma extension/kernels_ext.cma
-	@echo   "\033[36m[spoclevel]\033[0m"
+$(LIBNAME)level : $(LIBNAME).cma extension/kernels_ext.cma
+	@echo   "\033[36m[$(LIBNAME)level]\033[0m"
 	@ocamlmktop -custom -I +camlp4 -cclib -L. dynlink.cma \
 	camlp4o.cma extension/kernels_ext.cma str.cma bigarray.cma \
-	-cclib -lcamlrun -cclib -lbigarray -cclib -lspoc spoc.cma \
-	-o spoclevel
+	-cclib -lcamlrun -cclib -lbigarray -cclib -l$(LIBNAME) $(LIBNAME).cma \
+	-o $(LIBNAME)level
 
 ocp :
 	ocp-build -init
@@ -88,22 +91,22 @@ doc : uninstall install
 	mkdir -p tmp
 	for i in *.mli; do \
 	echo $$i; \
-	echo "open Spoc" > tmp/$$i; \
+	echo "open $(PROJ)" > tmp/$$i; \
 	cat $$i >> tmp/$$i; \
 	done
 	mkdir -p docs
-	ocamlfind ocamldoc -thread  -html -package spoc -d docs  tmp/*.mli
+	ocamlfind ocamldoc -thread  -html -package $(LIBNAME) -d docs  tmp/*.mli
 	rm -rf tmp
 
 install : all uninstall
-	@echo "\033[43m\033[30mInstalling SPOC\033[0m"
-	@ocamlfind install spoc *.cma *.a *.so *.cmxa spoc.cmi META 2>> log
+	@echo "\033[43m\033[30mInstalling $(PROJ)\033[0m"
+	@ocamlfind install $(LIBNAME) *.cma *.a *.so *.cmxa $(LIBNAME).cmi META 2>> log
 	@cd extension && make install
 	@cd Js && make install
 
 ocp-install:
 	ocp-build install
-	cp _obuild/spoc/*.cmi `ocamlfind query spoc`
+	cp _obuild/$(LIBNAME)/*.cmi `ocamlfind query spoc`
 	cd extension && make install
 	cd Js && make install
 
@@ -111,7 +114,7 @@ uninstall :
 	@echo "\033[43m\033[30mRemoving Spoc\033[0m"
 	@cd extension && make uninstall
 	@cd Js && make uninstall
-	@ocamlfind remove spoc 2>>log
+	@ocamlfind remove $(LIBNAME) 2>>log
 
 
 
@@ -155,4 +158,4 @@ ocp-clean:
 clean :
 	cd extension && make clean
 	cd Js && make clean
-	rm -rf tmp docs ocp-build.root.* ~* *.cm* *.o *.so log a.out spoclevel *~ *.a
+	rm -rf tmp docs ocp-build.root.* ~* *.cm* *.o *.so log a.out $(LIBNAME)level *~ *.a
