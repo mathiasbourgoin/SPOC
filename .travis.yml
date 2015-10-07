@@ -4,5 +4,5 @@ env:
   global:
     - OPAM_DEPENDS=""
   matrix:
-    - OCAML_VERSION=4.03.2 OPAM_VERSION=1.1.0
+    - OCAML_VERSION=4.03.2 OPAM_VERSION=1.2.0
 
