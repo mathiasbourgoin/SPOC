@@ -1,4 +1,5 @@
-MLSRC=Devices.ml Vector.ml OpenCL.ml Cuda.ml Mem.ml Tools.ml KernelOpenCL.ml KernelCuda.ml Kernel.ml
+MLSRC=$(shell ocamldep -sort *.ml)
+#Devices.ml Vector.ml OpenCL.ml Cuda.ml Mem.ml Tools.ml KernelOpenCL.ml KernelCuda.ml Kernel.ml
 CSRC=$(wildcard *.c)
 COBJ=$(CSRC:.c=.o)
 MLOBJ_B=$(MLSRC:.ml=.cmo)
@@ -8,6 +9,8 @@ CC=ocamlc
 
 
 all : start | build extension/kernels_ext.cma js
+
+
 
 start :
 	@echo "\033[43m\033[30mBuilding SPOC\033[0m"
@@ -141,7 +144,8 @@ android:
 
 
 depend :
-	ocamldep *.ml *.mli > .depend
+	ocamldep *.ml *.mli  > .depend
+
 
 include  .depend
 

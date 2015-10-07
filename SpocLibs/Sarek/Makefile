@@ -1,5 +1,7 @@
-MLSRC=Kirc_Ast.ml Kirc_Cuda.ml Kirc_OpenCL.ml Kirc.ml
-MLI=Kirc_Ast.mli Kirc.mli
+MLSRC=$(shell ocamldep -sort *.ml)
+#Kirc_Ast.ml Kirc_Cuda.ml Kirc_OpenCL.ml Kirc.ml
+MLI=$(shellocamldep -sort *.mli)
+#Kirc_Ast.mli Kirc.mli
 MLOBJ_B= $(MLSRC:.ml=.cmo) 
 MLOBJ_N=$(MLSRC:.ml=.cmx)
 EXTSRC=$(wildcard extension/*.ml)

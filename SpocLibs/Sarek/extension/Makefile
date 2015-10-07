@@ -54,7 +54,7 @@ test: kernels_int.cma test.ml
 	ocamlfind ocamlc -thread -package ctypes,spoc,sarek, -linkpkg -o $@ $<
 
 %.pp.nat: %.pp.ml
-	ocamlfind ocamlopt -nodynlink -thread  -package ctypes,spoc,sarek,graphics,camlimages,camlimages.png -linkpkg -o $@ $<
+	ocamlfind ocamlopt -nodynlink -thread  -package ctypes,spoc,sarek,graphics,camlimages,tsdl,camlimages.png -linkpkg -o $@ $<
 
 %.nat : %.ml
 	ocamlfind ocamlopt -unsafe -thread -package spoc,sarek \
@@ -69,4 +69,4 @@ pp_asm: all
 	ocamlfind ocamlopt -thread -package ctypes,spoc,sarek -linkpkg test_pp.ml
 
 clean:
-	rm -rf *.cmo *,cmx *.out *~ *.cmi camlprog.exe *.cma *.asm *.pp.ml *.pp.nat *.pp.byte log
+	rm -rf *.cmo *.cmx *.out *~ *.cmi camlprog.exe *.cma *.asm *.pp.ml *.pp.nat *.pp.byte log

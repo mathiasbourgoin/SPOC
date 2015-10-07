@@ -180,12 +180,19 @@ typedef struct spoc_vector {
 
 
 
-#define OPENCL_TRY(name,fun)                                    \
-  {                                                             \
-    cl_int err = fun;                                              \
-    if (err != CL_SUCCESS) {                                       \
+#define OPENCL_TRY(name,fun)						\
+  {									\
+    cl_int err = fun;							\
+    if (err != CL_SUCCESS) {						\
       fprintf(stderr,"ERROR %d calling %s().\n", err,name);             \
-      return -1;                                                        \
+    }                                                                   \
+  }
+
+#define OPENCL_TRY2(name,fun, err)						\
+  {									\
+    err = fun;							\
+    if (err != CL_SUCCESS) {						\
+      fprintf(stderr,"ERROR %d calling %s().\n", err,name);             \
     }                                                                   \
   }
 

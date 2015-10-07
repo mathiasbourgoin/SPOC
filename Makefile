@@ -1,12 +1,14 @@
+nprocs=$(shell getconf _NPROCESSORS_ONLN)
+
 all:
-	cd Spoc && make && cd ..
+	cd Spoc && make -j$(nprocs) && cd ..
 
 clean:
 	cd Spoc && make clean && cd ..
 
 
-install:
-	cd Spoc && make install && cd ..
+install: 
+	cd Spoc && make -j$(nprocs) install && cd ..
 
 uninstall:
 	cd Spoc && make uninstall && cd ..
@@ -15,7 +17,7 @@ samples: install
 	cd Samples; make
 
 install_sarek:
-	cd SpocLibs/Sarek; make && make install
+	cd SpocLibs/Sarek; make -j$(nprocs) && make install
 
 sarek_samples:
 	cd SpocLibs/Samples/Mandelbrot; make

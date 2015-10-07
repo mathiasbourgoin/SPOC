@@ -37,6 +37,8 @@ open Devices
 open Vector
 
 (* OpenCL Exceptions *)
+exception NO_PLATFORM
+ 
 exception No_OpenCL_Device
 
 exception OPENCL_ERROR_UNKNOWN
@@ -84,7 +86,8 @@ exception INVALID_ARG_SIZE
 exception INVALID_COMMAND_QUEUE
 
 let _ =
-  (Callback.register_exception "no_opencl_device" No_OpenCL_Device;
+  (Callback.register_exception "no_platform" NO_PLATFORM;
+   Callback.register_exception "no_opencl_device" No_OpenCL_Device;
    Callback.register_exception "opencl_error_unknown" OPENCL_ERROR_UNKNOWN;
    Callback.register_exception "opencl_invalid_context" INVALID_CONTEXT;
    Callback.register_exception "opencl_invalid_device" INVALID_DEVICE;
