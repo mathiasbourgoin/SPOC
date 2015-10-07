@@ -18,15 +18,15 @@ start :
 
 %.cmo:%.ml
 	@echo  "\033[32m[$@]\033[0m" 
-	@ocamlfind ocamlc -thread -package spoc -c $< 2>>log
+	@ocamlfind ocamlc -thread -package spoc -c $< 
 
 %.cmx:%.ml
 	@echo  "\033[32m[$@]\033[0m" 
-	@ocamlfind ocamlopt -thread -package spoc -c $< 2>>log
+	@ocamlfind ocamlopt -thread -package spoc -c $< 
 
 %.cmi:%.mli
 	@echo  "\033[32m[$@]\033[0m" 
-	@ocamlfind ocamlc -thread -package spoc -c $< 2>>log
+	@ocamlfind ocamlc -thread -package spoc -c $< 
 
 
 sarek.cma: $(MLOBJ_B)
