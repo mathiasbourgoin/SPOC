@@ -14,7 +14,6 @@
   0. You just DO WHAT THE FUCK YOU WANT TO.
 *)
 open Spoc
-
 open Kirc
 
 
@@ -24,7 +23,9 @@ let gpu_bitonic = kern v j k ->
   let i = thread_idx_x + block_dim_x * block_idx_x in
   let ixj = Math.xor i j in
   let mutable temp = 0. in
-  if ixj >= i then
+  if ixj < i then
+    ()
+  else
     begin
       if (Math.logical_and i k) = 0  then
         (
@@ -110,6 +111,16 @@ let measure_time s f =
   a;;
   
 
+let nearest_pow2 i  =
+  let rec aux acc = 
+    let res = acc*2 in
+    if res < i then
+      aux res
+    else acc in
+  let r = aux 1 in
+  if r <> i then
+    Printf.printf "Changed size value to a power of two (%d -> %d)\n" i r;
+  r
 
 let () = 
   let devid = ref 1
@@ -120,7 +131,7 @@ let () =
 
   let arg1 = ("-device" , Arg.Int (fun i  -> devid := i),
 	      "number of the device [0]")
-  and arg2 = ("-size" , Arg.Int (fun i  -> size := i),
+  and arg2 = ("-size" , Arg.Int (fun i  -> size := nearest_pow2 i),
 	      "size of the vector to sort [1024]")
   and arg3 = ("-bench" , Arg.Bool (fun b  -> compare := b),
 	      "compare time with sequential computation [true]")
@@ -174,6 +185,7 @@ let () =
 	      Spoc.Kernel.gridY = 1; Spoc.Kernel.gridZ = 1} in
   ignore(Kirc.gen ~only:Devices.OpenCL
            gpu_bitonic);
+
   let j,k = ref 0,ref 2 in
   measure_time "Parallel Bitonic" (fun () ->
       while !k <= size do
@@ -188,12 +200,12 @@ let () =
       Devices.flush !dev ();
     );
 
-  if check then
     (
       let r = ref (-. infinity) in
       for i = 0 to size - 1 do
         if gpu_vect.[<i>] < !r then
-          failwith (Printf.sprintf "error, %g <  %g" gpu_vect.[<i>] !r)
+          ( Printf.printf "%d -> %s\n" i (Printf.sprintf "error, %g <  %g" gpu_vect.[<i>] !r);
+            r := gpu_vect.[<i>]; )
         else
           r := gpu_vect.[<i>]; 
       done;

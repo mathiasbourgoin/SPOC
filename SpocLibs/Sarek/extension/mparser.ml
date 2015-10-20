@@ -66,22 +66,22 @@ let gen_arg_from_patt2 p =
 
     (let var = (Hashtbl.find !current_args x) in   
      match var.var_type with
-     | TUnknown  -> <:expr<(new_unknown_var $`int:var.n$)>>
+     | TUnknown  -> <:expr<(new_unknown_var $`int:var.n$ $str:x$)>>
      | TInt32 | TInt64 ->                                                 
-       <:expr<(new_int_var $`int:var.n$)>>
+       <:expr<(new_int_var $`int:var.n$  $str:x$)>>
      | TFloat32 -> 
-       <:expr<(new_float_var $`int:var.n$)>>
+       <:expr<(new_float_var $`int:var.n$  $str:x$)>>
      | TFloat64  -> 
-       <:expr<(new_float64_var $`int:var.n$)>>
+       <:expr<(new_float64_var $`int:var.n$  $str:x$)>>
      | Custom (t,n) ->
-       <:expr<(new_custom_var $str:n$ $`int:var.n$)>>
+       <:expr<(new_custom_var $str:n$ $`int:var.n$  $str:x$)>>
      | TVec k -> 
        (match k with
-        | TInt32 | TInt64  ->   <:expr<(new_int_vec_var $`int:var.n$)>>
-        | TFloat32 ->   <:expr<(new_float_vec_var $`int:var.n$)>>
-        | TFloat64 ->   <:expr<(new_double_vec_var $`int:var.n$)>>
+        | TInt32 | TInt64  ->   <:expr<(new_int_vec_var $`int:var.n$ $str:x$)>>
+        | TFloat32 ->   <:expr<(new_float_vec_var $`int:var.n$ $str:x$)>>
+        | TFloat64 ->   <:expr<(new_double_vec_var $`int:var.n$  $str:x$)>>
         | Custom (t,n) ->
-          <:expr<(new_custom_vec_var $str:n$ $`int:var.n$)>>
+          <:expr<(new_custom_vec_var $str:n$ $`int:var.n$  $str:x$)>>
         | _  -> failwith "Forbidden vector  type in kernel declaration")
      | _ ->  failwith "gap : unimplemented yet"
     )

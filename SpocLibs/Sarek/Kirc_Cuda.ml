@@ -92,21 +92,22 @@ and parse i = function
                     (parse i x)^";\n"^
                     (indent (i))^(parse i y)^
                     ";\n"^(indent (i))^"}\n"
-  | VecVar (t,i)  -> 
+  | VecVar (t,i,s)  -> 
     (match t with
      | Int _ ->"int"
      | Float _ -> "float"
      | Double _ -> "double"
-     | Custom (n,_) -> ("struct "^n^"_sarek")
+     | Custom (n,_,ss) -> ("struct "^n^"_sarek")
      | _ -> assert false
-    )^("* spoc_var"^(string_of_int (i)))
+    )^"* "^s (*("* spoc_var"^(string_of_int (i)))*)
   | Block b -> (indent i)^"{\n"^parse (i+1) b^"\n"^(indent i)^"}"
   | IdName s  ->  s
-  | IntVar s -> ("int spoc_var"^(string_of_int s))
-  | FloatVar s -> ("float spoc_var"^(string_of_int s))
-  | UnitVar v -> assert false
-  | CastDoubleVar s -> ("(double) spoc_var"^(string_of_int s))
-  | DoubleVar s -> ("double spoc_var"^(string_of_int s))
+  | IntVar (i,s) -> ("int "^s)
+
+  | FloatVar (i,s) -> ("float spoc_var"^(string_of_int i))
+  | UnitVar (v,s) -> assert false
+  | CastDoubleVar (i,s) -> ("(double) spoc_var"^(string_of_int i))
+  | DoubleVar (i,s) -> ("double "^s)
   | Arr (s,l,t,m) -> 
     let memspace = 
       match m with 
@@ -229,7 +230,7 @@ and parse i = function
     (parse i r)^"."^f
   | RecSet (r,v) ->
     (parse i r)^" = "^(parse i v)
-  | Custom (n,s) -> ("struct "^n^"_sarek spoc_var"^(string_of_int s))
+  | Custom (n,s,ss) -> ("struct "^n^"_sarek "^ss)
   | Match (s,e,l) ->
     let match_e = parse 0 e in
     let switch_content  = 
@@ -274,7 +275,7 @@ and parse_float n = function
   | IntId (s,_) -> s
   | Float f  ->  (string_of_float f)^"f"
   | GFloat f  ->  (string_of_float (f ()))^"f"
-  | CastDoubleVar s -> ("(double) spoc_var"^(string_of_int s))
+  | CastDoubleVar (i,s) -> ("(double) spoc_var"^(string_of_int i))
   | Double f  ->  "(double) "^(string_of_float f)
   | IntVecAcc (s,i)  -> (parse n s)^"["^(parse_int n i)^"]"
   | Plusf (a,b) as v ->  parse n v

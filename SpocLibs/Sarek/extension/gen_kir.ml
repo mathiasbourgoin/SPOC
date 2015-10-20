@@ -54,7 +54,7 @@ let rec  parse_int2 i t=
 	 if var.is_global then
            <:expr<global_int_var $ExId(_loc,s)$>>
 	 else
-           <:expr<var  $ExInt(_loc, string_of_int var.n)$>>
+           <:expr<var  $ExInt(_loc, string_of_int var.n)$ $str:string_of_ident s$>>
        with
        | Not_found ->
 	  try 
@@ -107,7 +107,7 @@ and  parse_float2 f t=
 	 if var.is_global then
            <:expr<global_float_var $ExId(_loc,s)$>>
 	 else
-           <:expr<var  $ExInt(_loc, string_of_int var.n)$>>
+           <:expr<var  $ExInt(_loc, string_of_int var.n)$  $str:string_of_ident s$>>
        with
        | Not_found ->
 	  try 
@@ -259,13 +259,13 @@ and parse_body2 body bool =
 		in
 		let rec f () = 
 		  match var.t with
-		  | TInt32 -> <:expr<(new_int_var $`int:gen_var.n$)>>, (aux y)
-		  | TInt64 -> <:expr<(new_int_var $`int:gen_var.n$)>>, (aux y)
-		  | TFloat32 -> <:expr<(new_float_var $`int:gen_var.n$)>>,(aux y)
-		  | TFloat64 -> <:expr<(new_double_var $`int:gen_var.n$)>>,(aux y)
+    | TInt32 -> <:expr<(new_int_var $`int:gen_var.n$ $str:string_of_ident s$)>>, (aux y)
+		  | TInt64 -> <:expr<(new_int_var $`int:gen_var.n$ $str:string_of_ident s$)>>, (aux y)
+		  | TFloat32 -> <:expr<(new_float_var $`int:gen_var.n$ $str:string_of_ident s$)>>,(aux y)
+		  | TFloat64 -> <:expr<(new_double_var $`int:gen_var.n$ $str:string_of_ident s$)>>,(aux y)
 		  | TApp _ -> expr_of_app var.t _loc gen_var y
 		  | Custom (t,n) ->
-                     <:expr<(new_custom_var $str:n$ $`int:gen_var.n$)>>,(aux y)
+                     <:expr<(new_custom_var $str:n$ $`int:gen_var.n$ $str:string_of_ident s$)>>,(aux y)
 		  | TUnknown -> if gen_var.var_type <> TUnknown then 
 				  ( var.t <- gen_var.var_type;
 				    f ();)
@@ -392,7 +392,7 @@ and parse_body2 body bool =
 		 | TInt32 -> <:expr<global_int_var (fun () -> $ExId(_loc,s)$)>>
 		 | _ -> assert false
 	       else
-		 <:expr<var  $ExInt(_loc, string_of_int var.n)$>>
+		 <:expr<var  $ExInt(_loc, string_of_int var.n)$  $str:string_of_ident s$>>
 	   )
 	 with _  ->  
            try 
@@ -598,7 +598,9 @@ and parse_body2 body bool =
          return_type := cons2.t;
        (<:expr< spoc_ife $p1$ $p2$ $p3$>>)
     | If (_loc, cond, cons1) ->
-       (<:expr< spoc_if $aux cond$ $aux cons1$>>)
+      let cons1_ = aux cons1 in
+      return_type := cons1.t;
+       (<:expr< spoc_if $aux cond$ $cons1_$>>)
     | DoLoop (_loc, id, min, max, body) ->
        (<:expr<spoc_do $aux id$ $aux min$ $aux max$ $aux body$>>)
     | While (_loc, cond, body) ->
@@ -749,14 +751,14 @@ and parse_body2 body bool =
 		      with _ -> assert false) in
 		    let ex1,ex2 = 
                       match var.t with
-                      | TInt32 -> <:expr<(new_int_var $`int:gen_var.n$)>>, (aux y)
-                      | TInt64 -> <:expr<(new_int_var $`int:gen_var.n$)>>, (aux y)
-                      | TFloat32 -> <:expr<(new_float_var $`int:gen_var.n$)>>,(aux y)
-                      | TFloat64 -> <:expr<(new_double_var $`int:gen_var.n$)>>,(aux y)
-		      | TBool -> <:expr< (new_int_var $`int:gen_var.n$)>>, (aux y) (* use int instead of bools *)
+                      | TInt32 -> <:expr<(new_int_var $`int:gen_var.n$ $str:string_of_ident s$) >>, (aux y)
+                      | TInt64 -> <:expr<(new_int_var $`int:gen_var.n$ $str:string_of_ident s$)>>, (aux y)
+                      | TFloat32 -> <:expr<(new_float_var $`int:gen_var.n$$str:string_of_ident s$)>>,(aux y)
+                      | TFloat64 -> <:expr<(new_double_var $`int:gen_var.n$ $str:string_of_ident s$)>>,(aux y)
+		      | TBool -> <:expr< (new_int_var $`int:gen_var.n$ $str:string_of_ident s$)>>, (aux y) (* use int instead of bools *)
                       | TUnit -> <:expr<Unit>>,aux y;
 		      | Custom (t,n) ->
-			 <:expr<(new_custom_var $str:n$ $`int:gen_var.n$)>>,(aux y)
+			 <:expr<(new_custom_var $str:n$ $`int:gen_var.n$ $str:string_of_ident s$)>>,(aux y)
                       | _  -> assert (not debug); 
 			      failwith "unknown var type"
 		    in

@@ -39,7 +39,7 @@ let space i =
 and  indent i = 
   let rec aux acc = function
     | 0 -> acc
-    | i -> aux (acc^"\t") (i-1)
+    | i -> aux (acc^"  ") (i-1)
   in aux "" i
 
 
@@ -101,24 +101,24 @@ and parse i = function
   | Local (x,y)  -> (parse i x)^";\n"^
                     (indent (i))^(parse i y)^
                     "\n"^(indent (i))^""
-  | VecVar (t,i)  ->
+  | VecVar (t,i,s)  ->
      (match t with
       | Int _ ->"__global int"
       | Float _ -> "__global float"
       | Double _ -> "__global double"
-      | Custom (n,_) -> ("__global struct "^n^"_sarek")
+      | Custom (n,_,ss) -> ("__global struct "^n^"_sarek")
       | _ -> assert false
-     )^("* spoc_var"^(string_of_int (i)))
+     )^("* "^s)
 	 
   | Block b -> (indent i)^"{\n"^parse (i+1) b^"\n"^(indent i)^"}"
   | IdName s  ->  s
-  | IntVar s -> ("int spoc_var"^(string_of_int s))
-  | FloatVar s -> ("float spoc_var"^(string_of_int s))
-  | Custom (n,s) -> ("struct "^n^"_sarek spoc_var"^(string_of_int s))
-  | UnitVar v -> assert false
-  | CastDoubleVar s -> ("(double) spoc_var"^(string_of_int s))
-  | DoubleVar s -> ("double spoc_var"^(string_of_int s))
-  | BoolVar s -> ("in spoc_var"^(string_of_int s)) 
+  | IntVar (i,s) -> ("int "^s)
+  | FloatVar (i,s) -> ("float "^s)
+  | Custom (n,s,ss) -> ("struct "^n^"_sarek "^ss)
+  | UnitVar (v,s) -> assert false
+  | CastDoubleVar (i,s) -> ("(double) spoc_var"^(string_of_int i))
+  | DoubleVar (i,s) -> ("double "^s)
+  | BoolVar (i,s) -> ("int "^s)
   | Arr (s,l,t,m) -> 
     let memspace = 
       match m with 
@@ -138,7 +138,7 @@ and parse i = function
   | Params k -> 
     ("__kernel void spoc_dummy ( "^
      (if (fst !return_v) <> "" then
-        (fst !return_v)^", " else "")^(parse i k)^" ) \n{\n"^(indent (i+1)))
+        (fst !return_v)^", " else "")^(parse i k)^" ) {\n"^(indent (i+1)))
   |Concat (a,b)  ->  
     (match b with 
      | Empty  -> (parse i a)
@@ -156,7 +156,7 @@ and parse i = function
   | RecGet (r,f) ->
     (parse i r)^"."^f
   | RecSet (r,v) ->
-    (parse i r)^"/*RECSET*/  = "^(parse i v)
+    (parse i r)^" = "^(parse i v)
   | Plus  (a,b) -> ((parse_int i a)^" + "^(parse_int i b))
   | Plusf  (a,b) -> ((parse_float i a)^" + "^(parse_float i b))
   | Min  (a,b) -> ((parse_int i a)^" - "^(parse_int i b))
@@ -170,25 +170,29 @@ and parse i = function
   | Id (s)  -> s
   | Set (var,value) 
   | Acc (var,value) -> 
-    ((parse i var)^" /*ACC*/ = "^
+    ((parse i var)^" = "^
      (parse i value))
   | Decl (var) ->
      (parse i var)
   | SetLocalVar (v,gv,k) -> 
-    ((parse i v)^"/*SLV*/ = "^
+    ((parse i v)^" = "^
      (match gv with
       | Intrinsics i -> (parse_intrinsics i)
       | _ -> (parse i gv))^";\n"^(indent i)^(parse i k))
-  | Return k -> 
-    (if (snd !return_v) <> "" then
-       snd !return_v
-     else
-       "return ")^
-    (parse i k)
-  | Unit  -> ""
+  | Return k ->
+    (match k with
+     |SetV _ | RecSet _ | Set _ | SetLocalVar _ | IntVecAcc _
+     | Acc _ | If _ -> (parse i k)
+     | _  ->
+       (if (snd !return_v) <> "" then
+          snd !return_v
+        else
+          "return ")^
+       (parse i k))
+    | Unit  -> ";"
   | IntVecAcc (vec,idx)  -> (parse i vec)^"["^(parse i idx)^"]"
   | SetV (vecacc,value)  -> (
-      (parse i vecacc)^"/*SETV*/ = "^(parse i value)^";") 
+      (parse i vecacc)^" = "^(parse i value)^";") 
   |Int  a  -> string_of_int a
   | Float f -> (string_of_float f)^"f"
   | GInt  a  -> Int32.to_string (a ())
@@ -197,8 +201,8 @@ and parse i = function
   | IntId (s,_) -> s
   |Intrinsics gv -> parse_intrinsics gv
   | Seq (a,b)  -> (parse i a)^" ;\n"^(indent i)^(parse i b)
-  | Ife(a,b,c) -> "if ("^(parse i a)^"){\n"^(indent (i+1))^(parse (i+1) b)^";}\n"^(indent i)^"else{\n"^(indent (i+1))^(parse (i+1) c)^";}\n"^(indent i)
-  | If (a,b) -> "if ("^(parse i a)^")\n"^(indent i)^"{\n"^(indent (i+1))^(parse (i+1) b)^";\n"^(indent i)^"}"^(indent i)
+  | Ife(a,b,c) -> "if ("^(parse i a)^"){\n"^(indent (i+1))^(parse (i+1) b)^"\n"^(indent i)^"}\n"^(indent i)^"else{\n"^(indent (i+1))^(parse (i+1) c)^"\n"^(indent i)^"}\n"^(indent i)
+  | If (a,b) -> "if ("^(parse i a)^")"^"{\n"^(indent (i+1))^(parse (i+1) b)^";\n"^(indent i)^"}"^(indent i)
   | Or (a,b) -> (parse i a)^" || "^(parse i b)
   | And (a,b) -> (parse i a)^" && "^(parse i b)
   | Not (a) -> "!"^(parse i a)
@@ -257,7 +261,7 @@ and parse i = function
         " " l in
     ("switch ("^match_e^"."^s^"_sarek_tag"^"){"^switch_content^
     "}") 
-
+  | _ -> assert false
 
 and parse_int n = function
   | IntId (s,_) -> s
@@ -278,7 +282,7 @@ and parse_float n = function
   | IntId (s,_) -> s
   | Float f  ->  (string_of_float f)^"f"
   | GFloat f  ->  (string_of_float (f ()))^"f"
-  | CastDoubleVar s -> ("(double) spoc_var"^(string_of_int s))
+  | CastDoubleVar(i,s) -> ("(double) spoc_var"^(string_of_int i))
   | Double f  ->  "(double) "^(string_of_float f)
   | IntVecAcc (s,i)  -> (parse n s)^"["^(parse_int n i)^"]"
   | Plusf (a,b) as v ->  parse n v
@@ -288,10 +292,10 @@ and parse_float n = function
   | App (a,b) as v -> parse n v
   | Intrinsics gv -> parse_intrinsics gv
   | RecGet (r,f) as v -> parse n v
-  | a  -> print_ast a; assert false; failwith "opencl error parse_float"
+  | a  -> print_ast a; failwith "opencl error parse_float"
 
 and parse_vect = function
   | IntVect i  -> i
-  | _  -> assert false; failwith "error parse_vect"
+  | _  -> failwith "opencl error parse_vect"
 
 and parse_intrinsics (cudas,opencls) = opencls

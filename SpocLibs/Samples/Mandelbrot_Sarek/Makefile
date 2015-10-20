@@ -3,10 +3,10 @@ all :
 
 
 test:
-	camlp4 -I +camlp4 -I ~/.opam/4.01.0/lib/spoc -I ~/.opam/4.01.0/lib/sarek_syntax -parser o -parser op -printer o kernels_int.cma -printer kernels_ext.cma Mandelbrot.ml
+	camlp4  -I +camlp4 -I `ocamlfind query spoc_external_kernels` -I `ocamlfind query sarek_syntax` -parser o -parser op -printer o kernels_int.cma -printer kernels_ext.cma Mandelbrot.ml
 
 pp:
-	camlp4 -I +camlp4 -I ~/.opam/4.01.0/lib/spoc_external_kernels -I ~/.opam/4.01.0/lib/sarek_syntax -parser o -parser op -printer o kernels_int.cma -printer kernels_ext.cma Mandelbrot.ml > Mandelbrot_pp.ml
+	camlp4  -I +camlp4 -I `ocamlfind query spoc_external_kernels` -I `ocamlfind query sarek_syntax` -parser o -parser op -printer o kernels_int.cma -printer kernels_ext.cma Mandelbrot.ml > Mandelbrot_pp.ml
 	ocamlfind ocamlopt -thread -package spoc,sarek,graphics -linkpkg -package sarek_syntax -syntax camlp4o -o Mandelbrot_pp.asm Mandelbrot_pp.ml
 
 clean:

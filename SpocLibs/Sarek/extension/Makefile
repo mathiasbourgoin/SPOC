@@ -1,7 +1,7 @@
 P4FLAGS =  -I +camlp4 -pp camlp4of dynlink.cma camlp4lib.cma 
 
 all:
-	@make -j4 kernels_int.cma 2>log
+	@make -j4 kernels_int.cma 
 
 
 install: kernels_int.cma

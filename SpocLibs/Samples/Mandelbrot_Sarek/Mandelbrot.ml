@@ -21,7 +21,7 @@ open Kirc
 let width = ref 1000l;;
 let height = ref 1000l;;
 
-let max_iter  = ref 10000l;;
+let max_iter  = ref 512l;;
 
 let zoom = ref 1. 
 let shiftx = ref 0l
@@ -38,24 +38,24 @@ let open Std in
 let normalize = fun x y -> x *. x +. y *. y in
   let y = thread_idx_y + (block_idx_y * block_dim_y) in
   let x = thread_idx_x + (block_idx_x * block_dim_x) in
-  (if (y >= !height) || (x >= !width) then
+  (if (y >= @height) || (x >= @width) then
       return () ;
   );
 (*  let shiftx = 0 in
   let shifty = 0 in*)
-  let x0 = (x + !shiftx) in
-  let y0 = (y + !shifty) in
+  let x0 = (x + @shiftx) in
+  let y0 = (y + @shifty) in
   let mutable cpt = 0 in 
   let mutable x1 = 0. in
   let mutable y1 = 0. in
   let mutable x2 = 0. in
   let mutable y2 = 0. in
-  let a = 4. *. ((float x0) /. (float !width)) /. !zoom  -. 2. in
-  let b = 4. *. ((float y0) /. (float !height)) /. !zoom -. 2. in
+  let a = 4. *. ((float x0) /. (float @width)) /. @zoom  -. 2. in
+  let b = 4. *. ((float y0) /. (float @height)) /. @zoom -. 2. in
  
   let mutable norm = normalize x1  y1
   in
-  while ((cpt < !max_iter) && (norm <=. 4.)) do
+  while ((cpt < @max_iter) && (norm <=. 4.)) do
     cpt := (cpt + 1);
     x2 := (x1 *. x1) -. (y1 *. y1) +. a;
     y2 :=  (2. *. x1 *. y1 ) +. b;
@@ -63,7 +63,7 @@ let normalize = fun x y -> x *. x +. y *. y in
     y1 := y2;
     norm := (x1 *. x1 ) +. ( y1 *. y1);
   done;
-  img.[<y * !width + x>] <- cpt
+  img.[<y * @width + x>] <- cpt
  ;; 
 
 
@@ -71,7 +71,7 @@ let mandelbrot = kern img shiftx shifty zoom ->
   let open Std in
   let y = thread_idx_y + (block_idx_y * block_dim_y) in
   let x = thread_idx_x + (block_idx_x * block_dim_x) in
-  (if (y >= !height) || (x >= !width) then
+  (if (y >= @height) || (x >= @width) then
       return () ;
   );
   let x0 = (x + shiftx) in
@@ -81,15 +81,15 @@ let mandelbrot = kern img shiftx shifty zoom ->
   let mutable y1 = 0. in
   let mutable x2 = 0. in
   let mutable y2 = 0. in
-  let a = 4. *. ((float x0) /. (float !width)) /. zoom  -. 2. in
-  let b = 4. *. ((float y0) /. (float !height)) /. zoom -. 2. in
+  let a = 4. *. ((float x0) /. (float @width)) /. zoom  -. 2. in
+  let b = 4. *. ((float y0) /. (float @height)) /. zoom -. 2. in
 let normalize = fun x y -> 
 let pow2 = fun x -> x *. x in
 (pow2 x) +. (pow2 y) in  
   let mutable norm = normalize x1  y1
 
   in
-  while ((cpt < !max_iter) && (norm <=. 4.)) do
+  while ((cpt < @max_iter) && (norm <=. 4.)) do
     cpt := (cpt + 1);
     x2 := (x1 *. x1) -. (y1 *. y1) +. a;
     y2 :=  (2. *. x1 *. y1 ) +. b;
@@ -97,7 +97,7 @@ let pow2 = fun x -> x *. x in
     y1 := y2;
     norm := (x1 *. x1 ) +. ( y1 *. y1);
   done;
-  img.[<y * !width + x>] <- cpt
+  img.[<y * @width + x>] <- cpt
 ;;
 
 
@@ -107,7 +107,7 @@ let normalize = fun x y -> x *. x +. y *. y in
   let open Math.Float64 in
   let y = thread_idx_y + (block_idx_y * block_dim_y) in
   let x = thread_idx_x + (block_idx_x * block_dim_x) in
-  (if (y >= !height) || (x >= !width) then
+  (if (y >= @height) || (x >= @width) then
      return () ;
   );
   let x0 = (x + shiftx) in
@@ -118,14 +118,14 @@ let normalize = fun x y -> x *. x +. y *. y in
   let mutable x2 = zero in
   let mutable y2 = zero in
   let a = minus (div (mul (of_float32 4.)
-			(div (float64 x0) (float64 !width)))
+			(div (float64 x0) (float64 @width)))
 		   (of_float32 zoom)) (of_float32 2.) in
   let b = minus (div (mul (of_float32 4.)
-			(div (float64 y0) (float64 !height)))
+			(div (float64 y0) (float64 @height)))
 		   (of_float32 zoom)) (of_float32 2.) in
   let mutable norm = add (mul x1 x1) (mul y1 y1)
   in
-  while ((cpt < !max_iter) && ((to_float32 norm) <=. 4.)) do
+  while ((cpt < @max_iter) && ((to_float32 norm) <=. 4.)) do
   cpt := (cpt + 1);
   x2 := add (minus (mul x1  x1) (mul y1 y1))  a;
   y2 := add (mul (of_float32 2.) (mul x1  y1 )) b;
@@ -133,7 +133,7 @@ let normalize = fun x y -> x *. x +. y *. y in
   y1 := y2;
   norm := add (mul x1  x1 ) (mul  y1  y1);
   done;
-  img.[<y * !height + x>] <- cpt
+  img.[<y * @height + x>] <- cpt
 ;;
 
 
@@ -221,7 +221,7 @@ let main_mandelbrot () =
   and arg3 = ("-width" , Arg.Int (fun i  -> width := Int32.of_int i),
 	      "width of the image to compute [1000]")
   and arg4 = ("-max_iter" , Arg.Int (fun b -> max_iter := Int32.of_int b),
-	      "max number of iterations [50]") 
+	      "max number of iterations [512]") 
   and arg5 = ("-recompile" , Arg.Bool (fun b -> recompile := b),
 	      "Regenerates kernel at each redraw [false]") 
   and arg6 = ("-bench" , Arg.Int (fun b -> bench := (true,b)),
