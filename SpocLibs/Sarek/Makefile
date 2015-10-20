@@ -55,7 +55,7 @@ sarek.cmxa : $(MLOBJ_N)
 	@ocamlfind ocamlopt -thread -package spoc -a  $(MLOBJ_N) -o sarek.cmxa
 #@ocamlmklib -linkall -o sarek $(MLOBJ_N)  -cclib -lasmrun
 
-build: sarek.cmxa sarek.cma spoclevel-sarek
+build: sarek.cmxa sarek.cma #spoclevel-sarek
 
 ocp:
 	ocp-build -init
