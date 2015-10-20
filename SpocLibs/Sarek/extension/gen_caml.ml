@@ -111,7 +111,7 @@ let rec parse_int i t=
   | RecGet _ -> parse_body i
   | App (_loc, e1, e2) -> parse_body i
   | _ -> my_eprintf (k_expr_to_string i.e); 
-    assert (not debug);  
+
     raise (TypeError (t, i.t, i.loc))
 
 and parse_float f t = 

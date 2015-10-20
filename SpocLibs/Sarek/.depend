@@ -6,5 +6,8 @@ Kirc_Cuda.cmo : Kirc_Ast.cmi
 Kirc_Cuda.cmx : Kirc_Ast.cmx
 Kirc_OpenCL.cmo : Kirc_Ast.cmi
 Kirc_OpenCL.cmx : Kirc_Ast.cmx
+Transform.cmo : Kirc_Ast.cmi Kirc.cmi Transform.cmi
+Transform.cmx : Kirc_Ast.cmx Kirc.cmx Transform.cmi
 Kirc.cmi : Kirc_Ast.cmi
 Kirc_Ast.cmi :
+Transform.cmi : Kirc_Ast.cmi Kirc.cmi

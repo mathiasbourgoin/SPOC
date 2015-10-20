@@ -35,8 +35,6 @@
 type kernel
 
 
-type var = 
-  | Var of string
 
 (*and kint =*)
 
@@ -74,14 +72,14 @@ type  k_ext =
   | Id of string
   | IdName of string
   | GlobalFun of k_ext*string
-  | IntVar of int
-  | FloatVar of int
-  | UnitVar of int
-  | CastDoubleVar of int
-  | DoubleVar of int
-  | BoolVar of int
+  | IntVar of int * string
+  | FloatVar of int * string
+  | UnitVar of int * string
+  | CastDoubleVar of int * string
+  | DoubleVar of int * string
+  | BoolVar of int * string
   | Arr of int*k_ext*elttype*memspace
-  | VecVar of  k_ext*int
+  | VecVar of  k_ext*int * string
   | Concat of  k_ext* k_ext
   | Constr of string * string * k_ext list
   | Record of string * k_ext list
@@ -99,8 +97,8 @@ type  k_ext =
   | Int of int
   | Float of float
   | Double of float
-  | Custom of string*int
-  | CustomVar of string*string
+  | Custom of string*int*string
+  | CustomVar of string*string*string
   | IntVecAcc of  k_ext *  k_ext
   | Local of  k_ext *  k_ext
   | Acc of  k_ext *  k_ext
@@ -189,20 +187,20 @@ let print_ast a =
       print i ("Id "^s)
     | IdName s -> 
       print i ("IdName "^s);
-    | IntVar ii ->
-      print i ("IntVar "^(string_of_int ii))
-    | FloatVar ii ->
-      print i ("FloatVar "^(string_of_int ii))
-    | CastDoubleVar ii ->
-      print i ("CastDoubleVar "^(string_of_int ii))
-    | DoubleVar ii ->
-      print i ("DoubleVar "^(string_of_int ii))
-    | BoolVar ii ->
-      print i ("BoolVar "^(string_of_int ii))
-    | UnitVar ii ->
-      print i ("UnitVar "^(string_of_int ii))
-    | VecVar (t,ii) ->
-      print i ("VecVar "^(string_of_int ii))
+    | IntVar (ii,s) ->
+      print i ("IntVar "^(string_of_int ii)^" -> "^s)
+    | FloatVar (ii,s) ->
+      print i ("FloatVar "^(string_of_int ii)^" -> "^s)
+    | CastDoubleVar (ii,s) ->
+                     print i ("CastDoubleVar "^(string_of_int ii)^" ->"^s)
+    | DoubleVar (ii,s) ->
+      print i ("DoubleVar "^(string_of_int ii)^" ->"^s)
+    | BoolVar (ii,s) ->
+      print i ("BoolVar "^(string_of_int ii)^" ->"^s)
+    | UnitVar (ii,s) ->
+      print i ("UnitVar "^(string_of_int ii)^" ->"^s)
+    | VecVar (t,ii,s) ->
+      print i ("VecVar "^(string_of_int ii)^" ->"^s)
     | Concat (a,b) ->
       print i "Concat";
       aux (i+1) a;
@@ -347,7 +345,7 @@ let print_ast a =
       print i ("RecGet");
       aux (i+1) r;
       aux (i+1) v;
-    | Custom (s,_) -> 
+    | Custom (s,_,ss) -> 
       print i ("Custom "^s)
     | Match (s,e1,l) ->
       print i ("Match "^s);

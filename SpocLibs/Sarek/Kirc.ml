@@ -137,7 +137,7 @@ let shared = Shared
 
 let new_var i = IdName ("spoc_var"^(string_of_int i))
 let new_array i l t m = Arr (i, l, t, m)
-let var i = IntId (("spoc_var"^(string_of_int i)), i)
+let var i s = IntId (s, i) (*("spoc_var"^(string_of_int i)), i)*)
 let spoc_gen_kernel args body = Kern (args,body)
 let spoc_fun_kernel a b = () 
 let global_fun a = GlobalFun (
@@ -147,7 +147,7 @@ let global_fun a = GlobalFun (
     | Vector.Float32 _  -> "float"
     | Vector.Custom _ -> 
       (match fst a.fun_ret with
-      | CustomVar (s,_) -> "struct "^s^"_sarek"
+      | CustomVar (s,_,_OA) -> "struct "^s^"_sarek"
       | _ -> assert false)
     | _ -> "void")
 let seq a b = Seq (a,b)
@@ -189,17 +189,17 @@ let spoc_record t params = Record (t,params)
 let spoc_return k = Return k 
 let concat a b = Concat (a,b)
 let empty_arg () = Empty
-let new_int_var i = IntVar i 
-let new_float_var i = FloatVar i 
-let new_float64_var i = DoubleVar i 
-let new_double_var i = DoubleVar i 
-let new_unit_var i = UnitVar i
-let new_custom_var n v = Custom (n,v)  (* <--- *)
+let new_int_var i s = IntVar (i,s)
+let new_float_var i s = FloatVar (i,s) 
+let new_float64_var i s = DoubleVar (i,s) 
+let new_double_var i s = DoubleVar (i,s)
+let new_unit_var i s = UnitVar (i,s)
+let new_custom_var n v s = Custom (n,v,s)  (* <--- *)
 
-let new_int_vec_var v = VecVar (Int 0, v) 
-let new_float_vec_var v = VecVar (Float 0., v) 
-let new_double_vec_var v = VecVar (Double 0., v) 
-let new_custom_vec_var n v = VecVar (Custom (n,0), v)  (* <--- *)
+let new_int_vec_var v s = VecVar (Int 0, v,s) 
+let new_float_vec_var v s = VecVar (Float 0., v,s) 
+let new_double_vec_var v s = VecVar (Double 0., v,s) 
+let new_custom_vec_var n v s = VecVar (Custom (n,0,s), v,s)  (* <--- *)
 
 let int_vect i = IntVect i 
 let spoc_rec_get r id = RecGet (r,id)
@@ -217,7 +217,7 @@ let spoc_acc a b = Acc (a, b)
 let int_var i = i
 let int32_var i = i
 let float_var f = f
-let double_var d = CastDoubleVar d
+let double_var d = CastDoubleVar (d,"")
 
 let equals a b = EqBool (a,b)
 let equals_custom s v1 v2 = EqCustom (s,v1,v2)
@@ -257,11 +257,11 @@ let get_vec a b = IntVecAcc (a,b)
 let get_arr a b = IntVecAcc (a,b)
 let return_unit () =  Unit
 
-let return_int i = IntVar i
-let return_float f = FloatVar f
-let return_double d = DoubleVar d
-let return_bool b = BoolVar b
-let return_custom n sn = CustomVar (n, sn)
+let return_int i s= IntVar (i,s)
+let return_float f s= FloatVar (f,s)
+let return_double d s= DoubleVar (d,s)
+let return_bool b s= BoolVar (b,s)
+let return_custom n sn s= CustomVar (n, sn,s)
 
 
 
@@ -328,8 +328,8 @@ let rewrite ker =
     | CastDoubleVar _ -> kern
     | DoubleVar _ -> kern
     | BoolVar _ -> kern
-    | VecVar (k,idx ) ->
-      VecVar (aux k, idx) 
+    | VecVar (k,idx,s ) ->
+      VecVar (aux k, idx,s) 
     | Concat (k1,k2) -> 
       Concat (aux k1, aux k2)
     | Constr (t,c,l) ->
@@ -494,7 +494,7 @@ let gen ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('a, 'b, 'c,'d,'e) sarek
   return_v := "","";
   let k' = ((Kirc_Cuda.parse 0 (fst k3)),
             ( match  (fst k3) with
-              | IntVar i | FloatVar i | DoubleVar i -> "spoc_var"^(string_of_int i)^" = "
+              | IntVar (i,s) | FloatVar (i,s) | DoubleVar (i,s) -> s (*"sspoc_var"^(string_of_int i)^*)^" = "
               | Unit -> ""
               | SetV _ -> ""
               | IntVecAcc _-> ""
@@ -589,7 +589,7 @@ let compile_kernel_to_files s ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) =
   return_v := "","";
   let k' = ((Kirc_Cuda.parse 0 (fst k3)),
             ( match  (fst k3) with
-              | IntVar i | FloatVar i | DoubleVar i -> "spoc_var"^(string_of_int i)^" = "
+              | IntVar (i,s) | FloatVar (i,s) | DoubleVar (i,s) -> s^(*"spoc_var"^(string_of_int i)^*)" = "
               | Unit -> ""
               | SetV _ -> ""
               | IntVecAcc _-> ""
@@ -751,347 +751,6 @@ end
 
 
 
-(************** Composition ****************)
-
-let a_to_vect = function
-  | IntVar i  ->  (new_int_vec_var ( i))
-  | FloatVar i -> (new_float_vec_var (i))
-  | a  -> print_ast a; assert false; failwith "a_to_vect"
-
-let a_to_return_vect k1 k2 idx= 
-  match k1 with
-  | IntVar i  ->  (set_vect_var (get_vec (var i) idx) (k2))
-  | FloatVar i  ->  (set_vect_var (get_vec (var i) idx) (k2))
-  | _  -> assert false; failwith "error a_to_return_vect"
-
-let param_list = ref []
-
-
-let add_to_param_list a = 
-  param_list := a :: !param_list
-
-let rec check_and_transform_to_map a = 
-  match a with 
-  | Plus (b,c)  -> Plus(check_and_transform_to_map b, check_and_transform_to_map c)
-  | Min (b,c)  -> Min(check_and_transform_to_map b, check_and_transform_to_map c)
-  | Mul (b,c)  -> Mul(check_and_transform_to_map b, check_and_transform_to_map c)
-  | Mod (b,c)  -> Mod(check_and_transform_to_map b, check_and_transform_to_map c)
-  | Div (b,c)  -> Div(check_and_transform_to_map b, check_and_transform_to_map c)
-  | IntId (v,i)  -> 
-    if (List.mem i !param_list) then
-      IntVecAcc(IdName ("spoc_var"^(string_of_int i)), 
-                Intrinsics ("blockIdx.x*blockDim.x+threadIdx.x","get_global_id (0)"))
-      (*(IntId ("spoc_global_id", -1)))*)
-    else 
-      a
-  | _  -> a
-
-
-let arg_of_vec v  = 
-  match Vector.kind v with
-  | Int32 _ -> VInt32 v
-  | Float32 _ -> VFloat32 v
-  | _ -> assert false
-
-
-let propagate f = function
-  | Block b -> Block (f b)
-  | Return a  -> Return (f a)
-  | Seq (a,b)  -> Seq (f a,  f b)
-  | Local (a,b) -> Local (f a, f b)
-  | Plus (a,b)  -> Plus (f a, f b)
-  | Min (a,b)  -> Min  (f a, f b)
-  | Mul (a,b)  -> Mul  (f a, f b)
-  | Div (a,b)  -> Div  (f a, f b)
-  | Mod (a,b)  -> Mod  (f a, f b)
-  | LtBool (a,b)  -> LtBool (f a, f b)
-  | GtBool (a,b)  -> GtBool (f a, f b)
-  | Ife (a,b,c)  -> Ife (f a, f b, f c)
-  | IntId (v,i)  -> IntId (v, i)
-  | Kern (a, b) -> Kern (f a, f b)
-  | Params a -> Params (f a)
-  | Plusf (a, b) -> Plusf (f a, f b)
-  | Minf (a, b) -> Minf (f a, f b)
-  | Mulf (a, b) -> Mulf (f a, f b)
-  | Divf (a, b) -> Divf (f a, f b)
-  | Id a -> Id a
-  | IdName a -> IdName a
-  | IntVar i -> IntVar i
-  | FloatVar i -> FloatVar i
-  | UnitVar i -> UnitVar i
-  | CastDoubleVar i -> assert false
-  | DoubleVar i -> DoubleVar i
-  | Arr (i, s, t, m) -> Arr (i, f s, t, m)
-  | VecVar (a, i) -> VecVar (f a, i)
-  | Concat (a, b) -> Concat (f a, f b)
-  | Empty -> Empty
-  | Set (a, b) -> Set (f a, f b)
-  | Decl a -> Decl (f a)
-  | SetV (a, b) -> SetV (f a, f b)
-  | SetLocalVar (a, b, c) -> SetLocalVar (f a, f b, f c)
-  | Intrinsics intr -> Intrinsics intr
-  | Int i -> Int i
-  | Float f -> Float f
-  | Double d -> Double d
-  | IntVecAcc (a, b) -> IntVecAcc (f a, f b)
-  | Acc (a, b) -> Acc (f a, f b) 
-  | If (a, b) -> If (f a, f b)
-  | Or (a, b) -> Or (f a, f b)
-  | And (a, b) -> And (f a, f b)
-  | EqBool (a, b) -> EqBool (f a, f b)
-  | EqCustom (n,a, b) -> EqCustom (n,f a, f b)
-  | LtEBool (a, b) -> LtEBool (f a, f b)
-  | GtEBool (a, b) -> GtEBool (f a, f b)
-  | DoLoop (a, b, c, d) -> DoLoop (f a, f b, f c, f d)
-  | While (a, b) -> While (f a,f b)
-  | App (a, b) -> App ((f a), Array.map f b)
-  | GInt foo -> GInt foo
-  | GFloat foo -> GFloat foo
-  | Unit -> Unit
-  | GlobalFun (a,b) -> GlobalFun (f a, b)
-  | Constr (a,b,c) -> Constr (a,b,List.map f c)
-  | Record (a,c) -> Record (a,List.map f c)
-  | RecGet (r,s) -> RecGet (f r, s)
-  | RecSet (r,v) -> RecSet (f r, f v)
-  | Custom (s,i) -> Custom (s,i)
-  | Match (s,a,b) -> Match (s,f a, 
-                            Array.map (fun (i,ofid,e) -> (i,ofid,f e)) b)
-
-
-let map ((ker: ('a, 'b, ('c -> 'd), 'e,'f) sarek_kernel)) ?dev:(device=(Spoc.Devices.init ()).(0)) (vec_in : ('g, 'h) Vector.vector) : ('i, 'j) Vector.vector= 
-  let ker2,k = ker in 
-  let (k1,k2,k3) = (k.ml_kern, k.body,k.ret_val) in 
-  param_list := [];
-  let rec aux = function
-    | Kern (args, body)  ->  
-      let new_args = 
-        match args with
-        | Params p ->
-          (match p with 
-           | Concat (Concat _, _) ->
-             assert false; failwith "error multiple map args ";  
-           | Concat (a, Empty)  ->
-             params (concat (a_to_vect a) (concat (a_to_vect (fst k3)) (empty_arg ()))) 
-           | _ -> assert false; failwith "map type error")
-        | _  -> assert false; failwith "error map args"
-      in let n_body =
-        let rec aux curr =
-          match curr with
-          | Return a  -> a_to_return_vect (fst k3) (aux a) ((intrinsics "blockIdx.x*blockDim.x+threadIdx.x" "get_global_id(0)"))
-          | Seq (a,b)  -> seq a (aux b)
-          | Local (a,b) -> Local (a, aux b)
-          | Plus (a,b)  -> Plus (aux a, aux b)
-          | Min (a,b)  -> Min  (aux a, aux b)
-          | Mul (a,b)  -> Mul  (aux a, aux b)
-          | Div (a,b)  -> Div  (aux a, aux b)
-          | Mod (a,b)  -> Mod  (aux a, aux b)
-          | LtBool (a,b)  -> LtBool (aux a, aux b)
-          | GtBool (a,b)  -> GtBool (aux a, aux b)
-          | Ife (a,b,c)  -> Ife (aux a, aux b, aux c)
-	  | Int a -> Int a
-          | IntId (v,i)  -> 
-            if i = 0 then
-              IntVecAcc(IdName ("spoc_var"^(string_of_int i)), 
-                        Intrinsics ("blockIdx.x*blockDim.x+threadIdx.x","get_global_id (0)"))
-            else
-              curr 
-          | a -> print_ast a; assert false
-        in
-        aux body
-      in
-      Kern (new_args, n_body)
-    | _ -> assert false; failwith "malformed kernel for map"   
-  in 
-  let res =(ker2,
-            { 
-              ml_kern = Tools.map (k1) (snd k3);
-              body = aux k2;
-              ret_val = Unit, Vector.int32;
-              extensions = k.extensions;
-            })
-  in 
-  let length = Vector.length vec_in in
-  let vec_out =
-    (Vector.create (snd k3)  ~dev:device length)
-  in
-  Mem.to_device vec_in device;
-  let target =
-    match device.Devices.specific_info with
-      Devices.CudaInfo _ -> Devices.Cuda
-    | Devices.OpenCLInfo _ -> Devices.OpenCL in
-  (*spoc_ker, kir_ker =*)
-  ignore(gen ~only:target res);
-  let spoc_ker, kir_ker = res in
-  let block = {blockX = 1; blockY = 1; blockZ = 1}
-  and grid = {gridX = 1; gridY = 1; gridZ = 1}
-  in spoc_ker#compile ~debug:true device;
-  begin
-    let open Devices in( 
-      match device.Devices.specific_info with
-      | Devices.CudaInfo cI -> 
-        if Vector.length vec_in < 
-           (cI.maxThreadsDim.x) then
-          (
-            grid.gridX <- 1;
-            block.blockX <- (Vector.length vec_in)
-          )
-        else
-          (
-            block.blockX <- cI.maxThreadsDim.x;
-            grid.gridX <- (Vector.length vec_in) / cI.maxThreadsDim.x;
-          )
-      | Devices.OpenCLInfo oI -> 
-        if Vector.length vec_in < oI.Devices.max_work_item_size.Devices.x then
-          (
-            grid.gridX <- 1;
-            block.blockX <- Vector.length vec_in
-          )
-        else
-          (
-            block.blockX <- oI.Devices.max_work_item_size.Devices.x;
-            grid.gridX <- (Vector.length vec_in) / block.blockX
-          )
-    )
-  end;
-  let bin = (Hashtbl.find (spoc_ker#get_binaries ()) device) in
-  let offset = ref 0 in
-  (match device.Devices.specific_info with
-   | Devices.CudaInfo cI ->
-      let extra = Kernel.Cuda.cuda_create_extra 2 in
-      Kernel.Cuda.cuda_load_arg offset extra device bin 0 (arg_of_vec vec_in);
-      Kernel.Cuda.cuda_load_arg offset extra device bin 1 (arg_of_vec vec_out);
-      Kernel.Cuda.cuda_launch_grid offset bin grid block extra device.Devices.general_info 0;
-   | Devices.OpenCLInfo _ ->
-      let clFun = bin in
-      Kernel.OpenCL.opencl_load_arg offset device clFun 0 (arg_of_vec vec_in);
-      Kernel.OpenCL.opencl_load_arg offset device clFun 1 (arg_of_vec vec_out);
-      Kernel.OpenCL.opencl_launch_grid clFun grid block device.Devices.general_info 0
-  );					
-  vec_out
-    
-let map2 ((ker: ('a, 'b,('c -> 'd -> 'e), 'f,'g) sarek_kernel)) ?dev:(device=(Spoc.Devices.init ()).(0)) (vec_in1 : ('h, 'i) Vector.vector) (vec_in2 : ('j, 'k) Vector.vector) : ('l, 'm) Vector.vector = 
-  let ker2,k = ker in
-  let (k1,k2,k3) = (k.ml_kern, k.body,k.ret_val) in 
-  param_list := [];
-  let rec aux = function
-    | Kern (args, body)  ->  
-      let new_args = 
-        match args with
-        | Params p ->
-          (match p with 
-           | Concat (Concat _, Concat _) ->
-             failwith "error multiple map2 args ";  
-           | Concat (a, Concat (b, Empty)) ->
-             params (concat (a_to_vect a) (concat (a_to_vect b) (concat (a_to_vect (fst k3)) (empty_arg ()))))
-           | Concat (a, Empty)  ->
-             failwith "error too few map2 args ";  
-           | _ -> Printf.printf "+++++> "; print_ast args; failwith "map2 type error")
-        | _  -> failwith "error map2 args"
-      in let n_body =
-        let rec aux curr =
-          match curr with
-          | Return a  -> a_to_return_vect (fst k3) (aux a) ((intrinsics "blockIdx.x*blockDim.x+threadIdx.x" "get_global_id(0)"))
-          | Seq (a,b)  -> seq a (aux b)
-          | Local (a,b) -> Local (aux a, aux b)
-          | Plus (a,b)  -> Plus (aux a, aux b)
-          | Min (a,b)  -> Min  (aux a, aux b)
-          | Mul (a,b)  -> Mul  (aux a, aux b)
-          | Div (a,b)  -> Div  (aux a, aux b)
-          | Mod (a,b)  -> Mod  (aux a, aux b)
-          | LtBool (a,b)  -> LtBool (aux a, aux b)
-          | GtBool (a,b)  -> GtBool (aux a, aux b)
-          | Ife (a,b,c)  -> Ife (aux a, aux b, aux c)
-          | IntId (v,i)  -> 
-            if i = 0 || i = 1 then
-              IntVecAcc(IdName ("spoc_var"^(string_of_int i)), 
-                        Intrinsics ("blockIdx.x*blockDim.x+threadIdx.x","get_global_id (0)"))
-            else
-              curr 
-          | a -> print_ast a; propagate aux a
-        in
-        aux body
-      in
-      Kern (new_args, n_body)
-    | _ -> failwith "malformed kernel for map2"   
-  in 
-  let res =(ker2,
-            { 
-              ml_kern = 
-                (let map2 = fun f k a b ->
-                   let c = Vector.create k (Vector.length a) in
-                   for i = 0 to (Vector.length a -1) do
-                     Mem.unsafe_set c i (f (Mem.unsafe_get a i) (Mem.unsafe_get b i)) 
-                   done;
-                   c
-                 in	map2 (k1) (snd k3));
-              body = aux k2;
-              ret_val = Unit, Vector.int32;
-              extensions = k.extensions;
-            })
-  in 
-  let length = Vector.length vec_in1 in
-  let vec_out =
-    (Vector.create (snd k3)  ~dev:device length)
-  in
-  Mem.to_device vec_in1 device;
-  Mem.to_device vec_in2 device;
-  let framework = 
-    let open Devices in
-      match device.Devices.specific_info with
-      | Devices.CudaInfo cI -> Devices.Cuda
-      | _ -> Devices.OpenCL in
-
-  let spoc_ker, kir_ker = gen ~only:framework res  in
-  let block = {blockX = 1; blockY = 1; blockZ = 1}
-  and grid = {gridX = 1; gridY = 1; gridZ = 1}
-  in spoc_ker#compile ~debug:true  device;
-  begin
-    let open Devices in( 
-      match device.Devices.specific_info with
-      | Devices.CudaInfo cI -> 
-        if length < 
-           (cI.maxThreadsDim.x) then
-          (
-            grid.gridX <- 1;
-            block.blockX <- (length)
-          )
-        else
-          (
-            block.blockX <- cI.maxThreadsDim.x;
-            grid.gridX <- (length) / cI.maxThreadsDim.x;
-          )
-      | Devices.OpenCLInfo oI -> 
-        if length < oI.Devices.max_work_item_size.Devices.x then
-          (
-            grid.gridX <- 1;
-            block.blockX <- length
-          )
-        else
-          (
-            block.blockX <- oI.Devices.max_work_item_size.Devices.x;
-            grid.gridX <- (length) / block.blockX
-          )
-    )
-  end;
-  let bin = (Hashtbl.find (spoc_ker#get_binaries ()) device) in
-  let offset = ref 0 in
-  (match device.Devices.specific_info with
-   | Devices.CudaInfo cI ->
-     let extra = Kernel.Cuda.cuda_create_extra 2 in
-     Kernel.Cuda.cuda_load_arg offset extra device bin 0 (arg_of_vec vec_in1);
-     Kernel.Cuda.cuda_load_arg offset extra device bin 1 (arg_of_vec vec_in2);
-     Kernel.Cuda.cuda_load_arg offset extra device bin 2 (arg_of_vec vec_out);
-     Kernel.Cuda.cuda_launch_grid offset bin grid block extra device.Devices.general_info 0;
-   | Devices.OpenCLInfo _ ->
-     let clFun = bin in
-     let offset = ref 0
-     in
-     Kernel.OpenCL.opencl_load_arg offset device clFun 0 (arg_of_vec vec_in1);
-     Kernel.OpenCL.opencl_load_arg offset device clFun 1 (arg_of_vec vec_in2);
-     Kernel.OpenCL.opencl_load_arg offset device clFun 2 (arg_of_vec vec_out);
-     Kernel.OpenCL.opencl_launch_grid clFun grid block device.Devices.general_info 0
-  );                  
-  vec_out		
 
 
 

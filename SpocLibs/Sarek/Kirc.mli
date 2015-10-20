@@ -34,7 +34,7 @@ val cuda_head : string
 val new_var : int -> Kirc_Ast.k_ext
 val global_fun : ('a,'b,'c) kirc_function -> Kirc_Ast.k_ext
 val new_array : int -> Kirc_Ast.k_ext -> Kirc_Ast.elttype -> Kirc_Ast.memspace -> Kirc_Ast.k_ext 
-val var : int -> Kirc_Ast.k_ext
+val var : int -> string -> Kirc_Ast.k_ext
 val spoc_gen_kernel : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val spoc_fun_kernel : 'a -> 'b -> unit
 val seq : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
@@ -75,16 +75,16 @@ val spoc_rec_set : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val spoc_return : Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val concat : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val empty_arg : unit -> Kirc_Ast.k_ext
-val new_int_var : int -> Kirc_Ast.k_ext
-val new_float_var : int -> Kirc_Ast.k_ext
-val new_float64_var : int -> Kirc_Ast.k_ext
-val new_double_var : int -> Kirc_Ast.k_ext
-val new_unit_var : int -> Kirc_Ast.k_ext
-val new_custom_var : string -> int -> Kirc_Ast.k_ext
-val new_int_vec_var : int -> Kirc_Ast.k_ext
-val new_float_vec_var : int -> Kirc_Ast.k_ext
-val new_double_vec_var : int -> Kirc_Ast.k_ext
-val new_custom_vec_var : string -> int -> Kirc_Ast.k_ext
+val new_int_var : int -> string -> Kirc_Ast.k_ext
+val new_float_var : int -> string -> Kirc_Ast.k_ext
+val new_float64_var : int -> string -> Kirc_Ast.k_ext
+val new_double_var : int -> string -> Kirc_Ast.k_ext
+val new_unit_var : int -> string -> Kirc_Ast.k_ext
+val new_custom_var : string -> int -> string -> Kirc_Ast.k_ext
+val new_int_vec_var : int -> string -> Kirc_Ast.k_ext
+val new_float_vec_var : int -> string -> Kirc_Ast.k_ext
+val new_double_vec_var : int -> string -> Kirc_Ast.k_ext
+val new_custom_vec_var : string -> int -> string -> Kirc_Ast.k_ext
 val int_vect : int -> Kirc_Ast.kvect
 val set_vect_var : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val set_arr_var : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
@@ -130,11 +130,11 @@ val gteF64 : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val get_vec : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val get_arr : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val return_unit : unit -> Kirc_Ast.k_ext
-val return_int : int -> Kirc_Ast.k_ext
-val return_float : int -> Kirc_Ast.k_ext
-val return_double : int -> Kirc_Ast.k_ext
-val return_bool : int -> Kirc_Ast.k_ext
-val return_custom : string -> string -> Kirc_Ast.k_ext
+val return_int : int -> string -> Kirc_Ast.k_ext
+val return_float : int -> string -> Kirc_Ast.k_ext
+val return_double : int -> string -> Kirc_Ast.k_ext
+val return_bool : int -> string -> Kirc_Ast.k_ext
+val return_custom : string -> string -> string -> Kirc_Ast.k_ext
 val rewrite : Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val return_v : (string * string) ref
 val save : string -> string -> unit
@@ -249,7 +249,7 @@ module Math :
         val make_local : Int32.t -> float array
       end
   end
-val a_to_vect : Kirc_Ast.k_ext -> Kirc_Ast.k_ext
+(*val a_to_vect : Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val a_to_return_vect :
   Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val param_list : int list ref
@@ -268,3 +268,4 @@ val map2 :
   ?dev:Spoc.Devices.device ->
   ('h, 'i) Spoc.Vector.vector ->
   ('j, 'k) Spoc.Vector.vector -> ('l, 'm) Spoc.Vector.vector
+*)

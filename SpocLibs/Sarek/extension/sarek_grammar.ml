@@ -206,13 +206,13 @@ let ret =
   incr arg_idx;
   match !return_type with
   | TUnknown  -> <:expr<return_unknown (), Dummy>>
-  | TInt32 -> <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int32 >>
-  | TInt64 ->  <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int64>>
+  | TInt32 -> <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$ "", Vector.int32 >>
+  | TInt64 ->  <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$ "", Vector.int64>>
   | TVec TInt32 | TVec TInt64 -> assert false
-  | TFloat32 ->  <:expr<return_float $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float32>>
-  | TFloat64 ->  <:expr<return_double $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float64>>
+  | TFloat32 ->  <:expr<return_float $ExInt(Loc.ghost, string_of_int (!arg_idx))$ "", Vector.float32>>
+  | TFloat64 ->  <:expr<return_double $ExInt(Loc.ghost, string_of_int (!arg_idx))$ "" , Vector.float64>>
   | TUnit  -> <:expr<return_unit (), Vector.Unit ((),())>>
-  | TBool -> <:expr< return_bool $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int32>>
+  | TBool -> <:expr< return_bool $ExInt(Loc.ghost, string_of_int (!arg_idx))$ "", Vector.int32>>
   | Custom (_, name) ->
     let sarek_name = name^"_sarek" in
     <:expr< Kirc.return_custom1 $str:name$ $str:sarek_name$ >> 
@@ -444,13 +444,13 @@ let ret =
   incr arg_idx;
   match !return_type with
   | TUnknown  -> <:expr<return_unknown (), Dummy>>
-  | TInt32 -> <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int32 >>
-  | TInt64 ->  <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int64>>
+  | TInt32 -> <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$ "", Vector.int32 >>
+  | TInt64 ->  <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$ "", Vector.int64>>
   | TVec TInt32 | TVec TInt64 -> assert false
-  | TFloat32 ->  <:expr<return_float $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float32>>
-  | TFloat64 ->  <:expr<return_double $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float64>>
+  | TFloat32 ->  <:expr<return_float $ExInt(Loc.ghost, string_of_int (!arg_idx))$ "", Vector.float32>>
+  | TFloat64 ->  <:expr<return_double $ExInt(Loc.ghost, string_of_int (!arg_idx))$ "", Vector.float64>>
   | TUnit  -> <:expr<return_unit (), Vector.Unit ((),())>>
-  | TBool -> <:expr< return_bool $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int32>>
+  | TBool -> <:expr< return_bool $ExInt(Loc.ghost, string_of_int (!arg_idx))$ "", Vector.int32>>
   | Custom (_, name) ->
      let sarek_name = name^"_sarek" in
      let customType = ExId(_loc, (IdLid (_loc,("custom"^(String.capitalize name))))) in
@@ -654,13 +654,13 @@ let ret =
   incr arg_idx;
   match !return_type with
   | TUnknown  -> <:expr<return_unknown (), Dummy>>
-  | TInt32 -> <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int32 >>
-  | TInt64 ->  <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int64>>
+  | TInt32 -> <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$ "", Vector.int32 >>
+  | TInt64 ->  <:expr<return_int $ExInt(Loc.ghost, string_of_int (!arg_idx))$ "", Vector.int64>>
   | TVec TInt32 | TVec TInt64 -> assert false
-  | TFloat32 ->  <:expr<return_float $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float32>>
-  | TFloat64 ->  <:expr<return_double $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.float64>>
+  | TFloat32 ->  <:expr<return_float $ExInt(Loc.ghost, string_of_int (!arg_idx))$ "", Vector.float32>>
+  | TFloat64 ->  <:expr<return_double $ExInt(Loc.ghost, string_of_int (!arg_idx))$ "", Vector.float64>>
   | TUnit  -> <:expr<return_unit (), Vector.Unit ((),())>>
-  | TBool -> <:expr< return_bool $ExInt(Loc.ghost, string_of_int (!arg_idx))$, Vector.int32>>
+  | TBool -> <:expr< return_bool $ExInt(Loc.ghost, string_of_int (!arg_idx))$ "", Vector.int32>>
   | Custom (_, name) ->
     let sarek_name = name^"_sarek" in
     let customType = ExId(_loc, (IdLid (_loc,("custom"^(String.capitalize name))))) in
@@ -785,14 +785,15 @@ in
       | x = SELF; "/"; y = SELF -> {t=TInt32; e = Div32(_loc, x,y); loc = _loc};
       | x = SELF; "/."; y = SELF -> {t=TFloat32; e = DivF32(_loc, x,y); loc = _loc}]
     
-  | "||" LEFTA	
+
+| "||" 
     [x = SELF; "||"; y = SELF -> {t=TBool; 
                                   e = BoolOr (_loc, x, y); loc = _loc} ]
     
-  | "&&" RIGHTA	
+  | "&&" 
     [x = SELF; "&&"; y = SELF -> {t=TBool; e = BoolAnd (_loc, x, y); loc = _loc} ]
 
-  | "not"
+  | "not" 
       ["!"; x = kexpr -> {t=TBool; e = BoolNot (_loc, x); loc = _loc} ]
 
 
@@ -824,7 +825,7 @@ in
       | x=SELF; "<=!!"; y=SELF -> {t=TBool; e= BoolLtE64(_loc,x,y); loc = _loc};
       | x=SELF; "<=."; y=SELF -> {t=TBool; e= BoolLtEF(_loc,x,y); loc = _loc}]
 
-  |  ">" RIGHTA
+  |  ">" 
       [ x=SELF; ">"; y=SELF -> {t=TBool; e= BoolGt32(_loc,x,y); loc = _loc};
         | x=SELF; ">!"; y=SELF -> {t=TBool; e= BoolGt32(_loc,x,y); loc = _loc};
         | x=SELF; ">!!"; y=SELF -> {t=TBool; e= BoolGt64(_loc,x,y); loc = _loc};
