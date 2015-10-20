@@ -36,7 +36,7 @@ sarek.cma: $(MLOBJ_B)
 libsarek.a:sarek.cma
 	@cp sarek.a libsarek.a	
 
-spoclevel-sarek : sarek.cma libsarek.a extension/kernels_int.cma
+spoclevel-sarek : sarek.cma extension/kernels_int.cma
 	@echo   "\033[36m[spoclevel-sarek]\033[0m"
 	@ocamlmktop -custom -I +camlp4 -cclib -L. dynlink.cma \
 	-cclib -L`ocamlfind query spoc` -I `ocamlfind query spoc` \
