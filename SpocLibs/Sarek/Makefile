@@ -18,25 +18,25 @@ start :
 
 %.cmo:%.ml
 	@echo  "\033[32m[$@]\033[0m" 
-	@ocamlfind ocamlc -thread -package spoc -c $< 2>>log
+	@ocamlfind ocamlc -thread -package spoc -c $< 
 
 %.cmx:%.ml
 	@echo  "\033[32m[$@]\033[0m" 
-	@ocamlfind ocamlopt -thread -package spoc -c $< 2>>log
+	@ocamlfind ocamlopt -thread -package spoc -c $< 
 
 %.cmi:%.mli
 	@echo  "\033[32m[$@]\033[0m" 
-	@ocamlfind ocamlc -thread -package spoc -c $< 2>>log
+	@ocamlfind ocamlc -thread -package spoc -c $< 
 
 
 sarek.cma: $(MLOBJ_B)
 	@echo  "\033[31m[sarek.cma]\033[0m"
-	@ocamlfind ocamlc -thread -package spoc -a -o sarek.cma $(MLOBJ_B)
+	ocamlfind ocamlc -thread -package spoc -a -o sarek.cma $(MLOBJ_B)
 
 libsarek.a:sarek.cma
 	@cp sarek.a libsarek.a	
 
-spoclevel-sarek : sarek.cma libsarek.a extension/kernels_int.cma
+spoclevel-sarek : sarek.cmxa sarek.cma extension/kernels_int.cma
 	@echo   "\033[36m[spoclevel-sarek]\033[0m"
 	@ocamlmktop -custom -I +camlp4 -cclib -L. dynlink.cma \
 	-cclib -L`ocamlfind query spoc` -I `ocamlfind query spoc` \
@@ -44,7 +44,7 @@ spoclevel-sarek : sarek.cma libsarek.a extension/kernels_int.cma
 	-cclib -lcamlrun -cclib -lbigarray \
 	spoc.cma -cclib -lspoc \
 	-cclib -lsarek sarek.cma \
-	-o spoclevel-sarek 2>log
+	-o spoclevel-sarek 
 
 #sarek.cma: sarek.cmo
 #	@echo  "\033[31m[sarek.cma]\033[0m"
@@ -55,7 +55,7 @@ sarek.cmxa : $(MLOBJ_N)
 	@ocamlfind ocamlopt -thread -package spoc -a  $(MLOBJ_N) -o sarek.cmxa
 #@ocamlmklib -linkall -o sarek $(MLOBJ_N)  -cclib -lasmrun
 
-build: sarek.cma sarek.cmxa spoclevel-sarek
+build: sarek.cmxa sarek.cma #spoclevel-sarek
 
 ocp:
 	ocp-build -init
@@ -73,7 +73,7 @@ ocp-clean :
 
 clean :
 	cd extension && make clean
-	rm -rf tmp docs ocp-build.root.* ~* *.cm* *.o *.so log a.out spoclevel-sarek *~
+	rm -rf tmp docs ocp-build.root.* ~* *.cm* *.o *.so log a.out spoclevel-sarek *~ sarek.a
 
 
 install : all uninstall

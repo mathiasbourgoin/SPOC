@@ -17,7 +17,7 @@ samples: install
 	cd Samples; make
 
 install_sarek:
-	cd SpocLibs/Sarek; make -j$(nprocs) && make install
+	cd SpocLibs/Sarek; make -j$(nprocs) install
 
 sarek_samples:
 	cd SpocLibs/Samples/Mandelbrot; make
