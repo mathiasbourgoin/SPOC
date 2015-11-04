@@ -40,6 +40,10 @@ open Vector
 
 open Kirc_Ast
 
+
+module Kirc_OpenCL = Gen.Generator(Kirc_OpenCL)
+module Kirc_Cuda = Gen.Generator(Kirc_Cuda)
+
 type extension = 
   | ExFloat32
   | ExFloat64
@@ -524,11 +528,12 @@ let gen ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('a, 'b, 'c,'d,'e) sarek
     let global_funs = ref "" in
     Hashtbl.iter (fun _ a -> global_funs := !global_funs^(fst a)^"\n") Kirc_Cuda.global_funs;
     let constructors = List.fold_left (fun a b -> "__device__ "^b^a) "\n\n" !constructors in
+    print_ast k2;
     save "kirc_kernel.cu" (cuda_head ^ constructors ^  !global_funs ^ src) ;
     ignore(Sys.command ("nvcc -m64  -O3 -ptx kirc_kernel.cu -o kirc_kernel.ptx"));
     let s = (load_file "kirc_kernel.ptx") in
     kir#set_cuda_sources s;
-    ignore(Sys.command "rm kirc_kernel.cu kirc_kernel.ptx"); 
+    (*    ignore(Sys.command "rm kirc_kernel.cu kirc_kernel.ptx"); *)
 
   and gen_opencl () =
     let opencl_head = 

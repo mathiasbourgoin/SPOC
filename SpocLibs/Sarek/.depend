@@ -1,11 +1,13 @@
-Kirc.cmo : Kirc_OpenCL.cmo Kirc_Cuda.cmo Kirc_Ast.cmi Kirc.cmi
-Kirc.cmx : Kirc_OpenCL.cmx Kirc_Cuda.cmx Kirc_Ast.cmx Kirc.cmi
+Gen.cmo : Kirc_Ast.cmi
+Gen.cmx : Kirc_Ast.cmx
+Kirc.cmo : Kirc_OpenCL.cmo Kirc_Cuda.cmo Kirc_Ast.cmi Gen.cmo Kirc.cmi
+Kirc.cmx : Kirc_OpenCL.cmx Kirc_Cuda.cmx Kirc_Ast.cmx Gen.cmx Kirc.cmi
 Kirc_Ast.cmo : Kirc_Ast.cmi
 Kirc_Ast.cmx : Kirc_Ast.cmi
-Kirc_Cuda.cmo : Kirc_Ast.cmi
-Kirc_Cuda.cmx : Kirc_Ast.cmx
-Kirc_OpenCL.cmo : Kirc_Ast.cmi
-Kirc_OpenCL.cmx : Kirc_Ast.cmx
+Kirc_Cuda.cmo :
+Kirc_Cuda.cmx :
+Kirc_OpenCL.cmo :
+Kirc_OpenCL.cmx :
 Transform.cmo : Kirc_Ast.cmi Kirc.cmi Transform.cmi
 Transform.cmx : Kirc_Ast.cmx Kirc.cmx Transform.cmi
 Kirc.cmi : Kirc_Ast.cmi
