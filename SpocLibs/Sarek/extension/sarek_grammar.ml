@@ -5,6 +5,8 @@ open Ast
 open Sarek_types
 open Typer
 open Mparser
+open Debug
+
 
 let gen_kernel () = () 
                     

@@ -2,17 +2,7 @@ open Camlp4.PreCast
 open Syntax
 open Ast
 
-let retype = ref false
-let unknown = ref 0
-let debug = false
-
-let my_eprintf s = 
-  if debug then
-    (output_string stderr s;
-     flush stderr;)
-  else ()
-
-
+open Debug
 
 type customtypes =
   | KRecord of ctyp list * ident list * bool list

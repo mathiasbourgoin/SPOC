@@ -40,6 +40,10 @@ open Vector
 
 open Kirc_Ast
 
+
+module Kirc_OpenCL = Gen.Generator(Kirc_OpenCL)
+module Kirc_Cuda = Gen.Generator(Kirc_Cuda)
+
 type extension = 
   | ExFloat32
   | ExFloat64

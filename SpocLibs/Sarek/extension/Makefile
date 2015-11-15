@@ -10,7 +10,7 @@ install: kernels_int.cma
 uninstall :
 	ocamlfind remove sarek_syntax
 
-kernels_int.cma:sarek_types.cmo typer.cmo gen_caml.cmo gen_kir.cmo mparser.cmo  sarek_grammar.cmo
+kernels_int.cma:debug.cmo sarek_types.cmo typer.cmo gen_caml.cmo gen_kir.cmo mparser.cmo  sarek_grammar.cmo
 	@ocamlfind ocamlc -a $^ -o kernels_int.cma
 
 
@@ -25,7 +25,9 @@ gen_kir.cmo : sarek_types.cmo gen_kir.ml
 
 mparser.cmo:sarek_types.cmo mparser.ml
 
-sarek_types.cmo:sarek_types.ml
+debug.cmo : debug.ml
+
+sarek_types.cmo:debug.cmo sarek_types.ml
 
 typer.cmo:sarek_types.cmo typer.ml
 
