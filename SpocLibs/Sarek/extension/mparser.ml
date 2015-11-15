@@ -39,7 +39,7 @@ open Syntax
 open Ast
 
 open Sarek_types
-
+open Debug
 
 let parse_args params body= 
   let _loc = Loc.ghost in

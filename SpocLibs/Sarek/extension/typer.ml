@@ -4,7 +4,7 @@ open Ast
 
 
 open Sarek_types
-
+open Debug
 
 let rec basic_check l current_type expected_type loc =
   if expected_type <> current_type && not (is_unknown current_type) then

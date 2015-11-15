@@ -3,7 +3,8 @@ open Syntax
 open Ast
 
 open Sarek_types
-
+open Debug
+    
 let rec parse_int i t= 
   match i.e with
   | Id (_loc,s)  -> 
