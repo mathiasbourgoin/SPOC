@@ -814,30 +814,30 @@ in
     [ x=SELF; "="; y=SELF -> {t=TBool; e= BoolEq(_loc,x,y); loc = _loc};
       | x=SELF; "=!"; y=SELF -> {t=TBool; e= BoolEq32(_loc,x,y); loc = _loc};
       | x=SELF; "=!!"; y=SELF -> {t=TBool; e= BoolEq64(_loc,x,y); loc = _loc};
-      | x=SELF; "=."; y=SELF -> {t=TBool; e= BoolEqF(_loc,x,y); loc = _loc}]
+      | x=SELF; "=."; y=SELF -> {t=TBool; e= BoolEqF32(_loc,x,y); loc = _loc}]
   | "<" 
     [ x=SELF; "<"; y=SELF -> {t=TBool; e= BoolLt32(_loc,x,y); loc = _loc};
       | x=SELF; "<!"; y=SELF -> {t=TBool; e= BoolLt32(_loc,x,y); loc = _loc};
       | x=SELF; "<!!"; y=SELF -> {t=TBool; e= BoolLt64(_loc,x,y); loc = _loc};
-      | x=SELF; "<."; y=SELF -> {t=TBool; e= BoolLtF(_loc,x,y); loc = _loc}]
+      | x=SELF; "<."; y=SELF -> {t=TBool; e= BoolLtF32(_loc,x,y); loc = _loc}]
     
   | "<="
     [ x=SELF; "<="; y=SELF -> {t=TBool; e= BoolLtE32(_loc,x,y); loc = _loc};
       | x=SELF; "<=!"; y=SELF -> {t=TBool; e= BoolLtE32(_loc,x,y); loc = _loc};
       | x=SELF; "<=!!"; y=SELF -> {t=TBool; e= BoolLtE64(_loc,x,y); loc = _loc};
-      | x=SELF; "<=."; y=SELF -> {t=TBool; e= BoolLtEF(_loc,x,y); loc = _loc}]
+      | x=SELF; "<=."; y=SELF -> {t=TBool; e= BoolLtEF32(_loc,x,y); loc = _loc}]
 
   |  ">" 
       [ x=SELF; ">"; y=SELF -> {t=TBool; e= BoolGt32(_loc,x,y); loc = _loc};
         | x=SELF; ">!"; y=SELF -> {t=TBool; e= BoolGt32(_loc,x,y); loc = _loc};
         | x=SELF; ">!!"; y=SELF -> {t=TBool; e= BoolGt64(_loc,x,y); loc = _loc};
-        | x=SELF; ">."; y=SELF -> {t=TBool; e= BoolGtF(_loc,x,y); loc = _loc}]
+        | x=SELF; ">."; y=SELF -> {t=TBool; e= BoolGtF32(_loc,x,y); loc = _loc}]
 
   | ">="
       [ x=SELF; ">="; y=SELF -> {t=TBool; e= BoolGtE32(_loc,x,y); loc = _loc};
         | x=SELF; ">=!"; y=SELF -> {t=TBool; e= BoolGtE32(_loc,x,y); loc = _loc};
         | x=SELF; ">=!!"; y=SELF -> {t=TBool; e= BoolGtE64(_loc,x,y); loc = _loc};
-        | x=SELF; ">=."; y=SELF -> {t=TBool; e= BoolGtEF(_loc,x,y); loc = _loc}]
+        | x=SELF; ">=."; y=SELF -> {t=TBool; e= BoolGtEF32(_loc,x,y); loc = _loc}]
 		
 
   | "@"

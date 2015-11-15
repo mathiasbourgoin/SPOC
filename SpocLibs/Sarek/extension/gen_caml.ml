@@ -160,8 +160,8 @@ and parse_float f t =
         raise (TypeError (t, f.t, f.loc)))
 
 
-  | PlusF _ |  PlusF32 _ | PlusF64 _ | MinF _ |  MinF32 _ | MinF64 _ 
-  | MulF _ |  MulF32 _ | MulF64 _ | DivF _ |  DivF32 _ | DivF64 _ 
+  | PlusF32 _ | PlusF64 _ | MinF32 _ | MinF64 _ 
+  | MulF32 _ | MulF64 _ | DivF32 _ | DivF64 _ 
   | ModuleAccess _ | RecGet _ | Acc _ ->
     parse_body f 
 
@@ -268,8 +268,6 @@ and parse_body body =
     ( <:expr<Int32.add $(parse_int a TInt32)$  $(parse_int b TInt32)$>>)
   | Plus64 (_loc, a, b) ->
     ( <:expr<Int64.add $(parse_int a TInt64)$  $(parse_int b TInt64)$>>)
-  | PlusF (_loc, a,b) -> 
-    ( <:expr<$(parse_float a TFloat32)$ +. $(parse_float b TFloat32)$>>)
   | PlusF32 (_loc, a,b) -> 
     let a_ = (parse_float a TFloat32) in
     let b_ = (parse_float b TFloat32) in
@@ -282,8 +280,6 @@ and parse_body body =
     ( <:expr<Int32.sub $(parse_int a TInt32)$  $(parse_int b TInt32)$>>)
   | Min64 (_loc, a, b) ->
     ( <:expr<Int64.sub $(parse_int a TInt64)$  $(parse_int b TInt64)$>>)
-  | MinF (_loc, a,b) -> 
-    ( <:expr<$(parse_float a TFloat32)$ -. $(parse_float b TFloat32)$>>)
   | MinF32 (_loc, a,b) -> 
     let a_ = (parse_float a TFloat32) in
     let b_ = (parse_float b TFloat32) in
@@ -296,8 +292,6 @@ and parse_body body =
     ( <:expr<Int32.mul $(parse_int a TInt32)$  $(parse_int b TInt32)$>>)
   | Mul64 (_loc, a, b) ->
     ( <:expr<Int64.mul $(parse_int a TInt64)$  $(parse_int b TInt64)$>>)
-  | MulF (_loc, a,b) -> 
-    ( <:expr<$(parse_float a TFloat32)$ *. $(parse_float b TFloat32)$>>)
   | MulF32 (_loc, a,b) -> 
     let a_ = (parse_float a TFloat32) in
     let b_ = (parse_float b TFloat32) in
@@ -310,8 +304,6 @@ and parse_body body =
     ( <:expr<Int32.div $(parse_int a TInt32)$  $(parse_int b TInt32)$>>)
   | Div64 (_loc, a, b) ->
     ( <:expr<Int64.div $(parse_int a TInt64)$  $(parse_int b TInt64)$>>)
-  | DivF (_loc, a,b) -> 
-    ( <:expr<$(parse_float a TFloat32)$ /. $(parse_float b TFloat32)$>>)
   | DivF32 (_loc, a,b) -> 
     let a_ = (parse_float a TFloat32) in
     let b_ = (parse_float b TFloat32) in
@@ -463,7 +455,7 @@ and parse_body body =
     (<:expr<$parse_int a TInt32$ = $parse_int b TInt32$>>)
   | BoolEq64 (_loc, a, b) ->
     (<:expr<$parse_int a TInt64$ = $parse_int b TInt64$>>)
-  | BoolEqF (_loc, a, b) ->
+  | BoolEqF32 (_loc, a, b) ->
     (<:expr<$parse_float a TFloat32$ = $parse_float b TFloat32$>>)
   | BoolEqF64 (_loc, a, b) ->
     (<:expr<$parse_float a TFloat64$ = $parse_float b TFloat64$>>)
@@ -473,7 +465,7 @@ and parse_body body =
     (<:expr<$parse_int a TInt32$ < $parse_int b TInt32$>>)
   | BoolLt64 (_loc, a, b) ->
     (<:expr<$parse_int a TInt64$ < $parse_int b TInt64$>>)
-  | BoolLtF (_loc, a, b) ->
+  | BoolLtF32 (_loc, a, b) ->
     (<:expr<$parse_float a TFloat32$ < $parse_float b TFloat32$>>)
   | BoolLtF64 (_loc, a, b) ->
     (<:expr<$parse_float a TFloat64$ < $parse_float b TFloat64$>>)
@@ -483,7 +475,7 @@ and parse_body body =
     (<:expr<$parse_int a TInt32$ > $parse_int b TInt32$>>)
   | BoolGt64 (_loc, a, b) ->
     (<:expr<$parse_int a TInt64$ > $parse_int b TInt64$>>)
-  | BoolGtF (_loc, a, b) ->
+  | BoolGtF32 (_loc, a, b) ->
     (<:expr<$parse_float a TFloat32$ > $parse_float b TFloat32$>>)
   | BoolGtF64 (_loc, a, b) ->
     (<:expr<$parse_float a TFloat64$ > $parse_float b TFloat64$>>)
@@ -493,7 +485,7 @@ and parse_body body =
     (<:expr<$parse_int a TInt32$ <= $parse_int b TInt32$>>)
   | BoolLtE64 (_loc, a, b) ->
     (<:expr<$parse_int a TInt64$ <= $parse_int b TInt64$>>)
-  | BoolLtEF (_loc, a, b) ->
+  | BoolLtEF32 (_loc, a, b) ->
     (<:expr<$parse_float a TFloat32$ <= $parse_float b TFloat32$>>)
   | BoolLtEF64 (_loc, a, b) ->
     (<:expr<$parse_float a TFloat64$ <= $parse_float b TFloat64$>>)
@@ -503,7 +495,7 @@ and parse_body body =
     (<:expr<$parse_int a TInt32$ >= $parse_int b TInt32$>>)
   | BoolGtE64 (_loc, a, b) ->
     (<:expr<$parse_int a TInt64$ >= $parse_int b TInt64$>>)
-  | BoolGtEF (_loc, a, b) ->
+  | BoolGtEF32 (_loc, a, b) ->
     (<:expr<$parse_float a TFloat32$ >= $parse_float b TFloat32$>>)
   | BoolGtEF64 (_loc, a, b) ->
     (<:expr<$parse_float a TFloat64$ >= $parse_float b TFloat64$>>)

@@ -282,11 +282,11 @@ and typer body t =
      typer e1 TInt32;
      typer e2 TInt32;
      update_type body TBool
-   | BoolEqF (l, e1, e2) 
-   | BoolLtF (l, e1, e2) 
-   | BoolLtEF (l, e1, e2) 
-   | BoolGtF (l, e1, e2) 
-   | BoolGtEF (l, e1, e2) -> 
+   | BoolEqF32 (l, e1, e2) 
+   | BoolLtF32 (l, e1, e2) 
+   | BoolLtEF32 (l, e1, e2) 
+   | BoolGtF32 (l, e1, e2) 
+   | BoolGtEF32 (l, e1, e2) -> 
      typer e1 TFloat32;
      typer e2 TFloat32;
      update_type body TBool

@@ -123,8 +123,8 @@ and  parse_float2 f t=
   | Float32 (_loc, s)  -> <:expr<spoc_float $(ExFlo(_loc, s))$>>
   | Float64 (_loc, s)  -> <:expr<spoc_double $(ExFlo(_loc, s))$>>
 
-  | PlusF _ |  PlusF32 _ | PlusF64 _ | MinF _ |  MinF32 _ | MinF64 _ 
-  | MulF _ |  MulF32 _ | MulF64 _ | DivF _ |  DivF32 _ | DivF64 _ 
+  | PlusF32 _ | PlusF64 _ | MinF32 _ | MinF64 _ 
+  | MulF32 _ | MulF64 _ | DivF32 _ | DivF64 _ 
   | ModuleAccess _ | RecGet _ | Acc _ ->
     parse_body2 f false
 
@@ -310,12 +310,6 @@ and parse_body2 body bool =
       if not r then 
         return_type := TInt64;
       ( <:expr<spoc_plus $p1$ $p2$>>) 
-    | PlusF (_loc, a,b) -> 
-      let p1 = (parse_float2 a TFloat32) 
-      and p2 = (parse_float2 b TFloat32) in
-      if not r then 
-        return_type := TFloat32;
-      ( <:expr<spoc_plus_float $p1$ $p2$>>) 
     | PlusF32 (_loc, a,b) -> 
       let p1 = (parse_float2 a TFloat32) 
       and p2 = (parse_float2 b TFloat32) in
@@ -332,8 +326,6 @@ and parse_body2 body bool =
       ( <:expr<spoc_min $(parse_int2 a TInt32)$ $(parse_int2 b TInt32)$>>)
     | Min64 (_loc, a,b) -> body.t <- TInt64; 
       ( <:expr<spoc_min $(parse_int2 a TInt64)$ $(parse_int2 b TInt64)$>>)
-    | MinF (_loc, a,b) -> 
-      ( <:expr<spoc_min_float $(parse_float2 a TFloat32)$ $(parse_float2 b TFloat32)$>>)
     | MinF32 (_loc, a,b) -> 
       ( <:expr<spoc_min_float $(parse_float2 a TFloat32)$ $(parse_float2 b TFloat32)$>>)
     | MinF64 (_loc, a,b) -> 
@@ -344,8 +336,6 @@ and parse_body2 body bool =
       ( <:expr<spoc_mul $(parse_int2 a TInt32)$ $(parse_int2 b TInt32)$>>)
     | Mul64 (_loc, a,b) -> body.t <- TInt64; 
       ( <:expr<spoc_mul $(parse_int2 a TInt64)$ $(parse_int2 b TInt64)$>>)
-    | MulF (_loc, a,b) -> 
-      ( <:expr<spoc_mul_float $(parse_float2 a TFloat32)$ $(parse_float2 b TFloat32)$>>)
     | MulF32 (_loc, a,b) -> 
       if not r then 
         return_type := TFloat32;
@@ -356,8 +346,6 @@ and parse_body2 body bool =
       ( <:expr<spoc_div $(parse_int2 a TInt32)$ $(parse_int2 b TInt32)$>>)
     | Div64 (_loc, a,b) -> body.t <- TInt64; 
       ( <:expr<spoc_div $(parse_int2 a TInt64)$ $(parse_int2 b TInt64)$>>)
-    | DivF (_loc, a,b) -> 
-      ( <:expr<spoc_div_float $(parse_float2 a TFloat32)$ $(parse_float2 b TFloat32)$>>)
     | DivF32 (_loc, a,b) -> 
       ( <:expr<spoc_div_float $(parse_float2 a TFloat32)$ $(parse_float2 b TFloat32)$>>)
     | DivF64 (_loc, a,b) -> 
@@ -523,7 +511,7 @@ and parse_body2 body bool =
       <:expr< equals32 $aux a$ $aux b$>>
     | BoolEq64(_loc, a, b) ->
       <:expr< equals64 $aux a$ $aux b$>>
-    | BoolEqF(_loc, a, b) ->
+    | BoolEqF32(_loc, a, b) ->
       <:expr< equalsF $aux a$ $aux b$>>
     | BoolEqF64(_loc, a, b) ->
       <:expr< equalsF64 $aux a$ $aux b$>>
@@ -541,7 +529,7 @@ and parse_body2 body bool =
       ( <:expr<lt32 $p1$ $p2$>>) 
     | BoolLt64(_loc, a, b) ->
       <:expr< lt64 $aux a$ $aux b$>>
-    | BoolLtF(_loc, a, b) ->
+    | BoolLtF32(_loc, a, b) ->
       <:expr< ltF $aux a$ $aux b$>>
     | BoolLtF64(_loc, a, b) ->
       <:expr< ltF64 $aux a$ $aux b$>>
@@ -559,7 +547,7 @@ and parse_body2 body bool =
       ( <:expr<gt32 $p1$ $p2$>>) 
     | BoolGt64(_loc, a, b) ->
       <:expr< gt64 $aux a$ $aux b$>>
-    | BoolGtF(_loc, a, b) ->
+    | BoolGtF32(_loc, a, b) ->
       <:expr< gtF $aux a$ $aux b$>>
     | BoolGtF64(_loc, a, b) ->
       <:expr< gtF64 $aux a$ $aux b$>>
@@ -569,7 +557,7 @@ and parse_body2 body bool =
       <:expr< lte32 $aux a$ $aux b$>>
     | BoolLtE64(_loc, a, b) ->
       <:expr< lte64 $aux a$ $aux b$>>
-    | BoolLtEF(_loc, a, b) ->
+    | BoolLtEF32(_loc, a, b) ->
       <:expr< lteF $aux a$ $aux b$>>
     | BoolLtEF64(_loc, a, b) ->
       <:expr< lteF64 $aux a$ $aux b$>>
@@ -580,7 +568,7 @@ and parse_body2 body bool =
       <:expr< gte32 $aux a$ $aux b$>>
     | BoolGtE64(_loc, a, b) ->
       <:expr< gte64 $aux a$ $aux b$>>
-    | BoolGtEF(_loc, a, b) ->
+    | BoolGtEF32(_loc, a, b) ->
       <:expr< gteF $aux a$ $aux b$>>
     | BoolGtEF64(_loc, a, b) ->
       <:expr< gteF64 $aux a$ $aux b$>>

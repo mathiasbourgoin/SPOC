@@ -90,7 +90,6 @@ type k_expr =
   | Bind of Loc.t*kexpr*kexpr*kexpr*bool
   | Plus32 of Loc.t*kexpr*kexpr
   | Plus64 of Loc.t*kexpr*kexpr
-  | PlusF of Loc.t*kexpr*kexpr
   | PlusF32 of Loc.t*kexpr*kexpr
   | PlusF64 of Loc.t*kexpr*kexpr
   | Record of Loc.t*field list
@@ -99,13 +98,11 @@ type k_expr =
 
   | Min32 of Loc.t*kexpr*kexpr
   | Min64 of Loc.t*kexpr*kexpr
-  | MinF of Loc.t*kexpr*kexpr
   | MinF32 of Loc.t*kexpr*kexpr
   | MinF64 of Loc.t*kexpr*kexpr
 
   | Mul32 of Loc.t*kexpr*kexpr
   | Mul64 of Loc.t*kexpr*kexpr
-  | MulF of Loc.t*kexpr*kexpr
   | MulF32 of Loc.t*kexpr*kexpr
   | MulF64 of Loc.t*kexpr*kexpr
 
@@ -113,7 +110,6 @@ type k_expr =
 
   | Div32 of Loc.t*kexpr*kexpr
   | Div64 of Loc.t*kexpr*kexpr
-  | DivF of Loc.t*kexpr*kexpr
   | DivF32 of Loc.t*kexpr*kexpr
   | DivF64 of Loc.t*kexpr*kexpr
 
@@ -130,30 +126,30 @@ type k_expr =
   | BoolEq of Loc.t*kexpr*kexpr
   | BoolEq32 of Loc.t*kexpr*kexpr
   | BoolEq64 of Loc.t*kexpr*kexpr
-  | BoolEqF of Loc.t*kexpr*kexpr
+  | BoolEqF32 of Loc.t*kexpr*kexpr
   | BoolEqF64 of Loc.t*kexpr*kexpr
   | BoolLt of Loc.t*kexpr*kexpr
   | BoolLt32 of Loc.t*kexpr*kexpr
   | BoolLt64 of Loc.t*kexpr*kexpr
-  | BoolLtF of Loc.t*kexpr*kexpr
+  | BoolLtF32 of Loc.t*kexpr*kexpr
   | BoolLtF64 of Loc.t*kexpr*kexpr
 
   | BoolLtE of Loc.t*kexpr*kexpr
   | BoolLtE32 of Loc.t*kexpr*kexpr
   | BoolLtE64 of Loc.t*kexpr*kexpr
-  | BoolLtEF of Loc.t*kexpr*kexpr
+  | BoolLtEF32 of Loc.t*kexpr*kexpr
   | BoolLtEF64 of Loc.t*kexpr*kexpr
 
   | BoolGt of Loc.t*kexpr*kexpr
   | BoolGt32 of Loc.t*kexpr*kexpr
   | BoolGt64 of Loc.t*kexpr*kexpr
-  | BoolGtF of Loc.t*kexpr*kexpr
+  | BoolGtF32 of Loc.t*kexpr*kexpr
   | BoolGtF64 of Loc.t*kexpr*kexpr
 
   | BoolGtE of Loc.t*kexpr*kexpr
   | BoolGtE32 of Loc.t*kexpr*kexpr
   | BoolGtE64 of Loc.t*kexpr*kexpr
-  | BoolGtEF of Loc.t*kexpr*kexpr
+  | BoolGtEF32 of Loc.t*kexpr*kexpr
   | BoolGtEF64 of Loc.t*kexpr*kexpr
 
   | Ife of Loc.t * kexpr * kexpr * kexpr
@@ -240,25 +236,21 @@ let rec k_expr_to_string = function
 (*  | Plus _ -> "Plus"*)
   | Plus32 _ -> "Plus32"
   | Plus64 _ -> "Plus64"
-  | PlusF _ -> "PlusF"
   | PlusF32 _ -> "PlusF32"
   | PlusF64 _ -> "PlusF64"
 (*  | Min _ -> "Min"*)
   | Min32 _ -> "Min32"
   | Min64 _ -> "Min64"
-  | MinF _ -> "MinF"
   | MinF32 _ -> "MinF32"
   | MinF64 _ -> "MinF64"
 (*  | Mul _ -> "Mul"*)
   | Mul32 _ -> "Mul32"
   | Mul64 _ -> "Mul64"
-  | MulF _ -> "MulF"
   | MulF32 _ -> "MulF32"
   | MulF64 _ -> "MulF64"
 (*  | Div _ -> "Div"*)
   | Div32 _ -> "Div32"
   | Div64 _ -> "Div64"
-  | DivF _ -> "DivF"
   | DivF32 _ -> "DivF32"
   | DivF64 _ -> "DivF64"
   | Mod _ -> "Mod"
@@ -273,27 +265,27 @@ let rec k_expr_to_string = function
   | BoolEq _ -> "BoolEq"
   | BoolEq32 _ -> "BoolEq32"
   | BoolEq64 _ -> "BoolEq64"
-  | BoolEqF _ -> "BoolEqF"
+  | BoolEqF32 _ -> "BoolEqF"
   | BoolEqF64 _ -> "BoolEqF64"
   | BoolLt _ -> "BoolLt"
   | BoolLt32 _ -> "BoolLt32"
   | BoolLt64 _ -> "BoolLt64"
-  | BoolLtF _ -> "BoolLtF"
+  | BoolLtF32 _ -> "BoolLtF"
   | BoolLtF64 _ -> "BoolEqF64"
   | BoolGt _ -> "BoolGt"
   | BoolGt32 _ -> "BoolGt32"
   | BoolGt64 _ -> "BoolGt64"
-  | BoolGtF _ -> "BoolGtF"
+  | BoolGtF32 _ -> "BoolGtF"
   | BoolGtF64 _ -> "BoolGtF64"
   | BoolLtE _ -> "BoolLtE"
   | BoolLtE32 _ -> "BoolLtE32"
   | BoolLtE64 _ -> "BoolLtE64"
-  | BoolLtEF _ -> "BoolLtEF"
+  | BoolLtEF32 _ -> "BoolLtEF"
   | BoolLtEF64 _ -> "BoolLtEF64"
   | BoolGtE _ -> "BoolGtE"
   | BoolGtE32 _ -> "BoolGtE32"
   | BoolGtE64 _ -> "BoolGtE64"
-  | BoolGtEF _ -> "BoolGtEF"
+  | BoolGtEF32 _ -> "BoolGtEF"
   | BoolGtEF64 _ -> "BoolGtEF64"
 
   | BoolAnd _ -> "BoolAnd"
