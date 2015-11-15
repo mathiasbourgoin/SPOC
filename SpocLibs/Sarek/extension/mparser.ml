@@ -247,7 +247,6 @@ let rec float32_expr f =
   in f32_typer f;
 
   (match f.e with
-   | PlusF (l, a,b) 
    | PlusF32 (l, a,b) -> 
      f.e <- PlusF32 (l, float32_expr a, float32_expr b)
    | Float (l,s) 
@@ -268,24 +267,20 @@ let rec float64_expr f =
      | _ ->() ) 
   in f64_typer f;
   (match f.e with
-   | PlusF (l, a,b) 
    | PlusF64 (l, a,b) -> 
      (
        f.e <- PlusF64 (l, float64_expr a, float64_expr b)
      )
-   | MinF (l, a,b) 
    | MinF64 (l, a,b) -> 
      (
        f.e <- MinF64 (l, float64_expr a, float64_expr b)
      )
 
-   | MulF (l, a,b) 
    | MulF64 (l, a,b) -> 
      (
        f.e <- MulF64 (l, float64_expr a, float64_expr b)
      )
 
-   | DivF (l, a,b) 
    | DivF64 (l, a,b) -> 
      (
        f.e <- DivF64 (l, float64_expr a, float64_expr b)
@@ -306,9 +301,9 @@ let rec float64_expr f =
    | Int _ | BoolEq32 _ | BoolEq64 _ -> () 
    | BoolLt _ | BoolLt32 _ | BoolLt64 _ 
    (*   | Plus _ | Min _ | Mul _ | Div  _ *) ->() 
-   | BoolEqF (l,a,b) ->
+   | BoolEqF32 (l,a,b) ->
      f.e <- BoolEqF64 (l, float64_expr a, float64_expr b)
-   | BoolLtF (l,a,b) -> 
+   | BoolLtF32 (l,a,b) -> 
      f.e <- BoolLtF64 (l, float64_expr a, float64_expr b)
    | Ife (l,cond,cons1,cons2) -> 
      f.e <- Ife (l, float64_expr cond, float64_expr cons1, float64_expr cons2)
