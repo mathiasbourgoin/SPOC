@@ -125,7 +125,7 @@ and  parse_float2 f t=
 
   | PlusF _ |  PlusF32 _ | PlusF64 _ | MinF _ |  MinF32 _ | MinF64 _ 
   | MulF _ |  MulF32 _ | MulF64 _ | DivF _ |  DivF32 _ | DivF64 _ 
-  | ModuleAccess _ | RecGet _ ->
+  | ModuleAccess _ | RecGet _ | Acc _ ->
     parse_body2 f false
 
   | VecGet (_loc, vector, index)  -> 

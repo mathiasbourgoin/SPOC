@@ -58,16 +58,12 @@ let rec parse_int i t=
       | TInt64  -> <:expr< $(ExInt64 (_loc, s))$>>
       | _ -> assert (not debug); 
         raise (TypeError (t, i.t, i.loc)))
-  | Plus32 (_loc, a, b) | Plus64 (_loc, a, b)  -> 
+
+  | Plus32 _ | Plus64 _  | Min32 _ | Min64 _  
+  | Mul32 _ | Mul64 _ | Div32 _ | Div64 _
+  | Mod _ ->
     parse_body i
-  | Min32 (_loc, a, b) | Min64 (_loc, a, b)  -> 
-    parse_body i
-  | Mul32 (_loc, a, b) | Mul64 (_loc, a, b)  -> 
-    parse_body i
-  | Div32 (_loc, a, b) | Div64 (_loc, a, b)  -> 
-    parse_body i
-  | Mod (_loc, a, b) -> 
-    parse_body i
+
   | Bind (_loc, var,y, z, is_mutable)  ->
     (
       let gen_z = parse_int z t in
@@ -162,13 +158,11 @@ and parse_float f t =
       | TFloat64  -> <:expr< $(ExFlo (_loc, s))$>>
       | _ -> assert (not debug); 
         raise (TypeError (t, f.t, f.loc)))
-  | PlusF (_loc, a, b) | PlusF32 (_loc, a, b) | PlusF64  (_loc, a, b)-> 
-    parse_body f 
-  | MinF (_loc, a, b) | MinF32 (_loc, a, b) | MinF64  (_loc, a, b)-> 
-    parse_body f 
-  | MulF _ | MulF32 _  | MulF64 _-> 
-    parse_body f 
-  | DivF (_loc, a, b) | DivF32 (_loc, a, b) | DivF64  (_loc, a, b)-> 
+
+
+  | PlusF _ |  PlusF32 _ | PlusF64 _ | MinF _ |  MinF32 _ | MinF64 _ 
+  | MulF _ |  MulF32 _ | MulF64 _ | DivF _ |  DivF32 _ | DivF64 _ 
+  | ModuleAccess _ | RecGet _ | Acc _ ->
     parse_body f 
 
   | VecGet (_loc, vector, index)  -> 
@@ -207,9 +201,6 @@ and parse_float f t =
      | _  ->
        assert (not debug); 
        failwith "Unknwown vector");
-  | ModuleAccess _ -> parse_body f
-  | Acc _ -> parse_body f
-  | RecGet _ -> parse_body f
   | _ ->   
     my_eprintf (Printf.sprintf "(*** val %s *)\n%!" (k_expr_to_string f.e));
     assert (not debug); 
@@ -532,8 +523,8 @@ and parse_body body =
   | DoLoop (_loc, ({t=_;e=Id(_,s) ;loc=_} as id), min, max, body) ->
     let var = (Hashtbl.find !current_args (string_of_ident s)) in
     var.var_type <- TInt32;
-    let min = (parse_body min) in
-    let max = (parse_body max) in
+    let min = parse_body min in
+    let max = parse_body max in
     let body = parse_body body in
     let string_of_id id =
       match id with
