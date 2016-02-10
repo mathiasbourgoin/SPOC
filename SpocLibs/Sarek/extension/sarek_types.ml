@@ -86,7 +86,7 @@ type k_expr =
   | ArrSet of Loc.t*kexpr*kexpr
   | ArrGet of Loc.t*kexpr*kexpr
   | Seq of Loc.t*kexpr*kexpr
-  | Fun of Loc.t*expr*ktyp*cfun
+  | Fun of Loc.t*expr*ktyp*cfun*(string list)
   | Bind of Loc.t*kexpr*kexpr*kexpr*bool
   | Plus32 of Loc.t*kexpr*kexpr
   | Plus64 of Loc.t*kexpr*kexpr
@@ -348,7 +348,7 @@ type cstr = {
   typ : customtypes
 }
 
-type localfun = cfun*str_item
+type localfun = cfun*str_item*string list
 
 let current_args = ref (args ()) 
 

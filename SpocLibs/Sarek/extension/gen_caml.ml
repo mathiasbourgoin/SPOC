@@ -11,7 +11,8 @@ let rec parse_int i t=
     (
       let is_mutable = ref false in
       ( try 
-          let var = 
+          let var =
+            (* Id of a variable *)
             Hashtbl.find !current_args (string_of_ident s)  in
           (
             is_mutable := var.is_mutable;
@@ -22,7 +23,8 @@ let rec parse_int i t=
               raise (TypeError (t, var.var_type, _loc)));
         with Not_found -> 
           (
-            try 
+            try
+              (* Id of a Sarek intrinsic *)
               let c_const = Hashtbl.find !intrinsics_const 
                   (string_of_ident s) in
               (match c_const.typ with
@@ -252,7 +254,7 @@ and parse_body body =
       match var.e with
       | Id (_loc,s)  ->
 	(match y.e with
-         | Fun (_loc,stri,tt,funv) ->
+         | Fun (_loc,stri,tt,funv,lifted) ->
            parse_body z;
          | _ ->
            let y = parse_body y in
@@ -543,14 +545,22 @@ and parse_body body =
     let e1 = 
       match e1.e with
       | Id (_loc, s) ->
-        (try 
-	   ignore(Hashtbl.find !global_fun (string_of_ident s)); 
-           <:expr<$parse_body e1$.ml_fun>>
+        (try
+	   ignore(Hashtbl.find !global_fun (string_of_ident s));
+    <:expr<$parse_body e1$.ml_fun>>
          with
          | Not_found ->
            (try 
-	      ignore(Hashtbl.find !local_fun (string_of_ident s));
-	      <:expr<$parse_body e1$.ml_fun>>
+	      let (_,_,lifted) = (Hashtbl.find !local_fun (string_of_ident s)) in
+       let rec aux acc = function
+         | [] -> acc
+         | t::q ->
+           (try ignore(Hashtbl.find !current_args t)
+           with | Not_found -> (););
+           aux (<:expr< $acc$ $ExId(_loc,IdLid(_loc,t))$>>) q 
+       in
+       aux 
+	 <:expr<$parse_body e1$.ml_fun>> lifted
             with
             | Not_found ->
 	      parse_body e1) )

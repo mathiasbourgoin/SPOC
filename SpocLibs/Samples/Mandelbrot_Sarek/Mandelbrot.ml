@@ -35,10 +35,13 @@ let simple = ref true
 
 let mandelbrot_recompile = kern img ->
 let open Std in
-let normalize = fun x y -> x *. x +. y *. y in
-  let y = thread_idx_y + (block_idx_y * block_dim_y) in
-  let x = thread_idx_x + (block_idx_x * block_dim_x) in
-  (if (y >= @height) || (x >= @width) then
+let i = 0. in
+
+let normalize = fun x y -> x *. x +. y *. y +. i in
+
+let y = thread_idx_y + (block_idx_y * block_dim_y) in
+let x = thread_idx_x + (block_idx_x * block_dim_x) in
+(if (y >= @height) || (x >= @width) then
       return () ;
   );
 (*  let shiftx = 0 in
@@ -52,7 +55,7 @@ let normalize = fun x y -> x *. x +. y *. y in
   let mutable y2 = 0. in
   let a = 4. *. ((float x0) /. (float @width)) /. @zoom  -. 2. in
   let b = 4. *. ((float y0) /. (float @height)) /. @zoom -. 2. in
- 
+
   let mutable norm = normalize x1  y1
   in
   while ((cpt < @max_iter) && (norm <=. 4.)) do

@@ -341,7 +341,7 @@ else
           })>>
 in
 let local =  
-  Hashtbl.fold (fun key (funv,stri) init -> 
+  Hashtbl.fold (fun key (funv,stri,_) init -> 
 		<:str_item<
 		$stri$ $init$>>) !local_fun
   <:str_item<>>
@@ -549,10 +549,24 @@ match_cases :
       (_loc, p, e)
     ]
   ];
+kident :
+  [
+    [ x = ident ->
+      Printf.eprintf "adding %s\n" (string_of_ident x);
+      Hashtbl.add !current_args (string_of_ident x)
+                 {n= (-1);
+          var_type = TUnknown;
+          is_mutable = false;
+          read_only = false;
+          write_only = false;
+          is_global = false;};
+      x]
+  ];
+  
 kexpr:
   [ 
-    "let"
-      ["let"; opt_mutable = OPT "mutable";  var = ident; "="; y = SELF; "in"; z = sequence  ->  
+    "let" 
+      ["let"; opt_mutable = OPT "mutable";  var = kident; "="; y = SELF; "in"; z = sequence  ->
        {t=TUnknown; 
         e=  Bind(_loc, 
                  {t= TUnknown; 
@@ -571,7 +585,11 @@ kexpr:
        }]
   | "fun"
       [ "fun"; args = LIST1 k_patt; "->"; body = sequence ->
-        (*save current kernel environment*)      
+        (*copy args in local list, (usedr fo lambda lifting *)
+        let args = ref args in
+        let lifted = ref [] in
+        
+        (*save current kernel environment*)
         let saved_arg_idx = !arg_idx;
         and saved_return_type = !return_type;
         and saved_arg_list = List.map (fun a -> a) !arg_list 
@@ -580,20 +598,50 @@ kexpr:
         arg_idx := 0;
         return_type := TUnknown;
         arg_list := [];
+
+        let old_args = Hashtbl.create (Hashtbl.length !current_args) in
+        Hashtbl.iter (Hashtbl.add old_args) !current_args;
+
         Hashtbl.clear !current_args;
-
-        List.iter new_arg_of_patt args;
-
+        
+        List.iter new_arg_of_patt !args;
+        
         retype := true;
         (try 
            while !retype do
              retype := false;
              unknown := 0;
-             typer body (TApp (TUnknown, TUnknown));
-             my_eprintf (Printf.sprintf "\nUnknown : %d \n\n\n%!" !unknown)
+             (try
+               typer body (TApp (TUnknown, TUnknown));
+             with
+             | Unbound_value (value, loc) ->
+               (
+                 (* unbound value in local function, do we need lambda lifitng? *)
+                 (try
+                    Hashtbl.iter (fun s _ -> Printf.eprintf "%s\n" s) old_args;  
+                    ignore(Hashtbl.find old_args value);
+                    (* value found in enclosing kernel/function, needs lambda lifting *)
+                    args := (<:patt< $lid:value$ >>) :: !args;
+                    lifted := value :: !lifted; 
+                    Hashtbl.add !current_args (value)
+                      {n= (-1);
+                       var_type = TUnknown;
+                       is_mutable = false;
+                       read_only = false;
+                       write_only = false;
+                       is_global = false;};
+                  with
+                  (* not found... *)
+                  | Not_found -> 
+                    (Printf.eprintf "%s\n%!" ("\027[31m Unbound Value \027[00m : \027[33m"^
+                                              (value)^"\027[00m in position : "^(Loc.to_string loc)^"");
+                     exit 3))
+               ));
+               
+               my_eprintf (Printf.sprintf "\nUnknown : %d \n\n\n%!" !unknown);
            done;
-	 with
-	 | TypeError(expected, given, loc) -> 
+         with
+         | TypeError(expected, given, loc) -> 
            (
              failwith ("Type Error : expecting : "^
 		       (ktyp_to_string expected)^" but given : "^
@@ -601,8 +649,8 @@ kexpr:
          | Immutable (value, loc) ->
            (Printf.eprintf "%s\n%!" ("\027[31m Immutable Value \027[00m : \027[33m"^
                                      (value)^"\027[00m used as mutable in position : "^(Loc.to_string loc)^"");
-            exit 2;));  
-
+            exit 2;));
+        
         my_eprintf ("fun_type : "^ktyp_to_string body.t^"\n");
 
         return_type := body.t;
@@ -642,7 +690,7 @@ kexpr:
           let n_body2 = <:expr<params $List.fold_left 
                              (fun a b -> <:expr<concat $b$ $a$>>) 
 <:expr<empty_arg()>> 
-  ((List.rev_map gen_arg_from_patt2 args))$>> in 
+  ((List.rev_map gen_arg_from_patt2 !args))$>> in 
 let gen_body2 =  <:expr< 
                          spoc_gen_kernel 
                          $n_body2$
@@ -650,7 +698,7 @@ let gen_body2 =  <:expr<
                          b_body
                          $>>
 in
-let gen_args = parse_args args gen_body
+let gen_args = parse_args !args gen_body
 in
 let ret =
   incr arg_idx;
@@ -676,7 +724,7 @@ let full_typ =
       | (PaId(_,i)) ->
         let value = (Hashtbl.find !current_args (string_of_ident i)) in
         TApp (value.var_type, seed)
-      | _ -> assert false) !return_type  (List.rev args)
+      | _ -> assert false) !return_type  (List.rev !args)
 in
 my_eprintf ("/....... "^ktyp_to_string full_typ^"\n");
 let funv =  {nb_args=0; 
@@ -684,14 +732,14 @@ let funv =  {nb_args=0;
              opencl_val=""; typ=full_typ} in
 
 let local =  
-  Hashtbl.fold (fun key (funv,stri) init -> 
+  Hashtbl.fold (fun key (funv,stri,_) init -> 
       <:str_item<
 $stri$ $init$>>) !local_fun
     <:str_item<>>
 in
 let a = <:expr< 
                 let open Kirc in 
-                let a = {
+                let local_function  = {
                 ml_fun = $gen_args$;
 	        funbody = $gen_body2$;
                 fun_ret = $ret$;
@@ -700,7 +748,7 @@ let a = <:expr<
       | t::[] -> t 
       | _ -> exSem_of_list  !extensions$|];
 }
-in a>>  in
+in local_function >>  in
 let res =
   <:expr< 
 	  let module Local_funs = struct
@@ -720,7 +768,7 @@ in
 
 	      {
     t = full_typ;
-    e = Fun (_loc,res,full_typ,funv);
+    e = Fun (_loc,res,full_typ,funv, !lifted);
     loc = _loc
        }  
 ]
