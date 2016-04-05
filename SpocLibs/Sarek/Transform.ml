@@ -112,7 +112,7 @@ let propagate f expr =
                             Array.map (fun (i,ofid,e) -> (i,ofid,f e)) b)
   | _ -> failwith "unimplemented yet"
 
-let map ((ker: ('a, 'b, ('c -> 'd), 'e,'f) sarek_kernel)) ?dev:(device=(Spoc.Devices.init ()).(0)) (vec_in : ('g, 'h) Vector.vector) : ('i, 'j) Vector.vector= 
+let map ((ker: ('a, 'b, ('c -> 'd), 'e,'f) sarek_kernel)) ?dev:(device=(Spoc.Devices.init ()).(0)) (vec_in : ('c, 'h) Vector.vector) : ('d, 'j) Vector.vector= 
   let ker2,k = ker in 
   let (k1,k2,k3) = (k.ml_kern, k.body,k.ret_val) in 
   param_list := [];
@@ -224,7 +224,7 @@ let map ((ker: ('a, 'b, ('c -> 'd), 'e,'f) sarek_kernel)) ?dev:(device=(Spoc.Dev
   );					
   vec_out
     
-let map2 ((ker: ('a, 'b,('c -> 'd -> 'e), 'f,'g) sarek_kernel)) ?dev:(device=(Spoc.Devices.init ()).(0)) (vec_in1 : ('h, 'i) Vector.vector) (vec_in2 : ('j, 'k) Vector.vector) : ('l, 'm) Vector.vector = 
+let map2 ((ker: ('a, 'b,('c -> 'd -> 'e), 'f,'g) sarek_kernel)) ?dev:(device=(Spoc.Devices.init ()).(0)) (vec_in1 : ('c, 'i) Vector.vector) (vec_in2 : ('d, 'k) Vector.vector) : ('e, 'm) Vector.vector = 
   let ker2,k = ker in
   let (k1,k2,k3) = (k.ml_kern, k.body,k.ret_val) in 
   param_list := [];

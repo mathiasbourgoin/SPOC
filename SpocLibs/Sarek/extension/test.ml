@@ -23,7 +23,7 @@ let mandelbrot = kern img shiftx shifty zoom ->
   let b = 4. *. ((float y0) /. (float @height)) /. zoom -. 2. in
 
   let normalize = fun x y -> 
-    let pow2 = fun x -> x *. x +. a in
+    let pow2 = fun x -> x *. x in
     (pow2 x) +. (pow2 y) in  
 
   let mutable norm = normalize x1  y1
