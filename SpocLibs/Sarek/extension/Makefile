@@ -8,7 +8,7 @@ install: kernels_int.cma
 	@ocamlfind install sarek_syntax *.cm* META
 
 uninstall :
-	ocamlfind query sarek_syntax && ocamlfind remove sarek_syntax
+	(ocamlfind query sarek_syntax && ocamlfind remove sarek_syntax) || echo "sarek_syntax not installed"
 
 kernels_int.cma:debug.cmo sarek_types.cmo typer.cmo gen_caml.cmo gen_kir.cmo mparser.cmo  sarek_grammar.cmo
 	@ocamlfind ocamlc -a $^ -o kernels_int.cma
