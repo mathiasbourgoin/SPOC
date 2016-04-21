@@ -87,5 +87,5 @@ ocp-install:
 	cd extension && make install
 
 uninstall :
-	ocamlfind query sarek && ocamlfind remove sarek
+	(ocamlfind query sarek && ocamlfind remove sarek) || echo "sarek not installed"
 	cd extension && make uninstall
