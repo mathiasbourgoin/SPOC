@@ -58,7 +58,8 @@ let x = thread_idx_x + (block_idx_x * block_dim_x) in
 
   let mutable norm = normalize x1  y1
   in
-  while ((cpt < @max_iter) && (norm <=. 4.)) do
+  while ((cpt < @max_iter) &&
+         (norm <=. 4.)) do
     cpt := (cpt + 1);
     x2 := (x1 *. x1) -. (y1 *. y1) +. a;
     y2 :=  (2. *. x1 *. y1 ) +. b;

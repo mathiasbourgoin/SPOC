@@ -18,20 +18,20 @@ start :
 
 %.cmo:%.ml
 	@echo  "\033[32m[$@]\033[0m" 
-	@ocamlfind ocamlc -thread -package spoc -c $< 
+	@ocamlfind ocamlc -thread -package spoc,ctypes,ctypes.foreign -c $< 
 
 %.cmx:%.ml
 	@echo  "\033[32m[$@]\033[0m" 
-	@ocamlfind ocamlopt -thread -package spoc -c $< 
+	@ocamlfind ocamlopt -thread -package spoc,ctypes,ctypes.foreign -c $< 
 
 %.cmi:%.mli
 	@echo  "\033[32m[$@]\033[0m" 
-	@ocamlfind ocamlc -thread -package spoc -c $< 
+	@ocamlfind ocamlc -thread -package spoc,ctypes,ctypes.foreign -c $< 
 
 
 sarek.cma: $(MLOBJ_B)
 	@echo  "\033[31m[sarek.cma]\033[0m"
-	ocamlfind ocamlc -thread -package spoc -a -o sarek.cma $(MLOBJ_B)
+	ocamlfind ocamlc -thread -package spoc,ctypes.foreign,ctypes  -a -o sarek.cma $(MLOBJ_B)
 
 libsarek.a:sarek.cma
 	@cp sarek.a libsarek.a	

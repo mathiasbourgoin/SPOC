@@ -56,11 +56,11 @@ test: kernels_int.cma test.ml
 	ocamlfind ocamlc -thread -package ctypes,spoc,sarek, -linkpkg -o $@ $<
 
 %.pp.nat: %.pp.ml
-	ocamlfind ocamlopt -nodynlink -thread  -package ctypes,spoc,sarek,graphics,camlimages,tsdl,camlimages.png -linkpkg -o $@ $<
+	ocamlfind ocamlopt  -thread  -package ctypes,ctypes.foreign,spoc,sarek,graphics,camlimages,tsdl,camlimages.png -linkpkg -o $@ $<
 
 %.nat : %.ml
-	ocamlfind ocamlopt -unsafe -thread -package spoc,sarek \
-		-package sarek_syntax -syntax camlp4o -linkpkg -o $@ $<	
+	ocamlfind ocamlopt  -thread -package ctypes,ctypes.foreign,spoc,sarek \
+		-package sarek_syntax -syntax camlp4o  -linkpkg -o $@ $<	
 
 %.byte : %.ml
 	ocamlfind ocamlc -thread -package spoc,sarek \

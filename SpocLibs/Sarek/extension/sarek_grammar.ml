@@ -191,8 +191,65 @@ let gen_kernel () = ()
        in
        let n_body2 = <:expr<params $List.fold_left 
                             (fun a b -> <:expr<concat $b$ $a$>>) 
+
 <:expr<empty_arg()>> 
   ((List.rev_map gen_arg_from_patt2 args))$>> in 
+let ff_type = 
+  let get_ff_type p = 
+    match p with
+    | PaId (_loc, IdLid (_loc2, x) ) -> 
+      (let var = (Hashtbl.find !current_args x) in   
+       match var.var_type with
+       | TInt32  ->                                                 
+         <:str_item<let $lid:("task_"^x)$ = field task  $str:"task_"^x$ int>>
+       | TInt64 ->    
+         <:str_item<let $lid:("task_"^x)$ = field task  $str:"task_"^x$ int>>
+       (* | TFloat32 ->  *)
+       (*   <:expr<(new_float_var $`int:var.n$  $str:x$)>> *)
+       (* | TFloat64  ->  *)
+       (*   <:expr<(new_float64_var $`int:var.n$  $str:x$)>> *)
+       (* | Custom (t,n) -> *)
+       (*   <:expr<(new_custom_var $str:n$ $`int:var.n$  $str:x$)>> *)
+       | TVec k ->  
+         (match k with 
+          (*| TInt32 | TInt64  ->   <:expr<(new_int_vec_var $`int:var.n$ $str:x$)>> *)
+          | TFloat32 ->   
+            <:str_item<let $lid:("task_"^x)$ = field task  $str:"task_"^x$ (ptr float)>>
+          (*    | TFloat64 ->   <:expr<(new_double_vec_var $`int:var.n$  $str:x$)>> *)
+          (*    | Custom (t,n) -> *)
+          (*      <:expr<(new_custom_vec_var $str:n$ $`int:var.n$  $str:x$)>> *)
+          (*    | _  -> failwith "Forbidden vector  type in kernel declaration") *)
+          | _ ->  failwith "gfft : unimplemented yet"
+         )
+       | _  -> failwith "error get_ff_type")
+  in
+  let f p =
+    match p with
+    | PaId (_loc, IdLid (_loc2, x) ) -> x
+    | _ -> assert false  
+  in
+  <:str_item< open Ctypes
+              type task
+              let task : task structure typ = structure "TASK";;
+              $List.fold_left 
+              (fun a b -> <:str_item< $a$;; $b$>>)
+              <:str_item< >> 
+              ((List.rev_map get_ff_type args))$
+              let () = seal task
+              let create_task ($paCom_of_list args$) = 
+                let t = make task in
+                $List.fold_left 
+                  (fun a b -> <:expr< $a$;
+                                      Ctypes.setf t $lid:("task_"^b)$ $lid:b$; 
+                                      
+                              >>)
+                  <:expr< >> (List.map f args)$;
+                t
+                                           
+>>
+
+in
+
 let gen_body2 =  <:expr< 
                          spoc_gen_kernel 
                          $n_body2$
@@ -294,6 +351,7 @@ let res =
   if !has_vector then 
   <:expr< let module M = 
           struct 
+          $ff_type$;;
           let exec_fun $tup_args$ = Spoc.Kernel.exec $list_args$;;
           class ['a, 'b] $lid:class_name$ = 
           object (self)
@@ -316,7 +374,8 @@ let res =
           ret_val = $ret$;
           extensions = $extensions$;
           }
-          )>>
+          )
+          >>
 else   
   <:expr< let module M = 
           struct
@@ -351,7 +410,8 @@ in
  $local$
 end
 in let open Local_funs in
-$res$>>
+$res$
+>>
 ]
 ];
 str_item:
@@ -490,7 +550,8 @@ let $id:name$ =
 | _ -> exSem_of_list  !extensions$|];
 }
 in
-a;;>>
+a;;
+>>
 ]
 ];
 k_patt:
@@ -917,6 +978,7 @@ in
   | "simple" NONA
       [ "("; ")" -> {t=TUnknown; e = Noop; loc = _loc};
         |  "(" ;  x= sequence; ")"  ->  x;
+        |  "(" ;  x= SELF; ")"  ->  x;
         | "begin" ;  x= sequence; "end"  ->  x;
         | x = FLOAT-> {t=TFloat32; e = Float32 (_loc, x); loc = _loc};
         | x = LIDENT  -> {t=TUnknown; e = Id (_loc, IdLid(_loc,x)); loc = _loc};
