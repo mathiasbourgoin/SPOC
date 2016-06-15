@@ -38,7 +38,7 @@ val auto : bool ref
 val unsafe : bool ref
 (**/**)
  
-(** By default Spoc wiil automatically handle memory transfers
+(** By default Spoc will automatically handle memory transfers
 	To make explicit transfers you have to stop auto_transfers 
 	
 	[auto_transfers true] will make transfers automatic

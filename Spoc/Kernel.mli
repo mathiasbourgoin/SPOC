@@ -122,7 +122,7 @@ string ->
 string ->
 object
   
-  (** hashtable containg the compiled binaries of the kernel (one for each device it has been compiled  for *)
+  (** hashtable containing the compiled binaries of the kernel (one for each device it has been compiled  for *)
   val binaries : (Devices.device, kernel) Hashtbl.t
   (** the cuda source code of the kernel *)
   val mutable cuda_sources : string list

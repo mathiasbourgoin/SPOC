@@ -41,7 +41,7 @@ type customarray
 (** Spoc offers many predefined vectors types.
 Custom vectors can contain any kind of data types.*)
 type ('a,'b) custom = {
-  size : int; (** the size of an element when transfered to a gpgpu device*)
+  size : int; (** the size of an element when transferred to a gpgpu device*)
   get : customarray -> int -> 'a; (** a function to access elements from the vector *)
   set : customarray -> int -> 'a -> unit; (** a function to modify an element of the vector *)
 }
@@ -86,7 +86,7 @@ external float_of_float32 : float -> float = "float_of_float32"
 type vec_device = No_dev | Dev of Devices.device | Transferring of Devices.device
 
 (** a vector  represents every information needed by Spoc to manage it
- It uses Bigarrays to manage data on the cpu side (see the OCaml Bigarray Module for more informations) *)
+ It uses Bigarrays to manage data on the cpu side (see the OCaml Bigarray Module for more information) *)
 type ('a, 'b) vector
   
 (** sub vectors are vector parts sharing memory space on cpu memory BUT not on gpu memory, 

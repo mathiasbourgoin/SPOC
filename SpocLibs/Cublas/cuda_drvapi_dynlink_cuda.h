@@ -349,7 +349,7 @@ typedef enum CUjit_option_enum
     CU_JIT_WALL_TIME,
 
     /**
-     * Pointer to a buffer in which to print any log messsages from PTXAS
+     * Pointer to a buffer in which to print any log messages from PTXAS
      * that are informational in nature (the buffer size is specified via
      * option ::CU_JIT_INFO_LOG_BUFFER_SIZE_BYTES) \n
      * Option type: char*

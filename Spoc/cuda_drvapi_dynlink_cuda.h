@@ -351,7 +351,7 @@ extern "C" {
         CU_JIT_WALL_TIME,
 
         /**
-         * Pointer to a buffer in which to print any log messsages from PTXAS
+         * Pointer to a buffer in which to print any log messages from PTXAS
          * that are informational in nature (the buffer size is specified via
          * option ::CU_JIT_INFO_LOG_BUFFER_SIZE_BYTES) \n
          * Option type: char*
@@ -482,7 +482,7 @@ extern "C" {
      */
     typedef enum CUresourcetype_enum
     {
-        CU_RESOURCE_TYPE_ARRAY           = 0x00, /**< Array resoure */
+        CU_RESOURCE_TYPE_ARRAY           = 0x00, /**< Array resource */
         CU_RESOURCE_TYPE_MIPMAPPED_ARRAY = 0x01, /**< Mipmapped array resource */
         CU_RESOURCE_TYPE_LINEAR          = 0x02, /**< Linear resource */
         CU_RESOURCE_TYPE_PITCH2D         = 0x03  /**< Pitch 2D resource */
