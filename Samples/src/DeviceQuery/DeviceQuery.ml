@@ -21,7 +21,7 @@
 let devices = Spoc.Devices.init ()
 in
   (Printf.printf
-     "DeviceQuery\nThis application prints informations about every\ndevice compatible with Spoc found on your computer.\n";
+     "DeviceQuery\nThis application prints information about every\ndevice compatible with Spoc found on your computer.\n";
    Printf.printf "Found %d devices: \n" (Spoc.Devices.gpgpu_devices ());
    Printf.printf "  ** %d Cuda devices \n" (Spoc.Devices.cuda_devices ());
    Printf.printf "  ** %d OpenCL devices \n" (Spoc.Devices.opencl_devices ());

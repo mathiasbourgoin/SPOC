@@ -44,7 +44,7 @@ type specificLibrary = Cuda | OpenCL | Both
 
 type context
 
-(** General informations shared
+(** General information shared
 by all devices (managed by Cuda or OpenCL) *)
 type generalInfo = {
   name : string; (**name of the device *)
@@ -61,7 +61,7 @@ type generalInfo = {
 (** Specific information depending on the framework
 used to manage the device *)
 
-(** Specific informations for Cuda-managed devices*)
+(** Specific information for Cuda-managed devices*)
 type cudaInfo = {
   major : int; (** Major compute capability *)
   minor : int; (** Minor compute capability *)
@@ -83,9 +83,9 @@ type cudaInfo = {
   driverVersion: int;
 }
 
-(** Specific informations for OpenCL-managed devices*)
+(** Specific information for OpenCL-managed devices*)
 
-(** Informations about the OpenCL platform *)
+(** information about the OpenCL platform *)
 type platformInfo = {
   platform_profile : string; (** OpenCL profile string. Returns the profile name
   supported by the implementation.
@@ -148,7 +148,7 @@ type clDeviceExecutionCapabilities = CL_EXEC_KERNEL | CL_EXEC_NATIVE_KERNEL
 
 type clDeviceID
 
-(** Specific informations for OpenCL-managed devices *)
+(** Specific information for OpenCL-managed devices *)
 type openCLInfo = {
   platform_info : platformInfo;
   device_type : deviceType;

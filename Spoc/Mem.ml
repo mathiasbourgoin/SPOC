@@ -230,7 +230,7 @@ and to_device vect ?queue_id:(q = 0) (dev : Devices.device) =
   (*     if sub_vector size  < 2 * "some correct size" then *)
   (*       copy sub_vector into one contiguous vector and transfer it *)
   (*     else *)
-  (*       (while subvector not entirely transfered do *)
+  (*       (while subvector not entirely transferred do *)
   (*          copy subvector into one contiguous vector of "some correct size" size; *)
   (*          transfer this vector in asynchronously; *)
   match Vector.dev vect with
