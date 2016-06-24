@@ -306,9 +306,9 @@ extern "C" {
     cuv = (cu_vector*)Field(dev_vec, 1);
     d_A = cuv->cu_vector;
     size = Int_val(Field(vector, 4))-seek;
-	
+
     CUDA_GET_CONTEXT;
-	
+
     CUDA_CHECK_CALL(cuDeviceGet(&dev, Int_val(nb_device)));
 
     h_A = (void*)Data_bigarray_val(bigArray);
@@ -356,8 +356,8 @@ extern "C" {
 
     CAMLreturn(Val_unit);
   }
-  
-  
+
+
   CAMLprim value spoc_cuda_alloc_vector(value vector, value nb_device, value gi, int custom){
     CAMLparam3(vector, nb_device, gi);
     CAMLlocal3(bigArray,  dev_vec_array, dev_vec);
@@ -377,7 +377,7 @@ extern "C" {
 	cuMemFree(cuv->cu_vector);
       free(cuv);
     }
-    cuv = (cu_vector*)malloc(sizeof(cu_vector*));
+    cuv = (cu_vector*)malloc(sizeof(cu_vector));
 
     size = Int_val(Field(vector, 4));
     cuv->cu_size = size;
@@ -606,7 +606,7 @@ extern "C" {
 
     OPENCL_CHECK_CALL1(
 		       opencl_error, clEnqueueWriteBuffer
-		       (queue[Int_val(queue_id)], d_A, CL_FALSE, 
+		       (queue[Int_val(queue_id)], d_A, CL_FALSE,
 			0, size*type_size, h_A, 0, NULL, NULL));
     OPENCL_RESTORE_CONTEXT;
 
@@ -1173,4 +1173,3 @@ extern "C" {
 #ifdef __cplusplus
 }
 #endif
-

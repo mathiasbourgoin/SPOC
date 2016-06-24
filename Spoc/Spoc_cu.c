@@ -47,7 +47,7 @@ extern "C" {
 #include <math.h>
 #include "cuda_drvapi_dynlink_cuda.h"
 #include "Spoc.h"
-  
+
   value spoc_cuInit() {
 
     CAMLparam0();
@@ -72,7 +72,7 @@ extern "C" {
 
   dev_vectors *usefull_vectors;
   dev_vectors *useless_vectors;
-  
+
   void add_usefull_vector (spoc_vector v, void* dev) {
     dev_vectors *vecs = usefull_vectors;
     while (vecs)
@@ -168,7 +168,7 @@ extern "C" {
     int infoInt;
     size_t infoUInt;
     int major, minor;
-    enum cudaError_enum cuda_error; 
+    enum cudaError_enum cuda_error;
 
 
     cuDeviceGetCount (&nb_devices);
@@ -198,7 +198,7 @@ extern "C" {
     CUDA_CHECK_CALL(cuCtxCreate	(&ctx,
 				 CU_CTX_SCHED_BLOCKING_SYNC | CU_CTX_MAP_HOST,
 				 dev));
-    spoc_ctx = malloc(sizeof(spoc_cl_context));
+    spoc_ctx = malloc(sizeof(spoc_cu_context));
     spoc_ctx->ctx = ctx;
     CUDA_CHECK_CALL(cuStreamCreate(&queue[0], 0));
     CUDA_CHECK_CALL(cuStreamCreate(&queue[1], 0));
