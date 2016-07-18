@@ -6,7 +6,7 @@ type ('a, 'b, 'c) kirc_kernel = {
   extensions : extension array;
 }
 type ('a,'b,'c) kirc_function =
-  { 
+  {
     ml_fun : 'a;
     funbody : Kirc_Ast.k_ext;
     fun_ret : Kirc_Ast.k_ext* ('b,'c) Spoc.Vector.kind;
@@ -33,7 +33,7 @@ val cuda_float64 : string
 val cuda_head : string
 val new_var : int -> Kirc_Ast.k_ext
 val global_fun : ('a,'b,'c) kirc_function -> Kirc_Ast.k_ext
-val new_array : int -> Kirc_Ast.k_ext -> Kirc_Ast.elttype -> Kirc_Ast.memspace -> Kirc_Ast.k_ext 
+val new_array : int -> Kirc_Ast.k_ext -> Kirc_Ast.elttype -> Kirc_Ast.memspace -> Kirc_Ast.k_ext
 val var : int -> string -> Kirc_Ast.k_ext
 val spoc_gen_kernel : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val spoc_fun_kernel : 'a -> 'b -> unit
@@ -143,7 +143,7 @@ val gen :
   ?return:bool ->
   ?only:Spoc.Devices.specificLibrary ->
   ('a, 'b, 'c, 'd, 'e) sarek_kernel ->
-  ('a, 'b, 'c, 'd, 'e) sarek_kernel 
+  ('a, 'b, 'c, 'd, 'e) sarek_kernel
 
 val run :
   ?recompile:bool ->

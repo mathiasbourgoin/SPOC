@@ -16,7 +16,8 @@
 open Spoc
 open Kirc
 
-
+open Ctypes
+open Foreign
 
 let gpu_bitonic = kern v j k ->
   let open Std in

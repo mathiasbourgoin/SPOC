@@ -1,7 +1,7 @@
-P4FLAGS =  -I +camlp4 -pp camlp4of dynlink.cma camlp4lib.cma 
+P4FLAGS =  -I +camlp4 -pp camlp4of dynlink.cma camlp4lib.cma
 
 all:
-	@make -j4 kernels_int.cma 
+	@make -j4 kernels_int.cma
 
 
 install: kernels_int.cma
@@ -10,12 +10,12 @@ install: kernels_int.cma
 uninstall :
 	ocamlfind remove sarek_syntax
 
-kernels_int.cma:debug.cmo sarek_types.cmo typer.cmo gen_caml.cmo gen_kir.cmo mparser.cmo  sarek_grammar.cmo
+kernels_int.cma:debug.cmo sarek_types.cmo typer.cmo gen_caml.cmo gen_kir.cmo mparser.cmo fastflow.cmo sarek_grammar.cmo
 	@ocamlfind ocamlc -a $^ -o kernels_int.cma
 
 
 %.cmo:%.ml
-	@echo  "\033[32m[$@]\033[0m" 
+	@echo  "\033[32m[$@]\033[0m"
 	@ocamlfind ocamlc $(P4FLAGS) $^ -c
 
 gen_caml.cmo : sarek_types.cmo gen_caml.ml
@@ -31,7 +31,9 @@ sarek_types.cmo:debug.cmo sarek_types.ml
 
 typer.cmo:sarek_types.cmo typer.ml
 
-sarek_grammar.cmo:sarek_types.cmo typer.cmo gen_caml.cmo gen_kir.cmo mparser.cmo sarek_grammar.ml
+fastflow.cmo:sarek_types.cmo typer.cmo gen_caml.cmo gen_kir.cmo mparser.cmo fastflow.ml
+
+sarek_grammar.cmo:sarek_types.cmo typer.cmo gen_caml.cmo gen_kir.cmo mparser.cmo fastflow.cmo sarek_grammar.ml
 
 
 test: kernels_int.cma test.ml
@@ -60,11 +62,11 @@ test: kernels_int.cma test.ml
 
 %.nat : %.ml
 	ocamlfind ocamlopt  -thread -package ctypes,ctypes.foreign,spoc,sarek \
-		-package sarek_syntax -syntax camlp4o  -linkpkg -o $@ $<	
+		-package sarek_syntax -syntax camlp4o  -linkpkg -o $@ $<
 
 %.byte : %.ml
 	ocamlfind ocamlc -thread -package spoc,sarek \
-		-package sarek_syntax -syntax camlp4o -linkpkg -o $@ $<	
+		-package sarek_syntax -syntax camlp4o -linkpkg -o $@ $<
 
 pp_asm: all
 	camlp4 -I +camlp4 -parser o -parser op -printer o kernels_int.cma test.ml > test_pp.ml

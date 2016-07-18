@@ -8,14 +8,13 @@ open Mparser
 open Debug
 
 
-let gen_kernel () = () 
-                    
+let gen_kernel () = ()
     EXTEND Gram
     GLOBAL: str_item expr;
   str_item:
-    [ 
+    [
       ["kmodule"; name=UIDENT; "="; "struct"; "begin_const"; mod_consts=LIST0 mod_const_expr; "end_const";
-       "begin_fun"; mod_funs = LIST0 mod_funs_expr; "end_fun";"end" -> 
+       "begin_fun"; mod_funs = LIST0 mod_funs_expr; "end_fun";"end" ->
        let new_module =
          {
            mod_name = name;
@@ -28,46 +27,46 @@ let gen_kernel () = ()
        module $name$ = struct
        end
        >>
-     | "ktype"; name=LIDENT; "="; k = ktype_kind -> 
+     | "ktype"; name=LIDENT; "="; k = ktype_kind ->
        Hashtbl.add custom_types name k;
        gen_ctypes _loc k name;
       ]
     ];
-  
+
   ktype_kind :
     [[ "{"; (t,l,m) = klabel_declaration_list; "}" ->
-        KRecord (t,l,m)  
+        KRecord (t,l,m)
      | t = fst_constructor -> KSum [t]
-     | t = fst_constructor; t2 = kconstructor_list -> 
-	KSum 
+     | t = fst_constructor; t2 = kconstructor_list ->
+	KSum
 	 (gen_constructors _loc t (Some t2));
      ]
     ];
   klabel_declaration_list:
     [ [ t1 = klabel_declaration; ";"; t2 = SELF ->
         gen_labels _loc t1 (Some t2);
-        | t1 = klabel_declaration; ";" -> 
+        | t1 = klabel_declaration; ";" ->
         gen_labels _loc t1 None;
-        | t1 = klabel_declaration -> 
+        | t1 = klabel_declaration ->
         gen_labels _loc t1 None;
       ] ]
   ;
   klabel_declaration:
     [[
-      m = OPT "mutable"; s=ident; ":";  t=type_kind -> 
+      m = OPT "mutable"; s=ident; ":";  t=type_kind ->
       match m with
         None -> (s,t,false)
       |_ -> (s,t,true)
     ]];
 
   kconstructor_list :
-    [[ 
+    [[
 	"|"; t1 = kconstructor; t2 = SELF ->
 	 gen_constructors _loc t1 (Some t2);
-      | "|";  t1 = kconstructor  -> 
+      | "|";  t1 = kconstructor  ->
 	 gen_constructors _loc t1 (None);
     ]];
-  fst_constructor : 
+  fst_constructor :
     [[
 	OPT "|"; t = kconstructor ->  t
 
@@ -78,8 +77,8 @@ let gen_kernel () = ()
       | c = UIDENT; "of" ; t = ctyp (* TODO: real types here! *) -> (c, Some t) ;
     ]];
 
-  mod_const_expr: 
-    [[name=ident; ":"; typ=ident; "="; cu_value=STRING; cl_value=STRING -> 
+  mod_const_expr:
+    [[name=ident; ":"; typ=ident; "="; cu_value=STRING; cl_value=STRING ->
       let typ =
         match string_of_ident typ with
         | "int32" -> TInt32;
@@ -90,8 +89,8 @@ let gen_kernel () = ()
       (typ, string_of_ident name, cu_value, cl_value)
      ]]
   ;
-  mod_funs_expr: 
-    [[name=ident; ":"; typ=ident; "="; cu_value=STRING; cl_value=STRING -> 
+  mod_funs_expr:
+    [[name=ident; ":"; typ=ident; "="; cu_value=STRING; cl_value=STRING ->
       let typ =
         match string_of_ident typ with
         | "int32" -> TInt32;
@@ -102,9 +101,11 @@ let gen_kernel () = ()
       (typ, string_of_ident name, 0, cu_value, cl_value)
      ]]
   ;
-  expr: 
+  expr:
     [
       ["kern"; args = LIST1 k_patt; "->"; body = kernel_body ->
+       Printf.printf
+         "(* Generated from the sarek syntax extension, \ndo not modify this file*)\n";
        arg_idx := 0;
        return_type := TUnknown;
        arg_list := [];
@@ -112,7 +113,7 @@ let gen_kernel () = ()
        Hashtbl.clear !current_args;
        Hashtbl.clear !local_fun;
        List.iter new_arg_of_patt args;
-       (try 
+       (try
           retype := true;
           while !retype do
             retype := false;
@@ -121,10 +122,10 @@ let gen_kernel () = ()
             typer body TUnknown;
             my_eprintf (Printf.sprintf "Unknown : %d \n\n\n%!" !unknown)
           done;
-          if !unknown > 0 then 
+          if !unknown > 0 then
             failwith "unknown types in this kernel"
         with
-        | TypeError(expected, given, loc) -> 
+        | TypeError(expected, given, loc) ->
           (
             Printf.eprintf "%s\n%!" ("\027[31m Type Error \027[00m : expecting : \027[33m"^
                                      (ktyp_to_string expected)^"\027[00m but given : \027[33m"^
@@ -145,15 +146,15 @@ let gen_kernel () = ()
                                     "\027[00m in position : "^(Loc.to_string loc)^"");
            exit 2;)
 
-       );  
+       );
        let new_hash_args = Hashtbl.create (Hashtbl.length !current_args) in
        Hashtbl.iter (Hashtbl.add new_hash_args) !current_args;
        Hashtbl.clear !current_args;
-       current_args := new_hash_args;  
-       let gen_body = 
-         <:expr< 
+       current_args := new_hash_args;
+       let gen_body =
+         <:expr<
                  $try Gen_caml.parse_body body with
-                 | TypeError(expected, given, loc) -> 
+                 | TypeError(expected, given, loc) ->
                  (
                  Printf.eprintf "%s\n%!" ("\027[31m Type Error \027[00m : expecting : \027[33m"^
                  (ktyp_to_string expected)^"\027[00m but given : \027[33m"^
@@ -170,10 +171,10 @@ let gen_kernel () = ()
                  exit 2;)
                  $>>
        in
-       let b_body = 
+       let b_body =
          (try Gen_kir.parse_body2 body true
-          with 
-          | TypeError(expected, given, loc) -> 
+          with
+          | TypeError(expected, given, loc) ->
             (
               Printf.eprintf "%s\n%!" ("\027[31m Type Error \027[00m : expecting : \027[33m"^
                                        (ktyp_to_string expected)^"\027[00m but given : \027[33m"^
@@ -189,71 +190,16 @@ let gen_kernel () = ()
                                       (value)^"\027[00m used as mutable in position : "^(Loc.to_string loc)^"");
              exit 2;))
        in
-       let n_body2 = <:expr<params $List.fold_left 
-                            (fun a b -> <:expr<concat $b$ $a$>>) 
+       let n_body2 = <:expr<params $List.fold_left
+                            (fun a b -> <:expr<concat $b$ $a$>>)
 
-<:expr<empty_arg()>> 
-  ((List.rev_map gen_arg_from_patt2 args))$>> in 
-let ff_type = 
-  let get_ff_type p = 
-    match p with
-    | PaId (_loc, IdLid (_loc2, x) ) -> 
-      (let var = (Hashtbl.find !current_args x) in   
-       match var.var_type with
-       | TInt32  ->                                                 
-         <:str_item<let $lid:("task_"^x)$ = field task  $str:"task_"^x$ int>>
-       | TInt64 ->    
-         <:str_item<let $lid:("task_"^x)$ = field task  $str:"task_"^x$ int>>
-       (* | TFloat32 ->  *)
-       (*   <:expr<(new_float_var $`int:var.n$  $str:x$)>> *)
-       (* | TFloat64  ->  *)
-       (*   <:expr<(new_float64_var $`int:var.n$  $str:x$)>> *)
-       (* | Custom (t,n) -> *)
-       (*   <:expr<(new_custom_var $str:n$ $`int:var.n$  $str:x$)>> *)
-       | TVec k ->  
-         (match k with 
-          (*| TInt32 | TInt64  ->   <:expr<(new_int_vec_var $`int:var.n$ $str:x$)>> *)
-          | TFloat32 ->   
-            <:str_item<let $lid:("task_"^x)$ = field task  $str:"task_"^x$ (ptr float)>>
-          (*    | TFloat64 ->   <:expr<(new_double_vec_var $`int:var.n$  $str:x$)>> *)
-          (*    | Custom (t,n) -> *)
-          (*      <:expr<(new_custom_vec_var $str:n$ $`int:var.n$  $str:x$)>> *)
-          (*    | _  -> failwith "Forbidden vector  type in kernel declaration") *)
-          | _ ->  failwith "gfft : unimplemented yet"
-         )
-       | _  -> failwith "error get_ff_type")
-  in
-  let f p =
-    match p with
-    | PaId (_loc, IdLid (_loc2, x) ) -> x
-    | _ -> assert false  
-  in
-  <:str_item< open Ctypes
-              type task
-              let task : task structure typ = structure "TASK";;
-              $List.fold_left 
-              (fun a b -> <:str_item< $a$;; $b$>>)
-              <:str_item< >> 
-              ((List.rev_map get_ff_type args))$
-              let () = seal task
-              let create_task ($paCom_of_list args$) = 
-                let t = make task in
-                $List.fold_left 
-                  (fun a b -> <:expr< $a$;
-                                      Ctypes.setf t $lid:("task_"^b)$ $lid:b$; 
-                                      
-                              >>)
-                  <:expr< >> (List.map f args)$;
-                t
-                                           
->>
+<:expr<empty_arg()>>
+  ((List.rev_map gen_arg_from_patt2 args))$>> in
 
-in
-
-let gen_body2 =  <:expr< 
-                         spoc_gen_kernel 
+let gen_body2 =  <:expr<
+                         spoc_gen_kernel
                          $n_body2$
-                         $List.fold_left (fun a b -> 
+                         $List.fold_left (fun a b ->
                          <:expr<spoc_local_env $b$ $a$>>)
 b_body
   !arg_list$>>
@@ -274,53 +220,53 @@ let ret =
   | TBool -> <:expr< return_bool $ExInt(Loc.ghost, string_of_int (!arg_idx))$ "", Vector.int32>>
   | Custom (_, name) ->
     let sarek_name = name^"_sarek" in
-    <:expr< Kirc.return_custom1 $str:name$ $str:sarek_name$ >> 
+    <:expr< Kirc.return_custom1 $str:name$ $str:sarek_name$ >>
 
   | t  -> failwith (Printf.sprintf "error ret : %s" (ktyp_to_string t))
 in
 let fst_ (a,b,c,d,e,f) = a
 and snd_ (a,b,c,d,e,f) = b
-and thd_ (a,b,c,d,e,f) = c 
-and fth_ (a,b,c,d,e,f) = d 
+and thd_ (a,b,c,d,e,f) = c
+and fth_ (a,b,c,d,e,f) = d
 and ffh_ (a,b,c,d,e,f) = e in
 
-let tup_args, list_args, class_legacy , list_to_args1, list_to_args2= 
-  let args_fst_list = 
+let tup_args, list_args, class_legacy , list_to_args1, list_to_args2=
+  let args_fst_list =
     (List.map fst_ (List.map gen_arg_from_patt3 args)) in
   let args_com = paCom_of_list  args_fst_list in
-  
-  
-  let args_list = 
+
+
+  let args_list =
     let l = (List.map snd_ (List.map gen_arg_from_patt3 args)) in
     exSem_of_list l
-  in 
-  
-  let args_thd_list = 
+  in
+
+  let args_thd_list =
     (List.map thd_ (List.map gen_arg_from_patt3 args)) in
   let args_typ = tySta_of_list args_thd_list in
-  
+
   let lta1 =
-    paSem_of_list 
+    paSem_of_list
       (List.map fth_ (List.map gen_arg_from_patt3 args)) in
 
   let args_ffth_list =
     (new_kernel := true;
      List.map ffh_ (List.map gen_arg_from_patt3 args)) in
-  let lta2 = 
-    exCom_of_list args_ffth_list in	 
+  let lta2 =
+    exCom_of_list args_ffth_list in
 
   begin
     if List.length args_fst_list = 1 then
       List.hd args_fst_list
     else
       PaTup (_loc, args_com)
-  end, 
+  end,
 
   begin
     ExArr (_loc, args_list)
   end,
 
-  begin 
+  begin
     if List.length args_thd_list = 1 then
       <:ctyp< $List.hd args_thd_list$,(('a,'b) Kernel.kernelArgs) array>>
     else
@@ -341,25 +287,24 @@ in
 let class_name = "kirc_class"^(string_of_int !nb_ker) in
 incr nb_ker;
 let has_vector = ref false in
-List.iter (fun a-> if patt_is_vector a then has_vector := true) args; 
-let extensions =  match !extensions with 
+List.iter (fun a-> if patt_is_vector a then has_vector := true) args;
+let extensions =  match !extensions with
   | [] -> <:expr< [||]>>
-  | t::[] -> <:expr< [|$t$|]>> 
+  | t::[] -> <:expr< [|$t$|]>>
   | _ -> <:expr<[|$exSem_of_list  !extensions$|]>>
 in
-let res = 
-  if !has_vector then 
-  <:expr< let module M = 
-          struct 
-          $ff_type$;;
+let res =
+  if !has_vector then
+  <:expr< let module M =
+          struct
           let exec_fun $tup_args$ = Spoc.Kernel.exec $list_args$;;
-          class ['a, 'b] $lid:class_name$ = 
+          class ['a, 'b] $lid:class_name$ =
           object (self)
-          inherit 
-          [$class_legacy$ ] 
+          inherit
+          [$class_legacy$ ]
           Spoc.Kernel.spoc_kernel "kirc_kernel" "spoc_dummy"
           method exec = exec_fun
-          method args_to_list = fun 
+          method args_to_list = fun
           $tup_args$ -> $list_args$
           method list_to_args = function
           | $list_to_args1$ -> $list_to_args2$
@@ -373,21 +318,22 @@ let res =
           body = $gen_body2$;
           ret_val = $ret$;
           extensions = $extensions$;
+
           }
           )
           >>
-else   
-  <:expr< let module M = 
+else
+  <:expr< let module M =
           struct
           let exec_fun $tup_args$ = Spoc.Kernel.exec $list_args$;;
-          class ['a, 'b] $lid:class_name$ = 
+          class ['a, 'b] $lid:class_name$ =
           object (self)
-          inherit 
-          [$class_legacy$ ] 
+          inherit
+          [$class_legacy$ ]
           Spoc.Kernel.spoc_kernel "kirc_kernel" "spoc_dummy"
-          method exec = assert false 
-          method args_to_list = assert false 
-          method list_to_args = assert false 
+          method exec = assert false
+          method args_to_list = assert false
+          method list_to_args = assert false
           end
           end
           in
@@ -399,13 +345,13 @@ else
           extensions = $extensions$;
           })>>
 in
-let local =  
-  Hashtbl.fold (fun key (funv,stri,_) init -> 
+let local =
+  Hashtbl.fold (fun key (funv,stri,_) init ->
 		<:str_item<
 		$stri$ $init$>>) !local_fun
   <:str_item<>>
 in
-<:expr< 
+<:expr<
  let module Local_funs = struct
  $local$
 end
@@ -425,8 +371,8 @@ str_item:
 
      let cpt = ref 0 in
      retype := true;
-     (try 
-         while !retype  && !cpt < 3 do 
+     (try
+         while !retype  && !cpt < 3 do
            if debug  then
 	     incr cpt;
 	   retype := false;
@@ -435,7 +381,7 @@ str_item:
            my_eprintf (Printf.sprintf "\nUnknown : %d \n\n\n%!" !unknown)
          done;
 	 with
-	 | TypeError(expected, given, loc) -> 
+	 | TypeError(expected, given, loc) ->
            (
              failwith ("Type Error : expecting : "^
 		       (ktyp_to_string expected)^" but given : "^
@@ -443,7 +389,7 @@ str_item:
          | Immutable (value, loc) ->
            (Printf.eprintf "%s\n%!" ("\027[31m Immutable Value \027[00m : \027[33m"^
                                      (value)^"\027[00m used as mutable in position : "^(Loc.to_string loc)^"");
-            exit 2;));  
+            exit 2;));
 
      (* (try  *)
      (*    typer body TUnknown *)
@@ -457,45 +403,45 @@ str_item:
      (*      (Printf.eprintf "%s\n%!" ("\027[31m Immutable Value \027[00m : \027[33m"^ *)
      (*                                (value)^"\027[00m used as mutable in position : "^(Loc.to_string loc)^""); *)
      (*       exit 2;));   *)
-     
+
      let new_hash_args = Hashtbl.create (Hashtbl.length !current_args) in
      Hashtbl.iter (Hashtbl.add new_hash_args) !current_args;
      Hashtbl.clear !current_args;
-     current_args := new_hash_args;  
+     current_args := new_hash_args;
 
-     let gen_body = 
-       <:expr< 
+     let gen_body =
+       <:expr<
                $try Gen_caml.parse_body body
-               with 
-               | TypeError(expected, given, loc) -> 
+               with
+               | TypeError(expected, given, loc) ->
                (
                failwith ("Type Error : expecting : "^
                (ktyp_to_string expected)^" but given : "^
                (ktyp_to_string given)^" in position : "^(Loc.to_string loc)))$>>
      in
-     let b_body = 
+     let b_body =
        (try Gen_kir.parse_body2 body true
-        with 
-        | TypeError(expected, given, loc) -> 
+        with
+        | TypeError(expected, given, loc) ->
           failwith ("Type Error : expecting : "^
                     (ktyp_to_string expected)^" but given : "^
-                    (ktyp_to_string given)^" in position : "^(Loc.to_string loc)) 
+                    (ktyp_to_string given)^" in position : "^(Loc.to_string loc))
         | Immutable (value, loc) ->
           (Printf.eprintf "%s\n%!" ("\027[31m Immutable Value \027[00m : \027[33m"^
                                     (value)^"\027[00m used as mutable in position : "^(Loc.to_string loc)^"");
            exit 2;))
      in
-     Hashtbl.iter (fun a b -> if b.var_type = TUnknown then 
+     Hashtbl.iter (fun a b -> if b.var_type = TUnknown then
 				failwith ("Unknown argument type : "^a))  !current_args ;
 
-	  let n_body2 = <:expr<params $List.fold_left 
-                          (fun a b -> <:expr<concat $b$ $a$>>) 
-<:expr<empty_arg()>> 
-  ((List.rev_map gen_arg_from_patt2 args))$>> in 
-let gen_body2 =  <:expr< 
-                         spoc_gen_kernel 
+	  let n_body2 = <:expr<params $List.fold_left
+                          (fun a b -> <:expr<concat $b$ $a$>>)
+<:expr<empty_arg()>>
+  ((List.rev_map gen_arg_from_patt2 args))$>> in
+let gen_body2 =  <:expr<
+                         spoc_gen_kernel
                          $n_body2$
-                         $List.fold_left (fun a b -> 
+                         $List.fold_left (fun a b ->
                          <:expr<spoc_local_env $b$ $a$>>)
 b_body
   !arg_list$>>
@@ -516,13 +462,13 @@ let ret =
   | Custom (_, name) ->
      let sarek_name = name^"_sarek" in
      let customType = ExId(_loc, (IdLid (_loc,("custom"^(String.capitalize name))))) in
-     <:expr< Kirc.return_custom $str:name$ $str:sarek_name$, Vector.Custom $customType$>> 
+     <:expr< Kirc.return_custom $str:name$ $str:sarek_name$, Vector.Custom $customType$>>
 
   | t  -> failwith (Printf.sprintf "error ret : %s" (ktyp_to_string t))
 in
 let t =
-    List.fold_left (fun seed  p  -> 
-      match p with 
+    List.fold_left (fun seed  p  ->
+      match p with
       | (PaId(_,i)) ->
         let value = (Hashtbl.find !current_args (string_of_ident i)) in
         TApp (value.var_type, seed)
@@ -533,20 +479,21 @@ let t =
 		TApp (seed , value.var_type)) !current_args !return_type in*)
 in
 my_eprintf ((string_of_ident name)^" ....... "^ktyp_to_string t^"\n");
-Hashtbl.add !global_fun (string_of_ident name) 
-  {nb_args=0; 
+Fastflow.print_task args name;
+Hashtbl.add !global_fun (string_of_ident name)
+  {nb_args=0;
    cuda_val="";
    opencl_val=""; typ=t};
-<:str_item< 
-let $id:name$ = 
-        let open Kirc in 
+<:str_item<
+let $id:name$ =
+        let open Kirc in
         let a = {
         ml_fun = $gen_args$;
         funbody = $gen_body2$;
         fun_ret = $ret$;
-        fun_extensions = [| $match !extensions with 
+        fun_extensions = [| $match !extensions with
         | [] -> <:expr<>>
-| t::[] -> t 
+| t::[] -> t
 | _ -> exSem_of_list  !extensions$|];
 }
 in
@@ -557,7 +504,7 @@ a;;
 k_patt:
   [
     [l = patt -> l
-    | "->"; "kern"; l=patt -> l  
+    | "->"; "kern"; l=patt -> l
     ]
   ];
 kernel_body:
@@ -566,20 +513,20 @@ kernel_body:
     ]
   ];
 sequence':
-  [ 
-    [ 
+  [
+    [
       ->fun e -> e
                | ";" -> fun e -> e
                | ";"; el = sequence ->
 		  fun e ->
 		  {t=TUnknown; e=Seq(_loc, e, el); loc = _loc}
-    ] 
+    ]
   ]
 ;
 sequence:
   [
-    [ 
-      e = kexpr; k = sequence' -> k e 
+    [
+      e = kexpr; k = sequence' -> k e
     ]
   ];
 do_sequence:
@@ -593,20 +540,20 @@ do_sequence:
 pattern :
   [
     [
-      cstr = a_UIDENT; s = OPT ident  -> 
+      cstr = a_UIDENT; s = OPT ident  ->
       Constr (cstr, s)
     ]
   ];
 first_case :
-  [ 
-    [ p = pattern; "->"; e = kexpr -> 
+  [
+    [ p = pattern; "->"; e = kexpr ->
       (_loc, p, e)
     ]
   ];
 match_cases :
   [
     [
-      "|"; p = pattern; "->"; e = kexpr -> 
+      "|"; p = pattern; "->"; e = kexpr ->
       (_loc, p, e)
     ]
   ];
@@ -623,14 +570,14 @@ kident :
           is_global = false;};
       x]
   ];
-  
+
 kexpr:
-  [ 
-    "let" 
+  [
+    "let"
       ["let"; opt_mutable = OPT "mutable";  var = kident; "="; y = SELF; "in"; z = sequence  ->
-       {t=TUnknown; 
-        e=  Bind(_loc, 
-                 {t= TUnknown; 
+       {t=TUnknown;
+        e=  Bind(_loc,
+                 {t= TUnknown;
                   e= Id (_loc, var);
                   loc = _loc},
                  y, z, (match opt_mutable with
@@ -649,12 +596,12 @@ kexpr:
         (*copy args in local list, (usedr fo lambda lifting *)
         let args = ref args in
         let lifted = ref [] in
-        
+
         (*save current kernel environment*)
         let saved_arg_idx = !arg_idx;
         and saved_return_type = !return_type;
-        and saved_arg_list = List.map (fun a -> a) !arg_list 
-        and saved_retype = !retype 
+        and saved_arg_list = List.map (fun a -> a) !arg_list
+        and saved_retype = !retype
         and saved_unknown = !unknown in
         arg_idx := 0;
         return_type := TUnknown;
@@ -664,11 +611,11 @@ kexpr:
         Hashtbl.iter (Hashtbl.add old_args) !current_args;
 
         Hashtbl.clear !current_args;
-        
+
         List.iter new_arg_of_patt !args;
-        
+
         retype := true;
-        (try 
+        (try
            while !retype do
              retype := false;
              unknown := 0;
@@ -679,11 +626,11 @@ kexpr:
                (
                  (* unbound value in local function, do we need lambda lifitng? *)
                  (try
-                    Hashtbl.iter (fun s _ -> Printf.eprintf "%s\n" s) old_args;  
+                    Hashtbl.iter (fun s _ -> Printf.eprintf "%s\n" s) old_args;
                     ignore(Hashtbl.find old_args value);
                     (* value found in enclosing kernel/function, needs lambda lifting *)
                     args := (<:patt< $lid:value$ >>) :: !args;
-                    lifted := value :: !lifted; 
+                    lifted := value :: !lifted;
                     Hashtbl.add !current_args (value)
                       {n= (-1);
                        var_type = TUnknown;
@@ -693,16 +640,16 @@ kexpr:
                        is_global = false;};
                   with
                   (* not found... *)
-                  | Not_found -> 
+                  | Not_found ->
                     (Printf.eprintf "%s\n%!" ("\027[31m Unbound Value \027[00m : \027[33m"^
                                               (value)^"\027[00m in position : "^(Loc.to_string loc)^"");
                      exit 3))
                ));
-               
+
                my_eprintf (Printf.sprintf "\nUnknown : %d \n\n\n%!" !unknown);
            done;
          with
-         | TypeError(expected, given, loc) -> 
+         | TypeError(expected, given, loc) ->
            (
              failwith ("Type Error : expecting : "^
 		       (ktyp_to_string expected)^" but given : "^
@@ -711,7 +658,7 @@ kexpr:
            (Printf.eprintf "%s\n%!" ("\027[31m Immutable Value \027[00m : \027[33m"^
                                      (value)^"\027[00m used as mutable in position : "^(Loc.to_string loc)^"");
             exit 2;));
-        
+
         my_eprintf ("fun_type : "^ktyp_to_string body.t^"\n");
 
         return_type := body.t;
@@ -719,41 +666,41 @@ kexpr:
         let new_hash_args = Hashtbl.create (Hashtbl.length !current_args) in
         Hashtbl.iter (Hashtbl.add new_hash_args) !current_args;
         Hashtbl.clear !current_args;
-        current_args := new_hash_args;  
+        current_args := new_hash_args;
 
 
 
-        let gen_body = 
-          <:expr< 
+        let gen_body =
+          <:expr<
                   $try Gen_caml.parse_body body
-                  with 
-                  | TypeError(expected, given, loc) -> 
+                  with
+                  | TypeError(expected, given, loc) ->
                   (
                   failwith ("Type Error : expecting : "^
                   (ktyp_to_string expected)^" but given : "^
                   (ktyp_to_string given)^" in position : "^(Loc.to_string loc)))$>>
         in
-        let b_body = 
+        let b_body =
           (try Gen_kir.parse_body2 body true
-           with 
-           | TypeError(expected, given, loc) -> 
+           with
+           | TypeError(expected, given, loc) ->
              failwith ("Type Error : expecting : "^
                        (ktyp_to_string expected)^" but given : "^
-                       (ktyp_to_string given)^" in position : "^(Loc.to_string loc)) 
+                       (ktyp_to_string given)^" in position : "^(Loc.to_string loc))
            | Immutable (value, loc) ->
              (Printf.eprintf "%s\n%!" ("\027[31m Immutable Value \027[00m : \027[33m"^
                                        (value)^"\027[00m used as mutable in position : "^(Loc.to_string loc)^"");
               exit 2;))
         in
-          Hashtbl.iter (fun a b -> if b.var_type = TUnknown then 
+          Hashtbl.iter (fun a b -> if b.var_type = TUnknown then
                            failwith ("Unknown argument type : "^a))  !current_args ;
-          
-          let n_body2 = <:expr<params $List.fold_left 
-                             (fun a b -> <:expr<concat $b$ $a$>>) 
-<:expr<empty_arg()>> 
-  ((List.rev_map gen_arg_from_patt2 !args))$>> in 
-let gen_body2 =  <:expr< 
-                         spoc_gen_kernel 
+
+          let n_body2 = <:expr<params $List.fold_left
+                             (fun a b -> <:expr<concat $b$ $a$>>)
+<:expr<empty_arg()>>
+  ((List.rev_map gen_arg_from_patt2 !args))$>> in
+let gen_body2 =  <:expr<
+                         spoc_gen_kernel
                          $n_body2$
                          $
                          b_body
@@ -775,43 +722,43 @@ let ret =
   | Custom (_, name) ->
     let sarek_name = name^"_sarek" in
     let customType = ExId(_loc, (IdLid (_loc,("custom"^(String.capitalize name))))) in
-    <:expr< Kirc.return_custom $str:name$ $str:sarek_name$, Vector.Custom $customType$>> 
+    <:expr< Kirc.return_custom $str:name$ $str:sarek_name$, Vector.Custom $customType$>>
 
   | t  -> failwith (Printf.sprintf "error ret : %s" (ktyp_to_string t))
 in
-let full_typ = 
-  List.fold_left (fun seed  p  -> 
-      match p with 
+let full_typ =
+  List.fold_left (fun seed  p  ->
+      match p with
       | (PaId(_,i)) ->
         let value = (Hashtbl.find !current_args (string_of_ident i)) in
         TApp (value.var_type, seed)
       | _ -> assert false) !return_type  (List.rev !args)
 in
 my_eprintf ("/....... "^ktyp_to_string full_typ^"\n");
-let funv =  {nb_args=0; 
+let funv =  {nb_args=0;
              cuda_val="";
              opencl_val=""; typ=full_typ} in
 
-let local =  
-  Hashtbl.fold (fun key (funv,stri,_) init -> 
+let local =
+  Hashtbl.fold (fun key (funv,stri,_) init ->
       <:str_item<
 $stri$ $init$>>) !local_fun
     <:str_item<>>
 in
-let a = <:expr< 
-                let open Kirc in 
+let a = <:expr<
+                let open Kirc in
                 let local_function  = {
                 ml_fun = $gen_args$;
 	        funbody = $gen_body2$;
                 fun_ret = $ret$;
-                fun_extensions = [| $match !extensions with 
+                fun_extensions = [| $match !extensions with
 		| [] -> <:expr<>>
-      | t::[] -> t 
+      | t::[] -> t
       | _ -> exSem_of_list  !extensions$|];
 }
 in local_function >>  in
 let res =
-  <:expr< 
+  <:expr<
 	  let module Local_funs = struct
 	  $local$
 	  end
@@ -831,34 +778,34 @@ in
     t = full_typ;
     e = Fun (_loc,res,full_typ,funv, !lifted);
     loc = _loc
-       }  
+       }
 ]
 | "if"
-    [ "if"; cond=SELF; "then"; cons1=sequence; 
-      "else"; cons2=sequence -> 
+    [ "if"; cond=SELF; "then"; cons1=sequence;
+      "else"; cons2=sequence ->
 		    {t=TUnknown; e= Ife(_loc,cond,cons1,cons2); loc = _loc}
-    | "if"; cond=SELF; "then"; cons1 = sequence -> 
+    | "if"; cond=SELF; "then"; cons1 = sequence ->
        {t=TUnknown; e= If(_loc,cond,cons1); loc = _loc}
     ]
 | "match"
-    [ 
-      "match"; x = SELF; "with"; m0 = OPT first_case; m = LIST0 match_cases 
+    [
+      "match"; x = SELF; "with"; m0 = OPT first_case; m = LIST0 match_cases
         ->
         match m0 with
-        | Some m1 -> 
+        | Some m1 ->
           {t=TUnknown; e= Match (_loc, x, m1::m); loc = _loc}
-        | None -> 
+        | None ->
           {t=TUnknown; e= Match (_loc, x, m); loc = _loc}]
 
   | "mod"  RIGHTA
       [ x = SELF; "mod"; y = SELF -> {t=TInt32; e = Mod(_loc, x,y); loc = _loc}]
-  | ":=" 
+  | ":="
       [ x = SELF; ":="; y= SELF  -> {t=(TUnit); e = Acc (_loc, x, y); loc = _loc}
       ]
-  | "<-" 
-      [ x = SELF; "<-"; y= SELF  -> 
+  | "<-"
+      [ x = SELF; "<-"; y= SELF  ->
         begin
-          match x with 
+          match x with
           | {t = _; e = VecGet _} ->
             {t=(TUnit);
              e = VecSet (_loc, x, y); loc = _loc}
@@ -873,7 +820,7 @@ in
       ]
   | "apply" LEFTA
     [ e1 = SELF; e2 = SELF -> {t=(TUnknown); e= App(_loc, e1, [e2]); loc = _loc}
-    ]	 
+    ]
   | "+" LEFTA
     [ x = SELF; "+!"; y = SELF -> {t=TInt32; e = Plus32(_loc, x,y); loc = _loc};
       | x = SELF; "+!!"; y = SELF -> {t=TInt64; e = Plus64(_loc, x,y); loc = _loc};
@@ -884,7 +831,7 @@ in
       | x = SELF; "-!!"; y = SELF -> {t=TInt64; e = Min64(_loc, x,y); loc = _loc};
       | x = SELF; "-"; y = SELF -> {t=TInt32; e = Min32(_loc, x,y); loc = _loc};
       | x = SELF; "-."; y = SELF -> {t=TFloat32; e = MinF32(_loc, x,y); loc = _loc}]
-    
+
   | "*" LEFTA
     [ x = SELF; "*!"; y = SELF -> {t=TInt32; e = Mul32(_loc, x,y); loc = _loc};
       | x = SELF; "*!!"; y = SELF -> {t=TInt64; e = Mul64(_loc, x,y); loc = _loc};
@@ -895,48 +842,48 @@ in
       | x = SELF; "/!!"; y = SELF -> {t=TInt64; e = Div64(_loc, x,y); loc = _loc};
       | x = SELF; "/"; y = SELF -> {t=TInt32; e = Div32(_loc, x,y); loc = _loc};
       | x = SELF; "/."; y = SELF -> {t=TFloat32; e = DivF32(_loc, x,y); loc = _loc}]
-    
 
-| "||" 
-    [x = SELF; "||"; y = SELF -> {t=TBool; 
+
+| "||"
+    [x = SELF; "||"; y = SELF -> {t=TBool;
                                   e = BoolOr (_loc, x, y); loc = _loc} ]
-    
-  | "&&" 
+
+  | "&&"
     [x = SELF; "&&"; y = SELF -> {t=TBool; e = BoolAnd (_loc, x, y); loc = _loc} ]
 
-  | "not" 
+  | "not"
       ["!"; x = kexpr -> {t=TBool; e = BoolNot (_loc, x); loc = _loc} ]
 
 
-    
+
   | "loop"
-    [ "for"; x = ident; "="; y=SELF; "to"; z = SELF; "do";  body=do_sequence -> 
-        {t = TUnknown; e = DoLoop (_loc, 
-                                {t= TInt32; 
+    [ "for"; x = ident; "="; y=SELF; "to"; z = SELF; "do";  body=do_sequence ->
+        {t = TUnknown; e = DoLoop (_loc,
+                                {t= TInt32;
                                  e= Id (_loc, x);
                                  loc = _loc}
                                ,y,z,body); loc = _loc};
-      | "while"; cond = sequence; "do"; body = do_sequence -> 
-      {t = TUnknown; e = While (_loc,cond, body); loc = _loc}] 
-    
+      | "while"; cond = sequence; "do"; body = do_sequence ->
+      {t = TUnknown; e = While (_loc,cond, body); loc = _loc}]
+
   | "="
     [ x=SELF; "="; y=SELF -> {t=TBool; e= BoolEq(_loc,x,y); loc = _loc};
       | x=SELF; "=!"; y=SELF -> {t=TBool; e= BoolEq32(_loc,x,y); loc = _loc};
       | x=SELF; "=!!"; y=SELF -> {t=TBool; e= BoolEq64(_loc,x,y); loc = _loc};
       | x=SELF; "=."; y=SELF -> {t=TBool; e= BoolEqF32(_loc,x,y); loc = _loc}]
-  | "<" 
+  | "<"
     [ x=SELF; "<"; y=SELF -> {t=TBool; e= BoolLt32(_loc,x,y); loc = _loc};
       | x=SELF; "<!"; y=SELF -> {t=TBool; e= BoolLt32(_loc,x,y); loc = _loc};
       | x=SELF; "<!!"; y=SELF -> {t=TBool; e= BoolLt64(_loc,x,y); loc = _loc};
       | x=SELF; "<."; y=SELF -> {t=TBool; e= BoolLtF32(_loc,x,y); loc = _loc}]
-    
+
   | "<="
     [ x=SELF; "<="; y=SELF -> {t=TBool; e= BoolLtE32(_loc,x,y); loc = _loc};
       | x=SELF; "<=!"; y=SELF -> {t=TBool; e= BoolLtE32(_loc,x,y); loc = _loc};
       | x=SELF; "<=!!"; y=SELF -> {t=TBool; e= BoolLtE64(_loc,x,y); loc = _loc};
       | x=SELF; "<=."; y=SELF -> {t=TBool; e= BoolLtEF32(_loc,x,y); loc = _loc}]
 
-  |  ">" 
+  |  ">"
       [ x=SELF; ">"; y=SELF -> {t=TBool; e= BoolGt32(_loc,x,y); loc = _loc};
         | x=SELF; ">!"; y=SELF -> {t=TBool; e= BoolGt32(_loc,x,y); loc = _loc};
         | x=SELF; ">!!"; y=SELF -> {t=TBool; e= BoolGt64(_loc,x,y); loc = _loc};
@@ -947,31 +894,31 @@ in
         | x=SELF; ">=!"; y=SELF -> {t=TBool; e= BoolGtE32(_loc,x,y); loc = _loc};
         | x=SELF; ">=!!"; y=SELF -> {t=TBool; e= BoolGtE64(_loc,x,y); loc = _loc};
         | x=SELF; ">=."; y=SELF -> {t=TBool; e= BoolGtEF32(_loc,x,y); loc = _loc}]
-		
+
 
   | "@"
-      [ "@"; x = ident -> 
-        {t=TUnknown; 
+      [ "@"; x = ident ->
+        {t=TUnknown;
          e=Ref(_loc,
                {t=TUnknown; e = Id (_loc, x); loc = _loc}
               ); loc = _loc}
       ]
-      
+
   | "." RIGHTA
 	[
-   x = SELF; "."; "[<"; y=SELF; ">]"  -> {t=(TUnknown); 
+   x = SELF; "."; "[<"; y=SELF; ">]"  -> {t=(TUnknown);
 					  e = VecGet (_loc, x, y); loc = _loc};
-   | x = SELF; "."; "("; y=SELF; ")"  -> {t=(TUnknown); 
+   | x = SELF; "."; "("; y=SELF; ")"  -> {t=(TUnknown);
                                           e = ArrGet (_loc, x, y); loc = _loc};
-   |l = UIDENT ; "."; e = SELF -> {t=(TUnknown); 
-				   e = ModuleAccess (_loc, l, e); 
+   |l = UIDENT ; "."; e = SELF -> {t=(TUnknown);
+				   e = ModuleAccess (_loc, l, e);
                                    loc = _loc};
    | e1 = kexpr; "."; field = ident -> {t= TUnknown;
                                          e= RecGet (_loc,e1,field);
                                          loc = _loc}
  ]
   | "record"
-      [ "{";l = kfields_declaration_list; "}" -> 
+      [ "{";l = kfields_declaration_list; "}" ->
         (Printf.eprintf "RECORD\n%!";
         {t=TUnknown; e=Record(_loc,l); loc=_loc};)
       ]
@@ -988,7 +935,7 @@ in
         | "false" -> {t=TBool; e=False _loc; loc = _loc};
         | "true" -> {t=TBool; e=True _loc; loc = _loc};
 
-      ] 		
+      ]
 
 
   ];
