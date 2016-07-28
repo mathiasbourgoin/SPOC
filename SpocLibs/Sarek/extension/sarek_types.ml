@@ -6,9 +6,9 @@ open Debug
 
 type customtypes =
   | KRecord of ctyp list * ident list * bool list
-  | KSum of (string * ctyp option ) list 
+  | KSum of (string * ctyp option ) list
 
-type memspace = 
+type memspace =
   | Local
   | Global
   | Shared
@@ -36,20 +36,20 @@ let rec ktyp_to_string = function
   | TFloat64 -> "float64"
   | TUnknown  -> "unknown"
   | TBool -> "bool"
-  | TVec k -> (ktyp_to_string k)^" vector" 
-  | TArr (k,m) -> (ktyp_to_string k)^" array" 
-  | TApp (k1,k2) -> (ktyp_to_string k1)^" -> "^(ktyp_to_string k2) 
+  | TVec k -> (ktyp_to_string k)^" vector"
+  | TArr (k,m) -> (ktyp_to_string k)^" array"
+  | TApp (k1,k2) -> (ktyp_to_string k1)^" -> "^(ktyp_to_string k2)
   | Custom (_,name) -> "Custom "^name
 
 
-let ex32 = 
+let ex32 =
   let _loc = Loc.ghost in
   <:expr< ExFloat32>>
 let ex64 = 	let _loc = Loc.ghost in
   <:expr< ExFloat64>>
 
-let extensions = 
-  ref [ ex32 ] 
+let extensions =
+  ref [ ex32 ]
 
 type var = {
   n : int;
@@ -67,17 +67,17 @@ exception Unbound_value of string * Loc.t
 exception Unbound_module of string * Loc.t
 exception Immutable of string * Loc.t
 exception TypeError of ktyp * ktyp * Loc.t
-exception FieldError of string * string * Loc.t 
+exception FieldError of string * string * Loc.t
 
-type cfun = 
+type cfun =
   { nb_args: int;
     cuda_val : string;
     opencl_val : string;
-    typ : ktyp 
+    typ : ktyp
   }
 
 
-type k_expr = 
+type k_expr =
   | Open of Loc.t * ident * kexpr
   | App of Loc.t * kexpr * kexpr list
   | Acc of Loc.t * kexpr * kexpr
@@ -153,7 +153,7 @@ type k_expr =
   | BoolGtEF64 of Loc.t*kexpr*kexpr
 
   | Ife of Loc.t * kexpr * kexpr * kexpr
-  | If of Loc.t * kexpr * kexpr 
+  | If of Loc.t * kexpr * kexpr
   | Match of Loc.t * kexpr * (case list)
   | DoLoop of Loc.t * kexpr * kexpr * kexpr * kexpr
   | While of Loc.t * kexpr * kexpr
@@ -162,13 +162,15 @@ type k_expr =
 
   | ModuleAccess of Loc.t * string * kexpr
   | True of Loc.t | False of Loc.t
+
+  | Nat of Loc.t * string
   | Noop
 
 and case =  Loc.t * pattern * kexpr (* | patt -> e *)
 and field = Loc.t*ident*kexpr
 
-and pattern = 
-  | Constr of string * ident option 
+and pattern =
+  | Constr of string * ident option
 
 and kexpr = {
   mutable t : ktyp;
@@ -178,7 +180,7 @@ and kexpr = {
 let rec is_unknown t =
     let rec app_return_type = function
       | TApp (_,(TApp (a,b))) -> app_return_type b
-      | TApp (_,b) -> is_unknown b 
+      | TApp (_,b) -> is_unknown b
       | a -> is_unknown a
     in
   match t with
@@ -209,8 +211,8 @@ let update_type value t =
             (value.t <- t;
              retype := true)
         )
-      
-let rec string_of_ident i = 
+
+let rec string_of_ident i =
   let aux = function
     | <:ident< $lid:s$ >> -> s
     | <:ident< $uid:s$ >> -> s
@@ -305,6 +307,7 @@ let rec k_expr_to_string = function
   | RecSet _ -> "RecSet"
   | True _ -> "true"
   | False _-> "false"
+  | Nat _ -> "native code"
 
 
 let expr_of_patt p =
@@ -312,7 +315,7 @@ let expr_of_patt p =
   | PaId (l,i) -> ExId (l,i)
   | _ -> raise ArgumentError
 
-type k_patt 
+type k_patt
 
 
 
@@ -321,7 +324,7 @@ type spoc_module = {
   mod_constants : (ktyp * string * string * string) list;
   mod_functions : (ktyp * string * int * string * string) list;
   mod_modules : (string, spoc_module) Hashtbl.t
-} 
+}
 
 
 let return_type = ref TUnknown
@@ -330,7 +333,7 @@ let arg_idx = ref 0
 
 let args () =
   let (tbl : (string, var) Hashtbl.t)  = Hashtbl.create 10 in
-  tbl 
+  tbl
 
 
 type recrd_field = {
@@ -350,7 +353,7 @@ type cstr = {
 
 type localfun = cfun*str_item*string list
 
-let current_args = ref (args ()) 
+let current_args = ref (args ())
 
 let intrinsics_fun = ref ((Hashtbl.create 100):(string,cfun) Hashtbl.t)
 let global_fun = ref ((Hashtbl.create 10):(string,cfun) Hashtbl.t)
@@ -366,7 +369,7 @@ let (arg_list : Camlp4.PreCast.Syntax.Ast.expr list ref ) = ref []
 
 
 
-let new_arg_of_patt p =  
+let new_arg_of_patt p =
 
   match p with
   | <:patt< $lid:x$ >> ->  let i = !arg_idx in     incr arg_idx;
@@ -381,7 +384,7 @@ let new_arg_of_patt p =
 
 let std = {
   mod_name = "Std";
-  mod_constants = 
+  mod_constants =
     [
       (TInt32, "thread_idx_x", "threadIdx.x", "(get_local_id (0))");
       (TInt32, "thread_idx_y", "threadIdx.y", "(get_local_id (1))");
@@ -399,7 +402,7 @@ let std = {
       (TInt32, "grid_dim_y", "gridDim.y", "(get_num_groups (1))");
       (TInt32, "grid_dim_z", "gridDim.z", "(get_num_groups (2))");
 
-      (TInt32, "global_thread_id", "blockIdx.x*blockDim.x+threadIdx.x", 
+      (TInt32, "global_thread_id", "blockIdx.x*blockDim.x+threadIdx.x",
        "get_global_id (0)");
 
       (TFloat64, "zero64", "0.", "0.");
@@ -422,14 +425,14 @@ let std = {
     (TApp (TInt32, TArr (TInt32, Shared)), "make_shared", 1, "", "");
     (TApp (TInt32, TArr (TInt32, Local)), "make_local", 1, "", "");
   ];
-  mod_modules = 
-    let m = Hashtbl.create 2 in 
+  mod_modules =
+    let m = Hashtbl.create 2 in
     m
 }
 
 let mathf32 = {
   mod_name = "Float32";
-  mod_constants = 
+  mod_constants =
     [
       (TFloat32, "zero", "0.f", "0.f");
       (TFloat32, "one", "1.f", "1.f");
@@ -481,7 +484,7 @@ let mathf32 = {
 
 let mathf64 = {
   mod_name = "Float64";
-  mod_constants = 
+  mod_constants =
     [
       (TFloat64, "zero", "0.", "0.");
       (TFloat64, "one", "1.", "1.");
@@ -522,8 +525,8 @@ let mathf64 = {
     (TApp ((TApp (TFloat64, TFloat64)), TFloat64), "copysign", 2, "copysign", "copysign");
     (TApp ((TApp (TFloat64, TFloat64)), TFloat64), "modf", 2, "fmod", "fmod");
 
-     (TApp (TFloat32, TFloat64), "of_float32", 1, "(double)", "(double)"); 
-     (TApp (TFloat64, TFloat32), "to_float32", 1, "(double)", "(double)"); 
+     (TApp (TFloat32, TFloat64), "of_float32", 1, "(double)", "(double)");
+     (TApp (TFloat64, TFloat32), "to_float32", 1, "(double)", "(double)");
 
     (TApp (TInt32, TArr (TFloat64, Shared)), "make_shared", 1, "", "");
     (TApp (TInt32, TArr (TFloat64, Local)), "make_local", 1, "", "");
@@ -536,7 +539,7 @@ let mathf64 = {
 
 let math = {
   mod_name = "Math";
-  mod_constants = 
+  mod_constants =
     [
     ];
   mod_functions = [
@@ -544,28 +547,28 @@ let math = {
     (TApp ((TApp (TInt32, TInt32)), TInt32), "logical_and", 2, "logical_and", "logical_and");
     (TApp ((TApp (TInt32, TInt32)), TInt32), "xor", 2, "spoc_xor", "spoc_xor");
   ];
-  mod_modules = 
+  mod_modules =
     let m = Hashtbl.create 0 in
-    Hashtbl.add m mathf32.mod_name mathf32; 
+    Hashtbl.add m mathf32.mod_name mathf32;
     Hashtbl.add m mathf64.mod_name mathf64;
     m
 }
 
 
-let modules = 
+let modules =
   let m = Hashtbl.create 10 in
   Hashtbl.add m std.mod_name std;
-  Hashtbl.add m math.mod_name math; 
+  Hashtbl.add m math.mod_name math;
   m
 
 
 
-let open_module  m_ident  _loc = 
+let open_module  m_ident  _loc =
   my_eprintf (Printf.sprintf "opening module %s\n%!" m_ident);
 
   (match m_ident with
-   | "Float64" -> 
-     if not (List.mem ex64 !extensions)  then 
+   | "Float64" ->
+     if not (List.mem ex64 !extensions)  then
        (
          extensions := ex64:: !extensions;
          Printf.eprintf "%s\n%!" ("\027[32m Warning \027[00m : kernel uses"^
@@ -582,21 +585,21 @@ let open_module  m_ident  _loc =
       (Hashtbl.add !intrinsics_fun (s) {nb_args=2; cuda_val = cuda_s; opencl_val = opencl_s; typ=typ})) m.mod_functions;
   List.iter (fun (typ,s,cuda_s, opencl_s) ->
       (Hashtbl.add !intrinsics_const (s) {nb_args=0; cuda_val = cuda_s; opencl_val = opencl_s; typ=typ})) m.mod_constants ;
-  Hashtbl.iter (fun name intern_m-> Hashtbl.add modules name intern_m) m.mod_modules 
+  Hashtbl.iter (fun name intern_m-> Hashtbl.add modules name intern_m) m.mod_modules
 
-and close_module m_ident = 
+and close_module m_ident =
   my_eprintf (Printf.sprintf "closing module %s\n%!" m_ident);
   try
     let m =
-      Hashtbl.find modules (m_ident)    
+      Hashtbl.find modules (m_ident)
     in
     List.iter (fun (typ,s,nb_args,cuda_s, opencl_s) ->
         (Hashtbl.remove !intrinsics_fun (s))) m.mod_functions;
     List.iter (fun (typ,s,cuda_s, opencl_s) ->
         (Hashtbl.remove !intrinsics_const (s))) m.mod_constants;
-    Hashtbl.iter (fun name intern_m-> Hashtbl.remove modules name) m.mod_modules 
+    Hashtbl.iter (fun name intern_m-> Hashtbl.remove modules name) m.mod_modules
   with
-  | _ -> () 
+  | _ -> ()
 
 let rec ktyp_of_typ = function
   | <:ctyp< int >> | <:ctyp< int32 >> -> TInt32
@@ -604,13 +607,13 @@ let rec ktyp_of_typ = function
   | <:ctyp< float >> | <:ctyp< float32 >> -> TFloat32
   | <:ctyp< float64 >>  -> TFloat64
   | TyCol (_,_,t) -> ktyp_of_typ t
-  | TyId(_,IdLid(_,t)) -> 
-    (try 
+  | TyId(_,IdLid(_,t)) ->
+    (try
        Custom ((Hashtbl.find custom_types t),t);
      with | _ ->
        failwith ("unknown type "^t))
   | _ -> assert false
-    
+
 
 let ctype_of_sarek_type  = function
   | "int32" -> "int"
@@ -648,17 +651,17 @@ let get_sarek_name t =
   | "float" | "float32" -> "float"
   | "float64" -> "double"
   | _ ->
-    try 
+    try
       Hashtbl.find sarek_types_tbl t
     with
     | _ -> my_eprintf  t; assert false
 
 and ident_of_patt  _loc = function
-  | Constr (s,_) -> 
+  | Constr (s,_) ->
     let cstr = Hashtbl.find !constructors s in
     cstr.id
 
 and type_of_patt = function
-  | Constr (s,_) -> 
+  | Constr (s,_) ->
     let cstr = Hashtbl.find !constructors s in
     cstr.ctyp

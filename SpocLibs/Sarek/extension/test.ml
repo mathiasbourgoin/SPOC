@@ -42,20 +42,12 @@ let width = ref 0l
 let max_iter = ref 0l
 
 
-let incrv = kern v length ->
-  for i = 0 to length do
-    if (i mod 2) = 0 then
-      v.[<i>] <- v.[<i>] +. 1.
-    else
-      v.[<i>] <- v.[<i>] -. 1.;
+    klet incrv = kfun v1 v2 v3 start_ end_ ->
+  for i = start_ to end_  do
+    v3.[<i>] <- 0.;
+    for j = 1 to i do
+      v3.[<i>] <- v3.[<i>] +. (v1.[<i>]/. (Std.float i) +.
+                               v2.[<i>] /. (Std.float i));
+      $"v3[i]=0;"$
+    done
   done
-
-
-
-let _ =
-  let module IncrV =
-    (val (Transform.to_fast_flow  (snd incrv)))
-  in
-  Printf.printf "%s\n" IncrV.source;
-  IncrV.create_accelerator 24;
-  IncrV.run_accelerator ();

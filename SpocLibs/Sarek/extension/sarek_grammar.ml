@@ -479,7 +479,7 @@ let t =
 		TApp (seed , value.var_type)) !current_args !return_type in*)
 in
 my_eprintf ((string_of_ident name)^" ....... "^ktyp_to_string t^"\n");
-Fastflow.print_task args name;
+let task_manager = Fastflow.print_task args name _loc in
 Hashtbl.add !global_fun (string_of_ident name)
   {nb_args=0;
    cuda_val="";
@@ -491,6 +491,7 @@ let $id:name$ =
         ml_fun = $gen_args$;
         funbody = $gen_body2$;
         fun_ret = $ret$;
+        fastflow_acc = $task_manager$;
         fun_extensions = [| $match !extensions with
         | [] -> <:expr<>>
 | t::[] -> t
@@ -780,6 +781,9 @@ in
     loc = _loc
        }
 ]
+| "native"
+    ["$"; code = STRING; "$" ->
+     {t = TUnit; e = Nat (_loc, code); loc = _loc}]
 | "if"
     [ "if"; cond=SELF; "then"; cons1=sequence;
       "else"; cons2=sequence ->

@@ -5,11 +5,12 @@ type ('a, 'b, 'c) kirc_kernel = {
   ret_val : Kirc_Ast.k_ext * ('b, 'c) Spoc.Vector.kind;
   extensions : extension array;
 }
-type ('a,'b,'c) kirc_function =
+type ('a,'b,'c, 'd) kirc_function =
   {
     ml_fun : 'a;
     funbody : Kirc_Ast.k_ext;
     fun_ret : Kirc_Ast.k_ext* ('b,'c) Spoc.Vector.kind;
+    fastflow_acc : 'd;
     fun_extensions : extension array
   }
 
@@ -32,7 +33,7 @@ val opencl_float64 : string
 val cuda_float64 : string
 val cuda_head : string
 val new_var : int -> Kirc_Ast.k_ext
-val global_fun : ('a,'b,'c) kirc_function -> Kirc_Ast.k_ext
+val global_fun : ('a,'b,'c, 'd) kirc_function -> Kirc_Ast.k_ext
 val new_array : int -> Kirc_Ast.k_ext -> Kirc_Ast.elttype -> Kirc_Ast.memspace -> Kirc_Ast.k_ext
 val var : int -> string -> Kirc_Ast.k_ext
 val spoc_gen_kernel : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
@@ -136,6 +137,7 @@ val return_double : int -> string -> Kirc_Ast.k_ext
 val return_bool : int -> string -> Kirc_Ast.k_ext
 val return_custom : string -> string -> string -> Kirc_Ast.k_ext
 val rewrite : Kirc_Ast.k_ext -> Kirc_Ast.k_ext
+val spoc_native : string -> Kirc_Ast.k_ext
 val return_v : (string * string) ref
 val save : string -> string -> unit
 val load_file : string -> string

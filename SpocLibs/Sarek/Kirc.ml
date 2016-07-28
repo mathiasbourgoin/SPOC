@@ -57,11 +57,12 @@ type ('a,'b,'c) kirc_kernel =
     extensions : extension array
   }
 
-type ('a,'b,'c) kirc_function =
+type ('a,'b,'c,'d) kirc_function =
   {
     ml_fun : 'a;
     funbody : Kirc_Ast.k_ext;
     fun_ret : Kirc_Ast.k_ext* ('b,'c) Vector.kind;
+    fastflow_acc : 'd;
     fun_extensions : extension array
   }
 
@@ -267,6 +268,7 @@ let return_double d s= DoubleVar (d,s)
 let return_bool b s= BoolVar (b,s)
 let return_custom n sn s= CustomVar (n, sn,s)
 
+let spoc_native s = Native s
 
 
 
@@ -288,6 +290,7 @@ let rewrite ker =
   let b = ref false in
   let rec aux kern =
     match kern with
+    | Native s -> Native s
     | Block b -> Block (aux b)
     | Kern (k1,k2) ->
       Kern (aux k1, aux k2)
