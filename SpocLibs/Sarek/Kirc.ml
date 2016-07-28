@@ -290,7 +290,7 @@ let rewrite ker =
   let b = ref false in
   let rec aux kern =
     match kern with
-    | Native s -> Native s
+    | Native _ -> kern
     | Block b -> Block (aux b)
     | Kern (k1,k2) ->
       Kern (aux k1, aux k2)

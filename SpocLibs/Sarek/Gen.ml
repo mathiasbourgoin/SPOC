@@ -291,7 +291,7 @@ module Generator (M:CodeGenerator) = struct
     ("switch ("^match_e^"."^s^"_sarek_tag"^"){"^switch_content^
      "}")
   | Native s ->
-    ((indent i) ^s)
+    (s)
   | _ -> assert false
 
 and parse_int n = function
