@@ -5,9 +5,14 @@ all :
 test:
 	camlp4  -I +camlp4 -I `ocamlfind query spoc_external_kernels` -I `ocamlfind query sarek_syntax` -parser o -parser op -printer o kernels_int.cma -printer kernels_ext.cma Mandelbrot.ml
 
-pp:
-	camlp4  -I +camlp4 -I `ocamlfind query spoc_external_kernels` -I `ocamlfind query sarek_syntax` -parser o -parser op -printer o kernels_int.cma -printer kernels_ext.cma Mandelbrot.ml > Mandelbrot_pp.ml
-	ocamlfind ocamlopt -thread -package spoc,sarek,graphics -linkpkg -package sarek_syntax -syntax camlp4o -o Mandelbrot_pp.asm Mandelbrot_pp.ml
+%.pp.ml : %.ml
+	camlp4  -I +camlp4 -I `ocamlfind query spoc_external_kernels` -I `ocamlfind query sarek_syntax` -parser o -parser op -printer o kernels_int.cma -printer kernels_ext.cma $< > $@
+
+
+%.pp.nat: %.pp.ml
+	ocamlfind ocamlopt -thread -package ctypes,ctypes.foreign,spoc,sarek,fastflow,graphics -linkpkg  -o $@ $<
+
+pp : Mandelbrot.pp.nat
 
 clean:
-	rm -f *.asm *.byte *.cm* *pp.ml *.o *.cl
+	rm -f *.asm *.byte *.cm* *pp.* *.o *.cl

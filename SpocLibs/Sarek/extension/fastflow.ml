@@ -37,6 +37,7 @@ let get_ff_type p =
        Printf.sprintf "let task_%s = field task \"task_%s\" %s" x x
          (
            match var.var_type with
+           | TFloat32 -> "float"
            | TInt32  ->
              "int"
            | TInt64 ->
@@ -47,7 +48,7 @@ let get_ff_type p =
                 "(ptr float)"
               | _ ->  failwith "gfft : unimplemented yet"
              )
-           | _  -> failwith "error get_ff_type_str"))
+           | _  -> failwith ("error get_ff_type_str -> "^ (ktyp_to_string var.var_type))))
 
   let string_of_patt = function
     | PaId(_,x) ->string_of_ident x
@@ -89,10 +90,14 @@ let print_task args nameid _loc =
        ""
        (args));
 
+  (* TODO : replace fun with functor *)
   Printf.printf"
-  let accGetResult = Foreign.foreign  ~check_errno:true ~release_runtime_lock:true ~from:FastFlow.fflib \"loadresacc\" (ptr void @-> (ptr (ptr void)) @-> returning void)
-  let accOffload = Foreign.foreign ~check_errno:true ~release_runtime_lock:true ~from:FastFlow.fflib \"offloadacc\" (ptr void @-> (ptr task) @-> returning void)
-  let accNomoretasks = Foreign.foreign  ~from:FastFlow.fflib \"nomoretasks\" (ptr void @-> returning void)";
+  let accGetResult () =   let fflib = FastFlow.fflib () in
+    Foreign.foreign  ~check_errno:true ~release_runtime_lock:true ~from:fflib \"loadresacc\" (ptr void @-> (ptr (ptr void)) @-> returning void)
+  let accOffload () =   let fflib = FastFlow.fflib () in
+    Foreign.foreign ~check_errno:true ~release_runtime_lock:true ~from:fflib \"offloadacc\" (ptr void @-> (ptr task) @-> returning void)
+  let accNomoretasks () =   let fflib = FastFlow.fflib () in
+    Foreign.foreign  ~from:fflib \"nomoretasks\" (ptr void @-> returning void)";
 
   let adapt_string_of_patt = function
     | PaId (_loc, IdLid (_loc2, x) ) ->
@@ -100,8 +105,21 @@ let print_task args nameid _loc =
        (
          match var.var_type with
          | TInt32
-         | TInt64 -> x
-         | TVec k -> Printf.sprintf "(Ctypes.bigarray_start array1 (Spoc.Vector.to_bigarray_shr %s))" x
+         | TInt64
+         | TFloat32
+         | TFloat64  -> x
+         | TVec k ->
+           let rec t  = function
+             | TInt32 -> "(int, Bigarray.int32_elt)"
+             | TInt64 -> "(int, Bigarray.int64_elt)"
+             | TFloat32 -> "(float, Bigarray.float32_elt)"
+             | TFloat64  -> "(float, Bigarray.float64_elt)"
+             | TVec k ->
+               ((t k)^" Spoc.Vector.vector")
+           in
+           Printf.sprintf "(Ctypes.bigarray_start array1
+                           (Spoc.Vector.to_bigarray_shr (%s : %s)))"
+             x (t var.var_type)
          | _  -> failwith "error get_ff_type_str"))
     | _ -> assert false
   in
@@ -113,7 +131,7 @@ let print_task args nameid _loc =
   Printf.printf "
   let offloadTask acc (%s) =
     let t = create_task (%s) in
-    accOffload acc t"
+    (accOffload ()) acc t"
     param_as_tuple_str
     adapted_params_as_tuple;
 
@@ -121,7 +139,7 @@ let print_task args nameid _loc =
   let getResult acc (%s) =
   let t = create_task (%s) in
   let t_ptr = allocate (ptr void) (to_voidp t) in
-  accGetResult acc t_ptr
+  (accGetResult ()) acc t_ptr
 " param_as_tuple_str adapted_params_as_tuple;
   Printf.printf "
 end\n\n";

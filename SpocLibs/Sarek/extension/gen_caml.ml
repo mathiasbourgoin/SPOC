@@ -109,6 +109,7 @@ let rec parse_int i t=
   | ArrGet _ -> parse_body i
   | RecGet _ -> parse_body i
   | App (_loc, e1, e2) -> parse_body i
+  | Nat (_loc,_) -> <:expr< failwith "native_code cannot be used in ml functions">>
   | _ -> my_eprintf (k_expr_to_string i.e);
 
     raise (TypeError (t, i.t, i.loc))
@@ -203,6 +204,7 @@ and parse_float f t =
      | _  ->
        assert (not debug);
        failwith "Unknwown vector");
+  | Nat (_loc,_) -> <:expr< failwith "native_code cannot be used in ml functions">>
   | _ ->
     my_eprintf (Printf.sprintf "(*** val %s *)\n%!" (k_expr_to_string f.e));
     assert (not debug);
@@ -611,7 +613,7 @@ and parse_body body =
         fl  in
     let recb = List.fold_left (fun a b -> <:rec_binding< $a$; $b$>>)
         (List.hd fl) (List.tl fl) in
-    <:expr< { $recb$ } >>
+    <:expr< $ExRec(_loc,recb, ExNil _loc)$ >>(*    <:expr< { $recb$ } >>*)
   | RecGet (_loc,e,fld) ->
     <:expr< $parse_body e$.$lid:string_of_ident fld$>>
   | RecSet (_loc,e1,e2) ->

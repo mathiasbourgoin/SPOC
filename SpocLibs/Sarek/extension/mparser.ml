@@ -814,10 +814,13 @@ let gen_ctypes _loc kt name =
                    <:rec_binding< $a$; $aux b c$>>)
                 (aux (List.hd l1) (List.hd l2)) (List.tl l1) (List.tl l2)                
             in
+
             begin
-              <:expr< fun x -> {$copy_to_caml$} ;
-              >>;
+              <:expr< fun x -> $ExRec(_loc, copy_to_caml, Ast.ExNil _loc)$>>;
             end
+(*              <:expr< fun x -> {$copy_to_caml$} ;
+              >>;
+                end*)
           | Custom ((KSum l),_)  ->
             let gen_sum_rep  l = 
               let rec aux acc tag = function

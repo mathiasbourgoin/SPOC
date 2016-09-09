@@ -349,7 +349,7 @@ let print_ast a =
     | Custom (s,_,ss) ->
       print i ("Custom "^s)
     | Native s ->
-      print i s
+      print i ("Native "^s)
     | Match (s,e1,l) ->
       print i ("Match "^s);
       aux (i+1) e1;

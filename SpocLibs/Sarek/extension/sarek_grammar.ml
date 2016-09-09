@@ -7,6 +7,13 @@ open Typer
 open Mparser
 open Debug
 
+let ano_n = ref 0 
+let gen_ano_f _loc : ident=
+  let s =
+    Printf.sprintf "f_anonym_%d" !ano_n in
+  incr ano_n;
+  IdLid(_loc, s)
+
 
 let gen_kernel () = ()
     EXTEND Gram
@@ -362,11 +369,12 @@ $res$
 ];
 str_item:
   [
-    ["klet"; name = ident; "="; "kfun"; args = LIST1 k_patt; "->"; body = kernel_body ->
+    ["klet"; name = ident; "="; "fun"; args = LIST1 k_patt; "->"; body = kernel_body ->
      arg_idx := 0;
      return_type := TUnknown;
      arg_list := [];
      Hashtbl.clear !current_args;
+     Hashtbl.clear !local_fun;
      List.iter new_arg_of_patt args;
 
      let cpt = ref 0 in
@@ -561,7 +569,7 @@ match_cases :
 kident :
   [
     [ x = ident ->
-      Printf.eprintf "adding %s\n" (string_of_ident x);
+      my_eprintf (Printf.sprintf "adding %s\n" (string_of_ident x));
       Hashtbl.add !current_args (string_of_ident x)
                  {n= (-1);
           var_type = TUnknown;
@@ -627,7 +635,7 @@ kexpr:
                (
                  (* unbound value in local function, do we need lambda lifitng? *)
                  (try
-                    Hashtbl.iter (fun s _ -> Printf.eprintf "%s\n" s) old_args;
+                    Hashtbl.iter (fun s _ -> my_eprintf (Printf.sprintf "%s\n" s)) old_args;
                     ignore(Hashtbl.find old_args value);
                     (* value found in enclosing kernel/function, needs lambda lifting *)
                     args := (<:patt< $lid:value$ >>) :: !args;
@@ -746,12 +754,14 @@ let local =
 $stri$ $init$>>) !local_fun
     <:str_item<>>
 in
+let task_manager = Fastflow.print_task !args (gen_ano_f _loc) _loc in
 let a = <:expr<
                 let open Kirc in
                 let local_function  = {
                 ml_fun = $gen_args$;
 	        funbody = $gen_body2$;
                 fun_ret = $ret$;
+                fastflow_acc = $task_manager$;
                 fun_extensions = [| $match !extensions with
 		| [] -> <:expr<>>
       | t::[] -> t
@@ -783,7 +793,7 @@ in
 ]
 | "native"
     ["$"; code = STRING; "$" ->
-     {t = TUnit; e = Nat (_loc, code); loc = _loc}]
+     {t = TUnknown; e = Nat (_loc, code); loc = _loc}]
 | "if"
     [ "if"; cond=SELF; "then"; cons1=sequence;
       "else"; cons2=sequence ->

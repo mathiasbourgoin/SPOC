@@ -91,6 +91,7 @@ let rec  parse_int2 i t=
            $parse_int2 index TInt32$>>
   | App _ -> parse_body2 i false
   | RecGet _ -> parse_body2 i false
+  | Nat (_loc, code) -> <:expr< spoc_native $str:code$>>
   | _ -> (my_eprintf (Printf.sprintf "--> (*** val2 %s *)\n%!" (k_expr_to_string i.e));
           raise (TypeError (t, i.t, i.loc));)
 
@@ -130,6 +131,7 @@ and  parse_float2 f t=
 
   | VecGet (_loc, vector, index)  ->
     <:expr<get_vec $parse_float2 vector (TVec t)$ $parse_int2 index TInt32$>>
+  | Nat (_loc, code) -> <:expr< spoc_native $str:code$>>
   | _  -> ( my_eprintf (Printf.sprintf "(*** val2 %s *)\n%!" (k_expr_to_string f.e));
             raise (TypeError (t, f.t, f.loc));)
 

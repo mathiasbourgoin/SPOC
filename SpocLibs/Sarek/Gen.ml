@@ -118,7 +118,7 @@ module Generator (M:CodeGenerator) = struct
     in
     name
 
-  and parse i = function
+  and parse i  = function
   | Kern (args,body) ->
     (let pargs = parse i args in
      let pbody =
@@ -212,17 +212,18 @@ module Generator (M:CodeGenerator) = struct
     (match k with
      |SetV _ | RecSet _ | Set _ | SetLocalVar _ | IntVecAcc _
      | Acc _ | If _ -> (parse i k)
+     | Unit  -> ";"
      | _  ->
        (if (snd !return_v) <> "" then
           snd !return_v
         else
           "return ")^
        (parse i k)^";")
-    | Unit  -> ";"
+
   | IntVecAcc (vec,idx)  -> (parse i vec)^"["^(parse i idx)^"]"
   | SetV (vecacc,value)  -> (
       (parse i vecacc)^" = "^(parse i value)^";")
-  |Int  a  -> string_of_int a
+  | Int  a  -> string_of_int a
   | Float f -> (string_of_float f)^"f"
   | GInt  a  -> Int32.to_string (a ())
   | GFloat  a  -> (string_of_float (a ()))^"f"
@@ -230,8 +231,8 @@ module Generator (M:CodeGenerator) = struct
   | IntId (s,_) -> s
   |Intrinsics gv -> M.parse_intrinsics gv
   | Seq (a,b)  -> (parse i a)^" ;\n"^(indent i)^(parse i b)
-  | Ife(a,b,c) -> "if ("^(parse i a)^"){\n"^(indent (i+1))^(parse (i+1) b)^"\n"^(indent i)^"}\n"^(indent i)^"else{\n"^(indent (i+1))^(parse (i+1) c)^"\n"^(indent i)^"}\n"^(indent i)
-  | If (a,b) -> "if ("^(parse i a)^")"^"{\n"^(indent (i+1))^(parse (i+1) b)^"\n"^(indent i)^"}"^(indent i)
+  | Ife(a,b,c) -> "if ("^(parse i a)^"){\n"^(indent (i+1))^(parse (i+1) b)^";\n"^(indent i)^"}\n"^(indent i)^"else{\n"^(indent (i+1))^(parse (i+1) c)^";\n"^(indent i)^"}\n"^(indent i)
+  | If (a,b) -> "if ("^(parse i a)^")"^"{\n"^(indent (i+1))^(parse (i+1) b)^";\n"^(indent i)^"}"^(indent i)
   | Or (a,b) -> (parse i a)^" || "^(parse i b)
   | And (a,b) -> (parse i a)^" && "^(parse i b)
   | Not (a) -> "!"^(parse i a)
@@ -292,6 +293,7 @@ module Generator (M:CodeGenerator) = struct
      "}")
   | Native s ->
     (s)
+  | Unit -> ""
   | _ -> assert false
 
 and parse_int n = function
@@ -323,6 +325,7 @@ and parse_float n = function
   | SetV (a,b) as v -> parse n v
   | Intrinsics gv -> M.parse_intrinsics gv
   | RecGet (r,f) as v -> parse n v
+  | Native s -> s
   | a  -> print_ast a; failwith  (M.target_name ^" error parse_float")
 
 and parse_vect = function

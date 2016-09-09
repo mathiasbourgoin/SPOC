@@ -1,15 +1,15 @@
 (*
-         DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE 
-                    Version 2, December 2004 
+         DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+                    Version 2, December 2004
 
- Copyright (C) 2004 Sam Hocevar <sam@hocevar.net> 
+ Copyright (C) 2004 Sam Hocevar <sam@hocevar.net>
 
- Everyone is permitted to copy and distribute verbatim or modified 
- copies of this license document, and changing it is allowed as long 
- as the name is changed. 
+ Everyone is permitted to copy and distribute verbatim or modified
+ copies of this license document, and changing it is allowed as long
+ as the name is changed.
 
-            DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE 
-   TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION 
+            DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+   TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
 
   0. You just DO WHAT THE FUCK YOU WANT TO.
 *)
@@ -23,22 +23,20 @@ let height = ref 1000l;;
 
 let max_iter  = ref 512l;;
 
-let zoom = ref 1. 
+let zoom = ref 1.
 let shiftx = ref 0l
 let shifty = ref 0l ;;
 
 let recompile = ref false
 
 let simple = ref true
-  
+
 
 
 let mandelbrot_recompile = kern img ->
 let open Std in
-let i = 0. in
 
-let normalize = fun x y -> x *. x +. y *. y +. i in
-
+let normalize = fun x y -> x *. x +. y *. y in
 let y = thread_idx_y + (block_idx_y * block_dim_y) in
 let x = thread_idx_x + (block_idx_x * block_dim_x) in
 (if (y >= @height) || (x >= @width) then
@@ -48,13 +46,14 @@ let x = thread_idx_x + (block_idx_x * block_dim_x) in
   let shifty = 0 in*)
   let x0 = (x + @shiftx) in
   let y0 = (y + @shifty) in
-  let mutable cpt = 0 in 
+  let mutable cpt = 0 in
   let mutable x1 = 0. in
   let mutable y1 = 0. in
   let mutable x2 = 0. in
   let mutable y2 = 0. in
   let a = 4. *. ((float x0) /. (float @width)) /. @zoom  -. 2. in
   let b = 4. *. ((float y0) /. (float @height)) /. @zoom -. 2. in
+
 
   let mutable norm = normalize x1  y1
   in
@@ -68,10 +67,10 @@ let x = thread_idx_x + (block_idx_x * block_dim_x) in
     norm := (x1 *. x1 ) +. ( y1 *. y1);
   done;
   img.[<y * @width + x>] <- cpt
- ;; 
+ ;;
 
 
-let mandelbrot = kern img shiftx shifty zoom -> 
+let mandelbrot = kern img shiftx shifty zoom ->
   let open Std in
 
   let y = thread_idx_y + (block_idx_y * block_dim_y) in
@@ -81,7 +80,7 @@ let mandelbrot = kern img shiftx shifty zoom ->
   );
   let x0 = (x + shiftx) in
   let y0 = (y + shifty) in
-  let mutable cpt = 0 in 
+  let mutable cpt = 0 in
   let mutable x1 = 0. in
   let mutable y1 = 0. in
   let mutable x2 = 0. in
@@ -89,9 +88,9 @@ let mandelbrot = kern img shiftx shifty zoom ->
   let a = 4. *. ((float x0) /. (float @width)) /. zoom  -. 2. in
   let b = 4. *. ((float y0) /. (float @height)) /. zoom -. 2. in
 
-  let normalize = fun x y -> 
+  let normalize = fun x y ->
     let pow2 = fun x -> x *. x in
-    (pow2 x) +. (pow2 y) in  
+    (pow2 x) +. (pow2 y) in
 
   let mutable norm = normalize x1  y1
 
@@ -145,19 +144,19 @@ let normalize = fun x y -> x *. x +. y *. y in
 ;;
 
 
-let cpu_compute img width height = 
-  for x = 0 to width -1 do 
+let cpu_compute img width height =
+  for x = 0 to width -1 do
     for y = 0 to height - 1 do
       let x0 = x  in
       let y0 = y  in
-      let cpt = ref 0l in 
+      let cpt = ref 0l in
       let x1 = ref 0. in
       let y1 = ref 0. in
       let x2 = ref 0. in
       let y2 = ref 0. in
-      let a = 4. *. ((float x0) /. (float width))   -. 2. in
-      let b = 4. *. ((float y0) /. (float height)) -. 2. in
-      
+      let a = 4. *. ((Pervasives.float x0) /. (Pervasives.float width))   -. 2. in
+      let b = 4. *. ((Pervasives.float y0) /. (Pervasives.float height)) -. 2. in
+
       let norm = ref (!x1 *. !x1 +. !y1 *. !y1)
       in
       while ((!cpt < !max_iter) && (!norm <= 4.)) do
@@ -210,18 +209,18 @@ let get_min ar =
 	min :=  ( (Spoc.Mem.unsafe_get ar i))
   done;
   !min
-    
-let couleur n = 
+
+let couleur n =
   if n = !max_iter then
     Graphics.rgb 196 200 200
-  else let f n = 
+  else let f n =
     let n = Int32.to_int n in
-    let i =  float n in 
+    let i =  Pervasives.float n in
     int_of_float (255. *. (0.5 +. 0.5 *. sin(i *. 0.1))) in
     Graphics.rgb (f (Int32.add n 32l))  (f(Int32.add n 16l))  (f n)
-      
-	 
-let main_mandelbrot () = 
+
+
+let main_mandelbrot () =
   let arg1 = ("-device" , Arg.Int (fun i  -> dev := devices.(i)),
 	      "number of the device [0]")
   and arg2 = ("-height" , Arg.Int (fun i  -> height := Int32.of_int i),
@@ -229,19 +228,19 @@ let main_mandelbrot () =
   and arg3 = ("-width" , Arg.Int (fun i  -> width := Int32.of_int i),
 	      "width of the image to compute [1000]")
   and arg4 = ("-max_iter" , Arg.Int (fun b -> max_iter := Int32.of_int b),
-	      "max number of iterations [512]") 
+	      "max number of iterations [512]")
   and arg5 = ("-recompile" , Arg.Bool (fun b -> recompile := b),
-	      "Regenerates kernel at each redraw [false]") 
+	      "Regenerates kernel at each redraw [false]")
   and arg6 = ("-bench" , Arg.Int (fun b -> bench := (true,b)),
-	      "benchmark (not interactive), number of calculations") 
+	      "benchmark (not interactive), number of calculations")
   and arg7 = ("-double" , Arg.Bool (fun b -> simple := not b),
-	      "use double precision [false]") 
+	      "use double precision [false]")
 in
   Arg.parse ([arg1;arg2;arg3;arg4;arg5;arg6; arg7]) (fun s -> ()) "";
   Printf.printf "Will use device : %s\n%!"
     (!dev).Spoc.Devices.general_info.Spoc.Devices.name;
   let threadsPerBlock = match !dev.Devices.specific_info with
-    | Devices.OpenCLInfo clI -> 
+    | Devices.OpenCLInfo clI ->
       (match clI.Devices.device_type with
       | Devices.CL_DEVICE_TYPE_CPU -> 1
       | _  ->   256)
@@ -252,7 +251,7 @@ in
   let sub_b = Spoc.Mem.sub_vector b_iter 0 (Spoc.Vector.length b_iter)
   in
   let img = Array.make_matrix (Int32.to_int !height) (Int32.to_int !width) Graphics.black in
-  
+
   let blocksPerGrid =
     ((Int32.to_int !width) * (Int32.to_int !height) + threadsPerBlock -1) / threadsPerBlock
   in
@@ -262,7 +261,7 @@ in
 	      Spoc.Kernel.gridY = 1; Spoc.Kernel.gridZ = 1} in
 
   let threadsPerBlock = match !dev.Devices.specific_info with
-    | Devices.OpenCLInfo clI -> 
+    | Devices.OpenCLInfo clI ->
       (match clI.Devices.device_type with
       | Devices.CL_DEVICE_TYPE_CPU -> 1
       | _  ->   16)
@@ -277,82 +276,82 @@ in
   and grid= {Spoc.Kernel.gridX = blocksPerGridx;
 	     Spoc.Kernel.gridY = blocksPerGridy;
 	     Spoc.Kernel.gridZ = 1} in
-    
+
   if not !recompile then
     if not !simple then
-      ignore(Kirc.gen (*~only:Devices.OpenCL*) mandelbrot_double)
-    else 
-      ignore(Kirc.gen (*~only:Devices.OpenCL*) mandelbrot);
+      ignore(Kirc.gen ~only:Devices.OpenCL mandelbrot_double)
+    else
+      ignore(Kirc.gen ~only:Devices.OpenCL mandelbrot);
 
   let l = Int32.to_string !width in
   let h = Int32.to_string !height in
   let dim = " " ^l^"x"^h in
-  
+
   Graphics.open_graph dim;
-  
+
   let running = ref true in
-  
+
   Graphics.auto_synchronize false;
   while !running do
-    
+
     running :=  not ( (fst !bench) && (snd !bench <= 0));
-    
+
     if fst !bench then
       bench := (fst !bench, snd !bench -1);
 
     if !recompile then
       begin
-	Kirc.gen (*~only:Devices.OpenCL*) mandelbrot_recompile;
+	Kirc.gen ~only:Devices.OpenCL mandelbrot_recompile;
 
-	Kirc.run 
-	  mandelbrot_recompile 
-	  (sub_b) 
-	  (block,grid) 
-	  0 
+	Kirc.run
+	  mandelbrot_recompile
+	  (sub_b)
+	  (block,grid)
+	  0
 	  !dev;
       end
     else
       begin
 	if not !simple then
-	  Kirc.run 
-	    mandelbrot_double 
-	    (sub_b, (Int32.to_int !shiftx), (Int32.to_int !shifty), !zoom) 
-	    (block,grid) 
-	    0 
+	  Kirc.run
+	    mandelbrot_double
+	    (sub_b, (Int32.to_int !shiftx), (Int32.to_int !shifty), !zoom)
+	    (block,grid)
+	    0
 	    !dev
 	else
-	  measure_time (fun () -> Kirc.run 
-	    mandelbrot 
-	    (sub_b, (Int32.to_int !shiftx), (Int32.to_int !shifty), !zoom) 
-	    (block,grid) 
-	    0 
+	  measure_time (fun () -> Kirc.run
+	    mandelbrot
+	    (sub_b, (Int32.to_int !shiftx), (Int32.to_int !shifty), !zoom)
+	    (block,grid)
+	    0
 	    !dev;
 
-                  Spoc.Mem.to_cpu sub_b (); 
+                  Spoc.Mem.to_cpu sub_b ();
                   Spoc.Devices.flush !dev (); ) "Accelerator";
-                  
-      end;
-    
-    
 
-    Spoc.Mem.to_cpu sub_b (); 
-    Spoc.Devices.flush !dev (); 
+      end;
+
+
+
+    Spoc.Mem.to_cpu sub_b ();
+    Spoc.Devices.flush !dev ();
     measure_time (fun () -> cpu_compute b_iter (Int32.to_int !width) (Int32.to_int !height)) "CPU";
 
-    for a = 0 to Int32.to_int (Int32.pred !height )do    
+    for a = 0 to Int32.to_int (Int32.pred !height )do
       for b = 0 to Int32.to_int (Int32.pred !width ) do
 	img.(a).(b) <-
-             (couleur 
+             (couleur
                 (Spoc.Mem.get b_iter (a * (Int32.to_int !width) + b) ));
       done;
     done;
     Graphics.draw_image (Graphics.make_image img) 0 0;
     Graphics.synchronize ();
-    
+
     Gc.full_major ();
     if not (fst !bench) then
       begin
-	let key = Graphics.read_key () 
+	let key = Graphics.read_key ()
 	in
 	match key  with
 	| 'w' -> shifty := Int32.add !shifty  10l;
@@ -403,8 +402,3 @@ let _ =
 
   measure_time(main_mandelbrot);
   Printf.printf "Total_time : %g\n%!" !tot_time;;
-
-
-
-
-

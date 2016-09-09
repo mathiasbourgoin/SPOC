@@ -346,11 +346,15 @@ let rewrite ker =
     | RecGet (r,s) -> RecGet (aux r,s)
     | RecSet (r,v) -> RecSet (aux r, aux v)
     | Empty -> kern
+    | Seq (k1, Unit) -> aux k1
     | Seq (k1,k2) ->
       Seq (aux k1, aux k2)
     | Return k ->
-       (match k with
-	| Acc _ | Set _ -> aux k
+      begin
+        match k with
+        | Return k ->
+          (b := true; aux (Return k))
+	     | Acc _ | Set _ -> aux k
        | Ife(k1, k2, k3) ->
          (b := true;
           Ife (aux k1, aux (Return k2), aux (Return k3)))
@@ -372,7 +376,8 @@ let rewrite ker =
                   Array.map (fun (i,ofid,e) ->
 			     (i,ofid, aux (Return e))) bb))
        | _ ->
-          Return (aux k))
+         Return (aux k)
+      end
     | Acc (k1,k2) ->
 
        (match k2 with
