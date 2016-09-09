@@ -83,9 +83,8 @@ ___
 <h4><a href="tutos/sarek2cl.html"><strong><u>Sarek2CL</u></strong></a></h4>
 </pre></div>
 </div>
-<hr></hr>
 
-#I - How to Build SPOC
+# I - How to Build SPOC
 
 
 
@@ -164,7 +163,7 @@ The "SpocLibs" directory contains few libraries based on Spoc.
 The Sample directory contains few samples using those libraries
 
 
-#Publications#
+# Publications #
 
 ### Talks ###
 ---
