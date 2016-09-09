@@ -215,11 +215,11 @@ The Sample directory contains few samples using those libraries
 
 ## Contact ##
 
-LIFO - Bâtiment IIIA
-Rue Léonard de Vinci
-B.P. 6759
-F-45067 ORLEANS Cedex 2
-France
+LIFO - Bâtiment IIIA  
+Rue Léonard de Vinci  
+B.P. 6759  
+F-45067 ORLEANS Cedex 2  
+France  
 Mathias.Bourgoin (at) univ-orleans.fr
 
 
