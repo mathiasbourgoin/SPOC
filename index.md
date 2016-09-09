@@ -212,13 +212,14 @@ The Sample directory contains few samples using those libraries
 + *M. Bourgoin, E. Chailloux, J.\-L. Lamotte* : **"Retour d'experience : portage d'une application haute-performance vers un langage de haut niveau"**, ComPas/RENPAR 2013, pp. 1-8 (2013)
 
 
-##Contact##
+## Contact ##
 
-INPG - VERIMAG  
-Centre Equation  
-2 Avenue de Vignate  
-38610 GIERES, France  
-Mathias.Bourgoin (at) imag.fr
+LIFO - Bâtiment IIIA
+Rue Léonard de Vinci
+B.P. 6759
+F-45067 ORLEANS Cedex 2
+France
+Mathias.Bourgoin (at) univ-orleans.fr
 
 
 
