@@ -193,6 +193,7 @@ The Sample directory contains few samples using those libraries
 
 ### Peer Reviewed Papers ###
 ---
+
 #### General Presentations ####
 + *M. Bourgoin, E. Chailloux, J.-L. Lamotte* : **"Efficient Abstractions for GPGPU Programming"**, International Journal of Parallel Programming, 2013.
 + *M. Bourgoin, E. Chailloux, J.\-L. Lamotte* : **"High-Performance GPGPU Programming with OCaml"**, OCaml 2013, 2013
