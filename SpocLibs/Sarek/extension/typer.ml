@@ -175,15 +175,13 @@ and typer body t =
           | Fun (_loc,stri,tt,funv,lifted) ->
              my_eprintf ("ADDDD: "^(string_of_ident s)^"\n%!");
              Hashtbl.add !local_fun (string_of_ident s)
-			 (funv, (<:str_item<let $id:s$ =
-		       $stri$>>), lifted);
-
+			         (funv, (<:str_item<let $id:s$ = $stri$>>), lifted);
              update_type y tt;
           | _ ->
-	     try
-	       let v = Hashtbl.find !current_args (string_of_ident s)
-	       in
-	       typer y v.var_type;
+            try
+	           let v = Hashtbl.find !current_args (string_of_ident s)
+           in
+	          typer y v.var_type;
 	     with
 	     | Not_found ->
 		(*Printf.eprintf "Looking for %s in [" (string_of_ident s);
@@ -192,7 +190,7 @@ and typer body t =
 		typer y TUnknown;
   (incr arg_idx;
    my_eprintf ("AD: "^(string_of_ident s)^"\n%!");
-		 Hashtbl.add !current_args (string_of_ident s)
+		Hashtbl.add !current_args (string_of_ident s)
 			     {n = !arg_idx; var_type = y.t;
 			      is_mutable = is_mutable;
 			      read_only = false;
@@ -200,6 +198,7 @@ and typer body t =
 			      is_global = false;}
              )
          );
+
       | _ -> assert false
      );
      update_type var y.t;
@@ -492,8 +491,12 @@ and typer body t =
       typer e t;
       close_module m;
       update_type body e.t;
+   | TypeConstraint (l, x, tc) ->
+     typer x tc;
+     check t tc;
+     update_type body tc;
    | Nat _ ->
-     update_type body TUnit   
+     update_type body TUnit
    | _ -> my_eprintf  ((k_expr_to_string body.e)^"\n"); assert false);
   if is_unknown body.t then
     (my_eprintf  (("UNKNOWN : "^k_expr_to_string body.e)^"\n");

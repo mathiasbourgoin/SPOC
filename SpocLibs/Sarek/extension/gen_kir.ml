@@ -718,6 +718,9 @@ and parse_body2 body bool =
       end
     | RecGet (_loc,r,fld) -> <:expr< spoc_rec_get $parse_body2 r false$ $str:string_of_ident fld$>>
     | RecSet (_loc,e1,e2) -> <:expr< spoc_rec_set $parse_body2 e1 false$ $parse_body2 e2 false$>>
+    | TypeConstraint (_loc, e, tt) ->
+      if not r then return_type := tt;
+          parse_body2 e false
     | Nat (_loc, code) -> <:expr< spoc_native $str:code$>>
     | _ ->  (
         my_eprintf __LOC__;

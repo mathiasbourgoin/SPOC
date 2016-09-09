@@ -622,5 +622,6 @@ and parse_body body =
   | False _loc ->  <:expr< false >>
   | BoolEq (_loc,e1,e2) -> <:expr< $parse_body e1$ = $parse_body e2$>>
   | BoolNot (_loc, e) -> <:expr< not $parse_body e$>>
+  | TypeConstraint (_loc, e, _) -> parse_body e
   | Nat (_loc, code) -> <:expr< failwith "native_code cannot be used in ml functions">>
-  | _ -> assert (not debug); failwith "unimplemented yet"
+  | _ -> assert (not debug); failwith "parse_body : unimplemented yet"

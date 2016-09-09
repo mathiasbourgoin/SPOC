@@ -30,7 +30,7 @@ let get_ff_type p =
     | _ -> assert false
 
 
-  let get_ff_type_str p =
+  let rec get_ff_type_str p =
     match p with
     | PaId (_loc, IdLid (_loc2, x) ) ->
       (let var = (Hashtbl.find !current_args x) in
@@ -49,9 +49,12 @@ let get_ff_type p =
               | _ ->  failwith "gfft : unimplemented yet"
              )
            | _  -> failwith ("error get_ff_type_str -> "^ (ktyp_to_string var.var_type))))
+    | PaTyc (_, x, _ ) -> get_ff_type_str x
 
-  let string_of_patt = function
+
+  let rec string_of_patt = function
     | PaId(_,x) ->string_of_ident x
+    | PaTyc(_,x,_) -> string_of_patt x
     | _ -> assert false
 
 
@@ -99,7 +102,7 @@ let print_task args nameid _loc =
   let accNomoretasks () =   let fflib = FastFlow.fflib () in
     Foreign.foreign  ~from:fflib \"nomoretasks\" (ptr void @-> returning void)";
 
-  let adapt_string_of_patt = function
+  let rec adapt_string_of_patt = function
     | PaId (_loc, IdLid (_loc2, x) ) ->
       (let var = (Hashtbl.find !current_args x) in
        (
@@ -121,6 +124,7 @@ let print_task args nameid _loc =
                            (Spoc.Vector.to_bigarray_shr (%s : %s)))"
              x (t var.var_type)
          | _  -> failwith "error get_ff_type_str"))
+    | PaTyc (_,x,_ ) -> adapt_string_of_patt x
     | _ -> assert false
   in
   let adapted_params_as_tuple =

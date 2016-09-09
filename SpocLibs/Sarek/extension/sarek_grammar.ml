@@ -7,7 +7,7 @@ open Typer
 open Mparser
 open Debug
 
-let ano_n = ref 0 
+let ano_n = ref 0
 let gen_ano_f _loc : ident=
   let s =
     Printf.sprintf "f_anonym_%d" !ano_n in
@@ -113,19 +113,19 @@ let gen_kernel () = ()
       ["kern"; args = LIST1 k_patt; "->"; body = kernel_body ->
        Printf.printf
          "(* Generated from the sarek syntax extension, \ndo not modify this file*)\n";
-       arg_idx := 0;
+       (*arg_idx := 0;*)
        return_type := TUnknown;
        arg_list := [];
        extensions := [ ex32 ];
-       Hashtbl.clear !current_args;
-       Hashtbl.clear !local_fun;
+       (*Hashtbl.clear !current_args;
+         Hashtbl.clear !local_fun;*)
        List.iter new_arg_of_patt args;
        (try
           retype := true;
           while !retype do
             retype := false;
             unknown := 0;
-	    Hashtbl.clear !local_fun;
+	          Hashtbl.clear !local_fun;
             typer body TUnknown;
             my_eprintf (Printf.sprintf "Unknown : %d \n\n\n%!" !unknown)
           done;
@@ -369,7 +369,8 @@ $res$
 ];
 str_item:
   [
-    ["klet"; name = ident; "="; "fun"; args = LIST1 k_patt; "->"; body = kernel_body ->
+    ["klet"; name = ident; "="; "fun"; args = LIST1 k_patt;
+         "->"; body = kernel_body ->
      arg_idx := 0;
      return_type := TUnknown;
      arg_list := [];
@@ -480,6 +481,7 @@ let t =
       | (PaId(_,i)) ->
         let value = (Hashtbl.find !current_args (string_of_ident i)) in
         TApp (value.var_type, seed)
+      | PaTyc (_,i,t) -> ktyp_of_typ t
       | _ -> assert false) !return_type  (List.rev args)
 (*
   Hashtbl.fold (
@@ -568,25 +570,43 @@ match_cases :
   ];
 kident :
   [
-    [ x = ident ->
+    "type constraint" LEFTA
+      [ "("; x = ident; ":"; t = ctyp; ")" ->
+        my_eprintf (Printf.sprintf "adding %s with constraint of type %s \n" (string_of_ident x) (string_of_ctyp t)) ;
+        incr arg_idx;
+        let arg =  {n= !arg_idx;
+                    var_type = ktyp_of_typ t;
+                    is_mutable = false;
+                    read_only = false;
+                    write_only = false;
+                    is_global = false;} in
+        Hashtbl.add !current_args (string_of_ident x) arg;
+      arg,x]
+  | "ident"
+      [ x = ident ->
       my_eprintf (Printf.sprintf "adding %s\n" (string_of_ident x));
-      Hashtbl.add !current_args (string_of_ident x)
-                 {n= (-1);
-          var_type = TUnknown;
-          is_mutable = false;
-          read_only = false;
-          write_only = false;
-          is_global = false;};
-      x]
+        incr arg_idx;
+        let arg =           {n= !arg_idx;
+                             var_type = TUnknown;
+                             is_mutable = false;
+                             read_only = false;
+                             write_only = false;
+                             is_global = false;} in
+        Hashtbl.add !current_args (string_of_ident x) arg;
+     arg,x]
   ];
 
 kexpr:
   [
     "let"
       ["let"; opt_mutable = OPT "mutable";  var = kident; "="; y = SELF; "in"; z = sequence  ->
-       {t=TUnknown;
-        e=  Bind(_loc,
-                 {t= TUnknown;
+       let arg,var = var
+        in   {t=TUnknown;
+        e=
+          Bind(_loc,
+               {t= (
+                     (ktyp_to_string arg.var_type);
+                   arg.var_type);
                   e= Id (_loc, var);
                   loc = _loc},
                  y, z, (match opt_mutable with
@@ -856,6 +876,9 @@ in
       | x = SELF; "/!!"; y = SELF -> {t=TInt64; e = Div64(_loc, x,y); loc = _loc};
       | x = SELF; "/"; y = SELF -> {t=TInt32; e = Div32(_loc, x,y); loc = _loc};
       | x = SELF; "/."; y = SELF -> {t=TFloat32; e = DivF32(_loc, x,y); loc = _loc}]
+| ":" LEFTA
+    [x=SELF; ":"; t=ctyp -> {t=TUnknown; e=TypeConstraint(_loc, x, (ktyp_of_typ t)); loc= _loc};]
+
 
 
 | "||"

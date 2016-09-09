@@ -163,6 +163,7 @@ type k_expr =
   | ModuleAccess of Loc.t * string * kexpr
   | True of Loc.t | False of Loc.t
 
+  | TypeConstraint of Loc.t * kexpr * ktyp
   | Nat of Loc.t * string
   | Noop
 
@@ -307,6 +308,7 @@ let rec k_expr_to_string = function
   | RecSet _ -> "RecSet"
   | True _ -> "true"
   | False _-> "false"
+  | TypeConstraint _ -> "TypeConstraint"
   | Nat _ -> "native code"
 
 
@@ -367,18 +369,40 @@ let custom_types :((string,customtypes) Hashtbl.t) = Hashtbl.create 10
 
 let (arg_list : Camlp4.PreCast.Syntax.Ast.expr list ref ) = ref []
 
+let rec ktyp_of_typ = function
+  | <:ctyp< int >> | <:ctyp< int32 >> -> TInt32
+  | <:ctyp< int64 >>  -> TInt64
+  | <:ctyp< float >> | <:ctyp< float32 >> -> TFloat32
+  | <:ctyp< float64 >>  -> TFloat64
+  | <:ctyp< $x$ vector>> -> TVec (ktyp_of_typ x)
+  | TyCol (_,_,t) -> ktyp_of_typ t
+  | TyId(_,IdLid(_,t)) ->
+    (try
+       Custom ((Hashtbl.find custom_types t),t);
+     with | _ ->
+       failwith ("unknown type "^t))
+  | _ -> assert false
 
 
 let new_arg_of_patt p =
 
   match p with
-  | <:patt< $lid:x$ >> ->  let i = !arg_idx in     incr arg_idx;
-
+  | <:patt< $lid:x$ >> ->
+    let i = !arg_idx in     incr arg_idx;
     Hashtbl.add !current_args x {n=i; var_type=TUnknown;
                                  is_mutable = false;
                                  read_only = false;
                                  write_only = false;
                                  is_global = false;};
+  | <:patt< ($lid:x$ : $t$) >> ->
+    let i = !arg_idx in     incr arg_idx;
+    Hashtbl.add !current_args x {n=i;
+                                 var_type=ktyp_of_typ t;
+                                 is_mutable = false;
+                                 read_only = false;
+                                 write_only = false;
+                                 is_global = false;};
+
   | _  -> failwith "error new_arg_of_patt"
 
 
@@ -601,19 +625,7 @@ and close_module m_ident =
   with
   | _ -> ()
 
-let rec ktyp_of_typ = function
-  | <:ctyp< int >> | <:ctyp< int32 >> -> TInt32
-  | <:ctyp< int64 >>  -> TInt64
-  | <:ctyp< float >> | <:ctyp< float32 >> -> TFloat32
-  | <:ctyp< float64 >>  -> TFloat64
-  | TyCol (_,_,t) -> ktyp_of_typ t
-  | TyId(_,IdLid(_,t)) ->
-    (try
-       Custom ((Hashtbl.find custom_types t),t);
-     with | _ ->
-       failwith ("unknown type "^t))
-  | _ -> assert false
-
+         
 
 let ctype_of_sarek_type  = function
   | "int32" -> "int"

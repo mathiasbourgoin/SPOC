@@ -1,4 +1,4 @@
-let mandelbrot = kern  img  ->
+(*let mandelbrot = kern  img  ->
   let open Std in
 
   let y = thread_idx_y + (block_idx_y * block_dim_y) in
@@ -33,5 +33,19 @@ let mandelbrot = kern  img  ->
     norm := (x1 *. x1 ) +. ( y1 *. y1);
   done;
   img.[<y * @width + x>] <- cpt
+*)
 
+open Spoc
+open Kirc
+open Spoc.Vector
 
+open Test2
+
+let f = kern (a:float vector) x ->
+  let i = Std.global_thread_id in
+  a.[<i>] <- my_sin x
+
+let _ =
+  Spoc.Devices.init () in
+Kirc.gen ~only:Devices.OpenCL f;
+List.iter (Printf.printf  "%s\n")((fst f)#get_opencl_sources ())
