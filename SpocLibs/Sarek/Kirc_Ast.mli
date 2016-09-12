@@ -2,7 +2,7 @@ type kernel
 
 and kvect = IntVect of int | Floatvect of int
 type intrinsics = string * string
-type elttype = 
+type elttype =
   | EInt32
   | EInt64
   | EFloat32
@@ -33,8 +33,8 @@ type k_ext =
   | FloatVar of int * string
   | UnitVar of int * string
   | CastDoubleVar of int * string
-  | DoubleVar of int * string 
-  | BoolVar of int * string 
+  | DoubleVar of int * string
+  | BoolVar of int * string
   | Arr of int * k_ext * elttype * memspace
   | VecVar of k_ext * int * string
   | Concat of k_ext * k_ext
@@ -65,7 +65,7 @@ type k_ext =
   | Or of k_ext * k_ext
   | And of k_ext * k_ext
   | Not of k_ext
-  | EqCustom of string * k_ext * k_ext 
+  | EqCustom of string * k_ext * k_ext
   | EqBool of k_ext * k_ext
   | LtBool of k_ext * k_ext
   | GtBool of k_ext * k_ext
@@ -76,6 +76,7 @@ type k_ext =
   | App of k_ext * k_ext array
   | GInt of (unit -> int32)
   | GFloat of (unit -> float)
+  | Native of string
   | Unit
 and case = int * (string*string*int) option * k_ext
 

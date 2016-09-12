@@ -39,7 +39,7 @@ open Kirc_Ast
 let space i =
   String.make i ' '
 
-and  indent i = 
+and  indent i =
   let rec aux acc = function
     | 0 -> acc
     | i -> aux (acc^"  ") (i-1)
@@ -50,7 +50,7 @@ module type CodeGenerator = sig
 
   (* framework name *)
   val target_name : string
-    
+
 
   (* framework dependent qualifiers *)
   val global_function : string
@@ -58,7 +58,7 @@ module type CodeGenerator = sig
   val host_function : string
 
   val global_parameter : string
-  
+
   val global_variable : string
   val local_variable : string
   val shared_variable : string
@@ -73,22 +73,22 @@ end
 module Generator (M:CodeGenerator) = struct
 
   let global_funs = Hashtbl.create 0
-      
+
   let return_v = ref ("","")
-      
-  let global_fun_idx = ref 0 
-      
+
+  let global_fun_idx = ref 0
+
   let protos = ref []
 
-  
-  let rec parse_fun i a b = 
+
+  let rec parse_fun i a b =
     let rec aux name a =
       let rec aux2 i a =
-        match a with 
-        | Kern  (args,body) -> 
+        match a with
+        | Kern  (args,body) ->
           (let pargs = aux2 i args  in
-           let pbody = 
-             match body with 
+           let pbody =
+             match body with
              | Seq (_,_)  -> (aux2 i body)
              | _  ->  ((aux2 i body )^"\n"^(indent i))
            in
@@ -102,27 +102,27 @@ module Generator (M:CodeGenerator) = struct
           protos := proto:: !protos;
           proto^"{"
         | a -> (parse  i a)
-      in 
+      in
       aux2 i a in
-    
-    
-    let name = 
+
+
+    let name =
       try snd (Hashtbl.find global_funs a) with
       | Not_found ->
         (
 	  incr global_fun_idx;
    let gen_name =  ("spoc_fun__"^(string_of_int !global_fun_idx)) in
-   let fun_src = aux gen_name a in	 
+   let fun_src = aux gen_name a in
    Hashtbl.add global_funs a (fun_src,gen_name) ;
    gen_name)
     in
     name
 
-  and parse i = function
-  | Kern (args,body) -> 
+  and parse i  = function
+  | Kern (args,body) ->
     (let pargs = parse i args in
-     let pbody = 
-       match body with 
+     let pbody =
+       match body with
        | Seq (_,_)  -> (parse (i+1) body)
        | _  ->  ((parse (i+1) body)^"\n"^(indent (i)))
      in
@@ -139,7 +139,7 @@ module Generator (M:CodeGenerator) = struct
       | Custom (n,_,ss) -> (" struct "^n^"_sarek")
       | _ -> assert false
      )^("* "^s)
-	 
+
   | Block b -> (indent i)^"{\n"^parse (i+1) b^"\n"^(indent i)^"}"
   | IdName s  ->  s
   | IntVar (i,s) -> ("int "^s)
@@ -148,28 +148,28 @@ module Generator (M:CodeGenerator) = struct
   | UnitVar (v,s) -> assert false
   | DoubleVar (i,s) -> ("double "^s)
   | BoolVar (i,s) -> ("int "^s)
-  | Arr (s,l,t,m) -> 
-    let memspace = 
-      match m with 
+  | Arr (s,l,t,m) ->
+    let memspace =
+      match m with
       | LocalSpace -> M.local_variable
       | Shared -> M.shared_variable
       | Global -> M.global_variable
-    and elttype = 
+    and elttype =
       match t with
       | EInt32 -> "int"
       | EInt64 -> "long"
       | EFloat32 -> "float"
-      | EFloat64 -> "double" 
+      | EFloat64 -> "double"
     in
         (memspace^" "^elttype^" spoc_var"^
                        (string_of_int s)^"["^
                        (parse i l)^"]")
-  | Params k -> 
+  | Params k ->
     (M.kern_start^" void spoc_dummy ( "^
      (if (fst !return_v) <> "" then
         (fst !return_v)^", " else "")^(parse i k)^" ) {\n"^(indent (i+1)))
-  |Concat (a,b)  ->  
-    (match b with 
+  |Concat (a,b)  ->
+    (match b with
      | Empty  -> (parse i a)
      | Concat (c,d)  ->  ((parse i a)^", "^(parse i b))
      | _  -> failwith "parse concat"
@@ -177,7 +177,7 @@ module Generator (M:CodeGenerator) = struct
   | Constr (t,s,l) ->
     "build_"^t^"_"^s^"("^(List.fold_left (fun a b -> a^parse i b) "" l)^")"
   | Record (s,l) ->
-    let params = 
+    let params =
       match l with
       | t::q -> (parse i t)^(List.fold_left (fun a b -> a^", "^parse i b) "" q)
       | [] -> assert false in
@@ -197,13 +197,13 @@ module Generator (M:CodeGenerator) = struct
 
   | Mod  (a,b) -> ("("^(parse_int i a)^" % "^(parse_int i b)^")")
   | Id (s)  -> s
-  | Set (var,value) 
-  | Acc (var,value) -> 
+  | Set (var,value)
+  | Acc (var,value) ->
     ((parse i var)^" = "^
      (parse i value))
   | Decl (var) ->
      (parse i var)
-  | SetLocalVar (v,gv,k) -> 
+  | SetLocalVar (v,gv,k) ->
     ((parse i v)^" = "^
      (match gv with
       | Intrinsics i -> (M.parse_intrinsics i)
@@ -212,17 +212,18 @@ module Generator (M:CodeGenerator) = struct
     (match k with
      |SetV _ | RecSet _ | Set _ | SetLocalVar _ | IntVecAcc _
      | Acc _ | If _ -> (parse i k)
+     | Unit  -> ";"
      | _  ->
        (if (snd !return_v) <> "" then
           snd !return_v
         else
           "return ")^
        (parse i k)^";")
-    | Unit  -> ";"
+
   | IntVecAcc (vec,idx)  -> (parse i vec)^"["^(parse i idx)^"]"
   | SetV (vecacc,value)  -> (
-      (parse i vecacc)^" = "^(parse i value)^";") 
-  |Int  a  -> string_of_int a
+      (parse i vecacc)^" = "^(parse i value)^";")
+  | Int  a  -> string_of_int a
   | Float f -> (string_of_float f)^"f"
   | GInt  a  -> Int32.to_string (a ())
   | GFloat  a  -> (string_of_float (a ()))^"f"
@@ -230,8 +231,8 @@ module Generator (M:CodeGenerator) = struct
   | IntId (s,_) -> s
   |Intrinsics gv -> M.parse_intrinsics gv
   | Seq (a,b)  -> (parse i a)^" ;\n"^(indent i)^(parse i b)
-  | Ife(a,b,c) -> "if ("^(parse i a)^"){\n"^(indent (i+1))^(parse (i+1) b)^"\n"^(indent i)^"}\n"^(indent i)^"else{\n"^(indent (i+1))^(parse (i+1) c)^"\n"^(indent i)^"}\n"^(indent i)
-  | If (a,b) -> "if ("^(parse i a)^")"^"{\n"^(indent (i+1))^(parse (i+1) b)^"\n"^(indent i)^"}"^(indent i)
+  | Ife(a,b,c) -> "if ("^(parse i a)^"){\n"^(indent (i+1))^(parse (i+1) b)^";\n"^(indent i)^"}\n"^(indent i)^"else{\n"^(indent (i+1))^(parse (i+1) c)^";\n"^(indent i)^"}\n"^(indent i)
+  | If (a,b) -> "if ("^(parse i a)^")"^"{\n"^(indent (i+1))^(parse (i+1) b)^";\n"^(indent i)^"}"^(indent i)
   | Or (a,b) -> (parse i a)^" || "^(parse i b)
   | And (a,b) -> (parse i a)^" && "^(parse i b)
   | Not (a) -> "!"^(parse i a)
@@ -245,7 +246,7 @@ module Generator (M:CodeGenerator) = struct
   | GtBool (a,b) -> (parse i a)^" > "^(parse i b)
   | LtEBool (a,b) -> (parse i a)^" <= "^(parse i b)
   | GtEBool (a,b) -> (parse i a)^" >= "^(parse i b)
-  | DoLoop (a,b,c,d) -> 
+  | DoLoop (a,b,c,d) ->
     let id = parse i a in
     let min = parse i b in
     let max = parse i c in
@@ -261,22 +262,22 @@ module Generator (M:CodeGenerator) = struct
       | t::[] -> parse i t
       | t::q -> (parse i t)^","^(aux q)
       | [] -> assert false
-    in 
-    (match a with 
+    in
+    (match a with
      | Intrinsics ("return","return") -> f^" "^(aux (Array.to_list b))^" "
      |  _ -> f^" ("^(aux (Array.to_list b))^") ")
   | Empty  -> ""
-  | GlobalFun (a,b) -> 
+  | GlobalFun (a,b) ->
      let s = (parse_fun i a b) in
      s
   | Match (s,e,l) ->
     let match_e = parse 0 e in
-    let switch_content  = 
-      Array.fold_left (fun a (j,of_i,b) ->              
-          let manage_of = 
+    let switch_content  =
+      Array.fold_left (fun a (j,of_i,b) ->
+          let manage_of =
             match of_i with
             | None -> ""
-            | Some (typ,cstr,varn) -> 
+            | Some (typ,cstr,varn) ->
               indent (i+1)^typ^
               " spoc_var"^(string_of_int varn)^" = "^match_e^"."^
               s^"_sarek_union."^s^"_sarek_"^cstr^"."^
@@ -289,7 +290,10 @@ module Generator (M:CodeGenerator) = struct
         )
         " " l in
     ("switch ("^match_e^"."^s^"_sarek_tag"^"){"^switch_content^
-    "}") 
+     "}")
+  | Native s ->
+    (s)
+  | Unit -> ""
   | _ -> assert false
 
 and parse_int n = function
@@ -321,13 +325,14 @@ and parse_float n = function
   | SetV (a,b) as v -> parse n v
   | Intrinsics gv -> M.parse_intrinsics gv
   | RecGet (r,f) as v -> parse n v
+  | Native s -> s
   | a  -> print_ast a; failwith  (M.target_name ^" error parse_float")
 
 and parse_vect = function
   | IntVect i  -> i
   | _  -> failwith (M.target_name ^" error parse_vect")
-            
 
-  
-  
+
+
+
 end

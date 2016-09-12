@@ -2,7 +2,7 @@ MLSRC=$(shell ocamldep -sort *.ml)
 #Kirc_Ast.ml Kirc_Cuda.ml Kirc_OpenCL.ml Kirc.ml
 MLI=$(shellocamldep -sort *.mli)
 #Kirc_Ast.mli Kirc.mli
-MLOBJ_B= $(MLSRC:.ml=.cmo) 
+MLOBJ_B= $(MLSRC:.ml=.cmo)
 MLOBJ_N=$(MLSRC:.ml=.cmx)
 EXTSRC=$(wildcard extension/*.ml)
 
@@ -11,30 +11,30 @@ all : start | build extension/kernels_int.cma
 extension/kernels_int.cma: $(EXTSRC)
 	@echo "\033[43m\033[30mBuilding SPOC external kernel extension\033[0m"
 	@echo "\033[31m[kernels_ext.cma]\033[0m"
-	@cd extension && make 
+	@cd extension && make
 
 start :
 	@echo "\033[43m\033[30mBuilding Sarek\033[0m"
 
 %.cmo:%.ml
-	@echo  "\033[32m[$@]\033[0m" 
-	@ocamlfind ocamlc -thread -package spoc -c $< 
+	@echo  "\033[32m[$@]\033[0m"
+	@ocamlfind ocamlc -thread -package spoc,ctypes,ctypes.foreign -c $<
 
 %.cmx:%.ml
-	@echo  "\033[32m[$@]\033[0m" 
-	@ocamlfind ocamlopt -thread -package spoc -c $< 
+	@echo  "\033[32m[$@]\033[0m"
+	@ocamlfind ocamlopt -thread -package spoc,ctypes,ctypes.foreign -c $<
 
 %.cmi:%.mli
-	@echo  "\033[32m[$@]\033[0m" 
-	@ocamlfind ocamlc -thread -package spoc -c $< 
+	@echo  "\033[32m[$@]\033[0m"
+	@ocamlfind ocamlc -thread -package spoc,ctypes,ctypes.foreign -c $<
 
 
 sarek.cma: $(MLOBJ_B)
 	@echo  "\033[31m[sarek.cma]\033[0m"
-	ocamlfind ocamlc -thread -package spoc -a -o sarek.cma $(MLOBJ_B)
+	ocamlfind ocamlc -thread -package spoc,ctypes.foreign,ctypes  -a -o sarek.cma $(MLOBJ_B)
 
 libsarek.a:sarek.cma
-	@cp sarek.a libsarek.a	
+	@cp sarek.a libsarek.a
 
 spoclevel-sarek : sarek.cmxa sarek.cma extension/kernels_int.cma
 	@echo   "\033[36m[spoclevel-sarek]\033[0m"
@@ -44,7 +44,7 @@ spoclevel-sarek : sarek.cmxa sarek.cma extension/kernels_int.cma
 	-cclib -lcamlrun -cclib -lbigarray \
 	spoc.cma -cclib -lspoc \
 	-cclib -lsarek sarek.cma \
-	-o spoclevel-sarek 
+	-o spoclevel-sarek
 
 #sarek.cma: sarek.cmo
 #	@echo  "\033[31m[sarek.cma]\033[0m"
@@ -69,7 +69,7 @@ include  .depend
 
 
 ocp-clean :
-	ocp-build clean	
+	ocp-build clean
 
 clean :
 	cd extension && make clean
@@ -87,5 +87,5 @@ ocp-install:
 	cd extension && make install
 
 uninstall :
-	(ocamlfind query sarek && ocamlfind remove sarek) || echo "sarek not installed"
-	cd extension && make uninstall
+	@(ocamlfind remove sarek) | true
+	@cd extension && make uninstall

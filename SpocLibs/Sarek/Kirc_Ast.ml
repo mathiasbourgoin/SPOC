@@ -45,7 +45,7 @@ and kvect =
 
 type intrinsics = string*string
 
-type elttype = 
+type elttype =
   | EInt32
   | EInt64
   | EFloat32
@@ -88,7 +88,7 @@ type  k_ext =
   | Empty
   | Seq of  k_ext *  k_ext
   | Return of  k_ext
-  | Set of  k_ext *  k_ext 
+  | Set of  k_ext *  k_ext
   | Decl of  k_ext
   | SetV of  k_ext*  k_ext
   | SetLocalVar of  k_ext *  k_ext *  k_ext
@@ -102,13 +102,13 @@ type  k_ext =
   | IntVecAcc of  k_ext *  k_ext
   | Local of  k_ext *  k_ext
   | Acc of  k_ext *  k_ext
-  | Ife of  k_ext *  k_ext  *  k_ext   
+  | Ife of  k_ext *  k_ext  *  k_ext
   | If of  k_ext *  k_ext
   | Match of string* k_ext * case array
   | Or of  k_ext *  k_ext
   | And of  k_ext *  k_ext
-  | Not of  k_ext 
-  | EqCustom of string * k_ext * k_ext 
+  | Not of  k_ext
+  | EqCustom of string * k_ext * k_ext
   | EqBool of  k_ext *  k_ext
   | LtBool of  k_ext *  k_ext
   | GtBool of  k_ext *  k_ext
@@ -119,12 +119,13 @@ type  k_ext =
   | App of  k_ext *  k_ext array
   | GInt of (unit -> int32)
   | GFloat of (unit -> float)
+  | Native of string
   | Unit
 
 
 and case =  int * (string*string*int) option * k_ext
 
-type  kfun = 
+type  kfun =
   | KernFun of  k_ext* k_ext
 
 
@@ -133,16 +134,16 @@ let print_ast a =
   let print i s =
     for j = 0 to i - 1 do
       Printf.printf "  ";
-    done; 
+    done;
     Printf.printf "%s\n" s
-  in  
+  in
   let rec aux i = function
     | Kern (a,b) ->
-      print i "Kern"; 
+      print i "Kern";
       (aux (i + 1) a);
       (aux (i + 1) b)
     | Block b ->
-      print i "Kern"; 
+      print i "Kern";
       (aux (i + 1) b);
     | Params p ->
       print i "Params";
@@ -185,7 +186,7 @@ let print_ast a =
       aux (i+1) b;
     | Id (s) ->
       print i ("Id "^s)
-    | IdName s -> 
+    | IdName s ->
       print i ("IdName "^s);
     | IntVar (ii,s) ->
       print i ("IntVar "^(string_of_int ii)^" -> "^s)
@@ -240,7 +241,7 @@ let print_ast a =
       print i ("IntId "^s^" "^(string_of_int ii));
     | Int ii ->
       print i ("Int "^(string_of_int ii));
-    | Float f 
+    | Float f
     | Double f ->
       print i ("Float "^(string_of_float f));
     | IntVecAcc (a,b) ->
@@ -306,17 +307,17 @@ let print_ast a =
       aux (i+1) a;
       aux (i+1) b;
     | Arr (s,l,t,m) ->
-      let memspace = 
-        match m with 
+      let memspace =
+        match m with
         | LocalSpace -> "__private"
         | Shared -> "__local"
         | Global -> "__global"
-      and elttype = 
+      and elttype =
         match t with
         | EInt32 -> "int"
         | EInt64 -> "long"
         | EFloat32 -> "float"
-        | EFloat64 -> "double" 
+        | EFloat64 -> "double"
       in
       print i ("Arr" ^ memspace^" "^elttype);
     | App (a,b) ->
@@ -345,8 +346,10 @@ let print_ast a =
       print i ("RecGet");
       aux (i+1) r;
       aux (i+1) v;
-    | Custom (s,_,ss) -> 
+    | Custom (s,_,ss) ->
       print i ("Custom "^s)
+    | Native s ->
+      print i ("Native "^s)
     | Match (s,e1,l) ->
       print i ("Match "^s);
       aux (i+1) e1;

@@ -16,7 +16,8 @@
 open Spoc
 open Kirc
 
-
+open Ctypes
+open Foreign
 
 let gpu_bitonic = kern v j k ->
   let open Std in
@@ -121,7 +122,7 @@ let nearest_pow2 i  =
   r
 
 let () = 
-  let devid = ref 1
+  let devid = ref 0
   and size = ref (1024*2*2*2*2*2*2*2*2*2*2*2*2*2*2*2)
   and check = ref true
   and compare = ref true

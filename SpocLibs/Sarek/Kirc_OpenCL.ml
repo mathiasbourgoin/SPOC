@@ -32,7 +32,6 @@
  * The fact that you are presently reading this means that you have had
  * knowledge of the CeCILL-B license and that you accept its terms.
  *******************************************************************************)
-
 let target_name = "OpenCL"
 
 let global_function = ""
@@ -44,11 +43,9 @@ let global_parameter = "__global"
 let global_variable = "__global"
 let local_variable = ""
 let shared_variable = "__local"
-  
+
 let kern_start  = "__kernel"
 let kern_end = "}"
 
 let parse_intrinsics (cuda,opencl) = opencl
-
-
-
+  

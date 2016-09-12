@@ -9,6 +9,7 @@ case "$OCAML_VERSION,$OPAM_VERSION" in
 4.02.0,1.1.0) ppa=avsm/ocaml42+opam11 ;;
 4.02.0,1.2.0) ppa=avsm/ocaml42+opam12 ;;
 4.02.3,1.2.0) ppa=avsm/ocaml42+opam12 ;;
+4.03,1.2.2) ppa=avsm/ocaml42+opam12 ;;
 *) echo Unknown $OCAML_VERSION,$OPAM_VERSION; exit 1 ;;
 esac
 
@@ -27,10 +28,10 @@ opam --git-version
 opam init
 eval `opam config env`
 case $OCAML_VERSION in
-    4.02|4.02.3) opam install camlp4;;
+    4.02|4.02.3|4.03) opam install camlp4;;
 esac
-#opam install ocp-build ctypes
-opam install ctypes
-#opam install ${OPAM_DEPENDS}
+
+opam install ctypes ctypes-foreign
+
 
 make check
