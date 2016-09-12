@@ -34,9 +34,9 @@ esac
 opam install ctypes ctypes-foreign
 
 git clone https://github.com/mathiasbourgoin/OCaml_FastFlow.git
-cd OCaml_FastFlow
+cd OCaml_FastFlow/src
 make install
-cd .. 
+cd ../..
 
 
 make check
