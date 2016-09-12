@@ -24,4 +24,4 @@ sarek_samples:
 	cd SpocLibs/Samples/Bitonic_sort; make
 
 
-check: all samples install_sarek sarek_samples
+check: all install_sarek #samples sarek_samples
