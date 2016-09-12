@@ -114,7 +114,7 @@ uninstall :
 	@echo "\033[43m\033[30mRemoving Spoc\033[0m"
 	@cd extension && make uninstall
 	@cd Js && make uninstall
-	@ocamlfind remove $(LIBNAME) 2>>log
+	@(ocamlfind remove $(LIBNAME) 2>>log) | true;
 
 
 
