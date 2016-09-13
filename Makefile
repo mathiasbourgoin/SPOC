@@ -27,4 +27,4 @@ sarek_samples:
 check:
 	make all install
 	make install_sarek
-	make samples sarek_samples
+	make samples #sarek_samples
