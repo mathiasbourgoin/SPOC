@@ -31,7 +31,7 @@ start :
 
 sarek.cma: $(MLOBJ_B)
 	@echo  "\033[31m[sarek.cma]\033[0m"
-	ocamlfind ocamlc -thread -package spoc,ctypes.foreign,ctypes  -a -o sarek.cma $(MLOBJ_B)
+	ocamlfind ocamlc -thread -package spoc,ctypes.foreign.threaded  -a -o sarek.cma $(MLOBJ_B)
 
 libsarek.a:sarek.cma
 	@cp sarek.a libsarek.a
@@ -52,7 +52,7 @@ spoclevel-sarek : sarek.cmxa sarek.cma extension/kernels_int.cma
 
 sarek.cmxa : $(MLOBJ_N)
 	@echo  "\033[31m[sarek.cmxa]\033[0m"
-	@ocamlfind ocamlopt -thread -package spoc -a  $(MLOBJ_N) -o sarek.cmxa
+	@ocamlfind ocamlopt -thread -package spoc,ctypes.foreign.threaded -a  $(MLOBJ_N) -o sarek.cmxa
 #@ocamlmklib -linkall -o sarek $(MLOBJ_N)  -cclib -lasmrun
 
 build: sarek.cmxa sarek.cma #spoclevel-sarek

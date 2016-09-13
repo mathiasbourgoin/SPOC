@@ -117,8 +117,8 @@ let gen_kernel () = ()
        return_type := TUnknown;
        arg_list := [];
        extensions := [ ex32 ];
-       (*Hashtbl.clear !current_args;
-         Hashtbl.clear !local_fun;*)
+       Hashtbl.clear !current_args;
+         Hashtbl.clear !local_fun;
        List.iter new_arg_of_patt args;
        (try
           retype := true;

@@ -13,8 +13,14 @@ SYNTAX_INCLUDES:=-I ` ocamlfind query spoc_external_kernels` \
 		 -I `ocamlfind query sarek_syntax`
 
 
-all : $(KERNELS) $(ASM) $(BYTE)
+#all : $(KERNELS) $(ASM) $(BYTE)
 
+asm :
+	ocamlfind ocamlopt  \
+	-pp "camlp4 -I `ocamlfind query sarek_syntax` -parser o -printer o kernels_int.cma \
+	-I `ocamlfind query spoc_external_kernels` -parser o -printer o kernels_ext.cma" \
+	-thread -package ctypes.foreign,spoc,sarek,fastflow,graphics -linkpkg \
+	$(MLSRC)  -o $(ASM)
 
 
 $(ASM): $(MLSRC)
