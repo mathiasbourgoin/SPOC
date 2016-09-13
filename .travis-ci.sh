@@ -33,10 +33,11 @@ esac
 
 opam install ctypes ctypes-foreign
 
+make install install_sarek
 git clone https://github.com/mathiasbourgoin/OCaml_FastFlow.git
 cd OCaml_FastFlow/src
 make install
 cd ../..
 
 
-make check
+make samples sarek_samples
