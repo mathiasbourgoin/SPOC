@@ -66,7 +66,7 @@ ADD docker_scripts/emacs-pkg-install.sh  /home/spoc/emacs_install/emacs-pkg-inst
 WORKDIR /home/spoc/emacs_install
 
 RUN sh ./emacs-pkg-install.sh auto-complete && \
-    sh ./emacs-pkg-install.sh company \
+    sh ./emacs-pkg-install.sh company && \
     sh ./emacs-pkg-install.sh company-irony
 #RUN sh ./emacs-pkg-install.sh company
 #RUN sh ./emacs-pkg-install.sh company-irony
