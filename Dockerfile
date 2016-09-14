@@ -45,7 +45,7 @@ RUN opam init -a --root /home/spoc/.opam && \
 RUN rm -rf SPOC
 RUN git clone https://github.com/mathiasbourgoin/SPOC.git
 
-ADD .bashrc /home/spoc/.bashrc
+ADD docker_scripts/.bashrc /home/spoc/.bashrc
 
 WORKDIR SPOC/Spoc
 RUN eval `opam config env` && make && \
@@ -74,6 +74,6 @@ RUN sh ./emacs-pkg-install.sh auto-complete && \
 #RUN eval `opam config env`&& opam install tuareg
 #RUN eval `opam config env`&& opam install ocp-indent
 
-ADD .emacs /home/spoc/.emacs
+ADD docker_scripts/.emacs /home/spoc/.emacs
 
 WORKDIR /home/spoc
