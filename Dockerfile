@@ -31,7 +31,7 @@ RUN eval `opam config env`
 
 RUN eval `opam config env`&& opam update
 RUN eval `opam config env` && opam depext conf-pkg-config.1.0
-RUN eval `opam config env` && opam install camlp4.4.02+1
+RUN eval `opam config env` && opam install camlp4
 RUN eval `opam config env` && opam install ctypes
 RUN eval `opam config env` && opam install ocp-indent
 RUN eval `opam config env` && opam install ctypes-foreign
