@@ -1,0 +1,263 @@
+[
+{
+
+	"type":"initialisation des devices",
+
+	"etat":"start",
+
+	"id":1,
+
+	"startTime":0
+
+	},
+{
+  "type":"deviceList",
+  "size":2,
+  "elem":[{
+  "type":"device",
+  "generalInfo": {
+  "type":"generalInfo",
+
+  "name":"GeForce GTX 960M",
+
+  "totalGlobalMem":2099642368,
+
+  "localMemSize":49152,
+
+  "clockRate":1097500,
+
+  "totalConstMem":65536,
+
+  "multiProcessorCount":5,
+
+  "eccEnabled":"false",
+
+  "id":0
+
+  },
+  "specificInfo":"Cuda"
+
+  },{
+  "type":"device",
+  "generalInfo": {
+  "type":"generalInfo",
+
+  "name":"Intel(R) Core(TM) i7-6700HQ CPU @ 2.60GHz",
+
+  "totalGlobalMem":16680583168,
+
+  "localMemSize":32768,
+
+  "clockRate":2600,
+
+  "totalConstMem":131072,
+
+  "multiProcessorCount":8,
+
+  "eccEnabled":"false",
+
+  "id":1
+
+  },
+  "specificInfo":"OpenCL"
+
+  }]},
+{
+
+	"type":"fin initialisation des devices",
+
+	"etat":"end",
+
+	"id":1,
+
+	"endTime":350472
+},
+{
+
+	"type":"event",
+
+	"desc":"creationVecteur",
+
+	"id":2,
+
+	"time":350492
+
+	},
+{
+    "type" : "vector",
+
+    "VectorId" : 1,
+
+    "resides" : -1,
+
+    "length" : 3920000,
+
+    "size" : 15680000, 
+
+    "kind" : "int32",
+
+    "isSub" : false},
+{
+
+	"type":"event",
+
+	"desc":"creationVecteur",
+
+	"id":3,
+
+	"time":350507
+
+	},
+{
+    "type" : "vector",
+
+    "VectorId" : 2,
+
+    "resides" : -1,
+
+    "length" : 5000,
+
+    "size" : 20000, 
+
+    "kind" : "int32",
+
+    "isSub" : false},
+{
+
+	"type":"event",
+
+	"desc":"creationVecteur",
+
+	"id":4,
+
+	"time":350514
+
+	},
+{
+    "type" : "vector",
+
+    "VectorId" : 3,
+
+    "resides" : -1,
+
+    "length" : 784,
+
+    "size" : 3136, 
+
+    "kind" : "int32",
+
+    "isSub" : false},
+{
+
+	"type":"allocGPU",
+
+	"desc":"GPU_ALLOC",
+
+	"time":1421420,
+
+	"id":5,
+
+	"vectorId":1,
+
+	"vectorSize":15680000,
+
+	"gpuType":"CUDA",
+
+	"deviceId":1
+
+	},
+{
+
+		"type":"transfert",
+
+		"desc":"CPU_TO_DEVICE",
+
+		"state":"start",
+
+		"time":1421442,
+
+		"id":6,
+
+		"vectorId":1,
+
+		"vectorSize":15680000,
+
+		"gpuType":"CUDA",
+
+		"deviceId":0,
+
+		"isSub":false
+
+		},
+{
+
+	"type":"transfert",
+
+	"id":6,
+
+	"state":"end",
+
+	"time":1423982,
+
+	"vectorId":1,
+
+	"duration":2536
+
+	},
+{
+
+	"type":"allocGPU",
+
+	"desc":"GPU_ALLOC",
+
+	"time":1424167,
+
+	"id":7,
+
+	"vectorId":2,
+
+	"vectorSize":20000,
+
+	"gpuType":"CUDA",
+
+	"deviceId":1
+
+	},
+{
+
+		"type":"transfert",
+
+		"desc":"CPU_TO_DEVICE",
+
+		"state":"start",
+
+		"time":1424179,
+
+		"id":8,
+
+		"vectorId":2,
+
+		"vectorSize":20000,
+
+		"gpuType":"CUDA",
+
+		"deviceId":0,
+
+		"isSub":false
+
+		},
+{
+
+	"type":"transfert",
+
+	"id":8,
+
+	"state":"end",
+
+	"time":1424263,
+
+	"vectorId":2,
+
+	"duration":82
+
+	},

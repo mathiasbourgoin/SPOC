@@ -1,6 +1,6 @@
 MLSRC=$(shell ocamldep -sort *.ml)
 #Kirc_Ast.ml Kirc_Cuda.ml Kirc_OpenCL.ml Kirc.ml
-MLI=$(shellocamldep -sort *.mli)
+MLI=$(shell ocamldep -sort *.mli)
 #Kirc_Ast.mli Kirc.mli
 MLOBJ_B= $(MLSRC:.ml=.cmo)
 MLOBJ_N=$(MLSRC:.ml=.cmx)

@@ -102,7 +102,7 @@ let mandelbrot = kern img shiftx shifty zoom ->
     y2 :=  (2. *. x1 *. y1 ) +. b;
     x1 := x2;
     y1 := y2;
-    norm := (x1 *. x1 ) +. ( y1 *. y1);
+    norm := normalize x1 y1;
   done;
   img.[<y * @width + x>] <- cpt
 ;;
@@ -186,7 +186,7 @@ let measure_time f  s =
   incr cpt;
   a;;
 
-let devices = measure_time(Spoc.Devices.init ~only:Devices.OpenCL) "init";;
+let devices = measure_time Spoc.Devices.init "init"
 
 (*let measure_time f = f () ;;*)
 
@@ -246,6 +246,7 @@ in
       | _  ->   256)
     | _  -> 256 in
 
+  
   let b_iter = Spoc.Vector.create Spoc.Vector.int32 ((Int32.to_int !width) * (Int32.to_int !height))
   in
   let sub_b = Spoc.Mem.sub_vector b_iter 0 (Spoc.Vector.length b_iter)
@@ -279,9 +280,9 @@ in
 
   if not !recompile then
     if not !simple then
-      ignore(Kirc.gen ~only:Devices.OpenCL mandelbrot_double)
+      ignore(Kirc.gen  ~profile:true   mandelbrot_double)
     else
-      ignore(Kirc.gen ~only:Devices.OpenCL mandelbrot);
+      ignore(Kirc.gen  ~profile:true  mandelbrot);
 
   let l = Int32.to_string !width in
   let h = Int32.to_string !height in
@@ -301,7 +302,7 @@ in
 
     if !recompile then
       begin
-	Kirc.gen ~only:Devices.OpenCL mandelbrot_recompile;
+	Kirc.gen  ~profile:true  mandelbrot_recompile;
 
 	Kirc.run
 	  mandelbrot_recompile
@@ -319,8 +320,9 @@ in
 	    (block,grid)
 	    0
 	    !dev
-	else
-	  measure_time (fun () -> Kirc.run
+ else
+  
+	  measure_time (fun () -> Kirc.profile_run
 	    mandelbrot
 	    (sub_b, (Int32.to_int !shiftx), (Int32.to_int !shifty), !zoom)
 	    (block,grid)

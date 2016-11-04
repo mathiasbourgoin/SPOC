@@ -61,7 +61,7 @@ test: kernels_int.cma test.ml
 	ocamlfind ocamlc -thread -package ctypes,spoc,sarek, -linkpkg -o $@ $<
 
 %.pp.nat: %.pp.ml
-	ocamlfind ocamlopt  -thread  -package ctypes,ctypes.foreign,fastflow,spoc,sarek,graphics,camlimages,tsdl,camlimages.png -linkpkg -o $@ $<
+	ocamlfind ocamlopt  -thread  -package ctypes,ctypes.foreign,fastflow,spoc,sarek -linkpkg -o $@ $<
 
 %.nat : %.ml
 	ocamlfind ocamlopt  -thread -package ctypes,ctypes.foreign,spoc,sarek \
