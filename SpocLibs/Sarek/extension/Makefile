@@ -10,7 +10,7 @@ install: kernels_int.cma
 uninstall :
 	@(ocamlfind remove sarek_syntax) | true
 
-kernels_int.cma:debug.cmo sarek_types.cmo typer.cmo gen_caml.cmo gen_kir.cmo mparser.cmo fastflow.cmo sarek_grammar.cmo
+kernels_int.cma:debug.cmo sarek_types.cmo typer.cmo gen_caml.cmo gen_kir.cmo mparser.cmo fastflow.cmo sarek_grammar.cmo  
 	@ocamlfind ocamlc -a $^ -o kernels_int.cma
 
 
@@ -36,7 +36,7 @@ typer.cmo:sarek_types.cmo typer.ml
 
 fastflow.cmo:sarek_types.cmo typer.cmo gen_caml.cmo gen_kir.cmo mparser.cmo fastflow.ml
 
-sarek_grammar.cmo:sarek_types.cmo typer.cmo gen_caml.cmo gen_kir.cmo mparser.cmo fastflow.cmo sarek_grammar.ml
+sarek_grammar.cmo:sarek_types.cmo typer.cmo gen_caml.cmo gen_kir.cmo mparser.cmo fastflow.cmo sarek_grammar.ml 
 
 
 test: kernels_int.cma test.ml

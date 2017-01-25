@@ -44,7 +44,7 @@ type ('a,'b) custom =
     set: customarray -> int -> 'a -> unit
   }
 
-type ('a,'b) couple = 'a*'b
+type ('a,'b) couple = 'a * 'b
 
 type ('a, 'b) kind =
     Float32 of ('a, 'b) Bigarray.kind
@@ -120,9 +120,57 @@ external opencl_custom_alloc_vect :
 
 let vec_id = ref 0
 
+(******************************************************************************************************)
+
+let emmitVect (vect : ('a, 'b) vector) length =
+    let isSub = match vect.is_sub with
+    | None -> "false"
+    | Some x -> "true" in
+    let dev = vect.device in
+    let id = vect.vec_id in
+    let kindS = match vect.kind with
+    | Char x -> "char"
+    | Float32 x -> "float32"
+    | Int32 x -> "int32"
+    | Float64 x -> "float64"
+    | Int64 x -> "int64"
+    | Complex32 x -> "complex32"
+    | _ -> "unknown" in
+    let size = match vect.kind with
+    | Char x -> 1
+    | Float32 x | Int32 x -> 4
+    | Float64 x | Int64 x | Complex32 x -> 8
+    | _ -> 0 in
+    Printf.fprintf Trac.fileOutput "{
+    \"type\" : \"vector\",\n
+    \"VectorId\" : %i,\n
+    \"resides\" : %i,\n
+    \"length\" : %i,\n
+    \"size\" : %i, \n
+    \"kind\" : \"%s\",\n
+    \"isSub\" : %s" id dev length (size*length) kindS isSub;
+    if isSub = "true" then begin
+        let (depth, start, ok_range, ko_range, parent) = match vect.is_sub with
+            | None -> failwith "Subvector sans sous vecteur"
+            | Some e -> e in
+        let parentId = parent.vec_id in
+        Printf.fprintf Trac.fileOutput ",\n\"subVector\":{\n
+        \"depth\" : %i,\n
+        \"start\" : %i,\n
+        \"okRange\" : %i,\n
+        \"koRange\" : %i,\n
+        \"parentID\" : %i\n
+        }\n" depth start ok_range ko_range parentId;
+    end;
+    Printf.fprintf Trac.fileOutput "},\n";
+;;
+
+(*******************************************************************************************************)
+
 let create (kind: ('a,'b) kind) ?dev size =
+  Trac.printEvent "creationVecteur";
   incr vec_id;
-  let vec = 
+  let vec =
     match kind with
     | Unit x | Dummy x-> assert false
     |  Float32 x | Char x | Float64 x
@@ -153,19 +201,19 @@ let create (kind: ('a,'b) kind) ?dev size =
         sub = [];
         vec_id = !vec_id; seek = 0; }
   in
-  (match dev with 
+  (match dev with
    | None  ->  ()
-   | Some dev  -> 
-     let alloc_on_dev () = 
-       (match dev.Devices.specific_info with 
-        | Devices.CudaInfo  ci -> 
-          (match kind with 
-           | Custom c  -> 
+   | Some dev  ->
+    let alloc_on_dev () =
+       (match dev.Devices.specific_info with
+        | Devices.CudaInfo  ci ->
+          (match kind with
+           | Custom c  ->
              cuda_custom_alloc_vect vec dev.Devices.general_info.Devices.id dev.Devices.general_info
            | _  -> cuda_alloc_vect vec dev.Devices.general_info.Devices.id dev.Devices.general_info)
-        | Devices.OpenCLInfo cli -> 	
-          (match kind with 
-           | Custom c  -> 
+        | Devices.OpenCLInfo cli ->
+          (match kind with
+           | Custom c  ->
              opencl_custom_alloc_vect vec  (dev.Devices.general_info.Devices.id - (Devices.cuda_devices ())) dev.Devices.general_info
            | _  ->  opencl_alloc_vect vec  (dev.Devices.general_info.Devices.id - (Devices.cuda_devices ())) dev.Devices.general_info)
        )
@@ -176,7 +224,8 @@ let create (kind: ('a,'b) kind) ?dev size =
       | _  ->  Gc.full_major (); alloc_on_dev ());
      vec.dev <- Dev dev;
   );
-  vec   
+  emmitVect vec size;
+  vec
 
 let length v =
   v.length
@@ -187,7 +236,7 @@ let dev v =
 let is_sub v =
   v.is_sub
 
-let kind v = 
+let kind v =
   v.kind
 
 let device v =
@@ -338,9 +387,9 @@ let sub_vector (vect : ('a, 'b) vector) _start _ok_r
 
 
 
-let of_bigarray_shr kind b = 
+let of_bigarray_shr kind b =
   incr vec_id;
-  let open Devices in 
+  let open Devices in
   {
     device = (-1);
     vector = Bigarray b;

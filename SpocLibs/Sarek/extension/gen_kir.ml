@@ -71,7 +71,7 @@ let rec  parse_int2 i t=
            raise (TypeError (t, c_const.typ, _loc))
        with Not_found ->
          (my_eprintf __LOC__;
-          raise (Unbound_value ((string_of_ident s),_loc))))
+          assert (not debug); raise (Unbound_value ((string_of_ident s),_loc))))
   | Ref (_, {loc=_; e=Id(_loc,s); t=_}) ->
     <:expr<global_int_var (fun () -> ! $ExId(_loc, s)$)>>
   | Int (_loc, s)  -> <:expr<spoc_int32 $(ExInt32 (_loc, s))$>>
@@ -117,7 +117,7 @@ and  parse_float2 f t=
            raise (TypeError (t, c_const.typ, _loc))
        with Not_found ->
          (my_eprintf __LOC__;
-          raise (Unbound_value ((string_of_ident s),_loc))))
+          assert (not debug); raise (Unbound_value ((string_of_ident s),_loc))))
   | Ref (_, {loc=_; e=Id(_loc,s); t=_}) ->
     <:expr<global_float_var (fun () -> ! $ExId(_loc, s)$)>>
   | Float (_loc, s)  -> <:expr<spoc_float $(ExFlo(_loc, s))$>>
@@ -408,7 +408,7 @@ and parse_body2 body bool =
           with
           | _  ->
             (my_eprintf __LOC__;
-             raise (Unbound_value ((string_of_ident s), _loc)))));
+             assert (not debug); raise (Unbound_value ((string_of_ident s), _loc)))));
     | Int (_loc, i)  -> <:expr<spoc_int $ExInt(_loc, i)$>>
     | Int32 (_loc, i)  -> <:expr<spoc_int32 $ExInt32(_loc, i)$>>
     | Int64 (_loc, i)  -> <:expr<spoc_int64 $ExInt64(_loc, i)$>>

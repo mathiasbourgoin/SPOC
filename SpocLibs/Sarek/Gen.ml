@@ -37,7 +37,7 @@
 open Kirc_Ast
 
 
-let profile_vect = ref (Spoc.Vector.create Spoc.Vector.int64 1)
+let profile_vect = ref (Obj.magic None)
 
 let space i =
   String.make i ' '

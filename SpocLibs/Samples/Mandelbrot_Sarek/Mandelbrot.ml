@@ -16,10 +16,24 @@
 open Spoc
 
 open Kirc
+let cpt = ref 0
+
+let tot_time = ref 0.
+
+let measure_time f  s =
+  let t0 = Unix.gettimeofday () in
+  let a = f () in
+  let t1 = Unix.gettimeofday () in
+  Printf.printf "%s time %d : %Fs\n%!" s !cpt (t1 -. t0);
+  tot_time := !tot_time +.  (t1 -. t0);
+  incr cpt;
+  a;;
 
 
-let width = ref 1000l;;
-let height = ref 1000l;;
+let devices = measure_time Spoc.Devices.init "init"
+    
+let width = ref 512l;;
+let height = ref 512l;;
 
 let max_iter  = ref 512l;;
 
@@ -173,20 +187,8 @@ let cpu_compute img width height =
 ;;
 
 
-let cpt = ref 0
 
-let tot_time = ref 0.
 
-let measure_time f  s =
-  let t0 = Unix.gettimeofday () in
-  let a = f () in
-  let t1 = Unix.gettimeofday () in
-  Printf.printf "%s time %d : %Fs\n%!" s !cpt (t1 -. t0);
-  tot_time := !tot_time +.  (t1 -. t0);
-  incr cpt;
-  a;;
-
-let devices = measure_time Spoc.Devices.init "init"
 
 (*let measure_time f = f () ;;*)
 
@@ -280,9 +282,9 @@ in
 
   if not !recompile then
     if not !simple then
-      ignore(Kirc.gen  ~profile:true   mandelbrot_double)
+      ignore(Kirc.gen  ~profile:true   mandelbrot_double !dev)
     else
-      ignore(Kirc.gen  ~profile:true  mandelbrot);
+      ignore(Kirc.gen  ~profile:true  mandelbrot !dev);
 
   let l = Int32.to_string !width in
   let h = Int32.to_string !height in
@@ -302,9 +304,9 @@ in
 
     if !recompile then
       begin
-	Kirc.gen  ~profile:true  mandelbrot_recompile;
+	Kirc.gen  ~profile:true  mandelbrot_recompile !dev;
 
-	Kirc.run
+	Kirc.profile_run
 	  mandelbrot_recompile
 	  (sub_b)
 	  (block,grid)
@@ -314,7 +316,7 @@ in
     else
       begin
 	if not !simple then
-	  Kirc.run
+	  Kirc.profile_run
 	    mandelbrot_double
 	    (sub_b, (Int32.to_int !shiftx), (Int32.to_int !shifty), !zoom)
 	    (block,grid)

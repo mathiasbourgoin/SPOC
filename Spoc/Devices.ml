@@ -192,9 +192,60 @@ let total_num_devices = ref 0
 let current_cuda_device = ref 0
 let current_opencl_device = ref 0
 
+
+
+(******************************************************************************************************)
+
+let emmitDim3 dim =
+  Printf.fprintf Trac.fileOutput "{ \"type\":\"dim3\", \"x\":%i, \"y\":%i, \"z\":%i }" dim.x dim.y dim.z
+
+let emmitGeneralInfo genInf =
+  let ecc = string_of_bool genInf.eccEnabled in
+  Printf.fprintf Trac.fileOutput "{
+  \"type\":\"generalInfo\",\n
+  \"name\":\"%s\",\n
+  \"totalGlobalMem\":\"%i\",\n
+  \"localMemSize\":\"%i\",\n
+  \"clockRate\":\"%i\",\n
+  \"totalConstMem\":\"%i\",\n
+  \"multiProcessorCount\":\"%i\",\n
+  \"eccEnabled\":\"%s\",\n
+  \"id\":\"%i\"\n
+  }" genInf.name genInf.totalGlobalMem genInf.localMemSize genInf.clockRate
+  genInf.totalConstMem genInf.multiProcessorCount ecc genInf.id
+
+let emmitDevice dev =
+  let devType = begin match dev.specific_info with
+  | CudaInfo inf -> "Cuda"
+  | OpenCLInfo inf -> "OpenCL"
+  end in
+  Printf.fprintf Trac.fileOutput "{
+  \"type\":\"device\",
+  \"generalInfo\": ";
+  emmitGeneralInfo dev.general_info;
+  Printf.fprintf Trac.fileOutput ",
+  \"specificInfo\":\"%s\"\n
+  }" devType
+
+let emmitDeviceList devList =
+  let nb = List.length devList in
+  Printf.fprintf Trac.fileOutput "{
+  \"type\":\"deviceList\",
+  \"size\":%i,
+  \"elem\":[" nb;
+  List.iteri (fun i dev -> emmitDevice dev; if(i != nb-1) then begin Printf.fprintf Trac.fileOutput "," end) devList;
+  Printf.fprintf Trac.fileOutput "]},\n"
+
+
+(**********************************************************************************************************)
+
 external is_available : int -> bool = "spoc_opencl_is_available"
 
 let init ?only: (s = Both) () =
+  Trac.openOutput ();
+  Trac.setStartTime ();
+
+  let idEvent = Trac.beginEvent "initialisation des devices" in
   begin
     match s with
     | Both -> (
@@ -228,6 +279,8 @@ let init ?only: (s = Both) () =
   done;
   total_num_devices := List.length !devList;
   opencl_compatible_devices := !i;
+  emmitDeviceList !devList;
+  Trac.endEvent "fin initialisation des devices" idEvent;
   Array.of_list	!devList
 
 let	cuda_devices () = !cuda_compatible_devices
@@ -241,7 +294,7 @@ external opencl_flush : generalInfo -> int -> unit = "spoc_opencl_flush"
 
 let flush dev ?queue_id () =
   match dev.specific_info, queue_id with
-  | CudaInfo _, None -> cuda_flush_all dev.general_info dev 
+  | CudaInfo _, None -> cuda_flush_all dev.general_info dev
   | CudaInfo _, Some q -> cuda_flush dev.general_info dev q
   | OpenCLInfo _, None ->
     opencl_flush dev.general_info 0
@@ -263,7 +316,7 @@ let hasCLExtension dev ext =
 
 let allowDouble dev =
   match dev.specific_info with
-  | OpenCLInfo cli -> 
+  | OpenCLInfo cli ->
     hasCLExtension dev "cl_khr_fp64" || hasCLExtension dev "cl_amd_fp64"
   | CudaInfo ci -> ci.major > 1 || ci.minor >= 3
 

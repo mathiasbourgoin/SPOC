@@ -578,7 +578,7 @@ and parse_body body =
     aux id;
     let e = <:expr<let open $id$ in $parse_body e$>> in
     let rec aux = function
-      | IdAcc (l,a,b) -> aux a; aux b
+      | IdAcc (l,a,b) -> aux b; aux a
       | IdUid (l,s) -> close_module s
       | _ -> assert (not debug)
     in

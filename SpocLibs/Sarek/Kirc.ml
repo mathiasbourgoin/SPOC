@@ -526,7 +526,10 @@ let gen_profile ker dev =
                           ret_val = k3;
                           extensions = k.extensions});  Pervasives.flush stdout; assert false) ))
   in
-  Printf.printf "%s\n" (Kirc_Profile.parse 0 (k2) dev)
+  Printf.fprintf Spoc.Trac.fileOutput "{\n \"type\":\"profile_kernel\",\n \
+                                        \"kernel_id\":%d,\n \
+                                        \"source\":\"%s\"\n \
+                                       },\n" (!Spoc.Trac.eventId - 1 )(Kirc_Profile.parse 0 (k2) dev)
 
 let gen ?profile:(prof=false) ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) dev =
   let kir,k = ker in
@@ -665,7 +668,7 @@ let profile_run ?recompile:(r=true) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) a b
          | [] -> ignore(gen ~profile:true ~only:Devices.OpenCL (kir,k) dev)
          | _ -> ()
      end);
-  (* kir#run a b q dev*)
+  (*kir#run a b q dev;*)
   let nCounter =
     !(match dev.Devices.specific_info with
      | Devices.CudaInfo _ ->
@@ -697,10 +700,8 @@ let profile_run ?recompile:(r=true) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) a b
       Array.iteri (Kernel.OpenCL.opencl_load_arg offset dev bin) args;
       Kernel.OpenCL.opencl_launch_grid bin grid block dev.Devices.general_info 0
   );
-
-  Printf.printf "**********************PROFILING ON\n";
+  
   Spoc.Tools.iter (fun a -> Printf.printf "%Ld " a) profiler_counters;
-  Printf.printf "\n**********************PROFILING OFF\n";
   Gen.profile_vect := profiler_counters;
   gen_profile ker dev;
 ;;

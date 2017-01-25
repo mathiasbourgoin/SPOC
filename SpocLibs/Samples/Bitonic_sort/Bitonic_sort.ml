@@ -123,7 +123,7 @@ let nearest_pow2 i  =
 
 let () = 
   let devid = ref 0
-  and size = ref (1024*2*2*2*2*2*2*2*2*2*2*2*2*2*2*2)
+  and size = ref 1024 (*(1024*2*2*2*2*2*2*2*2*2*2*2*2*2*2*2)*)
   and check = ref true
   and compare = ref true
   in
@@ -194,7 +194,7 @@ let () =
           if !first then
             (Kirc.profile_run gpu_bitonic (gpu_vect,!j,!k) (block0,grid0) 0 !dev;
              first := false);
-          Kirc.run gpu_bitonic (gpu_vect,!j,!k) (block0,grid0) 0 !dev;
+          Kirc.profile_run gpu_bitonic (gpu_vect,!j,!k) (block0,grid0) 0 !dev;
           j := !j lsr 1;
         done;
         k := !k lsl 1 ;

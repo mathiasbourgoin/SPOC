@@ -674,9 +674,16 @@ clGetKernelWorkGroupInfo(cl_kernel                  /* kernel */,
                          size_t *                   /* param_value_size_ret */) CL_API_SUFFIX__VERSION_1_0;
 
 /* Event Object APIs  */
-extern CL_API_ENTRY cl_int CL_API_CALL
-clWaitForEvents(cl_uint             /* num_events */,
-                const cl_event *    /* event_list */) CL_API_SUFFIX__VERSION_1_0;
+
+/*********************************************************/
+/*extern CL_API_ENTRY cl_int CL_API_CALL
+clWaitForEvents(cl_uint              num_events ,
+                const cl_event *     event_list ) CL_API_SUFFIX__VERSION_1_0;*/
+typedef CL_API_ENTRY cl_int CL_API_CALL
+tclWaitForEvents(cl_uint,
+ 	const cl_event *) CL_API_SUFFIX__VERSION_1_0;
+/**************************************************************/
+
 
 extern CL_API_ENTRY cl_int CL_API_CALL
 clGetEventInfo(cl_event         /* event */,
@@ -692,13 +699,22 @@ extern CL_API_ENTRY cl_int CL_API_CALL
 clReleaseEvent(cl_event /* event */) CL_API_SUFFIX__VERSION_1_0;
 
 /* Profiling APIs  */
-extern CL_API_ENTRY cl_int CL_API_CALL
-clGetEventProfilingInfo(cl_event            /* event */,
-                        cl_profiling_info   /* param_name */,
-                        size_t              /* param_value_size */,
-                        void *              /* param_value */,
-                        size_t *            /* param_value_size_ret */) CL_API_SUFFIX__VERSION_1_0;
 
+/****************************************************/
+/*extern CL_API_ENTRY cl_int CL_API_CALL
+clGetEventProfilingInfo(cl_event             event ,
+                        cl_profiling_info    param_name ,
+                        size_t               param_value_size ,
+                        void *               param_value ,
+                        size_t *             param_value_size_ret ) CL_API_SUFFIX__VERSION_1_0;*/
+
+typedef CL_API_ENTRY cl_int CL_API_CALL
+tclGetEventProfilingInfo(cl_event,
+ 	cl_profiling_info,
+ 	size_t,
+ 	void *,
+ 	size_t *) CL_API_SUFFIX__VERSION_1_0;
+/******************************************************/
 
 typedef CL_API_ENTRY cl_int CL_API_CALL
 tclSetEventCallback (	cl_event,
@@ -918,6 +934,8 @@ extern tclFlush* clFlush;
 extern tclFinish* clFinish;
 extern tclRetainCommandQueue* clRetainCommandQueue;
 extern tclReleaseCommandQueue* clReleaseCommandQueue;
+extern tclWaitForEvents* clWaitForEvents;
+extern tclGetEventProfilingInfo* clGetEventProfilingInfo;
 
 #endif
 

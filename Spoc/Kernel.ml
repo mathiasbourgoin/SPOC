@@ -176,7 +176,7 @@ struct
     match arg with
     | VChar v | VFloat32 v
     | VComplex32 v
-    | VInt32 v | VInt64 v 
+    | VInt32 v | VInt64 v
     | VFloat64 v -> check_vect v
     | VCustom (v : ('a, 'b) Vector.vector) -> check_vect v
     | _ -> load_non_vect arg
@@ -317,7 +317,7 @@ let exec (args: ('a,'b) kernelArgs array) (block, grid) queue_id
        ((grid.gridY > cI.Devices.maxGridSize.Devices.y) ||
         (grid.gridZ > cI.Devices.maxGridSize.Devices.z))
      then
-       (raise ERROR_GRID_SIZE) 
+       (raise ERROR_GRID_SIZE)
     );
     Array.iteri (cuda_load_arg offset extra dev cuFun) (args: ('a,'b) kernelArgs array);
     (* set_block_shape cuFun block dev.general_info; *)
@@ -329,7 +329,7 @@ let exec (args: ('a,'b) kernelArgs array) (block, grid) queue_id
     in
     (Array.iteri (opencl_load_arg offset dev clFun) (args: ('a,'b) kernelArgs array);
      opencl_launch_grid clFun grid block dev.Devices.general_info queue_id)
-
+    
 let compile_and_run (dev : Devices.device) ((block : block), (grid : grid))
     ?cached: (c = false) ?debug: (d = false) ?queue_id: (q = 0)
     ker =
@@ -364,7 +364,7 @@ class virtual ['a, 'b] spoc_kernel file (func: string) =
 
     val binaries = Hashtbl.create 8
 
-    method get_binaries () = binaries  
+    method get_binaries () = binaries
     method reset_binaries () = Hashtbl.clear binaries
 
     method get_cuda_sources () = cuda_sources
@@ -428,7 +428,7 @@ class virtual ['a, 'b] spoc_kernel file (func: string) =
           );
           Hashtbl.find binaries dev
       in
-      self#exec args (block, grid) queue_id dev bin
+        self#exec args (block, grid) queue_id dev bin
 
     method compile_and_run (args:'a) ((block: block), (grid: grid))
         ?debug: (d = false) (queue_id: int) (dev: Devices.device) =
@@ -436,23 +436,22 @@ class virtual ['a, 'b] spoc_kernel file (func: string) =
         self#compile ~debug: d dev;
         Hashtbl.find binaries dev
       in
-      self#exec args (block, grid) queue_id dev bin
-
+        self#exec args (block, grid) queue_id dev bin
   end
 
 let run (dev: Devices.device) ((block: block), (grid: grid)) (k: ('a, 'b) spoc_kernel) (args:'a) = k#run args (block, grid) 0 dev
 
 let compile (dev: Devices.device) (k: ('a, 'b) spoc_kernel) = k#compile ~debug: false dev
 
-let set_arg env i arg = 
+let set_arg env i arg =
   env.(i) <-
-    (match Vector.kind arg with 
+    (match Vector.kind arg with
      | Vector.Float32 x -> VFloat32 arg
      | Vector.Char x -> VChar arg
      |	Vector.Float64 x -> VFloat64 arg
-     | Vector.Int32 x -> VInt32 arg 
+     | Vector.Int32 x -> VInt32 arg
      | Vector.Int64 x -> VInt64 arg
-     | Vector.Complex32 x -> 
+     | Vector.Complex32 x ->
        VComplex32 arg
-     | _ -> assert false 
+     | _ -> assert false
     )

@@ -942,9 +942,11 @@ in
       ]
 
   | "." RIGHTA
-	[
-   x = SELF; "."; "[<"; y=SELF; ">]"  -> {t=(TUnknown);
+      [
+        x = SELF; "."; "[<"; y=SELF; ">]"  -> {t=(TUnknown);
 					  e = VecGet (_loc, x, y); loc = _loc};
+        (*| x = SELF; "."; "{<"; y=SELF; ">}"  -> {t=(TUnknown);
+	  e = VecGet (_loc, x, y); loc = _loc};*)
    | x = SELF; "."; "("; y=SELF; ")"  -> {t=(TUnknown);
                                           e = ArrGet (_loc, x, y); loc = _loc};
    |l = UIDENT ; "."; e = SELF -> {t=(TUnknown);

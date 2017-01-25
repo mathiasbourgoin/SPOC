@@ -54,7 +54,7 @@
 #include "Opencl_dynlink.h"
 
 /*#ifdef _WIN32
-#define THREAD_LOCAL   static  __declspec(thread) 
+#define THREAD_LOCAL   static  __declspec(thread)
 #else
 #define THREAD_LOCAL //static __thread
 #endif
@@ -267,8 +267,9 @@ typedef struct spoc_vector {
 	ctx = spoc_ctx->ctx; \
 	queue[0] = spoc_ctx->queue[0];\
 	queue[1] = spoc_ctx->queue[1];\
-	CUDA_CHECK_CALL(cuCtxSetCurrent(ctx)); \
-	caml_enter_blocking_section();
+	CUDA_CHECK_CALL(cuCtxSetCurrent(ctx));\
+	
+	//	caml_enter_blocking_section();
 
 #define BLOCKING_CUDA_GET_CONTEXT \
 	{CUcontext ctx; \
@@ -281,8 +282,9 @@ typedef struct spoc_vector {
 	queue[1] = spoc_ctx->queue[1];\
 	CUDA_CHECK_CALL(cuCtxSetCurrent(ctx));
 
+//caml_leave_blocking_section();
 #define CUDA_RESTORE_CONTEXT \
-  caml_leave_blocking_section();		\
+  \ 
   spoc_ctx->queue[0] = queue[0]; \
   spoc_ctx->queue[1] = queue[1]; \
   Store_field(gi,8, (value)spoc_ctx);}
@@ -311,12 +313,13 @@ typedef struct spoc_cu_context {
 	ctx = spoc_ctx->ctx; \
 	queue[0] = spoc_ctx->queue[0];\
 	queue[1] = spoc_ctx->queue[1];\
-	caml_enter_blocking_section();
+
+//caml_enter_blocking_section();
 
 
-
+//	caml_leave_blocking_section();		
 #define OPENCL_RESTORE_CONTEXT \
-	caml_leave_blocking_section();		\
+  \
 	spoc_ctx->queue[0] = queue[0]; \
 	spoc_ctx->queue[1] = queue[1]; \
 	spoc_ctx->ctx = ctx;\
@@ -334,7 +337,6 @@ int ae_load_file_to_memory(const char *filename, char **result);
   tag = Bigarray_val(bigArray)->flags & BIGARRAY_KIND_MASK;	\
 	switch (tag) { \
 	case BIGARRAY_UINT8 : \
-		printf("here\n"); \
 		type_size = sizeof(unsigned char); \
 		break; \
 	case BIGARRAY_FLOAT32 : \

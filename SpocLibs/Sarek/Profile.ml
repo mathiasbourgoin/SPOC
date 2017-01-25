@@ -85,17 +85,17 @@ let prof_counter = ref 2
 let genereated_functions = Hashtbl.create 10
 
 let gmem_load() =
-  "(** ### global_memory loads : "^(Int64.to_string (Spoc.Mem.get !Gen.profile_vect 1))^" **)\n"
+  "(** ### global_memory loads : "^(Int64.to_string (Spoc.Mem.get !Gen.profile_vect 1))^" **)\\n"
 
 let gmem_store() =
-    "(** ### global_memory stores : "^(Int64.to_string (Spoc.Mem.get !Gen.profile_vect 0))^" **)\n"
+    "(** ### global_memory stores : "^(Int64.to_string (Spoc.Mem.get !Gen.profile_vect 0))^" **)\\n"
 
 let prof_string()=
-  "(**  ### visits : "^(Int64.to_string (Spoc.Mem.get !Gen.profile_vect !prof_counter))^" **)\n"
+  "(**  ### visits : "^(Int64.to_string (Spoc.Mem.get !Gen.profile_vect !prof_counter))^" **)\\n"
 let prof_time_string()=
   let cycles = Spoc.Mem.get !Gen.profile_vect !prof_counter
   in
-  "(** ### total_#_cycles : "^(Int64.to_string cycles)^" **)\n"
+  "(** ### total_#_cycles : "^(Int64.to_string cycles)^" **)\\n"
 
 let fun_counter = ref 0
 
@@ -115,11 +115,11 @@ let rec parse_fun i a b dev =
            a^
            match body with
            | Seq (_,_)  -> (aux2 (i+1) body)
-           | _  ->  ((aux2 (i+1) body )^"\n")
+           | _  ->  ((aux2 (i+1) body )^"\\n")
 
          in
-         (pargs ^ " ->\n"^
-          gmem_store()^gmem_load()^"\n" ^indent (i+1) ^ pbody)^indent (i+1)^ "in")
+         (pargs ^ " ->\\n"^
+          gmem_store()^gmem_load()^"\\n" ^indent (i+1) ^ pbody)^indent (i+1)^ "in")
       | Params k -> parse (i+1) k dev
       | a -> parse (i+1) a dev
     in
@@ -134,7 +134,7 @@ let rec parse_fun i a b dev =
       let fun_src = aux gen_name a
       in
       Hashtbl.add genereated_functions a (fun_src,gen_name);
-      "\n"^indent (i+1) ^"let "^gen_name^" = fun "^fun_src ^"\n" ^indent (i+1)^gen_name
+      "\\n"^indent (i+1) ^"let "^gen_name^" = fun "^fun_src ^"\\n" ^indent (i+1)^gen_name
   in
   name
 
@@ -145,11 +145,11 @@ let rec parse_fun i a b dev =
 and  parse i a  dev =
   let open Kirc_Ast in
   let rec aux  = function
-    | Kern (args, body) -> ("kern "^(parse i args dev)^" ->\n"^
-                            gmem_store()^gmem_load()^"\n"^(parse (i) body dev))
-    | Local (x,y) -> (*"let mutable " ^ (parse i x)^" in\n"^
+    | Kern (args, body) -> ("kern "^(parse i args dev)^" ->\\n"^
+                            gmem_store()^gmem_load()^"\\n"^(parse (i) body dev))
+    | Local (x,y) -> (*"let mutable " ^ (parse i x)^" in\\n"^
                        (indent (i))^(parse i y)^
-                          "\n"^(indent (i))*)
+                          "\\n"^(indent (i))*)
       parse i y dev
     | VecVar (t, i, s) ->
        global_parameter^s
@@ -162,7 +162,7 @@ and  parse i a  dev =
     | Seq (a,b) ->
       let a = parse i a dev in
       let b = parse i b dev in
-      a^" \n"^(indent i)^b
+      a^" \\n"^(indent i)^b
     | SetV(vecacc, value) -> parse i vecacc dev ^" <- " ^(parse i value dev)^";"
     | IntId(s,_) -> s
     | IntVecAcc (s,v) -> ((parse i s dev)^".[<"^(parse i v dev)^">]")
@@ -194,20 +194,20 @@ and  parse i a  dev =
       let c = parse (i+1) c dev in
       let iff =
       (indent (i+1))^prof_string()^
-                (indent (i+1))^b^"\n"^(indent i)^"\n"^(indent i)
+                (indent (i+1))^b^"\\n"^(indent i)^"\\n"^(indent i)
       in
       incr prof_counter;
-      let elsee = "else \n"^
+      let elsee = "else \\n"^
       (indent (i+1))^prof_string()^
-                  (indent (i+1))^c^";\n"^(indent i)^"\n"^(indent i)
+                  (indent (i+1))^c^";\\n"^(indent i)^"\\n"^(indent i)
       in
       incr prof_counter;
-      "if ("^a^") then \n"^ iff ^elsee
+      "if ("^a^") then \\n"^ iff ^elsee
 
     | If (a,b) ->
       let s =
-        "if ("^(parse i a dev )^")"^" then \n"^(indent (i+1))^prof_string()^
-        (indent (i+1))^(parse (i+1) b dev)^";\n"^(indent i)^""^(indent i)
+        "if ("^(parse i a dev )^")"^" then \\n"^(indent (i+1))^prof_string()^
+        (indent (i+1))^(parse (i+1) b dev)^";\\n"^(indent i)^""^(indent i)
       in
       incr prof_counter;
       s
@@ -224,12 +224,12 @@ and  parse i a  dev =
       let min = parse i b dev in
       let max = parse i c dev in
       let body = parse (i+1) d dev in
-      "for (int "^id^" = "^min^" to  "^max^"do\n"^(indent (i+1))^body^"done;"
+      "for (int "^id^" = "^min^" to  "^max^"do\\n"^(indent (i+1))^body^"done;"
 
     | While (a,b) ->
       let cond = parse i a dev in
       let body = prof_string()^indent (i+1)^parse (i+1) b dev in
-      let s = "while " ^ cond ^" do\n"^
+      let s = "while " ^ cond ^" do\\n"^
               indent (i+1)^body^
               indent i^"done;"
       in
@@ -277,4 +277,4 @@ let parse i a dev =
   in
   let footer = ";;"
   in
-  (header^"\n" ^ parse 0  a dev ^"\n"^footer^"\n")
+  (header^"\\n" ^ parse 0  a dev ^"\\n"^footer^"\\n")

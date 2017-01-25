@@ -77,7 +77,7 @@ $(LIBNAME)level : $(LIBNAME).cma extension/kernels_ext.cma
 	@echo   "\033[36m[$(LIBNAME)level]\033[0m"
 	@ocamlmktop -custom -I +camlp4 -cclib -L. dynlink.cma \
 	camlp4o.cma extension/kernels_ext.cma str.cma bigarray.cma \
-	-cclib -lcamlrun -cclib -lbigarray -cclib -l$(LIBNAME) $(LIBNAME).cma \
+	-cclib -lcamlrun -cclib -lbigarray -cclib -lunix unix.cma -cclib -l$(LIBNAME) $(LIBNAME).cma \
 	-o $(LIBNAME)level
 
 ocp :

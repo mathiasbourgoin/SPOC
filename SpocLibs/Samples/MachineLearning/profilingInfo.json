@@ -1,3 +1,28 @@
+{
+
+	"type":"event",
+
+	"desc":"creationVecteur",
+
+	"id":1,
+
+	"time":1478688210179010
+
+	},
+{
+    "type" : "vector",
+
+    "VectorId" : 1,
+
+    "resides" : -1,
+
+    "length" : 1,
+
+    "size" : 8, 
+
+    "kind" : "int64",
+
+    "isSub" : false},
 [
 {
 
@@ -5,30 +30,30 @@
 
 	"etat":"start",
 
-	"id":1,
+	"id":2,
 
 	"startTime":0
 
 	},
 {
   "type":"deviceList",
-  "size":2,
+  "size":4,
   "elem":[{
   "type":"device",
   "generalInfo": {
   "type":"generalInfo",
 
-  "name":"GeForce GTX 960M",
+  "name":"Quadro K2100M",
 
-  "totalGlobalMem":2099642368,
+  "totalGlobalMem":2095251456,
 
   "localMemSize":49152,
 
-  "clockRate":1097500,
+  "clockRate":666500,
 
   "totalConstMem":65536,
 
-  "multiProcessorCount":5,
+  "multiProcessorCount":3,
 
   "eccEnabled":"false",
 
@@ -42,21 +67,69 @@
   "generalInfo": {
   "type":"generalInfo",
 
-  "name":"Intel(R) Core(TM) i7-6700HQ CPU @ 2.60GHz",
+  "name":"Intel(R) Core(TM) i7-4710MQ CPU @ 2.50GHz",
 
-  "totalGlobalMem":16680583168,
+  "totalGlobalMem":8245940224,
 
   "localMemSize":32768,
 
-  "clockRate":2600,
+  "clockRate":3271,
 
-  "totalConstMem":131072,
+  "totalConstMem":65536,
 
   "multiProcessorCount":8,
 
   "eccEnabled":"false",
 
   "id":1
+
+  },
+  "specificInfo":"OpenCL"
+
+  },{
+  "type":"device",
+  "generalInfo": {
+  "type":"generalInfo",
+
+  "name":"Intel(R) HD Graphics Haswell GT2 Mobile",
+
+  "totalGlobalMem":2147483648,
+
+  "localMemSize":65536,
+
+  "clockRate":1000,
+
+  "totalConstMem":134217728,
+
+  "multiProcessorCount":20,
+
+  "eccEnabled":"false",
+
+  "id":2
+
+  },
+  "specificInfo":"OpenCL"
+
+  },{
+  "type":"device",
+  "generalInfo": {
+  "type":"generalInfo",
+
+  "name":"Quadro K2100M",
+
+  "totalGlobalMem":2095251456,
+
+  "localMemSize":49152,
+
+  "clockRate":666,
+
+  "totalConstMem":65536,
+
+  "multiProcessorCount":3,
+
+  "eccEnabled":"false",
+
+  "id":3
 
   },
   "specificInfo":"OpenCL"
@@ -68,9 +141,9 @@
 
 	"etat":"end",
 
-	"id":1,
+	"id":2,
 
-	"endTime":350472
+	"endTime":310606
 },
 {
 
@@ -78,15 +151,15 @@
 
 	"desc":"creationVecteur",
 
-	"id":2,
+	"id":3,
 
-	"time":350492
+	"time":310791
 
 	},
 {
     "type" : "vector",
 
-    "VectorId" : 1,
+    "VectorId" : 2,
 
     "resides" : -1,
 
@@ -103,15 +176,15 @@
 
 	"desc":"creationVecteur",
 
-	"id":3,
+	"id":4,
 
-	"time":350507
+	"time":310839
 
 	},
 {
     "type" : "vector",
 
-    "VectorId" : 2,
+    "VectorId" : 3,
 
     "resides" : -1,
 
@@ -128,15 +201,15 @@
 
 	"desc":"creationVecteur",
 
-	"id":4,
+	"id":5,
 
-	"time":350514
+	"time":310892
 
 	},
 {
     "type" : "vector",
 
-    "VectorId" : 3,
+    "VectorId" : 4,
 
     "resides" : -1,
 
@@ -149,115 +222,24 @@
     "isSub" : false},
 {
 
-	"type":"allocGPU",
-
-	"desc":"GPU_ALLOC",
-
-	"time":1421420,
-
-	"id":5,
-
-	"vectorId":1,
-
-	"vectorSize":15680000,
-
-	"gpuType":"CUDA",
-
-	"deviceId":1
-
-	},
-{
-
 		"type":"transfert",
 
 		"desc":"CPU_TO_DEVICE",
 
 		"state":"start",
 
-		"time":1421442,
+		"time":1489531,
 
 		"id":6,
 
-		"vectorId":1,
+		"vectorId":2,
 
 		"vectorSize":15680000,
 
-		"gpuType":"CUDA",
+		"gpuType":"OPENCL",
 
-		"deviceId":0,
-
-		"isSub":false
-
-		},
-{
-
-	"type":"transfert",
-
-	"id":6,
-
-	"state":"end",
-
-	"time":1423982,
-
-	"vectorId":1,
-
-	"duration":2536
-
-	},
-{
-
-	"type":"allocGPU",
-
-	"desc":"GPU_ALLOC",
-
-	"time":1424167,
-
-	"id":7,
-
-	"vectorId":2,
-
-	"vectorSize":20000,
-
-	"gpuType":"CUDA",
-
-	"deviceId":1
-
-	},
-{
-
-		"type":"transfert",
-
-		"desc":"CPU_TO_DEVICE",
-
-		"state":"start",
-
-		"time":1424179,
-
-		"id":8,
-
-		"vectorId":2,
-
-		"vectorSize":20000,
-
-		"gpuType":"CUDA",
-
-		"deviceId":0,
+		"deviceId":1,
 
 		"isSub":false
 
 		},
-{
-
-	"type":"transfert",
-
-	"id":8,
-
-	"state":"end",
-
-	"time":1424263,
-
-	"vectorId":2,
-
-	"duration":82
-
-	},

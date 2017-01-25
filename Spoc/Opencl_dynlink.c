@@ -61,7 +61,8 @@ tclFinish* clFinish;
 tclRetainCommandQueue* clRetainCommandQueue;
 tclReleaseCommandQueue* clReleaseCommandQueue;
 tclSetEventCallback* clSetEventCallback;
-
+tclWaitForEvents* clWaitForEvents;
+tclGetEventProfilingInfo* clGetEventProfilingInfo;
 
 #define CL_ERROR_UNKNOWN -12
 
@@ -174,6 +175,8 @@ int CL_API_ENTRY clInit(){
     	GET_PROC(clRetainCommandQueue);
     	GET_PROC(clReleaseCommandQueue);
     	GET_PROC(clSetEventCallback);
+      GET_PROC(clWaitForEvents);
+      GET_PROC(clGetEventProfilingInfo);
 
     	return CL_SUCCESS;
     	//return CL_ERROR_UNKNOWN;

@@ -10,8 +10,8 @@ Kirc_Cuda.cmo :
 Kirc_Cuda.cmx :
 Kirc_OpenCL.cmo :
 Kirc_OpenCL.cmx :
-Profile.cmo : Kirc_Ast.cmi
-Profile.cmx : Kirc_Ast.cmx
+Profile.cmo : Kirc_Ast.cmi Gen.cmi
+Profile.cmx : Kirc_Ast.cmx Gen.cmx
 Transform.cmo : Kirc_Ast.cmi Kirc.cmi Gen.cmi
 Transform.cmx : Kirc_Ast.cmx Kirc.cmx Gen.cmx
 Gen.cmi : Kirc_Ast.cmi
