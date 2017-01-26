@@ -22,7 +22,7 @@ hasKern=$(shell ls kernels 1>/dev/null 2>/dev/null; echo $$?)
 ifeq ($(hasKern),0)
 ifeq ($(GCC_VER_LTE49), 1)
 ifeq ($(NVCC_PRESENT), 0)
-        KERNELS = $(KERNELSSRC:.cu=.ptx)
+	KERNELS = $(KERNELSSRC:.cu=.ptx)
 endif
 endif
 endif
@@ -35,10 +35,10 @@ CLIB := $(shell ls *.c 1>/dev/null 2>/dev/null; echo $$?)
 
 ifeq ($(CLIB), 0)
 $(ASM): $(MLSRC) $(COBJS)
-	ocamlfind -g ocamlopt -thread  $(PACKAGES) -linkpkg -package spoc_external_kernels -syntax camlp4o $(MLSRC) $(COBJS) -o $(ASM)
+	ocamlfind ocamlopt -g -thread  $(PACKAGES) -linkpkg -package spoc_external_kernels -syntax camlp4o $(MLSRC) $(COBJS) -o $(ASM)
 
 $(BYTE): $(MLSRC) $(COBJS)
-	ocamlfind ocamlc -custom -thread   $(PACKAGES) -linkpkg -package spoc_external_kernels -syntax camlp4o $(MLSRC) -cclib $(COBJS) -o $(BYTE)
+	ocamlfind ocamlc -g -custom -thread   $(PACKAGES) -linkpkg -package spoc_external_kernels -syntax camlp4o $(MLSRC) -cclib $(COBJS) -o $(BYTE)
 
 else
 

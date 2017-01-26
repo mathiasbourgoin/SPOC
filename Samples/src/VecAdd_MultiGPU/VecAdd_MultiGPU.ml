@@ -20,7 +20,7 @@
 (** Mathias Bourgoin - 2011                             *)
 open Spoc
 
-kernel vecadd: Spoc.Vector.vfloat32 -> Spoc.Vector.vfloat32 -> Spoc.Vector.vfloat32 -> int -> unit = "kernels/Spoc_kernels" "vec_add"
+kernel vecadd: Spoc.Vector.vfloat32 -> Spoc.Vector.vfloat32 -> Spoc.Vector.vfloat32 -> int -> unit = "kernels/VecAdd_MultiGPU" "vec_add"
 
 let devices = Spoc.Devices.init ()
 in
