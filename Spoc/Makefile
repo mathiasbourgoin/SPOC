@@ -48,7 +48,7 @@ extension/kernels_ext.cma:extension/kernels_ext.ml
 
 %.o:%.c
 	@echo  "\033[33m[$@]\033[0m" 
-	@$(CC) -c $< 2>>log
+	@$(CC) -g -c $< 2>>log
 
 build : $(LIBNAME).cma $(LIBNAME)level $(LIBNAME).cmxa $(LIBNAME).o
 
