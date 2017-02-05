@@ -81,7 +81,7 @@ module Generator (M:CodeGenerator) = struct
   let protos = ref []
 
 
-  let rec parse_fun i a b =
+  let rec parse_fun i a b n =
     let rec aux name a =
       let rec aux2 i a =
         match a with
@@ -100,7 +100,7 @@ module Generator (M:CodeGenerator) = struct
                 (fst !return_v)^", " else "")^(parse (i+1) k)^" )")
           in
           protos := proto:: !protos;
-          proto^"{"
+          proto^"{\n"
         | a -> (parse  i a)
       in
       aux2 i a in
@@ -111,7 +111,9 @@ module Generator (M:CodeGenerator) = struct
       | Not_found ->
         (
 	  incr global_fun_idx;
-   let gen_name =  ("spoc_fun__"^(string_of_int !global_fun_idx)) in
+   let gen_name =
+     if n <> "" then n
+     else ("spoc_fun__"^(string_of_int !global_fun_idx)) in
    let fun_src = aux gen_name a in
    Hashtbl.add global_funs a (fun_src,gen_name) ;
    gen_name)
@@ -267,8 +269,8 @@ module Generator (M:CodeGenerator) = struct
      | Intrinsics ("return","return") -> f^" "^(aux (Array.to_list b))^" "
      |  _ -> f^" ("^(aux (Array.to_list b))^") ")
   | Empty  -> ""
-  | GlobalFun (a,b) ->
-     let s = (parse_fun i a b) in
+  | GlobalFun (a,b,n) ->
+     let s = (parse_fun i a b n) in
      s
   | Match (s,e,l) ->
     let match_e = parse 0 e in
@@ -277,9 +279,9 @@ module Generator (M:CodeGenerator) = struct
           let manage_of =
             match of_i with
             | None -> ""
-            | Some (typ,cstr,varn) ->
+            | Some (typ,cstr,varn,id) ->
               indent (i+1)^typ^
-              " spoc_var"^(string_of_int varn)^" = "^match_e^"."^
+              " "^id^" = "^match_e^"."^
               s^"_sarek_union."^s^"_sarek_"^cstr^"."^
               s^"_sarek_"^cstr^"_t"^
               ";\n"
