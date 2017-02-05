@@ -59,6 +59,7 @@ type ('a,'b,'c) kirc_kernel =
 
 type ('a,'b,'c,'d) kirc_function =
   {
+    fun_name:string;
     ml_fun : 'a;
     funbody : Kirc_Ast.k_ext;
     fun_ret : Kirc_Ast.k_ext* ('b,'c) Vector.kind;
@@ -147,14 +148,15 @@ let spoc_gen_kernel args body = Kern (args,body)
 let spoc_fun_kernel a b = ()
 let global_fun a = GlobalFun (
     a.funbody,
-    match snd a.fun_ret with
+    (match snd a.fun_ret with
     | Vector.Int32 _  -> "int"
     | Vector.Float32 _  -> "float"
     | Vector.Custom _ ->
       (match fst a.fun_ret with
-      | CustomVar (s,_,_OA) -> "struct "^s^"_sarek"
+      | CustomVar (s,_,_) -> "struct "^s^"_sarek"
       | _ -> assert false)
-    | _ -> "void")
+    | _ -> "void"),
+    a.fun_name)
 let seq a b = Seq (a,b)
 let app a b = App (a,b)
 let spoc_unit () = Unit
@@ -468,7 +470,7 @@ let rewrite ker =
     | While (k1, k2) ->
       While (aux k1, aux k2)
     | App (a,b) -> App (aux a, (Array.map aux b))
-    | GlobalFun (a,b) -> GlobalFun (aux a, b)
+    | GlobalFun (a,b,n) -> GlobalFun (aux a, b,n)
     | Unit -> kern
     | Match (s,a,b) -> Match (s,aux a,
                               Array.map (fun (i,ofid,e) -> (i,ofid,aux e)) b)
@@ -755,6 +757,7 @@ struct
     let zero = 0.
     let one = 1.
     let of_float32 f = f
+    let of_float f = f
     let to_float32 f = f
     let make_shared i = Array.make (Int32.to_int i) 0.
     let make_local i = Array.make (Int32.to_int i) 0.

@@ -71,7 +71,7 @@ type  k_ext =
   | Mod of  k_ext *  k_ext
   | Id of string
   | IdName of string
-  | GlobalFun of k_ext*string
+  | GlobalFun of k_ext*string*string
   | IntVar of int * string
   | FloatVar of int * string
   | UnitVar of int * string
@@ -123,7 +123,7 @@ type  k_ext =
   | Unit
 
 
-and case =  int * (string*string*int) option * k_ext
+and case =  int * (string*string*int*string) option * k_ext
 
 type  kfun =
   | KernFun of  k_ext* k_ext
@@ -330,8 +330,8 @@ let print_ast a =
       print i "GFloat"
     | Unit ->
       print i "Unit"
-    | GlobalFun (e,s) ->
-      print i ("Global Fun " ^s);
+    | GlobalFun (e,s,n) ->
+      print i ("Global Fun " ^s^" "^ n);
       aux (i+1) e;
     | Constr (s1,s2,l) ->
       print i ("Constr "^s1^" "^s2);

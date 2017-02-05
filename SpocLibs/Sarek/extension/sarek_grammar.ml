@@ -111,8 +111,8 @@ let gen_kernel () = ()
   expr:
     [
       ["kern"; args = LIST1 k_patt; "->"; body = kernel_body ->
-       Printf.printf
-         "(* Generated from the sarek syntax extension, \ndo not modify this file*)\n";
+       (*Printf.printf
+         "(*Generated from the sarek syntax extension, \ndo not modify this file*)\n";*)
        (*arg_idx := 0;*)
        return_type := TUnknown;
        arg_list := [];
@@ -227,7 +227,7 @@ let ret =
   | TBool -> <:expr< return_bool $ExInt(Loc.ghost, string_of_int (!arg_idx))$ "", Vector.int32>>
   | Custom (_, name) ->
     let sarek_name = name^"_sarek" in
-    <:expr< Kirc.return_custom1 $str:name$ $str:sarek_name$ >>
+    <:expr< Kirc.return_custom1 $str:name$ $str:sarek_name$ "">>
 
   | t  -> failwith (Printf.sprintf "error ret : %s" (ktyp_to_string t))
 in
@@ -377,7 +377,7 @@ str_item:
      Hashtbl.clear !current_args;
      Hashtbl.clear !local_fun;
      List.iter new_arg_of_patt args;
-
+     my_eprintf ("->->-> global_fun "^(string_of_ident name));
      let cpt = ref 0 in
      retype := true;
      (try
@@ -471,7 +471,7 @@ let ret =
   | Custom (_, name) ->
      let sarek_name = name^"_sarek" in
      let customType = ExId(_loc, (IdLid (_loc,("custom"^(String.capitalize name))))) in
-     <:expr< Kirc.return_custom $str:name$ $str:sarek_name$, Vector.Custom $customType$>>
+     <:expr< Kirc.return_custom $str:name$ $str:sarek_name$ "", Vector.Custom $customType$>>
 
   | t  -> failwith (Printf.sprintf "error ret : %s" (ktyp_to_string t))
 in
@@ -489,7 +489,12 @@ let t =
 		TApp (seed , value.var_type)) !current_args !return_type in*)
 in
 my_eprintf ((string_of_ident name)^" ....... "^ktyp_to_string t^"\n");
-let task_manager = Fastflow.print_task args name _loc in
+let task_manager =
+  (if Fastflow.fastflow then
+     Fastflow.print_task args name _loc 
+   else
+     <:expr< Obj.magic None >>)
+in
 Hashtbl.add !global_fun (string_of_ident name)
   {nb_args=0;
    cuda_val="";
@@ -498,6 +503,7 @@ Hashtbl.add !global_fun (string_of_ident name)
 let $id:name$ =
         let open Kirc in
         let a = {
+        fun_name = $str:string_of_ident name$;
         ml_fun = $gen_args$;
         funbody = $gen_body2$;
         fun_ret = $ret$;
@@ -751,7 +757,7 @@ let ret =
   | Custom (_, name) ->
     let sarek_name = name^"_sarek" in
     let customType = ExId(_loc, (IdLid (_loc,("custom"^(String.capitalize name))))) in
-    <:expr< Kirc.return_custom $str:name$ $str:sarek_name$, Vector.Custom $customType$>>
+    <:expr< Kirc.return_custom $str:name$ $str:sarek_name$ "", Vector.Custom $customType$>>
 
   | t  -> failwith (Printf.sprintf "error ret : %s" (ktyp_to_string t))
 in
@@ -774,10 +780,16 @@ let local =
 $stri$ $init$>>) !local_fun
     <:str_item<>>
 in
-let task_manager = Fastflow.print_task !args (gen_ano_f _loc) _loc in
+let task_manager =
+  (if Fastflow.fastflow then
+     Fastflow.print_task !args (gen_ano_f _loc) _loc
+   else
+     <:expr< Obj.magic None >>)
+in
 let a = <:expr<
                 let open Kirc in
                 let local_function  = {
+                fun_name="";
                 ml_fun = $gen_args$;
 	        funbody = $gen_body2$;
                 fun_ret = $ret$;

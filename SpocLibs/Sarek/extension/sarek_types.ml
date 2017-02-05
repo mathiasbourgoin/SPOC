@@ -441,6 +441,7 @@ let std = {
     (TApp (TInt32, TFloat64), "float64_of_int", 1, "(double)", "(double)");
     (TApp (TInt32, TFloat64), "float64", 1, "(double)", "(double)");
     (TApp (TFloat32, TFloat64), "float64_of_float", 1, "(double)", "(double)");
+    (TApp (TFloat32, TFloat64), "of_float", 1, "(double)", "(double)");
 
     (TApp (TFloat32, TInt32), "int_of_float", 1, "(int)", "(int)");
     (TApp (TFloat64, TInt32), "int_of_float64", 1, "(int)", "(int)");
@@ -588,8 +589,7 @@ let modules =
 
 
 let open_module  m_ident  _loc =
-  my_eprintf (Printf.sprintf "opening module %s\n%!" m_ident);
-
+  my_eprintf (Printf.sprintf "!!opening module %s\n%!" m_ident);  
   (match m_ident with
    | "Float64" ->
      if not (List.mem ex64 !extensions)  then
@@ -611,6 +611,7 @@ let open_module  m_ident  _loc =
       (Hashtbl.add !intrinsics_const (s) {nb_args=0; cuda_val = cuda_s; opencl_val = opencl_s; typ=typ})) m.mod_constants ;
   Hashtbl.iter (fun name intern_m-> Hashtbl.add modules name intern_m) m.mod_modules
 
+    
 and close_module m_ident =
   my_eprintf (Printf.sprintf "closing module %s\n%!" m_ident);
   try
