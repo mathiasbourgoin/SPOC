@@ -118,10 +118,10 @@
 
 
 #define CUBLAS_RESTORE_CONTEXT \
-	caml_leave_blocking_section();		\
-	spoc_ctx->queue[0] = queue[0]; \
-    spoc_ctx->queue[1] = queue[1]; \
-	Store_field(gi,8, (value)spoc_ctx); }
+  caml_leave_blocking_section();       \
+  spoc_ctx->queue[0] = queue[0];       \
+  spoc_ctx->queue[1] = queue[1];		\
+  Store_field(gi,8, (value)spoc_ctx); }
 
 
 #endif

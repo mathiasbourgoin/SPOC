@@ -180,12 +180,19 @@ typedef struct spoc_vector {
 
 
 
-#define OPENCL_TRY(name,fun)                                    \
-  {                                                             \
-    cl_int err = fun;                                              \
-    if (err != CL_SUCCESS) {                                       \
+#define OPENCL_TRY(name,fun)						\
+  {									\
+    cl_int err = fun;							\
+    if (err != CL_SUCCESS) {						\
       fprintf(stderr,"ERROR %d calling %s().\n", err,name);             \
-      return -1;                                                        \
+    }                                                                   \
+  }
+
+#define OPENCL_TRY2(name,fun, err)						\
+  {									\
+    err = fun;							\
+    if (err != CL_SUCCESS) {						\
+      fprintf(stderr,"ERROR %d calling %s().\n", err,name);             \
     }                                                                   \
   }
 
@@ -263,8 +270,24 @@ typedef struct spoc_vector {
 	CUDA_CHECK_CALL(cuCtxSetCurrent(ctx)); \
 	caml_enter_blocking_section();
 
+#define BLOCKING_CUDA_GET_CONTEXT \
+	{CUcontext ctx; \
+	spoc_cu_context *spoc_ctx; \
+	CUstream queue[2]; \
+	enum cudaError_enum cuda_error = 0; \
+	spoc_ctx = (spoc_cu_context*)Field(gi, 8); \
+	ctx = spoc_ctx->ctx; \
+	queue[0] = spoc_ctx->queue[0];\
+	queue[1] = spoc_ctx->queue[1];\
+	CUDA_CHECK_CALL(cuCtxSetCurrent(ctx));
+
 #define CUDA_RESTORE_CONTEXT \
   caml_leave_blocking_section();		\
+  spoc_ctx->queue[0] = queue[0]; \
+  spoc_ctx->queue[1] = queue[1]; \
+  Store_field(gi,8, (value)spoc_ctx);}
+
+#define BLOCKING_CUDA_RESTORE_CONTEXT \
   spoc_ctx->queue[0] = queue[0]; \
   spoc_ctx->queue[1] = queue[1]; \
   Store_field(gi,8, (value)spoc_ctx);}
@@ -284,7 +307,7 @@ typedef struct spoc_cu_context {
 	cl_command_queue queue[2]; \
 	spoc_cl_context *spoc_ctx; \
 	cl_int opencl_error = 0; \
-	spoc_ctx = (spoc_cl_context*)Field(gi, 9); \
+	spoc_ctx = (spoc_cl_context*)Field(gi, 8); \
 	ctx = spoc_ctx->ctx; \
 	queue[0] = spoc_ctx->queue[0];\
 	queue[1] = spoc_ctx->queue[1];\
@@ -297,15 +320,23 @@ typedef struct spoc_cu_context {
 	spoc_ctx->queue[0] = queue[0]; \
 	spoc_ctx->queue[1] = queue[1]; \
 	spoc_ctx->ctx = ctx;\
-	Store_field(gi,9, (value)spoc_ctx);}
+	Store_field(gi,8, (value)spoc_ctx);}
 
 
 int ae_load_file_to_memory(const char *filename, char **result);
 
 
-#define GET_TYPE_SIZE \
-	tag = Bigarray_val(bigArray)->flags & BIGARRAY_KIND_MASK; \
+#define GET_TYPE_SIZE 						  \
+  if (custom) { \
+  type_size = Int_val(Field(Field(bigArray, 1),0))*sizeof(char); \
+  }								 \
+  else { \
+  tag = Bigarray_val(bigArray)->flags & BIGARRAY_KIND_MASK;	\
 	switch (tag) { \
+	case BIGARRAY_UINT8 : \
+		printf("here\n"); \
+		type_size = sizeof(unsigned char); \
+		break; \
 	case BIGARRAY_FLOAT32 : \
 		type_size = sizeof(float); \
 		break; \
@@ -321,13 +352,14 @@ int ae_load_file_to_memory(const char *filename, char **result);
 	case BIGARRAY_COMPLEX32: \
 		type_size = sizeof(float)*2;\
 		break; \
+		} \
 	}
 
 #define Val_cl_mem(x) (value)((cl_mem)x)
 #define Cl_mem_val(x) (cl_mem)((value)x)
 
-#define Val_CUdeviceptr(x) (value)((CUdeviceptr)x)
-#define CUdeviceptr_val(x) (CUdeviceptr)((value)x)
+#define Val_CUdeviceptr(x) (value)((cu_vector*)x)
+#define CUdeviceptr_val(x) (((cu_vector*)((value)x))->cu_vector)
 
 cuComplex complex_val (value c);
 cuDoubleComplex doubleComplex_val (value c);
@@ -346,7 +378,7 @@ value copy_doubleComplex(cuDoubleComplex c);
 	bigarray = Field (Field(V, 1), 0); \
 	A.spoc_vec = (void*)Data_bigarray_val(bigArray); \
 	int type_size; \
-	GET_TYPE_SIZE; \
+	GET_TYPE_SIZE;					      \
 	A.cuda_device_vec  = Field( Field(V, 2), (A.device)); \
 	A.opencl_device_vec  = Field( Field(V, 3), (A.device)); \
 	A.length = Int_val(Field(V, 4)); \
@@ -371,5 +403,18 @@ typedef struct cuda_event_list {
 	CUdeviceptr vec;
 	struct cuda_event_list *next;
 }cuda_event_list;
+
+
+
+typedef struct spoc_cl_vector {
+	long cu_size;
+	cl_mem cu_vector;
+}cl_vector;
+
+typedef struct spoc_cu_vector {
+	long cu_size;
+	CUdeviceptr cu_vector;
+}cu_vector;
+
 
 #endif
