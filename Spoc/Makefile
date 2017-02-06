@@ -4,6 +4,7 @@ mkfile_path=$(abspath $(lastword $(MAKEFILE_LIST)))
 PROJ=$(notdir $(patsubst %/,%,$(dir $(mkfile_path))))
 LIBNAME:=$(shell echo $(PROJ) | tr A-Z a-z)
 
+#CSRC=Spoc_c.c  Spoc_cu.c cuda_drvapi_dynlink.c  Custom.c  Kernel_cuda.c  Kernel_opencl.c  Mem_c.c  Opencl_dynlink.c
 CSRC=$(wildcard *.c)
 COBJ=$(CSRC:.c=.o)
 MLOBJ_B=$(MLSRC:.ml=.cmo)
@@ -75,7 +76,7 @@ $(LIBNAME).cmxa : $(LIBNAME).cmx $(LIBNAME).o $(COBJ)
 
 $(LIBNAME)level : $(LIBNAME).cma extension/kernels_ext.cma
 	@echo   "\033[36m[$(LIBNAME)level]\033[0m"
-	@ocamlmktop -custom -I +camlp4 -cclib -L. dynlink.cma \
+	ocamlmktop -custom -I +camlp4 -cclib -L. dynlink.cma \
 	camlp4o.cma extension/kernels_ext.cma str.cma bigarray.cma \
 	-cclib -lcamlrun -cclib -lbigarray -cclib -l$(LIBNAME) $(LIBNAME).cma \
 	-o $(LIBNAME)level

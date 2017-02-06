@@ -49,7 +49,6 @@
 #include "../dependencies/Cuda/cuComplex.h"
 
 
-
 #include "cuda_drvapi_dynlink_cuda.h"
 #include "Opencl_dynlink.h"
 
@@ -60,8 +59,9 @@
 #endif
 */
 
-int noCL;
-int noCuda;
+extern int noCuda;
+extern int noCL;
+
 int nbCudaDevices;
 
 // should be acquired from device_info

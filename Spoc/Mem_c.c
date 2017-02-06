@@ -130,7 +130,7 @@ extern "C" {
     v->type_size=Int_val(type_size);
     v->size=Int_val(n);
     if (noCuda){
-      posix_memalign(v->vec, OPENCL_PAGE_ALIGN,
+      posix_memalign(&(v->vec), OPENCL_PAGE_ALIGN,
 		     ((Int_val(type_size)*Int_val(n) - 1)/OPENCL_CACHE_ALIGN + 1) * OPENCL_CACHE_ALIGN);
     }
     else
@@ -281,7 +281,7 @@ extern "C" {
     int custom = 0;
     GET_TYPE_SIZE;
     size =Int_val(Field(vector, 4))-seek;
-    CUDA_CHECK_CALL(cuMemcpyHtoD(d_A+(seek*type_size), h_A+(seek*type_size), size*type_size));
+    CUDA_CHECK_CALL(cuMemcpyHtoDAsync(d_A+(seek*type_size), h_A+(seek*type_size), size*type_size, queue[Int_val(queue_id)]));
 
     //Store_field(dev_vec, 1, Val_CUdeviceptr(d_A));
     //Store_field(dev_vec, 2, (value) spoc_ctx);
@@ -315,7 +315,7 @@ extern "C" {
     d_A = cuv->cu_vector;
 
     CUDA_GET_CONTEXT;
-    CUDA_CHECK_CALL(cuMemcpyHtoD(d_A+(Int_val(offset)+seek*type_size), h_A+(Int_val(offset))+Int_val(start)+seek*type_size, part_size*type_size));
+    CUDA_CHECK_CALL(cuMemcpyHtoDAsync(d_A+(Int_val(offset)+seek*type_size), h_A+(Int_val(offset))+Int_val(start)+seek*type_size, part_size*type_size, queue[Int_val(queue_id)]));
 
     //Store_field(dev_vec, 1, Val_CUdeviceptr(d_A));
     //Store_field(dev_vec, 2, (value) spoc_ctx);
@@ -366,7 +366,7 @@ extern "C" {
 
     CUDA_GET_CONTEXT;
 
-    CUDA_CHECK_CALL(cuMemcpyHtoD(d_A+seek*type_size, h_A+(seek*type_size), size*type_size));
+    CUDA_CHECK_CALL(cuMemcpyHtoDAsync(d_A+seek*type_size, h_A+(seek*type_size), size*type_size, queue[Int_val(queue_id)]));
 
     //Store_field(dev_vec, 1, Val_CUdeviceptr(d_A));
     //Store_field(dev_vec, 2, (value) spoc_ctx);
@@ -622,9 +622,8 @@ extern "C" {
 
     size =Int_val(Field(sub_vector, 4));
 
-    CUDA_CHECK_CALL(cuMemcpyDtoHAsync(h_A, d_A+(Long_val(guest_offset)*type_size) /* (gcInfo->curr_ptr)*/,  (Long_val(part_size))*type_size, queue[Int_val(queue_id)]));
-    cuStreamSynchronize(queue[Int_val(queue_id)]);
-    
+    CUDA_CHECK_CALL(cuMemcpyDtoHAsync(h_A+(Long_val(guest_offset)*type_size), d_A /* (gcInfo->curr_ptr)*/,  (Long_val(part_size))*type_size, queue[Int_val(queue_id)]));
+    CUDA_CHECK_CALL(cuStreamAddCallback(queue[Int_val(queue_id)], cuda_free_after_transfer, (void*)d_A, 0));
     CUDA_RESTORE_CONTEXT;
     CAMLreturn(Val_unit);
   }
