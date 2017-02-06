@@ -34,11 +34,11 @@ extension/kernels_ext.cma:extension/kernels_ext.ml
 
 %.cmo:%.ml
 	@echo  "\033[32m[$@]\033[0m" 
-	@ocamlc -for-pack $(PROJ) -c $< 2>>log
+	@ocamlc -g -for-pack $(PROJ) -c $< 2>>log
 
 %.cmx:%.ml
 	@echo  "\033[34m[$@]\033[0m" 
-	@ocamlopt -for-pack $(PROJ) -c $< 2>>log
+	@ocamlopt -g -for-pack $(PROJ) -c $< 2>>log
 
 
 
@@ -54,11 +54,11 @@ build : $(LIBNAME).cma $(LIBNAME)level $(LIBNAME).cmxa $(LIBNAME).o
 
 $(LIBNAME).cmo : $(MLOBJ_B)  $(COBJ)
 	@echo  "\033[32m[spoc.cmo]\033[0m"
-	@ocamlc -pack  $(MLOBJ_B) $(COBJ) -o $(LIBNAME).cmo
+	@ocamlc -g -pack  $(MLOBJ_B) $(COBJ) -o $(LIBNAME).cmo
 
 $(LIBNAME).o : $(COBJ)
 	@echo  "\033[33m[$@]\033[0m" 
-	@$(CC) $(COBJ) -o $(LIBNAME).o
+	@$(CC) -g $(COBJ) -o $(LIBNAME).o
 
 
 $(LIBNAME).cma: $(LIBNAME).o $(LIBNAME).cmo $(COBJ)
@@ -67,7 +67,7 @@ $(LIBNAME).cma: $(LIBNAME).o $(LIBNAME).cmo $(COBJ)
 
 $(LIBNAME).cmx : $(LIBNAME).o $(MLOBJ_N)  $(COBJ)
 	@echo  "\033[34m[$(LIBNAME).cmx]\033[0m"	
-	@ocamlopt -pack $(MLOBJ_N) $(COBJ) -o $(LIBNAME).cmx
+	@ocamlopt -g -pack $(MLOBJ_N) $(COBJ) -o $(LIBNAME).cmx
 
 $(LIBNAME).cmxa : $(LIBNAME).cmx $(LIBNAME).o $(COBJ)
 	@echo  "\033[31m[$(LIBNAME).cmxa]\033[0m"

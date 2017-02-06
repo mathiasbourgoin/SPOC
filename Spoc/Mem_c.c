@@ -40,7 +40,123 @@ extern "C" {
 #include <assert.h>
 
 
+  #define spocsizeof(name,typename)			\
+    CAMLprim value sizeof##name(){		\
+      CAMLparam0();				\
+      CAMLreturn (Val_int(sizeof(typename)));	\
+    }						
+    
+  spocsizeof(Float32,float)
+  spocsizeof(Float64,double)
+  spocsizeof(Int32,int)
+  spocsizeof(Int64,long)
+  spocsizeof(Char,char)
+  spocsizeof(Complex32,double2)
 
+
+  #define  get(name,type,macro)				\
+    CAMLprim value get_##name(value v, value idx){	\
+    CAMLparam2(v, idx);					\
+    host_vector* vec = (host_vector*) (Field(v,1));	\
+    type r = ((type*)(vec->vec))[Int_val(idx)];		\
+    CAMLreturn (macro(r));				\
+    }
+
+  #define  set(name,type,macro)					\
+    CAMLprim value set_##name(value v, value idx, value val ){	\
+      CAMLparam3(v, idx, val);					\
+      host_vector* vec = (host_vector*) (Field(v,1));		\
+      type r = macro(val);					\
+      ((type*)(vec->vec))[Int_val(idx)] = r;			\
+      CAMLreturn (Val_unit);					\
+    }
+
+  get(int32,int,caml_copy_int32)
+  get(int64,long,caml_copy_int64)
+  get(float64,double,caml_copy_double)
+  get(char,int,Val_int)
+
+  set(int32,int,Int32_val)
+  set(int64,long,Int64_val)
+  set(float64,double,Double_val)
+  set(char,int,Int_val)
+  
+  CAMLprim value get_float32(value v, value idx){	
+    CAMLparam2(v, idx);					
+    host_vector* vec = (host_vector*) (Field(v,1));	
+    float r = ((float*)(vec->vec))[Int_val(idx)];		
+    CAMLreturn (caml_copy_double((double)r));				
+  }
+
+
+  CAMLprim value set_float32(value v, value idx, value val ){	
+      CAMLparam3(v, idx, val);					
+      host_vector* vec = (host_vector*) (Field(v,1));
+      float r = (float)Double_val(val);					
+      ((float*)(vec->vec))[Int_val(idx)] = r;
+      CAMLreturn (Val_unit);				       
+    }
+  
+  CAMLprim value get_complex32(value v, value idx){
+    CAMLparam2(v, idx);					
+    UNIMPLENTED;
+    CAMLreturn(Val_unit);
+  }
+
+  CAMLprim value set_complex32(value v, value idx, value val ){	
+    CAMLparam3(v, idx, val);
+    UNIMPLENTED;
+    CAMLreturn (Val_unit);
+  }
+  
+  void free_host(value v){
+    host_vector* vec = (host_vector*) (Field(v,1));
+    if (vec->vec) {
+      if  (noCuda){
+	free(vec->vec);
+      }
+      else{
+	cuMemFreeHost(vec->vec);
+      }
+    }
+    free(vec);
+  }
+  
+  CAMLprim value host_alloc (value type_size, value n){
+    CAMLparam2(type_size,n);
+    CAMLlocal1(ret);
+    ret=alloc_final(2, free_host, 0,  1);
+    host_vector* v= (host_vector*)malloc(sizeof(host_vector));
+    v->type_size=Int_val(type_size);
+    v->size=Int_val(n);
+    if (noCuda){
+      posix_memalign(v->vec, OPENCL_PAGE_ALIGN,
+		     ((Int_val(type_size)*Int_val(n) - 1)/OPENCL_CACHE_ALIGN + 1) * OPENCL_CACHE_ALIGN);
+    }
+    else
+      {
+	cuMemAllocHost(&(v->vec), Int_val(type_size)*Int_val(n));
+      }
+    Store_field(ret,1,v);
+    CAMLreturn(ret);
+  }
+
+
+  CAMLprim value spoc_sub_host_vec(value host_vec, value start, value len)
+{
+  CAMLparam3(host_vec, start, len);
+  CAMLlocal1(ret);
+  ret=caml_alloc(2,0);
+  host_vector* parent = (host_vector*) (Field(host_vec,1));
+  host_vector* v = (host_vector*)malloc(sizeof(host_vector));
+  v->type_size = parent->type_size;
+  v->size = len;
+  v->vec = (char*)parent->vec+(v->type_size*Int_val(start));
+  Store_field(ret,1,v);
+  CAMLreturn(ret);
+}  
+
+  
   void cuda_free_vec (value v) {
     cu_vector* cuv = (cu_vector*)(Field(v, 1));
     if (cuv)
@@ -57,16 +173,6 @@ extern "C" {
   }
 
 
-  CAMLprim value spoc_finalize_vector (value bigArray)
-  {
-    CAMLparam1(bigArray);
-    CUdevice dev = 0;
-    size_t size_left = 0;
-    enum cudaError_enum cuda_error = 0;
-    struct caml_ba_array * b = Caml_ba_array_val(bigArray);
-    int size = caml_ba_byte_size(b);
-    CAMLreturn(Val_unit);
-  }
 
   CAMLprim value spoc_init_cuda_device_vec(){
     CAMLparam0();
@@ -115,7 +221,9 @@ extern "C" {
 
     cuv = (cu_vector*)Field(dev_vec, 1);
     d_A = cuv->cu_vector;
-    h_A = (void*)((char*)Data_bigarray_val(bigArray)+((Long_val(host_offset)+Long_val(start)+seek)*type_size));
+    h_A =(void*)(((host_vector*)(Field(Field(bigArray,0),1)))->vec)+
+      ((Long_val(host_offset)+Long_val(start)+seek)*type_size);
+	//(void*)((char*)Data_bigarray_val(bigArray)+((Long_val(host_offset)+Long_val(start)+seek)*type_size));
 
     size =Int_val(Field(sub_vector, 4))-seek;
 
@@ -168,7 +276,8 @@ extern "C" {
     d_A = cuv->cu_vector;
     CUDA_GET_CONTEXT;
     gcInfo = (spoc_cuda_gc_info*) gc_info;
-    h_A = (void*)Data_bigarray_val(bigArray);
+    h_A =(void*)(((host_vector*)(Field(Field(bigArray,0),1)))->vec);
+  //h_A = (void*)Data_bigarray_val(bigArray);
     int custom = 0;
     GET_TYPE_SIZE;
     size =Int_val(Field(vector, 4))-seek;
@@ -257,7 +366,7 @@ extern "C" {
 
     CUDA_GET_CONTEXT;
 
-    CUDA_CHECK_CALL(cuMemcpyHtoD(d_A+seek*type_size, h_A+seek*type_size, size*type_size));
+    CUDA_CHECK_CALL(cuMemcpyHtoD(d_A+seek*type_size, h_A+(seek*type_size), size*type_size));
 
     //Store_field(dev_vec, 1, Val_CUdeviceptr(d_A));
     //Store_field(dev_vec, 2, (value) spoc_ctx);
@@ -279,7 +388,8 @@ extern "C" {
   void cuda_free_after_transfer(CUstream stream, CUresult status, void* data)
   {
     if (data) {
-      cuMemFree((CUdeviceptr)(data));
+      //cuMemFree((CUdeviceptr)(data));
+      printf("HERE");
     }
   }
 
@@ -311,14 +421,17 @@ extern "C" {
 
     CUDA_CHECK_CALL(cuDeviceGet(&dev, Int_val(nb_device)));
 
-    h_A = (void*)Data_bigarray_val(bigArray);
+  //h_A = (void*)Data_bigarray_val(bigArray);
+    h_A =(void*)(((host_vector*)(Field(Field(bigArray,0),1)))->vec);
     int custom = 0;
     GET_TYPE_SIZE;
+    
 
 
-
-    CUDA_CHECK_CALL(cuMemcpyDtoHAsync((void*)h_A+seek*type_size, d_A+seek*type_size, size*type_size, queue[Int_val(queue_id)]));
+    CUDA_CHECK_CALL(cuMemcpyDtoHAsync((void*)h_A+(seek*type_size), d_A+(seek*type_size), size*type_size, queue[Int_val(queue_id)]));
+    //printf ("D2H %p\n", h_A);
     CUDA_CHECK_CALL(cuStreamAddCallback(queue[Int_val(queue_id)], cuda_free_after_transfer, (void*)d_A, 0));
+
     /*
       CUDA_CHECK_CALL(cuEventCreate(&(evt->evt), CU_EVENT_BLOCKING_SYNC));
       evt->vec = d_A;
@@ -431,7 +544,8 @@ extern "C" {
     int type_size;
     int tag;
     bigArray = Field (Field(vector, 1), 0);
-    h_A = (void*)Data_bigarray_val(bigArray);
+    h_A =(void*)(((host_vector*)(Field(Field(bigArray,0),1)))->vec);
+  //h_A = (void*)Data_bigarray_val(bigArray);
     dev_vec_array = Field(vector, 3);
     dev_vec =Field(dev_vec_array, Int_val(nb_device));
     d_A = Cl_mem_val(Field(dev_vec, 1));
@@ -502,12 +616,15 @@ extern "C" {
     int custom = 0;
     GET_TYPE_SIZE;
 
-    h_A = (char*)Data_bigarray_val(bigArray)+((Long_val(host_offset)+Long_val(start))*type_size);
+    h_A =(void*)(((host_vector*)(Field(Field(bigArray,0),1)))->vec)+
+      ((Long_val(host_offset)+Long_val(start))*type_size);
+  //    h_A = (char*)Data_bigarray_val(bigArray)+((Long_val(host_offset)+Long_val(start))*type_size);
 
     size =Int_val(Field(sub_vector, 4));
 
-    CUDA_CHECK_CALL(cuMemcpyDtoH(h_A, d_A+(Long_val(guest_offset)*type_size) /* (gcInfo->curr_ptr)*/,  (Long_val(part_size))*type_size));
-
+    CUDA_CHECK_CALL(cuMemcpyDtoHAsync(h_A, d_A+(Long_val(guest_offset)*type_size) /* (gcInfo->curr_ptr)*/,  (Long_val(part_size))*type_size, queue[Int_val(queue_id)]));
+    cuStreamSynchronize(queue[Int_val(queue_id)]);
+    
     CUDA_RESTORE_CONTEXT;
     CAMLreturn(Val_unit);
   }
@@ -593,7 +710,8 @@ extern "C" {
     int type_size;
     int tag;
     bigArray = Field (Field(vector, 1), 0);
-    h_A = (void*)Data_bigarray_val(bigArray);
+  //h_A = (void*)Data_bigarray_val(bigArray);
+    h_A =(void*)(((host_vector*)(Field(Field(bigArray,0),1)))->vec);
     dev_vec_array = Field(vector, 3);
 
     dev_vec =Field(dev_vec_array, Int_val(nb_device));
@@ -662,9 +780,10 @@ extern "C" {
     bigArray = Field (Field(vector, 1), 0);
     int custom = 0;
     GET_TYPE_SIZE
-
-      h_A = (void*)((char*)Data_bigarray_val(bigArray)+
-		    ((Long_val(host_offset)+Long_val(start))*type_size));
+      h_A =(void*)(((host_vector*)(Field(Field(bigArray,0),1)))->vec)+
+      //      h_A = (void*)((char*)Data_bigarray_val(bigArray)+
+      ((Long_val(host_offset)+Long_val(start))*type_size);
+  //);
     dev_vec_array = Field(sub_vector, 3);
     dev_vec =Field(dev_vec_array, Int_val(nb_device));
     d_A = Cl_mem_val(Field(dev_vec, 1));
@@ -725,7 +844,8 @@ extern "C" {
     cl_device_id device_id;
     cl_command_queue  q;
     bigArray = Field (Field(vector, 1), 0);
-    h_A = (void*)Data_bigarray_val(bigArray);
+    h_A =(void*)(((host_vector*)(Field(Field(bigArray,0),1)))->vec);
+  //h_A = (void*)Data_bigarray_val(bigArray);
     int custom = 0;
     GET_TYPE_SIZE
 
@@ -797,9 +917,10 @@ extern "C" {
     bigArray = Field (Field(vector, 1), 0);
     int custom = 0;
     GET_TYPE_SIZE
-
-      h_A = (void*)((char*)Data_bigarray_val(bigArray)+
-		    ((Long_val(host_offset)+Long_val(start))*type_size));
+    h_A =(void*)(((host_vector*)(Field(Field(bigArray,0),1)))->vec)+
+      //      h_A = (void*)((char*)Data_bigarray_val(bigArray)+
+      ((Long_val(host_offset)+Long_val(start))*type_size);
+  //);
 
     dev_vec_array = Field(sub_vector, 3);
     dev_vec =Field(dev_vec_array, Int_val(nb_device));

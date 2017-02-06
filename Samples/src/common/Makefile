@@ -43,7 +43,7 @@ $(BYTE): $(MLSRC) $(COBJS)
 else
 
 $(ASM): $(MLSRC)
-	ocamlfind ocamlopt -thread  $(PACKAGES) -linkpkg \
+	ocamlfind ocamlopt -g -thread  $(PACKAGES) -linkpkg \
 	-package spoc_external_kernels -syntax camlp4o $(MLSRC) \
 	-o $(ASM)
 

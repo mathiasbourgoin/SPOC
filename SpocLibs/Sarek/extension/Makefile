@@ -88,4 +88,4 @@ pp_asm: all
 	ocamlfind ocamlopt -thread -package ctypes,spoc,sarek -linkpkg test_pp.ml
 
 clean:
-	rm -rf *.cmo *.cmx *.out *~ *.cmi camlprog.exe *.cma *.asm *.pp.ml *.pp.nat *.pp.byte log
+	rm -rf *.cmo *.cmx *.out *~ *.cmi camlprog.exe *.cma *.asm *.pp.ml *.pp.nat *.pp.byte log kirc_kernel.cl tests/*.pp.* tests/*cm*
