@@ -440,13 +440,54 @@ let sub_vector (vect : ('a, 'b) vector) _start _ok_r
 
 
 
+external bigarray_adress : 'c -> int -> int -> ('a,'b) ptr = "spoc_bigarray_adress"
 
 let of_bigarray_shr kind b = 
   incr vec_id;
   let open Devices in 
   {
     device = (-1);
-    vector = Bigarray b;
+    vector = (*Bigarray b;*)
+      Host_vec
+        (
+         match kind with
+         | Float32 x ->
+           {
+             ptr =  (bigarray_adress b (sizeofFloat32 ()) (Bigarray.Array1.dim b));
+             get = get_float32;
+             set = set_float32;
+           }
+         | Char x ->
+           {
+             ptr = (bigarray_adress b (sizeofChar ()) (Bigarray.Array1.dim b));
+             get = get_char;
+             set = set_char;
+           }
+         | Float64 x ->
+           {
+             ptr = (bigarray_adress b (sizeofFloat64 ()) (Bigarray.Array1.dim b));
+             get = get_float64;
+             set = set_float64;
+           }
+         | Int32 x ->
+           {
+             ptr = (bigarray_adress b (sizeofInt32 ()) (Bigarray.Array1.dim b));
+             get = get_int32;
+             set = set_int32;
+           }
+         | Int64 x ->
+           {
+             ptr = (bigarray_adress b (sizeofInt64 ()) (Bigarray.Array1.dim b));
+             get = get_int64;
+             set = set_int64;
+           }
+         | Complex32 x ->
+           {
+             ptr = (bigarray_adress b (sizeofComplex32 ()) (Bigarray.Array1.dim b));
+             get = get_complex32;
+             set = set_complex32;
+           }
+        ); 
     cuda_device_vec = Array.create (cuda_devices() +1) (init_cuda_device_vec ());
     opencl_device_vec = Array.create (opencl_devices() +1) (init_opencl_device_vec ());
     length =  Bigarray.Array1.dim b;

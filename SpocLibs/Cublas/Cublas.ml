@@ -90,10 +90,10 @@ let rec check_auto_cpu vecs =
          check_auto_cpu  vecs;) 
       | Vector.Dev d  -> 
 	Devices.flush d ();
-	Mem.to_cpu vecs.(i) ();
-	Devices.flush d ()
+ Mem.to_cpu vecs.(i) ();
+ Devices.flush d ()
     done
-
+    
 let rec check_auto vecs dev= 
   if !Mem.auto then
     for i = 0 to Array.length vecs - 1 do
@@ -105,8 +105,8 @@ let rec check_auto vecs dev=
          check_auto vecs dev;) 
       | Vector.Dev d  -> 
 	if Vector.device vecs.(i) != d.Devices.general_info.Devices.id then
-	  Devices.flush d ();
-	Mem.to_device vecs.(i) dev;
+   Devices.flush d ();
+ Mem.to_device vecs.(i) dev;
     done;
   Devices.flush dev ()
 

@@ -141,6 +141,18 @@ extern "C" {
     CAMLreturn(ret);
   }
 
+  CAMLprim value spoc_bigarray_adress(value ba, value type_size, value n){
+    CAMLparam3(ba, type_size,n);
+    CAMLlocal1(ret);
+    ret=caml_alloc(2,0);
+    host_vector* v= (host_vector*)malloc(sizeof(host_vector));
+    v->type_size=Int_val(type_size);
+    v->size=Int_val(n);
+    v->vec=Caml_ba_data_val(ba);
+    Store_field(ret,1,v);
+    CAMLreturn (ret);
+  }
+
 
   CAMLprim value spoc_sub_host_vec(value host_vec, value start, value len)
 {
@@ -388,8 +400,8 @@ extern "C" {
   void cuda_free_after_transfer(CUstream stream, CUresult status, void* data)
   {
     if (data) {
-      //cuMemFree((CUdeviceptr)(data));
-      printf("HERE");
+      cuMemFree((CUdeviceptr)(data));
+      //printf("HERE");
     }
   }
 
@@ -1289,6 +1301,7 @@ extern "C" {
   }
 
 
+  
 
 #ifdef __cplusplus
 }
