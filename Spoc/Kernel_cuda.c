@@ -48,6 +48,7 @@ extern "C" {
 #include <string.h>
 #include "Spoc.h"
 #include "Trac_c.h"
+#define PROFILE
 /**************** KERNEL ******************/
 
 int ae_load_file_to_memory(const char *filename, char **result)
@@ -112,16 +113,21 @@ CAMLprim value spoc_cuda_compile(value moduleSrc, value function_name, value gi)
 	jitOptions[3] = CU_JIT_TARGET_FROM_CUCONTEXT;
 	//CU_JIT_TARGET;
 //	jitOptVals[3] =  (void*)(uintptr_t)CU_TARGET_COMPUTE_11;
+	
+	#ifdef PROFILE
 	/**********************************************/
 	start_gpu_compile_callback();
 	/**********************************************/
+	#endif
 
 	CUDA_CHECK_CALL(cuModuleLoadDataEx(&module, ptx_source, jitNumOptions, jitOptions, (void **)jitOptVals));
 	CUDA_CHECK_CALL(cuModuleGetFunction(kernel, module, functionN));
 
+	#ifdef PROFILE
 	/**********************************************/
 	stop_gpu_compile_callback("COMPILE_CUDA", Int_val(Field(gi, 7)));
 	/**********************************************/
+	#endif
 
 	free(jitLogBuffer);
 	CUDA_RESTORE_CONTEXT;
@@ -168,9 +174,11 @@ CAMLprim value spoc_cuda_debug_compile(value moduleSrc, value function_name, val
 	//CU_JIT_TARGET;
 //	jitOptVals[3] =  (void*)(uintptr_t)CU_TARGET_COMPUTE_10;
 
+	#ifdef PROFILE
 	/**********************************************/
 	start_gpu_compile_callback();
 	/**********************************************/
+	#endif
 
 	cuda_error = (cuModuleLoadDataEx(&module, ptx_source, jitNumOptions, jitOptions, (void **)jitOptVals));
 	if (cuda_error)
@@ -185,9 +193,11 @@ CAMLprim value spoc_cuda_debug_compile(value moduleSrc, value function_name, val
 		fflush (stdout);
 	}
 
+	#ifdef PROFILE
 	/**********************************************/
 	stop_gpu_compile_callback("COMPILE_CUDA", Int_val(Field(gi, 7)));
 	/**********************************************/
+	#endif
 
 	BLOCKING_CUDA_RESTORE_CONTEXT;
 	free(jitLogBuffer);
@@ -407,18 +417,19 @@ CAMLprim value spoc_cuda_launch_grid(value off, value ker, value grid, value blo
   blockX = Int_val(Field(block,0));
   blockY = Int_val(Field(block,1));
   blockZ = Int_val(Field(block,2));
-
+  
   CUDA_GET_CONTEXT;
-
-  kernel = (CUfunction*) ker;
+  
+  kernel = (CUfunction*) ker;  
   extra = (char*)ex;
-
+  
   extra2[0] = CU_LAUNCH_PARAM_BUFFER_POINTER;
   extra2[1] = extra;
   extra2[2] = CU_LAUNCH_PARAM_BUFFER_SIZE;
   extra2[3] = &offset;
   extra2[4] = CU_LAUNCH_PARAM_END;
 
+#ifdef PROFILE	
 	/*********************************************/
 	sync_event_prof();
 	CUevent start_exec;
@@ -429,16 +440,18 @@ CAMLprim value spoc_cuda_launch_grid(value off, value ker, value grid, value blo
 	cuEventRecord(start_exec, queue[Int_val(queue_id)]);
 	cuEventSynchronize(start_exec);
 	/*********************************************/
+#endif
 
   CUDA_CHECK_CALL(cuLaunchKernel(*kernel,
 				 gridX, gridY, gridZ,
-				 blockX, blockY, blockZ,
-				 0, queue[Int_val(queue_id)],
+				 blockX, blockY, blockZ, 
+				 0, queue[Int_val(queue_id)], 
 				 NULL, extra2));
 
   Store_field(off, 0, Val_int(offset));
   free(extra);
 
+#ifdef PROFILE
 	/*********************************************/
 	cuEventRecord(finish_exec, queue[Int_val(queue_id)]);
 	cuEventSynchronize(finish_exec);
@@ -451,6 +464,8 @@ CAMLprim value spoc_cuda_launch_grid(value off, value ker, value grid, value blo
 	cuEventDestroy(finish_exec);
 	free(duration);
 	/*********************************************/
+#endif
+
   CUDA_RESTORE_CONTEXT;
   CAMLreturn(Val_unit);
 }
@@ -499,9 +514,9 @@ CAMLprim value spoc_cuda_flush_all(value gi, value dev){
 
   CAMLprim value spoc_cuda_launch_grid_n(value off, value ker, value grid, value block,  value ex, value gi, value queue_id){
     return spoc_cuda_launch_grid(off, ker, grid, block,  ex, gi, queue_id);
-
+    
   }
-
+  
   CAMLprim value spoc_cuda_launch_grid_b(value* vv , int nb_vals)
   {
     value off = vv[0];

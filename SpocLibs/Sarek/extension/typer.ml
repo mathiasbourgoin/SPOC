@@ -83,50 +83,55 @@ and gen_app_from_constr t cstr =
 
 
 and  typer_id body t tt f =
+  my_eprintf (Printf.sprintf"(*ID %s ### typ %s *)\n%!" (k_expr_to_string body.e) (ktyp_to_string t)) ;
+  (*Printf.eprintf "arg : \n";
+  Hashtbl.iter (fun  s _ -> Printf.eprintf "%s %!" s) !current_args;
+  Printf.eprintf "\nintr : \n";
+    Hashtbl.iter (fun  s _ -> Printf.eprintf "%s %!" s) !intrinsics_const;*)
   match body.e with
-  | Id (l, s) ->
-    (try
-       let var = Hashtbl.find !current_args (string_of_ident s) in
-       my_eprintf ((string_of_ident s)^ " of type " ^(ktyp_to_string t)^"\n");
-       if not (is_unknown t) then
-         if is_unknown var.var_type  then
-           (var.var_type <- t;
-            retype := true;
-            update_type body t)
-         else
-           check var.var_type t l;
-       tt := var.var_type
-     with Not_found ->
-     try
-       let c_const = Hashtbl.find !intrinsics_const (string_of_ident s) in
-       if t = TUnknown then
-         ( update_type body c_const.typ;)
-       else if t <> c_const.typ then
-         (assert (not debug); raise (TypeError (c_const.typ, t, l)))
-     with _ ->
-     try ignore(Hashtbl.find !intrinsics_fun (string_of_ident s) )
-     with _ ->
-     try
-       let cstr = Hashtbl.find !constructors (string_of_ident s) in
-       my_eprintf ("Found a constructor : "^(string_of_ident s)
-                   ^" of type "^cstr.name^" with "
-                   ^(string_of_int cstr.nb_args)^" arguments\n");
-       tt :=
-         if cstr.nb_args <> 0 then
-           gen_app_from_constr cstr s
-         else
-           Custom (cstr.typ, cstr.name);
-     with
-     | _ -> f ())
-  | _ -> assert false
-    
+   | Id (l, s) ->
+     (try
+        (let var = Hashtbl.find !current_args (string_of_ident s) in
+        my_eprintf ((string_of_ident s)^ " of type " ^(ktyp_to_string t)^"\n");
+        if not (is_unknown t) then
+          if is_unknown var.var_type  then
+            (var.var_type <- t;
+             retype := true;
+             update_type body t)
+          else
+            check var.var_type t l;
+        tt := var.var_type)
+      with Not_found ->
+      try
+        let c_const = Hashtbl.find !intrinsics_const (string_of_ident s) in
+        if t = TUnknown then
+          ( update_type body c_const.typ;)
+        else if t <> c_const.typ then
+          (assert (not debug); raise (TypeError (c_const.typ, t, l)))
+      with Not_found ->
+      try ignore(Hashtbl.find !intrinsics_fun (string_of_ident s) )
+      with Not_found ->
+      try
+        let cstr = Hashtbl.find !constructors (string_of_ident s) in
+        my_eprintf ("Found a constructor : "^(string_of_ident s)
+                    ^" of type "^cstr.name^" with "
+                    ^(string_of_int cstr.nb_args)^" arguments\n");
+        tt :=
+          if cstr.nb_args <> 0 then
+            gen_app_from_constr cstr s
+          else
+            Custom (cstr.typ, cstr.name);
+      with
+      | _ -> f ())
+   | _ -> assert false
+
 and typer body t =
   my_eprintf (Printf.sprintf"(* %s ############# typ %s *)\n%!" (k_expr_to_string body.e) (ktyp_to_string t)) ;
   (match body.e with
    | Id (l, s) ->
      let tt = ref t in
      typer_id body t tt (fun () ->
-         assert (not debug); raise (Unbound_value (string_of_ident s, l)));
+         raise (Unbound_value (string_of_ident s, l)));
 
      update_type body !tt
    | ArrSet (l, e1, e2) ->
@@ -153,7 +158,7 @@ and typer body t =
      update_type body (
        match e1.t with
        | TVec tt -> tt
-       | _ -> TVec TUnknown)
+       | _ -> TUnknown)
    (*my_eprintf ((k_expr_to_string e1.e) ^" ++ "^(ktyp_to_string e1.t)^"\n");
      assert false;)*)
    | Seq (l, e1, e2) ->
@@ -236,7 +241,7 @@ and typer body t =
        | IdUid (l,s) -> open_module s l
        | _ -> assert false
      and _close = function
-       | IdAcc (l,a,b) -> _close b; _close a
+       | IdAcc (l,a,b) -> _close a; _close b
        | IdUid (l,s) -> close_module s
        | _ -> assert false
      in
@@ -511,31 +516,33 @@ and typer_app e1 (e2 : kexpr list) t =
       match e1.e with
       | Id (_l, s) ->
         (try (Hashtbl.find !intrinsics_fun (string_of_ident s)).typ , _l
-         with |_ ->
-         try (Hashtbl.find !global_fun (string_of_ident s)).typ , _l
-         with |_ ->
-           try
-             let (f,_,lifted) =
-               (Hashtbl.find !local_fun (string_of_ident s))
-             in
-
-             f.typ,_l
-           with
-	   |_ ->
-      try
-        let cstr = Hashtbl.find !constructors (string_of_ident s) in
-        my_eprintf ("App : Found a constructor : "^(string_of_ident s)
-                    ^" of type "^cstr.name^" with "
-                    ^(string_of_int cstr.nb_args)^" arguments\n");
-        (if cstr.nb_args <> 0 then
-           gen_app_from_constr cstr s
-         else
-           Custom (cstr.typ, cstr.name)),_l
-      with
-      | Not_found  ->
-        assert (not debug); raise (Unbound_value (string_of_ident s,_l) ))
-
-      | ModuleAccess (_l, s, e) ->
+         with
+         | Not_found ->
+           (try (Hashtbl.find !global_fun (string_of_ident s)).typ , _l
+            with
+            | Not_found ->
+              (try
+                 let (f,_,lifted) =
+                   (Hashtbl.find !local_fun (string_of_ident s))
+                 in
+                 f.typ,_l
+               with
+	       | Not_found ->
+          (
+            try
+              let cstr = Hashtbl.find !constructors (string_of_ident s) in
+              my_eprintf ("App : Found a constructor : "^(string_of_ident s)
+                          ^" of type "^cstr.name^" with "
+                          ^(string_of_int cstr.nb_args)^" arguments\n");
+              (if cstr.nb_args <> 0 then
+                 gen_app_from_constr cstr s
+               else
+                 Custom (cstr.typ, cstr.name)),_l
+            with
+            | Not_found  ->
+              assert (not debug); raise (Unbound_value (string_of_ident s,_l) ))
+              )))
+        | ModuleAccess (_l, s, e) ->
         open_module s _l;
         let typ, loc = aux e in
         close_module s;

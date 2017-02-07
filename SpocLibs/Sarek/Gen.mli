@@ -15,7 +15,7 @@ module type CodeGenerator =
     val kern_end : string
     val parse_intrinsics : Kirc_Ast.intrinsics -> string
     val default_parser : bool
-    val parse_fun : int -> Kirc_Ast.k_ext -> string -> Spoc.Devices.device -> string
+    val parse_fun : int -> Kirc_Ast.k_ext -> string -> string -> Spoc.Devices.device -> string
     val parse : int -> Kirc_Ast.k_ext -> Spoc.Devices.device ->  string
   end
 module Generator :
@@ -25,7 +25,7 @@ module Generator :
       val return_v : (string * string) ref
       val global_fun_idx : int ref
       val protos : string list ref
-      val parse_fun : ?profile:bool -> int -> Kirc_Ast.k_ext -> string -> Spoc.Devices.device -> string
+      val parse_fun : ?profile:bool -> int -> Kirc_Ast.k_ext -> string -> string -> Spoc.Devices.device -> string
       val profiler_counter : int ref
       val get_profile_counter : unit -> int
       val parse : ?profile:bool -> int -> Kirc_Ast.k_ext -> Spoc.Devices.device -> string

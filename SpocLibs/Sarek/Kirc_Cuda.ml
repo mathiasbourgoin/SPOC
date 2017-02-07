@@ -52,5 +52,5 @@ let kern_end = "}\n#ifdef __cplusplus\n}\n#endif"
 let parse_intrinsics (cuda,opencl) = cuda
 
 let default_parser = true
-let parse_fun i a b dev = ""
+let parse_fun i a b n dev = ""
 let parse a b dev = ""

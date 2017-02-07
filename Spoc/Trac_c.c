@@ -1,4 +1,5 @@
 #include "Trac_c.h"
+#include <caml/threads.h>
 
 struct timeval start, end;
 int part_count = 0;
@@ -14,12 +15,12 @@ void sync_event_prof(){
     size_t size = info_tab[i].size;
     int vect_id = info_tab[i].vect_id;
     int part_id = info_tab[i].part_id;
-    /* if(part_id == -1){ */
-    /*   stop_transfert_callback("OPENCL_TRANSFER", event_id, size, vect_id, event); */
-    /* } */
-    /* else{ */
-    /*   stop_part_transfert_callback("OPENCL_TRANSFER", event_id, size, part_id, event); */
-    /* } */
+    /* if(part_id == -1){ */
+    /*   stop_transfert_callback("OPENCL_TRANSFER", event_id, size, vect_id, event); */
+    /* } */
+    /* else{ */
+    /*   stop_part_transfert_callback("OPENCL_TRANSFER", event_id, size, part_id, event); */
+    /* } */
   }
   info_elem = 0;
 }
@@ -185,7 +186,8 @@ int start_gpu_execution_callback(const char* desc, int id_device){
   if(closure_f_gpu_exec_start == NULL){
     closure_f_gpu_exec_start = caml_named_value("start_of_exec");
   }
-  return Int_val(caml_callback2(*closure_f_gpu_exec_start, caml_copy_string(desc), Val_int(id_device)));
+  int r = caml_callback2(*closure_f_gpu_exec_start, caml_copy_string(desc), Val_int(id_device));
+  return Int_val(r);
 }
 
 void stop_gpu_execution_callback(int id, double duration){

@@ -36,14 +36,21 @@
 extern "C" {
 #endif
 
-#include "Spoc.h"
+
 #include <assert.h>
 #include <string.h>
+#include "Spoc.h"
 
+  
 
 void free_custom (value v) {
 	void* f = (void*)(Field(v, 1));
-	if (f) free(f);
+	if (f) {
+	  if (noCuda)
+	    free(f);
+	  else
+	    cuMemFreeHost(f);
+	}
 }
 
 
@@ -54,8 +61,15 @@ void free_custom (value v) {
 	char* res;
 	ret = alloc_final(2, free_custom, 0, 1);
 	customSize = Field(custom, 0);
-	res = (char*)malloc(Int_val(size)*Int_val(customSize));
-	fflush (stdout);
+	//	res = (char*)malloc(Int_val(size)*Int_val(customSize)); 
+	if (noCuda){
+	  posix_memalign(&res, OPENCL_PAGE_ALIGN,
+			 ((Int_val(customSize)*Int_val(size) - 1)/OPENCL_CACHE_ALIGN + 1) * OPENCL_CACHE_ALIGN);
+	}
+	else
+	  {
+	    cuMemAllocHost(&res, Int_val(customSize)*Int_val(size));
+	  }
 	Store_field(ret, 1, (value)(res));
 	CAMLreturn(ret);
 }

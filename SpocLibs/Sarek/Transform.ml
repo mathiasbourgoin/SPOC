@@ -102,7 +102,7 @@ let propagate f expr =
   | GInt foo -> GInt foo
   | GFloat foo -> GFloat foo
   | Unit -> Unit
-  | GlobalFun (a,b) -> GlobalFun (f a, b)
+  | GlobalFun (a,b,n) -> GlobalFun (f a, b, n)
   | Constr (a,b,c) -> Constr (a,b,List.map f c)
   | Record (a,c) -> Record (a,List.map f c)
   | RecGet (r,s) -> RecGet (f r, s)
@@ -381,7 +381,7 @@ public:
 
     let default_parser = true
     let parse a b dev = ""
-    let parse_fun i a b dev = ""
+    let parse_fun i a b n dev = ""
   end
   in
   let

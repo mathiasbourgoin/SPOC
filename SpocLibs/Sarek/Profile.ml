@@ -99,7 +99,7 @@ let prof_time_string()=
 
 let fun_counter = ref 0
 
-let rec parse_fun i a b dev =
+let rec parse_fun i a b n dev =
   let open Kirc_Ast in
   let rec aux name a =
     let rec aux2 i a =
@@ -130,7 +130,10 @@ let rec parse_fun i a b dev =
     try snd (Hashtbl.find genereated_functions a) with
     | Not_found ->
       incr fun_counter;
-      let gen_name =  ("spoc_fun"^string_of_int !fun_counter) in
+      let gen_name =
+        if n <> "" then
+          n
+        else ("spoc_fun"^string_of_int !fun_counter) in
       let fun_src = aux gen_name a
       in
       Hashtbl.add genereated_functions a (fun_src,gen_name);
@@ -236,8 +239,8 @@ and  parse i a  dev =
       incr prof_counter;
       s
     | Unit -> "()"
-    | GlobalFun (a,b) ->
-      let s = (parse_fun i a b dev) in
+    | GlobalFun (a,b,n) ->
+      let s = (parse_fun i a b n dev) in
 
       s
     | Intrinsics gv -> parse_intrinsics gv

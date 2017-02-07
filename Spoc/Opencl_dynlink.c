@@ -38,7 +38,8 @@ extern "C" {
 
 
 #include "Opencl_dynlink.h"
-
+#include "Spoc.h"
+  
 tclGetDeviceIDs* clGetDeviceIDs;
 tclGetPlatformIDs* clGetPlatformIDs;
 tclGetPlatformInfo* clGetPlatformInfo;
@@ -143,14 +144,19 @@ tclGetEventProfilingInfo* clGetEventProfilingInfo;
 #define GET_PROC_OPTIONAL(name) GET_PROC_EX(name,name,0)
 #define GET_PROC(name) GET_PROC_REQUIRED(name)
 
-int noCL = 0;
+  //int noCL = 0;
 
 int CL_API_ENTRY clInit(){
     	OPENCLDRIVER OpenCLDrvLib;
     	//int driverVer = 1000;
-
-    	CHECKED_CALL(LOAD_LIBRARY(&OpenCLDrvLib));
-
+	
+    	int res = LOAD_LIBRARY(&OpenCLDrvLib);
+	if (CL_SUCCESS != res){
+	  return 0;
+	}
+	else{
+	  noCL=0;
+	}
 
     	GET_PROC(clGetDeviceIDs);
     	GET_PROC(clGetPlatformIDs);

@@ -37,40 +37,40 @@ ktype ray = {orig : point3; dir: point3}
 ktype color_shine = {color : color; shine : float}
 
 
-klet point_add  = kfun x y ->
+klet point_add  = fun x y ->
     {x = x.x +. y.x;
      y = x.y +. y.y;
      z = x.z +. y.z;
     }
       
-klet dotprod  = kfun a b ->
+klet dotprod  = fun a b ->
     a.x *. b.x +. a.y *. b.y +. a.z *. b.z
 					 
-klet point_mag = kfun p ->
+klet point_mag = fun p ->
     Math.Float32.sqrt (dotprod p p)
 		      
-klet point_div = kfun p s  ->
+klet point_div = fun p s  ->
       {x = p.x /. s;
        y = p.y /. s;
        z = p.z /.s;
       }
-klet unit_length  = kfun p ->
+klet unit_length  = fun p ->
     point_div p (point_mag p)
 
-klet point_mul = kfun p s  ->
+klet point_mul = fun p s  ->
       {x = p.x *. s;
        y = p.y *. s;
        z = p.z *.s;
       }
 	
-klet point_diff  = kfun x y ->
+klet point_diff  = fun x y ->
     {x = x.x -. y.x;
      y = x.y -. y.y;
      z = x.z -. y.z;
     }
 
 
-klet distance_to = kfun obj origin direction ->
+klet distance_to = fun obj origin direction ->
   match obj with
   | Sphere s ->  
      let point = point_add origin
@@ -97,7 +97,7 @@ klet distance_to = kfun obj origin direction ->
 
 
 	   
-klet castray = kfun origin dir objects nb_objs -> 
+klet castray = fun origin dir objects nb_objs -> 
   let mutable r = MatchMiss in
   for i = 0 to nb_objs - 1 do
     let dist = distance_to  objects.[<i>] origin dir in
@@ -114,22 +114,22 @@ klet castray = kfun origin dir objects nb_objs ->
   done;
   r
 
-klet add_color = kfun c1 c2 ->
+klet add_color = fun c1 c2 ->
     {r = c1.r +. c2.r;
      g = c1.g +. c2.g;
      b = c1.b +. c2.b}
 
-klet scale_colour = kfun c1 s ->
+klet scale_colour = fun c1 s ->
     {r = c1.r *. s;
      g = c1.g *. s;
      b = c1.b *. s}
       
-klet mul_colour = kfun c1 c2 ->
+klet mul_colour = fun c1 c2 ->
     {r = c1.r *. c2.r;
      g = c1.g *. c2.g;
      b = c1.b *. c2.b}
 		  
-klet checkray = kfun orig dir dist objects nb_objs ->
+klet checkray = fun orig dir dist objects nb_objs ->
   let mutable r = true in
   let mutable hit =  false in
   let mutable i =  0 in
@@ -145,7 +145,7 @@ klet checkray = kfun orig dir dist objects nb_objs ->
   done;
   r
     
-klet applyLights = kfun pos normal lights  objects nb_lights nb_objs ->
+klet applyLights = fun pos normal lights  objects nb_lights nb_objs ->
   let mutable color = {r=0.; g=0.;  b=0.;} in
   for i = 0 to nb_lights - 1 do
     let light = lights.[<i>] in
@@ -161,22 +161,23 @@ klet applyLights = kfun pos normal lights  objects nb_lights nb_objs ->
   done;
   color
 	   
-klet clamp = kfun x ->
-  if x <. 0. then 0.
-  else if x >. 1. then 1.
-  else x 
+klet myclamp = fun (x :float)  ->
+        ($"clamp (x,0.f,1.f)"$ : float)
+(*    if x <. 0. then 0.
+    else if x >. 1. then 1.
+      else x *)
 
 	 
-klet clamp_colour = kfun c ->
-       {r = clamp c.r;
-	g = clamp c.g;
-	b = clamp c.b;}
+klet clamp_colour = fun c ->
+       {r = myclamp c.r;
+	g = myclamp c.g;
+	b = myclamp c.b;}
 ktype nsc =
 	 { n : point3;
 	   s : float;
 	   c : color;
 	 }
-klet nsc_ = kfun o point ->
+klet nsc_ = fun o point ->
     let open Std in
     match o with
     | Sphere s ->
@@ -257,11 +258,11 @@ let raytrace =
        bce := bce - 1;
      done)
 	
-let devid = 2
+let devid = 4
 
 
 let _ =
-  let devs = Devices.init ~only:Devices.OpenCL () in
+  let devs = Devices.init  ~only:Devices.OpenCL() in
   let dev = devs.(devid) in
 
   let width = 640 in
@@ -412,6 +413,7 @@ in
   
   let name = dev.Spoc.Devices.general_info.Spoc.Devices.name in
 
+  
   measure_time (fun () ->
 		Kirc.run  cast_view_ray
 			  (width, height, fov, eyev, rays) 
@@ -431,6 +433,9 @@ in
      Devices.flush dev ();)  "GPU to raytrace";
   
 
+  Graphics.open_graph "";
+  Graphics.resize_window (width) (height);
+  
   let colors =
     measure_time
       (fun () -> Array.init height 
@@ -440,25 +445,36 @@ in
                let c= Mem.get imgs (y*width+x) in
                c.r,c.g, c.b
              in
-             (*Printf.printf "r : %g, g : %g, b : %g\n" r g b;*)
-             Graphics.rgb (int_of_float (r *.255.) ) (int_of_float (g *. 255.)) (int_of_float (b *. 255.))))
+             
+
+             let i x = int_of_float (x *. 255.) in
+             (*Printf.printf "r : %d, g : %d, b : %d\n" (i r) (i g) (i b);*)
+             
+             (*            Graphics.plot (x) (height-y);*)
+             Graphics.rgb (i r) (i g) (i b)))
+
       ) "CPU to convert into colors"
   in
-  Graphics.open_graph "";
-  Graphics.resize_window width height;
-  Graphics.draw_image (Graphics.make_image colors) 0 0 ;
+  Graphics.set_color (Graphics.rgb 0 0 0);
+  let img = (Graphics.make_image colors) in
+  Graphics.draw_image img  0 0 ;
   Graphics.synchronize ();
-  ignore(read_line ());
-  let image = Rgb24.make width height
-			 {Color.Rgb.r = 0; g=0; b=0; } in
+
+
+  while (not (Graphics.key_pressed ())) do
+    ();
+  done;
+  let open Color.Rgb in
+  let image = Rgb24.make width height 
+			 { r= 0; g=0; b=0; } in
   for y = 0 to height - 1 do
     for x = 0 to width - 1 do
       let r,g,b =
-	let c= Mem.get imgs (y*width+x) in
+	let c= Mem.unsafe_get imgs (y*width+x) in
 	let i x = int_of_float (x *. 255.) in
 	i c.r, i c.g, i c.b
       in
-      Rgb24.set image x y {Color.Rgb.r = r; g=g; b=b;}
+      Rgb24.set image x y {r = r; g=g; b=b;}
     done
   done;
   Png.save "ray.png" [] (Images.Rgb24 image)

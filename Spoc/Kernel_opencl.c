@@ -49,10 +49,6 @@ extern "C" {
 #include "Spoc.h"
 #include "Trac_c.h"
 
-void p (char* s){
-	printf ("%s", s);
-	fflush (stdout);
-}
 
 CAMLprim value spoc_opencl_compile(value moduleSrc, value function_name, value gi){
 	CAMLparam3(moduleSrc, function_name, gi);
@@ -128,7 +124,7 @@ CAMLprim value spoc_debug_opencl_compile(value moduleSrc, value function_name, v
 	                           paramValue,
 					 &param_value_size_ret);
 	
-	fprintf(stdout, " %s" , paramValue);
+	fprintf(stderr, " %s" , paramValue);
 	free(paramValue);
 	OPENCL_CHECK_CALL1(kernel, clCreateKernel(hProgram, functionN, &opencl_error));
 	OPENCL_RESTORE_CONTEXT;

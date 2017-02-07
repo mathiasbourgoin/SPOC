@@ -7,6 +7,7 @@ type ('a, 'b, 'c) kirc_kernel = {
 }
 type ('a,'b,'c, 'd) kirc_function =
   {
+    fun_name:string;
     ml_fun : 'a;
     funbody : Kirc_Ast.k_ext;
     fun_ret : Kirc_Ast.k_ext* ('b,'c) Spoc.Vector.kind;
@@ -62,7 +63,7 @@ val spoc_ife :
   Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val spoc_if : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val spoc_match : string -> Kirc_Ast.k_ext -> Kirc_Ast.case array -> Kirc_Ast.k_ext
-val spoc_case : int -> (string*string*int) option -> Kirc_Ast.k_ext -> Kirc_Ast.case
+val spoc_case : int -> (string*string*int*string) option -> Kirc_Ast.k_ext -> Kirc_Ast.case
 val spoc_do :
   Kirc_Ast.k_ext ->
   Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
@@ -259,6 +260,7 @@ module Math :
         val zero : float
         val one : float
         val of_float32 : float -> float
+        val of_float : float -> float
         val to_float32 : float -> float
         val make_shared : Int32.t -> float array
         val make_local : Int32.t -> float array

@@ -7,6 +7,8 @@ open Typer
 open Mparser
 open Debug
 
+let fastflow=false
+
 let get_ff_type p =
     match p with
     | PaId (_loc, IdLid (_loc2, x) ) ->

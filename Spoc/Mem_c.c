@@ -39,15 +39,145 @@ extern "C" {
 #include "Mem_c.h"
 #include "Trac_c.h"
 #include <assert.h>
+#define PROFILE
 
 
+  #define spocsizeof(name,typename)			\
+    CAMLprim value sizeof##name(){		\
+      CAMLparam0();				\
+      CAMLreturn (Val_int(sizeof(typename)));	\
+    }						
+    
+  spocsizeof(Float32,float)
+  spocsizeof(Float64,double)
+  spocsizeof(Int32,int)
+  spocsizeof(Int64,long)
+  spocsizeof(Char,char)
+  spocsizeof(Complex32,double2)
 
+
+  #define  get(name,type,macro)				\
+    CAMLprim value get_##name(value v, value idx){	\
+    CAMLparam2(v, idx);					\
+    host_vector* vec = (host_vector*) (Field(v,1));	\
+    type r = ((type*)(vec->vec))[Int_val(idx)];		\
+    CAMLreturn (macro(r));				\
+    }
+
+  #define  set(name,type,macro)					\
+    CAMLprim value set_##name(value v, value idx, value val ){	\
+      CAMLparam3(v, idx, val);					\
+      host_vector* vec = (host_vector*) (Field(v,1));		\
+      type r = macro(val);					\
+      ((type*)(vec->vec))[Int_val(idx)] = r;			\
+      CAMLreturn (Val_unit);					\
+    }
+
+  get(int32,int,caml_copy_int32)
+  get(int64,long,caml_copy_int64)
+  get(float64,double,caml_copy_double)
+  get(char,int,Val_int)
+
+  set(int32,int,Int32_val)
+  set(int64,long,Int64_val)
+  set(float64,double,Double_val)
+  set(char,int,Int_val)
+  
+  CAMLprim value get_float32(value v, value idx){	
+    CAMLparam2(v, idx);					
+    host_vector* vec = (host_vector*) (Field(v,1));	
+    float r = ((float*)(vec->vec))[Int_val(idx)];		
+    CAMLreturn (caml_copy_double((double)r));				
+  }
+
+
+  CAMLprim value set_float32(value v, value idx, value val ){	
+      CAMLparam3(v, idx, val);					
+      host_vector* vec = (host_vector*) (Field(v,1));
+      float r = (float)Double_val(val);					
+      ((float*)(vec->vec))[Int_val(idx)] = r;
+      CAMLreturn (Val_unit);				       
+    }
+  
+  CAMLprim value get_complex32(value v, value idx){
+    CAMLparam2(v, idx);					
+    UNIMPLENTED;
+    CAMLreturn(Val_unit);
+  }
+
+  CAMLprim value set_complex32(value v, value idx, value val ){	
+    CAMLparam3(v, idx, val);
+    UNIMPLENTED;
+    CAMLreturn (Val_unit);
+  }
+  
+  void free_host(value v){
+    host_vector* vec = (host_vector*) (Field(v,1));
+    if (vec->vec) {
+      if  (noCuda){
+	free(vec->vec);
+      }
+      else{
+	cuMemFreeHost(vec->vec);
+      }
+    }
+    free(vec);
+  }
+  
+  CAMLprim value host_alloc (value type_size, value n){
+    CAMLparam2(type_size,n);
+    CAMLlocal1(ret);
+    ret=alloc_final(2, free_host, 0,  1);
+    host_vector* v= (host_vector*)malloc(sizeof(host_vector));
+    v->type_size=Int_val(type_size);
+    v->size=Int_val(n);
+    if (noCuda){
+      posix_memalign(&(v->vec), OPENCL_PAGE_ALIGN,
+		     ((Int_val(type_size)*Int_val(n) - 1)/OPENCL_CACHE_ALIGN + 1) * OPENCL_CACHE_ALIGN);
+    }
+    else
+      {
+	cuMemAllocHost(&(v->vec), Int_val(type_size)*Int_val(n));
+      }
+    Store_field(ret,1,v);
+    CAMLreturn(ret);
+  }
+
+  CAMLprim value spoc_bigarray_adress(value ba, value type_size, value n){
+    CAMLparam3(ba, type_size,n);
+    CAMLlocal1(ret);
+    ret=caml_alloc(2,0);
+    host_vector* v= (host_vector*)malloc(sizeof(host_vector));
+    v->type_size=Int_val(type_size);
+    v->size=Int_val(n);
+    v->vec=Caml_ba_data_val(ba);
+    Store_field(ret,1,v);
+    CAMLreturn (ret);
+  }
+
+
+  CAMLprim value spoc_sub_host_vec(value host_vec, value start, value len)
+{
+  CAMLparam3(host_vec, start, len);
+  CAMLlocal1(ret);
+  ret=caml_alloc(2,0);
+  host_vector* parent = (host_vector*) (Field(host_vec,1));
+  host_vector* v = (host_vector*)malloc(sizeof(host_vector));
+  v->type_size = parent->type_size;
+  v->size = len;
+  v->vec = (char*)parent->vec+(v->type_size*Int_val(start));
+  Store_field(ret,1,v);
+  CAMLreturn(ret);
+}  
+
+  
   void cuda_free_vec (value v) {
     cu_vector* cuv = (cu_vector*)(Field(v, 1));
     if (cuv)
       {
-
 	CUdeviceptr f = cuv->cu_vector;
+	
+	#ifdef PROFILE
 	/***************************************/
 	CAMLlocal1(bigArray);
 	int size;
@@ -61,6 +191,7 @@ extern "C" {
 	GET_TYPE_SIZE;
 	gpu_free_callback("GPU_FREE", Field(v, 9), Field(v,0), "CUDA", size*type_size);
 	/***************************************/
+	#endif
 	enum cudaError_enum cuda_error = 0;
 	if (f)
 	  {
@@ -129,19 +260,25 @@ extern "C" {
 
     cuv = (cu_vector*)Field(dev_vec, 1);
     d_A = cuv->cu_vector;
-    h_A = (void*)((char*)Data_bigarray_val(bigArray)+((Long_val(host_offset)+Long_val(start)+seek)*type_size));
+    h_A =(void*)(((host_vector*)(Field(Field(bigArray,0),1)))->vec)+
+      ((Long_val(host_offset)+Long_val(start)+seek)*type_size);
+	//(void*)((char*)Data_bigarray_val(bigArray)+((Long_val(host_offset)+Long_val(start)+seek)*type_size));
 
     size = Int_val(Field(sub_vector, 4))-seek;
 
+    #ifdef PROFILE
     /************************************************/
     int event_id = start_part_transfert_callback("PART_CPU_TO_DEVICE", ((Long_val(part_size))*type_size), ((Int_val(Field(vector, 4))-seek)*type_size), Int_val(Field(sub_vector, 9)), Int_val(Field(vector, 9)), "CUDA", Int_val(nb_device), NULL);
     /************************************************/
-    
-    CUDA_CHECK_CALL(cuMemcpyHtoD(d_A+((Long_val(guest_offset)+seek)*type_size), h_A, (Long_val(part_size))*type_size));
+    #endif
 
+    CUDA_CHECK_CALL(cuMemcpyHtoDAsync(d_A+((Long_val(guest_offset)+seek)*type_size), h_A, (Long_val(part_size))*type_size, queue[Int_val(queue_id)]));
+
+    #ifdef PROFILE
     /************************************************/
     stop_part_transfert_callback("PART_CPU_TO_DEVICE", event_id, ((Long_val(part_size))*type_size), Int_val(Field(sub_vector, 9)), NULL);
     /************************************************/
+    #endif
 
     CUDA_RESTORE_CONTEXT;
     //Store_field(dev_vec, 1, Val_CUdeviceptr(d_A));
@@ -149,7 +286,7 @@ extern "C" {
     //Store_field(sub_vector, 2, dev_vec_array);
     CAMLreturn(Val_unit);
   }
-  
+
   CAMLprim value spoc_cuda_part_cpu_to_device_b(value *tab_val, value nb_val){
     value vector = tab_val[0];
     value sub_vector = tab_val[1];
@@ -188,25 +325,27 @@ extern "C" {
     dev_vec = Field(dev_vec_array, Int_val(nb_device));
     cuv = (cu_vector*)Field(dev_vec, 1);
     d_A = cuv->cu_vector;
-    int event_id;
     CUDA_GET_CONTEXT;
     gcInfo = (spoc_cuda_gc_info*) gc_info;
-    h_A = (void*)Data_bigarray_val(bigArray);
+    h_A =(void*)(((host_vector*)(Field(Field(bigArray,0),1)))->vec);
+  //h_A = (void*)Data_bigarray_val(bigArray);
     int custom = 0;
     GET_TYPE_SIZE;
-    size = Int_val(Field(vector, 4))-seek;
-
+    size =Int_val(Field(vector, 4))-seek;
+    
+    #ifdef PROFILE
     /************************************************/
     event_id = start_transfert_callback("CPU_TO_DEVICE", size*type_size, Int_val(Field(vector, 9)), "CUDA", Int_val(Field(gi, 7)), NULL);
     /************************************************/
+    #endif
 
-    CUDA_CHECK_CALL(cuMemcpyHtoD(d_A+(seek*type_size), h_A+(seek*type_size), size*type_size));
+    CUDA_CHECK_CALL(cuMemcpyHtoDAsync(d_A+(seek*type_size), h_A+(seek*type_size), size*type_size, queue[Int_val(queue_id)]));
 
-
-
+    #ifdef PROFILE
     /************************************************/
     stop_transfert_callback("CPU_TO_DEVICE", event_id, size*type_size, Int_val(Field(vector, 9)), NULL);
     /************************************************/
+    #endif
 
     //Store_field(dev_vec, 1, Val_CUdeviceptr(d_A));
     //Store_field(dev_vec, 2, (value) spoc_ctx);
@@ -240,17 +379,19 @@ extern "C" {
     d_A = cuv->cu_vector;
 
     CUDA_GET_CONTEXT;
-
+    #ifdef PROFILE
     /************************************************/
     int event_id = start_part_transfert_callback("PART_CPU_TO_DEVICE_CUSTOM", ((Long_val(part_size))*type_size), ((Int_val(Field(vector, 4))-seek)*type_size), Int_val(Field(sub_vector, 9)), Int_val(Field(vector, 9)), "CUDA", Int_val(nb_device), NULL);
     /* Why no long_val in cuMemcpyHtoD call ? */
     /************************************************/
+    #endif
+    CUDA_CHECK_CALL(cuMemcpyHtoDAsync(d_A+(Int_val(offset)+seek*type_size), h_A+(Int_val(offset))+Int_val(start)+seek*type_size, part_size*type_size, queue[Int_val(queue_id)]));
 
-    CUDA_CHECK_CALL(cuMemcpyHtoD(d_A+(Int_val(offset)+seek*type_size), h_A+(Int_val(offset))+Int_val(start)+seek*type_size, part_size*type_size));
-
+   #ifdef PROFILE
     /************************************************/
     stop_part_transfert_callback("PART_CPU_TO_DEVICE_CUSTOM", event_id, ((Long_val(part_size))*type_size), Int_val(Field(sub_vector, 9)), NULL);
     /************************************************/
+    #endif
 
     //Store_field(dev_vec, 1, Val_CUdeviceptr(d_A));
     //Store_field(dev_vec, 2, (value) spoc_ctx);
@@ -301,15 +442,19 @@ extern "C" {
 
     CUDA_GET_CONTEXT;
 
+    #ifdef PROFILE
     /************************************************/
     int event_id = start_transfert_callback("CPU_TO_DEVICE_CUSTOM", size*type_size, Int_val(Field(vector, 9)), "CUDA",Int_val(Field(gi, 7)), NULL);
     /************************************************/
+    #endif
 
-    CUDA_CHECK_CALL(cuMemcpyHtoD(d_A+seek*type_size, h_A+seek*type_size, size*type_size));
+    CUDA_CHECK_CALL(cuMemcpyHtoDAsync(d_A+seek*type_size, h_A+(seek*type_size), size*type_size, queue[Int_val(queue_id)]));
 
+    #ifdef PROFILE
     /************************************************/
     stop_transfert_callback("CPU_TO_DEVICE_CUSTOM", event_id, size*type_size, Int_val(Field(vector, 9)), NULL);
     /************************************************/
+    #endif
 
     //Store_field(dev_vec, 1, Val_CUdeviceptr(d_A));
     //Store_field(dev_vec, 2, (value) spoc_ctx);
@@ -328,12 +473,14 @@ extern "C" {
 
   }
 
-  /*void cuda_free_after_transfer(CUstream stream, CUresult status, void* data) {
+#ifndef PROFILE
+  void cuda_free_after_transfer(CUstream stream, CUresult status, void* data)
+  {
     if (data) {
       cuMemFree((CUdeviceptr)(data));
     }
-  }*/
-
+  }
+#else
   void cuda_free_after_transfer(CUstream stream, CUresult status, void* data) {
     CAMLlocal3(dev_vec, dev_vec_array, bigArray);
     value* tab = (value*)data;
@@ -365,6 +512,7 @@ extern "C" {
     free(tab);
 
   }
+#endif
 
   CAMLprim value spoc_cuda_device_to_cpu(value vector, value nb_device, value gi, value device, value queue_id) {
     CAMLparam4(vector, nb_device, gi, queue_id);
@@ -394,10 +542,12 @@ extern "C" {
 
     CUDA_CHECK_CALL(cuDeviceGet(&dev, Int_val(nb_device)));
 
-    h_A = (void*)Data_bigarray_val(bigArray);
+  //h_A = (void*)Data_bigarray_val(bigArray);
+    h_A =(void*)(((host_vector*)(Field(Field(bigArray,0),1)))->vec);
     int custom = 0;
     GET_TYPE_SIZE;
 
+    #ifdef PROFILE
     /************************************************/
     int event_id = start_transfert_callback("DEVICE_TO_CPU", size*type_size, Int_val(Field(vector, 9)), "CUDA", Int_val(Field(gi, 7)), NULL);
     value* data_table = malloc(3 * sizeof(value));
@@ -405,12 +555,16 @@ extern "C" {
     data_table[1] = nb_device;
     data_table[2] = Val_int(event_id);
     /************************************************/
+    #endif
 
     CUDA_CHECK_CALL(cuMemcpyDtoHAsync((void*)h_A+seek*type_size, d_A+seek*type_size, size*type_size, queue[Int_val(queue_id)]));
     //CUDA_CHECK_CALL(cuStreamAddCallback(queue[Int_val(queue_id)], cuda_free_after_transfer, (void*)d_A, 0));
-    CUDA_CHECK_CALL(cuStreamAddCallback(queue[Int_val(queue_id)], cuda_free_after_transfer, (void*)data_table, 0));
 
-
+    #ifdef PROFILE
+	CUDA_CHECK_CALL(cuStreamAddCallback(queue[Int_val(queue_id)], cuda_free_after_transfer, (void*)data_table, 0));
+    #else	
+    CUDA_CHECK_CALL(cuStreamAddCallback(queue[Int_val(queue_id)], cuda_free_after_transfer, (void*)d_A, 0));
+    #endif
     /*
       CUDA_CHECK_CALL(cuEventCreate(&(evt->evt), CU_EVENT_BLOCKING_SYNC));
       evt->vec = d_A;
@@ -446,6 +600,7 @@ extern "C" {
 
     Store_field(dev_vec, 1, (value)NULL);
 
+    #ifdef PROFILE
     /***************************************/
     int type_size;
     int size;
@@ -457,6 +612,8 @@ extern "C" {
     GET_TYPE_SIZE;
     gpu_free_callback("GPU_FREE", Field(vector, 9), nb_device, "CUDA", size*type_size);
     /***************************************/
+    #endif
+
     CAMLreturn(Val_unit);
   }
 
@@ -480,7 +637,7 @@ extern "C" {
 	cuMemFree(cuv->cu_vector);
       free(cuv);
     }
-    cuv = (cu_vector*)malloc(sizeof(cu_vector*));
+    cuv = (cu_vector*)malloc(sizeof(cu_vector));
 
     size = Int_val(Field(vector, 4));
     cuv->cu_size = size;
@@ -492,9 +649,12 @@ extern "C" {
     CUDA_CHECK_CALL(cuMemAlloc(&cuv->cu_vector, size*type_size));
 
 
+    #ifdef PROFILE
     /***************************************/
     gpu_alloc_callback("GPU_ALLOC", Int_val(Field(vector, 9)), nb_device, "CUDA", size*type_size);
     /***************************************/
+    #endif
+
     CUDA_RESTORE_CONTEXT;
 
     Store_field(dev_vec, 1, (value)cuv);
@@ -513,7 +673,7 @@ extern "C" {
 
   CAMLprim value spoc_opencl_free_vect(value vector, value nb_device){
     CAMLparam2(vector, nb_device);
-    CAMLlocal3(bigArray, dev_vec_array, dev_vec);
+    CAMLlocal2(dev_vec_array, dev_vec);
     void* h_A;
     cl_mem d_A;
     dev_vec_array = Field(vector, 3);
@@ -527,6 +687,7 @@ extern "C" {
 
     Store_field(dev_vec, 1, Val_cl_mem(d_A));
 
+    #ifdef PROFILE
     /***************************************/
     int type_size;
     int size;
@@ -539,6 +700,7 @@ extern "C" {
     GET_TYPE_SIZE;
     gpu_free_callback("GPU_FREE", Field(vector, 9), nb_device, "OPENCL", size*type_size);
     /***************************************/
+    #endif
 
     CAMLreturn(Val_unit);
   }
@@ -553,7 +715,8 @@ extern "C" {
     int type_size;
     int tag;
     bigArray = Field (Field(vector, 1), 0);
-    h_A = (void*)Data_bigarray_val(bigArray);
+    h_A =(void*)(((host_vector*)(Field(Field(bigArray,0),1)))->vec);
+  //h_A = (void*)Data_bigarray_val(bigArray);
     dev_vec_array = Field(vector, 3);
     dev_vec =Field(dev_vec_array, Int_val(nb_device));
     d_A = Cl_mem_val(Field(dev_vec, 1));
@@ -562,10 +725,12 @@ extern "C" {
     OPENCL_GET_CONTEXT;
     int custom = 0;
     GET_TYPE_SIZE;
+    
+    #ifdef PROFILE
     /***************************************/
     gpu_alloc_callback("GPU_ALLOC", Int_val(Field(vector, 9)), nb_device, "OPENCL", size*type_size);
     /***************************************/
-
+    #endif
 
     OPENCL_CHECK_CALL1(d_A, clCreateBuffer(ctx, CL_MEM_READ_WRITE, size*type_size, NULL, &opencl_error));
     OPENCL_RESTORE_CONTEXT;
@@ -604,10 +769,11 @@ extern "C" {
     OPENCL_CHECK_CALL1(d_A, clCreateBuffer(ctx, CL_MEM_READ_WRITE, size*type_size, NULL, &opencl_error));
 
 
-
+    #ifdef PROFILE
     /***************************************/
     gpu_alloc_callback("GPU_ALLOC", Int_val(Field(vector, 9)), nb_device, "OPENCL", size*type_size);
     /***************************************/
+    #endif
 
     OPENCL_RESTORE_CONTEXT;
 
@@ -635,21 +801,36 @@ extern "C" {
     int custom = 0;
     GET_TYPE_SIZE;
 
-    h_A = (char*)Data_bigarray_val(bigArray)+((Long_val(host_offset)+Long_val(start))*type_size);
+    h_A =(void*)(((host_vector*)(Field(Field(bigArray,0),1)))->vec)+
+      ((Long_val(host_offset)+Long_val(start))*type_size);
+  //    h_A = (char*)Data_bigarray_val(bigArray)+((Long_val(host_offset)+Long_val(start))*type_size);
 
     size = Int_val(Field(sub_vector, 4));
 
+    #ifdef PROFILE
     /************************************************/
     int event_id = start_part_transfert_callback("PART_DEVICE_TO_CPU", ((Long_val(part_size))*type_size),
     (Int_val(Field(vector, 4))*type_size), Int_val(Field(sub_vector, 9)), Int_val(Field(vector, 9)), "CUDA", Int_val(nb_device), NULL);
+    value* data_table = malloc(3 * sizeof(value));
+    data_table[0] = vector;
+    data_table[1] = nb_device;
+    data_table[2] = Val_int(event_id);    
     /************************************************/
+    #endif
 
-    CUDA_CHECK_CALL(cuMemcpyDtoH(h_A, d_A+(Long_val(guest_offset)*type_size) /* (gcInfo->curr_ptr)*/,  (Long_val(part_size))*type_size));
+    CUDA_CHECK_CALL(cuMemcpyDtoHAsync(h_A+(Long_val(guest_offset)*type_size), d_A /* (gcInfo->curr_ptr)*/,  (Long_val(part_size))*type_size, queue[Int_val(queue_id)]));
 
+    #ifdef PROFILE
+	CUDA_CHECK_CALL(cuStreamAddCallback(queue[Int_val(queue_id)], cuda_free_after_transfer, (void*)data_table, 0));
+    #else	
+    CUDA_CHECK_CALL(cuStreamAddCallback(queue[Int_val(queue_id)], cuda_free_after_transfer, (void*)d_A, 0));
+    #endif
+
+    #ifdef PROFILE
     /************************************************/
     stop_part_transfert_callback("PART_DEVICE_TO_CPU", event_id, ((Long_val(part_size))*type_size), Int_val(Field(sub_vector, 9)), NULL);
     /************************************************/
-
+    #endif
     CUDA_RESTORE_CONTEXT;
     CAMLreturn(Val_unit);
   }
@@ -716,15 +897,29 @@ extern "C" {
 
     CUDA_CHECK_CALL(cuDeviceGet(&dev, Int_val(nb_device)));
 
+    #ifdef PROFILE
     /************************************************/
     int event_id = start_transfert_callback("DEVICE_TO_CPU_CUSTOM", size*type_size, Int_val(Field(vector, 9)), "CUDA", Int_val(Field(gi, 7)), NULL);
+    value* data_table = malloc(3 * sizeof(value));
+    data_table[0] = vector;
+    data_table[1] = nb_device;
+    data_table[2] = Val_int(event_id);
     /************************************************/
+    #endif
 
-    CUDA_CHECK_CALL(cuMemcpyDtoH((void*)h_A, d_A, size*type_size));
-
+   CUDA_CHECK_CALL(cuMemcpyDtoHAsync((void*)h_A, d_A, size*type_size, queue[Int_val(queue_id)]));
+    
+    #ifdef PROFILE
+	CUDA_CHECK_CALL(cuStreamAddCallback(queue[Int_val(queue_id)], cuda_free_after_transfer, (void*)data_table, 0));
+    #else	
+    CUDA_CHECK_CALL(cuStreamAddCallback(queue[Int_val(queue_id)], cuda_free_after_transfer, (void*)d_A, 0));
+    #endif
+    
+    #ifdef PROFILE
     /************************************************/
     stop_transfert_callback("CPU_TO_DEVICE_CUSTOM", event_id, size*type_size, Int_val(Field(vector, 9)), NULL);
     /************************************************/
+    #endif
 
     CUDA_RESTORE_CONTEXT;
 
@@ -743,7 +938,8 @@ extern "C" {
     int type_size;
     int tag;
     bigArray = Field (Field(vector, 1), 0);
-    h_A = (void*)Data_bigarray_val(bigArray);
+  //h_A = (void*)Data_bigarray_val(bigArray);
+    h_A =(void*)(((host_vector*)(Field(Field(bigArray,0),1)))->vec);
     dev_vec_array = Field(vector, 3);
 
     dev_vec =Field(dev_vec_array, Int_val(nb_device));
@@ -752,14 +948,19 @@ extern "C" {
     int custom = 0;
     GET_TYPE_SIZE;
 
+    #ifdef PROFILE
     cl_event start_transfert, end_transfert, event_transfert;
+    #endif
     OPENCL_GET_CONTEXT;
 
+    #ifdef PROFILE
     /**************************************************/
     int id = start_transfert_callback("CPU_TO_DEVICE", size*type_size, Int_val(Field(vector, 9)), "OPENCL", Int_val(Field(gi, 7)), start_transfert);
     
     /**************************************************/
+    #endif
 
+    #ifdef PROFILE
     OPENCL_CHECK_CALL1(
 		       opencl_error, clEnqueueWriteBuffer
 		       (queue[Int_val(queue_id)], d_A, CL_FALSE,
@@ -770,9 +971,14 @@ extern "C" {
     /**************************************************/
     stop_transfert_callback("CPU_TO_DEVICE", id, size*type_size, Int_val(Field(vector, 9)), start_transfert);
     /**************************************************/
+    #else
+    OPENCL_CHECK_CALL1(
+		       opencl_error, clEnqueueWriteBuffer
+		       (queue[Int_val(queue_id)], d_A, CL_FALSE,
+			0, size*type_size, h_A, 0, NULL, NULL));
+    #endif
     OPENCL_RESTORE_CONTEXT;
 
-    
     Store_field(dev_vec, 1, Val_cl_mem(d_A));
     Store_field(dev_vec_array, Int_val(nb_device), dev_vec);
     CAMLreturn(Val_unit);
@@ -800,16 +1006,24 @@ extern "C" {
     d_A = Cl_mem_val(Field(dev_vec, 1));
     OPENCL_GET_CONTEXT;
 
+    #ifdef PROFILE
     /**************************************************/
     cl_event event_transfert;
     /**************************************************/
+    #endif
 
     OPENCL_TRY("clGetContextInfo", clGetContextInfo(ctx, CL_CONTEXT_DEVICES, (size_t)sizeof(cl_device_id), &device_id, NULL)) ;
+    #ifdef PROFILE
     OPENCL_CHECK_CALL1(opencl_error, clEnqueueWriteBuffer(queue[Int_val(queue_id)], d_A, CL_FALSE, seek, size*type_size, h_A, seek, NULL, &event_transfert));
+    #else
+    OPENCL_CHECK_CALL1(opencl_error, clEnqueueWriteBuffer(queue[Int_val(queue_id)], d_A, CL_FALSE, seek, size*type_size, h_A, seek, NULL, NULL));
+    #endif
 
+    #ifdef PROFILE
     /**************************************************/
     start_transfert_callback("CPU_TO_DEVICE_CUSTOM", size*type_size, Int_val(Field(vector, 9)), "OPENCL", Int_val(Field(gi, 7)), event_transfert);
     /**************************************************/
+    #endif
 
     OPENCL_RESTORE_CONTEXT;
     CAMLreturn(Val_unit);
@@ -832,20 +1046,25 @@ extern "C" {
     bigArray = Field (Field(vector, 1), 0);
     int custom = 0;
     GET_TYPE_SIZE
-
-      h_A = (void*)((char*)Data_bigarray_val(bigArray)+
-		    ((Long_val(host_offset)+Long_val(start))*type_size));
+      h_A =(void*)(((host_vector*)(Field(Field(bigArray,0),1)))->vec)+
+      //      h_A = (void*)((char*)Data_bigarray_val(bigArray)+
+      ((Long_val(host_offset)+Long_val(start))*type_size);
+  //);
     dev_vec_array = Field(sub_vector, 3);
     dev_vec =Field(dev_vec_array, Int_val(nb_device));
     d_A = Cl_mem_val(Field(dev_vec, 1));
     size = Int_val(Field(sub_vector, 4));
 
     OPENCL_GET_CONTEXT;
+    #ifdef PROFILE
     /**************************************************/
     cl_event start_transfert, end_transfert, event_transfert;
     int id = start_part_transfert_callback("PART_CPU_TO_DEVICE", ((Long_val(part_size))*type_size), (Int_val(Field(vector, 4))*type_size),
     Int_val(Field(sub_vector, 9)), Int_val(Field(vector, 9)), "OPENCL", Int_val(nb_device), start_transfert);
     /**************************************************/
+    #endif
+
+    #ifdef PROFILE
     OPENCL_CHECK_CALL1(opencl_error,
 		       clEnqueueWriteBuffer(queue[Int_val(queue_id)], d_A, CL_FALSE,
 					    (Long_val(guest_offset)*type_size),
@@ -857,6 +1076,13 @@ extern "C" {
     Int_val(Field(sub_vector, 9)),  end_transfert);
     sync_event_prof();
     /**************************************************/
+    #else
+    OPENCL_CHECK_CALL1(opencl_error,
+		       clEnqueueWriteBuffer(queue[Int_val(queue_id)], d_A, CL_FALSE,
+					    (Long_val(guest_offset)*type_size),
+					    Long_val(part_size)*type_size,
+					    h_A, 0, NULL, NULL));
+    #endif
 
     OPENCL_RESTORE_CONTEXT;
     Store_field(dev_vec, 1, Val_cl_mem(d_A));
@@ -906,7 +1132,8 @@ extern "C" {
     cl_device_id device_id;
     cl_command_queue  q;
     bigArray = Field (Field(vector, 1), 0);
-    h_A = (void*)Data_bigarray_val(bigArray);
+    h_A =(void*)(((host_vector*)(Field(Field(bigArray,0),1)))->vec);
+  //h_A = (void*)Data_bigarray_val(bigArray);
     int custom = 0;
     GET_TYPE_SIZE
 
@@ -919,20 +1146,26 @@ extern "C" {
 
     q = queue[Int_val(queue_id)];
 
+    #ifdef PROFILE
     /**************************************************/
     cl_event start_transfert, end_transfert, event_transfert;
     int id = start_transfert_callback("DEVICE_TO_CPU", size*type_size, Int_val(Field(vector, 9)), "OPENCL", Int_val(Field(gi, 7)), start_transfert);
     /**************************************************/
 
     OPENCL_CHECK_CALL1(opencl_error, clEnqueueReadBuffer(q, d_A, CL_FALSE, 0, size*type_size, h_A, 0, NULL, &event_transfert));
+    #else
+    OPENCL_CHECK_CALL1(opencl_error, clEnqueueReadBuffer(q, d_A, CL_FALSE, 0, size*type_size, h_A, 0, NULL, NULL));
+    #endif
     clReleaseMemObject(d_A);
     Store_field(dev_vec,1,NULL);
     OPENCL_CHECK_CALL1(opencl_error, clFlush(queue[Int_val(queue_id)]));
 
+    #ifdef PROFILE
     /**************************************************/
     stop_transfert_callback("DEVICE_TO_CPU", id, size*type_size, Int_val(Field(vector, 9)), end_transfert);
     sync_event_prof();
     /**************************************************/
+    #endif
 
     OPENCL_RESTORE_CONTEXT;
     CAMLreturn(Val_unit);
@@ -960,19 +1193,28 @@ extern "C" {
 
     OPENCL_GET_CONTEXT;
 
+    #ifdef PROFILE
     /**************************************************/
     cl_event event_transfert;
     /**************************************************/
+    #endif
 
     OPENCL_TRY("clGetContextInfo", clGetContextInfo(ctx, CL_CONTEXT_DEVICES, (size_t)sizeof(cl_device_id), &device_id, NULL)) ;
+    #ifdef PROFILE
     OPENCL_CHECK_CALL1(opencl_error, clEnqueueReadBuffer(queue[Int_val(queue_id)], d_A, CL_FALSE, 0, size*type_size, h_A, 0, NULL, &event_transfert));
+    #else
+    OPENCL_CHECK_CALL1(opencl_error, clEnqueueReadBuffer(queue[Int_val(queue_id)], d_A, CL_FALSE, 0, size*type_size, h_A, 0, NULL, NULL));
+    #endif
+
     clReleaseMemObject(d_A);
     Store_field(dev_vec,1,NULL);
 
+    #ifdef PROFILE
     /**************************************************/
     start_transfert_callback("DEVICE_TO_CPU_CUSTOM", size*type_size, Int_val(Field(vector, 9)), "OPENCL", Int_val(Field(gi, 7)), event_transfert);
     sync_event_prof();
     /**************************************************/
+    #endif
 
     OPENCL_RESTORE_CONTEXT;
     CAMLreturn(Val_unit);
@@ -998,9 +1240,10 @@ extern "C" {
     bigArray = Field (Field(vector, 1), 0);
     int custom = 0;
     GET_TYPE_SIZE
-
-      h_A = (void*)((char*)Data_bigarray_val(bigArray)+
-		    ((Long_val(host_offset)+Long_val(start))*type_size));
+    h_A =(void*)(((host_vector*)(Field(Field(bigArray,0),1)))->vec)+
+      //      h_A = (void*)((char*)Data_bigarray_val(bigArray)+
+      ((Long_val(host_offset)+Long_val(start))*type_size);
+  //);
 
     dev_vec_array = Field(sub_vector, 3);
     dev_vec =Field(dev_vec_array, Int_val(nb_device));
@@ -1011,12 +1254,15 @@ extern "C" {
 
     q = queue[Int_val(queue_id)];
 
+    #ifdef PROFILE
     /**************************************************/
     cl_event event_transfert, start_transfert, end_transfert;
     int id = start_part_transfert_callback("PART_DEVICE_TO_CPU", ((Long_val(part_size))*type_size),
     (Int_val(Field(vector, 4))*type_size), Int_val(Field(sub_vector, 9)), Int_val(Field(vector, 9)), "OPENCL", Int_val(nb_device), start_transfert);
     /**************************************************/
+    #endif
 
+    #ifdef PROFILE
     OPENCL_CHECK_CALL1(opencl_error,
 		       clEnqueueReadBuffer(q, d_A, CL_FALSE,
 					   (Long_val(guest_offset)*type_size),
@@ -1028,7 +1274,13 @@ extern "C" {
     Int_val(Field(sub_vector, 9)),  end_transfert);
     sync_event_prof();
     /**************************************************/
-
+    #else
+    OPENCL_CHECK_CALL1(opencl_error,
+		       clEnqueueReadBuffer(q, d_A, CL_FALSE,
+					   (Long_val(guest_offset)*type_size),
+					   (Long_val(part_size))*type_size,
+					   h_A, 0, NULL, NULL));
+    #endif
 
     OPENCL_RESTORE_CONTEXT;
     CAMLreturn(Val_unit);

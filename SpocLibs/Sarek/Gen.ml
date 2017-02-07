@@ -74,7 +74,7 @@ module type CodeGenerator = sig
 
 
   val default_parser : bool
-  val parse_fun : int -> Kirc_Ast.k_ext -> string -> Spoc.Devices.device -> string
+  val parse_fun : int -> Kirc_Ast.k_ext -> string -> string -> Spoc.Devices.device -> string
   val parse : int -> Kirc_Ast.k_ext -> Spoc.Devices.device -> string
 
 end
@@ -90,7 +90,8 @@ module Generator (M:CodeGenerator) = struct
   let protos = ref []
 
 
-  let rec parse_fun ?profile:(prof=false) i a ret_type dev =
+
+  let rec parse_fun ?profile:(prof=false) i a ret_type fname dev =
     begin
       if M.default_parser then
         begin
@@ -157,16 +158,18 @@ module Generator (M:CodeGenerator) = struct
             try snd (Hashtbl.find global_funs a) with
             | Not_found ->
               (
-	              incr global_fun_idx;
-                let gen_name =  ("spoc_fun__"^(string_of_int !global_fun_idx)) in
-                let fun_src = aux gen_name a in
-                Hashtbl.add global_funs a (fun_src,gen_name) ;
-                gen_name)
+	        incr global_fun_idx;
+         let gen_name =
+           if fname <> "" then fname
+           else ("spoc_fun__"^(string_of_int !global_fun_idx)) in
+         let fun_src = aux gen_name a in
+         Hashtbl.add global_funs a (fun_src,gen_name) ;
+         gen_name)
           in
           name
         end
       else
-        M.parse_fun i a ret_type dev
+        M.parse_fun i a ret_type fname dev
     end
 
   and profiler_counter = ref 2
@@ -469,8 +472,8 @@ and global_mem_string i =
                      )
                    else "")^
                   body^";}"
+                  
           in
-          if prof then
             (
               Printf.printf "incr in While \n%!";
               incr profiler_counter;
@@ -492,8 +495,8 @@ and global_mem_string i =
                 else "")^
                aux (Array.to_list b))^") ")
         | Empty  -> ""
-        | GlobalFun (a,b) ->
-          let s = (parse_fun ~profile:prof i a b dev) in
+        | GlobalFun (a,b,n) ->
+          let s = (parse_fun ~profile:prof i a b n dev) in
           s
         | Match (s,e,l) ->
           let match_e = parse ~profile:prof 0 e dev in
@@ -502,9 +505,9 @@ and global_mem_string i =
                 let manage_of =
                   match of_i with
                   | None -> ""
-                  | Some (typ,cstr,varn) ->
+                  | Some (typ,cstr,varn,id) ->
                     indent (i+1)^typ^
-                    " spoc_var"^(string_of_int varn)^" = "^match_e^"."^
+                    " " ^id^" = "^match_e^"."^
                     s^"_sarek_union."^s^"_sarek_"^cstr^"."^
                     s^"_sarek_"^cstr^"_t"^
                     ";\n"
