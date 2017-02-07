@@ -66,16 +66,22 @@ CAMLprim value spoc_opencl_compile(value moduleSrc, value function_name, value g
 	functionN = String_val(function_name);
 	cl_source = String_val(moduleSrc);
 
+	#ifdef PROFILE
 	/**********************************************/
 	start_gpu_compile_callback();
 	/**********************************************/
+	#endif
+	
 	OPENCL_CHECK_CALL1(hProgram, clCreateProgramWithSource(ctx, 1, (const char**)&cl_source, 0, &opencl_error));
 	OPENCL_TRY("clGetContextInfo", clGetContextInfo(ctx, CL_CONTEXT_DEVICES, (size_t)sizeof(cl_device_id), &device_id, NULL)) ;
 	OPENCL_CHECK_CALL1(ret_val, clBuildProgram(hProgram, 1, &device_id, 0, NULL, NULL));
 
+	#ifdef PROFILE
 	/**********************************************/
 	stop_gpu_compile_callback("COMPILE_OPENCL", Int_val(Field(gi, 7)));
 	/**********************************************/
+	#endif
+	
 	paramValueSize = 1024 * 1024;
 
 	OPENCL_CHECK_CALL1(kernel, clCreateKernel(hProgram, functionN, &opencl_error));
@@ -95,25 +101,30 @@ CAMLprim value spoc_debug_opencl_compile(value moduleSrc, value function_name, v
 	char* cl_source;
 	cl_int ret_val;
 	size_t paramValueSize,  param_value_size_ret;
-    char *paramValue;
+	char *paramValue;
 
 
 	OPENCL_GET_CONTEXT;
 
 	functionN = String_val(function_name);
 	cl_source = String_val(moduleSrc);
+
+	#ifdef PROFILE
 	/**********************************************/
 	start_gpu_compile_callback();
 	/**********************************************/
-
+	#endif
+	
 	OPENCL_CHECK_CALL1(hProgram, clCreateProgramWithSource(ctx, 1, (const char**)&cl_source, 0, &opencl_error));
 	OPENCL_TRY("clGetContextInfo", clGetContextInfo(ctx, CL_CONTEXT_DEVICES, (size_t)sizeof(cl_device_id), &device_id, NULL)) ;
 	OPENCL_CHECK_CALL1(ret_val, clBuildProgram(hProgram, 1, &device_id, 0, NULL, NULL));
 
+	#ifdef PROFILE
 	/**********************************************/
 	stop_gpu_compile_callback("COMPILE_OPENCL", Int_val(Field(gi, 7)));
 	/**********************************************/
-
+	#endif
+	
 	paramValueSize = 1024 * 1024;
 
 	paramValue = (char*)calloc(paramValueSize, sizeof(char));
@@ -277,13 +288,14 @@ CAMLprim value spoc_opencl_launch_grid(value ker, value grid, value block, value
 	work_size[1] = (size_t)blockY;
 	work_size[2] = (size_t)blockZ;
 
-
+	cl_event event;
+	#ifdef PROFILE
 	/*********************************************/
 	sync_event_prof();
-	cl_event event;
 	int id = start_gpu_execution_callback("OPENCL_KERNEL_EXEC",  Int_val(Field(gi, 7)));
 	/*********************************************/
-
+	#endif
+	
 	q = queue[Int_val(queue_id)];
 	OPENCL_CHECK_CALL1(opencl_error, clRetainCommandQueue(queue[Int_val(queue_id)]));
 	OPENCL_CHECK_CALL1(opencl_error, clEnqueueNDRangeKernel
@@ -292,6 +304,8 @@ CAMLprim value spoc_opencl_launch_grid(value ker, value grid, value block, value
 			    0, NULL, &event));
 	OPENCL_CHECK_CALL1(opencl_error, clReleaseCommandQueue(queue[Int_val(queue_id)]));
 
+
+	#ifdef PROFILE
 	/*********************************************/
 	OPENCL_CHECK_CALL1(opencl_error, clWaitForEvents(1 , &event));
 	cl_ulong time_start, time_end;
@@ -302,7 +316,8 @@ CAMLprim value spoc_opencl_launch_grid(value ker, value grid, value block, value
 	stop_gpu_execution_callback(id, total_time);
 	/*printf("\nExecution time in milliseconds = %f\n", total_time);*/
 	/*********************************************/
-
+	#endif
+	
 	OPENCL_RESTORE_CONTEXT;
 	CAMLreturn(Val_unit);
 }

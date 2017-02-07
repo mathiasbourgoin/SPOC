@@ -39,7 +39,7 @@ extern "C" {
 #include "Mem_c.h"
 #include "Trac_c.h"
 #include <assert.h>
-#define PROFILE
+
 
 
   #define spocsizeof(name,typename)			\
@@ -335,7 +335,7 @@ extern "C" {
     
     #ifdef PROFILE
     /************************************************/
-    event_id = start_transfert_callback("CPU_TO_DEVICE", size*type_size, Int_val(Field(vector, 9)), "CUDA", Int_val(Field(gi, 7)), NULL);
+    int event_id = start_transfert_callback("CPU_TO_DEVICE", size*type_size, Int_val(Field(vector, 9)), "CUDA", Int_val(Field(gi, 7)), NULL);
     /************************************************/
     #endif
 
@@ -673,9 +673,10 @@ extern "C" {
 
   CAMLprim value spoc_opencl_free_vect(value vector, value nb_device){
     CAMLparam2(vector, nb_device);
-    CAMLlocal2(dev_vec_array, dev_vec);
+    CAMLlocal3(bigArray,dev_vec_array, dev_vec);
     void* h_A;
     cl_mem d_A;
+    bigArray = Field (Field(vector, 1), 0);
     dev_vec_array = Field(vector, 3);
     dev_vec =Field(dev_vec_array, Int_val(nb_device));
     d_A = Cl_mem_val(Field(dev_vec, 1));
@@ -696,7 +697,7 @@ extern "C" {
     seek = Int_val(Field(vector, 10));
     size = Int_val(Field(vector, 4))-seek;
     int custom = 0;
-    bigArray = Field (Field(vector, 1), 0);
+    //bigArray = Field (Field(vector, 1), 0);
     GET_TYPE_SIZE;
     gpu_free_callback("GPU_FREE", Field(vector, 9), nb_device, "OPENCL", size*type_size);
     /***************************************/

@@ -167,6 +167,54 @@ external opencl_custom_alloc_vect :
 
 let vec_id = ref 0
 
+(******************************************************************************************************)
+
+let emmitVect (vect : ('a, 'b) vector) length =
+    let isSub = match vect.is_sub with
+    | None -> "false"
+    | Some x -> "true" in
+    let dev = vect.device in
+    let id = vect.vec_id in
+    let kindS = match vect.kind with
+    | Char x -> "char"
+    | Float32 x -> "float32"
+    | Int32 x -> "int32"
+    | Float64 x -> "float64"
+    | Int64 x -> "int64"
+    | Complex32 x -> "complex32"
+    | _ -> "unknown" in
+    let size = match vect.kind with
+    | Char x -> 1
+    | Float32 x | Int32 x -> 4
+    | Float64 x | Int64 x | Complex32 x -> 8
+    | _ -> 0 in
+    Printf.fprintf Trac.fileOutput "{
+    \"type\" : \"vector\",\n
+    \"VectorId\" : %i,\n
+    \"resides\" : %i,\n
+    \"length\" : %i,\n
+    \"size\" : %i, \n
+    \"kind\" : \"%s\",\n
+    \"isSub\" : %s" id dev length (size*length) kindS isSub;
+    if isSub = "true" then begin
+        let (depth, start, ok_range, ko_range, parent) = match vect.is_sub with
+            | None -> failwith "Subvector sans sous vecteur"
+            | Some e -> e in
+        let parentId = parent.vec_id in
+        Printf.fprintf Trac.fileOutput ",\n\"subVector\":{\n
+        \"depth\" : %i,\n
+        \"start\" : %i,\n
+        \"okRange\" : %i,\n
+        \"koRange\" : %i,\n
+        \"parentID\" : %i\n
+        }\n" depth start ok_range ko_range parentId;
+    end;
+    Printf.fprintf Trac.fileOutput "},\n";
+;;
+
+(*******************************************************************************************************)
+
+
 external sizeofFloat32  : unit -> int = "sizeofFloat32"
 external sizeofFloat64  : unit -> int = "sizeofFloat64"
 external sizeofChar  : unit -> int = "sizeofChar"

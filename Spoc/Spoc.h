@@ -60,6 +60,9 @@
 #endif
 */
 
+/* for profiling */
+//#define PROFILE
+
 extern int noCuda;
 extern int noCL;
 

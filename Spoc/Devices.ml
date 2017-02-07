@@ -192,6 +192,52 @@ let total_num_devices = ref 0
 let current_cuda_device = ref 0
 let current_opencl_device = ref 0
 
+(******************************************************************************************************)
+
+let emmitDim3 dim =
+  Printf.fprintf Trac.fileOutput "{ \"type\":\"dim3\", \"x\":%i, \"y\":%i, \"z\":%i }" dim.x dim.y dim.z
+
+let emmitGeneralInfo genInf =
+  let ecc = string_of_bool genInf.eccEnabled in
+  Printf.fprintf Trac.fileOutput "{
+  \"type\":\"generalInfo\",\n
+  \"name\":\"%s\",\n
+  \"totalGlobalMem\":%i,\n
+  \"localMemSize\":%i,\n
+  \"clockRate\":%i,\n
+  \"totalConstMem\":%i,\n
+  \"multiProcessorCount\":%i,\n
+  \"eccEnabled\":\"%s\",\n
+  \"id\":%i\n
+  }" genInf.name genInf.totalGlobalMem genInf.localMemSize genInf.clockRate
+  genInf.totalConstMem genInf.multiProcessorCount ecc genInf.id
+
+let emmitDevice dev =
+  let devType = begin match dev.specific_info with
+  | CudaInfo inf -> "Cuda"
+  | OpenCLInfo inf -> "OpenCL"
+  end in
+  Printf.fprintf Trac.fileOutput "{
+  \"type\":\"device\",
+  \"generalInfo\": ";
+  emmitGeneralInfo dev.general_info;
+  Printf.fprintf Trac.fileOutput ",
+  \"specificInfo\":\"%s\"\n
+  }" devType
+
+let emmitDeviceList devList =
+  let nb = List.length devList in
+  Printf.fprintf Trac.fileOutput "{
+  \"type\":\"deviceList\",
+  \"size\":%i,
+  \"elem\":[" nb;
+  List.iteri (fun i dev -> emmitDevice dev; if(i != nb-1) then begin Printf.fprintf Trac.fileOutput "," end) devList;
+  Printf.fprintf Trac.fileOutput "]},\n"
+
+
+(**********************************************************************************************************)
+
+
 external is_available : int -> bool = "spoc_opencl_is_available"
 
 let init ?only: (s = Both) () =

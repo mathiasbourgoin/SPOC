@@ -48,7 +48,7 @@ extern "C" {
 #include <string.h>
 #include "Spoc.h"
 #include "Trac_c.h"
-#define PROFILE
+
 /**************** KERNEL ******************/
 
 int ae_load_file_to_memory(const char *filename, char **result)
