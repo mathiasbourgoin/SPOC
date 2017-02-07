@@ -4,7 +4,7 @@ let startTime = ref 0.0
 
 (*let fileOutput = Unix.out_channel_of_descr (Unix.openfile jsonFileName [Unix.O_WRONLY; Unix.O_CREAT; Unix.O_TRUNC] 0o660)*)
 
-let fileOutput = open_out_gen [Open_wronly; Open_trunc] 0o777 jsonFileName
+let fileOutput = open_out_gen [Open_creat; Open_wronly; Open_trunc] 0o777 jsonFileName
 
 let eventId = ref 0
 
