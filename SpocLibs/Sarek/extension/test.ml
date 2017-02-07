@@ -2,12 +2,12 @@ open Spoc
 open Kirc
 open Spoc.Vector
 
-let height = ref 0l
-let width = ref 0l
+let height = ref 512l
+let width = ref 512l
 let shiftx = ref 0l
 let shifty = ref 0l
-let zoom = ref 0.
-let max_iter = ref 0l
+let zoom = ref 1.
+let max_iter = ref 10000l
 
 let mandelbrot = kern  img  ->
   let open Std in
@@ -48,9 +48,9 @@ let mandelbrot = kern  img  ->
 
 
 let _ =
-  let devs = Spoc.Devices.init ~only:Devices.OpenCL ()
+  let devs = Spoc.Devices.init  ()
   in
-  Kirc.gen ~profile:true ~only:Devices.OpenCL mandelbrot devs.(0);
+  Kirc.gen ~profile:true  mandelbrot devs.(0);
   Printf.printf "Here\n%!";
-  List.iter (Printf.printf "%s\n")((fst mandelbrot)#get_opencl_sources ())
+  List.iter (Printf.printf "%s\n")((fst mandelbrot)#get_cuda_sources ())
     

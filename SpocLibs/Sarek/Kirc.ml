@@ -95,6 +95,12 @@ let opencl_head = (
   "int spoc_xor (int a, int b ) { return (a^b);}\n"
 )
 
+let opencl_profile_head =(
+  "\n/*********** PROFILER FUNCTIONS **************/\n"^
+  "void spoc_atomic_add(__global ulong *a, ulong b){ atom_add(a, (ulong)b);}\n"^
+  "\n"
+)
+    
 let opencl_float64 = (
   "#ifndef __FLOAT64_EXTENSION__ \n"^
   "#define __FLOAT64_EXTENSION__ \n"^
@@ -132,8 +138,63 @@ let cuda_head = (
   "__device__ float spoc_fdiv ( float a, float b ) { return (a / b);}\n"^
   "__device__ int logical_and (int a, int b ) { return (a & b);}\n"^
   "__device__ int spoc_powint (int a, int b ) { return ((int) pow (((double) a), ((double) b)));}\n"^
-  "__device__ int spoc_xor (int a, int b ) { return (a^b);}\n"^
-  "__device__ void spoc_atomic_add(unsigned long long int *a, unsigned int b){ atomicAdd(a, b);}"
+  "__device__ int spoc_xor (int a, int b ) { return (a^b);}\n")
+
+let cuda_profile_head = (
+  "\n/*********** PROFILER FUNCTIONS **************/\n"^
+  "__device__ void spoc_atomic_add(unsigned long long int *a, unsigned int b){ atomicAdd(a, b);}\n"^
+  "__device__ __forceinline__ unsigned int get_laneid(void) {
+    unsigned int laneid;
+    asm volatile (\"mov.u32 %0, %laneid;\" : \"=r\"(laneid));
+    return laneid;
+  }\n"^ 
+  "__device__ void branch_analysis(unsigned long long int *profile_counters, int eval, int counters){
+  
+  int threadIdxInWarp =  get_laneid();//threadIdx.x & (warpSize-1);
+  
+  //Get count of 1) active threads  in this warp
+  //2) threads that will take the branch
+  //3) threads that do not take the branch.
+  unsigned int active = __ballot(1);
+  int taken = __ballot(eval);
+  int ntaken = __ballot(!eval);
+  int numActive = __popc(active);
+  int numTaken = __popc(taken), numNotTaken = __popc(ntaken);
+
+  // The first active thread in each warp gets to write results.
+  if ((__ffs(active)-1) == threadIdxInWarp) {
+    atomicAdd(profile_counters+4, 1ULL); //
+    atomicAdd(profile_counters+counters+1, numActive);
+    atomicAdd(profile_counters+counters+2, numTaken);
+    atomicAdd(profile_counters+counters+3, numNotTaken);
+    if (numTaken != numActive && numNotTaken != numActive) {
+      // If threads go different ways, note it.
+      atomicAdd(profile_counters+5, 1ULL);
+    }
+  }
+}\n"^
+  "__device__ void while_analysis(unsigned long long int *profile_counters, int eval){
+
+  int threadIdxInWarp =  get_laneid();//threadIdx.x & (warpSize-1);
+
+  //Get count of 1) active threads  in this warp                                  //2) threads that will take the branch                                          //3) threads that do not take the branch.                                                                   
+  int active = __ballot(1);
+  int taken = __ballot(eval);
+  int ntaken = __ballot(!eval);
+  int numActive = __popc(active);
+  int numTaken = __popc(taken), numNotTaken = __popc(ntaken);
+
+  // The first active thread in each warp gets to write results.                                              
+  if ((__ffs(active)-1) == threadIdxInWarp) {
+    atomicAdd(profile_counters+4, 1ULL); //                                                                   
+    if (numTaken != numActive && numNotTaken != numActive) {
+      // If threads go different ways, note it.                                                               
+      atomicAdd(profile_counters+5, 1ULL);
+    }
+  }
+}
+\n"^
+  "\n"
 )
 
 let eint32 = EInt32
@@ -528,10 +589,12 @@ let gen_profile ker dev =
                           ret_val = k3;
                           extensions = k.extensions});  Pervasives.flush stdout; assert false) ))
   in
+  let profile_source = (Kirc_Profile.parse 0 (k2) dev) in
+  Printf.printf "%s" profile_source;
   Printf.fprintf Spoc.Trac.fileOutput "{\n \"type\":\"profile_kernel\",\n \
                                         \"kernel_id\":%d,\n \
                                         \"source\":\"%s\"\n \
-                                       },\n" (!Spoc.Trac.eventId - 1 )(Kirc_Profile.parse 0 (k2) dev)
+                                       },\n" (!Spoc.Trac.eventId - 1 ) profile_source
 
 let gen ?profile:(prof=false) ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) dev =
   let kir,k = ker in
@@ -569,7 +632,7 @@ let gen ?profile:(prof=false) ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('
     let global_funs = ref "" in
     Hashtbl.iter (fun _ a -> global_funs := !global_funs^(fst a)^"\n") Kirc_Cuda.global_funs;
     let constructors = List.fold_left (fun a b -> "__device__ "^b^a) "\n\n" !constructors in
-    save "kirc_kernel.cu" (cuda_head ^ constructors ^  !global_funs ^ src) ;
+    save "kirc_kernel.cu" (cuda_head ^ (if prof then cuda_profile_head else "")^ constructors ^  !global_funs ^ src) ;
     ignore(Sys.command ("nvcc --gpu-architecture=sm_30 -m64  -O3 -ptx kirc_kernel.cu -o kirc_kernel.ptx"));
     let s = (load_file "kirc_kernel.ptx") in
     kir#set_cuda_sources s;
@@ -594,8 +657,8 @@ let gen ?profile:(prof=false) ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('
                      else "")^
                     opencl_head ^
                     (if prof then
-                      "void spoc_atomic_add(__global ulong *a, ulong b){ atom_add(a, (ulong)b);}\n"
-                    else "") ^
+                       opencl_profile_head
+                     else "") ^
                     constructors ^ protos ^ !global_funs ^  src)  in
     save "kirc_kernel.cl" clkernel;
     kir#set_opencl_sources clkernel;
@@ -681,7 +744,7 @@ let profile_run ?recompile:(r=true) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) a b
   in
   Printf.printf "Number of counters : %d\n\!" nCounter;
   let profiler_counters =  Vector.create Vector.int64 nCounter in
-  for i = 0 to nCounter - 1 do
+  for i = 0 to nCounter  - 1 do
     Mem.set profiler_counters i 0L;
   done;
   (

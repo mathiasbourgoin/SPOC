@@ -81,22 +81,68 @@ and  indent i =
   in aux "" i
 
 let default_parser = false
-let prof_counter = ref 2
-let genereated_functions = Hashtbl.create 10
-
-let gmem_load() =
-  "(** ### global_memory loads : "^(Int64.to_string (Spoc.Mem.get !Gen.profile_vect 1))^" **)\\n"
+let prof_counter = ref 5
+    
+let generated_functions = Hashtbl.create 10
 
 let gmem_store() =
-    "(** ### global_memory stores : "^(Int64.to_string (Spoc.Mem.get !Gen.profile_vect 0))^" **)\\n"
+    "(** ### global_memory stores : "^(Int64.to_string (Spoc.Mem.get !Gen.profile_vect 0))^" **)\n"
+
+let gmem_load() =
+  "(** ### global_memory loads : "^(Int64.to_string (Spoc.Mem.get !Gen.profile_vect 1))^" **)\n"
+
+let smem_store() =""
+let smem_load () =""
 
 let prof_string()=
-  "(**  ### visits : "^(Int64.to_string (Spoc.Mem.get !Gen.profile_vect !prof_counter))^" **)\\n"
+  "(**  ### visits : "^(Int64.to_string (Spoc.Mem.get !Gen.profile_vect !prof_counter))^" **)\n"
+
 let prof_time_string()=
   let cycles = Spoc.Mem.get !Gen.profile_vect !prof_counter
   in
-  "(** ### total_#_cycles : "^(Int64.to_string cycles)^" **)\\n"
+  "(** ### total_#_cycles : "^(Int64.to_string cycles)^" **)\n"
 
+
+let branches_string () =
+    let nb_branches = Int64.to_string (Spoc.Mem.get !Gen.profile_vect 4)
+    and nb_divergents = Int64.to_string (Spoc.Mem.get !Gen.profile_vect 5)
+    in
+    "(** ### Total branches : "^nb_branches^" **)\n"^
+    "(** ### Divergent branches : "^nb_divergents^" **)\n"
+
+let branch_analysis_string c =  
+  let numActive = Int64.to_string (Spoc.Mem.get !Gen.profile_vect (c+1)) 
+  and numTaken = Int64.to_string (Spoc.Mem.get !Gen.profile_vect (c+2))
+  and numNotTaken = Int64.to_string (Spoc.Mem.get !Gen.profile_vect (c+3))
+  in
+  "(** ### Active threads : "^numActive^" **)\n"^
+  "(** ### Branch taken : "^numTaken^" **)\n" ^
+  "(** ### Branch not taken : "^numNotTaken^" **)\n"
+
+
+let while_analysis_string c =  
+  let maxNumActive = Int64.to_string (Spoc.Mem.get !Gen.profile_vect (c+1))
+  and minNumActive = Int64.to_string (Spoc.Mem.get !Gen.profile_vect (c+2)) 
+  and maxNumTaken = Int64.to_string (Spoc.Mem.get !Gen.profile_vect (c+3))
+  and minNumTaken = Int64.to_string (Spoc.Mem.get !Gen.profile_vect (c+4))
+  and maxNumNotTaken = Int64.to_string (Spoc.Mem.get !Gen.profile_vect (c+5))
+  and minNumNotTaken = Int64.to_string (Spoc.Mem.get !Gen.profile_vect (c+6))
+  in
+  "(** ### Max Active threads : "^maxNumActive^" **)\n"^
+  "(** ### Min Active threads : "^minNumActive^" **)\n"^
+  "(** ### Max Branch taken : "^maxNumTaken^" **)\n" ^
+  "(** ### Min Branch taken : "^minNumTaken^" **)\n" ^
+  "(** ### Max Branch not taken : "^maxNumNotTaken^" **)\n"^
+  "(** ### Min Branch not taken : "^minNumNotTaken^" **)\n"
+
+
+let profile_head () =
+  gmem_store()^
+  gmem_load()^
+  smem_store()^
+  smem_load()^
+  branches_string()
+    
 let fun_counter = ref 0
 
 let rec parse_fun i a b n dev =
@@ -107,19 +153,17 @@ let rec parse_fun i a b n dev =
       | Kern (args,body) ->
         (let pargs = aux2 i args  in
          let pbody =
-           let a =
-           prof_string()^
-           (indent (i+2))
-           in
+           let s = prof_string() in
            incr prof_counter;
-           a^
+           s^
+           
            match body with
            | Seq (_,_)  -> (aux2 (i+1) body)
-           | _  ->  ((aux2 (i+1) body )^"\\n")
+           | _  ->  ((aux2 (i+1) body )^"\n")
 
          in
-         (pargs ^ " ->\\n"^
-          gmem_store()^gmem_load()^"\\n" ^indent (i+1) ^ pbody)^indent (i+1)^ "in")
+         (pargs ^ " ->\n"^
+          profile_head()^"\n" ^indent (i+1) ^ pbody)^indent (i+1)^ "in")
       | Params k -> parse (i+1) k dev
       | a -> parse (i+1) a dev
     in
@@ -127,32 +171,40 @@ let rec parse_fun i a b n dev =
 
   in
   let name =
-    try snd (Hashtbl.find genereated_functions a) with
+    try snd (Hashtbl.find generated_functions a) with
     | Not_found ->
-      incr fun_counter;
       let gen_name =
         if n <> "" then
           n
         else ("spoc_fun"^string_of_int !fun_counter) in
+      incr fun_counter;
       let fun_src = aux gen_name a
       in
-      Hashtbl.add genereated_functions a (fun_src,gen_name);
-      "\\n"^indent (i+1) ^"let "^gen_name^" = fun "^fun_src ^"\\n" ^indent (i+1)^gen_name
+      Hashtbl.add generated_functions a (fun_src,gen_name);
+      "\n"^indent (i+1) ^"let "^gen_name^" = fun "^fun_src ^"\n" ^indent (i+1)^gen_name
   in
   name
 
 
-
+ (*Profiling counters info                                                            
+    pc[0] <- gmem_store                                                                
+    pc[1] <- gmem_load                                                                 
+    pc[2] <- smem_store                                                                
+    pc[3] <- smem_load                                                                 
+    pc[4] <- nb_branches                                                               
+    pc[5] <- nb_divergent                                                              
+ *)
+    
 
 
 and  parse i a  dev =
   let open Kirc_Ast in
   let rec aux  = function
-    | Kern (args, body) -> ("kern "^(parse i args dev)^" ->\\n"^
-                            gmem_store()^gmem_load()^"\\n"^(parse (i) body dev))
-    | Local (x,y) -> (*"let mutable " ^ (parse i x)^" in\\n"^
+    | Kern (args, body) -> ("kern "^(parse i args dev)^" ->\n"^
+                            profile_head()^"\n"^(parse (i) body dev))
+    | Local (x,y) -> (*"let mutable " ^ (parse i x)^" in\n"^
                        (indent (i))^(parse i y)^
-                          "\\n"^(indent (i))*)
+                          "\n"^(indent (i))*)
       parse i y dev
     | VecVar (t, i, s) ->
        global_parameter^s
@@ -165,7 +217,7 @@ and  parse i a  dev =
     | Seq (a,b) ->
       let a = parse i a dev in
       let b = parse i b dev in
-      a^" \\n"^(indent i)^b
+      a^" \n"^(indent i)^b
     | SetV(vecacc, value) -> parse i vecacc dev ^" <- " ^(parse i value dev)^";"
     | IntId(s,_) -> s
     | IntVecAcc (s,v) -> ((parse i s dev)^".[<"^(parse i v dev)^">]")
@@ -192,28 +244,33 @@ and  parse i a  dev =
     | Double f -> string_of_float f
 
     | Ife(a,b,c) ->
+      Printf.printf "Ife %d\n%!" !prof_counter;
       let a = parse i a dev in
+      let b_anal = branch_analysis_string !prof_counter in
+      prof_counter := !prof_counter + 4; 
       let b = parse (i+1) b dev in
       let c = parse (i+1) c dev in
-      let iff =
-      (indent (i+1))^prof_string()^
-                (indent (i+1))^b^"\\n"^(indent i)^"\\n"^(indent i)
-      in
-      incr prof_counter;
-      let elsee = "else \\n"^
-      (indent (i+1))^prof_string()^
-                  (indent (i+1))^c^";\\n"^(indent i)^"\\n"^(indent i)
-      in
-      incr prof_counter;
-      "if ("^a^") then \\n"^ iff ^elsee
-
+      (* let iff = *)
+      (* (indent (i+1))^prof_string()^ *)
+      (*           (indent (i+1))^b^"\n"^(indent i)^"\n"^(indent i) *)
+      (* in *)
+      (* prof_counter := !prof_counter + 3; *)
+      (* let elsee = "else \n"^ *)
+      (* (\* (indent (i+1))^prof_string()^ *\) *)
+      (* (\*             (indent (i+1))^c^";\n"^(indent i)^"\n"^(indent i) *\) *)
+      (* (\* in *\) *)
+      b_anal ^
+      "if ("^a^") then \n"^ b ^"\n"^(indent i)^"else\n"^indent (i+1)^c
     | If (a,b) ->
+      Printf.printf "If %d\n%!" !prof_counter;
+      let a = parse i a dev in
+      let b_anal = branch_analysis_string !prof_counter in
+      prof_counter := !prof_counter + 4; 
       let s =
-        "if ("^(parse i a dev )^")"^" then \\n"^(indent (i+1))^prof_string()^
-        (indent (i+1))^(parse (i+1) b dev)^";\\n"^(indent i)^""^(indent i)
+        "if ("^a^")"^" then \n"^(indent (i+1))^
+        (indent (i+1))^(parse (i+1) b dev)^";\n"^(indent i)^""^(indent i)
       in
-      incr prof_counter;
-      s
+      b_anal ^ s
     | Or (a,b) -> (parse i a dev)^" || "^(parse i b dev)
     | And (a,b) -> (parse i a dev)^" && "^(parse i b dev)
     | Not (a) -> "!"^(parse i a dev)
@@ -227,16 +284,18 @@ and  parse i a  dev =
       let min = parse i b dev in
       let max = parse i c dev in
       let body = parse (i+1) d dev in
-      "for (int "^id^" = "^min^" to  "^max^"do\\n"^(indent (i+1))^body^"done;"
+      "for (int "^id^" = "^min^" to  "^max^"do\n"^(indent (i+1))^body^"done;"
 
     | While (a,b) ->
+      Printf.printf "While %d\n%!" !prof_counter;
       let cond = parse i a dev in
-      let body = prof_string()^indent (i+1)^parse (i+1) b dev in
-      let s = "while " ^ cond ^" do\\n"^
+      let b_anal = branch_analysis_string !prof_counter in
+      prof_counter := !prof_counter + 3; 
+      let body = indent (i+1)^parse (i+1) b dev in
+      let s = b_anal^"while " ^ cond ^" do\n"^
               indent (i+1)^body^
               indent i^"done;"
       in
-      incr prof_counter;
       s
     | Unit -> "()"
     | GlobalFun (a,b,n) ->
@@ -261,23 +320,23 @@ and  parse i a  dev =
       let s  =
         parse i k dev
       in
-
-      s^
+      let ss = 
       (match dev.Spoc.Devices.specific_info with
        |  Spoc.Devices.CudaInfo _ ->
-            let s =
-              prof_time_string() in
-            incr prof_counter; s
+         prof_time_string()
        | _ -> "")
+       in
+       incr prof_counter;
+       s^ss
     | _ -> Kirc_Ast.print_ast a; ""
   in aux  a
 
 let parse i a dev =
-  prof_counter := 2;
-  Hashtbl.clear genereated_functions;
+  prof_counter := 5;
+  Hashtbl.clear generated_functions;
   let header =
     "(* Profile Kernel *)"
   in
   let footer = ";;"
   in
-  (header^"\\n" ^ parse 0  a dev ^"\\n"^footer^"\\n")
+  (header^"\n" ^ parse 0  a dev ^"\n"^footer^"\n")

@@ -90,6 +90,14 @@ module Generator (M:CodeGenerator) = struct
   let protos = ref []
 
 
+  (*Profiling counters info 
+    pc[0] <- gmem_store
+    pc[1] <- gmem_load
+    pc[2] <- smem_store
+    pc[3] <- smem_load
+    pc[4] <- nb_branches
+    pc[5] <- nb_divergent
+  *)
 
   let rec parse_fun ?profile:(prof=false) i a ret_type fname dev =
     begin
@@ -102,16 +110,15 @@ module Generator (M:CodeGenerator) = struct
                 (let pargs = aux2 i args  in
                  let pbody =
                    let a =
-                   (if prof then
-                      "//PROFILER\n"^
-                      (indent (i+1))^
+                     (if prof then
+                        (indent (i+1))^
                       "spoc_atomic_add(profile_counters+"^
                       string_of_int !profiler_counter^", 1);\n"
                     else "")
                    in
                    if prof then
                      (
-                       (*Printf.printf "incr in parse_fun \n%!";*)
+                       Printf.printf "incr in parse_fun \n%!";
                        incr profiler_counter;
                      );
                    let b =
@@ -172,7 +179,7 @@ module Generator (M:CodeGenerator) = struct
         M.parse_fun i a ret_type fname dev
     end
 
-  and profiler_counter = ref 2
+  and profiler_counter = ref 5
 
   and gmem_load = ref 0
   and gmem_store = ref 0
@@ -195,7 +202,8 @@ and global_mem_string i =
              else "")  
   and get_profile_counter () =
     Hashtbl.clear  global_funs;
-    let a = !profiler_counter in profiler_counter := 2; a
+    let a = !profiler_counter in
+    profiler_counter := 5; a
 
   and parse ?profile:(prof=false) i a dev =
     if M.default_parser then
@@ -323,6 +331,7 @@ and global_mem_string i =
                         ", (int)(stop_time - start_time));\n"^
                         indent (i+1)^"return spoc_res;\n";
                       in
+                      Printf.printf "incr in Return \n%!";
                       incr profiler_counter;
                       ss
                     | _ -> "return "^s^";")
@@ -355,7 +364,17 @@ and global_mem_string i =
           let a =
             let a = parse ~profile:prof i a dev in
             global_mem_string i^
-            "if ( "^a^" )"
+            let pc = string_of_int !profiler_counter in
+            "bool spoc_prof_cond_"^pc^" = ("^a^");\n"^
+            (if prof then
+               (let s =
+                  indent i^
+                  "branch_analysis(profile_counters, spoc_prof_cond_"^pc^", "^ pc^");\n" in
+                Printf.printf "incr in Ife 3 \n%!";
+                profiler_counter := !profiler_counter + 4;
+               s)
+            else "")^
+                indent i^"if ( spoc_prof_cond_"^pc^" )"
           in          
           let b =
             let b = parse ~profile:prof i b dev in
@@ -367,24 +386,24 @@ and global_mem_string i =
             c in
           let iff = "{\n"^
                     (indent (i+1))^
-                    (if prof then
-                       (indent (i))^"spoc_atomic_add(profile_counters+"^string_of_int !profiler_counter^", 1); // control if\n"
-                     else "")^
+                    (* (if prof then *)
+                    (*    (indent (i))^"spoc_atomic_add(profile_counters+"^string_of_int !profiler_counter^", 1); // control if\n" *)
+                    (*  else "")^ *)
                     b^";\n"^(indent i)^"}\n" in
-          if prof then (
-            incr profiler_counter;);
+          (*if prof then (
+            incr profiler_counter;);*)
           let elsee = "{\n"^
                       (indent (i+1))^
-                      (if prof then
-                         (indent (i))^"spoc_atomic_add(profile_counters+"^string_of_int !profiler_counter^", 1); // control else\n"
-                       else "")^
+                      (* (if prof then *)
+                      (*    (indent (i))^"spoc_atomic_add(profile_counters+"^string_of_int !profiler_counter^", 1); // control else\n" *)
+                      (*  else "")^ *)
                       (indent i)^c^";\n"^
                       (indent i)^"}\n" in
-          if prof then
+          (*if prof then
             (
               Printf.printf "incr in Ife else \n%!";
-              incr profiler_counter;
-            );
+              profiler_counter := !profiler_counter + 3;
+            );*)
           global_mem_string (i+1)^
           a^
           iff^(indent i)^"else"^elsee^(indent i)
@@ -393,24 +412,32 @@ and global_mem_string i =
             let a = parse ~profile:prof i a dev in
             global_mem_string i ^a
           in
+          let pc = string_of_int !profiler_counter in
+          "bool spoc_tmp_if_cond_"^pc^" = ("^a^");\n"^
+          (if prof then
+             (let s = indent i^
+                      "branch_analysis(profile_counters, spoc_tmp_if_cond_"^pc^", "^ pc^");\n" in
+              Printf.printf "incr in If 3 \n%!";
+              profiler_counter := !profiler_counter + 4;
+              s)
+           else "")^
           let b =
             let b = parse ~profile:prof (i+1) b dev in
             global_mem_string (i+1)^b in
           let s =
             "if ("^a^")"^"{\n"^
             (indent (i+1))^
-            (if prof then
-               "//PROFILER\n"^(indent (i+1))^
-               "spoc_atomic_add(profile_counters+"^
-               string_of_int !profiler_counter^", 1);\n"
-             else "")^
+            (* (if prof then *)
+            (*    "//PROFILER\n"^(indent (i+1))^ *)
+            (*    "spoc_atomic_add(profile_counters+"^ *)
+            (*    string_of_int !profiler_counter^", 1);\n" *)
+            (*  else "")^ *)
             (indent (i+1))^
-            b^";\n"^(indent i)^"}"^(indent i)
-          in if prof then
-            (
-              Printf.printf "incr in If \n%!";
-              incr profiler_counter)
-          ;
+            b^";\n"^(indent i)^"}"^(indent i) in
+          (* in if prof then *)
+          (*   ( *)
+          (*     Printf.printf "incr in If \n%!"; *)
+          (*     incr profiler_counter) *)
           s
         | Or (a,b) -> (parse ~profile:prof i a dev)^" || "^(parse ~profile:prof i b dev)
         | And (a,b) -> (parse ~profile:prof i a dev)^" && "^(parse ~profile:prof i b dev)
@@ -449,35 +476,53 @@ and global_mem_string i =
           (indent (i+1))^body^";}"
         | While (a,b) ->
           let cond = parse ~profile:prof i a dev in
+          let pc = string_of_int !profiler_counter in
+          "bool spoc_prof_cond_"^pc^" = ("^cond^");\n"^
+          (if prof then
+             (let s =
+                indent i^
+                "branch_analysis(profile_counters, spoc_prof_cond_"^pc^", "^ pc^");\n" in
+              Printf.printf "incr 3 in While  \n%!";
+              profiler_counter := !profiler_counter + 4;
+              s)
+           else "")^
           let body = (indent (i+1))^
-                     (if prof then
-                        (indent (i+1))^"spoc_atomic_add(profile_counters+"^string_of_int !profiler_counter^", 1); // control while \n"
-                      else "")^
+                     (* (if prof then *)
+                     (*    (indent (i+1))^"spoc_atomic_add(profile_counters+"^string_of_int !profiler_counter^", 1); // control while \n" *)
+                     (*  else "")^ *)
                      parse ~profile:prof (i+1) b dev in
-          let s = "while ("^cond^"){\n"^
-                  (indent (i+1))
-                  ^
-                  (if !gmem_load > 0 then
-                     (
-                       let s = "spoc_atomic_add(profile_counters+1,"^(string_of_int !gmem_load)^"); // global mem load\n" in
-                       gmem_load := 0;
-                       indent(i+1)^s
-                     )
-                   else "")^
-                  (if !gmem_store > 0 then
-                     (
-                       let s = "spoc_atomic_add(profile_counters+0,"^(string_of_int !gmem_load)^"); // global mem store\n" in
-                       gmem_store := 0;
-                       s
-                     )
-                   else "")^
-                  body^";}"
+          let s = "while ( spoc_prof_cond_"^pc^" ){\n"^
+                  (* (indent (i+1)) *)
+                  (* ^ *)
+                  (* (if !gmem_load > 0 then *)
+                  (*    ( *)
+                  (*      let s = "spoc_atomic_add(profile_counters+1,"^(string_of_int !gmem_load)^"); // global mem load\n" in *)
+                  (*      gmem_load := 0; *)
+                  (*      indent(i+1)^s *)
+                  (*    ) *)
+                  (*  else "")^ *)
+                  (* (if !gmem_store > 0 then *)
+                  (*    ( *)
+                  (*      let s = "spoc_atomic_add(profile_counters+0,"^(string_of_int !gmem_load)^"); // global mem store\n" in *)
+                  (*      gmem_store := 0; *)
+                  (*      s *)
+                  (*    ) *)
+                  (*  else "")^ *)
+                  body^";\n"^
+                  indent (i+1)^
+                  "spoc_prof_cond_"^pc^" = ("^cond^");\n"^
+                  (if prof then
+                     (let s =
+                        indent (i+1)^
+                        "while_analysis(profile_counters, spoc_prof_cond_"^pc^");\n" in
+                      s)
+                   else "")^"\n}"
                   
-          in
-            (
-              Printf.printf "incr in While \n%!";
-              incr profiler_counter;
-            );
+          in 
+          (*   ( *)
+          (*     Printf.printf "incr in While \n%!"; *)
+          (*     incr profiler_counter; *)
+          (*   ); *)
           s
         | App (a,b) ->
           let f = parse ~profile:prof i a dev in

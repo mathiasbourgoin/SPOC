@@ -1,7 +1,7 @@
 all : asm
 
 asm :
-	ocamlfind ocamlopt  \
+	ocamlfind ocamlopt  -g \
 	-pp "camlp4 -I `ocamlfind query sarek_syntax` -parser o -printer o kernels_int.cma" \
 	-thread -package ctypes.foreign,spoc,sarek,graphics -linkpkg \
 	Mandelbrot.ml  -o Mandelbrot.asm
@@ -16,7 +16,7 @@ test:
 
 
 %.pp.nat: %.pp.ml
-	ocamlfind ocamlopt -thread -package ctypes,ctypes.foreign,spoc,sarek,fastflow,graphics -linkpkg  -o $@ $<
+	ocamlfind ocamlopt -g -thread -package ctypes,ctypes.foreign,spoc,sarek,graphics -linkpkg  -o $@ $<
 
 pp : Mandelbrot.pp.nat
 
