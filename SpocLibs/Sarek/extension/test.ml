@@ -44,4 +44,13 @@ let mandelbrot = kern  img  ->
     y1 := y2;
     norm := (x1 *. x1 ) +. ( y1 *. y1);
   done;
-  img.[<y * @width + x>] <- cpt
+  img.[<y * @width + x>] <- cpt;;
+
+
+let _ =
+  let devs = Spoc.Devices.init ~only:Devices.OpenCL ()
+  in
+  Kirc.gen ~profile:true ~only:Devices.OpenCL mandelbrot devs.(0);
+  Printf.printf "Here\n%!";
+  List.iter (Printf.printf "%s\n")((fst mandelbrot)#get_opencl_sources ())
+    

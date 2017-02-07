@@ -632,16 +632,16 @@ let run ?recompile:(r=false) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) a b q dev 
      else
        begin
          match kir#get_cuda_sources () with
-         | [] -> ignore(gen ~only:Devices.Cuda (kir,k) dev)
+         | [] -> ignore(gen  ~only:Devices.Cuda (kir,k) dev)
          | _ -> ()
        end
    | Devices.OpenCLInfo _ ->
      begin
        if r then
-         ignore(gen ~only:Devices.OpenCL (kir,k) dev)
+         ignore(gen  ~only:Devices.OpenCL (kir,k) dev)
        else
          match kir#get_opencl_sources () with
-         | [] -> ignore(gen ~only:Devices.OpenCL (kir,k) dev)
+         | [] -> ignore(gen  ~only:Devices.OpenCL (kir,k) dev)
          | _ -> ()
      end);
   kir#run a b q dev

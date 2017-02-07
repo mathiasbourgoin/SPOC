@@ -74,7 +74,7 @@ module type CodeGenerator = sig
 
 
   val default_parser : bool
-  val parse_fun : int -> Kirc_Ast.k_ext -> string -> Spoc.Devices.device -> string
+  val parse_fun : int -> Kirc_Ast.k_ext -> string -> string -> Spoc.Devices.device -> string
   val parse : int -> Kirc_Ast.k_ext -> Spoc.Devices.device -> string
 
 end
@@ -91,7 +91,7 @@ module Generator (M:CodeGenerator) = struct
 
 
 
-  let rec parse_fun ?profile:(prof=false) i a ret_type dev =
+  let rec parse_fun ?profile:(prof=false) i a ret_type fname dev =
     begin
       if M.default_parser then
         begin
@@ -158,16 +158,18 @@ module Generator (M:CodeGenerator) = struct
             try snd (Hashtbl.find global_funs a) with
             | Not_found ->
               (
-	              incr global_fun_idx;
-                let gen_name =  ("spoc_fun__"^(string_of_int !global_fun_idx)) in
-                let fun_src = aux gen_name a in
-                Hashtbl.add global_funs a (fun_src,gen_name) ;
-                gen_name)
+	        incr global_fun_idx;
+         let gen_name =
+           if fname <> "" then fname
+           else ("spoc_fun__"^(string_of_int !global_fun_idx)) in
+         let fun_src = aux gen_name a in
+         Hashtbl.add global_funs a (fun_src,gen_name) ;
+         gen_name)
           in
           name
         end
       else
-        M.parse_fun i a ret_type dev
+        M.parse_fun i a ret_type fname dev
     end
 
   and profiler_counter = ref 2
@@ -470,194 +472,8 @@ and global_mem_string i =
                      )
                    else "")^
                   body^";}"
+                  
           in
-          protos := proto:: !protos;
-          proto^"{\n"
-        | a -> (parse  i a)
-      in
-      aux2 i a in
-
-
-    let name =
-      try snd (Hashtbl.find global_funs a) with
-      | Not_found ->
-        (
-	  incr global_fun_idx;
-   let gen_name =
-     if n <> "" then n
-     else ("spoc_fun__"^(string_of_int !global_fun_idx)) in
-   let fun_src = aux gen_name a in
-   Hashtbl.add global_funs a (fun_src,gen_name) ;
-   gen_name)
-    in
-    name
-
-  and parse i  = function
-  | Kern (args,body) ->
-    (let pargs = parse i args in
-     let pbody =
-       match body with
-       | Seq (_,_)  -> (parse (i+1) body)
-       | _  ->  ((parse (i+1) body)^"\n"^(indent (i)))
-     in
-     (pargs ^ pbody)^M.kern_end)
-  | Local (x,y)  -> (parse i x)^";\n"^
-                    (indent (i))^(parse i y)^
-                    "\n"^(indent (i))^""
-  | VecVar (t,i,s)  ->
-    M.global_parameter^
-    (match t with
-      | Int _ ->" int"
-      | Float _ -> " float"
-      | Double _ -> " double"
-      | Custom (n,_,ss) -> (" struct "^n^"_sarek")
-      | _ -> assert false
-     )^("* "^s)
-
-  | Block b -> (indent i)^"{\n"^parse (i+1) b^"\n"^(indent i)^"}"
-  | IdName s  ->  s
-  | IntVar (i,s) -> ("int "^s)
-  | FloatVar (i,s) -> ("float "^s)
-  | Custom (n,s,ss) -> ("struct "^n^"_sarek "^ss)
-  | UnitVar (v,s) -> assert false
-  | DoubleVar (i,s) -> ("double "^s)
-  | BoolVar (i,s) -> ("int "^s)
-  | Arr (s,l,t,m) ->
-    let memspace =
-      match m with
-      | LocalSpace -> M.local_variable
-      | Shared -> M.shared_variable
-      | Global -> M.global_variable
-    and elttype =
-      match t with
-      | EInt32 -> "int"
-      | EInt64 -> "long"
-      | EFloat32 -> "float"
-      | EFloat64 -> "double"
-    in
-        (memspace^" "^elttype^" spoc_var"^
-                       (string_of_int s)^"["^
-                       (parse i l)^"]")
-  | Params k ->
-    (M.kern_start^" void spoc_dummy ( "^
-     (if (fst !return_v) <> "" then
-        (fst !return_v)^", " else "")^(parse i k)^" ) {\n"^(indent (i+1)))
-  |Concat (a,b)  ->
-    (match b with
-     | Empty  -> (parse i a)
-     | Concat (c,d)  ->  ((parse i a)^", "^(parse i b))
-     | _  -> failwith "parse concat"
-    )
-  | Constr (t,s,l) ->
-    "build_"^t^"_"^s^"("^(List.fold_left (fun a b -> a^parse i b) "" l)^")"
-  | Record (s,l) ->
-    let params =
-      match l with
-      | t::q -> (parse i t)^(List.fold_left (fun a b -> a^", "^parse i b) "" q)
-      | [] -> assert false in
-    "build_"^s^"("^params^")"
-  | RecGet (r,f) ->
-    (parse i r)^"."^f
-  | RecSet (r,v) ->
-    (parse i r)^" = "^(parse i v)
-  | Plus  (a,b) -> ("("^(parse_int i a)^" + "^(parse_int i b)^")")
-  | Plusf  (a,b) -> ("("^(parse_float i a)^" + "^(parse_float i b)^")")
-  | Min  (a,b) -> ("("^(parse_int i a)^" - "^(parse_int i b)^")")
-  | Minf  (a,b) -> ("("^(parse_float i a)^" - "^(parse_float i b)^")")
-  | Mul  (a,b) -> ("("^(parse_int i a)^" * "^(parse_int i b)^")")
-  | Mulf  (a,b) -> ("("^(parse_float i a)^" * "^(parse_float i b)^")")
-  | Div  (a,b) -> ("("^(parse_int i a)^" / "^(parse_int i b)^")")
-  | Divf  (a,b) -> ("("^(parse_float i a)^" / "^(parse_float i b)^")")
-
-  | Mod  (a,b) -> ("("^(parse_int i a)^" % "^(parse_int i b)^")")
-  | Id (s)  -> s
-  | Set (var,value)
-  | Acc (var,value) ->
-    ((parse i var)^" = "^
-     (parse i value))
-  | Decl (var) ->
-     (parse i var)
-  | SetLocalVar (v,gv,k) ->
-    ((parse i v)^" = "^
-     (match gv with
-      | Intrinsics i -> (M.parse_intrinsics i)
-      | _ -> (parse i gv))^";\n"^(indent i)^(parse i k))
-  | Return k ->
-    (match k with
-     |SetV _ | RecSet _ | Set _ | SetLocalVar _ | IntVecAcc _
-     | Acc _ | If _ -> (parse i k)
-     | Unit  -> ";"
-     | _  ->
-       (if (snd !return_v) <> "" then
-          snd !return_v
-        else
-          "return ")^
-       (parse i k)^";")
-
-  | IntVecAcc (vec,idx)  -> (parse i vec)^"["^(parse i idx)^"]"
-  | SetV (vecacc,value)  -> (
-      (parse i vecacc)^" = "^(parse i value)^";")
-  | Int  a  -> string_of_int a
-  | Float f -> (string_of_float f)^"f"
-  | GInt  a  -> Int32.to_string (a ())
-  | GFloat  a  -> (string_of_float (a ()))^"f"
-  | Double f -> string_of_float f
-  | IntId (s,_) -> s
-  |Intrinsics gv -> M.parse_intrinsics gv
-  | Seq (a,b)  -> (parse i a)^" ;\n"^(indent i)^(parse i b)
-  | Ife(a,b,c) -> "if ("^(parse i a)^"){\n"^(indent (i+1))^(parse (i+1) b)^";\n"^(indent i)^"}\n"^(indent i)^"else{\n"^(indent (i+1))^(parse (i+1) c)^";\n"^(indent i)^"}\n"^(indent i)
-  | If (a,b) -> "if ("^(parse i a)^")"^"{\n"^(indent (i+1))^(parse (i+1) b)^";\n"^(indent i)^"}"^(indent i)
-  | Or (a,b) -> (parse i a)^" || "^(parse i b)
-  | And (a,b) -> (parse i a)^" && "^(parse i b)
-  | Not (a) -> "!"^(parse i a)
-  | EqCustom (n,v1,v2) ->
-    let v1 = parse 0 v1
-    and v2 = parse 0 v2 in
-    (*"switch "^v1^"."^n^"_starek_tag"^*)
-    n^"("^v1^", "^v2^")"
-  | EqBool (a,b) -> (parse i a)^" == "^(parse i b)
-  | LtBool (a,b) -> (parse i a)^" < "^(parse i b)
-  | GtBool (a,b) -> (parse i a)^" > "^(parse i b)
-  | LtEBool (a,b) -> (parse i a)^" <= "^(parse i b)
-  | GtEBool (a,b) -> (parse i a)^" >= "^(parse i b)
-  | DoLoop (a,b,c,d) ->
-    let id = parse i a in
-    let min = parse i b in
-    let max = parse i c in
-    let body = parse (i+1) d in
-    "for (int "^id^" = "^min^"; "^id^" <= "^max^"; "^id^"++){\n"^(indent (i+1))^body^";}"
-  | While (a,b) ->
-    let cond = parse i a in
-    let body = parse (i+1) b in
-    "while ("^cond^"){\n"^(indent (i+1))^body^";}"
-  | App (a,b) ->
-    let f = parse i a in
-    let rec aux = function
-      | t::[] -> parse i t
-      | t::q -> (parse i t)^","^(aux q)
-      | [] -> assert false
-    in
-    (match a with
-     | Intrinsics ("return","return") -> f^" "^(aux (Array.to_list b))^" "
-     |  _ -> f^" ("^(aux (Array.to_list b))^") ")
-  | Empty  -> ""
-  | GlobalFun (a,b,n) ->
-     let s = (parse_fun i a b n) in
-     s
-  | Match (s,e,l) ->
-    let match_e = parse 0 e in
-    let switch_content  =
-      Array.fold_left (fun a (j,of_i,b) ->
-          let manage_of =
-            match of_i with
-            | None -> ""
-            | Some (typ,cstr,varn,id) ->
-              indent (i+1)^typ^
-              " "^id^" = "^match_e^"."^
-              s^"_sarek_union."^s^"_sarek_"^cstr^"."^
-              s^"_sarek_"^cstr^"_t"^
-              ";\n"
-          if prof then
             (
               Printf.printf "incr in While \n%!";
               incr profiler_counter;
@@ -679,8 +495,8 @@ and global_mem_string i =
                 else "")^
                aux (Array.to_list b))^") ")
         | Empty  -> ""
-        | GlobalFun (a,b) ->
-          let s = (parse_fun ~profile:prof i a b dev) in
+        | GlobalFun (a,b,n) ->
+          let s = (parse_fun ~profile:prof i a b n dev) in
           s
         | Match (s,e,l) ->
           let match_e = parse ~profile:prof 0 e dev in
@@ -689,9 +505,9 @@ and global_mem_string i =
                 let manage_of =
                   match of_i with
                   | None -> ""
-                  | Some (typ,cstr,varn) ->
+                  | Some (typ,cstr,varn,id) ->
                     indent (i+1)^typ^
-                    " spoc_var"^(string_of_int varn)^" = "^match_e^"."^
+                    " " ^id^" = "^match_e^"."^
                     s^"_sarek_union."^s^"_sarek_"^cstr^"."^
                     s^"_sarek_"^cstr^"_t"^
                     ";\n"

@@ -239,7 +239,7 @@ extern "C" {
 
     size =Int_val(Field(sub_vector, 4))-seek;
 
-    CUDA_CHECK_CALL(cuMemcpyHtoD(d_A+((Long_val(guest_offset)+seek)*type_size), h_A, (Long_val(part_size))*type_size));
+    CUDA_CHECK_CALL(cuMemcpyHtoDAsync(d_A+((Long_val(guest_offset)+seek)*type_size), h_A, (Long_val(part_size))*type_size, queue[Int_val(queue_id)]));
 
     CUDA_RESTORE_CONTEXT;
     //Store_field(dev_vec, 1, Val_CUdeviceptr(d_A));
@@ -703,7 +703,8 @@ extern "C" {
     CUDA_CHECK_CALL(cuDeviceGet(&dev, Int_val(nb_device)));
 
 
-    CUDA_CHECK_CALL(cuMemcpyDtoH((void*)h_A, d_A, size*type_size));
+    CUDA_CHECK_CALL(cuMemcpyDtoHAsync((void*)h_A, d_A, size*type_size, queue[Int_val(queue_id)]));
+    CUDA_CHECK_CALL(cuStreamAddCallback(queue[Int_val(queue_id)], cuda_free_after_transfer, (void*)d_A, 0));
     CUDA_RESTORE_CONTEXT;
 
     CAMLreturn(Val_unit);

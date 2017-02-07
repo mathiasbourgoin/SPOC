@@ -258,7 +258,7 @@ let raytrace =
        bce := bce - 1;
      done)
 	
-let devid = 0
+let devid = 4
 
 
 let _ =
@@ -413,6 +413,7 @@ in
   
   let name = dev.Spoc.Devices.general_info.Spoc.Devices.name in
 
+  
   measure_time (fun () ->
 		Kirc.run  cast_view_ray
 			  (width, height, fov, eyev, rays) 
