@@ -162,9 +162,10 @@ klet applyLights = fun pos normal lights  objects nb_lights nb_objs ->
   color
 	   
 klet myclamp = fun (x :float)  ->
-    if x <. 0. then 0.
+        ($"clamp (x,0.f,1.f)"$ : float)
+(*    if x <. 0. then 0.
     else if x >. 1. then 1.
-    else x
+      else x *)
 
 	 
 klet clamp_colour = fun c ->

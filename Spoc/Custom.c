@@ -45,7 +45,12 @@ extern "C" {
 
 void free_custom (value v) {
 	void* f = (void*)(Field(v, 1));
-	if (f) free(f);
+	if (f) {
+	  if (noCuda)
+	    free(f);
+	  else
+	    cuMemFreeHost(f);
+	}
 }
 
 
@@ -56,15 +61,15 @@ void free_custom (value v) {
 	char* res;
 	ret = alloc_final(2, free_custom, 0, 1);
 	customSize = Field(custom, 0);
+	//	res = (char*)malloc(Int_val(size)*Int_val(customSize)); 
 	if (noCuda){
-	  posix_memalign(res, OPENCL_PAGE_ALIGN,
+	  posix_memalign(&res, OPENCL_PAGE_ALIGN,
 			 ((Int_val(customSize)*Int_val(size) - 1)/OPENCL_CACHE_ALIGN + 1) * OPENCL_CACHE_ALIGN);
 	}
 	else
 	  {
 	    cuMemAllocHost(&res, Int_val(customSize)*Int_val(size));
 	  }
-	fflush (stdout);
 	Store_field(ret, 1, (value)(res));
 	CAMLreturn(ret);
 }

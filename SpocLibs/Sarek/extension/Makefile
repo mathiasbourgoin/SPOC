@@ -15,7 +15,7 @@ kernels_int.cma:debug.cmo sarek_types.cmo typer.cmo gen_caml.cmo gen_kir.cmo mpa
 
 
 %.pp.cmx : %.pp.ml
-	ocamlfind ocamlopt  -thread  -package ctypes,ctypes.foreign,spoc,sarek,graphics -linkpkg -c $<
+	ocamlfind ocamlopt -g -thread  -package ctypes,ctypes.foreign,spoc,sarek,graphics -linkpkg -c $<
 
 %.cmo:%.ml
 	@echo  "\033[32m[$@]\033[0m"
@@ -62,13 +62,13 @@ test: kernels_int.cma test.ml
 
 
 tests/ray.pp.nat : tests/ray.pp.ml
-	ocamlfind ocamlopt -thread -package						\
+	ocamlfind ocamlopt -g -thread -package						\
 	ctypes,ctypes.foreign,spoc,sarek,graphics,camlimages,camlimages.png,camlimages.graphics	\
 	-package sarek_syntax -syntax camlp4o -linkpkg -o $@ $<
 
 
 tests/%.pp.nat : tests/%.ml
-	ocamlfind ocamlopt  -thread -package ctypes,ctypes.foreign,spoc,sarek,camlimages,camlimages.png \
+	ocamlfind ocamlopt -g -thread -package ctypes,ctypes.foreign,spoc,sarek,camlimages,camlimages.png \
 		-package sarek_syntax -syntax camlp4o  -linkpkg -o $@ $<
 
 %.pp.nat: %.pp.ml
