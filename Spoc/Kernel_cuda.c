@@ -162,21 +162,21 @@ CAMLprim value spoc_cuda_debug_compile(value moduleSrc, value function_name, val
 
 	cuda_error = (cuModuleLoadDataEx(&module, ptx_source, jitNumOptions, jitOptions, (void **)jitOptVals));
 	if (cuda_error)
-		{
-			printf ("%s\n", jitLogBuffer);
-			fflush (stdout);
-		}
+	  {
+	    fprintf (stderr,"%s\n", jitLogBuffer);
+	    fflush (stderr);
+	  }
 	cuda_error = (cuModuleGetFunction(kernel, module, functionN));
 	if (cuda_error)
-	{
-		printf ("%s\n", jitLogBuffer);
-		fflush (stdout);
-	}
+	  {
+	    fprintf (stderr, "%s\n", jitLogBuffer);
+	    fflush (stderr);
+	  }
 	BLOCKING_CUDA_RESTORE_CONTEXT;
 	free(jitLogBuffer);
 	CAMLreturn((value) kernel);
 }
-
+  
 
 CAMLprim value spoc_cuda_create_extra(value n){
 	CAMLparam1(n);

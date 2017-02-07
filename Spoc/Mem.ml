@@ -319,11 +319,11 @@ and alloc_vect_on_device vector dev =
   match dev.Devices.specific_info with
   | Devices.CudaInfo _ -> 
     (match Vector.vector vector with
-     | Vector.Bigarray _  -> cuda_alloc_vect vector dev.Devices.general_info.Devices.id dev.Devices.general_info
+     | Vector.Bigarray _ | Vector.Host_vec _ -> cuda_alloc_vect vector dev.Devices.general_info.Devices.id dev.Devices.general_info
      | Vector.CustomArray _  -> cuda_custom_alloc_vect vector dev.Devices.general_info.Devices.id dev.Devices.general_info)
   | Devices.OpenCLInfo _ -> 
     (match Vector.vector vector with
-     | Vector.Bigarray _  ->   opencl_alloc_vect vector  (dev.Devices.general_info.Devices.id - (Devices.cuda_devices ())) dev.Devices.general_info
+     | Vector.Bigarray _ | Vector.Host_vec _ ->   opencl_alloc_vect vector  (dev.Devices.general_info.Devices.id - (Devices.cuda_devices ())) dev.Devices.general_info
      | Vector.CustomArray _  -> opencl_custom_alloc_vect vector (dev.Devices.general_info.Devices.id - (Devices.cuda_devices ())) dev.Devices.general_info)
 
 and to_cpu vect ?queue_id:(q = 0) () =

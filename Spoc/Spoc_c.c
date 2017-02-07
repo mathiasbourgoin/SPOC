@@ -36,8 +36,10 @@
 #include <string.h>
 #include <math.h>
 
-#include "Spoc.h"
 
+
+#include "Spoc.h"
+int noCL = 1;
 
 
 value spoc_getOpenCLDevicesCount()

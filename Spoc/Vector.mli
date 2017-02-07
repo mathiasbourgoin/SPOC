@@ -72,10 +72,13 @@ val float32 : (float, Bigarray.float32_elt) kind
 val float64 : (float, Bigarray.float64_elt) kind
 val complex32 : (Complex.t, Bigarray.complex32_elt) kind
 
+type ('a,'b) host_vec
+  
 (** a spoc_vector is a Bigarray or a custom  vector *)
 type ('a, 'b) spoc_vec =
     Bigarray of ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t
   | CustomArray of (customarray * ('a,'b) custom)
+  | Host_vec of ('a,'b) host_vec
 
 
 (**/**)

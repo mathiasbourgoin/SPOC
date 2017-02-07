@@ -21,8 +21,8 @@
 
 open Spoc
 
-kernel vec_add : Spoc.Vector.vfloat32 -> Spoc.Vector.vfloat32 -> Spoc.Vector.vfloat32 -> int -> unit = "kernels/Spoc_kernels" "vec_add"
-kernel vec_add_double : Spoc.Vector.vfloat64 -> Spoc.Vector.vfloat64 -> Spoc.Vector.vfloat64 -> int -> unit = "kernels/Spoc_kernels" "vec_add_double"
+kernel vec_add : Spoc.Vector.vfloat32 -> Spoc.Vector.vfloat32 -> Spoc.Vector.vfloat32 -> int -> unit = "kernels/VecAdd" "vec_add"
+kernel vec_add_double : Spoc.Vector.vfloat64 -> Spoc.Vector.vfloat64 -> Spoc.Vector.vfloat64 -> int -> unit = "kernels/VecAdd" "vec_add_double"
 
 let devices = Spoc.Devices.init ()
 

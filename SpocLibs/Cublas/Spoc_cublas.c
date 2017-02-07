@@ -56,14 +56,17 @@ CAMLprim value spoc_cublasGetError(){
 
 /*********************************************************/
 
-#define GET_HOST_VEC(vec, h_vec) \
-	bigArray = Field (Field(vec, 1), 0); \
-	h_vec = (void*) Data_bigarray_val(bigArray);
+#define GET_HOST_VEC(v, h_vec)					\
+  bigArray = Field (Field(v, 1), 0);					\
+  h_vec = (void*)(((host_vector*)(Field(Field(bigArray,0),1)))->vec);
+//(void*) Data_bigarray_val(bigArray);
 
-#define GET_VEC(vec, d_vec) \
-	dev_vec_array = Field(vec, 2); \
-	dev_vec =Field(dev_vec_array, id); \
-	d_vec = CUdeviceptr_val(Field(dev_vec, 1));
+#define GET_VEC(vec, d_vec)			\
+  dev_vec_array = Field(vec, 2);		\
+  gi = Field(dev, 0);				\
+  id = Int_val(Field(gi, 7));			\
+  dev_vec =Field(dev_vec_array, id);		\
+  d_vec = CUdeviceptr_val(Field(dev_vec, 1));
 
 /*********************************************************/
 
@@ -526,7 +529,8 @@ CAMLprim value spoc_cublasSetMatrix (value rows, value cols, value a, value lda,
 	CAMLlocal4(dev_vec_array, dev_vec, gi, bigArray);
 	CUdeviceptr d_B;
 	void* h_A;
-	int type_size, tag;
+	int type_size = sizeof(double);
+	int tag;
 	int id;
 	gi = Field(dev, 0);
 	id = Int_val(Field(gi, 7));
@@ -534,10 +538,13 @@ CAMLprim value spoc_cublasSetMatrix (value rows, value cols, value a, value lda,
 	GET_HOST_VEC (a, h_A);
 
 	CUBLAS_GET_CONTEXT;
+	int custom = 0;
 	GET_TYPE_SIZE;
 
-
+	//printf("rows : %d, col: %d, type_size : %d, lda :%d, ldb : %d\n", Int_val(rows), Int_val(cols), type_size, Int_val (lda), Int_val(ldb));
+	//fflush(stdout);
 	CUBLAS_CHECK_CALL(cublasSetMatrix(Int_val(rows), Int_val(cols), type_size, h_A, Int_val(lda), (void*) d_B, Int_val(ldb)));
+	
 	CUBLAS_RESTORE_CONTEXT;
 	CAMLreturn(Val_unit);
 }

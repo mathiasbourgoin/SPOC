@@ -123,10 +123,10 @@ let _ =
             (Custom customPoint) vbool
         in
         (Spoc.Mem.to_device gpuField ~queue_id: 1 !dev;
-          Spoc.Mem.to_device vbool ~queue_id: 0 !dev ;
-          pio4 := gpuPI gpuField vbool !dev !size;
-          Printf.printf "GPU Computation : PI = %d/%d = %.10G\n" !pio4 !size
-            ((4. *. (float !pio4)) /. (float !size));
-          Pervasives.flush stdout;
+         Spoc.Mem.to_device vbool ~queue_id: 0 !dev ;
+         pio4 := gpuPI gpuField vbool !dev !size;
+         Printf.printf "GPU Computation : PI = %d/%d = %.10G\n" !pio4 !size
+           ((4. *. (float !pio4)) /. (float !size));
+         Pervasives.flush stdout;
         ))))
 

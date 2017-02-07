@@ -194,7 +194,7 @@ let current_opencl_device = ref 0
 
 external is_available : int -> bool = "spoc_opencl_is_available"
 
-let init ?only: (s = Both) () =
+let init ?only:(s = Both) () =
   begin
     match s with
     | Both -> (
