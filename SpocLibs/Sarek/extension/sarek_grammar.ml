@@ -827,10 +827,10 @@ in
     ["$"; code = STRING; "$" ->
      {t = TUnknown; e = Nat (_loc, code); loc = _loc}]
 | "if"
-    [ "if"; cond=SELF; "then"; cons1=sequence;
+    [ "if"; cond=SELF; "then"; cons1= SELF;
       "else"; cons2=sequence ->
 		    {t=TUnknown; e= Ife(_loc,cond,cons1,cons2); loc = _loc}
-    | "if"; cond=SELF; "then"; cons1 = sequence ->
+    | "if"; cond=SELF; "then"; cons1 = SELF ->
        {t=TUnknown; e= If(_loc,cond,cons1); loc = _loc}
     ]
 | "match"
