@@ -186,10 +186,14 @@ let () =
            gpu_bitonic);
 
   let j,k = ref 0,ref 2 in
+  let first = ref true in
   measure_time "Parallel Bitonic" (fun () ->
       while !k <= size do
         j := !k lsr 1;
         while !j > 0 do
+          if !first then
+            (Kirc.profile_run gpu_bitonic (gpu_vect,!j,!k) (block0,grid0) 0 !dev;
+             first := false);
           Kirc.run gpu_bitonic (gpu_vect,!j,!k) (block0,grid0) 0 !dev;
           j := !j lsr 1;
         done;

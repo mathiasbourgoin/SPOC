@@ -43,6 +43,8 @@ open Kirc_Ast
 
 module Kirc_OpenCL = Gen.Generator(Kirc_OpenCL)
 module Kirc_Cuda = Gen.Generator(Kirc_Cuda)
+module Kirc_Profile = Gen.Generator(Profile)
+
 
 type extension =
   | ExFloat32
@@ -90,7 +92,8 @@ let opencl_head = (
   "float spoc_fdiv ( float a, float b ) { return (a / b);}\n"^
   "int logical_and (int a, int b ) { return (a & b);}\n"^
   "int spoc_powint (int a, int b ) { return ((int) pow (((float) a), ((float) b)));}\n"^
-  "int spoc_xor (int a, int b ) { return (a^b);}\n")
+  "int spoc_xor (int a, int b ) { return (a^b);}\n"
+)
 
 let opencl_float64 = (
   "#ifndef __FLOAT64_EXTENSION__ \n"^
@@ -129,7 +132,8 @@ let cuda_head = (
   "__device__ float spoc_fdiv ( float a, float b ) { return (a / b);}\n"^
   "__device__ int logical_and (int a, int b ) { return (a & b);}\n"^
   "__device__ int spoc_powint (int a, int b ) { return ((int) pow (((double) a), ((double) b)));}\n"^
-  "__device__ int spoc_xor (int a, int b ) { return (a^b);}\n"
+  "__device__ int spoc_xor (int a, int b ) { return (a^b);}\n"^
+  "__device__ void spoc_atomic_add(unsigned long long int *a, unsigned int b){ atomicAdd(a, b);}"
 )
 
 let eint32 = EInt32
@@ -503,11 +507,34 @@ let load_file f =
   close_in ic;
   (s)
 
-let gen ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) =
+
+
+    
+let gen_profile ker dev =
   let kir,k = ker in
   let (k1,k2,k3) = (k.ml_kern, k.body,k.ret_val) in
   return_v := "","";
-  let k' = ((Kirc_Cuda.parse 0 (fst k3)),
+  let k' = ((Kirc_Profile.parse 0 (fst k3) dev),
+            ( match  (fst k3) with
+              | IntVar (i,s) | FloatVar (i,s) | DoubleVar (i,s) -> s (*"sspoc_var"^(string_of_int i)^*)^" = "
+              | Unit -> ""
+              | SetV _ -> ""
+              | IntVecAcc _-> ""
+              | VecVar _ -> ""
+              | _ -> (debug_print
+                        (kir,
+                         {ml_kern = k1;
+                          body = fst k3;
+                          ret_val = k3;
+                          extensions = k.extensions});  Pervasives.flush stdout; assert false) ))
+  in
+  Printf.printf "%s\n" (Kirc_Profile.parse 0 (k2) dev)
+
+let gen ?profile:(prof=false) ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) dev =
+  let kir,k = ker in
+  let (k1,k2,k3) = (k.ml_kern, k.body,k.ret_val) in
+  return_v := "","";
+  let k' = ((Kirc_Cuda.parse ~profile:prof 0 (fst k3) dev),
             ( match  (fst k3) with
               | IntVar (i,s) | FloatVar (i,s) | DoubleVar (i,s) -> s (*"sspoc_var"^(string_of_int i)^*)^" = "
               | Unit -> ""
@@ -535,43 +562,65 @@ let gen ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('a, 'b, 'c,'d,'e) sarek
            match extension with
            | ExFloat32 -> header
            | ExFloat64 -> cuda_float64^header) cuda_head k.extensions in
-    let src = Kirc_Cuda.parse 0 (rewrite k2) in
+    let src = Kirc_Cuda.parse ~profile:prof 0 (rewrite k2) dev in
     let global_funs = ref "" in
     Hashtbl.iter (fun _ a -> global_funs := !global_funs^(fst a)^"\n") Kirc_Cuda.global_funs;
     let constructors = List.fold_left (fun a b -> "__device__ "^b^a) "\n\n" !constructors in
     save "kirc_kernel.cu" (cuda_head ^ constructors ^  !global_funs ^ src) ;
-    ignore(Sys.command ("nvcc -m64  -O3 -ptx kirc_kernel.cu -o kirc_kernel.ptx"));
+    ignore(Sys.command ("nvcc --gpu-architecture=sm_30 -m64  -O3 -ptx kirc_kernel.cu -o kirc_kernel.ptx"));
     let s = (load_file "kirc_kernel.ptx") in
     kir#set_cuda_sources s;
-    ignore(Sys.command "rm kirc_kernel.cu kirc_kernel.ptx");
+    (*ignore(Sys.command "rm kirc_kernel.cu kirc_kernel.ptx");*)
 
-  and gen_opencl () =
+  and gen_opencl prof =
     let opencl_head =
       Array.fold_left
         (fun header extension ->
            match extension with
            | ExFloat32 -> header
            | ExFloat64 -> opencl_float64^header) opencl_head k.extensions in
-    let src = Kirc_OpenCL.parse 0 (rewrite k2) in
+    let src = Kirc_OpenCL.parse ~profile:prof 0 (rewrite k2) dev in
     let global_funs = ref "/************* FUNCTION DEFINITIONS ******************/\n"  in
     Hashtbl.iter (fun _ a -> global_funs := !global_funs ^ "\n" ^ (fst a) ^ "\n" ) Kirc_OpenCL.global_funs;
     let constructors =  "/************* CUSTOM TYPES ******************/\n" ^
                         List.fold_left (fun a b -> b^a) "\n\n" !constructors in
     let protos = "/************* FUNCTION PROTOTYPES ******************/\n" ^
                  List.fold_left (fun a b -> b^";\n"^a) "" !Kirc_OpenCL.protos in
-    let clkernel = (opencl_head ^ constructors ^ protos ^ !global_funs ^  src)  in
+    let clkernel = ((if prof then
+                       "#pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable\n"
+                     else "")^
+                    opencl_head ^
+                    (if prof then
+                      "void spoc_atomic_add(__global ulong *a, ulong b){ atom_add(a, (ulong)b);}\n"
+                    else "") ^
+                    constructors ^ protos ^ !global_funs ^  src)  in
     save "kirc_kernel.cl" clkernel;
     kir#set_opencl_sources clkernel;
 
   in
   begin
     match o with
-    | Devices.Both -> gen_cuda (); gen_opencl();
-    | Devices.Cuda -> gen_cuda ()
-    | Devices.OpenCL -> gen_opencl ()
+    | Devices.Both ->
+      ignore(Kirc_Cuda.get_profile_counter());
+      gen_cuda ();
+      ignore(Kirc_OpenCL.get_profile_counter());
+      gen_opencl prof;
+    | Devices.Cuda ->
+      ignore(Kirc_Cuda.get_profile_counter());
+      gen_cuda ()
+    | Devices.OpenCL ->
+      ignore(Kirc_OpenCL.get_profile_counter());
+      gen_opencl prof
   end;
   kir#reset_binaries ();
   kir,k
+
+let arg_of_vec v  =
+  match Vector.kind v with
+  | Vector.Int32 _ -> Kernel.VInt32 v
+  | Vector.Float32 _ -> Kernel.VFloat32 v
+  | Vector.Int64 _ -> Kernel.VInt64 v
+  | _ -> assert false
 
 
 let run ?recompile:(r=false) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) a b q dev =
@@ -579,30 +628,91 @@ let run ?recompile:(r=false) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) a b q dev 
   (match dev.Devices.specific_info with
    | Devices.CudaInfo _ ->
      if r then
-       ignore(gen ~only:Devices.Cuda (kir,k))
+       ignore(gen ~only:Devices.Cuda (kir,k) dev)
      else
        begin
          match kir#get_cuda_sources () with
-         | [] -> ignore(gen ~only:Devices.Cuda (kir,k))
+         | [] -> ignore(gen ~only:Devices.Cuda (kir,k) dev)
          | _ -> ()
        end
    | Devices.OpenCLInfo _ ->
      begin
        if r then
-         ignore(gen ~only:Devices.OpenCL (kir,k))
+         ignore(gen ~only:Devices.OpenCL (kir,k) dev)
        else
          match kir#get_opencl_sources () with
-         | [] -> ignore(gen ~only:Devices.OpenCL (kir,k))
+         | [] -> ignore(gen ~only:Devices.OpenCL (kir,k) dev)
          | _ -> ()
      end);
   kir#run a b q dev
 
+let profile_run ?recompile:(r=true) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) a b q dev =
+  let kir,k = ker in
+  (match dev.Devices.specific_info with
+   | Devices.CudaInfo _ ->
+     if r then
+       ignore(gen ~profile:true ~only:Devices.Cuda (kir,k) dev)
+     else
+       begin
+         match kir#get_cuda_sources () with
+         | [] -> ignore(gen ~profile:true ~only:Devices.Cuda (kir,k) dev)
+         | _ -> ()
+       end
+   | Devices.OpenCLInfo _ ->
+     begin
+       if r then
+         ignore(gen ~profile:true ~only:Devices.OpenCL (kir,k) dev)
+       else
+         match kir#get_opencl_sources () with
+         | [] -> ignore(gen ~profile:true ~only:Devices.OpenCL (kir,k) dev)
+         | _ -> ()
+     end);
+  (* kir#run a b q dev*)
+  let nCounter =
+    !(match dev.Devices.specific_info with
+     | Devices.CudaInfo _ ->
+       Kirc_Cuda.profiler_counter;
+     | Devices.OpenCLInfo _ ->
+       Kirc_OpenCL.profiler_counter;
+     )
+  in
+  Printf.printf "Number of counters : %d\n\!" nCounter;
+  let profiler_counters =  Vector.create Vector.int64 nCounter in
+  for i = 0 to nCounter - 1 do
+    Mem.set profiler_counters i 0L;
+  done;
+  (
+    let args = kir#args_to_list a in
+    let offset = ref 0 in
+    kir#compile ~debug:true dev;
+    let block,grid = b in 
+    let bin = (Hashtbl.find (kir#get_binaries ()) dev) in
+    match dev.Devices.specific_info with
+    | Devices.CudaInfo cI ->
+      let extra = Kernel.Cuda.cuda_create_extra ((Array.length args) + 1) in
+      Kernel.Cuda.cuda_load_arg offset extra dev bin 0 (arg_of_vec profiler_counters);
+      Array.iteri (Kernel.Cuda.cuda_load_arg offset extra dev bin) args;
+      Kernel.Cuda.cuda_launch_grid offset bin grid block extra dev.Devices.general_info 0;
 
-let compile_kernel_to_files s ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) =
+    | Devices.OpenCLInfo _ ->
+      Kernel.OpenCL.opencl_load_arg offset dev bin 0 (arg_of_vec profiler_counters);
+      Array.iteri (Kernel.OpenCL.opencl_load_arg offset dev bin) args;
+      Kernel.OpenCL.opencl_launch_grid bin grid block dev.Devices.general_info 0
+  );
+
+  Printf.printf "**********************PROFILING ON\n";
+  Spoc.Tools.iter (fun a -> Printf.printf "%Ld " a) profiler_counters;
+  Printf.printf "\n**********************PROFILING OFF\n";
+  Gen.profile_vect := profiler_counters;
+  gen_profile ker dev;
+;;
+  
+  
+let compile_kernel_to_files s ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) dev =
   let kir,k = ker in
   let (k1,k2,k3) = (k.ml_kern, k.body,k.ret_val) in
   return_v := "","";
-  let k' = ((Kirc_Cuda.parse 0 (fst k3)),
+  let k' = ((Kirc_Cuda.parse 0 (fst k3)) dev,
             ( match  (fst k3) with
               | IntVar (i,s) | FloatVar (i,s) | DoubleVar (i,s) -> s^(*"spoc_var"^(string_of_int i)^*)" = "
               | Unit -> ""
@@ -631,8 +741,8 @@ let compile_kernel_to_files s ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) =
          match extension with
          | ExFloat32 -> header
          | ExFloat64 -> opencl_float64^header) opencl_head k.extensions in
-  save (s^".cu") (cuda_head^(Kirc_Cuda.parse 0 (rewrite k2))) ;
-  save (s^".cl") (opencl_head^(Kirc_OpenCL.parse 0 (rewrite k2)))
+  save (s^".cu") (cuda_head^(Kirc_Cuda.parse 0 (rewrite k2) dev)) ;
+  save (s^".cl") (opencl_head^(Kirc_OpenCL.parse 0 (rewrite k2) dev))
 
 
 

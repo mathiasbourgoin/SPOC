@@ -174,7 +174,7 @@ let map ((ker: ('a, 'b, ('c -> 'd), 'e, 'f) sarek_kernel)) ?dev:(device=(Spoc.De
       Devices.CudaInfo _ -> Devices.Cuda
     | Devices.OpenCLInfo _ -> Devices.OpenCL in
   (*spoc_ker, kir_ker =*)
-  ignore(gen ~only:target res);
+  ignore(gen ~only:target res device);
   let spoc_ker, kir_ker = res in
   let open Kernel in
   let block =  {blockX = 1; blockY = 1; blockZ = 1}
@@ -296,7 +296,7 @@ let map2 ((ker: ('a, 'b,('c -> 'd -> 'e), 'f,'g) sarek_kernel)) ?dev:(device=(Sp
       | Devices.CudaInfo cI -> Devices.Cuda
       | _ -> Devices.OpenCL in
 
-  let spoc_ker, kir_ker = gen ~only:framework res  in
+  let spoc_ker, kir_ker = gen ~only:framework res device in
   let open Kernel in
   let block =  {blockX = 1; blockY = 1; blockZ = 1}
   and grid = {gridX = 1; gridY = 1; gridZ = 1}
@@ -378,18 +378,22 @@ public:
     let kern_end = "\n     return task;\n   }\n};"
 
     let parse_intrinsics (cuda,opencl) = opencl
+
+    let default_parser = true
+    let parse a b dev = ""
+    let parse_fun i a b dev = ""
   end
   in
   let
     module Kirc_ff = Gen.Generator(Ff)
   in
-  let rec args_  = function
+  let rec args_ dev = function
     | Params p ->
       (*Kirc.print_ast p;*)
-      "typedef struct __task{\n"^args_ p
+      "typedef struct __task{\n"^args_ dev p
     | Concat (p1,p2)->
-      (Kirc_ff.parse 1 p1 ^";\n "^
-       args_ p2)
+      (Kirc_ff.parse 1 p1 dev ^";\n "^
+       args_ dev p2)
     | Empty -> "} TASK;"
     | _ -> assert false
   in
@@ -412,11 +416,11 @@ public:
 
   in
 
-  let rec aux = function
-    | Kern (args,body) -> (args_ args,
+  let rec aux dev = function
+    | Kern (args,body) -> (args_ dev args,
                            intro args,
-                           Kirc_ff.parse 3 body)
-    | a -> "",  "", Kirc_ff.parse 3 a in
+                           Kirc_ff.parse 3 body dev)
+    | a -> "",  "", Kirc_ff.parse 3 a dev in
 
 
 
@@ -463,7 +467,8 @@ void loadresacc(void ** ou) {
 using namespace ff;
 extern \"C\"{ "
   in
-  let (task, intro, body_source) = aux kern.body in
+  let device = Obj.magic None in
+  let (task, intro, body_source) = aux device kern.body in
   let ff_cpp_src = ff_header ^ "\n\n" ^task ^"\n\n" ^ Ff.kern_start ^>
                    intro ^ __ ^ body_source ^ Ff.kern_end ^"\n\n" ^ ff_lib ^"}"in
   let channel = open_out "temp_ff_file.cpp" in

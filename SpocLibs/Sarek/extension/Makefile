@@ -74,6 +74,7 @@ tests/%.pp.nat : tests/%.ml
 %.pp.nat: %.pp.ml
 	ocamlfind ocamlopt  -thread  -package ctypes,ctypes.foreign,spoc,sarek,graphics -linkpkg -o $@ $<
 
+
 %.nat : %.ml
 	ocamlfind ocamlopt  -thread -package ctypes,ctypes.foreign,spoc,sarek \
 		-package sarek_syntax -syntax camlp4o  -linkpkg -o $@ $<

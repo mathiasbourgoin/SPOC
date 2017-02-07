@@ -142,10 +142,15 @@ val spoc_native : string -> Kirc_Ast.k_ext
 val return_v : (string * string) ref
 val save : string -> string -> unit
 val load_file : string -> string
+
+val gen_profile :
+  ('a, 'b, 'c, 'd, 'e) sarek_kernel -> Spoc.Devices.device -> unit
+  
 val gen :
-  ?return:bool ->
+  ?profile:bool -> ?return:bool ->
   ?only:Spoc.Devices.specificLibrary ->
   ('a, 'b, 'c, 'd, 'e) sarek_kernel ->
+  Spoc.Devices.device -> 
   ('a, 'b, 'c, 'd, 'e) sarek_kernel
 
 val run :
@@ -153,8 +158,16 @@ val run :
   ('a, 'b, 'c, 'd, 'e) sarek_kernel ->
   'a ->
   Spoc.Kernel.block * Spoc.Kernel.grid -> int -> Spoc.Devices.device -> unit
+
+
+val profile_run :
+  ?recompile:bool ->
+  ('a, ('b, 'f) Spoc.Kernel.kernelArgs array, 'c, 'd, 'e) sarek_kernel ->
+  'a ->
+  Spoc.Kernel.block * Spoc.Kernel.grid -> int -> Spoc.Devices.device -> unit
+  
 val compile_kernel_to_files :
-  string -> ('a, 'b, 'c, 'd, 'e) sarek_kernel -> unit
+  string -> ('a, 'b, 'c, 'd, 'e) sarek_kernel -> Spoc.Devices.device ->unit
 module Std :
   sig
     val thread_idx_x : Int32.t
