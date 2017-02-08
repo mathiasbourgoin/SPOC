@@ -233,80 +233,91 @@ and to_device vect ?queue_id:(q = 0) (dev : Devices.device) =
   (*       (while subvector not entirely transferred do *)
   (*          copy subvector into one contiguous vector of "some correct size" size; *)
   (*          transfer this vector in asynchronously; *)
+  let aux_transfer_to_device vect q dev =
+    match Vector.is_sub vect with
+    | None -> basic_transfer_to_device vect q dev
+    | Some (1, _start, _ok, _ko, v)  ->
+      if _ok = 0 then
+        (
+          transfer_part_to_device v vect q dev 0 0 _start (Vector.length vect) ;
+         )
+      else
+      if _ok > 512 then
+        (
+          let to_transfer = ref (Vector.length vect) in
+          let cpt = ref 0 in
+          while !to_transfer  > _ok do
+            transfer_part_to_device v vect q dev (!cpt * (_ok + _ko)) (!cpt*_ok)_start _ok ;
+            to_transfer := !to_transfer - _ok;
+            incr cpt;
+          done;
+          if !to_transfer > 0 then
+            transfer_part_to_device v vect q dev (!cpt * (_ok + _ko)) (!cpt*_ok) _start !to_transfer;
+         )
+      else
+        (
+          let to_transfer = ref (Vector.length vect) in
+          let cpt = ref 0 in
+          let i = ref 0 in
+          while !to_transfer  > 512 do
+            let temp = Vector.create (Vector.kind vect) 512 in
+            Vector.copy_sub vect temp;
+            for idx = !i to (!i + 511) do
+              set temp idx (get vect !i);
+            done;
+            i := !i + 512;
+            transfer_part_to_device v temp q dev (!cpt * (512 + _ko)) (!cpt*512) _start 512 ;
+            to_transfer := !to_transfer - 512;
+            incr cpt;
+          done;
+          if !to_transfer > 0 then
+            (
+              let temp = Vector.create (Vector.kind vect) !to_transfer in
+              for idx = !i to (!i + !to_transfer - 1) do
+                set temp idx (get vect !i);
+              done;
+              Vector.copy_sub vect temp;
+              transfer_part_to_device v temp q dev (!cpt * (512 + _ko)) (!cpt*512) _start !to_transfer;
+            )
+        )
+     | Some (_, _, _, _, v) ->
+       (	let new_vect = temp_vector vect in
+         for i = 0 to Vector.length vect - 1 do
+           unsafe_set new_vect i (get vect i)
+         done;
+         basic_transfer_to_device new_vect q dev;
+         Vector.update_device_array new_vect vect;
+       )
+  in
   match Vector.dev vect with
-  | Vector.Transferring d  -> 
-    ( if d <> dev then
-        (Devices.flush d ();
-         to_device vect ~queue_id: q dev))
+  | Vector.Transferring d  ->
+    Devices.flush d ();
+    if d <> dev then
+      to_device vect ~queue_id: q dev
+    else
+      aux_transfer_to_device vect q dev
   | Vector.Dev d ->
-    (if d <> dev then
-       (to_cpu vect ~queue_id: q ();
-        Devices.flush d ();
-        to_device vect ~queue_id: q dev))
+    if d <> dev then
+      (to_cpu vect ~queue_id: q ();
+       Devices.flush d ();
+       to_device vect ~queue_id: q dev)
+    else
+      (Vector.set_device vect (dev.Devices.general_info.Devices.id) (Vector.Transferring dev);
+       aux_transfer_to_device vect q dev;
+       Vector.set_device vect (dev.Devices.general_info.Devices.id) (Vector.Dev dev)
+      )
   | Vector.No_dev ->
     (Vector.set_device vect (dev.Devices.general_info.Devices.id) (Vector.Transferring dev);
      (try alloc_vect_on_device vect dev with
       | Cuda.ERROR_OUT_OF_MEMORY | OpenCL.MEM_OBJECT_ALLOCATION_FAILURE | _ ->
         (try (Devices.flush dev ~queue_id:q (); alloc_vect_on_device vect dev)
-         with 
-         | Cuda.ERROR_OUT_OF_MEMORY | OpenCL.MEM_OBJECT_ALLOCATION_FAILURE -> 
+         with
+         | Cuda.ERROR_OUT_OF_MEMORY | OpenCL.MEM_OBJECT_ALLOCATION_FAILURE ->
            ( Devices.flush dev (); Gc.compact ();
              alloc_vect_on_device vect dev)
          | e -> raise e));
-     match Vector.is_sub vect with
-     | None -> basic_transfer_to_device vect q dev
-     | Some (1, _start, _ok, _ko, v)  -> 
-       if _ok = 0 then
-         (
-           transfer_part_to_device v vect q dev 0 0 _start (Vector.length vect) ;
-         )
-       else
-       if _ok > 512 then
-         (
-           let to_transfer = ref (Vector.length vect) in
-           let cpt = ref 0 in
-           while !to_transfer  > _ok do
-             transfer_part_to_device v vect q dev (!cpt * (_ok + _ko)) (!cpt*_ok)_start _ok ;
-             to_transfer := !to_transfer - _ok;
-             incr cpt;
-           done;
-           if !to_transfer > 0 then
-             transfer_part_to_device v vect q dev (!cpt * (_ok + _ko)) (!cpt*_ok) _start !to_transfer;
-         )
-       else
-         (
-           let to_transfer = ref (Vector.length vect) in
-           let cpt = ref 0 in
-           let i = ref 0 in
-           while !to_transfer  > 512 do
-             let temp = Vector.create (Vector.kind vect) 512 in
-             Vector.copy_sub vect temp;
-             for idx = !i to (!i + 511) do
-               set temp idx (get vect !i);
-             done;
-             i := !i + 512;
-             transfer_part_to_device v temp q dev (!cpt * (512 + _ko)) (!cpt*512) _start 512 ;
-             to_transfer := !to_transfer - 512;
-             incr cpt;
-           done;
-           if !to_transfer > 0 then
-             (
-               let temp = Vector.create (Vector.kind vect) !to_transfer in
-               for idx = !i to (!i + !to_transfer - 1) do
-                 set temp idx (get vect !i);
-               done;
-               Vector.copy_sub vect temp;
-               transfer_part_to_device v temp q dev (!cpt * (512 + _ko)) (!cpt*512) _start !to_transfer;
-             )
-         )			
-     | Some (_, _, _, _, v) -> 
-       (	let new_vect = temp_vector vect in
-         for i = 0 to Vector.length vect - 1 do 
-           unsafe_set new_vect i (get vect i)
-         done;
-         basic_transfer_to_device new_vect q dev;
-         Vector.update_device_array new_vect vect;
-       ));  
+    );
+    aux_transfer_to_device vect q dev;
     Vector.set_device vect (dev.Devices.general_info.Devices.id) (Vector.Dev dev)
 
 (*and free_vect_on_device vector dev =
