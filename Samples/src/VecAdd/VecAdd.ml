@@ -28,7 +28,7 @@ let devices = Spoc.Devices.init ()
 
 let dev = ref devices.(0)
 let vec_size = ref 1024
-let auto_transfers = ref false
+let auto_transfers = ref true
 let verify = ref true
 
 let _ =

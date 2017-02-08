@@ -1,5 +1,10 @@
 #include "Trac_c.h"
 #include <caml/threads.h>
+#include <execinfo.h>
+#define _GNU_SOURCE
+#include <errno.h>
+
+extern char* __progname;
 
 struct timeval start, end;
 int part_count = 0;
@@ -49,6 +54,33 @@ int start_transfert_callback(const char* desc, size_t size, int vect_id, const c
     info_tab[info_elem - 1].vect_id = vect_id;
     info_tab[info_elem - 1].part_id = -1;
   }
+
+  // print backtrace to find caller
+  int i,j, nptrs;
+  #define SIZE 100
+  void *buffer[SIZE];
+  char **strings;
+  nptrs = backtrace(buffer, SIZE);
+  strings = backtrace_symbols(buffer, nptrs);
+  for (i = 0; i < nptrs; i++){
+    //    printf("%s\n", strings[i]);
+    /*
+ find first occurence of '(' or ' ' in message[i] and assume
+     * everything before that is the file name. (Don't go beyond 0 though
+     * (string terminator)*/
+    size_t p = 0;
+    while(strings[i][p] != '(' && strings[i][p] != ' '
+	  && strings[i][p] != 0)
+      ++p;
+
+    char syscom[256];
+    sprintf(syscom,"addr2line %p -e %.*s | grep `basename %s .asm`.ml ", buffer[i], p, strings[i], __progname);
+    //last parameter is the file name of the symbol
+    system(syscom);
+  }
+
+  fflush(stdout);
+  free(strings);
   return res;
 }
 
