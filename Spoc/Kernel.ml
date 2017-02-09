@@ -337,10 +337,10 @@ let compile_and_run (dev : Devices.device) ((block : block), (grid : grid))
 
 let max a b = if a < b then b else a
 
-let load_source file ext =
+let load_source path file ext =
   let kernelPath =
-    let path = Sys.argv.(0) in
-    (Filename.dirname path) ^ (Filename.dir_sep ^ (file ^ ext)) in
+(*    let path = Sys.argv.(0) in*)
+    (*Filename.dirname path*) path ^ (Filename.dir_sep ^ (file ^ ext)) in
   let src = ref "" in
   let ic = open_in kernelPath
   in
@@ -356,16 +356,20 @@ class virtual ['a, 'b] spoc_kernel file (func: string) =
   object (self)
     val file_file = file
     val kernel_name = func
+    val mutable source_path = Filename.dirname Sys.argv.(0)
     val mutable cuda_sources =
-      try [ load_source file ".ptx" ] with | _ -> []
+      try [ load_source (Filename.dirname Sys.argv.(0)) file ".ptx" ] with | _ -> []
 
     val mutable opencl_sources =
-      try [ load_source file ".cl" ] with | _ -> []
+      try [ load_source (Filename.dirname Sys.argv.(0)) file ".cl" ] with | _ -> []
 
     val binaries = Hashtbl.create 8
 
-    method get_binaries () = binaries  
+    method get_binaries () = binaries
     method reset_binaries () = Hashtbl.clear binaries
+
+    method set_source_path path =
+      source_path <- path
 
     method get_cuda_sources () = cuda_sources
     method set_cuda_sources s =
@@ -377,9 +381,9 @@ class virtual ['a, 'b] spoc_kernel file (func: string) =
 
     method reload_sources () =
       cuda_sources <-
-        (try [ load_source file ".ptx" ] with | _ -> []);
+        (try [ load_source source_path file ".ptx" ] with | _ -> []);
       opencl_sources <-
-        (try [ load_source file ".cl" ] with | _ -> [])
+        (try [ load_source source_path file ".cl" ] with | _ -> [])
 
     method compile ?debug: (d = false) =
       fun dev ->

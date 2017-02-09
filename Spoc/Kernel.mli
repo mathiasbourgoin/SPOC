@@ -121,7 +121,7 @@ class virtual ['a, 'b] spoc_kernel :
 string ->
 string ->
 object
-  
+
   (** hashtable containing the compiled binaries of the kernel (one for each device it has been compiled  for *)
   val binaries : (Devices.device, kernel) Hashtbl.t
   (** the cuda source code of the kernel *)
@@ -133,7 +133,7 @@ object
   (** the opencl source code of the kernel *)
   val mutable opencl_sources : string list
   (** clean binary cache *)
-	method get_binaries : unit -> (Devices.device, kernel) Hashtbl.t
+  method get_binaries : unit -> (Devices.device, kernel) Hashtbl.t
   method reset_binaries : unit -> unit
   (** compiles a kernel for a device *)
   method compile : ?debug: bool -> Devices.device -> unit
@@ -143,6 +143,8 @@ object
   method virtual exec :
   'a ->
   block * grid -> int -> Devices.device -> kernel -> unit
+
+  method set_source_path: string -> unit
   (**/**)
   method get_cuda_sources : unit -> string list
   method get_opencl_sources : unit -> string list
@@ -158,7 +160,7 @@ object
   
   method virtual list_to_args : 'b -> 'a
   method virtual args_to_list : 'a -> 'b
-	
+
   (**/**)
 end
 
