@@ -74,7 +74,7 @@ int start_transfert_callback(const char* desc, size_t size, int vect_id, const c
       ++p;
 
     char syscom[256];
-    sprintf(syscom,"addr2line %p -e %.*s | grep -v Spoc | grep .ml ", buffer[i], p, strings[i], __progname);
+    sprintf(syscom,"addr2line %p -e %.*s | grep -v Spoc | grep -v stdlib | grep .ml ", buffer[i], p, strings[i], __progname);
     //last parameter is the file name of the symbol
     system(syscom);
   }
