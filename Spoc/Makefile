@@ -11,71 +11,71 @@ MLOBJ_B=$(MLSRC:.ml=.cmo)
 MLOBJ_N=$(MLSRC:.ml=.cmx)
 JSSRC=$(filter-out Js/spoc_lib.js, $(wildcard Js/*.js))
 CC=ocamlc
+ECHO=echo -e
 
 
 all : start | build extension/kernels_ext.cma js
 
 
 start :
-	@echo "\033[43m\033[30mBuilding $(PROJ)\033[0m"
+	@$(ECHO) "\033[43m\033[30mBuilding $(PROJ)\033[0m"
 
 js : Js/$(LIBNAME)_lib.js
 
 Js/$(LIBNAME)_lib.js : $(JSSRC)
-	@echo "\033[43m\033[30mBuilding Web$(PROJ)\033[0m"
-	@echo "\033[36m[$(LIBNAME)_lib.js]\033[0m"
-	@cd Js @@ make
+	@$(ECHO) "\033[43m\033[30mBuilding Web$(PROJ)\033[0m"
+	@$(ECHO) "\033[36m[$(LIBNAME)_lib.js]\033[0m"
+	@cd Js && make
 
 
 extension/kernels_ext.cma:extension/kernels_ext.ml
-	@echo "\033[43m\033[30mBuilding $(PROJ) external kernel extension\033[0m"
-	@echo "\033[31m[kernels_ext.cma]\033[0m"
+	@$(ECHO) "\033[43m\033[30mBuilding $(PROJ) external kernel extension\033[0m"
+	@$(ECHO) "\033[31m[kernels_ext.cma]\033[0m"
 	@cd extension && make 
 
 
 %.cmo:%.ml
-	@echo  "\033[32m[$@]\033[0m" 
+	@$(ECHO) "\033[32m[$@]\033[0m"
 	@ocamlc -g -for-pack $(PROJ) -c $< 2>>log
 
 %.cmx:%.ml
-	@echo  "\033[34m[$@]\033[0m" 
+	@$(ECHO) "\033[34m[$@]\033[0m"
 	@ocamlopt -g -for-pack $(PROJ) -c $< 2>>log
 
 
-
 %.cmi:%.mli
-	@echo  "\033[35m[$@]\033[0m" 
+	@$(ECHO)  "\033[35m[$@]\033[0m"
 	@ocamlc -for-pack $(PROJ) -c $< 2>>log
 
 %.o:%.c
-	@echo  "\033[33m[$@]\033[0m" 
+	@$(ECHO)  "\033[33m[$@]\033[0m"
 	@$(CC) -g -c $< 2>>log
 
 build : $(LIBNAME).cma $(LIBNAME)level $(LIBNAME).cmxa $(LIBNAME).o
 
 $(LIBNAME).cmo : $(MLOBJ_B)  $(COBJ)
-	@echo  "\033[32m[spoc.cmo]\033[0m"
+	@$(ECHO)  "\033[32m[spoc.cmo]\033[0m"
 	@ocamlc -g -pack  $(MLOBJ_B) $(COBJ) -o $(LIBNAME).cmo
 
 $(LIBNAME).o : $(COBJ)
-	@echo  "\033[33m[$@]\033[0m" 
+	@$(ECHO)  "\033[33m[$@]\033[0m"
 	@$(CC) -g $(COBJ) -o $(LIBNAME).o
 
 
 $(LIBNAME).cma: $(LIBNAME).o $(LIBNAME).cmo $(COBJ)
-	@echo  "\033[31m[$(LIBNAME).cma]\033[0m"
+	@$(ECHO)  "\033[31m[$(LIBNAME).cma]\033[0m"
 	@ocamlmklib  -linkall -o $(LIBNAME) $(LIBNAME).cmo $(COBJ) -cclib -lcamlrun
 
 $(LIBNAME).cmx : $(LIBNAME).o $(MLOBJ_N)  $(COBJ)
-	@echo  "\033[34m[$(LIBNAME).cmx]\033[0m"	
+	@$(ECHO)  "\033[34m[$(LIBNAME).cmx]\033[0m"
 	@ocamlopt -g -pack $(MLOBJ_N) $(COBJ) -o $(LIBNAME).cmx
 
 $(LIBNAME).cmxa : $(LIBNAME).cmx $(LIBNAME).o $(COBJ)
-	@echo  "\033[31m[$(LIBNAME).cmxa]\033[0m"
+	@$(ECHO)  "\033[31m[$(LIBNAME).cmxa]\033[0m"
 	@ocamlmklib -linkall -o $(LIBNAME) $(LIBNAME).cmx $(COBJ) -cclib -lasmrun
 
 $(LIBNAME)level : $(LIBNAME).cma extension/kernels_ext.cma
-	@echo   "\033[36m[$(LIBNAME)level]\033[0m"
+	@$(ECHO)   "\033[36m[$(LIBNAME)level]\033[0m"
 	ocamlmktop -custom -thread -I +camlp4 -cclib -L. dynlink.cma -cclib -lthreads \
 	camlp4o.cma extension/kernels_ext.cma str.cma bigarray.cma \
 	-cclib -lcamlrun -cclib -lbigarray -cclib -lunix unix.cma -cclib -l$(LIBNAME) $(LIBNAME).cma \
@@ -91,8 +91,8 @@ ocp :
 doc : uninstall install
 	mkdir -p tmp
 	for i in *.mli; do \
-	echo $$i; \
-	echo "open $(PROJ)" > tmp/$$i; \
+	$(ECHO) $$i; \
+	$(ECHO) "open $(PROJ)" > tmp/$$i; \
 	cat $$i >> tmp/$$i; \
 	done
 	mkdir -p docs
@@ -100,7 +100,7 @@ doc : uninstall install
 	rm -rf tmp
 
 install : all uninstall
-	@echo "\033[43m\033[30mInstalling $(PROJ)\033[0m"
+	@$(ECHO) "\033[43m\033[30mInstalling $(PROJ)\033[0m"
 	@ocamlfind install $(LIBNAME) *.cma *.a *.so *.cmxa $(LIBNAME).cmi META 2>> log
 	@cd extension && make install
 	@cd Js && make install
@@ -112,7 +112,7 @@ ocp-install:
 	cd Js && make install
 
 uninstall :
-	@echo "\033[43m\033[30mRemoving Spoc\033[0m"
+	@$(ECHO) "\033[43m\033[30mRemoving Spoc\033[0m"
 	@cd extension && make uninstall
 	@cd Js && make uninstall
 	@(ocamlfind remove $(LIBNAME) 2>>log) | true;
