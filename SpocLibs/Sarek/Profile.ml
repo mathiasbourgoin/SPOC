@@ -85,16 +85,16 @@ let prof_counter = ref 5
     
 let generated_functions = Hashtbl.create 10
 
-let gmem_store() =
+let gmem_store ()  =
     "(** ### global_memory stores : "^(Int64.to_string (Spoc.Mem.get !Gen.profile_vect 0))^" **)\n"
 
-let gmem_load() =
+let gmem_load () =
   "(** ### global_memory loads : "^(Int64.to_string (Spoc.Mem.get !Gen.profile_vect 1))^" **)\n"
 
-let smem_store() =""
-let smem_load () =""
+let smem_store ()  =""
+let smem_load  ()  =""
 
-let prof_string()=
+let prof_string ()=
   "(**  ### visits : "^(Int64.to_string (Spoc.Mem.get !Gen.profile_vect !prof_counter))^" **)\n"
 
 let prof_time_string()=
@@ -120,28 +120,13 @@ let branch_analysis_string c =
   "(** ### Branch not taken : "^numNotTaken^" **)\n"
 
 
-let while_analysis_string c =  
-  let maxNumActive = Int64.to_string (Spoc.Mem.get !Gen.profile_vect (c+1))
-  and minNumActive = Int64.to_string (Spoc.Mem.get !Gen.profile_vect (c+2)) 
-  and maxNumTaken = Int64.to_string (Spoc.Mem.get !Gen.profile_vect (c+3))
-  and minNumTaken = Int64.to_string (Spoc.Mem.get !Gen.profile_vect (c+4))
-  and maxNumNotTaken = Int64.to_string (Spoc.Mem.get !Gen.profile_vect (c+5))
-  and minNumNotTaken = Int64.to_string (Spoc.Mem.get !Gen.profile_vect (c+6))
-  in
-  "(** ### Max Active threads : "^maxNumActive^" **)\n"^
-  "(** ### Min Active threads : "^minNumActive^" **)\n"^
-  "(** ### Max Branch taken : "^maxNumTaken^" **)\n" ^
-  "(** ### Min Branch taken : "^minNumTaken^" **)\n" ^
-  "(** ### Max Branch not taken : "^maxNumNotTaken^" **)\n"^
-  "(** ### Min Branch not taken : "^minNumNotTaken^" **)\n"
-
 
 let profile_head () =
-  gmem_store()^
-  gmem_load()^
-  smem_store()^
-  smem_load()^
-  branches_string()
+  gmem_store ()^
+  gmem_load ()^
+  smem_store ()^
+  smem_load ()^
+  branches_string ()
     
 let fun_counter = ref 0
 
@@ -158,12 +143,12 @@ let rec parse_fun i a b n dev =
            s^
            
            match body with
-           | Seq (_,_)  -> (aux2 (i+1) body)
-           | _  ->  ((aux2 (i+1) body )^"\n")
+           | Seq (_,_)  -> (aux2 (i) body)
+           | _  ->  ((aux2 (i) body )^"\n")
 
          in
          (pargs ^ " ->\n"^
-          profile_head()^"\n" ^indent (i+1) ^ pbody)^indent (i+1)^ "in")
+          indent (i+1) ^ pbody)^indent (i+1)^ "in")
       | Params k -> parse (i+1) k dev
       | a -> parse (i+1) a dev
     in
@@ -181,7 +166,7 @@ let rec parse_fun i a b n dev =
       let fun_src = aux gen_name a
       in
       Hashtbl.add generated_functions a (fun_src,gen_name);
-      "\n"^indent (i+1) ^"let "^gen_name^" = fun "^fun_src ^"\n" ^indent (i+1)^gen_name
+      "\n"^indent (i+1) ^"let "^gen_name^" = fun "^fun_src ^"\n"^indent (i+1)^gen_name
   in
   name
 
@@ -201,7 +186,7 @@ and  parse i a  dev =
   let open Kirc_Ast in
   let rec aux  = function
     | Kern (args, body) -> ("kern "^(parse i args dev)^" ->\n"^
-                            profile_head()^"\n"^(parse (i) body dev))
+                            profile_head ()^"\n"^(parse (i) body dev))
     | Local (x,y) -> (*"let mutable " ^ (parse i x)^" in\n"^
                        (indent (i))^(parse i y)^
                           "\n"^(indent (i))*)
@@ -290,10 +275,10 @@ and  parse i a  dev =
       Printf.printf "While %d\n%!" !prof_counter;
       let cond = parse i a dev in
       let b_anal = branch_analysis_string !prof_counter in
-      prof_counter := !prof_counter + 3; 
+      prof_counter := !prof_counter + 4; 
       let body = indent (i+1)^parse (i+1) b dev in
       let s = b_anal^"while " ^ cond ^" do\n"^
-              indent (i+1)^body^
+              body^"\n"^
               indent i^"done;"
       in
       s
@@ -321,13 +306,16 @@ and  parse i a  dev =
         parse i k dev
       in
       let ss = 
-      (match dev.Spoc.Devices.specific_info with
-       |  Spoc.Devices.CudaInfo _ ->
-         prof_time_string()
-       | _ -> "")
-       in
-       incr prof_counter;
-       s^ss
+        (match dev.Spoc.Devices.specific_info with
+         |  Spoc.Devices.CudaInfo _ ->
+           let s = indent (i) ^
+                   prof_time_string()^ indent (i) in
+           incr prof_counter;
+           s
+         | _ -> "")
+      in
+
+      ss^s
     | _ -> Kirc_Ast.print_ast a; ""
   in aux  a
 

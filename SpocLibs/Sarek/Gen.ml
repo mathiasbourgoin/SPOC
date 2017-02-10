@@ -184,7 +184,7 @@ module Generator (M:CodeGenerator) = struct
   and gmem_load = ref 0
   and gmem_store = ref 0
 
-and global_mem_string i = 
+and global_mem_string i  = 
   (if !gmem_load > 0 then
      (
        let s = indent i^"spoc_atomic_add(profile_counters+1,"^(string_of_int !gmem_load)^"); // global mem load\n" in

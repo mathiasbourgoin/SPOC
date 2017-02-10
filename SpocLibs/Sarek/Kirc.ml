@@ -97,8 +97,77 @@ let opencl_head = (
 
 let opencl_profile_head =(
   "\n/*********** PROFILER FUNCTIONS **************/\n"^
+  "#pragma OPENCL EXTENSION cl_khr_int64_extended_atomics : enable\n"^
   "void spoc_atomic_add(__global ulong *a, ulong b){ atom_add(a, (ulong)b);}\n"^
-  "\n"
+  "\n"^
+  "void branch_analysis(__global ulong *profile_counters, int eval, int counters){
+  
+  unsigned int threadIdxInGroup = 
+                get_local_id(2)*get_local_size(0)*get_local_size(1) + 
+                get_local_id(1)*get_local_size(0) + get_local_id(0);
+  
+  
+  //Get count of 1) active work items  in this workgroup
+  //2) work items that will take the branch
+  //3) work items that do not take the branch.
+  __local ulong numActive[1]; numActive[0] = 0;
+  __local ulong numTaken[1];  numTaken[0] = 0;
+  __local ulong numNotTaken[1]; numNotTaken[0] = 0;
+  __local unsigned int lig[1]; lig[0]  = 0;
+  barrier(CLK_LOCAL_MEM_FENCE);
+
+  atomic_inc(numActive);
+  atom_max(lig, threadIdxInGroup);
+  
+  if (eval) atomic_inc(numTaken);
+  if (!eval) atomic_inc(numNotTaken);
+  
+  barrier(CLK_LOCAL_MEM_FENCE);
+  
+  // The last active work item in each group gets to write results.
+  if (lig[0] == threadIdxInGroup) {
+    spoc_atomic_add(profile_counters+4, (ulong)1); //
+    spoc_atomic_add(profile_counters+counters+1, numActive[0]);
+    spoc_atomic_add(profile_counters+counters+2, numTaken[0]);
+    spoc_atomic_add(profile_counters+counters+3, numNotTaken[0]);
+    if (numTaken[0] != numActive[0] && numNotTaken[0] != numActive[0]) {
+      // If threads go different ways, note it.
+      spoc_atomic_add(profile_counters+5, (ulong)1);
+    }
+  }
+}\n"^
+  "void while_analysis(unsigned long long int *profile_counters, int eval){
+  /* unsigned int threadIdxInGroup = 
+                get_local_id(2)*get_local_size(0)*get_local_size(1) + 
+                get_local_id(1)*get_local_size(0) + get_local_id(0);
+
+  //Get count of 1) active work items  in this workgroup
+  //2) work items that will take the branch
+  //3) work items that do not take the branch.
+  __local ulong numActive[1]; numActive[0] = 0;
+  __local unsigned int numTaken;  numTaken = 0;
+  __local unsigned int numNotTaken; numNotTaken = 0;
+  __local unsigned int lig; lig  = 0;
+  barrier(CLK_LOCAL_MEM_FENCE);
+
+  atomic_inc(numActive);
+  atom_max(&lig, threadIdxInGroup);
+  
+  if (eval) atom_inc(&numTaken);
+  if (!eval) atom_inc(&numNotTaken);
+  
+  barrier(CLK_LOCAL_MEM_FENCE);
+  
+  // The last active work item in each group gets to write results.
+  if (lig == threadIdxInGroup) {
+    spoc_atomic_add(profile_counters+4, (ulong)1); //
+    if (numTaken != numActive[0] && numNotTaken != numActive[0]) {
+      // If threads go different ways, note it.
+      spoc_atomic_add(profile_counters+5, (ulong)1);
+    }
+  } */               
+}
+\n"
 )
     
 let opencl_float64 = (
@@ -742,7 +811,7 @@ let profile_run ?recompile:(r=true) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) a b
        Kirc_OpenCL.profiler_counter;
      )
   in
-  Printf.printf "Number of counters : %d\n\!" nCounter;
+  Printf.printf "Number of counters : %d\n%!" nCounter;
   let profiler_counters =  Vector.create Vector.int64 nCounter in
   for i = 0 to nCounter  - 1 do
     Mem.set profiler_counters i 0L;
