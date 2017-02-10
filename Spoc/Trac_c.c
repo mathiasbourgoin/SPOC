@@ -1,11 +1,28 @@
 #include "Trac_c.h"
-#include <caml/threads.h>
 
 struct timeval start, end;
 int part_count = 0;
 int size_sum = 0;
 int info_elem = 0;
 transfert_prof_info* info_tab = NULL;
+FILE* output_file = NULL;
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+
+
+void open_output_file(){
+  if(output_file == NULL){
+    output_file = fopen("profilingInfo.json", "w");
+    if(output_file == NULL){
+      fprintf(stdout, "Error opening file: %s\n", strerror( errno ));
+    }
+  }
+}
+
+void close_output_file(){
+  if(output_file == NULL){
+    fclose(output_file);
+  }
+}
 
 void sync_event_prof(){
   int i;
@@ -149,7 +166,13 @@ void gpu_free_callback(const char* desc, int vect_id, int id_device, const char*
   args[2] = Val_int(vect_id);
   args[3] = caml_copy_string(type_gpu);
   args[4] = Val_int(id_device);
-  caml_callbackN(*closure_f_gpu_free, 5, args);
+  pthread_mutex_lock(&mutex);
+  if(output_file == NULL) open_output_file();
+  fprintf(output_file, "{\n	\"type\":\"freeGPU\",\n	\"desc\":\"%s\", \"vectorId\":\"%i\",\n	\"vectorSize\":\"%i\",\n \"gpuType\":\"%s\",\n \"deviceId\":\"%i\"\n },\n%!", desc, vect_id, size, type_gpu, id_device);
+  fflush(output_file);
+  //close_output_file();
+  pthread_mutex_unlock(&mutex);
+//caml_callbackN(*closure_f_gpu_free, 5, args);
 }
 
 void gpu_alloc_callback(const char* desc, int vect_id, int id_device, const char* type_gpu, size_t size){
@@ -164,7 +187,14 @@ void gpu_alloc_callback(const char* desc, int vect_id, int id_device, const char
   args[2] = Val_int(vect_id);
   args[3] = caml_copy_string(type_gpu);
   args[4] = Val_int(id_device);
-  caml_callbackN(*closure_f_gpu_alloc, 5, args);
+  pthread_mutex_lock(&mutex);
+  if(output_file == NULL) open_output_file();
+  fprintf(output_file, "{\n\"type\":\"allocGPU\",\n	\"desc\":\"%s\",\n\"vectorId\":\"%d\",\n\"vectorSize\":\"%d\",\n\"gpuType\":\"%s\",\n\"deviceId\":\"%d\"\n},\n", desc, vect_id, size, type_gpu, id_device);
+  fflush(output_file);
+  //close_output_file();
+  pthread_mutex_unlock(&mutex);
+
+//caml_callbackN(*closure_f_gpu_alloc, 5, args);
 }
 
 void start_gpu_compile_callback(){

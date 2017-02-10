@@ -2,10 +2,12 @@
 #define _TRAC_C_H
 
 #include <stdio.h>
+#include <pthread.h>
 #include <time.h>
 #include <sys/time.h>
 #include <string.h>
 #include <errno.h>
+#include <math.h>
 
 #include <caml/mlvalues.h>
 #include <caml/memory.h>
@@ -14,7 +16,7 @@
 #include <caml/callback.h>
 #include <caml/fail.h>
 #include <caml/bigarray.h>
-#include <math.h>
+#include <caml/threads.h>
 
 #include "Opencl_dynlink.h"
 #include "Spoc.h"
