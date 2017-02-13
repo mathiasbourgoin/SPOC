@@ -194,57 +194,41 @@ let current_opencl_device = ref 0
 
 (******************************************************************************************************)
 
-let emmitDim3 dim =
-  Printf.fprintf Trac.fileOutput "{ \"type\":\"dim3\", \"x\":%i, \"y\":%i, \"z\":%i }" dim.x dim.y dim.z
+external prePrint : int -> unit = "pre_print_device"
 
-let emmitGeneralInfo genInf =
-  let ecc = string_of_bool genInf.eccEnabled in
-  Printf.fprintf Trac.fileOutput "{
-  \"type\":\"generalInfo\",\n
-  \"name\":\"%s\",\n
-  \"totalGlobalMem\":%i,\n
-  \"localMemSize\":%i,\n
-  \"clockRate\":%i,\n
-  \"totalConstMem\":%i,\n
-  \"multiProcessorCount\":%i,\n
-  \"eccEnabled\":\"%s\",\n
-  \"id\":%i\n
-  }" genInf.name genInf.totalGlobalMem genInf.localMemSize genInf.clockRate
-  genInf.totalConstMem genInf.multiProcessorCount ecc genInf.id
+external printInfo : string -> int -> int -> int -> int -> int -> bool -> int -> string -> bool -> unit = "print_info_bytecode" "print_info_native"
 
-let emmitDevice dev =
+let emmitDevice dev printComma =
   let devType = begin match dev.specific_info with
   | CudaInfo inf -> "Cuda"
   | OpenCLInfo inf -> "OpenCL"
   end in
-  Printf.fprintf Trac.fileOutput "{
-  \"type\":\"device\",
-  \"generalInfo\": ";
-  emmitGeneralInfo dev.general_info;
-  Printf.fprintf Trac.fileOutput ",
-  \"specificInfo\":\"%s\"\n
-  }" devType
+  let genInf = dev.general_info in
+  printInfo genInf.name genInf.totalGlobalMem genInf.localMemSize genInf.clockRate
+    genInf.totalConstMem genInf.multiProcessorCount genInf.eccEnabled genInf.id devType printComma
 
 let emmitDeviceList devList =
   let nb = List.length devList in
-  Printf.fprintf Trac.fileOutput "{
-  \"type\":\"deviceList\",
-  \"size\":%i,
-  \"elem\":[" nb;
-  List.iteri (fun i dev -> emmitDevice dev; if(i != nb-1) then begin Printf.fprintf Trac.fileOutput "," end) devList;
-  Printf.fprintf Trac.fileOutput "]},\n"
+  prePrint nb;
+  List.iteri (fun i dev -> emmitDevice dev (i != nb-1)) devList;
 
 
 (**********************************************************************************************************)
 
+external openOutput : unit -> unit = "open_output_profiling"
+
+external closeOutput : unit -> unit = "close_output_profiling"
 
 external is_available : int -> bool = "spoc_opencl_is_available"
 
-let init ?only: (s = Both) () =
-  Trac.openOutput ();
-  Trac.setStartTime ();
+external beginEvent : string -> int = "begin_event"
 
-  let idEvent = Trac.beginEvent "initialisation des devices" in
+external endEvent : string -> int -> unit = "end_event" 
+
+let init ?only: (s = Both) () =
+  openOutput ();
+  
+  let idEvent = beginEvent "initialisation des devices" in
   begin
     match s with
     | Both -> (
@@ -279,7 +263,7 @@ let init ?only: (s = Both) () =
   total_num_devices := List.length !devList;
   opencl_compatible_devices := !i;
   emmitDeviceList !devList;
-  Trac.endEvent "fin initialisation des devices" idEvent;
+  endEvent "fin initialisation des devices" idEvent;
   Array.of_list	!devList
 
 let	cuda_devices () = !cuda_compatible_devices

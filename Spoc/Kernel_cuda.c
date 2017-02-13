@@ -116,7 +116,7 @@ CAMLprim value spoc_cuda_compile(value moduleSrc, value function_name, value gi)
 	
 	#ifdef PROFILE
 	/**********************************************/
-	start_gpu_compile_callback();
+	struct timeval* start = start_gpu_compile_callback();
 	/**********************************************/
 	#endif
 
@@ -125,7 +125,7 @@ CAMLprim value spoc_cuda_compile(value moduleSrc, value function_name, value gi)
 
 	#ifdef PROFILE
 	/**********************************************/
-	stop_gpu_compile_callback("COMPILE_CUDA", Int_val(Field(gi, 7)));
+	stop_gpu_compile_callback("COMPILE_CUDA", Int_val(Field(gi, 7)), start);
 	/**********************************************/
 	#endif
 
@@ -430,16 +430,16 @@ CAMLprim value spoc_cuda_launch_grid(value off, value ker, value grid, value blo
   extra2[4] = CU_LAUNCH_PARAM_END;
 
 #ifdef PROFILE	
-	/*********************************************/
-	sync_event_prof();
-	CUevent start_exec;
-	CUevent finish_exec;
-	int id = start_gpu_execution_callback("CUDA_KERNEL_EXEC",  Int_val(Field(gi, 7)));
-	cuEventCreate(&start_exec, CU_EVENT_DEFAULT);
-	cuEventCreate(&finish_exec, CU_EVENT_DEFAULT);
-	cuEventRecord(start_exec, queue[Int_val(queue_id)]);
-	cuEventSynchronize(start_exec);
-	/*********************************************/
+  /*********************************************/
+  sync_event_prof();
+  CUevent start_exec;
+  CUevent finish_exec;
+  int id = start_gpu_execution_callback("CUDA_KERNEL_EXEC",  Int_val(Field(gi, 7)));
+  cuEventCreate(&start_exec, CU_EVENT_DEFAULT);
+  cuEventCreate(&finish_exec, CU_EVENT_DEFAULT);
+  cuEventRecord(start_exec, queue[Int_val(queue_id)]);
+  cuEventSynchronize(start_exec);
+  /*********************************************/
 #endif
 
   CUDA_CHECK_CALL(cuLaunchKernel(*kernel,
@@ -452,18 +452,16 @@ CAMLprim value spoc_cuda_launch_grid(value off, value ker, value grid, value blo
   free(extra);
 
 #ifdef PROFILE
-	/*********************************************/
-	cuEventRecord(finish_exec, queue[Int_val(queue_id)]);
-	cuEventSynchronize(finish_exec);
-	float* duration = malloc(sizeof(float));
-	cuEventElapsedTime(duration, start_exec, finish_exec);
-	/*printf("dur : %f \n", *duration);
-	fflush(stdout);*/
-	stop_gpu_execution_callback(id, (double)((*duration) * 1000.0));
-	cuEventDestroy(start_exec);
-	cuEventDestroy(finish_exec);
-	free(duration);
-	/*********************************************/
+  /*********************************************/
+  cuEventRecord(finish_exec, queue[Int_val(queue_id)]);
+  cuEventSynchronize(finish_exec);
+  float* duration = malloc(sizeof(float));
+  cuEventElapsedTime(duration, start_exec, finish_exec);
+  stop_gpu_execution_callback(id, (double)((*duration) * 1000.0)); /*to microseconds*/
+  cuEventDestroy(start_exec);
+  cuEventDestroy(finish_exec);
+  free(duration);
+  /*********************************************/
 #endif
 
   CUDA_RESTORE_CONTEXT;
