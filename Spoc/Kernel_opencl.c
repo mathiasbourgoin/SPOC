@@ -142,41 +142,44 @@ CAMLprim value spoc_opencl_create_dummy_kernel(){
 	CAMLreturn((value) kernel);
 }
 
-CAMLprim value spoc_opencl_load_param_vec(value off, value ker, int idx, value A, value gi){
-	CAMLparam4(off, ker, A, gi);
-	cl_kernel kernel;
-	cl_mem d_A;
-	int offset;
-	offset = Int_val(Field(off, 0));
-		d_A = Cl_mem_val(Field(A, 1));
-	OPENCL_GET_CONTEXT;
+CAMLprim value spoc_opencl_load_param_vec(value off, value ker, value A, value id, value gi){
+  CAMLparam5(off, ker, A, id, gi);
+  cl_kernel kernel;
+  cl_mem d_A;
+  int offset;
+  offset = Int_val(Field(off, 0));
+  d_A = Cl_mem_val(Field(A, 1));
+  
+#ifdef PROFILE
+  print_last_vector_access(Int_val(id));
+#endif
+  OPENCL_GET_CONTEXT;
 
-	kernel = (cl_kernel) ker;
-	OPENCL_CHECK_CALL1(opencl_error, clSetKernelArg(kernel, offset, sizeof(cl_mem), (void*)&d_A));
-	offset+=1;
-	OPENCL_RESTORE_CONTEXT;
-	Store_field(off, 0, Val_int(offset));
-	CAMLreturn(Val_unit);
+  kernel = (cl_kernel) ker;
+  OPENCL_CHECK_CALL1(opencl_error, clSetKernelArg(kernel, offset, sizeof(cl_mem), (void*)&d_A));
+  offset+=1;
+  OPENCL_RESTORE_CONTEXT;
+  Store_field(off, 0, Val_int(offset));
+  CAMLreturn(Val_unit);
 }
 
 CAMLprim value spoc_opencl_load_param_local_vec(value off, value ker, int idx, value A, value gi){
-	CAMLparam4(off, ker, A, gi);
-	cl_kernel kernel;
-	cl_mem d_A;
-	int offset;
+  CAMLparam4(off, ker, A, gi);
+  cl_kernel kernel;
+  cl_mem d_A;
+  int offset;
+  
+  offset = Int_val(Field(off, 0));
+  d_A = Cl_mem_val(Field(A, 1));
 
-	offset = Int_val(Field(off, 0));
-		d_A = Cl_mem_val(Field(A, 1));
-
-	OPENCL_GET_CONTEXT;
-
-	kernel = (cl_kernel) ker;
-	OPENCL_CHECK_CALL1(opencl_error, clSetKernelArg(kernel, offset, sizeof(float)*4*8*8, NULL));
-	offset+=1;
-	OPENCL_RESTORE_CONTEXT;
-	Store_field(off, 0, Val_int(offset));
-
-	CAMLreturn(Val_unit);
+  OPENCL_GET_CONTEXT;
+    
+  kernel = (cl_kernel) ker;
+  OPENCL_CHECK_CALL1(opencl_error, clSetKernelArg(kernel, offset, sizeof(float)*4*8*8, NULL));
+  offset+=1;
+  OPENCL_RESTORE_CONTEXT;
+  Store_field(off, 0, Val_int(offset));
+  CAMLreturn(Val_unit);
 }
 
 CAMLprim value spoc_opencl_load_param_int(value off, value ker, value val, value gi){

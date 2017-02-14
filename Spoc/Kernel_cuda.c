@@ -175,7 +175,8 @@ CAMLprim value spoc_cuda_debug_compile(value moduleSrc, value function_name, val
     struct timespec* start = print_start_gpu_compile();
 #endif
 
-	cuda_error = (cuModuleLoadDataEx(&module, ptx_source, jitNumOptions, jitOptions, (void **)jitOptVals));
+	cuda_error = (cuModuleLoadDataEx(&module, ptx_source, jitNumOptions, jitOptions, 
+                                     (void **)jitOptVals));
 	if (cuda_error)
 		{
 			printf ("%s\n", jitLogBuffer);
@@ -211,15 +212,15 @@ CAMLprim value spoc_cuda_create_dummy_kernel(){
 }
 
 #define ALIGN_UP(offset, alignment) \
-(offset) = ((offset) + (alignment) - 1) & ~((alignment) - 1)
+  (offset) = ((offset) + (alignment) - 1) & ~((alignment) - 1)
 
 
-#define ADD_TO_PARAM_BUFFER(value, alignment)\
-do {\
-	offset = ALIGN_UP(offset, alignment); \
-	memcpy(extra + offset, &(value), sizeof(value));\
-	offset += sizeof(value);\
-} while (0)
+#define ADD_TO_PARAM_BUFFER(value, alignment)           \
+  do {                                                  \
+	offset = ALIGN_UP(offset, alignment);               \
+	memcpy(extra + offset, &(value), sizeof(value));    \
+	offset += sizeof(value);                            \
+  } while (0)
 
 
 
@@ -234,8 +235,9 @@ CAMLprim value spoc_cuda_load_param_vec(value off, value ex, value A, value v, v
 	int seek;
 	int type_size;
 	int tag;
-
-
+#ifdef PROFILE
+    print_last_vector_access(Field(v, 9));
+#endif
 	seek = Int_val(Field(v,10));
 	bigArray = Field (Field(v, 1), 0);
 	int custom = 0;
@@ -262,6 +264,9 @@ CAMLprim value spoc_cuda_custom_load_param_vec(value off, value ex, value A, val
 	int type_size;
 	int tag;
 	void* ptr;
+#ifdef PROFILE
+    print_last_vector_access(Field(v, 9));
+#endif
 	seek = Int_val(Field(v,10));
 	customArray = Field (Field(v, 1), 0);
 	type_size = Int_val(Field(Field(customArray, 1),1));
@@ -394,7 +399,8 @@ CAMLprim value spoc_cuda_set_block_shape(value ker, value block, value gi){
 	CAMLreturn(Val_unit);
 }
 
-CAMLprim value spoc_cuda_launch_grid(value off, value ker, value grid, value block, value ex, value gi, value queue_id){
+CAMLprim value spoc_cuda_launch_grid(value off, value ker, value grid, value block, value ex, 
+                                     value gi, value queue_id){
   CAMLparam5(ker, grid, ex, block, gi);
   CAMLxparam2(off, queue_id);
   CUfunction *kernel;

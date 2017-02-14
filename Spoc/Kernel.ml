@@ -180,7 +180,6 @@ struct
     | VFloat64 v -> check_vect v
     | VCustom (v : ('a, 'b) Vector.vector) -> check_vect v
     | _ -> load_non_vect arg
-
 end
 
 module OpenCL =
@@ -192,7 +191,7 @@ struct
     "spoc_debug_opencl_compile"
 
   external opencl_load_param_vec :
-    int ref -> kernel -> int -> Vector.device_vec -> Devices.generalInfo -> unit =
+    int ref -> kernel -> Vector.device_vec -> int -> Devices.generalInfo -> unit =
     "spoc_opencl_load_param_vec"
 
   external opencl_load_param_local_vec :
@@ -282,9 +281,9 @@ struct
          (if Vector.dev v <> (Vector.Dev dev) then Mem.to_device v dev ;
           Devices.flush dev ())
        ;
-       opencl_load_param_vec offset clFun idx
+       opencl_load_param_vec offset clFun
          (Vector.device_vec v `OpenCL (dev.Devices.general_info.Devices.id - Devices.cuda_devices()))
-         dev.Devices.general_info)
+         (Vector.get_vec_id v) dev.Devices.general_info)
     in
     match arg with
     | VChar v | VFloat32 v

@@ -55,7 +55,28 @@ extern "C" {
   spocsizeof(Char,char)
   spocsizeof(Complex32,double2)
   
-  
+#ifdef PROFILE
+#define  get(name,type,macro)                       \
+  CAMLprim value get_##name(value v, value idx){	\
+    CAMLparam2(v, idx);                             \
+    host_vector* vec = (host_vector*) (Field(v,1));	\
+    type r = ((type*)(vec->vec))[Int_val(idx)];		\
+    print_get_vector(Field(v, 9), Field(v, 0));     \
+    CAMLreturn (macro(r));                          \
+  }
+
+#define  set(name,type,macro)                                   \
+  CAMLprim value set_##name(value v, value idx, value val ){	\
+    CAMLparam3(v, idx, val);                                    \
+    host_vector* vec = (host_vector*) (Field(v,1));             \
+    type r = macro(val);                                        \
+    ((type*)(vec->vec))[Int_val(idx)] = r;                      \
+    print_set_vector(Field(v, 9), Field(v, 0));                 \
+    CAMLreturn (Val_unit);                                      \
+  }
+
+#else
+
 #define  get(name,type,macro)                       \
   CAMLprim value get_##name(value v, value idx){	\
     CAMLparam2(v, idx);                             \
@@ -63,7 +84,7 @@ extern "C" {
     type r = ((type*)(vec->vec))[Int_val(idx)];		\
     CAMLreturn (macro(r));                          \
   }
-  
+
 #define  set(name,type,macro)                                   \
   CAMLprim value set_##name(value v, value idx, value val ){	\
     CAMLparam3(v, idx, val);                                    \
@@ -72,6 +93,8 @@ extern "C" {
     ((type*)(vec->vec))[Int_val(idx)] = r;                      \
     CAMLreturn (Val_unit);                                      \
   }
+#endif  
+
 
   get(int32,int,caml_copy_int32)
   get(int64,long,caml_copy_int64)

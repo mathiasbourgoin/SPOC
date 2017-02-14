@@ -7,8 +7,12 @@ int size_sum = 0;
 int event_counter = 0;
 int info_elem = 0;
 int info_tab_size = INITIAL_TAB_SIZE;
+int get_tab_size = VECTOR_TAB_SIZE;
+int set_tab_size = VECTOR_TAB_SIZE;
 
 transfert_prof_info* info_tab = NULL;
+vector_entry* vector_get_tab = NULL;
+vector_entry* vector_set_tab = NULL;
 FILE* output_file = NULL;
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -187,6 +191,8 @@ void open_output_file(){
   if(output_file == NULL){
     GETTIME(start_time);
     info_tab = malloc(sizeof(transfert_prof_info) * INITIAL_TAB_SIZE);
+    vector_get_tab = malloc(sizeof(vector_entry) * VECTOR_TAB_SIZE);
+    vector_set_tab = malloc(sizeof(vector_entry) * VECTOR_TAB_SIZE);
     output_file = fopen("profilingInfo.json", "w");
     if(output_file == NULL){
       fprintf(stdout, "Error opening file: %s\n", strerror(errno));
@@ -204,6 +210,19 @@ void close_output_file(){
   }
   pthread_mutex_destroy(&mutex);
   free(info_tab);
+  int max = get_tab_size > set_tab_size ? get_tab_size : set_tab_size;
+  for(int i = 0; i < max; i++){
+    if(i < get_tab_size){
+      if(vector_get_tab[i].backtrace != NULL) 
+        free(vector_get_tab[i].backtrace);
+    }
+    if(i < set_tab_size){
+      if(vector_set_tab[i].backtrace != NULL) 
+        free(vector_set_tab[i].backtrace);
+    }
+  }
+  free(vector_get_tab);
+  free(vector_set_tab);
 }
 
 double get_time(){
@@ -298,34 +317,6 @@ int print_start_transfert(const char* desc, size_t size, int vect_id, const char
   }
   pthread_mutex_unlock(&mutex);
   return id_event;
-  /*
-  // print backtrace to find caller
-  int i,j, nptrs;
-  #define SIZE 100
-  void *buffer[SIZE];
-  char **strings;
-  nptrs = backtrace(buffer, SIZE);
-  strings = backtrace_symbols(buffer, nptrs);
-  for (i = 0; i < nptrs; i++){
-    //    printf("%s\n", strings[i]);
-    /*
- find first occurence of '(' or ' ' in message[i] and assume
-     * everything before that is the file name. (Don't go beyond 0 though
-     * (string terminator)*/
-   /* size_t p = 0;
-    while(strings[i][p] != '(' && strings[i][p] != ' '
-	  && strings[i][p] != 0)
-      ++p;
-
-    char syscom[256];
-    sprintf(syscom,"addr2line %p -e %.*s | grep -v Spoc | grep -v stdlib | grep .ml ", buffer[i], p, strings[i], __progname);
-    //last parameter is the file name of the symbol
-    system(syscom);
-  }
-
-  fflush(stdout);
-  free(strings);
-  return res;*/
 }
 
 void print_stop_transfert(const char* desc, int id, size_t size, int vect_id, 
@@ -574,4 +565,82 @@ void print_stop_gpu_execution(int event_id, double duration){
           "},\n", event_id, time, duration);
   fflush(output_file);
   pthread_mutex_unlock(&mutex);
+}
+
+void print_get_vector(int vector_id, int vector_device){
+  pthread_mutex_lock(&mutex);
+  if(vector_id > get_tab_size){
+    vector_get_tab = realloc(vector_get_tab, sizeof(vector_entry) * vector_id);
+    get_tab_size = vector_id;
+  }
+  vector_get_tab[vector_id-1].vector_id = vector_id;
+  vector_get_tab[vector_id-1].vector_device = vector_device;
+  //vector_get_tab[vector_id-1].backtrace = get_backtrace();
+  pthread_mutex_unlock(&mutex);
+}
+
+void print_set_vector(int vector_id, int vector_device){
+  pthread_mutex_lock(&mutex);
+  if(vector_id > set_tab_size){
+    vector_set_tab = realloc(vector_set_tab, sizeof(vector_entry) * vector_id);
+    set_tab_size = vector_id;
+  }
+  vector_set_tab[vector_id-1].vector_id = vector_id;
+  vector_set_tab[vector_id-1].vector_device = vector_device;
+  //vector_set_tab[vector_id-1].backtrace = get_backtrace();
+  pthread_mutex_unlock(&mutex);
+}
+
+void print_last_vector_access(int vector_id){
+  pthread_mutex_lock(&mutex);
+  int event_id = get_id_event();
+  fprintf(output_file, "{\n"
+          "\"type\":\"lastAccess\",\n"
+          "\"id\":\"%i\",\n"
+          "\"vectorId\":\"%i\",\n"
+          "\"getBacktrace\":\"%s\",\n"
+          "\"setBacktrace\":\"%s\"\n"
+          "},\n", event_id, vector_id, vector_get_tab[vector_id-1].backtrace,
+          vector_set_tab[vector_id-1].backtrace);
+  fflush(output_file);
+  pthread_mutex_unlock(&mutex);
+}
+
+char* get_backtrace(){
+  // print backtrace to find caller
+#define SIZE 100
+  int i, nptrs;
+  void* buffer[SIZE];
+  char** strings;
+  char* trace = malloc(sizeof(char) * BACKTRACE_MAX_SIZE);
+  nptrs = backtrace(buffer, SIZE);
+  strings = backtrace_symbols(buffer, nptrs);
+  for (i = 0; i < nptrs; i++){
+    //    printf("%s\n", strings[i]);
+ 
+    /* find first occurence of '(' or ' ' in message[i] and assume
+     * everything before that is the file name. (Don't go beyond 0 though
+     * (string terminator)
+     */
+    
+    size_t p = 0;
+    while(strings[i][p] != '(' && strings[i][p] != ' ' && strings[i][p] != 0)
+      ++p;
+    
+    char syscom[256];
+    sprintf(syscom, "addr2line %p -e %.*s | grep -v Spoc | grep -v stdlib | grep .ml ", buffer[i], 
+            (int)p, strings[i], __progname); //last parameter is the file name of the symbol
+    //system(syscom);
+    FILE* fp = popen(syscom, "r");
+    if(fp == NULL) {
+      fprintf(stdout, "Error opening pipe: %s\n", strerror(errno));
+    }
+    while(fgets(trace, sizeof(trace)-1, fp) != NULL) {
+      //printf("%s", path);
+    }
+    pclose(fp);
+  }
+  fflush(stdout);
+  free(strings);
+  return trace;
 }

@@ -32,6 +32,8 @@
   } while (0) 
 
 #define INITIAL_TAB_SIZE 8
+#define VECTOR_TAB_SIZE 3
+#define BACKTRACE_MAX_SIZE 1024
 
 extern char* __progname;
 
@@ -39,6 +41,12 @@ typedef struct cuda_events {
   CUevent start;
   CUevent end;
 } cuda_events;
+
+typedef struct vector_entry {
+  int vector_id;
+  int vector_device;
+  char* backtrace;
+} vector_entry;
 
 typedef struct transfert_prof_info {
   struct timespec start;
@@ -88,4 +96,8 @@ void print_stop_gpu_compile(const char* desc, int device_id, struct timespec* st
 int print_start_gpu_execution(const char* desc, int device_id);
 void stop_gpu_execution_callback(int event_id, double duration);
 void print_stop_gpu_execution(int event_id, double duration);
+void print_get_vector(int vector_id, int vector_device);
+void print_set_vector(int vector_id, int vector_device);
+void print_last_vector_access(int vector_id);
+char* get_backtrace();
 #endif
