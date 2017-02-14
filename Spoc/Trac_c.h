@@ -8,6 +8,7 @@
 #include <string.h>
 #include <errno.h>
 #include <math.h>
+#include <execinfo.h>
 
 #include <caml/mlvalues.h>
 #include <caml/memory.h>
@@ -21,6 +22,8 @@
 #include "Opencl_dynlink.h"
 #include "Spoc.h"
 
+#define _GNU_SOURCE
+
 #define GETTIME(time) do {                              \
     if (clock_gettime(CLOCK_MONOTONIC, &time) == -1) {  \
       fprintf(stdout, "Error getting time: %s\n",       \
@@ -29,6 +32,8 @@
   } while (0) 
 
 #define INITIAL_TAB_SIZE 8
+
+extern char* __progname;
 
 typedef struct cuda_events {
   CUevent start;

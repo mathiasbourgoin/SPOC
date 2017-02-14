@@ -1,13 +1,4 @@
 #include "Trac_c.h"
-<<<<<<< HEAD
-=======
-#include <caml/threads.h>
-#include <execinfo.h>
-#define _GNU_SOURCE
-#include <errno.h>
-
-extern char* __progname;
->>>>>>> 4896342b8d9e078f06e69fe659b5ca36b987c041
 
 struct timespec start_time;
 
@@ -73,7 +64,7 @@ CAMLprim value print_vector_native(value v_id, value v_dev, value v_length, valu
             "\"parentID\" : %i\n"
             "}\n", depth, start, ok_range, ko_range, parent_id);
   }
-  fprintf(output_file, "}.\n");
+  fprintf(output_file, "},\n");
   fflush(output_file);
   pthread_mutex_unlock(&mutex);
   CAMLreturn(Val_unit);
@@ -113,7 +104,7 @@ CAMLprim value print_info_native(value v_name, value v_global_mem, value v_local
           "\"totalConstMem\":%i,\n"
           "\"multiProcessorCount\":%i,\n"
           "\"eccEnabled\":\"%i\",\n"
-          "\"id\":%i\n}"
+          "\"id\":%i\n},\n"
           "\"specificInfo\":\"%s\"\n"
           "}", name, global_mem, local_mem, clock_rate, total_const_mem, 
           multi_proc_count, ecc, id, spec_info);
@@ -151,7 +142,7 @@ CAMLprim value print_event(value desc){
           "\"type\":\"event\",\n"
           "\"desc\":\"%s\",\n"
           "\"id\":\"%i\",\n"
-          "\"time\":\"%.5f\"\n"
+          "\"time\":\"%.3f\"\n"
           "},\n", description, event_id, time);
   fflush(output_file);
   pthread_mutex_unlock(&mutex);
@@ -168,7 +159,7 @@ CAMLprim value begin_event(value desc){
           "\"type\":\"%s\",\n"
           "\"etat\":\"start\",\n"
           "\"id\":\"%i\",\n"
-          "\"startTime\":\"%.5f\"\n"
+          "\"startTime\":\"%.3f\"\n"
           "},\n", description, event_id, time);
   fflush(output_file);
   pthread_mutex_unlock(&mutex);
@@ -185,7 +176,7 @@ CAMLprim value end_event(value desc, value id){
           "\"type\":\"%s\",\n"
           "\"etat\":\"end\",\n"
           "\"id\":\"%i\",\n"
-          "\"endTime\":\"%.5f\"\n"
+          "\"endTime\":\"%.3f\"\n"
           "},\n", description, event_id, time);
   fflush(output_file);
   pthread_mutex_unlock(&mutex);
@@ -201,12 +192,13 @@ void open_output_file(){
       fprintf(stdout, "Error opening file: %s\n", strerror(errno));
     }
   }
+  fprintf(output_file, "[\n");
 }
 
 void close_output_file(){
   sync_event_prof();
-  fprintf(output_file, "\n {}");
-  fflush();
+  fprintf(output_file, "\n {}]");
+  fflush(output_file);
   if(output_file != NULL){
     fclose(output_file);
   }
@@ -266,7 +258,7 @@ int print_start_transfert(const char* desc, size_t size, int vect_id, const char
                              int device_id, cl_event event_cl, cuda_events* event_cu){
   
   printf("(%s) Memory transfer (%zu bytes) starting...\n", desc, size);
- 
+  fflush(stdout);
   double time = get_time();
   pthread_mutex_lock(&mutex);
   int id_event = get_id_event();
@@ -274,7 +266,7 @@ int print_start_transfert(const char* desc, size_t size, int vect_id, const char
           "\"type\":\"transfert\",\n"
           "\"desc\":\"%s\",\n"
           "\"state\":\"start\",\n"
-          "\"time\":\"%.5f\",\n"
+          "\"time\":\"%.3f\",\n"
           "\"id\":\"%i\",\n"
           "\"vectorId\":\"%i\",\n"
           "\"vectorSize\":\"%zu\",\n"
@@ -329,16 +321,17 @@ int print_start_transfert(const char* desc, size_t size, int vect_id, const char
     sprintf(syscom,"addr2line %p -e %.*s | grep -v Spoc | grep -v stdlib | grep .ml ", buffer[i], p, strings[i], __progname);
     //last parameter is the file name of the symbol
     system(syscom);
-  }*/
+  }
 
   fflush(stdout);
   free(strings);
-  return res;
+  return res;*/
 }
 
 void print_stop_transfert(const char* desc, int id, size_t size, int vect_id, 
                              cl_event event_cl, cuda_events* event_cu ,struct timespec start){
   printf("(%s) Memory transfer done (%zu bytes)| ", desc, size);
+  fflush(stdout);
   struct timespec end;
   GETTIME(end);
   double time_fct;
@@ -370,14 +363,15 @@ void print_stop_transfert(const char* desc, int id, size_t size, int vect_id,
   long int time_elapsed =  (((1e9 * end.tv_sec) + end.tv_nsec)
                             - ((1e9 * start.tv_sec) + start.tv_nsec)) * 1.0e-3f;
   printf("Time elapsed : %f µs\n\n", time_fct);
+  fflush(stdout);
   double time = get_time();
   fprintf(output_file, "{\n"
           "\"type\":\"transfert\",\n"
           "\"id\":\"%i\",\n"
           "\"state\":\"end\",\n"
-          "\"time\":\"%.5f\",\n"
+          "\"time\":\"%.3f\",\n"
           "\"vectorId\":\"%i\",\n"
-          "\"duration\":\"%.5f\"\n"
+          "\"duration\":\"%.3f\"\n"
           "},\n", id, time, vect_id, time_fct);
   fflush(output_file);
 }
@@ -386,6 +380,7 @@ int print_start_part_transfert(const char* desc, size_t part_size, size_t total_
                                   int part_id, int vect_id, const char* type_gpu, 
                                   int device_id, cl_event event_cl, cuda_events* event_cu){
   printf("(%s) Memory transfer (%zu bytes) starting\n", desc, part_size);
+  fflush(stdout);
   double time = get_time();
   pthread_mutex_lock(&mutex);
   int id_event = get_id_event();
@@ -393,7 +388,7 @@ int print_start_part_transfert(const char* desc, size_t part_size, size_t total_
           "\"type\":\"part_transfert\",\n"
           "\"desc\":\"%s\",\n"
           "\"state\":\"start\",\n"
-          "\"time\":\"%.5f\",\n"
+          "\"time\":\"%.3f\",\n"
           "\"id\":\"%i\",\n"
           "\"partId\":\"%i\",\n"
           "\"vectorId\":\"%i\",\n"
@@ -433,6 +428,7 @@ int print_start_part_transfert(const char* desc, size_t part_size, size_t total_
 void print_stop_part_transfert(const char* desc, int id, size_t size, int part_id, 
                                   cl_event event_cl, cuda_events* event_cu, struct timespec start){
   printf("(%s) Memory transfer done (%zu bytes)| ", desc, size);
+  fflush(stdout);
   struct timespec end;
   GETTIME(end);
   double time_fct;
@@ -464,14 +460,15 @@ void print_stop_part_transfert(const char* desc, int id, size_t size, int part_i
   long int time_elapsed = (((1e9 * end.tv_sec) + end.tv_nsec) 
                            - ((1e9 * start.tv_sec) + start.tv_nsec)) * 1.0e-3f;
   printf("Time elapsed : %f µs\n\n", time_fct);
+  fflush(stdout);
   double time = get_time();
   fprintf(output_file, "{\n"
           "\"type\":\"part_transfert\",\n"
           "\"id\":\"%i\",\n"
           "\"state\":\"end\",\n"
-          "\"time\":\"%.5f\",\n"
+          "\"time\":\"%.3f\",\n"
           "\"partId\":\"%i\",\n"
-          "\"duration\":\"%.5f\"\n"
+          "\"duration\":\"%.3f\"\n"
           "},\n", id, time, part_id, time_fct);
   fflush(output_file);
 }
@@ -480,14 +477,14 @@ void print_gpu_free(const char* desc, int vect_id, int device_id,
                     const char* type_gpu, size_t size){
   printf("(%s)Vector n°%i freed on %s device n°%i (%zu bytes)\n", desc, vect_id, 
          type_gpu, device_id, size);
-  
+  fflush(stdout);
   double time = get_time();
   pthread_mutex_lock(&mutex);
   int event_id = get_id_event();
   fprintf(output_file, "{\n"
           "\"type\":\"freeGPU\",\n"
           "\"desc\":\"%s\",\n"
-          "\"time\":\"%.5f\",\n"
+          "\"time\":\"%.3f\",\n"
           "\"id\":\"%i\",\n"
           "\"vectorId\":\"%i\",\n"
           "\"vectorSize\":\"%zu\",\n"
@@ -502,15 +499,14 @@ void print_gpu_alloc(const char* desc, int vect_id, int device_id,
                         const char* type_gpu, size_t size){
   printf("(%s)Vector n°%i allocated on %s device n°%i (%zu bytes)\n", desc, vect_id, 
          type_gpu, device_id, size);
-
-  
+  fflush(stdout);
   double time = get_time();
   pthread_mutex_lock(&mutex);
   int event_id = get_id_event();
   fprintf(output_file, "{\n"
           "\"type\":\"allocGPU\",\n"
           "\"desc\":\"%s\",\n"
-          "\"time\":\"%.5f\",\n"
+          "\"time\":\"%.3f\",\n"
           "\"id\":\"%i\",\n"
           "\"vectorId\":\"%i\",\n"
           "\"vectorSize\":\"%zu\",\n"
@@ -539,9 +535,9 @@ void print_stop_gpu_compile(const char* desc, int device_id, struct timespec* st
   fprintf(output_file, "{\n"
           "\"type\":\"compile\",\n"
           "\"desc\":\"%s\",\n"
-          "\"time\":\"%.5f\",\n"
+          "\"time\":\"%.3f\",\n"
           "\"id\":\"%i\",\n"
-          "\"duration\":\"%.5f\",\n"
+          "\"duration\":\"%.3f\",\n"
           "\"deviceId\":\"%i\"\n"
           "},\n", desc, time, event_id, time_fct, device_id);
   fflush(output_file);
@@ -557,7 +553,7 @@ int print_start_gpu_execution(const char* desc, int device_id){
           "\"type\":\"execution\",\n"
           "\"desc\":\"%s\",\n"
           "\"state\":\"start\",\n"
-          "\"time\":\"%f.5\",\n"
+          "\"time\":\"%.3f\",\n"
           "\"id\":\"%i\",\n"
           "\"deviceId\":\"%i\"\n"
           "},\n", desc, time, event_id, device_id);
@@ -573,8 +569,8 @@ void print_stop_gpu_execution(int event_id, double duration){
           "\"type\":\"execution\",\n"
           "\"state\":\"end\",\n"
           "\"id\":\"%i\",\n"
-          "\"time\":\"%.5f\",\n"
-          "\"duration\":\"%.5f\"\n"
+          "\"time\":\"%.3f\",\n"
+          "\"duration\":\"%.3f\"\n"
           "},\n", event_id, time, duration);
   fflush(output_file);
   pthread_mutex_unlock(&mutex);
