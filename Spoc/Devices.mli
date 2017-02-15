@@ -262,6 +262,8 @@ external get_opencl_compatible_devices : unit -> int
 = "spoc_getOpenCLDevicesCount"
 (**/**)
 
+external closeOutput : unit -> unit = "close_output_profiling"
+
 (** Mandatory function to use Spoc
 @param only allows to specify which library to use, by default, Spoc will search any device on the system
 @return an array containing every compatible device found on the system *)

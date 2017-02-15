@@ -195,4 +195,6 @@ let _ =
   flush stdout;
   Printf.printf "Press any key to close\n";
   Pervasives.flush stdout;
+  Spoc.Devices.closeOutput ();
   let a = read_line() in a
+    

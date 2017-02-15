@@ -169,6 +169,8 @@ let vec_id = ref 0
 
 (******************************************************************************************************)
 
+external printVector : int -> int -> int -> int -> string -> bool -> int -> int -> int -> int -> int -> unit = "print_vector_bytecode" "print_vector_native"
+
 let emmitVect (vect : ('a, 'b) vector) length =
     let isSub = match vect.is_sub with
     | None -> "false"
@@ -188,28 +190,16 @@ let emmitVect (vect : ('a, 'b) vector) length =
     | Float32 x | Int32 x -> 4
     | Float64 x | Int64 x | Complex32 x -> 8
     | _ -> 0 in
-    Printf.fprintf Trac.fileOutput "{
-    \"type\" : \"vector\",\n
-    \"VectorId\" : %i,\n
-    \"resides\" : %i,\n
-    \"length\" : %i,\n
-    \"size\" : %i, \n
-    \"kind\" : \"%s\",\n
-    \"isSub\" : %s" id dev length (size*length) kindS isSub;
     if isSub = "true" then begin
-        let (depth, start, ok_range, ko_range, parent) = match vect.is_sub with
-            | None -> failwith "Subvector sans sous vecteur"
-            | Some e -> e in
-        let parentId = parent.vec_id in
-        Printf.fprintf Trac.fileOutput ",\n\"subVector\":{\n
-        \"depth\" : %i,\n
-        \"start\" : %i,\n
-        \"okRange\" : %i,\n
-        \"koRange\" : %i,\n
-        \"parentID\" : %i\n
-        }\n" depth start ok_range ko_range parentId;
-    end;
-    Printf.fprintf Trac.fileOutput "},\n";
+      let (depth, start, ok_range, ko_range, parent) = match vect.is_sub with
+        | None -> failwith "Subvector not found"
+        | Some e -> e in
+      let parentId = parent.vec_id in
+      printVector id dev length size kindS true depth start ok_range ko_range parentId;
+    end
+    else
+      printVector id dev length size kindS false 1 1 1 1 1;
+    
 ;;
 
 (*******************************************************************************************************)
@@ -221,9 +211,10 @@ external sizeofChar  : unit -> int = "sizeofChar"
 external sizeofInt32  : unit -> int = "sizeofInt32"
 external sizeofInt64  : unit -> int = "sizeofInt64"
 external sizeofComplex32  : unit -> int = "sizeofComplex32"
+external printEvent : string -> unit = "print_event"
 
 let create (kind: ('a,'b) kind) ?dev size =
-  Trac.printEvent "creationVecteur";
+  printEvent "VectorCreation";
   incr vec_id;
   let vec = 
     {

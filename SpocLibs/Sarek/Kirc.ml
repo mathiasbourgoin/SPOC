@@ -751,11 +751,11 @@ let gen_profile ker dev =
                           extensions = k.extensions});  Pervasives.flush stdout; assert false) ))
   in
   let profile_source = (Kirc_Profile.parse 0 (k2) dev) in
-  Printf.printf "%s" profile_source;
+  Printf.printf "%s" profile_source(*;
   Printf.fprintf Spoc.Trac.fileOutput "{\n \"type\":\"profile_kernel\",\n \
                                         \"kernel_id\":%d,\n \
                                         \"source\":\"%s\"\n \
-                                       },\n" (!Spoc.Trac.eventId - 1 ) profile_source
+                                       },\n" (!Spoc.Trac.eventId - 1 ) profile_source*)
 
 let gen ?profile:(prof=false) ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) dev =
   let kir,k = ker in
