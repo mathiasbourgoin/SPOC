@@ -71,18 +71,25 @@ let x = thread_idx_x + (block_idx_x * block_dim_x) in
 
   let mutable norm = normalize x1  y1
   in
-  while ((cpt < @max_iter) &&
-         (norm <=. 4.)) do
+  let mutable vote = ($"__ballot(((cpt < @max_iter) &&
+         (norm <=. 4.)))"$ : int) in
+  let mutable eval = vote > 16 in
+  while (eval)  do
     cpt := (cpt + 1);
     x2 := (x1 *. x1) -. (y1 *. y1) +. a;
     y2 :=  (2. *. x1 *. y1 ) +. b;
     x1 := x2;
     y1 := y2;
     norm := (x1 *. x1 ) +. ( y1 *. y1);
+    vote := ($"__ballot(((cpt < @max_iter) &&
+         (norm <=. 4.)))"$ : int);
+    eval := vote > 16;
   done;
   img.[<y * @width + x>] <- cpt
  ;;
 
+klet brh = fun (a : bool ) ->
+  ($"__popc(__ballot(a))"$ > 16)
 
 let mandelbrot = kern img shiftx shifty zoom ->
   let open Std in
@@ -107,10 +114,9 @@ let mandelbrot = kern img shiftx shifty zoom ->
     (pow2 x) +. (pow2 y) in
 
   let mutable norm = normalize x1  y1
-
-
   in
-  while ((cpt < @max_iter) && (norm <=. 4.)) do
+  while (brh((cpt < @max_iter) &&
+         (norm <=. 4.)))  do
     cpt := (cpt + 1);
     x2 := (x1 *. x1) -. (y1 *. y1) +. a;
     y2 :=  (2. *. x1 *. y1 ) +. b;

@@ -375,6 +375,7 @@ let rec ktyp_of_typ = function
   | <:ctyp< float >> | <:ctyp< float32 >> -> TFloat32
   | <:ctyp< float64 >>  -> TFloat64
   | <:ctyp< $x$ vector>> -> TVec (ktyp_of_typ x)
+  | <:ctyp< bool >> -> TBool
   | TyCol (_,_,t) -> ktyp_of_typ t
   | TyId(_,IdLid(_,t)) ->
     (try

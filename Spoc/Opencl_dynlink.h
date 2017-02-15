@@ -665,8 +665,8 @@ clGetKernelInfo(cl_kernel       /* kernel */,
                 void *          /* param_value */,
                 size_t *        /* param_value_size_ret */) CL_API_SUFFIX__VERSION_1_0;
 
-extern CL_API_ENTRY cl_int CL_API_CALL
-clGetKernelWorkGroupInfo(cl_kernel                  /* kernel */,
+typedef CL_API_ENTRY cl_int CL_API_CALL
+tclGetKernelWorkGroupInfo(cl_kernel                  /* kernel */,
                          cl_device_id               /* device */,
                          cl_kernel_work_group_info  /* param_name */,
                          size_t                     /* param_value_size */,
@@ -936,7 +936,7 @@ extern tclRetainCommandQueue* clRetainCommandQueue;
 extern tclReleaseCommandQueue* clReleaseCommandQueue;
 extern tclWaitForEvents* clWaitForEvents;
 extern tclGetEventProfilingInfo* clGetEventProfilingInfo;
-
+extern tclGetKernelWorkGroupInfo* clGetKernelWorkGroupInfo;
 #endif
 
 

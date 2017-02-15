@@ -4,18 +4,18 @@ open Kirc
     
 let comp_ml = kern trainingSet data res setSize dataSize ->
   let open Std in
-  let computeId = thread_idx_x + block_dim_x * block_idx_x in
-  if computeId < setSize then
+  let tid = thread_idx_x + block_dim_x * block_idx_x in
+  if tid < setSize then
     (
       let mutable diff = 0 in
       let mutable toAdd = 0 in
       let mutable i = 0 in
       while(i < dataSize) do
-        toAdd := data.[<i>] - trainingSet.[<computeId*dataSize + i>];
+        toAdd := data.[<i>] - trainingSet.[<tid*dataSize + i>];
         diff := diff + (toAdd * toAdd);
         i := i + 1;
       done;
-      res.[<computeId>] <- diff)
+      res.[<tid>] <- diff)
   else
     return ()
 (*kernel comp_ml : Spoc.Vector.vint32 -> Spoc.Vector.vint32 -> Spoc.Vector.vint32 -> int -> int -> unit = "kernels/Ml_kernel" "kernel_compute"*)
@@ -25,8 +25,8 @@ type labelPixels = { label: int; pixels: int array }
 let devices = Spoc.Devices.init ()
 
 
-let dev = ref devices.(0)
-let auto_transfers = ref false
+let dev = ref devices.(try int_of_string Sys.argv.(1) with | _ -> 0)
+let auto_transfers = ref true
 let compute_gpu = ref true
 let trainSet_size = ref 5000 
 let data_size = ref 784
@@ -114,9 +114,10 @@ let classify_gpu (pixels: int array) trainingset =
     (
       r := not !r;
       Kirc.profile_run comp_ml (trainSet, vect_validation, results, !trainSet_size, !data_size) (block, grid)  0 !dev;
+      ignore(Kirc.gen comp_ml !dev); 
     )
   else
-    Kirc.run comp_ml (trainSet, vect_validation, results, !trainSet_size, !data_size) (block, grid)  0 !dev;
+      Kirc.run comp_ml (trainSet, vect_validation, results, !trainSet_size, !data_size) (block, grid)  0 !dev;
   if (not !auto_transfers) then Spoc.Mem.to_cpu results ();
   Spoc.Devices.flush !dev ();
   let rec loop min id res =

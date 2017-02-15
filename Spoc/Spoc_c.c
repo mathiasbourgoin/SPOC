@@ -405,7 +405,7 @@ value spoc_getOpenCLDevice(value relative_i, value absolute_i)
            if (infoDimension > 3) infoDimension = 3; //for now limited to 3d
            maxWI = caml_alloc(infoDimension, 0);
            for (i = 0; i < infoDimension; i++)
-        	   Store_field(maxWI ,i, Val_int(work_sizes[i]));
+	     Store_field(maxWI ,i, Val_int(work_sizes[i]));
            Store_field(specific_info, 37, maxWI);
 	   free(work_sizes);
 
@@ -495,3 +495,5 @@ value copy_complex(cuComplex d){
 value copy_doubleComplex(cuDoubleComplex d){
   return copy_two_doubles(d.x, d.y);
 }
+
+

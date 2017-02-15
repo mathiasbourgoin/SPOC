@@ -64,7 +64,7 @@ tclReleaseCommandQueue* clReleaseCommandQueue;
 tclSetEventCallback* clSetEventCallback;
 tclWaitForEvents* clWaitForEvents;
 tclGetEventProfilingInfo* clGetEventProfilingInfo;
-
+tclGetKernelWorkGroupInfo* clGetKernelWorkGroupInfo;
 #define CL_ERROR_UNKNOWN -12
 
 #ifdef _WIN32
@@ -183,7 +183,6 @@ int CL_API_ENTRY clInit(){
     	GET_PROC(clSetEventCallback);
       GET_PROC(clWaitForEvents);
       GET_PROC(clGetEventProfilingInfo);
-
     	return CL_SUCCESS;
     	//return CL_ERROR_UNKNOWN;
     }

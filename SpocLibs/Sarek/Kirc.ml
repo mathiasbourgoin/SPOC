@@ -95,12 +95,23 @@ let opencl_head = (
   "int spoc_xor (int a, int b ) { return (a^b);}\n"
 )
 
-let opencl_profile_head =(
+let opencl_common_profile =(
   "\n/*********** PROFILER FUNCTIONS **************/\n"^
   "#pragma OPENCL EXTENSION cl_khr_int64_extended_atomics : enable\n"^
   "void spoc_atomic_add(__global ulong *a, ulong b){ atom_add(a, (ulong)b);}\n"^
-  "\n"^
-  "void branch_analysis(__global ulong *profile_counters, int eval, int counters){
+  "
+     void* memory_analysis(__global ulong *profile_counters, __global void* mp, int store, int load){
+    if (store) spoc_atomic_add(profile_counters+0, 1ULL);
+    if (load) spoc_atomic_add(profile_counters+1, 1ULL);
+    return mp;
+}"^
+  "\n"
+)
+
+
+let opencl_profile_head =(
+opencl_common_profile^  "
+void branch_analysis(__global ulong *profile_counters, int eval, int counters){
   
   unsigned int threadIdxInGroup = 
                 get_local_id(2)*get_local_size(0)*get_local_size(1) + 
@@ -136,7 +147,7 @@ let opencl_profile_head =(
     }
   }
 }\n"^
-  "void while_analysis(unsigned long long int *profile_counters, int eval){
+  "void while_analysis(__global ulong *profile_counters, int eval){
   /* unsigned int threadIdxInGroup = 
                 get_local_id(2)*get_local_size(0)*get_local_size(1) + 
                 get_local_id(1)*get_local_size(0) + get_local_id(0);
@@ -166,6 +177,26 @@ let opencl_profile_head =(
       spoc_atomic_add(profile_counters+5, (ulong)1);
     }
   } */               
+}
+\n"
+)
+
+let opencl_profile_head_cpu =(
+opencl_common_profile^"
+void branch_analysis(__global ulong *profile_counters, int eval, int counters){
+  
+  unsigned int threadIdxInGroup = 
+                get_local_id(2)*get_local_size(0)*get_local_size(1) + 
+                get_local_id(1)*get_local_size(0) + get_local_id(0);
+  
+  spoc_atomic_add(profile_counters+4, (ulong)1); //
+  spoc_atomic_add(profile_counters+counters+1, 1);
+  if (eval) 
+    spoc_atomic_add(profile_counters+counters+2, 1);
+  if (!eval)
+    spoc_atomic_add(profile_counters+counters+3, 1);
+ }\n"^
+  "void while_analysis(__global ulong  *profile_counters, int eval){
 }
 \n"
 )
@@ -263,6 +294,67 @@ let cuda_profile_head = (
   }
 }
 \n"^
+"
+#include<cuda.h>
+template <typename T>
+__device__ T __broadcast(T t, int fromWhom)
+{
+  union {
+    int32_t shflVals[sizeof(T)];
+    T t;
+  } p;
+  
+  p.t = t;
+    #pragma unroll
+  for (int i = 0; i < sizeof(T); i++) {
+    int32_t shfl = (int32_t)p.shflVals[i];
+    p.shflVals[i] = __shfl(shfl, fromWhom);
+  }
+  return p.t;
+}
+
+/// The number of bits we need to shift off to get the cache line address.
+#define LINE_BITS   5
+
+template<typename T>
+__device__ T* memory_analysis(unsigned long long int *profile_counters, T* mp, int store, int load){
+
+  int threadIdxInWarp =  get_laneid();//threadIdx.x & (warpSize-1);
+  intptr_t addrAsInt = (intptr_t) mp;
+
+  if (__isGlobal(mp)){
+    if (store) atomicAdd(profile_counters+0, 1ULL);
+    if (load) atomicAdd(profile_counters+1, 1ULL);
+
+    unsigned unique = 0; // Num unique lines per warp.
+
+    // Shift off the offset bits into the cache line.
+    intptr_t lineAddr = addrAsInt >> LINE_BITS;
+
+    int workset = __ballot(1);
+    int firstActive = __ffs(workset)-1;
+    int numActive = __popc(workset);
+    while (workset) {
+      // Elect a leader, get its cache line, see who matches it.
+      int leader = __ffs(workset) - 1;
+      intptr_t leadersAddr = __broadcast(lineAddr, leader);
+      int notMatchesLeader = __ballot(leadersAddr != lineAddr);
+
+      // We have accounted for all values that match the leader’s.
+      // Let’s remove them all from the workset.
+      workset = workset & notMatchesLeader;
+      unique++;
+    }
+
+    if (firstActive == threadIdxInWarp && unique ) {
+      atomicAdd(profile_counters+6, 1ULL);
+    }
+    
+  }
+  return mp;
+
+}
+"^
   "\n"
 )
 
@@ -690,7 +782,7 @@ let gen ?profile:(prof=false) ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('
       Kirc_OpenCL.return_v := k';
     );
 
-  let gen_cuda () =
+  let gen_cuda ?opts:(s="") () =
     let cuda_head =
       Array.fold_left
         (fun header extension ->
@@ -702,12 +794,12 @@ let gen ?profile:(prof=false) ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('
     Hashtbl.iter (fun _ a -> global_funs := !global_funs^(fst a)^"\n") Kirc_Cuda.global_funs;
     let constructors = List.fold_left (fun a b -> "__device__ "^b^a) "\n\n" !constructors in
     save "kirc_kernel.cu" (cuda_head ^ (if prof then cuda_profile_head else "")^ constructors ^  !global_funs ^ src) ;
-    ignore(Sys.command ("nvcc --gpu-architecture=sm_30 -m64  -O3 -ptx kirc_kernel.cu -o kirc_kernel.ptx"));
+    ignore(Sys.command ("nvcc -g -G "^ s ^" "^"-arch=sm_30 -m64  -O3 -ptx kirc_kernel.cu -o kirc_kernel.ptx"));
     let s = (load_file "kirc_kernel.ptx") in
     kir#set_cuda_sources s;
     (*ignore(Sys.command "rm kirc_kernel.cu kirc_kernel.ptx");*)
 
-  and gen_opencl prof =
+  and gen_opencl () =
     let opencl_head =
       Array.fold_left
         (fun header extension ->
@@ -726,7 +818,12 @@ let gen ?profile:(prof=false) ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('
                      else "")^
                     opencl_head ^
                     (if prof then
-                       opencl_profile_head
+                       match dev.Devices.specific_info with
+                       | Devices.OpenCLInfo
+                           {Devices.device_type = Devices.CL_DEVICE_TYPE_CPU; _} ->
+                         opencl_profile_head_cpu
+                       | _ ->
+                         opencl_profile_head
                      else "") ^
                     constructors ^ protos ^ !global_funs ^  src)  in
     save "kirc_kernel.cl" clkernel;
@@ -739,13 +836,13 @@ let gen ?profile:(prof=false) ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('
       ignore(Kirc_Cuda.get_profile_counter());
       gen_cuda ();
       ignore(Kirc_OpenCL.get_profile_counter());
-      gen_opencl prof;
+      gen_opencl ();
     | Devices.Cuda ->
       ignore(Kirc_Cuda.get_profile_counter());
       gen_cuda ()
     | Devices.OpenCL ->
       ignore(Kirc_OpenCL.get_profile_counter());
-      gen_opencl prof
+      gen_opencl ()
   end;
   kir#reset_binaries ();
   kir,k
@@ -826,15 +923,17 @@ let profile_run ?recompile:(r=true) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) a b
     | Devices.CudaInfo cI ->
       let extra = Kernel.Cuda.cuda_create_extra ((Array.length args) + 1) in
       Kernel.Cuda.cuda_load_arg offset extra dev bin 0 (arg_of_vec profiler_counters);
-      Array.iteri (Kernel.Cuda.cuda_load_arg offset extra dev bin) args;
+      Array.iteri (fun i a -> Kernel.Cuda.cuda_load_arg offset extra dev bin (i) a) args;
       Kernel.Cuda.cuda_launch_grid offset bin grid block extra dev.Devices.general_info 0;
 
     | Devices.OpenCLInfo _ ->
       Kernel.OpenCL.opencl_load_arg offset dev bin 0 (arg_of_vec profiler_counters);
-      Array.iteri (Kernel.OpenCL.opencl_load_arg offset dev bin) args;
+      Array.iteri (fun i a -> Kernel.OpenCL.opencl_load_arg offset dev bin (i) a) args;
       Kernel.OpenCL.opencl_launch_grid bin grid block dev.Devices.general_info 0
   );
-  
+  Devices.flush dev ();
+  if (not !Mem.auto) then
+    Mem.to_cpu profiler_counters ();
   Spoc.Tools.iter (fun a -> Printf.printf "%Ld " a) profiler_counters;
   Gen.profile_vect := profiler_counters;
   gen_profile ker dev;

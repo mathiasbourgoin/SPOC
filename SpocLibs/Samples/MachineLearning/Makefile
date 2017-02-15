@@ -26,7 +26,7 @@ $(BYTE): $(MLSRC)
 
 
 %.pp.nat: %.pp.ml
-	ocamlfind ocamlopt -thread -package ctypes,ctypes.foreign,spoc,sarek,fastflow,graphics -linkpkg  -o $@ $<
+	ocamlfind ocamlopt -thread -package ctypes,ctypes.foreign,spoc,sarek,graphics -linkpkg  -o $@ $<
 
 %.pp.ml : %.ml
 	camlp4  -I +camlp4 -I `ocamlfind query spoc_external_kernels` -I `ocamlfind query sarek_syntax` -parser o -parser op -printer o kernels_int.cma -printer kernels_ext.cma $< > $@

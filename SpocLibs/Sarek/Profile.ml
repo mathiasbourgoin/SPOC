@@ -119,7 +119,9 @@ let branch_analysis_string c =
   "(** ### Branch taken : "^numTaken^" **)\n" ^
   "(** ### Branch not taken : "^numNotTaken^" **)\n"
 
-
+let memory_div_string () =
+  let memDiv = Int64.to_string (Spoc.Mem.get !Gen.profile_vect 6) in
+  "(** ### Global Memory divergence : "^memDiv^" **)\n"
 
 let profile_head () =
   gmem_store ()^
@@ -186,7 +188,12 @@ and  parse i a  dev =
   let open Kirc_Ast in
   let rec aux  = function
     | Kern (args, body) -> ("kern "^(parse i args dev)^" ->\n"^
-                            profile_head ()^"\n"^(parse (i) body dev))
+                            profile_head ()^
+                            (match dev.Spoc.Devices.specific_info with
+                             | Spoc.Devices.CudaInfo _ ->
+                               memory_div_string()
+                             | _ -> "")
+                            ^"\n"^(parse (i) body dev))
     | Local (x,y) -> (*"let mutable " ^ (parse i x)^" in\n"^
                        (indent (i))^(parse i y)^
                           "\n"^(indent (i))*)
@@ -320,7 +327,7 @@ and  parse i a  dev =
   in aux  a
 
 let parse i a dev =
-  prof_counter := 5;
+  prof_counter := 6;
   Hashtbl.clear generated_functions;
   let header =
     "(* Profile Kernel *)"

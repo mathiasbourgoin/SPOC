@@ -67,7 +67,7 @@ let rec gen_arg_from_patt2 p =
     (let var = (Hashtbl.find !current_args x) in
      match var.var_type with
      | TUnknown  -> <:expr<(new_unknown_var $`int:var.n$ $str:x$)>>
-     | TInt32 | TInt64 ->
+     | TInt32 | TInt64 | TBool ->
        <:expr<(new_int_var $`int:var.n$  $str:x$)>>
      | TFloat32 ->
        <:expr<(new_float_var $`int:var.n$  $str:x$)>>

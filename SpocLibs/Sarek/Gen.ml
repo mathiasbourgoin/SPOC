@@ -96,7 +96,8 @@ module Generator (M:CodeGenerator) = struct
     pc[2] <- smem_store
     pc[3] <- smem_load
     pc[4] <- nb_branches
-    pc[5] <- nb_divergent
+    pc[5] <- nb_branch_divergent
+    pc[6] <- nb_memory_divergent
   *)
 
   let rec parse_fun ?profile:(prof=false) i a ret_type fname dev =
@@ -112,7 +113,7 @@ module Generator (M:CodeGenerator) = struct
                    let a =
                      (if prof then
                         (indent (i+1))^
-                      "spoc_atomic_add(profile_counters+"^
+                      "spoc_atomic_add(prof_cntrs+"^
                       string_of_int !profiler_counter^", 1);\n"
                     else "")
                    in
@@ -146,7 +147,7 @@ module Generator (M:CodeGenerator) = struct
                       (match M.target_name with
                       | "Cuda" -> "unsigned long long int"
                       | _ ->  " unsigned long ")^
-                              " * profile_counters, "
+                              " * prof_cntrs, "
                     else "")^
 
                    (if (fst !return_v) <> "" then
@@ -181,29 +182,28 @@ module Generator (M:CodeGenerator) = struct
 
   and profiler_counter = ref 5
 
-  and gmem_load = ref 0
-  and gmem_store = ref 0
 
-and global_mem_string i  = 
-  (if !gmem_load > 0 then
-     (
-       let s = indent i^"spoc_atomic_add(profile_counters+1,"^(string_of_int !gmem_load)^"); // global mem load\n" in
-       gmem_load := 0;
-       s
-     )
-   else "")
-  ^
-  (if !gmem_store > 0 then
-     (
-       let s = indent i^"spoc_atomic_add(profile_counters+0,"^(string_of_int !gmem_store)^"); // global mem store\n" in
-       gmem_store := 0;
-       s
-     )
-             else "")  
+                        
+(* and global_mem_string i  =  *)
+(*   (if !gmem_load > 0 then *)
+(*      ( *)
+(*        let s = indent i^"spoc_atomic_add(prof_cntrs+1,"^(string_of_int !gmem_load)^"); // global mem load\n" in *)
+(*        gmem_load := 0; *)
+(*        s *)
+(*      ) *)
+(*    else "") *)
+(*   ^ *)
+(*   (if !gmem_store > 0 then *)
+(*      ( *)
+(*        let s = indent i^"spoc_atomic_add(prof_cntrs+0,"^(string_of_int !gmem_store)^"); // global mem store\n" in *)
+(*        gmem_store := 0; *)
+(*        s *)
+(*      ) *)
+(*              else "")   *)
   and get_profile_counter () =
     Hashtbl.clear  global_funs;
     let a = !profiler_counter in
-    profiler_counter := 5; a
+    profiler_counter := 6; a
 
   and parse ?profile:(prof=false) i a dev =
     if M.default_parser then
@@ -217,8 +217,6 @@ and global_mem_string i  =
              | _  ->  ((parse ~profile:prof (i+1) body dev)^"\n"^(indent (i)))
            in
            (pargs ^
-            global_mem_string i
-            ^
             pbody)^M.kern_end)
         | Local (x,y)  -> (parse ~profile:prof i x dev)^";\n"^
                           (indent (i))^(parse ~profile:prof i y dev)^
@@ -263,7 +261,7 @@ and global_mem_string i  =
               M.global_parameter^
               (match M.target_name with
                | "Cuda" -> "unsigned long long int"
-               | _ ->  " unsigned long ")^" * profile_counters, "
+               | _ ->  " unsigned long ")^" * prof_cntrs, "
             else "")^
            (if (fst !return_v) <> "" then
               (fst !return_v)^", " else "")^(parse ~profile:prof i k dev)^" ) {\n"^(indent (i+1)))
@@ -326,7 +324,7 @@ and global_mem_string i  =
                       let ss =
                         indent (i+1)^"spoc_res = "^s^";\n"^
                         indent (i+1)^"clock_t stop_time = clock();\n"^
-                        indent (i+1)^"spoc_atomic_add(profile_counters+"^
+                        indent (i+1)^"spoc_atomic_add(prof_cntrs+"^
                         string_of_int (!profiler_counter)^
                         ", (int)(stop_time - start_time));\n"^
                         indent (i+1)^"return spoc_res;\n";
@@ -337,18 +335,29 @@ and global_mem_string i  =
                     | _ -> "return "^s^";")
                  else
                    "return "^s^";")))
-
+          
         | IntVecAcc (vec,idx)  ->
-          if prof then
-            incr gmem_load;
-          (parse ~profile:prof i vec dev)^"["^(parse ~profile:prof i idx dev)^"]"
+          (if prof then
+             "memory_analysis(prof_cntrs, "^
+             (parse ~profile:prof i vec dev)^"+("^(parse ~profile:prof i idx dev)^"), 0, 1)"
+           else
+             (parse ~profile:prof i vec dev)^"["^(parse ~profile:prof i idx dev)^"]")
         | SetV (vecacc,value)  -> (
-            let a =
-              (parse ~profile:prof i vecacc dev) in
-            if prof then
-              (decr gmem_load;
-               incr gmem_store;);
-            a^" = "^(parse ~profile:prof i value dev)^";")
+            match vecacc with
+            | IntVecAcc (vec, idx) ->
+              (if prof then
+                 (let a =
+                    (parse ~profile:prof i vec dev)^"+("^(parse ~profile:prof i idx dev)^")"
+                  in
+                  indent i^ "memory_analysis(prof_cntrs, "^a^", 1, 0);\n")
+               else "") ^
+              let a =
+                (parse ~profile:false 0 vecacc dev) in
+              indent i ^a^" = "^(parse ~profile:prof i value dev)^";"
+            | _ -> 
+              let a =
+                (parse ~profile:false 0 vecacc dev) in
+          indent i ^a^" = "^(parse ~profile:prof i value dev)^";")
         | Int  a  -> string_of_int a
         | Float f -> (string_of_float f)^"f"
         | GInt  a  -> Int32.to_string (a ())
@@ -363,31 +372,28 @@ and global_mem_string i  =
         | Ife(a,b,c) ->
           let a =
             let a = parse ~profile:prof i a dev in
-            global_mem_string i^
             let pc = string_of_int !profiler_counter in
             "bool spoc_prof_cond_"^pc^" = ("^a^");\n"^
             (if prof then
                (let s =
                   indent i^
-                  "branch_analysis(profile_counters, spoc_prof_cond_"^pc^", "^ pc^");\n" in
+                  "branch_analysis(prof_cntrs, spoc_prof_cond_"^pc^", "^ pc^");\n" in
                 Printf.printf "incr in Ife 3 \n%!";
                 profiler_counter := !profiler_counter + 4;
-               s)
-            else "")^
-                indent i^"if ( spoc_prof_cond_"^pc^" )"
+                s)
+             else "")^
+            indent i^"if ( spoc_prof_cond_"^pc^" )"
           in          
           let b =
             let b = parse ~profile:prof i b dev in
-            global_mem_string (i+1)^
             b in
           let c =
             let c = parse ~profile:prof i c dev in
-            global_mem_string (i+1)^
             c in
           let iff = "{\n"^
                     (indent (i+1))^
                     (* (if prof then *)
-                    (*    (indent (i))^"spoc_atomic_add(profile_counters+"^string_of_int !profiler_counter^", 1); // control if\n" *)
+                    (*    (indent (i))^"spoc_atomic_add(prof_cntrs+"^string_of_int !profiler_counter^", 1); // control if\n" *)
                     (*  else "")^ *)
                     b^";\n"^(indent i)^"}\n" in
           (*if prof then (
@@ -395,7 +401,7 @@ and global_mem_string i  =
           let elsee = "{\n"^
                       (indent (i+1))^
                       (* (if prof then *)
-                      (*    (indent (i))^"spoc_atomic_add(profile_counters+"^string_of_int !profiler_counter^", 1); // control else\n" *)
+                      (*    (indent (i))^"spoc_atomic_add(prof_cntrs+"^string_of_int !profiler_counter^", 1); // control else\n" *)
                       (*  else "")^ *)
                       (indent i)^c^";\n"^
                       (indent i)^"}\n" in
@@ -404,41 +410,30 @@ and global_mem_string i  =
               Printf.printf "incr in Ife else \n%!";
               profiler_counter := !profiler_counter + 3;
             );*)
-          global_mem_string (i+1)^
           a^
           iff^(indent i)^"else"^elsee^(indent i)
         | If (a,b) ->
-          let a =
-            let a = parse ~profile:prof i a dev in
-            global_mem_string i ^a
-          in
+          let a = parse ~profile:prof i a dev in
+          
           let pc = string_of_int !profiler_counter in
           "bool spoc_tmp_if_cond_"^pc^" = ("^a^");\n"^
           (if prof then
              (let s = indent i^
-                      "branch_analysis(profile_counters, spoc_tmp_if_cond_"^pc^", "^ pc^");\n" in
+                        "branch_analysis(prof_cntrs, spoc_tmp_if_cond_"^pc^", "^ pc^");\n" in
               Printf.printf "incr in If 3 \n%!";
               profiler_counter := !profiler_counter + 4;
               s)
            else "")^
-          let b =
-            let b = parse ~profile:prof (i+1) b dev in
-            global_mem_string (i+1)^b in
-          let s =
-            "if ("^a^")"^"{\n"^
-            (indent (i+1))^
-            (* (if prof then *)
-            (*    "//PROFILER\n"^(indent (i+1))^ *)
-            (*    "spoc_atomic_add(profile_counters+"^ *)
-            (*    string_of_int !profiler_counter^", 1);\n" *)
-            (*  else "")^ *)
-            (indent (i+1))^
-            b^";\n"^(indent i)^"}"^(indent i) in
-          (* in if prof then *)
-          (*   ( *)
-          (*     Printf.printf "incr in If \n%!"; *)
-          (*     incr profiler_counter) *)
-          s
+          (let b =
+             parse ~profile:prof (i+1) b dev in
+           let s =
+             "if ("^a^")"^"{\n"^
+             (indent (i+1))^
+             (indent (i+1))^
+             b^";\n"^(indent i)^"}"^(indent i)
+           in
+           s)
+            
         | Or (a,b) -> (parse ~profile:prof i a dev)^" || "^(parse ~profile:prof i b dev)
         | And (a,b) -> (parse ~profile:prof i a dev)^" && "^(parse ~profile:prof i b dev)
         | Not (a) -> "!"^(parse ~profile:prof i a dev)
@@ -458,21 +453,6 @@ and global_mem_string i  =
           let max = parse ~profile:prof i c dev in
           let body = parse ~profile:prof (i+1) d dev in
           "for (int "^id^" = "^min^"; "^id^" <= "^max^"; "^id^"++){\n"^
-          (if !gmem_load > 0 then
-             (
-               let s = "spoc_atomic_add(profile_counters+1,"^(string_of_int !gmem_load)^"); // global mem load\n" in
-               gmem_load := 0;
-               indent (i+1)^s
-             )
-           else "")
-          ^
-          (if !gmem_store > 0 then
-             (
-               let s = "spoc_atomic_add(profile_counters+0,"^(string_of_int !gmem_load)^"); // global mem store\n" in
-               gmem_store := 0;
-               s
-             )
-           else "")^
           (indent (i+1))^body^";}"
         | While (a,b) ->
           let cond = parse ~profile:prof i a dev in
@@ -481,14 +461,14 @@ and global_mem_string i  =
           (if prof then
              (let s =
                 indent i^
-                "branch_analysis(profile_counters, spoc_prof_cond_"^pc^", "^ pc^");\n" in
+                "branch_analysis(prof_cntrs, spoc_prof_cond_"^pc^", "^ pc^");\n" in
               Printf.printf "incr 3 in While  \n%!";
               profiler_counter := !profiler_counter + 4;
               s)
            else "")^
           let body = (indent (i+1))^
                      (* (if prof then *)
-                     (*    (indent (i+1))^"spoc_atomic_add(profile_counters+"^string_of_int !profiler_counter^", 1); // control while \n" *)
+                     (*    (indent (i+1))^"spoc_atomic_add(prof_cntrs+"^string_of_int !profiler_counter^", 1); // control while \n" *)
                      (*  else "")^ *)
                      parse ~profile:prof (i+1) b dev in
           let s = "while ( spoc_prof_cond_"^pc^" ){\n"^
@@ -496,14 +476,14 @@ and global_mem_string i  =
                   (* ^ *)
                   (* (if !gmem_load > 0 then *)
                   (*    ( *)
-                  (*      let s = "spoc_atomic_add(profile_counters+1,"^(string_of_int !gmem_load)^"); // global mem load\n" in *)
+                  (*      let s = "spoc_atomic_add(prof_cntrs+1,"^(string_of_int !gmem_load)^"); // global mem load\n" in *)
                   (*      gmem_load := 0; *)
                   (*      indent(i+1)^s *)
                   (*    ) *)
                   (*  else "")^ *)
                   (* (if !gmem_store > 0 then *)
                   (*    ( *)
-                  (*      let s = "spoc_atomic_add(profile_counters+0,"^(string_of_int !gmem_load)^"); // global mem store\n" in *)
+                  (*      let s = "spoc_atomic_add(prof_cntrs+0,"^(string_of_int !gmem_load)^"); // global mem store\n" in *)
                   (*      gmem_store := 0; *)
                   (*      s *)
                   (*    ) *)
@@ -514,7 +494,7 @@ and global_mem_string i  =
                   (if prof then
                      (let s =
                         indent (i+1)^
-                        "while_analysis(profile_counters, spoc_prof_cond_"^pc^");\n" in
+                        "while_analysis(prof_cntrs, spoc_prof_cond_"^pc^");\n" in
                       s)
                    else "")^"\n}"
                   
@@ -536,7 +516,7 @@ and global_mem_string i  =
            | Intrinsics (_, _)-> f^" ("^(aux (Array.to_list b))^") "
            |  _ -> f^" ("^(
                (if prof then
-                  " profile_counters, "
+                  " prof_cntrs, "
                 else "")^
                aux (Array.to_list b))^") ")
         | Empty  -> ""
@@ -578,9 +558,11 @@ and global_mem_string i  =
     | Int i  ->  string_of_int i
     | GInt i  ->  Int32.to_string  (i ())
     | IntVecAcc (s,i)  ->
-      if prof then
-        incr gmem_load;
-      (parse ~profile:prof n s dev)^"["^(parse_int n i dev)^"]"
+      (if prof then
+         "memory_analysis(prof_cntrs, " ^
+           (parse ~profile:prof n s dev)^"+("^(parse_int n i dev)^"), 0, 1)"
+       else
+      (parse ~profile:prof n s dev)^"["^(parse_int n i dev)^"]")
     | Plus (a,b) as v ->  parse ~profile:prof n v dev
     | Min (a,b) as v ->  parse ~profile:prof n v dev
     | Mul (a,b) as v ->  parse ~profile:prof n v dev
@@ -598,9 +580,14 @@ and global_mem_string i  =
     | GFloat f  ->  (string_of_float (f ()))^"f"
     | Double f  ->  "(double) "^(string_of_float f)
     | IntVecAcc (s,i)  ->
-      if prof then
-        incr gmem_load;
+      (if prof then
+         "(float) memory_analysis(prof_cntrs, (void*)"
+       else "") ^
       (parse ~profile:prof n s dev)^"["^(parse_int n i dev)^"]"
+      ^
+      (if prof then
+         ", 0, 1)"
+       else "")
     | Plusf (a,b) as v ->  parse ~profile:prof n v dev
     | Minf (a,b) as v ->  parse ~profile:prof n v dev
     | Mulf (a,b) as v ->  parse ~profile:prof n v dev
