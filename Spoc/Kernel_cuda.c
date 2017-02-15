@@ -114,20 +114,17 @@ CAMLprim value spoc_cuda_compile(value moduleSrc, value function_name, value gi)
 	//CU_JIT_TARGET;
 //	jitOptVals[3] =  (void*)(uintptr_t)CU_TARGET_COMPUTE_11;
 	
-	#ifdef PROFILE
-	/**********************************************/
-	start_gpu_compile_callback();
-	/**********************************************/
-	#endif
+#ifdef PROFILE
+	struct timeval* start = print_start_gpu_compile();
+#endif
 
-	CUDA_CHECK_CALL(cuModuleLoadDataEx(&module, ptx_source, jitNumOptions, jitOptions, (void **)jitOptVals));
+	CUDA_CHECK_CALL(cuModuleLoadDataEx(&module, ptx_source, jitNumOptions, jitOptions, 
+                                       (void **)jitOptVals));
 	CUDA_CHECK_CALL(cuModuleGetFunction(kernel, module, functionN));
 
-	#ifdef PROFILE
-	/**********************************************/
-	stop_gpu_compile_callback("COMPILE_CUDA", Int_val(Field(gi, 7)));
-	/**********************************************/
-	#endif
+#ifdef PROFILE
+    print_stop_gpu_compile("COMPILE_CUDA", Int_val(Field(gi, 7)), start);
+#endif
 
 	free(jitLogBuffer);
 	CUDA_RESTORE_CONTEXT;
@@ -174,13 +171,12 @@ CAMLprim value spoc_cuda_debug_compile(value moduleSrc, value function_name, val
 	//CU_JIT_TARGET;
 //	jitOptVals[3] =  (void*)(uintptr_t)CU_TARGET_COMPUTE_10;
 
-	#ifdef PROFILE
-	/**********************************************/
-	start_gpu_compile_callback();
-	/**********************************************/
-	#endif
+#ifdef PROFILE
+    struct timespec* start = print_start_gpu_compile();
+#endif
 
-	cuda_error = (cuModuleLoadDataEx(&module, ptx_source, jitNumOptions, jitOptions, (void **)jitOptVals));
+	cuda_error = (cuModuleLoadDataEx(&module, ptx_source, jitNumOptions, jitOptions, 
+                                     (void **)jitOptVals));
 	if (cuda_error)
 		{
 			printf ("%s\n", jitLogBuffer);
@@ -193,11 +189,9 @@ CAMLprim value spoc_cuda_debug_compile(value moduleSrc, value function_name, val
 		fflush (stdout);
 	}
 
-	#ifdef PROFILE
-	/**********************************************/
-	stop_gpu_compile_callback("COMPILE_CUDA", Int_val(Field(gi, 7)));
-	/**********************************************/
-	#endif
+#ifdef PROFILE
+	print_stop_gpu_compile("COMPILE_CUDA", Int_val(Field(gi, 7)), start);
+#endif
 
 	BLOCKING_CUDA_RESTORE_CONTEXT;
 	free(jitLogBuffer);
@@ -218,15 +212,15 @@ CAMLprim value spoc_cuda_create_dummy_kernel(){
 }
 
 #define ALIGN_UP(offset, alignment) \
-(offset) = ((offset) + (alignment) - 1) & ~((alignment) - 1)
+  (offset) = ((offset) + (alignment) - 1) & ~((alignment) - 1)
 
 
-#define ADD_TO_PARAM_BUFFER(value, alignment)\
-do {\
-	offset = ALIGN_UP(offset, alignment); \
-	memcpy(extra + offset, &(value), sizeof(value));\
-	offset += sizeof(value);\
-} while (0)
+#define ADD_TO_PARAM_BUFFER(value, alignment)           \
+  do {                                                  \
+	offset = ALIGN_UP(offset, alignment);               \
+	memcpy(extra + offset, &(value), sizeof(value));    \
+	offset += sizeof(value);                            \
+  } while (0)
 
 
 
@@ -241,8 +235,9 @@ CAMLprim value spoc_cuda_load_param_vec(value off, value ex, value A, value v, v
 	int seek;
 	int type_size;
 	int tag;
-
-
+#ifdef PROFILE
+    print_last_vector_access(Field(v, 9));
+#endif
 	seek = Int_val(Field(v,10));
 	bigArray = Field (Field(v, 1), 0);
 	int custom = 0;
@@ -269,6 +264,9 @@ CAMLprim value spoc_cuda_custom_load_param_vec(value off, value ex, value A, val
 	int type_size;
 	int tag;
 	void* ptr;
+#ifdef PROFILE
+    print_last_vector_access(Field(v, 9));
+#endif
 	seek = Int_val(Field(v,10));
 	customArray = Field (Field(v, 1), 0);
 	type_size = Int_val(Field(Field(customArray, 1),1));
@@ -401,7 +399,8 @@ CAMLprim value spoc_cuda_set_block_shape(value ker, value block, value gi){
 	CAMLreturn(Val_unit);
 }
 
-CAMLprim value spoc_cuda_launch_grid(value off, value ker, value grid, value block, value ex, value gi, value queue_id){
+CAMLprim value spoc_cuda_launch_grid(value off, value ker, value grid, value block, value ex, 
+                                     value gi, value queue_id){
   CAMLparam5(ker, grid, ex, block, gi);
   CAMLxparam2(off, queue_id);
   CUfunction *kernel;
@@ -430,16 +429,14 @@ CAMLprim value spoc_cuda_launch_grid(value off, value ker, value grid, value blo
   extra2[4] = CU_LAUNCH_PARAM_END;
 
 #ifdef PROFILE	
-	/*********************************************/
-	sync_event_prof();
-	CUevent start_exec;
-	CUevent finish_exec;
-	int id = start_gpu_execution_callback("CUDA_KERNEL_EXEC",  Int_val(Field(gi, 7)));
-	cuEventCreate(&start_exec, CU_EVENT_DEFAULT);
-	cuEventCreate(&finish_exec, CU_EVENT_DEFAULT);
-	cuEventRecord(start_exec, queue[Int_val(queue_id)]);
-	cuEventSynchronize(start_exec);
-	/*********************************************/
+  sync_event_prof();
+  CUevent start_exec;
+  CUevent finish_exec;
+  int id = print_start_gpu_execution("CUDA_KERNEL_EXEC",  Int_val(Field(gi, 7)));
+  cuEventCreate(&start_exec, CU_EVENT_DEFAULT);
+  cuEventCreate(&finish_exec, CU_EVENT_DEFAULT);
+  cuEventRecord(start_exec, queue[Int_val(queue_id)]);
+  cuEventSynchronize(start_exec);
 #endif
 
   CUDA_CHECK_CALL(cuLaunchKernel(*kernel,
@@ -452,18 +449,14 @@ CAMLprim value spoc_cuda_launch_grid(value off, value ker, value grid, value blo
   free(extra);
 
 #ifdef PROFILE
-	/*********************************************/
-	cuEventRecord(finish_exec, queue[Int_val(queue_id)]);
-	cuEventSynchronize(finish_exec);
-	float* duration = malloc(sizeof(float));
-	cuEventElapsedTime(duration, start_exec, finish_exec);
-	/*printf("dur : %f \n", *duration);
-	fflush(stdout);*/
-	stop_gpu_execution_callback(id, (double)((*duration) * 1000.0));
-	cuEventDestroy(start_exec);
-	cuEventDestroy(finish_exec);
-	free(duration);
-	/*********************************************/
+  cuEventRecord(finish_exec, queue[Int_val(queue_id)]);
+  cuEventSynchronize(finish_exec);
+  float* duration = malloc(sizeof(float));
+  cuEventElapsedTime(duration, start_exec, finish_exec);
+  print_stop_gpu_execution(id, (double)((*duration) * 1000.0)); /*to microseconds*/
+  cuEventDestroy(start_exec);
+  cuEventDestroy(finish_exec);
+  free(duration);
 #endif
 
   CUDA_RESTORE_CONTEXT;
