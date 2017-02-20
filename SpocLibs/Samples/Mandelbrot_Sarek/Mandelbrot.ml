@@ -89,7 +89,10 @@ let x = thread_idx_x + (block_idx_x * block_dim_x) in
  ;;
 
 klet brh = fun (a : bool ) ->
-  ($"__popc(__ballot(a))"$ > 16)
+  ($"__popc(__ballot(a))"$ > 26)
+
+klet nobrh = fun (a : bool ) -> a
+
 
 let mandelbrot = kern img shiftx shifty zoom ->
   let open Std in
@@ -207,6 +210,7 @@ let auto_transfers = ref true;;
 
 let bench = ref (false,0) ;;
 
+let prof = ref false
 
 let get_min ar =
   Spoc.Mem.to_cpu ar ();
@@ -243,8 +247,10 @@ let main_mandelbrot () =
 	      "benchmark (not interactive), number of calculations")
   and arg7 = ("-double" , Arg.Bool (fun b -> simple := not b),
 	      "use double precision [false]")
+  and arg8 = ("-prof" , Arg.Bool (fun b -> prof := b),
+	      "profile kernels [false]")
 in
-  Arg.parse ([arg1;arg2;arg3;arg4;arg5;arg6; arg7]) (fun s -> ()) "";
+  Arg.parse ([arg1;arg2;arg3;arg4;arg5;arg6; arg7; arg8]) (fun s -> ()) "";
   Printf.printf "Will use device : %s\n%!"
     (!dev).Spoc.Devices.general_info.Spoc.Devices.name;
   let threadsPerBlock = match !dev.Devices.specific_info with
@@ -288,9 +294,9 @@ in
 
   if not !recompile then
     if not !simple then
-      ignore(Kirc.gen  ~profile:true   mandelbrot_double !dev)
+      ignore(Kirc.gen  ~profile:!prof   mandelbrot_double !dev)
     else
-      ignore(Kirc.gen  ~profile:true  mandelbrot !dev);
+      ignore(Kirc.gen  ~profile:!prof  mandelbrot !dev);
 
   let l = Int32.to_string !width in
   let h = Int32.to_string !height in
@@ -310,9 +316,11 @@ in
 
     if !recompile then
       begin
-	Kirc.gen  ~profile:true  mandelbrot_recompile !dev;
+	Kirc.gen  ~profile:!prof  mandelbrot_recompile !dev;
 
-	Kirc.profile_run
+ (if !prof then
+    Kirc.profile_run
+  else Kirc.run)
 	  mandelbrot_recompile
 	  (sub_b)
 	  (block,grid)
@@ -321,25 +329,29 @@ in
       end
     else
       begin
-	if not !simple then
-	  Kirc.profile_run
-	    mandelbrot_double
-	    (sub_b, (Int32.to_int !shiftx), (Int32.to_int !shifty), !zoom)
-	    (block,grid)
-	    0
-	    !dev
+	if (not !simple) then
+   (
+     if !prof then
+       Kirc.profile_run
+     else Kirc.run)
+     mandelbrot_double
+     (sub_b, (Int32.to_int !shiftx), (Int32.to_int !shifty), !zoom)
+     (block,grid)
+     0
+     !dev
  else
   
-	  measure_time (fun () -> Kirc.profile_run
-	    mandelbrot
-	    (sub_b, (Int32.to_int !shiftx), (Int32.to_int !shifty), !zoom)
-	    (block,grid)
-	    0
-	    !dev;
+   measure_time (fun () ->
+       (if !prof then Kirc.profile_run else Kirc.run)
+	 mandelbrot
+  (sub_b, (Int32.to_int !shiftx), (Int32.to_int !shifty), !zoom)
+  (block,grid)
+  0
+  !dev;
 
                   Spoc.Mem.to_cpu sub_b ();
                   Spoc.Devices.flush !dev (); ) "Accelerator";
-
+ 
       end;
 
 

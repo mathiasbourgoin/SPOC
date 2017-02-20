@@ -10,7 +10,9 @@ COBJ=$(CSRC:.c=.o)
 MLOBJ_B=$(MLSRC:.ml=.cmo)
 MLOBJ_N=$(MLSRC:.ml=.cmx)
 JSSRC=$(filter-out Js/spoc_lib.js, $(wildcard Js/*.js))
-CC=ocamlc
+CC=ocamlfind ocamlc
+OCAMLC=ocamlfind ocamlc  -pp "cppo -q"
+OCAMLOPT=ocamlfind ocamlopt  -pp "cppo -q"
 ECHO=echo -e
 
 
@@ -36,16 +38,16 @@ extension/kernels_ext.cma:extension/kernels_ext.ml
 
 %.cmo:%.ml
 	@$(ECHO) "\033[32m[$@]\033[0m"
-	@ocamlc -g -for-pack $(PROJ) -c $< 2>>log
+	@$(OCAMLC) -g -for-pack $(PROJ) -c  $<
 
 %.cmx:%.ml
 	@$(ECHO) "\033[34m[$@]\033[0m"
-	@ocamlopt -g -for-pack $(PROJ) -c $< 2>>log
+	@$(OCAMLOPT) -g -for-pack $(PROJ) -c  $< 
 
 
 %.cmi:%.mli
 	@$(ECHO)  "\033[35m[$@]\033[0m"
-	@ocamlc -for-pack $(PROJ) -c $< 2>>log
+	@$(OCAMLC) -for-pack $(PROJ) -c  $< 2>>log
 
 %.o:%.c
 	@$(ECHO)  "\033[33m[$@]\033[0m"
@@ -55,7 +57,7 @@ build : $(LIBNAME).cma $(LIBNAME)level $(LIBNAME).cmxa $(LIBNAME).o
 
 $(LIBNAME).cmo : $(MLOBJ_B)  $(COBJ)
 	@$(ECHO)  "\033[32m[spoc.cmo]\033[0m"
-	@ocamlc -g -pack  $(MLOBJ_B) $(COBJ) -o $(LIBNAME).cmo
+	$(OCAMLC) -g -pack  $(MLOBJ_B) $(COBJ) -o $(LIBNAME).cmo
 
 $(LIBNAME).o : $(COBJ)
 	@$(ECHO)  "\033[33m[$@]\033[0m"
@@ -68,7 +70,7 @@ $(LIBNAME).cma: $(LIBNAME).o $(LIBNAME).cmo $(COBJ)
 
 $(LIBNAME).cmx : $(LIBNAME).o $(MLOBJ_N)  $(COBJ)
 	@$(ECHO)  "\033[34m[$(LIBNAME).cmx]\033[0m"
-	@ocamlopt -g -pack $(MLOBJ_N) $(COBJ) -o $(LIBNAME).cmx
+	@$(OCAMLOPT) -g -pack $(MLOBJ_N) $(COBJ) -o $(LIBNAME).cmx
 
 $(LIBNAME).cmxa : $(LIBNAME).cmx $(LIBNAME).o $(COBJ)
 	@$(ECHO)  "\033[31m[$(LIBNAME).cmxa]\033[0m"
@@ -123,26 +125,26 @@ android:
 	for i in "cuda_drvapi_dynlink.c"  "Custom.c" "Kernel_cuda.c" \
 	 	  "Kernel_opencl.c" "Mem_c.c" "Opencl_dynlink.c" \
 		  "Spoc_c.c" "Spoc_cu.c" ; do \
-	ocamlfind -toolchain android ocamlopt -package bigarray $$i;\
+	ocamlfind -toolchain android $(OCAMLOPT) -package bigarray $$i;\
 	done
-	ocamlfind -toolchain android ocamlopt -for-pack Spoc -package bigarray -linkpkg -c Devices.mli
-	ocamlfind -toolchain android ocamlopt -for-pack Spoc -package bigarray -linkpkg -c Devices.ml
-	ocamlfind -toolchain android ocamlopt -for-pack Spoc -package bigarray -linkpkg -c Vector.mli
-	ocamlfind -toolchain android ocamlopt -for-pack Spoc -package bigarray -linkpkg -c Vector.ml
-	ocamlfind -toolchain android ocamlopt -for-pack Spoc -package bigarray -linkpkg -c Cuda.mli
-	ocamlfind -toolchain android ocamlopt -for-pack Spoc -package bigarray -linkpkg -c Cuda.ml
-	ocamlfind -toolchain android ocamlopt -for-pack Spoc -package bigarray -linkpkg -c OpenCL.mli
-	ocamlfind -toolchain android ocamlopt -for-pack Spoc -package bigarray -linkpkg -c OpenCL.ml
-	ocamlfind -toolchain android ocamlopt -for-pack Spoc -package bigarray -linkpkg -c Mem.mli
-	ocamlfind -toolchain android ocamlopt -for-pack Spoc -package bigarray -linkpkg -c Mem.ml
-	ocamlfind -toolchain android ocamlopt -for-pack Spoc -package bigarray -linkpkg -c Kernel.mli
-	ocamlfind -toolchain android ocamlopt -for-pack Spoc -package bigarray -linkpkg -c Kernel.ml
+	ocamlfind -toolchain android $(OCAMLOPT) -for-pack Spoc -package bigarray -linkpkg -c Devices.mli
+	ocamlfind -toolchain android $(OCAMLOPT) -for-pack Spoc -package bigarray -linkpkg -c Devices.ml
+	ocamlfind -toolchain android $(OCAMLOPT) -for-pack Spoc -package bigarray -linkpkg -c Vector.mli
+	ocamlfind -toolchain android $(OCAMLOPT) -for-pack Spoc -package bigarray -linkpkg -c Vector.ml
+	ocamlfind -toolchain android $(OCAMLOPT) -for-pack Spoc -package bigarray -linkpkg -c Cuda.mli
+	ocamlfind -toolchain android $(OCAMLOPT) -for-pack Spoc -package bigarray -linkpkg -c Cuda.ml
+	ocamlfind -toolchain android $(OCAMLOPT) -for-pack Spoc -package bigarray -linkpkg -c OpenCL.mli
+	ocamlfind -toolchain android $(OCAMLOPT) -for-pack Spoc -package bigarray -linkpkg -c OpenCL.ml
+	ocamlfind -toolchain android $(OCAMLOPT) -for-pack Spoc -package bigarray -linkpkg -c Mem.mli
+	ocamlfind -toolchain android $(OCAMLOPT) -for-pack Spoc -package bigarray -linkpkg -c Mem.ml
+	ocamlfind -toolchain android $(OCAMLOPT) -for-pack Spoc -package bigarray -linkpkg -c Kernel.mli
+	ocamlfind -toolchain android $(OCAMLOPT) -for-pack Spoc -package bigarray -linkpkg -c Kernel.ml
 
-	ocamlfind -toolchain android ocamlopt -for-pack Spoc -package bigarray -linkpkg -c KernelCuda.ml
-	ocamlfind -toolchain android ocamlopt -for-pack Spoc -package bigarray -linkpkg -c KernelOpenCL.ml
-	ocamlfind -toolchain android ocamlopt -for-pack Spoc -package bigarray -linkpkg -c Tools.mli
-	ocamlfind -toolchain android ocamlopt -for-pack Spoc -package bigarray -linkpkg -c Tools.ml
-	ocamlfind -toolchain android ocamlopt -pack -o Spoc.cmx -package bigarray -linkpkg Devices.cmx Vector.cmx Cuda.cmx OpenCL.cmx Mem.cmx Kernel.cmx KernelCuda.cmx KernelOpenCL.cmx Tools.cmx *.o
+	ocamlfind -toolchain android $(OCAMLOPT) -for-pack Spoc -package bigarray -linkpkg -c KernelCuda.ml
+	ocamlfind -toolchain android $(OCAMLOPT) -for-pack Spoc -package bigarray -linkpkg -c KernelOpenCL.ml
+	ocamlfind -toolchain android $(OCAMLOPT) -for-pack Spoc -package bigarray -linkpkg -c Tools.mli
+	ocamlfind -toolchain android $(OCAMLOPT) -for-pack Spoc -package bigarray -linkpkg -c Tools.ml
+	ocamlfind -toolchain android $(OCAMLOPT) -pack -o Spoc.cmx -package bigarray -linkpkg Devices.cmx Vector.cmx Cuda.cmx OpenCL.cmx Mem.cmx Kernel.cmx KernelCuda.cmx KernelOpenCL.cmx Tools.cmx *.o
 	ocamlfind -toolchain android ocamlmklib -linkall Spoc.cmx -o spoc_android
 	ar rc spoc_android.a *.o
 

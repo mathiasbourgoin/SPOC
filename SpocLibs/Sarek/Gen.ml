@@ -416,10 +416,10 @@ module Generator (M:CodeGenerator) = struct
           let a = parse ~profile:prof i a dev in
           
           let pc = string_of_int !profiler_counter in
-          "bool spoc_tmp_if_cond_"^pc^" = ("^a^");\n"^
+          "bool spoc_prof_cond_"^pc^" = ("^a^");\n"^
           (if prof then
              (let s = indent i^
-                        "branch_analysis(prof_cntrs, spoc_tmp_if_cond_"^pc^", "^ pc^");\n" in
+                        "branch_analysis(prof_cntrs, spoc_prof_cond_"^pc^", "^ pc^");\n" in
               Printf.printf "incr in If 3 \n%!";
               profiler_counter := !profiler_counter + 4;
               s)
@@ -427,7 +427,7 @@ module Generator (M:CodeGenerator) = struct
           (let b =
              parse ~profile:prof (i+1) b dev in
            let s =
-             "if ("^a^")"^"{\n"^
+             "if ( spoc_prof_cond_"^pc^")"^"{\n"^
              (indent (i+1))^
              (indent (i+1))^
              b^";\n"^(indent i)^"}"^(indent i)

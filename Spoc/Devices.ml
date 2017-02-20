@@ -193,7 +193,7 @@ let current_cuda_device = ref 0
 let current_opencl_device = ref 0
 
 (******************************************************************************************************)
-
+#ifdef PROFILE
 external prePrint : int -> unit = "pre_print_device"
 
 external printInfo : string -> int -> int -> int -> int -> int -> bool -> int -> string -> bool -> unit = "print_info_bytecode" "print_info_native"
@@ -211,24 +211,27 @@ let emmitDeviceList devList =
   let nb = List.length devList in
   prePrint nb;
   List.iteri (fun i dev -> emmitDevice dev (i != nb-1)) devList;
-
+#endif
 
 (**********************************************************************************************************)
 
+#ifdef PROFILE
 external openOutput : unit -> unit = "open_output_profiling"
 
 external closeOutput : unit -> unit = "close_output_profiling"
 
-external is_available : int -> bool = "spoc_opencl_is_available"
-
 external beginEvent : string -> int = "begin_event"
 
-external endEvent : string -> int -> unit = "end_event" 
+external endEvent : string -> int -> unit = "end_event"
+#endif
 
-let init ?only: (s = Both) () =
-  openOutput ();
+external is_available : int -> bool = "spoc_opencl_is_available"
   
+let init ?only: (s = Both) () =
+#ifdef PROFILE
+  openOutput ();
   let idEvent = beginEvent "initialisation des devices" in
+#endif
   begin
     match s with
     | Both -> (
@@ -262,9 +265,13 @@ let init ?only: (s = Both) () =
   done;
   total_num_devices := List.length !devList;
   opencl_compatible_devices := !i;
+#ifdef PROFILE
   emmitDeviceList !devList;
   endEvent "fin initialisation des devices" idEvent;
+#endif
   Array.of_list	!devList
+;;
+
 
 let	cuda_devices () = !cuda_compatible_devices
 let	opencl_devices () = !opencl_compatible_devices

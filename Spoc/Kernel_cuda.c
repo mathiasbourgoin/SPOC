@@ -178,17 +178,17 @@ CAMLprim value spoc_cuda_debug_compile(value moduleSrc, value function_name, val
 	cuda_error = (cuModuleLoadDataEx(&module, ptx_source, jitNumOptions, jitOptions, 
                                      (void **)jitOptVals));
 	if (cuda_error)
-		{
-			printf ("%s\n", jitLogBuffer);
-			fflush (stdout);
-		}
+	  {
+	    printf ("%s\n", jitLogBuffer);
+	    fflush (stdout);
+	  }
 	cuda_error = (cuModuleGetFunction(kernel, module, functionN));
 	if (cuda_error)
-	{
-		printf ("%s\n", jitLogBuffer);
-		fflush (stdout);
-	}
-
+	  {
+	    printf ("%s\n", jitLogBuffer);
+	    fflush (stdout);
+	  }
+	
 #ifdef PROFILE
 	print_stop_gpu_compile("COMPILE_CUDA", Int_val(Field(gi, 7)), start);
 #endif
@@ -445,6 +445,7 @@ CAMLprim value spoc_cuda_launch_grid(value off, value ker, value grid, value blo
 				 0, queue[Int_val(queue_id)], 
 				 NULL, extra2));
 
+  CUDA_CHECK_CALL(cuCtxSynchronize());
   Store_field(off, 0, Val_int(offset));
   free(extra);
 

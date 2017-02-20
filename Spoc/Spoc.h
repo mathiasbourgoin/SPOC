@@ -61,7 +61,7 @@
 */
 
 /* for profiling */
-#define PROFILE
+//#define PROFILE
 
 extern int noCuda;
 extern int noCL;

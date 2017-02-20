@@ -169,7 +169,9 @@ let vec_id = ref 0
 
 (******************************************************************************************************)
 
+#ifdef PROFILE
 external printVector : int -> int -> int -> int -> string -> bool -> int -> int -> int -> int -> int -> unit = "print_vector_bytecode" "print_vector_native"
+
 
 let emmitVect (vect : ('a, 'b) vector) length =
     let isSub = match vect.is_sub with
@@ -201,7 +203,7 @@ let emmitVect (vect : ('a, 'b) vector) length =
       printVector id dev length size kindS false 1 1 1 1 1;
     
 ;;
-
+#endif
 (*******************************************************************************************************)
 
 
@@ -211,10 +213,15 @@ external sizeofChar  : unit -> int = "sizeofChar"
 external sizeofInt32  : unit -> int = "sizeofInt32"
 external sizeofInt64  : unit -> int = "sizeofInt64"
 external sizeofComplex32  : unit -> int = "sizeofComplex32"
-external printEvent : string -> unit = "print_event"
 
+#ifdef PROFILE
+external printEvent : string -> unit = "print_event"
+#endif
+                                         
 let create (kind: ('a,'b) kind) ?dev size =
+#ifdef PROFILE
   printEvent "VectorCreation";
+#endif
   incr vec_id;
   let vec = 
     {
@@ -310,7 +317,9 @@ let create (kind: ('a,'b) kind) ?dev size =
       | _  ->  Gc.full_major (); alloc_on_dev ());
      vec.dev <- Dev dev;
   );
-  emmitVect vec size;
+#ifdef PROFILE
+    emmitVect vec size;
+#endif  
   vec
 
 let length v =
