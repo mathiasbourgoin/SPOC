@@ -544,7 +544,7 @@ let gen ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('a, 'b, 'c,'d,'e) sarek
     ignore(Sys.command ("nvcc -m64  -O3 -ptx kirc_kernel.cu -o kirc_kernel.ptx"));
     let s = (load_file "kirc_kernel.ptx") in
     kir#set_cuda_sources s;
-    ignore(Sys.command "rm kirc_kernel.cu kirc_kernel.ptx");
+    ignore(Sys.command "rm -f kirc_kernel.cu kirc_kernel.ptx");
 
   and gen_opencl () =
     let opencl_head =
