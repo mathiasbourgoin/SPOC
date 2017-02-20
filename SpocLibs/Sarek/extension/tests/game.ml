@@ -82,7 +82,8 @@ let init id h w bench =
     done;
   done;
     let win = match Sdl.init Sdl.Init.video with 
-      | `Error e -> Sdl.log "Init error: %s" e; exit 1
+      | `Error e ->
+        Sdl.log "Init error: %s" e; exit 1
       | `Ok () -> 
         match Sdl.create_window ~w:w ~h:h "SDL OpenGL" Sdl.Window.opengl with 
         | `Error e -> Sdl.log "Create window error: %s" e; exit 1

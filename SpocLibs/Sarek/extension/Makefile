@@ -66,6 +66,11 @@ tests/ray.pp.nat : tests/ray.pp.ml
 	ctypes,ctypes.foreign,spoc,sarek,graphics,camlimages,camlimages.png,camlimages.graphics	\
 	-package sarek_syntax -syntax camlp4o -linkpkg -o $@ $<
 
+tests/game.pp.nat : tests/game.pp.ml
+	ocamlfind ocamlopt -thread -package			\
+	ctypes,ctypes.foreign,spoc,sarek,graphics,tsdl -package	\
+	sarek_syntax -syntax camlp4o -linkpkg -o $@ $<
+
 
 tests/%.pp.nat : tests/%.ml
 	ocamlfind ocamlopt  -thread -package ctypes,ctypes.foreign,spoc,sarek,camlimages,camlimages.png \
