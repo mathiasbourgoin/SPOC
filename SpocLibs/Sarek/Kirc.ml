@@ -491,7 +491,7 @@ let rewrite ker =
 let return_v = ref ("","")
 
 let save file string =
-  ignore(Sys.command ("rm -f"^file));
+  ignore(Sys.command ("rm -f "^file));
   let channel = open_out file in
   output_string channel string;
   close_out channel;;
