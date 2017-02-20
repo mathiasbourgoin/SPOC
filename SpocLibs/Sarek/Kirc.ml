@@ -567,9 +567,9 @@ let gen ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('a, 'b, 'c,'d,'e) sarek
   in
   begin
     match o with
-    | Devices.Both -> gen_cuda (); gen_opencl();
-    | Devices.Cuda -> gen_cuda ()
-    | Devices.OpenCL -> gen_opencl ()
+    | Devices.Both -> if Spoc.Devices.cuda_devices () > 0 then gen_cuda (); if Spoc.Devices.opencl_devices () > 0 then gen_opencl();
+    | Devices.Cuda -> if Spoc.Devices.cuda_devices () > 0 then gen_cuda () else Printf.eprintf "I could not find any Cuda device to compile Sarek kernels to... sorry :'(\n";
+    | Devices.OpenCL ->  if Spoc.Devices.opencl_devices () > 0 then gen_opencl () else Printf.eprintf "I could not find any Cuda device to compile Sarek kernels to... sorry :'(\n";
   end;
   kir#reset_binaries ();
   kir,k
