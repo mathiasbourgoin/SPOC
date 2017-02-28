@@ -1,4 +1,4 @@
-FROM ubuntu:16.04
+FROM ubuntu:16.10
 MAINTAINER Mathias Bourgoin <mathias.bourgoin@gmail.com>
 RUN apt-get -y update && \
 #RUN apt-get -y install sudo pkg-config git build-essential m4 software-properties-common aspcud unzip curl libx11-dev ocaml ocaml-native-compilers camlp4-extra git libffi-dev emacs pkg-config wget aspcud
@@ -32,7 +32,7 @@ RUN opam init -a --root /home/spoc/.opam && \
 #RUN eval `opam config env`&& opam update && \
     eval `opam config env`&& opam update && \
     opam depext conf-pkg-config.1.0 && \
-    opam install camlp4 ctypes ocp-indent ctypes-foreign ocamlfind
+    opam install camlp4 ctypes ocp-indent ctypes-foreign ocamlfind cppo
 #RUN eval `opam config env` && opam depext conf-pkg-config.1.0
 #RUN eval `opam config env` && opam install camlp4 ctypes ocp-indent ctypes-foreign ocamlfind
 #RUN eval `opam config env` && opam install ctypes
