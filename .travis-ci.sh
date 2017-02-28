@@ -31,7 +31,7 @@ case $OCAML_VERSION in
     4.02|4.02.3|4.03) opam install camlp4;;
 esac
 
-opam install ctypes ctypes-foreign
+opam install ctypes ctypes-foreign cppo
 
 make check
 
