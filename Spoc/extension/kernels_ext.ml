@@ -298,7 +298,7 @@ let rec parseInvTyp t i=
 
   | TyId (_, id) when (String.compare (string_of_ident id) "acc_acc_Spoc_Vector_vcomplex32") = 0 -> 
     incr idx;
-    arg_string := "Spoc.Kernel.VComplex32  "^i^" "^(!arg_string);
+    arg_string := "Spoc.Kernel.VComplex32 "^i^" "^(!arg_string);
     arg_string2 :=i^" "^(!arg_string2)
 
   | TyId (_, id) when (String.compare (string_of_ident id) "acc_acc_Spoc_Vector_vint32") = 0 -> 
@@ -520,6 +520,7 @@ let relaxed _loc nv =
 	| TyId (l, id) when ((string_of_ident id) = "acc_acc_Spoc_Vector_vchar") -> relaxed _loc nv
 	| TyId (l, id) when ((string_of_ident id) = "acc_acc_Spoc_Vector_vbool") -> relaxed _loc nv
 	| TyId (l, id) when ((string_of_ident id) = "acc_acc_Spoc_Vector_vcustom") -> relaxed _loc nv
+        | TyId (l, id) when ((string_of_ident id) = "acc_acc_Spoc_Vector_vcomplex32") -> relaxed _loc nv
 	| TyApp   (_loc, t1, t2)  -> 
 	  gen_inv_id t1 _loc nv
 	| _   ->  (ExId (_loc,
