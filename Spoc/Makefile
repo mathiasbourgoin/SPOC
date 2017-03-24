@@ -10,9 +10,9 @@ COBJ=$(CSRC:.c=.o)
 MLOBJ_B=$(MLSRC:.ml=.cmo)
 MLOBJ_N=$(MLSRC:.ml=.cmx)
 JSSRC=$(filter-out Js/spoc_lib.js, $(wildcard Js/*.js))
-CC=ocamlfind ocamlc
-OCAMLC=ocamlfind ocamlc  -pp "cppo -q"
-OCAMLOPT=ocamlfind ocamlopt  -pp "cppo -q"
+CC=ocamlfind ocamlc -ccopt "-D PROFILE"
+OCAMLC=ocamlfind ocamlc  -pp "cppo -q -D PROFILE"
+OCAMLOPT=ocamlfind ocamlopt  -pp "cppo -q -D PROFILE"
 ECHO=echo -e
 
 
@@ -51,7 +51,7 @@ extension/kernels_ext.cma:extension/kernels_ext.ml
 
 %.o:%.c
 	@$(ECHO)  "\033[33m[$@]\033[0m"
-	@$(CC) -g -c $< 2>>log
+	@$(CC) -g -c $< 
 
 build : $(LIBNAME).cma $(LIBNAME)level $(LIBNAME).cmxa $(LIBNAME).o
 

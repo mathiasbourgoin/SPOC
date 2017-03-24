@@ -35,7 +35,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
+  
 #include "Mem_c.h"
 #include "Trac_c.h"
 #include <assert.h>
@@ -195,11 +195,11 @@ extern "C" {
   void cuda_free_vec (value v) {
     cu_vector* cuv = (cu_vector*)(Field(v, 1));
     if (cuv)
-    {
-      CUdeviceptr f = cuv->cu_vector;
-    
+      {
+	CUdeviceptr f = cuv->cu_vector;
+	
 #ifdef PROFILE
-      CAMLlocal1(bigArray);
+      value bigArray;
       int size;
       int type_size;
       int seek;
@@ -540,15 +540,12 @@ extern "C" {
 
   }
 
-#ifndef PROFILE
+
   void cuda_free_after_transfer(CUstream stream, CUresult status, void* data) {
-    if (data) {
-      cuMemFree((CUdeviceptr)(data));
-    }
-  }
-#else
-  void cuda_free_after_transfer(CUstream stream, CUresult status, void* data) {
-    CAMLlocal3(dev_vec, dev_vec_array, bigArray);
+#ifdef PROFILE
+    value dev_vec;
+    value dev_vec_array;
+    value bigArray;
     value* tab = (value*)data;
     value vector = tab[0];
     value nb_device = tab[1];
@@ -573,9 +570,14 @@ extern "C" {
     }
     print_gpu_free("GPU_FREE", Field(vector, 9), Int_val(nb_device), "CUDA", size*type_size);
     free(tab);
-
-  }
+#else
+    if (data) {
+      cuMemFree((CUdeviceptr)(data));
+    }
 #endif
+  }
+
+
 
   CAMLprim value spoc_cuda_device_to_cpu(value vector, value nb_device, value gi, 
                                          value device, value queue_id) {
