@@ -187,6 +187,22 @@ CAMLprim value end_event(value desc, value id){
   CAMLreturn(Val_unit);
 }
 
+CAMLprim value kernel_source (value src){
+    CAMLparam1(src);
+    char* source = String_val(src);
+    int event_id = event_counter;
+    double time = get_time();
+    pthread_mutex_lock(&mutex);
+    fprintf(output_file, "{\n"
+	    "\"type\":\"profile kernel\",\n"
+	    "\"id\":\"%i\",\n"
+	    "\"source\":\"%s\",\n"
+	    "},\n", event_id, source);
+  fflush(output_file);
+  pthread_mutex_unlock(&mutex);
+  CAMLreturn(Val_unit);
+}
+
 void open_output_file(){
   if(output_file == NULL){
     GETTIME(start_time);
@@ -238,6 +254,8 @@ int get_id_event(){
   ++event_counter;
   return event_counter;
 }
+
+
 
 void sync_event_prof(){
   int i;

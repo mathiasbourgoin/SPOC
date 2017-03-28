@@ -236,7 +236,7 @@ and  parse i a  dev =
     | Double f -> string_of_float f
 
     | Ife(a,b,c) ->
-      Printf.printf "Ife %d\n%!" !prof_counter;
+      (*Printf.printf "Ife %d\n%!" !prof_counter;*)
       let a = parse i a dev in
       let b_anal = branch_analysis_string !prof_counter in
       prof_counter := !prof_counter + 4; 
@@ -254,7 +254,7 @@ and  parse i a  dev =
       b_anal ^
       "if ("^a^") then \n"^ b ^"\n"^(indent i)^"else\n"^indent (i+1)^c
     | If (a,b) ->
-      Printf.printf "If %d\n%!" !prof_counter;
+      (*Printf.printf "If %d\n%!" !prof_counter;*)
       let a = parse i a dev in
       let b_anal = branch_analysis_string !prof_counter in
       prof_counter := !prof_counter + 4; 
@@ -279,7 +279,7 @@ and  parse i a  dev =
       "for (int "^id^" = "^min^" to  "^max^"do\n"^(indent (i+1))^body^"done;"
 
     | While (a,b) ->
-      Printf.printf "While %d\n%!" !prof_counter;
+      (*Printf.printf "While %d\n%!" !prof_counter;*)
       let cond = parse i a dev in
       let b_anal = branch_analysis_string !prof_counter in
       prof_counter := !prof_counter + 4; 

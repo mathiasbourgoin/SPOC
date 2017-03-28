@@ -731,7 +731,9 @@ let load_file f =
 
 
 
-    
+
+external print_source : string -> unit = "kernel_source"
+  
 let gen_profile ker dev =
   let kir,k = ker in
   let (k1,k2,k3) = (k.ml_kern, k.body,k.ret_val) in
@@ -751,10 +753,11 @@ let gen_profile ker dev =
                           extensions = k.extensions});  Pervasives.flush stdout; assert false) ))
   in
   let profile_source = (Kirc_Profile.parse 0 (k2) dev) in
-  Printf.printf "%s" profile_source(*;
-  Printf.fprintf Spoc.Trac.fileOutput "{\n \"type\":\"profile_kernel\",\n \
-                                        \"kernel_id\":%d,\n \
-                                        \"source\":\"%s\"\n \
+  Printf.printf "%s" profile_source;
+  print_source profile_source
+    (*Printf.fprintf "profilingInfo.json" {\n \"type\":\"profile_kernel\",\n \
+                                       \"kernel_id\":%d,\n \
+                                       \"source\":\"%s\"\n \
                                        },\n" (!Spoc.Trac.eventId - 1 ) profile_source*)
 
 let gen ?profile:(prof=false) ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) dev =
@@ -908,7 +911,7 @@ let profile_run ?recompile:(r=true) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) a b
        Kirc_OpenCL.profiler_counter;
      )
   in
-  Printf.printf "Number of counters : %d\n%!" nCounter;
+  (*Printf.printf "Number of counters : %d\n%!" nCounter;*)
   let profiler_counters =  Vector.create Vector.int64 nCounter in
   for i = 0 to nCounter  - 1 do
     Mem.set profiler_counters i 0L;
@@ -934,7 +937,7 @@ let profile_run ?recompile:(r=true) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) a b
   Devices.flush dev ();
   if (not !Mem.auto) then
     Mem.to_cpu profiler_counters ();
-  Spoc.Tools.iter (fun a -> Printf.printf "%Ld " a) profiler_counters;
+  (*Spoc.Tools.iter (fun a -> Printf.printf "%Ld " a) profiler_counters;*)
   Gen.profile_vect := profiler_counters;
   gen_profile ker dev;
 ;;
