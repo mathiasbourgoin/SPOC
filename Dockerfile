@@ -1,4 +1,4 @@
-FROM ubuntu:16.04
+FROM ubuntu:17.04
 MAINTAINER Mathias Bourgoin <mathias.bourgoin@gmail.com>
 RUN apt-get -y update && \
 #RUN apt-get -y install sudo pkg-config git build-essential m4 software-properties-common aspcud unzip curl libx11-dev ocaml ocaml-native-compilers camlp4-extra git libffi-dev emacs pkg-config wget aspcud
@@ -26,7 +26,7 @@ CMD /bin/bash
 #RUN wget https://raw.github.com/ocaml/opam/master/shell/opam_installer.sh -O - | sh -s ~/.opam
 
 RUN opam init -a --root /home/spoc/.opam && \
-    opam switch 4.03.0	&& \
+    opam switch 4.04.0	&& \
 #RUN opam switch 4.03.0
 #RUN eval `opam config env`
 #RUN eval `opam config env`&& opam update && \

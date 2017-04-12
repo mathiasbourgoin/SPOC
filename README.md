@@ -16,8 +16,11 @@ To be able to use SPOC, you'll need a computer capable of running OCaml (obvious
 For Cuda you only need a current proprietary NVidia driver while for OpenCL you need to install the correct OpenCL implementation for your system. 
 SPOC should compile anyway as everything is dynamically linked, but you'll need Cuda/OpenCL eventually to run your programs.
 
-#Docker image
+# Docker image
 [![](https://images.microbadger.com/badges/version/mathiasbourgoin/spoc.svg)](https://microbadger.com/images/mathiasbourgoin/spoc) [![](https://images.microbadger.com/badges/image/mathiasbourgoin/spoc.svg)](https://microbadger.com/images/mathiasbourgoin/spoc)
+
+	  docker pull mathiasbourgoin/spoc
+
 
 For more information, examples and live tutorials, please
 check the [github page](http://mathiasbourgoin.github.io/SPOC/) :
