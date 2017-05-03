@@ -11,10 +11,9 @@ RUN apt-get -y update && \
 #RUN apt-get install -y pkg-config
 #RUN apt-get install -y wget aspcud
 
-RUN git clone https://github.com/mathiasbourgoin/amd_sdk.git
-
 ADD docker_scripts/.bashrc /home/spoc/.bashrc
-RUN sh amd_sdk/amd_sdk.sh
+
+RUN git clone https://github.com/mathiasbourgoin/amd_sdk.git && sh amd_sdk/amd_sdk.sh
 
 RUN apt-get install -y opam && \
     useradd -ms /bin/bash spoc && echo "spoc:spoc" | chpasswd && adduser spoc sudo
@@ -27,7 +26,7 @@ CMD /bin/bash
 #RUN wget https://raw.github.com/ocaml/opam/master/shell/opam_installer.sh -O - | sh -s ~/.opam
 
 RUN opam init -a --root /home/spoc/.opam && \
-    opam switch 4.03.0	&& \
+    opam switch 4.04.0	&& \
 #RUN opam switch 4.03.0
 #RUN eval `opam config env`
 #RUN eval `opam config env`&& opam update && \
@@ -42,13 +41,10 @@ RUN opam init -a --root /home/spoc/.opam && \
 #RUN opam install merlin
 #RUN eval `opam config env` && opam install ocamlfind
 
-
-RUN rm -rf SPOC
-RUN git clone https://github.com/mathiasbourgoin/SPOC.git
-
-
+RUN rm -rf SPOC && git clone https://github.com/mathiasbourgoin/SPOC.git
 
 WORKDIR SPOC/Spoc
+
 RUN eval `opam config env` && make && \
     ocamlfind install spoc *.cma *.a *.so *.cmxa *.cmi META  && \
     cd extension && make && make install
