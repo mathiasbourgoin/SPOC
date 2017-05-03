@@ -10,7 +10,7 @@ COBJ=$(CSRC:.c=.o)
 MLOBJ_B=$(MLSRC:.ml=.cmo)
 MLOBJ_N=$(MLSRC:.ml=.cmx)
 JSSRC=$(filter-out Js/spoc_lib.js, $(wildcard Js/*.js))
-CC=ocamlfind ocamlc -ccopt "-D SPOC_PROFILE -g -rdynamic"
+CC=ocamlfind ocamlc -ccopt "-D SPOC_PROFILE -g -rdynamic -std=c11"
 OCAMLC=ocamlfind ocamlc  -pp "cppo -q -D SPOC_PROFILE"
 OCAMLOPT=ocamlfind ocamlopt  -pp "cppo -q -D SPOC_PROFILE" -ccopt "-rdynamic -g"
 ECHO=printf 
