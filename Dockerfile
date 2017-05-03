@@ -13,6 +13,7 @@ RUN apt-get -y update && \
 
 RUN git clone https://github.com/mathiasbourgoin/amd_sdk.git
 
+ADD docker_scripts/.bashrc /home/spoc/.bashrc
 RUN sh amd_sdk/amd_sdk.sh
 
 RUN apt-get install -y opam && \
@@ -45,7 +46,7 @@ RUN opam init -a --root /home/spoc/.opam && \
 RUN rm -rf SPOC
 RUN git clone https://github.com/mathiasbourgoin/SPOC.git
 
-ADD docker_scripts/.bashrc /home/spoc/.bashrc
+
 
 WORKDIR SPOC/Spoc
 RUN eval `opam config env` && make && \
