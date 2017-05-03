@@ -54,7 +54,7 @@ extern "C" {
   spocsizeof(Char,char)
   spocsizeof(Complex32,double2)
   
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
 #define  get(name,type,macro)                       \
   CAMLprim value get_##name(value v, value idx){	\
     CAMLparam2(v, idx);                             \
@@ -198,7 +198,7 @@ extern "C" {
       {
 	CUdeviceptr f = cuv->cu_vector;
 	
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
       value bigArray;
       int size;
       int type_size;
@@ -287,7 +287,7 @@ extern "C" {
 
     size = Int_val(Field(sub_vector, 4))-seek;
 
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     CUevent start_transfer;
     CUevent end_transfer;    
     cuEventCreate(&start_transfer, CU_EVENT_DEFAULT);
@@ -298,7 +298,7 @@ extern "C" {
     CUDA_CHECK_CALL(cuMemcpyHtoDAsync(d_A+((Long_val(guest_offset)+seek)*type_size), h_A, 
                                       (Long_val(part_size))*type_size, queue[Int_val(queue_id)]));
 
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     cuEventRecord(end_transfer, queue[Int_val(queue_id)]);
     cuda_events* events = malloc(sizeof(cuda_events));
     events->start = start_transfer;
@@ -369,7 +369,7 @@ extern "C" {
     GET_TYPE_SIZE;
     size =Int_val(Field(vector, 4))-seek;
     
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     CUevent start_transfer;
     CUevent end_transfer;    
     cuEventCreate(&start_transfer, CU_EVENT_DEFAULT);
@@ -380,7 +380,7 @@ extern "C" {
     CUDA_CHECK_CALL(cuMemcpyHtoDAsync(d_A+(seek*type_size), h_A+(seek*type_size), 
                                       size*type_size, queue[Int_val(queue_id)]));
 
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     cuEventRecord(end_transfer, queue[Int_val(queue_id)]);
     cuda_events* events = malloc(sizeof(cuda_events));
     events->start = start_transfer;
@@ -424,7 +424,7 @@ extern "C" {
     d_A = cuv->cu_vector;
 
     CUDA_GET_CONTEXT;
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     CUevent start_transfer;
     CUevent end_transfer;    
     cuEventCreate(&start_transfer, CU_EVENT_DEFAULT);
@@ -434,7 +434,7 @@ extern "C" {
     CUDA_CHECK_CALL(cuMemcpyHtoDAsync(d_A+(Int_val(offset)+seek*type_size), 
                                       h_A+(Int_val(offset))+Int_val(start)+seek*type_size, 
                                       part_size*type_size, queue[Int_val(queue_id)]));
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     cuEventRecord(end_transfer, queue[Int_val(queue_id)]);
     cuda_events* events = malloc(sizeof(cuda_events));
     events->start = start_transfer;
@@ -504,7 +504,7 @@ extern "C" {
 
     CUDA_GET_CONTEXT;
     
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     CUevent start_transfer;
     CUevent end_transfer;  
     cuEventCreate(&start_transfer, CU_EVENT_DEFAULT);
@@ -514,7 +514,7 @@ extern "C" {
 
     CUDA_CHECK_CALL(cuMemcpyHtoDAsync(d_A+seek*type_size, h_A+(seek*type_size), size*type_size, queue[Int_val(queue_id)]));
 
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     cuEventRecord(end_transfer, queue[Int_val(queue_id)]);
     cuda_events* events = malloc(sizeof(cuda_events));
     events->start = start_transfer;
@@ -542,7 +542,7 @@ extern "C" {
 
 
   void cuda_free_after_transfer(CUstream stream, CUresult status, void* data) {
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     value dev_vec;
     value dev_vec_array;
     value bigArray;
@@ -613,7 +613,7 @@ extern "C" {
     int custom = 0;
     GET_TYPE_SIZE;
 
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     CUevent start_transfer;
     CUevent end_transfer;    
     cuEventCreate(&start_transfer, CU_EVENT_DEFAULT);
@@ -627,7 +627,7 @@ extern "C" {
     CUDA_CHECK_CALL(cuMemcpyDtoHAsync((void*)h_A+seek*type_size, d_A+seek*type_size, 
                                       size*type_size, queue[Int_val(queue_id)]));
 
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     cuEventRecord(end_transfer, queue[Int_val(queue_id)]);
     cuda_events* events = malloc(sizeof(cuda_events));
     events->start = start_transfer;
@@ -678,7 +678,7 @@ extern "C" {
 
     Store_field(dev_vec, 1, (value)NULL);
 
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     int type_size;
     int size;
     int seek;
@@ -725,7 +725,7 @@ extern "C" {
     CUDA_CHECK_CALL(cuMemAlloc(&cuv->cu_vector, size*type_size));
 
 
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     print_gpu_alloc("GPU_ALLOC", Int_val(Field(vector, 9)), nb_device, "CUDA", size*type_size);
 #endif
 
@@ -762,7 +762,7 @@ extern "C" {
 
     Store_field(dev_vec, 1, Val_cl_mem(d_A));
 
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     int type_size;
     int size;
     int seek;
@@ -799,7 +799,7 @@ extern "C" {
     int custom = 0;
     GET_TYPE_SIZE;
     
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     print_gpu_alloc("GPU_ALLOC", Int_val(Field(vector, 9)), nb_device, 
                     "OPENCL", size*type_size);
 #endif
@@ -843,7 +843,7 @@ extern "C" {
                                            &opencl_error));
 
 
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     print_gpu_alloc("GPU_ALLOC", Int_val(Field(vector, 9)), 
                     nb_device, "OPENCL", size*type_size);
 #endif
@@ -883,7 +883,7 @@ extern "C" {
 
     size = Int_val(Field(sub_vector, 4));
 
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     CUevent start_transfer;
     CUevent end_transfer;
     cuEventCreate(&start_transfer, CU_EVENT_DEFAULT);
@@ -896,7 +896,7 @@ extern "C" {
 
     CUDA_CHECK_CALL(cuMemcpyDtoHAsync(h_A+(Long_val(guest_offset)*type_size), d_A /* (gcInfo->curr_ptr)*/,  (Long_val(part_size))*type_size, queue[Int_val(queue_id)]));
     
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     cuEventRecord(end_transfer, queue[Int_val(queue_id)]);
     cuda_events* events = malloc(sizeof(cuda_events));
     events->start = start_transfer;
@@ -987,7 +987,7 @@ extern "C" {
 
     CUDA_CHECK_CALL(cuDeviceGet(&dev, Int_val(nb_device)));
 
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     value* data_table = malloc(3 * sizeof(value));
     data_table[0] = vector;
     data_table[1] = nb_device;
@@ -1000,7 +1000,7 @@ extern "C" {
 
    CUDA_CHECK_CALL(cuMemcpyDtoHAsync((void*)h_A, d_A, size*type_size, queue[Int_val(queue_id)]));
     
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
    cuEventRecord(end_transfer, queue[Int_val(queue_id)]);
    cuda_events* events = malloc(sizeof(cuda_events));
    events->start = start_transfer;
@@ -1045,7 +1045,7 @@ extern "C" {
     GET_TYPE_SIZE;
     OPENCL_GET_CONTEXT;
 
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     cl_event event_transfert;
     OPENCL_CHECK_CALL1(
       opencl_error, clEnqueueWriteBuffer(queue[Int_val(queue_id)], d_A, CL_FALSE,
@@ -1092,7 +1092,7 @@ extern "C" {
     OPENCL_TRY("clGetContextInfo", clGetContextInfo(ctx, CL_CONTEXT_DEVICES, 
                                                     (size_t)sizeof(cl_device_id), 
                                                     &device_id, NULL));
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     cl_event event_transfert;
     OPENCL_CHECK_CALL1(opencl_error, 
                        clEnqueueWriteBuffer(queue[Int_val(queue_id)], d_A,
@@ -1141,7 +1141,7 @@ extern "C" {
 
     OPENCL_GET_CONTEXT;
  
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     cl_event event_transfert;
     
     OPENCL_CHECK_CALL1(opencl_error,
@@ -1224,7 +1224,7 @@ extern "C" {
 
     q = queue[Int_val(queue_id)];
 
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     cl_event event_transfer;
  
     OPENCL_CHECK_CALL1(opencl_error, clEnqueueReadBuffer(q, d_A, CL_FALSE, 0, size*type_size,
@@ -1269,7 +1269,7 @@ extern "C" {
     OPENCL_TRY("clGetContextInfo", clGetContextInfo(ctx, CL_CONTEXT_DEVICES, 
                                                     (size_t)sizeof(cl_device_id), 
                                                     &device_id, NULL)) ;
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     cl_event event_transfert;
     OPENCL_CHECK_CALL1(opencl_error, clEnqueueReadBuffer(queue[Int_val(queue_id)], d_A, 
                                                          CL_FALSE, 0, size*type_size, h_A, 0, 
@@ -1324,11 +1324,11 @@ extern "C" {
 
     q = queue[Int_val(queue_id)];
 
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     
 #endif
 
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     cl_event event_transfert;
     OPENCL_CHECK_CALL1(opencl_error,
                        clEnqueueReadBuffer(q, d_A, CL_FALSE,

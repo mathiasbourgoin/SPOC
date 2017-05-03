@@ -262,7 +262,7 @@ external get_opencl_compatible_devices : unit -> int
 = "spoc_getOpenCLDevicesCount"
 (**/**)
 
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
 external closeOutput : unit -> unit = "close_output_profiling"
 #endif
                                         

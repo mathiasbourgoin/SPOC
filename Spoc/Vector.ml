@@ -169,7 +169,7 @@ let vec_id = ref 0
 
 (******************************************************************************************************)
 
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
 external printVector : int -> int -> int -> int -> string -> bool -> int -> int -> int -> int -> int -> unit = "print_vector_bytecode" "print_vector_native"
 
 
@@ -214,12 +214,12 @@ external sizeofInt32  : unit -> int = "sizeofInt32"
 external sizeofInt64  : unit -> int = "sizeofInt64"
 external sizeofComplex32  : unit -> int = "sizeofComplex32"
 
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
 external printEvent : string -> unit = "print_event"
 #endif
                                          
 let create (kind: ('a,'b) kind) ?dev size =
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
   printEvent "VectorCreation";
 #endif
   incr vec_id;
@@ -317,7 +317,7 @@ let create (kind: ('a,'b) kind) ?dev size =
       | _  ->  Gc.full_major (); alloc_on_dev ());
      vec.dev <- Dev dev;
   );
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     emmitVect vec size;
 #endif  
   vec

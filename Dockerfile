@@ -67,7 +67,7 @@ WORKDIR /home/spoc/emacs_install
 
 RUN sh ./emacs-pkg-install.sh auto-complete && \
     sh ./emacs-pkg-install.sh company && \
-    sh ./emacs-pkg-install.sh company-irony
+    sh ./emacs-pkg-install.sh company-irony || echo "No emacs package installed"
 #RUN sh ./emacs-pkg-install.sh company
 #RUN sh ./emacs-pkg-install.sh company-irony
 #RUN eval `opam config env`&& opam install merlin tuareg ocp-indent

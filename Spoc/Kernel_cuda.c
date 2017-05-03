@@ -114,7 +114,7 @@ CAMLprim value spoc_cuda_compile(value moduleSrc, value function_name, value gi)
 	//CU_JIT_TARGET;
 //	jitOptVals[3] =  (void*)(uintptr_t)CU_TARGET_COMPUTE_11;
 	
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
 	struct timeval* start = print_start_gpu_compile();
 #endif
 
@@ -122,7 +122,7 @@ CAMLprim value spoc_cuda_compile(value moduleSrc, value function_name, value gi)
                                        (void **)jitOptVals));
 	CUDA_CHECK_CALL(cuModuleGetFunction(kernel, module, functionN));
 
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     print_stop_gpu_compile("COMPILE_CUDA", Int_val(Field(gi, 7)), start);
 #endif
 
@@ -171,7 +171,7 @@ CAMLprim value spoc_cuda_debug_compile(value moduleSrc, value function_name, val
 	//CU_JIT_TARGET;
 //	jitOptVals[3] =  (void*)(uintptr_t)CU_TARGET_COMPUTE_10;
 
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     struct timespec* start = print_start_gpu_compile();
 #endif
 
@@ -189,7 +189,7 @@ CAMLprim value spoc_cuda_debug_compile(value moduleSrc, value function_name, val
 	    fflush (stdout);
 	  }
 	
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
 	print_stop_gpu_compile("COMPILE_CUDA", Int_val(Field(gi, 7)), start);
 #endif
 
@@ -235,7 +235,7 @@ CAMLprim value spoc_cuda_load_param_vec(value off, value ex, value A, value v, v
 	int seek;
 	int type_size;
 	int tag;
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     print_last_vector_access(Field(v, 9));
 #endif
 	seek = Int_val(Field(v,10));
@@ -264,7 +264,7 @@ CAMLprim value spoc_cuda_custom_load_param_vec(value off, value ex, value A, val
 	int type_size;
 	int tag;
 	void* ptr;
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     print_last_vector_access(Field(v, 9));
 #endif
 	seek = Int_val(Field(v,10));
@@ -428,7 +428,7 @@ CAMLprim value spoc_cuda_launch_grid(value off, value ker, value grid, value blo
   extra2[3] = &offset;
   extra2[4] = CU_LAUNCH_PARAM_END;
 
-#ifdef PROFILE	
+#ifdef SPOC_PROFILE	
   sync_event_prof();
   CUevent start_exec;
   CUevent finish_exec;
@@ -449,7 +449,7 @@ CAMLprim value spoc_cuda_launch_grid(value off, value ker, value grid, value blo
   Store_field(off, 0, Val_int(offset));
   free(extra);
 
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
   cuEventRecord(finish_exec, queue[Int_val(queue_id)]);
   cuEventSynchronize(finish_exec);
   float* duration = malloc(sizeof(float));

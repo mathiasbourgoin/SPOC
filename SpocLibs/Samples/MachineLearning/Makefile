@@ -19,14 +19,14 @@ endif
 all : classifyDigitsSpoc.pp.nat
 
 $(ASM): $(MLSRC)
-	ocamlfind ocamlopt -thread -package spoc -linkpkg -package spoc_external_kernels -syntax camlp4o $(MLSRC) -o $(ASM)
+	ocamlfind -g ocamlopt -thread -package spoc -linkpkg -package spoc_external_kernels -syntax camlp4o $(MLSRC) -o $(ASM)
 
 $(BYTE): $(MLSRC)
 	ocamlfind ocamlc -g -thread -package spoc -linkpkg -package spoc_external_kernels -syntax camlp4o $(MLSRC) -o $(BYTE)
 
 
 %.pp.nat: %.pp.ml
-	ocamlfind ocamlopt -thread -package ctypes,ctypes.foreign,spoc,sarek,graphics -linkpkg  -o $@ $<
+	ocamlfind ocamlopt -g -thread -package ctypes,ctypes.foreign,spoc,sarek,graphics -linkpkg  -o $@ $<
 
 %.pp.ml : %.ml
 	camlp4  -I +camlp4 -I `ocamlfind query spoc_external_kernels` -I `ocamlfind query sarek_syntax` -parser o -parser op -printer o kernels_int.cma -printer kernels_ext.cma $< > $@

@@ -10,78 +10,78 @@ COBJ=$(CSRC:.c=.o)
 MLOBJ_B=$(MLSRC:.ml=.cmo)
 MLOBJ_N=$(MLSRC:.ml=.cmx)
 JSSRC=$(filter-out Js/spoc_lib.js, $(wildcard Js/*.js))
-CC=ocamlfind ocamlc -ccopt "-D PROFILE"
-OCAMLC=ocamlfind ocamlc  -pp "cppo -q -D PROFILE"
-OCAMLOPT=ocamlfind ocamlopt  -pp "cppo -q -D PROFILE"
-ECHO=echo -e
-
+CC=ocamlfind ocamlc -ccopt "-D SPOC_PROFILE -g -rdynamic"
+OCAMLC=ocamlfind ocamlc  -pp "cppo -q -D SPOC_PROFILE"
+OCAMLOPT=ocamlfind ocamlopt  -pp "cppo -q -D SPOC_PROFILE" -ccopt "-rdynamic -g"
+ECHO=printf 
 
 all : start | build extension/kernels_ext.cma js
 
 
 start :
-	@$(ECHO) "\033[43m\033[30mBuilding $(PROJ)\033[0m"
+	@$(ECHO) "\033[43m\033[30mBuilding $(PROJ)\033[0m\n"
 
 js : Js/$(LIBNAME)_lib.js
 
 Js/$(LIBNAME)_lib.js : $(JSSRC)
-	@$(ECHO) "\033[43m\033[30mBuilding Web$(PROJ)\033[0m"
-	@$(ECHO) "\033[36m[$(LIBNAME)_lib.js]\033[0m"
+	@$(ECHO) "\033[43m\033[30mBuilding Web$(PROJ)\033[0m\n"
+	@$(ECHO) "\033[36m[$(LIBNAME)_lib.js]\033[0m\n"
 	@cd Js && make
 
 
 extension/kernels_ext.cma:extension/kernels_ext.ml
-	@$(ECHO) "\033[43m\033[30mBuilding $(PROJ) external kernel extension\033[0m"
-	@$(ECHO) "\033[31m[kernels_ext.cma]\033[0m"
+	@$(ECHO) "\033[43m\033[30mBuilding $(PROJ) external kernel extension\033[0m\n"
+	@$(ECHO) "\033[31m[kernels_ext.cma]\033[0m\n"
 	@cd extension && make 
 
 
 %.cmo:%.ml
-	@$(ECHO) "\033[32m[$@]\033[0m"
+	@$(ECHO) "\033[32m[$@]\033[0m\n"
 	@$(OCAMLC) -g -for-pack $(PROJ) -c  $<
 
 %.cmx:%.ml
-	@$(ECHO) "\033[34m[$@]\033[0m"
+	@$(ECHO) "\033[34m[$@]\033[0m\n"
 	@$(OCAMLOPT) -g -for-pack $(PROJ) -c  $< 
 
 
 %.cmi:%.mli
-	@$(ECHO)  "\033[35m[$@]\033[0m"
+	@$(ECHO)  "\033[35m[$@]\033[0m\n"
 	@$(OCAMLC) -for-pack $(PROJ) -c  $< 2>>log
 
 %.o:%.c
-	@$(ECHO)  "\033[33m[$@]\033[0m"
+	@$(ECHO)  "\033[33m[$@]\033[0m\n"
 	@$(CC) -g -c $< 
 
 build : $(LIBNAME).cma $(LIBNAME)level $(LIBNAME).cmxa $(LIBNAME).o
 
 $(LIBNAME).cmo : $(MLOBJ_B)  $(COBJ)
-	@$(ECHO)  "\033[32m[spoc.cmo]\033[0m"
+	@$(ECHO)  "\033[32m[spoc.cmo]\033[0m\n"
 	$(OCAMLC) -g -pack  $(MLOBJ_B) $(COBJ) -o $(LIBNAME).cmo
 
 $(LIBNAME).o : $(COBJ)
-	@$(ECHO)  "\033[33m[$@]\033[0m"
+	@$(ECHO)  "\033[33m[$@]\033[0m\n"
 	@$(CC) -g $(COBJ) -o $(LIBNAME).o
 
 
 $(LIBNAME).cma: $(LIBNAME).o $(LIBNAME).cmo $(COBJ)
-	@$(ECHO)  "\033[31m[$(LIBNAME).cma]\033[0m"
-	@ocamlmklib  -linkall -o $(LIBNAME) $(LIBNAME).cmo $(COBJ) -cclib -lcamlrun
+	@$(ECHO)  "\033[31m[$(LIBNAME).cma]\033[0m\n"
+	@ocamlmklib  -linkall -o $(LIBNAME) $(LIBNAME).cmo $(COBJ) -cclib -lcamlrun 
 
 $(LIBNAME).cmx : $(LIBNAME).o $(MLOBJ_N)  $(COBJ)
-	@$(ECHO)  "\033[34m[$(LIBNAME).cmx]\033[0m"
+	@$(ECHO)  "\033[34m[$(LIBNAME).cmx]\033[0m\n"
 	@$(OCAMLOPT) -g -pack $(MLOBJ_N) $(COBJ) -o $(LIBNAME).cmx
 
 $(LIBNAME).cmxa : $(LIBNAME).cmx $(LIBNAME).o $(COBJ)
-	@$(ECHO)  "\033[31m[$(LIBNAME).cmxa]\033[0m"
+	@$(ECHO)  "\033[31m[$(LIBNAME).cmxa]\033[0m\n"
 	@ocamlmklib -linkall -o $(LIBNAME) $(LIBNAME).cmx $(COBJ) -cclib -lasmrun
 
 $(LIBNAME)level : $(LIBNAME).cma extension/kernels_ext.cma
-	@$(ECHO)   "\033[36m[$(LIBNAME)level]\033[0m"
-	ocamlmktop -custom -thread -I +camlp4 -cclib -L. dynlink.cma -cclib -lthreads \
-	camlp4o.cma extension/kernels_ext.cma str.cma bigarray.cma \
-	-cclib -lcamlrun -cclib -lbigarray -cclib -lunix unix.cma -cclib -l$(LIBNAME) $(LIBNAME).cma \
-	-o $(LIBNAME)level
+	@$(ECHO)   "\033[36m[$(LIBNAME)level]\033[0m\n"
+	ocamlmktop -custom -thread -I +camlp4 -cclib -L. dynlink.cma	\
+	-cclib -lthreads camlp4o.cma extension/kernels_ext.cma		\
+	str.cma bigarray.cma -cclib -lcamlrun -cclib -lbigarray		\
+	-cclib -lunix unix.cma -cclib -l$(LIBNAME) $(LIBNAME).cma -o	\
+	$(LIBNAME)level
 
 ocp :
 	ocp-build -init
@@ -102,7 +102,7 @@ doc : uninstall install
 	rm -rf tmp
 
 install : all uninstall
-	@$(ECHO) "\033[43m\033[30mInstalling $(PROJ)\033[0m"
+	@$(ECHO) "\033[43m\033[30mInstalling $(PROJ)\033[0m\n"
 	@ocamlfind install $(LIBNAME) *.cma *.a *.so *.cmxa $(LIBNAME).cmi META 2>> log
 	@cd extension && make install
 	@cd Js && make install
@@ -114,7 +114,7 @@ ocp-install:
 	cd Js && make install
 
 uninstall :
-	@$(ECHO) "\033[43m\033[30mRemoving Spoc\033[0m"
+	@$(ECHO) "\033[43m\033[30mRemoving Spoc\033[0m\n"
 	@cd extension && make uninstall
 	@cd Js && make uninstall
 	@(ocamlfind remove $(LIBNAME) 2>>log) | true;

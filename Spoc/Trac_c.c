@@ -593,7 +593,8 @@ void print_get_vector(int vector_id, int vector_device){
   }
   vector_get_tab[vector_id-1].vector_id = vector_id;
   vector_get_tab[vector_id-1].vector_device = vector_device;
-  //vector_get_tab[vector_id-1].backtrace = get_backtrace();
+  //  strcpy(vector_get_tab[vector_id-1].backtrace, get_backtrace());
+  get_backtrace();
   pthread_mutex_unlock(&mutex);
 }
 
@@ -605,7 +606,8 @@ void print_set_vector(int vector_id, int vector_device){
   }
   vector_set_tab[vector_id-1].vector_id = vector_id;
   vector_set_tab[vector_id-1].vector_device = vector_device;
-  //vector_set_tab[vector_id-1].backtrace = get_backtrace();
+  strcpy(vector_set_tab[vector_id-1].backtrace, get_backtrace());
+  get_backtrace();
   pthread_mutex_unlock(&mutex);
 }
 
@@ -617,48 +619,80 @@ void print_last_vector_access(int vector_id){
 	            "\"id\":\"%i\",\n"
 	            "\"vectorId\":\"%i\"\n"
 	  //"\"getBacktrace\":\"%s\",\n"
-	  //        "\"setBacktrace\":\"%s\"\n"
+	  //"\"setBacktrace\":\"%s\"\n"
 	  "},\n", event_id, vector_id); //,vector_get_tab[vector_id-1].backtrace,
-    //vector_set_tab[vector_id-1].backtrace);
+	  //vector_set_tab[vector_id-1].backtrace);
   fflush(output_file);
   pthread_mutex_unlock(&mutex);
 }
 
-char* get_backtrace(){
+
+
+inline char* get_backtrace(){
   // print backtrace to find caller
+  int i,j, nptrs;
   #define SIZE 100
-  int i, nptrs;
-  void* buffer[SIZE];
-  char** strings;
-  char* trace = malloc(sizeof(char) * BACKTRACE_MAX_SIZE);
+  void *buffer[SIZE];
+  char **strings;
   nptrs = backtrace(buffer, SIZE);
   strings = backtrace_symbols(buffer, nptrs);
   for (i = 0; i < nptrs; i++){
-    //    printf("%s\n", strings[i]);
-
-    /* find first occurence of '(' or ' ' in message[i] and assume
+    printf("%s\n", strings[i]);
+    /*
+     * find first occurence of '(' or ' ' in message[i] and assume
      * everything before that is the file name. (Don't go beyond 0 though
-     * (string terminator)
-     */
-
+     * (string terminator)*/
     size_t p = 0;
     while(strings[i][p] != '(' && strings[i][p] != ' ' && strings[i][p] != 0)
       ++p;
-
+    
     char syscom[256];
-    sprintf(syscom, "addr2line %p -e %.*s | grep -v Spoc | grep -v stdlib | grep .ml ", buffer[i],
-	    (int)p, strings[i], __progname); //last parameter is the file name of the symbol
+    printf("addr2line %p -e %.*s\n", buffer[i], p, strings[i], __progname);
+    sprintf(syscom,"addr2line %p -e %.*s", buffer[i], p, strings[i], __progname);
+    //last parameter is the file name of the symbol
     //system(syscom);
-    FILE* fp = popen(syscom, "r");
-    if(fp == NULL) {
-      fprintf(stdout, "Error opening pipe: %s\n", strerror(errno));
-    }
-    while(fgets(trace, sizeof(trace)-1, fp) != NULL) {
-      //printf("%s", path);
-    }
-    pclose(fp);
   }
+
   fflush(stdout);
   free(strings);
-  return trace;
+  return( "");
+
+  /* #define SIZE 100 */
+  /* int i, nptrs; */
+  /* void* buffer[SIZE]; */
+  /* char** strings; */
+  /* char* trace = malloc(sizeof(char) * BACKTRACE_MAX_SIZE); */
+  /* nptrs = backtrace(buffer, SIZE); */
+  /* strings = backtrace_symbols(buffer, nptrs); */
+  /* printf("backtrace returned %d addresses\n", nptrs); */
+  /* for (i = 0; i < nptrs; i++){ */
+  /*   printf("%s\n", strings[i]); */
+
+  /*   /\* find first occurence of '(' or ' ' in message[i] and assume */
+  /*    * everything before that is the file name. (Don't go beyond 0 though */
+  /*    * (string terminator) */
+  /*    *\/ */
+
+  /*   size_t p = 0; */
+  /*   while(strings[i][p] != '(' && strings[i][p] != ' ' && strings[i][p] != 0) */
+  /*     ++p; */
+
+  /*   char syscom[256]; */
+  /*   sprintf(syscom, "addr2line %p -e %.*s ", buffer[i], (int)p, */
+  /* 	    strings[i]); //last parameter is the file name of the symbol */
+  /*   //system(syscom); */
+  /*   printf("---------> \n %s \n<--------\n",syscom); */
+  /*   fflush(stdout); */
+  /*   FILE* fp = popen(syscom, "r"); */
+  /*   if(fp == NULL) { */
+  /*     fprintf(stdout, "Error opening pipe: %s\n", strerror(errno)); */
+  /*   } */
+  /*   while(fgets(trace, sizeof(trace)-1, fp) != NULL) { */
+  /*     printf("%s", trace); */
+  /*   } */
+  /*   pclose(fp); */
+  /* } */
+  /* fflush(stdout); */
+  /* free(strings); */
+  /* return trace; */
 }

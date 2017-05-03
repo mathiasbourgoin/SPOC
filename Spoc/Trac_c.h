@@ -32,8 +32,8 @@
   } while (0) 
 
 #define INITIAL_TAB_SIZE 8
-#define VECTOR_TAB_SIZE 3
-#define BACKTRACE_MAX_SIZE 1024
+#define VECTOR_TAB_SIZE 30
+#define BACKTRACE_MAX_SIZE 256
 
 extern char* __progname;
 
@@ -45,7 +45,7 @@ typedef struct cuda_events {
 typedef struct vector_entry {
   int vector_id;
   int vector_device;
-  char* backtrace;
+  char *backtrace;
 } vector_entry;
 
 typedef struct transfert_prof_info {

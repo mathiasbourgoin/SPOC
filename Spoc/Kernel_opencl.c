@@ -66,7 +66,7 @@ CAMLprim value spoc_opencl_compile(value moduleSrc, value function_name, value g
 	functionN = String_val(function_name);
 	cl_source = String_val(moduleSrc);
 
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     struct timespec* start = print_start_gpu_compile();
 #endif
 	
@@ -74,7 +74,7 @@ CAMLprim value spoc_opencl_compile(value moduleSrc, value function_name, value g
 	OPENCL_TRY("clGetContextInfo", clGetContextInfo(ctx, CL_CONTEXT_DEVICES, (size_t)sizeof(cl_device_id), &device_id, NULL)) ;
 	OPENCL_CHECK_CALL1(ret_val, clBuildProgram(hProgram, 1, &device_id, 0, NULL, NULL));
 
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
 	print_stop_gpu_compile("COMPILE_OPENCL", Int_val(Field(gi, 7)), start);
 #endif
 	
@@ -105,7 +105,7 @@ CAMLprim value spoc_debug_opencl_compile(value moduleSrc, value function_name, v
 	functionN = String_val(function_name);
 	cl_source = String_val(moduleSrc);
 
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
 	struct timespec* start = print_start_gpu_compile();
 #endif
 	
@@ -113,7 +113,7 @@ CAMLprim value spoc_debug_opencl_compile(value moduleSrc, value function_name, v
 	OPENCL_TRY("clGetContextInfo", clGetContextInfo(ctx, CL_CONTEXT_DEVICES, (size_t)sizeof(cl_device_id), &device_id, NULL)) ;
 	OPENCL_CHECK_CALL1(ret_val, clBuildProgram(hProgram, 1, &device_id, 0, NULL, NULL));
     
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
 	print_stop_gpu_compile("COMPILE_OPENCL", Int_val(Field(gi, 7)), start);
 #endif
 	
@@ -150,7 +150,7 @@ CAMLprim value spoc_opencl_load_param_vec(value off, value ker, value A, value i
   offset = Int_val(Field(off, 0));
   d_A = Cl_mem_val(Field(A, 1));
   
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
   print_last_vector_access(Int_val(id));
 #endif
   OPENCL_GET_CONTEXT;
@@ -285,7 +285,7 @@ CAMLprim value spoc_opencl_launch_grid(value ker, value grid, value block, value
 	work_size[2] = (size_t)blockZ;
 
 	cl_event event;
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     sync_event_prof();
 	int id = print_start_gpu_execution("OPENCL_KERNEL_EXEC",  Int_val(Field(gi, 7)));
 #endif
@@ -299,7 +299,7 @@ CAMLprim value spoc_opencl_launch_grid(value ker, value grid, value block, value
 	OPENCL_CHECK_CALL1(opencl_error, clReleaseCommandQueue(queue[Int_val(queue_id)]));
 
 
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
     OPENCL_CHECK_CALL1(opencl_error, clWaitForEvents(1 , &event));
 	cl_ulong time_start, time_end;
 	double total_time;

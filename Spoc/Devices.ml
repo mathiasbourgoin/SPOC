@@ -193,7 +193,7 @@ let current_cuda_device = ref 0
 let current_opencl_device = ref 0
 
 (******************************************************************************************************)
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
 external prePrint : int -> unit = "pre_print_device"
 
 external printInfo : string -> int -> int -> int -> int -> int -> bool -> int -> string -> bool -> unit = "print_info_bytecode" "print_info_native"
@@ -215,7 +215,7 @@ let emmitDeviceList devList =
 
 (**********************************************************************************************************)
 
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
 external openOutput : unit -> unit = "open_output_profiling"
 
 external closeOutput : unit -> unit = "close_output_profiling"
@@ -228,7 +228,7 @@ external endEvent : string -> int -> unit = "end_event"
 external is_available : int -> bool = "spoc_opencl_is_available"
   
 let init ?only: (s = Both) () =
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
   openOutput ();
   let idEvent = beginEvent "initialisation des devices" in
 #endif
@@ -265,7 +265,7 @@ let init ?only: (s = Both) () =
   done;
   total_num_devices := List.length !devList;
   opencl_compatible_devices := !i;
-#ifdef PROFILE
+#ifdef SPOC_PROFILE
   emmitDeviceList !devList;
   endEvent "fin initialisation des devices" idEvent;
 #endif
