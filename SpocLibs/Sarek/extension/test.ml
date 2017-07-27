@@ -2,7 +2,7 @@ open Spoc
 open Kirc
 open Spoc.Vector
 
-let height = ref 512l
+(*let height = ref 512
 let width = ref 512l
 let shiftx = ref 0l
 let shifty = ref 0l
@@ -54,3 +54,13 @@ let _ =
   Printf.printf "Here\n%!";
   List.iter (Printf.printf "%s\n")((fst mandelbrot)#get_cuda_sources ())
     
+*)
+
+klet f = fun a -> a + 1
+
+let k = kern a b i ->
+  let open Std in 
+  let tid = thread_idx_x + (block_idx_x * block_dim_x) in
+  if (tid < i) then
+    b.[<tid>] <- f (a.[<tid>])
+  

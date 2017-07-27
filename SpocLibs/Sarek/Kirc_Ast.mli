@@ -81,4 +81,6 @@ type k_ext =
 and case = int * (string*string*int*string) option * k_ext
 
 type kfun = KernFun of k_ext * k_ext
+
+val string_of_ast : k_ext -> string
 val print_ast : k_ext -> unit

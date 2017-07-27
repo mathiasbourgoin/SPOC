@@ -47,6 +47,7 @@ let arg_of_vec v  =
   | _ -> assert false
 
 
+
 let propagate f expr =
   match expr with
   | Block b -> Block (f b)
@@ -110,7 +111,7 @@ let propagate f expr =
   | Custom (s,i,ss) -> expr
   | Match (s,a,b) -> Match (s,f a,
                             Array.map (fun (i,ofid,e) -> (i,ofid,f e)) b)
-  | _ -> failwith "unimplemented yet"
+  | _ -> failwith (("Kirk Transform : "^ (Kirc_Ast.string_of_ast expr) ^" unimplemented yet"))
 
 let map ((ker: ('a, 'b, ('c -> 'd), 'e, 'f) sarek_kernel)) ?dev:(device=(Spoc.Devices.init ()).(0)) (vec_in : ('c, 'h) Vector.vector) : ('d, 'j) Vector.vector=
   let ker2,k = ker in
@@ -349,7 +350,275 @@ let map2 ((ker: ('a, 'b,('c -> 'd -> 'e), 'f,'g) sarek_kernel)) ?dev:(device=(Sp
   );
   vec_out
 
+
+let reduce ((ker: ('a, 'b,('c -> 'c-> 'd), 'e,'f) sarek_kernel)) ?dev:(device=(Spoc.Devices.init ()).(0)) (vec_in1 : ('c, 'i) Vector.vector)  : 'd  = Obj.magic ()
+
+
 let (^>) =fun a b -> a ^ "\n" ^ b
+
+
+
+let map_skeleton f =
+  spoc_gen_kernel
+    (params
+       (concat (new_int_vec_var 3 "a")
+          (concat (new_int_vec_var 4 "b")
+             (concat (new_int_var 5 "i") (empty_arg ())))))
+    (spoc_local_env (spoc_declare (new_int_var 7 "tid"))
+       (seq
+          (spoc_set (var 7 "tid")
+             (spoc_plus
+                (intrinsics "threadIdx.x" "(get_local_id (0))")
+                (spoc_mul
+                   (intrinsics "blockIdx.x" "(get_group_id (0))")
+                   (intrinsics "blockDim.x"
+                      "(get_local_size (0))"))))
+          (spoc_if (lt32 (var 7 "tid") (var 5 "i"))
+             (set_vect_var (get_vec (var 4 "b") (var 7 "tid"))
+                (app (global_fun f)
+                   [| get_vec (var 3 "a") (var 7 "tid") |])))))
+
+
+let f = let open Kirc
+  in
+  {
+    fun_name = "f";
+    ml_fun = (fun a -> Int32.add a 1l);
+    funbody =
+      spoc_gen_kernel
+        (params (concat (new_int_var 0 "a") (empty_arg ())))
+        (spoc_return (spoc_plus (var 0 "a") (spoc_int32 1l)));
+    fun_ret = ((return_int 2 ""), Vector.int32);
+    fastflow_acc = Obj.magic None;
+    fun_extensions = [| ExFloat32 |];
+  }
+  
+
+class dummy_kernel = 
+  object (self)
+    inherit
+      [(((int32, Bigarray.int32_elt) Vector.vector) *
+        ((int32, Bigarray.int32_elt) Vector.vector) * int),
+       (('a, 'b) Kernel.kernelArgs) array] Spoc.Kernel.spoc_kernel
+        "kirc_kernel" "spoc_dummy"
+    method exec = assert false
+    method args_to_list =
+      fun
+        ((spoc_var3 : ('spoc_a, 'spoc_b) Vector.vector),
+         (spoc_var4 : ('spoc_a, 'spoc_b) Vector.vector),
+         (spoc_var5 : int))
+        ->
+          [| Spoc.Kernel.VInt32 (Spoc.Kernel.relax_vector spoc_var3);
+             Spoc.Kernel.VInt32 (Spoc.Kernel.relax_vector spoc_var4);
+             Spoc.Kernel.Int32 spoc_var5
+          |]
+    method list_to_args =
+      function
+      | [| Spoc.Kernel.VInt32 spoc_var3;
+           Spoc.Kernel.VInt32 spoc_var4; Spoc.Kernel.Int32 spoc_var5
+        |] ->
+        ((spoc_var3 : (int32, Bigarray.int32_elt) Vector.vector),
+         (Spoc.Kernel.relax_vector spoc_var4 :
+            (int32, Bigarray.int32_elt) Vector.vector),
+         (spoc_var5 : int))
+      | _ -> failwith "spoc_kernel_extension error"
+  end
+
+(* External from SPOC *)
+external opencl_compile : string -> string -> Devices.generalInfo -> Kernel.kernel =
+    "spoc_opencl_compile"
+external cuda_compile :
+  string ->
+  string -> Devices.generalInfo -> Kernel.kernel =
+  "spoc_cuda_compile"
+    
+
+let compile_dummy (ker : dummy_kernel) dev =
+  let bin = (match dev.Devices.specific_info with
+   | Devices.CudaInfo _ ->
+     cuda_compile (List.hd (ker#get_cuda_sources ())) "map_" dev.Devices.general_info 
+   | Devices.OpenCLInfo _ ->
+     opencl_compile (List.hd (ker#get_opencl_sources ())) "map_" dev.Devices.general_info )
+   in bin
+  
+let map = fun (f:('a,'b,'c, 'd) kirc_function) ?dev:(device=(Spoc.Devices.init ()).(0)) (vec_in : ('h, 'c) Vector.vector) : ('e, 'f) Vector.vector ->
+  let ker = map_skeleton f in
+  let vec_out = (Vector.create (snd f.fun_ret)  ~dev:device (Vector.length vec_in)) in
+  
+  Mem.to_device vec_in device;
+ 
+  let target =
+    match device.Devices.specific_info with
+      Devices.CudaInfo _ -> Devices.Cuda
+    | Devices.OpenCLInfo _ -> Devices.OpenCL in
+  (*spoc_ker, kir_ker =*)
+
+  let exec_fun  =
+    let v1 = arg_of_vec vec_in
+    and v2 = arg_of_vec vec_out in
+    Spoc.Kernel.exec [| v1; v2; 
+                        Spoc.Kernel.Int32 (Vector.length vec_in)
+                     |]
+  in 
+
+    
+  let open Spoc.Kernel in
+  
+  let block =  {blockX = 1; blockY = 1; blockZ = 1}
+  and grid = {gridX = 1; gridY = 1; gridZ = 1} in
+  begin
+    let open Devices in(
+      match device.Devices.specific_info with
+      | Devices.CudaInfo cI ->
+        if Vector.length vec_in <
+           (cI.maxThreadsDim.x) then
+          (
+            grid.gridX <- 1;
+            block.blockX <- (Vector.length vec_in)
+            )
+        else
+          (
+            block.blockX <- cI.maxThreadsDim.x;
+            grid.gridX <- (Vector.length vec_in) / cI.maxThreadsDim.x;
+          )
+      | Devices.OpenCLInfo oI ->
+        if Vector.length vec_in < oI.Devices.max_work_item_size.Devices.x then
+          (
+            grid.gridX <- 1;
+            block.blockX <- Vector.length vec_in
+            )
+        else
+          (
+            block.blockX <- oI.Devices.max_work_item_size.Devices.x;
+            grid.gridX <- (Vector.length vec_in) / block.blockX
+          )
+    )
+  end;
+  
+  
+  let dummy = new dummy_kernel in 
+  ignore(gen ~only:target (dummy ,{ml_kern = Tools.map (f.ml_fun) (snd f.fun_ret);
+                                   body = ker;
+                                   ret_val = Unit, Vector.int32;
+                                   extensions = f.fun_extensions;})
+             
+           device);
+  let bin = compile_dummy dummy device in
+  exec_fun (block,grid) 0 device bin;
+  vec_out
+
+
+
+
+module Compose = struct
+
+
+  type ('a,'b,'c,'d,'e,'f,'g,'h,'i) skeleton =
+    | Map of
+        ((('a, 'b, ('c-> 'd), 'f, 'g) sarek_kernel) * ('c, 'h) Vector.vector)
+    | Reduce of
+        ((('a, 'b, ('c -> 'c -> 'd), 'f, 'g) sarek_kernel) * ('c, 'h) Vector.vector)
+    | Zip of
+        ((('a, 'b, ('c -> 'e -> 'd), 'f, 'g) sarek_kernel) * ('c, 'h) Vector.vector * ('e, 'i) Vector.vector)
+    | Generate of
+        ((('a, 'b, (int -> 'c), 'f, 'g) sarek_kernel) * ('c, 'h) Vector.vector)
+    | Sort of
+        ((('a, 'b, ('c -> 'c -> bool), 'f, 'g) sarek_kernel) * ('c, 'h) Vector.vector)
+    | Reorder of
+        ((('a, 'b, (int -> int), 'f, 'g) sarek_kernel) * ('c, 'h) Vector.vector)
+    | Filter of
+        ((('a, 'b, ('c -> bool), 'f, 'g) sarek_kernel) * ('c, 'h) Vector.vector)
+                 
+    
+  
+
+  type pack = Pack : ('a,'b,'c,'d,'e,'f,'g,'h,'i) skeleton -> pack
+  
+  type composition =
+    | Map of pack
+    | Reduce of pack
+    | Zip of pack
+    | Generate of pack
+    | Sort of pack
+    | Reorder of pack
+    | Filter of pack
+    | Iterate of composition * int
+    | Seq of composition * composition
+    | Sync 
+        
+
+
+  let merge_map a  b  = 
+    match a,b with
+    |  ((Map ((ker,v) ) : ('a,'b,'c, 'd,'e,'f,'g,'h,'i) skeleton),
+        ((Map (ker2,v2)) : ('a2,'b2,'c2,'d2,'e2,'f2,'g2,'h2,'i2) skeleton)) ->
+      let ker,k = ker
+      and ker2, k2 = ker2 in
+      let ml_kern : 'c -> 'd2 = fun a -> k2.ml_kern (k.ml_kern a) in
+      let body = k.body (* <- TODO *)
+      in let ret_val = k2.ret_val in
+      let res = {
+        ml_kern = ml_kern;
+        body = body;
+        ret_val = ret_val;
+        extensions = k.extensions;
+      } in Pack (Map ((ker, res),v))
+        
+    | _ -> assert false
+    
+  let compose  (a : composition) (b : composition) =
+    match a,b  with
+    | Map (Pack a), Map (Pack b) ->
+      (merge_map  a (Obj.magic b))
+    | _ -> assert false
+        
+    
+    (* let compose a b = *)
+    (* match a,b with *)
+    (* | (Map ((ker,v)), (Map (ker2,v2))) -> *)
+    (*   let ker,k = ker *)
+    (*   and ker2, k2 = ker2 in *)
+    (*   let ml_kern = fun a -> k2.ml_kern (k.ml_kern a) in *)
+    (*   let body = k.body (\* <- TODO *\) *)
+    (*   in let ret_val = k2.ret_val in *)
+    (*   let res = { *)
+    (*     ml_kern = ml_kern; *)
+    (*     body = body; *)
+    (*     ret_val = ret_val; *)
+    (*     extensions = k.extensions; *)
+    (*   } in *)
+    (*   Map ((ker,res), v) *)
+
+    (* | (a,b)-> *)
+    (*   Seq (a,b) *)
+  
+  let compose a b = ()
+
+  
+  let (|>) = compose
+  
+end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 module type Fastflow = sig
   val source : string
