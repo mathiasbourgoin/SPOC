@@ -19,6 +19,7 @@ COBJS=$(CSRC:.c=.o)
 NVCC_PRESENT := $(shell nvcc --version 1>/dev/null 2>/dev/null;  echo $$?)
 GCC_MAX := 4.3
 
+hasKern=$(shell ls kernels 1>/dev/null 2>/dev/null; echo $$?)
 
 ifeq ($(NVCC_PRESENT), 0)
 
