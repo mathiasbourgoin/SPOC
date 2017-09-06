@@ -135,8 +135,26 @@ and  parse_float2 f t=
   | _  -> ( my_eprintf (Printf.sprintf "(*** val2 %s *)\n%!" (k_expr_to_string f.e));
             assert (not debug); raise (TypeError (t, f.t, f.loc));)
 
+and parse_special a =
+  match a.e with
+  | (*create_array *) App (_loc,{t=typ; e= Id(_,<:ident< create_array>>); loc=_}, [b]) ->
+    <:expr< $parse_body2 b false$>>
+  |  App (_loc, {e=App (_, {t=_; e= App (_,{t=_; e=Id(_,<:ident< map>>); loc=_}, [f]); loc=_}, [a])}, [b]) ->
+    <:expr< map $parse_body2 f false$ $parse_body2 a false$ $parse_body2 b false$>>;
+  |  App (_loc, {e=App (_, {t=_; e= App (_,{t=_; e=Id(_,<:ident< reduce>>); loc=_}, [f]); loc=_}, [a])}, [b]) ->
+    <:expr< reduce $parse_body2 f false$ $parse_body2 a false$ $parse_body2 b false$>>;
+    
+  |_  -> 
+    raise Not_found
+      
 and parse_app a =
   my_eprintf (Printf.sprintf "(* val2 parse_app %s *)\n%!" (k_expr_to_string a.e));
+  
+  try parse_special a with
+  
+  | Not_found ->
+
+
   match a.e with
   | App (_loc, e1, e2::[]) ->
     let res = ref [] in
@@ -269,7 +287,7 @@ and parse_body2 body bool =
                  else
                    (my_eprintf __LOC__;
                     raise (TypeError (TUnknown, gen_var.var_type , _loc));)
-               | TArr (t,s) ->
+               | TArr (t,m) ->
                  let elttype =
                    match t with
                    | TInt32 -> <:expr<eint32>>
@@ -278,13 +296,13 @@ and parse_body2 body bool =
                    | TFloat64 -> <:expr<efloat64>>
                    | _ -> my_eprintf __LOC__; assert false
                  and memspace =
-                   match s with
+                   match m with
                    | Local -> <:expr<local>>
                    | Shared -> <:expr<shared>>
                    | Global -> <:expr<global>>
                    | _ ->  my_eprintf __LOC__;  assert false
                  in
-                 <:expr<(new_array $`int:gen_var.n$) ($aux y$) $elttype$ $memspace$>>,(aux y)
+                 <:expr<(new_array $str:string_of_ident s$) ($aux y$) $elttype$ $memspace$>>,(aux y)
                | _  ->  ( assert (not debug); 
                           raise (TypeError (TUnknown, gen_var.var_type , _loc));)
              in
@@ -647,6 +665,8 @@ and parse_body2 body bool =
       (match var.var_type with
        | TFloat32 ->
          <:expr<global_float_var (fun _ -> ! $ExId(_loc,s)$)>>
+       | TFloat64 ->
+         <:expr<global_float64_var (fun _ -> ! $ExId(_loc,s)$)>>
        | TInt32 -> <:expr<global_int_var (fun _ -> ! $ExId(_loc,s)$)>>
        | Custom _ -> <:expr<global_custom_var (fun _ -> ! $ExId(_loc,s)$)>>
        | TBool -> <:expr<global_int_var (fun _ -> ! $ExId(_loc,s)$)>>
@@ -728,6 +748,11 @@ and parse_body2 body bool =
       if not r then return_type := tt;
           parse_body2 e false
     | Nat (_loc, code) -> <:expr< spoc_native $str:code$>>
+    | Fun (_loc,stri,tt,funv,lifted) -> <:expr< global_fun $stri$ >>
+    | Pragma (_loc, lopt, expr) ->
+      let lopt = List.map
+          (fun opt -> <:expr< $str:opt$>>) lopt in
+      <:expr< pragma [$exSem_of_list lopt$] $parse_body2 expr false$ >>
     | _ ->  (
         my_eprintf __LOC__;
         failwith ((k_expr_to_string body.e)^": not implemented yet");)

@@ -1,3 +1,5 @@
+type float64 = float
+
 type extension = ExFloat32 | ExFloat64
 type ('a, 'b, 'c) kirc_kernel = {
   ml_kern : 'a;
@@ -35,7 +37,7 @@ val cuda_float64 : string
 val cuda_head : string
 val new_var : int -> Kirc_Ast.k_ext
 val global_fun : ('a,'b,'c, 'd) kirc_function -> Kirc_Ast.k_ext
-val new_array : int -> Kirc_Ast.k_ext -> Kirc_Ast.elttype -> Kirc_Ast.memspace -> Kirc_Ast.k_ext
+val new_array : string -> Kirc_Ast.k_ext -> Kirc_Ast.elttype -> Kirc_Ast.memspace -> Kirc_Ast.k_ext
 val var : int -> string -> Kirc_Ast.k_ext
 val spoc_gen_kernel : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val spoc_fun_kernel : 'a -> 'b -> unit
@@ -45,6 +47,7 @@ val spoc_unit : unit -> Kirc_Ast.k_ext
 val spoc_int : int -> Kirc_Ast.k_ext
 val global_int_var : (unit -> int32) -> Kirc_Ast.k_ext
 val global_float_var : (unit -> float) -> Kirc_Ast.k_ext
+val global_float64_var : (unit -> float) -> Kirc_Ast.k_ext
 val spoc_int32 : int32 -> Kirc_Ast.k_ext
 val spoc_float : float -> Kirc_Ast.k_ext
 val spoc_double : float -> Kirc_Ast.k_ext
@@ -139,10 +142,12 @@ val return_bool : int -> string -> Kirc_Ast.k_ext
 val return_custom : string -> string -> string -> Kirc_Ast.k_ext
 val rewrite : Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val spoc_native : string -> Kirc_Ast.k_ext
+val pragma : string list -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val return_v : (string * string) ref
 val save : string -> string -> unit
 val load_file : string -> string
-
+val map : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
+                                                                  
 val gen_profile :
   ('a, 'b, 'c, 'd, 'e) sarek_kernel -> Spoc.Devices.device -> unit
   
@@ -155,7 +160,7 @@ val gen :
 
 val run :
   ?recompile:bool ->
-  ('a, 'b, 'c, 'd, 'e) sarek_kernel ->
+  ('a, ('b, 'f) Spoc.Kernel.kernelArgs array, 'c, 'd, 'e) sarek_kernel ->
   'a ->
   Spoc.Kernel.block * Spoc.Kernel.grid -> int -> Spoc.Devices.device -> unit
 
@@ -179,7 +184,12 @@ module Std :
     val block_dim_x : Int32.t
     val block_dim_y : Int32.t
     val block_dim_z : Int32.t
+    val grid_dim_x : Int32.t
+    val grid_dim_y : Int32.t
+    val grid_dim_z : Int32.t
+
     val global_thread_id : Int32.t
+                             
     val return : unit -> unit
     val float64 : Int32.t -> float
     val int_of_float64 : float -> Int32.t
@@ -188,7 +198,21 @@ module Std :
     val block_barrier : unit -> unit
     val make_shared : Int32.t -> Int32.t array
     val make_local : Int32.t -> Int32.t array
+    val map :
+      ('a -> 'b) -> (*, 'c, 'd, 'e) kirc_function -> *)
+           ('a, 'f) Spoc.Vector.vector -> ('b, 'g) Spoc.Vector.vector -> unit
+    val reduce :
+      ('a -> 'a -> 'a) -> (*, 'c, 'd, 'e) kirc_function -> *)
+           ('a, 'f) Spoc.Vector.vector -> ('a, 'g) Spoc.Vector.vector -> unit
+    
   end
+  
+module Sarek_vector :
+sig
+  val length : ('a,'b) Spoc.Vector.vector -> int32
+    
+end
+
 module Math :
   sig
     val pow : Int32.t -> Int32.t -> Int32.t
@@ -202,6 +226,7 @@ module Math :
         val div : float -> float -> float
         val pow : float -> float -> float
         val sqrt : float -> float
+        val rsqrt : float -> float
         val exp : float -> float
         val log : float -> float
         val log10 : float -> float
@@ -229,13 +254,15 @@ module Math :
         val make_local : Int32.t -> float array
       end
     module Float64 :
-      sig
+    sig
+
         val add : float -> float -> float
         val minus : float -> float -> float
         val mul : float -> float -> float
         val div : float -> float -> float
         val pow : float -> float -> float
         val sqrt : float -> float
+        val rsqrt : float -> float
         val exp : float -> float
         val log : float -> float
         val log10 : float -> float

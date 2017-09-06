@@ -1,5 +1,5 @@
 (******************************************************************************
- * Mathias Bourgoin, Universit Pierre et Marie Curie (2012)
+- * Mathias Bourgoin, Universit Pierre et Marie Curie (2012)
  *
  * Mathias.Bourgoin@gmail.com
  *
@@ -45,7 +45,8 @@ module Kirc_OpenCL = Gen.Generator(Kirc_OpenCL)
 module Kirc_Cuda = Gen.Generator(Kirc_Cuda)
 module Kirc_Profile = Gen.Generator(Profile)
 
-
+type float64 = float
+  
 type extension =
   | ExFloat32
   | ExFloat64
@@ -77,6 +78,7 @@ type ('a,'b,'c,'d,'e) sarek_kernel =
 let constructors = ref []
 
 let opencl_head = (
+  "#define SAREK_VEC_LENGTH(a) sarek_##a_length\n"^
   "float spoc_fadd ( float a, float b );\n"^
   "float spoc_fminus ( float a, float b );\n"^
   "float spoc_fmul ( float a, float b );\n"^
@@ -92,7 +94,8 @@ let opencl_head = (
   "float spoc_fdiv ( float a, float b ) { return (a / b);}\n"^
   "int logical_and (int a, int b ) { return (a & b);}\n"^
   "int spoc_powint (int a, int b ) { return ((int) pow (((float) a), ((float) b)));}\n"^
-  "int spoc_xor (int a, int b ) { return (a^b);}\n"
+  "int spoc_xor (int a, int b ) { return (a^b);}\n"^
+  "void spoc_barrier ( ) { barrier(CLK_LOCAL_MEM_FENCE);}\n"
 )
 
 let opencl_common_profile =(
@@ -232,6 +235,7 @@ let cuda_float64 =
     "#endif\n"
   )
 let cuda_head = (
+  "#define SAREK_VEC_LENGTH(a) sarek_##a_length\n"^
   "__device__ float spoc_fadd ( float a, float b ) { return (a + b);}\n"^
   "__device__ float spoc_fminus ( float a, float b ) { return (a - b);}\n"^
   "__device__ float spoc_fmul ( float a, float b ) { return (a * b);}\n"^
@@ -368,7 +372,7 @@ let local = LocalSpace
 let shared = Shared
 
 let new_var i = IdName ("spoc_var"^(string_of_int i))
-let new_array i l t m = Arr (i, l, t, m)
+let new_array n l t m = Arr (n, l, t, m)
 let var i s = IntId (s, i) (*("spoc_var"^(string_of_int i)), i)*)
 let spoc_gen_kernel args body = Kern (args,body)
 let spoc_fun_kernel a b = ()
@@ -389,6 +393,7 @@ let spoc_unit () = Unit
 let spoc_int a = Int a
 let global_int_var a = GInt a
 let global_float_var a = GFloat a
+let global_float64_var a = GFloat64 a
 let spoc_int32 a = Int (Int32.to_int a)
 let spoc_float f = Float f
 let spoc_double d = Double d
@@ -497,8 +502,9 @@ let return_bool b s= BoolVar (b,s)
 let return_custom n sn s= CustomVar (n, sn,s)
 
 let spoc_native s = Native s
-
-
+let pragma l e = Pragma (l,e)
+let map f a b = Map (f, a, b)
+let reduce f a b = Map (f, a, b)
 
 let print s = Printf.printf "%s}\n" s
 
@@ -519,6 +525,7 @@ let rewrite ker =
   let rec aux kern =
     match kern with
     | Native _ -> kern
+    | Pragma (opts,k) -> Pragma (opts,aux k)
     | Block b -> Block (aux b)
     | Kern (k1,k2) ->
       Kern (aux k1, aux k2)
@@ -658,6 +665,7 @@ let rewrite ker =
     | Int _-> kern
     | GInt _ -> kern
     | GFloat _ -> kern
+    | GFloat64 _ -> kern
     | Float _ -> kern
     | Double _ -> kern
     | Custom _ -> kern
@@ -701,6 +709,7 @@ let rewrite ker =
     | Match (s,a,b) -> Match (s,aux a,
                               Array.map (fun (i,ofid,e) -> (i,ofid,aux e)) b)
     | CustomVar _ -> kern
+    | Map (a,b,c) ->  Map (aux a, aux b, aux c)
 
 
   in
@@ -732,7 +741,7 @@ let load_file f =
 
 
 
-external print_source : string -> unit = "kernel_source"
+(*external print_source : string -> unit = "kernel_source"*)
   
 let gen_profile ker dev =
   let kir,k = ker in
@@ -753,12 +762,15 @@ let gen_profile ker dev =
                           extensions = k.extensions});  Pervasives.flush stdout; assert false) ))
   in
   let profile_source = (Kirc_Profile.parse 0 (k2) dev) in
-  Printf.printf "%s" profile_source;
-  print_source profile_source
+  Printf.printf "%s" profile_source(*;
+  print_source profile_source*)
     (*Printf.fprintf "profilingInfo.json" {\n \"type\":\"profile_kernel\",\n \
                                        \"kernel_id\":%d,\n \
                                        \"source\":\"%s\"\n \
                                        },\n" (!Spoc.Trac.eventId - 1 ) profile_source*)
+
+(* external from SPOC*)
+external nvrtc_ptx : string -> string = "spoc_nvrtc_ptx"
 
 let gen ?profile:(prof=false) ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) dev =
   let kir,k = ker in
@@ -795,10 +807,12 @@ let gen ?profile:(prof=false) ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('
     let src = Kirc_Cuda.parse ~profile:prof 0 (rewrite k2) dev in
     let global_funs = ref "" in
     Hashtbl.iter (fun _ a -> global_funs := !global_funs^(fst a)^"\n") Kirc_Cuda.global_funs;
-    let constructors = List.fold_left (fun a b -> "__device__ "^b^a) "\n\n" !constructors in
-    save "kirc_kernel.cu" (cuda_head ^ (if prof then cuda_profile_head else "")^ constructors ^  !global_funs ^ src) ;
-    ignore(Sys.command ("nvcc -g -G "^ s ^" "^"-arch=sm_30 -m64  -O3 -ptx kirc_kernel.cu -o kirc_kernel.ptx"));
-    let s = (load_file "kirc_kernel.ptx") in
+    let i = ref 0 in
+    let constructors = List.fold_left (fun a b -> incr i; (if !i mod 3 = 0 then " " else "__device__ ")^b^a) "\n\n" !constructors in
+    (*save "kirc_kernel.cu" (cuda_head ^ (if prof then cuda_profile_head else "")^ constructors ^  !global_funs ^ src) ;
+      ignore(Sys.command ("nvcc -g -G "^ s ^" "^"-arch=sm_30 -m64  -O3 -ptx kirc_kernel.cu -o kirc_kernel.ptx"));*)
+    let s = nvrtc_ptx (cuda_head ^ (if prof then cuda_profile_head else "")^ constructors ^  !global_funs ^ src) in
+    (*let s = (load_file "kirc_kernel.ptx") in*)
     kir#set_cuda_sources s;
     (*ignore(Sys.command "rm kirc_kernel.cu kirc_kernel.ptx");*)
 
@@ -879,7 +893,62 @@ let run ?recompile:(r=false) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) a b q dev 
          | [] -> ignore(gen  ~only:Devices.OpenCL (kir,k) dev)
          | _ -> ()
      end);
-  kir#run a b q dev
+  (*  kir#run a b q dev*)
+  
+  let args = kir#args_to_list a in
+  let offset = ref 0 in
+  kir#compile ~debug:true dev;
+  let block,grid = b in 
+  let bin = (Hashtbl.find (kir#get_binaries ()) dev) in
+  let nvec = ref 0 in
+  Array.iter (fun a ->
+      (match a with
+       | VChar v | VFloat32 v | VFloat64 v
+       | VInt32 v | VInt64 v | VComplex32 v
+       | VCustom v -> incr nvec
+       | _ -> ())) args ;
+  
+  match dev.Devices.specific_info with
+  | Devices.CudaInfo cI ->
+    let extra = Kernel.Cuda.cuda_create_extra ((Array.length args) + !nvec) in
+    (*Kernel.Cuda.cuda_load_arg offset extra dev bin 0 (arg_of_vec profiler_counters);*)
+    let idx = ref 0 in
+    Array.iter (fun  a ->
+        (match a with
+         | VChar v | VFloat32 v | VFloat64 v
+         | VInt32 v | VInt64 v | VComplex32 v
+         | VCustom v ->
+           (Kernel.Cuda.cuda_load_arg offset extra dev bin (!idx) a;
+            Kernel.Cuda.cuda_load_arg offset extra dev bin (!idx+1) (Kernel.Int32 (Vector.length v));
+            idx := !idx +2;
+           )
+         | _  ->
+           (Kernel.Cuda.cuda_load_arg offset extra dev bin (idx) a;
+            incr idx;)
+        )) args;       
+    Kernel.Cuda.cuda_launch_grid offset bin grid block extra dev.Devices.general_info 0;
+    
+  | Devices.OpenCLInfo _ ->
+    (*Kernel.OpenCL.opencl_load_arg offset dev bin 0 (arg_of_vec profiler_counters);*)
+    let idx = ref 0 in
+    Array.iter (fun  a ->
+        (match a with
+         | VChar v | VFloat32 v | VFloat64 v
+         | VInt32 v | VInt64 v | VComplex32 v
+         | VCustom v ->
+           (
+             Kernel.OpenCL.opencl_load_arg offset dev bin (!idx) a;
+             Kernel.OpenCL.opencl_load_arg offset dev bin (!idx+1) (Kernel.Int32 (Vector.length v));
+             idx := !idx +2;
+           )
+         | _  ->
+           (Kernel.OpenCL.opencl_load_arg offset dev bin (!idx) a;
+            incr idx;)
+        )) args;
+    (*Array.iteri (fun i a -> Kernel.OpenCL.opencl_load_arg offset dev bin (i) a) args;*)
+    Kernel.OpenCL.opencl_launch_grid bin grid block dev.Devices.general_info 0
+;;
+
 
 let profile_run ?recompile:(r=true) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) a b q dev =
   let kir,k = ker in
@@ -926,9 +995,17 @@ let profile_run ?recompile:(r=true) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) a b
     | Devices.CudaInfo cI ->
       let extra = Kernel.Cuda.cuda_create_extra ((Array.length args) + 1) in
       Kernel.Cuda.cuda_load_arg offset extra dev bin 0 (arg_of_vec profiler_counters);
-      Array.iteri (fun i a -> Kernel.Cuda.cuda_load_arg offset extra dev bin (i) a) args;
+      Array.iteri (fun i a ->
+          (match a with
+           | VChar _ | VFloat32 _ | VFloat64 _
+           | VInt32 _ | VInt64 _ | VComplex32 _
+           | VCustom _ ->
+             (
+              Kernel.Cuda.cuda_load_arg offset extra dev bin (i) a)
+           | _  -> Kernel.Cuda.cuda_load_arg offset extra dev bin (i) a)) args;
+      
       Kernel.Cuda.cuda_launch_grid offset bin grid block extra dev.Devices.general_info 0;
-
+      
     | Devices.OpenCLInfo _ ->
       Kernel.OpenCL.opencl_load_arg offset dev bin 0 (arg_of_vec profiler_counters);
       Array.iteri (fun i a -> Kernel.OpenCL.opencl_load_arg offset dev bin (i) a) args;
@@ -993,6 +1070,11 @@ struct
   let block_dim_x = 1l
   let block_dim_y = 1l
   let block_dim_z = 1l
+  let grid_dim_x = 1l
+  let grid_dim_y = 1l
+  let grid_dim_z = 1l
+    
+    
 
   let global_thread_id = 0l
   let return () = ()
@@ -1006,7 +1088,27 @@ struct
 
   let make_shared i = Array.make (Int32.to_int i) 0l
   let make_local i = Array.make (Int32.to_int i) 0l
+  let map f a b =
+    assert (Vector.length a= Vector.length b);
+    for i = 0 to Vector.length a do
+      Mem.set b i (f (Mem.get a i))
+    done
+
+  let reduce f a b =
+    let rec aux acc i =
+      if Vector.length a < i then
+        aux (f acc (Mem.get a i)) (i+1)
+      else acc
+    in
+    Mem.set b 0 (aux (Mem.get a 0) 1)
+
 end
+
+  module Sarek_vector =
+struct
+  let length v = Int32.of_int (Vector.length v)
+end
+
 
 module Math =
 struct
@@ -1033,6 +1135,7 @@ struct
 
     let pow = ( ** )
     let sqrt = Pervasives.sqrt
+    let rsqrt = Pervasives.sqrt (* todo*)
     let exp = Pervasives.exp
     let log = Pervasives.log
     let log10 = Pervasives.log10
@@ -1067,6 +1170,7 @@ struct
 
   module Float64 =
   struct
+
     let add = (+.)
     let minus = (-.)
     let mul = ( *. )
@@ -1074,6 +1178,7 @@ struct
 
     let pow = ( ** )
     let sqrt = Pervasives.sqrt
+    let rsqrt = Pervasives.sqrt (* todo*)
     let exp = Pervasives.exp
     let log = Pervasives.log
     let log10 = Pervasives.log10

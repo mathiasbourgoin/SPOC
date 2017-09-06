@@ -125,8 +125,12 @@ module Generator (M:CodeGenerator) = struct
                    let b =
                      (match M.target_name with
                       | "Cuda" ->
-                        indent (i+1)^ret_type^" spoc_res;\n"^
-                        indent (i+1)^"clock_t start_time = clock();\n"
+                        if prof then
+                          (
+                            indent (i+1)^ret_type^" spoc_res;\n"^
+                            indent (i+1)^"clock_t start_time = clock();\n"
+                          )
+                          else ""
                       | _ -> "")
                    in
                    a^b^
@@ -184,22 +188,6 @@ module Generator (M:CodeGenerator) = struct
 
 
                         
-(* and global_mem_string i  =  *)
-(*   (if !gmem_load > 0 then *)
-(*      ( *)
-(*        let s = indent i^"spoc_atomic_add(prof_cntrs+1,"^(string_of_int !gmem_load)^"); // global mem load\n" in *)
-(*        gmem_load := 0; *)
-(*        s *)
-(*      ) *)
-(*    else "") *)
-(*   ^ *)
-(*   (if !gmem_store > 0 then *)
-(*      ( *)
-(*        let s = indent i^"spoc_atomic_add(prof_cntrs+0,"^(string_of_int !gmem_store)^"); // global mem store\n" in *)
-(*        gmem_store := 0; *)
-(*        s *)
-(*      ) *)
-(*              else "")   *)
   and get_profile_counter () =
     Hashtbl.clear  global_funs;
     let a = !profiler_counter in
@@ -229,7 +217,7 @@ module Generator (M:CodeGenerator) = struct
            | Double _ -> " double"
            | Custom (n,_,ss) -> (" struct "^n^"_sarek")
            | _ -> assert false
-          )^("* "^s)
+          )^("* "^s^", int sarek_"^s^"_length")
 
         | Block b -> (indent i)^"{\n"^parse ~profile:prof (i+1) b dev^"\n"^(indent i)^"}"
         | IdName s  ->  s
@@ -252,8 +240,7 @@ module Generator (M:CodeGenerator) = struct
             | EFloat32 -> "float"
             | EFloat64 -> "double"
           in
-          (memspace^" "^elttype^" spoc_var"^
-           (string_of_int s)^"["^
+          (memspace^" "^elttype^" "^s^"["^
            (parse ~profile:prof i l dev )^"]")
         | Params k ->
           (M.kern_start^" void spoc_dummy ( "^
@@ -362,6 +349,7 @@ module Generator (M:CodeGenerator) = struct
         | Float f -> (string_of_float f)^"f"
         | GInt  a  -> Int32.to_string (a ())
         | GFloat  a  -> (string_of_float (a ()))^"f"
+        | GFloat64  a  -> (string_of_float (a ()))^"f"
         | Double f -> string_of_float f
         | IntId (s,_) -> s
         | Intrinsics gv -> M.parse_intrinsics gv
@@ -419,11 +407,12 @@ module Generator (M:CodeGenerator) = struct
           "bool spoc_prof_cond_"^pc^" = ("^a^");\n"^
           (if prof then
              (let s = indent i^
-                        "branch_analysis(prof_cntrs, spoc_prof_cond_"^pc^", "^ pc^");\n" in
+                      "branch_analysis(prof_cntrs, spoc_prof_cond_"^pc^", "^ pc^");\n" in
               Printf.printf "incr in If 3 \n%!";
               profiler_counter := !profiler_counter + 4;
               s)
-           else "")^
+           else
+             (profiler_counter := !profiler_counter + 4;""))^
           (let b =
              parse ~profile:prof (i+1) b dev in
            let s =
@@ -546,7 +535,13 @@ module Generator (M:CodeGenerator) = struct
            "}")
         | Native s ->
           (s)
+        | Pragma (opts, k) ->
+          "\n"^(indent i)^(List.fold_left (fun a b -> a ^" "^b) "#pragma " opts)^"\n"^
+          (indent i)^(parse i k dev)
         | Unit -> ""
+        | Map (f,v1, v2) ->
+          (indent i)^"for (int sarek_idx = 0; sarek_idx < SAREK_VEC_LENGTH("^parse 0 v1 dev^"); sarek_idx++){\n"^
+          (indent (i+1))^parse (i+1) v2 dev^"[sarek_idx] = "^parse 0 f dev^"( "^parse 0 v1 dev^"[sarek_idx] );}"
         | _ -> assert false
       end
     else

@@ -10,9 +10,12 @@ COBJ=$(CSRC:.c=.o)
 MLOBJ_B=$(MLSRC:.ml=.cmo)
 MLOBJ_N=$(MLSRC:.ml=.cmx)
 JSSRC=$(filter-out Js/spoc_lib.js, $(wildcard Js/*.js))
-CC=ocamlfind ocamlc -ccopt "-D SPOC_PROFILE -g -rdynamic"
-OCAMLC=ocamlfind ocamlc  -pp "cppo -q -D SPOC_PROFILE"
-OCAMLOPT=ocamlfind ocamlopt  -pp "cppo -q -D SPOC_PROFILE" -ccopt "-rdynamic -g"
+#CC=ocamlfind ocamlc -ccopt "-D SPOC_PROFILE -g -rdynamic"
+#OCAMLC=ocamlfind ocamlc  -pp "cppo -q -D SPOC_PROFILE"
+#OCAMLOPT=ocamlfind ocamlopt  -pp "cppo -q -D SPOC_PROFILE" -ccopt "-rdynamic -g"
+CC=ocamlfind ocamlc 
+OCAMLC=ocamlfind ocamlc  -pp "cppo -q"
+OCAMLOPT=ocamlfind ocamlopt  -pp "cppo -q" -ccopt "-rdynamic -g"
 ECHO=printf 
 
 all : start | build extension/kernels_ext.cma js
@@ -80,6 +83,7 @@ $(LIBNAME)level : $(LIBNAME).cma extension/kernels_ext.cma
 	ocamlmktop -custom -thread -I +camlp4 -cclib -L. dynlink.cma	\
 	-cclib -lthreads camlp4o.cma extension/kernels_ext.cma		\
 	str.cma bigarray.cma -cclib -lcamlrun -cclib -lbigarray		\
+	-cclib -lnvrtc \
 	-cclib -lunix unix.cma -cclib -l$(LIBNAME) $(LIBNAME).cma -o	\
 	$(LIBNAME)level
 

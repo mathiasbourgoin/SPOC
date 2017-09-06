@@ -48,6 +48,50 @@ let arg_of_vec v  =
 
 
 
+let launch_kernel_with_args bin grid block kernel_arg_tab device =
+  let offset = ref 0 in
+  (match device.Devices.specific_info with
+     | Devices.CudaInfo cI ->
+       let extra = Kernel.Cuda.cuda_create_extra (Array.length kernel_arg_tab) in
+       Array.iteri
+         (fun i arg -> 
+            Kernel.Cuda.cuda_load_arg offset extra device bin i arg) kernel_arg_tab;
+       Kernel.Cuda.cuda_launch_grid offset bin grid block extra device.Devices.general_info 0;
+     | Devices.OpenCLInfo _ ->
+       let clFun = bin in
+       Array.iteri
+         (fun i arg ->
+            Kernel.OpenCL.opencl_load_arg offset device clFun i arg) kernel_arg_tab;
+       Kernel.OpenCL.opencl_launch_grid clFun grid block device.Devices.general_info 0
+    )
+
+let compute_grid_block_1D device vec_in =
+  let open Kernel in
+  let block =  {blockX = 1; blockY = 1; blockZ = 1}
+  and grid = {gridX = 1; gridY = 1; gridZ = 1} in
+  let open Devices in
+  (
+    match device.Devices.specific_info with
+    | Devices.CudaInfo cI ->
+      if Vector.length vec_in <  (cI.maxThreadsDim.x) then
+        block.blockX <- (Vector.length vec_in)
+      else
+        (
+          block.blockX <- cI.maxThreadsDim.x;
+          grid.gridX <- (Vector.length vec_in) / cI.maxThreadsDim.x;
+        )
+    | Devices.OpenCLInfo oI ->
+      if Vector.length vec_in < oI.Devices.max_work_item_size.Devices.x then
+        block.blockX <- Vector.length vec_in
+      else
+        (
+          block.blockX <- oI.Devices.max_work_item_size.Devices.x;
+          grid.gridX <- (Vector.length vec_in) / block.blockX
+        )
+  );
+  (grid,block)
+  
+
 let propagate f expr =
   match expr with
   | Block b -> Block (f b)
@@ -357,7 +401,17 @@ let reduce ((ker: ('a, 'b,('c -> 'c-> 'd), 'e,'f) sarek_kernel)) ?dev:(device=(S
 let (^>) =fun a b -> a ^ "\n" ^ b
 
 
-
+let f_to_kir f l = 
+  app (GlobalFun (f.body,
+                   (match snd f.ret_val with
+                    | Vector.Int32 _  -> "int"
+                    | Vector.Float32 _  -> "float"
+                    | Vector.Custom _ ->
+                      (match fst f.ret_val with
+                       | CustomVar (s,_,_) -> "struct "^s^"_sarek"
+                       | _ -> assert false)
+                    | _ -> "void"), "f")) l
+  
 let map_skeleton f =
   spoc_gen_kernel
     (params
@@ -375,143 +429,108 @@ let map_skeleton f =
                       "(get_local_size (0))"))))
           (spoc_if (lt32 (var 7 "tid") (var 5 "i"))
              (set_vect_var (get_vec (var 4 "b") (var 7 "tid"))
-                (app (global_fun f)
+                (f_to_kir f
                    [| get_vec (var 3 "a") (var 7 "tid") |])))))
-
-
-let f = let open Kirc
-  in
-  {
-    fun_name = "f";
-    ml_fun = (fun a -> Int32.add a 1l);
-    funbody =
-      spoc_gen_kernel
-        (params (concat (new_int_var 0 "a") (empty_arg ())))
-        (spoc_return (spoc_plus (var 0 "a") (spoc_int32 1l)));
-    fun_ret = ((return_int 2 ""), Vector.int32);
-    fastflow_acc = Obj.magic None;
-    fun_extensions = [| ExFloat32 |];
-  }
-  
-
-class dummy_kernel = 
-  object (self)
-    inherit
-      [(((int32, Bigarray.int32_elt) Vector.vector) *
-        ((int32, Bigarray.int32_elt) Vector.vector) * int),
-       (('a, 'b) Kernel.kernelArgs) array] Spoc.Kernel.spoc_kernel
-        "kirc_kernel" "spoc_dummy"
-    method exec = assert false
-    method args_to_list =
-      fun
-        ((spoc_var3 : ('spoc_a, 'spoc_b) Vector.vector),
-         (spoc_var4 : ('spoc_a, 'spoc_b) Vector.vector),
-         (spoc_var5 : int))
-        ->
-          [| Spoc.Kernel.VInt32 (Spoc.Kernel.relax_vector spoc_var3);
-             Spoc.Kernel.VInt32 (Spoc.Kernel.relax_vector spoc_var4);
-             Spoc.Kernel.Int32 spoc_var5
-          |]
-    method list_to_args =
-      function
-      | [| Spoc.Kernel.VInt32 spoc_var3;
-           Spoc.Kernel.VInt32 spoc_var4; Spoc.Kernel.Int32 spoc_var5
-        |] ->
-        ((spoc_var3 : (int32, Bigarray.int32_elt) Vector.vector),
-         (Spoc.Kernel.relax_vector spoc_var4 :
-            (int32, Bigarray.int32_elt) Vector.vector),
-         (spoc_var5 : int))
-      | _ -> failwith "spoc_kernel_extension error"
-  end
-
-(* External from SPOC *)
-external opencl_compile : string -> string -> Devices.generalInfo -> Kernel.kernel =
-    "spoc_opencl_compile"
-external cuda_compile :
-  string ->
-  string -> Devices.generalInfo -> Kernel.kernel =
-  "spoc_cuda_compile"
     
 
-let compile_dummy (ker : dummy_kernel) dev =
-  let bin = (match dev.Devices.specific_info with
-   | Devices.CudaInfo _ ->
-     cuda_compile (List.hd (ker#get_cuda_sources ())) "map_" dev.Devices.general_info 
-   | Devices.OpenCLInfo _ ->
-     opencl_compile (List.hd (ker#get_opencl_sources ())) "map_" dev.Devices.general_info )
-   in bin
+let zip_skeleton f =
+  spoc_gen_kernel
+    (params
+       (concat (new_int_vec_var 2 "a")
+          (concat (new_int_vec_var 3 "b")
+             (concat (new_int_vec_var 4 "c")
+                (concat (new_int_var 5 "i") (empty_arg ()))))))
+    (spoc_local_env (spoc_declare (new_int_var 7 "tid"))
+       (seq
+          (spoc_set (var 7 "tid")
+             (spoc_plus
+                (intrinsics "threadIdx.x" "(get_local_id (0))")
+                (spoc_mul
+                   (intrinsics "blockIdx.x" "(get_group_id (0))")
+                   (intrinsics "blockDim.x"
+                      "(get_local_size (0))"))))
+          (spoc_if (lt32 (var 7 "tid") (var 5 "i"))
+             (set_vect_var (get_vec (var 4 "c") (var 7 "tid"))
+                (f_to_kir f [|get_vec (var 2 "a") (var 7 "tid");
+                              get_vec (var 3 "b") (var 7 "tid")|])))))
+    
   
-let map = fun (f:('a,'b,'c, 'd) kirc_function) ?dev:(device=(Spoc.Devices.init ()).(0)) (vec_in : ('h, 'c) Vector.vector) : ('e, 'f) Vector.vector ->
-  let ker = map_skeleton f in
-  let vec_out = (Vector.create (snd f.fun_ret)  ~dev:device (Vector.length vec_in)) in
+
+(* (\* External from SPOC *\) *)
+(* external opencl_compile : string -> string -> Devices.generalInfo -> Kernel.kernel = *)
+(*     "spoc_opencl_compile" *)
+(* external cuda_compile : *)
+(*   string -> *)
+(*   string -> Devices.generalInfo -> Kernel.kernel = *)
+(*   "spoc_cuda_compile" *)
+    
+let build_new_ker spoc_ker kir_ker ker ml_fun = 
+  (spoc_ker ,
+     {ml_kern = ml_fun; 
+      body = ker;
+      ret_val = Unit, (Vector.Unit ((), ()));
+      extensions = kir_ker.extensions;})
   
+let map = fun (f:('a,'b,'c,'d,'e) sarek_kernel) ?dev:(device=(Spoc.Devices.init ()).(0)) (vec_in : ('d, 'h) Vector.vector) : ('f, 'g) Vector.vector ->
+  let spoc_ker, kir_ker = f in
+  let ker = map_skeleton kir_ker in
+  let vec_out = (Vector.create (snd (kir_ker.ret_val))  ~dev:device (Vector.length vec_in)) in
   Mem.to_device vec_in device;
- 
   let target =
     match device.Devices.specific_info with
       Devices.CudaInfo _ -> Devices.Cuda
-    | Devices.OpenCLInfo _ -> Devices.OpenCL in
-  (*spoc_ker, kir_ker =*)
-
-  let exec_fun  =
-    let v1 = arg_of_vec vec_in
-    and v2 = arg_of_vec vec_out in
-    Spoc.Kernel.exec [| v1; v2; 
-                        Spoc.Kernel.Int32 (Vector.length vec_in)
-                     |]
-  in 
-
-    
+    | Devices.OpenCLInfo _ -> Devices.OpenCL in    
   let open Spoc.Kernel in
+  let (spoc_ker,kir_ker) as res = build_new_ker spoc_ker kir_ker ker
+      (Tools.map (kir_ker.ml_kern) (snd kir_ker.ret_val))
+  in
+  ignore(gen ~only:target res device) ;
+  spoc_ker#compile ~debug:true device;
+  let grid,block = compute_grid_block_1D device vec_in in
+
+  let bin = (Hashtbl.find (spoc_ker#get_binaries ()) device) in
+
+  launch_kernel_with_args bin grid block [|(arg_of_vec vec_in); (arg_of_vec vec_out); Kernel.Int32 (Vector.length vec_in)|] device;
+  vec_out
+
+exception Zip of string
+    
+let zip = fun (f:('a,'b,'c,'d,'e) sarek_kernel) ?dev:(device=(Spoc.Devices.init ()).(0)) (vec_in1 : ('f, 'g) Vector.vector) (vec_in2 : ('h,'i) Vector.vector) : ('j, 'k) Vector.vector ->
+  if (Vector.length vec_in1 <> Vector.length vec_in2) then
+    raise (Zip ("incompatible vector sizes"));
   
-  let block =  {blockX = 1; blockY = 1; blockZ = 1}
-  and grid = {gridX = 1; gridY = 1; gridZ = 1} in
-  begin
-    let open Devices in(
-      match device.Devices.specific_info with
-      | Devices.CudaInfo cI ->
-        if Vector.length vec_in <
-           (cI.maxThreadsDim.x) then
-          (
-            grid.gridX <- 1;
-            block.blockX <- (Vector.length vec_in)
-            )
-        else
-          (
-            block.blockX <- cI.maxThreadsDim.x;
-            grid.gridX <- (Vector.length vec_in) / cI.maxThreadsDim.x;
-          )
-      | Devices.OpenCLInfo oI ->
-        if Vector.length vec_in < oI.Devices.max_work_item_size.Devices.x then
-          (
-            grid.gridX <- 1;
-            block.blockX <- Vector.length vec_in
-            )
-        else
-          (
-            block.blockX <- oI.Devices.max_work_item_size.Devices.x;
-            grid.gridX <- (Vector.length vec_in) / block.blockX
-          )
-    )
-  end;
+  let spoc_ker, kir_ker = f in
+  let ker = zip_skeleton kir_ker in
   
-  
-  let dummy = new dummy_kernel in 
-  ignore(gen ~only:target (dummy ,{ml_kern = Tools.map (f.ml_fun) (snd f.fun_ret);
-                                   body = ker;
-                                   ret_val = Unit, Vector.int32;
-                                   extensions = f.fun_extensions;})
-             
-           device);
-  let bin = compile_dummy dummy device in
-  exec_fun (block,grid) 0 device bin;
+  let vec_out = (Vector.create (snd (kir_ker.ret_val))  ~dev:device (Vector.length vec_in1)) in
+  Mem.to_device vec_in1 device;
+  Mem.to_device vec_in2 device;
+  let target =
+    match device.Devices.specific_info with
+      Devices.CudaInfo _ -> Devices.Cuda
+    | Devices.OpenCLInfo _ -> Devices.OpenCL in    
+  let open Spoc.Kernel in
+  let (spoc_ker,kir_ker) as res = build_new_ker spoc_ker kir_ker ker
+      (fun a b ->
+         for i = 0 to Vector.length a - 1 do
+           Mem.set vec_out i (kir_ker.ml_kern (Mem.get a i) (Mem.get b i))
+         done;
+         vec_out;
+      )
+  in
+  ignore(gen ~only:target res device) ;
+  spoc_ker#compile ~debug:true device;
+  let grid,block = compute_grid_block_1D device vec_in1 in
+
+  let bin = (Hashtbl.find (spoc_ker#get_binaries ()) device) in
+
+  launch_kernel_with_args bin grid block [|(arg_of_vec vec_in1); (arg_of_vec vec_in2); (arg_of_vec vec_out); Kernel.Int32 (Vector.length vec_in1)|] device;
   vec_out
 
 
 
 
 module Compose = struct
-
 
   type ('a,'b,'c,'d,'e,'f,'g,'h,'i) skeleton =
     | Map of

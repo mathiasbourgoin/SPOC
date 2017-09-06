@@ -43,12 +43,37 @@ open Debug
 
 let parse_args params body=
   let _loc = Loc.ghost in
-  let rec aux acc = function
+  let nargs = List.length params in
+
+  let rec aux acc i a =
+    if i > nargs - !n_lifted_vals then
+      acc
+    else
+    match a with
     | []  ->  acc
     | t::q ->
       match t with
-      | PaTyc (_,x, <:ctyp< $_$ vector>>) | x -> aux <:expr<fun $x$ -> $acc$>> q
-  in aux body
+      | PaTyc (_,x, <:ctyp< $e$ vector>>) -> aux <:expr<fun ($x$:$e$ Vector.vector) -> $acc$>> (i+1) q
+      | PaId(_loc, IdLid(_,x)) as p ->
+        let var = (Hashtbl.find !current_args x) in
+        (match var.var_type with
+        | TVec k -> (
+            match k with
+            |TInt32 ->
+              aux <:expr<fun ($p$:(int32,Bigarray.int32_elt) Vector.vector) -> $acc$>> (i+1) q
+            |TInt64 ->
+              aux <:expr<fun ($p$:(int64,Bigarray.int64_elt) Vector.vector) -> $acc$>> (i+1) q
+            |TFloat32 ->
+              aux <:expr<fun ($p$:(float,Bigarray.float32_elt) Vector.vector) -> $acc$>> (i+1) q
+            |TFloat64 ->
+              aux <:expr<fun ($p$:(float,Bigarray.float64_elt) Vector.vector) -> $acc$>> (i+1) q
+            |_ ->
+              aux <:expr<fun $p$ -> $acc$>> (i+1) q
+          )
+        | _ ->
+          aux <:expr<fun $p$ -> $acc$>> (i+1) q)
+      | x -> aux <:expr<fun $x$ -> $acc$>> (i+1) q
+  in aux body 0
     (List.rev params)
 
 
@@ -82,7 +107,7 @@ let rec gen_arg_from_patt2 p =
         | TFloat64 ->   <:expr<(new_double_vec_var $`int:var.n$  $str:x$)>>
         | Custom (t,n) ->
           <:expr<(new_custom_vec_var $str:n$ $`int:var.n$  $str:x$)>>
-        | _  -> failwith "Forbidden vector  type in kernel declaration")
+        | _  -> failwith (Printf.sprintf "Forbidden vector  type (%s) in kernel declaration" (ktyp_to_string k)))
      | _ ->  failwith "gap : unimplemented yet"
     )
   | PaTyc (_loc, x, _) ->
@@ -145,9 +170,19 @@ let rec gen_arg_from_patt3 p =
                      IdUid (_loc, "Kernel"),
                      IdUid(_loc, "Int64"))),
          <:ctyp< int64>>
-       | TFloat32 | TFloat64 ->
-         <:ctyp< float>>,
+       | TFloat32 ->
+           <:ctyp< float>>,
          <:expr< Spoc.Kernel.Float32>>,
+         <:ctyp< float>>,
+         IdAcc(_loc,
+               IdUid(_loc, "Spoc"),
+               IdAcc(_loc,
+                     IdUid (_loc, "Kernel"),
+                     IdUid(_loc, "Float32"))),
+         <:ctyp< float>>
+       | TFloat64 ->
+         <:ctyp< float>>,
+         <:expr< Spoc.Kernel.Float64>>,
          <:ctyp< float>>,
          IdAcc(_loc,
                IdUid(_loc, "Spoc"),

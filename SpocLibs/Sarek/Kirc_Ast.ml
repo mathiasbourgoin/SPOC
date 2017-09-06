@@ -78,7 +78,7 @@ type  k_ext =
   | CastDoubleVar of int * string
   | DoubleVar of int * string
   | BoolVar of int * string
-  | Arr of int*k_ext*elttype*memspace
+  | Arr of string*k_ext*elttype*memspace
   | VecVar of  k_ext*int * string
   | Concat of  k_ext* k_ext
   | Constr of string * string * k_ext list
@@ -119,7 +119,10 @@ type  k_ext =
   | App of  k_ext *  k_ext array
   | GInt of (unit -> int32)
   | GFloat of (unit -> float)
+  | GFloat64 of (unit -> float)
   | Native of string
+  | Pragma of string list * k_ext
+  | Map of (k_ext*k_ext*k_ext)
   | Unit
 
 
@@ -321,7 +324,7 @@ let string_of_ast a =
         | EFloat32 -> "float"
         | EFloat64 -> "double"
       in
-      soa i ("Arr" ^ memspace^" "^elttype);
+      soa i ("Arr" ^ s^ " " ^memspace^" "^elttype);
     | App (a,b) ->
       soa i "App";
       aux (i+1) a;

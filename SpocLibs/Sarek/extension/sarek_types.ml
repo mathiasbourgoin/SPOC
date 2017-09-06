@@ -22,6 +22,7 @@ type ktyp =
   | TFloat32
   | TFloat64
   | TBool
+  | TAny 
   | TVec of ktyp
   | TArr of (ktyp*memspace)
   | TApp of ktyp * ktyp
@@ -35,6 +36,7 @@ let rec ktyp_to_string = function
   | TFloat32 -> "float32"
   | TFloat64 -> "float64"
   | TUnknown  -> "unknown"
+  | TAny -> "any"
   | TBool -> "bool"
   | TVec k -> (ktyp_to_string k)^" vector"
   | TArr (k,m) -> (ktyp_to_string k)^" array"
@@ -96,6 +98,9 @@ type k_expr =
   | RecGet of Loc.t*kexpr*ident
   | RecSet of Loc.t*kexpr*kexpr
 
+  | Map of Loc.t * kexpr*kexpr*kexpr
+
+    
   | Min32 of Loc.t*kexpr*kexpr
   | Min64 of Loc.t*kexpr*kexpr
   | MinF32 of Loc.t*kexpr*kexpr
@@ -165,6 +170,7 @@ type k_expr =
 
   | TypeConstraint of Loc.t * kexpr * ktyp
   | Nat of Loc.t * string
+  | Pragma of Loc.t * string list * kexpr
   | Noop
 
 and case =  Loc.t * pattern * kexpr (* | patt -> e *)
@@ -187,7 +193,8 @@ let rec is_unknown t =
   match t with
   | TUnknown
   | TVec TUnknown
-  | TArr (TUnknown, _) -> true
+  | TArr (TUnknown, _)
+  | TVec TAny -> true
   | TApp (a,b) -> app_return_type b
   | _ -> false
 
@@ -300,6 +307,7 @@ let rec k_expr_to_string = function
   | While _ -> "While"
   | End _ -> "End"
   | Open _ -> "Open"
+  | Pragma _ -> "Pragma"
   | Noop -> "Noop"
   | ModuleAccess _ -> "ModuleAccess"
   | Ref _ -> "Ref"
@@ -369,12 +377,15 @@ let custom_types :((string,customtypes) Hashtbl.t) = Hashtbl.create 10
 
 let (arg_list : Camlp4.PreCast.Syntax.Ast.expr list ref ) = ref []
 
+let n_lifted_vals = ref 0
+
 let rec ktyp_of_typ = function
   | <:ctyp< int >> | <:ctyp< int32 >> -> TInt32
   | <:ctyp< int64 >>  -> TInt64
   | <:ctyp< float >> | <:ctyp< float32 >> -> TFloat32
   | <:ctyp< float64 >>  -> TFloat64
   | <:ctyp< $x$ vector>> -> TVec (ktyp_of_typ x)
+  | <:ctyp< $x$ array>> -> TArr (ktyp_of_typ x, Shared)
   | <:ctyp< bool >> -> TBool
   | TyCol (_,_,t) -> ktyp_of_typ t
   | TyId(_,IdLid(_,t)) ->
@@ -446,14 +457,25 @@ let std = {
 
     (TApp (TFloat32, TInt32), "int_of_float", 1, "(int)", "(int)");
     (TApp (TFloat64, TInt32), "int_of_float64", 1, "(int)", "(int)");
-    (TApp (TUnit, TUnit), "block_barrier", 1, "__syncthreads ", "");
+    (TApp (TUnit, TUnit), "block_barrier", 1, "__syncthreads ", "spoc_barrier");
 
-    (TApp (TInt32, TArr (TInt32, Shared)), "make_shared", 1, "", "");
-    (TApp (TInt32, TArr (TInt32, Local)), "make_local", 1, "", "");
+    (* (TApp (TInt32, TArr (TInt32, Shared)), "make_shared", 1, "", ""); *)
+    (* (TApp (TInt32, TArr (TInt32, Local)), "make_local", 1, "", ""); *)
+
+    (* (TApp ((TApp ((TApp (TUnknown, TUnknown)),(TUnknown))), TUnknown), "map", 2, "" , ""); *)
   ];
   mod_modules =
     let m = Hashtbl.create 2 in
     m
+}
+
+let vector ={
+  mod_name = "Vector";
+  mod_constants = [];
+  mod_functions = [
+    (TApp (TVec TAny, TInt32), "length", 1, "SAREK_VEC_SIZE", "SAREK_VEC_SIZE");
+  ];
+  mod_modules = Hashtbl.create 0 
 }
 
 let mathf32 = {
@@ -471,6 +493,7 @@ let mathf32 = {
 
     (TApp ((TApp (TFloat32, TFloat32)), TFloat32), "pow", 2, "powf", "pow");
     (TApp (TFloat32, TFloat32), "sqrt", 1, "sqrtf", "sqrt");
+    (TApp (TFloat32, TFloat32), "sqrt", 1, "rsqrtf", "rsqrt");
     (TApp (TFloat32, TFloat32), "exp", 1, "expf", "exp");
     (TApp (TFloat32, TFloat32), "log", 1, "logf", "log");
     (TApp (TFloat32, TFloat32), "log10", 1, "log10f", "log10");
@@ -523,6 +546,7 @@ let mathf64 = {
 
     (TApp ((TApp (TFloat64, TFloat64)), TFloat64), "pow", 2, "powf", "pow");
     (TApp (TFloat64, TFloat64), "sqrt", 1, "sqrt", "sqrt");
+    (TApp (TFloat64, TFloat64), "rsqrt", 1, "rsqrtf", "rsqrt");
     (TApp (TFloat64, TFloat64), "exp", 1, "exp", "exp");
     (TApp (TFloat64, TFloat64), "log", 1, "log", "log");
     (TApp (TFloat64, TFloat64), "log10", 1, "log10", "log10");
@@ -584,6 +608,7 @@ let math = {
 let modules =
   let m = Hashtbl.create 10 in
   Hashtbl.add m std.mod_name std;
+  Hashtbl.add m vector.mod_name vector;
   Hashtbl.add m math.mod_name math;
   m
 
@@ -652,6 +677,8 @@ let rec string_of_ctyp = function
 				" -> "^(string_of_ctyp t2)
   | (Ast.TyId (_, Ast.IdLid (_, s ))) -> s
   | (Ast.TyId (_, Ast.IdUid (_, s ))) -> s
+  | Ast.TyApp (_, t1, t2) ->  (string_of_ctyp t1)^
+				 " "^(string_of_ctyp t2)
   | TyCol (l,t1,t2)-> string_of_ctyp t2
   | _ -> failwith "error in string_of_ctyp"
 

@@ -47,6 +47,7 @@ extern "C" {
 #include <math.h>
 #include <string.h>
 #include "Spoc.h"
+#include <nvrtc.h>
 #include "Trac_c.h"
 
 /**************** KERNEL ******************/
@@ -74,7 +75,38 @@ int ae_load_file_to_memory(const char *filename, char **result)
 	return size;
 }
 
-
+  #define CHECK_NVRTC(a) \
+    nvrtc_result = a;/* \ */
+    /* if (NVRTC_SUCCESS != nvrtc_result)\ */
+    /*   fprintf(stderr,"%s\n", nvrtcGetErrorString(nvrtc_result)); */
+  
+  CAMLprim value spoc_nvrtc_ptx(value src){
+    CAMLparam1(src);
+    const char* cuda_src = String_val(src);
+    //printf("%s\n", cuda_src);
+    
+    nvrtcResult nvrtc_result;
+    
+    nvrtcProgram prog;
+    size_t ptx_size;
+    CHECK_NVRTC(nvrtcCreateProgram(&prog, cuda_src, "kir_kernel.cu", 0, NULL, NULL));
+    const char* options = {"--device-debug", "--gpu-architecture=compute_30" };
+    CHECK_NVRTC(nvrtcCompileProgram(prog , 0, options));
+    if (NVRTC_SUCCESS != nvrtc_result){
+      // Obtain compilation log from the program.
+      size_t logSize;
+      nvrtcGetProgramLogSize(prog, &logSize);
+      char *log =  malloc (sizeof(char)*logSize);
+      nvrtcGetProgramLog(prog, log);
+      fprintf(stderr, "COMPILATION LOG : %s\n", log); fflush(stdout);
+    }
+    
+    CHECK_NVRTC(nvrtcGetPTXSize(prog, &ptx_size));
+    char * ptx = (char*)malloc (sizeof(char)*ptx_size);
+    CHECK_NVRTC(nvrtcGetPTX(prog, ptx));
+    CAMLreturn(caml_copy_string( ptx)); 
+  }
+  
 CAMLprim value spoc_cuda_compile(value moduleSrc, value function_name, value gi){
 	CAMLparam3(moduleSrc, function_name, gi);
 	CUmodule module;
