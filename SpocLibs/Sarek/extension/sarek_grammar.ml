@@ -130,7 +130,12 @@ let gen_kernel () = ()
             my_eprintf (Printf.sprintf "Unknown : %d \n\n\n%!" !unknown)
           done;
           if !unknown > 0 then
-            failwith "unknown types in this kernel"
+            (
+              Hashtbl.iter (fun a b -> if is_unknown b.var_type  then
+			       Printf.eprintf "Unknown value type : %s\n" a)  !current_args; 
+              failwith "unknown types in this kernel";
+              
+            )
         with
         | TypeError(expected, given, loc) ->
           (

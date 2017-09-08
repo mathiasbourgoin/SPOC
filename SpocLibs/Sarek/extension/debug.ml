@@ -1,6 +1,6 @@
 let retype = ref false
 let unknown = ref 0
-let debug = false
+let debug = true
 
 let my_eprintf s =
   if debug then

@@ -1,5 +1,5 @@
 (******************************************************************************
-- * Mathias Bourgoin, Universit Pierre et Marie Curie (2012)
+- * Mathias Bourgoin, Université Pierre et Marie Curie (2012)
  *
  * Mathias.Bourgoin@gmail.com
  *
@@ -37,6 +37,9 @@ open Kernel
 open Mem
 open Devices
 open Vector
+
+let debug = true
+let idkern = ref 0 
 
 open Kirc_Ast
 
@@ -809,8 +812,12 @@ let gen ?profile:(prof=false) ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('
     Hashtbl.iter (fun _ a -> global_funs := !global_funs^(fst a)^"\n") Kirc_Cuda.global_funs;
     let i = ref 0 in
     let constructors = List.fold_left (fun a b -> incr i; (if !i mod 3 = 0 then " " else "__device__ ")^b^a) "\n\n" !constructors in
-    (*save "kirc_kernel.cu" (cuda_head ^ (if prof then cuda_profile_head else "")^ constructors ^  !global_funs ^ src) ;
-      ignore(Sys.command ("nvcc -g -G "^ s ^" "^"-arch=sm_30 -m64  -O3 -ptx kirc_kernel.cu -o kirc_kernel.ptx"));*)
+    if  debug then
+      (
+        save ("kirc_kernel"^(string_of_int !idkern)^".cu") (cuda_head ^ (if prof then cuda_profile_head else "")^ constructors ^  !global_funs ^ src) ;
+        incr idkern;
+      );
+    (*ignore(Sys.command ("nvcc -g -G "^ s ^" "^"-arch=sm_30 -m64  -O3 -ptx kirc_kernel.cu -o kirc_kernel.ptx"));*)
     let s = nvrtc_ptx (cuda_head ^ (if prof then cuda_profile_head else "")^ constructors ^  !global_funs ^ src) in
     (*let s = (load_file "kirc_kernel.ptx") in*)
     kir#set_cuda_sources s;

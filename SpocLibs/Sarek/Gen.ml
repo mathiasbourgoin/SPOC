@@ -204,7 +204,7 @@ module Generator (M:CodeGenerator) = struct
              | Seq (_,_)  -> (parse ~profile:prof (i+1) body dev)
              | _  ->  ((parse ~profile:prof (i+1) body dev)^"\n"^(indent (i)))
            in
-           (pargs ^
+           (pargs ^ "bool spoc_prof_cond;\n" ^ 
             pbody)^M.kern_end)
         | Local (x,y)  -> (parse ~profile:prof i x dev)^";\n"^
                           (indent (i))^(parse ~profile:prof i y dev)^
@@ -361,16 +361,16 @@ module Generator (M:CodeGenerator) = struct
           let a =
             let a = parse ~profile:prof i a dev in
             let pc = string_of_int !profiler_counter in
-            "bool spoc_prof_cond_"^pc^" = ("^a^");\n"^
+            "spoc_prof_cond = ("^a^");\n"^
             (if prof then
                (let s =
                   indent i^
-                  "branch_analysis(prof_cntrs, spoc_prof_cond_"^pc^", "^ pc^");\n" in
+                  "branch_analysis(prof_cntrs, spoc_prof_cond, "^ pc^");\n" in
                 Printf.printf "incr in Ife 3 \n%!";
                 profiler_counter := !profiler_counter + 4;
                 s)
              else "")^
-            indent i^"if ( spoc_prof_cond_"^pc^" )"
+            indent i^"if ( spoc_prof_cond )"
           in          
           let b =
             let b = parse ~profile:prof i b dev in
@@ -404,10 +404,10 @@ module Generator (M:CodeGenerator) = struct
           let a = parse ~profile:prof i a dev in
           
           let pc = string_of_int !profiler_counter in
-          "bool spoc_prof_cond_"^pc^" = ("^a^");\n"^
+          "spoc_prof_cond  = ("^a^");\n"^
           (if prof then
              (let s = indent i^
-                      "branch_analysis(prof_cntrs, spoc_prof_cond_"^pc^", "^ pc^");\n" in
+                      "branch_analysis(prof_cntrs, spoc_prof_cond, "^ pc^");\n" in
               Printf.printf "incr in If 3 \n%!";
               profiler_counter := !profiler_counter + 4;
               s)
@@ -416,7 +416,7 @@ module Generator (M:CodeGenerator) = struct
           (let b =
              parse ~profile:prof (i+1) b dev in
            let s =
-             "if ( spoc_prof_cond_"^pc^")"^"{\n"^
+             "if ( spoc_prof_cond)"^"{\n"^
              (indent (i+1))^
              (indent (i+1))^
              b^";\n"^(indent i)^"}"^(indent i)
@@ -424,8 +424,8 @@ module Generator (M:CodeGenerator) = struct
            s)
             
         | Or (a,b) -> (parse ~profile:prof i a dev)^" || "^(parse ~profile:prof i b dev)
-        | And (a,b) -> (parse ~profile:prof i a dev)^" && "^(parse ~profile:prof i b dev)
-        | Not (a) -> "!"^(parse ~profile:prof i a dev)
+        | And (a,b) -> ("("^parse ~profile:prof i a dev)^") && ("^(parse ~profile:prof i b dev)^")"
+        | Not (a) -> "!("^(parse ~profile:prof i a dev)^")"
         | EqCustom (n,v1,v2) ->
           let v1 = parse ~profile:prof 0 v1 dev
           and v2 = parse ~profile:prof 0 v2 dev in
@@ -446,11 +446,11 @@ module Generator (M:CodeGenerator) = struct
         | While (a,b) ->
           let cond = parse ~profile:prof i a dev in
           let pc = string_of_int !profiler_counter in
-          "bool spoc_prof_cond_"^pc^" = ("^cond^");\n"^
+          "spoc_prof_cond = ("^cond^");\n"^
           (if prof then
              (let s =
                 indent i^
-                "branch_analysis(prof_cntrs, spoc_prof_cond_"^pc^", "^ pc^");\n" in
+                "branch_analysis(prof_cntrs, spoc_prof_cond, "^ pc^");\n" in
               Printf.printf "incr 3 in While  \n%!";
               profiler_counter := !profiler_counter + 4;
               s)
@@ -460,7 +460,7 @@ module Generator (M:CodeGenerator) = struct
                      (*    (indent (i+1))^"spoc_atomic_add(prof_cntrs+"^string_of_int !profiler_counter^", 1); // control while \n" *)
                      (*  else "")^ *)
                      parse ~profile:prof (i+1) b dev in
-          let s = "while ( spoc_prof_cond_"^pc^" ){\n"^
+          let s = "while ( spoc_prof_cond ){\n"^
                   (* (indent (i+1)) *)
                   (* ^ *)
                   (* (if !gmem_load > 0 then *)
@@ -479,11 +479,11 @@ module Generator (M:CodeGenerator) = struct
                   (*  else "")^ *)
                   body^";\n"^
                   indent (i+1)^
-                  "spoc_prof_cond_"^pc^" = ("^cond^");\n"^
+                  "spoc_prof_cond = ("^cond^");\n"^
                   (if prof then
                      (let s =
                         indent (i+1)^
-                        "while_analysis(prof_cntrs, spoc_prof_cond_"^pc^");\n" in
+                        "while_analysis(prof_cntrs, spoc_prof_cond );\n" in
                       s)
                    else "")^"\n}"
                   

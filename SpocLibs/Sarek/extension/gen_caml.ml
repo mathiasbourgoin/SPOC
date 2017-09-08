@@ -355,7 +355,7 @@ and parse_body body =
            | a -> vec_typ_to_e a
          in
          (match t with
-          | TInt32  -> <:ctyp<(int32, Bigarray.int32_elt) Spoc.Vector.vector>>
+          | TInt32 | TBool  -> <:ctyp<(int32, Bigarray.int32_elt) Spoc.Vector.vector>>
           | TInt64  -> <:ctyp<(int64, Bigarray.int64_elt) Spoc.Vector.vector>>
           | TFloat32 -> <:ctyp<(float, Bigarray.float32_elt) Spoc.Vector.vector>>
           | TFloat64 -> <:ctyp<(float, Bigarray.float64_elt) Spoc.Vector.vector>>
@@ -414,7 +414,7 @@ and parse_body body =
          (match var.var_type with
           | TVec k ->
             (match k with
-             | TInt32  -> <:ctyp<(int32, Bigarray.int32_elt) Spoc.Vector.vector>>
+             | TInt32 | TBool -> <:ctyp<(int32, Bigarray.int32_elt) Spoc.Vector.vector>>
              | TInt64  -> <:ctyp<(int64, Bigarray.int64_elt) Spoc.Vector.vector>>
              | TFloat32 -> <:ctyp<(float, Bigarray.float32_elt) Spoc.Vector.vector>>
              | TFloat64 -> <:ctyp<(float, Bigarray.float64_elt) Spoc.Vector.vector>>
@@ -422,9 +422,9 @@ and parse_body body =
                let name = TyId(_loc,IdLid(_loc,name))
                and sarek_name = TyId(_loc, IdLid(_loc,name^"_sarek")) in
                <:ctyp<($name$,$sarek_name$) Spoc.Vector.vector >>
-             | TBool | TVec _  | TUnknown | TUnit | TArr _
+             | TVec _  | TUnknown | TUnit | TArr _
              | TApp _   ->
-               my_eprintf ("Unimplemented vecget : "^(ktyp_to_string var.var_type )^"\n");
+               my_eprintf ("Unimplemented vecget : "^(ktyp_to_string var.var_type )^"\n");               
                assert false
             )
           | _  -> assert (not debug);

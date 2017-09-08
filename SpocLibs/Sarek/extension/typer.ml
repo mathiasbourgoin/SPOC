@@ -493,7 +493,7 @@ and typer body t =
      check e1.t TBool _loc;
      update_type body TBool;
    | BoolEq (_loc,e1,e2) ->
-     typer e1 TUnknown;
+     typer e1 TInt32;
      typer e2 e1.t;
      check e1.t e2.t _loc;
      update_type body TBool;

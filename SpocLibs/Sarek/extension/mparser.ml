@@ -102,7 +102,7 @@ let rec gen_arg_from_patt2 p =
        <:expr<(new_custom_var $str:n$ $`int:var.n$  $str:x$)>>
      | TVec k ->
        (match k with
-        | TInt32 | TInt64  ->   <:expr<(new_int_vec_var $`int:var.n$ $str:x$)>>
+        | TInt32 | TInt64 | TBool ->   <:expr<(new_int_vec_var $`int:var.n$ $str:x$)>>
         | TFloat32 ->   <:expr<(new_float_vec_var $`int:var.n$ $str:x$)>>
         | TFloat64 ->   <:expr<(new_double_vec_var $`int:var.n$  $str:x$)>>
         | Custom (t,n) ->
@@ -200,7 +200,7 @@ let rec gen_arg_from_patt3 p =
          <:ctyp<$sarek_namet$>>
        | TVec k ->
          (match k with
-          | TInt32 ->
+          | TInt32 | TBool ->
             <:ctyp< (('spoc_a, 'spoc_b) Vector.vector)>>,
             <:expr< Spoc.Kernel.VInt32>>,
             <:ctyp< ((int32, Bigarray.int32_elt) Vector.vector)>> ,
@@ -244,7 +244,7 @@ let rec gen_arg_from_patt3 p =
             <:ctyp< (($name$, $sarek_name$) Vector.vector)>>,
             <:ident< Spoc.Kernel.VCustom>>,
             <:ctyp< Spoc.Vector.custom>>
-          | _  -> failwith "Forbidden vector  type in kernel declaration")
+          | _  -> failwith "Forbidden vector type in kernel declaration")
        | _ ->
          assert (not debug);
          failwith "unimplemented yet"
