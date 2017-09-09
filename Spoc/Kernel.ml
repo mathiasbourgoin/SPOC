@@ -382,7 +382,7 @@ class virtual ['a, 'b] spoc_kernel file (func: string) =
 
     method compile ?debug: (d = false) =
       fun dev ->
-        try ignore(Hashtbl.find binaries dev)
+        try Hashtbl.find binaries dev
         with
         | Not_found ->
           let bin =
@@ -408,7 +408,7 @@ class virtual ['a, 'b] spoc_kernel file (func: string) =
                      opencl_compile t kernel_name dev.Devices.general_info
                end
             )
-          in (Hashtbl.add binaries dev bin)
+          in (Hashtbl.add binaries dev bin); bin
 
     method virtual exec : 'a -> (block * grid) ->
       int -> Devices.device -> kernel -> unit
@@ -440,7 +440,7 @@ class virtual ['a, 'b] spoc_kernel file (func: string) =
 
 let run (dev: Devices.device) ((block: block), (grid: grid)) (k: ('a, 'b) spoc_kernel) (args:'a) = k#run args (block, grid) 0 dev
 
-let compile (dev: Devices.device) (k: ('a, 'b) spoc_kernel) = k#compile ~debug: false dev
+let compile (dev: Devices.device) (k: ('a, 'b) spoc_kernel) = ignore(k#compile ~debug: false dev)
 
 let set_arg env i arg =
   env.(i) <-

@@ -43,7 +43,7 @@ let max_threads_per_block = ref 512l
     
 let bfs_kern1 = kern g_graph_nodes g_graph_edges g_graph_mask g_updating_graph_mask g_graph_visited g_cost no_of_nodes ->
   let open Std in
-  let tid = (block_idx_x * block_dim_x) + thread_idx_x in
+  let tid = (block_idx_x * @max_threads_per_block) + thread_idx_x in
   if (tid < no_of_nodes && (1 = g_graph_mask.[<tid>]) ) then
     (
       g_graph_mask.[<tid>] <- 0;
@@ -60,7 +60,7 @@ let bfs_kern1 = kern g_graph_nodes g_graph_edges g_graph_mask g_updating_graph_m
 
 let bfs_kern2 = kern g_graph_mask g_updating_graph_mask g_graph_visited g_over no_of_nodes ->
   let open Std in
-  let tid = (block_idx_x * block_dim_x) + thread_idx_x in
+  let tid = (block_idx_x * @max_threads_per_block) + thread_idx_x in
     if( tid<no_of_nodes && (g_updating_graph_mask.[<tid>] = 1) ) then
       (
         g_graph_mask.[<tid>] <- 1;
@@ -109,24 +109,24 @@ let bfs_graph () =
       num_of_blocks := ceil ((float no_of_nodes) /. (Int32.to_float !max_threads_per_block));
       num_of_threads_per_block := Int32.to_int !max_threads_per_block;
     );
-
- 
-  let graph_nodes = Vector.create (Vector.Custom customNode) no_of_nodes 
-  and graph_mask = Vector.create Vector.int32 no_of_nodes 
+  
+  
+  (*  let graph_nodes = Vector.create (Vector.Custom customNode) no_of_nodes *)
+  let graph_mask = Vector.create Vector.int32 no_of_nodes 
   and updating_graph_mask = Vector.create Vector.int32 no_of_nodes
   and graph_visited = Vector.create Vector.int32 no_of_nodes in
-
-  for i = 0 to no_of_nodes - 1 do
-    Scanf.bscanf fs "%d %d "
+  
+  let graph_nodes = Tools.map (fun _ ->
+      Scanf.bscanf fs "%d %d "
         (fun a b ->
-           Mem.set graph_nodes i {starting = Int32.of_int a;
-                                  no_of_edges = Int32.of_int b}
-        );
-
-
-    Mem.set graph_mask i  0l;
-    Mem.set updating_graph_mask i 0l;
-    Mem.set graph_visited i 0l;
+           {starting = Int32.of_int a;
+            no_of_edges = Int32.of_int b}
+        )) (Vector.Custom customNode) graph_mask in
+  
+  for i = 0 to no_of_nodes - 1 do
+    Mem.unsafe_set graph_mask i  0l;
+    Mem.unsafe_set updating_graph_mask i 0l;
+    Mem.unsafe_set graph_visited i 0l;
   done;
 
   
@@ -134,15 +134,15 @@ let bfs_graph () =
   
   let source = ref (Scanf.bscanf fs "%d " (fun i -> i)) in
   source := 0;
-  Mem.set graph_mask 0 1l;
-  Mem.set graph_visited 0 1l;
+  Mem.unsafe_set graph_mask !source 1l;
+  Mem.unsafe_set graph_visited !source 1l;
 
   let edge_list_size = Scanf.bscanf fs "%d " (fun i -> i) in
 
   let graph_edges = Vector.create Vector.int32 edge_list_size in
 
   for i = 0 to edge_list_size - 1 do
-    Scanf.bscanf fs "%d " (fun a -> Mem.set graph_edges i (Int32.of_int a));
+    Scanf.bscanf fs "%d " (fun a -> Mem.unsafe_set graph_edges i (Int32.of_int a));
     Scanf.bscanf fs "%d " (fun a -> ());
     (* if i = 4 || i = 118 then *)
     (*   Printf.printf "\n\n %ld  \n\n" (Mem.get graph_edges i) *)
@@ -154,7 +154,7 @@ let bfs_graph () =
 
   let cost = Vector.create Vector.int32 no_of_nodes in
   for i = 0 to no_of_nodes - 1 do
-    Mem.set cost i (-1l)
+    Mem.unsafe_set cost i (-1l)
   done;
   Mem.set cost 0 0l;
 
@@ -169,12 +169,9 @@ let bfs_graph () =
 
 
 
-  ignore(Kirc.gen bfs_kern1 dev);
-  ignore(Kirc.gen bfs_kern2 dev);
 
   
 
-  let stop = ref true in
   Mem.to_device graph_nodes dev;
   Mem.to_device graph_edges dev;
   Mem.to_device graph_mask dev;
@@ -184,14 +181,13 @@ let bfs_graph () =
   Spoc.Devices.flush dev ();
 
   print_endline ("Copied Everything to GPU memory");
-  let stop = ref true in
 
-    print_endline "Start traversing the tree";
+  print_endline "Start traversing the tree";
   let k = ref 0 in
-
+  
   
   Mem.set over 0 1l;
-
+  
   
   measure_time (fun () ->
       let kind = match dev.Devices.specific_info with
@@ -199,31 +195,33 @@ let bfs_graph () =
         | _ -> Devices.Cuda
       in
       Kirc.gen ~only:kind bfs_kern1 dev;
-      Kirc.gen ~only:kind bfs_kern2 dev) "Code generation";
-        
-
+      Kirc.gen ~only:kind bfs_kern2 dev;
+    ) "Code generation";
+  
+  
   let elapsed_time = ref 0. in
   
-  while Mem.get over 0 = 1l  do
-  
+  Mem.auto_transfers false;
+  while Mem.unsafe_get over 0 = 1l  do
+    
     let t0 = Unix.gettimeofday () in  
-    Mem.set over 0 0l;
-
-
+    Mem.unsafe_set over 0 0l;  
+    
+    Mem.to_device over dev;
     Kirc.run bfs_kern1 (graph_nodes, graph_edges, graph_mask, updating_graph_mask, graph_visited, cost, no_of_nodes) (block,grid) 0 dev;
     
-
     Kirc.run bfs_kern2 (graph_mask, updating_graph_mask, graph_visited, over, no_of_nodes) (block,grid) 0 dev;    
-
-    incr k;
+    Mem.to_cpu over ();
     
+    incr k;
+    Devices.flush ~queue_id:0 dev ();    
     if !k> 1 then
       elapsed_time := !elapsed_time +. (Unix.gettimeofday() -. t0);
     
   done;
-
+  
   Printf.printf "Kernel Executed %d times in %f\n" !k !elapsed_time;
-
+  
   let fpo = open_out "result.txt" in
   for i = 0 to no_of_nodes - 1 do
     Printf.fprintf fpo "%d) cost:%ld\n" i (Mem.get cost i);

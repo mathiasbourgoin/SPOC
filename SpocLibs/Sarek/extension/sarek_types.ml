@@ -473,7 +473,7 @@ let vector ={
   mod_name = "Vector";
   mod_constants = [];
   mod_functions = [
-    (TApp (TVec TAny, TInt32), "length", 1, "SAREK_VEC_SIZE", "SAREK_VEC_SIZE");
+    (TApp (TVec TAny, TInt32), "length", 1, "SAREK_VEC_LENGTH", "SAREK_VEC_LENGTH");
   ];
   mod_modules = Hashtbl.create 0 
 }

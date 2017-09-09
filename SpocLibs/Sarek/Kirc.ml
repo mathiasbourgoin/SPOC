@@ -81,7 +81,7 @@ type ('a,'b,'c,'d,'e) sarek_kernel =
 let constructors = ref []
 
 let opencl_head = (
-  "#define SAREK_VEC_LENGTH(a) sarek_##a_length\n"^
+  "#define SAREK_VEC_LENGTH(A) sarek_## A ##_length\n"^
   "float spoc_fadd ( float a, float b );\n"^
   "float spoc_fminus ( float a, float b );\n"^
   "float spoc_fmul ( float a, float b );\n"^
@@ -238,7 +238,7 @@ let cuda_float64 =
     "#endif\n"
   )
 let cuda_head = (
-  "#define SAREK_VEC_LENGTH(a) sarek_##a_length\n"^
+  "#define SAREK_VEC_LENGTH(a) sarek_ ## a ## _length\n"^
   "__device__ float spoc_fadd ( float a, float b ) { return (a + b);}\n"^
   "__device__ float spoc_fminus ( float a, float b ) { return (a - b);}\n"^
   "__device__ float spoc_fmul ( float a, float b ) { return (a * b);}\n"^
@@ -869,6 +869,7 @@ let gen ?profile:(prof=false) ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('
       gen_opencl ()
   end;
   kir#reset_binaries ();
+  ignore(kir#compile dev);
   kir,k
 
 let arg_of_vec v  =
@@ -879,7 +880,7 @@ let arg_of_vec v  =
   | _ -> assert false
 
 
-let run ?recompile:(r=false) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) a b q dev =
+let run ?recompile:(r=false) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) a (block,grid) q dev =
   let kir,k = ker in
   (match dev.Devices.specific_info with
    | Devices.CudaInfo _ ->
@@ -889,7 +890,7 @@ let run ?recompile:(r=false) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) a b q dev 
        begin
          match kir#get_cuda_sources () with
          | [] -> ignore(gen  ~only:Devices.Cuda (kir,k) dev)
-         | _ -> ()
+         | _ ->  ()
        end
    | Devices.OpenCLInfo _ ->
      begin
@@ -900,13 +901,10 @@ let run ?recompile:(r=false) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) a b q dev 
          | [] -> ignore(gen  ~only:Devices.OpenCL (kir,k) dev)
          | _ -> ()
      end);
-  (*  kir#run a b q dev*)
-  
   let args = kir#args_to_list a in
   let offset = ref 0 in
-  kir#compile ~debug:true dev;
-  let block,grid = b in 
-  let bin = (Hashtbl.find (kir#get_binaries ()) dev) in
+  let bin = kir#compile ~debug:true dev in
+  (*let bin = (Hashtbl.find (kir#get_binaries ()) dev) in*)
   let nvec = ref 0 in
   Array.iter (fun a ->
       (match a with

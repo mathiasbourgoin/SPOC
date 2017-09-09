@@ -90,8 +90,8 @@ int ae_load_file_to_memory(const char *filename, char **result)
     nvrtcProgram prog;
     size_t ptx_size;
     CHECK_NVRTC(nvrtcCreateProgram(&prog, cuda_src, "kir_kernel.cu", 0, NULL, NULL));
-    const char* options = {"--device-debug", "--gpu-architecture=compute_30" };
-    CHECK_NVRTC(nvrtcCompileProgram(prog , 0, options));
+    const char* options [] = {"--gpu-architecture=compute_30", "-dw" };
+    CHECK_NVRTC(nvrtcCompileProgram(prog , 2, options));
     if (NVRTC_SUCCESS != nvrtc_result){
       // Obtain compilation log from the program.
       size_t logSize;
