@@ -80,9 +80,16 @@ int ae_load_file_to_memory(const char *filename, char **result)
     /* if (NVRTC_SUCCESS != nvrtc_result)\ */
     /*   fprintf(stderr,"%s\n", nvrtcGetErrorString(nvrtc_result)); */
   
-  CAMLprim value spoc_nvrtc_ptx(value src){
-    CAMLparam1(src);
+  CAMLprim value spoc_nvrtc_ptx(value src, value opts){
+    CAMLparam2(src,opts);
     const char* cuda_src = String_val(src);
+
+    int nopts = Wosize_val(opts);
+    char** options = (char**)malloc(sizeof(char*)*nopts);
+
+    for (int i = 0 ; i < nopts; i++){
+      options[i] = String_val(Field(opts,i));
+    }
     //printf("%s\n", cuda_src);
     
     nvrtcResult nvrtc_result;
@@ -90,8 +97,8 @@ int ae_load_file_to_memory(const char *filename, char **result)
     nvrtcProgram prog;
     size_t ptx_size;
     CHECK_NVRTC(nvrtcCreateProgram(&prog, cuda_src, "kir_kernel.cu", 0, NULL, NULL));
-    const char* options [] = {"--gpu-architecture=compute_30", "-dw" };
-    CHECK_NVRTC(nvrtcCompileProgram(prog , 2, options));
+
+    CHECK_NVRTC(nvrtcCompileProgram(prog , nopts, options));
     if (NVRTC_SUCCESS != nvrtc_result){
       // Obtain compilation log from the program.
       size_t logSize;
@@ -477,7 +484,7 @@ CAMLprim value spoc_cuda_launch_grid(value off, value ker, value grid, value blo
 				 0, queue[Int_val(queue_id)], 
 				 NULL, extra2));
 
-  CUDA_CHECK_CALL(cuCtxSynchronize());
+  //CUDA_CHECK_CALL(cuCtxSynchronize());
   Store_field(off, 0, Val_int(offset));
   free(extra);
 

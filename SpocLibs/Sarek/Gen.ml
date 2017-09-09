@@ -113,9 +113,9 @@ module Generator (M:CodeGenerator) = struct
                    let a =
                      (if prof then
                         (indent (i+1))^
-                      "spoc_atomic_add(prof_cntrs+"^
-                      string_of_int !profiler_counter^", 1);\n"
-                    else "")
+                        "spoc_atomic_add(prof_cntrs+"^
+                        string_of_int !profiler_counter^", 1);\n"
+                      else "")
                    in
                    if prof then
                      (
@@ -130,7 +130,7 @@ module Generator (M:CodeGenerator) = struct
                             indent (i+1)^ret_type^" spoc_res;\n"^
                             indent (i+1)^"clock_t start_time = clock();\n"
                           )
-                          else ""
+                        else ""
                       | _ -> "")
                    in
                    a^b^
@@ -204,7 +204,7 @@ module Generator (M:CodeGenerator) = struct
              | Seq (_,_)  -> (parse ~profile:prof (i+1) body dev)
              | _  ->  ((parse ~profile:prof (i+1) body dev)^"\n"^(indent (i)))
            in
-           (pargs ^ "bool spoc_prof_cond;\n" ^ 
+           (pargs ^ "bool spoc_prof_cond;\n" ^ indent (i+1) ^
             pbody)^M.kern_end)
         | Local (x,y)  -> (parse ~profile:prof i x dev)^";\n"^
                           (indent (i))^(parse ~profile:prof i y dev)^
@@ -370,7 +370,7 @@ module Generator (M:CodeGenerator) = struct
                 profiler_counter := !profiler_counter + 4;
                 s)
              else "")^
-            indent i^"if ( spoc_prof_cond )"
+            (indent i)^"if ( spoc_prof_cond )"
           in          
           let b =
             let b = parse ~profile:prof i b dev in
@@ -416,13 +416,12 @@ module Generator (M:CodeGenerator) = struct
           (let b =
              parse ~profile:prof (i+1) b dev in
            let s =
-             "if ( spoc_prof_cond)"^"{\n"^
-             (indent (i+1))^
+             (indent i)^"if ( spoc_prof_cond)"^"{\n"^
              (indent (i+1))^
              b^";\n"^(indent i)^"}"^(indent i)
            in
            s)
-            
+          
         | Or (a,b) -> (parse ~profile:prof i a dev)^" || "^(parse ~profile:prof i b dev)
         | And (a,b) -> ("("^parse ~profile:prof i a dev)^") && ("^(parse ~profile:prof i b dev)^")"
         | Not (a) -> "!("^(parse ~profile:prof i a dev)^")"

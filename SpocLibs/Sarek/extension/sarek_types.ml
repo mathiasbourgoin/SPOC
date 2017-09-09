@@ -493,7 +493,7 @@ let mathf32 = {
 
     (TApp ((TApp (TFloat32, TFloat32)), TFloat32), "pow", 2, "powf", "pow");
     (TApp (TFloat32, TFloat32), "sqrt", 1, "sqrtf", "sqrt");
-    (TApp (TFloat32, TFloat32), "sqrt", 1, "rsqrtf", "rsqrt");
+    (TApp (TFloat32, TFloat32), "rsqrt", 1, "rsqrtf", "rsqrt");
     (TApp (TFloat32, TFloat32), "exp", 1, "expf", "exp");
     (TApp (TFloat32, TFloat32), "log", 1, "logf", "log");
     (TApp (TFloat32, TFloat32), "log10", 1, "log10f", "log10");

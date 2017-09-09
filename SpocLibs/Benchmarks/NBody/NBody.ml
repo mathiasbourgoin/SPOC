@@ -36,56 +36,59 @@ let blockSize = ref 256l
 let softening = ref 1e-9
 
 ktype float4 = {
-                  mutable x :float64;
-                mutable y:float64;
-                mutable z : float64;
-                w: float64;}
-              
+                  mutable x :float32;
+                  mutable y:float32;
+                  mutable z : float32;
+                  w: float32;}
+                
 let randomizeBodies data n =
   for i = 0 to n - 1 do
-    
-    Mem.set data i {x= (2.0 *. (Random.float 1. /. max_float) -. 1.);
-                    y= (2.0 *. (Random.float 1. /. max_float) -. 1.);
-                    z= (2.0 *. (Random.float 1. /. max_float) -. 1.);
-                    w= (2.0 *. (Random.float 1. /. max_float) -. 1.);
-                   }
-                    ;
+
+    let x = (2.0 *. (Random.float 1.) -. 1.);
+    and y = (2.0 *. (Random.float 1.) -. 1.);
+    and z = (2.0 *. (Random.float 1.) -. 1.);
+    and w = 0. in
+    Mem.unsafe_set data i {x; y; z; w;}
+    ;
   done
   
 let bodyForce = kern p v dt n ->
   let open Std in
   let open Math in
-  let open Float64 in
+  let open Float32 in
   let i = block_idx_x * block_dim_x + thread_idx_x in
   if (i < n) then
     
     let mutable fx = zero in
     let mutable fy = zero in
     let mutable fz = zero in
-    
-    for tile = 0 to grid_dim_x - 1 do
-      let (spos : float64 array) = create_array (3* @blockSize ) in
-      let tpos = p.[< tile * block_dim_x + thread_idx_x >] in
-      spos.(3*thread_idx_x) <>- (tpos.x);
+
+    let dist = fun a b c ->
+      let open Math in let open Float32 in 
+      add (add (mul a a) (mul b b)) (mul c c) in
       
+    for tile = 0 to grid_dim_x - 1 do
+      let (spos : float32 array) = create_array (3* @blockSize ) in
+      let tpos = p.[< tile * block_dim_x + thread_idx_x >] in
+      spos.(3*thread_idx_x) <>- tpos.x;
       spos.(3*thread_idx_x+1) <>- tpos.y;
       spos.(3*thread_idx_x+2) <>- tpos.z;
       block_barrier ();
 
-      (*pragma "unroll"*)
-      for  j =  0 to @blockSize - 1 do
-        let dx = minus (spos.(3*j))  p.[<i>].x in
-        let dy = minus (spos.(3*j+1))  p.[<i>].y in
-        let dz = minus (spos.(3*j+2))  p.[<i>].z in
-        let distSqr = add (add (mul dx  dx)  (mul dy dy)) (add (mul dz dz) @softening) in
-        let (invDist:float64) = rsqrt distSqr  in
-        let invDist3 = mul  (mul invDist invDist) invDist in
-        
-        fx := add fx (mul dx invDist3);
-        fy := add fy (mul dy invDist3);
-        fz := add fz (mul dz invDist3);
-        
-      done;
+      
+      pragma "unroll"
+        for  j =  0 to @blockSize - 1 do
+          let dx = minus (spos.(3*j))  p.[<i>].x in
+          let dy = minus (spos.(3*j+1))  p.[<i>].y in
+          let dz = minus (spos.(3*j+2))  p.[<i>].z in
+          let distSqr = add (dist dx dy dz)  @softening in
+          let (invDist:float32) = rsqrt distSqr  in
+          let invDist3 = mul  (mul invDist invDist) invDist in
+          
+          fx := add fx (mul dx invDist3);
+          fy := add fy (mul dy invDist3);
+          fz := add fz (mul dz invDist3);
+        done;
       block_barrier ();
       
     done;
@@ -95,9 +98,6 @@ let bodyForce = kern p v dt n ->
 ;;    
 
 
-
-
-
 let _ =
   let devid = ref 0 in
 
@@ -105,8 +105,8 @@ let _ =
  let nBodies = ref 30_000 in
  let nIters = ref 10 in
 
- let arg1 = ("nBodies", Arg.Int (fun i -> nBodies := i), "number of bodies")
- and arg2 = ("nIters", Arg.Int (fun i -> nIters := i), "number of iteration")
+ let arg1 = ("-nBodies", Arg.Int (fun i -> nBodies := i), "number of bodies")
+ and arg2 = ("-nIters", Arg.Int (fun i -> nIters := i), "number of iteration")
  and arg3 = ("-device" , Arg.Int (fun i  -> devid := i),
 	     "number of the device [0]")
             
@@ -133,7 +133,7 @@ let _ =
   in
   measure_time (fun () -> 
       for iter = 1 to !nIters do
-        ignore(Kirc.gen ~only:Devices.Cuda bodyForce dev)
+        ignore(Kirc.gen ~only:Devices.Cuda ~nvrtc_options:[|"-ftz=true"|] bodyForce dev)
           
       done;) "CUDA Code generation";
   
@@ -143,21 +143,40 @@ let _ =
           
       done;) "OpenCL Code generation";
   
-  measure_time (fun () ->
-      for iter = 1 to !nIters do
-        
-        (*  List.iter (Printf.printf "%s\n")((fst bodyForce)#get_cuda_sources ());*)
-        Kirc.run bodyForce (bodiesPos, bodiesVel, dt, !nBodies) (block,grid) 0 dev;
-        
-        for i = 0 to !nBodies - 1 do
-          (Mem.get bodiesPos i).x <- (Mem.get bodiesPos i).x +.  (Mem.get bodiesVel i).x *. dt;
-          (Mem.get bodiesPos i).y <- (Mem.get bodiesPos i).y +. (Mem.get bodiesVel i).y *. dt;
-          (Mem.get bodiesPos i).z <- (Mem.get bodiesPos i).z +. (Mem.get bodiesVel i).z *. dt;
-        done;
-        
-      done;) "NBODY Computation";
-  ()
   
+
+  let tot_time = ref 0.0 in
+  for iter = 1 to !nIters do
+
+    let t0 = Unix.gettimeofday () in
+   
+    Kirc.run bodyForce (bodiesPos, bodiesVel, dt, !nBodies) (block,grid) 0 dev;    
+
+
+    
+
+    for i = 0 to !nBodies - 1 do
+      let bP,bV = (Mem.get bodiesPos i), (Mem.get bodiesVel i) in
+      Mem.set bodiesPos i
+        {x = bP.x +. bV.x *. dt;
+         y = bP.y +. bV.y *. dt;
+         z = bP.z +. bV.z *. dt;
+         w = 0.};     
+    done;
+    
+    let tElapsed = (Unix.gettimeofday() -. t0) in
+    
+    
+    if iter > 1 then
+      tot_time := !tot_time +. tElapsed;
+    
+    Printf.printf "Iteration %d: %.3f seconds\n"  iter  tElapsed;                                                                                                                                                        
+
+  done;
+  Printf.printf "Total time : %f\n" !tot_time;
+
+
+
 
 ;;
 

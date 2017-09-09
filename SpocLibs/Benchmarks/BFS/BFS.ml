@@ -201,20 +201,16 @@ let bfs_graph () =
   
   let elapsed_time = ref 0. in
   
-  Mem.auto_transfers false;
-  while Mem.unsafe_get over 0 = 1l  do
+  while Mem.get over 0 = 1l  do
     
     let t0 = Unix.gettimeofday () in  
-    Mem.unsafe_set over 0 0l;  
+    Mem.set over 0 0l;  
     
-    Mem.to_device over dev;
     Kirc.run bfs_kern1 (graph_nodes, graph_edges, graph_mask, updating_graph_mask, graph_visited, cost, no_of_nodes) (block,grid) 0 dev;
     
     Kirc.run bfs_kern2 (graph_mask, updating_graph_mask, graph_visited, over, no_of_nodes) (block,grid) 0 dev;    
-    Mem.to_cpu over ();
     
     incr k;
-    Devices.flush ~queue_id:0 dev ();    
     if !k> 1 then
       elapsed_time := !elapsed_time +. (Unix.gettimeofday() -. t0);
     

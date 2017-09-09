@@ -1,4 +1,5 @@
 type float64 = float
+type float32 = float
 
 type extension = ExFloat32 | ExFloat64
 type ('a, 'b, 'c) kirc_kernel = {
@@ -154,6 +155,7 @@ val gen_profile :
 val gen :
   ?profile:bool -> ?return:bool ->
   ?only:Spoc.Devices.specificLibrary ->
+  ?nvrtc_options:string array ->
   ('a, 'b, 'c, 'd, 'e) sarek_kernel ->
   Spoc.Devices.device -> 
   ('a, 'b, 'c, 'd, 'e) sarek_kernel

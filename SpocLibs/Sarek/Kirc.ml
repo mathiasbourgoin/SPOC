@@ -49,6 +49,7 @@ module Kirc_Cuda = Gen.Generator(Kirc_Cuda)
 module Kirc_Profile = Gen.Generator(Profile)
 
 type float64 = float
+type float32 = float
   
 type extension =
   | ExFloat32
@@ -195,7 +196,7 @@ void branch_analysis(__global ulong *profile_counters, int eval, int counters){
                 get_local_id(2)*get_local_size(0)*get_local_size(1) + 
                 get_local_id(1)*get_local_size(0) + get_local_id(0);
   
-  spoc_atomic_add(profile_counters+4, (ulong)1); //
+  spoc_atomic_add(profile_counters+4, (ul;ong)1); //
   spoc_atomic_add(profile_counters+counters+1, 1);
   if (eval) 
     spoc_atomic_add(profile_counters+counters+2, 1);
@@ -366,9 +367,9 @@ __device__ T* memory_analysis(unsigned long long int *profile_counters, T* mp, i
 )
 
 let eint32 = EInt32
-let eint64 = EInt32
-let efloat32 = EInt32
-let efloat64 = EInt32
+let eint64 = EInt64
+let efloat32 = EFloat32
+let efloat64 = EFloat64
 
 let global = Global
 let local = LocalSpace
@@ -773,9 +774,9 @@ let gen_profile ker dev =
                                        },\n" (!Spoc.Trac.eventId - 1 ) profile_source*)
 
 (* external from SPOC*)
-external nvrtc_ptx : string -> string = "spoc_nvrtc_ptx"
+external nvrtc_ptx : string -> string array -> string = "spoc_nvrtc_ptx"
 
-let gen ?profile:(prof=false) ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) dev =
+let gen ?profile:(prof=false) ?return:(r=false) ?only:(o=Devices.Both) ?nvrtc_options:(nvopt=[||]) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) dev =
   let kir,k = ker in
   let (k1,k2,k3) = (k.ml_kern, k.body,k.ret_val) in
   return_v := "","";
@@ -812,13 +813,40 @@ let gen ?profile:(prof=false) ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('
     Hashtbl.iter (fun _ a -> global_funs := !global_funs^(fst a)^"\n") Kirc_Cuda.global_funs;
     let i = ref 0 in
     let constructors = List.fold_left (fun a b -> incr i; (if !i mod 3 = 0 then " " else "__device__ ")^b^a) "\n\n" !constructors in
+    let protos = "/************* FUNCTION PROTOTYPES ******************/\n" ^
+                 List.fold_left (fun a b -> b^";\n"^a) "" !Kirc_Cuda.protos in
     if  debug then
       (
-        save ("kirc_kernel"^(string_of_int !idkern)^".cu") (cuda_head ^ (if prof then cuda_profile_head else "")^ constructors ^  !global_funs ^ src) ;
+        save ("kirc_kernel"^(string_of_int !idkern)^".cu") (cuda_head ^ (if prof then cuda_profile_head else "")^ constructors ^ protos ^ !global_funs ^ src) ;
         incr idkern;
       );
     (*ignore(Sys.command ("nvcc -g -G "^ s ^" "^"-arch=sm_30 -m64  -O3 -ptx kirc_kernel.cu -o kirc_kernel.ptx"));*)
-    let s = nvrtc_ptx (cuda_head ^ (if prof then cuda_profile_head else "")^ constructors ^  !global_funs ^ src) in
+    let genopt =
+      (match dev.Devices.specific_info with
+       | Devices.CudaInfo cu ->
+         let computecap = cu.Devices.major*10+cu.Devices.minor in
+         [|
+           if computecap < 20 then
+             failwith ("CUDA device too old for this XXX")
+           else if computecap < 30 then
+             "--gpu-architecture=compute_20"
+           else if computecap < 35 then
+             "--gpu-architecture=compute_30"
+           else if computecap < 50 then
+             "--gpu-architecture=compute_35"
+           else if computecap < 52 then
+             "--gpu-architecture=compute_50"
+           else if computecap < 53 then
+             "--gpu-architecture=compute_52"
+           else if computecap = 53 then
+             "--gpu-architecture=compute_53"
+           else
+             "--gpu-architecture=compute_20"
+         |]
+       | _ -> [||])
+    in
+    let nvrtc_options = Array.append nvopt genopt in
+    let s = nvrtc_ptx (cuda_head ^ (if prof then cuda_profile_head else "")^ constructors ^  !global_funs ^ src) nvrtc_options in
     (*let s = (load_file "kirc_kernel.ptx") in*)
     kir#set_cuda_sources s;
     (*ignore(Sys.command "rm kirc_kernel.cu kirc_kernel.ptx");*)

@@ -541,8 +541,9 @@ and parse_body body =
       match a.e with
       | (*create_array *) App (_loc,{t=typ; e= Id(_,<:ident< create_array>>); loc=_}, [b]) ->
         (match a.t with
-        | TArr (TFloat64, Shared) ->
-          <:expr< Array.create (Int32.to_int $parse_body b$) 0. >>
+         | TArr (TFloat64, Shared)
+         | TArr (TFloat32, Shared) ->
+          <:expr< Array.make (Int32.to_int $parse_body b$) 0. >>
         | _ -> assert false)
       
       |  App (_loc, {e=App (_, {t=_; e= App (_,{t=_; e=Id(_,<:ident< map>>); loc=_}, [f]); loc=_}, [a])}, [b]) ->

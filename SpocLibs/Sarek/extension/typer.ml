@@ -606,7 +606,7 @@ and typer_app e1 (e2 : kexpr list) t =
                           Custom (cstr.typ, cstr.name)),_l
                      with
                      | Not_found  ->
-                       assert (not debug); raise (Unbound_value (string_of_ident s,_l) ))
+                       (*assert (not debug);*) raise (Unbound_value (string_of_ident s,_l) ))
                 )))
         | ModuleAccess (_l, s, e) ->
           open_module s _l;
