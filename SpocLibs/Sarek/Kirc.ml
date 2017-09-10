@@ -38,7 +38,7 @@ open Mem
 open Devices
 open Vector
 
-let debug = true
+let debug = false
 let idkern = ref 0 
 
 open Kirc_Ast
