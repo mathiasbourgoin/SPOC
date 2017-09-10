@@ -80,7 +80,8 @@ let bfs_graph () =
    ( usage();
      exit 0;
    );
-  print_endline "Reading File";
+
+  (*print_endline "Reading File";*)
 
   
   let dev =
@@ -150,7 +151,7 @@ let bfs_graph () =
 
   Scanf.Scanning.close_in fs;
 
-  print_endline "Read file";
+  (*  print_endline "Read file";*)
 
   let cost = Vector.create Vector.int32 no_of_nodes in
   for i = 0 to no_of_nodes - 1 do
@@ -180,9 +181,9 @@ let bfs_graph () =
   Mem.to_device cost dev;
   Spoc.Devices.flush dev ();
 
-  print_endline ("Copied Everything to GPU memory");
+  (*print_endline ("Copied Everything to GPU memory");*)
 
-  print_endline "Start traversing the tree";
+  (*print_endline "Start traversing the tree";*)
   let k = ref 0 in
   
   
@@ -216,14 +217,15 @@ let bfs_graph () =
     
   done;
   
-  Printf.printf "Kernel Executed %d times in %f\n" !k !elapsed_time;
+  Printf.printf "Kernel Executed with %d times in %f : %d nodes \n---------------------\n" !k !elapsed_time no_of_nodes;
   
+  (*
   let fpo = open_out "result.txt" in
   for i = 0 to no_of_nodes - 1 do
     Printf.fprintf fpo "%d) cost:%ld\n" i (Mem.get cost i);
   done;
   close_out fpo;
-  print_endline "Result stored in result.txt";  
+  print_endline "Result stored in result.txt";  *)
 ;;
   
 
