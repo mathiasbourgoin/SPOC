@@ -170,7 +170,7 @@ let _ =
     if iter > 1 then
       tot_time := !tot_time +. tElapsed;
     
-    Printf.printf "Iteration %d: %.3f seconds\n"  iter  tElapsed;                                                                                                                                                        
+    Printf.printf "Iteration %d: %.3f seconds\n%!"  iter  tElapsed;                                                                                                                                                        
 
   done;
   Printf.printf "Total time : %f\n" !tot_time;
