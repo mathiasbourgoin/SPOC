@@ -74,16 +74,15 @@ let loadData fname records locations =
         with | _ -> failwith ("Error opening a db: " ^ !dbname)
       in
       (try
-      
+         
          while true do
-           let latLong,recS =
-             let s = input_line fp in
-             Scanf.sscanf s "%i %i %i %i %i %s %f %f %i %i "
-               (fun y _ _ _ _ n lat lng _ _ ->
-                  { lat; lng},(Printf.sprintf "%i %s %f %f" y n lat lng))
-           in locations := latLong :: !locations;
+           let s = input_line fp in
 
-           records := {recString = recS;
+           let lat = float_of_string (String.sub s 28 4)
+           and lng = float_of_string (String.sub s 33 4) 
+           in locations := {lat; lng} :: !locations;
+           
+           records := {recString = s;
                        distance = 0.} :: !records;
            incr recNum;
          done;
@@ -194,6 +193,8 @@ let _ =
     if iter> 0 then
       elapsed_time := !elapsed_time +. (Unix.gettimeofday() -. t0);
 
+    Mem.to_device distances dev;
+    
   done;
 
   Printf.printf "Computed %d times in %fs\n" (nIter) !elapsed_time;
@@ -205,202 +206,3 @@ let _ =
   
 
 
-  
-(*ktype node = {
-                mutable starting : int32;
-                mutable no_of_edges : int32;
-              }
-
-
-  let max_threads_per_block = ref 512l
-
-  let bfs_kern1 = kern g_graph_nodes g_graph_edges g_graph_mask g_updating_graph_mask g_graph_visited g_cost no_of_nodes ->
-  let open Std in
-  let tid = (block_idx_x * @max_threads_per_block) + thread_idx_x in
-  if (tid < no_of_nodes && (1 = g_graph_mask.[<tid>]) ) then
-    (
-      g_graph_mask.[<tid>] <- 0;
-      for i = g_graph_nodes.[<tid>].starting to (g_graph_nodes.[<tid>].no_of_edges + g_graph_nodes.[<tid>].starting -1) do
-
-        let id = g_graph_edges.[<i>] in
-        if !(1 = g_graph_visited.[<id>] ) then
-          (
-            g_cost.[<id>] <- g_cost.[<tid>] + 1;
-            g_updating_graph_mask.[<id>] <- 1;
-          )
-      done;
-    )
-
-  let bfs_kern2 = kern g_graph_mask g_updating_graph_mask g_graph_visited g_over no_of_nodes ->
-  let open Std in
-  let tid = (block_idx_x * @max_threads_per_block) + thread_idx_x in
-    if( tid<no_of_nodes && (g_updating_graph_mask.[<tid>] = 1) ) then
-      (
-        g_graph_mask.[<tid>] <- 1;
-        g_graph_visited.[<tid>] <- 1;
-        g_over.[<0>] <- 1;
-        g_updating_graph_mask.[<tid>] <- 0;
-      )
-
-
-  let usage () =
-  Printf.eprintf "Usage: %s <input_file> [?device_id] \n%!" (Sys.argv.(0))
-
-
-  let bfs_graph () =
-
-  if (Array.length Sys.argv) != 2 && (Array.length Sys.argv) != 3 then
-   ( usage();
-     exit 0;
-   );
-  print_endline "Reading File";
-
-
-  let dev =
-    if (Array.length Sys.argv) = 3 then
-      devices.(int_of_string Sys.argv.(2))
-    else devices.(0)
-  in
-
-
-  let fs =
-    try
-      Scanf.Scanning.open_in Sys.argv.(1)
-    with | Sys_error _  -> failwith ("Error reading graph file : "^Sys.argv.(1))
-  in
-
-
-  (*let fs = Scanf.Scanning.from_channel fp in*)
-
-  let no_of_nodes = Scanf.bscanf fs "%d " (fun i -> i) in
-
-  let num_of_blocks = ref 1. in
-  let num_of_threads_per_block = ref no_of_nodes in
-
-  if no_of_nodes > (Int32.to_int !max_threads_per_block) then
-    (
-      num_of_blocks := ceil ((float no_of_nodes) /. (Int32.to_float !max_threads_per_block));
-      num_of_threads_per_block := Int32.to_int !max_threads_per_block;
-    );
-
-
-  (*  let graph_nodes = Vector.create (Vector.Custom customNode) no_of_nodes *)
-  let graph_mask = Vector.create Vector.int32 no_of_nodes 
-  and updating_graph_mask = Vector.create Vector.int32 no_of_nodes
-  and graph_visited = Vector.create Vector.int32 no_of_nodes in
-
-  let graph_nodes = Tools.map (fun _ ->
-      Scanf.bscanf fs "%d %d "
-        (fun a b ->
-           {starting = Int32.of_int a;
-            no_of_edges = Int32.of_int b}
-        )) (Vector.Custom customNode) graph_mask in
-
-  for i = 0 to no_of_nodes - 1 do
-    Mem.unsafe_set graph_mask i  0l;
-    Mem.unsafe_set updating_graph_mask i 0l;
-    Mem.unsafe_set graph_visited i 0l;
-  done;
-
-
-
-
-  let source = ref (Scanf.bscanf fs "%d " (fun i -> i)) in
-  source := 0;
-  Mem.unsafe_set graph_mask !source 1l;
-  Mem.unsafe_set graph_visited !source 1l;
-
-  let edge_list_size = Scanf.bscanf fs "%d " (fun i -> i) in
-
-  let graph_edges = Vector.create Vector.int32 edge_list_size in
-
-  for i = 0 to edge_list_size - 1 do
-    Scanf.bscanf fs "%d " (fun a -> Mem.unsafe_set graph_edges i (Int32.of_int a));
-    Scanf.bscanf fs "%d " (fun a -> ());
-    (* if i = 4 || i = 118 then *)
-    (*   Printf.printf "\n\n %ld  \n\n" (Mem.get graph_edges i) *)
-  done;
-
-  Scanf.Scanning.close_in fs;
-
-  print_endline "Read file";
-
-  let cost = Vector.create Vector.int32 no_of_nodes in
-  for i = 0 to no_of_nodes - 1 do
-    Mem.unsafe_set cost i (-1l)
-  done;
-  Mem.set cost 0 0l;
-
-  let over = Vector.create Vector.int32 1 in
-  Mem.set over 0 0l;
-
-  let grid =
-    {Kernel.gridX =  int_of_float !num_of_blocks;
-     Kernel.gridY = 1; Kernel.gridZ = 1;}
-  and block = {Kernel.blockX = !num_of_threads_per_block;
-               Kernel.blockY = 1; Kernel.blockZ = 1} in
-
-
-
-
-
-
-  Mem.to_device graph_nodes dev;
-  Mem.to_device graph_edges dev;
-  Mem.to_device graph_mask dev;
-  Mem.to_device updating_graph_mask dev;
-  Mem.to_device graph_visited dev;
-  Mem.to_device cost dev;
-  Spoc.Devices.flush dev ();
-
-  print_endline ("Copied Everything to GPU memory");
-
-  print_endline "Start traversing the tree";
-  let k = ref 0 in
-
-
-  Mem.set over 0 1l;
-
-
-  measure_time (fun () ->
-      let kind = match dev.Devices.specific_info with
-        | Devices.OpenCLInfo clI -> Devices.OpenCL
-        | _ -> Devices.Cuda
-      in
-      Kirc.gen ~only:kind bfs_kern1 dev;
-      Kirc.gen ~only:kind bfs_kern2 dev;
-    ) "Code generation";
-
-
-  let elapsed_time = ref 0. in
-
-  while Mem.get over 0 = 1l  do
-
-    let t0 = Unix.gettimeofday () in  
-    Mem.set over 0 0l;  
-
-    Kirc.run bfs_kern1 (graph_nodes, graph_edges, graph_mask, updating_graph_mask, graph_visited, cost, no_of_nodes) (block,grid) 0 dev;
-
-    Kirc.run bfs_kern2 (graph_mask, updating_graph_mask, graph_visited, over, no_of_nodes) (block,grid) 0 dev;    
-
-    incr k;
-    if !k> 1 then
-      elapsed_time := !elapsed_time +. (Unix.gettimeofday() -. t0);
-
-  done;
-
-  Printf.printf "Kernel Executed %d times in %f\n" !k !elapsed_time;
-
-  let fpo = open_out "result.txt" in
-  for i = 0 to no_of_nodes - 1 do
-    Printf.fprintf fpo "%d) cost:%ld\n" i (Mem.get cost i);
-  done;
-  close_out fpo;
-  print_endline "Result stored in result.txt";  
-  ;;
-
-
-  let _ =
-    bfs_graph ()
-
-*)
