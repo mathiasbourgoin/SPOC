@@ -1,4 +1,4 @@
--(*
+(*
          DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
                     Version 2, December 2004
 
@@ -24,7 +24,7 @@ let measure_time f  s =
   let t0 = Unix.gettimeofday () in
   let a = f () in
   let t1 = Unix.gettimeofday () in
-  Printf.printf "%s time %d : %Fs\n%!" s !cpt (t1 -. t0);
+  Printf.printf "%s time %d : %Fs\n%!" s !cpt ((t1 -. t0)/.10.);
   tot_time := !tot_time +.  (t1 -. t0);
   incr cpt;
   a;;
@@ -195,8 +195,10 @@ let bfs_graph () =
         | Devices.OpenCLInfo clI -> Devices.OpenCL
         | _ -> Devices.Cuda
       in
-      Kirc.gen ~only:kind bfs_kern1 dev;
-      Kirc.gen ~only:kind bfs_kern2 dev;
+      for i = 1 to 10 do
+        Kirc.gen ~only:kind bfs_kern1 dev;
+        Kirc.gen ~only:kind bfs_kern2 dev;
+      done;
     ) "Code generation";
   
   
