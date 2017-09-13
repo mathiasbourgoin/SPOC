@@ -1,7 +1,7 @@
 all : asm
 
 asm :
-	ocamlfind ocamlopt  -g \
+	ocamlfind ocamlopt  -g -unsafe \
 	-pp "camlp4 -I `ocamlfind query sarek_syntax` -parser o -printer o kernels_int.cma" \
 	-thread -package ctypes.foreign,spoc,sarek,graphics -linkpkg -cclib -lnvrtc \
 	NN.ml  -o NN.asm

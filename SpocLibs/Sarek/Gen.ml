@@ -159,6 +159,16 @@ module Generator (M:CodeGenerator) = struct
                 in
                 protos := proto:: !protos;
                 proto^"{\n"
+              | VecVar (t,i,s)  ->
+                 M.global_parameter^
+                   (match t with
+                    | Int _ ->" int"
+                    | Float _ -> " float"
+                    | Double _ -> " double"
+                    | Custom (n,_,ss) -> (" struct "^n^"_sarek")
+                    | _ -> assert false
+                   )^("* "^s^", int sarek_"^s^"_length")
+                       
               | a -> (parse ~profile:prof i a dev)
 
             in
@@ -493,12 +503,12 @@ module Generator (M:CodeGenerator) = struct
           (*   ); *)
           s
         | App (a,b) ->
-          let f = parse ~profile:prof i a dev in
-          let rec aux = function
-            | t::[] -> parse ~profile:prof i t dev
-            | t::q -> (parse ~profile:prof i t dev)^","^(aux q)
-            | [] -> assert false
-          in
+           let f = parse ~profile:prof i a dev in
+           let rec aux = function
+             | t :: [] -> parse ~profile:prof i t dev
+             | t::q -> (parse ~profile:prof i t dev)^", "^(aux q)
+             | [] -> assert false
+           in
           (match a with
            | Intrinsics ("return","return") -> f^" "^(aux (Array.to_list b))^" "
            | Intrinsics (_, _)-> f^" ("^(aux (Array.to_list b))^") "

@@ -32,7 +32,7 @@ let measure_time f  s =
 
 let devices = measure_time Spoc.Devices.init "init"
     
-let blockSize = ref 256l
+let blockSize = ref 64l
 let softening = ref 1e-9
 
 ktype float4 = {
@@ -74,21 +74,21 @@ let bodyForce = kern p v dt n ->
       spos.(3*thread_idx_x+1) <>- tpos.y;
       spos.(3*thread_idx_x+2) <>- tpos.z;
       block_barrier ();
-
+      
       
       pragma "unroll"
-        for  j =  0 to @blockSize - 1 do
-          let dx = minus (spos.(3*j))  p.[<i>].x in
-          let dy = minus (spos.(3*j+1))  p.[<i>].y in
-          let dz = minus (spos.(3*j+2))  p.[<i>].z in
-          let distSqr = add (dist dx dy dz)  @softening in
-          let (invDist:float32) = rsqrt distSqr  in
-          let invDist3 = mul  (mul invDist invDist) invDist in
-          
-          fx := add fx (mul dx invDist3);
-          fy := add fy (mul dy invDist3);
-          fz := add fz (mul dz invDist3);
-        done;
+      for  j =  0 to @blockSize - 1 do
+        let dx = minus (spos.(3*j))  p.[<i>].x in
+        let dy = minus (spos.(3*j+1))  p.[<i>].y in
+        let dz = minus (spos.(3*j+2))  p.[<i>].z in
+        let distSqr = add (dist dx dy dz)  @softening in
+        let (invDist:float32) = rsqrt distSqr  in
+        let invDist3 = mul  (mul invDist invDist) invDist in
+        
+        fx := add fx (mul dx invDist3);
+        fy := add fy (mul dy invDist3);
+        fz := add fz (mul dz invDist3);
+      done;
       block_barrier ();
       
     done;
@@ -131,37 +131,38 @@ let _ =
   let block = {Kernel.blockX = blockSize; Kernel.blockY= 1; Kernel.blockZ = 1} 
   and grid = {Kernel.gridX = blocksPerGrid; Kernel.gridY = 1; Kernel.gridZ = 1}
   in
-  measure_time (fun () -> 
+  (*measure_time (fun () -> 
       for iter = 1 to !nIters do
         ignore(Kirc.gen ~only:Devices.Cuda ~nvrtc_options:[|"-ftz=true"|] bodyForce dev)
-          
-      done;) "CUDA Code generation";
+              
+      done;) "CUDA Code generation";*)
   
   measure_time (fun () ->
       for iter = 1 to !nIters do
         ignore(Kirc.gen ~only:Devices.OpenCL bodyForce dev)
-          
+              
       done;) "OpenCL Code generation";
   
   
 
   let tot_time = ref 0.0 in
+
   for iter = 1 to !nIters do
-
-    let t0 = Unix.gettimeofday () in
-   
-    Kirc.run bodyForce (bodiesPos, bodiesVel, dt, !nBodies) (block,grid) 0 dev;    
-
-
     
-
+    let t0 = Unix.gettimeofday () in
+    
+    Kirc.run bodyForce (bodiesPos, bodiesVel, dt, !nBodies) (block,grid) 0 dev;    
+    
+    
+    
+    
     for i = 0 to !nBodies - 1 do
       let bP,bV = (Mem.get bodiesPos i), (Mem.get bodiesVel i) in
       Mem.set bodiesPos i
-        {x = bP.x +. bV.x *. dt;
-         y = bP.y +. bV.y *. dt;
-         z = bP.z +. bV.z *. dt;
-         w = 0.};     
+              {x = bP.x +. bV.x *. dt;
+               y = bP.y +. bV.y *. dt;
+               z = bP.z +. bV.z *. dt;
+               w = 0.};     
     done;
     
     let tElapsed = (Unix.gettimeofday() -. t0) in

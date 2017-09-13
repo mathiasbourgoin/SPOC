@@ -37,23 +37,18 @@ ktype latLong = {
                 lng : float32;
               }
 
-let euclid = kern location distances numRecords lat lng ->
+let euclid = kern locations distances numRecords lat lng ->
   let open Std in
   let open Math.Float32 in
   let globalId = block_dim_x * (grid_dim_x * block_idx_y+block_idx_x) + thread_idx_x in
   if (globalId < numRecords) then
-    let latLong = location.[< globalId >] in
-    let distance = fun lat lng latLong ->
-      let open Math.Float32 in
-      add (mul  (minus lat latLong.lat) (minus lat latLong.lat))
-        (mul (minus lng  latLong.lng) (minus lng  latLong.lng))
-    in
-    distances.[<globalId>] <- sqrt (
-        (distance lat lng latLong))
-        
-
+    let latLong = locations.[<globalId>] in
+    distances.[<globalId>] <-  sqrt (add (mul  (minus lat latLong.lat) (minus lat latLong.lat))
+                                         (mul (minus lng  latLong.lng) (minus lng  latLong.lng)))
+                                    
+                                    
 type record = {
-  recString : string;
+    recString : string;
   mutable distance : float;
 }
 
@@ -106,20 +101,20 @@ let findLowest records distances numRecords topN =
     let tempval = ref 0. in
     
     for j = i to numRecords - 1 do
-      tempval := Mem.get distances j;
-      if !tempval < Mem.get distances !minLoc then
+      tempval := Mem.unsafe_get distances j;
+      if !tempval < Mem.unsafe_get distances !minLoc then
         minLoc := j
     done;
     
-    let tempRec = records.(i) in
+    tempRec := records.(i);
     records.(i) <- records.(!minLoc);
-    records.(!minLoc) <- tempRec;
+    records.(!minLoc) <- !tempRec;
 
     let tempDist = Mem.get distances i in
-    Mem.set distances i (Mem.get distances !minLoc);
-    Mem.set distances !minLoc tempDist;
+    Mem.unsafe_set distances i (Mem.unsafe_get distances !minLoc);
+    Mem.unsafe_set distances !minLoc tempDist;
 
-    records.(i).distance <- Mem.get distances i;
+    records.(i).distance <- Mem.unsafe_get distances i;
     
     
   done
@@ -142,7 +137,7 @@ let _ =
 
   if !filename = "" then
     Arg.usage [arg0; arg1; arg2; arg3; arg4]  "Nearest Neighbor Usage\n NN.asm [filname] -r [int] -lat [int] -lng [int] -d [int]";
-  let quiet = 0 and timing = 0 and platform = 0 and device = 0 in
+  
   let records = ref [] in
   let locs = ref [] in
   let numRecords : int = loadData !filename records locs in
@@ -156,19 +151,12 @@ let _ =
   
   List.iteri (fun i a -> Mem.unsafe_set locations i a) !locs;
   
-  measure_time (fun () ->
-      let kind = match dev.Devices.specific_info with
-        | Devices.OpenCLInfo clI -> Devices.OpenCL
-        | _ -> Devices.Cuda
-      in
-      ignore(Kirc.gen ~only:kind euclid dev);
-    ) "Code generation";
   
   
   let nIter = 10 in
   let elapsed_time = ref 0.0 in
   
-  let threadsPerBlock = 256 in
+  let threadsPerBlock = 1024 in
   let ceilDiv  a b = (a + b -1) / b in
   let blocks= ceilDiv  numRecords  threadsPerBlock in
   let gridY = ceilDiv blocks 65535 in
@@ -180,28 +168,43 @@ let _ =
   Printf.printf "nR : %d - blockX : %d, gridX : %d, gridY : %d : %d \n" numRecords threadsPerBlock gridX gridY blocks;
   let recArray = (Array.of_list (!records)) in  
 
-  for  iter = 0 to nIter do
-    
-    let t0 = Unix.gettimeofday () in  
-    
-    Kirc.run euclid (locations, distances, numRecords, !lat, !lng) (block,grid) 0 dev;
-    Devices.flush ~queue_id:0 dev ();
+  for dev_id = 0 to 2 do
+    let dev = devices.(dev_id) in
 
-
-    findLowest recArray  distances numRecords !resultsCount;
+    measure_time (fun () ->
+        let kind = match dev.Devices.specific_info with
+          | Devices.OpenCLInfo clI -> Devices.OpenCL
+          | _ -> Devices.Cuda
+        in
+        ignore(Kirc.gen ~only:kind euclid dev);
+      ) "Code generation";
     
-    if iter> 0 then
-      elapsed_time := !elapsed_time +. (Unix.gettimeofday() -. t0);
-
-    Mem.to_device distances dev;
     
+    Mem.to_device locations dev;
+    for  iter = 0 to nIter do
+      
+      let t0 = Unix.gettimeofday () in  
+      
+      Kirc.run euclid (locations, distances, numRecords, !lat, !lng) (block,grid) 0 dev;
+      Devices.flush ~queue_id:0 dev ();
+      
+      
+      if iter> 0 then
+        elapsed_time := !elapsed_time +. (Unix.gettimeofday() -. t0);
+      
+      findLowest recArray  distances numRecords !resultsCount;
+      Mem.to_device distances dev;
+      Devices.flush dev ();
+      
+    done;
+    
+    Printf.printf "Dev : -> %s has computed %d times in %fs\n" dev.Devices.general_info.Devices.name (nIter) !elapsed_time;
+    for i = 0 to !resultsCount -1 do
+      Printf.printf "%s ---> Distance = %g\n" recArray.(i).recString recArray.(i).distance;
+    done;
+    print_endline "----------------------------";
   done;
 
-  Printf.printf "Computed %d times in %fs\n" (nIter) !elapsed_time;
-
-  for i = 0 to !resultsCount -1 do
-    Printf.printf "%s ---> Distance=%f\n" recArray.(i).recString recArray.(i).distance;
-  done
   
   
 

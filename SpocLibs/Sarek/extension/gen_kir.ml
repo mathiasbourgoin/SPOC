@@ -153,60 +153,62 @@ and parse_app a =
   try parse_special a with
   
   | Not_found ->
-
-
-  match a.e with
-  | App (_loc, e1, e2::[]) ->
-    let res = ref [] in
-    let constr = ref false in
-    let rec aux app =
-      my_eprintf (Printf.sprintf "(* val2 parse_app_app %s *)\n%!" (k_expr_to_string app.e));
-      match app.e with
-      | Id (_loc, s) ->
-        (try
-           let intr = Hashtbl.find !intrinsics_fun (string_of_ident s) in
-           <:expr< intrinsics $ExStr(_loc, intr.cuda_val)$ $ExStr(_loc, intr.opencl_val)$>>
-         with Not_found ->
-         try
-           ignore(Hashtbl.find !global_fun (string_of_ident s));
-           (<:expr< global_fun $id:s$>> )
-         with Not_found ->
-         try
-           ignore(Hashtbl.find !local_fun (string_of_ident s));
-           <:expr< global_fun $id:s$>>
-         with Not_found ->
-         try
-           let t = Hashtbl.find !constructors (string_of_ident s) in
-           constr := true;
-           <:expr< spoc_constr $str:t.name$ $str:string_of_ident s$ [$parse_body2 e2 false$]>>
-         with _ ->
-           parse_body2 e1 false;)
-      | App (_loc, e3, e4::[]) ->
-        let e = aux e3 in
-        res := <:expr< ($parse_body2 e4 false$)>> :: !res;
-        e
-      | ModuleAccess (_loc, s, e3) ->
-        open_module s _loc;
-        let e = aux e3 in
-        close_module s;
-        e
-      | _  -> my_eprintf __LOC__; assert false;
-    in
-    let intr = aux e1 in
-    if !constr then
-      <:expr< $intr$ >>
-    else
-      (
-        res := (parse_body2 e2 false) :: !res ;
-        (match !res with
-         | [] -> my_eprintf __LOC__; assert false
-         | t::[] ->
-           <:expr< app $intr$ [| ($t$) |]>>
-         | t::q ->
-           <:expr< app $intr$ [| $exSem_of_list (List.rev !res)$ |]>>)
-      )
-  | _ -> parse_body2 a false
-
+     match a.e with
+     | App (_loc, e1, e2::[]) ->
+        let res = ref [] in
+        let constr = ref false in
+        let rec aux app =
+          my_eprintf (Printf.sprintf "(* val2 parse_app_app %s *)\n%!" (k_expr_to_string app.e));
+          let has_vec_lengths = ref false in
+          match app.e with
+          | Id (_loc, s) ->
+             (try
+                let intr = Hashtbl.find !intrinsics_fun (string_of_ident s) in
+                <:expr< intrinsics $ExStr(_loc, intr.cuda_val)$ $ExStr(_loc, intr.opencl_val)$>>
+              with Not_found ->
+                try
+                  ignore(Hashtbl.find !global_fun (string_of_ident s));
+                  has_vec_lengths := true;
+                  (<:expr< global_fun $id:s$>> )
+                with Not_found ->
+                  try
+                    ignore(Hashtbl.find !local_fun (string_of_ident s));
+                    has_vec_lengths := true;
+                    <:expr< global_fun $id:s$>>
+                  with Not_found ->
+                    try
+                      let t = Hashtbl.find !constructors (string_of_ident s) in
+                      constr := true;
+                      <:expr< spoc_constr $str:t.name$ $str:string_of_ident s$ [$parse_body2 e2 false$]>>
+                    with _ ->
+                      parse_body2 e1 false;)
+          | App (_loc, e3, e4::[]) ->
+             let e = aux e3 in
+             res := <:expr< ($parse_body2 e4 false$)>> :: !res;
+             e
+          | ModuleAccess (_loc, s, e3) ->
+             open_module s _loc;
+             let e = aux e3 in
+             close_module s;
+             e
+          | _  -> my_eprintf __LOC__; assert false;
+        in
+        let intr = aux e1 in
+        if !constr then
+          <:expr< $intr$ >>
+        else
+          (
+            res :=
+              (parse_body2 e2 false) :: !res;
+            (match !res with
+             | [] -> my_eprintf __LOC__; assert false
+             | t::[] ->
+                <:expr< app $intr$ [| ($t$) |]>>
+             | t::q ->
+                <:expr< app $intr$ [| $exSem_of_list (List.rev !res)$ |]>>)
+          )
+     | _ -> parse_body2 a false
+                        
 
 
 and expr_of_app t _loc gen_var y =

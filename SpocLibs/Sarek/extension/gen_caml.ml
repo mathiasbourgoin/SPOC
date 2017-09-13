@@ -232,9 +232,9 @@ and parse_app_ml a modu =
       | Id (_loc,s) -> ExApp(_loc, ExAcc(_loc, modu,ExId(_loc, s)), parse_body e2)
       | App (l, e1, e2::[]) -> ExApp (_loc, aux e1 modu, parse_body e2)
       | ModuleAccess (_loc, s, e) ->
-        ExAcc(_loc, modu, (parse_body a))
+         ExAcc(_loc, modu, (parse_body a))
       | _ -> my_eprintf (Printf.sprintf "(* app %s *)\n%!" (k_expr_to_string a.e));
-        assert false
+             assert false
     in
     ExApp(_loc, aux e1 modu, parse_body e2)
   | _ -> parse_body a

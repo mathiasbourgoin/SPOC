@@ -53,7 +53,15 @@ let parse_args params body=
     | []  ->  acc
     | t::q ->
       match t with
-      | PaTyc (_,x, <:ctyp< $e$ vector>>) -> aux <:expr<fun ($x$:$e$ Vector.vector) -> $acc$>> (i+1) q
+      | PaTyc (_,x, <:ctyp< $e$ vector>>) ->
+         (match e with
+          | <:ctyp< float32 >> ->
+             aux <:expr<fun ($x$:(float,Bigarray.float32_elt) Vector.vector) -> $acc$>> (i+1) q
+          | <:ctyp< int32 >> ->
+             aux <:expr<fun ($x$:(int32,Bigarray.int32_elt) Vector.vector) -> $acc$>> (i+1) q
+          | _ ->
+            aux <:expr<fun ($x$:$e$ Vector.vector) -> $acc$>> (i+1) q
+         )
       | PaId(_loc, IdLid(_,x)) as p ->
         let var = (Hashtbl.find !current_args x) in
         (match var.var_type with

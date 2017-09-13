@@ -783,6 +783,7 @@ let full_typ =
       | (PaId(_,i)) ->
         let value = (Hashtbl.find !current_args (string_of_ident i)) in
         TApp (value.var_type, seed)
+      | PaTyc (_,p,t) -> TApp (ktyp_of_typ t, seed)
       | _ -> assert false) !return_type  (List.rev !args)
 in
 my_eprintf ("/....... "^ktyp_to_string full_typ^"\n");

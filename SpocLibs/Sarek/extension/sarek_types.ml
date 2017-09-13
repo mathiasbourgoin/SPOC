@@ -380,6 +380,7 @@ let (arg_list : Camlp4.PreCast.Syntax.Ast.expr list ref ) = ref []
 let n_lifted_vals = ref 0
 
 let rec ktyp_of_typ = function
+  | <:ctyp< unit >> -> TUnit
   | <:ctyp< int >> | <:ctyp< int32 >> -> TInt32
   | <:ctyp< int64 >>  -> TInt64
   | <:ctyp< float >> | <:ctyp< float32 >> -> TFloat32
