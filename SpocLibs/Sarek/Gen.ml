@@ -542,8 +542,8 @@ module Generator (M:CodeGenerator) = struct
               " " l in
           ("switch ("^match_e^"."^s^"_sarek_tag"^"){"^switch_content^
            "}")
-        | Native s ->
-          (s)
+        | Native f ->
+          (f dev)
         | Pragma (opts, k) ->
           "\n"^(indent i)^(List.fold_left (fun a b -> a ^" "^b) "#pragma " opts)^"\n"^
           (indent i)^(parse i k dev)
@@ -600,7 +600,7 @@ module Generator (M:CodeGenerator) = struct
     | SetV (a,b) as v -> parse ~profile:prof n v dev
     | Intrinsics gv -> M.parse_intrinsics gv
     | RecGet (r,f) as v -> parse ~profile:prof n v dev
-    | Native s -> s
+    | Native f -> f dev
     | a  -> print_ast a; failwith  (M.target_name ^" error parse_float")
 
   and parse_vect = function

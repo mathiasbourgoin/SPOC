@@ -142,7 +142,7 @@ val return_double : int -> string -> Kirc_Ast.k_ext
 val return_bool : int -> string -> Kirc_Ast.k_ext
 val return_custom : string -> string -> string -> Kirc_Ast.k_ext
 val rewrite : Kirc_Ast.k_ext -> Kirc_Ast.k_ext
-val spoc_native : string -> Kirc_Ast.k_ext
+val spoc_native : (Spoc.Devices.device -> string) -> Kirc_Ast.k_ext
 val pragma : string list -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val return_v : (string * string) ref
 val save : string -> string -> unit

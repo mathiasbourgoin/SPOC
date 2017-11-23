@@ -77,7 +77,7 @@ type k_ext =
   | GInt of (unit -> int32)
   | GFloat of (unit -> float)
   | GFloat64 of (unit -> float)
-  | Native of string
+  | Native of (Spoc.Devices.device -> string)
   | Pragma of string list * k_ext
   | Map of (k_ext*k_ext*k_ext)
   | Unit

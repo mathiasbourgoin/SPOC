@@ -35,22 +35,22 @@ CLIB := $(shell ls *.c 1>/dev/null 2>/dev/null; echo $$?)
 
 ifeq ($(CLIB), 0)
 $(ASM): $(MLSRC) $(COBJS)
-	ocamlfind ocamlopt -g -thread  $(PACKAGES) -linkpkg -package spoc_external_kernels -syntax camlp4o   $(MLSRC) $(COBJS) -o $(ASM)
+	ocamlfind ocamlopt -g -thread  $(PACKAGES) -linkpkg -package spoc_external_kernels -syntax camlp4o  $(MLSRC) $(COBJS) -cclib -lnvrtc -o $(ASM) 
 
 $(BYTE): $(MLSRC) $(COBJS)
-	ocamlfind ocamlc -g -custom -thread   $(PACKAGES) -linkpkg -package spoc_external_kernels -syntax camlp4o   $(MLSRC) -cclib $(COBJS) -o $(BYTE)
+	ocamlfind ocamlc -g -custom -thread   $(PACKAGES) -linkpkg -package spoc_external_kernels -syntax camlp4o   $(MLSRC) -cclib $(COBJS) -cclib -lnvrtc -o $(BYTE)
 
 else
 
 $(ASM): $(MLSRC)
-	ocamlfind ocamlopt -ccopt "-fPIC -g -rdynamic" -fPIC -g -thread  $(PACKAGES) -linkpkg \
+	ocamlfind ocamlopt -ccopt "-fPIC -g -rdynamic" -fPIC -g  -thread  $(PACKAGES) -linkpkg \
 	-package spoc_external_kernels -syntax camlp4o   $(MLSRC) \
-	-o $(ASM) -cclib -lbfd
+	-o $(ASM) -cclib -lbfd 
 
 $(BYTE): $(MLSRC)
 	ocamlfind ocamlc -g -ccopt "-g -rdynamic" -thread   $(PACKAGES) -linkpkg \
 	-package spoc_external_kernels -syntax camlp4o   $(MLSRC) \
-	-o $(BYTE) 
+	-o $(BYTE)  
 
 endif
 

@@ -169,7 +169,7 @@ type k_expr =
   | True of Loc.t | False of Loc.t
 
   | TypeConstraint of Loc.t * kexpr * ktyp
-  | Nat of Loc.t * string
+  | Nat of Loc.t * expr
   | Pragma of Loc.t * string list * kexpr
   | Noop
 

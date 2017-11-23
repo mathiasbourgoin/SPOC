@@ -91,7 +91,7 @@ let rec  parse_int2 i t=
            $parse_int2 index TInt32$>>
   | App _ -> parse_body2 i false
   | RecGet _ -> parse_body2 i false
-  | Nat (_loc, code) -> <:expr< spoc_native $str:code$>>
+  | Nat (_loc, code) -> <:expr< spoc_native  $code$>>
   | _ -> (my_eprintf (Printf.sprintf "--> (*** val2 %s *)\n%!" (k_expr_to_string i.e));
           assert (not debug); raise (TypeError (t, i.t, i.loc));)
 
@@ -131,7 +131,7 @@ and  parse_float2 f t=
 
   | VecGet (_loc, vector, index)  ->
     <:expr<get_vec $parse_float2 vector (TVec t)$ $parse_int2 index TInt32$>>
-  | Nat (_loc, code) -> <:expr< spoc_native $str:code$>>
+  | Nat (_loc, code) -> <:expr< spoc_native  $code$>>
   | _  -> ( my_eprintf (Printf.sprintf "(*** val2 %s *)\n%!" (k_expr_to_string f.e));
             assert (not debug); raise (TypeError (t, f.t, f.loc));)
 
@@ -481,7 +481,7 @@ and parse_body2 body bool =
       e
 
     | ArrSet (_loc, array, value)  ->
-      let gen_value = aux (~return_bool:true) value in
+      let gen_value = aux  value in
       let gen_value =
         match array.t, value.e with
         | TInt32, (Int32 _) -> <:expr<( $gen_value$)>>
@@ -749,7 +749,7 @@ and parse_body2 body bool =
     | TypeConstraint (_loc, e, tt) ->
       if not r then return_type := tt;
           parse_body2 e false
-    | Nat (_loc, code) -> <:expr< spoc_native $str:code$>>
+    | Nat (_loc, code) -> <:expr< spoc_native $code$ >>
     | Fun (_loc,stri,tt,funv,lifted) -> <:expr< global_fun $stri$ >>
     | Pragma (_loc, lopt, expr) ->
       let lopt = List.map

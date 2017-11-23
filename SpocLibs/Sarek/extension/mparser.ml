@@ -1,4 +1,3 @@
-
 (******************************************************************************
  * Mathias Bourgoin, Université Pierre et Marie Curie (2013)
  *
@@ -255,7 +254,7 @@ let rec gen_arg_from_patt3 p =
           | _  -> failwith "Forbidden vector type in kernel declaration")
        | _ ->
          assert (not debug);
-         failwith "unimplemented yet"
+         failwith "gap3 : unimplemented yet"
      in
      match var.var_type with
      | TVec _ ->

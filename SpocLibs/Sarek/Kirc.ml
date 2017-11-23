@@ -38,7 +38,7 @@ open Mem
 open Devices
 open Vector
 
-let debug = false
+let debug = true
 let idkern = ref 0 
 
 open Kirc_Ast
@@ -505,7 +505,7 @@ let return_double d s= DoubleVar (d,s)
 let return_bool b s= BoolVar (b,s)
 let return_custom n sn s= CustomVar (n, sn,s)
 
-let spoc_native s = Native s
+let spoc_native f = Native f
 let pragma l e = Pragma (l,e)
 let map f a b = Map (f, a, b)
 let reduce f a b = Map (f, a, b)

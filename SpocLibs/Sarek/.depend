@@ -15,6 +15,9 @@ Kirc_OpenCL.cmo :
 Kirc_OpenCL.cmx :
 Profile.cmo : Kirc_Ast.cmi Gen.cmi
 Profile.cmx : Kirc_Ast.cmx Gen.cmx
-Transform.cmo : Kirc_Ast.cmi Kirc.cmi Gen.cmi
-Transform.cmx : Kirc_Ast.cmx Kirc.cmx Gen.cmx
+Skeletons.cmo : Kirc_Ast.cmi Kirc.cmi Skeletons.cmi
+Skeletons.cmx : Kirc_Ast.cmx Kirc.cmx Skeletons.cmi
+Skeletons.cmi : Kirc_Ast.cmi Kirc.cmi
+Transform.cmo : Kirc_Ast.cmi Kirc.cmi
+Transform.cmx : Kirc_Ast.cmx Kirc.cmx
 transform.cmi : Kirc_Ast.cmi Kirc.cmi

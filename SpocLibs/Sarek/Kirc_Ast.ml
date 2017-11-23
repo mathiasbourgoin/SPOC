@@ -120,7 +120,7 @@ type  k_ext =
   | GInt of (unit -> int32)
   | GFloat of (unit -> float)
   | GFloat64 of (unit -> float)
-  | Native of string
+  | Native of (Spoc.Devices.device -> string)
   | Pragma of string list * k_ext
   | Map of (k_ext*k_ext*k_ext)
   | Unit
@@ -353,8 +353,8 @@ let string_of_ast a =
       aux (i+1) v;
     | Custom (s,_,ss) ->
       soa i ("Custom "^s)
-    | Native s ->
-      soa i ("Native "^s)
+    | Native f ->
+      soa i ("Native ")
     | Match (s,e1,l) ->
       soa i ("Match "^s);
       aux (i+1) e1;
