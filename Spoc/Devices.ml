@@ -193,12 +193,17 @@ let current_cuda_device = ref 0
 let current_opencl_device = ref 0
 
 (******************************************************************************************************)
+let openOutput () = ()
+let beginEvent s = 0
+let endEvent s i = ()
+let emitDeviceList _ = ()
+
 #ifdef SPOC_PROFILE
 external prePrint : int -> unit = "pre_print_device"
 
 external printInfo : string -> int -> int -> int -> int -> int -> bool -> int -> string -> bool -> unit = "print_info_bytecode" "print_info_native"
 
-let emmitDevice dev printComma =
+let emitDevice dev printComma =
   let devType = begin match dev.specific_info with
   | CudaInfo inf -> "Cuda"
   | OpenCLInfo inf -> "OpenCL"
@@ -207,31 +212,25 @@ let emmitDevice dev printComma =
   printInfo genInf.name genInf.totalGlobalMem genInf.localMemSize genInf.clockRate
     genInf.totalConstMem genInf.multiProcessorCount genInf.eccEnabled genInf.id devType printComma
 
-let emmitDeviceList devList =
+let emitDeviceList devList =
   let nb = List.length devList in
   prePrint nb;
-  List.iteri (fun i dev -> emmitDevice dev (i != nb-1)) devList;
-#endif
+  List.iteri (fun i dev -> emitDevice dev (i != nb-1)) devList;
 
-(**********************************************************************************************************)
-
-#ifdef SPOC_PROFILE
 external openOutput : unit -> unit = "open_output_profiling"
-
 external closeOutput : unit -> unit = "close_output_profiling"
-
 external beginEvent : string -> int = "begin_event"
-
 external endEvent : string -> int -> unit = "end_event"
 #endif
+(**********************************************************************************************************)
+
+
 
 external is_available : int -> bool = "spoc_opencl_is_available"
   
-let init ?only: (s = Both) () =
-#ifdef SPOC_PROFILE
+let init ?only: (s = Both) () = 
   openOutput ();
   let idEvent = beginEvent "initialisation des devices" in
-#endif
   begin
     match s with
     | Both -> (
@@ -265,10 +264,8 @@ let init ?only: (s = Both) () =
   done;
   total_num_devices := List.length !devList;
   opencl_compatible_devices := !i;
-#ifdef SPOC_PROFILE
-  emmitDeviceList !devList;
+  emitDeviceList !devList;
   endEvent "fin initialisation des devices" idEvent;
-#endif
   Array.of_list	!devList
 ;;
 

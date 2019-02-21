@@ -56,8 +56,12 @@ let parse_args params body=
          (match e with
           | <:ctyp< float32 >> ->
              aux <:expr<fun ($x$:(float,Bigarray.float32_elt) Vector.vector) -> $acc$>> (i+1) q
+          | <:ctyp< float64 >> ->
+             aux <:expr<fun ($x$:(float,Bigarray.float64_elt) Vector.vector) -> $acc$>> (i+1) q
           | <:ctyp< int32 >> ->
              aux <:expr<fun ($x$:(int32,Bigarray.int32_elt) Vector.vector) -> $acc$>> (i+1) q
+          | <:ctyp< int64 >> ->
+             aux <:expr<fun ($x$:(int64,Bigarray.int64_elt) Vector.vector) -> $acc$>> (i+1) q
           | _ ->
             aux <:expr<fun ($x$:$e$ Vector.vector) -> $acc$>> (i+1) q
          )

@@ -169,11 +169,13 @@ let vec_id = ref 0
 
 (******************************************************************************************************)
 
+let emitVect _ _ = ()
+
 #ifdef SPOC_PROFILE
 external printVector : int -> int -> int -> int -> string -> bool -> int -> int -> int -> int -> int -> unit = "print_vector_bytecode" "print_vector_native"
 
 
-let emmitVect (vect : ('a, 'b) vector) length =
+let emitVect (vect : ('a, 'b) vector) length =
     let isSub = match vect.is_sub with
     | None -> "false"
     | Some x -> "true" in
@@ -202,7 +204,6 @@ let emmitVect (vect : ('a, 'b) vector) length =
     else
       printVector id dev length size kindS false 1 1 1 1 1;
     
-;;
 #endif
 (*******************************************************************************************************)
 
@@ -214,14 +215,17 @@ external sizeofInt32  : unit -> int = "sizeofInt32"
 external sizeofInt64  : unit -> int = "sizeofInt64"
 external sizeofComplex32  : unit -> int = "sizeofComplex32"
 
+let printEvent _ = ()
+
 #ifdef SPOC_PROFILE
 external printEvent : string -> unit = "print_event"
 #endif
+
+
                                          
+
 let create (kind: ('a,'b) kind) ?dev size =
-#ifdef SPOC_PROFILE
   printEvent "VectorCreation";
-#endif
   incr vec_id;
   let vec = 
     {
@@ -317,9 +321,7 @@ let create (kind: ('a,'b) kind) ?dev size =
       | _  ->  Gc.full_major (); alloc_on_dev ());
      vec.dev <- Dev dev;
   );
-#ifdef SPOC_PROFILE
-    emmitVect vec size;
-#endif  
+    emitVect vec size;
   vec
 
 let length v =

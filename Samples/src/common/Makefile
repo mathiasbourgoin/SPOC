@@ -38,19 +38,19 @@ $(ASM): $(MLSRC) $(COBJS)
 	ocamlfind ocamlopt -g -thread  $(PACKAGES) -linkpkg -package spoc_external_kernels -syntax camlp4o  $(MLSRC) $(COBJS) -cclib -lnvrtc -o $(ASM) 
 
 $(BYTE): $(MLSRC) $(COBJS)
-	ocamlfind ocamlc -g -custom -thread   $(PACKAGES) -linkpkg -package spoc_external_kernels -syntax camlp4o   $(MLSRC) -cclib $(COBJS) -cclib -lnvrtc -o $(BYTE)
+	ocamlfind ocamlc -g -custom -thread $(PACKAGES) -linkpkg -package spoc_external_kernels -syntax camlp4o $(MLSRC) -cclib $(COBJS) -cclib -lnvrtc -o $(BYTE)
 
 else
 
 $(ASM): $(MLSRC)
-	ocamlfind ocamlopt -ccopt "-fPIC -g -rdynamic" -fPIC -g  -thread  $(PACKAGES) -linkpkg \
-	-package spoc_external_kernels -syntax camlp4o   $(MLSRC) \
-	-o $(ASM) -cclib -lbfd 
+	ocamlfind ocamlopt  -g \
+	-pp "camlp4 -I `ocamlfind query sarek_syntax` -parser o -printer o kernels_int.cma" -thread -package ctypes.foreign,spoc,sarek,graphics -linkpkg -cclib -lnvrtc $(MLSRC) \
+	 -o $(ASM) 
 
 $(BYTE): $(MLSRC)
 	ocamlfind ocamlc -g -ccopt "-g -rdynamic" -thread   $(PACKAGES) -linkpkg \
 	-package spoc_external_kernels -syntax camlp4o   $(MLSRC) \
-	-o $(BYTE)  
+	-cclib -lnvrtc -o $(BYTE)  
 
 endif
 

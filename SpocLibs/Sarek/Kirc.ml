@@ -737,7 +737,7 @@ let save file string =
 let load_file f =
   let ic = open_in f in
   let n = in_channel_length ic in
-  let s = String.make  n ' ' in
+  let s = Bytes.make  n ' ' in
   really_input ic s 0 n;
   close_in ic;
   (s)
@@ -826,10 +826,8 @@ let gen ?profile:(prof=false) ?return:(r=false) ?only:(o=Devices.Both) ?nvrtc_op
        | Devices.CudaInfo cu ->
          let computecap = cu.Devices.major*10+cu.Devices.minor in
          [|
-           if computecap < 20 then
+           if computecap < 30 then
              failwith ("CUDA device too old for this XXX")
-           else if computecap < 30 then
-             "--gpu-architecture=compute_20"
            else if computecap < 35 then
              "--gpu-architecture=compute_30"
            else if computecap < 50 then
@@ -838,10 +836,20 @@ let gen ?profile:(prof=false) ?return:(r=false) ?only:(o=Devices.Both) ?nvrtc_op
              "--gpu-architecture=compute_50"
            else if computecap < 53 then
              "--gpu-architecture=compute_52"
-           else if computecap = 53 then
+           else if computecap < 60 then
              "--gpu-architecture=compute_53"
+           else if computecap < 61 then
+             "--gpu-architecture=compute_60"
+           else if computecap < 62 then
+             "--gpu-architecture=compute_61"
+           else if computecap < 70 then
+             "--gpu-architecture=compute_62"
+           else if computecap < 72 then
+             "--gpu-architecture=compute_70"
+           else if computecap = 72 then
+             "--gpu-architecture=compute_72"
            else
-             "--gpu-architecture=compute_20"
+             "--gpu-architecture=compute_30"
          |]
        | _ -> [||])
     in

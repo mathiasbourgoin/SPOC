@@ -146,7 +146,7 @@ val spoc_native : (Spoc.Devices.device -> string) -> Kirc_Ast.k_ext
 val pragma : string list -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val return_v : (string * string) ref
 val save : string -> string -> unit
-val load_file : string -> string
+val load_file : string -> bytes
 val map : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
                                                                   
 val gen_profile :

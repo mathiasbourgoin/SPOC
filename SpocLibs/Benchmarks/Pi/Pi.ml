@@ -2,7 +2,7 @@ open Spoc
 open Kirc
 
        
-let piCL = kern rX rY (inside : int32 vector)->
+let piKern = kern rX rY (inside : int32 vector)->
   let open Std in
   let open Math in
   let open Float32 in
@@ -10,17 +10,12 @@ let piCL = kern rX rY (inside : int32 vector)->
   let r = sqrt ( add (mul rX.[< i >] rX.[< i>])
                      (mul rY.[< i >] rY.[< i >])) in
   if (r <=. 1.) then
-    ($"atomic_inc (inside); "$ : unit) 
-
-let piCU = kern rX rY (inside : int32 vector)->
-  let open Std in
-  let open Math in
-  let open Float32 in
-  let i = thread_idx_x + block_idx_x * block_dim_x in
-  let r = sqrt ( add (mul rX.[< i >] rX.[< i>])
-                     (mul rY.[< i >] rY.[< i >])) in
-  if (r <=. 1.) then
-    ($"atomicAdd (inside,1); "$ : unit) 
+    ($$ fun dev ->
+       match dev.Devices.specific_info with
+       | Devices.OpenCLInfo clI ->
+         "atomic_inc (inside)"
+       | _ -> "atomicAdd (inside,1)";; $$ : unit )
+    
 
 
 let cpt = ref 0
@@ -51,11 +46,11 @@ let _ =
   
   Mem.set inside 0 0l;
   measure_time (fun () ->
-      Kirc.gen ~only:Devices.OpenCL piCL devices.(1);
+      Kirc.gen ~only:Devices.Cuda piKern devices.(1);
     ) "GEN CL" 1;
 
   measure_time (fun () ->
-      Kirc.gen ~only:Devices.Cuda piCU devices.(0);
+      Kirc.gen ~only:Devices.Cuda piKern devices.(0);
     ) "Gen CU" 1;
 
   for i = 0 to !size - 1 do
@@ -68,8 +63,8 @@ let _ =
       | Devices.OpenCLInfo clI -> 
          (match clI.Devices.device_type with
           | Devices.CL_DEVICE_TYPE_CPU -> 1
-          | _  ->   512)
-      | _  -> 512 in
+          | _  ->   256)
+      | _  -> 256 in
     let blocksPerGrid =
       (size + threadsPerBlock -1) / threadsPerBlock
     in
@@ -83,7 +78,7 @@ let _ =
 
 
   measure_time (fun () ->    
-      Kirc.run piCL (vX, vY, inside) (make_bg devices.(1) !size) 0 devices.(1);
+      Kirc.run piKern (vX, vY, inside) (make_bg devices.(1) !size) 0 devices.(1);
       Devices.flush devices.(1) ();
     ) (Printf.sprintf "piCL on %s" devices.(1).Devices.general_info.Devices.name) 1;
 
@@ -92,7 +87,7 @@ let _ =
 
   Mem.set inside 0 0l;
   measure_time (fun () ->    
-      Kirc.run piCU (vX, vY, inside) (make_bg devices.(0) !size) 0 devices.(0);
+      Kirc.run piKern (vX, vY, inside) (make_bg devices.(0) !size) 0 devices.(0);
       Devices.flush devices.(0) ();
     ) (Printf.sprintf "piCU on %s" devices.(0).Devices.general_info.Devices.name) 1;
   
@@ -111,8 +106,8 @@ let _ =
   Mem.set inside2 0 0l;
 
   measure_time (fun () ->    
-      Kirc.run piCU (vX1, vY1, inside) (make_bg devices.(0) (97* !size/100)) 0 devices.(0);
-      Kirc.run piCL (vX2, vY2, inside2) (make_bg devices.(1) (3* !size/100)) 0 devices.(1);
+      Kirc.run piKern (vX1, vY1, inside) (make_bg devices.(0) (97* !size/100)) 0 devices.(0);
+      Kirc.run piKern (vX2, vY2, inside2) (make_bg devices.(1) (3* !size/100)) 0 devices.(1);
       Devices.flush devices.(0) ();
       Devices.flush devices.(1) ();
     ) (Printf.sprintf "piCU+piCL on both devices") 1;

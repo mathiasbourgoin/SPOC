@@ -125,19 +125,19 @@ open Kirc
 let smemSize = ref 0l
 let blockSize = ref 0l
 
-let k = kern (res:int32 vector) (a:int32 vector) nIsPow2 n ->
+let k = kern (res:float64 vector) (a:float64 vector) nIsPow2 n ->
   let open Std in
-  
-  let (sdata: int32 array) = create_array @smemSize in
+  let open Math.Float64 in
+  let (sdata: float64 array) = create_array @smemSize in
   let tid = thread_idx_x in
   let mutable i = block_idx_x * @blockSize*2 + thread_idx_x in
   let gridsize = @blockSize*2*grid_dim_x in
   
-  let mutable acc = 0 in
+  let mutable acc = zero  in
   while (i < n) do
-    acc :=  acc + a.[<i>];
+    acc :=  add acc  a.[<i>];
     if (nIsPow2 = 1) || (i + @blockSize) < n then
-      acc := acc + a.[<i + @blockSize>];
+      acc := add acc  a.[<i + @blockSize>];
     
     i := i + grid_dim_x;
     
@@ -147,57 +147,57 @@ let k = kern (res:int32 vector) (a:int32 vector) nIsPow2 n ->
   block_barrier();
   
   if ( @blockSize >= 512) && (tid < 256) then
-    (acc := acc + sdata.(tid + 256);
+    (acc := add acc sdata.(tid + 256);
      sdata.(tid) <>- acc;
     );
   
   block_barrier();
   
   if ( @blockSize >= 256) && (tid < 128) then
-    (acc := acc + sdata.(tid + 128);
+    (acc := add acc  sdata.(tid + 128);
      sdata.(tid) <>- acc;
     );
   block_barrier();
   
   if ( @blockSize >= 128) && (tid < 64) then
-    (acc := acc + sdata.(tid + 64);
+    (acc := add acc  sdata.(tid + 64);
      sdata.(tid) <>- acc;
     );
   block_barrier();
 
   if ( @blockSize >= 64) && (tid < 32) then
-    (acc := acc + sdata.(tid + 32);
+    (acc := add acc  sdata.(tid + 32);
      sdata.(tid) <>- acc;
     );
   block_barrier();
   
   if ( @blockSize >= 32) && (tid < 16) then
-    (acc := acc + sdata.(tid + 16);
+    (acc := add acc sdata.(tid + 16);
      sdata.(tid) <>- acc;
     );
   block_barrier();
 
     if ( @blockSize >= 16) && (tid < 8) then
-    (acc := acc + sdata.(tid + 8);
+    (acc := add acc sdata.(tid + 8);
      sdata.(tid) <>- acc;
     );
   block_barrier();
   
   if ( @blockSize >= 8) && (tid < 4) then
-    (acc := acc + sdata.(tid + 4);
+    (acc := add acc sdata.(tid + 4);
      sdata.(tid) <>- acc;
     );
   block_barrier();
   
   if ( @blockSize >= 4) && (tid < 2) then
-    (acc := acc + sdata.(tid + 2);
+    (acc := add acc sdata.(tid + 2);
      sdata.(tid) <>- acc;
     );
   block_barrier();
   
   
   if ( @blockSize >= 2) && (tid < 1) then
-    (acc := acc + sdata.(tid + 1);
+    (acc := add acc sdata.(tid + 1);
      sdata.(tid) <>- acc;
     );
   
@@ -207,35 +207,52 @@ let k = kern (res:int32 vector) (a:int32 vector) nIsPow2 n ->
     res.[<block_idx_x>] <- acc;
   
 ;;
+let cpt = ref 0
+
+let tot_time = ref 0.
+
+  
+let measure_time f s iter =
+  let t0 = Unix.gettimeofday () in
+  let a = f () in
+  let t1 = Unix.gettimeofday () in
+  Printf.printf "%s time %d : %Fs  average : %Fs \n%!" s !cpt
+                (t1 -. t0) ((t1 -. t0)/. (float_of_int iter));
+  tot_time := !tot_time +.  (t1 -. t0);
+  incr cpt;
+  a;;
+
   
 
 let reduce v dev threadsPerBlock =
-  Kirc.gen k dev;
   let blocksPerGrid = ((Vector.length v) + threadsPerBlock -1) / threadsPerBlock in
   let block = { Spoc.Kernel.blockX = threadsPerBlock; Spoc.Kernel.blockY = 1 ; Spoc.Kernel.blockZ = 1;} in
   let grid = { Spoc.Kernel.gridX = blocksPerGrid; Spoc.Kernel.gridY = 1 ; Spoc.Kernel.gridZ = 1;} in
-  let res = Vector.create Vector.int32 blocksPerGrid in
+  let res = Vector.create Vector.float64 blocksPerGrid in
   for i = 0 to blocksPerGrid - 1 do
-    Mem.set res i 0l;
+    Mem.set res i (float 0);
   done;
   blockSize := Int32.of_int threadsPerBlock;
-  Kirc.run ~recompile:true k (res, v, 1, Vector.length v) (block,grid)  0 dev;
-
-  let r = ref 0 in
+  Mem.to_device res dev;
+  Spoc.Devices.flush dev ();
+  measure_time (fun () -> 
+      Kirc.run  k (res, v, 1, Vector.length v) (block,grid)  0 dev;
+      Spoc.Devices.flush dev ()) "RUN0"  1;
+  
+  let r = ref 0. in
   for i = 0 to blocksPerGrid - 1 do
-    r := !r + Int32.to_int (Mem.get res i);
+    r := !r +. (Mem.get res i);
   done;
   !r
 
-  
 
     
 let _ =
   let devs = Spoc.Devices.init  ()
   in
-  let v1 = Vector.create Vector.int32 1024 in
+  let v1 = Vector.create Vector.float64 192_000_000 in
   for i= 0 to Vector.length v1 - 1  do
-    Mem.set v1 i 1l;
+    Mem.set v1 i (float 1);
   done;
 
   let threads dev =
@@ -253,15 +270,19 @@ let _ =
     Int32.of_int (if threadsPerBlock <= 32 then
                     2 * threadsPerBlock
                   else threadsPerBlock);
-  let r = reduce v1 devs.(0) threadsPerBlock in
-  Printf.printf "%s -> reduction : %d\n"  (devs.(0).Devices.general_info.Devices.name) r;
+  ignore (measure_time (fun () -> Kirc.gen ~only:Devices.Cuda k devs.(0)) "GEN_0" 1);
+  let r = 
+    reduce v1 devs.(0) threadsPerBlock  in
+  Printf.printf "%s -> reduction : %g\n"  (devs.(0).Devices.general_info.Devices.name) r;
   (*List.iter (Printf.printf "%s\n") ((fst k)#get_cuda_sources ());*)
   
-  let threadsPerBlock = threads devs.(3) in
+  let threadsPerBlock = threads devs.(1) in
   smemSize := Int32.of_int (
       if threadsPerBlock <= 32 then
         2 * threadsPerBlock
       else threadsPerBlock);
-  let r = reduce v1 devs.(1) threadsPerBlock in
-  Printf.printf "%s -> reduction : %d\n" (devs.(1).Devices.general_info.Devices.name) r;
+  ignore (measure_time (fun () -> Kirc.gen ~only:Devices.Cuda k devs.(1)) "GEN_1" 1);
+  let r = 
+    reduce v1 devs.(1) threadsPerBlock in
+  Printf.printf "%s -> reduction : %g\n" (devs.(1).Devices.general_info.Devices.name) r;
   (*List.iter (Printf.printf "%s\n") ((fst k)#get_opencl_sources ())*)

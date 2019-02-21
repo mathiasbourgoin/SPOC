@@ -13,10 +13,12 @@ JSSRC=$(filter-out Js/spoc_lib.js, $(wildcard Js/*.js))
 #CC=ocamlfind ocamlc -ccopt "-D SPOC_PROFILE -g -rdynamic"
 #OCAMLC=ocamlfind ocamlc  -pp "cppo -q -D SPOC_PROFILE"
 #OCAMLOPT=ocamlfind ocamlopt  -pp "cppo -q -D SPOC_PROFILE" -ccopt "-rdynamic -g"
-CC=ocamlfind ocamlc 
+#OCAMLDEP=ocamldep -pp "cppo -q -D SPOC_PROFILE"
+CC=ocamlfind ocamlc
 OCAMLC=ocamlfind ocamlc  -pp "cppo -q"
 OCAMLOPT=ocamlfind ocamlopt  -pp "cppo -q" -ccopt "-rdynamic -g"
-ECHO=printf 
+OCAMLDEP=ocamldep -pp "cppo -q"
+ECHO=printf
 
 all : start | build extension/kernels_ext.cma js
 
@@ -35,7 +37,7 @@ Js/$(LIBNAME)_lib.js : $(JSSRC)
 extension/kernels_ext.cma:extension/kernels_ext.ml
 	@$(ECHO) "\033[43m\033[30mBuilding $(PROJ) external kernel extension\033[0m\n"
 	@$(ECHO) "\033[31m[kernels_ext.cma]\033[0m\n"
-	@cd extension && make 
+	@cd extension && make
 
 
 %.cmo:%.ml
@@ -44,16 +46,16 @@ extension/kernels_ext.cma:extension/kernels_ext.ml
 
 %.cmx:%.ml
 	@$(ECHO) "\033[34m[$@]\033[0m\n"
-	@$(OCAMLOPT) -g -for-pack $(PROJ) -c  $< 
+	@$(OCAMLOPT) -g -for-pack $(PROJ) -c  $<
 
 
 %.cmi:%.mli
 	@$(ECHO)  "\033[35m[$@]\033[0m\n"
-	@$(OCAMLC) -for-pack $(PROJ) -c  $< 2>>log
+	@$(OCAMLC) -for-pack $(PROJ) -c  $< #2>>log
 
 %.o:%.c
 	@$(ECHO)  "\033[33m[$@]\033[0m\n"
-	@$(CC) -g -c $< 
+	@$(CC) -g -c $<
 
 build : $(LIBNAME).cma $(LIBNAME)level $(LIBNAME).cmxa $(LIBNAME).o
 
@@ -68,7 +70,7 @@ $(LIBNAME).o : $(COBJ)
 
 $(LIBNAME).cma: $(LIBNAME).o $(LIBNAME).cmo $(COBJ)
 	@$(ECHO)  "\033[31m[$(LIBNAME).cma]\033[0m\n"
-	@ocamlmklib  -linkall -o $(LIBNAME) $(LIBNAME).cmo $(COBJ) -cclib -lcamlrun 
+	@ocamlmklib  -linkall -o $(LIBNAME) $(LIBNAME).cmo $(COBJ) -cclib -lcamlrun
 
 $(LIBNAME).cmx : $(LIBNAME).o $(MLOBJ_N)  $(COBJ)
 	@$(ECHO)  "\033[34m[$(LIBNAME).cmx]\033[0m\n"
@@ -83,13 +85,13 @@ $(LIBNAME)level : $(LIBNAME).cma extension/kernels_ext.cma
 	ocamlmktop -custom -thread -I +camlp4 -cclib -L. dynlink.cma	\
 	-cclib -lthreads camlp4o.cma extension/kernels_ext.cma		\
 	str.cma bigarray.cma -cclib -lcamlrun -cclib -lbigarray		\
-	-cclib -lnvrtc \
+	-cclib -lnvrtc -ccopt -L$(CUDA_PATH)/lib64 	\
 	-cclib -lunix unix.cma -cclib -l$(LIBNAME) $(LIBNAME).cma -o	\
 	$(LIBNAME)level
 
 ocp :
 	ocp-build -init
-	ocp-build 
+	ocp-build
 	cd extension && make
 	cd Js && make
 
@@ -107,7 +109,7 @@ doc : uninstall install
 
 install : all uninstall
 	@$(ECHO) "\033[43m\033[30mInstalling $(PROJ)\033[0m\n"
-	@ocamlfind install $(LIBNAME) *.cma *.a *.so *.cmxa $(LIBNAME).cmi META 2>> log
+	@ocamlfind install $(LIBNAME) *.cma *.a *.so *.cmxa $(LIBNAME).cmi META #2>> log
 	@cd extension && make install
 	@cd Js && make install
 
@@ -154,7 +156,7 @@ android:
 
 
 depend :
-	ocamldep *.ml *.mli  > .depend
+	$(OCAMLDEP) *.ml *.mli  > .depend
 
 
 include  .depend

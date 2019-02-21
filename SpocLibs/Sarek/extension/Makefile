@@ -64,15 +64,15 @@ test: kernels_int.cma test.ml
 tests/ray.pp.nat : tests/ray.pp.ml
 	ocamlfind ocamlopt -g -thread -package						\
 	ctypes,ctypes.foreign,spoc,sarek,graphics,camlimages,camlimages.png,camlimages.graphics	\
-	-package sarek_syntax -syntax camlp4o -linkpkg -cclib -lnvrtc -o $@ $<
+	-package sarek_syntax -syntax camlp4o -linkpkg -cclib -lnvrtc -ccopt -L$(CUDA_PATH)/lib64 -o $@ $<
 
 
 tests/%.pp.nat : tests/%.ml
 	ocamlfind ocamlopt -g -thread -package ctypes,ctypes.foreign,spoc,sarek,camlimages,camlimages.png \
-		-package sarek_syntax -syntax camlp4o  -linkpkg -cclib -lnvrtc -o $@ $<
+		-package sarek_syntax -syntax camlp4o  -linkpkg -cclib -lnvrtc -ccopt -L$(CUDA_PATH)/lib64 -o $@ $<
 
 %.pp.nat: %.pp.ml
-	ocamlfind ocamlopt -thread -package ctypes.foreign,spoc,sarek,graphics -linkpkg -cclib -lnvrtc $< -o $@ 
+	ocamlfind ocamlopt -thread -package ctypes.foreign,spoc,sarek,graphics -linkpkg -cclib -lnvrtc -ccopt -L$(CUDA_PATH)/lib64 $< -o $@ 
 
 
 %.nat : %.ml

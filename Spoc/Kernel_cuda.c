@@ -98,7 +98,7 @@ int ae_load_file_to_memory(const char *filename, char **result)
     size_t ptx_size;
     CHECK_NVRTC(nvrtcCreateProgram(&prog, cuda_src, "kir_kernel.cu", 0, NULL, NULL));
 
-    CHECK_NVRTC(nvrtcCompileProgram(prog , nopts, options));
+    CHECK_NVRTC(nvrtcCompileProgram(prog , nopts, (const char* const*)options));
     if (NVRTC_SUCCESS != nvrtc_result){
       // Obtain compilation log from the program.
       size_t logSize;
