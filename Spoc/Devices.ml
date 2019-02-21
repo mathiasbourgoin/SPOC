@@ -192,9 +192,45 @@ let total_num_devices = ref 0
 let current_cuda_device = ref 0
 let current_opencl_device = ref 0
 
-external is_available : int -> bool = "spoc_opencl_is_available"
+(******************************************************************************************************)
+let openOutput () = ()
+let beginEvent s = 0
+let endEvent s i = ()
+let emitDeviceList _ = ()
 
-let init ?only: (s = Both) () =
+#ifdef SPOC_PROFILE
+external prePrint : int -> unit = "pre_print_device"
+
+external printInfo : string -> int -> int -> int -> int -> int -> bool -> int -> string -> bool -> unit = "print_info_bytecode" "print_info_native"
+
+let emitDevice dev printComma =
+  let devType = begin match dev.specific_info with
+  | CudaInfo inf -> "Cuda"
+  | OpenCLInfo inf -> "OpenCL"
+  end in
+  let genInf = dev.general_info in
+  printInfo genInf.name genInf.totalGlobalMem genInf.localMemSize genInf.clockRate
+    genInf.totalConstMem genInf.multiProcessorCount genInf.eccEnabled genInf.id devType printComma
+
+let emitDeviceList devList =
+  let nb = List.length devList in
+  prePrint nb;
+  List.iteri (fun i dev -> emitDevice dev (i != nb-1)) devList;
+
+external openOutput : unit -> unit = "open_output_profiling"
+external closeOutput : unit -> unit = "close_output_profiling"
+external beginEvent : string -> int = "begin_event"
+external endEvent : string -> int -> unit = "end_event"
+#endif
+(**********************************************************************************************************)
+
+
+
+external is_available : int -> bool = "spoc_opencl_is_available"
+  
+let init ?only: (s = Both) () = 
+  openOutput ();
+  let idEvent = beginEvent "initialisation des devices" in
   begin
     match s with
     | Both -> (
@@ -228,7 +264,11 @@ let init ?only: (s = Both) () =
   done;
   total_num_devices := List.length !devList;
   opencl_compatible_devices := !i;
+  emitDeviceList !devList;
+  endEvent "fin initialisation des devices" idEvent;
   Array.of_list	!devList
+;;
+
 
 let	cuda_devices () = !cuda_compatible_devices
 let	opencl_devices () = !opencl_compatible_devices
@@ -241,7 +281,7 @@ external opencl_flush : generalInfo -> int -> unit = "spoc_opencl_flush"
 
 let flush dev ?queue_id () =
   match dev.specific_info, queue_id with
-  | CudaInfo _, None -> cuda_flush_all dev.general_info dev 
+  | CudaInfo _, None -> cuda_flush_all dev.general_info dev
   | CudaInfo _, Some q -> cuda_flush dev.general_info dev q
   | OpenCLInfo _, None ->
     opencl_flush dev.general_info 0
@@ -263,7 +303,7 @@ let hasCLExtension dev ext =
 
 let allowDouble dev =
   match dev.specific_info with
-  | OpenCLInfo cli -> 
+  | OpenCLInfo cli ->
     hasCLExtension dev "cl_khr_fp64" || hasCLExtension dev "cl_amd_fp64"
   | CudaInfo ci -> ci.major > 1 || ci.minor >= 3
 

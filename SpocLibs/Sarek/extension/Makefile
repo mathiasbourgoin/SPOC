@@ -10,12 +10,12 @@ install: kernels_int.cma
 uninstall :
 	@(ocamlfind remove sarek_syntax) | true
 
-kernels_int.cma:debug.cmo sarek_types.cmo typer.cmo gen_caml.cmo gen_kir.cmo mparser.cmo fastflow.cmo sarek_grammar.cmo
+kernels_int.cma:debug.cmo sarek_types.cmo typer.cmo gen_caml.cmo gen_kir.cmo mparser.cmo fastflow.cmo sarek_grammar.cmo  
 	@ocamlfind ocamlc -a $^ -o kernels_int.cma
 
 
 %.pp.cmx : %.pp.ml
-	ocamlfind ocamlopt  -thread  -package ctypes,ctypes.foreign,spoc,sarek,graphics -linkpkg -c $<
+	ocamlfind ocamlopt -g -thread  -package ctypes,ctypes.foreign,spoc,sarek,graphics -linkpkg -c $<
 
 %.cmo:%.ml
 	@echo  "\033[32m[$@]\033[0m"
@@ -36,7 +36,7 @@ typer.cmo:sarek_types.cmo typer.ml
 
 fastflow.cmo:sarek_types.cmo typer.cmo gen_caml.cmo gen_kir.cmo mparser.cmo fastflow.ml
 
-sarek_grammar.cmo:sarek_types.cmo typer.cmo gen_caml.cmo gen_kir.cmo mparser.cmo fastflow.cmo sarek_grammar.ml
+sarek_grammar.cmo:sarek_types.cmo typer.cmo gen_caml.cmo gen_kir.cmo mparser.cmo fastflow.cmo sarek_grammar.ml 
 
 
 test: kernels_int.cma test.ml
@@ -62,9 +62,9 @@ test: kernels_int.cma test.ml
 
 
 tests/ray.pp.nat : tests/ray.pp.ml
-	ocamlfind ocamlopt -thread -package						\
+	ocamlfind ocamlopt -g -thread -package						\
 	ctypes,ctypes.foreign,spoc,sarek,graphics,camlimages,camlimages.png,camlimages.graphics	\
-	-package sarek_syntax -syntax camlp4o -linkpkg -o $@ $<
+	-package sarek_syntax -syntax camlp4o -linkpkg -cclib -lnvrtc -ccopt -L$(CUDA_PATH)/lib64 -o $@ $<
 
 tests/game.pp.nat : tests/game.pp.ml
 	ocamlfind ocamlopt -thread -package			\
@@ -73,11 +73,12 @@ tests/game.pp.nat : tests/game.pp.ml
 
 
 tests/%.pp.nat : tests/%.ml
-	ocamlfind ocamlopt  -thread -package ctypes,ctypes.foreign,spoc,sarek,camlimages,camlimages.png \
-		-package sarek_syntax -syntax camlp4o  -linkpkg -o $@ $<
+	ocamlfind ocamlopt -g -thread -package ctypes,ctypes.foreign,spoc,sarek,camlimages,camlimages.png \
+		-package sarek_syntax -syntax camlp4o  -linkpkg -cclib -lnvrtc -ccopt -L$(CUDA_PATH)/lib64 -o $@ $<
 
 %.pp.nat: %.pp.ml
-	ocamlfind ocamlopt  -thread  -package ctypes,ctypes.foreign,spoc,sarek,graphics -linkpkg -o $@ $<
+	ocamlfind ocamlopt -thread -package ctypes.foreign,spoc,sarek,graphics -linkpkg -cclib -lnvrtc -ccopt -L$(CUDA_PATH)/lib64 $< -o $@ 
+
 
 %.nat : %.ml
 	ocamlfind ocamlopt  -thread -package ctypes,ctypes.foreign,spoc,sarek \
@@ -93,4 +94,4 @@ pp_asm: all
 	ocamlfind ocamlopt -thread -package ctypes,spoc,sarek -linkpkg test_pp.ml
 
 clean:
-	rm -rf *.cmo *.cmx *.out *~ *.cmi camlprog.exe *.cma *.asm *.pp.ml *.pp.nat *.pp.byte log
+	rm -rf *.cmo *.cmx *.out *~ *.cmi camlprog.exe *.cma *.asm *.pp.ml *.pp.nat *.pp.byte log kirc_kernel.cl tests/*.pp.* tests/*cm*

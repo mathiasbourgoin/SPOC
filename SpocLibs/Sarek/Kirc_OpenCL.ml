@@ -48,4 +48,7 @@ let kern_start  = "__kernel"
 let kern_end = "}"
 
 let parse_intrinsics (cuda,opencl) = opencl
-  
+
+let default_parser = true
+let parse_fun i a  c n dev = ""
+let parse a b dev = ""

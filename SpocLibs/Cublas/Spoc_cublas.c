@@ -56,16 +56,17 @@ CAMLprim value spoc_cublasGetError(){
 
 /*********************************************************/
 
-#define GET_HOST_VEC(vec, h_vec) \
-	bigArray = Field (Field(vec, 1), 0); \
-	h_vec = (void*) Data_bigarray_val(bigArray);
+#define GET_HOST_VEC(v, h_vec)					\
+  bigArray = Field (Field(v, 1), 0);					\
+  h_vec = (void*)(((host_vector*)(Field(Field(bigArray,0),1)))->vec);
+//(void*) Data_bigarray_val(bigArray);
 
-#define GET_VEC(vec, d_vec) \
-	dev_vec_array = Field(vec, 2); \
-	gi = Field(dev, 0);	       \
-	id = Int_val(Field(gi, 7));    \
-	dev_vec =Field(dev_vec_array, id); \	
-	d_vec = CUdeviceptr_val(Field(dev_vec, 1));
+#define GET_VEC(vec, d_vec)			\
+  dev_vec_array = Field(vec, 2);		\
+  gi = Field(dev, 0);				\
+  id = Int_val(Field(gi, 7));			\
+  dev_vec =Field(dev_vec_array, id);		\
+  d_vec = CUdeviceptr_val(Field(dev_vec, 1));
 
 /*********************************************************/
 

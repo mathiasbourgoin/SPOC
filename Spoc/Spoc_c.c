@@ -36,8 +36,10 @@
 #include <string.h>
 #include <math.h>
 
-#include "Spoc.h"
 
+
+#include "Spoc.h"
+int noCL = 1;
 
 
 value spoc_getOpenCLDevicesCount()
@@ -57,7 +59,7 @@ value spoc_getOpenCLDevicesCount()
 	cl_int err;
 	OPENCL_TRY2 ("clGetPlatformIds", clGetPlatformIDs ( num_entries, platform_ids, &num_platforms), err);
 	if (CL_SUCCESS != err)
-	  raise_constant(*caml_named_value("no_platform")) ; 
+	  raise_constant(*caml_named_value("no_platform")) ;
 	for(platform_id = 0; platform_id < num_platforms; platform_id++) {
 		OPENCL_TRY("clGetDeviceIDs", clGetDeviceIDs( platform_ids[platform_id], CL_DEVICE_TYPE_ALL, max_num_devices, device_ids, &num_devices));
 		total_num_devices += num_devices;
@@ -217,8 +219,8 @@ value spoc_getOpenCLDevice(value relative_i, value absolute_i)
             properties[2] = 0;
             dev_id[0] = device_ids[device_id];
             OPENCL_CHECK_CALL1(ctx, clCreateContext(properties, 1, dev_id, pfn_notify, NULL, &opencl_error));
-        	OPENCL_CHECK_CALL1(queue[0],  clCreateCommandQueue(ctx, dev_id[0], 0, &opencl_error));
-        	OPENCL_CHECK_CALL1(queue[1],  clCreateCommandQueue(ctx, dev_id[0], 0, &opencl_error));
+        	OPENCL_CHECK_CALL1(queue[0],  clCreateCommandQueue(ctx, dev_id[0], CL_QUEUE_PROFILING_ENABLE, &opencl_error));
+        	OPENCL_CHECK_CALL1(queue[1],  clCreateCommandQueue(ctx, dev_id[0], CL_QUEUE_PROFILING_ENABLE, &opencl_error));
         	spoc_ctx = malloc(sizeof(spoc_cl_context));
         	spoc_ctx->ctx = ctx;
         	spoc_ctx->queue[0] = queue[0];
@@ -403,7 +405,7 @@ value spoc_getOpenCLDevice(value relative_i, value absolute_i)
            if (infoDimension > 3) infoDimension = 3; //for now limited to 3d
            maxWI = caml_alloc(infoDimension, 0);
            for (i = 0; i < infoDimension; i++)
-        	   Store_field(maxWI ,i, Val_int(work_sizes[i]));
+	     Store_field(maxWI ,i, Val_int(work_sizes[i]));
            Store_field(specific_info, 37, maxWI);
 	   free(work_sizes);
 
@@ -493,3 +495,5 @@ value copy_complex(cuComplex d){
 value copy_doubleComplex(cuDoubleComplex d){
   return copy_two_doubles(d.x, d.y);
 }
+
+

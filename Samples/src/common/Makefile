@@ -13,57 +13,21 @@ BYTE=$(MLSRC:.ml=.byte)
 CSRC=$(wildcard *.c)
 COBJS=$(CSRC:.c=.o)
 
-
-
-#only compile CUDA kernels if GCC version < GCC_MAX and nvcc is installed
+#only compile CUDA kernels if GCC version < 5.9 and nvcc is installed
+GCC_VER_LTE59 := $(shell echo `gcc -dumpversion | cut -f1-2 -d.` \<= 5.9 | bc )
 NVCC_PRESENT := $(shell nvcc --version 1>/dev/null 2>/dev/null;  echo $$?)
-GCC_MAX := 4.3
 
 hasKern=$(shell ls kernels 1>/dev/null 2>/dev/null; echo $$?)
 
-ifeq ($(NVCC_PRESENT), 0)
-
-$(info Found nvidia compiler)
-
-CUDA_VERSION := $(shell nvcc -V | grep release | cut -f5-5 -d ' '  | sed s/,//)
-$(info Cuda version $(CUDA_VERSION) is installed on the system)
-
-ifeq ($(CUDA_VERSION), 8.0)
- GCC_MAX := 5.3
-endif
-
-ifeq ($(CUDA_VERSION), 7.0)
- GCC_MAX := 4.9
-endif
-
-ifeq ($(CUDA_VERSION), 7.0)
- GCC_MAX := 4.7
-endif
-
-
-
-GCC_VER = $(shell echo `gcc -dumpversion | cut -f1-2 -d.`)
-$(info GCC version $(GCC_VER) is installed on the system)
-
-GCC_VER_OK := $(shell echo "$(GCC_VER) <= $(GCC_MAX)" | bc)
-hasKern = $(shell ls kernels 1>/dev/null 2>/dev/null; echo $$?)
-
-
 ifeq ($(hasKern),0)
-ifeq ($(GCC_VER_OK), 1)
-KERNELS = $(KERNELSSRC:.cu=.ptx)
-else
-WARNING = "\033[0;31m Warning : \n Your GCC version ($(GCC_VER)) seems incompatible with your CUDA version ($(CUDA_VERSION)), \n GCC should be < $(GCC_MAX), \n CUDA kernels were not compiled \033[0m"
+ifeq ($(GCC_VER_LTE59), 1)
+ifeq ($(NVCC_PRESENT), 0)
+	KERNELS = $(KERNELSSRC:.cu=.ptx)
 endif
 endif
 endif
 
-
-
-all :  $(KERNELS) $(ASM) $(BYTE)
-	@echo $(WARNING)
-
-
+all : $(KERNELS) $(ASM) $(BYTE)
 
 PACKAGES+=-package spoc
 
@@ -71,22 +35,22 @@ CLIB := $(shell ls *.c 1>/dev/null 2>/dev/null; echo $$?)
 
 ifeq ($(CLIB), 0)
 $(ASM): $(MLSRC) $(COBJS)
-	ocamlfind ocamlopt -g -thread  $(PACKAGES) -linkpkg -package spoc_external_kernels -syntax camlp4o $(MLSRC) $(COBJS) -o $(ASM)
+	ocamlfind ocamlopt -g -thread  $(PACKAGES) -linkpkg -package spoc_external_kernels -syntax camlp4o  $(MLSRC) $(COBJS) -cclib -lnvrtc -o $(ASM) 
 
 $(BYTE): $(MLSRC) $(COBJS)
-	ocamlfind ocamlc -g -custom -thread   $(PACKAGES) -linkpkg -package spoc_external_kernels -syntax camlp4o $(MLSRC) -cclib $(COBJS) -o $(BYTE)
+	ocamlfind ocamlc -g -custom -thread $(PACKAGES) -linkpkg -package spoc_external_kernels -syntax camlp4o $(MLSRC) -cclib $(COBJS) -cclib -lnvrtc -o $(BYTE)
 
 else
 
 $(ASM): $(MLSRC)
-	ocamlfind ocamlopt -thread  $(PACKAGES) -linkpkg \
-	-package spoc_external_kernels -syntax camlp4o $(MLSRC) \
-	-o $(ASM)
+	ocamlfind ocamlopt  -g \
+	-pp "camlp4 -I `ocamlfind query sarek_syntax` -parser o -printer o kernels_int.cma" -thread -package ctypes.foreign,spoc,sarek,graphics -linkpkg -cclib -lnvrtc $(MLSRC) \
+	 -o $(ASM) 
 
 $(BYTE): $(MLSRC)
-	ocamlfind ocamlc -thread  $(PACKAGES) -linkpkg \
-	-package spoc_external_kernels -syntax camlp4o $(MLSRC) \
-	-o $(BYTE)
+	ocamlfind ocamlc -g -ccopt "-g -rdynamic" -thread   $(PACKAGES) -linkpkg \
+	-package spoc_external_kernels -syntax camlp4o   $(MLSRC) \
+	-cclib -lnvrtc -o $(BYTE)  
 
 endif
 

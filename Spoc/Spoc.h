@@ -54,16 +54,24 @@
 #include "Opencl_dynlink.h"
 
 /*#ifdef _WIN32
-#define THREAD_LOCAL   static  __declspec(thread) 
+#define THREAD_LOCAL   static  __declspec(thread)
 #else
 #define THREAD_LOCAL //static __thread
 #endif
 */
 
-int noCL;
-int noCuda;
+/* for profiling */
+//#define PROFILE 
+
+
+extern int noCuda;
+extern int noCL;
+
 int nbCudaDevices;
 
+// should probably be acquired from device_info
+#define OPENCL_PAGE_ALIGN 4096
+#define OPENCL_CACHE_ALIGN 64
 
 typedef struct cuda_device_ptrs {
 	CUdeviceptr curr;
@@ -82,7 +90,12 @@ typedef struct spoc_cuda_gc_info{
 }
 spoc_cuda_gc_info;
 
-
+typedef struct host_vector{
+  int type;
+  int type_size;
+  int size;
+  void* vec;
+} host_vector;
 
 typedef struct spoc_vector {
 	int device;
@@ -326,34 +339,43 @@ typedef struct spoc_cu_context {
 int ae_load_file_to_memory(const char *filename, char **result);
 
 
-#define GET_TYPE_SIZE 						  \
-  if (custom) { \
-  type_size = Int_val(Field(Field(bigArray, 1),0))*sizeof(char); \
-  }								 \
-  else { \
-  tag = Bigarray_val(bigArray)->flags & BIGARRAY_KIND_MASK;	\
-	switch (tag) { \
-	case BIGARRAY_UINT8 : \
-		printf("here\n"); \
-		type_size = sizeof(unsigned char); \
-		break; \
-	case BIGARRAY_FLOAT32 : \
-		type_size = sizeof(float); \
-		break; \
-	case BIGARRAY_FLOAT64 : \
-		type_size = sizeof(double); \
-		break; \
-	case BIGARRAY_INT32 : \
-		type_size = sizeof(int); \
-		break; \
-	case BIGARRAY_INT64 : \
-		type_size = sizeof(int)*2; \
-		break; \
-	case BIGARRAY_COMPLEX32: \
-		type_size = sizeof(float)*2;\
-		break; \
-		} \
-	}
+
+
+#define GET_TYPE_SIZE				\
+  if (custom) {								\
+    type_size = Int_val(Field(Field(bigArray, 1),0))*sizeof(char);	\
+  }									\
+  else {								\
+    type_size=((host_vector*)(Field(Field(bigArray,0),1)))->type_size;	\
+  }
+/* #define GET_TYPE_SIZE 						  \ */
+/*   if (custom) { \ */
+/*   type_size = Int_val(Field(Field(bigArray, 1),0))*sizeof(char); \ */
+/*   }								 \ */
+/*   else { \ */
+/*   tag = Bigarray_val(bigArray)->flags & BIGARRAY_KIND_MASK;	\ */
+/* 	switch (tag) { \ */
+/* 	case BIGARRAY_UINT8 : \ */
+/* 		printf("here\n"); \ */
+/* 		type_size = sizeof(unsigned char); \ */
+/* 		break; \ */
+/* 	case BIGARRAY_FLOAT32 : \ */
+/* 		type_size = sizeof(float); \ */
+/* 		break; \ */
+/* 	case BIGARRAY_FLOAT64 : \ */
+/* 		type_size = sizeof(double); \ */
+/* 		break; \ */
+/* 	case BIGARRAY_INT32 : \ */
+/* 		type_size = sizeof(int); \ */
+/* 		break; \ */
+/* 	case BIGARRAY_INT64 : \ */
+/* 		type_size = sizeof(int)*2; \ */
+/* 		break; \ */
+/* 	case BIGARRAY_COMPLEX32: \ */
+/* 		type_size = sizeof(float)*2;\ */
+/* 		break; \ */
+/* 		} \ */
+/* 	} */
 
 #define Val_cl_mem(x) (value)((cl_mem)x)
 #define Cl_mem_val(x) (cl_mem)((value)x)
