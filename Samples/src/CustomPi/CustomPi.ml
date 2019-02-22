@@ -32,8 +32,12 @@ let nbPoint = 2_000_000;;
 let ray = 10.0;;
 
 
-kernel gpuPi : point Spoc.Vector.vcustom -> Spoc.Vector.vfloat32 -> int -> float -> unit = "kernels/CustomPi" "pi"
- 
+kernel gpuPi : point Spoc.Vector.vcustom -> Spoc.Vector.vint32 -> int -> float -> unit = "kernels/CustomPi" "pi"
+
+kernel gpuPi_complex : Spoc.Vector.vcomplex32 -> Spoc.Vector.vint32 -> int -> float -> unit = "kernels/CustomPi" "pi"
+
+kernel gpuPi_double : point Spoc.Vector.vcustom -> Spoc.Vector.vint32 -> int -> float -> unit = "kernels/CustomPi" "pi_double"
+
 
 
 let cpuPI field size =

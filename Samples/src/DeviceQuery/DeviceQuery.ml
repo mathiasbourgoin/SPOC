@@ -46,8 +46,7 @@ in
            dev.Spoc.Devices.general_info.Spoc.Devices.eccEnabled;
          (match dev.Spoc.Devices.specific_info with
           | Spoc.Devices.CudaInfo _ -> Printf.printf "    Powered by Cuda\n"
-          | Spoc.Devices.OpenCLInfo _ -> Printf.printf "    Powered by OpenCL\n"
-          | _ -> Printf.printf "    Not available with Spoc (now)\n");
+          | Spoc.Devices.OpenCLInfo _ -> Printf.printf "    Powered by OpenCL\n");
          match dev.Spoc.Devices.specific_info with
          | Spoc.Devices.CudaInfo ci ->
              (Printf.printf "    Driver Version %d\n"
@@ -244,6 +243,6 @@ in
                       (i - (Spoc.Devices.cuda_devices ()))
                   else ()
                 done)
-         | _ -> ()))
+         ))
      devices)
 

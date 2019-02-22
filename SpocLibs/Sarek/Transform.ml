@@ -420,7 +420,9 @@ let build_new_ker spoc_ker kir_ker ker ml_fun =
       ret_val = Unit, (Vector.Unit ((), ()));
       extensions = kir_ker.extensions;})
   
-let map = fun (f:('a,'b,'c,'d,'e) sarek_kernel) ?dev:(device=(Spoc.Devices.init ()).(0)) (vec_in : ('d, 'h) Vector.vector) : ('f, 'g) Vector.vector ->
+let map = fun (f:('a,'b,'c,'d,'e) sarek_kernel) 
+              ?dev:(device=(Spoc.Devices.init ()).(0)) 
+              (vec_in : ('d, 'h) Vector.vector) : ('f, 'g) Vector.vector ->
   let spoc_ker, kir_ker = f in
   let ker = map_skeleton kir_ker in
   let vec_out = (Vector.create (snd (kir_ker.ret_val))  ~dev:device (Vector.length vec_in)) in

@@ -14,10 +14,10 @@ JSSRC=$(filter-out Js/spoc_lib.js, $(wildcard Js/*.js))
 #OCAMLC=ocamlfind ocamlc  -pp "cppo -q -D SPOC_PROFILE"
 #OCAMLOPT=ocamlfind ocamlopt  -pp "cppo -q -D SPOC_PROFILE" -ccopt "-rdynamic -g"
 #OCAMLDEP=ocamldep -pp "cppo -q -D SPOC_PROFILE"
-CC=ocamlfind ocamlc
-OCAMLC=ocamlfind ocamlc  -pp "cppo -q"
-OCAMLOPT=ocamlfind ocamlopt  -pp "cppo -q" -ccopt "-rdynamic -g"
-OCAMLDEP=ocamldep -pp "cppo -q"
+CC=ocamlfind ocamlc  -ccopt `pkg-config  --cflags-only-I nvrtc-10.0`  -ccopt "-std=gnu99"
+OCAMLC=ocamlfind ocamlc -pp "cppo -q" -I .
+OCAMLOPT=ocamlfind ocamlopt  -pp "cppo -q" -ccopt "-rdynamic -g"  -I .
+OCAMLDEP=ocamldep -pp "cppo -q" 
 ECHO=printf
 
 all : start | build extension/kernels_ext.cma js
@@ -31,7 +31,7 @@ js : Js/$(LIBNAME)_lib.js
 Js/$(LIBNAME)_lib.js : $(JSSRC)
 	@$(ECHO) "\033[43m\033[30mBuilding Web$(PROJ)\033[0m\n"
 	@$(ECHO) "\033[36m[$(LIBNAME)_lib.js]\033[0m\n"
-	@cd Js && make
+	@cd Js && make -j1
 
 
 extension/kernels_ext.cma:extension/kernels_ext.ml
@@ -40,13 +40,13 @@ extension/kernels_ext.cma:extension/kernels_ext.ml
 	@cd extension && make
 
 
-%.cmo:%.ml
+%.cmo:%.ml %.cmi
 	@$(ECHO) "\033[32m[$@]\033[0m\n"
-	@$(OCAMLC) -g -for-pack $(PROJ) -c  $<
+	@$(OCAMLC) -I . -g -for-pack $(PROJ) -c  $<
 
-%.cmx:%.ml
+%.cmx:%.ml %.cmi
 	@$(ECHO) "\033[34m[$@]\033[0m\n"
-	@$(OCAMLOPT) -g -for-pack $(PROJ) -c  $<
+	@$(OCAMLOPT) -I . -g -for-pack $(PROJ) -c  $<
 
 
 %.cmi:%.mli
@@ -55,7 +55,7 @@ extension/kernels_ext.cma:extension/kernels_ext.ml
 
 %.o:%.c
 	@$(ECHO)  "\033[33m[$@]\033[0m\n"
-	@$(CC) -g -c $<
+	$(CC) -g -c $<
 
 build : $(LIBNAME).cma $(LIBNAME)level $(LIBNAME).cmxa $(LIBNAME).o
 
@@ -85,7 +85,7 @@ $(LIBNAME)level : $(LIBNAME).cma extension/kernels_ext.cma
 	ocamlmktop -custom -thread -I +camlp4 -cclib -L. dynlink.cma	\
 	-cclib -lthreads camlp4o.cma extension/kernels_ext.cma		\
 	str.cma bigarray.cma -cclib -lcamlrun -cclib -lbigarray		\
-	-cclib -lnvrtc -ccopt -L$(CUDA_PATH)/lib64 	\
+	`pkg-config --libs-only-L nvrtc-10.0 | sed s/"-L"/"-ccopt -L"\/g` -cclib -lnvrtc -ccopt -L$(CUDA_PATH)/lib64 	\
 	-cclib -lunix unix.cma -cclib -l$(LIBNAME) $(LIBNAME).cma -o	\
 	$(LIBNAME)level
 
