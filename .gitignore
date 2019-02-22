@@ -4,3 +4,5 @@ ocp-buid.root*
 _site
 Gemfile.lock
 serve.sh
+*.byte
+*.asm
