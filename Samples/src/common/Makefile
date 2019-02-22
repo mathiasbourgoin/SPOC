@@ -16,6 +16,7 @@ COBJS=$(CSRC:.c=.o)
 #only compile CUDA kernels if GCC version < 5.9 and nvcc is installed
 # only useful with older versions of NVCC
 #GCC_VER_LTE59 := $(shell echo `gcc -dumpversion | cut -f1-2 -d.` \<= 5.9 | bc )
+GCC_VER_LTE59 := 1
 NVCC_PRESENT := $(shell nvcc --version 1>/dev/null 2>/dev/null;  echo $$?)
 
 hasKern=$(shell ls kernels 1>/dev/null 2>/dev/null; echo $$?)
