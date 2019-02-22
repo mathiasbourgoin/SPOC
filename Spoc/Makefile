@@ -15,9 +15,9 @@ JSSRC=$(filter-out Js/spoc_lib.js, $(wildcard Js/*.js))
 #OCAMLOPT=ocamlfind ocamlopt  -pp "cppo -q -D SPOC_PROFILE" -ccopt "-rdynamic -g"
 #OCAMLDEP=ocamldep -pp "cppo -q -D SPOC_PROFILE"
 CC=ocamlfind ocamlc  -ccopt `pkg-config  --cflags-only-I nvrtc-10.0`  -ccopt "-std=gnu99"
-OCAMLC=ocamlfind ocamlc  -pp "cppo -q" 
-OCAMLOPT=ocamlfind ocamlopt  -pp "cppo -q" -ccopt "-rdynamic -g" 
-OCAMLDEP=ocamldep -pp "cppo -q"
+OCAMLC=ocamlfind ocamlc -pp "cppo -q" -I .
+OCAMLOPT=ocamlfind ocamlopt  -pp "cppo -q" -ccopt "-rdynamic -g"  -I .
+OCAMLDEP=ocamldep -pp "cppo -q" 
 ECHO=printf
 
 all : start | build extension/kernels_ext.cma js
@@ -40,13 +40,13 @@ extension/kernels_ext.cma:extension/kernels_ext.ml
 	@cd extension && make
 
 
-%.cmo:%.ml
+%.cmo:%.ml %.cmi
 	@$(ECHO) "\033[32m[$@]\033[0m\n"
-	@$(OCAMLC) -g -for-pack $(PROJ) -c  $<
+	@$(OCAMLC) -I . -g -for-pack $(PROJ) -c  $<
 
-%.cmx:%.ml
+%.cmx:%.ml %.cmi
 	@$(ECHO) "\033[34m[$@]\033[0m\n"
-	@$(OCAMLOPT) -g -for-pack $(PROJ) -c  $<
+	@$(OCAMLOPT) -I . -g -for-pack $(PROJ) -c  $<
 
 
 %.cmi:%.mli

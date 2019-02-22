@@ -7,10 +7,6 @@ Devices.cmi :
 Kernel.cmo : Vector.cmi Mem.cmi Devices.cmi Cuda.cmi Kernel.cmi
 Kernel.cmx : Vector.cmx Mem.cmx Devices.cmx Cuda.cmx Kernel.cmi
 Kernel.cmi : Vector.cmi Devices.cmi
-KernelCuda.cmo : Vector.cmi Mem.cmi Devices.cmi
-KernelCuda.cmx : Vector.cmx Mem.cmx Devices.cmx
-KernelOpenCL.cmo : Vector.cmi Mem.cmi Devices.cmi
-KernelOpenCL.cmx : Vector.cmx Mem.cmx Devices.cmx
 Mem.cmo : Vector.cmi OpenCL.cmi Devices.cmi Cuda.cmi Mem.cmi
 Mem.cmx : Vector.cmx OpenCL.cmx Devices.cmx Cuda.cmx Mem.cmi
 Mem.cmi : Vector.cmi Devices.cmi
