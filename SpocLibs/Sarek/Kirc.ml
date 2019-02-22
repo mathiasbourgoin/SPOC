@@ -1112,6 +1112,11 @@ struct
   let block_dim_x = 1l
   let block_dim_y = 1l
   let block_dim_z = 1l
+  let grid_dim_x = 1l
+  let grid_dim_y = 1l
+  let grid_dim_z = 1l
+    
+    
 
   let global_thread_id = 0l
   let return () = ()
@@ -1125,7 +1130,27 @@ struct
 
   let make_shared i = Array.make (Int32.to_int i) 0l
   let make_local i = Array.make (Int32.to_int i) 0l
+  let map f a b =
+    assert (Vector.length a= Vector.length b);
+    for i = 0 to Vector.length a do
+      Mem.set b i (f (Mem.get a i))
+    done
+
+  let reduce f a b =
+    let rec aux acc i =
+      if Vector.length a < i then
+        aux (f acc (Mem.get a i)) (i+1)
+      else acc
+    in
+    Mem.set b 0 (aux (Mem.get a 0) 1)
+
 end
+
+  module Sarek_vector =
+struct
+  let length v = Int32.of_int (Vector.length v)
+end
+
 
 module Math =
 struct
@@ -1152,6 +1177,7 @@ struct
 
     let pow = ( ** )
     let sqrt = Pervasives.sqrt
+    let rsqrt = Pervasives.sqrt (* todo*)
     let exp = Pervasives.exp
     let log = Pervasives.log
     let log10 = Pervasives.log10
@@ -1186,6 +1212,7 @@ struct
 
   module Float64 =
   struct
+
     let add = (+.)
     let minus = (-.)
     let mul = ( *. )
@@ -1193,6 +1220,7 @@ struct
 
     let pow = ( ** )
     let sqrt = Pervasives.sqrt
+    let rsqrt = Pervasives.sqrt (* todo*)
     let exp = Pervasives.exp
     let log = Pervasives.log
     let log10 = Pervasives.log10
