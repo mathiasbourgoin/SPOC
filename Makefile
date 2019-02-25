@@ -1,30 +1,27 @@
-nprocs=$(shell getconf _NPROCESSORS_ONLN)
+nprocs+=$(shell getconf _NPROCESSORS_ONLN)
 
 all:
-	cd Spoc && make -j$(nprocs) && cd ..
+	cd Spoc && $(MAKE) -j$(nprocs) && cd ..
 
 clean:
-	cd Spoc && make clean && cd ..
+	cd Spoc && $(MAKE) clean && cd ..
 
 
 install: 
-	cd Spoc && make -j$(nprocs) install && cd ..
+	cd Spoc && $(MAKE) -j$(nprocs) install && cd ..
 
 uninstall:
-	cd Spoc && make uninstall && cd ..
+	cd Spoc && $(MAKE) uninstall && cd ..
 
 samples: install
-	cd Samples; make
+	cd Samples; $(MAKE)
 
 install_sarek:
-	cd SpocLibs/Sarek; make -j$(nprocs) install
+	cd SpocLibs/Sarek; $(MAKE) -j$(nprocs) install
 
 sarek_samples:
-	cd SpocLibs/Samples/Mandelbrot; make
-	cd SpocLibs/Samples/Bitonic_sort; make
+	cd SpocLibs/Samples/Mandelbrot; $(MAKE)
+	cd SpocLibs/Samples/Bitonic_sort; $(MAKE)
 
 
-check:
-	make all install
-	make install_sarek
-	make samples #sarek_samples
+check: all install install_sarek samples #sarek_samples

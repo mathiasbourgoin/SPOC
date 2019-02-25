@@ -1,12 +1,12 @@
-MLSRCDIRS = CustomPi DeviceQuery VecAdd VecAdd_MultiGPU 
+MLSRCDIRS = CustomPi DeviceQuery VecAdd VecAdd_MultiGPU
 
-MLSRCDIRSGR = Game Mandelbrot Mandelbrot2 
+MLSRCDIRSGR = Game Mandelbrot Mandelbrot2
 
 KERNELDIR = ./kernels
 BINDIR=./build/
 
-all:  
-	cd src && make && cd ..
+all:
+	cd src && $(MAKE) && cd ..
 	mkdir -p $(KERNELDIR)
 	rm -rf $(BINDIR)
 	mkdir -p $(BINDIR)/Native/$(KERNELDIR)
@@ -26,7 +26,7 @@ all:
 	 		rsync -a --exclude .svn src/$$i/kernels $(BINDIR)/Native/;\
 			fi;)\
 		done;\
-	fi	
+	fi
 	cp ../Spoc/*.ptx $(KERNELDIR)
 	cp ../Spoc/*.cl $(KERNELDIR)
 	cp -a $(KERNELDIR) $(BINDIR)/Bytecode/
@@ -34,20 +34,20 @@ all:
 
 ../Spoc/Spoc_kernels.ptx:
 	cd ../Spoc
-	make clean
-	make
+	$(MAKE) clean
+	$(MAKE)
 
 %.nat:
-	cd src && make 
+	cd src && $(MAKE)
 
 %.byte:
-	cd src && make 
+	cd src && $(MAKE)
 
-%.exe: 
-	cd src && make
+%.exe:
+	cd src && $(MAKE)
 
 clean:
-	cd src && make clean
+	cd src && $(MAKE) clean
 	rm -rf *.o *.cm* *.a *.cmxa *~ *.exe *.nat *.byte *.obj *.asm *.tmp *.tmp.dll \#*\#
 
 mrproper : clean

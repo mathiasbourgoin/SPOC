@@ -11,7 +11,7 @@ all : start | build extension/kernels_int.cma
 extension/kernels_int.cma: $(EXTSRC)
 	@echo "\033[43m\033[30mBuilding SPOC external kernel extension\033[0m"
 	@echo "\033[31m[kernels_ext.cma]\033[0m"
-	@cd extension && make
+	@cd extension && $(MAKE)
 
 start :
 	@echo "\033[43m\033[30mBuilding Sarek\033[0m"
@@ -60,7 +60,7 @@ build: sarek.cmxa sarek.cma #spoclevel-sarek
 ocp:
 	ocp-build -init
 	ocp-build
-	cd extension && make
+	cd extension && $(MAKE)
 
 depend :
 	ocamldep *.ml *.mli > .depend
@@ -72,20 +72,20 @@ ocp-clean :
 	ocp-build clean
 
 clean :
-	cd extension && make clean
+	cd extension && $(MAKE) clean
 	rm -rf tmp docs ocp-build.root.* ~* *.cm* *.o *.so log a.out spoclevel-sarek *~ sarek.a
 
 
 install : all uninstall
 	@echo "\033[43m\033[30mInstalling Sarek\033[0m"
 	@ocamlfind install sarek *.cma *.a  *.cmxa *.cmi META 2>> log
-	@cd extension && make install
+	@cd extension && $(MAKE) install
 
 ocp-install:
 	ocp-build install
 	cp _obuild/sarek/*.cm* `ocamlfind query sarek`
-	cd extension && make install
+	cd extension && $(MAKE) install
 
 uninstall :
 	@(ocamlfind remove sarek) | true
-	@cd extension && make uninstall
+	@cd extension && $(MAKE) uninstall

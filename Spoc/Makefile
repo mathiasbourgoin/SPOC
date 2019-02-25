@@ -31,13 +31,13 @@ js : Js/$(LIBNAME)_lib.js
 Js/$(LIBNAME)_lib.js : $(JSSRC)
 	@$(ECHO) "\033[43m\033[30mBuilding Web$(PROJ)\033[0m\n"
 	@$(ECHO) "\033[36m[$(LIBNAME)_lib.js]\033[0m\n"
-	@cd Js && make -j1
+	@cd Js && $(MAKE) 
 
 
 extension/kernels_ext.cma:extension/kernels_ext.ml
 	@$(ECHO) "\033[43m\033[30mBuilding $(PROJ) external kernel extension\033[0m\n"
 	@$(ECHO) "\033[31m[kernels_ext.cma]\033[0m\n"
-	@cd extension && make
+	@cd extension && $(MAKE) 
 
 
 %.cmo:%.ml %.cmi
@@ -89,13 +89,6 @@ $(LIBNAME)level : $(LIBNAME).cma extension/kernels_ext.cma
 	-cclib -lunix unix.cma -cclib -l$(LIBNAME) $(LIBNAME).cma -o	\
 	$(LIBNAME)level
 
-ocp :
-	ocp-build -init
-	ocp-build
-	cd extension && make
-	cd Js && make
-
-
 doc : uninstall install
 	mkdir -p tmp
 	for i in *.mli; do \
@@ -110,50 +103,14 @@ doc : uninstall install
 install : all uninstall
 	@$(ECHO) "\033[43m\033[30mInstalling $(PROJ)\033[0m\n"
 	@ocamlfind install $(LIBNAME) *.cma *.a *.so *.cmxa $(LIBNAME).cmi META #2>> log
-	@cd extension && make install
-	@cd Js && make install
-
-ocp-install:
-	ocp-build install
-	cp _obuild/$(LIBNAME)/*.cmi `ocamlfind query spoc`
-	cd extension && make install
-	cd Js && make install
+	@cd extension && $(MAKE) install
+	@cd Js && $(MAKE) install
 
 uninstall :
 	@$(ECHO) "\033[43m\033[30mRemoving Spoc\033[0m\n"
-	@cd extension && make uninstall
-	@cd Js && make uninstall
+	@cd extension && $(MAKE) uninstall
+	@cd Js && $(MAKE) uninstall
 	@(ocamlfind remove $(LIBNAME) 2>>log) | true;
-
-
-
-android:
-	for i in "cuda_drvapi_dynlink.c"  "Custom.c" "Kernel_cuda.c" \
-	 	  "Kernel_opencl.c" "Mem_c.c" "Opencl_dynlink.c" \
-		  "Spoc_c.c" "Spoc_cu.c" ; do \
-	ocamlfind -toolchain android $(OCAMLOPT) -package bigarray $$i;\
-	done
-	ocamlfind -toolchain android $(OCAMLOPT) -for-pack Spoc -package bigarray -linkpkg -c Devices.mli
-	ocamlfind -toolchain android $(OCAMLOPT) -for-pack Spoc -package bigarray -linkpkg -c Devices.ml
-	ocamlfind -toolchain android $(OCAMLOPT) -for-pack Spoc -package bigarray -linkpkg -c Vector.mli
-	ocamlfind -toolchain android $(OCAMLOPT) -for-pack Spoc -package bigarray -linkpkg -c Vector.ml
-	ocamlfind -toolchain android $(OCAMLOPT) -for-pack Spoc -package bigarray -linkpkg -c Cuda.mli
-	ocamlfind -toolchain android $(OCAMLOPT) -for-pack Spoc -package bigarray -linkpkg -c Cuda.ml
-	ocamlfind -toolchain android $(OCAMLOPT) -for-pack Spoc -package bigarray -linkpkg -c OpenCL.mli
-	ocamlfind -toolchain android $(OCAMLOPT) -for-pack Spoc -package bigarray -linkpkg -c OpenCL.ml
-	ocamlfind -toolchain android $(OCAMLOPT) -for-pack Spoc -package bigarray -linkpkg -c Mem.mli
-	ocamlfind -toolchain android $(OCAMLOPT) -for-pack Spoc -package bigarray -linkpkg -c Mem.ml
-	ocamlfind -toolchain android $(OCAMLOPT) -for-pack Spoc -package bigarray -linkpkg -c Kernel.mli
-	ocamlfind -toolchain android $(OCAMLOPT) -for-pack Spoc -package bigarray -linkpkg -c Kernel.ml
-
-	ocamlfind -toolchain android $(OCAMLOPT) -for-pack Spoc -package bigarray -linkpkg -c KernelCuda.ml
-	ocamlfind -toolchain android $(OCAMLOPT) -for-pack Spoc -package bigarray -linkpkg -c KernelOpenCL.ml
-	ocamlfind -toolchain android $(OCAMLOPT) -for-pack Spoc -package bigarray -linkpkg -c Tools.mli
-	ocamlfind -toolchain android $(OCAMLOPT) -for-pack Spoc -package bigarray -linkpkg -c Tools.ml
-	ocamlfind -toolchain android $(OCAMLOPT) -pack -o Spoc.cmx -package bigarray -linkpkg Devices.cmx Vector.cmx Cuda.cmx OpenCL.cmx Mem.cmx Kernel.cmx KernelCuda.cmx KernelOpenCL.cmx Tools.cmx *.o
-	ocamlfind -toolchain android ocamlmklib -linkall Spoc.cmx -o spoc_android
-	ar rc spoc_android.a *.o
-
 
 depend :
 	$(OCAMLDEP) *.ml *.mli  > .depend
@@ -161,10 +118,7 @@ depend :
 
 include  .depend
 
-ocp-clean:
-	ocp-build clean
-
 clean :
-	cd extension && make clean
-	cd Js && make clean
+	cd extension && $(MAKE) clean
+	cd Js && $(MAKE) clean
 	rm -rf tmp docs ocp-build.root.* ~* *.cm* *.o *.so log a.out $(LIBNAME)level *~ *.a
