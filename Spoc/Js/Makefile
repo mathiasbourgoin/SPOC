@@ -1,4 +1,4 @@
-FILES= gpu.min.js SPOC.js Kernel.js Mem.js 
+FILES= SPOC.js Kernel.js Mem.js 
 
 spoc_lib.js: $(FILES)
 	@echo "//concat $(FILES)" > spoc_lib.js

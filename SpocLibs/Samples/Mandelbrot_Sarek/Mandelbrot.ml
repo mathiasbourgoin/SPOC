@@ -16,24 +16,10 @@
 open Spoc
 
 open Kirc
-let cpt = ref 0
-
-let tot_time = ref 0.
-
-let measure_time f  s =
-  let t0 = Unix.gettimeofday () in
-  let a = f () in
-  let t1 = Unix.gettimeofday () in
-  Printf.printf "%s time %d : %Fs\n%!" s !cpt (t1 -. t0);
-  tot_time := !tot_time +.  (t1 -. t0);
-  incr cpt;
-  a;;
 
 
-let devices = measure_time Spoc.Devices.init "init"
-    
-let width = ref 512l;;
-let height = ref 512l;;
+let width = ref 1000l;;
+let height = ref 1000l;;
 
 let max_iter  = ref 512l;;
 
@@ -71,27 +57,17 @@ let x = thread_idx_x + (block_idx_x * block_dim_x) in
 
   let mutable norm = normalize x1  y1
   in
-  let mutable vote = ($"__ballot(((cpt < @max_iter) &&
-         (norm <=. 4.)))"$ : int) in
-  let mutable eval = vote > 16 in
-  while (eval)  do
+  while ((cpt < @max_iter) &&
+         (norm <=. 4.)) do
     cpt := (cpt + 1);
     x2 := (x1 *. x1) -. (y1 *. y1) +. a;
     y2 :=  (2. *. x1 *. y1 ) +. b;
     x1 := x2;
     y1 := y2;
     norm := (x1 *. x1 ) +. ( y1 *. y1);
-    vote := ($"__ballot(((cpt < @max_iter) &&
-         (norm <=. 4.)))"$ : int);
-    eval := vote > 16;
   done;
   img.[<y * @width + x>] <- cpt
  ;;
-
-klet brh = fun (a : bool ) ->
-  ($"__popc(__ballot(a))"$ > 26)
-
-klet nobrh = fun (a : bool ) -> a
 
 
 let mandelbrot = kern img shiftx shifty zoom ->
@@ -117,15 +93,16 @@ let mandelbrot = kern img shiftx shifty zoom ->
     (pow2 x) +. (pow2 y) in
 
   let mutable norm = normalize x1  y1
+
+
   in
-  while (brh((cpt < @max_iter) &&
-         (norm <=. 4.)))  do
+  while ((cpt < @max_iter) && (norm <=. 4.)) do
     cpt := (cpt + 1);
     x2 := (x1 *. x1) -. (y1 *. y1) +. a;
     y2 :=  (2. *. x1 *. y1 ) +. b;
     x1 := x2;
     y1 := y2;
-    norm := normalize x1 y1;
+    norm := (x1 *. x1 ) +. ( y1 *. y1);
   done;
   img.[<y * @width + x>] <- cpt
 ;;
@@ -196,8 +173,20 @@ let cpu_compute img width height =
 ;;
 
 
+let cpt = ref 0
 
+let tot_time = ref 0.
 
+let measure_time f  s =
+  let t0 = Unix.gettimeofday () in
+  let a = f () in
+  let t1 = Unix.gettimeofday () in
+  Printf.printf "%s time %d : %Fs\n%!" s !cpt (t1 -. t0);
+  tot_time := !tot_time +.  (t1 -. t0);
+  incr cpt;
+  a;;
+
+let devices = measure_time(Spoc.Devices.init ~only:Devices.OpenCL) "init";;
 
 (*let measure_time f = f () ;;*)
 
@@ -210,7 +199,6 @@ let auto_transfers = ref true;;
 
 let bench = ref (false,0) ;;
 
-let prof = ref false
 
 let get_min ar =
   Spoc.Mem.to_cpu ar ();
@@ -247,10 +235,8 @@ let main_mandelbrot () =
 	      "benchmark (not interactive), number of calculations")
   and arg7 = ("-double" , Arg.Bool (fun b -> simple := not b),
 	      "use double precision [false]")
-  and arg8 = ("-prof" , Arg.Bool (fun b -> prof := b),
-	      "profile kernels [false]")
 in
-  Arg.parse ([arg1;arg2;arg3;arg4;arg5;arg6; arg7; arg8]) (fun s -> ()) "";
+  Arg.parse ([arg1;arg2;arg3;arg4;arg5;arg6; arg7]) (fun s -> ()) "";
   Printf.printf "Will use device : %s\n%!"
     (!dev).Spoc.Devices.general_info.Spoc.Devices.name;
   let threadsPerBlock = match !dev.Devices.specific_info with
@@ -260,7 +246,6 @@ in
       | _  ->   256)
     | _  -> 256 in
 
-  
   let b_iter = Spoc.Vector.create Spoc.Vector.int32 ((Int32.to_int !width) * (Int32.to_int !height))
   in
   let sub_b = Spoc.Mem.sub_vector b_iter 0 (Spoc.Vector.length b_iter)
@@ -294,9 +279,9 @@ in
 
   if not !recompile then
     if not !simple then
-      ignore(Kirc.gen  ~profile:!prof   mandelbrot_double !dev)
+      ignore(Kirc.gen ~only:Devices.OpenCL mandelbrot_double)
     else
-      ignore(Kirc.gen  ~profile:!prof  mandelbrot !dev);
+      ignore(Kirc.gen ~only:Devices.OpenCL mandelbrot);
 
   let l = Int32.to_string !width in
   let h = Int32.to_string !height in
@@ -316,11 +301,9 @@ in
 
     if !recompile then
       begin
-	Kirc.gen  ~profile:!prof  mandelbrot_recompile !dev;
+	Kirc.gen ~only:Devices.OpenCL mandelbrot_recompile;
 
- (if !prof then
-    Kirc.profile_run
-  else Kirc.run)
+	Kirc.run
 	  mandelbrot_recompile
 	  (sub_b)
 	  (block,grid)
@@ -329,29 +312,24 @@ in
       end
     else
       begin
-	if (not !simple) then
-   (
-     if !prof then
-       Kirc.profile_run
-     else Kirc.run)
-     mandelbrot_double
-     (sub_b, (Int32.to_int !shiftx), (Int32.to_int !shifty), !zoom)
-     (block,grid)
-     0
-     !dev
- else
-  
-   measure_time (fun () ->
-       (if !prof then Kirc.profile_run else Kirc.run)
-	 mandelbrot
-  (sub_b, (Int32.to_int !shiftx), (Int32.to_int !shifty), !zoom)
-  (block,grid)
-  0
-  !dev;
+	if not !simple then
+	  Kirc.run
+	    mandelbrot_double
+	    (sub_b, (Int32.to_int !shiftx), (Int32.to_int !shifty), !zoom)
+	    (block,grid)
+	    0
+	    !dev
+	else
+	  measure_time (fun () -> Kirc.run
+	    mandelbrot
+	    (sub_b, (Int32.to_int !shiftx), (Int32.to_int !shifty), !zoom)
+	    (block,grid)
+	    0
+	    !dev;
 
                   Spoc.Mem.to_cpu sub_b ();
                   Spoc.Devices.flush !dev (); ) "Accelerator";
- 
+
       end;
 
 

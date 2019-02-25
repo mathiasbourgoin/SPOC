@@ -162,10 +162,9 @@ klet applyLights = fun pos normal lights  objects nb_lights nb_objs ->
   color
 	   
 klet myclamp = fun (x :float)  ->
-        ($"clamp (x,0.f,1.f)"$ : float)
-(*    if x <. 0. then 0.
+    if x <. 0. then 0.
     else if x >. 1. then 1.
-      else x *)
+    else x
 
 	 
 klet clamp_colour = fun c ->
@@ -258,7 +257,7 @@ let raytrace =
        bce := bce - 1;
      done)
 	
-let devid = 4
+let devid = 0
 
 
 let _ =
@@ -413,7 +412,6 @@ in
   
   let name = dev.Spoc.Devices.general_info.Spoc.Devices.name in
 
-  
   measure_time (fun () ->
 		Kirc.run  cast_view_ray
 			  (width, height, fov, eyev, rays) 

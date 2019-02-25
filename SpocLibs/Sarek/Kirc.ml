@@ -1,5 +1,5 @@
 (******************************************************************************
-- * Mathias Bourgoin, Université Pierre et Marie Curie (2012)
+ * Mathias Bourgoin, Universit Pierre et Marie Curie (2012)
  *
  * Mathias.Bourgoin@gmail.com
  *
@@ -38,19 +38,12 @@ open Mem
 open Devices
 open Vector
 
-let debug = true
-let idkern = ref 0 
-
 open Kirc_Ast
 
 
 module Kirc_OpenCL = Gen.Generator(Kirc_OpenCL)
 module Kirc_Cuda = Gen.Generator(Kirc_Cuda)
-module Kirc_Profile = Gen.Generator(Profile)
 
-type float64 = float
-type float32 = float
-  
 type extension =
   | ExFloat32
   | ExFloat64
@@ -82,7 +75,6 @@ type ('a,'b,'c,'d,'e) sarek_kernel =
 let constructors = ref []
 
 let opencl_head = (
-  "#define SAREK_VEC_LENGTH(A) sarek_## A ##_length\n"^
   "float spoc_fadd ( float a, float b );\n"^
   "float spoc_fminus ( float a, float b );\n"^
   "float spoc_fmul ( float a, float b );\n"^
@@ -98,116 +90,8 @@ let opencl_head = (
   "float spoc_fdiv ( float a, float b ) { return (a / b);}\n"^
   "int logical_and (int a, int b ) { return (a & b);}\n"^
   "int spoc_powint (int a, int b ) { return ((int) pow (((float) a), ((float) b)));}\n"^
-  "int spoc_xor (int a, int b ) { return (a^b);}\n"^
-  "void spoc_barrier ( ) { barrier(CLK_LOCAL_MEM_FENCE);}\n"
-)
+  "int spoc_xor (int a, int b ) { return (a^b);}\n")
 
-let opencl_common_profile =(
-  "\n/*********** PROFILER FUNCTIONS **************/\n"^
-  "#pragma OPENCL EXTENSION cl_khr_int64_extended_atomics : enable\n"^
-  "void spoc_atomic_add(__global ulong *a, ulong b){ atom_add(a, (ulong)b);}\n"^
-  "
-     void* memory_analysis(__global ulong *profile_counters, __global void* mp, int store, int load){
-    if (store) spoc_atomic_add(profile_counters+0, 1ULL);
-    if (load) spoc_atomic_add(profile_counters+1, 1ULL);
-    return mp;
-}"^
-  "\n"
-)
-
-
-let opencl_profile_head =(
-opencl_common_profile^  "
-void branch_analysis(__global ulong *profile_counters, int eval, int counters){
-  
-  unsigned int threadIdxInGroup = 
-                get_local_id(2)*get_local_size(0)*get_local_size(1) + 
-                get_local_id(1)*get_local_size(0) + get_local_id(0);
-  
-  
-  //Get count of 1) active work items  in this workgroup
-  //2) work items that will take the branch
-  //3) work items that do not take the branch.
-  __local ulong numActive[1]; numActive[0] = 0;
-  __local ulong numTaken[1];  numTaken[0] = 0;
-  __local ulong numNotTaken[1]; numNotTaken[0] = 0;
-  __local unsigned int lig[1]; lig[0]  = 0;
-  barrier(CLK_LOCAL_MEM_FENCE);
-
-  atomic_inc(numActive);
-  atom_max(lig, threadIdxInGroup);
-  
-  if (eval) atomic_inc(numTaken);
-  if (!eval) atomic_inc(numNotTaken);
-  
-  barrier(CLK_LOCAL_MEM_FENCE);
-  
-  // The last active work item in each group gets to write results.
-  if (lig[0] == threadIdxInGroup) {
-    spoc_atomic_add(profile_counters+4, (ulong)1); //
-    spoc_atomic_add(profile_counters+counters+1, numActive[0]);
-    spoc_atomic_add(profile_counters+counters+2, numTaken[0]);
-    spoc_atomic_add(profile_counters+counters+3, numNotTaken[0]);
-    if (numTaken[0] != numActive[0] && numNotTaken[0] != numActive[0]) {
-      // If threads go different ways, note it.
-      spoc_atomic_add(profile_counters+5, (ulong)1);
-    }
-  }
-}\n"^
-  "void while_analysis(__global ulong *profile_counters, int eval){
-  /* unsigned int threadIdxInGroup = 
-                get_local_id(2)*get_local_size(0)*get_local_size(1) + 
-                get_local_id(1)*get_local_size(0) + get_local_id(0);
-
-  //Get count of 1) active work items  in this workgroup
-  //2) work items that will take the branch
-  //3) work items that do not take the branch.
-  __local ulong numActive[1]; numActive[0] = 0;
-  __local unsigned int numTaken;  numTaken = 0;
-  __local unsigned int numNotTaken; numNotTaken = 0;
-  __local unsigned int lig; lig  = 0;
-  barrier(CLK_LOCAL_MEM_FENCE);
-
-  atomic_inc(numActive);
-  atom_max(&lig, threadIdxInGroup);
-  
-  if (eval) atom_inc(&numTaken);
-  if (!eval) atom_inc(&numNotTaken);
-  
-  barrier(CLK_LOCAL_MEM_FENCE);
-  
-  // The last active work item in each group gets to write results.
-  if (lig == threadIdxInGroup) {
-    spoc_atomic_add(profile_counters+4, (ulong)1); //
-    if (numTaken != numActive[0] && numNotTaken != numActive[0]) {
-      // If threads go different ways, note it.
-      spoc_atomic_add(profile_counters+5, (ulong)1);
-    }
-  } */               
-}
-\n"
-)
-
-let opencl_profile_head_cpu =(
-opencl_common_profile^"
-void branch_analysis(__global ulong *profile_counters, int eval, int counters){
-  
-  unsigned int threadIdxInGroup = 
-                get_local_id(2)*get_local_size(0)*get_local_size(1) + 
-                get_local_id(1)*get_local_size(0) + get_local_id(0);
-  
-  spoc_atomic_add(profile_counters+4, (ul;ong)1); //
-  spoc_atomic_add(profile_counters+counters+1, 1);
-  if (eval) 
-    spoc_atomic_add(profile_counters+counters+2, 1);
-  if (!eval)
-    spoc_atomic_add(profile_counters+counters+3, 1);
- }\n"^
-  "void while_analysis(__global ulong  *profile_counters, int eval){
-}
-\n"
-)
-    
 let opencl_float64 = (
   "#ifndef __FLOAT64_EXTENSION__ \n"^
   "#define __FLOAT64_EXTENSION__ \n"^
@@ -239,144 +123,26 @@ let cuda_float64 =
     "#endif\n"
   )
 let cuda_head = (
-  "#define SAREK_VEC_LENGTH(a) sarek_ ## a ## _length\n"^
   "__device__ float spoc_fadd ( float a, float b ) { return (a + b);}\n"^
   "__device__ float spoc_fminus ( float a, float b ) { return (a - b);}\n"^
   "__device__ float spoc_fmul ( float a, float b ) { return (a * b);}\n"^
   "__device__ float spoc_fdiv ( float a, float b ) { return (a / b);}\n"^
   "__device__ int logical_and (int a, int b ) { return (a & b);}\n"^
   "__device__ int spoc_powint (int a, int b ) { return ((int) pow (((double) a), ((double) b)));}\n"^
-  "__device__ int spoc_xor (int a, int b ) { return (a^b);}\n")
-
-let cuda_profile_head = (
-  "\n/*********** PROFILER FUNCTIONS **************/\n"^
-  "__device__ void spoc_atomic_add(unsigned long long int *a, unsigned int b){ atomicAdd(a, b);}\n"^
-  "__device__ __forceinline__ unsigned int get_laneid(void) {
-    unsigned int laneid;
-    asm volatile (\"mov.u32 %0, %laneid;\" : \"=r\"(laneid));
-    return laneid;
-  }\n"^ 
-  "__device__ void branch_analysis(unsigned long long int *profile_counters, int eval, int counters){
-  
-  int threadIdxInWarp =  get_laneid();//threadIdx.x & (warpSize-1);
-  
-  //Get count of 1) active threads  in this warp
-  //2) threads that will take the branch
-  //3) threads that do not take the branch.
-  unsigned int active = __ballot(1);
-  int taken = __ballot(eval);
-  int ntaken = __ballot(!eval);
-  int numActive = __popc(active);
-  int numTaken = __popc(taken), numNotTaken = __popc(ntaken);
-
-  // The first active thread in each warp gets to write results.
-  if ((__ffs(active)-1) == threadIdxInWarp) {
-    atomicAdd(profile_counters+4, 1ULL); //
-    atomicAdd(profile_counters+counters+1, numActive);
-    atomicAdd(profile_counters+counters+2, numTaken);
-    atomicAdd(profile_counters+counters+3, numNotTaken);
-    if (numTaken != numActive && numNotTaken != numActive) {
-      // If threads go different ways, note it.
-      atomicAdd(profile_counters+5, 1ULL);
-    }
-  }
-}\n"^
-  "__device__ void while_analysis(unsigned long long int *profile_counters, int eval){
-
-  int threadIdxInWarp =  get_laneid();//threadIdx.x & (warpSize-1);
-
-  //Get count of 1) active threads  in this warp                                  //2) threads that will take the branch                                          //3) threads that do not take the branch.                                                                   
-  int active = __ballot(1);
-  int taken = __ballot(eval);
-  int ntaken = __ballot(!eval);
-  int numActive = __popc(active);
-  int numTaken = __popc(taken), numNotTaken = __popc(ntaken);
-
-  // The first active thread in each warp gets to write results.                                              
-  if ((__ffs(active)-1) == threadIdxInWarp) {
-    atomicAdd(profile_counters+4, 1ULL); //                                                                   
-    if (numTaken != numActive && numNotTaken != numActive) {
-      // If threads go different ways, note it.                                                               
-      atomicAdd(profile_counters+5, 1ULL);
-    }
-  }
-}
-\n"^
-"
-#include<cuda.h>
-template <typename T>
-__device__ T __broadcast(T t, int fromWhom)
-{
-  union {
-    int32_t shflVals[sizeof(T)];
-    T t;
-  } p;
-  
-  p.t = t;
-    #pragma unroll
-  for (int i = 0; i < sizeof(T); i++) {
-    int32_t shfl = (int32_t)p.shflVals[i];
-    p.shflVals[i] = __shfl(shfl, fromWhom);
-  }
-  return p.t;
-}
-
-/// The number of bits we need to shift off to get the cache line address.
-#define LINE_BITS   5
-
-template<typename T>
-__device__ T* memory_analysis(unsigned long long int *profile_counters, T* mp, int store, int load){
-
-  int threadIdxInWarp =  get_laneid();//threadIdx.x & (warpSize-1);
-  intptr_t addrAsInt = (intptr_t) mp;
-
-  if (__isGlobal(mp)){
-    if (store) atomicAdd(profile_counters+0, 1ULL);
-    if (load) atomicAdd(profile_counters+1, 1ULL);
-
-    unsigned unique = 0; // Num unique lines per warp.
-
-    // Shift off the offset bits into the cache line.
-    intptr_t lineAddr = addrAsInt >> LINE_BITS;
-
-    int workset = __ballot(1);
-    int firstActive = __ffs(workset)-1;
-    int numActive = __popc(workset);
-    while (workset) {
-      // Elect a leader, get its cache line, see who matches it.
-      int leader = __ffs(workset) - 1;
-      intptr_t leadersAddr = __broadcast(lineAddr, leader);
-      int notMatchesLeader = __ballot(leadersAddr != lineAddr);
-
-      // We have accounted for all values that match the leader’s.
-      // Let’s remove them all from the workset.
-      workset = workset & notMatchesLeader;
-      unique++;
-    }
-
-    if (firstActive == threadIdxInWarp && unique ) {
-      atomicAdd(profile_counters+6, 1ULL);
-    }
-    
-  }
-  return mp;
-
-}
-"^
-  "\n"
+  "__device__ int spoc_xor (int a, int b ) { return (a^b);}\n"
 )
 
 let eint32 = EInt32
-let eint64 = EInt64
-let efloat32 = EFloat32
-let efloat64 = EFloat64
+let eint64 = EInt32
+let efloat32 = EInt32
+let efloat64 = EInt32
 
 let global = Global
 let local = LocalSpace
 let shared = Shared
 
 let new_var i = IdName ("spoc_var"^(string_of_int i))
-let new_array n l t m = Arr (n, l, t, m)
+let new_array i l t m = Arr (i, l, t, m)
 let var i s = IntId (s, i) (*("spoc_var"^(string_of_int i)), i)*)
 let spoc_gen_kernel args body = Kern (args,body)
 let spoc_fun_kernel a b = ()
@@ -397,7 +163,6 @@ let spoc_unit () = Unit
 let spoc_int a = Int a
 let global_int_var a = GInt a
 let global_float_var a = GFloat a
-let global_float64_var a = GFloat64 a
 let spoc_int32 a = Int (Int32.to_int a)
 let spoc_float f = Float f
 let spoc_double d = Double d
@@ -505,10 +270,9 @@ let return_double d s= DoubleVar (d,s)
 let return_bool b s= BoolVar (b,s)
 let return_custom n sn s= CustomVar (n, sn,s)
 
-let spoc_native f = Native f
-let pragma l e = Pragma (l,e)
-let map f a b = Map (f, a, b)
-let reduce f a b = Map (f, a, b)
+let spoc_native s = Native s
+
+
 
 let print s = Printf.printf "%s}\n" s
 
@@ -529,7 +293,6 @@ let rewrite ker =
   let rec aux kern =
     match kern with
     | Native _ -> kern
-    | Pragma (opts,k) -> Pragma (opts,aux k)
     | Block b -> Block (aux b)
     | Kern (k1,k2) ->
       Kern (aux k1, aux k2)
@@ -669,7 +432,6 @@ let rewrite ker =
     | Int _-> kern
     | GInt _ -> kern
     | GFloat _ -> kern
-    | GFloat64 _ -> kern
     | Float _ -> kern
     | Double _ -> kern
     | Custom _ -> kern
@@ -713,7 +475,6 @@ let rewrite ker =
     | Match (s,a,b) -> Match (s,aux a,
                               Array.map (fun (i,ofid,e) -> (i,ofid,aux e)) b)
     | CustomVar _ -> kern
-    | Map (a,b,c) ->  Map (aux a, aux b, aux c)
 
 
   in
@@ -730,7 +491,7 @@ let rewrite ker =
 let return_v = ref ("","")
 
 let save file string =
-  ignore(Sys.command ("rm -f "^file));
+  ignore(Sys.command ("rm -f"^file));
   let channel = open_out file in
   output_string channel string;
   close_out channel;;
@@ -738,50 +499,16 @@ let save file string =
 let load_file f =
   let ic = open_in f in
   let n = in_channel_length ic in
-  let s = Bytes.make  n ' ' in
+  let s = String.make  n ' ' in
   really_input ic s 0 n;
   close_in ic;
   (s)
 
-
-
-
-(*external print_source : string -> unit = "kernel_source"*)
-  
-let gen_profile ker dev =
+let gen ?return:(r=false) ?only:(o=Devices.Both) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) =
   let kir,k = ker in
   let (k1,k2,k3) = (k.ml_kern, k.body,k.ret_val) in
   return_v := "","";
-  let k' = ((Kirc_Profile.parse 0 (fst k3) dev),
-            ( match  (fst k3) with
-              | IntVar (i,s) | FloatVar (i,s) | DoubleVar (i,s) -> s (*"sspoc_var"^(string_of_int i)^*)^" = "
-              | Unit -> ""
-              | SetV _ -> ""
-              | IntVecAcc _-> ""
-              | VecVar _ -> ""
-              | _ -> (debug_print
-                        (kir,
-                         {ml_kern = k1;
-                          body = fst k3;
-                          ret_val = k3;
-                          extensions = k.extensions});  Pervasives.flush stdout; assert false) ))
-  in
-  let profile_source = (Kirc_Profile.parse 0 (k2) dev) in
-  Printf.printf "%s" profile_source(*;
-  print_source profile_source*)
-    (*Printf.fprintf "profilingInfo.json" {\n \"type\":\"profile_kernel\",\n \
-                                       \"kernel_id\":%d,\n \
-                                       \"source\":\"%s\"\n \
-                                       },\n" (!Spoc.Trac.eventId - 1 ) profile_source*)
-
-(* external from SPOC*)
-external nvrtc_ptx : string -> string array -> string = "spoc_nvrtc_ptx"
-
-let gen ?profile:(prof=false) ?return:(r=false) ?only:(o=Devices.Both) ?nvrtc_options:(nvopt=[||]) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) dev =
-  let kir,k = ker in
-  let (k1,k2,k3) = (k.ml_kern, k.body,k.ret_val) in
-  return_v := "","";
-  let k' = ((Kirc_Cuda.parse ~profile:prof 0 (fst k3) dev),
+  let k' = ((Kirc_Cuda.parse 0 (fst k3)),
             ( match  (fst k3) with
               | IntVar (i,s) | FloatVar (i,s) | DoubleVar (i,s) -> s (*"sspoc_var"^(string_of_int i)^*)^" = "
               | Unit -> ""
@@ -802,61 +529,20 @@ let gen ?profile:(prof=false) ?return:(r=false) ?only:(o=Devices.Both) ?nvrtc_op
       Kirc_OpenCL.return_v := k';
     );
 
-  let gen_cuda ?opts:(s="") () =
+  let gen_cuda () =
     let cuda_head =
       Array.fold_left
         (fun header extension ->
            match extension with
            | ExFloat32 -> header
            | ExFloat64 -> cuda_float64^header) cuda_head k.extensions in
-    let src = Kirc_Cuda.parse ~profile:prof 0 (rewrite k2) dev in
+    let src = Kirc_Cuda.parse 0 (rewrite k2) in
     let global_funs = ref "" in
     Hashtbl.iter (fun _ a -> global_funs := !global_funs^(fst a)^"\n") Kirc_Cuda.global_funs;
-    let i = ref 0 in
-    let constructors = List.fold_left (fun a b -> incr i; (if !i mod 3 = 0 then " " else "__device__ ")^b^a) "\n\n" !constructors in
-    let protos = "/************* FUNCTION PROTOTYPES ******************/\n" ^
-                 List.fold_left (fun a b -> b^";\n"^a) "" !Kirc_Cuda.protos in
-    if  debug then
-      (
-        save ("kirc_kernel"^(string_of_int !idkern)^".cu") (cuda_head ^ (if prof then cuda_profile_head else "")^ constructors ^ protos ^ !global_funs ^ src) ;
-        incr idkern;
-      );
-    (*ignore(Sys.command ("nvcc -g -G "^ s ^" "^"-arch=sm_30 -m64  -O3 -ptx kirc_kernel.cu -o kirc_kernel.ptx"));*)
-    let genopt =
-      (match dev.Devices.specific_info with
-       | Devices.CudaInfo cu ->
-         let computecap = cu.Devices.major*10+cu.Devices.minor in
-         [|
-           if computecap < 30 then
-             failwith ("CUDA device too old for this XXX")
-           else if computecap < 35 then
-             "--gpu-architecture=compute_30"
-           else if computecap < 50 then
-             "--gpu-architecture=compute_35"
-           else if computecap < 52 then
-             "--gpu-architecture=compute_50"
-           else if computecap < 53 then
-             "--gpu-architecture=compute_52"
-           else if computecap < 60 then
-             "--gpu-architecture=compute_53"
-           else if computecap < 61 then
-             "--gpu-architecture=compute_60"
-           else if computecap < 62 then
-             "--gpu-architecture=compute_61"
-           else if computecap < 70 then
-             "--gpu-architecture=compute_62"
-           else if computecap < 72 then
-             "--gpu-architecture=compute_70"
-           else if computecap = 72 then
-             "--gpu-architecture=compute_72"
-           else
-             "--gpu-architecture=compute_30"
-         |]
-       | _ -> [||])
-    in
-    let nvrtc_options = Array.append nvopt genopt in
-    let s = nvrtc_ptx (cuda_head ^ (if prof then cuda_profile_head else "")^ constructors ^  !global_funs ^ src) nvrtc_options in
-    (*let s = (load_file "kirc_kernel.ptx") in*)
+    let constructors = List.fold_left (fun a b -> "__device__ "^b^a) "\n\n" !constructors in
+    save "kirc_kernel.cu" (cuda_head ^ constructors ^  !global_funs ^ src) ;
+    ignore(Sys.command ("nvcc -m64  -O3 -ptx kirc_kernel.cu -o kirc_kernel.ptx"));
+    let s = (load_file "kirc_kernel.ptx") in
     kir#set_cuda_sources s;
     ignore(Sys.command "rm kirc_kernel.cu kirc_kernel.ptx");
 
@@ -867,206 +553,57 @@ let gen ?profile:(prof=false) ?return:(r=false) ?only:(o=Devices.Both) ?nvrtc_op
            match extension with
            | ExFloat32 -> header
            | ExFloat64 -> opencl_float64^header) opencl_head k.extensions in
-    let src = Kirc_OpenCL.parse ~profile:prof 0 (rewrite k2) dev in
+    let src = Kirc_OpenCL.parse 0 (rewrite k2) in
     let global_funs = ref "/************* FUNCTION DEFINITIONS ******************/\n"  in
     Hashtbl.iter (fun _ a -> global_funs := !global_funs ^ "\n" ^ (fst a) ^ "\n" ) Kirc_OpenCL.global_funs;
     let constructors =  "/************* CUSTOM TYPES ******************/\n" ^
                         List.fold_left (fun a b -> b^a) "\n\n" !constructors in
     let protos = "/************* FUNCTION PROTOTYPES ******************/\n" ^
                  List.fold_left (fun a b -> b^";\n"^a) "" !Kirc_OpenCL.protos in
-    let clkernel = ((if prof then
-                       "#pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable\n"
-                     else "")^
-                    opencl_head ^
-                    (if prof then
-                       match dev.Devices.specific_info with
-                       | Devices.OpenCLInfo
-                           {Devices.device_type = Devices.CL_DEVICE_TYPE_CPU; _} ->
-                         opencl_profile_head_cpu
-                       | _ ->
-                         opencl_profile_head
-                     else "") ^
-                    constructors ^ protos ^ !global_funs ^  src)  in
+    let clkernel = (opencl_head ^ constructors ^ protos ^ !global_funs ^  src)  in
     save "kirc_kernel.cl" clkernel;
     kir#set_opencl_sources clkernel;
 
   in
   begin
     match o with
-    | Devices.Both ->
-      ignore(Kirc_Cuda.get_profile_counter());
-      gen_cuda ();
-      ignore(Kirc_OpenCL.get_profile_counter());
-      gen_opencl ();
-    | Devices.Cuda ->
-      ignore(Kirc_Cuda.get_profile_counter());
-      gen_cuda ()
-    | Devices.OpenCL ->
-      ignore(Kirc_OpenCL.get_profile_counter());
-      gen_opencl ()
+    | Devices.Both -> gen_cuda (); gen_opencl();
+    | Devices.Cuda -> gen_cuda ()
+    | Devices.OpenCL -> gen_opencl ()
   end;
   kir#reset_binaries ();
-  ignore(kir#compile dev);
   kir,k
 
-let arg_of_vec v  =
-  match Vector.kind v with
-  | Vector.Int32 _ -> Kernel.VInt32 v
-  | Vector.Float32 _ -> Kernel.VFloat32 v
-  | Vector.Int64 _ -> Kernel.VInt64 v
-  | _ -> assert false
 
-
-let run ?recompile:(r=false) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) a (block,grid) q dev =
+let run ?recompile:(r=false) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) a b q dev =
   let kir,k = ker in
   (match dev.Devices.specific_info with
    | Devices.CudaInfo _ ->
      if r then
-       ignore(gen ~only:Devices.Cuda (kir,k) dev)
+       ignore(gen ~only:Devices.Cuda (kir,k))
      else
        begin
          match kir#get_cuda_sources () with
-         | [] -> ignore(gen  ~only:Devices.Cuda (kir,k) dev)
-         | _ ->  ()
-       end
-   | Devices.OpenCLInfo _ ->
-     begin
-       if r then
-         ignore(gen  ~only:Devices.OpenCL (kir,k) dev)
-       else
-         match kir#get_opencl_sources () with
-         | [] -> ignore(gen  ~only:Devices.OpenCL (kir,k) dev)
-         | _ -> ()
-     end);
-  let args = kir#args_to_list a in
-  let offset = ref 0 in
-  let bin = kir#compile ~debug:true dev in
-  (*let bin = (Hashtbl.find (kir#get_binaries ()) dev) in*)
-  let nvec = ref 0 in
-  Array.iter (fun a ->
-      (match a with
-       | VChar v | VFloat32 v | VFloat64 v
-       | VInt32 v | VInt64 v | VComplex32 v
-       | VCustom v -> incr nvec
-       | _ -> ())) args ;
-  
-  match dev.Devices.specific_info with
-  | Devices.CudaInfo cI ->
-    let extra = Kernel.Cuda.cuda_create_extra ((Array.length args) + !nvec) in
-    (*Kernel.Cuda.cuda_load_arg offset extra dev bin 0 (arg_of_vec profiler_counters);*)
-    let idx = ref 0 in
-    Array.iter (fun  a ->
-        (match a with
-         | VChar v | VFloat32 v | VFloat64 v
-         | VInt32 v | VInt64 v | VComplex32 v
-         | VCustom v ->
-           (Kernel.Cuda.cuda_load_arg offset extra dev bin (!idx) a;
-            Kernel.Cuda.cuda_load_arg offset extra dev bin (!idx+1) (Kernel.Int32 (Vector.length v));
-            idx := !idx +2;
-           )
-         | _  ->
-           (Kernel.Cuda.cuda_load_arg offset extra dev bin (idx) a;
-            incr idx;)
-        )) args;       
-    Kernel.Cuda.cuda_launch_grid offset bin grid block extra dev.Devices.general_info 0;
-    
-  | Devices.OpenCLInfo _ ->
-    (*Kernel.OpenCL.opencl_load_arg offset dev bin 0 (arg_of_vec profiler_counters);*)
-    let idx = ref 0 in
-    Array.iter (fun  a ->
-        (match a with
-         | VChar v | VFloat32 v | VFloat64 v
-         | VInt32 v | VInt64 v | VComplex32 v
-         | VCustom v ->
-           (
-             Kernel.OpenCL.opencl_load_arg offset dev bin (!idx) a;
-             Kernel.OpenCL.opencl_load_arg offset dev bin (!idx+1) (Kernel.Int32 (Vector.length v));
-             idx := !idx +2;
-           )
-         | _  ->
-           (Kernel.OpenCL.opencl_load_arg offset dev bin (!idx) a;
-            incr idx;)
-        )) args;
-    (*Array.iteri (fun i a -> Kernel.OpenCL.opencl_load_arg offset dev bin (i) a) args;*)
-    Kernel.OpenCL.opencl_launch_grid bin grid block dev.Devices.general_info 0
-;;
-
-
-let profile_run ?recompile:(r=true) ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) a b q dev =
-  let kir,k = ker in
-  (match dev.Devices.specific_info with
-   | Devices.CudaInfo _ ->
-     if r then
-       ignore(gen ~profile:true ~only:Devices.Cuda (kir,k) dev)
-     else
-       begin
-         match kir#get_cuda_sources () with
-         | [] -> ignore(gen ~profile:true ~only:Devices.Cuda (kir,k) dev)
+         | [] -> ignore(gen ~only:Devices.Cuda (kir,k))
          | _ -> ()
        end
    | Devices.OpenCLInfo _ ->
      begin
        if r then
-         ignore(gen ~profile:true ~only:Devices.OpenCL (kir,k) dev)
+         ignore(gen ~only:Devices.OpenCL (kir,k))
        else
          match kir#get_opencl_sources () with
-         | [] -> ignore(gen ~profile:true ~only:Devices.OpenCL (kir,k) dev)
+         | [] -> ignore(gen ~only:Devices.OpenCL (kir,k))
          | _ -> ()
      end);
-  (*kir#run a b q dev;*)
-  let nCounter =
-    !(match dev.Devices.specific_info with
-     | Devices.CudaInfo _ ->
-       Kirc_Cuda.profiler_counter;
-     | Devices.OpenCLInfo _ ->
-       Kirc_OpenCL.profiler_counter;
-     )
-  in
-  (*Printf.printf "Number of counters : %d\n%!" nCounter;*)
-  let profiler_counters =  Vector.create Vector.int64 nCounter in
-  for i = 0 to nCounter  - 1 do
-    Mem.set profiler_counters i 0L;
-  done;
-  (
-    let args = kir#args_to_list a in
-    let offset = ref 0 in
-    kir#compile ~debug:true dev;
-    let block,grid = b in 
-    let bin = (Hashtbl.find (kir#get_binaries ()) dev) in
-    match dev.Devices.specific_info with
-    | Devices.CudaInfo cI ->
-      let extra = Kernel.Cuda.cuda_create_extra ((Array.length args) + 1) in
-      Kernel.Cuda.cuda_load_arg offset extra dev bin 0 (arg_of_vec profiler_counters);
-      Array.iteri (fun i a ->
-          (match a with
-           | VChar _ | VFloat32 _ | VFloat64 _
-           | VInt32 _ | VInt64 _ | VComplex32 _
-           | VCustom _ ->
-             (
-              Kernel.Cuda.cuda_load_arg offset extra dev bin (i) a)
-           | _  -> Kernel.Cuda.cuda_load_arg offset extra dev bin (i) a)) args;
-      
-      Kernel.Cuda.cuda_launch_grid offset bin grid block extra dev.Devices.general_info 0;
-      
-    | Devices.OpenCLInfo _ ->
-      Kernel.OpenCL.opencl_load_arg offset dev bin 0 (arg_of_vec profiler_counters);
-      Array.iteri (fun i a -> Kernel.OpenCL.opencl_load_arg offset dev bin (i) a) args;
-      Kernel.OpenCL.opencl_launch_grid bin grid block dev.Devices.general_info 0
-  );
-  Devices.flush dev ();
-  if (not !Mem.auto) then
-    Mem.to_cpu profiler_counters ();
-  (*Spoc.Tools.iter (fun a -> Printf.printf "%Ld " a) profiler_counters;*)
-  Gen.profile_vect := profiler_counters;
-  gen_profile ker dev;
-;;
-  
-  
-let compile_kernel_to_files s ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) dev =
+  kir#run a b q dev
+
+
+let compile_kernel_to_files s ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) =
   let kir,k = ker in
   let (k1,k2,k3) = (k.ml_kern, k.body,k.ret_val) in
   return_v := "","";
-  let k' = ((Kirc_Cuda.parse 0 (fst k3)) dev,
+  let k' = ((Kirc_Cuda.parse 0 (fst k3)),
             ( match  (fst k3) with
               | IntVar (i,s) | FloatVar (i,s) | DoubleVar (i,s) -> s^(*"spoc_var"^(string_of_int i)^*)" = "
               | Unit -> ""
@@ -1095,8 +632,8 @@ let compile_kernel_to_files s ((ker: ('a, 'b, 'c,'d,'e) sarek_kernel)) dev =
          match extension with
          | ExFloat32 -> header
          | ExFloat64 -> opencl_float64^header) opencl_head k.extensions in
-  save (s^".cu") (cuda_head^(Kirc_Cuda.parse 0 (rewrite k2) dev)) ;
-  save (s^".cl") (opencl_head^(Kirc_OpenCL.parse 0 (rewrite k2) dev))
+  save (s^".cu") (cuda_head^(Kirc_Cuda.parse 0 (rewrite k2))) ;
+  save (s^".cl") (opencl_head^(Kirc_OpenCL.parse 0 (rewrite k2)))
 
 
 
@@ -1112,11 +649,6 @@ struct
   let block_dim_x = 1l
   let block_dim_y = 1l
   let block_dim_z = 1l
-  let grid_dim_x = 1l
-  let grid_dim_y = 1l
-  let grid_dim_z = 1l
-    
-    
 
   let global_thread_id = 0l
   let return () = ()
@@ -1130,27 +662,7 @@ struct
 
   let make_shared i = Array.make (Int32.to_int i) 0l
   let make_local i = Array.make (Int32.to_int i) 0l
-  let map f a b =
-    assert (Vector.length a= Vector.length b);
-    for i = 0 to Vector.length a do
-      Mem.set b i (f (Mem.get a i))
-    done
-
-  let reduce f a b =
-    let rec aux acc i =
-      if Vector.length a < i then
-        aux (f acc (Mem.get a i)) (i+1)
-      else acc
-    in
-    Mem.set b 0 (aux (Mem.get a 0) 1)
-
 end
-
-  module Sarek_vector =
-struct
-  let length v = Int32.of_int (Vector.length v)
-end
-
 
 module Math =
 struct
@@ -1177,7 +689,6 @@ struct
 
     let pow = ( ** )
     let sqrt = Pervasives.sqrt
-    let rsqrt = Pervasives.sqrt (* todo*)
     let exp = Pervasives.exp
     let log = Pervasives.log
     let log10 = Pervasives.log10
@@ -1212,7 +723,6 @@ struct
 
   module Float64 =
   struct
-
     let add = (+.)
     let minus = (-.)
     let mul = ( *. )
@@ -1220,7 +730,6 @@ struct
 
     let pow = ( ** )
     let sqrt = Pervasives.sqrt
-    let rsqrt = Pervasives.sqrt (* todo*)
     let exp = Pervasives.exp
     let log = Pervasives.log
     let log10 = Pervasives.log10

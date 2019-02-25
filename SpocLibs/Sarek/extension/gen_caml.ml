@@ -232,9 +232,9 @@ and parse_app_ml a modu =
       | Id (_loc,s) -> ExApp(_loc, ExAcc(_loc, modu,ExId(_loc, s)), parse_body e2)
       | App (l, e1, e2::[]) -> ExApp (_loc, aux e1 modu, parse_body e2)
       | ModuleAccess (_loc, s, e) ->
-         ExAcc(_loc, modu, (parse_body a))
+        ExAcc(_loc, modu, (parse_body a))
       | _ -> my_eprintf (Printf.sprintf "(* app %s *)\n%!" (k_expr_to_string a.e));
-             assert false
+        assert false
     in
     ExApp(_loc, aux e1 modu, parse_body e2)
   | _ -> parse_body a
@@ -355,7 +355,7 @@ and parse_body body =
            | a -> vec_typ_to_e a
          in
          (match t with
-          | TInt32 | TBool  -> <:ctyp<(int32, Bigarray.int32_elt) Spoc.Vector.vector>>
+          | TInt32  -> <:ctyp<(int32, Bigarray.int32_elt) Spoc.Vector.vector>>
           | TInt64  -> <:ctyp<(int64, Bigarray.int64_elt) Spoc.Vector.vector>>
           | TFloat32 -> <:ctyp<(float, Bigarray.float32_elt) Spoc.Vector.vector>>
           | TFloat64 -> <:ctyp<(float, Bigarray.float64_elt) Spoc.Vector.vector>>
@@ -414,7 +414,7 @@ and parse_body body =
          (match var.var_type with
           | TVec k ->
             (match k with
-             | TInt32 | TBool -> <:ctyp<(int32, Bigarray.int32_elt) Spoc.Vector.vector>>
+             | TInt32  -> <:ctyp<(int32, Bigarray.int32_elt) Spoc.Vector.vector>>
              | TInt64  -> <:ctyp<(int64, Bigarray.int64_elt) Spoc.Vector.vector>>
              | TFloat32 -> <:ctyp<(float, Bigarray.float32_elt) Spoc.Vector.vector>>
              | TFloat64 -> <:ctyp<(float, Bigarray.float64_elt) Spoc.Vector.vector>>
@@ -422,9 +422,9 @@ and parse_body body =
                let name = TyId(_loc,IdLid(_loc,name))
                and sarek_name = TyId(_loc, IdLid(_loc,name^"_sarek")) in
                <:ctyp<($name$,$sarek_name$) Spoc.Vector.vector >>
-             | TVec _  | TUnknown | TUnit | TArr _
+             | TBool | TVec _  | TUnknown | TUnit | TArr _
              | TApp _   ->
-               my_eprintf ("Unimplemented vecget : "^(ktyp_to_string var.var_type )^"\n");               
+               my_eprintf ("Unimplemented vecget : "^(ktyp_to_string var.var_type )^"\n");
                assert false
             )
           | _  -> assert (not debug);
@@ -537,29 +537,6 @@ and parse_body body =
     let body = parse_body body in
     (<:expr< while $cond$ do $body$ done>>)
   | App (_loc, e1, e2) ->
-    let gen_special a =
-      match a.e with
-      | (*create_array *) App (_loc,{t=typ; e= Id(_,<:ident< create_array>>); loc=_}, [b]) ->
-        (match a.t with
-         | TArr (TFloat64, Shared)
-         | TArr (TFloat32, Shared) ->
-           <:expr< Array.make (Int32.to_int $parse_body b$) 0. >>
-         | TArr (TInt32, Shared) 
-         | TArr (TInt64, Shared) ->
-           <:expr< Array.make (Int32.to_int $parse_body b$) 0l >>
-        | _ -> assert false)
-      
-      |  App (_loc, {e=App (_, {t=_; e= App (_,{t=_; e=Id(_,<:ident< map>>); loc=_}, [f]); loc=_}, [a])}, [b]) ->
-        <:expr< map $parse_body f$.ml_fun $parse_body a $ $parse_body b $>>;
-      |  App (_loc, {e=App (_, {t=_; e= App (_,{t=_; e=Id(_,<:ident< reduce>>); loc=_}, [f]); loc=_}, [a])}, [b]) ->
-        <:expr< reduce $parse_body f$.ml_fun $parse_body a $ $parse_body b $>>;
-        
-      | _  -> 
-        raise Not_found
-    in
-    (try gen_special body with
-    | Not_found ->
-      (
     let rec aux e2 =
       match e2 with
       | t::[] -> parse_body t
@@ -592,7 +569,6 @@ and parse_body body =
       | _ -> parse_body e1
     in
     <:expr<$e1$ $e2$>>
-  ))
   | Open (_loc, id, e) ->
     let rec aux = function
       | IdAcc (l,a,b) -> aux a; aux b
@@ -602,7 +578,7 @@ and parse_body body =
     aux id;
     let e = <:expr<let open $id$ in $parse_body e$>> in
     let rec aux = function
-      | IdAcc (l,a,b) -> aux b; aux a
+      | IdAcc (l,a,b) -> aux a; aux b
       | IdUid (l,s) -> close_module s
       | _ -> assert (not debug)
     in
@@ -624,11 +600,6 @@ and parse_body body =
   | Ref (_, {loc=_; e=Id(_loc,s); t=_}) ->
     <:expr< ! $ExId(_loc, s)$>>
   | ModuleAccess (_loc, s, e) ->
-    let s =
-      match s with
-      | "Vector"  -> "Sarek_vector"
-      | _ -> s
-    in
     let e = parse_app_ml e <:expr< $uid:s$>> in
     e
   | Match (_loc, e, mc) ->
@@ -653,6 +624,4 @@ and parse_body body =
   | BoolNot (_loc, e) -> <:expr< not $parse_body e$>>
   | TypeConstraint (_loc, e, _) -> parse_body e
   | Nat (_loc, code) -> <:expr< failwith "native_code cannot be used in ml functions">>
-  | Fun (_loc,stri,tt,funv,lifted) -> <:expr< $stri$ >>
-  | Pragma (_,_,e) -> parse_body e
   | _ -> assert (not debug); failwith "parse_body : unimplemented yet"

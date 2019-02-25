@@ -78,7 +78,7 @@ type  k_ext =
   | CastDoubleVar of int * string
   | DoubleVar of int * string
   | BoolVar of int * string
-  | Arr of string*k_ext*elttype*memspace
+  | Arr of int*k_ext*elttype*memspace
   | VecVar of  k_ext*int * string
   | Concat of  k_ext* k_ext
   | Constr of string * string * k_ext list
@@ -119,10 +119,7 @@ type  k_ext =
   | App of  k_ext *  k_ext array
   | GInt of (unit -> int32)
   | GFloat of (unit -> float)
-  | GFloat64 of (unit -> float)
-  | Native of (Spoc.Devices.device -> string)
-  | Pragma of string list * k_ext
-  | Map of (k_ext*k_ext*k_ext)
+  | Native of string
   | Unit
 
 
@@ -133,182 +130,180 @@ type  kfun =
 
 
 
-
-
-let string_of_ast a =
-  let soa i s =
+let print_ast a =
+  let print i s =
     for j = 0 to i - 1 do
-       "  ";
+      Printf.printf "  ";
     done;
-   s^"\n"
+    Printf.printf "%s\n" s
   in
   let rec aux i = function
     | Kern (a,b) ->
-      soa i "Kern";
+      print i "Kern";
       (aux (i + 1) a);
       (aux (i + 1) b)
     | Block b ->
-      soa i "Kern";
+      print i "Kern";
       (aux (i + 1) b);
     | Params p ->
-      soa i "Params";
+      print i "Params";
       (aux (i+1) p)
     | Plus (a,b) ->
-      soa i "Plus";
+      print i "Plus";
       aux (i+1) a;
       aux (i+1) b;
     | Plusf (a,b) ->
-      soa i "Plusf";
+      print i "Plusf";
       aux (i+1) a;
       aux (i+1) b;
     | Min (a,b) ->
-      soa i "Min";
+      print i "Min";
       aux (i+1) a;
       aux (i+1) b;
     | Minf (a,b) ->
-      soa i "Minf";
+      print i "Minf";
       aux (i+1) a;
       aux (i+1) b;
     | Mul (a,b) ->
-      soa i "Mul";
+      print i "Mul";
       aux (i+1) a;
       aux (i+1) b;
     | Mulf (a,b) ->
-      soa i "Mulf";
+      print i "Mulf";
       aux (i+1) a;
       aux (i+1) b;
     | Div (a,b) ->
-      soa i "Div";
+      print i "Div";
       aux (i+1) a;
       aux (i+1) b;
     | Divf (a,b) ->
-      soa i "Divf";
+      print i "Divf";
       aux (i+1) a;
       aux (i+1) b;
     | Mod (a,b) ->
-      soa i "Mod";
+      print i "Mod";
       aux (i+1) a;
       aux (i+1) b;
     | Id (s) ->
-      soa i ("Id "^s)
+      print i ("Id "^s)
     | IdName s ->
-      soa i ("IdName "^s);
+      print i ("IdName "^s);
     | IntVar (ii,s) ->
-      soa i ("IntVar "^(string_of_int ii)^" -> "^s)
+      print i ("IntVar "^(string_of_int ii)^" -> "^s)
     | FloatVar (ii,s) ->
-      soa i ("FloatVar "^(string_of_int ii)^" -> "^s)
+      print i ("FloatVar "^(string_of_int ii)^" -> "^s)
     | CastDoubleVar (ii,s) ->
-                     soa i ("CastDoubleVar "^(string_of_int ii)^" ->"^s)
+                     print i ("CastDoubleVar "^(string_of_int ii)^" ->"^s)
     | DoubleVar (ii,s) ->
-      soa i ("DoubleVar "^(string_of_int ii)^" ->"^s)
+      print i ("DoubleVar "^(string_of_int ii)^" ->"^s)
     | BoolVar (ii,s) ->
-      soa i ("BoolVar "^(string_of_int ii)^" ->"^s)
+      print i ("BoolVar "^(string_of_int ii)^" ->"^s)
     | UnitVar (ii,s) ->
-      soa i ("UnitVar "^(string_of_int ii)^" ->"^s)
+      print i ("UnitVar "^(string_of_int ii)^" ->"^s)
     | VecVar (t,ii,s) ->
-      soa i ("VecVar "^(string_of_int ii)^" ->"^s)
+      print i ("VecVar "^(string_of_int ii)^" ->"^s)
     | Concat (a,b) ->
-      soa i "Concat";
+      print i "Concat";
       aux (i+1) a;
       aux (i+1) b;
     | Empty ->
-      soa i "Empty"
+      print i "Empty"
     | Seq (a,b) ->
-      soa i "Seq";
+      print i "Seq";
       aux (i+1) a;
       aux (i+1) b;
     | Return a ->
-      soa i "Return";
+      print i "Return";
       aux (i+1) a;
     | Set (a,b) ->
-      soa i "Set";
+      print i "Set";
       aux (i+1) a;
       aux (i+1) b;
     | Decl (a) ->
-      soa i "Decl";
+      print i "Decl";
       aux (i+1) a;
     | Acc (a,b) ->
-      soa i "Acc";
+      print i "Acc";
       aux (i+1) a;
       aux (i+1) b;
     | SetV (a,b) ->
-      soa i "SetV";
+      print i "SetV";
       aux (i+1) a;
       aux (i+1) b;
     | SetLocalVar (a,b,c) ->
-      soa i "SetLocalVar";
+      print i "SetLocalVar";
       aux (i+1) a;
       aux (i+1) b;
       aux (i+1) c;
     | Intrinsics _ ->
-      soa i "Intrinsics"
+      print i "Intrinsics"
     | IntId (s,ii) ->
-      soa i ("IntId "^s^" "^(string_of_int ii));
+      print i ("IntId "^s^" "^(string_of_int ii));
     | Int ii ->
-      soa i ("Int "^(string_of_int ii));
+      print i ("Int "^(string_of_int ii));
     | Float f
     | Double f ->
-      soa i ("Float "^(string_of_float f));
+      print i ("Float "^(string_of_float f));
     | IntVecAcc (a,b) ->
-      soa i "IntVecAcc";
+      print i "IntVecAcc";
       aux (i+1) a;
       aux (i+1) b;
     | Local (a,b) ->
-      soa i "Local";
+      print i "Local";
       aux (i+1) a;
       aux (i+1) b;
     | Ife (a,b,c) ->
-      soa i "Ife";
+      print i "Ife";
       aux (i+1) a;
       aux (i+1) b;
       aux (i+1) c;
     | If (a,b) ->
-      soa i "If";
+      print i "If";
       aux (i+1) a;
       aux (i+1) b;
     | EqBool (a,b) ->
-      soa i "EqBool";
+      print i "EqBool";
       aux (i+1) a;
       aux (i+1) b;
     | EqCustom(n,a,b) ->
-      soa i "EqSum";
+      print i "EqSum";
       aux (i+1) a;
       aux (i+1) b;
     | Or (a,b) ->
-      soa i "Or";
+      print i "Or";
       aux (i+1) a;
       aux (i+1) b;
     | And (a,b) ->
-      soa i "And";
+      print i "And";
       aux (i+1) a;
       aux (i+1) b;
     | Not (a) ->
-      soa i "Or";
+      print i "Or";
       aux (i+1) a;
     | LtBool (a,b) ->
-      soa i "LtBool";
+      print i "LtBool";
       aux (i+1) a;
       aux (i+1) b;
     | GtBool (a,b) ->
-      soa i "GtBool";
+      print i "GtBool";
       aux (i+1) a;
       aux (i+1) b;
     | LtEBool (a,b) ->
-      soa i "LtEBool";
+      print i "LtEBool";
       aux (i+1) a;
       aux (i+1) b;
     | GtEBool (a,b) ->
-      soa i "GtEBool";
+      print i "GtEBool";
       aux (i+1) a;
       aux (i+1) b;
     | DoLoop (a,b,c,d) ->
-      soa i "DoLoop";
+      print i "DoLoop";
       aux (i+1) a;
       aux (i+1) b;
       aux (i+1) c;
       aux (i+1) d;
     | While (a,b) ->
-      soa i "While";
+      print i "While";
       aux (i+1) a;
       aux (i+1) b;
     | Arr (s,l,t,m) ->
@@ -324,42 +319,39 @@ let string_of_ast a =
         | EFloat32 -> "float"
         | EFloat64 -> "double"
       in
-      soa i ("Arr" ^ s^ " " ^memspace^" "^elttype);
+      print i ("Arr" ^ memspace^" "^elttype);
     | App (a,b) ->
-      soa i "App";
+      print i "App";
       aux (i+1) a;
-      Array.fold_left (fun a b -> a^(aux (i+1) b) ) "" b;
+      Array.iter (aux (i+1)) b;
     | GInt a ->
-      soa i "GInt"
+      print i "GInt"
     | GFloat a ->
-      soa i "GFloat"
+      print i "GFloat"
     | Unit ->
-      soa i "Unit"
+      print i "Unit"
     | GlobalFun (e,s,n) ->
-      soa i ("Global Fun " ^s^" "^ n);
+      print i ("Global Fun " ^s^" "^ n);
       aux (i+1) e;
     | Constr (s1,s2,l) ->
-      soa i ("Constr "^s1^" "^s2);
-      List.fold_left (fun a b -> a^(aux (i+1) b) ) "" l;
+      print i ("Constr "^s1^" "^s2);
+      List.iter (fun a -> aux (i+1) a) l
     | Record (s,l) ->
-      soa i ("Record "^s);
-      List.fold_left (fun a b -> a^(aux (i+1) b) ) "" l;
+      print i ("Record "^s);
+      List.iter (fun a -> aux (i+1) a) l
     | RecGet (r,s) ->
-      soa i ("RecGet");
+      print i ("RecGet");
       aux (i+1) r
     | RecSet (r,v) ->
-      soa i ("RecGet");
+      print i ("RecGet");
       aux (i+1) r;
       aux (i+1) v;
     | Custom (s,_,ss) ->
-      soa i ("Custom "^s)
-    | Native f ->
-      soa i ("Native ")
+      print i ("Custom "^s)
+    | Native s ->
+      print i ("Native "^s)
     | Match (s,e1,l) ->
-      soa i ("Match "^s);
+      print i ("Match "^s);
       aux (i+1) e1;
-      Array.fold_left (fun a (_,_,b) -> aux (i+1) b) "" l;
-      
+      Array.iter (fun (_,_,a) -> aux (i+1) a) l
   in aux 0 a;;
-
-let print_ast a = Printf.printf "%s\n" (string_of_ast a)
