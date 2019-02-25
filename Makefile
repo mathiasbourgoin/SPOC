@@ -16,7 +16,7 @@ uninstall:
 samples: install
 	cd Samples; make
 
-install_sarek:
+install_sarek: 
 	cd SpocLibs/Sarek; make -j$(nprocs) install
 
 sarek_samples:

@@ -35,7 +35,7 @@ type k_ext =
   | CastDoubleVar of int * string
   | DoubleVar of int * string
   | BoolVar of int * string
-  | Arr of string * k_ext * elttype * memspace
+  | Arr of int * k_ext * elttype * memspace
   | VecVar of k_ext * int * string
   | Concat of k_ext * k_ext
   | Constr of string * string * k_ext list
@@ -76,14 +76,9 @@ type k_ext =
   | App of k_ext * k_ext array
   | GInt of (unit -> int32)
   | GFloat of (unit -> float)
-  | GFloat64 of (unit -> float)
-  | Native of (Spoc.Devices.device -> string)
-  | Pragma of string list * k_ext
-  | Map of (k_ext*k_ext*k_ext)
+  | Native of string
   | Unit
 and case = int * (string*string*int*string) option * k_ext
 
 type kfun = KernFun of k_ext * k_ext
-
-val string_of_ast : k_ext -> string
 val print_ast : k_ext -> unit

@@ -1,6 +1,6 @@
 MLSRC=$(shell ocamldep -sort *.ml)
 #Kirc_Ast.ml Kirc_Cuda.ml Kirc_OpenCL.ml Kirc.ml
-MLI=$(shell ocamldep -sort *.mli)
+MLI=$(shellocamldep -sort *.mli)
 #Kirc_Ast.mli Kirc.mli
 MLOBJ_B= $(MLSRC:.ml=.cmo)
 MLOBJ_N=$(MLSRC:.ml=.cmx)
@@ -22,7 +22,7 @@ start :
 
 %.cmx:%.ml
 	@echo  "\033[32m[$@]\033[0m"
-	@ocamlfind ocamlopt -g -thread -package spoc,ctypes,ctypes.foreign -c $<
+	@ocamlfind ocamlopt -thread -package spoc,ctypes,ctypes.foreign -c $<
 
 %.cmi:%.mli
 	@echo  "\033[32m[$@]\033[0m"
@@ -52,7 +52,7 @@ spoclevel-sarek : sarek.cmxa sarek.cma extension/kernels_int.cma
 
 sarek.cmxa : $(MLOBJ_N)
 	@echo  "\033[31m[sarek.cmxa]\033[0m"
-	@ocamlfind ocamlopt -g -thread -package spoc,ctypes.foreign.threaded -a  $(MLOBJ_N) -o sarek.cmxa
+	@ocamlfind ocamlopt -thread -package spoc,ctypes.foreign.threaded -a  $(MLOBJ_N) -o sarek.cmxa
 #@ocamlmklib -linkall -o sarek $(MLOBJ_N)  -cclib -lasmrun
 
 build: sarek.cmxa sarek.cma #spoclevel-sarek

@@ -72,13 +72,10 @@ val float32 : (float, Bigarray.float32_elt) kind
 val float64 : (float, Bigarray.float64_elt) kind
 val complex32 : (Complex.t, Bigarray.complex32_elt) kind
 
-type ('a,'b) host_vec
-  
 (** a spoc_vector is a Bigarray or a custom  vector *)
 type ('a, 'b) spoc_vec =
     Bigarray of ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t
   | CustomArray of (customarray * ('a,'b) custom)
-  | Host_vec of ('a,'b) host_vec
 
 
 (**/**)
@@ -91,8 +88,8 @@ type vec_device = No_dev | Dev of Devices.device | Transferring of Devices.devic
 (** a vector  represents every information needed by Spoc to manage it
  It uses Bigarrays to manage data on the cpu side (see the OCaml Bigarray Module for more information) *)
 type ('a, 'b) vector
-
-(** sub vectors are vector parts sharing memory space on cpu memory BUT not on gpu memory,
+  
+(** sub vectors are vector parts sharing memory space on cpu memory BUT not on gpu memory, 
 allowing easy computation distribution over multiple GPUs.
  sub-vector : sub_vector depth * start * ok range * ko range * parent vector (see samples for more info) *)
 and ('a,'b) sub = int * int * int * int * ('a,'b) vector

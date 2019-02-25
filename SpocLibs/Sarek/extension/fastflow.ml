@@ -22,10 +22,7 @@ let get_ff_type p =
          (match k with
           | TFloat32 ->
             <:str_item<let $lid:("task_"^x)$ = field task  $str:"task_"^x$ (ptr float)>>
-          | TInt32 ->
-            <:str_item<let $lid:("task_"^x)$ = field task  $str:"task_"^x$ (ptr int)>>
-              
-          | _ ->  failwith ("gfft : unimplemented yet " ^ ktyp_to_string k)
+          | _ ->  failwith "gfft : unimplemented yet"
          )
        | _  -> failwith "error get_ff_type")
 
@@ -51,7 +48,6 @@ let get_ff_type p =
              (match k with
               | TFloat32 ->
                 "(ptr float)"
-              | TInt32 -> "(ptr int)"
               | _ ->  failwith "gfft : unimplemented yet"
              )
            | _  -> failwith ("error get_ff_type_str -> "^ (ktyp_to_string var.var_type))))

@@ -45,14 +45,9 @@ extern "C" {
 #include <caml/fail.h>
 #include <caml/bigarray.h>
 #include <math.h>
-  #include "cuda_drvapi_dynlink_cuda.h"
-  int noCuda = 1;
+#include "cuda_drvapi_dynlink_cuda.h"
+#include "Spoc.h"
 
-  #include "Spoc.h"
-
-
-
-  
   value spoc_cuInit() {
 
     CAMLparam0();
@@ -65,10 +60,13 @@ extern "C" {
 			&& (CUDA_SUCCESS != cuInit(0, 2000))
 			&& (CUDA_SUCCESS != cuInit(0, 1000)))*/
       {
-	//noCuda = 1;
+	noCuda = 1;
 	CAMLreturn(Val_unit);
       }
-    noCuda=0;
+    else noCuda = 0;
+
+
+
     CAMLreturn(Val_unit);
   }
 
