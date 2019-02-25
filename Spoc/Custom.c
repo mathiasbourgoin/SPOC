@@ -58,13 +58,13 @@ void free_custom (value v) {
 {
 	CAMLparam2(custom, size);
 	CAMLlocal2(customSize, ret);
-	char* res;
+	void* res;
 	ret = alloc_final(2, free_custom, 0, 1);
 	customSize = Field(custom, 0);
 	//	res = (char*)malloc(Int_val(size)*Int_val(customSize)); 
 	if (noCuda){
-	  posix_memalign(&res, OPENCL_PAGE_ALIGN,
-			 ((Int_val(customSize)*Int_val(size) - 1)/OPENCL_CACHE_ALIGN + 1) * OPENCL_CACHE_ALIGN);
+	  if (0 != posix_memalign(&res, OPENCL_PAGE_ALIGN,
+			 ((Int_val(customSize)*Int_val(size) - 1)/OPENCL_CACHE_ALIGN + 1) * OPENCL_CACHE_ALIGN)) exit(1) ;
 	}
 	else
 	  {

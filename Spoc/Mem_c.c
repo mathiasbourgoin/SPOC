@@ -154,14 +154,14 @@ extern "C" {
     v->type_size=Int_val(type_size);
     v->size=Int_val(n);
     if (noCuda){
-      posix_memalign(&(v->vec), OPENCL_PAGE_ALIGN,
+      if (0 != posix_memalign(&(v->vec), OPENCL_PAGE_ALIGN,
                      ((Int_val(type_size)*Int_val(n) - 1)/OPENCL_CACHE_ALIGN + 1) * 
-                     OPENCL_CACHE_ALIGN);
+                              OPENCL_CACHE_ALIGN)) exit(1);
     }
     else{
       cuMemAllocHost(&(v->vec), Int_val(type_size)*Int_val(n));
     }
-    Store_field(ret,1,v);
+    Store_field(ret,1,(value)v);
     CAMLreturn(ret);
   }
 
@@ -173,7 +173,7 @@ extern "C" {
     v->type_size=Int_val(type_size);
     v->size=Int_val(n);
     v->vec=Caml_ba_data_val(ba);
-    Store_field(ret,1,v);
+    Store_field(ret,1,(value)v);
     CAMLreturn (ret);
   }
 
@@ -187,7 +187,7 @@ extern "C" {
     v->type_size = parent->type_size;
     v->size = len;
     v->vec = (char*)parent->vec+(v->type_size*Int_val(start));
-    Store_field(ret,1,v);
+    Store_field(ret,1,(value)v);
     CAMLreturn(ret);
   }
 
@@ -243,7 +243,7 @@ extern "C" {
     cl_mem f = Cl_mem_val(Field(v, 1));
     if (f) {
       clReleaseMemObject(f);
-      Store_field(v,1,NULL);
+      Store_field(v,1,(value)NULL);
     }
   }
 
@@ -757,7 +757,7 @@ extern "C" {
 
     if (d_A) {
       clReleaseMemObject(d_A);
-      Store_field(dev_vec,1,NULL);
+      Store_field(dev_vec,1,(value)NULL);
     }
 
     Store_field(dev_vec, 1, Val_cl_mem(d_A));
@@ -1237,7 +1237,7 @@ extern "C" {
       h_A, 0, NULL, NULL));
 #endif
     clReleaseMemObject(d_A);
-    Store_field(dev_vec,1,NULL);
+    Store_field(dev_vec,1,(value)NULL);
     OPENCL_CHECK_CALL1(opencl_error, clFlush(queue[Int_val(queue_id)]));
 
     OPENCL_RESTORE_CONTEXT;
@@ -1284,7 +1284,7 @@ extern "C" {
 #endif
 
     clReleaseMemObject(d_A);
-    Store_field(dev_vec,1,NULL);
+    Store_field(dev_vec,1,(value)NULL);
 
     OPENCL_RESTORE_CONTEXT;
     CAMLreturn(Val_unit);
