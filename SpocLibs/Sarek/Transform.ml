@@ -3,7 +3,7 @@ open Spoc
 open Kirc
 open Kirc_Ast
 
-
+open Skeletons
 (************** Composition ****************)
 
 let a_to_vect = function
@@ -46,6 +46,51 @@ let arg_of_vec v  =
   | Vector.Float32 _ -> Kernel.VFloat32 v
   | _ -> assert false
 
+
+
+let launch_kernel_with_args bin grid block kernel_arg_tab device =
+  let offset = ref 0 in
+  (match device.Devices.specific_info with
+     | Devices.CudaInfo cI ->
+       let extra = Kernel.Cuda.cuda_create_extra (Array.length kernel_arg_tab) in
+       Array.iteri
+         (fun i arg -> 
+            Kernel.Cuda.cuda_load_arg offset extra device bin i arg) kernel_arg_tab;
+       Kernel.Cuda.cuda_launch_grid offset bin grid block extra device.Devices.general_info 0;
+     | Devices.OpenCLInfo _ ->
+       let clFun = bin in
+       Array.iteri
+         (fun i arg ->
+            Kernel.OpenCL.opencl_load_arg offset device clFun i arg) kernel_arg_tab;
+       Kernel.OpenCL.opencl_launch_grid clFun grid block device.Devices.general_info 0
+    )
+
+let compute_grid_block_1D device vec_in =
+  let open Kernel in
+  let block =  {blockX = 1; blockY = 1; blockZ = 1}
+  and grid = {gridX = 1; gridY = 1; gridZ = 1} in
+  let open Devices in
+  (
+    match device.Devices.specific_info with
+    | Devices.CudaInfo cI ->
+      if Vector.length vec_in <  (cI.maxThreadsDim.x) then
+        block.blockX <- (Vector.length vec_in)
+      else
+        (
+          block.blockX <- cI.maxThreadsDim.x;
+          grid.gridX <- (Vector.length vec_in) / cI.maxThreadsDim.x;
+        )
+    | Devices.OpenCLInfo oI ->
+      if Vector.length vec_in < oI.Devices.max_work_item_size.Devices.x then
+        block.blockX <- Vector.length vec_in
+      else
+        (
+          block.blockX <- oI.Devices.max_work_item_size.Devices.x;
+          grid.gridX <- (Vector.length vec_in) / block.blockX
+        )
+  );
+  (grid,block)
+  
 
 let propagate f expr =
   match expr with
@@ -110,7 +155,7 @@ let propagate f expr =
   | Custom (s,i,ss) -> expr
   | Match (s,a,b) -> Match (s,f a,
                             Array.map (fun (i,ofid,e) -> (i,ofid,f e)) b)
-  | _ -> failwith "unimplemented yet"
+  | _ -> failwith (("Kirk Transform : "^ (Kirc_Ast.string_of_ast expr) ^" unimplemented yet"))
 
 let map ((ker: ('a, 'b, ('c -> 'd), 'e, 'f) sarek_kernel)) ?dev:(device=(Spoc.Devices.init ()).(0)) (vec_in : ('c, 'h) Vector.vector) : ('d, 'j) Vector.vector=
   let ker2,k = ker in
@@ -174,7 +219,7 @@ let map ((ker: ('a, 'b, ('c -> 'd), 'e, 'f) sarek_kernel)) ?dev:(device=(Spoc.De
       Devices.CudaInfo _ -> Devices.Cuda
     | Devices.OpenCLInfo _ -> Devices.OpenCL in
   (*spoc_ker, kir_ker =*)
-  ignore(gen ~only:target res);
+  ignore(gen ~only:target res device);
   let spoc_ker, kir_ker = res in
   let open Kernel in
   let block =  {blockX = 1; blockY = 1; blockZ = 1}
@@ -296,7 +341,7 @@ let map2 ((ker: ('a, 'b,('c -> 'd -> 'e), 'f,'g) sarek_kernel)) ?dev:(device=(Sp
       | Devices.CudaInfo cI -> Devices.Cuda
       | _ -> Devices.OpenCL in
 
-  let spoc_ker, kir_ker = gen ~only:framework res  in
+  let spoc_ker, kir_ker = gen ~only:framework res device in
   let open Kernel in
   let block =  {blockX = 1; blockY = 1; blockZ = 1}
   and grid = {gridX = 1; gridY = 1; gridZ = 1}
@@ -349,138 +394,112 @@ let map2 ((ker: ('a, 'b,('c -> 'd -> 'e), 'f,'g) sarek_kernel)) ?dev:(device=(Sp
   );
   vec_out
 
+
+let reduce ((ker: ('a, 'b,('c -> 'c-> 'd), 'e,'f) sarek_kernel)) ?dev:(device=(Spoc.Devices.init ()).(0)) (vec_in1 : ('c, 'i) Vector.vector)  : 'd  = Obj.magic ()
+
+
 let (^>) =fun a b -> a ^ "\n" ^ b
 
-module type Fastflow = sig
-  val source : string
-  val create_accelerator : int -> unit
-  val run_accelerator : unit -> unit
-end
 
-let to_fast_flow kern =
-  let module Ff = struct
-    let target_name = "FastFlow"
+  
+    
+  
 
-    let global_function = ""
-    let device_function = ""
-    let host_function = ""
-
-    let global_parameter = ""
-
-
-    let global_variable = ""
-    let local_variable = ""
-    let shared_variable = ""
-
-    let kern_start  = "class Worker: public ff_node_t<TASK> {
-public:
-   TASK*  svc(TASK* task){"
-    let kern_end = "\n     return task;\n   }\n};"
-
-    let parse_intrinsics (cuda,opencl) = opencl
-  end
+(* (\* External from SPOC *\) *)
+(* external opencl_compile : string -> string -> Devices.generalInfo -> Kernel.kernel = *)
+(*     "spoc_opencl_compile" *)
+(* external cuda_compile : *)
+(*   string -> *)
+(*   string -> Devices.generalInfo -> Kernel.kernel = *)
+(*   "spoc_cuda_compile" *)
+    
+let build_new_ker spoc_ker kir_ker ker ml_fun = 
+  (spoc_ker ,
+     {ml_kern = ml_fun; 
+      body = ker;
+      ret_val = Unit, (Vector.Unit ((), ()));
+      extensions = kir_ker.extensions;})
+  
+let map = fun (f:('a,'b,'c,'d,'e) sarek_kernel) 
+              ?dev:(device=(Spoc.Devices.init ()).(0)) 
+              (vec_in : ('d, 'h) Vector.vector) : ('f, 'g) Vector.vector ->
+  let spoc_ker, kir_ker = f in
+  let ker = map_skeleton kir_ker in
+  let vec_out = (Vector.create (snd (kir_ker.ret_val))  ~dev:device (Vector.length vec_in)) in
+  Mem.to_device vec_in device;
+  let target =
+    match device.Devices.specific_info with
+      Devices.CudaInfo _ -> Devices.Cuda
+    | Devices.OpenCLInfo _ -> Devices.OpenCL in    
+  let open Spoc.Kernel in
+  let (spoc_ker,kir_ker) as res = build_new_ker spoc_ker kir_ker ker
+      (Tools.map (kir_ker.ml_kern) (snd kir_ker.ret_val))
   in
-  let
-    module Kirc_ff = Gen.Generator(Ff)
+  ignore(gen ~only:target res device) ;
+  spoc_ker#compile ~debug:true device;
+  let grid,block = compute_grid_block_1D device vec_in in
+
+  let bin = (Hashtbl.find (spoc_ker#get_binaries ()) device) in
+
+  launch_kernel_with_args bin grid block [|(arg_of_vec vec_in); (arg_of_vec vec_out); Kernel.Int32 (Vector.length vec_in)|] device;
+  vec_out
+
+exception Zip of string
+    
+let zip = fun (f:('a,'b,'c,'d,'e) sarek_kernel) ?dev:(device=(Spoc.Devices.init ()).(0)) (vec_in1 : ('f, 'g) Vector.vector) (vec_in2 : ('h,'i) Vector.vector) : ('j, 'k) Vector.vector ->
+  if (Vector.length vec_in1 <> Vector.length vec_in2) then
+    raise (Zip ("incompatible vector sizes"));
+  
+  let spoc_ker, kir_ker = f in
+  let ker = zip_skeleton kir_ker in
+  
+  let vec_out = (Vector.create (snd (kir_ker.ret_val))  ~dev:device (Vector.length vec_in1)) in
+  Mem.to_device vec_in1 device;
+  Mem.to_device vec_in2 device;
+  let target =
+    match device.Devices.specific_info with
+      Devices.CudaInfo _ -> Devices.Cuda
+    | Devices.OpenCLInfo _ -> Devices.OpenCL in    
+  let open Spoc.Kernel in
+  let (spoc_ker,kir_ker) as res = build_new_ker spoc_ker kir_ker ker
+      (fun a b ->
+         for i = 0 to Vector.length a - 1 do
+           Mem.set vec_out i (kir_ker.ml_kern (Mem.get a i) (Mem.get b i))
+         done;
+         vec_out;
+      )
   in
-  let rec args_  = function
-    | Params p ->
-      (*Kirc.print_ast p;*)
-      "typedef struct __task{\n"^args_ p
-    | Concat (p1,p2)->
-      (Kirc_ff.parse 1 p1 ^";\n "^
-       args_ p2)
-    | Empty -> "} TASK;"
-    | _ -> assert false
-  in
-  let __ = "     " in
-  let rec intro = function
-    | Params p -> intro p
-    | Concat (p1,p2) ->
-      (intro p1 ^> intro p2)
-    | Empty -> "\n"
-    | VecVar (t, i, s) -> __ ^
-                          (match t with
-                           | Int _ ->"int *"
-                           | Float _ -> "float *"
-                           | Double _ -> "double *"
-                           | Custom (n,_,ss) -> (("struct "^n^"_sarek *"))
-                           | _ -> assert false
-                          )^ " "^s ^" = task->"^s^";"
-    | IntVar (i,s) -> __ ^"int" ^ " "^s ^" = task->"^s^";"
-    | _ -> ""
+  ignore(gen ~only:target res device) ;
+  spoc_ker#compile ~debug:true device;
+  let grid,block = compute_grid_block_1D device vec_in1 in
 
-  in
+  let bin = (Hashtbl.find (spoc_ker#get_binaries ()) device) in
 
-  let rec aux = function
-    | Kern (args,body) -> (args_ args,
-                           intro args,
-                           Kirc_ff.parse 3 body)
-    | a -> "",  "", Kirc_ff.parse 3 a in
+  launch_kernel_with_args bin grid block [|(arg_of_vec vec_in1); (arg_of_vec vec_in2); (arg_of_vec vec_out); Kernel.Int32 (Vector.length vec_in1)|] device;
+  vec_out
 
 
 
 
-  let ff_lib = begin
-    "/* library to handle the service*/" ^>
-    "ff_farm<> farm(true);" ^>
-    "
-void create_accelerator(int nworkers) {
-    std::vector<ff_node *> w;
-    for(int i=0;i<nworkers;++i)
-       w.push_back(new Worker);
-    farm.add_workers(w);
-    farm.add_collector(NULL);
-    return;
-}
 
-void run_accelerator() {
 
-    farm.run();
-    return;
-}
 
-void offloadacc(TASK *x) {
-    farm.offload(x);
-    return;
-}
 
-void loadresacc(void ** ou) {
-    farm.load_result(ou);
-    return;
-}
-"
-  end
-  in
 
-  let ff_header = "
-#include <vector>
-#include <iostream>
-#include <vector>
 
-#include <ff/farm.hpp>
-#include <ff/node.hpp>
-using namespace ff;
-extern \"C\"{ "
-  in
-  let (task, intro, body_source) = aux kern.body in
-  let ff_cpp_src = ff_header ^ "\n\n" ^task ^"\n\n" ^ Ff.kern_start ^>
-                   intro ^ __ ^ body_source ^ Ff.kern_end ^"\n\n" ^ ff_lib ^"}"in
-  let channel = open_out "temp_ff_file.cpp" in
-  output_string channel ff_cpp_src;
-  close_out channel;
-  ignore(Sys.command ("g++ -std=c++11 -O3 -I ~/dev/mc-fastflow-code/  --shared -fPIC temp_ff_file.cpp -o temp_ff_file.so"));
-  let open Ctypes in
-  let open Foreign in
-  let tmp_lib = Dl.dlopen ~filename:"./temp_ff_file.so" ~flags:[Dl.RTLD_NOW]
-  in
-  let module M = struct
-    let source = ff_cpp_src
-    let create_accelerator = Foreign.foreign ~from:tmp_lib "create_accelerator" (int @-> returning void)
-    let run_accelerator = Foreign.foreign ~from:tmp_lib "run_accelerator" (void @-> returning void)
-    type task
 
-  end
 
-  in
-  (module M : Fastflow )
+
+
+
+
+
+
+
+
+
+
+
+
+
+

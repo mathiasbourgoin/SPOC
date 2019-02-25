@@ -295,7 +295,7 @@ tcuWGLGetDevice                       *cuWGLGetDevice;
     #if defined(__APPLE__) || defined(__MACOSX)
     static char __CudaLibName[] = "/usr/local/cuda/lib/libcuda.dylib";
     #else
-    static char __CudaLibName[] = "libcuda.so";
+    static char __CudaLibName[] = "libcuda.so.1";
     #endif
 
     typedef void * CUDADRIVER;

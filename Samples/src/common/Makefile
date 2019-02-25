@@ -2,8 +2,8 @@ DIR=$(notdir $(CURDIR))
 KERNEL_DIR = ./kernels
 
 KERNELSSRC = $(KERNEL_DIR)/$(DIR).cu
-NVCC = nvcc 
-NVCCCFLAGS = -m64 -O3 -g -ptx 
+NVCC = nvcc
+NVCCCFLAGS = -m64 -O3 -g -ptx
 
 
 MLSRC=$(DIR).ml
@@ -13,14 +13,16 @@ BYTE=$(MLSRC:.ml=.byte)
 CSRC=$(wildcard *.c)
 COBJS=$(CSRC:.c=.o)
 
-#only compile CUDA kernels if GCC version < 4.9 and nvcc is installed
-GCC_VER_LTE49 := $(shell echo `gcc -dumpversion | cut -f1-2 -d.` \<= 4.9 | bc )
+#only compile CUDA kernels if GCC version < 5.9 and nvcc is installed
+# only useful with older versions of NVCC
+#GCC_VER_LTE59 := $(shell echo `gcc -dumpversion | cut -f1-2 -d.` \<= 5.9 | bc )
+GCC_VER_LTE59 := 1
 NVCC_PRESENT := $(shell nvcc --version 1>/dev/null 2>/dev/null;  echo $$?)
 
 hasKern=$(shell ls kernels 1>/dev/null 2>/dev/null; echo $$?)
 
 ifeq ($(hasKern),0)
-ifeq ($(GCC_VER_LTE49), 1)
+ifeq ($(GCC_VER_LTE59), 1)
 ifeq ($(NVCC_PRESENT), 0)
 	KERNELS = $(KERNELSSRC:.cu=.ptx)
 endif
@@ -34,25 +36,24 @@ PACKAGES+=-package spoc
 CLIB := $(shell ls *.c 1>/dev/null 2>/dev/null; echo $$?)
 
 ifeq ($(CLIB), 0)
+CCLIBS=-cclib $(COBJS)
+endif
+
 $(ASM): $(MLSRC) $(COBJS)
-	ocamlfind ocamlopt -g -thread  $(PACKAGES) -linkpkg -package spoc_external_kernels -syntax camlp4o $(MLSRC) $(COBJS) -o $(ASM)
+	ocamlfind ocamlopt -g \
+	-pp "camlp4 -I `ocamlfind query spoc_external_kernels` -parser o -printer o kernels_ext.cma" \
+	-thread -package ctypes.foreign,spoc,sarek,graphics \
+	`pkg-config --libs-only-L nvrtc-10.0 | sed s/"-L"/"-ccopt -L"\/g` \
+	-ccopt -L$(CUDA_PATH)/lib64 -cclib -lnvrtc \
+	-linkpkg  $(MLSRC) $(CCLIBS) -o $(ASM)
 
 $(BYTE): $(MLSRC) $(COBJS)
-	ocamlfind ocamlc -g -custom -thread   $(PACKAGES) -linkpkg -package spoc_external_kernels -syntax camlp4o $(MLSRC) -cclib $(COBJS) -o $(BYTE)
-
-else
-
-$(ASM): $(MLSRC)
-	ocamlfind ocamlopt -thread  $(PACKAGES) -linkpkg \
-	-package spoc_external_kernels -syntax camlp4o $(MLSRC) \
-	-o $(ASM)
-
-$(BYTE): $(MLSRC)
-	ocamlfind ocamlc -thread  $(PACKAGES) -linkpkg \
-	-package spoc_external_kernels -syntax camlp4o $(MLSRC) \
-	-o $(BYTE)
-
-endif
+	ocamlfind ocamlc -custom -g -ccopt "-g -rdynamic" \
+	-pp "camlp4 -I `ocamlfind query spoc_external_kernels` -parser o -printer o kernels_ext.cma" \
+	-thread  -package ctypes.foreign,spoc,sarek,graphics \
+	`pkg-config --libs-only-L nvrtc-10.0 | sed s/"-L"/"-ccopt -L"\/g` \
+	-ccopt -L$(CUDA_PATH)/lib64 -cclib -lnvrtc \
+	-linkpkg $(MLSRC) $(CCLIBS) -o $(BYTE)
 
 %ptx: %cu
 	$(NVCC) $(NVCCCFLAGS) $(NVCC_INCLUDES) -o $@ $<
@@ -62,5 +63,4 @@ endif
 
 clean:
 	rm -rf *.o *.cm* *.a *.cmxa *~ *.exe *.nat *.byte *.obj \
-	*.asm kernels/*.ptx *.js 
-
+	*.asm kernels/*.ptx *.js

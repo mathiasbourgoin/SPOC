@@ -47,6 +47,9 @@ extern "C" {
 #include <math.h>
 #include <string.h>
 #include "Spoc.h"
+#include <nvrtc.h>
+#include "Trac_c.h"
+
 /**************** KERNEL ******************/
 
 int ae_load_file_to_memory(const char *filename, char **result)
@@ -72,7 +75,45 @@ int ae_load_file_to_memory(const char *filename, char **result)
 	return size;
 }
 
+  #define CHECK_NVRTC(a) \
+    nvrtc_result = a;/* \ */
+    /* if (NVRTC_SUCCESS != nvrtc_result)\ */
+    /*   fprintf(stderr,"%s\n", nvrtcGetErrorString(nvrtc_result)); */
+  
+  CAMLprim value spoc_nvrtc_ptx(value src, value opts){
+    CAMLparam2(src,opts);
+    const char* cuda_src = String_val(src);
 
+    int nopts = Wosize_val(opts);
+    char** options = (char**)malloc(sizeof(char*)*nopts);
+
+    for (int i = 0 ; i < nopts; i++){
+      options[i] = String_val(Field(opts,i));
+    }
+    //printf("%s\n", cuda_src);
+    
+    nvrtcResult nvrtc_result;
+    
+    nvrtcProgram prog;
+    size_t ptx_size;
+    CHECK_NVRTC(nvrtcCreateProgram(&prog, cuda_src, "kir_kernel.cu", 0, NULL, NULL));
+
+    CHECK_NVRTC(nvrtcCompileProgram(prog , nopts, (const char* const*)options));
+    if (NVRTC_SUCCESS != nvrtc_result){
+      // Obtain compilation log from the program.
+      size_t logSize;
+      nvrtcGetProgramLogSize(prog, &logSize);
+      char *log =  malloc (sizeof(char)*logSize);
+      nvrtcGetProgramLog(prog, log);
+      fprintf(stderr, "COMPILATION LOG : %s\n", log); fflush(stdout);
+    }
+    
+    CHECK_NVRTC(nvrtcGetPTXSize(prog, &ptx_size));
+    char * ptx = (char*)malloc (sizeof(char)*ptx_size);
+    CHECK_NVRTC(nvrtcGetPTX(prog, ptx));
+    CAMLreturn(caml_copy_string( ptx)); 
+  }
+  
 CAMLprim value spoc_cuda_compile(value moduleSrc, value function_name, value gi){
 	CAMLparam3(moduleSrc, function_name, gi);
 	CUmodule module;
@@ -111,9 +152,19 @@ CAMLprim value spoc_cuda_compile(value moduleSrc, value function_name, value gi)
 	jitOptions[3] = CU_JIT_TARGET_FROM_CUCONTEXT;
 	//CU_JIT_TARGET;
 //	jitOptVals[3] =  (void*)(uintptr_t)CU_TARGET_COMPUTE_11;
+	
+#ifdef SPOC_PROFILE
+	struct timeval* start = print_start_gpu_compile();
+#endif
 
-	CUDA_CHECK_CALL(cuModuleLoadDataEx(&module, ptx_source, jitNumOptions, jitOptions, (void **)jitOptVals));
+	CUDA_CHECK_CALL(cuModuleLoadDataEx(&module, ptx_source, jitNumOptions, jitOptions, 
+                                       (void **)jitOptVals));
 	CUDA_CHECK_CALL(cuModuleGetFunction(kernel, module, functionN));
+
+#ifdef SPOC_PROFILE
+    print_stop_gpu_compile("COMPILE_CUDA", Int_val(Field(gi, 7)), start);
+#endif
+
 	free(jitLogBuffer);
 	CUDA_RESTORE_CONTEXT;
 	//caml_leave_blocking_section();
@@ -159,24 +210,33 @@ CAMLprim value spoc_cuda_debug_compile(value moduleSrc, value function_name, val
 	//CU_JIT_TARGET;
 //	jitOptVals[3] =  (void*)(uintptr_t)CU_TARGET_COMPUTE_10;
 
+#ifdef SPOC_PROFILE
+    struct timespec* start = print_start_gpu_compile();
+#endif
 
-	cuda_error = (cuModuleLoadDataEx(&module, ptx_source, jitNumOptions, jitOptions, (void **)jitOptVals));
+	cuda_error = (cuModuleLoadDataEx(&module, ptx_source, jitNumOptions, jitOptions, 
+                                     (void **)jitOptVals));
 	if (cuda_error)
 	  {
-	    fprintf (stderr,"%s\n", jitLogBuffer);
-	    fflush (stderr);
+	    printf ("%s\n", jitLogBuffer);
+	    fflush (stdout);
 	  }
 	cuda_error = (cuModuleGetFunction(kernel, module, functionN));
 	if (cuda_error)
 	  {
-	    fprintf (stderr, "%s\n", jitLogBuffer);
-	    fflush (stderr);
+	    printf ("%s\n", jitLogBuffer);
+	    fflush (stdout);
 	  }
+	
+#ifdef SPOC_PROFILE
+	print_stop_gpu_compile("COMPILE_CUDA", Int_val(Field(gi, 7)), start);
+#endif
+
 	BLOCKING_CUDA_RESTORE_CONTEXT;
 	free(jitLogBuffer);
 	CAMLreturn((value) kernel);
 }
-  
+
 
 CAMLprim value spoc_cuda_create_extra(value n){
 	CAMLparam1(n);
@@ -191,15 +251,15 @@ CAMLprim value spoc_cuda_create_dummy_kernel(){
 }
 
 #define ALIGN_UP(offset, alignment) \
-(offset) = ((offset) + (alignment) - 1) & ~((alignment) - 1)
+  (offset) = ((offset) + (alignment) - 1) & ~((alignment) - 1)
 
 
-#define ADD_TO_PARAM_BUFFER(value, alignment)\
-do {\
-	offset = ALIGN_UP(offset, alignment); \
-	memcpy(extra + offset, &(value), sizeof(value));\
-	offset += sizeof(value);\
-} while (0)
+#define ADD_TO_PARAM_BUFFER(value, alignment)           \
+  do {                                                  \
+	offset = ALIGN_UP(offset, alignment);               \
+	memcpy(extra + offset, &(value), sizeof(value));    \
+	offset += sizeof(value);                            \
+  } while (0)
 
 
 
@@ -214,8 +274,9 @@ CAMLprim value spoc_cuda_load_param_vec(value off, value ex, value A, value v, v
 	int seek;
 	int type_size;
 	int tag;
-
-
+#ifdef SPOC_PROFILE
+    print_last_vector_access(Field(v, 9));
+#endif
 	seek = Int_val(Field(v,10));
 	bigArray = Field (Field(v, 1), 0);
 	int custom = 0;
@@ -242,6 +303,9 @@ CAMLprim value spoc_cuda_custom_load_param_vec(value off, value ex, value A, val
 	int type_size;
 	int tag;
 	void* ptr;
+#ifdef SPOC_PROFILE
+    print_last_vector_access(Field(v, 9));
+#endif
 	seek = Int_val(Field(v,10));
 	customArray = Field (Field(v, 1), 0);
 	type_size = Int_val(Field(Field(customArray, 1),1));
@@ -374,7 +438,8 @@ CAMLprim value spoc_cuda_set_block_shape(value ker, value block, value gi){
 	CAMLreturn(Val_unit);
 }
 
-CAMLprim value spoc_cuda_launch_grid(value off, value ker, value grid, value block, value ex, value gi, value queue_id){
+CAMLprim value spoc_cuda_launch_grid(value off, value ker, value grid, value block, value ex, 
+                                     value gi, value queue_id){
   CAMLparam5(ker, grid, ex, block, gi);
   CAMLxparam2(off, queue_id);
   CUfunction *kernel;
@@ -401,16 +466,39 @@ CAMLprim value spoc_cuda_launch_grid(value off, value ker, value grid, value blo
   extra2[2] = CU_LAUNCH_PARAM_BUFFER_SIZE;
   extra2[3] = &offset;
   extra2[4] = CU_LAUNCH_PARAM_END;
-  
-  
-  CUDA_CHECK_CALL(cuLaunchKernel(*kernel, 
+
+#ifdef SPOC_PROFILE	
+  sync_event_prof();
+  CUevent start_exec;
+  CUevent finish_exec;
+  int id = print_start_gpu_execution("CUDA_KERNEL_EXEC",  Int_val(Field(gi, 7)));
+  cuEventCreate(&start_exec, CU_EVENT_DEFAULT);
+  cuEventCreate(&finish_exec, CU_EVENT_DEFAULT);
+  cuEventRecord(start_exec, queue[Int_val(queue_id)]);
+  cuEventSynchronize(start_exec);
+#endif
+
+  CUDA_CHECK_CALL(cuLaunchKernel(*kernel,
 				 gridX, gridY, gridZ,
 				 blockX, blockY, blockZ, 
 				 0, queue[Int_val(queue_id)], 
 				 NULL, extra2));
 
+  //CUDA_CHECK_CALL(cuCtxSynchronize());
   Store_field(off, 0, Val_int(offset));
   free(extra);
+
+#ifdef SPOC_PROFILE
+  cuEventRecord(finish_exec, queue[Int_val(queue_id)]);
+  cuEventSynchronize(finish_exec);
+  float* duration = malloc(sizeof(float));
+  cuEventElapsedTime(duration, start_exec, finish_exec);
+  print_stop_gpu_execution(id, (double)((*duration) * 1000.0)); /*to microseconds*/
+  cuEventDestroy(start_exec);
+  cuEventDestroy(finish_exec);
+  free(duration);
+#endif
+
   CUDA_RESTORE_CONTEXT;
   CAMLreturn(Val_unit);
 }

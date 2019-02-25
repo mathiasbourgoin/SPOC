@@ -38,7 +38,8 @@ extern "C" {
 
 
 #include "Opencl_dynlink.h"
-
+#include "Spoc.h"
+  
 tclGetDeviceIDs* clGetDeviceIDs;
 tclGetPlatformIDs* clGetPlatformIDs;
 tclGetPlatformInfo* clGetPlatformInfo;
@@ -61,8 +62,9 @@ tclFinish* clFinish;
 tclRetainCommandQueue* clRetainCommandQueue;
 tclReleaseCommandQueue* clReleaseCommandQueue;
 tclSetEventCallback* clSetEventCallback;
-
-
+tclWaitForEvents* clWaitForEvents;
+tclGetEventProfilingInfo* clGetEventProfilingInfo;
+tclGetKernelWorkGroupInfo* clGetKernelWorkGroupInfo;
 #define CL_ERROR_UNKNOWN -12
 
 #ifdef _WIN32
@@ -142,14 +144,19 @@ tclSetEventCallback* clSetEventCallback;
 #define GET_PROC_OPTIONAL(name) GET_PROC_EX(name,name,0)
 #define GET_PROC(name) GET_PROC_REQUIRED(name)
 
-int noCL = 0;
+  //int noCL = 0;
 
 int CL_API_ENTRY clInit(){
     	OPENCLDRIVER OpenCLDrvLib;
     	//int driverVer = 1000;
-
-    	CHECKED_CALL(LOAD_LIBRARY(&OpenCLDrvLib));
-
+	
+    	int res = LOAD_LIBRARY(&OpenCLDrvLib);
+	if (CL_SUCCESS != res){
+	  return 0;
+	}
+	else{
+	  noCL=0;
+	}
 
     	GET_PROC(clGetDeviceIDs);
     	GET_PROC(clGetPlatformIDs);
@@ -174,7 +181,8 @@ int CL_API_ENTRY clInit(){
     	GET_PROC(clRetainCommandQueue);
     	GET_PROC(clReleaseCommandQueue);
     	GET_PROC(clSetEventCallback);
-
+      GET_PROC(clWaitForEvents);
+      GET_PROC(clGetEventProfilingInfo);
     	return CL_SUCCESS;
     	//return CL_ERROR_UNKNOWN;
     }

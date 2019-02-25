@@ -47,6 +47,7 @@ extern "C" {
 #include <math.h>
 #include <string.h>
 #include "Spoc.h"
+#include "Trac_c.h"
 
 
 CAMLprim value spoc_opencl_compile(value moduleSrc, value function_name, value gi){
@@ -65,10 +66,18 @@ CAMLprim value spoc_opencl_compile(value moduleSrc, value function_name, value g
 	functionN = String_val(function_name);
 	cl_source = String_val(moduleSrc);
 
+#ifdef SPOC_PROFILE
+    struct timespec* start = print_start_gpu_compile();
+#endif
+	
 	OPENCL_CHECK_CALL1(hProgram, clCreateProgramWithSource(ctx, 1, (const char**)&cl_source, 0, &opencl_error));
 	OPENCL_TRY("clGetContextInfo", clGetContextInfo(ctx, CL_CONTEXT_DEVICES, (size_t)sizeof(cl_device_id), &device_id, NULL)) ;
 	OPENCL_CHECK_CALL1(ret_val, clBuildProgram(hProgram, 1, &device_id, 0, NULL, NULL));
 
+#ifdef SPOC_PROFILE
+	print_stop_gpu_compile("COMPILE_OPENCL", Int_val(Field(gi, 7)), start);
+#endif
+	
 	paramValueSize = 1024 * 1024;
 
 	OPENCL_CHECK_CALL1(kernel, clCreateKernel(hProgram, functionN, &opencl_error));
@@ -88,7 +97,7 @@ CAMLprim value spoc_debug_opencl_compile(value moduleSrc, value function_name, v
 	char* cl_source;
 	cl_int ret_val;
 	size_t paramValueSize,  param_value_size_ret;
-    char *paramValue;
+	char *paramValue;
 
 
 	OPENCL_GET_CONTEXT;
@@ -96,10 +105,18 @@ CAMLprim value spoc_debug_opencl_compile(value moduleSrc, value function_name, v
 	functionN = String_val(function_name);
 	cl_source = String_val(moduleSrc);
 
+#ifdef SPOC_PROFILE
+	struct timespec* start = print_start_gpu_compile();
+#endif
+	
 	OPENCL_CHECK_CALL1(hProgram, clCreateProgramWithSource(ctx, 1, (const char**)&cl_source, 0, &opencl_error));
 	OPENCL_TRY("clGetContextInfo", clGetContextInfo(ctx, CL_CONTEXT_DEVICES, (size_t)sizeof(cl_device_id), &device_id, NULL)) ;
 	OPENCL_CHECK_CALL1(ret_val, clBuildProgram(hProgram, 1, &device_id, 0, NULL, NULL));
-
+    
+#ifdef SPOC_PROFILE
+	print_stop_gpu_compile("COMPILE_OPENCL", Int_val(Field(gi, 7)), start);
+#endif
+	
 	paramValueSize = 1024 * 1024;
 
 	paramValue = (char*)calloc(paramValueSize, sizeof(char));
@@ -125,41 +142,44 @@ CAMLprim value spoc_opencl_create_dummy_kernel(){
 	CAMLreturn((value) kernel);
 }
 
-CAMLprim value spoc_opencl_load_param_vec(value off, value ker, int idx, value A, value gi){
-	CAMLparam4(off, ker, A, gi);
-	cl_kernel kernel;
-	cl_mem d_A;
-	int offset;
-	offset = Int_val(Field(off, 0));
-		d_A = Cl_mem_val(Field(A, 1));
-	OPENCL_GET_CONTEXT;
+CAMLprim value spoc_opencl_load_param_vec(value off, value ker, value A, value id, value gi){
+  CAMLparam5(off, ker, A, id, gi);
+  cl_kernel kernel;
+  cl_mem d_A;
+  int offset;
+  offset = Int_val(Field(off, 0));
+  d_A = Cl_mem_val(Field(A, 1));
+  
+#ifdef SPOC_PROFILE
+  print_last_vector_access(Int_val(id));
+#endif
+  OPENCL_GET_CONTEXT;
 
-	kernel = (cl_kernel) ker;
-	OPENCL_CHECK_CALL1(opencl_error, clSetKernelArg(kernel, offset, sizeof(cl_mem), (void*)&d_A));
-	offset+=1;
-	OPENCL_RESTORE_CONTEXT;
-	Store_field(off, 0, Val_int(offset));
-	CAMLreturn(Val_unit);
+  kernel = (cl_kernel) ker;
+  OPENCL_CHECK_CALL1(opencl_error, clSetKernelArg(kernel, offset, sizeof(cl_mem), (void*)&d_A));
+  offset+=1;
+  OPENCL_RESTORE_CONTEXT;
+  Store_field(off, 0, Val_int(offset));
+  CAMLreturn(Val_unit);
 }
 
 CAMLprim value spoc_opencl_load_param_local_vec(value off, value ker, int idx, value A, value gi){
-	CAMLparam4(off, ker, A, gi);
-	cl_kernel kernel;
-	cl_mem d_A;
-	int offset;
+  CAMLparam4(off, ker, A, gi);
+  cl_kernel kernel;
+  cl_mem d_A;
+  int offset;
+  
+  offset = Int_val(Field(off, 0));
+  d_A = Cl_mem_val(Field(A, 1));
 
-	offset = Int_val(Field(off, 0));
-		d_A = Cl_mem_val(Field(A, 1));
-
-	OPENCL_GET_CONTEXT;
-
-	kernel = (cl_kernel) ker;
-	OPENCL_CHECK_CALL1(opencl_error, clSetKernelArg(kernel, offset, sizeof(float)*4*8*8, NULL));
-	offset+=1;
-	OPENCL_RESTORE_CONTEXT;
-	Store_field(off, 0, Val_int(offset));
-
-	CAMLreturn(Val_unit);
+  OPENCL_GET_CONTEXT;
+    
+  kernel = (cl_kernel) ker;
+  OPENCL_CHECK_CALL1(opencl_error, clSetKernelArg(kernel, offset, sizeof(float)*4*8*8, NULL));
+  offset+=1;
+  OPENCL_RESTORE_CONTEXT;
+  Store_field(off, 0, Val_int(offset));
+  CAMLreturn(Val_unit);
 }
 
 CAMLprim value spoc_opencl_load_param_int(value off, value ker, value val, value gi){
@@ -237,6 +257,7 @@ CAMLprim value spoc_opencl_load_param_float64(value off, value ker, value val, v
 	CAMLreturn(Val_unit);
 }
 
+  
 CAMLprim value spoc_opencl_launch_grid(value ker, value grid, value block, value gi, value queue_id){
 	CAMLparam5(ker, grid, block, gi, queue_id);
 	cl_kernel kernel;
@@ -262,14 +283,36 @@ CAMLprim value spoc_opencl_launch_grid(value ker, value grid, value block, value
 	work_size[0] = (size_t)blockX;
 	work_size[1] = (size_t)blockY;
 	work_size[2] = (size_t)blockZ;
+
+	cl_event event;
+#ifdef SPOC_PROFILE
+    sync_event_prof();
+	int id = print_start_gpu_execution("OPENCL_KERNEL_EXEC",  Int_val(Field(gi, 7)));
+#endif
 	
 	q = queue[Int_val(queue_id)];
 	OPENCL_CHECK_CALL1(opencl_error, clRetainCommandQueue(queue[Int_val(queue_id)]));
 	OPENCL_CHECK_CALL1(opencl_error, clEnqueueNDRangeKernel
 			   (q, kernel, 3, NULL, global_dimension,
 			    ((blockX == 1) && (blockY == 1) && (blockZ == 1)) ? (size_t *) NULL : work_size,
-			    0, NULL, NULL));
+			    0, NULL, &event));
 	OPENCL_CHECK_CALL1(opencl_error, clReleaseCommandQueue(queue[Int_val(queue_id)]));
+
+
+#ifdef SPOC_PROFILE
+    OPENCL_CHECK_CALL1(opencl_error, clWaitForEvents(1 , &event));
+	cl_ulong time_start, time_end;
+	double total_time;
+	OPENCL_CHECK_CALL1(opencl_error, 
+                       clGetEventProfilingInfo(event, 
+                                               CL_PROFILING_COMMAND_START, 
+                                               sizeof(time_start), &time_start, NULL));
+	OPENCL_CHECK_CALL1(opencl_error, 
+                       clGetEventProfilingInfo(event, CL_PROFILING_COMMAND_END, 
+                                               sizeof(time_end), &time_end, NULL));
+	total_time = (time_end - time_start) * 1.0e-3f; /*nano secondes -> micro secondes*/
+	print_stop_gpu_execution(id, total_time);
+#endif
 	
 	OPENCL_RESTORE_CONTEXT;
 	CAMLreturn(Val_unit);

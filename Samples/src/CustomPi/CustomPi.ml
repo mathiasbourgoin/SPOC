@@ -34,6 +34,8 @@ let ray = 10.0;;
 
 kernel gpuPi : point Spoc.Vector.vcustom -> Spoc.Vector.vint32 -> int -> float -> unit = "kernels/CustomPi" "pi"
 
+kernel gpuPi_complex : Spoc.Vector.vcomplex32 -> Spoc.Vector.vint32 -> int -> float -> unit = "kernels/CustomPi" "pi"
+
 kernel gpuPi_double : point Spoc.Vector.vcustom -> Spoc.Vector.vint32 -> int -> float -> unit = "kernels/CustomPi" "pi_double"
 
 
@@ -54,7 +56,46 @@ let gpuPi_d dev (block,grid) (gpuField, vbool, nbPoint, ray)=
        (gpuField, vbool, nbPoint, (ray *. ray))
 ;;
 
+
+let gpuPi_complex vbool dev size = 
+  let gpuField = Vector.create complex32 size in
+  for i = 0 to size - 1 do
+    gpuField.[<i>] <- {re = Random.float ray; im = Random.float ray;};
+  done;
+  let threadsPerBlock =  match dev.Devices.specific_info with
+    | Devices.OpenCLInfo clI -> 
+      (match clI.Devices.device_type with
+       | Devices.CL_DEVICE_TYPE_CPU -> 1
+       | _  ->   256)
+    | _  -> 256 in
+  let blocksPerGrid =
+    (((size / 32) + threadsPerBlock) - 1) / threadsPerBlock in
+  let block =
+    {
+      Spoc.Kernel.blockX = threadsPerBlock;
+      Spoc.Kernel.blockY = 1;
+      Spoc.Kernel.blockZ = 1;
+    }
+  and grid =
+    {
+      Spoc.Kernel.gridX = blocksPerGrid;
+      Spoc.Kernel.gridY = 1;
+      Spoc.Kernel.gridZ = 1;
+    }
+  in
+  Spoc.Kernel.run dev (block,grid) gpuPi_complex
+                  (gpuField,vbool, nbPoint, (ray *. ray));
+  let pio4 =
+    Int32.to_int
+      (Tools.fold_left (fun a b -> Int32.add a  b) Int32.zero vbool) in
+       Printf.printf "GPU Complex Computation : PI = %d/%d = %.10g\n" pio4 size
+                     ((4. *. (float pio4)) /. (float size));
+       Pervasives.flush stdout;
+;;
+  
 let gpuPI gpuField vbool dev size =
+
+                               
   let threadsPerBlock =  match dev.Devices.specific_info with
     | Devices.OpenCLInfo clI -> 
       (match clI.Devices.device_type with
@@ -156,5 +197,9 @@ let _ =
           Printf.printf "GPU Computation : PI = %d/%d = %.10g\n" !pio4 !size
             ((4. *. (float !pio4)) /. (float !size));
           Pervasives.flush stdout;
-        ))))
+          Spoc.Mem.auto_transfers true;
+          gpuPi_complex vbool !dev !size;
+  ))))
+    
+  
 
