@@ -647,8 +647,8 @@ inline char* get_backtrace(){
       ++p;
     
     char syscom[256];
-    printf("addr2line %p -e %.*s\n", buffer[i], p, strings[i], __progname);
-    sprintf(syscom,"addr2line %p -e %.*s", buffer[i], p, strings[i], __progname);
+    printf("addr2line %p -e %.*s%s\n", buffer[i], (int)p, strings[i], __progname);
+    sprintf(syscom,"addr2line %p -e %.*s%s", buffer[i], (int)p, strings[i], __progname);
     //last parameter is the file name of the symbol
     //system(syscom);
   }

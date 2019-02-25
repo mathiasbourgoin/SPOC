@@ -144,7 +144,7 @@ let rec parse_ctyp = function
   | TyVrnInfSup _ -> assert false
   | TyAmp _ -> assert false
   | TyPkg _ -> assert false
-  | (TyAnt (l,s)) as t  -> failwith ("TyAnt : "^s)
+  | (TyAnt (l,s)) as _t  -> failwith ("TyAnt : "^s)
   | _ -> failwith "parse_ctyp OUHLALA"
  
     
