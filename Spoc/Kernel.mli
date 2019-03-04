@@ -35,23 +35,22 @@
 (** Manages Kernels *)
 type kernel
 
-external relax_vector : ('a,'b) Vector.vector -> ('c,'d) Vector.vector = "%identity"
+external relax_vector : 'a Vector.vector -> 'b Vector.vector = "%identity"
 
 (** type of parameters usable with kernels *)
-type ('a, 'b) kernelArgs =
-  | VChar of ('a, 'b) Vector.vector (** unsigned char vector *)
-  | VFloat32 of ('a, 'b) Vector.vector (** 32-bit float vector *)
-  | VFloat64 of ('a, 'b) Vector.vector (** 64-bit float vector *)
-  | VComplex32 of ('a, 'b) Vector.vector (** 32-bit complex vector *)
-  | VInt32 of ('a, 'b) Vector.vector (** 32-bit int vector *)
-  | VInt64 of ('a, 'b) Vector.vector (** 64-bit int vector *)
+type 'a kernelArg =
+  | VChar of 'a Vector.vector (** unsigned char vector *)
+  | VFloat32 of 'a Vector.vector (** 32-bit float vector *)
+  | VFloat64 of 'a Vector.vector (** 64-bit float vector *)
+  | VComplex32 of 'a Vector.vector (** 32-bit complex vector *)
+  | VInt32 of 'a Vector.vector (** 32-bit int vector *)
+  | VInt64 of 'a Vector.vector (** 64-bit int vector *)
   | Int32 of int (** 32-bit int *)
   | Int64 of int (** 64-bit int *)
   | Float32 of float (** 32-bit float *)
   | Float64 of float (** 64-bit float *)
-  | Custom of ('a,'b) Vector.custom
-  | Vector of ('a, 'b) Vector.vector  (** generic vector type *)
-  | VCustom of ('a, 'b) Vector.vector (** custom data type vector, see examples *)
+  | Custom of 'a Vector.custom
+  | VCustom of 'a Vector.vector (** custom data type vector, see examples *)
 
 (** A block is a 3 dimension group of threads *)
 type block = {
@@ -82,7 +81,7 @@ module Cuda :
 	
 	val cuda_load_arg :
       int ref ->
-      cuda_extra -> Devices.device -> 'c -> 'd -> ('a, 'b) kernelArgs -> unit
+      cuda_extra -> Devices.device -> 'c -> 'd -> 'a kernelArg -> unit
 end
 
 
@@ -93,14 +92,14 @@ module OpenCL :
       = "spoc_opencl_launch_grid"
     val opencl_load_arg :
       int ref ->
-      Devices.device -> kernel -> int -> ('a, 'b) kernelArgs -> unit
+      Devices.device -> kernel -> int -> 'a kernelArg -> unit
 
 end
 
 
 (**/**)
 val exec :
-('a,'b) kernelArgs array ->
+'a kernelArg array ->
 block * grid -> int -> Devices.device -> kernel -> unit
 
 val compile_and_run :
@@ -173,4 +172,4 @@ block * grid ->
 (** @deprecated you should use kernel#compile *)
 val compile : Devices.device -> ('a, 'b) spoc_kernel -> unit
 
-val set_arg : ('a, 'b) kernelArgs array -> int -> ('a,'b) Vector.vector -> unit
+val set_arg : 'a kernelArg array -> int -> 'a Vector.vector -> unit

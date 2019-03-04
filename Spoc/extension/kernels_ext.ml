@@ -343,42 +343,42 @@ let rec type_to_type t =
   match t with
   | TyId (l, id) when (String.compare (string_of_ident id) "float64") = 0 -> 
     let _loc = l in
-    (<:ctyp< float>>)
+    (<:ctyp< Vector.float64>>)
   | TyId (l, id) when (String.compare (string_of_ident id) "acc_acc_Spoc_Vector_vfloat32") = 0 -> 
     let _loc = l in
-    (<:ctyp< ('spoc_c, 'spoc_d) Vector.vector>>)
+    (<:ctyp< 'spoc_c Vector.vector>>)
       
   | TyId (l, id) when (String.compare (string_of_ident id) "acc_acc_Spoc_Vector_vchar") = 0 -> 
     let _loc = l in
-    (<:ctyp< ('spoc_e, 'spoc_f) Vector.vector>>)
+    (<:ctyp< 'spoc_e Vector.vector>>)
 
   | TyId (l, id) when (String.compare (string_of_ident id) "acc_acc_Spoc_Vector_localvfloat32") = 0 -> 
     let _loc = l in
-    (<:ctyp< ('spoc_g, 'spoc_h) Vector.vector>>)
+    (<:ctyp< 'spoc_g Vector.vector>>)
       
   | TyId (l, id) when (String.compare (string_of_ident id) "acc_acc_Spoc_Vector_vfloat64") = 0 -> 
     let _loc = l in
-    (<:ctyp< ('spoc_i, 'spoc_j) Vector.vector>>)
+    (<:ctyp< 'spoc_i Vector.vector>>)
 
   | TyId (l, id) when (String.compare (string_of_ident id) "acc_acc_Spoc_Vector_vcomplex32") = 0 -> 
     let _loc = l in
-    (<:ctyp< ('spoc_j, 'spoc_k) Vector.vector>>)
+    (<:ctyp< 'spoc_j Vector.vector>>)
 
   | TyId (l, id) when (String.compare (string_of_ident id) "acc_acc_Spoc_Vector_vint32") = 0 -> 
     let _loc = l in
-    (<:ctyp< ('spoc_l, 'spoc_m) Vector.vector>>)
+    (<:ctyp< 'spoc_l Vector.vector>>)
 
   | TyId (l, id) when (String.compare (string_of_ident id) "acc_acc_Spoc_Vector_vint64") = 0 -> 
     let _loc = l in
-    (<:ctyp< ('spoc_n, 'spoc_o) Vector.vector>>)
+    (<:ctyp< 'spoc_n Vector.vector>>)
 
   | TyId (l, id) when (String.compare (string_of_ident id) "acc_acc_Spoc_Vector_vbool") = 0 -> 
     let _loc = l in
-    (<:ctyp< ('spoc_p,'spoc_q) Vector.vector>>)
+    (<:ctyp< 'spoc_p Vector.vector>>)
 
   | TyId (l, id) when (String.compare (string_of_ident id) "acc_acc_Spoc_Vector_vcustom") = 0 -> 
     let _loc = l in
-    (<:ctyp< ('spoc_r,'spoc_s) Vector.vector>>)
+    (<:ctyp< 'spoc_r Vector.vector>>)
   | TyId (_, id) -> 
     t
   | TyApp (l, t1, t2)  -> 
@@ -394,35 +394,35 @@ let rec concrete_type_to_type t =
       
   | TyId (l, id) when (String.compare (string_of_ident id) "acc_acc_Spoc_Vector_vfloat32") = 0 -> 
     let _loc = l in
-    (<:ctyp< (float, Bigarray.float32_elt)  Vector.vector>>)
+    (<:ctyp< Vector.float32  Vector.vector>>)
       
   | TyId (l, id) when (String.compare (string_of_ident id) "acc_acc_Spoc_Vector_vchar") = 0 -> 
     let _loc = l in
-    (<:ctyp< (char, Bigarray.int8_unsigned_elt) Vector.vector>>)
+    (<:ctyp< Vector.char Vector.vector>>)
 
   | TyId (l, id) when (String.compare (string_of_ident id) "acc_acc_Spoc_Vector_localvfloat32") = 0 -> 
     let _loc = l in
-    (<:ctyp< (float, Bigarray.float32_elt) Vector.vector>>)
+    (<:ctyp< Vector.float32 Vector.vector>>)
       
   | TyId (l, id) when (String.compare (string_of_ident id) "acc_acc_Spoc_Vector_vfloat64") = 0 -> 
     let _loc = l in
-    (<:ctyp< (float, Bigarray.float64_elt) Vector.vector>>)
+    (<:ctyp< Vector.float64 Vector.vector>>)
 
   | TyId (l, id) when (String.compare (string_of_ident id) "acc_acc_Spoc_Vector_vcomplex32") = 0 -> 
     let _loc = l in
-    (<:ctyp< (Complex.t, Bigarray.complex32_elt) Vector.vector>>)
+    (<:ctyp< Vector.complex32 Vector.vector>>)
 
   | TyId (l, id) when (String.compare (string_of_ident id) "acc_acc_Spoc_Vector_vint32") = 0 -> 
     let _loc = l in
-    (<:ctyp< (int32, Bigarray.int32_elt) Vector.vector>>)
+    (<:ctyp< Vector.int32 Vector.vector>>)
 
   | TyId (l, id) when (String.compare (string_of_ident id) "acc_acc_Spoc_Vector_vint64") = 0 -> 
     let _loc = l in
-    (<:ctyp< (float, Bigarray.float64_elt) Vector.vector>>)
+    (<:ctyp< Vector.float Vector.vector>>)
 
   | TyId (l, id) when (String.compare (string_of_ident id) "acc_acc_Spoc_Vector_vbool") = 0 -> 
     let _loc = l in
-    (<:ctyp< (bool, bool) Vector.vector>>)
+    (<:ctyp< Vector.bool Vector.vector>>)
 
   | TyId (l, id) when (String.compare (string_of_ident id) "acc_acc_Spoc_Vector_vcustom") = 0 -> 
     let _loc = l in
@@ -659,7 +659,7 @@ let bigarray_set _loc var newval =
 	<:str_item< 
 	  
 	  class ['a, 'b] $lid:class_name$  = object (self)
-	    inherit [$k_typ$, ('a,'b) Kernel.kernelArgs array ] 
+	    inherit [$k_typ$, 'a Kernel.kernelArg array ] 
 	      Spoc.Kernel.spoc_kernel $filename$ $funcname$
 	    method exec  = 
 	      $exec$

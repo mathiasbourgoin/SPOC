@@ -41,17 +41,17 @@ external boolset : Vector.customarray -> int -> bool -> unit
 val print : int -> unit
 (**/**)
 
-val iter : ('a -> 'b) -> ('a, 'c) Vector.vector -> unit
-val iteri : ('a -> int -> 'b) -> ('a, 'c) Vector.vector -> unit
+val iter : ('a -> 'b) -> 'a Vector.vector -> unit
+val iteri : ('a -> int -> 'b) -> 'a Vector.vector -> unit
 val map :
   ('a -> 'b) ->
-  ('b, 'c) Vector.kind -> ('a, 'd) Vector.vector -> ('b, 'c) Vector.vector
-val trueCustom : (bool,bool) Vector.custom
-val falseCustom : (bool,bool) Vector.custom
-val fold_left : ('a -> 'b -> 'a) -> 'a -> ('b, 'c) Vector.vector -> 'a
-val fold_right : ('a -> 'b -> 'b) -> ('a, 'c) Vector.vector -> 'b -> 'b
+  'b Vector.kind -> 'a Vector.vector -> 'b Vector.vector
+val trueCustom : bool Vector.custom
+val falseCustom : bool Vector.custom
+val fold_left : ('a -> 'b -> 'a) -> 'a -> 'b Vector.vector -> 'a
+val fold_right : ('a -> 'b -> 'b) -> 'a Vector.vector -> 'b -> 'b
 (**/**)
-val vfalse : (bool, bool) Vector.kind
-val vtrue : (bool, bool) Vector.kind
-val spoc_bool : (bool, bool) Vector.kind
+val vfalse : bool Vector.kind
+val vtrue : bool Vector.kind
+val spoc_bool : bool Vector.kind
 (**/**)

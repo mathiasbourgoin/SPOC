@@ -113,9 +113,9 @@ let fold_right f vect seed =
     done;
     !s))
 
-let vfalse = Vector.Custom trueCustom
+let vfalse = Vector.custom trueCustom
 
-let vtrue = Vector.Custom falseCustom
+let vtrue = Vector.custom falseCustom
 
 let spoc_bool = vfalse
 

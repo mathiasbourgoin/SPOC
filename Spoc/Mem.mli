@@ -58,7 +58,7 @@ val unsafe_rw : bool -> unit
 	
 	use [Devices.flush] to wait for the end of the command queue*)
 val to_device :
-  ('a, 'b) Vector.vector -> ?queue_id:int -> Devices.device -> unit
+  'a Vector.vector -> ?queue_id:int -> Devices.device -> unit
 
 (** Explicit transfer from a device
 
@@ -68,14 +68,14 @@ val to_device :
 	transfers are asynchronous, [to_cpu] will return immediately, 
 	
 	use [Devices.flush] to wait for the end of the command queue*)
-val to_cpu : ('a, 'b) Vector.vector -> ?queue_id:int -> unit -> unit
+val to_cpu : 'a Vector.vector -> ?queue_id:int -> unit -> unit
 (**/**)
-val unsafe_set : ('a, 'b) Vector.vector -> int -> 'a -> unit
-val unsafe_get : ('a, 'b) Vector.vector -> int -> 'a
+val unsafe_set : 'a Vector.vector -> int -> 'a -> unit
+val unsafe_get : 'a Vector.vector -> int -> 'a
 (**/**)
 
-val set : ('a, 'b) Vector.vector -> int -> 'a -> unit
-val get : ('a, 'b) Vector.vector -> int -> 'a
+val set : 'a Vector.vector -> int -> 'a -> unit
+val get : 'a Vector.vector -> int -> 'a
 
 (** @return a subvector from a given vector
 Subvectors share the same cpu memory space with the vector they are from. 
@@ -83,23 +83,23 @@ They do not share the same memory space on gpgpu devices.
 [sub_vector vec start len] will return a new vector of length [len] sharing the
 same cpu memory space with [a] starting from index [start].*)
 val sub_vector :
-  ('a, 'b) Vector.vector -> int -> int -> ('a, 'b) Vector.vector
+  'a Vector.vector -> int -> int -> 'a Vector.vector
 	
 val sub_vector :
-           ('a, 'b) Vector.vector ->
-           int -> ?ok_rng:int -> ?ko_rng:int -> int -> ('a, 'b) Vector.vector
+           'a Vector.vector ->
+           int -> ?ok_rng:int -> ?ko_rng:int -> int -> 'a Vector.vector
 
 
 (** experimental : @return a copy of a given vector, the copy takes place on the vector location (CPU/GPU) *)
 val vector_copy : 
-           ('a, 'b) Vector.vector ->
-           int -> ('a, 'b) Vector.vector -> int -> int -> unit
+           'a Vector.vector ->
+           int -> 'a Vector.vector -> int -> int -> unit
 
 (**/**)
 val matrix_copy :
-           ('a, 'b) Vector.vector ->
+           'a Vector.vector ->
            int ->
            int ->
            int ->
-           ('a, 'b) Vector.vector -> int -> int -> int -> int -> int -> unit
+           'a Vector.vector -> int -> int -> int -> int -> int -> unit
 (**/**)

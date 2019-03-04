@@ -61,7 +61,7 @@
 */
 
 /* for profiling */
-//#define PROFILE 
+//#define PROFILE
 
 
 extern int noCuda;
@@ -390,23 +390,6 @@ value copy_complex(cuComplex c);
 value copy_doubleComplex(cuDoubleComplex c);
 
 #define Complex_val(c) complex_val(c)
-
-
-
-#define Spoc_vector_val(A, V ) do {\
-	A = malloc(sizeof(spoc_vector));\
-	A.device = Int_val (Field (V, 0));\
-	value bigarray; \
-	bigarray = Field (Field(V, 1), 0); \
-	A.spoc_vec = (void*)Data_bigarray_val(bigArray); \
-	int type_size; \
-	GET_TYPE_SIZE; \
-	A.cuda_device_vec  = Field( Field(V, 2), (A.device)); \
-	A.opencl_device_vec  = Field( Field(V, 3), (A.device)); \
-	A.length = Int_val(Field(V, 4)); \
-	A.type_size = type_size; \
-	A.vec_id = Int_val (Field (V,9)); \
-} while (0)
 
 typedef struct vector_list {
 		spoc_vector current;

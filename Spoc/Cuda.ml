@@ -88,36 +88,36 @@ let _ =
    Callback.register_exception "cuda_error_unknown" ERROR_UNKNOWN)
 
 external cuda_custom_alloc_vect :
-  ('a, 'b) Vector.vector -> int -> generalInfo -> unit =
+  'a Vector.vector -> int -> generalInfo -> unit =
   "spoc_cuda_custom_alloc_vect"
 
 external cuda_alloc_vect :
-  ('a, 'b) Vector.vector -> int -> generalInfo -> unit =
+  'a Vector.vector -> int -> generalInfo -> unit =
   "spoc_cuda_alloc_vect"
 
-external cuda_free_vect : ('a, 'b) Vector.vector -> int -> unit =
+external cuda_free_vect : 'a Vector.vector -> int -> unit =
   "spoc_cuda_free_vect"
 
 external cuda_part_cpu_to_device :
-  ('a, 'b) vector ->
-  ('a, 'b) Vector.vector ->
+  'a vector ->
+  'a Vector.vector ->
   int -> generalInfo -> gcInfo -> int -> int -> int -> int -> int -> unit =
   "spoc_cuda_part_cpu_to_device_b" "spoc_cuda_part_cpu_to_device_n"
 
 external cuda_cpu_to_device :
-  ('a, 'b) vector -> int -> generalInfo -> gcInfo -> int -> unit =
+  'a vector -> int -> generalInfo -> gcInfo -> int -> unit =
   "spoc_cuda_cpu_to_device"
 
-external cuda_device_to_device : ('a, 'b) vector -> int -> device -> unit =
+external cuda_device_to_device : 'a vector -> int -> device -> unit =
   "spoc_cuda_device_to_device"
 
 external cuda_device_to_cpu :
-  ('a, 'b) vector -> int -> generalInfo -> device -> int -> unit =
+  'a vector -> int -> generalInfo -> device -> int -> unit =
   "spoc_cuda_device_to_cpu"
 
 external cuda_custom_part_cpu_to_device :
-  ('a, 'b) vector ->
-  ('a, 'b) Vector.vector ->
+  'a vector ->
+  'a Vector.vector ->
   int ->
   generalInfo ->
   Devices.gcInfo -> int -> int -> int -> int -> int -> unit =
@@ -125,24 +125,24 @@ external cuda_custom_part_cpu_to_device :
     "spoc_cuda_custom_part_cpu_to_device_n"
 
 external cuda_custom_cpu_to_device :
-  ('a, 'b) vector -> int -> generalInfo -> int -> unit =
+  'a vector -> int -> generalInfo -> int -> unit =
   "spoc_cuda_custom_cpu_to_device"
 
 external cuda_custom_device_to_cpu :
-  ('a, 'b) vector -> int -> generalInfo -> int -> unit =
+  'a vector -> int -> generalInfo -> int -> unit =
   "spoc_cuda_custom_device_to_cpu"
 
 external cuda_part_device_to_cpu :
-  ('a, 'b) Vector.vector ->
-  ('a, 'b) Vector.vector ->
+  'a Vector.vector ->
+  'a Vector.vector ->
   int ->
   Devices.generalInfo ->
   Devices.gcInfo -> int -> int -> int -> int -> int -> unit =
   "spoc_cuda_part_device_to_cpu_b" "spoc_cuda_part_device_to_cpu_n"
 
 external cuda_custom_part_device_to_cpu :
-  ('a, 'b) Vector.vector ->
-  ('a, 'b) Vector.vector ->
+  'a Vector.vector ->
+  'a Vector.vector ->
   int ->
   Devices.generalInfo ->
   Devices.gcInfo -> int -> int -> int -> int -> int -> unit =
@@ -150,35 +150,35 @@ external cuda_custom_part_device_to_cpu :
     "spoc_cuda_custom_part_device_to_cpu_n"
 
 external cuda_vector_copy :
-  ('a, 'b) Vector.vector ->
+  'a Vector.vector ->
   int ->
-  ('a, 'b) Vector.vector ->
+  'a Vector.vector ->
   int -> int -> Devices.generalInfo -> int -> unit =
   "spoc_cuda_vector_copy_b" "spoc_cuda_vector_copy_n"
 
 external cuda_custom_vector_copy :
-  ('a, 'b) Vector.vector ->
+  'a Vector.vector ->
   int ->
-  ('a, 'b) Vector.vector ->
+  'a Vector.vector ->
   int -> int -> Devices.generalInfo -> int -> unit =
   "spoc_cuda_custom_vector_copy_b" "spoc_cuda_custom_vector_copy_n"
 
 external cuda_matrix_copy :
-  ('a, 'b) Vector.vector ->
+  'a Vector.vector ->
   int ->
   int ->
   int ->
-  ('a, 'b) Vector.vector ->
+  'a Vector.vector ->
   int ->
   int -> int -> int -> int -> Devices.generalInfo -> int -> unit =
   "spoc_cuda_matrix_copy_b" "spoc_cuda_matrix_copy_n"
 
 external cuda_custom_matrix_copy :
-  ('a, 'b) Vector.vector ->
+  'a Vector.vector ->
   int ->
   int ->
   int ->
-  ('a, 'b) Vector.vector ->
+  'a Vector.vector ->
   int ->
   int -> int -> int -> int -> Devices.generalInfo -> int -> unit =
   "spoc_cuda_custom_matrix_copy_b" "spoc_cuda_custom_matrix_copy_n"

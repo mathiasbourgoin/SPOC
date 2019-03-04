@@ -5,6 +5,8 @@ all:
 
 clean:
 	cd Spoc && $(MAKE) clean && cd ..
+	cd Samples && $(MAKE) clean && cd ..
+	cd SpocLibs/Sarek && $(MAKE) clean && cd ../..
 
 
 install: 

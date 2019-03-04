@@ -40,45 +40,45 @@ type customarray
 
 (** Spoc offers many predefined vectors types.
 Custom vectors can contain any kind of data types.*)
-type ('a,'b) custom = {
+type 'a custom = {
   size : int; (** the size of an element when transferred to a gpgpu device*)
   get : customarray -> int -> 'a; (** a function to access elements from the vector *)
   set : customarray -> int -> 'a -> unit; (** a function to modify an element of the vector *)
 }
 
 (** Some predifined types *)
+type float32 = float
+type float64 = float
+type int32 = Int32.t
+type int64 = Int64.t
+type complex32 = Complex.t
 
-type ('a,'b) couple = 'a*'b
-
-type ('a, 'b) kind =
-    Float32 of ('a, 'b) Bigarray.kind
-  | Char of ('a, 'b) Bigarray.kind
-  | Float64 of ('a, 'b) Bigarray.kind
-  | Int32 of ('a, 'b) Bigarray.kind
-  | Int64 of ('a, 'b) Bigarray.kind
-  | Complex32 of ('a, 'b) Bigarray.kind
-  | Custom of ('a,'b) custom
-
-  | Unit  of ('a, 'b) couple
-  | Dummy  of ('a, 'b) couple
+type _ kind =
+    Float32 : float32 kind
+  | Char : char kind
+  | Float64 : float64 kind
+  | Int32 : int32 kind
+  | Int64 : int64 kind
+  | Complex32 : complex32 kind
+  | Custom : 'a custom -> 'a  kind
 
 (** shortcuts *)
 
-val int : (int, Bigarray.int_elt) kind
-val int32 : (int32, Bigarray.int32_elt) kind
-val char : (char, Bigarray.int8_unsigned_elt) kind
-val int64 : (int64, Bigarray.int64_elt) kind
-val float32 : (float, Bigarray.float32_elt) kind
-val float64 : (float, Bigarray.float64_elt) kind
-val complex32 : (Complex.t, Bigarray.complex32_elt) kind
+val int32 : int32 kind
+val char : char kind
+val int64 : int64 kind
+val float32 : float32 kind
+val float64 : float64 kind
+val complex32 : complex32 kind
 
-type ('a,'b) host_vec
-  
+val custom  : 'a custom -> 'a kind
+type 'a host_vec
+
 (** a spoc_vector is a Bigarray or a custom  vector *)
-type ('a, 'b) spoc_vec =
-    Bigarray of ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t
-  | CustomArray of (customarray * ('a,'b) custom)
-  | Host_vec of ('a,'b) host_vec
+type _ spoc_vec =
+  | CustomArray : (customarray * 'a custom) -> 'a spoc_vec
+  | Host_vec : 'a host_vec -> 'a spoc_vec
+
 
 
 (**/**)
@@ -88,81 +88,80 @@ external float_of_float32 : float -> float = "float_of_float32"
 
 type vec_device = No_dev | Dev of Devices.device | Transferring of Devices.device
 
-(** a vector  represents every information needed by Spoc to manage it
- It uses Bigarrays to manage data on the cpu side (see the OCaml Bigarray Module for more information) *)
-type ('a, 'b) vector
+(** a vector  represents every information needed by Spoc to manage it *)
+type 'a vector
 
 (** sub vectors are vector parts sharing memory space on cpu memory BUT not on gpu memory,
 allowing easy computation distribution over multiple GPUs.
  sub-vector : sub_vector depth * start * ok range * ko range * parent vector (see samples for more info) *)
-and ('a,'b) sub = int * int * int * int * ('a,'b) vector
+and 'a sub = int * int * int * int * 'a vector
 
 (**/**)
 external init_cuda_device_vec : unit -> device_vec
 = "spoc_init_cuda_device_vec"
 external init_opencl_device_vec : unit -> device_vec
 = "spoc_init_opencl_device_vec"
-external create_custom : ('a,'b) custom -> int -> customarray
+external create_custom : 'a custom -> int -> customarray
 = "spoc_create_custom"
 val vec_id : int ref
 (**/**)
 
 (** @return a new vector.*)
 val create :
-           ('a, 'b) kind -> ?dev:Devices.device -> int -> ('a, 'b) vector
+           'a kind -> ?dev:Devices.device -> int -> 'a vector
 (** @return the length of a given vector *)
-val length : ('a, 'b) vector -> int
+val length : 'a vector -> int
 
 (** @return the device where the given vector is located *)
-val dev : ('a, 'b) vector -> vec_device
+val dev : 'a vector -> vec_device
 
 (** checks if a vector is a subvector *)
-val is_sub : ('a,'b) vector -> (('a, 'b) sub) option
+val is_sub : 'a vector -> 'a sub option
 
 (** @return the kind of a vector *)
-val kind : ('a,'b) vector -> ('a, 'b) kind
+val kind : 'a vector -> 'a kind
 
 (** @return the device id where the given vector is located *)
-val device : ('a, 'b) vector -> int
+val device : 'a vector -> int
 
 (**/**)
-val get_vec_id : ('a, 'b) vector -> int
+val get_vec_id : 'a vector -> int
 (**/**)
 
 (**/**)
-val vector : ('a, 'b) vector -> ('a, 'b) spoc_vec
+val vector : 'a vector -> 'a spoc_vec
 (**/**)
 
 (** checks equality between two vectors *)
-val equals : ('a, 'b) vector -> ('a, 'b) vector -> bool
+val equals : 'a vector -> 'a vector -> bool
 
 
-val vseek : ('a, 'b) vector -> int -> unit
-val get_seek : ('a, 'b) vector -> int
+val vseek : 'a vector -> int -> unit
+val get_seek : 'a vector -> int
 
 
-val unsafe_get : ('a, 'b) vector -> int -> 'a
-val unsafe_set : ('a, 'b) vector -> int -> 'a -> unit
+val unsafe_get : 'a vector -> int -> 'a
+val unsafe_set : 'a vector -> int -> 'a -> unit
 
 (**/**)
-val update_device_array : ('a, 'b) vector -> ('a, 'b) vector -> unit
+val update_device_array : 'a vector -> 'a vector -> unit
 
-val set_device : ('a, 'b) vector -> int -> vec_device -> unit
+val set_device : 'a vector -> int -> vec_device -> unit
 
-val temp_vector : ('a, 'b) vector -> ('a, 'b) vector
+val temp_vector : 'a vector -> 'a vector
 (**/**)
 
 val sub_vector :
-('a, 'b) vector -> int -> int -> int -> int -> ('a, 'b) vector
+'a vector -> int -> int -> int -> int -> 'a vector
 
 val device_vec :
-('a, 'b) vector -> [< `Cuda | `OpenCL ] -> int -> device_vec
+'a vector -> [< `Cuda | `OpenCL ] -> int -> device_vec
 
-val copy_sub : ('a, 'b) vector -> ('a, 'b) vector -> unit
+val copy_sub : 'a vector -> 'a vector -> unit
 
 val of_bigarray_shr :
-           ('a, 'b) kind ->
-           ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t -> ('a, 'b) vector
-          
+           'a kind ->
+           ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t -> 'a vector
+
 val to_bigarray_shr :
-  ('a, 'b) vector  ->   ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t
+  'a vector  ->   ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t

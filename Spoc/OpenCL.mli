@@ -79,27 +79,27 @@ exception INVALID_ARG_SIZE
 exception INVALID_COMMAND_QUEUE
 (**/**)  
 external opencl_alloc_vect :
-  ('a, 'b) Vector.vector -> int -> Devices.generalInfo -> unit =
+  'a Vector.vector -> int -> Devices.generalInfo -> unit =
   "spoc_opencl_alloc_vect"
 
 external opencl_custom_alloc_vect :
-  ('a, 'b) Vector.vector -> int -> Devices.generalInfo -> unit =
+  'a Vector.vector -> int -> Devices.generalInfo -> unit =
   "spoc_opencl_custom_alloc_vect"  
 
-external opencl_free_vect : ('a, 'b) Vector.vector -> int -> unit =
+external opencl_free_vect : 'a Vector.vector -> int -> unit =
   "spoc_opencl_free_vect"
   
 external opencl_part_device_to_cpu :
-  ('a, 'b) Vector.vector ->
-    ('a, 'b) Vector.vector ->
+  'a Vector.vector ->
+    'a Vector.vector ->
       int ->
         Devices.generalInfo ->
           Devices.gcInfo -> int -> int -> int -> int -> int -> unit =
   "spoc_opencl_part_device_to_cpu_b" "spoc_opencl_part_device_to_cpu_n"
   
 external opencl_custom_part_device_to_cpu :
-  ('a, 'b) Vector.vector ->
-    ('a, 'b) Vector.vector ->
+  'a Vector.vector ->
+    'a Vector.vector ->
       int ->
         Devices.generalInfo ->
           Devices.gcInfo -> int -> int -> int -> int -> int -> unit =
@@ -107,16 +107,16 @@ external opencl_custom_part_device_to_cpu :
   "spoc_opencl_custom_part_device_to_cpu_n"
   
 external opencl_part_cpu_to_device :
-  ('a, 'b) Vector.vector ->
-    ('a, 'b) Vector.vector ->
+  'a Vector.vector ->
+    'a Vector.vector ->
       int ->
         Devices.generalInfo ->
           Devices.gcInfo -> int -> int -> int -> int -> int -> unit =
   "spoc_opencl_part_cpu_to_device_b" "spoc_opencl_part_cpu_to_device_n"
   
 external opencl_custom_part_cpu_to_device :
-  ('a, 'b) Vector.vector ->
-    ('a, 'b) Vector.vector ->
+  'a Vector.vector ->
+    'a Vector.vector ->
       int ->
         Devices.generalInfo ->
           Devices.gcInfo -> int -> int -> int -> int -> int -> unit =
@@ -124,57 +124,57 @@ external opencl_custom_part_cpu_to_device :
   "spoc_opencl_custom_part_cpu_to_device_n"
   
 external opencl_cpu_to_device :
-  ('a, 'b) Vector.vector -> int -> Devices.generalInfo -> int -> unit =
+  'a Vector.vector -> int -> Devices.generalInfo -> int -> unit =
   "spoc_opencl_cpu_to_device"
   
 external opencl_device_to_device :
-  ('a, 'b) Vector.vector -> int -> Devices.device -> unit =
+  'a Vector.vector -> int -> Devices.device -> unit =
   "spoc_opencl_device_to_device"
   
 external opencl_device_to_cpu :
-  ('a, 'b) Vector.vector ->
+  'a Vector.vector ->
     int -> Devices.generalInfo -> Devices.specificInfo -> int -> unit =
   "spoc_opencl_device_to_cpu"
   
 external opencl_custom_cpu_to_device :
-  ('a, 'b) Vector.vector -> int -> Devices.generalInfo -> int -> unit =
+  'a Vector.vector -> int -> Devices.generalInfo -> int -> unit =
   "spoc_opencl_custom_cpu_to_device"
   
 external opencl_custom_device_to_cpu :
-  ('a, 'b) Vector.vector ->
+  'a Vector.vector ->
     int -> Devices.generalInfo -> Devices.specificInfo -> int -> unit =
   "spoc_opencl_custom_device_to_cpu"
   
 external opencl_vector_copy :
-  ('a, 'b) Vector.vector ->
+  'a Vector.vector ->
     int ->
-      ('a, 'b) Vector.vector ->
+      'a Vector.vector ->
         int -> int -> Devices.generalInfo -> int -> unit =
   "spoc_opencl_vector_copy_b" "spoc_opencl_vector_copy_n"
   
 external opencl_custom_vector_copy :
-  ('a, 'b) Vector.vector ->
+  'a Vector.vector ->
     int ->
-      ('a, 'b) Vector.vector ->
+      'a Vector.vector ->
         int -> int -> Devices.generalInfo -> int -> unit =
   "spoc_opencl_custom_vector_copy_b" "spoc_opencl_custom_vector_copy_n"
   
 external opencl_matrix_copy :
-  ('a, 'b) Vector.vector ->
+  'a Vector.vector ->
     int ->
       int ->
         int ->
-          ('a, 'b) Vector.vector ->
+          'a Vector.vector ->
             int ->
               int -> int -> int -> int -> Devices.generalInfo -> int -> unit =
   "spoc_opencl_matrix_copy_b" "spoc_opencl_matrix_copy_n"
   
 external opencl_custom_matrix_copy :
-   ('a, 'b) Vector.vector ->
+   'a Vector.vector ->
     int ->
       int ->
         int ->
-          ('a, 'b) Vector.vector ->
+          'a Vector.vector ->
             int ->
               int -> int -> int -> int -> Devices.generalInfo -> int -> unit =
   "spoc_opencl_custom_matrix_copy_b" "spoc_opencl_custom_matrix_copy_n"

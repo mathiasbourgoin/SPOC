@@ -102,7 +102,7 @@ and get vect idx =
 and temp_vector vect =
   Vector.temp_vector vect
 
-and basic_transfer_to_device new_vect q dev =
+and basic_transfer_to_device (type a) (new_vect: a Vector.vector)  q dev =
   (match dev.Devices.specific_info with
    | Devices.CudaInfo _ ->
      let f () =
@@ -328,11 +328,11 @@ and alloc_vect_on_device vector dev =
   match dev.Devices.specific_info with
   | Devices.CudaInfo _ ->
     (match Vector.vector vector with
-     | Vector.Bigarray _ | Vector.Host_vec _ -> cuda_alloc_vect vector dev.Devices.general_info.Devices.id dev.Devices.general_info
+     | Vector.Host_vec _ -> cuda_alloc_vect vector dev.Devices.general_info.Devices.id dev.Devices.general_info
      | Vector.CustomArray _  -> cuda_custom_alloc_vect vector dev.Devices.general_info.Devices.id dev.Devices.general_info)
   | Devices.OpenCLInfo _ ->
     (match Vector.vector vector with
-     | Vector.Bigarray _ | Vector.Host_vec _ ->   opencl_alloc_vect vector  (dev.Devices.general_info.Devices.id - (Devices.cuda_devices ())) dev.Devices.general_info
+     | Vector.Host_vec _ ->   opencl_alloc_vect vector  (dev.Devices.general_info.Devices.id - (Devices.cuda_devices ())) dev.Devices.general_info
      | Vector.CustomArray _  -> opencl_custom_alloc_vect vector (dev.Devices.general_info.Devices.id - (Devices.cuda_devices ())) dev.Devices.general_info)
 
 and to_cpu vect ?queue_id:(q = 0) () =
@@ -404,7 +404,7 @@ and to_cpu vect ?queue_id:(q = 0) () =
 
 
 
-let sub_vector (vect : ('a, 'b) Vector.vector) _start ?ok_rng:(_ok_r = 0)
+let sub_vector (vect : 'a Vector.vector) _start ?ok_rng:(_ok_r = 0)
     ?ko_rng:(_ko_r = 0) _len =
   if (_ok_r > _len) || ((_ok_r < 0) || (_ko_r < 0))
   then failwith "Wrong value: sub_vector"
@@ -444,7 +444,7 @@ let cpu_vector_copy vecA startA vecB startB size =
   done
 
 (* copy vector vecA data into vecB (takes place into vecA location) *)
-let rec vector_copy (vecA: ('a,'b) Vector.vector) startA (vecB: ('a,'b) Vector.vector) startB size =
+let rec vector_copy (vecA: 'a Vector.vector) startA (vecB: 'a Vector.vector) startB size =
   if (startA + size) > Vector.length vecA || (startB + size) > Vector.length vecB then
     raise (Invalid_argument "index out of bounds" ) 
   else
@@ -481,7 +481,7 @@ let rec vector_copy (vecA: ('a,'b) Vector.vector) startA (vecB: ('a,'b) Vector.v
       Devices.flush d2 ();
       cpu_vector_copy vecA startA vecB startB size
 
-let gpu_matrix_copy (vecA: ('a,'b) Vector.vector) ldA start_rowA start_colA (vecB: ('a,'b) Vector.vector) ldB start_rowB start_colB rows cols dev =
+let gpu_matrix_copy (vecA: 'a Vector.vector) ldA start_rowA start_colA (vecB: 'a Vector.vector) ldB start_rowB start_colB rows cols dev =
   (match dev.Devices.specific_info with
    | Devices.CudaInfo _ ->
      (match Vector.vector vecA with
@@ -495,11 +495,11 @@ let gpu_matrix_copy (vecA: ('a,'b) Vector.vector) ldA start_rowA start_colA (vec
       | _ -> (OpenCL.opencl_matrix_copy vecA ldA start_rowA start_colA vecB ldB start_rowB start_colB rows cols dev.Devices.general_info (dev.Devices.general_info.Devices.id - (Devices.cuda_devices ()))))
   )
 
-let cpu_matrix_copy (vecA: ('a,'b) Vector.vector) ldA start_rowA start_colA (vecB: ('a,'b) Vector.vector) ldB start_rowB start_colB rows cols =
+let cpu_matrix_copy (vecA: 'a Vector.vector) ldA start_rowA start_colA (vecB: 'a Vector.vector) ldB start_rowB start_colB rows cols =
   ()
 
-let rec matrix_copy (vecA: ('a,'b) Vector.vector) ldA start_rowA start_colA
-    (vecB: ('a,'b) Vector.vector) ldB start_rowB start_colB rows cols =
+let rec matrix_copy (vecA: 'a Vector.vector) ldA start_rowA start_colA
+    (vecB: 'a Vector.vector) ldB start_rowB start_colB rows cols =
   if (start_rowA*ldA+start_colA) + (rows*cols) - 1 > Vector.length vecA then
     raise (Invalid_argument
              (Printf.sprintf "index out of bounds %d > %d"

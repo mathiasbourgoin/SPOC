@@ -34,22 +34,21 @@
  *******************************************************************************)
 type kernel
 
-external relax_vector : ('a,'b) Vector.vector -> ('c,'d) Vector.vector = "%identity"
+external relax_vector : 'a Vector.vector -> 'b Vector.vector = "%identity"
 
-type ('a, 'b) kernelArgs =
-  | VChar of ('a, 'b) Vector.vector (** unsigned char vector *)
-  | VFloat32 of ('a, 'b) Vector.vector (** 32-bit float vector *)
-  | VFloat64 of ('a, 'b) Vector.vector (** 64-bit float vector *)
-  | VComplex32 of ('a, 'b) Vector.vector (** 32-bit complex vector *)
-  | VInt32 of ('a, 'b) Vector.vector (** 32-bit int vector *)
-  | VInt64 of ('a, 'b) Vector.vector (** 64-bit int vector *)
+type 'a kernelArg =
+  | VChar of 'a Vector.vector (** unsigned char vector *)
+  | VFloat32 of 'a Vector.vector (** 32-bit float vector *)
+  | VFloat64 of 'a Vector.vector (** 64-bit float vector *)
+  | VComplex32 of 'a Vector.vector (** 32-bit complex vector *)
+  | VInt32 of 'a Vector.vector (** 32-bit int vector *)
+  | VInt64 of 'a Vector.vector (** 64-bit int vector *)
   | Int32 of int (** 32-bit int *)
   | Int64 of int (** 64-bit int *)
   | Float32 of float (** 32-bit float *)
   | Float64 of float (** 64-bit float *)
-  | Custom of ('a,'b) Vector.custom
-  | Vector of ('a, 'b) Vector.vector  (** generic vector type *)
-  | VCustom of ('a,'b) Vector.vector  (** custom data type vector, see examples *)
+  | Custom of 'a Vector.custom
+  | VCustom of 'a Vector.vector  (** custom data type vector, see examples *)
 
 type block =
   { mutable blockX : int; mutable blockY : int; mutable blockZ : int
@@ -76,11 +75,11 @@ struct
     "spoc_cuda_debug_compile" (* <- ATTENTION *)
 
   external cuda_load_param_vec :
-    int ref -> cuda_extra -> Vector.device_vec -> ('a,'b) Vector.vector -> Devices.device -> unit =
+    int ref -> cuda_extra -> Vector.device_vec -> 'a Vector.vector -> Devices.device -> unit =
     "spoc_cuda_load_param_vec_b" "spoc_cuda_load_param_vec_n"
 
   external cuda_custom_load_param_vec :
-    int ref -> cuda_extra -> Vector.device_vec -> ('a,'b) Vector.vector -> unit =
+    int ref -> cuda_extra -> Vector.device_vec -> 'a Vector.vector -> unit =
     "spoc_cuda_custom_load_param_vec_b" "spoc_cuda_custom_load_param_vec_n"
 
   external cuda_load_param_int : int ref -> cuda_extra -> int -> unit =
@@ -144,7 +143,7 @@ struct
         close_in ic;
         let ker = cuda_compile !src s2 in ker))
 
-  let cuda_load_arg offset extra dev cuFun idx (arg: ('a,'b) kernelArgs) =
+  let cuda_load_arg offset extra dev cuFun idx (arg: 'a kernelArg) =
     let load_non_vect =
       function
       | Int32 i -> cuda_load_param_int offset extra i
@@ -178,7 +177,7 @@ struct
     | VComplex32 v
     | VInt32 v | VInt64 v
     | VFloat64 v -> check_vect v
-    | VCustom (v : ('a, 'b) Vector.vector) -> check_vect v
+    | VCustom (v : 'a Vector.vector) -> check_vect v
     | _ -> load_non_vect arg
 end
 
@@ -264,7 +263,7 @@ struct
           else opencl_compile !src s2
         in ker))
 
-  let opencl_load_arg offset dev clFun idx (arg : ('a,'b) kernelArgs) =
+  let opencl_load_arg offset dev clFun idx (arg : 'a kernelArg) =
     let load_non_vect =
       function
       | Int32 i -> opencl_load_param_int offset clFun i dev.Devices.general_info
@@ -297,7 +296,7 @@ end
 exception ERROR_BLOCK_SIZE
 exception ERROR_GRID_SIZE
 
-let exec (args: ('a,'b) kernelArgs array) (block, grid) queue_id
+let exec (args: 'a kernelArg array) (block, grid) queue_id
     dev (bin: kernel) =
   match dev.Devices.specific_info with
   | Devices.CudaInfo cI ->
@@ -318,7 +317,7 @@ let exec (args: ('a,'b) kernelArgs array) (block, grid) queue_id
      then
        (raise ERROR_GRID_SIZE)
     );
-    Array.iteri (cuda_load_arg offset extra dev cuFun) (args: ('a,'b) kernelArgs array);
+    Array.iteri (cuda_load_arg offset extra dev cuFun) (args: 'a kernelArg array);
     (* set_block_shape cuFun block dev.general_info; *)
     cuda_launch_grid offset cuFun grid block extra dev.Devices.general_info queue_id
   | Devices.OpenCLInfo _ ->
@@ -326,7 +325,7 @@ let exec (args: ('a,'b) kernelArgs array) (block, grid) queue_id
     let clFun = bin in
     let offset = ref 0
     in
-    (Array.iteri (opencl_load_arg offset dev clFun) (args: ('a,'b) kernelArgs array);
+    (Array.iteri (opencl_load_arg offset dev clFun) (args: 'a kernelArg array);
      opencl_launch_grid clFun grid block dev.Devices.general_info queue_id)
     
 let compile_and_run (dev : Devices.device) ((block : block), (grid : grid))
@@ -425,7 +424,7 @@ class virtual ['a, 'b] spoc_kernel file (func: string) =
         try Hashtbl.find binaries dev with
         | Not_found ->
           (
-            try self#compile ~debug: true dev with
+            try ignore(self#compile ~debug: true dev) with
             |e -> raise e
             (*| _ -> raise (Not_compiled_for_device dev)*)
           );
@@ -436,7 +435,7 @@ class virtual ['a, 'b] spoc_kernel file (func: string) =
     method compile_and_run (args:'a) ((block: block), (grid: grid))
         ?debug: (d = false) (queue_id: int) (dev: Devices.device) =
       let bin =
-        self#compile ~debug: d dev;
+        ignore(self#compile ~debug: d dev);
         Hashtbl.find binaries dev
       in
         self#exec args (block, grid) queue_id dev bin
@@ -446,15 +445,15 @@ let run (dev: Devices.device) ((block: block), (grid: grid)) (k: ('a, 'b) spoc_k
 
 let compile (dev: Devices.device) (k: ('a, 'b) spoc_kernel) = ignore(k#compile ~debug: false dev)
 
-let set_arg env i arg =
+let set_arg (type a) env i (arg : a Vector.vector)  =
   env.(i) <-
     (match Vector.kind arg with
-     | Vector.Float32 x -> VFloat32 arg
-     | Vector.Char x -> VChar arg
-     |	Vector.Float64 x -> VFloat64 arg
-     | Vector.Int32 x -> VInt32 arg
-     | Vector.Int64 x -> VInt64 arg
-     | Vector.Complex32 x ->
+     | Vector.Float32 -> VFloat32 arg
+     | Vector.Char -> VChar arg
+     |	Vector.Float64 -> VFloat64 arg
+     | Vector.Int32 -> VInt32 arg
+     | Vector.Int64 -> VInt64 arg
+     | Vector.Complex32 ->
        VComplex32 arg
      | _ -> assert false
     )
