@@ -7,6 +7,17 @@ sudo apt-get install -qq build-essential libffi-dev pkg-config cuda-nvrtc-dev-10
 sudo mkdir -p /usr/local/cuda-10.0/include/
 sudo ln -s /usr/local/cuda-10.0/targets/x86_64-linux/include/nvrtc.h /usr/local/cuda-10.0/include/nvrtc.h
 
+export PATH=/usr/local/cuda-10.0/bin${PATH:+:${PATH}}
+export LD_LIBRARY_PATH=/usr/local/cuda-10.0/lib64\
+       ${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
+
+export C_INCLUDE_PATH=/usr/local/cuda-10.0/targets/x86_64-linux/include/${C_INCLUDE_PATH:+:${C_INCLUDE_PATH}}
+export CUDA_PATH=/usr/local/cuda-10.0
+
+
+
+sudo .travis/install_intel_opencl.sh
+
 export OPAMYES=1
 export OPAMJOBS=2
 export OPAMVERBOSE=1
@@ -26,6 +37,9 @@ ${HOME}/opam --git-version
 
 ${HOME}/opam install camlp4 ctypes ctypes-foreign cppo
 
+
 make check
+
+cd Samples/src/DeviceQuery && make && ./DeviceQuery.asm
 
 
