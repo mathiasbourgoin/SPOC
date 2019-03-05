@@ -17,15 +17,16 @@
 (** Add 2 vectors allocated from OCaml                  *)
 (** Use prewritten kernel accessible from Spoc          *)
 (**                                                     *)
-(** Mathias Bourgoin - 2011                             *)
+(** Mathias Bourgoin - 2011 - 2019                      *)
 open Spoc
 
 kernel vecadd: Spoc.Vector.vfloat32 -> Spoc.Vector.vfloat32 -> Spoc.Vector.vfloat32 -> int -> unit = "kernels/VecAdd_MultiGPU" "vec_add"
 
 let devices = Spoc.Devices.init ()
+let dev2n = 1 mod 1 mod Array.length devices
 in
 let dev1 = ref devices.(0)
-and dev2 = ref devices.(1)
+and dev2 = ref devices.(dev2n)
 
 in
 let start () = if ((Spoc.Devices.gpgpu_devices ()) <2 ) then
@@ -36,7 +37,7 @@ let start () = if ((Spoc.Devices.gpgpu_devices ()) <2 ) then
   else
     begin
       Printf.printf "Wow %d compatible devices found\n" (Spoc.Devices.gpgpu_devices ());
-      dev2 := devices.(1)
+      dev2 := devices.(dev2n)
     end
 
 and vec_size = ref 1024
@@ -48,7 +49,7 @@ let compute () =
   start();
   Random.self_init();
   let arg0 = ("-device1" , Arg.Int (fun i -> dev1 := devices.(i)), "number of the device [0]")
-  and arg1 = ("-device2" , Arg.Int (fun i -> dev2 := devices.(i)), "number of the device [1]")
+  and arg1 = ("-device2" , Arg.Int (fun i -> dev2 := devices.(i)), "number of the device [1 mod number_of_compatible_devices]")
   and arg2 = ("-size" , Arg.Int (fun i -> vec_size := i), "size of the vectors to multiply [1024]")
   and arg3 = ("-auto" , Arg.Bool (fun b -> auto_transfers := b; ), "let Spoc handles transfers automatically [false]")
   and arg4 = ("-verify" , Arg.Bool (fun b -> verify := b), "verify computation [true]") in

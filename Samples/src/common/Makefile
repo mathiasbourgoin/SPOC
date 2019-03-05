@@ -55,6 +55,10 @@ $(BYTE): $(MLSRC) $(COBJS)
 	-ccopt -L$(CUDA_PATH)/lib64 -cclib -lnvrtc \
 	-linkpkg $(MLSRC) $(CCLIBS) -o $(BYTE)
 
+
+test : $(ASM)
+	@./test.sh $(ASM)
+
 %ptx: %cu
 	$(NVCC) $(NVCCCFLAGS) $(NVCC_INCLUDES) -o $@ $<
 
