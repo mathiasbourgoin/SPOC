@@ -32,6 +32,10 @@ all:
 	cp -a $(KERNELDIR) $(BINDIR)/Bytecode/
 	cp -a $(KERNELDIR) $(BINDIR)/Native/
 
+
+test:
+	cd src && $(MAKE) --no-print-directory -j1 test
+
 ../Spoc/Spoc_kernels.ptx:
 	cd ../Spoc
 	$(MAKE) clean

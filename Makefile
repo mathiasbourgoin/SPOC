@@ -24,4 +24,12 @@ sarek_samples:
 	cd SpocLibs/Samples/Bitonic_sort; $(MAKE)
 
 
-check: all install install_sarek samples #sarek_samples
+test:
+	cd Samples ; $(MAKE) --no-print-directory test | tee "/tmp/log_spoc_test_samples"
+	@if grep "KO" "/tmp/log_spoc_test_samples" ; \
+	then printf "\e[1mALL TESTS: \033[0;31mKO\033[0m\n" ; exit 1 ; \
+	else printf "\e[1mALL TESTS: \033[0;32mOK\033[0m\n" ; \
+	fi 
+
+
+check: all install install_sarek samples test #sarek_samples
