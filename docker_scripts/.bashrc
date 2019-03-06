@@ -123,6 +123,13 @@ export PATH=$PATH
 
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu/
 
-eval `opam config env`
+export PATH=/usr/local/cuda-10.0/bin${PATH:+:${PATH}}
+export LD_LIBRARY_PATH=/usr/local/cuda-10.0/lib64\
+       ${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
+
+export C_INCLUDE_PATH=/usr/local/cuda-10.0/targets/x86_64-linux/include/${C_INCLUDE_PATH:+:${C_INCLUDE_PATH}}
+export CUDA_PATH=/usr/local/cuda-10.0
+
+eval $(opam env)
 
 

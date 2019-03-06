@@ -14,7 +14,7 @@ wget -O ${HOME}/opam https://github.com/ocaml/opam/releases/download/2.0.2/opam-
 
 chmod +x ${HOME}/opam
 ${HOME}/opam init --compiler=${OCAML_VERSION} --disable-sandboxing
-eval `${HOME}/opam config env`
+eval $(${HOME}/opam  env)
 ${HOME}/opam update --upgrade
 
 echo OCaml version
