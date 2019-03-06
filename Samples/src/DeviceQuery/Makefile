@@ -2,7 +2,6 @@ include ../common/Makefile
 
 all : $(ASM) $(BYTE)
 
-
 js:$(DIR).js
 
 $(DIR).js: $(MLSRC) Printf_js.ml

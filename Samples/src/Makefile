@@ -12,6 +12,12 @@ all:
 		done; \
 	fi
 
+test:
+	for i in $(MLSRCDIRS); do \
+		( cd $$i; $(MAKE) test; ) \
+	done
+
+
 clean:
 	for i in $(MLSRCDIRS) $(MLSRCDIRSGR); do \
 	( cd $$i; $(MAKE) clean; ) \
