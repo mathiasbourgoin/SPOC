@@ -7,7 +7,7 @@ RUN  apt-get -yq install --no-install-recommends        \
      --allow-change-held-packages                       \
      sudo pkg-config git build-essential                \
      software-properties-common unzip curl              \
-     libx11-dev tar apt-utils m4                        \
+     libx11-dev tar apt-utils m4 dirmngr gpg-agent      \
      libffi-dev emacs-nox wget && apt-get -yq update
 
 RUN useradd -ms /bin/bash spoc && echo "spoc:spoc" | chpasswd && adduser spoc sudo
@@ -29,11 +29,15 @@ RUN cp docker_scripts/.bashrc /home/spoc/.bashrc
 
 RUN .travis/install_ocaml.sh
 
+USER root
+RUN chown -R spoc /home/spoc/SPOC
+USER spoc
+
 RUN eval `/home/spoc/opam config env` && make install install_sarek 
 
 RUN mkdir -p /home/spoc/emacs_install
-RUN cp docker_scripts/emacs-pkg-install.el  /home/spoc/emacs_install/emacs-pkg-install.el
-RUN cp docker_scripts/emacs-pkg-install.sh  /home/spoc/emacs_install/emacs-pkg-install.sh
+RUN cp /home/spoc/SPOC/docker_scripts/emacs-pkg-install.el  /home/spoc/emacs_install/emacs-pkg-install.el
+RUN cp /home/spoc/SPOC/docker_scripts/emacs-pkg-install.sh  /home/spoc/emacs_install/emacs-pkg-install.sh
 
 WORKDIR /home/spoc/emacs_install
 
