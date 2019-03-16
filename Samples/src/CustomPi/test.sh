@@ -4,9 +4,10 @@
 
 printf "\n  + GPU_COMPUTATION:"
 
-res1=`./${1} grep "GPU Computation" ${res} | tr -d "[:alpha:]" | tr -d ":"`
+res1=`./${1} | grep "GPU Computation"` 
 
-if `echo "${res1}" | grep -q 3\.` ; then
+
+if ` grep -q "= 3\." <<< ${res1}` ; then
     printf "${OK}\n"
 else
     printf "${KO}\n"
@@ -14,10 +15,10 @@ fi
 
 printf "  + GPU_COMPUTATION WITH COMPLEX32:"
 
-res2=`./${1} grep "GPU Complex" ${res} | tr -d "[:alpha:]" | tr -d ":" `
+res2=`./${1} | grep "GPU Complex"` 
 
 
-if `echo "${res2}" | grep -q 3\.` ; then
+if `grep -q "= 3\." <<< ${res2}` ; then
     printf "${OK}\n"
 else
     printf "${KO}\n"
