@@ -10,7 +10,7 @@ export OPAMYES=1
 export OPAMJOBS=2
 export OPAMVERBOSE=1
 
-wget -O ${HOME}/opam https://github.com/ocaml/opam/releases/download/2.0.2/opam-2.0.2-x86_64-linux
+wget -O ${HOME}/opam https://github.com/ocaml/opam/releases/download/2.0.5/opam-2.0.5-x86_64-linux
 
 chmod +x ${HOME}/opam
 ${HOME}/opam init --compiler=${OCAML_VERSION} --disable-sandboxing
