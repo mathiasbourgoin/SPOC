@@ -11,11 +11,13 @@ OCaml using Cuda and OpenCL. There is also a camlp4 syntax extension
 to handle external Cuda or OpenCL kernels, as well as a DSL (called
 Sarek) to express GPGPU kernels from the OCaml code.
 
-This work was part of my PhD thesis (done in
-[UPMC-LIP6](http://www.lip6.fr/?LANG=en), Paris, France) and was
-partially funded by the [OPENGPU project](http://opengpu.net/EN/).
-I'm currently in the [Verimag](http://www-verimag.imag.fr/?lang=en)
-laboratory (Grenoble, France).
+This work was part of my PhD thesis (UPMC-LIP6 laboratory, Paris,
+France) and was partially funded by the [OpenGPU](http://opengpu.net/)
+project. I continued this project in 2014-2015 in the
+[Verimag](http://www-verimag.imag.fr) laboratory (Grenoble, France)
+and then from 2015 to 2018 in the
+[LIFO](http://www.univ-orleans.fr/lifo/) laboratory in Orléans,
+France. I currently work at [Nomadic Labs](https://nomadic-labs.com)
 
 It has currently been tested on multiple architectures and systems,
 mostly 64-bit Linux and 64-bit OSX systems. It should work with
@@ -45,12 +47,20 @@ plan to add (bold ones are currently in development) :
  - Enable *List* handling with Spoc and Sarek
  - Add interoperability with OpenGL
 
+
+# Docker image (*Probably deprecated*)
+[![](https://images.microbadger.com/badges/version/mathiasbourgoin/spoc.svg)](https://microbadger.com/images/mathiasbourgoin/spoc) [![](https://images.microbadger.com/badges/image/mathiasbourgoin/spoc.svg)](https://microbadger.com/images/mathiasbourgoin/spoc)
+
+
 # Demos in your browser (experimental)<a name="demos"></a>
+
 
 ## Using WebCL and [js\_of\_ocaml][3] :
 
-This has been tested with Firefox 26-34 and [this plugin][5]
-under Windows 8.1 (32bit or 64bit), multiple Linux distributions (32bit and 64 bit) and Mac OS/X Mavericks and Yosemite.
+**Sadly WebCL development seems stopped**, [WebGPU]https://github.com/gpuweb/gpuweb/wiki/Implementation-Status) might be an alternative...  
+This has been tested with Firefox 26-34 and [this plugin][5] under
+Windows 8.1 (32bit or 64bit), multiple Linux distributions (32bit and
+64 bit) and Mac OS/X Mavericks and Yosemite.
 
 Of course, you'll also need to have OpenCL on your system.
 
@@ -104,7 +114,7 @@ For cuda compilation :
 
 ## 2 - Compilation & Installation
 
-### From Opam
+### From Opam (*Deprecated for now*, new packages may be developed in the future)
 
 SPOC and Sarek should be in the opam repository. 
 
