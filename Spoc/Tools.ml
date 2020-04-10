@@ -39,7 +39,7 @@ external boolget : Vector.customarray -> int -> bool = "custom_boolget"
 external boolset : Vector.customarray -> int -> bool -> unit = "custom_boolset"
 
 
-let print s = (Printf.printf "%s\n" (string_of_int s); Pervasives.flush stdout)
+let print s = (Printf.printf "%s\n" (string_of_int s); Stdlib.flush stdout)
 
 
 let iter f vect =

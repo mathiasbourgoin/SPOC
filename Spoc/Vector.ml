@@ -277,8 +277,8 @@ let create (kind: ('a,'b) kind) ?dev size =
          | Custom c ->
            CustomArray ((create_custom c size), c)
         );
-      cuda_device_vec = Array.create (Devices.cuda_devices() +1) (init_cuda_device_vec ());
-      opencl_device_vec = Array.create (Devices.opencl_devices() +1) (init_opencl_device_vec ());
+      cuda_device_vec = Array.make (Devices.cuda_devices() +1) (init_cuda_device_vec ());
+      opencl_device_vec = Array.make (Devices.opencl_devices() +1) (init_opencl_device_vec ());
       length = size;
       dev = No_dev;
       kind = kind;
@@ -457,9 +457,9 @@ let sub_vector (vect : ('a, 'b) vector) _start _ok_r
        device = (-1);
        vector = vect.vector;
        cuda_device_vec =
-         Array.create ((Devices.cuda_devices ()) + 1) (init_cuda_device_vec ());
+         Array.make ((Devices.cuda_devices ()) + 1) (init_cuda_device_vec ());
        opencl_device_vec =
-         Array.create ((Devices.opencl_devices ()) + 1)
+         Array.make ((Devices.opencl_devices ()) + 1)
            (init_opencl_device_vec ());
        length = _len;
        dev = No_dev;
@@ -538,9 +538,10 @@ let of_bigarray_shr kind b =
              get = get_complex32;
              set = set_complex32;
            }
+         | Custom _ | Unit _| Dummy _ -> assert false
         ); 
-    cuda_device_vec = Array.create (cuda_devices() +1) (init_cuda_device_vec ());
-    opencl_device_vec = Array.create (opencl_devices() +1) (init_opencl_device_vec ());
+    cuda_device_vec = Array.make (cuda_devices() +1) (init_cuda_device_vec ());
+    opencl_device_vec = Array.make (opencl_devices() +1) (init_opencl_device_vec ());
     length =  Bigarray.Array1.dim b;
     dev = No_dev;
     kind = kind;
