@@ -43,7 +43,7 @@ CAMLprim value print_vector_native(value v_id, value v_dev, value v_length, valu
   int dev = Int_val(v_dev);
   int length = Int_val(v_length);
   int size = Int_val(v_size);
-  char* kind = String_val(v_kind);
+  char* kind = (char*) String_val(v_kind);
   int is_sub = Bool_val(v_is_sub);
   int depth = Int_val(v_depth);
   int start = Int_val(v_start);
@@ -86,7 +86,7 @@ CAMLprim value print_info_native(value v_name, value v_global_mem, value v_local
 				 value v_spec_info, value v_print_comma){
   CAMLparam5(v_name, v_global_mem, v_local_mem, v_clock_rate, v_total_const_mem);
   CAMLxparam5(v_multi_proc_count, v_ecc, v_id, v_spec_info, v_print_comma);
-  char* name = String_val(v_name);
+  char* name = (char*) String_val(v_name);
   int global_mem = Int_val(v_global_mem);
   int local_mem = Int_val(v_local_mem);
   int clock_rate = Int_val(v_clock_rate);
@@ -95,7 +95,7 @@ CAMLprim value print_info_native(value v_name, value v_global_mem, value v_local
   int ecc = Bool_val(v_ecc);
   int id = Int_val(v_id);
   int print_comma = Bool_val(v_print_comma);
-  char* spec_info = String_val(v_spec_info);
+  char* spec_info = (char*) String_val(v_spec_info);
   pthread_mutex_lock(&mutex);
   fprintf(output_file, "{\n"
 	            "\"type\":\"device\","
@@ -138,7 +138,7 @@ CAMLprim value pre_print_device(value number){
 
 CAMLprim value print_event(value desc){
   CAMLparam1(desc);
-  char* description = String_val(desc);
+  char* description = (char*) String_val(desc);
   double time = get_time();
   pthread_mutex_lock(&mutex);
   int event_id = get_id_event();
@@ -155,7 +155,7 @@ CAMLprim value print_event(value desc){
 
 CAMLprim value begin_event(value desc){
   CAMLparam1(desc);
-  char* description = String_val(desc);
+  char* description = (char*) String_val(desc);
   double time = get_time();
   pthread_mutex_lock(&mutex);
   int event_id = get_id_event();
@@ -172,7 +172,7 @@ CAMLprim value begin_event(value desc){
 
 CAMLprim value end_event(value desc, value id){
   CAMLparam2(desc, id);
-  char* description = String_val(desc);
+  char* description = (char*) String_val(desc);
   int event_id = Int_val(id);
   double time = get_time();
   pthread_mutex_lock(&mutex);
@@ -189,7 +189,7 @@ CAMLprim value end_event(value desc, value id){
 
 CAMLprim value kernel_source (value src){
     CAMLparam1(src);
-    char* source = String_val(src);
+    char* source = (char*) String_val(src);
     int event_id = event_counter;
     double time = get_time();
     pthread_mutex_lock(&mutex);

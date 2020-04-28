@@ -63,8 +63,8 @@ CAMLprim value spoc_opencl_compile(value moduleSrc, value function_name, value g
 
 	OPENCL_GET_CONTEXT;
 
-	functionN = String_val(function_name);
-	cl_source = String_val(moduleSrc);
+	functionN = (char*) String_val(function_name);
+	cl_source = (char*) String_val(moduleSrc);
 
 #ifdef SPOC_PROFILE
     struct timespec* start = print_start_gpu_compile();
@@ -102,8 +102,8 @@ CAMLprim value spoc_debug_opencl_compile(value moduleSrc, value function_name, v
 
 	OPENCL_GET_CONTEXT;
 
-	functionN = String_val(function_name);
-	cl_source = String_val(moduleSrc);
+	functionN = (char*) String_val(function_name);
+	cl_source = (char*) String_val(moduleSrc);
 
 #ifdef SPOC_PROFILE
 	struct timespec* start = print_start_gpu_compile();

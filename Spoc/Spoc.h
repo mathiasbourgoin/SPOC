@@ -46,8 +46,8 @@
 #include <caml/bigarray.h>
 #include <caml/signals.h>
 
-#include "../dependencies/Cuda/cuComplex.h"
-
+#include "dependencies/Cuda/nvrtc.h"
+#include "dependencies/Cuda/cuComplex.h"
 
 
 #include "cuda_drvapi_dynlink_cuda.h"
@@ -67,7 +67,7 @@
 extern int noCuda;
 extern int noCL;
 
-int nbCudaDevices;
+static int nbCudaDevices;
 
 // should probably be acquired from device_info
 #define OPENCL_PAGE_ALIGN 4096
