@@ -83,9 +83,6 @@ They do not share the same memory space on gpgpu devices.
 [sub_vector vec start len] will return a new vector of length [len] sharing the
 same cpu memory space with [a] starting from index [start].*)
 val sub_vector :
-  ('a, 'b) Vector.vector -> int -> int -> ('a, 'b) Vector.vector
-	
-val sub_vector :
            ('a, 'b) Vector.vector ->
            int -> ?ok_rng:int -> ?ko_rng:int -> int -> ('a, 'b) Vector.vector
 

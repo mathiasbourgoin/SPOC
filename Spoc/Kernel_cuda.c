@@ -46,8 +46,9 @@ extern "C" {
 #include <caml/bigarray.h>
 #include <math.h>
 #include <string.h>
+#include "dependencies/Cuda/nvrtc.h"
 #include "Spoc.h"
-#include <nvrtc.h>
+
 #include "Trac_c.h"
 
 /**************** KERNEL ******************/
@@ -88,7 +89,7 @@ int ae_load_file_to_memory(const char *filename, char **result)
     char** options = (char**)malloc(sizeof(char*)*nopts);
 
     for (int i = 0 ; i < nopts; i++){
-      options[i] = String_val(Field(opts,i));
+      options[i] = (char*) String_val(Field(opts,i));
     }
     //printf("%s\n", cuda_src);
     
@@ -131,8 +132,8 @@ CAMLprim value spoc_cuda_compile(value moduleSrc, value function_name, value gi)
 	CUDA_GET_CONTEXT;
 
 	kernel = malloc(sizeof(CUfunction));
-	functionN = String_val(function_name);
-	ptx_source = String_val(moduleSrc);
+	functionN = (char*) String_val(function_name);
+	ptx_source = (char*) String_val(moduleSrc);
 
 	// set up size of compilation log buffer
 	jitOptions[0] = CU_JIT_INFO_LOG_BUFFER_SIZE_BYTES;
@@ -189,8 +190,8 @@ CAMLprim value spoc_cuda_debug_compile(value moduleSrc, value function_name, val
 	BLOCKING_CUDA_GET_CONTEXT;
 
 	kernel = malloc(sizeof(CUfunction));
-	functionN = String_val(function_name);
-	ptx_source = String_val(moduleSrc);
+	functionN = (char*) String_val(function_name);
+	ptx_source = (char*) String_val(moduleSrc);
 
 	// set up size of compilation log buffer
 	jitOptions[0] = CU_JIT_INFO_LOG_BUFFER_SIZE_BYTES;
