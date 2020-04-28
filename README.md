@@ -14,7 +14,7 @@ project. I continued this project in 2014-2015 in the
 [Verimag](http://www-verimag.imag.fr) laboratory (Grenoble, France)
 and then from 2015 to 2018 in the
 [LIFO](http://www.univ-orleans.fr/lifo/) laboratory in Orléans,
-France. I currently work at [Nomadic Labs](https://nomadic-labs.com)
+France. I currently work at [Nomadic Labs](https://nomadic-labs.com).
 
 SPOC has been tested on multiple architectures and systems, mostly
 64-bit Linux and 64-bit OSX systems. It should work with Windows too.

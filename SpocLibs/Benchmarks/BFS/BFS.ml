@@ -196,8 +196,8 @@ let bfs_graph () =
         | _ -> Devices.Cuda
       in
       for i = 1 to 10 do
-        Kirc.gen ~only:kind bfs_kern1 dev;
-        Kirc.gen ~only:kind bfs_kern2 dev;
+        ignore(Kirc.gen ~only:kind bfs_kern1 dev);
+        ignore(Kirc.gen ~only:kind bfs_kern2 dev)
       done;
     ) "Code generation";
   

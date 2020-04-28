@@ -14,10 +14,10 @@ JSSRC=$(filter-out Js/spoc_lib.js, $(wildcard Js/*.js))
 #OCAMLC=ocamlfind ocamlc  -pp "cppo -q -D SPOC_PROFILE"
 #OCAMLOPT=ocamlfind ocamlopt  -pp "cppo -q -D SPOC_PROFILE" -ccopt "-rdynamic -g"
 #OCAMLDEP=ocamldep -pp "cppo -q -D SPOC_PROFILE"
-CC=ocamlfind ocamlc  -ccopt `pkg-config  --cflags-only-I nvrtc-10.0`  -ccopt "-std=gnu99"
+CC=ocamlfind ocamlc  -ccopt "-lnvrtc"  -ccopt "-std=gnu99"
 OCAMLC=ocamlfind ocamlc -pp "cppo -q" -I .
 OCAMLOPT=ocamlfind ocamlopt  -pp "cppo -q" -ccopt "-rdynamic -g"  -I .
-OCAMLDEP=ocamldep -pp "cppo -q" 
+OCAMLDEP=ocamldep -pp "cppo -q"
 ECHO=printf
 
 all : start | build extension/kernels_ext.cma js
@@ -31,13 +31,13 @@ js : Js/$(LIBNAME)_lib.js
 Js/$(LIBNAME)_lib.js : $(JSSRC)
 	@$(ECHO) "\033[43m\033[30mBuilding Web$(PROJ)\033[0m\n"
 	@$(ECHO) "\033[36m[$(LIBNAME)_lib.js]\033[0m\n"
-	@cd Js && $(MAKE) 
+	@cd Js && $(MAKE)
 
 
 extension/kernels_ext.cma:extension/kernels_ext.ml
 	@$(ECHO) "\033[43m\033[30mBuilding $(PROJ) external kernel extension\033[0m\n"
 	@$(ECHO) "\033[31m[kernels_ext.cma]\033[0m\n"
-	@cd extension && $(MAKE) 
+	@cd extension && $(MAKE)
 
 
 %.cmo:%.ml %.cmi
@@ -84,8 +84,8 @@ $(LIBNAME)level : $(LIBNAME).cma extension/kernels_ext.cma
 	@$(ECHO)   "\033[36m[$(LIBNAME)level]\033[0m\n"
 	ocamlmktop -custom -thread -I +camlp4 -cclib -L. dynlink.cma	\
 	-cclib -lthreads camlp4o.cma extension/kernels_ext.cma		\
-	str.cma bigarray.cma -cclib -lcamlrun -cclib -lbigarray		\
-	`pkg-config --libs-only-L nvrtc-10.0 | sed s/"-L"/"-ccopt -L"\/g` -cclib -lnvrtc -ccopt -L$(CUDA_PATH)/lib64 	\
+	str.cma bigarray.cma -cclib -lcamlrun 	\
+	-cclib -lnvrtc -ccopt -L$(CUDA_PATH)/lib64 	\
 	-cclib -lunix unix.cma -cclib -l$(LIBNAME) $(LIBNAME).cma -o	\
 	$(LIBNAME)level
 

@@ -13,7 +13,7 @@ let piKern = kern rX rY (inside : int32 vector)->
     ($$ fun dev ->
        match dev.Devices.specific_info with
        | Devices.OpenCLInfo clI ->
-         "atomic_inc (inside)"
+          "atomic_inc (inside)"
        | _ -> "atomicAdd (inside,1)";; $$ : unit )
     
 
@@ -26,32 +26,28 @@ let measure_time f s iter =
   let t0 = Unix.gettimeofday () in
   let a = f () in
   let t1 = Unix.gettimeofday () in
-  Printf.printf "%s time %d : %Fs  average : %Fs \n%!" s !cpt
+  Printf.printf "%s : %Fs  average : %Fs \n%!" s
                 (t1 -. t0) ((t1 -. t0)/. (float_of_int iter));
   tot_time := !tot_time +.  (t1 -. t0);
   incr cpt;
   a;;
 
-      
-let devices = Devices.init () 
+let devices = Devices.init ()
 
-let size = ref 20_000_000                           
-
+let size = ref 20_000_000
 
 let _ =
 
   let vX = Vector.create Vector.float32 !size
   and vY =  Vector.create Vector.float32 !size
   and inside = Vector.create Vector.int32 1 in
-  
-  Mem.set inside 0 0l;
-  measure_time (fun () ->
-      Kirc.gen ~only:Devices.Cuda piKern devices.(1);
-    ) "GEN CL" 1;
 
-  measure_time (fun () ->
-      Kirc.gen ~only:Devices.Cuda piKern devices.(0);
-    ) "Gen CU" 1;
+  Mem.set inside 0 0l;
+
+  Array.iteri (fun i dev -> measure_time (fun () ->
+      ignore(Kirc.gen piKern dev);
+    ) (Printf.sprintf "Time to generate kernel for \"%s\""
+         dev.Devices.general_info.Devices.name) 1) devices ;
 
   for i = 0 to !size - 1 do
     Mem.set vX i (Random.float 1.);
@@ -60,7 +56,7 @@ let _ =
 
   let make_bg = fun dev size ->
     let threadsPerBlock = match dev.Devices.specific_info with
-      | Devices.OpenCLInfo clI -> 
+      | Devices.OpenCLInfo clI ->
          (match clI.Devices.device_type with
           | Devices.CL_DEVICE_TYPE_CPU -> 1
           | _  ->   256)
@@ -77,7 +73,7 @@ let _ =
   in
 
 
-  measure_time (fun () ->    
+  measure_time (fun () ->
       Kirc.run piKern (vX, vY, inside) (make_bg devices.(1) !size) 0 devices.(1);
       Devices.flush devices.(1) ();
     ) (Printf.sprintf "piCL on %s" devices.(1).Devices.general_info.Devices.name) 1;
@@ -86,11 +82,11 @@ let _ =
   Printf.printf "PI = %.10g\n" pi;
 
   Mem.set inside 0 0l;
-  measure_time (fun () ->    
+  measure_time (fun () ->
       Kirc.run piKern (vX, vY, inside) (make_bg devices.(0) !size) 0 devices.(0);
       Devices.flush devices.(0) ();
     ) (Printf.sprintf "piCU on %s" devices.(0).Devices.general_info.Devices.name) 1;
-  
+
   let pi = (float (Int32.to_int (Mem.get inside 0) * 4)) /. (float !size) in
   Printf.printf "PI = %.10g\n" pi;
 
@@ -105,13 +101,13 @@ let _ =
   Mem.set inside 0 0l;
   Mem.set inside2 0 0l;
 
-  measure_time (fun () ->    
+  measure_time (fun () -> 
       Kirc.run piKern (vX1, vY1, inside) (make_bg devices.(0) (97* !size/100)) 0 devices.(0);
       Kirc.run piKern (vX2, vY2, inside2) (make_bg devices.(1) (3* !size/100)) 0 devices.(1);
       Devices.flush devices.(0) ();
       Devices.flush devices.(1) ();
     ) (Printf.sprintf "piCU+piCL on both devices") 1;
-                      
+
   let pi = (float (Int32.to_int (Int32.add (Mem.get inside 0) (Mem.get inside2 0))* 4)) /. (float !size) in
   Printf.printf "PI = %.10g\n" pi;
   

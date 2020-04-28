@@ -30,8 +30,8 @@ let measure_time f  s =
   a;;
 
 
-let devices = measure_time Spoc.Devices.init "init"
-    
+let devices = measure_time (Spoc.Devices.init  ~only:Devices.Cuda) "init"
+
 let width = ref 512l;;
 let height = ref 512l;;
 
@@ -71,8 +71,10 @@ let x = thread_idx_x + (block_idx_x * block_dim_x) in
 
   let mutable norm = normalize x1  y1
   in
-  let mutable vote = ($"__ballot(((cpt < @max_iter) &&
-         (norm <=. 4.)))"$ : int) in
+  let mutable vote = 
+    ($$ fun dev ->
+        match dev.Devices.specific_info with
+        | Devices.CudaInfo _ -> "__ballot(((cpt < @max_iter) && (norm <=. 4.)))";; $$ : int) in
   let mutable eval = vote > 16 in
   while (eval)  do
     cpt := (cpt + 1);
@@ -81,15 +83,19 @@ let x = thread_idx_x + (block_idx_x * block_dim_x) in
     x1 := x2;
     y1 := y2;
     norm := (x1 *. x1 ) +. ( y1 *. y1);
-    vote := ($"__ballot(((cpt < @max_iter) &&
-         (norm <=. 4.)))"$ : int);
+    vote := ($$ fun dev ->
+      match dev.Devices.specific_info with
+       | Devices.CudaInfo _ ->  "__ballot(((cpt < @max_iter) &&
+         (norm <=. 4.)))";;$$ : int);
     eval := vote > 16;
   done;
   img.[<y * @width + x>] <- cpt
  ;;
 
 klet brh = fun (a : bool ) ->
-  ($"__popc(__ballot(a))"$ > 26)
+  ($$ fun dev -> 
+      match dev.Devices.specific_info with
+       | Devices.CudaInfo _ -> "__popc(__ballot(a))" ;; $$ > 26)
 
 klet nobrh = fun (a : bool ) -> a
 
@@ -340,7 +346,6 @@ in
      0
      !dev
  else
-   
    measure_time (fun () ->
        (if !prof then Kirc.profile_run else Kirc.run)
 	 mandelbrot
@@ -348,14 +353,12 @@ in
   (block,grid)
   0
   !dev;
-       
+
        Spoc.Mem.to_cpu sub_b ();
        Spoc.Devices.flush !dev (); ) "Accelerator";
- 
+
       end;
 
-    
-    
     Spoc.Mem.to_cpu sub_b ();
     Spoc.Devices.flush !dev ();
     measure_time (fun () -> cpu_compute b_iter (Int32.to_int !width) (Int32.to_int !height)) "CPU";
@@ -413,6 +416,7 @@ let measure_time f =
   a;;
 
 let _ =
+  Printf.printf "Warning : This sample is only compatible with Cuda devices since it uses explicit cuda native code in its kernel \n%!" ;
   Printf.printf "%s\n" (
     "Interactive commands\n"^
 		"  Move                              : WQSD\n"^

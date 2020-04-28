@@ -20,7 +20,7 @@ asm :
 	-pp "camlp4 -I `ocamlfind query sarek_syntax` -parser o -printer o kernels_int.cma \
 	-I `ocamlfind query spoc_external_kernels` -parser o -printer o kernels_ext.cma" \
 	-thread -package ctypes.foreign,spoc,sarek,graphics -linkpkg \
-	$(MLSRC)  -o $(ASM)
+	$(MLSRC)  -o $(ASM) -cclib -lnvrtc
 
 
 $(ASM): $(MLSRC)

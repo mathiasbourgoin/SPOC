@@ -136,7 +136,7 @@ object
   method get_binaries : unit -> (Devices.device, kernel) Hashtbl.t
   method reset_binaries : unit -> unit
   (** compiles a kernel for a device *)
-  method compile : ?debug: bool -> Devices.device -> kernel
+  method compile : ?debug: bool -> Devices.device -> unit
   (** compiles and run a device for a kernel *)
   method compile_and_run :
   'a -> block * grid -> ?debug: bool -> int -> Devices.device -> unit
