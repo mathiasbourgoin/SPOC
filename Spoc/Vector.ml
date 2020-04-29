@@ -232,40 +232,40 @@ let create (kind: ('a,'b) kind) ?dev size =
       device = -1;
       vector =
         (match kind with
-         | Unit x | Dummy x-> assert false
-         | Float32 x ->
+         | Unit _ | Dummy _-> assert false
+         | Float32 _ ->
            Host_vec
              {
                ptr =  (host_alloc (sizeofFloat32 ()) size);
                get = get_float32;
                set = set_float32;
              }
-         | Char x ->
+         | Char _ ->
            Host_vec {
              ptr = (host_alloc (sizeofChar ()) size);
              get = get_char;
              set = set_char;
            }
-         | Float64 x ->
+         | Float64 _ ->
            Host_vec {
              ptr = (host_alloc (sizeofFloat64 ()) size);
              get = get_float64;
              set = set_float64;
            }
-         | Int32 x ->
+         | Int32 _ ->
            Host_vec
              {
                ptr = (host_alloc (sizeofInt32 ()) size);
                get = get_int32;
                set = set_int32;
            }
-         | Int64 x -> Host_vec
+         | Int64 _ -> Host_vec
                                      {
                ptr = (host_alloc (sizeofInt64 ()) size);
                get = get_int64;
                set = set_int64;
            }
-         | Complex32 x -> Host_vec
+         | Complex32 _ -> Host_vec
                                          {
                ptr = (host_alloc (sizeofComplex32 ()) size);
                get = get_complex32;
@@ -292,14 +292,14 @@ let create (kind: ('a,'b) kind) ?dev size =
    | Some dev  ->
     let alloc_on_dev () =
        (match dev.Devices.specific_info with
-        | Devices.CudaInfo  ci ->
+        | Devices.CudaInfo  _ ->
           (match kind with
-           | Custom c  ->
+           | Custom _  ->
              cuda_custom_alloc_vect vec dev.Devices.general_info.Devices.id dev.Devices.general_info
            | _  -> cuda_alloc_vect vec dev.Devices.general_info.Devices.id dev.Devices.general_info)
-        | Devices.OpenCLInfo cli ->
+        | Devices.OpenCLInfo _ ->
           (match kind with
-           | Custom c  ->
+           | Custom _  ->
              opencl_custom_alloc_vect vec  (dev.Devices.general_info.Devices.id - (Devices.cuda_devices ())) dev.Devices.general_info
            | _  ->  opencl_alloc_vect vec  (dev.Devices.general_info.Devices.id - (Devices.cuda_devices ())) dev.Devices.general_info)
        )
@@ -376,8 +376,7 @@ let unsafe_get vect idx =
 
 let temp_vector vect =
   match vect.is_sub with
-  | Some (a, _, _, _, v) ->
-    (* sub sub vector, contiguity cannot be assured *)
+  | Some _ ->
     let new_v = create (vect.kind) (vect.length)
     in
     (new_v.device <- vect.device;
@@ -388,9 +387,6 @@ let temp_vector vect =
 
 let copy_sub vect1 vect2 =
   vect2.is_sub <- vect1.is_sub
-
-external sub_custom_array : customarray -> ('a,'b) custom -> int -> customarray =
-  "spoc_sub_custom_array"
 
 
 let dep = function | None -> 0 | Some (a, _, _, _, _) -> a
@@ -429,37 +425,37 @@ let of_bigarray_shr kind b =
       Host_vec
         (
          match kind with
-         | Float32 x ->
+         | Float32 _ ->
            {
              ptr =  (bigarray_adress b (sizeofFloat32 ()) (Bigarray.Array1.dim b));
              get = get_float32;
              set = set_float32;
            }
-         | Char x ->
+         | Char _ ->
            {
              ptr = (bigarray_adress b (sizeofChar ()) (Bigarray.Array1.dim b));
              get = get_char;
              set = set_char;
            }
-         | Float64 x ->
+         | Float64 _ ->
            {
              ptr = (bigarray_adress b (sizeofFloat64 ()) (Bigarray.Array1.dim b));
              get = get_float64;
              set = set_float64;
            }
-         | Int32 x ->
+         | Int32 _ ->
            {
              ptr = (bigarray_adress b (sizeofInt32 ()) (Bigarray.Array1.dim b));
              get = get_int32;
              set = set_int32;
            }
-         | Int64 x ->
+         | Int64 _ ->
            {
              ptr = (bigarray_adress b (sizeofInt64 ()) (Bigarray.Array1.dim b));
              get = get_int64;
              set = set_int64;
            }
-         | Complex32 x ->
+         | Complex32 _ ->
            {
              ptr = (bigarray_adress b (sizeofComplex32 ()) (Bigarray.Array1.dim b));
              get = get_complex32;

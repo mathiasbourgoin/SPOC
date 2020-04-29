@@ -110,6 +110,7 @@ val vec_id : int ref
 (** @return a new vector.*)
 val create :
            ('a, 'b) kind -> ?dev:Devices.device -> int -> ('a, 'b) vector
+
 (** @return the length of a given vector *)
 val length : ('a, 'b) vector -> int
 

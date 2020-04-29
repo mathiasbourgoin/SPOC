@@ -141,23 +141,7 @@ external cuda_custom_vector_copy :
       ('a, 'b) Vector.vector ->
         int -> int -> Devices.generalInfo -> int -> unit =
   "spoc_cuda_custom_vector_copy_b" "spoc_cuda_custom_vector_copy_n"
-  
-external cuda_matrix_copy :
-  ('a, 'b) Vector.vector ->
-    int ->
-      int ->
-        int ->
-          ('a, 'b) Vector.vector ->
-            int -> int -> int -> int -> Devices.generalInfo -> int -> unit =
-  "spoc_cuda_vector_copy_b" "spoc_cuda_vector_copy_n"
-  
-external cuda_custom_matrix_copy :
-  ('a, 'b) Vector.vector ->
-    int ->
-      ('a, 'b) Vector.vector ->
-        int -> int -> Devices.generalInfo -> int -> unit =
-  "spoc_cuda_custom_vector_copy_b" "spoc_cuda_custom_vector_copy_n"
-  
+    
 external cuda_matrix_copy :
   ('a, 'b) Vector.vector ->
     int ->

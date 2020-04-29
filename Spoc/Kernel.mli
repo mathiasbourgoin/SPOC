@@ -124,43 +124,56 @@ object
 
   (** hashtable containing the compiled binaries of the kernel (one for each device it has been compiled  for *)
   val binaries : (Devices.device, kernel) Hashtbl.t
+
   (** the cuda source code of the kernel *)
   val mutable cuda_sources : string list
+
   (**/**)
   val file_file : string
   val kernel_name : string
   (**/**)
+
   (** the opencl source code of the kernel *)
   val mutable opencl_sources : string list
+
   (** clean binary cache *)
   method get_binaries : unit -> (Devices.device, kernel) Hashtbl.t
+
   method reset_binaries : unit -> unit
+
   (** compiles a kernel for a device *)
+
   method compile : ?debug: bool -> Devices.device -> unit
+
   (** compiles and run a device for a kernel *)
   method compile_and_run :
   'a -> block * grid -> ?debug: bool -> int -> Devices.device -> unit
+
   method virtual exec :
   'a ->
   block * grid -> int -> Devices.device -> kernel -> unit
 
   method set_source_path: string -> unit
+
   (**/**)
   method get_cuda_sources : unit -> string list
   method get_opencl_sources : unit -> string list
   (**/**)
+
   (** reloads the sources form the file associated with the kernel *)
   method reload_sources : unit -> unit
+
   (** runs the kernel on a device *)
   method run :
+
   'a -> block * grid -> int -> Devices.device -> unit
+
   (**/**)
   method set_cuda_sources : string -> unit
   method set_opencl_sources : string -> unit
   
   method virtual list_to_args : 'b -> 'a
   method virtual args_to_list : 'a -> 'b
-
   (**/**)
 end
 

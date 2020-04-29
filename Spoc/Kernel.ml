@@ -58,8 +58,6 @@ type block = {mutable blockX: int; mutable blockY: int; mutable blockZ: int}
 
 type grid = {mutable gridX: int; mutable gridY: int; mutable gridZ: int}
 
-let nbCaches = 64
-
 module Cuda = struct
   type cuda_extra
 
@@ -108,10 +106,6 @@ module Cuda = struct
     int ref -> cuda_extra -> float -> unit
     = "spoc_cuda_load_param_float64_b" "spoc_cuda_load_param_float64_n"
 
-  external set_block_shape :
-    kernel -> block -> Devices.generalInfo -> unit
-    = "spoc_cuda_set_block_shape"
-
   external cuda_launch_grid :
        int ref
     -> kernel
@@ -123,48 +117,7 @@ module Cuda = struct
     -> unit
     = "spoc_cuda_launch_grid_b" "spoc_cuda_launch_grid_n"
 
-  external cuda_create_dummy_kernel :
-    unit -> kernel
-    = "spoc_cuda_create_dummy_kernel"
-
-  let cudaKernelCache = ref [||]
-
-  let cuda_load cached id s1 s2 args =
-    let path = Sys.argv.(0) in
-    let kernelPath = Filename.dirname path ^ Filename.dir_sep ^ s1 ^ ".ptx" in
-    if cached then (
-      if Array.length !cudaKernelCache = 0 then
-        cudaKernelCache :=
-          Array.make (Devices.cuda_devices ()) (Hashtbl.create nbCaches) ;
-      let hash = Digest.file kernelPath in
-      try
-        let ker = Hashtbl.find !cudaKernelCache.(id) hash in
-        ker
-      with Not_found ->
-        let src = ref "" in
-        let ic = open_in kernelPath in
-        ( try
-            while true do
-              src := !src ^ input_line ic ^ "\n"
-            done
-          with End_of_file -> () ) ;
-        close_in ic ;
-        let ker = cuda_compile !src s2 in
-        Hashtbl.add !cudaKernelCache.(id) hash ker ;
-        ker )
-    else
-      let src = ref "" in
-      let ic = open_in kernelPath in
-      ( try
-          while true do
-            src := !src ^ input_line ic ^ "\n"
-          done
-        with End_of_file -> () ) ;
-      close_in ic ;
-      let ker = cuda_compile !src s2 in
-      ker
-
-  let cuda_load_arg offset extra dev cuFun idx (arg : ('a, 'b) kernelArgs) =
+  let cuda_load_arg offset extra dev _cuFun _idx (arg : ('a, 'b) kernelArgs) =
     let load_non_vect = function
       | Int32 i -> cuda_load_param_int offset extra i
       | Int64 i -> cuda_load_param_int64 offset extra i
@@ -210,15 +163,6 @@ module OpenCL = struct
     -> unit
     = "spoc_opencl_load_param_vec"
 
-  external opencl_load_param_local_vec :
-       int ref
-    -> kernel
-    -> int
-    -> Vector.device_vec
-    -> Devices.generalInfo
-    -> unit
-    = "spoc_opencl_load_param_local_vec"
-
   external opencl_load_param_int :
     int ref -> kernel -> int -> Devices.generalInfo -> unit
     = "spoc_opencl_load_param_int"
@@ -239,50 +183,7 @@ module OpenCL = struct
     kernel -> grid -> block -> Devices.generalInfo -> int -> unit
     = "spoc_opencl_launch_grid"
 
-  external opencl_create_dummy_kernel :
-    unit -> kernel
-    = "spoc_opencl_create_dummy_kernel"
-
-  let openCLKernelCache = ref [||]
-
-  let opencl_load cached debug id s1 s2 =
-    let path = Sys.argv.(0) in
-    let kernelPath = Filename.dirname path ^ Filename.dir_sep ^ s1 ^ ".cl" in
-    if cached then (
-      if Array.length !openCLKernelCache = 0 then
-        openCLKernelCache :=
-          Array.make (Devices.opencl_devices ()) (Hashtbl.create nbCaches) ;
-      let hash = Digest.file kernelPath in
-      try
-        let ker = Hashtbl.find !openCLKernelCache.(id) hash in
-        ker
-      with Not_found ->
-        let src = ref "" in
-        let ic = open_in kernelPath in
-        ( try
-            while true do
-              src := !src ^ input_line ic ^ "\n"
-            done
-          with End_of_file -> () ) ;
-        close_in ic ;
-        let ker = opencl_compile !src s2 in
-        Hashtbl.add !openCLKernelCache.(id) hash ker ;
-        ker )
-    else
-      let src = ref "" in
-      let ic = open_in kernelPath in
-      ( try
-          while true do
-            src := !src ^ input_line ic ^ "\n"
-          done
-        with End_of_file -> () ) ;
-      close_in ic ;
-      let ker =
-        if debug then opencl_debug_compile !src s2 else opencl_compile !src s2
-      in
-      ker
-
-  let opencl_load_arg offset dev clFun idx (arg : ('a, 'b) kernelArgs) =
+  let opencl_load_arg offset dev clFun _idx (arg : ('a, 'b) kernelArgs) =
     let load_non_vect = function
       | Int32 i ->
           opencl_load_param_int offset clFun i dev.Devices.general_info
@@ -355,8 +256,6 @@ let compile_and_run (dev : Devices.device) ((block : block), (grid : grid))
     ?cached:(c = false) ?debug:(d = false) ?queue_id:(q = 0) ker =
   snd (fst ker) (block, grid) c d q dev
 
-let max a b = if a < b then b else a
-
 let load_source path file ext =
   let kernelPath =
     (*    let path = Sys.argv.(0) in*)
@@ -420,7 +319,7 @@ class virtual ['a, 'b] spoc_kernel file (func : string) =
               let open Cuda in
               match cuda_sources with
               | [] -> raise (No_source_for_device dev)
-              | t :: q ->
+              | t :: _ ->
                   if d then
                     cuda_debug_compile t kernel_name dev.Devices.general_info
                   else cuda_compile t kernel_name dev.Devices.general_info )
@@ -428,7 +327,7 @@ class virtual ['a, 'b] spoc_kernel file (func : string) =
               let open OpenCL in
               match opencl_sources with
               | [] -> raise (No_source_for_device dev)
-              | t :: q ->
+              | t :: _ ->
                   if d then
                     opencl_debug_compile t kernel_name dev.Devices.general_info
                   else opencl_compile t kernel_name dev.Devices.general_info )
@@ -467,10 +366,10 @@ let compile (dev : Devices.device) (k : ('a, 'b) spoc_kernel) =
 let set_arg env i arg =
   env.(i)
   <- ( match Vector.kind arg with
-     | Vector.Float32 x -> VFloat32 arg
-     | Vector.Char x -> VChar arg
-     | Vector.Float64 x -> VFloat64 arg
-     | Vector.Int32 x -> VInt32 arg
-     | Vector.Int64 x -> VInt64 arg
-     | Vector.Complex32 x -> VComplex32 arg
+     | Vector.Float32 _ -> VFloat32 arg
+     | Vector.Char _ -> VChar arg
+     | Vector.Float64 _ -> VFloat64 arg
+     | Vector.Int32 _ -> VInt32 arg
+     | Vector.Int64 _ -> VInt64 arg
+     | Vector.Complex32 _ -> VComplex32 arg
      | _ -> assert false )
