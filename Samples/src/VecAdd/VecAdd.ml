@@ -37,7 +37,7 @@ let _ =
   let arg1 = ("-device" , Arg.Int (fun i -> dev := devices.(i)), "number of the device [0]")
   and arg2 = ("-size" , Arg.Int (fun i -> vec_size := i), "size of the vectors to multiply [1024]")
   and arg3 = ("-auto" , Arg.Bool (fun b -> auto_transfers := b), "let Spoc handles transfers automatically [false]")
-  and arg4 = ("-verify" , Arg.Bool (fun b -> verify := b), "verify computation [true]") in
+  and arg4 = ("-check" , Arg.Bool (fun b -> verify := b), "check computation [true]") in
   Arg.parse ([arg1; arg2; arg3; arg4]) (fun s -> ()) "";
 
   let allow_double = Spoc.Devices.allowDouble !dev in
@@ -176,6 +176,4 @@ let _ =
               Printf.printf "Verif KO\n"
 	  end
 	)
-    end;
-  Printf.printf "Press any key to close\n%!";
-  let a = read_line() in a
+    end
