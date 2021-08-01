@@ -41,16 +41,16 @@ endif
 
 $(ASM): $(MLSRC) $(COBJS)
 	ocamlfind ocamlopt -g \
-	-pp "camlp4 -I `ocamlfind query spoc_external_kernels` -parser o -printer o kernels_ext.cma" \
+	-pp "camlp4 -I `ocamlfind query spoc.external_kernels` -parser o -printer o external_kernels.cma" \
 	-thread -package ctypes.foreign,spoc,graphics \
-	-ccopt -L$(CUDA_PATH)/lib64 -cclib -lnvrtc \
+	-ccopt -L$(CUDA_PATH)/ -cclib -lnvrtc \
 	-linkpkg  $(MLSRC) $(CCLIBS) -o $(ASM)
 
 $(BYTE): $(MLSRC) $(COBJS)
 	ocamlfind ocamlc -custom -g -ccopt "-g -rdynamic" \
-	-pp "camlp4 -I `ocamlfind query spoc_external_kernels` -parser o -printer o kernels_ext.cma" \
+	-pp "camlp4 -I `ocamlfind query spoc.external_kernels` -parser o -printer o external_kernels.cma" \
 	-thread  -package ctypes.foreign,spoc,graphics \
-	-ccopt -L$(CUDA_PATH)/lib64 -cclib -lnvrtc \
+	-ccopt -L$(CUDA_PATH) -cclib -lnvrtc \
 	-linkpkg $(MLSRC) $(CCLIBS) -o $(BYTE)
 
 

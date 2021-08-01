@@ -4,7 +4,7 @@ asm :
 	ocamlfind ocamlopt  -g \
 	-pp "camlp4 -I `ocamlfind query sarek_syntax` -parser o -printer o kernels_int.cma" \
 	-thread -package ctypes.foreign,spoc,sarek,graphics -linkpkg	\
-	-cclib -lnvrtc -ccopt -L$(CUDA_PATH)/lib64 \
+	-cclib -lnvrtc -ccopt -L$(CUDA_PATH) \
 	Pi.ml  -o Pi.asm
 #	ocamlfind ocamlopt -unsafe -thread -package spoc,sarek,graphics -linkpkg -package sarek_syntax -syntax camlp4o -o Pi.asm Pi.ml
 

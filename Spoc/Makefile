@@ -85,7 +85,7 @@ $(LIBNAME)level : $(LIBNAME).cma extension/kernels_ext.cma
 	ocamlmktop -custom -thread -I +camlp4 -cclib -L. dynlink.cma	\
 	-cclib -lthreads camlp4o.cma extension/kernels_ext.cma		\
 	str.cma bigarray.cma -cclib -lcamlrun 	\
-	-cclib -lnvrtc -ccopt -L$(CUDA_PATH)/lib64 	\
+	-cclib -lnvrtc -ccopt -L$(CUDA_PATH) 	\
 	-cclib -lunix unix.cma -cclib -l$(LIBNAME) $(LIBNAME).cma -o	\
 	$(LIBNAME)level
 
