@@ -14,7 +14,7 @@
   0. You just DO WHAT THE FUCK YOU WANT TO.
 *)
 open Spoc
-
+open Sarek
 open Kirc
 let cpt = ref 0
 
@@ -48,16 +48,16 @@ let simple = ref true
 
 
 let mandelbrot_recompile = kern img ->
-let open Std in
+  let open Std in
 
-let normalize = fun x y -> x *. x +. y *. y in
-let y = thread_idx_y + (block_idx_y * block_dim_y) in
-let x = thread_idx_x + (block_idx_x * block_dim_x) in
-(if (y >= @height) || (x >= @width) then
-      return () ;
+  let normalize = fun x y -> x *. x +. y *. y in
+  let y = thread_idx_y + (block_idx_y * block_dim_y) in
+  let x = thread_idx_x + (block_idx_x * block_dim_x) in
+  (if (y >= @height) || (x >= @width) then
+     return () ;
   );
-(*  let shiftx = 0 in
-  let shifty = 0 in*)
+  (*  let shiftx = 0 in
+      let shifty = 0 in*)
   let x0 = (x + @shiftx) in
   let y0 = (y + @shifty) in
   let mutable cpt = 0 in
@@ -71,10 +71,12 @@ let x = thread_idx_x + (block_idx_x * block_dim_x) in
 
   let mutable norm = normalize x1  y1
   in
-  let mutable vote = 
+  let mutable vote =
     ($$ fun dev ->
-        match dev.Devices.specific_info with
-        | Devices.CudaInfo _ -> "__ballot(((cpt < @max_iter) && (norm <=. 4.)))";; $$ : int) in
+       match dev.Devices.specific_info with
+       | Devices.CudaInfo _ -> "__ballot_sync(FULL_MASK, ((cpt < @max_iter) && (norm <=. 4.)))"
+       | _ -> "";; $$ : int) in
+
   let mutable eval = vote > 16 in
   while (eval)  do
     cpt := (cpt + 1);
@@ -84,20 +86,22 @@ let x = thread_idx_x + (block_idx_x * block_dim_x) in
     y1 := y2;
     norm := (x1 *. x1 ) +. ( y1 *. y1);
     vote := ($$ fun dev ->
-      match dev.Devices.specific_info with
-       | Devices.CudaInfo _ ->  "__ballot(((cpt < @max_iter) &&
-         (norm <=. 4.)))";;$$ : int);
+        match dev.Devices.specific_info with
+        | Devices.CudaInfo _ ->  "__ballot_sync(FULL_MASK, ((cpt < @max_iter) &&
+         (norm <=. 4.)))"
+        | _ -> "" ;;$$ : int);
     eval := vote > 16;
   done;
   img.[<y * @width + x>] <- cpt
- ;;
+;;
 
 klet brh = fun (a : bool ) ->
-  ($$ fun dev -> 
-      match dev.Devices.specific_info with
-       | Devices.CudaInfo _ -> "__popc(__ballot(a))" ;; $$ > 26)
+  ($$ fun dev ->
+     match dev.Devices.specific_info with
+     | Devices.CudaInfo _ -> "__popc(__ballot_sync(FULL_MASK,a))"
+     | _ -> "" ;; $$ > 26)
 
-klet nobrh = fun (a : bool ) -> a
+    klet nobrh = fun (a : bool ) -> a
 
 
 let mandelbrot = kern img shiftx shifty zoom ->
@@ -106,7 +110,7 @@ let mandelbrot = kern img shiftx shifty zoom ->
   let y = thread_idx_y + (block_idx_y * block_dim_y) in
   let x = thread_idx_x + (block_idx_x * block_dim_x) in
   (if (y >= @height) || (x >= @width) then
-      return () ;
+     return () ;
   );
   let x0 = (x + shiftx) in
   let y0 = (y + shifty) in
@@ -125,7 +129,7 @@ let mandelbrot = kern img shiftx shifty zoom ->
   let mutable norm = normalize x1  y1
   in
   while (brh((cpt < @max_iter) &&
-         (norm <=. 4.)))  do
+             (norm <=. 4.)))  do
     cpt := (cpt + 1);
     x2 := (x1 *. x1) -. (y1 *. y1) +. a;
     y2 :=  (2. *. x1 *. y1 ) +. b;
@@ -139,7 +143,7 @@ let mandelbrot = kern img shiftx shifty zoom ->
 
 let mandelbrot_double = kern img shiftx shifty zoom ->
   let open Std in
-let normalize = fun x y -> x *. x +. y *. y in
+  let normalize = fun x y -> x *. x +. y *. y in
   let open Math.Float64 in
   let y = thread_idx_y + (block_idx_y * block_dim_y) in
   let x = thread_idx_x + (block_idx_x * block_dim_x) in
@@ -162,12 +166,12 @@ let normalize = fun x y -> x *. x +. y *. y in
   let mutable norm = add (mul x1 x1) (mul y1 y1)
   in
   while ((cpt < @max_iter) && ((to_float32 norm) <=. 4.)) do
-  cpt := (cpt + 1);
-  x2 := add (minus (mul x1  x1) (mul y1 y1))  a;
-  y2 := add (mul (of_float32 2.) (mul x1  y1 )) b;
-  x1 := x2;
-  y1 := y2;
-  norm := add (mul x1  x1 ) (mul  y1  y1);
+    cpt := (cpt + 1);
+    x2 := add (minus (mul x1  x1) (mul y1 y1))  a;
+    y2 := add (mul (of_float32 2.) (mul x1  y1 )) b;
+    x1 := x2;
+    y1 := y2;
+    norm := add (mul x1  x1 ) (mul  y1  y1);
   done;
   img.[<y * @height + x>] <- cpt
 ;;
@@ -183,8 +187,8 @@ let cpu_compute img width height =
       let y1 = ref 0. in
       let x2 = ref 0. in
       let y2 = ref 0. in
-      let a = 4. *. ((Pervasives.float x0) /. (Pervasives.float width))   -. 2. in
-      let b = 4. *. ((Pervasives.float y0) /. (Pervasives.float height)) -. 2. in
+      let a = 4. *. ((float x0) /. (float width))   -. 2. in
+      let b = 4. *. ((float y0) /. (float height)) -. 2. in
 
       let norm = ref (!x1 *. !x1 +. !y1 *. !y1)
       in
@@ -232,9 +236,9 @@ let couleur n =
   if n = !max_iter then
     Graphics.rgb 196 200 200
   else let f n =
-    let n = Int32.to_int n in
-    let i =  Pervasives.float n in
-    int_of_float (255. *. (0.5 +. 0.5 *. sin(i *. 0.1))) in
+         let n = Int32.to_int n in
+         let i =  float n in
+         int_of_float (255. *. (0.5 +. 0.5 *. sin(i *. 0.1))) in
     Graphics.rgb (f (Int32.add n 32l))  (f(Int32.add n 16l))  (f n)
 
 
@@ -255,18 +259,18 @@ let main_mandelbrot () =
 	      "use double precision [false]")
   and arg8 = ("-prof" , Arg.Bool (fun b -> prof := b),
 	      "profile kernels [false]")
-in
+  in
   Arg.parse ([arg1;arg2;arg3;arg4;arg5;arg6; arg7; arg8]) (fun s -> ()) "";
   Printf.printf "Will use device : %s\n%!"
     (!dev).Spoc.Devices.general_info.Spoc.Devices.name;
   let threadsPerBlock = match !dev.Devices.specific_info with
     | Devices.OpenCLInfo clI ->
       (match clI.Devices.device_type with
-      | Devices.CL_DEVICE_TYPE_CPU -> 1
-      | _  ->   256)
+       | Devices.CL_DEVICE_TYPE_CPU -> 1
+       | _  ->   256)
     | _  -> 256 in
 
-  
+
   let b_iter = Spoc.Vector.create Spoc.Vector.int32 ((Int32.to_int !width) * (Int32.to_int !height))
   in
   let sub_b = Spoc.Mem.sub_vector b_iter 0 (Spoc.Vector.length b_iter)
@@ -284,8 +288,8 @@ in
   let threadsPerBlock = match !dev.Devices.specific_info with
     | Devices.OpenCLInfo clI ->
       (match clI.Devices.device_type with
-      | Devices.CL_DEVICE_TYPE_CPU -> 1
-      | _  ->   16)
+       | Devices.CL_DEVICE_TYPE_CPU -> 1
+       | _  ->   16)
     | _  -> 16  in
   let blocksPerGridx =
     ((Int32.to_int !width) + (threadsPerBlock) -1) / (threadsPerBlock) in
@@ -322,40 +326,40 @@ in
 
     if !recompile then
       begin
-	Kirc.gen  ~profile:!prof  mandelbrot_recompile !dev;
+	ignore(Kirc.gen  ~profile:!prof  mandelbrot_recompile !dev);
 
- (if !prof then
-    Kirc.profile_run
-  else Kirc.run)
-   mandelbrot_recompile
-   (sub_b)
-   (block,grid)
-   0
-   !dev;
+        (if !prof then
+           Kirc.profile_run
+         else Kirc.run)
+          mandelbrot_recompile
+          (sub_b)
+          (block,grid)
+          0
+          !dev;
       end
     else
       begin
 	if (not !simple) then
-   (
-     if !prof then
-       Kirc.profile_run
-     else Kirc.run)
-     mandelbrot_double
-     (sub_b, (Int32.to_int !shiftx), (Int32.to_int !shifty), !zoom)
-     (block,grid)
-     0
-     !dev
- else
-   measure_time (fun () ->
-       (if !prof then Kirc.profile_run else Kirc.run)
-	 mandelbrot
-  (sub_b, (Int32.to_int !shiftx), (Int32.to_int !shifty), !zoom)
-  (block,grid)
-  0
-  !dev;
+          (
+            if !prof then
+              Kirc.profile_run
+            else Kirc.run)
+            mandelbrot_double
+            (sub_b, (Int32.to_int !shiftx), (Int32.to_int !shifty), !zoom)
+            (block,grid)
+            0
+            !dev
+        else
+          measure_time (fun () ->
+              (if !prof then Kirc.profile_run else Kirc.run)
+	        mandelbrot
+                (sub_b, (Int32.to_int !shiftx), (Int32.to_int !shifty), !zoom)
+                (block,grid)
+                0
+                !dev;
 
-       Spoc.Mem.to_cpu sub_b ();
-       Spoc.Devices.flush !dev (); ) "Accelerator";
+              Spoc.Mem.to_cpu sub_b ();
+              Spoc.Devices.flush !dev (); ) "Accelerator";
 
       end;
 
@@ -366,8 +370,8 @@ in
     for a = 0 to Int32.to_int (Int32.pred !height )do
       for b = 0 to Int32.to_int (Int32.pred !width ) do
 	img.(a).(b) <-
-             (couleur
-                (Spoc.Mem.get b_iter (a * (Int32.to_int !width) + b) ));
+          (couleur
+             (Spoc.Mem.get b_iter (a * (Int32.to_int !width) + b) ));
       done;
     done;
     Graphics.draw_image (Graphics.make_image img) 0 0;
@@ -386,18 +390,18 @@ in
 	| '+' -> zoom := !zoom *. 1.1;
 	| '!' -> simple := not !simple;
 	  shifty := Int32.add !shifty (Int32.of_int
-                                  ((int_of_float (!zoom *. 10.)) *
-				  (Int32.to_int !height) / 200));
+                                         ((int_of_float (!zoom *. 10.)) *
+				          (Int32.to_int !height) / 200));
 	  shiftx := Int32.add !shiftx (Int32.of_int
-                                  ((int_of_float (!zoom *. 10.)) *
-				  (Int32.to_int !width) / 200));
+                                         ((int_of_float (!zoom *. 10.)) *
+				          (Int32.to_int !width) / 200));
 	| '-' -> zoom := !zoom *. 0.9;
 	  shifty := Int32.sub !shifty (Int32.of_int
-                                  ((int_of_float (!zoom *. 10.)) *
-				  (Int32.to_int !height) / 200));
+                                         ((int_of_float (!zoom *. 10.)) *
+				          (Int32.to_int !height) / 200));
 	  shiftx := Int32.sub !shiftx (Int32.of_int
-                                  ((int_of_float (!zoom *. 10.)) *
-				  (Int32.to_int !width) / 200));
+                                         ((int_of_float (!zoom *. 10.)) *
+				          (Int32.to_int !width) / 200));
 	| 'r' -> recompile := not !recompile;
 	|_ -> running := false;
       end
@@ -419,12 +423,12 @@ let _ =
   Printf.printf "Warning : This sample is only compatible with Cuda devices since it uses explicit cuda native code in its kernel \n%!" ;
   Printf.printf "%s\n" (
     "Interactive commands\n"^
-		"  Move                              : WQSD\n"^
-		"  Zoom                              : +/-\n"^
-		"  Change precision (simple/double)  : !\n"^
-		"  Recompile the kernel at each draw : r\n"^
-		"  Quit                              : Any other key"
-		);
+    "  Move                              : WQSD\n"^
+    "  Zoom                              : +/-\n"^
+    "  Change precision (simple/double)  : !\n"^
+    "  Recompile the kernel at each draw : r\n"^
+    "  Quit                              : Any other key"
+  );
 
   measure_time(main_mandelbrot);
   Printf.printf "Total_time : %g\n%!" !tot_time;;

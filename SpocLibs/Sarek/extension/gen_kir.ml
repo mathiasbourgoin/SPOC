@@ -139,76 +139,76 @@ and parse_special a =
   match a.e with
   | (*create_array *) App (_loc,{t=typ; e= Id(_,<:ident< create_array>>); loc=_}, [b]) ->
     <:expr< $parse_body2 b false$>>
-  |  App (_loc, {e=App (_, {t=_; e= App (_,{t=_; e=Id(_,<:ident< map>>); loc=_}, [f]); loc=_}, [a])}, [b]) ->
+  |  App (_loc, {e=App (_, {t=_; e= App (_,{t=_; e=Id(_,<:ident< map>>); loc=_}, [f]); loc=_}, [a]); _}, [b]) ->
     <:expr< map $parse_body2 f false$ $parse_body2 a false$ $parse_body2 b false$>>;
-  |  App (_loc, {e=App (_, {t=_; e= App (_,{t=_; e=Id(_,<:ident< reduce>>); loc=_}, [f]); loc=_}, [a])}, [b]) ->
+  |  App (_loc, {e=App (_, {t=_; e= App (_,{t=_; e=Id(_,<:ident< reduce>>); loc=_}, [f]); loc=_}, [a]); _}, [b]) ->
     <:expr< reduce $parse_body2 f false$ $parse_body2 a false$ $parse_body2 b false$>>;
-    
-  |_  -> 
+
+  |_  ->
     raise Not_found
-      
+
 and parse_app a =
   my_eprintf (Printf.sprintf "(* val2 parse_app %s *)\n%!" (k_expr_to_string a.e));
-  
+
   try parse_special a with
-  
+
   | Not_found ->
-     match a.e with
-     | App (_loc, e1, e2::[]) ->
-        let res = ref [] in
-        let constr = ref false in
-        let rec aux app =
-          my_eprintf (Printf.sprintf "(* val2 parse_app_app %s *)\n%!" (k_expr_to_string app.e));
-          let has_vec_lengths = ref false in
-          match app.e with
-          | Id (_loc, s) ->
-             (try
-                let intr = Hashtbl.find !intrinsics_fun (string_of_ident s) in
-                <:expr< intrinsics $ExStr(_loc, intr.cuda_val)$ $ExStr(_loc, intr.opencl_val)$>>
-              with Not_found ->
-                try
-                  ignore(Hashtbl.find !global_fun (string_of_ident s));
-                  has_vec_lengths := true;
-                  (<:expr< global_fun $id:s$>> )
-                with Not_found ->
-                  try
-                    ignore(Hashtbl.find !local_fun (string_of_ident s));
-                    has_vec_lengths := true;
-                    <:expr< global_fun $id:s$>>
-                  with Not_found ->
-                    try
-                      let t = Hashtbl.find !constructors (string_of_ident s) in
-                      constr := true;
-                      <:expr< spoc_constr $str:t.name$ $str:string_of_ident s$ [$parse_body2 e2 false$]>>
-                    with _ ->
-                      parse_body2 e1 false;)
-          | App (_loc, e3, e4::[]) ->
-             let e = aux e3 in
-             res := <:expr< ($parse_body2 e4 false$)>> :: !res;
-             e
-          | ModuleAccess (_loc, s, e3) ->
-             open_module s _loc;
-             let e = aux e3 in
-             close_module s;
-             e
-          | _  -> my_eprintf __LOC__; assert false;
-        in
-        let intr = aux e1 in
-        if !constr then
-          <:expr< $intr$ >>
-        else
-          (
-            res :=
-              (parse_body2 e2 false) :: !res;
-            (match !res with
-             | [] -> my_eprintf __LOC__; assert false
-             | t::[] ->
-                <:expr< app $intr$ [| ($t$) |]>>
-             | t::q ->
-                <:expr< app $intr$ [| $exSem_of_list (List.rev !res)$ |]>>)
-          )
-     | _ -> parse_body2 a false
-                        
+    match a.e with
+    | App (_loc, e1, e2::[]) ->
+      let res = ref [] in
+      let constr = ref false in
+      let rec aux app =
+        my_eprintf (Printf.sprintf "(* val2 parse_app_app %s *)\n%!" (k_expr_to_string app.e));
+        let has_vec_lengths = ref false in
+        match app.e with
+        | Id (_loc, s) ->
+          (try
+             let intr = Hashtbl.find !intrinsics_fun (string_of_ident s) in
+             <:expr< intrinsics $ExStr(_loc, intr.cuda_val)$ $ExStr(_loc, intr.opencl_val)$>>
+           with Not_found ->
+           try
+             ignore(Hashtbl.find !global_fun (string_of_ident s));
+             has_vec_lengths := true;
+             (<:expr< global_fun $id:s$>> )
+           with Not_found ->
+           try
+             ignore(Hashtbl.find !local_fun (string_of_ident s));
+             has_vec_lengths := true;
+             <:expr< global_fun $id:s$>>
+           with Not_found ->
+           try
+             let t = Hashtbl.find !constructors (string_of_ident s) in
+             constr := true;
+             <:expr< spoc_constr $str:t.name$ $str:string_of_ident s$ [$parse_body2 e2 false$]>>
+           with _ ->
+             parse_body2 e1 false;)
+        | App (_loc, e3, e4::[]) ->
+          let e = aux e3 in
+          res := <:expr< ($parse_body2 e4 false$)>> :: !res;
+          e
+        | ModuleAccess (_loc, s, e3) ->
+          open_module s _loc;
+          let e = aux e3 in
+          close_module s;
+          e
+        | _  -> my_eprintf __LOC__; assert false;
+      in
+      let intr = aux e1 in
+      if !constr then
+        <:expr< $intr$ >>
+      else
+        (
+          res :=
+            (parse_body2 e2 false) :: !res;
+          (match !res with
+           | [] -> my_eprintf __LOC__; assert false
+           | t::[] ->
+             <:expr< app $intr$ [| ($t$) |]>>
+           | t::q ->
+             <:expr< app $intr$ [| $exSem_of_list (List.rev !res)$ |]>>)
+        )
+    | _ -> parse_body2 a false
+
 
 
 and expr_of_app t _loc gen_var y =
@@ -305,7 +305,7 @@ and parse_body2 body bool =
                    | _ ->  my_eprintf __LOC__;  assert false
                  in
                  <:expr<(new_array $str:string_of_ident s$) ($aux y$) $elttype$ $memspace$>>,(aux y)
-               | _  ->  ( assert (not debug); 
+               | _  ->  ( assert (not debug);
                           raise (TypeError (TUnknown, gen_var.var_type , _loc));)
              in
              let ex1, ex2 = f () in
@@ -385,55 +385,55 @@ and parse_body2 body bool =
            let var =
              (Hashtbl.find !current_args (string_of_ident s))
            in
-         if not r then
-           return_type := var.var_type;
-         (match var.var_type with
-          | TUnit -> <:expr< Unit>>
-          | _ ->
-            body.t <- var.var_type;
-            if var.is_global then
-              match var.var_type with
-              | TFloat32 ->
-                <:expr<global_float_var (fun () -> $ExId(_loc,s)$)>>
-              | TInt32 -> <:expr<global_int_var (fun () -> $ExId(_loc,s)$)>>
-              | _ -> my_eprintf __LOC__; assert false
-            else
-              <:expr<var  $ExInt(_loc, string_of_int var.n)$  $str:string_of_ident s$>>
-         )
-       with _  ->
-       try
-         let c_const = (Hashtbl.find !intrinsics_const (string_of_ident s))  in
-         if body.t <> c_const.typ then
-           if body.t = TUnknown then
-             body.t <- c_const.typ
-           else
-             (my_eprintf __LOC__;
-              raise (TypeError (c_const.typ, body.t, _loc)));
-         <:expr<intrinsics $ExStr(_loc, c_const.cuda_val)$ $ExStr(_loc, c_const.opencl_val)$>>
-       with _ ->
-         (try
-            let intr =
-              Hashtbl.find !intrinsics_fun (string_of_ident s) in
-            <:expr< intrinsics $ExStr(_loc, intr.cuda_val)$ $ExStr(_loc, intr.opencl_val)$>>
-          with Not_found ->
-          try
-            ignore(Hashtbl.find !global_fun (string_of_ident s));
-            <:expr< global_fun $id:s$>>
-          with Not_found ->
-          try
-            ignore(Hashtbl.find !local_fun (string_of_ident s));
-            <:expr< global_fun $id:s$>>
-          with Not_found ->
-          try
-            let t = Hashtbl.find !constructors (string_of_ident s) in
-            <:expr< spoc_constr $str:t.name$ $str:(string_of_ident s)$ [] >>
-          with
-          | _  ->
-            (my_eprintf __LOC__;
-             raise (Unbound_value ((string_of_ident s), _loc))))) in
+           if not r then
+             return_type := var.var_type;
+           (match var.var_type with
+            | TUnit -> <:expr< Unit>>
+            | _ ->
+              body.t <- var.var_type;
+              if var.is_global then
+                match var.var_type with
+                | TFloat32 ->
+                  <:expr<global_float_var (fun () -> $ExId(_loc,s)$)>>
+                | TInt32 -> <:expr<global_int_var (fun () -> $ExId(_loc,s)$)>>
+                | _ -> my_eprintf __LOC__; assert false
+              else
+                <:expr<var  $ExInt(_loc, string_of_int var.n)$  $str:string_of_ident s$>>
+           )
+         with _  ->
+         try
+           let c_const = (Hashtbl.find !intrinsics_const (string_of_ident s))  in
+           if body.t <> c_const.typ then
+             if body.t = TUnknown then
+               body.t <- c_const.typ
+             else
+               (my_eprintf __LOC__;
+                raise (TypeError (c_const.typ, body.t, _loc)));
+           <:expr<intrinsics $ExStr(_loc, c_const.cuda_val)$ $ExStr(_loc, c_const.opencl_val)$>>
+         with _ ->
+           (try
+              let intr =
+                Hashtbl.find !intrinsics_fun (string_of_ident s) in
+              <:expr< intrinsics $ExStr(_loc, intr.cuda_val)$ $ExStr(_loc, intr.opencl_val)$>>
+            with Not_found ->
+            try
+              ignore(Hashtbl.find !global_fun (string_of_ident s));
+              <:expr< global_fun $id:s$>>
+            with Not_found ->
+            try
+              ignore(Hashtbl.find !local_fun (string_of_ident s));
+              <:expr< global_fun $id:s$>>
+            with Not_found ->
+            try
+              let t = Hashtbl.find !constructors (string_of_ident s) in
+              <:expr< spoc_constr $str:t.name$ $str:(string_of_ident s)$ [] >>
+            with
+            | _  ->
+              (my_eprintf __LOC__;
+               raise (Unbound_value ((string_of_ident s), _loc))))) in
       if r then
         (return_type := body.t;
-        <:expr< spoc_return $id$ >>)
+         <:expr< spoc_return $id$ >>)
       else id;
     | Int (_loc, i)  -> <:expr<spoc_int $ExInt(_loc, i)$>>
     | Int32 (_loc, i)  -> <:expr<spoc_int32 $ExInt32(_loc, i)$>>
@@ -741,14 +741,14 @@ and parse_body2 body bool =
            | _ -> assert false)
         in
         if not r then
-        return_type := body.t;
+          return_type := body.t;
         res;
       end
     | RecGet (_loc,r,fld) -> <:expr< spoc_rec_get $parse_body2 r false$ $str:string_of_ident fld$>>
     | RecSet (_loc,e1,e2) -> <:expr< spoc_rec_set $parse_body2 e1 false$ $parse_body2 e2 false$>>
     | TypeConstraint (_loc, e, tt) ->
       if not r then return_type := tt;
-          parse_body2 e false
+      parse_body2 e false
     | Nat (_loc, code) -> <:expr< spoc_native $code$ >>
     | Fun (_loc,stri,tt,funv,lifted) -> <:expr< global_fun $stri$ >>
     | Pragma (_loc, lopt, expr) ->
@@ -798,8 +798,8 @@ and parse_body2 body bool =
                  in
                  remove_int_var var;
                  res))
-              | _ -> failwith "this binding is not a binding"))
-        | Seq (a,b,c)  ->
+           | _ -> failwith "this binding is not a binding"))
+      | Seq (a,b,c)  ->
         <:expr<spoc_return $aux body$>>
       | _  ->
         let e = {t=body.t; e =End(_loc, body); loc = _loc} in

@@ -34,9 +34,6 @@
  *******************************************************************************)
 open Spoc
 open Kernel
-open Mem
-open Devices
-open Vector
 
 let debug = true
 
@@ -213,6 +210,7 @@ let cuda_float64 =
 
 let cuda_head =
   "#define SAREK_VEC_LENGTH(a) sarek_ ## a ## _length\n"
+  ^ "#define FULL_MASK 0xffffffff\n"
   ^ "__device__ float spoc_fadd ( float a, float b ) { return (a + b);}\n"
   ^ "__device__ float spoc_fminus ( float a, float b ) { return (a - b);}\n"
   ^ "__device__ float spoc_fmul ( float a, float b ) { return (a * b);}\n"
@@ -356,7 +354,7 @@ let var i s = IntId (s, i)
 (*("spoc_var"^(string_of_int i)), i)*)
 let spoc_gen_kernel args body = Kern (args, body)
 
-let spoc_fun_kernel a b = ()
+let spoc_fun_kernel _a _b = ()
 
 let global_fun a =
   GlobalFun
@@ -428,7 +426,7 @@ let spoc_while a b = While (a, b)
 
 let params l = Params l
 
-let spoc_id i = Id ""
+let spoc_id _i = Id ""
 
 let spoc_constr t c params = Constr (t, c, params)
 
@@ -574,15 +572,11 @@ let pragma l e = Pragma (l, e)
 
 let map f a b = Map (f, a, b)
 
-let reduce f a b = Map (f, a, b)
-
-let print s = Printf.printf "%s}\n" s
-
 let print_ast = Kirc_Ast.print_ast
 
 let debug_print (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel) =
   let _, k = ker in
-  let k1, k2, k3 = (k.ml_kern, k.body, k.ret_val) in
+  let _k1, k2, _k3 = (k.ml_kern, k.body, k.ret_val) in
   print_ast k2
 
 let rewrite ker =
@@ -772,8 +766,8 @@ let load_file f =
 (*external print_source : string -> unit = "kernel_source"*)
 
 let gen_profile ker dev =
-  let kir, k = ker in
-  let k1, k2, k3 = (k.ml_kern, k.body, k.ret_val) in
+  let _kir, k = ker in
+  let _k1, _k2, _k3 = (k.ml_kern, k.body, k.ret_val) in
   return_v := ("", "") ;
   (* let k' =
    *   ( Kirc_Profile.parse 0 (fst k3) dev
@@ -794,7 +788,7 @@ let gen_profile ker dev =
    *         Stdlib.flush stdout ;
    *         assert false ) *)
   (* in *)
-  let profile_source = Kirc_Profile.parse 0 k2 dev in
+  let profile_source = Kirc_Profile.parse 0 _k2 dev in
   Printf.printf "%s" profile_source
 
 (* external from SPOC*)
@@ -809,7 +803,7 @@ let gen ?profile:(prof = false) ?return:(r = false) ?only:o
   let k' =
     ( Kirc_Cuda.parse ~profile:prof 0 (fst k3) dev
     , match fst k3 with
-    | IntVar (i, s) | FloatVar (i, s) | DoubleVar (i, s) ->
+    | IntVar (_i, s) | FloatVar (_i, s) | DoubleVar (_i, s) ->
       s (*"sspoc_var"^(string_of_int i)^*) ^ " = "
     | Unit -> ""
     | SetV _ -> ""
@@ -828,7 +822,7 @@ let gen ?profile:(prof = false) ?return:(r = false) ?only:o
   if r then (
     Kirc_Cuda.return_v := k' ;
     Kirc_OpenCL.return_v := k' ) ;
-  let gen_cuda ?opts:(s = "") () =
+  let gen_cuda ?opts:(_s = "") () =
     let cuda_head =
       Array.fold_left
         (fun header extension ->
@@ -865,7 +859,7 @@ let gen ?profile:(prof = false) ?return:(r = false) ?only:o
       match dev.Devices.specific_info with
       | Devices.CudaInfo cu ->
         let computecap = (cu.Devices.major * 10) + cu.Devices.minor in
-        [| ( if computecap < 30 then
+        [| ( if computecap < 35 then
                failwith "CUDA device too old for this XXX"
              else if computecap < 35 then "--gpu-architecture=compute_30"
              else if computecap < 50 then "--gpu-architecture=compute_35"
@@ -880,7 +874,7 @@ let gen ?profile:(prof = false) ?return:(r = false) ?only:o
              else if computecap = 75 then "--gpu-architecture=compute_75"
              else if computecap = 80 then "--gpu-architecture=compute_80"
              else if computecap = 86 then "--gpu-architecture=compute_86"
-             else "--gpu-architecture=compute_30" ) |]
+             else "--gpu-architecture=compute_35" ) |]
       | _ -> [||]
     in
     let nvrtc_options = Array.append nvopt genopt in
@@ -894,10 +888,10 @@ let gen ?profile:(prof = false) ?return:(r = false) ?only:o
     save ("kirc_kernel" ^ string_of_int !idkern ^ ".ptx") s ;
     (*let s = (load_file "kirc_kernel.ptx") in*)
     kir#set_cuda_sources s ;
-    (* ignore
-     *   (Sys.command
-     *      ( "rm kirc_kernel" ^ string_of_int !idkern ^ ".cu kirc_kernel"
-     *      ^ string_of_int !idkern ^ ".ptx" )) ; *)
+    ignore
+      (Sys.command
+         ( "rm kirc_kernel" ^ string_of_int !idkern ^ ".cu kirc_kernel"
+           ^ string_of_int !idkern ^ ".ptx" )) ;
     incr idkern
   and gen_opencl () =
     let opencl_head =
@@ -974,7 +968,7 @@ let arg_of_vec v =
   | _ -> assert false
 
 let run ?recompile:(r = false) (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel) a
-    (block, grid) q dev =
+    (block, grid) _q dev =
   let kir, k = ker in
   ( match dev.Devices.specific_info with
     | Devices.CudaInfo _ -> (
@@ -997,18 +991,18 @@ let run ?recompile:(r = false) (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel) a
   Array.iter
     (fun a ->
        match a with
-       | VChar v
-       |VFloat32 v
-       |VFloat64 v
-       |VInt32 v
-       |VInt64 v
-       |VComplex32 v
-       |VCustom v ->
+       | VChar _v
+       |VFloat32 _v
+       |VFloat64 _v
+       |VInt32 _v
+       |VInt64 _v
+       |VComplex32 _v
+       |VCustom _v ->
          incr nvec
        | _ -> () )
     args ;
   match dev.Devices.specific_info with
-  | Devices.CudaInfo cI ->
+  | Devices.CudaInfo _cI ->
     let extra = Kernel.Cuda.cuda_create_extra (Array.length args + !nvec) in
     (*Kernel.Cuda.cuda_load_arg offset extra dev bin 0 (arg_of_vec profiler_counters);*)
     let idx = ref 0 in
@@ -1058,7 +1052,7 @@ let run ?recompile:(r = false) (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel) a
       0
 
 let profile_run ?recompile:(r = true) (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel)
-    a b q dev =
+    a b _q dev =
   let kir, k = ker in
   ( match dev.Devices.specific_info with
     | Devices.CudaInfo _ -> (
@@ -1090,7 +1084,7 @@ let profile_run ?recompile:(r = true) (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel)
    let block, grid = b in
    let bin = Hashtbl.find (kir#get_binaries ()) dev in
    match dev.Devices.specific_info with
-   | Devices.CudaInfo cI ->
+   | Devices.CudaInfo _cI ->
      let extra = Kernel.Cuda.cuda_create_extra (Array.length args + 1) in
      Kernel.Cuda.cuda_load_arg offset extra dev bin 0
        (arg_of_vec profiler_counters) ;
@@ -1125,7 +1119,7 @@ let compile_kernel_to_files s (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel) dev =
   let k' =
     ( (Kirc_Cuda.parse 0 (fst k3)) dev
     , match fst k3 with
-    | IntVar (i, s) | FloatVar (i, s) | DoubleVar (i, s) ->
+    | IntVar (_i, s) | FloatVar (_i, s) | DoubleVar (_i, s) ->
       s ^ (*"spoc_var"^(string_of_int i)^*) " = "
     | Unit -> ""
     | SetV _ -> ""
@@ -1223,15 +1217,8 @@ module Sarek_vector = struct
 end
 
 module Math = struct
-  let rec pow a b =
-    let rec aux a = function
-      | 0 -> 1
-      | 1 -> a
-      | n ->
-        let b = aux a (n / 2) in
-        b * b * if n mod 2 = 0 then 1 else a
-    in
-    Int32.of_int (aux (Int32.to_int a) (Int32.to_int b))
+  let pow a b =
+    Int32.of_float (Float.pow (Int32.to_float a) (Int32.to_float b))
 
   let logical_and a b = Int32.logand a b
 

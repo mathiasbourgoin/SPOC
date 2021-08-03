@@ -14,7 +14,7 @@
   0. You just DO WHAT THE FUCK YOU WANT TO.
 *)
 open Spoc
-
+open Sarek
 open Kirc
 let cpt = ref 0
 
@@ -32,15 +32,15 @@ let measure_time f  s =
 
 let devices = measure_time (Spoc.Devices.init ) "init"
 
-            
-ktype node = {
+
+    ktype node = {
                 mutable starting : int32;
                 mutable no_of_edges : int32;
               }
-              
+
 
 let max_threads_per_block = ref 512l
-    
+
 let bfs_kern1 = kern g_graph_nodes g_graph_edges g_graph_mask g_updating_graph_mask g_graph_visited g_cost no_of_nodes ->
   let open Std in
   let tid = (block_idx_x * @max_threads_per_block) + thread_idx_x in
@@ -61,36 +61,36 @@ let bfs_kern1 = kern g_graph_nodes g_graph_edges g_graph_mask g_updating_graph_m
 let bfs_kern2 = kern g_graph_mask g_updating_graph_mask g_graph_visited g_over no_of_nodes ->
   let open Std in
   let tid = (block_idx_x * @max_threads_per_block) + thread_idx_x in
-    if( tid<no_of_nodes && (g_updating_graph_mask.[<tid>] = 1) ) then
-      (
-        g_graph_mask.[<tid>] <- 1;
-        g_graph_visited.[<tid>] <- 1;
-        g_over.[<0>] <- 1;
-        g_updating_graph_mask.[<tid>] <- 0;
-      )
+  if( tid<no_of_nodes && (g_updating_graph_mask.[<tid>] = 1) ) then
+    (
+      g_graph_mask.[<tid>] <- 1;
+      g_graph_visited.[<tid>] <- 1;
+      g_over.[<0>] <- 1;
+      g_updating_graph_mask.[<tid>] <- 0;
+    )
 
-      
+
 let usage () =
   Printf.eprintf "Usage: %s <input_file> [?device_id] \n%!" (Sys.argv.(0))
 
 
 let bfs_graph () =
-  
+
   if (Array.length Sys.argv) != 2 && (Array.length Sys.argv) != 3 then
-   ( usage();
-     exit 0;
-   );
+    ( usage();
+      exit 0;
+    );
 
   (*print_endline "Reading File";*)
 
-  
+
   let dev =
     if (Array.length Sys.argv) = 3 then
       devices.(int_of_string Sys.argv.(2))
     else devices.(0)
   in
-  
-  
+
+
   let fs =
     try
       Scanf.Scanning.open_in Sys.argv.(1)
@@ -99,9 +99,9 @@ let bfs_graph () =
 
 
   (*let fs = Scanf.Scanning.from_channel fp in*)
-  
+
   let no_of_nodes = Scanf.bscanf fs "%d " (fun i -> i) in
-  
+
   let num_of_blocks = ref 1. in
   let num_of_threads_per_block = ref no_of_nodes in
 
@@ -110,29 +110,29 @@ let bfs_graph () =
       num_of_blocks := ceil ((float no_of_nodes) /. (Int32.to_float !max_threads_per_block));
       num_of_threads_per_block := Int32.to_int !max_threads_per_block;
     );
-  
-  
+
+
   (*  let graph_nodes = Vector.create (Vector.Custom customNode) no_of_nodes *)
-  let graph_mask = Vector.create Vector.int32 no_of_nodes 
+  let graph_mask = Vector.create Vector.int32 no_of_nodes
   and updating_graph_mask = Vector.create Vector.int32 no_of_nodes
   and graph_visited = Vector.create Vector.int32 no_of_nodes in
-  
+
   let graph_nodes = Tools.map (fun _ ->
       Scanf.bscanf fs "%d %d "
         (fun a b ->
            {starting = Int32.of_int a;
             no_of_edges = Int32.of_int b}
         )) (Vector.Custom customNode) graph_mask in
-  
+
   for i = 0 to no_of_nodes - 1 do
     Mem.unsafe_set graph_mask i  0l;
     Mem.unsafe_set updating_graph_mask i 0l;
     Mem.unsafe_set graph_visited i 0l;
   done;
 
-  
-  
-  
+
+
+
   let source = ref (Scanf.bscanf fs "%d " (fun i -> i)) in
   source := 0;
   Mem.unsafe_set graph_mask !source 1l;
@@ -171,7 +171,7 @@ let bfs_graph () =
 
 
 
-  
+
 
   Mem.to_device graph_nodes dev;
   Mem.to_device graph_edges dev;
@@ -185,11 +185,11 @@ let bfs_graph () =
 
   (*print_endline "Start traversing the tree";*)
   let k = ref 0 in
-  
-  
+
+
   Mem.set over 0 1l;
-  
-  
+
+
   measure_time (fun () ->
       let kind = match dev.Devices.specific_info with
         | Devices.OpenCLInfo clI -> Devices.OpenCL
@@ -200,27 +200,27 @@ let bfs_graph () =
         ignore(Kirc.gen ~only:kind bfs_kern2 dev)
       done;
     ) "Code generation";
-  
-  
+
+
   let elapsed_time = ref 0. in
-  
+
   while Mem.get over 0 = 1l  do
-    
-    let t0 = Unix.gettimeofday () in  
-    Mem.set over 0 0l;  
-    
+
+    let t0 = Unix.gettimeofday () in
+    Mem.set over 0 0l;
+
     Kirc.run bfs_kern1 (graph_nodes, graph_edges, graph_mask, updating_graph_mask, graph_visited, cost, no_of_nodes) (block,grid) 0 dev;
-    
-    Kirc.run bfs_kern2 (graph_mask, updating_graph_mask, graph_visited, over, no_of_nodes) (block,grid) 0 dev;    
-    
+
+    Kirc.run bfs_kern2 (graph_mask, updating_graph_mask, graph_visited, over, no_of_nodes) (block,grid) 0 dev;
+
     incr k;
     if !k> 1 then
       elapsed_time := !elapsed_time +. (Unix.gettimeofday() -. t0);
-    
+
   done;
-  
+
   Printf.printf "Kernel Executed with %d times in %f : %d nodes \n---------------------\n" !k !elapsed_time no_of_nodes;
-  
+
   (*
   let fpo = open_out "result.txt" in
   for i = 0 to no_of_nodes - 1 do
@@ -229,8 +229,7 @@ let bfs_graph () =
   close_out fpo;
   print_endline "Result stored in result.txt";  *)
 ;;
-  
+
 
 let _ =
-    bfs_graph ()
-      
+  bfs_graph ()

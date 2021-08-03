@@ -1,21 +1,22 @@
 open Spoc
+open Sarek
 open Kirc
 
-       
+
 let piKern = kern rX rY (inside : int32 vector)->
   let open Std in
   let open Math in
   let open Float32 in
   let i = thread_idx_x + block_idx_x * block_dim_x in
   let r = sqrt ( add (mul rX.[< i >] rX.[< i>])
-                     (mul rY.[< i >] rY.[< i >])) in
+                   (mul rY.[< i >] rY.[< i >])) in
   if (r <=. 1.) then
     ($$ fun dev ->
        match dev.Devices.specific_info with
        | Devices.OpenCLInfo clI ->
-          "atomic_inc (inside)"
+         "atomic_inc (inside)"
        | _ -> "atomicAdd (inside,1)";; $$ : unit )
-    
+
 
 
 let cpt = ref 0
@@ -27,7 +28,7 @@ let measure_time f s iter =
   let a = f () in
   let t1 = Unix.gettimeofday () in
   Printf.printf "%s : %Fs  average : %Fs \n%!" s
-                (t1 -. t0) ((t1 -. t0)/. (float_of_int iter));
+    (t1 -. t0) ((t1 -. t0)/. (float_of_int iter));
   tot_time := !tot_time +.  (t1 -. t0);
   incr cpt;
   a;;
@@ -57,9 +58,9 @@ let _ =
   let make_bg = fun dev size ->
     let threadsPerBlock = match dev.Devices.specific_info with
       | Devices.OpenCLInfo clI ->
-         (match clI.Devices.device_type with
-          | Devices.CL_DEVICE_TYPE_CPU -> 1
-          | _  ->   256)
+        (match clI.Devices.device_type with
+         | Devices.CL_DEVICE_TYPE_CPU -> 1
+         | _  ->   256)
       | _  -> 256 in
     let blocksPerGrid =
       (size + threadsPerBlock -1) / threadsPerBlock
@@ -101,7 +102,7 @@ let _ =
   Mem.set inside 0 0l;
   Mem.set inside2 0 0l;
 
-  measure_time (fun () -> 
+  measure_time (fun () ->
       Kirc.run piKern (vX1, vY1, inside) (make_bg devices.(0) (97* !size/100)) 0 devices.(0);
       Kirc.run piKern (vX2, vY2, inside2) (make_bg devices.(1) (3* !size/100)) 0 devices.(1);
       Devices.flush devices.(0) ();
@@ -110,6 +111,6 @@ let _ =
 
   let pi = (float (Int32.to_int (Int32.add (Mem.get inside 0) (Mem.get inside2 0))* 4)) /. (float !size) in
   Printf.printf "PI = %.10g\n" pi;
-  
+
   ()
 ;;
