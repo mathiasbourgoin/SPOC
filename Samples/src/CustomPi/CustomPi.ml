@@ -88,9 +88,8 @@ let gpuPi_complex vbool dev size =
   let pio4 =
     Int32.to_int
       (Tools.fold_left (fun a b -> Int32.add a  b) Int32.zero vbool) in
-       Printf.printf "GPU Complex Computation : PI = %d/%d = %.10g\n" pio4 size
+       Printf.printf "GPU Complex Computation : PI = %d/%d = %.10g\n%!" pio4 size
                      ((4. *. (float pio4)) /. (float size));
-       Pervasives.flush stdout;
 ;;
   
 let gpuPI gpuField vbool dev size =
@@ -166,7 +165,6 @@ let _ =
    else
      Printf.printf "Will use simple precision, results may be innacurate ;-)\n";
     let pio4 = ref 0 in (*CPU COMPUTATION*)
-    let t0 = Unix.gettimeofday () in
     let field =
       Array.init !size
         (fun _ -> { x = Random.float ray; y = Random.float ray; }) in
@@ -194,9 +192,8 @@ let _ =
         (Spoc.Mem.to_device gpuField ~queue_id: 1 !dev;
           Spoc.Mem.to_device vbool ~queue_id: 0 !dev ;
           pio4 := gpuPI gpuField vbool !dev !size;
-          Printf.printf "GPU Computation : PI = %d/%d = %.10g\n" !pio4 !size
+          Printf.printf "GPU Computation : PI = %d/%d = %.10g\n%!" !pio4 !size
             ((4. *. (float !pio4)) /. (float !size));
-          Pervasives.flush stdout;
           Spoc.Mem.auto_transfers true;
           gpuPi_complex vbool !dev !size;
   ))))

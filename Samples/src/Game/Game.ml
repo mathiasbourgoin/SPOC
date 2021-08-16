@@ -76,8 +76,7 @@ let main () =
 	let b_iter1 = Spoc.Vector.create Spoc.Vector.int32(*`Int32 Bigarray.int32*) ((!largeur)*(!hauteur))
 	and img1 = Array.make_matrix !largeur !hauteur Graphics.black
  in
-	Printf.printf "Will use device : %s\n" (!dev1).Spoc.Devices.general_info.Spoc.Devices.name;
-  Pervasives.flush stdout;
+	Printf.printf "Will use device : %s\n%!" (!dev1).Spoc.Devices.general_info.Spoc.Devices.name;
 	let threadsPerBlock = match (!dev1).Devices.specific_info with
           | Devices.OpenCLInfo clI -> 
             (match clI.Devices.device_type with
