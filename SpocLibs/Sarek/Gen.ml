@@ -90,7 +90,7 @@ module Generator (M:CodeGenerator) = struct
   let protos = ref []
 
 
-  (*Profiling counters info 
+  (*Profiling counters info
     pc[0] <- gmem_store
     pc[1] <- gmem_load
     pc[2] <- smem_store
@@ -104,7 +104,7 @@ module Generator (M:CodeGenerator) = struct
     begin
       if M.default_parser then
         begin
-          let rec aux name a =
+          let aux name a =
             let rec aux2 i a =
               match a with
               | Kern  (args,body) ->
@@ -149,9 +149,9 @@ module Generator (M:CodeGenerator) = struct
                    (if prof then
                       M.global_parameter^
                       (match M.target_name with
-                      | "Cuda" -> "unsigned long long int"
-                      | _ ->  " unsigned long ")^
-                              " * prof_cntrs, "
+                       | "Cuda" -> "unsigned long long int"
+                       | _ ->  " unsigned long ")^
+                      " * prof_cntrs, "
                     else "")^
 
                    (if (fst !return_v) <> "" then
@@ -159,16 +159,16 @@ module Generator (M:CodeGenerator) = struct
                 in
                 protos := proto:: !protos;
                 proto^"{\n"
-              | VecVar (t,i,s)  ->
-                 M.global_parameter^
-                   (match t with
-                    | Int _ ->" int"
-                    | Float _ -> " float"
-                    | Double _ -> " double"
-                    | Custom (n,_,ss) -> (" struct "^n^"_sarek")
-                    | _ -> assert false
-                   )^("* "^s^", int sarek_"^s^"_length")
-                       
+              | VecVar (t,_i,s)  ->
+                M.global_parameter^
+                (match t with
+                 | Int _ ->" int"
+                 | Float _ -> " float"
+                 | Double _ -> " double"
+                 | Custom (n,_,_ss) -> (" struct "^n^"_sarek")
+                 | _ -> assert false
+                )^("* "^s^", int sarek_"^s^"_length")
+
               | a -> (parse ~profile:prof i a dev)
 
             in
@@ -181,12 +181,12 @@ module Generator (M:CodeGenerator) = struct
             | Not_found ->
               (
 	        incr global_fun_idx;
-         let gen_name =
-           if fname <> "" then fname
-           else ("spoc_fun__"^(string_of_int !global_fun_idx)) in
-         let fun_src = aux gen_name a in
-         Hashtbl.add global_funs a (fun_src,gen_name) ;
-         gen_name)
+                let gen_name =
+                  if fname <> "" then fname
+                  else ("spoc_fun__"^(string_of_int !global_fun_idx)) in
+                let fun_src = aux gen_name a in
+                Hashtbl.add global_funs a (fun_src,gen_name) ;
+                gen_name)
           in
           name
         end
@@ -197,7 +197,7 @@ module Generator (M:CodeGenerator) = struct
   and profiler_counter = ref 5
 
 
-                        
+
   and get_profile_counter () =
     Hashtbl.clear  global_funs;
     let a = !profiler_counter in
@@ -219,24 +219,24 @@ module Generator (M:CodeGenerator) = struct
         | Local (x,y)  -> (parse ~profile:prof i x dev)^";\n"^
                           (indent (i))^(parse ~profile:prof i y dev)^
                           "\n"^(indent (i))^""
-        | VecVar (t,i,s)  ->
+        | VecVar (t,_i,s)  ->
           M.global_parameter^
           (match t with
            | Int _ ->" int"
            | Float _ -> " float"
            | Double _ -> " double"
-           | Custom (n,_,ss) -> (" struct "^n^"_sarek")
+           | Custom (n,_,_ss) -> (" struct "^n^"_sarek")
            | _ -> assert false
           )^("* "^s^", int sarek_"^s^"_length")
 
         | Block b -> (indent i)^"{\n"^parse ~profile:prof (i+1) b dev^"\n"^(indent i)^"}"
         | IdName s  ->  s
-        | IntVar (i,s) -> ("int "^s)
-        | FloatVar (i,s) -> ("float "^s)
-        | Custom (n,s,ss) -> ("struct "^n^"_sarek "^ss)
-        | UnitVar (v,s) -> assert false
-        | DoubleVar (i,s) -> ("double "^s)
-        | BoolVar (i,s) -> ("int "^s)
+        | IntVar (_i,s) -> ("int "^s)
+        | FloatVar (_i,s) -> ("float "^s)
+        | Custom (n,_s,ss) -> ("struct "^n^"_sarek "^ss)
+        | UnitVar (_v,_s) -> assert false
+        | DoubleVar (_i,s) -> ("double "^s)
+        | BoolVar (_i,s) -> ("int "^s)
         | Arr (s,l,t,m) ->
           let memspace =
             match m with
@@ -265,7 +265,7 @@ module Generator (M:CodeGenerator) = struct
         |Concat (a,b)  ->
           (match b with
            | Empty  -> (parse ~profile:prof i a dev)
-           | Concat (c,d)  ->  ((parse ~profile:prof i a dev)^", "^(parse ~profile:prof i b dev))
+           | Concat (_c,_d)  ->  ((parse ~profile:prof i a dev)^", "^(parse ~profile:prof i b dev))
            | _  -> failwith "parse concat"
           )
         | Constr (t,s,l) ->
@@ -332,7 +332,7 @@ module Generator (M:CodeGenerator) = struct
                     | _ -> "return "^s^";")
                  else
                    "return "^s^";")))
-          
+
         | IntVecAcc (vec,idx)  ->
           (if prof then
              "memory_analysis(prof_cntrs, "^
@@ -351,10 +351,10 @@ module Generator (M:CodeGenerator) = struct
               let a =
                 (parse ~profile:false 0 vecacc dev) in
               indent i ^a^" = "^(parse ~profile:prof i value dev)^";"
-            | _ -> 
+            | _ ->
               let a =
                 (parse ~profile:false 0 vecacc dev) in
-          indent i ^a^" = "^(parse ~profile:prof i value dev)^";")
+              indent i ^a^" = "^(parse ~profile:prof i value dev)^";")
         | Int  a  -> string_of_int a
         | Float f -> (string_of_float f)^"f"
         | GInt  a  -> Int32.to_string (a ())
@@ -381,7 +381,7 @@ module Generator (M:CodeGenerator) = struct
                 s)
              else "")^
             (indent i)^"if ( spoc_prof_cond )"
-          in          
+          in
           let b =
             let b = parse ~profile:prof i b dev in
             b in
@@ -412,7 +412,7 @@ module Generator (M:CodeGenerator) = struct
           iff^(indent i)^"else"^elsee^(indent i)
         | If (a,b) ->
           let a = parse ~profile:prof i a dev in
-          
+
           let pc = string_of_int !profiler_counter in
           "spoc_prof_cond  = ("^a^");\n"^
           (if prof then
@@ -431,7 +431,7 @@ module Generator (M:CodeGenerator) = struct
              b^";\n"^(indent i)^"}"^(indent i)
            in
            s)
-          
+
         | Or (a,b) -> (parse ~profile:prof i a dev)^" || "^(parse ~profile:prof i b dev)
         | And (a,b) -> ("("^parse ~profile:prof i a dev)^") && ("^(parse ~profile:prof i b dev)^")"
         | Not (a) -> "!("^(parse ~profile:prof i a dev)^")"
@@ -495,20 +495,20 @@ module Generator (M:CodeGenerator) = struct
                         "while_analysis(prof_cntrs, spoc_prof_cond );\n" in
                       s)
                    else "")^"\n}"
-                  
-          in 
+
+          in
           (*   ( *)
           (*     Printf.printf "incr in While \n%!"; *)
           (*     incr profiler_counter; *)
           (*   ); *)
           s
         | App (a,b) ->
-           let f = parse ~profile:prof i a dev in
-           let rec aux = function
-             | t :: [] -> parse ~profile:prof i t dev
-             | t::q -> (parse ~profile:prof i t dev)^", "^(aux q)
-             | [] -> assert false
-           in
+          let f = parse ~profile:prof i a dev in
+          let rec aux = function
+            | t :: [] -> parse ~profile:prof i t dev
+            | t::q -> (parse ~profile:prof i t dev)^", "^(aux q)
+            | [] -> assert false
+          in
           (match a with
            | Intrinsics ("return","return") -> f^" "^(aux (Array.to_list b))^" "
            | Intrinsics (_, _)-> f^" ("^(aux (Array.to_list b))^") "
@@ -528,7 +528,7 @@ module Generator (M:CodeGenerator) = struct
                 let manage_of =
                   match of_i with
                   | None -> ""
-                  | Some (typ,cstr,varn,id) ->
+                  | Some (typ,cstr,_varn,id) ->
                     indent (i+1)^typ^
                     " " ^id^" = "^match_e^"."^
                     s^"_sarek_union."^s^"_sarek_"^cstr^"."^
@@ -564,16 +564,16 @@ module Generator (M:CodeGenerator) = struct
     | IntVecAcc (s,i)  ->
       (if prof then
          "memory_analysis(prof_cntrs, " ^
-           (parse ~profile:prof n s dev)^"+("^(parse_int n i dev)^"), 0, 1)"
+         (parse ~profile:prof n s dev)^"+("^(parse_int n i dev)^"), 0, 1)"
        else
-      (parse ~profile:prof n s dev)^"["^(parse_int n i dev)^"]")
-    | Plus (a,b) as v ->  parse ~profile:prof n v dev
-    | Min (a,b) as v ->  parse ~profile:prof n v dev
-    | Mul (a,b) as v ->  parse ~profile:prof n v dev
-    | Mod (a,b) as v ->  parse ~profile:prof n v dev
-    | Div (a,b) as v ->  parse ~profile:prof n v dev
-    | App (a,b) as v -> parse ~profile:prof n v dev
-    | RecGet (r,f) as v -> parse ~profile:prof n v dev
+         (parse ~profile:prof n s dev)^"["^(parse_int n i dev)^"]")
+    | Plus (_a,_b) as v ->  parse ~profile:prof n v dev
+    | Min (_a,_b) as v ->  parse ~profile:prof n v dev
+    | Mul (_a,_b) as v ->  parse ~profile:prof n v dev
+    | Mod (_a,_b) as v ->  parse ~profile:prof n v dev
+    | Div (_a,_b) as v ->  parse ~profile:prof n v dev
+    | App (_a,_b) as v -> parse ~profile:prof n v dev
+    | RecGet (_r,_f) as v -> parse ~profile:prof n v dev
     | a -> parse_float ~profile:prof n a dev
   (*  | _  -> assert false; failwith "error parse_int" *)
 
@@ -592,14 +592,14 @@ module Generator (M:CodeGenerator) = struct
       (if prof then
          ", 0, 1)"
        else "")
-    | Plusf (a,b) as v ->  parse ~profile:prof n v dev
-    | Minf (a,b) as v ->  parse ~profile:prof n v dev
-    | Mulf (a,b) as v ->  parse ~profile:prof n v dev
-    | Divf (a,b) as v ->  parse ~profile:prof n v dev
-    | App (a,b) as v -> parse ~profile:prof n v dev
-    | SetV (a,b) as v -> parse ~profile:prof n v dev
+    | Plusf (_a,_b) as v ->  parse ~profile:prof n v dev
+    | Minf (_a,_b) as v ->  parse ~profile:prof n v dev
+    | Mulf (_a,_b) as v ->  parse ~profile:prof n v dev
+    | Divf (_a,_b) as v ->  parse ~profile:prof n v dev
+    | App (_a,_b) as v -> parse ~profile:prof n v dev
+    | SetV (_a,_b) as v -> parse ~profile:prof n v dev
     | Intrinsics gv -> M.parse_intrinsics gv
-    | RecGet (r,f) as v -> parse ~profile:prof n v dev
+    | RecGet (_r,_f) as v -> parse ~profile:prof n v dev
     | Native f -> f dev
     | a  -> print_ast a; failwith  (M.target_name ^" error parse_float")
 

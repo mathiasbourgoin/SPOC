@@ -3,69 +3,68 @@ open Syntax
 open Ast
 
 open Sarek_types
-open Typer
-open Mparser
-open Debug
 
 let fastflow=false
 
 let get_ff_type p =
-    match p with
-    | PaId (_loc, IdLid (_loc2, x) ) ->
-      (let var = (Hashtbl.find !current_args x) in
-       match var.var_type with
-       | TInt32  ->
-         <:str_item<let $lid:("task_"^x)$ = field task  $str:"task_"^x$ int>>
-       | TInt64 ->
-         <:str_item<let $lid:("task_"^x)$ = field task  $str:"task_"^x$ int>>
-       | TVec k ->
-         (match k with
-          | TFloat32 ->
-            <:str_item<let $lid:("task_"^x)$ = field task  $str:"task_"^x$ (ptr float)>>
-          | TInt32 ->
-            <:str_item<let $lid:("task_"^x)$ = field task  $str:"task_"^x$ (ptr int)>>
-              
-          | _ ->  failwith ("gfft : unimplemented yet " ^ ktyp_to_string k)
-         )
-       | _  -> failwith "error get_ff_type")
+  match p with
+  | PaId (_loc, IdLid (_loc2, x) ) ->
+    (let var = (Hashtbl.find !current_args x) in
+     match var.var_type with
+     | TInt32  ->
+       <:str_item<let $lid:("task_"^x)$ = field task  $str:"task_"^x$ int>>
+     | TInt64 ->
+       <:str_item<let $lid:("task_"^x)$ = field task  $str:"task_"^x$ int>>
+     | TVec k ->
+       (match k with
+        | TFloat32 ->
+          <:str_item<let $lid:("task_"^x)$ = field task  $str:"task_"^x$ (ptr float)>>
+        | TInt32 ->
+          <:str_item<let $lid:("task_"^x)$ = field task  $str:"task_"^x$ (ptr int)>>
 
-  let f p =
-    match p with
-    | PaId (_loc, IdLid (_loc2, x) ) -> x
-    | _ -> assert false
+        | _ ->  failwith ("gfft : unimplemented yet " ^ ktyp_to_string k)
+       )
+     | _  -> failwith "error get_ff_type")
+  | _ -> assert false
 
-
-  let rec get_ff_type_str p =
-    match p with
-    | PaId (_loc, IdLid (_loc2, x) ) ->
-      (let var = (Hashtbl.find !current_args x) in
-       Printf.sprintf "let task_%s = field task \"task_%s\" %s" x x
-         (
-           match var.var_type with
-           | TFloat32 -> "float"
-           | TInt32  ->
-             "int"
-           | TInt64 ->
-             "int"
-           | TVec k ->
-             (match k with
-              | TFloat32 ->
-                "(ptr float)"
-              | TInt32 -> "(ptr int)"
-              | _ ->  failwith "gfft : unimplemented yet"
-             )
-           | _  -> failwith ("error get_ff_type_str -> "^ (ktyp_to_string var.var_type))))
-    | PaTyc (_, x, _ ) -> get_ff_type_str x
+let f p =
+  match p with
+  | PaId (_loc, IdLid (_loc2, x) ) -> x
+  | _ -> assert false
 
 
-  let rec string_of_patt = function
-    | PaId(_,x) ->string_of_ident x
-    | PaTyc(_,x,_) -> string_of_patt x
-    | _ -> assert false
+let rec get_ff_type_str p =
+  match p with
+  | PaId (_loc, IdLid (_loc2, x) ) ->
+    (let var = (Hashtbl.find !current_args x) in
+     Printf.sprintf "let task_%s = field task \"task_%s\" %s" x x
+       (
+         match var.var_type with
+         | TFloat32 -> "float"
+         | TInt32  ->
+           "int"
+         | TInt64 ->
+           "int"
+         | TVec k ->
+           (match k with
+            | TFloat32 ->
+              "(ptr float)"
+            | TInt32 -> "(ptr int)"
+            | _ ->  failwith "gfft : unimplemented yet"
+           )
+         | _  -> failwith ("error get_ff_type_str -> "^ (ktyp_to_string var.var_type))))
+  | PaTyc (_, x, _ ) -> get_ff_type_str x
+  | _ -> assert false
+
+
+let rec string_of_patt = function
+  | PaId(_,x) ->string_of_ident x
+  | PaTyc(_,x,_) -> string_of_patt x
+  | _ -> assert false
 
 
 let print_task args nameid _loc =
-  let moduleName = (String.capitalize (string_of_ident nameid)) in
+  let moduleName = (String.capitalize_ascii (string_of_ident nameid)) in
   let res = <:expr<
                 object (self)
                 method offloadTask = $lid:moduleName$.offloadTask
@@ -73,8 +72,8 @@ let print_task args nameid _loc =
                 method getResult = $lid:moduleName$.getResult
                 end
   >> in
-                 Printf.printf "open Ctypes\n";
-                 Printf.printf "\tmodule %s = struct\n" moduleName;
+  Printf.printf "open Ctypes\n";
+  Printf.printf "\tmodule %s = struct\n" moduleName;
 
   Printf.printf "\ttype task\n\t
   let task : task structure typ = structure \"TASK\";;
@@ -125,6 +124,7 @@ let print_task args nameid _loc =
              | TFloat64  -> "(float, Bigarray.float64_elt)"
              | TVec k ->
                ((t k)^" Spoc.Vector.vector")
+             | _ -> assert false
            in
            Printf.sprintf "(Ctypes.bigarray_start array1
                            (Spoc.Vector.to_bigarray_shr (%s : %s)))"

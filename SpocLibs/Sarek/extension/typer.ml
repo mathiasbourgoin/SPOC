@@ -67,7 +67,7 @@ and gen_app_from_constr t cstr =
       let rec aux = function
         | (c,Some s)::q ->
           (* for now Constructors only applies to single arguments *)
-          let rec aux2 = function
+          let aux2 = function
             | <:ctyp< int >> | <:ctyp< int32 >> -> TInt32
 	    | <:ctyp< float >> | <:ctyp< float32 >> -> TFloat32 (*missing many types *)
             | a -> Custom (t.typ, string_of_ctyp a)
@@ -147,9 +147,9 @@ and typer body t =
        match e1.t with
        | TArr (tt,_) -> tt
        | _ -> TUnknown)
-     (*my_eprintf (ktyp_to_string e1.t);
-         (*assert (not debug);*)
-                         raise (TypeError (TArr (t,Shared), e1.t, l));)*)
+   (*my_eprintf (ktyp_to_string e1.t);
+       (*assert (not debug);*)
+                       raise (TypeError (TArr (t,Shared), e1.t, l));)*)
    | VecSet (l, e1, e2) ->
      check t TUnit l;
      typer e1 e2.t;
@@ -185,17 +185,17 @@ and typer body t =
            my_eprintf ("ADDDD: "^(string_of_ident s)^"\n%!");
            Hashtbl.add !local_fun (string_of_ident s)
 	     (funv, (<:str_item<let $id:s$ = $stri$>>), lifted);
-           update_type y tt;           
+           update_type y tt;
          | _ ->
            try
 	     let v = Hashtbl.find !current_args (string_of_ident s)
-      in
-      typer y v.var_type;
+             in
+             typer y v.var_type;
 	   with
-    | Not_found ->
-      (*Printf.eprintf "Looking for %s in [" (string_of_ident s);
-	Hashtbl.iter (fun a b -> Printf.eprintf " %s;" a) !current_args;
-	Printf.eprintf " ]\n";*)
+           | Not_found ->
+             (*Printf.eprintf "Looking for %s in [" (string_of_ident s);
+	       Hashtbl.iter (fun a b -> Printf.eprintf " %s;" a) !current_args;
+	       Printf.eprintf " ]\n";*)
 	     typer y TUnknown;
              (incr arg_idx;
               my_eprintf ("AD: "^(string_of_ident s)^" of type "^ktyp_to_string y.t ^" \n%!");
@@ -344,19 +344,19 @@ and typer body t =
       | (_loc,(Constr (s,of_) as p), ee)::_ ->
         (type_patt p;
 	 (*(match of_ with
-                 |Some id ->
+                                                           |Some id ->
 	   incr arg_idx;
-                   Hashtbl.add !current_args (string_of_ident id)
+                                                             Hashtbl.add !current_args (string_of_ident id)
 	   {n = !arg_idx; var_type = ktyp_of_typ (TyId(_loc,IdLid(_loc,type_of_patt p)));
 	   is_mutable = false;
 	   read_only = false;
 	   write_only = false;
 	   is_global = false;};
-                   typer ee t;
-                   Hashtbl.remove !current_args (string_of_ident id);
-                 | None -> typer ee t;
-                )
-                );*)
+                                                             typer ee t;
+                                                             Hashtbl.remove !current_args (string_of_ident id);
+                                                           | None -> typer ee t;
+                                                          )
+                                                          );*)
 	)
       | _ -> failwith "No match cases in patern matching");
      let rec aux = function
@@ -521,8 +521,8 @@ and is_special e1 e2 t : bool*ktyp=
   | (*create_array *) Id (_,<:ident< create_array>>),_ ->
     typer e2 TInt32;
     (true,t)
-     
-  | (*map *) (App (_, {t=_; e= App (_,{t=_; e=Id(_,<:ident< map>>); loc=_}, [f]); loc=_}, [a]),_) -> 
+
+  | (*map *) (App (_, {t=_; e= App (_,{t=_; e=Id(_,<:ident< map>>); loc=_}, [f]); loc=_}, [a]),_) ->
     let fun_typ =
       (match f.e with
        | Id (_,s) ->
@@ -536,13 +536,13 @@ and is_special e1 e2 t : bool*ktyp=
       | TApp (x, y) ->
         typer a (TVec x);
         (match y with
-         | TApp (ty, _) 
+         | TApp (ty, _)
          | ty ->
            typer e2 (TVec ty));
       | _ -> assert false
     );
     (true, TUnit)
-  | (*reduce *) (App (_, {t=_; e= App (_,{t=_; e=Id(_,<:ident< reduce>>); loc=_}, [f]); loc=loc}, [a]),_) -> 
+  | (*reduce *) (App (_, {t=_; e= App (_,{t=_; e=Id(_,<:ident< reduce>>); loc=_}, [f]); loc=loc}, [a]),_) ->
     let fun_typ =
       (match f.e with
        | Id (_,s) ->
@@ -559,7 +559,8 @@ and is_special e1 e2 t : bool*ktyp=
         (match y with
          | TApp (ty, tz)  ->
            check x ty loc; (* check reduction function type is consistent *)
-           typer e2 (TVec tz));
+           typer e2 (TVec tz)
+         | _ -> assert false);
       | _ ->     my_eprintf  (("UNKNOWN : "^k_expr_to_string f.e)^"\n") ;assert false
     );
     (true , TUnit)
@@ -618,14 +619,14 @@ and typer_app e1 (e2 : kexpr list) t =
       aux e1
     in
     let ret = ref TUnit in
-    let rec aux2 typ expr =
+    let aux2 typ expr =
       match typ, expr with
       | TApp (t1, t2), e::[] -> typer e t1; ret := t2
       | _ , [] -> assert false
       | _ -> assert false
     in
 
-    let rec aux typ1 e =
+    let aux typ1 e =
       match typ1,e with
       | (TApp (t1, (TApp (_,_) as t2)),
          App ( l , e1, (t::(tt::qq) as e2))) ->
@@ -652,7 +653,7 @@ and typer_app e1 (e2 : kexpr list) t =
       | _ -> assert (not debug);
     in aux typ (App (loc,e1,e2));
 
-    let rec aux typ =
+    let aux typ =
       match typ with
       | TApp(t1,t2) -> t2
       | t -> t

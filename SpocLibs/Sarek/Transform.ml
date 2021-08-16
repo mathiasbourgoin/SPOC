@@ -30,7 +30,7 @@ let rec check_and_transform_to_map a =
   | Mul (b,c)  -> Mul(check_and_transform_to_map b, check_and_transform_to_map c)
   | Mod (b,c)  -> Mod(check_and_transform_to_map b, check_and_transform_to_map c)
   | Div (b,c)  -> Div(check_and_transform_to_map b, check_and_transform_to_map c)
-  | IntId (v,i)  ->
+  | IntId (_v,i)  ->
     if (List.mem i !param_list) then
       IntVecAcc(IdName ("spoc_var"^(string_of_int i)),
                 Intrinsics ("blockIdx.x*blockDim.x+threadIdx.x","get_global_id (0)"))
@@ -51,7 +51,7 @@ let arg_of_vec v  =
 let launch_kernel_with_args bin grid block kernel_arg_tab device =
   let offset = ref 0 in
   (match device.Devices.specific_info with
-     | Devices.CudaInfo cI ->
+     | Devices.CudaInfo _cI ->
        let extra = Kernel.Cuda.cuda_create_extra (Array.length kernel_arg_tab) in
        Array.iteri
          (fun i arg -> 
@@ -119,7 +119,7 @@ let propagate f expr =
   | FloatVar _
   | DoubleVar _
   | UnitVar _-> expr
-  | CastDoubleVar (i,s) -> assert false
+  | CastDoubleVar (_i,_s) -> assert false
   | Arr (i, s, t, m) -> Arr (i, f s, t, m)
   | VecVar (a, i, s) -> VecVar (f a, i, s)
   | Concat (a, b) -> Concat (f a, f b)
@@ -152,16 +152,16 @@ let propagate f expr =
   | Record (a,c) -> Record (a,List.map f c)
   | RecGet (r,s) -> RecGet (f r, s)
   | RecSet (r,v) -> RecSet (f r, f v)
-  | Custom (s,i,ss) -> expr
+  | Custom (_s,_i,_ss) -> expr
   | Match (s,a,b) -> Match (s,f a,
                             Array.map (fun (i,ofid,e) -> (i,ofid,f e)) b)
   | _ -> failwith (("Kirk Transform : "^ (Kirc_Ast.string_of_ast expr) ^" unimplemented yet"))
 
-let map ((ker: ('a, 'b, ('c -> 'd), 'e, 'f) sarek_kernel)) ?dev:(device=(Spoc.Devices.init ()).(0)) (vec_in : ('c, 'h) Vector.vector) : ('d, 'j) Vector.vector=
+let _map ((ker: ('a, 'b, ('c -> 'd), 'e, 'f) sarek_kernel)) ?dev:(device=(Spoc.Devices.init ()).(0)) (vec_in : ('c, 'h) Vector.vector) : ('d, 'j) Vector.vector=
   let ker2,k = ker in
   let (k1,k2,k3) = (k.ml_kern, k.body,k.ret_val) in
   param_list := [];
-  let rec aux = function
+  let aux = function
     | Kern (args, body)  ->
       let new_args =
         match args with
@@ -188,7 +188,7 @@ let map ((ker: ('a, 'b, ('c -> 'd), 'e, 'f) sarek_kernel)) ?dev:(device=(Spoc.De
           | GtBool (a,b)  -> GtBool (aux a, aux b)
           | Ife (a,b,c)  -> Ife (aux a, aux b, aux c)
 	  | Int a -> Int a
-          | IntId (v,i)  ->
+          | IntId (_v,i)  ->
             if i = 0 then
               IntVecAcc(IdName ("spoc_var"^(string_of_int i)),
                         Intrinsics ("blockIdx.x*blockDim.x+threadIdx.x","get_global_id (0)"))
@@ -220,7 +220,7 @@ let map ((ker: ('a, 'b, ('c -> 'd), 'e, 'f) sarek_kernel)) ?dev:(device=(Spoc.De
     | Devices.OpenCLInfo _ -> Devices.OpenCL in
   (*spoc_ker, kir_ker =*)
   ignore(gen ~only:target res device);
-  let spoc_ker, kir_ker = res in
+  let spoc_ker, _kir_ker = res in
   let open Kernel in
   let block =  {blockX = 1; blockY = 1; blockZ = 1}
   and grid = {gridX = 1; gridY = 1; gridZ = 1}
@@ -256,7 +256,7 @@ let map ((ker: ('a, 'b, ('c -> 'd), 'e, 'f) sarek_kernel)) ?dev:(device=(Spoc.De
   let bin = (Hashtbl.find (spoc_ker#get_binaries ()) device) in
   let offset = ref 0 in
   (match device.Devices.specific_info with
-   | Devices.CudaInfo cI ->
+   | Devices.CudaInfo _cI ->
       let extra = Kernel.Cuda.cuda_create_extra 2 in
       Kernel.Cuda.cuda_load_arg offset extra device bin 0 (arg_of_vec vec_in);
       Kernel.Cuda.cuda_load_arg offset extra device bin 1 (arg_of_vec vec_out);
@@ -273,7 +273,7 @@ let map2 ((ker: ('a, 'b,('c -> 'd -> 'e), 'f,'g) sarek_kernel)) ?dev:(device=(Sp
   let ker2,k = ker in
   let (k1,k2,k3) = (k.ml_kern, k.body,k.ret_val) in
   param_list := [];
-  let rec aux = function
+  let aux = function
     | Kern (args, body)  ->
       let new_args =
         match args with
@@ -283,7 +283,7 @@ let map2 ((ker: ('a, 'b,('c -> 'd -> 'e), 'f,'g) sarek_kernel)) ?dev:(device=(Sp
              failwith "error multiple map2 args ";
            | Concat (a, Concat (b, Empty)) ->
              params (concat (a_to_vect a) (concat (a_to_vect b) (concat (a_to_vect (fst k3)) (empty_arg ()))))
-           | Concat (a, Empty)  ->
+           | Concat (_a, Empty)  ->
              failwith "error too few map2 args ";
            | _ -> Printf.printf "+++++> "; print_ast args; failwith "map2 type error")
         | _  -> failwith "error map2 args"
@@ -301,7 +301,7 @@ let map2 ((ker: ('a, 'b,('c -> 'd -> 'e), 'f,'g) sarek_kernel)) ?dev:(device=(Sp
           | LtBool (a,b)  -> LtBool (aux a, aux b)
           | GtBool (a,b)  -> GtBool (aux a, aux b)
           | Ife (a,b,c)  -> Ife (aux a, aux b, aux c)
-          | IntId (v,i)  ->
+          | IntId (_v,i)  ->
             if i = 0 || i = 1 then
               IntVecAcc(IdName ("spoc_var"^(string_of_int i)),
                         Intrinsics ("blockIdx.x*blockDim.x+threadIdx.x","get_global_id (0)"))
@@ -336,12 +336,11 @@ let map2 ((ker: ('a, 'b,('c -> 'd -> 'e), 'f,'g) sarek_kernel)) ?dev:(device=(Sp
   Mem.to_device vec_in1 device;
   Mem.to_device vec_in2 device;
   let framework =
-    let open Devices in
       match device.Devices.specific_info with
-      | Devices.CudaInfo cI -> Devices.Cuda
+      | Devices.CudaInfo _cI -> Devices.Cuda
       | _ -> Devices.OpenCL in
 
-  let spoc_ker, kir_ker = gen ~only:framework res device in
+  let spoc_ker, _kir_ker = gen ~only:framework res device in
   let open Kernel in
   let block =  {blockX = 1; blockY = 1; blockZ = 1}
   and grid = {gridX = 1; gridY = 1; gridZ = 1}
@@ -377,7 +376,7 @@ let map2 ((ker: ('a, 'b,('c -> 'd -> 'e), 'f,'g) sarek_kernel)) ?dev:(device=(Sp
   let bin = (Hashtbl.find (spoc_ker#get_binaries ()) device) in
   let offset = ref 0 in
   (match device.Devices.specific_info with
-   | Devices.CudaInfo cI ->
+   | Devices.CudaInfo _cI ->
      let extra = Kernel.Cuda.cuda_create_extra 2 in
      Kernel.Cuda.cuda_load_arg offset extra device bin 0 (arg_of_vec vec_in1);
      Kernel.Cuda.cuda_load_arg offset extra device bin 1 (arg_of_vec vec_in2);
@@ -395,7 +394,7 @@ let map2 ((ker: ('a, 'b,('c -> 'd -> 'e), 'f,'g) sarek_kernel)) ?dev:(device=(Sp
   vec_out
 
 
-let reduce ((ker: ('a, 'b,('c -> 'c-> 'd), 'e,'f) sarek_kernel)) ?dev:(device=(Spoc.Devices.init ()).(0)) (vec_in1 : ('c, 'i) Vector.vector)  : 'd  = Obj.magic ()
+let reduce ((_ker: ('a, 'b,('c -> 'c-> 'd), 'e,'f) sarek_kernel)) ?dev:(_device=(Spoc.Devices.init ()).(0)) (_vec_in1 : ('c, 'i) Vector.vector)  : 'd  = Obj.magic ()
 
 
 let (^>) =fun a b -> a ^ "\n" ^ b
@@ -431,8 +430,7 @@ let map = fun (f:('a,'b,'c,'d,'e) sarek_kernel)
     match device.Devices.specific_info with
       Devices.CudaInfo _ -> Devices.Cuda
     | Devices.OpenCLInfo _ -> Devices.OpenCL in    
-  let open Spoc.Kernel in
-  let (spoc_ker,kir_ker) as res = build_new_ker spoc_ker kir_ker ker
+  let (spoc_ker,_kir_ker) as res = build_new_ker spoc_ker kir_ker ker
       (Tools.map (kir_ker.ml_kern) (snd kir_ker.ret_val))
   in
   ignore(gen ~only:target res device) ;
@@ -460,8 +458,7 @@ let zip = fun (f:('a,'b,'c,'d,'e) sarek_kernel) ?dev:(device=(Spoc.Devices.init 
     match device.Devices.specific_info with
       Devices.CudaInfo _ -> Devices.Cuda
     | Devices.OpenCLInfo _ -> Devices.OpenCL in    
-  let open Spoc.Kernel in
-  let (spoc_ker,kir_ker) as res = build_new_ker spoc_ker kir_ker ker
+  let (spoc_ker,_kir_ker) as res = build_new_ker spoc_ker kir_ker ker
       (fun a b ->
          for i = 0 to Vector.length a - 1 do
            Mem.set vec_out i (kir_ker.ml_kern (Mem.get a i) (Mem.get b i))
