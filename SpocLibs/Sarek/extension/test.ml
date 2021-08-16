@@ -1,24 +1,25 @@
 open Spoc
+open Sarek
 open Kirc
 open Spoc.Vector
 
 
-    
-    (*let height = ref 512
-let width = ref 512l
-let shiftx = ref 0l
-let shifty = ref 0l
-let zoom = ref 1.
-let max_iter = ref 10000l
 
-let mandelbrot = kern  img  ->
+(*let height = ref 512
+  let width = ref 512l
+  let shiftx = ref 0l
+  let shifty = ref 0l
+  let zoom = ref 1.
+  let max_iter = ref 10000l
+
+  let mandelbrot = kern  img  ->
   let open Std in
 
   let y = thread_idx_y + (block_idx_y * block_dim_y) in
   let x = thread_idx_x + (block_idx_x * block_dim_x) in
   (if (y >= @height) || (x >= @width) then
-     return () ;
-   else return ();
+  return () ;
+  else return ();
   );
   let x0 = (x + @shiftx) in
   let y0 = (y + @shifty) in
@@ -31,31 +32,31 @@ let mandelbrot = kern  img  ->
   let b = 4. *. ((float y0) /. (float @height)) /. @zoom -. 2. in
 
   let normalize = fun x y ->
-    let pow2 = fun x -> x *. x in
-    (pow2 x) +. (pow2 y) in
+  let pow2 = fun x -> x *. x in
+  (pow2 x) +. (pow2 y) in
 
   let mutable norm = normalize x1  y1
 
 
   in
   while ((cpt < @max_iter) && (norm <=. 4.)) do
-    cpt := (cpt + 1);
-    x2 := (x1 *. x1) -. (y1 *. y1) +. a;
-    y2 :=  (2. *. x1 *. y1 ) +. b;
-    x1 := x2;
-    y1 := y2;
-    norm := (x1 *. x1 ) +. ( y1 *. y1);
+  cpt := (cpt + 1);
+  x2 := (x1 *. x1) -. (y1 *. y1) +. a;
+  y2 :=  (2. *. x1 *. y1 ) +. b;
+  x1 := x2;
+  y1 := y2;
+  norm := (x1 *. x1 ) +. ( y1 *. y1);
   done;
   img.[<y * @width + x>] <- cpt;;
 
 
-let _ =
+  let _ =
   let devs = Spoc.Devices.init  ()
   in
   Kirc.gen ~profile:true  mandelbrot devs.(0);
   Printf.printf "Here\n%!";
   List.iter (Printf.printf "%s\n")((fst mandelbrot)#get_cuda_sources ())
-    
+
 *)
 
 
@@ -75,7 +76,7 @@ let _ =
 (*     Mem.set v1 i  (Int32.of_int i); *)
 (*     Mem.set v2 i  (Int32.of_int (1023 - i)) *)
 (*   done; *)
-  
+
 (*   let res = Transform.zip ~dev:d.(0) (kern a b -> *)
 (*                                       a + b *)
 (*                                    )   v1 v2 in *)
@@ -132,33 +133,33 @@ let k = kern (res:float64 vector) (a:float64 vector) nIsPow2 n ->
   let tid = thread_idx_x in
   let mutable i = block_idx_x * @blockSize*2 + thread_idx_x in
   let gridsize = @blockSize*2*grid_dim_x in
-  
+
   let mutable acc = zero  in
   while (i < n) do
     acc :=  add acc  a.[<i>];
     if (nIsPow2 = 1) || (i + @blockSize) < n then
       acc := add acc  a.[<i + @blockSize>];
-    
+
     i := i + grid_dim_x;
-    
+
   done;
-  
+
   sdata.(tid) <>- acc;
   block_barrier();
-  
+
   if ( @blockSize >= 512) && (tid < 256) then
     (acc := add acc sdata.(tid + 256);
      sdata.(tid) <>- acc;
     );
-  
+
   block_barrier();
-  
+
   if ( @blockSize >= 256) && (tid < 128) then
     (acc := add acc  sdata.(tid + 128);
      sdata.(tid) <>- acc;
     );
   block_barrier();
-  
+
   if ( @blockSize >= 128) && (tid < 64) then
     (acc := add acc  sdata.(tid + 64);
      sdata.(tid) <>- acc;
@@ -170,59 +171,59 @@ let k = kern (res:float64 vector) (a:float64 vector) nIsPow2 n ->
      sdata.(tid) <>- acc;
     );
   block_barrier();
-  
+
   if ( @blockSize >= 32) && (tid < 16) then
     (acc := add acc sdata.(tid + 16);
      sdata.(tid) <>- acc;
     );
   block_barrier();
 
-    if ( @blockSize >= 16) && (tid < 8) then
+  if ( @blockSize >= 16) && (tid < 8) then
     (acc := add acc sdata.(tid + 8);
      sdata.(tid) <>- acc;
     );
   block_barrier();
-  
+
   if ( @blockSize >= 8) && (tid < 4) then
     (acc := add acc sdata.(tid + 4);
      sdata.(tid) <>- acc;
     );
   block_barrier();
-  
+
   if ( @blockSize >= 4) && (tid < 2) then
     (acc := add acc sdata.(tid + 2);
      sdata.(tid) <>- acc;
     );
   block_barrier();
-  
-  
+
+
   if ( @blockSize >= 2) && (tid < 1) then
     (acc := add acc sdata.(tid + 1);
      sdata.(tid) <>- acc;
     );
-  
+
   block_barrier();
-  
+
   if (tid = 0) then
     res.[<block_idx_x>] <- acc;
-  
+
 ;;
 let cpt = ref 0
 
 let tot_time = ref 0.
 
-  
+
 let measure_time f s iter =
   let t0 = Unix.gettimeofday () in
   let a = f () in
   let t1 = Unix.gettimeofday () in
   Printf.printf "%s time %d : %Fs  average : %Fs \n%!" s !cpt
-                (t1 -. t0) ((t1 -. t0)/. (float_of_int iter));
+    (t1 -. t0) ((t1 -. t0)/. (float_of_int iter));
   tot_time := !tot_time +.  (t1 -. t0);
   incr cpt;
   a;;
 
-  
+
 
 let reduce v dev threadsPerBlock =
   let blocksPerGrid = ((Vector.length v) + threadsPerBlock -1) / threadsPerBlock in
@@ -235,10 +236,10 @@ let reduce v dev threadsPerBlock =
   blockSize := Int32.of_int threadsPerBlock;
   Mem.to_device res dev;
   Spoc.Devices.flush dev ();
-  measure_time (fun () -> 
+  measure_time (fun () ->
       Kirc.run  k (res, v, 1, Vector.length v) (block,grid)  0 dev;
       Spoc.Devices.flush dev ()) "RUN0"  1;
-  
+
   let r = ref 0. in
   for i = 0 to blocksPerGrid - 1 do
     r := !r +. (Mem.get res i);
@@ -246,7 +247,7 @@ let reduce v dev threadsPerBlock =
   !r
 
 
-    
+
 let _ =
   let devs = Spoc.Devices.init  ()
   in
@@ -263,26 +264,26 @@ let _ =
        | _ -> 256)
     | _ -> 256
   in
-  
-  
+
+
   let threadsPerBlock = threads devs.(0) in
   smemSize :=
     Int32.of_int (if threadsPerBlock <= 32 then
                     2 * threadsPerBlock
                   else threadsPerBlock);
   ignore (measure_time (fun () -> Kirc.gen ~only:Devices.Cuda k devs.(0)) "GEN_0" 1);
-  let r = 
+  let r =
     reduce v1 devs.(0) threadsPerBlock  in
   Printf.printf "%s -> reduction : %g\n"  (devs.(0).Devices.general_info.Devices.name) r;
   (*List.iter (Printf.printf "%s\n") ((fst k)#get_cuda_sources ());*)
-  
+
   let threadsPerBlock = threads devs.(1) in
   smemSize := Int32.of_int (
       if threadsPerBlock <= 32 then
         2 * threadsPerBlock
       else threadsPerBlock);
   ignore (measure_time (fun () -> Kirc.gen ~only:Devices.Cuda k devs.(1)) "GEN_1" 1);
-  let r = 
+  let r =
     reduce v1 devs.(1) threadsPerBlock in
   Printf.printf "%s -> reduction : %g\n" (devs.(1).Devices.general_info.Devices.name) r;
   (*List.iter (Printf.printf "%s\n") ((fst k)#get_opencl_sources ())*)

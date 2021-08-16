@@ -49,7 +49,7 @@ exception Unbound_value2 of ((Loc.t*string)*Loc.t)
 let debug = false
 let print i = 
   if debug then
-    Printf.printf "%s\n" i; Pervasives.flush stdout
+    Printf.printf "%s\n%!" i
       
 (******************** external kernels **********************)
 
@@ -322,18 +322,13 @@ let rec parseInvTyp t i=
     arg_string2 :=i^" "^(!arg_string2)
 
   | TyId (_, id) -> 
-								(*Printf.printf "--- %s\n" (string_of_ident id); 
-								  flush stdout;  *)
     arg_string := i^" "^(!arg_string);
     arg_string2 := i^" "^(!arg_string2)
-
-							(*failwith "apply_of_constraints TyId "*)
   | TyApp (l, t1, t2)  -> 
     begin
       match t2 with 
       | TyId (_, id) ->
-										(*incr idx;*)
-	(parseInvTyp t1 i );(*arg_string:= (string_of_ident id)^" "^ !arg_string;*)
+	(parseInvTyp t1 i )
       | _  -> failwith "erf"
     end
   | _ -> 
@@ -428,11 +423,7 @@ let rec concrete_type_to_type t =
     let _loc = l in
     (<:ctyp< Vector.vector>>)
   | TyId (_, id) -> 
-								(*Printf.printf "--- %s\n" (string_of_ident id); 
-								  flush stdout;  *)
     t
-
-							(*failwith "apply_of_constraints TyId "*)
   | TyApp (_loc, t1, t2)  -> 
     <:ctyp< ($concrete_type_to_type t2$,$concrete_type_to_type t2$) $concrete_type_to_type t1$>>
   | _ -> 

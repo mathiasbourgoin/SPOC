@@ -6,3 +6,4 @@ Gemfile.lock
 serve.sh
 *.byte
 *.asm
+_build

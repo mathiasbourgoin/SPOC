@@ -47,8 +47,8 @@ let shared_variable = "__local"
 let kern_start  = "__kernel"
 let kern_end = "}"
 
-let parse_intrinsics (cuda,opencl) = opencl
+let parse_intrinsics (_cuda,opencl) = opencl
 
 let default_parser = true
-let parse_fun i a  c n dev = ""
-let parse a b dev = ""
+let parse_fun _i _a  _c _n _dev = ""
+let parse _a _b _dev = ""

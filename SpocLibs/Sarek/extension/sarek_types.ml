@@ -22,7 +22,7 @@ type ktyp =
   | TFloat32
   | TFloat64
   | TBool
-  | TAny 
+  | TAny
   | TVec of ktyp
   | TArr of (ktyp*memspace)
   | TApp of ktyp * ktyp
@@ -100,7 +100,7 @@ type k_expr =
 
   | Map of Loc.t * kexpr*kexpr*kexpr
 
-    
+
   | Min32 of Loc.t*kexpr*kexpr
   | Min64 of Loc.t*kexpr*kexpr
   | MinF32 of Loc.t*kexpr*kexpr
@@ -185,11 +185,11 @@ and kexpr = {
   loc: Loc.t}
 
 let rec is_unknown t =
-    let rec app_return_type = function
-      | TApp (_,(TApp (a,b))) -> app_return_type b
-      | TApp (_,b) -> is_unknown b
-      | a -> is_unknown a
-    in
+  let rec app_return_type = function
+    | TApp (_,(TApp (a,b))) -> app_return_type b
+    | TApp (_,b) -> is_unknown b
+    | a -> is_unknown a
+  in
   match t with
   | TUnknown
   | TVec TUnknown
@@ -231,7 +231,7 @@ let rec string_of_ident i =
 
 
 
-let rec k_expr_to_string = function
+let k_expr_to_string = function
   | App (_,{t=_;e=Id(l,s);loc=_},_) -> ("App "^(string_of_ident s))
   | App _ -> "App"
   | Acc _ -> "Acc"
@@ -243,22 +243,22 @@ let rec k_expr_to_string = function
   | Bind _ -> "Bind"
   | Fun _ -> "Fun"
 
-(*  | Plus _ -> "Plus"*)
+  (*  | Plus _ -> "Plus"*)
   | Plus32 _ -> "Plus32"
   | Plus64 _ -> "Plus64"
   | PlusF32 _ -> "PlusF32"
   | PlusF64 _ -> "PlusF64"
-(*  | Min _ -> "Min"*)
+  (*  | Min _ -> "Min"*)
   | Min32 _ -> "Min32"
   | Min64 _ -> "Min64"
   | MinF32 _ -> "MinF32"
   | MinF64 _ -> "MinF64"
-(*  | Mul _ -> "Mul"*)
+  (*  | Mul _ -> "Mul"*)
   | Mul32 _ -> "Mul32"
   | Mul64 _ -> "Mul64"
   | MulF32 _ -> "MulF32"
   | MulF64 _ -> "MulF64"
-(*  | Div _ -> "Div"*)
+  (*  | Div _ -> "Div"*)
   | Div32 _ -> "Div32"
   | Div64 _ -> "Div64"
   | DivF32 _ -> "DivF32"
@@ -319,6 +319,7 @@ let rec k_expr_to_string = function
   | TypeConstraint _ -> "TypeConstraint"
   | Nat _ -> "native code"
 
+  | Map (_,_,_,_) -> "Map"
 
 let expr_of_patt p =
   match p with
@@ -476,7 +477,7 @@ let vector ={
   mod_functions = [
     (TApp (TVec TAny, TInt32), "length", 1, "SAREK_VEC_LENGTH", "SAREK_VEC_LENGTH");
   ];
-  mod_modules = Hashtbl.create 0 
+  mod_modules = Hashtbl.create 0
 }
 
 let mathf32 = {
@@ -522,9 +523,9 @@ let mathf32 = {
     (TApp ((TApp (TFloat32, TFloat32)), TFloat32), "copysign", 2, "copysignf", "copysign");
     (TApp ((TApp (TFloat32, TFloat32)), TFloat32), "modf", 2, "fmodf", "fmod");
 
-(*    (TApp (TFloat, TFloat32), "of_float", 1, "(float)", "(float)");
-    (TApp (TFloat32, TFloat), "to_float", 1, "(float)", "(float)");
-*)
+    (*    (TApp (TFloat, TFloat32), "of_float", 1, "(float)", "(float)");
+          (TApp (TFloat32, TFloat), "to_float", 1, "(float)", "(float)");
+    *)
     (TApp (TInt32, TArr (TFloat32, Shared)), "make_shared", 1, "", "");
     (TApp (TInt32, TArr (TFloat32, Local)), "make_local", 1, "", "");
 
@@ -576,8 +577,8 @@ let mathf64 = {
     (TApp ((TApp (TFloat64, TFloat64)), TFloat64), "copysign", 2, "copysign", "copysign");
     (TApp ((TApp (TFloat64, TFloat64)), TFloat64), "modf", 2, "fmod", "fmod");
 
-     (TApp (TFloat32, TFloat64), "of_float32", 1, "(double)", "(double)");
-     (TApp (TFloat64, TFloat32), "to_float32", 1, "(double)", "(double)");
+    (TApp (TFloat32, TFloat64), "of_float32", 1, "(double)", "(double)");
+    (TApp (TFloat64, TFloat32), "to_float32", 1, "(double)", "(double)");
 
     (TApp (TInt32, TArr (TFloat64, Shared)), "make_shared", 1, "", "");
     (TApp (TInt32, TArr (TFloat64, Local)), "make_local", 1, "", "");
@@ -616,7 +617,7 @@ let modules =
 
 
 let open_module  m_ident  _loc =
-  my_eprintf (Printf.sprintf "!!opening module %s\n%!" m_ident);  
+  my_eprintf (Printf.sprintf "!!opening module %s\n%!" m_ident);
   (match m_ident with
    | "Float64" ->
      if not (List.mem ex64 !extensions)  then
@@ -638,7 +639,7 @@ let open_module  m_ident  _loc =
       (Hashtbl.add !intrinsics_const (s) {nb_args=0; cuda_val = cuda_s; opencl_val = opencl_s; typ=typ})) m.mod_constants ;
   Hashtbl.iter (fun name intern_m-> Hashtbl.add modules name intern_m) m.mod_modules
 
-    
+
 and close_module m_ident =
   my_eprintf (Printf.sprintf "closing module %s\n%!" m_ident);
   try
@@ -653,7 +654,7 @@ and close_module m_ident =
   with
   | _ -> ()
 
-         
+
 
 let ctype_of_sarek_type  = function
   | "int32" -> "int"
@@ -679,7 +680,7 @@ let rec string_of_ctyp = function
   | (Ast.TyId (_, Ast.IdLid (_, s ))) -> s
   | (Ast.TyId (_, Ast.IdUid (_, s ))) -> s
   | Ast.TyApp (_, t1, t2) ->  (string_of_ctyp t1)^
-				 " "^(string_of_ctyp t2)
+			      " "^(string_of_ctyp t2)
   | TyCol (l,t1,t2)-> string_of_ctyp t2
   | _ -> failwith "error in string_of_ctyp"
 

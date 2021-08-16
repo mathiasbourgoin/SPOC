@@ -189,13 +189,11 @@ let opencl_compatible_devices = ref 0
 
 let total_num_devices = ref 0
 
-let current_cuda_device = ref 0
-let current_opencl_device = ref 0
 
 (******************************************************************************************************)
 let openOutput () = ()
-let beginEvent s = 0
-let endEvent s i = ()
+let beginEvent _s = 0
+let endEvent _s _i = ()
 let emitDeviceList _ = ()
 
 #ifdef SPOC_PROFILE
@@ -303,7 +301,7 @@ let hasCLExtension dev ext =
 
 let allowDouble dev =
   match dev.specific_info with
-  | OpenCLInfo cli ->
+  | OpenCLInfo _cli ->
     hasCLExtension dev "cl_khr_fp64" || hasCLExtension dev "cl_amd_fp64"
   | CudaInfo ci -> ci.major > 1 || ci.minor >= 3
 

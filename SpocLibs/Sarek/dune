@@ -1,0 +1,7 @@
+(dirs extension)
+
+(library
+  (name sarek)
+  (public_name sarek)
+  (libraries spoc)
+)

@@ -70,7 +70,7 @@ and set vect (idx : int) (value : 'a) =
           (flush_and_transfer_to_cpu d vect)
         | Vector.No_dev -> ());
      match Vector.is_sub vect with
-     | Some (1, start, ok_r, 0, v2) -> unsafe_set v2 (start + idx) value
+     | Some (1, start, _, 0, v2) -> unsafe_set v2 (start + idx) value
      | Some (1, start, ok_r, ko_r, v2) ->
        unsafe_set v2
          ((start + ((idx / ok_r) * (ko_r + ok_r))) + (idx mod ok_r)) value
@@ -91,7 +91,7 @@ and get vect idx =
         (flush_and_transfer_to_cpu d vect)
       | Vector.No_dev -> ());
    match Vector.is_sub vect with
-   | Some (1, start, ok_r, 0, v2) -> unsafe_get v2 (start + idx)
+   | Some (1, start, _, 0, v2) -> unsafe_get v2 (start + idx)
    | Some (1, start, ok_r, ko_r, v2) ->
      unsafe_get v2
        ((start + ((idx / ok_r) * (ko_r + ok_r))) + (idx mod ok_r))
@@ -107,7 +107,7 @@ and basic_transfer_to_device new_vect q dev =
    | Devices.CudaInfo _ ->
      let f () =
        (match Vector.vector new_vect with
-        | Vector.CustomArray custom ->
+        | Vector.CustomArray _ ->
           (cuda_custom_cpu_to_device new_vect dev.Devices.general_info.Devices.id
              dev.Devices.general_info q;)
         | _ ->
@@ -123,7 +123,7 @@ and basic_transfer_to_device new_vect q dev =
    | Devices.OpenCLInfo _ ->
      let f () =
        (match Vector.vector new_vect with
-        | Vector.CustomArray custom ->
+        | Vector.CustomArray _ ->
           (opencl_custom_cpu_to_device new_vect
              (dev.Devices.general_info.Devices.id - (Devices.cuda_devices ()))
              dev.Devices.general_info q;)
@@ -145,7 +145,7 @@ and basic_transfer_to_cpu new_vect q dev =
    | Devices.CudaInfo _ ->
      let f () =
        (match Vector.vector new_vect with
-        | Vector.CustomArray custom ->
+        | Vector.CustomArray _ ->
           (cuda_custom_device_to_cpu new_vect dev.Devices.general_info.Devices.id
              dev.Devices.general_info q;)
         | _ ->
@@ -161,7 +161,7 @@ and basic_transfer_to_cpu new_vect q dev =
    | Devices.OpenCLInfo _ ->
      let f () =
        (match Vector.vector new_vect with
-        | Vector.CustomArray custom ->
+        | Vector.CustomArray _ ->
           (opencl_custom_device_to_cpu new_vect
              (dev.Devices.general_info.Devices.id - (Devices.cuda_devices ()))
              dev.Devices.general_info dev.Devices.specific_info q;)
@@ -182,7 +182,7 @@ and transfer_part_to_device vect sub_vect q (dev : Devices.device) host_offset g
   (match dev.Devices.specific_info with
    | Devices.CudaInfo _ ->
      (match Vector.vector vect with
-      | Vector.CustomArray custom ->
+      | Vector.CustomArray _ ->
         (cuda_custom_part_cpu_to_device vect sub_vect dev.Devices.general_info.Devices.id
            dev.Devices.general_info dev.Devices.gc_info q host_offset guest_offset start size;)
       | _ -> (cuda_part_cpu_to_device vect sub_vect dev.Devices.general_info.Devices.id
@@ -190,7 +190,7 @@ and transfer_part_to_device vect sub_vect q (dev : Devices.device) host_offset g
      )
    | Devices.OpenCLInfo _ ->
      (match Vector.vector vect with
-      | Vector.CustomArray custom -> (opencl_custom_part_cpu_to_device vect sub_vect
+      | Vector.CustomArray _ -> (opencl_custom_part_cpu_to_device vect sub_vect
                                         (dev.Devices.general_info.Devices.id - (Devices.cuda_devices ()))
                                         dev.Devices.general_info dev.Devices.gc_info q host_offset guest_offset start size;)
       | _ -> (opencl_part_cpu_to_device vect sub_vect
@@ -203,7 +203,7 @@ and transfer_part_to_cpu vect sub_vect q (dev : Devices.device) host_offset gues
   (match dev.Devices.specific_info with
    | Devices.CudaInfo _ ->
      (match Vector.vector vect with
-      | Vector.CustomArray custom ->
+      | Vector.CustomArray _ ->
         (cuda_custom_part_device_to_cpu vect sub_vect dev.Devices.general_info.Devices.id
            dev.Devices.general_info dev.Devices.gc_info q host_offset guest_offset start size;)
       | _ -> (cuda_part_device_to_cpu vect sub_vect dev.Devices.general_info.Devices.id
@@ -211,7 +211,7 @@ and transfer_part_to_cpu vect sub_vect q (dev : Devices.device) host_offset gues
      )
    | Devices.OpenCLInfo _ ->
      (match Vector.vector vect with
-      | Vector.CustomArray custom -> (opencl_custom_part_device_to_cpu vect sub_vect
+      | Vector.CustomArray _ -> (opencl_custom_part_device_to_cpu vect sub_vect
                                         (dev.Devices.general_info.Devices.id - (Devices.cuda_devices ()))
                                         dev.Devices.general_info dev.Devices.gc_info q host_offset guest_offset start size;)
       | _ -> (opencl_part_device_to_cpu vect sub_vect
@@ -280,7 +280,7 @@ and to_device vect ?queue_id:(q = 0) (dev : Devices.device) =
               transfer_part_to_device v temp q dev (!cpt * (512 + _ko)) (!cpt*512) _start !to_transfer;
             )
         )
-     | Some (_, _, _, _, v) ->
+     | Some _ ->
        (	let new_vect = temp_vector vect in
          for i = 0 to Vector.length vect - 1 do
            unsafe_set new_vect i (get vect i)
@@ -388,7 +388,7 @@ and to_cpu vect ?queue_id:(q = 0) () =
                transfer_part_to_cpu v temp q dev (!cpt * (512 + _ko)) (!cpt*512) _start !to_transfer;
              )
          )
-     | Some (_, _, _, _, v) ->
+     | Some _ ->
        let new_vect = temp_vector vect
        in
        (
@@ -426,13 +426,13 @@ let gpu_vector_copy vecA startA vecB startB size dev =
   (match dev.Devices.specific_info with
    | Devices.CudaInfo _ ->
      (match Vector.vector vecA with
-      | Vector.CustomArray custom -> (
+      | Vector.CustomArray _ -> (
           Cuda.cuda_custom_vector_copy vecA startA vecB startB size dev.Devices.general_info dev.Devices.general_info.Devices.id)
       | _ -> (
           Cuda.cuda_vector_copy vecA startA vecB startB size dev.Devices.general_info dev.Devices.general_info.Devices.id))
    | Devices.OpenCLInfo _ ->
      (match Vector.vector vecA with
-      | Vector.CustomArray custom ->  (OpenCL.opencl_custom_vector_copy vecA startA vecB startB size dev.Devices.general_info (dev.Devices.general_info.Devices.id - (Devices.cuda_devices ())))
+      | Vector.CustomArray _ ->  (OpenCL.opencl_custom_vector_copy vecA startA vecB startB size dev.Devices.general_info (dev.Devices.general_info.Devices.id - (Devices.cuda_devices ())))
       | _ -> (OpenCL.opencl_vector_copy vecA startA vecB startB size dev.Devices.general_info (dev.Devices.general_info.Devices.id - (Devices.cuda_devices ()))))
   )
 
@@ -485,17 +485,17 @@ let gpu_matrix_copy (vecA: ('a,'b) Vector.vector) ldA start_rowA start_colA (vec
   (match dev.Devices.specific_info with
    | Devices.CudaInfo _ ->
      (match Vector.vector vecA with
-      | Vector.CustomArray custom -> (
+      | Vector.CustomArray _ -> (
           Cuda.cuda_custom_matrix_copy vecA ldA start_rowA start_colA vecB ldB start_rowB start_colB rows cols dev.Devices.general_info dev.Devices.general_info.Devices.id)
       | _ -> (
           Cuda.cuda_matrix_copy vecA ldA start_rowA start_colA vecB ldB start_rowB start_colB rows cols dev.Devices.general_info dev.Devices.general_info.Devices.id))
    | Devices.OpenCLInfo _ ->
      (match Vector.vector vecA with
-      | Vector.CustomArray custom ->  (OpenCL.opencl_custom_matrix_copy vecA ldA start_rowA start_colA vecB ldB start_rowB start_colB rows cols dev.Devices.general_info (dev.Devices.general_info.Devices.id - (Devices.cuda_devices ())))
+      | Vector.CustomArray _ ->  (OpenCL.opencl_custom_matrix_copy vecA ldA start_rowA start_colA vecB ldB start_rowB start_colB rows cols dev.Devices.general_info (dev.Devices.general_info.Devices.id - (Devices.cuda_devices ())))
       | _ -> (OpenCL.opencl_matrix_copy vecA ldA start_rowA start_colA vecB ldB start_rowB start_colB rows cols dev.Devices.general_info (dev.Devices.general_info.Devices.id - (Devices.cuda_devices ()))))
   )
 
-let cpu_matrix_copy (vecA: ('a,'b) Vector.vector) ldA start_rowA start_colA (vecB: ('a,'b) Vector.vector) ldB start_rowB start_colB rows cols =
+let cpu_matrix_copy (_vecA: ('a,'b) Vector.vector) _ldA _start_rowA _start_colA (_vecB: ('a,'b) Vector.vector) _ldB _start_rowB _start_colB _rows _cols =
   ()
 
 let rec matrix_copy (vecA: ('a,'b) Vector.vector) ldA start_rowA start_colA
