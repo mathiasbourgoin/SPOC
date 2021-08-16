@@ -23,4 +23,4 @@ echo OPAM versions
 ${HOME}/opam --version
 ${HOME}/opam --git-version
 
-${HOME}/opam install camlp4 ctypes ctypes-foreign cppo
+${HOME}/opam install graphics camlp4 ctypes ctypes-foreign cppo dune
