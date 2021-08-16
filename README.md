@@ -1,4 +1,4 @@
-[![Build Status](https://github.com/mathiasbourgoin/SPOC/actions/workflows/build.yml/badge.svg)](https://github.com/mathiasbourgoin/SPOC/actions)
+[![Build Status](https://github.com/mathiasbourgoin/SPOC/actions/workflows/build.yml/badge.svg)](https://github.com/mathiasbourgoin/SPOC/actions?query=branch%3Amaster)
 
 SPOC is a set of tools for GPGPU programming with OCaml.
 
@@ -29,7 +29,7 @@ linked, but you'll need Cuda/OpenCL eventually to run your programs.
 [![](https://images.microbadger.com/badges/version/mathiasbourgoin/spoc.svg)](https://microbadger.com/images/mathiasbourgoin/spoc) [![](https://images.microbadger.com/badges/image/mathiasbourgoin/spoc.svg)](https://microbadger.com/images/mathiasbourgoin/spoc)
 
 (*The github page is largely deprecated. While it's being updated, github actions scripts (in
-`.github/workflows`) may show how to build and run tests*)
+`.github/workflows`) may show how to build and run tests*)  
 For more information, examples and live tutorials,
 please check the [github page](http://mathiasbourgoin.github.io/SPOC/):
 
