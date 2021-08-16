@@ -1,35 +1,25 @@
-nprocs+=$(shell getconf _NPROCESSORS_ONLN)
-
 all:
-	cd Spoc && $(MAKE) -j$(nprocs) && cd ..
+	dune build
 
 clean:
-	cd Spoc && $(MAKE) clean && cd ..
+	dune clean
 
 
-install: 
-	cd Spoc && $(MAKE) -j$(nprocs) install && cd ..
+install:
+	dune build @install
+	dune install
 
 uninstall:
-	cd Spoc && $(MAKE) uninstall && cd ..
-
-samples: install
-	cd Samples; $(MAKE)
-
-install_sarek:
-	cd SpocLibs/Sarek; $(MAKE) -j$(nprocs) install
-
-sarek_samples:
-	cd SpocLibs/Samples/Mandelbrot; $(MAKE)
-	cd SpocLibs/Samples/Bitonic_sort; $(MAKE)
-
+	dune uninstall
 
 test:
-	cd Samples ; $(MAKE) --no-print-directory test | tee "/tmp/log_spoc_test_samples"
-	@if grep "KO" "/tmp/log_spoc_test_samples" ; \
-	then printf "\e[1mALL TESTS: \033[0;31mKO\033[0m\n" ; exit 1 ; \
-	else printf "\e[1mALL TESTS: \033[0;32mOK\033[0m\n" ; \
-	fi 
+	dune exec Samples/src/DeviceQuery/DeviceQuery.exe
+	# dune exec Samples/src/VecAdd/VecAdd.exe
+	# dune exec Samples/src/Mandelbrot/Mandelbrot.exe
+
+test_sarek:
+	dune exec SpocLibs/Benchmarks/Pi/Pi.exe
+	dune exec SpocLibs/Benchmarks/Mandelbrot_Sarek/Mandelbrot.exe
 
 
 check: all install install_sarek samples test #sarek_samples
