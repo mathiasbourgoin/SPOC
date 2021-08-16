@@ -14,12 +14,21 @@ uninstall:
 
 test:
 	dune exec Samples/src/DeviceQuery/DeviceQuery.exe
-	# dune exec Samples/src/VecAdd/VecAdd.exe
-	# dune exec Samples/src/Mandelbrot/Mandelbrot.exe
+	dune exec Samples/src/VecAdd/VecAdd.exe
+	dune exec Samples/src/Mandelbrot/Mandelbrot.exe
 
 test_sarek:
-	dune exec SpocLibs/Benchmarks/Pi/Pi.exe
-	dune exec SpocLibs/Benchmarks/Mandelbrot_Sarek/Mandelbrot.exe
+	echo "Compiling Sarek samples"
+	dune build SpocLibs/Benchmarks/Pi/Pi.exe
+	dune build SpocLibs/Benchmarks/Mandelbrot_Sarek/Mandelbrot.exe
+	dune build SpocLibs/Samples/Bitonic_sort/Bitonic_sort.exe
+	echo "Running OpenCL compatible samples"
+	dune exec SpocLibs/Samples/Bitonic_sort/Bitonic_sort.exe
+	## Cuda Samples cannot be executed on CI
+	# dune exec SpocLibs/Benchmarks/Pi/Pi.exe
+	# dune exec SpocLibs/Benchmarks/Mandelbrot_Sarek/Mandelbrot.exe
 
+check: all install install_sarek samples test test_sarek
 
-check: all install install_sarek samples test #sarek_samples
+mr_proper: clean
+	rm -rf _build

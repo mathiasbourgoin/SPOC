@@ -71,10 +71,11 @@ let mandelbrot_recompile = kern img ->
 
   let mutable norm = normalize x1  y1
   in
+  let max = @max_iter : int in
   let mutable vote =
     ($$ fun dev ->
        match dev.Devices.specific_info with
-       | Devices.CudaInfo _ -> "__ballot_sync(FULL_MASK, ((cpt < @max_iter) && (norm <=. 4.)))"
+       | Devices.CudaInfo _ -> "__ballot_sync(FULL_MASK, ((cpt < max) && (norm <= 4.)))"
        | _ -> "";; $$ : int) in
 
   let mutable eval = vote > 16 in
@@ -87,8 +88,8 @@ let mandelbrot_recompile = kern img ->
     norm := (x1 *. x1 ) +. ( y1 *. y1);
     vote := ($$ fun dev ->
         match dev.Devices.specific_info with
-        | Devices.CudaInfo _ ->  "__ballot_sync(FULL_MASK, ((cpt < @max_iter) &&
-         (norm <=. 4.)))"
+        | Devices.CudaInfo _ ->  "__ballot_sync(FULL_MASK, ((cpt < max) &&
+         (norm <= 4.)))"
         | _ -> "" ;;$$ : int);
     eval := vote > 16;
   done;
