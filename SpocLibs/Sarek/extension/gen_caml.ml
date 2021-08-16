@@ -121,9 +121,9 @@ and parse_float f t =
   | Id (_loc,s)  ->
     (let is_mutable = ref false in
      ( let var = (
-        ( try Hashtbl.find !current_args (string_of_ident s)
-          with _ -> assert (not debug);
-            raise (Unbound_value ((string_of_ident s),_loc)))) in
+           ( try Hashtbl.find !current_args (string_of_ident s)
+             with _ -> assert (not debug);
+               raise (Unbound_value ((string_of_ident s),_loc)))) in
        is_mutable := var.is_mutable;
        match var.var_type with
        | TUnknown ->
@@ -232,9 +232,9 @@ and parse_app_ml a modu =
       | Id (_loc,s) -> ExApp(_loc, ExAcc(_loc, modu,ExId(_loc, s)), parse_body e2)
       | App (l, e1, e2::[]) -> ExApp (_loc, aux e1 modu, parse_body e2)
       | ModuleAccess (_loc, s, e) ->
-         ExAcc(_loc, modu, (parse_body a))
+        ExAcc(_loc, modu, (parse_body a))
       | _ -> my_eprintf (Printf.sprintf "(* app %s *)\n%!" (k_expr_to_string a.e));
-             assert false
+        assert false
     in
     ExApp(_loc, aux e1 modu, parse_body e2)
   | _ -> parse_body a
@@ -364,7 +364,7 @@ and parse_body body =
             and sarek_name = TyId(_loc, IdLid(_loc,name^"_sarek")) in
             <:ctyp<($name$,$sarek_name$) Spoc.Vector.vector >>
           | TApp (a,b) -> (my_eprintf ("type : "^(ktyp_to_string t)^"\n");
-                             app_return_type b;)
+                           app_return_type b;)
           | _ -> (my_eprintf (k_expr_to_string body.e); assert false)
          ) in
        (match v.e with
@@ -424,8 +424,9 @@ and parse_body body =
                <:ctyp<($name$,$sarek_name$) Spoc.Vector.vector >>
              | TVec _  | TUnknown | TUnit | TArr _
              | TApp _   ->
-               my_eprintf ("Unimplemented vecget : "^(ktyp_to_string var.var_type )^"\n");               
+               my_eprintf ("Unimplemented vecget : "^(ktyp_to_string var.var_type )^"\n");
                assert false
+             | _ -> assert false
             )
           | _  -> assert (not debug);
             failwith (Printf.sprintf "strange vector %s" (ktyp_to_string var.var_type ))
@@ -531,7 +532,7 @@ and parse_body body =
             (Int32.to_int $min$) to (Int32.to_int  $max$) do
             let $(PaId (_loc, IdLid(_loc, (string_of_id id.e))))$ = Int32.of_int spoc_tmp in
             $body$
-      done>>
+           done>>
   | While (_loc, cond, body) ->
     let cond = parse_body cond in
     let body = parse_body body in
@@ -544,55 +545,55 @@ and parse_body body =
          | TArr (TFloat64, Shared)
          | TArr (TFloat32, Shared) ->
            <:expr< Array.make (Int32.to_int $parse_body b$) 0. >>
-         | TArr (TInt32, Shared) 
+         | TArr (TInt32, Shared)
          | TArr (TInt64, Shared) ->
            <:expr< Array.make (Int32.to_int $parse_body b$) 0l >>
-        | _ -> assert false)
-      
-      |  App (_loc, {e=App (_, {t=_; e= App (_,{t=_; e=Id(_,<:ident< map>>); loc=_}, [f]); loc=_}, [a])}, [b]) ->
+         | _ -> assert false)
+
+      |  App (_loc, {e=App (_, {t=_; e= App (_,{t=_; e=Id(_,<:ident< map>>); loc=_}, [f]); loc=_}, [a]); _}, [b]) ->
         <:expr< map $parse_body f$.ml_fun $parse_body a $ $parse_body b $>>;
-      |  App (_loc, {e=App (_, {t=_; e= App (_,{t=_; e=Id(_,<:ident< reduce>>); loc=_}, [f]); loc=_}, [a])}, [b]) ->
+      |  App (_loc, {e=App (_, {t=_; e= App (_,{t=_; e=Id(_,<:ident< reduce>>); loc=_}, [f]); loc=_}, [a]); _}, [b]) ->
         <:expr< reduce $parse_body f$.ml_fun $parse_body a $ $parse_body b $>>;
-        
-      | _  -> 
+
+      | _  ->
         raise Not_found
     in
     (try gen_special body with
-    | Not_found ->
-      (
-    let rec aux e2 =
-      match e2 with
-      | t::[] -> parse_body t
-      | t::q -> ExApp(_loc, (aux q), (parse_body t))
-      | [] -> assert false
-    in
-    let e2 = aux e2 in
-    let e1 =
-      match e1.e with
-      | Id (_loc, s) ->
-        (try
-	   ignore(Hashtbl.find !global_fun (string_of_ident s));
-    <:expr<$parse_body e1$.ml_fun>>
-         with
-         | Not_found ->
-           (try
-	      let (_,_,lifted) = (Hashtbl.find !local_fun (string_of_ident s)) in
-       let rec aux acc = function
-         | [] -> acc
-         | t::q ->
-           (try ignore(Hashtbl.find !current_args t)
-           with | Not_found -> (););
-           aux (<:expr< $acc$ $ExId(_loc,IdLid(_loc,t))$>>) q
-       in
-       aux
-	 <:expr<$parse_body e1$.ml_fun>> lifted
-            with
-            | Not_found ->
-	      parse_body e1) )
-      | _ -> parse_body e1
-    in
-    <:expr<$e1$ $e2$>>
-  ))
+     | Not_found ->
+       (
+         let rec aux e2 =
+           match e2 with
+           | t::[] -> parse_body t
+           | t::q -> ExApp(_loc, (aux q), (parse_body t))
+           | [] -> assert false
+         in
+         let e2 = aux e2 in
+         let e1 =
+           match e1.e with
+           | Id (_loc, s) ->
+             (try
+	        ignore(Hashtbl.find !global_fun (string_of_ident s));
+                <:expr<$parse_body e1$.ml_fun>>
+              with
+              | Not_found ->
+                (try
+	           let (_,_,lifted) = (Hashtbl.find !local_fun (string_of_ident s)) in
+                   let rec aux acc = function
+                     | [] -> acc
+                     | t::q ->
+                       (try ignore(Hashtbl.find !current_args t)
+                        with | Not_found -> (););
+                       aux (<:expr< $acc$ $ExId(_loc,IdLid(_loc,t))$>>) q
+                   in
+                   aux
+	             <:expr<$parse_body e1$.ml_fun>> lifted
+                 with
+                 | Not_found ->
+	           parse_body e1) )
+           | _ -> parse_body e1
+         in
+         <:expr<$e1$ $e2$>>
+       ))
   | Open (_loc, id, e) ->
     let rec aux = function
       | IdAcc (l,a,b) -> aux a; aux b
@@ -638,7 +639,7 @@ and parse_body body =
   | Record (_loc,fl) ->
     let fl = List.map (
         fun (_loc,id,e) ->
-            <:rec_binding< $lid:string_of_ident id$ =  $parse_body e$>>)
+          <:rec_binding< $lid:string_of_ident id$ =  $parse_body e$>>)
         fl  in
     let recb = List.fold_left (fun a b -> <:rec_binding< $a$; $b$>>)
         (List.hd fl) (List.tl fl) in

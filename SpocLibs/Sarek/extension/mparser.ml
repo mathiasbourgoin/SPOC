@@ -48,42 +48,42 @@ let parse_args params body=
     if i > nargs - !n_lifted_vals then
       acc
     else
-    match a with
-    | []  ->  acc
-    | t::q ->
-      match t with
-      | PaTyc (_,x, <:ctyp< $e$ vector>>) ->
-         (match e with
-          | <:ctyp< float32 >> ->
+      match a with
+      | []  ->  acc
+      | t::q ->
+        match t with
+        | PaTyc (_,x, <:ctyp< $e$ vector>>) ->
+          (match e with
+           | <:ctyp< float32 >> ->
              aux <:expr<fun ($x$:(float,Bigarray.float32_elt) Vector.vector) -> $acc$>> (i+1) q
-          | <:ctyp< float64 >> ->
+           | <:ctyp< float64 >> ->
              aux <:expr<fun ($x$:(float,Bigarray.float64_elt) Vector.vector) -> $acc$>> (i+1) q
-          | <:ctyp< int32 >> ->
+           | <:ctyp< int32 >> ->
              aux <:expr<fun ($x$:(int32,Bigarray.int32_elt) Vector.vector) -> $acc$>> (i+1) q
-          | <:ctyp< int64 >> ->
+           | <:ctyp< int64 >> ->
              aux <:expr<fun ($x$:(int64,Bigarray.int64_elt) Vector.vector) -> $acc$>> (i+1) q
-          | _ ->
-            aux <:expr<fun ($x$:$e$ Vector.vector) -> $acc$>> (i+1) q
-         )
-      | PaId(_loc, IdLid(_,x)) as p ->
-        let var = (Hashtbl.find !current_args x) in
-        (match var.var_type with
-        | TVec k -> (
-            match k with
-            |TInt32 ->
-              aux <:expr<fun ($p$:(int32,Bigarray.int32_elt) Vector.vector) -> $acc$>> (i+1) q
-            |TInt64 ->
-              aux <:expr<fun ($p$:(int64,Bigarray.int64_elt) Vector.vector) -> $acc$>> (i+1) q
-            |TFloat32 ->
-              aux <:expr<fun ($p$:(float,Bigarray.float32_elt) Vector.vector) -> $acc$>> (i+1) q
-            |TFloat64 ->
-              aux <:expr<fun ($p$:(float,Bigarray.float64_elt) Vector.vector) -> $acc$>> (i+1) q
-            |_ ->
-              aux <:expr<fun $p$ -> $acc$>> (i+1) q
+           | _ ->
+             aux <:expr<fun ($x$:$e$ Vector.vector) -> $acc$>> (i+1) q
           )
-        | _ ->
-          aux <:expr<fun $p$ -> $acc$>> (i+1) q)
-      | x -> aux <:expr<fun $x$ -> $acc$>> (i+1) q
+        | PaId(_loc, IdLid(_,x)) as p ->
+          let var = (Hashtbl.find !current_args x) in
+          (match var.var_type with
+           | TVec k -> (
+               match k with
+               |TInt32 ->
+                 aux <:expr<fun ($p$:(int32,Bigarray.int32_elt) Vector.vector) -> $acc$>> (i+1) q
+               |TInt64 ->
+                 aux <:expr<fun ($p$:(int64,Bigarray.int64_elt) Vector.vector) -> $acc$>> (i+1) q
+               |TFloat32 ->
+                 aux <:expr<fun ($p$:(float,Bigarray.float32_elt) Vector.vector) -> $acc$>> (i+1) q
+               |TFloat64 ->
+                 aux <:expr<fun ($p$:(float,Bigarray.float64_elt) Vector.vector) -> $acc$>> (i+1) q
+               |_ ->
+                 aux <:expr<fun $p$ -> $acc$>> (i+1) q
+             )
+           | _ ->
+             aux <:expr<fun $p$ -> $acc$>> (i+1) q)
+        | x -> aux <:expr<fun $x$ -> $acc$>> (i+1) q
   in aux body 0
     (List.rev params)
 
@@ -151,16 +151,16 @@ let rec gen_arg_from_patt3 p =
      let e1, e2, e3, e4, e5 =
        match var.var_type with
        | TUnknown  ->
-	  failwith ("Could not infer type for argument "^ x);
-         <:ctyp< 'a>>,
-         <:expr< Spoc.Kernel.abs>>,
-         <:ctyp< 'a>>,
-         IdAcc(_loc,
-               IdUid(_loc, "Spoc"),
-               IdAcc(_loc,
-                     IdUid (_loc, "Kernel"),
-                     IdLid(_loc, "abs"))),
-         <:ctyp< 'a>>
+	 failwith ("Could not infer type for argument "^ x);
+         (* <:ctyp< 'a>>,
+          * <:expr< Spoc.Kernel.abs>>,
+          * <:ctyp< 'a>>,
+          * IdAcc(_loc,
+          *       IdUid(_loc, "Spoc"),
+          *       IdAcc(_loc,
+          *             IdUid (_loc, "Kernel"),
+          *             IdLid(_loc, "abs"))),
+          * <:ctyp< 'a>> *)
        | TInt32 ->
          <:ctyp< int>>,
          <:expr< Spoc.Kernel.Int32 >>,
@@ -182,7 +182,7 @@ let rec gen_arg_from_patt3 p =
                      IdUid(_loc, "Int64"))),
          <:ctyp< int64>>
        | TFloat32 ->
-           <:ctyp< float>>,
+         <:ctyp< float>>,
          <:expr< Spoc.Kernel.Float32>>,
          <:ctyp< float>>,
          IdAcc(_loc,
@@ -202,8 +202,8 @@ let rec gen_arg_from_patt3 p =
                      IdUid(_loc, "Float32"))),
          <:ctyp< float>>
        | Custom (t,name) ->
-         let namet = TyId(_loc,IdLid(_loc,name))
-         and sarek_namet = TyId(_loc, IdLid(_loc,name^"_sarek")) in
+
+         let sarek_namet = TyId(_loc, IdLid(_loc,name^"_sarek")) in
          <:ctyp< $sarek_namet$>>,
          <:expr< Spoc.Kernel.Custom >>,
          <:ctyp< $lid:name$ >>,
@@ -290,7 +290,7 @@ let rec gen_arg_from_patt3 p =
 
 
 let rec float32_expr f =
-  let rec f32_typer f =
+  let f32_typer f =
     (match f.t with
      | TUnknown -> f.t <- TFloat32
      | TFloat32 -> f.t <- TFloat32
@@ -311,7 +311,7 @@ let rec float32_expr f =
   f
 
 let rec float64_expr f =
-  let rec f64_typer f =
+  let f64_typer f =
     (match f.t with
      | TUnknown -> ()
      | TVec TFloat64 -> f.t <- TVec TFloat64
@@ -352,7 +352,7 @@ let rec float64_expr f =
    | Id  (l, id) -> f.e <-  Id  (l, id)
    | Int _ | BoolEq32 _ | BoolEq64 _ -> ()
    | BoolLt _ | BoolLt32 _ | BoolLt64 _
-   (*   | Plus _ | Min _ | Mul _ | Div  _ *) ->()
+     (*   | Plus _ | Min _ | Mul _ | Div  _ *) ->()
    | BoolEqF32 (l,a,b) ->
      f.e <- BoolEqF64 (l, float64_expr a, float64_expr b)
    | BoolLtF32 (l,a,b) ->
@@ -424,11 +424,11 @@ let gen_mltyp _loc name t =
            with
            | Not_found ->
              (let recrd_field =
-               { id = (let i = !type_id in incr type_id; i);
-                 field = idfield;
-                 name = name;
-                 ctyps = [name];
-               }
+                { id = (let i = !type_id in incr type_id; i);
+                  field = idfield;
+                  name = name;
+                  ctyps = [name];
+                }
               in
               my_eprintf ("Add field : "^(idfield)^"\n");
               Hashtbl.add !rec_fields idfield recrd_field));
@@ -443,42 +443,42 @@ let gen_mltyp _loc name t =
           $List.fold_left2
              (fun elt list_elt list_mut ->
               <:ctyp< $elt$; $aux list_elt list_mut$ >> )
-	     (aux (List.hd ctypes) (List.hd muts)) (List.tl ctypes) (List.tl muts)$} >>
-      end
-    | Custom ((KSum l),_) ->
-       begin
-	 let type_of_string s =
-           TyId (_loc, (IdUid(_loc,s)) )
-         in
-         let typeof t1 t2 =
-           TyOf(_loc, t1, t2)
-         in
-         let id = ref 0 in
-         let aux (list_elt,t) =
-           Hashtbl.add !constructors (list_elt) (
-			 {id = (let i = !id in incr id; i);
-			  name = name;
-			  nb_args = 0;
-			  ctyp = "";
-			  typ = KSum l});
-           match t with
-           | Some (s:ctyp) ->
-              let c = (Hashtbl.find !constructors list_elt) in
-              c.nb_args <- 1;
-              c.ctyp <-  (string_of_ctyp s);
-              let t  =
-                typeof (type_of_string list_elt) s
-              in
-                     begin
-                       <:ctyp<  $t$ >>end
-	   | None ->
-	      <:ctyp< $type_of_string list_elt$ >>
-	 in
-	 let ct =
-	   <:ctyp< $Ast.tyOr_of_list (List.map aux l)$>>
-	 in
-	 <:str_item< type $lid:name$ = $Ast.TySum (_loc, ct)$>>
+(aux (List.hd ctypes) (List.hd muts)) (List.tl ctypes) (List.tl muts)$} >>
 end
+| Custom ((KSum l),_) ->
+  begin
+    let type_of_string s =
+      TyId (_loc, (IdUid(_loc,s)) )
+    in
+    let typeof t1 t2 =
+      TyOf(_loc, t1, t2)
+    in
+    let id = ref 0 in
+    let aux (list_elt,t) =
+      Hashtbl.add !constructors (list_elt) (
+	{id = (let i = !id in incr id; i);
+	 name = name;
+	 nb_args = 0;
+	 ctyp = "";
+	 typ = KSum l});
+      match t with
+      | Some (s:ctyp) ->
+        let c = (Hashtbl.find !constructors list_elt) in
+        c.nb_args <- 1;
+        c.ctyp <-  (string_of_ctyp s);
+        let t  =
+          typeof (type_of_string list_elt) s
+        in
+        begin
+          <:ctyp<  $t$ >>end
+      | None ->
+	<:ctyp< $type_of_string list_elt$ >>
+    in
+    let ct =
+      <:ctyp< $Ast.tyOr_of_list (List.map aux l)$>>
+    in
+    <:str_item< type $lid:name$ = $Ast.TySum (_loc, ct)$>>
+  end
 | TInt32 ->
   <:str_item< int >>
 | _ ->
@@ -503,7 +503,7 @@ let rec has_of = function
 
 
 let gen_ctypes _loc kt name =
-  let rec gen_repr _loc t name =
+  let gen_repr _loc t name =
     let managed_ktypes = Hashtbl.create 5 in
     let sarek_type_name = name^"_sarek" in
     Hashtbl.add sarek_types_tbl name sarek_type_name;
@@ -564,7 +564,7 @@ let gen_ctypes _loc kt name =
               in
               let tag = sarek_type_name^"_tag" in
               let fields = content (<:str_item<let $lid:tag$ =
-                                     Ctypes.field $lid:sarek_type_name$ $str:tag$ Ctypes.int ;;>>) l
+                                               Ctypes.field $lid:sarek_type_name$ $str:tag$ Ctypes.int ;;>>) l
               in
 
               if has_of l then
@@ -601,20 +601,20 @@ let gen_ctypes _loc kt name =
         begin
 
           <:str_item<
-                      	              (** open ctype **)
-                      	              type $lid:sarek_type_name$ ;;
-                      	              let ($lid:sarek_type_name$ :($lid:sarek_type_name$
-                      	              Ctypes.structure)
-                      	              Ctypes.typ) =
-                      	              Ctypes.structure $str:sarek_type_name$ ;;
+                      (** open ctype **)
+                      type $lid:sarek_type_name$ ;;
+                      let ($lid:sarek_type_name$ :($lid:sarek_type_name$
+                      Ctypes.structure)
+                      Ctypes.typ) =
+                      Ctypes.structure $str:sarek_type_name$ ;;
                       (** fill its fields **)
 
-                      	              $fieldsML$ ;;
+                      $fieldsML$ ;;
                       (** close ctype **)
 
 
                       let () = Ctypes.seal $lid:sarek_type_name$ ;;
-                      	>>
+                      >>
         end ;
       end;
     in
@@ -684,7 +684,7 @@ let gen_ctypes _loc kt name =
                    content (ctype^ " && ( a."^(string_of_ident t2)^
                             " ==  b."^(string_of_ident t2)^")") (q1,q2)
                 )
-                | _ -> assert false
+              | _ -> assert false
             in
 
             let fieldsC =
@@ -761,18 +761,18 @@ let gen_ctypes _loc kt name =
             end
 
           | Custom ((KSum l),_) ->
-             let copy_to_c =
-               let gen_sum_rep  l =
-                 let rec aux acc tag = function
-                   | (cstr,of_) :: q ->
-                      aux ((cstr,tag,of_)::acc) (tag+1) q
-                   | [] -> acc
-                 in
-                 aux [] 0 l
-               in
-               let repr_ = gen_sum_rep l
-               in
-               let copy_content cstr (of_ :ctyp option) =
+            let copy_to_c =
+              let gen_sum_rep  l =
+                let rec aux acc tag = function
+                  | (cstr,of_) :: q ->
+                    aux ((cstr,tag,of_)::acc) (tag+1) q
+                  | [] -> acc
+                in
+                aux [] 0 l
+              in
+              let repr_ = gen_sum_rep l
+              in
+              let copy_content cstr (of_ :ctyp option) =
                 let copy_of _of =
                   try
                     let get =
@@ -804,40 +804,40 @@ let gen_ctypes _loc kt name =
                 match of_ with
                 | Some x -> copy_of x
                 | None -> <:expr< >>
-               in
-               let match_cases =
-                 List.map
-                   (fun (cstr,tag,of_) ->
-                    begin
-                      <:match_case<
-		      $match of_ with
+              in
+              let match_cases =
+                List.map
+                  (fun (cstr,tag,of_) ->
+                     begin
+                       <:match_case<
+$match of_ with
                        | Some _ ->
                           <:patt< $uid:cstr$ sarek_tmp>>
-		       | None -> <:patt< $uid:cstr$ >>$
-			 ->
-			  begin
-			    Ctypes.setf tmp $lid:sarek_type_name^"_tag"$
-						 $int:string_of_int tag$ ;
-                            $copy_content cstr of_$;
-			  end
-			  >>
-                    end
-                   )
-                   repr_
-               in
-	       let l =
-		 List.rev match_cases in
-	       <:expr< match x with
-		$list:l$  >>
-	     in
-             begin
-	       <:expr< fun x ->
-                let tmp =
-                Ctypes.make $lid:sarek_type_name$ in
-                $copy_to_c$ ;
-                tmp
-		>>;
-             end
+		     | None -> <:patt< $uid:cstr$ >>$
+			       ->
+			       begin
+			         Ctypes.setf tmp $lid:sarek_type_name^"_tag"$
+						      $int:string_of_int tag$ ;
+                                                           $copy_content cstr of_$;
+			       end
+		       >>
+                     end
+                  )
+                  repr_
+              in
+	      let l =
+		List.rev match_cases in
+	      <:expr< match x with
+		      $list:l$  >>
+	    in
+            begin
+	      <:expr< fun x ->
+                                                                              let tmp =
+                                                                              Ctypes.make $lid:sarek_type_name$ in
+                                                                              $copy_to_c$ ;
+                                                                              tmp
+		      >>;
+            end
 
           | _ -> assert false
         end;
@@ -870,9 +870,9 @@ let gen_ctypes _loc kt name =
             begin
               <:expr< fun x -> $ExRec(_loc, copy_to_caml, Ast.ExNil _loc)$>>;
             end
-(*              <:expr< fun x -> {$copy_to_caml$} ;
-              >>;
-                end*)
+          (*              <:expr< fun x -> {$copy_to_caml$} ;
+                          >>;
+                          end*)
           | Custom ((KSum l),_)  ->
             let gen_sum_rep  l =
               let rec aux acc tag = function
@@ -958,7 +958,7 @@ let gen_ctypes _loc kt name =
            "struct "^sarek_type_name^" sarek_tmp;\n"^
            content^"\treturn sarek_tmp;\n}"];
         | Custom ((KSum l),n) ->
-          let rec content i = function
+          let content i = function
             |cstr,None ->
               "struct "^sarek_type_name^" build_"^n^"_"^cstr^"(){\n\t"^
               "struct "^sarek_type_name^" sarek_tmp;\n"^
@@ -969,13 +969,13 @@ let gen_ctypes _loc kt name =
               let params =
                 ctype_of_sarek_type (string_of_ctyp of_) in
               "struct "^sarek_type_name^" build_"^n^"_"^cstr^"("
-              ^params^" "^(String.uncapitalize cstr)^"){\n\t"^
+              ^params^" "^(String.uncapitalize_ascii cstr)^"){\n\t"^
               "struct "^sarek_type_name^" sarek_tmp;\n"^
               "\tsarek_tmp."^sarek_type_name^"_tag = "^
               (string_of_int i)^";\n"^
               "\tstruct "^sarek_type_name^"_"^cstr^" t"^cstr^";\n"^
               "\tt"^cstr^"."^sarek_type_name^"_"^cstr^"_t = "^
-              (String.uncapitalize cstr)^";\n"^
+              (String.uncapitalize_ascii cstr)^";\n"^
               "\tsarek_tmp."^sarek_type_name^"_union."^
               sarek_type_name^"_"^cstr^" = "^"t"^cstr^";\n"^
               "\treturn sarek_tmp;\n}"
@@ -1002,14 +1002,14 @@ let gen_ctypes _loc kt name =
                     (Obj.magic cr))) in
                     !@(ptrcr +@ i)))>>;
       <:rec_binding<set = (fun c i v ->
-			   let open Ctypes in
-			   let cr = Obj.repr c in
-			   let ptrcr =
-			     (Ctypes.from_voidp $lid:sarek_type_name$
-						       (Ctypes.ptr_of_raw_address
-							  (Obj.magic cr))) in
-			   Ctypes.(<-@) (Ctypes.(+@) ptrcr  i)
-					($t.ml_to_c$ v)) >>]
+		    let open Ctypes in
+		    let cr = Obj.repr c in
+		    let ptrcr =
+		    (Ctypes.from_voidp $lid:sarek_type_name$
+		    (Ctypes.ptr_of_raw_address
+		    (Obj.magic cr))) in
+		    Ctypes.(<-@) (Ctypes.(+@) ptrcr  i)
+		    ($t.ml_to_c$ v)) >>]
     in
     ExRec(_loc, rbSem_of_list l, (Ast.ExNil _loc))
   in
@@ -1020,17 +1020,17 @@ let gen_ctypes _loc kt name =
 	t.ml_typ ;
 	t.ctype ;
 	(<:str_item<
-	   let $lid:"custom"^(String.capitalize name)$ : (($lid:name$,$lid:sarek_type_name$) Vector.custom) =
-	     $custom$>>) ;
+let $lid:"custom"^(String.capitalize_ascii name)$ : (($lid:name$,$lid:sarek_type_name$) Vector.custom) =
+$custom$>>) ;
 	(<:str_item<let $lid:t.name^"_c_repr"$ = $str:t.crepr$>>) ;
 	(<:str_item<Kirc.constructors := $str:t.crepr$ :: !Kirc.constructors>>) ;
 	(<:str_item<Kirc.constructors := $str:t.compare$ :: !Kirc.constructors>>)
       ]
-       @
-	 (List.map (fun a ->
-                    (<:str_item<Kirc.constructors := $str:a^"\n"$ :: !Kirc.constructors>>)
-		   ) t.build_c
-	 )
+        @
+	(List.map (fun a ->
+             (<:str_item<Kirc.constructors := $str:a^"\n"$ :: !Kirc.constructors>>)
+	   ) t.build_c
+	)
       )
   end
 
