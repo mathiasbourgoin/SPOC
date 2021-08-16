@@ -11,7 +11,7 @@
 
 (package
  (name spoc)
- (synopsis "High-level GPGPU programming library for OCaml.")
+ (synopsis "High-level GPGPU programming library for OCaml")
  (description "")
  (depends
   str
