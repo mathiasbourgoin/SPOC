@@ -1,5 +1,4 @@
-[![Build Status](https://travis-ci.org/mathiasbourgoin/SPOC.png?branch=master)](https://travis-ci.org/mathiasbourgoin/SPOC)
-
+[![Build Status](https://github.com/mathiasbourgoin/SPOC/actions/workflows/build.yml/badge.svg)](https://github.com/mathiasbourgoin/SPOC/actions)
 
 SPOC is a set of tools for GPGPU programming with OCaml.
 
@@ -14,7 +13,7 @@ project. I continued this project in 2014-2015 in the
 [Verimag](http://www-verimag.imag.fr) laboratory (Grenoble, France)
 and then from 2015 to 2018 in the
 [LIFO](http://www.univ-orleans.fr/lifo/) laboratory in Orléans,
-France. I currently work at [Nomadic Labs](https://nomadic-labs.com)
+France. I'm now working at [Nomadic Labs](https://nomadic-labs.com).
 
 SPOC has been tested on multiple architectures and systems, mostly
 64-bit Linux and 64-bit OSX systems. It should work with Windows too.
@@ -29,8 +28,10 @@ linked, but you'll need Cuda/OpenCL eventually to run your programs.
 # Docker image (*Probably deprecated*)
 [![](https://images.microbadger.com/badges/version/mathiasbourgoin/spoc.svg)](https://microbadger.com/images/mathiasbourgoin/spoc) [![](https://images.microbadger.com/badges/image/mathiasbourgoin/spoc.svg)](https://microbadger.com/images/mathiasbourgoin/spoc)
 
-For more information, examples and live tutorials, please
-check the [github page](http://mathiasbourgoin.github.io/SPOC/) :
+(*The github page is largely deprecated. While it's being updated, github actions scripts (in
+`.github/workflows`) may show how to build and run tests*)
+For more information, examples and live tutorials,
+please check the [github page](http://mathiasbourgoin.github.io/SPOC/):
 
       more infos
       how to build spoc
