@@ -42,10 +42,10 @@ let gen_kernel () = ()
 
   ktype_kind :
     [[ "{"; (t,l,m) = klabel_declaration_list; "}" ->
-        KRecord (t,l,m)
-     | t = fst_constructor -> KSum [t]
-     | t = fst_constructor; t2 = kconstructor_list ->
-	KSum
+       KRecord (t,l,m)
+                                             | t = fst_constructor -> KSum [t]
+                                             | t = fst_constructor; t2 = kconstructor_list ->
+       KSum
 	 (gen_constructors _loc t (Some t2));
      ]
     ];
@@ -68,19 +68,19 @@ let gen_kernel () = ()
 
   kconstructor_list :
     [[
-	"|"; t1 = kconstructor; t2 = SELF ->
-	 gen_constructors _loc t1 (Some t2);
+      "|"; t1 = kconstructor; t2 = SELF ->
+      gen_constructors _loc t1 (Some t2);
       | "|";  t1 = kconstructor  ->
-	 gen_constructors _loc t1 (None);
+      gen_constructors _loc t1 (None);
     ]];
   fst_constructor :
     [[
-	OPT "|"; t = kconstructor ->  t
+      OPT "|"; t = kconstructor ->  t
 
     ]];
   kconstructor:
     [[
-	c = UIDENT -> (c,None);
+      c = UIDENT -> (c,None);
       | c = UIDENT; "of" ; t = ctyp (* TODO: real types here! *) -> (c, Some t) ;
     ]];
 
@@ -125,16 +125,16 @@ let gen_kernel () = ()
           while !retype do
             retype := false;
             unknown := 0;
-	          Hashtbl.clear !local_fun;
+	    Hashtbl.clear !local_fun;
             typer body TUnknown;
             my_eprintf (Printf.sprintf "Unknown : %d \n\n\n%!" !unknown)
           done;
           if !unknown > 0 then
             (
               Hashtbl.iter (fun a b -> if is_unknown b.var_type  then
-			       Printf.eprintf "Unknown value type : %s\n" a)  !current_args; 
+			       Printf.eprintf "Unknown value type : %s\n" a)  !current_args;
               failwith "unknown types in this kernel";
-              
+
             )
         with
         | TypeError(expected, given, loc) ->
@@ -307,61 +307,61 @@ let extensions =  match !extensions with
 in
 let res =
   if !has_vector then
-  <:expr< let module M =
-          struct
-          let exec_fun $tup_args$ = Spoc.Kernel.exec $list_args$;;
-          class ['a, 'b] $lid:class_name$ =
-          object (self)
-          inherit
-          [$class_legacy$ ]
-          Spoc.Kernel.spoc_kernel "kirc_kernel" "spoc_dummy"
-          method exec = exec_fun
-          method args_to_list = fun
-          $tup_args$ -> $list_args$
-          method list_to_args = function
-          | $list_to_args1$ -> $list_to_args2$
-          | _ -> failwith "spoc_kernel_extension error"
-          end
-          end
-          in
-          let open Kirc in
-          (new M.$lid:class_name$, {
-          ml_kern = $gen_args$;
-          body = $gen_body2$;
-          ret_val = $ret$;
-          extensions = $extensions$;
+    <:expr< let module M =
+            struct
+            let exec_fun $tup_args$ = Spoc.Kernel.exec $list_args$;;
+            class ['a, 'b] $lid:class_name$ =
+            object (self)
+            inherit
+            [$class_legacy$ ]
+            Spoc.Kernel.spoc_kernel "kirc_kernel" "spoc_dummy"
+            method exec = exec_fun
+            method args_to_list = fun
+            $tup_args$ -> $list_args$
+            method list_to_args = function
+            | $list_to_args1$ -> $list_to_args2$
+            | _ -> failwith "spoc_kernel_extension error"
+            end
+            end
+            in
+            let open Kirc in
+            (new M.$lid:class_name$, {
+            ml_kern = $gen_args$;
+            body = $gen_body2$;
+            ret_val = $ret$;
+            extensions = $extensions$;
 
-          }
-          )
-          >>
-else
-  <:expr< let module M =
-          struct
-          let exec_fun $tup_args$ = Spoc.Kernel.exec $list_args$;;
-          class ['a, 'b] $lid:class_name$ =
-          object (self)
-          inherit
-          [$class_legacy$ ]
-          Spoc.Kernel.spoc_kernel "kirc_kernel" "spoc_dummy"
-          method exec = assert false
-          method args_to_list = assert false
-          method list_to_args = assert false
-          end
-          end
-          in
-          let open Kirc in
-          (new M.$lid:class_name$, {
-          ml_kern = $gen_args$;
-          body = $gen_body2$;
-          ret_val = $ret$;
-          extensions = $extensions$;
-          })>>
+            }
+            )
+    >>
+  else
+    <:expr< let module M =
+            struct
+            let exec_fun $tup_args$ = Spoc.Kernel.exec $list_args$;;
+            class ['a, 'b] $lid:class_name$ =
+            object (self)
+            inherit
+            [$class_legacy$ ]
+            Spoc.Kernel.spoc_kernel "kirc_kernel" "spoc_dummy"
+            method exec = assert false
+            method args_to_list = assert false
+            method list_to_args = assert false
+            end
+            end
+            in
+            let open Kirc in
+            (new M.$lid:class_name$, {
+            ml_kern = $gen_args$;
+            body = $gen_body2$;
+            ret_val = $ret$;
+            extensions = $extensions$;
+            })>>
 in
 let local =
   Hashtbl.fold (fun key (funv,stri,_) init ->
-		<:str_item<
-		$stri$ $init$>>) !local_fun
-  <:str_item<>>
+      <:str_item<
+$stri$ $init$>>) !local_fun
+    <:str_item<>>
 in
 <:expr<
  let module Local_funs = struct
@@ -375,7 +375,7 @@ $res$
 str_item:
   [
     ["klet"; name = ident; "="; "fun"; args = LIST1 k_patt;
-         "->"; body = kernel_body ->
+     "->"; body = kernel_body ->
      arg_idx := 0;
      return_type := TUnknown;
      arg_list := [];
@@ -386,24 +386,24 @@ str_item:
      let cpt = ref 0 in
      retype := true;
      (try
-         while !retype  && !cpt < 3 do
-           if debug  then
-	     incr cpt;
-	   retype := false;
-           unknown := 0;
-           typer body (TUnknown);
-           my_eprintf (Printf.sprintf "\nUnknown : %d \n\n\n%!" !unknown)
-         done;
-	 with
-	 | TypeError(expected, given, loc) ->
-           (
-             failwith ("Type Error : expecting : "^
-		       (ktyp_to_string expected)^" but given : "^
-		       (ktyp_to_string given)^" in position : "^(Loc.to_string loc)))
-         | Immutable (value, loc) ->
-           (Printf.eprintf "%s\n%!" ("\027[31m Immutable Value \027[00m : \027[33m"^
-                                     (value)^"\027[00m used as mutable in position : "^(Loc.to_string loc)^"");
-            exit 2;));
+        while !retype  && !cpt < 3 do
+          if debug  then
+	    incr cpt;
+	  retype := false;
+          unknown := 0;
+          typer body (TUnknown);
+          my_eprintf (Printf.sprintf "\nUnknown : %d \n\n\n%!" !unknown)
+        done;
+      with
+      | TypeError(expected, given, loc) ->
+        (
+          failwith ("Type Error : expecting : "^
+		    (ktyp_to_string expected)^" but given : "^
+		    (ktyp_to_string given)^" in position : "^(Loc.to_string loc)))
+      | Immutable (value, loc) ->
+        (Printf.eprintf "%s\n%!" ("\027[31m Immutable Value \027[00m : \027[33m"^
+                                  (value)^"\027[00m used as mutable in position : "^(Loc.to_string loc)^"");
+         exit 2;));
 
      (* (try  *)
      (*    typer body TUnknown *)
@@ -420,7 +420,7 @@ str_item:
 
      let new_hash_args = Hashtbl.create (Hashtbl.length !current_args) in
      Hashtbl.iter (Hashtbl.add new_hash_args) !current_args;
-          Hashtbl.clear !current_args;
+     Hashtbl.clear !current_args;
      current_args := new_hash_args;
 
      let gen_body =
@@ -446,10 +446,10 @@ str_item:
            exit 2;))
      in
      Hashtbl.iter (fun a b -> if b.var_type = TUnknown then
-				failwith ("Unknown argument type : "^a))  !current_args ;
+		      failwith ("Unknown argument type : "^a))  !current_args ;
 
-	  let n_body2 = <:expr<params $List.fold_left
-                          (fun a b -> <:expr<concat $b$ $a$>>)
+     let n_body2 = <:expr<params $List.fold_left
+                            (fun a b -> <:expr<concat $b$ $a$>>)
 <:expr<empty_arg()>>
   ((List.rev_map gen_arg_from_patt2 args))$>> in
 let gen_body2 =  <:expr<
@@ -474,14 +474,14 @@ let ret =
   | TUnit  -> <:expr<return_unit (), Vector.Unit ((),())>>
   | TBool -> <:expr< return_bool $ExInt(Loc.ghost, string_of_int (!arg_idx))$ "", Vector.int32>>
   | Custom (_, name) ->
-     let sarek_name = name^"_sarek" in
-     let customType = ExId(_loc, (IdLid (_loc,("custom"^(String.capitalize name))))) in
-     <:expr< Kirc.return_custom $str:name$ $str:sarek_name$ "", Vector.Custom $customType$>>
+    let sarek_name = name^"_sarek" in
+    let customType = ExId(_loc, (IdLid (_loc,("custom"^(String.capitalize_ascii name))))) in
+    <:expr< Kirc.return_custom $str:name$ $str:sarek_name$ "", Vector.Custom $customType$>>
 
   | t  -> failwith (Printf.sprintf "error ret : %s" (ktyp_to_string t))
 in
 let t =
-    List.fold_left (fun seed  p  ->
+  List.fold_left (fun seed  p  ->
       match p with
       | (PaId(_,i)) ->
         let value = (Hashtbl.find !current_args (string_of_ident i)) in
@@ -491,12 +491,12 @@ let t =
 (*
   Hashtbl.fold (
       fun _ value seed ->
-		TApp (seed , value.var_type)) !current_args !return_type in*)
+TApp (seed , value.var_type)) !current_args !return_type in*)
 in
 my_eprintf ((string_of_ident name)^" ....... "^ktyp_to_string t^"\n");
 let task_manager =
   (if Fastflow.fastflow then
-     Fastflow.print_task args name _loc 
+     Fastflow.print_task args name _loc
    else
      <:expr< Obj.magic None >>)
 in
@@ -539,9 +539,9 @@ sequence':
     [
       ->fun e -> e
                | ";" -> fun e -> e
-               | ";"; el = sequence ->
-		  fun e ->
-		  {t=TUnknown; e=Seq(_loc, e, el); loc = _loc}
+                               | ";"; el = sequence ->
+	fun e ->
+	  {t=TUnknown; e=Seq(_loc, e, el); loc = _loc}
     ]
   ]
 ;
@@ -592,10 +592,10 @@ kident :
                     write_only = false;
                     is_global = false;} in
         Hashtbl.add !current_args (string_of_ident x) arg;
-      arg,x]
+        arg,x]
   | "ident"
       [ x = ident ->
-      my_eprintf (Printf.sprintf "adding %s\n" (string_of_ident x));
+        my_eprintf (Printf.sprintf "adding %s\n" (string_of_ident x));
         incr arg_idx;
         let arg =           {n= !arg_idx;
                              var_type = TUnknown;
@@ -604,7 +604,7 @@ kident :
                              write_only = false;
                              is_global = false;} in
         Hashtbl.add !current_args (string_of_ident x) arg;
-     arg,x]
+        arg,x]
   ];
 
 kexpr:
@@ -612,19 +612,20 @@ kexpr:
     "let"
       ["let"; opt_mutable = OPT "mutable";  var = kident; "="; y = SELF; "in"; z = sequence  ->
        let arg,var = var
-        in   {t=TUnknown;
-        e=
-          Bind(_loc,
-               {t= (
-                     (ktyp_to_string arg.var_type);
-                   arg.var_type);
-                  e= Id (_loc, var);
-                  loc = _loc},
-                 y, z, (match opt_mutable with
-            | None -> false
-            | _ -> true)
-                );
-        loc = _loc};
+       in   {t=TUnknown;
+             e=
+               Bind(_loc,
+                    {t= (
+                        (* FIXME *)
+                        ignore(ktyp_to_string arg.var_type);
+                        arg.var_type);
+                     e= Id (_loc, var);
+                     loc = _loc},
+                    y, z, (match opt_mutable with
+                   | None -> false
+                   | _ -> true)
+                   );
+             loc = _loc};
        |"let"; "open"; i = module_longident; "in"; s = sequence ->
        {
          t = TUnknown;
@@ -666,37 +667,37 @@ kexpr:
              retype := false;
              unknown := 0;
              (try
-               typer body (TApp (TUnknown, TUnknown));
-             with
-             | Unbound_value (value, loc) ->
-               (
-                 (* unbound value in local function, do we need lambda lifitng? *)
-                 (try
-                    Hashtbl.iter (fun s _ -> my_eprintf (Printf.sprintf "%s\n" s)) old_args;
-                    ignore(Hashtbl.find old_args value);
+                typer body (TApp (TUnknown, TUnknown));
+              with
+              | Unbound_value (value, loc) ->
+                (
+                  (* unbound value in local function, do we need lambda lifitng? *)
+                  (try
+                     Hashtbl.iter (fun s _ -> my_eprintf (Printf.sprintf "%s\n" s)) old_args;
+                     ignore(Hashtbl.find old_args value);
 
-                    (* value found in enclosing kernel/function, needs lambda lifting *)
-                    failwith "Lambda lifting not fully implemented yet";
-                    args :=  !args @ [(<:patt< $lid:value$ >>)];
-                    Printf.eprintf "var : %s needs lambda lifiting\n" value;
-                    lifted := value :: !lifted;
-                    incr n_lifted_vals;
-                    Hashtbl.add !current_args (value)
-                      {n= (-1);
-                       var_type = TUnknown;
-                       is_mutable = false;
-                       read_only = false;
-                       write_only = false;
-                       is_global = false;};
-                  with
-                  (* not found... *)
-                  | Not_found ->
-                    (Printf.eprintf "%s\n%!" ("\027[31m Unbound Value \027[00m : \027[33m"^
-                                              (value)^"\027[00m in position : "^(Loc.to_string loc)^"");
-                     exit 3))
-               ));
+                     (* value found in enclosing kernel/function, needs lambda lifting *)
+                     (* failwith "Lambda lifting not fully implemented yet"; *)
+                     args :=  !args @ [(<:patt< $lid:value$ >>)];
+                     Printf.eprintf "var : %s needs lambda lifiting\n" value;
+                     lifted := value :: !lifted;
+                     incr n_lifted_vals;
+                     Hashtbl.add !current_args (value)
+                       {n= (-1);
+                        var_type = TUnknown;
+                        is_mutable = false;
+                        read_only = false;
+                        write_only = false;
+                        is_global = false;};
+                   with
+                   (* not found... *)
+                   | Not_found ->
+                     (Printf.eprintf "%s\n%!" ("\027[31m Unbound Value \027[00m : \027[33m"^
+                                               (value)^"\027[00m in position : "^(Loc.to_string loc)^"");
+                      exit 3))
+                ));
 
-               my_eprintf (Printf.sprintf "\nUnknown : %d \n\n\n%!" !unknown);
+             my_eprintf (Printf.sprintf "\nUnknown : %d \n\n\n%!" !unknown);
            done;
          with
          | TypeError(expected, given, loc) ->
@@ -742,10 +743,10 @@ kexpr:
                                        (value)^"\027[00m used as mutable in position : "^(Loc.to_string loc)^"");
               exit 2;))
         in
-          Hashtbl.iter (fun a b -> if b.var_type = TUnknown then
-                           failwith ("Unknown argument type : "^a))  !current_args ;
+        Hashtbl.iter (fun a b -> if b.var_type = TUnknown then
+                         failwith ("Unknown argument type : "^a))  !current_args ;
 
-          let n_body2 = <:expr<params $List.fold_left
+        let n_body2 = <:expr<params $List.fold_left
                              (fun a b -> <:expr<concat $b$ $a$>>)
 <:expr<empty_arg()>>
   ((List.rev_map gen_arg_from_patt2 !args))$>> in
@@ -772,7 +773,7 @@ let ret =
   | TBool -> <:expr< return_bool $ExInt(Loc.ghost, string_of_int (!arg_idx))$ "", Vector.int32>>
   | Custom (_, name) ->
     let sarek_name = name^"_sarek" in
-    let customType = ExId(_loc, (IdLid (_loc,("custom"^(String.capitalize name))))) in
+    let customType = ExId(_loc, (IdLid (_loc,("custom"^(String.capitalize_ascii name))))) in
     <:expr< Kirc.return_custom $str:name$ $str:sarek_name$ "", Vector.Custom $customType$>>
 
   | t  -> failwith (Printf.sprintf "error ret : %s" (ktyp_to_string t))
@@ -808,230 +809,230 @@ let a = <:expr<
                 let local_function  = {
                 fun_name="";
                 ml_fun = $gen_args$;
-	        funbody = $gen_body2$;
+funbody = $gen_body2$;
                 fun_ret = $ret$;
                 fastflow_acc = $task_manager$;
                 fun_extensions = [| $match !extensions with
-		| [] -> <:expr<>>
+| [] -> <:expr<>>
       | t::[] -> t
       | _ -> exSem_of_list  !extensions$|];
 }
 in local_function >>  in
 let res =
   <:expr<
-	  let module Local_funs = struct
-	  $local$
-	  end
-	     in let open Local_funs in
-	     $a$>>
+let module Local_funs = struct
+$local$
+end
+in let open Local_funs in
+$a$>>
 in
 
-       (*restore kernel environment*)
-       arg_idx := saved_arg_idx;
-       return_type := saved_return_type;
-       arg_list := List.map (fun a -> a) saved_arg_list;
-       retype := saved_retype;
-       unknown := saved_unknown;
+(*restore kernel environment*)
+arg_idx := saved_arg_idx;
+return_type := saved_return_type;
+arg_list := List.map (fun a -> a) saved_arg_list;
+retype := saved_retype;
+unknown := saved_unknown;
 
 
-	      {
-    t = full_typ;
-    e = Fun (_loc,res,full_typ,funv, !lifted);
-    loc = _loc
-       }
+{
+  t = full_typ;
+  e = Fun (_loc,res,full_typ,funv, !lifted);
+  loc = _loc
+}
 ]
-| "native" 
+| "native"
     [
-     "$$";  e = expr; ";;"; "$$" ->
-     {t= TUnknown; e=Nat(_loc, e); loc= _loc}
+      "$$";  e = expr; ";;"; "$$" ->
+      {t= TUnknown; e=Nat(_loc, e); loc= _loc}
     ]
-    
+
 | "if"
-     [ "if"; cond=SELF; "then"; cons1=SELF;
-       "else"; cons2=SELF ->
-       {t=TUnknown; e= Ife(_loc,cond,cons1,cons2); loc = _loc}
-     | "if"; cond=SELF; "then"; cons1 = SELF->
-       {t=TUnknown; e= If(_loc,cond,cons1); loc = _loc}
-     ]
-     
-  
+    [ "if"; cond=SELF; "then"; cons1=SELF;
+      "else"; cons2=SELF ->
+      {t=TUnknown; e= Ife(_loc,cond,cons1,cons2); loc = _loc}
+            | "if"; cond=SELF; "then"; cons1 = SELF->
+      {t=TUnknown; e= If(_loc,cond,cons1); loc = _loc}
+    ]
+
+
 | "match"
     [
       "match"; x = SELF; "with"; m0 = OPT first_case; m = LIST0 match_cases
-        ->
-        match m0 with
-        | Some m1 ->
-          {t=TUnknown; e= Match (_loc, x, m1::m); loc = _loc}
-        | None ->
-          {t=TUnknown; e= Match (_loc, x, m); loc = _loc}]
+      ->
+      match m0 with
+      | Some m1 ->
+        {t=TUnknown; e= Match (_loc, x, m1::m); loc = _loc}
+      | None ->
+        {t=TUnknown; e= Match (_loc, x, m); loc = _loc}]
 
-  | "mod"  RIGHTA
-      [ x = SELF; "mod"; y = SELF -> {t=TInt32; e = Mod(_loc, x,y); loc = _loc}]
-  | ":="
-      [ x = SELF; ":="; y= SELF  -> {t=(TUnit); e = Acc (_loc, x, y); loc = _loc}
-      ]
+| "mod"  RIGHTA
+    [ x = SELF; "mod"; y = SELF -> {t=TInt32; e = Mod(_loc, x,y); loc = _loc}]
+| ":="
+    [ x = SELF; ":="; y= SELF  -> {t=(TUnit); e = Acc (_loc, x, y); loc = _loc}
+    ]
 | "<>-"
-      [ x = SELF; "<>-"; y= SELF  ->
-        begin
-          match x with
-          | {t = _; e = ArrGet _ } ->
-            {t=(TUnit);
-             e = ArrSet (_loc, x, y); loc = _loc}
-          | _ -> assert false
-        end
-      ]  | "<-"
-      [ x = SELF; "<-"; y= SELF  ->
-        begin
-          match x with
-          | {t = _; e = VecGet _} ->
-            {t=(TUnit);
-             e = VecSet (_loc, x, y); loc = _loc}
-          | {t = _; e = ArrGet _ } ->
-            failwith ("Error in position "^(Loc.to_string _loc)^", 
+    [ x = SELF; "<>-"; y= SELF  ->
+      begin
+        match x with
+        | {t = _; e = ArrGet _ ; _} ->
+          {t=(TUnit);
+           e = ArrSet (_loc, x, y); loc = _loc}
+        | _ -> assert false
+      end
+    ]  | "<-"
+  [ x = SELF; "<-"; y= SELF  ->
+    begin
+      match x with
+      | {t = _; e = VecGet _; _} ->
+        {t=(TUnit);
+         e = VecSet (_loc, x, y); loc = _loc}
+      | {t = _; e = ArrGet _ ; _} ->
+        failwith ("Error in position "^(Loc.to_string _loc)^",
                        arrays are stored in shared memory and can olny be accessed with '<<-' \n")
-          | {t=_; e=RecGet _}->
-            {t=TUnit;
-             e = RecSet (_loc, x, y); loc = _loc}
-          | _ -> assert false
-        end
-      ]
+      | {t=_; e=RecGet _; _}->
+        {t=TUnit;
+         e = RecSet (_loc, x, y); loc = _loc}
+      | _ -> assert false
+    end
+  ]
 
 | "apply" LEFTA
-    [ e1 = SELF; e2 = SELF -> {t=(TUnknown); e= App(_loc, e1, [e2]); loc = _loc}
-    ]
-  | "+" LEFTA
-    [ x = SELF; "+!"; y = SELF -> {t=TInt32; e = Plus32(_loc, x,y); loc = _loc};
-      | x = SELF; "+!!"; y = SELF -> {t=TInt64; e = Plus64(_loc, x,y); loc = _loc};
-      | x = SELF; "+"; y = SELF -> {t=TInt32; e = Plus32(_loc, x,y); loc = _loc};
-      | x = SELF; "+."; y = SELF -> {t=TFloat32; e = PlusF32(_loc, x, y); loc = _loc}]
-  | "-" LEFTA
-    [ x = SELF; "-!"; y = SELF -> {t=TInt32; e = Min32(_loc, x,y); loc = _loc};
-      | x = SELF; "-!!"; y = SELF -> {t=TInt64; e = Min64(_loc, x,y); loc = _loc};
-      | x = SELF; "-"; y = SELF -> {t=TInt32; e = Min32(_loc, x,y); loc = _loc};
-      | x = SELF; "-."; y = SELF -> {t=TFloat32; e = MinF32(_loc, x,y); loc = _loc}]
+  [ e1 = SELF; e2 = SELF -> {t=(TUnknown); e= App(_loc, e1, [e2]); loc = _loc}
+  ]
+| "+" LEFTA
+  [ x = SELF; "+!"; y = SELF -> {t=TInt32; e = Plus32(_loc, x,y); loc = _loc};
+    | x = SELF; "+!!"; y = SELF -> {t=TInt64; e = Plus64(_loc, x,y); loc = _loc};
+    | x = SELF; "+"; y = SELF -> {t=TInt32; e = Plus32(_loc, x,y); loc = _loc};
+    | x = SELF; "+."; y = SELF -> {t=TFloat32; e = PlusF32(_loc, x, y); loc = _loc}]
+| "-" LEFTA
+  [ x = SELF; "-!"; y = SELF -> {t=TInt32; e = Min32(_loc, x,y); loc = _loc};
+    | x = SELF; "-!!"; y = SELF -> {t=TInt64; e = Min64(_loc, x,y); loc = _loc};
+    | x = SELF; "-"; y = SELF -> {t=TInt32; e = Min32(_loc, x,y); loc = _loc};
+    | x = SELF; "-."; y = SELF -> {t=TFloat32; e = MinF32(_loc, x,y); loc = _loc}]
 
-  | "*" LEFTA
-    [ x = SELF; "*!"; y = SELF -> {t=TInt32; e = Mul32(_loc, x,y); loc = _loc};
-      | x = SELF; "*!!"; y = SELF -> {t=TInt64; e = Mul64(_loc, x,y); loc = _loc};
-      | x = SELF; "*"; y = SELF -> {t=TInt32; e = Mul32(_loc, x,y); loc = _loc};
-      | x = SELF; "*."; y = SELF -> {t=TFloat32; e = MulF32(_loc, x,y); loc = _loc}]
-  | "/" LEFTA
-    [ x = SELF; "/!"; y = SELF -> {t=TInt32; e = Div32(_loc, x,y); loc = _loc};
-      | x = SELF; "/!!"; y = SELF -> {t=TInt64; e = Div64(_loc, x,y); loc = _loc};
-      | x = SELF; "/"; y = SELF -> {t=TInt32; e = Div32(_loc, x,y); loc = _loc};
-      | x = SELF; "/."; y = SELF -> {t=TFloat32; e = DivF32(_loc, x,y); loc = _loc}]
+| "*" LEFTA
+  [ x = SELF; "*!"; y = SELF -> {t=TInt32; e = Mul32(_loc, x,y); loc = _loc};
+    | x = SELF; "*!!"; y = SELF -> {t=TInt64; e = Mul64(_loc, x,y); loc = _loc};
+    | x = SELF; "*"; y = SELF -> {t=TInt32; e = Mul32(_loc, x,y); loc = _loc};
+    | x = SELF; "*."; y = SELF -> {t=TFloat32; e = MulF32(_loc, x,y); loc = _loc}]
+| "/" LEFTA
+  [ x = SELF; "/!"; y = SELF -> {t=TInt32; e = Div32(_loc, x,y); loc = _loc};
+    | x = SELF; "/!!"; y = SELF -> {t=TInt64; e = Div64(_loc, x,y); loc = _loc};
+    | x = SELF; "/"; y = SELF -> {t=TInt32; e = Div32(_loc, x,y); loc = _loc};
+    | x = SELF; "/."; y = SELF -> {t=TFloat32; e = DivF32(_loc, x,y); loc = _loc}]
 | ":" LEFTA
-    [x=SELF; ":"; t=ctyp -> {t=TUnknown; e=TypeConstraint(_loc, x, (ktyp_of_typ t)); loc= _loc};]
+  [x=SELF; ":"; t=ctyp -> {t=TUnknown; e=TypeConstraint(_loc, x, (ktyp_of_typ t)); loc= _loc};]
 
 
 
 | "||"
-    [x = SELF; "||"; y = SELF -> {t=TBool;
-                                  e = BoolOr (_loc, x, y); loc = _loc} ]
+  [x = SELF; "||"; y = SELF -> {t=TBool;
+                                e = BoolOr (_loc, x, y); loc = _loc} ]
 
-  | "&&"
-    [x = SELF; "&&"; y = SELF -> {t=TBool; e = BoolAnd (_loc, x, y); loc = _loc} ]
+| "&&"
+  [x = SELF; "&&"; y = SELF -> {t=TBool; e = BoolAnd (_loc, x, y); loc = _loc} ]
 
-  | "not"
-      ["!"; x = kexpr -> {t=TBool; e = BoolNot (_loc, x); loc = _loc} ]
+| "not"
+  ["!"; x = kexpr -> {t=TBool; e = BoolNot (_loc, x); loc = _loc} ]
 
 
 | "pragma"
-    ["pragma"; opt = LIST0 [x = STRING -> x]; y = SELF -> {t=TUnit; e=Pragma(_loc,opt,y); loc=_loc}
-    ]
-  | "loop"
-    [  "for"; x = ident; "="; y=SELF; "to"; z = SELF; "do";  body=do_sequence ->
-        {t = TUnknown; e = DoLoop (_loc,
+  ["pragma"; opt = LIST0 [x = STRING -> x]; y = SELF -> {t=TUnit; e=Pragma(_loc,opt,y); loc=_loc}
+  ]
+| "loop"
+  [  "for"; x = ident; "="; y=SELF; "to"; z = SELF; "do";  body=do_sequence ->
+     {t = TUnknown; e = DoLoop (_loc,
                                 {t= TInt32;
                                  e= Id (_loc, x);
                                  loc = _loc}
                                ,y,z,body); loc = _loc};
-      | "while"; cond = sequence; "do"; body = do_sequence ->
-      {t = TUnknown; e = While (_loc,cond, body); loc = _loc}]
+     | "while"; cond = sequence; "do"; body = do_sequence ->
+     {t = TUnknown; e = While (_loc,cond, body); loc = _loc}]
 
-  | "="
-    [ x=SELF; "="; y=SELF -> {t=TBool; e= BoolEq(_loc,x,y); loc = _loc};
-      | x=SELF; "=!"; y=SELF -> {t=TBool; e= BoolEq32(_loc,x,y); loc = _loc};
-      | x=SELF; "=!!"; y=SELF -> {t=TBool; e= BoolEq64(_loc,x,y); loc = _loc};
-      | x=SELF; "=."; y=SELF -> {t=TBool; e= BoolEqF32(_loc,x,y); loc = _loc}]
-  | "<"
-    [ x=SELF; "<"; y=SELF -> {t=TBool; e= BoolLt32(_loc,x,y); loc = _loc};
-      | x=SELF; "<!"; y=SELF -> {t=TBool; e= BoolLt32(_loc,x,y); loc = _loc};
-      | x=SELF; "<!!"; y=SELF -> {t=TBool; e= BoolLt64(_loc,x,y); loc = _loc};
-      | x=SELF; "<."; y=SELF -> {t=TBool; e= BoolLtF32(_loc,x,y); loc = _loc}]
+| "="
+  [ x=SELF; "="; y=SELF -> {t=TBool; e= BoolEq(_loc,x,y); loc = _loc};
+    | x=SELF; "=!"; y=SELF -> {t=TBool; e= BoolEq32(_loc,x,y); loc = _loc};
+    | x=SELF; "=!!"; y=SELF -> {t=TBool; e= BoolEq64(_loc,x,y); loc = _loc};
+    | x=SELF; "=."; y=SELF -> {t=TBool; e= BoolEqF32(_loc,x,y); loc = _loc}]
+| "<"
+  [ x=SELF; "<"; y=SELF -> {t=TBool; e= BoolLt32(_loc,x,y); loc = _loc};
+    | x=SELF; "<!"; y=SELF -> {t=TBool; e= BoolLt32(_loc,x,y); loc = _loc};
+    | x=SELF; "<!!"; y=SELF -> {t=TBool; e= BoolLt64(_loc,x,y); loc = _loc};
+    | x=SELF; "<."; y=SELF -> {t=TBool; e= BoolLtF32(_loc,x,y); loc = _loc}]
 
-  | "<="
-    [ x=SELF; "<="; y=SELF -> {t=TBool; e= BoolLtE32(_loc,x,y); loc = _loc};
-      | x=SELF; "<=!"; y=SELF -> {t=TBool; e= BoolLtE32(_loc,x,y); loc = _loc};
-      | x=SELF; "<=!!"; y=SELF -> {t=TBool; e= BoolLtE64(_loc,x,y); loc = _loc};
-      | x=SELF; "<=."; y=SELF -> {t=TBool; e= BoolLtEF32(_loc,x,y); loc = _loc}]
+| "<="
+  [ x=SELF; "<="; y=SELF -> {t=TBool; e= BoolLtE32(_loc,x,y); loc = _loc};
+    | x=SELF; "<=!"; y=SELF -> {t=TBool; e= BoolLtE32(_loc,x,y); loc = _loc};
+    | x=SELF; "<=!!"; y=SELF -> {t=TBool; e= BoolLtE64(_loc,x,y); loc = _loc};
+    | x=SELF; "<=."; y=SELF -> {t=TBool; e= BoolLtEF32(_loc,x,y); loc = _loc}]
 
-  |  ">"
-      [ x=SELF; ">"; y=SELF -> {t=TBool; e= BoolGt32(_loc,x,y); loc = _loc};
-        | x=SELF; ">!"; y=SELF -> {t=TBool; e= BoolGt32(_loc,x,y); loc = _loc};
-        | x=SELF; ">!!"; y=SELF -> {t=TBool; e= BoolGt64(_loc,x,y); loc = _loc};
-        | x=SELF; ">."; y=SELF -> {t=TBool; e= BoolGtF32(_loc,x,y); loc = _loc}]
+|  ">"
+  [ x=SELF; ">"; y=SELF -> {t=TBool; e= BoolGt32(_loc,x,y); loc = _loc};
+    | x=SELF; ">!"; y=SELF -> {t=TBool; e= BoolGt32(_loc,x,y); loc = _loc};
+    | x=SELF; ">!!"; y=SELF -> {t=TBool; e= BoolGt64(_loc,x,y); loc = _loc};
+    | x=SELF; ">."; y=SELF -> {t=TBool; e= BoolGtF32(_loc,x,y); loc = _loc}]
 
-  | ">="
-      [ x=SELF; ">="; y=SELF -> {t=TBool; e= BoolGtE32(_loc,x,y); loc = _loc};
-        | x=SELF; ">=!"; y=SELF -> {t=TBool; e= BoolGtE32(_loc,x,y); loc = _loc};
-        | x=SELF; ">=!!"; y=SELF -> {t=TBool; e= BoolGtE64(_loc,x,y); loc = _loc};
-        | x=SELF; ">=."; y=SELF -> {t=TBool; e= BoolGtEF32(_loc,x,y); loc = _loc}]
-
-
-  | "@"
-      [ "@"; x = ident ->
-        {t=TUnknown;
-         e=Ref(_loc,
-               {t=TUnknown; e = Id (_loc, x); loc = _loc}
-              ); loc = _loc}
-      ]
-
-  | "." RIGHTA
-      [
-        x = SELF; "."; "[<"; y=SELF; ">]"  -> {t=(TUnknown);
-					       e = VecGet (_loc, x, y); loc = _loc};
-        | x = SELF; "."; "("; y=SELF; ")"  -> {t=(TUnknown);
-                                               e = ArrGet (_loc, x, y); loc = _loc};
-        |l = UIDENT ; "."; e = SELF -> {t=(TUnknown);
-				        e = ModuleAccess (_loc, l, e);
-                                        loc = _loc};
-        | e1 = kexpr; "."; field = ident -> {t= TUnknown;
-                                             e= RecGet (_loc,e1,field);
-                                             loc = _loc}
- ]
-  | "record"
-      [ "{";l = kfields_declaration_list; "}" ->
-        (Printf.eprintf "RECORD\n%!";
-        {t=TUnknown; e=Record(_loc,l); loc=_loc};)
-      ]
-  | "simple" NONA
-      [ "("; ")" -> {t=TUnknown; e = Noop; loc = _loc};
-        |  "(" ;  x= sequence; ")"  ->  x;
-        |  "(" ;  x= SELF; ")"  ->  x;
-        | "begin" ;  x= sequence; "end"  ->  x;
-        | x = FLOAT-> {t=TFloat32; e = Float32 (_loc, x); loc = _loc};
-        | x = LIDENT  -> {t=TUnknown; e = Id (_loc, IdLid(_loc,x)); loc = _loc};
-        | x = INT32  ->{t=TInt32; e = Int32 (_loc, x); loc = _loc};
-        | x = INT  ->{t=TInt32; e = Int32 (_loc, x); loc = _loc}
-        | x = a_UIDENT -> {t=TUnknown; e = Id (_loc, IdUid(_loc,x)); loc = _loc};
-        | "false" -> {t=TBool; e=False _loc; loc = _loc};
-        | "true" -> {t=TBool; e=True _loc; loc = _loc};
-
-      ]
+| ">="
+  [ x=SELF; ">="; y=SELF -> {t=TBool; e= BoolGtE32(_loc,x,y); loc = _loc};
+    | x=SELF; ">=!"; y=SELF -> {t=TBool; e= BoolGtE32(_loc,x,y); loc = _loc};
+    | x=SELF; ">=!!"; y=SELF -> {t=TBool; e= BoolGtE64(_loc,x,y); loc = _loc};
+    | x=SELF; ">=."; y=SELF -> {t=TBool; e= BoolGtEF32(_loc,x,y); loc = _loc}]
 
 
-  ];
-  kfields_declaration_list:
-    [ [ t1 = kfield_declaration; ";"; t2 = SELF -> t1::t2
-        | t1 = kfield_declaration; ";" -> [t1]
-        | t1 = kfield_declaration ->  [t1]
-       ] ]
-  ;
-  kfield_declaration:
-    [[
-      s=ident; "=";  t=kexpr -> (_loc,s,t)
-    ]];
+| "@"
+  [ "@"; x = ident ->
+    {t=TUnknown;
+     e=Ref(_loc,
+           {t=TUnknown; e = Id (_loc, x); loc = _loc}
+          ); loc = _loc}
+  ]
+
+| "." RIGHTA
+  [
+    x = SELF; "."; "[<"; y=SELF; ">]"  -> {t=(TUnknown);
+					   e = VecGet (_loc, x, y); loc = _loc};
+    | x = SELF; "."; "("; y=SELF; ")"  -> {t=(TUnknown);
+                                           e = ArrGet (_loc, x, y); loc = _loc};
+    |l = UIDENT ; "."; e = SELF -> {t=(TUnknown);
+				    e = ModuleAccess (_loc, l, e);
+                                    loc = _loc};
+    | e1 = kexpr; "."; field = ident -> {t= TUnknown;
+                                         e= RecGet (_loc,e1,field);
+                                         loc = _loc}
+  ]
+| "record"
+  [ "{";l = kfields_declaration_list; "}" ->
+    (Printf.eprintf "RECORD\n%!";
+     {t=TUnknown; e=Record(_loc,l); loc=_loc};)
+  ]
+| "simple" NONA
+  [ "("; ")" -> {t=TUnknown; e = Noop; loc = _loc};
+    |  "(" ;  x= sequence; ")"  ->  x;
+    |  "(" ;  x= SELF; ")"  ->  x;
+    | "begin" ;  x= sequence; "end"  ->  x;
+    | x = FLOAT-> {t=TFloat32; e = Float32 (_loc, x); loc = _loc};
+    | x = LIDENT  -> {t=TUnknown; e = Id (_loc, IdLid(_loc,x)); loc = _loc};
+    | x = INT32  ->{t=TInt32; e = Int32 (_loc, x); loc = _loc};
+    | x = INT  ->{t=TInt32; e = Int32 (_loc, x); loc = _loc}
+    | x = a_UIDENT -> {t=TUnknown; e = Id (_loc, IdUid(_loc,x)); loc = _loc};
+    | "false" -> {t=TBool; e=False _loc; loc = _loc};
+    | "true" -> {t=TBool; e=True _loc; loc = _loc};
+
+  ]
+
+
+];
+kfields_declaration_list:
+  [ [ t1 = kfield_declaration; ";"; t2 = SELF -> t1::t2
+                                  | t1 = kfield_declaration; ";" -> [t1]
+                                                           | t1 = kfield_declaration ->  [t1]
+    ] ]
+;
+kfield_declaration:
+  [[
+    s=ident; "=";  t=kexpr -> (_loc,s,t)
+  ]];
 
 
 

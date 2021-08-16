@@ -48,7 +48,7 @@ let kern_start  = ""
 let kern_end = ""
 
 
-let parse_intrinsics (cuda,opencl) =
+let parse_intrinsics (_cuda,opencl) =
   match opencl with
   | "(get_local_id (0))" -> "thread_idx_x"
   | "(get_local_id (1))" -> "thread_idx_y"
@@ -82,11 +82,11 @@ and  indent i =
 
 let default_parser = false
 let prof_counter = ref 5
-    
+
 let generated_functions = Hashtbl.create 10
 
 let gmem_store ()  =
-    "(** ### global_memory stores : "^(Int64.to_string (Spoc.Mem.get !Gen.profile_vect 0))^" **)\n"
+  "(** ### global_memory stores : "^(Int64.to_string (Spoc.Mem.get !Gen.profile_vect 0))^" **)\n"
 
 let gmem_load () =
   "(** ### global_memory loads : "^(Int64.to_string (Spoc.Mem.get !Gen.profile_vect 1))^" **)\n"
@@ -104,14 +104,14 @@ let prof_time_string()=
 
 
 let branches_string () =
-    let nb_branches = Int64.to_string (Spoc.Mem.get !Gen.profile_vect 4)
-    and nb_divergents = Int64.to_string (Spoc.Mem.get !Gen.profile_vect 5)
-    in
-    "(** ### Total branches : "^nb_branches^" **)\n"^
-    "(** ### Divergent branches : "^nb_divergents^" **)\n"
+  let nb_branches = Int64.to_string (Spoc.Mem.get !Gen.profile_vect 4)
+  and nb_divergents = Int64.to_string (Spoc.Mem.get !Gen.profile_vect 5)
+  in
+  "(** ### Total branches : "^nb_branches^" **)\n"^
+  "(** ### Divergent branches : "^nb_divergents^" **)\n"
 
-let branch_analysis_string c =  
-  let numActive = Int64.to_string (Spoc.Mem.get !Gen.profile_vect (c+1)) 
+let branch_analysis_string c =
+  let numActive = Int64.to_string (Spoc.Mem.get !Gen.profile_vect (c+1))
   and numTaken = Int64.to_string (Spoc.Mem.get !Gen.profile_vect (c+2))
   and numNotTaken = Int64.to_string (Spoc.Mem.get !Gen.profile_vect (c+3))
   in
@@ -129,12 +129,12 @@ let profile_head () =
   smem_store ()^
   smem_load ()^
   branches_string ()
-    
+
 let fun_counter = ref 0
 
-let rec parse_fun i a b n dev =
+let rec parse_fun i a _b n dev =
   let open Kirc_Ast in
-  let rec aux name a =
+  let aux _name a =
     let rec aux2 i a =
       match a with
       | Kern (args,body) ->
@@ -143,7 +143,7 @@ let rec parse_fun i a b n dev =
            let s = prof_string() in
            incr prof_counter;
            s^
-           
+
            match body with
            | Seq (_,_)  -> (aux2 (i) body)
            | _  ->  ((aux2 (i) body )^"\n")
@@ -173,20 +173,20 @@ let rec parse_fun i a b n dev =
   name
 
 
- (*Profiling counters info                                                            
-    pc[0] <- gmem_store                                                                
-    pc[1] <- gmem_load                                                                 
-    pc[2] <- smem_store                                                                
-    pc[3] <- smem_load                                                                 
-    pc[4] <- nb_branches                                                               
-    pc[5] <- nb_divergent                                                              
- *)
-    
+(*Profiling counters info
+   pc[0] <- gmem_store
+   pc[1] <- gmem_load
+   pc[2] <- smem_store
+   pc[3] <- smem_load
+   pc[4] <- nb_branches
+   pc[5] <- nb_divergent
+*)
+
 
 
 and  parse i a  dev =
   let open Kirc_Ast in
-  let rec aux  = function
+  let aux  = function
     | Kern (args, body) -> ("kern "^(parse i args dev)^" ->\n"^
                             profile_head ()^
                             (match dev.Spoc.Devices.specific_info with
@@ -194,18 +194,18 @@ and  parse i a  dev =
                                memory_div_string()
                              | _ -> "")
                             ^"\n"^(parse (i) body dev))
-    | Local (x,y) -> (*"let mutable " ^ (parse i x)^" in\n"^
-                       (indent (i))^(parse i y)^
+    | Local (_x,y) -> (*"let mutable " ^ (parse i x)^" in\n"^
+                        (indent (i))^(parse i y)^
                           "\n"^(indent (i))*)
       parse i y dev
-    | VecVar (t, i, s) ->
-       global_parameter^s
+    | VecVar (_t, _i, s) ->
+      global_parameter^s
     | Params k -> parse i k dev
     | Concat (a,b) ->
       (match b with
-      | Empty -> parse i a dev
-      | Concat (c,d) -> parse i a dev ^ " " ^parse i b dev
-      | _ -> assert false )
+       | Empty -> parse i a dev
+       | Concat (_c,_d) -> parse i a dev ^ " " ^parse i b dev
+       | _ -> assert false )
     | Seq (a,b) ->
       let a = parse i a dev in
       let b = parse i b dev in
@@ -239,7 +239,7 @@ and  parse i a  dev =
       (*Printf.printf "Ife %d\n%!" !prof_counter;*)
       let a = parse i a dev in
       let b_anal = branch_analysis_string !prof_counter in
-      prof_counter := !prof_counter + 4; 
+      prof_counter := !prof_counter + 4;
       let b = parse (i+1) b dev in
       let c = parse (i+1) c dev in
       (* let iff = *)
@@ -257,7 +257,7 @@ and  parse i a  dev =
       (*Printf.printf "If %d\n%!" !prof_counter;*)
       let a = parse i a dev in
       let b_anal = branch_analysis_string !prof_counter in
-      prof_counter := !prof_counter + 4; 
+      prof_counter := !prof_counter + 4;
       let s =
         "if ("^a^")"^" then \n"^(indent (i+1))^
         (indent (i+1))^(parse (i+1) b dev)^";\n"^(indent i)^""^(indent i)
@@ -282,7 +282,7 @@ and  parse i a  dev =
       (*Printf.printf "While %d\n%!" !prof_counter;*)
       let cond = parse i a dev in
       let b_anal = branch_analysis_string !prof_counter in
-      prof_counter := !prof_counter + 4; 
+      prof_counter := !prof_counter + 4;
       let body = indent (i+1)^parse (i+1) b dev in
       let s = b_anal^"while " ^ cond ^" do\n"^
               body^"\n"^
@@ -312,7 +312,7 @@ and  parse i a  dev =
       let s  =
         parse i k dev
       in
-      let ss = 
+      let ss =
         (match dev.Spoc.Devices.specific_info with
          |  Spoc.Devices.CudaInfo _ ->
            let s = indent (i) ^
@@ -326,7 +326,7 @@ and  parse i a  dev =
     | _ -> Kirc_Ast.print_ast a; ""
   in aux  a
 
-let parse i a dev =
+let parse _i a dev =
   prof_counter := 6;
   Hashtbl.clear generated_functions;
   let header =

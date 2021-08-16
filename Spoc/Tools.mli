@@ -41,8 +41,8 @@ external boolset : Vector.customarray -> int -> bool -> unit
 val print : int -> unit
 (**/**)
 
-val iter : ('a -> 'b) -> ('a, 'c) Vector.vector -> unit
-val iteri : ('a -> int -> 'b) -> ('a, 'c) Vector.vector -> unit
+val iter : ('a -> unit) -> ('a, 'c) Vector.vector -> unit
+val iteri : ('a -> int -> unit) -> ('a, 'c) Vector.vector -> unit
 val map :
   ('a -> 'b) ->
   ('b, 'c) Vector.kind -> ('a, 'd) Vector.vector -> ('b, 'c) Vector.vector

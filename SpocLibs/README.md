@@ -2,13 +2,14 @@
 
 
 The "SpocLibs" directory contains few libraries based on Spoc.
- - Compose allows basic composition over GPGPU kernels
- - Cublas allows to use some functions of the Cublas library 
-   (Cublas needs Cuda SDK to compile)
- - Sarek is a embedded DSL for OCaml to express kernels from the OCaml program
+ - **Sarek** is a embedded DSL for OCaml to express kernels from the OCaml program (**experimental but tested and up to date with camlp4 and SPOC**)
+ - **Benchmarks** contains few examples and benchmarks (inspired from other benchamrk suite such a rodinia) using SPOC and Sarek
+ - **Cublas** allows to use some functions of the Cublas library 
+   (Cublas needs Cuda SDK to compile) (**maybe deprecated but probably easy to update to current libraries**)
+ - **Compose** allows basic composition over GPGPU kernels  (**mostly deprecated**)
 
-The Sample directory contains few smaples using those libraries
 
+The **Samples** directory contains few samples using those libraries. (**deprecated**)
 
 #II - Build and Install
 
@@ -25,4 +26,4 @@ should build and install
 #III - Usage
 
 
-See the Sample directory for examples of programs using those libraries
+See the **Benchmarks** and **Samples** directory for examples of programs using those libraries

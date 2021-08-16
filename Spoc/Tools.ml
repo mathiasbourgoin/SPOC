@@ -38,84 +38,84 @@ external boolget : Vector.customarray -> int -> bool = "custom_boolget"
 
 external boolset : Vector.customarray -> int -> bool -> unit = "custom_boolset"
 
-
-let print s = (Printf.printf "%s\n" (string_of_int s); Pervasives.flush stdout)
-
+let print s =
+  Printf.printf "%s\n" (string_of_int s) ;
+  flush stdout
 
 let iter f vect =
-  ((match Vector.dev vect with
-      | Vector.No_dev -> ()
-      | Vector.Dev d | Vector.Transferring d ->
-        (Devices.flush d ~queue_id: 0 ();
-         Devices.flush d ~queue_id: 1 ();
-         Mem.to_cpu vect ();
-         Devices.flush d ~queue_id: 0 ()));
-   for idx = 0 to (Vector.length vect) - 1 do f (Mem.unsafe_get vect idx) done)
+  ( match Vector.dev vect with
+  | Vector.No_dev -> ()
+  | Vector.Dev d | Vector.Transferring d ->
+      Devices.flush d ~queue_id:0 () ;
+      Devices.flush d ~queue_id:1 () ;
+      Mem.to_cpu vect () ;
+      Devices.flush d ~queue_id:0 () ) ;
+  for idx = 0 to Vector.length vect - 1 do
+    f (Mem.unsafe_get vect idx)
+  done
 
 let iteri f vect =
-  ((match Vector.dev vect with
-      | Vector.No_dev -> ()
-      | Vector.Dev d | Vector.Transferring d ->
-        (Devices.flush d ~queue_id: 0 ();
-         Devices.flush d ~queue_id: 1 ();
-         Mem.to_cpu vect ();
-         Devices.flush d ~queue_id: 0 ()));
-   for idx = 0 to (Vector.length vect) - 1 do f (Mem.unsafe_get vect idx) idx done)
+  ( match Vector.dev vect with
+  | Vector.No_dev -> ()
+  | Vector.Dev d | Vector.Transferring d ->
+      Devices.flush d ~queue_id:0 () ;
+      Devices.flush d ~queue_id:1 () ;
+      Mem.to_cpu vect () ;
+      Devices.flush d ~queue_id:0 () ) ;
+  for idx = 0 to Vector.length vect - 1 do
+    f (Mem.unsafe_get vect idx) idx
+  done
 
 let map f kind vect =
-  ((match Vector.dev vect with
-      | Vector.No_dev -> ()
-      | Vector.Dev d | Vector.Transferring d ->
-        (Devices.flush d ~queue_id: 0 ();
-         Devices.flush d ~queue_id: 1 ();
-         Mem.to_cpu vect ();
-         Devices.flush d ~queue_id: 0 ()));
-   let newvect = Vector.create kind (Vector.length vect)
-   in
-   (for i = 0 to Vector.length vect - 1 do
-      Mem.unsafe_set newvect i (f (Mem.unsafe_get vect i))
-    done;
-    newvect))
+  ( match Vector.dev vect with
+  | Vector.No_dev -> ()
+  | Vector.Dev d | Vector.Transferring d ->
+      Devices.flush d ~queue_id:0 () ;
+      Devices.flush d ~queue_id:1 () ;
+      Mem.to_cpu vect () ;
+      Devices.flush d ~queue_id:0 () ) ;
+  let newvect = Vector.create kind (Vector.length vect) in
+  for i = 0 to Vector.length vect - 1 do
+    Mem.unsafe_set newvect i (f (Mem.unsafe_get vect i))
+  done ;
+  newvect
 
 let trueCustom =
-  { Vector.size = sizeofbool (); Vector.get = boolget; Vector.set = boolset; }
+  {Vector.size= sizeofbool () ; Vector.get= boolget ; Vector.set= boolset}
 
 let falseCustom =
-  { Vector.size = sizeofbool (); Vector.get = boolget; Vector.set = boolset; }
+  {Vector.size= sizeofbool () ; Vector.get= boolget ; Vector.set= boolset}
 
 let fold_left f seed vect =
-  ((match Vector.dev vect with
-      | Vector.No_dev -> ()
-      | Vector.Dev d | Vector.Transferring d ->
-        (Devices.flush d ~queue_id: 0 ();
-         Devices.flush d ~queue_id: 1 ();
-         Mem.to_cpu vect ();
-         Devices.flush d ~queue_id: 0 ()));
-   let s = ref seed
-   in
-   (for i = 0 to Vector.length vect - 1 do
-      s := f !s (Mem.unsafe_get vect i)
-    done;
-    !s))
+  ( match Vector.dev vect with
+  | Vector.No_dev -> ()
+  | Vector.Dev d | Vector.Transferring d ->
+      Devices.flush d ~queue_id:0 () ;
+      Devices.flush d ~queue_id:1 () ;
+      Mem.to_cpu vect () ;
+      Devices.flush d ~queue_id:0 () ) ;
+  let s = ref seed in
+  for i = 0 to Vector.length vect - 1 do
+    s := f !s (Mem.unsafe_get vect i)
+  done ;
+  !s
 
 let fold_right f vect seed =
-  ((match Vector.dev vect with
-      | Vector.No_dev -> ()
-      | Vector.Dev d | Vector.Transferring d ->
-        (Devices.flush d ~queue_id: 0 ();
-         Devices.flush d ~queue_id: 1 ();
-         Mem.to_cpu vect ();
-         Devices.flush d ~queue_id: 0 ()));
-   let s = ref seed
-   in
-   (for i = Vector.length vect - 1 downto 0 do
-      s := f (Mem.unsafe_get vect i) !s
-    done;
-    !s))
+  ( match Vector.dev vect with
+  | Vector.No_dev -> ()
+  | Vector.Dev d | Vector.Transferring d ->
+      Devices.flush d ~queue_id:0 () ;
+      Devices.flush d ~queue_id:1 () ;
+      Mem.to_cpu vect () ;
+      Devices.flush d ~queue_id:0 () ) ;
+  let s = ref seed in
+  for i = Vector.length vect - 1 downto 0 do
+    s := f (Mem.unsafe_get vect i) !s
+  done ;
+  !s
 
 let vfalse = Vector.Custom trueCustom
 
 let vtrue = Vector.Custom falseCustom
 
 let spoc_bool = vfalse
-

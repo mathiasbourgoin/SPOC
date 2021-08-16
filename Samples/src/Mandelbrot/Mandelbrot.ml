@@ -129,8 +129,8 @@ let main () =
 	  Graphics.synchronize ();
 	  Gc.full_major();
 	done;;
-Printf.printf "Press any key to close\n";
-Pervasives.flush stdout;
+Printf.printf "Press any key to close\n%!";
+
  (*	ignore (Graphics.read_key ());*)
 Graphics.close_graph ();;
 

@@ -1,23 +1,22 @@
  (*
-         DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE 
-                    Version 2, December 2004 
+         DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+                    Version 2, December 2004
 
- Copyright (C) 2004 Sam Hocevar <sam@hocevar.net> 
+ Copyright (C) 2004 Sam Hocevar <sam@hocevar.net>
 
- Everyone is permitted to copy and distribute verbatim or modified 
- copies of this license document, and changing it is allowed as long 
- as the name is changed. 
+ Everyone is permitted to copy and distribute verbatim or modified
+ copies of this license document, and changing it is allowed as long
+ as the name is changed.
 
-            DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE 
-   TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION 
+            DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+   TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
 
   0. You just DO WHAT THE FUCK YOU WANT TO.
 *)
 open Spoc
+open Sarek
 open Kirc
 
-open Ctypes
-open Foreign
 
 let gpu_bitonic = kern v j k ->
   let open Std in
@@ -33,17 +32,12 @@ let gpu_bitonic = kern v j k ->
              v.[<ixj>] <- v.[<i>];
              v.[<i>] <- temp)
         )
-      else 
+      else
       if v.[<i>] <. v.[<ixj>] then
         (temp := v.[<ixj>];
          v.[<ixj>] <- v.[<i>];
          v.[<i>] <- temp);
     end
-
- 
-
-
-
 
 let exchange (v : (float, Bigarray.float32_elt) Spoc.Vector.vector) i j : unit =
   let t : float = v.[<i>] in
@@ -51,16 +45,16 @@ let exchange (v : (float, Bigarray.float32_elt) Spoc.Vector.vector) i j : unit =
   v.[<j>] <- t
 ;;
 
-let rec sortup v 
-    m n : unit = 
+let rec sortup v
+    m n : unit =
   if n <> 1 then
     begin
       sortup v m (n/2);
       sortdown v (m+n/2) (n/2);
-      mergeup v m (n/2); 
+      mergeup v m (n/2);
     end
 
-and sortdown v 
+and sortdown v
     m n : unit =
   if n <> 1 then
     begin
@@ -69,7 +63,7 @@ and sortdown v
       mergedown v m (n/2);
     end
 
-and mergeup v 
+and mergeup v
     (m:int) (n:int) : unit =
   if n <> 0 then
     begin
@@ -81,7 +75,7 @@ and mergeup v
       mergeup v  (m+n) (n/2)
     end
 
-and mergedown v 
+and mergedown v
     m n =
   if n <> 0 then
     begin
@@ -93,8 +87,6 @@ and mergedown v
       mergedown v (m+n) (n/2)
     end
 ;;
-
-  
 
 let cpt = ref 0
 
@@ -108,10 +100,9 @@ let measure_time s f =
   tot_time := !tot_time +.  (t1 -. t0);
   incr cpt;
   a;;
-  
 
 let nearest_pow2 i  =
-  let rec aux acc = 
+  let rec aux acc =
     let res = acc*2 in
     if res < i then
       aux res
@@ -121,7 +112,7 @@ let nearest_pow2 i  =
     Printf.printf "Changed size value to a power of two (%d -> %d)\n" i r;
   r
 
-let () = 
+let () =
   let devid = ref 0
   and size = ref 1024 (*(1024*2*2*2*2*2*2*2*2*2*2*2*2*2*2*2)*)
   and check = ref true
@@ -142,17 +133,17 @@ let () =
   let dev = ref devs.(!devid) in
   Printf.printf "Will use device : %s  to sort %d floats\n%!"
     (!dev).Spoc.Devices.general_info.Spoc.Devices.name !size;
-  let size = !size 
-  and check = !check 
+  let size = !size
+  and check = !check
   and compare = !compare in
   let seq_vect  = Spoc.Vector.create Vector.float32 size
-      
+
   and gpu_vect = Spoc.Vector.create Vector.float32 size
   and base_vect = Spoc.Vector.create Vector.float32 size
-  and vect_as_array = Array.create size 0.
+  and vect_as_array = Array.make size 0.
   in
   Random.self_init ();
-  (* fill vectors with randmo values... *)
+  (* fill vectors with random values... *)
   for i = 0 to Vector.length seq_vect - 1 do
     let v = Random.float 255. in
     seq_vect.[<i>] <- v;
@@ -160,21 +151,20 @@ let () =
     base_vect.[<i>] <- v;
     vect_as_array.(i) <- v;
   done;
-  
 
   if compare then
-(*    begin*)
-      (* measure_time "Sequential bitonic"  *)
-      (*   (fun () -> Mem.unsafe_rw true; sortup seq_vect 0 (Vector.length seq_vect); Mem.unsafe_rw false); *)
-    (*   measure_time "Sequential Array.sort"  *)
-    (*     (fun () -> Array.sort Pervasives.compare vect_as_array); *)
-    (* end; *)
+    begin
+      measure_time "Sequential bitonic"
+        (fun () -> Mem.unsafe_rw true; sortup seq_vect 0 (Vector.length seq_vect); Mem.unsafe_rw false);
+      measure_time "Sequential Array.sort"
+        (fun () -> Array.sort Stdlib.compare vect_as_array);
+    end;
   let threadsPerBlock = match !dev.Devices.specific_info with
-    | Devices.OpenCLInfo clI -> 
+    | Devices.OpenCLInfo clI ->
       (match clI.Devices.device_type with
        | Devices.CL_DEVICE_TYPE_CPU -> 1
-       | _  ->   256)
-    | _  -> 256 in
+       | _  ->   1)
+    | _  -> 1 in
   let blocksPerGrid =
     (size + threadsPerBlock -1) / threadsPerBlock
   in
@@ -182,8 +172,7 @@ let () =
 		Spoc.Kernel.blockY = 1; Spoc.Kernel.blockZ = 1}
   and grid0= {Spoc.Kernel.gridX = blocksPerGrid;
 	      Spoc.Kernel.gridY = 1; Spoc.Kernel.gridZ = 1} in
-  ignore(Kirc.gen (*~only:Devices.OpenCL*)
-           gpu_bitonic);
+  ignore(Kirc.gen gpu_bitonic devs.(!devid));
 
   let j,k = ref 0,ref 2 in
   let first = ref true in
@@ -192,26 +181,32 @@ let () =
         j := !k lsr 1;
         while !j > 0 do
           if !first then
-            (Kirc.profile_run gpu_bitonic (gpu_vect,!j,!k) (block0,grid0) 0 !dev;
+            (Kirc.run gpu_bitonic (gpu_vect,!j,!k) (block0,grid0) 0 !dev;
              first := false);
-          Kirc.profile_run gpu_bitonic (gpu_vect,!j,!k) (block0,grid0) 0 !dev;
+          Kirc.run gpu_bitonic (gpu_vect,!j,!k) (block0,grid0) 0 !dev;
           j := !j lsr 1;
         done;
         k := !k lsl 1 ;
       done;
-      Mem.to_cpu gpu_vect;
+      Mem.to_cpu gpu_vect ();
       Devices.flush !dev ();
     );
 
+  if check then
     (
       let r = ref (-. infinity) in
+      let ok = ref true in
       for i = 0 to size - 1 do
         if gpu_vect.[<i>] < !r then
           ( Printf.printf "%d -> %s\n" i (Printf.sprintf "error, %g <  %g" gpu_vect.[<i>] !r);
-            r := gpu_vect.[<i>]; )
-        else
-          r := gpu_vect.[<i>]; 
+            r := Mem.get gpu_vect i;
+            ok := false ;)
+        else (
+          r := gpu_vect.[<i>]);
       done;
-      Printf.printf "Check OK\n";
+      if !ok then
+        Printf.printf "Check OK\n"
+      else
+        Printf.printf "Check KO\n";
     )
 ;;
