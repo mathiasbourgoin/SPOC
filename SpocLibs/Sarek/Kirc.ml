@@ -794,7 +794,7 @@ let gen_profile ker dev =
 (* external from SPOC*)
 external nvrtc_ptx : string -> string array -> string = "spoc_nvrtc_ptx"
 
-let gen ?profile:(prof = false) ?return:(r = false) ?only:o
+let gen ?keep_temp:(kt=false) ?profile:(prof = false) ?return:(r = false) ?only:o
     ?nvrtc_options:(nvopt = [||]) (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel) dev
   =
   let kir, k = ker in
@@ -888,10 +888,10 @@ let gen ?profile:(prof = false) ?return:(r = false) ?only:o
     save ("kirc_kernel" ^ string_of_int !idkern ^ ".ptx") s ;
     (*let s = (load_file "kirc_kernel.ptx") in*)
     kir#set_cuda_sources s ;
-    ignore
-      (Sys.command
-         ( "rm kirc_kernel" ^ string_of_int !idkern ^ ".cu kirc_kernel"
-           ^ string_of_int !idkern ^ ".ptx" )) ;
+    if not kt then ignore
+        (Sys.command
+           ( "rm kirc_kernel" ^ string_of_int !idkern ^ ".cu kirc_kernel"
+             ^ string_of_int !idkern ^ ".ptx" )) ;
     incr idkern
   and gen_opencl () =
     let opencl_head =
@@ -932,7 +932,11 @@ let gen ?profile:(prof = false) ?return:(r = false) ?only:o
       ^ constructors ^ protos ^ !global_funs ^ src
     in
     save ("kirc_kernel" ^ string_of_int !idkern ^ ".cl") clkernel ;
-    kir#set_opencl_sources clkernel
+    kir#set_opencl_sources clkernel;
+    if not kt then ignore
+        (Sys.command
+           ( "rm kirc_kernel" ^ string_of_int !idkern ^ ".cl" )) ;
+
   in
   ( match o with
     | None -> (

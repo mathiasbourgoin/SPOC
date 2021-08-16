@@ -19,7 +19,7 @@ type ('a,'b,'c, 'd) kirc_function =
   }
 
 type ('a, 'b, 'c, 'd, 'e) sarek_kernel =
-    ('a, 'b) Spoc.Kernel.spoc_kernel * ('c, 'd, 'e) kirc_kernel
+  ('a, 'b) Spoc.Kernel.spoc_kernel * ('c, 'd, 'e) kirc_kernel
 
 val constructors : string list ref
 
@@ -148,16 +148,16 @@ val return_v : (string * string) ref
 val save : string -> string -> unit
 val load_file : string -> bytes
 val map : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
-                                                                  
+
 val gen_profile :
   ('a, 'b, 'c, 'd, 'e) sarek_kernel -> Spoc.Devices.device -> unit
-  
+
 val gen :
-  ?profile:bool -> ?return:bool ->
+  ?keep_temp:bool -> ?profile:bool -> ?return:bool ->
   ?only:Spoc.Devices.specificLibrary ->
   ?nvrtc_options:string array ->
   ('a, 'b, 'c, 'd, 'e) sarek_kernel ->
-  Spoc.Devices.device -> 
+  Spoc.Devices.device ->
   ('a, 'b, 'c, 'd, 'e) sarek_kernel
 
 val run :
@@ -172,144 +172,144 @@ val profile_run :
   ('a, ('b, 'f) Spoc.Kernel.kernelArgs array, 'c, 'd, 'e) sarek_kernel ->
   'a ->
   Spoc.Kernel.block * Spoc.Kernel.grid -> int -> Spoc.Devices.device -> unit
-  
+
 val compile_kernel_to_files :
   string -> ('a, 'b, 'c, 'd, 'e) sarek_kernel -> Spoc.Devices.device ->unit
 module Std :
-  sig
-    val thread_idx_x : Int32.t
-    val thread_idx_y : Int32.t
-    val thread_idx_z : Int32.t
-    val block_idx_x : Int32.t
-    val block_idx_y : Int32.t
-    val block_idx_z : Int32.t
-    val block_dim_x : Int32.t
-    val block_dim_y : Int32.t
-    val block_dim_z : Int32.t
-    val grid_dim_x : Int32.t
-    val grid_dim_y : Int32.t
-    val grid_dim_z : Int32.t
+sig
+  val thread_idx_x : Int32.t
+  val thread_idx_y : Int32.t
+  val thread_idx_z : Int32.t
+  val block_idx_x : Int32.t
+  val block_idx_y : Int32.t
+  val block_idx_z : Int32.t
+  val block_dim_x : Int32.t
+  val block_dim_y : Int32.t
+  val block_dim_z : Int32.t
+  val grid_dim_x : Int32.t
+  val grid_dim_y : Int32.t
+  val grid_dim_z : Int32.t
 
-    val global_thread_id : Int32.t
-                             
-    val return : unit -> unit
-    val float64 : Int32.t -> float
-    val int_of_float64 : float -> Int32.t
-    val float : Int32.t -> float
-    val int_of_float : float -> Int32.t
-    val block_barrier : unit -> unit
-    val make_shared : Int32.t -> Int32.t array
-    val make_local : Int32.t -> Int32.t array
-    val map :
-      ('a -> 'b) -> (*, 'c, 'd, 'e) kirc_function -> *)
-           ('a, 'f) Spoc.Vector.vector -> ('b, 'g) Spoc.Vector.vector -> unit
-    val reduce :
-      ('a -> 'a -> 'a) -> (*, 'c, 'd, 'e) kirc_function -> *)
-           ('a, 'f) Spoc.Vector.vector -> ('a, 'g) Spoc.Vector.vector -> unit
-    
-  end
-  
+  val global_thread_id : Int32.t
+
+  val return : unit -> unit
+  val float64 : Int32.t -> float
+  val int_of_float64 : float -> Int32.t
+  val float : Int32.t -> float
+  val int_of_float : float -> Int32.t
+  val block_barrier : unit -> unit
+  val make_shared : Int32.t -> Int32.t array
+  val make_local : Int32.t -> Int32.t array
+  val map :
+    ('a -> 'b) -> (*, 'c, 'd, 'e) kirc_function -> *)
+    ('a, 'f) Spoc.Vector.vector -> ('b, 'g) Spoc.Vector.vector -> unit
+  val reduce :
+    ('a -> 'a -> 'a) -> (*, 'c, 'd, 'e) kirc_function -> *)
+    ('a, 'f) Spoc.Vector.vector -> ('a, 'g) Spoc.Vector.vector -> unit
+
+end
+
 module Sarek_vector :
 sig
   val length : ('a,'b) Spoc.Vector.vector -> int32
-    
+
 end
 
 module Math :
+sig
+  val pow : Int32.t -> Int32.t -> Int32.t
+  val logical_and : Int32.t -> Int32.t -> Int32.t
+  val xor : Int32.t -> Int32.t -> Int32.t
+  module Float32 :
   sig
-    val pow : Int32.t -> Int32.t -> Int32.t
-    val logical_and : Int32.t -> Int32.t -> Int32.t
-    val xor : Int32.t -> Int32.t -> Int32.t
-    module Float32 :
-      sig
-        val add : float -> float -> float
-        val minus : float -> float -> float
-        val mul : float -> float -> float
-        val div : float -> float -> float
-        val pow : float -> float -> float
-        val sqrt : float -> float
-        val rsqrt : float -> float
-        val exp : float -> float
-        val log : float -> float
-        val log10 : float -> float
-        val expm1 : float -> float
-        val log1p : float -> float
-        val acos : float -> float
-        val cos : float -> float
-        val cosh : float -> float
-        val asin : float -> float
-        val sin : float -> float
-        val sinh : float -> float
-        val tan : float -> float
-        val tanh : float -> float
-        val atan : float -> float
-        val atan2 : float -> float -> float
-        val hypot : float -> float -> float
-        val ceil : float -> float
-        val floor : float -> float
-        val abs_float : float -> float
-        val copysign : float -> float -> float
-        val modf : float -> float * float
-        val zero : float
-        val one : float
-        val make_shared : Int32.t -> float array
-        val make_local : Int32.t -> float array
-      end
-    module Float64 :
-    sig
-
-        val add : float -> float -> float
-        val minus : float -> float -> float
-        val mul : float -> float -> float
-        val div : float -> float -> float
-        val pow : float -> float -> float
-        val sqrt : float -> float
-        val rsqrt : float -> float
-        val exp : float -> float
-        val log : float -> float
-        val log10 : float -> float
-        val expm1 : float -> float
-        val log1p : float -> float
-        val acos : float -> float
-        val cos : float -> float
-        val cosh : float -> float
-        val asin : float -> float
-        val sin : float -> float
-        val sinh : float -> float
-        val tan : float -> float
-        val tanh : float -> float
-        val atan : float -> float
-        val atan2 : float -> float -> float
-        val hypot : float -> float -> float
-        val ceil : float -> float
-        val floor : float -> float
-        val abs_float : float -> float
-        val copysign : float -> float -> float
-        val modf : float -> float * float
-        val zero : float
-        val one : float
-        val of_float32 : float -> float
-        val of_float : float -> float
-        val to_float32 : float -> float
-        val make_shared : Int32.t -> float array
-        val make_local : Int32.t -> float array
-      end
+    val add : float -> float -> float
+    val minus : float -> float -> float
+    val mul : float -> float -> float
+    val div : float -> float -> float
+    val pow : float -> float -> float
+    val sqrt : float -> float
+    val rsqrt : float -> float
+    val exp : float -> float
+    val log : float -> float
+    val log10 : float -> float
+    val expm1 : float -> float
+    val log1p : float -> float
+    val acos : float -> float
+    val cos : float -> float
+    val cosh : float -> float
+    val asin : float -> float
+    val sin : float -> float
+    val sinh : float -> float
+    val tan : float -> float
+    val tanh : float -> float
+    val atan : float -> float
+    val atan2 : float -> float -> float
+    val hypot : float -> float -> float
+    val ceil : float -> float
+    val floor : float -> float
+    val abs_float : float -> float
+    val copysign : float -> float -> float
+    val modf : float -> float * float
+    val zero : float
+    val one : float
+    val make_shared : Int32.t -> float array
+    val make_local : Int32.t -> float array
   end
+  module Float64 :
+  sig
+
+    val add : float -> float -> float
+    val minus : float -> float -> float
+    val mul : float -> float -> float
+    val div : float -> float -> float
+    val pow : float -> float -> float
+    val sqrt : float -> float
+    val rsqrt : float -> float
+    val exp : float -> float
+    val log : float -> float
+    val log10 : float -> float
+    val expm1 : float -> float
+    val log1p : float -> float
+    val acos : float -> float
+    val cos : float -> float
+    val cosh : float -> float
+    val asin : float -> float
+    val sin : float -> float
+    val sinh : float -> float
+    val tan : float -> float
+    val tanh : float -> float
+    val atan : float -> float
+    val atan2 : float -> float -> float
+    val hypot : float -> float -> float
+    val ceil : float -> float
+    val floor : float -> float
+    val abs_float : float -> float
+    val copysign : float -> float -> float
+    val modf : float -> float * float
+    val zero : float
+    val one : float
+    val of_float32 : float -> float
+    val of_float : float -> float
+    val to_float32 : float -> float
+    val make_shared : Int32.t -> float array
+    val make_local : Int32.t -> float array
+  end
+end
 (*val a_to_vect : Kirc_Ast.k_ext -> Kirc_Ast.k_ext
-val a_to_return_vect :
+  val a_to_return_vect :
   Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
-val param_list : int list ref
-val add_to_param_list : int -> unit
-val check_and_transform_to_map : Kirc_Ast.k_ext -> Kirc_Ast.k_ext
-val arg_of_vec :
+  val param_list : int list ref
+  val add_to_param_list : int -> unit
+  val check_and_transform_to_map : Kirc_Ast.k_ext -> Kirc_Ast.k_ext
+  val arg_of_vec :
   ('a, 'b) Spoc.Vector.vector -> ('a, 'b) Spoc.Kernel.kernelArgs
-val propagate :
+  val propagate :
   (Kirc_Ast.k_ext -> Kirc_Ast.k_ext) -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
-val map :
+  val map :
   ('a, 'b, 'c -> 'i, 'i, 'j) sarek_kernel ->
   ?dev:Spoc.Devices.device ->
   ('g, 'h) Spoc.Vector.vector -> ('i, 'j) Spoc.Vector.vector
-val map2 :
+  val map2 :
   ('a, 'b, 'c -> 'd -> 'l, 'l, 'm) sarek_kernel ->
   ?dev:Spoc.Devices.device ->
   ('h, 'i) Spoc.Vector.vector ->
