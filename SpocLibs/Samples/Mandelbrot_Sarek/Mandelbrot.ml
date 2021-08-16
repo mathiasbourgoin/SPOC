@@ -71,8 +71,7 @@ let x = thread_idx_x + (block_idx_x * block_dim_x) in
 
   let mutable norm = normalize x1  y1
   in
-  let mutable vote = ($"__ballot(((cpt < @max_iter) &&
-         (norm <=. 4.)))"$ : int) in
+  let mutable vote = ($$"__ballot(((cpt < @max_iter) && (norm <=. 4.)))"$$ : int) in
   let mutable eval = vote > 16 in
   while (eval)  do
     cpt := (cpt + 1);
@@ -81,15 +80,15 @@ let x = thread_idx_x + (block_idx_x * block_dim_x) in
     x1 := x2;
     y1 := y2;
     norm := (x1 *. x1 ) +. ( y1 *. y1);
-    vote := ($"__ballot(((cpt < @max_iter) &&
-         (norm <=. 4.)))"$ : int);
+    vote := ($$"__ballot(((cpt < @max_iter) &&
+         (norm <=. 4.)))"$$ : int);
     eval := vote > 16;
   done;
   img.[<y * @width + x>] <- cpt
  ;;
 
 klet brh = fun (a : bool ) ->
-  ($"__popc(__ballot(a))"$ > 26)
+  ($$"__popc(__ballot(a))"$$ > 26)
 
 klet nobrh = fun (a : bool ) -> a
 
