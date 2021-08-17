@@ -32,3 +32,10 @@ check: all install install_sarek samples test test_sarek
 
 mr_proper: clean
 	rm -rf _build
+
+release:
+	dune-release tag
+	dune-release distrib
+	dune-release publish
+	dune-release opam pkg
+	dune-release opam submit

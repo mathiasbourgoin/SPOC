@@ -14,7 +14,8 @@
  (synopsis "High-level GPGPU programming library for OCaml")
  (description "")
  (depends
-  str
+ (ocaml (>= 4.07.0))
+  re
   (dune (> 2.0))
   cppo
   camlp4
@@ -27,11 +28,12 @@
  (synopsis "GPGPU kernel DSL for OCaml")
  (description "")
  (depends
-  str
+ (ocaml (>= 4.07.0))
+  spoc
+  re
   (dune (> 2.0))
   cppo
   camlp4
   ctypes
   ctypes-foreign
-  spoc
  ))
