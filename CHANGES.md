@@ -1,3 +1,7 @@
+## Next
+
+- Add PPX extension to declare external GPGPU kernels
+
 ## 20210816
 
 ### Added
