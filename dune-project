@@ -36,4 +36,23 @@
   camlp4
   ctypes
   ctypes-foreign
+  spoc
  ))
+
+(package 
+  (name spoc_ppx)
+  (synopsis "PPX to declare external GPGPU kernels written in CUDA or OpenCL")
+  (description "")
+  (depends
+ (ocaml (>= 4.07.0))
+  re
+  (dune (> 2.0))
+  cppo
+  camlp4
+  ctypes
+  ctypes-foreign
+  ppxlib
+  ppx_tools
+  spoc
+ ))
+  
