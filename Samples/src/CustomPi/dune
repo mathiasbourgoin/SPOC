@@ -1,13 +1,11 @@
 (executable
  (name CustomPi)
  (flags (-ccopt -L$CUDA_PATH -cclib -lnvrtc))
-(preprocess
-  (action
-    (system "camlp4 -I `ocamlfind query spoc.external_kernels` -I. -parser o -printer o external_kernels.cma %{input-file}")))
+ (preprocess (pps spoc_ppx))
   (foreign_stubs
     (language c)
     (names ExtCustom)
   )
  (preprocessor_deps (package spoc))
- (libraries unix spoc camlp4)
+ (libraries unix spoc)
 )

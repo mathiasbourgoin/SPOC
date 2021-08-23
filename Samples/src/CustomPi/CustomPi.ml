@@ -32,11 +32,11 @@ let nbPoint = 2_000_000;;
 let ray = 10.0;;
 
 
-kernel gpuPi : point Spoc.Vector.vcustom -> Spoc.Vector.vint32 -> int -> float -> unit = "kernels/CustomPi" "pi"
+external%kernel gpuPi : point Spoc.Vector.vcustom -> Spoc.Vector.vint32 -> int -> float -> unit = "kernels/CustomPi" "pi"
 
-kernel gpuPi_complex : Spoc.Vector.vcomplex32 -> Spoc.Vector.vint32 -> int -> float -> unit = "kernels/CustomPi" "pi"
+external%kernel gpuPi_complex : Spoc.Vector.vcomplex32 -> Spoc.Vector.vint32 -> int -> float -> unit = "kernels/CustomPi" "pi"
 
-kernel gpuPi_double : point Spoc.Vector.vcustom -> Spoc.Vector.vint32 -> int -> float -> unit = "kernels/CustomPi" "pi_double"
+external%kernel gpuPi_double : point Spoc.Vector.vcustom -> Spoc.Vector.vint32 -> int -> float -> unit = "kernels/CustomPi" "pi_double"
 
 
 
@@ -48,22 +48,22 @@ let cpuPI field size =
   in res
 
 let gpuPi_d dev (block,grid) (gpuField, vbool, nbPoint, ray)=
-    if Spoc.Devices.allowDouble dev then
+  if Spoc.Devices.allowDouble dev then
     Spoc.Kernel.run dev (block, grid) gpuPi_double
-       (gpuField, vbool, nbPoint, (ray *. ray))
+      (gpuField, vbool, nbPoint, (ray *. ray))
   else
     Spoc.Kernel.run dev (block, grid) gpuPi
-       (gpuField, vbool, nbPoint, (ray *. ray))
+      (gpuField, vbool, nbPoint, (ray *. ray))
 ;;
 
 
-let gpuPi_complex vbool dev size = 
+let gpuPi_complex vbool dev size =
   let gpuField = Vector.create complex32 size in
   for i = 0 to size - 1 do
-    gpuField.[<i>] <- {re = Random.float ray; im = Random.float ray;};
+    Mem.set gpuField i {re = Random.float ray; im = Random.float ray;};
   done;
   let threadsPerBlock =  match dev.Devices.specific_info with
-    | Devices.OpenCLInfo clI -> 
+    | Devices.OpenCLInfo clI ->
       (match clI.Devices.device_type with
        | Devices.CL_DEVICE_TYPE_CPU -> 1
        | _  ->   256)
@@ -84,19 +84,19 @@ let gpuPi_complex vbool dev size =
     }
   in
   Spoc.Kernel.run dev (block,grid) gpuPi_complex
-                  (gpuField,vbool, nbPoint, (ray *. ray));
+    (gpuField,vbool, nbPoint, (ray *. ray));
   let pio4 =
     Int32.to_int
       (Tools.fold_left (fun a b -> Int32.add a  b) Int32.zero vbool) in
-       Printf.printf "GPU Complex Computation : PI = %d/%d = %.10g\n%!" pio4 size
-                     ((4. *. (float pio4)) /. (float size));
+  Printf.printf "GPU Complex Computation : PI = %d/%d = %.10g\n%!" pio4 size
+    ((4. *. (float pio4)) /. (float size));
 ;;
-  
+
 let gpuPI gpuField vbool dev size =
 
-                               
+
   let threadsPerBlock =  match dev.Devices.specific_info with
-    | Devices.OpenCLInfo clI -> 
+    | Devices.OpenCLInfo clI ->
       (match clI.Devices.device_type with
        | Devices.CL_DEVICE_TYPE_CPU -> 1
        | _  ->   256)
@@ -117,7 +117,7 @@ let gpuPI gpuField vbool dev size =
     }
   in
   gpuPi_d dev (block, grid) (gpuField, vbool, nbPoint, ray);
-  
+
   let pio4 =
     Int32.to_int
       (Tools.fold_left (fun a b -> Int32.add a b) Int32.zero vbool)
@@ -141,15 +141,15 @@ let multiGpuPI gpuField1 gpuField2 vbool1 vbool2 dev1 dev2 size =
     }
   in
   (gpuPi_d dev1 (block, grid)(gpuField1, vbool1, (size / 2), ray);
-  gpuPi_d dev2 (block, grid)(gpuField1, vbool2, (size / 2), ray);
-  let pio4_1 =
-    Int32.to_int
-      (Tools.fold_left (fun a b -> Int32.add a  b) Int32.zero vbool1)
-  and pio4_2 =
-    Int32.to_int
-      (Tools.fold_left (fun a b -> Int32.add a b) 0l vbool2)
-  in
-  let pio4 = pio4_1 + pio4_2 in pio4)
+   gpuPi_d dev2 (block, grid)(gpuField1, vbool2, (size / 2), ray);
+   let pio4_1 =
+     Int32.to_int
+       (Tools.fold_left (fun a b -> Int32.add a  b) Int32.zero vbool1)
+   and pio4_2 =
+     Int32.to_int
+       (Tools.fold_left (fun a b -> Int32.add a b) 0l vbool2)
+   in
+   let pio4 = pio4_1 + pio4_2 in pio4)
 ;;
 let _ =
   (Random.self_init ();
@@ -164,39 +164,36 @@ let _ =
      Printf.printf "Will use double precision\n"
    else
      Printf.printf "Will use simple precision, results may be innacurate ;-)\n";
-    let pio4 = ref 0 in (*CPU COMPUTATION*)
-    let field =
-      Array.init !size
-        (fun _ -> { x = Random.float ray; y = Random.float ray; }) in
-    (pio4 := cpuPI field !size;
-     Printf.printf "CPU Computation : PI = %d/%d = %.10G\n" !pio4 !size
-       ((4. *. (float !pio4)) /. (float !size));
-     
-      (* GPU COMPUTATION *)
-    
-      (
-        Printf.printf "Will use device : %s\n" !dev.Spoc.Devices.general_info.Spoc.Devices.name;
-        Spoc.Kernel.compile !dev gpuPi;
-        Spoc.Mem.auto_transfers false;
-        let vbool = Spoc.Vector.create int32 !size in
-        let gpuField =
-          if Devices.allowDouble !dev then
-            Spoc.Tools.map
-              (fun _ -> { x = Random.float ray; y = Random.float ray; })
-              (Custom customPoint2) vbool
-          else
-            Spoc.Tools.map
-              (fun _ -> { x = Random.float ray; y = Random.float ray; })
-              (Custom customPoint) vbool
-        in
-        (Spoc.Mem.to_device gpuField ~queue_id: 1 !dev;
-          Spoc.Mem.to_device vbool ~queue_id: 0 !dev ;
-          pio4 := gpuPI gpuField vbool !dev !size;
-          Printf.printf "GPU Computation : PI = %d/%d = %.10g\n%!" !pio4 !size
-            ((4. *. (float !pio4)) /. (float !size));
-          Spoc.Mem.auto_transfers true;
-          gpuPi_complex vbool !dev !size;
-  ))))
-    
-  
+   let pio4 = ref 0 in (*CPU COMPUTATION*)
+   let field =
+     Array.init !size
+       (fun _ -> { x = Random.float ray; y = Random.float ray; }) in
+   (pio4 := cpuPI field !size;
+    Printf.printf "CPU Computation : PI = %d/%d = %.10G\n" !pio4 !size
+      ((4. *. (float !pio4)) /. (float !size));
 
+    (* GPU COMPUTATION *)
+
+    (
+      Printf.printf "Will use device : %s\n" !dev.Spoc.Devices.general_info.Spoc.Devices.name;
+      Spoc.Kernel.compile !dev gpuPi;
+      Spoc.Mem.auto_transfers false;
+      let vbool = Spoc.Vector.create int32 !size in
+      let gpuField =
+        if Devices.allowDouble !dev then
+          Spoc.Tools.map
+            (fun _ -> { x = Random.float ray; y = Random.float ray; })
+            (Custom customPoint2) vbool
+        else
+          Spoc.Tools.map
+            (fun _ -> { x = Random.float ray; y = Random.float ray; })
+            (Custom customPoint) vbool
+      in
+      (Spoc.Mem.to_device gpuField ~queue_id: 1 !dev;
+       Spoc.Mem.to_device vbool ~queue_id: 0 !dev ;
+       pio4 := gpuPI gpuField vbool !dev !size;
+       Printf.printf "GPU Computation : PI = %d/%d = %.10g\n%!" !pio4 !size
+         ((4. *. (float !pio4)) /. (float !size));
+       Spoc.Mem.auto_transfers true;
+       gpuPi_complex vbool !dev !size;
+      ))))

@@ -1,6 +1,7 @@
 ## Next
 
 - Add PPX extension to declare external GPGPU kernels
+- Update Samples to use PPX instead of Camlp4 extension
 
 ## 20210816
 

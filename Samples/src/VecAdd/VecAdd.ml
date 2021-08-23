@@ -22,8 +22,8 @@
 open Spoc
 
 
-    kernel vec_add : Spoc.Vector.vfloat32 -> Spoc.Vector.vfloat32 -> Spoc.Vector.vfloat32 -> int -> unit = "kernels/VecAdd" "vec_add"
-                                                                                                      kernel vec_add_double : Spoc.Vector.vfloat64 -> Spoc.Vector.vfloat64 -> Spoc.Vector.vfloat64 -> int -> unit = "kernels/VecAdd" "vec_add_double"
+[%%kernel external vec_add : Spoc.Vector.vfloat32 -> Spoc.Vector.vfloat32 -> Spoc.Vector.vfloat32 -> int -> unit = "kernels/VecAdd" "vec_add"]
+[%%kernel external vec_add_double : Spoc.Vector.vfloat64 -> Spoc.Vector.vfloat64 -> Spoc.Vector.vfloat64 -> int -> unit = "kernels/VecAdd" "vec_add_double"]
 
 let devices = Spoc.Devices.init ()
 
@@ -81,7 +81,7 @@ let _ =
     	let block = { Spoc.Kernel.blockX = threadsPerBlock; Spoc.Kernel.blockY = 1 ; Spoc.Kernel.blockZ = 1;} in
     	let grid = { Spoc.Kernel.gridX = blocksPerGrid; Spoc.Kernel.gridY = 1 ; Spoc.Kernel.gridZ = 1;} in
 
-	vec_add#compile (~debug: true) !dev;
+	vec_add#compile  !dev;
     	Spoc.Kernel.run !dev (block, grid) vec_add (a, b, res, !vec_size);
       end;
       if (not !auto_transfers) then
@@ -147,7 +147,7 @@ let _ =
     	let block = { Spoc.Kernel.blockX = threadsPerBlock; Spoc.Kernel.blockY = 1 ; Spoc.Kernel.blockZ = 1;} in
     	let grid = { Spoc.Kernel.gridX = blocksPerGrid; Spoc.Kernel.gridY = 1 ; Spoc.Kernel.gridZ = 1;} in
 
-	vec_add#compile (~debug: true) !dev;
+	vec_add#compile  !dev;
     	Spoc.Kernel.run !dev (block, grid) vec_add (a, b, res, !vec_size);
       end;
       if (not !auto_transfers) then
