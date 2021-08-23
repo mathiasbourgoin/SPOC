@@ -8,14 +8,14 @@ license: "Cecill-B"
 homepage: "https://github.com/mathiasbourgoin/SPOC"
 bug-reports: "https://github.com/mathiasbourgoin/SPOC/issues"
 depends: [
-  "ocaml" {>= "4.09.0"}
+  "ocaml" {>= "4.07.0"}
   "re"
   "dune" {>= "2.9" & > "2.0"}
   "cppo"
   "camlp4"
   "ctypes"
   "ctypes-foreign"
-  "ppxlib"
+  "ppxlib" {>= "0.22.0"}
   "ppx_tools"
   "spoc"
   "odoc" {with-doc}
