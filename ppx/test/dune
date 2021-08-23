@@ -1,0 +1,7 @@
+(executable
+ (name Test)
+ (flags (-ccopt -L$CUDA_PATH -cclib -lnvrtc))
+ (preprocessor_deps (package spoc))
+ (preprocess (pps spoc_ppx sarek_ppx))
+ (libraries spoc ctypes)
+)

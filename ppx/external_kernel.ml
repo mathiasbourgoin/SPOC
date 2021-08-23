@@ -50,9 +50,7 @@ let new_fresh_var loc =
 
 let rec parse_ctyp = function
   | (* a -> b *)
-    {ptyp_desc =
-       Ptyp_arrow (Nolabel,
-                   typ1, typ2); _} ->
+    [%type: [%t? typ1] -> [%t? typ2]] ->
     let l1 = parse_ctyp typ1
     and l2 = parse_ctyp typ2 in
     {constraint_vars = l1.constraint_vars@l2.constraint_vars;

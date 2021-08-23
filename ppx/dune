@@ -4,5 +4,15 @@
   (kind ppx_rewriter)
   (libraries ppxlib spoc)
   (preprocess (pps ppxlib.metaquot))
-  (modules (:standard ))
+  (modules external_kernel)
+)
+
+
+(library
+  (name sarek_ppx)
+  (public_name sarek_ppx)
+  (kind ppx_rewriter)
+  (libraries ppxlib spoc)
+  (preprocess (pps ppxlib.metaquot))
+  (modules (:standard \ external_kernel))
 )

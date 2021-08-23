@@ -45,3 +45,20 @@
   (ppxlib (>= 0.22.0))
   (spoc (= version))
  ))
+
+(package
+  (name sarek_ppx)
+  (synopsis "PPX to write GPGPU kernels embedded in OCaml code")
+  (description "")
+  (depends
+ (ocaml (>= 4.11.0))
+  re
+  (dune (> 2.0))
+  cppo
+  camlp4
+  ctypes
+  ctypes-foreign
+  (ppxlib (>= 0.22.0))
+  ppx_tools
+  spoc
+ ))
