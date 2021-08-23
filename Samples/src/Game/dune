@@ -1,9 +1,7 @@
 (executable
  (name Game)
  (flags (-ccopt -L$CUDA_PATH -cclib -lnvrtc))
-(preprocess
-  (action
-    (system "camlp4 -I `ocamlfind query spoc.external_kernels` -I. -parser o -printer o external_kernels.cma %{input-file}")))
+ (preprocess (pps spoc_ppx))
  (preprocessor_deps (package spoc))
- (libraries graphics unix spoc camlp4)
+ (libraries graphics unix spoc)
 )

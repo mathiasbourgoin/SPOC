@@ -1,9 +1,7 @@
 (executable
  (name Mandelbrot)
  (flags (-ccopt -L$CUDA_PATH -cclib -lnvrtc))
-(preprocess
-  (action
-    (system "camlp4 -I `ocamlfind query spoc.external_kernels` -I. -parser o -printer o external_kernels.cma %{input-file}")))
+ (libraries graphics unix spoc )
  (preprocessor_deps (package spoc))
- (libraries graphics unix spoc camlp4)
+ (preprocess (pps spoc_ppx))
 )
