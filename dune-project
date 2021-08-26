@@ -14,7 +14,7 @@
  (synopsis "High-level GPGPU programming library for OCaml")
  (description "")
  (depends
- (ocaml (>= 4.11.0))
+ (ocaml (>= 4.07.0))
   re
   (dune (> 2.0))
   cppo
@@ -28,15 +28,11 @@
  (synopsis "GPGPU kernel DSL for OCaml")
  (description "")
  (depends
- (ocaml (>= 4.11.0))
-  spoc
+ (ocaml (>= 4.07.0))
+ (spoc (= version))
   re
   (dune (> 2.0))
-  cppo
   camlp4
-  ctypes
-  ctypes-foreign
-  spoc
  ))
 
 (package
@@ -44,14 +40,8 @@
   (synopsis "PPX to declare external GPGPU kernels written in CUDA or OpenCL")
   (description "")
   (depends
- (ocaml (>= 4.11.0))
-  re
+ (ocaml (>= 4.07.0))
   (dune (> 2.0))
-  cppo
-  camlp4
-  ctypes
-  ctypes-foreign
   (ppxlib (>= 0.22.0))
-  ppx_tools
-  spoc
+  (spoc (= version))
  ))

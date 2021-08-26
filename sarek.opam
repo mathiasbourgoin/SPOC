@@ -9,14 +9,10 @@ homepage: "https://github.com/mathiasbourgoin/SPOC"
 bug-reports: "https://github.com/mathiasbourgoin/SPOC/issues"
 depends: [
   "ocaml" {>= "4.07.0"}
-  "spoc"
+  "spoc" {= version}
   "re"
   "dune" {>= "2.9" & > "2.0"}
-  "cppo"
   "camlp4"
-  "ctypes"
-  "ctypes-foreign"
-  "spoc"
   "odoc" {with-doc}
 ]
 build: [
@@ -36,7 +32,5 @@ build: [
   ]
   ["dune" "install" "-p" name "--create-install-files" name]
 ]
-
-available: [ os = "linux" ]
-
 dev-repo: "git+https://github.com/mathiasbourgoin/SPOC.git"
+available: [ os = "linux" ]
