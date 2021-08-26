@@ -34,7 +34,5 @@ build: [
   ]
   ["dune" "install" "-p" name "--create-install-files" name]
 ]
-
-available: [ os = "linux" ]
-
 dev-repo: "git+https://github.com/mathiasbourgoin/SPOC.git"
+available: [ os = "linux" ]

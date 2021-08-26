@@ -4,9 +4,14 @@ all:
 clean:
 	dune clean
 
-
-install:
+opam:
 	dune build @install
+	echo 'available: [ os = "linux" ]'  >> spoc.opam
+	echo 'available: [ os = "linux" ]'  >> sarek.opam
+	echo 'available: [ os = "linux" ]'  >> spoc_ppx.opam
+
+
+install: opam
 	dune install
 
 uninstall:
