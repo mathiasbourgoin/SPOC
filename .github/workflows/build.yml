@@ -37,9 +37,16 @@ jobs:
           restore-keys: |
             ${{ matrix.os }}-${{ matrix.ocaml-compiler }}-
 
+      - name: Initialize Opam
+        run: |
+          export OPAMYES=1
+          opam init --compiler=${{ matrix.ocaml-compiler }} --disable-sandboxing
+          eval $(opam env)
+
       - name: Install opam packages
-        # Consider simplifying the opam init check if `camlp4` command check is problematic
-        run: export OPAMYES=1 && eval $(opam env) || opam init --compiler=${{ matrix.ocaml-compiler }} --disable-sandboxing && eval $(opam env) && opam install graphics camlp4 ctypes ctypes-foreign cppo dune ppxlib ppx_tools
+        run: |
+          eval $(opam env)
+          opam install graphics camlp4 ctypes ctypes-foreign cppo dune ppxlib ppx_tools
 
       - name: Build SPOC
         # Remove explicit CUDA_PATH, let dune try to find it
