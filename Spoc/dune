@@ -1,4 +1,4 @@
-(dirs dependencies dependencies/Cuda dependencies/CL extension)
+(dirs extension)
 
 (library
  (name spoc)
@@ -6,8 +6,7 @@
  (foreign_stubs
   (language c)
     (names cuda_drvapi_dynlink Kernel_cuda Mem_c Spoc_c Trac_c Custom Kernel_opencl Opencl_dynlink  Spoc_cu)
-    (include_dirs dependencies/Cuda dependencies/CL)
- (flags :standard -I/opt/cuda/targets/x86_64-linux/lib/ -lnvrtc))
+ (flags :standard -lnvrtc))
  (libraries str)
  (preprocess (action (run %{bin:cppo} -V OCAML:%{ocaml_version} %{input-file}))))
 

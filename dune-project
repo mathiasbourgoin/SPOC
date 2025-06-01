@@ -1,4 +1,4 @@
-(lang dune 2.9)
+(lang dune 3.7)
 (name spoc)
 ; version field is optional
 

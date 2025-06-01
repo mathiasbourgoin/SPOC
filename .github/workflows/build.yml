@@ -19,23 +19,28 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
+      - name: Setup CUDA
+        uses: cuda-actions/setup-cuda@v1
+        with:
+          cuda_version: '11.8.0'
 
-      - name: Install intel opencl
-        run: sudo ./.travis/install_intel_opencl.sh
-
-      - name: Install deps
-        run: sudo apt-get install --no-install-recommends nvidia-cuda-dev libnvrtc10.1 opam
+      - name: Install OpenCL and system deps
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y ocl-icd-opencl-dev intel-opencl-icd opam
 
       - name: Opam Cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ~/.opam
-          key: ${{ matrix.os }}-${{ matrix.ocaml-version }}-${{ hashFiles('*.opam') }}-build
+          key: ${{ matrix.os }}-${{ matrix.ocaml-compiler }}-${{ hashFiles('*.opam') }}-build
 
       - name: Install opam packages
-        run: export OPAMYES=1 && eval $(opam env) && if $(camlp4);then echo; else opam init --compiler=${{ matrix.ocaml-compiler }}  --disable-sandboxing; fi && eval $(opam env) && opam install graphics camlp4 ctypes ctypes-foreign cppo dune ppxlib ppx_tools
+        run: |
+          export OPAMYES=true
+          opam init --compiler=${{ matrix.ocaml-compiler }} --disable-sandboxing --bare
+          eval $(opam env)
+          opam install . --deps-only --with-test
 
       - name: Build SPOC
-        run: export CUDA_PATH=/usr/lib/x86_64-linux-gnu/ && eval $(opam env) && dune build
+        run: eval $(opam env) && dune build
