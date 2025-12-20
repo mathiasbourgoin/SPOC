@@ -64,6 +64,10 @@ exception ERROR_LAUNCH_TIMEOUT
 
 exception ERROR_LAUNCH_INCOMPATIBLE_TEXTURING
 
+exception ERROR_INVALID_HANDLE
+
+exception ERROR_ALREADY_MAPPED
+
 let _ =
   (Callback.register_exception "no_cuda_device" No_Cuda_Device;
    Callback.register_exception "cuda_error_deinitialized" ERROR_DEINITIALIZED;
@@ -85,6 +89,8 @@ let _ =
      ERROR_LAUNCH_TIMEOUT;
    Callback.register_exception "cuda_error_launch_incompatible_texturing"
      ERROR_LAUNCH_INCOMPATIBLE_TEXTURING;
+   Callback.register_exception "cuda_error_invalid_handle" ERROR_INVALID_HANDLE;
+   Callback.register_exception "cuda_error_already_mapped" ERROR_ALREADY_MAPPED;
    Callback.register_exception "cuda_error_unknown" ERROR_UNKNOWN)
 
 external cuda_custom_alloc_vect :
@@ -182,4 +188,3 @@ external cuda_custom_matrix_copy :
   int ->
   int -> int -> int -> int -> Devices.generalInfo -> int -> unit =
   "spoc_cuda_custom_matrix_copy_b" "spoc_cuda_custom_matrix_copy_n"
-
