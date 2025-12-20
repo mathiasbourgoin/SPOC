@@ -6,6 +6,8 @@
  ******************************************************************************)
 
 open Ppxlib
+open Sarek_typed_ast
+open Sarek_types
 
 (** Helper to create an identifier expression *)
 let evar ~loc name =
@@ -110,18 +112,18 @@ and quote_k_ext ~loc (k : Kirc_Ast.k_ext) : expression =
     [%expr Sarek.Kirc_Ast.GlobalFun ([%e quote_k_ext ~loc body],
                                [%e quote_string ~loc ret_type],
                                [%e quote_string ~loc name])]
-  | Kirc_Ast.IntVar (id, name) ->
-    [%expr Sarek.Kirc_Ast.IntVar ([%e quote_int ~loc id], [%e quote_string ~loc name])]
-  | Kirc_Ast.FloatVar (id, name) ->
-    [%expr Sarek.Kirc_Ast.FloatVar ([%e quote_int ~loc id], [%e quote_string ~loc name])]
-  | Kirc_Ast.UnitVar (id, name) ->
-    [%expr Sarek.Kirc_Ast.UnitVar ([%e quote_int ~loc id], [%e quote_string ~loc name])]
+  | Kirc_Ast.IntVar (id, name, is_mut) ->
+    [%expr Sarek.Kirc_Ast.IntVar ([%e quote_int ~loc id], [%e quote_string ~loc name], [%e quote_bool ~loc is_mut])]
+  | Kirc_Ast.FloatVar (id, name, is_mut) ->
+    [%expr Sarek.Kirc_Ast.FloatVar ([%e quote_int ~loc id], [%e quote_string ~loc name], [%e quote_bool ~loc is_mut])]
+  | Kirc_Ast.UnitVar (id, name, is_mut) ->
+    [%expr Sarek.Kirc_Ast.UnitVar ([%e quote_int ~loc id], [%e quote_string ~loc name], [%e quote_bool ~loc is_mut])]
   | Kirc_Ast.CastDoubleVar (id, name) ->
     [%expr Sarek.Kirc_Ast.CastDoubleVar ([%e quote_int ~loc id], [%e quote_string ~loc name])]
-  | Kirc_Ast.DoubleVar (id, name) ->
-    [%expr Sarek.Kirc_Ast.DoubleVar ([%e quote_int ~loc id], [%e quote_string ~loc name])]
-  | Kirc_Ast.BoolVar (id, name) ->
-    [%expr Sarek.Kirc_Ast.BoolVar ([%e quote_int ~loc id], [%e quote_string ~loc name])]
+  | Kirc_Ast.DoubleVar (id, name, is_mut) ->
+    [%expr Sarek.Kirc_Ast.DoubleVar ([%e quote_int ~loc id], [%e quote_string ~loc name], [%e quote_bool ~loc is_mut])]
+  | Kirc_Ast.BoolVar (id, name, is_mut) ->
+    [%expr Sarek.Kirc_Ast.BoolVar ([%e quote_int ~loc id], [%e quote_string ~loc name], [%e quote_bool ~loc is_mut])]
   | Kirc_Ast.VecVar (elem, id, name) ->
     [%expr Sarek.Kirc_Ast.VecVar ([%e quote_k_ext ~loc elem], [%e quote_int ~loc id],
                             [%e quote_string ~loc name])]
@@ -232,16 +234,128 @@ and quote_k_ext ~loc (k : Kirc_Ast.k_ext) : expression =
   | Kirc_Ast.Unit ->
     [%expr Sarek.Kirc_Ast.Unit]
 
+(** Build argument handling for spoc_kernel methods *)
+let kernel_ctor_lid ~loc name =
+  { txt = Ldot (Ldot (Lident "Spoc", "Kernel"), name); loc }
+
+let kernel_ctor_expr ~loc name arg =
+  Ast_builder.Default.pexp_construct ~loc (kernel_ctor_lid ~loc name) (Some arg)
+
+let kernel_ctor_pat ~loc name arg =
+  Ast_builder.Default.ppat_construct ~loc (kernel_ctor_lid ~loc name) (Some arg)
+
+let core_type_of_typ ~loc (t : typ) : core_type option =
+  match repr t with
+  | TPrim TUnit -> Some [%type: unit]
+  | TPrim (TBool | TInt32 | TInt64) -> Some [%type: int]
+  | TPrim (TFloat32 | TFloat64) -> Some [%type: float]
+  | TVec elem ->
+    (match repr elem with
+     | TPrim TInt32 ->
+       Some [%type: (int32, Bigarray.int32_elt) Spoc.Vector.vector]
+     | TPrim TInt64 ->
+       Some [%type: (int64, Bigarray.int64_elt) Spoc.Vector.vector]
+     | TPrim TFloat32 ->
+       Some [%type: (float, Bigarray.float32_elt) Spoc.Vector.vector]
+     | TPrim TFloat64 ->
+       Some [%type: (float, Bigarray.float64_elt) Spoc.Vector.vector]
+     | TPrim TBool ->
+       Some [%type: (bool, bool) Spoc.Vector.vector]
+     | TRecord _ | TVariant _ ->
+       Some [%type: ('spoc_a, 'spoc_b) Spoc.Vector.vector]
+     | _ -> None)
+  | TRecord _ | TVariant _ -> None
+  | TArr _ | TFun _ | TTuple _ | TVar _ -> None
+
+let kernel_ctor_name (t : typ) : string =
+  match repr t with
+  | TPrim (TBool | TInt32) -> "Int32"
+  | TPrim TInt64 -> "Int64"
+  | TPrim TFloat32 -> "Float32"
+  | TPrim TFloat64 -> "Float64"
+  | TVec elem ->
+    (match repr elem with
+     | TPrim (TBool | TInt32) -> "VInt32"
+     | TPrim TInt64 -> "VInt64"
+     | TPrim TFloat32 -> "VFloat32"
+     | TPrim TFloat64 -> "VFloat64"
+     | TRecord _ | TVariant _ -> "VCustom"
+     | _ -> "Vector")
+  | TRecord _ | TVariant _ -> "Custom"
+  | _ -> "Vector"
+
+let kernel_arg_expr ~loc ty var =
+  match repr ty with
+  | TVec _ ->
+    let relaxed = [%expr Spoc.Kernel.relax_vector [%e var]] in
+    kernel_ctor_expr ~loc (kernel_ctor_name ty) relaxed
+  | _ ->
+    kernel_ctor_expr ~loc (kernel_ctor_name ty) var
+
+let kernel_arg_pat ~loc ty var =
+  kernel_ctor_pat ~loc (kernel_ctor_name ty) var
+
+let build_kernel_args ~loc (params : tparam list) =
+  let names = List.mapi (fun idx _ -> Printf.sprintf "spoc_arg%d" idx) params in
+  let vars = List.map (fun name -> (name, evar ~loc name)) names in
+  let args_pat =
+    let pats = List.map (fun (name, _) -> Ast_builder.Default.ppat_var ~loc { txt = name; loc }) vars in
+    match pats with
+    | [] -> [%pat? ()]
+    | [p] -> p
+    | _ -> Ast_builder.Default.ppat_tuple ~loc pats
+  in
+  let args_array_expr =
+    let exprs = List.map2 (fun p (_, v) -> kernel_arg_expr ~loc p.tparam_type v) params vars in
+    Ast_builder.Default.pexp_array ~loc exprs
+  in
+  let list_to_args_pat =
+    let pats = List.map2 (fun p (name, _) ->
+        kernel_arg_pat ~loc p.tparam_type
+          (Ast_builder.Default.ppat_var ~loc { txt = name; loc })
+      ) params vars in
+    Ast_builder.Default.ppat_array ~loc pats
+  in
+  let list_to_args_expr =
+    let first_vec = ref false in
+    let exprs =
+      List.map2
+        (fun p (_, v) ->
+           let base =
+             match repr p.tparam_type with
+             | TVec _ ->
+               if not !first_vec then (first_vec := true; v)
+               else [%expr Spoc.Kernel.relax_vector [%e v]]
+             | _ -> v
+           in
+           match core_type_of_typ ~loc p.tparam_type with
+           | Some ty -> Ast_builder.Default.pexp_constraint ~loc base ty
+           | None -> base)
+        params vars
+    in
+    match exprs with
+    | [] -> [%expr ()]
+    | [e] -> e
+    | _ -> Ast_builder.Default.pexp_tuple ~loc exprs
+  in
+  args_pat, args_array_expr, list_to_args_pat, list_to_args_expr
+
 (** Quote a kernel to create a sarek_kernel expression *)
-let quote_kernel ~loc (ir : Kirc_Ast.k_ext) (ret_val : Kirc_Ast.k_ext) : expression =
+let quote_kernel ~loc (kernel : tkernel) (ir : Kirc_Ast.k_ext) (ret_val : Kirc_Ast.k_ext) : expression =
+  let args_pat, args_array_expr, list_to_args_pat, list_to_args_expr =
+    build_kernel_args ~loc kernel.tkern_params
+  in
   [%expr
     let open Spoc in
     let module M = struct
+      let exec_fun [%p args_pat] = Spoc.Kernel.exec [%e args_array_expr]
       class ['a, 'b] sarek_kern = object
         inherit ['a, 'b] Spoc.Kernel.spoc_kernel "kirc_kernel" "spoc_dummy"
-        method exec = assert false
-        method args_to_list = assert false
-        method list_to_args = assert false
+        method exec = exec_fun
+        method args_to_list = fun [%p args_pat] -> [%e args_array_expr]
+        method list_to_args = function
+          | [%p list_to_args_pat] -> [%e list_to_args_expr]
+          | _ -> failwith "spoc_kernel_extension error"
       end
     end in
     let open Sarek.Kirc in

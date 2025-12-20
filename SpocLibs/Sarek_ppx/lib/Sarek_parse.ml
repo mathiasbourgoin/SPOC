@@ -147,6 +147,16 @@ let rec parse_expression (expr : expression) : Sarek_ast.expr =
         [(Nolabel, arr); (Nolabel, idx); (Nolabel, value)]) ->
       Sarek_ast.EArrSet (parse_expression arr, parse_expression idx, parse_expression value)
 
+    (* Mutable assignment: x := v *)
+    | Pexp_apply (
+        { pexp_desc = Pexp_ident { txt = Lident ":="; _ }; _ },
+        [(Nolabel, lhs); (Nolabel, rhs)]) ->
+      (match lhs.pexp_desc with
+       | Pexp_ident { txt = Lident name; _ } ->
+         Sarek_ast.EAssign (name, parse_expression rhs)
+       | _ ->
+         raise (Parse_error_exn ("Expected variable on left-hand side of :=", lhs.pexp_loc)))
+
     (* a.(i) syntax - array access *)
     | Pexp_apply (arr, [(Nolabel, idx)])
       when is_array_access expr ->
@@ -184,7 +194,22 @@ let rec parse_expression (expr : expression) : Sarek_ast.expr =
         | None -> raise (Parse_error_exn ("Expected variable pattern", pvb_pat.ppat_loc))
       in
       let ty = extract_type_from_pattern pvb_pat in
-      Sarek_ast.ELet (name, ty, parse_expression pvb_expr, parse_expression body)
+      let mut_expr =
+        match pvb_expr.pexp_desc with
+        | Pexp_apply ({ pexp_desc = Pexp_ident { txt = Lident "mut"; _ }; _ },
+                      [(Nolabel, inner)]) ->
+          Some inner
+        | _ -> None
+      in
+      let is_mutable = Option.is_some mut_expr in
+      let value_expr = match mut_expr with
+        | Some inner -> inner
+        | None -> pvb_expr
+      in
+      if is_mutable then
+        Sarek_ast.ELetMut (name, ty, parse_expression value_expr, parse_expression body)
+      else
+        Sarek_ast.ELet (name, ty, parse_expression value_expr, parse_expression body)
 
     (* If-then-else *)
     | Pexp_ifthenelse (cond, then_e, else_opt) ->

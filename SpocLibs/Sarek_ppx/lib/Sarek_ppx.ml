@@ -33,7 +33,7 @@ let expand_kernel ~ctxt payload =
        let ret_val = Sarek_lower.lower_return_value tkernel in
 
        (* 5. Quote the IR back to OCaml *)
-       Sarek_quote.quote_kernel ~loc ir ret_val)
+       Sarek_quote.quote_kernel ~loc tkernel ir ret_val)
 
   with
   | Sarek_parse.Parse_error_exn (msg, ploc) ->

@@ -62,7 +62,7 @@ let rec lower_expr (state : state) (te : texpr) : Kirc_Ast.k_ext =
 
   (* Variables - use IntId for variable references in expressions *)
   | TEVar (name, id) ->
-    Kirc_Ast.IntId (name, id)
+    lower_ref id name te.ty
 
   (* Vector access *)
   | TEVecGet (vec, idx) ->
@@ -111,15 +111,22 @@ let rec lower_expr (state : state) (te : texpr) : Kirc_Ast.k_ext =
     let args_ir = Array.of_list (List.map (lower_expr state) args) in
     Kirc_Ast.App (fn_ir, args_ir)
 
+  (* Mutable assignment *)
+  | TEAssign (name, id, value) ->
+    let value_ir = lower_expr state value in
+    let ref_ir = lower_ref id name value.ty in
+    Kirc_Ast.Set (ref_ir, value_ir)
+
   (* Let binding *)
   | TELet (name, id, value, body) ->
     let value_ir = lower_expr state value in
-    let var_ir = lower_var id name value.ty in
+    let decl_ir = lower_decl ~mutable_:false id name value.ty in
+    let ref_ir = lower_ref id name value.ty in
     let body_ir = lower_expr state body in
     Kirc_Ast.Seq (
-      Kirc_Ast.Decl var_ir,
+      Kirc_Ast.Decl decl_ir,
       Kirc_Ast.Seq (
-        Kirc_Ast.Set (var_ir, value_ir),
+        Kirc_Ast.Set (ref_ir, value_ir),
         body_ir
       )
     )
@@ -127,12 +134,13 @@ let rec lower_expr (state : state) (te : texpr) : Kirc_Ast.k_ext =
   (* Mutable let binding - same as regular let in IR *)
   | TELetMut (name, id, value, body) ->
     let value_ir = lower_expr state value in
-    let var_ir = lower_var id name value.ty in
+    let decl_ir = lower_decl ~mutable_:true id name value.ty in
+    let ref_ir = lower_ref id name value.ty in
     let body_ir = lower_expr state body in
     Kirc_Ast.Seq (
-      Kirc_Ast.Decl var_ir,
+      Kirc_Ast.Decl decl_ir,
       Kirc_Ast.Seq (
-        Kirc_Ast.Set (var_ir, value_ir),
+        Kirc_Ast.Set (ref_ir, value_ir),
         body_ir
       )
     )
@@ -151,7 +159,7 @@ let rec lower_expr (state : state) (te : texpr) : Kirc_Ast.k_ext =
   | TEFor (var, id, lo, hi, dir, body) ->
     let lo_ir = lower_expr state lo in
     let hi_ir = lower_expr state hi in
-    let var_ir = Kirc_Ast.IntVar (id, var) in
+    let var_ir = lower_ref id var te.ty in
     let body_ir = lower_expr state body in
     (* DoLoop takes: var, start, end, body *)
     (* For downto, we need to handle differently - for now assume upto *)
@@ -232,18 +240,22 @@ let rec lower_expr (state : state) (te : texpr) : Kirc_Ast.k_ext =
     else
       Kirc_Ast.App (Kirc_Ast.Intrinsics (cuda, opencl), args_ir)
 
-(** Lower a variable reference based on type *)
-and lower_var id name ty =
+(** Lower a declaration for a local/kernel variable. *)
+and lower_decl ~mutable_ id name ty =
   match repr ty with
-  | TPrim TInt32 | TPrim TInt64 -> Kirc_Ast.IntVar (id, name)
-  | TPrim TFloat32 -> Kirc_Ast.FloatVar (id, name)
-  | TPrim TFloat64 -> Kirc_Ast.DoubleVar (id, name)
-  | TPrim TBool -> Kirc_Ast.BoolVar (id, name)
-  | TPrim TUnit -> Kirc_Ast.UnitVar (id, name)
+  | TPrim TInt32 | TPrim TInt64 -> Kirc_Ast.IntVar (id, name, mutable_)
+  | TPrim TFloat32 -> Kirc_Ast.FloatVar (id, name, mutable_)
+  | TPrim TFloat64 -> Kirc_Ast.DoubleVar (id, name, mutable_)
+  | TPrim TBool -> Kirc_Ast.BoolVar (id, name, mutable_)
+  | TPrim TUnit -> Kirc_Ast.UnitVar (id, name, mutable_)
   | TVec _ -> Kirc_Ast.VecVar (Kirc_Ast.Empty, id, name)
   | TRecord (type_name, _) -> Kirc_Ast.Custom (type_name, id, name)
   | TVariant (type_name, _) -> Kirc_Ast.Custom (type_name, id, name)
-  | _ -> Kirc_Ast.IntVar (id, name)
+  | _ -> Kirc_Ast.IntVar (id, name, mutable_)
+
+(** Lower a reference to a previously-declared variable. *)
+and lower_ref id name _ty =
+  Kirc_Ast.IntId (name, id)
 
 (** Lower binary operation based on operand types *)
 and lower_binop state op e1 e2 _result_ty =
@@ -342,19 +354,19 @@ let lower_param (p : tparam) : Kirc_Ast.k_ext =
     in
     Kirc_Ast.VecVar (elem_ir, p.tparam_id, p.tparam_name)
   | TPrim TInt32 | TPrim TInt64 ->
-    Kirc_Ast.IntVar (p.tparam_id, p.tparam_name)
+    Kirc_Ast.IntVar (p.tparam_id, p.tparam_name, false)
   | TPrim TFloat32 ->
-    Kirc_Ast.FloatVar (p.tparam_id, p.tparam_name)
+    Kirc_Ast.FloatVar (p.tparam_id, p.tparam_name, false)
   | TPrim TFloat64 ->
-    Kirc_Ast.DoubleVar (p.tparam_id, p.tparam_name)
+    Kirc_Ast.DoubleVar (p.tparam_id, p.tparam_name, false)
   | TPrim TBool ->
-    Kirc_Ast.BoolVar (p.tparam_id, p.tparam_name)
+    Kirc_Ast.BoolVar (p.tparam_id, p.tparam_name, false)
   | TPrim TUnit ->
-    Kirc_Ast.UnitVar (p.tparam_id, p.tparam_name)
+    Kirc_Ast.UnitVar (p.tparam_id, p.tparam_name, false)
   | TRecord (type_name, _) ->
     Kirc_Ast.Custom (type_name, p.tparam_id, p.tparam_name)
   | _ ->
-    Kirc_Ast.IntVar (p.tparam_id, p.tparam_name)
+    Kirc_Ast.IntVar (p.tparam_id, p.tparam_name, false)
 
 (** Lower kernel parameters to IR params *)
 let lower_params (params : tparam list) : Kirc_Ast.k_ext =
@@ -375,11 +387,11 @@ let lower_return_value (kernel : tkernel) : Kirc_Ast.k_ext =
   match repr kernel.tkern_return_type with
   | TPrim TUnit -> Kirc_Ast.Unit
   | TPrim TInt32 | TPrim TInt64 ->
-    Kirc_Ast.IntVar (0, "result")
+    Kirc_Ast.IntVar (0, "result", true)
   | TPrim TFloat32 ->
-    Kirc_Ast.FloatVar (0, "result")
+    Kirc_Ast.FloatVar (0, "result", true)
   | TPrim TFloat64 ->
-    Kirc_Ast.DoubleVar (0, "result")
+    Kirc_Ast.DoubleVar (0, "result", true)
   | TVec elem_ty ->
     let elem = match repr elem_ty with
       | TPrim TInt32 -> Kirc_Ast.Int 0

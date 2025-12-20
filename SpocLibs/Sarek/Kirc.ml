@@ -438,15 +438,15 @@ let concat a b = Concat (a, b)
 
 let empty_arg () = Empty
 
-let new_int_var i s = IntVar (i, s)
+let new_int_var ?(mutable_=true) i s = IntVar (i, s, mutable_)
 
-let new_float_var i s = FloatVar (i, s)
+let new_float_var ?(mutable_=true) i s = FloatVar (i, s, mutable_)
 
-let new_float64_var i s = DoubleVar (i, s)
+let new_float64_var ?(mutable_=true) i s = DoubleVar (i, s, mutable_)
 
-let new_double_var i s = DoubleVar (i, s)
+let new_double_var ?(mutable_=true) i s = DoubleVar (i, s, mutable_)
 
-let new_unit_var i s = UnitVar (i, s)
+let new_unit_var ?(mutable_=true) i s = UnitVar (i, s, mutable_)
 
 let new_custom_var n v s = Custom (n, v, s)
 
@@ -556,13 +556,13 @@ let get_arr a b = IntVecAcc (a, b)
 
 let return_unit () = Unit
 
-let return_int i s = IntVar (i, s)
+let return_int i s = IntVar (i, s, true)
 
-let return_float f s = FloatVar (f, s)
+let return_float f s = FloatVar (f, s, true)
 
-let return_double d s = DoubleVar (d, s)
+let return_double d s = DoubleVar (d, s, true)
 
-let return_bool b s = BoolVar (b, s)
+let return_bool b s = BoolVar (b, s, true)
 
 let return_custom n sn s = CustomVar (n, sn, s)
 
@@ -763,6 +763,70 @@ let load_file f =
   let s = Bytes.make n ' ' in
   really_input ic s 0 n ; close_in ic ; s
 
+let opencl_source ?profile:(prof = false) ?return:(r = false)
+    (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel) dev =
+  let kir, k = ker in
+  let k1, k2, k3 = (k.ml_kern, k.body, k.ret_val) in
+  return_v := ("", "") ;
+  let k' =
+    ( Kirc_Cuda.parse ~profile:prof 0 (fst k3) dev
+    , match fst k3 with
+      | IntVar (_i, s, _) | FloatVar (_i, s, _) | DoubleVar (_i, s, _) ->
+        s ^ " = "
+      | Unit -> ""
+      | SetV _ -> ""
+      | IntVecAcc _ -> ""
+      | VecVar _ -> ""
+      | _ ->
+        debug_print
+          ( kir
+          , { ml_kern= k1
+            ; body= fst k3
+            ; ret_val= k3
+            ; extensions= k.extensions } ) ;
+        Stdlib.flush stdout ;
+        assert false )
+  in
+  if r then (
+    Kirc_Cuda.return_v := k' ;
+    Kirc_OpenCL.return_v := k' ) ;
+  ignore (Kirc_OpenCL.get_profile_counter ()) ;
+  let opencl_head =
+    Array.fold_left
+      (fun header extension ->
+         match extension with
+         | ExFloat32 -> header
+         | ExFloat64 -> opencl_float64 ^ header )
+      opencl_head k.extensions
+  in
+  let src = Kirc_OpenCL.parse ~profile:prof 0 (rewrite k2) dev in
+  let global_funs =
+    ref "/************* FUNCTION DEFINITIONS ******************/\n"
+  in
+  Hashtbl.iter
+    (fun _ a -> global_funs := !global_funs ^ "\n" ^ fst a ^ "\n")
+    Kirc_OpenCL.global_funs ;
+  let constructors =
+    "/************* CUSTOM TYPES ******************/\n"
+    ^ List.fold_left (fun a b -> b ^ a) "\n\n" !constructors
+  in
+  let protos =
+    "/************* FUNCTION PROTOTYPES ******************/\n"
+    ^ List.fold_left (fun a b -> b ^ ";\n" ^ a) "" !Kirc_OpenCL.protos
+  in
+  ( if prof then
+      "#pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable\n"
+    else "" )
+  ^ opencl_head
+  ^ ( if prof then
+        match dev.Devices.specific_info with
+        | Devices.OpenCLInfo
+            {Devices.device_type= Devices.CL_DEVICE_TYPE_CPU ; _} ->
+          opencl_profile_head_cpu
+        | _ -> opencl_profile_head
+      else "" )
+  ^ constructors ^ protos ^ !global_funs ^ src
+
 (*external print_source : string -> unit = "kernel_source"*)
 
 let gen_profile ker dev =
@@ -803,7 +867,7 @@ let gen ?keep_temp:(kt=false) ?profile:(prof = false) ?return:(r = false) ?only:
   let k' =
     ( Kirc_Cuda.parse ~profile:prof 0 (fst k3) dev
     , match fst k3 with
-    | IntVar (_i, s) | FloatVar (_i, s) | DoubleVar (_i, s) ->
+    | IntVar (_i, s, _) | FloatVar (_i, s, _) | DoubleVar (_i, s, _) ->
       s (*"sspoc_var"^(string_of_int i)^*) ^ " = "
     | Unit -> ""
     | SetV _ -> ""
@@ -1123,7 +1187,7 @@ let compile_kernel_to_files s (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel) dev =
   let k' =
     ( (Kirc_Cuda.parse 0 (fst k3)) dev
     , match fst k3 with
-    | IntVar (_i, s) | FloatVar (_i, s) | DoubleVar (_i, s) ->
+    | IntVar (_i, s, _) | FloatVar (_i, s, _) | DoubleVar (_i, s, _) ->
       s ^ (*"spoc_var"^(string_of_int i)^*) " = "
     | Unit -> ""
     | SetV _ -> ""

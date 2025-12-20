@@ -281,6 +281,18 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
        let* () = unify_or_error tfn.ty expected_fn_ty fn.expr_loc in
        Ok (mk_texpr (TEApp (tfn, targs)) (repr ret_ty) loc, env))
 
+  (* Mutable assignment *)
+  | EAssign (name, value) ->
+    let* (tv, env) = infer env value in
+    (match find_var name env with
+     | None -> Error [Unbound_variable (name, loc)]
+     | Some vi ->
+       if (not vi.vi_mutable) || vi.vi_is_param then
+         Error [Immutable_variable (name, loc)]
+       else
+         let* () = unify_or_error tv.ty vi.vi_type value.expr_loc in
+         Ok (mk_texpr (TEAssign (name, vi.vi_index, tv)) t_unit loc, env))
+
   (* Let binding *)
   | ELet (name, ty_annot, value, body) ->
     let env' = enter_level env in

@@ -31,13 +31,20 @@ let () =
   let dev = devs.(0) in
   Printf.printf "Using device: %s\n%!" dev.Devices.general_info.Devices.name;
 
-  (* Try to generate kernel code - this may fail on OCaml 5 due to domain lock issues *)
+  (* Try to generate kernel code - keep_temp to see the generated source *)
   (try
-    let _ = Sarek.Kirc.gen vector_add dev in
+    let _ = Sarek.Kirc.gen ~keep_temp:true vector_add dev in
     print_endline "Kernel code generation PASSED"
   with e ->
     Printf.printf "Kernel code generation failed: %s\n" (Printexc.to_string e);
-    Printf.printf "This may be due to OCaml 5 runtime incompatibilities\n";
+    (* Try to show the generated kernel if it was saved *)
+    (try
+      let ic = open_in "kirc_kernel0.cl" in
+      print_endline "=== Generated OpenCL Source ===";
+      (try while true do print_endline (input_line ic) done with End_of_file -> ());
+      close_in ic;
+      print_endline "==============================="
+    with _ -> ());
     print_endline "IR generation test PASSED (code gen skipped)";
     exit 0);
 

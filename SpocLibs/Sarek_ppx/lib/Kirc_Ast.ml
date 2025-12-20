@@ -59,12 +59,12 @@ type k_ext =
   | Id of string
   | IdName of string
   | GlobalFun of k_ext * string * string
-  | IntVar of int * string
-  | FloatVar of int * string
-  | UnitVar of int * string
+  | IntVar of int * string * bool
+  | FloatVar of int * string * bool
+  | UnitVar of int * string * bool
   | CastDoubleVar of int * string
-  | DoubleVar of int * string
-  | BoolVar of int * string
+  | DoubleVar of int * string * bool
+  | BoolVar of int * string * bool
   | Arr of string * k_ext * elttype * memspace
   | VecVar of k_ext * int * string
   | Concat of k_ext * k_ext
@@ -146,13 +146,13 @@ let string_of_ast a =
       sprintf "%s%s%s" (soa i "Mod") (aux (i + 1) a) (aux (i + 1) b)
     | Id s -> soa i ("Id " ^ s)
     | IdName s -> soa i ("IdName " ^ s)
-    | IntVar (ii, s) -> soa i ("IntVar " ^ string_of_int ii ^ " -> " ^ s)
-    | FloatVar (ii, s) -> soa i ("FloatVar " ^ string_of_int ii ^ " -> " ^ s)
+    | IntVar (ii, s, _m) -> soa i ("IntVar " ^ string_of_int ii ^ " -> " ^ s)
+    | FloatVar (ii, s, _m) -> soa i ("FloatVar " ^ string_of_int ii ^ " -> " ^ s)
     | CastDoubleVar (ii, s) ->
       soa i ("CastDoubleVar " ^ string_of_int ii ^ " ->" ^ s)
-    | DoubleVar (ii, s) -> soa i ("DoubleVar " ^ string_of_int ii ^ " ->" ^ s)
-    | BoolVar (ii, s) -> soa i ("BoolVar " ^ string_of_int ii ^ " ->" ^ s)
-    | UnitVar (ii, s) -> soa i ("UnitVar " ^ string_of_int ii ^ " ->" ^ s)
+    | DoubleVar (ii, s, _m) -> soa i ("DoubleVar " ^ string_of_int ii ^ " ->" ^ s)
+    | BoolVar (ii, s, _m) -> soa i ("BoolVar " ^ string_of_int ii ^ " ->" ^ s)
+    | UnitVar (ii, s, _m) -> soa i ("UnitVar " ^ string_of_int ii ^ " ->" ^ s)
     | VecVar (_t, ii, s) -> soa i ("VecVar " ^ string_of_int ii ^ " ->" ^ s)
     | Concat (a, b) ->
       sprintf "%s%s%s" (soa i "Concat") (aux (i + 1) a) (aux (i + 1) b)

@@ -81,11 +81,11 @@ val spoc_rec_set : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val spoc_return : Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val concat : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 val empty_arg : unit -> Kirc_Ast.k_ext
-val new_int_var : int -> string -> Kirc_Ast.k_ext
-val new_float_var : int -> string -> Kirc_Ast.k_ext
-val new_float64_var : int -> string -> Kirc_Ast.k_ext
-val new_double_var : int -> string -> Kirc_Ast.k_ext
-val new_unit_var : int -> string -> Kirc_Ast.k_ext
+val new_int_var : ?mutable_:bool -> int -> string -> Kirc_Ast.k_ext
+val new_float_var : ?mutable_:bool -> int -> string -> Kirc_Ast.k_ext
+val new_float64_var : ?mutable_:bool -> int -> string -> Kirc_Ast.k_ext
+val new_double_var : ?mutable_:bool -> int -> string -> Kirc_Ast.k_ext
+val new_unit_var : ?mutable_:bool -> int -> string -> Kirc_Ast.k_ext
 val new_custom_var : string -> int -> string -> Kirc_Ast.k_ext
 val new_int_vec_var : int -> string -> Kirc_Ast.k_ext
 val new_float_vec_var : int -> string -> Kirc_Ast.k_ext
@@ -151,6 +151,11 @@ val map : Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext
 
 val gen_profile :
   ('a, 'b, 'c, 'd, 'e) sarek_kernel -> Spoc.Devices.device -> unit
+
+val opencl_source :
+  ?profile:bool -> ?return:bool ->
+  ('a, 'b, 'c, 'd, 'e) sarek_kernel ->
+  Spoc.Devices.device -> string
 
 val gen :
   ?keep_temp:bool -> ?profile:bool -> ?return:bool ->

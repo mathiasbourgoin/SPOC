@@ -38,6 +38,7 @@ and texpr_desc =
   | TEBinop of binop * texpr * texpr
   | TEUnop of unop * texpr
   | TEApp of texpr * texpr list
+  | TEAssign of string * int * texpr  (** name, var_id, value *)
 
   (* Binding and control *)
   | TELet of string * int * texpr * texpr  (** name, var_id, value, body *)
@@ -138,6 +139,8 @@ let rec pp_texpr fmt te =
   | TEApp (f, args) ->
     Format.fprintf fmt "(%a %a)" pp_texpr f
       (Format.pp_print_list ~pp_sep:(fun fmt () -> Format.fprintf fmt " ") pp_texpr) args
+  | TEAssign (name, id, value) ->
+    Format.fprintf fmt "(%s#%d := %a)" name id pp_texpr value
   | TELet (name, id, value, body) ->
     Format.fprintf fmt "(let %s#%d = %a in %a)" name id pp_texpr value pp_texpr body
   | TELetMut (name, id, value, body) ->

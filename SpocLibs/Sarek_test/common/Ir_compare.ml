@@ -72,11 +72,11 @@ let rec ir_equal (ir1 : k_ext) (ir2 : k_ext) : bool =
     ir_equal c1 c2 && ir_equal t1 t2
   | Id s1, Id s2 -> s1 = s2
   | IdName s1, IdName s2 -> s1 = s2
-  | IntVar (i1, s1), IntVar (i2, s2) -> i1 = i2 && s1 = s2
-  | FloatVar (i1, s1), FloatVar (i2, s2) -> i1 = i2 && s1 = s2
-  | DoubleVar (i1, s1), DoubleVar (i2, s2) -> i1 = i2 && s1 = s2
-  | BoolVar (i1, s1), BoolVar (i2, s2) -> i1 = i2 && s1 = s2
-  | UnitVar (i1, s1), UnitVar (i2, s2) -> i1 = i2 && s1 = s2
+  | IntVar (i1, s1, _m1), IntVar (i2, s2, _m2) -> i1 = i2 && s1 = s2
+  | FloatVar (i1, s1, _m1), FloatVar (i2, s2, _m2) -> i1 = i2 && s1 = s2
+  | DoubleVar (i1, s1, _m1), DoubleVar (i2, s2, _m2) -> i1 = i2 && s1 = s2
+  | BoolVar (i1, s1, _m1), BoolVar (i2, s2, _m2) -> i1 = i2 && s1 = s2
+  | UnitVar (i1, s1, _m1), UnitVar (i2, s2, _m2) -> i1 = i2 && s1 = s2
   | VecVar (t1, i1, s1), VecVar (t2, i2, s2) ->
     ir_equal t1 t2 && i1 = i2 && s1 = s2
   | Int i1, Int i2 -> i1 = i2
@@ -216,7 +216,7 @@ let rec diff_ir ?(path="") (expected : k_ext) (got : k_ext) : ir_diff list =
       | Plusf (a1, b1), Plusf (a2, b2) ->
         diff_ir ~path:(path ^ "/left") a1 a2 @
         diff_ir ~path:(path ^ "/right") b1 b2
-      | IntVar (i1, s1), IntVar (i2, s2) when i1 <> i2 || s1 <> s2 ->
+      | IntVar (i1, s1, _m1), IntVar (i2, s2, _m2) when i1 <> i2 || s1 <> s2 ->
         [NodeMismatch { path;
                         expected = Printf.sprintf "IntVar(%d, %S)" i1 s1;
                         got = Printf.sprintf "IntVar(%d, %S)" i2 s2 }]
