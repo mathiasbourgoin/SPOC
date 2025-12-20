@@ -1,0 +1,25 @@
+(library
+ (name sarek_ppx_lib)
+ (public_name sarek_ppx.lib)
+ (libraries ppxlib spoc)
+ (preprocess (pps ppxlib.metaquot))
+ (modules
+   Kirc_Ast
+   Sarek_ast
+   Sarek_types
+   Sarek_env
+   Sarek_error
+   Sarek_typed_ast
+   Sarek_typer
+   Sarek_lower
+   Sarek_intrinsics
+   Sarek_parse
+   Sarek_quote))
+
+(library
+ (name sarek_ppx)
+ (public_name sarek_ppx)
+ (kind ppx_rewriter)
+ (libraries ppxlib sarek_ppx_lib)
+ (preprocess (pps ppxlib.metaquot))
+ (modules Sarek_ppx))
