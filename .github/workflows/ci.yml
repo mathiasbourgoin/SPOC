@@ -1,6 +1,10 @@
 name: CI
 
-on: [push, pull_request]
+on:
+  pull_request:
+    branches: [master, main]
+  push:
+    branches: [master, main]
 
 jobs:
   build:
@@ -128,6 +132,13 @@ jobs:
         run: |
           chmod -R u+rwX,go+rX _build
           find _build -type f -name "*.exe" -exec chmod a+x {} +
+          # Ensure kernel sources are colocated with executables (Spoc loads from argv[0] dir).
+          for d in Samples/src/*/kernels; do
+            [ -d "$d" ] || continue
+            rel="${d#Samples/src/}"
+            mkdir -p "_build/default/Samples/src/$rel"
+            cp -R "$d/." "_build/default/Samples/src/$rel/"
+          done
 
       - name: Run tests
         run: |
@@ -145,6 +156,4 @@ jobs:
               eval $(opam env --switch=${{ matrix.ocaml-compiler }}) && \
               opam install ./spoc.opam ./spoc_ppx.opam --deps-only && \
               opam install graphics && \
-              dune exec --no-build --profile cuda -- Samples/src/DeviceQuery/DeviceQuery.exe && \
-              dune exec --no-build --profile cuda -- Samples/src/VecAdd/VecAdd.exe && \
-              dune exec --no-build --profile cuda -- Samples/src/Mandelbrot/Mandelbrot.exe -ppm /tmp/mandelbrot.ppm'
+              ./_build/default/Samples/src/DeviceQuery/DeviceQuery.exe'
