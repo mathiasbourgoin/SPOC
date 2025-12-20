@@ -159,6 +159,40 @@ let test_parse_type_var () =
    | TEVar "a" -> Alcotest.(check pass) "'a parses" () ()
    | _ -> Alcotest.fail "'a should parse to TEVar")
 
+(* Test parsing payload that starts with a let-module before the kernel function *)
+let test_parse_payload_letmodule () =
+  let loc = Location.none in
+  let open Ppxlib.Ast_builder.Default in
+  (* module M = struct let c = 1 end in fun (v : int32 vector) -> () *)
+  let module_struct =
+    pmod_structure ~loc [
+      pstr_value ~loc Nonrecursive [
+        value_binding ~loc ~pat:(ppat_var ~loc { txt = "c"; loc })
+          ~expr:(eint ~loc 1)
+      ]
+    ]
+  in
+  let vec_ty =
+    ptyp_constr ~loc { txt = Lident "vector"; loc }
+      [ptyp_constr ~loc { txt = Lident "int32"; loc } []]
+  in
+  let param_pat =
+    ppat_constraint ~loc (ppat_var ~loc { txt = "v"; loc }) vec_ty
+  in
+  let fun_expr =
+    pexp_fun ~loc Nolabel None param_pat
+      (pexp_construct ~loc { txt = Lident "()"; loc } None)
+  in
+  let payload =
+    pexp_letmodule ~loc { txt = Some "M"; loc } module_struct fun_expr
+  in
+  let kernel = parse_payload payload in
+  match kernel.kern_params with
+  | [p] ->
+    if p.param_name <> "v" then
+      Alcotest.failf "expected param name v, got %s" p.param_name
+  | _ -> Alcotest.fail "expected exactly one parameter in kernel"
+
 (* Integration test - parse a complete kernel function *)
 let test_parse_kernel_simple () =
   let loc = Location.none in
@@ -365,6 +399,7 @@ let () =
       Alcotest.test_case "simple" `Quick test_parse_kernel_simple;
       Alcotest.test_case "two params" `Quick test_parse_kernel_two_params;
       Alcotest.test_case "no annotation" `Quick test_parse_kernel_no_annotation;
+      Alcotest.test_case "payload letmodule" `Quick test_parse_payload_letmodule;
     ];
     "expr", [
       Alcotest.test_case "int" `Quick test_parse_expr_int;
