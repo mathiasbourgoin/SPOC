@@ -114,6 +114,7 @@ and expr_desc =
   | EBinop of binop * expr * expr
   | EUnop of unop * expr
   | EApp of expr * expr list          (** f x y *)
+  | EAssign of string * expr          (** x := e *)
 
   (* Binding and control *)
   | ELet of string * type_expr option * expr * expr  (** let x : t = e1 in e2 *)
@@ -235,6 +236,8 @@ let rec pp_expr fmt expr =
   | EApp (f, args) ->
     Format.fprintf fmt "(%a %a)" pp_expr f
       (Format.pp_print_list ~pp_sep:(fun fmt () -> Format.fprintf fmt " ") pp_expr) args
+  | EAssign (name, value) ->
+    Format.fprintf fmt "(%s := %a)" name pp_expr value
   | ELet (name, ty, value, body) ->
     Format.fprintf fmt "(let %s%a = %a in %a)"
       name

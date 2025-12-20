@@ -245,7 +245,7 @@ let test_lower_for () =
   let state = create_state () in
   let ir = lower_expr state te in
   check_ir_is "for lowers to DoLoop"
-    ir (function DoLoop (IntVar (0, "i"), Int 0, Int 10, Unit) -> true | _ -> false)
+    ir (function DoLoop (IntId ("i", 0), Int 0, Int 10, Unit) -> true | _ -> false)
 
 (* Test lowering sequence *)
 let test_lower_seq () =
@@ -297,7 +297,7 @@ let test_lower_vec_set () =
   check_ir_is "v.[i] <- x lowers to SetV(IntVecAcc, x)"
     ir (function SetV (IntVecAcc (IntId ("v", 0), Int 5), Float _) -> true | _ -> false)
 
-(* Test lowering let - body var becomes IntId, declarations stay IntVar *)
+(* Test lowering let - body var becomes IntId, declarations use IntVar, Set uses IntId *)
 let test_lower_let () =
   let value = int_texpr 42 in
   let body = var_texpr "x" 0 t_int32 in
@@ -306,8 +306,8 @@ let test_lower_let () =
   let ir = lower_expr state te in
   check_ir_is "let x = 42 in x lowers to Seq(Decl, Seq(Set, body))"
     ir (function
-        | Seq (Decl (IntVar (0, "x")),
-               Seq (Set (IntVar (0, "x"), Int 42),
+        | Seq (Decl (IntVar (0, "x", _m)),
+               Seq (Set (IntId ("x", 0), Int 42),
                     IntId ("x", 0))) -> true
         | _ -> false)
 

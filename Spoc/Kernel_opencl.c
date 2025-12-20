@@ -66,24 +66,16 @@ CAMLprim value spoc_opencl_compile(value moduleSrc, value function_name, value g
 	functionN = (char*) String_val(function_name);
 	cl_source = (char*) String_val(moduleSrc);
 
-#ifdef SPOC_PROFILE
-    struct timespec* start = print_start_gpu_compile();
-#endif
-	
 	OPENCL_CHECK_CALL1(hProgram, clCreateProgramWithSource(ctx, 1, (const char**)&cl_source, 0, &opencl_error));
 	OPENCL_TRY("clGetContextInfo", clGetContextInfo(ctx, CL_CONTEXT_DEVICES, (size_t)sizeof(cl_device_id), &device_id, NULL)) ;
 	OPENCL_CHECK_CALL1(ret_val, clBuildProgram(hProgram, 1, &device_id, 0, NULL, NULL));
 
-#ifdef SPOC_PROFILE
-	print_stop_gpu_compile("COMPILE_OPENCL", Int_val(Field(gi, 7)), start);
-#endif
-	
 	paramValueSize = 1024 * 1024;
 
 	OPENCL_CHECK_CALL1(kernel, clCreateKernel(hProgram, functionN, &opencl_error));
 	OPENCL_RESTORE_CONTEXT;
-	
-	CAMLreturn((value) kernel);;
+
+	CAMLreturn((value) kernel);
 
 }
 
@@ -99,24 +91,15 @@ CAMLprim value spoc_debug_opencl_compile(value moduleSrc, value function_name, v
 	size_t paramValueSize,  param_value_size_ret;
 	char *paramValue;
 
-
 	OPENCL_GET_CONTEXT;
 
 	functionN = (char*) String_val(function_name);
 	cl_source = (char*) String_val(moduleSrc);
 
-#ifdef SPOC_PROFILE
-	struct timespec* start = print_start_gpu_compile();
-#endif
-	
 	OPENCL_CHECK_CALL1(hProgram, clCreateProgramWithSource(ctx, 1, (const char**)&cl_source, 0, &opencl_error));
 	OPENCL_TRY("clGetContextInfo", clGetContextInfo(ctx, CL_CONTEXT_DEVICES, (size_t)sizeof(cl_device_id), &device_id, NULL)) ;
 	OPENCL_CHECK_CALL1(ret_val, clBuildProgram(hProgram, 1, &device_id, 0, NULL, NULL));
-    
-#ifdef SPOC_PROFILE
-	print_stop_gpu_compile("COMPILE_OPENCL", Int_val(Field(gi, 7)), start);
-#endif
-	
+
 	paramValueSize = 1024 * 1024;
 
 	paramValue = (char*)calloc(paramValueSize, sizeof(char));
@@ -126,12 +109,13 @@ CAMLprim value spoc_debug_opencl_compile(value moduleSrc, value function_name, v
 					 paramValueSize,
 	                           paramValue,
 					 &param_value_size_ret);
-	
+
 	fprintf(stderr, " %s" , paramValue);
 	free(paramValue);
 	OPENCL_CHECK_CALL1(kernel, clCreateKernel(hProgram, functionN, &opencl_error));
 	OPENCL_RESTORE_CONTEXT;
-	CAMLreturn((value) kernel);;
+
+	CAMLreturn((value) kernel);
 
 }
 

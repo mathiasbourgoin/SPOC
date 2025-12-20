@@ -42,11 +42,19 @@ let profile_vect = ref (Obj.magic None)
 let space i =
   String.make i ' '
 
-and  indent i =
-  let rec aux acc = function
-    | 0 -> acc
-    | i -> aux (acc^"  ") (i-1)
-  in aux "" i
+  and  indent i =
+    let rec aux acc = function
+      | 0 -> acc
+      | i -> aux (acc^"  ") (i-1)
+    in aux "" i
+
+
+  let decl_info = function
+    | IntVar (i, s, false) -> Some (i, s, "int")
+    | FloatVar (i, s, false) -> Some (i, s, "float")
+    | DoubleVar (i, s, false) -> Some (i, s, "double")
+    | BoolVar (i, s, false) -> Some (i, s, "int")
+    | _ -> None
 
 
 module type CodeGenerator = sig
@@ -216,9 +224,23 @@ module Generator (M:CodeGenerator) = struct
            in
            (pargs ^ "bool spoc_prof_cond;\n" ^ indent (i+1) ^
             pbody)^M.kern_end)
-        | Local (x,y)  -> (parse ~profile:prof i x dev)^";\n"^
-                          (indent (i))^(parse ~profile:prof i y dev)^
-                          "\n"^(indent (i))^""
+        | Local (x, y) -> (
+            match x, y with
+            | Decl var, Seq (Set (IntId (s, id), value), body) -> (
+                match decl_info var with
+                | Some (vid, vname, vtype) when vid = id && vname = s ->
+                  let value_s = parse ~profile:prof i value dev in
+                  let body_s = parse ~profile:prof i body dev in
+                  "const " ^ vtype ^ " " ^ vname ^ " = " ^ value_s ^ ";\n" ^
+                  (indent i) ^ body_s ^ "\n" ^ (indent i)
+                | _ ->
+                  (parse ~profile:prof i x dev)^";\n"^
+                  (indent i)^(parse ~profile:prof i y dev)^
+                  "\n"^(indent i)^"" )
+            | _ ->
+              (parse ~profile:prof i x dev)^";\n"^
+              (indent i)^(parse ~profile:prof i y dev)^
+              "\n"^(indent i)^"" )
         | VecVar (t,_i,s)  ->
           M.global_parameter^
           (match t with
@@ -231,12 +253,12 @@ module Generator (M:CodeGenerator) = struct
 
         | Block b -> (indent i)^"{\n"^parse ~profile:prof (i+1) b dev^"\n"^(indent i)^"}"
         | IdName s  ->  s
-        | IntVar (_i,s) -> ("int "^s)
-        | FloatVar (_i,s) -> ("float "^s)
+        | IntVar (_i,s,_m) -> ("int " ^ s)
+        | FloatVar (_i,s,_m) -> ("float " ^ s)
         | Custom (n,_s,ss) -> ("struct "^n^"_sarek "^ss)
-        | UnitVar (_v,_s) -> assert false
-        | DoubleVar (_i,s) -> ("double "^s)
-        | BoolVar (_i,s) -> ("int "^s)
+        | UnitVar (_v,_s,_m) -> assert false
+        | DoubleVar (_i,s,_m) -> ("double " ^ s)
+        | BoolVar (_i,s,_m) -> ("int " ^ s)
         | Arr (s,l,t,m) ->
           let memspace =
             match m with
@@ -253,6 +275,30 @@ module Generator (M:CodeGenerator) = struct
           (memspace^" "^elttype^" "^s^"["^
            (parse ~profile:prof i l dev )^"]")
         | Params k ->
+          let rec parse_param k =
+            match k with
+            | Concat (a, b) ->
+              (match b with
+               | Empty -> parse_param a
+               | Concat (_c, _d) -> parse_param a ^ ", " ^ parse_param b
+               | _ -> failwith "parse concat")
+            | VecVar (t, _i, s) ->
+              M.global_parameter ^
+              (match t with
+               | Int _ -> " int"
+               | Float _ -> " float"
+               | Double _ -> " double"
+               | Custom (n, _, _ss) -> " struct " ^ n ^ "_sarek"
+               | _ -> assert false) ^
+              ("* " ^ s ^ ", int sarek_" ^ s ^ "_length")
+            | IntVar (_i, s, m) -> ((if m then "" else "const ") ^ "int " ^ s)
+            | FloatVar (_i, s, m) -> ((if m then "" else "const ") ^ "float " ^ s)
+            | DoubleVar (_i, s, m) -> ((if m then "" else "const ") ^ "double " ^ s)
+            | BoolVar (_i, s, m) -> ((if m then "" else "const ") ^ "int " ^ s)
+            | Custom (n, _s, ss) -> "struct " ^ n ^ "_sarek " ^ ss
+            | Empty -> ""
+            | a -> parse ~profile:prof i a dev
+          in
           (M.kern_start^" void spoc_dummy ( "^
            (if prof then
               M.global_parameter^
@@ -261,7 +307,7 @@ module Generator (M:CodeGenerator) = struct
                | _ ->  " unsigned long ")^" * prof_cntrs, "
             else "")^
            (if (fst !return_v) <> "" then
-              (fst !return_v)^", " else "")^(parse ~profile:prof i k dev)^" ) {\n"^(indent (i+1)))
+              (fst !return_v)^", " else "")^(parse_param k)^" ) {\n"^(indent (i+1)))
         |Concat (a,b)  ->
           (match b with
            | Empty  -> (parse ~profile:prof i a dev)
@@ -364,9 +410,22 @@ module Generator (M:CodeGenerator) = struct
         | IntId (s,_) -> s
         | Intrinsics gv -> M.parse_intrinsics gv
         | Seq (a,b)  ->
-          let a = parse ~profile:prof i a dev
-          and b = parse ~profile:prof i b dev
-          in a^" ;\n"^(indent i)^b
+          (match a, b with
+           | Decl var, Seq (Set (IntId (s, id), value), body) ->
+             (match decl_info var with
+              | Some (vid, vname, vtype) when vid = id && vname = s ->
+                let value_s = parse ~profile:prof i value dev in
+                let body_s = parse ~profile:prof i body dev in
+                "const " ^ vtype ^ " " ^ vname ^ " = " ^ value_s ^ ";\n" ^
+                (indent i) ^ body_s
+              | _ ->
+                let a = parse ~profile:prof i a dev in
+                let b = parse ~profile:prof i b dev in
+                a^" ;\n"^(indent i)^b)
+           | _ ->
+             let a = parse ~profile:prof i a dev
+             and b = parse ~profile:prof i b dev
+             in a^" ;\n"^(indent i)^b)
         | Ife(a,b,c) ->
           let a =
             let a = parse ~profile:prof i a dev in

@@ -295,7 +295,7 @@ and  parse i a  dev =
 
       s
     | Intrinsics gv -> parse_intrinsics gv
-    | FloatVar (_,s) | IntVar (_,s) -> s
+    | FloatVar (_,s,_) | IntVar (_,s,_) -> s
     | Decl (var) ->
       (parse i var dev)
     | App (a,b) ->

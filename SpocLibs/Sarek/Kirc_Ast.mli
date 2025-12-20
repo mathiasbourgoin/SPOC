@@ -29,12 +29,12 @@ type k_ext =
   | Id of string
   | IdName of string
   | GlobalFun of k_ext*string*string
-  | IntVar of int * string
-  | FloatVar of int * string
-  | UnitVar of int * string
+  | IntVar of int * string * bool
+  | FloatVar of int * string * bool
+  | UnitVar of int * string * bool
   | CastDoubleVar of int * string
-  | DoubleVar of int * string
-  | BoolVar of int * string
+  | DoubleVar of int * string * bool
+  | BoolVar of int * string * bool
   | Arr of string * k_ext * elttype * memspace
   | VecVar of k_ext * int * string
   | Concat of k_ext * k_ext

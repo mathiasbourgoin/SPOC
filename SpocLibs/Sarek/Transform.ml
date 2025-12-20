@@ -7,14 +7,14 @@ open Skeletons
 (************** Composition ****************)
 
 let a_to_vect = function
-  | IntVar (i,s)  ->  (new_int_vec_var ( i) s)
-  | FloatVar (i,s) -> (new_float_vec_var (i) s)
+  | IntVar (i,s,_m)  ->  (new_int_vec_var ( i) s)
+  | FloatVar (i,s,_m) -> (new_float_vec_var (i) s)
   | a  -> print_ast a; failwith "a_to_vect"
 
 let a_to_return_vect k1 k2 idx=
   match k1 with
-  | IntVar (i,s)  ->  (set_vect_var (get_vec (var i s) idx) (k2) )
-  | FloatVar (i,s)  ->  (set_vect_var (get_vec (var i s) idx) (k2))
+  | IntVar (i,s,_m)  ->  (set_vect_var (get_vec (var i s) idx) (k2) )
+  | FloatVar (i,s,_m)  ->  (set_vect_var (get_vec (var i s) idx) (k2))
   | _  -> failwith "error a_to_return_vect"
 
 let param_list = ref []
@@ -474,7 +474,6 @@ let zip = fun (f:('a,'b,'c,'d,'e) sarek_kernel) ?dev:(device=(Spoc.Devices.init 
 
   launch_kernel_with_args bin grid block [|(arg_of_vec vec_in1); (arg_of_vec vec_in2); (arg_of_vec vec_out); Kernel.Int32 (Vector.length vec_in1)|] device;
   vec_out
-
 
 
 

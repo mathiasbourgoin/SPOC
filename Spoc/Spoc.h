@@ -330,13 +330,11 @@ typedef struct spoc_cu_context {
 	spoc_ctx = (spoc_cl_context*)Field(gi, 8); \
 	ctx = spoc_ctx->ctx; \
 	queue[0] = spoc_ctx->queue[0];\
-	queue[1] = spoc_ctx->queue[1];\
-	caml_enter_blocking_section();
+	queue[1] = spoc_ctx->queue[1];
 
 
 
 #define OPENCL_RESTORE_CONTEXT \
-	caml_leave_blocking_section();		\
 	spoc_ctx->queue[0] = queue[0]; \
 	spoc_ctx->queue[1] = queue[1]; \
 	spoc_ctx->ctx = ctx;\
