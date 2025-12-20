@@ -305,8 +305,9 @@ tcuWGLGetDevice                       *cuWGLGetDevice;
         *pInstance = dlopen(__CudaLibName, RTLD_NOW);
         if (*pInstance == NULL)
         {
-	  fprintf(stderr,"dlopen \"%s\" failed!\n", __CudaLibName);
-            return CUDA_ERROR_UNKNOWN;
+          if (getenv("SPOC_CUDA_DEBUG") != NULL)
+            fprintf(stderr,"dlopen \"%s\" failed!\n", __CudaLibName);
+          return CUDA_ERROR_UNKNOWN;
         }
         return CUDA_SUCCESS;
     }
