@@ -1,6 +1,7 @@
 (library
  (name external_kernels)
  (public_name spoc.external_kernels)
+ (enabled_if (< %{ocaml_version} 5.0))
 (preprocess
   (action
     (system "camlp4of  %{input-file}")))
@@ -8,5 +9,4 @@
  (libraries camlp4 dynlink)
  (modes byte)
 )
-
 

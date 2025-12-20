@@ -176,7 +176,7 @@ extern "C" {
     cuDeviceGetCount (&nb_devices);
 
     if ((Int_val(i)) > nb_devices)
-      raise_constant(*caml_named_value("no_cuda_device")) ;
+      caml_raise_constant(*caml_named_value("no_cuda_device")) ;
 
 
     CUDA_CHECK_CALL(cuDeviceGet(&dev, Int_val(i)));
@@ -185,7 +185,7 @@ extern "C" {
     general_info = caml_alloc (9, 0);
     CUDA_CHECK_CALL(cuDeviceGetName(infoStr, sizeof(infoStr), dev));
 
-    Store_field(general_info,0, copy_string(infoStr));//
+    Store_field(general_info,0, caml_copy_string(infoStr));//
     CUDA_CHECK_CALL(cuDeviceTotalMem(&infoUInt, dev));
 
     Store_field(general_info,1, Val_int(infoUInt));//

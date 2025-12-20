@@ -1,5 +1,6 @@
 (executable
  (name BFS)
+ (enabled_if (< %{ocaml_version} 5.0))
  (flags (-ccopt -L$CUDA_PATH -cclib -lnvrtc))
 (preprocess
   (action

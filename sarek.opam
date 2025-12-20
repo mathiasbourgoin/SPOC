@@ -12,7 +12,7 @@ depends: [
   "spoc" {= version}
   "re"
   "dune" {>= "2.9" & > "2.0"}
-  "camlp4"
+  "camlp4" {< "5.0"}
   "odoc" {with-doc}
 ]
 build: [
@@ -33,4 +33,4 @@ build: [
   ["dune" "install" "-p" name "--create-install-files" name]
 ]
 dev-repo: "git+https://github.com/mathiasbourgoin/SPOC.git"
-available: [ os = "linux" ]
+available: [ os = "linux" & ocaml < "5.0" ]

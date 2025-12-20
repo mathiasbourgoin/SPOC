@@ -409,9 +409,18 @@ class ext_kernel_mapper =
                 ~loc ({txt= "list_to_args"; loc} ,
                       Public,
                       Cfk_concrete (Fresh,
-                                    Ast_builder.Default.pexp_function
-                                      ~loc [(Ast_builder.Default.case ~lhs:(snd inv_args) ~guard:None ~rhs:(fst inv_args));
-                                            (Ast_builder.Default.case ~lhs:[%pat? _] ~guard:None ~rhs:[%expr failwith "spoc_kernel_extension error"])])) in
+                                    let arg_name = {txt = "spoc_args"; loc} in
+                                    let arg_expr = Ast_builder.Default.evar ~loc "spoc_args" in
+                                    Ast_builder.Default.pexp_fun
+                                      ~loc
+                                      Nolabel
+                                      None
+                                      (Ast_builder.Default.ppat_var ~loc arg_name)
+                                      (Ast_builder.Default.pexp_match
+                                         ~loc
+                                         arg_expr
+                                         [(Ast_builder.Default.case ~lhs:(snd inv_args) ~guard:None ~rhs:(fst inv_args));
+                                          (Ast_builder.Default.case ~lhs:[%pat? _] ~guard:None ~rhs:[%expr failwith "spoc_kernel_extension error"])]))) in
             let class_structure =
               Ast_builder.Default.class_structure
                 ~self:[%pat? (self)]

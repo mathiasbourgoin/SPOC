@@ -12,7 +12,7 @@ depends: [
   "re"
   "dune" {>= "2.9" & > "2.0"}
   "cppo"
-  "camlp4"
+  "camlp4" {< "5.0" & ocaml < "5.0"}
   "ctypes"
   "ctypes-foreign"
   "odoc" {with-doc}

@@ -3,5 +3,6 @@
 (library
   (name sarek)
   (public_name sarek)
+  (enabled_if (< %{ocaml_version} 5.0))
   (libraries spoc)
 )

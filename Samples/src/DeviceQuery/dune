@@ -1,5 +1,6 @@
 (executable
  (name DeviceQuery)
+ (enabled_if (= %{profile} "cuda"))
  (flags (-ccopt -L$CUDA_PATH -cclib -lnvrtc))
  (libraries spoc)
 )

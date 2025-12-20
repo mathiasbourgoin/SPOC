@@ -59,7 +59,7 @@ value spoc_getOpenCLDevicesCount()
 	cl_int err;
 	OPENCL_TRY2 ("clGetPlatformIds", clGetPlatformIDs ( num_entries, platform_ids, &num_platforms), err);
 	if (CL_SUCCESS != err)
-	  raise_constant(*caml_named_value("no_platform")) ;
+	  caml_raise_constant(*caml_named_value("no_platform")) ;
 	for(platform_id = 0; platform_id < num_platforms; platform_id++) {
 		OPENCL_TRY("clGetDeviceIDs", clGetDeviceIDs( platform_ids[platform_id], CL_DEVICE_TYPE_ALL, max_num_devices, device_ids, &num_devices));
 		total_num_devices += num_devices;
@@ -111,7 +111,7 @@ value spoc_opencl_is_available(value i)
 		total_num_devices += num_devices;
 	}
 	if ((Int_val(i)) > total_num_devices)
-		raise_constant(*caml_named_value("no_opencl_device")) ;
+		caml_raise_constant(*caml_named_value("no_opencl_device")) ;
 
 
 	for(platform_id = 0; platform_id < num_platforms; platform_id++) {
@@ -184,7 +184,7 @@ value spoc_getOpenCLDevice(value relative_i, value absolute_i)
 		total_num_devices += num_devices;
 	}
 	if ((Int_val(relative_i)) > total_num_devices)
-		raise_constant(*caml_named_value("no_opencl_device")) ;
+		caml_raise_constant(*caml_named_value("no_opencl_device")) ;
 
 
 	general_info = caml_alloc (9, 0);
@@ -200,7 +200,7 @@ value spoc_getOpenCLDevice(value relative_i, value absolute_i)
 		{
 			//general info
 			OPENCL_TRY("clGetDeviceInfo", clGetDeviceInfo ( device_ids[device_id], CL_DEVICE_NAME, sizeof(infoStr), infoStr, &infoLen ));
-			Store_field(general_info, 0, copy_string(infoStr));
+			Store_field(general_info, 0, caml_copy_string(infoStr));
 			OPENCL_TRY("clGetDeviceInfo", clGetDeviceInfo ( device_ids[device_id], CL_DEVICE_GLOBAL_MEM_SIZE , sizeof(infoULong), &infoULong, &infoLen ));
 			Store_field(general_info,1, Val_int(infoULong));
 			OPENCL_TRY("clGetDeviceInfo", clGetDeviceInfo ( device_ids[device_id], CL_DEVICE_LOCAL_MEM_SIZE , sizeof(infoULong), &infoULong, &infoLen ));
@@ -233,15 +233,15 @@ value spoc_getOpenCLDevice(value relative_i, value absolute_i)
 
             //platform info
             OPENCL_TRY("clGetPlatformInfo", clGetPlatformInfo ( platform_ids[platform_id], CL_PLATFORM_PROFILE, sizeof(infoStr), infoStr, &infoLen ));
-            Store_field(platform_info, 0, copy_string(infoStr));
+            Store_field(platform_info, 0, caml_copy_string(infoStr));
             OPENCL_TRY("clGetPlatformInfo", clGetPlatformInfo ( platform_ids[platform_id], CL_PLATFORM_VERSION, sizeof(infoStr), infoStr, &infoLen ));
-            Store_field(platform_info, 1, copy_string(infoStr));
+            Store_field(platform_info, 1, caml_copy_string(infoStr));
             OPENCL_TRY("clGetPlatformInfo", clGetPlatformInfo ( platform_ids[platform_id], CL_PLATFORM_NAME, sizeof(infoStr), infoStr, &infoLen ));
-            Store_field(platform_info, 2, copy_string(infoStr));
+            Store_field(platform_info, 2, caml_copy_string(infoStr));
             OPENCL_TRY("clGetPlatformInfo", clGetPlatformInfo ( platform_ids[platform_id], CL_PLATFORM_VENDOR, sizeof(infoStr), infoStr, &infoLen ));
-            Store_field(platform_info, 3, copy_string(infoStr));
+            Store_field(platform_info, 3, caml_copy_string(infoStr));
             OPENCL_TRY("clGetPlatformInfo", clGetPlatformInfo ( platform_ids[platform_id], CL_PLATFORM_EXTENSIONS, sizeof(infoStr), infoStr, &infoLen ));
-            Store_field(platform_info, 4, copy_string(infoStr));
+            Store_field(platform_info, 4, caml_copy_string(infoStr));
             Store_field(platform_info, 5, Val_int(num_devices));
 
             //specific info
@@ -255,13 +255,13 @@ value spoc_getOpenCLDevice(value relative_i, value absolute_i)
             if (infoType & CL_DEVICE_TYPE_DEFAULT)
             	Store_field(specific_info, 1,Val_int(3));
             OPENCL_TRY("clGetDeviceInfo", clGetDeviceInfo ( device_ids[device_id], CL_DEVICE_PROFILE, sizeof(infoStr), infoStr, &infoLen ));
-            Store_field(specific_info, 2, copy_string(infoStr));
+            Store_field(specific_info, 2, caml_copy_string(infoStr));
             OPENCL_TRY("clGetDeviceInfo", clGetDeviceInfo ( device_ids[device_id], CL_DEVICE_VERSION, sizeof(infoStr), infoStr, &infoLen ));
-            Store_field(specific_info, 3, copy_string(infoStr));
+            Store_field(specific_info, 3, caml_copy_string(infoStr));
             OPENCL_TRY("clGetDeviceInfo", clGetDeviceInfo ( device_ids[device_id], CL_DEVICE_VENDOR, sizeof(infoStr), infoStr, &infoLen ));
-            Store_field(specific_info, 4, copy_string(infoStr));
+            Store_field(specific_info, 4, caml_copy_string(infoStr));
             OPENCL_TRY("clGetDeviceInfo", clGetDeviceInfo ( device_ids[device_id], CL_DEVICE_EXTENSIONS, sizeof(infoStr), infoStr, &infoLen ));
-            Store_field(specific_info, 5, copy_string(infoStr));
+            Store_field(specific_info, 5, caml_copy_string(infoStr));
             OPENCL_TRY("clGetDeviceInfo", clGetDeviceInfo ( device_ids[device_id], CL_DEVICE_VENDOR_ID, sizeof(infoUInt), &infoUInt, &infoLen ));
             Store_field(specific_info, 6, Val_int(infoUInt));
             OPENCL_TRY("clGetDeviceInfo", clGetDeviceInfo ( device_ids[device_id], CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS, sizeof(infoDimension), &infoDimension, &infoLen));
@@ -431,7 +431,7 @@ value spoc_getOpenCLDevice(value relative_i, value absolute_i)
            Store_field(specific_info, 44, Val_int((int)infoSize));
 
            OPENCL_TRY("clGetPlatformInfo", clGetDeviceInfo ( device_ids[device_id], CL_DRIVER_VERSION, sizeof(infoStr), infoStr, &infoLen ));
-           Store_field(specific_info, 45, copy_string(infoStr));
+           Store_field(specific_info, 45, caml_copy_string(infoStr));
 
            break;
 
@@ -495,5 +495,4 @@ value copy_complex(cuComplex d){
 value copy_doubleComplex(cuDoubleComplex d){
   return copy_two_doubles(d.x, d.y);
 }
-
 
