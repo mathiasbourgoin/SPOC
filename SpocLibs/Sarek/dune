@@ -1,8 +1,8 @@
-(dirs extension)
+(dirs extension ir_extract)
 
 (library
   (name sarek)
   (public_name sarek)
-  (enabled_if (and (< %{ocaml_version} 5.0) (= %{os_type} "linux")))
   (libraries spoc)
+  (modules Kirc_Ast Gen Kirc Kirc_Cuda Kirc_OpenCL Profile Skeletons Transform)
 )
