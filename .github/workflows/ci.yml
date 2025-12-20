@@ -143,6 +143,15 @@ jobs:
             cp -R "$d/." "_build/default/Samples/src/$rel/"
           done
 
+      - name: Detect GPU availability
+        id: gpu
+        run: |
+          if command -v nvidia-smi >/dev/null 2>&1; then
+            echo "has_gpu=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_gpu=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Run tests
         run: |
           docker run --rm \
@@ -150,3 +159,13 @@ jobs:
             -w /work \
             spoc-ci:latest \
             bash -lc './_build/default/Samples/src/DeviceQuery/DeviceQuery.exe'
+
+      - name: Run CUDA samples (GPU only)
+        if: steps.gpu.outputs.has_gpu == 'true'
+        run: |
+          docker run --rm --gpus all \
+            -v ${{ github.workspace }}:/work \
+            -w /work \
+            spoc-ci:latest \
+            bash -lc './_build/default/Samples/src/VecAdd/VecAdd.exe && \
+              ./_build/default/Samples/src/Mandelbrot/Mandelbrot.exe -ppm /tmp/mandelbrot.ppm'
