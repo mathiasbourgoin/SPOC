@@ -7,4 +7,6 @@ serve.sh
 *.byte
 *.asm
 _build
+_opam
 dune-project
+.aider*

@@ -160,7 +160,7 @@ extern "C" {
   CAMLprim value host_alloc (value type_size, value n){
     CAMLparam2(type_size,n);
     CAMLlocal1(ret);
-    ret=alloc_final(2, free_host, 0,  1);
+    ret=caml_alloc_final(2, free_host, 0,  1);
     host_vector* v= (host_vector*)malloc(sizeof(host_vector));
     v->type_size=Int_val(type_size);
     v->size=Int_val(n);
@@ -245,7 +245,7 @@ extern "C" {
   CAMLprim value spoc_init_cuda_device_vec(){
     CAMLparam0();
     CAMLlocal1(ret);
-    ret = alloc_final(2, cuda_free_vec, 0, 1);
+    ret = caml_alloc_final(2, cuda_free_vec, 0, 1);
     Store_field(ret, 1, (value)NULL);
     CAMLreturn(ret);
   }
@@ -261,7 +261,7 @@ extern "C" {
   CAMLprim value spoc_init_opencl_device_vec(){
     CAMLparam0();
     CAMLlocal1(ret);
-    ret = alloc_final(2, cl_free_vec, 0, 1);
+    ret = caml_alloc_final(2, cl_free_vec, 0, 1);
     Store_field(ret, 1, (value)NULL);
 
     CAMLreturn(ret);

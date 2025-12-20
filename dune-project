@@ -2,7 +2,7 @@
 (name spoc)
 ; version field is optional
 
-(generate_opam_files true)
+(generate_opam_files false)
 
 (source (github mathiasbourgoin/SPOC))
 (license Cecill-B)
@@ -18,7 +18,7 @@
   re
   (dune (> 2.0))
   cppo
-  camlp4
+  (camlp4 (< 5.0))
   ctypes
   ctypes-foreign
  ))
@@ -29,10 +29,10 @@
  (description "")
  (depends
  (ocaml (>= 4.07.0))
- (spoc (= version))
+ (spoc (= :version))
   re
   (dune (> 2.0))
-  camlp4
+  (camlp4 (< 5.0))
  ))
 
 (package
@@ -43,5 +43,5 @@
  (ocaml (>= 4.07.0))
   (dune (> 2.0))
   (ppxlib (>= 0.22.0))
-  (spoc (= version))
+  (spoc (= :version))
  ))

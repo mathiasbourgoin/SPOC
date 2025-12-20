@@ -38,6 +38,9 @@
 #include <stdlib.h>
 
 #include <caml/mlvalues.h>
+#include <caml/alloc.h>
+#include <caml/fail.h>
+#include <caml/memory.h>
 #include <caml/memory.h>
 #include <caml/alloc.h>
 #include <caml/custom.h>
@@ -128,50 +131,50 @@ typedef struct spoc_vector {
 #define RAISE_CUDA_ERROR \
 	switch (cuda_error){ \
 		case  CUDA_ERROR_DEINITIALIZED: \
-			raise_constant(*caml_named_value("cuda_error_deinitialized")) ; \
+			caml_raise_constant(*caml_named_value("cuda_error_deinitialized")) ; \
 			break; \
 		case CUDA_ERROR_NOT_INITIALIZED: \
-			raise_constant(*caml_named_value("cuda_error_not_initialized")) ; \
+			caml_raise_constant(*caml_named_value("cuda_error_not_initialized")) ; \
 			break; \
 		case CUDA_ERROR_INVALID_CONTEXT: \
-			raise_constant(*caml_named_value("cuda_error_invalid_context")) ; \
+			caml_raise_constant(*caml_named_value("cuda_error_invalid_context")) ; \
 			break; \
 		case CUDA_ERROR_INVALID_VALUE: \
-			raise_constant(*caml_named_value("cuda_error_invalid_value")) ; \
+			caml_raise_constant(*caml_named_value("cuda_error_invalid_value")) ; \
 			break; \
 		case CUDA_ERROR_OUT_OF_MEMORY: \
-			raise_constant(*caml_named_value("cuda_error_out_of_memory")) ; \
+			caml_raise_constant(*caml_named_value("cuda_error_out_of_memory")) ; \
 			break; \
 		case CUDA_ERROR_INVALID_DEVICE: \
-			raise_constant(*caml_named_value("cuda_error_invalid_device")) ; \
+			caml_raise_constant(*caml_named_value("cuda_error_invalid_device")) ; \
 			break; \
 		case CUDA_ERROR_NOT_FOUND: \
-			raise_constant(*caml_named_value("cuda_error_not_found")) ; \
+			caml_raise_constant(*caml_named_value("cuda_error_not_found")) ; \
 			break; \
 		case CUDA_ERROR_FILE_NOT_FOUND: \
-			raise_constant(*caml_named_value("cuda_error_file_not_found")) ; \
+			caml_raise_constant(*caml_named_value("cuda_error_file_not_found")) ; \
 			break; \
 		case CUDA_ERROR_LAUNCH_FAILED: \
-			raise_constant(*caml_named_value("cuda_error_launch_failed")) ; \
+			caml_raise_constant(*caml_named_value("cuda_error_launch_failed")) ; \
 			break; \
 		case CUDA_ERROR_LAUNCH_OUT_OF_RESOURCES: \
-			raise_constant(*caml_named_value("cuda_error_launch_out_of_resources")) ; \
+			caml_raise_constant(*caml_named_value("cuda_error_launch_out_of_resources")) ; \
 			break; \
 		case CUDA_ERROR_LAUNCH_TIMEOUT: \
-			raise_constant(*caml_named_value("cuda_error_launch_timeout")) ; \
+			caml_raise_constant(*caml_named_value("cuda_error_launch_timeout")) ; \
 			break; \
 		case CUDA_ERROR_LAUNCH_INCOMPATIBLE_TEXTURING: \
-			raise_constant(*caml_named_value("cuda_error_launch_incompatible_texturing")) ; \
+			caml_raise_constant(*caml_named_value("cuda_error_launch_incompatible_texturing")) ; \
 			break; \
 		case  CUDA_ERROR_INVALID_HANDLE: \
-/* ->*/			raise_constant(*caml_named_value("cuda_error_launch_incompatible_texturing")) ; \
+/* ->*/			caml_raise_constant(*caml_named_value("cuda_error_launch_incompatible_texturing")) ; \
 			break; \
 		case  CUDA_ERROR_ALREADY_MAPPED: \
-/* ->*/			raise_constant(*caml_named_value("cuda_error_launch_incompatible_texturing")) ; \
+/* ->*/			caml_raise_constant(*caml_named_value("cuda_error_launch_incompatible_texturing")) ; \
 			break; \
 		case CUDA_ERROR_UNKNOWN: \
 		default: \
-			raise_constant(*caml_named_value("cuda_error_unknown")) ; \
+			caml_raise_constant(*caml_named_value("cuda_error_unknown")) ; \
 			break;\
 	}\
 
@@ -214,49 +217,49 @@ typedef struct spoc_vector {
 
 #define RAISE_OPENCL_ERROR \
 	switch (opencl_error){ \
-		case CL_INVALID_CONTEXT: raise_constant(*caml_named_value("opencl_invalid_context")) ; \
+		case CL_INVALID_CONTEXT: caml_raise_constant(*caml_named_value("opencl_invalid_context")) ; \
 			break; \
-		case CL_INVALID_DEVICE: raise_constant(*caml_named_value("opencl_invalid_device")) ; \
+		case CL_INVALID_DEVICE: caml_raise_constant(*caml_named_value("opencl_invalid_device")) ; \
 			break; \
-		case CL_INVALID_VALUE: raise_constant(*caml_named_value("opencl_invalid_value")) ; \
+		case CL_INVALID_VALUE: caml_raise_constant(*caml_named_value("opencl_invalid_value")) ; \
 			break; \
-		case CL_INVALID_QUEUE_PROPERTIES: raise_constant(*caml_named_value("opencl_invalid_queue_properties")) ; \
+		case CL_INVALID_QUEUE_PROPERTIES: caml_raise_constant(*caml_named_value("opencl_invalid_queue_properties")) ; \
 			break; \
-		case CL_OUT_OF_RESOURCES: raise_constant(*caml_named_value("opencl_out_of_resources")) ; \
+		case CL_OUT_OF_RESOURCES: caml_raise_constant(*caml_named_value("opencl_out_of_resources")) ; \
 			break; \
-		case CL_MEM_OBJECT_ALLOCATION_FAILURE:	raise_constant(*caml_named_value("opencl_mem_object_allocation_failure")) ; \
+		case CL_MEM_OBJECT_ALLOCATION_FAILURE:	caml_raise_constant(*caml_named_value("opencl_mem_object_allocation_failure")) ; \
 			break; \
-		case CL_OUT_OF_HOST_MEMORY: raise_constant(*caml_named_value("opencl_out_of_host_memory")) ; \
+		case CL_OUT_OF_HOST_MEMORY: caml_raise_constant(*caml_named_value("opencl_out_of_host_memory")) ; \
 			break; \
-		case CL_INVALID_PROGRAM: raise_constant(*caml_named_value("opencl_invalid_program")) ; \
+		case CL_INVALID_PROGRAM: caml_raise_constant(*caml_named_value("opencl_invalid_program")) ; \
 			break; \
-		case CL_INVALID_BINARY: raise_constant(*caml_named_value("opencl_invalid_binary")) ; \
+		case CL_INVALID_BINARY: caml_raise_constant(*caml_named_value("opencl_invalid_binary")) ; \
 			break; \
-		case CL_INVALID_BUILD_OPTIONS: raise_constant(*caml_named_value("opencl_invalid_build_options")) ; \
+		case CL_INVALID_BUILD_OPTIONS: caml_raise_constant(*caml_named_value("opencl_invalid_build_options")) ; \
 			break; \
-		case CL_INVALID_OPERATION: raise_constant(*caml_named_value("opencl_invalid_operation")) ; \
+		case CL_INVALID_OPERATION: caml_raise_constant(*caml_named_value("opencl_invalid_operation")) ; \
 			break; \
-		case CL_COMPILER_NOT_AVAILABLE: raise_constant(*caml_named_value("opencl_compiler_not_available")) ; \
+		case CL_COMPILER_NOT_AVAILABLE: caml_raise_constant(*caml_named_value("opencl_compiler_not_available")) ; \
 			break; \
-		case CL_BUILD_PROGRAM_FAILURE: raise_constant(*caml_named_value("opencl_build_program_failure")) ; \
+		case CL_BUILD_PROGRAM_FAILURE: caml_raise_constant(*caml_named_value("opencl_build_program_failure")) ; \
 			break; \
-		case CL_INVALID_KERNEL: raise_constant(*caml_named_value("opencl_invalid_kernel")) ; \
+		case CL_INVALID_KERNEL: caml_raise_constant(*caml_named_value("opencl_invalid_kernel")) ; \
 			break; \
-		case CL_INVALID_ARG_INDEX: raise_constant(*caml_named_value("opencl_invalid_arg_index")) ; \
+		case CL_INVALID_ARG_INDEX: caml_raise_constant(*caml_named_value("opencl_invalid_arg_index")) ; \
 			break; \
-		case CL_INVALID_ARG_VALUE: raise_constant(*caml_named_value("opencl_invalid_arg_value")) ; \
+		case CL_INVALID_ARG_VALUE: caml_raise_constant(*caml_named_value("opencl_invalid_arg_value")) ; \
 			break; \
-		case CL_INVALID_MEM_OBJECT: raise_constant(*caml_named_value("opencl_invalid_mem_object")) ; \
+		case CL_INVALID_MEM_OBJECT: caml_raise_constant(*caml_named_value("opencl_invalid_mem_object")) ; \
 			break; \
-		case CL_INVALID_SAMPLER: raise_constant(*caml_named_value("opencl_invalid_sampler")) ; \
+		case CL_INVALID_SAMPLER: caml_raise_constant(*caml_named_value("opencl_invalid_sampler")) ; \
 			break; \
-		case CL_INVALID_ARG_SIZE: raise_constant(*caml_named_value("opencl_invalid_arg_size")) ; \
+		case CL_INVALID_ARG_SIZE: caml_raise_constant(*caml_named_value("opencl_invalid_arg_size")) ; \
 			break; \
-		case CL_FILE_NOT_FOUND: raise_constant(*caml_named_value("opencl_file_not_found")) ; \
+		case CL_FILE_NOT_FOUND: caml_raise_constant(*caml_named_value("opencl_file_not_found")) ; \
 			break; \
-		case CL_INVALID_COMMAND_QUEUE: raise_constant(*caml_named_value("opencl_invalid_command_queue")) ; \
+		case CL_INVALID_COMMAND_QUEUE: caml_raise_constant(*caml_named_value("opencl_invalid_command_queue")) ; \
 			break; \
-		default: raise_constant(*caml_named_value("opencl_error_unknown")) ; \
+		default: caml_raise_constant(*caml_named_value("opencl_error_unknown")) ; \
 			break; \
 }
 
