@@ -149,14 +149,4 @@ jobs:
             -v ${{ github.workspace }}:/work \
             -w /work \
             spoc-ci:latest \
-            bash -lc 'export OPAMROOT=/work/.opam-ci && \
-              if [ ! -d "$OPAMROOT" ]; then \
-                opam init --compiler=${{ matrix.ocaml-compiler }} --disable-sandboxing --no-setup; \
-              else \
-                opam switch set ${{ matrix.ocaml-compiler }} || \
-                  opam switch create ${{ matrix.ocaml-compiler }}; \
-              fi && \
-              eval $(opam env --switch=${{ matrix.ocaml-compiler }}) && \
-              opam install ./spoc.opam ./spoc_ppx.opam --deps-only && \
-              opam install graphics && \
-              ./_build/default/Samples/src/DeviceQuery/DeviceQuery.exe'
+            bash -lc './_build/default/Samples/src/DeviceQuery/DeviceQuery.exe'
