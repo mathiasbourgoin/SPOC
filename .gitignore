@@ -10,3 +10,4 @@ _build
 _opam
 dune-project
 .aider*
+*.install
