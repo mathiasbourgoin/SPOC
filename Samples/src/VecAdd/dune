@@ -6,3 +6,5 @@
  (preprocess (pps spoc_ppx))
  (libraries spoc)
 )
+
+(data_only_dirs kernels)

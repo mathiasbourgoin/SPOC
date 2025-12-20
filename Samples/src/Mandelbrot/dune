@@ -6,3 +6,5 @@
  (preprocessor_deps (package spoc))
  (preprocess (pps spoc_ppx))
 )
+
+(data_only_dirs kernels)
