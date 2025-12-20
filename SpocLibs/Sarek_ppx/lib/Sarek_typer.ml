@@ -161,28 +161,40 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
     let* () = unify_or_error tx.ty elem_ty value.expr_loc in
     Ok (mk_texpr (TEVecSet (tv, ti, tx)) t_unit loc, env)
 
-  (* Array access: a.(i) *)
+  (* Array/vector access: a.(i) - works for both TArr and TVec *)
   | EArrGet (arr, idx) ->
     let* (ta, env) = infer env arr in
     let* (ti, env) = infer env idx in
     let* () = unify_or_error ti.ty t_int32 idx.expr_loc in
     let elem_ty = fresh_tvar () in
-    let mem = Local in  (* Default to local *)
-    let* () = unify_or_error ta.ty (TArr (elem_ty, mem)) arr.expr_loc in
-    let resolved_elem = repr elem_ty in
-    Ok (mk_texpr (TEArrGet (ta, ti)) resolved_elem loc, env)
+    (* Try to unify with vector first, then array *)
+    (match unify ta.ty (TVec elem_ty) with
+     | Ok () ->
+       let resolved_elem = repr elem_ty in
+       Ok (mk_texpr (TEVecGet (ta, ti)) resolved_elem loc, env)
+     | Error _ ->
+       let mem = Local in
+       let* () = unify_or_error ta.ty (TArr (elem_ty, mem)) arr.expr_loc in
+       let resolved_elem = repr elem_ty in
+       Ok (mk_texpr (TEArrGet (ta, ti)) resolved_elem loc, env))
 
-  (* Array set: a.(i) <- x *)
+  (* Array/vector set: a.(i) <- x - works for both TArr and TVec *)
   | EArrSet (arr, idx, value) ->
     let* (ta, env) = infer env arr in
     let* (ti, env) = infer env idx in
     let* (tx, env) = infer env value in
     let* () = unify_or_error ti.ty t_int32 idx.expr_loc in
     let elem_ty = fresh_tvar () in
-    let mem = Local in
-    let* () = unify_or_error ta.ty (TArr (elem_ty, mem)) arr.expr_loc in
-    let* () = unify_or_error tx.ty elem_ty value.expr_loc in
-    Ok (mk_texpr (TEArrSet (ta, ti, tx)) t_unit loc, env)
+    (* Try to unify with vector first, then array *)
+    (match unify ta.ty (TVec elem_ty) with
+     | Ok () ->
+       let* () = unify_or_error tx.ty elem_ty value.expr_loc in
+       Ok (mk_texpr (TEVecSet (ta, ti, tx)) t_unit loc, env)
+     | Error _ ->
+       let mem = Local in
+       let* () = unify_or_error ta.ty (TArr (elem_ty, mem)) arr.expr_loc in
+       let* () = unify_or_error tx.ty elem_ty value.expr_loc in
+       Ok (mk_texpr (TEArrSet (ta, ti, tx)) t_unit loc, env))
 
   (* Field access: r.field *)
   | EFieldGet (record, field) ->

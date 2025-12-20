@@ -1,6 +1,7 @@
 (executable
   (name test_reference_ir)
   (libraries str)
+  (modules test_reference_ir)
 )
 
 (rule
@@ -10,4 +11,12 @@
   (action
     (chdir %{project_root}
       (run %{exe:test_reference_ir.exe})))
+)
+
+(library
+  (name test_ktype)
+  (libraries sarek_ppx_lib spoc sarek)
+  (preprocess (pps sarek_ppx))
+  (flags (:standard -w -33))
+  (modules test_ktype)
 )

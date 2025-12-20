@@ -38,17 +38,17 @@ let quote_bool ~loc b =
 (** Quote an elttype *)
 let quote_elttype ~loc (e : Kirc_Ast.elttype) : expression =
   match e with
-  | Kirc_Ast.EInt32 -> [%expr Kirc_Ast.EInt32]
-  | Kirc_Ast.EInt64 -> [%expr Kirc_Ast.EInt64]
-  | Kirc_Ast.EFloat32 -> [%expr Kirc_Ast.EFloat32]
-  | Kirc_Ast.EFloat64 -> [%expr Kirc_Ast.EFloat64]
+  | Kirc_Ast.EInt32 -> [%expr Sarek.Kirc_Ast.EInt32]
+  | Kirc_Ast.EInt64 -> [%expr Sarek.Kirc_Ast.EInt64]
+  | Kirc_Ast.EFloat32 -> [%expr Sarek.Kirc_Ast.EFloat32]
+  | Kirc_Ast.EFloat64 -> [%expr Sarek.Kirc_Ast.EFloat64]
 
 (** Quote a memspace *)
 let quote_memspace ~loc (m : Kirc_Ast.memspace) : expression =
   match m with
-  | Kirc_Ast.LocalSpace -> [%expr Kirc_Ast.LocalSpace]
-  | Kirc_Ast.Global -> [%expr Kirc_Ast.Global]
-  | Kirc_Ast.Shared -> [%expr Kirc_Ast.Shared]
+  | Kirc_Ast.LocalSpace -> [%expr Sarek.Kirc_Ast.LocalSpace]
+  | Kirc_Ast.Global -> [%expr Sarek.Kirc_Ast.Global]
+  | Kirc_Ast.Shared -> [%expr Sarek.Kirc_Ast.Shared]
 
 (** Quote a list *)
 let quote_list ~loc quote_elem elems =
@@ -79,173 +79,179 @@ let rec quote_case ~loc ((i, opt, body) : Kirc_Ast.case) : expression =
 and quote_k_ext ~loc (k : Kirc_Ast.k_ext) : expression =
   match k with
   | Kirc_Ast.Kern (params, body) ->
-    [%expr Kirc_Ast.Kern ([%e quote_k_ext ~loc params], [%e quote_k_ext ~loc body])]
+    [%expr Sarek.Kirc_Ast.Kern ([%e quote_k_ext ~loc params], [%e quote_k_ext ~loc body])]
   | Kirc_Ast.Block b ->
-    [%expr Kirc_Ast.Block [%e quote_k_ext ~loc b]]
+    [%expr Sarek.Kirc_Ast.Block [%e quote_k_ext ~loc b]]
   | Kirc_Ast.Params p ->
-    [%expr Kirc_Ast.Params [%e quote_k_ext ~loc p]]
+    [%expr Sarek.Kirc_Ast.Params [%e quote_k_ext ~loc p]]
   | Kirc_Ast.Plus (a, b) ->
-    [%expr Kirc_Ast.Plus ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
+    [%expr Sarek.Kirc_Ast.Plus ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
   | Kirc_Ast.Plusf (a, b) ->
-    [%expr Kirc_Ast.Plusf ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
+    [%expr Sarek.Kirc_Ast.Plusf ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
   | Kirc_Ast.Min (a, b) ->
-    [%expr Kirc_Ast.Min ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
+    [%expr Sarek.Kirc_Ast.Min ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
   | Kirc_Ast.Minf (a, b) ->
-    [%expr Kirc_Ast.Minf ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
+    [%expr Sarek.Kirc_Ast.Minf ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
   | Kirc_Ast.Mul (a, b) ->
-    [%expr Kirc_Ast.Mul ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
+    [%expr Sarek.Kirc_Ast.Mul ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
   | Kirc_Ast.Mulf (a, b) ->
-    [%expr Kirc_Ast.Mulf ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
+    [%expr Sarek.Kirc_Ast.Mulf ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
   | Kirc_Ast.Div (a, b) ->
-    [%expr Kirc_Ast.Div ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
+    [%expr Sarek.Kirc_Ast.Div ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
   | Kirc_Ast.Divf (a, b) ->
-    [%expr Kirc_Ast.Divf ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
+    [%expr Sarek.Kirc_Ast.Divf ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
   | Kirc_Ast.Mod (a, b) ->
-    [%expr Kirc_Ast.Mod ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
+    [%expr Sarek.Kirc_Ast.Mod ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
   | Kirc_Ast.Id s ->
-    [%expr Kirc_Ast.Id [%e quote_string ~loc s]]
+    [%expr Sarek.Kirc_Ast.Id [%e quote_string ~loc s]]
   | Kirc_Ast.IdName s ->
-    [%expr Kirc_Ast.IdName [%e quote_string ~loc s]]
+    [%expr Sarek.Kirc_Ast.IdName [%e quote_string ~loc s]]
   | Kirc_Ast.GlobalFun (body, ret_type, name) ->
-    [%expr Kirc_Ast.GlobalFun ([%e quote_k_ext ~loc body],
+    [%expr Sarek.Kirc_Ast.GlobalFun ([%e quote_k_ext ~loc body],
                                [%e quote_string ~loc ret_type],
                                [%e quote_string ~loc name])]
   | Kirc_Ast.IntVar (id, name) ->
-    [%expr Kirc_Ast.IntVar ([%e quote_int ~loc id], [%e quote_string ~loc name])]
+    [%expr Sarek.Kirc_Ast.IntVar ([%e quote_int ~loc id], [%e quote_string ~loc name])]
   | Kirc_Ast.FloatVar (id, name) ->
-    [%expr Kirc_Ast.FloatVar ([%e quote_int ~loc id], [%e quote_string ~loc name])]
+    [%expr Sarek.Kirc_Ast.FloatVar ([%e quote_int ~loc id], [%e quote_string ~loc name])]
   | Kirc_Ast.UnitVar (id, name) ->
-    [%expr Kirc_Ast.UnitVar ([%e quote_int ~loc id], [%e quote_string ~loc name])]
+    [%expr Sarek.Kirc_Ast.UnitVar ([%e quote_int ~loc id], [%e quote_string ~loc name])]
   | Kirc_Ast.CastDoubleVar (id, name) ->
-    [%expr Kirc_Ast.CastDoubleVar ([%e quote_int ~loc id], [%e quote_string ~loc name])]
+    [%expr Sarek.Kirc_Ast.CastDoubleVar ([%e quote_int ~loc id], [%e quote_string ~loc name])]
   | Kirc_Ast.DoubleVar (id, name) ->
-    [%expr Kirc_Ast.DoubleVar ([%e quote_int ~loc id], [%e quote_string ~loc name])]
+    [%expr Sarek.Kirc_Ast.DoubleVar ([%e quote_int ~loc id], [%e quote_string ~loc name])]
   | Kirc_Ast.BoolVar (id, name) ->
-    [%expr Kirc_Ast.BoolVar ([%e quote_int ~loc id], [%e quote_string ~loc name])]
+    [%expr Sarek.Kirc_Ast.BoolVar ([%e quote_int ~loc id], [%e quote_string ~loc name])]
   | Kirc_Ast.VecVar (elem, id, name) ->
-    [%expr Kirc_Ast.VecVar ([%e quote_k_ext ~loc elem], [%e quote_int ~loc id],
+    [%expr Sarek.Kirc_Ast.VecVar ([%e quote_k_ext ~loc elem], [%e quote_int ~loc id],
                             [%e quote_string ~loc name])]
   | Kirc_Ast.Arr (name, size, elt, mem) ->
-    [%expr Kirc_Ast.Arr ([%e quote_string ~loc name], [%e quote_k_ext ~loc size],
+    [%expr Sarek.Kirc_Ast.Arr ([%e quote_string ~loc name], [%e quote_k_ext ~loc size],
                          [%e quote_elttype ~loc elt], [%e quote_memspace ~loc mem])]
   | Kirc_Ast.Concat (a, b) ->
-    [%expr Kirc_Ast.Concat ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
+    [%expr Sarek.Kirc_Ast.Concat ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
   | Kirc_Ast.Constr (type_name, constr_name, args) ->
-    [%expr Kirc_Ast.Constr ([%e quote_string ~loc type_name],
+    [%expr Sarek.Kirc_Ast.Constr ([%e quote_string ~loc type_name],
                             [%e quote_string ~loc constr_name],
                             [%e quote_list ~loc quote_k_ext args])]
   | Kirc_Ast.Record (type_name, fields) ->
-    [%expr Kirc_Ast.Record ([%e quote_string ~loc type_name],
+    [%expr Sarek.Kirc_Ast.Record ([%e quote_string ~loc type_name],
                             [%e quote_list ~loc quote_k_ext fields])]
   | Kirc_Ast.RecGet (record, field) ->
-    [%expr Kirc_Ast.RecGet ([%e quote_k_ext ~loc record], [%e quote_string ~loc field])]
+    [%expr Sarek.Kirc_Ast.RecGet ([%e quote_k_ext ~loc record], [%e quote_string ~loc field])]
   | Kirc_Ast.RecSet (record, value) ->
-    [%expr Kirc_Ast.RecSet ([%e quote_k_ext ~loc record], [%e quote_k_ext ~loc value])]
+    [%expr Sarek.Kirc_Ast.RecSet ([%e quote_k_ext ~loc record], [%e quote_k_ext ~loc value])]
   | Kirc_Ast.Empty ->
-    [%expr Kirc_Ast.Empty]
+    [%expr Sarek.Kirc_Ast.Empty]
   | Kirc_Ast.Seq (a, b) ->
-    [%expr Kirc_Ast.Seq ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
+    [%expr Sarek.Kirc_Ast.Seq ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
   | Kirc_Ast.Return k ->
-    [%expr Kirc_Ast.Return [%e quote_k_ext ~loc k]]
+    [%expr Sarek.Kirc_Ast.Return [%e quote_k_ext ~loc k]]
   | Kirc_Ast.Set (a, b) ->
-    [%expr Kirc_Ast.Set ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
+    [%expr Sarek.Kirc_Ast.Set ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
   | Kirc_Ast.Decl k ->
-    [%expr Kirc_Ast.Decl [%e quote_k_ext ~loc k]]
+    [%expr Sarek.Kirc_Ast.Decl [%e quote_k_ext ~loc k]]
   | Kirc_Ast.SetV (a, b) ->
-    [%expr Kirc_Ast.SetV ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
+    [%expr Sarek.Kirc_Ast.SetV ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
   | Kirc_Ast.SetLocalVar (a, b, c) ->
-    [%expr Kirc_Ast.SetLocalVar ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b],
+    [%expr Sarek.Kirc_Ast.SetLocalVar ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b],
                                  [%e quote_k_ext ~loc c])]
   | Kirc_Ast.Intrinsics (cuda, opencl) ->
-    [%expr Kirc_Ast.Intrinsics ([%e quote_string ~loc cuda], [%e quote_string ~loc opencl])]
+    [%expr Sarek.Kirc_Ast.Intrinsics ([%e quote_string ~loc cuda], [%e quote_string ~loc opencl])]
   | Kirc_Ast.IntId (name, id) ->
-    [%expr Kirc_Ast.IntId ([%e quote_string ~loc name], [%e quote_int ~loc id])]
+    [%expr Sarek.Kirc_Ast.IntId ([%e quote_string ~loc name], [%e quote_int ~loc id])]
   | Kirc_Ast.Int i ->
-    [%expr Kirc_Ast.Int [%e quote_int ~loc i]]
+    [%expr Sarek.Kirc_Ast.Int [%e quote_int ~loc i]]
   | Kirc_Ast.Float f ->
-    [%expr Kirc_Ast.Float [%e quote_float ~loc f]]
+    [%expr Sarek.Kirc_Ast.Float [%e quote_float ~loc f]]
   | Kirc_Ast.Double f ->
-    [%expr Kirc_Ast.Double [%e quote_float ~loc f]]
+    [%expr Sarek.Kirc_Ast.Double [%e quote_float ~loc f]]
   | Kirc_Ast.Custom (type_name, id, name) ->
-    [%expr Kirc_Ast.Custom ([%e quote_string ~loc type_name], [%e quote_int ~loc id],
+    [%expr Sarek.Kirc_Ast.Custom ([%e quote_string ~loc type_name], [%e quote_int ~loc id],
                             [%e quote_string ~loc name])]
   | Kirc_Ast.CustomVar (type_name, constr_name, var_name) ->
-    [%expr Kirc_Ast.CustomVar ([%e quote_string ~loc type_name],
+    [%expr Sarek.Kirc_Ast.CustomVar ([%e quote_string ~loc type_name],
                                [%e quote_string ~loc constr_name],
                                [%e quote_string ~loc var_name])]
   | Kirc_Ast.IntVecAcc (vec, idx) ->
-    [%expr Kirc_Ast.IntVecAcc ([%e quote_k_ext ~loc vec], [%e quote_k_ext ~loc idx])]
+    [%expr Sarek.Kirc_Ast.IntVecAcc ([%e quote_k_ext ~loc vec], [%e quote_k_ext ~loc idx])]
   | Kirc_Ast.Local (decl, body) ->
-    [%expr Kirc_Ast.Local ([%e quote_k_ext ~loc decl], [%e quote_k_ext ~loc body])]
+    [%expr Sarek.Kirc_Ast.Local ([%e quote_k_ext ~loc decl], [%e quote_k_ext ~loc body])]
   | Kirc_Ast.Acc (a, b) ->
-    [%expr Kirc_Ast.Acc ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
+    [%expr Sarek.Kirc_Ast.Acc ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
   | Kirc_Ast.Ife (cond, then_e, else_e) ->
-    [%expr Kirc_Ast.Ife ([%e quote_k_ext ~loc cond], [%e quote_k_ext ~loc then_e],
+    [%expr Sarek.Kirc_Ast.Ife ([%e quote_k_ext ~loc cond], [%e quote_k_ext ~loc then_e],
                          [%e quote_k_ext ~loc else_e])]
   | Kirc_Ast.If (cond, then_e) ->
-    [%expr Kirc_Ast.If ([%e quote_k_ext ~loc cond], [%e quote_k_ext ~loc then_e])]
+    [%expr Sarek.Kirc_Ast.If ([%e quote_k_ext ~loc cond], [%e quote_k_ext ~loc then_e])]
   | Kirc_Ast.Match (type_name, scrutinee, cases) ->
-    [%expr Kirc_Ast.Match ([%e quote_string ~loc type_name],
+    [%expr Sarek.Kirc_Ast.Match ([%e quote_string ~loc type_name],
                            [%e quote_k_ext ~loc scrutinee],
                            [%e quote_array ~loc quote_case cases])]
   | Kirc_Ast.Or (a, b) ->
-    [%expr Kirc_Ast.Or ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
+    [%expr Sarek.Kirc_Ast.Or ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
   | Kirc_Ast.And (a, b) ->
-    [%expr Kirc_Ast.And ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
+    [%expr Sarek.Kirc_Ast.And ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
   | Kirc_Ast.Not k ->
-    [%expr Kirc_Ast.Not [%e quote_k_ext ~loc k]]
+    [%expr Sarek.Kirc_Ast.Not [%e quote_k_ext ~loc k]]
   | Kirc_Ast.EqCustom (type_name, a, b) ->
-    [%expr Kirc_Ast.EqCustom ([%e quote_string ~loc type_name],
+    [%expr Sarek.Kirc_Ast.EqCustom ([%e quote_string ~loc type_name],
                               [%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
   | Kirc_Ast.EqBool (a, b) ->
-    [%expr Kirc_Ast.EqBool ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
+    [%expr Sarek.Kirc_Ast.EqBool ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
   | Kirc_Ast.LtBool (a, b) ->
-    [%expr Kirc_Ast.LtBool ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
+    [%expr Sarek.Kirc_Ast.LtBool ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
   | Kirc_Ast.GtBool (a, b) ->
-    [%expr Kirc_Ast.GtBool ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
+    [%expr Sarek.Kirc_Ast.GtBool ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
   | Kirc_Ast.LtEBool (a, b) ->
-    [%expr Kirc_Ast.LtEBool ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
+    [%expr Sarek.Kirc_Ast.LtEBool ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
   | Kirc_Ast.GtEBool (a, b) ->
-    [%expr Kirc_Ast.GtEBool ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
+    [%expr Sarek.Kirc_Ast.GtEBool ([%e quote_k_ext ~loc a], [%e quote_k_ext ~loc b])]
   | Kirc_Ast.DoLoop (var, lo, hi, body) ->
-    [%expr Kirc_Ast.DoLoop ([%e quote_k_ext ~loc var], [%e quote_k_ext ~loc lo],
+    [%expr Sarek.Kirc_Ast.DoLoop ([%e quote_k_ext ~loc var], [%e quote_k_ext ~loc lo],
                             [%e quote_k_ext ~loc hi], [%e quote_k_ext ~loc body])]
   | Kirc_Ast.While (cond, body) ->
-    [%expr Kirc_Ast.While ([%e quote_k_ext ~loc cond], [%e quote_k_ext ~loc body])]
+    [%expr Sarek.Kirc_Ast.While ([%e quote_k_ext ~loc cond], [%e quote_k_ext ~loc body])]
   | Kirc_Ast.App (fn, args) ->
-    [%expr Kirc_Ast.App ([%e quote_k_ext ~loc fn],
+    [%expr Sarek.Kirc_Ast.App ([%e quote_k_ext ~loc fn],
                          [%e quote_array ~loc quote_k_ext args])]
   | Kirc_Ast.GInt _ ->
     (* Global int - we need to create a closure that evaluates at runtime *)
-    [%expr Kirc_Ast.GInt (fun () -> 0l)]  (* Placeholder *)
+    [%expr Sarek.Kirc_Ast.GInt (fun () -> 0l)]  (* Placeholder *)
   | Kirc_Ast.GFloat _ ->
-    [%expr Kirc_Ast.GFloat (fun () -> 0.0)]
+    [%expr Sarek.Kirc_Ast.GFloat (fun () -> 0.0)]
   | Kirc_Ast.GFloat64 _ ->
-    [%expr Kirc_Ast.GFloat64 (fun () -> 0.0)]
+    [%expr Sarek.Kirc_Ast.GFloat64 (fun () -> 0.0)]
   | Kirc_Ast.Native _ ->
-    [%expr Kirc_Ast.Native (fun _dev -> "")]  (* Placeholder *)
+    [%expr Sarek.Kirc_Ast.Native (fun _dev -> "")]  (* Placeholder *)
   | Kirc_Ast.Pragma (opts, body) ->
-    [%expr Kirc_Ast.Pragma ([%e quote_list ~loc quote_string opts], [%e quote_k_ext ~loc body])]
+    [%expr Sarek.Kirc_Ast.Pragma ([%e quote_list ~loc quote_string opts], [%e quote_k_ext ~loc body])]
   | Kirc_Ast.Map (f, a, b) ->
-    [%expr Kirc_Ast.Map ([%e quote_k_ext ~loc f], [%e quote_k_ext ~loc a],
+    [%expr Sarek.Kirc_Ast.Map ([%e quote_k_ext ~loc f], [%e quote_k_ext ~loc a],
                          [%e quote_k_ext ~loc b])]
   | Kirc_Ast.Unit ->
-    [%expr Kirc_Ast.Unit]
+    [%expr Sarek.Kirc_Ast.Unit]
 
 (** Quote a kernel to create a sarek_kernel expression *)
 let quote_kernel ~loc (ir : Kirc_Ast.k_ext) (ret_val : Kirc_Ast.k_ext) : expression =
   [%expr
     let open Spoc in
-    let open Kirc in
+    let module M = struct
+      class ['a, 'b] sarek_kern = object
+        inherit ['a, 'b] Spoc.Kernel.spoc_kernel "kirc_kernel" "spoc_dummy"
+        method exec = assert false
+        method args_to_list = assert false
+        method list_to_args = assert false
+      end
+    end in
+    let open Sarek.Kirc in
     let body_ir = [%e quote_k_ext ~loc ir] in
     let ret_ir = [%e quote_k_ext ~loc ret_val] in
-    (* Create the kernel object *)
-    let kern = new Spoc.Kernel.spoc_kernel "" in
     let kirc_kernel = {
-      Kirc.ml_kern = (fun () -> ());
-      Kirc.body = body_ir;
-      Kirc.ret_val = (ret_ir, Spoc.Vector.int32);
-      Kirc.extensions = [||];
+      Sarek.Kirc.ml_kern = (fun () -> ());
+      Sarek.Kirc.body = body_ir;
+      Sarek.Kirc.ret_val = (ret_ir, Spoc.Vector.int32);
+      Sarek.Kirc.extensions = [||];
     } in
-    (kern, kirc_kernel)
+    (new M.sarek_kern, kirc_kernel)
   ]

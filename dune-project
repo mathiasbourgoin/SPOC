@@ -45,3 +45,14 @@
   (ppxlib (>= 0.22.0))
   (spoc (= :version))
  ))
+
+(package
+  (name sarek_ppx)
+  (synopsis "PPX-based Sarek DSL for GPU kernels")
+  (description "")
+  (depends
+ (ocaml (>= 4.14.0))
+  (dune (> 2.0))
+  (ppxlib (>= 0.22.0))
+  (spoc (= :version))
+ ))

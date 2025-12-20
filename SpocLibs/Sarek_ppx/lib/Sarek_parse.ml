@@ -141,6 +141,12 @@ let rec parse_expression (expr : expression) : Sarek_ast.expr =
         [(Nolabel, arr); (Nolabel, idx)]) ->
       Sarek_ast.EArrGet (parse_expression arr, parse_expression idx)
 
+    (* Vector/array set: e.(i) <- x *)
+    | Pexp_apply (
+        { pexp_desc = Pexp_ident { txt = Ldot (Lident "Array", "set"); _ }; _ },
+        [(Nolabel, arr); (Nolabel, idx); (Nolabel, value)]) ->
+      Sarek_ast.EArrSet (parse_expression arr, parse_expression idx, parse_expression value)
+
     (* a.(i) syntax - array access *)
     | Pexp_apply (arr, [(Nolabel, idx)])
       when is_array_access expr ->
