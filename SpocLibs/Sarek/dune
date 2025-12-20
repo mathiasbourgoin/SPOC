@@ -3,6 +3,6 @@
 (library
   (name sarek)
   (public_name sarek)
-  (enabled_if (< %{ocaml_version} 5.0))
+  (enabled_if (and (< %{ocaml_version} 5.0) (= %{os_type} "linux")))
   (libraries spoc)
 )
