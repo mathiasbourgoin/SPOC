@@ -1,0 +1,289 @@
+(******************************************************************************
+ * Unit tests for Sarek_typer
+ *
+ * Tests type inference for expressions.
+ ******************************************************************************)
+
+open Sarek_ppx_lib.Sarek_ast
+open Sarek_ppx_lib.Sarek_types
+open Sarek_ppx_lib.Sarek_env
+open Sarek_ppx_lib.Sarek_typer
+open Sarek_ppx_lib.Sarek_typed_ast
+
+let dummy_loc = {
+  loc_file = "test";
+  loc_line = 1;
+  loc_col = 0;
+  loc_end_line = 1;
+  loc_end_col = 0;
+}
+
+(* Helper to create expressions *)
+let mk_expr e = { e; expr_loc = dummy_loc }
+
+let int_expr i = mk_expr (EInt i)
+let int32_expr i = mk_expr (EInt32 i)
+let float_expr f = mk_expr (EFloat f)
+let bool_expr b = mk_expr (EBool b)
+let var_expr s = mk_expr (EVar s)
+let unit_expr = mk_expr EUnit
+
+let binop_expr op e1 e2 = mk_expr (EBinop (op, e1, e2))
+let unop_expr op e = mk_expr (EUnop (op, e))
+let if_expr c t e = mk_expr (EIf (c, t, e))
+let let_expr name ty value body = mk_expr (ELet (name, ty, value, body))
+
+(* Helper to check inference result *)
+let check_infer_ok msg env expr expected_typ =
+  reset_tvar_counter ();
+  reset_var_id_counter ();
+  match infer env expr with
+  | Ok (te, _) ->
+    let resolved = repr te.ty in
+    let expected_resolved = repr expected_typ in
+    (match resolved, expected_resolved with
+     | TPrim p1, TPrim p2 when p1 = p2 -> ()
+     | TVec t1, TVec t2 ->
+       (match repr t1, repr t2 with
+        | TPrim p1, TPrim p2 when p1 = p2 -> ()
+        | _ -> Alcotest.failf "%s: expected %s, got %s" msg
+                 (typ_to_string expected_typ) (typ_to_string te.ty))
+     | _ ->
+       Alcotest.failf "%s: expected %s, got %s" msg
+         (typ_to_string expected_typ) (typ_to_string te.ty))
+  | Error errors ->
+    Alcotest.failf "%s: type error: %s" msg
+      (String.concat ", " (List.map Sarek_ppx_lib.Sarek_error.error_to_string errors))
+
+let check_infer_error msg env expr =
+  reset_tvar_counter ();
+  reset_var_id_counter ();
+  match infer env expr with
+  | Ok (te, _) ->
+    Alcotest.failf "%s: expected error but got type %s" msg (typ_to_string te.ty)
+  | Error _ ->
+    ()
+
+(* Test literal type inference *)
+let test_literal_int () =
+  let env = with_stdlib empty in
+  check_infer_ok "int literal" env (int_expr 42) t_int32
+
+let test_literal_int32 () =
+  let env = with_stdlib empty in
+  check_infer_ok "int32 literal" env (int32_expr 42l) t_int32
+
+let test_literal_float () =
+  let env = with_stdlib empty in
+  check_infer_ok "float literal" env (float_expr 3.14) t_float32
+
+let test_literal_bool () =
+  let env = with_stdlib empty in
+  check_infer_ok "bool literal true" env (bool_expr true) t_bool;
+  check_infer_ok "bool literal false" env (bool_expr false) t_bool
+
+let test_literal_unit () =
+  let env = with_stdlib empty in
+  check_infer_ok "unit literal" env unit_expr t_unit
+
+(* Test variable type inference *)
+let test_var_lookup () =
+  let env = with_stdlib empty in
+  let info = {
+    vi_type = t_float32;
+    vi_mutable = false;
+    vi_is_param = true;
+    vi_index = 0;
+    vi_is_vec = false;
+  } in
+  let env = add_var "x" info env in
+  check_infer_ok "variable lookup" env (var_expr "x") t_float32
+
+let test_var_unbound () =
+  let env = with_stdlib empty in
+  check_infer_error "unbound variable" env (var_expr "undefined_var")
+
+let test_intrinsic_const () =
+  let env = with_stdlib empty in
+  check_infer_ok "thread_idx_x" env (var_expr "thread_idx_x") t_int32;
+  check_infer_ok "global_thread_id" env (var_expr "global_thread_id") t_int32
+
+(* Test binary operation type inference *)
+let test_binop_add_int () =
+  let env = with_stdlib empty in
+  let expr = binop_expr Add (int_expr 1) (int_expr 2) in
+  check_infer_ok "int + int" env expr t_int32
+
+let test_binop_add_float () =
+  let env = with_stdlib empty in
+  let expr = binop_expr Add (float_expr 1.0) (float_expr 2.0) in
+  check_infer_ok "float + float" env expr t_float32
+
+let test_binop_add_mismatch () =
+  let env = with_stdlib empty in
+  let expr = binop_expr Add (int_expr 1) (float_expr 2.0) in
+  check_infer_error "int + float should fail" env expr
+
+let test_binop_comparison () =
+  let env = with_stdlib empty in
+  let expr = binop_expr Lt (int_expr 1) (int_expr 2) in
+  check_infer_ok "int < int gives bool" env expr t_bool
+
+let test_binop_logical () =
+  let env = with_stdlib empty in
+  let expr = binop_expr And (bool_expr true) (bool_expr false) in
+  check_infer_ok "bool && bool" env expr t_bool
+
+let test_binop_logical_mismatch () =
+  let env = with_stdlib empty in
+  let expr = binop_expr And (int_expr 1) (bool_expr true) in
+  check_infer_error "int && bool should fail" env expr
+
+(* Test unary operation type inference *)
+let test_unop_neg_int () =
+  let env = with_stdlib empty in
+  let expr = unop_expr Neg (int_expr 42) in
+  check_infer_ok "-int" env expr t_int32
+
+let test_unop_neg_float () =
+  let env = with_stdlib empty in
+  let expr = unop_expr Neg (float_expr 3.14) in
+  check_infer_ok "-float" env expr t_float32
+
+let test_unop_not () =
+  let env = with_stdlib empty in
+  let expr = unop_expr Not (bool_expr true) in
+  check_infer_ok "not bool" env expr t_bool
+
+let test_unop_not_mismatch () =
+  let env = with_stdlib empty in
+  let expr = unop_expr Not (int_expr 1) in
+  check_infer_error "not int should fail" env expr
+
+(* Test if expression type inference *)
+let test_if_simple () =
+  let env = with_stdlib empty in
+  let expr = if_expr (bool_expr true) (int_expr 1) (Some (int_expr 2)) in
+  check_infer_ok "if bool then int else int" env expr t_int32
+
+let test_if_branch_mismatch () =
+  let env = with_stdlib empty in
+  let expr = if_expr (bool_expr true) (int_expr 1) (Some (float_expr 2.0)) in
+  check_infer_error "if branches with different types should fail" env expr
+
+let test_if_condition_not_bool () =
+  let env = with_stdlib empty in
+  let expr = if_expr (int_expr 1) (int_expr 2) (Some (int_expr 3)) in
+  check_infer_error "if with non-bool condition should fail" env expr
+
+let test_if_no_else () =
+  let env = with_stdlib empty in
+  let expr = if_expr (bool_expr true) unit_expr None in
+  check_infer_ok "if bool then unit (no else)" env expr t_unit
+
+(* Test let expression type inference *)
+let test_let_simple () =
+  let env = with_stdlib empty in
+  let expr = let_expr "x" None (int_expr 42) (var_expr "x") in
+  check_infer_ok "let x = 42 in x" env expr t_int32
+
+let test_let_with_annotation () =
+  let env = with_stdlib empty in
+  let ty_annot = Sarek_ppx_lib.Sarek_ast.TEConstr ("int32", []) in
+  let expr = let_expr "x" (Some ty_annot) (int_expr 42) (var_expr "x") in
+  check_infer_ok "let x : int32 = 42 in x" env expr t_int32
+
+let test_let_annotation_mismatch () =
+  let env = with_stdlib empty in
+  let ty_annot = Sarek_ppx_lib.Sarek_ast.TEConstr ("float32", []) in
+  let expr = let_expr "x" (Some ty_annot) (int_expr 42) (var_expr "x") in
+  check_infer_error "let x : float32 = 42 should fail" env expr
+
+let test_let_body_uses_binding () =
+  let env = with_stdlib empty in
+  let expr = let_expr "x" None (int_expr 1)
+      (binop_expr Add (var_expr "x") (int_expr 2)) in
+  check_infer_ok "let x = 1 in x + 2" env expr t_int32
+
+(* Test vector access type inference *)
+let test_vec_access () =
+  let env = with_stdlib empty in
+  let info = {
+    vi_type = TVec t_float32;
+    vi_mutable = false;
+    vi_is_param = true;
+    vi_index = 0;
+    vi_is_vec = true;
+  } in
+  let env = add_var "v" info env in
+  let expr = mk_expr (EVecGet (var_expr "v", int_expr 0)) in
+  check_infer_ok "v.[0]" env expr t_float32
+
+let test_vec_access_wrong_index () =
+  let env = with_stdlib empty in
+  let info = {
+    vi_type = TVec t_float32;
+    vi_mutable = false;
+    vi_is_param = true;
+    vi_index = 0;
+    vi_is_vec = true;
+  } in
+  let env = add_var "v" info env in
+  let expr = mk_expr (EVecGet (var_expr "v", float_expr 0.0)) in
+  check_infer_error "v.[0.0] should fail (index must be int)" env expr
+
+(* Test sequence type inference *)
+let test_seq () =
+  let env = with_stdlib empty in
+  let expr = mk_expr (ESeq (int_expr 1, float_expr 2.0)) in
+  check_infer_ok "1; 2.0 has type of last expr" env expr t_float32
+
+(* Test suite *)
+let () =
+  Alcotest.run "Sarek_typer" [
+    "literals", [
+      Alcotest.test_case "int" `Quick test_literal_int;
+      Alcotest.test_case "int32" `Quick test_literal_int32;
+      Alcotest.test_case "float" `Quick test_literal_float;
+      Alcotest.test_case "bool" `Quick test_literal_bool;
+      Alcotest.test_case "unit" `Quick test_literal_unit;
+    ];
+    "variables", [
+      Alcotest.test_case "lookup" `Quick test_var_lookup;
+      Alcotest.test_case "unbound" `Quick test_var_unbound;
+      Alcotest.test_case "intrinsic const" `Quick test_intrinsic_const;
+    ];
+    "binop", [
+      Alcotest.test_case "add int" `Quick test_binop_add_int;
+      Alcotest.test_case "add float" `Quick test_binop_add_float;
+      Alcotest.test_case "add mismatch" `Quick test_binop_add_mismatch;
+      Alcotest.test_case "comparison" `Quick test_binop_comparison;
+      Alcotest.test_case "logical" `Quick test_binop_logical;
+      Alcotest.test_case "logical mismatch" `Quick test_binop_logical_mismatch;
+    ];
+    "unop", [
+      Alcotest.test_case "neg int" `Quick test_unop_neg_int;
+      Alcotest.test_case "neg float" `Quick test_unop_neg_float;
+      Alcotest.test_case "not" `Quick test_unop_not;
+      Alcotest.test_case "not mismatch" `Quick test_unop_not_mismatch;
+    ];
+    "if", [
+      Alcotest.test_case "simple" `Quick test_if_simple;
+      Alcotest.test_case "branch mismatch" `Quick test_if_branch_mismatch;
+      Alcotest.test_case "condition not bool" `Quick test_if_condition_not_bool;
+      Alcotest.test_case "no else" `Quick test_if_no_else;
+    ];
+    "let", [
+      Alcotest.test_case "simple" `Quick test_let_simple;
+      Alcotest.test_case "with annotation" `Quick test_let_with_annotation;
+      Alcotest.test_case "annotation mismatch" `Quick test_let_annotation_mismatch;
+      Alcotest.test_case "body uses binding" `Quick test_let_body_uses_binding;
+    ];
+    "vector", [
+      Alcotest.test_case "access" `Quick test_vec_access;
+      Alcotest.test_case "wrong index type" `Quick test_vec_access_wrong_index;
+    ];
+    "sequence", [
+      Alcotest.test_case "seq" `Quick test_seq;
+    ];
+  ]

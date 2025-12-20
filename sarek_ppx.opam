@@ -1,0 +1,24 @@
+opam-version: "2.0"
+name: "sarek_ppx"
+version: "0.1.0"
+synopsis: "PPX-based GPGPU kernel DSL for OCaml"
+description: """
+Write GPU kernels in OCaml syntax using [%kernel ...] extension.
+This is a modern replacement for the camlp4-based Sarek DSL.
+Works with OCaml 4.14+ and 5.x.
+"""
+maintainer: ["mathias.bourgoin@gmail.com"]
+authors: ["Mathias Bourgoin"]
+license: "CeCILL-B"
+homepage: "https://github.com/mathiasbourgoin/SPOC"
+bug-reports: "https://github.com/mathiasbourgoin/SPOC/issues"
+depends: [
+  "ocaml" {>= "4.14.0"}
+  "dune" {>= "2.9"}
+  "ppxlib" {>= "0.28.0"}
+  "sarek" {= version}
+]
+build: [
+  ["dune" "subst"] {dev}
+  ["dune" "build" "-p" name "-j" jobs]
+]

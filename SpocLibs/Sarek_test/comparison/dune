@@ -6,6 +6,8 @@
 (rule
   (alias runtest)
   (deps
-    (source_tree %{project_root}/SpocLibs/Sarek_test/regression))
-  (action (run ./test_reference_ir.exe))
+    ../regression/reference_ir.txt)
+  (action
+    (chdir %{project_root}
+      (run %{exe:test_reference_ir.exe})))
 )
