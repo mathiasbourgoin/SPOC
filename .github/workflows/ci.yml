@@ -1,0 +1,150 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+        ocaml-compiler:
+          - 5.4.0
+        cache:
+          - true
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache key
+        run: echo "CACHE_WEEK=$(date +%G-%V)" >> $GITHUB_ENV
+
+      - name: Build CI image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ci/Dockerfile
+          tags: spoc-ci:latest
+          load: true
+          build-args: |
+            CACHEBUST=${{ env.CACHE_WEEK }}
+          cache-from: type=gha,scope=spoc-ci-${{ hashFiles('ci/Dockerfile') }}
+          cache-to: type=gha,scope=spoc-ci-${{ hashFiles('ci/Dockerfile') }},mode=max
+
+      - name: Cache opam root
+        uses: actions/cache@v4
+        with:
+          path: .opam-ci
+          key: opam-${{ runner.os }}-${{ matrix.ocaml-compiler }}-${{ hashFiles('*.opam') }}
+          restore-keys: |
+            opam-${{ runner.os }}-${{ matrix.ocaml-compiler }}-
+
+      - name: Build SPOC and samples
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/work \
+            -w /work \
+            spoc-ci:latest \
+            bash -lc 'export OPAMROOT=/work/.opam-ci && \
+              if [ ! -d "$OPAMROOT" ]; then \
+                opam init --compiler=${{ matrix.ocaml-compiler }} --disable-sandboxing --no-setup; \
+              else \
+                opam switch set ${{ matrix.ocaml-compiler }} || \
+                  opam switch create ${{ matrix.ocaml-compiler }}; \
+              fi && \
+              eval $(opam env --switch=${{ matrix.ocaml-compiler }}) && \
+              opam install ./spoc.opam ./spoc_ppx.opam --deps-only && \
+              opam install graphics && \
+              dune build --profile cuda -p spoc,spoc_ppx && \
+              dune build --profile cuda -- Samples/src/DeviceQuery/DeviceQuery.exe && \
+              dune build --profile cuda -- Samples/src/VecAdd/VecAdd.exe && \
+              dune build --profile cuda -- Samples/src/Mandelbrot/Mandelbrot.exe'
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dune-build-${{ matrix.os }}-ocaml-${{ matrix.ocaml-compiler }}
+          path: _build
+          retention-days: 7
+
+  test:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+        ocaml-compiler:
+          - 5.4.0
+        cache:
+          - true
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache key
+        run: echo "CACHE_WEEK=$(date +%G-%V)" >> $GITHUB_ENV
+
+      - name: Build CI image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ci/Dockerfile
+          tags: spoc-ci:latest
+          load: true
+          build-args: |
+            CACHEBUST=${{ env.CACHE_WEEK }}
+          cache-from: type=gha,scope=spoc-ci-${{ hashFiles('ci/Dockerfile') }}
+          cache-to: type=gha,scope=spoc-ci-${{ hashFiles('ci/Dockerfile') }},mode=max
+
+      - name: Cache opam root
+        uses: actions/cache@v4
+        with:
+          path: .opam-ci
+          key: opam-${{ runner.os }}-${{ matrix.ocaml-compiler }}-${{ hashFiles('*.opam') }}
+          restore-keys: |
+            opam-${{ runner.os }}-${{ matrix.ocaml-compiler }}-
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dune-build-${{ matrix.os }}-ocaml-${{ matrix.ocaml-compiler }}
+          path: _build
+
+      - name: Restore executable bits
+        run: |
+          chmod -R u+rwX,go+rX _build
+          find _build -type f -name "*.exe" -exec chmod a+x {} +
+
+      - name: Run tests
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/work \
+            -w /work \
+            spoc-ci:latest \
+            bash -lc 'export OPAMROOT=/work/.opam-ci && \
+              if [ ! -d "$OPAMROOT" ]; then \
+                opam init --compiler=${{ matrix.ocaml-compiler }} --disable-sandboxing --no-setup; \
+              else \
+                opam switch set ${{ matrix.ocaml-compiler }} || \
+                  opam switch create ${{ matrix.ocaml-compiler }}; \
+              fi && \
+              eval $(opam env --switch=${{ matrix.ocaml-compiler }}) && \
+              opam install ./spoc.opam ./spoc_ppx.opam --deps-only && \
+              opam install graphics && \
+              dune exec --no-build --profile cuda -- Samples/src/DeviceQuery/DeviceQuery.exe && \
+              dune exec --no-build --profile cuda -- Samples/src/VecAdd/VecAdd.exe && \
+              dune exec --no-build --profile cuda -- Samples/src/Mandelbrot/Mandelbrot.exe -ppm /tmp/mandelbrot.ppm'
