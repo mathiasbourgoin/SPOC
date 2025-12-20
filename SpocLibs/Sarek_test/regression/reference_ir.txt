@@ -1,0 +1,1520 @@
+=== k_int_literal ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 0 ->v
+      Empty
+  SetV
+    IntVecAcc
+      IntId v 0
+      Int 0
+    Int 42
+
+--- ret_val ---
+Unit
+
+
+=== k_float_literal ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 2 ->v
+      Empty
+  SetV
+    IntVecAcc
+      IntId v 2
+      Int 0
+    Float 3.14
+
+--- ret_val ---
+Unit
+
+
+=== k_arithmetic_int ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 6 ->v
+      Empty
+  Local
+    Decl
+      IntVar 8 -> a
+    Local
+      Decl
+        IntVar 9 -> b
+      Seq
+        Set
+          IntId a 8
+          Int 10
+        Seq
+          Set
+            IntId b 9
+            Int 3
+          Seq
+            SetV
+              IntVecAcc
+                IntId v 6
+                Int 0
+              Plus
+                IntId a 8
+                IntId b 9
+            Return
+              Seq
+                SetV
+                  IntVecAcc
+                    IntId v 6
+                    Int 1
+                  Min
+                    IntId a 8
+                    IntId b 9
+                Return
+                  Seq
+                    SetV
+                      IntVecAcc
+                        IntId v 6
+                        Int 2
+                      Mul
+                        IntId a 8
+                        IntId b 9
+                    SetV
+                      IntVecAcc
+                        IntId v 6
+                        Int 3
+                      Div
+                        IntId a 8
+                        IntId b 9
+
+--- ret_val ---
+Unit
+
+
+=== k_arithmetic_float ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 12 ->v
+      Empty
+  Local
+    Decl
+      FloatVar 14 -> a
+    Local
+      Decl
+        FloatVar 15 -> b
+      Seq
+        Set
+          IntId a 14
+          Float 10.
+        Seq
+          Set
+            IntId b 15
+            Float 3.
+          Seq
+            SetV
+              IntVecAcc
+                IntId v 12
+                Int 0
+              Plusf
+                IntId a 14
+                IntId b 15
+            Return
+              Seq
+                SetV
+                  IntVecAcc
+                    IntId v 12
+                    Int 1
+                  Minf
+                    IntId a 14
+                    IntId b 15
+                Return
+                  Seq
+                    SetV
+                      IntVecAcc
+                        IntId v 12
+                        Int 2
+                      Mulf
+                        IntId a 14
+                        IntId b 15
+                    SetV
+                      IntVecAcc
+                        IntId v 12
+                        Int 3
+                      Divf
+                        IntId a 14
+                        IntId b 15
+
+--- ret_val ---
+Unit
+
+
+=== k_comparisons ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 18 ->v
+      Empty
+  Local
+    Decl
+      IntVar 20 -> a
+    Local
+      Decl
+        IntVar 21 -> b
+      Seq
+        Set
+          IntId a 20
+          Int 5
+        Seq
+          Set
+            IntId b 21
+            Int 10
+          Seq
+            Ife
+              LtBool
+                IntId a 20
+                IntId b 21
+              SetV
+                IntVecAcc
+                  IntId v 18
+                  Int 0
+                Int 1
+              SetV
+                IntVecAcc
+                  IntId v 18
+                  Int 0
+                Int 0
+            Return
+              Seq
+                Ife
+                  GtBool
+                    IntId a 20
+                    IntId b 21
+                  SetV
+                    IntVecAcc
+                      IntId v 18
+                      Int 1
+                    Int 1
+                  SetV
+                    IntVecAcc
+                      IntId v 18
+                      Int 1
+                    Int 0
+                Ife
+                  EqBool
+                    IntId a 20
+                    IntId b 21
+                  SetV
+                    IntVecAcc
+                      IntId v 18
+                      Int 2
+                    Int 1
+                  SetV
+                    IntVecAcc
+                      IntId v 18
+                      Int 2
+                    Int 0
+
+--- ret_val ---
+Unit
+
+
+=== k_comparisons_float ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 24 ->v
+      Empty
+  Local
+    Decl
+      FloatVar 26 -> a
+    Local
+      Decl
+        FloatVar 27 -> b
+      Seq
+        Set
+          IntId a 26
+          Float 5.
+        Seq
+          Set
+            IntId b 27
+            Float 10.
+          Seq
+            Ife
+              LtBool
+                IntId a 26
+                IntId b 27
+              SetV
+                IntVecAcc
+                  IntId v 24
+                  Int 0
+                Int 1
+              SetV
+                IntVecAcc
+                  IntId v 24
+                  Int 0
+                Int 0
+            Return
+              Seq
+                Ife
+                  GtBool
+                    IntId a 26
+                    IntId b 27
+                  SetV
+                    IntVecAcc
+                      IntId v 24
+                      Int 1
+                    Int 1
+                  SetV
+                    IntVecAcc
+                      IntId v 24
+                      Int 1
+                    Int 0
+                Return
+                  Seq
+                    Ife
+                      LtEBool
+                        IntId a 26
+                        IntId b 27
+                      SetV
+                        IntVecAcc
+                          IntId v 24
+                          Int 2
+                        Int 1
+                      SetV
+                        IntVecAcc
+                          IntId v 24
+                          Int 2
+                        Int 0
+                    Ife
+                      GtEBool
+                        IntId a 26
+                        IntId b 27
+                      SetV
+                        IntVecAcc
+                          IntId v 24
+                          Int 3
+                        Int 1
+                      SetV
+                        IntVecAcc
+                          IntId v 24
+                          Int 3
+                        Int 0
+
+--- ret_val ---
+Unit
+
+
+=== k_thread_indices ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 31 ->v
+      Empty
+  Local
+    Decl
+      IntVar 33 -> tid
+    Local
+      Decl
+        IntVar 34 -> bid
+      Local
+        Decl
+          IntVar 35 -> bdim
+        Seq
+          Set
+            IntId tid 33
+            Intrinsics
+          Seq
+            Set
+              IntId bid 34
+              Intrinsics
+            Seq
+              Set
+                IntId bdim 35
+                Intrinsics
+              SetV
+                IntVecAcc
+                  IntId v 31
+                  IntId tid 33
+                Plus
+                  Mul
+                    IntId bid 34
+                    IntId bdim 35
+                  IntId tid 33
+
+--- ret_val ---
+Unit
+
+
+=== k_thread_indices_2d ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 38 ->v
+      Concat
+        IntVar 39 -> width
+        Empty
+  Local
+    Decl
+      IntVar 41 -> x
+    Local
+      Decl
+        IntVar 42 -> y
+      Seq
+        Set
+          IntId x 41
+          Plus
+            Intrinsics
+            Mul
+              Intrinsics
+              Intrinsics
+        Seq
+          Set
+            IntId y 42
+            Plus
+              Intrinsics
+              Mul
+                Intrinsics
+                Intrinsics
+          SetV
+            IntVecAcc
+              IntId v 38
+              Plus
+                Mul
+                  IntId y 42
+                  IntId width 39
+                IntId x 41
+            Plus
+              IntId x 41
+              IntId y 42
+
+--- ret_val ---
+Unit
+
+
+=== k_global_thread_id ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 44 ->v
+      Empty
+  Local
+    Decl
+      IntVar 46 -> tid
+    Seq
+      Set
+        IntId tid 46
+        Intrinsics
+      SetV
+        IntVecAcc
+          IntId v 44
+          IntId tid 46
+        IntId tid 46
+
+--- ret_val ---
+Unit
+
+
+=== k_if_then_else ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 47 ->v
+      Concat
+        IntVar 48 -> cond
+        Empty
+  Ife
+    EqBool
+      IntId cond 48
+      Int 1
+    SetV
+      IntVecAcc
+        IntId v 47
+        Int 0
+      Int 100
+    SetV
+      IntVecAcc
+        IntId v 47
+        Int 0
+      Int 200
+
+--- ret_val ---
+Unit
+
+
+=== k_if_no_else ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 50 ->v
+      Concat
+        IntVar 51 -> cond
+        Empty
+  If
+    EqBool
+      IntId cond 51
+      Int 1
+    SetV
+      IntVecAcc
+        IntId v 50
+        Int 0
+      Int 100
+
+--- ret_val ---
+Unit
+
+
+=== k_while_loop ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 55 ->v
+      Concat
+        IntVar 56 -> n
+        Empty
+  Local
+    Decl
+      IntVar 58 -> i
+    Local
+      Decl
+        IntVar 59 -> sum
+      Seq
+        Set
+          IntId i 58
+          Int 0
+        Seq
+          Set
+            IntId sum 59
+            Int 0
+          Seq
+            While
+              LtBool
+                IntId i 58
+                IntId n 56
+              Seq
+                Acc
+                  IntId sum 59
+                  Plus
+                    IntId sum 59
+                    IntId i 58
+                Acc
+                  IntId i 58
+                  Plus
+                    IntId i 58
+                    Int 1
+            SetV
+              IntVecAcc
+                IntId v 55
+                Int 0
+              IntId sum 59
+
+--- ret_val ---
+Unit
+
+
+=== k_for_loop ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 61 ->v
+      Concat
+        IntVar 62 -> n
+        Empty
+  Local
+    Decl
+      IntVar 64 -> sum
+    Seq
+      Set
+        IntId sum 64
+        Int 0
+      Seq
+        DoLoop
+          IntId i 65
+          Int 0
+          Min
+            IntId n 62
+            Int 1
+          Acc
+            IntId sum 64
+            Plus
+              IntId sum 64
+              IntId i 65
+        SetV
+          IntVecAcc
+            IntId v 61
+            Int 0
+          IntId sum 64
+
+--- ret_val ---
+Unit
+
+
+=== k_nested_loops ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 68 ->v
+      Concat
+        IntVar 69 -> n
+        Empty
+  Local
+    Decl
+      IntVar 71 -> sum
+    Seq
+      Set
+        IntId sum 71
+        Int 0
+      Seq
+        DoLoop
+          IntId i 72
+          Int 0
+          Min
+            IntId n 69
+            Int 1
+          DoLoop
+            IntId j 73
+            Int 0
+            Min
+              IntId n 69
+              Int 1
+            Acc
+              IntId sum 71
+              Plus
+                IntId sum 71
+                Mul
+                  IntId i 72
+                  IntId j 73
+        SetV
+          IntVecAcc
+            IntId v 68
+            Int 0
+          IntId sum 71
+
+--- ret_val ---
+Unit
+
+
+=== k_vector_read ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 77 ->a
+      Concat
+        VecVar 78 ->b
+        Empty
+  Local
+    Decl
+      IntVar 80 -> tid
+    Seq
+      Set
+        IntId tid 80
+        Intrinsics
+      SetV
+        IntVecAcc
+          IntId b 78
+          IntId tid 80
+        IntVecAcc
+          IntId a 77
+          IntId tid 80
+
+--- ret_val ---
+Unit
+
+
+=== k_vector_write ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 82 ->v
+      Empty
+  Local
+    Decl
+      IntVar 84 -> tid
+    Seq
+      Set
+        IntId tid 84
+        Intrinsics
+      SetV
+        IntVecAcc
+          IntId v 82
+          IntId tid 84
+        Mul
+          IntId tid 84
+          Int 2
+
+--- ret_val ---
+Unit
+
+
+=== k_vector_read_write ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 87 ->a
+      Concat
+        VecVar 88 ->b
+        Empty
+  Local
+    Decl
+      IntVar 90 -> tid
+    Local
+      Decl
+        FloatVar 91 -> x
+      Seq
+        Set
+          IntId tid 90
+          Intrinsics
+        Seq
+          Set
+            IntId x 91
+            IntVecAcc
+              IntId a 87
+              IntId tid 90
+          SetV
+            IntVecAcc
+              IntId b 88
+              IntId tid 90
+            Mulf
+              IntId x 91
+              Float 2.
+
+--- ret_val ---
+Unit
+
+
+=== k_let_simple ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 93 ->v
+      Empty
+  Local
+    Decl
+      IntVar 95 -> x
+    Seq
+      Set
+        IntId x 95
+        Int 42
+      SetV
+        IntVecAcc
+          IntId v 93
+          Int 0
+        IntId x 95
+
+--- ret_val ---
+Unit
+
+
+=== k_let_nested ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 99 ->v
+      Empty
+  Local
+    Decl
+      IntVar 101 -> x
+    Local
+      Decl
+        IntVar 102 -> y
+      Local
+        Decl
+          IntVar 103 -> z
+        Seq
+          Set
+            IntId x 101
+            Int 1
+          Seq
+            Set
+              IntId y 102
+              Plus
+                IntId x 101
+                Int 2
+            Seq
+              Set
+                IntId z 103
+                Mul
+                  IntId y 102
+                  Int 3
+              SetV
+                IntVecAcc
+                  IntId v 99
+                  Int 0
+                IntId z 103
+
+--- ret_val ---
+Unit
+
+
+=== k_let_mutable ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 105 ->v
+      Empty
+  Local
+    Decl
+      IntVar 107 -> x
+    Seq
+      Set
+        IntId x 107
+        Int 0
+      Seq
+        Acc
+          IntId x 107
+          Int 10
+        Return
+          Seq
+            Acc
+              IntId x 107
+              Plus
+                IntId x 107
+                Int 5
+            SetV
+              IntVecAcc
+                IntId v 105
+                Int 0
+              IntId x 107
+
+--- ret_val ---
+Unit
+
+
+=== k_math_float ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 109 ->v
+      Empty
+  Local
+    Decl
+      FloatVar 111 -> x
+    Seq
+      Set
+        IntId x 111
+        Float 0.5
+      Seq
+        SetV
+          IntVecAcc
+            IntId v 109
+            Int 0
+          App
+            Intrinsics
+            IntId x 111
+        Return
+          Seq
+            SetV
+              IntVecAcc
+                IntId v 109
+                Int 1
+              App
+                Intrinsics
+                IntId x 111
+            SetV
+              IntVecAcc
+                IntId v 109
+                Int 2
+              App
+                Intrinsics
+                IntId x 111
+
+--- ret_val ---
+Unit
+
+
+=== k_math_more ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 113 ->v
+      Empty
+  Local
+    Decl
+      FloatVar 115 -> x
+    Seq
+      Set
+        IntId x 115
+        Float 2.
+      Seq
+        SetV
+          IntVecAcc
+            IntId v 113
+            Int 0
+          App
+            Intrinsics
+            IntId x 115
+        Return
+          Seq
+            SetV
+              IntVecAcc
+                IntId v 113
+                Int 1
+              App
+                Intrinsics
+                IntId x 115
+            SetV
+              IntVecAcc
+                IntId v 113
+                Int 2
+              App
+                Intrinsics
+                IntId x 115
+
+--- ret_val ---
+Unit
+
+
+=== k_math_int ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 118 ->v
+      Empty
+  Local
+    Decl
+      IntVar 120 -> a
+    Local
+      Decl
+        IntVar 121 -> b
+      Seq
+        Set
+          IntId a 120
+          Int 5
+        Seq
+          Set
+            IntId b 121
+            Int 3
+          Seq
+            SetV
+              IntVecAcc
+                IntId v 118
+                Int 0
+              App
+                Intrinsics
+                IntId a 120
+                IntId b 121
+            SetV
+              IntVecAcc
+                IntId v 118
+                Int 1
+              App
+                Intrinsics
+                IntId a 120
+                IntId b 121
+
+--- ret_val ---
+Unit
+
+
+=== k_barrier ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 123 ->v
+      Empty
+  Local
+    Decl
+      IntVar 125 -> tid
+    Seq
+      Set
+        IntId tid 125
+        Intrinsics
+      Seq
+        SetV
+          IntVecAcc
+            IntId v 123
+            IntId tid 125
+          IntId tid 125
+        Return
+          Seq
+            App
+              Intrinsics
+              Unit
+            SetV
+              IntVecAcc
+                IntId v 123
+                IntId tid 125
+              Plus
+                IntVecAcc
+                  IntId v 123
+                  IntId tid 125
+                Int 1
+
+--- ret_val ---
+Unit
+
+
+=== k_early_return ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 127 ->v
+      Concat
+        IntVar 128 -> n
+        Empty
+  Local
+    Decl
+      IntVar 130 -> tid
+    Seq
+      Set
+        IntId tid 130
+        Intrinsics
+      Seq
+        If
+          GtEBool
+            IntId tid 130
+            IntId n 128
+          App
+            Intrinsics
+            Unit
+        SetV
+          IntVecAcc
+            IntId v 127
+            IntId tid 130
+          IntId tid 130
+
+--- ret_val ---
+Unit
+
+
+=== k_saxpy ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 132 ->y
+      Concat
+        VecVar 133 ->x
+        Concat
+          FloatVar 134 -> a
+          Concat
+            IntVar 135 -> n
+            Empty
+  Local
+    Decl
+      IntVar 137 -> tid
+    Seq
+      Set
+        IntId tid 137
+        Intrinsics
+      If
+        LtBool
+          IntId tid 137
+          IntId n 135
+        SetV
+          IntVecAcc
+            IntId y 132
+            IntId tid 137
+          Plusf
+            Mulf
+              IntId a 134
+              IntVecAcc
+                IntId x 133
+                IntId tid 137
+            IntVecAcc
+              IntId y 132
+              IntId tid 137
+
+--- ret_val ---
+Unit
+
+
+=== k_bitonic ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 141 ->v
+      Concat
+        IntVar 142 -> j
+        Concat
+          IntVar 143 -> k
+          Empty
+  Local
+    Decl
+      IntVar 145 -> i
+    Local
+      Decl
+        IntVar 146 -> ixj
+      Local
+        Decl
+          FloatVar 147 -> temp
+        Seq
+          Set
+            IntId i 145
+            Plus
+              Intrinsics
+              Mul
+                Intrinsics
+                Intrinsics
+          Seq
+            Set
+              IntId ixj 146
+              App
+                Intrinsics
+                IntId i 145
+                IntId j 142
+            Seq
+              Set
+                IntId temp 147
+                Float 0.
+              If
+                GtEBool
+                  IntId ixj 146
+                  IntId i 145
+                Ife
+                  EqBool
+                    App
+                      Intrinsics
+                      IntId i 145
+                      IntId k 143
+                    Int 0
+                  If
+                    GtBool
+                      IntVecAcc
+                        IntId v 141
+                        IntId i 145
+                      IntVecAcc
+                        IntId v 141
+                        IntId ixj 146
+                    Seq
+                      Acc
+                        IntId temp 147
+                        IntVecAcc
+                          IntId v 141
+                          IntId ixj 146
+                      Return
+                        Seq
+                          SetV
+                            IntVecAcc
+                              IntId v 141
+                              IntId ixj 146
+                            IntVecAcc
+                              IntId v 141
+                              IntId i 145
+                          SetV
+                            IntVecAcc
+                              IntId v 141
+                              IntId i 145
+                            IntId temp 147
+                  If
+                    LtBool
+                      IntVecAcc
+                        IntId v 141
+                        IntId i 145
+                      IntVecAcc
+                        IntId v 141
+                        IntId ixj 146
+                    Seq
+                      Acc
+                        IntId temp 147
+                        IntVecAcc
+                          IntId v 141
+                          IntId ixj 146
+                      Return
+                        Seq
+                          SetV
+                            IntVecAcc
+                              IntId v 141
+                              IntId ixj 146
+                            IntVecAcc
+                              IntId v 141
+                              IntId i 145
+                          SetV
+                            IntVecAcc
+                              IntId v 141
+                              IntId i 145
+                            IntId temp 147
+
+--- ret_val ---
+Unit
+
+
+=== k_to_gray ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 151 ->v
+      Empty
+  Local
+    Decl
+      IntVar 153 -> tid
+    Local
+      Decl
+        IntVar 154 -> i
+      Local
+        Decl
+          IntVar 155 -> res
+        Seq
+          Set
+            IntId tid 153
+            Plus
+              Intrinsics
+              Mul
+                Intrinsics
+                Intrinsics
+          If
+            LtEBool
+              IntId tid 153
+              Mul
+                Int 512
+                Int 512
+            Seq
+              Set
+                IntId i 154
+                Mul
+                  IntId tid 153
+                  Int 4
+              Seq
+                Set
+                  IntId res 155
+                  App
+                    Intrinsics
+                    Plusf
+                      Plusf
+                        Mulf
+                          Float 0.21
+                          App
+                            Intrinsics
+                            IntVecAcc
+                              IntId v 151
+                              IntId i 154
+                        Mulf
+                          Float 0.71
+                          App
+                            Intrinsics
+                            IntVecAcc
+                              IntId v 151
+                              Plus
+                                IntId i 154
+                                Int 1
+                      Mulf
+                        Float 0.07
+                        App
+                          Intrinsics
+                          IntVecAcc
+                            IntId v 151
+                            Plus
+                              IntId i 154
+                              Int 2
+                Seq
+                  SetV
+                    IntVecAcc
+                      IntId v 151
+                      IntId i 154
+                    IntId res 155
+                  Return
+                    Seq
+                      SetV
+                        IntVecAcc
+                          IntId v 151
+                          Plus
+                            IntId i 154
+                            Int 1
+                        IntId res 155
+                      SetV
+                        IntVecAcc
+                          IntId v 151
+                          Plus
+                            IntId i 154
+                            Int 2
+                        IntId res 155
+
+--- ret_val ---
+Unit
+
+
+=== k_nested_functions ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 160 ->v
+      Empty
+  Local
+    Decl
+      FloatVar 162 -> x
+    Local
+      Decl
+        FloatVar 163 -> y
+      Return
+        Seq
+          Set
+            IntId x 162
+            Float 3.
+          Seq
+            Set
+              IntId y 163
+              Float 4.
+            Seq
+              SetV
+                IntVecAcc
+                  IntId v 160
+                  Int 0
+                App
+                  Global Fun float 
+                    Kern
+                      Params
+                        Concat
+                          FloatVar 0 -> x
+                          Concat
+                            FloatVar 1 -> y
+                            Empty
+                      Return
+                        Plusf
+                          Mulf
+                            IntId x 0
+                            IntId x 0
+                          Mulf
+                            IntId y 1
+                            IntId y 1
+                  IntId x 162
+                  IntId y 163
+              SetV
+                IntVecAcc
+                  IntId v 160
+                  Int 1
+                App
+                  Global Fun float 
+                    Kern
+                      Params
+                        Concat
+                          FloatVar 0 -> x
+                          Empty
+                      Return
+                        Mulf
+                          IntId x 0
+                          IntId x 0
+                  IntId x 162
+
+--- ret_val ---
+Unit
+
+
+=== k_deeply_nested_functions ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 166 ->v
+      Empty
+  SetV
+    IntVecAcc
+      IntId v 166
+      Int 0
+    App
+      Global Fun float 
+        Kern
+          Params
+            Concat
+              FloatVar 0 -> x
+              Empty
+          Return
+            App
+              Global Fun float 
+                Kern
+                  Params
+                    Concat
+                      FloatVar 0 -> y
+                      Empty
+                  Return
+                    Mulf
+                      IntId y 0
+                      Float 2.
+              Plusf
+                IntId x 0
+                Float 1.
+      Float 5.
+
+--- ret_val ---
+Unit
+
+
+=== k_boolean_ops ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 170 ->v
+      Empty
+  Local
+    Decl
+      IntVar 172 -> a
+    Local
+      Decl
+        IntVar 173 -> b
+      Seq
+        Set
+          IntId a 172
+          Int 1
+        Seq
+          Set
+            IntId b 173
+            Int 0
+          Seq
+            Ife
+              And
+                IntId a 172
+                IntId b 173
+              SetV
+                IntVecAcc
+                  IntId v 170
+                  Int 0
+                Int 1
+              SetV
+                IntVecAcc
+                  IntId v 170
+                  Int 0
+                Int 0
+            Ife
+              Or
+                IntId a 172
+                IntId b 173
+              SetV
+                IntVecAcc
+                  IntId v 170
+                  Int 1
+                Int 1
+              SetV
+                IntVecAcc
+                  IntId v 170
+                  Int 1
+                Int 0
+
+--- ret_val ---
+Unit
+
+
+=== k_negation ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 175 ->v
+      Empty
+  Local
+    Decl
+      FloatVar 177 -> x
+    Seq
+      Set
+        IntId x 177
+        Float 5.
+      SetV
+        IntVecAcc
+          IntId v 175
+          Int 0
+        Minf
+          Float 0.
+          IntId x 177
+
+--- ret_val ---
+Unit
+
+
+=== k_int_negation ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 179 ->v
+      Empty
+  Local
+    Decl
+      IntVar 181 -> x
+    Seq
+      Set
+        IntId x 181
+        Int 5
+      SetV
+        IntVecAcc
+          IntId v 179
+          Int 0
+        Min
+          Int 0
+          IntId x 181
+
+--- ret_val ---
+Unit
+
+
+=== k_conversions ===
+--- body ---
+Kern
+  Params
+    Concat
+      VecVar 185 ->vi
+      Concat
+        VecVar 186 ->vf
+        Empty
+  Local
+    Decl
+      IntVar 188 -> tid
+    Local
+      Decl
+        IntVar 189 -> i
+      Local
+        Decl
+          FloatVar 190 -> f
+        Seq
+          Set
+            IntId tid 188
+            Intrinsics
+          Seq
+            Set
+              IntId i 189
+              IntVecAcc
+                IntId vi 185
+                IntId tid 188
+            Seq
+              Set
+                IntId f 190
+                IntVecAcc
+                  IntId vf 186
+                  IntId tid 188
+              Seq
+                SetV
+                  IntVecAcc
+                    IntId vf 186
+                    IntId tid 188
+                  App
+                    Intrinsics
+                    IntId i 189
+                SetV
+                  IntVecAcc
+                    IntId vi 185
+                    IntId tid 188
+                  App
+                    Intrinsics
+                    IntId f 190
+
+--- ret_val ---
+Unit
+
+
+Done extracting 32 kernels.
+
+Note: ktype examples (records, variants, pattern matching) are in
+ktype_examples.ml.reference - they have Ctypes compatibility issues.

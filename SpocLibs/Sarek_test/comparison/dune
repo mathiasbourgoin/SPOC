@@ -1,0 +1,11 @@
+(executable
+  (name test_reference_ir)
+  (libraries str)
+)
+
+(rule
+  (alias runtest)
+  (deps
+    (source_tree %{project_root}/SpocLibs/Sarek_test/regression))
+  (action (run ./test_reference_ir.exe))
+)
