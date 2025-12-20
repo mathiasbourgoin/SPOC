@@ -167,10 +167,10 @@ typedef struct spoc_vector {
 			caml_raise_constant(*caml_named_value("cuda_error_launch_incompatible_texturing")) ; \
 			break; \
 		case  CUDA_ERROR_INVALID_HANDLE: \
-/* ->*/			caml_raise_constant(*caml_named_value("cuda_error_launch_incompatible_texturing")) ; \
+			caml_raise_constant(*caml_named_value("cuda_error_invalid_handle")) ; \
 			break; \
 		case  CUDA_ERROR_ALREADY_MAPPED: \
-/* ->*/			caml_raise_constant(*caml_named_value("cuda_error_launch_incompatible_texturing")) ; \
+			caml_raise_constant(*caml_named_value("cuda_error_already_mapped")) ; \
 			break; \
 		case CUDA_ERROR_UNKNOWN: \
 		default: \

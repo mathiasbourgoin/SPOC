@@ -60,6 +60,10 @@ exception ERROR_LAUNCH_TIMEOUT
   
 exception ERROR_LAUNCH_INCOMPATIBLE_TEXTURING
 
+exception ERROR_INVALID_HANDLE
+
+exception ERROR_ALREADY_MAPPED
+
 (**/**)
 external cuda_custom_alloc_vect :
   ('a, 'b) Vector.vector -> int -> Devices.generalInfo -> unit =
