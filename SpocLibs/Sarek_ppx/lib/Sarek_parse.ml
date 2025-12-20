@@ -365,4 +365,10 @@ let parse_kernel_function (expr : expression) : Sarek_ast.kernel =
 
 (** Parse from ppxlib payload *)
 let parse_payload (payload : expression) : Sarek_ast.kernel =
-  parse_kernel_function payload
+  let rec strip_wrappers e =
+    match e.pexp_desc with
+    | Pexp_letmodule (_name, _mod_expr, body) ->
+      strip_wrappers body
+    | _ -> e
+  in
+  parse_kernel_function (strip_wrappers payload)
