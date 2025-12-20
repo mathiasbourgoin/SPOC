@@ -60,17 +60,9 @@ let rec lower_expr (state : state) (te : texpr) : Kirc_Ast.k_ext =
   | TEFloat f -> Kirc_Ast.Float f
   | TEDouble f -> Kirc_Ast.Double f
 
-  (* Variables *)
+  (* Variables - use IntId for variable references in expressions *)
   | TEVar (name, id) ->
-    (match repr te.ty with
-     | TPrim TInt32 | TPrim TInt64 -> Kirc_Ast.IntVar (id, name)
-     | TPrim TFloat32 -> Kirc_Ast.FloatVar (id, name)
-     | TPrim TFloat64 -> Kirc_Ast.DoubleVar (id, name)
-     | TPrim TBool -> Kirc_Ast.BoolVar (id, name)
-     | TPrim TUnit -> Kirc_Ast.UnitVar (id, name)
-     | TVec _ -> Kirc_Ast.VecVar (Kirc_Ast.Empty, id, name)
-     | TRecord (type_name, _) -> Kirc_Ast.Custom (type_name, id, name)
-     | _ -> Kirc_Ast.IntVar (id, name))
+    Kirc_Ast.IntId (name, id)
 
   (* Vector access *)
   | TEVecGet (vec, idx) ->
@@ -342,12 +334,11 @@ and lower_match state scrutinee cases =
 let lower_param (p : tparam) : Kirc_Ast.k_ext =
   match repr p.tparam_type with
   | TVec elem_ty ->
-    let elt = elttype_of_typ elem_ty in
-    let elem_ir = match elt with
-      | Kirc_Ast.EInt32 -> Kirc_Ast.Int 0
-      | Kirc_Ast.EInt64 -> Kirc_Ast.Int 0
-      | Kirc_Ast.EFloat32 -> Kirc_Ast.Float 0.0
-      | Kirc_Ast.EFloat64 -> Kirc_Ast.Double 0.0
+    let elem_ir = match repr elem_ty with
+      | TPrim TInt32 | TPrim TInt64 -> Kirc_Ast.Int 0
+      | TPrim TFloat32 -> Kirc_Ast.Float 0.0
+      | TPrim TFloat64 -> Kirc_Ast.Double 0.0
+      | _ -> Kirc_Ast.Int 0
     in
     Kirc_Ast.VecVar (elem_ir, p.tparam_id, p.tparam_name)
   | TPrim TInt32 | TPrim TInt64 ->
@@ -367,13 +358,10 @@ let lower_param (p : tparam) : Kirc_Ast.k_ext =
 
 (** Lower kernel parameters to IR params *)
 let lower_params (params : tparam list) : Kirc_Ast.k_ext =
-  match params with
-  | [] -> Kirc_Ast.Empty
-  | [p] -> lower_param p
-  | p :: rest ->
-    List.fold_left (fun acc p ->
-        Kirc_Ast.Concat (acc, lower_param p)
-      ) (lower_param p) rest
+  (* Build right-associative Concat: Concat(p1, Concat(p2, Concat(p3, Empty))) *)
+  List.fold_right (fun p acc ->
+      Kirc_Ast.Concat (lower_param p, acc)
+    ) params Kirc_Ast.Empty
 
 (** Lower a complete kernel *)
 let lower_kernel (kernel : tkernel) : Kirc_Ast.k_ext =
