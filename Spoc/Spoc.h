@@ -200,7 +200,9 @@ typedef struct spoc_vector {
   {									\
     cl_int err = fun;							\
     if (err != CL_SUCCESS) {						\
-      fprintf(stderr,"ERROR %d calling %s().\n", err,name);             \
+      if (getenv("SPOC_OPENCL_DEBUG") != NULL) {                         \
+        fprintf(stderr,"ERROR %d calling %s().\n", err,name);            \
+      }                                                                 \
     }                                                                   \
   }
 
@@ -208,7 +210,9 @@ typedef struct spoc_vector {
   {									\
     err = fun;							\
     if (err != CL_SUCCESS) {						\
-      fprintf(stderr,"ERROR %d calling %s().\n", err,name);             \
+      if (getenv("SPOC_OPENCL_DEBUG") != NULL) {                         \
+        fprintf(stderr,"ERROR %d calling %s().\n", err,name);            \
+      }                                                                 \
     }                                                                   \
   }
 

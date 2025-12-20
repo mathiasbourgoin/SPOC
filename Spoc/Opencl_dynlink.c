@@ -114,7 +114,8 @@ tclGetKernelWorkGroupInfo* clGetKernelWorkGroupInfo;
         *pInstance = dlopen(__OpenCLLibName, RTLD_NOW);
         if (*pInstance == NULL)
         {
-            printf("dlopen \"%s\" failed!\n", __OpenCLLibName);
+            if (getenv("SPOC_OPENCL_DEBUG") != NULL)
+              printf("dlopen \"%s\" failed!\n", __OpenCLLibName);
             return CL_ERROR_UNKNOWN;
         }
         return CL_SUCCESS;
@@ -205,4 +206,3 @@ value spoc_clInit() {
 #ifdef __cplusplus
 }
 #endif
-
