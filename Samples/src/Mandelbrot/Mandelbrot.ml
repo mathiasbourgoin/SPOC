@@ -40,8 +40,8 @@ let dev = ref devices.(0);;
 let auto_transfers = ref true;;
 
 
-let largeur = ref 800;;
-let hauteur = ref 800;;
+let width = ref 800;;
+let height = ref 800;;
 
 let max_iter  = ref 500;;
 
@@ -55,21 +55,46 @@ let get_min ar =
   done;
   !min
 
-let couleur n =
-  if n =  !max_iter then
-    Graphics.black
-  else let f n =
-	 let i = float n in
-	 int_of_float (255. *. (0.5 +. 0.5 *. sin(i *. 0.1))) in
-    Graphics.rgb (*(f (n + 32))*)0  (f(n + 16))  (f n)
+let color_rgb n =
+  if n = !max_iter then
+    (0, 0, 0)
+  else
+    let f n =
+      let i = float n in
+      int_of_float (255. *. (0.5 +. 0.5 *. sin (i *. 0.1)))
+    in
+    (0, f (n + 16), f n)
 
+let color_graphics n =
+  let r, g, b = color_rgb n in
+  Graphics.rgb r g b
+
+
+let write_ppm filename width height b_iter =
+  let oc = open_out_bin filename in
+  Printf.fprintf oc "P6\n%d %d\n255\n" width height;
+  for y = 0 to pred height do
+    for x = 0 to pred width do
+      let idx = (y * height) + x in
+      let v = Int32.to_int (Spoc.Mem.unsafe_get b_iter idx) in
+      let r, g, b = color_rgb v in
+      output_byte oc r;
+      output_byte oc g;
+      output_byte oc b;
+    done;
+  done;
+  close_out oc
 
 let main () =
   let arg1 = ("-device" , Arg.Int (fun i  -> dev := devices.(i)), "number of the device [0]")
-  and arg2 = ("-width" , Arg.Int (fun i  -> largeur := i), "width of the image to compute [1024]")
-  and arg3 = ("-height" , Arg.Int (fun i  -> hauteur := i), "height of the image to compute [1024]")
-  and arg4 = ("-max_iter" , Arg.Int (fun b -> max_iter := b), "max number of iterations [1024]") in
-  Arg.parse ([arg1;arg2;arg3;arg4]) (fun s -> ()) "";
+  and arg2 = ("-width" , Arg.Int (fun i  -> width := i), "width of the image to compute [1024]")
+  and arg3 = ("-height" , Arg.Int (fun i  -> height := i), "height of the image to compute [1024]")
+  and arg4 = ("-max_iter" , Arg.Int (fun b -> max_iter := b), "max number of iterations [1024]")
+  and output_file = ref None
+  and auto_open = ref false in
+  let arg5 = ("-ppm", Arg.String (fun s -> output_file := Some s), "write output to PPM file (disables Graphics)")
+  and arg6 = ("-open", Arg.Unit (fun () -> auto_open := true), "open PPM output after render") in
+  Arg.parse ([arg1;arg2;arg3;arg4;arg5;arg6]) (fun s -> ()) "";
   Printf.printf "Will use device : %s\n" (!dev).Spoc.Devices.general_info.Spoc.Devices.name;
   (*	let threadsPerBlock = match !dev.Devices.specific_info with
             | Devices.OpenCLInfo clI ->
@@ -81,10 +106,14 @@ let main () =
     let block = {Spoc.Kernel.blockX = threadsPerBlock; Spoc.Kernel.blockY = 1; Spoc.Kernel.blockZ = 1}
     and grid= {Spoc.Kernel.gridX = blocksPerGrid; Spoc.Kernel.gridY = 1; Spoc.Kernel.gridZ = 1} in
   *)
-  let b_iter = Spoc.Vector.create Spoc.Vector.int32(*`Int32 Bigarray.int32*) ~dev:!dev ((!largeur)*(!hauteur)) in
+  let b_iter = Spoc.Vector.create Spoc.Vector.int32(*`Int32 Bigarray.int32*) ~dev:!dev ((!width)*(!height)) in
 
 
-  let img = Array.make_matrix !largeur !hauteur Graphics.black in
+  let img =
+    match !output_file with
+    | Some _ -> [||]
+    | None -> Array.make_matrix !width !height Graphics.black
+  in
 
   let threadsPerBlock = match !dev.Devices.specific_info with
     | Devices.OpenCLInfo clI ->
@@ -92,8 +121,8 @@ let main () =
        | Devices.CL_DEVICE_TYPE_CPU -> 1
        | _  ->   8)
     | _  -> 8 in
-  let blocksPerGridx = (!largeur + (threadsPerBlock) -1) / (threadsPerBlock) in
-  let blocksPerGridy = (!hauteur + (threadsPerBlock) -1) / (threadsPerBlock) in
+  let blocksPerGridx = (!width + (threadsPerBlock) -1) / (threadsPerBlock) in
+  let blocksPerGridy = (!height + (threadsPerBlock) -1) / (threadsPerBlock) in
   let block = {Spoc.Kernel.blockX = threadsPerBlock; Spoc.Kernel.blockY = threadsPerBlock; Spoc.Kernel.blockZ = 1}
   and grid= {Spoc.Kernel.gridX = blocksPerGridx;   Spoc.Kernel.gridY = blocksPerGridy; Spoc.Kernel.gridZ = 1} in
 
@@ -102,33 +131,46 @@ let main () =
 
   Spoc.Kernel.compile !dev mandelbrot;
 
-  Graphics.auto_synchronize false;
-  let l = string_of_int !largeur in
-  let h = string_of_int !hauteur in
-  let dim = " " ^l^"x"^h in
-  Graphics.open_graph dim;
+  (match !output_file with
+   | Some _ -> ()
+   | None ->
+     Graphics.auto_synchronize false;
+     let l = string_of_int !width in
+     let h = string_of_int !height in
+     let dim = " " ^ l ^ "x" ^ h in
+     Graphics.open_graph dim);
 
-  for i = 0 to 9 do
+  let iterations = match !output_file with Some _ -> 1 | None -> 10 in
+  for i = 0 to (iterations - 1) do
 
-    Spoc.Kernel.run !dev (block,grid) mandelbrot (sub_b, !max_iter, !largeur, !hauteur);
+    Spoc.Kernel.run !dev (block,grid) mandelbrot (sub_b, !max_iter, !width, !height);
 
     Spoc.Mem.to_cpu sub_b ();
     Spoc.Devices.flush !dev ();
 
+    (match !output_file with
+     | Some filename ->
+       if i = iterations - 1 then write_ppm filename !width !height b_iter
+     | None ->
+       for a = 0 to pred (!width - 1 ) do
+         for b = 0 to pred (!height - 1 )do
+           img.(b).(a) <- (color_graphics (Int32.to_int ((Spoc.Mem.unsafe_get b_iter (b * !height + a) ))));
+         done;
+       done;
+       Graphics.draw_image (Graphics.make_image img) 0 0;
+       Graphics.synchronize ();
+       Gc.full_major());
+  done;
+  (match !output_file with
+   | Some filename ->
+     if !auto_open then
+       ignore (Sys.command (Printf.sprintf "xdg-open %s >/dev/null 2>&1 &" filename))
+   | None ->
+     Printf.printf "Press any key to close\n%!";
+     (* ignore (Graphics.read_key ()); *)
+     Graphics.close_graph ());
 
-    for a = 0 to pred (!largeur - 1 ) do
-      for b = 0 to pred (!hauteur - 1 )do
-	img.(b).(a) <-  (couleur (Int32.to_int ((Spoc.Mem.unsafe_get b_iter (b * !hauteur + a) )))) ;
-      done;
-    done;
-    Graphics.draw_image (Graphics.make_image img) 0 0;
-    Graphics.synchronize ();
-    Gc.full_major();
-  done;;
-Printf.printf "Press any key to close\n%!";
-
-(*	ignore (Graphics.read_key ());*)
-Graphics.close_graph ();;
+  ()
 
 
 let measure_time f =

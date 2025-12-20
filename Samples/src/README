@@ -32,6 +32,8 @@ options:
  -width width of the image to compute [1024]
  -height height of the image to compute [1024]
  -max_iter max number of iterations [1024]
+ -ppm output PPM file (no Graphics window)
+ -open auto-open the PPM output with xdg-open
 
 Mandelbrot2
 computes and displays the mandelbrot set using 2 GPUs
@@ -59,4 +61,3 @@ options :
  -size size of the vectors to multiply [1024]
  -auto let Spoc handles transfers automatically [false]
  -verify verify computation [true]
-
