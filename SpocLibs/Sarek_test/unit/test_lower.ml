@@ -69,27 +69,27 @@ let test_lower_unit () =
   check_ir_is "unit lowers to Unit"
     ir (function Unit -> true | _ -> false)
 
-(* Test lowering variables *)
+(* Test lowering variables - all variables lower to IntId for use in expressions *)
 let test_lower_int_var () =
   let te = var_texpr "x" 0 t_int32 in
   let state = create_state () in
   let ir = lower_expr state te in
-  check_ir_is "int var lowers to IntVar"
-    ir (function IntVar (0, "x") -> true | _ -> false)
+  check_ir_is "int var lowers to IntId"
+    ir (function IntId ("x", 0) -> true | _ -> false)
 
 let test_lower_float_var () =
   let te = var_texpr "y" 1 t_float32 in
   let state = create_state () in
   let ir = lower_expr state te in
-  check_ir_is "float var lowers to FloatVar"
-    ir (function FloatVar (1, "y") -> true | _ -> false)
+  check_ir_is "float var lowers to IntId"
+    ir (function IntId ("y", 1) -> true | _ -> false)
 
 let test_lower_double_var () =
   let te = var_texpr "z" 2 t_float64 in
   let state = create_state () in
   let ir = lower_expr state te in
-  check_ir_is "double var lowers to DoubleVar"
-    ir (function DoubleVar (2, "z") -> true | _ -> false)
+  check_ir_is "double var lowers to IntId"
+    ir (function IntId ("z", 2) -> true | _ -> false)
 
 (* Test lowering binary operations *)
 let test_lower_add_int () =
@@ -277,7 +277,7 @@ let test_lower_intrinsic_const () =
   check_ir_is "intrinsic const lowers to Intrinsics"
     ir (function Intrinsics ("threadIdx.x", "get_local_id(0)") -> true | _ -> false)
 
-(* Test lowering vector access *)
+(* Test lowering vector access - variables lower to IntId *)
 let test_lower_vec_get () =
   let vec = var_texpr "v" 0 (TVec t_float32) in
   let idx = int_texpr 5 in
@@ -285,7 +285,7 @@ let test_lower_vec_get () =
   let state = create_state () in
   let ir = lower_expr state te in
   check_ir_is "v.[i] lowers to IntVecAcc"
-    ir (function IntVecAcc (VecVar (_, 0, "v"), Int 5) -> true | _ -> false)
+    ir (function IntVecAcc (IntId ("v", 0), Int 5) -> true | _ -> false)
 
 let test_lower_vec_set () =
   let vec = var_texpr "v" 0 (TVec t_float32) in
@@ -295,9 +295,9 @@ let test_lower_vec_set () =
   let state = create_state () in
   let ir = lower_expr state te in
   check_ir_is "v.[i] <- x lowers to SetV(IntVecAcc, x)"
-    ir (function SetV (IntVecAcc (VecVar _, Int 5), Float _) -> true | _ -> false)
+    ir (function SetV (IntVecAcc (IntId ("v", 0), Int 5), Float _) -> true | _ -> false)
 
-(* Test lowering let *)
+(* Test lowering let - body var becomes IntId, declarations stay IntVar *)
 let test_lower_let () =
   let value = int_texpr 42 in
   let body = var_texpr "x" 0 t_int32 in
@@ -308,7 +308,7 @@ let test_lower_let () =
     ir (function
         | Seq (Decl (IntVar (0, "x")),
                Seq (Set (IntVar (0, "x"), Int 42),
-                    IntVar (0, "x"))) -> true
+                    IntId ("x", 0))) -> true
         | _ -> false)
 
 (* Test suite *)
