@@ -71,14 +71,24 @@ jobs:
               dune build --profile cuda -- Samples/src/VecAdd/VecAdd.exe && \
               dune build --profile cuda -- Samples/src/Mandelbrot/Mandelbrot.exe'
 
+      - name: Collect sample artifacts
+        run: |
+          rm -rf ci_artifacts
+          mkdir -p ci_artifacts
+          for f in \
+            _build/default/Samples/src/DeviceQuery/DeviceQuery.exe \
+            _build/default/Samples/src/VecAdd/VecAdd.exe \
+            _build/default/Samples/src/Mandelbrot/Mandelbrot.exe; do
+            [ -f "$f" ] || continue
+            mkdir -p "ci_artifacts/$(dirname "$f")"
+            cp "$f" "ci_artifacts/$f"
+          done
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: dune-build-${{ matrix.os }}-ocaml-${{ matrix.ocaml-compiler }}
-          path: |
-            _build/default/Samples/src/DeviceQuery/DeviceQuery.exe
-            _build/default/Samples/src/VecAdd/VecAdd.exe
-            _build/default/Samples/src/Mandelbrot/Mandelbrot.exe
+          path: ci_artifacts
           retention-days: 7
 
   test:
@@ -129,18 +139,18 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: dune-build-${{ matrix.os }}-ocaml-${{ matrix.ocaml-compiler }}
-          path: _build
+          path: ci_artifacts
 
       - name: Restore executable bits
         run: |
-          chmod -R u+rwX,go+rX _build
-          find _build -type f -name "*.exe" -exec chmod a+x {} +
+          chmod -R u+rwX,go+rX ci_artifacts
+          find ci_artifacts -type f -name "*.exe" -exec chmod a+x {} +
           # Ensure kernel sources are colocated with executables (Spoc loads from argv[0] dir).
           for d in Samples/src/*/kernels; do
             [ -d "$d" ] || continue
             rel="${d#Samples/src/}"
-            mkdir -p "_build/default/Samples/src/$rel"
-            cp -R "$d/." "_build/default/Samples/src/$rel/"
+            mkdir -p "ci_artifacts/_build/default/Samples/src/$rel"
+            cp -R "$d/." "ci_artifacts/_build/default/Samples/src/$rel/"
           done
 
       - name: Detect GPU availability
@@ -158,7 +168,7 @@ jobs:
             -v ${{ github.workspace }}:/work \
             -w /work \
             spoc-ci:latest \
-            bash -lc './_build/default/Samples/src/DeviceQuery/DeviceQuery.exe'
+            bash -lc './ci_artifacts/_build/default/Samples/src/DeviceQuery/DeviceQuery.exe'
 
       - name: Run CUDA samples (GPU only)
         if: steps.gpu.outputs.has_gpu == 'true'
@@ -167,5 +177,5 @@ jobs:
             -v ${{ github.workspace }}:/work \
             -w /work \
             spoc-ci:latest \
-            bash -lc './_build/default/Samples/src/VecAdd/VecAdd.exe && \
-              ./_build/default/Samples/src/Mandelbrot/Mandelbrot.exe -ppm /tmp/mandelbrot.ppm'
+            bash -lc './ci_artifacts/_build/default/Samples/src/VecAdd/VecAdd.exe && \
+              ./ci_artifacts/_build/default/Samples/src/Mandelbrot/Mandelbrot.exe -ppm /tmp/mandelbrot.ppm'
