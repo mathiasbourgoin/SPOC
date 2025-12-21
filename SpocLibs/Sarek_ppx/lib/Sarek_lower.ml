@@ -54,6 +54,7 @@ let record_constructor_strings name (fields : (string * typ * bool) list) =
   [struct_def; builder]
 
 let variant_constructor_strings name constrs =
+  let struct_name = name ^ "_sarek" in
   let constr_structs =
     List.map
       (fun (cname, carg) ->
@@ -79,7 +80,7 @@ let variant_constructor_strings name constrs =
     ^ "\n};"
   in
   let main_struct =
-    "struct " ^ name ^ "_sarek {\n" ^ "  int " ^ name ^ "_sarek_tag;\n"
+    "struct " ^ struct_name ^ " {\n" ^ "  int " ^ name ^ "_sarek_tag;\n"
     ^ "  union " ^ name ^ "_sarek_union " ^ name ^ "_sarek_union;\n" ^ "};"
   in
   let builders =
@@ -94,13 +95,13 @@ let variant_constructor_strings name constrs =
                 "  res." ^ name ^ "_sarek_union." ^ name ^ "_sarek_" ^ cname
                 ^ "." ^ name ^ "_sarek_" ^ cname ^ "_t = " ^ pname ^ ";" )
         in
-        "struct " ^ name ^ "_sarek build_" ^ name ^ "_" ^ cname ^ "(" ^ params
-        ^ ") {\n" ^ "  struct " ^ name ^ "_sarek res;\n" ^ "  res." ^ name
+        "struct " ^ struct_name ^ " build_" ^ name ^ "_" ^ cname ^ "(" ^ params
+        ^ ") {\n" ^ "  struct " ^ struct_name ^ " res;\n" ^ "  res." ^ name
         ^ "_sarek_tag = " ^ string_of_int idx ^ ";\n" ^ assign ^ "\n"
         ^ "  return res;\n}")
       constrs
   in
-  builders @ [main_struct; union_def] @ constr_structs
+  constr_structs @ (union_def :: (main_struct :: builders))
 
 let c_type_of_core_type ~loc (ct : core_type) =
   match ct.ptyp_desc with
@@ -332,7 +333,7 @@ let rec lower_expr (state : state) (te : texpr) : Kirc_Ast.k_ext =
       let args =
         match arg_opt with None -> [] | Some arg -> [lower_expr state arg]
       in
-      Kirc_Ast.Constr (type_name ^ "_sarek", constr_name, args)
+      Kirc_Ast.Constr (type_name, constr_name, args)
   (* Tuple - represented as anonymous record *)
   | TETuple exprs ->
       let exprs_ir = List.map (lower_expr state) exprs in
@@ -442,7 +443,7 @@ and lower_match state scrutinee cases =
   let scr_ir = lower_expr state scrutinee in
   let type_name =
     match repr scrutinee.ty with
-    | TVariant (n, _) -> n ^ "_sarek"
+    | TVariant (n, _) -> n
     | _ -> "match_type"
   in
   let cases_ir =
@@ -450,18 +451,20 @@ and lower_match state scrutinee cases =
       (List.mapi
          (fun i (pat, body) ->
            let body_ir = lower_expr state body in
-           let case_info =
-             match pat.tpat with
-             | TPConstr (_, name, arg_opt) ->
-                 let arg_info =
-                   match arg_opt with
-                   | None -> None
-                   | Some ap -> (
-                       match ap.tpat with
-                       | TPVar (vname, vid) -> Some (type_name, name, vid, vname)
-                       | _ -> None)
-                 in
-                 (i, arg_info, body_ir)
+          let case_info =
+            match pat.tpat with
+            | TPConstr (_, name, arg_opt) ->
+                let arg_info =
+                  match arg_opt with
+                  | None -> None
+                  | Some ap -> (
+                      match ap.tpat with
+                      | TPVar (vname, vid) ->
+                          let arg_typ = c_type_of_typ ap.tpat_ty in
+                          Some (arg_typ, name, vid, vname)
+                      | _ -> None)
+                in
+                (i, arg_info, body_ir)
              | TPVar (name, id) ->
                  (i, Some (type_name, "var", id, name), body_ir)
              | TPAny -> (i, None, body_ir)
@@ -491,7 +494,7 @@ and lower_param (p : tparam) : Kirc_Ast.k_ext =
   | TPrim TFloat64 -> Kirc_Ast.DoubleVar (p.tparam_id, p.tparam_name, false)
   | TPrim TBool -> Kirc_Ast.BoolVar (p.tparam_id, p.tparam_name, false)
   | TPrim TUnit -> Kirc_Ast.UnitVar (p.tparam_id, p.tparam_name, false)
-  | TRecord (type_name, _) ->
+  | TRecord (type_name, _) | TVariant (type_name, _) ->
       Kirc_Ast.Custom (type_name, p.tparam_id, p.tparam_name)
   | _ -> Kirc_Ast.IntVar (p.tparam_id, p.tparam_name, false)
 
