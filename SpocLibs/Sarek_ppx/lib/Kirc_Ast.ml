@@ -123,136 +123,146 @@ let string_of_ast a =
   in
   let rec aux i = function
     | Kern (a, b) ->
-      sprintf "%s%s%s" (soa i "Kern") (aux (i + 1) a) (aux (i + 1) b)
+        sprintf "%s%s%s" (soa i "Kern") (aux (i + 1) a) (aux (i + 1) b)
     | Block b -> sprintf "%s%s" (soa i "Kern") (aux (i + 1) b)
     | Params p -> sprintf "%s%s" (soa i "Params") (aux (i + 1) p)
     | Plus (a, b) ->
-      sprintf "%s%s%s" (soa i "Plus") (aux (i + 1) a) (aux (i + 1) b)
+        sprintf "%s%s%s" (soa i "Plus") (aux (i + 1) a) (aux (i + 1) b)
     | Plusf (a, b) ->
-      sprintf "%s%s%s" (soa i "Plusf") (aux (i + 1) a) (aux (i + 1) b)
+        sprintf "%s%s%s" (soa i "Plusf") (aux (i + 1) a) (aux (i + 1) b)
     | Min (a, b) ->
-      sprintf "%s%s%s" (soa i "Min") (aux (i + 1) a) (aux (i + 1) b)
+        sprintf "%s%s%s" (soa i "Min") (aux (i + 1) a) (aux (i + 1) b)
     | Minf (a, b) ->
-      sprintf "%s%s%s" (soa i "Minf") (aux (i + 1) a) (aux (i + 1) b)
+        sprintf "%s%s%s" (soa i "Minf") (aux (i + 1) a) (aux (i + 1) b)
     | Mul (a, b) ->
-      sprintf "%s%s%s" (soa i "Mul") (aux (i + 1) a) (aux (i + 1) b)
+        sprintf "%s%s%s" (soa i "Mul") (aux (i + 1) a) (aux (i + 1) b)
     | Mulf (a, b) ->
-      sprintf "%s%s%s" (soa i "Mulf") (aux (i + 1) a) (aux (i + 1) b)
+        sprintf "%s%s%s" (soa i "Mulf") (aux (i + 1) a) (aux (i + 1) b)
     | Div (a, b) ->
-      sprintf "%s%s%s" (soa i "Div") (aux (i + 1) a) (aux (i + 1) b)
+        sprintf "%s%s%s" (soa i "Div") (aux (i + 1) a) (aux (i + 1) b)
     | Divf (a, b) ->
-      sprintf "%s%s%s" (soa i "Divf") (aux (i + 1) a) (aux (i + 1) b)
+        sprintf "%s%s%s" (soa i "Divf") (aux (i + 1) a) (aux (i + 1) b)
     | Mod (a, b) ->
-      sprintf "%s%s%s" (soa i "Mod") (aux (i + 1) a) (aux (i + 1) b)
+        sprintf "%s%s%s" (soa i "Mod") (aux (i + 1) a) (aux (i + 1) b)
     | Id s -> soa i ("Id " ^ s)
     | IdName s -> soa i ("IdName " ^ s)
     | IntVar (ii, s, _m) -> soa i ("IntVar " ^ string_of_int ii ^ " -> " ^ s)
     | FloatVar (ii, s, _m) -> soa i ("FloatVar " ^ string_of_int ii ^ " -> " ^ s)
     | CastDoubleVar (ii, s) ->
-      soa i ("CastDoubleVar " ^ string_of_int ii ^ " ->" ^ s)
-    | DoubleVar (ii, s, _m) -> soa i ("DoubleVar " ^ string_of_int ii ^ " ->" ^ s)
+        soa i ("CastDoubleVar " ^ string_of_int ii ^ " ->" ^ s)
+    | DoubleVar (ii, s, _m) ->
+        soa i ("DoubleVar " ^ string_of_int ii ^ " ->" ^ s)
     | BoolVar (ii, s, _m) -> soa i ("BoolVar " ^ string_of_int ii ^ " ->" ^ s)
     | UnitVar (ii, s, _m) -> soa i ("UnitVar " ^ string_of_int ii ^ " ->" ^ s)
     | VecVar (_t, ii, s) -> soa i ("VecVar " ^ string_of_int ii ^ " ->" ^ s)
     | Concat (a, b) ->
-      sprintf "%s%s%s" (soa i "Concat") (aux (i + 1) a) (aux (i + 1) b)
+        sprintf "%s%s%s" (soa i "Concat") (aux (i + 1) a) (aux (i + 1) b)
     | Empty -> soa i "Empty"
     | Seq (a, b) ->
-      sprintf "%s%s%s" (soa i "Seq") (aux (i + 1) a) (aux (i + 1) b)
+        sprintf "%s%s%s" (soa i "Seq") (aux (i + 1) a) (aux (i + 1) b)
     | Return a -> sprintf "%s%s" (soa i "Return") (aux (i + 1) a)
     | Set (a, b) ->
-      sprintf "%s%s%s" (soa i "Set") (aux (i + 1) a) (aux (i + 1) b)
+        sprintf "%s%s%s" (soa i "Set") (aux (i + 1) a) (aux (i + 1) b)
     | Decl a -> sprintf "%s%s" (soa i "Decl") (aux (i + 1) a)
     | Acc (a, b) ->
-      sprintf "%s%s%s" (soa i "Acc") (aux (i + 1) a) (aux (i + 1) b)
+        sprintf "%s%s%s" (soa i "Acc") (aux (i + 1) a) (aux (i + 1) b)
     | SetV (a, b) ->
-      sprintf "%s%s%s" (soa i "SetV") (aux (i + 1) a) (aux (i + 1) b)
+        sprintf "%s%s%s" (soa i "SetV") (aux (i + 1) a) (aux (i + 1) b)
     | SetLocalVar (a, b, c) ->
-      sprintf "%s%s%s%s" (soa i "SetLocalVar")
-        (aux (i + 1) a)
-        (aux (i + 1) b)
-        (aux (i + 1) c)
+        sprintf
+          "%s%s%s%s"
+          (soa i "SetLocalVar")
+          (aux (i + 1) a)
+          (aux (i + 1) b)
+          (aux (i + 1) c)
     | Intrinsics _ -> soa i "Intrinsics"
     | IntId (s, ii) -> soa i ("IntId " ^ s ^ " " ^ string_of_int ii)
     | Int ii -> soa i ("Int " ^ string_of_int ii)
     | Float f | Double f -> soa i ("Float " ^ string_of_float f)
     | IntVecAcc (a, b) ->
-      sprintf "%s%s%s" (soa i "IntVecAcc") (aux (i + 1) a) (aux (i + 1) b)
+        sprintf "%s%s%s" (soa i "IntVecAcc") (aux (i + 1) a) (aux (i + 1) b)
     | Local (a, b) ->
-      sprintf "%s%s%s" (soa i "Local") (aux (i + 1) a) (aux (i + 1) b)
+        sprintf "%s%s%s" (soa i "Local") (aux (i + 1) a) (aux (i + 1) b)
     | Ife (a, b, c) ->
-      sprintf "%s%s%s%s" (soa i "Ife")
-        (aux (i + 1) a)
-        (aux (i + 1) b)
-        (aux (i + 1) c)
-    | If (a, b) ->
-      sprintf "%s%s%s" (soa i "If") (aux (i + 1) a) (aux (i + 1) b)
+        sprintf
+          "%s%s%s%s"
+          (soa i "Ife")
+          (aux (i + 1) a)
+          (aux (i + 1) b)
+          (aux (i + 1) c)
+    | If (a, b) -> sprintf "%s%s%s" (soa i "If") (aux (i + 1) a) (aux (i + 1) b)
     | EqBool (a, b) ->
-      sprintf "%s%s%s" (soa i "EqBool") (aux (i + 1) a) (aux (i + 1) b)
+        sprintf "%s%s%s" (soa i "EqBool") (aux (i + 1) a) (aux (i + 1) b)
     | EqCustom (_n, a, b) ->
-      sprintf "%s%s%s" (soa i "EqSum") (aux (i + 1) a) (aux (i + 1) b)
-    | Or (a, b) ->
-      sprintf "%s%s%s" (soa i "Or") (aux (i + 1) a) (aux (i + 1) b)
+        sprintf "%s%s%s" (soa i "EqSum") (aux (i + 1) a) (aux (i + 1) b)
+    | Or (a, b) -> sprintf "%s%s%s" (soa i "Or") (aux (i + 1) a) (aux (i + 1) b)
     | And (a, b) ->
-      sprintf "%s%s%s" (soa i "And") (aux (i + 1) a) (aux (i + 1) b)
+        sprintf "%s%s%s" (soa i "And") (aux (i + 1) a) (aux (i + 1) b)
     | Not a -> sprintf "%s%s" (soa i "Or") (aux (i + 1) a)
     | LtBool (a, b) ->
-      sprintf "%s%s%s" (soa i "LtBool") (aux (i + 1) a) (aux (i + 1) b)
+        sprintf "%s%s%s" (soa i "LtBool") (aux (i + 1) a) (aux (i + 1) b)
     | GtBool (a, b) ->
-      sprintf "%s%s%s" (soa i "GtBool") (aux (i + 1) a) (aux (i + 1) b)
+        sprintf "%s%s%s" (soa i "GtBool") (aux (i + 1) a) (aux (i + 1) b)
     | LtEBool (a, b) ->
-      sprintf "%s%s%s" (soa i "LtEBool") (aux (i + 1) a) (aux (i + 1) b)
+        sprintf "%s%s%s" (soa i "LtEBool") (aux (i + 1) a) (aux (i + 1) b)
     | GtEBool (a, b) ->
-      sprintf "%s%s%s" (soa i "GtEBool") (aux (i + 1) a) (aux (i + 1) b)
+        sprintf "%s%s%s" (soa i "GtEBool") (aux (i + 1) a) (aux (i + 1) b)
     | DoLoop (a, b, c, d) ->
-      sprintf "%s%s%s%s%s" (soa i "DoLoop")
-        (aux (i + 1) a)
-        (aux (i + 1) b)
-        (aux (i + 1) c)
-        (aux (i + 1) d)
+        sprintf
+          "%s%s%s%s%s"
+          (soa i "DoLoop")
+          (aux (i + 1) a)
+          (aux (i + 1) b)
+          (aux (i + 1) c)
+          (aux (i + 1) d)
     | While (a, b) ->
-      sprintf "%s%s%s" (soa i "While") (aux (i + 1) a) (aux (i + 1) b)
+        sprintf "%s%s%s" (soa i "While") (aux (i + 1) a) (aux (i + 1) b)
     | Arr (s, _l, t, m) ->
-      let memspace =
-        match m with
-        | LocalSpace -> "__private"
-        | Shared -> "__local"
-        | Global -> "__global"
-      and elttype =
-        match t with
-        | EInt32 -> "int"
-        | EInt64 -> "long"
-        | EFloat32 -> "float"
-        | EFloat64 -> "double"
-      in
-      soa i ("Arr" ^ s ^ " " ^ memspace ^ " " ^ elttype)
+        let memspace =
+          match m with
+          | LocalSpace -> "__private"
+          | Shared -> "__local"
+          | Global -> "__global"
+        and elttype =
+          match t with
+          | EInt32 -> "int"
+          | EInt64 -> "long"
+          | EFloat32 -> "float"
+          | EFloat64 -> "double"
+        in
+        soa i ("Arr" ^ s ^ " " ^ memspace ^ " " ^ elttype)
     | App (a, b) ->
-      sprintf "%s%s%s" (soa i "App")
-        (aux (i + 1) a)
-        (Array.fold_left (fun a b -> a ^ aux (i + 1) b) "" b)
+        sprintf
+          "%s%s%s"
+          (soa i "App")
+          (aux (i + 1) a)
+          (Array.fold_left (fun a b -> a ^ aux (i + 1) b) "" b)
     | GInt _a -> soa i "GInt"
     | GFloat _a -> soa i "GFloat"
     | Unit -> soa i "Unit"
     | GlobalFun (e, s, n) ->
-      sprintf "%s%s" (soa i ("Global Fun " ^ s ^ " " ^ n)) (aux (i + 1) e)
+        sprintf "%s%s" (soa i ("Global Fun " ^ s ^ " " ^ n)) (aux (i + 1) e)
     | Constr (s1, s2, l) ->
-      sprintf "%s%s"
-        (soa i ("Constr " ^ s1 ^ " " ^ s2))
-        (List.fold_left (fun a b -> a ^ aux (i + 1) b) "" l)
+        sprintf
+          "%s%s"
+          (soa i ("Constr " ^ s1 ^ " " ^ s2))
+          (List.fold_left (fun a b -> a ^ aux (i + 1) b) "" l)
     | Record (s, l) ->
-      sprintf "%s%s"
-        (soa i ("Record " ^ s))
-        (List.fold_left (fun a b -> a ^ aux (i + 1) b) "" l)
+        sprintf
+          "%s%s"
+          (soa i ("Record " ^ s))
+          (List.fold_left (fun a b -> a ^ aux (i + 1) b) "" l)
     | RecGet (r, _s) -> sprintf "%s%s" (soa i "RecGet") (aux (i + 1) r)
     | RecSet (r, v) ->
-      sprintf "%s%s%s" (soa i "RecGet") (aux (i + 1) r) (aux (i + 1) v)
+        sprintf "%s%s%s" (soa i "RecGet") (aux (i + 1) r) (aux (i + 1) v)
     | Custom (s, _, _ss) -> soa i ("Custom " ^ s)
     | Native _f -> soa i "Native "
     | Match (s, e1, l) ->
-      sprintf "%s%s%s"
-        (soa i ("Match " ^ s))
-        (aux (i + 1) e1)
-        (Array.fold_left (fun _a (_, _, b) -> aux (i + 1) b) "" l)
+        sprintf
+          "%s%s%s"
+          (soa i ("Match " ^ s))
+          (aux (i + 1) e1)
+          (Array.fold_left (fun _a (_, _, b) -> aux (i + 1) b) "" l)
     | CustomVar _ -> soa i "CustomVar"
     | GFloat64 _ -> soa i "GFloat64"
     | Pragma _ -> soa i "Pragma"

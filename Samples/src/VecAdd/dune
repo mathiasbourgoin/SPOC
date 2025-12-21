@@ -1,10 +1,13 @@
 (executable
  (name VecAdd)
- (enabled_if (= %{profile} "cuda"))
- (flags (-ccopt -L$CUDA_PATH -cclib -lnvrtc))
- (preprocessor_deps (package spoc))
- (preprocess (pps spoc_ppx))
- (libraries spoc)
-)
+ (enabled_if
+  (= %{profile} "cuda"))
+ (flags
+  (-ccopt -L$CUDA_PATH -cclib -lnvrtc))
+ (preprocessor_deps
+  (package spoc))
+ (preprocess
+  (pps spoc_ppx))
+ (libraries spoc))
 
 (data_only_dirs kernels)

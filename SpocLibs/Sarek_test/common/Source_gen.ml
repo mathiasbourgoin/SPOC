@@ -27,32 +27,44 @@ let to_new_syntax (k : test_kernel) : string =
 
 (** Generate a complete test file using old syntax *)
 let generate_old_test_file (kernels : test_kernel list) : string =
-  let kernel_defs = List.map (fun k ->
-      Printf.sprintf "let %s = %s\n" k.id (to_old_syntax k)
-    ) kernels in
-  String.concat "\n" [
-    "(* Auto-generated test file for old camlp4 syntax *)";
-    "open Spoc";
-    "open Kirc";
-    "";
-  ] ^ String.concat "\n" kernel_defs
+  let kernel_defs =
+    List.map
+      (fun k -> Printf.sprintf "let %s = %s\n" k.id (to_old_syntax k))
+      kernels
+  in
+  String.concat
+    "\n"
+    [
+      "(* Auto-generated test file for old camlp4 syntax *)";
+      "open Spoc";
+      "open Kirc";
+      "";
+    ]
+  ^ String.concat "\n" kernel_defs
 
 (** Generate a complete test file using new PPX syntax *)
 let generate_new_test_file (kernels : test_kernel list) : string =
-  let kernel_defs = List.map (fun k ->
-      Printf.sprintf "let %s = %s\n" k.id (to_new_syntax k)
-    ) kernels in
-  String.concat "\n" [
-    "(* Auto-generated test file for new PPX syntax *)";
-    "open Spoc";
-    "open Kirc";
-    "";
-  ] ^ String.concat "\n" kernel_defs
+  let kernel_defs =
+    List.map
+      (fun k -> Printf.sprintf "let %s = %s\n" k.id (to_new_syntax k))
+      kernels
+  in
+  String.concat
+    "\n"
+    [
+      "(* Auto-generated test file for new PPX syntax *)";
+      "open Spoc";
+      "open Kirc";
+      "";
+    ]
+  ^ String.concat "\n" kernel_defs
 
 (** Utility: wrap kernel body with standard opens for evaluation *)
 let wrap_for_eval (body : string) : string =
-  Printf.sprintf {|
+  Printf.sprintf
+    {|
     let open Kirc.Std in
     let open Kirc.Math in
     %s
-  |} body
+  |}
+    body

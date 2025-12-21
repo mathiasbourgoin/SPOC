@@ -17,23 +17,51 @@ let loc_to_sloc loc = Sarek_ast.loc_of_ppxlib loc
 (** Parse a core_type to type_expr *)
 let rec parse_type (ct : core_type) : Sarek_ast.type_expr =
   match ct.ptyp_desc with
-  | Ptyp_constr ({ txt = Lident name; _ }, []) ->
-    Sarek_ast.TEConstr (name, [])
-  | Ptyp_constr ({ txt = Lident name; _ }, args) ->
-    Sarek_ast.TEConstr (name, List.map parse_type args)
-  | Ptyp_constr ({ txt = Ldot (Lident _mod, name); _ }, args) ->
-    Sarek_ast.TEConstr (name, List.map parse_type args)
-  | Ptyp_var name ->
-    Sarek_ast.TEVar name
-  | Ptyp_arrow (_, t1, t2) ->
-    Sarek_ast.TEArrow (parse_type t1, parse_type t2)
-  | Ptyp_tuple ts ->
-    Sarek_ast.TETuple (List.map parse_type ts)
-  | _ ->
-    Sarek_ast.TEConstr ("unknown", [])
+  | Ptyp_constr ({txt = Lident name; _}, []) -> Sarek_ast.TEConstr (name, [])
+  | Ptyp_constr ({txt = Lident name; _}, args) ->
+      Sarek_ast.TEConstr (name, List.map parse_type args)
+  | Ptyp_constr ({txt = Ldot (Lident _mod, name); _}, args) ->
+      Sarek_ast.TEConstr (name, List.map parse_type args)
+  | Ptyp_var name -> Sarek_ast.TEVar name
+  | Ptyp_arrow (_, t1, t2) -> Sarek_ast.TEArrow (parse_type t1, parse_type t2)
+  | Ptyp_tuple ts -> Sarek_ast.TETuple (List.map parse_type ts)
+  | _ -> Sarek_ast.TEConstr ("unknown", [])
+
+let parse_record_fields labels =
+  List.map
+    (fun (ld : label_declaration) ->
+      let name = ld.pld_name.txt in
+      let ty = parse_type ld.pld_type in
+      let is_mut =
+        match ld.pld_mutable with Mutable -> true | Immutable -> false
+      in
+      (name, is_mut, ty))
+    labels
+
+let parse_variant_constructors constrs =
+  let parse_arg = function
+    | Pcstr_tuple [] -> None
+    | Pcstr_tuple [arg] -> Some (parse_type arg)
+    | Pcstr_tuple _ ->
+        raise
+          (Parse_error_exn
+             ( "Constructors with multiple arguments are not supported",
+               Location.none ))
+    | Pcstr_record _ ->
+        raise
+          (Parse_error_exn
+             ("Record constructors are not supported in kernels", Location.none))
+  in
+  List.map
+    (fun (cd : constructor_declaration) ->
+      let name = cd.pcd_name.txt in
+      let arg = parse_arg cd.pcd_args in
+      (name, arg))
+    constrs
 
 (** Extract type annotation from a Ppxlib pattern if present *)
-let rec extract_type_from_pattern (pat : Ppxlib.pattern) : Sarek_ast.type_expr option =
+let rec extract_type_from_pattern (pat : Ppxlib.pattern) :
+    Sarek_ast.type_expr option =
   match pat.ppat_desc with
   | Ppat_constraint (_, ct) -> Some (parse_type ct)
   | Ppat_alias (p, _) -> extract_type_from_pattern p
@@ -42,29 +70,28 @@ let rec extract_type_from_pattern (pat : Ppxlib.pattern) : Sarek_ast.type_expr o
 (** Extract variable name from a Ppxlib pattern *)
 let rec extract_name_from_pattern (pat : Ppxlib.pattern) : string option =
   match pat.ppat_desc with
-  | Ppat_var { txt; _ } -> Some txt
+  | Ppat_var {txt; _} -> Some txt
   | Ppat_constraint (p, _) -> extract_name_from_pattern p
-  | Ppat_alias (_, { txt; _ }) -> Some txt
+  | Ppat_alias (_, {txt; _}) -> Some txt
   | Ppat_any -> Some "_"
   | _ -> None
 
 (** Parse a Ppxlib pattern to Sarek pattern *)
 let rec parse_pattern (pat : Ppxlib.pattern) : Sarek_ast.pattern =
   let loc = loc_of_ppxlib pat.ppat_loc in
-  let pat_desc = match pat.ppat_desc with
+  let pat_desc =
+    match pat.ppat_desc with
     | Ppat_any -> Sarek_ast.PAny
-    | Ppat_var { txt; _ } -> Sarek_ast.PVar txt
+    | Ppat_var {txt; _} -> Sarek_ast.PVar txt
     | Ppat_constraint (p, _) -> (parse_pattern p).Sarek_ast.pat
-    | Ppat_construct ({ txt = Lident name; _ }, None) ->
-      Sarek_ast.PConstr (name, None)
-    | Ppat_construct ({ txt = Lident name; _ }, Some (_, arg)) ->
-      Sarek_ast.PConstr (name, Some (parse_pattern arg))
-    | Ppat_tuple ps ->
-      Sarek_ast.PTuple (List.map parse_pattern ps)
-    | _ ->
-      raise (Parse_error_exn ("Unsupported pattern", pat.ppat_loc))
+    | Ppat_construct ({txt = Lident name; _}, None) ->
+        Sarek_ast.PConstr (name, None)
+    | Ppat_construct ({txt = Lident name; _}, Some (_, arg)) ->
+        Sarek_ast.PConstr (name, Some (parse_pattern arg))
+    | Ppat_tuple ps -> Sarek_ast.PTuple (List.map parse_pattern ps)
+    | _ -> raise (Parse_error_exn ("Unsupported pattern", pat.ppat_loc))
   in
-  { Sarek_ast.pat = pat_desc; Sarek_ast.pat_loc = loc }
+  {Sarek_ast.pat = pat_desc; Sarek_ast.pat_loc = loc}
 
 (** Parse a binary operator *)
 let parse_binop (op : string) : Sarek_ast.binop option =
@@ -101,221 +128,235 @@ let parse_unop (op : string) : Sarek_ast.unop option =
 (** Parse an expression *)
 let rec parse_expression (expr : expression) : Sarek_ast.expr =
   let loc = loc_of_ppxlib expr.pexp_loc in
-  let e = match expr.pexp_desc with
+  let e =
+    match expr.pexp_desc with
     (* Unit *)
-    | Pexp_construct ({ txt = Lident "()"; _ }, None) ->
-      Sarek_ast.EUnit
-
+    | Pexp_construct ({txt = Lident "()"; _}, None) -> Sarek_ast.EUnit
     (* Boolean literals *)
-    | Pexp_construct ({ txt = Lident "true"; _ }, None) ->
-      Sarek_ast.EBool true
-    | Pexp_construct ({ txt = Lident "false"; _ }, None) ->
-      Sarek_ast.EBool false
-
+    | Pexp_construct ({txt = Lident "true"; _}, None) -> Sarek_ast.EBool true
+    | Pexp_construct ({txt = Lident "false"; _}, None) -> Sarek_ast.EBool false
     (* Integer literals *)
     | Pexp_constant (Pconst_integer (s, Some 'l')) ->
-      Sarek_ast.EInt32 (Int32.of_string s)
+        Sarek_ast.EInt32 (Int32.of_string s)
     | Pexp_constant (Pconst_integer (s, Some 'L')) ->
-      Sarek_ast.EInt64 (Int64.of_string s)
+        Sarek_ast.EInt64 (Int64.of_string s)
     | Pexp_constant (Pconst_integer (s, None)) ->
-      Sarek_ast.EInt (int_of_string s)
-
+        Sarek_ast.EInt (int_of_string s)
     (* Float literals *)
     | Pexp_constant (Pconst_float (s, _)) ->
-      Sarek_ast.EFloat (float_of_string s)
-
+        Sarek_ast.EFloat (float_of_string s)
     (* Variables *)
-    | Pexp_ident { txt = Lident name; _ } ->
-      Sarek_ast.EVar name
-
+    | Pexp_ident {txt = Lident name; _} -> Sarek_ast.EVar name
     (* Module-qualified identifiers *)
-    | Pexp_ident { txt = Ldot (Lident _mod, name); _ } ->
-      Sarek_ast.EVar name  (* For now, just use the name *)
-
+    | Pexp_ident {txt = Ldot (Lident _mod, name); _} ->
+        Sarek_ast.EVar name (* For now, just use the name *)
     (* Vector/array access: e.(i) or e.[i] *)
-    | Pexp_apply (
-        { pexp_desc = Pexp_ident { txt = Lident "Array.get"; _ }; _ },
-        [(Nolabel, arr); (Nolabel, idx)]) ->
-      Sarek_ast.EArrGet (parse_expression arr, parse_expression idx)
-
-    | Pexp_apply (
-        { pexp_desc = Pexp_ident { txt = Ldot (Lident "Array", "get"); _ }; _ },
-        [(Nolabel, arr); (Nolabel, idx)]) ->
-      Sarek_ast.EArrGet (parse_expression arr, parse_expression idx)
-
+    | Pexp_apply
+        ( {pexp_desc = Pexp_ident {txt = Lident "Array.get"; _}; _},
+          [(Nolabel, arr); (Nolabel, idx)] ) ->
+        Sarek_ast.EArrGet (parse_expression arr, parse_expression idx)
+    | Pexp_apply
+        ( {pexp_desc = Pexp_ident {txt = Ldot (Lident "Array", "get"); _}; _},
+          [(Nolabel, arr); (Nolabel, idx)] ) ->
+        Sarek_ast.EArrGet (parse_expression arr, parse_expression idx)
     (* Vector/array set: e.(i) <- x *)
-    | Pexp_apply (
-        { pexp_desc = Pexp_ident { txt = Ldot (Lident "Array", "set"); _ }; _ },
-        [(Nolabel, arr); (Nolabel, idx); (Nolabel, value)]) ->
-      Sarek_ast.EArrSet (parse_expression arr, parse_expression idx, parse_expression value)
-
+    | Pexp_apply
+        ( {pexp_desc = Pexp_ident {txt = Ldot (Lident "Array", "set"); _}; _},
+          [(Nolabel, arr); (Nolabel, idx); (Nolabel, value)] ) ->
+        Sarek_ast.EArrSet
+          (parse_expression arr, parse_expression idx, parse_expression value)
     (* Mutable assignment: x := v *)
-    | Pexp_apply (
-        { pexp_desc = Pexp_ident { txt = Lident ":="; _ }; _ },
-        [(Nolabel, lhs); (Nolabel, rhs)]) ->
-      (match lhs.pexp_desc with
-       | Pexp_ident { txt = Lident name; _ } ->
-         Sarek_ast.EAssign (name, parse_expression rhs)
-       | _ ->
-         raise (Parse_error_exn ("Expected variable on left-hand side of :=", lhs.pexp_loc)))
-
+    | Pexp_apply
+        ( {pexp_desc = Pexp_ident {txt = Lident ":="; _}; _},
+          [(Nolabel, lhs); (Nolabel, rhs)] ) -> (
+        match lhs.pexp_desc with
+        | Pexp_ident {txt = Lident name; _} ->
+            Sarek_ast.EAssign (name, parse_expression rhs)
+        | _ ->
+            raise
+              (Parse_error_exn
+                 ("Expected variable on left-hand side of :=", lhs.pexp_loc)))
     (* a.(i) syntax - array access *)
-    | Pexp_apply (arr, [(Nolabel, idx)])
-      when is_array_access expr ->
-      Sarek_ast.EArrGet (parse_expression arr, parse_expression idx)
-
+    | Pexp_apply (arr, [(Nolabel, idx)]) when is_array_access expr ->
+        Sarek_ast.EArrGet (parse_expression arr, parse_expression idx)
     (* Binary operators *)
-    | Pexp_apply (
-        { pexp_desc = Pexp_ident { txt = Lident op; _ }; _ },
-        [(Nolabel, e1); (Nolabel, e2)]) ->
-      (match parse_binop op with
-       | Some binop -> Sarek_ast.EBinop (binop, parse_expression e1, parse_expression e2)
-       | None ->
-         (* Regular function application with infix *)
-         Sarek_ast.EApp (parse_expression { expr with pexp_desc = Pexp_ident { txt = Lident op; loc = expr.pexp_loc } },
-               [parse_expression e1; parse_expression e2]))
-
+    | Pexp_apply
+        ( {pexp_desc = Pexp_ident {txt = Lident op; _}; _},
+          [(Nolabel, e1); (Nolabel, e2)] ) -> (
+        match parse_binop op with
+        | Some binop ->
+            Sarek_ast.EBinop (binop, parse_expression e1, parse_expression e2)
+        | None ->
+            (* Regular function application with infix *)
+            Sarek_ast.EApp
+              ( parse_expression
+                  {
+                    expr with
+                    pexp_desc =
+                      Pexp_ident {txt = Lident op; loc = expr.pexp_loc};
+                  },
+                [parse_expression e1; parse_expression e2] ))
     (* Unary operators *)
-    | Pexp_apply (
-        { pexp_desc = Pexp_ident { txt = Lident op; _ }; _ },
-        [(Nolabel, e)]) when parse_unop op <> None ->
-      (match parse_unop op with
-       | Some unop -> Sarek_ast.EUnop (unop, parse_expression e)
-       | None -> assert false)
-
+    | Pexp_apply
+        ({pexp_desc = Pexp_ident {txt = Lident op; _}; _}, [(Nolabel, e)])
+      when parse_unop op <> None -> (
+        match parse_unop op with
+        | Some unop -> Sarek_ast.EUnop (unop, parse_expression e)
+        | None -> assert false)
     (* Function application *)
     | Pexp_apply (fn, args) ->
-      let fn_expr = parse_expression fn in
-      let arg_exprs = List.map (fun (_, e) -> parse_expression e) args in
-      Sarek_ast.EApp (fn_expr, arg_exprs)
-
+        let fn_expr = parse_expression fn in
+        let arg_exprs = List.map (fun (_, e) -> parse_expression e) args in
+        Sarek_ast.EApp (fn_expr, arg_exprs)
     (* Let binding *)
-    | Pexp_let (Nonrecursive, [{ pvb_pat; pvb_expr; _ }], body) ->
-      let name = match extract_name_from_pattern pvb_pat with
-        | Some n -> n
-        | None -> raise (Parse_error_exn ("Expected variable pattern", pvb_pat.ppat_loc))
-      in
-      let ty = extract_type_from_pattern pvb_pat in
-      let mut_expr =
-        match pvb_expr.pexp_desc with
-        | Pexp_apply ({ pexp_desc = Pexp_ident { txt = Lident "mut"; _ }; _ },
-                      [(Nolabel, inner)]) ->
-          Some inner
-        | _ -> None
-      in
-      let is_mutable = Option.is_some mut_expr in
-      let value_expr = match mut_expr with
-        | Some inner -> inner
-        | None -> pvb_expr
-      in
-      if is_mutable then
-        Sarek_ast.ELetMut (name, ty, parse_expression value_expr, parse_expression body)
-      else
-        Sarek_ast.ELet (name, ty, parse_expression value_expr, parse_expression body)
-
+    | Pexp_let (Nonrecursive, [{pvb_pat; pvb_expr; _}], body) ->
+        let name =
+          match extract_name_from_pattern pvb_pat with
+          | Some n -> n
+          | None ->
+              raise
+                (Parse_error_exn ("Expected variable pattern", pvb_pat.ppat_loc))
+        in
+        let ty = extract_type_from_pattern pvb_pat in
+        let mut_expr =
+          match pvb_expr.pexp_desc with
+          | Pexp_apply
+              ( {pexp_desc = Pexp_ident {txt = Lident "mut"; _}; _},
+                [(Nolabel, inner)] ) ->
+              Some inner
+          | _ -> None
+        in
+        let is_mutable = Option.is_some mut_expr in
+        let value_expr =
+          match mut_expr with Some inner -> inner | None -> pvb_expr
+        in
+        if is_mutable then
+          Sarek_ast.ELetMut
+            (name, ty, parse_expression value_expr, parse_expression body)
+        else
+          Sarek_ast.ELet
+            (name, ty, parse_expression value_expr, parse_expression body)
     (* If-then-else *)
     | Pexp_ifthenelse (cond, then_e, else_opt) ->
-      Sarek_ast.EIf (parse_expression cond,
-           parse_expression then_e,
-           Option.map parse_expression else_opt)
-
+        Sarek_ast.EIf
+          ( parse_expression cond,
+            parse_expression then_e,
+            Option.map parse_expression else_opt )
     (* For loop *)
-    | Pexp_for ({ ppat_desc = Ppat_var { txt = var; _ }; _ },
-                lo, hi, dir, body) ->
-      let d = match dir with Upto -> Sarek_ast.Upto | Downto -> Sarek_ast.Downto in
-      Sarek_ast.EFor (var, parse_expression lo, parse_expression hi, d, parse_expression body)
-
+    | Pexp_for ({ppat_desc = Ppat_var {txt = var; _}; _}, lo, hi, dir, body) ->
+        let d =
+          match dir with Upto -> Sarek_ast.Upto | Downto -> Sarek_ast.Downto
+        in
+        Sarek_ast.EFor
+          ( var,
+            parse_expression lo,
+            parse_expression hi,
+            d,
+            parse_expression body )
     (* While loop *)
     | Pexp_while (cond, body) ->
-      Sarek_ast.EWhile (parse_expression cond, parse_expression body)
-
+        Sarek_ast.EWhile (parse_expression cond, parse_expression body)
     (* Sequence *)
     | Pexp_sequence (e1, e2) ->
-      Sarek_ast.ESeq (parse_expression e1, parse_expression e2)
-
+        Sarek_ast.ESeq (parse_expression e1, parse_expression e2)
     (* Match *)
     | Pexp_match (scrutinee, cases) ->
-      let parsed_cases = List.map (fun case ->
-          let pat = parse_pattern case.pc_lhs in
-          let body = parse_expression case.pc_rhs in
-          (pat, body)
-        ) cases in
-      Sarek_ast.EMatch (parse_expression scrutinee, parsed_cases)
-
+        let parsed_cases =
+          List.map
+            (fun case ->
+              let pat = parse_pattern case.pc_lhs in
+              let body = parse_expression case.pc_rhs in
+              (pat, body))
+            cases
+        in
+        Sarek_ast.EMatch (parse_expression scrutinee, parsed_cases)
     (* Record construction *)
     | Pexp_record (fields, _base) ->
-      let parsed_fields = List.map (fun ({ txt; _ }, e) ->
-          let name = match txt with
-            | Lident n -> n
-            | Ldot (_, n) -> n
-            | _ -> "field"
-          in
-          (name, parse_expression e)
-        ) fields in
-      Sarek_ast.ERecord (None, parsed_fields)
-
+        let parsed_fields =
+          List.map
+            (fun ({txt; _}, e) ->
+              let name =
+                match txt with Lident n -> n | Ldot (_, n) -> n | _ -> "field"
+              in
+              (name, parse_expression e))
+            fields
+        in
+        Sarek_ast.ERecord (None, parsed_fields)
     (* Field access *)
-    | Pexp_field (record, { txt = Lident field; _ }) ->
-      Sarek_ast.EFieldGet (parse_expression record, field)
-
+    | Pexp_field (record, {txt = Lident field; _}) ->
+        Sarek_ast.EFieldGet (parse_expression record, field)
     (* Field set (via setfield) *)
-    | Pexp_setfield (record, { txt = Lident field; _ }, value) ->
-      Sarek_ast.EFieldSet (parse_expression record, field, parse_expression value)
-
+    | Pexp_setfield (record, {txt = Lident field; _}, value) ->
+        Sarek_ast.EFieldSet
+          (parse_expression record, field, parse_expression value)
     (* Constructor application *)
-    | Pexp_construct ({ txt = Lident name; _ }, arg_opt) ->
-      Sarek_ast.EConstr (name, Option.map parse_expression arg_opt)
-
+    | Pexp_construct ({txt = Lident name; _}, arg_opt) ->
+        Sarek_ast.EConstr (name, Option.map parse_expression arg_opt)
     (* Tuple *)
-    | Pexp_tuple es ->
-      Sarek_ast.ETuple (List.map parse_expression es)
-
+    | Pexp_tuple es -> Sarek_ast.ETuple (List.map parse_expression es)
     (* Type annotation *)
     | Pexp_constraint (e, ty) ->
-      Sarek_ast.ETyped (parse_expression e, parse_type ty)
-
+        Sarek_ast.ETyped (parse_expression e, parse_type ty)
     (* Open expression *)
-    | Pexp_open ({ popen_expr = { pmod_desc = Pmod_ident { txt; _ }; _ }; _ }, e) ->
-      let path = match txt with
-        | Lident n -> [n]
-        | Ldot (Lident m, n) -> [m; n]
-        | _ -> []
-      in
-      Sarek_ast.EOpen (path, parse_expression e)
-
+    | Pexp_open ({popen_expr = {pmod_desc = Pmod_ident {txt; _}; _}; _}, e) ->
+        let path =
+          match txt with
+          | Lident n -> [n]
+          | Ldot (Lident m, n) -> [m; n]
+          | _ -> []
+        in
+        Sarek_ast.EOpen (path, parse_expression e)
     (* Lambda - for local functions in kernels (OCaml 5.2+ uses Pexp_function) *)
-    | Pexp_function ([{ pparam_desc = Pparam_val (Nolabel, None, pat); _ }], None, Pfunction_body body) ->
-      let name = match extract_name_from_pattern pat with
-        | Some n -> n
-        | None -> "_"
-      in
-      let ty = extract_type_from_pattern pat in
-      (* Wrap as a let *)
-      Sarek_ast.ELet (name, ty, parse_expression body, { Sarek_ast.e = Sarek_ast.EVar name; Sarek_ast.expr_loc = loc })
-
+    | Pexp_function
+        ( [{pparam_desc = Pparam_val (Nolabel, None, pat); _}],
+          None,
+          Pfunction_body body ) ->
+        let name =
+          match extract_name_from_pattern pat with Some n -> n | None -> "_"
+        in
+        let ty = extract_type_from_pattern pat in
+        (* Wrap as a let *)
+        Sarek_ast.ELet
+          ( name,
+            ty,
+            parse_expression body,
+            {Sarek_ast.e = Sarek_ast.EVar name; Sarek_ast.expr_loc = loc} )
     (* Multi-parameter lambda *)
-    | Pexp_function (params, None, Pfunction_body body) when List.length params > 0 ->
-      (* Convert multi-param lambda to nested lets *)
-      let rec make_nested_lets params body_expr =
-        match params with
-        | [] -> parse_expression body_expr
-        | { pparam_desc = Pparam_val (Nolabel, None, pat); _ } :: rest ->
-          let name = match extract_name_from_pattern pat with
-            | Some n -> n
-            | None -> "_"
-          in
-          let ty = extract_type_from_pattern pat in
-          let inner = make_nested_lets rest body_expr in
-          { Sarek_ast.e = Sarek_ast.ELet (name, ty, inner, { Sarek_ast.e = Sarek_ast.EVar name; Sarek_ast.expr_loc = loc });
-            Sarek_ast.expr_loc = loc }
-        | _ -> raise (Parse_error_exn ("Unsupported function parameter", expr.pexp_loc))
-      in
-      (make_nested_lets params body).Sarek_ast.e
-
-    | _ ->
-      raise (Parse_error_exn ("Unsupported expression", expr.pexp_loc))
+    | Pexp_function (params, None, Pfunction_body body)
+      when List.length params > 0 ->
+        (* Convert multi-param lambda to nested lets *)
+        let rec make_nested_lets params body_expr =
+          match params with
+          | [] -> parse_expression body_expr
+          | {pparam_desc = Pparam_val (Nolabel, None, pat); _} :: rest ->
+              let name =
+                match extract_name_from_pattern pat with
+                | Some n -> n
+                | None -> "_"
+              in
+              let ty = extract_type_from_pattern pat in
+              let inner = make_nested_lets rest body_expr in
+              {
+                Sarek_ast.e =
+                  Sarek_ast.ELet
+                    ( name,
+                      ty,
+                      inner,
+                      {
+                        Sarek_ast.e = Sarek_ast.EVar name;
+                        Sarek_ast.expr_loc = loc;
+                      } );
+                Sarek_ast.expr_loc = loc;
+              }
+          | _ ->
+              raise
+                (Parse_error_exn
+                   ("Unsupported function parameter", expr.pexp_loc))
+        in
+        (make_nested_lets params body).Sarek_ast.e
+    | _ -> raise (Parse_error_exn ("Unsupported expression", expr.pexp_loc))
   in
-  { Sarek_ast.e; Sarek_ast.expr_loc = loc }
+  {Sarek_ast.e; Sarek_ast.expr_loc = loc}
 
 (** Check if an expression is an array access *)
 and is_array_access (_expr : expression) : bool =
@@ -326,23 +367,33 @@ and is_array_access (_expr : expression) : bool =
 let extract_param_from_pparam (pparam : function_param) : Sarek_ast.param =
   match pparam.pparam_desc with
   | Pparam_val (Nolabel, None, pat) ->
-    let name = match extract_name_from_pattern pat with
-      | Some n -> n
-      | None -> raise (Parse_error_exn ("Expected named parameter", pat.ppat_loc))
-    in
-    let ty = match extract_type_from_pattern pat with
-      | Some t -> t
-      | None -> raise (Parse_error_exn ("Kernel parameters must have type annotations", pat.ppat_loc))
-    in
-    {
-      Sarek_ast.param_name = name;
-      Sarek_ast.param_type = ty;
-      Sarek_ast.param_loc = loc_of_ppxlib pat.ppat_loc;
-    }
+      let name =
+        match extract_name_from_pattern pat with
+        | Some n -> n
+        | None ->
+            raise (Parse_error_exn ("Expected named parameter", pat.ppat_loc))
+      in
+      let ty =
+        match extract_type_from_pattern pat with
+        | Some t -> t
+        | None ->
+            raise
+              (Parse_error_exn
+                 ("Kernel parameters must have type annotations", pat.ppat_loc))
+      in
+      {
+        Sarek_ast.param_name = name;
+        Sarek_ast.param_type = ty;
+        Sarek_ast.param_loc = loc_of_ppxlib pat.ppat_loc;
+      }
   | Pparam_val (_, _, pat) ->
-    raise (Parse_error_exn ("Labelled parameters not supported in kernels", pat.ppat_loc))
+      raise
+        (Parse_error_exn
+           ("Labelled parameters not supported in kernels", pat.ppat_loc))
   | Pparam_newtype _ ->
-    raise (Parse_error_exn ("Newtype parameters not supported in kernels", pparam.pparam_loc))
+      raise
+        (Parse_error_exn
+           ("Newtype parameters not supported in kernels", pparam.pparam_loc))
 
 (** Parse a function expression into a kernel *)
 let parse_kernel_function (expr : expression) : Sarek_ast.kernel =
@@ -350,55 +401,142 @@ let parse_kernel_function (expr : expression) : Sarek_ast.kernel =
   (* OCaml 5.2+ uses Pexp_function with all params in a list *)
   match expr.pexp_desc with
   | Pexp_function (params, _constraint, Pfunction_body body_expr) ->
-    if params = [] then
-      raise (Parse_error_exn ("Kernel must have at least one parameter", expr.pexp_loc));
-    let parsed_params = List.map extract_param_from_pparam params in
-    let body = parse_expression body_expr in
-    {
-      Sarek_ast.kern_name = None;
-      kern_module_items = [];
-      kern_params = parsed_params;
-      kern_body = body;
-      kern_loc = loc;
-    }
+      if params = [] then
+        raise
+          (Parse_error_exn
+             ("Kernel must have at least one parameter", expr.pexp_loc)) ;
+      let parsed_params = List.map extract_param_from_pparam params in
+      let body = parse_expression body_expr in
+      {
+        Sarek_ast.kern_name = None;
+        kern_types = [];
+        kern_module_items = [];
+        kern_params = parsed_params;
+        kern_body = body;
+        kern_loc = loc;
+      }
   | Pexp_function (_, _, Pfunction_cases _) ->
-    raise (Parse_error_exn ("Pattern-matching functions not supported as kernels", expr.pexp_loc))
+      raise
+        (Parse_error_exn
+           ("Pattern-matching functions not supported as kernels", expr.pexp_loc))
   | _ ->
-    raise (Parse_error_exn ("Expected function expression for kernel", expr.pexp_loc))
+      raise
+        (Parse_error_exn
+           ("Expected function expression for kernel", expr.pexp_loc))
 
 (** Parse from ppxlib payload *)
 let parse_payload (payload : expression) : Sarek_ast.kernel =
-  let rec collect_mods acc e =
-    match e.pexp_desc with
-    | Pexp_letmodule ({ txt = Some _name; _ }, _mod_expr, body) ->
-      (* For now we just skip module content; modules must be handled explicitly inside payload *)
-      collect_mods acc body
-    | Pexp_let (Nonrecursive, [{ pvb_pat; pvb_expr; _ }], body) ->
-      (* Capture top-level let as module const/fun *)
-      let name =
-        match extract_name_from_pattern pvb_pat with
-        | Some n -> n
-        | None -> raise (Parse_error_exn ("Expected variable pattern", pvb_pat.ppat_loc))
-      in
-      let ty = extract_type_from_pattern pvb_pat in
-      let module_items =
-        match pvb_expr.pexp_desc with
-        | Pexp_function (params, _, Pfunction_body fn_body) ->
-          let parsed_params = List.map extract_param_from_pparam params in
-          let fn_body = parse_expression fn_body in
-          Sarek_ast.MFun (name, parsed_params, fn_body) :: acc
-        | _ ->
-          let value = parse_expression pvb_expr in
-          let ty =
-            match ty with
-            | Some t -> t
-            | None -> raise (Parse_error_exn ("Module constants must have type annotations", pvb_pat.ppat_loc))
-          in
-          Sarek_ast.MConst (name, ty, value) :: acc
-      in
-      collect_mods module_items body
-    | _ -> List.rev acc, e
+  let parse_module_items_from_structure items =
+    List.fold_left
+      (fun (types_acc, mods_acc) (item : structure_item) ->
+        match item.pstr_desc with
+        | Pstr_type (_, decls) ->
+            let tdecls =
+              List.map
+                (fun (td : type_declaration) ->
+                  let loc = td.ptype_loc in
+                  match td.ptype_kind with
+                  | Ptype_record labels ->
+                      Sarek_ast.Type_record
+                        {
+                          tdecl_name = td.ptype_name.txt;
+                          tdecl_fields = parse_record_fields labels;
+                          tdecl_loc = loc_of_ppxlib loc;
+                        }
+                  | Ptype_variant constrs ->
+                      Sarek_ast.Type_variant
+                        {
+                          tdecl_name = td.ptype_name.txt;
+                          tdecl_constructors =
+                            parse_variant_constructors constrs;
+                          tdecl_loc = loc_of_ppxlib loc;
+                        }
+                  | _ ->
+                      raise
+                        (Parse_error_exn
+                           ( "Unsupported type declaration in kernel payload",
+                             loc )))
+                decls
+            in
+            (List.rev_append tdecls types_acc, mods_acc)
+        | Pstr_value (Nonrecursive, vbs) ->
+            let mods =
+              List.fold_left
+                (fun acc vb ->
+                  let name =
+                    match extract_name_from_pattern vb.pvb_pat with
+                    | Some n -> n
+                    | None ->
+                        raise
+                          (Parse_error_exn
+                             ("Expected variable pattern", vb.pvb_pat.ppat_loc))
+                  in
+                  let ty = extract_type_from_pattern vb.pvb_pat in
+                  match vb.pvb_expr.pexp_desc with
+                  | Pexp_function (params, _, Pfunction_body fn_body) ->
+                      let parsed_params =
+                        List.map extract_param_from_pparam params
+                      in
+                      let fn_body = parse_expression fn_body in
+                      Sarek_ast.MFun (name, parsed_params, fn_body) :: acc
+                  | _ -> (
+                      let value = parse_expression vb.pvb_expr in
+                      match ty with
+                      | Some t -> Sarek_ast.MConst (name, t, value) :: acc
+                      | None -> acc))
+                mods_acc
+                vbs
+            in
+            (types_acc, mods)
+        | _ -> (types_acc, mods_acc))
+      ([], [])
+      items
   in
-  let module_items, core = collect_mods [] payload in
+
+  let rec collect_mods types_acc mods_acc e =
+    match e.pexp_desc with
+    | Pexp_letmodule ({txt = Some _name; _}, mod_expr, body) ->
+        let inner_types, inner_mods =
+          match mod_expr.pmod_desc with
+          | Pmod_structure items -> parse_module_items_from_structure items
+          | _ -> ([], [])
+        in
+        collect_mods
+          (List.rev_append inner_types types_acc)
+          (List.rev_append inner_mods mods_acc)
+          body
+    | Pexp_let (Nonrecursive, [{pvb_pat; pvb_expr; _}], body) ->
+        (* Capture top-level let as module const/fun *)
+        let name =
+          match extract_name_from_pattern pvb_pat with
+          | Some n -> n
+          | None ->
+              raise
+                (Parse_error_exn ("Expected variable pattern", pvb_pat.ppat_loc))
+        in
+        let ty = extract_type_from_pattern pvb_pat in
+        let module_items =
+          match pvb_expr.pexp_desc with
+          | Pexp_function (params, _, Pfunction_body fn_body) ->
+              let parsed_params = List.map extract_param_from_pparam params in
+              let fn_body = parse_expression fn_body in
+              Sarek_ast.MFun (name, parsed_params, fn_body) :: mods_acc
+          | _ ->
+              let value = parse_expression pvb_expr in
+              let ty =
+                match ty with
+                | Some t -> t
+                | None ->
+                    raise
+                      (Parse_error_exn
+                         ( "Module constants must have type annotations",
+                           pvb_pat.ppat_loc ))
+              in
+              Sarek_ast.MConst (name, ty, value) :: mods_acc
+        in
+        collect_mods types_acc module_items body
+    | _ -> (List.rev types_acc, List.rev mods_acc, e)
+  in
+  let type_decls, module_items, core = collect_mods [] [] payload in
   let kern = parse_kernel_function core in
-  { kern with kern_module_items = module_items }
+  {kern with kern_types = type_decls; kern_module_items = module_items}

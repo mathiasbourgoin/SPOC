@@ -13,22 +13,24 @@
 
   0. You just DO WHAT THE FUCK YOU WANT TO.
 *)
-(** Mathias Bourgoin - 2014                             *)
+(** Mathias Bourgoin - 2014 *)
 
 open Spoc
 
-
-
-
-let _ = 
+let _ =
   let devices = Spoc.Devices.init () in
-  Array.iter (fun dev ->
-      Printf.printf "Test on device : %s\n" dev.Devices.general_info.Devices.name;
+  Array.iter
+    (fun dev ->
+      Printf.printf
+        "Test on device : %s\n"
+        dev.Devices.general_info.Devices.name ;
       for i = 0 to 1024 do
         let v1 = Spoc.Vector.create Vector.float32 1024 in
         let v2 = Spoc.Vector.create Vector.float32 1024 in
-        Mem.to_device v1 dev;
-        Mem.to_device v2 dev;
-        Mem.to_cpu v1 ();
-        Devices.flush dev ();
-      done; Gc.compact ();) devices
+        Mem.to_device v1 dev ;
+        Mem.to_device v2 dev ;
+        Mem.to_cpu v1 () ;
+        Devices.flush dev ()
+      done ;
+      Gc.compact ())
+    devices

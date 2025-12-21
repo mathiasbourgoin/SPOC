@@ -1,8 +1,15 @@
 (dirs extension ir_extract)
 
 (library
-  (name sarek)
-  (public_name sarek)
-  (libraries spoc)
-  (modules Kirc_Ast Gen Kirc Kirc_Cuda Kirc_OpenCL Profile Skeletons Transform)
-)
+ (name sarek)
+ (public_name sarek)
+ (libraries spoc)
+ (modules
+  Kirc_Ast
+  Gen
+  Kirc
+  Kirc_Cuda
+  Kirc_OpenCL
+  Profile
+  Skeletons
+  Transform))

@@ -33,25 +33,43 @@
  * knowledge of the CeCILL-B license and that you accept its terms.
 *******************************************************************************)
 (** This Module contains various iterators over vectors computed by the CPU *)
+
 (**/**)
+
 external sizeofbool : unit -> int = "custom_getsizeofbool"
+
 external boolget : Vector.customarray -> int -> bool = "custom_boolget"
-external boolset : Vector.customarray -> int -> bool -> unit
-  = "custom_boolset"
+
+external boolset : Vector.customarray -> int -> bool -> unit = "custom_boolset"
+
 val print : int -> unit
+
 (**/**)
 
 val iter : ('a -> unit) -> ('a, 'c) Vector.vector -> unit
+
 val iteri : ('a -> int -> unit) -> ('a, 'c) Vector.vector -> unit
+
 val map :
   ('a -> 'b) ->
-  ('b, 'c) Vector.kind -> ('a, 'd) Vector.vector -> ('b, 'c) Vector.vector
-val trueCustom : (bool,bool) Vector.custom
-val falseCustom : (bool,bool) Vector.custom
+  ('b, 'c) Vector.kind ->
+  ('a, 'd) Vector.vector ->
+  ('b, 'c) Vector.vector
+
+val trueCustom : (bool, bool) Vector.custom
+
+val falseCustom : (bool, bool) Vector.custom
+
 val fold_left : ('a -> 'b -> 'a) -> 'a -> ('b, 'c) Vector.vector -> 'a
+
 val fold_right : ('a -> 'b -> 'b) -> ('a, 'c) Vector.vector -> 'b -> 'b
+
 (**/**)
+
 val vfalse : (bool, bool) Vector.kind
+
 val vtrue : (bool, bool) Vector.kind
+
 val spoc_bool : (bool, bool) Vector.kind
+
 (**/**)

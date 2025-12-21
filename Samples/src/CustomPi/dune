@@ -1,12 +1,14 @@
 (executable
  (name CustomPi)
- (enabled_if (= %{profile} "cuda"))
- (flags (-ccopt -L$CUDA_PATH -cclib -lnvrtc))
- (preprocess (pps spoc_ppx))
-  (foreign_stubs
-    (language c)
-    (names ExtCustom)
-  )
- (preprocessor_deps (package spoc))
- (libraries unix spoc)
-)
+ (enabled_if
+  (= %{profile} "cuda"))
+ (flags
+  (-ccopt -L$CUDA_PATH -cclib -lnvrtc))
+ (preprocess
+  (pps spoc_ppx))
+ (foreign_stubs
+  (language c)
+  (names ExtCustom))
+ (preprocessor_deps
+  (package spoc))
+ (libraries unix spoc))

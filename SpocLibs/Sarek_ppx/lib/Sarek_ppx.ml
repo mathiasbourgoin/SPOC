@@ -20,29 +20,30 @@ let expand_kernel ~ctxt payload =
     let env = Sarek_env.(empty |> with_stdlib) in
 
     (* 3. Type inference *)
-    (match Sarek_typer.infer_kernel env ast with
-     | Error errors ->
-       (* Report the first error with location *)
-       Sarek_error.report_errors errors;
-       (* If we get here, generate dummy expression *)
-       [%expr assert false]
+    match Sarek_typer.infer_kernel env ast with
+    | Error errors ->
+        (* Report the first error with location *)
+        Sarek_error.report_errors errors ;
+        (* If we get here, generate dummy expression *)
+        [%expr assert false]
+    | Ok tkernel ->
+        (* 4. Lower to Kirc_Ast *)
+        let ir = Sarek_lower.lower_kernel tkernel in
+        let ret_val = Sarek_lower.lower_return_value tkernel in
 
-     | Ok tkernel ->
-       (* 4. Lower to Kirc_Ast *)
-       let ir = Sarek_lower.lower_kernel tkernel in
-       let ret_val = Sarek_lower.lower_return_value tkernel in
-
-       (* 5. Quote the IR back to OCaml *)
-       Sarek_quote.quote_kernel ~loc tkernel ir ret_val)
-
+        (* 5. Quote the IR back to OCaml *)
+        Sarek_quote.quote_kernel ~loc tkernel ir ret_val
   with
   | Sarek_parse.Parse_error_exn (msg, ploc) ->
-    Location.raise_errorf ~loc:ploc "Sarek parse error: %s" msg
+      Location.raise_errorf ~loc:ploc "Sarek parse error: %s" msg
   | Sarek_error.Sarek_error e ->
-    let eloc = Sarek_ast.loc_to_ppxlib (Sarek_error.error_loc e) in
-    Location.raise_errorf ~loc:eloc "%a" Sarek_error.pp_error e
+      let eloc = Sarek_ast.loc_to_ppxlib (Sarek_error.error_loc e) in
+      Location.raise_errorf ~loc:eloc "%a" Sarek_error.pp_error e
   | e ->
-    Location.raise_errorf ~loc "Sarek internal error: %s" (Printexc.to_string e)
+      Location.raise_errorf
+        ~loc
+        "Sarek internal error: %s"
+        (Printexc.to_string e)
 
 (** The [%kernel ...] extension *)
 let kernel_extension =
@@ -54,6 +55,4 @@ let kernel_extension =
 
 (** Register the transformation *)
 let () =
-  Driver.register_transformation
-    ~extensions:[kernel_extension]
-    "sarek_ppx"
+  Driver.register_transformation ~extensions:[kernel_extension] "sarek_ppx"
