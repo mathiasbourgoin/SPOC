@@ -54,9 +54,9 @@ let rec type_of_type_expr_env env te =
   | Sarek_ast.TETuple ts -> TTuple (List.map (type_of_type_expr_env env) ts)
   | Sarek_ast.TEConstr (name, _) -> (
       match find_type name env with
-      | Some (TIRecord {ti_fields; _}) ->
-          TRecord (name, List.map (fun (f, t, _) -> (f, t)) ti_fields)
-      | Some (TIVariant {ti_constrs; _}) -> TVariant (name, ti_constrs)
+      | Some (TIRecord {ti_fields; ti_name}) ->
+          TRecord (ti_name, List.map (fun (f, t, _) -> (f, t)) ti_fields)
+      | Some (TIVariant {ti_constrs; ti_name}) -> TVariant (ti_name, ti_constrs)
       | None -> type_of_type_expr te)
   | _ -> type_of_type_expr te
 
@@ -409,8 +409,10 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
         match name_opt with
         | Some n -> (
             match find_type n env with
-            | Some (TIRecord {ti_fields; _}) ->
-                (n, TRecord (n, List.map (fun (f, t, _) -> (f, t)) ti_fields))
+            | Some (TIRecord {ti_fields; ti_name}) ->
+                ( ti_name,
+                  TRecord (ti_name, List.map (fun (f, t, _) -> (f, t)) ti_fields)
+                )
             | Some (TIVariant _) ->
                 (* Name provided but not a record *)
                 ("anon_record", TRecord ("anon_record", field_tys))
@@ -419,15 +421,16 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
             (* Try to match an existing record type by field names *)
             let matches =
               StringMap.fold
-                (fun name info acc ->
+                (fun _name info acc ->
                   match info with
-                  | TIRecord {ti_fields; _} ->
+                  | TIRecord {ti_fields; ti_name} ->
                       let names_match =
                         List.map (fun (f, _, _) -> f) ti_fields
                         = List.map (fun (f, _) -> f) field_tys
                       in
                       if names_match then
-                        (name, List.map (fun (f, t, _) -> (f, t)) ti_fields)
+                        ( ti_name,
+                          List.map (fun (f, t, _) -> (f, t)) ti_fields )
                         :: acc
                       else acc
                   | _ -> acc)
@@ -630,7 +633,13 @@ let infer_kernel (env : t) (kernel : Sarek_ast.kernel) : tkernel result =
     | [] -> Ok (List.rev acc, env)
     | decl :: rest -> (
         match decl with
-        | Sarek_ast.Type_record {tdecl_name; tdecl_fields; tdecl_loc} ->
+        | Sarek_ast.Type_record
+            {tdecl_name; tdecl_module; tdecl_fields; tdecl_loc} ->
+            let full_name =
+              match tdecl_module with
+              | Some m -> m ^ "." ^ tdecl_name
+              | None -> tdecl_name
+            in
             let tfields =
               List.map
                 (fun (fname, fmut, fty) ->
@@ -639,15 +648,36 @@ let infer_kernel (env : t) (kernel : Sarek_ast.kernel) : tkernel result =
             in
             let env' =
               add_type
-                tdecl_name
-                (TIRecord {ti_name = tdecl_name; ti_fields = tfields})
+                full_name
+                (TIRecord {ti_name = full_name; ti_fields = tfields})
                 env
             in
             let acc_decl =
-              TTypeRecord {tdecl_name; tdecl_fields = tfields; tdecl_loc}
+              TTypeRecord
+                {
+                  tdecl_name = full_name;
+                  tdecl_module = tdecl_module;
+                  tdecl_fields = tfields;
+                  tdecl_loc;
+                }
             in
-            add_type_decls env' (acc_decl :: acc) rest
-        | Sarek_ast.Type_variant {tdecl_name; tdecl_constructors; tdecl_loc} ->
+            let env_final =
+              match tdecl_module with
+              | None ->
+                  add_type
+                    tdecl_name
+                    (TIRecord {ti_name = full_name; ti_fields = tfields})
+                    env'
+              | Some _ -> env'
+            in
+            add_type_decls env_final (acc_decl :: acc) rest
+        | Sarek_ast.Type_variant
+            {tdecl_name; tdecl_module; tdecl_constructors; tdecl_loc} ->
+            let full_name =
+              match tdecl_module with
+              | Some m -> m ^ "." ^ tdecl_name
+              | None -> tdecl_name
+            in
             let constrs =
               List.map
                 (fun (cname, carg) ->
@@ -656,14 +686,29 @@ let infer_kernel (env : t) (kernel : Sarek_ast.kernel) : tkernel result =
             in
             let env' =
               add_type
-                tdecl_name
-                (TIVariant {ti_name = tdecl_name; ti_constrs = constrs})
+                full_name
+                (TIVariant {ti_name = full_name; ti_constrs = constrs})
                 env
             in
             let acc_decl =
-              TTypeVariant {tdecl_name; tdecl_constructors = constrs; tdecl_loc}
+              TTypeVariant
+                {
+                  tdecl_name = full_name;
+                  tdecl_module = tdecl_module;
+                  tdecl_constructors = constrs;
+                  tdecl_loc;
+                }
             in
-            add_type_decls env' (acc_decl :: acc) rest)
+            let env_final =
+              match tdecl_module with
+              | None ->
+                  add_type
+                    tdecl_name
+                    (TIVariant {ti_name = full_name; ti_constrs = constrs})
+                    env'
+              | Some _ -> env'
+            in
+            add_type_decls env_final (acc_decl :: acc) rest)
   in
   let* ttypes, env_with_types = add_type_decls env [] kernel.kern_types in
 

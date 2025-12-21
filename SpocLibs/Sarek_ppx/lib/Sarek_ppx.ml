@@ -11,9 +11,62 @@ open Sarek_ppx_lib
 (* Registry of globally declared Sarek types (via [@@sarek.type]). *)
 let registered_types : Sarek_ast.type_decl list ref = ref []
 
+let registry_file _loc =
+  match Sys.getenv_opt "SAREK_PPX_REGISTRY" with
+  | Some p -> p
+  | None ->
+      Filename.concat (Filename.get_temp_dir_name ()) "sarek_types_registry"
+
+let load_registry loc =
+  try
+    let ic = open_in_bin (registry_file loc) in
+    let rec loop acc =
+      try
+        let v = Marshal.from_channel ic in
+        loop (v :: acc)
+      with End_of_file -> List.rev acc
+    in
+    let res = loop [] in
+    close_in ic ;
+    res
+  with Sys_error _ -> []
+
+let append_registry loc tdecl =
+  try
+    let oc = open_out_gen [Open_creat; Open_append; Open_binary] 0o644 (registry_file loc) in
+    Marshal.to_channel oc tdecl [] ;
+    close_out oc
+  with Sys_error msg ->
+    Format.eprintf "Sarek PPX: cannot persist registry (%s)@." msg
+
+let tdecl_key = function
+  | Sarek_ast.Type_record {tdecl_name; tdecl_module; _}
+  | Sarek_ast.Type_variant {tdecl_name; tdecl_module; _} -> (
+      match tdecl_module with
+      | Some m -> m ^ "." ^ tdecl_name
+      | None -> tdecl_name)
+
+let dedup_tdecls decls =
+  let module S = Set.Make (String) in
+  let _, revs =
+    List.fold_left
+      (fun (seen, acc) d ->
+        let key = tdecl_key d in
+        if S.mem key seen then (seen, acc)
+        else (S.add key seen, d :: acc))
+      (S.empty, []) decls
+  in
+  List.rev revs
+
+let rec flatten_longident = function
+  | Lident s -> [s]
+  | Ldot (li, s) -> flatten_longident li @ [s]
+  | Lapply _ -> []
+
 let rec core_type_to_sarek_type_expr ~loc (ct : core_type) =
   match ct.ptyp_desc with
-  | Ptyp_constr ({txt = Lident name; _}, args) ->
+  | Ptyp_constr ({txt; _}, args) ->
+      let name = String.concat "." (flatten_longident txt) in
       let args = List.map (core_type_to_sarek_type_expr ~loc) args in
       Sarek_ast.TEConstr (name, args)
   | Ptyp_var v -> Sarek_ast.TEVar v
@@ -25,6 +78,11 @@ let rec core_type_to_sarek_type_expr ~loc (ct : core_type) =
       Sarek_ast.TETuple (List.map (core_type_to_sarek_type_expr ~loc) l)
   | _ ->
       Location.raise_errorf ~loc "Unsupported type expression in [@@sarek.type]"
+
+let module_name_of_loc loc =
+  let file = loc.loc_start.pos_fname in
+  let base = Filename.(remove_extension (basename file)) in
+  String.capitalize_ascii base
 
 let register_sarek_type_decl ~loc (td : type_declaration) =
   let tdecl =
@@ -41,6 +99,7 @@ let register_sarek_type_decl ~loc (td : type_declaration) =
         Sarek_ast.Type_record
           {
             tdecl_name = td.ptype_name.txt;
+            tdecl_module = Some (module_name_of_loc loc);
             tdecl_fields = fields;
             tdecl_loc = Sarek_ast.loc_of_ppxlib loc;
           }
@@ -62,6 +121,7 @@ let register_sarek_type_decl ~loc (td : type_declaration) =
         Sarek_ast.Type_variant
           {
             tdecl_name = td.ptype_name.txt;
+            tdecl_module = Some (module_name_of_loc loc);
             tdecl_constructors = cons;
             tdecl_loc = Sarek_ast.loc_of_ppxlib loc;
           }
@@ -70,7 +130,40 @@ let register_sarek_type_decl ~loc (td : type_declaration) =
           ~loc
           "Only record or variant types can be used with [@@sarek.type]"
   in
-  registered_types := tdecl :: !registered_types
+  registered_types := tdecl :: !registered_types ;
+  append_registry loc tdecl
+
+let scan_dir_for_sarek_types directory =
+  Array.iter
+    (fun fname ->
+      if Filename.check_suffix fname ".ml" then
+        let path = Filename.concat directory fname in
+        try
+          let ic = open_in path in
+          let lexbuf = Lexing.from_channel ic in
+          lexbuf.lex_curr_p <-
+            {
+              lexbuf.lex_curr_p with
+              pos_fname = path;
+              pos_bol = 0;
+              pos_lnum = 1;
+            } ;
+          let st = Parse.implementation lexbuf in
+          close_in ic ;
+          List.iter
+            (fun item ->
+              match item.pstr_desc with
+              | Pstr_type (_rf, decls) ->
+                  List.iter
+                    (fun d ->
+                      let has_attr a = String.equal a.attr_name.txt "sarek.type" in
+                      if List.exists has_attr d.ptype_attributes then
+                        register_sarek_type_decl ~loc:d.ptype_loc d)
+                    decls
+              | _ -> ())
+            st
+        with _ -> ())
+    (try Sys.readdir directory with Sys_error _ -> [||])
 
 (* Attribute used to mark Sarek-visible type declarations *)
 let sarek_type_attr =
@@ -99,16 +192,20 @@ let expand_kernel ~ctxt payload =
   let loc = Expansion_context.Extension.extension_point_loc ctxt in
 
   try
-    (* Pre-registered types (top-level sarek.type) *)
-    let file = loc.loc_start.pos_fname in
-    let pre_types =
-      List.filter
-        (function
-          | Sarek_ast.Type_record {tdecl_loc; _}
-          | Sarek_ast.Type_variant {tdecl_loc; _} ->
-              String.equal tdecl_loc.loc_file file)
-        !registered_types
+    let dir = Filename.dirname loc.loc_start.pos_fname in
+    scan_dir_for_sarek_types dir ;
+    let real_dir =
+      Filename.dirname (Unix.realpath loc.loc_start.pos_fname)
     in
+    if not (String.equal dir real_dir) then scan_dir_for_sarek_types real_dir ;
+    (match Sys.getenv_opt "PWD" with
+    | Some cwd -> (
+        let source_dir = Filename.concat cwd dir in
+        try if Sys.is_directory source_dir then scan_dir_for_sarek_types source_dir
+        with Sys_error _ -> ())
+    | None -> ());
+    (* Pre-registered types (top-level sarek.type) *)
+    let pre_types = dedup_tdecls (load_registry loc @ !registered_types) in
     (* 1. Parse the PPX payload to Sarek AST *)
     let ast = Sarek_parse.parse_payload payload in
     let ast = {ast with Sarek_ast.kern_types = pre_types @ ast.kern_types} in

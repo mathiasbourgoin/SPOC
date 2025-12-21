@@ -17,10 +17,13 @@ let loc_to_sloc loc = Sarek_ast.loc_of_ppxlib loc
 (** Parse a core_type to type_expr *)
 let rec parse_type (ct : core_type) : Sarek_ast.type_expr =
   match ct.ptyp_desc with
-  | Ptyp_constr ({txt = Lident name; _}, []) -> Sarek_ast.TEConstr (name, [])
-  | Ptyp_constr ({txt = Lident name; _}, args) ->
-      Sarek_ast.TEConstr (name, List.map parse_type args)
-  | Ptyp_constr ({txt = Ldot (Lident _mod, name); _}, args) ->
+  | Ptyp_constr ({txt; _}, args) ->
+      let rec flatten = function
+        | Longident.Lident s -> [s]
+        | Longident.Ldot (li, s) -> flatten li @ [s]
+        | Longident.Lapply _ -> []
+      in
+      let name = String.concat "." (flatten txt) in
       Sarek_ast.TEConstr (name, List.map parse_type args)
   | Ptyp_var name -> Sarek_ast.TEVar name
   | Ptyp_arrow (_, t1, t2) -> Sarek_ast.TEArrow (parse_type t1, parse_type t2)
@@ -440,6 +443,7 @@ let parse_payload (payload : expression) : Sarek_ast.kernel =
                       Sarek_ast.Type_record
                         {
                           tdecl_name = td.ptype_name.txt;
+                          tdecl_module = None;
                           tdecl_fields = parse_record_fields labels;
                           tdecl_loc = loc_of_ppxlib loc;
                         }
@@ -447,6 +451,7 @@ let parse_payload (payload : expression) : Sarek_ast.kernel =
                       Sarek_ast.Type_variant
                         {
                           tdecl_name = td.ptype_name.txt;
+                          tdecl_module = None;
                           tdecl_constructors =
                             parse_variant_constructors constrs;
                           tdecl_loc = loc_of_ppxlib loc;

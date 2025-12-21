@@ -81,11 +81,13 @@ type tparam = {
 type ttype_decl =
   | TTypeRecord of {
       tdecl_name : string;
+      tdecl_module : string option;
       tdecl_fields : (string * typ * bool) list;  (** name, type, mutable *)
       tdecl_loc : loc;
     }
   | TTypeVariant of {
       tdecl_name : string;
+      tdecl_module : string option;
       tdecl_constructors : (string * typ option) list;
       tdecl_loc : loc;
     }

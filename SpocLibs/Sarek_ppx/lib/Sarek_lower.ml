@@ -10,6 +10,9 @@ open Sarek_ast
 open Sarek_types
 open Sarek_typed_ast
 
+let mangle_type_name name =
+  String.map (function '.' -> '_' | c -> c) name
+
 let rec c_type_of_typ ty =
   match repr ty with
   | TPrim TInt32 -> "int"
@@ -18,12 +21,14 @@ let rec c_type_of_typ ty =
   | TPrim TFloat64 -> "double"
   | TPrim TBool -> "int"
   | TPrim TUnit -> "void"
-  | TRecord (name, _) -> "struct " ^ name ^ "_sarek"
+  | TRecord (name, _) -> "struct " ^ mangle_type_name name ^ "_sarek"
+  | TVariant (name, _) -> "struct " ^ mangle_type_name name ^ "_sarek"
   | TVec t -> c_type_of_typ t ^ " *"
   | TArr (t, _) -> c_type_of_typ t ^ " *"
   | _ -> "int"
 
 let record_constructor_strings name (fields : (string * typ * bool) list) =
+  let name = mangle_type_name name in
   let struct_name = name ^ "_sarek" in
   let struct_fields =
     List.map
@@ -54,6 +59,7 @@ let record_constructor_strings name (fields : (string * typ * bool) list) =
   [struct_def; builder]
 
 let variant_constructor_strings name constrs =
+  let name = mangle_type_name name in
   let struct_name = name ^ "_sarek" in
   let constr_structs =
     List.map
@@ -327,13 +333,13 @@ let rec lower_expr (state : state) (te : texpr) : Kirc_Ast.k_ext =
   (* Record construction *)
   | TERecord (type_name, fields) ->
       let field_irs = List.map (fun (_, e) -> lower_expr state e) fields in
-      Kirc_Ast.Record (type_name ^ "_sarek", field_irs)
+      Kirc_Ast.Record (mangle_type_name type_name ^ "_sarek", field_irs)
   (* Constructor application *)
   | TEConstr (type_name, constr_name, arg_opt) ->
       let args =
         match arg_opt with None -> [] | Some arg -> [lower_expr state arg]
       in
-      Kirc_Ast.Constr (type_name, constr_name, args)
+      Kirc_Ast.Constr (mangle_type_name type_name, constr_name, args)
   (* Tuple - represented as anonymous record *)
   | TETuple exprs ->
       let exprs_ir = List.map (lower_expr state) exprs in
@@ -378,8 +384,10 @@ and lower_decl ~mutable_ id name ty =
   | TPrim TBool -> Kirc_Ast.BoolVar (id, name, mutable_)
   | TPrim TUnit -> Kirc_Ast.UnitVar (id, name, mutable_)
   | TVec _ -> Kirc_Ast.VecVar (Kirc_Ast.Empty, id, name)
-  | TRecord (type_name, _) -> Kirc_Ast.Custom (type_name, id, name)
-  | TVariant (type_name, _) -> Kirc_Ast.Custom (type_name, id, name)
+  | TRecord (type_name, _) ->
+      Kirc_Ast.Custom (mangle_type_name type_name, id, name)
+  | TVariant (type_name, _) ->
+      Kirc_Ast.Custom (mangle_type_name type_name, id, name)
   | _ -> Kirc_Ast.IntVar (id, name, mutable_)
 
 (** Lower a reference to a previously-declared variable. *)
@@ -443,7 +451,7 @@ and lower_match state scrutinee cases =
   let scr_ir = lower_expr state scrutinee in
   let type_name =
     match repr scrutinee.ty with
-    | TVariant (n, _) -> n
+    | TVariant (n, _) -> mangle_type_name n
     | _ -> "match_type"
   in
   let cases_ir =
@@ -495,7 +503,7 @@ and lower_param (p : tparam) : Kirc_Ast.k_ext =
   | TPrim TBool -> Kirc_Ast.BoolVar (p.tparam_id, p.tparam_name, false)
   | TPrim TUnit -> Kirc_Ast.UnitVar (p.tparam_id, p.tparam_name, false)
   | TRecord (type_name, _) | TVariant (type_name, _) ->
-      Kirc_Ast.Custom (type_name, p.tparam_id, p.tparam_name)
+      Kirc_Ast.Custom (mangle_type_name type_name, p.tparam_id, p.tparam_name)
   | _ -> Kirc_Ast.IntVar (p.tparam_id, p.tparam_name, false)
 
 (** Lower kernel parameters to IR params *)
