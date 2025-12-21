@@ -1,0 +1,7 @@
+(library
+ (name visibility_lib)
+ (public_name sarek.visibility)
+ (modules visibility_lib)
+ (libraries spoc)
+ (preprocess
+  (pps sarek_ppx)))

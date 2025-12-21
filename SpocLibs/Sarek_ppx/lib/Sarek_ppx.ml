@@ -141,7 +141,7 @@ let module_name_of_loc loc =
   let base = Filename.(remove_extension (basename file)) in
   String.capitalize_ascii base
 
-let register_sarek_type_decl ~loc (td : type_declaration) =
+let register_sarek_type_decl ?(persist = true) ~loc (td : type_declaration) =
   let tdecl =
     match td.ptype_kind with
     | Ptype_record labels ->
@@ -187,21 +187,24 @@ let register_sarek_type_decl ~loc (td : type_declaration) =
           ~loc
           "Only record or variant types can be used with [@@sarek.type]"
   in
-  let blob = Marshal.to_string tdecl [] in
-  Metadata.register_type_blob blob ;
+  if persist then (
+    let blob = Marshal.to_string tdecl [] in
+    Metadata.register_type_blob blob ;
+    append_registry loc tdecl) ;
   registered_types := tdecl :: !registered_types ;
-  append_registry loc tdecl
+  ()
 
-let register_sarek_module_item ~loc item =
+let register_sarek_module_item ?(persist = true) ~loc item =
   (match item with
   | Sarek_ast.MFun (name, _, _) ->
       Format.eprintf "Sarek PPX: register module fun %s@." name
   | Sarek_ast.MConst (name, _, _) ->
       Format.eprintf "Sarek PPX: register module const %s@." name) ;
-  let blob = Marshal.to_string item [] in
-  Metadata.register_module_blob blob ;
-  registered_mods := item :: !registered_mods ;
-  append_mod_registry loc item
+  if persist then (
+    let blob = Marshal.to_string item [] in
+    Metadata.register_module_blob blob ;
+    append_mod_registry loc item) ;
+  registered_mods := item :: !registered_mods
 
 let scan_dir_for_sarek_types directory =
   Array.iter
@@ -221,19 +224,41 @@ let scan_dir_for_sarek_types directory =
               | Pstr_type (_rf, decls) ->
                   List.iter
                     (fun d ->
-                      let has_attr a =
-                        String.equal a.attr_name.txt "sarek.type"
+                      let has_attr name a = String.equal a.attr_name.txt name in
+                      let persist =
+                        not
+                          (List.exists
+                             (has_attr "sarek.type_private")
+                             d.ptype_attributes)
                       in
-                      if List.exists has_attr d.ptype_attributes then
-                        register_sarek_type_decl ~loc:d.ptype_loc d)
+                      if
+                        List.exists
+                          (has_attr "sarek.type")
+                          d.ptype_attributes
+                        || List.exists
+                             (has_attr "sarek.type_private")
+                             d.ptype_attributes
+                      then
+                        register_sarek_type_decl ~persist ~loc:d.ptype_loc d)
                     decls
               | Pstr_value (Nonrecursive, vbs) ->
                   List.iter
                     (fun vb ->
-                      let has_attr a =
-                        String.equal a.attr_name.txt "sarek.module"
+                      let has_attr name a = String.equal a.attr_name.txt name in
+                      let persist =
+                        not
+                          (List.exists
+                             (has_attr "sarek.module_private")
+                             vb.pvb_attributes)
                       in
-                      if List.exists has_attr vb.pvb_attributes then (
+                      if
+                        List.exists
+                          (has_attr "sarek.module")
+                          vb.pvb_attributes
+                        || List.exists
+                             (has_attr "sarek.module_private")
+                             vb.pvb_attributes
+                      then (
                         Format.eprintf
                           "Sarek PPX: sarek.module binding %s@."
                           (Option.value
@@ -280,7 +305,7 @@ let scan_dir_for_sarek_types directory =
                               in
                               Sarek_ast.MConst (name, ty, value)
                         in
-                        register_sarek_module_item ~loc:vb.pvb_loc item))
+                        register_sarek_module_item ~persist ~loc:vb.pvb_loc item))
                     vbs
               | _ -> ())
             st
@@ -295,6 +320,13 @@ let sarek_type_attr =
     Ast_pattern.(pstr nil)
     ()
 
+let sarek_type_private_attr =
+  Attribute.declare
+    "sarek.type_private"
+    Attribute.Context.type_declaration
+    Ast_pattern.(pstr nil)
+    ()
+
 (* Context-free rule to capture [@@sarek.type] before kernel expansion *)
 let sarek_type_rule =
   Context_free.Rule.attr_str_type_decl
@@ -304,6 +336,19 @@ let sarek_type_rule =
         (fun td payload ->
           match payload with
           | Some () -> register_sarek_type_decl ~loc:td.ptype_loc td
+          | None -> ())
+        decls
+        payloads ;
+      [])
+
+let sarek_type_private_rule =
+  Context_free.Rule.attr_str_type_decl
+    sarek_type_private_attr
+    (fun ~ctxt:_ _rec_flag decls payloads ->
+      List.iter2
+        (fun td payload ->
+          match payload with
+          | Some () -> register_sarek_type_decl ~persist:false ~loc:td.ptype_loc td
           | None -> ())
         decls
         payloads ;
@@ -422,8 +467,21 @@ let sarek_type_extension = ()
     publish metadata even when no [%kernel] expansion happens in that file. *)
 let process_structure_for_module_items (str : structure) : structure =
   let register_vb vb =
-    let has_attr a = String.equal a.attr_name.txt "sarek.module" in
-    if List.exists has_attr vb.pvb_attributes then
+    let has_attr name a = String.equal a.attr_name.txt name in
+    let persist =
+      not
+        (List.exists
+           (has_attr "sarek.module_private")
+           vb.pvb_attributes)
+    in
+    if
+      List.exists
+        (has_attr "sarek.module")
+        vb.pvb_attributes
+      || List.exists
+           (has_attr "sarek.module_private")
+           vb.pvb_attributes
+    then
       let name =
         match Sarek_parse.extract_name_from_pattern vb.pvb_pat with
         | Some n -> n
@@ -453,7 +511,7 @@ let process_structure_for_module_items (str : structure) : structure =
             in
             Sarek_ast.MConst (name, ty, value)
       in
-      register_sarek_module_item ~loc:vb.pvb_loc item
+      register_sarek_module_item ~persist ~loc:vb.pvb_loc item
   in
   List.iter
     (fun item ->
@@ -465,7 +523,9 @@ let process_structure_for_module_items (str : structure) : structure =
 
 (** Register the transformation *)
 let () =
-  let rules = [sarek_type_rule; Context_free.Rule.extension kernel_extension] in
+  let rules =
+    [sarek_type_rule; sarek_type_private_rule; Context_free.Rule.extension kernel_extension]
+  in
   Driver.register_transformation
     ~rules
     ~impl:process_structure_for_module_items
