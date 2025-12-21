@@ -17,10 +17,19 @@ install: opam
 uninstall:
 	dune uninstall
 
+# Core PPX/unit/comparison/e2e builds (GPU execution not required)
 test:
-	dune exec Samples/src/DeviceQuery/DeviceQuery.exe
-	dune exec Samples/src/VecAdd/VecAdd.exe
-	dune exec Samples/src/Mandelbrot/Mandelbrot.exe
+	dune build @SpocLibs/Sarek_test/runtest
+
+# Optional CUDA samples (require CUDA toolchain and graphics libs)
+test_samples_cuda:
+	dune build --profile=cuda \
+		Samples/src/DeviceQuery/DeviceQuery.exe \
+		Samples/src/VecAdd/VecAdd.exe \
+		Samples/src/Mandelbrot/Mandelbrot.exe
+	dune exec --profile=cuda Samples/src/DeviceQuery/DeviceQuery.exe
+	dune exec --profile=cuda Samples/src/VecAdd/VecAdd.exe
+	dune exec --profile=cuda Samples/src/Mandelbrot/Mandelbrot.exe
 
 test_ppx:
 	# Build unit/comparison tests and all Sarek PPX e2e binaries (execution may require GPU)
