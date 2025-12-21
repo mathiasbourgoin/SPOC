@@ -12,6 +12,8 @@ let loc_of_ppxlib = Sarek_ast.loc_of_ppxlib
 (** Parse exception *)
 exception Parse_error_exn of string * Location.t
 
+let loc_to_sloc loc = Sarek_ast.loc_of_ppxlib loc
+
 (** Parse a core_type to type_expr *)
 let rec parse_type (ct : core_type) : Sarek_ast.type_expr =
   match ct.ptyp_desc with
@@ -354,9 +356,10 @@ let parse_kernel_function (expr : expression) : Sarek_ast.kernel =
     let body = parse_expression body_expr in
     {
       Sarek_ast.kern_name = None;
-      Sarek_ast.kern_params = parsed_params;
-      Sarek_ast.kern_body = body;
-      Sarek_ast.kern_loc = loc;
+      kern_module_items = [];
+      kern_params = parsed_params;
+      kern_body = body;
+      kern_loc = loc;
     }
   | Pexp_function (_, _, Pfunction_cases _) ->
     raise (Parse_error_exn ("Pattern-matching functions not supported as kernels", expr.pexp_loc))
@@ -365,10 +368,37 @@ let parse_kernel_function (expr : expression) : Sarek_ast.kernel =
 
 (** Parse from ppxlib payload *)
 let parse_payload (payload : expression) : Sarek_ast.kernel =
-  let rec strip_wrappers e =
+  let rec collect_mods acc e =
     match e.pexp_desc with
-    | Pexp_letmodule (_name, _mod_expr, body) ->
-      strip_wrappers body
-    | _ -> e
+    | Pexp_letmodule ({ txt = Some _name; _ }, _mod_expr, body) ->
+      (* For now we just skip module content; modules must be handled explicitly inside payload *)
+      collect_mods acc body
+    | Pexp_let (Nonrecursive, [{ pvb_pat; pvb_expr; _ }], body) ->
+      (* Capture top-level let as module const/fun *)
+      let name =
+        match extract_name_from_pattern pvb_pat with
+        | Some n -> n
+        | None -> raise (Parse_error_exn ("Expected variable pattern", pvb_pat.ppat_loc))
+      in
+      let ty = extract_type_from_pattern pvb_pat in
+      let module_items =
+        match pvb_expr.pexp_desc with
+        | Pexp_function (params, _, Pfunction_body fn_body) ->
+          let parsed_params = List.map extract_param_from_pparam params in
+          let fn_body = parse_expression fn_body in
+          Sarek_ast.MFun (name, parsed_params, fn_body) :: acc
+        | _ ->
+          let value = parse_expression pvb_expr in
+          let ty =
+            match ty with
+            | Some t -> t
+            | None -> raise (Parse_error_exn ("Module constants must have type annotations", pvb_pat.ppat_loc))
+          in
+          Sarek_ast.MConst (name, ty, value) :: acc
+      in
+      collect_mods module_items body
+    | _ -> List.rev acc, e
   in
-  parse_kernel_function (strip_wrappers payload)
+  let module_items, core = collect_mods [] payload in
+  let kern = parse_kernel_function core in
+  { kern with kern_module_items = module_items }

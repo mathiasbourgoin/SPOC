@@ -1,12 +1,12 @@
-1. Investigate how to integrate the Camlp4 `kmodule` declaration into the PPX workflow:
+1. Integrate the Camlp4 `kmodule` declaration into the PPX workflow:
    - extend `Sarek_ast`/`Sarek_typed_ast` with nodes that represent module constants and functions.
    - allow `[%kernel …]` payload to parse a `kmodule … end` block and register the contained definitions.
    - ensure the typer/lower/quote correctly see and reuse those definitions, then add a simple example and regression test showing shared constants/functions.
    - **Step 1 substeps**
-     * Define `Sarek_ast.kmodule` and corresponding typed node to hold a list of constant/function declarations.
-     * Update `Sarek_parse` to accept `module`/`let`-based declarations at the top of the kernel payload and emit `kmodule`.
-     * Teach `Sarek_typer` to type-check the module items and register their definitions for later use in the kernel body.
-     * Adjust `Sarek_lower`/`quote` to translate module constants/functions to `Kirc_Ast.GlobalFun`/`Intrinsics`.
+     * Define `Sarek_ast`/`Sarek_typed_ast` module decl nodes for constants/functions.
+     * Update `Sarek_parse` to emit those nodes (not just strip wrappers) when encountering module/let-based decls before the kernel body.
+     * Teach `Sarek_typer` to register/check module items and expose them to the kernel body.
+     * Adjust `Sarek_lower`/`quote` to translate module constants/functions (likely via `GlobalFun`/intrinsics) so backend sees them.
      * Add a minimal example kernel plus regression test verifying the module is usable from the kernel body.
 
 2. Add `ktype` declarations (records and variants) inside `%kernel` and propagate them through the PPX:

@@ -86,6 +86,35 @@ let test_literal_unit () =
   let env = with_stdlib empty in
   check_infer_ok "unit literal" env unit_expr t_unit
 
+let test_kernel_module_const () =
+  reset_tvar_counter (); reset_var_id_counter ();
+  let env = with_stdlib empty in
+  let module_item = MConst ("c", TEConstr ("int32", []), int_expr 1) in
+  let param = { param_name = "x"; param_type = TEConstr ("int32", []); param_loc = dummy_loc } in
+  let body = binop_expr Add (var_expr "x") (var_expr "c") in
+  let kernel =
+    { kern_name = Some "k";
+      kern_module_items = [module_item];
+      kern_params = [param];
+      kern_body = body;
+      kern_loc = dummy_loc }
+  in
+  match infer_kernel env kernel with
+  | Ok tk ->
+    Alcotest.(check int) "module items count" 1 (List.length tk.tkern_module_items);
+    (match tk.tkern_module_items with
+     | TMConst (_name, ty, _value) :: _ ->
+       (match repr ty with
+        | TPrim TInt32 -> ()
+        | _ -> Alcotest.fail "module const should be int32")
+     | _ -> Alcotest.fail "expected module const");
+    (match repr tk.tkern_return_type with
+     | TPrim TInt32 -> ()
+     | _ -> Alcotest.fail "kernel body should type to int32")
+  | Error errs ->
+    Alcotest.failf "kernel with module const failed: %s"
+      (String.concat ", " (List.map Sarek_ppx_lib.Sarek_error.error_to_string errs))
+
 (* Test variable type inference *)
 let test_var_lookup () =
   let env = with_stdlib empty in
@@ -272,6 +301,7 @@ let () =
       Alcotest.test_case "branch mismatch" `Quick test_if_branch_mismatch;
       Alcotest.test_case "condition not bool" `Quick test_if_condition_not_bool;
       Alcotest.test_case "no else" `Quick test_if_no_else;
+      Alcotest.test_case "kernel module const" `Quick test_kernel_module_const;
     ];
     "let", [
       Alcotest.test_case "simple" `Quick test_let_simple;
