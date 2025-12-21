@@ -21,7 +21,7 @@
  (name sarek_ppx)
  (public_name sarek_ppx)
  (kind ppx_rewriter)
- (libraries ppxlib sarek_ppx_lib)
+ (libraries ppxlib sarek_ppx_lib unix)
  (preprocess
   (pps ppxlib.metaquot))
  (modules Sarek_ppx))

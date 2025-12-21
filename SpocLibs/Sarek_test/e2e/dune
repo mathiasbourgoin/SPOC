@@ -9,7 +9,8 @@
  test_nbody_ppx
  test_ray_ppx
  test_registered_type
- test_registered_variant)
+ test_registered_variant
+ test_cross_module_type)
  (libraries spoc sarek unix)
  (preprocess
   (pps sarek_ppx))

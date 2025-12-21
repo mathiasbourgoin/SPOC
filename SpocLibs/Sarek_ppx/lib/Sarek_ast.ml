@@ -161,12 +161,14 @@ type param = {param_name : string; param_type : type_expr; param_loc : loc}
 type type_decl =
   | Type_record of {
       tdecl_name : string;
+      tdecl_module : string option;
       tdecl_fields : (string * bool * type_expr) list;
           (** name, mutable, type *)
       tdecl_loc : loc;
     }
   | Type_variant of {
       tdecl_name : string;
+      tdecl_module : string option;
       tdecl_constructors : (string * type_expr option) list;
       tdecl_loc : loc;
     }
