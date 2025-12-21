@@ -15,8 +15,27 @@
  test_geometry_metadata
  test_visibility_private
  test_external_kernel_ppx)
- (libraries spoc sarek sarek_geometry sarek.visibility sarek_ppx.lib unix)
- (preprocess
-  (pps sarek_ppx))
- (flags
-  (:standard -w -33 -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc)))
+(libraries spoc sarek sarek_geometry sarek.visibility sarek_ppx.lib unix)
+(preprocess
+ (pps sarek_ppx))
+(flags
+ (:standard -w -33 -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc)))
+
+(alias
+ (name runtest)
+ (deps
+  test_vector_add.exe
+  test_module_const.exe
+  test_ktype_record.exe
+  test_klet_fun.exe
+  test_klet_variant.exe
+  test_ktype_helper.exe
+  test_nbody_ppx.exe
+  test_ray_ppx.exe
+  test_registered_type.exe
+  test_registered_variant.exe
+  test_cross_module_type.exe
+  test_registered_const.exe
+  test_geometry_metadata.exe
+  test_visibility_private.exe
+  test_external_kernel_ppx.exe))

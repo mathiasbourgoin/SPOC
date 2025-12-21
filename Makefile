@@ -22,6 +22,10 @@ test:
 	dune exec Samples/src/VecAdd/VecAdd.exe
 	dune exec Samples/src/Mandelbrot/Mandelbrot.exe
 
+test_ppx:
+	# Build unit/comparison tests and all Sarek PPX e2e binaries (execution may require GPU)
+	SKIP_OCAMLFORMAT=1 dune build @SpocLibs/Sarek_test/runtest
+
 test_sarek:
 	echo "Compiling Sarek samples"
 	dune build SpocLibs/Benchmarks/Pi/Pi.exe
