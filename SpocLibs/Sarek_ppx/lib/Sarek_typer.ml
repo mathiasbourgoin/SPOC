@@ -431,7 +431,8 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
                         :: acc
                       else acc
                   | _ -> acc)
-                env.types []
+                env.types
+                []
             in
             match matches with
             | (n, tys) :: _ -> (n, TRecord (n, tys))

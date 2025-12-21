@@ -11,11 +11,15 @@ let () =
         type point = {x : float32; y : float32}
       end in
       let make_point (x : float32) (y : float32) : point = {x; y} in
-      fun (xv : float32 vector) (yv : float32 vector) (dst : float32 vector) (n : int32) ->
-        let tid = thread_idx_x + block_idx_x * block_dim_x in
+      fun (xv : float32 vector)
+          (yv : float32 vector)
+          (dst : float32 vector)
+          (n : int32)
+        ->
+        let tid = thread_idx_x + (block_idx_x * block_dim_x) in
         if tid < n then
           let p = make_point xv.(tid) yv.(tid) in
-          dst.(tid) <- sqrt (p.x *. p.x +. p.y *. p.y)]
+          dst.(tid) <- sqrt ((p.x *. p.x) +. (p.y *. p.y))]
   in
 
   let _, kirc_kernel = length_kernel in
@@ -44,12 +48,8 @@ let () =
 
   let threads = 128 in
   let grid_x = (n + threads - 1) / threads in
-  let block =
-    { Kernel.blockX = threads; blockY = 1; blockZ = 1 }
-  in
-  let grid =
-    { Kernel.gridX = grid_x; gridY = 1; gridZ = 1 }
-  in
+  let block = {Kernel.blockX = threads; blockY = 1; blockZ = 1} in
+  let grid = {Kernel.gridX = grid_x; gridY = 1; gridZ = 1} in
 
   let length_kernel = Sarek.Kirc.gen length_kernel dev in
   Sarek.Kirc.run length_kernel (xv, yv, dst, n) (block, grid) 0 dev ;
@@ -61,11 +61,13 @@ let () =
   for i = 0 to n - 1 do
     let x = Bigarray.Array1.get bax i in
     let y = Bigarray.Array1.get bay i in
-    let expected = sqrt (x *. x +. y *. y) in
+    let expected = sqrt ((x *. x) +. (y *. y)) in
     let got = Bigarray.Array1.get bad i in
     if abs_float (got -. expected) > 1e-3 then (
       ok := false ;
       Printf.printf "Mismatch at %d: got %f expected %f\n%!" i got expected)
   done ;
   if !ok then print_endline "Execution check PASSED"
-  else (print_endline "Execution check FAILED" ; exit 1)
+  else (
+    print_endline "Execution check FAILED" ;
+    exit 1)

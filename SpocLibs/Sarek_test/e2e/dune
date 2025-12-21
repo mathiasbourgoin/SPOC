@@ -7,7 +7,8 @@
   test_klet_variant
   test_ktype_helper
   test_nbody_ppx
-  test_ray_ppx)
+  test_ray_ppx
+  test_registered_type)
  (libraries spoc sarek unix)
  (preprocess
   (pps sarek_ppx))

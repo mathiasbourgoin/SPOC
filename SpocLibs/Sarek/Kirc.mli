@@ -49,6 +49,8 @@ val cuda_float64 : string
 
 val cuda_head : string
 
+val register_constructor_string : string -> unit
+
 val new_var : int -> Kirc_Ast.k_ext
 
 val global_fun : ('a, 'b, 'c, 'd) kirc_function -> Kirc_Ast.k_ext

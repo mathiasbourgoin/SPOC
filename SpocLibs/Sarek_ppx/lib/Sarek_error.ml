@@ -93,7 +93,8 @@ let pp_error fmt = function
   | Recursive_type (t, _) ->
       Format.fprintf fmt "Recursive type detected: %a" pp_typ t
   | Unsupported_expression (desc, _) ->
-      Format.fprintf fmt
+      Format.fprintf
+        fmt
         "Unsupported expression: %s (tip: mutable locals in kernels must use \
          \"let fx = mut ...\"; refs/OCaml stdlib mutables are not supported)"
         desc

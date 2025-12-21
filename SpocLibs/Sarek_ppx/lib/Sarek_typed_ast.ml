@@ -106,6 +106,12 @@ type tkernel = {
   tkern_loc : loc;
 }
 
+(* Top-level declaration item for registration outside kernels *)
+type tdecl_item =
+  | TDType of ttype_decl
+  | TDFun of string * tparam list * texpr
+  | TDConst of string * int * typ * texpr
+
 (** Variable ID generator *)
 let var_id_counter = ref 0
 

@@ -458,11 +458,12 @@ let quote_kernel ~loc (kernel : tkernel) (ir : Kirc_Ast.k_ext)
   [%expr
     let open Spoc in
     let () =
-      Sarek.Kirc.constructors :=
+      List.iter
+        Sarek.Kirc.register_constructor_string
         [%e
-          Ast_builder.Default.elist ~loc
+          Ast_builder.Default.elist
+            ~loc
             (List.map (Ast_builder.Default.estring ~loc) constructors)]
-        @ !(Sarek.Kirc.constructors)
     in
     let module M = struct
       let exec_fun [%p args_pat] = Spoc.Kernel.exec [%e args_array_expr]
