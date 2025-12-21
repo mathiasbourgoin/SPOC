@@ -28,13 +28,17 @@ test-force:
 
 # Optional CUDA samples (require CUDA toolchain and graphics libs)
 test_samples_cuda:
-	dune build --profile=cuda \
-		Samples/src/DeviceQuery/DeviceQuery.exe \
-		Samples/src/VecAdd/VecAdd.exe \
-		Samples/src/Mandelbrot/Mandelbrot.exe
-	dune exec --profile=cuda Samples/src/DeviceQuery/DeviceQuery.exe
-	dune exec --profile=cuda Samples/src/VecAdd/VecAdd.exe
-	dune exec --profile=cuda Samples/src/Mandelbrot/Mandelbrot.exe
+	@if [ -z "$$CUDA_PATH" ] || [ ! -f "$$CUDA_PATH/lib64/libnvrtc.so" ]; then \
+	  echo "Skipping CUDA samples (CUDA_PATH/libnvrtc.so not found)"; \
+	else \
+	  dune build --profile=cuda \
+	    Samples/src/DeviceQuery/DeviceQuery.exe \
+	    Samples/src/VecAdd/VecAdd.exe \
+	    Samples/src/Mandelbrot/Mandelbrot.exe && \
+	  dune exec --profile=cuda Samples/src/DeviceQuery/DeviceQuery.exe && \
+	  dune exec --profile=cuda Samples/src/VecAdd/VecAdd.exe && \
+	  dune exec --profile=cuda Samples/src/Mandelbrot/Mandelbrot.exe ; \
+	fi
 
 test_ppx:
 	# Build unit/comparison tests and all Sarek PPX e2e binaries (execution may require GPU)
