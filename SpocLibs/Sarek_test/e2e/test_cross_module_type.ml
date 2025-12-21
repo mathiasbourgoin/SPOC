@@ -15,7 +15,7 @@ let () =
         if tid < n then
           let open Registered_defs in
           let p : Registered_defs.vec2 = {x = xs.(tid); y = ys.(tid)} in
-          dst.(tid) <- p.x +. p.y]
+          dst.(tid) <- add_vec p]
   in
 
   let devs = Devices.init () in
