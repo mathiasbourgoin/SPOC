@@ -5,14 +5,15 @@
   test_ktype_record
   test_klet_fun
   test_klet_variant
- test_ktype_helper
- test_nbody_ppx
- test_ray_ppx
- test_registered_type
- test_registered_variant
- test_cross_module_type
- test_registered_const)
- (libraries spoc sarek unix)
+  test_ktype_helper
+  test_nbody_ppx
+  test_ray_ppx
+  test_registered_type
+  test_registered_variant
+  test_cross_module_type
+  test_registered_const
+  test_geometry_metadata)
+ (libraries spoc sarek sarek_geometry unix)
  (preprocess
   (pps sarek_ppx))
  (flags

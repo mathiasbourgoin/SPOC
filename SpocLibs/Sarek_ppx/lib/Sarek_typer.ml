@@ -429,8 +429,7 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
                         = List.map (fun (f, _) -> f) field_tys
                       in
                       if names_match then
-                        ( ti_name,
-                          List.map (fun (f, t, _) -> (f, t)) ti_fields )
+                        (ti_name, List.map (fun (f, t, _) -> (f, t)) ti_fields)
                         :: acc
                       else acc
                   | _ -> acc)
@@ -662,7 +661,7 @@ let infer_kernel (env : t) (kernel : Sarek_ast.kernel) : tkernel result =
               TTypeRecord
                 {
                   tdecl_name = full_name;
-                  tdecl_module = tdecl_module;
+                  tdecl_module;
                   tdecl_fields = tfields;
                   tdecl_loc;
                 }
@@ -697,7 +696,7 @@ let infer_kernel (env : t) (kernel : Sarek_ast.kernel) : tkernel result =
               TTypeVariant
                 {
                   tdecl_name = full_name;
-                  tdecl_module = tdecl_module;
+                  tdecl_module;
                   tdecl_constructors = constrs;
                   tdecl_loc;
                 }

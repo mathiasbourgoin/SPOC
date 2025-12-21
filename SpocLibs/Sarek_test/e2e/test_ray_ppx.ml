@@ -15,7 +15,7 @@ let () =
         {x; y; z}
       in
       let dot (a : vec3) (b : vec3) : float32 =
-        ((a.x *. b.x) +. (a.y *. b.y)) +. (a.z *. b.z)
+        (a.x *. b.x) +. (a.y *. b.y) +. (a.z *. b.z)
       in
       let normalize (v : vec3) : vec3 =
         let inv = 1.0 /. sqrt (dot v v) in
@@ -42,7 +42,7 @@ let () =
           let disc = (half_b *. half_b) -. (a *. c) in
           let idx = tid * 3 in
           if disc > 0.0 then (
-            let t = ((-.half_b) -. sqrt disc) /. a in
+            let t = (-.half_b -. sqrt disc) /. a in
             let hx = t *. dxn in
             let hy = t *. dyn in
             let hz = t *. dzn in
@@ -55,8 +55,8 @@ let () =
             out.(idx + 2) <- 0.5 *. (nrm.z +. 1.0))
           else
             let t = 0.5 *. (dyn +. 1.0) in
-            let r = (1.0 -. t) +. (t *. 0.5) in
-            let g = (1.0 -. t) +. (t *. 0.7) in
+            let r = 1.0 -. t +. (t *. 0.5) in
+            let g = 1.0 -. t +. (t *. 0.7) in
             let b = 1.0 in
             out.(idx) <- r ;
             out.(idx + 1) <- g ;
@@ -90,8 +90,8 @@ let () =
   for y = 0 to h - 1 do
     for x = 0 to w - 1 do
       let i = (y * w) + x in
-      let u = ((2.0 *. float_of_int x) /. float_of_int (w - 1)) -. 1.0 in
-      let v = ((2.0 *. float_of_int y) /. float_of_int (h - 1)) -. 1.0 in
+      let u = (2.0 *. float_of_int x /. float_of_int (w - 1)) -. 1.0 in
+      let v = (2.0 *. float_of_int y /. float_of_int (h - 1)) -. 1.0 in
       Bigarray.Array1.set bax i u ;
       Bigarray.Array1.set bay i v ;
       Bigarray.Array1.set baz i (-1.5)
@@ -127,7 +127,7 @@ let () =
       let disc = (half_b *. half_b) -. (a *. c) in
       let r, g, b =
         if disc > 0.0 then
-          let t = ((-.half_b) -. sqrt disc) /. a in
+          let t = (-.half_b -. sqrt disc) /. a in
           let hx = t *. dxn and hy = t *. dyn and hz = t *. dzn in
           let nx = hx -. 0.0 and ny = hy -. 0.0 and nz = hz +. 2.0 in
           let inv = 1.0 /. sqrt ((nx *. nx) +. (ny *. ny) +. (nz *. nz)) in
@@ -135,7 +135,7 @@ let () =
           (0.5 *. (nx +. 1.0), 0.5 *. (ny +. 1.0), 0.5 *. (nz +. 1.0))
         else
           let t = 0.5 *. (dyn +. 1.0) in
-          ((1.0 -. t) +. (t *. 0.5), (1.0 -. t) +. (t *. 0.7), 1.0)
+          (1.0 -. t +. (t *. 0.5), 1.0 -. t +. (t *. 0.7), 1.0)
       in
       let gx = Bigarray.Array1.get out_ba (idx + 0) in
       let gy = Bigarray.Array1.get out_ba (idx + 1) in
@@ -164,7 +164,8 @@ let () =
     done
   done ;
   close_out ppm ;
-  if !ok then Printf.printf "Ray PPX execution PASSED (ppm: /tmp/ray_ppx.ppm)\n%!"
+  if !ok then
+    Printf.printf "Ray PPX execution PASSED (ppm: /tmp/ray_ppx.ppm)\n%!"
   else (
     print_endline "Ray PPX execution FAILED" ;
     exit 1)

@@ -14,9 +14,7 @@ let () =
       fun (xs : float32 vector) (dst : float32 vector) (n : int32) ->
         let tid = thread_idx_x + (block_idx_x * block_dim_x) in
         if tid < n then
-          let c =
-            if xs.(tid) > 0.0 then Value xs.(tid) else Red
-          in
+          let c = if xs.(tid) > 0.0 then Value xs.(tid) else Red in
           match c with
           | Red -> dst.(tid) <- 0.0
           | Value v -> dst.(tid) <- v +. 1.0]
@@ -49,7 +47,7 @@ let () =
 
   let ok = ref true in
   for i = 0 to n - 1 do
-    let expected = if i mod 2 = 0 then 0.0 else (float_of_int i) +. 1.0 in
+    let expected = if i mod 2 = 0 then 0.0 else float_of_int i +. 1.0 in
     let got = Bigarray.Array1.get dst_ba i in
     if abs_float (got -. expected) > 1e-3 then (
       ok := false ;
