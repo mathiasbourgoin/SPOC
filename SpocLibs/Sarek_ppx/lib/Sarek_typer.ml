@@ -652,6 +652,12 @@ let infer_kernel (env : t) (kernel : Sarek_ast.kernel) : tkernel result =
                 (TIRecord {ti_name = full_name; ti_fields = tfields})
                 env
             in
+            let env'' =
+              add_type
+                tdecl_name
+                (TIRecord {ti_name = full_name; ti_fields = tfields})
+                env'
+            in
             let acc_decl =
               TTypeRecord
                 {
@@ -661,16 +667,7 @@ let infer_kernel (env : t) (kernel : Sarek_ast.kernel) : tkernel result =
                   tdecl_loc;
                 }
             in
-            let env_final =
-              match tdecl_module with
-              | None ->
-                  add_type
-                    tdecl_name
-                    (TIRecord {ti_name = full_name; ti_fields = tfields})
-                    env'
-              | Some _ -> env'
-            in
-            add_type_decls env_final (acc_decl :: acc) rest
+            add_type_decls env'' (acc_decl :: acc) rest
         | Sarek_ast.Type_variant
             {tdecl_name; tdecl_module; tdecl_constructors; tdecl_loc} ->
             let full_name =
@@ -690,6 +687,12 @@ let infer_kernel (env : t) (kernel : Sarek_ast.kernel) : tkernel result =
                 (TIVariant {ti_name = full_name; ti_constrs = constrs})
                 env
             in
+            let env'' =
+              add_type
+                tdecl_name
+                (TIVariant {ti_name = full_name; ti_constrs = constrs})
+                env'
+            in
             let acc_decl =
               TTypeVariant
                 {
@@ -699,16 +702,7 @@ let infer_kernel (env : t) (kernel : Sarek_ast.kernel) : tkernel result =
                   tdecl_loc;
                 }
             in
-            let env_final =
-              match tdecl_module with
-              | None ->
-                  add_type
-                    tdecl_name
-                    (TIVariant {ti_name = full_name; ti_constrs = constrs})
-                    env'
-              | Some _ -> env'
-            in
-            add_type_decls env_final (acc_decl :: acc) rest)
+            add_type_decls env'' (acc_decl :: acc) rest)
   in
   let* ttypes, env_with_types = add_type_decls env [] kernel.kern_types in
 

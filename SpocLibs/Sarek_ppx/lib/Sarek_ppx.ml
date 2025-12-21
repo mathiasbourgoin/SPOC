@@ -10,12 +10,20 @@ open Sarek_ppx_lib
 
 (* Registry of globally declared Sarek types (via [@@sarek.type]). *)
 let registered_types : Sarek_ast.type_decl list ref = ref []
+(* Registry of globally declared Sarek module items (functions/constants) *)
+let registered_mods : Sarek_ast.module_item list ref = ref []
 
 let registry_file _loc =
   match Sys.getenv_opt "SAREK_PPX_REGISTRY" with
   | Some p -> p
   | None ->
       Filename.concat (Filename.get_temp_dir_name ()) "sarek_types_registry"
+
+let registry_mod_file _loc =
+  match Sys.getenv_opt "SAREK_PPX_MODREG" with
+  | Some p -> p
+  | None ->
+      Filename.concat (Filename.get_temp_dir_name ()) "sarek_module_registry"
 
 let load_registry loc =
   try
@@ -39,6 +47,31 @@ let append_registry loc tdecl =
   with Sys_error msg ->
     Format.eprintf "Sarek PPX: cannot persist registry (%s)@." msg
 
+let load_mod_registry loc =
+  try
+    let ic = open_in_bin (registry_mod_file loc) in
+    let rec loop acc =
+      try
+        let v = Marshal.from_channel ic in
+        loop (v :: acc)
+      with End_of_file -> List.rev acc
+    in
+    let res = loop [] in
+    close_in ic ;
+    res
+  with Sys_error _ -> []
+
+let append_mod_registry loc item =
+  try
+    let oc =
+      open_out_gen [Open_creat; Open_append; Open_binary] 0o644
+        (registry_mod_file loc)
+    in
+    Marshal.to_channel oc item [] ;
+    close_out oc
+  with Sys_error msg ->
+    Format.eprintf "Sarek PPX: cannot persist mod registry (%s)@." msg
+
 let tdecl_key = function
   | Sarek_ast.Type_record {tdecl_name; tdecl_module; _}
   | Sarek_ast.Type_variant {tdecl_name; tdecl_module; _} -> (
@@ -55,6 +88,20 @@ let dedup_tdecls decls =
         if S.mem key seen then (seen, acc)
         else (S.add key seen, d :: acc))
       (S.empty, []) decls
+  in
+  List.rev revs
+
+let dedup_mods mods =
+  let module S = Set.Make (String) in
+  let _, revs =
+    List.fold_left
+      (fun (seen, acc) m ->
+        let key =
+          match m with Sarek_ast.MConst (n, _, _) | Sarek_ast.MFun (n, _, _) -> n
+        in
+        if S.mem key seen then (seen, acc)
+        else (S.add key seen, m :: acc))
+      (S.empty, []) mods
   in
   List.rev revs
 
@@ -133,6 +180,10 @@ let register_sarek_type_decl ~loc (td : type_declaration) =
   registered_types := tdecl :: !registered_types ;
   append_registry loc tdecl
 
+let register_sarek_module_item ~loc item =
+  registered_mods := item :: !registered_mods ;
+  append_mod_registry loc item
+
 let scan_dir_for_sarek_types directory =
   Array.iter
     (fun fname ->
@@ -160,6 +211,42 @@ let scan_dir_for_sarek_types directory =
                       if List.exists has_attr d.ptype_attributes then
                         register_sarek_type_decl ~loc:d.ptype_loc d)
                     decls
+              | Pstr_value (Nonrecursive, vbs) ->
+                  List.iter
+                    (fun vb ->
+                      let has_attr a =
+                        String.equal a.attr_name.txt "sarek.module"
+                      in
+                      if List.exists has_attr vb.pvb_attributes then
+                        let name =
+                          match Sarek_parse.extract_name_from_pattern vb.pvb_pat with
+                          | Some n -> n
+                          | None ->
+                              Location.raise_errorf
+                                ~loc:vb.pvb_pat.ppat_loc "Expected variable name"
+                        in
+                        let ty = Sarek_parse.extract_type_from_pattern vb.pvb_pat in
+                        let item =
+                          match vb.pvb_expr.pexp_desc with
+                          | Pexp_function (params, _, Pfunction_body body_expr) ->
+                              let params =
+                                List.map Sarek_parse.extract_param_from_pparam params
+                              in
+                              let body = Sarek_parse.parse_expression body_expr in
+                              Sarek_ast.MFun (name, params, body)
+                          | _ ->
+                              let value = Sarek_parse.parse_expression vb.pvb_expr in
+                              let ty =
+                                match ty with
+                                | Some t -> t
+                                | None ->
+                                    Location.raise_errorf ~loc:vb.pvb_pat.ppat_loc
+                                      "[@sarek.module] constants require a type annotation"
+                              in
+                              Sarek_ast.MConst (name, ty, value)
+                        in
+                        register_sarek_module_item ~loc:vb.pvb_loc item)
+                    vbs
               | _ -> ())
             st
         with _ -> ())
@@ -206,9 +293,16 @@ let expand_kernel ~ctxt payload =
     | None -> ());
     (* Pre-registered types (top-level sarek.type) *)
     let pre_types = dedup_tdecls (load_registry loc @ !registered_types) in
+    let pre_mods = dedup_mods (load_mod_registry loc @ !registered_mods) in
     (* 1. Parse the PPX payload to Sarek AST *)
     let ast = Sarek_parse.parse_payload payload in
-    let ast = {ast with Sarek_ast.kern_types = pre_types @ ast.kern_types} in
+    let ast =
+      {
+        ast with
+        Sarek_ast.kern_types = pre_types @ ast.kern_types;
+        kern_module_items = pre_mods @ ast.kern_module_items;
+      }
+    in
 
     (* 2. Set up the typing environment with stdlib *)
     let env = Sarek_env.(empty |> with_stdlib) in
