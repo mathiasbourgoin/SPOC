@@ -10,7 +10,8 @@
  test_ray_ppx
  test_registered_type
  test_registered_variant
- test_cross_module_type)
+ test_cross_module_type
+ test_registered_const)
  (libraries spoc sarek unix)
  (preprocess
   (pps sarek_ppx))

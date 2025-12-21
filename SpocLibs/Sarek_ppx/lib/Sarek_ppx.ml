@@ -181,6 +181,9 @@ let register_sarek_type_decl ~loc (td : type_declaration) =
   append_registry loc tdecl
 
 let register_sarek_module_item ~loc item =
+  (match item with
+  | Sarek_ast.MFun (name, _, _) -> Format.eprintf "Sarek PPX: register module fun %s@." name
+  | Sarek_ast.MConst (name, _, _) -> Format.eprintf "Sarek PPX: register module const %s@." name) ;
   registered_mods := item :: !registered_mods ;
   append_mod_registry loc item
 
@@ -217,7 +220,11 @@ let scan_dir_for_sarek_types directory =
                       let has_attr a =
                         String.equal a.attr_name.txt "sarek.module"
                       in
-                      if List.exists has_attr vb.pvb_attributes then
+                      if List.exists has_attr vb.pvb_attributes then (
+                        Format.eprintf "Sarek PPX: sarek.module binding %s@."
+                          (Option.value
+                             (Sarek_parse.extract_name_from_pattern vb.pvb_pat)
+                             ~default:"<anon>") ;
                         let name =
                           match Sarek_parse.extract_name_from_pattern vb.pvb_pat with
                           | Some n -> n
@@ -245,7 +252,7 @@ let scan_dir_for_sarek_types directory =
                               in
                               Sarek_ast.MConst (name, ty, value)
                         in
-                        register_sarek_module_item ~loc:vb.pvb_loc item)
+                        register_sarek_module_item ~loc:vb.pvb_loc item))
                     vbs
               | _ -> ())
             st
@@ -294,6 +301,8 @@ let expand_kernel ~ctxt payload =
     (* Pre-registered types (top-level sarek.type) *)
     let pre_types = dedup_tdecls (load_registry loc @ !registered_types) in
     let pre_mods = dedup_mods (load_mod_registry loc @ !registered_mods) in
+    Format.eprintf "Sarek PPX: mods=%d types=%d@."
+      (List.length pre_mods) (List.length pre_types) ;
     (* 1. Parse the PPX payload to Sarek AST *)
     let ast = Sarek_parse.parse_payload payload in
     let ast =
