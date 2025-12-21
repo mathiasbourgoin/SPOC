@@ -180,6 +180,10 @@ module Generator (M : CodeGenerator) = struct
             else "spoc_fun__" ^ string_of_int !global_fun_idx
           in
           let fun_src = aux gen_name a in
+          (match M.target_name with
+          | "OpenCL" ->
+              Printf.printf "GEN fun %s : %s\n%!" gen_name ret_type
+          | _ -> ()) ;
           Hashtbl.add global_funs a (fun_src, gen_name) ;
           gen_name
       in

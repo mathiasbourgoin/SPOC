@@ -9,6 +9,103 @@ open Sarek_ast
 open Sarek_types
 open Sarek_typed_ast
 
+let rec c_type_of_typ ty =
+  match repr ty with
+  | TPrim TInt32 -> "int"
+  | TPrim TInt64 -> "long"
+  | TPrim TFloat32 -> "float"
+  | TPrim TFloat64 -> "double"
+  | TPrim TBool -> "int"
+  | TPrim TUnit -> "void"
+  | TRecord (name, _) -> "struct " ^ name ^ "_sarek"
+  | TVec t -> c_type_of_typ t ^ " *"
+  | TArr (t, _) -> c_type_of_typ t ^ " *"
+  | _ -> "int"
+
+let record_constructor_strings name (fields : (string * typ * bool) list) =
+  let struct_name = name ^ "_sarek" in
+  let struct_fields =
+    List.map
+      (fun (fname, fty, _) -> "  " ^ c_type_of_typ fty ^ " " ^ fname ^ ";")
+      fields
+  in
+  let struct_def =
+    "struct " ^ struct_name ^ " {\n"
+    ^ String.concat "\n" struct_fields
+    ^ "\n};"
+  in
+  let params =
+    String.concat ", "
+      (List.map
+         (fun (fname, fty, _) -> c_type_of_typ fty ^ " " ^ fname)
+         fields)
+  in
+  let assigns =
+    String.concat "\n"
+      (List.map
+         (fun (fname, _, _) -> "  res." ^ fname ^ " = " ^ fname ^ ";")
+         fields)
+  in
+  let builder =
+    "struct " ^ struct_name ^ " build_" ^ struct_name ^ "(" ^ params ^ ") {\n"
+    ^ "  struct " ^ struct_name ^ " res;\n"
+    ^ assigns ^ "\n  return res;\n}"
+  in
+  [builder; struct_def]
+
+let variant_constructor_strings name constrs =
+  let constr_structs =
+    List.map
+      (fun (cname, carg) ->
+        let field =
+          match carg with
+          | None -> "  int " ^ name ^ "_sarek_" ^ cname ^ "_t;"
+          | Some ty ->
+              "  " ^ c_type_of_typ ty ^ " " ^ name ^ "_sarek_" ^ cname ^ "_t;"
+        in
+        "struct " ^ name ^ "_sarek_" ^ cname ^ " {\n" ^ field ^ "\n};")
+      constrs
+  in
+  let union_fields =
+    List.map
+      (fun (cname, _carg) ->
+        "  struct " ^ name ^ "_sarek_" ^ cname ^ " " ^ name ^ "_sarek_"
+        ^ cname ^ ";")
+      constrs
+  in
+  let union_def =
+    "union " ^ name ^ "_sarek_union {\n"
+    ^ String.concat "\n" union_fields
+    ^ "\n};"
+  in
+  let main_struct =
+    "struct " ^ name ^ "_sarek {\n"
+    ^ "  int " ^ name ^ "_sarek_tag;\n"
+    ^ "  union " ^ name ^ "_sarek_union " ^ name ^ "_sarek_union;\n"
+    ^ "};"
+  in
+  let builders =
+    List.mapi
+      (fun idx (cname, carg) ->
+        let params, assign =
+          match carg with
+          | None -> ("", "  /* no payload */")
+          | Some ty ->
+              let pname = "v" in
+              (c_type_of_typ ty ^ " " ^ pname, "  res." ^ name ^ "_sarek_union."
+               ^ name ^ "_sarek_" ^ cname ^ "."
+               ^ name ^ "_sarek_" ^ cname ^ "_t = " ^ pname ^ ";")
+        in
+        "struct " ^ name ^ "_sarek build_" ^ name ^ "_" ^ cname ^ "(" ^ params
+        ^ ") {\n"
+        ^ "  struct " ^ name ^ "_sarek res;\n"
+        ^ "  res." ^ name ^ "_sarek_tag = " ^ string_of_int idx ^ ";\n"
+        ^ assign ^ "\n"
+        ^ "  return res;\n}")
+      constrs
+  in
+  builders @ [main_struct; union_def] @ constr_structs
+
 (** Lowering state *)
 type state = {
   mutable next_var_id : int;
@@ -106,23 +203,15 @@ let rec lower_expr (state : state) (te : texpr) : Kirc_Ast.k_ext =
             | TRecord (n, _) -> "struct " ^ n ^ "_sarek"
             | _ -> "int"
           in
+          let params_ir = lower_params params in
           let fun_body_ir = lower_expr state body in
-          (* Ensure parameters are declared for the function body *)
           let fun_body_ir =
-            List.fold_right
-              (fun p acc ->
-                let decl =
-                  lower_decl
-                    ~mutable_:false
-                    p.tparam_id
-                    p.tparam_name
-                    p.tparam_type
-                in
-                Kirc_Ast.Seq (Kirc_Ast.Decl decl, acc))
-              params
-              fun_body_ir
+            match fun_body_ir with
+            | Kirc_Ast.Return _ -> fun_body_ir
+            | _ -> Kirc_Ast.Return fun_body_ir
           in
-          Kirc_Ast.App (Kirc_Ast.GlobalFun (fun_body_ir, ret_str, name), args_ir)
+          let fun_ir = Kirc_Ast.Kern (Kirc_Ast.Params params_ir, fun_body_ir) in
+          Kirc_Ast.App (Kirc_Ast.GlobalFun (fun_ir, ret_str, name), args_ir)
       | _ ->
           let fn_ir = lower_expr state fn in
           Kirc_Ast.App (fn_ir, args_ir))
@@ -328,7 +417,7 @@ and lower_match state scrutinee cases =
   Kirc_Ast.Match (type_name, scr_ir, cases_ir)
 
 (** Lower a kernel parameter to IR *)
-let lower_param (p : tparam) : Kirc_Ast.k_ext =
+and lower_param (p : tparam) : Kirc_Ast.k_ext =
   match repr p.tparam_type with
   | TVec elem_ty ->
       let elem_ir =
@@ -350,7 +439,7 @@ let lower_param (p : tparam) : Kirc_Ast.k_ext =
   | _ -> Kirc_Ast.IntVar (p.tparam_id, p.tparam_name, false)
 
 (** Lower kernel parameters to IR params *)
-let lower_params (params : tparam list) : Kirc_Ast.k_ext =
+and lower_params (params : tparam list) : Kirc_Ast.k_ext =
   (* Build right-associative Concat: Concat(p1, Concat(p2, Concat(p3, Empty))) *)
   List.fold_right
     (fun p acc -> Kirc_Ast.Concat (lower_param p, acc))
@@ -358,7 +447,7 @@ let lower_params (params : tparam list) : Kirc_Ast.k_ext =
     Kirc_Ast.Empty
 
 (** Lower a complete kernel *)
-let lower_kernel (kernel : tkernel) : Kirc_Ast.k_ext =
+let lower_kernel (kernel : tkernel) : Kirc_Ast.k_ext * string list =
   let fun_map = Hashtbl.create 8 in
   List.iter
     (function
@@ -377,12 +466,22 @@ let lower_kernel (kernel : tkernel) : Kirc_Ast.k_ext =
               Kirc_Ast.Set (Kirc_Ast.IntId (name, id), lower_expr state expr)
             in
             Kirc_Ast.Seq (Kirc_Ast.Decl decl, Kirc_Ast.Seq (setv, acc))
-        | TMFun (_name, _params, _body) -> acc)
-      kernel.tkern_module_items
-      Kirc_Ast.Empty
+      | TMFun (_name, _params, _body) -> acc)
+    kernel.tkern_module_items Kirc_Ast.Empty
+  in
+  let constructors =
+    List.concat
+      (List.map
+         (function
+           | TTypeRecord {tdecl_name; tdecl_fields; _} ->
+               record_constructor_strings tdecl_name tdecl_fields
+           | TTypeVariant {tdecl_name; tdecl_constructors; _} ->
+               variant_constructor_strings tdecl_name tdecl_constructors)
+         kernel.tkern_type_decls)
   in
   let body_ir = lower_expr state kernel.tkern_body in
-  Kirc_Ast.Kern (params_ir, Kirc_Ast.Seq (module_items_ir, body_ir))
+  ( Kirc_Ast.Kern (params_ir, Kirc_Ast.Seq (module_items_ir, body_ir)),
+    constructors )
 
 (** Get the return value IR from a kernel *)
 let lower_return_value (kernel : tkernel) : Kirc_Ast.k_ext =
