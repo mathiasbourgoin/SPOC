@@ -21,6 +21,14 @@ uninstall:
 test:
 	dune build @SpocLibs/Sarek_test/runtest
 
+# Build and run selected GPU e2e tests (requires a working OpenCL/CUDA device)
+test_e2e_gpu:
+	dune build \
+		SpocLibs/Sarek_test/e2e/test_nbody_ppx.exe \
+		SpocLibs/Sarek_test/e2e/test_ray_ppx.exe
+	dune exec SpocLibs/Sarek_test/e2e/test_nbody_ppx.exe -- --device 0
+	dune exec SpocLibs/Sarek_test/e2e/test_ray_ppx.exe -- --device 0
+
 # Force rebuild/re-run of PPX tests even if previously built
 test-force:
 	dune clean || true
