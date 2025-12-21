@@ -9,7 +9,9 @@ type float32 = float
 let () =
   let kernel =
     [%kernel
-      fun (xs : float32 vector) (ys : float32 vector) (dst : float32 vector)
+      fun (xs : float32 vector)
+          (ys : float32 vector)
+          (dst : float32 vector)
           (n : int32) ->
         let tid = thread_idx_x + (block_idx_x * block_dim_x) in
         if tid < n then
@@ -50,16 +52,13 @@ let () =
 
   let ok = ref true in
   for i = 0 to n - 1 do
-    let expected =
-      Bigarray.Array1.get bax i +. Bigarray.Array1.get bay i
-    in
+    let expected = Bigarray.Array1.get bax i +. Bigarray.Array1.get bay i in
     let got = Bigarray.Array1.get bad i in
     if abs_float (got -. expected) > 1e-4 then (
       ok := false ;
       Printf.printf "Mismatch at %d: got %f expected %f\n%!" i got expected)
   done ;
-  if !ok then
-    print_endline "Cross-module registered type execution PASSED"
+  if !ok then print_endline "Cross-module registered type execution PASSED"
   else (
     print_endline "Cross-module registered type execution FAILED" ;
     exit 1)

@@ -7,9 +7,11 @@
 
 open Ppxlib
 open Sarek_ppx_lib
+module Metadata = Spoc.Sarek_metadata
 
 (* Registry of globally declared Sarek types (via [@@sarek.type]). *)
 let registered_types : Sarek_ast.type_decl list ref = ref []
+
 (* Registry of globally declared Sarek module items (functions/constants) *)
 let registered_mods : Sarek_ast.module_item list ref = ref []
 
@@ -41,7 +43,12 @@ let load_registry loc =
 
 let append_registry loc tdecl =
   try
-    let oc = open_out_gen [Open_creat; Open_append; Open_binary] 0o644 (registry_file loc) in
+    let oc =
+      open_out_gen
+        [Open_creat; Open_append; Open_binary]
+        0o644
+        (registry_file loc)
+    in
     Marshal.to_channel oc tdecl [] ;
     close_out oc
   with Sys_error msg ->
@@ -64,7 +71,9 @@ let load_mod_registry loc =
 let append_mod_registry loc item =
   try
     let oc =
-      open_out_gen [Open_creat; Open_append; Open_binary] 0o644
+      open_out_gen
+        [Open_creat; Open_append; Open_binary]
+        0o644
         (registry_mod_file loc)
     in
     Marshal.to_channel oc item [] ;
@@ -85,9 +94,9 @@ let dedup_tdecls decls =
     List.fold_left
       (fun (seen, acc) d ->
         let key = tdecl_key d in
-        if S.mem key seen then (seen, acc)
-        else (S.add key seen, d :: acc))
-      (S.empty, []) decls
+        if S.mem key seen then (seen, acc) else (S.add key seen, d :: acc))
+      (S.empty, [])
+      decls
   in
   List.rev revs
 
@@ -97,11 +106,12 @@ let dedup_mods mods =
     List.fold_left
       (fun (seen, acc) m ->
         let key =
-          match m with Sarek_ast.MConst (n, _, _) | Sarek_ast.MFun (n, _, _) -> n
+          match m with
+          | Sarek_ast.MConst (n, _, _) | Sarek_ast.MFun (n, _, _) -> n
         in
-        if S.mem key seen then (seen, acc)
-        else (S.add key seen, m :: acc))
-      (S.empty, []) mods
+        if S.mem key seen then (seen, acc) else (S.add key seen, m :: acc))
+      (S.empty, [])
+      mods
   in
   List.rev revs
 
@@ -177,13 +187,19 @@ let register_sarek_type_decl ~loc (td : type_declaration) =
           ~loc
           "Only record or variant types can be used with [@@sarek.type]"
   in
+  let blob = Marshal.to_string tdecl [] in
+  Metadata.register_type_blob blob ;
   registered_types := tdecl :: !registered_types ;
   append_registry loc tdecl
 
 let register_sarek_module_item ~loc item =
   (match item with
-  | Sarek_ast.MFun (name, _, _) -> Format.eprintf "Sarek PPX: register module fun %s@." name
-  | Sarek_ast.MConst (name, _, _) -> Format.eprintf "Sarek PPX: register module const %s@." name) ;
+  | Sarek_ast.MFun (name, _, _) ->
+      Format.eprintf "Sarek PPX: register module fun %s@." name
+  | Sarek_ast.MConst (name, _, _) ->
+      Format.eprintf "Sarek PPX: register module const %s@." name) ;
+  let blob = Marshal.to_string item [] in
+  Metadata.register_module_blob blob ;
   registered_mods := item :: !registered_mods ;
   append_mod_registry loc item
 
@@ -196,12 +212,7 @@ let scan_dir_for_sarek_types directory =
           let ic = open_in path in
           let lexbuf = Lexing.from_channel ic in
           lexbuf.lex_curr_p <-
-            {
-              lexbuf.lex_curr_p with
-              pos_fname = path;
-              pos_bol = 0;
-              pos_lnum = 1;
-            } ;
+            {lexbuf.lex_curr_p with pos_fname = path; pos_bol = 0; pos_lnum = 1} ;
           let st = Parse.implementation lexbuf in
           close_in ic ;
           List.iter
@@ -210,7 +221,9 @@ let scan_dir_for_sarek_types directory =
               | Pstr_type (_rf, decls) ->
                   List.iter
                     (fun d ->
-                      let has_attr a = String.equal a.attr_name.txt "sarek.type" in
+                      let has_attr a =
+                        String.equal a.attr_name.txt "sarek.type"
+                      in
                       if List.exists has_attr d.ptype_attributes then
                         register_sarek_type_decl ~loc:d.ptype_loc d)
                     decls
@@ -221,34 +234,49 @@ let scan_dir_for_sarek_types directory =
                         String.equal a.attr_name.txt "sarek.module"
                       in
                       if List.exists has_attr vb.pvb_attributes then (
-                        Format.eprintf "Sarek PPX: sarek.module binding %s@."
+                        Format.eprintf
+                          "Sarek PPX: sarek.module binding %s@."
                           (Option.value
                              (Sarek_parse.extract_name_from_pattern vb.pvb_pat)
                              ~default:"<anon>") ;
                         let name =
-                          match Sarek_parse.extract_name_from_pattern vb.pvb_pat with
+                          match
+                            Sarek_parse.extract_name_from_pattern vb.pvb_pat
+                          with
                           | Some n -> n
                           | None ->
                               Location.raise_errorf
-                                ~loc:vb.pvb_pat.ppat_loc "Expected variable name"
+                                ~loc:vb.pvb_pat.ppat_loc
+                                "Expected variable name"
                         in
-                        let ty = Sarek_parse.extract_type_from_pattern vb.pvb_pat in
+                        let ty =
+                          Sarek_parse.extract_type_from_pattern vb.pvb_pat
+                        in
                         let item =
                           match vb.pvb_expr.pexp_desc with
-                          | Pexp_function (params, _, Pfunction_body body_expr) ->
+                          | Pexp_function (params, _, Pfunction_body body_expr)
+                            ->
                               let params =
-                                List.map Sarek_parse.extract_param_from_pparam params
+                                List.map
+                                  Sarek_parse.extract_param_from_pparam
+                                  params
                               in
-                              let body = Sarek_parse.parse_expression body_expr in
+                              let body =
+                                Sarek_parse.parse_expression body_expr
+                              in
                               Sarek_ast.MFun (name, params, body)
                           | _ ->
-                              let value = Sarek_parse.parse_expression vb.pvb_expr in
+                              let value =
+                                Sarek_parse.parse_expression vb.pvb_expr
+                              in
                               let ty =
                                 match ty with
                                 | Some t -> t
                                 | None ->
-                                    Location.raise_errorf ~loc:vb.pvb_pat.ppat_loc
-                                      "[@sarek.module] constants require a type annotation"
+                                    Location.raise_errorf
+                                      ~loc:vb.pvb_pat.ppat_loc
+                                      "[@sarek.module] constants require a \
+                                       type annotation"
                               in
                               Sarek_ast.MConst (name, ty, value)
                         in
@@ -288,21 +316,41 @@ let expand_kernel ~ctxt payload =
   try
     let dir = Filename.dirname loc.loc_start.pos_fname in
     scan_dir_for_sarek_types dir ;
-    let real_dir =
-      Filename.dirname (Unix.realpath loc.loc_start.pos_fname)
-    in
+    let real_dir = Filename.dirname (Unix.realpath loc.loc_start.pos_fname) in
     if not (String.equal dir real_dir) then scan_dir_for_sarek_types real_dir ;
     (match Sys.getenv_opt "PWD" with
     | Some cwd -> (
         let source_dir = Filename.concat cwd dir in
-        try if Sys.is_directory source_dir then scan_dir_for_sarek_types source_dir
+        try
+          if Sys.is_directory source_dir then
+            scan_dir_for_sarek_types source_dir
         with Sys_error _ -> ())
-    | None -> ());
+    | None -> ()) ;
+    let runtime_types =
+      List.filter_map
+        (fun blob ->
+          try Some (Marshal.from_string blob 0 : Sarek_ast.type_decl)
+          with _ -> None)
+        (Metadata.get_type_blobs ())
+    in
+    let runtime_mods =
+      List.filter_map
+        (fun blob ->
+          try Some (Marshal.from_string blob 0 : Sarek_ast.module_item)
+          with _ -> None)
+        (Metadata.get_module_blobs ())
+    in
     (* Pre-registered types (top-level sarek.type) *)
-    let pre_types = dedup_tdecls (load_registry loc @ !registered_types) in
-    let pre_mods = dedup_mods (load_mod_registry loc @ !registered_mods) in
-    Format.eprintf "Sarek PPX: mods=%d types=%d@."
-      (List.length pre_mods) (List.length pre_types) ;
+    let pre_types =
+      dedup_tdecls (runtime_types @ load_registry loc @ !registered_types)
+    in
+    let pre_mods =
+      dedup_mods (runtime_mods @ load_mod_registry loc @ !registered_mods)
+    in
+    Format.eprintf
+      "Sarek PPX: mods=%d types=%d@."
+      (List.length pre_mods)
+      (List.length pre_types) ;
     (* 1. Parse the PPX payload to Sarek AST *)
     let ast = Sarek_parse.parse_payload payload in
     let ast =
@@ -370,7 +418,55 @@ let expand_sarek_type ~ctxt payload =
 
 let sarek_type_extension = ()
 
+(** Register sarek.module bindings on any structure we process, so libraries can
+    publish metadata even when no [%kernel] expansion happens in that file. *)
+let process_structure_for_module_items (str : structure) : structure =
+  let register_vb vb =
+    let has_attr a = String.equal a.attr_name.txt "sarek.module" in
+    if List.exists has_attr vb.pvb_attributes then
+      let name =
+        match Sarek_parse.extract_name_from_pattern vb.pvb_pat with
+        | Some n -> n
+        | None ->
+            Location.raise_errorf
+              ~loc:vb.pvb_pat.ppat_loc
+              "Expected variable name"
+      in
+      let ty = Sarek_parse.extract_type_from_pattern vb.pvb_pat in
+      let item =
+        match vb.pvb_expr.pexp_desc with
+        | Pexp_function (params, _, Pfunction_body body_expr) ->
+            let params =
+              List.map Sarek_parse.extract_param_from_pparam params
+            in
+            let body = Sarek_parse.parse_expression body_expr in
+            Sarek_ast.MFun (name, params, body)
+        | _ ->
+            let value = Sarek_parse.parse_expression vb.pvb_expr in
+            let ty =
+              match ty with
+              | Some t -> t
+              | None ->
+                  Location.raise_errorf
+                    ~loc:vb.pvb_pat.ppat_loc
+                    "[@sarek.module] constants require a type annotation"
+            in
+            Sarek_ast.MConst (name, ty, value)
+      in
+      register_sarek_module_item ~loc:vb.pvb_loc item
+  in
+  List.iter
+    (fun item ->
+      match item.pstr_desc with
+      | Pstr_value (_rf, vbs) -> List.iter register_vb vbs
+      | _ -> ())
+    str ;
+  str
+
 (** Register the transformation *)
 let () =
   let rules = [sarek_type_rule; Context_free.Rule.extension kernel_extension] in
-  Driver.register_transformation ~rules "sarek_ppx"
+  Driver.register_transformation
+    ~rules
+    ~impl:process_structure_for_module_items
+    "sarek_ppx"

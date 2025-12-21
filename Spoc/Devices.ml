@@ -195,12 +195,15 @@ let total_num_devices = ref 0
 
 (******************************************************************************************************)
 let openOutput () = ()
-let beginEvent _s = 0
-let endEvent _s _i = ()
-let emitDeviceList _ = ()
 
-#ifdef SPOC_PROFILE
+let beginEvent _s = 0
+
+let endEvent _s _i = ()
+
+let emitDeviceList _ = ()#ifdef SPOC_PROFILE
+
 external prePrint : int -> unit = "pre_print_device"
+
 external printInfo :
   string ->
   int ->
@@ -236,13 +239,16 @@ let emitDevice dev printComma =
 
 let emitDeviceList devList =
   let nb = List.length devList in
-  prePrint nb;
-  List.iteri (fun i dev -> emitDevice dev (i != nb-1)) devList;
+  prePrint nb ;
+  List.iteri (fun i dev -> emitDevice dev (i != nb - 1)) devList
 
 external openOutput : unit -> unit = "open_output_profiling"
+
 external closeOutput : unit -> unit = "close_output_profiling"
+
 external beginEvent : string -> int = "begin_event"
-external endEvent : string -> int -> unit = "end_event"
+
+external endEvent : string -> int -> unit = "end_event" ;;
 
 #endif
 (**********************************************************************************************************)

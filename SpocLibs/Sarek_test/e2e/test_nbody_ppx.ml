@@ -67,12 +67,9 @@ let () =
     Bigarray.Array1.set bay i (float_of_int (i mod 5) /. 10.0) ;
     Bigarray.Array1.set baz i (float_of_int (i mod 3) /. 10.0)
   done ;
-  let ax_ba =
-    Bigarray.Array1.create Bigarray.float32 Bigarray.c_layout n in
-  let ay_ba =
-    Bigarray.Array1.create Bigarray.float32 Bigarray.c_layout n in
-  let az_ba =
-    Bigarray.Array1.create Bigarray.float32 Bigarray.c_layout n in
+  let ax_ba = Bigarray.Array1.create Bigarray.float32 Bigarray.c_layout n in
+  let ay_ba = Bigarray.Array1.create Bigarray.float32 Bigarray.c_layout n in
+  let az_ba = Bigarray.Array1.create Bigarray.float32 Bigarray.c_layout n in
   let xs = Vector.of_bigarray_shr Vector.float32 bax in
   let ys = Vector.of_bigarray_shr Vector.float32 bay in
   let zs = Vector.of_bigarray_shr Vector.float32 baz in

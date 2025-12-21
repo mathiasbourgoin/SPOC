@@ -10,8 +10,7 @@ open Sarek_ast
 open Sarek_types
 open Sarek_typed_ast
 
-let mangle_type_name name =
-  String.map (function '.' -> '_' | c -> c) name
+let mangle_type_name name = String.map (function '.' -> '_' | c -> c) name
 
 let rec c_type_of_typ ty =
   match repr ty with
@@ -107,7 +106,7 @@ let variant_constructor_strings name constrs =
         ^ "  return res;\n}")
       constrs
   in
-  constr_structs @ (union_def :: (main_struct :: builders))
+  constr_structs @ (union_def :: main_struct :: builders)
 
 let c_type_of_core_type ~loc (ct : core_type) =
   match ct.ptyp_desc with
@@ -459,20 +458,20 @@ and lower_match state scrutinee cases =
       (List.mapi
          (fun i (pat, body) ->
            let body_ir = lower_expr state body in
-          let case_info =
-            match pat.tpat with
-            | TPConstr (_, name, arg_opt) ->
-                let arg_info =
-                  match arg_opt with
-                  | None -> None
-                  | Some ap -> (
-                      match ap.tpat with
-                      | TPVar (vname, vid) ->
-                          let arg_typ = c_type_of_typ ap.tpat_ty in
-                          Some (arg_typ, name, vid, vname)
-                      | _ -> None)
-                in
-                (i, arg_info, body_ir)
+           let case_info =
+             match pat.tpat with
+             | TPConstr (_, name, arg_opt) ->
+                 let arg_info =
+                   match arg_opt with
+                   | None -> None
+                   | Some ap -> (
+                       match ap.tpat with
+                       | TPVar (vname, vid) ->
+                           let arg_typ = c_type_of_typ ap.tpat_ty in
+                           Some (arg_typ, name, vid, vname)
+                       | _ -> None)
+                 in
+                 (i, arg_info, body_ir)
              | TPVar (name, id) ->
                  (i, Some (type_name, "var", id, name), body_ir)
              | TPAny -> (i, None, body_ir)
@@ -493,6 +492,8 @@ and lower_param (p : tparam) : Kirc_Ast.k_ext =
         | TPrim TInt32 | TPrim TInt64 -> Kirc_Ast.Int 0
         | TPrim TFloat32 -> Kirc_Ast.Float 0.0
         | TPrim TFloat64 -> Kirc_Ast.Double 0.0
+        | TRecord (type_name, _) | TVariant (type_name, _) ->
+            Kirc_Ast.Custom (mangle_type_name type_name, 0, p.tparam_name)
         | _ -> Kirc_Ast.Int 0
       in
       Kirc_Ast.VecVar (elem_ir, p.tparam_id, p.tparam_name)

@@ -9,7 +9,9 @@ type float32 = float
 let () =
   let kernel =
     [%kernel
-      fun (xs : float32 vector) (ys : float32 vector) (dst : float32 vector)
+      fun (xs : float32 vector)
+          (ys : float32 vector)
+          (dst : float32 vector)
           (n : int32) ->
         let tid = thread_idx_x + (block_idx_x * block_dim_x) in
         if tid < n then
