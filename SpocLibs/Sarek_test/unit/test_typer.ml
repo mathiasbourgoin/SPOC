@@ -103,7 +103,7 @@ let test_kernel_module_const () =
   | Ok tk ->
     Alcotest.(check int) "module items count" 1 (List.length tk.tkern_module_items);
     (match tk.tkern_module_items with
-     | TMConst (_name, ty, _value) :: _ ->
+     | TMConst (_name, _id, ty, _value) :: _ ->
        (match repr ty with
         | TPrim TInt32 -> ()
         | _ -> Alcotest.fail "module const should be int32")

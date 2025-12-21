@@ -569,10 +569,11 @@ let infer_kernel (env : t) (kernel : Sarek_ast.kernel) : tkernel result =
          let ty = type_of_type_expr ty_expr in
          let* (tvalue, env') = infer env value in
          let* () = unify_or_error tvalue.ty ty value.expr_loc in
+         let var_id = fresh_var_id () in
          let vi = { vi_type = ty; vi_mutable = false;
-                    vi_is_param = false; vi_index = fresh_var_id (); vi_is_vec = false } in
+                    vi_is_param = false; vi_index = var_id; vi_is_vec = false } in
          let env'' = add_var name vi env' in
-         add_module_items env'' (TMConst (name, ty, tvalue) :: acc) rest
+         add_module_items env'' (TMConst (name, var_id, ty, tvalue) :: acc) rest
        | Sarek_ast.MFun (_name, _params, _body) ->
          Error [Sarek_error.Unsupported_expression ("module functions are not supported yet", kernel.kern_loc)])
   in
