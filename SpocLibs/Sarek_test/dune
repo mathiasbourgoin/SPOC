@@ -1,1 +1,8 @@
 (dirs common unit comparison regression e2e)
+
+(alias
+ (name runtest)
+ (deps
+  (:unit (alias unit/runtest))
+  (:comparison (alias comparison/runtest))
+  (:e2e (alias e2e/runtest))))

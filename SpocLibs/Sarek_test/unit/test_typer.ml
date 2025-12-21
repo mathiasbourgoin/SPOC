@@ -223,6 +223,7 @@ let test_kernel_module_fun_with_variant () =
             ("Circle", Some (TEConstr ("float32", [])));
             ("Square", Some (TEConstr ("float32", [])));
           ];
+        tdecl_module = None;
         tdecl_loc = dummy_loc;
       }
   in
@@ -321,6 +322,7 @@ let test_kernel_module_fun_with_record () =
             ("x", false, TEConstr ("float32", []));
             ("y", false, TEConstr ("float32", []));
           ];
+        tdecl_module = None;
         tdecl_loc = dummy_loc;
       }
   in
@@ -401,6 +403,7 @@ let test_kernel_type_decl_record () =
             ("x", false, TEConstr ("float32", []));
             ("y", false, TEConstr ("float32", []));
           ];
+        tdecl_module = None;
         tdecl_loc = dummy_loc;
       }
   in
