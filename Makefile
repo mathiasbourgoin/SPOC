@@ -21,6 +21,11 @@ uninstall:
 test:
 	dune build @SpocLibs/Sarek_test/runtest
 
+# Force rebuild/re-run of PPX tests even if previously built
+test-force:
+	dune clean @SpocLibs/Sarek_test/runtest || true
+	dune build --force @SpocLibs/Sarek_test/runtest
+
 # Optional CUDA samples (require CUDA toolchain and graphics libs)
 test_samples_cuda:
 	dune build --profile=cuda \
