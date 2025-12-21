@@ -25,6 +25,7 @@ let rec parse_type (ct : core_type) : Sarek_ast.type_expr =
       in
       let name = String.concat "." (flatten txt) in
       Sarek_ast.TEConstr (name, List.map parse_type args)
+  | Ptyp_poly (_, ct) -> parse_type ct
   | Ptyp_var name -> Sarek_ast.TEVar name
   | Ptyp_arrow (_, t1, t2) -> Sarek_ast.TEArrow (parse_type t1, parse_type t2)
   | Ptyp_tuple ts -> Sarek_ast.TETuple (List.map parse_type ts)
