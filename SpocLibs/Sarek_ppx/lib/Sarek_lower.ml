@@ -382,8 +382,10 @@ let lower_kernel (kernel : tkernel) : Kirc_Ast.k_ext =
   let module_items_ir =
     List.fold_right (fun item acc ->
         match item with
-        | TMConst (_name, _ty, _expr) ->
-          acc (* TODO: emit constants as globals if needed *)
+        | TMConst (name, id, ty, expr) ->
+          let decl = lower_decl ~mutable_:false id name ty in
+          let setv = Kirc_Ast.Set (Kirc_Ast.IntId (name, id), lower_expr state expr) in
+          Kirc_Ast.Seq (Kirc_Ast.Decl decl, Kirc_Ast.Seq (setv, acc))
         | TMFun (_name, _params, _body) ->
           acc
       ) kernel.tkern_module_items Kirc_Ast.Empty

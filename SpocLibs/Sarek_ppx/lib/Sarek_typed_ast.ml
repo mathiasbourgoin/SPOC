@@ -87,7 +87,7 @@ type tparam = {
 
 (** Typed module item *)
 type tmodule_item =
-  | TMConst of string * typ * texpr          (** let name : ty = expr *)
+  | TMConst of string * int * typ * texpr    (** let name : ty = expr, var id *)
   | TMFun of string * tparam list * texpr    (** let name params = expr *)
 
 (** Typed kernel definition *)
