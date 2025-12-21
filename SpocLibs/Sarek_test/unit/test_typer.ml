@@ -210,6 +210,141 @@ let test_kernel_module_fun () =
            ", "
            (List.map Sarek_ppx_lib.Sarek_error.error_to_string errs))
 
+let test_kernel_module_fun_with_variant () =
+  reset_tvar_counter () ;
+  reset_var_id_counter () ;
+  let env = with_stdlib empty in
+  let type_decl =
+    Type_variant
+      {
+        tdecl_name = "shape";
+        tdecl_constructors =
+          [
+            ("Circle", Some (TEConstr ("float32", [])));
+            ("Square", Some (TEConstr ("float32", [])));
+          ];
+        tdecl_loc = dummy_loc;
+      }
+  in
+  let module_fun =
+    MFun
+      ( "area",
+        [
+          {param_name = "s"; param_type = TEConstr ("shape", []); param_loc = dummy_loc};
+        ],
+        mk_expr
+          (EMatch
+             ( var_expr "s",
+               [
+                 ( {pat = PConstr ("Circle", Some {pat = PVar "r"; pat_loc = dummy_loc}); pat_loc = dummy_loc},
+                   mk_expr
+                     (EBinop
+                        ( Mul,
+                          float_expr 3.14,
+                          mk_expr (EBinop (Mul, var_expr "r", var_expr "r")) )) );
+                 ( {pat = PConstr ("Square", Some {pat = PVar "x"; pat_loc = dummy_loc}); pat_loc = dummy_loc},
+                   mk_expr (EBinop (Mul, var_expr "x", var_expr "x")) );
+               ] )) )
+  in
+  let param =
+    {param_name = "v"; param_type = TEConstr ("shape", []); param_loc = dummy_loc}
+  in
+  let body =
+    mk_expr
+      (ELet
+         ( "a",
+           None,
+           mk_expr (EApp (var_expr "area", [var_expr "v"])),
+           var_expr "a" ))
+  in
+  let kernel =
+    {
+      kern_name = Some "k";
+      kern_types = [type_decl];
+      kern_module_items = [module_fun];
+      kern_params = [param];
+      kern_body = body;
+      kern_loc = dummy_loc;
+    }
+  in
+  match infer_kernel env kernel with
+  | Ok tk -> (
+      Alcotest.(check int) "variant type decl" 1 (List.length tk.tkern_type_decls) ;
+      Alcotest.(check int) "module fun count" 1 (List.length tk.tkern_module_items) ;
+      match repr tk.tkern_return_type with
+      | TPrim TFloat32 -> ()
+      | other -> Alcotest.failf "expected float32 return, got %s" (typ_to_string other))
+  | Error errs ->
+      Alcotest.failf
+        "kernel with variant helper failed: %s"
+        (String.concat
+           ", "
+           (List.map Sarek_ppx_lib.Sarek_error.error_to_string errs))
+
+let test_kernel_module_fun_with_record () =
+  reset_tvar_counter () ;
+  reset_var_id_counter () ;
+  let env = with_stdlib empty in
+  let type_decl =
+    Type_record
+      {
+        tdecl_name = "point";
+        tdecl_fields =
+          [
+            ("x", false, TEConstr ("float32", []));
+            ("y", false, TEConstr ("float32", []));
+          ];
+        tdecl_loc = dummy_loc;
+      }
+  in
+  let module_fun =
+    MFun
+      ( "make_point",
+        [
+          {param_name = "a"; param_type = TEConstr ("float32", []); param_loc = dummy_loc};
+          {param_name = "b"; param_type = TEConstr ("float32", []); param_loc = dummy_loc};
+        ],
+        mk_expr (ERecord (Some "point", [("x", var_expr "a"); ("y", var_expr "b")])) )
+  in
+  let param =
+    {
+      param_name = "dst";
+      param_type = TEConstr ("point", []);
+      param_loc = dummy_loc;
+    }
+  in
+  let body =
+    mk_expr
+      (ELet
+         ( "p",
+           None,
+           mk_expr (EApp (var_expr "make_point", [float_expr 1.0; float_expr 2.0])),
+           mk_expr (EFieldGet (var_expr "p", "x")) ))
+  in
+  let kernel =
+    {
+      kern_name = Some "k";
+      kern_types = [type_decl];
+      kern_module_items = [module_fun];
+      kern_params = [param];
+      kern_body = body;
+      kern_loc = dummy_loc;
+    }
+  in
+  match infer_kernel env kernel with
+  | Ok tk -> (
+      Alcotest.(check int) "type decl count" 1 (List.length tk.tkern_type_decls) ;
+      Alcotest.(check int) "module item count" 1 (List.length tk.tkern_module_items) ;
+      match repr tk.tkern_return_type with
+      | TPrim TFloat32 -> ()
+      | other -> Alcotest.failf "expected float32 return, got %s" (typ_to_string other))
+  | Error errs ->
+      Alcotest.failf
+        "kernel with record helper failed: %s"
+        (String.concat
+           ", "
+           (List.map Sarek_ppx_lib.Sarek_error.error_to_string errs))
+
 let test_kernel_type_decl_record () =
   reset_tvar_counter () ;
   reset_var_id_counter () ;
@@ -474,6 +609,12 @@ let () =
             `Quick
             test_kernel_module_const;
           Alcotest.test_case "kernel module fun" `Quick test_kernel_module_fun;
+          Alcotest.test_case "kernel module fun with record" `Quick test_kernel_module_fun_with_record;
+          Alcotest.test_case "kernel module fun with variant" `Quick test_kernel_module_fun_with_variant;
+          Alcotest.test_case
+            "kernel module fun with record"
+            `Quick
+            test_kernel_module_fun_with_record;
           Alcotest.test_case
             "kernel type decl (record)"
             `Quick
