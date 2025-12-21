@@ -85,9 +85,15 @@ type tparam = {
   tparam_id: int;                   (** Variable ID for this parameter *)
 }
 
+(** Typed module item *)
+type tmodule_item =
+  | TMConst of string * typ * texpr          (** let name : ty = expr *)
+  | TMFun of string * tparam list * texpr    (** let name params = expr *)
+
 (** Typed kernel definition *)
 type tkernel = {
   tkern_name: string option;
+  tkern_module_items: tmodule_item list;
   tkern_params: tparam list;
   tkern_body: texpr;
   tkern_return_type: typ;

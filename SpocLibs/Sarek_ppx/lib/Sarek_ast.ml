@@ -151,9 +151,15 @@ type param = {
   param_loc: loc;
 }
 
+(** Module-level items (constants or functions) within a kernel payload *)
+type module_item =
+  | MConst of string * type_expr * expr    (** let name : ty = expr *)
+  | MFun of string * param list * expr     (** let name params = expr *)
+
 (** A complete kernel definition *)
 type kernel = {
   kern_name: string option;           (** None for anonymous kernels *)
+  kern_module_items: module_item list; (** Module-level items visible in body *)
   kern_params: param list;
   kern_body: expr;
   kern_loc: loc;

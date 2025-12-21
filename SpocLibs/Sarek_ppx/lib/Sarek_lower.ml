@@ -379,8 +379,17 @@ let lower_params (params : tparam list) : Kirc_Ast.k_ext =
 let lower_kernel (kernel : tkernel) : Kirc_Ast.k_ext =
   let state = create_state () in
   let params_ir = Kirc_Ast.Params (lower_params kernel.tkern_params) in
+  let module_items_ir =
+    List.fold_right (fun item acc ->
+        match item with
+        | TMConst (_name, _ty, _expr) ->
+          acc (* TODO: emit constants as globals if needed *)
+        | TMFun (_name, _params, _body) ->
+          acc
+      ) kernel.tkern_module_items Kirc_Ast.Empty
+  in
   let body_ir = lower_expr state kernel.tkern_body in
-  Kirc_Ast.Kern (params_ir, body_ir)
+  Kirc_Ast.Kern (params_ir, Kirc_Ast.Seq (module_items_ir, body_ir))
 
 (** Get the return value IR from a kernel *)
 let lower_return_value (kernel : tkernel) : Kirc_Ast.k_ext =

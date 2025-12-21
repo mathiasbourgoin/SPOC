@@ -560,6 +560,23 @@ and is_tvar t =
 
 (** Type a complete kernel *)
 let infer_kernel (env : t) (kernel : Sarek_ast.kernel) : tkernel result =
+  (* Type module items first to extend the environment *)
+  let rec add_module_items env acc = function
+    | [] -> Ok (List.rev acc, env)
+    | item :: rest ->
+      (match item with
+       | Sarek_ast.MConst (name, ty_expr, value) ->
+         let ty = type_of_type_expr ty_expr in
+         let* (tvalue, env') = infer env value in
+         let* () = unify_or_error tvalue.ty ty value.expr_loc in
+         let vi = { vi_type = ty; vi_mutable = false;
+                    vi_is_param = false; vi_index = fresh_var_id (); vi_is_vec = false } in
+         let env'' = add_var name vi env' in
+         add_module_items env'' (TMConst (name, ty, tvalue) :: acc) rest
+       | Sarek_ast.MFun (_name, _params, _body) ->
+         Error [Sarek_error.Unsupported_expression ("module functions are not supported yet", kernel.kern_loc)])
+  in
+  let* (tmodule_items, env_after_mods) = add_module_items env [] kernel.kern_module_items in
   (* Add parameters to environment *)
   let rec add_params env idx acc = function
     | [] -> Ok (List.rev acc, env)
@@ -579,10 +596,11 @@ let infer_kernel (env : t) (kernel : Sarek_ast.kernel) : tkernel result =
       } in
       add_params env' (idx + 1) (tparam :: acc) rest
   in
-  let* (tparams, env') = add_params env 0 [] kernel.kern_params in
+  let* (tparams, env') = add_params env_after_mods 0 [] kernel.kern_params in
   let* (tbody, _) = infer env' kernel.kern_body in
   Ok {
     tkern_name = kernel.kern_name;
+    tkern_module_items = tmodule_items;
     tkern_params = tparams;
     tkern_body = tbody;
     tkern_return_type = tbody.ty;
