@@ -93,7 +93,10 @@ let pp_error fmt = function
   | Recursive_type (t, _) ->
       Format.fprintf fmt "Recursive type detected: %a" pp_typ t
   | Unsupported_expression (desc, _) ->
-      Format.fprintf fmt "Unsupported expression: %s" desc
+      Format.fprintf fmt
+        "Unsupported expression: %s (tip: mutable locals in kernels must use \
+         \"let fx = mut ...\"; refs/OCaml stdlib mutables are not supported)"
+        desc
   | Parse_error (msg, _) -> Format.fprintf fmt "Parse error: %s" msg
   | Invalid_kernel (msg, _) -> Format.fprintf fmt "Invalid kernel: %s" msg
   | Duplicate_field (name, _) -> Format.fprintf fmt "Duplicate field: %s" name
