@@ -1,5 +1,7 @@
 (executables
-(names test_vector_add test_module_const test_ktype_record test_klet_fun test_klet_variant)
+(names
+ test_vector_add test_module_const test_ktype_record test_klet_fun test_klet_variant
+ test_ktype_helper)
  (libraries spoc sarek unix)
  (preprocess
   (pps sarek_ppx))
