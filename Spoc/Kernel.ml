@@ -34,8 +34,7 @@
  *******************************************************************************)
 type kernel
 
-external relax_vector :
-  ('a, 'b) Vector.vector -> ('c, 'd) Vector.vector
+external relax_vector : ('a, 'b) Vector.vector -> ('c, 'd) Vector.vector
   = "%identity"
 
 type ('a, 'b) kernelArgs =
@@ -54,17 +53,16 @@ type ('a, 'b) kernelArgs =
   | VCustom of ('a, 'b) Vector.vector
       (** custom data type vector, see examples *)
 
-type block = {mutable blockX: int; mutable blockY: int; mutable blockZ: int}
+type block = {mutable blockX : int; mutable blockY : int; mutable blockZ : int}
 
-type grid = {mutable gridX: int; mutable gridY: int; mutable gridZ: int}
+type grid = {mutable gridX : int; mutable gridY : int; mutable gridZ : int}
 
 module Cuda = struct
   type cuda_extra
 
   external cuda_create_extra : int -> cuda_extra = "spoc_cuda_create_extra"
 
-  external cuda_compile :
-    string -> string -> Devices.generalInfo -> kernel
+  external cuda_compile : string -> string -> Devices.generalInfo -> kernel
     = "spoc_cuda_compile"
 
   external cuda_debug_compile :
@@ -74,48 +72,38 @@ module Cuda = struct
   (* <- ATTENTION *)
 
   external cuda_load_param_vec :
-       int ref
-    -> cuda_extra
-    -> Vector.device_vec
-    -> ('a, 'b) Vector.vector
-    -> Devices.device
-    -> unit
-    = "spoc_cuda_load_param_vec_b" "spoc_cuda_load_param_vec_n"
+    int ref ->
+    cuda_extra ->
+    Vector.device_vec ->
+    ('a, 'b) Vector.vector ->
+    Devices.device ->
+    unit = "spoc_cuda_load_param_vec_b" "spoc_cuda_load_param_vec_n"
 
   external cuda_custom_load_param_vec :
-       int ref
-    -> cuda_extra
-    -> Vector.device_vec
-    -> ('a, 'b) Vector.vector
-    -> unit
+    int ref -> cuda_extra -> Vector.device_vec -> ('a, 'b) Vector.vector -> unit
     = "spoc_cuda_custom_load_param_vec_b" "spoc_cuda_custom_load_param_vec_n"
 
-  external cuda_load_param_int :
-    int ref -> cuda_extra -> int -> unit
+  external cuda_load_param_int : int ref -> cuda_extra -> int -> unit
     = "spoc_cuda_load_param_int_b" "spoc_cuda_load_param_int_n"
 
-  external cuda_load_param_int64 :
-    int ref -> cuda_extra -> int -> unit
+  external cuda_load_param_int64 : int ref -> cuda_extra -> int -> unit
     = "spoc_cuda_load_param_int64_b" "spoc_cuda_load_param_int64_n"
 
-  external cuda_load_param_float :
-    int ref -> cuda_extra -> float -> unit
+  external cuda_load_param_float : int ref -> cuda_extra -> float -> unit
     = "spoc_cuda_load_param_float_b" "spoc_cuda_load_param_float_n"
 
-  external cuda_load_param_float64 :
-    int ref -> cuda_extra -> float -> unit
+  external cuda_load_param_float64 : int ref -> cuda_extra -> float -> unit
     = "spoc_cuda_load_param_float64_b" "spoc_cuda_load_param_float64_n"
 
   external cuda_launch_grid :
-       int ref
-    -> kernel
-    -> grid
-    -> block
-    -> cuda_extra
-    -> Devices.generalInfo
-    -> int
-    -> unit
-    = "spoc_cuda_launch_grid_b" "spoc_cuda_launch_grid_n"
+    int ref ->
+    kernel ->
+    grid ->
+    block ->
+    cuda_extra ->
+    Devices.generalInfo ->
+    int ->
+    unit = "spoc_cuda_launch_grid_b" "spoc_cuda_launch_grid_n"
 
   let cuda_load_arg offset extra dev _cuFun _idx (arg : ('a, 'b) kernelArgs) =
     let load_non_vect = function
@@ -125,18 +113,25 @@ module Cuda = struct
       | Float64 f -> cuda_load_param_float64 offset extra f
       | _ -> failwith "CU LOAD ARG Type Not Implemented\n"
     and check_vect v =
-      ( if !Mem.auto then
-        try Mem.to_device v dev ; Devices.flush dev ()
-        with Cuda.ERROR_OUT_OF_MEMORY -> raise Cuda.ERROR_OUT_OF_MEMORY ) ;
+      (if !Mem.auto then
+         try
+           Mem.to_device v dev ;
+           Devices.flush dev ()
+         with Cuda.ERROR_OUT_OF_MEMORY -> raise Cuda.ERROR_OUT_OF_MEMORY) ;
       match arg with
       | VCustom v2 ->
-          cuda_custom_load_param_vec offset extra
+          cuda_custom_load_param_vec
+            offset
+            extra
             (Vector.device_vec v2 `Cuda dev.Devices.general_info.Devices.id)
             v
       | _ ->
-          cuda_load_param_vec offset extra
+          cuda_load_param_vec
+            offset
+            extra
             (Vector.device_vec v `Cuda dev.Devices.general_info.Devices.id)
-            v dev
+            v
+            dev
     in
     match arg with
     | VChar v | VFloat32 v | VComplex32 v | VInt32 v | VInt64 v | VFloat64 v ->
@@ -146,8 +141,7 @@ module Cuda = struct
 end
 
 module OpenCL = struct
-  external opencl_compile :
-    string -> string -> Devices.generalInfo -> kernel
+  external opencl_compile : string -> string -> Devices.generalInfo -> kernel
     = "spoc_opencl_compile"
 
   external opencl_debug_compile :
@@ -155,12 +149,7 @@ module OpenCL = struct
     = "spoc_debug_opencl_compile"
 
   external opencl_load_param_vec :
-       int ref
-    -> kernel
-    -> Vector.device_vec
-    -> int
-    -> Devices.generalInfo
-    -> unit
+    int ref -> kernel -> Vector.device_vec -> int -> Devices.generalInfo -> unit
     = "spoc_opencl_load_param_vec"
 
   external opencl_load_param_int :
@@ -185,8 +174,7 @@ module OpenCL = struct
 
   let opencl_load_arg offset dev clFun _idx (arg : ('a, 'b) kernelArgs) =
     let load_non_vect = function
-      | Int32 i ->
-          opencl_load_param_int offset clFun i dev.Devices.general_info
+      | Int32 i -> opencl_load_param_int offset clFun i dev.Devices.general_info
       | Int64 i ->
           opencl_load_param_int64 offset clFun i dev.Devices.general_info
       | Float32 f ->
@@ -197,20 +185,25 @@ module OpenCL = struct
     and check_vect v =
       if !Mem.auto then (
         if Vector.dev v <> Vector.Dev dev then Mem.to_device v dev ;
-        Devices.flush dev () ) ;
-      opencl_load_param_vec offset clFun
-        (Vector.device_vec v `OpenCL
+        Devices.flush dev ()) ;
+      opencl_load_param_vec
+        offset
+        clFun
+        (Vector.device_vec
+           v
+           `OpenCL
            (dev.Devices.general_info.Devices.id - Devices.cuda_devices ()))
-        (Vector.get_vec_id v) dev.Devices.general_info
+        (Vector.get_vec_id v)
+        dev.Devices.general_info
     in
     match arg with
     | VChar v
-     |VFloat32 v
-     |VFloat64 v
-     |VComplex32 v
-     |VInt32 v
-     |VInt64 v
-     |VCustom v ->
+    | VFloat32 v
+    | VFloat64 v
+    | VComplex32 v
+    | VInt32 v
+    | VInt64 v
+    | VCustom v ->
         check_vect v
     | _ -> load_non_vect arg
 end
@@ -241,7 +234,13 @@ let exec (args : ('a, 'b) kernelArgs array) (block, grid) queue_id dev
         (cuda_load_arg offset extra dev cuFun)
         (args : ('a, 'b) kernelArgs array) ;
       (* set_block_shape cuFun block dev.general_info; *)
-      cuda_launch_grid offset cuFun grid block extra dev.Devices.general_info
+      cuda_launch_grid
+        offset
+        cuFun
+        grid
+        block
+        extra
+        dev.Devices.general_info
         queue_id
   | Devices.OpenCLInfo _ ->
       let open OpenCL in
@@ -264,12 +263,13 @@ let load_source path file ext =
   in
   let src = ref "" in
   let ic = open_in kernelPath in
-  ( try
-      while true do
-        src := !src ^ input_line ic ^ "\n"
-      done
-    with End_of_file -> () ) ;
-  close_in ic ; !src
+  (try
+     while true do
+       src := !src ^ input_line ic ^ "\n"
+     done
+   with End_of_file -> ()) ;
+  close_in ic ;
+  !src
 
 exception No_source_for_device of Devices.device
 
@@ -284,11 +284,12 @@ class virtual ['a, 'b] spoc_kernel file (func : string) =
     val mutable source_path = Filename.dirname Sys.argv.(0)
 
     val mutable cuda_sources =
-      try [load_source (Filename.dirname Sys.argv.(0)) file ".ptx"] with _ ->
-        []
+      try [load_source (Filename.dirname Sys.argv.(0)) file ".ptx"]
+      with _ -> []
 
     val mutable opencl_sources =
-      try [load_source (Filename.dirname Sys.argv.(0)) file ".cl"] with _ -> []
+      try [load_source (Filename.dirname Sys.argv.(0)) file ".cl"]
+      with _ -> []
 
     val binaries = Hashtbl.create 8
 
@@ -312,7 +313,8 @@ class virtual ['a, 'b] spoc_kernel file (func : string) =
         (try [load_source source_path file ".cl"] with _ -> [])
 
     method compile ?debug:(d = false) dev =
-      try ignore (Hashtbl.find binaries dev) with Not_found ->
+      try ignore (Hashtbl.find binaries dev)
+      with Not_found ->
         let bin =
           match dev.Devices.specific_info with
           | Devices.CudaInfo _ -> (
@@ -322,7 +324,7 @@ class virtual ['a, 'b] spoc_kernel file (func : string) =
               | t :: _ ->
                   if d then
                     cuda_debug_compile t kernel_name dev.Devices.general_info
-                  else cuda_compile t kernel_name dev.Devices.general_info )
+                  else cuda_compile t kernel_name dev.Devices.general_info)
           | Devices.OpenCLInfo _ -> (
               let open OpenCL in
               match opencl_sources with
@@ -330,7 +332,7 @@ class virtual ['a, 'b] spoc_kernel file (func : string) =
               | t :: _ ->
                   if d then
                     opencl_debug_compile t kernel_name dev.Devices.general_info
-                  else opencl_compile t kernel_name dev.Devices.general_info )
+                  else opencl_compile t kernel_name dev.Devices.general_info)
         in
         Hashtbl.add binaries dev bin
 
@@ -344,7 +346,8 @@ class virtual ['a, 'b] spoc_kernel file (func : string) =
     method run (args : 'a) ((block : block), (grid : grid)) (queue_id : int)
         (dev : Devices.device) =
       let bin =
-        try Hashtbl.find binaries dev with Not_found ->
+        try Hashtbl.find binaries dev
+        with Not_found ->
           (try self#compile ~debug:true dev with e -> raise e) ;
           Hashtbl.find binaries dev
       in
@@ -352,7 +355,10 @@ class virtual ['a, 'b] spoc_kernel file (func : string) =
 
     method compile_and_run (args : 'a) ((block : block), (grid : grid))
         ?debug:(d = false) (queue_id : int) (dev : Devices.device) =
-      let bin = self#compile ~debug:d dev ; Hashtbl.find binaries dev in
+      let bin =
+        self#compile ~debug:d dev ;
+        Hashtbl.find binaries dev
+      in
       self#exec args (block, grid) queue_id dev bin
   end
 
@@ -364,12 +370,12 @@ let compile (dev : Devices.device) (k : ('a, 'b) spoc_kernel) =
   k#compile ~debug:false dev
 
 let set_arg env i arg =
-  env.(i)
-  <- ( match Vector.kind arg with
-     | Vector.Float32 _ -> VFloat32 arg
-     | Vector.Char _ -> VChar arg
-     | Vector.Float64 _ -> VFloat64 arg
-     | Vector.Int32 _ -> VInt32 arg
-     | Vector.Int64 _ -> VInt64 arg
-     | Vector.Complex32 _ -> VComplex32 arg
-     | _ -> assert false )
+  env.(i) <-
+    (match Vector.kind arg with
+    | Vector.Float32 _ -> VFloat32 arg
+    | Vector.Char _ -> VChar arg
+    | Vector.Float64 _ -> VFloat64 arg
+    | Vector.Int32 _ -> VInt32 arg
+    | Vector.Int64 _ -> VInt64 arg
+    | Vector.Complex32 _ -> VComplex32 arg
+    | _ -> assert false)

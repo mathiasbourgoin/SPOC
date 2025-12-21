@@ -35,20 +35,27 @@
 let target_name = "OpenCL"
 
 let global_function = ""
+
 let device_function = ""
+
 let host_function = ""
 
 let global_parameter = "__global"
 
 let global_variable = "__global"
+
 let local_variable = ""
+
 let shared_variable = "__local"
 
-let kern_start  = "__kernel"
+let kern_start = "__kernel"
+
 let kern_end = "}"
 
-let parse_intrinsics (_cuda,opencl) = opencl
+let parse_intrinsics (_cuda, opencl) = opencl
 
 let default_parser = true
-let parse_fun _i _a  _c _n _dev = ""
+
+let parse_fun _i _a _c _n _dev = ""
+
 let parse _a _b _dev = ""

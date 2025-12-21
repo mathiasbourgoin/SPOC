@@ -7,20 +7,21 @@
 
 (** Source locations *)
 type loc = {
-  loc_file: string;
-  loc_line: int;
-  loc_col: int;
-  loc_end_line: int;
-  loc_end_col: int;
+  loc_file : string;
+  loc_line : int;
+  loc_col : int;
+  loc_end_line : int;
+  loc_end_col : int;
 }
 
-let dummy_loc = {
-  loc_file = "<dummy>";
-  loc_line = 1;
-  loc_col = 0;
-  loc_end_line = 1;
-  loc_end_col = 0;
-}
+let dummy_loc =
+  {
+    loc_file = "<dummy>";
+    loc_line = 1;
+    loc_col = 0;
+    loc_end_line = 1;
+    loc_end_col = 0;
+  }
 
 let loc_of_ppxlib (loc : Ppxlib.Location.t) : loc =
   {
@@ -33,136 +34,157 @@ let loc_of_ppxlib (loc : Ppxlib.Location.t) : loc =
 
 let loc_to_ppxlib (loc : loc) : Ppxlib.Location.t =
   let open Lexing in
-  let pos_start = {
-    pos_fname = loc.loc_file;
-    pos_lnum = loc.loc_line;
-    pos_bol = 0;
-    pos_cnum = loc.loc_col;
-  } in
-  let pos_end = {
-    pos_fname = loc.loc_file;
-    pos_lnum = loc.loc_end_line;
-    pos_bol = 0;
-    pos_cnum = loc.loc_end_col;
-  } in
-  { loc_start = pos_start; loc_end = pos_end; loc_ghost = false }
+  let pos_start =
+    {
+      pos_fname = loc.loc_file;
+      pos_lnum = loc.loc_line;
+      pos_bol = 0;
+      pos_cnum = loc.loc_col;
+    }
+  in
+  let pos_end =
+    {
+      pos_fname = loc.loc_file;
+      pos_lnum = loc.loc_end_line;
+      pos_bol = 0;
+      pos_cnum = loc.loc_end_col;
+    }
+  in
+  {loc_start = pos_start; loc_end = pos_end; loc_ghost = false}
 
 (** Memory spaces for arrays *)
 type memspace =
-  | Local    (** Thread-private memory *)
-  | Shared   (** Block-shared memory *)
-  | Global   (** Global device memory *)
+  | Local  (** Thread-private memory *)
+  | Shared  (** Block-shared memory *)
+  | Global  (** Global device memory *)
 
 (** Type syntax (what user writes, before inference) *)
 type type_expr =
-  | TEVar of string                          (** 'a, 'b - type variables *)
-  | TEConstr of string * type_expr list      (** int32, float32 vector, etc. *)
-  | TEArrow of type_expr * type_expr         (** a -> b *)
-  | TETuple of type_expr list                (** a * b *)
+  | TEVar of string  (** 'a, 'b - type variables *)
+  | TEConstr of string * type_expr list  (** int32, float32 vector, etc. *)
+  | TEArrow of type_expr * type_expr  (** a -> b *)
+  | TETuple of type_expr list  (** a * b *)
 
 (** Binary operators - single constructor each, type resolved during typing *)
 type binop =
-  | Add | Sub | Mul | Div | Mod
-  | And | Or
-  | Eq | Ne | Lt | Le | Gt | Ge
-  | Land | Lor | Lxor | Lsl | Lsr | Asr  (** Bitwise ops *)
+  | Add
+  | Sub
+  | Mul
+  | Div
+  | Mod
+  | And
+  | Or
+  | Eq
+  | Ne
+  | Lt
+  | Le
+  | Gt
+  | Ge
+  | Land
+  | Lor
+  | Lxor
+  | Lsl
+  | Lsr
+  | Asr  (** Bitwise ops *)
 
 (** Unary operators *)
 type unop =
-  | Neg      (** Arithmetic negation *)
-  | Not      (** Logical not *)
-  | Lnot     (** Bitwise not *)
+  | Neg  (** Arithmetic negation *)
+  | Not  (** Logical not *)
+  | Lnot  (** Bitwise not *)
 
 (** Patterns for match expressions *)
-type pattern = {
-  pat: pattern_desc;
-  pat_loc: loc;
-}
+type pattern = {pat : pattern_desc; pat_loc : loc}
 
 and pattern_desc =
-  | PAny                              (** _ *)
-  | PVar of string                    (** x *)
-  | PConstr of string * pattern option (** Some x, None *)
-  | PTuple of pattern list            (** (a, b) *)
+  | PAny  (** _ *)
+  | PVar of string  (** x *)
+  | PConstr of string * pattern option  (** Some x, None *)
+  | PTuple of pattern list  (** (a, b) *)
 
 (** Expressions *)
-type expr = {
-  e: expr_desc;
-  expr_loc: loc;
-}
+type expr = {e : expr_desc; expr_loc : loc}
 
 and expr_desc =
   (* Literals *)
   | EUnit
   | EBool of bool
-  | EInt of int                       (** int literal (will be int32 in kernel) *)
+  | EInt of int  (** int literal (will be int32 in kernel) *)
   | EInt32 of int32
   | EInt64 of int64
-  | EFloat of float                   (** float32 *)
-  | EDouble of float                  (** float64 *)
-
+  | EFloat of float  (** float32 *)
+  | EDouble of float  (** float64 *)
   (* Variables and access *)
   | EVar of string
-  | EVecGet of expr * expr            (** v.[i] - vector element access *)
-  | EVecSet of expr * expr * expr     (** v.[i] <- x *)
-  | EArrGet of expr * expr            (** a.(i) - array element access *)
-  | EArrSet of expr * expr * expr     (** a.(i) <- x *)
-  | EFieldGet of expr * string        (** r.field *)
-  | EFieldSet of expr * string * expr (** r.field <- x *)
-
+  | EVecGet of expr * expr  (** v.[i] - vector element access *)
+  | EVecSet of expr * expr * expr  (** v.[i] <- x *)
+  | EArrGet of expr * expr  (** a.(i) - array element access *)
+  | EArrSet of expr * expr * expr  (** a.(i) <- x *)
+  | EFieldGet of expr * string  (** r.field *)
+  | EFieldSet of expr * string * expr  (** r.field <- x *)
   (* Operations *)
   | EBinop of binop * expr * expr
   | EUnop of unop * expr
-  | EApp of expr * expr list          (** f x y *)
-  | EAssign of string * expr          (** x := e *)
-
+  | EApp of expr * expr list  (** f x y *)
+  | EAssign of string * expr  (** x := e *)
   (* Binding and control *)
   | ELet of string * type_expr option * expr * expr  (** let x : t = e1 in e2 *)
-  | ELetMut of string * type_expr option * expr * expr (** let mutable x = ... *)
+  | ELetMut of string * type_expr option * expr * expr
+      (** let mutable x = ... *)
   | EIf of expr * expr * expr option  (** if c then a [else b] *)
-  | EFor of string * expr * expr * for_dir * expr  (** for i = a to/downto b do ... done *)
+  | EFor of string * expr * expr * for_dir * expr
+      (** for i = a to/downto b do ... done *)
   | EWhile of expr * expr
   | ESeq of expr * expr
   | EMatch of expr * (pattern * expr) list
-
   (* Records and variants *)
-  | ERecord of string option * (string * expr) list  (** { field = value; ... } with optional type name *)
-  | EConstr of string * expr option   (** Constructor application *)
-  | ETuple of expr list               (** (a, b, c) *)
-
+  | ERecord of string option * (string * expr) list
+      (** { field = value; ... } with optional type name *)
+  | EConstr of string * expr option  (** Constructor application *)
+  | ETuple of expr list  (** (a, b, c) *)
   (* Special forms *)
   | EReturn of expr
   | ECreateArray of expr * type_expr * memspace
-  | EGlobalRef of string              (** @name - reference to OCaml value *)
-  | ENative of string                 (** Native code injection *)
-
+  | EGlobalRef of string  (** @name - reference to OCaml value *)
+  | ENative of string  (** Native code injection *)
   (* Type annotation *)
   | ETyped of expr * type_expr
-
   (* Module access *)
-  | EOpen of string list * expr       (** let open M.N in e *)
+  | EOpen of string list * expr  (** let open M.N in e *)
 
 and for_dir = Upto | Downto
 
 (** Kernel parameters *)
-type param = {
-  param_name: string;
-  param_type: type_expr;
-  param_loc: loc;
-}
+type param = {param_name : string; param_type : type_expr; param_loc : loc}
+
+(** Kernel-local type declarations *)
+type type_decl =
+  | Type_record of {
+      tdecl_name : string;
+      tdecl_fields : (string * bool * type_expr) list;
+          (** name, mutable, type *)
+      tdecl_loc : loc;
+    }
+  | Type_variant of {
+      tdecl_name : string;
+      tdecl_constructors : (string * type_expr option) list;
+      tdecl_loc : loc;
+    }
 
 (** Module-level items (constants or functions) within a kernel payload *)
 type module_item =
-  | MConst of string * type_expr * expr    (** let name : ty = expr *)
-  | MFun of string * param list * expr     (** let name params = expr *)
+  | MConst of string * type_expr * expr  (** let name : ty = expr *)
+  | MFun of string * param list * expr  (** let name params = expr *)
 
 (** A complete kernel definition *)
 type kernel = {
-  kern_name: string option;           (** None for anonymous kernels *)
-  kern_module_items: module_item list; (** Module-level items visible in body *)
-  kern_params: param list;
-  kern_body: expr;
-  kern_loc: loc;
+  kern_name : string option;  (** None for anonymous kernels *)
+  kern_types : type_decl list;  (** Type declarations visible in body *)
+  kern_module_items : module_item list;
+      (** Module-level items visible in body *)
+  kern_params : param list;
+  kern_body : expr;
+  kern_loc : loc;
 }
 
 (** Pretty printing for debugging *)
@@ -170,14 +192,24 @@ let rec pp_type_expr fmt = function
   | TEVar s -> Format.fprintf fmt "'%s" s
   | TEConstr (name, []) -> Format.fprintf fmt "%s" name
   | TEConstr (name, args) ->
-    Format.fprintf fmt "(%a) %s"
-      (Format.pp_print_list ~pp_sep:(fun fmt () -> Format.fprintf fmt ", ") pp_type_expr)
-      args name
-  | TEArrow (a, b) -> Format.fprintf fmt "%a -> %a" pp_type_expr a pp_type_expr b
+      Format.fprintf
+        fmt
+        "(%a) %s"
+        (Format.pp_print_list
+           ~pp_sep:(fun fmt () -> Format.fprintf fmt ", ")
+           pp_type_expr)
+        args
+        name
+  | TEArrow (a, b) ->
+      Format.fprintf fmt "%a -> %a" pp_type_expr a pp_type_expr b
   | TETuple ts ->
-    Format.fprintf fmt "(%a)"
-      (Format.pp_print_list ~pp_sep:(fun fmt () -> Format.fprintf fmt " * ") pp_type_expr)
-      ts
+      Format.fprintf
+        fmt
+        "(%a)"
+        (Format.pp_print_list
+           ~pp_sep:(fun fmt () -> Format.fprintf fmt " * ")
+           pp_type_expr)
+        ts
 
 let pp_binop fmt = function
   | Add -> Format.fprintf fmt "+"
@@ -217,9 +249,13 @@ let rec pp_pattern fmt pat =
   | PConstr (name, None) -> Format.fprintf fmt "%s" name
   | PConstr (name, Some p) -> Format.fprintf fmt "%s %a" name pp_pattern p
   | PTuple ps ->
-    Format.fprintf fmt "(%a)"
-      (Format.pp_print_list ~pp_sep:(fun fmt () -> Format.fprintf fmt ", ") pp_pattern)
-      ps
+      Format.fprintf
+        fmt
+        "(%a)"
+        (Format.pp_print_list
+           ~pp_sep:(fun fmt () -> Format.fprintf fmt ", ")
+           pp_pattern)
+        ps
 
 let rec pp_expr fmt expr =
   match expr.e with
@@ -232,72 +268,138 @@ let rec pp_expr fmt expr =
   | EDouble f -> Format.fprintf fmt "%f" f
   | EVar s -> Format.fprintf fmt "%s" s
   | EVecGet (v, i) -> Format.fprintf fmt "%a.[%a]" pp_expr v pp_expr i
-  | EVecSet (v, i, x) -> Format.fprintf fmt "%a.[%a] <- %a" pp_expr v pp_expr i pp_expr x
+  | EVecSet (v, i, x) ->
+      Format.fprintf fmt "%a.[%a] <- %a" pp_expr v pp_expr i pp_expr x
   | EArrGet (a, i) -> Format.fprintf fmt "%a.(%a)" pp_expr a pp_expr i
-  | EArrSet (a, i, x) -> Format.fprintf fmt "%a.(%a) <- %a" pp_expr a pp_expr i pp_expr x
+  | EArrSet (a, i, x) ->
+      Format.fprintf fmt "%a.(%a) <- %a" pp_expr a pp_expr i pp_expr x
   | EFieldGet (r, f) -> Format.fprintf fmt "%a.%s" pp_expr r f
-  | EFieldSet (r, f, x) -> Format.fprintf fmt "%a.%s <- %a" pp_expr r f pp_expr x
-  | EBinop (op, a, b) -> Format.fprintf fmt "(%a %a %a)" pp_expr a pp_binop op pp_expr b
+  | EFieldSet (r, f, x) ->
+      Format.fprintf fmt "%a.%s <- %a" pp_expr r f pp_expr x
+  | EBinop (op, a, b) ->
+      Format.fprintf fmt "(%a %a %a)" pp_expr a pp_binop op pp_expr b
   | EUnop (op, a) -> Format.fprintf fmt "(%a %a)" pp_unop op pp_expr a
   | EApp (f, args) ->
-    Format.fprintf fmt "(%a %a)" pp_expr f
-      (Format.pp_print_list ~pp_sep:(fun fmt () -> Format.fprintf fmt " ") pp_expr) args
-  | EAssign (name, value) ->
-    Format.fprintf fmt "(%s := %a)" name pp_expr value
+      Format.fprintf
+        fmt
+        "(%a %a)"
+        pp_expr
+        f
+        (Format.pp_print_list
+           ~pp_sep:(fun fmt () -> Format.fprintf fmt " ")
+           pp_expr)
+        args
+  | EAssign (name, value) -> Format.fprintf fmt "(%s := %a)" name pp_expr value
   | ELet (name, ty, value, body) ->
-    Format.fprintf fmt "(let %s%a = %a in %a)"
-      name
-      (fun fmt -> function None -> () | Some t -> Format.fprintf fmt " : %a" pp_type_expr t) ty
-      pp_expr value pp_expr body
+      Format.fprintf
+        fmt
+        "(let %s%a = %a in %a)"
+        name
+        (fun fmt -> function
+          | None -> () | Some t -> Format.fprintf fmt " : %a" pp_type_expr t)
+        ty
+        pp_expr
+        value
+        pp_expr
+        body
   | ELetMut (name, ty, value, body) ->
-    Format.fprintf fmt "(let mutable %s%a = %a in %a)"
-      name
-      (fun fmt -> function None -> () | Some t -> Format.fprintf fmt " : %a" pp_type_expr t) ty
-      pp_expr value pp_expr body
+      Format.fprintf
+        fmt
+        "(let mutable %s%a = %a in %a)"
+        name
+        (fun fmt -> function
+          | None -> () | Some t -> Format.fprintf fmt " : %a" pp_type_expr t)
+        ty
+        pp_expr
+        value
+        pp_expr
+        body
   | EIf (c, t, None) -> Format.fprintf fmt "(if %a then %a)" pp_expr c pp_expr t
-  | EIf (c, t, Some e) -> Format.fprintf fmt "(if %a then %a else %a)" pp_expr c pp_expr t pp_expr e
+  | EIf (c, t, Some e) ->
+      Format.fprintf fmt "(if %a then %a else %a)" pp_expr c pp_expr t pp_expr e
   | EFor (var, lo, hi, dir, body) ->
-    Format.fprintf fmt "(for %s = %a %s %a do %a done)"
-      var pp_expr lo
-      (match dir with Upto -> "to" | Downto -> "downto")
-      pp_expr hi pp_expr body
-  | EWhile (c, body) -> Format.fprintf fmt "(while %a do %a done)" pp_expr c pp_expr body
+      Format.fprintf
+        fmt
+        "(for %s = %a %s %a do %a done)"
+        var
+        pp_expr
+        lo
+        (match dir with Upto -> "to" | Downto -> "downto")
+        pp_expr
+        hi
+        pp_expr
+        body
+  | EWhile (c, body) ->
+      Format.fprintf fmt "(while %a do %a done)" pp_expr c pp_expr body
   | ESeq (a, b) -> Format.fprintf fmt "(%a; %a)" pp_expr a pp_expr b
   | EMatch (e, cases) ->
-    Format.fprintf fmt "(match %a with %a)"
-      pp_expr e
-      (Format.pp_print_list ~pp_sep:(fun fmt () -> Format.fprintf fmt " | ")
-         (fun fmt (p, e) -> Format.fprintf fmt "%a -> %a" pp_pattern p pp_expr e))
-      cases
+      Format.fprintf
+        fmt
+        "(match %a with %a)"
+        pp_expr
+        e
+        (Format.pp_print_list
+           ~pp_sep:(fun fmt () -> Format.fprintf fmt " | ")
+           (fun fmt (p, e) ->
+             Format.fprintf fmt "%a -> %a" pp_pattern p pp_expr e))
+        cases
   | ERecord (name, fields) ->
-    Format.fprintf fmt "{%a%a}"
-      (fun fmt -> function None -> () | Some n -> Format.fprintf fmt "%s with " n) name
-      (Format.pp_print_list ~pp_sep:(fun fmt () -> Format.fprintf fmt "; ")
-         (fun fmt (f, e) -> Format.fprintf fmt "%s = %a" f pp_expr e))
-      fields
+      Format.fprintf
+        fmt
+        "{%a%a}"
+        (fun fmt -> function
+          | None -> () | Some n -> Format.fprintf fmt "%s with " n)
+        name
+        (Format.pp_print_list
+           ~pp_sep:(fun fmt () -> Format.fprintf fmt "; ")
+           (fun fmt (f, e) -> Format.fprintf fmt "%s = %a" f pp_expr e))
+        fields
   | EConstr (name, None) -> Format.fprintf fmt "%s" name
   | EConstr (name, Some e) -> Format.fprintf fmt "(%s %a)" name pp_expr e
   | ETuple es ->
-    Format.fprintf fmt "(%a)"
-      (Format.pp_print_list ~pp_sep:(fun fmt () -> Format.fprintf fmt ", ") pp_expr)
-      es
+      Format.fprintf
+        fmt
+        "(%a)"
+        (Format.pp_print_list
+           ~pp_sep:(fun fmt () -> Format.fprintf fmt ", ")
+           pp_expr)
+        es
   | EReturn e -> Format.fprintf fmt "(return %a)" pp_expr e
   | ECreateArray (size, ty, mem) ->
-    Format.fprintf fmt "(create_array %a : %a %a)" pp_expr size pp_type_expr ty pp_memspace mem
+      Format.fprintf
+        fmt
+        "(create_array %a : %a %a)"
+        pp_expr
+        size
+        pp_type_expr
+        ty
+        pp_memspace
+        mem
   | EGlobalRef name -> Format.fprintf fmt "@%s" name
   | ENative s -> Format.fprintf fmt "[%%native %S]" s
   | ETyped (e, ty) -> Format.fprintf fmt "(%a : %a)" pp_expr e pp_type_expr ty
   | EOpen (path, e) ->
-    Format.fprintf fmt "(let open %s in %a)"
-      (String.concat "." path) pp_expr e
+      Format.fprintf
+        fmt
+        "(let open %s in %a)"
+        (String.concat "." path)
+        pp_expr
+        e
 
 let pp_param fmt p =
   Format.fprintf fmt "(%s : %a)" p.param_name pp_type_expr p.param_type
 
 let pp_kernel fmt k =
-  Format.fprintf fmt "kernel %a (%a) = %a"
-    (fun fmt -> function None -> Format.fprintf fmt "<anon>" | Some n -> Format.fprintf fmt "%s" n)
+  Format.fprintf
+    fmt
+    "kernel %a (%a) = %a"
+    (fun fmt -> function
+      | None -> Format.fprintf fmt "<anon>"
+      | Some n -> Format.fprintf fmt "%s" n)
     k.kern_name
-    (Format.pp_print_list ~pp_sep:(fun fmt () -> Format.fprintf fmt " ") pp_param)
+    (Format.pp_print_list
+       ~pp_sep:(fun fmt () -> Format.fprintf fmt " ")
+       pp_param)
     k.kern_params
-    pp_expr k.kern_body
+    pp_expr
+    k.kern_body

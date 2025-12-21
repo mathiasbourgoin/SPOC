@@ -1,5 +1,7 @@
 (executables
- (names test_vector_add test_module_const)
+ (names test_vector_add test_module_const test_ktype_record)
  (libraries spoc sarek unix)
- (preprocess (pps sarek_ppx))
- (flags (:standard -w -33 -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc)))
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33 -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc)))

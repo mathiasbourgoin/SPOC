@@ -1,8 +1,8 @@
 (library
-  (name spoc_ppx)
-  (public_name spoc_ppx)
-  (kind ppx_rewriter)
-  (libraries ppxlib spoc)
-  (preprocess (pps ppxlib.metaquot))
-  (modules (:standard ))
-)
+ (name spoc_ppx)
+ (public_name spoc_ppx)
+ (kind ppx_rewriter)
+ (libraries ppxlib spoc)
+ (preprocess
+  (pps ppxlib.metaquot))
+ (modules (:standard)))

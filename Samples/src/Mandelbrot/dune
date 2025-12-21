@@ -1,10 +1,13 @@
 (executable
  (name Mandelbrot)
- (enabled_if (= %{profile} "cuda"))
- (flags (-ccopt -L$CUDA_PATH -cclib -lnvrtc))
- (libraries graphics unix spoc )
- (preprocessor_deps (package spoc))
- (preprocess (pps spoc_ppx))
-)
+ (enabled_if
+  (= %{profile} "cuda"))
+ (flags
+  (-ccopt -L$CUDA_PATH -cclib -lnvrtc))
+ (libraries graphics unix spoc)
+ (preprocessor_deps
+  (package spoc))
+ (preprocess
+  (pps spoc_ppx)))
 
 (data_only_dirs kernels)

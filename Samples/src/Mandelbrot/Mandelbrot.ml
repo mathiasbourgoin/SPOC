@@ -15,7 +15,9 @@
 *)
 open Spoc
 
-[%%kernel external mandelbrot : Spoc.Vector.vint32 -> int -> int -> int -> unit = "kernels/Mandelbrot" "mandelbrot"]
+[%%kernel
+external mandelbrot : Spoc.Vector.vint32 -> int -> int -> int -> unit
+  = "kernels/Mandelbrot" "mandelbrot"]
 
 let cpt = ref 0
 
@@ -25,43 +27,41 @@ let measure_time f =
   let t0 = Unix.gettimeofday () in
   let a = f () in
   let t1 = Unix.gettimeofday () in
-  Printf.printf "time %d : %Fs\n%!" !cpt (t1 -. t0);
-  tot_time := !tot_time +.  (t1 -. t0);
-  incr cpt;
-  a;;
+  Printf.printf "time %d : %Fs\n%!" !cpt (t1 -. t0) ;
+  tot_time := !tot_time +. (t1 -. t0) ;
+  incr cpt ;
+  a
 
-let devices = measure_time(Spoc.Devices.init);;
+let devices = measure_time Spoc.Devices.init
 
-let measure_time f = f () ;;
+let measure_time f = f ()
 
-let dev = ref devices.(0);;
+let dev = ref devices.(0)
 
+let auto_transfers = ref true
 
-let auto_transfers = ref true;;
+let width = ref 800
 
+let height = ref 800
 
-let width = ref 800;;
-let height = ref 800;;
-
-let max_iter  = ref 500;;
+let max_iter = ref 500
 
 let get_min ar =
-  Spoc.Mem.to_cpu ar ();
+  Spoc.Mem.to_cpu ar () ;
   let min = ref !max_iter in
-  for i = 0 to (Spoc.Vector.length ar - 1) do
-    if (Int32.to_int (Spoc.Mem.unsafe_get ar i)) > 1 then
-      if (Int32.to_int (Spoc.Mem.unsafe_get ar i)) < !min then
-	min :=  (Int32.to_int (Spoc.Mem.unsafe_get ar i))
-  done;
+  for i = 0 to Spoc.Vector.length ar - 1 do
+    if Int32.to_int (Spoc.Mem.unsafe_get ar i) > 1 then
+      if Int32.to_int (Spoc.Mem.unsafe_get ar i) < !min then
+        min := Int32.to_int (Spoc.Mem.unsafe_get ar i)
+  done ;
   !min
 
 let color_rgb n =
-  if n = !max_iter then
-    (0, 0, 0)
+  if n = !max_iter then (0, 0, 0)
   else
     let f n =
       let i = float n in
-      int_of_float (255. *. (0.5 +. 0.5 *. sin (i *. 0.1)))
+      int_of_float (255. *. (0.5 +. (0.5 *. sin (i *. 0.1))))
     in
     (0, f (n + 16), f n)
 
@@ -69,33 +69,53 @@ let color_graphics n =
   let r, g, b = color_rgb n in
   Graphics.rgb r g b
 
-
 let write_ppm filename width height b_iter =
   let oc = open_out_bin filename in
-  Printf.fprintf oc "P6\n%d %d\n255\n" width height;
+  Printf.fprintf oc "P6\n%d %d\n255\n" width height ;
   for y = 0 to pred height do
     for x = 0 to pred width do
       let idx = (y * height) + x in
       let v = Int32.to_int (Spoc.Mem.unsafe_get b_iter idx) in
       let r, g, b = color_rgb v in
-      output_byte oc r;
-      output_byte oc g;
-      output_byte oc b;
-    done;
-  done;
+      output_byte oc r ;
+      output_byte oc g ;
+      output_byte oc b
+    done
+  done ;
   close_out oc
 
 let main () =
-  let arg1 = ("-device" , Arg.Int (fun i  -> dev := devices.(i)), "number of the device [0]")
-  and arg2 = ("-width" , Arg.Int (fun i  -> width := i), "width of the image to compute [1024]")
-  and arg3 = ("-height" , Arg.Int (fun i  -> height := i), "height of the image to compute [1024]")
-  and arg4 = ("-max_iter" , Arg.Int (fun b -> max_iter := b), "max number of iterations [1024]")
+  let arg1 =
+    ( "-device",
+      Arg.Int (fun i -> dev := devices.(i)),
+      "number of the device [0]" )
+  and arg2 =
+    ( "-width",
+      Arg.Int (fun i -> width := i),
+      "width of the image to compute [1024]" )
+  and arg3 =
+    ( "-height",
+      Arg.Int (fun i -> height := i),
+      "height of the image to compute [1024]" )
+  and arg4 =
+    ( "-max_iter",
+      Arg.Int (fun b -> max_iter := b),
+      "max number of iterations [1024]" )
   and output_file = ref None
   and auto_open = ref false in
-  let arg5 = ("-ppm", Arg.String (fun s -> output_file := Some s), "write output to PPM file (disables Graphics)")
-  and arg6 = ("-open", Arg.Unit (fun () -> auto_open := true), "open PPM output after render") in
-  Arg.parse ([arg1;arg2;arg3;arg4;arg5;arg6]) (fun s -> ()) "";
-  Printf.printf "Will use device : %s\n" (!dev).Spoc.Devices.general_info.Spoc.Devices.name;
+  let arg5 =
+    ( "-ppm",
+      Arg.String (fun s -> output_file := Some s),
+      "write output to PPM file (disables Graphics)" )
+  and arg6 =
+    ( "-open",
+      Arg.Unit (fun () -> auto_open := true),
+      "open PPM output after render" )
+  in
+  Arg.parse [arg1; arg2; arg3; arg4; arg5; arg6] (fun s -> ()) "" ;
+  Printf.printf
+    "Will use device : %s\n"
+    !dev.Spoc.Devices.general_info.Spoc.Devices.name ;
   (*	let threadsPerBlock = match !dev.Devices.specific_info with
             | Devices.OpenCLInfo clI ->
               (match clI.Devices.device_type with
@@ -106,8 +126,12 @@ let main () =
     let block = {Spoc.Kernel.blockX = threadsPerBlock; Spoc.Kernel.blockY = 1; Spoc.Kernel.blockZ = 1}
     and grid= {Spoc.Kernel.gridX = blocksPerGrid; Spoc.Kernel.gridY = 1; Spoc.Kernel.gridZ = 1} in
   *)
-  let b_iter = Spoc.Vector.create Spoc.Vector.int32(*`Int32 Bigarray.int32*) ~dev:!dev ((!width)*(!height)) in
-
+  let b_iter =
+    Spoc.Vector.create
+      Spoc.Vector.int32 (*`Int32 Bigarray.int32*)
+      ~dev:!dev
+      (!width * !height)
+  in
 
   let img =
     match !output_file with
@@ -115,73 +139,91 @@ let main () =
     | None -> Array.make_matrix !width !height Graphics.black
   in
 
-  let threadsPerBlock = match !dev.Devices.specific_info with
-    | Devices.OpenCLInfo clI ->
-      (match clI.Devices.device_type with
-       | Devices.CL_DEVICE_TYPE_CPU -> 1
-       | _  ->   8)
-    | _  -> 8 in
-  let blocksPerGridx = (!width + (threadsPerBlock) -1) / (threadsPerBlock) in
-  let blocksPerGridy = (!height + (threadsPerBlock) -1) / (threadsPerBlock) in
-  let block = {Spoc.Kernel.blockX = threadsPerBlock; Spoc.Kernel.blockY = threadsPerBlock; Spoc.Kernel.blockZ = 1}
-  and grid= {Spoc.Kernel.gridX = blocksPerGridx;   Spoc.Kernel.gridY = blocksPerGridy; Spoc.Kernel.gridZ = 1} in
-
+  let threadsPerBlock =
+    match !dev.Devices.specific_info with
+    | Devices.OpenCLInfo clI -> (
+        match clI.Devices.device_type with
+        | Devices.CL_DEVICE_TYPE_CPU -> 1
+        | _ -> 8)
+    | _ -> 8
+  in
+  let blocksPerGridx = (!width + threadsPerBlock - 1) / threadsPerBlock in
+  let blocksPerGridy = (!height + threadsPerBlock - 1) / threadsPerBlock in
+  let block =
+    {
+      Spoc.Kernel.blockX = threadsPerBlock;
+      Spoc.Kernel.blockY = threadsPerBlock;
+      Spoc.Kernel.blockZ = 1;
+    }
+  and grid =
+    {
+      Spoc.Kernel.gridX = blocksPerGridx;
+      Spoc.Kernel.gridY = blocksPerGridy;
+      Spoc.Kernel.gridZ = 1;
+    }
+  in
 
   let sub_b = Spoc.Mem.sub_vector b_iter 0 (Spoc.Vector.length b_iter) in
 
-  Spoc.Kernel.compile !dev mandelbrot;
+  Spoc.Kernel.compile !dev mandelbrot ;
 
   (match !output_file with
-   | Some _ -> ()
-   | None ->
-     Graphics.auto_synchronize false;
-     let l = string_of_int !width in
-     let h = string_of_int !height in
-     let dim = " " ^ l ^ "x" ^ h in
-     Graphics.open_graph dim);
+  | Some _ -> ()
+  | None ->
+      Graphics.auto_synchronize false ;
+      let l = string_of_int !width in
+      let h = string_of_int !height in
+      let dim = " " ^ l ^ "x" ^ h in
+      Graphics.open_graph dim) ;
 
   let iterations = match !output_file with Some _ -> 1 | None -> 10 in
-  for i = 0 to (iterations - 1) do
+  for i = 0 to iterations - 1 do
+    Spoc.Kernel.run
+      !dev
+      (block, grid)
+      mandelbrot
+      (sub_b, !max_iter, !width, !height) ;
 
-    Spoc.Kernel.run !dev (block,grid) mandelbrot (sub_b, !max_iter, !width, !height);
+    Spoc.Mem.to_cpu sub_b () ;
+    Spoc.Devices.flush !dev () ;
 
-    Spoc.Mem.to_cpu sub_b ();
-    Spoc.Devices.flush !dev ();
-
-    (match !output_file with
-     | Some filename ->
-       if i = iterations - 1 then write_ppm filename !width !height b_iter
-     | None ->
-       for a = 0 to pred (!width - 1 ) do
-         for b = 0 to pred (!height - 1 )do
-           img.(b).(a) <- (color_graphics (Int32.to_int ((Spoc.Mem.unsafe_get b_iter (b * !height + a) ))));
-         done;
-       done;
-       Graphics.draw_image (Graphics.make_image img) 0 0;
-       Graphics.synchronize ();
-       Gc.full_major());
-  done;
+    match !output_file with
+    | Some filename ->
+        if i = iterations - 1 then write_ppm filename !width !height b_iter
+    | None ->
+        for a = 0 to pred (!width - 1) do
+          for b = 0 to pred (!height - 1) do
+            img.(b).(a) <-
+              color_graphics
+                (Int32.to_int (Spoc.Mem.unsafe_get b_iter ((b * !height) + a)))
+          done
+        done ;
+        Graphics.draw_image (Graphics.make_image img) 0 0 ;
+        Graphics.synchronize () ;
+        Gc.full_major ()
+  done ;
   (match !output_file with
-   | Some filename ->
-     if !auto_open then
-       ignore (Sys.command (Printf.sprintf "xdg-open %s >/dev/null 2>&1 &" filename))
-   | None ->
-     Printf.printf "Press any key to close\n%!";
-     (* ignore (Graphics.read_key ()); *)
-     Graphics.close_graph ());
+  | Some filename ->
+      if !auto_open then
+        ignore
+          (Sys.command
+             (Printf.sprintf "xdg-open %s >/dev/null 2>&1 &" filename))
+  | None ->
+      Printf.printf "Press any key to close\n%!" ;
+      (* ignore (Graphics.read_key ()); *)
+      Graphics.close_graph ()) ;
 
   ()
-
 
 let measure_time f =
   let t0 = Unix.gettimeofday () in
   let a = f () in
   let t1 = Unix.gettimeofday () in
-  Printf.printf "time %d : %Fs\n%!" !cpt (t1 -. t0);
-  tot_time := !tot_time +.  (t1 -. t0);
-  incr cpt;
-  a;;
+  Printf.printf "time %d : %Fs\n%!" !cpt (t1 -. t0) ;
+  tot_time := !tot_time +. (t1 -. t0) ;
+  incr cpt ;
+  a
 
 let _ =
-  measure_time(main);
-  Printf.printf "Total_time : %g\n%!" !tot_time;;
+  measure_time main ;
+  Printf.printf "Total_time : %g\n%!" !tot_time

@@ -33,24 +33,30 @@
  * knowledge of the CeCILL-B license and that you accept its terms.
  *******************************************************************************)
 
-
 let target_name = "Cuda"
 
 let global_function = "__global__"
+
 let device_function = "__device__"
+
 let host_function = "__host__"
 
 let global_parameter = ""
 
 let global_variable = "__device__"
-let local_variable = ""
-let shared_variable  = "__shared__"
 
-let kern_start  = "#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n__global__"
+let local_variable = ""
+
+let shared_variable = "__shared__"
+
+let kern_start = "#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n__global__"
+
 let kern_end = "}\n#ifdef __cplusplus\n}\n#endif"
 
-let parse_intrinsics (cuda,_opencl) = cuda
+let parse_intrinsics (cuda, _opencl) = cuda
 
 let default_parser = true
+
 let parse_fun _i _a _b _n _dev = ""
+
 let parse _a _b _dev = ""

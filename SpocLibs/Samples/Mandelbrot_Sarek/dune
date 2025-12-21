@@ -2,6 +2,7 @@
  (name mandelbrot_ppx)
  (modules Mandelbrot_ppx)
  (libraries spoc sarek unix)
- (flags (:standard -w -33 -ccopt -L$CUDA_PATH -cclib -lnvrtc))
- (preprocess (pps sarek_ppx))
-)
+ (flags
+  (:standard -w -33 -ccopt -L$CUDA_PATH -cclib -lnvrtc))
+ (preprocess
+  (pps sarek_ppx)))

@@ -33,52 +33,51 @@
  * knowledge of the CeCILL - B license and that you accept its terms.
  *******************************************************************************)
 external cuda_init : unit -> unit = "spoc_cuInit"
+
 external cl_init : unit -> unit = "spoc_clInit"
 
-type dim3 = { x: int; y: int; z: int }
+type dim3 = {x : int; y : int; z : int}
 
-type specificLibrary = 			 
-  | Cuda
-  | OpenCL
-  | Both
+type specificLibrary = Cuda | OpenCL | Both
 
 type context
 
 type generalInfo = {
-  name: string;
-  totalGlobalMem: int;
-  localMemSize: int; (* corresponding cuda name : shared mem per block *)
-  clockRate: int;
-  totalConstMem: int; (* corresponding OpenCL name : MAX_CONSTANT_BUFFER_SIZE *)
-  multiProcessorCount: int; (* corresponding OpenCL name : MAX_COMPUTE_UNIT *)
-  eccEnabled: bool; (* corresponding OpenCL name : ERROR_CORRECTION_SUPPORT *)
-  id: int;
-  ctx: context;
+  name : string;
+  totalGlobalMem : int;
+  localMemSize : int; (* corresponding cuda name : shared mem per block *)
+  clockRate : int;
+  totalConstMem : int;
+      (* corresponding OpenCL name : MAX_CONSTANT_BUFFER_SIZE *)
+  multiProcessorCount : int; (* corresponding OpenCL name : MAX_COMPUTE_UNIT *)
+  eccEnabled : bool; (* corresponding OpenCL name : ERROR_CORRECTION_SUPPORT *)
+  id : int;
+  ctx : context;
 }
 
 type cudaInfo = {
-  major: int;
-  minor: int;
-  regsPerBlock: int;
-  warpSize: int;
-  memPitch: int;
-  maxThreadsPerBlock: int;
-  maxThreadsDim: dim3;
-  maxGridSize: dim3;
-  textureAlignment: int;
-  deviceOverlap: bool;
-  kernelExecTimeoutEnabled: bool;
-  integrated: bool;
-  canMapHostMemory: bool;
-  computeMode: int;
-  concurrentKernels: bool;
-  pciBusID: int;
-  pciDeviceID: int;
-  driverVersion: int;
+  major : int;
+  minor : int;
+  regsPerBlock : int;
+  warpSize : int;
+  memPitch : int;
+  maxThreadsPerBlock : int;
+  maxThreadsDim : dim3;
+  maxGridSize : dim3;
+  textureAlignment : int;
+  deviceOverlap : bool;
+  kernelExecTimeoutEnabled : bool;
+  integrated : bool;
+  canMapHostMemory : bool;
+  computeMode : int;
+  concurrentKernels : bool;
+  pciBusID : int;
+  pciDeviceID : int;
+  driverVersion : int;
 }
 
 type platformInfo = {
-  platform_profile: string;
+  platform_profile : string;
   platform_version : string;
   platform_name : string;
   platform_vendor : string;
@@ -87,7 +86,10 @@ type platformInfo = {
 }
 
 type deviceType =
-    CL_DEVICE_TYPE_CPU | CL_DEVICE_TYPE_GPU | CL_DEVICE_TYPE_ACCELERATOR | CL_DEVICE_TYPE_DEFAULT
+  | CL_DEVICE_TYPE_CPU
+  | CL_DEVICE_TYPE_GPU
+  | CL_DEVICE_TYPE_ACCELERATOR
+  | CL_DEVICE_TYPE_DEFAULT
 
 type clDeviceFPConfig =
   | CL_FP_DENORM
@@ -99,18 +101,17 @@ type clDeviceFPConfig =
   | CL_FP_NONE
 
 type clDeviceQueueProperties =
-  | CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE | CL_QUEUE_PROFILING_ENABLE
+  | CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE
+  | CL_QUEUE_PROFILING_ENABLE
 
 type clDeviceGlobalMemCacheType =
   | CL_READ_WRITE_CACHE
   | CL_READ_ONLY_CACHE
   | CL_NONE
 
-type clDeviceLocalMemType =
-  | CL_LOCAL | CL_GLOBAL
+type clDeviceLocalMemType = CL_LOCAL | CL_GLOBAL
 
-type clDeviceExecutionCapabilities =
-  | CL_EXEC_KERNEL | CL_EXEC_NATIVE_KERNEL
+type clDeviceExecutionCapabilities = CL_EXEC_KERNEL | CL_EXEC_NATIVE_KERNEL
 
 type clDeviceID
 
@@ -142,8 +143,8 @@ type openCLInfo = {
   queue_properties : clDeviceQueueProperties;
   local_mem_type : clDeviceLocalMemType;
   double_fp_config : clDeviceFPConfig;
-  max_constant_buffer_size: int;
-  execution_capabilities: clDeviceExecutionCapabilities;
+  max_constant_buffer_size : int;
+  execution_capabilities : clDeviceExecutionCapabilities;
   half_fp_config : clDeviceFPConfig;
   max_work_group_size : int;
   image2D_max_height : int;
@@ -161,147 +162,165 @@ type openCLInfo = {
   prefered_vector_width_double : int;
   profiling_timer_resolution : int;
   driver_version : string;
-  device_id: clDeviceID;
+  device_id : clDeviceID;
 }
 
-type specificInfo =
-    CudaInfo of cudaInfo
-  | OpenCLInfo of openCLInfo
+type specificInfo = CudaInfo of cudaInfo | OpenCLInfo of openCLInfo
 
 type gcInfo
+
 type events
 
 type device = {
   general_info : generalInfo;
   specific_info : specificInfo;
   gc_info : gcInfo;
-  events: events;
+  events : events;
 }
 
 external get_cuda_compatible_devices : unit -> int = "spoc_getCudaDevicesCount"
-external get_opencl_compatible_devices : unit -> int = "spoc_getOpenCLDevicesCount"
+
+external get_opencl_compatible_devices : unit -> int
+  = "spoc_getOpenCLDevicesCount"
 
 external get_cuda_device : int -> device = "spoc_getCudaDevice"
+
 external get_opencl_device : int -> int -> device = "spoc_getOpenCLDevice"
 
 let cuda_compatible_devices = ref 0
+
 let opencl_compatible_devices = ref 0
 
 let total_num_devices = ref 0
 
-
 (******************************************************************************************************)
 let openOutput () = ()
-let beginEvent _s = 0
-let endEvent _s _i = ()
-let emitDeviceList _ = ()
 
-#ifdef SPOC_PROFILE
+let beginEvent _s = 0
+
+let endEvent _s _i = ()
+
+let emitDeviceList _ = ()#ifdef SPOC_PROFILE
+
 external prePrint : int -> unit = "pre_print_device"
 
-external printInfo : string -> int -> int -> int -> int -> int -> bool -> int -> string -> bool -> unit = "print_info_bytecode" "print_info_native"
+external printInfo :
+  string ->
+  int ->
+  int ->
+  int ->
+  int ->
+  int ->
+  bool ->
+  int ->
+  string ->
+  bool ->
+  unit = "print_info_bytecode" "print_info_native"
 
 let emitDevice dev printComma =
-  let devType = begin match dev.specific_info with
-  | CudaInfo inf -> "Cuda"
-  | OpenCLInfo inf -> "OpenCL"
-  end in
+  let devType =
+    begin match dev.specific_info with
+    | CudaInfo inf -> "Cuda"
+    | OpenCLInfo inf -> "OpenCL"
+    end
+  in
   let genInf = dev.general_info in
-  printInfo genInf.name genInf.totalGlobalMem genInf.localMemSize genInf.clockRate
-    genInf.totalConstMem genInf.multiProcessorCount genInf.eccEnabled genInf.id devType printComma
+  printInfo
+    genInf.name
+    genInf.totalGlobalMem
+    genInf.localMemSize
+    genInf.clockRate
+    genInf.totalConstMem
+    genInf.multiProcessorCount
+    genInf.eccEnabled
+    genInf.id
+    devType
+    printComma
 
 let emitDeviceList devList =
   let nb = List.length devList in
-  prePrint nb;
-  List.iteri (fun i dev -> emitDevice dev (i != nb-1)) devList;
+  prePrint nb ;
+  List.iteri (fun i dev -> emitDevice dev (i != nb - 1)) devList
 
 external openOutput : unit -> unit = "open_output_profiling"
+
 external closeOutput : unit -> unit = "close_output_profiling"
+
 external beginEvent : string -> int = "begin_event"
-external endEvent : string -> int -> unit = "end_event"
+
+external endEvent : string -> int -> unit = "end_event" ;;
+
 #endif
 (**********************************************************************************************************)
 
-
-
 external is_available : int -> bool = "spoc_opencl_is_available"
-  
-let init ?only: (s = Both) () = 
-  openOutput ();
+
+let init ?only:(s = Both) () =
+  openOutput () ;
   let idEvent = beginEvent "initialisation des devices" in
-  begin
-    match s with
-    | Both -> (
-        cuda_init ();
-        cuda_compatible_devices := get_cuda_compatible_devices ();
-        cl_init ();
-        opencl_compatible_devices := get_opencl_compatible_devices();
-      )
-    | Cuda -> (
-        cuda_init ();
-        cuda_compatible_devices := get_cuda_compatible_devices ();
-      )
-    | OpenCL -> (
-        cl_init ();
-        opencl_compatible_devices := get_opencl_compatible_devices();
-      )
-  end;
-  total_num_devices := !cuda_compatible_devices + !opencl_compatible_devices;
+  begin match s with
+  | Both ->
+      cuda_init () ;
+      cuda_compatible_devices := get_cuda_compatible_devices () ;
+      cl_init () ;
+      opencl_compatible_devices := get_opencl_compatible_devices ()
+  | Cuda ->
+      cuda_init () ;
+      cuda_compatible_devices := get_cuda_compatible_devices ()
+  | OpenCL ->
+      cl_init () ;
+      opencl_compatible_devices := get_opencl_compatible_devices ()
+  end ;
+  total_num_devices := !cuda_compatible_devices + !opencl_compatible_devices ;
   let devList = ref [] in
   for i = 0 to !cuda_compatible_devices - 1 do
-    devList := !devList@[(get_cuda_device i)]
-  done;
+    devList := !devList @ [get_cuda_device i]
+  done ;
   let i = ref 0 and j = ref 0 in
-  while !j < (!opencl_compatible_devices ) do
-    if (is_available !i) then
-      (
-        devList := !devList@[(get_opencl_device !i (!i + !cuda_compatible_devices))];
-        incr i;
-      );
-    incr j;
-  done;
-  total_num_devices := List.length !devList;
-  opencl_compatible_devices := !i;
-  emitDeviceList !devList;
-  endEvent "fin initialisation des devices" idEvent;
-  Array.of_list	!devList
-;;
+  while !j < !opencl_compatible_devices do
+    if is_available !i then (
+      devList :=
+        !devList @ [get_opencl_device !i (!i + !cuda_compatible_devices)] ;
+      incr i) ;
+    incr j
+  done ;
+  total_num_devices := List.length !devList ;
+  opencl_compatible_devices := !i ;
+  emitDeviceList !devList ;
+  endEvent "fin initialisation des devices" idEvent ;
+  Array.of_list !devList
 
+let cuda_devices () = !cuda_compatible_devices
 
-let	cuda_devices () = !cuda_compatible_devices
-let	opencl_devices () = !opencl_compatible_devices
-let	gpgpu_devices () = !total_num_devices
+let opencl_devices () = !opencl_compatible_devices
+
+let gpgpu_devices () = !total_num_devices
 
 external cuda_flush : generalInfo -> device -> int -> unit = "spoc_cuda_flush"
+
 external cuda_flush_all : generalInfo -> device -> unit = "spoc_cuda_flush_all"
 
 external opencl_flush : generalInfo -> int -> unit = "spoc_opencl_flush"
 
 let flush dev ?queue_id () =
-  match dev.specific_info, queue_id with
+  match (dev.specific_info, queue_id) with
   | CudaInfo _, None -> cuda_flush_all dev.general_info dev
   | CudaInfo _, Some q -> cuda_flush dev.general_info dev q
-  | OpenCLInfo _, None ->
-    opencl_flush dev.general_info 0
-  | OpenCLInfo _, Some q ->
-    opencl_flush dev.general_info q
+  | OpenCLInfo _, None -> opencl_flush dev.general_info 0
+  | OpenCLInfo _, Some q -> opencl_flush dev.general_info q
 
 let hasCLExtension dev ext =
   match dev.specific_info with
-  | OpenCLInfo cli ->
-    begin
+  | OpenCLInfo cli -> begin
       try
-        ignore(Str.search_forward (Str.regexp ext) cli.extensions 0);
+        ignore (Str.search_forward (Str.regexp ext) cli.extensions 0) ;
         true
-      with
-      | _ -> false
+      with _ -> false
     end
   | _ -> false
-
 
 let allowDouble dev =
   match dev.specific_info with
   | OpenCLInfo _cli ->
-    hasCLExtension dev "cl_khr_fp64" || hasCLExtension dev "cl_amd_fp64"
+      hasCLExtension dev "cl_khr_fp64" || hasCLExtension dev "cl_amd_fp64"
   | CudaInfo ci -> ci.major > 1 || ci.minor >= 3
-

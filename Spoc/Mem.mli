@@ -33,70 +33,93 @@
  * knowledge of the CeCILL-B license and that you accept its terms.
 *******************************************************************************)
 (** Manages memory transfers *)
+
 (**/**)
+
 val auto : bool ref
+
 val unsafe : bool ref
+
 (**/**)
- 
-(** By default Spoc will automatically handle memory transfers
-	To make explicit transfers you have to stop auto_transfers 
-	
-	[auto_transfers true] will make transfers automatic
-	
-	[auto_transfers false] will stop Spoc to make automatic transfers 
-	
-	default is : [auto_transfers true] *)
+
+(** By default Spoc will automatically handle memory transfers To make explicit
+    transfers you have to stop auto_transfers
+
+    [auto_transfers true] will make transfers automatic
+
+    [auto_transfers false] will stop Spoc to make automatic transfers
+
+    default is : [auto_transfers true] *)
 val auto_transfers : bool -> unit
+
 val unsafe_rw : bool -> unit
 
 (** Explicit transfer to a device
 
-	[to_device v d] will transfer the vector v to the device d
-	@param queue_id allows to specify which command queue to use for the transfer
-	
-	transfers are asynchronous, [to_device] will return immediately, 
-	
-	use [Devices.flush] to wait for the end of the command queue*)
+    [to_device v d] will transfer the vector v to the device d
+    @param queue_id
+      allows to specify which command queue to use for the transfer
+
+    transfers are asynchronous, [to_device] will return immediately,
+
+    use [Devices.flush] to wait for the end of the command queue*)
 val to_device :
   ('a, 'b) Vector.vector -> ?queue_id:int -> Devices.device -> unit
 
 (** Explicit transfer from a device
 
-	[to_cpu v ] will transfer the vector v from its current location to the cpu
-	@param queue_id allows to specify which command queue to use for the transfer
-	
-	transfers are asynchronous, [to_cpu] will return immediately, 
-	
-	use [Devices.flush] to wait for the end of the command queue*)
+    [to_cpu v ] will transfer the vector v from its current location to the cpu
+    @param queue_id
+      allows to specify which command queue to use for the transfer
+
+    transfers are asynchronous, [to_cpu] will return immediately,
+
+    use [Devices.flush] to wait for the end of the command queue*)
 val to_cpu : ('a, 'b) Vector.vector -> ?queue_id:int -> unit -> unit
+
 (**/**)
+
 val unsafe_set : ('a, 'b) Vector.vector -> int -> 'a -> unit
+
 val unsafe_get : ('a, 'b) Vector.vector -> int -> 'a
+
 (**/**)
 
 val set : ('a, 'b) Vector.vector -> int -> 'a -> unit
+
 val get : ('a, 'b) Vector.vector -> int -> 'a
 
-(** @return a subvector from a given vector
-Subvectors share the same cpu memory space with the vector they are from. 
-They do not share the same memory space on gpgpu devices.
-[sub_vector vec start len] will return a new vector of length [len] sharing the
-same cpu memory space with [a] starting from index [start].*)
+(** @return
+      a subvector from a given vector Subvectors share the same cpu memory space
+      with the vector they are from. They do not share the same memory space on
+      gpgpu devices. [sub_vector vec start len] will return a new vector of
+      length [len] sharing the same cpu memory space with [a] starting from
+      index [start].*)
 val sub_vector :
-           ('a, 'b) Vector.vector ->
-           int -> ?ok_rng:int -> ?ko_rng:int -> int -> ('a, 'b) Vector.vector
-
+  ('a, 'b) Vector.vector ->
+  int ->
+  ?ok_rng:int ->
+  ?ko_rng:int ->
+  int ->
+  ('a, 'b) Vector.vector
 
 (** experimental : @return a copy of a given vector, the copy takes place on the vector location (CPU/GPU) *)
-val vector_copy : 
-           ('a, 'b) Vector.vector ->
-           int -> ('a, 'b) Vector.vector -> int -> int -> unit
+val vector_copy :
+  ('a, 'b) Vector.vector -> int -> ('a, 'b) Vector.vector -> int -> int -> unit
 
 (**/**)
+
 val matrix_copy :
-           ('a, 'b) Vector.vector ->
-           int ->
-           int ->
-           int ->
-           ('a, 'b) Vector.vector -> int -> int -> int -> int -> int -> unit
+  ('a, 'b) Vector.vector ->
+  int ->
+  int ->
+  int ->
+  ('a, 'b) Vector.vector ->
+  int ->
+  int ->
+  int ->
+  int ->
+  int ->
+  unit
+
 (**/**)

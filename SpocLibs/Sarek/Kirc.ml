@@ -50,19 +50,21 @@ type float32 = float
 
 type extension = ExFloat32 | ExFloat64
 
-type ('a, 'b, 'c) kirc_kernel =
-  { ml_kern: 'a
-  ; body: Kirc_Ast.k_ext
-  ; ret_val: Kirc_Ast.k_ext * ('b, 'c) Vector.kind
-  ; extensions: extension array }
+type ('a, 'b, 'c) kirc_kernel = {
+  ml_kern : 'a;
+  body : Kirc_Ast.k_ext;
+  ret_val : Kirc_Ast.k_ext * ('b, 'c) Vector.kind;
+  extensions : extension array;
+}
 
-type ('a, 'b, 'c, 'd) kirc_function =
-  { fun_name: string
-  ; ml_fun: 'a
-  ; funbody: Kirc_Ast.k_ext
-  ; fun_ret: Kirc_Ast.k_ext * ('b, 'c) Vector.kind
-  ; fastflow_acc: 'd
-  ; fun_extensions: extension array }
+type ('a, 'b, 'c, 'd) kirc_function = {
+  fun_name : string;
+  ml_fun : 'a;
+  funbody : Kirc_Ast.k_ext;
+  fun_ret : Kirc_Ast.k_ext * ('b, 'c) Vector.kind;
+  fastflow_acc : 'd;
+  fun_extensions : extension array;
+}
 
 type ('a, 'b, 'c, 'd, 'e) sarek_kernel =
   ('a, 'b) spoc_kernel * ('c, 'd, 'e) kirc_kernel
@@ -216,8 +218,8 @@ let cuda_head =
   ^ "__device__ float spoc_fmul ( float a, float b ) { return (a * b);}\n"
   ^ "__device__ float spoc_fdiv ( float a, float b ) { return (a / b);}\n"
   ^ "__device__ int logical_and (int a, int b ) { return (a & b);}\n"
-  ^ "__device__ int spoc_powint (int a, int b ) { return ((int) pow \
-     (((double) a), ((double) b)));}\n"
+  ^ "__device__ int spoc_powint (int a, int b ) { return ((int) pow (((double) \
+     a), ((double) b)));}\n"
   ^ "__device__ int spoc_xor (int a, int b ) { return (a^b);}\n"
 
 let cuda_profile_head =
@@ -229,8 +231,8 @@ let cuda_profile_head =
     \    asm volatile (\"mov.u32 %0, %laneid;\" : \"=r\"(laneid));\n\
     \    return laneid;\n\
     \  }\n"
-  ^ "__device__ void branch_analysis(unsigned long long int \
-     *profile_counters, int eval, int counters){\n\
+  ^ "__device__ void branch_analysis(unsigned long long int *profile_counters, \
+     int eval, int counters){\n\
     \  \n\
     \  int threadIdxInWarp =  get_laneid();//threadIdx.x & (warpSize-1);\n\
     \  \n\
@@ -358,16 +360,16 @@ let spoc_fun_kernel _a _b = ()
 
 let global_fun a =
   GlobalFun
-    ( a.funbody
-    , ( match snd a.fun_ret with
-        | Vector.Int32 _ -> "int"
-        | Vector.Float32 _ -> "float"
-        | Vector.Custom _ -> (
-            match fst a.fun_ret with
-            | CustomVar (s, _, _) -> "struct " ^ s ^ "_sarek"
-            | _ -> assert false )
-        | _ -> "void" )
-    , a.fun_name )
+    ( a.funbody,
+      (match snd a.fun_ret with
+      | Vector.Int32 _ -> "int"
+      | Vector.Float32 _ -> "float"
+      | Vector.Custom _ -> (
+          match fst a.fun_ret with
+          | CustomVar (s, _, _) -> "struct " ^ s ^ "_sarek"
+          | _ -> assert false)
+      | _ -> "void"),
+      a.fun_name )
 
 let seq a b = Seq (a, b)
 
@@ -438,15 +440,15 @@ let concat a b = Concat (a, b)
 
 let empty_arg () = Empty
 
-let new_int_var ?(mutable_=true) i s = IntVar (i, s, mutable_)
+let new_int_var ?(mutable_ = true) i s = IntVar (i, s, mutable_)
 
-let new_float_var ?(mutable_=true) i s = FloatVar (i, s, mutable_)
+let new_float_var ?(mutable_ = true) i s = FloatVar (i, s, mutable_)
 
-let new_float64_var ?(mutable_=true) i s = DoubleVar (i, s, mutable_)
+let new_float64_var ?(mutable_ = true) i s = DoubleVar (i, s, mutable_)
 
-let new_double_var ?(mutable_=true) i s = DoubleVar (i, s, mutable_)
+let new_double_var ?(mutable_ = true) i s = DoubleVar (i, s, mutable_)
 
-let new_unit_var ?(mutable_=true) i s = UnitVar (i, s, mutable_)
+let new_unit_var ?(mutable_ = true) i s = UnitVar (i, s, mutable_)
 
 let new_custom_var n v s = Custom (n, v, s)
 
@@ -592,30 +594,30 @@ let rewrite ker =
     | Plusf (k1, k2) -> (
         match (k1, k2) with
         | Float f1, Float f2 ->
-          b := true ;
-          Float (f1 +. f2)
-        | _ -> Plusf (aux k1, aux k2) )
+            b := true ;
+            Float (f1 +. f2)
+        | _ -> Plusf (aux k1, aux k2))
     | Min (k1, k2) -> Min (aux k1, aux k2)
     | Minf (k1, k2) -> (
         match (k1, k2) with
         | Float f1, Float f2 ->
-          b := true ;
-          Float (f1 +. f2)
-        | _ -> Minf (aux k1, aux k2) )
+            b := true ;
+            Float (f1 +. f2)
+        | _ -> Minf (aux k1, aux k2))
     | Mul (k1, k2) -> Mul (aux k1, aux k2)
     | Mulf (k1, k2) -> (
         match (k1, k2) with
         | Float f1, Float f2 ->
-          b := true ;
-          Float (f1 +. f2)
-        | _ -> Mulf (aux k1, aux k2) )
+            b := true ;
+            Float (f1 +. f2)
+        | _ -> Mulf (aux k1, aux k2))
     | Div (k1, k2) -> Div (aux k1, aux k2)
     | Divf (k1, k2) -> (
         match (k1, k2) with
         | Float f1, Float f2 ->
-          b := true ;
-          Float (f1 +. f2)
-        | _ -> Divf (aux k1, aux k2) )
+            b := true ;
+            Float (f1 +. f2)
+        | _ -> Divf (aux k1, aux k2))
     | Mod (k1, k2) -> Mod (aux k1, aux k2)
     | Id _ -> kern
     | IdName _ -> kern
@@ -637,74 +639,74 @@ let rewrite ker =
     | Return k -> (
         match k with
         | Return k ->
-          b := true ;
-          aux (Return k)
+            b := true ;
+            aux (Return k)
         | Acc _ | Set _ -> aux k
         | Ife (k1, k2, k3) ->
-          b := true ;
-          Ife (aux k1, aux (Return k2), aux (Return k3))
+            b := true ;
+            Ife (aux k1, aux (Return k2), aux (Return k3))
         | If (k1, k2) ->
-          b := true ;
-          If (aux k1, aux (Return k2))
+            b := true ;
+            If (aux k1, aux (Return k2))
         | DoLoop (k1, k2, k3, k4) ->
-          b := true ;
-          DoLoop (aux k1, aux k2, aux k3, aux (Return k4))
+            b := true ;
+            DoLoop (aux k1, aux k2, aux k3, aux (Return k4))
         | While (k1, k2) ->
-          b := true ;
-          While (aux k1, aux (Return k2))
+            b := true ;
+            While (aux k1, aux (Return k2))
         | Seq (k1, k2) ->
-          b := true ;
-          Seq (aux k1, aux (Return k2))
+            b := true ;
+            Seq (aux k1, aux (Return k2))
         | Match (s, a, bb) ->
-          b := true ;
-          Match
-            ( s
-            , aux a
-            , Array.map (fun (i, ofid, e) -> (i, ofid, aux (Return e))) bb )
-        | _ -> Return (aux k) )
+            b := true ;
+            Match
+              ( s,
+                aux a,
+                Array.map (fun (i, ofid, e) -> (i, ofid, aux (Return e))) bb )
+        | _ -> Return (aux k))
     | Acc (k1, k2) -> (
         match k2 with
         | Ife (k1', k2', k3') ->
-          b := true ;
-          Ife (aux k1', aux (Acc (k1, k2')), aux (Acc (k1, k3')))
+            b := true ;
+            Ife (aux k1', aux (Acc (k1, k2')), aux (Acc (k1, k3')))
         | If (k1', k2') ->
-          b := true ;
-          If (aux k1', aux (Acc (k1, k2')))
+            b := true ;
+            If (aux k1', aux (Acc (k1, k2')))
         | DoLoop (k1', k2', k3', k4') ->
-          b := true ;
-          DoLoop (aux k1', aux k2', aux k3', aux (Acc (k1, k4')))
+            b := true ;
+            DoLoop (aux k1', aux k2', aux k3', aux (Acc (k1, k4')))
         | While (k1', k2') ->
-          b := true ;
-          While (aux k1', aux (Acc (k1, k2')))
+            b := true ;
+            While (aux k1', aux (Acc (k1, k2')))
         | Seq (k1', k2') ->
-          b := true ;
-          Seq (aux k1', aux (Acc (k1, k2')))
+            b := true ;
+            Seq (aux k1', aux (Acc (k1, k2')))
         | Match (s, a, bb) ->
-          b := true ;
-          Match
-            ( s
-            , aux a
-            , Array.map (fun (i, ofid, e) -> (i, ofid, aux (Acc (k1, e)))) bb
-            )
+            b := true ;
+            Match
+              ( s,
+                aux a,
+                Array.map (fun (i, ofid, e) -> (i, ofid, aux (Acc (k1, e)))) bb
+              )
         | Return _ -> assert false
-        | _ -> Acc (aux k1, aux k2) )
+        | _ -> Acc (aux k1, aux k2))
     | Set (k1, k2) -> aux (Acc (k1, k2))
     | Decl k1 -> aux k1
     | SetV (k1, k2) -> (
         match k2 with
         | Seq (k3, k4) -> Seq (k3, SetV (aux k1, aux k4))
         | Ife (k3, k4, k5) ->
-          b := true ;
-          Ife (aux k3, SetV (aux k1, aux k4), SetV (aux k1, k5))
+            b := true ;
+            Ife (aux k3, SetV (aux k1, aux k4), SetV (aux k1, k5))
         | Match (s, a, bb) ->
-          b := true ;
-          Match
-            ( s
-            , aux a
-            , Array.map
-                (fun (i, ofid, e) -> (i, ofid, SetV (aux k1, aux e)))
-                bb )
-        | _ -> SetV (aux k1, aux k2) )
+            b := true ;
+            Match
+              ( s,
+                aux a,
+                Array.map
+                  (fun (i, ofid, e) -> (i, ofid, SetV (aux k1, aux e)))
+                  bb )
+        | _ -> SetV (aux k1, aux k2))
     | SetLocalVar (k1, k2, k3) -> SetLocalVar (aux k1, aux k2, aux k3)
     | Intrinsics _ -> kern
     | IntId _ -> kern
@@ -718,7 +720,7 @@ let rewrite ker =
     | IntVecAcc (k1, k2) -> (
         match k2 with
         | Seq (k3, k4) -> Seq (k3, IntVecAcc (aux k1, aux k4))
-        | _ -> IntVecAcc (aux k1, aux k2) )
+        | _ -> IntVecAcc (aux k1, aux k2))
     | Local (k1, k2) -> Local (aux k1, aux k2)
     | Ife (k1, k2, k3) -> Ife (aux k1, aux k2, aux k3)
     | If (k1, k2) -> If (aux k1, aux k2)
@@ -738,7 +740,7 @@ let rewrite ker =
     | GlobalFun (a, b, n) -> GlobalFun (aux a, b, n)
     | Unit -> kern
     | Match (s, a, b) ->
-      Match (s, aux a, Array.map (fun (i, ofid, e) -> (i, ofid, aux e)) b)
+        Match (s, aux a, Array.map (fun (i, ofid, e) -> (i, ofid, aux e)) b)
     | CustomVar _ -> kern
     | Map (a, b, c) -> Map (aux a, aux b, aux c)
   in
@@ -761,7 +763,9 @@ let load_file f =
   let ic = open_in f in
   let n = in_channel_length ic in
   let s = Bytes.make n ' ' in
-  really_input ic s 0 n ; close_in ic ; s
+  really_input ic s 0 n ;
+  close_in ic ;
+  s
 
 let opencl_source ?profile:(prof = false) ?return:(r = false)
     (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel) dev =
@@ -769,35 +773,38 @@ let opencl_source ?profile:(prof = false) ?return:(r = false)
   let k1, k2, k3 = (k.ml_kern, k.body, k.ret_val) in
   return_v := ("", "") ;
   let k' =
-    ( Kirc_Cuda.parse ~profile:prof 0 (fst k3) dev
-    , match fst k3 with
+    ( Kirc_Cuda.parse ~profile:prof 0 (fst k3) dev,
+      match fst k3 with
       | IntVar (_i, s, _) | FloatVar (_i, s, _) | DoubleVar (_i, s, _) ->
-        s ^ " = "
+          s ^ " = "
       | Unit -> ""
       | SetV _ -> ""
       | IntVecAcc _ -> ""
       | VecVar _ -> ""
       | _ ->
-        debug_print
-          ( kir
-          , { ml_kern= k1
-            ; body= fst k3
-            ; ret_val= k3
-            ; extensions= k.extensions } ) ;
-        Stdlib.flush stdout ;
-        assert false )
+          debug_print
+            ( kir,
+              {
+                ml_kern = k1;
+                body = fst k3;
+                ret_val = k3;
+                extensions = k.extensions;
+              } ) ;
+          Stdlib.flush stdout ;
+          assert false )
   in
   if r then (
     Kirc_Cuda.return_v := k' ;
-    Kirc_OpenCL.return_v := k' ) ;
+    Kirc_OpenCL.return_v := k') ;
   ignore (Kirc_OpenCL.get_profile_counter ()) ;
   let opencl_head =
     Array.fold_left
       (fun header extension ->
-         match extension with
-         | ExFloat32 -> header
-         | ExFloat64 -> opencl_float64 ^ header )
-      opencl_head k.extensions
+        match extension with
+        | ExFloat32 -> header
+        | ExFloat64 -> opencl_float64 ^ header)
+      opencl_head
+      k.extensions
   in
   let src = Kirc_OpenCL.parse ~profile:prof 0 (rewrite k2) dev in
   let global_funs =
@@ -814,17 +821,16 @@ let opencl_source ?profile:(prof = false) ?return:(r = false)
     "/************* FUNCTION PROTOTYPES ******************/\n"
     ^ List.fold_left (fun a b -> b ^ ";\n" ^ a) "" !Kirc_OpenCL.protos
   in
-  ( if prof then
-      "#pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable\n"
-    else "" )
+  (if prof then "#pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable\n"
+   else "")
   ^ opencl_head
-  ^ ( if prof then
-        match dev.Devices.specific_info with
-        | Devices.OpenCLInfo
-            {Devices.device_type= Devices.CL_DEVICE_TYPE_CPU ; _} ->
-          opencl_profile_head_cpu
-        | _ -> opencl_profile_head
-      else "" )
+  ^ (if prof then
+       match dev.Devices.specific_info with
+       | Devices.OpenCLInfo
+           {Devices.device_type = Devices.CL_DEVICE_TYPE_CPU; _} ->
+           opencl_profile_head_cpu
+       | _ -> opencl_profile_head
+     else "")
   ^ constructors ^ protos ^ !global_funs ^ src
 
 (*external print_source : string -> unit = "kernel_source"*)
@@ -858,42 +864,45 @@ let gen_profile ker dev =
 (* external from SPOC*)
 external nvrtc_ptx : string -> string array -> string = "spoc_nvrtc_ptx"
 
-let gen ?keep_temp:(kt=false) ?profile:(prof = false) ?return:(r = false) ?only:o
-    ?nvrtc_options:(nvopt = [||]) (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel) dev
-  =
+let gen ?keep_temp:(kt = false) ?profile:(prof = false) ?return:(r = false)
+    ?only:o ?nvrtc_options:(nvopt = [||])
+    (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel) dev =
   let kir, k = ker in
   let k1, k2, k3 = (k.ml_kern, k.body, k.ret_val) in
   return_v := ("", "") ;
   let k' =
-    ( Kirc_Cuda.parse ~profile:prof 0 (fst k3) dev
-    , match fst k3 with
-    | IntVar (_i, s, _) | FloatVar (_i, s, _) | DoubleVar (_i, s, _) ->
-      s (*"sspoc_var"^(string_of_int i)^*) ^ " = "
-    | Unit -> ""
-    | SetV _ -> ""
-    | IntVecAcc _ -> ""
-    | VecVar _ -> ""
-    | _ ->
-      debug_print
-        ( kir
-        , { ml_kern= k1
-          ; body= fst k3
-          ; ret_val= k3
-          ; extensions= k.extensions } ) ;
-      Stdlib.flush stdout ;
-      assert false )
+    ( Kirc_Cuda.parse ~profile:prof 0 (fst k3) dev,
+      match fst k3 with
+      | IntVar (_i, s, _) | FloatVar (_i, s, _) | DoubleVar (_i, s, _) ->
+          s (*"sspoc_var"^(string_of_int i)^*) ^ " = "
+      | Unit -> ""
+      | SetV _ -> ""
+      | IntVecAcc _ -> ""
+      | VecVar _ -> ""
+      | _ ->
+          debug_print
+            ( kir,
+              {
+                ml_kern = k1;
+                body = fst k3;
+                ret_val = k3;
+                extensions = k.extensions;
+              } ) ;
+          Stdlib.flush stdout ;
+          assert false )
   in
   if r then (
     Kirc_Cuda.return_v := k' ;
-    Kirc_OpenCL.return_v := k' ) ;
+    Kirc_OpenCL.return_v := k') ;
   let gen_cuda ?opts:(_s = "") () =
     let cuda_head =
       Array.fold_left
         (fun header extension ->
-           match extension with
-           | ExFloat32 -> header
-           | ExFloat64 -> cuda_float64 ^ header )
-        cuda_head k.extensions
+          match extension with
+          | ExFloat32 -> header
+          | ExFloat64 -> cuda_float64 ^ header)
+        cuda_head
+        k.extensions
     in
     let src = Kirc_Cuda.parse ~profile:prof 0 (rewrite k2) dev in
     let global_funs = ref "" in
@@ -904,9 +913,10 @@ let gen ?keep_temp:(kt=false) ?profile:(prof = false) ?return:(r = false) ?only:
     let constructors =
       List.fold_left
         (fun a b ->
-           incr i ;
-           (if !i mod 3 = 0 then " " else "__device__ ") ^ b ^ a )
-        "\n\n" !constructors
+          incr i ;
+          (if !i mod 3 = 0 then " " else "__device__ ") ^ b ^ a)
+        "\n\n"
+        !constructors
     in
     let protos =
       "/************* FUNCTION PROTOTYPES ******************/\n"
@@ -915,16 +925,16 @@ let gen ?keep_temp:(kt=false) ?profile:(prof = false) ?return:(r = false) ?only:
     if debug then
       save
         ("kirc_kernel" ^ string_of_int !idkern ^ ".cu")
-        ( cuda_head
-          ^ (if prof then cuda_profile_head else "")
-          ^ constructors ^ protos ^ !global_funs ^ src ) ;
+        (cuda_head
+        ^ (if prof then cuda_profile_head else "")
+        ^ constructors ^ protos ^ !global_funs ^ src) ;
     (*ignore(Sys.command ("nvcc -g -G "^ s ^" "^"-arch=sm_30 -m64  -O3 -ptx kirc_kernel.cu -o kirc_kernel.ptx"));*)
     let genopt =
       match dev.Devices.specific_info with
       | Devices.CudaInfo cu ->
-        let computecap = (cu.Devices.major * 10) + cu.Devices.minor in
-        [| ( if computecap < 35 then
-               failwith "CUDA device too old for this XXX"
+          let computecap = (cu.Devices.major * 10) + cu.Devices.minor in
+          [|
+            (if computecap < 35 then failwith "CUDA device too old for this XXX"
              else if computecap < 35 then "--gpu-architecture=compute_30"
              else if computecap < 50 then "--gpu-architecture=compute_35"
              else if computecap < 52 then "--gpu-architecture=compute_50"
@@ -938,33 +948,36 @@ let gen ?keep_temp:(kt=false) ?profile:(prof = false) ?return:(r = false) ?only:
              else if computecap = 75 then "--gpu-architecture=compute_75"
              else if computecap = 80 then "--gpu-architecture=compute_80"
              else if computecap = 86 then "--gpu-architecture=compute_86"
-             else "--gpu-architecture=compute_35" ) |]
+             else "--gpu-architecture=compute_35");
+          |]
       | _ -> [||]
     in
     let nvrtc_options = Array.append nvopt genopt in
     let s =
       nvrtc_ptx
-        ( cuda_head
-          ^ (if prof then cuda_profile_head else "")
-          ^ constructors ^ !global_funs ^ src )
+        (cuda_head
+        ^ (if prof then cuda_profile_head else "")
+        ^ constructors ^ !global_funs ^ src)
         nvrtc_options
     in
     save ("kirc_kernel" ^ string_of_int !idkern ^ ".ptx") s ;
     (*let s = (load_file "kirc_kernel.ptx") in*)
     kir#set_cuda_sources s ;
-    if not kt then ignore
+    if not kt then
+      ignore
         (Sys.command
-           ( "rm kirc_kernel" ^ string_of_int !idkern ^ ".cu kirc_kernel"
-             ^ string_of_int !idkern ^ ".ptx" )) ;
+           ("rm kirc_kernel" ^ string_of_int !idkern ^ ".cu kirc_kernel"
+          ^ string_of_int !idkern ^ ".ptx")) ;
     incr idkern
   and gen_opencl () =
     let opencl_head =
       Array.fold_left
         (fun header extension ->
-           match extension with
-           | ExFloat32 -> header
-           | ExFloat64 -> opencl_float64 ^ header )
-        opencl_head k.extensions
+          match extension with
+          | ExFloat32 -> header
+          | ExFloat64 -> opencl_float64 ^ header)
+        opencl_head
+        k.extensions
     in
     let src = Kirc_OpenCL.parse ~profile:prof 0 (rewrite k2) dev in
     let global_funs =
@@ -982,48 +995,46 @@ let gen ?keep_temp:(kt=false) ?profile:(prof = false) ?return:(r = false) ?only:
       ^ List.fold_left (fun a b -> b ^ ";\n" ^ a) "" !Kirc_OpenCL.protos
     in
     let clkernel =
-      ( if prof then
-          "#pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable\n"
-        else "" )
+      (if prof then
+         "#pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable\n"
+       else "")
       ^ opencl_head
-      ^ ( if prof then
-            match dev.Devices.specific_info with
-            | Devices.OpenCLInfo
-                {Devices.device_type= Devices.CL_DEVICE_TYPE_CPU ; _} ->
-              opencl_profile_head_cpu
-            | _ -> opencl_profile_head
-          else "" )
+      ^ (if prof then
+           match dev.Devices.specific_info with
+           | Devices.OpenCLInfo
+               {Devices.device_type = Devices.CL_DEVICE_TYPE_CPU; _} ->
+               opencl_profile_head_cpu
+           | _ -> opencl_profile_head
+         else "")
       ^ constructors ^ protos ^ !global_funs ^ src
     in
     save ("kirc_kernel" ^ string_of_int !idkern ^ ".cl") clkernel ;
-    kir#set_opencl_sources clkernel;
-    if not kt then ignore
-        (Sys.command
-           ( "rm kirc_kernel" ^ string_of_int !idkern ^ ".cl" )) ;
-
+    kir#set_opencl_sources clkernel ;
+    if not kt then
+      ignore (Sys.command ("rm kirc_kernel" ^ string_of_int !idkern ^ ".cl"))
   in
-  ( match o with
-    | None -> (
-        match dev.Devices.specific_info with
-        | Devices.OpenCLInfo _ ->
+  (match o with
+  | None -> (
+      match dev.Devices.specific_info with
+      | Devices.OpenCLInfo _ ->
           ignore (Kirc_OpenCL.get_profile_counter ()) ;
           gen_opencl ()
-        | _ ->
+      | _ ->
           ignore (Kirc_OpenCL.get_profile_counter ()) ;
-          gen_cuda () )
-    | Some d -> (
-        match d with
-        | Devices.Both ->
+          gen_cuda ())
+  | Some d -> (
+      match d with
+      | Devices.Both ->
           ignore (Kirc_Cuda.get_profile_counter ()) ;
           gen_cuda () ;
           ignore (Kirc_OpenCL.get_profile_counter ()) ;
           gen_opencl ()
-        | Devices.Cuda ->
+      | Devices.Cuda ->
           ignore (Kirc_Cuda.get_profile_counter ()) ;
           gen_cuda ()
-        | Devices.OpenCL ->
+      | Devices.OpenCL ->
           ignore (Kirc_OpenCL.get_profile_counter ()) ;
-          gen_opencl () ) ) ;
+          gen_opencl ())) ;
   kir#reset_binaries () ;
   ignore (kir#compile dev) ;
   (kir, k)
@@ -1038,19 +1049,19 @@ let arg_of_vec v =
 let run ?recompile:(r = false) (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel) a
     (block, grid) _q dev =
   let kir, k = ker in
-  ( match dev.Devices.specific_info with
-    | Devices.CudaInfo _ -> (
-        if r then ignore (gen ~only:Devices.Cuda (kir, k) dev)
-        else
-          match kir#get_cuda_sources () with
-          | [] -> ignore (gen ~only:Devices.Cuda (kir, k) dev)
-          | _ -> () )
-    | Devices.OpenCLInfo _ -> (
-        if r then ignore (gen ~only:Devices.OpenCL (kir, k) dev)
-        else
-          match kir#get_opencl_sources () with
-          | [] -> ignore (gen ~only:Devices.OpenCL (kir, k) dev)
-          | _ -> () ) ) ;
+  (match dev.Devices.specific_info with
+  | Devices.CudaInfo _ -> (
+      if r then ignore (gen ~only:Devices.Cuda (kir, k) dev)
+      else
+        match kir#get_cuda_sources () with
+        | [] -> ignore (gen ~only:Devices.Cuda (kir, k) dev)
+        | _ -> ())
+  | Devices.OpenCLInfo _ -> (
+      if r then ignore (gen ~only:Devices.OpenCL (kir, k) dev)
+      else
+        match kir#get_opencl_sources () with
+        | [] -> ignore (gen ~only:Devices.OpenCL (kir, k) dev)
+        | _ -> ())) ;
   let args = kir#args_to_list a in
   let offset = ref 0 in
   kir#compile ~debug:true dev ;
@@ -1058,88 +1069,102 @@ let run ?recompile:(r = false) (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel) a
   let nvec = ref 0 in
   Array.iter
     (fun a ->
-       match a with
-       | VChar _v
-       |VFloat32 _v
-       |VFloat64 _v
-       |VInt32 _v
-       |VInt64 _v
-       |VComplex32 _v
-       |VCustom _v ->
-         incr nvec
-       | _ -> () )
+      match a with
+      | VChar _v
+      | VFloat32 _v
+      | VFloat64 _v
+      | VInt32 _v
+      | VInt64 _v
+      | VComplex32 _v
+      | VCustom _v ->
+          incr nvec
+      | _ -> ())
     args ;
   match dev.Devices.specific_info with
   | Devices.CudaInfo _cI ->
-    let extra = Kernel.Cuda.cuda_create_extra (Array.length args + !nvec) in
-    (*Kernel.Cuda.cuda_load_arg offset extra dev bin 0 (arg_of_vec profiler_counters);*)
-    let idx = ref 0 in
-    Array.iter
-      (fun a ->
-         match a with
-         | VChar v
-         |VFloat32 v
-         |VFloat64 v
-         |VInt32 v
-         |VInt64 v
-         |VComplex32 v
-         |VCustom v ->
-           Kernel.Cuda.cuda_load_arg offset extra dev bin !idx a ;
-           Kernel.Cuda.cuda_load_arg offset extra dev bin (!idx + 1)
-             (Kernel.Int32 (Vector.length v)) ;
-           idx := !idx + 2
-         | _ ->
-           Kernel.Cuda.cuda_load_arg offset extra dev bin idx a ;
-           incr idx )
-      args ;
-    Kernel.Cuda.cuda_launch_grid offset bin grid block extra
-      dev.Devices.general_info 0
+      let extra = Kernel.Cuda.cuda_create_extra (Array.length args + !nvec) in
+      (*Kernel.Cuda.cuda_load_arg offset extra dev bin 0 (arg_of_vec profiler_counters);*)
+      let idx = ref 0 in
+      Array.iter
+        (fun a ->
+          match a with
+          | VChar v
+          | VFloat32 v
+          | VFloat64 v
+          | VInt32 v
+          | VInt64 v
+          | VComplex32 v
+          | VCustom v ->
+              Kernel.Cuda.cuda_load_arg offset extra dev bin !idx a ;
+              Kernel.Cuda.cuda_load_arg
+                offset
+                extra
+                dev
+                bin
+                (!idx + 1)
+                (Kernel.Int32 (Vector.length v)) ;
+              idx := !idx + 2
+          | _ ->
+              Kernel.Cuda.cuda_load_arg offset extra dev bin idx a ;
+              incr idx)
+        args ;
+      Kernel.Cuda.cuda_launch_grid
+        offset
+        bin
+        grid
+        block
+        extra
+        dev.Devices.general_info
+        0
   | Devices.OpenCLInfo _ ->
-    (*Kernel.OpenCL.opencl_load_arg offset dev bin 0 (arg_of_vec profiler_counters);*)
-    let idx = ref 0 in
-    Array.iter
-      (fun a ->
-         match a with
-         | VChar v
-         |VFloat32 v
-         |VFloat64 v
-         |VInt32 v
-         |VInt64 v
-         |VComplex32 v
-         |VCustom v ->
-           Kernel.OpenCL.opencl_load_arg offset dev bin !idx a ;
-           Kernel.OpenCL.opencl_load_arg offset dev bin (!idx + 1)
-             (Kernel.Int32 (Vector.length v)) ;
-           idx := !idx + 2
-         | _ ->
-           Kernel.OpenCL.opencl_load_arg offset dev bin !idx a ;
-           incr idx )
-      args ;
-    (*Array.iteri (fun i a -> Kernel.OpenCL.opencl_load_arg offset dev bin (i) a) args;*)
-    Kernel.OpenCL.opencl_launch_grid bin grid block dev.Devices.general_info
-      0
+      (*Kernel.OpenCL.opencl_load_arg offset dev bin 0 (arg_of_vec profiler_counters);*)
+      let idx = ref 0 in
+      Array.iter
+        (fun a ->
+          match a with
+          | VChar v
+          | VFloat32 v
+          | VFloat64 v
+          | VInt32 v
+          | VInt64 v
+          | VComplex32 v
+          | VCustom v ->
+              Kernel.OpenCL.opencl_load_arg offset dev bin !idx a ;
+              Kernel.OpenCL.opencl_load_arg
+                offset
+                dev
+                bin
+                (!idx + 1)
+                (Kernel.Int32 (Vector.length v)) ;
+              idx := !idx + 2
+          | _ ->
+              Kernel.OpenCL.opencl_load_arg offset dev bin !idx a ;
+              incr idx)
+        args ;
+      (*Array.iteri (fun i a -> Kernel.OpenCL.opencl_load_arg offset dev bin (i) a) args;*)
+      Kernel.OpenCL.opencl_launch_grid bin grid block dev.Devices.general_info 0
 
 let profile_run ?recompile:(r = true) (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel)
     a b _q dev =
   let kir, k = ker in
-  ( match dev.Devices.specific_info with
-    | Devices.CudaInfo _ -> (
-        if r then ignore (gen ~profile:true ~only:Devices.Cuda (kir, k) dev)
-        else
-          match kir#get_cuda_sources () with
-          | [] -> ignore (gen ~profile:true ~only:Devices.Cuda (kir, k) dev)
-          | _ -> () )
-    | Devices.OpenCLInfo _ -> (
-        if r then ignore (gen ~profile:true ~only:Devices.OpenCL (kir, k) dev)
-        else
-          match kir#get_opencl_sources () with
-          | [] -> ignore (gen ~profile:true ~only:Devices.OpenCL (kir, k) dev)
-          | _ -> () ) ) ;
+  (match dev.Devices.specific_info with
+  | Devices.CudaInfo _ -> (
+      if r then ignore (gen ~profile:true ~only:Devices.Cuda (kir, k) dev)
+      else
+        match kir#get_cuda_sources () with
+        | [] -> ignore (gen ~profile:true ~only:Devices.Cuda (kir, k) dev)
+        | _ -> ())
+  | Devices.OpenCLInfo _ -> (
+      if r then ignore (gen ~profile:true ~only:Devices.OpenCL (kir, k) dev)
+      else
+        match kir#get_opencl_sources () with
+        | [] -> ignore (gen ~profile:true ~only:Devices.OpenCL (kir, k) dev)
+        | _ -> ())) ;
   (*kir#run a b q dev;*)
   let nCounter =
-    !( match dev.Devices.specific_info with
-       | Devices.CudaInfo _ -> Kirc_Cuda.profiler_counter
-       | Devices.OpenCLInfo _ -> Kirc_OpenCL.profiler_counter )
+    !(match dev.Devices.specific_info with
+     | Devices.CudaInfo _ -> Kirc_Cuda.profiler_counter
+     | Devices.OpenCLInfo _ -> Kirc_OpenCL.profiler_counter)
   in
   (*Printf.printf "Number of counters : %d\n%!" nCounter;*)
   let profiler_counters = Vector.create Vector.int64 nCounter in
@@ -1153,27 +1178,46 @@ let profile_run ?recompile:(r = true) (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel)
    let bin = Hashtbl.find (kir#get_binaries ()) dev in
    match dev.Devices.specific_info with
    | Devices.CudaInfo _cI ->
-     let extra = Kernel.Cuda.cuda_create_extra (Array.length args + 1) in
-     Kernel.Cuda.cuda_load_arg offset extra dev bin 0
-       (arg_of_vec profiler_counters) ;
-     Array.iteri
-       (fun i a ->
-          match a with
-          | VChar _ | VFloat32 _ | VFloat64 _ | VInt32 _ | VInt64 _
-          |VComplex32 _ | VCustom _ ->
-            Kernel.Cuda.cuda_load_arg offset extra dev bin i a
-          | _ -> Kernel.Cuda.cuda_load_arg offset extra dev bin i a )
-       args ;
-     Kernel.Cuda.cuda_launch_grid offset bin grid block extra
-       dev.Devices.general_info 0
+       let extra = Kernel.Cuda.cuda_create_extra (Array.length args + 1) in
+       Kernel.Cuda.cuda_load_arg
+         offset
+         extra
+         dev
+         bin
+         0
+         (arg_of_vec profiler_counters) ;
+       Array.iteri
+         (fun i a ->
+           match a with
+           | VChar _ | VFloat32 _ | VFloat64 _ | VInt32 _ | VInt64 _
+           | VComplex32 _ | VCustom _ ->
+               Kernel.Cuda.cuda_load_arg offset extra dev bin i a
+           | _ -> Kernel.Cuda.cuda_load_arg offset extra dev bin i a)
+         args ;
+       Kernel.Cuda.cuda_launch_grid
+         offset
+         bin
+         grid
+         block
+         extra
+         dev.Devices.general_info
+         0
    | Devices.OpenCLInfo _ ->
-     Kernel.OpenCL.opencl_load_arg offset dev bin 0
-       (arg_of_vec profiler_counters) ;
-     Array.iteri
-       (fun i a -> Kernel.OpenCL.opencl_load_arg offset dev bin i a)
-       args ;
-     Kernel.OpenCL.opencl_launch_grid bin grid block dev.Devices.general_info
-       0) ;
+       Kernel.OpenCL.opencl_load_arg
+         offset
+         dev
+         bin
+         0
+         (arg_of_vec profiler_counters) ;
+       Array.iteri
+         (fun i a -> Kernel.OpenCL.opencl_load_arg offset dev bin i a)
+         args ;
+       Kernel.OpenCL.opencl_launch_grid
+         bin
+         grid
+         block
+         dev.Devices.general_info
+         0) ;
   Devices.flush dev () ;
   if not !Mem.auto then Mem.to_cpu profiler_counters () ;
   (*Spoc.Tools.iter (fun a -> Printf.printf "%Ld " a) profiler_counters;*)
@@ -1185,41 +1229,48 @@ let compile_kernel_to_files s (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel) dev =
   let k1, k2, k3 = (k.ml_kern, k.body, k.ret_val) in
   return_v := ("", "") ;
   let k' =
-    ( (Kirc_Cuda.parse 0 (fst k3)) dev
-    , match fst k3 with
-    | IntVar (_i, s, _) | FloatVar (_i, s, _) | DoubleVar (_i, s, _) ->
-      s ^ (*"spoc_var"^(string_of_int i)^*) " = "
-    | Unit -> ""
-    | SetV _ -> ""
-    | IntVecAcc _ -> ""
-    | VecVar _ -> ""
-    | _ ->
-      debug_print
-        ( kir
-        , { ml_kern= k1
-          ; body= fst k3
-          ; ret_val= k3
-          ; extensions= k.extensions } ) ;
-      Stdlib.flush stdout ;
-      assert false )
+    ( (Kirc_Cuda.parse 0 (fst k3)) dev,
+      match fst k3 with
+      | IntVar (_i, s, _) | FloatVar (_i, s, _) | DoubleVar (_i, s, _) ->
+          s
+          ^
+          (*"spoc_var"^(string_of_int i)^*)
+          " = "
+      | Unit -> ""
+      | SetV _ -> ""
+      | IntVecAcc _ -> ""
+      | VecVar _ -> ""
+      | _ ->
+          debug_print
+            ( kir,
+              {
+                ml_kern = k1;
+                body = fst k3;
+                ret_val = k3;
+                extensions = k.extensions;
+              } ) ;
+          Stdlib.flush stdout ;
+          assert false )
   in
   Kirc_Cuda.return_v := k' ;
   Kirc_OpenCL.return_v := k' ;
   let cuda_head =
     Array.fold_left
       (fun header extension ->
-         match extension with
-         | ExFloat32 -> header
-         | ExFloat64 -> cuda_float64 ^ header )
-      cuda_head k.extensions
+        match extension with
+        | ExFloat32 -> header
+        | ExFloat64 -> cuda_float64 ^ header)
+      cuda_head
+      k.extensions
   in
   let opencl_head =
     Array.fold_left
       (fun header extension ->
-         match extension with
-         | ExFloat32 -> header
-         | ExFloat64 -> opencl_float64 ^ header )
-      opencl_head k.extensions
+        match extension with
+        | ExFloat32 -> header
+        | ExFloat64 -> opencl_float64 ^ header)
+      opencl_head
+      k.extensions
   in
   save (s ^ ".cu") (cuda_head ^ Kirc_Cuda.parse 0 (rewrite k2) dev) ;
   save (s ^ ".cl") (opencl_head ^ Kirc_OpenCL.parse 0 (rewrite k2) dev)
@@ -1285,8 +1336,7 @@ module Sarek_vector = struct
 end
 
 module Math = struct
-  let pow a b =
-    Int32.of_float (Float.pow (Int32.to_float a) (Int32.to_float b))
+  let pow a b = Int32.of_float (Float.pow (Int32.to_float a) (Int32.to_float b))
 
   let logical_and a b = Int32.logand a b
 
