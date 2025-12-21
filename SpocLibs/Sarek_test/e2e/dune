@@ -1,6 +1,5 @@
-(executable
-  (name test_vector_add)
-  (libraries spoc sarek unix)
-  (preprocess (pps sarek_ppx))
-  (flags (:standard -w -33 -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc))
-)
+(executables
+ (names test_vector_add test_module_const)
+ (libraries spoc sarek unix)
+ (preprocess (pps sarek_ppx))
+ (flags (:standard -w -33 -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc)))
