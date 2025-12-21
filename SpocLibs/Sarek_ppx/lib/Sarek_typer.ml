@@ -404,21 +404,40 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
   (* Record construction *)
   | ERecord (name_opt, fields) ->
       let* tfields, env = infer_record_fields env fields in
-      let type_name =
-        match name_opt with Some n -> n | None -> "anon_record"
-      in
       let field_tys = List.map (fun (f, te) -> (f, te.ty)) tfields in
-      let* ty =
+      let inferred_name, ty =
         match name_opt with
         | Some n -> (
             match find_type n env with
             | Some (TIRecord {ti_fields; _}) ->
-                Ok (TRecord (n, List.map (fun (f, t, _) -> (f, t)) ti_fields))
-            | Some (TIVariant _) -> Error [Not_a_record (TVariant (n, []), loc)]
-            | None -> Ok (TRecord (n, field_tys)))
-        | None -> Ok (TRecord (type_name, field_tys))
+                (n, TRecord (n, List.map (fun (f, t, _) -> (f, t)) ti_fields))
+            | Some (TIVariant _) ->
+                (* Name provided but not a record *)
+                ("anon_record", TRecord ("anon_record", field_tys))
+            | None -> (n, TRecord (n, field_tys)))
+        | None -> (
+            (* Try to match an existing record type by field names *)
+            let matches =
+              StringMap.fold
+                (fun name info acc ->
+                  match info with
+                  | TIRecord {ti_fields; _} ->
+                      let names_match =
+                        List.map (fun (f, _, _) -> f) ti_fields
+                        = List.map (fun (f, _) -> f) field_tys
+                      in
+                      if names_match then
+                        (name, List.map (fun (f, t, _) -> (f, t)) ti_fields)
+                        :: acc
+                      else acc
+                  | _ -> acc)
+                env.types []
+            in
+            match matches with
+            | (n, tys) :: _ -> (n, TRecord (n, tys))
+            | [] -> ("anon_record", TRecord ("anon_record", field_tys)))
       in
-      Ok (mk_texpr (TERecord (type_name, tfields)) ty loc, env)
+      Ok (mk_texpr (TERecord (inferred_name, tfields)) ty loc, env)
   (* Constructor application *)
   | EConstr (name, arg_opt) -> (
       match find_constructor name env with

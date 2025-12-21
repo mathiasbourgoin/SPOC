@@ -451,12 +451,19 @@ let build_kernel_args ~loc (params : tparam list) =
 
 (** Quote a kernel to create a sarek_kernel expression *)
 let quote_kernel ~loc (kernel : tkernel) (ir : Kirc_Ast.k_ext)
-    (ret_val : Kirc_Ast.k_ext) : expression =
+    (constructors : string list) (ret_val : Kirc_Ast.k_ext) : expression =
   let args_pat, args_array_expr, list_to_args_pat, list_to_args_expr =
     build_kernel_args ~loc kernel.tkern_params
   in
   [%expr
     let open Spoc in
+    let () =
+      Sarek.Kirc.constructors :=
+        [%e
+          Ast_builder.Default.elist ~loc
+            (List.map (Ast_builder.Default.estring ~loc) constructors)]
+        @ !(Sarek.Kirc.constructors)
+    in
     let module M = struct
       let exec_fun [%p args_pat] = Spoc.Kernel.exec [%e args_array_expr]
 

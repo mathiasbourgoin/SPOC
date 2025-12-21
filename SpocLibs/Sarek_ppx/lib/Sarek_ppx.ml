@@ -28,11 +28,11 @@ let expand_kernel ~ctxt payload =
         [%expr assert false]
     | Ok tkernel ->
         (* 4. Lower to Kirc_Ast *)
-        let ir = Sarek_lower.lower_kernel tkernel in
+        let ir, constructors = Sarek_lower.lower_kernel tkernel in
         let ret_val = Sarek_lower.lower_return_value tkernel in
 
         (* 5. Quote the IR back to OCaml *)
-        Sarek_quote.quote_kernel ~loc tkernel ir ret_val
+        Sarek_quote.quote_kernel ~loc tkernel ir constructors ret_val
   with
   | Sarek_parse.Parse_error_exn (msg, ploc) ->
       Location.raise_errorf ~loc:ploc "Sarek parse error: %s" msg
