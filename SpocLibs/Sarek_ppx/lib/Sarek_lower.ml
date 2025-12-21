@@ -5,6 +5,7 @@
  * existing code generation backend.
  ******************************************************************************)
 
+open Ppxlib
 open Sarek_ast
 open Sarek_types
 open Sarek_typed_ast
@@ -30,28 +31,27 @@ let record_constructor_strings name (fields : (string * typ * bool) list) =
       fields
   in
   let struct_def =
-    "struct " ^ struct_name ^ " {\n"
-    ^ String.concat "\n" struct_fields
-    ^ "\n};"
+    "struct " ^ struct_name ^ " {\n" ^ String.concat "\n" struct_fields ^ "\n};"
   in
   let params =
-    String.concat ", "
-      (List.map
-         (fun (fname, fty, _) -> c_type_of_typ fty ^ " " ^ fname)
-         fields)
+    String.concat
+      ", "
+      (List.map (fun (fname, fty, _) -> c_type_of_typ fty ^ " " ^ fname) fields)
   in
   let assigns =
-    String.concat "\n"
+    String.concat
+      "\n"
       (List.map
          (fun (fname, _, _) -> "  res." ^ fname ^ " = " ^ fname ^ ";")
          fields)
   in
   let builder =
     "struct " ^ struct_name ^ " build_" ^ struct_name ^ "(" ^ params ^ ") {\n"
-    ^ "  struct " ^ struct_name ^ " res;\n"
-    ^ assigns ^ "\n  return res;\n}"
+    ^ "  struct " ^ struct_name ^ " res;\n" ^ assigns ^ "\n  return res;\n}"
   in
-  [builder; struct_def]
+  (* Emit struct definition first so OpenCL can see the type in builder
+     signature. *)
+  [struct_def; builder]
 
 let variant_constructor_strings name constrs =
   let constr_structs =
@@ -69,8 +69,8 @@ let variant_constructor_strings name constrs =
   let union_fields =
     List.map
       (fun (cname, _carg) ->
-        "  struct " ^ name ^ "_sarek_" ^ cname ^ " " ^ name ^ "_sarek_"
-        ^ cname ^ ";")
+        "  struct " ^ name ^ "_sarek_" ^ cname ^ " " ^ name ^ "_sarek_" ^ cname
+        ^ ";")
       constrs
   in
   let union_def =
@@ -79,10 +79,8 @@ let variant_constructor_strings name constrs =
     ^ "\n};"
   in
   let main_struct =
-    "struct " ^ name ^ "_sarek {\n"
-    ^ "  int " ^ name ^ "_sarek_tag;\n"
-    ^ "  union " ^ name ^ "_sarek_union " ^ name ^ "_sarek_union;\n"
-    ^ "};"
+    "struct " ^ name ^ "_sarek {\n" ^ "  int " ^ name ^ "_sarek_tag;\n"
+    ^ "  union " ^ name ^ "_sarek_union " ^ name ^ "_sarek_union;\n" ^ "};"
   in
   let builders =
     List.mapi
@@ -92,19 +90,78 @@ let variant_constructor_strings name constrs =
           | None -> ("", "  /* no payload */")
           | Some ty ->
               let pname = "v" in
-              (c_type_of_typ ty ^ " " ^ pname, "  res." ^ name ^ "_sarek_union."
-               ^ name ^ "_sarek_" ^ cname ^ "."
-               ^ name ^ "_sarek_" ^ cname ^ "_t = " ^ pname ^ ";")
+              ( c_type_of_typ ty ^ " " ^ pname,
+                "  res." ^ name ^ "_sarek_union." ^ name ^ "_sarek_" ^ cname
+                ^ "." ^ name ^ "_sarek_" ^ cname ^ "_t = " ^ pname ^ ";" )
         in
         "struct " ^ name ^ "_sarek build_" ^ name ^ "_" ^ cname ^ "(" ^ params
-        ^ ") {\n"
-        ^ "  struct " ^ name ^ "_sarek res;\n"
-        ^ "  res." ^ name ^ "_sarek_tag = " ^ string_of_int idx ^ ";\n"
-        ^ assign ^ "\n"
+        ^ ") {\n" ^ "  struct " ^ name ^ "_sarek res;\n" ^ "  res." ^ name
+        ^ "_sarek_tag = " ^ string_of_int idx ^ ";\n" ^ assign ^ "\n"
         ^ "  return res;\n}")
       constrs
   in
   builders @ [main_struct; union_def] @ constr_structs
+
+let c_type_of_core_type ~loc (ct : core_type) =
+  match ct.ptyp_desc with
+  | Ptyp_constr ({txt = Lident "float32"; _}, _) -> "float"
+  | Ptyp_constr ({txt = Lident "float64"; _}, _) -> "double"
+  | Ptyp_constr ({txt = Lident "float"; _}, _) -> "float"
+  | Ptyp_constr ({txt = Lident "int32"; _}, _) -> "int"
+  | Ptyp_constr ({txt = Lident "int"; _}, _) -> "int"
+  | _ ->
+      Location.raise_errorf
+        ~loc
+        "Unsupported type in Sarek top-level registration"
+
+let typ_of_core_type ~loc (ct : core_type) =
+  match ct.ptyp_desc with
+  | Ptyp_constr ({txt = Lident "float32"; _}, _) -> TPrim TFloat32
+  | Ptyp_constr ({txt = Lident "float64"; _}, _) -> TPrim TFloat64
+  | Ptyp_constr ({txt = Lident "float"; _}, _) -> TPrim TFloat32
+  | Ptyp_constr ({txt = Lident "int32"; _}, _) -> TPrim TInt32
+  | Ptyp_constr ({txt = Lident "int"; _}, _) -> TPrim TInt32
+  | _ ->
+      Location.raise_errorf
+        ~loc
+        "Unsupported type in Sarek top-level registration"
+
+let constructor_strings_of_core_type_decl ~loc (tdecl : type_declaration) =
+  match tdecl.ptype_kind with
+  | Ptype_record labels ->
+      let fields =
+        List.map
+          (fun ld ->
+            ( ld.pld_name.txt,
+              typ_of_core_type ~loc ld.pld_type,
+              ld.pld_mutable = Mutable ))
+          labels
+      in
+      let strs = record_constructor_strings tdecl.ptype_name.txt fields in
+      Ast_builder.Default.elist
+        ~loc
+        (List.map (Ast_builder.Default.estring ~loc) strs)
+  | Ptype_variant constrs ->
+      let constrs =
+        List.map
+          (fun cd ->
+            match cd.pcd_args with
+            | Pcstr_tuple [] -> (cd.pcd_name.txt, None)
+            | Pcstr_tuple [ct] ->
+                let _ = typ_of_core_type ~loc ct in
+                (cd.pcd_name.txt, None)
+            | Pcstr_tuple _ | Pcstr_record _ ->
+                Location.raise_errorf
+                  ~loc
+                  "Only zero or single-argument constructors supported")
+          constrs
+      in
+      let strs = variant_constructor_strings tdecl.ptype_name.txt constrs in
+      Ast_builder.Default.elist
+        ~loc
+        (List.map (Ast_builder.Default.estring ~loc) strs)
+  | _ ->
+      Location.raise_errorf ~loc "Only record/variant types can be registered"
 
 (** Lowering state *)
 type state = {
@@ -466,8 +523,9 @@ let lower_kernel (kernel : tkernel) : Kirc_Ast.k_ext * string list =
               Kirc_Ast.Set (Kirc_Ast.IntId (name, id), lower_expr state expr)
             in
             Kirc_Ast.Seq (Kirc_Ast.Decl decl, Kirc_Ast.Seq (setv, acc))
-      | TMFun (_name, _params, _body) -> acc)
-    kernel.tkern_module_items Kirc_Ast.Empty
+        | TMFun (_name, _params, _body) -> acc)
+      kernel.tkern_module_items
+      Kirc_Ast.Empty
   in
   let constructors =
     List.concat

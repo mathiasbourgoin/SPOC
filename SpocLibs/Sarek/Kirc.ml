@@ -71,6 +71,8 @@ type ('a, 'b, 'c, 'd, 'e) sarek_kernel =
 
 let constructors = ref []
 
+let register_constructor_string s = constructors := s :: !constructors
+
 let opencl_head =
   "#define SAREK_VEC_LENGTH(A) sarek_## A ##_length\n"
   ^ "float spoc_fadd ( float a, float b );\n"
