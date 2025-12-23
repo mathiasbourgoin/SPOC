@@ -19,3 +19,22 @@
  (flags
   (:standard -w -33))
  (modules test_ktype))
+
+; IR comparison tests - compares PPX-generated IR to reference
+
+(executable
+ (name test_comparison)
+ (libraries str alcotest spoc sarek)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33 -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc))
+ (modules test_comparison))
+
+(rule
+ (alias runtest)
+ (deps ../regression/reference_ir.txt)
+ (action
+  (chdir
+   %{project_root}
+   (run %{exe:test_comparison.exe}))))

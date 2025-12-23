@@ -451,7 +451,7 @@ let expand_kernel ~ctxt payload =
         "Sarek internal error: %s"
         (Printexc.to_string e)
 
-(** The [%kernel ...] extension *)
+(** The [%kernel ...] extension for expressions *)
 let kernel_extension =
   Extension.V3.declare
     "kernel"
