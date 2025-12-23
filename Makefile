@@ -52,6 +52,14 @@ test_ppx:
 	# Build unit/comparison tests and all Sarek PPX e2e binaries (execution may require GPU)
 	SKIP_OCAMLFORMAT=1 dune build @SpocLibs/Sarek_test/runtest
 
+# Negative tests - verify that expected compile errors are raised
+test_negative:
+	@echo "Testing field error detection..."
+	@dune build SpocLibs/Sarek_test/negative/test_convention_kernel_fail.exe 2>&1 | tee /tmp/neg1.out | grep -q "Field z not found" && echo "  PASS: field error" || (cat /tmp/neg1.out; false)
+	@echo "Testing type mismatch detection..."
+	@dune build SpocLibs/Sarek_test/negative/test_convention_kernel_fail2.exe 2>&1 | tee /tmp/neg2.out | grep -q "Cannot unify types" && echo "  PASS: type mismatch" || (cat /tmp/neg2.out; false)
+	@echo "All negative tests passed"
+
 test_sarek:
 	echo "Compiling Sarek samples"
 	dune build SpocLibs/Benchmarks/Pi/Pi.exe

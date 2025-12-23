@@ -1,0 +1,11 @@
+; Negative tests - check that expected errors are raised
+; These files should fail to compile with specific error messages
+; Run via: make test-negative (not included in dune runtest to avoid blocking)
+
+(executables
+ (names test_convention_kernel_fail test_convention_kernel_fail2)
+ (libraries spoc sarek sarek_geometry)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33 -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc)))
