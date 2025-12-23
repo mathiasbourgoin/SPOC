@@ -1,4 +1,4 @@
-(dirs common unit comparison regression e2e)
+(dirs common unit comparison regression e2e negative)
 
 (alias
  (name runtest)

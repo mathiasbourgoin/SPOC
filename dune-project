@@ -1,5 +1,6 @@
 (lang dune 2.9)
 (name spoc)
+(cram enable)
 ; version field is optional
 
 (generate_opam_files false)
