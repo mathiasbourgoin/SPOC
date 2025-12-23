@@ -1,4 +1,7 @@
-(dirs extension ir_extract)
+; Note: extension/ contains legacy camlp4 code (disabled for OCaml 5+)
+; ir_extract/ contains tools for extracting reference IR
+
+(dirs ir_extract)
 
 (library
  (name sarek)
