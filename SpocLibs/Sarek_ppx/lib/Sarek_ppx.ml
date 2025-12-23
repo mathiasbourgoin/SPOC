@@ -7,7 +7,6 @@
 
 open Ppxlib
 open Sarek_ppx_lib
-module Metadata = Spoc.Sarek_metadata
 
 (* Registry of globally declared Sarek types (via [@@sarek.type]). *)
 let registered_types : Sarek_ast.type_decl list ref = ref []
@@ -188,10 +187,7 @@ let register_sarek_type_decl ?(persist = true) ~loc (td : type_declaration) =
           ~loc
           "Only record or variant types can be used with [@@sarek.type]"
   in
-  if persist then (
-    let blob = Marshal.to_string tdecl [] in
-    Metadata.register_type_blob blob ;
-    append_registry loc tdecl) ;
+  if persist then append_registry loc tdecl ;
   registered_types := tdecl :: !registered_types ;
   ()
 
@@ -201,10 +197,7 @@ let register_sarek_module_item ?(persist = true) ~loc item =
       Format.eprintf "Sarek PPX: register module fun %s@." name
   | Sarek_ast.MConst (name, _, _) ->
       Format.eprintf "Sarek PPX: register module const %s@." name) ;
-  if persist then (
-    let blob = Marshal.to_string item [] in
-    Metadata.register_module_blob blob ;
-    append_mod_registry loc item) ;
+  if persist then append_mod_registry loc item ;
   registered_mods := item :: !registered_mods
 
 let scan_dir_for_sarek_types directory =
@@ -427,27 +420,9 @@ let expand_kernel ~ctxt payload =
             scan_dir_for_sarek_types source_dir
         with Sys_error _ -> ())
     | None -> ()) ;
-    let runtime_types =
-      List.filter_map
-        (fun blob ->
-          try Some (Marshal.from_string blob 0 : Sarek_ast.type_decl)
-          with _ -> None)
-        (Metadata.get_type_blobs ())
-    in
-    let runtime_mods =
-      List.filter_map
-        (fun blob ->
-          try Some (Marshal.from_string blob 0 : Sarek_ast.module_item)
-          with _ -> None)
-        (Metadata.get_module_blobs ())
-    in
     (* Pre-registered types (top-level sarek.type) *)
-    let pre_types =
-      dedup_tdecls (runtime_types @ load_registry loc @ !registered_types)
-    in
-    let pre_mods =
-      dedup_mods (runtime_mods @ load_mod_registry loc @ !registered_mods)
-    in
+    let pre_types = dedup_tdecls (load_registry loc @ !registered_types) in
+    let pre_mods = dedup_mods (load_mod_registry loc @ !registered_mods) in
     Format.eprintf
       "Sarek PPX: mods=%d types=%d@."
       (List.length pre_mods)
