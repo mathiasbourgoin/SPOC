@@ -15,6 +15,78 @@ let registered_types : Sarek_ast.type_decl list ref = ref []
 (* Registry of globally declared Sarek module items (functions/constants) *)
 let registered_mods : Sarek_ast.module_item list ref = ref []
 
+(** Load .sarek metadata files from installed libraries using ocamlfind. *)
+let find_library_sarek_files () =
+  (* Get list of all installed libraries that might have .sarek files *)
+  try
+    let ic =
+      Unix.open_process_in "ocamlfind list -separator '\\n' 2>/dev/null"
+    in
+    let rec read_lines acc =
+      try
+        let line = input_line ic in
+        (* Each line is "libname (version)" - extract libname *)
+        let libname =
+          match String.index_opt line ' ' with
+          | Some i -> String.sub line 0 i
+          | None -> line
+        in
+        read_lines (libname :: acc)
+      with End_of_file -> List.rev acc
+    in
+    let libs = read_lines [] in
+    let _ = Unix.close_process_in ic in
+    (* For each library, check if it has a .sarek file *)
+    List.filter_map
+      (fun lib ->
+        try
+          let ic =
+            Unix.open_process_in
+              (Printf.sprintf "ocamlfind query %s 2>/dev/null" lib)
+          in
+          let dir = input_line ic in
+          let _ = Unix.close_process_in ic in
+          let sarek_file = Filename.concat dir (lib ^ ".sarek") in
+          if Sys.file_exists sarek_file then Some sarek_file else None
+        with _ -> None)
+      libs
+  with _ -> []
+
+(** Load types and modules from a .sarek metadata file. *)
+let load_sarek_file path =
+  try
+    let ic = open_in_bin path in
+    let types : Sarek_ast.type_decl list = Marshal.from_channel ic in
+    let mods : Sarek_ast.module_item list = Marshal.from_channel ic in
+    close_in ic ;
+    (types, mods)
+  with _ -> ([], [])
+
+(** Collect types and modules from all installed .sarek files. *)
+let load_all_library_metadata () =
+  let files = find_library_sarek_files () in
+  List.fold_left
+    (fun (types_acc, mods_acc) path ->
+      let types, mods = load_sarek_file path in
+      (types @ types_acc, mods @ mods_acc))
+    ([], [])
+    files
+
+(** Load .sarek files from a specific directory. *)
+let load_sarek_files_from_dir dir =
+  try
+    let files = Sys.readdir dir in
+    Array.fold_left
+      (fun (types_acc, mods_acc) fname ->
+        if Filename.check_suffix fname ".sarek" then
+          let path = Filename.concat dir fname in
+          let types, mods = load_sarek_file path in
+          (types @ types_acc, mods @ mods_acc)
+        else (types_acc, mods_acc))
+      ([], [])
+      files
+  with Sys_error _ -> ([], [])
+
 let registry_file _loc =
   match Sys.getenv_opt "SAREK_PPX_REGISTRY" with
   | Some p -> p
@@ -69,13 +141,9 @@ let load_mod_registry loc =
   with Sys_error _ -> []
 
 let append_mod_registry loc item =
+  let path = registry_mod_file loc in
   try
-    let oc =
-      open_out_gen
-        [Open_creat; Open_append; Open_binary]
-        0o644
-        (registry_mod_file loc)
-    in
+    let oc = open_out_gen [Open_creat; Open_append; Open_binary] 0o644 path in
     Marshal.to_channel oc item [] ;
     close_out oc
   with Sys_error msg ->
@@ -114,6 +182,45 @@ let dedup_mods mods =
       mods
   in
   List.rev revs
+
+(** Get the library name from filename module name. *)
+let get_library_name loc =
+  let file = loc.loc_start.pos_fname in
+  let base = Filename.(remove_extension (basename file)) in
+  base
+
+(** Write a .sarek metadata file for the current library. Writes to
+    _build/.sarek-cache/ to avoid dune interference. *)
+let write_library_sarek_file ~loc ~lib_name types mods =
+  if types = [] && mods = [] then ()
+  else
+    let dir =
+      match Sys.getenv_opt "SAREK_BUILD_DIR" with
+      | Some d -> d
+      | None -> (
+          (* Write to _build/.sarek-cache to avoid dune sandbox/cleaning issues *)
+          match Sys.getenv_opt "PWD" with
+          | Some cwd ->
+              let cache_dir = Filename.concat cwd "_build/.sarek-cache" in
+              (* Ensure directory exists *)
+              (try Unix.mkdir cache_dir 0o755 with Unix.Unix_error _ -> ()) ;
+              cache_dir
+          | None -> Filename.dirname loc.loc_start.pos_fname)
+    in
+    let path = Filename.concat dir (lib_name ^ ".sarek") in
+    (* Read existing data and merge *)
+    let existing_types, existing_mods =
+      if Sys.file_exists path then load_sarek_file path else ([], [])
+    in
+    let all_types = dedup_tdecls (types @ existing_types) in
+    let all_mods = dedup_mods (mods @ existing_mods) in
+    try
+      let oc = open_out_bin path in
+      Marshal.to_channel oc all_types [] ;
+      Marshal.to_channel oc all_mods [] ;
+      close_out oc
+    with Sys_error msg ->
+      Format.eprintf "Sarek PPX: cannot write sarek metadata (%s)@." msg
 
 let rec flatten_longident = function
   | Lident s -> [s]
@@ -232,14 +339,11 @@ let scan_dir_for_sarek_types directory =
                              d.ptype_attributes)
                       in
                       if
-                        List.exists
-                          (has_attr "sarek.type")
-                          d.ptype_attributes
+                        List.exists (has_attr "sarek.type") d.ptype_attributes
                         || List.exists
                              (has_attr "sarek.type_private")
                              d.ptype_attributes
-                      then
-                        register_sarek_type_decl ~persist ~loc:d.ptype_loc d)
+                      then register_sarek_type_decl ~persist ~loc:d.ptype_loc d)
                     decls
               | Pstr_value (Nonrecursive, vbs) ->
                   List.iter
@@ -252,9 +356,7 @@ let scan_dir_for_sarek_types directory =
                              vb.pvb_attributes)
                       in
                       if
-                        List.exists
-                          (has_attr "sarek.module")
-                          vb.pvb_attributes
+                        List.exists (has_attr "sarek.module") vb.pvb_attributes
                         || List.exists
                              (has_attr "sarek.module_private")
                              vb.pvb_attributes
@@ -327,19 +429,78 @@ let sarek_type_private_attr =
     Ast_pattern.(pstr nil)
     ()
 
+(** Generate field accessor functions for a record type.
+    For type point = { x: float32; y: float32 }, generates:
+      let sarek_get_point_x (p : point) : float32 = p.x
+      let sarek_get_point_y (p : point) : float32 = p.y *)
+let generate_field_accessors ~loc (td : type_declaration) : structure_item list
+    =
+  match td.ptype_kind with
+  | Ptype_record labels ->
+      let type_name = td.ptype_name.txt in
+      let type_lid = {txt = Lident type_name; loc} in
+      let type_ct = Ast_builder.Default.ptyp_constr ~loc type_lid [] in
+      List.map
+        (fun (ld : label_declaration) ->
+          let field_name = ld.pld_name.txt in
+          let field_type = ld.pld_type in
+          let fn_name = Printf.sprintf "sarek_get_%s_%s" type_name field_name in
+          let param_pat =
+            Ast_builder.Default.ppat_constraint
+              ~loc
+              (Ast_builder.Default.pvar ~loc "p")
+              type_ct
+          in
+          let field_access =
+            Ast_builder.Default.pexp_field
+              ~loc
+              (Ast_builder.Default.evar ~loc "p")
+              {txt = Lident field_name; loc}
+          in
+          let body =
+            Ast_builder.Default.pexp_constraint ~loc field_access field_type
+          in
+          let fn_expr =
+            Ast_builder.Default.pexp_fun ~loc Nolabel None param_pat body
+          in
+          let fn_pat = Ast_builder.Default.pvar ~loc fn_name in
+          [%stri let [%p fn_pat] = [%e fn_expr]])
+        labels
+  | _ -> []
+
 (* Context-free rule to capture [@@sarek.type] before kernel expansion *)
 let sarek_type_rule =
   Context_free.Rule.attr_str_type_decl
     sarek_type_attr
-    (fun ~ctxt:_ _rec_flag decls payloads ->
-      List.iter2
-        (fun td payload ->
-          match payload with
-          | Some () -> register_sarek_type_decl ~loc:td.ptype_loc td
-          | None -> ())
-        decls
-        payloads ;
-      [])
+    (fun ~ctxt _rec_flag decls payloads ->
+      let loc = Expansion_context.Deriver.derived_item_loc ctxt in
+      let generated =
+        List.concat_map
+          (fun (td, payload) ->
+            match payload with
+            | Some () ->
+                register_sarek_type_decl ~loc:td.ptype_loc td ;
+                (* Generate a named value following the convention: sarek_type_<name> *)
+                let tdecl =
+                  List.find
+                    (fun d ->
+                      tdecl_key d = tdecl_key (List.hd !registered_types))
+                    !registered_types
+                in
+                let blob = Marshal.to_string tdecl [] in
+                let blob_str = Ast_builder.Default.estring ~loc blob in
+                let value_name = "sarek_type_" ^ td.ptype_name.txt in
+                let pat = Ast_builder.Default.pvar ~loc value_name in
+                let type_value =
+                  [%stri let [%p pat] : string = [%e blob_str]]
+                in
+                (* Generate field accessor functions *)
+                let accessors = generate_field_accessors ~loc td in
+                type_value :: accessors
+            | None -> [])
+          (List.combine decls payloads)
+      in
+      generated)
 
 let sarek_type_private_rule =
   Context_free.Rule.attr_str_type_decl
@@ -348,7 +509,8 @@ let sarek_type_private_rule =
       List.iter2
         (fun td payload ->
           match payload with
-          | Some () -> register_sarek_type_decl ~persist:false ~loc:td.ptype_loc td
+          | Some () ->
+              register_sarek_type_decl ~persist:false ~loc:td.ptype_loc td
           | None -> ())
         decls
         payloads ;
@@ -385,12 +547,28 @@ let expand_kernel ~ctxt payload =
           with _ -> None)
         (Metadata.get_module_blobs ())
     in
+    (* Load metadata from installed libraries (.sarek files) *)
+    let lib_types, lib_mods = load_all_library_metadata () in
+    (* Also load .sarek files from the cache directory *)
+    let build_types, build_mods =
+      match Sys.getenv_opt "PWD" with
+      | Some cwd ->
+          let cache_dir = Filename.concat cwd "_build/.sarek-cache" in
+          if Sys.file_exists cache_dir && Sys.is_directory cache_dir then
+            load_sarek_files_from_dir cache_dir
+          else ([], [])
+      | None -> ([], [])
+    in
     (* Pre-registered types (top-level sarek.type) *)
     let pre_types =
-      dedup_tdecls (runtime_types @ load_registry loc @ !registered_types)
+      dedup_tdecls
+        (build_types @ lib_types @ runtime_types @ load_registry loc
+       @ !registered_types)
     in
     let pre_mods =
-      dedup_mods (runtime_mods @ load_mod_registry loc @ !registered_mods)
+      dedup_mods
+        (build_mods @ lib_mods @ runtime_mods @ load_mod_registry loc
+       @ !registered_mods)
     in
     Format.eprintf
       "Sarek PPX: mods=%d types=%d@."
@@ -464,24 +642,19 @@ let expand_sarek_type ~ctxt payload =
 let sarek_type_extension = ()
 
 (** Register sarek.module bindings on any structure we process, so libraries can
-    publish metadata even when no [%kernel] expansion happens in that file. *)
+    publish metadata even when no [%kernel] expansion happens in that file. For
+    public items (persist=true), emit runtime registration code. *)
 let process_structure_for_module_items (str : structure) : structure =
-  let register_vb vb =
+  let process_vb vb =
     let has_attr name a = String.equal a.attr_name.txt name in
     let persist =
-      not
-        (List.exists
-           (has_attr "sarek.module_private")
-           vb.pvb_attributes)
+      not (List.exists (has_attr "sarek.module_private") vb.pvb_attributes)
     in
     if
-      List.exists
-        (has_attr "sarek.module")
-        vb.pvb_attributes
-      || List.exists
-           (has_attr "sarek.module_private")
-           vb.pvb_attributes
-    then
+      List.exists (has_attr "sarek.module") vb.pvb_attributes
+      || List.exists (has_attr "sarek.module_private") vb.pvb_attributes
+    then (
+      let loc = vb.pvb_loc in
       let name =
         match Sarek_parse.extract_name_from_pattern vb.pvb_pat with
         | Some n -> n
@@ -511,20 +684,54 @@ let process_structure_for_module_items (str : structure) : structure =
             in
             Sarek_ast.MConst (name, ty, value)
       in
-      register_sarek_module_item ~persist ~loc:vb.pvb_loc item
+      register_sarek_module_item ~persist ~loc item ;
+      (* Emit named value following convention: sarek_fun_<name> or sarek_const_<name> *)
+      if persist then
+        let blob = Marshal.to_string item [] in
+        let blob_str = Ast_builder.Default.estring ~loc blob in
+        let value_name =
+          match item with
+          | Sarek_ast.MFun (n, _, _) -> "sarek_fun_" ^ n
+          | Sarek_ast.MConst (n, _, _) -> "sarek_const_" ^ n
+        in
+        let pat = Ast_builder.Default.pvar ~loc value_name in
+        Some [%stri let [%p pat] : string = [%e blob_str]]
+      else None)
+    else None
   in
-  List.iter
-    (fun item ->
-      match item.pstr_desc with
-      | Pstr_value (_rf, vbs) -> List.iter register_vb vbs
-      | _ -> ())
-    str ;
-  str
+  let extra_items =
+    List.filter_map
+      (fun item ->
+        match item.pstr_desc with
+        | Pstr_value (_rf, vbs) ->
+            let registrations = List.filter_map process_vb vbs in
+            if registrations = [] then None else Some registrations
+        | _ -> None)
+      str
+    |> List.flatten
+  in
+  (* Write .sarek file for any registered types/modules *)
+  (match str with
+  | item :: _ ->
+      let loc =
+        match item.pstr_desc with
+        | Pstr_type (_, td :: _) -> td.ptype_loc
+        | Pstr_value (_, vb :: _) -> vb.pvb_loc
+        | _ -> item.pstr_loc
+      in
+      let lib_name = get_library_name loc in
+      write_library_sarek_file ~loc ~lib_name !registered_types !registered_mods
+  | [] -> ()) ;
+  str @ extra_items
 
 (** Register the transformation *)
 let () =
   let rules =
-    [sarek_type_rule; sarek_type_private_rule; Context_free.Rule.extension kernel_extension]
+    [
+      sarek_type_rule;
+      sarek_type_private_rule;
+      Context_free.Rule.extension kernel_extension;
+    ]
   in
   Driver.register_transformation
     ~rules

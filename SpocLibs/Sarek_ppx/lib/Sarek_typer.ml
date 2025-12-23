@@ -438,19 +438,18 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
             in
             match matches with
             | [] -> ("anon_record", TRecord ("anon_record", field_tys))
-            | _ ->
+            | _ -> (
                 let prefer_local, _others =
                   List.partition
                     (fun (n, _) -> not (String.contains n '.'))
                     matches
                 in
-                (match prefer_local with
+                match prefer_local with
                 | (n, tys) :: _ -> (n, TRecord (n, tys))
                 | [] ->
                     (* Only registered/external records matched; keep anonymous to
                        let surrounding constraints pick the right one. *)
-                    ("anon_record", TRecord ("anon_record", field_tys)))
-            )
+                    ("anon_record", TRecord ("anon_record", field_tys))))
       in
       Ok (mk_texpr (TERecord (inferred_name, tfields)) ty loc, env)
   (* Constructor application *)

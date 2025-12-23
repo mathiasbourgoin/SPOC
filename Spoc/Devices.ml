@@ -200,9 +200,7 @@ let beginEvent _s = 0
 
 let endEvent _s _i = ()
 
-let emitDeviceList _ = ()
-
-#ifdef SPOC_PROFILE
+let emitDeviceList _ = ()#ifdef SPOC_PROFILE
 
 external prePrint : int -> unit = "pre_print_device"
 
@@ -250,7 +248,7 @@ external closeOutput : unit -> unit = "close_output_profiling"
 
 external beginEvent : string -> int = "begin_event"
 
-external endEvent : string -> int -> unit = "end_event"
+external endEvent : string -> int -> unit = "end_event" ;;
 
 #endif
 (**********************************************************************************************************)

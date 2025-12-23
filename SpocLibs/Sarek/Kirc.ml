@@ -874,8 +874,8 @@ let gen_profile ker dev =
 (* external from SPOC*)
 external nvrtc_ptx : string -> string array -> string = "spoc_nvrtc_ptx"
 
-let gen ?keep_temp:(kt = false) ?profile:(prof = profile_default ()) ?return:(r = false)
-    ?only:o ?nvrtc_options:(nvopt = [||])
+let gen ?keep_temp:(kt = false) ?profile:(prof = profile_default ())
+    ?return:(r = false) ?only:o ?nvrtc_options:(nvopt = [||])
     (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel) dev =
   let kir, k = ker in
   let k1, k2, k3 = (k.ml_kern, k.body, k.ret_val) in
