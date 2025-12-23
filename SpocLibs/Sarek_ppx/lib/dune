@@ -14,8 +14,8 @@
   Sarek_typer
   Sarek_lower
   Sarek_intrinsics
- Sarek_parse
- Sarek_quote))
+  Sarek_parse
+  Sarek_quote))
 
 (library
  (name sarek_ppx)

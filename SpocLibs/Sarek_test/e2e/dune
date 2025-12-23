@@ -8,18 +8,22 @@
   test_ktype_helper
   test_nbody_ppx
   test_ray_ppx
- test_registered_type
- test_registered_variant
- test_cross_module_type
- test_registered_const
- test_geometry_metadata
- test_visibility_private
- test_external_kernel_ppx)
-(libraries spoc sarek sarek_geometry sarek.visibility sarek_ppx.lib unix)
-(preprocess
- (pps sarek_ppx))
-(flags
- (:standard -w -33 -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc)))
+  test_registered_type
+  test_registered_variant
+  test_cross_module_type
+  test_registered_const
+  test_geometry_metadata
+  test_visibility_private
+  test_external_kernel_ppx
+  test_convention
+  test_convention_kernel
+  test_convention_kernel_fail
+  test_convention_kernel_fail2)
+ (libraries spoc sarek sarek_geometry sarek.visibility sarek_ppx.lib unix)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33 -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc)))
 
 (alias
  (name runtest)
