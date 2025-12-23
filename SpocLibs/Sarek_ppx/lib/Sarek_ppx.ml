@@ -15,17 +15,22 @@ let registered_types : Sarek_ast.type_decl list ref = ref []
 (* Registry of globally declared Sarek module items (functions/constants) *)
 let registered_mods : Sarek_ast.module_item list ref = ref []
 
-let registry_file _loc =
-  match Sys.getenv_opt "SAREK_PPX_REGISTRY" with
-  | Some p -> p
-  | None ->
-      Filename.concat (Filename.get_temp_dir_name ()) "sarek_types_registry"
+(** Get the registry directory, creating it if needed. Uses
+    _build/.sarek-registry to persist across builds. *)
+let registry_dir () =
+  match Sys.getenv_opt "SAREK_PPX_REGISTRY_DIR" with
+  | Some d -> d
+  | None -> (
+      match Sys.getenv_opt "PWD" with
+      | Some cwd ->
+          let dir = Filename.concat cwd "_build/.sarek-registry" in
+          (try Unix.mkdir dir 0o755 with Unix.Unix_error _ -> ()) ;
+          dir
+      | None -> Filename.get_temp_dir_name ())
 
-let registry_mod_file _loc =
-  match Sys.getenv_opt "SAREK_PPX_MODREG" with
-  | Some p -> p
-  | None ->
-      Filename.concat (Filename.get_temp_dir_name ()) "sarek_module_registry"
+let registry_file _loc = Filename.concat (registry_dir ()) "types"
+
+let registry_mod_file _loc = Filename.concat (registry_dir ()) "modules"
 
 let load_registry loc =
   try
