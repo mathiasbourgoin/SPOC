@@ -367,23 +367,8 @@ let sarek_type_rule =
             match payload with
             | Some () ->
                 register_sarek_type_decl ~loc:td.ptype_loc td ;
-                (* Generate a named value following the convention: sarek_type_<name> *)
-                let tdecl =
-                  List.find
-                    (fun d ->
-                      tdecl_key d = tdecl_key (List.hd !registered_types))
-                    !registered_types
-                in
-                let blob = Marshal.to_string tdecl [] in
-                let blob_str = Ast_builder.Default.estring ~loc blob in
-                let value_name = "sarek_type_" ^ td.ptype_name.txt in
-                let pat = Ast_builder.Default.pvar ~loc value_name in
-                let type_value =
-                  [%stri let [%p pat] : string = [%e blob_str]]
-                in
-                (* Generate field accessor functions *)
-                let accessors = generate_field_accessors ~loc td in
-                type_value :: accessors
+                (* Generate field accessor functions for compile-time validation *)
+                generate_field_accessors ~loc td
             | None -> [])
           (List.combine decls payloads)
       in
@@ -538,18 +523,7 @@ let process_structure_for_module_items (str : structure) : structure =
             Sarek_ast.MConst (name, ty, value)
       in
       register_sarek_module_item ~persist ~loc item ;
-      (* Emit named value following convention: sarek_fun_<name> or sarek_const_<name> *)
-      if persist then
-        let blob = Marshal.to_string item [] in
-        let blob_str = Ast_builder.Default.estring ~loc blob in
-        let value_name =
-          match item with
-          | Sarek_ast.MFun (n, _, _) -> "sarek_fun_" ^ n
-          | Sarek_ast.MConst (n, _, _) -> "sarek_const_" ^ n
-        in
-        let pat = Ast_builder.Default.pvar ~loc value_name in
-        Some [%stri let [%p pat] : string = [%e blob_str]]
-      else None)
+      None)
     else None
   in
   let extra_items =
