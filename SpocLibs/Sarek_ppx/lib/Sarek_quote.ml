@@ -309,13 +309,30 @@ and quote_k_ext ~loc (k : Kirc_Ast.k_ext) : expression =
         Sarek.Kirc_Ast.App
           ([%e quote_k_ext ~loc fn], [%e quote_array ~loc quote_k_ext args])]
   | Kirc_Ast.GInt _ ->
-      (* Global int - we need to create a closure that evaluates at runtime *)
+      (* This shouldn't be reached in PPX - we use GIntVar instead *)
       [%expr Sarek.Kirc_Ast.GInt (fun () -> 0l)]
-      (* Placeholder *)
   | Kirc_Ast.GFloat _ -> [%expr Sarek.Kirc_Ast.GFloat (fun () -> 0.0)]
   | Kirc_Ast.GFloat64 _ -> [%expr Sarek.Kirc_Ast.GFloat64 (fun () -> 0.0)]
+  (* GIntVar, GFloatVar, GFloat64Var - generate closures that capture the variable *)
+  (* These variables are refs, so we dereference them with ! *)
+  | Kirc_Ast.GIntVar name ->
+      let var_expr = evar ~loc name in
+      [%expr Sarek.Kirc_Ast.GInt (fun () -> ![%e var_expr])]
+  | Kirc_Ast.GFloatVar name ->
+      let var_expr = evar ~loc name in
+      [%expr Sarek.Kirc_Ast.GFloat (fun () -> ![%e var_expr])]
+  | Kirc_Ast.GFloat64Var name ->
+      let var_expr = evar ~loc name in
+      [%expr Sarek.Kirc_Ast.GFloat64 (fun () -> ![%e var_expr])]
   | Kirc_Ast.Native _ ->
-      [%expr Sarek.Kirc_Ast.Native (fun _dev -> "")] (* Placeholder *)
+      (* This shouldn't be reached in PPX - we use NativeVar instead *)
+      [%expr Sarek.Kirc_Ast.Native (fun _dev -> "")]
+  | Kirc_Ast.NativeVar code ->
+      (* Native code is a string literal, not a variable reference *)
+      [%expr Sarek.Kirc_Ast.Native (fun _dev -> [%e quote_string ~loc code])]
+  | Kirc_Ast.NativeFunExpr func_expr ->
+      (* Native function expression - pass it through directly to Native *)
+      [%expr Sarek.Kirc_Ast.Native [%e func_expr]]
   | Kirc_Ast.Pragma (opts, body) ->
       [%expr
         Sarek.Kirc_Ast.Pragma
@@ -355,7 +372,8 @@ let core_type_of_typ ~loc (t : typ) : core_type option =
           Some [%type: (float, Bigarray.float64_elt) Spoc.Vector.vector]
       | TPrim TBool -> Some [%type: (bool, bool) Spoc.Vector.vector]
       | TRecord _ | TVariant _ ->
-          Some [%type: ('spoc_a, 'spoc_b) Spoc.Vector.vector]
+          (* Don't add type constraint for custom vectors - let OCaml infer *)
+          None
       | _ -> None)
   | TRecord _ | TVariant _ -> None
   | TArr _ | TFun _ | TTuple _ | TVar _ -> None

@@ -224,6 +224,15 @@ and parse i a dev =
     | Divf (a, b) -> "(" ^ parse i a dev ^ " /. " ^ parse i b dev ^ ")"
     | Int i -> string_of_int i
     | GInt i -> Int32.to_string (i ())
+    | GIntVar n ->
+        failwith ("GIntVar " ^ n ^ " should have been expanded during quoting")
+    | GFloatVar n ->
+        failwith ("GFloatVar " ^ n ^ " should have been expanded during quoting")
+    | GFloat64Var n ->
+        failwith
+          ("GFloat64Var " ^ n ^ " should have been expanded during quoting")
+    | NativeVar n ->
+        failwith ("NativeVar " ^ n ^ " should have been expanded during quoting")
     | Set (var, value) ->
         indent i ^ "let mutable " ^ parse i var dev ^ " = " ^ parse i value dev
         ^ " in"

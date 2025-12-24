@@ -107,7 +107,15 @@ type k_ext =
   | GInt of (unit -> int32)
   | GFloat of (unit -> float)
   | GFloat64 of (unit -> float)
+  | GIntVar of string  (** Global int32 variable by name - for PPX quoting *)
+  | GFloatVar of string
+      (** Global float32 variable by name - for PPX quoting *)
+  | GFloat64Var of string
+      (** Global float64 variable by name - for PPX quoting *)
   | Native of (Spoc.Devices.device -> string)
+  | NativeVar of string  (** Native code by variable name - for PPX quoting *)
+  | NativeFunExpr of Ppxlib.expression
+      (** Native function expression - for PPX quoting *)
   | Pragma of string list * k_ext
   | Map of (k_ext * k_ext * k_ext)
   | Unit
@@ -265,6 +273,11 @@ let string_of_ast a =
           (Array.fold_left (fun _a (_, _, b) -> aux (i + 1) b) "" l)
     | CustomVar _ -> soa i "CustomVar"
     | GFloat64 _ -> soa i "GFloat64"
+    | GIntVar n -> soa i ("GIntVar " ^ n)
+    | GFloatVar n -> soa i ("GFloatVar " ^ n)
+    | GFloat64Var n -> soa i ("GFloat64Var " ^ n)
+    | NativeVar s -> soa i ("NativeVar " ^ s)
+    | NativeFunExpr _ -> soa i "NativeFunExpr ..."
     | Pragma _ -> soa i "Pragma"
     | Map _ -> soa i "Map"
   in

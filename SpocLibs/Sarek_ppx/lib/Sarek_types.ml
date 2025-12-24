@@ -92,7 +92,10 @@ let rec unify (t1 : typ) (t2 : typ) : (unit, unify_error) result =
         end
     | TPrim p1, TPrim p2 when p1 = p2 -> Ok ()
     | TVec t1, TVec t2 -> unify t1 t2
-    | TArr (t1, m1), TArr (t2, m2) when m1 = m2 -> unify t1 t2
+    | TArr (t1, _m1), TArr (t2, _m2) ->
+        (* Memspace may differ (e.g., annotation defaults to Local, create_array uses Shared)
+           The actual memspace comes from create_array, not the type annotation *)
+        unify t1 t2
     | TFun (args1, ret1), TFun (args2, ret2) ->
         if List.length args1 <> List.length args2 then
           Error (Cannot_unify (t1, t2))

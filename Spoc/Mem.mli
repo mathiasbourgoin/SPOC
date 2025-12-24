@@ -89,6 +89,12 @@ val set : ('a, 'b) Vector.vector -> int -> 'a -> unit
 
 val get : ('a, 'b) Vector.vector -> int -> 'a
 
+(** Custom indexing operators for vectors. Use [v.%[i]] to read and
+    [v.%[i] <- x] to write. *)
+val ( .%[] ) : ('a, 'b) Vector.vector -> int -> 'a
+
+val ( .%[]<- ) : ('a, 'b) Vector.vector -> int -> 'a -> unit
+
 (** @return
       a subvector from a given vector Subvectors share the same cpu memory space
       with the vector they are from. They do not share the same memory space on

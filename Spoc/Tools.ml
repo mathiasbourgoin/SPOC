@@ -38,6 +38,11 @@ external boolget : Vector.customarray -> int -> bool = "custom_boolget"
 
 external boolset : Vector.customarray -> int -> bool -> unit = "custom_boolset"
 
+external float32get : Vector.customarray -> int -> float = "custom_float32get"
+
+external float32set : Vector.customarray -> int -> float -> unit
+  = "custom_float32set"
+
 let print s =
   Printf.printf "%s\n" (string_of_int s) ;
   flush stdout
