@@ -33,41 +33,43 @@ let measure_time f  s =
 let devices = measure_time (Spoc.Devices.init ) "init"
 
 
-    ktype node = {
-                mutable starting : int32;
-                mutable no_of_edges : int32;
-              }
+type node = {
+  mutable starting : int32;
+  mutable no_of_edges : int32;
+} [@@sarek.type]
 
 
 let max_threads_per_block = ref 512l
 
-let bfs_kern1 = kern g_graph_nodes g_graph_edges g_graph_mask g_updating_graph_mask g_graph_visited g_cost no_of_nodes ->
+let bfs_kern1 () = [%kernel fun (g_graph_nodes : node vector) (g_graph_edges : int32 vector) (g_graph_mask : int32 vector) (g_updating_graph_mask : int32 vector) (g_graph_visited : int32 vector) (g_cost : int32 vector) (no_of_nodes : int32) ->
   let open Std in
-  let tid = (block_idx_x * @max_threads_per_block) + thread_idx_x in
-  if (tid < no_of_nodes && (1 = g_graph_mask.[<tid>]) ) then
+  let tid = (block_idx_x * [%global max_threads_per_block]) + thread_idx_x in
+  if (tid < no_of_nodes && (1 = g_graph_mask.%[tid]) ) then
     (
-      g_graph_mask.[<tid>] <- 0;
-      for i = g_graph_nodes.[<tid>].starting to (g_graph_nodes.[<tid>].no_of_edges + g_graph_nodes.[<tid>].starting -1) do
+      g_graph_mask.%[tid] <- 0;
+      for i = g_graph_nodes.%[tid].starting to (g_graph_nodes.%[tid].no_of_edges + g_graph_nodes.%[tid].starting - 1) do
 
-        let id = g_graph_edges.[<i>] in
-        if !(1 = g_graph_visited.[<id>] ) then
+        let id = g_graph_edges.%[i] in
+        if not (1 = g_graph_visited.%[id]) then
           (
-            g_cost.[<id>] <- g_cost.[<tid>] + 1;
-            g_updating_graph_mask.[<id>] <- 1;
+            g_cost.%[id] <- g_cost.%[tid] + 1;
+            g_updating_graph_mask.%[id] <- 1;
           )
       done;
     )
+]
 
-let bfs_kern2 = kern g_graph_mask g_updating_graph_mask g_graph_visited g_over no_of_nodes ->
+let bfs_kern2 = [%kernel fun (g_graph_mask : int32 vector) (g_updating_graph_mask : int32 vector) (g_graph_visited : int32 vector) (g_over : int32 vector) (no_of_nodes : int32) ->
   let open Std in
-  let tid = (block_idx_x * @max_threads_per_block) + thread_idx_x in
-  if( tid<no_of_nodes && (g_updating_graph_mask.[<tid>] = 1) ) then
+  let tid = (block_idx_x * [%global max_threads_per_block]) + thread_idx_x in
+  if( tid<no_of_nodes && (g_updating_graph_mask.%[tid] = 1) ) then
     (
-      g_graph_mask.[<tid>] <- 1;
-      g_graph_visited.[<tid>] <- 1;
-      g_over.[<0>] <- 1;
-      g_updating_graph_mask.[<tid>] <- 0;
+      g_graph_mask.%[tid] <- 1;
+      g_graph_visited.%[tid] <- 1;
+      g_over.%[0] <- 1;
+      g_updating_graph_mask.%[tid] <- 0;
     )
+]
 
 
 let usage () =
@@ -112,7 +114,7 @@ let bfs_graph () =
     );
 
 
-  (*  let graph_nodes = Vector.create (Vector.Custom customNode) no_of_nodes *)
+  (*  let graph_nodes = Vector.create (Vector.Custom node_custom) no_of_nodes *)
   let graph_mask = Vector.create Vector.int32 no_of_nodes
   and updating_graph_mask = Vector.create Vector.int32 no_of_nodes
   and graph_visited = Vector.create Vector.int32 no_of_nodes in
@@ -122,7 +124,7 @@ let bfs_graph () =
         (fun a b ->
            {starting = Int32.of_int a;
             no_of_edges = Int32.of_int b}
-        )) (Vector.Custom customNode) graph_mask in
+        )) (Vector.Custom node_custom) graph_mask in
 
   for i = 0 to no_of_nodes - 1 do
     Mem.unsafe_set graph_mask i  0l;
@@ -190,13 +192,14 @@ let bfs_graph () =
   Mem.set over 0 1l;
 
 
+  let kern1 = bfs_kern1 () in
   measure_time (fun () ->
       let kind = match dev.Devices.specific_info with
         | Devices.OpenCLInfo clI -> Devices.OpenCL
         | _ -> Devices.Cuda
       in
       for i = 1 to 10 do
-        ignore(Kirc.gen ~only:kind bfs_kern1 dev);
+        ignore(Kirc.gen ~only:kind kern1 dev);
         ignore(Kirc.gen ~only:kind bfs_kern2 dev)
       done;
     ) "Code generation";
@@ -209,7 +212,7 @@ let bfs_graph () =
     let t0 = Unix.gettimeofday () in
     Mem.set over 0 0l;
 
-    Kirc.run bfs_kern1 (graph_nodes, graph_edges, graph_mask, updating_graph_mask, graph_visited, cost, no_of_nodes) (block,grid) 0 dev;
+    Kirc.run kern1 (graph_nodes, graph_edges, graph_mask, updating_graph_mask, graph_visited, cost, no_of_nodes) (block,grid) 0 dev;
 
     Kirc.run bfs_kern2 (graph_mask, updating_graph_mask, graph_visited, over, no_of_nodes) (block,grid) 0 dev;
 

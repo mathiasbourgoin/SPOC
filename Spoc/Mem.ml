@@ -567,6 +567,11 @@ and to_cpu vect ?queue_id:(q = 0) () =
           done) ;
       Vector.set_device vect dev.Devices.general_info.Devices.id Vector.No_dev
 
+(* Custom indexing operators *)
+let ( .%[] ) = get
+
+let ( .%[]<- ) = set
+
 let sub_vector (vect : ('a, 'b) Vector.vector) _start ?ok_rng:(_ok_r = 0)
     ?ko_rng:(_ko_r = 0) _len =
   if _ok_r > _len || _ok_r < 0 || _ko_r < 0 then

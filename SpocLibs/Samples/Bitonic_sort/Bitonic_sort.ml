@@ -18,32 +18,29 @@ open Sarek
 open Kirc
 
 
-let gpu_bitonic = kern v j k ->
-  let open Std in
-  let i = thread_idx_x + block_dim_x * block_idx_x in
-  let ixj = Math.xor i j in
-  let mutable temp = 0. in
-  if ixj >= i then
-    begin
-      if (Math.logical_and i k) = 0  then
-        (
-          if  v.[<i>] >. v.[<ixj>] then
-            (temp := v.[<ixj>];
-             v.[<ixj>] <- v.[<i>];
-             v.[<i>] <- temp)
-        )
-      else
-      if v.[<i>] <. v.[<ixj>] then
-        (temp := v.[<ixj>];
-         v.[<ixj>] <- v.[<i>];
-         v.[<i>] <- temp);
-    end
+let gpu_bitonic =
+  [%kernel
+    fun (v : float32 vector) (j : int32) (k : int32) ->
+      let i = thread_idx_x + block_dim_x * block_idx_x in
+      let ixj = Math.xor i j in
+      let temp = mut 0. in
+      if ixj >= i then begin
+        if Math.logical_and i k = 0 then
+          if v.%[i] > v.%[ixj] then (
+            temp := v.%[ixj] ;
+            v.%[ixj] <- v.%[i] ;
+            v.%[i] <- temp)
+        else if v.%[i] < v.%[ixj] then (
+          temp := v.%[ixj] ;
+          v.%[ixj] <- v.%[i] ;
+          v.%[i] <- temp)
+      end]
 
 let exchange (v : (float, Bigarray.float32_elt) Spoc.Vector.vector) i j : unit =
-  let t : float = v.[<i>] in
-  v.[<i>] <- v.[<j>];
-  v.[<j>] <- t
-;;
+  let open Mem in
+  let t : float = v.%[i] in
+  v.%[i] <- v.%[j] ;
+  v.%[j] <- t
 
 let rec sortup v
     m n : unit =
@@ -63,30 +60,25 @@ and sortdown v
       mergedown v m (n/2);
     end
 
-and mergeup v
-    (m:int) (n:int) : unit =
-  if n <> 0 then
-    begin
-      for i = 0 to n - 1 do
-        if v.[<m+i>] > v.[<m+i+n>] then
-          exchange v  (m+i) (m+i+n);
-      done;
-      mergeup v  m (n/2);
-      mergeup v  (m+n) (n/2)
-    end
+and mergeup v (m : int) (n : int) : unit =
+  let open Mem in
+  if n <> 0 then begin
+    for i = 0 to n - 1 do
+      if v.%[m + i] > v.%[m + i + n] then exchange v (m + i) (m + i + n)
+    done ;
+    mergeup v m (n / 2) ;
+    mergeup v (m + n) (n / 2)
+  end
 
-and mergedown v
-    m n =
-  if n <> 0 then
-    begin
-      for i = 0 to n - 1 do
-        if v.[<m+i>] < v.[<m+i+n>] then
-          exchange v (m+i) (m+i+n);
-      done;
-      mergedown v m (n/2);
-      mergedown v (m+n) (n/2)
-    end
-;;
+and mergedown v m n =
+  let open Mem in
+  if n <> 0 then begin
+    for i = 0 to n - 1 do
+      if v.%[m + i] < v.%[m + i + n] then exchange v (m + i) (m + i + n)
+    done ;
+    mergedown v m (n / 2) ;
+    mergedown v (m + n) (n / 2)
+  end
 
 let cpt = ref 0
 
@@ -142,15 +134,16 @@ let () =
   and base_vect = Spoc.Vector.create Vector.float32 size
   and vect_as_array = Array.make size 0.
   in
-  Random.self_init ();
+  Random.self_init () ;
+  let open Mem in
   (* fill vectors with random values... *)
   for i = 0 to Vector.length seq_vect - 1 do
     let v = Random.float 255. in
-    seq_vect.[<i>] <- v;
-    gpu_vect.[<i>] <- v;
-    base_vect.[<i>] <- v;
-    vect_as_array.(i) <- v;
-  done;
+    seq_vect.%[i] <- v ;
+    gpu_vect.%[i] <- v ;
+    base_vect.%[i] <- v ;
+    vect_as_array.(i) <- v
+  done ;
 
   if compare then
     begin
@@ -192,21 +185,15 @@ let () =
       Devices.flush !dev ();
     );
 
-  if check then
-    (
-      let r = ref (-. infinity) in
-      let ok = ref true in
-      for i = 0 to size - 1 do
-        if gpu_vect.[<i>] < !r then
-          ( Printf.printf "%d -> %s\n" i (Printf.sprintf "error, %g <  %g" gpu_vect.[<i>] !r);
-            r := Mem.get gpu_vect i;
-            ok := false ;)
-        else (
-          r := gpu_vect.[<i>]);
-      done;
-      if !ok then
-        Printf.printf "Check OK\n"
-      else
-        Printf.printf "Check KO\n";
-    )
-;;
+  if check then (
+    let r = ref neg_infinity in
+    let ok = ref true in
+    for i = 0 to size - 1 do
+      let vi = gpu_vect.%[i] in
+      if vi < !r then (
+        Printf.printf "%d -> %s\n" i (Printf.sprintf "error, %g <  %g" vi !r) ;
+        r := vi ;
+        ok := false)
+      else r := vi
+    done ;
+    if !ok then Printf.printf "Check OK\n" else Printf.printf "Check KO\n")

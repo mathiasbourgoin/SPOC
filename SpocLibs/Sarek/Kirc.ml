@@ -82,7 +82,8 @@ let constructors = ref []
 let register_constructor_string s = constructors := s :: !constructors
 
 let opencl_head =
-  "#define SAREK_VEC_LENGTH(A) sarek_## A ##_length\n"
+  "#pragma OPENCL EXTENSION cl_khr_global_int32_base_atomics : enable\n"
+  ^ "#define SAREK_VEC_LENGTH(A) sarek_## A ##_length\n"
   ^ "float spoc_fadd ( float a, float b );\n"
   ^ "float spoc_fminus ( float a, float b );\n"
   ^ "float spoc_fmul ( float a, float b );\n"
@@ -724,6 +725,10 @@ let rewrite ker =
     | GInt _ -> kern
     | GFloat _ -> kern
     | GFloat64 _ -> kern
+    | GIntVar _ -> kern
+    | GFloatVar _ -> kern
+    | GFloat64Var _ -> kern
+    | NativeVar _ -> kern
     | Float _ -> kern
     | Double _ -> kern
     | Custom _ -> kern
@@ -919,12 +924,20 @@ let gen ?keep_temp:(kt = false) ?profile:(prof = profile_default ())
     Hashtbl.iter
       (fun _ a -> global_funs := !global_funs ^ fst a ^ "\n")
       Kirc_Cuda.global_funs ;
-    let i = ref 0 in
     let constructors =
+      let contains_build s =
+        let rec check i =
+          if i > String.length s - 6 then false
+          else if String.sub s i 6 = "build_" then true
+          else check (i + 1)
+        in
+        check 0
+      in
       List.fold_left
         (fun a b ->
-          incr i ;
-          (if !i mod 3 = 0 then " " else "__device__ ") ^ b ^ a)
+          (* Add __device__ to function definitions, not to
+             struct/union type definitions. Functions contain "build_" *)
+          (if contains_build b then "__device__ " else "") ^ b ^ a)
         "\n\n"
         !constructors
     in

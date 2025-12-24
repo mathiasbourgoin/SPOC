@@ -284,14 +284,28 @@ let rec lower_expr (state : state) (te : texpr) : Kirc_Ast.k_ext =
       let ref_ir = lower_ref id name value.ty in
       Kirc_Ast.Set (ref_ir, value_ir)
   (* Let binding *)
-  | TELet (name, id, value, body) ->
-      let value_ir = lower_expr state value in
-      let decl_ir = lower_decl ~mutable_:false id name value.ty in
-      let ref_ir = lower_ref id name value.ty in
-      let body_ir = lower_expr state body in
-      Kirc_Ast.Seq
-        ( Kirc_Ast.Decl decl_ir,
-          Kirc_Ast.Seq (Kirc_Ast.Set (ref_ir, value_ir), body_ir) )
+  | TELet (name, _id, value, body) -> (
+      match value.te with
+      (* Special case: create_array - the Arr node IS the declaration *)
+      | TECreateArray (size, elem_ty, mem) ->
+          let size_ir = lower_expr state size in
+          let elt =
+            match repr elem_ty with
+            | TPrim p -> lower_elttype p
+            | _ -> Kirc_Ast.EInt32
+          in
+          let arr_ir = Kirc_Ast.Arr (name, size_ir, elt, lower_memspace mem) in
+          let body_ir = lower_expr state body in
+          Kirc_Ast.Local (arr_ir, body_ir)
+      (* Normal let binding *)
+      | _ ->
+          let value_ir = lower_expr state value in
+          let decl_ir = lower_decl ~mutable_:false _id name value.ty in
+          let ref_ir = lower_ref _id name value.ty in
+          let body_ir = lower_expr state body in
+          Kirc_Ast.Seq
+            ( Kirc_Ast.Decl decl_ir,
+              Kirc_Ast.Seq (Kirc_Ast.Set (ref_ir, value_ir), body_ir) ))
   (* Mutable let binding - same as regular let in IR *)
   | TELetMut (name, id, value, body) ->
       let value_ir = lower_expr state value in
@@ -372,7 +386,13 @@ let rec lower_expr (state : state) (te : texpr) : Kirc_Ast.k_ext =
   | TEIntrinsicConst (cuda, opencl) -> Kirc_Ast.Intrinsics (cuda, opencl)
   (* Intrinsic function call *)
   | TEIntrinsicFun (cuda, opencl, args) ->
-      let args_ir = Array.of_list (List.map (lower_expr state) args) in
+      (* Filter out Unit arguments - they're just () for function application syntax *)
+      let non_unit_args =
+        List.filter
+          (fun arg -> match arg.te with TEUnit -> false | _ -> true)
+          args
+      in
+      let args_ir = Array.of_list (List.map (lower_expr state) non_unit_args) in
       if Array.length args_ir = 0 then Kirc_Ast.Intrinsics (cuda, opencl)
       else Kirc_Ast.App (Kirc_Ast.Intrinsics (cuda, opencl), args_ir)
 

@@ -355,6 +355,152 @@ let generate_field_accessors ~loc (td : type_declaration) : structure_item list
         labels
   | _ -> []
 
+(** Calculate the size in bytes of a sarek type based on its fields. Uses 4
+    bytes for int32/float32, 8 bytes for int64/float64. *)
+let calc_type_size (labels : label_declaration list) : int =
+  List.fold_left
+    (fun acc ld ->
+      let field_size =
+        match ld.pld_type.ptyp_desc with
+        | Ptyp_constr ({txt = Lident "int32"; _}, _) -> 4
+        | Ptyp_constr ({txt = Lident "int64"; _}, _) -> 8
+        | Ptyp_constr ({txt = Lident "float32"; _}, _) -> 4
+        | Ptyp_constr ({txt = Lident "float"; _}, _) -> 8
+        | Ptyp_constr ({txt = Lident "int"; _}, _) -> 4
+        | _ -> 4
+      in
+      acc + field_size)
+    0
+    labels
+
+(** Get the accessor function for a field type *)
+let get_accessor_for_type ~loc (ct : core_type) : expression =
+  match ct.ptyp_desc with
+  | Ptyp_constr ({txt = Lident "float32"; _}, _)
+  | Ptyp_constr ({txt = Lident "float"; _}, _) ->
+      [%expr Spoc.Tools.float32get]
+  | Ptyp_constr ({txt = Lident "int32"; _}, _)
+  | Ptyp_constr ({txt = Lident "int"; _}, _) ->
+      (* For int32, we'd need custom_int32get - for now use float32 as placeholder *)
+      [%expr fun arr idx -> Int32.of_float (Spoc.Tools.float32get arr idx)]
+  | _ -> [%expr Spoc.Tools.float32get]
+
+(** Get the setter function for a field type *)
+let set_accessor_for_type ~loc (ct : core_type) : expression =
+  match ct.ptyp_desc with
+  | Ptyp_constr ({txt = Lident "float32"; _}, _)
+  | Ptyp_constr ({txt = Lident "float"; _}, _) ->
+      [%expr Spoc.Tools.float32set]
+  | Ptyp_constr ({txt = Lident "int32"; _}, _)
+  | Ptyp_constr ({txt = Lident "int"; _}, _) ->
+      [%expr fun arr idx v -> Spoc.Tools.float32set arr idx (Int32.to_float v)]
+  | _ -> [%expr Spoc.Tools.float32set]
+
+(** Get the field count (number of primitive fields, counting nested as 1 for
+    now) *)
+let field_element_count (ct : core_type) : int =
+  match ct.ptyp_desc with
+  | Ptyp_constr ({txt = Lident "float32"; _}, _) -> 1
+  | Ptyp_constr ({txt = Lident "float"; _}, _) -> 1
+  | Ptyp_constr ({txt = Lident "int32"; _}, _) -> 1
+  | Ptyp_constr ({txt = Lident "int"; _}, _) -> 1
+  | _ -> 1
+
+(** Generate a <name>_custom value for Vector.Custom.
+    For type float4 = { mutable x: float32; mutable y: float32; ... } [@@sarek.type],
+    generates proper get/set functions using Spoc.Tools.float32get/set *)
+let generate_custom_value ~loc (td : type_declaration) : structure_item list =
+  match td.ptype_kind with
+  | Ptype_record labels ->
+      let type_name = td.ptype_name.txt in
+      let custom_name = type_name ^ "_custom" in
+      let size = calc_type_size labels in
+      let size_expr = Ast_builder.Default.eint ~loc size in
+      let custom_pat = Ast_builder.Default.pvar ~loc custom_name in
+
+      (* Calculate field offsets in terms of primitive count *)
+      let field_infos =
+        let rec calc_offsets offset = function
+          | [] -> []
+          | ld :: rest ->
+              let count = field_element_count ld.pld_type in
+              (ld.pld_name.txt, offset, ld.pld_type)
+              :: calc_offsets (offset + count) rest
+        in
+        calc_offsets 0 labels
+      in
+
+      (* Generate get function: fun arr idx -> { x = get arr (idx*n + 0); ... } *)
+      let num_fields = List.length labels in
+      let num_fields_expr = Ast_builder.Default.eint ~loc num_fields in
+      let get_fields =
+        List.map
+          (fun (name, offset, ftype) ->
+            let offset_expr = Ast_builder.Default.eint ~loc offset in
+            let getter = get_accessor_for_type ~loc ftype in
+            let field_expr =
+              [%expr [%e getter] arr (base + [%e offset_expr])]
+            in
+            ({txt = Lident name; loc}, field_expr))
+          field_infos
+      in
+      let get_record = Ast_builder.Default.pexp_record ~loc get_fields None in
+      let get_body =
+        [%expr
+          let base = idx * [%e num_fields_expr] in
+          [%e get_record]]
+      in
+      let get_fn = [%expr fun arr idx -> [%e get_body]] in
+
+      (* Generate set function: fun arr idx v -> set arr (idx*n+0) v.x; ... *)
+      let set_stmts =
+        List.map
+          (fun (name, offset, ftype) ->
+            let offset_expr = Ast_builder.Default.eint ~loc offset in
+            let setter = set_accessor_for_type ~loc ftype in
+            let field_access =
+              Ast_builder.Default.pexp_field
+                ~loc
+                [%expr v]
+                {txt = Lident name; loc}
+            in
+            [%expr [%e setter] arr (base + [%e offset_expr]) [%e field_access]])
+          field_infos
+      in
+      let set_body =
+        match set_stmts with
+        | [] -> [%expr ()]
+        | [stmt] ->
+            [%expr
+              let base = idx * [%e num_fields_expr] in
+              [%e stmt]]
+        | stmt :: rest ->
+            let seq =
+              List.fold_left
+                (fun acc s ->
+                  [%expr
+                    [%e acc] ;
+                    [%e s]])
+                stmt
+                rest
+            in
+            [%expr
+              let base = idx * [%e num_fields_expr] in
+              [%e seq]]
+      in
+      let set_fn = [%expr fun arr idx v -> [%e set_body]] in
+
+      [
+        [%stri
+          let [%p custom_pat] =
+            {
+              Spoc.Vector.size = [%e size_expr];
+              get = [%e get_fn];
+              set = [%e set_fn];
+            }];
+      ]
+  | _ -> []
+
 (* Context-free rule to capture [@@sarek.type] before kernel expansion *)
 let sarek_type_rule =
   Context_free.Rule.attr_str_type_decl
@@ -368,7 +514,10 @@ let sarek_type_rule =
             | Some () ->
                 register_sarek_type_decl ~loc:td.ptype_loc td ;
                 (* Generate field accessor functions for compile-time validation *)
-                generate_field_accessors ~loc td
+                let accessors = generate_field_accessors ~loc td in
+                (* Generate <name>_custom value for Vector.Custom *)
+                let custom_val = generate_custom_value ~loc td in
+                accessors @ custom_val
             | None -> [])
           (List.combine decls payloads)
       in

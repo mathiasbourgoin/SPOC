@@ -218,10 +218,32 @@ let rec parse_expression (expr : expression) : Sarek_ast.expr =
         in
         let opts = collect_strings [] opts_expr in
         Sarek_ast.EPragma (opts, parse_expression body)
-    (* Binary operators *)
+    (* create_array size memspace - special form for local/shared arrays
+       Must come before binary operators since it has 2 arguments *)
+    | Pexp_apply
+        ( {pexp_desc = Pexp_ident {txt = Lident "create_array"; _}; _},
+          [(Nolabel, size_expr); (Nolabel, mem_expr)] ) ->
+        let size = parse_expression size_expr in
+        let mem =
+          match mem_expr.pexp_desc with
+          | Pexp_construct ({txt = Lident "Local"; _}, None) -> Sarek_ast.Local
+          | Pexp_construct ({txt = Lident "Shared"; _}, None) ->
+              Sarek_ast.Shared
+          | Pexp_construct ({txt = Lident "Global"; _}, None) ->
+              Sarek_ast.Global
+          | _ ->
+              raise
+                (Parse_error_exn
+                   ( "create_array expects Local, Shared, or Global as memspace",
+                     mem_expr.pexp_loc ))
+        in
+        (* Type comes from let binding annotation, use type variable for inference *)
+        Sarek_ast.ECreateArray (size, Sarek_ast.TEVar "_infer", mem)
+    (* Binary operators - exclude create_array which is handled above *)
     | Pexp_apply
         ( {pexp_desc = Pexp_ident {txt = Lident op; _}; _},
-          [(Nolabel, e1); (Nolabel, e2)] ) -> (
+          [(Nolabel, e1); (Nolabel, e2)] )
+      when op <> "create_array" -> (
         match parse_binop op with
         | Some binop ->
             Sarek_ast.EBinop (binop, parse_expression e1, parse_expression e2)

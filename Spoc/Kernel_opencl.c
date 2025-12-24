@@ -132,7 +132,7 @@ CAMLprim value spoc_opencl_load_param_vec(value off, value ker, value A, value i
   cl_mem d_A;
   int offset;
   offset = Int_val(Field(off, 0));
-  d_A = Cl_mem_val(Field(A, 1));
+  d_A = Cl_mem_val(A);
   
 #ifdef SPOC_PROFILE
   print_last_vector_access(Int_val(id));
@@ -154,7 +154,7 @@ CAMLprim value spoc_opencl_load_param_local_vec(value off, value ker, int idx, v
   int offset;
   
   offset = Int_val(Field(off, 0));
-  d_A = Cl_mem_val(Field(A, 1));
+  d_A = Cl_mem_val(A);
 
   OPENCL_GET_CONTEXT;
     

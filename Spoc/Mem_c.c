@@ -1781,6 +1781,24 @@ static struct custom_operations host_vec_nonowning_ops = {
     CAMLreturn(Val_unit);
   }
 
+  /* Float32 get/set for custom arrays */
+  CAMLprim value custom_float32get (value customArray, value idx)
+  {
+    CAMLparam2(customArray, idx);
+    float *f;
+    f = ((float*)Custom_array_val(customArray)) + Int_val(idx);
+    CAMLreturn(caml_copy_double((double)*f));
+  }
+
+  CAMLprim value custom_float32set (value customArray, value idx, value v)
+  {
+    CAMLparam3(customArray, idx, v);
+    float* f;
+    f = ((float*)Custom_array_val(customArray)) + Int_val(idx);
+    *f = (float)Double_val(v);
+    CAMLreturn(Val_unit);
+  }
+
 #ifdef __cplusplus
 }
 #endif

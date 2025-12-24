@@ -72,7 +72,11 @@ type k_ext =
   | GInt of (unit -> int32)
   | GFloat of (unit -> float)
   | GFloat64 of (unit -> float)
+  | GIntVar of string
+  | GFloatVar of string
+  | GFloat64Var of string
   | Native of (Spoc.Devices.device -> string)
+  | NativeVar of string
   | Pragma of string list * k_ext
   | Map of (k_ext * k_ext * k_ext)
   | Unit

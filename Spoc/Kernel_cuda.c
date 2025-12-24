@@ -284,7 +284,7 @@ CAMLprim value spoc_cuda_load_param_vec(value off, value ex, value A, value v, v
 	GET_TYPE_SIZE;
 	extra = (char*)ex;
 	offset = Int_val(Field(off, 0));
-	cuv = (cu_vector*)Field(A, 1);
+	cuv = Cu_vector_val(A);
 	d_A = cuv->cu_vector;
 	ptr = (void*) (size_t) d_A+seek*type_size;
 	ADD_TO_PARAM_BUFFER(ptr, __alignof(d_A));
@@ -314,7 +314,7 @@ CAMLprim value spoc_cuda_custom_load_param_vec(value off, value ex, value A, val
 	extra = (char*)ex;
 	offset = Int_val(Field(off, 0));
 
-	cuv = (cu_vector*)Field(A, 1);
+	cuv = Cu_vector_val(A);
 	d_A = cuv->cu_vector;
 	ptr = (void*) (size_t) d_A + seek * type_size;
 	ADD_TO_PARAM_BUFFER(ptr, __alignof(d_A));

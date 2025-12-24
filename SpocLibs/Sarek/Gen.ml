@@ -459,6 +459,17 @@ module Generator (M : CodeGenerator) = struct
       | GInt a -> Int32.to_string (a ())
       | GFloat a -> string_of_float (a ()) ^ "f"
       | GFloat64 a -> string_of_float (a ()) ^ "f"
+      | GIntVar n ->
+          failwith ("GIntVar " ^ n ^ " should have been expanded during quoting")
+      | GFloatVar n ->
+          failwith
+            ("GFloatVar " ^ n ^ " should have been expanded during quoting")
+      | GFloat64Var n ->
+          failwith
+            ("GFloat64Var " ^ n ^ " should have been expanded during quoting")
+      | NativeVar n ->
+          failwith
+            ("NativeVar " ^ n ^ " should have been expanded during quoting")
       | Double f -> string_of_float f
       | IntId (s, _) -> s
       | Intrinsics gv -> M.parse_intrinsics gv
