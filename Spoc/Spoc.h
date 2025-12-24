@@ -283,7 +283,7 @@ typedef struct spoc_vector {
 	spoc_cu_context *spoc_ctx; \
 	CUstream queue[2]; \
 	enum cudaError_enum cuda_error = 0; \
-	spoc_ctx = (spoc_cu_context*)Field(gi, 8); \
+	spoc_ctx = *((spoc_cu_context**)Data_custom_val(Field(gi, 8))); \
 	ctx = spoc_ctx->ctx; \
 	queue[0] = spoc_ctx->queue[0];\
 	queue[1] = spoc_ctx->queue[1];\
@@ -295,7 +295,7 @@ typedef struct spoc_vector {
 	spoc_cu_context *spoc_ctx; \
 	CUstream queue[2]; \
 	enum cudaError_enum cuda_error = 0; \
-	spoc_ctx = (spoc_cu_context*)Field(gi, 8); \
+	spoc_ctx = *((spoc_cu_context**)Data_custom_val(Field(gi, 8))); \
 	ctx = spoc_ctx->ctx; \
 	queue[0] = spoc_ctx->queue[0];\
 	queue[1] = spoc_ctx->queue[1];\
@@ -304,13 +304,11 @@ typedef struct spoc_vector {
 #define CUDA_RESTORE_CONTEXT \
   caml_leave_blocking_section();		\
   spoc_ctx->queue[0] = queue[0]; \
-  spoc_ctx->queue[1] = queue[1]; \
-  Store_field(gi,8, (value)spoc_ctx);}
+  spoc_ctx->queue[1] = queue[1];}
 
 #define BLOCKING_CUDA_RESTORE_CONTEXT \
   spoc_ctx->queue[0] = queue[0]; \
-  spoc_ctx->queue[1] = queue[1]; \
-  Store_field(gi,8, (value)spoc_ctx);}
+  spoc_ctx->queue[1] = queue[1];}
 
 typedef struct spoc_cl_context {
 		cl_context ctx;
@@ -327,7 +325,7 @@ typedef struct spoc_cu_context {
 	cl_command_queue queue[2]; \
 	spoc_cl_context *spoc_ctx; \
 	cl_int opencl_error = 0; \
-	spoc_ctx = (spoc_cl_context*)Field(gi, 8); \
+	spoc_ctx = *((spoc_cl_context**)Data_custom_val(Field(gi, 8))); \
 	ctx = spoc_ctx->ctx; \
 	queue[0] = spoc_ctx->queue[0];\
 	queue[1] = spoc_ctx->queue[1];
@@ -337,8 +335,7 @@ typedef struct spoc_cu_context {
 #define OPENCL_RESTORE_CONTEXT \
 	spoc_ctx->queue[0] = queue[0]; \
 	spoc_ctx->queue[1] = queue[1]; \
-	spoc_ctx->ctx = ctx;\
-	Store_field(gi,8, (value)spoc_ctx);}
+	spoc_ctx->ctx = ctx;}
 
 
 int ae_load_file_to_memory(const char *filename, char **result);
@@ -351,7 +348,7 @@ int ae_load_file_to_memory(const char *filename, char **result);
     type_size = Int_val(Field(Field(bigArray, 1),0))*sizeof(char);	\
   }									\
   else {								\
-    type_size=((host_vector*)(Field(Field(bigArray,0),1)))->type_size;	\
+    type_size=(*((host_vector**)Data_custom_val(Field(bigArray,0))))->type_size;	\
   }
 /* #define GET_TYPE_SIZE 						  \ */
 /*   if (custom) { \ */
@@ -382,11 +379,24 @@ int ae_load_file_to_memory(const char *filename, char **result);
 /* 		} \ */
 /* 	} */
 
-#define Val_cl_mem(x) (value)((cl_mem)x)
-#define Cl_mem_val(x) (cl_mem)((value)x)
+/* OCaml 5 compatible device vector access macros.
+   Device vectors are now stored as custom blocks with the pointer
+   in the data area, not as raw pointers in OCaml fields. */
 
-#define Val_CUdeviceptr(x) (value)((CUdeviceptr)x)
-#define CUdeviceptr_val(x) (CUdeviceptr)((value)x)
+/* Access cl_mem from a device_vec custom block */
+#define Cl_mem_ptr(v) ((cl_mem*)Data_custom_val(v))
+#define Cl_mem_val(v) (*Cl_mem_ptr(v))
+#define Set_cl_mem(v, x) (*Cl_mem_ptr(v) = (x))
+
+/* Access cu_vector* from a CUDA device_vec custom block */
+#define Cu_vector_ptr(v) ((cu_vector**)Data_custom_val(v))
+#define Cu_vector_val(v) (*Cu_vector_ptr(v))
+#define Set_cu_vector(v, x) (*Cu_vector_ptr(v) = (x))
+
+/* Access void* from a custom array block (for spoc custom types) */
+#define Custom_array_ptr(v) ((void**)Data_custom_val(v))
+#define Custom_array_val(v) (*Custom_array_ptr(v))
+#define Set_custom_array(v, x) (*Custom_array_ptr(v) = (x))
 
 cuComplex complex_val (value c);
 cuDoubleComplex doubleComplex_val (value c);

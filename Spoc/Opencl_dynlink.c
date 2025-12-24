@@ -61,6 +61,7 @@ tclFlush* clFlush;
 tclFinish* clFinish;
 tclRetainCommandQueue* clRetainCommandQueue;
 tclReleaseCommandQueue* clReleaseCommandQueue;
+tclReleaseContext* clReleaseContext;
 tclSetEventCallback* clSetEventCallback;
 tclWaitForEvents* clWaitForEvents;
 tclGetEventProfilingInfo* clGetEventProfilingInfo;
@@ -181,6 +182,7 @@ int CL_API_ENTRY clInit(){
     	GET_PROC(clFinish);
     	GET_PROC(clRetainCommandQueue);
     	GET_PROC(clReleaseCommandQueue);
+    	GET_PROC(clReleaseContext);
     	GET_PROC(clSetEventCallback);
       GET_PROC(clWaitForEvents);
       GET_PROC(clGetEventProfilingInfo);
