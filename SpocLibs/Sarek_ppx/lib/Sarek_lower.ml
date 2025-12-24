@@ -355,17 +355,19 @@ let rec lower_expr (state : state) (te : texpr) : Kirc_Ast.k_ext =
       in
       let name = "local_array_" ^ string_of_int (fresh_id state) in
       Kirc_Ast.Arr (name, size_ir, elt, lower_memspace mem)
-  (* Global reference *)
-  | TEGlobalRef (_name, ty) -> (
+  (* Global reference - use *Var variants to preserve name for quoting *)
+  | TEGlobalRef (name, ty) -> (
       match repr ty with
-      | TPrim TInt32 | TPrim TInt64 ->
-          Kirc_Ast.GInt (fun () -> Int32.zero)
-          (* Placeholder - will be filled by quotation *)
-      | TPrim TFloat32 -> Kirc_Ast.GFloat (fun () -> 0.0)
-      | TPrim TFloat64 -> Kirc_Ast.GFloat64 (fun () -> 0.0)
-      | _ -> Kirc_Ast.GInt (fun () -> Int32.zero))
-  (* Native code *)
-  | TENative s -> Kirc_Ast.Native (fun _dev -> s)
+      | TPrim TInt32 | TPrim TInt64 -> Kirc_Ast.GIntVar name
+      | TPrim TFloat32 -> Kirc_Ast.GFloatVar name
+      | TPrim TFloat64 -> Kirc_Ast.GFloat64Var name
+      | _ -> Kirc_Ast.GIntVar name)
+  (* Native code - use NativeVar to preserve string for quoting *)
+  | TENative s -> Kirc_Ast.NativeVar s
+  (* Native code - function expression, store for quoting *)
+  | TENativeFun func_expr -> Kirc_Ast.NativeFunExpr func_expr
+  (* Pragma *)
+  | TEPragma (opts, body) -> Kirc_Ast.Pragma (opts, lower_expr state body)
   (* Intrinsic constant *)
   | TEIntrinsicConst (cuda, opencl) -> Kirc_Ast.Intrinsics (cuda, opencl)
   (* Intrinsic function call *)

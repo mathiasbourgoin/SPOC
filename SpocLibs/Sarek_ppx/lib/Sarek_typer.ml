@@ -494,10 +494,18 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
       (* Type will be inferred from context or annotated *)
       let ty = fresh_tvar () in
       Ok (mk_texpr (TEGlobalRef (name, ty)) ty loc, env)
-  (* Native code *)
+  (* Native code - string *)
   | ENative s ->
       let ty = fresh_tvar () in
       Ok (mk_texpr (TENative s) ty loc, env)
+  (* Native code - function *)
+  | ENativeFun func_expr ->
+      let ty = fresh_tvar () in
+      Ok (mk_texpr (TENativeFun func_expr) ty loc, env)
+  (* Pragma *)
+  | EPragma (opts, body) ->
+      let* tbody, env = infer env body in
+      Ok (mk_texpr (TEPragma (opts, tbody)) tbody.ty loc, env)
   (* Type annotation *)
   | ETyped (e, ty_expr) ->
       let* te, env = infer env e in

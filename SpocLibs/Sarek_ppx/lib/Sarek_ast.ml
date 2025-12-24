@@ -146,7 +146,10 @@ and expr_desc =
   | EReturn of expr
   | ECreateArray of expr * type_expr * memspace
   | EGlobalRef of string  (** @name - reference to OCaml value *)
-  | ENative of string  (** Native code injection *)
+  | ENative of string  (** Native code injection - simple string *)
+  | ENativeFun of Ppxlib.expression
+      (** Native code function - fun dev -> ... *)
+  | EPragma of string list * expr  (** pragma "unroll" body *)
   (* Type annotation *)
   | ETyped of expr * type_expr
   (* Module access *)
@@ -379,6 +382,17 @@ let rec pp_expr fmt expr =
         mem
   | EGlobalRef name -> Format.fprintf fmt "@%s" name
   | ENative s -> Format.fprintf fmt "[%%native %S]" s
+  | ENativeFun _ -> Format.fprintf fmt "[%%native fun ...]"
+  | EPragma (opts, body) ->
+      Format.fprintf
+        fmt
+        "(pragma %a %a)"
+        (Format.pp_print_list
+           ~pp_sep:(fun fmt () -> Format.fprintf fmt " ")
+           Format.pp_print_string)
+        opts
+        pp_expr
+        body
   | ETyped (e, ty) -> Format.fprintf fmt "(%a : %a)" pp_expr e pp_type_expr ty
   | EOpen (path, e) ->
       Format.fprintf

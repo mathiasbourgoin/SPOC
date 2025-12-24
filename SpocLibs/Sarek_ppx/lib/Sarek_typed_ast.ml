@@ -55,7 +55,9 @@ and texpr_desc =
   | TEReturn of texpr
   | TECreateArray of texpr * typ * memspace
   | TEGlobalRef of string * typ  (** External ref with its type *)
-  | TENative of string
+  | TENative of string  (** Native code - simple string *)
+  | TENativeFun of Ppxlib.expression  (** Native code - function expression *)
+  | TEPragma of string list * texpr  (** pragma options body *)
   (* Intrinsics *)
   | TEIntrinsicConst of string * string  (** cuda code, opencl code *)
   | TEIntrinsicFun of string * string * texpr list  (** cuda, opencl, args *)
@@ -278,6 +280,17 @@ let rec pp_texpr fmt te =
         mem
   | TEGlobalRef (name, ty) -> Format.fprintf fmt "@%s : %a" name pp_typ ty
   | TENative s -> Format.fprintf fmt "[%%native %S]" s
+  | TENativeFun _ -> Format.fprintf fmt "[%%native fun ...]"
+  | TEPragma (opts, body) ->
+      Format.fprintf
+        fmt
+        "(pragma %a %a)"
+        (Format.pp_print_list
+           ~pp_sep:(fun fmt () -> Format.fprintf fmt " ")
+           Format.pp_print_string)
+        opts
+        pp_texpr
+        body
   | TEIntrinsicConst (cuda, _) -> Format.fprintf fmt "<intrinsic:%s>" cuda
   | TEIntrinsicFun (cuda, _, args) ->
       Format.fprintf
