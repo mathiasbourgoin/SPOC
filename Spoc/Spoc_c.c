@@ -41,6 +41,32 @@
 #include "Spoc.h"
 int noCL = 1;
 
+/* OCaml 5 compatible: custom block for OpenCL context */
+static void opencl_context_finalize(value v) {
+    spoc_cl_context* ctx = *((spoc_cl_context**)Data_custom_val(v));
+    if (ctx) {
+        if (ctx->queue[0]) clReleaseCommandQueue(ctx->queue[0]);
+        if (ctx->queue[1]) clReleaseCommandQueue(ctx->queue[1]);
+        if (ctx->ctx) clReleaseContext(ctx->ctx);
+        free(ctx);
+        *((spoc_cl_context**)Data_custom_val(v)) = NULL;
+    }
+}
+
+static struct custom_operations opencl_context_ops = {
+    .identifier = "spoc.opencl_context",
+    .finalize = opencl_context_finalize,
+    .compare = custom_compare_default,
+    .hash = custom_hash_default,
+    .serialize = custom_serialize_default,
+    .deserialize = custom_deserialize_default,
+    .compare_ext = custom_compare_ext_default,
+    .fixed_length = custom_fixed_length_default
+};
+
+#define Opencl_context_val(v) (*((spoc_cl_context**)Data_custom_val(v)))
+#define Set_opencl_context(v, x) (*((spoc_cl_context**)Data_custom_val(v)) = (x))
+
 
 value spoc_getOpenCLDevicesCount()
 {
@@ -228,7 +254,12 @@ value spoc_getOpenCLDevice(value relative_i, value absolute_i)
         	OPENCL_CHECK_CALL1(opencl_error, clRetainCommandQueue(queue[0]));
         	OPENCL_CHECK_CALL1(opencl_error, clRetainCommandQueue(queue[1]));
 
-            Store_field(general_info,8, (value) spoc_ctx);
+            /* OCaml 5: store context in a custom block */
+            {
+                value ctx_block = caml_alloc_custom(&opencl_context_ops, sizeof(spoc_cl_context*), 0, 1);
+                Set_opencl_context(ctx_block, spoc_ctx);
+                Store_field(general_info, 8, ctx_block);
+            }
 
 
             //platform info

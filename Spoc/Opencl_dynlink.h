@@ -470,8 +470,8 @@ clCreateContextFromType(const cl_context_properties * /* properties */,
 extern CL_API_ENTRY cl_int CL_API_CALL
 clRetainContext(cl_context /* context */) CL_API_SUFFIX__VERSION_1_0;
 
-extern CL_API_ENTRY cl_int CL_API_CALL
-clReleaseContext(cl_context /* context */) CL_API_SUFFIX__VERSION_1_0;
+typedef CL_API_ENTRY cl_int CL_API_CALL
+tclReleaseContext(cl_context /* context */) CL_API_SUFFIX__VERSION_1_0;
 
 typedef CL_API_ENTRY cl_int CL_API_CALL
 tclGetContextInfo(cl_context         /* context */,
@@ -934,6 +934,7 @@ extern tclFlush* clFlush;
 extern tclFinish* clFinish;
 extern tclRetainCommandQueue* clRetainCommandQueue;
 extern tclReleaseCommandQueue* clReleaseCommandQueue;
+extern tclReleaseContext* clReleaseContext;
 extern tclWaitForEvents* clWaitForEvents;
 extern tclGetEventProfilingInfo* clGetEventProfilingInfo;
 extern tclGetKernelWorkGroupInfo* clGetKernelWorkGroupInfo;

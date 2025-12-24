@@ -50,6 +50,55 @@ extern "C" {
 
   #include "Spoc.h"
 
+/* OCaml 5 compatible: custom block for CUDA context */
+static void cuda_context_finalize(value v) {
+    spoc_cu_context* ctx = *((spoc_cu_context**)Data_custom_val(v));
+    if (ctx) {
+        if (ctx->queue[0]) cuStreamDestroy(ctx->queue[0]);
+        if (ctx->queue[1]) cuStreamDestroy(ctx->queue[1]);
+        if (ctx->ctx) cuCtxDestroy(ctx->ctx);
+        free(ctx);
+        *((spoc_cu_context**)Data_custom_val(v)) = NULL;
+    }
+}
+
+static struct custom_operations cuda_context_ops = {
+    .identifier = "spoc.cuda_context",
+    .finalize = cuda_context_finalize,
+    .compare = custom_compare_default,
+    .hash = custom_hash_default,
+    .serialize = custom_serialize_default,
+    .deserialize = custom_deserialize_default,
+    .compare_ext = custom_compare_ext_default,
+    .fixed_length = custom_fixed_length_default
+};
+
+#define Cuda_context_val(v) (*((spoc_cu_context**)Data_custom_val(v)))
+#define Set_cuda_context(v, x) (*((spoc_cu_context**)Data_custom_val(v)) = (x))
+
+/* OCaml 5 compatible: custom block for CUDA GC info */
+static void cuda_gc_info_finalize(value v) {
+    spoc_cuda_gc_info* info = *((spoc_cuda_gc_info**)Data_custom_val(v));
+    if (info) {
+        free(info);
+        *((spoc_cuda_gc_info**)Data_custom_val(v)) = NULL;
+    }
+}
+
+static struct custom_operations cuda_gc_info_ops = {
+    .identifier = "spoc.cuda_gc_info",
+    .finalize = cuda_gc_info_finalize,
+    .compare = custom_compare_default,
+    .hash = custom_hash_default,
+    .serialize = custom_serialize_default,
+    .deserialize = custom_deserialize_default,
+    .compare_ext = custom_compare_ext_default,
+    .fixed_length = custom_fixed_length_default
+};
+
+#define Cuda_gc_info_val(v) (*((spoc_cuda_gc_info**)Data_custom_val(v)))
+#define Set_cuda_gc_info(v, x) (*((spoc_cuda_gc_info**)Data_custom_val(v)) = (x))
+
 
 
   
@@ -206,7 +255,12 @@ extern "C" {
     CUDA_CHECK_CALL(cuStreamCreate(&queue[1], 0));
     spoc_ctx->queue[0] = queue[0];
     spoc_ctx->queue[1] = queue[1];
-    Store_field(general_info,8, (value)spoc_ctx);
+    /* OCaml 5: store context in a custom block */
+    {
+        value ctx_block = caml_alloc_custom(&cuda_context_ops, sizeof(spoc_cu_context*), 0, 1);
+        Set_cuda_context(ctx_block, spoc_ctx);
+        Store_field(general_info, 8, ctx_block);
+    }
     CUDA_CHECK_CALL(cuCtxSetCurrent(ctx));
 
 
@@ -262,15 +316,17 @@ extern "C" {
       CUDA_CHECK_CALL(cuMemGetInfo(&infoUInt, NULL));
       infoUInt -= (32*1024*1024);
 
-      Store_field(device, 2, (value)gcInfo);
+      /* OCaml 5: store gc_info in a custom block */
+      {
+          value gc_block = caml_alloc_custom(&cuda_gc_info_ops, sizeof(spoc_cuda_gc_info*), 0, 1);
+          Set_cuda_gc_info(gc_block, gcInfo);
+          Store_field(device, 2, gc_block);
+      }
 
+      /* events can be NULL initially, store as Val_int(0) which is safe */
+      Store_field(device, 3, Val_int(0));
 
-      {cuda_event_list* events = NULL;
-	Store_field(device, 3, (value)events);
-
-
-
-	CAMLreturn(device);}}
+      CAMLreturn(device);}
   }
 
 #ifdef __cplusplus

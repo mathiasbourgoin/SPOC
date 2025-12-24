@@ -41,36 +41,71 @@ extern "C" {
 #include <string.h>
 #include "Spoc.h"
 
-  
+/* Use macros from Spoc.h for custom array access */
+#define Custom_ptr_val(v) Custom_array_val(v)
+#define Set_custom_ptr(v, x) Set_custom_array(v, x)
 
-void free_custom (value v) {
-	void* f = (void*)(Field(v, 1));
+/* Finalizer for custom arrays that OWN their buffer */
+static void custom_array_finalize(value v) {
+	void* f = Custom_ptr_val(v);
 	if (f) {
 	  if (noCuda)
 	    free(f);
 	  else
 	    cuMemFreeHost(f);
+	  Set_custom_ptr(v, NULL);
 	}
 }
 
+/* Finalizer for sub-custom arrays that do NOT own their buffer */
+static void custom_array_nonowning_finalize(value v) {
+	/* Nothing to free - parent owns the buffer */
+	(void)v;
+}
 
-  CAMLprim value spoc_create_custom (value custom, value size)
+/* Custom operations for custom arrays that own their buffer */
+static struct custom_operations custom_array_ops = {
+  .identifier = "spoc.custom_array",
+  .finalize = custom_array_finalize,
+  .compare = custom_compare_default,
+  .hash = custom_hash_default,
+  .serialize = custom_serialize_default,
+  .deserialize = custom_deserialize_default,
+  .compare_ext = custom_compare_ext_default,
+  .fixed_length = custom_fixed_length_default
+};
+
+/* Custom operations for sub-custom arrays that do NOT own their buffer */
+static struct custom_operations custom_array_nonowning_ops = {
+  .identifier = "spoc.custom_array_nonowning",
+  .finalize = custom_array_nonowning_finalize,
+  .compare = custom_compare_default,
+  .hash = custom_hash_default,
+  .serialize = custom_serialize_default,
+  .deserialize = custom_deserialize_default,
+  .compare_ext = custom_compare_ext_default,
+  .fixed_length = custom_fixed_length_default
+};
+
+CAMLprim value spoc_create_custom (value custom, value size)
 {
 	CAMLparam2(custom, size);
 	CAMLlocal2(customSize, ret);
 	void* res;
-	ret = caml_alloc_final(2, free_custom, 0, 1);
+	/* OCaml 5 compatible: allocate custom block with space for void pointer */
+	ret = caml_alloc_custom(&custom_array_ops, sizeof(void*), 0, 1);
 	customSize = Field(custom, 0);
-	//	res = (char*)malloc(Int_val(size)*Int_val(customSize)); 
 	if (noCuda){
 	  if (0 != posix_memalign(&res, OPENCL_PAGE_ALIGN,
-			 ((Int_val(customSize)*Int_val(size) - 1)/OPENCL_CACHE_ALIGN + 1) * OPENCL_CACHE_ALIGN)) exit(1) ;
+			 ((Int_val(customSize)*Int_val(size) - 1)/OPENCL_CACHE_ALIGN + 1) * OPENCL_CACHE_ALIGN)) {
+	    caml_failwith("spoc_create_custom: posix_memalign failed");
+	  }
 	}
 	else
-	  {
+	{
 	    cuMemAllocHost(&res, Int_val(customSize)*Int_val(size));
-	  }
-	Store_field(ret, 1, (value)(res));
+	}
+	Set_custom_ptr(ret, res);
 	CAMLreturn(ret);
 }
 
@@ -80,10 +115,11 @@ CAMLprim value spoc_sub_custom_array(value customArray, value custom, value star
 	CAMLparam3(customArray, custom, start);
 	CAMLlocal2(customSize, ret);
 	char* res;
-	customSize = Int_val(Field(custom, 0))/sizeof(char);
-	ret = caml_alloc_final(2, free_custom, 0, 1);
-	res = (((char*)(Field(customArray,1)))+(customSize*Int_val(start)));
-	Store_field(ret, 1, (value)(res));
+	int elemSize = Int_val(Field(custom, 0))/sizeof(char);
+	/* OCaml 5 compatible: use non-owning custom block since parent owns the memory */
+	ret = caml_alloc_custom(&custom_array_nonowning_ops, sizeof(void*), 0, 1);
+	res = (((char*)Custom_ptr_val(customArray)) + (elemSize * Int_val(start)));
+	Set_custom_ptr(ret, res);
 	CAMLreturn(ret);
 }
 
