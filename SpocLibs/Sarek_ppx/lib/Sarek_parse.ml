@@ -107,10 +107,10 @@ let parse_binop (op : string) : Sarek_ast.binop option =
   | "mod" -> Some Sarek_ast.Mod
   | "=" -> Some Sarek_ast.Eq
   | "<>" | "!=" -> Some Sarek_ast.Ne
-  | "<" -> Some Sarek_ast.Lt
-  | "<=" -> Some Sarek_ast.Le
-  | ">" -> Some Sarek_ast.Gt
-  | ">=" -> Some Sarek_ast.Ge
+  | "<" | "<." -> Some Sarek_ast.Lt
+  | "<=" | "<=." -> Some Sarek_ast.Le
+  | ">" | ">." -> Some Sarek_ast.Gt
+  | ">=" | ">=." -> Some Sarek_ast.Ge
   | "&&" -> Some Sarek_ast.And
   | "||" -> Some Sarek_ast.Or
   | "land" -> Some Sarek_ast.Land
@@ -169,6 +169,17 @@ let rec parse_expression (expr : expression) : Sarek_ast.expr =
           [(Nolabel, arr); (Nolabel, idx); (Nolabel, value)] ) ->
         Sarek_ast.EArrSet
           (parse_expression arr, parse_expression idx, parse_expression value)
+    (* Custom indexing: v.%[i] -> EArrGet *)
+    | Pexp_apply
+        ( {pexp_desc = Pexp_ident {txt = Lident ".%[]"; _}; _},
+          [(Nolabel, arr); (Nolabel, idx)] ) ->
+        Sarek_ast.EArrGet (parse_expression arr, parse_expression idx)
+    (* Custom indexing: v.%[i] <- x -> EArrSet *)
+    | Pexp_apply
+        ( {pexp_desc = Pexp_ident {txt = Lident ".%[]<-"; _}; _},
+          [(Nolabel, arr); (Nolabel, idx); (Nolabel, value)] ) ->
+        Sarek_ast.EArrSet
+          (parse_expression arr, parse_expression idx, parse_expression value)
     (* Mutable assignment: x := v *)
     | Pexp_apply
         ( {pexp_desc = Pexp_ident {txt = Lident ":="; _}; _},
@@ -183,6 +194,30 @@ let rec parse_expression (expr : expression) : Sarek_ast.expr =
     (* a.(i) syntax - array access *)
     | Pexp_apply (arr, [(Nolabel, idx)]) when is_array_access expr ->
         Sarek_ast.EArrGet (parse_expression arr, parse_expression idx)
+    (* Pragma - pragma ["opt1"; "opt2"] body - must come before binary ops *)
+    | Pexp_apply
+        ( {pexp_desc = Pexp_ident {txt = Lident "pragma"; _}; _},
+          [(Nolabel, opts_expr); (Nolabel, body)] ) ->
+        let rec collect_strings acc expr =
+          match expr.pexp_desc with
+          | Pexp_construct ({txt = Lident "[]"; _}, None) -> List.rev acc
+          | Pexp_construct
+              ({txt = Lident "::"; _}, Some {pexp_desc = Pexp_tuple [hd; tl]; _})
+            -> (
+              match hd.pexp_desc with
+              | Pexp_constant (Pconst_string (s, _, _)) ->
+                  collect_strings (s :: acc) tl
+              | _ ->
+                  raise
+                    (Parse_error_exn
+                       ("pragma options must be strings", hd.pexp_loc)))
+          | _ ->
+              raise
+                (Parse_error_exn
+                   ("pragma expects a list of strings", opts_expr.pexp_loc))
+        in
+        let opts = collect_strings [] opts_expr in
+        Sarek_ast.EPragma (opts, parse_expression body)
     (* Binary operators *)
     | Pexp_apply
         ( {pexp_desc = Pexp_ident {txt = Lident op; _}; _},
@@ -358,6 +393,39 @@ let rec parse_expression (expr : expression) : Sarek_ast.expr =
                    ("Unsupported function parameter", expr.pexp_loc))
         in
         (make_nested_lets params body).Sarek_ast.e
+    (* Extension point: [%global name] - reference to OCaml value *)
+    | Pexp_extension
+        ( {txt = "global"; _},
+          PStr
+            [
+              {
+                pstr_desc =
+                  Pstr_eval
+                    ({pexp_desc = Pexp_ident {txt = Lident name; _}; _}, _);
+                _;
+              };
+            ] ) ->
+        Sarek_ast.EGlobalRef name
+    (* Extension point: [%native "code"] - inline device code (string) *)
+    | Pexp_extension
+        ( {txt = "native"; _},
+          PStr
+            [
+              {
+                pstr_desc =
+                  Pstr_eval
+                    ( {pexp_desc = Pexp_constant (Pconst_string (code, _, _)); _},
+                      _ );
+                _;
+              };
+            ] ) ->
+        Sarek_ast.ENative code
+    (* Extension point: [%native fun dev -> ...] - inline device code (function) *)
+    | Pexp_extension
+        ({txt = "native"; _}, PStr [{pstr_desc = Pstr_eval (func_expr, _); _}])
+      ->
+        (* Pass through the function expression *)
+        Sarek_ast.ENativeFun func_expr
     | _ -> raise (Parse_error_exn ("Unsupported expression", expr.pexp_loc))
   in
   {Sarek_ast.e; Sarek_ast.expr_loc = loc}

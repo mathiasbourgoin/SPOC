@@ -12,12 +12,11 @@
   test_registered_variant
   test_cross_module_type
   test_registered_const
-  test_geometry_metadata
   test_visibility_private
   test_external_kernel_ppx
   test_convention
   test_convention_kernel
-  test_unify_module_type)
+  test_pragma)
  (libraries spoc sarek sarek_geometry sarek.visibility sarek_ppx.lib unix)
  (preprocess
   (pps sarek_ppx))
@@ -39,6 +38,8 @@
   test_registered_variant.exe
   test_cross_module_type.exe
   test_registered_const.exe
-  test_geometry_metadata.exe
   test_visibility_private.exe
-  test_external_kernel_ppx.exe))
+  test_external_kernel_ppx.exe
+  test_convention.exe
+  test_convention_kernel.exe
+  test_pragma.exe))
