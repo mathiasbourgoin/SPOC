@@ -14,7 +14,6 @@
   Sarek_typed_ast
   Sarek_typer
   Sarek_lower
-  Sarek_intrinsics
   Sarek_parse
   Sarek_quote))
 
