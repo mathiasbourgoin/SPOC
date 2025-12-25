@@ -2,11 +2,20 @@
  * Sarek Float32 Standard Library
  *
  * Provides float32 math functions for use in Sarek kernels.
- * Functions are registered with Sarek_registry at module load time.
+ * Uses %sarek_intrinsic to define GPU intrinsics with device function pattern.
+ *
+ * Each intrinsic generates:
+ * - func_device : device -> string  (the device code generator)
+ * - func_device_ref : (device -> string) ref  (for extension chaining)
+ * - func : host-side OCaml implementation
+ * - Registry entry for JIT code generation
+ *
+ * To extend for a new backend (e.g., FPGA), use %sarek_extend:
+ *   let%sarek_extend Float32.sin = fun dev ->
+ *     if is_fpga dev then "fpga_sin" else Float32.sin_device dev
  ******************************************************************************)
 
 open Spoc.Devices
-open Sarek.Sarek_registry
 
 (** CUDA vs OpenCL helper *)
 let cuda_or_opencl dev cuda_code opencl_code =
@@ -14,129 +23,114 @@ let cuda_or_opencl dev cuda_code opencl_code =
   | CudaInfo _ -> cuda_code
   | OpenCLInfo _ -> opencl_code
 
-(* Register float32 type *)
-let () = register_type "float32" ~device:(fun _ -> "float") ~size:4
+(******************************************************************************
+ * Unary math functions
+ ******************************************************************************)
 
-(* Register float32 intrinsic functions *)
-let () =
-  (* Unary math functions *)
-  let unary_funs =
-    [
-      ("sin", "sinf", "sin");
-      ("cos", "cosf", "cos");
-      ("tan", "tanf", "tan");
-      ("asin", "asinf", "asin");
-      ("acos", "acosf", "acos");
-      ("atan", "atanf", "atan");
-      ("sinh", "sinhf", "sinh");
-      ("cosh", "coshf", "cosh");
-      ("tanh", "tanhf", "tanh");
-      ("exp", "expf", "exp");
-      ("log", "logf", "log");
-      ("log10", "log10f", "log10");
-      ("sqrt", "sqrtf", "sqrt");
-      ("ceil", "ceilf", "ceil");
-      ("floor", "floorf", "floor");
-      ("expm1", "expm1f", "expm1");
-      ("log1p", "log1pf", "log1p");
-      ("abs_float", "fabsf", "fabs");
-      ("rsqrt", "rsqrtf", "rsqrt");
-    ]
-  in
-  List.iter
-    (fun (name, cuda, opencl) ->
-      register_fun
-        ~module_path:["Float32"]
-        name
-        ~arity:1
-        ~device:(fun dev -> cuda_or_opencl dev cuda opencl)
-        ~arg_types:["float32"]
-        ~ret_type:"float32")
-    unary_funs ;
+let%sarek_intrinsic (sin : float -> float) =
+  {device = (fun dev -> cuda_or_opencl dev "sinf" "sin"); ocaml = Stdlib.sin}
 
-  (* Binary math functions *)
-  let binary_funs =
-    [
-      ("pow", "powf", "pow");
-      ("atan2", "atan2f", "atan2");
-      ("hypot", "hypotf", "hypot");
-      ("copysign", "copysignf", "copysign");
-    ]
-  in
-  List.iter
-    (fun (name, cuda, opencl) ->
-      register_fun
-        ~module_path:["Float32"]
-        name
-        ~arity:2
-        ~device:(fun dev -> cuda_or_opencl dev cuda opencl)
-        ~arg_types:["float32"; "float32"]
-        ~ret_type:"float32")
-    binary_funs
+let%sarek_intrinsic (cos : float -> float) =
+  {device = (fun dev -> cuda_or_opencl dev "cosf" "cos"); ocaml = Stdlib.cos}
 
-(** OCaml implementations for host-side use *)
-let sin = Stdlib.sin
+let%sarek_intrinsic (tan : float -> float) =
+  {device = (fun dev -> cuda_or_opencl dev "tanf" "tan"); ocaml = Stdlib.tan}
 
-let cos = Stdlib.cos
+let%sarek_intrinsic (asin : float -> float) =
+  {device = (fun dev -> cuda_or_opencl dev "asinf" "asin"); ocaml = Stdlib.asin}
 
-let tan = Stdlib.tan
+let%sarek_intrinsic (acos : float -> float) =
+  {device = (fun dev -> cuda_or_opencl dev "acosf" "acos"); ocaml = Stdlib.acos}
 
-let asin = Stdlib.asin
+let%sarek_intrinsic (atan : float -> float) =
+  {device = (fun dev -> cuda_or_opencl dev "atanf" "atan"); ocaml = Stdlib.atan}
 
-let acos = Stdlib.acos
+let%sarek_intrinsic (sinh : float -> float) =
+  {device = (fun dev -> cuda_or_opencl dev "sinhf" "sinh"); ocaml = Stdlib.sinh}
 
-let atan = Stdlib.atan
+let%sarek_intrinsic (cosh : float -> float) =
+  {device = (fun dev -> cuda_or_opencl dev "coshf" "cosh"); ocaml = Stdlib.cosh}
 
-let sinh = Stdlib.sinh
+let%sarek_intrinsic (tanh : float -> float) =
+  {device = (fun dev -> cuda_or_opencl dev "tanhf" "tanh"); ocaml = Stdlib.tanh}
 
-let cosh = Stdlib.cosh
+let%sarek_intrinsic (exp : float -> float) =
+  {device = (fun dev -> cuda_or_opencl dev "expf" "exp"); ocaml = Stdlib.exp}
 
-let tanh = Stdlib.tanh
+let%sarek_intrinsic (log : float -> float) =
+  {device = (fun dev -> cuda_or_opencl dev "logf" "log"); ocaml = Stdlib.log}
 
-let exp = Stdlib.exp
+let%sarek_intrinsic (log10 : float -> float) =
+  {
+    device = (fun dev -> cuda_or_opencl dev "log10f" "log10");
+    ocaml = Stdlib.log10;
+  }
 
-let log = Stdlib.log
+let%sarek_intrinsic (sqrt : float -> float) =
+  {device = (fun dev -> cuda_or_opencl dev "sqrtf" "sqrt"); ocaml = Stdlib.sqrt}
 
-let log10 = Stdlib.log10
+let%sarek_intrinsic (ceil : float -> float) =
+  {device = (fun dev -> cuda_or_opencl dev "ceilf" "ceil"); ocaml = Stdlib.ceil}
 
-let sqrt = Stdlib.sqrt
+let%sarek_intrinsic (floor : float -> float) =
+  {
+    device = (fun dev -> cuda_or_opencl dev "floorf" "floor");
+    ocaml = Stdlib.floor;
+  }
 
-let ceil = Stdlib.ceil
+let%sarek_intrinsic (expm1 : float -> float) =
+  {
+    device = (fun dev -> cuda_or_opencl dev "expm1f" "expm1");
+    ocaml = Stdlib.expm1;
+  }
 
-let floor = Stdlib.floor
+let%sarek_intrinsic (log1p : float -> float) =
+  {
+    device = (fun dev -> cuda_or_opencl dev "log1pf" "log1p");
+    ocaml = Stdlib.log1p;
+  }
 
-let expm1 = Stdlib.expm1
+let%sarek_intrinsic (abs_float : float -> float) =
+  {
+    device = (fun dev -> cuda_or_opencl dev "fabsf" "fabs");
+    ocaml = Stdlib.abs_float;
+  }
 
-let log1p = Stdlib.log1p
+let%sarek_intrinsic (rsqrt : float -> float) =
+  {
+    device = (fun dev -> cuda_or_opencl dev "rsqrtf" "rsqrt");
+    ocaml = (fun x -> 1.0 /. Stdlib.sqrt x);
+  }
 
-let abs_float = Stdlib.abs_float
+(******************************************************************************
+ * Binary math functions
+ ******************************************************************************)
 
-let rsqrt x = 1.0 /. Stdlib.sqrt x
+let%sarek_intrinsic (pow : float -> float -> float) =
+  {device = (fun dev -> cuda_or_opencl dev "powf" "pow"); ocaml = Float.pow}
 
-let pow = Float.pow
+let%sarek_intrinsic (atan2 : float -> float -> float) =
+  {
+    device = (fun dev -> cuda_or_opencl dev "atan2f" "atan2");
+    ocaml = Stdlib.atan2;
+  }
 
-let atan2 = Stdlib.atan2
+let%sarek_intrinsic (hypot : float -> float -> float) =
+  {
+    device = (fun dev -> cuda_or_opencl dev "hypotf" "hypot");
+    ocaml = Stdlib.hypot;
+  }
 
-let hypot = Stdlib.hypot
+let%sarek_intrinsic (copysign : float -> float -> float) =
+  {
+    device = (fun dev -> cuda_or_opencl dev "copysignf" "copysign");
+    ocaml = Stdlib.copysign;
+  }
 
-let copysign = Stdlib.copysign
+(******************************************************************************
+ * Conversion functions
+ ******************************************************************************)
 
-(** Conversion functions *)
 let of_int x = Stdlib.float_of_int x
 
 let to_int x = Stdlib.int_of_float x
-
-(* Register conversion functions *)
-let () =
-  register_fun
-    "float"
-    ~arity:1
-    ~device:(fun _ -> "(float)")
-    ~arg_types:["int32"]
-    ~ret_type:"float32" ;
-  register_fun
-    "int_of_float"
-    ~arity:1
-    ~device:(fun _ -> "(int)")
-    ~arg_types:["float32"]
-    ~ret_type:"int32"

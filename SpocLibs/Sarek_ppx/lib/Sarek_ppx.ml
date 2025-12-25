@@ -1027,6 +1027,7 @@ let () =
       sarek_type_private_rule;
       Context_free.Rule.extension kernel_extension;
       Context_free.Rule.extension sarek_intrinsic_extension;
+      Context_free.Rule.extension sarek_extend_extension;
     ]
   in
   Driver.register_transformation
