@@ -468,6 +468,18 @@ let test_var_unbound () =
   let env = with_stdlib empty in
   check_infer_error "unbound variable" env (var_expr "undefined_var")
 
+let test_unbound_function () =
+  let env = with_stdlib empty in
+  (* Test calling a non-existent function *)
+  let expr = mk_expr (EApp (var_expr "nonexistent_func", [int_expr 42])) in
+  check_infer_error "unbound function call" env expr
+
+let test_mistyped_intrinsic () =
+  let env = with_stdlib empty in
+  (* sin expects float32, not int32 *)
+  let expr = mk_expr (EApp (var_expr "sin", [int_expr 42])) in
+  check_infer_error "sin with wrong type" env expr
+
 let test_intrinsic_const () =
   let env = with_stdlib empty in
   check_infer_ok "thread_idx_x" env (var_expr "thread_idx_x") t_int32 ;
@@ -625,6 +637,8 @@ let () =
         [
           Alcotest.test_case "lookup" `Quick test_var_lookup;
           Alcotest.test_case "unbound" `Quick test_var_unbound;
+          Alcotest.test_case "unbound function" `Quick test_unbound_function;
+          Alcotest.test_case "mistyped intrinsic" `Quick test_mistyped_intrinsic;
           Alcotest.test_case "intrinsic const" `Quick test_intrinsic_const;
         ] );
       ( "binop",
