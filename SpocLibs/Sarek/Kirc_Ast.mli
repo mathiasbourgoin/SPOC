@@ -45,6 +45,7 @@ type k_ext =
   | SetV of k_ext * k_ext
   | SetLocalVar of k_ext * k_ext * k_ext
   | Intrinsics of intrinsics
+  | IntrinsicRef of string list * string
   | IntId of string * int
   | Int of int
   | Float of float

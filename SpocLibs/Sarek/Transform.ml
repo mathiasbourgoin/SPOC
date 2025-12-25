@@ -129,6 +129,7 @@ let propagate f expr =
   | SetV (a, b) -> SetV (f a, f b)
   | SetLocalVar (a, b, c) -> SetLocalVar (f a, f b, f c)
   | Intrinsics intr -> Intrinsics intr
+  | IntrinsicRef (path, name) -> IntrinsicRef (path, name)
   | Int i -> Int i
   | Float f -> Float f
   | Double d -> Double d

@@ -60,7 +60,8 @@ and texpr_desc =
   | TEPragma of string list * texpr  (** pragma options body *)
   (* Intrinsics *)
   | TEIntrinsicConst of string * string  (** cuda code, opencl code *)
-  | TEIntrinsicFun of string * string * texpr list  (** cuda, opencl, args *)
+  | TEIntrinsicFun of string * string * Sarek_env.intrinsic_ref * texpr list
+      (** cuda, opencl, ocaml_ref, args *)
 
 and tpattern = {tpat : tpattern_desc; tpat_ty : typ; tpat_loc : loc}
 
@@ -292,7 +293,7 @@ let rec pp_texpr fmt te =
         pp_texpr
         body
   | TEIntrinsicConst (cuda, _) -> Format.fprintf fmt "<intrinsic:%s>" cuda
-  | TEIntrinsicFun (cuda, _, args) ->
+  | TEIntrinsicFun (cuda, _, _ocaml, args) ->
       Format.fprintf
         fmt
         "<%s>(%a)"

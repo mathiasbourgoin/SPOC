@@ -35,6 +35,41 @@
 
 open Kirc_Ast
 
+(** Look up element type string using the registry, with fallback to hardcoded
+    types *)
+let elttype_string dev t =
+  match t with
+  | EInt32 -> (
+      match Sarek_registry.find_type "int32" with
+      | Some ti -> ti.ti_device dev
+      | None -> "int")
+  | EInt64 -> (
+      match Sarek_registry.find_type "int64" with
+      | Some ti -> ti.ti_device dev
+      | None -> "long")
+  | EFloat32 -> (
+      match Sarek_registry.find_type "float32" with
+      | Some ti -> ti.ti_device dev
+      | None -> "float")
+  | EFloat64 -> (
+      match Sarek_registry.find_type "float64" with
+      | Some ti -> ti.ti_device dev
+      | None -> "double")
+
+(** Generate code for a binary operator using the registry. The format string
+    from the registry should be like "(%s + %s)". Returns None if not found in
+    registry, so caller can fall back. *)
+let binop_from_registry name a_code b_code dev =
+  match Sarek_registry.find_fun name with
+  | Some fi ->
+      let template = fi.fi_device dev in
+      (* Convert string to format and apply arguments *)
+      let fmt : (string -> string -> string, unit, string) format =
+        Scanf.format_from_string template "%s%s"
+      in
+      Some (Printf.sprintf fmt a_code b_code)
+  | None -> None
+
 let profile_vect = ref (Obj.magic None)
 
 let space i = String.make i ' '
@@ -256,13 +291,8 @@ module Generator (M : CodeGenerator) = struct
             | LocalSpace -> M.local_variable
             | Shared -> M.shared_variable
             | Global -> M.global_variable
-          and elttype =
-            match t with
-            | EInt32 -> "int"
-            | EInt64 -> "long"
-            | EFloat32 -> "float"
-            | EFloat64 -> "double"
           in
+          let elttype = elttype_string dev t in
           memspace ^ " " ^ elttype ^ " " ^ s ^ "["
           ^ parse ~profile:prof i l dev
           ^ "]"
@@ -328,58 +358,60 @@ module Generator (M : CodeGenerator) = struct
       | RecGet (r, f) -> parse ~profile:prof i r dev ^ "." ^ f
       | RecSet (r, v) ->
           parse ~profile:prof i r dev ^ " = " ^ parse ~profile:prof i v dev
-      | Plus (a, b) ->
-          "("
-          ^ parse_int ~profile:prof i a dev
-          ^ " + "
-          ^ parse_int ~profile:prof i b dev
-          ^ ")"
-      | Plusf (a, b) ->
-          let a = parse_float ~profile:prof i a dev in
-          let b = parse_float ~profile:prof i b dev in
-          "(" ^ a ^ " + " ^ b ^ ")"
-      | Min (a, b) ->
-          "("
-          ^ parse_int ~profile:prof i a dev
-          ^ " - "
-          ^ parse_int ~profile:prof i b dev
-          ^ ")"
-      | Minf (a, b) ->
-          "("
-          ^ parse_float ~profile:prof i a dev
-          ^ " - "
-          ^ parse_float ~profile:prof i b dev
-          ^ ")"
-      | Mul (a, b) ->
-          "("
-          ^ parse_int ~profile:prof i a dev
-          ^ " * "
-          ^ parse_int ~profile:prof i b dev
-          ^ ")"
-      | Mulf (a, b) ->
-          "("
-          ^ parse_float ~profile:prof i a dev
-          ^ " * "
-          ^ parse_float ~profile:prof i b dev
-          ^ ")"
-      | Div (a, b) ->
-          "("
-          ^ parse_int ~profile:prof i a dev
-          ^ " / "
-          ^ parse_int ~profile:prof i b dev
-          ^ ")"
-      | Divf (a, b) ->
-          "("
-          ^ parse_float ~profile:prof i a dev
-          ^ " / "
-          ^ parse_float ~profile:prof i b dev
-          ^ ")"
-      | Mod (a, b) ->
-          "("
-          ^ parse_int ~profile:prof i a dev
-          ^ " % "
-          ^ parse_int ~profile:prof i b dev
-          ^ ")"
+      | Plus (a, b) -> (
+          let a_code = parse_int ~profile:prof i a dev in
+          let b_code = parse_int ~profile:prof i b dev in
+          match binop_from_registry "add_int32" a_code b_code dev with
+          | Some code -> code
+          | None -> "(" ^ a_code ^ " + " ^ b_code ^ ")")
+      | Plusf (a, b) -> (
+          let a_code = parse_float ~profile:prof i a dev in
+          let b_code = parse_float ~profile:prof i b dev in
+          match binop_from_registry "add_float32" a_code b_code dev with
+          | Some code -> code
+          | None -> "(" ^ a_code ^ " + " ^ b_code ^ ")")
+      | Min (a, b) -> (
+          let a_code = parse_int ~profile:prof i a dev in
+          let b_code = parse_int ~profile:prof i b dev in
+          match binop_from_registry "sub_int32" a_code b_code dev with
+          | Some code -> code
+          | None -> "(" ^ a_code ^ " - " ^ b_code ^ ")")
+      | Minf (a, b) -> (
+          let a_code = parse_float ~profile:prof i a dev in
+          let b_code = parse_float ~profile:prof i b dev in
+          match binop_from_registry "sub_float32" a_code b_code dev with
+          | Some code -> code
+          | None -> "(" ^ a_code ^ " - " ^ b_code ^ ")")
+      | Mul (a, b) -> (
+          let a_code = parse_int ~profile:prof i a dev in
+          let b_code = parse_int ~profile:prof i b dev in
+          match binop_from_registry "mul_int32" a_code b_code dev with
+          | Some code -> code
+          | None -> "(" ^ a_code ^ " * " ^ b_code ^ ")")
+      | Mulf (a, b) -> (
+          let a_code = parse_float ~profile:prof i a dev in
+          let b_code = parse_float ~profile:prof i b dev in
+          match binop_from_registry "mul_float32" a_code b_code dev with
+          | Some code -> code
+          | None -> "(" ^ a_code ^ " * " ^ b_code ^ ")")
+      | Div (a, b) -> (
+          let a_code = parse_int ~profile:prof i a dev in
+          let b_code = parse_int ~profile:prof i b dev in
+          match binop_from_registry "div_int32" a_code b_code dev with
+          | Some code -> code
+          | None -> "(" ^ a_code ^ " / " ^ b_code ^ ")")
+      | Divf (a, b) -> (
+          let a_code = parse_float ~profile:prof i a dev in
+          let b_code = parse_float ~profile:prof i b dev in
+          match binop_from_registry "div_float32" a_code b_code dev with
+          | Some code -> code
+          | None -> "(" ^ a_code ^ " / " ^ b_code ^ ")")
+      | Mod (a, b) -> (
+          let a_code = parse_int ~profile:prof i a dev in
+          let b_code = parse_int ~profile:prof i b dev in
+          match binop_from_registry "mod_int32" a_code b_code dev with
+          | Some code -> code
+          | None -> "(" ^ a_code ^ " % " ^ b_code ^ ")")
       | Id s -> s
       | Set (var, value) | Acc (var, value) ->
           parse ~profile:prof i var dev
@@ -473,6 +505,9 @@ module Generator (M : CodeGenerator) = struct
       | Double f -> string_of_float f
       | IntId (s, _) -> s
       | Intrinsics gv -> M.parse_intrinsics gv
+      | IntrinsicRef (module_path, name) ->
+          (* Look up the intrinsic in the registry and call its device function *)
+          Sarek_registry.fun_device_code ~module_path name dev
       | Seq (a, b) -> (
           match (a, b) with
           | Decl var, Seq (Set (IntId (s, id), value), body) -> (
@@ -754,6 +789,8 @@ module Generator (M : CodeGenerator) = struct
     | App (_a, _b) as v -> parse ~profile:prof n v dev
     | SetV (_a, _b) as v -> parse ~profile:prof n v dev
     | Intrinsics gv -> M.parse_intrinsics gv
+    | IntrinsicRef (module_path, name) ->
+        Sarek_registry.fun_device_code ~module_path name dev
     | RecGet (_r, _f) as v -> parse ~profile:prof n v dev
     | Native f -> f dev
     | a ->

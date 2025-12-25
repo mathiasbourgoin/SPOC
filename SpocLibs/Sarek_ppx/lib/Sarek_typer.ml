@@ -282,7 +282,10 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
                     Ok
                       ( mk_texpr
                           (TEIntrinsicFun
-                             (info.intr_cuda, info.intr_opencl, targs))
+                             ( info.intr_cuda,
+                               info.intr_opencl,
+                               info.intr_ocaml,
+                               targs ))
                           ret_ty
                           loc,
                         env )

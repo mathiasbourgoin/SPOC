@@ -6,7 +6,7 @@
 (library
  (name sarek)
  (public_name sarek)
- (libraries spoc)
+ (libraries spoc ctypes)
  (modules
   Kirc_Ast
   Gen
@@ -15,4 +15,6 @@
   Kirc_OpenCL
   Profile
   Skeletons
-  Transform))
+  Transform
+  Sarek_prim
+  Sarek_registry))
