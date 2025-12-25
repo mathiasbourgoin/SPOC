@@ -183,7 +183,7 @@ let () =
   register_type "unit" ~device:(fun _ -> "void") ~size:0
 
 (******************************************************************************
- * Register standard functions
+ * Helper function for device-specific code
  ******************************************************************************)
 
 let cuda_or_opencl dev cuda_code opencl_code =
@@ -191,133 +191,6 @@ let cuda_or_opencl dev cuda_code opencl_code =
   | Spoc.Devices.CudaInfo _ -> cuda_code
   | Spoc.Devices.OpenCLInfo _ -> opencl_code
 
-let () =
-  (* Thread indices *)
-  register_fun
-    "thread_idx_x"
-    ~arity:0
-    ~arg_types:[]
-    ~ret_type:"int32"
-    ~device:(fun dev -> cuda_or_opencl dev "threadIdx.x" "get_local_id(0)") ;
-  register_fun
-    "thread_idx_y"
-    ~arity:0
-    ~arg_types:[]
-    ~ret_type:"int32"
-    ~device:(fun dev -> cuda_or_opencl dev "threadIdx.y" "get_local_id(1)") ;
-  register_fun
-    "thread_idx_z"
-    ~arity:0
-    ~arg_types:[]
-    ~ret_type:"int32"
-    ~device:(fun dev -> cuda_or_opencl dev "threadIdx.z" "get_local_id(2)") ;
-
-  (* Block indices *)
-  register_fun
-    "block_idx_x"
-    ~arity:0
-    ~arg_types:[]
-    ~ret_type:"int32"
-    ~device:(fun dev -> cuda_or_opencl dev "blockIdx.x" "get_group_id(0)") ;
-  register_fun
-    "block_idx_y"
-    ~arity:0
-    ~arg_types:[]
-    ~ret_type:"int32"
-    ~device:(fun dev -> cuda_or_opencl dev "blockIdx.y" "get_group_id(1)") ;
-  register_fun
-    "block_idx_z"
-    ~arity:0
-    ~arg_types:[]
-    ~ret_type:"int32"
-    ~device:(fun dev -> cuda_or_opencl dev "blockIdx.z" "get_group_id(2)") ;
-
-  (* Block dimensions *)
-  register_fun
-    "block_dim_x"
-    ~arity:0
-    ~arg_types:[]
-    ~ret_type:"int32"
-    ~device:(fun dev -> cuda_or_opencl dev "blockDim.x" "get_local_size(0)") ;
-  register_fun
-    "block_dim_y"
-    ~arity:0
-    ~arg_types:[]
-    ~ret_type:"int32"
-    ~device:(fun dev -> cuda_or_opencl dev "blockDim.y" "get_local_size(1)") ;
-  register_fun
-    "block_dim_z"
-    ~arity:0
-    ~arg_types:[]
-    ~ret_type:"int32"
-    ~device:(fun dev -> cuda_or_opencl dev "blockDim.z" "get_local_size(2)") ;
-
-  (* Grid dimensions *)
-  register_fun
-    "grid_dim_x"
-    ~arity:0
-    ~arg_types:[]
-    ~ret_type:"int32"
-    ~device:(fun dev -> cuda_or_opencl dev "gridDim.x" "get_num_groups(0)") ;
-  register_fun
-    "grid_dim_y"
-    ~arity:0
-    ~arg_types:[]
-    ~ret_type:"int32"
-    ~device:(fun dev -> cuda_or_opencl dev "gridDim.y" "get_num_groups(1)") ;
-  register_fun
-    "grid_dim_z"
-    ~arity:0
-    ~arg_types:[]
-    ~ret_type:"int32"
-    ~device:(fun dev -> cuda_or_opencl dev "gridDim.z" "get_num_groups(2)") ;
-
-  (* Synchronization *)
-  register_fun
-    "block_barrier"
-    ~arity:1
-    ~arg_types:["unit"]
-    ~ret_type:"unit"
-    ~device:(fun dev ->
-      cuda_or_opencl dev "__syncthreads()" "barrier(CLK_LOCAL_MEM_FENCE)") ;
-
-  (* NOTE: Float32 arithmetic operators are now registered by Float32.ml
-     in Sarek_stdlib using %sarek_intrinsic. *)
-
-  (* Int32 arithmetic operators *)
-  register_fun
-    "add_int32"
-    ~arity:2
-    ~arg_types:["int32"; "int32"]
-    ~ret_type:"int32"
-    ~device:(fun _dev -> "(%s + %s)") ;
-  register_fun
-    "sub_int32"
-    ~arity:2
-    ~arg_types:["int32"; "int32"]
-    ~ret_type:"int32"
-    ~device:(fun _dev -> "(%s - %s)") ;
-  register_fun
-    "mul_int32"
-    ~arity:2
-    ~arg_types:["int32"; "int32"]
-    ~ret_type:"int32"
-    ~device:(fun _dev -> "(%s * %s)") ;
-  register_fun
-    "div_int32"
-    ~arity:2
-    ~arg_types:["int32"; "int32"]
-    ~ret_type:"int32"
-    ~device:(fun _dev -> "(%s / %s)") ;
-  register_fun
-    "mod_int32"
-    ~arity:2
-    ~arg_types:["int32"; "int32"]
-    ~ret_type:"int32"
-    ~device:(fun _dev -> "(%s %% %s)")
-
-(* Note: Float32 type and functions (including arithmetic operators like +, -,
-     *, / and math functions like sqrt, sin, etc.) are defined in Sarek_stdlib
-     and auto-registered via %sarek_intrinsic when that library is loaded.
-     Only GPU-specific intrinsics (thread indices, barriers, etc.) and Int32
-     operators are defined here. Int32 should also be moved to stdlib. *)
+(* Note: All intrinsics (Float32, Float64, Int32, Int64, GPU) are defined in
+   Sarek_stdlib modules and auto-register via %sarek_intrinsic when that
+   library is loaded. No hardcoded registrations needed here. *)

@@ -517,7 +517,7 @@ let expr_of_intrinsic_ref ~loc (ref : Sarek_env.intrinsic_ref) : expression =
 let rec collect_intrinsic_refs (te : texpr) : IntrinsicRefSet.t =
   match te.te with
   | TEUnit | TEBool _ | TEInt _ | TEInt32 _ | TEInt64 _ | TEFloat _ | TEDouble _
-  | TEVar _ | TEIntrinsicConst _ | TENative _ | TENativeFun _ | TEGlobalRef _ ->
+  | TEVar _ | TENative _ | TENativeFun _ | TEGlobalRef _ ->
       IntrinsicRefSet.empty
   | TEVecGet (v, i) | TEVecSet (v, i, _) | TEArrGet (v, i) ->
       IntrinsicRefSet.union
@@ -595,8 +595,9 @@ let rec collect_intrinsic_refs (te : texpr) : IntrinsicRefSet.t =
         exprs
   | TEReturn e | TEPragma (_, e) -> collect_intrinsic_refs e
   | TECreateArray (size, _, _) -> collect_intrinsic_refs size
-  | TEIntrinsicFun (_, _, ocaml_ref, args) ->
-      let base = IntrinsicRefSet.singleton ocaml_ref in
+  | TEIntrinsicConst ref -> IntrinsicRefSet.singleton ref
+  | TEIntrinsicFun (ref, args) ->
+      let base = IntrinsicRefSet.singleton ref in
       List.fold_left
         (fun acc arg -> IntrinsicRefSet.union acc (collect_intrinsic_refs arg))
         base

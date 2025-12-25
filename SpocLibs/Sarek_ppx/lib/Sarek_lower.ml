@@ -392,19 +392,26 @@ let rec lower_expr (state : state) (te : texpr) : Kirc_Ast.k_ext =
   | TENativeFun func_expr -> Kirc_Ast.NativeFunExpr func_expr
   (* Pragma *)
   | TEPragma (opts, body) -> Kirc_Ast.Pragma (opts, lower_expr state body)
-  (* Intrinsic constant *)
-  | TEIntrinsicConst (cuda, opencl) -> Kirc_Ast.Intrinsics (cuda, opencl)
-  (* Intrinsic function call *)
-  | TEIntrinsicFun (cuda, opencl, _ocaml_path, args) ->
-      (* Filter out Unit arguments - they're just () for function application syntax *)
-      let non_unit_args =
-        List.filter
-          (fun arg -> match arg.te with TEUnit -> false | _ -> true)
-          args
-      in
-      let args_ir = Array.of_list (List.map (lower_expr state) non_unit_args) in
-      if Array.length args_ir = 0 then Kirc_Ast.Intrinsics (cuda, opencl)
-      else Kirc_Ast.App (Kirc_Ast.Intrinsics (cuda, opencl), args_ir)
+  (* Intrinsic constant - emit IntrinsicRef, device code resolved at JIT *)
+  | TEIntrinsicConst ref -> (
+      match ref with
+      | Sarek_env.IntrinsicRef (path, name) -> Kirc_Ast.IntrinsicRef (path, name)
+      )
+  (* Intrinsic function call - emit IntrinsicRef, device code resolved at JIT *)
+  | TEIntrinsicFun (ref, args) -> (
+      match ref with
+      | Sarek_env.IntrinsicRef (path, name) ->
+          (* Filter out Unit arguments - they're just () for function application syntax *)
+          let non_unit_args =
+            List.filter
+              (fun arg -> match arg.te with TEUnit -> false | _ -> true)
+              args
+          in
+          let args_ir =
+            Array.of_list (List.map (lower_expr state) non_unit_args)
+          in
+          if Array.length args_ir = 0 then Kirc_Ast.IntrinsicRef (path, name)
+          else Kirc_Ast.App (Kirc_Ast.IntrinsicRef (path, name), args_ir))
 
 (** Lower a declaration for a local/kernel variable. *)
 and lower_decl ~mutable_ id name ty =

@@ -23,11 +23,26 @@ let type_name_of_core_type (ct : core_type) : string =
   | Ptyp_constr ({txt = Ldot (_, name); _}, _) -> name
   | _ -> "unknown"
 
-(** Get the module name from a location (used for qualified names) *)
-let module_name_of_loc loc =
+(** Get the full module path from a location. For wrapped libraries like
+    Sarek_stdlib, modules are accessed as Sarek_stdlib.Float32, so we need
+    [Sarek_stdlib; Float32] as the path. This is derived from the directory
+    structure. *)
+let module_path_of_loc loc =
   let file = loc.loc_start.pos_fname in
   let base = Filename.(remove_extension (basename file)) in
-  String.capitalize_ascii base
+  let module_name = String.capitalize_ascii base in
+  (* Extract directory name - could be the library name for wrapped libraries *)
+  let dir = Filename.dirname file in
+  let dir_base = Filename.basename dir in
+  (* Capitalize and check if it looks like a library name (has underscore or
+     is a known stdlib). If so, include it in the path. *)
+  let lib_name = String.capitalize_ascii dir_base in
+  if String.contains dir_base '_' then
+    (* Looks like a library name like "Sarek_stdlib" or "Sarek_ppx_lib" *)
+    [lib_name; module_name]
+  else
+    (* Just a regular directory, use module name only *)
+    [module_name]
 
 (** Convert type name to Sarek_types representation *)
 let sarek_type_of_name ~loc (name : string) : expression =
@@ -106,7 +121,7 @@ let expand_sarek_intrinsic_type ~ctxt payload =
                ... }"
       in
       let type_name_str = Ast_builder.Default.estring ~loc type_name in
-      let _module_name = module_name_of_loc loc in
+      let _module_path = module_path_of_loc loc in
       let sarek_type = sarek_type_of_name ~loc type_name in
       [
         (* Runtime registration for JIT *)
@@ -220,19 +235,20 @@ let expand_sarek_intrinsic_fun ~ctxt payload =
         Ast_builder.Default.evar ~loc device_fun_ref_name
       in
 
-      (* Module path for PPX-time registration *)
-      let module_name = module_name_of_loc loc in
+      (* Module path for both runtime and PPX-time registration *)
+      let module_path = module_path_of_loc loc in
       let module_path_expr =
         Ast_builder.Default.elist
           ~loc
-          [Ast_builder.Default.estring ~loc module_name]
+          (List.map (Ast_builder.Default.estring ~loc) module_path)
       in
 
       (* Build Sarek type for PPX-time registration *)
       let sarek_fun_type = build_sarek_fun_type ~loc arg_types ret_type in
 
       [
-        (* Expose the device function for extensions to chain to *)
+        (* Expose the device function for extensions to chain to.
+           The user provides the device function directly. *)
         [%stri
           let [%p device_fun_pat] : Spoc.Devices.device -> string =
             [%e device_expr]];
@@ -244,12 +260,15 @@ let expand_sarek_intrinsic_fun ~ctxt payload =
         [%stri
           let () =
             Sarek.Sarek_registry.register_fun
+              ~module_path:[%e module_path_expr]
               [%e fun_name_str]
               ~arity:[%e arity_expr]
               ~device:(fun dev -> ![%e device_fun_ref_expr] dev)
               ~arg_types:[%e arg_types_expr]
               ~ret_type:[%e ret_type_expr]];
-        (* PPX-time registration for compile-time type checking *)
+        (* PPX-time registration for compile-time type checking.
+           We register the device function ref so that extensions work correctly.
+           The ref is dereferenced at lookup time, allowing %sarek_extend to work. *)
         [%stri
           let () =
             Sarek_ppx_lib.Sarek_ppx_registry.register_intrinsic

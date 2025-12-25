@@ -1,5 +1,6 @@
 (tests
  (names test_types test_env test_typer test_lower test_parse)
- (libraries sarek_ppx_lib alcotest ppxlib)
+ ; Link sarek_stdlib to trigger auto-registration of intrinsics
+ (libraries sarek_ppx_lib sarek_stdlib alcotest ppxlib)
  (preprocess
   (pps ppxlib.metaquot)))

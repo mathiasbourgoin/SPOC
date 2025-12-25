@@ -31,21 +31,22 @@ type var_info = {
 type intrinsic_ref =
   | IntrinsicRef of string list * string  (** module_path, function_name *)
 
-(** Information about an intrinsic function. Note: intr_cuda and intr_opencl are
-    kept for the lowering phase. The JIT uses Sarek_registry for device code. *)
+(** Get the qualified name of an intrinsic ref for debugging/printing *)
+let intrinsic_ref_name = function
+  | IntrinsicRef (path, name) -> String.concat "." (path @ [name])
+
+(** Information about an intrinsic function. Device code is resolved at JIT time
+    via Sarek_registry. *)
 type intrinsic_fun_info = {
   intr_type : typ;
-  intr_cuda : string;  (** TODO: Remove once lowering uses registry directly *)
-  intr_opencl : string;
-      (** TODO: Remove once lowering uses registry directly *)
-  intr_ocaml : intrinsic_ref;  (** Reference to stdlib module function *)
+  intr_ref : intrinsic_ref;  (** Reference to stdlib module function *)
 }
 
-(** Information about an intrinsic constant *)
+(** Information about an intrinsic constant. Device code is resolved at JIT time
+    via Sarek_registry. *)
 type intrinsic_const_info = {
   const_type : typ;
-  const_cuda : string;
-  const_opencl : string;
+  const_ref : intrinsic_ref;  (** Reference to intrinsic constant *)
 }
 
 (** Information about a custom type *)
@@ -144,445 +145,111 @@ let enter_level env = {env with current_level = env.current_level + 1}
 
 let exit_level env = {env with current_level = max 0 (env.current_level - 1)}
 
-(** Create standard library environment with GPU intrinsics *)
+(** Get the short module name from a module path. E.g.,
+    ["Sarek_stdlib"; "Float32"] -> "Float32" *)
+let short_module_name = function [] -> "" | path -> List.hd (List.rev path)
+
+(** Open a module: bring its bindings into scope under short names. E.g.,
+    open_module ["Float32"] brings Float32.sin -> sin
+
+    Also handles legacy aliases:
+    - Std -> Gpu (backward compatibility) *)
+let open_module (path : string list) env =
+  (* Handle legacy module aliases for backward compatibility *)
+  let module_name =
+    match short_module_name path with
+    | "Std" -> "Gpu" (* Std was the old name for GPU intrinsics *)
+    | "Math" -> "Float32" (* Math.Float32 -> just Float32 *)
+    | name -> name
+  in
+  if module_name = "" then env
+  else
+    (* Find all intrinsics in this module and add under short names *)
+    let prefix = module_name ^ "." in
+    let env =
+      StringMap.fold
+        (fun name info env ->
+          if
+            String.length name > String.length prefix
+            && String.sub name 0 (String.length prefix) = prefix
+          then
+            let short_name =
+              String.sub
+                name
+                (String.length prefix)
+                (String.length name - String.length prefix)
+            in
+            add_intrinsic_fun short_name info env
+          else env)
+        env.intrinsic_funs
+        env
+    in
+    StringMap.fold
+      (fun name info env ->
+        if
+          String.length name > String.length prefix
+          && String.sub name 0 (String.length prefix) = prefix
+        then
+          let short_name =
+            String.sub
+              name
+              (String.length prefix)
+              (String.length name - String.length prefix)
+          in
+          add_intrinsic_const short_name info env
+        else env)
+      env.intrinsic_consts
+      env
+
+(** Create standard library environment from the PPX registry. This queries
+    Sarek_ppx_registry for all registered intrinsics and builds the typing
+    environment from them. No hardcoding needed - everything comes from
+    %sarek_intrinsic definitions in stdlib modules.
+
+    Intrinsics are registered under module-qualified names (e.g., "Float32.sin")
+    to avoid ambiguity between Float32.sqrt and Float64.sqrt. Use `open_module`
+    to bring a module's bindings into scope under short names.
+
+    IMPORTANT: The caller must ensure stdlib modules are initialized before
+    calling this function (e.g., via Sarek_stdlib.force_init()). This is done in
+    Sarek_ppx.ml to avoid circular dependencies. *)
 let with_stdlib env =
-  (* Helper functions to create intrinsic refs for stdlib modules.
-     Sarek_stdlib is a wrapped library, so modules are accessed as Sarek_stdlib.Float32, etc. *)
-  let float32_ref name = IntrinsicRef (["Sarek_stdlib"; "Float32"], name) in
-  let float64_ref name = IntrinsicRef (["Sarek_stdlib"; "Float64"], name) in
-  let int32_ref name = IntrinsicRef (["Sarek_stdlib"; "Int32"], name) in
-  let _int64_ref name = IntrinsicRef (["Sarek_stdlib"; "Int64"], name) in
-  (* GPU intrinsics that don't belong to a type-specific module.
-     These reference Sarek.Sarek_prim for now - will be moved to Gpu.ml later *)
-  let gpu_ref name = IntrinsicRef (["Sarek"; "Sarek_prim"], name) in
+  (* Import all intrinsics from the PPX registry *)
+  let intrinsics = Sarek_ppx_registry.all_intrinsics () in
 
-  (* Std module constants *)
-  let env =
-    add_intrinsic_const
-      "thread_idx_x"
-      {
-        const_type = t_int32;
-        const_cuda = "threadIdx.x";
-        const_opencl = "get_local_id(0)";
-      }
-      env
-  in
-  let env =
-    add_intrinsic_const
-      "thread_idx_y"
-      {
-        const_type = t_int32;
-        const_cuda = "threadIdx.y";
-        const_opencl = "get_local_id(1)";
-      }
-      env
-  in
-  let env =
-    add_intrinsic_const
-      "thread_idx_z"
-      {
-        const_type = t_int32;
-        const_cuda = "threadIdx.z";
-        const_opencl = "get_local_id(2)";
-      }
-      env
-  in
-
-  let env =
-    add_intrinsic_const
-      "block_idx_x"
-      {
-        const_type = t_int32;
-        const_cuda = "blockIdx.x";
-        const_opencl = "get_group_id(0)";
-      }
-      env
-  in
-  let env =
-    add_intrinsic_const
-      "block_idx_y"
-      {
-        const_type = t_int32;
-        const_cuda = "blockIdx.y";
-        const_opencl = "get_group_id(1)";
-      }
-      env
-  in
-  let env =
-    add_intrinsic_const
-      "block_idx_z"
-      {
-        const_type = t_int32;
-        const_cuda = "blockIdx.z";
-        const_opencl = "get_group_id(2)";
-      }
-      env
-  in
-
-  let env =
-    add_intrinsic_const
-      "block_dim_x"
-      {
-        const_type = t_int32;
-        const_cuda = "blockDim.x";
-        const_opencl = "get_local_size(0)";
-      }
-      env
-  in
-  let env =
-    add_intrinsic_const
-      "block_dim_y"
-      {
-        const_type = t_int32;
-        const_cuda = "blockDim.y";
-        const_opencl = "get_local_size(1)";
-      }
-      env
-  in
-  let env =
-    add_intrinsic_const
-      "block_dim_z"
-      {
-        const_type = t_int32;
-        const_cuda = "blockDim.z";
-        const_opencl = "get_local_size(2)";
-      }
-      env
-  in
-
-  let env =
-    add_intrinsic_const
-      "grid_dim_x"
-      {
-        const_type = t_int32;
-        const_cuda = "gridDim.x";
-        const_opencl = "get_num_groups(0)";
-      }
-      env
-  in
-  let env =
-    add_intrinsic_const
-      "grid_dim_y"
-      {
-        const_type = t_int32;
-        const_cuda = "gridDim.y";
-        const_opencl = "get_num_groups(1)";
-      }
-      env
-  in
-  let env =
-    add_intrinsic_const
-      "grid_dim_z"
-      {
-        const_type = t_int32;
-        const_cuda = "gridDim.z";
-        const_opencl = "get_num_groups(2)";
-      }
-      env
-  in
-
-  let env =
-    add_intrinsic_const
-      "global_thread_id"
-      {
-        const_type = t_int32;
-        const_cuda = "(blockIdx.x*blockDim.x+threadIdx.x)";
-        const_opencl = "get_global_id(0)";
-      }
-      env
-  in
-
-  (* GPU synchronization functions *)
-  let env =
-    add_intrinsic_fun
-      "block_barrier"
-      {
-        intr_type = t_fun [t_unit] t_unit;
-        intr_cuda = "__syncthreads()";
-        intr_opencl = "barrier(CLK_LOCAL_MEM_FENCE)";
-        intr_ocaml = gpu_ref "block_barrier";
-      }
-      env
-  in
-
-  let env =
-    add_intrinsic_fun
-      "return"
-      {
-        intr_type = t_fun [t_unit] t_unit;
-        intr_cuda = "return";
-        intr_opencl = "return";
-        intr_ocaml = gpu_ref "return_unit";
-      }
-      env
-  in
-
-  (* Type conversion functions *)
-  let env =
-    add_intrinsic_fun
-      "float"
-      {
-        intr_type = t_fun [t_int32] t_float32;
-        intr_cuda = "(float)";
-        intr_opencl = "(float)";
-        intr_ocaml = gpu_ref "float_of_int";
-      }
-      env
-  in
-
-  let env =
-    add_intrinsic_fun
-      "float64"
-      {
-        intr_type = t_fun [t_int32] t_float64;
-        intr_cuda = "(double)";
-        intr_opencl = "(double)";
-        intr_ocaml = gpu_ref "float64_of_int";
-      }
-      env
-  in
-
-  let env =
-    add_intrinsic_fun
-      "int_of_float"
-      {
-        intr_type = t_fun [t_float32] t_int32;
-        intr_cuda = "(int)";
-        intr_opencl = "(int)";
-        intr_ocaml = gpu_ref "int_of_float";
-      }
-      env
-  in
-
-  let env =
-    add_intrinsic_fun
-      "int_of_float64"
-      {
-        intr_type = t_fun [t_float64] t_int32;
-        intr_cuda = "(int)";
-        intr_opencl = "(int)";
-        intr_ocaml = gpu_ref "int_of_float64";
-      }
-      env
-  in
-
-  (* Math.Float32 unary functions *)
-  let float32_unary_funs =
-    [
-      ("sin", "sinf", "sin");
-      ("cos", "cosf", "cos");
-      ("tan", "tanf", "tan");
-      ("asin", "asinf", "asin");
-      ("acos", "acosf", "acos");
-      ("atan", "atanf", "atan");
-      ("sinh", "sinhf", "sinh");
-      ("cosh", "coshf", "cosh");
-      ("tanh", "tanhf", "tanh");
-      ("exp", "expf", "exp");
-      ("log", "logf", "log");
-      ("log10", "log10f", "log10");
-      ("sqrt", "sqrtf", "sqrt");
-      ("ceil", "ceilf", "ceil");
-      ("floor", "floorf", "floor");
-      ("expm1", "expm1f", "expm1");
-      ("log1p", "log1pf", "log1p");
-      ("abs_float", "fabsf", "fabs");
-      ("rsqrt", "rsqrtf", "rsqrt");
-    ]
-  in
+  (* Add each intrinsic to the environment under module-qualified name.
+     E.g., "Float32.sin" not just "sin". This avoids Float32/Float64 conflicts.
+     Intrinsics with function types (TFun) go into intrinsic_funs.
+     Intrinsics with non-function types (constants like thread_idx_x) go into
+     intrinsic_consts. *)
   let env =
     List.fold_left
-      (fun env (name, cuda, opencl) ->
-        add_intrinsic_fun
-          name
-          {
-            intr_type = t_fun [t_float32] t_float32;
-            intr_cuda = cuda;
-            intr_opencl = opencl;
-            intr_ocaml = float32_ref name;
-          }
-          env)
+      (fun env (info : Sarek_ppx_registry.intrinsic_info) ->
+        let ref = IntrinsicRef (info.ii_module, info.ii_name) in
+        (* Use module-qualified name: e.g., "Float32.sin" *)
+        let module_name = short_module_name info.ii_module in
+        let qualified_name =
+          if module_name = "" then info.ii_name
+          else module_name ^ "." ^ info.ii_name
+        in
+        match info.ii_type with
+        | TFun _ ->
+            (* It's a function - register under qualified name *)
+            let fun_info = {intr_type = info.ii_type; intr_ref = ref} in
+            add_intrinsic_fun qualified_name fun_info env
+        | _ ->
+            (* It's a constant - register under qualified name *)
+            let const_info = {const_type = info.ii_type; const_ref = ref} in
+            add_intrinsic_const qualified_name const_info env)
       env
-      float32_unary_funs
+      intrinsics
   in
-
-  (* Math.Float32 binary functions *)
-  let float32_bin_funs =
-    [
-      ("pow", "powf", "pow");
-      ("atan2", "atan2f", "atan2");
-      ("hypot", "hypotf", "hypot");
-      ("copysign", "copysignf", "copysign");
-    ]
-  in
-  let env =
-    List.fold_left
-      (fun env (name, cuda, opencl) ->
-        add_intrinsic_fun
-          name
-          {
-            intr_type = t_fun [t_float32; t_float32] t_float32;
-            intr_cuda = cuda;
-            intr_opencl = opencl;
-            intr_ocaml = float32_ref name;
-          }
-          env)
-      env
-      float32_bin_funs
-  in
-
-  (* Math.Float32 binary functions - GPU specific (spoc helpers) *)
-  let float32_bin_funs_gpu =
-    [
-      ("add", "spoc_fadd", "spoc_fadd", "add_float32");
-      ("minus", "spoc_fminus", "spoc_fminus", "sub_float32");
-      ("mul", "spoc_fmul", "spoc_fmul", "mul_float32");
-      ("div", "spoc_fdiv", "spoc_fdiv", "div_float32");
-    ]
-  in
-  let env =
-    List.fold_left
-      (fun env (name, cuda, opencl, stdlib_name) ->
-        add_intrinsic_fun
-          name
-          {
-            intr_type = t_fun [t_float32; t_float32] t_float32;
-            intr_cuda = cuda;
-            intr_opencl = opencl;
-            intr_ocaml = float32_ref stdlib_name;
-          }
-          env)
-      env
-      float32_bin_funs_gpu
-  in
-
-  (* Math.Float64 unary functions - mapped to Float64.stdlib_name *)
-  let float64_unary_funs =
-    [
-      ("sin64", "sin", "sin", "sin");
-      ("cos64", "cos", "cos", "cos");
-      ("tan64", "tan", "tan", "tan");
-      ("asin64", "asin", "asin", "asin");
-      ("acos64", "acos", "acos", "acos");
-      ("atan64", "atan", "atan", "atan");
-      ("sinh64", "sinh", "sinh", "sinh");
-      ("cosh64", "cosh", "cosh", "cosh");
-      ("tanh64", "tanh", "tanh", "tanh");
-      ("exp64", "exp", "exp", "exp");
-      ("log64", "log", "log", "log");
-      ("log1064", "log10", "log10", "log10");
-      ("sqrt64", "sqrt", "sqrt", "sqrt");
-      ("ceil64", "ceil", "ceil", "ceil");
-      ("floor64", "floor", "floor", "floor");
-      ("abs_float64", "fabs", "fabs", "abs_float");
-      ("rsqrt64", "rsqrt", "rsqrt", "rsqrt");
-    ]
-  in
-  let env =
-    List.fold_left
-      (fun env (name, cuda, opencl, stdlib_name) ->
-        add_intrinsic_fun
-          name
-          {
-            intr_type = t_fun [t_float64] t_float64;
-            intr_cuda = cuda;
-            intr_opencl = opencl;
-            intr_ocaml = float64_ref stdlib_name;
-          }
-          env)
-      env
-      float64_unary_funs
-  in
-
-  (* Math.Float64 binary functions *)
-  let float64_bin_funs =
-    [
-      ("pow64", "pow", "pow", "pow");
-      ("atan264", "atan2", "atan2", "atan2");
-      ("hypot64", "hypot", "hypot", "hypot");
-      ("copysign64", "copysign", "copysign", "copysign");
-    ]
-  in
-  let env =
-    List.fold_left
-      (fun env (name, cuda, opencl, stdlib_name) ->
-        add_intrinsic_fun
-          name
-          {
-            intr_type = t_fun [t_float64; t_float64] t_float64;
-            intr_cuda = cuda;
-            intr_opencl = opencl;
-            intr_ocaml = float64_ref stdlib_name;
-          }
-          env)
-      env
-      float64_bin_funs
-  in
-
-  (* Math.Float64 binary functions - GPU specific (spoc helpers) *)
-  let float64_bin_funs_gpu =
-    [
-      ("add64", "spoc_dadd", "spoc_dadd", "add_float64");
-      ("minus64", "spoc_dminus", "spoc_dminus", "sub_float64");
-      ("mul64", "spoc_dmul", "spoc_dmul", "mul_float64");
-      ("div64", "spoc_ddiv", "spoc_ddiv", "div_float64");
-    ]
-  in
-  let env =
-    List.fold_left
-      (fun env (name, cuda, opencl, stdlib_name) ->
-        add_intrinsic_fun
-          name
-          {
-            intr_type = t_fun [t_float64; t_float64] t_float64;
-            intr_cuda = cuda;
-            intr_opencl = opencl;
-            intr_ocaml = float64_ref stdlib_name;
-          }
-          env)
-      env
-      float64_bin_funs_gpu
-  in
-
-  (* Integer math functions *)
-  let env =
-    add_intrinsic_fun
-      "logical_and"
-      {
-        intr_type = t_fun [t_int32; t_int32] t_int32;
-        intr_cuda = "logical_and";
-        intr_opencl = "logical_and";
-        intr_ocaml = int32_ref "logand";
-      }
-      env
-  in
-
-  let env =
-    add_intrinsic_fun
-      "xor"
-      {
-        intr_type = t_fun [t_int32; t_int32] t_int32;
-        intr_cuda = "spoc_xor";
-        intr_opencl = "spoc_xor";
-        intr_ocaml = int32_ref "logxor";
-      }
-      env
-  in
-
-  let env =
-    add_intrinsic_fun
-      "spoc_powint"
-      {
-        intr_type = t_fun [t_int32; t_int32] t_int32;
-        intr_cuda = "spoc_powint";
-        intr_opencl = "spoc_powint";
-        (* No stdlib equivalent yet - keep in gpu_ref for now *)
-        intr_ocaml = gpu_ref "spoc_powint";
-      }
-      env
-  in
-
-  env
+  (* Auto-open core modules - their intrinsics are fundamental
+     and should be available without explicit qualification *)
+  let env = open_module ["Gpu"] env in
+  (* Also auto-open Float32 for backward compatibility - math functions like
+     sqrt, sin, etc. were available at top level in the old system *)
+  open_module ["Float32"] env
 
 (** Lookup that checks all namespaces for an identifier *)
 type lookup_result =
@@ -629,22 +296,20 @@ let pp_env fmt env =
     (fun name info ->
       Format.fprintf
         fmt
-        "  %s : %a (cuda=%s, opencl=%s)@."
+        "  %s : %a (ref=%s)@."
         name
         pp_typ
         info.const_type
-        info.const_cuda
-        info.const_opencl)
+        (intrinsic_ref_name info.const_ref))
     env.intrinsic_consts ;
   Format.fprintf fmt "Intrinsic functions:@." ;
   StringMap.iter
     (fun name info ->
       Format.fprintf
         fmt
-        "  %s : %a (cuda=%s, opencl=%s)@."
+        "  %s : %a (ref=%s)@."
         name
         pp_typ
         info.intr_type
-        info.intr_cuda
-        info.intr_opencl)
+        (intrinsic_ref_name info.intr_ref))
     env.intrinsic_funs

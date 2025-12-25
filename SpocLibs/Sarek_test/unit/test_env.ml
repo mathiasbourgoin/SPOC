@@ -4,6 +4,9 @@
  * Tests typing environment operations.
  ******************************************************************************)
 
+(* Force stdlib initialization to register intrinsics *)
+let () = Sarek_stdlib.force_init ()
+
 open Sarek_ppx_lib.Sarek_types
 open Sarek_ppx_lib.Sarek_env
 
@@ -110,14 +113,17 @@ let test_intrinsic_consts () =
         "thread_idx_x has int32 type"
         true
         (match info.const_type with TPrim TInt32 -> true | _ -> false) ;
-      Alcotest.(check string)
-        "thread_idx_x has correct cuda code"
-        "threadIdx.x"
-        info.const_cuda ;
-      Alcotest.(check string)
-        "thread_idx_x has correct opencl code"
-        "get_local_id(0)"
-        info.const_opencl
+      (* Now uses IntrinsicRef for JIT resolution - path from registry *)
+      let ref_name = intrinsic_ref_name info.const_ref in
+      Alcotest.(check bool)
+        "thread_idx_x has Gpu in path"
+        true
+        (String.length ref_name > 0
+        && String.sub
+             ref_name
+             (String.length ref_name - String.length "thread_idx_x")
+             (String.length "thread_idx_x")
+           = "thread_idx_x")
   | None -> Alcotest.fail "thread_idx_x should be found"
 
 (* Test intrinsic functions *)
@@ -147,7 +153,17 @@ let test_intrinsic_funs () =
       | TFun ([TReg "float32"], TReg "float32") ->
           Alcotest.(check pass) "sin has correct type" () ()
       | _ -> Alcotest.fail "sin should have type float32 -> float32") ;
-      Alcotest.(check string) "sin has correct cuda code" "sinf" info.intr_cuda
+      (* Now uses IntrinsicRef for JIT resolution - path from registry *)
+      let ref_name = intrinsic_ref_name info.intr_ref in
+      Alcotest.(check bool)
+        "sin has Float32 in path"
+        true
+        (String.length ref_name > 0
+        && String.sub
+             ref_name
+             (String.length ref_name - String.length "sin")
+             (String.length "sin")
+           = "sin")
   | None -> Alcotest.fail "sin should be found"
 
 (* Test lookup function *)

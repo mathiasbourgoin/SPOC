@@ -13,6 +13,10 @@
 open Ppxlib
 open Sarek_ppx_lib
 
+(* Force stdlib module initialization to populate the PPX registry.
+   This must happen before any kernel expansion uses Sarek_env.with_stdlib(). *)
+let () = Sarek_stdlib.force_init ()
+
 (* Registry of types declared in the current compilation unit via [@@sarek.type] *)
 let registered_types : Sarek_ast.type_decl list ref = ref []
 

@@ -27,7 +27,9 @@ type intrinsic_info = {
   ii_name : string;  (** Function name, e.g., "sin" *)
   ii_qualified_name : string;  (** Qualified name, e.g., "Float32.sin" *)
   ii_type : typ;  (** Type signature *)
-  ii_device : Spoc.Devices.device -> string;  (** Device code generator *)
+  ii_device : Spoc.Devices.device -> string;
+      (** Device code generator - more generic than storing cuda/opencl
+          separately *)
   ii_module : string list;  (** Module path, e.g., ["Sarek_stdlib"; "Float32"] *)
 }
 
@@ -36,8 +38,7 @@ type const_info = {
   ci_name : string;  (** Constant name *)
   ci_qualified_name : string;  (** Qualified name *)
   ci_type : typ;  (** Type *)
-  ci_cuda : string;  (** CUDA code *)
-  ci_opencl : string;  (** OpenCL code *)
+  ci_device : Spoc.Devices.device -> string;  (** Device code generator *)
   ci_module : string list;  (** Module path *)
 }
 
@@ -132,14 +133,13 @@ let make_intrinsic_info ~name ~module_path ~typ ~device : intrinsic_info =
   }
 
 (** Helper: create const_info *)
-let make_const_info ~name ~module_path ~typ ~cuda ~opencl : const_info =
+let make_const_info ~name ~module_path ~typ ~device : const_info =
   let qualified = String.concat "." (module_path @ [name]) in
   {
     ci_name = name;
     ci_qualified_name = qualified;
     ci_type = typ;
-    ci_cuda = cuda;
-    ci_opencl = opencl;
+    ci_device = device;
     ci_module = module_path;
   }
 

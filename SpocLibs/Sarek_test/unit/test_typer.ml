@@ -4,6 +4,9 @@
  * Tests type inference for expressions.
  ******************************************************************************)
 
+(* Force stdlib initialization to register intrinsics *)
+let () = Sarek_stdlib.force_init ()
+
 open Sarek_ppx_lib.Sarek_ast
 open Sarek_ppx_lib.Sarek_types
 open Sarek_ppx_lib.Sarek_env
