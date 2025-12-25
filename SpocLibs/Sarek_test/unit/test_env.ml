@@ -72,7 +72,7 @@ let test_var_shadowing () =
       Alcotest.(check bool)
         "shadowed var has new type"
         true
-        (match found.vi_type with TPrim TFloat32 -> true | _ -> false) ;
+        (match found.vi_type with TReg "float32" -> true | _ -> false) ;
       Alcotest.(check bool)
         "shadowed var has new mutability"
         true
@@ -144,7 +144,7 @@ let test_intrinsic_funs () =
   match find_intrinsic_fun "sin" env with
   | Some info ->
       (match info.intr_type with
-      | TFun ([TPrim TFloat32], TPrim TFloat32) ->
+      | TFun ([TReg "float32"], TReg "float32") ->
           Alcotest.(check pass) "sin has correct type" () ()
       | _ -> Alcotest.fail "sin should have type float32 -> float32") ;
       Alcotest.(check string) "sin has correct cuda code" "sinf" info.intr_cuda
@@ -225,7 +225,7 @@ let test_custom_types () =
       Alcotest.(check bool)
         "field x has correct type"
         true
-        (match ty with TPrim TFloat32 -> true | _ -> false) ;
+        (match ty with TReg "float32" -> true | _ -> false) ;
       Alcotest.(check bool) "field x is immutable" false mutable_
   | None -> Alcotest.fail "field x should be found"
 

@@ -49,9 +49,9 @@ let test_prim_types () =
     true
     (match t_int32 with TPrim TInt32 -> true | _ -> false) ;
   Alcotest.(check bool)
-    "t_float32 is TPrim TFloat32"
+    "t_float32 is TReg float32"
     true
-    (match t_float32 with TPrim TFloat32 -> true | _ -> false)
+    (match t_float32 with TReg "float32" -> true | _ -> false)
 
 (* Tests for type constructors *)
 let test_type_constructors () =
@@ -65,14 +65,14 @@ let test_type_constructors () =
   Alcotest.(check bool)
     "t_arr creates TArr"
     true
-    (match arr_float with TArr (TPrim TFloat32, Local) -> true | _ -> false) ;
+    (match arr_float with TArr (TReg "float32", Local) -> true | _ -> false) ;
 
   let fn = t_fun [t_int32; t_float32] t_bool in
   Alcotest.(check bool)
     "t_fun creates TFun"
     true
     (match fn with
-    | TFun ([TPrim TInt32; TPrim TFloat32], TPrim TBool) -> true
+    | TFun ([TPrim TInt32; TReg "float32"], TPrim TBool) -> true
     | _ -> false)
 
 (* Tests for fresh type variables *)
