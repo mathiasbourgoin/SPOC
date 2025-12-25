@@ -1,6 +1,4 @@
 (library
  (name sarek_stdlib)
  (public_name sarek.stdlib)
- (libraries sarek)
- (preprocess
-  (pps sarek_ppx)))
+ (libraries sarek spoc))

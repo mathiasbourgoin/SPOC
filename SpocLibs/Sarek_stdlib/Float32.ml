@@ -2,12 +2,11 @@
  * Sarek Float32 Standard Library
  *
  * Provides float32 math functions for use in Sarek kernels.
- * Each function is defined using %sarek_intrinsic which:
- *   1. Registers the intrinsic in Sarek_registry at library load time
- *   2. Provides an OCaml implementation for host-side use
+ * Functions are registered with Sarek_registry at module load time.
  ******************************************************************************)
 
 open Spoc.Devices
+open Sarek.Sarek_registry
 
 (** CUDA vs OpenCL helper *)
 let cuda_or_opencl dev cuda_code opencl_code =
@@ -15,72 +14,129 @@ let cuda_or_opencl dev cuda_code opencl_code =
   | CudaInfo _ -> cuda_code
   | OpenCLInfo _ -> opencl_code
 
-(** Square root *)
-let%sarek_intrinsic (sqrt_float32 : float -> float) =
-  {
-    device = (fun dev -> cuda_or_opencl dev "sqrtf(%s)" "sqrt(%s)");
-    ocaml = sqrt;
-  }
+(* Register float32 type *)
+let () = register_type "float32" ~device:(fun _ -> "float") ~size:4
 
-(** Reciprocal square root: 1/sqrt(x) *)
-let%sarek_intrinsic (rsqrt_float32 : float -> float) =
-  {
-    device = (fun dev -> cuda_or_opencl dev "rsqrtf(%s)" "rsqrt(%s)");
-    ocaml = (fun x -> 1.0 /. sqrt x);
-  }
+(* Register float32 intrinsic functions *)
+let () =
+  (* Unary math functions *)
+  let unary_funs =
+    [
+      ("sin", "sinf", "sin");
+      ("cos", "cosf", "cos");
+      ("tan", "tanf", "tan");
+      ("asin", "asinf", "asin");
+      ("acos", "acosf", "acos");
+      ("atan", "atanf", "atan");
+      ("sinh", "sinhf", "sinh");
+      ("cosh", "coshf", "cosh");
+      ("tanh", "tanhf", "tanh");
+      ("exp", "expf", "exp");
+      ("log", "logf", "log");
+      ("log10", "log10f", "log10");
+      ("sqrt", "sqrtf", "sqrt");
+      ("ceil", "ceilf", "ceil");
+      ("floor", "floorf", "floor");
+      ("expm1", "expm1f", "expm1");
+      ("log1p", "log1pf", "log1p");
+      ("abs_float", "fabsf", "fabs");
+      ("rsqrt", "rsqrtf", "rsqrt");
+    ]
+  in
+  List.iter
+    (fun (name, cuda, opencl) ->
+      register_fun
+        ~module_path:["Float32"]
+        name
+        ~arity:1
+        ~device:(fun dev -> cuda_or_opencl dev cuda opencl)
+        ~arg_types:["float32"]
+        ~ret_type:"float32")
+    unary_funs ;
 
-(** Sine *)
-let%sarek_intrinsic (sin_float32 : float -> float) =
-  {device = (fun dev -> cuda_or_opencl dev "sinf(%s)" "sin(%s)"); ocaml = sin}
+  (* Binary math functions *)
+  let binary_funs =
+    [
+      ("pow", "powf", "pow");
+      ("atan2", "atan2f", "atan2");
+      ("hypot", "hypotf", "hypot");
+      ("copysign", "copysignf", "copysign");
+    ]
+  in
+  List.iter
+    (fun (name, cuda, opencl) ->
+      register_fun
+        ~module_path:["Float32"]
+        name
+        ~arity:2
+        ~device:(fun dev -> cuda_or_opencl dev cuda opencl)
+        ~arg_types:["float32"; "float32"]
+        ~ret_type:"float32")
+    binary_funs
 
-(** Cosine *)
-let%sarek_intrinsic (cos_float32 : float -> float) =
-  {device = (fun dev -> cuda_or_opencl dev "cosf(%s)" "cos(%s)"); ocaml = cos}
+(** OCaml implementations for host-side use *)
+let sin = Stdlib.sin
 
-(** Exponential: e^x *)
-let%sarek_intrinsic (exp_float32 : float -> float) =
-  {device = (fun dev -> cuda_or_opencl dev "expf(%s)" "exp(%s)"); ocaml = exp}
+let cos = Stdlib.cos
 
-(** Natural logarithm *)
-let%sarek_intrinsic (log_float32 : float -> float) =
-  {device = (fun dev -> cuda_or_opencl dev "logf(%s)" "log(%s)"); ocaml = log}
+let tan = Stdlib.tan
 
-(** Absolute value *)
-let%sarek_intrinsic (abs_float32 : float -> float) =
-  {
-    device = (fun dev -> cuda_or_opencl dev "fabsf(%s)" "fabs(%s)");
-    ocaml = abs_float;
-  }
+let asin = Stdlib.asin
 
-(** Floor *)
-let%sarek_intrinsic (floor_float32 : float -> float) =
-  {
-    device = (fun dev -> cuda_or_opencl dev "floorf(%s)" "floor(%s)");
-    ocaml = floor;
-  }
+let acos = Stdlib.acos
 
-(** Ceiling *)
-let%sarek_intrinsic (ceil_float32 : float -> float) =
-  {
-    device = (fun dev -> cuda_or_opencl dev "ceilf(%s)" "ceil(%s)");
-    ocaml = ceil;
-  }
+let atan = Stdlib.atan
 
-(* Expose nicer names *)
-let sqrt = sqrt_float32
+let sinh = Stdlib.sinh
 
-let rsqrt = rsqrt_float32
+let cosh = Stdlib.cosh
 
-let sin = sin_float32
+let tanh = Stdlib.tanh
 
-let cos = cos_float32
+let exp = Stdlib.exp
 
-let exp = exp_float32
+let log = Stdlib.log
 
-let log = log_float32
+let log10 = Stdlib.log10
 
-let abs = abs_float32
+let sqrt = Stdlib.sqrt
 
-let floor = floor_float32
+let ceil = Stdlib.ceil
 
-let ceil = ceil_float32
+let floor = Stdlib.floor
+
+let expm1 = Stdlib.expm1
+
+let log1p = Stdlib.log1p
+
+let abs_float = Stdlib.abs_float
+
+let rsqrt x = 1.0 /. Stdlib.sqrt x
+
+let pow = Float.pow
+
+let atan2 = Stdlib.atan2
+
+let hypot = Stdlib.hypot
+
+let copysign = Stdlib.copysign
+
+(** Conversion functions *)
+let of_int x = Stdlib.float_of_int x
+
+let to_int x = Stdlib.int_of_float x
+
+(* Register conversion functions *)
+let () =
+  register_fun
+    "float"
+    ~arity:1
+    ~device:(fun _ -> "(float)")
+    ~arg_types:["int32"]
+    ~ret_type:"float32" ;
+  register_fun
+    "int_of_float"
+    ~arity:1
+    ~device:(fun _ -> "(int)")
+    ~arg_types:["float32"]
+    ~ret_type:"int32"
