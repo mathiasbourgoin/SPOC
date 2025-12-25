@@ -17,7 +17,14 @@
   test_convention
   test_convention_kernel
   test_pragma)
- (libraries spoc sarek sarek_geometry sarek.visibility sarek_ppx.lib unix)
+ (libraries
+  spoc
+  sarek
+  sarek.stdlib
+  sarek_geometry
+  sarek.visibility
+  sarek_ppx.lib
+  unix)
  (preprocess
   (pps sarek_ppx))
  (flags

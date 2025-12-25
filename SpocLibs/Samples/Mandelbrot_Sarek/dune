@@ -3,7 +3,7 @@
  (enabled_if
   (= %{profile} "cuda"))
  (modules mandelbrot_ppx)
- (libraries spoc sarek unix)
+ (libraries spoc sarek sarek.stdlib unix)
  (preprocess
   (pps sarek_ppx))
  (flags
