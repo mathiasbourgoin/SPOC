@@ -2,7 +2,7 @@
  * Sarek Int64 Standard Library
  *
  * Provides int64 type and operations for Sarek kernels.
- * Uses %sarek_intrinsic to define GPU intrinsics with device function pattern.
+ * Uses %sarek_intrinsic to define GPU intrinsics.
  *
  * Each intrinsic generates:
  * - func_device : device -> string  (the device code generator)
@@ -21,46 +21,48 @@ let%sarek_intrinsic int64 = {device = (fun _ -> "long"); ctype = Ctypes.int64_t}
  * Arithmetic operators
  ******************************************************************************)
 
+let dev cuda opencl d = Sarek.Sarek_registry.cuda_or_opencl d cuda opencl
+
 let%sarek_intrinsic (add_int64 : int64 -> int64 -> int64) =
-  {device = (fun _ -> "(%s + %s)"); ocaml = Stdlib.Int64.add}
+  {device = dev "(%s + %s)" "(%s + %s)"; ocaml = Stdlib.Int64.add}
 
 let%sarek_intrinsic (sub_int64 : int64 -> int64 -> int64) =
-  {device = (fun _ -> "(%s - %s)"); ocaml = Stdlib.Int64.sub}
+  {device = dev "(%s - %s)" "(%s - %s)"; ocaml = Stdlib.Int64.sub}
 
 let%sarek_intrinsic (mul_int64 : int64 -> int64 -> int64) =
-  {device = (fun _ -> "(%s * %s)"); ocaml = Stdlib.Int64.mul}
+  {device = dev "(%s * %s)" "(%s * %s)"; ocaml = Stdlib.Int64.mul}
 
 let%sarek_intrinsic (div_int64 : int64 -> int64 -> int64) =
-  {device = (fun _ -> "(%s / %s)"); ocaml = Stdlib.Int64.div}
+  {device = dev "(%s / %s)" "(%s / %s)"; ocaml = Stdlib.Int64.div}
 
 let%sarek_intrinsic (mod_int64 : int64 -> int64 -> int64) =
-  {device = (fun _ -> "(%s %% %s)"); ocaml = Stdlib.Int64.rem}
+  {device = dev "(%s %% %s)" "(%s %% %s)"; ocaml = Stdlib.Int64.rem}
 
 (******************************************************************************
  * Bitwise operators
  ******************************************************************************)
 
 let%sarek_intrinsic (logand : int64 -> int64 -> int64) =
-  {device = (fun _ -> "(%s & %s)"); ocaml = Stdlib.Int64.logand}
+  {device = dev "(%s & %s)" "(%s & %s)"; ocaml = Stdlib.Int64.logand}
 
 let%sarek_intrinsic (logor : int64 -> int64 -> int64) =
-  {device = (fun _ -> "(%s | %s)"); ocaml = Stdlib.Int64.logor}
+  {device = dev "(%s | %s)" "(%s | %s)"; ocaml = Stdlib.Int64.logor}
 
 let%sarek_intrinsic (logxor : int64 -> int64 -> int64) =
-  {device = (fun _ -> "(%s ^ %s)"); ocaml = Stdlib.Int64.logxor}
+  {device = dev "(%s ^ %s)" "(%s ^ %s)"; ocaml = Stdlib.Int64.logxor}
 
 let%sarek_intrinsic (lognot : int64 -> int64) =
-  {device = (fun _ -> "(~%s)"); ocaml = Stdlib.Int64.lognot}
+  {device = dev "(~%s)" "(~%s)"; ocaml = Stdlib.Int64.lognot}
 
 let%sarek_intrinsic (shift_left : int64 -> int -> int64) =
-  {device = (fun _ -> "(%s << %s)"); ocaml = Stdlib.Int64.shift_left}
+  {device = dev "(%s << %s)" "(%s << %s)"; ocaml = Stdlib.Int64.shift_left}
 
 let%sarek_intrinsic (shift_right : int64 -> int -> int64) =
-  {device = (fun _ -> "(%s >> %s)"); ocaml = Stdlib.Int64.shift_right}
+  {device = dev "(%s >> %s)" "(%s >> %s)"; ocaml = Stdlib.Int64.shift_right}
 
 let%sarek_intrinsic (shift_right_logical : int64 -> int -> int64) =
   {
-    device = (fun _ -> "((unsigned long)%s >> %s)");
+    device = dev "((unsigned long)%s >> %s)" "((unsigned long)%s >> %s)";
     ocaml = Stdlib.Int64.shift_right_logical;
   }
 
@@ -69,16 +71,16 @@ let%sarek_intrinsic (shift_right_logical : int64 -> int -> int64) =
  ******************************************************************************)
 
 let%sarek_intrinsic (abs : int64 -> int64) =
-  {device = (fun _ -> "llabs(%s)"); ocaml = Stdlib.Int64.abs}
+  {device = dev "llabs(%s)" "labs(%s)"; ocaml = Stdlib.Int64.abs}
 
 let%sarek_intrinsic (neg : int64 -> int64) =
-  {device = (fun _ -> "(-%s)"); ocaml = Stdlib.Int64.neg}
+  {device = dev "(-%s)" "(-%s)"; ocaml = Stdlib.Int64.neg}
 
 let%sarek_intrinsic (min : int64 -> int64 -> int64) =
-  {device = (fun _ -> "min(%s, %s)"); ocaml = Stdlib.Int64.min}
+  {device = dev "min(%s, %s)" "min(%s, %s)"; ocaml = Stdlib.Int64.min}
 
 let%sarek_intrinsic (max : int64 -> int64 -> int64) =
-  {device = (fun _ -> "max(%s, %s)"); ocaml = Stdlib.Int64.max}
+  {device = dev "max(%s, %s)" "max(%s, %s)"; ocaml = Stdlib.Int64.max}
 
 (******************************************************************************
  * Conversion functions

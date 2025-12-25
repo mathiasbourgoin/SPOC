@@ -690,7 +690,6 @@ module Generator (M : CodeGenerator) = struct
           (*   ); *)
           s
       | App (a, b) -> (
-          let f = parse ~profile:prof i a dev in
           let rec aux = function
             | t :: [] -> parse ~profile:prof i t dev
             | t :: q -> parse ~profile:prof i t dev ^ ", " ^ aux q
@@ -698,9 +697,53 @@ module Generator (M : CodeGenerator) = struct
           in
           match a with
           | Intrinsics ("return", "return") ->
+              let f = parse ~profile:prof i a dev in
               f ^ " " ^ aux (Array.to_list b) ^ " "
-          | Intrinsics (_, _) -> f ^ " (" ^ aux (Array.to_list b) ^ ") "
+          | Intrinsics (_, _) ->
+              let f = parse ~profile:prof i a dev in
+              f ^ " (" ^ aux (Array.to_list b) ^ ") "
+          | IntrinsicRef (module_path, name) ->
+              (* Get the device code template from the registry.
+                 Templates can be:
+                 - Function names like "sinf" -> generate "sinf(arg)"
+                 - Format strings like "(%s + %s)" -> apply sprintf *)
+              let template =
+                Sarek_registry.fun_device_code ~module_path name dev
+              in
+              let args = Array.to_list b in
+              let parsed_args =
+                List.map (fun arg -> parse ~profile:prof i arg dev) args
+              in
+              (* Count %s placeholders in template *)
+              let count_placeholders s =
+                let rec count i acc =
+                  if i >= String.length s - 1 then acc
+                  else if s.[i] = '%' && s.[i + 1] = 's' then
+                    count (i + 2) (acc + 1)
+                  else count (i + 1) acc
+                in
+                count 0 0
+              in
+              let num_placeholders = count_placeholders template in
+              if num_placeholders = 0 then
+                (* Plain function name like "sinf" -> call as function *)
+                template ^ "(" ^ String.concat ", " parsed_args ^ ")"
+              else if num_placeholders = 1 && List.length parsed_args = 1 then
+                (* Unary format like "%s" or "func(%s)" *)
+                Printf.sprintf
+                  (Scanf.format_from_string template "%s")
+                  (List.hd parsed_args)
+              else if num_placeholders = 2 && List.length parsed_args = 2 then
+                (* Binary format like "(%s + %s)" *)
+                Printf.sprintf
+                  (Scanf.format_from_string template "%s%s")
+                  (List.nth parsed_args 0)
+                  (List.nth parsed_args 1)
+              else
+                (* Fallback: treat as function call *)
+                template ^ "(" ^ String.concat ", " parsed_args ^ ")"
           | _ ->
+              let f = parse ~profile:prof i a dev in
               f ^ " ("
               ^ ((if prof then " prof_cntrs, " else "") ^ aux (Array.to_list b))
               ^ ") ")

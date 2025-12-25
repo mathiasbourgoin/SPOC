@@ -622,3 +622,6 @@ let mul64 : (float64 -> float64 -> float64) intrinsic =
 
 let div64 : (float64 -> float64 -> float64) intrinsic =
   Intrinsic2 {name = "div64"; device = (fun _ -> "spoc_ddiv"); ocaml = ( /. )}
+
+(* Note: GPU thread/block index constants are now defined in Sarek_stdlib.Gpu
+   using %sarek_intrinsic for auto-registration. *)

@@ -129,11 +129,7 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
           Ok (mk_texpr (TEVar (name, id)) info.vi_type loc, env)
       | LIntrinsicConst info ->
           Ok
-            ( mk_texpr
-                (TEIntrinsicConst (info.const_cuda, info.const_opencl))
-                info.const_type
-                loc,
-              env )
+            (mk_texpr (TEIntrinsicConst info.const_ref) info.const_type loc, env)
       | LIntrinsicFun info ->
           (* Return a function value that will be applied *)
           let id = fresh_var_id () in
@@ -303,11 +299,7 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
                     let* () = unify_args param_tys targs loc in
                     Ok
                       ( mk_texpr
-                          (TEIntrinsicFun
-                             ( info.intr_cuda,
-                               info.intr_opencl,
-                               info.intr_ocaml,
-                               targs ))
+                          (TEIntrinsicFun (info.intr_ref, targs))
                           ret_ty
                           loc,
                         env )
@@ -537,10 +529,15 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
       let ty = type_of_type_expr_env env ty_expr in
       let* () = unify_or_error te.ty ty loc in
       Ok ({te with ty = repr ty}, env)
-  (* Module open *)
-  | EOpen (_path, e) ->
-      (* For now, just infer the inner expression - opens are handled by intrinsics *)
-      infer env e
+  (* Module open: let open M in e *)
+  | EOpen (path, e) ->
+      (* Bring module's bindings into scope for the inner expression only.
+         We discard the modified environment to prevent the open from leaking
+         to sibling expressions in sequences. *)
+      let env' = Sarek_env.open_module path env in
+      let* te, _env_inner = infer env' e in
+      Ok (te, env)
+(* Return original env, not the one with opened module *)
 
 and infer_list env exprs =
   let rec aux env acc = function

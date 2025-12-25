@@ -270,13 +270,18 @@ let test_lower_return () =
 
 (* Test lowering intrinsics *)
 let test_lower_intrinsic_const () =
+  (* Use a simple module path for testing *)
   let te =
-    mk_texpr (TEIntrinsicConst ("threadIdx.x", "get_local_id(0)")) t_int32
+    mk_texpr
+      (TEIntrinsicConst
+         (Sarek_ppx_lib.Sarek_env.IntrinsicRef (["Gpu"], "thread_idx_x")))
+      t_int32
   in
   let state = create_state (empty_fun_map ()) in
   let ir = lower_expr state te in
-  check_ir_is "intrinsic const lowers to Intrinsics" ir (function
-    | Intrinsics ("threadIdx.x", "get_local_id(0)") -> true
+  check_ir_is "intrinsic const lowers to IntrinsicRef" ir (function
+    | IntrinsicRef (["Gpu"], "thread_idx_x") -> true
+    | IntrinsicRef (["Sarek_stdlib"; "Gpu"], "thread_idx_x") -> true
     | _ -> false)
 
 (* Test lowering vector access - variables lower to IntId *)

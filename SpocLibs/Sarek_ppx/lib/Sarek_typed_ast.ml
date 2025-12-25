@@ -58,10 +58,11 @@ and texpr_desc =
   | TENative of string  (** Native code - simple string *)
   | TENativeFun of Ppxlib.expression  (** Native code - function expression *)
   | TEPragma of string list * texpr  (** pragma options body *)
-  (* Intrinsics *)
-  | TEIntrinsicConst of string * string  (** cuda code, opencl code *)
-  | TEIntrinsicFun of string * string * Sarek_env.intrinsic_ref * texpr list
-      (** cuda, opencl, ocaml_ref, args *)
+  (* Intrinsics - use intrinsic_ref, device code resolved at JIT time *)
+  | TEIntrinsicConst of Sarek_env.intrinsic_ref
+      (** Reference to intrinsic constant *)
+  | TEIntrinsicFun of Sarek_env.intrinsic_ref * texpr list
+      (** Reference to intrinsic function, args *)
 
 and tpattern = {tpat : tpattern_desc; tpat_ty : typ; tpat_loc : loc}
 
@@ -292,12 +293,16 @@ let rec pp_texpr fmt te =
         opts
         pp_texpr
         body
-  | TEIntrinsicConst (cuda, _) -> Format.fprintf fmt "<intrinsic:%s>" cuda
-  | TEIntrinsicFun (cuda, _, _ocaml, args) ->
+  | TEIntrinsicConst ref ->
+      Format.fprintf
+        fmt
+        "<intrinsic_const:%s>"
+        (Sarek_env.intrinsic_ref_name ref)
+  | TEIntrinsicFun (ref, args) ->
       Format.fprintf
         fmt
         "<%s>(%a)"
-        cuda
+        (Sarek_env.intrinsic_ref_name ref)
         (Format.pp_print_list
            ~pp_sep:(fun fmt () -> Format.fprintf fmt ", ")
            pp_texpr)
