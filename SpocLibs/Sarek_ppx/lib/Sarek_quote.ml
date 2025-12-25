@@ -366,17 +366,18 @@ let kernel_ctor_pat ~loc name arg =
 let core_type_of_typ ~loc (t : typ) : core_type option =
   match repr t with
   | TPrim TUnit -> Some [%type: unit]
-  | TPrim (TBool | TInt32 | TInt64) -> Some [%type: int]
-  | TPrim (TFloat32 | TFloat64) -> Some [%type: float]
+  | TPrim (TBool | TInt32) -> Some [%type: int]
+  | TReg "int64" -> Some [%type: int]
+  | TReg ("float32" | "float64") -> Some [%type: float]
   | TVec elem -> (
       match repr elem with
       | TPrim TInt32 ->
           Some [%type: (int32, Bigarray.int32_elt) Spoc.Vector.vector]
-      | TPrim TInt64 ->
+      | TReg "int64" ->
           Some [%type: (int64, Bigarray.int64_elt) Spoc.Vector.vector]
-      | TPrim TFloat32 ->
+      | TReg "float32" ->
           Some [%type: (float, Bigarray.float32_elt) Spoc.Vector.vector]
-      | TPrim TFloat64 ->
+      | TReg "float64" ->
           Some [%type: (float, Bigarray.float64_elt) Spoc.Vector.vector]
       | TPrim TBool -> Some [%type: (bool, bool) Spoc.Vector.vector]
       | TRecord _ | TVariant _ ->
@@ -384,20 +385,20 @@ let core_type_of_typ ~loc (t : typ) : core_type option =
           None
       | _ -> None)
   | TRecord _ | TVariant _ -> None
-  | TArr _ | TFun _ | TTuple _ | TVar _ -> None
+  | TArr _ | TFun _ | TTuple _ | TVar _ | TReg _ -> None
 
 let kernel_ctor_name (t : typ) : string =
   match repr t with
   | TPrim (TBool | TInt32) -> "Int32"
-  | TPrim TInt64 -> "Int64"
-  | TPrim TFloat32 -> "Float32"
-  | TPrim TFloat64 -> "Float64"
+  | TReg "int64" -> "Int64"
+  | TReg "float32" -> "Float32"
+  | TReg "float64" -> "Float64"
   | TVec elem -> (
       match repr elem with
       | TPrim (TBool | TInt32) -> "VInt32"
-      | TPrim TInt64 -> "VInt64"
-      | TPrim TFloat32 -> "VFloat32"
-      | TPrim TFloat64 -> "VFloat64"
+      | TReg "int64" -> "VInt64"
+      | TReg "float32" -> "VFloat32"
+      | TReg "float64" -> "VFloat64"
       | TRecord _ | TVariant _ -> "VCustom"
       | _ -> "Vector")
   | TRecord _ | TVariant _ -> "Custom"

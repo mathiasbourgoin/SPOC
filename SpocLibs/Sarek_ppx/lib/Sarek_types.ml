@@ -5,8 +5,14 @@
  * Types are framework-independent and support unification for type inference.
  ******************************************************************************)
 
-(** Primitive types supported in GPU kernels *)
-type prim_type = TUnit | TBool | TInt32 | TInt64 | TFloat32 | TFloat64
+(** Primitive types supported in GPU kernels (core language only). Numeric types
+    like float32, float64, int64 are library-defined. *)
+type prim_type = TUnit | TBool | TInt32
+
+(** Registered type name - for library-defined types like float32, float64,
+    int64. These are not built-in but are registered by libraries via
+    [@@sarek.type]. *)
+type registered_type = string
 
 (** Memory spaces *)
 type memspace =
@@ -16,7 +22,9 @@ type memspace =
 
 (** Types *)
 type typ =
-  | TPrim of prim_type  (** Primitive types *)
+  | TPrim of prim_type  (** Primitive types (core language) *)
+  | TReg of registered_type
+      (** Registered types (library-defined: float32, float64, int64, etc.) *)
   | TVar of tvar ref  (** Unification variable *)
   | TVec of typ  (** Vector type (GPU array parameter) *)
   | TArr of typ * memspace  (** Local array with memory space *)
@@ -56,6 +64,7 @@ let rec occurs (id : int) (t : typ) : bool =
   | TVar {contents = Link _} ->
       assert false (* repr should have followed links *)
   | TPrim _ -> false
+  | TReg _ -> false (* Registered types are concrete *)
   | TVec t -> occurs id t
   | TArr (t, _) -> occurs id t
   | TFun (args, ret) -> List.exists (occurs id) args || occurs id ret
@@ -91,6 +100,8 @@ let rec unify (t1 : typ) (t2 : typ) : (unit, unify_error) result =
           Ok ()
         end
     | TPrim p1, TPrim p2 when p1 = p2 -> Ok ()
+    | TReg r1, TReg r2 when r1 = r2 ->
+        Ok () (* Registered types must match exactly *)
     | TVec t1, TVec t2 -> unify t1 t2
     | TArr (t1, _m1), TArr (t2, _m2) ->
         (* Memspace may differ (e.g., annotation defaults to Local, create_array uses Shared)
@@ -147,9 +158,6 @@ let pp_prim fmt = function
   | TUnit -> Format.fprintf fmt "unit"
   | TBool -> Format.fprintf fmt "bool"
   | TInt32 -> Format.fprintf fmt "int32"
-  | TInt64 -> Format.fprintf fmt "int64"
-  | TFloat32 -> Format.fprintf fmt "float32"
-  | TFloat64 -> Format.fprintf fmt "float64"
 
 let pp_memspace fmt = function
   | Local -> Format.fprintf fmt "local"
@@ -159,6 +167,7 @@ let pp_memspace fmt = function
 let rec pp_typ fmt t =
   match repr t with
   | TPrim p -> pp_prim fmt p
+  | TReg name -> Format.fprintf fmt "%s" name
   | TVar {contents = Unbound (id, level)} ->
       Format.fprintf fmt "'t%d[%d]" id level
   | TVar {contents = Link t} -> pp_typ fmt t
@@ -202,33 +211,39 @@ let t_bool = TPrim TBool
 
 let t_int32 = TPrim TInt32
 
-let t_int64 = TPrim TInt64
-
-let t_float32 = TPrim TFloat32
-
-let t_float64 = TPrim TFloat64
-
 let t_vec t = TVec t
 
 let t_arr t m = TArr (t, m)
 
 let t_fun args ret = TFun (args, ret)
 
-(** Check if type is numeric *)
+(** Helpers for library-defined numeric types (registered types). These are not
+    built-in primitives but use TReg for type-checking. *)
+let t_float32 = TReg "float32"
+
+let t_float64 = TReg "float64"
+
+let t_int64 = TReg "int64"
+
+(** Check if type is numeric (includes both core int32 and registered float/int
+    types). *)
 let is_numeric t =
   match repr t with
-  | TPrim (TInt32 | TInt64 | TFloat32 | TFloat64) -> true
+  | TPrim TInt32 -> true
+  | TReg ("float32" | "float64" | "int64") -> true
   | _ -> false
 
-(** Check if type is integer *)
+(** Check if type is integer (core int32 or registered int64) *)
 let is_integer t =
-  match repr t with TPrim (TInt32 | TInt64) -> true | _ -> false
+  match repr t with TPrim TInt32 -> true | TReg "int64" -> true | _ -> false
 
-(** Check if type is floating point *)
+(** Check if type is floating point (registered types) *)
 let is_float t =
-  match repr t with TPrim (TFloat32 | TFloat64) -> true | _ -> false
+  match repr t with TReg ("float32" | "float64") -> true | _ -> false
 
-(** Convert AST type expression to type (with fresh type variables) *)
+(** Convert AST type expression to type (with fresh type variables). Core types
+    (unit, bool, int32) are handled directly. Other types (float32, float64,
+    int64, etc.) are looked up in the type registry. *)
 let rec type_of_type_expr (te : Sarek_ast.type_expr) : typ =
   match te with
   | Sarek_ast.TEVar _ -> fresh_tvar ()
@@ -237,10 +252,9 @@ let rec type_of_type_expr (te : Sarek_ast.type_expr) : typ =
   | Sarek_ast.TEConstr ("int", []) -> t_int32
   | Sarek_ast.TEConstr ("int32", []) -> t_int32
   | Sarek_ast.TEConstr ("int64", []) -> t_int64
-  | Sarek_ast.TEConstr ("float", []) -> t_float32
   | Sarek_ast.TEConstr ("float32", []) -> t_float32
   | Sarek_ast.TEConstr ("float64", []) -> t_float64
-  | Sarek_ast.TEConstr ("double", []) -> t_float64
+  | Sarek_ast.TEConstr ("float", []) -> t_float64 (* OCaml float = float64 *)
   | Sarek_ast.TEConstr ("vector", [elem]) -> TVec (type_of_type_expr elem)
   | Sarek_ast.TEConstr (name, [elem])
     when String.ends_with ~suffix:"vector" name ->
@@ -248,10 +262,10 @@ let rec type_of_type_expr (te : Sarek_ast.type_expr) : typ =
       TVec (type_of_type_expr elem)
   | Sarek_ast.TEConstr ("array", [elem]) -> TArr (type_of_type_expr elem, Local)
   | Sarek_ast.TEConstr (name, args) ->
-      (* Custom type - we'll need to look it up in environment *)
+      (* Custom type - lookup in type registry or create placeholder *)
       let _ = List.map type_of_type_expr args in
       TRecord (name, [])
-      (* Placeholder - will be resolved by typer *)
+      (* Placeholder - will be resolved by typer using type registry *)
   | Sarek_ast.TEArrow (a, b) -> TFun ([type_of_type_expr a], type_of_type_expr b)
   | Sarek_ast.TETuple ts -> TTuple (List.map type_of_type_expr ts)
 

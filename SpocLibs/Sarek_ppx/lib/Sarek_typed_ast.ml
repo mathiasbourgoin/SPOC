@@ -136,7 +136,7 @@ let rec resolve_type t =
   | TVar {contents = Link t'} -> resolve_type t'
   | TVar {contents = Unbound _} ->
       t (* Should not happen after type inference *)
-  | TPrim _ | TVec _ | TArr _ | TRecord _ | TVariant _ | TTuple _ -> t
+  | TPrim _ | TReg _ | TVec _ | TArr _ | TRecord _ | TVariant _ | TTuple _ -> t
   | TFun (args, ret) -> TFun (List.map resolve_type args, resolve_type ret)
 
 (** Pretty printing *)

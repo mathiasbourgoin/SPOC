@@ -15,11 +15,11 @@ let mangle_type_name name = String.map (function '.' -> '_' | c -> c) name
 let rec c_type_of_typ ty =
   match repr ty with
   | TPrim TInt32 -> "int"
-  | TPrim TInt64 -> "long"
-  | TPrim TFloat32 -> "float"
-  | TPrim TFloat64 -> "double"
   | TPrim TBool -> "int"
   | TPrim TUnit -> "void"
+  | TReg "int64" -> "long"
+  | TReg "float32" -> "float"
+  | TReg "float64" -> "double"
   | TRecord (name, _) -> "struct " ^ mangle_type_name name ^ "_sarek"
   | TVariant (name, _) -> "struct " ^ mangle_type_name name ^ "_sarek"
   | TVec t -> c_type_of_typ t ^ " *"
@@ -122,11 +122,12 @@ let c_type_of_core_type ~loc (ct : core_type) =
 
 let typ_of_core_type ~loc (ct : core_type) =
   match ct.ptyp_desc with
-  | Ptyp_constr ({txt = Lident "float32"; _}, _) -> TPrim TFloat32
-  | Ptyp_constr ({txt = Lident "float64"; _}, _) -> TPrim TFloat64
-  | Ptyp_constr ({txt = Lident "float"; _}, _) -> TPrim TFloat32
+  | Ptyp_constr ({txt = Lident "float32"; _}, _) -> TReg "float32"
+  | Ptyp_constr ({txt = Lident "float64"; _}, _) -> TReg "float64"
+  | Ptyp_constr ({txt = Lident "float"; _}, _) -> TReg "float32"
   | Ptyp_constr ({txt = Lident "int32"; _}, _) -> TPrim TInt32
   | Ptyp_constr ({txt = Lident "int"; _}, _) -> TPrim TInt32
+  | Ptyp_constr ({txt = Lident "int64"; _}, _) -> TReg "int64"
   | _ ->
       Location.raise_errorf
         ~loc
@@ -191,17 +192,22 @@ let lower_memspace = function
   | Global -> Kirc_Ast.Global
 
 (** Convert prim_type to Kirc_Ast elttype *)
-let lower_elttype = function
+let lower_prim_elttype = function
   | TInt32 -> Kirc_Ast.EInt32
-  | TInt64 -> Kirc_Ast.EInt64
-  | TFloat32 -> Kirc_Ast.EFloat32
-  | TFloat64 -> Kirc_Ast.EFloat64
   | TUnit | TBool -> Kirc_Ast.EInt32 (* bool as int *)
+
+(** Convert registered type to Kirc_Ast elttype *)
+let lower_reg_elttype = function
+  | "int64" -> Kirc_Ast.EInt64
+  | "float32" -> Kirc_Ast.EFloat32
+  | "float64" -> Kirc_Ast.EFloat64
+  | _ -> Kirc_Ast.EInt32 (* Default *)
 
 (** Get element type from a typ *)
 let rec elttype_of_typ t =
   match repr t with
-  | TPrim p -> lower_elttype p
+  | TPrim p -> lower_prim_elttype p
+  | TReg r -> lower_reg_elttype r
   | TVec t -> elttype_of_typ t
   | TArr (t, _) -> elttype_of_typ t
   | _ -> Kirc_Ast.EInt32 (* Default *)
@@ -259,9 +265,10 @@ let rec lower_expr (state : state) (te : texpr) : Kirc_Ast.k_ext =
           let ret_ty = repr body.ty in
           let ret_str =
             match ret_ty with
-            | TPrim TInt32 | TPrim TInt64 -> "int"
-            | TPrim TFloat32 -> "float"
-            | TPrim TFloat64 -> "double"
+            | TPrim TInt32 -> "int"
+            | TReg "int64" -> "long"
+            | TReg "float32" -> "float"
+            | TReg "float64" -> "double"
             | TPrim TUnit -> "void"
             | TRecord (n, _) -> "struct " ^ n ^ "_sarek"
             | _ -> "int"
@@ -291,7 +298,8 @@ let rec lower_expr (state : state) (te : texpr) : Kirc_Ast.k_ext =
           let size_ir = lower_expr state size in
           let elt =
             match repr elem_ty with
-            | TPrim p -> lower_elttype p
+            | TPrim p -> lower_prim_elttype p
+            | TReg r -> lower_reg_elttype r
             | _ -> Kirc_Ast.EInt32
           in
           let arr_ir = Kirc_Ast.Arr (name, size_ir, elt, lower_memspace mem) in
@@ -364,7 +372,8 @@ let rec lower_expr (state : state) (te : texpr) : Kirc_Ast.k_ext =
       let size_ir = lower_expr state size in
       let elt =
         match repr elem_ty with
-        | TPrim p -> lower_elttype p
+        | TPrim p -> lower_prim_elttype p
+        | TReg r -> lower_reg_elttype r
         | _ -> Kirc_Ast.EInt32
       in
       let name = "local_array_" ^ string_of_int (fresh_id state) in
@@ -372,9 +381,10 @@ let rec lower_expr (state : state) (te : texpr) : Kirc_Ast.k_ext =
   (* Global reference - use *Var variants to preserve name for quoting *)
   | TEGlobalRef (name, ty) -> (
       match repr ty with
-      | TPrim TInt32 | TPrim TInt64 -> Kirc_Ast.GIntVar name
-      | TPrim TFloat32 -> Kirc_Ast.GFloatVar name
-      | TPrim TFloat64 -> Kirc_Ast.GFloat64Var name
+      | TPrim TInt32 -> Kirc_Ast.GIntVar name
+      | TReg "int64" -> Kirc_Ast.GIntVar name
+      | TReg "float32" -> Kirc_Ast.GFloatVar name
+      | TReg "float64" -> Kirc_Ast.GFloat64Var name
       | _ -> Kirc_Ast.GIntVar name)
   (* Native code - use NativeVar to preserve string for quoting *)
   | TENative s -> Kirc_Ast.NativeVar s
@@ -399,9 +409,10 @@ let rec lower_expr (state : state) (te : texpr) : Kirc_Ast.k_ext =
 (** Lower a declaration for a local/kernel variable. *)
 and lower_decl ~mutable_ id name ty =
   match repr ty with
-  | TPrim TInt32 | TPrim TInt64 -> Kirc_Ast.IntVar (id, name, mutable_)
-  | TPrim TFloat32 -> Kirc_Ast.FloatVar (id, name, mutable_)
-  | TPrim TFloat64 -> Kirc_Ast.DoubleVar (id, name, mutable_)
+  | TPrim TInt32 -> Kirc_Ast.IntVar (id, name, mutable_)
+  | TReg "int64" -> Kirc_Ast.IntVar (id, name, mutable_)
+  | TReg "float32" -> Kirc_Ast.FloatVar (id, name, mutable_)
+  | TReg "float64" -> Kirc_Ast.DoubleVar (id, name, mutable_)
   | TPrim TBool -> Kirc_Ast.BoolVar (id, name, mutable_)
   | TPrim TUnit -> Kirc_Ast.UnitVar (id, name, mutable_)
   | TVec _ -> Kirc_Ast.VecVar (Kirc_Ast.Empty, id, name)
@@ -419,7 +430,7 @@ and lower_binop state op e1 e2 _result_ty =
   let ir1 = lower_expr state e1 in
   let ir2 = lower_expr state e2 in
   let is_float =
-    match repr e1.ty with TPrim (TFloat32 | TFloat64) -> true | _ -> false
+    match repr e1.ty with TReg ("float32" | "float64") -> true | _ -> false
   in
   match op with
   | Add ->
@@ -449,7 +460,7 @@ and lower_binop state op e1 e2 _result_ty =
 and lower_unop state op e _result_ty =
   let ir = lower_expr state e in
   let is_float =
-    match repr e.ty with TPrim (TFloat32 | TFloat64) -> true | _ -> false
+    match repr e.ty with TReg ("float32" | "float64") -> true | _ -> false
   in
   match op with
   | Neg ->
@@ -511,18 +522,19 @@ and lower_param (p : tparam) : Kirc_Ast.k_ext =
   | TVec elem_ty ->
       let elem_ir =
         match repr elem_ty with
-        | TPrim TInt32 | TPrim TInt64 -> Kirc_Ast.Int 0
-        | TPrim TFloat32 -> Kirc_Ast.Float 0.0
-        | TPrim TFloat64 -> Kirc_Ast.Double 0.0
+        | TPrim TInt32 -> Kirc_Ast.Int 0
+        | TReg "int64" -> Kirc_Ast.Int 0
+        | TReg "float32" -> Kirc_Ast.Float 0.0
+        | TReg "float64" -> Kirc_Ast.Double 0.0
         | TRecord (type_name, _) | TVariant (type_name, _) ->
             Kirc_Ast.Custom (mangle_type_name type_name, 0, p.tparam_name)
         | _ -> Kirc_Ast.Int 0
       in
       Kirc_Ast.VecVar (elem_ir, p.tparam_id, p.tparam_name)
-  | TPrim TInt32 | TPrim TInt64 ->
-      Kirc_Ast.IntVar (p.tparam_id, p.tparam_name, false)
-  | TPrim TFloat32 -> Kirc_Ast.FloatVar (p.tparam_id, p.tparam_name, false)
-  | TPrim TFloat64 -> Kirc_Ast.DoubleVar (p.tparam_id, p.tparam_name, false)
+  | TPrim TInt32 -> Kirc_Ast.IntVar (p.tparam_id, p.tparam_name, false)
+  | TReg "int64" -> Kirc_Ast.IntVar (p.tparam_id, p.tparam_name, false)
+  | TReg "float32" -> Kirc_Ast.FloatVar (p.tparam_id, p.tparam_name, false)
+  | TReg "float64" -> Kirc_Ast.DoubleVar (p.tparam_id, p.tparam_name, false)
   | TPrim TBool -> Kirc_Ast.BoolVar (p.tparam_id, p.tparam_name, false)
   | TPrim TUnit -> Kirc_Ast.UnitVar (p.tparam_id, p.tparam_name, false)
   | TRecord (type_name, _) | TVariant (type_name, _) ->
@@ -579,15 +591,16 @@ let lower_kernel (kernel : tkernel) : Kirc_Ast.k_ext * string list =
 let lower_return_value (kernel : tkernel) : Kirc_Ast.k_ext =
   match repr kernel.tkern_return_type with
   | TPrim TUnit -> Kirc_Ast.Unit
-  | TPrim TInt32 | TPrim TInt64 -> Kirc_Ast.IntVar (0, "result", true)
-  | TPrim TFloat32 -> Kirc_Ast.FloatVar (0, "result", true)
-  | TPrim TFloat64 -> Kirc_Ast.DoubleVar (0, "result", true)
+  | TPrim TInt32 -> Kirc_Ast.IntVar (0, "result", true)
+  | TReg "int64" -> Kirc_Ast.IntVar (0, "result", true)
+  | TReg "float32" -> Kirc_Ast.FloatVar (0, "result", true)
+  | TReg "float64" -> Kirc_Ast.DoubleVar (0, "result", true)
   | TVec elem_ty ->
       let elem =
         match repr elem_ty with
         | TPrim TInt32 -> Kirc_Ast.Int 0
-        | TPrim TFloat32 -> Kirc_Ast.Float 0.0
-        | TPrim TFloat64 -> Kirc_Ast.Double 0.0
+        | TReg "float32" -> Kirc_Ast.Float 0.0
+        | TReg "float64" -> Kirc_Ast.Double 0.0
         | _ -> Kirc_Ast.Int 0
       in
       Kirc_Ast.VecVar (elem, 0, "result")

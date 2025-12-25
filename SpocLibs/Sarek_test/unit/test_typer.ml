@@ -42,31 +42,36 @@ let if_expr c t e = mk_expr (EIf (c, t, e))
 
 let let_expr name ty value body = mk_expr (ELet (name, ty, value, body))
 
+(* Helper to check if two types are equivalent *)
+let rec types_equal t1 t2 =
+  match (repr t1, repr t2) with
+  | TPrim p1, TPrim p2 -> p1 = p2
+  | TReg r1, TReg r2 -> r1 = r2
+  | TVec t1, TVec t2 -> types_equal t1 t2
+  | TArr (t1, _), TArr (t2, _) -> types_equal t1 t2
+  | TFun (args1, ret1), TFun (args2, ret2) ->
+      List.length args1 = List.length args2
+      && List.for_all2 types_equal args1 args2
+      && types_equal ret1 ret2
+  | TTuple ts1, TTuple ts2 ->
+      List.length ts1 = List.length ts2 && List.for_all2 types_equal ts1 ts2
+  | TRecord (n1, _), TRecord (n2, _) -> n1 = n2
+  | TVariant (n1, _), TVariant (n2, _) -> n1 = n2
+  | _ -> false
+
 (* Helper to check inference result *)
 let check_infer_ok msg env expr expected_typ =
   reset_tvar_counter () ;
   reset_var_id_counter () ;
   match infer env expr with
-  | Ok (te, _) -> (
-      let resolved = repr te.ty in
-      let expected_resolved = repr expected_typ in
-      match (resolved, expected_resolved) with
-      | TPrim p1, TPrim p2 when p1 = p2 -> ()
-      | TVec t1, TVec t2 -> (
-          match (repr t1, repr t2) with
-          | TPrim p1, TPrim p2 when p1 = p2 -> ()
-          | _ ->
-              Alcotest.failf
-                "%s: expected %s, got %s"
-                msg
-                (typ_to_string expected_typ)
-                (typ_to_string te.ty))
-      | _ ->
-          Alcotest.failf
-            "%s: expected %s, got %s"
-            msg
-            (typ_to_string expected_typ)
-            (typ_to_string te.ty))
+  | Ok (te, _) ->
+      if types_equal te.ty expected_typ then ()
+      else
+        Alcotest.failf
+          "%s: expected %s, got %s"
+          msg
+          (typ_to_string expected_typ)
+          (typ_to_string te.ty)
   | Error errors ->
       Alcotest.failf
         "%s: type error: %s"
@@ -298,7 +303,7 @@ let test_kernel_module_fun_with_variant () =
         1
         (List.length tk.tkern_module_items) ;
       match repr tk.tkern_return_type with
-      | TPrim TFloat32 -> ()
+      | TReg "float32" -> ()
       | other ->
           Alcotest.failf "expected float32 return, got %s" (typ_to_string other)
       )
@@ -379,7 +384,7 @@ let test_kernel_module_fun_with_record () =
         1
         (List.length tk.tkern_module_items) ;
       match repr tk.tkern_return_type with
-      | TPrim TFloat32 -> ()
+      | TReg "float32" -> ()
       | other ->
           Alcotest.failf "expected float32 return, got %s" (typ_to_string other)
       )
@@ -433,7 +438,7 @@ let test_kernel_type_decl_record () =
           Alcotest.(check string) "type name" "point" tdecl_name
       | _ -> Alcotest.fail "expected record type decl") ;
       match repr tk.tkern_return_type with
-      | TPrim TFloat32 -> ()
+      | TReg "float32" -> ()
       | other ->
           Alcotest.failf "expected float32 return, got %s" (typ_to_string other)
       )
