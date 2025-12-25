@@ -171,13 +171,14 @@ let variant_constructors name =
 
 (******************************************************************************
  * Register standard types
+ *
+ * NOTE: Primitive types like float32, int32, etc. are now registered by their
+ * respective stdlib modules (Float32.ml, Int32.ml, etc.) using %sarek_intrinsic.
+ * Only truly fundamental types (bool, unit) that have no stdlib module are
+ * registered here.
  ******************************************************************************)
 
 let () =
-  register_type "float32" ~device:(fun _ -> "float") ~size:4 ;
-  register_type "float64" ~device:(fun _ -> "double") ~size:8 ;
-  register_type "int32" ~device:(fun _ -> "int") ~size:4 ;
-  register_type "int64" ~device:(fun _ -> "long") ~size:8 ;
   register_type "bool" ~device:(fun _ -> "int") ~size:4 ;
   register_type "unit" ~device:(fun _ -> "void") ~size:0
 
@@ -280,31 +281,8 @@ let () =
     ~device:(fun dev ->
       cuda_or_opencl dev "__syncthreads()" "barrier(CLK_LOCAL_MEM_FENCE)") ;
 
-  (* Float32 arithmetic operators *)
-  register_fun
-    "add_float32"
-    ~arity:2
-    ~arg_types:["float32"; "float32"]
-    ~ret_type:"float32"
-    ~device:(fun _dev -> "(%s + %s)") ;
-  register_fun
-    "sub_float32"
-    ~arity:2
-    ~arg_types:["float32"; "float32"]
-    ~ret_type:"float32"
-    ~device:(fun _dev -> "(%s - %s)") ;
-  register_fun
-    "mul_float32"
-    ~arity:2
-    ~arg_types:["float32"; "float32"]
-    ~ret_type:"float32"
-    ~device:(fun _dev -> "(%s * %s)") ;
-  register_fun
-    "div_float32"
-    ~arity:2
-    ~arg_types:["float32"; "float32"]
-    ~ret_type:"float32"
-    ~device:(fun _dev -> "(%s / %s)") ;
+  (* NOTE: Float32 arithmetic operators are now registered by Float32.ml
+     in Sarek_stdlib using %sarek_intrinsic. *)
 
   (* Int32 arithmetic operators *)
   register_fun
@@ -338,6 +316,8 @@ let () =
     ~ret_type:"int32"
     ~device:(fun _dev -> "(%s %% %s)")
 
-(* Note: Float32/Int32 math functions (sqrt, sin, abs, etc.) are defined in
-     Sarek_stdlib and auto-registered via %sarek_intrinsic when that library
-     is loaded. Only core arithmetic operators are defined here. *)
+(* Note: Float32 type and functions (including arithmetic operators like +, -,
+     *, / and math functions like sqrt, sin, etc.) are defined in Sarek_stdlib
+     and auto-registered via %sarek_intrinsic when that library is loaded.
+     Only GPU-specific intrinsics (thread indices, barriers, etc.) and Int32
+     operators are defined here. Int32 should also be moved to stdlib. *)
