@@ -152,7 +152,15 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
       | LLocalFun (_, typ) ->
           let id = fresh_var_id () in
           Ok (mk_texpr (TEVar (name, id)) typ loc, env)
-      | LNotFound -> Error [Unbound_variable (name, loc)])
+      | LNotFound ->
+          (* Check if this is a qualified name (Module.func) from another module.
+             If so, treat it as an external function that will be resolved at runtime
+             via the Sarek_registry. This follows the ppx_deriving composability pattern. *)
+          if String.contains name '.' then
+            let id = fresh_var_id () in
+            let ty = fresh_tvar () in
+            Ok (mk_texpr (TEVar (name, id)) ty loc, env)
+          else Error [Unbound_variable (name, loc)])
   (* Vector access: v.[i] *)
   | EVecGet (vec, idx) ->
       let* tv, env = infer env vec in
@@ -209,7 +217,8 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
   | EFieldGet (record, field) -> (
       let* tr, env = infer env record in
       match repr tr.ty with
-      | TRecord (_type_name, fields) -> (
+      | TRecord (_type_name, fields) when fields <> [] -> (
+          (* Known record type with field info - validate at compile time *)
           match List.assoc_opt field fields with
           | Some field_ty ->
               let idx =
@@ -222,6 +231,13 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
               in
               Ok (mk_texpr (TEFieldGet (tr, field, idx)) field_ty loc, env)
           | None -> Error [Field_not_found (field, tr.ty, loc)])
+      | TRecord (_type_name, []) ->
+          (* External record type (from another module) - defer field lookup to runtime.
+             This follows the ppx_deriving composability pattern: we trust that the
+             type exists and will be registered at runtime by the dependent library.
+             The field type and index will be resolved during JIT compilation. *)
+          let field_ty = fresh_tvar () in
+          Ok (mk_texpr (TEFieldGet (tr, field, 0)) field_ty loc, env)
       | t when is_tvar t ->
           (* Type not yet known, defer *)
           let field_ty = fresh_tvar () in
@@ -232,7 +248,8 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
       let* tr, env = infer env record in
       let* tx, env = infer env value in
       match repr tr.ty with
-      | TRecord (_type_name, fields) -> (
+      | TRecord (_type_name, fields) when fields <> [] -> (
+          (* Known record type with field info - validate at compile time *)
           match List.assoc_opt field fields with
           | Some field_ty ->
               let* () = unify_or_error tx.ty field_ty value.expr_loc in
@@ -246,6 +263,9 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
               in
               Ok (mk_texpr (TEFieldSet (tr, field, idx, tx)) t_unit loc, env)
           | None -> Error [Field_not_found (field, tr.ty, loc)])
+      | TRecord (_type_name, []) ->
+          (* External record type - defer to runtime (ppx_deriving pattern) *)
+          Ok (mk_texpr (TEFieldSet (tr, field, 0, tx)) t_unit loc, env)
       | t -> Error [Not_a_record (t, loc)])
   (* Binary operations *)
   | EBinop (op, e1, e2) ->

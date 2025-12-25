@@ -1,16 +1,65 @@
 (******************************************************************************
- * Sarek Intrinsics Registry
+ * Sarek Runtime Registry
  *
- * Runtime registry for intrinsic types and functions. The PPX registers
- * intrinsics here, and the code generator looks them up at JIT time.
+ * This module implements a runtime registry for Sarek types, intrinsics, and
+ * user-defined functions. It enables cross-module composability following the
+ * same pattern as ppx_deriving:
+ *
+ * DESIGN RATIONALE:
+ * -----------------
+ * Instead of using a file-based registry that the PPX reads at compile time,
+ * we follow the ppx_deriving approach where:
+ *
+ * 1. The PPX generates OCaml code that registers types/functions at module
+ *    initialization time (when the library is linked).
+ *
+ * 2. Cross-module references work because:
+ *    - Dune ensures libraries are compiled in dependency order
+ *    - When a library is linked, its registration code runs
+ *    - By the time JIT compilation happens, all types are registered
+ *
+ * 3. Compile-time type checking uses Sarek_env.with_stdlib for core types.
+ *    For user-defined types from other modules, the PPX trusts the OCaml
+ *    type checker and defers detailed validation to runtime.
+ *
+ * USAGE:
+ * ------
+ * - [@@sarek.type] on a record/variant generates registration code
+ * - [%sarek_intrinsic] generates intrinsic registration + device function
+ * - [%sarek_extend] chains a new device function to an existing intrinsic
+ *
+ * At JIT time, the code generator queries this registry to get device code
+ * for types and functions.
+ *
+ * See also: Sarek_ppx.ml for the PPX implementation.
  ******************************************************************************)
 
-(** Information about an intrinsic type *)
+(** Information about a primitive/intrinsic type (float32, int64, etc.) *)
 type type_info = {
   ti_name : string;
   ti_device : Spoc.Devices.device -> string;
   ti_size : int; (* bytes *)
 }
+
+(** Information about a record field *)
+type field_info = {
+  field_name : string;
+  field_type : string;
+  field_mutable : bool;
+}
+
+(** Information about a record type (user-defined via [@@sarek.type]) *)
+type record_info = {
+  ri_name : string; (* Full name including module path *)
+  ri_fields : field_info list;
+  ri_size : int; (* Total size in bytes *)
+}
+
+(** Information about a variant constructor *)
+type constructor_info = {ctor_name : string; ctor_arg_type : string option}
+
+(** Information about a variant type *)
+type variant_info = {vi_name : string; vi_constructors : constructor_info list}
 
 (** Information about an intrinsic function *)
 type fun_info = {
@@ -21,8 +70,14 @@ type fun_info = {
   fi_ret_type : string;
 }
 
-(** Type registry - maps type names to their info *)
+(** Type registry - maps type names to their info (primitives) *)
 let type_registry : (string, type_info) Hashtbl.t = Hashtbl.create 32
+
+(** Record registry - maps type names to their info (user-defined records) *)
+let record_registry : (string, record_info) Hashtbl.t = Hashtbl.create 32
+
+(** Variant registry - maps type names to their info (user-defined variants) *)
+let variant_registry : (string, variant_info) Hashtbl.t = Hashtbl.create 32
 
 (** Function registry - maps (module_path, name) to their info *)
 let fun_registry : (string list * string, fun_info) Hashtbl.t =
@@ -34,6 +89,20 @@ let register_type name ~device ~size =
     type_registry
     name
     {ti_name = name; ti_device = device; ti_size = size}
+
+(** Register a record type (called by PPX-generated code for [@@sarek.type]) *)
+let register_record name ~fields ~size =
+  Hashtbl.replace
+    record_registry
+    name
+    {ri_name = name; ri_fields = fields; ri_size = size}
+
+(** Register a variant type (called by PPX-generated code for [@@sarek.type]) *)
+let register_variant name ~constructors =
+  Hashtbl.replace
+    variant_registry
+    name
+    {vi_name = name; vi_constructors = constructors}
 
 (** Register an intrinsic function *)
 let register_fun ?(module_path = []) name ~arity ~device ~arg_types ~ret_type =
@@ -48,15 +117,27 @@ let register_fun ?(module_path = []) name ~arity ~device ~arg_types ~ret_type =
       fi_ret_type = ret_type;
     }
 
-(** Find a type by name *)
+(** Find a primitive type by name *)
 let find_type name = Hashtbl.find_opt type_registry name
+
+(** Find a record type by name *)
+let find_record name = Hashtbl.find_opt record_registry name
+
+(** Find a variant type by name *)
+let find_variant name = Hashtbl.find_opt variant_registry name
 
 (** Find a function by name, optionally in a module *)
 let find_fun ?(module_path = []) name =
   Hashtbl.find_opt fun_registry (module_path, name)
 
-(** Check if a name is a registered type *)
+(** Check if a name is a registered primitive type *)
 let is_type name = Hashtbl.mem type_registry name
+
+(** Check if a name is a registered record type *)
+let is_record name = Hashtbl.mem record_registry name
+
+(** Check if a name is a registered variant type *)
+let is_variant name = Hashtbl.mem variant_registry name
 
 (** Check if a name is a registered function *)
 let is_fun ?(module_path = []) name =
@@ -75,6 +156,18 @@ let fun_device_code ?(module_path = []) name dev =
   | None ->
       let path = String.concat "." (module_path @ [name]) in
       failwith ("Unknown intrinsic function: " ^ path)
+
+(** Get record field info *)
+let record_fields name =
+  match find_record name with
+  | Some ri -> ri.ri_fields
+  | None -> failwith ("Unknown record type: " ^ name)
+
+(** Get variant constructors *)
+let variant_constructors name =
+  match find_variant name with
+  | Some vi -> vi.vi_constructors
+  | None -> failwith ("Unknown variant type: " ^ name)
 
 (******************************************************************************
  * Register standard types
