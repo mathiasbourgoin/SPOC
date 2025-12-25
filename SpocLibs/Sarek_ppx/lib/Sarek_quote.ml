@@ -499,8 +499,7 @@ end)
 
     Examples:
     - IntrinsicRef (["Float32"], "sin") -> Float32.sin
-    - IntrinsicRef (["Sarek"; "Sarek_prim"], "block_barrier") ->
-      Sarek.Sarek_prim.block_barrier *)
+    - IntrinsicRef (["Gpu"], "block_barrier") -> Gpu.block_barrier *)
 let expr_of_intrinsic_ref ~loc (ref : Sarek_env.intrinsic_ref) : expression =
   match ref with
   | Sarek_env.IntrinsicRef (module_path, name) ->
