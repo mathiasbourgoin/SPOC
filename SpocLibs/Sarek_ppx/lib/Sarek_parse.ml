@@ -151,9 +151,11 @@ let rec parse_expression (expr : expression) : Sarek_ast.expr =
         Sarek_ast.EFloat (float_of_string s)
     (* Variables *)
     | Pexp_ident {txt = Lident name; _} -> Sarek_ast.EVar name
-    (* Module-qualified identifiers *)
-    | Pexp_ident {txt = Ldot (Lident _mod, name); _} ->
-        Sarek_ast.EVar name (* For now, just use the name *)
+    (* Module-qualified identifiers: Module.name -> "Module.name"
+       This preserves the qualified name for cross-module function lookup.
+       The typer will look up "Module.name" in the environment/registry. *)
+    | Pexp_ident {txt = Ldot (Lident modname, name); _} ->
+        Sarek_ast.EVar (modname ^ "." ^ name)
     (* Vector/array access: e.(i) or e.[i] *)
     | Pexp_apply
         ( {pexp_desc = Pexp_ident {txt = Lident "Array.get"; _}; _},

@@ -3,83 +3,21 @@
  *
  * This is the PPX entry point. It registers the [%kernel ...] extension
  * and orchestrates parsing, type checking, lowering, and code generation.
+ *
+ * Type and intrinsic information comes from:
+ * 1. Sarek_env.with_stdlib - hardcoded core types and intrinsics
+ * 2. [@@sarek.type] attributes - user-defined record/variant types
+ * 3. Runtime Sarek_registry - populated by %sarek_intrinsic at load time
  ******************************************************************************)
 
 open Ppxlib
 open Sarek_ppx_lib
 
-(* Registry of globally declared Sarek types (via [@@sarek.type]). *)
+(* Registry of types declared in the current compilation unit via [@@sarek.type] *)
 let registered_types : Sarek_ast.type_decl list ref = ref []
 
-(* Registry of globally declared Sarek module items (functions/constants) *)
+(* Registry of module items declared in the current compilation unit *)
 let registered_mods : Sarek_ast.module_item list ref = ref []
-
-(** Get the registry directory, creating it if needed. Uses
-    _build/.sarek-registry to persist across builds. *)
-let registry_dir () =
-  match Sys.getenv_opt "SAREK_PPX_REGISTRY_DIR" with
-  | Some d -> d
-  | None -> (
-      match Sys.getenv_opt "PWD" with
-      | Some cwd ->
-          let dir = Filename.concat cwd "_build/.sarek-registry" in
-          (try Unix.mkdir dir 0o755 with Unix.Unix_error _ -> ()) ;
-          dir
-      | None -> Filename.get_temp_dir_name ())
-
-let registry_file _loc = Filename.concat (registry_dir ()) "types"
-
-let registry_mod_file _loc = Filename.concat (registry_dir ()) "modules"
-
-let load_registry loc =
-  try
-    let ic = open_in_bin (registry_file loc) in
-    let rec loop acc =
-      try
-        let v = Marshal.from_channel ic in
-        loop (v :: acc)
-      with End_of_file -> List.rev acc
-    in
-    let res = loop [] in
-    close_in ic ;
-    res
-  with Sys_error _ -> []
-
-let append_registry loc tdecl =
-  try
-    let oc =
-      open_out_gen
-        [Open_creat; Open_append; Open_binary]
-        0o644
-        (registry_file loc)
-    in
-    Marshal.to_channel oc tdecl [] ;
-    close_out oc
-  with Sys_error msg ->
-    Format.eprintf "Sarek PPX: cannot persist registry (%s)@." msg
-
-let load_mod_registry loc =
-  try
-    let ic = open_in_bin (registry_mod_file loc) in
-    let rec loop acc =
-      try
-        let v = Marshal.from_channel ic in
-        loop (v :: acc)
-      with End_of_file -> List.rev acc
-    in
-    let res = loop [] in
-    close_in ic ;
-    res
-  with Sys_error _ -> []
-
-let append_mod_registry loc item =
-  let path = registry_mod_file loc in
-  try
-    let oc = open_out_gen [Open_creat; Open_append; Open_binary] 0o644 path in
-    Marshal.to_channel oc item [] ;
-    close_out oc
-  with Sys_error msg ->
-    Format.eprintf "Sarek PPX: cannot persist mod registry (%s)@." msg
 
 let tdecl_key = function
   | Sarek_ast.Type_record {tdecl_name; tdecl_module; _}
@@ -141,7 +79,7 @@ let module_name_of_loc loc =
   let base = Filename.(remove_extension (basename file)) in
   String.capitalize_ascii base
 
-let register_sarek_type_decl ?(persist = true) ~loc (td : type_declaration) =
+let register_sarek_type_decl ~loc (td : type_declaration) =
   let tdecl =
     match td.ptype_kind with
     | Ptype_record labels ->
@@ -187,17 +125,15 @@ let register_sarek_type_decl ?(persist = true) ~loc (td : type_declaration) =
           ~loc
           "Only record or variant types can be used with [@@sarek.type]"
   in
-  if persist then append_registry loc tdecl ;
   registered_types := tdecl :: !registered_types ;
   ()
 
-let register_sarek_module_item ?(persist = true) ~loc item =
+let register_sarek_module_item ~loc:_ item =
   (match item with
   | Sarek_ast.MFun (name, _, _) ->
       Format.eprintf "Sarek PPX: register module fun %s@." name
   | Sarek_ast.MConst (name, _, _) ->
       Format.eprintf "Sarek PPX: register module const %s@." name) ;
-  if persist then append_mod_registry loc item ;
   registered_mods := item :: !registered_mods
 
 let scan_dir_for_sarek_types directory =
@@ -219,29 +155,17 @@ let scan_dir_for_sarek_types directory =
                   List.iter
                     (fun d ->
                       let has_attr name a = String.equal a.attr_name.txt name in
-                      let persist =
-                        not
-                          (List.exists
-                             (has_attr "sarek.type_private")
-                             d.ptype_attributes)
-                      in
                       if
                         List.exists (has_attr "sarek.type") d.ptype_attributes
                         || List.exists
                              (has_attr "sarek.type_private")
                              d.ptype_attributes
-                      then register_sarek_type_decl ~persist ~loc:d.ptype_loc d)
+                      then register_sarek_type_decl ~loc:d.ptype_loc d)
                     decls
               | Pstr_value (Nonrecursive, vbs) ->
                   List.iter
                     (fun vb ->
                       let has_attr name a = String.equal a.attr_name.txt name in
-                      let persist =
-                        not
-                          (List.exists
-                             (has_attr "sarek.module_private")
-                             vb.pvb_attributes)
-                      in
                       if
                         List.exists (has_attr "sarek.module") vb.pvb_attributes
                         || List.exists
@@ -294,7 +218,7 @@ let scan_dir_for_sarek_types directory =
                               in
                               Sarek_ast.MConst (name, ty, value)
                         in
-                        register_sarek_module_item ~persist ~loc:vb.pvb_loc item))
+                        register_sarek_module_item ~loc:vb.pvb_loc item))
                     vbs
               | _ -> ())
             st
@@ -354,6 +278,13 @@ let generate_field_accessors ~loc (td : type_declaration) : structure_item list
           [%stri let [%p fn_pat] = [%e fn_expr]])
         labels
   | _ -> []
+
+(** Extract type name from a core_type for registry registration *)
+let type_name_of_core_type (ct : core_type) : string =
+  match ct.ptyp_desc with
+  | Ptyp_constr ({txt = Lident name; _}, _) -> name
+  | Ptyp_constr ({txt = Ldot (_, name); _}, _) -> name
+  | _ -> "unknown"
 
 (** Calculate the size in bytes of a sarek type based on its fields. Uses 4
     bytes for int32/float32, 8 bytes for int64/float64. *)
@@ -501,6 +432,108 @@ let generate_custom_value ~loc (td : type_declaration) : structure_item list =
       ]
   | _ -> []
 
+(** Generate runtime registration code for a type.
+
+    This implements the ppx_deriving-style composability pattern:
+    - The PPX generates OCaml code that calls Sarek.Sarek_registry.register_*
+    - This code runs at module initialization time (when the library is linked)
+    - When another module depends on this library, the type is already registered
+    - At JIT time, the code generator can look up the type info
+
+    For a record type:
+      type point = { x: float32; y: float32 } [@@sarek.type]
+
+    Generates:
+      let () = Sarek.Sarek_registry.register_record
+        "Module.point"
+        ~fields:[{field_name="x"; field_type="float32"; field_mutable=false}; ...]
+        ~size:8
+
+    For a variant type:
+      type shape = Circle of float32 | Square of float32 [@@sarek.type]
+
+    Generates:
+      let () = Sarek.Sarek_registry.register_variant
+        "Module.shape"
+        ~constructors:[{ctor_name="Circle"; ctor_arg_type=Some "float32"}; ...]
+*)
+let generate_type_registration ~loc (td : type_declaration) :
+    structure_item list =
+  let type_name = td.ptype_name.txt in
+  (* Get module name from file path for fully qualified name *)
+  let module_name = module_name_of_loc loc in
+  let full_name = module_name ^ "." ^ type_name in
+  let full_name_expr = Ast_builder.Default.estring ~loc full_name in
+
+  match td.ptype_kind with
+  | Ptype_record labels ->
+      (* Build field info list *)
+      let field_exprs =
+        List.map
+          (fun (ld : label_declaration) ->
+            let fname = Ast_builder.Default.estring ~loc ld.pld_name.txt in
+            let ftype =
+              Ast_builder.Default.estring
+                ~loc
+                (type_name_of_core_type ld.pld_type)
+            in
+            let fmut =
+              Ast_builder.Default.ebool ~loc (ld.pld_mutable = Mutable)
+            in
+            [%expr
+              {
+                Sarek.Sarek_registry.field_name = [%e fname];
+                field_type = [%e ftype];
+                field_mutable = [%e fmut];
+              }])
+          labels
+      in
+      let fields_list = Ast_builder.Default.elist ~loc field_exprs in
+      let size = calc_type_size labels in
+      let size_expr = Ast_builder.Default.eint ~loc size in
+      [
+        [%stri
+          let () =
+            Sarek.Sarek_registry.register_record
+              [%e full_name_expr]
+              ~fields:[%e fields_list]
+              ~size:[%e size_expr]];
+      ]
+  | Ptype_variant constrs ->
+      (* Build constructor info list *)
+      let ctor_exprs =
+        List.map
+          (fun (cd : constructor_declaration) ->
+            let cname = Ast_builder.Default.estring ~loc cd.pcd_name.txt in
+            let carg =
+              match cd.pcd_args with
+              | Pcstr_tuple [] -> [%expr None]
+              | Pcstr_tuple [t] ->
+                  let tname =
+                    Ast_builder.Default.estring ~loc (type_name_of_core_type t)
+                  in
+                  [%expr Some [%e tname]]
+              | Pcstr_tuple _ -> [%expr Some "tuple"] (* Simplified for now *)
+              | Pcstr_record _ -> [%expr Some "record"]
+              (* Inline record *)
+            in
+            [%expr
+              {
+                Sarek.Sarek_registry.ctor_name = [%e cname];
+                ctor_arg_type = [%e carg];
+              }])
+          constrs
+      in
+      let ctors_list = Ast_builder.Default.elist ~loc ctor_exprs in
+      [
+        [%stri
+          let () =
+            Sarek.Sarek_registry.register_variant
+              [%e full_name_expr]
+              ~constructors:[%e ctors_list]];
+      ]
+  | _ -> []
+
 (* Context-free rule to capture [@@sarek.type] before kernel expansion *)
 let sarek_type_rule =
   Context_free.Rule.attr_str_type_decl
@@ -517,7 +550,13 @@ let sarek_type_rule =
                 let accessors = generate_field_accessors ~loc td in
                 (* Generate <name>_custom value for Vector.Custom *)
                 let custom_val = generate_custom_value ~loc td in
-                accessors @ custom_val
+                (* Generate runtime registration code for cross-module composability.
+                   This follows the ppx_deriving pattern: the PPX generates OCaml code
+                   that registers the type at module initialization time. When another
+                   module depends on this library, the registration runs before any
+                   kernels are JIT-compiled, making the type info available. *)
+                let registration = generate_type_registration ~loc td in
+                accessors @ custom_val @ registration
             | None -> [])
           (List.combine decls payloads)
       in
@@ -530,8 +569,7 @@ let sarek_type_private_rule =
       List.iter2
         (fun td payload ->
           match payload with
-          | Some () ->
-              register_sarek_type_decl ~persist:false ~loc:td.ptype_loc td
+          | Some () -> register_sarek_type_decl ~loc:td.ptype_loc td
           | None -> ())
         decls
         payloads ;
@@ -620,6 +658,14 @@ let expand_sarek_intrinsic_type ~ctxt payload =
         "type%%sarek_intrinsic expects: type%%sarek_intrinsic name = { device \
          = ...; ctype = ... }"
 
+(** Extract argument types and return type from a function type *)
+let rec extract_fun_types (ct : core_type) : string list * string =
+  match ct.ptyp_desc with
+  | Ptyp_arrow (_, arg_type, ret_type) ->
+      let more_args, final_ret = extract_fun_types ret_type in
+      (type_name_of_core_type arg_type :: more_args, final_ret)
+  | _ -> ([], type_name_of_core_type ct)
+
 (** Extension for let%sarek_intrinsic *)
 let expand_sarek_intrinsic_fun ~ctxt payload =
   let loc = Expansion_context.Extension.extension_point_loc ctxt in
@@ -636,7 +682,8 @@ let expand_sarek_intrinsic_fun ~ctxt payload =
                       {
                         ppat_desc =
                           Ppat_constraint
-                            ({ppat_desc = Ppat_var {txt = fun_name; _}; _}, _);
+                            ( {ppat_desc = Ppat_var {txt = fun_name; _}; _},
+                              type_constraint );
                         _;
                       };
                     pvb_expr = record_expr;
@@ -646,6 +693,9 @@ let expand_sarek_intrinsic_fun ~ctxt payload =
           _;
         };
       ] ->
+      (* Extract type information from constraint *)
+      let arg_types, ret_type = extract_fun_types type_constraint in
+      let arity = List.length arg_types in
       (* Extract device and ocaml fields from the record expression *)
       let device_expr, ocaml_expr =
         match record_expr.pexp_desc with
@@ -676,26 +726,50 @@ let expand_sarek_intrinsic_fun ~ctxt payload =
               "sarek_intrinsic function expects a record { device = ...; ocaml \
                = ... }"
       in
-      (* Generate runtime registration and OCaml binding *)
+      (* Generate device function, registration, and OCaml binding *)
       let fun_name_str = Ast_builder.Default.estring ~loc fun_name in
       let fun_name_pat = Ast_builder.Default.pvar ~loc fun_name in
+      let device_fun_name = fun_name ^ "_device" in
+      let device_fun_pat = Ast_builder.Default.pvar ~loc device_fun_name in
+      let arity_expr = Ast_builder.Default.eint ~loc arity in
+      let arg_types_expr =
+        Ast_builder.Default.elist
+          ~loc
+          (List.map (Ast_builder.Default.estring ~loc) arg_types)
+      in
+      let ret_type_expr = Ast_builder.Default.estring ~loc ret_type in
+      let device_fun_ref_name = fun_name ^ "_device_ref" in
+      let device_fun_ref_pat =
+        Ast_builder.Default.pvar ~loc device_fun_ref_name
+      in
+      let device_fun_ref_expr =
+        Ast_builder.Default.evar ~loc device_fun_ref_name
+      in
       [
-        (* Register the intrinsic for code generation *)
+        (* Expose the device function for extensions to chain to *)
+        [%stri
+          let [%p device_fun_pat] : Spoc.Devices.device -> string =
+            [%e device_expr]];
+        (* Mutable ref for extension chaining *)
+        [%stri
+          let [%p device_fun_ref_pat] : (Spoc.Devices.device -> string) ref =
+            ref [%e Ast_builder.Default.evar ~loc device_fun_name]];
+        (* Register the intrinsic for code generation - uses the ref for extensibility *)
         [%stri
           let () =
             Sarek.Sarek_registry.register_fun
               [%e fun_name_str]
-              ~arity:1
-              ~device:[%e device_expr]
-              ~arg_types:[]
-              ~ret_type:""];
-        (* Also expose the OCaml implementation for host-side use *)
+              ~arity:[%e arity_expr]
+              ~device:(fun dev -> ![%e device_fun_ref_expr] dev)
+              ~arg_types:[%e arg_types_expr]
+              ~ret_type:[%e ret_type_expr]];
+        (* Expose the OCaml implementation for host-side use *)
         [%stri let [%p fun_name_pat] = [%e ocaml_expr]];
       ]
   | _ ->
       Location.raise_errorf
         ~loc
-        "let%%sarek_intrinsic expects: let%%sarek_intrinsic name : type = { \
+        "let%%sarek_intrinsic expects: let%%sarek_intrinsic (name : type) = { \
          device = ...; ocaml = ... }"
 
 (** Combined extension for %sarek_intrinsic - handles both types and functions
@@ -745,6 +819,63 @@ let sarek_intrinsic_extension =
           pincl_attributes = [];
         })
 
+(** Extension for %sarek_extend - allows extending intrinsics for new backends.
+
+    Syntax: let%sarek_extend Module.func = fun dev -> if ... then "new_code"
+    else Module.func_device dev
+
+    This updates the Module.func_device_ref to point to the new function, which
+    chains to the original via Module.func_device. *)
+let expand_sarek_extend ~ctxt payload =
+  let loc = Expansion_context.Extension.extension_point_loc ctxt in
+  match payload with
+  | PStr
+      [
+        {
+          pstr_desc =
+            Pstr_value
+              ( _,
+                [
+                  {
+                    pvb_pat = {ppat_desc = Ppat_var {txt = name; _}; _};
+                    pvb_expr = new_device_fun;
+                    _;
+                  };
+                ] );
+          _;
+        };
+      ] ->
+      (* name is like "Float32.sin" - we need to update Float32.sin_device_ref *)
+      let device_ref_name = name ^ "_device_ref" in
+      let device_ref_expr =
+        (* Parse "Float32.sin_device_ref" into a proper longident expression *)
+        let parts = String.split_on_char '.' device_ref_name in
+        match parts with
+        | [single] -> Ast_builder.Default.evar ~loc single
+        | _ ->
+            let rec build_longident = function
+              | [] -> assert false
+              | [x] -> Lident x
+              | x :: rest -> Ldot (build_longident rest, x)
+            in
+            Ast_builder.Default.pexp_ident
+              ~loc
+              {txt = build_longident (List.rev parts); loc}
+      in
+      [%stri let () = [%e device_ref_expr] := [%e new_device_fun]]
+  | _ ->
+      Location.raise_errorf
+        ~loc
+        "let%%sarek_extend expects: let%%sarek_extend Module.func = fun dev -> \
+         ..."
+
+let sarek_extend_extension =
+  Extension.V3.declare
+    "sarek_extend"
+    Extension.Context.structure_item
+    Ast_pattern.(pstr __)
+    (fun ~ctxt payload -> expand_sarek_extend ~ctxt (PStr payload))
+
 (** The main kernel expansion function *)
 let expand_kernel ~ctxt payload =
   let loc = Expansion_context.Extension.extension_point_loc ctxt in
@@ -762,13 +893,9 @@ let expand_kernel ~ctxt payload =
             scan_dir_for_sarek_types source_dir
         with Sys_error _ -> ())
     | None -> ()) ;
-    (* Pre-registered types (top-level sarek.type) *)
-    let pre_types = dedup_tdecls (load_registry loc @ !registered_types) in
-    let pre_mods = dedup_mods (load_mod_registry loc @ !registered_mods) in
-    Format.eprintf
-      "Sarek PPX: mods=%d types=%d@."
-      (List.length pre_mods)
-      (List.length pre_types) ;
+    (* Types and module items registered in the current compilation unit *)
+    let pre_types = dedup_tdecls !registered_types in
+    let pre_mods = dedup_mods !registered_mods in
     (* 1. Parse the PPX payload to Sarek AST *)
     let ast = Sarek_parse.parse_payload payload in
     let ast =
@@ -837,14 +964,10 @@ let expand_sarek_type ~ctxt payload =
 let sarek_type_extension = ()
 
 (** Register sarek.module bindings on any structure we process, so libraries can
-    publish metadata even when no [%kernel] expansion happens in that file. For
-    public items (persist=true), emit runtime registration code. *)
+    publish module items for use in kernels. *)
 let process_structure_for_module_items (str : structure) : structure =
   let process_vb vb =
     let has_attr name a = String.equal a.attr_name.txt name in
-    let persist =
-      not (List.exists (has_attr "sarek.module_private") vb.pvb_attributes)
-    in
     if
       List.exists (has_attr "sarek.module") vb.pvb_attributes
       || List.exists (has_attr "sarek.module_private") vb.pvb_attributes
@@ -879,7 +1002,7 @@ let process_structure_for_module_items (str : structure) : structure =
             in
             Sarek_ast.MConst (name, ty, value)
       in
-      register_sarek_module_item ~persist ~loc item ;
+      register_sarek_module_item ~loc item ;
       None)
     else None
   in
