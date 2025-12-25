@@ -80,6 +80,8 @@ type k_ext =
   | SetV of k_ext * k_ext
   | SetLocalVar of k_ext * k_ext * k_ext
   | Intrinsics of intrinsics
+  | IntrinsicRef of string list * string
+      (** module_path * name: looked up in registry at JIT *)
   | IntId of string * int
   | Int of int
   | Float of float
@@ -278,6 +280,8 @@ let string_of_ast a =
     | GFloat64Var n -> soa i ("GFloat64Var " ^ n)
     | NativeVar s -> soa i ("NativeVar " ^ s)
     | NativeFunExpr _ -> soa i "NativeFunExpr ..."
+    | IntrinsicRef (path, name) ->
+        soa i ("IntrinsicRef " ^ String.concat "." (path @ [name]))
     | Pragma _ -> soa i "Pragma"
     | Map _ -> soa i "Map"
   in

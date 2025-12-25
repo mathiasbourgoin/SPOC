@@ -80,6 +80,8 @@ type k_ext =
   | SetV of k_ext * k_ext
   | SetLocalVar of k_ext * k_ext * k_ext
   | Intrinsics of intrinsics
+  | IntrinsicRef of string list * string
+      (** module_path * name: looked up in registry at JIT *)
   | IntId of string * int
   | Int of int
   | Float of float
@@ -182,6 +184,8 @@ let string_of_ast a =
           (aux (i + 1) b)
           (aux (i + 1) c)
     | Intrinsics _ -> soa i "Intrinsics"
+    | IntrinsicRef (path, name) ->
+        soa i ("IntrinsicRef " ^ String.concat "." (path @ [name]))
     | IntId (s, ii) -> soa i ("IntId " ^ s ^ " " ^ string_of_int ii)
     | Int ii -> soa i ("Int " ^ string_of_int ii)
     | Float f | Double f -> soa i ("Float " ^ string_of_float f)

@@ -181,6 +181,7 @@ let constructor_name : k_ext -> string = function
   | GFloat64Var _ -> "GFloat64Var"
   | NativeVar _ -> "NativeVar"
   | NativeFunExpr _ -> "NativeFunExpr"
+  | IntrinsicRef _ -> "IntrinsicRef"
   | Pragma _ -> "Pragma"
   | Map _ -> "Map"
   | Unit -> "Unit"

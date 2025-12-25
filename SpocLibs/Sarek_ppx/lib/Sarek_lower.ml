@@ -385,7 +385,7 @@ let rec lower_expr (state : state) (te : texpr) : Kirc_Ast.k_ext =
   (* Intrinsic constant *)
   | TEIntrinsicConst (cuda, opencl) -> Kirc_Ast.Intrinsics (cuda, opencl)
   (* Intrinsic function call *)
-  | TEIntrinsicFun (cuda, opencl, args) ->
+  | TEIntrinsicFun (cuda, opencl, _ocaml_path, args) ->
       (* Filter out Unit arguments - they're just () for function application syntax *)
       let non_unit_args =
         List.filter

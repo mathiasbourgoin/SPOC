@@ -537,6 +537,214 @@ let sarek_type_private_rule =
         payloads ;
       [])
 
+(******************************************************************************
+ * Intrinsic Type and Function Declarations
+ *
+ * These extensions allow libraries to define primitive types and functions
+ * that map directly to GPU intrinsics:
+ *
+ *   type%sarek_intrinsic float32 = {
+ *     device = (fun _ -> "float");
+ *     ctype = Ctypes.float;
+ *   }
+ *
+ *   let%sarek_intrinsic rsqrt : float32 -> float32 = {
+ *     device = (fun dev -> match dev... with ...);
+ *     ocaml = (fun x -> 1.0 /. sqrt x);
+ *   }
+ ******************************************************************************)
+
+(** Extension for type%sarek_intrinsic *)
+let expand_sarek_intrinsic_type ~ctxt payload =
+  let loc = Expansion_context.Extension.extension_point_loc ctxt in
+  match payload with
+  | PStr
+      [
+        {
+          pstr_desc =
+            Pstr_value
+              ( _,
+                [
+                  {
+                    pvb_pat = {ppat_desc = Ppat_var {txt = type_name; _}; _};
+                    pvb_expr = record_expr;
+                    _;
+                  };
+                ] );
+          _;
+        };
+      ] ->
+      (* Extract device and ctype fields from the record expression *)
+      let device_expr, ctype_expr =
+        match record_expr.pexp_desc with
+        | Pexp_record (fields, None) -> (
+            let find_field name =
+              List.find_map
+                (fun (lid, expr) ->
+                  match lid.txt with
+                  | Lident n when String.equal n name -> Some expr
+                  | _ -> None)
+                fields
+            in
+            ( (match find_field "device" with
+              | Some e -> e
+              | None ->
+                  Location.raise_errorf
+                    ~loc
+                    "sarek_intrinsic type requires 'device' field"),
+              match find_field "ctype" with
+              | Some e -> e
+              | None ->
+                  Location.raise_errorf
+                    ~loc
+                    "sarek_intrinsic type requires 'ctype' field" ))
+        | _ ->
+            Location.raise_errorf
+              ~loc
+              "sarek_intrinsic type expects a record { device = ...; ctype = \
+               ... }"
+      in
+      (* Generate runtime registration code *)
+      let type_name_str = Ast_builder.Default.estring ~loc type_name in
+      [
+        [%stri
+          let () =
+            Sarek.Sarek_registry.register_type
+              [%e type_name_str]
+              ~device:[%e device_expr]
+              ~size:(Ctypes.sizeof [%e ctype_expr])];
+      ]
+  | _ ->
+      Location.raise_errorf
+        ~loc
+        "type%%sarek_intrinsic expects: type%%sarek_intrinsic name = { device \
+         = ...; ctype = ... }"
+
+(** Extension for let%sarek_intrinsic *)
+let expand_sarek_intrinsic_fun ~ctxt payload =
+  let loc = Expansion_context.Extension.extension_point_loc ctxt in
+  match payload with
+  | PStr
+      [
+        {
+          pstr_desc =
+            Pstr_value
+              ( _,
+                [
+                  {
+                    pvb_pat =
+                      {
+                        ppat_desc =
+                          Ppat_constraint
+                            ({ppat_desc = Ppat_var {txt = fun_name; _}; _}, _);
+                        _;
+                      };
+                    pvb_expr = record_expr;
+                    _;
+                  };
+                ] );
+          _;
+        };
+      ] ->
+      (* Extract device and ocaml fields from the record expression *)
+      let device_expr, ocaml_expr =
+        match record_expr.pexp_desc with
+        | Pexp_record (fields, None) -> (
+            let find_field name =
+              List.find_map
+                (fun (lid, expr) ->
+                  match lid.txt with
+                  | Lident n when String.equal n name -> Some expr
+                  | _ -> None)
+                fields
+            in
+            ( (match find_field "device" with
+              | Some e -> e
+              | None ->
+                  Location.raise_errorf
+                    ~loc
+                    "sarek_intrinsic function requires 'device' field"),
+              match find_field "ocaml" with
+              | Some e -> e
+              | None ->
+                  Location.raise_errorf
+                    ~loc
+                    "sarek_intrinsic function requires 'ocaml' field" ))
+        | _ ->
+            Location.raise_errorf
+              ~loc
+              "sarek_intrinsic function expects a record { device = ...; ocaml \
+               = ... }"
+      in
+      (* Generate runtime registration and OCaml binding *)
+      let fun_name_str = Ast_builder.Default.estring ~loc fun_name in
+      let fun_name_pat = Ast_builder.Default.pvar ~loc fun_name in
+      [
+        (* Register the intrinsic for code generation *)
+        [%stri
+          let () =
+            Sarek.Sarek_registry.register_fun
+              [%e fun_name_str]
+              ~arity:1
+              ~device:[%e device_expr]
+              ~arg_types:[]
+              ~ret_type:""];
+        (* Also expose the OCaml implementation for host-side use *)
+        [%stri let [%p fun_name_pat] = [%e ocaml_expr]];
+      ]
+  | _ ->
+      Location.raise_errorf
+        ~loc
+        "let%%sarek_intrinsic expects: let%%sarek_intrinsic name : type = { \
+         device = ...; ocaml = ... }"
+
+(** Combined extension for %sarek_intrinsic - handles both types and functions
+*)
+let expand_sarek_intrinsic ~ctxt payload =
+  let _loc = Expansion_context.Extension.extension_point_loc ctxt in
+  match payload with
+  (* Try type first - pattern: let name = { device = ...; ctype = ... } *)
+  | PStr
+      [
+        {
+          pstr_desc =
+            Pstr_value
+              ( _,
+                [
+                  {
+                    pvb_pat = {ppat_desc = Ppat_var _; _};
+                    pvb_expr = {pexp_desc = Pexp_record (fields, None); _};
+                    _;
+                  };
+                ] );
+          _;
+        };
+      ]
+    when List.exists
+           (fun (lid, _) ->
+             match lid.txt with Lident "ctype" -> true | _ -> false)
+           fields ->
+      expand_sarek_intrinsic_type ~ctxt payload
+  (* Otherwise try function - pattern: let (name : type) = { device = ...; ocaml = ... } *)
+  | _ -> expand_sarek_intrinsic_fun ~ctxt payload
+
+let sarek_intrinsic_extension =
+  Extension.V3.declare
+    "sarek_intrinsic"
+    Extension.Context.structure_item
+    Ast_pattern.(pstr __)
+    (fun ~ctxt payload ->
+      let loc = Expansion_context.Extension.extension_point_loc ctxt in
+      let items = expand_sarek_intrinsic ~ctxt (PStr payload) in
+      (* Wrap multiple items in include struct ... end *)
+      Ast_builder.Default.pstr_include
+        ~loc
+        {
+          pincl_mod = Ast_builder.Default.pmod_structure ~loc items;
+          pincl_loc = loc;
+          pincl_attributes = [];
+        })
+
 (** The main kernel expansion function *)
 let expand_kernel ~ctxt payload =
   let loc = Expansion_context.Extension.extension_point_loc ctxt in
@@ -695,6 +903,7 @@ let () =
       sarek_type_rule;
       sarek_type_private_rule;
       Context_free.Rule.extension kernel_extension;
+      Context_free.Rule.extension sarek_intrinsic_extension;
     ]
   in
   Driver.register_transformation

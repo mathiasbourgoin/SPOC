@@ -720,6 +720,7 @@ let rewrite ker =
         | _ -> SetV (aux k1, aux k2))
     | SetLocalVar (k1, k2, k3) -> SetLocalVar (aux k1, aux k2, aux k3)
     | Intrinsics _ -> kern
+    | IntrinsicRef _ -> kern
     | IntId _ -> kern
     | Int _ -> kern
     | GInt _ -> kern

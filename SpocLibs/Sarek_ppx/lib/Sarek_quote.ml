@@ -343,6 +343,14 @@ and quote_k_ext ~loc (k : Kirc_Ast.k_ext) : expression =
           ( [%e quote_k_ext ~loc f],
             [%e quote_k_ext ~loc a],
             [%e quote_k_ext ~loc b] )]
+  | Kirc_Ast.IntrinsicRef (path, name) ->
+      let path_expr =
+        Ast_builder.Default.elist
+          ~loc
+          (List.map (Ast_builder.Default.estring ~loc) path)
+      in
+      let name_expr = Ast_builder.Default.estring ~loc name in
+      [%expr Sarek.Kirc_Ast.IntrinsicRef ([%e path_expr], [%e name_expr])]
   | Kirc_Ast.Unit -> [%expr Sarek.Kirc_Ast.Unit]
 
 (** Build argument handling for spoc_kernel methods *)
@@ -467,6 +475,151 @@ let build_kernel_args ~loc (params : tparam list) =
   in
   (args_pat, args_array_expr, list_to_args_pat, list_to_args_expr)
 
+(******************************************************************************
+ * Intrinsic Reference Collection
+ *
+ * Collect all intrinsic function references from a kernel and generate
+ * a dummy expression that mentions each one. This ensures that if an
+ * intrinsic function is missing from the stdlib, compilation will fail.
+ ******************************************************************************)
+
+module IntrinsicRefSet = Set.Make (struct
+  type t = Sarek_env.intrinsic_ref
+
+  let compare = compare
+end)
+
+(** Generate an OCaml expression for an intrinsic reference. All intrinsics are
+    now in Sarek_prim as GADT values. We just reference the GADT value to check
+    it exists - we don't call ocaml_of_intrinsic since that would return a
+    function and cause "ignored partial application" warnings. *)
+let expr_of_intrinsic_ref ~loc (ref : Sarek_env.intrinsic_ref) : expression =
+  match ref with
+  | Sarek_env.IntrinsicPrim name ->
+      let prim_lid = Ldot (Ldot (Lident "Sarek", "Sarek_prim"), name) in
+      Ast_builder.Default.pexp_ident ~loc {txt = prim_lid; loc}
+
+(** Collect all intrinsic function refs from a typed expression *)
+let rec collect_intrinsic_refs (te : texpr) : IntrinsicRefSet.t =
+  match te.te with
+  | TEUnit | TEBool _ | TEInt _ | TEInt32 _ | TEInt64 _ | TEFloat _ | TEDouble _
+  | TEVar _ | TEIntrinsicConst _ | TENative _ | TENativeFun _ | TEGlobalRef _ ->
+      IntrinsicRefSet.empty
+  | TEVecGet (v, i) | TEVecSet (v, i, _) | TEArrGet (v, i) ->
+      IntrinsicRefSet.union
+        (collect_intrinsic_refs v)
+        (collect_intrinsic_refs i)
+  | TEArrSet (a, i, x) ->
+      IntrinsicRefSet.union
+        (collect_intrinsic_refs a)
+        (IntrinsicRefSet.union
+           (collect_intrinsic_refs i)
+           (collect_intrinsic_refs x))
+  | TEFieldGet (r, _, _) -> collect_intrinsic_refs r
+  | TEFieldSet (r, _, _, x) ->
+      IntrinsicRefSet.union
+        (collect_intrinsic_refs r)
+        (collect_intrinsic_refs x)
+  | TEBinop (_, a, b) ->
+      IntrinsicRefSet.union
+        (collect_intrinsic_refs a)
+        (collect_intrinsic_refs b)
+  | TEUnop (_, a) -> collect_intrinsic_refs a
+  | TEApp (f, args) ->
+      List.fold_left
+        (fun acc arg -> IntrinsicRefSet.union acc (collect_intrinsic_refs arg))
+        (collect_intrinsic_refs f)
+        args
+  | TEAssign (_, _, value) -> collect_intrinsic_refs value
+  | TELet (_, _, value, body) | TELetMut (_, _, value, body) ->
+      IntrinsicRefSet.union
+        (collect_intrinsic_refs value)
+        (collect_intrinsic_refs body)
+  | TEIf (cond, then_e, else_e) -> (
+      let base =
+        IntrinsicRefSet.union
+          (collect_intrinsic_refs cond)
+          (collect_intrinsic_refs then_e)
+      in
+      match else_e with
+      | Some e -> IntrinsicRefSet.union base (collect_intrinsic_refs e)
+      | None -> base)
+  | TEFor (_, _, lo, hi, _, body) ->
+      IntrinsicRefSet.union
+        (collect_intrinsic_refs lo)
+        (IntrinsicRefSet.union
+           (collect_intrinsic_refs hi)
+           (collect_intrinsic_refs body))
+  | TEWhile (cond, body) ->
+      IntrinsicRefSet.union
+        (collect_intrinsic_refs cond)
+        (collect_intrinsic_refs body)
+  | TESeq exprs ->
+      List.fold_left
+        (fun acc e -> IntrinsicRefSet.union acc (collect_intrinsic_refs e))
+        IntrinsicRefSet.empty
+        exprs
+  | TEMatch (scrutinee, cases) ->
+      List.fold_left
+        (fun acc (_, body) ->
+          IntrinsicRefSet.union acc (collect_intrinsic_refs body))
+        (collect_intrinsic_refs scrutinee)
+        cases
+  | TERecord (_, fields) ->
+      List.fold_left
+        (fun acc (_, e) -> IntrinsicRefSet.union acc (collect_intrinsic_refs e))
+        IntrinsicRefSet.empty
+        fields
+  | TEConstr (_, _, arg) -> (
+      match arg with
+      | Some e -> collect_intrinsic_refs e
+      | None -> IntrinsicRefSet.empty)
+  | TETuple exprs ->
+      List.fold_left
+        (fun acc e -> IntrinsicRefSet.union acc (collect_intrinsic_refs e))
+        IntrinsicRefSet.empty
+        exprs
+  | TEReturn e | TEPragma (_, e) -> collect_intrinsic_refs e
+  | TECreateArray (size, _, _) -> collect_intrinsic_refs size
+  | TEIntrinsicFun (_, _, ocaml_ref, args) ->
+      let base = IntrinsicRefSet.singleton ocaml_ref in
+      List.fold_left
+        (fun acc arg -> IntrinsicRefSet.union acc (collect_intrinsic_refs arg))
+        base
+        args
+
+(** Collect intrinsic refs from module items *)
+let collect_from_module_items (items : tmodule_item list) : IntrinsicRefSet.t =
+  List.fold_left
+    (fun acc item ->
+      match item with
+      | TMConst (_, _, _, e) ->
+          IntrinsicRefSet.union acc (collect_intrinsic_refs e)
+      | TMFun (_, _, e) -> IntrinsicRefSet.union acc (collect_intrinsic_refs e))
+    IntrinsicRefSet.empty
+    items
+
+(** Generate a dummy expression that references all intrinsic functions. This
+    ensures compile-time checking that all intrinsics exist in Sarek_prim. *)
+let generate_intrinsic_check ~loc (kernel : tkernel) : expression =
+  let refs_from_body = collect_intrinsic_refs kernel.tkern_body in
+  let refs_from_items = collect_from_module_items kernel.tkern_module_items in
+  let all_refs = IntrinsicRefSet.union refs_from_body refs_from_items in
+  let ref_list = IntrinsicRefSet.elements all_refs in
+  let fn_exprs = List.map (expr_of_intrinsic_ref ~loc) ref_list in
+  match fn_exprs with
+  | [] -> [%expr ()]
+  | exprs ->
+      (* Generate: let _ = (fn1, fn2, fn3, ...) in () *)
+      let tuple_expr =
+        match exprs with
+        | [e] -> e
+        | es -> Ast_builder.Default.pexp_tuple ~loc es
+      in
+      [%expr
+        let _ = [%e tuple_expr] in
+        ()]
+
 (** Quote a kernel to create a sarek_kernel expression *)
 let quote_kernel ~loc (kernel : tkernel) (ir : Kirc_Ast.k_ext)
     (constructors : string list) (ret_val : Kirc_Ast.k_ext) : expression =
@@ -503,6 +656,7 @@ let quote_kernel ~loc (kernel : tkernel) (ir : Kirc_Ast.k_ext)
     let open Sarek.Kirc in
     let body_ir = [%e quote_k_ext ~loc ir] in
     let ret_ir = [%e quote_k_ext ~loc ret_val] in
+    let _intrinsic_check = [%e generate_intrinsic_check ~loc kernel] in
     let kirc_kernel =
       {
         Sarek.Kirc.ml_kern = (fun () -> ());

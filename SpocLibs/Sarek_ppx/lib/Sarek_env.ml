@@ -18,11 +18,21 @@ type var_info = {
   vi_is_vec : bool;  (** Is this a vector parameter? *)
 }
 
-(** Information about an intrinsic function *)
+(** Reference to an intrinsic in Sarek_prim. All intrinsics are now defined in
+    Sarek_prim as GADT values. The name refers to the value name in
+    Sarek.Sarek_prim module. *)
+type intrinsic_ref =
+  | IntrinsicPrim of string
+      (** Name in Sarek.Sarek_prim, e.g. "sin", "rsqrt" *)
+
+(** Information about an intrinsic function. Note: intr_cuda and intr_opencl are
+    kept for the lowering phase. The JIT will eventually use device_of_intrinsic
+    from the GADT directly. *)
 type intrinsic_fun_info = {
   intr_type : typ;
-  intr_cuda : string;
-  intr_opencl : string;
+  intr_cuda : string;  (** TODO: Remove once JIT uses GADT directly *)
+  intr_opencl : string;  (** TODO: Remove once JIT uses GADT directly *)
+  intr_ocaml : intrinsic_ref;  (** Reference to GADT in Sarek.Sarek_prim *)
 }
 
 (** Information about an intrinsic constant *)
@@ -266,7 +276,7 @@ let with_stdlib env =
       env
   in
 
-  (* Std module functions *)
+  (* GPU synchronization functions - defined in Sarek_prim *)
   let env =
     add_intrinsic_fun
       "block_barrier"
@@ -274,6 +284,7 @@ let with_stdlib env =
         intr_type = t_fun [t_unit] t_unit;
         intr_cuda = "__syncthreads()";
         intr_opencl = "barrier(CLK_LOCAL_MEM_FENCE)";
+        intr_ocaml = IntrinsicPrim "block_barrier";
       }
       env
   in
@@ -285,11 +296,12 @@ let with_stdlib env =
         intr_type = t_fun [t_unit] t_unit;
         intr_cuda = "return";
         intr_opencl = "return";
+        intr_ocaml = IntrinsicPrim "return_unit";
       }
       env
   in
 
-  (* Type conversion functions *)
+  (* Type conversion functions - defined in Sarek_prim *)
   let env =
     add_intrinsic_fun
       "float"
@@ -297,6 +309,7 @@ let with_stdlib env =
         intr_type = t_fun [t_int32] t_float32;
         intr_cuda = "(float)";
         intr_opencl = "(float)";
+        intr_ocaml = IntrinsicPrim "float_of_int";
       }
       env
   in
@@ -308,6 +321,7 @@ let with_stdlib env =
         intr_type = t_fun [t_int32] t_float64;
         intr_cuda = "(double)";
         intr_opencl = "(double)";
+        intr_ocaml = IntrinsicPrim "float64_of_int";
       }
       env
   in
@@ -319,6 +333,7 @@ let with_stdlib env =
         intr_type = t_fun [t_float32] t_int32;
         intr_cuda = "(int)";
         intr_opencl = "(int)";
+        intr_ocaml = IntrinsicPrim "int_of_float";
       }
       env
   in
@@ -330,12 +345,13 @@ let with_stdlib env =
         intr_type = t_fun [t_float64] t_int32;
         intr_cuda = "(int)";
         intr_opencl = "(int)";
+        intr_ocaml = IntrinsicPrim "int_of_float64";
       }
       env
   in
 
-  (* Math.Float32 functions *)
-  let float32_funs =
+  (* Math.Float32 unary functions - all defined in Sarek_prim *)
+  let float32_unary_funs =
     [
       ("sin", "sinf", "sin");
       ("cos", "cosf", "cos");
@@ -350,12 +366,12 @@ let with_stdlib env =
       ("log", "logf", "log");
       ("log10", "log10f", "log10");
       ("sqrt", "sqrtf", "sqrt");
-      ("rsqrt", "rsqrtf", "rsqrt");
       ("ceil", "ceilf", "ceil");
       ("floor", "floorf", "floor");
-      ("abs_float", "fabsf", "fabs");
       ("expm1", "expm1f", "expm1");
       ("log1p", "log1pf", "log1p");
+      ("abs_float", "fabsf", "fabs");
+      ("rsqrt", "rsqrtf", "rsqrt");
     ]
   in
   let env =
@@ -367,19 +383,42 @@ let with_stdlib env =
             intr_type = t_fun [t_float32] t_float32;
             intr_cuda = cuda;
             intr_opencl = opencl;
+            intr_ocaml = IntrinsicPrim name;
           }
           env)
       env
-      float32_funs
+      float32_unary_funs
   in
 
-  (* Math.Float32 binary functions *)
+  (* Math.Float32 binary functions - defined in Sarek_prim *)
   let float32_bin_funs =
     [
       ("pow", "powf", "pow");
       ("atan2", "atan2f", "atan2");
       ("hypot", "hypotf", "hypot");
       ("copysign", "copysignf", "copysign");
+    ]
+  in
+  let env =
+    List.fold_left
+      (fun env (name, cuda, opencl) ->
+        add_intrinsic_fun
+          name
+          {
+            intr_type = t_fun [t_float32; t_float32] t_float32;
+            intr_cuda = cuda;
+            intr_opencl = opencl;
+            intr_ocaml = IntrinsicPrim name;
+          }
+          env)
+      env
+      float32_bin_funs
+  in
+
+  (* Math.Float32 binary functions - GPU specific (spoc helpers)
+     TODO: Add these to Sarek_prim with appropriate OCaml fallbacks *)
+  let float32_bin_funs_gpu =
+    [
       ("add", "spoc_fadd", "spoc_fadd");
       ("minus", "spoc_fminus", "spoc_fminus");
       ("mul", "spoc_fmul", "spoc_fmul");
@@ -395,14 +434,17 @@ let with_stdlib env =
             intr_type = t_fun [t_float32; t_float32] t_float32;
             intr_cuda = cuda;
             intr_opencl = opencl;
+            (* TODO: These should reference Sarek_prim once we add them there *)
+            intr_ocaml = IntrinsicPrim (name ^ "_f32");
+            (* placeholder *)
           }
           env)
       env
-      float32_bin_funs
+      float32_bin_funs_gpu
   in
 
-  (* Math.Float64 functions (same as Float32 but without f suffix) *)
-  let float64_funs =
+  (* Math.Float64 unary functions - defined in Sarek_prim *)
+  let float64_unary_funs =
     [
       ("sin64", "sin", "sin");
       ("cos64", "cos", "cos");
@@ -417,10 +459,10 @@ let with_stdlib env =
       ("log64", "log", "log");
       ("log1064", "log10", "log10");
       ("sqrt64", "sqrt", "sqrt");
-      ("rsqrt64", "rsqrt", "rsqrt");
       ("ceil64", "ceil", "ceil");
       ("floor64", "floor", "floor");
       ("abs_float64", "fabs", "fabs");
+      ("rsqrt64", "rsqrt", "rsqrt");
     ]
   in
   let env =
@@ -432,19 +474,42 @@ let with_stdlib env =
             intr_type = t_fun [t_float64] t_float64;
             intr_cuda = cuda;
             intr_opencl = opencl;
+            intr_ocaml = IntrinsicPrim name;
           }
           env)
       env
-      float64_funs
+      float64_unary_funs
   in
 
-  (* Math.Float64 binary functions *)
+  (* Math.Float64 binary functions - defined in Sarek_prim *)
   let float64_bin_funs =
     [
       ("pow64", "pow", "pow");
       ("atan264", "atan2", "atan2");
       ("hypot64", "hypot", "hypot");
       ("copysign64", "copysign", "copysign");
+    ]
+  in
+  let env =
+    List.fold_left
+      (fun env (name, cuda, opencl) ->
+        add_intrinsic_fun
+          name
+          {
+            intr_type = t_fun [t_float64; t_float64] t_float64;
+            intr_cuda = cuda;
+            intr_opencl = opencl;
+            intr_ocaml = IntrinsicPrim name;
+          }
+          env)
+      env
+      float64_bin_funs
+  in
+
+  (* Math.Float64 binary functions - GPU specific (spoc helpers)
+     TODO: Add these to Sarek_prim with appropriate OCaml fallbacks *)
+  let float64_bin_funs_gpu =
+    [
       ("add64", "spoc_dadd", "spoc_dadd");
       ("minus64", "spoc_dminus", "spoc_dminus");
       ("mul64", "spoc_dmul", "spoc_dmul");
@@ -460,13 +525,17 @@ let with_stdlib env =
             intr_type = t_fun [t_float64; t_float64] t_float64;
             intr_cuda = cuda;
             intr_opencl = opencl;
+            (* TODO: These should reference Sarek_prim once we add them there *)
+            intr_ocaml = IntrinsicPrim name;
+            (* placeholder *)
           }
           env)
       env
-      float64_bin_funs
+      float64_bin_funs_gpu
   in
 
-  (* Integer math functions *)
+  (* Integer math functions - GPU specific
+     TODO: Add these to Sarek_prim with appropriate OCaml fallbacks *)
   let env =
     add_intrinsic_fun
       "logical_and"
@@ -474,6 +543,8 @@ let with_stdlib env =
         intr_type = t_fun [t_int32; t_int32] t_int32;
         intr_cuda = "logical_and";
         intr_opencl = "logical_and";
+        intr_ocaml = IntrinsicPrim "logical_and";
+        (* TODO: add to Sarek_prim *)
       }
       env
   in
@@ -485,6 +556,8 @@ let with_stdlib env =
         intr_type = t_fun [t_int32; t_int32] t_int32;
         intr_cuda = "spoc_xor";
         intr_opencl = "spoc_xor";
+        intr_ocaml = IntrinsicPrim "xor";
+        (* TODO: add to Sarek_prim *)
       }
       env
   in
@@ -496,6 +569,8 @@ let with_stdlib env =
         intr_type = t_fun [t_int32; t_int32] t_int32;
         intr_cuda = "spoc_powint";
         intr_opencl = "spoc_powint";
+        intr_ocaml = IntrinsicPrim "spoc_powint";
+        (* TODO: add to Sarek_prim *)
       }
       env
   in
