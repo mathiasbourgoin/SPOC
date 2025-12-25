@@ -13,7 +13,7 @@
 
 (library
  (name test_ktype)
- (libraries sarek_ppx_lib spoc sarek)
+ (libraries sarek_ppx_lib spoc sarek sarek.stdlib)
  (preprocess
   (pps sarek_ppx))
  (flags
@@ -24,7 +24,7 @@
 
 (executable
  (name test_comparison)
- (libraries str alcotest spoc sarek)
+ (libraries str alcotest spoc sarek sarek.stdlib)
  (preprocess
   (pps sarek_ppx))
  (flags

@@ -8,6 +8,7 @@
   Kirc_Ast
   Sarek_ast
   Sarek_types
+  Sarek_ppx_registry
   Sarek_env
   Sarek_error
   Sarek_typed_ast
@@ -21,7 +22,8 @@
  (name sarek_ppx)
  (public_name sarek_ppx)
  (kind ppx_rewriter)
- (libraries ppxlib sarek_ppx_lib unix)
+ ; Link sarek_stdlib so its module init registers types/intrinsics at PPX load time
+ (libraries ppxlib sarek_ppx_lib sarek_stdlib unix)
  (preprocess
   (pps ppxlib.metaquot))
  (modules Sarek_ppx Sarek_external))

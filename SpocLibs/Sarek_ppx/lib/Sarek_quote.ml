@@ -490,15 +490,28 @@ module IntrinsicRefSet = Set.Make (struct
   let compare = compare
 end)
 
-(** Generate an OCaml expression for an intrinsic reference. All intrinsics are
-    now in Sarek_prim as GADT values. We just reference the GADT value to check
-    it exists - we don't call ocaml_of_intrinsic since that would return a
-    function and cause "ignored partial application" warnings. *)
+(** Generate an OCaml expression for an intrinsic reference.
+
+    Intrinsics are now defined in stdlib modules (Float32, Float64, Int32, etc.)
+    via %sarek_intrinsic. We reference the function to ensure it exists at
+    compile time. The module path enables extensibility: user libraries can
+    define their own intrinsics and the PPX will reference them correctly.
+
+    Examples:
+    - IntrinsicRef (["Float32"], "sin") -> Float32.sin
+    - IntrinsicRef (["Sarek"; "Sarek_prim"], "block_barrier") ->
+      Sarek.Sarek_prim.block_barrier *)
 let expr_of_intrinsic_ref ~loc (ref : Sarek_env.intrinsic_ref) : expression =
   match ref with
-  | Sarek_env.IntrinsicPrim name ->
-      let prim_lid = Ldot (Ldot (Lident "Sarek", "Sarek_prim"), name) in
-      Ast_builder.Default.pexp_ident ~loc {txt = prim_lid; loc}
+  | Sarek_env.IntrinsicRef (module_path, name) ->
+      (* Build longident from module path: ["A"; "B"] + "f" -> A.B.f *)
+      let lid =
+        List.fold_left
+          (fun acc m -> Ldot (acc, m))
+          (Lident (List.hd module_path))
+          (List.tl module_path @ [name])
+      in
+      Ast_builder.Default.pexp_ident ~loc {txt = lid; loc}
 
 (** Collect all intrinsic function refs from a typed expression *)
 let rec collect_intrinsic_refs (te : texpr) : IntrinsicRefSet.t =
@@ -601,7 +614,8 @@ let collect_from_module_items (items : tmodule_item list) : IntrinsicRefSet.t =
     items
 
 (** Generate a dummy expression that references all intrinsic functions. This
-    ensures compile-time checking that all intrinsics exist in Sarek_prim. *)
+    ensures compile-time checking that all intrinsics exist in their stdlib
+    modules. *)
 let generate_intrinsic_check ~loc (kernel : tkernel) : expression =
   let refs_from_body = collect_intrinsic_refs kernel.tkern_body in
   let refs_from_items = collect_from_module_items kernel.tkern_module_items in

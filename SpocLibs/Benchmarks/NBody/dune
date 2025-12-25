@@ -1,7 +1,7 @@
 (executable
  (name NBody_ppx)
  (modules NBody_ppx)
- (libraries spoc sarek unix)
+ (libraries spoc sarek sarek.stdlib unix)
  (preprocess
   (pps sarek_ppx))
  (flags

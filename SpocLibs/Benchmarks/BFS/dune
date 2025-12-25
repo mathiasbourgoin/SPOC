@@ -4,4 +4,4 @@
   (-ccopt -L$CUDA_PATH -cclib -lnvrtc))
  (preprocess
   (pps sarek_ppx))
- (libraries spoc sarek unix))
+ (libraries spoc sarek sarek.stdlib unix))
