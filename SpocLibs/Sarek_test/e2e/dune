@@ -16,7 +16,8 @@
   test_external_kernel_ppx
   test_convention
   test_convention_kernel
-  test_pragma)
+  test_pragma
+  test_barrier_converged)
  (libraries
   spoc
   sarek
@@ -49,4 +50,5 @@
   test_external_kernel_ppx.exe
   test_convention.exe
   test_convention_kernel.exe
-  test_pragma.exe))
+  test_pragma.exe
+  test_barrier_converged.exe))

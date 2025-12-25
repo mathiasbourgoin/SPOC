@@ -13,6 +13,7 @@
   Sarek_error
   Sarek_typed_ast
   Sarek_typer
+  Sarek_convergence
   Sarek_lower
   Sarek_parse
   Sarek_quote))

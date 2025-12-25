@@ -30,6 +30,7 @@ type error =
   | Duplicate_field of string * loc
   | Missing_type_annotation of string * loc
   | Invalid_intrinsic of string * loc
+  | Barrier_in_diverged_flow of loc
 
 (** Get the location from an error *)
 let error_loc = function
@@ -53,6 +54,7 @@ let error_loc = function
   | Duplicate_field (_, loc) -> loc
   | Missing_type_annotation (_, loc) -> loc
   | Invalid_intrinsic (_, loc) -> loc
+  | Barrier_in_diverged_flow loc -> loc
 
 (** Pretty print an error *)
 let pp_error fmt = function
@@ -105,6 +107,11 @@ let pp_error fmt = function
       Format.fprintf fmt "Missing type annotation for parameter: %s" name
   | Invalid_intrinsic (name, _) ->
       Format.fprintf fmt "Invalid intrinsic: %s" name
+  | Barrier_in_diverged_flow _ ->
+      Format.fprintf
+        fmt
+        "Barrier called in diverged control flow. All threads in a workgroup \
+         must reach the barrier together"
 
 (** Convert error to string *)
 let error_to_string e = Format.asprintf "%a" pp_error e
