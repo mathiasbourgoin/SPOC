@@ -623,13 +623,19 @@ let expand_kernel ~ctxt payload =
         Sarek_error.report_errors errors ;
         (* If we get here, generate dummy expression *)
         [%expr assert false]
-    | Ok tkernel ->
-        (* 4. Lower to Kirc_Ast *)
-        let ir, constructors = Sarek_lower.lower_kernel tkernel in
-        let ret_val = Sarek_lower.lower_return_value tkernel in
+    | Ok tkernel -> (
+        (* 4. Convergence analysis - check barrier safety *)
+        match Sarek_convergence.check_kernel tkernel with
+        | Error (err :: _) ->
+            (* Raise as Sarek_error to be caught by the handler below *)
+            raise (Sarek_error.Sarek_error err)
+        | Error [] | Ok () ->
+            (* 5. Lower to Kirc_Ast *)
+            let ir, constructors = Sarek_lower.lower_kernel tkernel in
+            let ret_val = Sarek_lower.lower_return_value tkernel in
 
-        (* 5. Quote the IR back to OCaml *)
-        Sarek_quote.quote_kernel ~loc tkernel ir constructors ret_val
+            (* 6. Quote the IR back to OCaml *)
+            Sarek_quote.quote_kernel ~loc tkernel ir constructors ret_val)
   with
   | Sarek_parse.Parse_error_exn (msg, ploc) ->
       Location.raise_errorf ~loc:ploc "Sarek parse error: %s" msg

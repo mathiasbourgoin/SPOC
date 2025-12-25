@@ -1,3 +1,6 @@
 ; Negative tests - check that expected errors are raised
 ; These files should fail to compile with specific error messages
-; They are not included in the build - run manually to verify error messages
+; They are NOT included in the build - manually compile to verify errors
+
+; To test: dune build SpocLibs/Sarek_test/negative/test_barrier_diverged.exe
+; Expected: "Barrier called in diverged control flow"
