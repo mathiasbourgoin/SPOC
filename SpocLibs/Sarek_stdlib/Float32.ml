@@ -1,7 +1,7 @@
 (******************************************************************************
  * Sarek Float32 Standard Library
  *
- * Provides float32 math functions for use in Sarek kernels.
+ * Provides float32 type and math functions for use in Sarek kernels.
  * Uses %sarek_intrinsic to define GPU intrinsics with device function pattern.
  *
  * Each intrinsic generates:
@@ -22,6 +22,34 @@ let cuda_or_opencl dev cuda_code opencl_code =
   match dev.specific_info with
   | CudaInfo _ -> cuda_code
   | OpenCLInfo _ -> opencl_code
+
+(******************************************************************************
+ * Type registration
+ *
+ * Register float32 as a primitive type. This must happen before any functions
+ * that use float32 are registered.
+ ******************************************************************************)
+
+let%sarek_intrinsic float32 =
+  {device = (fun _ -> "float"); ctype = Ctypes.float}
+
+(******************************************************************************
+ * Arithmetic operators
+ *
+ * These are the fundamental float32 operations used by the kernel code generator.
+ ******************************************************************************)
+
+let%sarek_intrinsic (add_float32 : float -> float -> float) =
+  {device = (fun _ -> "(%s + %s)"); ocaml = ( +. )}
+
+let%sarek_intrinsic (sub_float32 : float -> float -> float) =
+  {device = (fun _ -> "(%s - %s)"); ocaml = ( -. )}
+
+let%sarek_intrinsic (mul_float32 : float -> float -> float) =
+  {device = (fun _ -> "(%s * %s)"); ocaml = ( *. )}
+
+let%sarek_intrinsic (div_float32 : float -> float -> float) =
+  {device = (fun _ -> "(%s / %s)"); ocaml = ( /. )}
 
 (******************************************************************************
  * Unary math functions
