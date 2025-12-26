@@ -53,12 +53,20 @@ test_ppx:
 	SKIP_OCAMLFORMAT=1 dune build @SpocLibs/Sarek_test/runtest
 
 # Negative tests - verify that expected compile errors are raised
+# Uses --profile=negative to enable the negative test libraries
 test_negative:
-	@echo "Testing field error detection..."
-	@dune build SpocLibs/Sarek_test/negative/test_convention_kernel_fail.exe 2>&1 | tee /tmp/neg1.out | grep -q "Field z not found" && echo "  PASS: field error" || (cat /tmp/neg1.out; false)
+	@echo "=== Negative tests (expected compile errors) ==="
 	@echo "Testing type mismatch detection..."
-	@dune build SpocLibs/Sarek_test/negative/test_convention_kernel_fail2.exe 2>&1 | tee /tmp/neg2.out | grep -q "Cannot unify types" && echo "  PASS: type mismatch" || (cat /tmp/neg2.out; false)
+	@dune build --profile=negative SpocLibs/Sarek_test/negative/neg_test_convention_kernel_fail2.cma 2>&1 | tee /tmp/neg1.out | grep -q "Cannot unify types" && echo "  PASS: type mismatch" || (cat /tmp/neg1.out; false)
+	@echo "Testing barrier in diverged control flow..."
+	@dune build --profile=negative SpocLibs/Sarek_test/negative/neg_test_barrier_diverged.cma 2>&1 | tee /tmp/neg2.out | grep -q "Barrier called in diverged control flow" && echo "  PASS: barrier diverged" || (cat /tmp/neg2.out; false)
+	@echo "Testing unbound function detection..."
+	@dune build --profile=negative SpocLibs/Sarek_test/negative/neg_test_unbound_function.cma 2>&1 | tee /tmp/neg3.out | grep -q "Unbound" && echo "  PASS: unbound function" || (cat /tmp/neg3.out; false)
 	@echo "All negative tests passed"
+
+# Run all tests: unit tests, e2e tests, and negative tests
+test-all: test test_negative
+	@echo "=== All tests passed ==="
 
 test_sarek:
 	echo "Compiling Sarek samples"

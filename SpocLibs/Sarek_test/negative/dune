@@ -1,6 +1,68 @@
-; Negative tests - check that expected errors are raised
-; These files should fail to compile with specific error messages
-; They are NOT included in the build - manually compile to verify errors
+; Negative tests - verify expected compile errors
+;
+; These files intentionally contain errors to test error detection.
+; Disabled by default; enabled via --profile=negative
+;
+; Run via: make test_negative
+;
+; Expected errors:
+; - test_barrier_diverged: "Barrier called in diverged control flow"
+; - test_superstep_diverged: "Barrier called in diverged control flow"
+; - test_unbound_function: "Unbound variable"
+; - test_convention_kernel_fail: "Field z not found"
+; - test_convention_kernel_fail2: "Cannot unify types"
 
-; To test: dune build SpocLibs/Sarek_test/negative/test_barrier_diverged.exe
-; Expected: "Barrier called in diverged control flow"
+(library
+ (name neg_test_convention_kernel_fail)
+ (modules test_convention_kernel_fail)
+ (libraries spoc sarek sarek.stdlib sarek_ppx.lib sarek_geometry)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_convention_kernel_fail2)
+ (modules test_convention_kernel_fail2)
+ (libraries spoc sarek sarek.stdlib sarek_ppx.lib sarek_geometry)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_barrier_diverged)
+ (modules test_barrier_diverged)
+ (libraries spoc sarek sarek.stdlib sarek_ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_superstep_diverged)
+ (modules test_superstep_diverged)
+ (libraries spoc sarek sarek.stdlib sarek_ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_unbound_function)
+ (modules test_unbound_function)
+ (libraries spoc sarek sarek.stdlib sarek_ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
