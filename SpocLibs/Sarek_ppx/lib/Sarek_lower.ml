@@ -419,7 +419,7 @@ let rec lower_expr (state : state) (te : texpr) : Kirc_Ast.k_ext =
           (* Core primitives use Gpu module path for registry lookup *)
           Kirc_Ast.IntrinsicRef (["Gpu"], name))
   (* Intrinsic function call - emit IntrinsicRef, device code resolved at JIT *)
-  | TEIntrinsicFun (ref, args) ->
+  | TEIntrinsicFun (ref, _convergence, args) ->
       (* Filter out Unit arguments - they're just () for function application syntax *)
       let non_unit_args =
         List.filter

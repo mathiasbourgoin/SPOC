@@ -92,7 +92,7 @@ let rec is_thread_varying (te : texpr) : bool =
   (* Application: varying if any argument varies *)
   | TEApp (_, args) -> List.exists is_thread_varying args
   (* Intrinsic function: varying if any argument varies *)
-  | TEIntrinsicFun (_, args) -> List.exists is_thread_varying args
+  | TEIntrinsicFun (_, _, args) -> List.exists is_thread_varying args
   (* Tuple: varying if any element varies *)
   | TETuple es -> List.exists is_thread_varying es
   (* Let binding: check the bound expression and body *)
@@ -128,19 +128,18 @@ let is_warp_convergence_ref (ref : intrinsic_ref) : bool =
 (** Collect errors from convergence analysis *)
 let rec check_expr ctx (te : texpr) : Sarek_error.error list =
   match te.te with
-  (* Barrier calls - the key check for block-level convergence *)
-  | TEIntrinsicFun (ref, args) when is_barrier_intrinsic ref ->
+  (* Intrinsic function calls - check convergence requirement from AST *)
+  | TEIntrinsicFun (ref, convergence, args) ->
       let arg_errors = List.concat_map (check_expr ctx) args in
       if ctx.mode = Diverged then
-        Sarek_error.Barrier_in_diverged_flow te.te_loc :: arg_errors
-      else arg_errors
-  (* Warp collective calls - check for warp-level convergence *)
-  | TEIntrinsicFun (ref, args) when is_warp_convergence_ref ref ->
-      let arg_errors = List.concat_map (check_expr ctx) args in
-      if ctx.mode = Diverged then
-        let name = Sarek_env.intrinsic_ref_display_name ref in
-        Sarek_error.Warp_collective_in_diverged_flow (name, te.te_loc)
-        :: arg_errors
+        match convergence with
+        | Some Sarek_core_primitives.ConvergencePoint ->
+            Sarek_error.Barrier_in_diverged_flow te.te_loc :: arg_errors
+        | Some Sarek_core_primitives.WarpConvergence ->
+            let name = Sarek_env.intrinsic_ref_display_name ref in
+            Sarek_error.Warp_collective_in_diverged_flow (name, te.te_loc)
+            :: arg_errors
+        | Some Sarek_core_primitives.NoEffect | None -> arg_errors
       else arg_errors
   (* If expression - diverge if condition is thread-varying *)
   | TEIf (cond, then_e, else_opt) ->
@@ -190,7 +189,6 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
   | TEBinop (_, a, b) -> check_expr ctx a @ check_expr ctx b
   | TEUnop (_, e) -> check_expr ctx e
   | TEApp (f, args) -> check_expr ctx f @ List.concat_map (check_expr ctx) args
-  | TEIntrinsicFun (_, args) -> List.concat_map (check_expr ctx) args
   | TEAssign (_, _, e) -> check_expr ctx e
   | TELet (_, _, value, body) | TELetMut (_, _, value, body) ->
       check_expr ctx value @ check_expr ctx body
@@ -264,7 +262,8 @@ and contains_diverging_control_flow (te : texpr) : bool =
       contains_diverging_control_flow a || contains_diverging_control_flow b
   | TEUnop (_, e) -> contains_diverging_control_flow e
   | TEApp (_, args) -> List.exists contains_diverging_control_flow args
-  | TEIntrinsicFun (_, args) -> List.exists contains_diverging_control_flow args
+  | TEIntrinsicFun (_, _, args) ->
+      List.exists contains_diverging_control_flow args
   | TEVecGet (v, i) ->
       contains_diverging_control_flow v || contains_diverging_control_flow i
   | TEVecSet (v, i, x) ->

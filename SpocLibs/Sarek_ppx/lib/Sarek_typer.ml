@@ -299,7 +299,8 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
                     let* () = unify_args param_tys targs loc in
                     Ok
                       ( mk_texpr
-                          (TEIntrinsicFun (info.intr_ref, targs))
+                          (TEIntrinsicFun
+                             (info.intr_ref, info.intr_convergence, targs))
                           ret_ty
                           loc,
                         env )

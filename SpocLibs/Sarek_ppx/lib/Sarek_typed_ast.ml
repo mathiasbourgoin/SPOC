@@ -61,8 +61,11 @@ and texpr_desc =
   (* Intrinsics - use intrinsic_ref, device code resolved at JIT time *)
   | TEIntrinsicConst of Sarek_env.intrinsic_ref
       (** Reference to intrinsic constant *)
-  | TEIntrinsicFun of Sarek_env.intrinsic_ref * texpr list
-      (** Reference to intrinsic function, args *)
+  | TEIntrinsicFun of
+      Sarek_env.intrinsic_ref
+      * Sarek_core_primitives.convergence option
+      * texpr list
+      (** Reference to intrinsic function, convergence requirement, args *)
   (* BSP superstep constructs *)
   | TELetShared of string * int * typ * texpr option * texpr
       (** name, var_id, elem_type, size_opt, body *)
@@ -303,7 +306,7 @@ let rec pp_texpr fmt te =
         fmt
         "<intrinsic_const:%s>"
         (Sarek_env.intrinsic_ref_name ref)
-  | TEIntrinsicFun (ref, args) ->
+  | TEIntrinsicFun (ref, _convergence, args) ->
       Format.fprintf
         fmt
         "<%s>(%a)"

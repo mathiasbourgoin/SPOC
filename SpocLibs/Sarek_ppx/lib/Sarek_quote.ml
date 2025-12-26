@@ -611,7 +611,7 @@ let rec collect_intrinsic_refs (te : texpr) : IntrinsicRefSet.t =
         (collect_intrinsic_refs step_body)
         (collect_intrinsic_refs cont)
   | TEIntrinsicConst ref -> IntrinsicRefSet.singleton ref
-  | TEIntrinsicFun (ref, args) ->
+  | TEIntrinsicFun (ref, _convergence, args) ->
       let base = IntrinsicRefSet.singleton ref in
       List.fold_left
         (fun acc arg -> IntrinsicRefSet.union acc (collect_intrinsic_refs arg))

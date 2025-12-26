@@ -54,6 +54,9 @@ let intrinsic_ref_display_name = function
 type intrinsic_fun_info = {
   intr_type : typ;
   intr_ref : intrinsic_ref;  (** Reference to stdlib module function *)
+  intr_convergence : Sarek_core_primitives.convergence option;
+      (** Convergence requirement. None means NoEffect. User libraries can
+          specify ConvergencePoint or WarpConvergence. *)
 }
 
 (** Information about an intrinsic constant. Device code is resolved at JIT time
@@ -178,7 +181,10 @@ let open_module (path : string list) env =
   in
   if module_name = "" then env
   else
-    (* Find all intrinsics in this module and add under short names *)
+    (* Find all intrinsics in this module and add under short names.
+       IMPORTANT: Preserve convergence from existing core primitive entries
+       when they exist - stdlib intrinsics provide device implementations
+       but core primitives define the convergence requirements. *)
     let prefix = module_name ^ "." in
     let env =
       StringMap.fold
@@ -192,6 +198,14 @@ let open_module (path : string list) env =
                 name
                 (String.length prefix)
                 (String.length name - String.length prefix)
+            in
+            (* Check if there's an existing entry with convergence info *)
+            let info =
+              match StringMap.find_opt short_name env.intrinsic_funs with
+              | Some existing when existing.intr_convergence <> None ->
+                  (* Preserve the existing convergence *)
+                  {info with intr_convergence = existing.intr_convergence}
+              | _ -> info
             in
             add_intrinsic_fun short_name info env
           else env)
@@ -243,7 +257,17 @@ let with_stdlib env =
         let ref = CorePrimitiveRef prim.name in
         match prim.typ with
         | TFun _ ->
-            let info = {intr_type = prim.typ; intr_ref = ref} in
+            let convergence =
+              if prim.convergence = Sarek_core_primitives.NoEffect then None
+              else Some prim.convergence
+            in
+            let info =
+              {
+                intr_type = prim.typ;
+                intr_ref = ref;
+                intr_convergence = convergence;
+              }
+            in
             add_intrinsic_fun prim.name info env
         | _ ->
             let info = {const_type = prim.typ; const_ref = ref} in
@@ -274,7 +298,13 @@ let with_stdlib env =
         match info.ii_type with
         | TFun _ ->
             (* It's a function - register under qualified name *)
-            let fun_info = {intr_type = info.ii_type; intr_ref = ref} in
+            let fun_info =
+              {
+                intr_type = info.ii_type;
+                intr_ref = ref;
+                intr_convergence = None;
+              }
+            in
             add_intrinsic_fun qualified_name fun_info env
         | _ ->
             (* It's a constant - register under qualified name *)
