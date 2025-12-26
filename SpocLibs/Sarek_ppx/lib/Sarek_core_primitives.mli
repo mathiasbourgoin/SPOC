@@ -52,6 +52,9 @@ val is_core_primitive : string -> bool
 
 val is_thread_varying : string -> bool
 
+(** Check if a primitive has warp-level or finer variance (WarpVarying or ThreadVarying) *)
+val is_warp_varying : string -> bool
+
 val is_convergence_point : string -> bool
 
 val is_pure : string -> bool

@@ -51,6 +51,14 @@ let test_thread_varying () =
     false
     (is_thread_varying "block_idx_x")
 
+let test_warp_varying () =
+  (* ThreadVarying implies WarpVarying *)
+  check bool "thread_idx_x is warp varying" true (is_warp_varying "thread_idx_x") ;
+  (* BlockVarying is NOT warp varying *)
+  check bool "block_idx_x is not warp varying" false (is_warp_varying "block_idx_x") ;
+  (* Uniform is NOT warp varying *)
+  check bool "block_dim_x is not warp varying" false (is_warp_varying "block_dim_x")
+
 let test_variance_of () =
   check
     (option (of_pp pp_variance))
@@ -236,6 +244,7 @@ let lookup_tests =
 let variance_tests =
   [
     ("thread varying", `Quick, test_thread_varying);
+    ("warp varying", `Quick, test_warp_varying);
     ("variance_of", `Quick, test_variance_of);
     ("join variance", `Quick, test_join_variance);
     ("variance leq", `Quick, test_variance_leq);

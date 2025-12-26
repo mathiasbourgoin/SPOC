@@ -482,6 +482,13 @@ let is_core_primitive name = Hashtbl.mem primitive_table name
 let is_thread_varying name =
   match find name with Some p -> p.variance = ThreadVarying | None -> false
 
+(** Check if a primitive has warp-level or finer granularity variance.
+    Returns true for WarpVarying and ThreadVarying primitives. *)
+let is_warp_varying name =
+  match find name with
+  | Some p -> p.variance = WarpVarying || p.variance = ThreadVarying
+  | None -> false
+
 let is_convergence_point name =
   match find name with
   | Some p -> p.convergence = ConvergencePoint
