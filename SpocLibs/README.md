@@ -1,29 +1,29 @@
-#I - Description
+# SpocLibs
 
+Libraries built on top of SPOC.
 
-The "SpocLibs" directory contains few libraries based on Spoc.
- - **Sarek** is a embedded DSL for OCaml to express kernels from the OCaml program (**experimental but tested and up to date with camlp4 and SPOC**)
- - **Benchmarks** contains few examples and benchmarks (inspired from other benchamrk suite such a rodinia) using SPOC and Sarek
- - **Cublas** allows to use some functions of the Cublas library 
-   (Cublas needs Cuda SDK to compile) (**maybe deprecated but probably easy to update to current libraries**)
- - **Compose** allows basic composition over GPGPU kernels  (**mostly deprecated**)
+## Libraries
 
+- **Sarek** - Embedded DSL for writing GPGPU kernels in OCaml using PPX syntax
+- **Sarek_stdlib** - Standard library of GPU intrinsics (math, barriers, atomics)
+- **Sarek_ppx** - PPX preprocessor for Sarek kernel syntax
+- **Benchmarks** - Examples and benchmarks using SPOC and Sarek
+- **Samples** - Sample programs demonstrating library usage
 
-The **Samples** directory contains few samples using those libraries. (**deprecated**)
+## Optional Libraries
 
-#II - Build and Install
+- **Cublas** - Bindings for NVIDIA cuBLAS library (requires CUDA SDK)
+- **Compose** - Basic kernel composition utilities
 
+## Build and Install
 
-To build and install :
+1. Ensure SPOC is built and installed
+2. Build with dune:
+   ```
+   dune build
+   dune install
+   ```
 
-1 - make sure SPOC is correctly built and installed
-2 - for each library : 	
-  make
-  make install
-should build and install 
+## Usage
 
-
-#III - Usage
-
-
-See the **Benchmarks** and **Samples** directory for examples of programs using those libraries
+See the **Benchmarks** and **Samples** directories for examples.
