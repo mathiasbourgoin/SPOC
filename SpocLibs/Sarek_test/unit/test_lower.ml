@@ -320,6 +320,60 @@ let test_lower_let () =
         true
     | _ -> false)
 
+(* Test lowering BSP constructs *)
+
+(* Helper to check if IR contains a barrier call anywhere *)
+let rec contains_barrier = function
+  | App (IntrinsicRef (_, "block_barrier"), _) -> true
+  | Seq (a, b) -> contains_barrier a || contains_barrier b
+  | Local (_, body) -> contains_barrier body
+  | If (_, body) -> contains_barrier body
+  | Ife (_, then_, else_) -> contains_barrier then_ || contains_barrier else_
+  | While (_, body) -> contains_barrier body
+  | DoLoop (_, _, _, body) -> contains_barrier body
+  | _ -> false
+
+(* Helper to check if IR starts with Local(Arr(..., Shared), ...) *)
+let is_local_shared_arr = function
+  | Local (Arr (_, _, _, Shared), _) -> true
+  | _ -> false
+
+let test_lower_let_shared () =
+  (* let%shared (tile : float32) = () in unit *)
+  let body = mk_texpr TEUnit t_unit in
+  let te = mk_texpr (TELetShared ("tile", 0, t_float32, None, body)) t_unit in
+  let state = create_state (empty_fun_map ()) in
+  let ir = lower_expr state te in
+  check_ir_is
+    "let%shared lowers to Local(Arr(..., Shared), ...)"
+    ir
+    is_local_shared_arr
+
+let test_lower_let_shared_sized () =
+  (* let%shared (tile : float32) = 64 in unit *)
+  let body = mk_texpr TEUnit t_unit in
+  let size = int_texpr 64 in
+  let te =
+    mk_texpr (TELetShared ("tile", 0, t_float32, Some size, body)) t_unit
+  in
+  let state = create_state (empty_fun_map ()) in
+  let ir = lower_expr state te in
+  check_ir_is
+    "let%shared with size lowers to Local(Arr(..., Shared), ...)"
+    ir
+    (function
+    | Local (Arr (_, Int 64, _, Shared), _) -> true
+    | _ -> false)
+
+let test_lower_superstep () =
+  (* let%superstep step = unit in unit - should generate barrier *)
+  let step_body = mk_texpr TEUnit t_unit in
+  let cont = mk_texpr TEUnit t_unit in
+  let te = mk_texpr (TESuperstep ("step", false, step_body, cont)) t_unit in
+  let state = create_state (empty_fun_map ()) in
+  let ir = lower_expr state te in
+  check_ir_is "let%superstep generates barrier call" ir contains_barrier
+
 (* Test suite *)
 let () =
   Alcotest.run
@@ -377,4 +431,13 @@ let () =
           Alcotest.test_case "vec set" `Quick test_lower_vec_set;
         ] );
       ("let", [Alcotest.test_case "let" `Quick test_lower_let]);
+      ( "bsp",
+        [
+          Alcotest.test_case "let_shared" `Quick test_lower_let_shared;
+          Alcotest.test_case
+            "let_shared_sized"
+            `Quick
+            test_lower_let_shared_sized;
+          Alcotest.test_case "superstep" `Quick test_lower_superstep;
+        ] );
     ]
