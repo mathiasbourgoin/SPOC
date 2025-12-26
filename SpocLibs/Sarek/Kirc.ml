@@ -1355,6 +1355,60 @@ module Std = struct
     Mem.set b 0 (aux (Mem.get a 0) 1)
 end
 
+(** Kernel fusion module - fuse producer/consumer kernels to eliminate
+    intermediate arrays *)
+module Fusion = struct
+  [@@@warning "-32"] (* These are public API functions *)
+
+  (** Check if two kirc_kernel bodies can be fused via an intermediate array.
+      Returns true if producer writes to the intermediate and consumer reads
+      from it with compatible access patterns. *)
+  let can_fuse_bodies (producer_body : Kirc_Ast.k_ext)
+      (consumer_body : Kirc_Ast.k_ext) ~intermediate =
+    try
+      let prod_ir = Sarek_ir.of_k_ext producer_body in
+      let cons_ir = Sarek_ir.of_k_ext consumer_body in
+      Sarek_fusion.can_fuse prod_ir cons_ir intermediate
+    with Sarek_ir.Conversion_error _ -> false
+
+  (** Fuse two kernel bodies, eliminating the intermediate array. Returns the
+      fused k_ext body. *)
+  let fuse_bodies (producer_body : Kirc_Ast.k_ext)
+      (consumer_body : Kirc_Ast.k_ext) ~intermediate =
+    let prod_ir = Sarek_ir.of_k_ext producer_body in
+    let cons_ir = Sarek_ir.of_k_ext consumer_body in
+    let fused_ir = Sarek_fusion.fuse prod_ir cons_ir intermediate in
+    Sarek_ir.to_k_ext fused_ir
+
+  (** Fuse two kirc_kernels, eliminating the intermediate array. The consumer's
+      structure is preserved with the producer inlined.
+      @param producer The kernel that writes to the intermediate
+      @param consumer The kernel that reads from the intermediate
+      @param intermediate Name of the array to eliminate
+      @return A new kirc_kernel with the fused body *)
+  let fuse_kernels (producer : ('a, 'b, 'c) kirc_kernel)
+      (consumer : ('d, 'e, 'f) kirc_kernel) ~intermediate =
+    let fused_body = fuse_bodies producer.body consumer.body ~intermediate in
+    (* Use consumer's structure with fused body *)
+    {
+      ml_kern = consumer.ml_kern;
+      body = fused_body;
+      ret_val = consumer.ret_val;
+      extensions =
+        Array.append producer.extensions consumer.extensions
+        |> Array.to_list |> List.sort_uniq compare |> Array.of_list;
+    }
+
+  (** Try to fuse a pipeline of kernel bodies.
+      @return (fused_body, list of eliminated intermediate array names) *)
+  let fuse_pipeline_bodies (bodies : Kirc_Ast.k_ext list) =
+    try
+      let irs = List.map Sarek_ir.of_k_ext bodies in
+      let fused_ir, eliminated = Sarek_fusion.fuse_pipeline irs in
+      (Sarek_ir.to_k_ext fused_ir, eliminated)
+    with Sarek_ir.Conversion_error msg -> failwith ("Fusion failed: " ^ msg)
+end
+
 module Sarek_vector = struct
   let length v = Int32.of_int (Vector.length v)
 end
