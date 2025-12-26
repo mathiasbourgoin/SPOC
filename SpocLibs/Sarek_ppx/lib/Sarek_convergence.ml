@@ -125,12 +125,6 @@ let is_warp_convergence_ref (ref : intrinsic_ref) : bool =
   | CorePrimitiveRef name ->
       Sarek_core_primitives.is_warp_convergence_point name
 
-(** Get the name of an intrinsic ref for error messages *)
-let intrinsic_ref_name (ref : intrinsic_ref) : string =
-  match ref with
-  | IntrinsicRef (path, name) -> String.concat "." (path @ [name])
-  | CorePrimitiveRef name -> name
-
 (** Collect errors from convergence analysis *)
 let rec check_expr ctx (te : texpr) : Sarek_error.error list =
   match te.te with
@@ -144,7 +138,7 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
   | TEIntrinsicFun (ref, args) when is_warp_convergence_ref ref ->
       let arg_errors = List.concat_map (check_expr ctx) args in
       if ctx.mode = Diverged then
-        let name = intrinsic_ref_name ref in
+        let name = Sarek_env.intrinsic_ref_display_name ref in
         Sarek_error.Warp_collective_in_diverged_flow (name, te.te_loc)
         :: arg_errors
       else arg_errors
