@@ -550,7 +550,11 @@ let primitives =
     (* === Atomic Operations ===
        All atomics return the OLD value at the memory location.
        Variance is ThreadVarying because return value depends on execution order.
-       purity = Atomic distinguishes from Pure and Impure. *)
+       purity = Atomic distinguishes from Pure and Impure.
+
+       NOTE on pointer representation: The first argument is typed as int32/int64/float
+       here for simplicity. In lowering, this becomes an array reference + index.
+       The actual pointer arithmetic is handled by the code generator. *)
     {
       name = "atomic_add_int32";
       typ = t_fun [t_int32; t_int32] t_int32;
@@ -626,10 +630,47 @@ let primitives =
       purity = Atomic;
       category = "atomic";
     };
+    (* CUDA-specific increment/decrement *)
+    {
+      name = "atomic_inc_int32";
+      typ = t_fun [t_int32; t_int32] t_int32;
+      (* ptr, modulo -> old (increments, wraps at modulo) *)
+      variance = ThreadVarying;
+      convergence = NoEffect;
+      purity = Atomic;
+      category = "atomic";
+    };
+    {
+      name = "atomic_dec_int32";
+      typ = t_fun [t_int32; t_int32] t_int32;
+      (* ptr, modulo -> old (decrements, wraps at modulo) *)
+      variance = ThreadVarying;
+      convergence = NoEffect;
+      purity = Atomic;
+      category = "atomic";
+    };
+    (* 64-bit atomics - requires compute capability 3.5+ *)
+    {
+      name = "atomic_add_int64";
+      typ = t_fun [t_int64; t_int64] t_int64;
+      variance = ThreadVarying;
+      convergence = NoEffect;
+      purity = Atomic;
+      category = "atomic";
+    };
     (* Float atomics - limited hardware support *)
     {
       name = "atomic_add_float32";
       typ = t_fun [t_float32; t_float32] t_float32;
+      variance = ThreadVarying;
+      convergence = NoEffect;
+      purity = Atomic;
+      category = "atomic";
+    };
+    {
+      name = "atomic_add_float64";
+      typ = t_fun [t_float64; t_float64] t_float64;
+      (* requires compute capability 6.0+ *)
       variance = ThreadVarying;
       convergence = NoEffect;
       purity = Atomic;

@@ -305,6 +305,14 @@ let test_atomic () =
     "atomic_add_float32 is atomic"
     true
     (is_atomic "atomic_add_float32") ;
+  check bool "atomic_inc_int32 is atomic" true (is_atomic "atomic_inc_int32") ;
+  check bool "atomic_dec_int32 is atomic" true (is_atomic "atomic_dec_int32") ;
+  check bool "atomic_add_int64 is atomic" true (is_atomic "atomic_add_int64") ;
+  check
+    bool
+    "atomic_add_float64 is atomic"
+    true
+    (is_atomic "atomic_add_float64") ;
   check bool "sin is not atomic" false (is_atomic "sin") ;
   check bool "block_barrier is not atomic" false (is_atomic "block_barrier")
 
@@ -330,7 +338,7 @@ let test_category () =
   let sync = primitives_in_category "sync" in
   check bool "sync category has barrier" true (List.length sync >= 1) ;
   let atomics = primitives_in_category "atomic" in
-  check bool "atomic category has primitives" true (List.length atomics >= 10)
+  check bool "atomic category has primitives" true (List.length atomics >= 14)
 
 (* === Test suites === *)
 
