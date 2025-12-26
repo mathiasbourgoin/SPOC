@@ -9,17 +9,19 @@
  * be redefined by user libraries.
  ******************************************************************************)
 
-(** Variance levels in the GPU execution model. Forms a lattice: Uniform ≤
-    BlockVarying ≤ ThreadVarying *)
+(** Variance levels in the GPU execution model.
+    Forms a lattice: Uniform ≤ BlockVarying ≤ WarpVarying ≤ ThreadVarying *)
 type variance =
   | Uniform  (** Same value for all threads in grid *)
   | BlockVarying  (** Uniform within block, varies between blocks *)
+  | WarpVarying  (** Uniform within warp, varies between warps *)
   | ThreadVarying  (** Varies per thread *)
 
 (** Convergence requirements for synchronization primitives *)
 type convergence =
   | NoEffect  (** Does not affect convergence *)
   | ConvergencePoint  (** All workgroup threads must reach together *)
+  | WarpConvergence  (** All warp threads must reach together *)
 
 (** Purity classification for optimization *)
 type purity =

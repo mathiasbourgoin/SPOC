@@ -8,16 +8,19 @@
 
 open Sarek_types
 
-(** Variance levels in the GPU execution model *)
+(** Variance levels in the GPU execution model.
+    Forms a lattice: Uniform ≤ BlockVarying ≤ WarpVarying ≤ ThreadVarying *)
 type variance =
   | Uniform  (** Same value for all threads in grid *)
   | BlockVarying  (** Uniform within block, varies between blocks *)
+  | WarpVarying  (** Uniform within warp, varies between warps *)
   | ThreadVarying  (** Varies per thread *)
 
 (** Convergence requirements *)
 type convergence =
   | NoEffect  (** Does not affect convergence *)
   | ConvergencePoint  (** All workgroup threads must reach together *)
+  | WarpConvergence  (** All warp threads must reach together *)
 
 (** Purity classification *)
 type purity =
@@ -299,6 +302,169 @@ let primitives =
       purity = Pure;
       category = "math_f32";
     };
+    (* === Float64 Math (Pure) === *)
+    {
+      name = "sin_f64";
+      typ = t_fun [t_float64] t_float64;
+      variance = Uniform;
+      convergence = NoEffect;
+      purity = Pure;
+      category = "math_f64";
+    };
+    {
+      name = "cos_f64";
+      typ = t_fun [t_float64] t_float64;
+      variance = Uniform;
+      convergence = NoEffect;
+      purity = Pure;
+      category = "math_f64";
+    };
+    {
+      name = "tan_f64";
+      typ = t_fun [t_float64] t_float64;
+      variance = Uniform;
+      convergence = NoEffect;
+      purity = Pure;
+      category = "math_f64";
+    };
+    {
+      name = "sqrt_f64";
+      typ = t_fun [t_float64] t_float64;
+      variance = Uniform;
+      convergence = NoEffect;
+      purity = Pure;
+      category = "math_f64";
+    };
+    {
+      name = "exp_f64";
+      typ = t_fun [t_float64] t_float64;
+      variance = Uniform;
+      convergence = NoEffect;
+      purity = Pure;
+      category = "math_f64";
+    };
+    {
+      name = "log_f64";
+      typ = t_fun [t_float64] t_float64;
+      variance = Uniform;
+      convergence = NoEffect;
+      purity = Pure;
+      category = "math_f64";
+    };
+    {
+      name = "log2_f64";
+      typ = t_fun [t_float64] t_float64;
+      variance = Uniform;
+      convergence = NoEffect;
+      purity = Pure;
+      category = "math_f64";
+    };
+    {
+      name = "log10_f64";
+      typ = t_fun [t_float64] t_float64;
+      variance = Uniform;
+      convergence = NoEffect;
+      purity = Pure;
+      category = "math_f64";
+    };
+    {
+      name = "pow_f64";
+      typ = t_fun [t_float64; t_float64] t_float64;
+      variance = Uniform;
+      convergence = NoEffect;
+      purity = Pure;
+      category = "math_f64";
+    };
+    {
+      name = "fabs_f64";
+      typ = t_fun [t_float64] t_float64;
+      variance = Uniform;
+      convergence = NoEffect;
+      purity = Pure;
+      category = "math_f64";
+    };
+    {
+      name = "floor_f64";
+      typ = t_fun [t_float64] t_float64;
+      variance = Uniform;
+      convergence = NoEffect;
+      purity = Pure;
+      category = "math_f64";
+    };
+    {
+      name = "ceil_f64";
+      typ = t_fun [t_float64] t_float64;
+      variance = Uniform;
+      convergence = NoEffect;
+      purity = Pure;
+      category = "math_f64";
+    };
+    {
+      name = "fma_f64";
+      typ = t_fun [t_float64; t_float64; t_float64] t_float64;
+      variance = Uniform;
+      convergence = NoEffect;
+      purity = Pure;
+      category = "math_f64";
+    };
+    (* === Integer Primitives (Pure) === *)
+    {
+      name = "abs_int32";
+      typ = t_fun [t_int32] t_int32;
+      variance = Uniform;
+      convergence = NoEffect;
+      purity = Pure;
+      category = "int";
+    };
+    {
+      name = "min_int32";
+      typ = t_fun [t_int32; t_int32] t_int32;
+      variance = Uniform;
+      convergence = NoEffect;
+      purity = Pure;
+      category = "int";
+    };
+    {
+      name = "max_int32";
+      typ = t_fun [t_int32; t_int32] t_int32;
+      variance = Uniform;
+      convergence = NoEffect;
+      purity = Pure;
+      category = "int";
+    };
+    {
+      name = "clz_int32";
+      typ = t_fun [t_int32] t_int32;
+      variance = Uniform;
+      convergence = NoEffect;
+      purity = Pure;
+      category = "int";
+    };
+    {
+      name = "popcount_int32";
+      typ = t_fun [t_int32] t_int32;
+      variance = Uniform;
+      convergence = NoEffect;
+      purity = Pure;
+      category = "int";
+    };
+    (* === Memory Fences (Impure, no convergence) === *)
+    {
+      name = "memory_fence_block";
+      typ = t_fun [t_unit] t_unit;
+      variance = Uniform;
+      convergence = NoEffect;
+      purity = Impure;
+      category = "fence";
+    };
+    {
+      name = "memory_fence_device";
+      typ = t_fun [t_unit] t_unit;
+      variance = Uniform;
+      convergence = NoEffect;
+      purity = Impure;
+      category = "fence";
+    };
   ]
 
 (* Build lookup table for O(1) access *)
@@ -326,18 +492,22 @@ let is_pure name =
 
 let variance_of name = Option.map (fun p -> p.variance) (find name)
 
-(* Variance lattice join (least upper bound) *)
+(* Variance lattice join (least upper bound)
+   Lattice: Uniform ≤ BlockVarying ≤ WarpVarying ≤ ThreadVarying *)
 let join_variance v1 v2 =
   match (v1, v2) with
   | Uniform, v | v, Uniform -> v
   | BlockVarying, BlockVarying -> BlockVarying
+  | BlockVarying, WarpVarying | WarpVarying, BlockVarying -> WarpVarying
+  | WarpVarying, WarpVarying -> WarpVarying
   | ThreadVarying, _ | _, ThreadVarying -> ThreadVarying
 
 (* Variance ordering: v1 ≤ v2 means v1 is less varying than v2 *)
 let variance_leq v1 v2 =
   match (v1, v2) with
   | Uniform, _ -> true
-  | BlockVarying, (BlockVarying | ThreadVarying) -> true
+  | BlockVarying, (BlockVarying | WarpVarying | ThreadVarying) -> true
+  | WarpVarying, (WarpVarying | ThreadVarying) -> true
   | ThreadVarying, ThreadVarying -> true
   | _ -> false
 
@@ -348,11 +518,13 @@ let primitives_in_category cat =
 let pp_variance fmt = function
   | Uniform -> Format.fprintf fmt "Uniform"
   | BlockVarying -> Format.fprintf fmt "BlockVarying"
+  | WarpVarying -> Format.fprintf fmt "WarpVarying"
   | ThreadVarying -> Format.fprintf fmt "ThreadVarying"
 
 let pp_convergence fmt = function
   | NoEffect -> Format.fprintf fmt "NoEffect"
   | ConvergencePoint -> Format.fprintf fmt "ConvergencePoint"
+  | WarpConvergence -> Format.fprintf fmt "WarpConvergence"
 
 let pp_purity fmt = function
   | Pure -> Format.fprintf fmt "Pure"

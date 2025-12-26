@@ -17,6 +17,9 @@ let test_is_core_primitive () =
   check bool "thread_idx_x is core" true (is_core_primitive "thread_idx_x") ;
   check bool "block_barrier is core" true (is_core_primitive "block_barrier") ;
   check bool "sin is core" true (is_core_primitive "sin") ;
+  check bool "sin_f64 is core" true (is_core_primitive "sin_f64") ;
+  check bool "abs_int32 is core" true (is_core_primitive "abs_int32") ;
+  check bool "memory_fence_block is core" true (is_core_primitive "memory_fence_block") ;
   check bool "random is not core" false (is_core_primitive "random")
 
 (* === Variance tests === *)
@@ -100,11 +103,33 @@ let test_join_variance () =
     (of_pp pp_variance)
     "ThreadVarying + BlockVarying"
     ThreadVarying
-    (join_variance ThreadVarying BlockVarying)
+    (join_variance ThreadVarying BlockVarying) ;
+  (* WarpVarying tests *)
+  check
+    (of_pp pp_variance)
+    "WarpVarying + WarpVarying"
+    WarpVarying
+    (join_variance WarpVarying WarpVarying) ;
+  check
+    (of_pp pp_variance)
+    "BlockVarying + WarpVarying"
+    WarpVarying
+    (join_variance BlockVarying WarpVarying) ;
+  check
+    (of_pp pp_variance)
+    "WarpVarying + ThreadVarying"
+    ThreadVarying
+    (join_variance WarpVarying ThreadVarying) ;
+  check
+    (of_pp pp_variance)
+    "Uniform + WarpVarying"
+    WarpVarying
+    (join_variance Uniform WarpVarying)
 
 let test_variance_leq () =
   check bool "Uniform <= Uniform" true (variance_leq Uniform Uniform) ;
   check bool "Uniform <= BlockVarying" true (variance_leq Uniform BlockVarying) ;
+  check bool "Uniform <= WarpVarying" true (variance_leq Uniform WarpVarying) ;
   check
     bool
     "Uniform <= ThreadVarying"
@@ -117,9 +142,24 @@ let test_variance_leq () =
     (variance_leq BlockVarying BlockVarying) ;
   check
     bool
+    "BlockVarying <= WarpVarying"
+    true
+    (variance_leq BlockVarying WarpVarying) ;
+  check
+    bool
     "BlockVarying <= ThreadVarying"
     true
     (variance_leq BlockVarying ThreadVarying) ;
+  check
+    bool
+    "WarpVarying <= WarpVarying"
+    true
+    (variance_leq WarpVarying WarpVarying) ;
+  check
+    bool
+    "WarpVarying <= ThreadVarying"
+    true
+    (variance_leq WarpVarying ThreadVarying) ;
   check
     bool
     "ThreadVarying <= ThreadVarying"
@@ -130,6 +170,11 @@ let test_variance_leq () =
     "ThreadVarying <= Uniform"
     false
     (variance_leq ThreadVarying Uniform) ;
+  check
+    bool
+    "WarpVarying <= BlockVarying"
+    false
+    (variance_leq WarpVarying BlockVarying) ;
   check bool "BlockVarying <= Uniform" false (variance_leq BlockVarying Uniform)
 
 (* === Convergence tests === *)
@@ -153,8 +198,11 @@ let test_pure () =
   check bool "sin is pure" true (is_pure "sin") ;
   check bool "cos is pure" true (is_pure "cos") ;
   check bool "sqrt is pure" true (is_pure "sqrt") ;
+  check bool "sin_f64 is pure" true (is_pure "sin_f64") ;
+  check bool "abs_int32 is pure" true (is_pure "abs_int32") ;
   check bool "thread_idx_x is pure" true (is_pure "thread_idx_x") ;
-  check bool "block_barrier is not pure" false (is_pure "block_barrier")
+  check bool "block_barrier is not pure" false (is_pure "block_barrier") ;
+  check bool "memory_fence_block is not pure" false (is_pure "memory_fence_block")
 
 (* === Category tests === *)
 
@@ -167,6 +215,12 @@ let test_category () =
     (List.length thread_ids >= 4) ;
   let math = primitives_in_category "math_f32" in
   check bool "math_f32 category has primitives" true (List.length math >= 10) ;
+  let math64 = primitives_in_category "math_f64" in
+  check bool "math_f64 category has primitives" true (List.length math64 >= 10) ;
+  let ints = primitives_in_category "int" in
+  check bool "int category has primitives" true (List.length ints >= 5) ;
+  let fences = primitives_in_category "fence" in
+  check bool "fence category has primitives" true (List.length fences >= 2) ;
   let sync = primitives_in_category "sync" in
   check bool "sync category has barrier" true (List.length sync >= 1)
 
