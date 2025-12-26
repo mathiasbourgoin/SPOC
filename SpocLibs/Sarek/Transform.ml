@@ -415,7 +415,7 @@ let map2 (ker : ('a, 'b, 'c -> 'd -> 'e, 'f, 'g) sarek_kernel)
   let offset = ref 0 in
   (match device.Devices.specific_info with
   | Devices.CudaInfo _cI ->
-      let extra = Kernel.Cuda.cuda_create_extra 2 in
+      let extra = Kernel.Cuda.cuda_create_extra 3 in
       Kernel.Cuda.cuda_load_arg offset extra device bin 0 (arg_of_vec vec_in1) ;
       Kernel.Cuda.cuda_load_arg offset extra device bin 1 (arg_of_vec vec_in2) ;
       Kernel.Cuda.cuda_load_arg offset extra device bin 2 (arg_of_vec vec_out) ;
@@ -444,7 +444,7 @@ let map2 (ker : ('a, 'b, 'c -> 'd -> 'e, 'f, 'g) sarek_kernel)
 let reduce (_ker : ('a, 'b, 'c -> 'c -> 'd, 'e, 'f) sarek_kernel)
     ?dev:(_device = (Spoc.Devices.init ()).(0))
     (_vec_in1 : ('c, 'i) Vector.vector) : 'd =
-  Obj.magic ()
+  failwith "Transform.reduce: not implemented"
 
 let ( ^> ) = fun a b -> a ^ "\n" ^ b
 
