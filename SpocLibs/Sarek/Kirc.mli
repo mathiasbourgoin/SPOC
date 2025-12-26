@@ -533,6 +533,29 @@ module Math : sig
     val make_local : Int32.t -> float array
   end
 end
+
+(** Kernel fusion module - fuse producer/consumer kernels *)
+module Fusion : sig
+  (** Check if two kernel bodies can be fused via an intermediate array *)
+  val can_fuse_bodies :
+    Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> intermediate:string -> bool
+
+  (** Fuse two kernel bodies, eliminating the intermediate array *)
+  val fuse_bodies :
+    Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> intermediate:string -> Kirc_Ast.k_ext
+
+  (** Fuse two kirc_kernel records *)
+  val fuse_kernels :
+    ('a, 'b, 'c) kirc_kernel ->
+    ('d, 'e, 'f) kirc_kernel ->
+    intermediate:string ->
+    ('d, 'e, 'f) kirc_kernel
+
+  (** Fuse a pipeline of kernel bodies, returning fused body and eliminated
+      arrays *)
+  val fuse_pipeline_bodies : Kirc_Ast.k_ext list -> Kirc_Ast.k_ext * string list
+end
+
 (*val a_to_vect : Kirc_Ast.k_ext -> Kirc_Ast.k_ext
   val a_to_return_vect :
   Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext -> Kirc_Ast.k_ext

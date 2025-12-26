@@ -18,7 +18,8 @@
   test_convention_kernel
   test_pragma
   test_barrier_converged
-  test_superstep)
+  test_superstep
+  test_fusion_api)
  (libraries
   spoc
   sarek
@@ -53,4 +54,5 @@
   test_convention_kernel.exe
   test_pragma.exe
   test_barrier_converged.exe
-  test_superstep.exe))
+  test_superstep.exe
+  test_fusion_api.exe))
