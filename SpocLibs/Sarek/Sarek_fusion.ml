@@ -863,3 +863,122 @@ let try_fuse_all (producer : kernel) (consumer : kernel) (intermediate : string)
   else if can_fuse producer consumer intermediate then
     Some (fuse producer consumer intermediate)
   else None
+
+(** {1 Phase 5: Auto-Fusion Heuristics}
+
+    Simple pattern-based heuristics for deciding when fusion is beneficial.
+    Conservative - never recommends fusion when it would hurt. *)
+
+(** Fusion decision *)
+type fusion_decision =
+  | Fuse  (** Definitely fuse *)
+  | DontFuse  (** Definitely don't fuse *)
+  | MaybeFuse  (** User should decide / profile *)
+
+(** Fusion hint with decision and reason *)
+type fusion_hint = {decision : fusion_decision; reason : string}
+
+(** Simple heuristics for auto-fusion decisions. These are conservative - they
+    never recommend fusion when it would hurt. *)
+let should_fuse (producer : kernel) (consumer : kernel) (intermediate : string)
+    : fusion_hint =
+  let prod_info = analyze producer in
+  let cons_info = analyze consumer in
+
+  (* Rule 1: Can't fuse if barriers present *)
+  if prod_info.has_barriers || cons_info.has_barriers then
+    {decision = DontFuse; reason = "Barrier prevents fusion"}
+  else
+    (* Rule 2: Always fuse simple element-wise (OneToOne -> OneToOne) *)
+    match
+      ( List.assoc_opt intermediate prod_info.writes,
+        List.assoc_opt intermediate cons_info.reads )
+    with
+    | Some (OneToOne _), Some (OneToOne _) ->
+        {decision = Fuse; reason = "Element-wise producer/consumer"}
+    (* Rule 3: Map -> Reduction is always good *)
+    | Some (OneToOne _), Some (Reduction _) ->
+        {decision = Fuse; reason = "Map-reduce pattern"}
+    (* Rule 4: Stencil needs shared memory - maybe beneficial *)
+    | Some (OneToOne _), Some (Stencil offsets) ->
+        if List.length offsets <= 3 then
+          {decision = MaybeFuse; reason = "Small stencil - profile to decide"}
+        else
+          {decision = DontFuse; reason = "Large stencil radius - keep separate"}
+    (* Rule 5: Gather patterns - don't fuse (unpredictable access) *)
+    | Some (OneToOne _), Some Gather ->
+        {decision = DontFuse; reason = "Gather pattern - keep separate"}
+    (* Rule 6: Unknown - be conservative *)
+    | _ ->
+        {decision = MaybeFuse; reason = "Unknown pattern - profile to decide"}
+
+(** Auto-fuse a pipeline using heuristics. Returns: (fused_kernel,
+    eliminated_arrays, skipped_reasons) *)
+let auto_fuse_pipeline (kernels : kernel list) :
+    kernel * string list * string list =
+  match kernels with
+  | [] -> failwith "auto_fuse_pipeline: empty list"
+  | [k] -> (k, [], [])
+  | k1 :: rest ->
+      let rec loop current eliminated skipped = function
+        | [] -> (current, eliminated, skipped)
+        | k :: ks -> (
+            let curr_info = analyze current in
+            let k_info = analyze k in
+            let curr_writes = List.map fst curr_info.writes in
+            let k_reads = List.map fst k_info.reads in
+            let candidates =
+              List.filter (fun arr -> List.mem arr k_reads) curr_writes
+            in
+            match candidates with
+            | [] -> loop k eliminated skipped ks
+            | inter :: _ -> (
+                let hint = should_fuse current k inter in
+                match hint.decision with
+                | Fuse -> (
+                    match try_fuse current k inter with
+                    | Some fused -> loop fused (inter :: eliminated) skipped ks
+                    | None -> loop k eliminated (hint.reason :: skipped) ks)
+                | DontFuse -> loop k eliminated (hint.reason :: skipped) ks
+                | MaybeFuse ->
+                    (* Conservative: don't auto-fuse uncertain cases *)
+                    loop k eliminated (hint.reason :: skipped) ks))
+      in
+      loop k1 [] [] rest
+
+(** Print fusion analysis for a pipeline *)
+let analyze_pipeline (kernels : kernel list) : unit =
+  Printf.printf "=== Fusion Analysis ===\n" ;
+  let pairs =
+    match kernels with
+    | [] | [_] -> []
+    | k1 :: rest ->
+        let rec pairs acc prev = function
+          | [] -> List.rev acc
+          | k :: ks -> pairs ((prev, k) :: acc) k ks
+        in
+        pairs [] k1 rest
+  in
+  List.iteri
+    (fun i (prod, cons) ->
+      let prod_info = analyze prod in
+      let cons_info = analyze cons in
+      let candidates =
+        List.filter
+          (fun arr -> List.mem_assoc arr cons_info.reads)
+          (List.map fst prod_info.writes)
+      in
+      Printf.printf "\n[%d] %s -> %s\n" i prod.kern_name cons.kern_name ;
+      List.iter
+        (fun inter ->
+          let hint = should_fuse prod cons inter in
+          let symbol =
+            match hint.decision with
+            | Fuse -> "[FUSE]"
+            | DontFuse -> "[SKIP]"
+            | MaybeFuse -> "[MAYBE]"
+          in
+          Printf.printf "  %s via '%s': %s\n" symbol inter hint.reason)
+        candidates)
+    pairs ;
+  Printf.printf "\n"

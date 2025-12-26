@@ -596,6 +596,196 @@ let test_try_fuse_all () =
   assert (Option.is_some result) ;
   Printf.printf "test_try_fuse_all: PASSED\n"
 
+(** Test: should_fuse recommends Fuse for OneToOne -> OneToOne *)
+let test_should_fuse_one_to_one () =
+  let producer =
+    {
+      kern_name = "producer";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SAssign
+          ( LArrayElem ("temp", thread_idx_x),
+            EBinop (Mul, EArrayRead ("input", thread_idx_x), EConst (CInt32 2l))
+          );
+    }
+  in
+  let consumer =
+    {
+      kern_name = "consumer";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SAssign
+          ( LArrayElem ("output", thread_idx_x),
+            EBinop (Add, EArrayRead ("temp", thread_idx_x), EConst (CInt32 1l))
+          );
+    }
+  in
+  let hint = should_fuse producer consumer "temp" in
+  assert (hint.decision = Fuse) ;
+  Printf.printf "test_should_fuse_one_to_one: PASSED (%s)\n" hint.reason
+
+(** Test: should_fuse returns DontFuse for barrier *)
+let test_should_fuse_barrier () =
+  let producer =
+    {
+      kern_name = "producer";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SSeq
+          [
+            SAssign
+              ( LArrayElem ("temp", thread_idx_x),
+                EArrayRead ("input", thread_idx_x) );
+            SBarrier;
+          ];
+    }
+  in
+  let consumer =
+    {
+      kern_name = "consumer";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SAssign
+          ( LArrayElem ("output", thread_idx_x),
+            EArrayRead ("temp", thread_idx_x) );
+    }
+  in
+  let hint = should_fuse producer consumer "temp" in
+  assert (hint.decision = DontFuse) ;
+  Printf.printf "test_should_fuse_barrier: PASSED (%s)\n" hint.reason
+
+(** Test: should_fuse returns MaybeFuse for small stencil *)
+let test_should_fuse_small_stencil () =
+  let producer =
+    {
+      kern_name = "producer";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SAssign
+          ( LArrayElem ("temp", thread_idx_x),
+            EBinop (Mul, EArrayRead ("input", thread_idx_x), EConst (CInt32 2l))
+          );
+    }
+  in
+  (* Consumer reads temp[i-1], temp[i], temp[i+1] *)
+  let consumer =
+    {
+      kern_name = "consumer";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SAssign
+          ( LArrayElem ("output", thread_idx_x),
+            EBinop
+              ( Add,
+                EBinop
+                  ( Add,
+                    EArrayRead
+                      ("temp", EBinop (Sub, thread_idx_x, EConst (CInt32 1l))),
+                    EArrayRead ("temp", thread_idx_x) ),
+                EArrayRead
+                  ("temp", EBinop (Add, thread_idx_x, EConst (CInt32 1l))) ) );
+    }
+  in
+  let hint = should_fuse producer consumer "temp" in
+  assert (hint.decision = MaybeFuse) ;
+  Printf.printf "test_should_fuse_small_stencil: PASSED (%s)\n" hint.reason
+
+(** Test: auto_fuse_pipeline with OneToOne kernels *)
+let test_auto_fuse_pipeline () =
+  (* K1: a[i] = input[i] * 2 *)
+  let k1 =
+    {
+      kern_name = "k1";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SAssign
+          ( LArrayElem ("a", thread_idx_x),
+            EBinop (Mul, EArrayRead ("input", thread_idx_x), EConst (CInt32 2l))
+          );
+    }
+  in
+  (* K2: b[i] = a[i] + 1 *)
+  let k2 =
+    {
+      kern_name = "k2";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SAssign
+          ( LArrayElem ("b", thread_idx_x),
+            EBinop (Add, EArrayRead ("a", thread_idx_x), EConst (CInt32 1l)) );
+    }
+  in
+  (* K3: output[i] = b[i] * 3 *)
+  let k3 =
+    {
+      kern_name = "k3";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SAssign
+          ( LArrayElem ("output", thread_idx_x),
+            EBinop (Mul, EArrayRead ("b", thread_idx_x), EConst (CInt32 3l)) );
+    }
+  in
+  let fused, eliminated, skipped = auto_fuse_pipeline [k1; k2; k3] in
+  assert (List.mem "a" eliminated) ;
+  assert (List.mem "b" eliminated) ;
+  assert (List.length skipped = 0) ;
+  let info = analyze fused in
+  assert (List.mem_assoc "input" info.reads) ;
+  assert (List.mem_assoc "output" info.writes) ;
+  Printf.printf
+    "test_auto_fuse_pipeline: PASSED (eliminated: %s)\n"
+    (String.concat ", " eliminated)
+
+(** Test: auto_fuse_pipeline skips stencil *)
+let test_auto_fuse_pipeline_skip_stencil () =
+  (* K1: temp[i] = input[i] * 2 *)
+  let k1 =
+    {
+      kern_name = "k1";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SAssign
+          ( LArrayElem ("temp", thread_idx_x),
+            EBinop (Mul, EArrayRead ("input", thread_idx_x), EConst (CInt32 2l))
+          );
+    }
+  in
+  (* K2: output[i] = temp[i-1] + temp[i+1] (stencil) *)
+  let k2 =
+    {
+      kern_name = "k2";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SAssign
+          ( LArrayElem ("output", thread_idx_x),
+            EBinop
+              ( Add,
+                EArrayRead
+                  ("temp", EBinop (Sub, thread_idx_x, EConst (CInt32 1l))),
+                EArrayRead
+                  ("temp", EBinop (Add, thread_idx_x, EConst (CInt32 1l))) ) );
+    }
+  in
+  let _fused, eliminated, skipped = auto_fuse_pipeline [k1; k2] in
+  (* Should skip because stencil is MaybeFuse *)
+  assert (List.length eliminated = 0) ;
+  assert (List.length skipped = 1) ;
+  Printf.printf
+    "test_auto_fuse_pipeline_skip_stencil: PASSED (skipped: %s)\n"
+    (String.concat ", " skipped)
+
 let () =
   Printf.printf "=== Fusion Unit Tests ===\n" ;
   test_expr_equal () ;
@@ -618,4 +808,10 @@ let () =
   test_can_fuse_stencil () ;
   test_fuse_stencil () ;
   test_try_fuse_all () ;
+  Printf.printf "\n=== Auto-Fusion Heuristics Tests ===\n" ;
+  test_should_fuse_one_to_one () ;
+  test_should_fuse_barrier () ;
+  test_should_fuse_small_stencil () ;
+  test_auto_fuse_pipeline () ;
+  test_auto_fuse_pipeline_skip_stencil () ;
   Printf.printf "=== All tests passed! ===\n"
