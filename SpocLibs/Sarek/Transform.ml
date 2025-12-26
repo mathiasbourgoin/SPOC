@@ -292,16 +292,6 @@ let reduce (_ker : ('a, 'b, 'c -> 'c -> 'd, 'e, 'f) sarek_kernel)
     (_vec_in1 : ('c, 'i) Vector.vector) : 'd =
   failwith "Transform.reduce: not implemented"
 
-let ( ^> ) = fun a b -> a ^ "\n" ^ b
-
-(* (\* External from SPOC *\) *)
-(* external opencl_compile : string -> string -> Devices.generalInfo -> Kernel.kernel = *)
-(*     "spoc_opencl_compile" *)
-(* external cuda_compile : *)
-(*   string -> *)
-(*   string -> Devices.generalInfo -> Kernel.kernel = *)
-(*   "spoc_cuda_compile" *)
-
 let build_new_ker spoc_ker kir_ker ker ml_fun =
   ( spoc_ker,
     {
