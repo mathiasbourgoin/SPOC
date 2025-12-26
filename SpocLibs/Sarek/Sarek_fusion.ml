@@ -12,6 +12,7 @@ open Sarek_ir
 type access_pattern =
   | OneToOne of expr  (** arr[idx] where idx is thread-uniform *)
   | Stencil of int list  (** arr[idx + offset] for each offset *)
+  | Reduction of binop  (** Reduction with associative op (Add, Mul, etc.) *)
   | Gather  (** arr[f(idx)] - arbitrary index *)
   | Unknown
 
@@ -408,3 +409,166 @@ let fuse_pipeline (kernels : kernel list) : kernel * string list =
                 loop k eliminated ks)
       in
       loop k1 [] rest
+
+(** {1 Reduction Fusion}
+
+    Fuses a map kernel with a subsequent reduction, eliminating the intermediate
+    array. Pattern:
+    - Map: temp[i] = f(input[i])
+    - Reduce: result = fold(op, temp)
+    - Fused: result = fold(op, f(input[i])) *)
+
+(** Detect if a statement is a reduction pattern. Returns the accumulator
+    variable, the reduction operator, the array being reduced, and the loop
+    body. *)
+let detect_reduction_pattern stmt =
+  (* Look for pattern: for i = 0 to n: acc = acc op arr[i] *)
+  match stmt with
+  | SFor (loop_var, _start, _stop, Upto, body) -> (
+      match body with
+      | SAssign (LVar acc, EBinop (op, EVar acc', EArrayRead (arr, EVar idx)))
+        when acc.var_id = acc'.var_id && idx.var_id = loop_var.var_id ->
+          Some (acc, op, arr, loop_var)
+      | SAssign (LVar acc, EBinop (op, EArrayRead (arr, EVar idx), EVar acc'))
+        when acc.var_id = acc'.var_id && idx.var_id = loop_var.var_id ->
+          Some (acc, op, arr, loop_var)
+      | _ -> None)
+  | _ -> None
+
+(** Check if a kernel is a reduction over an array *)
+let is_reduction_kernel (k : kernel) (arr : string) : binop option =
+  let rec find_reduction = function
+    | SSeq stmts -> List.find_map find_reduction stmts
+    | stmt -> (
+        match detect_reduction_pattern stmt with
+        | Some (_acc, op, reduced_arr, _) when reduced_arr = arr -> Some op
+        | _ -> None)
+  in
+  find_reduction k.kern_body
+
+(** Check if a map kernel can be fused with a reduction kernel.
+
+    Requirements: 1. Map writes to intermediate with OneToOne pattern 2.
+    Reduction reads from intermediate in a reduction pattern 3. No barriers in
+    either kernel *)
+let can_fuse_reduction (map_kernel : kernel) (reduce_kernel : kernel)
+    (intermediate : string) : bool =
+  let map_info = analyze map_kernel in
+  let reduce_info = analyze reduce_kernel in
+
+  (* Map must write to intermediate with OneToOne *)
+  let map_writes_inter =
+    match List.assoc_opt intermediate map_info.writes with
+    | Some (OneToOne _) -> true
+    | _ -> false
+  in
+
+  (* Reduction must read from intermediate *)
+  let reduce_reads_inter = is_reduction_kernel reduce_kernel intermediate in
+
+  (* No barriers *)
+  let no_barriers =
+    (not map_info.has_barriers) && not reduce_info.has_barriers
+  in
+
+  map_writes_inter && Option.is_some reduce_reads_inter && no_barriers
+
+(** Fuse a map kernel into a reduction kernel, eliminating intermediate array.
+
+    The resulting kernel: 1. Has reduction structure 2. Inlines map computation
+    at each reduction step 3. Does not reference the intermediate array *)
+let fuse_reduction (map_kernel : kernel) (reduce_kernel : kernel)
+    (intermediate : string) : kernel =
+  (* Find what map writes to intermediate[idx] *)
+  let map_idx =
+    (* Get the index expression from map's write *)
+    let writes = collect_writes_stmt [] map_kernel.kern_body in
+    List.find_map
+      (fun (arr, idx) -> if arr = intermediate then Some idx else None)
+      writes
+  in
+
+  match map_idx with
+  | None -> reduce_kernel (* Can't find map write, return unchanged *)
+  | Some _idx -> (
+      (* Find the map expression: what is written to intermediate *)
+      let map_expr = find_write_expr map_kernel.kern_body intermediate _idx in
+      match map_expr with
+      | None -> reduce_kernel
+      | Some replacement ->
+          (* In the reduction, substitute arr[loop_var] with map_expr *)
+          let rec transform_stmt stmt =
+            match stmt with
+            | SFor (loop_var, start, stop, dir, body) -> (
+                match detect_reduction_pattern stmt with
+                | Some (_acc, _op, arr, _) when arr = intermediate ->
+                    (* This is the reduction loop - substitute array reads *)
+                    let new_body =
+                      subst_array_read_stmt
+                        intermediate
+                        (EVar loop_var)
+                        replacement
+                        body
+                    in
+                    SFor (loop_var, start, stop, dir, new_body)
+                | _ -> SFor (loop_var, start, stop, dir, transform_stmt body))
+            | SSeq stmts -> SSeq (List.map transform_stmt stmts)
+            | SIf (cond, s1, s2) ->
+                SIf (cond, transform_stmt s1, Option.map transform_stmt s2)
+            | SWhile (cond, body) -> SWhile (cond, transform_stmt body)
+            | SMatch (e, cases) ->
+                SMatch (e, List.map (fun (p, s) -> (p, transform_stmt s)) cases)
+            | other -> other
+          in
+
+          let fused_body = transform_stmt reduce_kernel.kern_body in
+
+          (* Remove intermediate from params, add map's input params *)
+          let fused_params =
+            List.filter
+              (fun d ->
+                match d with
+                | DParam (v, _) -> v.var_name <> intermediate
+                | DShared (name, _, _) -> name <> intermediate
+                | _ -> true)
+              reduce_kernel.kern_params
+          in
+
+          let cons_param_names =
+            List.filter_map
+              (fun d ->
+                match d with
+                | DParam (v, _) -> Some v.var_name
+                | DShared (name, _, _) -> Some name
+                | _ -> None)
+              fused_params
+          in
+
+          let new_params =
+            List.filter
+              (fun d ->
+                match d with
+                | DParam (v, _) ->
+                    v.var_name <> intermediate
+                    && not (List.mem v.var_name cons_param_names)
+                | DShared (name, _, _) ->
+                    name <> intermediate && not (List.mem name cons_param_names)
+                | _ -> true)
+              map_kernel.kern_params
+          in
+
+          {
+            kern_name = reduce_kernel.kern_name ^ "_fused";
+            kern_params = fused_params @ new_params;
+            kern_locals = reduce_kernel.kern_locals @ map_kernel.kern_locals;
+            kern_body = fused_body;
+          })
+
+(** Try to fuse map+reduce, falling back to regular fusion if not applicable *)
+let try_fuse (producer : kernel) (consumer : kernel) (intermediate : string) :
+    kernel option =
+  if can_fuse_reduction producer consumer intermediate then
+    Some (fuse_reduction producer consumer intermediate)
+  else if can_fuse producer consumer intermediate then
+    Some (fuse producer consumer intermediate)
+  else None

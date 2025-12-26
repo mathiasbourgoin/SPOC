@@ -238,6 +238,205 @@ let test_subst_array_read () =
       | _ -> failwith "test_subst_array_read: wrong inner expression")
   | _ -> failwith "test_subst_array_read: wrong result structure"
 
+(** Test: detect_reduction_pattern *)
+let test_detect_reduction_pattern () =
+  let loop_var =
+    {var_name = "i"; var_id = 1; var_type = TInt32; var_mutable = true}
+  in
+  let acc =
+    {var_name = "sum"; var_id = 2; var_type = TInt32; var_mutable = true}
+  in
+  (* for i = 0 to n: sum = sum + arr[i] *)
+  let body =
+    SAssign (LVar acc, EBinop (Add, EVar acc, EArrayRead ("arr", EVar loop_var)))
+  in
+  let stmt =
+    SFor (loop_var, EConst (CInt32 0l), EConst (CInt32 100l), Upto, body)
+  in
+  let result = detect_reduction_pattern stmt in
+  assert (Option.is_some result) ;
+  let detected_acc, op, arr, _ = Option.get result in
+  assert (detected_acc.var_name = "sum") ;
+  assert (op = Add) ;
+  assert (arr = "arr") ;
+  Printf.printf "test_detect_reduction_pattern: PASSED\n"
+
+(** Test: is_reduction_kernel *)
+let test_is_reduction_kernel () =
+  let loop_var =
+    {var_name = "i"; var_id = 1; var_type = TInt32; var_mutable = true}
+  in
+  let acc =
+    {var_name = "sum"; var_id = 2; var_type = TInt32; var_mutable = true}
+  in
+  let kernel =
+    {
+      kern_name = "reduce_sum";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SSeq
+          [
+            SAssign (LVar acc, EConst (CInt32 0l));
+            SFor
+              ( loop_var,
+                EConst (CInt32 0l),
+                EConst (CInt32 100l),
+                Upto,
+                SAssign
+                  ( LVar acc,
+                    EBinop (Add, EVar acc, EArrayRead ("temp", EVar loop_var))
+                  ) );
+          ];
+    }
+  in
+  let result = is_reduction_kernel kernel "temp" in
+  assert (result = Some Add) ;
+  Printf.printf "test_is_reduction_kernel: PASSED\n"
+
+(** Test: can_fuse_reduction *)
+let test_can_fuse_reduction () =
+  (* Map: temp[i] = input[i] * 2 *)
+  let map_kernel =
+    {
+      kern_name = "map";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SAssign
+          ( LArrayElem ("temp", thread_idx_x),
+            EBinop (Mul, EArrayRead ("input", thread_idx_x), EConst (CInt32 2l))
+          );
+    }
+  in
+  (* Reduce: sum = fold(+, temp) *)
+  let loop_var =
+    {var_name = "i"; var_id = 1; var_type = TInt32; var_mutable = true}
+  in
+  let acc =
+    {var_name = "sum"; var_id = 2; var_type = TInt32; var_mutable = true}
+  in
+  let reduce_kernel =
+    {
+      kern_name = "reduce";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SSeq
+          [
+            SAssign (LVar acc, EConst (CInt32 0l));
+            SFor
+              ( loop_var,
+                EConst (CInt32 0l),
+                EConst (CInt32 100l),
+                Upto,
+                SAssign
+                  ( LVar acc,
+                    EBinop (Add, EVar acc, EArrayRead ("temp", EVar loop_var))
+                  ) );
+          ];
+    }
+  in
+  let result = can_fuse_reduction map_kernel reduce_kernel "temp" in
+  assert result ;
+  Printf.printf "test_can_fuse_reduction: PASSED\n"
+
+(** Test: fuse_reduction *)
+let test_fuse_reduction () =
+  (* Map: temp[thread_idx_x] = input[thread_idx_x] * 2 *)
+  let map_kernel =
+    {
+      kern_name = "map";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SAssign
+          ( LArrayElem ("temp", thread_idx_x),
+            EBinop (Mul, EArrayRead ("input", thread_idx_x), EConst (CInt32 2l))
+          );
+    }
+  in
+  (* Reduce: sum = fold(+, temp) with loop var i *)
+  let loop_var =
+    {var_name = "i"; var_id = 1; var_type = TInt32; var_mutable = true}
+  in
+  let acc =
+    {var_name = "sum"; var_id = 2; var_type = TInt32; var_mutable = true}
+  in
+  let reduce_kernel =
+    {
+      kern_name = "reduce";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SSeq
+          [
+            SAssign (LVar acc, EConst (CInt32 0l));
+            SFor
+              ( loop_var,
+                EConst (CInt32 0l),
+                EConst (CInt32 100l),
+                Upto,
+                SAssign
+                  ( LVar acc,
+                    EBinop (Add, EVar acc, EArrayRead ("temp", EVar loop_var))
+                  ) );
+          ];
+    }
+  in
+  let fused = fuse_reduction map_kernel reduce_kernel "temp" in
+  assert (fused.kern_name = "reduce_fused") ;
+  (* Fused should not read from temp anymore *)
+  let info = analyze fused in
+  assert (not (List.mem_assoc "temp" info.reads)) ;
+  Printf.printf "test_fuse_reduction: PASSED\n"
+
+(** Test: try_fuse with reduction *)
+let test_try_fuse_reduction () =
+  (* Map: temp[i] = input[i] * 2 *)
+  let map_kernel =
+    {
+      kern_name = "map";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SAssign
+          ( LArrayElem ("temp", thread_idx_x),
+            EBinop (Mul, EArrayRead ("input", thread_idx_x), EConst (CInt32 2l))
+          );
+    }
+  in
+  let loop_var =
+    {var_name = "i"; var_id = 1; var_type = TInt32; var_mutable = true}
+  in
+  let acc =
+    {var_name = "sum"; var_id = 2; var_type = TInt32; var_mutable = true}
+  in
+  let reduce_kernel =
+    {
+      kern_name = "reduce";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SSeq
+          [
+            SAssign (LVar acc, EConst (CInt32 0l));
+            SFor
+              ( loop_var,
+                EConst (CInt32 0l),
+                EConst (CInt32 100l),
+                Upto,
+                SAssign
+                  ( LVar acc,
+                    EBinop (Add, EVar acc, EArrayRead ("temp", EVar loop_var))
+                  ) );
+          ];
+    }
+  in
+  let result = try_fuse map_kernel reduce_kernel "temp" in
+  assert (Option.is_some result) ;
+  Printf.printf "test_try_fuse_reduction: PASSED\n"
+
 let () =
   Printf.printf "=== Fusion Unit Tests ===\n" ;
   test_expr_equal () ;
@@ -248,4 +447,10 @@ let () =
   test_can_fuse_with_barrier () ;
   test_fuse_simple () ;
   test_fuse_pipeline () ;
+  Printf.printf "\n=== Reduction Fusion Tests ===\n" ;
+  test_detect_reduction_pattern () ;
+  test_is_reduction_kernel () ;
+  test_can_fuse_reduction () ;
+  test_fuse_reduction () ;
+  test_try_fuse_reduction () ;
   Printf.printf "=== All tests passed! ===\n"
