@@ -15,25 +15,23 @@
  (synopsis "High-level GPGPU programming library for OCaml")
  (description "")
  (depends
- (ocaml (>= 4.07.0))
+  (ocaml (>= 4.14.0))
   re
   (dune (> 2.0))
   cppo
-  (camlp4 (< 5.0))
   ctypes
   ctypes-foreign
  ))
 
 (package
  (name sarek)
- (synopsis "GPGPU kernel DSL for OCaml")
+ (synopsis "GPGPU kernel DSL runtime library for OCaml")
  (description "")
  (depends
- (ocaml (>= 4.07.0))
- (spoc (= :version))
+  (ocaml (>= 4.14.0))
+  (spoc (= :version))
   re
   (dune (> 2.0))
-  (camlp4 (< 5.0))
  ))
 
 (package
@@ -41,7 +39,7 @@
   (synopsis "PPX to declare external GPGPU kernels written in CUDA or OpenCL")
   (description "")
   (depends
- (ocaml (>= 4.07.0))
+  (ocaml (>= 4.14.0))
   (dune (> 2.0))
   (ppxlib (>= 0.22.0))
   (spoc (= :version))

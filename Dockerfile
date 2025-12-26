@@ -4,7 +4,7 @@ RUN apt-get -y update && \
 #RUN apt-get -y install sudo pkg-config git build-essential m4 software-properties-common aspcud unzip curl libx11-dev ocaml ocaml-native-compilers camlp4-extra git libffi-dev emacs pkg-config wget aspcud
      apt-get -y install sudo pkg-config git build-essential \
      m4 software-properties-common aspcud unzip curl \
-     libx11-dev ocaml ocaml-native-compilers camlp4-extra \
+     libx11-dev ocaml ocaml-native-compilers \
      git libffi-dev emacs pkg-config wget aspcud
 #RUN apt-get install -y git libffi-dev emacs pkg-config wget aspcud
 #RUN apt-get install -y emacs
@@ -32,7 +32,7 @@ RUN opam init -a --root /home/spoc/.opam && \
 #RUN eval `opam config env`&& opam update && \
     eval `opam config env`&& opam update && \
     opam depext conf-pkg-config.1.0 && \
-    opam install camlp4 ctypes ocp-indent ctypes-foreign ocamlfind cppo
+    opam install ctypes ocp-indent ctypes-foreign ocamlfind cppo ppxlib
 #RUN eval `opam config env` && opam depext conf-pkg-config.1.0
 #RUN eval `opam config env` && opam install camlp4 ctypes ocp-indent ctypes-foreign ocamlfind
 #RUN eval `opam config env` && opam install ctypes
@@ -50,7 +50,7 @@ ADD docker_scripts/.bashrc /home/spoc/.bashrc
 WORKDIR SPOC/Spoc
 RUN eval `opam config env` && make && \
     ocamlfind install spoc *.cma *.a *.so *.cmxa *.cmi META  && \
-    cd extension && make && make install
+    echo "SPOC installed"
 #RUN eval `opam config env` && ocamlfind install spoc *.cma *.a *.so *.cmxa *.cmi META
 #RUN cd extension && eval `opam config env` && make && make install
 #RUN cd extension && eval `opam config env` && make install 

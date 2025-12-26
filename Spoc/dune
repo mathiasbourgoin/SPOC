@@ -1,4 +1,4 @@
-(dirs dependencies dependencies/Cuda dependencies/CL extension)
+(dirs dependencies dependencies/Cuda dependencies/CL)
 
 (library
  (name spoc)
