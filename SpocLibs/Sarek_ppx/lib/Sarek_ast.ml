@@ -154,6 +154,11 @@ and expr_desc =
   | ETyped of expr * type_expr
   (* Module access *)
   | EOpen of string list * expr  (** let open M.N in e *)
+  (* BSP superstep constructs *)
+  | ELetShared of string * type_expr * expr option * expr
+      (** let%shared name : elem_type [= size] in body *)
+  | ESuperstep of string * bool * expr * expr
+      (** let%superstep [~divergent] name = body in cont *)
 
 and for_dir = Upto | Downto
 
@@ -401,6 +406,28 @@ let rec pp_expr fmt expr =
         (String.concat "." path)
         pp_expr
         e
+  | ELetShared (name, elem_ty, size_opt, body) ->
+      Format.fprintf
+        fmt
+        "(let%%shared %s : %a%a in %a)"
+        name
+        pp_type_expr
+        elem_ty
+        (fun fmt -> function
+          | None -> () | Some size -> Format.fprintf fmt " = %a" pp_expr size)
+        size_opt
+        pp_expr
+        body
+  | ESuperstep (name, divergent, step_body, cont) ->
+      Format.fprintf
+        fmt
+        "(let%%superstep %s%s = %a in %a)"
+        (if divergent then "~divergent " else "")
+        name
+        pp_expr
+        step_body
+        pp_expr
+        cont
 
 let pp_param fmt p =
   Format.fprintf fmt "(%s : %a)" p.param_name pp_type_expr p.param_type

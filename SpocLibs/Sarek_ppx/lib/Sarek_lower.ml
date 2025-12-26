@@ -392,6 +392,25 @@ let rec lower_expr (state : state) (te : texpr) : Kirc_Ast.k_ext =
   | TENativeFun func_expr -> Kirc_Ast.NativeFunExpr func_expr
   (* Pragma *)
   | TEPragma (opts, body) -> Kirc_Ast.Pragma (opts, lower_expr state body)
+  (* BSP constructs *)
+  | TELetShared (name, _id, elem_ty, size_opt, body) ->
+      (* Lower the size: use block_dim_x if not specified *)
+      let size_ir =
+        match size_opt with
+        | Some size -> lower_expr state size
+        | None -> Kirc_Ast.IntrinsicRef (["Gpu"], "block_dim_x")
+      in
+      let elt = elttype_of_typ elem_ty in
+      let arr_ir = Kirc_Ast.Arr (name, size_ir, elt, Kirc_Ast.Shared) in
+      let body_ir = lower_expr state body in
+      Kirc_Ast.Local (arr_ir, body_ir)
+  | TESuperstep (_name, _divergent, step_body, cont) ->
+      (* Lower body, then emit barrier, then lower continuation *)
+      let body_ir = lower_expr state step_body in
+      let barrier_ir = Kirc_Ast.IntrinsicRef (["Gpu"], "block_barrier") in
+      let barrier_call = Kirc_Ast.App (barrier_ir, [|Kirc_Ast.Unit|]) in
+      let cont_ir = lower_expr state cont in
+      Kirc_Ast.Seq (body_ir, Kirc_Ast.Seq (barrier_call, cont_ir))
   (* Intrinsic constant - emit IntrinsicRef, device code resolved at JIT *)
   | TEIntrinsicConst ref -> (
       match ref with

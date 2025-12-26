@@ -103,6 +103,14 @@ let rec is_thread_varying (te : texpr) : bool =
       is_thread_varying value || is_thread_varying body
   (* Typed expression: shouldn't appear but check inner *)
   | TESeq es -> List.exists is_thread_varying es
+  (* BSP constructs: check body/continuation *)
+  | TELetShared (_, _, _, size_opt, body) ->
+      (match size_opt with
+        | Some size -> is_thread_varying size
+        | None -> false)
+      || is_thread_varying body
+  | TESuperstep (_, _, step_body, cont) ->
+      is_thread_varying step_body || is_thread_varying cont
   (* Default: assume uniform (minimize false positives) *)
   | TEIf _ | TEFor _ | TEWhile _ | TEMatch _ | TERecord _ | TEConstr _
   | TEReturn _ | TECreateArray _ | TEGlobalRef _ | TENative _ | TENativeFun _
@@ -182,6 +190,22 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
   | TEReturn e -> check_expr ctx e
   | TECreateArray (size, _, _) -> check_expr ctx size
   | TEPragma (_, body) -> check_expr ctx body
+  (* BSP constructs *)
+  | TELetShared (_, _, _, size_opt, body) ->
+      let size_errors =
+        match size_opt with None -> [] | Some size -> check_expr ctx size
+      in
+      size_errors @ check_expr ctx body
+  | TESuperstep (_, divergent, step_body, cont) ->
+      (* Check body: if divergent flag is set, allow diverged mode; otherwise
+         enforce convergence within the superstep body *)
+      let body_errors =
+        if divergent then check_expr ctx step_body
+        else check_expr {mode = Converged} step_body
+      in
+      (* After the implicit barrier, we're back to converged *)
+      let cont_errors = check_expr {mode = Converged} cont in
+      body_errors @ cont_errors
 
 (** Check a module item *)
 let check_module_item ctx (item : tmodule_item) : Sarek_error.error list =

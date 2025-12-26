@@ -537,7 +537,51 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
       let env' = Sarek_env.open_module path env in
       let* te, _env_inner = infer env' e in
       Ok (te, env)
-(* Return original env, not the one with opened module *)
+  (* Return original env, not the one with opened module *)
+  (* BSP constructs: let%shared and let%superstep *)
+  | ELetShared (name, elem_ty, size_opt, body) ->
+      (* Type the optional size expression *)
+      let* tsize_opt, env =
+        match size_opt with
+        | None -> Ok (None, env)
+        | Some size ->
+            let* tsize, env = infer env size in
+            let* () = unify_or_error tsize.ty t_int32 size.expr_loc in
+            Ok (Some tsize, env)
+      in
+      (* Create the shared array type *)
+      let elem_t = type_of_type_expr_env env elem_ty in
+      let arr_ty = TArr (elem_t, Shared) in
+      let var_id = fresh_var_id () in
+      let vi =
+        {
+          vi_type = arr_ty;
+          vi_mutable = false;
+          vi_is_param = false;
+          vi_index = var_id;
+          vi_is_vec = false;
+        }
+      in
+      let env' = add_var name vi env in
+      let* tbody, env' = infer env' body in
+      Ok
+        ( mk_texpr
+            (TELetShared (name, var_id, elem_t, tsize_opt, tbody))
+            tbody.ty
+            loc,
+          env' )
+  | ESuperstep (name, divergent, step_body, cont) ->
+      (* Type the superstep body - should be unit *)
+      let* tstep_body, env = infer env step_body in
+      let* () = unify_or_error tstep_body.ty t_unit step_body.expr_loc in
+      (* Type the continuation *)
+      let* tcont, env = infer env cont in
+      Ok
+        ( mk_texpr
+            (TESuperstep (name, divergent, tstep_body, tcont))
+            tcont.ty
+            loc,
+          env )
 
 and infer_list env exprs =
   let rec aux env acc = function

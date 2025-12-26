@@ -63,6 +63,11 @@ and texpr_desc =
       (** Reference to intrinsic constant *)
   | TEIntrinsicFun of Sarek_env.intrinsic_ref * texpr list
       (** Reference to intrinsic function, args *)
+  (* BSP superstep constructs *)
+  | TELetShared of string * int * typ * texpr option * texpr
+      (** name, var_id, elem_type, size_opt, body *)
+  | TESuperstep of string * bool * texpr * texpr
+      (** name, divergent, body, continuation *)
 
 and tpattern = {tpat : tpattern_desc; tpat_ty : typ; tpat_loc : loc}
 
@@ -307,6 +312,29 @@ let rec pp_texpr fmt te =
            ~pp_sep:(fun fmt () -> Format.fprintf fmt ", ")
            pp_texpr)
         args
+  | TELetShared (name, id, elem_ty, size_opt, body) ->
+      Format.fprintf
+        fmt
+        "(let%%shared %s#%d : %a%a in %a)"
+        name
+        id
+        pp_typ
+        elem_ty
+        (fun fmt -> function
+          | None -> () | Some size -> Format.fprintf fmt " = %a" pp_texpr size)
+        size_opt
+        pp_texpr
+        body
+  | TESuperstep (name, divergent, step_body, cont) ->
+      Format.fprintf
+        fmt
+        "(let%%superstep %s%s = %a in %a)"
+        (if divergent then "~divergent " else "")
+        name
+        pp_texpr
+        step_body
+        pp_texpr
+        cont
 
 and pp_tpattern fmt p =
   match p.tpat with

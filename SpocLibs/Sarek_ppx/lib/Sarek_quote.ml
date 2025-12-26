@@ -594,6 +594,17 @@ let rec collect_intrinsic_refs (te : texpr) : IntrinsicRefSet.t =
         exprs
   | TEReturn e | TEPragma (_, e) -> collect_intrinsic_refs e
   | TECreateArray (size, _, _) -> collect_intrinsic_refs size
+  | TELetShared (_, _, _, size_opt, body) ->
+      let size_refs =
+        match size_opt with
+        | Some size -> collect_intrinsic_refs size
+        | None -> IntrinsicRefSet.empty
+      in
+      IntrinsicRefSet.union size_refs (collect_intrinsic_refs body)
+  | TESuperstep (_, _, step_body, cont) ->
+      IntrinsicRefSet.union
+        (collect_intrinsic_refs step_body)
+        (collect_intrinsic_refs cont)
   | TEIntrinsicConst ref -> IntrinsicRefSet.singleton ref
   | TEIntrinsicFun (ref, args) ->
       let base = IntrinsicRefSet.singleton ref in

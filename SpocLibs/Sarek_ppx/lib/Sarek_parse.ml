@@ -129,8 +129,88 @@ let parse_unop (op : string) : Sarek_ast.unop option =
   | "lnot" -> Some Sarek_ast.Lnot
   | _ -> None
 
+(** Parse let%shared: let%shared name : type [= size] in body Syntax: let%shared
+    tile : float32 array in body let%shared tile : float32 array = 64 in body *)
+let rec parse_let_shared parse_expr (expr : expression) : Sarek_ast.expr_desc =
+  match expr.pexp_desc with
+  (* Pattern: let name : type = size in body
+     Note: when size is (), we treat it as no size specified *)
+  | Pexp_let
+      ( Nonrecursive,
+        [
+          {
+            pvb_pat = {ppat_desc = Ppat_constraint (name_pat, elem_type); _};
+            pvb_expr = size_expr;
+            _;
+          };
+        ],
+        body_expr ) ->
+      let name =
+        match name_pat.ppat_desc with
+        | Ppat_var {txt; _} -> txt
+        | _ ->
+            raise
+              (Parse_error_exn ("Expected variable name", name_pat.ppat_loc))
+      in
+      let elem_ty = parse_type elem_type in
+      (* Check if size is unit - if so, no size specified *)
+      let size =
+        match size_expr.pexp_desc with
+        | Pexp_construct ({txt = Lident "()"; _}, None) -> None
+        | _ -> Some (parse_expr size_expr)
+      in
+      let body = parse_expr body_expr in
+      Sarek_ast.ELetShared (name, elem_ty, size, body)
+  (* Shorthand: name : type in body (no explicit let) *)
+  | Pexp_constraint
+      ({pexp_desc = Pexp_sequence (name_expr, body_expr); _}, elem_type) -> (
+      match name_expr.pexp_desc with
+      | Pexp_ident {txt = Lident name; _} ->
+          let elem_ty = parse_type elem_type in
+          let body = parse_expr body_expr in
+          Sarek_ast.ELetShared (name, elem_ty, None, body)
+      | _ ->
+          raise
+            (Parse_error_exn
+               ("Expected identifier for shared array name", expr.pexp_loc)))
+  | _ ->
+      raise
+        (Parse_error_exn
+           ("Expected 'let%shared name : type [= size] in body'", expr.pexp_loc))
+
+(** Parse let%superstep: let%superstep [~divergent] name = body in cont Syntax:
+    let%superstep load = tile.(i) <- v in cont let%superstep ~divergent final =
+    ... in cont *)
+and parse_superstep parse_expr (expr : expression) : Sarek_ast.expr_desc =
+  match expr.pexp_desc with
+  (* Pattern: let name = body in cont *)
+  | Pexp_let
+      ( Nonrecursive,
+        [{pvb_pat; pvb_expr = step_body; pvb_attributes; _}],
+        cont_expr ) ->
+      let name =
+        match extract_name_from_pattern pvb_pat with
+        | Some n -> n
+        | None ->
+            raise
+              (Parse_error_exn ("Expected superstep name", pvb_pat.ppat_loc))
+      in
+      (* Check for ~divergent attribute *)
+      let divergent =
+        List.exists
+          (fun (attr : attribute) -> attr.attr_name.txt = "divergent")
+          pvb_attributes
+      in
+      let body = parse_expr step_body in
+      let cont = parse_expr cont_expr in
+      Sarek_ast.ESuperstep (name, divergent, body, cont)
+  | _ ->
+      raise
+        (Parse_error_exn
+           ("Expected 'let%superstep name = body in cont'", expr.pexp_loc))
+
 (** Parse an expression *)
-let rec parse_expression (expr : expression) : Sarek_ast.expr =
+and parse_expression (expr : expression) : Sarek_ast.expr =
   let loc = loc_of_ppxlib expr.pexp_loc in
   let e =
     match expr.pexp_desc with
@@ -450,6 +530,16 @@ let rec parse_expression (expr : expression) : Sarek_ast.expr =
       ->
         (* Pass through the function expression *)
         Sarek_ast.ENativeFun func_expr
+    (* Extension: let%shared name : type [= size] in body *)
+    | Pexp_extension
+        ({txt = "shared"; _}, PStr [{pstr_desc = Pstr_eval (inner_expr, _); _}])
+      ->
+        parse_let_shared parse_expression inner_expr
+    (* Extension: let%superstep [~divergent] name = body in cont *)
+    | Pexp_extension
+        ( {txt = "superstep"; _},
+          PStr [{pstr_desc = Pstr_eval (inner_expr, _); _}] ) ->
+        parse_superstep parse_expression inner_expr
     | _ -> raise (Parse_error_exn ("Unsupported expression", expr.pexp_loc))
   in
   {Sarek_ast.e; Sarek_ast.expr_loc = loc}
