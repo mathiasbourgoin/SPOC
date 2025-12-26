@@ -17,31 +17,6 @@ let a_to_return_vect k1 k2 idx =
   | FloatVar (i, s, _m) -> set_vect_var (get_vec (var i s) idx) k2
   | _ -> failwith "error a_to_return_vect"
 
-let param_list = ref []
-
-let add_to_param_list a = param_list := a :: !param_list
-
-let rec check_and_transform_to_map a =
-  match a with
-  | Plus (b, c) ->
-      Plus (check_and_transform_to_map b, check_and_transform_to_map c)
-  | Min (b, c) ->
-      Min (check_and_transform_to_map b, check_and_transform_to_map c)
-  | Mul (b, c) ->
-      Mul (check_and_transform_to_map b, check_and_transform_to_map c)
-  | Mod (b, c) ->
-      Mod (check_and_transform_to_map b, check_and_transform_to_map c)
-  | Div (b, c) ->
-      Div (check_and_transform_to_map b, check_and_transform_to_map c)
-  | IntId (_v, i) ->
-      if List.mem i !param_list then
-        IntVecAcc
-          ( IdName ("spoc_var" ^ string_of_int i),
-            Intrinsics ("blockIdx.x*blockDim.x+threadIdx.x", "get_global_id (0)")
-          ) (*(IntId ("spoc_global_id", -1)))*)
-      else a
-  | _ -> a
-
 let arg_of_vec v =
   match Vector.kind v with
   | Vector.Int32 _ -> Kernel.VInt32 v
@@ -166,141 +141,12 @@ let propagate f expr =
         ^ Kirc_Ast.string_of_ast expr
         ^ " unimplemented yet")
 
-let _map (ker : ('a, 'b, 'c -> 'd, 'e, 'f) sarek_kernel)
-    ?dev:(device = (Spoc.Devices.init ()).(0)) (vec_in : ('c, 'h) Vector.vector)
-    : ('d, 'j) Vector.vector =
-  let ker2, k = ker in
-  let k1, k2, k3 = (k.ml_kern, k.body, k.ret_val) in
-  param_list := [] ;
-  let aux = function
-    | Kern (args, body) ->
-        let new_args =
-          match args with
-          | Params p -> (
-              match p with
-              | Concat (Concat _, _) -> failwith "error multiple map args "
-              | Concat (a, Empty) ->
-                  params
-                    (concat
-                       (a_to_vect a)
-                       (concat (a_to_vect (fst k3)) (empty_arg ())))
-              | _ -> failwith "map type error")
-          | _ -> failwith "error map args"
-        in
-        let n_body =
-          let rec aux curr =
-            match curr with
-            | Return a ->
-                a_to_return_vect
-                  (fst k3)
-                  (aux a)
-                  (intrinsics
-                     "blockIdx.x*blockDim.x+threadIdx.x"
-                     "get_global_id(0)")
-            | Seq (a, b) -> seq a (aux b)
-            | Local (a, b) -> Local (a, aux b)
-            | Plus (a, b) -> Plus (aux a, aux b)
-            | Min (a, b) -> Min (aux a, aux b)
-            | Mul (a, b) -> Mul (aux a, aux b)
-            | Div (a, b) -> Div (aux a, aux b)
-            | Mod (a, b) -> Mod (aux a, aux b)
-            | LtBool (a, b) -> LtBool (aux a, aux b)
-            | GtBool (a, b) -> GtBool (aux a, aux b)
-            | Ife (a, b, c) -> Ife (aux a, aux b, aux c)
-            | Int a -> Int a
-            | IntId (_v, i) ->
-                if i = 0 then
-                  IntVecAcc
-                    ( IdName ("spoc_var" ^ string_of_int i),
-                      Intrinsics
-                        ( "blockIdx.x*blockDim.x+threadIdx.x",
-                          "get_global_id (0)" ) )
-                else curr
-            | a ->
-                print_ast a ;
-                assert false
-          in
-          aux body
-        in
-        Kern (new_args, n_body)
-    | _ -> failwith "malformed kernel for map"
-  in
-  let res =
-    ( ker2,
-      {
-        ml_kern = Tools.map k1 (snd k3);
-        body = aux k2;
-        ret_val = (Unit, Vector.int32);
-        extensions = k.extensions;
-      } )
-  in
-  let length = Vector.length vec_in in
-  let vec_out = Vector.create (snd k3) ~dev:device length in
-  Mem.to_device vec_in device ;
-  let target =
-    match device.Devices.specific_info with
-    | Devices.CudaInfo _ -> Devices.Cuda
-    | Devices.OpenCLInfo _ -> Devices.OpenCL
-  in
-  (*spoc_ker, kir_ker =*)
-  ignore (gen ~only:target res device) ;
-  let spoc_ker, _kir_ker = res in
-  let open Kernel in
-  let block = {blockX = 1; blockY = 1; blockZ = 1}
-  and grid = {gridX = 1; gridY = 1; gridZ = 1} in
-  spoc_ker#compile ~debug:true device ;
-  begin
-    let open Devices in
-    match device.Devices.specific_info with
-    | Devices.CudaInfo cI ->
-        if Vector.length vec_in < cI.maxThreadsDim.x then (
-          grid.gridX <- 1 ;
-          block.blockX <- Vector.length vec_in)
-        else (
-          block.blockX <- cI.maxThreadsDim.x ;
-          grid.gridX <- Vector.length vec_in / cI.maxThreadsDim.x)
-    | Devices.OpenCLInfo oI ->
-        if Vector.length vec_in < oI.Devices.max_work_item_size.Devices.x then (
-          grid.gridX <- 1 ;
-          block.blockX <- Vector.length vec_in)
-        else (
-          block.blockX <- oI.Devices.max_work_item_size.Devices.x ;
-          grid.gridX <- Vector.length vec_in / block.blockX)
-  end ;
-  let bin = Hashtbl.find (spoc_ker#get_binaries ()) device in
-  let offset = ref 0 in
-  (match device.Devices.specific_info with
-  | Devices.CudaInfo _cI ->
-      let extra = Kernel.Cuda.cuda_create_extra 2 in
-      Kernel.Cuda.cuda_load_arg offset extra device bin 0 (arg_of_vec vec_in) ;
-      Kernel.Cuda.cuda_load_arg offset extra device bin 1 (arg_of_vec vec_out) ;
-      Kernel.Cuda.cuda_launch_grid
-        offset
-        bin
-        grid
-        block
-        extra
-        device.Devices.general_info
-        0
-  | Devices.OpenCLInfo _ ->
-      let clFun = bin in
-      Kernel.OpenCL.opencl_load_arg offset device clFun 0 (arg_of_vec vec_in) ;
-      Kernel.OpenCL.opencl_load_arg offset device clFun 1 (arg_of_vec vec_out) ;
-      Kernel.OpenCL.opencl_launch_grid
-        clFun
-        grid
-        block
-        device.Devices.general_info
-        0) ;
-  vec_out
-
 let map2 (ker : ('a, 'b, 'c -> 'd -> 'e, 'f, 'g) sarek_kernel)
     ?dev:(device = (Spoc.Devices.init ()).(0))
     (vec_in1 : ('c, 'i) Vector.vector) (vec_in2 : ('d, 'k) Vector.vector) :
     ('e, 'm) Vector.vector =
   let ker2, k = ker in
   let k1, k2, k3 = (k.ml_kern, k.body, k.ret_val) in
-  param_list := [] ;
   let aux = function
     | Kern (args, body) ->
         let new_args =
