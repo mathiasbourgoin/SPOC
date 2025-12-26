@@ -202,6 +202,19 @@ let rec has_barrier stmt =
   | SMatch (_, cases) -> List.exists (fun (_, s) -> has_barrier s) cases
   | SAssign _ | SReturn _ | SExpr _ | SEmpty -> false
 
+(** Extract constant offset from index expression. Returns Some (base, offset)
+    if idx = base + const or base - const. *)
+let extract_offset idx =
+  match idx with
+  | EBinop (Add, base, EConst (CInt32 n)) -> Some (base, Int32.to_int n)
+  | EBinop (Sub, base, EConst (CInt32 n)) -> Some (base, -Int32.to_int n)
+  | EBinop (Add, EConst (CInt32 n), base) -> Some (base, Int32.to_int n)
+  | _ -> None
+
+(** Check if index is a base expression (no offset) *)
+let is_base_index idx =
+  match idx with EVar _ | EIntrinsic _ -> true | _ -> false
+
 (** Analyze access pattern for an array *)
 let analyze_pattern reads arr =
   let arr_reads = List.filter (fun (a, _) -> a = arr) reads in
@@ -209,9 +222,27 @@ let analyze_pattern reads arr =
   | [] -> Unknown
   | [(_, idx)] -> OneToOne idx
   | _ ->
-      (* Check if all reads use same base with constant offsets *)
-      (* Simplified: just mark as Gather for now *)
-      Gather
+      (* Check if all reads use same base with constant offsets -> stencil *)
+      let offsets_and_bases =
+        List.filter_map
+          (fun (_, idx) ->
+            match extract_offset idx with
+            | Some (base, off) -> Some (base, off)
+            | None when is_base_index idx -> Some (idx, 0)
+            | None -> None)
+          arr_reads
+      in
+      if List.length offsets_and_bases = List.length arr_reads then
+        (* All accesses have extractable offsets *)
+        match offsets_and_bases with
+        | [] -> Unknown
+        | (base, _) :: rest ->
+            (* Check all have same base *)
+            if List.for_all (fun (b, _) -> expr_equal b base) rest then
+              let offsets = List.map snd offsets_and_bases in
+              Stencil (List.sort_uniq compare offsets)
+            else Gather
+      else Gather
 
 (** Analyze a kernel's access patterns *)
 let analyze (k : kernel) : fusion_info =
@@ -569,6 +600,266 @@ let try_fuse (producer : kernel) (consumer : kernel) (intermediate : string) :
     kernel option =
   if can_fuse_reduction producer consumer intermediate then
     Some (fuse_reduction producer consumer intermediate)
+  else if can_fuse producer consumer intermediate then
+    Some (fuse producer consumer intermediate)
+  else None
+
+(** {1 Stencil Fusion}
+
+    Fuses stencil operations with tiling. When producer uses stencil pattern and
+    consumer also uses stencil, the combined radius determines halo size.
+
+    Example:
+    - Producer: temp[i] = (input[i-1] + input[i] + input[i+1]) / 3 (radius 1)
+    - Consumer: out[i] = (temp[i-1] + temp[i] + temp[i+1]) / 3 (radius 1)
+    - Fused: out[i] computed from input[i-2..i+2] (combined radius 2) *)
+
+(** Compute stencil radius from offset list *)
+let stencil_radius offsets =
+  List.fold_left (fun acc o -> max acc (abs o)) 0 offsets
+
+(** Get stencil info for array access in a kernel *)
+let get_stencil_info (k : kernel) (arr : string) : int list option =
+  let info = analyze k in
+  match List.assoc_opt arr info.reads with
+  | Some (Stencil offsets) -> Some offsets
+  | Some (OneToOne _) -> Some [0] (* OneToOne is stencil with radius 0 *)
+  | _ -> None
+
+(** Check if two stencil kernels can be fused.
+
+    Requirements: 1. Producer writes to intermediate 2. Consumer reads from
+    intermediate with stencil pattern 3. No barriers in either kernel 4.
+    Producer's output stencil is compatible *)
+let can_fuse_stencil (producer : kernel) (consumer : kernel)
+    (intermediate : string) : bool =
+  let prod_info = analyze producer in
+  let cons_info = analyze consumer in
+
+  (* Producer must write to intermediate *)
+  let prod_writes_inter =
+    List.exists (fun (arr, _) -> arr = intermediate) prod_info.writes
+  in
+
+  (* Consumer must read from intermediate with stencil or one-to-one *)
+  let cons_stencil =
+    match List.assoc_opt intermediate cons_info.reads with
+    | Some (Stencil _) -> true
+    | Some (OneToOne _) -> true
+    | _ -> false
+  in
+
+  (* No barriers *)
+  let no_barriers =
+    (not prod_info.has_barriers) && not cons_info.has_barriers
+  in
+
+  prod_writes_inter && cons_stencil && no_barriers
+
+(** Information about fused stencil *)
+type stencil_fusion_info = {
+  combined_radius : int;  (** Total radius after fusion *)
+  producer_radius : int;  (** Radius of producer's input stencil *)
+  consumer_radius : int;  (** Radius of consumer's intermediate stencil *)
+  input_arrays : string list;  (** Arrays read by producer *)
+}
+
+(** Analyze stencil fusion parameters *)
+let analyze_stencil_fusion (producer : kernel) (consumer : kernel)
+    (intermediate : string) : stencil_fusion_info option =
+  let prod_info = analyze producer in
+  let cons_info = analyze consumer in
+
+  (* Get producer's input stencil radius *)
+  let prod_input_radius =
+    List.fold_left
+      (fun acc (arr, pattern) ->
+        if arr <> intermediate then
+          match pattern with
+          | Stencil offsets -> max acc (stencil_radius offsets)
+          | OneToOne _ -> acc
+          | _ -> acc
+        else acc)
+      0
+      prod_info.reads
+  in
+
+  (* Get consumer's intermediate stencil radius *)
+  let cons_inter_radius =
+    match List.assoc_opt intermediate cons_info.reads with
+    | Some (Stencil offsets) -> Some (stencil_radius offsets)
+    | Some (OneToOne _) -> Some 0
+    | _ -> None
+  in
+  match cons_inter_radius with
+  | None -> None
+  | Some cons_inter_radius ->
+      (* Input arrays from producer *)
+      let input_arrays =
+        List.filter_map
+          (fun (arr, _) -> if arr <> intermediate then Some arr else None)
+          prod_info.reads
+      in
+
+      Some
+        {
+          combined_radius = prod_input_radius + cons_inter_radius;
+          producer_radius = prod_input_radius;
+          consumer_radius = cons_inter_radius;
+          input_arrays;
+        }
+
+(** Substitute all stencil reads of an array in an expression. For each read
+    arr[base + offset], substitute with the producer's computation shifted by
+    that offset. *)
+let rec subst_stencil_reads arr base_idx producer_expr offset_shift expr =
+  match expr with
+  | EArrayRead (a, idx) when a = arr -> (
+      match extract_offset idx with
+      | Some (base, off) when expr_equal base base_idx ->
+          (* Shift the producer expression by the offset *)
+          shift_expr producer_expr (off + offset_shift)
+      | None when expr_equal idx base_idx ->
+          shift_expr producer_expr offset_shift
+      | _ -> expr)
+  | EBinop (op, e1, e2) ->
+      EBinop
+        ( op,
+          subst_stencil_reads arr base_idx producer_expr offset_shift e1,
+          subst_stencil_reads arr base_idx producer_expr offset_shift e2 )
+  | EUnop (op, e) ->
+      EUnop (op, subst_stencil_reads arr base_idx producer_expr offset_shift e)
+  | EIntrinsic (path, name, args) ->
+      EIntrinsic
+        ( path,
+          name,
+          List.map
+            (subst_stencil_reads arr base_idx producer_expr offset_shift)
+            args )
+  | ECast (ty, e) ->
+      ECast (ty, subst_stencil_reads arr base_idx producer_expr offset_shift e)
+  | ETuple es ->
+      ETuple
+        (List.map
+           (subst_stencil_reads arr base_idx producer_expr offset_shift)
+           es)
+  | _ -> expr
+
+(** Shift all array indices in an expression by a constant offset *)
+and shift_expr expr offset =
+  if offset = 0 then expr
+  else
+    let shift_idx idx =
+      if offset > 0 then EBinop (Add, idx, EConst (CInt32 (Int32.of_int offset)))
+      else EBinop (Sub, idx, EConst (CInt32 (Int32.of_int (-offset))))
+    in
+    match expr with
+    | EArrayRead (arr, idx) -> EArrayRead (arr, shift_idx idx)
+    | EBinop (op, e1, e2) ->
+        EBinop (op, shift_expr e1 offset, shift_expr e2 offset)
+    | EUnop (op, e) -> EUnop (op, shift_expr e offset)
+    | EIntrinsic (path, name, args) ->
+        EIntrinsic (path, name, List.map (fun e -> shift_expr e offset) args)
+    | ECast (ty, e) -> ECast (ty, shift_expr e offset)
+    | ETuple es -> ETuple (List.map (fun e -> shift_expr e offset) es)
+    | _ -> expr
+
+(** Fuse stencil kernels, substituting intermediate reads with producer
+    computation *)
+let fuse_stencil (producer : kernel) (consumer : kernel) (intermediate : string)
+    : kernel =
+  (* Find the index and expression producer writes to intermediate *)
+  let writes = collect_writes_stmt [] producer.kern_body in
+  let write_info = List.find_opt (fun (arr, _) -> arr = intermediate) writes in
+
+  match write_info with
+  | None -> consumer
+  | Some (_, write_idx) -> (
+      let prod_expr =
+        find_write_expr producer.kern_body intermediate write_idx
+      in
+      match prod_expr with
+      | None -> consumer
+      | Some replacement ->
+          (* Substitute each read of intermediate in consumer *)
+          let rec transform_stmt stmt =
+            match stmt with
+            | SAssign (lv, e) ->
+                let e' =
+                  subst_stencil_reads intermediate write_idx replacement 0 e
+                in
+                SAssign (lv, e')
+            | SSeq stmts -> SSeq (List.map transform_stmt stmts)
+            | SIf (cond, s1, s2) ->
+                let cond' =
+                  subst_stencil_reads intermediate write_idx replacement 0 cond
+                in
+                SIf (cond', transform_stmt s1, Option.map transform_stmt s2)
+            | SWhile (cond, body) ->
+                let cond' =
+                  subst_stencil_reads intermediate write_idx replacement 0 cond
+                in
+                SWhile (cond', transform_stmt body)
+            | SFor (v, start, stop, dir, body) ->
+                SFor (v, start, stop, dir, transform_stmt body)
+            | SMatch (e, cases) ->
+                let e' =
+                  subst_stencil_reads intermediate write_idx replacement 0 e
+                in
+                SMatch (e', List.map (fun (p, s) -> (p, transform_stmt s)) cases)
+            | other -> other
+          in
+
+          let fused_body = transform_stmt consumer.kern_body in
+
+          (* Merge params, removing intermediate *)
+          let fused_params =
+            List.filter
+              (fun d ->
+                match d with
+                | DParam (v, _) -> v.var_name <> intermediate
+                | DShared (name, _, _) -> name <> intermediate
+                | _ -> true)
+              consumer.kern_params
+          in
+
+          let cons_param_names =
+            List.filter_map
+              (fun d ->
+                match d with
+                | DParam (v, _) -> Some v.var_name
+                | DShared (name, _, _) -> Some name
+                | _ -> None)
+              fused_params
+          in
+
+          let new_params =
+            List.filter
+              (fun d ->
+                match d with
+                | DParam (v, _) ->
+                    v.var_name <> intermediate
+                    && not (List.mem v.var_name cons_param_names)
+                | DShared (name, _, _) ->
+                    name <> intermediate && not (List.mem name cons_param_names)
+                | _ -> true)
+              producer.kern_params
+          in
+
+          {
+            kern_name = consumer.kern_name ^ "_stencil_fused";
+            kern_params = fused_params @ new_params;
+            kern_locals = consumer.kern_locals @ producer.kern_locals;
+            kern_body = fused_body;
+          })
+
+(** Enhanced try_fuse that includes stencil fusion *)
+let try_fuse_all (producer : kernel) (consumer : kernel) (intermediate : string)
+    : kernel option =
+  if can_fuse_reduction producer consumer intermediate then
+    Some (fuse_reduction producer consumer intermediate)
+  else if can_fuse_stencil producer consumer intermediate then
+    Some (fuse_stencil producer consumer intermediate)
   else if can_fuse producer consumer intermediate then
     Some (fuse producer consumer intermediate)
   else None

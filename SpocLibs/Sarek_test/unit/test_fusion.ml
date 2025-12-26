@@ -437,6 +437,165 @@ let test_try_fuse_reduction () =
   assert (Option.is_some result) ;
   Printf.printf "test_try_fuse_reduction: PASSED\n"
 
+(** Test: stencil pattern detection *)
+let test_stencil_pattern () =
+  (* Kernel: output[i] = (input[i-1] + input[i] + input[i+1]) / 3 *)
+  let kernel =
+    {
+      kern_name = "blur";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SAssign
+          ( LArrayElem ("output", thread_idx_x),
+            EBinop
+              ( Div,
+                EBinop
+                  ( Add,
+                    EBinop
+                      ( Add,
+                        EArrayRead
+                          ( "input",
+                            EBinop (Sub, thread_idx_x, EConst (CInt32 1l)) ),
+                        EArrayRead ("input", thread_idx_x) ),
+                    EArrayRead
+                      ("input", EBinop (Add, thread_idx_x, EConst (CInt32 1l)))
+                  ),
+                EConst (CInt32 3l) ) );
+    }
+  in
+  let info = analyze kernel in
+  match List.assoc_opt "input" info.reads with
+  | Some (Stencil offsets) ->
+      assert (List.mem (-1) offsets) ;
+      assert (List.mem 0 offsets) ;
+      assert (List.mem 1 offsets) ;
+      Printf.printf
+        "test_stencil_pattern: PASSED (offsets: %s)\n"
+        (String.concat ", " (List.map string_of_int offsets))
+  | _ -> failwith "test_stencil_pattern: expected Stencil pattern"
+
+(** Test: stencil radius computation *)
+let test_stencil_radius () =
+  assert (stencil_radius [-1; 0; 1] = 1) ;
+  assert (stencil_radius [-2; -1; 0; 1; 2] = 2) ;
+  assert (stencil_radius [0] = 0) ;
+  assert (stencil_radius [-3; 0; 1] = 3) ;
+  Printf.printf "test_stencil_radius: PASSED\n"
+
+(** Test: can_fuse_stencil *)
+let test_can_fuse_stencil () =
+  (* Producer: temp[i] = input[i-1] + input[i+1] *)
+  let producer =
+    {
+      kern_name = "producer";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SAssign
+          ( LArrayElem ("temp", thread_idx_x),
+            EBinop
+              ( Add,
+                EArrayRead
+                  ("input", EBinop (Sub, thread_idx_x, EConst (CInt32 1l))),
+                EArrayRead
+                  ("input", EBinop (Add, thread_idx_x, EConst (CInt32 1l))) ) );
+    }
+  in
+  (* Consumer: output[i] = temp[i-1] + temp[i] + temp[i+1] *)
+  let consumer =
+    {
+      kern_name = "consumer";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SAssign
+          ( LArrayElem ("output", thread_idx_x),
+            EBinop
+              ( Add,
+                EBinop
+                  ( Add,
+                    EArrayRead
+                      ("temp", EBinop (Sub, thread_idx_x, EConst (CInt32 1l))),
+                    EArrayRead ("temp", thread_idx_x) ),
+                EArrayRead
+                  ("temp", EBinop (Add, thread_idx_x, EConst (CInt32 1l))) ) );
+    }
+  in
+  let result = can_fuse_stencil producer consumer "temp" in
+  assert result ;
+  Printf.printf "test_can_fuse_stencil: PASSED\n"
+
+(** Test: fuse_stencil *)
+let test_fuse_stencil () =
+  (* Producer: temp[i] = input[i] * 2 (simple case) *)
+  let producer =
+    {
+      kern_name = "producer";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SAssign
+          ( LArrayElem ("temp", thread_idx_x),
+            EBinop (Mul, EArrayRead ("input", thread_idx_x), EConst (CInt32 2l))
+          );
+    }
+  in
+  (* Consumer: output[i] = temp[i-1] + temp[i+1] *)
+  let consumer =
+    {
+      kern_name = "consumer";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SAssign
+          ( LArrayElem ("output", thread_idx_x),
+            EBinop
+              ( Add,
+                EArrayRead
+                  ("temp", EBinop (Sub, thread_idx_x, EConst (CInt32 1l))),
+                EArrayRead
+                  ("temp", EBinop (Add, thread_idx_x, EConst (CInt32 1l))) ) );
+    }
+  in
+  let fused = fuse_stencil producer consumer "temp" in
+  assert (fused.kern_name = "consumer_stencil_fused") ;
+  (* Fused should read input, not temp *)
+  let info = analyze fused in
+  assert (not (List.mem_assoc "temp" info.reads)) ;
+  Printf.printf "test_fuse_stencil: PASSED\n"
+
+(** Test: try_fuse_all *)
+let test_try_fuse_all () =
+  (* Simple OneToOne case should use vertical fusion *)
+  let producer =
+    {
+      kern_name = "producer";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SAssign
+          ( LArrayElem ("temp", thread_idx_x),
+            EBinop (Mul, EArrayRead ("input", thread_idx_x), EConst (CInt32 2l))
+          );
+    }
+  in
+  let consumer =
+    {
+      kern_name = "consumer";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SAssign
+          ( LArrayElem ("output", thread_idx_x),
+            EBinop (Add, EArrayRead ("temp", thread_idx_x), EConst (CInt32 1l))
+          );
+    }
+  in
+  let result = try_fuse_all producer consumer "temp" in
+  assert (Option.is_some result) ;
+  Printf.printf "test_try_fuse_all: PASSED\n"
+
 let () =
   Printf.printf "=== Fusion Unit Tests ===\n" ;
   test_expr_equal () ;
@@ -453,4 +612,10 @@ let () =
   test_can_fuse_reduction () ;
   test_fuse_reduction () ;
   test_try_fuse_reduction () ;
+  Printf.printf "\n=== Stencil Fusion Tests ===\n" ;
+  test_stencil_pattern () ;
+  test_stencil_radius () ;
+  test_can_fuse_stencil () ;
+  test_fuse_stencil () ;
+  test_try_fuse_all () ;
   Printf.printf "=== All tests passed! ===\n"
