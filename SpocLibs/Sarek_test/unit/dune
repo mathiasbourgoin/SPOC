@@ -10,3 +10,9 @@
  (libraries sarek_ppx_lib sarek_stdlib alcotest ppxlib)
  (preprocess
   (pps ppxlib.metaquot)))
+
+; Fusion tests use sarek library directly (no ppx needed)
+
+(test
+ (name test_fusion)
+ (libraries sarek))
