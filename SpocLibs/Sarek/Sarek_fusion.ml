@@ -1,0 +1,410 @@
+(** Sarek_fusion - Kernel fusion on Sarek_ir
+
+    Implements vertical fusion: when kernel A writes to an intermediate array
+    that kernel B reads, fuse them by inlining A's computation into B,
+    eliminating the intermediate array. *)
+
+open Sarek_ir
+
+(** {1 Access pattern analysis} *)
+
+(** Access pattern for arrays *)
+type access_pattern =
+  | OneToOne of expr  (** arr[idx] where idx is thread-uniform *)
+  | Stencil of int list  (** arr[idx + offset] for each offset *)
+  | Gather  (** arr[f(idx)] - arbitrary index *)
+  | Unknown
+
+(** Fusion analysis result for a kernel *)
+type fusion_info = {
+  reads : (string * access_pattern) list;  (** arrays read *)
+  writes : (string * access_pattern) list;  (** arrays written *)
+  has_barriers : bool;  (** contains barriers *)
+  has_atomics : bool;  (** contains atomic ops *)
+}
+
+(** {1 Expression utilities} *)
+
+(** Check if two expressions are structurally equal *)
+let rec expr_equal e1 e2 =
+  match (e1, e2) with
+  | EConst c1, EConst c2 -> c1 = c2
+  | EVar v1, EVar v2 -> v1.var_id = v2.var_id
+  | EBinop (op1, a1, b1), EBinop (op2, a2, b2) ->
+      op1 = op2 && expr_equal a1 a2 && expr_equal b1 b2
+  | EUnop (op1, e1), EUnop (op2, e2) -> op1 = op2 && expr_equal e1 e2
+  | EArrayRead (arr1, idx1), EArrayRead (arr2, idx2) ->
+      arr1 = arr2 && expr_equal idx1 idx2
+  | EIntrinsic (p1, n1, args1), EIntrinsic (p2, n2, args2) ->
+      p1 = p2 && n1 = n2
+      && List.length args1 = List.length args2
+      && List.for_all2 expr_equal args1 args2
+  | _ -> false
+
+(** Check if expression references an array *)
+let rec expr_uses_array arr expr =
+  match expr with
+  | EArrayRead (a, idx) -> a = arr || expr_uses_array arr idx
+  | EBinop (_, e1, e2) -> expr_uses_array arr e1 || expr_uses_array arr e2
+  | EUnop (_, e) -> expr_uses_array arr e
+  | ERecordField (e, _) -> expr_uses_array arr e
+  | EIntrinsic (_, _, args) -> List.exists (expr_uses_array arr) args
+  | ECast (_, e) -> expr_uses_array arr e
+  | ETuple es -> List.exists (expr_uses_array arr) es
+  | EApp (fn, args) ->
+      expr_uses_array arr fn || List.exists (expr_uses_array arr) args
+  | EConst _ | EVar _ -> false
+
+(** Substitute array reads in an expression *)
+let rec subst_array_read arr idx_var replacement expr =
+  match expr with
+  | EArrayRead (a, idx) when a = arr && expr_equal idx idx_var -> replacement
+  | EArrayRead (a, idx) ->
+      EArrayRead (a, subst_array_read arr idx_var replacement idx)
+  | EBinop (op, e1, e2) ->
+      EBinop
+        ( op,
+          subst_array_read arr idx_var replacement e1,
+          subst_array_read arr idx_var replacement e2 )
+  | EUnop (op, e) -> EUnop (op, subst_array_read arr idx_var replacement e)
+  | ERecordField (e, f) ->
+      ERecordField (subst_array_read arr idx_var replacement e, f)
+  | EIntrinsic (path, name, args) ->
+      EIntrinsic
+        (path, name, List.map (subst_array_read arr idx_var replacement) args)
+  | ECast (ty, e) -> ECast (ty, subst_array_read arr idx_var replacement e)
+  | ETuple es -> ETuple (List.map (subst_array_read arr idx_var replacement) es)
+  | EApp (fn, args) ->
+      EApp
+        ( subst_array_read arr idx_var replacement fn,
+          List.map (subst_array_read arr idx_var replacement) args )
+  | EConst _ | EVar _ -> expr
+
+(** {1 Statement utilities} *)
+
+(** Substitute array reads in a statement *)
+let rec subst_array_read_stmt arr idx_var replacement stmt =
+  let subst_e = subst_array_read arr idx_var replacement in
+  match stmt with
+  | SAssign (lv, e) ->
+      let lv' =
+        match lv with
+        | LArrayElem (a, idx) -> LArrayElem (a, subst_e idx)
+        | lv -> lv
+      in
+      SAssign (lv', subst_e e)
+  | SSeq stmts ->
+      SSeq (List.map (subst_array_read_stmt arr idx_var replacement) stmts)
+  | SIf (cond, s1, s2) ->
+      SIf
+        ( subst_e cond,
+          subst_array_read_stmt arr idx_var replacement s1,
+          Option.map (subst_array_read_stmt arr idx_var replacement) s2 )
+  | SWhile (cond, body) ->
+      SWhile (subst_e cond, subst_array_read_stmt arr idx_var replacement body)
+  | SFor (v, start, stop, dir, body) ->
+      SFor
+        ( v,
+          subst_e start,
+          subst_e stop,
+          dir,
+          subst_array_read_stmt arr idx_var replacement body )
+  | SMatch (e, cases) ->
+      SMatch
+        ( subst_e e,
+          List.map
+            (fun (p, s) -> (p, subst_array_read_stmt arr idx_var replacement s))
+            cases )
+  | SReturn e -> SReturn (subst_e e)
+  | SExpr e -> SExpr (subst_e e)
+  | SBarrier | SWarpBarrier | SEmpty -> stmt
+
+(** Check if statement uses an array *)
+let rec stmt_uses_array arr stmt =
+  match stmt with
+  | SAssign (LArrayElem (a, idx), e) ->
+      a = arr || expr_uses_array arr idx || expr_uses_array arr e
+  | SAssign (_, e) -> expr_uses_array arr e
+  | SSeq stmts -> List.exists (stmt_uses_array arr) stmts
+  | SIf (cond, s1, s2) ->
+      expr_uses_array arr cond || stmt_uses_array arr s1
+      || Option.fold ~none:false ~some:(stmt_uses_array arr) s2
+  | SWhile (cond, body) -> expr_uses_array arr cond || stmt_uses_array arr body
+  | SFor (_, start, stop, _, body) ->
+      expr_uses_array arr start || expr_uses_array arr stop
+      || stmt_uses_array arr body
+  | SMatch (e, cases) ->
+      expr_uses_array arr e
+      || List.exists (fun (_, s) -> stmt_uses_array arr s) cases
+  | SReturn e | SExpr e -> expr_uses_array arr e
+  | SBarrier | SWarpBarrier | SEmpty -> false
+
+(** {1 Analysis} *)
+
+(** Collect all array reads from an expression *)
+let rec collect_reads_expr acc expr =
+  match expr with
+  | EArrayRead (arr, idx) -> (arr, idx) :: collect_reads_expr acc idx
+  | EBinop (_, e1, e2) -> collect_reads_expr (collect_reads_expr acc e1) e2
+  | EUnop (_, e) -> collect_reads_expr acc e
+  | ERecordField (e, _) -> collect_reads_expr acc e
+  | EIntrinsic (_, _, args) -> List.fold_left collect_reads_expr acc args
+  | ECast (_, e) -> collect_reads_expr acc e
+  | ETuple es -> List.fold_left collect_reads_expr acc es
+  | EApp (fn, args) ->
+      List.fold_left collect_reads_expr (collect_reads_expr acc fn) args
+  | EConst _ | EVar _ -> acc
+
+(** Collect all array writes from a statement *)
+let rec collect_writes_stmt acc stmt =
+  match stmt with
+  | SAssign (LArrayElem (arr, idx), _) -> (arr, idx) :: acc
+  | SAssign _ -> acc
+  | SSeq stmts -> List.fold_left collect_writes_stmt acc stmts
+  | SIf (_, s1, s2) ->
+      let acc' = collect_writes_stmt acc s1 in
+      Option.fold ~none:acc' ~some:(collect_writes_stmt acc') s2
+  | SWhile (_, body) | SFor (_, _, _, _, body) -> collect_writes_stmt acc body
+  | SMatch (_, cases) ->
+      List.fold_left (fun acc (_, s) -> collect_writes_stmt acc s) acc cases
+  | SReturn _ | SExpr _ | SBarrier | SWarpBarrier | SEmpty -> acc
+
+(** Collect all array reads from a statement *)
+let rec collect_reads_stmt acc stmt =
+  match stmt with
+  | SAssign (LArrayElem (_, idx), e) ->
+      collect_reads_expr (collect_reads_expr acc idx) e
+  | SAssign (_, e) -> collect_reads_expr acc e
+  | SSeq stmts -> List.fold_left collect_reads_stmt acc stmts
+  | SIf (cond, s1, s2) ->
+      let acc' = collect_reads_expr acc cond in
+      let acc'' = collect_reads_stmt acc' s1 in
+      Option.fold ~none:acc'' ~some:(collect_reads_stmt acc'') s2
+  | SWhile (cond, body) -> collect_reads_stmt (collect_reads_expr acc cond) body
+  | SFor (_, start, stop, _, body) ->
+      let acc' = collect_reads_expr (collect_reads_expr acc start) stop in
+      collect_reads_stmt acc' body
+  | SMatch (e, cases) ->
+      let acc' = collect_reads_expr acc e in
+      List.fold_left (fun acc (_, s) -> collect_reads_stmt acc s) acc' cases
+  | SReturn e | SExpr e -> collect_reads_expr acc e
+  | SBarrier | SWarpBarrier | SEmpty -> acc
+
+(** Check if statement contains barriers *)
+let rec has_barrier stmt =
+  match stmt with
+  | SBarrier | SWarpBarrier -> true
+  | SSeq stmts -> List.exists has_barrier stmts
+  | SIf (_, s1, s2) ->
+      has_barrier s1 || Option.fold ~none:false ~some:has_barrier s2
+  | SWhile (_, body) | SFor (_, _, _, _, body) -> has_barrier body
+  | SMatch (_, cases) -> List.exists (fun (_, s) -> has_barrier s) cases
+  | SAssign _ | SReturn _ | SExpr _ | SEmpty -> false
+
+(** Analyze access pattern for an array *)
+let analyze_pattern reads arr =
+  let arr_reads = List.filter (fun (a, _) -> a = arr) reads in
+  match arr_reads with
+  | [] -> Unknown
+  | [(_, idx)] -> OneToOne idx
+  | _ ->
+      (* Check if all reads use same base with constant offsets *)
+      (* Simplified: just mark as Gather for now *)
+      Gather
+
+(** Analyze a kernel's access patterns *)
+let analyze (k : kernel) : fusion_info =
+  let reads = collect_reads_stmt [] k.kern_body in
+  let writes = collect_writes_stmt [] k.kern_body in
+
+  (* Group by array name *)
+  let read_arrs = List.sort_uniq compare (List.map fst reads) in
+  let write_arrs = List.sort_uniq compare (List.map fst writes) in
+
+  {
+    reads = List.map (fun arr -> (arr, analyze_pattern reads arr)) read_arrs;
+    writes = List.map (fun arr -> (arr, analyze_pattern writes arr)) write_arrs;
+    has_barriers = has_barrier k.kern_body;
+    has_atomics = false;
+    (* TODO: detect atomics *)
+  }
+
+(** {1 Fusion} *)
+
+(** Find the expression written to arr[idx] in a statement. Returns None if not
+    found or if multiple/conditional writes. *)
+let rec find_write_expr stmt arr idx =
+  match stmt with
+  | SAssign (LArrayElem (a, i), e) when a = arr && expr_equal i idx -> Some e
+  | SSeq stmts ->
+      (* Find first write *)
+      List.fold_left
+        (fun acc s ->
+          match acc with Some _ -> acc | None -> find_write_expr s arr idx)
+        None
+        stmts
+  | SIf _ | SWhile _ | SFor _ | SMatch _ ->
+      (* Can't safely extract from conditional *)
+      None
+  | SAssign _ | SReturn _ | SExpr _ | SBarrier | SWarpBarrier | SEmpty -> None
+
+(** Check if two kernels can be fused via an intermediate array.
+
+    Requirements for vertical fusion: 1. Producer writes to intermediate with
+    OneToOne pattern 2. Consumer reads from intermediate with OneToOne pattern
+    3. Both use same index expression 4. No barriers between write and read 5.
+    Intermediate not used elsewhere in consumer *)
+let can_fuse (producer : kernel) (consumer : kernel) (intermediate : string) :
+    bool =
+  let prod_info = analyze producer in
+  let cons_info = analyze consumer in
+
+  (* Check producer writes to intermediate *)
+  let prod_writes_inter =
+    List.exists (fun (arr, _) -> arr = intermediate) prod_info.writes
+  in
+
+  (* Check consumer reads from intermediate *)
+  let cons_reads_inter =
+    List.exists (fun (arr, _) -> arr = intermediate) cons_info.reads
+  in
+
+  (* Check patterns are compatible *)
+  let patterns_ok =
+    match
+      ( List.assoc_opt intermediate prod_info.writes,
+        List.assoc_opt intermediate cons_info.reads )
+    with
+    | Some (OneToOne _), Some (OneToOne _) -> true
+    | _ -> false
+  in
+
+  (* No barriers in either *)
+  let no_barriers =
+    (not prod_info.has_barriers) && not cons_info.has_barriers
+  in
+
+  prod_writes_inter && cons_reads_inter && patterns_ok && no_barriers
+
+(** Fuse producer into consumer, eliminating intermediate array.
+
+    The fused kernel: 1. Has consumer's structure 2. Replaces reads of
+    intermediate[idx] with producer's computation 3. Removes the intermediate
+    array from params *)
+let fuse (producer : kernel) (consumer : kernel) (intermediate : string) :
+    kernel =
+  (* Find the index variable used to access intermediate in consumer *)
+  let cons_reads = collect_reads_stmt [] consumer.kern_body in
+  let inter_idx =
+    List.find_map
+      (fun (arr, idx) -> if arr = intermediate then Some idx else None)
+      cons_reads
+  in
+
+  match inter_idx with
+  | None ->
+      (* Consumer doesn't read intermediate, just return consumer *)
+      consumer
+  | Some idx -> (
+      (* Find what producer writes to intermediate[idx] *)
+      let prod_expr = find_write_expr producer.kern_body intermediate idx in
+      match prod_expr with
+      | None ->
+          (* Can't find simple write, return consumer unchanged *)
+          consumer
+      | Some replacement ->
+          (* Substitute in consumer *)
+          let fused_body =
+            subst_array_read_stmt
+              intermediate
+              idx
+              replacement
+              consumer.kern_body
+          in
+
+          (* Remove intermediate from params if it was a param *)
+          let fused_params =
+            List.filter
+              (fun d ->
+                match d with
+                | DParam (v, _) -> v.var_name <> intermediate
+                | DShared (name, _, _) -> name <> intermediate
+                | _ -> true)
+              consumer.kern_params
+          in
+
+          (* Add producer's params that aren't already in consumer *)
+          let prod_param_names =
+            List.filter_map
+              (fun d ->
+                match d with
+                | DParam (v, _) -> Some v.var_name
+                | DShared (name, _, _) -> Some name
+                | _ -> None)
+              producer.kern_params
+          in
+
+          let cons_param_names =
+            List.filter_map
+              (fun d ->
+                match d with
+                | DParam (v, _) -> Some v.var_name
+                | DShared (name, _, _) -> Some name
+                | _ -> None)
+              fused_params
+          in
+
+          let _ = prod_param_names in
+          (* suppress warning *)
+
+          let new_params =
+            List.filter
+              (fun d ->
+                match d with
+                | DParam (v, _) ->
+                    v.var_name <> intermediate
+                    && not (List.mem v.var_name cons_param_names)
+                | DShared (name, _, _) ->
+                    name <> intermediate && not (List.mem name cons_param_names)
+                | _ -> true)
+              producer.kern_params
+          in
+
+          {
+            kern_name = consumer.kern_name ^ "_fused";
+            kern_params = fused_params @ new_params;
+            kern_locals = consumer.kern_locals @ producer.kern_locals;
+            kern_body = fused_body;
+          })
+
+(** {1 High-level interface} *)
+
+(** Try to fuse a pipeline of kernels. Returns fused kernel and list of
+    eliminated intermediates. *)
+let fuse_pipeline (kernels : kernel list) : kernel * string list =
+  match kernels with
+  | [] -> failwith "fuse_pipeline: empty list"
+  | [k] -> (k, [])
+  | k1 :: rest ->
+      let rec loop current eliminated = function
+        | [] -> (current, eliminated)
+        | k :: ks -> (
+            (* Find intermediate: array that current writes and k reads *)
+            let curr_info = analyze current in
+            let k_info = analyze k in
+            let curr_writes = List.map fst curr_info.writes in
+            let k_reads = List.map fst k_info.reads in
+            let intermediates =
+              List.filter
+                (fun arr -> List.mem arr curr_writes && List.mem arr k_reads)
+                curr_writes
+            in
+            match intermediates with
+            | inter :: _ when can_fuse current k inter ->
+                let fused = fuse current k inter in
+                loop fused (inter :: eliminated) ks
+            | _ ->
+                (* Can't fuse, just use k as new current *)
+                loop k eliminated ks)
+      in
+      loop k1 [] rest

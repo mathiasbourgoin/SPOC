@@ -8,6 +8,8 @@
  (libraries spoc ctypes)
  (modules
   Kirc_Ast
+  Sarek_ir
+  Sarek_fusion
   Gen
   Kirc
   Kirc_Cuda
