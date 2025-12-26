@@ -49,16 +49,14 @@ let is_thread_varying_intrinsic (ref : intrinsic_ref) : bool =
   match ref with
   | IntrinsicRef (_, base_name) ->
       Sarek_core_primitives.is_thread_varying base_name
-  | CorePrimitiveRef name ->
-      Sarek_core_primitives.is_thread_varying name
+  | CorePrimitiveRef name -> Sarek_core_primitives.is_thread_varying name
 
 (** Check if an intrinsic ref is a barrier/convergence point *)
 let is_barrier_ref (ref : intrinsic_ref) : bool =
   match ref with
   | IntrinsicRef (_, base_name) ->
       Sarek_core_primitives.is_convergence_point base_name
-  | CorePrimitiveRef name ->
-      Sarek_core_primitives.is_convergence_point name
+  | CorePrimitiveRef name -> Sarek_core_primitives.is_convergence_point name
 
 (** Check if an expression's value varies per-thread.
 

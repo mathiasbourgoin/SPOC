@@ -19,7 +19,11 @@ let test_is_core_primitive () =
   check bool "sin is core" true (is_core_primitive "sin") ;
   check bool "sin_f64 is core" true (is_core_primitive "sin_f64") ;
   check bool "abs_int32 is core" true (is_core_primitive "abs_int32") ;
-  check bool "memory_fence_block is core" true (is_core_primitive "memory_fence_block") ;
+  check
+    bool
+    "memory_fence_block is core"
+    true
+    (is_core_primitive "memory_fence_block") ;
   check bool "random is not core" false (is_core_primitive "random")
 
 (* === Variance tests === *)
@@ -53,11 +57,23 @@ let test_thread_varying () =
 
 let test_warp_varying () =
   (* ThreadVarying implies WarpVarying *)
-  check bool "thread_idx_x is warp varying" true (is_warp_varying "thread_idx_x") ;
+  check
+    bool
+    "thread_idx_x is warp varying"
+    true
+    (is_warp_varying "thread_idx_x") ;
   (* BlockVarying is NOT warp varying *)
-  check bool "block_idx_x is not warp varying" false (is_warp_varying "block_idx_x") ;
+  check
+    bool
+    "block_idx_x is not warp varying"
+    false
+    (is_warp_varying "block_idx_x") ;
   (* Uniform is NOT warp varying *)
-  check bool "block_dim_x is not warp varying" false (is_warp_varying "block_dim_x")
+  check
+    bool
+    "block_dim_x is not warp varying"
+    false
+    (is_warp_varying "block_dim_x")
 
 let test_variance_of () =
   check
@@ -198,7 +214,62 @@ let test_convergence_point () =
     bool
     "thread_idx_x is not convergence point"
     false
-    (is_convergence_point "thread_idx_x")
+    (is_convergence_point "thread_idx_x") ;
+  (* Warp primitives have WarpConvergence, not ConvergencePoint *)
+  check
+    bool
+    "warp_shuffle is not block convergence point"
+    false
+    (is_convergence_point "warp_shuffle")
+
+let test_warp_convergence () =
+  check
+    bool
+    "warp_shuffle requires warp convergence"
+    true
+    (is_warp_convergence_point "warp_shuffle") ;
+  check
+    bool
+    "warp_vote_all requires warp convergence"
+    true
+    (is_warp_convergence_point "warp_vote_all") ;
+  check
+    bool
+    "warp_ballot requires warp convergence"
+    true
+    (is_warp_convergence_point "warp_ballot") ;
+  check
+    bool
+    "warp_active_mask does not require convergence"
+    false
+    (is_warp_convergence_point "warp_active_mask") ;
+  check
+    bool
+    "block_barrier does not require warp convergence"
+    false
+    (is_warp_convergence_point "block_barrier")
+
+let test_requires_convergence () =
+  check
+    bool
+    "block_barrier requires convergence"
+    true
+    (requires_convergence "block_barrier") ;
+  check
+    bool
+    "warp_shuffle requires convergence"
+    true
+    (requires_convergence "warp_shuffle") ;
+  check
+    bool
+    "sin does not require convergence"
+    false
+    (requires_convergence "sin") ;
+  check
+    bool
+    "warp_active_mask does not require convergence"
+    false
+    (requires_convergence "warp_active_mask")
 
 (* === Purity tests === *)
 
@@ -210,7 +281,11 @@ let test_pure () =
   check bool "abs_int32 is pure" true (is_pure "abs_int32") ;
   check bool "thread_idx_x is pure" true (is_pure "thread_idx_x") ;
   check bool "block_barrier is not pure" false (is_pure "block_barrier") ;
-  check bool "memory_fence_block is not pure" false (is_pure "memory_fence_block")
+  check
+    bool
+    "memory_fence_block is not pure"
+    false
+    (is_pure "memory_fence_block")
 
 (* === Category tests === *)
 
@@ -229,6 +304,8 @@ let test_category () =
   check bool "int category has primitives" true (List.length ints >= 5) ;
   let fences = primitives_in_category "fence" in
   check bool "fence category has primitives" true (List.length fences >= 2) ;
+  let warp = primitives_in_category "warp" in
+  check bool "warp category has primitives" true (List.length warp >= 8) ;
   let sync = primitives_in_category "sync" in
   check bool "sync category has barrier" true (List.length sync >= 1)
 
@@ -250,7 +327,12 @@ let variance_tests =
     ("variance leq", `Quick, test_variance_leq);
   ]
 
-let convergence_tests = [("convergence point", `Quick, test_convergence_point)]
+let convergence_tests =
+  [
+    ("convergence point", `Quick, test_convergence_point);
+    ("warp convergence", `Quick, test_warp_convergence);
+    ("requires convergence", `Quick, test_requires_convergence);
+  ]
 
 let purity_tests = [("pure", `Quick, test_pure)]
 

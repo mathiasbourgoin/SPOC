@@ -23,10 +23,10 @@ type var_info = {
     - IntrinsicRef: Reference to a stdlib module intrinsic. The module path
       allows the PPX to generate correct references for compile-time type
       checking. For example:
-      - IntrinsicRef (["Sarek_stdlib"; "Float32"], "sin") ->
-        Sarek_stdlib.Float32.sin
-      - IntrinsicRef (["Sarek_stdlib"; "Int32"], "add_int32") ->
-        Sarek_stdlib.Int32.add_int32
+    - IntrinsicRef (["Sarek_stdlib"; "Float32"], "sin") ->
+      Sarek_stdlib.Float32.sin
+    - IntrinsicRef (["Sarek_stdlib"; "Int32"], "add_int32") ->
+      Sarek_stdlib.Int32.add_int32
 
     - CorePrimitiveRef: Reference to a core GPU primitive defined in
       Sarek_core_primitives. These have compile-time semantic properties
@@ -210,7 +210,8 @@ let open_module (path : string list) env =
       env.intrinsic_consts
       env
 
-(** Create standard library environment from core primitives and the PPX registry.
+(** Create standard library environment from core primitives and the PPX
+    registry.
 
     Step 1: Add all core primitives from Sarek_core_primitives. These have
     compile-time semantic properties (variance, convergence, purity) that the

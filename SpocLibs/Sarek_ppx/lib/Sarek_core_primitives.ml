@@ -8,8 +8,8 @@
 
 open Sarek_types
 
-(** Variance levels in the GPU execution model.
-    Forms a lattice: Uniform ≤ BlockVarying ≤ WarpVarying ≤ ThreadVarying *)
+(** Variance levels in the GPU execution model. Forms a lattice: Uniform ≤
+    BlockVarying ≤ WarpVarying ≤ ThreadVarying *)
 type variance =
   | Uniform  (** Same value for all threads in grid *)
   | BlockVarying  (** Uniform within block, varies between blocks *)
@@ -465,6 +465,88 @@ let primitives =
       purity = Impure;
       category = "fence";
     };
+    (* === Warp-Level Primitives === *)
+    (* Warp shuffle: exchange values between lanes *)
+    {
+      name = "warp_shuffle";
+      typ = t_fun [t_int32; t_int32] t_int32;
+      variance = ThreadVarying;
+      (* Output varies per thread *)
+      convergence = WarpConvergence;
+      (* All warp threads must participate *)
+      purity = Pure;
+      category = "warp";
+    };
+    {
+      name = "warp_shuffle_down";
+      typ = t_fun [t_int32; t_int32] t_int32;
+      variance = ThreadVarying;
+      convergence = WarpConvergence;
+      purity = Pure;
+      category = "warp";
+    };
+    {
+      name = "warp_shuffle_up";
+      typ = t_fun [t_int32; t_int32] t_int32;
+      variance = ThreadVarying;
+      convergence = WarpConvergence;
+      purity = Pure;
+      category = "warp";
+    };
+    {
+      name = "warp_shuffle_xor";
+      typ = t_fun [t_int32; t_int32] t_int32;
+      variance = ThreadVarying;
+      convergence = WarpConvergence;
+      purity = Pure;
+      category = "warp";
+    };
+    (* Warp vote: collective predicates *)
+    {
+      name = "warp_vote_all";
+      typ = t_fun [t_bool] t_bool;
+      variance = WarpVarying;
+      (* Same result for all threads in warp *)
+      convergence = WarpConvergence;
+      purity = Pure;
+      category = "warp";
+    };
+    {
+      name = "warp_vote_any";
+      typ = t_fun [t_bool] t_bool;
+      variance = WarpVarying;
+      convergence = WarpConvergence;
+      purity = Pure;
+      category = "warp";
+    };
+    {
+      name = "warp_ballot";
+      typ = t_fun [t_bool] t_int32;
+      variance = WarpVarying;
+      (* Bitmask is same for all threads in warp *)
+      convergence = WarpConvergence;
+      purity = Pure;
+      category = "warp";
+    };
+    (* Warp introspection *)
+    {
+      name = "warp_active_mask";
+      typ = t_fun [t_unit] t_int32;
+      variance = WarpVarying;
+      convergence = NoEffect;
+      (* Doesn't require convergence *)
+      purity = Pure;
+      category = "warp";
+    };
+    {
+      name = "warp_size";
+      typ = t_int32;
+      variance = Uniform;
+      (* Same for all threads *)
+      convergence = NoEffect;
+      purity = Pure;
+      category = "warp";
+    };
   ]
 
 (* Build lookup table for O(1) access *)
@@ -482,8 +564,8 @@ let is_core_primitive name = Hashtbl.mem primitive_table name
 let is_thread_varying name =
   match find name with Some p -> p.variance = ThreadVarying | None -> false
 
-(** Check if a primitive has warp-level or finer granularity variance.
-    Returns true for WarpVarying and ThreadVarying primitives. *)
+(** Check if a primitive has warp-level or finer granularity variance. Returns
+    true for WarpVarying and ThreadVarying primitives. *)
 let is_warp_varying name =
   match find name with
   | Some p -> p.variance = WarpVarying || p.variance = ThreadVarying
@@ -492,6 +574,19 @@ let is_warp_varying name =
 let is_convergence_point name =
   match find name with
   | Some p -> p.convergence = ConvergencePoint
+  | None -> false
+
+(** Check if a primitive requires warp-level convergence *)
+let is_warp_convergence_point name =
+  match find name with
+  | Some p -> p.convergence = WarpConvergence
+  | None -> false
+
+(** Check if a primitive requires any kind of convergence (block or warp) *)
+let requires_convergence name =
+  match find name with
+  | Some p ->
+      p.convergence = ConvergencePoint || p.convergence = WarpConvergence
   | None -> false
 
 let is_pure name =

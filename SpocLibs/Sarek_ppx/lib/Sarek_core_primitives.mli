@@ -9,8 +9,8 @@
  * be redefined by user libraries.
  ******************************************************************************)
 
-(** Variance levels in the GPU execution model.
-    Forms a lattice: Uniform ≤ BlockVarying ≤ WarpVarying ≤ ThreadVarying *)
+(** Variance levels in the GPU execution model. Forms a lattice: Uniform ≤
+    BlockVarying ≤ WarpVarying ≤ ThreadVarying *)
 type variance =
   | Uniform  (** Same value for all threads in grid *)
   | BlockVarying  (** Uniform within block, varies between blocks *)
@@ -52,10 +52,17 @@ val is_core_primitive : string -> bool
 
 val is_thread_varying : string -> bool
 
-(** Check if a primitive has warp-level or finer variance (WarpVarying or ThreadVarying) *)
+(** Check if a primitive has warp-level or finer variance (WarpVarying or
+    ThreadVarying) *)
 val is_warp_varying : string -> bool
 
 val is_convergence_point : string -> bool
+
+(** Check if a primitive requires warp-level convergence *)
+val is_warp_convergence_point : string -> bool
+
+(** Check if a primitive requires any convergence (block or warp level) *)
+val requires_convergence : string -> bool
 
 val is_pure : string -> bool
 
