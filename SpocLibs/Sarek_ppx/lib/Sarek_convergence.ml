@@ -44,22 +44,17 @@ let init_ctx = {mode = Converged}
 (** Enter diverged mode *)
 let diverge _ctx = {mode = Diverged}
 
-(** Thread-varying intrinsic names (the base name without module prefix) *)
-let thread_varying_intrinsics =
-  ["thread_idx_x"; "thread_idx_y"; "thread_idx_z"; "global_thread_id"]
-
-(** Check if an intrinsic ref is thread-varying based on its base name *)
+(** Check if an intrinsic ref is thread-varying using core primitives *)
 let is_thread_varying_intrinsic (ref : intrinsic_ref) : bool =
   match ref with
-  | IntrinsicRef (_, base_name) -> List.mem base_name thread_varying_intrinsics
+  | IntrinsicRef (_, base_name) ->
+      Sarek_core_primitives.is_thread_varying base_name
 
-(** Barrier intrinsic names *)
-let barrier_intrinsics = ["block_barrier"; "barrier"]
-
-(** Check if an intrinsic ref is a barrier *)
+(** Check if an intrinsic ref is a barrier/convergence point *)
 let is_barrier_ref (ref : intrinsic_ref) : bool =
   match ref with
-  | IntrinsicRef (_, base_name) -> List.mem base_name barrier_intrinsics
+  | IntrinsicRef (_, base_name) ->
+      Sarek_core_primitives.is_convergence_point base_name
 
 (** Check if an expression's value varies per-thread.
 
@@ -81,7 +76,7 @@ let rec is_thread_varying (te : texpr) : bool =
     ->
       false
   (* Check if variable is a thread-varying intrinsic *)
-  | TEVar (name, _) -> List.mem name thread_varying_intrinsics
+  | TEVar (name, _) -> Sarek_core_primitives.is_thread_varying name
   (* Intrinsic constants - check if thread-varying *)
   | TEIntrinsicConst ref -> is_thread_varying_intrinsic ref
   (* Binary ops: varying if either operand varies *)
@@ -197,15 +192,99 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
       in
       size_errors @ check_expr ctx body
   | TESuperstep (_, divergent, step_body, cont) ->
-      (* Check body: if divergent flag is set, allow diverged mode; otherwise
-         enforce convergence within the superstep body *)
+      (* For non-divergent supersteps, check that the body doesn't contain
+         any diverging control flow (thread-varying conditions).
+         The implicit barrier at the end requires all threads to reach it. *)
       let body_errors =
-        if divergent then check_expr ctx step_body
-        else check_expr {mode = Converged} step_body
+        if divergent then
+          (* Divergent flag set: allow any control flow, just check for nested barriers *)
+          check_expr ctx step_body
+        else
+          (* Non-divergent: check for any divergence in the body.
+             We do this by checking in Converged mode - if there's an if/while
+             with thread-varying condition followed by a barrier, that's caught.
+             But we also need to catch the implicit barrier at the end.
+             So if the body ends in diverged mode (any thread-varying branch taken),
+             that's an error because the implicit barrier would be in diverged flow. *)
+          let body_errs = check_expr {mode = Converged} step_body in
+          (* Also check: does the body contain any diverging conditions?
+             If so, the implicit barrier at the end is in diverged flow. *)
+          if contains_diverging_control_flow step_body then
+            Sarek_error.Barrier_in_diverged_flow te.te_loc :: body_errs
+          else body_errs
       in
       (* After the implicit barrier, we're back to converged *)
       let cont_errors = check_expr {mode = Converged} cont in
       body_errors @ cont_errors
+
+(** Check if an expression contains any control flow with thread-varying
+    conditions. This is used for superstep analysis - the implicit barrier at
+    the end of a superstep requires that no divergence occurs within the body.
+*)
+and contains_diverging_control_flow (te : texpr) : bool =
+  match te.te with
+  | TEIf (cond, then_e, else_opt) -> (
+      is_thread_varying cond
+      || contains_diverging_control_flow then_e
+      ||
+      match else_opt with
+      | None -> false
+      | Some e -> contains_diverging_control_flow e)
+  | TEWhile (cond, body) ->
+      is_thread_varying cond || contains_diverging_control_flow body
+  | TEFor (_, _, lo, hi, _, body) ->
+      is_thread_varying lo || is_thread_varying hi
+      || contains_diverging_control_flow body
+  | TEMatch (scrut, cases) ->
+      is_thread_varying scrut
+      || List.exists (fun (_, e) -> contains_diverging_control_flow e) cases
+  (* Recursively check subexpressions *)
+  | TELet (_, _, v, b) | TELetMut (_, _, v, b) ->
+      contains_diverging_control_flow v || contains_diverging_control_flow b
+  | TESeq es -> List.exists contains_diverging_control_flow es
+  | TEBinop (_, a, b) ->
+      contains_diverging_control_flow a || contains_diverging_control_flow b
+  | TEUnop (_, e) -> contains_diverging_control_flow e
+  | TEApp (_, args) -> List.exists contains_diverging_control_flow args
+  | TEIntrinsicFun (_, args) -> List.exists contains_diverging_control_flow args
+  | TEVecGet (v, i) ->
+      contains_diverging_control_flow v || contains_diverging_control_flow i
+  | TEVecSet (v, i, x) ->
+      contains_diverging_control_flow v
+      || contains_diverging_control_flow i
+      || contains_diverging_control_flow x
+  | TEArrGet (a, i) ->
+      contains_diverging_control_flow a || contains_diverging_control_flow i
+  | TEArrSet (a, i, x) ->
+      contains_diverging_control_flow a
+      || contains_diverging_control_flow i
+      || contains_diverging_control_flow x
+  | TEFieldGet (e, _, _) -> contains_diverging_control_flow e
+  | TEFieldSet (e, _, _, x) ->
+      contains_diverging_control_flow e || contains_diverging_control_flow x
+  | TERecord (_, fields) ->
+      List.exists (fun (_, e) -> contains_diverging_control_flow e) fields
+  | TETuple es -> List.exists contains_diverging_control_flow es
+  | TEReturn e -> contains_diverging_control_flow e
+  | TEPragma (_, body) -> contains_diverging_control_flow body
+  | TEAssign (_, _, e) -> contains_diverging_control_flow e
+  | TECreateArray (size, _, _) -> contains_diverging_control_flow size
+  | TEConstr (_, _, arg) -> (
+      match arg with
+      | None -> false
+      | Some e -> contains_diverging_control_flow e)
+  | TELetShared (_, _, _, size_opt, body) ->
+      (match size_opt with
+        | None -> false
+        | Some s -> contains_diverging_control_flow s)
+      || contains_diverging_control_flow body
+  | TESuperstep (_, _, step_body, cont) ->
+      contains_diverging_control_flow step_body
+      || contains_diverging_control_flow cont
+  (* Terminal cases - no nested control flow *)
+  | TEUnit | TEBool _ | TEInt _ | TEInt32 _ | TEInt64 _ | TEFloat _ | TEDouble _
+  | TEVar _ | TEGlobalRef _ | TENative _ | TENativeFun _ | TEIntrinsicConst _ ->
+      false
 
 (** Check a module item *)
 let check_module_item ctx (item : tmodule_item) : Sarek_error.error list =

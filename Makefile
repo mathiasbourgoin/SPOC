@@ -60,8 +60,10 @@ test_negative:
 	@dune build --profile=negative SpocLibs/Sarek_test/negative/neg_test_convention_kernel_fail2.cma 2>&1 | tee /tmp/neg1.out | grep -q "Cannot unify types" && echo "  PASS: type mismatch" || (cat /tmp/neg1.out; false)
 	@echo "Testing barrier in diverged control flow..."
 	@dune build --profile=negative SpocLibs/Sarek_test/negative/neg_test_barrier_diverged.cma 2>&1 | tee /tmp/neg2.out | grep -q "Barrier called in diverged control flow" && echo "  PASS: barrier diverged" || (cat /tmp/neg2.out; false)
+	@echo "Testing superstep in diverged control flow..."
+	@dune build --profile=negative SpocLibs/Sarek_test/negative/neg_test_superstep_diverged.cma 2>&1 | tee /tmp/neg3.out | grep -q "Barrier called in diverged control flow" && echo "  PASS: superstep diverged" || (cat /tmp/neg3.out; false)
 	@echo "Testing unbound function detection..."
-	@dune build --profile=negative SpocLibs/Sarek_test/negative/neg_test_unbound_function.cma 2>&1 | tee /tmp/neg3.out | grep -q "Unbound" && echo "  PASS: unbound function" || (cat /tmp/neg3.out; false)
+	@dune build --profile=negative SpocLibs/Sarek_test/negative/neg_test_unbound_function.cma 2>&1 | tee /tmp/neg4.out | grep -q "Unbound" && echo "  PASS: unbound function" || (cat /tmp/neg4.out; false)
 	@echo "All negative tests passed"
 
 # Run all tests: unit tests, e2e tests, and negative tests
