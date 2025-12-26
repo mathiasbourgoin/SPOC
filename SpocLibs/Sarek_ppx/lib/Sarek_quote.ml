@@ -499,7 +499,8 @@ end)
 
     Examples:
     - IntrinsicRef (["Float32"], "sin") -> Float32.sin
-    - IntrinsicRef (["Gpu"], "block_barrier") -> Gpu.block_barrier *)
+    - IntrinsicRef (["Gpu"], "block_barrier") -> Gpu.block_barrier
+    - CorePrimitiveRef "thread_idx_x" -> Gpu.thread_idx_x *)
 let expr_of_intrinsic_ref ~loc (ref : Sarek_env.intrinsic_ref) : expression =
   match ref with
   | Sarek_env.IntrinsicRef (module_path, name) ->
@@ -510,6 +511,10 @@ let expr_of_intrinsic_ref ~loc (ref : Sarek_env.intrinsic_ref) : expression =
           (Lident (List.hd module_path))
           (List.tl module_path @ [name])
       in
+      Ast_builder.Default.pexp_ident ~loc {txt = lid; loc}
+  | Sarek_env.CorePrimitiveRef name ->
+      (* Core primitives are accessed via Gpu module *)
+      let lid = Ldot (Lident "Gpu", name) in
       Ast_builder.Default.pexp_ident ~loc {txt = lid; loc}
 
 (** Collect all intrinsic function refs from a typed expression *)

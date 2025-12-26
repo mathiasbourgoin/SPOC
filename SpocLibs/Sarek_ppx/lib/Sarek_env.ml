@@ -18,22 +18,31 @@ type var_info = {
   vi_is_vec : bool;  (** Is this a vector parameter? *)
 }
 
-(** Reference to an intrinsic function in a stdlib module. The module path
-    allows the PPX to generate correct references for compile-time type
-    checking. For example:
-    - IntrinsicRef (["Sarek_stdlib"; "Float32"], "sin") ->
-      Sarek_stdlib.Float32.sin
-    - IntrinsicRef (["Sarek_stdlib"; "Int32"], "add_int32") ->
-      Sarek_stdlib.Int32.add_int32
+(** Reference to an intrinsic function or constant.
+
+    - IntrinsicRef: Reference to a stdlib module intrinsic. The module path
+      allows the PPX to generate correct references for compile-time type
+      checking. For example:
+      - IntrinsicRef (["Sarek_stdlib"; "Float32"], "sin") ->
+        Sarek_stdlib.Float32.sin
+      - IntrinsicRef (["Sarek_stdlib"; "Int32"], "add_int32") ->
+        Sarek_stdlib.Int32.add_int32
+
+    - CorePrimitiveRef: Reference to a core GPU primitive defined in
+      Sarek_core_primitives. These have compile-time semantic properties
+      (variance, convergence, purity) that cannot be overridden by user code.
+      Device implementations are still resolved via Sarek_registry at JIT time.
 
     This enables extensibility: user libraries can define their own intrinsics
     via %sarek_intrinsic and the PPX will reference them correctly. *)
 type intrinsic_ref =
   | IntrinsicRef of string list * string  (** module_path, function_name *)
+  | CorePrimitiveRef of string  (** Core primitive name *)
 
 (** Get the qualified name of an intrinsic ref for debugging/printing *)
 let intrinsic_ref_name = function
   | IntrinsicRef (path, name) -> String.concat "." (path @ [name])
+  | CorePrimitiveRef name -> "@core:" ^ name
 
 (** Information about an intrinsic function. Device code is resolved at JIT time
     via Sarek_registry. *)
@@ -201,10 +210,15 @@ let open_module (path : string list) env =
       env.intrinsic_consts
       env
 
-(** Create standard library environment from the PPX registry. This queries
-    Sarek_ppx_registry for all registered intrinsics and builds the typing
-    environment from them. No hardcoding needed - everything comes from
-    %sarek_intrinsic definitions in stdlib modules.
+(** Create standard library environment from core primitives and the PPX registry.
+
+    Step 1: Add all core primitives from Sarek_core_primitives. These have
+    compile-time semantic properties (variance, convergence, purity) that the
+    PPX uses for analysis. Core primitives use CorePrimitiveRef.
+
+    Step 2: Add library intrinsics from Sarek_ppx_registry. These may shadow
+    core primitives if they have the same name (which provides device
+    implementations). Library intrinsics use IntrinsicRef.
 
     Intrinsics are registered under module-qualified names (e.g., "Float32.sin")
     to avoid ambiguity between Float32.sqrt and Float64.sqrt. Use `open_module`
@@ -214,7 +228,26 @@ let open_module (path : string list) env =
     calling this function (e.g., via Sarek_stdlib.force_init()). This is done in
     Sarek_ppx.ml to avoid circular dependencies. *)
 let with_stdlib env =
-  (* Import all intrinsics from the PPX registry *)
+  (* Step 1: Add all core primitives first.
+     These provide semantic properties (variance, convergence, purity)
+     that the PPX needs for compile-time analysis. *)
+  let env =
+    List.fold_left
+      (fun env (prim : Sarek_core_primitives.primitive) ->
+        let ref = CorePrimitiveRef prim.name in
+        match prim.typ with
+        | TFun _ ->
+            let info = {intr_type = prim.typ; intr_ref = ref} in
+            add_intrinsic_fun prim.name info env
+        | _ ->
+            let info = {const_type = prim.typ; const_ref = ref} in
+            add_intrinsic_const prim.name info env)
+      env
+      Sarek_core_primitives.primitives
+  in
+
+  (* Step 2: Import all intrinsics from the PPX registry.
+     These provide device implementations and may shadow core primitives. *)
   let intrinsics = Sarek_ppx_registry.all_intrinsics () in
 
   (* Add each intrinsic to the environment under module-qualified name.

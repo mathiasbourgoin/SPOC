@@ -415,22 +415,29 @@ let rec lower_expr (state : state) (te : texpr) : Kirc_Ast.k_ext =
   | TEIntrinsicConst ref -> (
       match ref with
       | Sarek_env.IntrinsicRef (path, name) -> Kirc_Ast.IntrinsicRef (path, name)
-      )
+      | Sarek_env.CorePrimitiveRef name ->
+          (* Core primitives use Gpu module path for registry lookup *)
+          Kirc_Ast.IntrinsicRef (["Gpu"], name))
   (* Intrinsic function call - emit IntrinsicRef, device code resolved at JIT *)
-  | TEIntrinsicFun (ref, args) -> (
-      match ref with
-      | Sarek_env.IntrinsicRef (path, name) ->
-          (* Filter out Unit arguments - they're just () for function application syntax *)
-          let non_unit_args =
-            List.filter
-              (fun arg -> match arg.te with TEUnit -> false | _ -> true)
-              args
-          in
-          let args_ir =
-            Array.of_list (List.map (lower_expr state) non_unit_args)
-          in
-          if Array.length args_ir = 0 then Kirc_Ast.IntrinsicRef (path, name)
-          else Kirc_Ast.App (Kirc_Ast.IntrinsicRef (path, name), args_ir))
+  | TEIntrinsicFun (ref, args) ->
+      (* Filter out Unit arguments - they're just () for function application syntax *)
+      let non_unit_args =
+        List.filter
+          (fun arg -> match arg.te with TEUnit -> false | _ -> true)
+          args
+      in
+      let args_ir =
+        Array.of_list (List.map (lower_expr state) non_unit_args)
+      in
+      let path, name =
+        match ref with
+        | Sarek_env.IntrinsicRef (path, name) -> (path, name)
+        | Sarek_env.CorePrimitiveRef name ->
+            (* Core primitives use Gpu module path for registry lookup *)
+            (["Gpu"], name)
+      in
+      if Array.length args_ir = 0 then Kirc_Ast.IntrinsicRef (path, name)
+      else Kirc_Ast.App (Kirc_Ast.IntrinsicRef (path, name), args_ir)
 
 (** Lower a declaration for a local/kernel variable. *)
 and lower_decl ~mutable_ id name ty =
