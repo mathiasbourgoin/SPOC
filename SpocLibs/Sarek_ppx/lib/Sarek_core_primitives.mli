@@ -66,6 +66,9 @@ val requires_convergence : string -> bool
 
 val is_pure : string -> bool
 
+(** Check if a primitive is an atomic memory operation *)
+val is_atomic : string -> bool
+
 (** Get variance of a named primitive *)
 val variance_of : string -> variance option
 

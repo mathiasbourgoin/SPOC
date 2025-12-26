@@ -285,7 +285,28 @@ let test_pure () =
     bool
     "memory_fence_block is not pure"
     false
-    (is_pure "memory_fence_block")
+    (is_pure "memory_fence_block") ;
+  check bool "atomic_add_int32 is not pure" false (is_pure "atomic_add_int32")
+
+(* === Atomic tests === *)
+
+let test_atomic () =
+  check bool "atomic_add_int32 is atomic" true (is_atomic "atomic_add_int32") ;
+  check bool "atomic_sub_int32 is atomic" true (is_atomic "atomic_sub_int32") ;
+  check bool "atomic_exch_int32 is atomic" true (is_atomic "atomic_exch_int32") ;
+  check bool "atomic_min_int32 is atomic" true (is_atomic "atomic_min_int32") ;
+  check bool "atomic_max_int32 is atomic" true (is_atomic "atomic_max_int32") ;
+  check bool "atomic_cas_int32 is atomic" true (is_atomic "atomic_cas_int32") ;
+  check bool "atomic_and_int32 is atomic" true (is_atomic "atomic_and_int32") ;
+  check bool "atomic_or_int32 is atomic" true (is_atomic "atomic_or_int32") ;
+  check bool "atomic_xor_int32 is atomic" true (is_atomic "atomic_xor_int32") ;
+  check
+    bool
+    "atomic_add_float32 is atomic"
+    true
+    (is_atomic "atomic_add_float32") ;
+  check bool "sin is not atomic" false (is_atomic "sin") ;
+  check bool "block_barrier is not atomic" false (is_atomic "block_barrier")
 
 (* === Category tests === *)
 
@@ -307,7 +328,9 @@ let test_category () =
   let warp = primitives_in_category "warp" in
   check bool "warp category has primitives" true (List.length warp >= 8) ;
   let sync = primitives_in_category "sync" in
-  check bool "sync category has barrier" true (List.length sync >= 1)
+  check bool "sync category has barrier" true (List.length sync >= 1) ;
+  let atomics = primitives_in_category "atomic" in
+  check bool "atomic category has primitives" true (List.length atomics >= 10)
 
 (* === Test suites === *)
 
@@ -334,7 +357,8 @@ let convergence_tests =
     ("requires convergence", `Quick, test_requires_convergence);
   ]
 
-let purity_tests = [("pure", `Quick, test_pure)]
+let purity_tests =
+  [("pure", `Quick, test_pure); ("atomic", `Quick, test_atomic)]
 
 let category_tests = [("category", `Quick, test_category)]
 

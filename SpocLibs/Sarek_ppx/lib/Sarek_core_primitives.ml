@@ -547,6 +547,94 @@ let primitives =
       purity = Pure;
       category = "warp";
     };
+    (* === Atomic Operations ===
+       All atomics return the OLD value at the memory location.
+       Variance is ThreadVarying because return value depends on execution order.
+       purity = Atomic distinguishes from Pure and Impure. *)
+    {
+      name = "atomic_add_int32";
+      typ = t_fun [t_int32; t_int32] t_int32;
+      (* ptr, value -> old *)
+      variance = ThreadVarying;
+      convergence = NoEffect;
+      purity = Atomic;
+      category = "atomic";
+    };
+    {
+      name = "atomic_sub_int32";
+      typ = t_fun [t_int32; t_int32] t_int32;
+      variance = ThreadVarying;
+      convergence = NoEffect;
+      purity = Atomic;
+      category = "atomic";
+    };
+    {
+      name = "atomic_exch_int32";
+      typ = t_fun [t_int32; t_int32] t_int32;
+      (* ptr, new_val -> old *)
+      variance = ThreadVarying;
+      convergence = NoEffect;
+      purity = Atomic;
+      category = "atomic";
+    };
+    {
+      name = "atomic_min_int32";
+      typ = t_fun [t_int32; t_int32] t_int32;
+      variance = ThreadVarying;
+      convergence = NoEffect;
+      purity = Atomic;
+      category = "atomic";
+    };
+    {
+      name = "atomic_max_int32";
+      typ = t_fun [t_int32; t_int32] t_int32;
+      variance = ThreadVarying;
+      convergence = NoEffect;
+      purity = Atomic;
+      category = "atomic";
+    };
+    {
+      name = "atomic_cas_int32";
+      typ = t_fun [t_int32; t_int32; t_int32] t_int32;
+      (* ptr, compare, value -> old *)
+      variance = ThreadVarying;
+      convergence = NoEffect;
+      purity = Atomic;
+      category = "atomic";
+    };
+    {
+      name = "atomic_and_int32";
+      typ = t_fun [t_int32; t_int32] t_int32;
+      variance = ThreadVarying;
+      convergence = NoEffect;
+      purity = Atomic;
+      category = "atomic";
+    };
+    {
+      name = "atomic_or_int32";
+      typ = t_fun [t_int32; t_int32] t_int32;
+      variance = ThreadVarying;
+      convergence = NoEffect;
+      purity = Atomic;
+      category = "atomic";
+    };
+    {
+      name = "atomic_xor_int32";
+      typ = t_fun [t_int32; t_int32] t_int32;
+      variance = ThreadVarying;
+      convergence = NoEffect;
+      purity = Atomic;
+      category = "atomic";
+    };
+    (* Float atomics - limited hardware support *)
+    {
+      name = "atomic_add_float32";
+      typ = t_fun [t_float32; t_float32] t_float32;
+      variance = ThreadVarying;
+      convergence = NoEffect;
+      purity = Atomic;
+      category = "atomic";
+    };
   ]
 
 (* Build lookup table for O(1) access *)
@@ -591,6 +679,10 @@ let requires_convergence name =
 
 let is_pure name =
   match find name with Some p -> p.purity = Pure | None -> false
+
+(** Check if a primitive is an atomic memory operation *)
+let is_atomic name =
+  match find name with Some p -> p.purity = Atomic | None -> false
 
 let variance_of name = Option.map (fun p -> p.variance) (find name)
 
