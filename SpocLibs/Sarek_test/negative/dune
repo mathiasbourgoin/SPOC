@@ -8,6 +8,7 @@
 ; Expected errors:
 ; - test_barrier_diverged: "Barrier called in diverged control flow"
 ; - test_superstep_diverged: "Barrier called in diverged control flow"
+; - test_warp_diverged: "Warp collective 'warp_shuffle' called in diverged control flow"
 ; - test_unbound_function: "Unbound variable"
 ; - test_convention_kernel_fail: "Field z not found"
 ; - test_convention_kernel_fail2: "Cannot unify types"
@@ -59,6 +60,17 @@
 (library
  (name neg_test_unbound_function)
  (modules test_unbound_function)
+ (libraries spoc sarek sarek.stdlib sarek_ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_warp_diverged)
+ (modules test_warp_diverged)
  (libraries spoc sarek sarek.stdlib sarek_ppx.lib)
  (preprocess
   (pps sarek_ppx))

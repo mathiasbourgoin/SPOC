@@ -117,14 +117,36 @@ let rec is_thread_varying (te : texpr) : bool =
 (** Check if an intrinsic reference is a barrier *)
 let is_barrier_intrinsic (ref : intrinsic_ref) : bool = is_barrier_ref ref
 
+(** Check if an intrinsic ref requires warp convergence *)
+let is_warp_convergence_ref (ref : intrinsic_ref) : bool =
+  match ref with
+  | IntrinsicRef (_, base_name) ->
+      Sarek_core_primitives.is_warp_convergence_point base_name
+  | CorePrimitiveRef name ->
+      Sarek_core_primitives.is_warp_convergence_point name
+
+(** Get the name of an intrinsic ref for error messages *)
+let intrinsic_ref_name (ref : intrinsic_ref) : string =
+  match ref with
+  | IntrinsicRef (path, name) -> String.concat "." (path @ [name])
+  | CorePrimitiveRef name -> name
+
 (** Collect errors from convergence analysis *)
 let rec check_expr ctx (te : texpr) : Sarek_error.error list =
   match te.te with
-  (* Barrier calls - the key check *)
+  (* Barrier calls - the key check for block-level convergence *)
   | TEIntrinsicFun (ref, args) when is_barrier_intrinsic ref ->
       let arg_errors = List.concat_map (check_expr ctx) args in
       if ctx.mode = Diverged then
         Sarek_error.Barrier_in_diverged_flow te.te_loc :: arg_errors
+      else arg_errors
+  (* Warp collective calls - check for warp-level convergence *)
+  | TEIntrinsicFun (ref, args) when is_warp_convergence_ref ref ->
+      let arg_errors = List.concat_map (check_expr ctx) args in
+      if ctx.mode = Diverged then
+        let name = intrinsic_ref_name ref in
+        Sarek_error.Warp_collective_in_diverged_flow (name, te.te_loc)
+        :: arg_errors
       else arg_errors
   (* If expression - diverge if condition is thread-varying *)
   | TEIf (cond, then_e, else_opt) ->

@@ -31,6 +31,7 @@ type error =
   | Missing_type_annotation of string * loc
   | Invalid_intrinsic of string * loc
   | Barrier_in_diverged_flow of loc
+  | Warp_collective_in_diverged_flow of string * loc
 
 (** Get the location from an error *)
 let error_loc = function
@@ -55,6 +56,7 @@ let error_loc = function
   | Missing_type_annotation (_, loc) -> loc
   | Invalid_intrinsic (_, loc) -> loc
   | Barrier_in_diverged_flow loc -> loc
+  | Warp_collective_in_diverged_flow (_, loc) -> loc
 
 (** Pretty print an error *)
 let pp_error fmt = function
@@ -112,6 +114,12 @@ let pp_error fmt = function
         fmt
         "Barrier called in diverged control flow. All threads in a workgroup \
          must reach the barrier together"
+  | Warp_collective_in_diverged_flow (name, _) ->
+      Format.fprintf
+        fmt
+        "Warp collective '%s' called in diverged control flow. All threads in \
+         a warp must participate together"
+        name
 
 (** Convert error to string *)
 let error_to_string e = Format.asprintf "%a" pp_error e
