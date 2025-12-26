@@ -391,3 +391,67 @@ let zip =
     |]
     device ;
   vec_out
+
+(** {1 Kernel Fusion}
+
+    Automatic fusion of producer-consumer kernels to eliminate intermediate
+    arrays and reduce memory traffic. *)
+
+(** Detect intermediate arrays between producer and consumer kernels. Returns
+    list of array names written by producer and read by consumer. *)
+let detect_intermediates producer_body consumer_body =
+  let producer_ir = Sarek_ir.of_k_ext producer_body in
+  let consumer_ir = Sarek_ir.of_k_ext consumer_body in
+  let producer_info = Sarek_fusion.analyze producer_ir in
+  let consumer_info = Sarek_fusion.analyze consumer_ir in
+  let producer_writes = List.map fst producer_info.Sarek_fusion.writes in
+  let consumer_reads = List.map fst consumer_info.Sarek_fusion.reads in
+  List.filter (fun arr -> List.mem arr consumer_reads) producer_writes
+
+(** Try to fuse two kernel bodies, returning fused body if possible *)
+let try_fuse_bodies producer_body consumer_body =
+  let intermediates = detect_intermediates producer_body consumer_body in
+  match intermediates with
+  | [] -> None
+  | intermediate :: _ ->
+      let producer_ir = Sarek_ir.of_k_ext producer_body in
+      let consumer_ir = Sarek_ir.of_k_ext consumer_body in
+      if Sarek_fusion.can_fuse producer_ir consumer_ir intermediate then
+        let fused_ir = Sarek_fusion.fuse producer_ir consumer_ir intermediate in
+        Some (Sarek_ir.to_k_ext fused_ir)
+      else None
+
+(** Fuse a pipeline of kernel bodies. Returns (fused_body, eliminated_arrays).
+*)
+let fuse_pipeline_bodies bodies =
+  match bodies with
+  | [] -> failwith "fuse_pipeline_bodies: empty list"
+  | [single] -> (single, [])
+  | _ ->
+      let irs = List.map Sarek_ir.of_k_ext bodies in
+      let fused_ir, eliminated = Sarek_fusion.fuse_pipeline irs in
+      (Sarek_ir.to_k_ext fused_ir, eliminated)
+
+(** Pipeline module for composing and executing fused kernels *)
+module Pipeline = struct
+  type 'a stage = {body : Kirc_Ast.k_ext; info : 'a}
+
+  (** Create a pipeline from a list of kernel bodies *)
+  let of_bodies bodies = List.map (fun b -> {body = b; info = ()}) bodies
+
+  (** Optimize a pipeline by fusing adjacent stages *)
+  let optimize stages =
+    let bodies = List.map (fun s -> s.body) stages in
+    let fused_body, eliminated = fuse_pipeline_bodies bodies in
+    (fused_body, eliminated)
+
+  (** Check if two stages can be fused *)
+  let can_fuse_stages s1 s2 =
+    let intermediates = detect_intermediates s1.body s2.body in
+    match intermediates with
+    | [] -> false
+    | intermediate :: _ ->
+        let ir1 = Sarek_ir.of_k_ext s1.body in
+        let ir2 = Sarek_ir.of_k_ext s2.body in
+        Sarek_fusion.can_fuse ir1 ir2 intermediate
+end
