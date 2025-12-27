@@ -17,11 +17,17 @@ let verify = ref true
 
 let use_interpreter = ref false
 
+let use_native = ref false
+
+let benchmark_all = ref false
+
 let usage () =
   Printf.printf "Usage: %s [options]\n" Sys.argv.(0) ;
   Printf.printf "Options:\n" ;
   Printf.printf "  -d <id>       Device ID (default: 0)\n" ;
   Printf.printf "  --interpreter Use CPU interpreter device\n" ;
+  Printf.printf "  --native      Use native CPU runtime device\n" ;
+  Printf.printf "  --benchmark   Run on all devices and compare times\n" ;
   Printf.printf "  -s <size>     Vector size (default: 1024)\n" ;
   Printf.printf "  -b <size>     Block/work-group size (default: 256)\n" ;
   Printf.printf "  -no-verify    Skip result verification\n" ;
@@ -31,27 +37,82 @@ let usage () =
 let parse_args () =
   let i = ref 1 in
   while !i < Array.length Sys.argv do
-    match Sys.argv.(!i) with
+    (match Sys.argv.(!i) with
     | "-d" ->
         incr i ;
         dev_id := int_of_string Sys.argv.(!i)
-    | "--interpreter" ->
-        use_interpreter := true ;
-        incr i
+    | "--interpreter" -> use_interpreter := true
+    | "--native" -> use_native := true
+    | "--benchmark" -> benchmark_all := true
     | "-s" ->
         incr i ;
         size := int_of_string Sys.argv.(!i)
     | "-b" ->
         incr i ;
         block_size := int_of_string Sys.argv.(!i)
-    | "-no-verify" ->
-        verify := false ;
-        incr i
+    | "-no-verify" -> verify := false
     | "-h" | "--help" -> usage ()
-    | _ ->
-        () ;
-        incr i
+    | _ -> ()) ;
+    incr i
   done
+
+(* Run kernel on a single device and return time in ms *)
+let run_on_device vector_add _devs dev =
+  (* Create vectors *)
+  let a = Vector.create Vector.float32 !size in
+  let b = Vector.create Vector.float32 !size in
+  let c = Vector.create Vector.float32 !size in
+
+  (* Initialize *)
+  for i = 0 to !size - 1 do
+    Mem.set a i (float_of_int i) ;
+    Mem.set b i (float_of_int (i * 2)) ;
+    Mem.set c i 0.0
+  done ;
+
+  (* Generate kernel for this device *)
+  ignore (Sarek.Kirc.gen vector_add dev) ;
+
+  (* Setup grid/block *)
+  let threadsPerBlock =
+    match dev.Devices.specific_info with
+    | Devices.OpenCLInfo clI -> (
+        match clI.Devices.device_type with
+        | Devices.CL_DEVICE_TYPE_CPU -> 1
+        | _ -> !block_size)
+    | _ -> !block_size
+  in
+  let blocksPerGrid = (!size + threadsPerBlock - 1) / threadsPerBlock in
+  let block =
+    {Kernel.blockX = threadsPerBlock; Kernel.blockY = 1; Kernel.blockZ = 1}
+  in
+  let grid =
+    {Kernel.gridX = blocksPerGrid; Kernel.gridY = 1; Kernel.gridZ = 1}
+  in
+
+  (* Run kernel *)
+  let t0 = Unix.gettimeofday () in
+  Sarek.Kirc.run vector_add (a, b, c, !size) (block, grid) 0 dev ;
+  Devices.flush dev () ;
+  let t1 = Unix.gettimeofday () in
+  let time_ms = (t1 -. t0) *. 1000.0 in
+
+  (* Verify results if requested *)
+  let ok =
+    if !verify then begin
+      Mem.to_cpu c () ;
+      Devices.flush dev () ;
+      let errors = ref 0 in
+      for i = 0 to !size - 1 do
+        let expected = float_of_int i +. float_of_int (i * 2) in
+        let got = Mem.get c i in
+        if abs_float (got -. expected) > 0.001 then incr errors
+      done ;
+      !errors = 0
+    end
+    else true
+  in
+  (time_ms, ok)
 
 let () =
   parse_args () ;
@@ -80,84 +141,53 @@ let () =
       Printf.printf "  [%d] %s\n" i d.Devices.general_info.Devices.name)
     devs ;
 
-  (* Select device: --interpreter flag overrides -d *)
-  let dev =
-    if !use_interpreter then (
-      match Devices.find_interpreter_id devs with
-      | Some id -> devs.(id)
-      | None ->
-          print_endline "No interpreter device found" ;
-          exit 1)
-    else devs.(!dev_id)
-  in
-  Printf.printf "Using device: %s\n%!" dev.Devices.general_info.Devices.name ;
-  Printf.printf "Configuration: size=%d, block_size=%d\n%!" !size !block_size ;
+  if !benchmark_all then begin
+    (* Benchmark mode: run on all devices *)
+    Printf.printf "\nBenchmark: vector_add with %d elements\n" !size ;
+    Printf.printf "%-40s %12s %10s\n" "Device" "Time (ms)" "Status" ;
+    Printf.printf "%s\n" (String.make 64 '-') ;
+    Array.iter
+      (fun dev ->
+        let name = dev.Devices.general_info.Devices.name in
+        let time_ms, ok = run_on_device vector_add devs dev in
+        let status = if ok then "OK" else "FAIL" in
+        Printf.printf "%-40s %12.4f %10s\n" name time_ms status)
+      devs ;
+    print_endline "\nBenchmark complete."
+  end
+  else begin
+    (* Single device mode *)
+    let dev =
+      if !use_native then (
+        match Devices.find_native_id devs with
+        | Some id -> devs.(id)
+        | None ->
+            print_endline "No native CPU device found" ;
+            exit 1)
+      else if !use_interpreter then (
+        match Devices.find_interpreter_id devs with
+        | Some id -> devs.(id)
+        | None ->
+            print_endline "No interpreter device found" ;
+            exit 1)
+      else devs.(!dev_id)
+    in
+    Printf.printf "Using device: %s\n%!" dev.Devices.general_info.Devices.name ;
+    Printf.printf "Configuration: size=%d, block_size=%d\n%!" !size !block_size ;
 
-  let blocks = (!size + !block_size - 1) / !block_size in
-  Printf.printf
-    "  -> blocks=%d, total_threads=%d\n%!"
-    blocks
-    (blocks * !block_size) ;
+    let blocks = (!size + !block_size - 1) / !block_size in
+    Printf.printf
+      "  -> blocks=%d, total_threads=%d\n%!"
+      blocks
+      (blocks * !block_size) ;
 
-  (* Create vectors *)
-  Printf.printf "Creating vectors...\n%!" ;
-  let a = Vector.create Vector.float32 !size in
-  let b = Vector.create Vector.float32 !size in
-  let c = Vector.create Vector.float32 !size in
+    Printf.printf "Running kernel...\n%!" ;
+    let time_ms, ok = run_on_device vector_add devs dev in
+    Printf.printf "Kernel time: %.4f ms\n%!" time_ms ;
 
-  (* Initialize *)
-  Printf.printf "Initializing vectors...\n%!" ;
-  for i = 0 to !size - 1 do
-    Mem.set a i (float_of_int i) ;
-    Mem.set b i (float_of_int (i * 2)) ;
-    Mem.set c i 0.0
-  done ;
+    if !verify then
+      if ok then Printf.printf "Verification PASSED\n%!"
+      else Printf.printf "Verification FAILED\n%!" ;
 
-  (* Generate kernel *)
-  Printf.printf "Generating kernel...\n%!" ;
-  ignore (Sarek.Kirc.gen vector_add dev) ;
-
-  (* Setup grid/block *)
-  let threadsPerBlock =
-    match dev.Devices.specific_info with
-    | Devices.OpenCLInfo clI -> (
-        match clI.Devices.device_type with
-        | Devices.CL_DEVICE_TYPE_CPU -> 1
-        | _ -> !block_size)
-    | _ -> !block_size
-  in
-  let blocksPerGrid = (!size + threadsPerBlock - 1) / threadsPerBlock in
-  let block =
-    {Kernel.blockX = threadsPerBlock; Kernel.blockY = 1; Kernel.blockZ = 1}
-  in
-  let grid =
-    {Kernel.gridX = blocksPerGrid; Kernel.gridY = 1; Kernel.gridZ = 1}
-  in
-
-  (* Run kernel *)
-  Printf.printf "Running kernel...\n%!" ;
-  Sarek.Kirc.run vector_add (a, b, c, !size) (block, grid) 0 dev ;
-  Devices.flush dev () ;
-
-  Printf.printf "Kernel execution complete.\n%!" ;
-
-  (* Verify results *)
-  if !verify then begin
-    Printf.printf "Verifying results...\n%!" ;
-    Mem.to_cpu c () ;
-    Devices.flush dev () ;
-    let errors = ref 0 in
-    for i = 0 to min (!size - 1) 9 do
-      let expected = float_of_int i +. float_of_int (i * 2) in
-      let got = Mem.get c i in
-      if abs_float (got -. expected) > 0.001 then begin
-        Printf.printf "  ERROR at %d: expected %f, got %f\n" i expected got ;
-        incr errors
-      end
-      else if i < 5 then Printf.printf "  c[%d] = %f (OK)\n" i got
-    done ;
-    if !errors = 0 then Printf.printf "Verification PASSED\n%!"
-    else Printf.printf "Verification FAILED with %d errors\n%!" !errors
-  end ;
-
-  print_endline "E2E Test PASSED"
+    print_endline "E2E Test PASSED"
+  end

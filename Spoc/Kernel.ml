@@ -252,6 +252,8 @@ let exec (args : ('a, 'b) kernelArgs array) (block, grid) queue_id dev
       opencl_launch_grid clFun grid block dev.Devices.general_info queue_id
   | Devices.InterpreterInfo _ ->
       failwith "Kernel.exec: Use Kirc.run for interpreter devices"
+  | Devices.NativeInfo _ ->
+      failwith "Kernel.exec: Use Kirc.run for native CPU devices"
 
 let compile_and_run (dev : Devices.device) ((block : block), (grid : grid))
     ?cached:(c = false) ?debug:(d = false) ?queue_id:(q = 0) ker =
@@ -337,6 +339,9 @@ class virtual ['a, 'b] spoc_kernel file (func : string) =
                   else opencl_compile t kernel_name dev.Devices.general_info)
           | Devices.InterpreterInfo _ ->
               (* Interpreter doesn't need compiled kernels - just return dummy *)
+              Obj.magic ()
+          | Devices.NativeInfo _ ->
+              (* Native doesn't need compiled kernels - just return dummy *)
               Obj.magic ()
         in
         Hashtbl.add binaries dev bin

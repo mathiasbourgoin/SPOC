@@ -191,7 +191,8 @@ let cuda_or_opencl dev cuda_code opencl_code =
   | Spoc.Devices.CudaInfo _ -> cuda_code
   | Spoc.Devices.OpenCLInfo _ -> opencl_code
   | Spoc.Devices.InterpreterInfo _ -> cuda_code
-(* Use CUDA syntax for interpreter *)
+  | Spoc.Devices.NativeInfo _ -> cuda_code
+(* Use CUDA syntax for interpreter and native *)
 
 (* Note: All intrinsics (Float32, Float64, Int32, Int64, GPU) are defined in
    Sarek_stdlib modules and auto-register via %sarek_intrinsic when that

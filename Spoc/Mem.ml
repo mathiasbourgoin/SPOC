@@ -146,6 +146,8 @@ and basic_transfer_to_device new_vect q dev =
           f ()))
   | Devices.InterpreterInfo _ ->
       () (* No transfer needed - data stays in host memory *)
+  | Devices.NativeInfo _ ->
+      () (* No transfer needed - data stays in host memory *)
 
 and basic_transfer_to_cpu new_vect q dev =
   match dev.Devices.specific_info with
@@ -201,6 +203,8 @@ and basic_transfer_to_cpu new_vect q dev =
           Gc.full_major () ;
           f ()))
   | Devices.InterpreterInfo _ ->
+      () (* No transfer needed - data stays in host memory *)
+  | Devices.NativeInfo _ ->
       () (* No transfer needed - data stays in host memory *)
 
 and transfer_part_to_device vect sub_vect q (dev : Devices.device) host_offset
@@ -260,6 +264,8 @@ and transfer_part_to_device vect sub_vect q (dev : Devices.device) host_offset
             size)
   | Devices.InterpreterInfo _ ->
       () (* No transfer needed - data stays in host memory *)
+  | Devices.NativeInfo _ ->
+      () (* No transfer needed - data stays in host memory *)
 
 and transfer_part_to_cpu vect sub_vect q (dev : Devices.device) host_offset
     guest_offset start size =
@@ -317,6 +323,8 @@ and transfer_part_to_cpu vect sub_vect q (dev : Devices.device) host_offset
             start
             size)
   | Devices.InterpreterInfo _ ->
+      () (* No transfer needed - data stays in host memory *)
+  | Devices.NativeInfo _ ->
       () (* No transfer needed - data stays in host memory *)
 
 and to_device vect ?queue_id:(q = 0) (dev : Devices.device) =
@@ -488,6 +496,8 @@ and alloc_vect_on_device vector dev =
             dev.Devices.general_info)
   | Devices.InterpreterInfo _ ->
       () (* No allocation needed - data stays in host memory *)
+  | Devices.NativeInfo _ ->
+      () (* No allocation needed - data stays in host memory *)
 
 and to_cpu vect ?queue_id:(q = 0) () =
   match Vector.dev vect with
@@ -649,6 +659,14 @@ let gpu_vector_copy vecA startA vecB startB size dev =
           (startB + i)
           (Vector.unsafe_get vecA (startA + i))
       done
+  | Devices.NativeInfo _ ->
+      (* CPU copy - use host memory directly *)
+      for i = 0 to size - 1 do
+        Vector.unsafe_set
+          vecB
+          (startB + i)
+          (Vector.unsafe_get vecA (startA + i))
+      done
 
 let cpu_vector_copy vecA startA vecB startB size =
   let sB = ref startB in
@@ -758,6 +776,15 @@ let gpu_matrix_copy (vecA : ('a, 'b) Vector.vector) ldA start_rowA start_colA
             dev.Devices.general_info
             (dev.Devices.general_info.Devices.id - Devices.cuda_devices ()))
   | Devices.InterpreterInfo _ ->
+      (* CPU matrix copy - use host memory directly *)
+      for row = 0 to rows - 1 do
+        for col = 0 to cols - 1 do
+          let srcIdx = ((start_rowA + row) * ldA) + (start_colA + col) in
+          let dstIdx = ((start_rowB + row) * ldB) + (start_colB + col) in
+          Vector.unsafe_set vecB dstIdx (Vector.unsafe_get vecA srcIdx)
+        done
+      done
+  | Devices.NativeInfo _ ->
       (* CPU matrix copy - use host memory directly *)
       for row = 0 to rows - 1 do
         for col = 0 to cols - 1 do

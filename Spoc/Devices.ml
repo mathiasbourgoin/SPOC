@@ -176,10 +176,16 @@ type interpreterInfo = {
   debug_mode : bool;
 }
 
+(** Native CPU runtime - uses PPX-generated OCaml code *)
+type nativeInfo = {
+  native_num_cores : int;
+}
+
 type specificInfo =
   | CudaInfo of cudaInfo
   | OpenCLInfo of openCLInfo
   | InterpreterInfo of interpreterInfo
+  | NativeInfo of nativeInfo
 
 type gcInfo
 
@@ -309,7 +315,33 @@ let create_interpreter_device ?(backend = Sequential) ?(debug = false) () =
 
 let interpreter_compatible_devices = ref 0
 
-let init ?only:(s = Both) ?(interpreter = Some Sequential) () =
+(* Counter for native device IDs *)
+let native_device_id = ref 0
+
+let create_native_device () =
+  let id = !native_device_id in
+  incr native_device_id ;
+  let num_cores = try Domain.recommended_domain_count () with _ -> 4 in
+  {
+    general_info = {
+      name = Printf.sprintf "CPU Native Runtime (%d cores)" num_cores;
+      totalGlobalMem = Sys.max_array_length * 8;
+      localMemSize = 64 * 1024;
+      clockRate = 0;
+      totalConstMem = 64 * 1024;
+      multiProcessorCount = num_cores;
+      eccEnabled = false;
+      id;
+      ctx = Obj.magic ();
+    };
+    specific_info = NativeInfo { native_num_cores = num_cores };
+    gc_info = Obj.magic ();
+    events = Obj.magic ();
+  }
+
+let native_compatible_devices = ref 0
+
+let init ?only:(s = Both) ?(interpreter = Some Sequential) ?(native = true) () =
   openOutput () ;
   let idEvent = beginEvent "initialisation des devices" in
   begin match s with
@@ -345,6 +377,13 @@ let init ?only:(s = Both) ?(interpreter = Some Sequential) () =
        interpreter_compatible_devices := 1
    | None ->
        interpreter_compatible_devices := 0) ;
+  (* Optionally add native CPU device *)
+  if native then begin
+    devList := !devList @ [create_native_device ()] ;
+    native_compatible_devices := 1
+  end
+  else
+    native_compatible_devices := 0 ;
   total_num_devices := List.length !devList ;
   opencl_compatible_devices := !i ;
   emitDeviceList !devList ;
@@ -356,6 +395,8 @@ let cuda_devices () = !cuda_compatible_devices
 let opencl_devices () = !opencl_compatible_devices
 
 let interpreter_devices () = !interpreter_compatible_devices
+
+let native_devices () = !native_compatible_devices
 
 let gpgpu_devices () = !total_num_devices
 
@@ -372,6 +413,7 @@ let flush dev ?queue_id () =
   | OpenCLInfo _, None -> opencl_flush dev.general_info 0
   | OpenCLInfo _, Some q -> opencl_flush dev.general_info q
   | InterpreterInfo _, _ -> () (* No-op for interpreter *)
+  | NativeInfo _, _ -> () (* No-op for native *)
 
 let hasCLExtension dev ext =
   match dev.specific_info with
@@ -389,6 +431,7 @@ let allowDouble dev =
       hasCLExtension dev "cl_khr_fp64" || hasCLExtension dev "cl_amd_fp64"
   | CudaInfo ci -> ci.major > 1 || ci.minor >= 3
   | InterpreterInfo _ -> true
+  | NativeInfo _ -> true
 
 (** Check if a device is the CPU interpreter *)
 let is_interpreter dev =
@@ -405,6 +448,25 @@ let find_interpreter_id devs =
   let rec find i =
     if i >= Array.length devs then None
     else if is_interpreter devs.(i) then Some i
+    else find (i + 1)
+  in
+  find 0
+
+(** Check if a device is the native CPU runtime *)
+let is_native dev =
+  match dev.specific_info with
+  | NativeInfo _ -> true
+  | _ -> false
+
+(** Find the native device in an array, returns None if not present *)
+let find_native devs =
+  Array.find_opt is_native devs
+
+(** Find the native device index in an array, returns None if not present *)
+let find_native_id devs =
+  let rec find i =
+    if i >= Array.length devs then None
+    else if is_native devs.(i) then Some i
     else find (i + 1)
   in
   find 0

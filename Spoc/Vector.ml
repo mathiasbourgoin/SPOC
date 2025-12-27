@@ -355,6 +355,8 @@ let create (kind : ('a, 'b) kind) ?dev size =
                   dev.Devices.general_info)
         | Devices.InterpreterInfo _ ->
             () (* No device allocation needed - data stays in host memory *)
+        | Devices.NativeInfo _ ->
+            () (* No device allocation needed - data stays in host memory *)
       in
       (try alloc_on_dev ()
        with _ ->

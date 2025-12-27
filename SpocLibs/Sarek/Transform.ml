@@ -52,6 +52,8 @@ let launch_kernel_with_args bin grid block kernel_arg_tab device =
         0
   | Devices.InterpreterInfo _ ->
       failwith "Transform.launch_kernel_with_args: Use Kirc.run for interpreter"
+  | Devices.NativeInfo _ ->
+      failwith "Transform.launch_kernel_with_args: Use Kirc.run for native CPU"
 
 let compute_grid_block_1D device vec_in =
   let open Kernel in
@@ -73,6 +75,13 @@ let compute_grid_block_1D device vec_in =
         grid.gridX <- Vector.length vec_in / block.blockX)
   | Devices.InterpreterInfo _ ->
       (* For interpreter, use simple blocking *)
+      let len = Vector.length vec_in in
+      if len < 256 then block.blockX <- len
+      else (
+        block.blockX <- 256 ;
+        grid.gridX <- len / 256)
+  | Devices.NativeInfo _ ->
+      (* For native CPU, use simple blocking *)
       let len = Vector.length vec_in in
       if len < 256 then block.blockX <- len
       else (
@@ -273,6 +282,13 @@ let map2 (ker : ('a, 'b, 'c -> 'd -> 'e, 'f, 'g) sarek_kernel)
         else (
           block.blockX <- 256 ;
           grid.gridX <- length / 256)
+    | Devices.NativeInfo _ ->
+        if length < 256 then (
+          grid.gridX <- 1 ;
+          block.blockX <- length)
+        else (
+          block.blockX <- 256 ;
+          grid.gridX <- length / 256)
   end ;
   let bin = Hashtbl.find (spoc_ker#get_binaries ()) device in
   let offset = ref 0 in
@@ -303,7 +319,9 @@ let map2 (ker : ('a, 'b, 'c -> 'd -> 'e, 'f, 'g) sarek_kernel)
         device.Devices.general_info
         0
   | Devices.InterpreterInfo _ ->
-      failwith "Transform.map2: Use Kirc.run for interpreter") ;
+      failwith "Transform.map2: Use Kirc.run for interpreter"
+  | Devices.NativeInfo _ ->
+      failwith "Transform.map2: Use Kirc.run for native CPU") ;
   vec_out
 
 let reduce (_ker : ('a, 'b, 'c -> 'c -> 'd, 'e, 'f) sarek_kernel)
@@ -338,6 +356,7 @@ let map =
     | Devices.CudaInfo _ -> Devices.Cuda
     | Devices.OpenCLInfo _ -> Devices.OpenCL
     | Devices.InterpreterInfo _ -> Devices.Cuda (* Use CUDA for codegen *)
+    | Devices.NativeInfo _ -> Devices.Cuda (* Use CUDA for codegen *)
   in
   let ((spoc_ker, _kir_ker) as res) =
     build_new_ker
@@ -387,6 +406,7 @@ let zip =
     | Devices.CudaInfo _ -> Devices.Cuda
     | Devices.OpenCLInfo _ -> Devices.OpenCL
     | Devices.InterpreterInfo _ -> Devices.Cuda (* Use CUDA for codegen *)
+    | Devices.NativeInfo _ -> Devices.Cuda (* Use CUDA for codegen *)
   in
   let ((spoc_ker, _kir_ker) as res) =
     build_new_ker spoc_ker kir_ker ker (fun a b ->

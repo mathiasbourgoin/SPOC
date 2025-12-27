@@ -254,10 +254,16 @@ type interpreterInfo = {
   debug_mode : bool;  (** Enable extra validation and tracing *)
 }
 
+(** Information for native CPU runtime devices *)
+type nativeInfo = {
+  native_num_cores : int;  (** Number of cores for parallel execution *)
+}
+
 type specificInfo =
     CudaInfo of cudaInfo
   | OpenCLInfo of openCLInfo
   | InterpreterInfo of interpreterInfo
+  | NativeInfo of nativeInfo
 
 type gcInfo
 type events
@@ -281,15 +287,19 @@ external closeOutput : unit -> unit = "close_output_profiling"
                                         
 (** Mandatory function to use Spoc
 @param only allows to specify which library to use, by default, Spoc will search any device on the system
+@param interpreter Defaults to [Some Sequential]. Use [None] to exclude the interpreter device.
+@param native if true, adds a native CPU runtime device (default: true)
 @return an array containing every compatible device found on the system *)
-val init : ?only: specificLibrary -> ?interpreter:interpreter_backend option -> unit -> device array
-(** @param interpreter Defaults to [Some Sequential]. Use [None] to exclude the interpreter device. *)
+val init : ?only: specificLibrary -> ?interpreter:interpreter_backend option -> ?native:bool -> unit -> device array
 
 (** @return the number of Cuda compatible devices found *)
 val cuda_devices : unit -> int
 
 (** @return the number of interpreter devices (0 or 1) *)
 val interpreter_devices : unit -> int
+
+(** @return the number of native CPU runtime devices (0 or 1) *)
+val native_devices : unit -> int
 
 (** @return the number of OpenCL compatible devices found *)
 val opencl_devices : unit -> int
@@ -324,3 +334,18 @@ val find_interpreter_id : device array -> int option
     @return a device that can be used with Kirc.run *)
 val create_interpreter_device :
   ?backend:interpreter_backend -> ?debug:bool -> unit -> device
+
+(** Check if a device is the native CPU runtime *)
+val is_native : device -> bool
+
+(** Find the native device in an array, returns None if not present *)
+val find_native : device array -> device option
+
+(** Find the native device index in an array, returns None if not present *)
+val find_native_id : device array -> int option
+
+(** Create a native CPU runtime device.
+    This device executes kernels using PPX-generated native OCaml code,
+    which runs at full native speed without interpretation overhead.
+    @return a device that can be used with Kirc.run *)
+val create_native_device : unit -> device
