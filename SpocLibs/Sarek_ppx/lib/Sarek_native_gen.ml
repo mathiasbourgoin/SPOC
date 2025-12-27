@@ -233,12 +233,69 @@ let gen_intrinsic_fun ~loc (ref : Sarek_env.intrinsic_ref)
     TEVar can dereference them. *)
 module IntSet = Set.Make (Int)
 
+(** Set of inline type names for first-class module approach *)
+module StringSet = Set.Make (String)
+
+(** Expression generation context *)
+type gen_context = {
+  mut_vars : IntSet.t;
+      (** Variable IDs that are mutable (need dereferencing) *)
+  inline_types : StringSet.t;
+      (** Type names that use first-class module accessors *)
+  current_module : string option;
+      (** Current module name for same-module type detection *)
+}
+
+(** Empty generation context *)
+let empty_ctx =
+  {
+    mut_vars = IntSet.empty;
+    inline_types = StringSet.empty;
+    current_module = None;
+  }
+
+(** Check if a qualified type name is from the current module. For
+    "Test_registered_variant.color", returns true if current_module is
+    "Test_registered_variant". *)
+let is_same_module ctx type_name =
+  match ctx.current_module with
+  | None -> false
+  | Some cur_mod -> (
+      match String.rindex_opt type_name '.' with
+      | Some idx ->
+          let type_mod = String.sub type_name 0 idx in
+          String.equal type_mod cur_mod
+      | None -> false)
+
+(** The name of the first-class module variable *)
+let types_module_var = "__types"
+
+(** {1 First-Class Module Name Helpers} *)
+
+(** Generate accessor function name for a field getter *)
+let field_getter_name type_name field_name =
+  Printf.sprintf "get_%s_%s" type_name field_name
+
+(** Generate accessor function name for a field setter (mutable fields) *)
+let field_setter_name type_name field_name =
+  Printf.sprintf "set_%s_%s" type_name field_name
+
+(** Generate constructor function name for a record *)
+let record_maker_name type_name = Printf.sprintf "make_%s" type_name
+
+(** Generate constructor function name for a variant constructor *)
+let variant_ctor_name type_name ctor_name =
+  Printf.sprintf "make_%s_%s" type_name ctor_name
+
+(** Generate match function name for a variant *)
+let variant_match_name type_name = Printf.sprintf "match_%s" type_name
+
 (** Generate OCaml expression from typed Sarek expression.
-    @param mut_vars Set of variable IDs that are mutable (need dereferencing) *)
-let rec gen_expr_impl ~loc:_ ~mut_vars (te : texpr) : expression =
+    @param ctx Generation context with mutable vars and inline types *)
+let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
   let loc = ppxlib_loc_of_sarek te.te_loc in
-  (* Helper to recursively generate, passing mut_vars *)
-  let gen_expr ~loc e = gen_expr_impl ~loc ~mut_vars e in
+  (* Helper to recursively generate, passing ctx *)
+  let gen_expr ~loc e = gen_expr_impl ~loc ~ctx e in
   match te.te with
   (* Literals *)
   | TEUnit -> [%expr ()]
@@ -268,9 +325,22 @@ let rec gen_expr_impl ~loc:_ ~mut_vars (te : texpr) : expression =
          - Local let-bound variables (like "tid")
          - Module-level functions/constants (like "add_scale")
          - Mutable variables (need dereferencing with !)
+         - Qualified names (like "Visibility_lib.public_add")
          OCaml handles shadowing correctly, so using original names is safe. *)
-      let var_e = evar ~loc name in
-      if IntSet.mem id mut_vars then
+      let var_e =
+        if String.contains name '.' then
+          (* Qualified name - build a proper Ldot path *)
+          let parts = String.split_on_char '.' name in
+          let rec build_lid = function
+            | [] -> assert false
+            | [x] -> Lident x
+            | x :: rest -> Ldot (build_lid rest, x)
+          in
+          let lid = build_lid (List.rev parts) in
+          Ast_builder.Default.pexp_ident ~loc {txt = lid; loc}
+        else evar ~loc name
+      in
+      if IntSet.mem id ctx.mut_vars then
         (* Mutable variable - dereference the ref *)
         [%expr ![%e var_e]]
       else var_e
@@ -297,38 +367,57 @@ let rec gen_expr_impl ~loc:_ ~mut_vars (te : texpr) : expression =
         Bigarray.Array1.set [%e arr_e] (Int32.to_int [%e idx_e]) [%e val_e]]
   (* Record field access - qualify field with module path from record type.
      For Geometry_lib.point, we need p.Geometry_lib.x, not p.x.
-     For inline types (no module prefix), use unqualified name - the types
-     are in scope via TEOpen from the original `let module Types = ... in`. *)
-  | TEFieldGet (record, field_name, _field_idx) ->
+     For inline types using first-class modules, call __types.get_type_field.
+     For same-module types, use unqualified field names. *)
+  | TEFieldGet (record, field_name, _field_idx) -> (
       let rec_e = gen_expr ~loc record in
-      let field_lid =
-        match repr record.ty with
-        | TRecord (type_name, _) -> (
-            (* type_name may be "Module.type" or just "type" *)
-            match String.rindex_opt type_name '.' with
-            | Some idx ->
-                (* Extract module path: "Geometry_lib.point" -> "Geometry_lib" *)
-                let module_path = String.sub type_name 0 idx in
-                (* Parse module path which may be nested: "A.B.C" *)
-                let parts = String.split_on_char '.' module_path in
-                (* Build Ldot chain: A.B.C.field_name *)
-                let rec build_lid = function
-                  | [] -> Lident field_name
-                  | [m] -> Ldot (Lident m, field_name)
-                  | m :: rest -> Ldot (build_lid rest, m)
+      match repr record.ty with
+      | TRecord (type_name, _) -> (
+          (* type_name may be "Module.type" or just "type" *)
+          match String.rindex_opt type_name '.' with
+          | Some _ when is_same_module ctx type_name ->
+              (* Same-module type - use unqualified field access *)
+              let field_lid = {txt = Lident field_name; loc} in
+              Ast_builder.Default.pexp_field ~loc rec_e field_lid
+          | Some idx ->
+              (* External qualified type - use qualified field access *)
+              let module_path = String.sub type_name 0 idx in
+              let parts = String.split_on_char '.' module_path in
+              let rec build_lid = function
+                | [] -> Lident field_name
+                | [m] -> Ldot (Lident m, field_name)
+                | m :: rest -> Ldot (build_lid rest, m)
+              in
+              let field_lid = {txt = build_lid (List.rev parts); loc} in
+              Ast_builder.Default.pexp_field ~loc rec_e field_lid
+          | None ->
+              (* Inline type - check if using first-class module approach *)
+              if StringSet.mem type_name ctx.inline_types then
+                (* Use accessor: __types#get_typename_fieldname record *)
+                let fn_name = field_getter_name type_name field_name in
+                let method_call =
+                  Ast_builder.Default.pexp_send
+                    ~loc
+                    (evar ~loc types_module_var)
+                    {txt = fn_name; loc}
                 in
-                {txt = build_lid (List.rev parts); loc}
-            | None ->
-                (* Inline type - use unqualified name, types are in scope *)
-                {txt = Lident field_name; loc})
-        | _ ->
-            (* Not a record type - shouldn't happen, but use unqualified name *)
-            {txt = Lident field_name; loc}
-      in
-      Ast_builder.Default.pexp_field ~loc rec_e field_lid
+                Ast_builder.Default.pexp_apply
+                  ~loc
+                  method_call
+                  [(Nolabel, rec_e)]
+              else
+                (* Direct field access *)
+                let field_lid = {txt = Lident field_name; loc} in
+                Ast_builder.Default.pexp_field ~loc rec_e field_lid)
+      | _ ->
+          (* Not a record type - shouldn't happen, but use unqualified name *)
+          let field_lid = {txt = Lident field_name; loc} in
+          Ast_builder.Default.pexp_field ~loc rec_e field_lid)
   | TEFieldSet (record, field_name, _field_idx, value) ->
       let rec_e = gen_expr ~loc record in
       let val_e = gen_expr ~loc value in
+      (* Note: mutable record fields with first-class modules would need setters.
+         For now we don't support mutable fields in inline types with FCM. *)
       let field_lid =
         match repr record.ty with
         | TRecord (type_name, _) -> (
@@ -386,8 +475,8 @@ let rec gen_expr_impl ~loc:_ ~mut_vars (te : texpr) : expression =
   | TELetMut (name, id, value, body) ->
       let val_e = gen_expr ~loc value in
       (* Add this variable to the mutable set for the body *)
-      let mut_vars' = IntSet.add id mut_vars in
-      let body_e = gen_expr_impl ~loc ~mut_vars:mut_vars' body in
+      let ctx' = {ctx with mut_vars = IntSet.add id ctx.mut_vars} in
+      let body_e = gen_expr_impl ~loc ~ctx:ctx' body in
       let pat = Ast_builder.Default.ppat_var ~loc {txt = name; loc} in
       (* Create: let x = ref val in body
          Note: TEVar for mutable vars will dereference with !.
@@ -470,56 +559,117 @@ let rec gen_expr_impl ~loc:_ ~mut_vars (te : texpr) : expression =
       let cases_e =
         List.map
           (fun (pat, body) ->
-            let pat_e = gen_pattern ~loc pat in
+            let pat_e = gen_pattern_impl ~loc ~ctx pat in
             let body_e = gen_expr ~loc body in
             Ast_builder.Default.case ~lhs:pat_e ~guard:None ~rhs:body_e)
           cases
       in
       Ast_builder.Default.pexp_match ~loc scrut_e cases_e
   (* Record construction - qualify field names with module path from type_name.
-     For inline types, use unqualified name - types are in scope via TEOpen. *)
-  | TERecord (type_name, fields) ->
-      let field_lid name =
-        match String.rindex_opt type_name '.' with
-        | Some idx ->
-            let module_path = String.sub type_name 0 idx in
-            let parts = String.split_on_char '.' module_path in
+     For inline types with FCM, use __types.make_typename ~field1:v1 ~field2:v2.
+     For same-module types, use unqualified field names. *)
+  | TERecord (type_name, fields) -> (
+      match String.rindex_opt type_name '.' with
+      | Some _ when is_same_module ctx type_name ->
+          (* Same-module type - use unqualified record construction *)
+          let fields_e =
+            List.map
+              (fun (name, expr) ->
+                ({txt = Lident name; loc}, gen_expr ~loc expr))
+              fields
+          in
+          Ast_builder.Default.pexp_record ~loc fields_e None
+      | Some idx ->
+          (* External qualified type - use qualified field names *)
+          let module_path = String.sub type_name 0 idx in
+          let parts = String.split_on_char '.' module_path in
+          let field_lid name =
             let rec build_lid = function
               | [] -> Lident name
               | [m] -> Ldot (Lident m, name)
               | m :: rest -> Ldot (build_lid rest, m)
             in
             {txt = build_lid (List.rev parts); loc}
-        | None ->
-            (* Inline type - use unqualified name *)
-            {txt = Lident name; loc}
-      in
-      let fields_e =
-        List.map
-          (fun (name, expr) -> (field_lid name, gen_expr ~loc expr))
-          fields
-      in
-      Ast_builder.Default.pexp_record ~loc fields_e None
-  (* Variant construction - qualify constructor with module path.
-     For inline types, use unqualified name - types are in scope via TEOpen. *)
-  | TEConstr (type_name, constr_name, arg) ->
-      let arg_e = Option.map (gen_expr ~loc) arg in
-      let constr_lid =
-        match String.rindex_opt type_name '.' with
-        | Some idx ->
-            let module_path = String.sub type_name 0 idx in
-            let parts = String.split_on_char '.' module_path in
-            let rec build_lid = function
-              | [] -> Lident constr_name
-              | [m] -> Ldot (Lident m, constr_name)
-              | m :: rest -> Ldot (build_lid rest, m)
+          in
+          let fields_e =
+            List.map
+              (fun (name, expr) -> (field_lid name, gen_expr ~loc expr))
+              fields
+          in
+          Ast_builder.Default.pexp_record ~loc fields_e None
+      | None ->
+          (* Inline type - check if using first-class module approach *)
+          if StringSet.mem type_name ctx.inline_types then
+            (* Use maker: __types#make_typename ~field1:v1 ~field2:v2 *)
+            let fn_name = record_maker_name type_name in
+            let method_call =
+              Ast_builder.Default.pexp_send
+                ~loc
+                (evar ~loc types_module_var)
+                {txt = fn_name; loc}
             in
-            build_lid (List.rev parts)
-        | None ->
-            (* Inline type - use unqualified name *)
-            Lident constr_name
-      in
-      Ast_builder.Default.pexp_construct ~loc {txt = constr_lid; loc} arg_e
+            (* Build labelled arguments *)
+            let args =
+              List.map
+                (fun (name, expr) -> (Labelled name, gen_expr ~loc expr))
+                fields
+            in
+            Ast_builder.Default.pexp_apply ~loc method_call args
+          else
+            (* Direct record construction *)
+            let fields_e =
+              List.map
+                (fun (name, expr) ->
+                  ({txt = Lident name; loc}, gen_expr ~loc expr))
+                fields
+            in
+            Ast_builder.Default.pexp_record ~loc fields_e None)
+  (* Variant construction - qualify constructor with module path.
+     For inline types with FCM, use __types.make_typename_Ctor arg.
+     For same-module types, use unqualified constructors. *)
+  | TEConstr (type_name, constr_name, arg) -> (
+      match String.rindex_opt type_name '.' with
+      | Some _ when is_same_module ctx type_name ->
+          (* Same-module type - use unqualified constructor *)
+          let arg_e = Option.map (gen_expr ~loc) arg in
+          Ast_builder.Default.pexp_construct
+            ~loc
+            {txt = Lident constr_name; loc}
+            arg_e
+      | Some idx ->
+          (* External qualified type - use qualified constructor *)
+          let module_path = String.sub type_name 0 idx in
+          let parts = String.split_on_char '.' module_path in
+          let rec build_lid = function
+            | [] -> Lident constr_name
+            | [m] -> Ldot (Lident m, constr_name)
+            | m :: rest -> Ldot (build_lid rest, m)
+          in
+          let constr_lid = build_lid (List.rev parts) in
+          let arg_e = Option.map (gen_expr ~loc) arg in
+          Ast_builder.Default.pexp_construct ~loc {txt = constr_lid; loc} arg_e
+      | None ->
+          (* Inline type - check if using first-class module approach *)
+          if StringSet.mem type_name ctx.inline_types then
+            (* Use maker: __types#make_typename_Ctor arg or __types#make_typename_Ctor () *)
+            let fn_name = variant_ctor_name type_name constr_name in
+            let method_call =
+              Ast_builder.Default.pexp_send
+                ~loc
+                (evar ~loc types_module_var)
+                {txt = fn_name; loc}
+            in
+            let arg_e =
+              match arg with Some a -> gen_expr ~loc a | None -> [%expr ()]
+            in
+            Ast_builder.Default.pexp_apply ~loc method_call [(Nolabel, arg_e)]
+          else
+            (* Direct constructor *)
+            let arg_e = Option.map (gen_expr ~loc) arg in
+            Ast_builder.Default.pexp_construct
+              ~loc
+              {txt = Lident constr_name; loc}
+              arg_e)
   (* Tuple *)
   | TETuple exprs ->
       let exprs_e = List.map (gen_expr ~loc) exprs in
@@ -614,8 +764,9 @@ let rec gen_expr_impl ~loc:_ ~mut_vars (te : texpr) : expression =
            ~expr:(Ast_builder.Default.pmod_ident ~loc {txt = mod_lid; loc}))
         body_e
 
-(** Generate pattern from typed pattern *)
-and gen_pattern ~loc:_ (tpat : tpattern) : pattern =
+(** Generate pattern from typed pattern. Takes context to detect same-module
+    types that shouldn't be qualified. *)
+and gen_pattern_impl ~loc:_ ~ctx (tpat : tpattern) : pattern =
   let loc = ppxlib_loc_of_sarek tpat.tpat_loc in
   match tpat.tpat with
   | TPAny -> Ast_builder.Default.ppat_any ~loc
@@ -623,28 +774,31 @@ and gen_pattern ~loc:_ (tpat : tpattern) : pattern =
       (* Use original name for pattern variables *)
       Ast_builder.Default.ppat_var ~loc {txt = name; loc}
   | TPConstr (type_name, constr_name, arg) ->
-      let arg_p = Option.map (gen_pattern ~loc) arg in
+      let arg_p = Option.map (gen_pattern_impl ~loc ~ctx) arg in
       (* Qualify constructor with module path from type_name if present.
          For "Geometry_lib.shape", we need Geometry_lib.Circle, not Circle.
-         For inline types, use unqualified name - types are in scope via TEOpen. *)
+         For inline types or same-module types, use unqualified name. *)
       let constr_lid =
         match String.rindex_opt type_name '.' with
         | Some idx ->
-            let module_path = String.sub type_name 0 idx in
-            let parts = String.split_on_char '.' module_path in
-            let rec build_lid = function
-              | [] -> Lident constr_name
-              | [m] -> Ldot (Lident m, constr_name)
-              | m :: rest -> Ldot (build_lid rest, m)
-            in
-            build_lid (List.rev parts)
+            (* Check if this is from the current module - use unqualified if so *)
+            if is_same_module ctx type_name then Lident constr_name
+            else
+              let module_path = String.sub type_name 0 idx in
+              let parts = String.split_on_char '.' module_path in
+              let rec build_lid = function
+                | [] -> Lident constr_name
+                | [m] -> Ldot (Lident m, constr_name)
+                | m :: rest -> Ldot (build_lid rest, m)
+              in
+              build_lid (List.rev parts)
         | None ->
             (* Inline type - use unqualified name *)
             Lident constr_name
       in
       Ast_builder.Default.ppat_construct ~loc {txt = constr_lid; loc} arg_p
   | TPTuple pats ->
-      let pats_p = List.map (gen_pattern ~loc) pats in
+      let pats_p = List.map (gen_pattern_impl ~loc ~ctx) pats in
       Ast_builder.Default.ppat_tuple ~loc pats_p
 
 (** Generate binary operation *)
@@ -742,9 +896,21 @@ and gen_unop ~loc op a ty : expression =
       | TReg "int64" -> [%expr Int64.lognot [%e a]]
       | _ -> [%expr lnot [%e a]])
 
-(** Top-level entry point for generating expressions. Starts with empty mutable
-    variable set. *)
-let gen_expr ~loc e = gen_expr_impl ~loc ~mut_vars:IntSet.empty e
+(** Extract module name from a Sarek location (file path). For
+    "/path/to/test_registered_variant.ml", returns "Test_registered_variant". *)
+let module_name_of_sarek_loc (loc : Sarek_ast.loc) : string =
+  let file = loc.loc_file in
+  let base = Filename.(remove_extension (basename file)) in
+  String.capitalize_ascii base
+
+(** Top-level entry point for generating expressions. Starts with empty context.
+*)
+let gen_expr ~loc e = gen_expr_impl ~loc ~ctx:empty_ctx e
+
+(** Generate expression with inline types context for first-class modules. *)
+let gen_expr_with_inline_types ~loc ~inline_type_names ~current_module e =
+  let ctx = {empty_ctx with inline_types = inline_type_names; current_module} in
+  gen_expr_impl ~loc ~ctx e
 
 (** {1 Module Item Generation} *)
 
@@ -916,6 +1082,201 @@ let wrap_module_items ~loc (items : tmodule_item list) (body : expression) :
     items
     body
 
+(** {1 First-Class Module Approach for Inline Types}
+
+    To avoid "type escapes its scope" errors, we use first-class modules to
+    encapsulate inline types. The approach:
+
+    1. Generate a module signature KERNEL_TYPES with abstract types and
+    accessors 2. Generate a concrete module implementation with the actual types
+    3. Transform the kernel body to use T.get_field and T.make_type accessors 4.
+    Pass (module T : KERNEL_TYPES) as a parameter to the kernel
+
+    This keeps the concrete types hidden behind an existential type. *)
+
+(** Generate a module signature for inline types.
+    For a record type point = {x: float; y: float}, generates:
+      module type KERNEL_TYPES = sig
+        type point
+        val get_point_x : point -> float
+        val get_point_y : point -> float
+        val make_point : x:float -> y:float -> point
+      end *)
+let gen_module_type_sig ~loc (decls : ttype_decl list) : module_type =
+  let sig_items =
+    List.concat_map
+      (fun decl ->
+        match decl with
+        | TTypeRecord {tdecl_name; tdecl_fields; _} ->
+            (* Abstract type declaration *)
+            let type_decl =
+              Ast_builder.Default.psig_type
+                ~loc
+                Recursive
+                [
+                  Ast_builder.Default.type_declaration
+                    ~loc
+                    ~name:{txt = tdecl_name; loc}
+                    ~params:[]
+                    ~cstrs:[]
+                    ~kind:Ptype_abstract
+                    ~private_:Public
+                    ~manifest:None;
+                ]
+            in
+            (* Getter for each field *)
+            let getters =
+              List.map
+                (fun (fname, fty, _is_mut) ->
+                  let fn_name = field_getter_name tdecl_name fname in
+                  let ty =
+                    [%type:
+                      [%t
+                        Ast_builder.Default.ptyp_constr
+                          ~loc
+                          {txt = Lident tdecl_name; loc}
+                          []] ->
+                      [%t core_type_of_typ ~loc fty]]
+                  in
+                  Ast_builder.Default.psig_value
+                    ~loc
+                    (Ast_builder.Default.value_description
+                       ~loc
+                       ~name:{txt = fn_name; loc}
+                       ~type_:ty
+                       ~prim:[]))
+                tdecl_fields
+            in
+            (* Constructor: make_point : x:float -> y:float -> point *)
+            let maker =
+              let fn_name = record_maker_name tdecl_name in
+              let result_ty =
+                Ast_builder.Default.ptyp_constr
+                  ~loc
+                  {txt = Lident tdecl_name; loc}
+                  []
+              in
+              let ty =
+                List.fold_right
+                  (fun (fname, fty, _) acc ->
+                    Ast_builder.Default.ptyp_arrow
+                      ~loc
+                      (Labelled fname)
+                      (core_type_of_typ ~loc fty)
+                      acc)
+                  tdecl_fields
+                  result_ty
+              in
+              Ast_builder.Default.psig_value
+                ~loc
+                (Ast_builder.Default.value_description
+                   ~loc
+                   ~name:{txt = fn_name; loc}
+                   ~type_:ty
+                   ~prim:[])
+            in
+            (type_decl :: getters) @ [maker]
+        | TTypeVariant {tdecl_name; tdecl_constructors; _} ->
+            (* Abstract type declaration *)
+            let type_decl =
+              Ast_builder.Default.psig_type
+                ~loc
+                Recursive
+                [
+                  Ast_builder.Default.type_declaration
+                    ~loc
+                    ~name:{txt = tdecl_name; loc}
+                    ~params:[]
+                    ~cstrs:[]
+                    ~kind:Ptype_abstract
+                    ~private_:Public
+                    ~manifest:None;
+                ]
+            in
+            (* Constructor functions for each variant *)
+            let ctors =
+              List.map
+                (fun (cname, arg_opt) ->
+                  let fn_name = variant_ctor_name tdecl_name cname in
+                  let result_ty =
+                    Ast_builder.Default.ptyp_constr
+                      ~loc
+                      {txt = Lident tdecl_name; loc}
+                      []
+                  in
+                  let ty =
+                    match arg_opt with
+                    | None ->
+                        (* unit -> type *)
+                        [%type: unit -> [%t result_ty]]
+                    | Some arg_ty ->
+                        (* arg -> type *)
+                        [%type:
+                          [%t core_type_of_typ ~loc arg_ty] -> [%t result_ty]]
+                  in
+                  Ast_builder.Default.psig_value
+                    ~loc
+                    (Ast_builder.Default.value_description
+                       ~loc
+                       ~name:{txt = fn_name; loc}
+                       ~type_:ty
+                       ~prim:[]))
+                tdecl_constructors
+            in
+            type_decl :: ctors)
+      decls
+  in
+  Ast_builder.Default.pmty_signature ~loc sig_items
+
+(** Generate a concrete module implementation for inline types (types only).
+    For a record type point = {x: float; y: float}, generates:
+      struct
+        type point = {x: float; y: float}
+      end
+
+    Note: We only generate type declarations here, not accessor functions.
+    The accessor functions are generated as object methods by gen_types_object. *)
+let gen_module_impl ~loc (decls : ttype_decl list) : module_expr =
+  let struct_items =
+    List.map
+      (fun decl ->
+        match decl with
+        | TTypeRecord {tdecl_name; tdecl_fields; _} ->
+            gen_type_decl_record ~loc tdecl_name tdecl_fields
+        | TTypeVariant {tdecl_name; tdecl_constructors; _} ->
+            gen_type_decl_variant ~loc tdecl_name tdecl_constructors)
+      decls
+  in
+  Ast_builder.Default.pmod_structure ~loc struct_items
+
+(** Get only inline type declarations (those without module prefix).
+    External/registered types have qualified names like "Module.type". *)
+let inline_type_decls (decls : ttype_decl list) : ttype_decl list =
+  List.filter
+    (fun decl ->
+      let name =
+        match decl with
+        | TTypeRecord {tdecl_name; _} -> tdecl_name
+        | TTypeVariant {tdecl_name; _} -> tdecl_name
+      in
+      (* Only include types without '.' - these are inline definitions *)
+      not (String.contains name '.'))
+    decls
+
+(** Check if a kernel has inline types that need first-class module handling *)
+let has_inline_types (kernel : tkernel) : bool =
+  inline_type_decls kernel.tkern_type_decls <> []
+
+(** Check if a kernel has record/variant vector parameters *)
+let has_record_vector_params (kernel : tkernel) : bool =
+  List.exists
+    (fun p ->
+      match repr p.tparam_type with
+      | TVec elem_ty -> (
+          match repr elem_ty with TRecord _ | TVariant _ -> true | _ -> false)
+      | _ -> false)
+    kernel.tkern_params
+
 (** {1 Kernel Generation} *)
 
 (** Generate the cpu_kern function from a typed kernel.
@@ -923,9 +1284,49 @@ let wrap_module_items ~loc (items : tmodule_item list) (body : expression) :
     The generated function has type: Sarek_cpu_runtime.thread_state -> (arg1,
     arg2, ...) -> unit
 
-    Parameters are passed as a tuple of bigarrays and scalars. *)
+    Parameters are passed as a tuple of bigarrays and scalars.
+
+    For kernels with inline types, we use first-class modules:
+    - The kernel takes an extra __types parameter of type (module KERNEL_TYPES)
+    - Field access uses __types.get_type_field
+    - Record construction uses __types.make_type *)
 let gen_cpu_kern ~loc (kernel : tkernel) : expression =
-  let body_e = gen_expr ~loc kernel.tkern_body in
+  (* Check if we need first-class modules for inline types *)
+  let use_fcm = has_inline_types kernel in
+
+  (* Build set of inline type names for the context *)
+  let inline_type_names =
+    if use_fcm then
+      List.fold_left
+        (fun acc decl ->
+          let name =
+            match decl with
+            | TTypeRecord {tdecl_name; _} -> tdecl_name
+            | TTypeVariant {tdecl_name; _} -> tdecl_name
+          in
+          (* Only include unqualified names (inline types) *)
+          if not (String.contains name '.') then StringSet.add name acc else acc)
+        StringSet.empty
+        kernel.tkern_type_decls
+    else StringSet.empty
+  in
+
+  (* Extract current module name for same-module type detection *)
+  let current_module = Some (module_name_of_sarek_loc kernel.tkern_loc) in
+
+  (* Generate body with appropriate context *)
+  let body_e =
+    if use_fcm then
+      gen_expr_with_inline_types
+        ~loc
+        ~inline_type_names
+        ~current_module
+        kernel.tkern_body
+    else
+      (* Even without FCM, we need current_module for same-module type detection *)
+      let ctx = {empty_ctx with current_module} in
+      gen_expr_impl ~loc ~ctx kernel.tkern_body
+  in
 
   (* Generate inline module items only.
      External registered functions ([@sarek.module]) are the first N items,
@@ -965,7 +1366,10 @@ let gen_cpu_kern ~loc (kernel : tkernel) : expression =
   in
 
   (* Build the function:
-     fun __state __shared (arg0, arg1, ...) -> body
+     For regular kernels: fun __state __shared (arg0, arg1, ...) -> body
+     For FCM kernels: fun __types __state __shared (arg0, arg1, ...) -> body
+     where __types is a record with accessor functions.
+
      We suppress warning 27 (unused-var-strict) since kernel parameters
      may not always be used (e.g., barrier-only kernels), and warnings
      32/33 for unused value bindings. *)
@@ -974,10 +1378,21 @@ let gen_cpu_kern ~loc (kernel : tkernel) : expression =
 
   (* The function expression with warning suppression attribute on the body *)
   let inner_fun =
-    [%expr
-      fun ([%p state_pat] : Sarek.Sarek_cpu_runtime.thread_state)
-          ([%p shared_pat] : Sarek.Sarek_cpu_runtime.shared_mem)
-          [%p params_pat] -> [%e body_with_items]]
+    if use_fcm then
+      (* FCM kernel: add __types parameter as first argument *)
+      let types_pat =
+        Ast_builder.Default.ppat_var ~loc {txt = types_module_var; loc}
+      in
+      [%expr
+        fun [%p types_pat]
+            ([%p state_pat] : Sarek.Sarek_cpu_runtime.thread_state)
+            ([%p shared_pat] : Sarek.Sarek_cpu_runtime.shared_mem)
+            [%p params_pat] -> [%e body_with_items]]
+    else
+      [%expr
+        fun ([%p state_pat] : Sarek.Sarek_cpu_runtime.thread_state)
+            ([%p shared_pat] : Sarek.Sarek_cpu_runtime.shared_mem)
+            [%p params_pat] -> [%e body_with_items]]
   in
   (* Add warning suppression attribute to the function *)
   let fun_with_warnings =
@@ -1052,6 +1467,112 @@ let gen_arg_cast ~loc (param : tparam) (idx : int) : expression =
       (* Default - just return as Obj.t and let caller deal with it *)
       arr_access
 
+(** Generate an object expression with accessor methods for FCM.
+    For type point = {x: float; y: float}, generates:
+      object
+        method get_point_x r = r.x
+        method get_point_y r = r.y
+        method make_point ~x ~y = {x; y}
+      end
+
+    Using an object avoids needing to define a record type for the accessors. *)
+let gen_types_object ~loc (decls : ttype_decl list) : expression =
+  let methods =
+    List.concat_map
+      (fun decl ->
+        match decl with
+        | TTypeRecord {tdecl_name; tdecl_fields; _} ->
+            (* Getters *)
+            let getters =
+              List.map
+                (fun (fname, _fty, _is_mut) ->
+                  let fn_name = field_getter_name tdecl_name fname in
+                  let field_lid = {txt = Lident fname; loc} in
+                  let fn_expr =
+                    [%expr
+                      fun __r ->
+                        [%e
+                          Ast_builder.Default.pexp_field
+                            ~loc
+                            [%expr __r]
+                            field_lid]]
+                  in
+                  Ast_builder.Default.pcf_method
+                    ~loc
+                    ({txt = fn_name; loc}, Public, Cfk_concrete (Fresh, fn_expr)))
+                tdecl_fields
+            in
+            (* Maker *)
+            let maker =
+              let fn_name = record_maker_name tdecl_name in
+              let param_pats =
+                List.map
+                  (fun (fname, _fty, _) ->
+                    ( Labelled fname,
+                      Ast_builder.Default.ppat_var ~loc {txt = fname; loc} ))
+                  tdecl_fields
+              in
+              let record_fields =
+                List.map
+                  (fun (fname, _, _) ->
+                    ( {txt = Lident fname; loc},
+                      Ast_builder.Default.pexp_ident
+                        ~loc
+                        {txt = Lident fname; loc} ))
+                  tdecl_fields
+              in
+              let record_expr =
+                Ast_builder.Default.pexp_record ~loc record_fields None
+              in
+              let fn_expr =
+                List.fold_right
+                  (fun (lbl, pat) body ->
+                    Ast_builder.Default.pexp_fun ~loc lbl None pat body)
+                  param_pats
+                  record_expr
+              in
+              Ast_builder.Default.pcf_method
+                ~loc
+                ({txt = fn_name; loc}, Public, Cfk_concrete (Fresh, fn_expr))
+            in
+            getters @ [maker]
+        | TTypeVariant {tdecl_name; tdecl_constructors; _} ->
+            (* Constructor functions *)
+            List.map
+              (fun (cname, arg_opt) ->
+                let fn_name = variant_ctor_name tdecl_name cname in
+                let ctor_lid = {txt = Lident cname; loc} in
+                let fn_expr =
+                  match arg_opt with
+                  | None ->
+                      [%expr
+                        fun () ->
+                          [%e
+                            Ast_builder.Default.pexp_construct
+                              ~loc
+                              ctor_lid
+                              None]]
+                  | Some _ ->
+                      [%expr
+                        fun __x ->
+                          [%e
+                            Ast_builder.Default.pexp_construct
+                              ~loc
+                              ctor_lid
+                              (Some [%expr __x])]]
+                in
+                Ast_builder.Default.pcf_method
+                  ~loc
+                  ({txt = fn_name; loc}, Public, Cfk_concrete (Fresh, fn_expr)))
+              tdecl_constructors)
+      decls
+  in
+  Ast_builder.Default.pexp_object
+    ~loc
+    (Ast_builder.Default.class_structure
+       ~self:(Ast_builder.Default.ppat_any ~loc)
+       ~fields:methods)
+
 (** Generate the cpu_kern wrapper that matches the kirc_kernel.cpu_kern type.
 
     Generated function type: block:int*int*int -> grid:int*int*int -> Obj.t
@@ -1060,32 +1581,22 @@ let gen_arg_cast ~loc (param : tparam) (idx : int) : expression =
     This wrapper: 1. Extracts and casts each argument from the Obj.t array 2.
     Builds the args tuple 3. Calls run_sequential with the native kernel
 
-    Note: Kernels with inline type declarations (ktype) or vectors of record
-    types cannot be executed natively because OCaml's type system doesn't
-    support local type definitions that escape their scope. These kernels will
-    raise an exception when executed on CPU. *)
+    For kernels with inline types, we use first-class modules to avoid "type
+    escapes its scope" errors. The types module is created inside the wrapper
+    and passed to the kernel. *)
 let gen_cpu_kern_wrapper ~loc (kernel : tkernel) : expression =
-  (* Check if the kernel uses features that prevent native execution *)
-  let has_inline_types = kernel.tkern_type_decls <> [] in
-  let has_record_vector_params =
-    List.exists
-      (fun p ->
-        match repr p.tparam_type with
-        | TVec elem_ty -> (
-            match repr elem_ty with
-            | TRecord _ | TVariant _ -> true
-            | _ -> false)
-        | _ -> false)
-      kernel.tkern_params
-  in
-  if has_inline_types || has_record_vector_params then
+  (* Check if the kernel uses record/variant vector parameters - these still
+     don't work because Bigarray can't hold record types *)
+  let has_record_vector_params = has_record_vector_params kernel in
+  if has_record_vector_params then
     (* Generate a stub that raises an error - native execution not supported *)
     [%expr
       fun ~block:_ ~grid:_ _ ->
         failwith
-          "Native CPU execution not supported for kernels with inline types or \
-           record/variant vectors"]
+          "Native CPU execution not supported for kernels with record/variant \
+           vectors (Bigarray limitation)"]
   else
+    let use_fcm = has_inline_types kernel in
     let native_kern = gen_cpu_kern ~loc kernel in
 
     (* Generate argument extraction bindings - use parameter names *)
@@ -1111,14 +1622,18 @@ let gen_cpu_kern_wrapper ~loc (kernel : tkernel) : expression =
       | es -> Ast_builder.Default.pexp_tuple ~loc es
     in
 
-    (* Build the nested let bindings *)
-    let body_with_bindings =
-      List.fold_right
-        (fun (pat, expr) body ->
-          [%expr
-            let [%p pat] = [%e expr] in
-            [%e body]])
-        arg_bindings
+    (* Build the call to run_sequential.
+       For FCM kernels, we need to partially apply the types record first:
+         run_sequential ~block ~grid (__native_kern __types_rec) args *)
+    let run_call =
+      if use_fcm then
+        [%expr
+          Sarek.Sarek_cpu_runtime.run_sequential
+            ~block
+            ~grid
+            (__native_kern __types_rec)
+            [%e args_tuple]]
+      else
         [%expr
           Sarek.Sarek_cpu_runtime.run_sequential
             ~block
@@ -1127,7 +1642,51 @@ let gen_cpu_kern_wrapper ~loc (kernel : tkernel) : expression =
             [%e args_tuple]]
     in
 
-    [%expr
-      fun ~block ~grid __args ->
-        let __native_kern = [%e native_kern] in
-        [%e body_with_bindings]]
+    (* Build the nested let bindings *)
+    let body_with_bindings =
+      List.fold_right
+        (fun (pat, expr) body ->
+          [%expr
+            let [%p pat] = [%e expr] in
+            [%e body]])
+        arg_bindings
+        run_call
+    in
+
+    if use_fcm then
+      (* For FCM kernels, create the types object inside a local module
+         to define the concrete types, then extract the accessor object.
+         Only include inline types (not external/registered types). *)
+      let inline_decls = inline_type_decls kernel.tkern_type_decls in
+      let types_object = gen_types_object ~loc inline_decls in
+      let types_impl = gen_module_impl ~loc inline_decls in
+      (* Build: let module __Types = <impl> in let open __Types in ... *)
+      let inner_body =
+        (* let open __Types in let __types_rec = ... *)
+        Ast_builder.Default.pexp_open
+          ~loc
+          (Ast_builder.Default.open_infos
+             ~loc
+             ~override:Fresh
+             ~expr:
+               (Ast_builder.Default.pmod_ident
+                  ~loc
+                  {txt = Lident "__Types"; loc}))
+          [%expr
+            let __types_rec = [%e types_object] in
+            let __native_kern = [%e native_kern] in
+            [%e body_with_bindings]]
+      in
+      let with_module =
+        Ast_builder.Default.pexp_letmodule
+          ~loc
+          {txt = Some "__Types"; loc}
+          types_impl
+          inner_body
+      in
+      [%expr fun ~block ~grid __args -> [%e with_module]]
+    else
+      [%expr
+        fun ~block ~grid __args ->
+          let __native_kern = [%e native_kern] in
+          [%e body_with_bindings]]
