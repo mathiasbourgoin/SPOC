@@ -10,6 +10,7 @@
   Kirc_Ast
   Sarek_ir
   Sarek_fusion
+  Sarek_interp
   Gen
   Kirc
   Kirc_Cuda

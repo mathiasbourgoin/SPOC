@@ -16,3 +16,9 @@
 (test
  (name test_fusion)
  (libraries sarek))
+
+; Interpreter tests use sarek library directly (no ppx needed)
+
+(test
+ (name test_interp)
+ (libraries sarek))
