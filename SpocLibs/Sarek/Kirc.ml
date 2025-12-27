@@ -1092,25 +1092,89 @@ let run ?recompile:(r = false) (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel) a
   (* For interpreter devices, dispatch to Sarek_interp *)
   (match dev.Devices.specific_info with
   | Devices.InterpreterInfo _ ->
+      let param_info = Sarek_interp.extract_param_info k.body in
+      let args_array = kir#args_to_list a in
+      (* Track (wrapped_array, original_vector) pairs for writeback *)
+      let writeback_list = ref [] in
       let interp_args =
-        kir#args_to_list a |> Array.to_list
-        |> List.mapi (fun i arg ->
-            let name = Printf.sprintf "arg%d" i in
-            match arg with
-            | VChar v -> (name, Sarek_interp.wrap_vector v)
-            | VFloat32 v -> (name, Sarek_interp.wrap_vector v)
-            | VFloat64 v -> (name, Sarek_interp.wrap_vector v)
-            | VInt32 v -> (name, Sarek_interp.wrap_vector v)
-            | VInt64 v -> (name, Sarek_interp.wrap_vector v)
-            | VCustom v -> (name, Sarek_interp.wrap_vector v)
-            | _ ->
-                failwith "Kirc.run: unsupported argument type for interpreter")
+        List.mapi
+          (fun i pinfo ->
+            if i >= Array.length args_array then
+              failwith
+                (Printf.sprintf
+                   "Kirc.run: not enough arguments for parameter %s"
+                   pinfo.Sarek_interp.p_name)
+            else
+              let arg = args_array.(i) in
+              match arg with
+              | VChar v ->
+                  let arr = Sarek_interp.wrap_vector v in
+                  writeback_list := (arr, VChar v) :: !writeback_list ;
+                  (pinfo, Sarek_interp.ArgArray arr)
+              | VFloat32 v ->
+                  let arr = Sarek_interp.wrap_vector v in
+                  writeback_list := (arr, VFloat32 v) :: !writeback_list ;
+                  (pinfo, Sarek_interp.ArgArray arr)
+              | VFloat64 v ->
+                  let arr = Sarek_interp.wrap_vector v in
+                  writeback_list := (arr, VFloat64 v) :: !writeback_list ;
+                  (pinfo, Sarek_interp.ArgArray arr)
+              | VInt32 v ->
+                  let arr = Sarek_interp.wrap_vector v in
+                  writeback_list := (arr, VInt32 v) :: !writeback_list ;
+                  (pinfo, Sarek_interp.ArgArray arr)
+              | VInt64 v ->
+                  let arr = Sarek_interp.wrap_vector v in
+                  writeback_list := (arr, VInt64 v) :: !writeback_list ;
+                  (pinfo, Sarek_interp.ArgArray arr)
+              | VComplex32 v ->
+                  let arr = Sarek_interp.wrap_vector v in
+                  writeback_list := (arr, VComplex32 v) :: !writeback_list ;
+                  (pinfo, Sarek_interp.ArgArray arr)
+              | VCustom v ->
+                  let arr = Sarek_interp.wrap_vector v in
+                  writeback_list := (arr, VCustom v) :: !writeback_list ;
+                  (pinfo, Sarek_interp.ArgArray arr)
+              | Int32 n ->
+                  ( pinfo,
+                    Sarek_interp.ArgScalar
+                      (Sarek_interp.VInt32 (Int32.of_int n)) )
+              | Int64 n ->
+                  ( pinfo,
+                    Sarek_interp.ArgScalar
+                      (Sarek_interp.VInt64 (Int64.of_int n)) )
+              | Float32 f ->
+                  (pinfo, Sarek_interp.ArgScalar (Sarek_interp.VFloat32 f))
+              | Float64 f ->
+                  (pinfo, Sarek_interp.ArgScalar (Sarek_interp.VFloat64 f))
+              | Vector v ->
+                  let arr = Sarek_interp.wrap_vector v in
+                  writeback_list := (arr, Vector v) :: !writeback_list ;
+                  (pinfo, Sarek_interp.ArgArray arr)
+              | Custom _ ->
+                  failwith
+                    "Kirc.run: Custom args not yet supported for interpreter")
+          param_info
       in
-      Sarek_interp.run_body
+      Sarek_interp.run_body_with_params
         k.body
         ~block:(block.Kernel.blockX, block.Kernel.blockY, block.Kernel.blockZ)
         ~grid:(grid.Kernel.gridX, grid.Kernel.gridY, grid.Kernel.gridZ)
-        interp_args
+        interp_args ;
+      (* Write back results to original SPOC vectors *)
+      List.iter
+        (fun (arr, orig) ->
+          match orig with
+          | VChar v -> Sarek_interp.unwrap_to_vector arr v
+          | VFloat32 v -> Sarek_interp.unwrap_to_vector arr v
+          | VFloat64 v -> Sarek_interp.unwrap_to_vector arr v
+          | VInt32 v -> Sarek_interp.unwrap_to_vector arr v
+          | VInt64 v -> Sarek_interp.unwrap_to_vector arr v
+          | VComplex32 v -> Sarek_interp.unwrap_to_vector arr v
+          | VCustom v -> Sarek_interp.unwrap_to_vector arr v
+          | Vector v -> Sarek_interp.unwrap_to_vector arr v
+          | _ -> ())
+        !writeback_list
   | _ -> ()) ;
   let args = kir#args_to_list a in
   let offset = ref 0 in

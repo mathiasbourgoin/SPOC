@@ -128,111 +128,193 @@ let eq_val a b =
   | VBool x, VBool y -> x = y
   | _ -> to_int32 a = to_int32 b
 
-let lt_val a b = to_int32 a < to_int32 b
+let lt_val a b =
+  match (a, b) with
+  | VFloat32 x, VFloat32 y -> x < y
+  | VFloat64 x, VFloat64 y -> x < y
+  | VFloat32 x, VFloat64 y -> Float.of_int (int_of_float x) < y
+  | VFloat64 x, VFloat32 y -> x < Float.of_int (int_of_float y)
+  | VInt32 _, VFloat32 y -> to_float32 a < y
+  | VFloat32 x, VInt32 _ -> x < to_float32 b
+  | _ -> to_int32 a < to_int32 b
 
-let gt_val a b = to_int32 a > to_int32 b
+let gt_val a b =
+  match (a, b) with
+  | VFloat32 x, VFloat32 y -> x > y
+  | VFloat64 x, VFloat64 y -> x > y
+  | VFloat32 x, VFloat64 y -> Float.of_int (int_of_float x) > y
+  | VFloat64 x, VFloat32 y -> x > Float.of_int (int_of_float y)
+  | VInt32 _, VFloat32 y -> to_float32 a > y
+  | VFloat32 x, VInt32 _ -> x > to_float32 b
+  | _ -> to_int32 a > to_int32 b
 
-let lte_val a b = to_int32 a <= to_int32 b
+let lte_val a b =
+  match (a, b) with
+  | VFloat32 x, VFloat32 y -> x <= y
+  | VFloat64 x, VFloat64 y -> x <= y
+  | VFloat32 x, VFloat64 y -> Float.of_int (int_of_float x) <= y
+  | VFloat64 x, VFloat32 y -> x <= Float.of_int (int_of_float y)
+  | VInt32 _, VFloat32 y -> to_float32 a <= y
+  | VFloat32 x, VInt32 _ -> x <= to_float32 b
+  | _ -> to_int32 a <= to_int32 b
 
-let gte_val a b = to_int32 a >= to_int32 b
+let gte_val a b =
+  match (a, b) with
+  | VFloat32 x, VFloat32 y -> x >= y
+  | VFloat64 x, VFloat64 y -> x >= y
+  | VFloat32 x, VFloat64 y -> Float.of_int (int_of_float x) >= y
+  | VFloat64 x, VFloat32 y -> x >= Float.of_int (int_of_float y)
+  | VInt32 _, VFloat32 y -> to_float32 a >= y
+  | VFloat32 x, VInt32 _ -> x >= to_float32 b
+  | _ -> to_int32 a >= to_int32 b
 
 (** {1 Intrinsics} *)
+
+(** Check if path matches a GPU intrinsic path *)
+let is_gpu_path = function
+  | ["Gpu"] | [] | ["Sarek_stdlib"; "Gpu"] -> true
+  | _ -> false
+
+(** Check if path matches Float32 module *)
+let is_float32_path = function
+  | ["Float32"] | ["Sarek_stdlib"; "Float32"] -> true
+  | _ -> false
+
+(** Check if path matches Float64 module *)
+let is_float64_path = function
+  | ["Float64"] | ["Sarek_stdlib"; "Float64"] -> true
+  | _ -> false
+
+(** Check if path matches Int32 module *)
+let is_int32_path = function
+  | ["Int32"] | ["Sarek_stdlib"; "Int32"] -> true
+  | _ -> false
+
+(** Check if path matches Std module *)
+let is_std_path = function
+  | ["Std"] | ["Gpu"] | [] | ["Sarek_stdlib"; "Std"] | ["Sarek_stdlib"; "Gpu"]
+    ->
+      true
+  | _ -> false
 
 let eval_intrinsic state path name args =
   match (path, name) with
   (* Thread indices *)
-  | (["Gpu"] | []), "thread_idx_x" ->
+  | path, "thread_idx_x" when is_gpu_path path ->
       let x, _, _ = state.thread_idx in
       VInt32 (Int32.of_int x)
-  | (["Gpu"] | []), "thread_idx_y" ->
+  | path, "thread_idx_y" when is_gpu_path path ->
       let _, y, _ = state.thread_idx in
       VInt32 (Int32.of_int y)
-  | (["Gpu"] | []), "thread_idx_z" ->
+  | path, "thread_idx_z" when is_gpu_path path ->
       let _, _, z = state.thread_idx in
       VInt32 (Int32.of_int z)
   (* Block indices *)
-  | (["Gpu"] | []), "block_idx_x" ->
+  | path, "block_idx_x" when is_gpu_path path ->
       let x, _, _ = state.block_idx in
       VInt32 (Int32.of_int x)
-  | (["Gpu"] | []), "block_idx_y" ->
+  | path, "block_idx_y" when is_gpu_path path ->
       let _, y, _ = state.block_idx in
       VInt32 (Int32.of_int y)
-  | (["Gpu"] | []), "block_idx_z" ->
+  | path, "block_idx_z" when is_gpu_path path ->
       let _, _, z = state.block_idx in
       VInt32 (Int32.of_int z)
   (* Block dimensions *)
-  | (["Gpu"] | []), "block_dim_x" ->
+  | path, "block_dim_x" when is_gpu_path path ->
       let x, _, _ = state.block_dim in
       VInt32 (Int32.of_int x)
-  | (["Gpu"] | []), "block_dim_y" ->
+  | path, "block_dim_y" when is_gpu_path path ->
       let _, y, _ = state.block_dim in
       VInt32 (Int32.of_int y)
-  | (["Gpu"] | []), "block_dim_z" ->
+  | path, "block_dim_z" when is_gpu_path path ->
       let _, _, z = state.block_dim in
       VInt32 (Int32.of_int z)
   (* Grid dimensions *)
-  | (["Gpu"] | []), "grid_dim_x" ->
+  | path, "grid_dim_x" when is_gpu_path path ->
       let x, _, _ = state.grid_dim in
       VInt32 (Int32.of_int x)
-  | (["Gpu"] | []), "grid_dim_y" ->
+  | path, "grid_dim_y" when is_gpu_path path ->
       let _, y, _ = state.grid_dim in
       VInt32 (Int32.of_int y)
-  | (["Gpu"] | []), "grid_dim_z" ->
+  | path, "grid_dim_z" when is_gpu_path path ->
       let _, _, z = state.grid_dim in
       VInt32 (Int32.of_int z)
   (* Global index helpers *)
-  | (["Gpu"] | []), "global_idx" ->
+  | path, "global_idx" when is_gpu_path path ->
       let tx, _, _ = state.thread_idx in
       let bx, _, _ = state.block_idx in
       let bdx, _, _ = state.block_dim in
       VInt32 (Int32.of_int ((bx * bdx) + tx))
-  | (["Gpu"] | []), "global_size" ->
+  | path, "global_size" when is_gpu_path path ->
       let bdx, _, _ = state.block_dim in
       let gdx, _, _ = state.grid_dim in
       VInt32 (Int32.of_int (bdx * gdx))
   (* Barriers - no-op in sequential mode *)
-  | (["Gpu"] | []), "block_barrier" -> VUnit
-  | (["Gpu"] | []), "warp_barrier" -> VUnit
+  | path, "block_barrier" when is_gpu_path path -> VUnit
+  | path, "warp_barrier" when is_gpu_path path -> VUnit
   (* Math intrinsics - Float32 *)
-  | ["Float32"], "sin" -> VFloat32 (sin (to_float32 (List.hd args)))
-  | ["Float32"], "cos" -> VFloat32 (cos (to_float32 (List.hd args)))
-  | ["Float32"], "tan" -> VFloat32 (tan (to_float32 (List.hd args)))
-  | ["Float32"], "sqrt" -> VFloat32 (sqrt (to_float32 (List.hd args)))
-  | ["Float32"], "exp" -> VFloat32 (exp (to_float32 (List.hd args)))
-  | ["Float32"], "log" -> VFloat32 (log (to_float32 (List.hd args)))
-  | ["Float32"], "abs" -> VFloat32 (abs_float (to_float32 (List.hd args)))
-  | ["Float32"], "floor" -> VFloat32 (floor (to_float32 (List.hd args)))
-  | ["Float32"], "ceil" -> VFloat32 (ceil (to_float32 (List.hd args)))
-  | ["Float32"], "fma" ->
+  | path, "sin" when is_float32_path path ->
+      VFloat32 (sin (to_float32 (List.hd args)))
+  | path, "cos" when is_float32_path path ->
+      VFloat32 (cos (to_float32 (List.hd args)))
+  | path, "tan" when is_float32_path path ->
+      VFloat32 (tan (to_float32 (List.hd args)))
+  | path, "sqrt" when is_float32_path path ->
+      VFloat32 (sqrt (to_float32 (List.hd args)))
+  | path, "exp" when is_float32_path path ->
+      VFloat32 (exp (to_float32 (List.hd args)))
+  | path, "log" when is_float32_path path ->
+      VFloat32 (log (to_float32 (List.hd args)))
+  | path, "abs" when is_float32_path path ->
+      VFloat32 (abs_float (to_float32 (List.hd args)))
+  | path, "floor" when is_float32_path path ->
+      VFloat32 (floor (to_float32 (List.hd args)))
+  | path, "ceil" when is_float32_path path ->
+      VFloat32 (ceil (to_float32 (List.hd args)))
+  | path, "fma" when is_float32_path path ->
       let a = to_float32 (List.nth args 0) in
       let b = to_float32 (List.nth args 1) in
       let c = to_float32 (List.nth args 2) in
       VFloat32 ((a *. b) +. c)
-  | ["Float32"], "min" ->
+  | path, "min" when is_float32_path path ->
       VFloat32
         (min (to_float32 (List.nth args 0)) (to_float32 (List.nth args 1)))
-  | ["Float32"], "max" ->
+  | path, "max" when is_float32_path path ->
       VFloat32
         (max (to_float32 (List.nth args 0)) (to_float32 (List.nth args 1)))
+  | path, "add" when is_float32_path path ->
+      VFloat32 (to_float32 (List.nth args 0) +. to_float32 (List.nth args 1))
+  | path, "sub" when is_float32_path path ->
+      VFloat32 (to_float32 (List.nth args 0) -. to_float32 (List.nth args 1))
+  | path, "mul" when is_float32_path path ->
+      VFloat32 (to_float32 (List.nth args 0) *. to_float32 (List.nth args 1))
+  | path, "div" when is_float32_path path ->
+      VFloat32 (to_float32 (List.nth args 0) /. to_float32 (List.nth args 1))
+  | path, "of_int" when is_float32_path path ->
+      VFloat32 (Int32.to_float (to_int32 (List.hd args)))
+  | path, "of_float64" when is_float32_path path ->
+      VFloat32 (to_float64 (List.hd args))
+  (* Float64 intrinsics *)
+  | path, "of_int" when is_float64_path path ->
+      VFloat64 (Int32.to_float (to_int32 (List.hd args)))
+  | path, "of_float32" when is_float64_path path ->
+      VFloat64 (to_float32 (List.hd args))
   (* Int32 math *)
-  | ["Int32"], "abs" -> VInt32 (Int32.abs (to_int32 (List.hd args)))
-  | ["Int32"], "min" ->
+  | path, "abs" when is_int32_path path ->
+      VInt32 (Int32.abs (to_int32 (List.hd args)))
+  | path, "min" when is_int32_path path ->
       VInt32 (min (to_int32 (List.nth args 0)) (to_int32 (List.nth args 1)))
-  | ["Int32"], "max" ->
+  | path, "max" when is_int32_path path ->
       VInt32 (max (to_int32 (List.nth args 0)) (to_int32 (List.nth args 1)))
   (* Type conversions *)
-  | (["Std"] | ["Gpu"] | []), "float" ->
+  | path, "float" when is_std_path path ->
       VFloat32 (Int32.to_float (to_int32 (List.hd args)))
-  | (["Std"] | ["Gpu"] | []), "float64" ->
+  | path, "float64" when is_std_path path ->
       VFloat64 (Int32.to_float (to_int32 (List.hd args)))
-  | (["Std"] | ["Gpu"] | []), "int_of_float" ->
+  | path, "int_of_float" when is_std_path path ->
       VInt32 (Int32.of_float (to_float32 (List.hd args)))
-  | (["Std"] | ["Gpu"] | []), "int_of_float64" ->
+  | path, "int_of_float64" when is_std_path path ->
       VInt32 (Int32.of_float (to_float64 (List.hd args)))
-  | ["Float32"], "of_int" -> VFloat32 (Int32.to_float (to_int32 (List.hd args)))
-  | ["Float64"], "of_int" -> VFloat64 (Int32.to_float (to_int32 (List.hd args)))
-  | ["Float64"], "of_float32" -> VFloat64 (to_float32 (List.hd args))
-  | ["Float32"], "of_float64" -> VFloat32 (to_float64 (List.hd args))
   (* Unknown intrinsic *)
   | _ ->
       let full_name = String.concat "." (path @ [name]) in
@@ -351,6 +433,67 @@ let rec eval_expr state env expr =
       | _ -> failwith "App: unsupported function expression")
   (* Pragmas - just evaluate body *)
   | Pragma (_, body) -> eval_expr state env body
+  (* Native code blocks - try to interpret common patterns *)
+  | Native f ->
+      (* Call the native function with a fake interpreter device to get the code string *)
+      let fake_dev =
+        {
+          Spoc.Devices.general_info =
+            {
+              Spoc.Devices.name = "Interpreter";
+              totalGlobalMem = 0;
+              localMemSize = 0;
+              clockRate = 0;
+              totalConstMem = 0;
+              multiProcessorCount = 1;
+              eccEnabled = false;
+              id = 0;
+              ctx = Obj.magic ();
+            };
+          specific_info =
+            Spoc.Devices.InterpreterInfo
+              {
+                Spoc.Devices.backend = Spoc.Devices.Sequential;
+                num_cores = 1;
+                debug_mode = false;
+              };
+          gc_info = Obj.magic ();
+          events = Obj.magic ();
+        }
+      in
+      let code = f fake_dev in
+      (* Try to interpret common atomic patterns *)
+      if String.length code > 0 then begin
+        (* atomicAdd (var,1) or atomicAdd(var, 1) - CUDA style *)
+        let atomicAdd_re =
+          Str.regexp "atomicAdd[ ]*(\\([a-zA-Z_][a-zA-Z0-9_]*\\),[ ]*1)"
+        in
+        (* atomic_inc (var) or atomic_inc(var) - OpenCL style *)
+        let atomic_inc_re =
+          Str.regexp "atomic_inc[ ]*(\\([a-zA-Z_][a-zA-Z0-9_]*\\))"
+        in
+        let matched_var =
+          if Str.string_match atomicAdd_re code 0 then
+            Some (Str.matched_group 1 code)
+          else if Str.string_match atomic_inc_re code 0 then
+            Some (Str.matched_group 1 code)
+          else None
+        in
+        match matched_var with
+        | Some var_name -> (
+            try
+              let arr = Hashtbl.find env.arrays var_name in
+              match arr.(0) with
+              | VInt32 n -> arr.(0) <- VInt32 (Int32.add n 1l)
+              | VInt64 n -> arr.(0) <- VInt64 (Int64.add n 1L)
+              | _ -> ()
+            with Not_found -> ())
+        | None -> ()
+      end ;
+      VUnit
+  | NativeVar _ ->
+      (* NativeVar references a native function by name - can't interpret *)
+      VUnit
   (* Other *)
   | Empty -> VUnit
   | Return e -> eval_expr state env e
@@ -566,14 +709,75 @@ let run_grid env body block_dim grid_dim =
 
 (** {1 Public API} *)
 
-(** Run a kernel body on CPU *)
+(** Extract kernel body from k_ext *)
+let extract_body = function Kern (_, body) -> body | body -> body
+
+(** Parameter info: name, is_scalar, and optional var_id for scalars *)
+type param_info = {
+  p_name : string;
+  p_is_scalar : bool;
+  p_var_id : int option;  (** Variable ID for scalar params *)
+}
+
+(** Argument type for run_body_with_params *)
+type arg_value =
+  | ArgArray of value array  (** Vector parameter *)
+  | ArgScalar of value  (** Scalar parameter *)
+
+(** Extract parameter names from Kern(params, body) in order. Returns list of
+    (name, is_scalar) pairs for backward compatibility. *)
+let rec extract_param_names = function
+  | Kern (params, _) ->
+      List.map (fun p -> (p.p_name, p.p_is_scalar)) (collect_params params)
+  | _ -> []
+
+(** Extract full parameter info from Kern(params, body). *)
+and extract_param_info = function
+  | Kern (params, _) -> collect_params params
+  | _ -> []
+
+and collect_params = function
+  | Params p -> collect_params p
+  | Concat (a, b) -> collect_params a @ collect_params b
+  | VecVar (_, id, name) ->
+      [{p_name = name; p_is_scalar = false; p_var_id = Some id}]
+  | IntVar (id, name, _) ->
+      [{p_name = name; p_is_scalar = true; p_var_id = Some id}]
+  | FloatVar (id, name, _) ->
+      [{p_name = name; p_is_scalar = true; p_var_id = Some id}]
+  | DoubleVar (id, name, _) ->
+      [{p_name = name; p_is_scalar = true; p_var_id = Some id}]
+  | Arr (name, _, _, _) ->
+      [{p_name = name; p_is_scalar = false; p_var_id = None}]
+  | _ -> []
+
+(** Run a kernel body on CPU with full parameter info *)
+let run_body_with_params body ~block ~grid
+    (args : (param_info * arg_value) list) =
+  let env = create_env () in
+  List.iter
+    (fun (pinfo, arg) ->
+      match arg with
+      | ArgArray arr -> (
+          (* Vector: store by name in arrays, and by var_id in locals as VArray *)
+          Hashtbl.add env.arrays pinfo.p_name arr ;
+          match pinfo.p_var_id with
+          | Some id -> Hashtbl.add env.locals id (VArray arr)
+          | None -> ())
+      | ArgScalar v -> (
+          (* Scalar: store both by name (as single-element array) and by var_id *)
+          Hashtbl.add env.arrays pinfo.p_name [|v|] ;
+          match pinfo.p_var_id with
+          | Some id -> Hashtbl.add env.locals id v
+          | None -> ()))
+    args ;
+  run_grid env body block grid
+
+(** Run a kernel body on CPU (legacy interface) *)
 let run_body body ~block ~grid (arrays : (string * value array) list) =
   let env = create_env () in
   List.iter (fun (name, arr) -> Hashtbl.add env.arrays name arr) arrays ;
   run_grid env body block grid
-
-(** Extract kernel body from k_ext *)
-let extract_body = function Kern (_, body) -> body | body -> body
 
 (** Convenience: create int32 array *)
 let int32_array n = Array.make n (VInt32 0l)
