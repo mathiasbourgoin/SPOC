@@ -11,6 +11,7 @@
   Sarek_ir
   Sarek_fusion
   Sarek_interp
+  Sarek_cpu_runtime
   Gen
   Kirc
   Kirc_Cuda

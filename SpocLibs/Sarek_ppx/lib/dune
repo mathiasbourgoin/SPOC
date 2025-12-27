@@ -17,7 +17,8 @@
   Sarek_convergence
   Sarek_lower
   Sarek_parse
-  Sarek_quote))
+  Sarek_quote
+  Sarek_native_gen))
 
 (library
  (name sarek_ppx)
