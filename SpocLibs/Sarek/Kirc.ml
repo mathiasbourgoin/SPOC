@@ -63,6 +63,9 @@ type ('a, 'b, 'c) kirc_kernel = {
   body : Kirc_Ast.k_ext;
   ret_val : Kirc_Ast.k_ext * ('b, 'c) Vector.kind;
   extensions : extension array;
+  cpu_kern :
+    (block:int * int * int -> grid:int * int * int -> Obj.t array -> unit)
+    option;
 }
 
 type ('a, 'b, 'c, 'd) kirc_function = {
@@ -805,6 +808,7 @@ let opencl_source ?profile:(prof = profile_default ()) ?return:(r = false)
                 body = fst k3;
                 ret_val = k3;
                 extensions = k.extensions;
+                cpu_kern = k.cpu_kern;
               } ) ;
           Stdlib.flush stdout ;
           assert false )
@@ -903,6 +907,7 @@ let gen ?keep_temp:(kt = false) ?profile:(prof = profile_default ())
                 body = fst k3;
                 ret_val = k3;
                 extensions = k.extensions;
+                cpu_kern = k.cpu_kern;
               } ) ;
           Stdlib.flush stdout ;
           assert false )
@@ -1372,6 +1377,7 @@ let compile_kernel_to_files s (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel) dev =
                 body = fst k3;
                 ret_val = k3;
                 extensions = k.extensions;
+                cpu_kern = k.cpu_kern;
               } ) ;
           Stdlib.flush stdout ;
           assert false )
@@ -1497,6 +1503,8 @@ module Fusion = struct
       extensions =
         Array.append producer.extensions consumer.extensions
         |> Array.to_list |> List.sort_uniq compare |> Array.of_list;
+      cpu_kern = None;
+      (* Fused kernels lose native kernel - use interpreter *)
     }
 
   (** Try to fuse a pipeline of kernel bodies.

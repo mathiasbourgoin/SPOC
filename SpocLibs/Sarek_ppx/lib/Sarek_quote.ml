@@ -694,6 +694,7 @@ let quote_kernel ~loc (kernel : tkernel) (ir : Kirc_Ast.k_ext)
         Sarek.Kirc.body = body_ir;
         Sarek.Kirc.ret_val = (ret_ir, Spoc.Vector.int32);
         Sarek.Kirc.extensions = [||];
+        Sarek.Kirc.cpu_kern = None;
       }
     in
     (new M.sarek_kern, kirc_kernel)]

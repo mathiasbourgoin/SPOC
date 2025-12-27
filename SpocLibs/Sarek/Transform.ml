@@ -231,6 +231,7 @@ let map2 (ker : ('a, 'b, 'c -> 'd -> 'e, 'f, 'g) sarek_kernel)
         body = aux k2;
         ret_val = (Unit, Vector.int32);
         extensions = k.extensions;
+        cpu_kern = None;
       } )
   in
   let length = Vector.length vec_in1 in
@@ -317,6 +318,7 @@ let build_new_ker spoc_ker kir_ker ker ml_fun =
       body = ker;
       ret_val = (Unit, Vector.Unit ((), ()));
       extensions = kir_ker.extensions;
+      cpu_kern = None;
     } )
 
 let map =
