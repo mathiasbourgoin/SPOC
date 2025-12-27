@@ -242,9 +242,22 @@ type openCLInfo = {
 
 (**/**)
 
+(** Interpreter execution backend *)
+type interpreter_backend =
+  | Sequential  (** Deterministic single-threaded, for debugging *)
+  | Parallel    (** Multi-threaded using Domains, for performance *)
+
+(** Information for interpreter-based CPU devices *)
+type interpreterInfo = {
+  backend : interpreter_backend;
+  num_cores : int;    (** Number of cores for parallel backend *)
+  debug_mode : bool;  (** Enable extra validation and tracing *)
+}
+
 type specificInfo =
     CudaInfo of cudaInfo
   | OpenCLInfo of openCLInfo
+  | InterpreterInfo of interpreterInfo
 
 type gcInfo
 type events
@@ -269,10 +282,14 @@ external closeOutput : unit -> unit = "close_output_profiling"
 (** Mandatory function to use Spoc
 @param only allows to specify which library to use, by default, Spoc will search any device on the system
 @return an array containing every compatible device found on the system *)
-val init : ?only: specificLibrary -> unit -> device array
+val init : ?only: specificLibrary -> ?interpreter:interpreter_backend option -> unit -> device array
+(** @param interpreter Defaults to [Some Sequential]. Use [None] to exclude the interpreter device. *)
 
 (** @return the number of Cuda compatible devices found *)
 val cuda_devices : unit -> int
+
+(** @return the number of interpreter devices (0 or 1) *)
+val interpreter_devices : unit -> int
 
 (** @return the number of OpenCL compatible devices found *)
 val opencl_devices : unit -> int
@@ -289,3 +306,12 @@ val hasCLExtension : device -> string -> bool
 
 
 val allowDouble : device -> bool
+
+(** Create an interpreter-based CPU device.
+    This device executes kernels using a pure OCaml interpreter,
+    without requiring GPU hardware.
+    @param backend execution backend (default: Sequential)
+    @param debug enable extra validation (default: false)
+    @return a device that can be used with Kirc.run *)
+val create_interpreter_device :
+  ?backend:interpreter_backend -> ?debug:bool -> unit -> device

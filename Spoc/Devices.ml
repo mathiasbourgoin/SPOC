@@ -166,7 +166,20 @@ type openCLInfo = {
   device_id : clDeviceID;
 }
 
-type specificInfo = CudaInfo of cudaInfo | OpenCLInfo of openCLInfo
+type interpreter_backend =
+  | Sequential  (** Deterministic single-threaded, for debugging *)
+  | Parallel    (** Multi-threaded using Domains, for performance *)
+
+type interpreterInfo = {
+  backend : interpreter_backend;
+  num_cores : int;
+  debug_mode : bool;
+}
+
+type specificInfo =
+  | CudaInfo of cudaInfo
+  | OpenCLInfo of openCLInfo
+  | InterpreterInfo of interpreterInfo
 
 type gcInfo
 
@@ -258,7 +271,45 @@ external endEvent : string -> int -> unit = "end_event"
 
 external is_available : int -> bool = "spoc_opencl_is_available"
 
-let init ?only:(s = Both) () =
+(* Counter for interpreter device IDs *)
+let interpreter_device_id = ref 0
+
+let create_interpreter_device ?(backend = Sequential) ?(debug = false) () =
+  let id = !interpreter_device_id in
+  incr interpreter_device_id ;
+  let num_cores =
+    match backend with
+    | Sequential -> 1
+    | Parallel -> (try Domain.recommended_domain_count () with _ -> 4)
+  in
+  let name =
+    match backend with
+    | Sequential -> "CPU Interpreter (Sequential)"
+    | Parallel -> Printf.sprintf "CPU Interpreter (Parallel, %d cores)" num_cores
+  in
+  {
+    general_info = {
+      name;
+      totalGlobalMem = Sys.max_array_length * 8; (* Approximate *)
+      localMemSize = 64 * 1024; (* 64KB shared memory emulation *)
+      clockRate = 0; (* Not applicable *)
+      totalConstMem = 64 * 1024;
+      multiProcessorCount = num_cores;
+      eccEnabled = false;
+      id;
+      (* Use Obj.magic to create dummy opaque types - safe because
+         interpreter never passes these to C code *)
+      ctx = Obj.magic ();
+    };
+    specific_info = InterpreterInfo { backend; num_cores; debug_mode = debug };
+    (* Dummy values for opaque types - interpreter doesn't use them *)
+    gc_info = Obj.magic ();
+    events = Obj.magic ();
+  }
+
+let interpreter_compatible_devices = ref 0
+
+let init ?only:(s = Both) ?(interpreter = Some Sequential) () =
   openOutput () ;
   let idEvent = beginEvent "initialisation des devices" in
   begin match s with
@@ -287,6 +338,13 @@ let init ?only:(s = Both) () =
       incr i) ;
     incr j
   done ;
+  (* Optionally add interpreter device *)
+  (match interpreter with
+   | Some backend ->
+       devList := !devList @ [create_interpreter_device ~backend ()] ;
+       interpreter_compatible_devices := 1
+   | None ->
+       interpreter_compatible_devices := 0) ;
   total_num_devices := List.length !devList ;
   opencl_compatible_devices := !i ;
   emitDeviceList !devList ;
@@ -296,6 +354,8 @@ let init ?only:(s = Both) () =
 let cuda_devices () = !cuda_compatible_devices
 
 let opencl_devices () = !opencl_compatible_devices
+
+let interpreter_devices () = !interpreter_compatible_devices
 
 let gpgpu_devices () = !total_num_devices
 
@@ -311,6 +371,7 @@ let flush dev ?queue_id () =
   | CudaInfo _, Some q -> cuda_flush dev.general_info dev q
   | OpenCLInfo _, None -> opencl_flush dev.general_info 0
   | OpenCLInfo _, Some q -> opencl_flush dev.general_info q
+  | InterpreterInfo _, _ -> () (* No-op for interpreter *)
 
 let hasCLExtension dev ext =
   match dev.specific_info with
@@ -327,3 +388,4 @@ let allowDouble dev =
   | OpenCLInfo _cli ->
       hasCLExtension dev "cl_khr_fp64" || hasCLExtension dev "cl_amd_fp64"
   | CudaInfo ci -> ci.major > 1 || ci.minor >= 3
+  | InterpreterInfo _ -> true

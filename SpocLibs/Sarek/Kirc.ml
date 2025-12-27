@@ -1085,7 +1085,33 @@ let run ?recompile:(r = false) (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel) a
       else
         match kir#get_opencl_sources () with
         | [] -> ignore (gen ~only:Devices.OpenCL (kir, k) dev)
-        | _ -> ())) ;
+        | _ -> ())
+  | Devices.InterpreterInfo _ ->
+      (* Interpreter doesn't need GPU code generation *)
+      ()) ;
+  (* For interpreter devices, dispatch to Sarek_interp *)
+  (match dev.Devices.specific_info with
+  | Devices.InterpreterInfo _ ->
+      let interp_args =
+        kir#args_to_list a |> Array.to_list
+        |> List.mapi (fun i arg ->
+            let name = Printf.sprintf "arg%d" i in
+            match arg with
+            | VChar v -> (name, Sarek_interp.wrap_vector v)
+            | VFloat32 v -> (name, Sarek_interp.wrap_vector v)
+            | VFloat64 v -> (name, Sarek_interp.wrap_vector v)
+            | VInt32 v -> (name, Sarek_interp.wrap_vector v)
+            | VInt64 v -> (name, Sarek_interp.wrap_vector v)
+            | VCustom v -> (name, Sarek_interp.wrap_vector v)
+            | _ ->
+                failwith "Kirc.run: unsupported argument type for interpreter")
+      in
+      Sarek_interp.run_body
+        k.body
+        ~block:(block.Kernel.blockX, block.Kernel.blockY, block.Kernel.blockZ)
+        ~grid:(grid.Kernel.gridX, grid.Kernel.gridY, grid.Kernel.gridZ)
+        interp_args
+  | _ -> ()) ;
   let args = kir#args_to_list a in
   let offset = ref 0 in
   kir#compile ~debug:true dev ;
@@ -1167,6 +1193,9 @@ let run ?recompile:(r = false) (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel) a
         args ;
       (*Array.iteri (fun i a -> Kernel.OpenCL.opencl_load_arg offset dev bin (i) a) args;*)
       Kernel.OpenCL.opencl_launch_grid bin grid block dev.Devices.general_info 0
+  | Devices.InterpreterInfo _ ->
+      (* Interpreter already executed above, nothing more to do *)
+      ()
 
 let profile_run ?recompile:(r = true) (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel)
     a b _q dev =
@@ -1183,12 +1212,16 @@ let profile_run ?recompile:(r = true) (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel)
       else
         match kir#get_opencl_sources () with
         | [] -> ignore (gen ~profile:true ~only:Devices.OpenCL (kir, k) dev)
-        | _ -> ())) ;
+        | _ -> ())
+  | Devices.InterpreterInfo _ ->
+      (* Profiling not supported for interpreter *)
+      ()) ;
   (*kir#run a b q dev;*)
   let nCounter =
     !(match dev.Devices.specific_info with
      | Devices.CudaInfo _ -> Kirc_Cuda.profiler_counter
-     | Devices.OpenCLInfo _ -> Kirc_OpenCL.profiler_counter)
+     | Devices.OpenCLInfo _ -> Kirc_OpenCL.profiler_counter
+     | Devices.InterpreterInfo _ -> ref 0 (* No profiling for interpreter *))
   in
   (*Printf.printf "Number of counters : %d\n%!" nCounter;*)
   let profiler_counters = Vector.create Vector.int64 nCounter in
@@ -1241,7 +1274,10 @@ let profile_run ?recompile:(r = true) (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel)
          grid
          block
          dev.Devices.general_info
-         0) ;
+         0
+   | Devices.InterpreterInfo _ ->
+       (* Profiling not supported for interpreter *)
+       ()) ;
   Devices.flush dev () ;
   if not !Mem.auto then Mem.to_cpu profiler_counters () ;
   (*Spoc.Tools.iter (fun a -> Printf.printf "%Ld " a) profiler_counters;*)

@@ -15,10 +15,14 @@
 
 (test
  (name test_fusion)
- (libraries sarek))
+ (libraries sarek)
+ (flags
+  (:standard -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc)))
 
 ; Interpreter tests use sarek library directly (no ppx needed)
 
 (test
  (name test_interp)
- (libraries sarek))
+ (libraries sarek)
+ (flags
+  (:standard -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc)))

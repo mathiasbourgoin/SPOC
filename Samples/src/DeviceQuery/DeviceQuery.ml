@@ -26,6 +26,9 @@ Printf.printf
 Printf.printf "Found %d devices: \n" (Spoc.Devices.gpgpu_devices ()) ;
 Printf.printf "  ** %d Cuda devices \n" (Spoc.Devices.cuda_devices ()) ;
 Printf.printf "  ** %d OpenCL devices \n" (Spoc.Devices.opencl_devices ()) ;
+Printf.printf
+  "  ** %d Interpreter devices \n"
+  (Spoc.Devices.interpreter_devices ()) ;
 print_newline () ;
 Printf.printf "Devices Info:\n" ;
 Array.iteri
@@ -54,7 +57,16 @@ Array.iteri
       dev.Spoc.Devices.general_info.Spoc.Devices.eccEnabled ;
     (match dev.Spoc.Devices.specific_info with
     | Spoc.Devices.CudaInfo _ -> Printf.printf "    Powered by Cuda\n"
-    | Spoc.Devices.OpenCLInfo _ -> Printf.printf "    Powered by OpenCL\n") ;
+    | Spoc.Devices.OpenCLInfo _ -> Printf.printf "    Powered by OpenCL\n"
+    | Spoc.Devices.InterpreterInfo info ->
+        Printf.printf "    Powered by CPU Interpreter\n" ;
+        Printf.printf
+          "    Backend: %s\n"
+          (match info.Spoc.Devices.backend with
+          | Spoc.Devices.Sequential -> "Sequential"
+          | Spoc.Devices.Parallel -> "Parallel") ;
+        Printf.printf "    Cores: %d\n" info.Spoc.Devices.num_cores ;
+        Printf.printf "    Debug Mode: %b\n" info.Spoc.Devices.debug_mode) ;
     match dev.Spoc.Devices.specific_info with
     | Spoc.Devices.CudaInfo ci ->
         Printf.printf
@@ -262,5 +274,8 @@ Array.iteri
               "    !!Warning!! could be Device %d\n"
               (i - Spoc.Devices.cuda_devices ())
           else ()
-        done)
+        done
+    | Spoc.Devices.InterpreterInfo _ ->
+        (* Already printed details in the first match *)
+        ())
   devices

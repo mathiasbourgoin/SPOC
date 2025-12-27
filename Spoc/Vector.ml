@@ -353,6 +353,8 @@ let create (kind : ('a, 'b) kind) ?dev size =
                   vec
                   (dev.Devices.general_info.Devices.id - Devices.cuda_devices ())
                   dev.Devices.general_info)
+        | Devices.InterpreterInfo _ ->
+            () (* No device allocation needed - data stays in host memory *)
       in
       (try alloc_on_dev ()
        with _ ->

@@ -85,6 +85,14 @@ let to_float64 = function
   | VInt64 n -> Int64.to_float n
   | _ -> failwith "to_float64: not a numeric value"
 
+let to_int64 = function
+  | VInt64 n -> n
+  | VInt32 n -> Int64.of_int32 n
+  | VFloat32 f -> Int64.of_float f
+  | VFloat64 f -> Int64.of_float f
+  | VBool b -> if b then 1L else 0L
+  | _ -> failwith "to_int64: not a numeric value"
+
 let to_bool = function
   | VBool b -> b
   | VInt32 n -> n <> 0l
@@ -212,6 +220,19 @@ let eval_intrinsic state path name args =
       VInt32 (min (to_int32 (List.nth args 0)) (to_int32 (List.nth args 1)))
   | ["Int32"], "max" ->
       VInt32 (max (to_int32 (List.nth args 0)) (to_int32 (List.nth args 1)))
+  (* Type conversions *)
+  | (["Std"] | ["Gpu"] | []), "float" ->
+      VFloat32 (Int32.to_float (to_int32 (List.hd args)))
+  | (["Std"] | ["Gpu"] | []), "float64" ->
+      VFloat64 (Int32.to_float (to_int32 (List.hd args)))
+  | (["Std"] | ["Gpu"] | []), "int_of_float" ->
+      VInt32 (Int32.of_float (to_float32 (List.hd args)))
+  | (["Std"] | ["Gpu"] | []), "int_of_float64" ->
+      VInt32 (Int32.of_float (to_float64 (List.hd args)))
+  | ["Float32"], "of_int" -> VFloat32 (Int32.to_float (to_int32 (List.hd args)))
+  | ["Float64"], "of_int" -> VFloat64 (Int32.to_float (to_int32 (List.hd args)))
+  | ["Float64"], "of_float32" -> VFloat64 (to_float32 (List.hd args))
+  | ["Float32"], "of_float64" -> VFloat32 (to_float64 (List.hd args))
   (* Unknown intrinsic *)
   | _ ->
       let full_name = String.concat "." (path @ [name]) in
@@ -401,9 +422,12 @@ let rec exec_stmt state env stmt =
              idx
              (Array.length arr))
       else arr.(idx) <- value
-  | SetV (lhs, rhs) ->
-      (* Generic SetV - try to interpret as array access *)
-      exec_stmt state env (SetV (lhs, rhs))
+  | SetV (lhs, _rhs) ->
+      (* Generic SetV - unsupported lvalue *)
+      failwith
+        (Printf.sprintf
+           "SetV: unsupported lvalue: %s"
+           (Kirc_Ast.string_of_ast lhs))
   (* Local variable with init *)
   | SetLocalVar (var_expr, init_expr, body) -> (
       let value = eval_expr state env init_expr in
@@ -569,3 +593,58 @@ let set_int32s arr values = Array.iteri (fun i v -> arr.(i) <- VInt32 v) values
 (** Set float32 values in array *)
 let set_float32s arr values =
   Array.iteri (fun i v -> arr.(i) <- VFloat32 v) values
+
+(** Wrap a SPOC vector into interpreter value array. This creates a value array
+    that references the same underlying data. *)
+let wrap_vector (vec : ('a, 'b) Spoc.Vector.vector) : value array =
+  let len = Spoc.Vector.length vec in
+  let arr = Array.make len VUnit in
+  (* Determine element type from vector kind *)
+  (match Spoc.Vector.kind vec with
+  | Spoc.Vector.Float32 _ ->
+      for i = 0 to len - 1 do
+        arr.(i) <- VFloat32 (Obj.magic (Spoc.Mem.get vec i) : float)
+      done
+  | Spoc.Vector.Float64 _ ->
+      for i = 0 to len - 1 do
+        arr.(i) <- VFloat64 (Obj.magic (Spoc.Mem.get vec i) : float)
+      done
+  | Spoc.Vector.Int32 _ ->
+      for i = 0 to len - 1 do
+        arr.(i) <- VInt32 (Obj.magic (Spoc.Mem.get vec i) : int32)
+      done
+  | Spoc.Vector.Int64 _ ->
+      for i = 0 to len - 1 do
+        arr.(i) <- VInt64 (Obj.magic (Spoc.Mem.get vec i) : int64)
+      done
+  | Spoc.Vector.Char _ ->
+      for i = 0 to len - 1 do
+        arr.(i) <-
+          VInt32
+            (Int32.of_int (Char.code (Obj.magic (Spoc.Mem.get vec i) : char)))
+      done
+  | _ -> failwith "wrap_vector: unsupported vector type") ;
+  arr
+
+(** Unwrap interpreter value array back to SPOC vector. This copies the values
+    back to the vector. *)
+let unwrap_to_vector arr (vec : ('a, 'b) Spoc.Vector.vector) : unit =
+  let len = min (Array.length arr) (Spoc.Vector.length vec) in
+  match Spoc.Vector.kind vec with
+  | Spoc.Vector.Float32 _ ->
+      for i = 0 to len - 1 do
+        Spoc.Mem.set vec i (Obj.magic (to_float32 arr.(i)))
+      done
+  | Spoc.Vector.Float64 _ ->
+      for i = 0 to len - 1 do
+        Spoc.Mem.set vec i (Obj.magic (to_float64 arr.(i)))
+      done
+  | Spoc.Vector.Int32 _ ->
+      for i = 0 to len - 1 do
+        Spoc.Mem.set vec i (Obj.magic (to_int32 arr.(i)))
+      done
+  | Spoc.Vector.Int64 _ ->
+      for i = 0 to len - 1 do
+        Spoc.Mem.set vec i (Obj.magic (to_int64 arr.(i)))
+      done
+  | _ -> failwith "unwrap_to_vector: unsupported vector type"
