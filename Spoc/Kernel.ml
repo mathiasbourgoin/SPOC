@@ -184,7 +184,7 @@ module OpenCL = struct
       | _ -> failwith "Cl LOAD ARG Type Not Implemented\n"
     and check_vect v =
       if !Mem.auto then (
-        if Vector.dev v <> Vector.Dev dev then Mem.to_device v dev ;
+        if not (Vector.is_on_device (Vector.dev v) dev) then Mem.to_device v dev ;
         Devices.flush dev ()) ;
       opencl_load_param_vec
         offset

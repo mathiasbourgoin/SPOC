@@ -384,6 +384,13 @@ let set_device v device dev =
 
 let equals v1 v2 = v1.vec_id = v2.vec_id
 
+(* Compare vec_device by device ID to avoid comparing abstract types *)
+let is_on_device vd dev =
+  match vd with
+  | No_dev -> false
+  | Dev d | Transferring d ->
+      d.Devices.general_info.Devices.id = dev.Devices.general_info.Devices.id
+
 let vseek v s = v.seek <- s
 
 let get_seek v = v.seek

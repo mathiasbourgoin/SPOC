@@ -52,6 +52,18 @@ test_ppx:
 	# Build unit/comparison tests and all Sarek PPX e2e binaries (execution may require GPU)
 	SKIP_OCAMLFORMAT=1 dune build @SpocLibs/Sarek_test/runtest
 
+# Run interpreter tests (no GPU required)
+test_interpreter:
+	@echo "=== Interpreter unit tests ==="
+	dune build SpocLibs/Sarek_test/unit/test_interp.exe
+	@echo "Running interpreter unit tests..."
+	dune exec SpocLibs/Sarek_test/unit/test_interp.exe
+	@echo "=== Interpreter e2e tests ==="
+	dune build SpocLibs/Sarek_test/e2e/test_vector_add.exe
+	@echo "Running vector_add on interpreter..."
+	dune exec SpocLibs/Sarek_test/e2e/test_vector_add.exe -- --interpreter -s 64 -b 16
+	@echo "=== Interpreter tests passed ==="
+
 # Negative tests - verify that expected compile errors are raised
 # Uses --profile=negative to enable the negative test libraries
 test_negative:
@@ -67,7 +79,7 @@ test_negative:
 	@echo "All negative tests passed"
 
 # Run all tests: unit tests, e2e tests, and negative tests
-test-all: test test_negative
+test-all: test test_interpreter test_negative
 	@echo "=== All tests passed ==="
 
 test_sarek:

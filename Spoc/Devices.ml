@@ -389,3 +389,22 @@ let allowDouble dev =
       hasCLExtension dev "cl_khr_fp64" || hasCLExtension dev "cl_amd_fp64"
   | CudaInfo ci -> ci.major > 1 || ci.minor >= 3
   | InterpreterInfo _ -> true
+
+(** Check if a device is the CPU interpreter *)
+let is_interpreter dev =
+  match dev.specific_info with
+  | InterpreterInfo _ -> true
+  | _ -> false
+
+(** Find the interpreter device in an array, returns None if not present *)
+let find_interpreter devs =
+  Array.find_opt is_interpreter devs
+
+(** Find the interpreter device index in an array, returns None if not present *)
+let find_interpreter_id devs =
+  let rec find i =
+    if i >= Array.length devs then None
+    else if is_interpreter devs.(i) then Some i
+    else find (i + 1)
+  in
+  find 0

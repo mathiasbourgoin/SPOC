@@ -307,6 +307,15 @@ val hasCLExtension : device -> string -> bool
 
 val allowDouble : device -> bool
 
+(** Check if a device is the CPU interpreter *)
+val is_interpreter : device -> bool
+
+(** Find the interpreter device in an array, returns None if not present *)
+val find_interpreter : device array -> device option
+
+(** Find the interpreter device index in an array, returns None if not present *)
+val find_interpreter_id : device array -> int option
+
 (** Create an interpreter-based CPU device.
     This device executes kernels using a pure OCaml interpreter,
     without requiring GPU hardware.

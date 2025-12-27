@@ -13,6 +13,7 @@ let make_mandelbrot () =
         (shiftx : int)
         (shifty : int)
         (zoom : float32) ->
+      let open Std in
       let x = thread_idx_x + (block_idx_x * block_dim_x) in
       let y = thread_idx_y + (block_idx_y * block_dim_y) in
       if x < width && y < height then begin

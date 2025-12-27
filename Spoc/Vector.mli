@@ -158,6 +158,10 @@ val vector : ('a, 'b) vector -> ('a, 'b) spoc_vec
 (** checks equality between two vectors *)
 val equals : ('a, 'b) vector -> ('a, 'b) vector -> bool
 
+(** Check if a vec_device is on a specific device (by ID, not structural
+    equality) *)
+val is_on_device : vec_device -> Devices.device -> bool
+
 val vseek : ('a, 'b) vector -> int -> unit
 
 val get_seek : ('a, 'b) vector -> int

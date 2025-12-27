@@ -98,6 +98,13 @@ let%sarek_intrinsic (float_of_int : int32 -> float) =
     ocaml = (fun i -> Stdlib.float_of_int (Stdlib.Int32.to_int i));
   }
 
+(* Alias for float_of_int - OCaml convention *)
+let%sarek_intrinsic (float : int32 -> float32) =
+  {
+    device = (fun _ -> "(float)");
+    ocaml = (fun i -> Stdlib.float_of_int (Stdlib.Int32.to_int i));
+  }
+
 let%sarek_intrinsic (float64_of_int : int32 -> float) =
   {
     device = (fun _ -> "(double)");

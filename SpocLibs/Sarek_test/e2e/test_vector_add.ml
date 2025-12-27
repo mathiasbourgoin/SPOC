@@ -15,14 +15,17 @@ let block_size = ref 256
 
 let verify = ref true
 
+let use_interpreter = ref false
+
 let usage () =
   Printf.printf "Usage: %s [options]\n" Sys.argv.(0) ;
   Printf.printf "Options:\n" ;
-  Printf.printf "  -d <id>     Device ID (default: 0)\n" ;
-  Printf.printf "  -s <size>   Vector size (default: 1024)\n" ;
-  Printf.printf "  -b <size>   Block/work-group size (default: 256)\n" ;
-  Printf.printf "  -no-verify  Skip result verification\n" ;
-  Printf.printf "  -h          Show this help\n" ;
+  Printf.printf "  -d <id>       Device ID (default: 0)\n" ;
+  Printf.printf "  --interpreter Use CPU interpreter device\n" ;
+  Printf.printf "  -s <size>     Vector size (default: 1024)\n" ;
+  Printf.printf "  -b <size>     Block/work-group size (default: 256)\n" ;
+  Printf.printf "  -no-verify    Skip result verification\n" ;
+  Printf.printf "  -h            Show this help\n" ;
   exit 0
 
 let parse_args () =
@@ -32,13 +35,18 @@ let parse_args () =
     | "-d" ->
         incr i ;
         dev_id := int_of_string Sys.argv.(!i)
+    | "--interpreter" ->
+        use_interpreter := true ;
+        incr i
     | "-s" ->
         incr i ;
         size := int_of_string Sys.argv.(!i)
     | "-b" ->
         incr i ;
         block_size := int_of_string Sys.argv.(!i)
-    | "-no-verify" -> verify := false
+    | "-no-verify" ->
+        verify := false ;
+        incr i
     | "-h" | "--help" -> usage ()
     | _ ->
         () ;
@@ -72,7 +80,16 @@ let () =
       Printf.printf "  [%d] %s\n" i d.Devices.general_info.Devices.name)
     devs ;
 
-  let dev = devs.(!dev_id) in
+  (* Select device: --interpreter flag overrides -d *)
+  let dev =
+    if !use_interpreter then (
+      match Devices.find_interpreter_id devs with
+      | Some id -> devs.(id)
+      | None ->
+          print_endline "No interpreter device found" ;
+          exit 1)
+    else devs.(!dev_id)
+  in
   Printf.printf "Using device: %s\n%!" dev.Devices.general_info.Devices.name ;
   Printf.printf "Configuration: size=%d, block_size=%d\n%!" !size !block_size ;
 
