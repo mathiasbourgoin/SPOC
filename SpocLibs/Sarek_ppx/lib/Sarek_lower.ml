@@ -411,6 +411,9 @@ let rec lower_expr (state : state) (te : texpr) : Kirc_Ast.k_ext =
       let barrier_call = Kirc_Ast.App (barrier_ir, [|Kirc_Ast.Unit|]) in
       let cont_ir = lower_expr state cont in
       Kirc_Ast.Seq (body_ir, Kirc_Ast.Seq (barrier_call, cont_ir))
+  | TEOpen (_, body) ->
+      (* Module opens are erased in GPU lowering - already resolved by typer *)
+      lower_expr state body
   (* Intrinsic constant - emit IntrinsicRef, device code resolved at JIT *)
   | TEIntrinsicConst ref -> (
       match ref with

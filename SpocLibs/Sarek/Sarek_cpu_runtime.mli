@@ -7,36 +7,39 @@
 (** {1 Thread State} *)
 
 (** Thread state passed to each kernel invocation. Contains thread/block/grid
-    indices and dimensions, plus a barrier function. *)
+    indices and dimensions, plus a barrier function.
+
+    All indices are int32 to match GPU semantics (Sarek_stdlib.Gpu uses int32).
+*)
 type thread_state = {
-  thread_idx_x : int;
-  thread_idx_y : int;
-  thread_idx_z : int;
-  block_idx_x : int;
-  block_idx_y : int;
-  block_idx_z : int;
-  block_dim_x : int;
-  block_dim_y : int;
-  block_dim_z : int;
-  grid_dim_x : int;
-  grid_dim_y : int;
-  grid_dim_z : int;
+  thread_idx_x : int32;
+  thread_idx_y : int32;
+  thread_idx_z : int32;
+  block_idx_x : int32;
+  block_idx_y : int32;
+  block_idx_z : int32;
+  block_dim_x : int32;
+  block_dim_y : int32;
+  block_dim_z : int32;
+  grid_dim_x : int32;
+  grid_dim_y : int32;
+  grid_dim_z : int32;
   barrier : unit -> unit;
 }
 
 (** {1 Global Index Helpers} *)
 
-val global_idx_x : thread_state -> int
+val global_idx_x : thread_state -> int32
 
-val global_idx_y : thread_state -> int
+val global_idx_y : thread_state -> int32
 
-val global_idx_z : thread_state -> int
+val global_idx_z : thread_state -> int32
 
-val global_size_x : thread_state -> int
+val global_size_x : thread_state -> int32
 
-val global_size_y : thread_state -> int
+val global_size_y : thread_state -> int32
 
-val global_size_z : thread_state -> int
+val global_size_z : thread_state -> int32
 
 (** {1 Bigarray Type Aliases} *)
 
@@ -72,11 +75,12 @@ val alloc_shared_int32 : shared_mem -> string -> int -> int32_vec
 (** {1 Execution Modes} *)
 
 (** Run kernel sequentially. All threads execute in order, barriers are no-ops.
-    Good for debugging and correctness testing. *)
+    Good for debugging and correctness testing. The kernel function receives
+    thread_state, shared_mem (for the block), and args. *)
 val run_sequential :
   block:int * int * int ->
   grid:int * int * int ->
-  (thread_state -> 'a -> unit) ->
+  (thread_state -> shared_mem -> 'a -> unit) ->
   'a ->
   unit
 
@@ -86,6 +90,6 @@ val run_sequential :
 val run_parallel :
   block:int * int * int ->
   grid:int * int * int ->
-  (thread_state -> 'a -> unit) ->
+  (thread_state -> shared_mem -> 'a -> unit) ->
   'a ->
   unit

@@ -534,10 +534,12 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
   | EOpen (path, e) ->
       (* Bring module's bindings into scope for the inner expression only.
          We discard the modified environment to prevent the open from leaking
-         to sibling expressions in sequences. *)
+         to sibling expressions in sequences.
+         We preserve the TEOpen in the typed AST so native code gen can
+         generate `let open M in ...` *)
       let env' = Sarek_env.open_module path env in
       let* te, _env_inner = infer env' e in
-      Ok (te, env)
+      Ok ({te = TEOpen (path, te); ty = te.ty; te_loc = loc}, env)
   (* Return original env, not the one with opened module *)
   (* BSP constructs: let%shared and let%superstep *)
   | ELetShared (name, elem_ty, size_opt, body) ->
@@ -889,6 +891,7 @@ let infer_kernel (env : t) (kernel : Sarek_ast.kernel) : tkernel result =
       tkern_name = kernel.kern_name;
       tkern_type_decls = ttypes;
       tkern_module_items = tmodule_items;
+      tkern_external_item_count = kernel.kern_external_item_count;
       tkern_params = tparams;
       tkern_body = tbody;
       tkern_return_type = tbody.ty;

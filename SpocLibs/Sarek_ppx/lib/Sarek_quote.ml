@@ -610,6 +610,7 @@ let rec collect_intrinsic_refs (te : texpr) : IntrinsicRefSet.t =
       IntrinsicRefSet.union
         (collect_intrinsic_refs step_body)
         (collect_intrinsic_refs cont)
+  | TEOpen (_, body) -> collect_intrinsic_refs body
   | TEIntrinsicConst ref -> IntrinsicRefSet.singleton ref
   | TEIntrinsicFun (ref, _convergence, args) ->
       let base = IntrinsicRefSet.singleton ref in
@@ -688,13 +689,14 @@ let quote_kernel ~loc (kernel : tkernel) (ir : Kirc_Ast.k_ext)
     let body_ir = [%e quote_k_ext ~loc ir] in
     let ret_ir = [%e quote_k_ext ~loc ret_val] in
     let _intrinsic_check = [%e generate_intrinsic_check ~loc kernel] in
+    let cpu_kern_fn = [%e Sarek_native_gen.gen_cpu_kern_wrapper ~loc kernel] in
     let kirc_kernel =
       {
         Sarek.Kirc.ml_kern = (fun () -> ());
         Sarek.Kirc.body = body_ir;
         Sarek.Kirc.ret_val = (ret_ir, Spoc.Vector.int32);
         Sarek.Kirc.extensions = [||];
-        Sarek.Kirc.cpu_kern = None;
+        Sarek.Kirc.cpu_kern = Some cpu_kern_fn;
       }
     in
     (new M.sarek_kern, kirc_kernel)]

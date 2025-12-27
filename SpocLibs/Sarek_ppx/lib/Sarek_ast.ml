@@ -192,6 +192,9 @@ type kernel = {
   kern_types : type_decl list;  (** Type declarations visible in body *)
   kern_module_items : module_item list;
       (** Module-level items visible in body *)
+  kern_external_item_count : int;
+      (** Number of items in kern_module_items that are external (from
+          [@sarek.module]). First N items are external, rest are inline. *)
   kern_params : param list;
   kern_body : expr;
   kern_loc : loc;

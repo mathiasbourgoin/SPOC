@@ -610,6 +610,9 @@ let expand_kernel ~ctxt payload =
         ast with
         Sarek_ast.kern_types = pre_types @ ast.kern_types;
         kern_module_items = pre_mods @ ast.kern_module_items;
+        (* External items are prepended first, then inline items from payload.
+           Track how many are external so native code gen can skip them. *)
+        kern_external_item_count = List.length pre_mods;
       }
     in
 

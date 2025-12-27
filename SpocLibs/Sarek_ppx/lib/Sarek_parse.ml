@@ -597,6 +597,7 @@ let parse_kernel_function (expr : expression) : Sarek_ast.kernel =
         Sarek_ast.kern_name = None;
         kern_types = [];
         kern_module_items = [];
+        kern_external_item_count = 0;
         kern_params = parsed_params;
         kern_body = body;
         kern_loc = loc;

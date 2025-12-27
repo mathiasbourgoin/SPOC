@@ -71,6 +71,8 @@ and texpr_desc =
       (** name, var_id, elem_type, size_opt, body *)
   | TESuperstep of string * bool * texpr * texpr
       (** name, divergent, body, continuation *)
+  (* Module open *)
+  | TEOpen of string list * texpr  (** let open M.N in e *)
 
 and tpattern = {tpat : tpattern_desc; tpat_ty : typ; tpat_loc : loc}
 
@@ -114,6 +116,12 @@ type tkernel = {
   tkern_name : string option;
   tkern_type_decls : ttype_decl list;
   tkern_module_items : tmodule_item list;
+      (** Number of module items that are external (from [@sarek.module]). The
+          first N items in tkern_module_items are external, the rest are inline
+          (defined within the kernel payload). Native code gen should skip
+          external items - they're already available via the OCaml module
+          system. *)
+  tkern_external_item_count : int;
   tkern_params : tparam list;
   tkern_body : texpr;
   tkern_return_type : typ;
@@ -338,6 +346,13 @@ let rec pp_texpr fmt te =
         step_body
         pp_texpr
         cont
+  | TEOpen (path, body) ->
+      Format.fprintf
+        fmt
+        "(let open %s in %a)"
+        (String.concat "." path)
+        pp_texpr
+        body
 
 and pp_tpattern fmt p =
   match p.tpat with

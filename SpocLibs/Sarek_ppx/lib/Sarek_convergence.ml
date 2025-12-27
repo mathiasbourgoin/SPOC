@@ -108,6 +108,7 @@ let rec is_thread_varying (te : texpr) : bool =
       || is_thread_varying body
   | TESuperstep (_, _, step_body, cont) ->
       is_thread_varying step_body || is_thread_varying cont
+  | TEOpen (_, body) -> is_thread_varying body
   (* Default: assume uniform (minimize false positives) *)
   | TEIf _ | TEFor _ | TEWhile _ | TEMatch _ | TERecord _ | TEConstr _
   | TEReturn _ | TECreateArray _ | TEGlobalRef _ | TENative _ | TENativeFun _
@@ -232,6 +233,7 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
       (* After the implicit barrier, we're back to converged *)
       let cont_errors = check_expr {mode = Converged} cont in
       body_errors @ cont_errors
+  | TEOpen (_, body) -> check_expr ctx body
 
 (** Check if an expression contains any control flow with thread-varying
     conditions. This is used for superstep analysis - the implicit barrier at
@@ -298,6 +300,7 @@ and contains_diverging_control_flow (te : texpr) : bool =
   | TESuperstep (_, _, step_body, cont) ->
       contains_diverging_control_flow step_body
       || contains_diverging_control_flow cont
+  | TEOpen (_, body) -> contains_diverging_control_flow body
   (* Terminal cases - no nested control flow *)
   | TEUnit | TEBool _ | TEInt _ | TEInt32 _ | TEInt64 _ | TEFloat _ | TEDouble _
   | TEVar _ | TEGlobalRef _ | TENative _ | TENativeFun _ | TEIntrinsicConst _ ->
