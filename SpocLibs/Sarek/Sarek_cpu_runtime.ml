@@ -112,124 +112,133 @@ let run_sequential ~block:(bx, by, bz) ~grid:(gx, gy, gz)
     Uses OCaml 5 Domain parallelism with effects for fibers.
     - Fixed pool of N domains (one per core)
     - Blocks are distributed across domains
-    - Threads within a block run as fibers with proper barrier sync *)
+    - Threads within a block run as fibers with proper barrier sync
 
-(** Effect for yielding control to other fibers *)
-type _ Effect.t += Yield : unit Effect.t
+    BSP Model: For barrier-based kernels, we use a superstep execution model: 1.
+    Each thread is a fiber that can be suspended at barriers 2. All threads run
+    until they hit a barrier (or complete) 3. When all threads have reached the
+    barrier, all are resumed 4. Repeat until all threads complete *)
 
-(** Fiber-based barrier for synchronizing threads within a block. *)
-module FiberBarrier = struct
-  type t = {
-    mutable count : int;
-    total : int;
-    mutable waiters : (unit -> unit) list;
-  }
+(** Effect for yielding control at barrier *)
+type _ Effect.t += Barrier : unit Effect.t
 
-  let create n = {count = 0; total = n; waiters = []}
-
-  let wait t k =
-    t.count <- t.count + 1 ;
-    if t.count = t.total then begin
-      (* Last fiber - reset and resume all waiters *)
-      t.count <- 0 ;
-      let waiters = t.waiters in
-      t.waiters <- [] ;
-      List.iter (fun resume -> resume ()) waiters ;
-      k ()
-    end
-    else begin
-      (* Not last - add to waiters and yield *)
-      t.waiters <- k :: t.waiters
-    end
-end
-
-(** Run a block with merged fibers. Each fiber handles a batch of threads,
-    running them sequentially between barriers. *)
-let[@warning "-32"] run_block_with_fibers ~block:(bx, by, bz) ~grid:(gx, gy, gz)
-    ~block_idx:(block_x, block_y, block_z) ~num_fibers
+(** Run a block with BSP-style barrier synchronization. Each thread is a
+    separate fiber. All threads run until barrier, then all resume together. *)
+let run_block_with_barriers ~block:(bx, by, bz) ~grid:(gx, gy, gz)
+    ~block_idx:(block_x, block_y, block_z)
     (kernel : thread_state -> shared_mem -> 'a -> unit) (args : 'a) : unit =
   let num_threads = bx * by * bz in
   let shared = create_shared () in
-  let barrier = FiberBarrier.create num_fibers in
-  (* Queue of ready fibers *)
-  let ready_queue : (unit -> unit) Queue.t = Queue.create () in
-  (* Distribute threads across fibers *)
-  let threads_per_fiber = (num_threads + num_fibers - 1) / num_fibers in
-  (* Create fiber for each batch of threads *)
-  for fiber_id = 0 to num_fibers - 1 do
-    let start_thread = fiber_id * threads_per_fiber in
-    let end_thread = min ((fiber_id + 1) * threads_per_fiber) num_threads in
-    if start_thread < num_threads then
-      Queue.add
-        (fun () ->
-          (* This fiber runs threads [start_thread, end_thread) *)
-          (* We need to run in lockstep: all threads do work, then all barrier *)
-          (* For simplicity, run all assigned threads sequentially *)
-          for tid = start_thread to end_thread - 1 do
-            let thread_x = tid mod bx in
-            let thread_y = tid / bx mod by in
-            let thread_z = tid / (bx * by) in
-            let state =
-              {
-                thread_idx_x = Int32.of_int thread_x;
-                thread_idx_y = Int32.of_int thread_y;
-                thread_idx_z = Int32.of_int thread_z;
-                block_idx_x = Int32.of_int block_x;
-                block_idx_y = Int32.of_int block_y;
-                block_idx_z = Int32.of_int block_z;
-                block_dim_x = Int32.of_int bx;
-                block_dim_y = Int32.of_int by;
-                block_dim_z = Int32.of_int bz;
-                grid_dim_x = Int32.of_int gx;
-                grid_dim_y = Int32.of_int gy;
-                grid_dim_z = Int32.of_int gz;
-                barrier =
-                  (fun () ->
-                    (* Use effect to yield at barrier *)
-                    Effect.perform Yield);
-              }
-            in
-            kernel state shared args
-          done)
-        ready_queue
-  done ;
-  (* Completed fiber count *)
-  let actual_fibers = min num_fibers num_threads in
-  let completed = ref 0 in
-  (* Run fibers with effect handler *)
-  let rec run_fiber fiber =
+
+  (* Continuations waiting at barrier *)
+  let waiting : (unit, unit) Effect.Deep.continuation option array =
+    Array.make num_threads None
+  in
+  let num_waiting = ref 0 in
+  let num_completed = ref 0 in
+
+  (* Pre-compute int32 values *)
+  let bx32 = Int32.of_int bx in
+  let by32 = Int32.of_int by in
+  let bz32 = Int32.of_int bz in
+  let gx32 = Int32.of_int gx in
+  let gy32 = Int32.of_int gy in
+  let gz32 = Int32.of_int gz in
+  let block_x32 = Int32.of_int block_x in
+  let block_y32 = Int32.of_int block_y in
+  let block_z32 = Int32.of_int block_z in
+
+  (* Create thread state for each thread *)
+  let make_state tid =
+    let thread_x = tid mod bx in
+    let thread_y = tid / bx mod by in
+    let thread_z = tid / (bx * by) in
+    {
+      thread_idx_x = Int32.of_int thread_x;
+      thread_idx_y = Int32.of_int thread_y;
+      thread_idx_z = Int32.of_int thread_z;
+      block_idx_x = block_x32;
+      block_idx_y = block_y32;
+      block_idx_z = block_z32;
+      block_dim_x = bx32;
+      block_dim_y = by32;
+      block_dim_z = bz32;
+      grid_dim_x = gx32;
+      grid_dim_y = gy32;
+      grid_dim_z = gz32;
+      barrier = (fun () -> Effect.perform Barrier);
+    }
+  in
+
+  (* Run a single thread with effect handler *)
+  let run_thread tid =
+    let state = make_state tid in
     Effect.Deep.match_with
-      fiber
+      (fun () -> kernel state shared args)
       ()
       {
         retc =
           (fun () ->
-            incr completed ;
-            schedule ());
+            (* Thread completed *)
+            incr num_completed);
         exnc = raise;
         effc =
           (fun (type a) (eff : a Effect.t) ->
             match eff with
-            | Yield ->
+            | Barrier ->
                 Some
-                  (fun (k : (a, _) Effect.Deep.continuation) ->
-                    (* Barrier wait - let barrier decide when to resume *)
-                    FiberBarrier.wait barrier (fun () ->
-                        Queue.add
-                          (fun () -> Effect.Deep.continue k ())
-                          ready_queue) ;
-                    schedule ())
+                  (fun (k : (a, unit) Effect.Deep.continuation) ->
+                    (* Save continuation and mark as waiting *)
+                    waiting.(tid) <- Some k ;
+                    incr num_waiting)
             | _ -> None);
       }
-  and schedule () =
-    if !completed < actual_fibers then
-      match Queue.take_opt ready_queue with
-      | Some fiber -> run_fiber fiber
-      | None ->
-          (* No ready fibers but not all completed - shouldn't happen *)
-          failwith "Deadlock: no ready fibers"
   in
-  schedule ()
+
+  (* Resume a waiting thread *)
+  let resume_thread tid =
+    match waiting.(tid) with
+    | Some k ->
+        waiting.(tid) <- None ;
+        Effect.Deep.match_with
+          (fun () -> Effect.Deep.continue k ())
+          ()
+          {
+            retc =
+              (fun () ->
+                (* Thread completed *)
+                incr num_completed);
+            exnc = raise;
+            effc =
+              (fun (type a) (eff : a Effect.t) ->
+                match eff with
+                | Barrier ->
+                    Some
+                      (fun (k : (a, unit) Effect.Deep.continuation) ->
+                        waiting.(tid) <- Some k ;
+                        incr num_waiting)
+                | _ -> None);
+          }
+    | None -> ()
+  in
+
+  (* Initial run: start all threads *)
+  for tid = 0 to num_threads - 1 do
+    run_thread tid
+  done ;
+
+  (* Superstep loop: while threads are waiting at barriers *)
+  while !num_waiting > 0 do
+    (* All waiting threads have reached barrier - resume them all *)
+    let to_resume = !num_waiting in
+    num_waiting := 0 ;
+    for tid = 0 to num_threads - 1 do
+      if Option.is_some waiting.(tid) then resume_thread tid
+    done ;
+    (* Safety check *)
+    if !num_waiting = to_resume && !num_completed < num_threads then
+      failwith "BSP deadlock: no progress made"
+  done
 
 (** Global domain pool for parallel execution *)
 module DomainPool = struct
@@ -423,22 +432,20 @@ let run_parallel_simple ~block:(bx, by, bz) ~grid:(gx, gy, gz)
   in
   Array.iter (function Some d -> Domain.join d | None -> ()) domains
 
-(** Run kernel in parallel with fiber-based barriers. Distributes blocks across
-    domain pool, uses fibers for barrier sync. *)
+(** Run kernel in parallel with BSP-style barriers. Distributes blocks across
+    domain pool, uses effect-based barriers for thread sync within each block.
+*)
 let run_parallel_with_barriers ~block:(bx, by, bz) ~grid:(gx, gy, gz)
     (kernel : thread_state -> shared_mem -> 'a -> unit) (args : 'a) : unit =
   let pool = get_pool () in
-  let num_cores = pool.DomainPool.num_domains in
-  let num_fibers = min num_cores (bx * by * bz) in
   for block_z = 0 to gz - 1 do
     for block_y = 0 to gy - 1 do
       for block_x = 0 to gx - 1 do
         DomainPool.submit pool (fun () ->
-            run_block_with_fibers
+            run_block_with_barriers
               ~block:(bx, by, bz)
               ~grid:(gx, gy, gz)
               ~block_idx:(block_x, block_y, block_z)
-              ~num_fibers
               kernel
               args)
       done
