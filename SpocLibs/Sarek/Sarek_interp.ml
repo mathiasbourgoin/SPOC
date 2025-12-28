@@ -1,8 +1,16 @@
 (** Sarek_interp - CPU interpreter for Sarek kernels
 
-    Executes Kirc_Ast on CPU for debugging and testing without GPU. *)
+    Executes Kirc_Ast on CPU for debugging and testing without GPU. Supports
+    BSP-style barrier synchronization using OCaml 5 effects. *)
 
 open Kirc_Ast
+
+(** {1 BSP Barrier Effect}
+
+    Used for synchronizing threads at barriers. Each thread is suspended when it
+    hits a barrier, and all threads are resumed together. *)
+
+type _ Effect.t += Barrier : unit Effect.t
 
 (** {1 Runtime Values} *)
 
@@ -249,9 +257,13 @@ let eval_intrinsic state path name args =
       let bdx, _, _ = state.block_dim in
       let gdx, _, _ = state.grid_dim in
       VInt32 (Int32.of_int (bdx * gdx))
-  (* Barriers - no-op in sequential mode *)
-  | path, "block_barrier" when is_gpu_path path -> VUnit
-  | path, "warp_barrier" when is_gpu_path path -> VUnit
+  (* Barriers - perform effect for BSP synchronization *)
+  | path, "block_barrier" when is_gpu_path path ->
+      Effect.perform Barrier ;
+      VUnit
+  | path, "warp_barrier" when is_gpu_path path ->
+      Effect.perform Barrier ;
+      VUnit
   (* Math intrinsics - Float32 *)
   | path, "sin" when is_float32_path path ->
       VFloat32 (sin (to_float32 (List.hd args)))
@@ -599,13 +611,25 @@ let rec exec_stmt state env stmt =
         | EFloat32 -> VFloat32 0.0
         | EFloat64 -> VFloat64 0.0
       in
-      let arr = Array.make size init_val in
+      (* For shared memory, reuse existing array if already allocated.
+         This is important for BSP execution where multiple threads share
+         the same shared memory array within a block. Shared memory is
+         cleared at the start of each block by run_grid, so we don't
+         remove it here - it persists for the block's lifetime. *)
       (match memspace with
-      | Shared -> Hashtbl.add env.shared name arr
-      | _ -> Hashtbl.add env.arrays name arr) ;
+      | Shared -> (
+          match Hashtbl.find_opt env.shared name with
+          | Some _ -> () (* Already allocated by another thread *)
+          | None ->
+              let arr = Array.make size init_val in
+              Hashtbl.add env.shared name arr)
+      | _ ->
+          let arr = Array.make size init_val in
+          Hashtbl.add env.arrays name arr) ;
       exec_stmt state env body ;
+      (* Only remove private arrays, not shared (shared cleared per-block) *)
       match memspace with
-      | Shared -> Hashtbl.remove env.shared name
+      | Shared -> ()
       | _ -> Hashtbl.remove env.arrays name)
   | Local (decl, body) ->
       exec_stmt state env (Decl decl) ;
@@ -663,9 +687,11 @@ let rec exec_stmt state env stmt =
   | Return e ->
       let _ = eval_expr state env e in
       ()
-  (* Barriers - no-op in sequential mode *)
-  | IntrinsicRef ((["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "block_barrier") -> ()
-  | IntrinsicRef ((["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "warp_barrier") -> ()
+  (* Barriers - perform effect to synchronize with other threads *)
+  | IntrinsicRef ((["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "block_barrier") ->
+      Effect.perform Barrier
+  | IntrinsicRef ((["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "warp_barrier") ->
+      Effect.perform Barrier
   (* Pragmas *)
   | Pragma (_, body) -> exec_stmt state env body
   (* Global function definition - store for later *)
@@ -685,19 +711,82 @@ let rec exec_stmt state env stmt =
 (** Run a single thread *)
 let run_thread state env body = exec_stmt state env body
 
-(** Run all threads in a block (sequential mode) *)
+(** Run all threads in a block with BSP barrier synchronization. Uses effects to
+    suspend threads at barriers and resume them together. *)
 let run_block env body block_idx block_dim grid_dim =
   let bx, by, bz = block_dim in
-  for tz = 0 to bz - 1 do
-    for ty = 0 to by - 1 do
-      for tx = 0 to bx - 1 do
-        let state =
-          {thread_idx = (tx, ty, tz); block_idx; block_dim; grid_dim}
-        in
-        let thread_env = copy_env env in
-        run_thread state thread_env body
-      done
-    done
+  let num_threads = bx * by * bz in
+
+  (* Continuations waiting at barrier *)
+  let waiting : (unit, unit) Effect.Deep.continuation option array =
+    Array.make num_threads None
+  in
+  let num_waiting = ref 0 in
+  let num_completed = ref 0 in
+
+  (* Run a single thread with effect handler *)
+  let run_thread_with_barrier tid =
+    let tx = tid mod bx in
+    let ty = tid / bx mod by in
+    let tz = tid / (bx * by) in
+    let state = {thread_idx = (tx, ty, tz); block_idx; block_dim; grid_dim} in
+    let thread_env = copy_env env in
+    Effect.Deep.match_with
+      (fun () -> run_thread state thread_env body)
+      ()
+      {
+        retc = (fun () -> incr num_completed);
+        exnc = raise;
+        effc =
+          (fun (type a) (eff : a Effect.t) ->
+            match eff with
+            | Barrier ->
+                Some
+                  (fun (k : (a, unit) Effect.Deep.continuation) ->
+                    waiting.(tid) <- Some k ;
+                    incr num_waiting)
+            | _ -> None);
+      }
+  in
+
+  (* Resume a waiting thread *)
+  let resume_thread tid =
+    match waiting.(tid) with
+    | Some k ->
+        waiting.(tid) <- None ;
+        Effect.Deep.match_with
+          (fun () -> Effect.Deep.continue k ())
+          ()
+          {
+            retc = (fun () -> incr num_completed);
+            exnc = raise;
+            effc =
+              (fun (type a) (eff : a Effect.t) ->
+                match eff with
+                | Barrier ->
+                    Some
+                      (fun (k : (a, unit) Effect.Deep.continuation) ->
+                        waiting.(tid) <- Some k ;
+                        incr num_waiting)
+                | _ -> None);
+          }
+    | None -> ()
+  in
+
+  (* Initial run: start all threads *)
+  for tid = 0 to num_threads - 1 do
+    run_thread_with_barrier tid
+  done ;
+
+  (* Superstep loop: while threads are waiting at barriers *)
+  while !num_waiting > 0 do
+    let to_resume = !num_waiting in
+    num_waiting := 0 ;
+    for tid = 0 to num_threads - 1 do
+      if Option.is_some waiting.(tid) then resume_thread tid
+    done ;
+    if !num_waiting = to_resume && !num_completed < num_threads then
+      failwith "BSP deadlock: no progress made in interpreter"
   done
 
 (** Run all blocks in a grid *)
