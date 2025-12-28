@@ -67,42 +67,132 @@ let alloc_shared (shared : shared_mem) name size (default : 'a) : 'a array =
 
 (** {1 Sequential Execution}
 
-    Runs all threads in sequence. Barriers are no-ops. *)
+    Runs all threads in sequence with proper BSP barrier synchronization. Uses
+    the same effect-based approach as parallel, but without domains. *)
+
+(** Effect for yielding control at barrier - declared here for sequential use *)
+type _ Effect.t += Barrier : unit Effect.t
+
+(** Run a block sequentially with BSP-style barrier synchronization. Same
+    algorithm as run_block_with_barriers but simpler since no parallelism. *)
+let run_block_sequential_bsp ~block:(bx, by, bz) ~grid:(gx, gy, gz)
+    ~block_idx:(block_x, block_y, block_z)
+    (kernel : thread_state -> shared_mem -> 'a -> unit) (args : 'a) : unit =
+  let num_threads = bx * by * bz in
+  let shared = create_shared () in
+
+  (* Continuations waiting at barrier *)
+  let waiting : (unit, unit) Effect.Deep.continuation option array =
+    Array.make num_threads None
+  in
+  let num_waiting = ref 0 in
+  let num_completed = ref 0 in
+
+  (* Pre-compute int32 values *)
+  let bx32 = Int32.of_int bx in
+  let by32 = Int32.of_int by in
+  let bz32 = Int32.of_int bz in
+  let gx32 = Int32.of_int gx in
+  let gy32 = Int32.of_int gy in
+  let gz32 = Int32.of_int gz in
+  let block_x32 = Int32.of_int block_x in
+  let block_y32 = Int32.of_int block_y in
+  let block_z32 = Int32.of_int block_z in
+
+  (* Create thread state for each thread *)
+  let make_state tid =
+    let thread_x = tid mod bx in
+    let thread_y = tid / bx mod by in
+    let thread_z = tid / (bx * by) in
+    {
+      thread_idx_x = Int32.of_int thread_x;
+      thread_idx_y = Int32.of_int thread_y;
+      thread_idx_z = Int32.of_int thread_z;
+      block_idx_x = block_x32;
+      block_idx_y = block_y32;
+      block_idx_z = block_z32;
+      block_dim_x = bx32;
+      block_dim_y = by32;
+      block_dim_z = bz32;
+      grid_dim_x = gx32;
+      grid_dim_y = gy32;
+      grid_dim_z = gz32;
+      barrier = (fun () -> Effect.perform Barrier);
+    }
+  in
+
+  (* Run a single thread with effect handler *)
+  let run_thread tid =
+    let state = make_state tid in
+    Effect.Deep.match_with
+      (fun () -> kernel state shared args)
+      ()
+      {
+        retc = (fun () -> incr num_completed);
+        exnc = raise;
+        effc =
+          (fun (type a) (eff : a Effect.t) ->
+            match eff with
+            | Barrier ->
+                Some
+                  (fun (k : (a, unit) Effect.Deep.continuation) ->
+                    waiting.(tid) <- Some k ;
+                    incr num_waiting)
+            | _ -> None);
+      }
+  in
+
+  (* Resume a waiting thread *)
+  let resume_thread tid =
+    match waiting.(tid) with
+    | Some k ->
+        waiting.(tid) <- None ;
+        Effect.Deep.match_with
+          (fun () -> Effect.Deep.continue k ())
+          ()
+          {
+            retc = (fun () -> incr num_completed);
+            exnc = raise;
+            effc =
+              (fun (type a) (eff : a Effect.t) ->
+                match eff with
+                | Barrier ->
+                    Some
+                      (fun (k : (a, unit) Effect.Deep.continuation) ->
+                        waiting.(tid) <- Some k ;
+                        incr num_waiting)
+                | _ -> None);
+          }
+    | None -> ()
+  in
+
+  (* Initial run: start all threads *)
+  for tid = 0 to num_threads - 1 do
+    run_thread tid
+  done ;
+
+  (* Superstep loop: while threads are waiting at barriers *)
+  while !num_waiting > 0 do
+    let to_resume = !num_waiting in
+    num_waiting := 0 ;
+    for tid = 0 to num_threads - 1 do
+      if Option.is_some waiting.(tid) then resume_thread tid
+    done ;
+    if !num_waiting = to_resume && !num_completed < num_threads then
+      failwith "BSP deadlock: no progress made"
+  done
 
 let run_sequential ~block:(bx, by, bz) ~grid:(gx, gy, gz)
     (kernel : thread_state -> shared_mem -> 'a -> unit) (args : 'a) : unit =
-  (* Iterate over all blocks *)
   for block_z = 0 to gz - 1 do
     for block_y = 0 to gy - 1 do
       for block_x = 0 to gx - 1 do
-        (* Create shared memory for this block - shared across all threads *)
-        let shared = create_shared () in
-        (* Iterate over all threads in block *)
-        for thread_z = 0 to bz - 1 do
-          for thread_y = 0 to by - 1 do
-            for thread_x = 0 to bx - 1 do
-              let state =
-                {
-                  thread_idx_x = Int32.of_int thread_x;
-                  thread_idx_y = Int32.of_int thread_y;
-                  thread_idx_z = Int32.of_int thread_z;
-                  block_idx_x = Int32.of_int block_x;
-                  block_idx_y = Int32.of_int block_y;
-                  block_idx_z = Int32.of_int block_z;
-                  block_dim_x = Int32.of_int bx;
-                  block_dim_y = Int32.of_int by;
-                  block_dim_z = Int32.of_int bz;
-                  grid_dim_x = Int32.of_int gx;
-                  grid_dim_y = Int32.of_int gy;
-                  grid_dim_z = Int32.of_int gz;
-                  barrier = (fun () -> ());
-                  (* No-op in sequential mode *)
-                }
-              in
-              kernel state shared args
-            done
-          done
-        done
+        run_block_sequential_bsp
+          ~block:(bx, by, bz)
+          ~grid:(gx, gy, gz)
+          ~block_idx:(block_x, block_y, block_z)
+          kernel
+          args
       done
     done
   done
@@ -117,10 +207,9 @@ let run_sequential ~block:(bx, by, bz) ~grid:(gx, gy, gz)
     BSP Model: For barrier-based kernels, we use a superstep execution model: 1.
     Each thread is a fiber that can be suspended at barriers 2. All threads run
     until they hit a barrier (or complete) 3. When all threads have reached the
-    barrier, all are resumed 4. Repeat until all threads complete *)
+    barrier, all are resumed 4. Repeat until all threads complete
 
-(** Effect for yielding control at barrier *)
-type _ Effect.t += Barrier : unit Effect.t
+    The Barrier effect is declared in the sequential section above. *)
 
 (** Run a block with BSP-style barrier synchronization. Each thread is a
     separate fiber. All threads run until barrier, then all resume together. *)
