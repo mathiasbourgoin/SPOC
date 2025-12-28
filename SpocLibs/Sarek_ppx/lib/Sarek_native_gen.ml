@@ -422,7 +422,11 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
         match repr record.ty with
         | TRecord (type_name, _) -> (
             match String.rindex_opt type_name '.' with
+            | Some _ when is_same_module ctx type_name ->
+                (* Same-module type - use unqualified field access *)
+                {txt = Lident field_name; loc}
             | Some idx ->
+                (* External qualified type - use qualified field access *)
                 let module_path = String.sub type_name 0 idx in
                 let parts = String.split_on_char '.' module_path in
                 let rec build_lid = function
