@@ -81,7 +81,10 @@ let%sarek_intrinsic (global_thread_id : int32) =
 
 let%sarek_intrinsic (block_barrier : unit -> unit) =
   {
-    device = dev "__syncthreads()" "barrier(CLK_LOCAL_MEM_FENCE)";
+    (* Note: The code generator adds parentheses for function calls.
+       For OpenCL barrier, we use %s placeholder to consume the unit argument
+       without adding extra parens. CUDA __syncthreads gets () added automatically. *)
+    device = dev "__syncthreads" "barrier(CLK_LOCAL_MEM_FENCE)%s";
     ocaml = (fun () -> ());
   }
 

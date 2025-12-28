@@ -86,7 +86,9 @@ type ('a, 'b, 'c, 'd, 'e) sarek_kernel =
 
 let constructors = ref []
 
-let register_constructor_string s = constructors := s :: !constructors
+let register_constructor_string s =
+  (* Only add if not already present to avoid duplicate type definitions *)
+  if not (List.mem s !constructors) then constructors := s :: !constructors
 
 let opencl_head =
   "#pragma OPENCL EXTENSION cl_khr_global_int32_base_atomics : enable\n"

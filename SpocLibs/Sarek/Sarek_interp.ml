@@ -513,6 +513,12 @@ and get_array state env expr =
       with Not_found -> (
         try Hashtbl.find env.shared name
         with Not_found -> failwith ("get_array: unknown VecVar " ^ name)))
+  | IntId (name, _) -> (
+      (* Shared arrays are referenced by IntId in lowered AST *)
+      try Hashtbl.find env.arrays name
+      with Not_found -> (
+        try Hashtbl.find env.shared name
+        with Not_found -> failwith ("get_array: unknown IntId array " ^ name)))
   | _ -> (
       match eval_expr state env expr with
       | VArray arr -> arr
@@ -658,8 +664,8 @@ let rec exec_stmt state env stmt =
       let _ = eval_expr state env e in
       ()
   (* Barriers - no-op in sequential mode *)
-  | IntrinsicRef (["Gpu"], "block_barrier") -> ()
-  | IntrinsicRef (["Gpu"], "warp_barrier") -> ()
+  | IntrinsicRef ((["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "block_barrier") -> ()
+  | IntrinsicRef ((["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "warp_barrier") -> ()
   (* Pragmas *)
   | Pragma (_, body) -> exec_stmt state env body
   (* Global function definition - store for later *)

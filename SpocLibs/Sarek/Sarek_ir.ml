@@ -735,8 +735,9 @@ let rec k_ext_of_stmt : stmt -> Kirc_Ast.k_ext = function
       in
       Kirc_Ast.Match ("", k_ext_of_expr e, cases')
   | SReturn e -> Kirc_Ast.Return (k_ext_of_expr e)
-  | SBarrier -> Kirc_Ast.IntrinsicRef (["Gpu"], "block_barrier")
-  | SWarpBarrier -> Kirc_Ast.IntrinsicRef (["Gpu"], "warp_barrier")
+  | SBarrier -> Kirc_Ast.IntrinsicRef (["Sarek_stdlib"; "Gpu"], "block_barrier")
+  | SWarpBarrier ->
+      Kirc_Ast.IntrinsicRef (["Sarek_stdlib"; "Gpu"], "warp_barrier")
   | SExpr e -> k_ext_of_expr e
 
 and k_ext_of_lvalue : lvalue -> Kirc_Ast.k_ext = function

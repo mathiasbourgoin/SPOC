@@ -384,10 +384,11 @@ let init ?only:(s = Both) ?(interpreter = Some Sequential) ?(native = true) () =
        interpreter_compatible_devices := 1
    | None ->
        interpreter_compatible_devices := 0) ;
-  (* Optionally add native CPU device *)
+  (* Optionally add native CPU devices (sequential and parallel) *)
   if native then begin
-    devList := !devList @ [create_native_device ()] ;
-    native_compatible_devices := 1
+    devList := !devList @ [create_native_device ~parallel:false ()] ;
+    devList := !devList @ [create_native_device ~parallel:true ()] ;
+    native_compatible_devices := 2
   end
   else
     native_compatible_devices := 0 ;
@@ -465,15 +466,37 @@ let is_native dev =
   | NativeInfo _ -> true
   | _ -> false
 
+(** Check if a device is the native CPU runtime with parallel execution *)
+let is_native_parallel dev =
+  match dev.specific_info with
+  | NativeInfo ni -> ni.native_parallel
+  | _ -> false
+
+(** Check if a device is the native CPU runtime with sequential execution *)
+let is_native_sequential dev =
+  match dev.specific_info with
+  | NativeInfo ni -> not ni.native_parallel
+  | _ -> false
+
 (** Find the native device in an array, returns None if not present *)
 let find_native devs =
   Array.find_opt is_native devs
 
-(** Find the native device index in an array, returns None if not present *)
+(** Find the native device index in an array, returns None if not present.
+    Returns the sequential native device (first one). *)
 let find_native_id devs =
   let rec find i =
     if i >= Array.length devs then None
-    else if is_native devs.(i) then Some i
+    else if is_native_sequential devs.(i) then Some i
+    else find (i + 1)
+  in
+  find 0
+
+(** Find the parallel native device index in an array *)
+let find_native_parallel_id devs =
+  let rec find i =
+    if i >= Array.length devs then None
+    else if is_native_parallel devs.(i) then Some i
     else find (i + 1)
   in
   find 0

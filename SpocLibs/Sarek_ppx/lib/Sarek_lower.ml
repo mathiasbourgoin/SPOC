@@ -398,7 +398,7 @@ let rec lower_expr (state : state) (te : texpr) : Kirc_Ast.k_ext =
       let size_ir =
         match size_opt with
         | Some size -> lower_expr state size
-        | None -> Kirc_Ast.IntrinsicRef (["Gpu"], "block_dim_x")
+        | None -> Kirc_Ast.IntrinsicRef (["Sarek_stdlib"; "Gpu"], "block_dim_x")
       in
       let elt = elttype_of_typ elem_ty in
       let arr_ir = Kirc_Ast.Arr (name, size_ir, elt, Kirc_Ast.Shared) in
@@ -407,7 +407,9 @@ let rec lower_expr (state : state) (te : texpr) : Kirc_Ast.k_ext =
   | TESuperstep (_name, _divergent, step_body, cont) ->
       (* Lower body, then emit barrier, then lower continuation *)
       let body_ir = lower_expr state step_body in
-      let barrier_ir = Kirc_Ast.IntrinsicRef (["Gpu"], "block_barrier") in
+      let barrier_ir =
+        Kirc_Ast.IntrinsicRef (["Sarek_stdlib"; "Gpu"], "block_barrier")
+      in
       let barrier_call = Kirc_Ast.App (barrier_ir, [|Kirc_Ast.Unit|]) in
       let cont_ir = lower_expr state cont in
       Kirc_Ast.Seq (body_ir, Kirc_Ast.Seq (barrier_call, cont_ir))
@@ -420,7 +422,7 @@ let rec lower_expr (state : state) (te : texpr) : Kirc_Ast.k_ext =
       | Sarek_env.IntrinsicRef (path, name) -> Kirc_Ast.IntrinsicRef (path, name)
       | Sarek_env.CorePrimitiveRef name ->
           (* Core primitives use Gpu module path for registry lookup *)
-          Kirc_Ast.IntrinsicRef (["Gpu"], name))
+          Kirc_Ast.IntrinsicRef (["Sarek_stdlib"; "Gpu"], name))
   (* Intrinsic function call - emit IntrinsicRef, device code resolved at JIT *)
   | TEIntrinsicFun (ref, _convergence, args) ->
       (* Filter out Unit arguments - they're just () for function application syntax *)
@@ -435,7 +437,7 @@ let rec lower_expr (state : state) (te : texpr) : Kirc_Ast.k_ext =
         | Sarek_env.IntrinsicRef (path, name) -> (path, name)
         | Sarek_env.CorePrimitiveRef name ->
             (* Core primitives use Gpu module path for registry lookup *)
-            (["Gpu"], name)
+            (["Sarek_stdlib"; "Gpu"], name)
       in
       if Array.length args_ir = 0 then Kirc_Ast.IntrinsicRef (path, name)
       else Kirc_Ast.App (Kirc_Ast.IntrinsicRef (path, name), args_ir)

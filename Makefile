@@ -78,9 +78,135 @@ test_negative:
 	@dune build --profile=negative SpocLibs/Sarek_test/negative/neg_test_unbound_function.cma 2>&1 | tee /tmp/neg4.out | grep -q "Unbound" && echo "  PASS: unbound function" || (cat /tmp/neg4.out; false)
 	@echo "All negative tests passed"
 
+# Run new comprehensive Sarek e2e tests (GPU required)
+test_comprehensive:
+	@echo "=== Comprehensive Sarek e2e tests ==="
+	dune build \
+		SpocLibs/Sarek_test/e2e/test_stencil.exe \
+		SpocLibs/Sarek_test/e2e/test_matrix_mul.exe \
+		SpocLibs/Sarek_test/e2e/test_reduce.exe \
+		SpocLibs/Sarek_test/e2e/test_histogram.exe \
+		SpocLibs/Sarek_test/e2e/test_complex_types.exe \
+		SpocLibs/Sarek_test/e2e/test_math_intrinsics.exe \
+		SpocLibs/Sarek_test/e2e/test_bitwise_ops.exe \
+		SpocLibs/Sarek_test/e2e/test_scan.exe \
+		SpocLibs/Sarek_test/e2e/test_transpose.exe \
+		SpocLibs/Sarek_test/e2e/test_sort.exe \
+		SpocLibs/Sarek_test/e2e/test_convolution.exe \
+		SpocLibs/Sarek_test/e2e/test_mandelbrot.exe
+	@echo "Running on native parallel CPU..."
+	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_stencil.exe -- --native-parallel -s 4096
+	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_matrix_mul.exe -- --native-parallel -s 1024
+	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_reduce.exe -- --native-parallel -s 8192
+	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_histogram.exe -- --native-parallel -s 4096
+	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_complex_types.exe -- --native-parallel -s 4096
+	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_math_intrinsics.exe -- --native-parallel -s 4096
+	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_bitwise_ops.exe -- --native-parallel -s 4096
+	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_scan.exe -- --native-parallel -s 256
+	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_transpose.exe -- --native-parallel -s 4096
+	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_sort.exe -- --native-parallel -s 512
+	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_convolution.exe -- --native-parallel -s 4096
+	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_mandelbrot.exe -- --native-parallel -s 4096
+	@echo "=== Comprehensive e2e tests passed ==="
+
 # Run all tests: unit tests, e2e tests, and negative tests
 test-all: test test_interpreter test_negative
 	@echo "=== All tests passed ==="
+
+# E2E tests - quick verification with small datasets comparing GPU vs native CPU
+E2E_TESTS = test_stencil test_matrix_mul test_reduce test_histogram \
+            test_complex_types test_math_intrinsics test_bitwise_ops \
+            test_scan test_transpose test_sort test_convolution test_mandelbrot
+
+test-e2e:
+	@echo "=== E2E Tests (small datasets, verification enabled) ==="
+	@dune build $(addprefix SpocLibs/Sarek_test/e2e/,$(addsuffix .exe,$(E2E_TESTS)))
+	@echo ""
+	@echo "--- Stencil ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_stencil.exe -- -s 1024
+	@echo ""
+	@echo "--- Matrix Multiplication ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_matrix_mul.exe -- -s 256
+	@echo ""
+	@echo "--- Reduction ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_reduce.exe -- -s 2048
+	@echo ""
+	@echo "--- Histogram ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_histogram.exe -- -s 1024
+	@echo ""
+	@echo "--- Complex Types ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_complex_types.exe -- -s 1024
+	@echo ""
+	@echo "--- Math Intrinsics ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_math_intrinsics.exe -- -s 1024
+	@echo ""
+	@echo "--- Bitwise Operations ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_bitwise_ops.exe -- -s 1024
+	@echo ""
+	@echo "--- Scan ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_scan.exe -- -s 256
+	@echo ""
+	@echo "--- Transpose ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_transpose.exe -- -s 1024
+	@echo ""
+	@echo "--- Sort ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_sort.exe -- -s 256
+	@echo ""
+	@echo "--- Convolution ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_convolution.exe -- -s 1024
+	@echo ""
+	@echo "--- Mandelbrot ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_mandelbrot.exe -- -s 1024
+	@echo ""
+	@echo "=== All E2E tests passed ==="
+
+# Benchmarks - run all tests with --benchmark to compare all devices
+benchmarks:
+	@echo "=============================================="
+	@echo "       SAREK BENCHMARK SUITE"
+	@echo "=============================================="
+	@echo ""
+	@dune build $(addprefix SpocLibs/Sarek_test/e2e/,$(addsuffix .exe,$(E2E_TESTS)))
+	@echo ""
+	@echo "--- Stencil (1D/2D with shared memory) ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_stencil.exe -- --benchmark -s 65536
+	@echo ""
+	@echo "--- Matrix Multiplication (naive + tiled) ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_matrix_mul.exe -- --benchmark -s 4096
+	@echo ""
+	@echo "--- Reduction (sum, max, dot product) ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_reduce.exe -- --benchmark -s 131072
+	@echo ""
+	@echo "--- Histogram ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_histogram.exe -- --benchmark -s 65536
+	@echo ""
+	@echo "--- Complex Types (records, particles) ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_complex_types.exe -- --benchmark -s 65536
+	@echo ""
+	@echo "--- Math Intrinsics (sin, cos, exp, log, sqrt) ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_math_intrinsics.exe -- --benchmark -s 65536
+	@echo ""
+	@echo "--- Bitwise Operations ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_bitwise_ops.exe -- --benchmark -s 65536
+	@echo ""
+	@echo "--- Scan (prefix sum) ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_scan.exe -- --benchmark -s 256
+	@echo ""
+	@echo "--- Transpose (naive + coalesced) ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_transpose.exe -- --benchmark -s 65536
+	@echo ""
+	@echo "--- Sort (bitonic, odd-even) ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_sort.exe -- --benchmark -s 4096
+	@echo ""
+	@echo "--- Convolution (1D, 2D, Sobel) ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_convolution.exe -- --benchmark -s 65536
+	@echo ""
+	@echo "--- Mandelbrot / Julia ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_mandelbrot.exe -- --benchmark -s 65536
+	@echo ""
+	@echo "=============================================="
+	@echo "       BENCHMARK COMPLETE"
+	@echo "=============================================="
 
 test_sarek:
 	echo "Compiling Sarek samples"

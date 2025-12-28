@@ -339,11 +339,21 @@ val create_interpreter_device :
 (** Check if a device is the native CPU runtime *)
 val is_native : device -> bool
 
+(** Check if a device is the native CPU runtime with parallel execution *)
+val is_native_parallel : device -> bool
+
+(** Check if a device is the native CPU runtime with sequential execution *)
+val is_native_sequential : device -> bool
+
 (** Find the native device in an array, returns None if not present *)
 val find_native : device array -> device option
 
-(** Find the native device index in an array, returns None if not present *)
+(** Find the native device index in an array, returns None if not present.
+    Returns the sequential native device. *)
 val find_native_id : device array -> int option
+
+(** Find the parallel native device index in an array *)
+val find_native_parallel_id : device array -> int option
 
 (** Create a native CPU runtime device.
     This device executes kernels using PPX-generated native OCaml code,
