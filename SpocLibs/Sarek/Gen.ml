@@ -739,6 +739,13 @@ module Generator (M : CodeGenerator) = struct
                   (Scanf.format_from_string template "%s%s")
                   (List.nth parsed_args 0)
                   (List.nth parsed_args 1)
+              else if num_placeholders = 3 && List.length parsed_args = 3 then
+                (* Ternary format like "atomic_add(%s + %s, %s)" *)
+                Printf.sprintf
+                  (Scanf.format_from_string template "%s%s%s")
+                  (List.nth parsed_args 0)
+                  (List.nth parsed_args 1)
+                  (List.nth parsed_args 2)
               else
                 (* Fallback: treat as function call *)
                 template ^ "(" ^ String.concat ", " parsed_args ^ ")"

@@ -16,9 +16,29 @@
 
 open Ppxlib
 
-(** Extract type name from a core_type for registry registration *)
-let type_name_of_core_type (ct : core_type) : string =
+(** Parsed type representation for intrinsic declarations *)
+type parsed_type =
+  | PTSimple of string (* e.g., "int32", "float" *)
+  | PTArray of parsed_type (* e.g., "int32 array" *)
+  | PTArrow of parsed_type * parsed_type (* for function types if needed *)
+
+(** Extract parsed type from a core_type *)
+let rec parsed_type_of_core_type (ct : core_type) : parsed_type =
   match ct.ptyp_desc with
+  | Ptyp_constr ({txt = Lident "array"; _}, [elem_type]) ->
+      PTArray (parsed_type_of_core_type elem_type)
+  | Ptyp_constr ({txt = Lident name; _}, _) -> PTSimple name
+  | Ptyp_constr ({txt = Ldot (_, name); _}, _) -> PTSimple name
+  | Ptyp_arrow (_, arg, ret) ->
+      PTArrow (parsed_type_of_core_type arg, parsed_type_of_core_type ret)
+  | _ -> PTSimple "unknown"
+
+(** Extract type name from a core_type for registry registration (string
+    representation) *)
+let rec type_name_of_core_type (ct : core_type) : string =
+  match ct.ptyp_desc with
+  | Ptyp_constr ({txt = Lident "array"; _}, [elem_type]) ->
+      type_name_of_core_type elem_type ^ " array"
   | Ptyp_constr ({txt = Lident name; _}, _) -> name
   | Ptyp_constr ({txt = Ldot (_, name); _}, _) -> name
   | _ -> "unknown"
@@ -44,8 +64,8 @@ let module_path_of_loc loc =
     (* Just a regular directory, use module name only *)
     [module_name]
 
-(** Convert type name to Sarek_types representation *)
-let sarek_type_of_name ~loc (name : string) : expression =
+(** Convert simple type name to Sarek_types representation *)
+let sarek_type_of_simple_name ~loc (name : string) : expression =
   match name with
   | "unit" -> [%expr Sarek_ppx_lib.Sarek_types.t_unit]
   | "bool" -> [%expr Sarek_ppx_lib.Sarek_types.t_bool]
@@ -57,6 +77,59 @@ let sarek_type_of_name ~loc (name : string) : expression =
       (* For unknown types, use TReg with the name *)
       let name_expr = Ast_builder.Default.estring ~loc name in
       [%expr Sarek_ppx_lib.Sarek_types.TReg [%e name_expr]]
+
+(** Flatten a parsed arrow type into (arg_types, return_type). E.g., PTArrow(a,
+    PTArrow(b, c)) becomes ([a; b], c) *)
+let rec flatten_arrow (pt : parsed_type) : parsed_type list * parsed_type =
+  match pt with
+  | PTArrow (arg, ret) ->
+      let args, final_ret = flatten_arrow ret in
+      (arg :: args, final_ret)
+  | _ -> ([], pt)
+
+(** Convert a non-arrow parsed type to Sarek_types representation *)
+let rec sarek_type_of_simple_parsed ~loc (pt : parsed_type) : expression =
+  match pt with
+  | PTSimple name -> sarek_type_of_simple_name ~loc name
+  | PTArray elem_type ->
+      let elem_expr = sarek_type_of_simple_parsed ~loc elem_type in
+      (* Use Local memory space for intrinsic array args (shared memory) *)
+      [%expr
+        Sarek_ppx_lib.Sarek_types.TArr
+          ([%e elem_expr], Sarek_ppx_lib.Sarek_types.Local)]
+  | PTArrow _ ->
+      (* Should not happen after flattening, but handle gracefully *)
+      sarek_type_of_simple_name ~loc "unknown"
+
+(** Convert parsed type to Sarek_types representation. Flattens arrow types so a
+    -> b -> c becomes TFun([a; b], c). *)
+let sarek_type_of_parsed ~loc (pt : parsed_type) : expression =
+  match pt with
+  | PTArrow _ ->
+      let args, ret = flatten_arrow pt in
+      let arg_exprs =
+        Ast_builder.Default.elist
+          ~loc
+          (List.map (sarek_type_of_simple_parsed ~loc) args)
+      in
+      let ret_expr = sarek_type_of_simple_parsed ~loc ret in
+      [%expr Sarek_ppx_lib.Sarek_types.TFun ([%e arg_exprs], [%e ret_expr])]
+  | _ -> sarek_type_of_simple_parsed ~loc pt
+
+(** Convert type name string to Sarek_types representation (for backward compat)
+*)
+let sarek_type_of_name ~loc (name : string) : expression =
+  (* Parse compound types like "int32 array" *)
+  if
+    String.length name > 6
+    && String.sub name (String.length name - 6) 6 = " array"
+  then
+    let elem_name = String.sub name 0 (String.length name - 6) in
+    let elem_expr = sarek_type_of_simple_name ~loc elem_name in
+    [%expr
+      Sarek_ppx_lib.Sarek_types.TArr
+        ([%e elem_expr], Sarek_ppx_lib.Sarek_types.Local)]
+  else sarek_type_of_simple_name ~loc name
 
 (** Build a function type from argument types and return type *)
 let build_sarek_fun_type ~loc (arg_types : string list) (ret_type : string) :

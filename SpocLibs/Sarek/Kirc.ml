@@ -847,17 +847,22 @@ let opencl_source ?profile:(prof = profile_default ()) ?return:(r = false)
     "/************* FUNCTION PROTOTYPES ******************/\n"
     ^ List.fold_left (fun a b -> b ^ ";\n" ^ a) "" !Kirc_OpenCL.protos
   in
-  (if prof then "#pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable\n"
-   else "")
-  ^ opencl_head
-  ^ (if prof then
-       match dev.Devices.specific_info with
-       | Devices.OpenCLInfo
-           {Devices.device_type = Devices.CL_DEVICE_TYPE_CPU; _} ->
-           opencl_profile_head_cpu
-       | _ -> opencl_profile_head
+  let result =
+    (if prof then
+       "#pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable\n"
      else "")
-  ^ constructors ^ protos ^ !global_funs ^ src
+    ^ opencl_head
+    ^ (if prof then
+         match dev.Devices.specific_info with
+         | Devices.OpenCLInfo
+             {Devices.device_type = Devices.CL_DEVICE_TYPE_CPU; _} ->
+             opencl_profile_head_cpu
+         | _ -> opencl_profile_head
+       else "")
+    ^ constructors ^ protos ^ !global_funs ^ src
+  in
+  if debug then save ("kirc_kernel" ^ string_of_int !idkern ^ ".cl") result ;
+  result
 
 (*external print_source : string -> unit = "kernel_source"*)
 
@@ -1045,7 +1050,8 @@ let gen ?keep_temp:(kt = false) ?profile:(prof = profile_default ())
     in
     save ("kirc_kernel" ^ string_of_int !idkern ^ ".cl") clkernel ;
     kir#set_opencl_sources clkernel ;
-    if not kt then
+    (* Keep debug files when debug=true *)
+    if (not kt) && not debug then
       ignore (Sys.command ("rm kirc_kernel" ^ string_of_int !idkern ^ ".cl"))
   in
   (match o with

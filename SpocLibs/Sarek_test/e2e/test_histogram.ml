@@ -23,18 +23,21 @@ let histogram_kernel =
       let gid = thread_idx_x + (block_dim_x * block_idx_x) in
       (* Initialize local histogram *)
       let%superstep init = if tid < num_bins then local_hist.(tid) <- 0l in
-      (* Count in local histogram - sequential to avoid race conditions *)
+      (* Count in local histogram using atomic increment *)
       let%superstep[@divergent] count =
         if gid < n then begin
           let bin = input.(gid) mod num_bins in
-          (* Simple increment - not truly atomic but demonstrates shared memory *)
-          local_hist.(bin) <- local_hist.(bin) + 1l
+          let _ = atomic_add_int32 local_hist bin 1l in
+          ()
         end
       in
-      (* Merge to global histogram *)
+      (* Merge to global histogram using atomics *)
       let%superstep[@divergent] merge =
-        if tid < num_bins then
-          histogram.(tid) <- histogram.(tid) + local_hist.(tid)
+        if tid < num_bins then begin
+          let local_count = local_hist.(tid) in
+          let _ = atomic_add_global_int32 histogram tid local_count in
+          ()
+        end
       in
       ()]
 
@@ -51,17 +54,20 @@ let histogram_strided_kernel =
       let stride = block_dim_x * grid_dim_x in
       (* Initialize local histogram *)
       let%superstep init = if tid < num_bins then local_hist.(tid) <- 0l in
-      (* Count with stride *)
+      (* Count with stride using atomic increment *)
       let i = mut gid in
       while i < n do
         let bin = input.(i) mod num_bins in
-        local_hist.(bin) <- local_hist.(bin) + 1l ;
+        let _ = atomic_add_int32 local_hist bin 1l in
         i := i + stride
       done ;
       block_barrier () ;
-      (* Merge to global histogram *)
-      if tid < num_bins then
-        histogram.(tid) <- histogram.(tid) + local_hist.(tid)]
+      (* Merge to global histogram using atomics *)
+      if tid < num_bins then begin
+        let local_count = local_hist.(tid) in
+        let _ = atomic_add_global_int32 histogram tid local_count in
+        ()
+      end]
 
 (** Run simple histogram test *)
 let run_histogram dev =

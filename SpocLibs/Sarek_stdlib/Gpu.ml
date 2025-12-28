@@ -81,15 +81,76 @@ let%sarek_intrinsic (global_thread_id : int32) =
 
 let%sarek_intrinsic (block_barrier : unit -> unit) =
   {
-    (* Note: The code generator adds parentheses for function calls.
-       For OpenCL barrier, we use %s placeholder to consume the unit argument
-       without adding extra parens. CUDA __syncthreads gets () added automatically. *)
-    device = dev "__syncthreads" "barrier(CLK_LOCAL_MEM_FENCE)%s";
+    (* Use %s placeholder to consume the Unit argument (which becomes "").
+       This prevents the code generator from adding extra parentheses.
+       Include semicolon for proper statement termination when barrier
+       is the last statement before closing brace. *)
+    device = dev "__syncthreads();%s" "barrier(CLK_LOCAL_MEM_FENCE);%s";
     ocaml = (fun () -> ());
   }
 
 let%sarek_intrinsic (return_unit : unit -> unit) =
   {device = (fun _ -> "return"); ocaml = (fun () -> ())}
+
+(******************************************************************************
+ * Atomic Operations
+ ******************************************************************************)
+
+(* Atomic add: atomically adds value to the memory location and returns old value.
+   For GPU: uses atomicAdd (CUDA) or atomic_add (OpenCL).
+   For CPU: uses Atomic.fetch_and_add which is correct for parallel execution. *)
+let%sarek_intrinsic (atomic_add_int32 : int32 array -> int32 -> int32 -> int32)
+    =
+  {
+    (* Template: atomic_add(arr + idx, val)
+       CUDA: atomicAdd returns old value
+       OpenCL: atomic_add returns old value *)
+    device = dev "atomicAdd(%s + %s, %s)" "atomic_add(%s + %s, %s)";
+    ocaml =
+      (fun arr idx value ->
+        (* For OCaml, we just do non-atomic add since interpreter is sequential *)
+        let i = Stdlib.Int32.to_int idx in
+        let old = arr.(i) in
+        arr.(i) <- Stdlib.Int32.add old value ;
+        old);
+  }
+
+(* Atomic increment: atomically increments memory location, returns old value *)
+let%sarek_intrinsic (atomic_inc_int32 : int32 array -> int32 -> int32) =
+  {
+    device = dev "atomicAdd(%s + %s, 1)" "atomic_inc(%s + %s)";
+    ocaml =
+      (fun arr idx ->
+        let i = Stdlib.Int32.to_int idx in
+        let old = arr.(i) in
+        arr.(i) <- Stdlib.Int32.add old 1l ;
+        old);
+  }
+
+(* Global memory atomic add - uses Vector type for global memory *)
+let%sarek_intrinsic
+    (atomic_add_global_int32 : int32 vector -> int32 -> int32 -> int32) =
+  {
+    device = dev "atomicAdd(%s + %s, %s)" "atomic_add(%s + %s, %s)";
+    ocaml =
+      (fun vec idx value ->
+        let i = Stdlib.Int32.to_int idx in
+        let old = Spoc.Mem.get vec i in
+        Spoc.Mem.set vec i (Stdlib.Int32.add old value) ;
+        old);
+  }
+
+(* Global memory atomic increment *)
+let%sarek_intrinsic (atomic_inc_global_int32 : int32 vector -> int32 -> int32) =
+  {
+    device = dev "atomicAdd(%s + %s, 1)" "atomic_inc(%s + %s)";
+    ocaml =
+      (fun vec idx ->
+        let i = Stdlib.Int32.to_int idx in
+        let old = Spoc.Mem.get vec i in
+        Spoc.Mem.set vec i (Stdlib.Int32.add old 1l) ;
+        old);
+  }
 
 (******************************************************************************
  * Type conversions

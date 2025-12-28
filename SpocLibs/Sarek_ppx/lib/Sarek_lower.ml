@@ -425,13 +425,9 @@ let rec lower_expr (state : state) (te : texpr) : Kirc_Ast.k_ext =
           Kirc_Ast.IntrinsicRef (["Sarek_stdlib"; "Gpu"], name))
   (* Intrinsic function call - emit IntrinsicRef, device code resolved at JIT *)
   | TEIntrinsicFun (ref, _convergence, args) ->
-      (* Filter out Unit arguments - they're just () for function application syntax *)
-      let non_unit_args =
-        List.filter
-          (fun arg -> match arg.te with TEUnit -> false | _ -> true)
-          args
-      in
-      let args_ir = Array.of_list (List.map (lower_expr state) non_unit_args) in
+      (* Keep Unit arguments so templates with %s placeholders work correctly.
+         The code generator handles Unit by generating "" which gets substituted. *)
+      let args_ir = Array.of_list (List.map (lower_expr state) args) in
       let path, name =
         match ref with
         | Sarek_env.IntrinsicRef (path, name) -> (path, name)

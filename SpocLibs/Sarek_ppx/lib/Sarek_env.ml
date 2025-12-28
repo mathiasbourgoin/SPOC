@@ -199,13 +199,23 @@ let open_module (path : string list) env =
                 (String.length prefix)
                 (String.length name - String.length prefix)
             in
-            (* Check if there's an existing entry with convergence info *)
+            (* Check if there's an existing core primitive entry.
+               Core primitives define the canonical type and convergence.
+               Stdlib intrinsics just provide device implementations. *)
             let info =
               match StringMap.find_opt short_name env.intrinsic_funs with
-              | Some existing when existing.intr_convergence <> None ->
-                  (* Preserve the existing convergence *)
-                  {info with intr_convergence = existing.intr_convergence}
-              | _ -> info
+              | Some existing ->
+                  (* Preserve type and convergence from core primitive.
+                     Only update the reference to use the stdlib implementation. *)
+                  {
+                    intr_type = existing.intr_type;
+                    intr_ref = info.intr_ref;
+                    intr_convergence =
+                      (if existing.intr_convergence <> None then
+                         existing.intr_convergence
+                       else info.intr_convergence);
+                  }
+              | None -> info
             in
             add_intrinsic_fun short_name info env
           else env)

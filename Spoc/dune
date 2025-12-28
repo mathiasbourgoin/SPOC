@@ -16,7 +16,9 @@
    Opencl_dynlink
    Spoc_cu)
   (include_dirs dependencies/Cuda dependencies/CL)
-  (flags :standard -I/opt/cuda/targets/x86_64-linux/lib/ -lnvrtc))
+  (flags :standard))
+ (c_library_flags
+  (-L/opt/cuda/lib64 -lnvrtc))
  (libraries str)
  (preprocess
   (action
