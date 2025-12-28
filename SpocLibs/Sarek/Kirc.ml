@@ -1184,171 +1184,40 @@ let run ?recompile:(r = false) (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel) a
           | _ -> ())
         !writeback_list
   | Devices.NativeInfo _ -> (
-      (* Native CPU runtime - use generated OCaml code *)
+      (* Native CPU runtime - use generated OCaml code.
+         The generated kernel uses Spoc.Mem.get/set directly on SPOC vectors,
+         so we just pass the vectors as Obj.t without any conversion. *)
       match k.cpu_kern with
       | Some kern ->
           let args_array = kir#args_to_list a in
-          (* Helper to convert SPOC vector to bigarray.
-             SPOC vectors can be Host_vec (pointer-based) or Bigarray.
-             For native CPU, we need to copy to bigarray if not already.
-             We use Obj.magic for type coercion since the GADT hides the types. *)
-          let vec_to_bigarray_f32 v : Obj.t =
-            match Vector.vector v with
-            | Vector.Bigarray b -> Obj.repr b
-            | Vector.Host_vec _ ->
-                let len = Vector.length v in
-                let arr =
-                  Bigarray.Array1.create Bigarray.float32 Bigarray.c_layout len
-                in
-                for i = 0 to len - 1 do
-                  Bigarray.Array1.set arr i (Obj.magic (Mem.get v i) : float)
-                done ;
-                Obj.repr arr
-            | _ ->
-                failwith "Kirc.run: unsupported vector backing for native CPU"
-          in
-          let vec_to_bigarray_f64 v : Obj.t =
-            match Vector.vector v with
-            | Vector.Bigarray b -> Obj.repr b
-            | Vector.Host_vec _ ->
-                let len = Vector.length v in
-                let arr =
-                  Bigarray.Array1.create Bigarray.float64 Bigarray.c_layout len
-                in
-                for i = 0 to len - 1 do
-                  Bigarray.Array1.set arr i (Obj.magic (Mem.get v i) : float)
-                done ;
-                Obj.repr arr
-            | _ ->
-                failwith "Kirc.run: unsupported vector backing for native CPU"
-          in
-          let vec_to_bigarray_i32 v : Obj.t =
-            match Vector.vector v with
-            | Vector.Bigarray b -> Obj.repr b
-            | Vector.Host_vec _ ->
-                let len = Vector.length v in
-                let arr =
-                  Bigarray.Array1.create Bigarray.int32 Bigarray.c_layout len
-                in
-                for i = 0 to len - 1 do
-                  Bigarray.Array1.set arr i (Obj.magic (Mem.get v i) : int32)
-                done ;
-                Obj.repr arr
-            | _ ->
-                failwith "Kirc.run: unsupported vector backing for native CPU"
-          in
-          let vec_to_bigarray_i64 v : Obj.t =
-            match Vector.vector v with
-            | Vector.Bigarray b -> Obj.repr b
-            | Vector.Host_vec _ ->
-                let len = Vector.length v in
-                let arr =
-                  Bigarray.Array1.create Bigarray.int64 Bigarray.c_layout len
-                in
-                for i = 0 to len - 1 do
-                  Bigarray.Array1.set arr i (Obj.magic (Mem.get v i) : int64)
-                done ;
-                Obj.repr arr
-            | _ ->
-                failwith "Kirc.run: unsupported vector backing for native CPU"
-          in
-          (* Track vectors that need writeback *)
-          let writeback_list = ref [] in
-          (* Convert args to Obj.t array for the native kernel *)
+          (* Convert args to Obj.t array - pass vectors directly *)
           let obj_args =
             Array.map
               (fun arg ->
                 match arg with
-                | VFloat32 v ->
-                    let arr = vec_to_bigarray_f32 v in
-                    writeback_list := (arr, arg) :: !writeback_list ;
-                    arr
-                | VFloat64 v ->
-                    let arr = vec_to_bigarray_f64 v in
-                    writeback_list := (arr, arg) :: !writeback_list ;
-                    arr
-                | VInt32 v ->
-                    let arr = vec_to_bigarray_i32 v in
-                    writeback_list := (arr, arg) :: !writeback_list ;
-                    arr
-                | VInt64 v ->
-                    let arr = vec_to_bigarray_i64 v in
-                    writeback_list := (arr, arg) :: !writeback_list ;
-                    arr
-                | VChar _ | VComplex32 _ | VCustom _ | Vector _ ->
-                    failwith "Kirc.run: unsupported vector type for native CPU"
+                | VChar v
+                | VFloat32 v
+                | VFloat64 v
+                | VInt32 v
+                | VInt64 v
+                | VComplex32 v
+                | VCustom v
+                | Vector v ->
+                    Obj.repr v
                 | Int32 n -> Obj.repr (Int32.of_int n)
                 | Int64 n -> Obj.repr (Int64.of_int n)
                 | Float32 f -> Obj.repr f
                 | Float64 f -> Obj.repr f
                 | Custom _ ->
                     failwith
-                      "Kirc.run: Custom args not yet supported for native")
+                      "Kirc.run: Custom scalar args not supported for native")
               args_array
           in
           kern
             ~block:
               (block.Kernel.blockX, block.Kernel.blockY, block.Kernel.blockZ)
             ~grid:(grid.Kernel.gridX, grid.Kernel.gridY, grid.Kernel.gridZ)
-            obj_args ;
-          (* Write back results to original SPOC vectors *)
-          let writeback_f32 arr v =
-            let ba :
-                ( float,
-                  Bigarray.float32_elt,
-                  Bigarray.c_layout )
-                Bigarray.Array1.t =
-              Obj.obj arr
-            in
-            let len = min (Bigarray.Array1.dim ba) (Vector.length v) in
-            for i = 0 to len - 1 do
-              Mem.set v i (Obj.magic (Bigarray.Array1.get ba i))
-            done
-          in
-          let writeback_f64 arr v =
-            let ba :
-                ( float,
-                  Bigarray.float64_elt,
-                  Bigarray.c_layout )
-                Bigarray.Array1.t =
-              Obj.obj arr
-            in
-            let len = min (Bigarray.Array1.dim ba) (Vector.length v) in
-            for i = 0 to len - 1 do
-              Mem.set v i (Obj.magic (Bigarray.Array1.get ba i))
-            done
-          in
-          let writeback_i32 arr v =
-            let ba :
-                (int32, Bigarray.int32_elt, Bigarray.c_layout) Bigarray.Array1.t
-                =
-              Obj.obj arr
-            in
-            let len = min (Bigarray.Array1.dim ba) (Vector.length v) in
-            for i = 0 to len - 1 do
-              Mem.set v i (Obj.magic (Bigarray.Array1.get ba i))
-            done
-          in
-          let writeback_i64 arr v =
-            let ba :
-                (int64, Bigarray.int64_elt, Bigarray.c_layout) Bigarray.Array1.t
-                =
-              Obj.obj arr
-            in
-            let len = min (Bigarray.Array1.dim ba) (Vector.length v) in
-            for i = 0 to len - 1 do
-              Mem.set v i (Obj.magic (Bigarray.Array1.get ba i))
-            done
-          in
-          List.iter
-            (fun (arr, orig) ->
-              match orig with
-              | VFloat32 v -> writeback_f32 arr v
-              | VFloat64 v -> writeback_f64 arr v
-              | VInt32 v -> writeback_i32 arr v
-              | VInt64 v -> writeback_i64 arr v
-              | _ -> ())
-            !writeback_list
+            obj_args
       | None ->
           failwith
             "Kirc.run: kernel has no native CPU implementation (cpu_kern is \

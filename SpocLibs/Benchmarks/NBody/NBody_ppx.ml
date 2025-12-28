@@ -67,22 +67,22 @@ let bodyForce () =
         let fy = mut 0.0 in
         let fz = mut 0.0 in
 
-        for tile = 0 to grid_dim_x - 1 do
+        for tile = 0l to grid_dim_x - 1l do
           let spos : float32 array =
-            create_array (3 * [%global blockSize]) Shared
+            create_array (Int32.to_int (3l * [%global blockSize])) Shared
           in
           let tpos = p.((tile * block_dim_x) + thread_idx_x) in
-          spos.(3 * thread_idx_x) <- tpos.x ;
-          spos.((3 * thread_idx_x) + 1) <- tpos.y ;
-          spos.((3 * thread_idx_x) + 2) <- tpos.z ;
+          spos.(3l * thread_idx_x) <- tpos.x ;
+          spos.((3l * thread_idx_x) + 1l) <- tpos.y ;
+          spos.((3l * thread_idx_x) + 2l) <- tpos.z ;
           block_barrier () ;
 
           pragma
             ["unroll"]
-            (for j = 0 to [%global blockSize] - 1 do
-               let dx = spos.(3 * j) -. p.(i).x in
-               let dy = spos.((3 * j) + 1) -. p.(i).y in
-               let dz = spos.((3 * j) + 2) -. p.(i).z in
+            (for j = 0l to [%global blockSize] - 1l do
+               let dx = spos.(3l * j) -. p.(i).x in
+               let dy = spos.((3l * j) + 1l) -. p.(i).y in
+               let dz = spos.((3l * j) + 2l) -. p.(i).z in
                let distSqr =
                  (dx *. dx) +. (dy *. dy) +. (dz *. dz) +. [%global softening]
                in

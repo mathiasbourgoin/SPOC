@@ -46,51 +46,22 @@ let global_size_y st = Int32.mul st.grid_dim_y st.block_dim_y
 
 let global_size_z st = Int32.mul st.grid_dim_z st.block_dim_z
 
-(** {1 Bigarray Type Aliases}
-
-    Kernel arguments are passed as bigarrays for efficient access. *)
-
-type float32_vec =
-  (float, Bigarray.float32_elt, Bigarray.c_layout) Bigarray.Array1.t
-
-type float64_vec =
-  (float, Bigarray.float64_elt, Bigarray.c_layout) Bigarray.Array1.t
-
-type int32_vec =
-  (int32, Bigarray.int32_elt, Bigarray.c_layout) Bigarray.Array1.t
-
-type int64_vec =
-  (int64, Bigarray.int64_elt, Bigarray.c_layout) Bigarray.Array1.t
-
-type char_vec =
-  (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t
-
 (** {1 Shared Memory}
 
     Shared memory is allocated per-block and accessible by all threads in the
-    block. *)
+    block. Uses regular OCaml arrays to support custom types. *)
 
 type shared_mem = {data : (string, Obj.t) Hashtbl.t}
 
 let create_shared () = {data = Hashtbl.create 8}
 
-(** Allocate a shared float32 array. If already allocated, returns existing. *)
-let alloc_shared_float32 (shared : shared_mem) name size : float32_vec =
+(** Allocate a shared array of any type. If already allocated, returns existing.
+    Uses Obj.magic to allow any element type. *)
+let alloc_shared (shared : shared_mem) name size (default : 'a) : 'a array =
   match Hashtbl.find_opt shared.data name with
   | Some arr -> Obj.obj arr
   | None ->
-      let arr =
-        Bigarray.Array1.create Bigarray.float32 Bigarray.c_layout size
-      in
-      Hashtbl.add shared.data name (Obj.repr arr) ;
-      arr
-
-(** Allocate a shared int32 array. If already allocated, returns existing. *)
-let alloc_shared_int32 (shared : shared_mem) name size : int32_vec =
-  match Hashtbl.find_opt shared.data name with
-  | Some arr -> Obj.obj arr
-  | None ->
-      let arr = Bigarray.Array1.create Bigarray.int32 Bigarray.c_layout size in
+      let arr = Array.make size default in
       Hashtbl.add shared.data name (Obj.repr arr) ;
       arr
 

@@ -1,0 +1,7 @@
+(executable
+ (name test_native_custom_type)
+ (libraries spoc sarek sarek.stdlib unix)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33 -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc)))

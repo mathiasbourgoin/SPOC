@@ -344,27 +344,27 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
         (* Mutable variable - dereference the ref *)
         [%expr ![%e var_e]]
       else var_e
-  (* Vector/array access - convert int32 index to int for Bigarray *)
+  (* Vector/array access - use Spoc.Mem.get/set for SPOC vectors.
+     This handles GPU-resident data and custom types correctly. *)
   | TEVecGet (vec, idx) ->
       let vec_e = gen_expr ~loc vec in
       let idx_e = gen_expr ~loc idx in
-      [%expr Bigarray.Array1.get [%e vec_e] (Int32.to_int [%e idx_e])]
+      [%expr Spoc.Mem.get [%e vec_e] (Int32.to_int [%e idx_e])]
   | TEVecSet (vec, idx, value) ->
       let vec_e = gen_expr ~loc vec in
       let idx_e = gen_expr ~loc idx in
       let val_e = gen_expr ~loc value in
-      [%expr
-        Bigarray.Array1.set [%e vec_e] (Int32.to_int [%e idx_e]) [%e val_e]]
+      [%expr Spoc.Mem.set [%e vec_e] (Int32.to_int [%e idx_e]) [%e val_e]]
+  (* Array access - for shared memory (regular OCaml arrays) *)
   | TEArrGet (arr, idx) ->
       let arr_e = gen_expr ~loc arr in
       let idx_e = gen_expr ~loc idx in
-      [%expr Bigarray.Array1.get [%e arr_e] (Int32.to_int [%e idx_e])]
+      [%expr [%e arr_e].(Int32.to_int [%e idx_e])]
   | TEArrSet (arr, idx, value) ->
       let arr_e = gen_expr ~loc arr in
       let idx_e = gen_expr ~loc idx in
       let val_e = gen_expr ~loc value in
-      [%expr
-        Bigarray.Array1.set [%e arr_e] (Int32.to_int [%e idx_e]) [%e val_e]]
+      [%expr [%e arr_e].(Int32.to_int [%e idx_e]) <- [%e val_e]]
   (* Record field access - qualify field with module path from record type.
      For Geometry_lib.point, we need p.Geometry_lib.x, not p.x.
      For inline types using first-class modules, call __types.get_type_field.
@@ -676,11 +676,20 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
       Ast_builder.Default.pexp_tuple ~loc exprs_e
   (* Return - just evaluate the expression *)
   | TEReturn e -> gen_expr ~loc e
-  (* Create local array - allocate on stack/heap *)
+  (* Create local array - use regular OCaml arrays for native mode *)
   | TECreateArray (size, elem_ty, _memspace) ->
       let size_e = gen_expr ~loc size in
-      let kind_e = bigarray_kind_of_typ ~loc elem_ty in
-      [%expr Bigarray.Array1.create [%e kind_e] Bigarray.c_layout [%e size_e]]
+      (* Generate default value based on element type *)
+      let default_e =
+        match repr elem_ty with
+        | TReg "float32" | TReg "float64" -> [%expr 0.0]
+        | TPrim TInt32 | TReg "int32" -> [%expr 0l]
+        | TReg "int64" -> [%expr 0L]
+        | TReg "char" -> [%expr '\000']
+        | _ -> [%expr Obj.magic 0]
+        (* Fallback for custom types *)
+      in
+      [%expr Array.make [%e size_e] [%e default_e]]
   (* Global ref - reference to external value *)
   | TEGlobalRef (name, _typ) ->
       (* Dereference the ref *)
@@ -705,7 +714,7 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
   | TEIntrinsicFun (ref, _convergence, args) ->
       let args_e = List.map (gen_expr ~loc) args in
       gen_intrinsic_fun ~loc ref args_e
-  (* BSP let%shared - allocate shared memory *)
+  (* BSP let%shared - allocate shared memory using OCaml arrays *)
   | TELetShared (name, _id, elem_ty, size_opt, body) ->
       (* Size needs to be int, but expressions may be int32 (like block_dim_x).
          Wrap in Int32.to_int for conversion. *)
@@ -719,21 +728,26 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
             let state = evar ~loc state_var in
             [%expr Int32.to_int [%e state].Sarek.Sarek_cpu_runtime.block_dim_x]
       in
-      let alloc_fn =
+      (* Generate default value based on element type *)
+      let default_e =
         match repr elem_ty with
-        | TReg "float32" -> [%expr Sarek.Sarek_cpu_runtime.alloc_shared_float32]
-        | TPrim TInt32 -> [%expr Sarek.Sarek_cpu_runtime.alloc_shared_int32]
-        | _ -> [%expr Sarek.Sarek_cpu_runtime.alloc_shared_float32]
+        | TReg "float32" | TReg "float64" -> [%expr 0.0]
+        | TPrim TInt32 | TReg "int32" -> [%expr 0l]
+        | TReg "int64" -> [%expr 0L]
+        | TReg "char" -> [%expr '\000']
+        | _ -> [%expr Obj.magic 0]
+        (* Fallback for custom types *)
       in
       let shared = evar ~loc shared_var in
       let body_e = gen_expr ~loc body in
       let pat = Ast_builder.Default.ppat_var ~loc {txt = name; loc} in
       [%expr
         let [%p pat] =
-          [%e alloc_fn]
+          Sarek.Sarek_cpu_runtime.alloc_shared
             [%e shared]
             [%e Ast_builder.Default.estring ~loc name]
             [%e size_e]
+            [%e default_e]
         in
         [%e body_e]]
   (* BSP let%superstep - synchronized block + barrier *)
@@ -1418,46 +1432,45 @@ let gen_cpu_kern ~loc (kernel : tkernel) : expression =
 
 (** Generate a type cast expression for extracting a kernel argument.
 
-    For vectors: cast Obj.t to the appropriate bigarray type For scalars: cast
-    Obj.t to the primitive type *)
+    For vectors: cast Obj.t to the appropriate Spoc.Vector.vector type. For
+    scalars: cast Obj.t to the primitive type.
+
+    We use Spoc vectors directly (not bigarrays) because:
+    - Supports custom types (records/variants)
+    - Handles GPU-resident data correctly via Spoc.Mem.get/set
+    - No copy overhead *)
 let gen_arg_cast ~loc (param : tparam) (idx : int) : expression =
   let arr_access =
     [%expr Array.get __args [%e Ast_builder.Default.eint ~loc idx]]
   in
   match repr param.tparam_type with
   | TVec elem_ty -> (
-      (* Vector types - cast to appropriate bigarray *)
+      (* Vector types - cast to Spoc.Vector.vector with appropriate element type *)
       match repr elem_ty with
       | TReg "float32" ->
           [%expr
             (Obj.obj [%e arr_access]
-              : ( float,
-                  Bigarray.float32_elt,
-                  Bigarray.c_layout )
-                Bigarray.Array1.t)]
+              : (float, Bigarray.float32_elt) Spoc.Vector.vector)]
       | TReg "float64" ->
           [%expr
             (Obj.obj [%e arr_access]
-              : ( float,
-                  Bigarray.float64_elt,
-                  Bigarray.c_layout )
-                Bigarray.Array1.t)]
+              : (float, Bigarray.float64_elt) Spoc.Vector.vector)]
       | TReg "int32" | TPrim TInt32 ->
           [%expr
             (Obj.obj [%e arr_access]
-              : (int32, Bigarray.int32_elt, Bigarray.c_layout) Bigarray.Array1.t)]
+              : (int32, Bigarray.int32_elt) Spoc.Vector.vector)]
       | TReg "int64" ->
           [%expr
             (Obj.obj [%e arr_access]
-              : (int64, Bigarray.int64_elt, Bigarray.c_layout) Bigarray.Array1.t)]
+              : (int64, Bigarray.int64_elt) Spoc.Vector.vector)]
+      | TRecord _ | TVariant _ ->
+          (* Custom types - use generic vector type *)
+          [%expr (Obj.obj [%e arr_access] : (_, _) Spoc.Vector.vector)]
       | _ ->
           (* Default to float32 for unknown types *)
           [%expr
             (Obj.obj [%e arr_access]
-              : ( float,
-                  Bigarray.float32_elt,
-                  Bigarray.c_layout )
-                Bigarray.Array1.t)])
+              : (float, Bigarray.float32_elt) Spoc.Vector.vector)])
   | TReg "float32" -> [%expr (Obj.obj [%e arr_access] : float)]
   | TReg "float64" -> [%expr (Obj.obj [%e arr_access] : float)]
   | TReg "int32" | TPrim TInt32 -> [%expr (Obj.obj [%e arr_access] : int32)]
@@ -1585,108 +1598,97 @@ let gen_types_object ~loc (decls : ttype_decl list) : expression =
     escapes its scope" errors. The types module is created inside the wrapper
     and passed to the kernel. *)
 let gen_cpu_kern_wrapper ~loc (kernel : tkernel) : expression =
-  (* Check if the kernel uses record/variant vector parameters - these still
-     don't work because Bigarray can't hold record types *)
-  let has_record_vector_params = has_record_vector_params kernel in
-  if has_record_vector_params then
-    (* Generate a stub that raises an error - native execution not supported *)
-    [%expr
-      fun ~block:_ ~grid:_ _ ->
-        failwith
-          "Native CPU execution not supported for kernels with record/variant \
-           vectors (Bigarray limitation)"]
-  else
-    let use_fcm = has_inline_types kernel in
-    let native_kern = gen_cpu_kern ~loc kernel in
+  (* We now use Spoc vectors directly (via Spoc.Mem.get/set) instead of
+     bigarrays, so record/variant vectors are supported. *)
+  let use_fcm = has_inline_types kernel in
+  let native_kern = gen_cpu_kern ~loc kernel in
 
-    (* Generate argument extraction bindings - use parameter names *)
-    let arg_bindings =
-      List.mapi
-        (fun i param ->
-          let var_pat =
-            Ast_builder.Default.ppat_var ~loc {txt = param.tparam_name; loc}
-          in
-          let cast_expr = gen_arg_cast ~loc param i in
-          (var_pat, cast_expr))
-        kernel.tkern_params
+  (* Generate argument extraction bindings - use parameter names *)
+  let arg_bindings =
+    List.mapi
+      (fun i param ->
+        let var_pat =
+          Ast_builder.Default.ppat_var ~loc {txt = param.tparam_name; loc}
+        in
+        let cast_expr = gen_arg_cast ~loc param i in
+        (var_pat, cast_expr))
+      kernel.tkern_params
+  in
+
+  (* Build the args tuple expression - use parameter names *)
+  let args_tuple =
+    let arg_exprs =
+      List.map (fun p -> evar ~loc p.tparam_name) kernel.tkern_params
     in
+    match arg_exprs with
+    | [] -> [%expr ()]
+    | [e] -> e
+    | es -> Ast_builder.Default.pexp_tuple ~loc es
+  in
 
-    (* Build the args tuple expression - use parameter names *)
-    let args_tuple =
-      let arg_exprs =
-        List.map (fun p -> evar ~loc p.tparam_name) kernel.tkern_params
-      in
-      match arg_exprs with
-      | [] -> [%expr ()]
-      | [e] -> e
-      | es -> Ast_builder.Default.pexp_tuple ~loc es
-    in
-
-    (* Build the call to run_sequential.
-       For FCM kernels, we need to partially apply the types record first:
-         run_sequential ~block ~grid (__native_kern __types_rec) args *)
-    let run_call =
-      if use_fcm then
-        [%expr
-          Sarek.Sarek_cpu_runtime.run_sequential
-            ~block
-            ~grid
-            (__native_kern __types_rec)
-            [%e args_tuple]]
-      else
-        [%expr
-          Sarek.Sarek_cpu_runtime.run_sequential
-            ~block
-            ~grid
-            __native_kern
-            [%e args_tuple]]
-    in
-
-    (* Build the nested let bindings *)
-    let body_with_bindings =
-      List.fold_right
-        (fun (pat, expr) body ->
-          [%expr
-            let [%p pat] = [%e expr] in
-            [%e body]])
-        arg_bindings
-        run_call
-    in
-
+  (* Build the call to run_sequential.
+     For FCM kernels, we need to partially apply the types record first:
+       run_sequential ~block ~grid (__native_kern __types_rec) args *)
+  let run_call =
     if use_fcm then
-      (* For FCM kernels, create the types object inside a local module
-         to define the concrete types, then extract the accessor object.
-         Only include inline types (not external/registered types). *)
-      let inline_decls = inline_type_decls kernel.tkern_type_decls in
-      let types_object = gen_types_object ~loc inline_decls in
-      let types_impl = gen_module_impl ~loc inline_decls in
-      (* Build: let module __Types = <impl> in let open __Types in ... *)
-      let inner_body =
-        (* let open __Types in let __types_rec = ... *)
-        Ast_builder.Default.pexp_open
-          ~loc
-          (Ast_builder.Default.open_infos
-             ~loc
-             ~override:Fresh
-             ~expr:
-               (Ast_builder.Default.pmod_ident
-                  ~loc
-                  {txt = Lident "__Types"; loc}))
-          [%expr
-            let __types_rec = [%e types_object] in
-            let __native_kern = [%e native_kern] in
-            [%e body_with_bindings]]
-      in
-      let with_module =
-        Ast_builder.Default.pexp_letmodule
-          ~loc
-          {txt = Some "__Types"; loc}
-          types_impl
-          inner_body
-      in
-      [%expr fun ~block ~grid __args -> [%e with_module]]
+      [%expr
+        Sarek.Sarek_cpu_runtime.run_sequential
+          ~block
+          ~grid
+          (__native_kern __types_rec)
+          [%e args_tuple]]
     else
       [%expr
-        fun ~block ~grid __args ->
+        Sarek.Sarek_cpu_runtime.run_sequential
+          ~block
+          ~grid
+          __native_kern
+          [%e args_tuple]]
+  in
+
+  (* Build the nested let bindings *)
+  let body_with_bindings =
+    List.fold_right
+      (fun (pat, expr) body ->
+        [%expr
+          let [%p pat] = [%e expr] in
+          [%e body]])
+      arg_bindings
+      run_call
+  in
+
+  if use_fcm then
+    (* For FCM kernels, create the types object inside a local module
+       to define the concrete types, then extract the accessor object.
+       Only include inline types (not external/registered types). *)
+    let inline_decls = inline_type_decls kernel.tkern_type_decls in
+    let types_object = gen_types_object ~loc inline_decls in
+    let types_impl = gen_module_impl ~loc inline_decls in
+    (* Build: let module __Types = <impl> in let open __Types in ... *)
+    let inner_body =
+      (* let open __Types in let __types_rec = ... *)
+      Ast_builder.Default.pexp_open
+        ~loc
+        (Ast_builder.Default.open_infos
+           ~loc
+           ~override:Fresh
+           ~expr:
+             (Ast_builder.Default.pmod_ident ~loc {txt = Lident "__Types"; loc}))
+        [%expr
+          let __types_rec = [%e types_object] in
           let __native_kern = [%e native_kern] in
           [%e body_with_bindings]]
+    in
+    let with_module =
+      Ast_builder.Default.pexp_letmodule
+        ~loc
+        {txt = Some "__Types"; loc}
+        types_impl
+        inner_body
+    in
+    [%expr fun ~block ~grid __args -> [%e with_module]]
+  else
+    [%expr
+      fun ~block ~grid __args ->
+        let __native_kern = [%e native_kern] in
+        [%e body_with_bindings]]

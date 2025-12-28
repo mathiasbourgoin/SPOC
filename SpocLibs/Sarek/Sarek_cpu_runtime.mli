@@ -41,23 +41,6 @@ val global_size_y : thread_state -> int32
 
 val global_size_z : thread_state -> int32
 
-(** {1 Bigarray Type Aliases} *)
-
-type float32_vec =
-  (float, Bigarray.float32_elt, Bigarray.c_layout) Bigarray.Array1.t
-
-type float64_vec =
-  (float, Bigarray.float64_elt, Bigarray.c_layout) Bigarray.Array1.t
-
-type int32_vec =
-  (int32, Bigarray.int32_elt, Bigarray.c_layout) Bigarray.Array1.t
-
-type int64_vec =
-  (int64, Bigarray.int64_elt, Bigarray.c_layout) Bigarray.Array1.t
-
-type char_vec =
-  (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t
-
 (** {1 Shared Memory} *)
 
 (** Shared memory container for a block. *)
@@ -66,11 +49,9 @@ type shared_mem
 (** Create a new empty shared memory container. *)
 val create_shared : unit -> shared_mem
 
-(** Allocate or retrieve a shared float32 array by name. *)
-val alloc_shared_float32 : shared_mem -> string -> int -> float32_vec
-
-(** Allocate or retrieve a shared int32 array by name. *)
-val alloc_shared_int32 : shared_mem -> string -> int -> int32_vec
+(** Allocate or retrieve a shared array by name. Uses regular OCaml arrays to
+    support custom types. *)
+val alloc_shared : shared_mem -> string -> int -> 'a -> 'a array
 
 (** {1 Execution Modes} *)
 
