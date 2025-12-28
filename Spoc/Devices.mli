@@ -257,6 +257,7 @@ type interpreterInfo = {
 (** Information for native CPU runtime devices *)
 type nativeInfo = {
   native_num_cores : int;  (** Number of cores for parallel execution *)
+  native_parallel : bool;  (** Use parallel execution (Domain per thread) *)
 }
 
 type specificInfo =
@@ -347,5 +348,7 @@ val find_native_id : device array -> int option
 (** Create a native CPU runtime device.
     This device executes kernels using PPX-generated native OCaml code,
     which runs at full native speed without interpretation overhead.
+    @param parallel if true, threads within blocks run in parallel using
+           OCaml 5 Domains with proper barrier synchronization
     @return a device that can be used with Kirc.run *)
-val create_native_device : unit -> device
+val create_native_device : ?parallel:bool -> unit -> device

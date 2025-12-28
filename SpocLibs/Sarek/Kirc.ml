@@ -64,7 +64,11 @@ type ('a, 'b, 'c) kirc_kernel = {
   ret_val : Kirc_Ast.k_ext * ('b, 'c) Vector.kind;
   extensions : extension array;
   cpu_kern :
-    (block:int * int * int -> grid:int * int * int -> Obj.t array -> unit)
+    (parallel:bool ->
+    block:int * int * int ->
+    grid:int * int * int ->
+    Obj.t array ->
+    unit)
     option;
 }
 
@@ -1183,7 +1187,7 @@ let run ?recompile:(r = false) (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel) a
           | Vector v -> Sarek_interp.unwrap_to_vector arr v
           | _ -> ())
         !writeback_list
-  | Devices.NativeInfo _ -> (
+  | Devices.NativeInfo ni -> (
       (* Native CPU runtime - use generated OCaml code.
          The generated kernel uses Spoc.Mem.get/set directly on SPOC vectors,
          so we just pass the vectors as Obj.t without any conversion. *)
@@ -1214,6 +1218,7 @@ let run ?recompile:(r = false) (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel) a
               args_array
           in
           kern
+            ~parallel:ni.Devices.native_parallel
             ~block:
               (block.Kernel.blockX, block.Kernel.blockY, block.Kernel.blockZ)
             ~grid:(grid.Kernel.gridX, grid.Kernel.gridY, grid.Kernel.gridZ)

@@ -19,6 +19,8 @@ let use_interpreter = ref false
 
 let use_native = ref false
 
+let use_native_parallel = ref false
+
 let benchmark_all = ref false
 
 let usage () =
@@ -26,7 +28,9 @@ let usage () =
   Printf.printf "Options:\n" ;
   Printf.printf "  -d <id>       Device ID (default: 0)\n" ;
   Printf.printf "  --interpreter Use CPU interpreter device\n" ;
-  Printf.printf "  --native      Use native CPU runtime device\n" ;
+  Printf.printf "  --native      Use native CPU runtime device (sequential)\n" ;
+  Printf.printf
+    "  --native-parallel  Use native CPU runtime with parallel threads\n" ;
   Printf.printf "  --benchmark   Run on all devices and compare times\n" ;
   Printf.printf "  -s <size>     Vector size (default: 1024)\n" ;
   Printf.printf "  -b <size>     Block/work-group size (default: 256)\n" ;
@@ -43,6 +47,7 @@ let parse_args () =
         dev_id := int_of_string Sys.argv.(!i)
     | "--interpreter" -> use_interpreter := true
     | "--native" -> use_native := true
+    | "--native-parallel" -> use_native_parallel := true
     | "--benchmark" -> benchmark_all := true
     | "-s" ->
         incr i ;
@@ -142,10 +147,11 @@ let () =
     devs ;
 
   if !benchmark_all then begin
-    (* Benchmark mode: run on all devices *)
+    (* Benchmark mode: run on all devices including parallel native *)
     Printf.printf "\nBenchmark: vector_add with %d elements\n" !size ;
     Printf.printf "%-40s %12s %10s\n" "Device" "Time (ms)" "Status" ;
     Printf.printf "%s\n" (String.make 64 '-') ;
+    (* Run on all standard devices *)
     Array.iter
       (fun dev ->
         let name = dev.Devices.general_info.Devices.name in
@@ -153,12 +159,20 @@ let () =
         let status = if ok then "OK" else "FAIL" in
         Printf.printf "%-40s %12.4f %10s\n" name time_ms status)
       devs ;
+    (* Also run on parallel native device *)
+    let parallel_dev = Devices.create_native_device ~parallel:true () in
+    let name = parallel_dev.Devices.general_info.Devices.name in
+    let time_ms, ok = run_on_device vector_add devs parallel_dev in
+    let status = if ok then "OK" else "FAIL" in
+    Printf.printf "%-40s %12.4f %10s\n" name time_ms status ;
     print_endline "\nBenchmark complete."
   end
   else begin
     (* Single device mode *)
     let dev =
-      if !use_native then (
+      if !use_native_parallel then
+        Devices.create_native_device ~parallel:true ()
+      else if !use_native then (
         match Devices.find_native_id devs with
         | Some id -> devs.(id)
         | None ->

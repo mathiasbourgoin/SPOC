@@ -179,6 +179,7 @@ type interpreterInfo = {
 (** Native CPU runtime - uses PPX-generated OCaml code *)
 type nativeInfo = {
   native_num_cores : int;
+  native_parallel : bool;  (** Use parallel execution (Domain per thread) *)
 }
 
 type specificInfo =
@@ -318,13 +319,18 @@ let interpreter_compatible_devices = ref 0
 (* Counter for native device IDs *)
 let native_device_id = ref 0
 
-let create_native_device () =
+let create_native_device ?(parallel = false) () =
   let id = !native_device_id in
   incr native_device_id ;
   let num_cores = try Domain.recommended_domain_count () with _ -> 4 in
+  let name =
+    if parallel then
+      Printf.sprintf "CPU Native Runtime Parallel (%d cores)" num_cores
+    else Printf.sprintf "CPU Native Runtime Sequential (%d cores)" num_cores
+  in
   {
     general_info = {
-      name = Printf.sprintf "CPU Native Runtime (%d cores)" num_cores;
+      name;
       totalGlobalMem = Sys.max_array_length * 8;
       localMemSize = 64 * 1024;
       clockRate = 0;
@@ -334,7 +340,8 @@ let create_native_device () =
       id;
       ctx = Obj.magic ();
     };
-    specific_info = NativeInfo { native_num_cores = num_cores };
+    specific_info =
+      NativeInfo {native_num_cores = num_cores; native_parallel = parallel};
     gc_info = Obj.magic ();
     events = Obj.magic ();
   }

@@ -1630,24 +1630,38 @@ let gen_cpu_kern_wrapper ~loc (kernel : tkernel) : expression =
     | es -> Ast_builder.Default.pexp_tuple ~loc es
   in
 
-  (* Build the call to run_sequential.
+  (* Build the call to run_sequential or run_parallel based on __parallel flag.
      For FCM kernels, we need to partially apply the types record first:
-       run_sequential ~block ~grid (__native_kern __types_rec) args *)
+       run_X ~block ~grid (__native_kern __types_rec) args *)
   let run_call =
     if use_fcm then
       [%expr
-        Sarek.Sarek_cpu_runtime.run_sequential
-          ~block
-          ~grid
-          (__native_kern __types_rec)
-          [%e args_tuple]]
+        if __parallel then
+          Sarek.Sarek_cpu_runtime.run_parallel
+            ~block
+            ~grid
+            (__native_kern __types_rec)
+            [%e args_tuple]
+        else
+          Sarek.Sarek_cpu_runtime.run_sequential
+            ~block
+            ~grid
+            (__native_kern __types_rec)
+            [%e args_tuple]]
     else
       [%expr
-        Sarek.Sarek_cpu_runtime.run_sequential
-          ~block
-          ~grid
-          __native_kern
-          [%e args_tuple]]
+        if __parallel then
+          Sarek.Sarek_cpu_runtime.run_parallel
+            ~block
+            ~grid
+            __native_kern
+            [%e args_tuple]
+        else
+          Sarek.Sarek_cpu_runtime.run_sequential
+            ~block
+            ~grid
+            __native_kern
+            [%e args_tuple]]
   in
 
   (* Build the nested let bindings *)
@@ -1690,9 +1704,10 @@ let gen_cpu_kern_wrapper ~loc (kernel : tkernel) : expression =
         types_impl
         inner_body
     in
-    [%expr fun ~block ~grid __args -> [%e with_module]]
+    [%expr
+      fun ~parallel:(__parallel : bool) ~block ~grid __args -> [%e with_module]]
   else
     [%expr
-      fun ~block ~grid __args ->
+      fun ~parallel:(__parallel : bool) ~block ~grid __args ->
         let __native_kern = [%e native_kern] in
         [%e body_with_bindings]]

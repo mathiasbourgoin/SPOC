@@ -65,9 +65,9 @@ val run_sequential :
   'a ->
   unit
 
-(** Run kernel in parallel. Uses Domain per block, fiber per thread. Barriers
-    synchronize all fibers within a block. Currently falls back to sequential -
-    parallel implementation pending. *)
+(** Run kernel in parallel. Threads within each block run in parallel using
+    OCaml 5 Domains. Barriers properly synchronize all threads within a block
+    using Mutex/Condition. Blocks run sequentially. *)
 val run_parallel :
   block:int * int * int ->
   grid:int * int * int ->

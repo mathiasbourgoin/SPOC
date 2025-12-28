@@ -10,7 +10,11 @@ type ('a, 'b, 'c) kirc_kernel = {
   ret_val : Kirc_Ast.k_ext * ('b, 'c) Spoc.Vector.kind;
   extensions : extension array;
   cpu_kern :
-    (block:int * int * int -> grid:int * int * int -> Obj.t array -> unit)
+    (parallel:bool ->
+    block:int * int * int ->
+    grid:int * int * int ->
+    Obj.t array ->
+    unit)
     option;
 }
 
