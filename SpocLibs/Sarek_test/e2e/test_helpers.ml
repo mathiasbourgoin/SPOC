@@ -51,26 +51,25 @@ let parse_args ?(extra = fun _ _ -> false) ?(extra_usage = fun () -> ()) name =
   let i = ref 1 in
   while !i < Array.length Sys.argv do
     let consumed = extra cfg !i in
-    if not consumed then
-      match Sys.argv.(!i) with
-      | "-d" ->
-          incr i ;
-          cfg.dev_id <- int_of_string Sys.argv.(!i)
-      | "--interpreter" -> cfg.use_interpreter <- true
-      | "--native" -> cfg.use_native <- true
-      | "--native-parallel" -> cfg.use_native_parallel <- true
-      | "--benchmark" -> cfg.benchmark_all <- true
-      | "-s" ->
-          incr i ;
-          cfg.size <- int_of_string Sys.argv.(!i)
-      | "-b" ->
-          incr i ;
-          cfg.block_size <- int_of_string Sys.argv.(!i)
-      | "-no-verify" -> cfg.verify <- false
-      | "-h" | "--help" -> usage name extra_usage
-      | _ ->
-          () ;
-          incr i
+    (if not consumed then
+       match Sys.argv.(!i) with
+       | "-d" ->
+           incr i ;
+           cfg.dev_id <- int_of_string Sys.argv.(!i)
+       | "--interpreter" -> cfg.use_interpreter <- true
+       | "--native" -> cfg.use_native <- true
+       | "--native-parallel" -> cfg.use_native_parallel <- true
+       | "--benchmark" -> cfg.benchmark_all <- true
+       | "-s" ->
+           incr i ;
+           cfg.size <- int_of_string Sys.argv.(!i)
+       | "-b" ->
+           incr i ;
+           cfg.block_size <- int_of_string Sys.argv.(!i)
+       | "-no-verify" -> cfg.verify <- false
+       | "-h" | "--help" -> usage name extra_usage
+       | _ -> ()) ;
+    incr i
   done ;
   cfg
 
@@ -105,20 +104,15 @@ let benchmark_all devs run_test name =
   Printf.printf "\nBenchmark: %s\n" name ;
   Printf.printf "%-40s %12s %10s\n" "Device" "Time (ms)" "Status" ;
   Printf.printf "%s\n" (String.make 64 '-') ;
-  (* Run on all standard devices *)
+  (* Run on all devices (including parallel native from Devices.init) *)
   Array.iter
     (fun dev ->
       let dev_name = dev.Devices.general_info.Devices.name in
+      flush stdout ;
       let time_ms, ok = run_test dev in
       let status = if ok then "OK" else "FAIL" in
-      Printf.printf "%-40s %12.4f %10s\n" dev_name time_ms status)
+      Printf.printf "%-40s %12.4f %10s\n%!" dev_name time_ms status)
     devs ;
-  (* Also run on parallel native device *)
-  let parallel_dev = Devices.create_native_device ~parallel:true () in
-  let dev_name = parallel_dev.Devices.general_info.Devices.name in
-  let time_ms, ok = run_test parallel_dev in
-  let status = if ok then "OK" else "FAIL" in
-  Printf.printf "%-40s %12.4f %10s\n" dev_name time_ms status ;
   print_endline "\nBenchmark complete."
 
 (** Get appropriate block size for device *)
@@ -126,7 +120,10 @@ let get_block_size cfg dev =
   match dev.Devices.specific_info with
   | Devices.OpenCLInfo clI -> (
       match clI.Devices.device_type with
-      | Devices.CL_DEVICE_TYPE_CPU -> 1
+      | Devices.CL_DEVICE_TYPE_CPU ->
+          (* CPU OpenCL can use larger work-groups for barrier-based kernels.
+             Use cfg.block_size if specified, otherwise default to reasonable size. *)
+          if cfg.block_size > 1 then cfg.block_size else 64
       | _ -> cfg.block_size)
   | _ -> cfg.block_size
 
