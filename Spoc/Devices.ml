@@ -358,7 +358,7 @@ let create_native_device ?(parallel = false) ?(fission = false) () =
 
 let native_compatible_devices = ref 0
 
-let init ?only:(s = Both) ?(interpreter = Some Sequential) ?(native = true) () =
+let init ?only:(s = Both) ?(interpreter = None) ?(native = true) () =
   openOutput () ;
   let idEvent = beginEvent "initialisation des devices" in
   begin match s with
@@ -394,12 +394,10 @@ let init ?only:(s = Both) ?(interpreter = Some Sequential) ?(native = true) () =
        interpreter_compatible_devices := 1
    | None ->
        interpreter_compatible_devices := 0) ;
-  (* Optionally add native CPU devices (sequential, parallel, fission) *)
+  (* Optionally add native CPU device (fission mode only) *)
   if native then begin
-    devList := !devList @ [create_native_device ~parallel:false ~fission:false ()] ;
-    devList := !devList @ [create_native_device ~parallel:true ~fission:false ()] ;
     devList := !devList @ [create_native_device ~parallel:true ~fission:true ()] ;
-    native_compatible_devices := 3
+    native_compatible_devices := 1
   end
   else
     native_compatible_devices := 0 ;

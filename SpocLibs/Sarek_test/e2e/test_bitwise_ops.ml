@@ -9,6 +9,128 @@ open Spoc
 
 let cfg = Test_helpers.default_config ()
 
+(* ========== Pure OCaml baselines ========== *)
+
+let ocaml_bitwise_basic a b and_out or_out xor_out n =
+  for i = 0 to n - 1 do
+    and_out.(i) <- Int32.logand a.(i) b.(i) ;
+    or_out.(i) <- Int32.logor a.(i) b.(i) ;
+    xor_out.(i) <- Int32.logxor a.(i) b.(i)
+  done
+
+let ocaml_shift input shift_amt left_out right_out n =
+  for i = 0 to n - 1 do
+    let s = Int32.to_int shift_amt.(i) in
+    left_out.(i) <- Int32.shift_left input.(i) s ;
+    right_out.(i) <- Int32.shift_right_logical input.(i) s
+  done
+
+let count_bits x =
+  let rec loop acc v =
+    if v = 0l then acc
+    else loop (Int32.add acc (Int32.logand v 1l)) (Int32.shift_right_logical v 1)
+  in
+  loop 0l x
+
+let ocaml_popcount input output n =
+  for i = 0 to n - 1 do
+    output.(i) <- count_bits input.(i)
+  done
+
+let ocaml_gray_code input to_gray from_gray n =
+  for i = 0 to n - 1 do
+    let x = input.(i) in
+    let gray = Int32.logxor x (Int32.shift_right_logical x 1) in
+    to_gray.(i) <- gray ;
+    (* Gray code to binary *)
+    let g = gray in
+    let b = ref g in
+    let mask = ref (Int32.shift_right_logical g 1) in
+    while !mask <> 0l do
+      b := Int32.logxor !b !mask ;
+      mask := Int32.shift_right_logical !mask 1
+    done ;
+    from_gray.(i) <- !b
+  done
+
+(* ========== Shared test data ========== *)
+
+let input_a = ref [||]
+let input_b = ref [||]
+let expected_and = ref [||]
+let expected_or = ref [||]
+let expected_xor = ref [||]
+
+let input_shift = ref [||]
+let input_shift_amt = ref [||]
+let expected_left = ref [||]
+let expected_right = ref [||]
+
+let input_popcount = ref [||]
+let expected_popcount = ref [||]
+
+let input_gray = ref [||]
+let expected_to_gray = ref [||]
+let expected_from_gray = ref [||]
+
+let init_bitwise_data () =
+  let n = cfg.size in
+  let a = Array.init n (fun i -> Int32.of_int (i * 17)) in
+  let b = Array.init n (fun i -> Int32.of_int (i * 13)) in
+  let and_out = Array.make n 0l in
+  let or_out = Array.make n 0l in
+  let xor_out = Array.make n 0l in
+  input_a := a ;
+  input_b := b ;
+  expected_and := and_out ;
+  expected_or := or_out ;
+  expected_xor := xor_out ;
+  let t0 = Unix.gettimeofday () in
+  ocaml_bitwise_basic a b and_out or_out xor_out n ;
+  let t1 = Unix.gettimeofday () in
+  ((t1 -. t0) *. 1000.0, true)
+
+let init_shift_data () =
+  let n = cfg.size in
+  let inp = Array.make n (Int32.of_int 0xFF00FF) in
+  let amt = Array.init n (fun i -> Int32.of_int (i mod 16)) in
+  let left = Array.make n 0l in
+  let right = Array.make n 0l in
+  input_shift := inp ;
+  input_shift_amt := amt ;
+  expected_left := left ;
+  expected_right := right ;
+  let t0 = Unix.gettimeofday () in
+  ocaml_shift inp amt left right n ;
+  let t1 = Unix.gettimeofday () in
+  ((t1 -. t0) *. 1000.0, true)
+
+let init_popcount_data () =
+  let n = cfg.size in
+  let inp = Array.init n (fun i -> Int32.of_int i) in
+  let out = Array.make n 0l in
+  input_popcount := inp ;
+  expected_popcount := out ;
+  let t0 = Unix.gettimeofday () in
+  ocaml_popcount inp out n ;
+  let t1 = Unix.gettimeofday () in
+  ((t1 -. t0) *. 1000.0, true)
+
+let init_gray_data () =
+  let n = cfg.size in
+  let inp = Array.init n (fun i -> Int32.of_int i) in
+  let to_g = Array.make n 0l in
+  let from_g = Array.make n 0l in
+  input_gray := inp ;
+  expected_to_gray := to_g ;
+  expected_from_gray := from_g ;
+  let t0 = Unix.gettimeofday () in
+  ocaml_gray_code inp to_g from_g n ;
+  let t1 = Unix.gettimeofday () in
+  ((t1 -. t0) *. 1000.0, true)
+
+(* ========== Sarek kernels ========== *)
+
 (** Basic bitwise operations kernel *)
 let bitwise_basic_kernel =
   [%kernel
@@ -58,21 +180,6 @@ let popcount_kernel =
         output.(tid) <- count
       end]
 
-(** Bit reversal kernel - reverse bits in a 32-bit integer *)
-let bit_reverse_kernel =
-  [%kernel
-    fun (input : int32 vector) (output : int32 vector) (n : int32) ->
-      let tid = thread_idx_x + (block_dim_x * block_idx_x) in
-      if tid < n then begin
-        let x = mut input.(tid) in
-        let result = mut 0l in
-        for _i = 0 to 31 do
-          result := (result lsl 1l) lor (x land 1l) ;
-          x := x lsr 1l
-        done ;
-        output.(tid) <- result
-      end]
-
 (** Gray code conversion kernel *)
 let gray_code_kernel =
   [%kernel
@@ -96,25 +203,17 @@ let gray_code_kernel =
         from_gray.(tid) <- b
       end]
 
-(** Mask generation kernel - create bitmasks *)
-let mask_kernel =
-  [%kernel
-    fun (start_bit : int32 vector)
-        (num_bits : int32 vector)
-        (mask_out : int32 vector)
-        (n : int32) ->
-      let tid = thread_idx_x + (block_dim_x * block_idx_x) in
-      if tid < n then begin
-        let s = start_bit.(tid) in
-        let nb = num_bits.(tid) in
-        (* Create mask with 'num_bits' ones starting at 'start_bit' *)
-        let ones = (1l lsl nb) - 1l in
-        mask_out.(tid) <- ones lsl s
-      end]
+(* ========== Device test runners ========== *)
 
 (** Run basic bitwise test *)
 let run_bitwise_basic_test dev =
   let n = cfg.size in
+  let inp_a = !input_a in
+  let inp_b = !input_b in
+  let exp_and = !expected_and in
+  let exp_or = !expected_or in
+  let exp_xor = !expected_xor in
+
   let a = Vector.create Vector.int32 n in
   let b = Vector.create Vector.int32 n in
   let and_out = Vector.create Vector.int32 n in
@@ -122,8 +221,8 @@ let run_bitwise_basic_test dev =
   let xor_out = Vector.create Vector.int32 n in
 
   for i = 0 to n - 1 do
-    Mem.set a i (Int32.of_int (i * 17)) ;
-    Mem.set b i (Int32.of_int (i * 13)) ;
+    Mem.set a i inp_a.(i) ;
+    Mem.set b i inp_b.(i) ;
     Mem.set and_out i 0l ;
     Mem.set or_out i 0l ;
     Mem.set xor_out i 0l
@@ -154,12 +253,10 @@ let run_bitwise_basic_test dev =
       Devices.flush dev () ;
       let errors = ref 0 in
       for i = 0 to n - 1 do
-        let x = Mem.get a i in
-        let y = Mem.get b i in
         if
-          Mem.get and_out i <> Int32.logand x y
-          || Mem.get or_out i <> Int32.logor x y
-          || Mem.get xor_out i <> Int32.logxor x y
+          Mem.get and_out i <> exp_and.(i)
+          || Mem.get or_out i <> exp_or.(i)
+          || Mem.get xor_out i <> exp_xor.(i)
         then incr errors
       done ;
       !errors = 0
@@ -171,14 +268,19 @@ let run_bitwise_basic_test dev =
 (** Run shift test *)
 let run_shift_test dev =
   let n = cfg.size in
+  let inp = !input_shift in
+  let amt = !input_shift_amt in
+  let exp_left = !expected_left in
+  let exp_right = !expected_right in
+
   let input = Vector.create Vector.int32 n in
   let shift_amt = Vector.create Vector.int32 n in
   let left_out = Vector.create Vector.int32 n in
   let right_out = Vector.create Vector.int32 n in
 
   for i = 0 to n - 1 do
-    Mem.set input i (Int32.of_int 0xFF00FF) ;
-    Mem.set shift_amt i (Int32.of_int (i mod 16)) ;
+    Mem.set input i inp.(i) ;
+    Mem.set shift_amt i amt.(i) ;
     Mem.set left_out i 0l ;
     Mem.set right_out i 0l
   done ;
@@ -207,11 +309,7 @@ let run_shift_test dev =
       Devices.flush dev () ;
       let errors = ref 0 in
       for i = 0 to n - 1 do
-        let x = Mem.get input i in
-        let s = Int32.to_int (Mem.get shift_amt i) in
-        if
-          Mem.get left_out i <> Int32.shift_left x s
-          || Mem.get right_out i <> Int32.shift_right_logical x s
+        if Mem.get left_out i <> exp_left.(i) || Mem.get right_out i <> exp_right.(i)
         then incr errors
       done ;
       !errors = 0
@@ -223,11 +321,14 @@ let run_shift_test dev =
 (** Run popcount test *)
 let run_popcount_test dev =
   let n = cfg.size in
+  let inp = !input_popcount in
+  let exp = !expected_popcount in
+
   let input = Vector.create Vector.int32 n in
   let output = Vector.create Vector.int32 n in
 
   for i = 0 to n - 1 do
-    Mem.set input i (Int32.of_int i) ;
+    Mem.set input i inp.(i) ;
     Mem.set output i 0l
   done ;
 
@@ -243,26 +344,13 @@ let run_popcount_test dev =
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
 
-  (* Helper to count bits *)
-  let count_bits x =
-    let rec loop acc v =
-      if v = 0l then acc
-      else
-        loop (Int32.add acc (Int32.logand v 1l)) (Int32.shift_right_logical v 1)
-    in
-    loop 0l x
-  in
-
   let ok =
     if cfg.verify then begin
       Mem.to_cpu output () ;
       Devices.flush dev () ;
       let errors = ref 0 in
       for i = 0 to n - 1 do
-        let x = Mem.get input i in
-        let expected = count_bits x in
-        let got = Mem.get output i in
-        if got <> expected then incr errors
+        if Mem.get output i <> exp.(i) then incr errors
       done ;
       !errors = 0
     end
@@ -273,12 +361,16 @@ let run_popcount_test dev =
 (** Run Gray code test *)
 let run_gray_code_test dev =
   let n = cfg.size in
+  let inp = !input_gray in
+  let exp_to = !expected_to_gray in
+  let exp_from = !expected_from_gray in
+
   let input = Vector.create Vector.int32 n in
   let to_gray = Vector.create Vector.int32 n in
   let from_gray = Vector.create Vector.int32 n in
 
   for i = 0 to n - 1 do
-    Mem.set input i (Int32.of_int i) ;
+    Mem.set input i inp.(i) ;
     Mem.set to_gray i 0l ;
     Mem.set from_gray i 0l
   done ;
@@ -290,12 +382,7 @@ let run_gray_code_test dev =
   let grid = {Kernel.gridX = blocks; gridY = 1; gridZ = 1} in
 
   let t0 = Unix.gettimeofday () in
-  Sarek.Kirc.run
-    gray_code_kernel
-    (input, to_gray, from_gray, n)
-    (block, grid)
-    0
-    dev ;
+  Sarek.Kirc.run gray_code_kernel (input, to_gray, from_gray, n) (block, grid) 0 dev ;
   Devices.flush dev () ;
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
@@ -307,11 +394,8 @@ let run_gray_code_test dev =
       Devices.flush dev () ;
       let errors = ref 0 in
       for i = 0 to n - 1 do
-        let x = Mem.get input i in
-        let gray = Int32.logxor x (Int32.shift_right_logical x 1) in
-        if Mem.get to_gray i <> gray then incr errors ;
-        (* from_gray should recover original after round-trip through gray code math *)
-        if Mem.get from_gray i <> x then incr errors
+        if Mem.get to_gray i <> exp_to.(i) then incr errors ;
+        if Mem.get from_gray i <> exp_from.(i) then incr errors
       done ;
       !errors = 0
     end
@@ -324,7 +408,6 @@ let () =
   cfg.dev_id <- c.dev_id ;
   cfg.use_interpreter <- c.use_interpreter ;
   cfg.use_native <- c.use_native ;
-  cfg.use_native_parallel <- c.use_native_parallel ;
   cfg.benchmark_all <- c.benchmark_all ;
   cfg.benchmark_devices <- c.benchmark_devices ;
   cfg.verify <- c.verify ;
@@ -339,24 +422,28 @@ let () =
   Test_helpers.print_devices devs ;
 
   if cfg.benchmark_all then begin
-    Test_helpers.benchmark_all
+    Test_helpers.benchmark_with_baseline
       ~device_ids:cfg.benchmark_devices
       devs
+      ~baseline:init_bitwise_data
       run_bitwise_basic_test
       "Bitwise AND/OR/XOR" ;
-    Test_helpers.benchmark_all
+    Test_helpers.benchmark_with_baseline
       ~device_ids:cfg.benchmark_devices
       devs
+      ~baseline:init_shift_data
       run_shift_test
       "Bit shifts" ;
-    Test_helpers.benchmark_all
+    Test_helpers.benchmark_with_baseline
       ~device_ids:cfg.benchmark_devices
       devs
+      ~baseline:init_popcount_data
       run_popcount_test
       "Popcount" ;
-    Test_helpers.benchmark_all
+    Test_helpers.benchmark_with_baseline
       ~device_ids:cfg.benchmark_devices
       devs
+      ~baseline:init_gray_data
       run_gray_code_test
       "Gray code"
   end
@@ -365,32 +452,44 @@ let () =
     Printf.printf "Using device: %s\n%!" dev.Devices.general_info.Devices.name ;
     Printf.printf "Testing bitwise operations with size=%d\n%!" cfg.size ;
 
+    let baseline_ms, _ = init_bitwise_data () in
+    Printf.printf "\nOCaml baseline (bitwise): %.4f ms\n%!" baseline_ms ;
     Printf.printf "\nBitwise AND/OR/XOR:\n%!" ;
     let time_ms, ok = run_bitwise_basic_test dev in
     Printf.printf
-      "  Time: %.4f ms, %s\n%!"
+      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
       time_ms
+      (baseline_ms /. time_ms)
       (if ok then "PASSED" else "FAILED") ;
 
+    let baseline_ms, _ = init_shift_data () in
+    Printf.printf "\nOCaml baseline (shift): %.4f ms\n%!" baseline_ms ;
     Printf.printf "\nBit shifts:\n%!" ;
     let time_ms, ok = run_shift_test dev in
     Printf.printf
-      "  Time: %.4f ms, %s\n%!"
+      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
       time_ms
+      (baseline_ms /. time_ms)
       (if ok then "PASSED" else "FAILED") ;
 
+    let baseline_ms, _ = init_popcount_data () in
+    Printf.printf "\nOCaml baseline (popcount): %.4f ms\n%!" baseline_ms ;
     Printf.printf "\nPopcount:\n%!" ;
     let time_ms, ok = run_popcount_test dev in
     Printf.printf
-      "  Time: %.4f ms, %s\n%!"
+      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
       time_ms
+      (baseline_ms /. time_ms)
       (if ok then "PASSED" else "FAILED") ;
 
+    let baseline_ms, _ = init_gray_data () in
+    Printf.printf "\nOCaml baseline (gray): %.4f ms\n%!" baseline_ms ;
     Printf.printf "\nGray code:\n%!" ;
     let time_ms, ok = run_gray_code_test dev in
     Printf.printf
-      "  Time: %.4f ms, %s\n%!"
+      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
       time_ms
+      (baseline_ms /. time_ms)
       (if ok then "PASSED" else "FAILED") ;
 
     print_endline "\nBitwise operations tests PASSED"

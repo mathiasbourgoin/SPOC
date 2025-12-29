@@ -9,6 +9,48 @@ open Spoc
 
 let cfg = Test_helpers.default_config ()
 
+(* ========== Pure OCaml baselines ========== *)
+
+let ocaml_inclusive_scan input output n =
+  if n > 0 then begin
+    output.(0) <- input.(0) ;
+    for i = 1 to n - 1 do
+      output.(i) <- Int32.add output.(i - 1) input.(i)
+    done
+  end
+
+(* ========== Shared test data ========== *)
+
+let input_ones = ref [||]
+let expected_ones = ref [||]
+
+let input_varying = ref [||]
+let expected_varying = ref [||]
+
+let init_ones_data () =
+  let n = min cfg.size 256 in
+  let inp = Array.make n 1l in
+  let out = Array.make n 0l in
+  input_ones := inp ;
+  expected_ones := out ;
+  let t0 = Unix.gettimeofday () in
+  ocaml_inclusive_scan inp out n ;
+  let t1 = Unix.gettimeofday () in
+  ((t1 -. t0) *. 1000.0, true)
+
+let init_varying_data () =
+  let n = min cfg.size 256 in
+  let inp = Array.init n (fun i -> Int32.of_int (i + 1)) in
+  let out = Array.make n 0l in
+  input_varying := inp ;
+  expected_varying := out ;
+  let t0 = Unix.gettimeofday () in
+  ocaml_inclusive_scan inp out n ;
+  let t1 = Unix.gettimeofday () in
+  ((t1 -. t0) *. 1000.0, true)
+
+(* ========== Sarek kernels ========== *)
+
 (** Inclusive scan within a block using Hillis-Steele algorithm.
 
     IMPORTANT: Hillis-Steele requires that ALL threads read their neighbor's
@@ -82,16 +124,19 @@ let inclusive_scan_kernel =
       (* Write result from temp (last write was to temp) *)
       if gid < n then output.(gid) <- temp.(tid)]
 
+(* ========== Device test runners ========== *)
+
 (** Run inclusive scan test *)
 let run_inclusive_scan_test dev =
   let n = min cfg.size 256 in
-  (* Single block for simplicity *)
+  let inp = !input_ones in
+  let exp = !expected_ones in
+
   let input = Vector.create Vector.int32 n in
   let output = Vector.create Vector.int32 n in
 
   for i = 0 to n - 1 do
-    Mem.set input i 1l ;
-    (* All ones - sum should be 1, 2, 3, ... *)
+    Mem.set input i inp.(i) ;
     Mem.set output i 0l
   done ;
 
@@ -112,15 +157,10 @@ let run_inclusive_scan_test dev =
       Devices.flush dev () ;
       let errors = ref 0 in
       for i = 0 to n - 1 do
-        let expected = Int32.of_int (i + 1) in
         let got = Mem.get output i in
-        if got <> expected then begin
+        if got <> exp.(i) then begin
           if !errors < 10 then
-            Printf.printf
-              "  Mismatch at %d: expected %ld, got %ld\n"
-              i
-              expected
-              got ;
+            Printf.printf "  Mismatch at %d: expected %ld, got %ld\n" i exp.(i) got ;
           incr errors
         end
       done ;
@@ -133,12 +173,14 @@ let run_inclusive_scan_test dev =
 (** Run scan with varying values test *)
 let run_varying_scan_test dev =
   let n = min cfg.size 256 in
+  let inp = !input_varying in
+  let exp = !expected_varying in
+
   let input = Vector.create Vector.int32 n in
   let output = Vector.create Vector.int32 n in
 
-  (* Initialize with i+1 values: 1, 2, 3, ... *)
   for i = 0 to n - 1 do
-    Mem.set input i (Int32.of_int (i + 1)) ;
+    Mem.set input i inp.(i) ;
     Mem.set output i 0l
   done ;
 
@@ -158,17 +200,11 @@ let run_varying_scan_test dev =
       Mem.to_cpu output () ;
       Devices.flush dev () ;
       let errors = ref 0 in
-      let expected = ref 0l in
       for i = 0 to n - 1 do
-        expected := Int32.add !expected (Int32.of_int (i + 1)) ;
         let got = Mem.get output i in
-        if got <> !expected then begin
+        if got <> exp.(i) then begin
           if !errors < 10 then
-            Printf.printf
-              "  Mismatch at %d: expected %ld, got %ld\n"
-              i
-              !expected
-              got ;
+            Printf.printf "  Mismatch at %d: expected %ld, got %ld\n" i exp.(i) got ;
           incr errors
         end
       done ;
@@ -183,7 +219,6 @@ let () =
   cfg.dev_id <- c.dev_id ;
   cfg.use_interpreter <- c.use_interpreter ;
   cfg.use_native <- c.use_native ;
-  cfg.use_native_parallel <- c.use_native_parallel ;
   cfg.benchmark_all <- c.benchmark_all ;
   cfg.benchmark_devices <- c.benchmark_devices ;
   cfg.verify <- c.verify ;
@@ -198,14 +233,16 @@ let () =
   Test_helpers.print_devices devs ;
 
   if cfg.benchmark_all then begin
-    Test_helpers.benchmark_all
+    Test_helpers.benchmark_with_baseline
       ~device_ids:cfg.benchmark_devices
       devs
+      ~baseline:init_ones_data
       run_inclusive_scan_test
       "Inclusive scan" ;
-    Test_helpers.benchmark_all
+    Test_helpers.benchmark_with_baseline
       ~device_ids:cfg.benchmark_devices
       devs
+      ~baseline:init_varying_data
       run_varying_scan_test
       "Scan with varying values"
   end
@@ -214,18 +251,24 @@ let () =
     Printf.printf "Using device: %s\n%!" dev.Devices.general_info.Devices.name ;
     Printf.printf "Testing prefix sum operations\n%!" ;
 
+    let baseline_ms, _ = init_ones_data () in
+    Printf.printf "\nOCaml baseline (ones): %.4f ms\n%!" baseline_ms ;
     Printf.printf "\nInclusive scan (all ones):\n%!" ;
     let time_ms, ok = run_inclusive_scan_test dev in
     Printf.printf
-      "  Time: %.4f ms, %s\n%!"
+      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
       time_ms
+      (baseline_ms /. time_ms)
       (if ok then "PASSED" else "FAILED") ;
 
+    let baseline_ms, _ = init_varying_data () in
+    Printf.printf "\nOCaml baseline (varying): %.4f ms\n%!" baseline_ms ;
     Printf.printf "\nScan with varying values:\n%!" ;
     let time_ms, ok = run_varying_scan_test dev in
     Printf.printf
-      "  Time: %.4f ms, %s\n%!"
+      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
       time_ms
+      (baseline_ms /. time_ms)
       (if ok then "PASSED" else "FAILED") ;
 
     print_endline "\nScan tests PASSED"

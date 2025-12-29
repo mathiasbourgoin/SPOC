@@ -290,8 +290,8 @@ external closeOutput : unit -> unit = "close_output_profiling"
                                         
 (** Mandatory function to use Spoc
 @param only allows to specify which library to use, by default, Spoc will search any device on the system
-@param interpreter Defaults to [Some Sequential]. Use [None] to exclude the interpreter device.
-@param native if true, adds a native CPU runtime device (default: true)
+@param interpreter Defaults to [None]. Use [Some Sequential] or [Some Parallel] to include the interpreter device.
+@param native if true, adds the native CPU runtime device with fission parallelism (default: true)
 @return an array containing every compatible device found on the system *)
 val init : ?only: specificLibrary -> ?interpreter:interpreter_backend option -> ?native:bool -> unit -> device array
 

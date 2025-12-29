@@ -11,6 +11,45 @@ let cfg = Test_helpers.default_config ()
 
 let tile_size = ref 16
 
+(* ========== Pure OCaml baseline ========== *)
+
+(** Pure OCaml matrix multiplication *)
+let ocaml_matmul a b c m n k =
+  for row = 0 to m - 1 do
+    for col = 0 to n - 1 do
+      let sum = ref 0.0 in
+      for i = 0 to k - 1 do
+        sum := !sum +. (a.((row * k) + i) *. b.((i * n) + col))
+      done ;
+      c.((row * n) + col) <- !sum
+    done
+  done
+
+(* ========== Shared test data ========== *)
+
+let input_a = ref [||]
+let input_b = ref [||]
+let expected_c = ref [||]
+let matrix_dim = ref 0
+
+(** Initialize matrices and compute expected result *)
+let init_matmul_data () =
+  let dim = int_of_float (sqrt (float_of_int cfg.size)) in
+  matrix_dim := dim ;
+  let m, n, k = (dim, dim, dim) in
+  let a = Array.init (m * k) (fun i -> float_of_int (i mod 10) /. 10.0) in
+  let b = Array.init (k * n) (fun i -> float_of_int ((i + 1) mod 10) /. 10.0) in
+  let c = Array.make (m * n) 0.0 in
+  input_a := a ;
+  input_b := b ;
+  expected_c := c ;
+  let t0 = Unix.gettimeofday () in
+  ocaml_matmul a b c m n k ;
+  let t1 = Unix.gettimeofday () in
+  ((t1 -. t0) *. 1000.0, true)
+
+(* ========== Sarek kernels ========== *)
+
 (** Naive matrix multiplication - each thread computes one output element *)
 let matmul_naive_kernel =
   [%kernel
@@ -30,20 +69,7 @@ let matmul_naive_kernel =
         c.((row * n) + col) <- sum
       end]
 
-(** Tiled matrix multiplication with shared memory and supersteps.
-
-    Uses the classic tiled algorithm where each block cooperatively loads tiles
-    of A and B into shared memory, then computes partial dot products.
-
-    BSP Synchronization Pattern: Each loop iteration has 3 supersteps with
-    barriers: 1. load_a: All threads load their portion of tile_a, then barrier
-    2. load_b: All threads load their portion of tile_b, then barrier 3.
-    compute: All threads read from tiles and accumulate, then barrier
-
-    The final barrier (after compute) is critical: it ensures all threads finish
-    reading the tiles before the next iteration overwrites them. Without it,
-    thread 0 could start writing tile_a for iteration t+1 while thread 1 is
-    still reading tile_a for iteration t. *)
+(** Tiled matrix multiplication with shared memory and supersteps. *)
 let matmul_tiled_kernel =
   [%kernel
     fun (a : float32 vector)
@@ -52,7 +78,6 @@ let matmul_tiled_kernel =
         (m : int32)
         (n : int32)
         (k : int32) ->
-      (* Shared memory tiles: 16x16 = 256 elements each *)
       let%shared (tile_a : float32) = 256l in
       let%shared (tile_b : float32) = 256l in
       let tx = thread_idx_x in
@@ -63,23 +88,18 @@ let matmul_tiled_kernel =
       let num_tiles = (k + tile_size - 1l) / tile_size in
       let sum = mut 0.0 in
       for t = 0 to num_tiles - 1l do
-        (* Superstep 1: Cooperatively load tile from A into shared memory *)
         let%superstep load_a =
           let a_col = (t * tile_size) + tx in
           if row < m && a_col < k then
             tile_a.((ty * tile_size) + tx) <- a.((row * k) + a_col)
           else tile_a.((ty * tile_size) + tx) <- 0.0
         in
-        (* Superstep 2: Cooperatively load tile from B into shared memory *)
         let%superstep load_b =
           let b_row = (t * tile_size) + ty in
           if b_row < k && col < n then
             tile_b.((ty * tile_size) + tx) <- b.((b_row * n) + col)
           else tile_b.((ty * tile_size) + tx) <- 0.0
         in
-        (* Superstep 3: Compute partial dot product using shared tiles.
-           Must be in a superstep so barrier runs before next iteration
-           overwrites the tiles. *)
         let%superstep _compute =
           for i = 0 to tile_size - 1l do
             sum :=
@@ -89,30 +109,32 @@ let matmul_tiled_kernel =
         in
         ()
       done ;
-      (* Write final result to global memory *)
       if row < m && col < n then c.((row * n) + col) <- sum]
+
+(* ========== Device test runners ========== *)
 
 (** Run naive matrix multiplication test *)
 let run_matmul_naive dev =
-  let dim = Int32.to_int (Int32.of_float (sqrt (float_of_int cfg.size))) in
+  let dim = !matrix_dim in
   let m, n, k = (dim, dim, dim) in
+  let inp_a = !input_a in
+  let inp_b = !input_b in
+  let exp_c = !expected_c in
 
   let a = Vector.create Vector.float32 (m * k) in
   let b = Vector.create Vector.float32 (k * n) in
   let c = Vector.create Vector.float32 (m * n) in
 
-  (* Initialize matrices *)
   for i = 0 to (m * k) - 1 do
-    Mem.set a i (float_of_int (i mod 10) /. 10.0)
+    Mem.set a i inp_a.(i)
   done ;
   for i = 0 to (k * n) - 1 do
-    Mem.set b i (float_of_int ((i + 1) mod 10) /. 10.0)
+    Mem.set b i inp_b.(i)
   done ;
   for i = 0 to (m * n) - 1 do
     Mem.set c i 0.0
   done ;
 
-  (* Generate and run kernel *)
   ignore (Sarek.Kirc.gen matmul_naive_kernel dev) ;
   let block_size = min 16 (Test_helpers.get_block_size cfg dev) in
   let blocks_x = (n + block_size - 1) / block_size in
@@ -126,27 +148,17 @@ let run_matmul_naive dev =
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
 
-  (* Verify *)
   let ok =
     if cfg.verify then begin
-      Mem.to_cpu a () ;
-      Mem.to_cpu b () ;
       Mem.to_cpu c () ;
       Devices.flush dev () ;
       Mem.unsafe_rw true ;
       let errors = ref 0 in
-      (* Check a few elements *)
       let check_count = min 100 (m * n) in
       for idx = 0 to check_count - 1 do
-        let row = idx / n in
-        let col = idx mod n in
-        let expected = ref 0.0 in
-        for i = 0 to k - 1 do
-          expected :=
-            !expected +. (Mem.get a ((row * k) + i) *. Mem.get b ((i * n) + col))
-        done ;
+        let expected = exp_c.(idx) in
         let got = Mem.get c idx in
-        if abs_float (got -. !expected) > 0.01 then incr errors
+        if abs_float (got -. expected) > 0.01 then incr errors
       done ;
       Mem.unsafe_rw false ;
       !errors = 0
@@ -157,27 +169,40 @@ let run_matmul_naive dev =
 
 (** Run tiled matrix multiplication test *)
 let run_matmul_tiled dev =
-  let dim = Int32.to_int (Int32.of_float (sqrt (float_of_int cfg.size))) in
-  (* Round to multiple of tile size *)
+  let dim = !matrix_dim in
   let dim = (dim + !tile_size - 1) / !tile_size * !tile_size in
   let m, n, k = (dim, dim, dim) in
+
+  (* Need to recompute expected for padded dimension *)
+  let inp_a = !input_a in
+  let inp_b = !input_b in
+  let orig_dim = !matrix_dim in
 
   let a = Vector.create Vector.float32 (m * k) in
   let b = Vector.create Vector.float32 (k * n) in
   let c = Vector.create Vector.float32 (m * n) in
 
-  (* Initialize matrices *)
-  for i = 0 to (m * k) - 1 do
-    Mem.set a i (float_of_int (i mod 10) /. 10.0)
+  (* Initialize with padding *)
+  for row = 0 to m - 1 do
+    for col = 0 to k - 1 do
+      let idx = (row * k) + col in
+      if row < orig_dim && col < orig_dim then
+        Mem.set a idx inp_a.((row * orig_dim) + col)
+      else Mem.set a idx 0.0
+    done
   done ;
-  for i = 0 to (k * n) - 1 do
-    Mem.set b i (float_of_int ((i + 1) mod 10) /. 10.0)
+  for row = 0 to k - 1 do
+    for col = 0 to n - 1 do
+      let idx = (row * n) + col in
+      if row < orig_dim && col < orig_dim then
+        Mem.set b idx inp_b.((row * orig_dim) + col)
+      else Mem.set b idx 0.0
+    done
   done ;
   for i = 0 to (m * n) - 1 do
     Mem.set c i 0.0
   done ;
 
-  (* Generate and run kernel *)
   ignore (Sarek.Kirc.gen matmul_tiled_kernel dev) ;
   let block_size = !tile_size in
   let blocks_x = n / block_size in
@@ -191,27 +216,20 @@ let run_matmul_tiled dev =
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
 
-  (* Verify *)
   let ok =
     if cfg.verify then begin
-      Mem.to_cpu a () ;
-      Mem.to_cpu b () ;
       Mem.to_cpu c () ;
       Devices.flush dev () ;
       Mem.unsafe_rw true ;
       let errors = ref 0 in
-      (* Check a few elements *)
-      let check_count = min 100 (m * n) in
+      let exp_c = !expected_c in
+      let check_count = min 100 (orig_dim * orig_dim) in
       for idx = 0 to check_count - 1 do
-        let row = idx / n in
-        let col = idx mod n in
-        let expected = ref 0.0 in
-        for i = 0 to k - 1 do
-          expected :=
-            !expected +. (Mem.get a ((row * k) + i) *. Mem.get b ((i * n) + col))
-        done ;
-        let got = Mem.get c idx in
-        if abs_float (got -. !expected) > 0.01 then incr errors
+        let row = idx / orig_dim in
+        let col = idx mod orig_dim in
+        let expected = exp_c.(idx) in
+        let got = Mem.get c ((row * n) + col) in
+        if abs_float (got -. expected) > 0.01 then incr errors
       done ;
       Mem.unsafe_rw false ;
       !errors = 0
@@ -225,7 +243,6 @@ let () =
   cfg.dev_id <- c.dev_id ;
   cfg.use_interpreter <- c.use_interpreter ;
   cfg.use_native <- c.use_native ;
-  cfg.use_native_parallel <- c.use_native_parallel ;
   cfg.benchmark_all <- c.benchmark_all ;
   cfg.benchmark_devices <- c.benchmark_devices ;
   cfg.verify <- c.verify ;
@@ -239,7 +256,7 @@ let () =
   end ;
   Test_helpers.print_devices devs ;
 
-  let dim = Int32.to_int (Int32.of_float (sqrt (float_of_int cfg.size))) in
+  let dim = int_of_float (sqrt (float_of_int cfg.size)) in
   Printf.printf
     "Matrix dimensions: %dx%d (total elements: %d)\n%!"
     dim
@@ -247,14 +264,16 @@ let () =
     (dim * dim) ;
 
   if cfg.benchmark_all then begin
-    Test_helpers.benchmark_all
+    Test_helpers.benchmark_with_baseline
       ~device_ids:cfg.benchmark_devices
       devs
+      ~baseline:init_matmul_data
       run_matmul_naive
       "Matrix multiplication (naive)" ;
-    Test_helpers.benchmark_all
+    Test_helpers.benchmark_with_baseline
       ~device_ids:cfg.benchmark_devices
       devs
+      ~baseline:(fun () -> init_matmul_data ())
       run_matmul_tiled
       "Matrix multiplication (tiled)"
   end
@@ -262,18 +281,23 @@ let () =
     let dev = Test_helpers.get_device cfg devs in
     Printf.printf "Using device: %s\n%!" dev.Devices.general_info.Devices.name ;
 
+    let baseline_ms, _ = init_matmul_data () in
+    Printf.printf "\nOCaml baseline: %.4f ms\n%!" baseline_ms ;
+
     Printf.printf "\nNaive matrix multiplication:\n%!" ;
     let time_ms, ok = run_matmul_naive dev in
     Printf.printf
-      "  Time: %.4f ms, %s\n%!"
+      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
       time_ms
+      (baseline_ms /. time_ms)
       (if ok then "PASSED" else "FAILED") ;
 
     Printf.printf "\nTiled matrix multiplication:\n%!" ;
     let time_ms, ok = run_matmul_tiled dev in
     Printf.printf
-      "  Time: %.4f ms, %s\n%!"
+      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
       time_ms
+      (baseline_ms /. time_ms)
       (if ok then "PASSED" else "FAILED") ;
 
     print_endline "\nMatrix multiplication tests PASSED"

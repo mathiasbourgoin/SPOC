@@ -11,7 +11,6 @@ type config = {
   mutable dev_id : int;
   mutable use_interpreter : bool;
   mutable use_native : bool;
-  mutable use_native_parallel : bool;
   mutable benchmark_all : bool;
   mutable benchmark_devices : int list option;
       (** None = all, Some ids = specific *)
@@ -25,7 +24,6 @@ let default_config () =
     dev_id = 0;
     use_interpreter = false;
     use_native = false;
-    use_native_parallel = false;
     benchmark_all = false;
     benchmark_devices = None;
     verify = true;
@@ -38,9 +36,7 @@ let usage name extra_opts =
   Printf.printf "Options:\n" ;
   Printf.printf "  -d <id>       Device ID (default: 0)\n" ;
   Printf.printf "  --interpreter Use CPU interpreter device\n" ;
-  Printf.printf "  --native      Use native CPU runtime device (sequential)\n" ;
-  Printf.printf
-    "  --native-parallel  Use native CPU runtime with parallel threads\n" ;
+  Printf.printf "  --native      Use native CPU runtime device\n" ;
   Printf.printf "  --benchmark, --benchmark-all  Run on all devices\n" ;
   Printf.printf "  --benchmark-devices <0,1,4>  Run on specific devices\n" ;
   Printf.printf "  -s, --size <size>  Problem size (default: 1024)\n" ;
@@ -62,7 +58,6 @@ let parse_args ?(extra = fun _ _ -> false) ?(extra_usage = fun () -> ()) name =
            cfg.dev_id <- int_of_string Sys.argv.(!i)
        | "--interpreter" -> cfg.use_interpreter <- true
        | "--native" -> cfg.use_native <- true
-       | "--native-parallel" -> cfg.use_native_parallel <- true
        | "--benchmark" | "--benchmark-all" -> cfg.benchmark_all <- true
        | "--benchmark-devices" ->
            incr i ;
@@ -87,8 +82,7 @@ let parse_args ?(extra = fun _ _ -> false) ?(extra_usage = fun () -> ()) name =
 
 (** Get device based on config *)
 let get_device cfg devs =
-  if cfg.use_native_parallel then Devices.create_native_device ~parallel:true ()
-  else if cfg.use_native then (
+  if cfg.use_native then (
     match Devices.find_native_id devs with
     | Some id -> devs.(id)
     | None ->
@@ -133,6 +127,54 @@ let benchmark_all ?(device_ids = None) devs run_test name =
         let time_ms, ok = run_test dev in
         let status = if ok then "OK" else "FAIL" in
         Printf.printf "%-40s %12.4f %10s\n%!" dev_name time_ms status
+      end)
+    devs ;
+  print_endline "\nBenchmark complete."
+
+(** Run benchmark with pure OCaml baseline, showing speedups *)
+let benchmark_with_baseline ?(device_ids = None) devs ~baseline run_test name =
+  (match device_ids with
+  | None -> Printf.printf "\nBenchmark: %s (all devices)\n" name
+  | Some ids ->
+      Printf.printf
+        "\nBenchmark: %s (devices: %s)\n"
+        name
+        (String.concat ", " (List.map string_of_int ids))) ;
+  Printf.printf
+    "%-40s %12s %10s %10s\n"
+    "Device"
+    "Time (ms)"
+    "Status"
+    "Speedup" ;
+  Printf.printf "%s\n" (String.make 76 '-') ;
+  (* Run baseline first *)
+  let baseline_time, baseline_ok = baseline () in
+  Printf.printf
+    "%-40s %12.4f %10s %10s\n%!"
+    "Pure OCaml (baseline)"
+    baseline_time
+    (if baseline_ok then "OK" else "FAIL")
+    "1.00x" ;
+  (* Run on devices *)
+  Array.iteri
+    (fun i dev ->
+      let should_run =
+        match device_ids with None -> true | Some ids -> List.mem i ids
+      in
+      if should_run then begin
+        let dev_name = dev.Devices.general_info.Devices.name in
+        flush stdout ;
+        let time_ms, ok = run_test dev in
+        let status = if ok then "OK" else "FAIL" in
+        let speedup =
+          if time_ms > 0.0 then baseline_time /. time_ms else 0.0
+        in
+        Printf.printf
+          "%-40s %12.4f %10s %9.2fx\n%!"
+          dev_name
+          time_ms
+          status
+          speedup
       end)
     devs ;
   print_endline "\nBenchmark complete."

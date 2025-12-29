@@ -11,7 +11,34 @@ let cfg = Test_helpers.default_config ()
 
 let num_bins = ref 256
 
-(** Simple histogram with shared memory and supersteps *)
+(* ========== Pure OCaml baseline ========== *)
+
+let ocaml_histogram input n bins =
+  let hist = Array.make bins 0l in
+  for i = 0 to n - 1 do
+    let bin = Int32.to_int (Int32.rem input.(i) (Int32.of_int bins)) in
+    hist.(bin) <- Int32.add hist.(bin) 1l
+  done ;
+  hist
+
+(* ========== Shared test data ========== *)
+
+let input_data = ref [||]
+let expected_hist = ref [||]
+
+let init_histogram_data () =
+  let n = cfg.size in
+  let bins = !num_bins in
+  Random.init 42 ;
+  let inp = Array.init n (fun _ -> Int32.of_int (Random.int bins)) in
+  input_data := inp ;
+  let t0 = Unix.gettimeofday () in
+  expected_hist := ocaml_histogram inp n bins ;
+  let t1 = Unix.gettimeofday () in
+  ((t1 -. t0) *. 1000.0, true)
+
+(* ========== Sarek kernels ========== *)
+
 let histogram_kernel =
   [%kernel
     fun (input : int32 vector)
@@ -21,9 +48,7 @@ let histogram_kernel =
       let%shared (local_hist : int32) = 256l in
       let tid = thread_idx_x in
       let gid = thread_idx_x + (block_dim_x * block_idx_x) in
-      (* Initialize local histogram *)
       let%superstep init = if tid < num_bins then local_hist.(tid) <- 0l in
-      (* Count in local histogram using atomic increment *)
       let%superstep[@divergent] count =
         if gid < n then begin
           let bin = input.(gid) mod num_bins in
@@ -31,7 +56,6 @@ let histogram_kernel =
           ()
         end
       in
-      (* Merge to global histogram using atomics *)
       let%superstep[@divergent] merge =
         if tid < num_bins then begin
           let local_count = local_hist.(tid) in
@@ -41,7 +65,6 @@ let histogram_kernel =
       in
       ()]
 
-(** Histogram with striding - each thread processes multiple elements *)
 let histogram_strided_kernel =
   [%kernel
     fun (input : int32 vector)
@@ -52,9 +75,7 @@ let histogram_strided_kernel =
       let tid = thread_idx_x in
       let gid = thread_idx_x + (block_dim_x * block_idx_x) in
       let stride = block_dim_x * grid_dim_x in
-      (* Initialize local histogram *)
       let%superstep init = if tid < num_bins then local_hist.(tid) <- 0l in
-      (* Count with stride using atomic increment *)
       let i = mut gid in
       while i < n do
         let bin = input.(i) mod num_bins in
@@ -62,38 +83,30 @@ let histogram_strided_kernel =
         i := i + stride
       done ;
       block_barrier () ;
-      (* Merge to global histogram using atomics *)
       if tid < num_bins then begin
         let local_count = local_hist.(tid) in
         let _ = atomic_add_global_int32 histogram tid local_count in
         ()
       end]
 
-(** Run simple histogram test *)
+(* ========== Device test runners ========== *)
+
 let run_histogram dev =
   let n = cfg.size in
   let bins = !num_bins in
+  let inp = !input_data in
+  let exp = !expected_hist in
 
   let input = Vector.create Vector.int32 n in
   let histogram = Vector.create Vector.int32 bins in
 
-  (* Initialize with random values in [0, bins) *)
-  Random.init 42 ;
   for i = 0 to n - 1 do
-    Mem.set input i (Int32.of_int (Random.int bins))
+    Mem.set input i inp.(i)
   done ;
   for i = 0 to bins - 1 do
     Mem.set histogram i 0l
   done ;
 
-  (* Compute expected histogram on CPU *)
-  let expected = Array.make bins 0l in
-  for i = 0 to n - 1 do
-    let bin = Int32.to_int (Mem.get input i) in
-    expected.(bin) <- Int32.add expected.(bin) 1l
-  done ;
-
-  (* Generate and run kernel *)
   ignore (Sarek.Kirc.gen histogram_kernel dev) ;
   let block_size = min 256 (Test_helpers.get_block_size cfg dev) in
   let num_blocks = (n + block_size - 1) / block_size in
@@ -101,17 +114,11 @@ let run_histogram dev =
   let grid = {Kernel.gridX = num_blocks; gridY = 1; gridZ = 1} in
 
   let t0 = Unix.gettimeofday () in
-  Sarek.Kirc.run
-    histogram_kernel
-    (input, histogram, n, bins)
-    (block, grid)
-    0
-    dev ;
+  Sarek.Kirc.run histogram_kernel (input, histogram, n, bins) (block, grid) 0 dev ;
   Devices.flush dev () ;
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
 
-  (* Verify *)
   let ok =
     if cfg.verify then begin
       Mem.to_cpu histogram () ;
@@ -119,9 +126,9 @@ let run_histogram dev =
       let errors = ref 0 in
       for i = 0 to bins - 1 do
         let got = Mem.get histogram i in
-        if got <> expected.(i) then begin
+        if got <> exp.(i) then begin
           if !errors < 10 then
-            Printf.printf "  Bin %d: expected %ld, got %ld\n" i expected.(i) got ;
+            Printf.printf "  Bin %d: expected %ld, got %ld\n" i exp.(i) got ;
           incr errors
         end
       done ;
@@ -131,31 +138,22 @@ let run_histogram dev =
   in
   (time_ms, ok)
 
-(** Run strided histogram test *)
 let run_histogram_strided dev =
   let n = cfg.size in
   let bins = !num_bins in
+  let inp = !input_data in
+  let exp = !expected_hist in
 
   let input = Vector.create Vector.int32 n in
   let histogram = Vector.create Vector.int32 bins in
 
-  (* Initialize with random values in [0, bins) *)
-  Random.init 42 ;
   for i = 0 to n - 1 do
-    Mem.set input i (Int32.of_int (Random.int bins))
+    Mem.set input i inp.(i)
   done ;
   for i = 0 to bins - 1 do
     Mem.set histogram i 0l
   done ;
 
-  (* Compute expected histogram on CPU *)
-  let expected = Array.make bins 0l in
-  for i = 0 to n - 1 do
-    let bin = Int32.to_int (Mem.get input i) in
-    expected.(bin) <- Int32.add expected.(bin) 1l
-  done ;
-
-  (* Generate and run kernel with fewer blocks (striding handles the rest) *)
   ignore (Sarek.Kirc.gen histogram_strided_kernel dev) ;
   let block_size = min 256 (Test_helpers.get_block_size cfg dev) in
   let num_blocks = min 64 ((n + block_size - 1) / block_size) in
@@ -173,7 +171,6 @@ let run_histogram_strided dev =
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
 
-  (* Verify *)
   let ok =
     if cfg.verify then begin
       Mem.to_cpu histogram () ;
@@ -181,9 +178,9 @@ let run_histogram_strided dev =
       let errors = ref 0 in
       for i = 0 to bins - 1 do
         let got = Mem.get histogram i in
-        if got <> expected.(i) then begin
+        if got <> exp.(i) then begin
           if !errors < 10 then
-            Printf.printf "  Bin %d: expected %ld, got %ld\n" i expected.(i) got ;
+            Printf.printf "  Bin %d: expected %ld, got %ld\n" i exp.(i) got ;
           incr errors
         end
       done ;
@@ -198,7 +195,6 @@ let () =
   cfg.dev_id <- c.dev_id ;
   cfg.use_interpreter <- c.use_interpreter ;
   cfg.use_native <- c.use_native ;
-  cfg.use_native_parallel <- c.use_native_parallel ;
   cfg.benchmark_all <- c.benchmark_all ;
   cfg.benchmark_devices <- c.benchmark_devices ;
   cfg.verify <- c.verify ;
@@ -218,14 +214,16 @@ let () =
     !num_bins ;
 
   if cfg.benchmark_all then begin
-    Test_helpers.benchmark_all
+    Test_helpers.benchmark_with_baseline
       ~device_ids:cfg.benchmark_devices
       devs
+      ~baseline:init_histogram_data
       run_histogram
       "Histogram (simple)" ;
-    Test_helpers.benchmark_all
+    Test_helpers.benchmark_with_baseline
       ~device_ids:cfg.benchmark_devices
       devs
+      ~baseline:(fun () -> init_histogram_data ())
       run_histogram_strided
       "Histogram (strided)"
   end
@@ -233,18 +231,23 @@ let () =
     let dev = Test_helpers.get_device cfg devs in
     Printf.printf "Using device: %s\n%!" dev.Devices.general_info.Devices.name ;
 
+    let baseline_ms, _ = init_histogram_data () in
+    Printf.printf "\nOCaml baseline: %.4f ms\n%!" baseline_ms ;
+
     Printf.printf "\nSimple histogram:\n%!" ;
     let time_ms, ok = run_histogram dev in
     Printf.printf
-      "  Time: %.4f ms, %s\n%!"
+      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
       time_ms
+      (baseline_ms /. time_ms)
       (if ok then "PASSED" else "FAILED") ;
 
     Printf.printf "\nStrided histogram:\n%!" ;
     let time_ms, ok = run_histogram_strided dev in
     Printf.printf
-      "  Time: %.4f ms, %s\n%!"
+      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
       time_ms
+      (baseline_ms /. time_ms)
       (if ok then "PASSED" else "FAILED") ;
 
     print_endline "\nHistogram tests PASSED"

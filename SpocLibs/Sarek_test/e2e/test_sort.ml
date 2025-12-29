@@ -9,6 +9,61 @@ open Spoc
 
 let cfg = Test_helpers.default_config ()
 
+(* ========== Pure OCaml baselines ========== *)
+
+let ocaml_sort arr _n =
+  let a = Array.copy arr in
+  Array.sort Int32.compare a ;
+  a
+
+(* ========== Shared test data ========== *)
+
+let input_bitonic_global = ref [||]
+let expected_bitonic_global = ref [||]
+let sort_size_global = ref 0
+
+let input_bitonic_block = ref [||]
+let expected_bitonic_block = ref [||]
+
+let input_odd_even = ref [||]
+let expected_odd_even = ref [||]
+let sort_size_odd_even = ref 0
+
+let init_bitonic_global_data () =
+  let log2n = int_of_float (log (float_of_int cfg.size) /. log 2.0) in
+  let n = 1 lsl log2n in
+  sort_size_global := n ;
+  Random.init 42 ;
+  let inp = Array.init n (fun _ -> Int32.of_int (Random.int 10000)) in
+  input_bitonic_global := inp ;
+  let t0 = Unix.gettimeofday () in
+  expected_bitonic_global := ocaml_sort inp n ;
+  let t1 = Unix.gettimeofday () in
+  ((t1 -. t0) *. 1000.0, true)
+
+let init_bitonic_block_data () =
+  let n = 16 in
+  Random.init 42 ;
+  let inp = Array.init n (fun _ -> Int32.of_int (Random.int 10000)) in
+  input_bitonic_block := inp ;
+  let t0 = Unix.gettimeofday () in
+  expected_bitonic_block := ocaml_sort inp n ;
+  let t1 = Unix.gettimeofday () in
+  ((t1 -. t0) *. 1000.0, true)
+
+let init_odd_even_data () =
+  let n = min 512 cfg.size in
+  sort_size_odd_even := n ;
+  Random.init 42 ;
+  let inp = Array.init n (fun _ -> Int32.of_int (Random.int 10000)) in
+  input_odd_even := inp ;
+  let t0 = Unix.gettimeofday () in
+  expected_odd_even := ocaml_sort inp n ;
+  let t1 = Unix.gettimeofday () in
+  ((t1 -. t0) *. 1000.0, true)
+
+(* ========== Sarek kernels ========== *)
+
 (** Bitonic sort step - one comparison/swap pass *)
 let bitonic_sort_step_kernel =
   [%kernel
@@ -187,20 +242,20 @@ let odd_even_step_kernel =
         end
       end]
 
+(* ========== Device test runners ========== *)
+
 (** Run global bitonic sort test *)
 let run_bitonic_sort_global dev =
-  (* Size must be power of 2 for bitonic sort *)
-  let log2n = int_of_float (log (float_of_int cfg.size) /. log 2.0) in
-  let n = 1 lsl log2n in
+  let n = !sort_size_global in
+  let inp = !input_bitonic_global in
+  let exp = !expected_bitonic_global in
+
   let data = Vector.create Vector.int32 n in
 
-  (* Initialize with random values *)
-  Random.init 42 ;
   for i = 0 to n - 1 do
-    Mem.set data i (Int32.of_int (Random.int 10000))
+    Mem.set data i inp.(i)
   done ;
 
-  (* Sort using bitonic sort *)
   ignore (Sarek.Kirc.gen bitonic_sort_step_kernel dev) ;
   let block_size = Test_helpers.get_block_size cfg dev in
   let blocks = (n + block_size - 1) / block_size in
@@ -208,18 +263,11 @@ let run_bitonic_sort_global dev =
   let grid = {Kernel.gridX = blocks; gridY = 1; gridZ = 1} in
 
   let t0 = Unix.gettimeofday () in
-  (* Outer loop: stages *)
   let k = ref 2 in
   while !k <= n do
-    (* Inner loop: steps within stage *)
     let j = ref (!k / 2) in
     while !j > 0 do
-      Sarek.Kirc.run
-        bitonic_sort_step_kernel
-        (data, !j, !k, n)
-        (block, grid)
-        0
-        dev ;
+      Sarek.Kirc.run bitonic_sort_step_kernel (data, !j, !k, n) (block, grid) 0 dev ;
       Devices.flush dev () ;
       j := !j / 2
     done ;
@@ -236,6 +284,10 @@ let run_bitonic_sort_global dev =
       for i = 0 to n - 2 do
         if Mem.get data i > Mem.get data (i + 1) then incr errors
       done ;
+      (* Also check first few values match expected *)
+      for i = 0 to min 10 (n - 1) do
+        if Mem.get data i <> exp.(i) then incr errors
+      done ;
       !errors = 0
     end
     else true
@@ -245,13 +297,13 @@ let run_bitonic_sort_global dev =
 (** Run block-level bitonic sort test - sorts 16 elements *)
 let run_bitonic_sort_block dev =
   let n = 16 in
-  (* Fixed to 16 elements for unrolled supersteps *)
+  let inp = !input_bitonic_block in
+  let exp = !expected_bitonic_block in
+
   let data = Vector.create Vector.int32 n in
 
-  (* Initialize with random values *)
-  Random.init 42 ;
   for i = 0 to n - 1 do
-    Mem.set data i (Int32.of_int (Random.int 10000))
+    Mem.set data i inp.(i)
   done ;
 
   ignore (Sarek.Kirc.gen bitonic_sort_block_kernel dev) ;
@@ -280,6 +332,9 @@ let run_bitonic_sort_block dev =
           incr errors
         end
       done ;
+      for i = 0 to n - 1 do
+        if Mem.get data i <> exp.(i) then incr errors
+      done ;
       !errors = 0
     end
     else true
@@ -288,13 +343,14 @@ let run_bitonic_sort_block dev =
 
 (** Run odd-even transposition sort test *)
 let run_odd_even_sort dev =
-  let n = min 512 cfg.size in
+  let n = !sort_size_odd_even in
+  let inp = !input_odd_even in
+  let exp = !expected_odd_even in
+
   let data = Vector.create Vector.int32 n in
 
-  (* Initialize with random values *)
-  Random.init 42 ;
   for i = 0 to n - 1 do
-    Mem.set data i (Int32.of_int (Random.int 10000))
+    Mem.set data i inp.(i)
   done ;
 
   ignore (Sarek.Kirc.gen odd_even_step_kernel dev) ;
@@ -304,7 +360,6 @@ let run_odd_even_sort dev =
   let grid = {Kernel.gridX = max 1 blocks; gridY = 1; gridZ = 1} in
 
   let t0 = Unix.gettimeofday () in
-  (* n phases for complete sort *)
   for phase = 0 to n - 1 do
     let phase_mod = phase mod 2 in
     Sarek.Kirc.run odd_even_step_kernel (data, phase_mod, n) (block, grid) 0 dev ;
@@ -321,6 +376,9 @@ let run_odd_even_sort dev =
       for i = 0 to n - 2 do
         if Mem.get data i > Mem.get data (i + 1) then incr errors
       done ;
+      for i = 0 to min 10 (n - 1) do
+        if Mem.get data i <> exp.(i) then incr errors
+      done ;
       !errors = 0
     end
     else true
@@ -332,7 +390,6 @@ let () =
   cfg.dev_id <- c.dev_id ;
   cfg.use_interpreter <- c.use_interpreter ;
   cfg.use_native <- c.use_native ;
-  cfg.use_native_parallel <- c.use_native_parallel ;
   cfg.benchmark_all <- c.benchmark_all ;
   cfg.benchmark_devices <- c.benchmark_devices ;
   cfg.verify <- c.verify ;
@@ -347,19 +404,22 @@ let () =
   Test_helpers.print_devices devs ;
 
   if cfg.benchmark_all then begin
-    Test_helpers.benchmark_all
+    Test_helpers.benchmark_with_baseline
       ~device_ids:cfg.benchmark_devices
       devs
+      ~baseline:init_bitonic_global_data
       run_bitonic_sort_global
       "Bitonic sort (global)" ;
-    Test_helpers.benchmark_all
+    Test_helpers.benchmark_with_baseline
       ~device_ids:cfg.benchmark_devices
       devs
+      ~baseline:init_bitonic_block_data
       run_bitonic_sort_block
       "Bitonic sort (block)" ;
-    Test_helpers.benchmark_all
+    Test_helpers.benchmark_with_baseline
       ~device_ids:cfg.benchmark_devices
       devs
+      ~baseline:init_odd_even_data
       run_odd_even_sort
       "Odd-even sort"
   end
@@ -368,25 +428,34 @@ let () =
     Printf.printf "Using device: %s\n%!" dev.Devices.general_info.Devices.name ;
     Printf.printf "Testing sorting algorithms\n%!" ;
 
+    let baseline_ms, _ = init_bitonic_global_data () in
+    Printf.printf "\nOCaml baseline (bitonic global): %.4f ms\n%!" baseline_ms ;
     Printf.printf "\nBitonic sort (global):\n%!" ;
     let time_ms, ok = run_bitonic_sort_global dev in
     Printf.printf
-      "  Time: %.4f ms, %s\n%!"
+      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
       time_ms
+      (baseline_ms /. time_ms)
       (if ok then "PASSED" else "FAILED") ;
 
+    let baseline_ms, _ = init_bitonic_block_data () in
+    Printf.printf "\nOCaml baseline (bitonic block): %.4f ms\n%!" baseline_ms ;
     Printf.printf "\nBitonic sort (block-level):\n%!" ;
     let time_ms, ok = run_bitonic_sort_block dev in
     Printf.printf
-      "  Time: %.4f ms, %s\n%!"
+      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
       time_ms
+      (baseline_ms /. time_ms)
       (if ok then "PASSED" else "FAILED") ;
 
+    let baseline_ms, _ = init_odd_even_data () in
+    Printf.printf "\nOCaml baseline (odd-even): %.4f ms\n%!" baseline_ms ;
     Printf.printf "\nOdd-even transposition sort:\n%!" ;
     let time_ms, ok = run_odd_even_sort dev in
     Printf.printf
-      "  Time: %.4f ms, %s\n%!"
+      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
       time_ms
+      (baseline_ms /. time_ms)
       (if ok then "PASSED" else "FAILED") ;
 
     print_endline "\nSort tests PASSED"

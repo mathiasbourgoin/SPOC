@@ -9,6 +9,129 @@ open Spoc
 
 let cfg = Test_helpers.default_config ()
 
+(* ========== Pure OCaml baselines ========== *)
+
+let ocaml_trig input sin_out cos_out tan_out n =
+  for i = 0 to n - 1 do
+    let x = input.(i) in
+    sin_out.(i) <- sin x ;
+    cos_out.(i) <- cos x ;
+    tan_out.(i) <- tan x
+  done
+
+let ocaml_exp_log input exp_out log_out log10_out n =
+  for i = 0 to n - 1 do
+    let x = input.(i) in
+    exp_out.(i) <- exp x ;
+    if x > 0.0 then begin
+      log_out.(i) <- log x ;
+      log10_out.(i) <- log10 x
+    end
+    else begin
+      log_out.(i) <- 0.0 ;
+      log10_out.(i) <- 0.0
+    end
+  done
+
+let ocaml_power base exponent pow_out sqrt_out n =
+  for i = 0 to n - 1 do
+    let b = base.(i) in
+    let e = exponent.(i) in
+    pow_out.(i) <- b ** e ;
+    if b >= 0.0 then sqrt_out.(i) <- sqrt b else sqrt_out.(i) <- 0.0
+  done
+
+let ocaml_complex_math x y output n =
+  for i = 0 to n - 1 do
+    let a = x.(i) in
+    let b = y.(i) in
+    let r = sqrt ((a *. a) +. (b *. b)) in
+    let decay = exp (-0.1 *. (a +. b)) in
+    let oscillation = cos (a *. b) in
+    output.(i) <- r *. decay *. oscillation
+  done
+
+(* ========== Shared test data ========== *)
+
+let input_trig = ref [||]
+let expected_sin = ref [||]
+let expected_cos = ref [||]
+let expected_tan = ref [||]
+
+let input_exp = ref [||]
+let expected_exp = ref [||]
+let expected_log = ref [||]
+let expected_log10 = ref [||]
+
+let input_base = ref [||]
+let input_exponent = ref [||]
+let expected_pow = ref [||]
+let expected_sqrt = ref [||]
+
+let input_x = ref [||]
+let input_y = ref [||]
+let expected_complex = ref [||]
+
+let init_trig_data () =
+  let n = cfg.size in
+  let inp = Array.init n (fun i -> float_of_int i *. 0.01) in
+  let s = Array.make n 0.0 in
+  let c = Array.make n 0.0 in
+  let t = Array.make n 0.0 in
+  input_trig := inp ;
+  expected_sin := s ;
+  expected_cos := c ;
+  expected_tan := t ;
+  let t0 = Unix.gettimeofday () in
+  ocaml_trig inp s c t n ;
+  let t1 = Unix.gettimeofday () in
+  ((t1 -. t0) *. 1000.0, true)
+
+let init_exp_log_data () =
+  let n = cfg.size in
+  let inp = Array.init n (fun i -> float_of_int ((i mod 86) + 1) *. 0.1) in
+  let e = Array.make n 0.0 in
+  let l = Array.make n 0.0 in
+  let l10 = Array.make n 0.0 in
+  input_exp := inp ;
+  expected_exp := e ;
+  expected_log := l ;
+  expected_log10 := l10 ;
+  let t0 = Unix.gettimeofday () in
+  ocaml_exp_log inp e l l10 n ;
+  let t1 = Unix.gettimeofday () in
+  ((t1 -. t0) *. 1000.0, true)
+
+let init_power_data () =
+  let n = cfg.size in
+  let b = Array.init n (fun i -> float_of_int (i + 1) *. 0.1) in
+  let e = Array.make n 2.0 in
+  let p = Array.make n 0.0 in
+  let s = Array.make n 0.0 in
+  input_base := b ;
+  input_exponent := e ;
+  expected_pow := p ;
+  expected_sqrt := s ;
+  let t0 = Unix.gettimeofday () in
+  ocaml_power b e p s n ;
+  let t1 = Unix.gettimeofday () in
+  ((t1 -. t0) *. 1000.0, true)
+
+let init_complex_data () =
+  let n = cfg.size in
+  let x = Array.init n (fun i -> float_of_int (i mod 10) *. 0.5) in
+  let y = Array.init n (fun i -> float_of_int ((i + 5) mod 10) *. 0.5) in
+  let o = Array.make n 0.0 in
+  input_x := x ;
+  input_y := y ;
+  expected_complex := o ;
+  let t0 = Unix.gettimeofday () in
+  ocaml_complex_math x y o n ;
+  let t1 = Unix.gettimeofday () in
+  ((t1 -. t0) *. 1000.0, true)
+
+(* ========== Sarek kernels ========== *)
+
 (** Trigonometric functions kernel *)
 let trig_kernel =
   [%kernel
@@ -63,30 +186,6 @@ let power_kernel =
         if b >= 0.0 then sqrt_out.(tid) <- sqrt b else sqrt_out.(tid) <- 0.0
       end]
 
-(** Rounding functions *)
-let rounding_kernel =
-  [%kernel
-    fun (input : float32 vector)
-        (floor_out : float32 vector)
-        (ceil_out : float32 vector)
-        (n : int32) ->
-      let tid = thread_idx_x + (block_dim_x * block_idx_x) in
-      if tid < n then begin
-        let x = input.(tid) in
-        floor_out.(tid) <- floor x ;
-        ceil_out.(tid) <- ceil x
-      end]
-
-(** Abs and sign functions *)
-let abs_kernel =
-  [%kernel
-    fun (input : float32 vector) (abs_out : float32 vector) (n : int32) ->
-      let tid = thread_idx_x + (block_dim_x * block_idx_x) in
-      if tid < n then begin
-        let x = input.(tid) in
-        if x < 0.0 then abs_out.(tid) <- -.x else abs_out.(tid) <- x
-      end]
-
 (** Complex math expression combining multiple intrinsics *)
 let complex_math_kernel =
   [%kernel
@@ -105,17 +204,22 @@ let complex_math_kernel =
         output.(tid) <- r *. decay *. oscillation
       end]
 
+(* ========== Device test runners ========== *)
+
 (** Run trigonometric test *)
 let run_trig_test dev =
   let n = cfg.size in
+  let inp = !input_trig in
+  let exp_sin = !expected_sin in
+  let exp_cos = !expected_cos in
+
   let input = Vector.create Vector.float32 n in
   let sin_out = Vector.create Vector.float32 n in
   let cos_out = Vector.create Vector.float32 n in
   let tan_out = Vector.create Vector.float32 n in
 
-  (* Initialize with angles *)
   for i = 0 to n - 1 do
-    Mem.set input i (float_of_int i *. 0.01) ;
+    Mem.set input i inp.(i) ;
     Mem.set sin_out i 0.0 ;
     Mem.set cos_out i 0.0 ;
     Mem.set tan_out i 0.0
@@ -145,11 +249,10 @@ let run_trig_test dev =
       Devices.flush dev () ;
       let errors = ref 0 in
       for i = 0 to n - 1 do
-        let x = Mem.get input i in
         let s = Mem.get sin_out i in
         let c = Mem.get cos_out i in
-        if abs_float (s -. sin x) > 0.001 || abs_float (c -. cos x) > 0.001 then
-          incr errors
+        if abs_float (s -. exp_sin.(i)) > 0.001 || abs_float (c -. exp_cos.(i)) > 0.001
+        then incr errors
       done ;
       !errors = 0
     end
@@ -160,15 +263,17 @@ let run_trig_test dev =
 (** Run exp/log test *)
 let run_exp_log_test dev =
   let n = cfg.size in
+  let inp = !input_exp in
+  let exp_expected = !expected_exp in
+  let log_expected = !expected_log in
+
   let input = Vector.create Vector.float32 n in
   let exp_out = Vector.create Vector.float32 n in
   let log_out = Vector.create Vector.float32 n in
   let log10_out = Vector.create Vector.float32 n in
 
-  (* Initialize with values in safe range for float32 exp (max ~88) and log (positive) *)
   for i = 0 to n - 1 do
-    (* Use modulo to keep values in range [0.1, 8.7] for exp, all positive for log *)
-    Mem.set input i (float_of_int ((i mod 86) + 1) *. 0.1) ;
+    Mem.set input i inp.(i) ;
     Mem.set exp_out i 0.0 ;
     Mem.set log_out i 0.0 ;
     Mem.set log10_out i 0.0
@@ -197,37 +302,16 @@ let run_exp_log_test dev =
       Mem.to_cpu log_out () ;
       Devices.flush dev () ;
       let errors = ref 0 in
-      (* Use relative error for exp (values can be very large) *)
       let rel_err a b =
         if abs_float b < 1e-6 then abs_float (a -. b)
         else abs_float (a -. b) /. abs_float b
       in
       for i = 0 to n - 1 do
-        let x = Mem.get input i in
         let e = Mem.get exp_out i in
         let l = Mem.get log_out i in
-        let exp_expected = exp x in
-        let log_expected = log x in
-        (* float32 has ~7 decimal digits of precision, use 1e-5 relative tolerance *)
-        let exp_rel_err = rel_err e exp_expected in
-        let log_rel_err = rel_err l log_expected in
-        if exp_rel_err > 1e-5 || log_rel_err > 1e-5 then begin
-          if !errors < 5 then
-            Printf.printf
-              "  [%d] x=%.4f exp: got %.4f expected %.4f (rel_err=%.2e), log: \
-               got %.4f expected %.4f (rel_err=%.2e)\n"
-              i
-              x
-              e
-              exp_expected
-              exp_rel_err
-              l
-              log_expected
-              log_rel_err ;
-          incr errors
-        end
+        if rel_err e exp_expected.(i) > 1e-5 || rel_err l log_expected.(i) > 1e-5
+        then incr errors
       done ;
-      if !errors > 0 then Printf.printf "  Total errors: %d\n" !errors ;
       !errors = 0
     end
     else true
@@ -237,15 +321,19 @@ let run_exp_log_test dev =
 (** Run power test *)
 let run_power_test dev =
   let n = cfg.size in
+  let inp_base = !input_base in
+  let inp_exp = !input_exponent in
+  let pow_expected = !expected_pow in
+  let sqrt_expected = !expected_sqrt in
+
   let base = Vector.create Vector.float32 n in
   let exponent = Vector.create Vector.float32 n in
   let pow_out = Vector.create Vector.float32 n in
   let sqrt_out = Vector.create Vector.float32 n in
 
-  (* Initialize *)
   for i = 0 to n - 1 do
-    Mem.set base i (float_of_int (i + 1) *. 0.1) ;
-    Mem.set exponent i 2.0 ;
+    Mem.set base i inp_base.(i) ;
+    Mem.set exponent i inp_exp.(i) ;
     Mem.set pow_out i 0.0 ;
     Mem.set sqrt_out i 0.0
   done ;
@@ -273,20 +361,15 @@ let run_power_test dev =
       Mem.to_cpu sqrt_out () ;
       Devices.flush dev () ;
       let errors = ref 0 in
-      (* Use relative error for pow (values can be very large) *)
       let rel_err a b =
         if abs_float b < 1e-6 then abs_float (a -. b)
         else abs_float (a -. b) /. abs_float b
       in
       for i = 0 to n - 1 do
-        let b = Mem.get base i in
         let p = Mem.get pow_out i in
         let s = Mem.get sqrt_out i in
-        let pow_expected = b ** 2.0 in
-        let sqrt_expected = sqrt b in
-        (* float32 has ~7 decimal digits of precision, use 1e-5 relative tolerance *)
-        if rel_err p pow_expected > 1e-5 || rel_err s sqrt_expected > 1e-5 then
-          incr errors
+        if rel_err p pow_expected.(i) > 1e-5 || rel_err s sqrt_expected.(i) > 1e-5
+        then incr errors
       done ;
       !errors = 0
     end
@@ -297,13 +380,17 @@ let run_power_test dev =
 (** Run complex math test *)
 let run_complex_math_test dev =
   let n = cfg.size in
+  let inp_x = !input_x in
+  let inp_y = !input_y in
+  let exp_out = !expected_complex in
+
   let x = Vector.create Vector.float32 n in
   let y = Vector.create Vector.float32 n in
   let output = Vector.create Vector.float32 n in
 
   for i = 0 to n - 1 do
-    Mem.set x i (float_of_int (i mod 10) *. 0.5) ;
-    Mem.set y i (float_of_int ((i + 5) mod 10) *. 0.5) ;
+    Mem.set x i inp_x.(i) ;
+    Mem.set y i inp_y.(i) ;
     Mem.set output i 0.0
   done ;
 
@@ -325,13 +412,8 @@ let run_complex_math_test dev =
       Devices.flush dev () ;
       let errors = ref 0 in
       for i = 0 to n - 1 do
-        let a = Mem.get x i in
-        let b = Mem.get y i in
-        let expected =
-          sqrt ((a *. a) +. (b *. b)) *. exp (-0.1 *. (a +. b)) *. cos (a *. b)
-        in
         let got = Mem.get output i in
-        if abs_float (got -. expected) > 0.01 then incr errors
+        if abs_float (got -. exp_out.(i)) > 0.01 then incr errors
       done ;
       !errors = 0
     end
@@ -344,7 +426,6 @@ let () =
   cfg.dev_id <- c.dev_id ;
   cfg.use_interpreter <- c.use_interpreter ;
   cfg.use_native <- c.use_native ;
-  cfg.use_native_parallel <- c.use_native_parallel ;
   cfg.benchmark_all <- c.benchmark_all ;
   cfg.benchmark_devices <- c.benchmark_devices ;
   cfg.verify <- c.verify ;
@@ -359,24 +440,28 @@ let () =
   Test_helpers.print_devices devs ;
 
   if cfg.benchmark_all then begin
-    Test_helpers.benchmark_all
+    Test_helpers.benchmark_with_baseline
       ~device_ids:cfg.benchmark_devices
       devs
+      ~baseline:init_trig_data
       run_trig_test
       "Trigonometric (sin/cos/tan)" ;
-    Test_helpers.benchmark_all
+    Test_helpers.benchmark_with_baseline
       ~device_ids:cfg.benchmark_devices
       devs
+      ~baseline:init_exp_log_data
       run_exp_log_test
       "Exp/Log" ;
-    Test_helpers.benchmark_all
+    Test_helpers.benchmark_with_baseline
       ~device_ids:cfg.benchmark_devices
       devs
+      ~baseline:init_power_data
       run_power_test
       "Power/Sqrt" ;
-    Test_helpers.benchmark_all
+    Test_helpers.benchmark_with_baseline
       ~device_ids:cfg.benchmark_devices
       devs
+      ~baseline:init_complex_data
       run_complex_math_test
       "Complex math expression"
   end
@@ -385,32 +470,44 @@ let () =
     Printf.printf "Using device: %s\n%!" dev.Devices.general_info.Devices.name ;
     Printf.printf "Testing math intrinsics with size=%d\n%!" cfg.size ;
 
+    let baseline_ms, _ = init_trig_data () in
+    Printf.printf "\nOCaml baseline (trig): %.4f ms\n%!" baseline_ms ;
     Printf.printf "\nTrigonometric functions:\n%!" ;
     let time_ms, ok = run_trig_test dev in
     Printf.printf
-      "  Time: %.4f ms, %s\n%!"
+      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
       time_ms
+      (baseline_ms /. time_ms)
       (if ok then "PASSED" else "FAILED") ;
 
+    let baseline_ms, _ = init_exp_log_data () in
+    Printf.printf "\nOCaml baseline (exp/log): %.4f ms\n%!" baseline_ms ;
     Printf.printf "\nExp/Log functions:\n%!" ;
     let time_ms, ok = run_exp_log_test dev in
     Printf.printf
-      "  Time: %.4f ms, %s\n%!"
+      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
       time_ms
+      (baseline_ms /. time_ms)
       (if ok then "PASSED" else "FAILED") ;
 
+    let baseline_ms, _ = init_power_data () in
+    Printf.printf "\nOCaml baseline (power): %.4f ms\n%!" baseline_ms ;
     Printf.printf "\nPower/Sqrt functions:\n%!" ;
     let time_ms, ok = run_power_test dev in
     Printf.printf
-      "  Time: %.4f ms, %s\n%!"
+      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
       time_ms
+      (baseline_ms /. time_ms)
       (if ok then "PASSED" else "FAILED") ;
 
+    let baseline_ms, _ = init_complex_data () in
+    Printf.printf "\nOCaml baseline (complex): %.4f ms\n%!" baseline_ms ;
     Printf.printf "\nComplex math expression:\n%!" ;
     let time_ms, ok = run_complex_math_test dev in
     Printf.printf
-      "  Time: %.4f ms, %s\n%!"
+      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
       time_ms
+      (baseline_ms /. time_ms)
       (if ok then "PASSED" else "FAILED") ;
 
     print_endline "\nMath intrinsics tests PASSED"

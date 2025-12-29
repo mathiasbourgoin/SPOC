@@ -9,6 +9,75 @@ open Spoc
 
 let cfg = Test_helpers.default_config ()
 
+(* ========== Pure OCaml baselines ========== *)
+
+let ocaml_transpose input output width height =
+  for y = 0 to height - 1 do
+    for x = 0 to width - 1 do
+      let in_idx = (y * width) + x in
+      let out_idx = (x * height) + y in
+      output.(out_idx) <- input.(in_idx)
+    done
+  done
+
+(* ========== Shared test data ========== *)
+
+let input_naive = ref [||]
+let expected_naive = ref [||]
+let matrix_dim_naive = ref 0
+
+let input_coalesced = ref [||]
+let expected_coalesced = ref [||]
+let matrix_dim_coalesced = ref 0
+
+let input_rect = ref [||]
+let expected_rect = ref [||]
+
+let init_naive_data () =
+  let dim = Int32.to_int (Int32.of_float (sqrt (float_of_int cfg.size))) in
+  matrix_dim_naive := dim ;
+  let n = dim * dim in
+  let inp = Array.init n (fun i -> float_of_int i) in
+  let out = Array.make n 0.0 in
+  input_naive := inp ;
+  expected_naive := out ;
+  let t0 = Unix.gettimeofday () in
+  ocaml_transpose inp out dim dim ;
+  let t1 = Unix.gettimeofday () in
+  ((t1 -. t0) *. 1000.0, true)
+
+let init_coalesced_data () =
+  let tile_dim = 16 in
+  let dim =
+    (Int32.to_int (Int32.of_float (sqrt (float_of_int cfg.size))) + tile_dim - 1)
+    / tile_dim * tile_dim
+  in
+  matrix_dim_coalesced := dim ;
+  let n = dim * dim in
+  let inp = Array.init n (fun i -> float_of_int i) in
+  let out = Array.make n 0.0 in
+  input_coalesced := inp ;
+  expected_coalesced := out ;
+  let t0 = Unix.gettimeofday () in
+  ocaml_transpose inp out dim dim ;
+  let t1 = Unix.gettimeofday () in
+  ((t1 -. t0) *. 1000.0, true)
+
+let init_rect_data () =
+  let width = 64 in
+  let height = 32 in
+  let n = width * height in
+  let inp = Array.init n (fun i -> float_of_int ((i / width * 100) + (i mod width))) in
+  let out = Array.make n 0.0 in
+  input_rect := inp ;
+  expected_rect := out ;
+  let t0 = Unix.gettimeofday () in
+  ocaml_transpose inp out width height ;
+  let t1 = Unix.gettimeofday () in
+  ((t1 -. t0) *. 1000.0, true)
+
+(* ========== Sarek kernels ========== *)
+
 (** Naive matrix transpose - poor memory access pattern *)
 let transpose_naive_kernel =
   [%kernel
@@ -50,23 +119,23 @@ let transpose_coalesced_kernel =
       if out_x < height && out_y < width then
         output.((out_y * height) + out_x) <- tile.((tx * (tile_dim + 1l)) + ty)]
 
+(* ========== Device test runners ========== *)
+
 (** Run naive transpose test *)
 let run_transpose_naive dev =
-  let dim = Int32.to_int (Int32.of_float (sqrt (float_of_int cfg.size))) in
+  let dim = !matrix_dim_naive in
   let width = dim in
   let height = dim in
   let n = width * height in
+  let inp = !input_naive in
+  let exp = !expected_naive in
 
   let input = Vector.create Vector.float32 n in
   let output = Vector.create Vector.float32 n in
 
-  (* Initialize with row-major indices *)
-  for y = 0 to height - 1 do
-    for x = 0 to width - 1 do
-      let idx = (y * width) + x in
-      Mem.set input idx (float_of_int idx) ;
-      Mem.set output idx 0.0
-    done
+  for i = 0 to n - 1 do
+    Mem.set input i inp.(i) ;
+    Mem.set output i 0.0
   done ;
 
   ignore (Sarek.Kirc.gen transpose_naive_kernel dev) ;
@@ -92,14 +161,8 @@ let run_transpose_naive dev =
       Mem.to_cpu output () ;
       Devices.flush dev () ;
       let errors = ref 0 in
-      for y = 0 to height - 1 do
-        for x = 0 to width - 1 do
-          let in_idx = (y * width) + x in
-          let out_idx = (x * height) + y in
-          let expected = float_of_int in_idx in
-          let got = Mem.get output out_idx in
-          if abs_float (got -. expected) > 0.001 then incr errors
-        done
+      for i = 0 to n - 1 do
+        if abs_float (Mem.get output i -. exp.(i)) > 0.001 then incr errors
       done ;
       !errors = 0
     end
@@ -109,29 +172,23 @@ let run_transpose_naive dev =
 
 (** Run coalesced transpose test *)
 let run_transpose_coalesced dev =
-  let tile_dim = 16 in
-  let dim =
-    (Int32.to_int (Int32.of_float (sqrt (float_of_int cfg.size))) + tile_dim - 1)
-    / tile_dim * tile_dim
-  in
+  let dim = !matrix_dim_coalesced in
   let width = dim in
   let height = dim in
   let n = width * height in
+  let inp = !input_coalesced in
+  let exp = !expected_coalesced in
 
   let input = Vector.create Vector.float32 n in
   let output = Vector.create Vector.float32 n in
 
-  (* Initialize with row-major indices *)
-  for y = 0 to height - 1 do
-    for x = 0 to width - 1 do
-      let idx = (y * width) + x in
-      Mem.set input idx (float_of_int idx) ;
-      Mem.set output idx 0.0
-    done
+  for i = 0 to n - 1 do
+    Mem.set input i inp.(i) ;
+    Mem.set output i 0.0
   done ;
 
   ignore (Sarek.Kirc.gen transpose_coalesced_kernel dev) ;
-  let block_size = tile_dim in
+  let block_size = 16 in
   let blocks_x = width / block_size in
   let blocks_y = height / block_size in
   let block = {Kernel.blockX = block_size; blockY = block_size; blockZ = 1} in
@@ -153,23 +210,16 @@ let run_transpose_coalesced dev =
       Mem.to_cpu output () ;
       Devices.flush dev () ;
       let errors = ref 0 in
-      for y = 0 to height - 1 do
-        for x = 0 to width - 1 do
-          let in_idx = (y * width) + x in
-          let out_idx = (x * height) + y in
-          let expected = float_of_int in_idx in
-          let got = Mem.get output out_idx in
-          if abs_float (got -. expected) > 0.001 then begin
-            if !errors < 10 then
-              Printf.printf
-                "  Mismatch at (%d,%d): expected %.0f, got %.0f\n"
-                x
-                y
-                expected
-                got ;
-            incr errors
-          end
-        done
+      for i = 0 to n - 1 do
+        if abs_float (Mem.get output i -. exp.(i)) > 0.001 then begin
+          if !errors < 10 then
+            Printf.printf
+              "  Mismatch at %d: expected %.0f, got %.0f\n"
+              i
+              exp.(i)
+              (Mem.get output i) ;
+          incr errors
+        end
       done ;
       !errors = 0
     end
@@ -182,17 +232,15 @@ let run_transpose_rectangular dev =
   let width = 64 in
   let height = 32 in
   let n = width * height in
+  let inp = !input_rect in
+  let exp = !expected_rect in
 
   let input = Vector.create Vector.float32 n in
   let output = Vector.create Vector.float32 n in
 
-  (* Initialize *)
-  for y = 0 to height - 1 do
-    for x = 0 to width - 1 do
-      let idx = (y * width) + x in
-      Mem.set input idx (float_of_int ((y * 100) + x)) ;
-      Mem.set output idx 0.0
-    done
+  for i = 0 to n - 1 do
+    Mem.set input i inp.(i) ;
+    Mem.set output i 0.0
   done ;
 
   ignore (Sarek.Kirc.gen transpose_naive_kernel dev) ;
@@ -218,14 +266,8 @@ let run_transpose_rectangular dev =
       Mem.to_cpu output () ;
       Devices.flush dev () ;
       let errors = ref 0 in
-      for y = 0 to height - 1 do
-        for x = 0 to width - 1 do
-          let in_idx = (y * width) + x in
-          let out_idx = (x * height) + y in
-          let expected = Mem.get input in_idx in
-          let got = Mem.get output out_idx in
-          if abs_float (got -. expected) > 0.001 then incr errors
-        done
+      for i = 0 to n - 1 do
+        if abs_float (Mem.get output i -. exp.(i)) > 0.001 then incr errors
       done ;
       !errors = 0
     end
@@ -238,7 +280,6 @@ let () =
   cfg.dev_id <- c.dev_id ;
   cfg.use_interpreter <- c.use_interpreter ;
   cfg.use_native <- c.use_native ;
-  cfg.use_native_parallel <- c.use_native_parallel ;
   cfg.benchmark_all <- c.benchmark_all ;
   cfg.benchmark_devices <- c.benchmark_devices ;
   cfg.verify <- c.verify ;
@@ -256,19 +297,22 @@ let () =
   Printf.printf "Matrix dimensions: %dx%d\n%!" dim dim ;
 
   if cfg.benchmark_all then begin
-    Test_helpers.benchmark_all
+    Test_helpers.benchmark_with_baseline
       ~device_ids:cfg.benchmark_devices
       devs
+      ~baseline:init_naive_data
       run_transpose_naive
       "Transpose (naive)" ;
-    Test_helpers.benchmark_all
+    Test_helpers.benchmark_with_baseline
       ~device_ids:cfg.benchmark_devices
       devs
+      ~baseline:init_coalesced_data
       run_transpose_coalesced
       "Transpose (coalesced)" ;
-    Test_helpers.benchmark_all
+    Test_helpers.benchmark_with_baseline
       ~device_ids:cfg.benchmark_devices
       devs
+      ~baseline:init_rect_data
       run_transpose_rectangular
       "Transpose (rectangular)"
   end
@@ -276,25 +320,34 @@ let () =
     let dev = Test_helpers.get_device cfg devs in
     Printf.printf "Using device: %s\n%!" dev.Devices.general_info.Devices.name ;
 
+    let baseline_ms, _ = init_naive_data () in
+    Printf.printf "\nOCaml baseline (naive): %.4f ms\n%!" baseline_ms ;
     Printf.printf "\nNaive transpose:\n%!" ;
     let time_ms, ok = run_transpose_naive dev in
     Printf.printf
-      "  Time: %.4f ms, %s\n%!"
+      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
       time_ms
+      (baseline_ms /. time_ms)
       (if ok then "PASSED" else "FAILED") ;
 
+    let baseline_ms, _ = init_coalesced_data () in
+    Printf.printf "\nOCaml baseline (coalesced): %.4f ms\n%!" baseline_ms ;
     Printf.printf "\nCoalesced transpose:\n%!" ;
     let time_ms, ok = run_transpose_coalesced dev in
     Printf.printf
-      "  Time: %.4f ms, %s\n%!"
+      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
       time_ms
+      (baseline_ms /. time_ms)
       (if ok then "PASSED" else "FAILED") ;
 
+    let baseline_ms, _ = init_rect_data () in
+    Printf.printf "\nOCaml baseline (rect): %.4f ms\n%!" baseline_ms ;
     Printf.printf "\nRectangular transpose:\n%!" ;
     let time_ms, ok = run_transpose_rectangular dev in
     Printf.printf
-      "  Time: %.4f ms, %s\n%!"
+      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
       time_ms
+      (baseline_ms /. time_ms)
       (if ok then "PASSED" else "FAILED") ;
 
     print_endline "\nTranspose tests PASSED"

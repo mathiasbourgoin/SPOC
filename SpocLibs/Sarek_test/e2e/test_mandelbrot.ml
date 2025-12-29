@@ -11,7 +11,73 @@ let cfg = Test_helpers.default_config ()
 
 let max_iter = ref 256
 
-(** Run basic Mandelbrot test *)
+(* ========== Pure OCaml baselines ========== *)
+
+let ocaml_mandelbrot output width height max_iter =
+  for py = 0 to height - 1 do
+    for px = 0 to width - 1 do
+      let x0 = (4.0 *. float_of_int px /. float_of_int width) -. 2.5 in
+      let y0 = (3.0 *. float_of_int py /. float_of_int height) -. 1.5 in
+      let x = ref 0.0 in
+      let y = ref 0.0 in
+      let iter = ref 0 in
+      while (!x *. !x) +. (!y *. !y) <= 4.0 && !iter < max_iter do
+        let xtemp = (!x *. !x) -. (!y *. !y) +. x0 in
+        y := (2.0 *. !x *. !y) +. y0 ;
+        x := xtemp ;
+        incr iter
+      done ;
+      output.((py * width) + px) <- Int32.of_int !iter
+    done
+  done
+
+let ocaml_julia output width height c_real c_imag max_iter =
+  for py = 0 to height - 1 do
+    for px = 0 to width - 1 do
+      let x = ref ((4.0 *. float_of_int px /. float_of_int width) -. 2.0) in
+      let y = ref ((4.0 *. float_of_int py /. float_of_int height) -. 2.0) in
+      let iter = ref 0 in
+      while (!x *. !x) +. (!y *. !y) <= 4.0 && !iter < max_iter do
+        let xtemp = (!x *. !x) -. (!y *. !y) +. c_real in
+        y := (2.0 *. !x *. !y) +. c_imag ;
+        x := xtemp ;
+        incr iter
+      done ;
+      output.((py * width) + px) <- Int32.of_int !iter
+    done
+  done
+
+(* ========== Shared test data ========== *)
+
+let expected_mandelbrot = ref [||]
+let expected_julia = ref [||]
+let image_dim = ref 0
+
+let init_mandelbrot_data () =
+  let dim = int_of_float (sqrt (float_of_int cfg.size)) in
+  image_dim := dim ;
+  let n = dim * dim in
+  let output = Array.make n 0l in
+  expected_mandelbrot := output ;
+  let t0 = Unix.gettimeofday () in
+  ocaml_mandelbrot output dim dim !max_iter ;
+  let t1 = Unix.gettimeofday () in
+  ((t1 -. t0) *. 1000.0, true)
+
+let init_julia_data () =
+  let dim = !image_dim in
+  let n = dim * dim in
+  let output = Array.make n 0l in
+  expected_julia := output ;
+  let c_real = -0.7 in
+  let c_imag = 0.27015 in
+  let t0 = Unix.gettimeofday () in
+  ocaml_julia output dim dim c_real c_imag !max_iter ;
+  let t1 = Unix.gettimeofday () in
+  ((t1 -. t0) *. 1000.0, true)
+
+(* ========== Device test runners ========== *)
+
 let run_mandelbrot_test dev =
   let mandelbrot_kernel =
     [%kernel
@@ -23,7 +89,6 @@ let run_mandelbrot_test dev =
         let px = thread_idx_x + (block_dim_x * block_idx_x) in
         let py = thread_idx_y + (block_dim_y * block_idx_y) in
         if px < width && py < height then begin
-          (* Map pixel to complex plane: x in [-2.5, 1.0], y in [-1.5, 1.5] *)
           let x0 = (4.0 *. (float px /. float width)) -. 2.5 in
           let y0 = (3.0 *. (float py /. float height)) -. 1.5 in
           let x = mut 0.0 in
@@ -38,10 +103,11 @@ let run_mandelbrot_test dev =
           output.((py * width) + px) <- iter
         end]
   in
-  let dim = Int32.to_int (Int32.of_float (sqrt (float_of_int cfg.size))) in
+  let dim = !image_dim in
   let width = dim in
   let height = dim in
   let n = width * height in
+  let exp = !expected_mandelbrot in
 
   let output = Vector.create Vector.int32 n in
 
@@ -71,27 +137,17 @@ let run_mandelbrot_test dev =
     if cfg.verify then begin
       Mem.to_cpu output () ;
       Devices.flush dev () ;
-      (* Verify some known properties:
-         - Point (-1, 0) is in the Mandelbrot set (period-2 cycle)
-         - Mapping: x0 = 4.0 * px/width - 2.5, so px = (x0 + 2.5) / 4.0 * width
-           For x0 = -1: px = 1.5/4.0 * width = 0.375 * width
-         - y0 = 3.0 * py/height - 1.5, so for y0 = 0: py = 1.5/3.0 * height = 0.5 * height
-         - Points far from origin should escape quickly *)
-      let inside_x = width * 3 / 8 in
-      (* Maps to x0 = -1.0 *)
-      let inside_y = height / 2 in
-      (* Maps to y0 = 0.0 *)
-      let inside_iter = Mem.get output ((inside_y * width) + inside_x) in
-      let corner_iter = Mem.get output 0 in
-      (* (-2.5, -1.5) is outside *)
-      (* Point (-1, 0) should stay in set (high iterations), corner should escape fast *)
-      inside_iter >= Int32.of_int (!max_iter / 2) && corner_iter < 100l
+      let errors = ref 0 in
+      for i = 0 to min 1000 (n - 1) do
+        let got = Mem.get output i in
+        if got <> exp.(i) then incr errors
+      done ;
+      !errors = 0
     end
     else true
   in
   (time_ms, ok)
 
-(** Run Julia set test *)
 let run_julia_test dev =
   let julia_kernel =
     [%kernel
@@ -105,7 +161,6 @@ let run_julia_test dev =
         let px = thread_idx_x + (block_dim_x * block_idx_x) in
         let py = thread_idx_y + (block_dim_y * block_idx_y) in
         if px < width && py < height then begin
-          (* Map pixel to [-2, 2] x [-2, 2] *)
           let x = mut ((4.0 *. (float px /. float width)) -. 2.0) in
           let y = mut ((4.0 *. (float py /. float height)) -. 2.0) in
           let iter = mut 0l in
@@ -118,10 +173,11 @@ let run_julia_test dev =
           output.((py * width) + px) <- iter
         end]
   in
-  let dim = Int32.to_int (Int32.of_float (sqrt (float_of_int cfg.size))) in
+  let dim = !image_dim in
   let width = dim in
   let height = dim in
   let n = width * height in
+  let exp = !expected_julia in
 
   let output = Vector.create Vector.int32 n in
 
@@ -129,7 +185,6 @@ let run_julia_test dev =
     Mem.set output i 0l
   done ;
 
-  (* Classic Julia set constant *)
   let c_real = -0.7 in
   let c_imag = 0.27015 in
 
@@ -155,16 +210,12 @@ let run_julia_test dev =
     if cfg.verify then begin
       Mem.to_cpu output () ;
       Devices.flush dev () ;
-      (* Verify that we got a mix of iterations (not all same value) *)
-      let min_iter = ref 1000000l in
-      let max_iter_found = ref 0l in
-      for i = 0 to n - 1 do
-        let v = Mem.get output i in
-        if v < !min_iter then min_iter := v ;
-        if v > !max_iter_found then max_iter_found := v
+      let errors = ref 0 in
+      for i = 0 to min 1000 (n - 1) do
+        let got = Mem.get output i in
+        if got <> exp.(i) then incr errors
       done ;
-      (* Should have variation in iteration counts *)
-      !max_iter_found > Int32.add !min_iter 10l
+      !errors = 0
     end
     else true
   in
@@ -175,7 +226,6 @@ let () =
   cfg.dev_id <- c.dev_id ;
   cfg.use_interpreter <- c.use_interpreter ;
   cfg.use_native <- c.use_native ;
-  cfg.use_native_parallel <- c.use_native_parallel ;
   cfg.benchmark_all <- c.benchmark_all ;
   cfg.benchmark_devices <- c.benchmark_devices ;
   cfg.verify <- c.verify ;
@@ -189,18 +239,20 @@ let () =
   end ;
   Test_helpers.print_devices devs ;
 
-  let dim = Int32.to_int (Int32.of_float (sqrt (float_of_int cfg.size))) in
+  let dim = int_of_float (sqrt (float_of_int cfg.size)) in
   Printf.printf "Image dimensions: %dx%d, max_iter=%d\n%!" dim dim !max_iter ;
 
   if cfg.benchmark_all then begin
-    Test_helpers.benchmark_all
+    Test_helpers.benchmark_with_baseline
       ~device_ids:cfg.benchmark_devices
       devs
+      ~baseline:init_mandelbrot_data
       run_mandelbrot_test
       "Mandelbrot" ;
-    Test_helpers.benchmark_all
+    Test_helpers.benchmark_with_baseline
       ~device_ids:cfg.benchmark_devices
       devs
+      ~baseline:init_julia_data
       run_julia_test
       "Julia set"
   end
@@ -208,18 +260,24 @@ let () =
     let dev = Test_helpers.get_device cfg devs in
     Printf.printf "Using device: %s\n%!" dev.Devices.general_info.Devices.name ;
 
+    let baseline_ms, _ = init_mandelbrot_data () in
+    Printf.printf "\nOCaml baseline (Mandelbrot): %.4f ms\n%!" baseline_ms ;
     Printf.printf "\nMandelbrot:\n%!" ;
     let time_ms, ok = run_mandelbrot_test dev in
     Printf.printf
-      "  Time: %.4f ms, %s\n%!"
+      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
       time_ms
+      (baseline_ms /. time_ms)
       (if ok then "PASSED" else "FAILED") ;
 
+    let baseline_ms, _ = init_julia_data () in
+    Printf.printf "\nOCaml baseline (Julia): %.4f ms\n%!" baseline_ms ;
     Printf.printf "\nJulia set:\n%!" ;
     let time_ms, ok = run_julia_test dev in
     Printf.printf
-      "  Time: %.4f ms, %s\n%!"
+      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
       time_ms
+      (baseline_ms /. time_ms)
       (if ok then "PASSED" else "FAILED") ;
 
     print_endline "\nMandelbrot tests PASSED"
