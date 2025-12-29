@@ -227,6 +227,7 @@ let () =
   cfg.use_native <- c.use_native ;
   cfg.use_native_parallel <- c.use_native_parallel ;
   cfg.benchmark_all <- c.benchmark_all ;
+  cfg.benchmark_devices <- c.benchmark_devices ;
   cfg.verify <- c.verify ;
   cfg.size <- c.size ;
   cfg.block_size <- c.block_size ;
@@ -247,10 +248,12 @@ let () =
 
   if cfg.benchmark_all then begin
     Test_helpers.benchmark_all
+      ~device_ids:cfg.benchmark_devices
       devs
       run_matmul_naive
       "Matrix multiplication (naive)" ;
     Test_helpers.benchmark_all
+      ~device_ids:cfg.benchmark_devices
       devs
       run_matmul_tiled
       "Matrix multiplication (tiled)"

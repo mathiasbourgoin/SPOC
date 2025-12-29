@@ -158,6 +158,7 @@ let () =
   cfg.use_native <- c.use_native ;
   cfg.use_native_parallel <- c.use_native_parallel ;
   cfg.benchmark_all <- c.benchmark_all ;
+  cfg.benchmark_devices <- c.benchmark_devices ;
   cfg.verify <- c.verify ;
   cfg.size <- c.size ;
   cfg.block_size <- c.block_size ;
@@ -170,8 +171,13 @@ let () =
   Test_helpers.print_devices devs ;
 
   if cfg.benchmark_all then begin
-    Test_helpers.benchmark_all devs run_inclusive_scan_test "Inclusive scan" ;
     Test_helpers.benchmark_all
+      ~device_ids:cfg.benchmark_devices
+      devs
+      run_inclusive_scan_test
+      "Inclusive scan" ;
+    Test_helpers.benchmark_all
+      ~device_ids:cfg.benchmark_devices
       devs
       run_varying_scan_test
       "Scan with varying values"

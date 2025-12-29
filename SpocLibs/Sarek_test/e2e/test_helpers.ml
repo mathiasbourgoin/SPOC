@@ -13,6 +13,8 @@ type config = {
   mutable use_native : bool;
   mutable use_native_parallel : bool;
   mutable benchmark_all : bool;
+  mutable benchmark_devices : int list option;
+      (** None = all, Some ids = specific *)
   mutable verify : bool;
   mutable size : int;
   mutable block_size : int;
@@ -25,6 +27,7 @@ let default_config () =
     use_native = false;
     use_native_parallel = false;
     benchmark_all = false;
+    benchmark_devices = None;
     verify = true;
     size = 1024;
     block_size = 256;
@@ -38,8 +41,9 @@ let usage name extra_opts =
   Printf.printf "  --native      Use native CPU runtime device (sequential)\n" ;
   Printf.printf
     "  --native-parallel  Use native CPU runtime with parallel threads\n" ;
-  Printf.printf "  --benchmark   Run on all devices and compare times\n" ;
-  Printf.printf "  -s <size>     Problem size (default: 1024)\n" ;
+  Printf.printf "  --benchmark, --benchmark-all  Run on all devices\n" ;
+  Printf.printf "  --benchmark-devices <0,1,4>  Run on specific devices\n" ;
+  Printf.printf "  -s, --size <size>  Problem size (default: 1024)\n" ;
   Printf.printf "  -b <size>     Block/work-group size (default: 256)\n" ;
   Printf.printf "  -no-verify    Skip result verification\n" ;
   Printf.printf "  -h            Show this help\n" ;
@@ -59,8 +63,16 @@ let parse_args ?(extra = fun _ _ -> false) ?(extra_usage = fun () -> ()) name =
        | "--interpreter" -> cfg.use_interpreter <- true
        | "--native" -> cfg.use_native <- true
        | "--native-parallel" -> cfg.use_native_parallel <- true
-       | "--benchmark" -> cfg.benchmark_all <- true
-       | "-s" ->
+       | "--benchmark" | "--benchmark-all" -> cfg.benchmark_all <- true
+       | "--benchmark-devices" ->
+           incr i ;
+           let ids =
+             String.split_on_char ',' Sys.argv.(!i)
+             |> List.map String.trim |> List.map int_of_string
+           in
+           cfg.benchmark_all <- true ;
+           cfg.benchmark_devices <- Some ids
+       | "-s" | "--size" ->
            incr i ;
            cfg.size <- int_of_string Sys.argv.(!i)
        | "-b" ->
@@ -99,19 +111,29 @@ let print_devices devs =
     devs ;
   flush stdout
 
-(** Run benchmark on all devices *)
-let benchmark_all devs run_test name =
-  Printf.printf "\nBenchmark: %s\n" name ;
+(** Run benchmark on selected devices (None = all, Some ids = specific) *)
+let benchmark_all ?(device_ids = None) devs run_test name =
+  (match device_ids with
+  | None -> Printf.printf "\nBenchmark: %s (all devices)\n" name
+  | Some ids ->
+      Printf.printf
+        "\nBenchmark: %s (devices: %s)\n"
+        name
+        (String.concat ", " (List.map string_of_int ids))) ;
   Printf.printf "%-40s %12s %10s\n" "Device" "Time (ms)" "Status" ;
   Printf.printf "%s\n" (String.make 64 '-') ;
-  (* Run on all devices (including parallel native from Devices.init) *)
-  Array.iter
-    (fun dev ->
-      let dev_name = dev.Devices.general_info.Devices.name in
-      flush stdout ;
-      let time_ms, ok = run_test dev in
-      let status = if ok then "OK" else "FAIL" in
-      Printf.printf "%-40s %12.4f %10s\n%!" dev_name time_ms status)
+  Array.iteri
+    (fun i dev ->
+      let should_run =
+        match device_ids with None -> true | Some ids -> List.mem i ids
+      in
+      if should_run then begin
+        let dev_name = dev.Devices.general_info.Devices.name in
+        flush stdout ;
+        let time_ms, ok = run_test dev in
+        let status = if ok then "OK" else "FAIL" in
+        Printf.printf "%-40s %12.4f %10s\n%!" dev_name time_ms status
+      end)
     devs ;
   print_endline "\nBenchmark complete."
 

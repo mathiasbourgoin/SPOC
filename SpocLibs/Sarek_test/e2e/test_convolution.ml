@@ -411,6 +411,7 @@ let () =
   cfg.use_native <- c.use_native ;
   cfg.use_native_parallel <- c.use_native_parallel ;
   cfg.benchmark_all <- c.benchmark_all ;
+  cfg.benchmark_devices <- c.benchmark_devices ;
   cfg.verify <- c.verify ;
   cfg.size <- c.size ;
   cfg.block_size <- c.block_size ;
@@ -423,13 +424,26 @@ let () =
   Test_helpers.print_devices devs ;
 
   if cfg.benchmark_all then begin
-    Test_helpers.benchmark_all devs run_conv1d_test "1D convolution (3-point)" ;
-    Test_helpers.benchmark_all devs run_conv2d_test "2D convolution (3x3)" ;
     Test_helpers.benchmark_all
+      ~device_ids:cfg.benchmark_devices
+      devs
+      run_conv1d_test
+      "1D convolution (3-point)" ;
+    Test_helpers.benchmark_all
+      ~device_ids:cfg.benchmark_devices
+      devs
+      run_conv2d_test
+      "2D convolution (3x3)" ;
+    Test_helpers.benchmark_all
+      ~device_ids:cfg.benchmark_devices
       devs
       run_conv2d_shared_test
       "2D convolution (shared)" ;
-    Test_helpers.benchmark_all devs run_sobel_test "Sobel edge detection"
+    Test_helpers.benchmark_all
+      ~device_ids:cfg.benchmark_devices
+      devs
+      run_sobel_test
+      "Sobel edge detection"
   end
   else begin
     let dev = Test_helpers.get_device cfg devs in

@@ -240,6 +240,7 @@ let () =
   cfg.use_native <- c.use_native ;
   cfg.use_native_parallel <- c.use_native_parallel ;
   cfg.benchmark_all <- c.benchmark_all ;
+  cfg.benchmark_devices <- c.benchmark_devices ;
   cfg.verify <- c.verify ;
   cfg.size <- c.size ;
   cfg.block_size <- c.block_size ;
@@ -255,12 +256,18 @@ let () =
   Printf.printf "Matrix dimensions: %dx%d\n%!" dim dim ;
 
   if cfg.benchmark_all then begin
-    Test_helpers.benchmark_all devs run_transpose_naive "Transpose (naive)" ;
     Test_helpers.benchmark_all
+      ~device_ids:cfg.benchmark_devices
+      devs
+      run_transpose_naive
+      "Transpose (naive)" ;
+    Test_helpers.benchmark_all
+      ~device_ids:cfg.benchmark_devices
       devs
       run_transpose_coalesced
       "Transpose (coalesced)" ;
     Test_helpers.benchmark_all
+      ~device_ids:cfg.benchmark_devices
       devs
       run_transpose_rectangular
       "Transpose (rectangular)"

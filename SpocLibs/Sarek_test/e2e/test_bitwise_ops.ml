@@ -326,6 +326,7 @@ let () =
   cfg.use_native <- c.use_native ;
   cfg.use_native_parallel <- c.use_native_parallel ;
   cfg.benchmark_all <- c.benchmark_all ;
+  cfg.benchmark_devices <- c.benchmark_devices ;
   cfg.verify <- c.verify ;
   cfg.size <- c.size ;
   cfg.block_size <- c.block_size ;
@@ -338,10 +339,26 @@ let () =
   Test_helpers.print_devices devs ;
 
   if cfg.benchmark_all then begin
-    Test_helpers.benchmark_all devs run_bitwise_basic_test "Bitwise AND/OR/XOR" ;
-    Test_helpers.benchmark_all devs run_shift_test "Bit shifts" ;
-    Test_helpers.benchmark_all devs run_popcount_test "Popcount" ;
-    Test_helpers.benchmark_all devs run_gray_code_test "Gray code"
+    Test_helpers.benchmark_all
+      ~device_ids:cfg.benchmark_devices
+      devs
+      run_bitwise_basic_test
+      "Bitwise AND/OR/XOR" ;
+    Test_helpers.benchmark_all
+      ~device_ids:cfg.benchmark_devices
+      devs
+      run_shift_test
+      "Bit shifts" ;
+    Test_helpers.benchmark_all
+      ~device_ids:cfg.benchmark_devices
+      devs
+      run_popcount_test
+      "Popcount" ;
+    Test_helpers.benchmark_all
+      ~device_ids:cfg.benchmark_devices
+      devs
+      run_gray_code_test
+      "Gray code"
   end
   else begin
     let dev = Test_helpers.get_device cfg devs in
