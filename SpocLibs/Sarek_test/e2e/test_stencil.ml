@@ -81,6 +81,7 @@ let run_stencil_1d dev =
 
   (* Generate and run kernel *)
   ignore (Sarek.Kirc.gen stencil_1d_kernel dev) ;
+
   let block_size = Test_helpers.get_block_size cfg dev in
   let blocks = (n + block_size - 1) / block_size in
   let block = {Kernel.blockX = block_size; blockY = 1; blockZ = 1} in
@@ -95,8 +96,10 @@ let run_stencil_1d dev =
   (* Verify *)
   let ok =
     if cfg.verify then begin
+      Mem.to_cpu input () ;
       Mem.to_cpu output () ;
       Devices.flush dev () ;
+      Mem.unsafe_rw true ;
       let errors = ref 0 in
       for i = 1 to n - 2 do
         let left = Mem.get input (i - 1) in
@@ -106,6 +109,7 @@ let run_stencil_1d dev =
         let got = Mem.get output i in
         if abs_float (got -. expected) > 0.0001 then incr errors
       done ;
+      Mem.unsafe_rw false ;
       !errors = 0
     end
     else true
@@ -140,8 +144,10 @@ let run_stencil_1d_shared dev =
   (* Verify *)
   let ok =
     if cfg.verify then begin
+      Mem.to_cpu input () ;
       Mem.to_cpu output () ;
       Devices.flush dev () ;
+      Mem.unsafe_rw true ;
       let errors = ref 0 in
       for i = 1 to n - 2 do
         let left = Mem.get input (i - 1) in
@@ -151,6 +157,7 @@ let run_stencil_1d_shared dev =
         let got = Mem.get output i in
         if abs_float (got -. expected) > 0.0001 then incr errors
       done ;
+      Mem.unsafe_rw false ;
       !errors = 0
     end
     else true
@@ -197,8 +204,10 @@ let run_stencil_2d dev =
   (* Verify *)
   let ok =
     if cfg.verify then begin
+      Mem.to_cpu input () ;
       Mem.to_cpu output () ;
       Devices.flush dev () ;
+      Mem.unsafe_rw true ;
       let errors = ref 0 in
       for y = 1 to height - 2 do
         for x = 1 to width - 2 do
@@ -215,6 +224,7 @@ let run_stencil_2d dev =
           if abs_float (got -. expected) > 0.0001 then incr errors
         done
       done ;
+      Mem.unsafe_rw false ;
       !errors = 0
     end
     else true

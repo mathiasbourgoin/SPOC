@@ -49,6 +49,34 @@ extern "C" {
 #include "Spoc.h"
 #include "Trac_c.h"
 
+/* Custom block operations for OpenCL kernel handles.
+   Kernels are opaque pointers that must be wrapped to prevent GC issues. */
+static void opencl_kernel_finalize(value v) {
+    cl_kernel k = Cl_kernel_val(v);
+    if (k) {
+        clReleaseKernel(k);
+    }
+}
+
+static struct custom_operations opencl_kernel_ops = {
+    "spoc.opencl_kernel",
+    opencl_kernel_finalize,
+    custom_compare_default,
+    custom_hash_default,
+    custom_serialize_default,
+    custom_deserialize_default,
+    custom_compare_ext_default,
+    custom_fixed_length_default
+};
+
+/* Allocate a custom block for an OpenCL kernel */
+static value alloc_opencl_kernel(cl_kernel kernel) {
+    CAMLparam0();
+    CAMLlocal1(v);
+    v = caml_alloc_custom(&opencl_kernel_ops, sizeof(cl_kernel), 0, 1);
+    Set_cl_kernel(v, kernel);
+    CAMLreturn(v);
+}
 
 CAMLprim value spoc_opencl_compile(value moduleSrc, value function_name, value gi){
 	CAMLparam3(moduleSrc, function_name, gi);
@@ -75,7 +103,7 @@ CAMLprim value spoc_opencl_compile(value moduleSrc, value function_name, value g
 	OPENCL_CHECK_CALL1(kernel, clCreateKernel(hProgram, functionN, &opencl_error));
 	OPENCL_RESTORE_CONTEXT;
 
-	CAMLreturn((value) kernel);
+	CAMLreturn(alloc_opencl_kernel(kernel));
 
 }
 
@@ -115,7 +143,7 @@ CAMLprim value spoc_debug_opencl_compile(value moduleSrc, value function_name, v
 	OPENCL_CHECK_CALL1(kernel, clCreateKernel(hProgram, functionN, &opencl_error));
 	OPENCL_RESTORE_CONTEXT;
 
-	CAMLreturn((value) kernel);
+	CAMLreturn(alloc_opencl_kernel(kernel));
 
 }
 
@@ -123,7 +151,7 @@ CAMLprim value spoc_debug_opencl_compile(value moduleSrc, value function_name, v
 CAMLprim value spoc_opencl_create_dummy_kernel(){
 	CAMLparam0();
 	cl_kernel kernel = NULL;
-	CAMLreturn((value) kernel);
+	CAMLreturn(alloc_opencl_kernel(kernel));
 }
 
 CAMLprim value spoc_opencl_load_param_vec(value off, value ker, value A, value id, value gi){
@@ -139,7 +167,7 @@ CAMLprim value spoc_opencl_load_param_vec(value off, value ker, value A, value i
 #endif
   OPENCL_GET_CONTEXT;
 
-  kernel = (cl_kernel) ker;
+  kernel = Cl_kernel_val(ker);
   OPENCL_CHECK_CALL1(opencl_error, clSetKernelArg(kernel, offset, sizeof(cl_mem), (void*)&d_A));
   offset+=1;
   OPENCL_RESTORE_CONTEXT;
@@ -158,7 +186,7 @@ CAMLprim value spoc_opencl_load_param_local_vec(value off, value ker, int idx, v
 
   OPENCL_GET_CONTEXT;
     
-  kernel = (cl_kernel) ker;
+  kernel = Cl_kernel_val(ker);
   OPENCL_CHECK_CALL1(opencl_error, clSetKernelArg(kernel, offset, sizeof(float)*4*8*8, NULL));
   offset+=1;
   OPENCL_RESTORE_CONTEXT;
@@ -175,7 +203,7 @@ CAMLprim value spoc_opencl_load_param_int(value off, value ker, value val, value
 
 	OPENCL_GET_CONTEXT;
 	i = Int_val(val);
-	kernel = (cl_kernel) ker;
+	kernel = Cl_kernel_val(ker);
 	OPENCL_CHECK_CALL1(opencl_error, clSetKernelArg(kernel, offset, sizeof(int), (void*)&i));
 	offset+=1;
 	OPENCL_RESTORE_CONTEXT;
@@ -194,7 +222,7 @@ CAMLprim value spoc_opencl_load_param_int64(value off, value ker, value val, val
 	OPENCL_GET_CONTEXT;
 
 	i = (long long)Int_val(val);
-	kernel = (cl_kernel) ker;
+	kernel = Cl_kernel_val(ker);
 	OPENCL_CHECK_CALL1(opencl_error, clSetKernelArg(kernel, offset, sizeof(long long), (void*)&i));
 	offset+=1;
 	OPENCL_RESTORE_CONTEXT;
@@ -213,7 +241,7 @@ CAMLprim value spoc_opencl_load_param_float(value off, value ker, value val, val
 	OPENCL_GET_CONTEXT;
 
 	f = (float)(Double_val(val));
-	kernel = (cl_kernel) ker;
+	kernel = Cl_kernel_val(ker);
 	OPENCL_CHECK_CALL1(opencl_error, clSetKernelArg(kernel, offset, sizeof(float), (void*)&f));
 	offset+=1;
 	OPENCL_RESTORE_CONTEXT;
@@ -232,7 +260,7 @@ CAMLprim value spoc_opencl_load_param_float64(value off, value ker, value val, v
 	OPENCL_GET_CONTEXT;
 
 	f = (Double_val(val));
-	kernel = (cl_kernel) ker;
+	kernel = Cl_kernel_val(ker);
 	OPENCL_CHECK_CALL1(opencl_error, clSetKernelArg(kernel, offset, sizeof(double), (void*)&f));
 	offset+=1;
 	OPENCL_RESTORE_CONTEXT;
@@ -259,7 +287,7 @@ CAMLprim value spoc_opencl_launch_grid(value ker, value grid, value block, value
 	blockZ = Int_val(Field(block,2));
 	OPENCL_GET_CONTEXT;
 
-	kernel = (cl_kernel) ker;
+	kernel = Cl_kernel_val(ker);
 	
 	global_dimension[0] = (size_t)gridX*blockX;
 	global_dimension[1] = (size_t)gridY*blockY;

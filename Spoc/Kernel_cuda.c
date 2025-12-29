@@ -51,6 +51,35 @@ extern "C" {
 
 #include "Trac_c.h"
 
+/* Custom block operations for CUDA kernel handles.
+   Kernels are malloc'd CUfunction* that must be wrapped to prevent GC issues. */
+static void cuda_kernel_finalize(value v) {
+    CUfunction *k = Cu_kernel_val(v);
+    if (k) {
+        free(k);
+    }
+}
+
+static struct custom_operations cuda_kernel_ops = {
+    "spoc.cuda_kernel",
+    cuda_kernel_finalize,
+    custom_compare_default,
+    custom_hash_default,
+    custom_serialize_default,
+    custom_deserialize_default,
+    custom_compare_ext_default,
+    custom_fixed_length_default
+};
+
+/* Allocate a custom block for a CUDA kernel */
+static value alloc_cuda_kernel(CUfunction *kernel) {
+    CAMLparam0();
+    CAMLlocal1(v);
+    v = caml_alloc_custom(&cuda_kernel_ops, sizeof(CUfunction*), 0, 1);
+    Set_cu_kernel(v, kernel);
+    CAMLreturn(v);
+}
+
 /**************** KERNEL ******************/
 
 int ae_load_file_to_memory(const char *filename, char **result)
@@ -169,7 +198,7 @@ CAMLprim value spoc_cuda_compile(value moduleSrc, value function_name, value gi)
 	free(jitLogBuffer);
 	CUDA_RESTORE_CONTEXT;
 	//caml_leave_blocking_section();
-	CAMLreturn((value) kernel);
+	CAMLreturn(alloc_cuda_kernel(kernel));
 }
 
 
@@ -235,7 +264,7 @@ CAMLprim value spoc_cuda_debug_compile(value moduleSrc, value function_name, val
 
 	BLOCKING_CUDA_RESTORE_CONTEXT;
 	free(jitLogBuffer);
-	CAMLreturn((value) kernel);
+	CAMLreturn(alloc_cuda_kernel(kernel));
 }
 
 
@@ -248,7 +277,7 @@ CAMLprim value spoc_cuda_create_extra(value n){
 CAMLprim value spoc_cuda_create_dummy_kernel(){
 	CAMLparam0();
 	CUfunction *kernel = NULL;
-	CAMLreturn((value) kernel);
+	CAMLreturn(alloc_cuda_kernel(kernel));
 }
 
 #define ALIGN_UP(offset, alignment) \
@@ -432,7 +461,7 @@ CAMLprim value spoc_cuda_set_block_shape(value ker, value block, value gi){
 
 	CUDA_GET_CONTEXT;
 
-	kernel = (CUfunction*) ker;
+	kernel = Cu_kernel_val(ker);
 	CUDA_CHECK_CALL(cuFuncSetBlockShape(*kernel, Int_val(Field(block,0)),Int_val(Field(block,1)),Int_val(Field(block,2))));
 
 	CUDA_RESTORE_CONTEXT;
@@ -459,7 +488,7 @@ CAMLprim value spoc_cuda_launch_grid(value off, value ker, value grid, value blo
   
   CUDA_GET_CONTEXT;
   
-  kernel = (CUfunction*) ker;  
+  kernel = Cu_kernel_val(ker);  
   extra = (char*)ex;
   
   extra2[0] = CU_LAUNCH_PARAM_BUFFER_POINTER;

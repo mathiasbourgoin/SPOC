@@ -55,6 +55,7 @@ tclCreateProgramWithSource* clCreateProgramWithSource;
 tclBuildProgram* clBuildProgram;
 tclGetProgramBuildInfo* clGetProgramBuildInfo;
 tclCreateKernel* clCreateKernel;
+tclReleaseKernel* clReleaseKernel;
 tclSetKernelArg* clSetKernelArg;
 tclEnqueueNDRangeKernel* clEnqueueNDRangeKernel;
 tclFlush* clFlush;
@@ -176,6 +177,7 @@ int CL_API_ENTRY clInit(){
     	GET_PROC(clBuildProgram);
     	GET_PROC(clGetProgramBuildInfo);
     	GET_PROC(clCreateKernel);
+    	GET_PROC(clReleaseKernel);
     	GET_PROC(clSetKernelArg);
     	GET_PROC(clEnqueueNDRangeKernel);
     	GET_PROC(clFlush);

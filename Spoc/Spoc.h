@@ -393,6 +393,16 @@ int ae_load_file_to_memory(const char *filename, char **result);
 #define Cu_vector_val(v) (*Cu_vector_ptr(v))
 #define Set_cu_vector(v, x) (*Cu_vector_ptr(v) = (x))
 
+/* Access cl_kernel from an OpenCL kernel custom block */
+#define Cl_kernel_ptr(v) ((cl_kernel*)Data_custom_val(v))
+#define Cl_kernel_val(v) (*Cl_kernel_ptr(v))
+#define Set_cl_kernel(v, x) (*Cl_kernel_ptr(v) = (x))
+
+/* Access CUfunction* from a CUDA kernel custom block */
+#define Cu_kernel_ptr(v) ((CUfunction**)Data_custom_val(v))
+#define Cu_kernel_val(v) (*Cu_kernel_ptr(v))
+#define Set_cu_kernel(v, x) (*Cu_kernel_ptr(v) = (x))
+
 /* Access void* from a custom array block (for spoc custom types) */
 #define Custom_array_ptr(v) ((void**)Data_custom_val(v))
 #define Custom_array_val(v) (*Custom_array_ptr(v))
