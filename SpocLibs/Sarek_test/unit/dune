@@ -26,3 +26,11 @@
  (libraries sarek)
  (flags
   (:standard -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc)))
+
+; Float32 module tests
+
+(test
+ (name test_float32)
+ (libraries sarek)
+ (flags
+  (:standard -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc)))

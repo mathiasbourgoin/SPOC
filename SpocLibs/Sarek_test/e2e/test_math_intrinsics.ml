@@ -198,7 +198,10 @@ let run_exp_log_test dev =
       Devices.flush dev () ;
       let errors = ref 0 in
       (* Use relative error for exp (values can be very large) *)
-      let rel_err a b = if abs_float b < 1e-6 then abs_float (a -. b) else abs_float (a -. b) /. abs_float b in
+      let rel_err a b =
+        if abs_float b < 1e-6 then abs_float (a -. b)
+        else abs_float (a -. b) /. abs_float b
+      in
       for i = 0 to n - 1 do
         let x = Mem.get input i in
         let e = Mem.get exp_out i in
@@ -210,12 +213,21 @@ let run_exp_log_test dev =
         let log_rel_err = rel_err l log_expected in
         if exp_rel_err > 1e-5 || log_rel_err > 1e-5 then begin
           if !errors < 5 then
-            Printf.printf "  [%d] x=%.4f exp: got %.4f expected %.4f (rel_err=%.2e), log: got %.4f expected %.4f (rel_err=%.2e)\n"
-              i x e exp_expected exp_rel_err l log_expected log_rel_err;
+            Printf.printf
+              "  [%d] x=%.4f exp: got %.4f expected %.4f (rel_err=%.2e), log: \
+               got %.4f expected %.4f (rel_err=%.2e)\n"
+              i
+              x
+              e
+              exp_expected
+              exp_rel_err
+              l
+              log_expected
+              log_rel_err ;
           incr errors
         end
       done ;
-      if !errors > 0 then Printf.printf "  Total errors: %d\n" !errors;
+      if !errors > 0 then Printf.printf "  Total errors: %d\n" !errors ;
       !errors = 0
     end
     else true
@@ -262,7 +274,10 @@ let run_power_test dev =
       Devices.flush dev () ;
       let errors = ref 0 in
       (* Use relative error for pow (values can be very large) *)
-      let rel_err a b = if abs_float b < 1e-6 then abs_float (a -. b) else abs_float (a -. b) /. abs_float b in
+      let rel_err a b =
+        if abs_float b < 1e-6 then abs_float (a -. b)
+        else abs_float (a -. b) /. abs_float b
+      in
       for i = 0 to n - 1 do
         let b = Mem.get base i in
         let p = Mem.get pow_out i in
@@ -270,8 +285,8 @@ let run_power_test dev =
         let pow_expected = b ** 2.0 in
         let sqrt_expected = sqrt b in
         (* float32 has ~7 decimal digits of precision, use 1e-5 relative tolerance *)
-        if rel_err p pow_expected > 1e-5 || rel_err s sqrt_expected > 1e-5
-        then incr errors
+        if rel_err p pow_expected > 1e-5 || rel_err s sqrt_expected > 1e-5 then
+          incr errors
       done ;
       !errors = 0
     end
