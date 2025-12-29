@@ -22,9 +22,11 @@ let ocaml_inclusive_scan input output n =
 (* ========== Shared test data ========== *)
 
 let input_ones = ref [||]
+
 let expected_ones = ref [||]
 
 let input_varying = ref [||]
+
 let expected_varying = ref [||]
 
 let init_ones_data () =
@@ -160,7 +162,11 @@ let run_inclusive_scan_test dev =
         let got = Mem.get output i in
         if got <> exp.(i) then begin
           if !errors < 10 then
-            Printf.printf "  Mismatch at %d: expected %ld, got %ld\n" i exp.(i) got ;
+            Printf.printf
+              "  Mismatch at %d: expected %ld, got %ld\n"
+              i
+              exp.(i)
+              got ;
           incr errors
         end
       done ;
@@ -204,7 +210,11 @@ let run_varying_scan_test dev =
         let got = Mem.get output i in
         if got <> exp.(i) then begin
           if !errors < 10 then
-            Printf.printf "  Mismatch at %d: expected %ld, got %ld\n" i exp.(i) got ;
+            Printf.printf
+              "  Mismatch at %d: expected %ld, got %ld\n"
+              i
+              exp.(i)
+              got ;
           incr errors
         end
       done ;

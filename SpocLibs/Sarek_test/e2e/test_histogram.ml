@@ -24,6 +24,7 @@ let ocaml_histogram input n bins =
 (* ========== Shared test data ========== *)
 
 let input_data = ref [||]
+
 let expected_hist = ref [||]
 
 let init_histogram_data () =
@@ -114,7 +115,12 @@ let run_histogram dev =
   let grid = {Kernel.gridX = num_blocks; gridY = 1; gridZ = 1} in
 
   let t0 = Unix.gettimeofday () in
-  Sarek.Kirc.run histogram_kernel (input, histogram, n, bins) (block, grid) 0 dev ;
+  Sarek.Kirc.run
+    histogram_kernel
+    (input, histogram, n, bins)
+    (block, grid)
+    0
+    dev ;
   Devices.flush dev () ;
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in

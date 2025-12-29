@@ -161,3 +161,43 @@ val flush_fission_queue : int -> unit
 
 (** Wait for all fission queues to complete. Called by Devices.flush. *)
 val flush_fission : unit -> unit
+
+(** {1 Optimized Simple Kernel Runners}
+
+    For kernels that only use global_idx_x/y/z without thread/block dimensions,
+    shared memory, or barriers, we can skip the expensive thread_state machinery
+    and just pass the global index directly.
+
+    This eliminates:
+    - 6 Obj.set_field calls per element
+    - 6 integer divisions/modulos
+    - Function call overhead through thread_state
+
+    These functions are used when the PPX detects Simple1D/2D/3D execution
+    strategy. *)
+
+(** Run a simple 1D kernel in parallel - just iterates over global_idx_x.
+    @param total_x Total number of elements (block_x * grid_x)
+    @param kernel Function taking (gid_x, args) *)
+val run_1d_threadpool : total_x:int -> (int32 -> 'a -> unit) -> 'a -> unit
+
+(** Run a simple 2D kernel in parallel - iterates over global_idx_x,
+    global_idx_y.
+    @param width Total width (block_x * grid_x)
+    @param height Total height (block_y * grid_y)
+    @param kernel Function taking (gid_x, gid_y, args) *)
+val run_2d_threadpool :
+  width:int -> height:int -> (int32 -> int32 -> 'a -> unit) -> 'a -> unit
+
+(** Run a simple 3D kernel in parallel - iterates over global_idx_x/y/z.
+    @param width Total width
+    @param height Total height
+    @param depth Total depth
+    @param kernel Function taking (gid_x, gid_y, gid_z, args) *)
+val run_3d_threadpool :
+  width:int ->
+  height:int ->
+  depth:int ->
+  (int32 -> int32 -> int32 -> 'a -> unit) ->
+  'a ->
+  unit

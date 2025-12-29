@@ -123,100 +123,181 @@ let rec core_type_of_typ ~loc typ : Ppxlib.core_type =
     Map Sarek intrinsics to their OCaml equivalents. For cpu_kern, we call the
     OCaml implementations directly rather than generating GPU code. *)
 
-let gen_intrinsic_const ~loc (ref : Sarek_env.intrinsic_ref) : expression =
-  match ref with
-  | Sarek_env.CorePrimitiveRef name -> (
-      let state = evar ~loc state_var in
-      match name with
-      | "thread_idx_x" ->
-          [%expr [%e state].Sarek.Sarek_cpu_runtime.thread_idx_x]
-      | "thread_idx_y" ->
-          [%expr [%e state].Sarek.Sarek_cpu_runtime.thread_idx_y]
-      | "thread_idx_z" ->
-          [%expr [%e state].Sarek.Sarek_cpu_runtime.thread_idx_z]
-      | "block_idx_x" -> [%expr [%e state].Sarek.Sarek_cpu_runtime.block_idx_x]
-      | "block_idx_y" -> [%expr [%e state].Sarek.Sarek_cpu_runtime.block_idx_y]
-      | "block_idx_z" -> [%expr [%e state].Sarek.Sarek_cpu_runtime.block_idx_z]
-      | "block_dim_x" -> [%expr [%e state].Sarek.Sarek_cpu_runtime.block_dim_x]
-      | "block_dim_y" -> [%expr [%e state].Sarek.Sarek_cpu_runtime.block_dim_y]
-      | "block_dim_z" -> [%expr [%e state].Sarek.Sarek_cpu_runtime.block_dim_z]
-      | "grid_dim_x" -> [%expr [%e state].Sarek.Sarek_cpu_runtime.grid_dim_x]
-      | "grid_dim_y" -> [%expr [%e state].Sarek.Sarek_cpu_runtime.grid_dim_y]
-      | "grid_dim_z" -> [%expr [%e state].Sarek.Sarek_cpu_runtime.grid_dim_z]
-      | _ ->
-          (* Unknown - try to generate call to Gpu module *)
-          evar_qualified ~loc ["Gpu"] name)
-  | Sarek_env.IntrinsicRef (path, name) -> (
-      (* Check if this is a Gpu module constant that maps to thread state *)
-      let state = evar ~loc state_var in
-      match (path, name) with
-      | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "thread_idx_x" ->
-          [%expr [%e state].Sarek.Sarek_cpu_runtime.thread_idx_x]
-      | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "thread_idx_y" ->
-          [%expr [%e state].Sarek.Sarek_cpu_runtime.thread_idx_y]
-      | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "thread_idx_z" ->
-          [%expr [%e state].Sarek.Sarek_cpu_runtime.thread_idx_z]
-      | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "block_idx_x" ->
-          [%expr [%e state].Sarek.Sarek_cpu_runtime.block_idx_x]
-      | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "block_idx_y" ->
-          [%expr [%e state].Sarek.Sarek_cpu_runtime.block_idx_y]
-      | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "block_idx_z" ->
-          [%expr [%e state].Sarek.Sarek_cpu_runtime.block_idx_z]
-      | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "block_dim_x" ->
-          [%expr [%e state].Sarek.Sarek_cpu_runtime.block_dim_x]
-      | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "block_dim_y" ->
-          [%expr [%e state].Sarek.Sarek_cpu_runtime.block_dim_y]
-      | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "block_dim_z" ->
-          [%expr [%e state].Sarek.Sarek_cpu_runtime.block_dim_z]
-      | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "grid_dim_x" ->
-          [%expr [%e state].Sarek.Sarek_cpu_runtime.grid_dim_x]
-      | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "grid_dim_y" ->
-          [%expr [%e state].Sarek.Sarek_cpu_runtime.grid_dim_y]
-      | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "grid_dim_z" ->
-          [%expr [%e state].Sarek.Sarek_cpu_runtime.grid_dim_z]
-      | _ ->
-          (* For other intrinsic constants from stdlib modules, look up via module path *)
-          evar_qualified ~loc path name)
+(** Kernel generation mode for simple vs full execution - defined early for use
+    below *)
+type gen_mode =
+  | FullMode  (** Standard mode - uses thread_state for all indices *)
+  | Simple1DMode  (** Simple 1D - gid_x passed directly as int32 *)
+  | Simple2DMode  (** Simple 2D - gid_x, gid_y passed directly *)
+  | Simple3DMode  (** Simple 3D - gid_x, gid_y, gid_z passed directly *)
 
-let gen_intrinsic_fun ~loc (ref : Sarek_env.intrinsic_ref)
-    (args : expression list) : expression =
+(** Variable names for simple mode global indices *)
+let gid_x_var = "__gid_x"
+
+let gid_y_var = "__gid_y"
+
+let gid_z_var = "__gid_z"
+
+(** Generate intrinsic constant based on generation mode. For simple modes,
+    global indices are passed as direct parameters. For full mode, all indices
+    come from thread_state. *)
+let gen_intrinsic_const ~loc ~gen_mode (ref : Sarek_env.intrinsic_ref) :
+    expression =
+  (* Helper for simple mode - use direct gid variables for global indices *)
+  let use_simple_gid name =
+    match (gen_mode, name) with
+    (* In simple modes, global_idx_x/global_thread_id is the __gid_x parameter *)
+    | ( (Simple1DMode | Simple2DMode | Simple3DMode),
+        ("global_idx_x" | "global_thread_id") ) ->
+        Some (evar ~loc gid_x_var)
+    | (Simple2DMode | Simple3DMode), "global_idx_y" ->
+        Some (evar ~loc gid_y_var)
+    | Simple3DMode, "global_idx_z" -> Some (evar ~loc gid_z_var)
+    | _ -> None
+  in
   match ref with
   | Sarek_env.CorePrimitiveRef name -> (
-      let state = evar ~loc state_var in
-      match name with
-      | "block_barrier" | "warp_barrier" ->
-          (* Call the barrier function from thread state *)
-          [%expr [%e state].Sarek.Sarek_cpu_runtime.barrier ()]
-      | "global_idx" -> [%expr Sarek.Sarek_cpu_runtime.global_idx_x [%e state]]
-      | "global_size" ->
-          [%expr Sarek.Sarek_cpu_runtime.global_size_x [%e state]]
-      | _ ->
-          (* Try Gpu module *)
-          let fn = evar_qualified ~loc ["Gpu"] name in
-          Ast_builder.Default.pexp_apply
-            ~loc
-            fn
-            (List.map (fun a -> (Nolabel, a)) args))
-  | Sarek_env.IntrinsicRef (path, name) -> (
-      (* Check if this is a Gpu module function that maps to thread state *)
-      let state = evar ~loc state_var in
-      match (path, name) with
-      | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "block_barrier" ->
-          [%expr [%e state].Sarek.Sarek_cpu_runtime.barrier ()]
-      | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "global_idx" ->
-          [%expr Sarek.Sarek_cpu_runtime.global_idx_x [%e state]]
-      | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "global_size" ->
-          [%expr Sarek.Sarek_cpu_runtime.global_size_x [%e state]]
-      | _ -> (
-          (* Call the OCaml implementation from the stdlib module *)
-          let fn = evar_qualified ~loc path name in
-          match args with
-          | [] -> fn
+      (* Check if this can be simplified for simple modes *)
+      match use_simple_gid name with
+      | Some e -> e
+      | None -> (
+          let state = evar ~loc state_var in
+          match name with
+          | "thread_idx_x" ->
+              [%expr [%e state].Sarek.Sarek_cpu_runtime.thread_idx_x]
+          | "thread_idx_y" ->
+              [%expr [%e state].Sarek.Sarek_cpu_runtime.thread_idx_y]
+          | "thread_idx_z" ->
+              [%expr [%e state].Sarek.Sarek_cpu_runtime.thread_idx_z]
+          | "block_idx_x" ->
+              [%expr [%e state].Sarek.Sarek_cpu_runtime.block_idx_x]
+          | "block_idx_y" ->
+              [%expr [%e state].Sarek.Sarek_cpu_runtime.block_idx_y]
+          | "block_idx_z" ->
+              [%expr [%e state].Sarek.Sarek_cpu_runtime.block_idx_z]
+          | "block_dim_x" ->
+              [%expr [%e state].Sarek.Sarek_cpu_runtime.block_dim_x]
+          | "block_dim_y" ->
+              [%expr [%e state].Sarek.Sarek_cpu_runtime.block_dim_y]
+          | "block_dim_z" ->
+              [%expr [%e state].Sarek.Sarek_cpu_runtime.block_dim_z]
+          | "grid_dim_x" ->
+              [%expr [%e state].Sarek.Sarek_cpu_runtime.grid_dim_x]
+          | "grid_dim_y" ->
+              [%expr [%e state].Sarek.Sarek_cpu_runtime.grid_dim_y]
+          | "grid_dim_z" ->
+              [%expr [%e state].Sarek.Sarek_cpu_runtime.grid_dim_z]
+          | "global_idx_x" ->
+              [%expr Sarek.Sarek_cpu_runtime.global_idx_x [%e state]]
+          | "global_idx_y" ->
+              [%expr Sarek.Sarek_cpu_runtime.global_idx_y [%e state]]
+          | "global_idx_z" ->
+              [%expr Sarek.Sarek_cpu_runtime.global_idx_z [%e state]]
           | _ ->
+              (* Unknown - try to generate call to Gpu module *)
+              evar_qualified ~loc ["Gpu"] name))
+  | Sarek_env.IntrinsicRef (path, name) -> (
+      (* Check if this can be simplified for simple modes *)
+      match use_simple_gid name with
+      | Some e -> e
+      | None -> (
+          (* Check if this is a Gpu module constant that maps to thread state *)
+          let state = evar ~loc state_var in
+          match (path, name) with
+          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "thread_idx_x" ->
+              [%expr [%e state].Sarek.Sarek_cpu_runtime.thread_idx_x]
+          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "thread_idx_y" ->
+              [%expr [%e state].Sarek.Sarek_cpu_runtime.thread_idx_y]
+          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "thread_idx_z" ->
+              [%expr [%e state].Sarek.Sarek_cpu_runtime.thread_idx_z]
+          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "block_idx_x" ->
+              [%expr [%e state].Sarek.Sarek_cpu_runtime.block_idx_x]
+          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "block_idx_y" ->
+              [%expr [%e state].Sarek.Sarek_cpu_runtime.block_idx_y]
+          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "block_idx_z" ->
+              [%expr [%e state].Sarek.Sarek_cpu_runtime.block_idx_z]
+          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "block_dim_x" ->
+              [%expr [%e state].Sarek.Sarek_cpu_runtime.block_dim_x]
+          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "block_dim_y" ->
+              [%expr [%e state].Sarek.Sarek_cpu_runtime.block_dim_y]
+          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "block_dim_z" ->
+              [%expr [%e state].Sarek.Sarek_cpu_runtime.block_dim_z]
+          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "grid_dim_x" ->
+              [%expr [%e state].Sarek.Sarek_cpu_runtime.grid_dim_x]
+          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "grid_dim_y" ->
+              [%expr [%e state].Sarek.Sarek_cpu_runtime.grid_dim_y]
+          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "grid_dim_z" ->
+              [%expr [%e state].Sarek.Sarek_cpu_runtime.grid_dim_z]
+          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "global_idx_x" ->
+              [%expr Sarek.Sarek_cpu_runtime.global_idx_x [%e state]]
+          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "global_idx_y" ->
+              [%expr Sarek.Sarek_cpu_runtime.global_idx_y [%e state]]
+          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "global_idx_z" ->
+              [%expr Sarek.Sarek_cpu_runtime.global_idx_z [%e state]]
+          | _ ->
+              (* For other intrinsic constants from stdlib modules, look up via module path *)
+              evar_qualified ~loc path name))
+
+(** Generate intrinsic function call based on generation mode. For simple modes,
+    global indices are direct parameters. For full mode, indices come from
+    thread_state. *)
+let gen_intrinsic_fun ~loc ~gen_mode (ref : Sarek_env.intrinsic_ref)
+    (args : expression list) : expression =
+  (* Helper for simple mode global index functions *)
+  let use_simple_gid_fn name =
+    match (gen_mode, name) with
+    | ( (Simple1DMode | Simple2DMode | Simple3DMode),
+        ("global_idx" | "global_idx_x" | "global_thread_id") ) ->
+        Some (evar ~loc gid_x_var)
+    | (Simple2DMode | Simple3DMode), "global_idx_y" ->
+        Some (evar ~loc gid_y_var)
+    | Simple3DMode, "global_idx_z" -> Some (evar ~loc gid_z_var)
+    | _ -> None
+  in
+  match ref with
+  | Sarek_env.CorePrimitiveRef name -> (
+      match use_simple_gid_fn name with
+      | Some e -> e
+      | None -> (
+          let state = evar ~loc state_var in
+          match name with
+          | "block_barrier" | "warp_barrier" ->
+              (* Call the barrier function from thread state *)
+              [%expr [%e state].Sarek.Sarek_cpu_runtime.barrier ()]
+          | "global_idx" | "global_thread_id" ->
+              [%expr Sarek.Sarek_cpu_runtime.global_idx_x [%e state]]
+          | "global_size" ->
+              [%expr Sarek.Sarek_cpu_runtime.global_size_x [%e state]]
+          | _ ->
+              (* Try Gpu module *)
+              let fn = evar_qualified ~loc ["Gpu"] name in
               Ast_builder.Default.pexp_apply
                 ~loc
                 fn
                 (List.map (fun a -> (Nolabel, a)) args)))
+  | Sarek_env.IntrinsicRef (path, name) -> (
+      match use_simple_gid_fn name with
+      | Some e -> e
+      | None -> (
+          (* Check if this is a Gpu module function that maps to thread state *)
+          let state = evar ~loc state_var in
+          match (path, name) with
+          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "block_barrier" ->
+              [%expr [%e state].Sarek.Sarek_cpu_runtime.barrier ()]
+          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "global_idx" ->
+              [%expr Sarek.Sarek_cpu_runtime.global_idx_x [%e state]]
+          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "global_size" ->
+              [%expr Sarek.Sarek_cpu_runtime.global_size_x [%e state]]
+          | _ -> (
+              (* Call the OCaml implementation from the stdlib module *)
+              let fn = evar_qualified ~loc path name in
+              match args with
+              | [] -> fn
+              | _ ->
+                  Ast_builder.Default.pexp_apply
+                    ~loc
+                    fn
+                    (List.map (fun a -> (Nolabel, a)) args))))
 
 (** {1 Expression Generation} *)
 
@@ -235,6 +316,8 @@ type gen_context = {
       (** Type names that use first-class module accessors *)
   current_module : string option;
       (** Current module name for same-module type detection *)
+  gen_mode : gen_mode;
+      (** Generation mode - affects how thread indices are accessed *)
 }
 
 (** Empty generation context *)
@@ -243,6 +326,7 @@ let empty_ctx =
     mut_vars = IntSet.empty;
     inline_types = StringSet.empty;
     current_module = None;
+    gen_mode = FullMode;
   }
 
 (** Check if a qualified type name is from the current module. For
@@ -693,11 +777,11 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
   (* Pragma - just evaluate body (pragmas are hints for GPU) *)
   | TEPragma (_opts, body) -> gen_expr ~loc body
   (* Intrinsic constant - thread indices, etc. *)
-  | TEIntrinsicConst ref -> gen_intrinsic_const ~loc ref
+  | TEIntrinsicConst ref -> gen_intrinsic_const ~loc ~gen_mode:ctx.gen_mode ref
   (* Intrinsic function - math functions, barriers, etc. *)
   | TEIntrinsicFun (ref, _convergence, args) ->
       let args_e = List.map (gen_expr ~loc) args in
-      gen_intrinsic_fun ~loc ref args_e
+      gen_intrinsic_fun ~loc ~gen_mode:ctx.gen_mode ref args_e
   (* BSP let%shared - allocate shared memory using OCaml arrays *)
   | TELetShared (name, _id, elem_ty, size_opt, body) ->
       (* Size needs to be int, but expressions may be int32 (like block_dim_x).
@@ -1116,6 +1200,13 @@ let has_inline_types (kernel : tkernel) : bool =
 
 (** {1 Kernel Generation} *)
 
+(** Convert execution strategy to generation mode *)
+let gen_mode_of_exec_strategy = function
+  | Sarek_convergence.Simple1D -> Simple1DMode
+  | Sarek_convergence.Simple2D -> Simple2DMode
+  | Sarek_convergence.Simple3D -> Simple3DMode
+  | Sarek_convergence.FullState -> FullMode
+
 (** Generate the cpu_kern function from a typed kernel.
 
     The generated function has type: Sarek_cpu_runtime.thread_state -> (arg1,
@@ -1252,6 +1343,145 @@ let gen_cpu_kern ~loc (kernel : tkernel) : expression =
     }
   in
   fun_with_warnings
+
+(** Generate a simplified cpu_kern for simple 1D/2D/3D kernels.
+
+    For Simple1D: fun __gid_x (args) -> body For Simple2D: fun __gid_x __gid_y
+    (args) -> body For Simple3D: fun __gid_x __gid_y __gid_z (args) -> body
+
+    These kernels don't need thread_state or shared memory. The body is
+    generated with the appropriate gen_mode so that global_idx_x/y/z references
+    are replaced with the __gid_x/y/z parameters. *)
+let gen_simple_cpu_kern ~loc ~exec_strategy (kernel : tkernel) : expression =
+  (* Build set of inline type names for the context *)
+  let use_fcm = has_inline_types kernel in
+  let inline_type_names =
+    if use_fcm then
+      List.fold_left
+        (fun acc decl ->
+          let name =
+            match decl with
+            | TTypeRecord {tdecl_name; _} -> tdecl_name
+            | TTypeVariant {tdecl_name; _} -> tdecl_name
+          in
+          if not (String.contains name '.') then StringSet.add name acc else acc)
+        StringSet.empty
+        kernel.tkern_type_decls
+    else StringSet.empty
+  in
+
+  (* Extract current module name for same-module type detection *)
+  let current_module = Some (module_name_of_sarek_loc kernel.tkern_loc) in
+
+  (* Set generation mode based on strategy *)
+  let gen_mode = gen_mode_of_exec_strategy exec_strategy in
+
+  (* Generate body with the simple mode context *)
+  let ctx =
+    {empty_ctx with current_module; inline_types = inline_type_names; gen_mode}
+  in
+  let body_e = gen_expr_impl ~loc ~ctx kernel.tkern_body in
+
+  (* Generate inline module items *)
+  let inline_items =
+    let all_items = kernel.tkern_module_items in
+    let skip_count = kernel.tkern_external_item_count in
+    let rec drop n lst =
+      if n <= 0 then lst
+      else match lst with [] -> [] | _ :: tl -> drop (n - 1) tl
+    in
+    drop skip_count all_items
+  in
+  let body_with_items = wrap_module_items ~loc inline_items body_e in
+
+  (* Build parameter tuple pattern - use parameter names with type constraints *)
+  let param_pats =
+    List.map
+      (fun p ->
+        let var_pat =
+          Ast_builder.Default.ppat_var ~loc {txt = p.tparam_name; loc}
+        in
+        let ty = core_type_of_typ ~loc p.tparam_type in
+        Ast_builder.Default.ppat_constraint ~loc var_pat ty)
+      kernel.tkern_params
+  in
+  let params_pat =
+    match param_pats with
+    | [] -> [%pat? ()]
+    | [p] -> p
+    | ps -> Ast_builder.Default.ppat_tuple ~loc ps
+  in
+
+  (* Build the function with gid parameters based on strategy:
+     Simple1D: fun __gid_x (args) -> body
+     Simple2D: fun __gid_x __gid_y (args) -> body
+     Simple3D: fun __gid_x __gid_y __gid_z (args) -> body *)
+  let gid_x_pat = Ast_builder.Default.ppat_var ~loc {txt = gid_x_var; loc} in
+  let gid_y_pat = Ast_builder.Default.ppat_var ~loc {txt = gid_y_var; loc} in
+  let gid_z_pat = Ast_builder.Default.ppat_var ~loc {txt = gid_z_var; loc} in
+
+  let inner_fun =
+    if use_fcm then
+      let types_pat =
+        Ast_builder.Default.ppat_var ~loc {txt = types_module_var; loc}
+      in
+      match exec_strategy with
+      | Sarek_convergence.Simple1D ->
+          [%expr
+            fun [%p types_pat] ([%p gid_x_pat] : int32) [%p params_pat] ->
+              [%e body_with_items]]
+      | Sarek_convergence.Simple2D ->
+          [%expr
+            fun [%p types_pat]
+                ([%p gid_x_pat] : int32)
+                ([%p gid_y_pat] : int32)
+                [%p params_pat] -> [%e body_with_items]]
+      | Sarek_convergence.Simple3D ->
+          [%expr
+            fun [%p types_pat]
+                ([%p gid_x_pat] : int32)
+                ([%p gid_y_pat] : int32)
+                ([%p gid_z_pat] : int32)
+                [%p params_pat] -> [%e body_with_items]]
+      | Sarek_convergence.FullState ->
+          failwith "gen_simple_cpu_kern called with FullState strategy"
+    else
+      match exec_strategy with
+      | Sarek_convergence.Simple1D ->
+          [%expr
+            fun ([%p gid_x_pat] : int32) [%p params_pat] -> [%e body_with_items]]
+      | Sarek_convergence.Simple2D ->
+          [%expr
+            fun ([%p gid_x_pat] : int32)
+                ([%p gid_y_pat] : int32)
+                [%p params_pat] -> [%e body_with_items]]
+      | Sarek_convergence.Simple3D ->
+          [%expr
+            fun ([%p gid_x_pat] : int32)
+                ([%p gid_y_pat] : int32)
+                ([%p gid_z_pat] : int32)
+                [%p params_pat] -> [%e body_with_items]]
+      | Sarek_convergence.FullState ->
+          failwith "gen_simple_cpu_kern called with FullState strategy"
+  in
+  (* Add warning suppression attribute to the function *)
+  {
+    inner_fun with
+    pexp_attributes =
+      [
+        Ast_builder.Default.attribute
+          ~loc
+          ~name:{txt = "warning"; loc}
+          ~payload:
+            (PStr
+               [
+                 Ast_builder.Default.pstr_eval
+                   ~loc
+                   (Ast_builder.Default.estring ~loc "-27-32-33")
+                   [];
+               ]);
+      ];
+  }
 
 (** Generate a type cast expression for extracting a kernel argument.
 
@@ -1419,12 +1649,20 @@ let gen_types_object ~loc (decls : ttype_decl list) : expression =
 
     For kernels with inline types, we use first-class modules to avoid "type
     escapes its scope" errors. The types module is created inside the wrapper
-    and passed to the kernel. *)
+    and passed to the kernel.
+
+    OPTIMIZATION: For simple 1D/2D/3D kernels that don't use block/thread
+    indices, shared memory, or barriers, we generate an optimized path that uses
+    run_1d/2d/3d_threadpool. This eliminates the per-element thread_state
+    overhead. *)
 let gen_cpu_kern_wrapper ~loc (kernel : tkernel) : expression =
   (* We now use Spoc vectors directly (via Spoc.Mem.get/set) instead of
      bigarrays, so record/variant vectors are supported. *)
   let use_fcm = has_inline_types kernel in
   let native_kern = gen_cpu_kern ~loc kernel in
+
+  (* Detect execution strategy for optimization *)
+  let exec_strategy = Sarek_convergence.kernel_exec_strategy kernel in
 
   (* Detect barrier usage at compile time - passed to runtime *)
   let has_barriers = Sarek_convergence.kernel_uses_barriers kernel in
@@ -1453,58 +1691,172 @@ let gen_cpu_kern_wrapper ~loc (kernel : tkernel) : expression =
     | es -> Ast_builder.Default.pexp_tuple ~loc es
   in
 
-  (* Build the call to run_sequential, run_parallel, or run_threadpool
-     based on __mode (exec_mode variant):
-       Sequential  = single-threaded
-       Parallel    = spawn domains per kernel
-       Threadpool  = persistent worker pool (fission mode)
-     For FCM kernels, we need to partially apply the types record first:
-       run_X ~block ~grid (__native_kern __types_rec) args *)
+  (* Generate the simple kernel expression if needed *)
+  let simple_kern_opt =
+    match exec_strategy with
+    | Sarek_convergence.Simple1D | Sarek_convergence.Simple2D
+    | Sarek_convergence.Simple3D ->
+        Some (gen_simple_cpu_kern ~loc ~exec_strategy kernel)
+    | Sarek_convergence.FullState -> None
+  in
+
+  (* For simple kernels, generate optimized threadpool call:
+     - Simple1D: run_1d_threadpool ~total_x:(bx*gx) simple_kern args
+     - Simple2D: run_2d_threadpool ~width:(bx*gx) ~height:(by*gy) simple_kern args
+     - Simple3D: run_3d_threadpool ~width ~height ~depth simple_kern args
+     For FCM kernels, partially apply __types_rec first.
+     Note: __simple_kern is bound in the wrapper body. *)
+  let gen_simple_threadpool_call () =
+    match exec_strategy with
+    | Sarek_convergence.Simple1D ->
+        if use_fcm then
+          [%expr
+            let bx, _, _ = block in
+            let gx, _, _ = grid in
+            Sarek.Sarek_cpu_runtime.run_1d_threadpool
+              ~total_x:(bx * gx)
+              (fun gid_x args -> __simple_kern __types_rec gid_x args)
+              [%e args_tuple]]
+        else
+          [%expr
+            let bx, _, _ = block in
+            let gx, _, _ = grid in
+            Sarek.Sarek_cpu_runtime.run_1d_threadpool
+              ~total_x:(bx * gx)
+              __simple_kern
+              [%e args_tuple]]
+    | Sarek_convergence.Simple2D ->
+        if use_fcm then
+          [%expr
+            let bx, by, _ = block in
+            let gx, gy, _ = grid in
+            Sarek.Sarek_cpu_runtime.run_2d_threadpool
+              ~width:(bx * gx)
+              ~height:(by * gy)
+              (fun gid_x gid_y args ->
+                __simple_kern __types_rec gid_x gid_y args)
+              [%e args_tuple]]
+        else
+          [%expr
+            let bx, by, _ = block in
+            let gx, gy, _ = grid in
+            Sarek.Sarek_cpu_runtime.run_2d_threadpool
+              ~width:(bx * gx)
+              ~height:(by * gy)
+              __simple_kern
+              [%e args_tuple]]
+    | Sarek_convergence.Simple3D ->
+        if use_fcm then
+          [%expr
+            let bx, by, bz = block in
+            let gx, gy, gz = grid in
+            Sarek.Sarek_cpu_runtime.run_3d_threadpool
+              ~width:(bx * gx)
+              ~height:(by * gy)
+              ~depth:(bz * gz)
+              (fun gid_x gid_y gid_z args ->
+                __simple_kern __types_rec gid_x gid_y gid_z args)
+              [%e args_tuple]]
+        else
+          [%expr
+            let bx, by, bz = block in
+            let gx, gy, gz = grid in
+            Sarek.Sarek_cpu_runtime.run_3d_threadpool
+              ~width:(bx * gx)
+              ~height:(by * gy)
+              ~depth:(bz * gz)
+              __simple_kern
+              [%e args_tuple]]
+    | Sarek_convergence.FullState ->
+        failwith "gen_simple_threadpool_call called with FullState"
+  in
+
+  (* For simple kernels in Threadpool mode, use the optimized path.
+     For all other cases, use the standard path. *)
   let run_call =
-    if use_fcm then
-      [%expr
-        match __mode with
-        | Sarek.Sarek_cpu_runtime.Sequential ->
-            Sarek.Sarek_cpu_runtime.run_sequential
-              ~block
-              ~grid
-              (__native_kern __types_rec)
-              [%e args_tuple]
-        | Sarek.Sarek_cpu_runtime.Threadpool ->
-            Sarek.Sarek_cpu_runtime.run_threadpool
-              ~has_barriers:[%e has_barriers_expr]
-              ~block
-              ~grid
-              (__native_kern __types_rec)
-              [%e args_tuple]
-        | Sarek.Sarek_cpu_runtime.Parallel ->
-            Sarek.Sarek_cpu_runtime.run_parallel
-              ~block
-              ~grid
-              (__native_kern __types_rec)
-              [%e args_tuple]]
-    else
-      [%expr
-        match __mode with
-        | Sarek.Sarek_cpu_runtime.Sequential ->
-            Sarek.Sarek_cpu_runtime.run_sequential
-              ~block
-              ~grid
-              __native_kern
-              [%e args_tuple]
-        | Sarek.Sarek_cpu_runtime.Threadpool ->
-            Sarek.Sarek_cpu_runtime.run_threadpool
-              ~has_barriers:[%e has_barriers_expr]
-              ~block
-              ~grid
-              __native_kern
-              [%e args_tuple]
-        | Sarek.Sarek_cpu_runtime.Parallel ->
-            Sarek.Sarek_cpu_runtime.run_parallel
-              ~block
-              ~grid
-              __native_kern
-              [%e args_tuple]]
+    match exec_strategy with
+    | Sarek_convergence.Simple1D | Sarek_convergence.Simple2D
+    | Sarek_convergence.Simple3D ->
+        (* Simple kernel - use optimized path for Threadpool *)
+        let simple_call = gen_simple_threadpool_call () in
+        if use_fcm then
+          [%expr
+            match __mode with
+            | Sarek.Sarek_cpu_runtime.Sequential ->
+                Sarek.Sarek_cpu_runtime.run_sequential
+                  ~block
+                  ~grid
+                  (__native_kern __types_rec)
+                  [%e args_tuple]
+            | Sarek.Sarek_cpu_runtime.Threadpool -> [%e simple_call]
+            | Sarek.Sarek_cpu_runtime.Parallel ->
+                Sarek.Sarek_cpu_runtime.run_parallel
+                  ~block
+                  ~grid
+                  (__native_kern __types_rec)
+                  [%e args_tuple]]
+        else
+          [%expr
+            match __mode with
+            | Sarek.Sarek_cpu_runtime.Sequential ->
+                Sarek.Sarek_cpu_runtime.run_sequential
+                  ~block
+                  ~grid
+                  __native_kern
+                  [%e args_tuple]
+            | Sarek.Sarek_cpu_runtime.Threadpool -> [%e simple_call]
+            | Sarek.Sarek_cpu_runtime.Parallel ->
+                Sarek.Sarek_cpu_runtime.run_parallel
+                  ~block
+                  ~grid
+                  __native_kern
+                  [%e args_tuple]]
+    | Sarek_convergence.FullState ->
+        (* Complex kernel - use standard path for all modes *)
+        if use_fcm then
+          [%expr
+            match __mode with
+            | Sarek.Sarek_cpu_runtime.Sequential ->
+                Sarek.Sarek_cpu_runtime.run_sequential
+                  ~block
+                  ~grid
+                  (__native_kern __types_rec)
+                  [%e args_tuple]
+            | Sarek.Sarek_cpu_runtime.Threadpool ->
+                Sarek.Sarek_cpu_runtime.run_threadpool
+                  ~has_barriers:[%e has_barriers_expr]
+                  ~block
+                  ~grid
+                  (__native_kern __types_rec)
+                  [%e args_tuple]
+            | Sarek.Sarek_cpu_runtime.Parallel ->
+                Sarek.Sarek_cpu_runtime.run_parallel
+                  ~block
+                  ~grid
+                  (__native_kern __types_rec)
+                  [%e args_tuple]]
+        else
+          [%expr
+            match __mode with
+            | Sarek.Sarek_cpu_runtime.Sequential ->
+                Sarek.Sarek_cpu_runtime.run_sequential
+                  ~block
+                  ~grid
+                  __native_kern
+                  [%e args_tuple]
+            | Sarek.Sarek_cpu_runtime.Threadpool ->
+                Sarek.Sarek_cpu_runtime.run_threadpool
+                  ~has_barriers:[%e has_barriers_expr]
+                  ~block
+                  ~grid
+                  __native_kern
+                  [%e args_tuple]
+            | Sarek.Sarek_cpu_runtime.Parallel ->
+                Sarek.Sarek_cpu_runtime.run_parallel
+                  ~block
+                  ~grid
+                  __native_kern
+                  [%e args_tuple]]
   in
 
   (* Build the nested let bindings *)
@@ -1535,10 +1887,18 @@ let gen_cpu_kern_wrapper ~loc (kernel : tkernel) : expression =
            ~override:Fresh
            ~expr:
              (Ast_builder.Default.pmod_ident ~loc {txt = Lident "__Types"; loc}))
-        [%expr
-          let __types_rec = [%e types_object] in
-          let __native_kern = [%e native_kern] in
-          [%e body_with_bindings]]
+        (match simple_kern_opt with
+        | Some simple_kern ->
+            [%expr
+              let __types_rec = [%e types_object] in
+              let __native_kern = [%e native_kern] in
+              let __simple_kern = [%e simple_kern] in
+              [%e body_with_bindings]]
+        | None ->
+            [%expr
+              let __types_rec = [%e types_object] in
+              let __native_kern = [%e native_kern] in
+              [%e body_with_bindings]])
     in
     let with_module =
       Ast_builder.Default.pexp_letmodule
@@ -1553,10 +1913,21 @@ let gen_cpu_kern_wrapper ~loc (kernel : tkernel) : expression =
           ~grid
           __args -> [%e with_module]]
   else
-    [%expr
-      fun ~mode:(__mode : Sarek.Sarek_cpu_runtime.exec_mode)
-          ~block
-          ~grid
-          __args ->
-        let __native_kern = [%e native_kern] in
-        [%e body_with_bindings]]
+    match simple_kern_opt with
+    | Some simple_kern ->
+        [%expr
+          fun ~mode:(__mode : Sarek.Sarek_cpu_runtime.exec_mode)
+              ~block
+              ~grid
+              __args ->
+            let __native_kern = [%e native_kern] in
+            let __simple_kern = [%e simple_kern] in
+            [%e body_with_bindings]]
+    | None ->
+        [%expr
+          fun ~mode:(__mode : Sarek.Sarek_cpu_runtime.exec_mode)
+              ~block
+              ~grid
+              __args ->
+            let __native_kern = [%e native_kern] in
+            [%e body_with_bindings]]

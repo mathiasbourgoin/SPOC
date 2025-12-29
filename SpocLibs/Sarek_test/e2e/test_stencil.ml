@@ -98,9 +98,13 @@ let stencil_2d_kernel =
 
 (* Mutable refs to hold test data for sharing between baseline and device runs *)
 let input_1d = ref [||]
+
 let expected_1d = ref [||]
+
 let input_2d = ref [||]
+
 let expected_2d = ref [||]
+
 let dim_2d = ref 0
 
 (** Initialize 1D test data and compute expected result *)

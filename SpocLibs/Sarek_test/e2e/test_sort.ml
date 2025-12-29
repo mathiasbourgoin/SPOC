@@ -19,14 +19,19 @@ let ocaml_sort arr _n =
 (* ========== Shared test data ========== *)
 
 let input_bitonic_global = ref [||]
+
 let expected_bitonic_global = ref [||]
+
 let sort_size_global = ref 0
 
 let input_bitonic_block = ref [||]
+
 let expected_bitonic_block = ref [||]
 
 let input_odd_even = ref [||]
+
 let expected_odd_even = ref [||]
+
 let sort_size_odd_even = ref 0
 
 let init_bitonic_global_data () =
@@ -267,7 +272,12 @@ let run_bitonic_sort_global dev =
   while !k <= n do
     let j = ref (!k / 2) in
     while !j > 0 do
-      Sarek.Kirc.run bitonic_sort_step_kernel (data, !j, !k, n) (block, grid) 0 dev ;
+      Sarek.Kirc.run
+        bitonic_sort_step_kernel
+        (data, !j, !k, n)
+        (block, grid)
+        0
+        dev ;
       Devices.flush dev () ;
       j := !j / 2
     done ;

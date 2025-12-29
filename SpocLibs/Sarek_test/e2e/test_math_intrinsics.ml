@@ -54,22 +54,33 @@ let ocaml_complex_math x y output n =
 (* ========== Shared test data ========== *)
 
 let input_trig = ref [||]
+
 let expected_sin = ref [||]
+
 let expected_cos = ref [||]
+
 let expected_tan = ref [||]
 
 let input_exp = ref [||]
+
 let expected_exp = ref [||]
+
 let expected_log = ref [||]
+
 let expected_log10 = ref [||]
 
 let input_base = ref [||]
+
 let input_exponent = ref [||]
+
 let expected_pow = ref [||]
+
 let expected_sqrt = ref [||]
 
 let input_x = ref [||]
+
 let input_y = ref [||]
+
 let expected_complex = ref [||]
 
 let init_trig_data () =
@@ -251,7 +262,9 @@ let run_trig_test dev =
       for i = 0 to n - 1 do
         let s = Mem.get sin_out i in
         let c = Mem.get cos_out i in
-        if abs_float (s -. exp_sin.(i)) > 0.001 || abs_float (c -. exp_cos.(i)) > 0.001
+        if
+          abs_float (s -. exp_sin.(i)) > 0.001
+          || abs_float (c -. exp_cos.(i)) > 0.001
         then incr errors
       done ;
       !errors = 0
@@ -309,7 +322,8 @@ let run_exp_log_test dev =
       for i = 0 to n - 1 do
         let e = Mem.get exp_out i in
         let l = Mem.get log_out i in
-        if rel_err e exp_expected.(i) > 1e-5 || rel_err l log_expected.(i) > 1e-5
+        if
+          rel_err e exp_expected.(i) > 1e-5 || rel_err l log_expected.(i) > 1e-5
         then incr errors
       done ;
       !errors = 0
@@ -368,7 +382,9 @@ let run_power_test dev =
       for i = 0 to n - 1 do
         let p = Mem.get pow_out i in
         let s = Mem.get sqrt_out i in
-        if rel_err p pow_expected.(i) > 1e-5 || rel_err s sqrt_expected.(i) > 1e-5
+        if
+          rel_err p pow_expected.(i) > 1e-5
+          || rel_err s sqrt_expected.(i) > 1e-5
         then incr errors
       done ;
       !errors = 0

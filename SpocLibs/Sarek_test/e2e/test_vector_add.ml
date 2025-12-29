@@ -106,8 +106,19 @@ let run_on_device vector_add _devs dev =
       for i = 0 to !size - 1 do
         let expected = float_of_int i +. float_of_int (i * 2) in
         let got = Mem.get c i in
-        if abs_float (got -. expected) > 0.001 then incr errors
+        if abs_float (got -. expected) > 0.001 then begin
+          if !errors < 5 then
+            Printf.printf
+              "Mismatch at %d: expected %.2f, got %.2f (a=%.2f, b=%.2f)\n"
+              i
+              expected
+              got
+              (Mem.get a i)
+              (Mem.get b i) ;
+          incr errors
+        end
       done ;
+      if !errors > 0 then Printf.printf "Total errors: %d\n" !errors ;
       !errors = 0
     end
     else true
@@ -117,14 +128,16 @@ let run_on_device vector_add _devs dev =
 let () =
   parse_args () ;
 
-  (* Define kernel inside function to avoid value restriction *)
+  (* Define kernel inside function to avoid value restriction.
+     Uses global_thread_id to enable Simple1D optimization for native runtime. *)
   let vector_add =
     [%kernel
       fun (a : float32 vector)
           (b : float32 vector)
           (c : float32 vector)
-          (n : int32) ->
-        let tid = thread_idx_x + (block_dim_x * block_idx_x) in
+          (n : int) ->
+        let open Std in
+        let tid = global_thread_id in
         if tid < n then c.(tid) <- a.(tid) +. b.(tid)]
   in
 

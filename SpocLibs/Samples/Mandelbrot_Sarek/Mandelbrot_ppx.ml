@@ -14,8 +14,9 @@ let make_mandelbrot () =
         (shifty : int)
         (zoom : float32) ->
       let open Std in
-      let x = thread_idx_x + (block_idx_x * block_dim_x) in
-      let y = thread_idx_y + (block_idx_y * block_dim_y) in
+      (* Use global_idx_x/y to enable Simple2D optimization for native runtime *)
+      let x = global_idx_x in
+      let y = global_idx_y in
       if x < width && y < height then begin
         let x0 = x + shiftx in
         let y0 = y + shifty in

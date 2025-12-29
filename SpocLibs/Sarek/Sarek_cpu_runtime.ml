@@ -1029,6 +1029,169 @@ let get_fission_pool () =
   Mutex.unlock fission_pool_mutex ;
   pool
 
+(** {1 Simple Parallel Pool for Simple Kernels}
+
+    A persistent thread pool for embarrassingly parallel kernels. Workers are
+    spawned once and reused across kernel invocations.
+
+    Uses a simple shared atomic counter for work distribution - each worker
+    atomically claims chunks of work. This is simpler and more reliable than
+    work-stealing for our use case. *)
+
+module ParallelPool = struct
+  (** Default chunk size for work distribution. Smaller = better load balance
+      but more overhead. This is tuned for typical GPU-style workloads. *)
+  let default_chunk_size = 256
+
+  type t = {
+    num_workers : int;
+    mutable workers : unit Domain.t array;
+    (* Shared work counter - workers atomically fetch-and-add to claim chunks *)
+    next_chunk : int Atomic.t;
+    total_work : int Atomic.t;
+    (* Current chunk size - can be customized per parallel_for call *)
+    current_chunk_size : int Atomic.t;
+    (* Current work function *)
+    work_fn : (int -> int -> unit) Atomic.t;
+    (* Synchronization *)
+    mutex : Mutex.t;
+    work_ready : Condition.t;
+    work_done : Condition.t;
+    mutable pending_workers : int;
+    mutable shutdown : bool;
+    mutable generation : int;
+  }
+
+  (** Worker function - claims chunks via atomic counter *)
+  let worker_fn pool _worker_id =
+    let last_gen = ref 0 in
+
+    let rec loop () =
+      (* Wait for work *)
+      Mutex.lock pool.mutex ;
+      while (not pool.shutdown) && pool.generation = !last_gen do
+        Condition.wait pool.work_ready pool.mutex
+      done ;
+      if pool.shutdown then begin
+        Mutex.unlock pool.mutex ;
+        () (* Exit *)
+      end
+      else begin
+        last_gen := pool.generation ;
+        Mutex.unlock pool.mutex ;
+
+        (* Get work function, total, and chunk size *)
+        let work_fn = Atomic.get pool.work_fn in
+        let total = Atomic.get pool.total_work in
+        let chunk_size = Atomic.get pool.current_chunk_size in
+
+        (* Claim and process chunks until done *)
+        let rec process_chunks () =
+          let start = Atomic.fetch_and_add pool.next_chunk chunk_size in
+          if start < total then begin
+            let end_ = min (start + chunk_size) total in
+            work_fn start end_ ;
+            process_chunks ()
+          end
+        in
+        process_chunks () ;
+
+        (* Signal completion *)
+        Mutex.lock pool.mutex ;
+        pool.pending_workers <- pool.pending_workers - 1 ;
+        if pool.pending_workers = 0 then Condition.signal pool.work_done ;
+        Mutex.unlock pool.mutex ;
+
+        loop ()
+      end
+    in
+    loop ()
+
+  (** Create a parallel pool with the given number of workers *)
+  let create num_workers =
+    let pool =
+      {
+        num_workers;
+        workers = [||];
+        (* Will be set after workers are spawned *)
+        next_chunk = Atomic.make 0;
+        total_work = Atomic.make 0;
+        current_chunk_size = Atomic.make default_chunk_size;
+        work_fn = Atomic.make (fun _ _ -> ());
+        mutex = Mutex.create ();
+        work_ready = Condition.create ();
+        work_done = Condition.create ();
+        pending_workers = 0;
+        shutdown = false;
+        generation = 0;
+      }
+    in
+    (* Spawn worker domains - they reference the same pool record *)
+    pool.workers <-
+      Array.init num_workers (fun id ->
+          Domain.spawn (fun () -> worker_fn pool id)) ;
+    pool
+
+  (** Run a parallel_for over [0, total) with custom chunk size *)
+  let parallel_for_chunk pool ~total ~chunk_size (work_fn : int -> int -> unit)
+      =
+    if total <= 0 then ()
+    else begin
+      (* Reset counter and set work *)
+      Atomic.set pool.next_chunk 0 ;
+      Atomic.set pool.total_work total ;
+      Atomic.set pool.current_chunk_size chunk_size ;
+      Atomic.set pool.work_fn work_fn ;
+
+      (* Wake workers *)
+      Mutex.lock pool.mutex ;
+      pool.pending_workers <- pool.num_workers ;
+      pool.generation <- pool.generation + 1 ;
+      Condition.broadcast pool.work_ready ;
+
+      (* Wait for completion *)
+      while pool.pending_workers > 0 do
+        Condition.wait pool.work_done pool.mutex
+      done ;
+      Mutex.unlock pool.mutex
+    end
+
+  (** Run a parallel_for over [0, total) with default chunk size *)
+  let parallel_for pool ~total work_fn =
+    parallel_for_chunk pool ~total ~chunk_size:default_chunk_size work_fn
+
+  let shutdown pool =
+    Mutex.lock pool.mutex ;
+    pool.shutdown <- true ;
+    Condition.broadcast pool.work_ready ;
+    Mutex.unlock pool.mutex ;
+    Array.iter Domain.join pool.workers
+
+  let _ = shutdown (* Suppress unused warning - available for cleanup *)
+end
+
+(** Global parallel pool for simple kernels *)
+let parallel_pool : ParallelPool.t option ref = ref None
+
+let parallel_pool_mutex = Mutex.create ()
+
+let get_parallel_pool () =
+  match !parallel_pool with
+  | Some p -> p
+  | None ->
+      Mutex.lock parallel_pool_mutex ;
+      let p =
+        match !parallel_pool with
+        | Some p -> p
+        | None ->
+            let num_workers = max 1 (Domain.recommended_domain_count () - 1) in
+            let p = ParallelPool.create num_workers in
+            parallel_pool := Some p ;
+            p
+      in
+      Mutex.unlock parallel_pool_mutex ;
+      p
+
 (** Run kernel using the persistent thread pool. This is like run_parallel but
     uses the fission thread pool instead of spawning new domains. For use by the
     wrapper in fission mode.
@@ -1038,16 +1201,80 @@ let get_fission_pool () =
     - has_barriers=true: distribute blocks (required for BSP semantics) *)
 let run_threadpool ~has_barriers ~block:(bx, by, bz) ~grid:(gx, gy, gz)
     (kernel : thread_state -> shared_mem -> 'a -> unit) (args : 'a) : unit =
-  let pool = get_fission_pool () in
-  (* Wrap the typed kernel to take Obj.t array *)
-  let wrapped_kernel state shared _obj_args = kernel state shared args in
-  ThreadPool.run_kernel
-    pool
-    ~block:(bx, by, bz)
-    ~grid:(gx, gy, gz)
-    ~uses_barriers:has_barriers
-    wrapped_kernel
-    [||]
+  if has_barriers then begin
+    (* Use ThreadPool for barrier kernels - need BSP semantics *)
+    let pool = get_fission_pool () in
+    let wrapped_kernel state shared _obj_args = kernel state shared args in
+    ThreadPool.run_kernel
+      pool
+      ~block:(bx, by, bz)
+      ~grid:(gx, gy, gz)
+      ~uses_barriers:true
+      wrapped_kernel
+      [||]
+  end
+  else begin
+    (* Use ParallelPool for barrier-free kernels - better load balancing *)
+    let pool = get_parallel_pool () in
+    let threads_per_block = bx * by * bz in
+    let total_blocks = gx * gy * gz in
+    let total_threads = total_blocks * threads_per_block in
+    let empty_shared = create_shared () in
+    (* Pre-compute int32 values for block/thread dimensions *)
+    let bx32 = Int32.of_int bx in
+    let by32 = Int32.of_int by in
+    let bz32 = Int32.of_int bz in
+    let gx32 = Int32.of_int gx in
+    let gy32 = Int32.of_int gy in
+    let gz32 = Int32.of_int gz in
+    (* Pre-compute lookup tables *)
+    let thread_x_table = Array.init bx Int32.of_int in
+    let thread_y_table = Array.init by Int32.of_int in
+    let thread_z_table =
+      if bz > 1 then Array.init bz Int32.of_int else [|0l|]
+    in
+    let block_x_table = Array.init gx Int32.of_int in
+    let block_y_table = Array.init gy Int32.of_int in
+    let block_z_table = if gz > 1 then Array.init gz Int32.of_int else [|0l|] in
+    let noop_barrier = fun () -> () in
+    ParallelPool.parallel_for pool ~total:total_threads (fun start end_ ->
+        (* Pre-allocate a reusable state record *)
+        let state =
+          {
+            thread_idx_x = 0l;
+            thread_idx_y = 0l;
+            thread_idx_z = 0l;
+            block_idx_x = 0l;
+            block_idx_y = 0l;
+            block_idx_z = 0l;
+            block_dim_x = bx32;
+            block_dim_y = by32;
+            block_dim_z = bz32;
+            grid_dim_x = gx32;
+            grid_dim_y = gy32;
+            grid_dim_z = gz32;
+            barrier = noop_barrier;
+          }
+        in
+        for global_tid = start to end_ - 1 do
+          let block_id = global_tid / threads_per_block in
+          let local_tid = global_tid - (block_id * threads_per_block) in
+          let block_x = block_id mod gx in
+          let block_y = block_id / gx mod gy in
+          let block_z = block_id / (gx * gy) in
+          let thread_x = local_tid mod bx in
+          let thread_y = local_tid / bx mod by in
+          let thread_z = local_tid / (bx * by) in
+          (* Update state using Obj.set_field for efficiency *)
+          Obj.set_field (Obj.repr state) 0 (Obj.repr thread_x_table.(thread_x)) ;
+          Obj.set_field (Obj.repr state) 1 (Obj.repr thread_y_table.(thread_y)) ;
+          Obj.set_field (Obj.repr state) 2 (Obj.repr thread_z_table.(thread_z)) ;
+          Obj.set_field (Obj.repr state) 3 (Obj.repr block_x_table.(block_x)) ;
+          Obj.set_field (Obj.repr state) 4 (Obj.repr block_y_table.(block_y)) ;
+          Obj.set_field (Obj.repr state) 5 (Obj.repr block_z_table.(block_z)) ;
+          kernel state empty_shared args
+        done)
+  end
 
 (** {1 Fission Queue with Thread Pool Execution}
 
@@ -1207,3 +1434,67 @@ let flush_fission () =
   let queues = Hashtbl.fold (fun _ q acc -> q :: acc) fission_queues [] in
   Mutex.unlock fission_queues_mutex ;
   List.iter LaunchQueue.flush queues
+
+(** {1 Optimized Simple Kernel Runners}
+
+    For kernels that only use global_idx_x/y/z without thread/block dimensions,
+    shared memory, or barriers, we can skip the expensive thread_state machinery
+    and just pass the global index directly.
+
+    This eliminates:
+    - 6 Obj.set_field calls per element
+    - 6 integer divisions/modulos
+    - Function call overhead through thread_state
+
+    These functions are used when the PPX detects Simple1D/2D/3D execution
+    strategy. *)
+
+(** Run a simple 1D kernel in parallel - just iterates over global_idx_x. Kernel
+    signature: (gid_x:int32 -> args -> unit)
+
+    Uses persistent parallel pool for efficient parallel execution. *)
+let run_1d_threadpool ~total_x (kernel : int32 -> 'a -> unit) (args : 'a) : unit
+    =
+  let pool = get_parallel_pool () in
+  ParallelPool.parallel_for pool ~total:total_x (fun start end_ ->
+      for x = start to end_ - 1 do
+        kernel (Int32.of_int x) args
+      done)
+
+(** Run a simple 2D kernel in parallel - iterates over global_idx_x,
+    global_idx_y. Kernel signature: (gid_x:int32 -> gid_y:int32 -> args -> unit)
+
+    Uses persistent parallel pool. Flattens 2D to 1D for work distribution, then
+    unfolds coordinates. This allows fine-grained work stealing which is
+    essential for workloads with non-uniform computation (like Mandelbrot where
+    center pixels do more work than edge pixels). *)
+let run_2d_threadpool ~width ~height (kernel : int32 -> int32 -> 'a -> unit)
+    (args : 'a) : unit =
+  let pool = get_parallel_pool () in
+  let total = width * height in
+  ParallelPool.parallel_for pool ~total (fun start end_ ->
+      for idx = start to end_ - 1 do
+        let y = idx / width in
+        let x = idx - (y * width) in
+        (* Faster than mod *)
+        kernel (Int32.of_int x) (Int32.of_int y) args
+      done)
+
+(** Run a simple 3D kernel in parallel - iterates over global_idx_x/y/z. Kernel
+    signature: (gid_x:int32 -> gid_y:int32 -> gid_z:int32 -> args -> unit)
+
+    Uses persistent parallel pool. Flattens 3D to 1D for work distribution. *)
+let run_3d_threadpool ~width ~height ~depth
+    (kernel : int32 -> int32 -> int32 -> 'a -> unit) (args : 'a) : unit =
+  let pool = get_parallel_pool () in
+  let total = width * height * depth in
+  let wh = width * height in
+  ParallelPool.parallel_for pool ~total (fun start end_ ->
+      for idx = start to end_ - 1 do
+        let z = idx / wh in
+        let rem = idx - (z * wh) in
+        (* Faster than mod *)
+        let y = rem / width in
+        let x = rem - (y * width) in
+        kernel (Int32.of_int x) (Int32.of_int y) (Int32.of_int z) args
+      done)

@@ -50,7 +50,9 @@ let ocaml_julia output width height c_real c_imag max_iter =
 (* ========== Shared test data ========== *)
 
 let expected_mandelbrot = ref [||]
+
 let expected_julia = ref [||]
+
 let image_dim = ref 0
 
 let init_mandelbrot_data () =
@@ -86,8 +88,9 @@ let run_mandelbrot_test dev =
           (height : int)
           (max_iter : int) ->
         let open Std in
-        let px = thread_idx_x + (block_dim_x * block_idx_x) in
-        let py = thread_idx_y + (block_dim_y * block_idx_y) in
+        (* Use global_idx_x/y to enable Simple2D optimization for native runtime *)
+        let px = global_idx_x in
+        let py = global_idx_y in
         if px < width && py < height then begin
           let x0 = (4.0 *. (float px /. float width)) -. 2.5 in
           let y0 = (3.0 *. (float py /. float height)) -. 1.5 in
@@ -158,8 +161,9 @@ let run_julia_test dev =
           (c_imag : float32)
           (max_iter : int) ->
         let open Std in
-        let px = thread_idx_x + (block_dim_x * block_idx_x) in
-        let py = thread_idx_y + (block_dim_y * block_idx_y) in
+        (* Use global_idx_x/y to enable Simple2D optimization for native runtime *)
+        let px = global_idx_x in
+        let py = global_idx_y in
         if px < width && py < height then begin
           let x = mut ((4.0 *. (float px /. float width)) -. 2.0) in
           let y = mut ((4.0 *. (float py /. float height)) -. 2.0) in

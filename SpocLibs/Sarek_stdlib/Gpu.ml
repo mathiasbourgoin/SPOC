@@ -66,12 +66,31 @@ let%sarek_intrinsic (grid_dim_z : int32) =
   {device = dev "gridDim.z" "get_num_groups(2)"; ocaml = 0l}
 
 (******************************************************************************
- * Convenience: global thread ID
+ * Convenience: global thread ID and global indices
  ******************************************************************************)
 
 let%sarek_intrinsic (global_thread_id : int32) =
   {
     device = dev "(threadIdx.x + blockIdx.x * blockDim.x)" "get_global_id(0)";
+    ocaml = 0l;
+  }
+
+(* Global indices - for Simple1D/2D/3D optimization in native runtime *)
+let%sarek_intrinsic (global_idx_x : int32) =
+  {
+    device = dev "(threadIdx.x + blockIdx.x * blockDim.x)" "get_global_id(0)";
+    ocaml = 0l;
+  }
+
+let%sarek_intrinsic (global_idx_y : int32) =
+  {
+    device = dev "(threadIdx.y + blockIdx.y * blockDim.y)" "get_global_id(1)";
+    ocaml = 0l;
+  }
+
+let%sarek_intrinsic (global_idx_z : int32) =
+  {
+    device = dev "(threadIdx.z + blockIdx.z * blockDim.z)" "get_global_id(2)";
     ocaml = 0l;
   }
 

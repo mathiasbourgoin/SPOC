@@ -140,12 +140,7 @@ let benchmark_with_baseline ?(device_ids = None) devs ~baseline run_test name =
         "\nBenchmark: %s (devices: %s)\n"
         name
         (String.concat ", " (List.map string_of_int ids))) ;
-  Printf.printf
-    "%-40s %12s %10s %10s\n"
-    "Device"
-    "Time (ms)"
-    "Status"
-    "Speedup" ;
+  Printf.printf "%-40s %12s %10s %10s\n" "Device" "Time (ms)" "Status" "Speedup" ;
   Printf.printf "%s\n" (String.make 76 '-') ;
   (* Run baseline first *)
   let baseline_time, baseline_ok = baseline () in
@@ -166,9 +161,7 @@ let benchmark_with_baseline ?(device_ids = None) devs ~baseline run_test name =
         flush stdout ;
         let time_ms, ok = run_test dev in
         let status = if ok then "OK" else "FAIL" in
-        let speedup =
-          if time_ms > 0.0 then baseline_time /. time_ms else 0.0
-        in
+        let speedup = if time_ms > 0.0 then baseline_time /. time_ms else 0.0 in
         Printf.printf
           "%-40s %12.4f %10s %9.2fx\n%!"
           dev_name

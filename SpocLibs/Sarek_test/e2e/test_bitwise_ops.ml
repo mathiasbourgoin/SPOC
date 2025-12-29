@@ -28,7 +28,8 @@ let ocaml_shift input shift_amt left_out right_out n =
 let count_bits x =
   let rec loop acc v =
     if v = 0l then acc
-    else loop (Int32.add acc (Int32.logand v 1l)) (Int32.shift_right_logical v 1)
+    else
+      loop (Int32.add acc (Int32.logand v 1l)) (Int32.shift_right_logical v 1)
   in
   loop 0l x
 
@@ -56,21 +57,31 @@ let ocaml_gray_code input to_gray from_gray n =
 (* ========== Shared test data ========== *)
 
 let input_a = ref [||]
+
 let input_b = ref [||]
+
 let expected_and = ref [||]
+
 let expected_or = ref [||]
+
 let expected_xor = ref [||]
 
 let input_shift = ref [||]
+
 let input_shift_amt = ref [||]
+
 let expected_left = ref [||]
+
 let expected_right = ref [||]
 
 let input_popcount = ref [||]
+
 let expected_popcount = ref [||]
 
 let input_gray = ref [||]
+
 let expected_to_gray = ref [||]
+
 let expected_from_gray = ref [||]
 
 let init_bitwise_data () =
@@ -309,7 +320,9 @@ let run_shift_test dev =
       Devices.flush dev () ;
       let errors = ref 0 in
       for i = 0 to n - 1 do
-        if Mem.get left_out i <> exp_left.(i) || Mem.get right_out i <> exp_right.(i)
+        if
+          Mem.get left_out i <> exp_left.(i)
+          || Mem.get right_out i <> exp_right.(i)
         then incr errors
       done ;
       !errors = 0
@@ -382,7 +395,12 @@ let run_gray_code_test dev =
   let grid = {Kernel.gridX = blocks; gridY = 1; gridZ = 1} in
 
   let t0 = Unix.gettimeofday () in
-  Sarek.Kirc.run gray_code_kernel (input, to_gray, from_gray, n) (block, grid) 0 dev ;
+  Sarek.Kirc.run
+    gray_code_kernel
+    (input, to_gray, from_gray, n)
+    (block, grid)
+    0
+    dev ;
   Devices.flush dev () ;
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in

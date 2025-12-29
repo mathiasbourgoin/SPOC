@@ -35,11 +35,17 @@ let ocaml_dot a b n =
 (* ========== Shared test data ========== *)
 
 let input_sum = ref [||]
+
 let expected_sum = ref 0.0
+
 let input_max = ref [||]
+
 let expected_max = ref 0.0
+
 let input_a = ref [||]
+
 let input_b = ref [||]
+
 let expected_dot = ref 0.0
 
 let init_sum_data () =

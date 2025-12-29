@@ -74,6 +74,31 @@ let primitives =
       purity = Pure;
       category = "thread_id";
     };
+    (* === Global Indices (ThreadVarying) - for Simple1D/2D/3D optimization === *)
+    {
+      name = "global_idx_x";
+      typ = t_int32;
+      variance = ThreadVarying;
+      convergence = NoEffect;
+      purity = Pure;
+      category = "thread_id";
+    };
+    {
+      name = "global_idx_y";
+      typ = t_int32;
+      variance = ThreadVarying;
+      convergence = NoEffect;
+      purity = Pure;
+      category = "thread_id";
+    };
+    {
+      name = "global_idx_z";
+      typ = t_int32;
+      variance = ThreadVarying;
+      convergence = NoEffect;
+      purity = Pure;
+      category = "thread_id";
+    };
     (* === Block Indices (BlockVarying) === *)
     {
       name = "block_idx_x";

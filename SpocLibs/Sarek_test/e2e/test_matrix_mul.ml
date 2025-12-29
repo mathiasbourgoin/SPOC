@@ -28,8 +28,11 @@ let ocaml_matmul a b c m n k =
 (* ========== Shared test data ========== *)
 
 let input_a = ref [||]
+
 let input_b = ref [||]
+
 let expected_c = ref [||]
+
 let matrix_dim = ref 0
 
 (** Initialize matrices and compute expected result *)
@@ -50,7 +53,8 @@ let init_matmul_data () =
 
 (* ========== Sarek kernels ========== *)
 
-(** Naive matrix multiplication - each thread computes one output element *)
+(** Naive matrix multiplication - each thread computes one output element. Uses
+    global_idx_x/y for optimized Simple2D execution path on native CPU. *)
 let matmul_naive_kernel =
   [%kernel
     fun (a : float32 vector)
@@ -59,8 +63,9 @@ let matmul_naive_kernel =
         (m : int32)
         (n : int32)
         (k : int32) ->
-      let row = thread_idx_y + (block_dim_y * block_idx_y) in
-      let col = thread_idx_x + (block_dim_x * block_idx_x) in
+      let open Std in
+      let row = global_idx_y in
+      let col = global_idx_x in
       if row < m && col < n then begin
         let sum = mut 0.0 in
         for i = 0 to k - 1l do

@@ -23,14 +23,19 @@ let ocaml_transpose input output width height =
 (* ========== Shared test data ========== *)
 
 let input_naive = ref [||]
+
 let expected_naive = ref [||]
+
 let matrix_dim_naive = ref 0
 
 let input_coalesced = ref [||]
+
 let expected_coalesced = ref [||]
+
 let matrix_dim_coalesced = ref 0
 
 let input_rect = ref [||]
+
 let expected_rect = ref [||]
 
 let init_naive_data () =
@@ -67,7 +72,9 @@ let init_rect_data () =
   let width = 64 in
   let height = 32 in
   let n = width * height in
-  let inp = Array.init n (fun i -> float_of_int ((i / width * 100) + (i mod width))) in
+  let inp =
+    Array.init n (fun i -> float_of_int ((i / width * 100) + (i mod width)))
+  in
   let out = Array.make n 0.0 in
   input_rect := inp ;
   expected_rect := out ;

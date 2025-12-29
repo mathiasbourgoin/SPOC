@@ -50,8 +50,12 @@ let ocaml_sobel input output width height =
         let p20 = input.(idx + width - 1) in
         let p21 = input.(idx + width) in
         let p22 = input.(idx + width + 1) in
-        let gx = -.p00 +. p02 +. (-2.0 *. p10) +. (2.0 *. p12) +. -.p20 +. p22 in
-        let gy = -.p00 +. (-2.0 *. p01) +. -.p02 +. p20 +. (2.0 *. p21) +. p22 in
+        let gx =
+          -.p00 +. p02 +. (-2.0 *. p10) +. (2.0 *. p12) +. -.p20 +. p22
+        in
+        let gy =
+          -.p00 +. (-2.0 *. p01) +. -.p02 +. p20 +. (2.0 *. p21) +. p22
+        in
         output.(idx) <- sqrt ((gx *. gx) +. (gy *. gy))
       end
       else output.(idx) <- 0.0
@@ -61,18 +65,25 @@ let ocaml_sobel input output width height =
 (* ========== Shared test data ========== *)
 
 let input_1d = ref [||]
+
 let expected_1d = ref [||]
 
 let input_2d = ref [||]
+
 let expected_2d = ref [||]
+
 let dim_2d = ref 0
 
 let input_sobel = ref [||]
+
 let expected_sobel = ref [||]
+
 let dim_sobel = ref 0
 
 let input_shared = ref [||]
+
 let expected_shared = ref [||]
+
 let dim_shared = ref 0
 
 let init_conv1d_data () =
@@ -90,7 +101,9 @@ let init_conv2d_data () =
   let dim = Int32.to_int (Int32.of_float (sqrt (float_of_int cfg.size))) in
   dim_2d := dim ;
   let n = dim * dim in
-  let inp = Array.init n (fun i -> float_of_int (((i / dim) + (i mod dim)) mod 2 * 100)) in
+  let inp =
+    Array.init n (fun i -> float_of_int (((i / dim) + (i mod dim)) mod 2 * 100))
+  in
   let out = Array.make n 0.0 in
   input_2d := inp ;
   expected_2d := out ;
@@ -121,7 +134,9 @@ let init_shared_data () =
   let dim = (dim + 15) / 16 * 16 in
   dim_shared := dim ;
   let n = dim * dim in
-  let inp = Array.init n (fun i -> float_of_int (((i / dim) + (i mod dim)) mod 256)) in
+  let inp =
+    Array.init n (fun i -> float_of_int (((i / dim) + (i mod dim)) mod 256))
+  in
   let out = Array.make n 0.0 in
   input_shared := inp ;
   expected_shared := out ;
@@ -196,9 +211,13 @@ let sobel_kernel =
         let p21 = input.(idx + width) in
         let p22 = input.(idx + width + 1) in
         (* Sobel X: [-1 0 1; -2 0 2; -1 0 1] *)
-        let gx = -.p00 +. p02 +. (-2.0 *. p10) +. (2.0 *. p12) +. -.p20 +. p22 in
+        let gx =
+          -.p00 +. p02 +. (-2.0 *. p10) +. (2.0 *. p12) +. -.p20 +. p22
+        in
         (* Sobel Y: [-1 -2 -1; 0 0 0; 1 2 1] *)
-        let gy = -.p00 +. (-2.0 *. p01) +. -.p02 +. p20 +. (2.0 *. p21) +. p22 in
+        let gy =
+          -.p00 +. (-2.0 *. p01) +. -.p02 +. p20 +. (2.0 *. p21) +. p22
+        in
         (* Gradient magnitude *)
         output.(idx) <- sqrt ((gx *. gx) +. (gy *. gy))
       end
@@ -240,7 +259,8 @@ let conv2d_shared_kernel =
       (* Load right halo *)
       let%superstep load_right =
         if tx = block_dim_x - 1l && gx < width - 1l && gy < height then
-          tile.(((ty + 1l) * tile_width) + tx + 2l) <- input.((gy * width) + gx + 1l)
+          tile.(((ty + 1l) * tile_width) + tx + 2l) <-
+            input.((gy * width) + gx + 1l)
         else if tx = block_dim_x - 1l then
           tile.(((ty + 1l) * tile_width) + tx + 2l) <- 0.0
       in
@@ -253,7 +273,8 @@ let conv2d_shared_kernel =
       (* Load bottom halo *)
       let%superstep load_bottom =
         if ty = block_dim_y - 1l && gy < height - 1l && gx < width then
-          tile.(((ty + 2l) * tile_width) + tx + 1l) <- input.(((gy + 1l) * width) + gx)
+          tile.(((ty + 2l) * tile_width) + tx + 1l) <-
+            input.(((gy + 1l) * width) + gx)
         else if ty = block_dim_y - 1l then
           tile.(((ty + 2l) * tile_width) + tx + 1l) <- 0.0
       in
@@ -268,12 +289,14 @@ let conv2d_shared_kernel =
           (* Top-right corner *)
           if block_origin_x + block_dim_x < width && block_origin_y > 0l then
             tile.(block_dim_x + 1l) <-
-              input.(((block_origin_y - 1l) * width) + block_origin_x + block_dim_x)
+              input.(((block_origin_y - 1l) * width)
+                     + block_origin_x + block_dim_x)
           else tile.(block_dim_x + 1l) <- 0.0 ;
           (* Bottom-left corner *)
           if block_origin_x > 0l && block_origin_y + block_dim_y < height then
             tile.(((block_dim_y + 1l) * tile_width) + 0l) <-
-              input.(((block_origin_y + block_dim_y) * width) + block_origin_x - 1l)
+              input.(((block_origin_y + block_dim_y) * width)
+                     + block_origin_x - 1l)
           else tile.(((block_dim_y + 1l) * tile_width) + 0l) <- 0.0 ;
           (* Bottom-right corner *)
           if
@@ -283,7 +306,8 @@ let conv2d_shared_kernel =
             tile.(((block_dim_y + 1l) * tile_width) + block_dim_x + 1l) <-
               input.(((block_origin_y + block_dim_y) * width)
                      + block_origin_x + block_dim_x)
-          else tile.(((block_dim_y + 1l) * tile_width) + block_dim_x + 1l) <- 0.0
+          else
+            tile.(((block_dim_y + 1l) * tile_width) + block_dim_x + 1l) <- 0.0
         end
       in
       (* Compute convolution from shared memory *)
@@ -372,7 +396,12 @@ let run_conv2d_test dev =
   let grid = {Kernel.gridX = blocks_x; gridY = blocks_y; gridZ = 1} in
 
   let t0 = Unix.gettimeofday () in
-  Sarek.Kirc.run conv2d_3x3_kernel (input, output, width, height) (block, grid) 0 dev ;
+  Sarek.Kirc.run
+    conv2d_3x3_kernel
+    (input, output, width, height)
+    (block, grid)
+    0
+    dev ;
   Devices.flush dev () ;
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
@@ -467,7 +496,12 @@ let run_conv2d_shared_test dev =
   let grid = {Kernel.gridX = blocks_x; gridY = blocks_y; gridZ = 1} in
 
   let t0 = Unix.gettimeofday () in
-  Sarek.Kirc.run conv2d_shared_kernel (input, output, width, height) (block, grid) 0 dev ;
+  Sarek.Kirc.run
+    conv2d_shared_kernel
+    (input, output, width, height)
+    (block, grid)
+    0
+    dev ;
   Devices.flush dev () ;
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
