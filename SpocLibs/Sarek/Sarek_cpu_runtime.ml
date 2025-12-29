@@ -640,17 +640,19 @@ let run_parallel ~block ~grid kernel args =
 
     Design:
     - N worker domains created once, stay alive until program exit
-    - Each kernel launch distributes work items to workers
-    - Workers wait on a condition variable between kernels
-    - Barriers synchronize all workers between kernel launches *)
+    - Each kernel launch distributes BLOCKS to workers (not individual threads)
+    - Each worker processes complete blocks with BSP barrier semantics
+    - Workers wait on a condition variable between kernels *)
 
 module ThreadPool = struct
-  (** Work item: a range of global thread IDs to execute *)
+  (** Work item: a range of block IDs to execute. Each worker gets complete
+      blocks to preserve BSP barrier semantics. *)
   type work_item = {
     kernel : thread_state -> shared_mem -> Obj.t array -> unit;
     args : Obj.t array;
-    start_tid : int;
-    end_tid : int;
+    start_block : int;  (** First block ID (inclusive) *)
+    end_block : int;  (** Last block ID (exclusive) *)
+    uses_barriers : bool;  (** Whether kernel uses barriers *)
     (* Kernel dimensions *)
     bx : int;
     by : int;
@@ -658,20 +660,6 @@ module ThreadPool = struct
     gx : int;
     gy : int;
     gz : int;
-    threads_per_block : int;
-    (* Pre-computed int32 tables - shared across workers *)
-    bx32 : int32;
-    by32 : int32;
-    bz32 : int32;
-    gx32 : int32;
-    gy32 : int32;
-    gz32 : int32;
-    thread_x_table : int32 array;
-    thread_y_table : int32 array;
-    thread_z_table : int32 array;
-    block_x_table : int32 array;
-    block_y_table : int32 array;
-    block_z_table : int32 array;
   }
 
   type t = {
@@ -688,30 +676,157 @@ module ThreadPool = struct
     mutable generation : int; (* Incremented each kernel launch *)
   }
 
-  (** Worker function - runs in each domain *)
-  let worker_fn pool worker_id =
-    let last_gen = ref 0 in
-    (* Start at 0 to match initial pool.generation *)
+  (** Run a single block without barriers - fast path for barrier-free kernels
+  *)
+  let run_block_simple ~block:(bx, by, bz) ~grid:(gx, gy, gz)
+      ~block_idx:(block_x, block_y, block_z)
+      (kernel : thread_state -> shared_mem -> Obj.t array -> unit)
+      (args : Obj.t array) =
+    let threads_per_block = bx * by * bz in
     let empty_shared = create_shared () in
     let noop_barrier = fun () -> () in
-    (* Pre-allocate mutable state *)
+    (* Pre-compute int32 values *)
+    let bx32 = Int32.of_int bx in
+    let by32 = Int32.of_int by in
+    let bz32 = Int32.of_int bz in
+    let gx32 = Int32.of_int gx in
+    let gy32 = Int32.of_int gy in
+    let gz32 = Int32.of_int gz in
+    let block_x32 = Int32.of_int block_x in
+    let block_y32 = Int32.of_int block_y in
+    let block_z32 = Int32.of_int block_z in
+    let thread_x_table = Array.init bx Int32.of_int in
+    let thread_y_table = Array.init by Int32.of_int in
+    let thread_z_table =
+      if bz > 1 then Array.init bz Int32.of_int else [|0l|]
+    in
+    (* Pre-allocate state *)
     let state =
       {
         thread_idx_x = 0l;
         thread_idx_y = 0l;
         thread_idx_z = 0l;
-        block_idx_x = 0l;
-        block_idx_y = 0l;
-        block_idx_z = 0l;
-        block_dim_x = 0l;
-        block_dim_y = 0l;
-        block_dim_z = 0l;
-        grid_dim_x = 0l;
-        grid_dim_y = 0l;
-        grid_dim_z = 0l;
+        block_idx_x = block_x32;
+        block_idx_y = block_y32;
+        block_idx_z = block_z32;
+        block_dim_x = bx32;
+        block_dim_y = by32;
+        block_dim_z = bz32;
+        grid_dim_x = gx32;
+        grid_dim_y = gy32;
+        grid_dim_z = gz32;
         barrier = noop_barrier;
       }
     in
+    (* Run all threads in this block *)
+    for tid = 0 to threads_per_block - 1 do
+      let thread_x = tid mod bx in
+      let thread_y = tid / bx mod by in
+      let thread_z = tid / (bx * by) in
+      Obj.set_field (Obj.repr state) 0 (Obj.repr thread_x_table.(thread_x)) ;
+      Obj.set_field (Obj.repr state) 1 (Obj.repr thread_y_table.(thread_y)) ;
+      Obj.set_field (Obj.repr state) 2 (Obj.repr thread_z_table.(thread_z)) ;
+      kernel state empty_shared args
+    done
+
+  (** Run a single block with BSP barriers using Effect.Shallow fibers *)
+  let run_block_bsp ~block:(bx, by, bz) ~grid:(gx, gy, gz)
+      ~block_idx:(block_x, block_y, block_z)
+      (kernel : thread_state -> shared_mem -> Obj.t array -> unit)
+      (args : Obj.t array) =
+    let num_threads = bx * by * bz in
+    let shared = create_shared () in
+    (* Thread status: 0 = running, 1 = waiting at barrier, 2 = completed *)
+    let status = Array.make num_threads 0 in
+    let conts : (unit, unit) Effect.Shallow.continuation option array =
+      Array.make num_threads None
+    in
+    let num_waiting = ref 0 in
+    let num_completed = ref 0 in
+    (* Pre-compute int32 values *)
+    let bx32 = Int32.of_int bx in
+    let by32 = Int32.of_int by in
+    let bz32 = Int32.of_int bz in
+    let gx32 = Int32.of_int gx in
+    let gy32 = Int32.of_int gy in
+    let gz32 = Int32.of_int gz in
+    let block_x32 = Int32.of_int block_x in
+    let block_y32 = Int32.of_int block_y in
+    let block_z32 = Int32.of_int block_z in
+    let thread_x_table = Array.init bx Int32.of_int in
+    let thread_y_table = Array.init by Int32.of_int in
+    let thread_z_table =
+      if bz > 1 then Array.init bz Int32.of_int else [|0l|]
+    in
+    (* Pre-allocate all thread states *)
+    let states =
+      Array.init num_threads (fun tid ->
+          let thread_x = tid mod bx in
+          let thread_y = tid / bx mod by in
+          let thread_z = tid / (bx * by) in
+          {
+            thread_idx_x = thread_x_table.(thread_x);
+            thread_idx_y = thread_y_table.(thread_y);
+            thread_idx_z = thread_z_table.(thread_z);
+            block_idx_x = block_x32;
+            block_idx_y = block_y32;
+            block_idx_z = block_z32;
+            block_dim_x = bx32;
+            block_dim_y = by32;
+            block_dim_z = bz32;
+            grid_dim_x = gx32;
+            grid_dim_y = gy32;
+            grid_dim_z = gz32;
+            barrier = (fun () -> Effect.perform Barrier);
+          })
+    in
+    (* Shallow handler *)
+    let handler tid =
+      {
+        Effect.Shallow.retc =
+          (fun () ->
+            status.(tid) <- 2 ;
+            incr num_completed);
+        exnc = raise;
+        effc =
+          (fun (type a) (eff : a Effect.t) ->
+            match eff with
+            | Barrier ->
+                Some
+                  (fun (k : (a, unit) Effect.Shallow.continuation) ->
+                    conts.(tid) <- Some (Obj.magic k) ;
+                    status.(tid) <- 1 ;
+                    incr num_waiting)
+            | _ -> None);
+      }
+    in
+    (* Create fibers for all threads *)
+    let fibers =
+      Array.init num_threads (fun tid ->
+          Effect.Shallow.fiber (fun () -> kernel states.(tid) shared args))
+    in
+    (* Initial run *)
+    for tid = 0 to num_threads - 1 do
+      Effect.Shallow.continue_with fibers.(tid) () (handler tid)
+    done ;
+    (* Superstep loop *)
+    while !num_waiting > 0 do
+      num_waiting := 0 ;
+      for tid = 0 to num_threads - 1 do
+        if status.(tid) = 1 then begin
+          status.(tid) <- 0 ;
+          match conts.(tid) with
+          | Some k ->
+              conts.(tid) <- None ;
+              Effect.Shallow.continue_with k () (handler tid)
+          | None -> ()
+        end
+      done
+    done
+
+  (** Worker function - runs in each domain, processes complete blocks *)
+  let worker_fn pool worker_id =
+    let last_gen = ref 0 in
     let rec loop () =
       (* Wait for new work - generation must change *)
       Mutex.lock pool.mutex ;
@@ -730,48 +845,25 @@ module ThreadPool = struct
           match Atomic.get pool.work.(worker_id) with
           | None -> false
           | Some w ->
-              (* Update dimension fields once per kernel *)
-              Obj.set_field (Obj.repr state) 6 (Obj.repr w.bx32) ;
-              Obj.set_field (Obj.repr state) 7 (Obj.repr w.by32) ;
-              Obj.set_field (Obj.repr state) 8 (Obj.repr w.bz32) ;
-              Obj.set_field (Obj.repr state) 9 (Obj.repr w.gx32) ;
-              Obj.set_field (Obj.repr state) 10 (Obj.repr w.gy32) ;
-              Obj.set_field (Obj.repr state) 11 (Obj.repr w.gz32) ;
-              (* Execute our range of threads *)
-              for global_tid = w.start_tid to w.end_tid - 1 do
-                let block_id = global_tid / w.threads_per_block in
-                let local_tid = global_tid - (block_id * w.threads_per_block) in
+              (* Process each block in our range *)
+              for block_id = w.start_block to w.end_block - 1 do
                 let block_x = block_id mod w.gx in
                 let block_y = block_id / w.gx mod w.gy in
                 let block_z = block_id / (w.gx * w.gy) in
-                let thread_x = local_tid mod w.bx in
-                let thread_y = local_tid / w.bx mod w.by in
-                let thread_z = local_tid / (w.bx * w.by) in
-                Obj.set_field
-                  (Obj.repr state)
-                  0
-                  (Obj.repr w.thread_x_table.(thread_x)) ;
-                Obj.set_field
-                  (Obj.repr state)
-                  1
-                  (Obj.repr w.thread_y_table.(thread_y)) ;
-                Obj.set_field
-                  (Obj.repr state)
-                  2
-                  (Obj.repr w.thread_z_table.(thread_z)) ;
-                Obj.set_field
-                  (Obj.repr state)
-                  3
-                  (Obj.repr w.block_x_table.(block_x)) ;
-                Obj.set_field
-                  (Obj.repr state)
-                  4
-                  (Obj.repr w.block_y_table.(block_y)) ;
-                Obj.set_field
-                  (Obj.repr state)
-                  5
-                  (Obj.repr w.block_z_table.(block_z)) ;
-                w.kernel state empty_shared w.args
+                if w.uses_barriers then
+                  run_block_bsp
+                    ~block:(w.bx, w.by, w.bz)
+                    ~grid:(w.gx, w.gy, w.gz)
+                    ~block_idx:(block_x, block_y, block_z)
+                    w.kernel
+                    w.args
+                else
+                  run_block_simple
+                    ~block:(w.bx, w.by, w.bz)
+                    ~grid:(w.gx, w.gy, w.gz)
+                    ~block_idx:(block_x, block_y, block_z)
+                    w.kernel
+                    w.args
               done ;
               Atomic.set pool.work.(worker_id) None ;
               true
@@ -810,63 +902,37 @@ module ThreadPool = struct
           Domain.spawn (fun () -> worker_fn pool i)) ;
     pool
 
-  (** Submit kernel to thread pool and wait for completion *)
-  let run_kernel pool ~block:(bx, by, bz) ~grid:(gx, gy, gz)
+  (** Submit kernel to thread pool and wait for completion. Distributes blocks
+      (not threads) to preserve BSP barrier semantics. *)
+  let run_kernel pool ~block:(bx, by, bz) ~grid:(gx, gy, gz) ~uses_barriers
       (kernel : thread_state -> shared_mem -> Obj.t array -> unit)
       (args : Obj.t array) =
-    let threads_per_block = bx * by * bz in
     let total_blocks = gx * gy * gz in
-    let total_threads = total_blocks * threads_per_block in
-    let threads_per_worker =
-      (total_threads + pool.num_workers - 1) / pool.num_workers
+    let blocks_per_worker =
+      (total_blocks + pool.num_workers - 1) / pool.num_workers
     in
-    (* Pre-compute int32 tables *)
-    let bx32 = Int32.of_int bx in
-    let by32 = Int32.of_int by in
-    let bz32 = Int32.of_int bz in
-    let gx32 = Int32.of_int gx in
-    let gy32 = Int32.of_int gy in
-    let gz32 = Int32.of_int gz in
-    let thread_x_table = Array.init bx Int32.of_int in
-    let thread_y_table = Array.init by Int32.of_int in
-    let thread_z_table = Array.init bz Int32.of_int in
-    let block_x_table = Array.init gx Int32.of_int in
-    let block_y_table = Array.init gy Int32.of_int in
-    let block_z_table = Array.init gz Int32.of_int in
-    (* Distribute work *)
+    (* Distribute blocks *)
     Mutex.lock pool.mutex ;
     let active_workers = ref 0 in
     for i = 0 to pool.num_workers - 1 do
-      let start_tid = i * threads_per_worker in
-      let end_tid = min ((i + 1) * threads_per_worker) total_threads in
-      if start_tid < total_threads then begin
+      let start_block = i * blocks_per_worker in
+      let end_block = min ((i + 1) * blocks_per_worker) total_blocks in
+      if start_block < total_blocks then begin
         Atomic.set
           pool.work.(i)
           (Some
              {
                kernel;
                args;
-               start_tid;
-               end_tid;
+               start_block;
+               end_block;
+               uses_barriers;
                bx;
                by;
                bz;
                gx;
                gy;
                gz;
-               threads_per_block;
-               bx32;
-               by32;
-               bz32;
-               gx32;
-               gy32;
-               gz32;
-               thread_x_table;
-               thread_y_table;
-               thread_z_table;
-               block_x_table;
-               block_y_table;
-               block_z_table;
              }) ;
         incr active_workers
       end
@@ -911,16 +977,24 @@ let get_fission_pool () =
 
 (** Run kernel using the persistent thread pool. This is like run_parallel but
     uses the fission thread pool instead of spawning new domains. For use by the
-    wrapper in fission mode. *)
+    wrapper in fission mode.
+
+    Automatically detects barrier usage and enables BSP execution when needed.
+*)
 let run_threadpool ~block:(bx, by, bz) ~grid:(gx, gy, gz)
     (kernel : thread_state -> shared_mem -> 'a -> unit) (args : 'a) : unit =
   let pool = get_fission_pool () in
+  (* Detect if kernel uses barriers *)
+  let uses_barriers =
+    kernel_uses_barriers ~block:(bx, by, bz) ~grid:(gx, gy, gz) kernel args
+  in
   (* Wrap the typed kernel to take Obj.t array *)
   let wrapped_kernel state shared _obj_args = kernel state shared args in
   ThreadPool.run_kernel
     pool
     ~block:(bx, by, bz)
     ~grid:(gx, gy, gz)
+    ~uses_barriers
     wrapped_kernel
     [||]
 
