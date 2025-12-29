@@ -479,14 +479,27 @@ and lower_binop state op e1 e2 _result_ty =
   | Ge -> Kirc_Ast.GtEBool (ir1, ir2)
   | And -> Kirc_Ast.And (ir1, ir2)
   | Or -> Kirc_Ast.Or (ir1, ir2)
-  | Land -> Kirc_Ast.And (ir1, ir2) (* Bitwise and for ints *)
-  | Lor -> Kirc_Ast.Or (ir1, ir2)
+  | Land ->
+      (* Bitwise AND: & in both CUDA and OpenCL - use format string for infix *)
+      Kirc_Ast.App (Kirc_Ast.Intrinsics ("(%s & %s)", "(%s & %s)"), [|ir1; ir2|])
+  | Lor ->
+      (* Bitwise OR: | in both CUDA and OpenCL - use format string for infix *)
+      Kirc_Ast.App (Kirc_Ast.Intrinsics ("(%s | %s)", "(%s | %s)"), [|ir1; ir2|])
   | Lxor ->
-      Kirc_Ast.App (Kirc_Ast.Intrinsics ("spoc_xor", "spoc_xor"), [|ir1; ir2|])
-  | Lsl | Lsr | Asr ->
-      (* Shift operations - need to implement *)
-      ir1
-(* Placeholder *)
+      (* XOR: ^ in both CUDA and OpenCL - use format string for infix *)
+      Kirc_Ast.App (Kirc_Ast.Intrinsics ("(%s ^ %s)", "(%s ^ %s)"), [|ir1; ir2|])
+  | Lsl ->
+      (* Left shift: << in both - use format string for infix *)
+      Kirc_Ast.App
+        (Kirc_Ast.Intrinsics ("(%s << %s)", "(%s << %s)"), [|ir1; ir2|])
+  | Lsr ->
+      (* Logical right shift: >> in both - use format string for infix *)
+      Kirc_Ast.App
+        (Kirc_Ast.Intrinsics ("(%s >> %s)", "(%s >> %s)"), [|ir1; ir2|])
+  | Asr ->
+      (* Arithmetic right shift: >> for signed - same as logical for GPU *)
+      Kirc_Ast.App
+        (Kirc_Ast.Intrinsics ("(%s >> %s)", "(%s >> %s)"), [|ir1; ir2|])
 
 (** Lower unary operation *)
 and lower_unop state op e _result_ty =

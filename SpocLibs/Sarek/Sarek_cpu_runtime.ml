@@ -53,7 +53,7 @@ let global_size_z st = Int32.mul st.grid_dim_z st.block_dim_z
 
 type shared_mem = {data : (string, Obj.t) Hashtbl.t}
 
-let create_shared () = {data = Hashtbl.create 8}
+let create_shared () = {data = Hashtbl.create 4}
 
 (** Allocate a shared array of any type. If already allocated, returns existing.
     Uses Obj.magic to allow any element type. *)
@@ -74,17 +74,18 @@ let alloc_shared (shared : shared_mem) name size (default : 'a) : 'a array =
 type _ Effect.t += Barrier : unit Effect.t
 
 (** Run a block sequentially with BSP-style barrier synchronization. Same
-    algorithm as run_block_with_barriers but simpler since no parallelism. *)
+    algorithm as run_block_with_barriers but simpler since no parallelism.
+
+    Optimized version: pre-allocate thread states and reuse effect handlers. *)
 let run_block_sequential_bsp ~block:(bx, by, bz) ~grid:(gx, gy, gz)
     ~block_idx:(block_x, block_y, block_z)
     (kernel : thread_state -> shared_mem -> 'a -> unit) (args : 'a) : unit =
   let num_threads = bx * by * bz in
   let shared = create_shared () in
 
-  (* Continuations waiting at barrier *)
-  let waiting : (unit, unit) Effect.Deep.continuation option array =
-    Array.make num_threads None
-  in
+  (* Continuations waiting at barrier - use Obj.t to avoid option boxing *)
+  let waiting : Obj.t array = Array.make num_threads (Obj.repr ()) in
+  let is_waiting = Array.make num_threads false in
   let num_waiting = ref 0 in
   let num_completed = ref 0 in
 
@@ -99,71 +100,68 @@ let run_block_sequential_bsp ~block:(bx, by, bz) ~grid:(gx, gy, gz)
   let block_y32 = Int32.of_int block_y in
   let block_z32 = Int32.of_int block_z in
 
-  (* Create thread state for each thread *)
-  let make_state tid =
-    let thread_x = tid mod bx in
-    let thread_y = tid / bx mod by in
-    let thread_z = tid / (bx * by) in
+  (* Pre-compute thread index lookup tables *)
+  let thread_x_table = Array.init bx Int32.of_int in
+  let thread_y_table = Array.init by Int32.of_int in
+  let thread_z_table = if bz > 1 then Array.init bz Int32.of_int else [|0l|] in
+
+  (* Pre-allocate all thread states *)
+  let states =
+    Array.init num_threads (fun tid ->
+        let thread_x = tid mod bx in
+        let thread_y = tid / bx mod by in
+        let thread_z = tid / (bx * by) in
+        {
+          thread_idx_x = thread_x_table.(thread_x);
+          thread_idx_y = thread_y_table.(thread_y);
+          thread_idx_z = thread_z_table.(thread_z);
+          block_idx_x = block_x32;
+          block_idx_y = block_y32;
+          block_idx_z = block_z32;
+          block_dim_x = bx32;
+          block_dim_y = by32;
+          block_dim_z = bz32;
+          grid_dim_x = gx32;
+          grid_dim_y = gy32;
+          grid_dim_z = gz32;
+          barrier = (fun () -> Effect.perform Barrier);
+        })
+  in
+
+  (* Shared effect handler - reused for all threads *)
+  let handler tid =
     {
-      thread_idx_x = Int32.of_int thread_x;
-      thread_idx_y = Int32.of_int thread_y;
-      thread_idx_z = Int32.of_int thread_z;
-      block_idx_x = block_x32;
-      block_idx_y = block_y32;
-      block_idx_z = block_z32;
-      block_dim_x = bx32;
-      block_dim_y = by32;
-      block_dim_z = bz32;
-      grid_dim_x = gx32;
-      grid_dim_y = gy32;
-      grid_dim_z = gz32;
-      barrier = (fun () -> Effect.perform Barrier);
+      Effect.Deep.retc = (fun () -> incr num_completed);
+      exnc = raise;
+      effc =
+        (fun (type a) (eff : a Effect.t) ->
+          match eff with
+          | Barrier ->
+              Some
+                (fun (k : (a, unit) Effect.Deep.continuation) ->
+                  waiting.(tid) <- Obj.repr k ;
+                  is_waiting.(tid) <- true ;
+                  incr num_waiting)
+          | _ -> None);
     }
   in
 
   (* Run a single thread with effect handler *)
   let run_thread tid =
-    let state = make_state tid in
     Effect.Deep.match_with
-      (fun () -> kernel state shared args)
+      (fun () -> kernel states.(tid) shared args)
       ()
-      {
-        retc = (fun () -> incr num_completed);
-        exnc = raise;
-        effc =
-          (fun (type a) (eff : a Effect.t) ->
-            match eff with
-            | Barrier ->
-                Some
-                  (fun (k : (a, unit) Effect.Deep.continuation) ->
-                    waiting.(tid) <- Some k ;
-                    incr num_waiting)
-            | _ -> None);
-      }
+      (handler tid)
   in
 
   (* Resume a waiting thread *)
   let resume_thread tid =
-    match waiting.(tid) with
-    | Some k ->
-        waiting.(tid) <- None ;
-        Effect.Deep.match_with
-          (fun () -> Effect.Deep.continue k ())
-          ()
-          {
-            retc = (fun () -> incr num_completed);
-            exnc = raise;
-            effc =
-              (fun (type a) (eff : a Effect.t) ->
-                match eff with
-                | Barrier ->
-                    Some
-                      (fun (k : (a, unit) Effect.Deep.continuation) ->
-                        waiting.(tid) <- Some k ;
-                        incr num_waiting)
-                | _ -> None);
-          }
-    | None -> ()
+    let k : (unit, unit) Effect.Deep.continuation = Obj.obj waiting.(tid) in
+    is_waiting.(tid) <- false ;
+    Effect.Deep.match_with
+      (fun () -> Effect.Deep.continue k ())
+      ()
+      (handler tid)
   in
 
   (* Initial run: start all threads *)
@@ -176,7 +174,7 @@ let run_block_sequential_bsp ~block:(bx, by, bz) ~grid:(gx, gy, gz)
     let to_resume = !num_waiting in
     num_waiting := 0 ;
     for tid = 0 to num_threads - 1 do
-      if Option.is_some waiting.(tid) then resume_thread tid
+      if is_waiting.(tid) then resume_thread tid
     done ;
     if !num_waiting = to_resume && !num_completed < num_threads then
       failwith "BSP deadlock: no progress made"
@@ -212,17 +210,20 @@ let run_sequential ~block:(bx, by, bz) ~grid:(gx, gy, gz)
     The Barrier effect is declared in the sequential section above. *)
 
 (** Run a block with BSP-style barrier synchronization. Each thread is a
-    separate fiber. All threads run until barrier, then all resume together. *)
+    separate fiber. All threads run until barrier, then all resume together.
+
+    Uses Effect.Shallow for better performance - avoids reinstalling handlers on
+    every resume, which is significant for BSP execution with many barriers. *)
 let run_block_with_barriers ~block:(bx, by, bz) ~grid:(gx, gy, gz)
     ~block_idx:(block_x, block_y, block_z)
     (kernel : thread_state -> shared_mem -> 'a -> unit) (args : 'a) : unit =
   let num_threads = bx * by * bz in
   let shared = create_shared () in
 
-  (* Continuations waiting at barrier *)
-  let waiting : (unit, unit) Effect.Deep.continuation option array =
-    Array.make num_threads None
-  in
+  (* Thread status: 0 = running, 1 = waiting at barrier, 2 = completed *)
+  let status = Array.make num_threads 0 in
+  (* Shallow continuations - use Obj.t to store the shallow continuation *)
+  let conts : Obj.t array = Array.make num_threads (Obj.repr ()) in
   let num_waiting = ref 0 in
   let num_completed = ref 0 in
 
@@ -237,96 +238,78 @@ let run_block_with_barriers ~block:(bx, by, bz) ~grid:(gx, gy, gz)
   let block_y32 = Int32.of_int block_y in
   let block_z32 = Int32.of_int block_z in
 
-  (* Create thread state for each thread *)
-  let make_state tid =
-    let thread_x = tid mod bx in
-    let thread_y = tid / bx mod by in
-    let thread_z = tid / (bx * by) in
+  (* Pre-compute thread index lookup tables *)
+  let thread_x_table = Array.init bx Int32.of_int in
+  let thread_y_table = Array.init by Int32.of_int in
+  let thread_z_table = if bz > 1 then Array.init bz Int32.of_int else [|0l|] in
+
+  (* Pre-allocate all thread states *)
+  let states =
+    Array.init num_threads (fun tid ->
+        let thread_x = tid mod bx in
+        let thread_y = tid / bx mod by in
+        let thread_z = tid / (bx * by) in
+        {
+          thread_idx_x = thread_x_table.(thread_x);
+          thread_idx_y = thread_y_table.(thread_y);
+          thread_idx_z = thread_z_table.(thread_z);
+          block_idx_x = block_x32;
+          block_idx_y = block_y32;
+          block_idx_z = block_z32;
+          block_dim_x = bx32;
+          block_dim_y = by32;
+          block_dim_z = bz32;
+          grid_dim_x = gx32;
+          grid_dim_y = gy32;
+          grid_dim_z = gz32;
+          barrier = (fun () -> Effect.perform Barrier);
+        })
+  in
+
+  (* Shallow handler - much lighter weight than Deep handlers *)
+  let handler tid =
     {
-      thread_idx_x = Int32.of_int thread_x;
-      thread_idx_y = Int32.of_int thread_y;
-      thread_idx_z = Int32.of_int thread_z;
-      block_idx_x = block_x32;
-      block_idx_y = block_y32;
-      block_idx_z = block_z32;
-      block_dim_x = bx32;
-      block_dim_y = by32;
-      block_dim_z = bz32;
-      grid_dim_x = gx32;
-      grid_dim_y = gy32;
-      grid_dim_z = gz32;
-      barrier = (fun () -> Effect.perform Barrier);
+      Effect.Shallow.retc =
+        (fun () ->
+          status.(tid) <- 2 ;
+          incr num_completed);
+      exnc = raise;
+      effc =
+        (fun (type a) (eff : a Effect.t) ->
+          match eff with
+          | Barrier ->
+              Some
+                (fun (k : (a, unit) Effect.Shallow.continuation) ->
+                  conts.(tid) <- Obj.repr k ;
+                  status.(tid) <- 1 ;
+                  incr num_waiting)
+          | _ -> None);
     }
   in
 
-  (* Run a single thread with effect handler *)
-  let run_thread tid =
-    let state = make_state tid in
-    Effect.Deep.match_with
-      (fun () -> kernel state shared args)
-      ()
-      {
-        retc =
-          (fun () ->
-            (* Thread completed *)
-            incr num_completed);
-        exnc = raise;
-        effc =
-          (fun (type a) (eff : a Effect.t) ->
-            match eff with
-            | Barrier ->
-                Some
-                  (fun (k : (a, unit) Effect.Deep.continuation) ->
-                    (* Save continuation and mark as waiting *)
-                    waiting.(tid) <- Some k ;
-                    incr num_waiting)
-            | _ -> None);
-      }
+  (* Create fibers for all threads *)
+  let fibers =
+    Array.init num_threads (fun tid ->
+        Effect.Shallow.fiber (fun () -> kernel states.(tid) shared args))
   in
 
-  (* Resume a waiting thread *)
-  let resume_thread tid =
-    match waiting.(tid) with
-    | Some k ->
-        waiting.(tid) <- None ;
-        Effect.Deep.match_with
-          (fun () -> Effect.Deep.continue k ())
-          ()
-          {
-            retc =
-              (fun () ->
-                (* Thread completed *)
-                incr num_completed);
-            exnc = raise;
-            effc =
-              (fun (type a) (eff : a Effect.t) ->
-                match eff with
-                | Barrier ->
-                    Some
-                      (fun (k : (a, unit) Effect.Deep.continuation) ->
-                        waiting.(tid) <- Some k ;
-                        incr num_waiting)
-                | _ -> None);
-          }
-    | None -> ()
-  in
-
-  (* Initial run: start all threads *)
+  (* Initial run: start all threads with shallow continue_with *)
   for tid = 0 to num_threads - 1 do
-    run_thread tid
+    Effect.Shallow.continue_with fibers.(tid) () (handler tid)
   done ;
 
   (* Superstep loop: while threads are waiting at barriers *)
   while !num_waiting > 0 do
-    (* All waiting threads have reached barrier - resume them all *)
-    let to_resume = !num_waiting in
     num_waiting := 0 ;
     for tid = 0 to num_threads - 1 do
-      if Option.is_some waiting.(tid) then resume_thread tid
-    done ;
-    (* Safety check *)
-    if !num_waiting = to_resume && !num_completed < num_threads then
-      failwith "BSP deadlock: no progress made"
+      if status.(tid) = 1 then begin
+        status.(tid) <- 0 ;
+        let k : (unit, unit) Effect.Shallow.continuation =
+          Obj.obj conts.(tid)
+        in
+        Effect.Shallow.continue_with k () (handler tid)
+      end
+    done
   done
 
 (** Global domain pool for parallel execution *)
@@ -441,7 +424,7 @@ let run_parallel_simple ~block:(bx, by, bz) ~grid:(gx, gy, gz)
   let gy32 = Int32.of_int gy in
   let gz32 = Int32.of_int gz in
   (* Shared empty hashtable - barrier-free kernels don't use shared memory *)
-  let empty_shared = {data = Hashtbl.create 0} in
+  let empty_shared = create_shared () in
   let noop_barrier = fun () -> () in
   (* Pre-compute int32 lookup tables to avoid Int32.of_int in hot loop *)
   let thread_x_table = Array.init bx Int32.of_int in

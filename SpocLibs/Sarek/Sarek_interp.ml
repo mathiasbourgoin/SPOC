@@ -277,6 +277,12 @@ let eval_intrinsic state path name args =
       VFloat32 (exp (to_float32 (List.hd args)))
   | path, "log" when is_float32_path path ->
       VFloat32 (log (to_float32 (List.hd args)))
+  | path, "log10" when is_float32_path path ->
+      VFloat32 (log10 (to_float32 (List.hd args)))
+  | path, "pow" when is_float32_path path ->
+      let base = to_float32 (List.nth args 0) in
+      let exp = to_float32 (List.nth args 1) in
+      VFloat32 (base ** exp)
   | path, "abs" when is_float32_path path ->
       VFloat32 (abs_float (to_float32 (List.hd args)))
   | path, "floor" when is_float32_path path ->
@@ -327,6 +333,45 @@ let eval_intrinsic state path name args =
       VInt32 (Int32.of_float (to_float32 (List.hd args)))
   | path, "int_of_float64" when is_std_path path ->
       VInt32 (Int32.of_float (to_float64 (List.hd args)))
+  (* Bitwise operations (via intrinsics with format strings) *)
+  | _, "(%s ^ %s)" ->
+      VInt32
+        (Int32.logxor (to_int32 (List.nth args 0)) (to_int32 (List.nth args 1)))
+  | _, "(%s & %s)" ->
+      VInt32
+        (Int32.logand (to_int32 (List.nth args 0)) (to_int32 (List.nth args 1)))
+  | _, "(%s | %s)" ->
+      VInt32
+        (Int32.logor (to_int32 (List.nth args 0)) (to_int32 (List.nth args 1)))
+  | _, "(%s << %s)" ->
+      VInt32
+        (Int32.shift_left
+           (to_int32 (List.nth args 0))
+           (to_int (List.nth args 1)))
+  | _, "(%s >> %s)" ->
+      VInt32
+        (Int32.shift_right_logical
+           (to_int32 (List.nth args 0))
+           (to_int (List.nth args 1)))
+  (* Atomic operations - interpreter runs sequentially so these are just regular ops *)
+  | path, "atomic_add_int32" when is_gpu_path path -> (
+      (* args: array, index, value - returns old value, adds value to array[index] *)
+      match args with
+      | [VArray arr; idx_val; add_val] ->
+          let idx = Int32.to_int (to_int32 idx_val) in
+          let old_val = arr.(idx) in
+          arr.(idx) <- add_int32 old_val add_val ;
+          old_val
+      | _ -> failwith "atomic_add_int32: wrong arguments")
+  | path, "atomic_add_global_int32" when is_gpu_path path -> (
+      (* Same as above but for global memory *)
+      match args with
+      | [VArray arr; idx_val; add_val] ->
+          let idx = Int32.to_int (to_int32 idx_val) in
+          let old_val = arr.(idx) in
+          arr.(idx) <- add_int32 old_val add_val ;
+          old_val
+      | _ -> failwith "atomic_add_global_int32: wrong arguments")
   (* Unknown intrinsic *)
   | _ ->
       let full_name = String.concat "." (path @ [name]) in
@@ -356,10 +401,13 @@ let rec eval_expr state env expr =
       with Not_found -> (
         try VArray (Hashtbl.find env.shared name)
         with Not_found -> failwith ("eval_expr: unbound id " ^ name)))
-  | IntId (_, id) -> (
+  | IntId (name, id) -> (
       try Hashtbl.find env.locals id
-      with Not_found ->
-        failwith ("eval_expr: unbound IntId " ^ string_of_int id))
+      with Not_found -> (
+        (* Also check shared arrays - they're referenced by IntId in lowered AST *)
+        try VArray (Hashtbl.find env.shared name)
+        with Not_found ->
+          failwith ("eval_expr: unbound IntId " ^ string_of_int id)))
   (* Global values *)
   | GInt f -> VInt32 (f ())
   | GFloat f -> VFloat32 (f ())
@@ -388,11 +436,19 @@ let rec eval_expr state env expr =
       VBool (gte_val (eval_expr state env a) (eval_expr state env b))
   | EqCustom (_, a, b) ->
       VBool (eq_val (eval_expr state env a) (eval_expr state env b))
-  (* Boolean ops *)
-  | And (a, b) ->
-      VBool (to_bool (eval_expr state env a) && to_bool (eval_expr state env b))
-  | Or (a, b) ->
-      VBool (to_bool (eval_expr state env a) || to_bool (eval_expr state env b))
+  (* Boolean ops / Bitwise ops - disambiguated by operand type *)
+  | And (a, b) -> (
+      let va = eval_expr state env a in
+      let vb = eval_expr state env b in
+      match (va, vb) with
+      | VBool _, VBool _ -> VBool (to_bool va && to_bool vb)
+      | _ -> VInt32 (Int32.logand (to_int32 va) (to_int32 vb)))
+  | Or (a, b) -> (
+      let va = eval_expr state env a in
+      let vb = eval_expr state env b in
+      match (va, vb) with
+      | VBool _, VBool _ -> VBool (to_bool va || to_bool vb)
+      | _ -> VInt32 (Int32.logor (to_int32 va) (to_int32 vb)))
   | Not a -> VBool (not (to_bool (eval_expr state env a)))
   (* Array access *)
   | Acc (arr_expr, idx_expr) | IntVecAcc (arr_expr, idx_expr) ->
@@ -439,6 +495,10 @@ let rec eval_expr state env expr =
       | IntrinsicRef (path, name) ->
           let arg_vals = Array.to_list (Array.map (eval_expr state env) args) in
           eval_intrinsic state path name arg_vals
+      | Intrinsics (_path, name) ->
+          (* Intrinsics node used for some operations like spoc_xor *)
+          let arg_vals = Array.to_list (Array.map (eval_expr state env) args) in
+          eval_intrinsic state [] name arg_vals
       | GlobalFun (body, _name, _sig) ->
           (* Simple: evaluate body with args bound - needs proper impl *)
           eval_expr state env body
@@ -509,6 +569,53 @@ let rec eval_expr state env expr =
   (* Other *)
   | Empty -> VUnit
   | Return e -> eval_expr state env e
+  (* Statement-like nodes that can appear in expression context due to let bindings *)
+  | Seq (a, b) ->
+      (* Execute first as statement-for-side-effect, then evaluate second *)
+      let _ = eval_expr state env a in
+      eval_expr state env b
+  | Decl var_expr -> (
+      (* Declaration - add to locals with default value *)
+      match var_expr with
+      | IntVar (id, _, _) ->
+          Hashtbl.replace env.locals id (VInt32 0l) ;
+          VUnit
+      | FloatVar (id, _, _) ->
+          Hashtbl.replace env.locals id (VFloat32 0.0) ;
+          VUnit
+      | DoubleVar (id, _, _) ->
+          Hashtbl.replace env.locals id (VFloat64 0.0) ;
+          VUnit
+      | BoolVar (id, _, _) ->
+          Hashtbl.replace env.locals id (VBool false) ;
+          VUnit
+      | UnitVar (id, _, _) ->
+          Hashtbl.replace env.locals id VUnit ;
+          VUnit
+      | _ -> VUnit)
+  | Set (var_expr, val_expr) -> (
+      (* Assignment - set value in locals *)
+      let value = eval_expr state env val_expr in
+      match var_expr with
+      | IntVar (id, _, _)
+      | FloatVar (id, _, _)
+      | DoubleVar (id, _, _)
+      | BoolVar (id, _, _)
+      | UnitVar (id, _, _) ->
+          Hashtbl.replace env.locals id value ;
+          VUnit
+      | IntId (_, id) ->
+          Hashtbl.replace env.locals id value ;
+          VUnit
+      | _ -> failwith "Set in eval_expr: unsupported lvalue")
+  | SetV (Acc (arr_expr, idx_expr), val_expr)
+  | SetV (IntVecAcc (arr_expr, idx_expr), val_expr) ->
+      (* Array element assignment *)
+      let arr = get_array state env arr_expr in
+      let idx = to_int (eval_expr state env idx_expr) in
+      let value = eval_expr state env val_expr in
+      if idx >= 0 && idx < Array.length arr then arr.(idx) <- value ;
+      VUnit
   | _ ->
       failwith
         ("eval_expr: unsupported expression " ^ Kirc_Ast.string_of_ast expr)
