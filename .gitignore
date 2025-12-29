@@ -11,3 +11,4 @@ _opam
 dune-project
 .aider*
 *.install
+kirc_kernel*.cl
