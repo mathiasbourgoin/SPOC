@@ -30,7 +30,20 @@ let matmul_naive_kernel =
         c.((row * n) + col) <- sum
       end]
 
-(** Tiled matrix multiplication with shared memory and supersteps *)
+(** Tiled matrix multiplication with shared memory and supersteps.
+
+    Uses the classic tiled algorithm where each block cooperatively loads tiles
+    of A and B into shared memory, then computes partial dot products.
+
+    BSP Synchronization Pattern: Each loop iteration has 3 supersteps with
+    barriers: 1. load_a: All threads load their portion of tile_a, then barrier
+    2. load_b: All threads load their portion of tile_b, then barrier 3.
+    compute: All threads read from tiles and accumulate, then barrier
+
+    The final barrier (after compute) is critical: it ensures all threads finish
+    reading the tiles before the next iteration overwrites them. Without it,
+    thread 0 could start writing tile_a for iteration t+1 while thread 1 is
+    still reading tile_a for iteration t. *)
 let matmul_tiled_kernel =
   [%kernel
     fun (a : float32 vector)
@@ -39,6 +52,7 @@ let matmul_tiled_kernel =
         (m : int32)
         (n : int32)
         (k : int32) ->
+      (* Shared memory tiles: 16x16 = 256 elements each *)
       let%shared (tile_a : float32) = 256l in
       let%shared (tile_b : float32) = 256l in
       let tx = thread_idx_x in
@@ -49,27 +63,33 @@ let matmul_tiled_kernel =
       let num_tiles = (k + tile_size - 1l) / tile_size in
       let sum = mut 0.0 in
       for t = 0 to num_tiles - 1l do
-        (* Load tile from A *)
+        (* Superstep 1: Cooperatively load tile from A into shared memory *)
         let%superstep load_a =
           let a_col = (t * tile_size) + tx in
           if row < m && a_col < k then
             tile_a.((ty * tile_size) + tx) <- a.((row * k) + a_col)
           else tile_a.((ty * tile_size) + tx) <- 0.0
         in
-        (* Load tile from B *)
+        (* Superstep 2: Cooperatively load tile from B into shared memory *)
         let%superstep load_b =
           let b_row = (t * tile_size) + ty in
           if b_row < k && col < n then
             tile_b.((ty * tile_size) + tx) <- b.((b_row * n) + col)
           else tile_b.((ty * tile_size) + tx) <- 0.0
         in
-        (* Compute partial dot product *)
-        for i = 0 to tile_size - 1l do
-          sum :=
-            sum
-            +. (tile_a.((ty * tile_size) + i) *. tile_b.((i * tile_size) + tx))
-        done
+        (* Superstep 3: Compute partial dot product using shared tiles.
+           Must be in a superstep so barrier runs before next iteration
+           overwrites the tiles. *)
+        let%superstep _compute =
+          for i = 0 to tile_size - 1l do
+            sum :=
+              sum
+              +. (tile_a.((ty * tile_size) + i) *. tile_b.((i * tile_size) + tx))
+          done
+        in
+        ()
       done ;
+      (* Write final result to global memory *)
       if row < m && col < n then c.((row * n) + col) <- sum]
 
 (** Run naive matrix multiplication test *)
