@@ -520,17 +520,19 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
       in
       match dir with
       | Sarek_ast.Upto ->
+          (* OCaml for loops are inclusive on both ends, just like Sarek.
+             for i = 0 to k - 1l means iterate from 0 to k-1 inclusive. *)
           [%expr
             for
               [%p int_var_pat] = Int32.to_int [%e lo_e]
-              to Int32.to_int [%e hi_e] - 1
+              to Int32.to_int [%e hi_e]
             do
               [%e wrapped_body]
             done]
       | Sarek_ast.Downto ->
           [%expr
             for
-              [%p int_var_pat] = Int32.to_int [%e hi_e] - 1
+              [%p int_var_pat] = Int32.to_int [%e hi_e]
               downto Int32.to_int [%e lo_e]
             do
               [%e wrapped_body]

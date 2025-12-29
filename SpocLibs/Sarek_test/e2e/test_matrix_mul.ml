@@ -109,8 +109,11 @@ let run_matmul_naive dev =
   (* Verify *)
   let ok =
     if cfg.verify then begin
+      Mem.to_cpu a () ;
+      Mem.to_cpu b () ;
       Mem.to_cpu c () ;
       Devices.flush dev () ;
+      Mem.unsafe_rw true ;
       let errors = ref 0 in
       (* Check a few elements *)
       let check_count = min 100 (m * n) in
@@ -125,6 +128,7 @@ let run_matmul_naive dev =
         let got = Mem.get c idx in
         if abs_float (got -. !expected) > 0.01 then incr errors
       done ;
+      Mem.unsafe_rw false ;
       !errors = 0
     end
     else true
@@ -170,8 +174,11 @@ let run_matmul_tiled dev =
   (* Verify *)
   let ok =
     if cfg.verify then begin
+      Mem.to_cpu a () ;
+      Mem.to_cpu b () ;
       Mem.to_cpu c () ;
       Devices.flush dev () ;
+      Mem.unsafe_rw true ;
       let errors = ref 0 in
       (* Check a few elements *)
       let check_count = min 100 (m * n) in
@@ -186,6 +193,7 @@ let run_matmul_tiled dev =
         let got = Mem.get c idx in
         if abs_float (got -. !expected) > 0.01 then incr errors
       done ;
+      Mem.unsafe_rw false ;
       !errors = 0
     end
     else true
