@@ -49,14 +49,28 @@ val global_size_z : thread_state -> int32
 
 (** {1 Shared Memory} *)
 
-(** Shared memory container for a block. *)
+(** Shared memory container for a block. Uses per-type hashtables for type
+    safety on common types. *)
 type shared_mem
 
 (** Create a new empty shared memory container. *)
 val create_shared : unit -> shared_mem
 
-(** Allocate or retrieve a shared array by name. Uses regular OCaml arrays to
-    support custom types. *)
+(** {2 Typed Allocators}
+
+    These allocators are type-safe and don't use Obj.magic. *)
+
+val alloc_shared_int : shared_mem -> string -> int -> int -> int array
+
+val alloc_shared_float : shared_mem -> string -> int -> float -> float array
+
+val alloc_shared_int32 : shared_mem -> string -> int -> int32 -> int32 array
+
+val alloc_shared_int64 : shared_mem -> string -> int -> int64 -> int64 array
+
+(** {2 Generic Allocator}
+
+    For custom types not covered by typed allocators. Uses Obj.t internally. *)
 val alloc_shared : shared_mem -> string -> int -> 'a -> 'a array
 
 (** {1 Execution Modes} *)

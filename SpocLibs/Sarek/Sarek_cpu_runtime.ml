@@ -52,20 +52,75 @@ let global_size_z st = Int32.mul st.grid_dim_z st.block_dim_z
 (** {1 Shared Memory}
 
     Shared memory is allocated per-block and accessible by all threads in the
-    block. Uses regular OCaml arrays to support custom types. *)
+    block. Uses regular OCaml arrays to support custom types.
 
-type shared_mem = {data : (string, Obj.t) Hashtbl.t}
+    Implementation note: We use a single hashtable with Obj.t values because
+    shared memory can hold arrays of any type (int, float, custom records, etc.)
+    and the type is only known at the call site. The typed accessors below
+    provide type-safe access for common cases. *)
 
-let create_shared () = {data = Hashtbl.create 4}
+type shared_mem = {
+  int_arrays : (string, int array) Hashtbl.t;
+  float_arrays : (string, float array) Hashtbl.t;
+  int32_arrays : (string, int32 array) Hashtbl.t;
+  int64_arrays : (string, int64 array) Hashtbl.t;
+  other_arrays : (string, Obj.t) Hashtbl.t;
+}
 
-(** Allocate a shared array of any type. If already allocated, returns existing.
-    Uses Obj.magic to allow any element type. *)
+let create_shared () =
+  {
+    int_arrays = Hashtbl.create 2;
+    float_arrays = Hashtbl.create 2;
+    int32_arrays = Hashtbl.create 2;
+    int64_arrays = Hashtbl.create 2;
+    other_arrays = Hashtbl.create 2;
+  }
+
+(** Typed allocators for common array types - no Obj.magic needed *)
+
+let alloc_shared_int (shared : shared_mem) name size (default : int) : int array
+    =
+  match Hashtbl.find_opt shared.int_arrays name with
+  | Some arr -> arr
+  | None ->
+      let arr = Array.make size default in
+      Hashtbl.add shared.int_arrays name arr ;
+      arr
+
+let alloc_shared_float (shared : shared_mem) name size (default : float) :
+    float array =
+  match Hashtbl.find_opt shared.float_arrays name with
+  | Some arr -> arr
+  | None ->
+      let arr = Array.make size default in
+      Hashtbl.add shared.float_arrays name arr ;
+      arr
+
+let alloc_shared_int32 (shared : shared_mem) name size (default : int32) :
+    int32 array =
+  match Hashtbl.find_opt shared.int32_arrays name with
+  | Some arr -> arr
+  | None ->
+      let arr = Array.make size default in
+      Hashtbl.add shared.int32_arrays name arr ;
+      arr
+
+let alloc_shared_int64 (shared : shared_mem) name size (default : int64) :
+    int64 array =
+  match Hashtbl.find_opt shared.int64_arrays name with
+  | Some arr -> arr
+  | None ->
+      let arr = Array.make size default in
+      Hashtbl.add shared.int64_arrays name arr ;
+      arr
+
+(** Generic allocator for custom types - uses Obj.t for type erasure *)
 let alloc_shared (shared : shared_mem) name size (default : 'a) : 'a array =
-  match Hashtbl.find_opt shared.data name with
+  match Hashtbl.find_opt shared.other_arrays name with
   | Some arr -> Obj.obj arr
   | None ->
       let arr = Array.make size default in
-      Hashtbl.add shared.data name (Obj.repr arr) ;
+      Hashtbl.add shared.other_arrays name (Obj.repr arr) ;
       arr
 
 (** {1 Sequential Execution}

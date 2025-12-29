@@ -712,27 +712,59 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
             let state = evar ~loc state_var in
             [%expr Int32.to_int [%e state].Sarek.Sarek_cpu_runtime.block_dim_x]
       in
-      (* Generate default value based on element type *)
-      let default_e =
-        match repr elem_ty with
-        | TReg "float32" | TReg "float64" -> [%expr 0.0]
-        | TPrim TInt32 | TReg "int32" -> [%expr 0l]
-        | TReg "int64" -> [%expr 0L]
-        | TReg "char" -> [%expr '\000']
-        | _ -> [%expr Obj.magic 0]
-        (* Fallback for custom types *)
-      in
       let shared = evar ~loc shared_var in
       let body_e = gen_expr ~loc body in
       let pat = Ast_builder.Default.ppat_var ~loc {txt = name; loc} in
+      let name_e = Ast_builder.Default.estring ~loc name in
+      (* Use typed allocators for common types, generic for custom types *)
+      let alloc_expr =
+        match repr elem_ty with
+        | TReg "float32" | TReg "float64" ->
+            [%expr
+              Sarek.Sarek_cpu_runtime.alloc_shared_float
+                [%e shared]
+                [%e name_e]
+                [%e size_e]
+                0.0]
+        | TPrim TInt32 | TReg "int32" ->
+            [%expr
+              Sarek.Sarek_cpu_runtime.alloc_shared_int32
+                [%e shared]
+                [%e name_e]
+                [%e size_e]
+                0l]
+        | TReg "int64" ->
+            [%expr
+              Sarek.Sarek_cpu_runtime.alloc_shared_int64
+                [%e shared]
+                [%e name_e]
+                [%e size_e]
+                0L]
+        | TReg "int" ->
+            [%expr
+              Sarek.Sarek_cpu_runtime.alloc_shared_int
+                [%e shared]
+                [%e name_e]
+                [%e size_e]
+                0]
+        | TReg "char" ->
+            [%expr
+              Sarek.Sarek_cpu_runtime.alloc_shared
+                [%e shared]
+                [%e name_e]
+                [%e size_e]
+                '\000']
+        | _ ->
+            (* Fallback for custom types - uses Obj.magic *)
+            [%expr
+              Sarek.Sarek_cpu_runtime.alloc_shared
+                [%e shared]
+                [%e name_e]
+                [%e size_e]
+                (Obj.magic 0)]
+      in
       [%expr
-        let [%p pat] =
-          Sarek.Sarek_cpu_runtime.alloc_shared
-            [%e shared]
-            [%e Ast_builder.Default.estring ~loc name]
-            [%e size_e]
-            [%e default_e]
-        in
+        let [%p pat] = [%e alloc_expr] in
         [%e body_e]]
   (* BSP let%superstep - synchronized block + barrier *)
   | TESuperstep (_name, _divergent, step_body, cont) ->
