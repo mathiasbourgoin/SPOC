@@ -258,6 +258,8 @@ type interpreterInfo = {
 type nativeInfo = {
   native_num_cores : int;  (** Number of cores for parallel execution *)
   native_parallel : bool;  (** Use parallel execution (Domain per thread) *)
+  native_fission : bool;
+      (** Use loop fission for supersteps (no effects, just plain loops) *)
 }
 
 type specificInfo =
@@ -312,6 +314,11 @@ val gpgpu_devices : unit -> int
 @param queue_id allows to specify only a specific command queue *)
 val flush : device -> ?queue_id: int -> unit -> unit
 
+(** Register a flush handler for native devices.
+    The handler receives (device, queue_id option) and returns true if handled.
+    Used by Sarek to register fission queue flush. *)
+val register_native_flush_hook : (device -> int option -> bool) -> unit
+
 (** Checks if a device offers an extension *)
 val hasCLExtension : device -> string -> bool
 
@@ -345,6 +352,9 @@ val is_native_parallel : device -> bool
 (** Check if a device is the native CPU runtime with sequential execution *)
 val is_native_sequential : device -> bool
 
+(** Check if a device is the native CPU runtime with loop fission *)
+val is_native_fission : device -> bool
+
 (** Find the native device in an array, returns None if not present *)
 val find_native : device array -> device option
 
@@ -361,4 +371,4 @@ val find_native_parallel_id : device array -> int option
     @param parallel if true, threads within blocks run in parallel using
            OCaml 5 Domains with proper barrier synchronization
     @return a device that can be used with Kirc.run *)
-val create_native_device : ?parallel:bool -> unit -> device
+val create_native_device : ?parallel:bool -> ?fission:bool -> unit -> device

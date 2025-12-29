@@ -35,6 +35,17 @@
 open Spoc
 open Kernel
 
+(* Register flush hook for fission devices at module load time *)
+let () =
+  Devices.register_native_flush_hook (fun dev queue_id ->
+      match dev.Devices.specific_info with
+      | Devices.NativeInfo ni when ni.Devices.native_fission ->
+          (match queue_id with
+          | Some q -> Sarek_cpu_runtime.flush_fission_queue q
+          | None -> Sarek_cpu_runtime.flush_fission ()) ;
+          true
+      | _ -> false)
+
 let debug = true
 
 let profile_default () =
@@ -64,7 +75,7 @@ type ('a, 'b, 'c) kirc_kernel = {
   ret_val : Kirc_Ast.k_ext * ('b, 'c) Vector.kind;
   extensions : extension array;
   cpu_kern :
-    (parallel:bool ->
+    (mode:Sarek_cpu_runtime.exec_mode ->
     block:int * int * int ->
     grid:int * int * int ->
     Obj.t array ->
@@ -1237,12 +1248,19 @@ let run ?recompile:(r = false) (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel) a
                       "Kirc.run: Custom scalar args not supported for native")
               args_array
           in
-          kern
-            ~parallel:ni.Devices.native_parallel
-            ~block:
-              (block.Kernel.blockX, block.Kernel.blockY, block.Kernel.blockZ)
-            ~grid:(grid.Kernel.gridX, grid.Kernel.gridY, grid.Kernel.gridZ)
-            obj_args
+          let block_tuple =
+            (block.Kernel.blockX, block.Kernel.blockY, block.Kernel.blockZ)
+          in
+          let grid_tuple =
+            (grid.Kernel.gridX, grid.Kernel.gridY, grid.Kernel.gridZ)
+          in
+          (* Select execution mode based on device flags *)
+          let mode : Sarek_cpu_runtime.exec_mode =
+            if ni.Devices.native_fission then Threadpool
+            else if ni.Devices.native_parallel then Parallel
+            else Sequential
+          in
+          kern ~mode ~block:block_tuple ~grid:grid_tuple obj_args
       | None ->
           failwith
             "Kirc.run: kernel has no native CPU implementation (cpu_kern is \
@@ -1745,3 +1763,16 @@ module Math = struct
     let make_local i = Array.make (Int32.to_int i) 0.
   end
 end
+
+(** Flush device, handling fission queue for native fission devices. This wraps
+    Devices.flush and adds fission queue synchronization. *)
+let flush dev ?queue_id () =
+  match dev.Devices.specific_info with
+  | Devices.NativeInfo ni when ni.Devices.native_fission -> (
+      (* Fission device: flush the launch queue *)
+      match queue_id with
+      | Some q -> Sarek_cpu_runtime.flush_fission_queue q
+      | None -> Sarek_cpu_runtime.flush_fission ())
+  | _ ->
+      (* Other devices: use standard flush *)
+      Devices.flush dev ?queue_id ()

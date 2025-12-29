@@ -10,6 +10,14 @@
     semantics matching GPU behavior. *)
 module Float32 = Sarek_float32
 
+(** {1 Execution Mode} *)
+
+(** Execution mode for native kernels *)
+type exec_mode =
+  | Sequential  (** Single-threaded, barriers are no-ops *)
+  | Parallel  (** Spawn domains per kernel launch *)
+  | Threadpool  (** Use persistent thread pool (fission mode) *)
+
 (** {1 Thread State} *)
 
 (** Thread state passed to each kernel invocation. Contains thread/block/grid
@@ -94,3 +102,56 @@ val run_parallel :
   (thread_state -> shared_mem -> 'a -> unit) ->
   'a ->
   unit
+
+(** {1 Fission Mode - Thread Pool Execution}
+
+    For the fission device, kernels are executed by a persistent thread pool.
+    This eliminates per-launch Domain spawn/join overhead for workloads with
+    many consecutive kernel launches (like odd-even sort with 512 launches).
+
+    Architecture:
+    - A persistent pool of N worker domains (one per core) stays alive
+    - Each kernel launch distributes work to workers via condition variables
+    - Workers execute their portion and signal completion
+    - No Domain spawn/join per kernel - just signaling overhead *)
+
+(** Run kernel using the persistent thread pool. Like run_parallel but uses
+    pre-created worker domains. Best for workloads with many consecutive kernel
+    launches. *)
+val run_threadpool :
+  block:int * int * int ->
+  grid:int * int * int ->
+  (thread_state -> shared_mem -> 'a -> unit) ->
+  'a ->
+  unit
+
+(** {2 Asynchronous Queue API}
+
+    Multiple queues are supported (like CUDA/OpenCL command queues):
+    - Same queue_id: kernels execute in order (serialized)
+    - Different queue_id: kernels can run in parallel (one dispatcher per queue)
+*)
+
+(** Enqueue a kernel for fission execution on a specific queue. The kernel
+    starts executing immediately in the background via thread pool. Kernels on
+    the same queue execute in order; different queues run in parallel. Default
+    queue_id is 0. *)
+val enqueue_fission :
+  ?queue_id:int ->
+  kernel:
+    (mode:exec_mode ->
+    block:int * int * int ->
+    grid:int * int * int ->
+    Obj.t array ->
+    unit) ->
+  args:Obj.t array ->
+  block:int * int * int ->
+  grid:int * int * int ->
+  unit ->
+  unit
+
+(** Wait for a specific queue to complete. *)
+val flush_fission_queue : int -> unit
+
+(** Wait for all fission queues to complete. Called by Devices.flush. *)
+val flush_fission : unit -> unit

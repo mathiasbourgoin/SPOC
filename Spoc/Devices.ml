@@ -180,6 +180,8 @@ type interpreterInfo = {
 type nativeInfo = {
   native_num_cores : int;
   native_parallel : bool;  (** Use parallel execution (Domain per thread) *)
+  native_fission : bool;
+      (** Use loop fission for supersteps (no effects, just plain loops) *)
 }
 
 type specificInfo =
@@ -319,14 +321,18 @@ let interpreter_compatible_devices = ref 0
 (* Counter for native device IDs *)
 let native_device_id = ref 0
 
-let create_native_device ?(parallel = false) () =
+let create_native_device ?(parallel = false) ?(fission = false) () =
   let id = !native_device_id in
   incr native_device_id ;
   let num_cores = try Domain.recommended_domain_count () with _ -> 4 in
   let name =
-    if parallel then
-      Printf.sprintf "CPU Native Runtime Parallel (%d cores)" num_cores
-    else Printf.sprintf "CPU Native Runtime Sequential (%d cores)" num_cores
+    match (parallel, fission) with
+    | false, _ ->
+        Printf.sprintf "CPU Native Runtime Sequential (%d cores)" num_cores
+    | true, false ->
+        Printf.sprintf "CPU Native Runtime Parallel (%d cores)" num_cores
+    | true, true ->
+        Printf.sprintf "CPU Native Runtime Fission (%d cores)" num_cores
   in
   {
     general_info = {
@@ -341,7 +347,11 @@ let create_native_device ?(parallel = false) () =
       ctx = Obj.magic ();
     };
     specific_info =
-      NativeInfo {native_num_cores = num_cores; native_parallel = parallel};
+      NativeInfo {
+        native_num_cores = num_cores;
+        native_parallel = parallel;
+        native_fission = fission;
+      };
     gc_info = Obj.magic ();
     events = Obj.magic ();
   }
@@ -384,11 +394,12 @@ let init ?only:(s = Both) ?(interpreter = Some Sequential) ?(native = true) () =
        interpreter_compatible_devices := 1
    | None ->
        interpreter_compatible_devices := 0) ;
-  (* Optionally add native CPU devices (sequential and parallel) *)
+  (* Optionally add native CPU devices (sequential, parallel, fission) *)
   if native then begin
-    devList := !devList @ [create_native_device ~parallel:false ()] ;
-    devList := !devList @ [create_native_device ~parallel:true ()] ;
-    native_compatible_devices := 2
+    devList := !devList @ [create_native_device ~parallel:false ~fission:false ()] ;
+    devList := !devList @ [create_native_device ~parallel:true ~fission:false ()] ;
+    devList := !devList @ [create_native_device ~parallel:true ~fission:true ()] ;
+    native_compatible_devices := 3
   end
   else
     native_compatible_devices := 0 ;
@@ -414,6 +425,13 @@ external cuda_flush_all : generalInfo -> device -> unit = "spoc_cuda_flush_all"
 
 external opencl_flush : generalInfo -> int -> unit = "spoc_opencl_flush"
 
+(** Hook for native device flush - allows Sarek to register fission queue flush.
+    The hook receives (device, queue_id option) and returns true if handled. *)
+let native_flush_hook : (device -> int option -> bool) ref = ref (fun _ _ -> false)
+
+(** Register a flush handler for native devices *)
+let register_native_flush_hook f = native_flush_hook := f
+
 let flush dev ?queue_id () =
   match (dev.specific_info, queue_id) with
   | CudaInfo _, None -> cuda_flush_all dev.general_info dev
@@ -421,7 +439,9 @@ let flush dev ?queue_id () =
   | OpenCLInfo _, None -> opencl_flush dev.general_info 0
   | OpenCLInfo _, Some q -> opencl_flush dev.general_info q
   | InterpreterInfo _, _ -> () (* No-op for interpreter *)
-  | NativeInfo _, _ -> () (* No-op for native *)
+  | NativeInfo _, _ ->
+      (* Call the registered hook - Sarek registers fission queue flush *)
+      ignore (!native_flush_hook dev queue_id)
 
 let hasCLExtension dev ext =
   match dev.specific_info with
@@ -476,6 +496,12 @@ let is_native_parallel dev =
 let is_native_sequential dev =
   match dev.specific_info with
   | NativeInfo ni -> not ni.native_parallel
+  | _ -> false
+
+(** Check if a device is the native CPU runtime with loop fission *)
+let is_native_fission dev =
+  match dev.specific_info with
+  | NativeInfo ni -> ni.native_fission
   | _ -> false
 
 (** Find the native device in an array, returns None if not present *)

@@ -10,7 +10,7 @@ type ('a, 'b, 'c) kirc_kernel = {
   ret_val : Kirc_Ast.k_ext * ('b, 'c) Spoc.Vector.kind;
   extensions : extension array;
   cpu_kern :
-    (parallel:bool ->
+    (mode:Sarek_cpu_runtime.exec_mode ->
     block:int * int * int ->
     grid:int * int * int ->
     Obj.t array ->
@@ -320,6 +320,11 @@ val run :
   int ->
   Spoc.Devices.device ->
   unit
+
+(** Flush device, handling fission queue for native fission devices. This wraps
+    Devices.flush and adds fission queue synchronization. Use this instead of
+    Devices.flush when using the fission device. *)
+val flush : Spoc.Devices.device -> ?queue_id:int -> unit -> unit
 
 val profile_run :
   ?recompile:bool ->
