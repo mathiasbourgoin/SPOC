@@ -117,8 +117,14 @@ val run_parallel :
 
 (** Run kernel using the persistent thread pool. Like run_parallel but uses
     pre-created worker domains. Best for workloads with many consecutive kernel
-    launches. *)
+    launches.
+
+    @param has_barriers
+      Compile-time flag from PPX indicating barrier usage.
+      - false: use thread distribution (faster, more granular)
+      - true: use block distribution with BSP barriers *)
 val run_threadpool :
+  has_barriers:bool ->
   block:int * int * int ->
   grid:int * int * int ->
   (thread_state -> shared_mem -> 'a -> unit) ->

@@ -1426,6 +1426,10 @@ let gen_cpu_kern_wrapper ~loc (kernel : tkernel) : expression =
   let use_fcm = has_inline_types kernel in
   let native_kern = gen_cpu_kern ~loc kernel in
 
+  (* Detect barrier usage at compile time - passed to runtime *)
+  let has_barriers = Sarek_convergence.kernel_uses_barriers kernel in
+  let has_barriers_expr = Ast_builder.Default.ebool ~loc has_barriers in
+
   (* Generate argument extraction bindings - use parameter names *)
   let arg_bindings =
     List.mapi
@@ -1468,6 +1472,7 @@ let gen_cpu_kern_wrapper ~loc (kernel : tkernel) : expression =
               [%e args_tuple]
         | Sarek.Sarek_cpu_runtime.Threadpool ->
             Sarek.Sarek_cpu_runtime.run_threadpool
+              ~has_barriers:[%e has_barriers_expr]
               ~block
               ~grid
               (__native_kern __types_rec)
@@ -1489,6 +1494,7 @@ let gen_cpu_kern_wrapper ~loc (kernel : tkernel) : expression =
               [%e args_tuple]
         | Sarek.Sarek_cpu_runtime.Threadpool ->
             Sarek.Sarek_cpu_runtime.run_threadpool
+              ~has_barriers:[%e has_barriers_expr]
               ~block
               ~grid
               __native_kern

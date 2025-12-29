@@ -645,14 +645,20 @@ let run_parallel ~block ~grid kernel args =
     - Workers wait on a condition variable between kernels *)
 
 module ThreadPool = struct
-  (** Work item: a range of block IDs to execute. Each worker gets complete
-      blocks to preserve BSP barrier semantics. *)
+  (** Work item: either thread or block distribution based on barrier usage.
+      - No barriers: thread distribution (start_tid/end_tid) - more granular
+      - With barriers: block distribution (start_block/end_block) - preserves
+        BSP *)
   type work_item = {
     kernel : thread_state -> shared_mem -> Obj.t array -> unit;
     args : Obj.t array;
+    uses_barriers : bool;  (** Whether kernel uses barriers *)
+    (* Thread distribution (uses_barriers=false) *)
+    start_tid : int;  (** First global thread ID (inclusive) *)
+    end_tid : int;  (** Last global thread ID (exclusive) *)
+    (* Block distribution (uses_barriers=true) *)
     start_block : int;  (** First block ID (inclusive) *)
     end_block : int;  (** Last block ID (exclusive) *)
-    uses_barriers : bool;  (** Whether kernel uses barriers *)
     (* Kernel dimensions *)
     bx : int;
     by : int;
@@ -675,59 +681,6 @@ module ThreadPool = struct
     mutable shutdown : bool;
     mutable generation : int; (* Incremented each kernel launch *)
   }
-
-  (** Run a single block without barriers - fast path for barrier-free kernels
-  *)
-  let run_block_simple ~block:(bx, by, bz) ~grid:(gx, gy, gz)
-      ~block_idx:(block_x, block_y, block_z)
-      (kernel : thread_state -> shared_mem -> Obj.t array -> unit)
-      (args : Obj.t array) =
-    let threads_per_block = bx * by * bz in
-    let empty_shared = create_shared () in
-    let noop_barrier = fun () -> () in
-    (* Pre-compute int32 values *)
-    let bx32 = Int32.of_int bx in
-    let by32 = Int32.of_int by in
-    let bz32 = Int32.of_int bz in
-    let gx32 = Int32.of_int gx in
-    let gy32 = Int32.of_int gy in
-    let gz32 = Int32.of_int gz in
-    let block_x32 = Int32.of_int block_x in
-    let block_y32 = Int32.of_int block_y in
-    let block_z32 = Int32.of_int block_z in
-    let thread_x_table = Array.init bx Int32.of_int in
-    let thread_y_table = Array.init by Int32.of_int in
-    let thread_z_table =
-      if bz > 1 then Array.init bz Int32.of_int else [|0l|]
-    in
-    (* Pre-allocate state *)
-    let state =
-      {
-        thread_idx_x = 0l;
-        thread_idx_y = 0l;
-        thread_idx_z = 0l;
-        block_idx_x = block_x32;
-        block_idx_y = block_y32;
-        block_idx_z = block_z32;
-        block_dim_x = bx32;
-        block_dim_y = by32;
-        block_dim_z = bz32;
-        grid_dim_x = gx32;
-        grid_dim_y = gy32;
-        grid_dim_z = gz32;
-        barrier = noop_barrier;
-      }
-    in
-    (* Run all threads in this block *)
-    for tid = 0 to threads_per_block - 1 do
-      let thread_x = tid mod bx in
-      let thread_y = tid / bx mod by in
-      let thread_z = tid / (bx * by) in
-      Obj.set_field (Obj.repr state) 0 (Obj.repr thread_x_table.(thread_x)) ;
-      Obj.set_field (Obj.repr state) 1 (Obj.repr thread_y_table.(thread_y)) ;
-      Obj.set_field (Obj.repr state) 2 (Obj.repr thread_z_table.(thread_z)) ;
-      kernel state empty_shared args
-    done
 
   (** Run a single block with BSP barriers using Effect.Shallow fibers *)
   let run_block_bsp ~block:(bx, by, bz) ~grid:(gx, gy, gz)
@@ -824,7 +777,68 @@ module ThreadPool = struct
       done
     done
 
-  (** Worker function - runs in each domain, processes complete blocks *)
+  (** Run a range of global threads directly - for barrier-free kernels. More
+      efficient than block distribution when no barriers are needed. *)
+  let run_threads w =
+    let threads_per_block = w.bx * w.by * w.bz in
+    let empty_shared = create_shared () in
+    let noop_barrier = fun () -> () in
+    (* Pre-compute int32 values *)
+    let bx32 = Int32.of_int w.bx in
+    let by32 = Int32.of_int w.by in
+    let bz32 = Int32.of_int w.bz in
+    let gx32 = Int32.of_int w.gx in
+    let gy32 = Int32.of_int w.gy in
+    let gz32 = Int32.of_int w.gz in
+    (* Pre-compute lookup tables *)
+    let thread_x_table = Array.init w.bx Int32.of_int in
+    let thread_y_table = Array.init w.by Int32.of_int in
+    let thread_z_table =
+      if w.bz > 1 then Array.init w.bz Int32.of_int else [|0l|]
+    in
+    let block_x_table = Array.init w.gx Int32.of_int in
+    let block_y_table = Array.init w.gy Int32.of_int in
+    let block_z_table =
+      if w.gz > 1 then Array.init w.gz Int32.of_int else [|0l|]
+    in
+    (* Pre-allocate mutable state *)
+    let state =
+      {
+        thread_idx_x = 0l;
+        thread_idx_y = 0l;
+        thread_idx_z = 0l;
+        block_idx_x = 0l;
+        block_idx_y = 0l;
+        block_idx_z = 0l;
+        block_dim_x = bx32;
+        block_dim_y = by32;
+        block_dim_z = bz32;
+        grid_dim_x = gx32;
+        grid_dim_y = gy32;
+        grid_dim_z = gz32;
+        barrier = noop_barrier;
+      }
+    in
+    (* Run each global thread in our range *)
+    for global_tid = w.start_tid to w.end_tid - 1 do
+      let block_id = global_tid / threads_per_block in
+      let local_tid = global_tid - (block_id * threads_per_block) in
+      let block_x = block_id mod w.gx in
+      let block_y = block_id / w.gx mod w.gy in
+      let block_z = block_id / (w.gx * w.gy) in
+      let thread_x = local_tid mod w.bx in
+      let thread_y = local_tid / w.bx mod w.by in
+      let thread_z = local_tid / (w.bx * w.by) in
+      Obj.set_field (Obj.repr state) 0 (Obj.repr thread_x_table.(thread_x)) ;
+      Obj.set_field (Obj.repr state) 1 (Obj.repr thread_y_table.(thread_y)) ;
+      Obj.set_field (Obj.repr state) 2 (Obj.repr thread_z_table.(thread_z)) ;
+      Obj.set_field (Obj.repr state) 3 (Obj.repr block_x_table.(block_x)) ;
+      Obj.set_field (Obj.repr state) 4 (Obj.repr block_y_table.(block_y)) ;
+      Obj.set_field (Obj.repr state) 5 (Obj.repr block_z_table.(block_z)) ;
+      w.kernel state empty_shared w.args
+    done
+
+  (** Worker function - runs in each domain, processes work items *)
   let worker_fn pool worker_id =
     let last_gen = ref 0 in
     let rec loop () =
@@ -845,26 +859,23 @@ module ThreadPool = struct
           match Atomic.get pool.work.(worker_id) with
           | None -> false
           | Some w ->
-              (* Process each block in our range *)
-              for block_id = w.start_block to w.end_block - 1 do
-                let block_x = block_id mod w.gx in
-                let block_y = block_id / w.gx mod w.gy in
-                let block_z = block_id / (w.gx * w.gy) in
-                if w.uses_barriers then
+              if w.uses_barriers then begin
+                (* Block distribution - required for BSP barriers *)
+                for block_id = w.start_block to w.end_block - 1 do
+                  let block_x = block_id mod w.gx in
+                  let block_y = block_id / w.gx mod w.gy in
+                  let block_z = block_id / (w.gx * w.gy) in
                   run_block_bsp
                     ~block:(w.bx, w.by, w.bz)
                     ~grid:(w.gx, w.gy, w.gz)
                     ~block_idx:(block_x, block_y, block_z)
                     w.kernel
                     w.args
-                else
-                  run_block_simple
-                    ~block:(w.bx, w.by, w.bz)
-                    ~grid:(w.gx, w.gy, w.gz)
-                    ~block_idx:(block_x, block_y, block_z)
-                    w.kernel
-                    w.args
-              done ;
+                done
+              end
+              else
+                (* Thread distribution - more granular, faster *)
+                run_threads w ;
               Atomic.set pool.work.(worker_id) None ;
               true
         in
@@ -902,41 +913,84 @@ module ThreadPool = struct
           Domain.spawn (fun () -> worker_fn pool i)) ;
     pool
 
-  (** Submit kernel to thread pool and wait for completion. Distributes blocks
-      (not threads) to preserve BSP barrier semantics. *)
+  (** Submit kernel to thread pool and wait for completion. Distribution
+      strategy depends on barrier usage:
+      - uses_barriers=false: distribute threads (more granular)
+      - uses_barriers=true: distribute blocks (preserves BSP) *)
   let run_kernel pool ~block:(bx, by, bz) ~grid:(gx, gy, gz) ~uses_barriers
       (kernel : thread_state -> shared_mem -> Obj.t array -> unit)
       (args : Obj.t array) =
+    let threads_per_block = bx * by * bz in
     let total_blocks = gx * gy * gz in
-    let blocks_per_worker =
-      (total_blocks + pool.num_workers - 1) / pool.num_workers
-    in
-    (* Distribute blocks *)
+    let total_threads = total_blocks * threads_per_block in
     Mutex.lock pool.mutex ;
     let active_workers = ref 0 in
-    for i = 0 to pool.num_workers - 1 do
-      let start_block = i * blocks_per_worker in
-      let end_block = min ((i + 1) * blocks_per_worker) total_blocks in
-      if start_block < total_blocks then begin
-        Atomic.set
-          pool.work.(i)
-          (Some
-             {
-               kernel;
-               args;
-               start_block;
-               end_block;
-               uses_barriers;
-               bx;
-               by;
-               bz;
-               gx;
-               gy;
-               gz;
-             }) ;
-        incr active_workers
-      end
-    done ;
+    if uses_barriers then begin
+      (* Block distribution - required for BSP barriers *)
+      let blocks_per_worker =
+        (total_blocks + pool.num_workers - 1) / pool.num_workers
+      in
+      for i = 0 to pool.num_workers - 1 do
+        let start_block = i * blocks_per_worker in
+        let end_block = min ((i + 1) * blocks_per_worker) total_blocks in
+        if start_block < total_blocks then begin
+          Atomic.set
+            pool.work.(i)
+            (Some
+               {
+                 kernel;
+                 args;
+                 uses_barriers;
+                 start_tid = 0;
+                 (* unused *)
+                 end_tid = 0;
+                 (* unused *)
+                 start_block;
+                 end_block;
+                 bx;
+                 by;
+                 bz;
+                 gx;
+                 gy;
+                 gz;
+               }) ;
+          incr active_workers
+        end
+      done
+    end
+    else begin
+      (* Thread distribution - more granular, faster *)
+      let threads_per_worker =
+        (total_threads + pool.num_workers - 1) / pool.num_workers
+      in
+      for i = 0 to pool.num_workers - 1 do
+        let start_tid = i * threads_per_worker in
+        let end_tid = min ((i + 1) * threads_per_worker) total_threads in
+        if start_tid < total_threads then begin
+          Atomic.set
+            pool.work.(i)
+            (Some
+               {
+                 kernel;
+                 args;
+                 uses_barriers;
+                 start_tid;
+                 end_tid;
+                 start_block = 0;
+                 (* unused *)
+                 end_block = 0;
+                 (* unused *)
+                 bx;
+                 by;
+                 bz;
+                 gx;
+                 gy;
+                 gz;
+               }) ;
+          incr active_workers
+        end
+      done
+    end ;
     pool.pending_workers <- !active_workers ;
     pool.generation <- pool.generation + 1 ;
     Condition.broadcast pool.work_ready ;
@@ -979,22 +1033,19 @@ let get_fission_pool () =
     uses the fission thread pool instead of spawning new domains. For use by the
     wrapper in fission mode.
 
-    Automatically detects barrier usage and enables BSP execution when needed.
-*)
-let run_threadpool ~block:(bx, by, bz) ~grid:(gx, gy, gz)
+    Uses compile-time barrier detection from PPX to choose optimal distribution:
+    - has_barriers=false: distribute threads (more granular, faster)
+    - has_barriers=true: distribute blocks (required for BSP semantics) *)
+let run_threadpool ~has_barriers ~block:(bx, by, bz) ~grid:(gx, gy, gz)
     (kernel : thread_state -> shared_mem -> 'a -> unit) (args : 'a) : unit =
   let pool = get_fission_pool () in
-  (* Detect if kernel uses barriers *)
-  let uses_barriers =
-    kernel_uses_barriers ~block:(bx, by, bz) ~grid:(gx, gy, gz) kernel args
-  in
   (* Wrap the typed kernel to take Obj.t array *)
   let wrapped_kernel state shared _obj_args = kernel state shared args in
   ThreadPool.run_kernel
     pool
     ~block:(bx, by, bz)
     ~grid:(gx, gy, gz)
-    ~uses_barriers
+    ~uses_barriers:has_barriers
     wrapped_kernel
     [||]
 

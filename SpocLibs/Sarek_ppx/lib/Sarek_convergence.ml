@@ -323,3 +323,73 @@ let check_kernel (kernel : tkernel) : (unit, Sarek_error.error list) result =
   let body_errors = check_expr ctx kernel.tkern_body in
   let all_errors = item_errors @ body_errors in
   if all_errors = [] then Ok () else Error all_errors
+
+(** Check if a kernel uses any barriers (explicit or implicit). Used for
+    compile-time optimization of native kernel execution. *)
+let rec expr_uses_barriers (te : texpr) : bool =
+  match te.te with
+  (* Superstep has implicit barrier *)
+  | TESuperstep (_, _, step_body, cont) ->
+      true || expr_uses_barriers step_body || expr_uses_barriers cont
+  (* Intrinsic function - check if it's a convergence point *)
+  | TEIntrinsicFun (_, Some Sarek_core_primitives.ConvergencePoint, _) -> true
+  | TEIntrinsicFun (_, _, args) -> List.exists expr_uses_barriers args
+  (* Recursively check subexpressions *)
+  | TEIf (cond, then_e, else_opt) ->
+      expr_uses_barriers cond || expr_uses_barriers then_e
+      || Option.is_some
+           (Option.bind else_opt (fun e ->
+                if expr_uses_barriers e then Some () else None))
+  | TEWhile (cond, body) -> expr_uses_barriers cond || expr_uses_barriers body
+  | TEFor (_, _, lo, hi, _, body) ->
+      expr_uses_barriers lo || expr_uses_barriers hi || expr_uses_barriers body
+  | TEMatch (scrut, cases) ->
+      expr_uses_barriers scrut
+      || List.exists (fun (_, e) -> expr_uses_barriers e) cases
+  | TELet (_, _, v, b) | TELetMut (_, _, v, b) ->
+      expr_uses_barriers v || expr_uses_barriers b
+  | TESeq es -> List.exists expr_uses_barriers es
+  | TEBinop (_, a, b) -> expr_uses_barriers a || expr_uses_barriers b
+  | TEUnop (_, e) -> expr_uses_barriers e
+  | TEApp (f, args) ->
+      expr_uses_barriers f || List.exists expr_uses_barriers args
+  | TEVecGet (v, i) -> expr_uses_barriers v || expr_uses_barriers i
+  | TEVecSet (v, i, x) ->
+      expr_uses_barriers v || expr_uses_barriers i || expr_uses_barriers x
+  | TEArrGet (a, i) -> expr_uses_barriers a || expr_uses_barriers i
+  | TEArrSet (a, i, x) ->
+      expr_uses_barriers a || expr_uses_barriers i || expr_uses_barriers x
+  | TEFieldGet (e, _, _) -> expr_uses_barriers e
+  | TEFieldSet (e, _, _, x) -> expr_uses_barriers e || expr_uses_barriers x
+  | TERecord (_, fields) ->
+      List.exists (fun (_, e) -> expr_uses_barriers e) fields
+  | TETuple es -> List.exists expr_uses_barriers es
+  | TEReturn e -> expr_uses_barriers e
+  | TEPragma (_, body) -> expr_uses_barriers body
+  | TEAssign (_, _, e) -> expr_uses_barriers e
+  | TECreateArray (size, _, _) -> expr_uses_barriers size
+  | TEConstr (_, _, arg) ->
+      Option.is_some
+        (Option.bind arg (fun e ->
+             if expr_uses_barriers e then Some () else None))
+  | TELetShared (_, _, _, size_opt, body) ->
+      (match size_opt with None -> false | Some s -> expr_uses_barriers s)
+      || expr_uses_barriers body
+  | TEOpen (_, body) -> expr_uses_barriers body
+  (* Terminal cases - no barriers *)
+  | TEUnit | TEBool _ | TEInt _ | TEInt32 _ | TEInt64 _ | TEFloat _ | TEDouble _
+  | TEVar _ | TEGlobalRef _ | TENative _ | TEIntrinsicConst _ ->
+      false
+
+(** Check if a kernel uses barriers *)
+let kernel_uses_barriers (kernel : tkernel) : bool =
+  (* Check module items *)
+  let item_uses =
+    List.exists
+      (fun (item : tmodule_item) ->
+        match item with
+        | TMConst (_, _, _, e) -> expr_uses_barriers e
+        | TMFun (_, _, e) -> expr_uses_barriers e)
+      kernel.tkern_module_items
+  in
+  item_uses || expr_uses_barriers kernel.tkern_body
