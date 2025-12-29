@@ -738,7 +738,7 @@ let rewrite ker =
     | GIntVar _ -> kern
     | GFloatVar _ -> kern
     | GFloat64Var _ -> kern
-    | NativeVar _ -> kern
+    | NativeWithFallback _ -> kern
     | Float _ -> kern
     | Double _ -> kern
     | Custom _ -> kern

@@ -111,8 +111,8 @@ let rec is_thread_varying (te : texpr) : bool =
   | TEOpen (_, body) -> is_thread_varying body
   (* Default: assume uniform (minimize false positives) *)
   | TEIf _ | TEFor _ | TEWhile _ | TEMatch _ | TERecord _ | TEConstr _
-  | TEReturn _ | TECreateArray _ | TEGlobalRef _ | TENative _ | TENativeFun _
-  | TEPragma _ | TEVecSet _ | TEArrSet _ | TEFieldSet _ | TEAssign _ ->
+  | TEReturn _ | TECreateArray _ | TEGlobalRef _ | TENative _ | TEPragma _
+  | TEVecSet _ | TEArrSet _ | TEFieldSet _ | TEAssign _ ->
       false
 
 (** Check if an intrinsic reference is a barrier *)
@@ -179,7 +179,7 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
       scrut_errors @ case_errors
   (* Recursively check subexpressions - these don't change mode *)
   | TEUnit | TEBool _ | TEInt _ | TEInt32 _ | TEInt64 _ | TEFloat _ | TEDouble _
-  | TEVar _ | TEGlobalRef _ | TENative _ | TENativeFun _ | TEIntrinsicConst _ ->
+  | TEVar _ | TEGlobalRef _ | TENative _ | TEIntrinsicConst _ ->
       []
   | TEVecGet (v, i) -> check_expr ctx v @ check_expr ctx i
   | TEVecSet (v, i, x) -> check_expr ctx v @ check_expr ctx i @ check_expr ctx x
@@ -303,7 +303,7 @@ and contains_diverging_control_flow (te : texpr) : bool =
   | TEOpen (_, body) -> contains_diverging_control_flow body
   (* Terminal cases - no nested control flow *)
   | TEUnit | TEBool _ | TEInt _ | TEInt32 _ | TEInt64 _ | TEFloat _ | TEDouble _
-  | TEVar _ | TEGlobalRef _ | TENative _ | TENativeFun _ | TEIntrinsicConst _ ->
+  | TEVar _ | TEGlobalRef _ | TENative _ | TEIntrinsicConst _ ->
       false
 
 (** Check a module item *)

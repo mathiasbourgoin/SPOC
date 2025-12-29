@@ -146,9 +146,13 @@ and expr_desc =
   | EReturn of expr
   | ECreateArray of expr * type_expr * memspace
   | EGlobalRef of string  (** @name - reference to OCaml value *)
-  | ENative of string  (** Native code injection - simple string *)
-  | ENativeFun of Ppxlib.expression
-      (** Native code function - fun dev -> ... *)
+  | ENative of {
+      gpu : Ppxlib.expression;  (** fun dev -> "cuda/opencl code" *)
+      ocaml : Ppxlib.expression;  (** fun arg1 arg2 ... -> OCaml fallback *)
+    }
+      (** Native code with GPU string generator and OCaml fallback function.
+          Usage: [%native (fun dev -> "code"), (fun x y -> ...)] x y The result
+          is a function that takes the same args as the ocaml fallback. *)
   | EPragma of string list * expr  (** pragma "unroll" body *)
   (* Type annotation *)
   | ETyped of expr * type_expr
@@ -389,8 +393,7 @@ let rec pp_expr fmt expr =
         pp_memspace
         mem
   | EGlobalRef name -> Format.fprintf fmt "@%s" name
-  | ENative s -> Format.fprintf fmt "[%%native %S]" s
-  | ENativeFun _ -> Format.fprintf fmt "[%%native fun ...]"
+  | ENative _ -> Format.fprintf fmt "[%%native ~gpu:... ~ocaml:...]"
   | EPragma (opts, body) ->
       Format.fprintf
         fmt

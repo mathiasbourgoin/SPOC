@@ -701,17 +701,11 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
       (* Dereference the ref *)
       let var_e = evar ~loc name in
       [%expr ![%e var_e]]
-  (* Native code - wrap as OCaml string (will fail at runtime if executed) *)
-  | TENative code ->
-      [%expr
-        failwith
-          [%e
-            Ast_builder.Default.estring
-              ~loc
-              ("Native code not supported on CPU: " ^ code)]]
-  (* Native function - call with interpreter device to get code string *)
-  | TENativeFun _fn_expr ->
-      [%expr failwith "Native functions not supported on CPU backend"]
+  (* Native code with OCaml fallback - use the OCaml expression directly *)
+  | TENative {ocaml; _} ->
+      (* The ocaml expression is a function that will be applied to arguments.
+         Return it as-is; TEApp will handle the application. *)
+      ocaml
   (* Pragma - just evaluate body (pragmas are hints for GPU) *)
   | TEPragma (_opts, body) -> gen_expr ~loc body
   (* Intrinsic constant - thread indices, etc. *)

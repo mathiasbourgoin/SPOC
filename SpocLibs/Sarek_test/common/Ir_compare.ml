@@ -105,7 +105,9 @@ let rec ir_equal (ir1 : k_ext) (ir2 : k_ext) : bool =
   | GIntVar s1, GIntVar s2 -> s1 = s2
   | GFloatVar s1, GFloatVar s2 -> s1 = s2
   | GFloat64Var s1, GFloat64Var s2 -> s1 = s2
-  | NativeVar s1, NativeVar s2 -> s1 = s2
+  | NativeWithFallback _, NativeWithFallback _ ->
+      (* Can't compare functions, just check both are NativeWithFallback *)
+      true
   | _, _ -> false
 
 and case_equal (i1, o1, b1) (i2, o2, b2) = i1 = i2 && o1 = o2 && ir_equal b1 b2
@@ -179,8 +181,7 @@ let constructor_name : k_ext -> string = function
   | GIntVar _ -> "GIntVar"
   | GFloatVar _ -> "GFloatVar"
   | GFloat64Var _ -> "GFloat64Var"
-  | NativeVar _ -> "NativeVar"
-  | NativeFunExpr _ -> "NativeFunExpr"
+  | NativeWithFallback _ -> "NativeWithFallback"
   | IntrinsicRef _ -> "IntrinsicRef"
   | Pragma _ -> "Pragma"
   | Map _ -> "Map"

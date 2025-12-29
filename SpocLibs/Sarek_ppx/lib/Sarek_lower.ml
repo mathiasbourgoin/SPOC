@@ -386,10 +386,8 @@ let rec lower_expr (state : state) (te : texpr) : Kirc_Ast.k_ext =
       | TReg "float32" -> Kirc_Ast.GFloatVar name
       | TReg "float64" -> Kirc_Ast.GFloat64Var name
       | _ -> Kirc_Ast.GIntVar name)
-  (* Native code - use NativeVar to preserve string for quoting *)
-  | TENative s -> Kirc_Ast.NativeVar s
-  (* Native code - function expression, store for quoting *)
-  | TENativeFun func_expr -> Kirc_Ast.NativeFunExpr func_expr
+  (* Native code with GPU and OCaml fallback *)
+  | TENative {gpu; ocaml} -> Kirc_Ast.NativeWithFallback {gpu; ocaml}
   (* Pragma *)
   | TEPragma (opts, body) -> Kirc_Ast.Pragma (opts, lower_expr state body)
   (* BSP constructs *)

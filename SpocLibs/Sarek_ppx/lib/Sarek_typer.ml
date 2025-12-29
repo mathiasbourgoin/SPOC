@@ -512,14 +512,10 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
       (* Type will be inferred from context or annotated *)
       let ty = fresh_tvar () in
       Ok (mk_texpr (TEGlobalRef (name, ty)) ty loc, env)
-  (* Native code - string *)
-  | ENative s ->
+  (* Native code with GPU and OCaml fallback *)
+  | ENative {gpu; ocaml} ->
       let ty = fresh_tvar () in
-      Ok (mk_texpr (TENative s) ty loc, env)
-  (* Native code - function *)
-  | ENativeFun func_expr ->
-      let ty = fresh_tvar () in
-      Ok (mk_texpr (TENativeFun func_expr) ty loc, env)
+      Ok (mk_texpr (TENative {gpu; ocaml}) ty loc, env)
   (* Pragma *)
   | EPragma (opts, body) ->
       let* tbody, env = infer env body in

@@ -3,22 +3,36 @@ open Sarek
 open Kirc
 
 
-let piKern = [%kernel fun (rX : float32 vector) (rY : float32 vector) (inside : int32 vector) (n : int32) ->
-  let open Std in
-  let open Math in
-  let open Float32 in
-  let i = thread_idx_x + block_idx_x * block_dim_x in
-  if i < n then begin
-    let r = sqrt ( add (mul rX.%[i] rX.%[i])
-                     (mul rY.%[i] rY.%[i])) in
-    if (r <=. 1.) then
-      [%native fun dev ->
-        match dev.Spoc.Devices.specific_info with
-        | Spoc.Devices.OpenCLInfo _ -> "atomic_inc (inside)"
-        | _ -> "atomicAdd (inside,1)"
-      ]
-  end
-]
+(* This kernel demonstrates [%native] for embedding raw GPU code with an
+   OCaml fallback. The [%native] extension returns a function that you apply
+   with the actual arguments.
+
+   Note: For atomic operations, you can also use the Gpu.atomic_add_global_int32
+   intrinsic directly, which works on all backends without needing [%native]. *)
+let piKern =
+  [%kernel
+    fun (rX : float32 vector)
+        (rY : float32 vector)
+        (inside : int32 vector)
+        (n : int32) ->
+      let open Std in
+      let open Math in
+      let open Float32 in
+      let i = thread_idx_x + (block_idx_x * block_dim_x) in
+      if i < n then begin
+        let r = sqrt (add (mul rX.%[i] rX.%[i]) (mul rY.%[i] rY.%[i])) in
+        if r <=. 1. then
+          let _ =
+            [%native
+              (fun dev ->
+                 match dev.Spoc.Devices.specific_info with
+                 | Spoc.Devices.OpenCLInfo _ -> "atomic_inc(inside)"
+                 | _ -> "atomicAdd(inside, 1)"),
+              (fun v -> Sarek_stdlib.Gpu.atomic_add_global_int32 v 0l 1l)]
+              inside
+          in
+          ()
+      end]
 
 
 

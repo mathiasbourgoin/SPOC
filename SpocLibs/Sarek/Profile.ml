@@ -231,8 +231,9 @@ and parse i a dev =
     | GFloat64Var n ->
         failwith
           ("GFloat64Var " ^ n ^ " should have been expanded during quoting")
-    | NativeVar n ->
-        failwith ("NativeVar " ^ n ^ " should have been expanded during quoting")
+    | NativeWithFallback {gpu; _} ->
+        (* For GPU profiling, use the GPU code generator *)
+        gpu dev
     | Set (var, value) ->
         indent i ^ "let mutable " ^ parse i var dev ^ " = " ^ parse i value dev
         ^ " in"

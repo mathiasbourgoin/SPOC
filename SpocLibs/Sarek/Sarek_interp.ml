@@ -6,6 +6,24 @@
 open Kirc_Ast
 module F32 = Sarek_float32
 
+(** {1 Native Code Warnings}
+
+    Track which native nodes have already issued warnings to avoid spamming. *)
+
+let native_warnings_issued : (int, unit) Hashtbl.t = Hashtbl.create 8
+
+let warn_native_skipped (node : k_ext) =
+  let id = Hashtbl.hash node in
+  if not (Hashtbl.mem native_warnings_issued id) then begin
+    Hashtbl.add native_warnings_issued id () ;
+    Printf.eprintf
+      "Warning: [%%native] code skipped in interpreter (use intrinsics for \
+       portable behavior)\n\
+       %!"
+  end
+
+let reset_native_warnings () = Hashtbl.clear native_warnings_issued
+
 (** {1 BSP Barrier Effect}
 
     Used for synchronizing threads at barriers. Each thread is suspended when it
@@ -507,69 +525,21 @@ let rec eval_expr state env expr =
       | GlobalFun (body, _name, _sig) ->
           (* Simple: evaluate body with args bound - needs proper impl *)
           eval_expr state env body
+      | NativeWithFallback _ as node ->
+          (* The OCaml fallback expects real SPOC vectors, not interpreter values.
+             Skip native code in interpreter - it's typically for GPU-specific ops
+             like atomics that have intrinsic equivalents. *)
+          warn_native_skipped node ;
+          VUnit
       | _ -> failwith "App: unsupported function expression")
   (* Pragmas - just evaluate body *)
   | Pragma (_, body) -> eval_expr state env body
-  (* Native code blocks - try to interpret common patterns *)
-  | Native f ->
-      (* Call the native function with a fake interpreter device to get the code string *)
-      let fake_dev =
-        {
-          Spoc.Devices.general_info =
-            {
-              Spoc.Devices.name = "Interpreter";
-              totalGlobalMem = 0;
-              localMemSize = 0;
-              clockRate = 0;
-              totalConstMem = 0;
-              multiProcessorCount = 1;
-              eccEnabled = false;
-              id = 0;
-              ctx = Obj.magic ();
-            };
-          specific_info =
-            Spoc.Devices.InterpreterInfo
-              {
-                Spoc.Devices.backend = Spoc.Devices.Sequential;
-                num_cores = 1;
-                debug_mode = false;
-              };
-          gc_info = Obj.magic ();
-          events = Obj.magic ();
-        }
-      in
-      let code = f fake_dev in
-      (* Try to interpret common atomic patterns *)
-      if String.length code > 0 then begin
-        (* atomicAdd (var,1) or atomicAdd(var, 1) - CUDA style *)
-        let atomicAdd_re =
-          Str.regexp "atomicAdd[ ]*(\\([a-zA-Z_][a-zA-Z0-9_]*\\),[ ]*1)"
-        in
-        (* atomic_inc (var) or atomic_inc(var) - OpenCL style *)
-        let atomic_inc_re =
-          Str.regexp "atomic_inc[ ]*(\\([a-zA-Z_][a-zA-Z0-9_]*\\))"
-        in
-        let matched_var =
-          if Str.string_match atomicAdd_re code 0 then
-            Some (Str.matched_group 1 code)
-          else if Str.string_match atomic_inc_re code 0 then
-            Some (Str.matched_group 1 code)
-          else None
-        in
-        match matched_var with
-        | Some var_name -> (
-            try
-              let arr = Hashtbl.find env.arrays var_name in
-              match arr.(0) with
-              | VInt32 n -> arr.(0) <- VInt32 (Int32.add n 1l)
-              | VInt64 n -> arr.(0) <- VInt64 (Int64.add n 1L)
-              | _ -> ()
-            with Not_found -> ())
-        | None -> ()
-      end ;
+  (* Native code - should be applied via App, but handle gracefully *)
+  | Native _ as node ->
+      warn_native_skipped node ;
       VUnit
-  | NativeVar _ ->
-      (* NativeVar references a native function by name - can't interpret *)
+  | NativeWithFallback _ as node ->
+      warn_native_skipped node ;
       VUnit
   (* Other *)
   | Empty -> VUnit

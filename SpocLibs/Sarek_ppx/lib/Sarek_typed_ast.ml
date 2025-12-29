@@ -55,8 +55,10 @@ and texpr_desc =
   | TEReturn of texpr
   | TECreateArray of texpr * typ * memspace
   | TEGlobalRef of string * typ  (** External ref with its type *)
-  | TENative of string  (** Native code - simple string *)
-  | TENativeFun of Ppxlib.expression  (** Native code - function expression *)
+  | TENative of {
+      gpu : Ppxlib.expression;  (** fun dev -> "cuda/opencl code" *)
+      ocaml : Ppxlib.expression;  (** OCaml fallback for interpreter/native *)
+    }  (** Native code with GPU and OCaml expressions *)
   | TEPragma of string list * texpr  (** pragma options body *)
   (* Intrinsics - use intrinsic_ref, device code resolved at JIT time *)
   | TEIntrinsicConst of Sarek_env.intrinsic_ref
@@ -297,8 +299,7 @@ let rec pp_texpr fmt te =
         pp_memspace
         mem
   | TEGlobalRef (name, ty) -> Format.fprintf fmt "@%s : %a" name pp_typ ty
-  | TENative s -> Format.fprintf fmt "[%%native %S]" s
-  | TENativeFun _ -> Format.fprintf fmt "[%%native fun ...]"
+  | TENative _ -> Format.fprintf fmt "[%%native ~gpu:... ~ocaml:...]"
   | TEPragma (opts, body) ->
       Format.fprintf
         fmt

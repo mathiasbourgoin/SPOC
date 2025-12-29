@@ -325,14 +325,16 @@ and quote_k_ext ~loc (k : Kirc_Ast.k_ext) : expression =
       let var_expr = evar ~loc name in
       [%expr Sarek.Kirc_Ast.GFloat64 (fun () -> ![%e var_expr])]
   | Kirc_Ast.Native _ ->
-      (* This shouldn't be reached in PPX - we use NativeVar instead *)
+      (* This shouldn't be reached in PPX - we use NativeWithFallback instead *)
       [%expr Sarek.Kirc_Ast.Native (fun _dev -> "")]
-  | Kirc_Ast.NativeVar code ->
-      (* Native code is a string literal, not a variable reference *)
-      [%expr Sarek.Kirc_Ast.Native (fun _dev -> [%e quote_string ~loc code])]
-  | Kirc_Ast.NativeFunExpr func_expr ->
-      (* Native function expression - pass it through directly to Native *)
-      [%expr Sarek.Kirc_Ast.Native [%e func_expr]]
+  | Kirc_Ast.NativeWithFallback {gpu; ocaml} ->
+      (* Native code with GPU expression and OCaml fallback function.
+         The GPU expression is (fun dev -> "code").
+         The ocaml expression is a function that will be applied to args.
+         We use Obj.repr to store the function polymorphically. *)
+      [%expr
+        Sarek.Kirc_Ast.NativeWithFallback
+          {gpu = [%e gpu]; ocaml = Obj.repr [%e ocaml]}]
   | Kirc_Ast.Pragma (opts, body) ->
       [%expr
         Sarek.Kirc_Ast.Pragma
@@ -521,7 +523,7 @@ let expr_of_intrinsic_ref ~loc (ref : Sarek_env.intrinsic_ref) : expression =
 let rec collect_intrinsic_refs (te : texpr) : IntrinsicRefSet.t =
   match te.te with
   | TEUnit | TEBool _ | TEInt _ | TEInt32 _ | TEInt64 _ | TEFloat _ | TEDouble _
-  | TEVar _ | TENative _ | TENativeFun _ | TEGlobalRef _ ->
+  | TEVar _ | TENative _ | TEGlobalRef _ ->
       IntrinsicRefSet.empty
   | TEVecGet (v, i) | TEVecSet (v, i, _) | TEArrGet (v, i) ->
       IntrinsicRefSet.union

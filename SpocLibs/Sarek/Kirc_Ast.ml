@@ -115,7 +115,13 @@ type k_ext =
   | GFloat64Var of string
       (** Global float64 variable by name - for PPX quoting *)
   | Native of (Spoc.Devices.device -> string)
-  | NativeVar of string  (** Native code by variable name - for PPX quoting *)
+  | NativeWithFallback of {
+      gpu : Spoc.Devices.device -> string;  (** GPU code generator *)
+      ocaml : Obj.t;  (** OCaml fallback function (polymorphic) *)
+    }
+      (** Native code with GPU and OCaml fallback. The ocaml field holds a
+          function that will be applied to args. Use Obj.t because we don't know
+          the function's type statically. *)
   | Pragma of string list * k_ext
   | Map of (k_ext * k_ext * k_ext)
   | Unit
@@ -252,7 +258,7 @@ let string_of_ast a =
     | GIntVar n -> soa i ("GIntVar " ^ n)
     | GFloatVar n -> soa i ("GFloatVar " ^ n)
     | GFloat64Var n -> soa i ("GFloat64Var " ^ n)
-    | NativeVar n -> soa i ("NativeVar " ^ n)
+    | NativeWithFallback _ -> soa i "NativeWithFallback ~gpu:... ~ocaml:..."
     | Unit -> soa i "Unit"
     | GlobalFun (e, s, n) ->
         sprintf "%s%s" (soa i ("Global Fun " ^ s ^ " " ^ n)) (aux (i + 1) e)

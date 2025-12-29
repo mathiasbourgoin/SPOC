@@ -510,26 +510,21 @@ and parse_expression (expr : expression) : Sarek_ast.expr =
               };
             ] ) ->
         Sarek_ast.EGlobalRef name
-    (* Extension point: [%native "code"] - inline device code (string) *)
+    (* Extension point: [%native gpu_fun, ocaml_expr]
+       Inline device code with OCaml fallback for interpreter/native runtimes.
+       gpu_fun: (fun dev -> "cuda/opencl code")
+       ocaml_expr: OCaml expression to execute on interpreter/native *)
     | Pexp_extension
-        ( {txt = "native"; _},
-          PStr
-            [
-              {
-                pstr_desc =
-                  Pstr_eval
-                    ( {pexp_desc = Pexp_constant (Pconst_string (code, _, _)); _},
-                      _ );
-                _;
-              };
-            ] ) ->
-        Sarek_ast.ENative code
-    (* Extension point: [%native fun dev -> ...] - inline device code (function) *)
-    | Pexp_extension
-        ({txt = "native"; _}, PStr [{pstr_desc = Pstr_eval (func_expr, _); _}])
-      ->
-        (* Pass through the function expression *)
-        Sarek_ast.ENativeFun func_expr
+        ({txt = "native"; _}, PStr [{pstr_desc = Pstr_eval (inner_expr, _); _}])
+      -> (
+        (* Parse tuple (gpu_fun, ocaml_expr) *)
+        match inner_expr.pexp_desc with
+        | Pexp_tuple [gpu; ocaml] -> Sarek_ast.ENative {gpu; ocaml}
+        | _ ->
+            raise
+              (Parse_error_exn
+                 ( "[%native] requires a tuple: (fun dev -> ..., ocaml_fallback)",
+                   expr.pexp_loc )))
     (* Extension: let%shared name : type [= size] in body *)
     | Pexp_extension
         ({txt = "shared"; _}, PStr [{pstr_desc = Pstr_eval (inner_expr, _); _}])

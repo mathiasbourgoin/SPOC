@@ -143,7 +143,7 @@ let propagate f expr =
   | GIntVar n -> GIntVar n
   | GFloatVar n -> GFloatVar n
   | GFloat64Var n -> GFloat64Var n
-  | NativeVar n -> NativeVar n
+  | NativeWithFallback r -> NativeWithFallback r
   | Unit -> Unit
   | GlobalFun (a, b, n) -> GlobalFun (f a, b, n)
   | Constr (a, b, c) -> Constr (a, b, List.map f c)

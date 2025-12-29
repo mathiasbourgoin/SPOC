@@ -499,9 +499,9 @@ module Generator (M : CodeGenerator) = struct
       | GFloat64Var n ->
           failwith
             ("GFloat64Var " ^ n ^ " should have been expanded during quoting")
-      | NativeVar n ->
-          failwith
-            ("NativeVar " ^ n ^ " should have been expanded during quoting")
+      | NativeWithFallback {gpu; _} ->
+          (* For GPU code generation, use the GPU code generator *)
+          gpu dev
       | Double f -> string_of_float f
       | IntId (s, _) -> s
       | Intrinsics gv -> M.parse_intrinsics gv
@@ -775,6 +775,10 @@ module Generator (M : CodeGenerator) = struct
               else
                 (* Fallback: treat as function call *)
                 template ^ "(" ^ String.concat ", " parsed_args ^ ")"
+          | NativeWithFallback {gpu; _} ->
+              (* Native code: the GPU function returns a complete code string,
+                 so we DON'T add arguments - they're already embedded in the string *)
+              gpu dev
           | _ ->
               let f = parse ~profile:prof i a dev in
               f ^ " ("
