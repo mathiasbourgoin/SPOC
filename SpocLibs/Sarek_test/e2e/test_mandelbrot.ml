@@ -72,15 +72,20 @@ let run_mandelbrot_test dev =
       Mem.to_cpu output () ;
       Devices.flush dev () ;
       (* Verify some known properties:
-         - Center of set (0,0) should be in the set (max_iter)
+         - Point (-1, 0) is in the Mandelbrot set (period-2 cycle)
+         - Mapping: x0 = 4.0 * px/width - 2.5, so px = (x0 + 2.5) / 4.0 * width
+           For x0 = -1: px = 1.5/4.0 * width = 0.375 * width
+         - y0 = 3.0 * py/height - 1.5, so for y0 = 0: py = 1.5/3.0 * height = 0.5 * height
          - Points far from origin should escape quickly *)
-      let center_x = (width / 2) + (width / 4) in
-      (* Map to about (-0.5, 0) *)
-      let center_y = height / 2 in
-      let center_iter = Mem.get output ((center_y * width) + center_x) in
+      let inside_x = width * 3 / 8 in
+      (* Maps to x0 = -1.0 *)
+      let inside_y = height / 2 in
+      (* Maps to y0 = 0.0 *)
+      let inside_iter = Mem.get output ((inside_y * width) + inside_x) in
       let corner_iter = Mem.get output 0 in
       (* (-2.5, -1.5) is outside *)
-      center_iter >= Int32.of_int (!max_iter / 2) && corner_iter < 100l
+      (* Point (-1, 0) should stay in set (high iterations), corner should escape fast *)
+      inside_iter >= Int32.of_int (!max_iter / 2) && corner_iter < 100l
     end
     else true
   in

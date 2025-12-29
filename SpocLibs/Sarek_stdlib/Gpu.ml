@@ -96,9 +96,17 @@ let%sarek_intrinsic (return_unit : unit -> unit) =
  * Atomic Operations
  ******************************************************************************)
 
+(* Global mutex for atomic operations on vectors.
+   This is needed because OCaml arrays (used by Spoc.Vector internally) don't
+   have built-in atomic operations. In parallel native execution, multiple
+   domains may access the same vector concurrently. *)
+let atomic_mutex = Mutex.create ()
+
 (* Atomic add: atomically adds value to the memory location and returns old value.
    For GPU: uses atomicAdd (CUDA) or atomic_add (OpenCL).
-   For CPU: uses Atomic.fetch_and_add which is correct for parallel execution. *)
+   For CPU: For shared memory arrays within a block, threads run as fibers on
+   a single domain, so no actual atomicity is needed - the sequential execution
+   within a block provides the required ordering. *)
 let%sarek_intrinsic (atomic_add_int32 : int32 array -> int32 -> int32 -> int32)
     =
   {
@@ -108,7 +116,8 @@ let%sarek_intrinsic (atomic_add_int32 : int32 array -> int32 -> int32 -> int32)
     device = dev "atomicAdd(%s + %s, %s)" "atomic_add(%s + %s, %s)";
     ocaml =
       (fun arr idx value ->
-        (* For OCaml, we just do non-atomic add since interpreter is sequential *)
+        (* Shared memory arrays: threads within a block run sequentially as fibers,
+           so no actual atomic operation is needed. *)
         let i = Stdlib.Int32.to_int idx in
         let old = arr.(i) in
         arr.(i) <- Stdlib.Int32.add old value ;
@@ -121,22 +130,27 @@ let%sarek_intrinsic (atomic_inc_int32 : int32 array -> int32 -> int32) =
     device = dev "atomicAdd(%s + %s, 1)" "atomic_inc(%s + %s)";
     ocaml =
       (fun arr idx ->
+        (* Shared memory: sequential within block, no mutex needed *)
         let i = Stdlib.Int32.to_int idx in
         let old = arr.(i) in
         arr.(i) <- Stdlib.Int32.add old 1l ;
         old);
   }
 
-(* Global memory atomic add - uses Vector type for global memory *)
+(* Global memory atomic add - uses Vector type for global memory.
+   This MUST be truly atomic because different blocks run on different domains
+   and may access the same global memory location concurrently. *)
 let%sarek_intrinsic
     (atomic_add_global_int32 : int32 vector -> int32 -> int32 -> int32) =
   {
     device = dev "atomicAdd(%s + %s, %s)" "atomic_add(%s + %s, %s)";
     ocaml =
       (fun vec idx value ->
+        Mutex.lock atomic_mutex ;
         let i = Stdlib.Int32.to_int idx in
         let old = Spoc.Mem.get vec i in
         Spoc.Mem.set vec i (Stdlib.Int32.add old value) ;
+        Mutex.unlock atomic_mutex ;
         old);
   }
 
@@ -146,9 +160,11 @@ let%sarek_intrinsic (atomic_inc_global_int32 : int32 vector -> int32 -> int32) =
     device = dev "atomicAdd(%s + %s, 1)" "atomic_inc(%s + %s)";
     ocaml =
       (fun vec idx ->
+        Mutex.lock atomic_mutex ;
         let i = Stdlib.Int32.to_int idx in
         let old = Spoc.Mem.get vec i in
         Spoc.Mem.set vec i (Stdlib.Int32.add old 1l) ;
+        Mutex.unlock atomic_mutex ;
         old);
   }
 

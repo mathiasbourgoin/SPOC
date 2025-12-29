@@ -405,14 +405,18 @@ let rec lower_expr (state : state) (te : texpr) : Kirc_Ast.k_ext =
       let body_ir = lower_expr state body in
       Kirc_Ast.Local (arr_ir, body_ir)
   | TESuperstep (_name, _divergent, step_body, cont) ->
-      (* Lower body, then emit barrier, then lower continuation *)
+      (* Lower body, then emit barrier, then lower continuation.
+         Wrap body in Block to create a C scope for local variable declarations,
+         preventing redeclaration errors when same variable names are used across
+         different supersteps. *)
       let body_ir = lower_expr state step_body in
+      let scoped_body = Kirc_Ast.Block body_ir in
       let barrier_ir =
         Kirc_Ast.IntrinsicRef (["Sarek_stdlib"; "Gpu"], "block_barrier")
       in
       let barrier_call = Kirc_Ast.App (barrier_ir, [|Kirc_Ast.Unit|]) in
       let cont_ir = lower_expr state cont in
-      Kirc_Ast.Seq (body_ir, Kirc_Ast.Seq (barrier_call, cont_ir))
+      Kirc_Ast.Seq (scoped_body, Kirc_Ast.Seq (barrier_call, cont_ir))
   | TEOpen (_, body) ->
       (* Module opens are erased in GPU lowering - already resolved by typer *)
       lower_expr state body

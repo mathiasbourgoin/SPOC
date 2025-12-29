@@ -9,50 +9,77 @@ open Spoc
 
 let cfg = Test_helpers.default_config ()
 
-(** Inclusive scan within a block using Hillis-Steele algorithm *)
+(** Inclusive scan within a block using Hillis-Steele algorithm.
+
+    IMPORTANT: Hillis-Steele requires that ALL threads read their neighbor's
+    value BEFORE any thread writes. This requires double-buffering or explicit
+    barrier between reads and writes.
+
+    Pattern for each step: 1. All threads read neighbor into local variable (in
+    superstep) 2. All threads write updated value (in next superstep) *)
 let inclusive_scan_kernel =
   [%kernel
     fun (input : int32 vector) (output : int32 vector) (n : int32) ->
       let%shared (temp : int32) = 512l in
+      let%shared (temp2 : int32) = 512l in
       let tid = thread_idx_x in
       let gid = thread_idx_x + (block_dim_x * block_idx_x) in
-      (* Load to shared memory *)
+      (* Load to shared memory - use temp as source *)
       let%superstep load =
         if gid < n then temp.(tid) <- input.(gid) else temp.(tid) <- 0l
       in
-      (* Hillis-Steele: offset 1 *)
-      let%superstep scan1 =
-        if tid >= 1l then temp.(tid) <- temp.(tid) + temp.(tid - 1l)
+      (* Hillis-Steele: ping-pong between temp and temp2.
+         Each superstep uses the same variable names (v, add) - this tests that
+         the code generator properly scopes local variables within superstep blocks. *)
+      (* Step 1: read from temp, write to temp2 *)
+      let%superstep step1 =
+        let v = temp.(tid) in
+        let add = if tid >= 1l then temp.(tid - 1l) else 0l in
+        temp2.(tid) <- v + add
       in
-      (* offset 2 *)
-      let%superstep scan2 =
-        if tid >= 2l then temp.(tid) <- temp.(tid) + temp.(tid - 2l)
+      (* Step 2: read from temp2, write to temp *)
+      let%superstep step2 =
+        let v = temp2.(tid) in
+        let add = if tid >= 2l then temp2.(tid - 2l) else 0l in
+        temp.(tid) <- v + add
       in
-      (* offset 4 *)
-      let%superstep scan4 =
-        if tid >= 4l then temp.(tid) <- temp.(tid) + temp.(tid - 4l)
+      (* Step 4: read from temp, write to temp2 *)
+      let%superstep step4 =
+        let v = temp.(tid) in
+        let add = if tid >= 4l then temp.(tid - 4l) else 0l in
+        temp2.(tid) <- v + add
       in
-      (* offset 8 *)
-      let%superstep scan8 =
-        if tid >= 8l then temp.(tid) <- temp.(tid) + temp.(tid - 8l)
+      (* Step 8: read from temp2, write to temp *)
+      let%superstep step8 =
+        let v = temp2.(tid) in
+        let add = if tid >= 8l then temp2.(tid - 8l) else 0l in
+        temp.(tid) <- v + add
       in
-      (* offset 16 *)
-      let%superstep scan16 =
-        if tid >= 16l then temp.(tid) <- temp.(tid) + temp.(tid - 16l)
+      (* Step 16: read from temp, write to temp2 *)
+      let%superstep step16 =
+        let v = temp.(tid) in
+        let add = if tid >= 16l then temp.(tid - 16l) else 0l in
+        temp2.(tid) <- v + add
       in
-      (* offset 32 *)
-      let%superstep scan32 =
-        if tid >= 32l then temp.(tid) <- temp.(tid) + temp.(tid - 32l)
+      (* Step 32: read from temp2, write to temp *)
+      let%superstep step32 =
+        let v = temp2.(tid) in
+        let add = if tid >= 32l then temp2.(tid - 32l) else 0l in
+        temp.(tid) <- v + add
       in
-      (* offset 64 *)
-      let%superstep scan64 =
-        if tid >= 64l then temp.(tid) <- temp.(tid) + temp.(tid - 64l)
+      (* Step 64: read from temp, write to temp2 *)
+      let%superstep step64 =
+        let v = temp.(tid) in
+        let add = if tid >= 64l then temp.(tid - 64l) else 0l in
+        temp2.(tid) <- v + add
       in
-      (* offset 128 *)
-      let%superstep scan128 =
-        if tid >= 128l then temp.(tid) <- temp.(tid) + temp.(tid - 128l)
+      (* Step 128: read from temp2, write to temp *)
+      let%superstep step128 =
+        let v = temp2.(tid) in
+        let add = if tid >= 128l then temp2.(tid - 128l) else 0l in
+        temp.(tid) <- v + add
       in
-      (* Write result *)
+      (* Write result from temp (last write was to temp) *)
       if gid < n then output.(gid) <- temp.(tid)]
 
 (** Run inclusive scan test *)

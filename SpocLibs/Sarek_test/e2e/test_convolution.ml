@@ -105,7 +105,9 @@ let sobel_kernel =
         output.(idx) <- 0.0
       end]
 
-(** 2D convolution with shared memory and supersteps *)
+(** 2D convolution with shared memory and supersteps. Uses 18x18 tile for 16x16
+    block with 1-pixel halo on each side. Must load: center, 4 edges
+    (left/right/top/bottom), and 4 corners. *)
 let conv2d_shared_kernel =
   [%kernel
     fun (input : float32 vector)
@@ -119,6 +121,9 @@ let conv2d_shared_kernel =
       let ty = thread_idx_y in
       let gx = thread_idx_x + (block_dim_x * block_idx_x) in
       let gy = thread_idx_y + (block_dim_y * block_idx_y) in
+      (* Global block origin for corner calculations *)
+      let block_origin_x = block_dim_x * block_idx_x in
+      let block_origin_y = block_dim_y * block_idx_y in
       (* Load center elements *)
       let%superstep load_center =
         if gx < width && gy < height then
@@ -152,6 +157,38 @@ let conv2d_shared_kernel =
             input.(((gy + 1l) * width) + gx)
         else if ty = block_dim_y - 1l then
           tile.(((ty + 2l) * tile_width) + tx + 1l) <- 0.0
+      in
+      (* Load corner halos - only thread (0,0) loads all 4 corners *)
+      let%superstep load_corners =
+        if tx = 0l && ty = 0l then begin
+          (* Top-left corner *)
+          if block_origin_x > 0l && block_origin_y > 0l then
+            tile.(0l) <-
+              input.(((block_origin_y - 1l) * width) + block_origin_x - 1l)
+          else tile.(0l) <- 0.0 ;
+          (* Top-right corner *)
+          if block_origin_x + block_dim_x < width && block_origin_y > 0l then
+            tile.(block_dim_x + 1l) <-
+              input.(((block_origin_y - 1l) * width)
+                     + block_origin_x + block_dim_x)
+          else tile.(block_dim_x + 1l) <- 0.0 ;
+          (* Bottom-left corner *)
+          if block_origin_x > 0l && block_origin_y + block_dim_y < height then
+            tile.(((block_dim_y + 1l) * tile_width) + 0l) <-
+              input.(((block_origin_y + block_dim_y) * width)
+                     + block_origin_x - 1l)
+          else tile.(((block_dim_y + 1l) * tile_width) + 0l) <- 0.0 ;
+          (* Bottom-right corner *)
+          if
+            block_origin_x + block_dim_x < width
+            && block_origin_y + block_dim_y < height
+          then
+            tile.(((block_dim_y + 1l) * tile_width) + block_dim_x + 1l) <-
+              input.(((block_origin_y + block_dim_y) * width)
+                     + block_origin_x + block_dim_x)
+          else
+            tile.(((block_dim_y + 1l) * tile_width) + block_dim_x + 1l) <- 0.0
+        end
       in
       (* Compute convolution from shared memory *)
       if gx > 0l && gx < width - 1l && gy > 0l && gy < height - 1l then begin
