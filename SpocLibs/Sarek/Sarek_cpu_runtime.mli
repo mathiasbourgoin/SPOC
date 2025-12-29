@@ -4,6 +4,12 @@
     OCaml code by the Sarek PPX. Unlike Sarek_interp which interprets the AST,
     this module is used by generated code that runs at full native speed. *)
 
+(** {1 Float32 Module}
+
+    Re-exported for use in generated native kernels. Provides true float32
+    semantics matching GPU behavior. *)
+module Float32 = Sarek_float32
+
 (** {1 Thread State} *)
 
 (** Thread state passed to each kernel invocation. Contains thread/block/grid

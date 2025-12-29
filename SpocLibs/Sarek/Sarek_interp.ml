@@ -4,6 +4,7 @@
     BSP-style barrier synchronization using OCaml 5 effects. *)
 
 open Kirc_Ast
+module F32 = Sarek_float32
 
 (** {1 BSP Barrier Effect}
 
@@ -81,9 +82,9 @@ let to_int = function
 
 let to_float32 = function
   | VFloat32 f -> f
-  | VFloat64 f -> f
-  | VInt32 n -> Int32.to_float n
-  | VInt64 n -> Int64.to_float n
+  | VFloat64 f -> F32.to_float32 f
+  | VInt32 n -> F32.to_float32 (Int32.to_float n)
+  | VInt64 n -> F32.to_float32 (Int64.to_float n)
   | _ -> failwith "to_float32: not a numeric value"
 
 let to_float64 = function
@@ -119,13 +120,13 @@ let div_int32 a b = VInt32 (Int32.div (to_int32 a) (to_int32 b))
 
 let mod_int32 a b = VInt32 (Int32.rem (to_int32 a) (to_int32 b))
 
-let add_float a b = VFloat32 (to_float32 a +. to_float32 b)
+let add_float a b = VFloat32 (F32.add (to_float32 a) (to_float32 b))
 
-let sub_float a b = VFloat32 (to_float32 a -. to_float32 b)
+let sub_float a b = VFloat32 (F32.sub (to_float32 a) (to_float32 b))
 
-let mul_float a b = VFloat32 (to_float32 a *. to_float32 b)
+let mul_float a b = VFloat32 (F32.mul (to_float32 a) (to_float32 b))
 
-let div_float a b = VFloat32 (to_float32 a /. to_float32 b)
+let div_float a b = VFloat32 (F32.div (to_float32 a) (to_float32 b))
 
 let eq_val a b =
   match (a, b) with
@@ -264,54 +265,58 @@ let eval_intrinsic state path name args =
   | path, "warp_barrier" when is_gpu_path path ->
       Effect.perform Barrier ;
       VUnit
-  (* Math intrinsics - Float32 *)
+  (* Math intrinsics - Float32 (using Sarek_float32 for true float32 semantics) *)
   | path, "sin" when is_float32_path path ->
-      VFloat32 (sin (to_float32 (List.hd args)))
+      VFloat32 (F32.sin (to_float32 (List.hd args)))
   | path, "cos" when is_float32_path path ->
-      VFloat32 (cos (to_float32 (List.hd args)))
+      VFloat32 (F32.cos (to_float32 (List.hd args)))
   | path, "tan" when is_float32_path path ->
-      VFloat32 (tan (to_float32 (List.hd args)))
+      VFloat32 (F32.tan (to_float32 (List.hd args)))
   | path, "sqrt" when is_float32_path path ->
-      VFloat32 (sqrt (to_float32 (List.hd args)))
+      VFloat32 (F32.sqrt (to_float32 (List.hd args)))
   | path, "exp" when is_float32_path path ->
-      VFloat32 (exp (to_float32 (List.hd args)))
+      VFloat32 (F32.exp (to_float32 (List.hd args)))
   | path, "log" when is_float32_path path ->
-      VFloat32 (log (to_float32 (List.hd args)))
+      VFloat32 (F32.log (to_float32 (List.hd args)))
   | path, "log10" when is_float32_path path ->
-      VFloat32 (log10 (to_float32 (List.hd args)))
+      VFloat32 (F32.log10 (to_float32 (List.hd args)))
   | path, "pow" when is_float32_path path ->
       let base = to_float32 (List.nth args 0) in
-      let exp = to_float32 (List.nth args 1) in
-      VFloat32 (base ** exp)
+      let e = to_float32 (List.nth args 1) in
+      VFloat32 (F32.pow base e)
   | path, "abs" when is_float32_path path ->
-      VFloat32 (abs_float (to_float32 (List.hd args)))
+      VFloat32 (F32.abs (to_float32 (List.hd args)))
   | path, "floor" when is_float32_path path ->
-      VFloat32 (floor (to_float32 (List.hd args)))
+      VFloat32 (F32.floor (to_float32 (List.hd args)))
   | path, "ceil" when is_float32_path path ->
-      VFloat32 (ceil (to_float32 (List.hd args)))
+      VFloat32 (F32.ceil (to_float32 (List.hd args)))
   | path, "fma" when is_float32_path path ->
       let a = to_float32 (List.nth args 0) in
       let b = to_float32 (List.nth args 1) in
       let c = to_float32 (List.nth args 2) in
-      VFloat32 ((a *. b) +. c)
+      VFloat32 (F32.fma a b c)
   | path, "min" when is_float32_path path ->
       VFloat32
-        (min (to_float32 (List.nth args 0)) (to_float32 (List.nth args 1)))
+        (F32.min (to_float32 (List.nth args 0)) (to_float32 (List.nth args 1)))
   | path, "max" when is_float32_path path ->
       VFloat32
-        (max (to_float32 (List.nth args 0)) (to_float32 (List.nth args 1)))
+        (F32.max (to_float32 (List.nth args 0)) (to_float32 (List.nth args 1)))
   | path, "add" when is_float32_path path ->
-      VFloat32 (to_float32 (List.nth args 0) +. to_float32 (List.nth args 1))
+      VFloat32
+        (F32.add (to_float32 (List.nth args 0)) (to_float32 (List.nth args 1)))
   | path, "sub" when is_float32_path path ->
-      VFloat32 (to_float32 (List.nth args 0) -. to_float32 (List.nth args 1))
+      VFloat32
+        (F32.sub (to_float32 (List.nth args 0)) (to_float32 (List.nth args 1)))
   | path, "mul" when is_float32_path path ->
-      VFloat32 (to_float32 (List.nth args 0) *. to_float32 (List.nth args 1))
+      VFloat32
+        (F32.mul (to_float32 (List.nth args 0)) (to_float32 (List.nth args 1)))
   | path, "div" when is_float32_path path ->
-      VFloat32 (to_float32 (List.nth args 0) /. to_float32 (List.nth args 1))
+      VFloat32
+        (F32.div (to_float32 (List.nth args 0)) (to_float32 (List.nth args 1)))
   | path, "of_int" when is_float32_path path ->
-      VFloat32 (Int32.to_float (to_int32 (List.hd args)))
+      VFloat32 (F32.of_int (Int32.to_int (to_int32 (List.hd args))))
   | path, "of_float64" when is_float32_path path ->
-      VFloat32 (to_float64 (List.hd args))
+      VFloat32 (F32.to_float32 (to_float64 (List.hd args)))
   (* Float64 intrinsics *)
   | path, "of_int" when is_float64_path path ->
       VFloat64 (Int32.to_float (to_int32 (List.hd args)))
@@ -326,7 +331,7 @@ let eval_intrinsic state path name args =
       VInt32 (max (to_int32 (List.nth args 0)) (to_int32 (List.nth args 1)))
   (* Type conversions *)
   | path, "float" when is_std_path path ->
-      VFloat32 (Int32.to_float (to_int32 (List.hd args)))
+      VFloat32 (F32.of_int (Int32.to_int (to_int32 (List.hd args))))
   | path, "float64" when is_std_path path ->
       VFloat64 (Int32.to_float (to_int32 (List.hd args)))
   | path, "int_of_float" when is_std_path path ->
