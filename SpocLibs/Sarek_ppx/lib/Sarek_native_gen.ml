@@ -118,15 +118,6 @@ let rec core_type_of_typ ~loc typ : Ppxlib.core_type =
       Ast_builder.Default.ptyp_tuple ~loc (List.map (core_type_of_typ ~loc) tys)
   | TFun _ | TVar _ | TReg _ -> [%type: _]
 
-(** Map Sarek types to OCaml types for bigarray access *)
-let bigarray_kind_of_typ ~loc typ =
-  match repr typ with
-  | TReg "float32" | TPrim (TBool | TInt32) -> [%expr Bigarray.float32]
-  | TReg "float64" -> [%expr Bigarray.float64]
-  | TReg "int64" -> [%expr Bigarray.int64]
-  | _ -> [%expr Bigarray.float32]
-(* Default *)
-
 (** {1 Intrinsic Mapping}
 
     Map Sarek intrinsics to their OCaml equivalents. For cpu_kern, we call the
@@ -276,19 +267,12 @@ let types_module_var = "__types"
 let field_getter_name type_name field_name =
   Printf.sprintf "get_%s_%s" type_name field_name
 
-(** Generate accessor function name for a field setter (mutable fields) *)
-let field_setter_name type_name field_name =
-  Printf.sprintf "set_%s_%s" type_name field_name
-
 (** Generate constructor function name for a record *)
 let record_maker_name type_name = Printf.sprintf "make_%s" type_name
 
 (** Generate constructor function name for a variant constructor *)
 let variant_ctor_name type_name ctor_name =
   Printf.sprintf "make_%s_%s" type_name ctor_name
-
-(** Generate match function name for a variant *)
-let variant_match_name type_name = Printf.sprintf "match_%s" type_name
 
 (** Generate OCaml expression from typed Sarek expression.
     @param ctx Generation context with mutable vars and inline types *)
@@ -1028,55 +1012,6 @@ let gen_type_decl_item ~loc (decl : ttype_decl) : structure_item =
   | TTypeVariant {tdecl_name; tdecl_constructors; _} ->
       gen_type_decl_variant ~loc tdecl_name tdecl_constructors
 
-(** Wrap expression with type declarations using a local module. Generates: let
-    module Types = struct [@@@warning "-34-37"] type t = ... end in let open
-    Types in body The warning suppression avoids unused-type and
-    unused-constructor warnings for registered types that may not be used by
-    this specific kernel. *)
-let wrap_type_decls ~loc (decls : ttype_decl list) (body : expression) :
-    expression =
-  if decls = [] then body
-  else
-    (* Generate structure items for each type declaration *)
-    let type_items = List.map (gen_type_decl_item ~loc) decls in
-    (* Add warning suppression at the start of the module:
-       [@@@warning "-34-37"] suppresses unused-type-declaration and unused-constructor *)
-    let warning_attr =
-      Ast_builder.Default.pstr_attribute
-        ~loc
-        (Ast_builder.Default.attribute
-           ~loc
-           ~name:{txt = "warning"; loc}
-           ~payload:
-             (PStr
-                [
-                  Ast_builder.Default.pstr_eval
-                    ~loc
-                    (Ast_builder.Default.estring ~loc "-34-37")
-                    [];
-                ]))
-    in
-    (* Create the module structure with warning suppression first *)
-    let mod_struct =
-      Ast_builder.Default.pmod_structure ~loc (warning_attr :: type_items)
-    in
-    (* Wrap with let module Types = struct ... end in let open Types in body *)
-    let open_types =
-      Ast_builder.Default.pexp_open
-        ~loc
-        (Ast_builder.Default.open_infos
-           ~loc
-           ~override:Fresh
-           ~expr:
-             (Ast_builder.Default.pmod_ident ~loc {txt = Lident "Types"; loc}))
-        body
-    in
-    Ast_builder.Default.pexp_letmodule
-      ~loc
-      {txt = Some "Types"; loc}
-      mod_struct
-      open_types
-
 (** Wrap expression with module item bindings. *)
 let wrap_module_items ~loc (items : tmodule_item list) (body : expression) :
     expression =
@@ -1107,140 +1042,6 @@ let wrap_module_items ~loc (items : tmodule_item list) (body : expression) :
     Pass (module T : KERNEL_TYPES) as a parameter to the kernel
 
     This keeps the concrete types hidden behind an existential type. *)
-
-(** Generate a module signature for inline types.
-    For a record type point = {x: float; y: float}, generates:
-      module type KERNEL_TYPES = sig
-        type point
-        val get_point_x : point -> float
-        val get_point_y : point -> float
-        val make_point : x:float -> y:float -> point
-      end *)
-let gen_module_type_sig ~loc (decls : ttype_decl list) : module_type =
-  let sig_items =
-    List.concat_map
-      (fun decl ->
-        match decl with
-        | TTypeRecord {tdecl_name; tdecl_fields; _} ->
-            (* Abstract type declaration *)
-            let type_decl =
-              Ast_builder.Default.psig_type
-                ~loc
-                Recursive
-                [
-                  Ast_builder.Default.type_declaration
-                    ~loc
-                    ~name:{txt = tdecl_name; loc}
-                    ~params:[]
-                    ~cstrs:[]
-                    ~kind:Ptype_abstract
-                    ~private_:Public
-                    ~manifest:None;
-                ]
-            in
-            (* Getter for each field *)
-            let getters =
-              List.map
-                (fun (fname, fty, _is_mut) ->
-                  let fn_name = field_getter_name tdecl_name fname in
-                  let ty =
-                    [%type:
-                      [%t
-                        Ast_builder.Default.ptyp_constr
-                          ~loc
-                          {txt = Lident tdecl_name; loc}
-                          []] ->
-                      [%t core_type_of_typ ~loc fty]]
-                  in
-                  Ast_builder.Default.psig_value
-                    ~loc
-                    (Ast_builder.Default.value_description
-                       ~loc
-                       ~name:{txt = fn_name; loc}
-                       ~type_:ty
-                       ~prim:[]))
-                tdecl_fields
-            in
-            (* Constructor: make_point : x:float -> y:float -> point *)
-            let maker =
-              let fn_name = record_maker_name tdecl_name in
-              let result_ty =
-                Ast_builder.Default.ptyp_constr
-                  ~loc
-                  {txt = Lident tdecl_name; loc}
-                  []
-              in
-              let ty =
-                List.fold_right
-                  (fun (fname, fty, _) acc ->
-                    Ast_builder.Default.ptyp_arrow
-                      ~loc
-                      (Labelled fname)
-                      (core_type_of_typ ~loc fty)
-                      acc)
-                  tdecl_fields
-                  result_ty
-              in
-              Ast_builder.Default.psig_value
-                ~loc
-                (Ast_builder.Default.value_description
-                   ~loc
-                   ~name:{txt = fn_name; loc}
-                   ~type_:ty
-                   ~prim:[])
-            in
-            (type_decl :: getters) @ [maker]
-        | TTypeVariant {tdecl_name; tdecl_constructors; _} ->
-            (* Abstract type declaration *)
-            let type_decl =
-              Ast_builder.Default.psig_type
-                ~loc
-                Recursive
-                [
-                  Ast_builder.Default.type_declaration
-                    ~loc
-                    ~name:{txt = tdecl_name; loc}
-                    ~params:[]
-                    ~cstrs:[]
-                    ~kind:Ptype_abstract
-                    ~private_:Public
-                    ~manifest:None;
-                ]
-            in
-            (* Constructor functions for each variant *)
-            let ctors =
-              List.map
-                (fun (cname, arg_opt) ->
-                  let fn_name = variant_ctor_name tdecl_name cname in
-                  let result_ty =
-                    Ast_builder.Default.ptyp_constr
-                      ~loc
-                      {txt = Lident tdecl_name; loc}
-                      []
-                  in
-                  let ty =
-                    match arg_opt with
-                    | None ->
-                        (* unit -> type *)
-                        [%type: unit -> [%t result_ty]]
-                    | Some arg_ty ->
-                        (* arg -> type *)
-                        [%type:
-                          [%t core_type_of_typ ~loc arg_ty] -> [%t result_ty]]
-                  in
-                  Ast_builder.Default.psig_value
-                    ~loc
-                    (Ast_builder.Default.value_description
-                       ~loc
-                       ~name:{txt = fn_name; loc}
-                       ~type_:ty
-                       ~prim:[]))
-                tdecl_constructors
-            in
-            type_decl :: ctors)
-      decls
-  in
-  Ast_builder.Default.pmty_signature ~loc sig_items
 
 (** Generate a concrete module implementation for inline types (types only).
     For a record type point = {x: float; y: float}, generates:
@@ -1280,16 +1081,6 @@ let inline_type_decls (decls : ttype_decl list) : ttype_decl list =
 (** Check if a kernel has inline types that need first-class module handling *)
 let has_inline_types (kernel : tkernel) : bool =
   inline_type_decls kernel.tkern_type_decls <> []
-
-(** Check if a kernel has record/variant vector parameters *)
-let has_record_vector_params (kernel : tkernel) : bool =
-  List.exists
-    (fun p ->
-      match repr p.tparam_type with
-      | TVec elem_ty -> (
-          match repr elem_ty with TRecord _ | TVariant _ -> true | _ -> false)
-      | _ -> false)
-    kernel.tkern_params
 
 (** {1 Kernel Generation} *)
 

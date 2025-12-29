@@ -974,7 +974,13 @@ let gen ?keep_temp:(kt = false) ?profile:(prof = profile_default ())
       | Devices.CudaInfo cu ->
           let computecap = (cu.Devices.major * 10) + cu.Devices.minor in
           [|
-            (if computecap < 35 then failwith "CUDA device too old for this XXX"
+            (if computecap < 35 then
+               failwith
+                 (Printf.sprintf
+                    "CUDA device compute capability %d.%d is too old (minimum: \
+                     3.5)"
+                    cu.Devices.major
+                    cu.Devices.minor)
              else if computecap < 35 then "--gpu-architecture=compute_30"
              else if computecap < 50 then "--gpu-architecture=compute_35"
              else if computecap < 52 then "--gpu-architecture=compute_50"
@@ -1085,7 +1091,13 @@ let arg_of_vec v =
   | Vector.Int32 _ -> Kernel.VInt32 v
   | Vector.Float32 _ -> Kernel.VFloat32 v
   | Vector.Int64 _ -> Kernel.VInt64 v
-  | _ -> assert false
+  | Vector.Float64 _ -> Kernel.VFloat64 v
+  | Vector.Char _ -> Kernel.VChar v
+  | Vector.Complex32 _ -> Kernel.VComplex32 v
+  | Vector.Custom _ -> Kernel.VCustom v
+  | Vector.Unit _ | Vector.Dummy _ ->
+      failwith
+        "Kirc.arg_of_vec: Unit and Dummy vectors cannot be kernel arguments"
 
 let run ?recompile:(r = false) (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel) a
     (block, grid) _q dev =
