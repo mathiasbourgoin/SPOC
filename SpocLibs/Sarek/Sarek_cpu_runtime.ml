@@ -86,9 +86,10 @@ let run_block_sequential_bsp ~block:(bx, by, bz) ~grid:(gx, gy, gz)
   let num_threads = bx * by * bz in
   let shared = create_shared () in
 
-  (* Continuations waiting at barrier - use Obj.t to avoid option boxing *)
-  let waiting : Obj.t array = Array.make num_threads (Obj.repr ()) in
-  let is_waiting = Array.make num_threads false in
+  (* Continuations waiting at barrier *)
+  let waiting : (unit, unit) Effect.Deep.continuation option array =
+    Array.make num_threads None
+  in
   let num_waiting = ref 0 in
   let num_completed = ref 0 in
 
@@ -142,8 +143,7 @@ let run_block_sequential_bsp ~block:(bx, by, bz) ~grid:(gx, gy, gz)
           | Barrier ->
               Some
                 (fun (k : (a, unit) Effect.Deep.continuation) ->
-                  waiting.(tid) <- Obj.repr k ;
-                  is_waiting.(tid) <- true ;
+                  waiting.(tid) <- Some (Obj.magic k) ;
                   incr num_waiting)
           | _ -> None);
     }
@@ -159,12 +159,14 @@ let run_block_sequential_bsp ~block:(bx, by, bz) ~grid:(gx, gy, gz)
 
   (* Resume a waiting thread *)
   let resume_thread tid =
-    let k : (unit, unit) Effect.Deep.continuation = Obj.obj waiting.(tid) in
-    is_waiting.(tid) <- false ;
-    Effect.Deep.match_with
-      (fun () -> Effect.Deep.continue k ())
-      ()
-      (handler tid)
+    match waiting.(tid) with
+    | Some k ->
+        waiting.(tid) <- None ;
+        Effect.Deep.match_with
+          (fun () -> Effect.Deep.continue k ())
+          ()
+          (handler tid)
+    | None -> ()
   in
 
   (* Initial run: start all threads *)
@@ -177,7 +179,7 @@ let run_block_sequential_bsp ~block:(bx, by, bz) ~grid:(gx, gy, gz)
     let to_resume = !num_waiting in
     num_waiting := 0 ;
     for tid = 0 to num_threads - 1 do
-      if is_waiting.(tid) then resume_thread tid
+      if Option.is_some waiting.(tid) then resume_thread tid
     done ;
     if !num_waiting = to_resume && !num_completed < num_threads then
       failwith "BSP deadlock: no progress made"
@@ -225,8 +227,10 @@ let run_block_with_barriers ~block:(bx, by, bz) ~grid:(gx, gy, gz)
 
   (* Thread status: 0 = running, 1 = waiting at barrier, 2 = completed *)
   let status = Array.make num_threads 0 in
-  (* Shallow continuations - use Obj.t to store the shallow continuation *)
-  let conts : Obj.t array = Array.make num_threads (Obj.repr ()) in
+  (* Shallow continuations stored as option for type safety *)
+  let conts : (unit, unit) Effect.Shallow.continuation option array =
+    Array.make num_threads None
+  in
   let num_waiting = ref 0 in
   let num_completed = ref 0 in
 
@@ -283,7 +287,7 @@ let run_block_with_barriers ~block:(bx, by, bz) ~grid:(gx, gy, gz)
           | Barrier ->
               Some
                 (fun (k : (a, unit) Effect.Shallow.continuation) ->
-                  conts.(tid) <- Obj.repr k ;
+                  conts.(tid) <- Some (Obj.magic k) ;
                   status.(tid) <- 1 ;
                   incr num_waiting)
           | _ -> None);
@@ -307,10 +311,11 @@ let run_block_with_barriers ~block:(bx, by, bz) ~grid:(gx, gy, gz)
     for tid = 0 to num_threads - 1 do
       if status.(tid) = 1 then begin
         status.(tid) <- 0 ;
-        let k : (unit, unit) Effect.Shallow.continuation =
-          Obj.obj conts.(tid)
-        in
-        Effect.Shallow.continue_with k () (handler tid)
+        match conts.(tid) with
+        | Some k ->
+            conts.(tid) <- None ;
+            Effect.Shallow.continue_with k () (handler tid)
+        | None -> ()
       end
     done
   done
