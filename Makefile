@@ -78,6 +78,8 @@ test_negative:
 	@dune build --profile=negative SpocLibs/Sarek_test/negative/neg_test_unbound_function.cma 2>&1 | tee /tmp/neg4.out | grep -q "Unbound" && echo "  PASS: unbound function" || (cat /tmp/neg4.out; false)
 	@echo "Testing reserved keyword detection..."
 	@dune build --profile=negative SpocLibs/Sarek_test/negative/neg_test_reserved_keyword.cma 2>&1 | tee /tmp/neg5.out | grep -q "reserved C/CUDA/OpenCL keyword" && echo "  PASS: reserved keyword" || (cat /tmp/neg5.out; false)
+	@echo "Testing inline node exhaustion..."
+	@dune build --profile=negative SpocLibs/Sarek_test/negative/neg_test_inline_node_exhaustion.cma 2>&1 | tee /tmp/neg6.out | grep -q "Inlining produced .* nodes (limit: 10000)" && echo "  PASS: inline node exhaustion" || (cat /tmp/neg6.out; false)
 	@echo "All negative tests passed"
 
 # Run new comprehensive Sarek e2e tests (GPU required)
@@ -95,7 +97,8 @@ test_comprehensive:
 		SpocLibs/Sarek_test/e2e/test_transpose.exe \
 		SpocLibs/Sarek_test/e2e/test_sort.exe \
 		SpocLibs/Sarek_test/e2e/test_convolution.exe \
-		SpocLibs/Sarek_test/e2e/test_mandelbrot.exe
+		SpocLibs/Sarek_test/e2e/test_mandelbrot.exe \
+		SpocLibs/Sarek_test/e2e/test_inline_pragma.exe
 	@echo "Running on native CPU..."
 	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_stencil.exe -- --native -s 4096
 	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_matrix_mul.exe -- --native -s 1024
@@ -109,6 +112,8 @@ test_comprehensive:
 	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_sort.exe -- --native -s 512
 	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_convolution.exe -- --native -s 4096
 	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_mandelbrot.exe -- --native -s 4096
+	@echo "Running inline pragma tests on GPU..."
+	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_inline_pragma.exe
 	@echo "=== Comprehensive e2e tests passed ==="
 
 # Run all tests: unit tests, e2e tests, and negative tests

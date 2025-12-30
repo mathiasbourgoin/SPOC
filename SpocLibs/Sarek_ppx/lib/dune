@@ -22,7 +22,8 @@
   Sarek_quote
   Sarek_native_gen
   Sarek_tailrec
-  Sarek_mono))
+  Sarek_mono
+  Sarek_debug))
 
 (library
  (name sarek_ppx)

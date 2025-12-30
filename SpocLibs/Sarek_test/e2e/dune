@@ -39,7 +39,8 @@
   test_mandelbrot
   test_polymorphism
   test_module_poly
-  test_bounded_recursion)
+  test_bounded_recursion
+  test_inline_pragma)
  (modules
   test_vector_add
   test_module_const
@@ -76,7 +77,8 @@
   test_mandelbrot
   test_polymorphism
   test_module_poly
-  test_bounded_recursion)
+  test_bounded_recursion
+  test_inline_pragma)
  (libraries
   spoc
   sarek

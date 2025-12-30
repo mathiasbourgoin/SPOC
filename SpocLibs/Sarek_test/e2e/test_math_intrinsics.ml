@@ -143,14 +143,15 @@ let init_complex_data () =
 
 (* ========== Sarek kernels ========== *)
 
-(** Trigonometric functions kernel *)
+(** Trigonometric functions kernel - uses float64 for precision *)
 let trig_kernel =
   [%kernel
-    fun (input : float32 vector)
-        (sin_out : float32 vector)
-        (cos_out : float32 vector)
-        (tan_out : float32 vector)
+    fun (input : float64 vector)
+        (sin_out : float64 vector)
+        (cos_out : float64 vector)
+        (tan_out : float64 vector)
         (n : int32) ->
+      let open Sarek_float64.Float64 in
       let tid = thread_idx_x + (block_dim_x * block_idx_x) in
       if tid < n then begin
         let x = input.(tid) in
@@ -217,17 +218,17 @@ let complex_math_kernel =
 
 (* ========== Device test runners ========== *)
 
-(** Run trigonometric test *)
+(** Run trigonometric test - uses float64 for precision *)
 let run_trig_test dev =
   let n = cfg.size in
   let inp = !input_trig in
   let exp_sin = !expected_sin in
   let exp_cos = !expected_cos in
 
-  let input = Vector.create Vector.float32 n in
-  let sin_out = Vector.create Vector.float32 n in
-  let cos_out = Vector.create Vector.float32 n in
-  let tan_out = Vector.create Vector.float32 n in
+  let input = Vector.create Vector.float64 n in
+  let sin_out = Vector.create Vector.float64 n in
+  let cos_out = Vector.create Vector.float64 n in
+  let tan_out = Vector.create Vector.float64 n in
 
   for i = 0 to n - 1 do
     Mem.set input i inp.(i) ;
@@ -262,9 +263,10 @@ let run_trig_test dev =
       for i = 0 to n - 1 do
         let s = Mem.get sin_out i in
         let c = Mem.get cos_out i in
+        (* Use tighter tolerance with float64 *)
         if
-          abs_float (s -. exp_sin.(i)) > 0.001
-          || abs_float (c -. exp_cos.(i)) > 0.001
+          abs_float (s -. exp_sin.(i)) > 1e-10
+          || abs_float (c -. exp_cos.(i)) > 1e-10
         then incr errors
       done ;
       !errors = 0

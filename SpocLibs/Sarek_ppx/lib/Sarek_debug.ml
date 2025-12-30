@@ -1,0 +1,30 @@
+(******************************************************************************
+ * Sarek PPX - Debug Logging
+ *
+ * Gated by SAREK_DEBUG environment variable. When not set, all logging
+ * functions are no-ops with no performance impact.
+ ******************************************************************************)
+
+let enabled =
+  match Sys.getenv_opt "SAREK_DEBUG" with
+  | Some "1" | Some "true" | Some "yes" -> true
+  | _ -> false
+
+let () = if enabled then Format.eprintf "SAREK DEBUG: Debug logging enabled@.%!"
+
+let log fmt =
+  if enabled then
+    Format.kasprintf (fun s -> Format.eprintf "SAREK DEBUG: %s@.%!" s) fmt
+  else Format.ikfprintf (fun _ -> ()) Format.err_formatter fmt
+
+let log_enter name =
+  if enabled then Format.eprintf "SAREK DEBUG: >>> %s@.%!" name
+
+let log_exit name =
+  if enabled then Format.eprintf "SAREK DEBUG: <<< %s@.%!" name
+
+let log_int name v =
+  if enabled then Format.eprintf "SAREK DEBUG: %s = %d@.%!" name v
+
+let log_string name v =
+  if enabled then Format.eprintf "SAREK DEBUG: %s = %s@.%!" name v

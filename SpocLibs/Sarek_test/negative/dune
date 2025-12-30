@@ -13,6 +13,7 @@
 ; - test_reserved_keyword: "'double' is a reserved C/CUDA/OpenCL keyword"
 ; - test_convention_kernel_fail: "Field z not found"
 ; - test_convention_kernel_fail2: "Cannot unify types"
+; - test_inline_node_exhaustion: "Inlining produced N nodes (limit: 10000)"
 
 (library
  (name neg_test_convention_kernel_fail)
@@ -83,6 +84,17 @@
 (library
  (name neg_test_reserved_keyword)
  (modules test_reserved_keyword)
+ (libraries spoc sarek sarek.stdlib sarek_ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_inline_node_exhaustion)
+ (modules test_inline_node_exhaustion)
  (libraries spoc sarek sarek.stdlib sarek_ppx.lib)
  (preprocess
   (pps sarek_ppx))

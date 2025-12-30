@@ -547,7 +547,9 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
       Ok (mk_texpr (TENative {gpu; ocaml}) ty loc, env)
   (* Pragma *)
   | EPragma (opts, body) ->
+      Sarek_debug.log "EPragma opts=%s" (String.concat "," opts) ;
       let* tbody, env = infer env body in
+      Sarek_debug.log "EPragma done" ;
       Ok (mk_texpr (TEPragma (opts, tbody)) tbody.ty loc, env)
   (* Type annotation *)
   | ETyped (e, ty_expr) ->
@@ -611,6 +613,7 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
             loc,
           env )
   | ELetRec (name, params, ret_ty_opt, fn_body, cont) ->
+      Sarek_debug.log "ELetRec '%s'" name ;
       (* Enter a level for the function's type variables *)
       let env_inner = enter_level env in
       (* Type parameters using shared type variable context at inner level *)

@@ -285,6 +285,7 @@ let collect_poly_functions (kernel : tkernel) :
           let is_poly =
             List.exists (fun p -> has_type_vars p.tparam_type) params
           in
+          Sarek_debug.log "collect_poly: %s is_poly=%b" name is_poly ;
           if is_poly then Some (name, is_rec, params, body) else None
       | TMConst _ -> None)
     kernel.tkern_module_items
@@ -536,9 +537,13 @@ let rec rewrite_calls (env : mono_env) (poly_names : string list) (expr : texpr)
 
 (** Main monomorphization entry point *)
 let monomorphize (kernel : tkernel) : tkernel =
+  Sarek_debug.log_enter "monomorphize" ;
   (* 1. Find polymorphic functions *)
   let poly_funs = collect_poly_functions kernel in
-  if poly_funs = [] then kernel (* No polymorphic functions *)
+  Sarek_debug.log "poly_funs count=%d" (List.length poly_funs) ;
+  if poly_funs = [] then (
+    Sarek_debug.log_exit "monomorphize (no poly funs)" ;
+    kernel (* No polymorphic functions *))
   else
     let poly_names = List.map (fun (n, _, _, _) -> n) poly_funs in
     let env = create_mono_env () in

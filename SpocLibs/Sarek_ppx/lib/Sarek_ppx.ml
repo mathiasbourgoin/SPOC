@@ -592,6 +592,7 @@ let sarek_type_private_rule =
 (** The main kernel expansion function *)
 let expand_kernel ~ctxt payload =
   let loc = Expansion_context.Extension.extension_point_loc ctxt in
+  Sarek_debug.log "expand_kernel: %s" loc.loc_start.pos_fname ;
 
   try
     let dir = Filename.dirname loc.loc_start.pos_fname in
@@ -609,8 +610,11 @@ let expand_kernel ~ctxt payload =
     (* Types and module items registered in the current compilation unit *)
     let pre_types = dedup_tdecls !registered_types in
     let pre_mods = dedup_mods !registered_mods in
+    Sarek_debug.log "pre_mods count=%d" (List.length pre_mods) ;
     (* 1. Parse the PPX payload to Sarek AST *)
+    Sarek_debug.log_enter "parse_payload" ;
     let ast = Sarek_parse.parse_payload payload in
+    Sarek_debug.log_exit "parse_payload" ;
     let ast =
       {
         ast with
@@ -626,6 +630,7 @@ let expand_kernel ~ctxt payload =
     let env = Sarek_env.(empty |> with_stdlib) in
 
     (* 3. Type inference *)
+    Sarek_debug.log_enter "infer_kernel" ;
     match Sarek_typer.infer_kernel env ast with
     | Error errors ->
         (* Report the first error with location *)
@@ -633,6 +638,7 @@ let expand_kernel ~ctxt payload =
         (* If we get here, generate dummy expression *)
         [%expr assert false]
     | Ok tkernel -> (
+        Sarek_debug.log_exit "infer_kernel" ;
         (* 4. Convergence analysis - check barrier safety *)
         match Sarek_convergence.check_kernel tkernel with
         | Error (err :: _) ->
@@ -640,15 +646,21 @@ let expand_kernel ~ctxt payload =
             raise (Sarek_error.Sarek_error err)
         | Error [] | Ok () ->
             (* 5. Monomorphization pass - specialize polymorphic functions *)
+            Sarek_debug.log_enter "monomorphize" ;
             let tkernel = Sarek_mono.monomorphize tkernel in
+            Sarek_debug.log_exit "monomorphize" ;
 
             (* 6. Tail recursion elimination pass (for GPU code) *)
             (* Keep original kernel for native OCaml which handles recursion *)
             let native_kernel = tkernel in
+            Sarek_debug.log_enter "transform_kernel" ;
             let tkernel = Sarek_tailrec.transform_kernel tkernel in
+            Sarek_debug.log_exit "transform_kernel" ;
 
             (* 7. Lower to Kirc_Ast *)
+            Sarek_debug.log_enter "lower_kernel" ;
             let ir, constructors = Sarek_lower.lower_kernel tkernel in
+            Sarek_debug.log_exit "lower_kernel" ;
             let ret_val = Sarek_lower.lower_return_value tkernel in
 
             (* 8. Quote the IR back to OCaml *)

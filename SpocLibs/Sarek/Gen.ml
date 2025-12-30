@@ -168,7 +168,10 @@ module Generator (M : CodeGenerator) = struct
                       else ""
                   | _ -> ""
                 in
-                a ^ b
+                (* Helper functions need their own spoc_prof_cond for if/else *)
+                "bool spoc_prof_cond;\n"
+                ^ indent (i + 1)
+                ^ a ^ b
                 ^
                 match body with
                 | Seq (_, _) -> aux2 i body
@@ -215,9 +218,17 @@ module Generator (M : CodeGenerator) = struct
             else "spoc_fun__" ^ string_of_int !global_fun_idx
           in
           let fun_src = aux gen_name a in
-          (match M.target_name with
-          | "OpenCL" -> Printf.printf "GEN fun %s : %s\n%!" gen_name ret_type
-          | _ -> ()) ;
+          let debug =
+            match Sys.getenv_opt "SAREK_DEBUG" with
+            | Some "1" | Some "true" | Some "yes" -> true
+            | _ -> false
+          in
+          (if debug then
+             match M.target_name with
+             | "OpenCL" ->
+                 Printf.eprintf "GEN fun %s : %s\n%!" gen_name ret_type ;
+                 Printf.eprintf "FUN SRC:\n%s\n%!" fun_src
+             | _ -> ()) ;
           Hashtbl.add global_funs a (fun_src, gen_name) ;
           gen_name
       in
@@ -233,6 +244,65 @@ module Generator (M : CodeGenerator) = struct
     let a = !profiler_counter in
     profiler_counter := 6 ;
     a
+
+  (* Parse an expression that may contain statements.
+     For Seq: wrap in GCC statement expression syntax: ({ ... })
+     For Ife: use ternary operator for simpler/safer code *)
+  and parse_as_expr ?profile:(prof = false) i a dev =
+    match a with
+    | Ife (cond, then_e, else_e) ->
+        (* Use ternary operator for expression context *)
+        let cond_s = parse ~profile:prof i cond dev in
+        let then_s = parse_as_expr ~profile:prof i then_e dev in
+        let else_s = parse_as_expr ~profile:prof i else_e dev in
+        "(" ^ cond_s ^ " ? " ^ then_s ^ " : " ^ else_s ^ ")"
+    | Seq (Decl var, Seq (Set (IntId (s, id), value), body)) -> (
+        (* Special case: declaration followed by assignment - combine them *)
+        match decl_info var with
+        | Some (vid, vname, vtype) when vid = id && vname = s ->
+            let value_s = parse ~profile:prof (i + 1) value dev in
+            let body_s = parse_as_expr ~profile:prof (i + 1) body dev in
+            "({\n"
+            ^ indent (i + 1)
+            ^ vtype ^ " " ^ vname ^ " = " ^ value_s ^ ";\n"
+            ^ indent (i + 1)
+            ^ body_s ^ ";\n" ^ indent i ^ "})"
+        | _ ->
+            (* Fallback: parse both parts *)
+            let decl_s = parse ~profile:prof (i + 1) (Decl var) dev in
+            let rest_s =
+              parse_as_expr
+                ~profile:prof
+                (i + 1)
+                (Seq (Set (IntId (s, id), value), body))
+                dev
+            in
+            "({\n"
+            ^ indent (i + 1)
+            ^ decl_s ^ ";\n"
+            ^ indent (i + 1)
+            ^ rest_s ^ ";\n" ^ indent i ^ "})")
+    | Seq (IntVar (id, name, _mutable), Seq (Acc (IntId (s, aid), value), body))
+      when name = s && id = aid ->
+        (* IntVar + Acc pattern: combine declaration and assignment *)
+        let value_s = parse ~profile:prof (i + 1) value dev in
+        let body_s = parse_as_expr ~profile:prof (i + 1) body dev in
+        "({\n"
+        ^ indent (i + 1)
+        ^ "int " ^ name ^ " = " ^ value_s ^ ";\n"
+        ^ indent (i + 1)
+        ^ body_s ^ ";\n" ^ indent i ^ "})"
+    | Seq (stmt, rest) ->
+        (* For Seq in expression context, use statement expression.
+           Parse statements normally but use parse_as_expr for the final expression *)
+        let stmt_s = parse ~profile:prof (i + 1) stmt dev in
+        let rest_s = parse_as_expr ~profile:prof (i + 1) rest dev in
+        "({\n"
+        ^ indent (i + 1)
+        ^ stmt_s ^ ";\n"
+        ^ indent (i + 1)
+        ^ rest_s ^ ";\n" ^ indent i ^ "})"
+    | _ -> parse ~profile:prof i a dev
 
   and parse ?profile:(prof = false) i a dev =
     if M.default_parser then begin
@@ -848,6 +918,9 @@ module Generator (M : CodeGenerator) = struct
     | Div (_a, _b) as v -> parse ~profile:prof n v dev
     | App (_a, _b) as v -> parse ~profile:prof n v dev
     | RecGet (_r, _f) as v -> parse ~profile:prof n v dev
+    (* Seq and Ife contain statements - use statement expression wrapping *)
+    | Seq (_a, _b) as v -> parse_as_expr ~profile:prof n v dev
+    | Ife (_c, _t, _e) as v -> parse_as_expr ~profile:prof n v dev
     | a -> parse_float ~profile:prof n a dev
   (*  | _  -> assert false; failwith "error parse_int" *)
 
@@ -872,6 +945,9 @@ module Generator (M : CodeGenerator) = struct
     | IntrinsicRef (module_path, name) ->
         Sarek_registry.fun_device_code ~module_path name dev
     | RecGet (_r, _f) as v -> parse ~profile:prof n v dev
+    (* Seq and Ife contain statements - use statement expression wrapping *)
+    | Seq (_a, _b) as v -> parse_as_expr ~profile:prof n v dev
+    | Ife (_c, _t, _e) as v -> parse_as_expr ~profile:prof n v dev
     | Native f -> f dev
     | a ->
         print_ast a ;

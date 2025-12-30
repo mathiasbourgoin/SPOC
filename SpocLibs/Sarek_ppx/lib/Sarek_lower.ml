@@ -175,9 +175,20 @@ type state = {
   mutable next_var_id : int;
   mutable declarations : Kirc_Ast.k_ext list;
   fun_map : (string, tparam list * texpr) Hashtbl.t;
+  (* Track functions currently being lowered to detect recursion *)
+  lowering_stack : (string, unit) Hashtbl.t;
+  (* Cache of already-lowered function bodies to avoid re-lowering *)
+  lowered_funs : (string, Kirc_Ast.k_ext * string) Hashtbl.t;
 }
 
-let create_state fun_map = {next_var_id = 0; declarations = []; fun_map}
+let create_state fun_map =
+  {
+    next_var_id = 0;
+    declarations = [];
+    fun_map;
+    lowering_stack = Hashtbl.create 8;
+    lowered_funs = Hashtbl.create 8;
+  }
 
 (** Generate a fresh variable ID *)
 let fresh_id state =
@@ -258,30 +269,57 @@ let rec lower_expr (state : state) (te : texpr) : Kirc_Ast.k_ext =
   | TEUnop (op, e) -> lower_unop state op e te.ty
   (* Function application *)
   | TEApp (fn, args) -> (
+      Sarek_debug.log "lower: TEApp" ;
       let args_ir = Array.of_list (List.map (lower_expr state) args) in
       match fn.te with
       | TEVar (name, _) when Hashtbl.mem state.fun_map name ->
-          let params, body = Hashtbl.find state.fun_map name in
-          let ret_ty = repr body.ty in
-          let ret_str =
-            match ret_ty with
-            | TPrim TInt32 -> "int"
-            | TReg "int64" -> "long"
-            | TReg "float32" -> "float"
-            | TReg "float64" -> "double"
-            | TPrim TUnit -> "void"
-            | TRecord (n, _) -> "struct " ^ n ^ "_sarek"
-            | _ -> "int"
-          in
-          let params_ir = lower_params params in
-          let fun_body_ir = lower_expr state body in
-          let fun_body_ir =
-            match fun_body_ir with
-            | Kirc_Ast.Return _ -> fun_body_ir
-            | _ -> Kirc_Ast.Return fun_body_ir
-          in
-          let fun_ir = Kirc_Ast.Kern (Kirc_Ast.Params params_ir, fun_body_ir) in
-          Kirc_Ast.App (Kirc_Ast.GlobalFun (fun_ir, ret_str, name), args_ir)
+          Sarek_debug.log "lower: TEApp to module fun '%s'" name ;
+          (* Check if we've already lowered this function (cached) *)
+          if Hashtbl.mem state.lowered_funs name then (
+            Sarek_debug.log "lower: using cached fun '%s'" name ;
+            let fun_ir, ret_str = Hashtbl.find state.lowered_funs name in
+            Kirc_Ast.App (Kirc_Ast.GlobalFun (fun_ir, ret_str, name), args_ir)
+            (* Check if we're currently lowering this function (recursive call) *))
+          else if Hashtbl.mem state.lowering_stack name then (
+            Sarek_debug.log
+              "lower: recursive call to '%s', emitting call by name"
+              name ;
+            (* For recursive calls within the same function, just emit a call by name.
+               Gen.ml will have already emitted the function definition, so we just
+               need to call it by name. *)
+            Kirc_Ast.App (Kirc_Ast.IdName name, args_ir))
+          else (
+            (* First time lowering this function *)
+            Sarek_debug.log "lower: first time lowering fun '%s'" name ;
+            let params, body = Hashtbl.find state.fun_map name in
+            let ret_ty = repr body.ty in
+            let ret_str =
+              match ret_ty with
+              | TPrim TInt32 -> "int"
+              | TReg "int64" -> "long"
+              | TReg "float32" -> "float"
+              | TReg "float64" -> "double"
+              | TPrim TUnit -> "void"
+              | TRecord (n, _) -> "struct " ^ n ^ "_sarek"
+              | _ -> "int"
+            in
+            let params_ir = lower_params params in
+            (* Mark as being lowered *)
+            Hashtbl.add state.lowering_stack name () ;
+            let fun_body_ir = lower_expr state body in
+            (* Done lowering *)
+            Hashtbl.remove state.lowering_stack name ;
+            let fun_body_ir =
+              match fun_body_ir with
+              | Kirc_Ast.Return _ -> fun_body_ir
+              | _ -> Kirc_Ast.Return fun_body_ir
+            in
+            let fun_ir =
+              Kirc_Ast.Kern (Kirc_Ast.Params params_ir, fun_body_ir)
+            in
+            (* Cache for future calls *)
+            Hashtbl.add state.lowered_funs name (fun_ir, ret_str) ;
+            Kirc_Ast.App (Kirc_Ast.GlobalFun (fun_ir, ret_str, name), args_ir))
       | _ ->
           let fn_ir = lower_expr state fn in
           Kirc_Ast.App (fn_ir, args_ir))
@@ -606,6 +644,7 @@ and lower_params (params : tparam list) : Kirc_Ast.k_ext =
 
 (** Lower a complete kernel *)
 let lower_kernel (kernel : tkernel) : Kirc_Ast.k_ext * string list =
+  Sarek_debug.log_enter "lower_kernel" ;
   let fun_map = Hashtbl.create 8 in
   List.iter
     (function
@@ -613,8 +652,10 @@ let lower_kernel (kernel : tkernel) : Kirc_Ast.k_ext * string list =
           Hashtbl.replace fun_map name (params, body)
       | _ -> ())
     kernel.tkern_module_items ;
+  Sarek_debug.log "lower: fun_map built" ;
   let state = create_state fun_map in
   let params_ir = Kirc_Ast.Params (lower_params kernel.tkern_params) in
+  Sarek_debug.log "lower: params lowered" ;
   let module_items_ir =
     List.fold_right
       (fun item acc ->
@@ -629,6 +670,7 @@ let lower_kernel (kernel : tkernel) : Kirc_Ast.k_ext * string list =
       kernel.tkern_module_items
       Kirc_Ast.Empty
   in
+  Sarek_debug.log "lower: module items done" ;
   let constructors =
     List.concat
       (List.map
@@ -639,7 +681,10 @@ let lower_kernel (kernel : tkernel) : Kirc_Ast.k_ext * string list =
                variant_constructor_strings tdecl_name tdecl_constructors)
          kernel.tkern_type_decls)
   in
+  Sarek_debug.log "lower: constructors done" ;
+  Sarek_debug.log "lower: about to lower body" ;
   let body_ir = lower_expr state kernel.tkern_body in
+  Sarek_debug.log "lower: body done" ;
   ( Kirc_Ast.Kern (params_ir, Kirc_Ast.Seq (module_items_ir, body_ir)),
     constructors )
 
