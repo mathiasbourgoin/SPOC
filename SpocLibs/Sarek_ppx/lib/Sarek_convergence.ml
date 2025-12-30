@@ -112,7 +112,7 @@ let rec is_thread_varying (te : texpr) : bool =
   (* Default: assume uniform (minimize false positives) *)
   | TEIf _ | TEFor _ | TEWhile _ | TEMatch _ | TERecord _ | TEConstr _
   | TEReturn _ | TECreateArray _ | TEGlobalRef _ | TENative _ | TEPragma _
-  | TEVecSet _ | TEArrSet _ | TEFieldSet _ | TEAssign _ ->
+  | TEVecSet _ | TEArrSet _ | TEFieldSet _ | TEAssign _ | TELetRec _ ->
       false
 
 (** Check if an intrinsic reference is a barrier *)
@@ -234,6 +234,8 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
       let cont_errors = check_expr {mode = Converged} cont in
       body_errors @ cont_errors
   | TEOpen (_, body) -> check_expr ctx body
+  | TELetRec (_, _, _, fn_body, cont) ->
+      check_expr ctx fn_body @ check_expr ctx cont
 
 (** Check if an expression contains any control flow with thread-varying
     conditions. This is used for superstep analysis - the implicit barrier at
@@ -301,6 +303,9 @@ and contains_diverging_control_flow (te : texpr) : bool =
       contains_diverging_control_flow step_body
       || contains_diverging_control_flow cont
   | TEOpen (_, body) -> contains_diverging_control_flow body
+  | TELetRec (_, _, _, fn_body, cont) ->
+      contains_diverging_control_flow fn_body
+      || contains_diverging_control_flow cont
   (* Terminal cases - no nested control flow *)
   | TEUnit | TEBool _ | TEInt _ | TEInt32 _ | TEInt64 _ | TEFloat _ | TEDouble _
   | TEVar _ | TEGlobalRef _ | TENative _ | TEIntrinsicConst _ ->
@@ -310,7 +315,7 @@ and contains_diverging_control_flow (te : texpr) : bool =
 let check_module_item ctx (item : tmodule_item) : Sarek_error.error list =
   match item with
   | TMConst (_, _, _, e) -> check_expr ctx e
-  | TMFun (_, _, e) -> check_expr ctx e
+  | TMFun (_, _, _, e) -> check_expr ctx e
 
 (** Check a kernel for convergence safety *)
 let check_kernel (kernel : tkernel) : (unit, Sarek_error.error list) result =
@@ -376,6 +381,8 @@ let rec expr_uses_barriers (te : texpr) : bool =
       (match size_opt with None -> false | Some s -> expr_uses_barriers s)
       || expr_uses_barriers body
   | TEOpen (_, body) -> expr_uses_barriers body
+  | TELetRec (_, _, _, fn_body, cont) ->
+      expr_uses_barriers fn_body || expr_uses_barriers cont
   (* Terminal cases - no barriers *)
   | TEUnit | TEBool _ | TEInt _ | TEInt32 _ | TEInt64 _ | TEFloat _ | TEDouble _
   | TEVar _ | TEGlobalRef _ | TENative _ | TEIntrinsicConst _ ->
@@ -389,7 +396,7 @@ let kernel_uses_barriers (kernel : tkernel) : bool =
       (fun (item : tmodule_item) ->
         match item with
         | TMConst (_, _, _, e) -> expr_uses_barriers e
-        | TMFun (_, _, e) -> expr_uses_barriers e)
+        | TMFun (_, _, _, e) -> expr_uses_barriers e)
       kernel.tkern_module_items
   in
   item_uses || expr_uses_barriers kernel.tkern_body
@@ -553,6 +560,8 @@ let rec expr_dim_usage (te : texpr) : dim_usage =
   | TESuperstep (_, _, step, cont) ->
       merge_dim_usage (expr_dim_usage step) (expr_dim_usage cont)
   | TEOpen (_, body) -> expr_dim_usage body
+  | TELetRec (_, _, _, fn_body, cont) ->
+      merge_dim_usage (expr_dim_usage fn_body) (expr_dim_usage cont)
   (* Terminal cases - no dimension usage *)
   | TEUnit | TEBool _ | TEInt _ | TEInt32 _ | TEInt64 _ | TEFloat _ | TEDouble _
   | TEGlobalRef _ | TENative _ ->
@@ -580,7 +589,7 @@ let kernel_exec_strategy (kernel : tkernel) : exec_strategy =
            (fun (item : tmodule_item) ->
              match item with
              | TMConst (_, _, _, e) -> expr_dim_usage e
-             | TMFun (_, _, e) -> expr_dim_usage e)
+             | TMFun (_, _, _, e) -> expr_dim_usage e)
            kernel.tkern_module_items)
     in
     (* Analyze kernel body *)

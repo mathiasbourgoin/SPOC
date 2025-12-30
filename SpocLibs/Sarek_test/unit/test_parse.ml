@@ -311,7 +311,7 @@ let test_parse_payload_module_fun () =
   let kernel = parse_payload payload in
   Alcotest.(check int) "one module fun" 1 (List.length kernel.kern_module_items) ;
   match List.hd kernel.kern_module_items with
-  | MFun (name, _, _) -> Alcotest.(check string) "fun name" "add1" name
+  | MFun (name, _, _, _) -> Alcotest.(check string) "fun name" "add1" name
   | _ -> Alcotest.fail "expected module fun"
 
 (* Integration test - parse a complete kernel function *)

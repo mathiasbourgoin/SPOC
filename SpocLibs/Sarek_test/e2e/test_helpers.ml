@@ -80,6 +80,16 @@ let parse_args ?(extra = fun _ _ -> false) ?(extra_usage = fun () -> ()) name =
   done ;
   cfg
 
+(** Initialize devices based on config. Pass ~interpreter:(Some Sequential) when
+    --interpreter is used. *)
+let init_devices cfg =
+  if cfg.use_interpreter then
+    Devices.init
+      ~interpreter:(Some Devices.Sequential)
+      ~native:cfg.use_native
+      ()
+  else Devices.init ~native:cfg.use_native ()
+
 (** Get device based on config *)
 let get_device cfg devs =
   if cfg.use_native then (

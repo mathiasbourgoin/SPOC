@@ -8,6 +8,16 @@
 open Sarek_ast
 open Sarek_types
 
+(** Typed kernel parameter - defined before texpr so TELetRec can reference it
+*)
+type tparam = {
+  tparam_name : string;
+  tparam_type : typ;
+  tparam_index : int;
+  tparam_is_vec : bool;  (** Is this a vector parameter? *)
+  tparam_id : int;  (** Variable ID for this parameter *)
+}
+
 (** Typed expression - every node has its type *)
 type texpr = {
   te : texpr_desc;
@@ -39,6 +49,8 @@ and texpr_desc =
   | TEAssign of string * int * texpr  (** name, var_id, value *)
   (* Binding and control *)
   | TELet of string * int * texpr * texpr  (** name, var_id, value, body *)
+  | TELetRec of string * int * tparam list * texpr * texpr
+      (** name, fn_id, params, fn_body, continuation *)
   | TELetMut of string * int * texpr * texpr
   | TEIf of texpr * texpr * texpr option
   | TEFor of string * int * texpr * texpr * for_dir * texpr
@@ -84,15 +96,6 @@ and tpattern_desc =
   | TPConstr of string * string * tpattern option  (** type_name, constr, arg *)
   | TPTuple of tpattern list
 
-(** Typed kernel parameter *)
-type tparam = {
-  tparam_name : string;
-  tparam_type : typ;
-  tparam_index : int;
-  tparam_is_vec : bool;  (** Is this a vector parameter? *)
-  tparam_id : int;  (** Variable ID for this parameter *)
-}
-
 (** Typed type declarations *)
 type ttype_decl =
   | TTypeRecord of {
@@ -111,7 +114,8 @@ type ttype_decl =
 (** Typed module item *)
 type tmodule_item =
   | TMConst of string * int * typ * texpr  (** let name : ty = expr, var id *)
-  | TMFun of string * tparam list * texpr  (** let name params = expr *)
+  | TMFun of string * bool * tparam list * texpr
+      (** TMFun(name, is_recursive, params, body) *)
 
 (** Typed kernel definition *)
 type tkernel = {
@@ -212,6 +216,27 @@ let rec pp_texpr fmt te =
         value
         pp_texpr
         body
+  | TELetRec (name, id, params, fn_body, cont) ->
+      Format.fprintf
+        fmt
+        "(let rec %s#%d %a = %a in %a)"
+        name
+        id
+        (Format.pp_print_list
+           ~pp_sep:(fun fmt () -> Format.fprintf fmt " ")
+           (fun fmt p ->
+             Format.fprintf
+               fmt
+               "(%s#%d : %a)"
+               p.tparam_name
+               p.tparam_id
+               Sarek_types.pp_typ
+               p.tparam_type))
+        params
+        pp_texpr
+        fn_body
+        pp_texpr
+        cont
   | TELetMut (name, id, value, body) ->
       Format.fprintf
         fmt

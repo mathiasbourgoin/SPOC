@@ -1,0 +1,10 @@
+; CUDA Plugin - Pure OCaml with ctypes
+; No C stubs required
+; NOTE: Internal library for now - will become public when ctypes is available
+
+(library
+ (name sarek_cuda)
+ (optional)
+ (libraries ctypes ctypes-foreign)
+ (modules Cuda_types Cuda_bindings Cuda_nvrtc Cuda_api Cuda_plugin)
+ (preprocess no_preprocessing))

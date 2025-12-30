@@ -581,6 +581,69 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
             tcont.ty
             loc,
           env )
+  | ELetRec (name, params, ret_ty_opt, fn_body, cont) ->
+      (* Type parameters *)
+      let param_tys =
+        List.map (fun p -> type_of_type_expr_env env p.param_type) params
+      in
+      let fn_id = fresh_var_id () in
+      (* Create function type and add to environment for recursive calls *)
+      let ret_ty =
+        match ret_ty_opt with
+        | Some ty -> type_of_type_expr_env env ty
+        | None -> fresh_tvar ()
+      in
+      let fn_ty = TFun (param_tys, ret_ty) in
+      let fn_vi =
+        {
+          vi_type = fn_ty;
+          vi_mutable = false;
+          vi_is_param = false;
+          vi_index = 0;
+          vi_is_vec = false;
+        }
+      in
+      let env_with_fn = add_var name fn_vi env in
+      (* Add parameters to environment *)
+      let tparams, env_with_params =
+        List.fold_left2
+          (fun (acc, env) p param_ty ->
+            let pid = fresh_var_id () in
+            let tparam =
+              {
+                tparam_name = p.param_name;
+                tparam_type = param_ty;
+                tparam_index = List.length acc;
+                tparam_is_vec = false;
+                tparam_id = pid;
+              }
+            in
+            let param_vi =
+              {
+                vi_type = param_ty;
+                vi_mutable = false;
+                vi_is_param = false;
+                vi_index = 0;
+                vi_is_vec = false;
+              }
+            in
+            (tparam :: acc, add_var p.param_name param_vi env))
+          ([], env_with_fn)
+          params
+          param_tys
+      in
+      let tparams = List.rev tparams in
+      (* Type the function body *)
+      let* tfn_body, _ = infer env_with_params fn_body in
+      let* () = unify_or_error ret_ty tfn_body.ty fn_body.expr_loc in
+      (* Type the continuation with the function in scope *)
+      let* tcont, env = infer env_with_fn cont in
+      Ok
+        ( mk_texpr
+            (TELetRec (name, fn_id, tparams, tfn_body, tcont))
+            tcont.ty
+            loc,
+          env )
 
 and infer_list env exprs =
   let rec aux env acc = function
@@ -813,7 +876,7 @@ let infer_kernel (env : t) (kernel : Sarek_ast.kernel) : tkernel result =
               env''
               (TMConst (name, var_id, ty, tvalue) :: acc)
               rest
-        | Sarek_ast.MFun (name, params, body) ->
+        | Sarek_ast.MFun (name, is_rec, params, body) ->
             let rec add_fun_params env idx acc = function
               | [] -> Ok (List.rev acc, env)
               | p :: rest ->
@@ -842,12 +905,22 @@ let infer_kernel (env : t) (kernel : Sarek_ast.kernel) : tkernel result =
                   add_fun_params env' (idx + 1) (tparam :: acc) rest
             in
             let* tparams, env_fun = add_fun_params env 0 [] params in
-            let* tbody, _ = infer env_fun body in
-            let fn_ty =
-              TFun (List.map (fun p -> p.tparam_type) tparams, tbody.ty)
+            (* For recursive functions, add a placeholder type for the function
+               so it can reference itself in its body *)
+            let param_types = List.map (fun p -> p.tparam_type) tparams in
+            let ret_type_var = TVar (ref (Unbound (fresh_var_id (), 0))) in
+            let fn_ty_placeholder = TFun (param_types, ret_type_var) in
+            let env_body =
+              if is_rec then add_local_fun name fn_ty_placeholder env_fun
+              else env_fun
             in
+            let* tbody, _ = infer env_body body in
+            let fn_ty = TFun (param_types, tbody.ty) in
             let env'' = add_local_fun name fn_ty env in
-            add_module_items env'' (TMFun (name, tparams, tbody) :: acc) rest)
+            add_module_items
+              env''
+              (TMFun (name, is_rec, tparams, tbody) :: acc)
+              rest)
   in
   let* tmodule_items, env_after_mods =
     add_module_items env_with_types [] kernel.kern_module_items

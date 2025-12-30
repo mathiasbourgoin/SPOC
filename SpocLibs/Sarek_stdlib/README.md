@@ -34,11 +34,13 @@ The Sarek stdlib follows a **ppx_deriving-style architecture** where:
 ## Module Structure
 
 - **`Float32.ml`** - 32-bit float type and math functions (sin, cos, sqrt, etc.)
-- **`Float64.ml`** - 64-bit float type and math functions
 - **`Int32.ml`** - 32-bit integer type and operations
 - **`Int64.ml`** - 64-bit integer type and operations
 - **`Gpu.ml`** - GPU thread/block intrinsics (thread_idx_x, block_barrier, etc.)
 - **`Sarek_stdlib.ml`** - Re-exports all modules and forces initialization
+
+**Note:** Float64 is NOT part of stdlib - it's in a separate library (`sarek_float64`)
+because not all devices support double precision. Link `sarek_float64` only when needed.
 
 ## Defining Intrinsics
 

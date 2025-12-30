@@ -116,12 +116,57 @@ let%sarek_intrinsic (copysign : float -> float -> float) =
 
 (******************************************************************************
  * Conversion functions
+ *
+ * These are GPU intrinsics that generate proper casts in device code.
+ * Note: We use `float` in the type annotation to represent float64 on the
+ * host side, since OCaml's float is always 64-bit.
  ******************************************************************************)
 
-let of_int x = Stdlib.float_of_int x
+let%sarek_intrinsic (of_int : int -> float) =
+  {device = dev "(double)(%s)" "(double)(%s)"; ocaml = Stdlib.float_of_int}
 
-let to_int x = Stdlib.int_of_float x
+let%sarek_intrinsic (of_int32 : int32 -> float) =
+  {device = dev "(double)(%s)" "(double)(%s)"; ocaml = Int32.to_float}
 
-let of_float32 x = x
+let%sarek_intrinsic (to_int : float -> int) =
+  {device = dev "(int)(%s)" "(int)(%s)"; ocaml = Stdlib.int_of_float}
 
-let to_float32 x = x
+let%sarek_intrinsic (to_int32 : float -> int32) =
+  {device = dev "(int)(%s)" "(int)(%s)"; ocaml = Int32.of_float}
+
+let%sarek_intrinsic (of_float32 : float32 -> float) =
+  {device = dev "(double)(%s)" "(double)(%s)"; ocaml = (fun x -> x)}
+
+let%sarek_intrinsic (to_float32 : float -> float32) =
+  {device = dev "(float)(%s)" "(float)(%s)"; ocaml = (fun x -> x)}
+
+(******************************************************************************
+ * Operator aliases
+ *
+ * These provide convenient infix operators for float64 arithmetic.
+ * Use `let open Float64 in` to shadow the float32 operators from Std.
+ ******************************************************************************)
+
+let%sarek_intrinsic (( +. ) : float -> float -> float) =
+  {device = dev "(%s + %s)" "(%s + %s)"; ocaml = ( +. )}
+
+let%sarek_intrinsic (( -. ) : float -> float -> float) =
+  {device = dev "(%s - %s)" "(%s - %s)"; ocaml = ( -. )}
+
+let%sarek_intrinsic (( *. ) : float -> float -> float) =
+  {device = dev "(%s * %s)" "(%s * %s)"; ocaml = ( *. )}
+
+let%sarek_intrinsic (( /. ) : float -> float -> float) =
+  {device = dev "(%s / %s)" "(%s / %s)"; ocaml = ( /. )}
+
+let%sarek_intrinsic (( <= ) : float -> float -> bool) =
+  {device = dev "(%s <= %s)" "(%s <= %s)"; ocaml = ( <= )}
+
+let%sarek_intrinsic (( >= ) : float -> float -> bool) =
+  {device = dev "(%s >= %s)" "(%s >= %s)"; ocaml = ( >= )}
+
+let%sarek_intrinsic (( < ) : float -> float -> bool) =
+  {device = dev "(%s < %s)" "(%s < %s)"; ocaml = ( < )}
+
+let%sarek_intrinsic (( > ) : float -> float -> bool) =
+  {device = dev "(%s > %s)" "(%s > %s)"; ocaml = ( > )}

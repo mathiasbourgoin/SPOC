@@ -142,7 +142,11 @@ let () =
   in
 
   (* Initialize SPOC and get devices *)
-  let devs = Devices.init () in
+  let devs =
+    if !use_interpreter then
+      Devices.init ~interpreter:(Some Devices.Sequential) ~native:!use_native ()
+    else Devices.init ~native:!use_native ()
+  in
   if Array.length devs = 0 then begin
     print_endline "No GPU devices found" ;
     exit 1

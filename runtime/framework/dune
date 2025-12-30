@@ -1,0 +1,8 @@
+; Framework Plugin System
+; Core interfaces and registry for GPU backends
+; NOTE: Internal library for now
+
+(library
+ (name sarek_framework)
+ (modules Framework_sig Framework_registry)
+ (preprocess no_preprocessing))

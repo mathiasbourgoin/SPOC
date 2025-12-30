@@ -612,6 +612,10 @@ let rec collect_intrinsic_refs (te : texpr) : IntrinsicRefSet.t =
       IntrinsicRefSet.union
         (collect_intrinsic_refs step_body)
         (collect_intrinsic_refs cont)
+  | TELetRec (_, _, _, fn_body, cont) ->
+      IntrinsicRefSet.union
+        (collect_intrinsic_refs fn_body)
+        (collect_intrinsic_refs cont)
   | TEOpen (_, body) -> collect_intrinsic_refs body
   | TEIntrinsicConst ref -> IntrinsicRefSet.singleton ref
   | TEIntrinsicFun (ref, _convergence, args) ->
@@ -628,7 +632,8 @@ let collect_from_module_items (items : tmodule_item list) : IntrinsicRefSet.t =
       match item with
       | TMConst (_, _, _, e) ->
           IntrinsicRefSet.union acc (collect_intrinsic_refs e)
-      | TMFun (_, _, e) -> IntrinsicRefSet.union acc (collect_intrinsic_refs e))
+      | TMFun (_, _, _, e) ->
+          IntrinsicRefSet.union acc (collect_intrinsic_refs e))
     IntrinsicRefSet.empty
     items
 
@@ -655,8 +660,13 @@ let generate_intrinsic_check ~loc (kernel : tkernel) : expression =
         ()]
 
 (** Quote a kernel to create a sarek_kernel expression *)
-let quote_kernel ~loc (kernel : tkernel) (ir : Kirc_Ast.k_ext)
-    (constructors : string list) (ret_val : Kirc_Ast.k_ext) : expression =
+let quote_kernel ~loc ?(native_kernel : tkernel option) (kernel : tkernel)
+    (ir : Kirc_Ast.k_ext) (constructors : string list)
+    (ret_val : Kirc_Ast.k_ext) : expression =
+  (* Use native_kernel for CPU code generation if provided, otherwise use kernel.
+     This allows passing the original kernel (before tailrec transformation)
+     for native OCaml, since OCaml handles recursion natively. *)
+  let kernel_for_native = Option.value native_kernel ~default:kernel in
   let args_pat, args_array_expr, list_to_args_pat, list_to_args_expr =
     build_kernel_args ~loc kernel.tkern_params
   in
@@ -691,7 +701,9 @@ let quote_kernel ~loc (kernel : tkernel) (ir : Kirc_Ast.k_ext)
     let body_ir = [%e quote_k_ext ~loc ir] in
     let ret_ir = [%e quote_k_ext ~loc ret_val] in
     let _intrinsic_check = [%e generate_intrinsic_check ~loc kernel] in
-    let cpu_kern_fn = [%e Sarek_native_gen.gen_cpu_kern_wrapper ~loc kernel] in
+    let cpu_kern_fn =
+      [%e Sarek_native_gen.gen_cpu_kern_wrapper ~loc kernel_for_native]
+    in
     let kirc_kernel =
       {
         Sarek.Kirc.ml_kern = (fun () -> ());

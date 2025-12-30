@@ -643,7 +643,8 @@ let parse_payload (payload : expression) : Sarek_ast.kernel =
                 decls
             in
             (List.rev_append tdecls types_acc, mods_acc)
-        | Pstr_value (Nonrecursive, vbs) ->
+        | Pstr_value (rec_flag, vbs) ->
+            let is_recursive = rec_flag = Recursive in
             let mods =
               List.fold_left
                 (fun acc vb ->
@@ -662,7 +663,8 @@ let parse_payload (payload : expression) : Sarek_ast.kernel =
                         List.map extract_param_from_pparam params
                       in
                       let fn_body = parse_expression fn_body in
-                      Sarek_ast.MFun (name, parsed_params, fn_body) :: acc
+                      Sarek_ast.MFun (name, is_recursive, parsed_params, fn_body)
+                      :: acc
                   | _ -> (
                       let value = parse_expression vb.pvb_expr in
                       match ty with
@@ -689,8 +691,12 @@ let parse_payload (payload : expression) : Sarek_ast.kernel =
           (List.rev_append inner_types types_acc)
           (List.rev_append inner_mods mods_acc)
           body
-    | Pexp_let (Nonrecursive, [{pvb_pat; pvb_expr; _}], body) ->
+    | Pexp_open (_, body) ->
+        (* Skip past 'let open M in' and continue collecting *)
+        collect_mods types_acc mods_acc body
+    | Pexp_let (rec_flag, [{pvb_pat; pvb_expr; _}], body) ->
         (* Capture top-level let as module const/fun *)
+        let is_recursive = rec_flag = Recursive in
         let name =
           match extract_name_from_pattern pvb_pat with
           | Some n -> n
@@ -704,7 +710,8 @@ let parse_payload (payload : expression) : Sarek_ast.kernel =
           | Pexp_function (params, _, Pfunction_body fn_body) ->
               let parsed_params = List.map extract_param_from_pparam params in
               let fn_body = parse_expression fn_body in
-              Sarek_ast.MFun (name, parsed_params, fn_body) :: mods_acc
+              Sarek_ast.MFun (name, is_recursive, parsed_params, fn_body)
+              :: mods_acc
           | _ ->
               let value = parse_expression pvb_expr in
               let ty =

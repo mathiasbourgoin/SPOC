@@ -169,6 +169,7 @@ let test_kernel_module_fun () =
   let module_fun =
     MFun
       ( "add1",
+        false,
         [
           {
             param_name = "x";
@@ -207,7 +208,7 @@ let test_kernel_module_fun () =
   match infer_kernel env kernel with
   | Ok tk -> (
       (match tk.tkern_module_items with
-      | TMFun (name, _, _) :: _ ->
+      | TMFun (name, _, _, _) :: _ ->
           Alcotest.(check string) "fun name" "add1" name
       | _ -> Alcotest.fail "expected TMFun") ;
       match repr tk.tkern_return_type with
@@ -240,6 +241,7 @@ let test_kernel_module_fun_with_variant () =
   let module_fun =
     MFun
       ( "area",
+        false,
         [
           {
             param_name = "s";
@@ -340,6 +342,7 @@ let test_kernel_module_fun_with_record () =
   let module_fun =
     MFun
       ( "make_point",
+        false,
         [
           {
             param_name = "a";

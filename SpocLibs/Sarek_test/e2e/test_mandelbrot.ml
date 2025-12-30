@@ -3,11 +3,30 @@
  *
  * Tests iterative computation with complex arithmetic.
  * Mandelbrot is a classic GPU benchmark with high arithmetic intensity.
+ *
+ * Includes both float32 and float64 versions of Julia set to test
+ * precision and float64 device support detection.
  ******************************************************************************)
 
 open Spoc
 
 let cfg = Test_helpers.default_config ()
+
+(* Check if a device supports float64 (double precision) *)
+let supports_float64 dev =
+  match dev.Devices.specific_info with
+  | Devices.CudaInfo _ ->
+      (* CUDA devices generally support float64, check compute capability *)
+      true
+  | Devices.OpenCLInfo info ->
+      (* OpenCL: check double_fp_config - CL_FP_NONE means no support *)
+      info.Devices.double_fp_config <> Devices.CL_FP_NONE
+  | Devices.NativeInfo _ ->
+      (* Native CPU always supports float64 *)
+      true
+  | Devices.InterpreterInfo _ ->
+      (* Interpreter supports float64 *)
+      true
 
 let max_iter = ref 256
 
@@ -151,15 +170,16 @@ let run_mandelbrot_test dev =
   in
   (time_ms, ok)
 
-let run_julia_test dev =
-  let julia_kernel =
+(* Julia set kernel using float32 (single precision) *)
+let run_julia_f32_test dev =
+  let julia_f32_kernel =
     [%kernel
       fun (output : int32 vector)
-          (width : int)
-          (height : int)
+          (width : int32)
+          (height : int32)
           (c_real : float32)
           (c_imag : float32)
-          (max_iter : int) ->
+          (max_iter : int32) ->
         let open Std in
         (* Use global_idx_x/y to enable Simple2D optimization for native runtime *)
         let px = global_idx_x in
@@ -192,7 +212,7 @@ let run_julia_test dev =
   let c_real = -0.7 in
   let c_imag = 0.27015 in
 
-  ignore (Sarek.Kirc.gen julia_kernel dev) ;
+  ignore (Sarek.Kirc.gen julia_f32_kernel dev) ;
   let block_size = min 16 (Test_helpers.get_block_size cfg dev) in
   let blocks_x = (width + block_size - 1) / block_size in
   let blocks_y = (height + block_size - 1) / block_size in
@@ -201,8 +221,167 @@ let run_julia_test dev =
 
   let t0 = Unix.gettimeofday () in
   Sarek.Kirc.run
-    julia_kernel
+    julia_f32_kernel
     (output, width, height, c_real, c_imag, !max_iter)
+    (block, grid)
+    0
+    dev ;
+  Devices.flush dev () ;
+  let t1 = Unix.gettimeofday () in
+  let time_ms = (t1 -. t0) *. 1000.0 in
+
+  let ok =
+    if cfg.verify then begin
+      Mem.to_cpu output () ;
+      Devices.flush dev () ;
+      let errors = ref 0 in
+      for i = 0 to min 1000 (n - 1) do
+        let got = Mem.get output i in
+        if got <> exp.(i) then incr errors
+      done ;
+      !errors = 0
+    end
+    else true
+  in
+  (time_ms, ok)
+
+(* Julia set kernel using float64 (double precision) - requires device support *)
+let run_julia_f64_test dev =
+  let julia_f64_kernel =
+    [%kernel
+      fun (output : int32 vector)
+          (width : int32)
+          (height : int32)
+          (c_real : float)
+          (c_imag : float)
+          (max_iter : int32) ->
+        let open Std in
+        (* Use global_idx_x/y to enable Simple2D optimization for native runtime *)
+        let px = global_idx_x in
+        let py = global_idx_y in
+        if px < width && py < height then begin
+          (* Open Float64 after int comparisons to avoid shadowing < *)
+          let open Sarek_float64.Float64 in
+          let four = of_float32 4.0 in
+          let two = of_float32 2.0 in
+          let fwidth = of_int32 width in
+          let fheight = of_int32 height in
+          let x = mut ((four *. (of_int32 px /. fwidth)) -. two) in
+          let y = mut ((four *. (of_int32 py /. fheight)) -. two) in
+          let iter = mut 0l in
+          while (x *. x) +. (y *. y) <= four && iter < max_iter do
+            let xtemp = (x *. x) -. (y *. y) +. c_real in
+            y := (two *. x *. y) +. c_imag ;
+            x := xtemp ;
+            iter := iter + 1l
+          done ;
+          output.((py * width) + px) <- iter
+        end]
+  in
+  let dim = !image_dim in
+  let width = dim in
+  let height = dim in
+  let n = width * height in
+  let exp = !expected_julia in
+
+  let output = Vector.create Vector.int32 n in
+
+  for i = 0 to n - 1 do
+    Mem.set output i 0l
+  done ;
+
+  let c_real = -0.7 in
+  let c_imag = 0.27015 in
+
+  ignore (Sarek.Kirc.gen julia_f64_kernel dev) ;
+  let block_size = min 16 (Test_helpers.get_block_size cfg dev) in
+  let blocks_x = (width + block_size - 1) / block_size in
+  let blocks_y = (height + block_size - 1) / block_size in
+  let block = {Kernel.blockX = block_size; blockY = block_size; blockZ = 1} in
+  let grid = {Kernel.gridX = blocks_x; gridY = blocks_y; gridZ = 1} in
+
+  let t0 = Unix.gettimeofday () in
+  Sarek.Kirc.run
+    julia_f64_kernel
+    (output, width, height, c_real, c_imag, !max_iter)
+    (block, grid)
+    0
+    dev ;
+  Devices.flush dev () ;
+  let t1 = Unix.gettimeofday () in
+  let time_ms = (t1 -. t0) *. 1000.0 in
+
+  let ok =
+    if cfg.verify then begin
+      Mem.to_cpu output () ;
+      Devices.flush dev () ;
+      let errors = ref 0 in
+      for i = 0 to min 1000 (n - 1) do
+        let got = Mem.get output i in
+        if got <> exp.(i) then incr errors
+      done ;
+      !errors = 0
+    end
+    else true
+  in
+  (time_ms, ok)
+
+(* ========== Tail-recursive mandelbrot using module function ========== *)
+
+let run_mandelbrot_tailrec_test dev =
+  let mandelbrot_tailrec_kernel =
+    [%kernel
+      (* Tail-recursive iteration using module function *)
+      let open Std in
+      (* This function uses the accumulator pattern - it's tail-recursive
+         and will be transformed to a while loop by the tailrec pass.
+         Note: Use int32 for consistency with native code generation. *)
+      let rec iterate (x : float32) (y : float32) (x0 : float32) (y0 : float32)
+          (iter : int32) (max_iter : int32) : int32 =
+        if (x *. x) +. (y *. y) > 4.0 || iter >= max_iter then iter
+        else
+          let xtemp = (x *. x) -. (y *. y) +. x0 in
+          let ynew = (2.0 *. x *. y) +. y0 in
+          iterate xtemp ynew x0 y0 (iter + 1l) max_iter
+      in
+
+      fun (output : int32 vector)
+          (width : int)
+          (height : int)
+          (max_iter : int)
+        ->
+        let px = global_idx_x in
+        let py = global_idx_y in
+        if px < width && py < height then begin
+          let x0 = (4.0 *. (float px /. float width)) -. 2.5 in
+          let y0 = (3.0 *. (float py /. float height)) -. 1.5 in
+          let iter = iterate 0.0 0.0 x0 y0 0l max_iter in
+          output.((py * width) + px) <- iter
+        end]
+  in
+  let dim = !image_dim in
+  let width = dim in
+  let height = dim in
+  let n = width * height in
+  let exp = !expected_mandelbrot in
+
+  let output = Vector.create Vector.int32 n in
+
+  for i = 0 to n - 1 do
+    Mem.set output i 0l
+  done ;
+
+  ignore (Sarek.Kirc.gen mandelbrot_tailrec_kernel dev) ;
+  let block_size = min 16 (Test_helpers.get_block_size cfg dev) in
+  let blocks_x = (width + block_size - 1) / block_size in
+  let blocks_y = (height + block_size - 1) / block_size in
+  let block = {Kernel.blockX = block_size; blockY = block_size; blockZ = 1} in
+  let grid = {Kernel.gridX = blocks_x; gridY = blocks_y; gridZ = 1} in
+
+  let t0 = Unix.gettimeofday () in
+  Sarek.Kirc.run
+    mandelbrot_tailrec_kernel
+    (output, width, height, !max_iter)
     (block, grid)
     0
     dev ;
@@ -257,12 +436,35 @@ let () =
       ~device_ids:cfg.benchmark_devices
       devs
       ~baseline:init_julia_data
-      run_julia_test
-      "Julia set"
+      run_julia_f32_test
+      "Julia set (float32)" ;
+    (* Float64 Julia - filter to only devices that support it *)
+    let all_device_ids =
+      match cfg.benchmark_devices with
+      | Some ids -> ids
+      | None -> List.init (Array.length devs) (fun i -> i)
+    in
+    let f64_devices =
+      all_device_ids
+      |> List.filter (fun id ->
+          id < Array.length devs && supports_float64 devs.(id))
+    in
+    if f64_devices <> [] then
+      Test_helpers.benchmark_with_baseline
+        ~device_ids:(Some f64_devices)
+        devs
+        ~baseline:init_julia_data
+        run_julia_f64_test
+        "Julia set (float64)"
+    else
+      Printf.printf "\nJulia set (float64): No devices with float64 support\n%!"
   end
   else begin
     let dev = Test_helpers.get_device cfg devs in
     Printf.printf "Using device: %s\n%!" dev.Devices.general_info.Devices.name ;
+    Printf.printf
+      "  Float64 support: %s\n%!"
+      (if supports_float64 dev then "yes" else "no") ;
 
     let baseline_ms, _ = init_mandelbrot_data () in
     Printf.printf "\nOCaml baseline (Mandelbrot): %.4f ms\n%!" baseline_ms ;
@@ -276,8 +478,32 @@ let () =
 
     let baseline_ms, _ = init_julia_data () in
     Printf.printf "\nOCaml baseline (Julia): %.4f ms\n%!" baseline_ms ;
-    Printf.printf "\nJulia set:\n%!" ;
-    let time_ms, ok = run_julia_test dev in
+
+    Printf.printf "\nJulia set (float32):\n%!" ;
+    let time_ms, ok = run_julia_f32_test dev in
+    Printf.printf
+      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
+      time_ms
+      (baseline_ms /. time_ms)
+      (if ok then "PASSED" else "FAILED") ;
+
+    if supports_float64 dev then begin
+      Printf.printf "\nJulia set (float64):\n%!" ;
+      let time_ms, ok = run_julia_f64_test dev in
+      Printf.printf
+        "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
+        time_ms
+        (baseline_ms /. time_ms)
+        (if ok then "PASSED" else "FAILED")
+    end
+    else
+      Printf.printf
+        "\nJulia set (float64): SKIPPED (device doesn't support float64)\n%!" ;
+
+    (* Tail-recursive mandelbrot test *)
+    Printf.printf "\nMandelbrot (tail-recursive):\n%!" ;
+    let time_ms, ok = run_mandelbrot_tailrec_test dev in
+    let baseline_ms, _ = init_mandelbrot_data () in
     Printf.printf
       "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
       time_ms

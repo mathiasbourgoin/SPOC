@@ -17,6 +17,11 @@ open Sarek_ppx_lib
    This must happen before any kernel expansion uses Sarek_env.with_stdlib(). *)
 let () = Sarek_stdlib.force_init ()
 
+(* Force Float64 module initialization to populate the PPX registry.
+   Float64 is in a separate library (sarek.float64) for devices that support it.
+   The PPX knows about Float64 intrinsics, but runtime code only links if needed. *)
+let () = ignore Sarek_float64.Float64.sin
+
 (* Registry of types declared in the current compilation unit via [@@sarek.type] *)
 let registered_types : Sarek_ast.type_decl list ref = ref []
 
@@ -49,7 +54,7 @@ let dedup_mods mods =
       (fun (seen, acc) m ->
         let key =
           match m with
-          | Sarek_ast.MConst (n, _, _) | Sarek_ast.MFun (n, _, _) -> n
+          | Sarek_ast.MConst (n, _, _) | Sarek_ast.MFun (n, _, _, _) -> n
         in
         if S.mem key seen then (seen, acc) else (S.add key seen, m :: acc))
       (S.empty, [])
@@ -134,7 +139,7 @@ let register_sarek_type_decl ~loc (td : type_declaration) =
 
 let register_sarek_module_item ~loc:_ item =
   (match item with
-  | Sarek_ast.MFun (name, _, _) ->
+  | Sarek_ast.MFun (name, _, _, _) ->
       Format.eprintf "Sarek PPX: register module fun %s@." name
   | Sarek_ast.MConst (name, _, _) ->
       Format.eprintf "Sarek PPX: register module const %s@." name) ;
@@ -166,7 +171,8 @@ let scan_dir_for_sarek_types directory =
                              d.ptype_attributes
                       then register_sarek_type_decl ~loc:d.ptype_loc d)
                     decls
-              | Pstr_value (Nonrecursive, vbs) ->
+              | Pstr_value (rec_flag, vbs) ->
+                  let is_rec = rec_flag = Recursive in
                   List.iter
                     (fun vb ->
                       let has_attr name a = String.equal a.attr_name.txt name in
@@ -206,7 +212,7 @@ let scan_dir_for_sarek_types directory =
                               let body =
                                 Sarek_parse.parse_expression body_expr
                               in
-                              Sarek_ast.MFun (name, params, body)
+                              Sarek_ast.MFun (name, is_rec, params, body)
                           | _ ->
                               let value =
                                 Sarek_parse.parse_expression vb.pvb_expr
@@ -633,12 +639,23 @@ let expand_kernel ~ctxt payload =
             (* Raise as Sarek_error to be caught by the handler below *)
             raise (Sarek_error.Sarek_error err)
         | Error [] | Ok () ->
-            (* 5. Lower to Kirc_Ast *)
+            (* 5. Tail recursion elimination pass (for GPU code) *)
+            (* Keep original kernel for native OCaml which handles recursion *)
+            let native_kernel = tkernel in
+            let tkernel = Sarek_tailrec.transform_kernel tkernel in
+
+            (* 6. Lower to Kirc_Ast *)
             let ir, constructors = Sarek_lower.lower_kernel tkernel in
             let ret_val = Sarek_lower.lower_return_value tkernel in
 
-            (* 6. Quote the IR back to OCaml *)
-            Sarek_quote.quote_kernel ~loc tkernel ir constructors ret_val)
+            (* 7. Quote the IR back to OCaml *)
+            Sarek_quote.quote_kernel
+              ~loc
+              ~native_kernel
+              tkernel
+              ir
+              constructors
+              ret_val)
   with
   | Sarek_parse.Parse_error_exn (msg, ploc) ->
       Location.raise_errorf ~loc:ploc "Sarek parse error: %s" msg
@@ -682,7 +699,7 @@ let sarek_type_extension = ()
 (** Register sarek.module bindings on any structure we process, so libraries can
     publish module items for use in kernels. *)
 let process_structure_for_module_items (str : structure) : structure =
-  let process_vb vb =
+  let process_vb ~is_rec vb =
     let has_attr name a = String.equal a.attr_name.txt name in
     if
       List.exists (has_attr "sarek.module") vb.pvb_attributes
@@ -705,7 +722,7 @@ let process_structure_for_module_items (str : structure) : structure =
               List.map Sarek_parse.extract_param_from_pparam params
             in
             let body = Sarek_parse.parse_expression body_expr in
-            Sarek_ast.MFun (name, params, body)
+            Sarek_ast.MFun (name, is_rec, params, body)
         | _ ->
             let value = Sarek_parse.parse_expression vb.pvb_expr in
             let ty =
@@ -726,8 +743,9 @@ let process_structure_for_module_items (str : structure) : structure =
     List.filter_map
       (fun item ->
         match item.pstr_desc with
-        | Pstr_value (_rf, vbs) ->
-            let registrations = List.filter_map process_vb vbs in
+        | Pstr_value (rf, vbs) ->
+            let is_rec = rf = Recursive in
+            let registrations = List.filter_map (process_vb ~is_rec) vbs in
             if registrations = [] then None else Some registrations
         | _ -> None)
       str

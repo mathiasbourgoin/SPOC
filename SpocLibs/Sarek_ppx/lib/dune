@@ -8,6 +8,7 @@
   Kirc_Ast
   Sarek_ast
   Sarek_types
+  Sarek_scheme
   Sarek_core_primitives
   Sarek_ppx_registry
   Sarek_env
@@ -18,14 +19,17 @@
   Sarek_lower
   Sarek_parse
   Sarek_quote
-  Sarek_native_gen))
+  Sarek_native_gen
+  Sarek_tailrec
+  Sarek_mono))
 
 (library
  (name sarek_ppx)
  (public_name sarek_ppx)
  (kind ppx_rewriter)
  ; Link sarek_stdlib so its module init registers types/intrinsics at PPX load time
- (libraries ppxlib sarek_ppx_lib sarek_stdlib unix)
+ ; Link sarek_float64 so Float64 intrinsics are available (optional for runtime linking)
+ (libraries ppxlib sarek_ppx_lib sarek_stdlib sarek_float64 unix)
  (preprocess
   (pps ppxlib.metaquot))
  (modules Sarek_ppx Sarek_external))

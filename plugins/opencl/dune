@@ -1,0 +1,10 @@
+; OpenCL Plugin - Pure OCaml with ctypes
+; No C stubs required
+; NOTE: Internal library for now - will become public when ctypes is available
+
+(library
+ (name sarek_opencl)
+ (optional)
+ (libraries ctypes ctypes-foreign)
+ (modules Opencl_types Opencl_bindings Opencl_api Opencl_plugin)
+ (preprocess no_preprocessing))

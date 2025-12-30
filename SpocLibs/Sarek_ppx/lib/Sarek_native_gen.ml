@@ -877,6 +877,28 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
            ~override:Fresh
            ~expr:(Ast_builder.Default.pmod_ident ~loc {txt = mod_lid; loc}))
         body_e
+  | TELetRec (name, _id, params, fn_body, cont) ->
+      (* Generate: let rec name p1 p2 ... = body in cont *)
+      let fn_body_e = gen_expr ~loc fn_body in
+      let cont_e = gen_expr ~loc cont in
+      (* Create function with parameters *)
+      let fn_expr =
+        List.fold_right
+          (fun p acc ->
+            let pvar =
+              Ast_builder.Default.ppat_var ~loc {txt = p.tparam_name; loc}
+            in
+            Ast_builder.Default.pexp_fun ~loc Nolabel None pvar acc)
+          params
+          fn_body_e
+      in
+      let binding =
+        Ast_builder.Default.value_binding
+          ~loc
+          ~pat:(Ast_builder.Default.ppat_var ~loc {txt = name; loc})
+          ~expr:fn_expr
+      in
+      Ast_builder.Default.pexp_let ~loc Recursive [binding] cont_e
 
 (** Generate pattern from typed pattern. Takes context to detect same-module
     types that shouldn't be qualified. *)
@@ -1134,11 +1156,17 @@ let wrap_module_items ~loc (items : tmodule_item list) (body : expression) :
   List.fold_right
     (fun item acc ->
       match item with
-      | TMFun (name, params, item_body) ->
+      | TMFun (name, is_rec, params, item_body) ->
           let pat, expr = gen_module_fun ~loc name params item_body in
-          [%expr
-            let [%p pat] = [%e expr] in
-            [%e acc]]
+          if is_rec then
+            (* Generate let rec for recursive functions *)
+            [%expr
+              let rec [%p pat] = [%e expr] in
+              [%e acc]]
+          else
+            [%expr
+              let [%p pat] = [%e expr] in
+              [%e acc]]
       | TMConst (name, id, typ, value) ->
           let pat, expr = gen_module_const ~loc name id typ value in
           [%expr

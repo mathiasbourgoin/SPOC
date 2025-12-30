@@ -272,6 +272,12 @@ let eval_intrinsic state path name args =
       let bx, _, _ = state.block_idx in
       let bdx, _, _ = state.block_dim in
       VInt32 (Int32.of_int ((bx * bdx) + tx))
+  | path, "global_thread_id" when is_gpu_path path ->
+      (* Same as global_idx - 1D global thread ID *)
+      let tx, _, _ = state.thread_idx in
+      let bx, _, _ = state.block_idx in
+      let bdx, _, _ = state.block_dim in
+      VInt32 (Int32.of_int ((bx * bdx) + tx))
   | path, "global_size" when is_gpu_path path ->
       let bdx, _, _ = state.block_dim in
       let gdx, _, _ = state.grid_dim in

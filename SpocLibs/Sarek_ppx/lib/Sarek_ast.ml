@@ -102,6 +102,9 @@ and pattern_desc =
   | PConstr of string * pattern option  (** Some x, None *)
   | PTuple of pattern list  (** (a, b) *)
 
+(** Kernel parameters - defined before expr so ELetRec can reference it *)
+type param = {param_name : string; param_type : type_expr; param_loc : loc}
+
 (** Expressions *)
 type expr = {e : expr_desc; expr_loc : loc}
 
@@ -129,6 +132,8 @@ and expr_desc =
   | EAssign of string * expr  (** x := e *)
   (* Binding and control *)
   | ELet of string * type_expr option * expr * expr  (** let x : t = e1 in e2 *)
+  | ELetRec of string * param list * type_expr option * expr * expr
+      (** let rec f params : ret_ty = body in cont *)
   | ELetMut of string * type_expr option * expr * expr
       (** let mutable x = ... *)
   | EIf of expr * expr * expr option  (** if c then a [else b] *)
@@ -166,9 +171,6 @@ and expr_desc =
 
 and for_dir = Upto | Downto
 
-(** Kernel parameters *)
-type param = {param_name : string; param_type : type_expr; param_loc : loc}
-
 (** Kernel-local type declarations *)
 type type_decl =
   | Type_record of {
@@ -188,7 +190,8 @@ type type_decl =
 (** Module-level items (constants or functions) within a kernel payload *)
 type module_item =
   | MConst of string * type_expr * expr  (** let name : ty = expr *)
-  | MFun of string * param list * expr  (** let name params = expr *)
+  | MFun of string * bool * param list * expr
+      (** MFun(name, is_recursive, params, body) *)
 
 (** A complete kernel definition *)
 type kernel = {
@@ -319,6 +322,28 @@ let rec pp_expr fmt expr =
         value
         pp_expr
         body
+  | ELetRec (name, params, ret_ty, fn_body, cont) ->
+      Format.fprintf
+        fmt
+        "(let rec %s %a%a = %a in %a)"
+        name
+        (Format.pp_print_list
+           ~pp_sep:(fun fmt () -> Format.fprintf fmt " ")
+           (fun fmt p ->
+             Format.fprintf
+               fmt
+               "(%s : %a)"
+               p.param_name
+               pp_type_expr
+               p.param_type))
+        params
+        (fun fmt -> function
+          | None -> () | Some t -> Format.fprintf fmt " : %a" pp_type_expr t)
+        ret_ty
+        pp_expr
+        fn_body
+        pp_expr
+        cont
   | ELetMut (name, ty, value, body) ->
       Format.fprintf
         fmt

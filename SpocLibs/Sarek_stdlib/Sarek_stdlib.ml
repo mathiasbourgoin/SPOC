@@ -2,10 +2,13 @@
  * Sarek Standard Library
  *
  * Re-exports all stdlib modules for convenient use.
+ *
+ * NOTE: Float64 is NOT part of stdlib - it's a separate library (sarek_float64)
+ * because not all devices support double precision. Link sarek_float64 only
+ * when you need float64 support.
  ******************************************************************************)
 
 module Float32 = Float32
-module Float64 = Float64
 module Int32 = Int32
 module Int64 = Int64
 module Gpu = Gpu
@@ -27,7 +30,6 @@ let () =
   (* Reference something from each module to force initialization.
      Order doesn't matter for registration since we use qualified names
      (Float32.sqrt vs Float64.sqrt) and open_module handles short names. *)
-  ignore Float64.sin ;
   ignore Int64.of_float ;
   ignore Float32.sin ;
   ignore Int32.of_float ;

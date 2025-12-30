@@ -201,20 +201,29 @@ let open_module (path : string list) env =
             in
             (* Check if there's an existing core primitive entry.
                Core primitives define the canonical type and convergence.
-               Stdlib intrinsics just provide device implementations. *)
+               Stdlib intrinsics just provide device implementations.
+
+               IMPORTANT: Only preserve type/convergence from CorePrimitiveRef.
+               When shadowing another IntrinsicRef (e.g., Float64 shadowing Float32),
+               we want the new module's type to take precedence. *)
             let info =
               match StringMap.find_opt short_name env.intrinsic_funs with
-              | Some existing ->
-                  (* Preserve type and convergence from core primitive.
-                     Only update the reference to use the stdlib implementation. *)
-                  {
-                    intr_type = existing.intr_type;
-                    intr_ref = info.intr_ref;
-                    intr_convergence =
-                      (if existing.intr_convergence <> None then
-                         existing.intr_convergence
-                       else info.intr_convergence);
-                  }
+              | Some existing -> (
+                  match existing.intr_ref with
+                  | CorePrimitiveRef _ ->
+                      (* Core primitive: preserve type and convergence,
+                         only update reference to use stdlib implementation. *)
+                      {
+                        intr_type = existing.intr_type;
+                        intr_ref = info.intr_ref;
+                        intr_convergence =
+                          (if existing.intr_convergence <> None then
+                             existing.intr_convergence
+                           else info.intr_convergence);
+                      }
+                  | IntrinsicRef _ ->
+                      (* Another stdlib intrinsic: new module shadows old completely *)
+                      info)
               | None -> info
             in
             add_intrinsic_fun short_name info env

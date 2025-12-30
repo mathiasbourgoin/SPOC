@@ -75,6 +75,7 @@
   spoc
   sarek
   sarek.stdlib
+  sarek.float64
   sarek_geometry
   sarek.visibility
   sarek_ppx.lib

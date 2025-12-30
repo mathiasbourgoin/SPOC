@@ -1,0 +1,370 @@
+(******************************************************************************
+ * CUDA API - High-Level Wrappers
+ *
+ * Provides a safe, OCaml-friendly interface to CUDA functionality.
+ * Handles error checking, resource management, and type conversions.
+ ******************************************************************************)
+
+open Ctypes
+open Cuda_types
+open Cuda_bindings
+
+(** {1 Exceptions} *)
+
+exception Cuda_error of cu_result * string
+
+(** Check CUDA result and raise exception on error *)
+let check (ctx : string) (result : cu_result) : unit =
+  match result with CUDA_SUCCESS -> () | err -> raise (Cuda_error (err, ctx))
+
+(** {1 Device Management} *)
+
+module Device = struct
+  type t = {
+    id : int;
+    handle : cu_device;
+    context : cu_context structure ptr;
+    name : string;
+    total_mem : int64;
+    compute_capability : int * int;
+    max_threads_per_block : int;
+    max_block_dims : int * int * int;
+    max_grid_dims : int * int * int;
+    shared_mem_per_block : int;
+    warp_size : int;
+    multiprocessor_count : int;
+  }
+
+  let initialized = ref false
+
+  let init () =
+    if not !initialized then begin
+      check "cuInit" (cuInit 0) ;
+      initialized := true
+    end
+
+  let count () =
+    init () ;
+    let n = allocate int 0 in
+    check "cuDeviceGetCount" (cuDeviceGetCount n) ;
+    !@n
+
+  let get_attribute dev attr =
+    let v = allocate int 0 in
+    check
+      "cuDeviceGetAttribute"
+      (cuDeviceGetAttribute v (int_of_device_attribute attr) dev) ;
+    !@v
+
+  let get idx =
+    init () ;
+    let dev = allocate cu_device 0 in
+    check "cuDeviceGet" (cuDeviceGet dev idx) ;
+    let handle = !@dev in
+
+    (* Get name *)
+    let name_buf = allocate_n char ~count:256 in
+    check "cuDeviceGetName" (cuDeviceGetName name_buf 256 handle) ;
+    let name = string_from_ptr name_buf ~length:255 in
+    let name =
+      String.sub name 0 (try String.index name '\000' with Not_found -> 255)
+    in
+
+    (* Get total memory *)
+    let mem = allocate size_t Unsigned.Size_t.zero in
+    check "cuDeviceTotalMem" (cuDeviceTotalMem mem handle) ;
+    let total_mem = Unsigned.Size_t.to_int64 !@mem in
+
+    (* Get attributes *)
+    let major =
+      get_attribute handle CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR
+    in
+    let minor =
+      get_attribute handle CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR
+    in
+    let max_threads =
+      get_attribute handle CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_BLOCK
+    in
+    let max_block_x =
+      get_attribute handle CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_X
+    in
+    let max_block_y =
+      get_attribute handle CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_Y
+    in
+    let max_block_z =
+      get_attribute handle CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_Z
+    in
+    let max_grid_x = get_attribute handle CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_X in
+    let max_grid_y = get_attribute handle CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_Y in
+    let max_grid_z = get_attribute handle CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_Z in
+    let shared_mem =
+      get_attribute handle CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK
+    in
+    let warp = get_attribute handle CU_DEVICE_ATTRIBUTE_WARP_SIZE in
+    let mp_count =
+      get_attribute handle CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT
+    in
+
+    (* Create context *)
+    let ctx = allocate cu_context_ptr (from_voidp cu_context null) in
+    check
+      "cuCtxCreate"
+      (cuCtxCreate ctx (Unsigned.UInt.of_int cu_ctx_sched_auto) handle) ;
+
+    {
+      id = idx;
+      handle;
+      context = !@ctx;
+      name;
+      total_mem;
+      compute_capability = (major, minor);
+      max_threads_per_block = max_threads;
+      max_block_dims = (max_block_x, max_block_y, max_block_z);
+      max_grid_dims = (max_grid_x, max_grid_y, max_grid_z);
+      shared_mem_per_block = shared_mem;
+      warp_size = warp;
+      multiprocessor_count = mp_count;
+    }
+
+  let set_current dev = check "cuCtxSetCurrent" (cuCtxSetCurrent dev.context)
+
+  let synchronize dev =
+    set_current dev ;
+    check "cuCtxSynchronize" (cuCtxSynchronize ())
+
+  let destroy dev = check "cuCtxDestroy" (cuCtxDestroy dev.context)
+end
+
+(** {1 Memory Management} *)
+
+module Memory = struct
+  type 'a buffer = {
+    ptr : cu_deviceptr;
+    size : int;
+    elem_size : int;
+    device : Device.t;
+  }
+
+  let alloc device size kind =
+    Device.set_current device ;
+    let elem_size = Ctypes_static.sizeof (Ctypes.typ_of_bigarray_kind kind) in
+    let bytes = Unsigned.Size_t.of_int (size * elem_size) in
+    let ptr = allocate cu_deviceptr Unsigned.UInt64.zero in
+    check "cuMemAlloc" (cuMemAlloc ptr bytes) ;
+    {ptr = !@ptr; size; elem_size; device}
+
+  let free buf =
+    Device.set_current buf.device ;
+    check "cuMemFree" (cuMemFree buf.ptr)
+
+  let host_to_device ~src ~dst =
+    Device.set_current dst.device ;
+    let src_ptr = bigarray_start array1 src |> to_voidp in
+    let bytes = Unsigned.Size_t.of_int (Bigarray.Array1.size_in_bytes src) in
+    check "cuMemcpyHtoD" (cuMemcpyHtoD dst.ptr src_ptr bytes)
+
+  let device_to_host ~src ~dst =
+    Device.set_current src.device ;
+    let dst_ptr = bigarray_start array1 dst |> to_voidp in
+    let bytes = Unsigned.Size_t.of_int (Bigarray.Array1.size_in_bytes dst) in
+    check "cuMemcpyDtoH" (cuMemcpyDtoH dst_ptr src.ptr bytes)
+
+  let device_to_device ~src ~dst =
+    Device.set_current src.device ;
+    let bytes = Unsigned.Size_t.of_int (src.size * src.elem_size) in
+    check "cuMemcpyDtoD" (cuMemcpyDtoD dst.ptr src.ptr bytes)
+
+  let memset buf value =
+    Device.set_current buf.device ;
+    let bytes = Unsigned.Size_t.of_int (buf.size * buf.elem_size) in
+    check "cuMemsetD8" (cuMemsetD8 buf.ptr (Unsigned.UChar.of_int value) bytes)
+end
+
+(** {1 Stream Management} *)
+
+module Stream = struct
+  type t = {handle : cu_stream structure ptr; device : Device.t}
+
+  let create device =
+    Device.set_current device ;
+    let stream = allocate cu_stream_ptr (from_voidp cu_stream null) in
+    check
+      "cuStreamCreate"
+      (cuStreamCreate stream (Unsigned.UInt.of_int cu_stream_default)) ;
+    {handle = !@stream; device}
+
+  let destroy stream =
+    Device.set_current stream.device ;
+    check "cuStreamDestroy" (cuStreamDestroy stream.handle)
+
+  let synchronize stream =
+    check "cuStreamSynchronize" (cuStreamSynchronize stream.handle)
+
+  let default device = {handle = from_voidp cu_stream null; device}
+end
+
+(** {1 Event Management} *)
+
+module Event = struct
+  type t = {handle : cu_event structure ptr}
+
+  let create () =
+    let event = allocate cu_event_ptr (from_voidp cu_event null) in
+    check
+      "cuEventCreate"
+      (cuEventCreate event (Unsigned.UInt.of_int cu_event_default)) ;
+    {handle = !@event}
+
+  let destroy event = check "cuEventDestroy" (cuEventDestroy event.handle)
+
+  let record event stream =
+    check "cuEventRecord" (cuEventRecord event.handle stream.Stream.handle)
+
+  let synchronize event =
+    check "cuEventSynchronize" (cuEventSynchronize event.handle)
+
+  let elapsed ~start ~stop =
+    let ms = allocate float 0.0 in
+    check "cuEventElapsedTime" (cuEventElapsedTime ms start.handle stop.handle) ;
+    !@ms
+end
+
+(** {1 Kernel Management} *)
+
+module Kernel = struct
+  type t = {
+    module_ : cu_module structure ptr;
+    function_ : cu_function structure ptr;
+    name : string;
+  }
+
+  type arg =
+    | ArgBuffer : _ Memory.buffer -> arg
+    | ArgInt32 : int32 -> arg
+    | ArgInt64 : int64 -> arg
+    | ArgFloat32 : float -> arg
+    | ArgFloat64 : float -> arg
+    | ArgPtr : nativeint -> arg
+
+  (* Compilation cache *)
+  let cache : (string, t) Hashtbl.t = Hashtbl.create 16
+
+  let compile device ~name ~source =
+    Device.set_current device ;
+
+    (* Compile to PTX using NVRTC *)
+    let major, minor = device.Device.compute_capability in
+    let arch = Printf.sprintf "compute_%d%d" major minor in
+    let ptx = Cuda_nvrtc.compile_to_ptx ~name ~arch source in
+
+    (* Load module from PTX *)
+    let module_ = allocate cu_module_ptr (from_voidp cu_module null) in
+    let ptx_ptr = CArray.of_string ptx |> CArray.start |> to_voidp in
+    check "cuModuleLoadData" (cuModuleLoadData module_ ptx_ptr) ;
+
+    (* Get function *)
+    let func = allocate cu_function_ptr (from_voidp cu_function null) in
+    check "cuModuleGetFunction" (cuModuleGetFunction func !@module_ name) ;
+
+    {module_ = !@module_; function_ = !@func; name}
+
+  let compile_cached device ~name ~source =
+    let key = Digest.string source |> Digest.to_hex in
+    match Hashtbl.find_opt cache key with
+    | Some k -> k
+    | None ->
+        let k = compile device ~name ~source in
+        Hashtbl.add cache key k ;
+        k
+
+  let clear_cache () =
+    Hashtbl.iter
+      (fun _ k ->
+        let _ = cuModuleUnload k.module_ in
+        ())
+      cache ;
+    Hashtbl.clear cache
+
+  let launch kernel ~args ~grid ~block ~shared_mem ~stream =
+    (* Build parameter array *)
+    let params = CArray.make (ptr void) (List.length args) in
+    let refs = ref [] in
+    (* Keep references alive *)
+
+    List.iteri
+      (fun i arg ->
+        let ptr =
+          match arg with
+          | ArgBuffer buf ->
+              let v = allocate cu_deviceptr buf.Memory.ptr in
+              refs := Obj.repr v :: !refs ;
+              to_voidp v
+          | ArgInt32 n ->
+              let v = allocate int32_t n in
+              refs := Obj.repr v :: !refs ;
+              to_voidp v
+          | ArgInt64 n ->
+              let v = allocate int64_t n in
+              refs := Obj.repr v :: !refs ;
+              to_voidp v
+          | ArgFloat32 f ->
+              let v = allocate float f in
+              refs := Obj.repr v :: !refs ;
+              to_voidp v
+          | ArgFloat64 f ->
+              let v = allocate double f in
+              refs := Obj.repr v :: !refs ;
+              to_voidp v
+          | ArgPtr p ->
+              let v = allocate nativeint p in
+              refs := Obj.repr v :: !refs ;
+              to_voidp v
+        in
+        CArray.set params i ptr)
+      args ;
+
+    let stream_ptr =
+      match stream with
+      | Some s -> s.Stream.handle
+      | None -> from_voidp cu_stream null
+    in
+
+    let gx, gy, gz = grid in
+    let bx, by, bz = block in
+
+    check
+      "cuLaunchKernel"
+      (cuLaunchKernel
+         kernel.function_
+         (Unsigned.UInt.of_int gx)
+         (Unsigned.UInt.of_int gy)
+         (Unsigned.UInt.of_int gz)
+         (Unsigned.UInt.of_int bx)
+         (Unsigned.UInt.of_int by)
+         (Unsigned.UInt.of_int bz)
+         (Unsigned.UInt.of_int shared_mem)
+         stream_ptr
+         (CArray.start params)
+         (from_voidp (ptr void) null))
+end
+
+(** {1 Utility Functions} *)
+
+let driver_version () =
+  let v = allocate int 0 in
+  check "cuDriverGetVersion" (cuDriverGetVersion v) ;
+  let ver = !@v in
+  (ver / 1000, ver mod 1000 / 10)
+
+let is_available () =
+  try
+    Device.init () ;
+    Device.count () > 0
+  with _ -> false
+
+let memory_info device =
+  Device.set_current device ;
+  let free = allocate size_t Unsigned.Size_t.zero in
+  let total = allocate size_t Unsigned.Size_t.zero in
+  check "cuMemGetInfo" (cuMemGetInfo free total) ;
+  (Unsigned.Size_t.to_int64 !@free, Unsigned.Size_t.to_int64 !@total)

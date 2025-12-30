@@ -439,6 +439,14 @@ let rec lower_expr (state : state) (te : texpr) : Kirc_Ast.k_ext =
       in
       if Array.length args_ir = 0 then Kirc_Ast.IntrinsicRef (path, name)
       else Kirc_Ast.App (Kirc_Ast.IntrinsicRef (path, name), args_ir)
+  | TELetRec (_name, _id, _params, _fn_body, cont) ->
+      (* TELetRec should be transformed to loops by the tailrec pass.
+         If we reach here with a non-trivial function body, the function
+         is either not called or is non-tail-recursive (which is not
+         supported for GPU kernels without a call stack).
+         We lower only the continuation - any recursive calls will be
+         handled separately if they exist. *)
+      lower_expr state cont
 
 (** Lower a declaration for a local/kernel variable. *)
 and lower_decl ~mutable_ id name ty =
@@ -601,7 +609,8 @@ let lower_kernel (kernel : tkernel) : Kirc_Ast.k_ext * string list =
   let fun_map = Hashtbl.create 8 in
   List.iter
     (function
-      | TMFun (name, params, body) -> Hashtbl.replace fun_map name (params, body)
+      | TMFun (name, _, params, body) ->
+          Hashtbl.replace fun_map name (params, body)
       | _ -> ())
     kernel.tkern_module_items ;
   let state = create_state fun_map in
@@ -616,7 +625,7 @@ let lower_kernel (kernel : tkernel) : Kirc_Ast.k_ext * string list =
               Kirc_Ast.Set (Kirc_Ast.IntId (name, id), lower_expr state expr)
             in
             Kirc_Ast.Seq (Kirc_Ast.Decl decl, Kirc_Ast.Seq (setv, acc))
-        | TMFun (_name, _params, _body) -> acc)
+        | TMFun (_name, _, _params, _body) -> acc)
       kernel.tkern_module_items
       Kirc_Ast.Empty
   in

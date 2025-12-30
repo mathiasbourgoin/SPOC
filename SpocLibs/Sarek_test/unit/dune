@@ -5,7 +5,8 @@
   test_typer
   test_lower
   test_parse
-  test_core_primitives)
+  test_core_primitives
+  test_tailrec)
  ; Link sarek_stdlib to trigger auto-registration of intrinsics
  (libraries sarek_ppx_lib sarek_stdlib alcotest ppxlib)
  (preprocess
@@ -32,5 +33,13 @@
 (test
  (name test_float32)
  (libraries sarek)
+ (flags
+  (:standard -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc)))
+
+; Float64 module tests
+
+(test
+ (name test_float64)
+ (libraries sarek.float64)
  (flags
   (:standard -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc)))

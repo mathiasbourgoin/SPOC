@@ -142,8 +142,12 @@ let%sarek_intrinsic (div : float32 -> float32 -> float32) =
 
 (******************************************************************************
  * Conversion functions
+ *
+ * These are GPU intrinsics that generate proper casts in device code.
  ******************************************************************************)
 
-let of_int x = Stdlib.float_of_int x
+let%sarek_intrinsic (of_int : int -> float32) =
+  {device = dev "(float)(%s)" "(float)(%s)"; ocaml = Stdlib.float_of_int}
 
-let to_int x = Stdlib.int_of_float x
+let%sarek_intrinsic (to_int : float32 -> int) =
+  {device = dev "(int)(%s)" "(int)(%s)"; ocaml = Stdlib.int_of_float}
