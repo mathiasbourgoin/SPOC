@@ -13,6 +13,7 @@
   Sarek_ppx_registry
   Sarek_env
   Sarek_error
+  Sarek_reserved
   Sarek_typed_ast
   Sarek_typer
   Sarek_convergence

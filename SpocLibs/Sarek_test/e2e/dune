@@ -36,7 +36,8 @@
   test_transpose
   test_sort
   test_convolution
-  test_mandelbrot)
+  test_mandelbrot
+  test_polymorphism)
  (modules
   test_vector_add
   test_module_const
@@ -70,7 +71,8 @@
   test_transpose
   test_sort
   test_convolution
-  test_mandelbrot)
+  test_mandelbrot
+  test_polymorphism)
  (libraries
   spoc
   sarek
@@ -120,4 +122,5 @@
   test_transpose.exe
   test_sort.exe
   test_convolution.exe
-  test_mandelbrot.exe))
+  test_mandelbrot.exe
+  test_polymorphism.exe))

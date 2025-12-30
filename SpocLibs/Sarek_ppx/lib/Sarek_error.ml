@@ -32,6 +32,7 @@ type error =
   | Invalid_intrinsic of string * loc
   | Barrier_in_diverged_flow of loc
   | Warp_collective_in_diverged_flow of string * loc
+  | Reserved_keyword of string * loc
 
 (** Get the location from an error *)
 let error_loc = function
@@ -57,6 +58,7 @@ let error_loc = function
   | Invalid_intrinsic (_, loc) -> loc
   | Barrier_in_diverged_flow loc -> loc
   | Warp_collective_in_diverged_flow (_, loc) -> loc
+  | Reserved_keyword (_, loc) -> loc
 
 (** Pretty print an error *)
 let pp_error fmt = function
@@ -119,6 +121,12 @@ let pp_error fmt = function
         fmt
         "Warp collective '%s' called in diverged control flow. All threads in \
          a warp must participate together"
+        name
+  | Reserved_keyword (name, _) ->
+      Format.fprintf
+        fmt
+        "'%s' is a reserved C/CUDA/OpenCL keyword and cannot be used as a \
+         function or variable name"
         name
 
 (** Convert error to string *)

@@ -2,7 +2,7 @@
  * Sarek PPX - GPU kernel DSL for OCaml
  *
  * This module implements type inference for Sarek kernels.
- * Uses constraint-based Hindley-Milner style inference.
+ * Uses constraint-based Hindley-Milner style inference with let-polymorphism.
  ******************************************************************************)
 
 open Sarek_ast
@@ -10,6 +10,7 @@ open Sarek_types
 open Sarek_env
 open Sarek_error
 open Sarek_typed_ast
+open Sarek_scheme
 
 (** Unify with error reporting *)
 let unify_or_error t1 t2 loc =
@@ -41,26 +42,52 @@ let check_boolean t loc =
   | TVar _ -> unify_or_error t t_bool loc
   | t -> Error [Type_mismatch {expected = t_bool; got = t; loc}]
 
-(** Convert a parsed type expression using the current typing environment *)
-let rec type_of_type_expr_env env te =
+(** Type variable context for tracking named type variables like 'a, 'b *)
+module TvarCtx = Map.Make (String)
+
+type tvar_ctx = {
+  tvars : typ TvarCtx.t ref;
+  level : int;  (** Level at which to create new type variables *)
+}
+
+(** Create a fresh type variable context at a given level *)
+let fresh_tvar_ctx ?(level = 0) () : tvar_ctx =
+  {tvars = ref TvarCtx.empty; level}
+
+(** Convert a parsed type expression using the current typing environment and a
+    type variable context for polymorphic type variables *)
+let rec type_of_type_expr_ctx env (ctx : tvar_ctx) te =
   match te with
+  | Sarek_ast.TEVar name -> (
+      (* Named type variable like 'a - look up or create at the context's level *)
+      match TvarCtx.find_opt name !(ctx.tvars) with
+      | Some tv -> tv
+      | None ->
+          let tv = fresh_tvar ~level:ctx.level () in
+          ctx.tvars := TvarCtx.add name tv !(ctx.tvars) ;
+          tv)
   | Sarek_ast.TEConstr ("vector", [elem]) ->
-      TVec (type_of_type_expr_env env elem)
+      TVec (type_of_type_expr_ctx env ctx elem)
   | Sarek_ast.TEConstr (name, [elem])
     when String.ends_with ~suffix:"vector" name ->
-      TVec (type_of_type_expr_env env elem)
+      TVec (type_of_type_expr_ctx env ctx elem)
   | Sarek_ast.TEConstr ("array", [elem]) ->
-      TArr (type_of_type_expr_env env elem, Local)
+      TArr (type_of_type_expr_ctx env ctx elem, Local)
   | Sarek_ast.TEArrow (a, b) ->
-      TFun ([type_of_type_expr_env env a], type_of_type_expr_env env b)
-  | Sarek_ast.TETuple ts -> TTuple (List.map (type_of_type_expr_env env) ts)
+      TFun ([type_of_type_expr_ctx env ctx a], type_of_type_expr_ctx env ctx b)
+  | Sarek_ast.TETuple ts -> TTuple (List.map (type_of_type_expr_ctx env ctx) ts)
   | Sarek_ast.TEConstr (name, _) -> (
       match find_type name env with
       | Some (TIRecord {ti_fields; ti_name}) ->
           TRecord (ti_name, List.map (fun (f, t, _) -> (f, t)) ti_fields)
       | Some (TIVariant {ti_constrs; ti_name}) -> TVariant (ti_name, ti_constrs)
       | None -> type_of_type_expr te)
-  | _ -> type_of_type_expr te
+
+(** Convert a parsed type expression using the current typing environment.
+    Creates fresh type variables for each TEVar - use type_of_type_expr_ctx when
+    type variable names need to be preserved across multiple types. *)
+let type_of_type_expr_env env te =
+  type_of_type_expr_ctx env (fresh_tvar_ctx ()) te
 
 (** Infer type of a binary operation *)
 let infer_binop op t1 t2 loc =
@@ -145,7 +172,9 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
               (* Will be resolved when applied *)
               let id = fresh_var_id () in
               Ok (mk_texpr (TEVar (name, id)) ty loc, env))
-      | LLocalFun (_, typ) ->
+      | LLocalFun (_, scheme) ->
+          (* Instantiate the polymorphic scheme to get a fresh type *)
+          let typ = instantiate scheme in
           let id = fresh_var_id () in
           Ok (mk_texpr (TEVar (name, id)) typ loc, env)
       | LNotFound ->
@@ -582,16 +611,21 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
             loc,
           env )
   | ELetRec (name, params, ret_ty_opt, fn_body, cont) ->
-      (* Type parameters *)
+      (* Enter a level for the function's type variables *)
+      let env_inner = enter_level env in
+      (* Type parameters using shared type variable context at inner level *)
+      let tvar_ctx = fresh_tvar_ctx ~level:env_inner.current_level () in
       let param_tys =
-        List.map (fun p -> type_of_type_expr_env env p.param_type) params
+        List.map
+          (fun p -> type_of_type_expr_ctx env tvar_ctx p.param_type)
+          params
       in
       let fn_id = fresh_var_id () in
       (* Create function type and add to environment for recursive calls *)
       let ret_ty =
         match ret_ty_opt with
-        | Some ty -> type_of_type_expr_env env ty
-        | None -> fresh_tvar ()
+        | Some ty -> type_of_type_expr_ctx env tvar_ctx ty
+        | None -> fresh_tvar ~level:env_inner.current_level ()
       in
       let fn_ty = TFun (param_tys, ret_ty) in
       let fn_vi =
@@ -877,50 +911,64 @@ let infer_kernel (env : t) (kernel : Sarek_ast.kernel) : tkernel result =
               (TMConst (name, var_id, ty, tvalue) :: acc)
               rest
         | Sarek_ast.MFun (name, is_rec, params, body) ->
-            let rec add_fun_params env idx acc = function
-              | [] -> Ok (List.rev acc, env)
-              | p :: rest ->
-                  let ty = type_of_type_expr_env env p.param_type in
-                  let is_vec = match ty with TVec _ -> true | _ -> false in
-                  let var_id = fresh_var_id () in
-                  let vi =
-                    {
-                      vi_type = ty;
-                      vi_mutable = false;
-                      vi_is_param = false;
-                      vi_index = var_id;
-                      vi_is_vec = is_vec;
-                    }
-                  in
-                  let env' = add_var p.param_name vi env in
-                  let tparam =
-                    {
-                      tparam_name = p.param_name;
-                      tparam_type = ty;
-                      tparam_index = idx;
-                      tparam_is_vec = is_vec;
-                      tparam_id = var_id;
-                    }
-                  in
-                  add_fun_params env' (idx + 1) (tparam :: acc) rest
-            in
-            let* tparams, env_fun = add_fun_params env 0 [] params in
-            (* For recursive functions, add a placeholder type for the function
-               so it can reference itself in its body *)
-            let param_types = List.map (fun p -> p.tparam_type) tparams in
-            let ret_type_var = TVar (ref (Unbound (fresh_var_id (), 0))) in
-            let fn_ty_placeholder = TFun (param_types, ret_type_var) in
-            let env_body =
-              if is_rec then add_local_fun name fn_ty_placeholder env_fun
-              else env_fun
-            in
-            let* tbody, _ = infer env_body body in
-            let fn_ty = TFun (param_types, tbody.ty) in
-            let env'' = add_local_fun name fn_ty env in
-            add_module_items
-              env''
-              (TMFun (name, is_rec, tparams, tbody) :: acc)
-              rest)
+            (* Check for reserved keywords *)
+            if Sarek_reserved.is_reserved name then
+              Error [Reserved_keyword (name, body.expr_loc)]
+            else begin
+              (* Enter a new level for let-polymorphism *)
+              let env_inner = enter_level env in
+              (* Create a shared type variable context for all params at inner level *)
+              let tvar_ctx = fresh_tvar_ctx ~level:env_inner.current_level () in
+              let rec add_fun_params env idx acc = function
+                | [] -> Ok (List.rev acc, env)
+                | p :: rest ->
+                    let ty = type_of_type_expr_ctx env tvar_ctx p.param_type in
+                    let is_vec = match ty with TVec _ -> true | _ -> false in
+                    let var_id = fresh_var_id () in
+                    let vi =
+                      {
+                        vi_type = ty;
+                        vi_mutable = false;
+                        vi_is_param = false;
+                        vi_index = var_id;
+                        vi_is_vec = is_vec;
+                      }
+                    in
+                    let env' = add_var p.param_name vi env in
+                    let tparam =
+                      {
+                        tparam_name = p.param_name;
+                        tparam_type = ty;
+                        tparam_index = idx;
+                        tparam_is_vec = is_vec;
+                        tparam_id = var_id;
+                      }
+                    in
+                    add_fun_params env' (idx + 1) (tparam :: acc) rest
+              in
+              let* tparams, env_fun = add_fun_params env_inner 0 [] params in
+              (* For recursive functions, add a placeholder type for the function
+                 so it can reference itself in its body *)
+              let param_types = List.map (fun p -> p.tparam_type) tparams in
+              let ret_type_var =
+                TVar (ref (Unbound (fresh_var_id (), env_inner.current_level)))
+              in
+              let fn_ty_placeholder = TFun (param_types, ret_type_var) in
+              let env_body =
+                if is_rec then
+                  add_local_fun name (mono fn_ty_placeholder) env_fun
+                else env_fun
+              in
+              let* tbody, _ = infer env_body body in
+              let fn_ty = TFun (param_types, tbody.ty) in
+              (* Generalize the function type to create a polymorphic scheme *)
+              let fn_scheme = generalize env.current_level fn_ty in
+              let env'' = add_local_fun name fn_scheme env in
+              add_module_items
+                env''
+                (TMFun (name, is_rec, tparams, tbody) :: acc)
+                rest
+            end)
   in
   let* tmodule_items, env_after_mods =
     add_module_items env_with_types [] kernel.kern_module_items

@@ -45,6 +45,49 @@ let unique (lst : int list) : int list = List.sort_uniq compare lst
 
 (** {1 Generalization} *)
 
+(** Deep copy a type, creating fresh type variables with NEW ids for those that
+    will be quantified. This ensures the scheme's body is completely independent
+    of unification on the original or instantiated types. *)
+let copy_for_scheme (level : int) (t : typ) : typ * int list =
+  (* Map from old tvar id to (new_id, new tvar ref) *)
+  let tvar_map : (int, int * typ) Hashtbl.t = Hashtbl.create 8 in
+  let quantified = ref [] in
+
+  let rec copy t =
+    match repr t with
+    | TVar {contents = Unbound (id, l)} when l > level -> (
+        (* This variable should be quantified - create fresh copy with NEW id *)
+        match Hashtbl.find_opt tvar_map id with
+        | Some (_, tv) -> tv
+        | None ->
+            let new_id = fresh_tvar_id () in
+            let fresh = TVar (ref (Unbound (new_id, level))) in
+            Hashtbl.add tvar_map id (new_id, fresh) ;
+            quantified := new_id :: !quantified ;
+            fresh)
+    | TVar {contents = Unbound (id, l)} -> (
+        (* Not quantified - keep as-is but create fresh ref to isolate *)
+        match Hashtbl.find_opt tvar_map id with
+        | Some (_, tv) -> tv
+        | None ->
+            let new_id = fresh_tvar_id () in
+            let fresh = TVar (ref (Unbound (new_id, l))) in
+            Hashtbl.add tvar_map id (new_id, fresh) ;
+            fresh)
+    | TVar {contents = Link t'} -> copy t'
+    | TVec t -> TVec (copy t)
+    | TArr (t, m) -> TArr (copy t, m)
+    | TFun (args, ret) -> TFun (List.map copy args, copy ret)
+    | TRecord (n, fields) ->
+        TRecord (n, List.map (fun (f, t) -> (f, copy t)) fields)
+    | TVariant (n, constrs) ->
+        TVariant (n, List.map (fun (c, t) -> (c, Option.map copy t)) constrs)
+    | TTuple ts -> TTuple (List.map copy ts)
+    | t -> t
+  in
+  let copied = copy t in
+  (copied, !quantified)
+
 (** Generalize a type at a given level. Type variables at levels greater than
     the given level are quantified.
 
@@ -52,30 +95,8 @@ let unique (lst : int list) : int list = List.sort_uniq compare lst
     @param t The type to generalize
     @return A type scheme with free variables at higher levels quantified *)
 let generalize (level : int) (t : typ) : scheme =
-  let quantified = ref [] in
-
-  let rec collect t =
-    match repr t with
-    | TVar ({contents = Unbound (id, l)} as r) when l > level ->
-        (* This variable was introduced inside the let binding *)
-        if not (List.mem id !quantified) then quantified := id :: !quantified ;
-        (* Lower the level to prevent re-generalization *)
-        r := Unbound (id, level)
-    | TVar {contents = Link t'} -> collect t'
-    | TVec t -> collect t
-    | TArr (t, _) -> collect t
-    | TFun (args, ret) ->
-        List.iter collect args ;
-        collect ret
-    | TRecord (_, fields) -> List.iter (fun (_, t) -> collect t) fields
-    | TVariant (_, constrs) ->
-        List.iter (function _, None -> () | _, Some t -> collect t) constrs
-    | TTuple ts -> List.iter collect ts
-    | TPrim _ | TReg _ | TVar _ -> ()
-  in
-
-  collect t ;
-  {quantified = !quantified; body = t}
+  let body, quantified = copy_for_scheme level t in
+  {quantified; body}
 
 (** {1 Instantiation} *)
 

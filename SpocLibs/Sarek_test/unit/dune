@@ -6,7 +6,9 @@
   test_lower
   test_parse
   test_core_primitives
-  test_tailrec)
+  test_tailrec
+  test_scheme
+  test_mono)
  ; Link sarek_stdlib to trigger auto-registration of intrinsics
  (libraries sarek_ppx_lib sarek_stdlib alcotest ppxlib)
  (preprocess

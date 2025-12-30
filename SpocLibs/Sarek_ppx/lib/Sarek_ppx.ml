@@ -639,16 +639,19 @@ let expand_kernel ~ctxt payload =
             (* Raise as Sarek_error to be caught by the handler below *)
             raise (Sarek_error.Sarek_error err)
         | Error [] | Ok () ->
-            (* 5. Tail recursion elimination pass (for GPU code) *)
+            (* 5. Monomorphization pass - specialize polymorphic functions *)
+            let tkernel = Sarek_mono.monomorphize tkernel in
+
+            (* 6. Tail recursion elimination pass (for GPU code) *)
             (* Keep original kernel for native OCaml which handles recursion *)
             let native_kernel = tkernel in
             let tkernel = Sarek_tailrec.transform_kernel tkernel in
 
-            (* 6. Lower to Kirc_Ast *)
+            (* 7. Lower to Kirc_Ast *)
             let ir, constructors = Sarek_lower.lower_kernel tkernel in
             let ret_val = Sarek_lower.lower_return_value tkernel in
 
-            (* 7. Quote the IR back to OCaml *)
+            (* 8. Quote the IR back to OCaml *)
             Sarek_quote.quote_kernel
               ~loc
               ~native_kernel

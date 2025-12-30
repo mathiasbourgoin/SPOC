@@ -76,6 +76,8 @@ test_negative:
 	@dune build --profile=negative SpocLibs/Sarek_test/negative/neg_test_superstep_diverged.cma 2>&1 | tee /tmp/neg3.out | grep -q "Barrier called in diverged control flow" && echo "  PASS: superstep diverged" || (cat /tmp/neg3.out; false)
 	@echo "Testing unbound function detection..."
 	@dune build --profile=negative SpocLibs/Sarek_test/negative/neg_test_unbound_function.cma 2>&1 | tee /tmp/neg4.out | grep -q "Unbound" && echo "  PASS: unbound function" || (cat /tmp/neg4.out; false)
+	@echo "Testing reserved keyword detection..."
+	@dune build --profile=negative SpocLibs/Sarek_test/negative/neg_test_reserved_keyword.cma 2>&1 | tee /tmp/neg5.out | grep -q "reserved C/CUDA/OpenCL keyword" && echo "  PASS: reserved keyword" || (cat /tmp/neg5.out; false)
 	@echo "All negative tests passed"
 
 # Run new comprehensive Sarek e2e tests (GPU required)

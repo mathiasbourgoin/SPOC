@@ -4,9 +4,12 @@
  * This module defines the immutable typing environment for name resolution
  * and type checking. Replaces the global mutable hashtables from the old
  * implementation.
+ *
+ * Supports let-polymorphism via type schemes for local function bindings.
  ******************************************************************************)
 
 open Sarek_types
+open Sarek_scheme
 module StringMap = Map.Make (String)
 
 (** Information about a variable *)
@@ -89,7 +92,8 @@ type t = {
   fields : (string * int * typ * bool) StringMap.t;
       (** field -> (type_name, index, type, mutable) *)
   current_level : int;  (** For let-polymorphism *)
-  local_funs : (string * typ) StringMap.t;  (** Local function definitions *)
+  local_funs : (string * scheme) StringMap.t;
+      (** Local function definitions with polymorphic schemes *)
 }
 
 (** Empty environment *)
@@ -140,8 +144,8 @@ let add_intrinsic_fun name info env =
 let add_intrinsic_const name info env =
   {env with intrinsic_consts = StringMap.add name info env.intrinsic_consts}
 
-let add_local_fun name typ env =
-  {env with local_funs = StringMap.add name (name, typ) env.local_funs}
+let add_local_fun name scheme env =
+  {env with local_funs = StringMap.add name (name, scheme) env.local_funs}
 
 let find_var name env = StringMap.find_opt name env.vars
 
@@ -345,7 +349,7 @@ type lookup_result =
   | LIntrinsicConst of intrinsic_const_info
   | LIntrinsicFun of intrinsic_fun_info
   | LConstructor of string * typ option  (** type_name, arg_type *)
-  | LLocalFun of string * typ
+  | LLocalFun of string * scheme  (** name and type scheme (for polymorphism) *)
   | LNotFound
 
 let lookup name env =
@@ -362,7 +366,7 @@ let lookup name env =
               | Some (type_name, arg_type) -> LConstructor (type_name, arg_type)
               | None -> (
                   match find_local_fun name env with
-                  | Some (name, typ) -> LLocalFun (name, typ)
+                  | Some (_name, scheme) -> LLocalFun (name, scheme)
                   | None -> LNotFound))))
 
 (** Debug: print environment contents *)
