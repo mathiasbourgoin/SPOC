@@ -1044,11 +1044,215 @@ let%test "unified_device_init" =
 | 1. Polymorphism | Medium | ✅ Complete |
 | 2. Recursion | Medium-High | ✅ Complete |
 | 3. SPOC Rework | High | 🚧 In Progress (~85%) |
+| 4. Unified Execution Architecture | High | 📋 Planned |
 
-Next steps:
-1. Step 3.8: Migration - switch SPOC tests to use new ctypes plugins
-2. Connect Sarek PPX output to new Runtime API
-3. Package split (sarek, sarek-runtime, sarek-cuda, sarek-opencl)
+---
+
+## Phase 4: Unified Execution Architecture 📋 PLANNED
+
+### Goal
+Design a generalized backend architecture that supports:
+1. **JIT backends** (CUDA, OpenCL, Vulkan, Metal, WebGPU) - IR → Source → JIT compile → Execute
+2. **Direct backends** (Native CPU, Interpreter) - Typed AST → Execute directly
+3. **Custom backends** (LLVM, SPIR-V) - Full control over compilation pipeline
+
+### Execution Models
+
+```ocaml
+type execution_model =
+  | JIT of jit_backend      (* Generate source, compile at runtime *)
+  | Direct of direct_backend (* Execute typed AST directly *)
+  | Custom of custom_backend (* Full control: typed AST → custom pipeline *)
+```
+
+### JIT Backend (CUDA, OpenCL, Vulkan, Metal, WebGPU)
+
+```ocaml
+and jit_backend = {
+  (** Optional IR transform before codegen (warp shuffles, vectorization) *)
+  transform_ir : Sarek_ir.kernel -> Sarek_ir.kernel;
+
+  (** Generate target source from IR *)
+  generate : Sarek_ir.kernel -> string;
+
+  (** Compile source to executable *)
+  compile : device -> name:string -> source:string -> compiled_kernel;
+
+  (** Launch compiled kernel *)
+  launch : compiled_kernel -> args -> grid -> block -> unit;
+
+  (** Compilation cache by (source_hash, device_id) *)
+  cache : (int * int, compiled_kernel) Hashtbl.t;
+
+  (** Backend-specific intrinsics *)
+  intrinsics : intrinsic_registry;
+}
+```
+
+### Direct Backend (Native CPU, Interpreter)
+
+```ocaml
+and direct_backend = {
+  (** Optional AST transform (loop tiling, simplification) *)
+  transform_ast : Sarek_typed_ast.tkernel -> Sarek_typed_ast.tkernel;
+
+  (** Execute typed AST directly *)
+  execute :
+    Sarek_typed_ast.tkernel ->
+    args:Obj.t array ->
+    block:int*int*int ->
+    grid:int*int*int ->
+    unit;
+}
+```
+
+### Custom Backend (LLVM, SPIR-V, future backends)
+
+```ocaml
+and custom_backend = {
+  (** Full control - receives typed AST, handles everything *)
+  run :
+    Sarek_typed_ast.tkernel ->
+    device:device ->
+    args:Obj.t array ->
+    block:int*int*int ->
+    grid:int*int*int ->
+    unit;
+
+  (** Custom intrinsics *)
+  intrinsics : intrinsic_registry;
+}
+```
+
+### Intrinsics Registration Per-Backend
+
+```ocaml
+and intrinsic_registry = {
+  find : string -> intrinsic_impl option;
+  register : string -> intrinsic_impl -> unit;
+}
+
+and intrinsic_impl = {
+  (** Code generation for JIT backends *)
+  codegen : Sarek_ir.expr list -> string;
+
+  (** Type checking: arg types → return type *)
+  typing : Sarek_types.typ list -> Sarek_types.typ;
+
+  (** Convergence behavior for barrier safety *)
+  convergence : [`Uniform | `Divergent | `Sync];
+}
+```
+
+### Kernel Record (PPX Output)
+
+The PPX generates both paths lazily:
+
+```ocaml
+type 'a kernel = {
+  name : string;
+
+  (** For JIT backends - lazy IR generation *)
+  ir : Sarek_ir.kernel Lazy.t;
+
+  (** For Direct backends - pre-generated OCaml function *)
+  native_fn : (block:dims -> grid:dims -> Obj.t array -> unit) option;
+
+  (** For Custom backends or AST transforms *)
+  typed_ast : Sarek_typed_ast.tkernel Lazy.t;
+
+  (** Parameter types for argument marshalling *)
+  param_types : Sarek_types.typ list;
+}
+```
+
+### Unified Execution
+
+```ocaml
+let run (kernel : _ kernel) ~device ~block ~grid args =
+  let backend = Framework_registry.get_backend device.framework in
+  match backend.execution_model with
+
+  | JIT jit ->
+      let ir = jit.transform_ir (Lazy.force kernel.ir) in
+      let source = jit.generate ir in
+      let cache_key = (Hashtbl.hash source, device.id) in
+      let compiled = match Hashtbl.find_opt jit.cache cache_key with
+        | Some k -> k
+        | None ->
+            let k = jit.compile device ~name:kernel.name ~source in
+            Hashtbl.replace jit.cache cache_key k;
+            k
+      in
+      jit.launch compiled args grid block
+
+  | Direct direct ->
+      (match kernel.native_fn with
+       | Some f -> f ~block ~grid args
+       | None ->
+           let ast = direct.transform_ast (Lazy.force kernel.typed_ast) in
+           direct.execute ast ~args ~block ~grid)
+
+  | Custom custom ->
+      custom.run (Lazy.force kernel.typed_ast) ~device ~args ~block ~grid
+```
+
+### Target Package Structure
+
+```
+sarek-types/          # Sarek_ir, Sarek_typed_ast, Sarek_types
+  ├── Sarek_ir.ml           # Clean IR (replaces Kirc_Ast)
+  ├── Sarek_typed_ast.ml    # Typed AST
+  └── Sarek_types.ml        # Type definitions
+
+sarek-ppx/            # PPX preprocessor
+  ├── Sarek_ppx.ml          # Entry point
+  ├── Sarek_parse.ml        # OCaml → AST
+  ├── Sarek_typer.ml        # Type inference
+  ├── Sarek_lower.ml        # Typed AST → Sarek_ir
+  └── Sarek_native_gen.ml   # Typed AST → OCaml function
+
+sarek-runtime/        # Execution infrastructure
+  ├── Framework_sig.ml      # BACKEND signature with execution_model
+  ├── Framework_registry.ml # Plugin registration
+  ├── Device.ml             # Unified device abstraction
+  ├── Memory.ml             # Unified memory abstraction
+  └── Execute.ml            # Dispatch to backend
+
+sarek-cuda/           # JIT backend
+  ├── Cuda_bindings.ml      # ctypes FFI
+  ├── Cuda_codegen.ml       # Sarek_ir → CUDA source
+  ├── Cuda_intrinsics.ml    # __shfl_sync, atomics, etc.
+  └── Cuda_plugin.ml        # Implements BACKEND (JIT)
+
+sarek-opencl/         # JIT backend
+  ├── Opencl_bindings.ml    # ctypes FFI
+  ├── Opencl_codegen.ml     # Sarek_ir → OpenCL source
+  ├── Opencl_intrinsics.ml  # sub_group_shuffle, barriers, etc.
+  └── Opencl_plugin.ml      # Implements BACKEND (JIT)
+
+sarek-native/         # Direct backend
+  ├── Native_runtime.ml     # Parallel execution with Domains
+  ├── Native_transforms.ml  # Loop tiling, cache optimization
+  └── Native_plugin.ml      # Implements BACKEND (Direct)
+```
+
+### Migration Path
+
+1. **Phase 4.1**: Create `Sarek_ir` as clean IR, keep `Kirc_Ast` for compatibility
+2. **Phase 4.2**: Add `transform_ir` to existing CUDA/OpenCL codegens
+3. **Phase 4.3**: Move codegens into plugins, expose intrinsic registration
+4. **Phase 4.4**: Native plugin using `Direct` model with existing `Sarek_cpu_runtime`
+5. **Phase 4.5**: Deprecate `Kirc_Ast`, all backends use `Sarek_ir`
+
+### Benefits
+
+- **JIT backends** (CUDA, OpenCL) get IR and generate their own source
+- **Direct backends** (Native) get typed AST or pre-compiled OCaml function
+- **Custom backends** possible - e.g., LLVM backend: Typed AST → LLVM IR → JIT
+- **AST/IR transformers** per-backend - Native does loop tiling, CUDA does warp optimization
+- **Lazy evaluation** - IR only generated if JIT backend used
+- **Intrinsics extensibility** - each backend registers its own intrinsics
 
 ---
 
@@ -1058,3 +1262,4 @@ Next steps:
 2. **Recursion limits**: What's a reasonable default inline limit for bounded recursion?
 3. **Vulkan/Metal**: Should plugins for these be included in initial scope?
 4. **WebGPU**: Browser support via wasm - worth considering?
+5. **LLVM backend**: Worth implementing as Custom backend for CPU optimization?
