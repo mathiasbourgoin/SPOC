@@ -108,7 +108,7 @@ let to_string d =
     d.name
     d.framework
     (let major, minor = d.capabilities.compute_capability in
-     if major > 0 then Printf.sprintf "SM %d.%d" major minor else "OpenCL")
+     if major > 0 then Printf.sprintf "SM %d.%d" major minor else d.framework)
     (Int64.to_float d.capabilities.total_global_mem
     /. (1024.0 *. 1024.0 *. 1024.0))
     d.capabilities.multiprocessor_count

@@ -12,12 +12,16 @@ let () = Sarek_cuda.Cuda_plugin.init ()
 
 let () = Sarek_opencl.Opencl_plugin.init ()
 
+let () = Sarek_native.Native_plugin.init ()
+
 let () =
   print_endline "=== Sarek Runtime Test ===" ;
 
-  (* Test 1: Device discovery *)
+  (* Test 1: Device discovery (including Native) *)
   print_endline "\n[1] Testing device discovery..." ;
-  let devices = Sarek_core.Device.init () in
+  let devices =
+    Sarek_core.Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"] ()
+  in
   Printf.printf "Found %d device(s)\n" (Array.length devices) ;
   Array.iter
     (fun d -> Printf.printf "  - %s\n" (Sarek_core.Device.to_string d))
