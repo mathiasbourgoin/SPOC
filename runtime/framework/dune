@@ -4,5 +4,6 @@
 
 (library
  (name sarek_framework)
+ (public_name sarek.framework)
  (modules Framework_sig Framework_registry)
  (preprocess no_preprocessing))

@@ -1776,3 +1776,136 @@ let flush dev ?queue_id () =
   | _ ->
       (* Other devices: use standard flush *)
       Devices.flush dev ?queue_id ()
+
+(******************************************************************************
+ * New Runtime Integration Module
+ *
+ * Provides integration with the new ctypes-based plugin runtime (sarek_core).
+ * This allows Sarek kernels to run on devices discovered via the new plugin
+ * architecture, with source code generation from the IR at runtime.
+ ******************************************************************************)
+module NewRuntime = struct
+  [@@@warning "-32"] (* These are public API functions *)
+
+  (** Generate CUDA source code from a kernel IR *)
+  let generate_cuda_source (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel)
+      (spoc_dev : Devices.device) : string =
+    let _kir, k = ker in
+    let k2 = k.body in
+    let cuda_head =
+      Array.fold_left
+        (fun header extension ->
+          match extension with
+          | ExFloat32 -> header
+          | ExFloat64 -> cuda_float64 ^ header)
+        cuda_head
+        k.extensions
+    in
+    let src = Kirc_Cuda.parse 0 (rewrite k2) spoc_dev in
+    let global_funs = ref "" in
+    Hashtbl.iter
+      (fun _ a -> global_funs := !global_funs ^ fst a ^ "\n")
+      Kirc_Cuda.global_funs ;
+    let constructors =
+      let contains_build s =
+        let rec check i =
+          if i > String.length s - 6 then false
+          else if String.sub s i 6 = "build_" then true
+          else check (i + 1)
+        in
+        check 0
+      in
+      List.fold_left
+        (fun a b -> (if contains_build b then "__device__ " else "") ^ b ^ a)
+        "\n\n"
+        !constructors
+    in
+    cuda_head ^ constructors ^ !global_funs ^ src
+
+  (** Generate OpenCL source code from a kernel IR *)
+  let generate_opencl_source (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel)
+      (spoc_dev : Devices.device) : string =
+    let _kir, k = ker in
+    let k2 = k.body in
+    let opencl_head =
+      Array.fold_left
+        (fun header extension ->
+          match extension with
+          | ExFloat32 -> header
+          | ExFloat64 -> opencl_float64 ^ header)
+        opencl_head
+        k.extensions
+    in
+    let src = Kirc_OpenCL.parse 0 (rewrite k2) spoc_dev in
+    let global_funs =
+      ref "/************* FUNCTION DEFINITIONS ******************/\n"
+    in
+    Hashtbl.iter
+      (fun _ a -> global_funs := !global_funs ^ "\n" ^ fst a ^ "\n")
+      Kirc_OpenCL.global_funs ;
+    let constructors =
+      "/************* CUSTOM TYPES ******************/\n"
+      ^ List.fold_left (fun a b -> b ^ a) "\n\n" !constructors
+    in
+    let protos =
+      "/************* FUNCTION PROTOTYPES ******************/\n"
+      ^ List.fold_left (fun a b -> b ^ ";\n" ^ a) "" !Kirc_OpenCL.protos
+    in
+    opencl_head ^ constructors ^ protos ^ !global_funs ^ src
+
+  (** Generate source code for the appropriate framework *)
+  let generate_source (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel)
+      ~(framework : string) (spoc_dev : Devices.device) : string =
+    match framework with
+    | "CUDA" -> generate_cuda_source ker spoc_dev
+    | "OpenCL" -> generate_opencl_source ker spoc_dev
+    | _ -> failwith ("Unsupported framework for source generation: " ^ framework)
+
+  (** Convert SPOC kernel argument to sarek_core Runtime.arg *)
+  let convert_arg (type a b) (arg : (a, b) Kernel.kernelArgs) :
+      Sarek_core.Runtime.arg option =
+    match arg with
+    | Kernel.Int32 n -> Some (Sarek_core.Runtime.ArgInt32 (Int32.of_int n))
+    | Kernel.Int64 n -> Some (Sarek_core.Runtime.ArgInt64 (Int64.of_int n))
+    | Kernel.Float32 f -> Some (Sarek_core.Runtime.ArgFloat32 f)
+    | Kernel.Float64 f -> Some (Sarek_core.Runtime.ArgFloat64 f)
+    | Kernel.VInt32 _ | Kernel.VInt64 _ | Kernel.VFloat32 _ | Kernel.VFloat64 _
+    | Kernel.VChar _ | Kernel.VComplex32 _ | Kernel.VCustom _ | Kernel.Vector _
+    | Kernel.Custom _ ->
+        (* Vector arguments need to be converted to buffers -
+           this requires the caller to pre-allocate buffers.
+           For now, return None to indicate the caller should handle this. *)
+        None
+
+  (** Check if a device can be run via the new runtime *)
+  let is_new_runtime_device (framework : string) : bool =
+    match Sarek_framework.Framework_registry.find_backend framework with
+    | Some _ -> true
+    | None -> false
+
+  (** Run a kernel using the new plugin-based runtime. This function generates
+      source code from the IR and dispatches to sarek_core.Runtime for
+      execution.
+
+      Note: This is a lower-level function. For vector arguments, buffers must
+      be pre-allocated and passed as ArgBuffer. *)
+  let run_with_buffers ~(device : Sarek_core.Device.t) ~(name : string)
+      ~(source : string) ~(args : Sarek_core.Runtime.arg list)
+      ~(grid : Sarek_core.Runtime.dims) ~(block : Sarek_core.Runtime.dims)
+      ?(shared_mem = 0) () : unit =
+    Sarek_core.Runtime.run
+      device
+      ~name
+      ~source
+      ~args
+      ~grid
+      ~block
+      ~shared_mem
+      ()
+
+  (** Get kernel name from a sarek_kernel *)
+  let kernel_name (_ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel) : string =
+    (* The kernel name is embedded in the source during generation.
+       For now, use a default name that matches what the generators produce. *)
+    "spoc_dummy"
+end

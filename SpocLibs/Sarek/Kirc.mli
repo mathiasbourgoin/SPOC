@@ -588,3 +588,45 @@ end
   ('h, 'i) Spoc.Vector.vector ->
   ('j, 'k) Spoc.Vector.vector -> ('l, 'm) Spoc.Vector.vector
 *)
+
+(** New runtime integration module.
+
+    Provides integration with the ctypes-based plugin runtime (sarek_core). This
+    allows Sarek kernels to run on devices discovered via the new plugin
+    architecture, with source code generation from the IR at runtime. *)
+module NewRuntime : sig
+  (** Generate CUDA source code from a kernel IR *)
+  val generate_cuda_source :
+    ('a, 'b, 'c, 'd, 'e) sarek_kernel -> Spoc.Devices.device -> string
+
+  (** Generate OpenCL source code from a kernel IR *)
+  val generate_opencl_source :
+    ('a, 'b, 'c, 'd, 'e) sarek_kernel -> Spoc.Devices.device -> string
+
+  (** Generate source code for the appropriate framework.
+      @param framework "CUDA" or "OpenCL" *)
+  val generate_source :
+    ('a, 'b, 'c, 'd, 'e) sarek_kernel ->
+    framework:string ->
+    Spoc.Devices.device ->
+    string
+
+  (** Check if a device framework is available via the new runtime *)
+  val is_new_runtime_device : string -> bool
+
+  (** Run a kernel using the new plugin-based runtime. For vector arguments,
+      buffers must be pre-allocated and passed as ArgBuffer. *)
+  val run_with_buffers :
+    device:Sarek_core.Device.t ->
+    name:string ->
+    source:string ->
+    args:Sarek_core.Runtime.arg list ->
+    grid:Sarek_core.Runtime.dims ->
+    block:Sarek_core.Runtime.dims ->
+    ?shared_mem:int ->
+    unit ->
+    unit
+
+  (** Get kernel name from a sarek_kernel *)
+  val kernel_name : ('a, 'b, 'c, 'd, 'e) sarek_kernel -> string
+end
