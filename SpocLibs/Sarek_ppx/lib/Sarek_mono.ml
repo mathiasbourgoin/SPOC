@@ -609,8 +609,24 @@ let monomorphize (kernel : tkernel) : tkernel =
         kernel.tkern_module_items
     in
 
+    (* Count how many external items remain after removing polymorphic ones.
+       The specialized functions are NOT external - they're generated inline. *)
+    let original_external_count = kernel.tkern_external_item_count in
+    let removed_external_count =
+      List.length
+        (List.filter
+           (fun (name, _, _, _) -> List.mem name poly_names)
+           (List.filter_map
+              (function TMFun (n, r, p, b) -> Some (n, r, p, b) | _ -> None)
+              (List.filteri
+                 (fun i _ -> i < original_external_count)
+                 kernel.tkern_module_items)))
+    in
+    let new_external_count = original_external_count - removed_external_count in
+
     {
       kernel with
       tkern_module_items = new_items @ specialized_funs;
+      tkern_external_item_count = new_external_count;
       tkern_body = new_body;
     }

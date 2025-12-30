@@ -37,7 +37,8 @@
   test_sort
   test_convolution
   test_mandelbrot
-  test_polymorphism)
+  test_polymorphism
+  test_module_poly)
  (modules
   test_vector_add
   test_module_const
@@ -72,7 +73,8 @@
   test_sort
   test_convolution
   test_mandelbrot
-  test_polymorphism)
+  test_polymorphism
+  test_module_poly)
  (libraries
   spoc
   sarek
