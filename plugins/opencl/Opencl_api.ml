@@ -545,10 +545,13 @@ end
 (** {1 Utility Functions} *)
 
 let is_available () =
-  try
-    let platforms = Platform.get_all () in
-    Array.length platforms > 0
-  with _ -> false
+  (* First check if the library is available at all *)
+  if not (Opencl_bindings.is_available ()) then false
+  else
+    try
+      let platforms = Platform.get_all () in
+      Array.length platforms > 0
+    with _ -> false
 
 (* String helper *)
 module String = struct

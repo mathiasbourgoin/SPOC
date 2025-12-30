@@ -417,7 +417,7 @@ let%kernel tree_test = fun (result: int32 vector) ->
 
 ---
 
-## Phase 3: SPOC/Sarek Rework with Ctypes
+## Phase 3: SPOC/Sarek Rework with Ctypes 🚧 IN PROGRESS
 
 ### Goal
 Complete rewrite of SPOC with:
@@ -426,7 +426,26 @@ Complete rewrite of SPOC with:
 3. Clean separation between Sarek (compiler) and SPOC (runtime)
 4. Multiple opam packages
 
-### Current State
+### Implementation Status
+- **Step 3.1** ✅ Framework Plugin Interface - `Framework_sig.ml` with `S` and `BACKEND` signatures
+- **Step 3.2** ✅ Plugin Registry - `Framework_registry.ml` with priority-based backend selection
+- **Step 3.3** ✅ CUDA Ctypes Bindings - 1800+ lines in `plugins/cuda/`
+  - `Cuda_types.ml` - Type definitions (431 lines)
+  - `Cuda_bindings.ml` - Driver API bindings (404 lines)
+  - `Cuda_nvrtc.ml` - Runtime compilation (305 lines)
+  - `Cuda_api.ml` - High-level wrappers (370 lines)
+  - `Cuda_plugin.ml` - Full BACKEND implementation (259 lines)
+- **Step 3.4** ⏸️ CUDA Plugin fully implements `BACKEND` signature but auto-registration disabled
+- **Step 3.5** ✅ OpenCL Ctypes Bindings - 1900+ lines in `plugins/opencl/`
+  - `Opencl_types.ml` - Type definitions (365 lines)
+  - `Opencl_bindings.ml` - API bindings (469 lines)
+  - `Opencl_api.ml` - High-level wrappers (553 lines)
+  - `Opencl_plugin.ml` - Full BACKEND implementation (370 lines)
+- **Step 3.6** ⏳ Unified Device Abstraction - not started
+- **Step 3.7** ⏳ Kernel Execution integration - not started
+- **Step 3.8** ⏳ Migration (parallel dev, switch over, package split) - not started
+
+### Current State (legacy)
 - C stubs in `Spoc/*.c` (9 files, ~5000 lines of C)
 - Mixed OCaml/C for CUDA and OpenCL
 - Tight coupling between Sarek and SPOC
@@ -1017,10 +1036,12 @@ let%test "unified_device_init" =
 |-------|--------|--------|
 | 1. Polymorphism | Medium | ✅ Complete |
 | 2. Recursion | Medium-High | ✅ Complete |
-| 3. SPOC Rework | High | Not started |
+| 3. SPOC Rework | High | 🚧 In Progress (~50%) |
 
 Next steps:
-1. Phase 3: SPOC Rework with ctypes plugin architecture
+1. Step 3.6: Unified Device Abstraction in `runtime/core/Device.ml`
+2. Step 3.7: Kernel Execution integration
+3. Step 3.8: Migration - switch SPOC to use new ctypes plugins
 
 ---
 

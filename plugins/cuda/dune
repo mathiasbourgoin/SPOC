@@ -1,10 +1,10 @@
 ; CUDA Plugin - Pure OCaml with ctypes
 ; No C stubs required
-; NOTE: Internal library for now - will become public when ctypes is available
+; Linking this library automatically registers the CUDA backend
 
 (library
  (name sarek_cuda)
  (optional)
- (libraries ctypes ctypes-foreign)
+ (libraries ctypes ctypes-foreign sarek_framework (re_export sarek_core))
  (modules Cuda_types Cuda_bindings Cuda_nvrtc Cuda_api Cuda_plugin)
  (preprocess no_preprocessing))

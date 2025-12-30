@@ -2,7 +2,26 @@
  * CUDA Driver API - Ctypes Bindings
  *
  * Direct FFI bindings to CUDA driver API via ctypes-foreign.
- * These are low-level bindings; see Cuda_api.ml for high-level wrappers.
+ * All bindings are lazy - they only dlopen the library when first used.
+ * This allows the module to be linked even on systems without CUDA.
+ *
+ * TODO: Performance optimization opportunity
+ * ==========================================
+ * Currently each binding uses Lazy.force which adds ~5-10ns overhead per call
+ * (atomic read + branch after first evaluation). For hot paths like
+ * cuLaunchKernel called in tight loops, this may be noticeable.
+ *
+ * Optimization approach:
+ * 1. Use mutable refs: let cuInit_fn : (int -> cu_result) option ref = ref None
+ * 2. Add init_bindings() that populates all refs at once via dlsym
+ * 3. Call init_bindings() once from is_available() or Device.init()
+ * 4. Direct function calls: match !cuInit_fn with Some f -> f x | None -> ...
+ *
+ * This eliminates per-call overhead after initialization while preserving
+ * the lazy loading benefit (no dlopen on non-CUDA systems).
+ *
+ * Current approach is acceptable because kernel launch time (~100μs-10ms)
+ * dwarfs the lazy overhead (~5ns), making it <0.01% of total execution.
  ******************************************************************************)
 
 open Ctypes
@@ -11,394 +30,259 @@ open Cuda_types
 
 (** {1 Library Loading} *)
 
-(** Load CUDA driver library dynamically *)
-let cuda_lib : Dl.library option ref = ref None
-
-let get_cuda_lib () =
-  match !cuda_lib with
-  | Some lib -> lib
-  | None ->
-      let lib =
+(** Load CUDA driver library dynamically (lazy) *)
+let cuda_lib : Dl.library option Lazy.t = lazy (
+  try
+    Some (Dl.dlopen ~filename:"libcuda.so.1" ~flags:[Dl.RTLD_LAZY; Dl.RTLD_GLOBAL])
+  with _ ->
+    try
+      Some (Dl.dlopen ~filename:"libcuda.so" ~flags:[Dl.RTLD_LAZY; Dl.RTLD_GLOBAL])
+    with _ ->
+      try
+        Some (Dl.dlopen ~filename:"libcuda.dylib" ~flags:[Dl.RTLD_LAZY; Dl.RTLD_GLOBAL])
+      with _ ->
         try
-          Dl.dlopen
-            ~filename:"libcuda.so.1"
-            ~flags:[Dl.RTLD_LAZY; Dl.RTLD_GLOBAL]
-        with _ -> (
-          try
-            Dl.dlopen
-              ~filename:"libcuda.so"
-              ~flags:[Dl.RTLD_LAZY; Dl.RTLD_GLOBAL]
-          with _ -> (
-            try
-              Dl.dlopen
-                ~filename:"libcuda.dylib"
-                ~flags:[Dl.RTLD_LAZY; Dl.RTLD_GLOBAL]
-            with _ -> (
-              try
-                Dl.dlopen
-                  ~filename:"nvcuda.dll"
-                  ~flags:[Dl.RTLD_LAZY; Dl.RTLD_GLOBAL]
-              with _ -> failwith "CUDA driver library not found")))
-      in
-      cuda_lib := Some lib ;
-      lib
+          Some (Dl.dlopen ~filename:"nvcuda.dll" ~flags:[Dl.RTLD_LAZY; Dl.RTLD_GLOBAL])
+        with _ -> None
+)
 
-(** Create a foreign binding to CUDA driver API *)
-let foreign_cuda name typ = foreign ~from:(get_cuda_lib ()) name typ
+(** Check if CUDA library is available *)
+let is_available () =
+  match Lazy.force cuda_lib with
+  | Some _ -> true
+  | None -> false
+
+(** Get CUDA library, raising if not available *)
+let get_cuda_lib () =
+  match Lazy.force cuda_lib with
+  | Some lib -> lib
+  | None -> failwith "CUDA driver library not found"
+
+(** Create a lazy foreign binding to CUDA driver API *)
+let foreign_cuda_lazy name typ =
+  lazy (foreign ~from:(get_cuda_lib ()) name typ)
 
 (** {1 Initialization} *)
 
-(** Initialize the CUDA driver API. Must be called before any other function. *)
-let cuInit = foreign_cuda "cuInit" (int @-> returning cu_result)
+let cuInit_lazy = foreign_cuda_lazy "cuInit" (int @-> returning cu_result)
+let cuInit flags = Lazy.force cuInit_lazy flags
 
 (** {1 Device Management} *)
 
-(** Get the number of CUDA-capable devices *)
-let cuDeviceGetCount =
-  foreign_cuda "cuDeviceGetCount" (ptr int @-> returning cu_result)
+let cuDeviceGetCount_lazy = foreign_cuda_lazy "cuDeviceGetCount" (ptr int @-> returning cu_result)
+let cuDeviceGetCount p = Lazy.force cuDeviceGetCount_lazy p
 
-(** Get a device handle by ordinal *)
-let cuDeviceGet =
-  foreign_cuda "cuDeviceGet" (ptr cu_device @-> int @-> returning cu_result)
+let cuDeviceGet_lazy = foreign_cuda_lazy "cuDeviceGet" (ptr cu_device @-> int @-> returning cu_result)
+let cuDeviceGet p i = Lazy.force cuDeviceGet_lazy p i
 
-(** Get device name *)
-let cuDeviceGetName =
-  foreign_cuda
-    "cuDeviceGetName"
-    (ptr char @-> int @-> cu_device @-> returning cu_result)
+let cuDeviceGetName_lazy = foreign_cuda_lazy "cuDeviceGetName" (ptr char @-> int @-> cu_device @-> returning cu_result)
+let cuDeviceGetName p len d = Lazy.force cuDeviceGetName_lazy p len d
 
-(** Get total memory on device *)
-let cuDeviceTotalMem =
-  foreign_cuda
-    "cuDeviceTotalMem_v2"
-    (ptr size_t @-> cu_device @-> returning cu_result)
+let cuDeviceTotalMem_lazy = foreign_cuda_lazy "cuDeviceTotalMem_v2" (ptr size_t @-> cu_device @-> returning cu_result)
+let cuDeviceTotalMem p d = Lazy.force cuDeviceTotalMem_lazy p d
 
-(** Get a device attribute *)
-let cuDeviceGetAttribute =
-  foreign_cuda
-    "cuDeviceGetAttribute"
-    (ptr int @-> int @-> cu_device @-> returning cu_result)
+let cuDeviceGetAttribute_lazy = foreign_cuda_lazy "cuDeviceGetAttribute" (ptr int @-> int @-> cu_device @-> returning cu_result)
+let cuDeviceGetAttribute p attr d = Lazy.force cuDeviceGetAttribute_lazy p attr d
 
-(** Get compute capability *)
-let cuDeviceComputeCapability =
-  foreign_cuda
-    "cuDeviceComputeCapability"
-    (ptr int @-> ptr int @-> cu_device @-> returning cu_result)
+let cuDeviceComputeCapability_lazy = foreign_cuda_lazy "cuDeviceComputeCapability" (ptr int @-> ptr int @-> cu_device @-> returning cu_result)
+let cuDeviceComputeCapability major minor d = Lazy.force cuDeviceComputeCapability_lazy major minor d
 
 (** {1 Context Management} *)
 
-(** Create a CUDA context *)
-let cuCtxCreate =
-  foreign_cuda
-    "cuCtxCreate_v2"
-    (ptr cu_context_ptr @-> uint @-> cu_device @-> returning cu_result)
+let cuCtxCreate_lazy = foreign_cuda_lazy "cuCtxCreate_v2" (ptr cu_context_ptr @-> uint @-> cu_device @-> returning cu_result)
+let cuCtxCreate p flags d = Lazy.force cuCtxCreate_lazy p flags d
 
-(** Destroy a CUDA context *)
-let cuCtxDestroy =
-  foreign_cuda "cuCtxDestroy_v2" (cu_context_ptr @-> returning cu_result)
+let cuCtxDestroy_lazy = foreign_cuda_lazy "cuCtxDestroy_v2" (cu_context_ptr @-> returning cu_result)
+let cuCtxDestroy ctx = Lazy.force cuCtxDestroy_lazy ctx
 
-(** Push context onto the current thread's context stack *)
-let cuCtxPushCurrent =
-  foreign_cuda "cuCtxPushCurrent_v2" (cu_context_ptr @-> returning cu_result)
+let cuCtxPushCurrent_lazy = foreign_cuda_lazy "cuCtxPushCurrent_v2" (cu_context_ptr @-> returning cu_result)
+let cuCtxPushCurrent ctx = Lazy.force cuCtxPushCurrent_lazy ctx
 
-(** Pop context from current thread's context stack *)
-let cuCtxPopCurrent =
-  foreign_cuda "cuCtxPopCurrent_v2" (ptr cu_context_ptr @-> returning cu_result)
+let cuCtxPopCurrent_lazy = foreign_cuda_lazy "cuCtxPopCurrent_v2" (ptr cu_context_ptr @-> returning cu_result)
+let cuCtxPopCurrent p = Lazy.force cuCtxPopCurrent_lazy p
 
-(** Set the current context *)
-let cuCtxSetCurrent =
-  foreign_cuda "cuCtxSetCurrent" (cu_context_ptr @-> returning cu_result)
+let cuCtxSetCurrent_lazy = foreign_cuda_lazy "cuCtxSetCurrent" (cu_context_ptr @-> returning cu_result)
+let cuCtxSetCurrent ctx = Lazy.force cuCtxSetCurrent_lazy ctx
 
-(** Get the current context *)
-let cuCtxGetCurrent =
-  foreign_cuda "cuCtxGetCurrent" (ptr cu_context_ptr @-> returning cu_result)
+let cuCtxGetCurrent_lazy = foreign_cuda_lazy "cuCtxGetCurrent" (ptr cu_context_ptr @-> returning cu_result)
+let cuCtxGetCurrent p = Lazy.force cuCtxGetCurrent_lazy p
 
-(** Synchronize the current context *)
-let cuCtxSynchronize =
-  foreign_cuda "cuCtxSynchronize" (void @-> returning cu_result)
+let cuCtxSynchronize_lazy = foreign_cuda_lazy "cuCtxSynchronize" (void @-> returning cu_result)
+let cuCtxSynchronize () = Lazy.force cuCtxSynchronize_lazy ()
 
-(** Get device for current context *)
-let cuCtxGetDevice =
-  foreign_cuda "cuCtxGetDevice" (ptr cu_device @-> returning cu_result)
+let cuCtxGetDevice_lazy = foreign_cuda_lazy "cuCtxGetDevice" (ptr cu_device @-> returning cu_result)
+let cuCtxGetDevice p = Lazy.force cuCtxGetDevice_lazy p
 
 (** {1 Memory Management} *)
 
-(** Allocate device memory *)
-let cuMemAlloc =
-  foreign_cuda
-    "cuMemAlloc_v2"
-    (ptr cu_deviceptr @-> size_t @-> returning cu_result)
+let cuMemAlloc_lazy = foreign_cuda_lazy "cuMemAlloc_v2" (ptr cu_deviceptr @-> size_t @-> returning cu_result)
+let cuMemAlloc p size = Lazy.force cuMemAlloc_lazy p size
 
-(** Free device memory *)
-let cuMemFree =
-  foreign_cuda "cuMemFree_v2" (cu_deviceptr @-> returning cu_result)
+let cuMemFree_lazy = foreign_cuda_lazy "cuMemFree_v2" (cu_deviceptr @-> returning cu_result)
+let cuMemFree ptr = Lazy.force cuMemFree_lazy ptr
 
-(** Copy memory from host to device *)
-let cuMemcpyHtoD =
-  foreign_cuda
-    "cuMemcpyHtoD_v2"
-    (cu_deviceptr @-> ptr void @-> size_t @-> returning cu_result)
+let cuMemcpyHtoD_lazy = foreign_cuda_lazy "cuMemcpyHtoD_v2" (cu_deviceptr @-> ptr void @-> size_t @-> returning cu_result)
+let cuMemcpyHtoD dst src size = Lazy.force cuMemcpyHtoD_lazy dst src size
 
-(** Copy memory from device to host *)
-let cuMemcpyDtoH =
-  foreign_cuda
-    "cuMemcpyDtoH_v2"
-    (ptr void @-> cu_deviceptr @-> size_t @-> returning cu_result)
+let cuMemcpyDtoH_lazy = foreign_cuda_lazy "cuMemcpyDtoH_v2" (ptr void @-> cu_deviceptr @-> size_t @-> returning cu_result)
+let cuMemcpyDtoH dst src size = Lazy.force cuMemcpyDtoH_lazy dst src size
 
-(** Copy memory from device to device *)
-let cuMemcpyDtoD =
-  foreign_cuda
-    "cuMemcpyDtoD_v2"
-    (cu_deviceptr @-> cu_deviceptr @-> size_t @-> returning cu_result)
+let cuMemcpyDtoD_lazy = foreign_cuda_lazy "cuMemcpyDtoD_v2" (cu_deviceptr @-> cu_deviceptr @-> size_t @-> returning cu_result)
+let cuMemcpyDtoD dst src size = Lazy.force cuMemcpyDtoD_lazy dst src size
 
-(** Async copy from host to device *)
-let cuMemcpyHtoDAsync =
-  foreign_cuda
-    "cuMemcpyHtoDAsync_v2"
-    (cu_deviceptr @-> ptr void @-> size_t @-> cu_stream_ptr
-   @-> returning cu_result)
+let cuMemcpyHtoDAsync_lazy = foreign_cuda_lazy "cuMemcpyHtoDAsync_v2" (cu_deviceptr @-> ptr void @-> size_t @-> cu_stream_ptr @-> returning cu_result)
+let cuMemcpyHtoDAsync dst src size stream = Lazy.force cuMemcpyHtoDAsync_lazy dst src size stream
 
-(** Async copy from device to host *)
-let cuMemcpyDtoHAsync =
-  foreign_cuda
-    "cuMemcpyDtoHAsync_v2"
-    (ptr void @-> cu_deviceptr @-> size_t @-> cu_stream_ptr
-   @-> returning cu_result)
+let cuMemcpyDtoHAsync_lazy = foreign_cuda_lazy "cuMemcpyDtoHAsync_v2" (ptr void @-> cu_deviceptr @-> size_t @-> cu_stream_ptr @-> returning cu_result)
+let cuMemcpyDtoHAsync dst src size stream = Lazy.force cuMemcpyDtoHAsync_lazy dst src size stream
 
-(** Set memory to a value (8-bit) *)
-let cuMemsetD8 =
-  foreign_cuda
-    "cuMemsetD8_v2"
-    (cu_deviceptr @-> uchar @-> size_t @-> returning cu_result)
+let cuMemsetD8_lazy = foreign_cuda_lazy "cuMemsetD8_v2" (cu_deviceptr @-> uchar @-> size_t @-> returning cu_result)
+let cuMemsetD8 ptr value count = Lazy.force cuMemsetD8_lazy ptr value count
 
-(** Set memory to a value (32-bit) *)
-let cuMemsetD32 =
-  foreign_cuda
-    "cuMemsetD32_v2"
-    (cu_deviceptr @-> uint32_t @-> size_t @-> returning cu_result)
+let cuMemsetD32_lazy = foreign_cuda_lazy "cuMemsetD32_v2" (cu_deviceptr @-> uint32_t @-> size_t @-> returning cu_result)
+let cuMemsetD32 ptr value count = Lazy.force cuMemsetD32_lazy ptr value count
 
-(** Allocate host memory (page-locked) *)
-let cuMemAllocHost =
-  foreign_cuda
-    "cuMemAllocHost_v2"
-    (ptr (ptr void) @-> size_t @-> returning cu_result)
+let cuMemAllocHost_lazy = foreign_cuda_lazy "cuMemAllocHost_v2" (ptr (ptr void) @-> size_t @-> returning cu_result)
+let cuMemAllocHost p size = Lazy.force cuMemAllocHost_lazy p size
 
-(** Free host memory *)
-let cuMemFreeHost =
-  foreign_cuda "cuMemFreeHost" (ptr void @-> returning cu_result)
+let cuMemFreeHost_lazy = foreign_cuda_lazy "cuMemFreeHost" (ptr void @-> returning cu_result)
+let cuMemFreeHost ptr = Lazy.force cuMemFreeHost_lazy ptr
 
-(** Get memory info (free and total) *)
-let cuMemGetInfo =
-  foreign_cuda
-    "cuMemGetInfo_v2"
-    (ptr size_t @-> ptr size_t @-> returning cu_result)
+let cuMemGetInfo_lazy = foreign_cuda_lazy "cuMemGetInfo_v2" (ptr size_t @-> ptr size_t @-> returning cu_result)
+let cuMemGetInfo free total = Lazy.force cuMemGetInfo_lazy free total
 
 (** {1 Module Management} *)
 
-(** Load a module from a PTX/cubin image in memory *)
-let cuModuleLoadData =
-  foreign_cuda
-    "cuModuleLoadData"
-    (ptr cu_module_ptr @-> ptr void @-> returning cu_result)
+let cuModuleLoadData_lazy = foreign_cuda_lazy "cuModuleLoadData" (ptr cu_module_ptr @-> ptr void @-> returning cu_result)
+let cuModuleLoadData p data = Lazy.force cuModuleLoadData_lazy p data
 
-(** Load a module from a PTX/cubin file *)
-let cuModuleLoad =
-  foreign_cuda
-    "cuModuleLoad"
-    (ptr cu_module_ptr @-> string @-> returning cu_result)
+let cuModuleLoad_lazy = foreign_cuda_lazy "cuModuleLoad" (ptr cu_module_ptr @-> string @-> returning cu_result)
+let cuModuleLoad p fname = Lazy.force cuModuleLoad_lazy p fname
 
-(** Load module with JIT options *)
-let cuModuleLoadDataEx =
-  foreign_cuda
-    "cuModuleLoadDataEx"
-    (ptr cu_module_ptr @-> ptr void @-> uint @-> ptr int
-    @-> ptr (ptr void)
-    @-> returning cu_result)
+let cuModuleLoadDataEx_lazy = foreign_cuda_lazy "cuModuleLoadDataEx" (ptr cu_module_ptr @-> ptr void @-> uint @-> ptr int @-> ptr (ptr void) @-> returning cu_result)
+let cuModuleLoadDataEx p data num opts vals = Lazy.force cuModuleLoadDataEx_lazy p data num opts vals
 
-(** Unload a module *)
-let cuModuleUnload =
-  foreign_cuda "cuModuleUnload" (cu_module_ptr @-> returning cu_result)
+let cuModuleUnload_lazy = foreign_cuda_lazy "cuModuleUnload" (cu_module_ptr @-> returning cu_result)
+let cuModuleUnload m = Lazy.force cuModuleUnload_lazy m
 
-(** Get a function handle from a module *)
-let cuModuleGetFunction =
-  foreign_cuda
-    "cuModuleGetFunction"
-    (ptr cu_function_ptr @-> cu_module_ptr @-> string @-> returning cu_result)
+let cuModuleGetFunction_lazy = foreign_cuda_lazy "cuModuleGetFunction" (ptr cu_function_ptr @-> cu_module_ptr @-> string @-> returning cu_result)
+let cuModuleGetFunction p m name = Lazy.force cuModuleGetFunction_lazy p m name
 
-(** Get a global variable from a module *)
-let cuModuleGetGlobal =
-  foreign_cuda
-    "cuModuleGetGlobal_v2"
-    (ptr cu_deviceptr @-> ptr size_t @-> cu_module_ptr @-> string
-   @-> returning cu_result)
+let cuModuleGetGlobal_lazy = foreign_cuda_lazy "cuModuleGetGlobal_v2" (ptr cu_deviceptr @-> ptr size_t @-> cu_module_ptr @-> string @-> returning cu_result)
+let cuModuleGetGlobal ptr size m name = Lazy.force cuModuleGetGlobal_lazy ptr size m name
 
 (** {1 Kernel Execution} *)
 
-(** Launch a kernel *)
-let cuLaunchKernel =
-  foreign_cuda
-    "cuLaunchKernel"
-    (cu_function_ptr
-   (* function *)
-   @-> uint
-    @-> uint @-> uint
-    (* grid dimensions (x, y, z) *)
-    @-> uint
-    @-> uint @-> uint
-    (* block dimensions (x, y, z) *)
-    @-> uint
-    (* shared memory bytes *)
-    @-> cu_stream_ptr
-    (* stream (null for default) *)
-    @-> ptr (ptr void)
-    (* kernel parameters *)
-    @-> ptr (ptr void)
-    @->
-    (* extra (usually null) *)
-    returning cu_result)
+let cuLaunchKernel_lazy = foreign_cuda_lazy "cuLaunchKernel" (
+  cu_function_ptr @->
+  uint @-> uint @-> uint @->
+  uint @-> uint @-> uint @->
+  uint @->
+  cu_stream_ptr @->
+  ptr (ptr void) @->
+  ptr (ptr void) @->
+  returning cu_result
+)
+let cuLaunchKernel f gx gy gz bx by bz shm stream params extra =
+  Lazy.force cuLaunchKernel_lazy f gx gy gz bx by bz shm stream params extra
 
-(** Get function attribute *)
-let cuFuncGetAttribute =
-  foreign_cuda
-    "cuFuncGetAttribute"
-    (ptr int @-> int @-> cu_function_ptr @-> returning cu_result)
+let cuFuncGetAttribute_lazy = foreign_cuda_lazy "cuFuncGetAttribute" (ptr int @-> int @-> cu_function_ptr @-> returning cu_result)
+let cuFuncGetAttribute p attr f = Lazy.force cuFuncGetAttribute_lazy p attr f
 
-(** Set function cache configuration *)
-let cuFuncSetCacheConfig =
-  foreign_cuda
-    "cuFuncSetCacheConfig"
-    (cu_function_ptr @-> int @-> returning cu_result)
+let cuFuncSetCacheConfig_lazy = foreign_cuda_lazy "cuFuncSetCacheConfig" (cu_function_ptr @-> int @-> returning cu_result)
+let cuFuncSetCacheConfig f config = Lazy.force cuFuncSetCacheConfig_lazy f config
 
-(** Set function shared memory configuration *)
-let cuFuncSetSharedMemConfig =
-  foreign_cuda
-    "cuFuncSetSharedMemConfig"
-    (cu_function_ptr @-> int @-> returning cu_result)
+let cuFuncSetSharedMemConfig_lazy = foreign_cuda_lazy "cuFuncSetSharedMemConfig" (cu_function_ptr @-> int @-> returning cu_result)
+let cuFuncSetSharedMemConfig f config = Lazy.force cuFuncSetSharedMemConfig_lazy f config
 
 (** {1 Stream Management} *)
 
-(** Create a stream *)
-let cuStreamCreate =
-  foreign_cuda
-    "cuStreamCreate"
-    (ptr cu_stream_ptr @-> uint @-> returning cu_result)
+let cuStreamCreate_lazy = foreign_cuda_lazy "cuStreamCreate" (ptr cu_stream_ptr @-> uint @-> returning cu_result)
+let cuStreamCreate p flags = Lazy.force cuStreamCreate_lazy p flags
 
-(** Create a stream with priority *)
-let cuStreamCreateWithPriority =
-  foreign_cuda
-    "cuStreamCreateWithPriority"
-    (ptr cu_stream_ptr @-> uint @-> int @-> returning cu_result)
+let cuStreamCreateWithPriority_lazy = foreign_cuda_lazy "cuStreamCreateWithPriority" (ptr cu_stream_ptr @-> uint @-> int @-> returning cu_result)
+let cuStreamCreateWithPriority p flags prio = Lazy.force cuStreamCreateWithPriority_lazy p flags prio
 
-(** Destroy a stream *)
-let cuStreamDestroy =
-  foreign_cuda "cuStreamDestroy_v2" (cu_stream_ptr @-> returning cu_result)
+let cuStreamDestroy_lazy = foreign_cuda_lazy "cuStreamDestroy_v2" (cu_stream_ptr @-> returning cu_result)
+let cuStreamDestroy s = Lazy.force cuStreamDestroy_lazy s
 
-(** Synchronize a stream *)
-let cuStreamSynchronize =
-  foreign_cuda "cuStreamSynchronize" (cu_stream_ptr @-> returning cu_result)
+let cuStreamSynchronize_lazy = foreign_cuda_lazy "cuStreamSynchronize" (cu_stream_ptr @-> returning cu_result)
+let cuStreamSynchronize s = Lazy.force cuStreamSynchronize_lazy s
 
-(** Query stream status *)
-let cuStreamQuery =
-  foreign_cuda "cuStreamQuery" (cu_stream_ptr @-> returning cu_result)
+let cuStreamQuery_lazy = foreign_cuda_lazy "cuStreamQuery" (cu_stream_ptr @-> returning cu_result)
+let cuStreamQuery s = Lazy.force cuStreamQuery_lazy s
 
-(** Wait for an event in a stream *)
-let cuStreamWaitEvent =
-  foreign_cuda
-    "cuStreamWaitEvent"
-    (cu_stream_ptr @-> cu_event_ptr @-> uint @-> returning cu_result)
+let cuStreamWaitEvent_lazy = foreign_cuda_lazy "cuStreamWaitEvent" (cu_stream_ptr @-> cu_event_ptr @-> uint @-> returning cu_result)
+let cuStreamWaitEvent s e flags = Lazy.force cuStreamWaitEvent_lazy s e flags
 
-(** Get stream priority range *)
-let cuCtxGetStreamPriorityRange =
-  foreign_cuda
-    "cuCtxGetStreamPriorityRange"
-    (ptr int @-> ptr int @-> returning cu_result)
+let cuCtxGetStreamPriorityRange_lazy = foreign_cuda_lazy "cuCtxGetStreamPriorityRange" (ptr int @-> ptr int @-> returning cu_result)
+let cuCtxGetStreamPriorityRange lo hi = Lazy.force cuCtxGetStreamPriorityRange_lazy lo hi
 
 (** {1 Event Management} *)
 
-(** Create an event *)
-let cuEventCreate =
-  foreign_cuda
-    "cuEventCreate"
-    (ptr cu_event_ptr @-> uint @-> returning cu_result)
+let cuEventCreate_lazy = foreign_cuda_lazy "cuEventCreate" (ptr cu_event_ptr @-> uint @-> returning cu_result)
+let cuEventCreate p flags = Lazy.force cuEventCreate_lazy p flags
 
-(** Destroy an event *)
-let cuEventDestroy =
-  foreign_cuda "cuEventDestroy_v2" (cu_event_ptr @-> returning cu_result)
+let cuEventDestroy_lazy = foreign_cuda_lazy "cuEventDestroy_v2" (cu_event_ptr @-> returning cu_result)
+let cuEventDestroy e = Lazy.force cuEventDestroy_lazy e
 
-(** Record an event *)
-let cuEventRecord =
-  foreign_cuda
-    "cuEventRecord"
-    (cu_event_ptr @-> cu_stream_ptr @-> returning cu_result)
+let cuEventRecord_lazy = foreign_cuda_lazy "cuEventRecord" (cu_event_ptr @-> cu_stream_ptr @-> returning cu_result)
+let cuEventRecord e s = Lazy.force cuEventRecord_lazy e s
 
-(** Synchronize an event *)
-let cuEventSynchronize =
-  foreign_cuda "cuEventSynchronize" (cu_event_ptr @-> returning cu_result)
+let cuEventSynchronize_lazy = foreign_cuda_lazy "cuEventSynchronize" (cu_event_ptr @-> returning cu_result)
+let cuEventSynchronize e = Lazy.force cuEventSynchronize_lazy e
 
-(** Query event status *)
-let cuEventQuery =
-  foreign_cuda "cuEventQuery" (cu_event_ptr @-> returning cu_result)
+let cuEventQuery_lazy = foreign_cuda_lazy "cuEventQuery" (cu_event_ptr @-> returning cu_result)
+let cuEventQuery e = Lazy.force cuEventQuery_lazy e
 
-(** Get elapsed time between events *)
-let cuEventElapsedTime =
-  foreign_cuda
-    "cuEventElapsedTime"
-    (ptr float @-> cu_event_ptr @-> cu_event_ptr @-> returning cu_result)
+let cuEventElapsedTime_lazy = foreign_cuda_lazy "cuEventElapsedTime" (ptr float @-> cu_event_ptr @-> cu_event_ptr @-> returning cu_result)
+let cuEventElapsedTime t start stop = Lazy.force cuEventElapsedTime_lazy t start stop
 
 (** {1 Error Handling} *)
 
-(** Get error name *)
-let cuGetErrorName =
-  foreign_cuda
-    "cuGetErrorName"
-    (cu_result @-> ptr string @-> returning cu_result)
+let cuGetErrorName_lazy = foreign_cuda_lazy "cuGetErrorName" (cu_result @-> ptr string @-> returning cu_result)
+let cuGetErrorName err p = Lazy.force cuGetErrorName_lazy err p
 
-(** Get error string *)
-let cuGetErrorString =
-  foreign_cuda
-    "cuGetErrorString"
-    (cu_result @-> ptr string @-> returning cu_result)
+let cuGetErrorString_lazy = foreign_cuda_lazy "cuGetErrorString" (cu_result @-> ptr string @-> returning cu_result)
+let cuGetErrorString err p = Lazy.force cuGetErrorString_lazy err p
 
 (** {1 Version} *)
 
-(** Get CUDA driver version *)
-let cuDriverGetVersion =
-  foreign_cuda "cuDriverGetVersion" (ptr int @-> returning cu_result)
+let cuDriverGetVersion_lazy = foreign_cuda_lazy "cuDriverGetVersion" (ptr int @-> returning cu_result)
+let cuDriverGetVersion p = Lazy.force cuDriverGetVersion_lazy p
 
 (** {1 Occupancy} *)
 
-(** Get max active blocks per multiprocessor *)
-let cuOccupancyMaxActiveBlocksPerMultiprocessor =
-  foreign_cuda
-    "cuOccupancyMaxActiveBlocksPerMultiprocessor"
-    (ptr int @-> cu_function_ptr @-> int @-> size_t @-> returning cu_result)
+let cuOccupancyMaxActiveBlocksPerMultiprocessor_lazy = foreign_cuda_lazy "cuOccupancyMaxActiveBlocksPerMultiprocessor" (ptr int @-> cu_function_ptr @-> int @-> size_t @-> returning cu_result)
+let cuOccupancyMaxActiveBlocksPerMultiprocessor p f bs dsmem = Lazy.force cuOccupancyMaxActiveBlocksPerMultiprocessor_lazy p f bs dsmem
 
 (** {1 Peer Access} *)
 
-(** Check if peer access is possible *)
-let cuDeviceCanAccessPeer =
-  foreign_cuda
-    "cuDeviceCanAccessPeer"
-    (ptr int @-> cu_device @-> cu_device @-> returning cu_result)
+let cuDeviceCanAccessPeer_lazy = foreign_cuda_lazy "cuDeviceCanAccessPeer" (ptr int @-> cu_device @-> cu_device @-> returning cu_result)
+let cuDeviceCanAccessPeer p d1 d2 = Lazy.force cuDeviceCanAccessPeer_lazy p d1 d2
 
-(** Enable peer access *)
-let cuCtxEnablePeerAccess =
-  foreign_cuda
-    "cuCtxEnablePeerAccess"
-    (cu_context_ptr @-> uint @-> returning cu_result)
+let cuCtxEnablePeerAccess_lazy = foreign_cuda_lazy "cuCtxEnablePeerAccess" (cu_context_ptr @-> uint @-> returning cu_result)
+let cuCtxEnablePeerAccess ctx flags = Lazy.force cuCtxEnablePeerAccess_lazy ctx flags
 
-(** Disable peer access *)
-let cuCtxDisablePeerAccess =
-  foreign_cuda "cuCtxDisablePeerAccess" (cu_context_ptr @-> returning cu_result)
+let cuCtxDisablePeerAccess_lazy = foreign_cuda_lazy "cuCtxDisablePeerAccess" (cu_context_ptr @-> returning cu_result)
+let cuCtxDisablePeerAccess ctx = Lazy.force cuCtxDisablePeerAccess_lazy ctx
 
 (** {1 Profiler Control} *)
 
-(** Start profiler *)
-let cuProfilerStart =
-  try foreign_cuda "cuProfilerStart" (void @-> returning cu_result)
-  with _ -> fun () -> CUDA_SUCCESS (* Profiler may not be available *)
+let cuProfilerStart_lazy = lazy (
+  try Some (foreign ~from:(get_cuda_lib ()) "cuProfilerStart" (void @-> returning cu_result))
+  with _ -> None
+)
+let cuProfilerStart () =
+  match Lazy.force cuProfilerStart_lazy with
+  | Some f -> f ()
+  | None -> CUDA_SUCCESS
 
-(** Stop profiler *)
-let cuProfilerStop =
-  try foreign_cuda "cuProfilerStop" (void @-> returning cu_result)
-  with _ -> fun () -> CUDA_SUCCESS
+let cuProfilerStop_lazy = lazy (
+  try Some (foreign ~from:(get_cuda_lib ()) "cuProfilerStop" (void @-> returning cu_result))
+  with _ -> None
+)
+let cuProfilerStop () =
+  match Lazy.force cuProfilerStop_lazy with
+  | Some f -> f ()
+  | None -> CUDA_SUCCESS

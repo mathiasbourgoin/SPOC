@@ -1,0 +1,8 @@
+; Sarek Runtime Core
+; Unified abstractions for devices, memory, and kernel execution
+
+(library
+ (name sarek_core)
+ (libraries sarek_framework)
+ (modules Device Memory Kernel)
+ (preprocess no_preprocessing))

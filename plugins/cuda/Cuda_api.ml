@@ -357,10 +357,14 @@ let driver_version () =
   (ver / 1000, ver mod 1000 / 10)
 
 let is_available () =
-  try
-    Device.init () ;
-    Device.count () > 0
-  with _ -> false
+  (* First check if the library is available at all *)
+  if not (Cuda_bindings.is_available ()) then false
+  else if not (Cuda_nvrtc.is_available ()) then false
+  else
+    try
+      Device.init () ;
+      Device.count () > 0
+    with _ -> false
 
 let memory_info device =
   Device.set_current device ;

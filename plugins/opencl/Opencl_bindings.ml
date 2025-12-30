@@ -2,7 +2,14 @@
  * OpenCL API - Ctypes Bindings
  *
  * Direct FFI bindings to OpenCL API via ctypes-foreign.
- * These are low-level bindings; see Opencl_api.ml for high-level wrappers.
+ * All bindings are lazy - they only dlopen the library when first used.
+ * This allows the module to be linked even on systems without OpenCL.
+ *
+ * TODO: Performance optimization opportunity
+ * ==========================================
+ * Currently each binding uses Lazy.force which adds ~5-10ns overhead per call.
+ * See Cuda_bindings.ml for the optimization approach using mutable refs.
+ * Current approach is acceptable because kernel launch time dwarfs the overhead.
  ******************************************************************************)
 
 open Ctypes
@@ -11,509 +18,267 @@ open Opencl_types
 
 (** {1 Library Loading} *)
 
-let opencl_lib : Dl.library option ref = ref None
+(** Load OpenCL library dynamically (lazy) *)
+let opencl_lib : Dl.library option Lazy.t = lazy (
+  try Some (Dl.dlopen ~filename:"libOpenCL.so.1" ~flags:[Dl.RTLD_LAZY])
+  with _ ->
+    try Some (Dl.dlopen ~filename:"libOpenCL.so" ~flags:[Dl.RTLD_LAZY])
+    with _ ->
+      try Some (Dl.dlopen ~filename:"libOpenCL.dylib" ~flags:[Dl.RTLD_LAZY])
+      with _ ->
+        try Some (Dl.dlopen ~filename:"/System/Library/Frameworks/OpenCL.framework/OpenCL" ~flags:[Dl.RTLD_LAZY])
+        with _ ->
+          try Some (Dl.dlopen ~filename:"OpenCL.dll" ~flags:[Dl.RTLD_LAZY])
+          with _ -> None
+)
 
+(** Check if OpenCL library is available *)
+let is_available () =
+  match Lazy.force opencl_lib with
+  | Some _ -> true
+  | None -> false
+
+(** Get OpenCL library, raising if not available *)
 let get_opencl_lib () =
-  match !opencl_lib with
+  match Lazy.force opencl_lib with
   | Some lib -> lib
-  | None ->
-      let lib =
-        try Dl.dlopen ~filename:"libOpenCL.so.1" ~flags:[Dl.RTLD_LAZY]
-        with _ -> (
-          try Dl.dlopen ~filename:"libOpenCL.so" ~flags:[Dl.RTLD_LAZY]
-          with _ -> (
-            try Dl.dlopen ~filename:"libOpenCL.dylib" ~flags:[Dl.RTLD_LAZY]
-            with _ -> (
-              try
-                Dl.dlopen
-                  ~filename:"/System/Library/Frameworks/OpenCL.framework/OpenCL"
-                  ~flags:[Dl.RTLD_LAZY]
-              with _ -> (
-                try Dl.dlopen ~filename:"OpenCL.dll" ~flags:[Dl.RTLD_LAZY]
-                with _ -> failwith "OpenCL library not found"))))
-      in
-      opencl_lib := Some lib ;
-      lib
+  | None -> failwith "OpenCL library not found"
 
-let foreign_cl name typ = foreign ~from:(get_opencl_lib ()) name typ
+(** Create a lazy foreign binding to OpenCL *)
+let foreign_cl_lazy name typ =
+  lazy (foreign ~from:(get_opencl_lib ()) name typ)
 
 (** {1 Platform API} *)
 
-(** Get platform IDs *)
-let clGetPlatformIDs =
-  foreign_cl
-    "clGetPlatformIDs"
-    (cl_uint
-   (* num_entries *)
-   @-> ptr cl_platform_id
-    (* platforms *)
-    @-> ptr cl_uint
-    @->
-    (* num_platforms *)
-    returning cl_int)
+let clGetPlatformIDs_lazy = foreign_cl_lazy "clGetPlatformIDs" (
+  cl_uint @-> ptr cl_platform_id @-> ptr cl_uint @-> returning cl_int
+)
+let clGetPlatformIDs n p np = Lazy.force clGetPlatformIDs_lazy n p np
 
-(** Get platform info *)
-let clGetPlatformInfo =
-  foreign_cl
-    "clGetPlatformInfo"
-    (cl_platform_id
-   (* platform *)
-   @-> cl_uint
-    (* param_name *)
-    @-> size_t
-    (* param_value_size *)
-    @-> ptr void
-    (* param_value *)
-    @-> ptr size_t
-    @->
-    (* param_value_size_ret *)
-    returning cl_int)
+let clGetPlatformInfo_lazy = foreign_cl_lazy "clGetPlatformInfo" (
+  cl_platform_id @-> cl_uint @-> size_t @-> ptr void @-> ptr size_t @-> returning cl_int
+)
+let clGetPlatformInfo p pn sz v szr = Lazy.force clGetPlatformInfo_lazy p pn sz v szr
 
 (** {1 Device API} *)
 
-(** Get device IDs *)
-let clGetDeviceIDs =
-  foreign_cl
-    "clGetDeviceIDs"
-    (cl_platform_id
-   (* platform *)
-   @-> cl_bitfield
-    (* device_type *)
-    @-> cl_uint
-    (* num_entries *)
-    @-> ptr cl_device_id
-    (* devices *)
-    @-> ptr cl_uint
-    @->
-    (* num_devices *)
-    returning cl_int)
+let clGetDeviceIDs_lazy = foreign_cl_lazy "clGetDeviceIDs" (
+  cl_platform_id @-> cl_bitfield @-> cl_uint @-> ptr cl_device_id @-> ptr cl_uint @-> returning cl_int
+)
+let clGetDeviceIDs p dt n d nd = Lazy.force clGetDeviceIDs_lazy p dt n d nd
 
-(** Get device info *)
-let clGetDeviceInfo =
-  foreign_cl
-    "clGetDeviceInfo"
-    (cl_device_id
-   (* device *)
-   @-> cl_uint
-    (* param_name *)
-    @-> size_t
-    (* param_value_size *)
-    @-> ptr void
-    (* param_value *)
-    @-> ptr size_t
-    @->
-    (* param_value_size_ret *)
-    returning cl_int)
+let clGetDeviceInfo_lazy = foreign_cl_lazy "clGetDeviceInfo" (
+  cl_device_id @-> cl_uint @-> size_t @-> ptr void @-> ptr size_t @-> returning cl_int
+)
+let clGetDeviceInfo d pn sz v szr = Lazy.force clGetDeviceInfo_lazy d pn sz v szr
 
 (** {1 Context API} *)
 
-(** Create context *)
-let clCreateContext =
-  foreign_cl
-    "clCreateContext"
-    (ptr cl_ulong
-   (* properties (null-terminated) *)
-   @-> cl_uint
-    (* num_devices *)
-    @-> ptr cl_device_id
-    (* devices *)
-    @-> ptr void
-    (* pfn_notify callback *)
-    @-> ptr void
-    (* user_data *)
-    @-> ptr cl_int
-    @->
-    (* errcode_ret *)
-    returning cl_context)
+let clCreateContext_lazy = foreign_cl_lazy "clCreateContext" (
+  ptr cl_ulong @-> cl_uint @-> ptr cl_device_id @-> ptr void @-> ptr void @-> ptr cl_int @-> returning cl_context
+)
+let clCreateContext props nd devs cb ud err = Lazy.force clCreateContext_lazy props nd devs cb ud err
 
-(** Create context from type *)
-let clCreateContextFromType =
-  foreign_cl
-    "clCreateContextFromType"
-    (ptr cl_ulong
-   (* properties *)
-   @-> cl_bitfield
-    (* device_type *)
-    @-> ptr void
-    (* pfn_notify *)
-    @-> ptr void
-    (* user_data *)
-    @-> ptr cl_int
-    @->
-    (* errcode_ret *)
-    returning cl_context)
+let clCreateContextFromType_lazy = foreign_cl_lazy "clCreateContextFromType" (
+  ptr cl_ulong @-> cl_bitfield @-> ptr void @-> ptr void @-> ptr cl_int @-> returning cl_context
+)
+let clCreateContextFromType props dt cb ud err = Lazy.force clCreateContextFromType_lazy props dt cb ud err
 
-(** Retain context *)
-let clRetainContext =
-  foreign_cl "clRetainContext" (cl_context @-> returning cl_int)
+let clRetainContext_lazy = foreign_cl_lazy "clRetainContext" (cl_context @-> returning cl_int)
+let clRetainContext ctx = Lazy.force clRetainContext_lazy ctx
 
-(** Release context *)
-let clReleaseContext =
-  foreign_cl "clReleaseContext" (cl_context @-> returning cl_int)
+let clReleaseContext_lazy = foreign_cl_lazy "clReleaseContext" (cl_context @-> returning cl_int)
+let clReleaseContext ctx = Lazy.force clReleaseContext_lazy ctx
 
-(** Get context info *)
-let clGetContextInfo =
-  foreign_cl
-    "clGetContextInfo"
-    (cl_context @-> cl_uint @-> size_t @-> ptr void @-> ptr size_t
-   @-> returning cl_int)
+let clGetContextInfo_lazy = foreign_cl_lazy "clGetContextInfo" (
+  cl_context @-> cl_uint @-> size_t @-> ptr void @-> ptr size_t @-> returning cl_int
+)
+let clGetContextInfo ctx pn sz v szr = Lazy.force clGetContextInfo_lazy ctx pn sz v szr
 
 (** {1 Command Queue API} *)
 
-(** Create command queue (OpenCL 2.0+) *)
-let clCreateCommandQueueWithProperties =
-  foreign_cl
-    "clCreateCommandQueueWithProperties"
-    (cl_context
-   (* context *)
-   @-> cl_device_id
-    (* device *)
-    @-> ptr cl_ulong
-    (* properties *)
-    @-> ptr cl_int
-    @->
-    (* errcode_ret *)
-    returning cl_command_queue)
+let clCreateCommandQueueWithProperties_lazy = foreign_cl_lazy "clCreateCommandQueueWithProperties" (
+  cl_context @-> cl_device_id @-> ptr cl_ulong @-> ptr cl_int @-> returning cl_command_queue
+)
+let clCreateCommandQueueWithProperties ctx d props err = Lazy.force clCreateCommandQueueWithProperties_lazy ctx d props err
 
-(** Create command queue (OpenCL 1.x fallback) *)
-let clCreateCommandQueue =
-  try
-    foreign_cl
-      "clCreateCommandQueue"
-      (cl_context @-> cl_device_id @-> cl_bitfield @-> ptr cl_int
-     @-> returning cl_command_queue)
-  with _ ->
-    fun _ _ _ err ->
-      err <-@ -34l ;
-      (* CL_INVALID_CONTEXT *)
-      from_voidp void null
+let clCreateCommandQueue_lazy = lazy (
+  try Some (foreign ~from:(get_opencl_lib ()) "clCreateCommandQueue" (
+    cl_context @-> cl_device_id @-> cl_bitfield @-> ptr cl_int @-> returning cl_command_queue
+  ))
+  with _ -> None
+)
+let clCreateCommandQueue ctx d props err =
+  match Lazy.force clCreateCommandQueue_lazy with
+  | Some f -> f ctx d props err
+  | None -> err <-@ (-34l); from_voidp void null
 
-(** Retain command queue *)
-let clRetainCommandQueue =
-  foreign_cl "clRetainCommandQueue" (cl_command_queue @-> returning cl_int)
+let clRetainCommandQueue_lazy = foreign_cl_lazy "clRetainCommandQueue" (cl_command_queue @-> returning cl_int)
+let clRetainCommandQueue q = Lazy.force clRetainCommandQueue_lazy q
 
-(** Release command queue *)
-let clReleaseCommandQueue =
-  foreign_cl "clReleaseCommandQueue" (cl_command_queue @-> returning cl_int)
+let clReleaseCommandQueue_lazy = foreign_cl_lazy "clReleaseCommandQueue" (cl_command_queue @-> returning cl_int)
+let clReleaseCommandQueue q = Lazy.force clReleaseCommandQueue_lazy q
 
-(** Flush command queue *)
-let clFlush = foreign_cl "clFlush" (cl_command_queue @-> returning cl_int)
+let clFlush_lazy = foreign_cl_lazy "clFlush" (cl_command_queue @-> returning cl_int)
+let clFlush q = Lazy.force clFlush_lazy q
 
-(** Finish (synchronize) command queue *)
-let clFinish = foreign_cl "clFinish" (cl_command_queue @-> returning cl_int)
+let clFinish_lazy = foreign_cl_lazy "clFinish" (cl_command_queue @-> returning cl_int)
+let clFinish q = Lazy.force clFinish_lazy q
 
 (** {1 Memory Object API} *)
 
-(** Create buffer *)
-let clCreateBuffer =
-  foreign_cl
-    "clCreateBuffer"
-    (cl_context
-   (* context *)
-   @-> cl_bitfield
-    (* flags *)
-    @-> size_t
-    (* size *)
-    @-> ptr void
-    (* host_ptr *)
-    @-> ptr cl_int
-    @->
-    (* errcode_ret *)
-    returning cl_mem)
+let clCreateBuffer_lazy = foreign_cl_lazy "clCreateBuffer" (
+  cl_context @-> cl_bitfield @-> size_t @-> ptr void @-> ptr cl_int @-> returning cl_mem
+)
+let clCreateBuffer ctx flags sz hp err = Lazy.force clCreateBuffer_lazy ctx flags sz hp err
 
-(** Retain memory object *)
-let clRetainMemObject =
-  foreign_cl "clRetainMemObject" (cl_mem @-> returning cl_int)
+let clRetainMemObject_lazy = foreign_cl_lazy "clRetainMemObject" (cl_mem @-> returning cl_int)
+let clRetainMemObject m = Lazy.force clRetainMemObject_lazy m
 
-(** Release memory object *)
-let clReleaseMemObject =
-  foreign_cl "clReleaseMemObject" (cl_mem @-> returning cl_int)
+let clReleaseMemObject_lazy = foreign_cl_lazy "clReleaseMemObject" (cl_mem @-> returning cl_int)
+let clReleaseMemObject m = Lazy.force clReleaseMemObject_lazy m
 
-(** Get memory object info *)
-let clGetMemObjectInfo =
-  foreign_cl
-    "clGetMemObjectInfo"
-    (cl_mem @-> cl_uint @-> size_t @-> ptr void @-> ptr size_t
-   @-> returning cl_int)
+let clGetMemObjectInfo_lazy = foreign_cl_lazy "clGetMemObjectInfo" (
+  cl_mem @-> cl_uint @-> size_t @-> ptr void @-> ptr size_t @-> returning cl_int
+)
+let clGetMemObjectInfo m pn sz v szr = Lazy.force clGetMemObjectInfo_lazy m pn sz v szr
 
 (** {1 Enqueue Operations} *)
 
-(** Enqueue read buffer *)
-let clEnqueueReadBuffer =
-  foreign_cl
-    "clEnqueueReadBuffer"
-    (cl_command_queue
-   (* command_queue *)
-   @-> cl_mem
-    (* buffer *)
-    @-> cl_bool
-    (* blocking_read *)
-    @-> size_t
-    (* offset *)
-    @-> size_t
-    (* size *)
-    @-> ptr void
-    (* ptr *)
-    @-> cl_uint
-    (* num_events_in_wait_list *)
-    @-> ptr cl_event
-    (* event_wait_list *)
-    @-> ptr cl_event
-    @->
-    (* event *)
-    returning cl_int)
+let clEnqueueReadBuffer_lazy = foreign_cl_lazy "clEnqueueReadBuffer" (
+  cl_command_queue @-> cl_mem @-> cl_bool @-> size_t @-> size_t @-> ptr void @->
+  cl_uint @-> ptr cl_event @-> ptr cl_event @-> returning cl_int
+)
+let clEnqueueReadBuffer q b bl off sz p ne el e = Lazy.force clEnqueueReadBuffer_lazy q b bl off sz p ne el e
 
-(** Enqueue write buffer *)
-let clEnqueueWriteBuffer =
-  foreign_cl
-    "clEnqueueWriteBuffer"
-    (cl_command_queue @-> cl_mem @-> cl_bool @-> size_t @-> size_t @-> ptr void
-   @-> cl_uint @-> ptr cl_event @-> ptr cl_event @-> returning cl_int)
+let clEnqueueWriteBuffer_lazy = foreign_cl_lazy "clEnqueueWriteBuffer" (
+  cl_command_queue @-> cl_mem @-> cl_bool @-> size_t @-> size_t @-> ptr void @->
+  cl_uint @-> ptr cl_event @-> ptr cl_event @-> returning cl_int
+)
+let clEnqueueWriteBuffer q b bl off sz p ne el e = Lazy.force clEnqueueWriteBuffer_lazy q b bl off sz p ne el e
 
-(** Enqueue copy buffer *)
-let clEnqueueCopyBuffer =
-  foreign_cl
-    "clEnqueueCopyBuffer"
-    (cl_command_queue @-> cl_mem
-   (* src_buffer *)
-   @-> cl_mem
-    (* dst_buffer *)
-    @-> size_t
-    (* src_offset *)
-    @-> size_t
-    (* dst_offset *)
-    @-> size_t
-    (* size *)
-    @-> cl_uint
-    @-> ptr cl_event @-> ptr cl_event @-> returning cl_int)
+let clEnqueueCopyBuffer_lazy = foreign_cl_lazy "clEnqueueCopyBuffer" (
+  cl_command_queue @-> cl_mem @-> cl_mem @-> size_t @-> size_t @-> size_t @->
+  cl_uint @-> ptr cl_event @-> ptr cl_event @-> returning cl_int
+)
+let clEnqueueCopyBuffer q sb db so do_ sz ne el e = Lazy.force clEnqueueCopyBuffer_lazy q sb db so do_ sz ne el e
 
-(** Enqueue fill buffer *)
-let clEnqueueFillBuffer =
-  try
-    foreign_cl
-      "clEnqueueFillBuffer"
-      (cl_command_queue @-> cl_mem @-> ptr void
-     (* pattern *)
-     @-> size_t
-      (* pattern_size *)
-      @-> size_t
-      (* offset *)
-      @-> size_t
-      (* size *)
-      @-> cl_uint
-      @-> ptr cl_event @-> ptr cl_event @-> returning cl_int)
-  with _ -> fun _ _ _ _ _ _ _ _ _ -> -30l (* CL_INVALID_VALUE *)
+let clEnqueueFillBuffer_lazy = lazy (
+  try Some (foreign ~from:(get_opencl_lib ()) "clEnqueueFillBuffer" (
+    cl_command_queue @-> cl_mem @-> ptr void @-> size_t @-> size_t @-> size_t @->
+    cl_uint @-> ptr cl_event @-> ptr cl_event @-> returning cl_int
+  ))
+  with _ -> None
+)
+let clEnqueueFillBuffer q b pat psz off sz ne el e =
+  match Lazy.force clEnqueueFillBuffer_lazy with
+  | Some f -> f q b pat psz off sz ne el e
+  | None -> -30l
 
 (** {1 Program API} *)
 
-(** Create program from source *)
-let clCreateProgramWithSource =
-  foreign_cl
-    "clCreateProgramWithSource"
-    (cl_context
-   (* context *)
-   @-> cl_uint
-    (* count *)
-    @-> ptr string
-    (* strings *)
-    @-> ptr size_t
-    (* lengths *)
-    @-> ptr cl_int
-    @->
-    (* errcode_ret *)
-    returning cl_program)
+let clCreateProgramWithSource_lazy = foreign_cl_lazy "clCreateProgramWithSource" (
+  cl_context @-> cl_uint @-> ptr string @-> ptr size_t @-> ptr cl_int @-> returning cl_program
+)
+let clCreateProgramWithSource ctx cnt strs lens err = Lazy.force clCreateProgramWithSource_lazy ctx cnt strs lens err
 
-(** Create program from binary *)
-let clCreateProgramWithBinary =
-  foreign_cl
-    "clCreateProgramWithBinary"
-    (cl_context @-> cl_uint
-   (* num_devices *)
-   @-> ptr cl_device_id
-    (* device_list *)
-    @-> ptr size_t
-    (* lengths *)
-    @-> ptr (ptr uchar)
-    (* binaries *)
-    @-> ptr cl_int
-    (* binary_status *)
-    @-> ptr cl_int
-    @->
-    (* errcode_ret *)
-    returning cl_program)
+let clCreateProgramWithBinary_lazy = foreign_cl_lazy "clCreateProgramWithBinary" (
+  cl_context @-> cl_uint @-> ptr cl_device_id @-> ptr size_t @-> ptr (ptr uchar) @->
+  ptr cl_int @-> ptr cl_int @-> returning cl_program
+)
+let clCreateProgramWithBinary ctx nd dl lens bins bs err = Lazy.force clCreateProgramWithBinary_lazy ctx nd dl lens bins bs err
 
-(** Build program *)
-let clBuildProgram =
-  foreign_cl
-    "clBuildProgram"
-    (cl_program
-   (* program *)
-   @-> cl_uint
-    (* num_devices *)
-    @-> ptr cl_device_id
-    (* device_list *)
-    @-> string
-    (* options *)
-    @-> ptr void
-    (* pfn_notify *)
-    @-> ptr void
-    @->
-    (* user_data *)
-    returning cl_int)
+let clBuildProgram_lazy = foreign_cl_lazy "clBuildProgram" (
+  cl_program @-> cl_uint @-> ptr cl_device_id @-> string @-> ptr void @-> ptr void @-> returning cl_int
+)
+let clBuildProgram p nd dl opts cb ud = Lazy.force clBuildProgram_lazy p nd dl opts cb ud
 
-(** Get program build info *)
-let clGetProgramBuildInfo =
-  foreign_cl
-    "clGetProgramBuildInfo"
-    (cl_program @-> cl_device_id @-> cl_uint
-   (* param_name *)
-   @-> size_t
-    @-> ptr void @-> ptr size_t @-> returning cl_int)
+let clGetProgramBuildInfo_lazy = foreign_cl_lazy "clGetProgramBuildInfo" (
+  cl_program @-> cl_device_id @-> cl_uint @-> size_t @-> ptr void @-> ptr size_t @-> returning cl_int
+)
+let clGetProgramBuildInfo p d pn sz v szr = Lazy.force clGetProgramBuildInfo_lazy p d pn sz v szr
 
-(** Retain program *)
-let clRetainProgram =
-  foreign_cl "clRetainProgram" (cl_program @-> returning cl_int)
+let clRetainProgram_lazy = foreign_cl_lazy "clRetainProgram" (cl_program @-> returning cl_int)
+let clRetainProgram p = Lazy.force clRetainProgram_lazy p
 
-(** Release program *)
-let clReleaseProgram =
-  foreign_cl "clReleaseProgram" (cl_program @-> returning cl_int)
+let clReleaseProgram_lazy = foreign_cl_lazy "clReleaseProgram" (cl_program @-> returning cl_int)
+let clReleaseProgram p = Lazy.force clReleaseProgram_lazy p
 
 (** {1 Kernel API} *)
 
-(** Create kernel *)
-let clCreateKernel =
-  foreign_cl
-    "clCreateKernel"
-    (cl_program
-   (* program *)
-   @-> string
-    (* kernel_name *)
-    @-> ptr cl_int
-    @->
-    (* errcode_ret *)
-    returning cl_kernel)
+let clCreateKernel_lazy = foreign_cl_lazy "clCreateKernel" (
+  cl_program @-> string @-> ptr cl_int @-> returning cl_kernel
+)
+let clCreateKernel p name err = Lazy.force clCreateKernel_lazy p name err
 
-(** Set kernel argument *)
-let clSetKernelArg =
-  foreign_cl
-    "clSetKernelArg"
-    (cl_kernel
-   (* kernel *)
-   @-> cl_uint
-    (* arg_index *)
-    @-> size_t
-    (* arg_size *)
-    @-> ptr void
-    @->
-    (* arg_value *)
-    returning cl_int)
+let clSetKernelArg_lazy = foreign_cl_lazy "clSetKernelArg" (
+  cl_kernel @-> cl_uint @-> size_t @-> ptr void @-> returning cl_int
+)
+let clSetKernelArg k idx sz v = Lazy.force clSetKernelArg_lazy k idx sz v
 
-(** Retain kernel *)
-let clRetainKernel = foreign_cl "clRetainKernel" (cl_kernel @-> returning cl_int)
+let clRetainKernel_lazy = foreign_cl_lazy "clRetainKernel" (cl_kernel @-> returning cl_int)
+let clRetainKernel k = Lazy.force clRetainKernel_lazy k
 
-(** Release kernel *)
-let clReleaseKernel =
-  foreign_cl "clReleaseKernel" (cl_kernel @-> returning cl_int)
+let clReleaseKernel_lazy = foreign_cl_lazy "clReleaseKernel" (cl_kernel @-> returning cl_int)
+let clReleaseKernel k = Lazy.force clReleaseKernel_lazy k
 
-(** Get kernel info *)
-let clGetKernelInfo =
-  foreign_cl
-    "clGetKernelInfo"
-    (cl_kernel @-> cl_uint @-> size_t @-> ptr void @-> ptr size_t
-   @-> returning cl_int)
+let clGetKernelInfo_lazy = foreign_cl_lazy "clGetKernelInfo" (
+  cl_kernel @-> cl_uint @-> size_t @-> ptr void @-> ptr size_t @-> returning cl_int
+)
+let clGetKernelInfo k pn sz v szr = Lazy.force clGetKernelInfo_lazy k pn sz v szr
 
-(** Get kernel work group info *)
-let clGetKernelWorkGroupInfo =
-  foreign_cl
-    "clGetKernelWorkGroupInfo"
-    (cl_kernel @-> cl_device_id @-> cl_uint @-> size_t @-> ptr void
-   @-> ptr size_t @-> returning cl_int)
+let clGetKernelWorkGroupInfo_lazy = foreign_cl_lazy "clGetKernelWorkGroupInfo" (
+  cl_kernel @-> cl_device_id @-> cl_uint @-> size_t @-> ptr void @-> ptr size_t @-> returning cl_int
+)
+let clGetKernelWorkGroupInfo k d pn sz v szr = Lazy.force clGetKernelWorkGroupInfo_lazy k d pn sz v szr
 
-(** Enqueue ND range kernel *)
-let clEnqueueNDRangeKernel =
-  foreign_cl
-    "clEnqueueNDRangeKernel"
-    (cl_command_queue
-   (* command_queue *)
-   @-> cl_kernel
-    (* kernel *)
-    @-> cl_uint
-    (* work_dim *)
-    @-> ptr size_t
-    (* global_work_offset *)
-    @-> ptr size_t
-    (* global_work_size *)
-    @-> ptr size_t
-    (* local_work_size *)
-    @-> cl_uint
-    (* num_events_in_wait_list *)
-    @-> ptr cl_event
-    (* event_wait_list *)
-    @-> ptr cl_event
-    @->
-    (* event *)
-    returning cl_int)
+let clEnqueueNDRangeKernel_lazy = foreign_cl_lazy "clEnqueueNDRangeKernel" (
+  cl_command_queue @-> cl_kernel @-> cl_uint @-> ptr size_t @-> ptr size_t @-> ptr size_t @->
+  cl_uint @-> ptr cl_event @-> ptr cl_event @-> returning cl_int
+)
+let clEnqueueNDRangeKernel q k dim gwo gws lws ne el e = Lazy.force clEnqueueNDRangeKernel_lazy q k dim gwo gws lws ne el e
 
 (** {1 Event API} *)
 
-(** Wait for events *)
-let clWaitForEvents =
-  foreign_cl
-    "clWaitForEvents"
-    (cl_uint
-   (* num_events *)
-   @-> ptr cl_event
-    @->
-    (* event_list *)
-    returning cl_int)
+let clWaitForEvents_lazy = foreign_cl_lazy "clWaitForEvents" (cl_uint @-> ptr cl_event @-> returning cl_int)
+let clWaitForEvents n el = Lazy.force clWaitForEvents_lazy n el
 
-(** Retain event *)
-let clRetainEvent = foreign_cl "clRetainEvent" (cl_event @-> returning cl_int)
+let clRetainEvent_lazy = foreign_cl_lazy "clRetainEvent" (cl_event @-> returning cl_int)
+let clRetainEvent e = Lazy.force clRetainEvent_lazy e
 
-(** Release event *)
-let clReleaseEvent = foreign_cl "clReleaseEvent" (cl_event @-> returning cl_int)
+let clReleaseEvent_lazy = foreign_cl_lazy "clReleaseEvent" (cl_event @-> returning cl_int)
+let clReleaseEvent e = Lazy.force clReleaseEvent_lazy e
 
-(** Get event info *)
-let clGetEventInfo =
-  foreign_cl
-    "clGetEventInfo"
-    (cl_event @-> cl_uint @-> size_t @-> ptr void @-> ptr size_t
-   @-> returning cl_int)
+let clGetEventInfo_lazy = foreign_cl_lazy "clGetEventInfo" (
+  cl_event @-> cl_uint @-> size_t @-> ptr void @-> ptr size_t @-> returning cl_int
+)
+let clGetEventInfo e pn sz v szr = Lazy.force clGetEventInfo_lazy e pn sz v szr
 
-(** Get event profiling info *)
-let clGetEventProfilingInfo =
-  foreign_cl
-    "clGetEventProfilingInfo"
-    (cl_event @-> cl_uint
-   (* param_name *)
-   @-> size_t
-    @-> ptr void @-> ptr size_t @-> returning cl_int)
+let clGetEventProfilingInfo_lazy = foreign_cl_lazy "clGetEventProfilingInfo" (
+  cl_event @-> cl_uint @-> size_t @-> ptr void @-> ptr size_t @-> returning cl_int
+)
+let clGetEventProfilingInfo e pn sz v szr = Lazy.force clGetEventProfilingInfo_lazy e pn sz v szr
 
 (** {1 Synchronization} *)
 
-(** Enqueue marker with wait list *)
-let clEnqueueMarkerWithWaitList =
-  try
-    foreign_cl
-      "clEnqueueMarkerWithWaitList"
-      (cl_command_queue @-> cl_uint @-> ptr cl_event @-> ptr cl_event
-     @-> returning cl_int)
-  with _ -> fun _ _ _ _ -> -30l
+let clEnqueueMarkerWithWaitList_lazy = lazy (
+  try Some (foreign ~from:(get_opencl_lib ()) "clEnqueueMarkerWithWaitList" (
+    cl_command_queue @-> cl_uint @-> ptr cl_event @-> ptr cl_event @-> returning cl_int
+  ))
+  with _ -> None
+)
+let clEnqueueMarkerWithWaitList q ne el e =
+  match Lazy.force clEnqueueMarkerWithWaitList_lazy with
+  | Some f -> f q ne el e
+  | None -> -30l
 
-(** Enqueue barrier with wait list *)
-let clEnqueueBarrierWithWaitList =
-  try
-    foreign_cl
-      "clEnqueueBarrierWithWaitList"
-      (cl_command_queue @-> cl_uint @-> ptr cl_event @-> ptr cl_event
-     @-> returning cl_int)
-  with _ -> fun _ _ _ _ -> -30l
-
-(** {1 Helpers} *)
-
-(** Check if OpenCL is available *)
-let is_available () : bool =
-  try
-    let _ = get_opencl_lib () in
-    true
-  with _ -> false
+let clEnqueueBarrierWithWaitList_lazy = lazy (
+  try Some (foreign ~from:(get_opencl_lib ()) "clEnqueueBarrierWithWaitList" (
+    cl_command_queue @-> cl_uint @-> ptr cl_event @-> ptr cl_event @-> returning cl_int
+  ))
+  with _ -> None
+)
+let clEnqueueBarrierWithWaitList q ne el e =
+  match Lazy.force clEnqueueBarrierWithWaitList_lazy with
+  | Some f -> f q ne el e
+  | None -> -30l

@@ -254,6 +254,7 @@ end = struct
   let is_available = Cuda_api.is_available
 end
 
-(* Auto-register when module is loaded *)
-(* Note: This requires Framework_registry to be linked *)
-(* let () = Framework_registry.register ~priority:100 (module Cuda) *)
+(* Auto-register when module is loaded - only if available *)
+let () =
+  if Cuda.is_available () then
+    Framework_registry.register_backend ~priority:100 (module Cuda : Framework_sig.BACKEND)
