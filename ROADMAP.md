@@ -435,14 +435,21 @@ Complete rewrite of SPOC with:
   - `Cuda_nvrtc.ml` - Runtime compilation (305 lines)
   - `Cuda_api.ml` - High-level wrappers (370 lines)
   - `Cuda_plugin.ml` - Full BACKEND implementation (259 lines)
-- **Step 3.4** ⏸️ CUDA Plugin fully implements `BACKEND` signature but auto-registration disabled
+- **Step 3.4** ✅ CUDA Plugin fully implements `BACKEND` signature with auto-registration
 - **Step 3.5** ✅ OpenCL Ctypes Bindings - 1900+ lines in `plugins/opencl/`
   - `Opencl_types.ml` - Type definitions (365 lines)
   - `Opencl_bindings.ml` - API bindings (469 lines)
   - `Opencl_api.ml` - High-level wrappers (553 lines)
   - `Opencl_plugin.ml` - Full BACKEND implementation (370 lines)
-- **Step 3.6** ⏳ Unified Device Abstraction - not started
-- **Step 3.7** ⏳ Kernel Execution integration - not started
+- **Step 3.6** ✅ Unified Device Abstraction - `runtime/core/`
+  - `Device.ml` - Device discovery across backends (~116 lines)
+  - `Memory.ml` - Unified buffer management (~75 lines)
+  - `Kernel.ml` - Kernel compilation and execution (~105 lines)
+  - `Runtime.ml` - High-level execution API (~105 lines)
+- **Step 3.7** ✅ Kernel Execution integration
+  - `runtime/test/test_runtime.ml` - E2E test for new runtime
+  - Lazy loading works correctly (gracefully handles missing CUDA/OpenCL)
+  - Plugins auto-register when libraries are available
 - **Step 3.8** ⏳ Migration (parallel dev, switch over, package split) - not started
 
 ### Current State (legacy)
@@ -1036,12 +1043,12 @@ let%test "unified_device_init" =
 |-------|--------|--------|
 | 1. Polymorphism | Medium | ✅ Complete |
 | 2. Recursion | Medium-High | ✅ Complete |
-| 3. SPOC Rework | High | 🚧 In Progress (~50%) |
+| 3. SPOC Rework | High | 🚧 In Progress (~85%) |
 
 Next steps:
-1. Step 3.6: Unified Device Abstraction in `runtime/core/Device.ml`
-2. Step 3.7: Kernel Execution integration
-3. Step 3.8: Migration - switch SPOC to use new ctypes plugins
+1. Step 3.8: Migration - switch SPOC tests to use new ctypes plugins
+2. Connect Sarek PPX output to new Runtime API
+3. Package split (sarek, sarek-runtime, sarek-cuda, sarek-opencl)
 
 ---
 

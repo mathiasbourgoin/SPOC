@@ -9,15 +9,16 @@ open Sarek_framework
 
 (** Unified device representation *)
 type t = {
-  id : int;                     (** Global device ID (0, 1, 2...) *)
-  backend_id : int;             (** ID within the backend (0, 1...) *)
-  name : string;                (** Human-readable device name *)
-  framework : string;           (** Backend name: "CUDA", "OpenCL", "Native" *)
+  id : int;  (** Global device ID (0, 1, 2...) *)
+  backend_id : int;  (** ID within the backend (0, 1...) *)
+  name : string;  (** Human-readable device name *)
+  framework : string;  (** Backend name: "CUDA", "OpenCL", "Native" *)
   capabilities : Framework_sig.capabilities;
 }
 
 (** Device initialization state *)
 let devices : t array ref = ref [||]
+
 let initialized = ref false
 
 (** Initialize all available backends and enumerate devices *)
@@ -27,38 +28,39 @@ let init ?(frameworks = ["CUDA"; "OpenCL"]) () =
     let all_devices = ref [] in
     let global_id = ref 0 in
 
-    frameworks |> List.iter (fun fw_name ->
-      match Framework_registry.find_backend fw_name with
-      | None -> () (* Backend not registered *)
-      | Some (module B : Framework_sig.BACKEND) ->
-          if B.is_available () then begin
-            try
-              B.Device.init ();
-              let count = B.Device.count () in
-              for i = 0 to count - 1 do
-                let dev = B.Device.get i in
-                let device = {
-                  id = !global_id;
-                  backend_id = i;
-                  name = B.Device.name dev;
-                  framework = B.name;
-                  capabilities = B.Device.capabilities dev;
-                } in
-                all_devices := device :: !all_devices;
-                incr global_id
-              done
-            with _ -> () (* Skip backends that fail to initialize *)
-          end
-    );
+    frameworks
+    |> List.iter (fun fw_name ->
+        match Framework_registry.find_backend fw_name with
+        | None -> () (* Backend not registered *)
+        | Some (module B : Framework_sig.BACKEND) ->
+            if B.is_available () then begin
+              try
+                B.Device.init () ;
+                let count = B.Device.count () in
+                for i = 0 to count - 1 do
+                  let dev = B.Device.get i in
+                  let device =
+                    {
+                      id = !global_id;
+                      backend_id = i;
+                      name = B.Device.name dev;
+                      framework = B.name;
+                      capabilities = B.Device.capabilities dev;
+                    }
+                  in
+                  all_devices := device :: !all_devices ;
+                  incr global_id
+                done
+              with _ -> () (* Skip backends that fail to initialize *)
+            end) ;
 
-    devices := Array.of_list (List.rev !all_devices);
-    initialized := true;
+    devices := Array.of_list (List.rev !all_devices) ;
+    initialized := true ;
     !devices
   end
 
 (** Get all initialized devices *)
-let all () =
-  if not !initialized then init () else !devices
+let all () = if not !initialized then init () else !devices
 
 (** Get device count *)
 let count () = Array.length (all ())
@@ -66,8 +68,7 @@ let count () = Array.length (all ())
 (** Get device by global ID *)
 let get id =
   let devs = all () in
-  if id >= 0 && id < Array.length devs then Some devs.(id)
-  else None
+  if id >= 0 && id < Array.length devs then Some devs.(id) else None
 
 (** Get first available device (if any) *)
 let first () =
@@ -92,24 +93,25 @@ let best () =
   if Array.length cuda > 0 then Some cuda.(0)
   else
     let opencl = by_framework "OpenCL" in
-    if Array.length opencl > 0 then Some opencl.(0)
-    else first ()
+    if Array.length opencl > 0 then Some opencl.(0) else first ()
 
 (** Reset initialization state (for testing) *)
 let reset () =
-  devices := [||];
+  devices := [||] ;
   initialized := false
 
 (** Pretty-print device info *)
 let to_string d =
-  Printf.sprintf "[%d] %s (%s) - %s, %.1f GB, %d MPs"
-    d.id d.name d.framework
-    (let (major, minor) = d.capabilities.compute_capability in
-     if major > 0 then Printf.sprintf "SM %d.%d" major minor
-     else "OpenCL")
-    (Int64.to_float d.capabilities.total_global_mem /. (1024.0 *. 1024.0 *. 1024.0))
+  Printf.sprintf
+    "[%d] %s (%s) - %s, %.1f GB, %d MPs"
+    d.id
+    d.name
+    d.framework
+    (let major, minor = d.capabilities.compute_capability in
+     if major > 0 then Printf.sprintf "SM %d.%d" major minor else "OpenCL")
+    (Int64.to_float d.capabilities.total_global_mem
+    /. (1024.0 *. 1024.0 *. 1024.0))
     d.capabilities.multiprocessor_count
 
 (** Print all devices *)
-let print_all () =
-  all () |> Array.iter (fun d -> print_endline (to_string d))
+let print_all () = all () |> Array.iter (fun d -> print_endline (to_string d))

@@ -90,24 +90,24 @@ let string_of_nvrtc_result = function
 (** {1 Library Loading} *)
 
 (** Load NVRTC library dynamically (lazy) *)
-let nvrtc_lib : Dl.library option Lazy.t = lazy (
-  try Some (Dl.dlopen ~filename:"libnvrtc.so.12" ~flags:[Dl.RTLD_LAZY])
-  with _ ->
-    try Some (Dl.dlopen ~filename:"libnvrtc.so.11" ~flags:[Dl.RTLD_LAZY])
-    with _ ->
-      try Some (Dl.dlopen ~filename:"libnvrtc.so" ~flags:[Dl.RTLD_LAZY])
-      with _ ->
-        try Some (Dl.dlopen ~filename:"libnvrtc.dylib" ~flags:[Dl.RTLD_LAZY])
-        with _ ->
-          try Some (Dl.dlopen ~filename:"nvrtc64_120_0.dll" ~flags:[Dl.RTLD_LAZY])
-          with _ -> None
-)
+let nvrtc_lib : Dl.library option Lazy.t =
+  lazy
+    (try Some (Dl.dlopen ~filename:"libnvrtc.so.12" ~flags:[Dl.RTLD_LAZY])
+     with _ -> (
+       try Some (Dl.dlopen ~filename:"libnvrtc.so.11" ~flags:[Dl.RTLD_LAZY])
+       with _ -> (
+         try Some (Dl.dlopen ~filename:"libnvrtc.so" ~flags:[Dl.RTLD_LAZY])
+         with _ -> (
+           try Some (Dl.dlopen ~filename:"libnvrtc.dylib" ~flags:[Dl.RTLD_LAZY])
+           with _ -> (
+             try
+               Some
+                 (Dl.dlopen ~filename:"nvrtc64_120_0.dll" ~flags:[Dl.RTLD_LAZY])
+             with _ -> None)))))
 
 (** Check if NVRTC library is available *)
 let is_available () =
-  match Lazy.force nvrtc_lib with
-  | Some _ -> true
-  | None -> false
+  match Lazy.force nvrtc_lib with Some _ -> true | None -> false
 
 (** Get NVRTC library, raising if not available *)
 let get_nvrtc_lib () =
@@ -121,67 +121,111 @@ let foreign_nvrtc_lazy name typ =
 
 (** {1 Bindings} *)
 
-let nvrtcVersion_lazy = foreign_nvrtc_lazy "nvrtcVersion" (ptr int @-> ptr int @-> returning nvrtc_result)
+let nvrtcVersion_lazy =
+  foreign_nvrtc_lazy
+    "nvrtcVersion"
+    (ptr int @-> ptr int @-> returning nvrtc_result)
+
 let nvrtcVersion major minor = Lazy.force nvrtcVersion_lazy major minor
 
-let nvrtcCreateProgram_lazy = foreign_nvrtc_lazy "nvrtcCreateProgram" (
-  ptr nvrtc_program_ptr @->
-  string @->
-  string_opt @->
-  int @->
-  ptr string_opt @->
-  ptr string_opt @->
-  returning nvrtc_result
-)
+let nvrtcCreateProgram_lazy =
+  foreign_nvrtc_lazy
+    "nvrtcCreateProgram"
+    (ptr nvrtc_program_ptr @-> string @-> string_opt @-> int @-> ptr string_opt
+   @-> ptr string_opt @-> returning nvrtc_result)
+
 let nvrtcCreateProgram prog src name numh headers includes =
   Lazy.force nvrtcCreateProgram_lazy prog src name numh headers includes
 
-let nvrtcDestroyProgram_lazy = foreign_nvrtc_lazy "nvrtcDestroyProgram" (ptr nvrtc_program_ptr @-> returning nvrtc_result)
+let nvrtcDestroyProgram_lazy =
+  foreign_nvrtc_lazy
+    "nvrtcDestroyProgram"
+    (ptr nvrtc_program_ptr @-> returning nvrtc_result)
+
 let nvrtcDestroyProgram prog = Lazy.force nvrtcDestroyProgram_lazy prog
 
-let nvrtcCompileProgram_lazy = foreign_nvrtc_lazy "nvrtcCompileProgram" (
-  nvrtc_program_ptr @->
-  int @->
-  ptr string @->
-  returning nvrtc_result
-)
-let nvrtcCompileProgram prog numopts opts = Lazy.force nvrtcCompileProgram_lazy prog numopts opts
+let nvrtcCompileProgram_lazy =
+  foreign_nvrtc_lazy
+    "nvrtcCompileProgram"
+    (nvrtc_program_ptr @-> int @-> ptr string @-> returning nvrtc_result)
 
-let nvrtcGetPTXSize_lazy = foreign_nvrtc_lazy "nvrtcGetPTXSize" (nvrtc_program_ptr @-> ptr size_t @-> returning nvrtc_result)
+let nvrtcCompileProgram prog numopts opts =
+  Lazy.force nvrtcCompileProgram_lazy prog numopts opts
+
+let nvrtcGetPTXSize_lazy =
+  foreign_nvrtc_lazy
+    "nvrtcGetPTXSize"
+    (nvrtc_program_ptr @-> ptr size_t @-> returning nvrtc_result)
+
 let nvrtcGetPTXSize prog size = Lazy.force nvrtcGetPTXSize_lazy prog size
 
-let nvrtcGetPTX_lazy = foreign_nvrtc_lazy "nvrtcGetPTX" (nvrtc_program_ptr @-> ptr char @-> returning nvrtc_result)
+let nvrtcGetPTX_lazy =
+  foreign_nvrtc_lazy
+    "nvrtcGetPTX"
+    (nvrtc_program_ptr @-> ptr char @-> returning nvrtc_result)
+
 let nvrtcGetPTX prog buf = Lazy.force nvrtcGetPTX_lazy prog buf
 
-let nvrtcGetCUBINSize_lazy = lazy (
-  try Some (foreign ~from:(get_nvrtc_lib ()) "nvrtcGetCUBINSize" (nvrtc_program_ptr @-> ptr size_t @-> returning nvrtc_result))
-  with _ -> None
-)
+let nvrtcGetCUBINSize_lazy =
+  lazy
+    (try
+       Some
+         (foreign
+            ~from:(get_nvrtc_lib ())
+            "nvrtcGetCUBINSize"
+            (nvrtc_program_ptr @-> ptr size_t @-> returning nvrtc_result))
+     with _ -> None)
+
 let nvrtcGetCUBINSize prog size =
   match Lazy.force nvrtcGetCUBINSize_lazy with
   | Some f -> f prog size
   | None -> NVRTC_ERROR_INVALID_PROGRAM
 
-let nvrtcGetCUBIN_lazy = lazy (
-  try Some (foreign ~from:(get_nvrtc_lib ()) "nvrtcGetCUBIN" (nvrtc_program_ptr @-> ptr char @-> returning nvrtc_result))
-  with _ -> None
-)
+let nvrtcGetCUBIN_lazy =
+  lazy
+    (try
+       Some
+         (foreign
+            ~from:(get_nvrtc_lib ())
+            "nvrtcGetCUBIN"
+            (nvrtc_program_ptr @-> ptr char @-> returning nvrtc_result))
+     with _ -> None)
+
 let nvrtcGetCUBIN prog buf =
   match Lazy.force nvrtcGetCUBIN_lazy with
   | Some f -> f prog buf
   | None -> NVRTC_ERROR_INVALID_PROGRAM
 
-let nvrtcGetProgramLogSize_lazy = foreign_nvrtc_lazy "nvrtcGetProgramLogSize" (nvrtc_program_ptr @-> ptr size_t @-> returning nvrtc_result)
-let nvrtcGetProgramLogSize prog size = Lazy.force nvrtcGetProgramLogSize_lazy prog size
+let nvrtcGetProgramLogSize_lazy =
+  foreign_nvrtc_lazy
+    "nvrtcGetProgramLogSize"
+    (nvrtc_program_ptr @-> ptr size_t @-> returning nvrtc_result)
 
-let nvrtcGetProgramLog_lazy = foreign_nvrtc_lazy "nvrtcGetProgramLog" (nvrtc_program_ptr @-> ptr char @-> returning nvrtc_result)
+let nvrtcGetProgramLogSize prog size =
+  Lazy.force nvrtcGetProgramLogSize_lazy prog size
+
+let nvrtcGetProgramLog_lazy =
+  foreign_nvrtc_lazy
+    "nvrtcGetProgramLog"
+    (nvrtc_program_ptr @-> ptr char @-> returning nvrtc_result)
+
 let nvrtcGetProgramLog prog buf = Lazy.force nvrtcGetProgramLog_lazy prog buf
 
-let nvrtcAddNameExpression_lazy = foreign_nvrtc_lazy "nvrtcAddNameExpression" (nvrtc_program_ptr @-> string @-> returning nvrtc_result)
-let nvrtcAddNameExpression prog name = Lazy.force nvrtcAddNameExpression_lazy prog name
+let nvrtcAddNameExpression_lazy =
+  foreign_nvrtc_lazy
+    "nvrtcAddNameExpression"
+    (nvrtc_program_ptr @-> string @-> returning nvrtc_result)
 
-let nvrtcGetLoweredName_lazy = foreign_nvrtc_lazy "nvrtcGetLoweredName" (nvrtc_program_ptr @-> string @-> ptr string @-> returning nvrtc_result)
-let nvrtcGetLoweredName prog name lowered = Lazy.force nvrtcGetLoweredName_lazy prog name lowered
+let nvrtcAddNameExpression prog name =
+  Lazy.force nvrtcAddNameExpression_lazy prog name
+
+let nvrtcGetLoweredName_lazy =
+  foreign_nvrtc_lazy
+    "nvrtcGetLoweredName"
+    (nvrtc_program_ptr @-> string @-> ptr string @-> returning nvrtc_result)
+
+let nvrtcGetLoweredName prog name lowered =
+  Lazy.force nvrtcGetLoweredName_lazy prog name lowered
 
 (** {1 High-Level Helpers} *)
 

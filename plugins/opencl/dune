@@ -5,6 +5,11 @@
 (library
  (name sarek_opencl)
  (optional)
- (libraries ctypes ctypes-foreign sarek_framework (re_export sarek_core))
+ (libraries
+  ctypes
+  ctypes.foreign
+  str
+  sarek_framework
+  (re_export sarek_core))
  (modules Opencl_types Opencl_bindings Opencl_api Opencl_plugin)
  (preprocess no_preprocessing))

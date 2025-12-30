@@ -10,13 +10,14 @@ open Sarek_framework
 (** Unified buffer type - wraps backend-specific buffers *)
 type 'a buffer = {
   device : Device.t;
-  size : int;                    (** Number of elements *)
+  size : int;  (** Number of elements *)
   kind : ('a, Bigarray.c_layout) Bigarray.kind;
-  handle : Obj.t;                (** Backend-specific buffer handle *)
+  handle : Obj.t;  (** Backend-specific buffer handle *)
 }
 
 (** Allocate a buffer on a device *)
-let alloc (device : Device.t) (size : int) (kind : ('a, 'b) Bigarray.kind) : 'a buffer =
+let alloc (device : Device.t) (size : int) (kind : ('a, 'b) Bigarray.kind) :
+    'a buffer =
   match Framework_registry.find_backend device.framework with
   | None -> failwith ("Unknown framework: " ^ device.framework)
   | Some (module B : Framework_sig.BACKEND) ->
@@ -25,7 +26,8 @@ let alloc (device : Device.t) (size : int) (kind : ('a, 'b) Bigarray.kind) : 'a 
       {
         device;
         size;
-        kind = Obj.magic kind; (* Safe: same underlying type *)
+        kind = Obj.magic kind;
+        (* Safe: same underlying type *)
         handle = Obj.repr buf;
       }
 

@@ -211,9 +211,14 @@ module Device = struct
 
     (* Check FP64 support *)
     let extensions = get_info_string handle CL_DEVICE_EXTENSIONS in
+    let contains sub str =
+      try
+        let _ = Str.search_forward (Str.regexp_string sub) str 0 in
+        true
+      with Not_found -> false
+    in
     let supports_fp64 =
-      String.is_substring ~sub:"cl_khr_fp64" extensions
-      || String.is_substring ~sub:"cl_amd_fp64" extensions
+      contains "cl_khr_fp64" extensions || contains "cl_amd_fp64" extensions
     in
 
     {
@@ -249,7 +254,7 @@ module Device = struct
       (fun p ->
         let devices = get_devices p cl_device_type_all in
         Array.iteri
-          (fun i d ->
+          (fun _i d ->
             if !current = idx then result := Some (make_device p idx d) ;
             incr current)
           devices)

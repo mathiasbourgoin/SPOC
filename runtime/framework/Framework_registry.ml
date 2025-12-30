@@ -9,7 +9,8 @@
 let plugins : (string, (module Framework_sig.S)) Hashtbl.t = Hashtbl.create 8
 
 (** Full backend plugins with complete functionality *)
-let backends : (string, (module Framework_sig.BACKEND)) Hashtbl.t = Hashtbl.create 8
+let backends : (string, (module Framework_sig.BACKEND)) Hashtbl.t =
+  Hashtbl.create 8
 
 (** Priority ordering for auto-selection (higher = preferred) *)
 let priorities : (string, int) Hashtbl.t = Hashtbl.create 8
@@ -62,8 +63,12 @@ let best_backend () =
       let sorted =
         List.sort
           (fun (name1, _) (name2, _) ->
-            let p1 = Hashtbl.find_opt priorities name1 |> Option.value ~default:50 in
-            let p2 = Hashtbl.find_opt priorities name2 |> Option.value ~default:50 in
+            let p1 =
+              Hashtbl.find_opt priorities name1 |> Option.value ~default:50
+            in
+            let p2 =
+              Hashtbl.find_opt priorities name2 |> Option.value ~default:50
+            in
             compare p2 p1) (* descending *)
           backends
       in

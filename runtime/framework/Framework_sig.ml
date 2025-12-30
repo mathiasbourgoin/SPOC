@@ -24,7 +24,8 @@ type capabilities = {
   max_grid_dims : int * int * int;
   shared_mem_per_block : int;
   total_global_mem : int64;
-  compute_capability : int * int;  (** (major, minor) for CUDA, (0,0) for OpenCL *)
+  compute_capability : int * int;
+      (** (major, minor) for CUDA, (0,0) for OpenCL *)
   supports_fp64 : bool;
   supports_atomics : bool;
   warp_size : int;
@@ -35,8 +36,8 @@ type capabilities = {
 
 (** {1 Plugin Module Signature} *)
 
-(** Minimal framework signature for plugin registration.
-    Used by Framework_registry for basic plugin management. *)
+(** Minimal framework signature for plugin registration. Used by
+    Framework_registry for basic plugin management. *)
 module type S = sig
   val name : string
 
@@ -45,8 +46,9 @@ module type S = sig
   val is_available : unit -> bool
 end
 
-(** Full plugin signature with Device, Memory, Stream, Event, and Kernel modules.
-    This is the complete interface that backends (CUDA, OpenCL) implement. *)
+(** Full plugin signature with Device, Memory, Stream, Event, and Kernel
+    modules. This is the complete interface that backends (CUDA, OpenCL)
+    implement. *)
 module type BACKEND = sig
   val name : string
 

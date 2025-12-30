@@ -1,0 +1,7 @@
+; Sarek Runtime Tests
+; Tests for the new ctypes-based plugin architecture
+
+(executable
+ (name test_runtime)
+ (libraries sarek_cuda sarek_opencl sarek_core)
+ (modules test_runtime))

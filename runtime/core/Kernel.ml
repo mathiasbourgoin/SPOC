@@ -10,13 +10,13 @@ open Sarek_framework
 type t = {
   device : Device.t;
   name : string;
-  handle : Obj.t;               (** Backend-specific kernel handle *)
+  handle : Obj.t;  (** Backend-specific kernel handle *)
 }
 
 (** Kernel arguments builder *)
 type args = {
   device : Device.t;
-  handle : Obj.t;               (** Backend-specific args handle *)
+  handle : Obj.t;  (** Backend-specific args handle *)
 }
 
 (** Compile a kernel from source *)
@@ -26,7 +26,7 @@ let compile (device : Device.t) ~(name : string) ~(source : string) : t =
   | Some (module B : Framework_sig.BACKEND) ->
       let dev = B.Device.get device.backend_id in
       let k = B.Kernel.compile dev ~name ~source in
-      { device; name; handle = Obj.repr k }
+      {device; name; handle = Obj.repr k}
 
 (** Compile with caching *)
 let compile_cached (device : Device.t) ~(name : string) ~(source : string) : t =
@@ -35,7 +35,7 @@ let compile_cached (device : Device.t) ~(name : string) ~(source : string) : t =
   | Some (module B : Framework_sig.BACKEND) ->
       let dev = B.Device.get device.backend_id in
       let k = B.Kernel.compile_cached dev ~name ~source in
-      { device; name; handle = Obj.repr k }
+      {device; name; handle = Obj.repr k}
 
 (** Create an arguments object *)
 let create_args (device : Device.t) : args =
@@ -43,7 +43,7 @@ let create_args (device : Device.t) : args =
   | None -> failwith ("Unknown framework: " ^ device.framework)
   | Some (module B : Framework_sig.BACKEND) ->
       let a = B.Kernel.create_args () in
-      { device; handle = Obj.repr a }
+      {device; handle = Obj.repr a}
 
 (** Set buffer argument *)
 let set_arg_buffer (args : args) (idx : int) (buf : _ Memory.buffer) : unit =
@@ -100,5 +100,4 @@ let launch (kernel : t) ~(args : args) ~(grid : Framework_sig.dims)
 let clear_cache (device : Device.t) : unit =
   match Framework_registry.find_backend device.framework with
   | None -> ()
-  | Some (module B : Framework_sig.BACKEND) ->
-      B.Kernel.clear_cache ()
+  | Some (module B : Framework_sig.BACKEND) -> B.Kernel.clear_cache ()

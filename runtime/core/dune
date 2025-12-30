@@ -4,5 +4,5 @@
 (library
  (name sarek_core)
  (libraries sarek_framework)
- (modules Device Memory Kernel)
+ (modules Device Memory Kernel Runtime)
  (preprocess no_preprocessing))
