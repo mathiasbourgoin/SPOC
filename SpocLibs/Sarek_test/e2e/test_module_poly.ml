@@ -14,8 +14,10 @@ let[@sarek.module] identity (x : 'a) : 'a = x
 let test_poly_identity () =
   let test_kernel =
     [%kernel
-      fun (src_i : int32 vector) (src_f : float32 vector)
-          (dst_i : int32 vector) (dst_f : float32 vector) ->
+      fun (src_i : int32 vector)
+          (src_f : float32 vector)
+          (dst_i : int32 vector)
+          (dst_f : float32 vector) ->
         let open Std in
         let idx = global_idx_x in
         (* Use identity at int32 *)
@@ -84,7 +86,9 @@ let () =
   print_endline "" ;
 
   print_endline "=== Summary ===" ;
-  Printf.printf "Polymorphic module identity: %s\n" (if t1 then "PASS" else "FAIL") ;
+  Printf.printf
+    "Polymorphic module identity: %s\n"
+    (if t1 then "PASS" else "FAIL") ;
 
   if t1 then (
     print_endline "\nAll tests passed!" ;

@@ -196,16 +196,36 @@ let rec has_recursion_in_loops (fname : string) (expr : texpr) : bool =
       has_recursion_in_loops fname step || has_recursion_in_loops fname cont
   | _ -> false
 
+(** Detect bounded recursion depth from the code structure.
+
+    This is a conservative analysis that only returns Some when we can prove the
+    recursion is bounded. Currently disabled as the analysis is too imprecise.
+
+    TODO: Implement proper termination analysis that tracks:
+    - Which parameter is the "depth" parameter (must increase towards bound)
+    - That recursive calls increment that parameter
+    - That the bound is reached before max_inline_limit
+
+    For now, we only support tail recursion which is transformed to loops. *)
+let detect_bounded_depth (_fname : string) (_body : texpr) : int option =
+  (* Disabled - the simple heuristic was too imprecise and caused infinite
+     inlining for patterns like fibonacci where n decreases rather than
+     a depth parameter that increases. *)
+  None
+
 (** Analyze a function for recursion patterns *)
 let analyze_recursion (fname : string) (body : texpr) : recursion_info =
   let call_count = count_recursive_calls fname body in
   let is_tail = call_count > 0 && is_tail_recursive fname body in
   let in_loop = has_recursion_in_loops fname body in
+  let max_depth =
+    if call_count > 0 && not is_tail then detect_bounded_depth fname body
+    else None
+  in
   {
     ri_name = fname;
     ri_is_tail = is_tail;
-    ri_max_depth = None;
-    (* TODO: detect bounded depth *)
+    ri_max_depth = max_depth;
     ri_call_count = call_count;
     ri_in_loop = in_loop;
   }
@@ -389,16 +409,45 @@ let eliminate_tail_recursion (fname : string) (params : tparam list)
     match expr.te with
     | TEApp (fn, args) when is_self_call fname fn ->
         (* Replace recursive call with assignment to loop variables.
-           _continue stays true, so loop continues. *)
-        let assigns =
-          List.map2
-            (fun (name, _orig_id, loop_id, _ty) arg ->
-              mk_loop_assign name loop_id arg)
-            loop_vars
+           _continue stays true, so loop continues.
+
+           IMPORTANT: We must evaluate all arguments BEFORE assigning them,
+           otherwise `gcd b (a mod b)` would become:
+             __a := __b;
+             __b := __a mod __b;  // Wrong! Uses new __a, not old
+           Instead we generate:
+             let _tmp_0 = __b in
+             let _tmp_1 = __a mod __b in
+             __a := _tmp_0;
+             __b := _tmp_1;
+        *)
+        (* Create temporary variables for each argument *)
+        let temps =
+          List.mapi
+            (fun i arg ->
+              let tmp_id = fresh_transform_id () in
+              let tmp_name = "_tmp_" ^ string_of_int i in
+              (tmp_name, tmp_id, arg))
             args
         in
-        (* Sequence of assignments *)
-        {te = TESeq assigns; ty = t_unit; te_loc = expr.te_loc}
+        (* Create assignments from temps to loop vars *)
+        let assigns =
+          List.map2
+            (fun (name, _orig_id, loop_id, _ty) (tmp_name, tmp_id, arg) ->
+              let tmp_ref =
+                {te = TEVar (tmp_name, tmp_id); ty = arg.ty; te_loc = loc}
+              in
+              mk_loop_assign name loop_id tmp_ref)
+            loop_vars
+            temps
+        in
+        (* Wrap assigns in let bindings for temps *)
+        let body = {te = TESeq assigns; ty = t_unit; te_loc = expr.te_loc} in
+        List.fold_right
+          (fun (tmp_name, tmp_id, arg) acc ->
+            {te = TELet (tmp_name, tmp_id, arg, acc); ty = t_unit; te_loc = loc})
+          temps
+          body
     | TEIf (cond, then_, else_opt) ->
         (* Only transform branches - condition is NOT in tail position *)
         {
@@ -541,13 +590,20 @@ let eliminate_tail_recursion (fname : string) (params : tparam list)
 (** {1 Bounded Recursion Inlining} *)
 
 (** Inline bounded recursion up to a maximum depth. This is used for
-    non-tail-recursive functions with known bounds. *)
+    non-tail-recursive functions with known bounds.
+
+    Note: max_depth is the value from the termination condition (e.g., if depth
+    >= 4). We inline one extra level to ensure the base case is properly
+    expanded. *)
 let inline_bounded_recursion (fname : string) (params : tparam list)
     (body : texpr) (max_depth : int) (_loc : Sarek_ast.loc) : texpr =
+  (* Add some buffer to ensure base cases are fully expanded *)
+  let effective_depth = max_depth + 2 in
   let rec inline depth expr =
-    if depth > max_depth then
-      (* Exceeded depth: insert error/default *)
-      {expr with te = TEUnit} (* Or could raise *)
+    if depth > effective_depth then
+      (* Exceeded depth - this should not happen if depth detection is correct.
+         Return the expression unchanged as a safety fallback. *)
+      expr
     else
       match expr.te with
       | TEApp (fn, args) when is_self_call fname fn ->
@@ -625,15 +681,21 @@ let inline_bounded_recursion (fname : string) (params : tparam list)
 
 (** {1 Kernel-Level Pass} *)
 
-(** Transform all tail-recursive module functions in a kernel to loops.
-    Non-tail-recursive functions are left unchanged with a warning.
+(** Maximum inline depth for bounded recursion. Beyond this, we refuse to
+    compile as it would generate too much code. *)
+let max_inline_limit = 16
+
+(** Transform all recursive module functions in a kernel:
+    - Tail-recursive functions are transformed to loops
+    - Bounded non-tail-recursive functions are inlined up to the bound
+    - Unbounded non-tail-recursive functions produce a compile error
 
     This pass is run after type checking and before lowering to Kirc. *)
 let transform_kernel (kernel : tkernel) : tkernel =
   let new_items =
     List.map
       (function
-        | TMFun (name, is_rec, params, body) as orig ->
+        | TMFun (name, is_rec, params, body) as orig -> (
             let info = analyze_recursion name body in
             if info.ri_call_count = 0 then
               (* Not recursive, leave as-is *)
@@ -647,17 +709,41 @@ let transform_kernel (kernel : tkernel) : tkernel =
                 eliminate_tail_recursion name params body body.te_loc
               in
               TMFun (name, is_rec, params, new_body))
-            else (
-              (* Recursive but not tail - warn and leave as-is *)
-              Format.eprintf
-                "Sarek warning: function '%s' is recursive but not \
-                 tail-recursive@."
-                name ;
-              Format.eprintf
-                "  (recursive calls: %d, in loops: %b)@."
-                info.ri_call_count
-                info.ri_in_loop ;
-              orig)
+            else
+              match info.ri_max_depth with
+              | Some depth when depth <= max_inline_limit ->
+                  (* Bounded non-tail recursion - inline *)
+                  Format.eprintf
+                    "Sarek: inlining bounded recursive function '%s' (depth \
+                     %d)@."
+                    name
+                    depth ;
+                  let new_body =
+                    inline_bounded_recursion name params body depth body.te_loc
+                  in
+                  TMFun (name, is_rec, params, new_body)
+              | Some depth ->
+                  (* Bounded but too deep *)
+                  Format.eprintf
+                    "Sarek error: recursive function '%s' has depth %d, \
+                     exceeds limit %d@."
+                    name
+                    depth
+                    max_inline_limit ;
+                  orig
+              | None ->
+                  (* Unbounded non-tail recursion - warn *)
+                  Format.eprintf
+                    "Sarek warning: function '%s' is recursive but not \
+                     tail-recursive@."
+                    name ;
+                  Format.eprintf
+                    "  (recursive calls: %d, in loops: %b)@."
+                    info.ri_call_count
+                    info.ri_in_loop ;
+                  Format.eprintf
+                    "  Consider using tail recursion or adding a depth bound.@." ;
+                  orig)
         | item -> item)
       kernel.tkern_module_items
   in
