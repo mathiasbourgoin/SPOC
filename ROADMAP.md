@@ -1256,6 +1256,46 @@ sarek-native/         # Direct backend
 
 ---
 
+## Buffer/Vector Redesign (Phase 4)
+
+The current plugin architecture uses Bigarrays for memory, but this is insufficient for Sarek's needs:
+
+### Current Limitation
+- Bigarrays only handle numeric types (`float32`, `int32`, etc.)
+- SPOC's `CustomArray` supports user-defined structs with serialize/deserialize
+- No support for Struct-of-Arrays (SoA) layouts for GPU efficiency
+
+### Proposed Unified Buffer
+
+```ocaml
+(* sarek-runtime/Buffer.ml *)
+type layout =
+  | Bigarray of Bigarray.kind  (* numeric types *)
+  | Custom of {
+      elem_size : int;
+      serialize : 'a -> bytes;
+      deserialize : bytes -> 'a;
+    }
+  | SoA of field list  (* struct-of-arrays for GPU efficiency *)
+
+type 'a t = {
+  length : int;
+  layout : layout;
+  host_data : Obj.t option;
+  device_handle : Obj.t option;
+  device : Device.t option;
+}
+```
+
+### Integration with PPX
+- PPX generates serialization code for custom types (`[@sarek.struct]`)
+- Type-safe at compile time, efficient at runtime
+- Each plugin provides its own device memory management
+
+This redesign should happen alongside PPX integration in Phase 4.
+
+---
+
 ## Open Questions
 
 1. **Polymorphism scope**: Should we support higher-kinded types or just rank-1?
@@ -1263,3 +1303,4 @@ sarek-native/         # Direct backend
 3. **Vulkan/Metal**: Should plugins for these be included in initial scope?
 4. **WebGPU**: Browser support via wasm - worth considering?
 5. **LLVM backend**: Worth implementing as Custom backend for CPU optimization?
+6. **Buffer layout**: SoA vs AoS - should we auto-transform for GPU efficiency?
