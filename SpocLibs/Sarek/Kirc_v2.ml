@@ -127,6 +127,7 @@ let to_kirc_kernel (k : 'a kernel_v2) :
   {
     Kirc.ml_kern = (fun () -> ());
     Kirc.body;
+    Kirc.body_v2 = None;
     (* ret_val is unused in V2 path; dummy value for type compatibility *)
     Kirc.ret_val = (Kirc_Ast.Empty, Obj.magic Spoc.Vector.int32);
     Kirc.extensions = k.extensions;

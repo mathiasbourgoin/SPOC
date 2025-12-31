@@ -54,6 +54,11 @@ type binop =
   | Ge
   | And
   | Or
+  | Shl
+  | Shr
+  | BitAnd
+  | BitOr
+  | BitXor
 
 (** Unary operators *)
 type unop = Neg | Not
@@ -159,6 +164,11 @@ let string_of_binop = function
   | Ge -> ">="
   | And -> "&&"
   | Or -> "||"
+  | Shl -> "<<"
+  | Shr -> ">>"
+  | BitAnd -> "&"
+  | BitOr -> "|"
+  | BitXor -> "^"
 
 let string_of_unop = function Neg -> "-" | Not -> "!"
 
@@ -739,6 +749,21 @@ let rec k_ext_of_expr : expr -> Kirc_Ast.k_ext = function
   | EBinop (Ge, e1, e2) -> Kirc_Ast.GtEBool (k_ext_of_expr e1, k_ext_of_expr e2)
   | EBinop (And, e1, e2) -> Kirc_Ast.And (k_ext_of_expr e1, k_ext_of_expr e2)
   | EBinop (Or, e1, e2) -> Kirc_Ast.Or (k_ext_of_expr e1, k_ext_of_expr e2)
+  | EBinop (Shl, e1, e2) ->
+      (* Use intrinsic call for shift left *)
+      Kirc_Ast.App (Kirc_Ast.Id "__shl", [| k_ext_of_expr e1; k_ext_of_expr e2 |])
+  | EBinop (Shr, e1, e2) ->
+      (* Use intrinsic call for shift right *)
+      Kirc_Ast.App (Kirc_Ast.Id "__shr", [| k_ext_of_expr e1; k_ext_of_expr e2 |])
+  | EBinop (BitAnd, e1, e2) ->
+      (* Use intrinsic call for bitwise and *)
+      Kirc_Ast.App (Kirc_Ast.Id "__band", [| k_ext_of_expr e1; k_ext_of_expr e2 |])
+  | EBinop (BitOr, e1, e2) ->
+      (* Use intrinsic call for bitwise or *)
+      Kirc_Ast.App (Kirc_Ast.Id "__bor", [| k_ext_of_expr e1; k_ext_of_expr e2 |])
+  | EBinop (BitXor, e1, e2) ->
+      (* Use intrinsic call for bitwise xor *)
+      Kirc_Ast.App (Kirc_Ast.Id "__bxor", [| k_ext_of_expr e1; k_ext_of_expr e2 |])
   | EUnop (Neg, e) -> Kirc_Ast.Min (Kirc_Ast.Int 0, k_ext_of_expr e)
   | EUnop (Not, e) -> Kirc_Ast.Not (k_ext_of_expr e)
   | EArrayRead (arr, idx) ->

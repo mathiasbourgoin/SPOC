@@ -660,16 +660,31 @@ let expand_kernel ~ctxt payload =
             let tkernel = Sarek_tailrec.transform_kernel tkernel in
             Sarek_debug.log_exit "transform_kernel" ;
 
-            (* 7. Lower to Kirc_Ast *)
+            (* 7. Lower to Kirc_Ast (legacy) *)
             Sarek_debug.log_enter "lower_kernel" ;
             let ir, constructors = Sarek_lower.lower_kernel tkernel in
             Sarek_debug.log_exit "lower_kernel" ;
             let ret_val = Sarek_lower.lower_return_value tkernel in
 
+            (* 7b. Lower to Sarek_ir (V2) - optional, fails gracefully *)
+            let v2_kernel =
+              try
+                Sarek_debug.log_enter "lower_kernel_v2" ;
+                let k, _constructors_v2 =
+                  Sarek_lower_v2.lower_kernel tkernel
+                in
+                Sarek_debug.log_exit "lower_kernel_v2" ;
+                Some k
+              with _ ->
+                Sarek_debug.log_exit "lower_kernel_v2 (failed)" ;
+                None
+            in
+
             (* 8. Quote the IR back to OCaml *)
             Sarek_quote.quote_kernel
               ~loc
               ~native_kernel
+              ?ir_v2:v2_kernel
               tkernel
               ir
               constructors

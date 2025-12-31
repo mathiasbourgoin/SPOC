@@ -660,7 +660,8 @@ let generate_intrinsic_check ~loc (kernel : tkernel) : expression =
         ()]
 
 (** Quote a kernel to create a sarek_kernel expression *)
-let quote_kernel ~loc ?(native_kernel : tkernel option) (kernel : tkernel)
+let quote_kernel ~loc ?(native_kernel : tkernel option)
+    ?(ir_v2 : Sarek_ir_ppx.kernel option) (kernel : tkernel)
     (ir : Kirc_Ast.k_ext) (constructors : string list)
     (ret_val : Kirc_Ast.k_ext) : expression =
   (* Use native_kernel for CPU code generation if provided, otherwise use kernel.
@@ -699,6 +700,12 @@ let quote_kernel ~loc ?(native_kernel : tkernel option) (kernel : tkernel)
     end in
     let open Sarek.Kirc in
     let body_ir = [%e quote_k_ext ~loc ir] in
+    let body_v2_ir =
+      [%e
+        match ir_v2 with
+        | Some k -> [%expr Some [%e Sarek_quote_ir.quote_kernel ~loc k]]
+        | None -> [%expr None]]
+    in
     let ret_ir = [%e quote_k_ext ~loc ret_val] in
     let _intrinsic_check = [%e generate_intrinsic_check ~loc kernel] in
     let cpu_kern_fn =
@@ -708,6 +715,7 @@ let quote_kernel ~loc ?(native_kernel : tkernel option) (kernel : tkernel)
       {
         Sarek.Kirc.ml_kern = (fun () -> ());
         Sarek.Kirc.body = body_ir;
+        Sarek.Kirc.body_v2 = body_v2_ir;
         Sarek.Kirc.ret_val = (ret_ir, Spoc.Vector.int32);
         Sarek.Kirc.extensions = [||];
         Sarek.Kirc.cpu_kern = Some cpu_kern_fn;

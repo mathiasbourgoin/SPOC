@@ -72,6 +72,7 @@ type extension = ExFloat32 | ExFloat64
 type ('a, 'b, 'c) kirc_kernel = {
   ml_kern : 'a;
   body : Kirc_Ast.k_ext;
+  body_v2 : Sarek_ir.kernel option;  (* V2 IR for new execution path *)
   ret_val : Kirc_Ast.k_ext * ('b, 'c) Vector.kind;
   extensions : extension array;
   cpu_kern :
@@ -823,6 +824,7 @@ let opencl_source ?profile:(prof = profile_default ()) ?return:(r = false)
               {
                 ml_kern = k1;
                 body = fst k3;
+                body_v2 = None;
                 ret_val = k3;
                 extensions = k.extensions;
                 cpu_kern = k.cpu_kern;
@@ -927,6 +929,7 @@ let gen ?keep_temp:(kt = false) ?profile:(prof = profile_default ())
               {
                 ml_kern = k1;
                 body = fst k3;
+                body_v2 = None;
                 ret_val = k3;
                 extensions = k.extensions;
                 cpu_kern = k.cpu_kern;
@@ -1470,6 +1473,7 @@ let compile_kernel_to_files s (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel) dev =
               {
                 ml_kern = k1;
                 body = fst k3;
+                body_v2 = None;
                 ret_val = k3;
                 extensions = k.extensions;
                 cpu_kern = k.cpu_kern;
@@ -1594,6 +1598,7 @@ module Fusion = struct
     {
       ml_kern = consumer.ml_kern;
       body = fused_body;
+      body_v2 = None;
       ret_val = consumer.ret_val;
       extensions =
         Array.append producer.extensions consumer.extensions

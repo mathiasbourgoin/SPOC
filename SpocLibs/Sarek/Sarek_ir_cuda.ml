@@ -142,6 +142,11 @@ and gen_binop = function
   | Ge -> " >= "
   | And -> " && "
   | Or -> " || "
+  | Shl -> " << "
+  | Shr -> " >> "
+  | BitAnd -> " & "
+  | BitOr -> " | "
+  | BitXor -> " ^ "
 
 and gen_unop = function Neg -> "-" | Not -> "!"
 

@@ -238,6 +238,7 @@ let map2 (ker : ('a, 'b, 'c -> 'd -> 'e, 'f, 'g) sarek_kernel)
            in
            map2 k1 (snd k3));
         body = aux k2;
+        body_v2 = None;
         ret_val = (Unit, Vector.int32);
         extensions = k.extensions;
         cpu_kern = None;
@@ -334,6 +335,7 @@ let build_new_ker spoc_ker kir_ker ker ml_fun =
     {
       ml_kern = ml_fun;
       body = ker;
+      body_v2 = None;
       ret_val = (Unit, Vector.Unit ((), ()));
       extensions = kir_ker.extensions;
       cpu_kern = None;
