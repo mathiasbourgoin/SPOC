@@ -452,6 +452,11 @@ Complete rewrite of SPOC with:
   - Plugins auto-register when libraries are available
 - **Step 3.8** ⏳ Migration (parallel dev, switch over, package split) - not started
 
+### Remaining Tasks (Phase 3)
+- [ ] **Fix anonymous record type inference** - The typer should propagate type annotations to record literals. Currently `{x = ...; y = ...}` is typed as `anon_record_sarek` even when context expects a named type like `point`. Workaround: copy record first, then update fields individually.
+- [ ] **Add CUDA custom types test** - We only tested OpenCL with `test_new_runtime_custom.ml`. Should verify CUDA plugin works with custom types too.
+- [ ] **Remove unused scan_dir_for_sarek_types** - This function in Sarek_ppx.ml is no longer called after the fix for cross-file type scanning issues. Should be removed entirely.
+
 ### Current State (legacy)
 - C stubs in `Spoc/*.c` (9 files, ~5000 lines of C)
 - Mixed OCaml/C for CUDA and OpenCL
