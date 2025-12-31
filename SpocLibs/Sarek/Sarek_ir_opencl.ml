@@ -12,6 +12,11 @@
  ******************************************************************************)
 
 open Sarek_ir
+open Sarek_core
+
+(** Current device for SNative code generation (set during generate_for_device)
+*)
+let current_device : Device.t option ref = ref None
 
 (** {1 Type Mapping} *)
 
@@ -401,6 +406,18 @@ let rec gen_stmt buf indent = function
   | SMemFence ->
       Buffer.add_string buf indent ;
       Buffer.add_string buf "mem_fence(CLK_GLOBAL_MEM_FENCE);\n"
+  | SNative {gpu; ocaml = _} -> (
+      match !current_device with
+      | Some dev ->
+          let code = gpu dev in
+          Buffer.add_string buf indent ;
+          Buffer.add_string buf code ;
+          if not (String.length code > 0 && code.[String.length code - 1] = '\n')
+          then Buffer.add_char buf '\n'
+      | None ->
+          failwith
+            "SNative requires device context - use generate_for_device instead \
+             of generate")
   | SExpr e ->
       Buffer.add_string buf indent ;
       gen_expr buf e ;
@@ -509,6 +526,13 @@ let generate (k : kernel) : string =
   Buffer.add_string buf "}\n" ;
 
   Buffer.contents buf
+
+(** Generate complete OpenCL source with device context for SNative *)
+let generate_for_device ~(device : Device.t) (k : kernel) : string =
+  current_device := Some device ;
+  let result = generate k in
+  current_device := None ;
+  result
 
 (** Generate OpenCL source with custom type definitions *)
 let generate_with_types ~(types : (string * (string * elttype) list) list)

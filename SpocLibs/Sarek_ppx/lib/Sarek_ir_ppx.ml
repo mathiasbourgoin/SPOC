@@ -117,6 +117,10 @@ type stmt =
   | SLetMut of var * expr * stmt
   | SPragma of string list * stmt
   | SMemFence
+  | SNative of {
+      gpu : Ppxlib.expression;  (** fun dev -> "cuda/opencl code" *)
+      ocaml : Ppxlib.expression;  (** OCaml fallback for interpreter/native *)
+    }  (** Inline native GPU code with OCaml fallback *)
 
 (** Array info for parameters *)
 type array_info = {arr_elttype : elttype; arr_memspace : memspace}

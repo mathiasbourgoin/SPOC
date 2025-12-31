@@ -161,7 +161,7 @@ let rec subst_array_read_stmt arr idx_var replacement stmt =
       SLetMut (v, subst_e e, subst_array_read_stmt arr idx_var replacement body)
   | SPragma (hints, body) ->
       SPragma (hints, subst_array_read_stmt arr idx_var replacement body)
-  | SBarrier | SWarpBarrier | SMemFence | SEmpty -> stmt
+  | SBarrier | SWarpBarrier | SMemFence | SEmpty | SNative _ -> stmt
 
 (** Check if statement uses an array *)
 let rec stmt_uses_array arr stmt =
@@ -184,7 +184,7 @@ let rec stmt_uses_array arr stmt =
   | SLet (_, e, body) | SLetMut (_, e, body) ->
       expr_uses_array arr e || stmt_uses_array arr body
   | SPragma (_, body) -> stmt_uses_array arr body
-  | SBarrier | SWarpBarrier | SMemFence | SEmpty -> false
+  | SBarrier | SWarpBarrier | SMemFence | SEmpty | SNative _ -> false
 
 (** {1 Analysis} *)
 
@@ -230,7 +230,9 @@ let rec collect_writes_stmt acc stmt =
       List.fold_left (fun acc (_, s) -> collect_writes_stmt acc s) acc cases
   | SLet (_, _, body) | SLetMut (_, _, body) | SPragma (_, body) ->
       collect_writes_stmt acc body
-  | SReturn _ | SExpr _ | SBarrier | SWarpBarrier | SMemFence | SEmpty -> acc
+  | SReturn _ | SExpr _ | SBarrier | SWarpBarrier | SMemFence | SEmpty
+  | SNative _ ->
+      acc
 
 (** Collect all array reads from a statement *)
 let rec collect_reads_stmt acc stmt =
@@ -254,7 +256,7 @@ let rec collect_reads_stmt acc stmt =
   | SLet (_, e, body) | SLetMut (_, e, body) ->
       collect_reads_stmt (collect_reads_expr acc e) body
   | SPragma (_, body) -> collect_reads_stmt acc body
-  | SBarrier | SWarpBarrier | SMemFence | SEmpty -> acc
+  | SBarrier | SWarpBarrier | SMemFence | SEmpty | SNative _ -> acc
 
 (** Check if statement contains barriers *)
 let rec has_barrier stmt =
@@ -267,7 +269,7 @@ let rec has_barrier stmt =
   | SMatch (_, cases) -> List.exists (fun (_, s) -> has_barrier s) cases
   | SLet (_, _, body) | SLetMut (_, _, body) | SPragma (_, body) ->
       has_barrier body
-  | SAssign _ | SReturn _ | SExpr _ | SMemFence | SEmpty -> false
+  | SAssign _ | SReturn _ | SExpr _ | SMemFence | SEmpty | SNative _ -> false
 
 (** Extract constant offset from index expression. Returns Some (base, offset)
     if idx = base + const or base - const. *)
@@ -348,7 +350,7 @@ let rec find_write_expr stmt arr idx =
   | SLet (_, _, body) | SLetMut (_, _, body) | SPragma (_, body) ->
       find_write_expr body arr idx
   | SAssign _ | SReturn _ | SExpr _ | SBarrier | SWarpBarrier | SMemFence
-  | SEmpty ->
+  | SEmpty | SNative _ ->
       None
 
 (** Check if two kernels can be fused via an intermediate array.

@@ -288,6 +288,10 @@ let rec quote_stmt ~loc (s : Ir.stmt) : expression =
         Sarek.Sarek_ir.SPragma
           ([%e quote_list ~loc quote_string opts], [%e quote_stmt ~loc body])]
   | Ir.SMemFence -> [%expr Sarek.Sarek_ir.SMemFence]
+  | Ir.SNative {gpu; ocaml} ->
+      (* gpu is already (device -> string), ocaml needs Obj.repr *)
+      [%expr
+        Sarek.Sarek_ir.SNative {gpu = [%e gpu]; ocaml = Obj.repr [%e ocaml]}]
 
 (** Quote array_info *)
 let quote_array_info ~loc (ai : Ir.array_info) : expression =

@@ -118,6 +118,10 @@ type stmt =
   | SLetMut of var * expr * stmt  (** Mutable let: let v = ref e in body *)
   | SPragma of string list * stmt  (** Pragma hints wrapping a statement *)
   | SMemFence  (** Memory fence (threadfence) *)
+  | SNative of {
+      gpu : Sarek_core.Device.t -> string;  (** Generate GPU code for device *)
+      ocaml : Obj.t;  (** OCaml fallback (polymorphic via Obj.t) *)
+    }  (** Inline native GPU code with OCaml fallback *)
 
 (** Declarations *)
 type decl =
@@ -311,6 +315,7 @@ let rec pp_stmt fmt = function
       Format.fprintf fmt "#pragma %s@," (String.concat " " hints) ;
       pp_stmt fmt body
   | SMemFence -> Format.fprintf fmt "__threadfence();"
+  | SNative _ -> Format.fprintf fmt "/* native code */"
 
 and pp_pattern fmt = function
   | PConstr (name, vars) ->
@@ -904,6 +909,7 @@ let rec k_ext_of_stmt : stmt -> Kirc_Ast.k_ext = function
       Kirc_Ast.SetLocalVar (k_ext_of_var v, k_ext_of_expr e, k_ext_of_stmt body)
   | SPragma (hints, body) -> Kirc_Ast.Pragma (hints, k_ext_of_stmt body)
   | SMemFence -> Kirc_Ast.IntrinsicRef (["Sarek_stdlib"; "Gpu"], "memory_fence")
+  | SNative _ -> assert false (* V2 only, not used in Kirc_Ast path *)
 
 and k_ext_of_var (v : var) : Kirc_Ast.k_ext =
   match v.var_type with

@@ -236,7 +236,7 @@ let rec make_returning stmt =
   | Ir.SLetMut (v, e, body) -> Ir.SLetMut (v, e, make_returning body)
   | Ir.SPragma (opts, body) -> Ir.SPragma (opts, make_returning body)
   | Ir.SFor _ | Ir.SWhile _ | Ir.SAssign _ | Ir.SBarrier | Ir.SWarpBarrier
-  | Ir.SMemFence | Ir.SEmpty ->
+  | Ir.SMemFence | Ir.SEmpty | Ir.SNative _ ->
       (* These are side-effect statements; return unit after *)
       Ir.SSeq [stmt; Ir.SReturn (Ir.EConst Ir.CUnit)]
 
@@ -424,7 +424,7 @@ and lower_stmt (state : state) (te : texpr) : Ir.stmt =
   | TECreateArray (_size, _elem_ty, _mem) ->
       (* Standalone array creation - just emit unit *)
       Ir.SExpr (Ir.EConst Ir.CUnit)
-  | TENative _ -> Ir.SEmpty
+  | TENative {gpu; ocaml} -> Ir.SNative {gpu; ocaml}
   (* Pure expressions as statements *)
   | TEBool _ | TEInt _ | TEInt32 _ | TEInt64 _ | TEFloat _ | TEDouble _
   | TEVar _ | TEVecGet _ | TEArrGet _ | TEFieldGet _ | TEBinop _ | TEUnop _
