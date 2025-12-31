@@ -121,6 +121,8 @@ external init_opencl_device_vec : unit -> device_vec
 external create_custom : ('a, 'b) custom -> int -> customarray
   = "spoc_create_custom"
 
+external customarray_ptr : customarray -> nativeint = "spoc_customarray_ptr"
+
 val vec_id : int ref
 
 (**/**)

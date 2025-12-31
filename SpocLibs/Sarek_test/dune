@@ -1,4 +1,4 @@
-(dirs common unit comparison regression e2e negative native)
+(dirs common unit comparison regression e2e negative native new_runtime)
 
 (alias
  (name runtest)

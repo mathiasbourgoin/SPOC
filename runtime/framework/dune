@@ -6,4 +6,5 @@
  (name sarek_framework)
  (public_name sarek.framework)
  (modules Framework_sig Framework_registry)
+ (libraries ctypes)
  (preprocess no_preprocessing))

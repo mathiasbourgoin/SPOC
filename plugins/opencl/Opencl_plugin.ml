@@ -39,6 +39,8 @@ module Opencl : sig
 
     val alloc : Device.t -> int -> ('a, 'b) Bigarray.kind -> 'a buffer
 
+    val alloc_custom : Device.t -> size:int -> elem_size:int -> 'a buffer
+
     val free : 'a buffer -> unit
 
     val host_to_device :
@@ -46,6 +48,12 @@ module Opencl : sig
 
     val device_to_host :
       src:'a buffer -> dst:('a, 'b, Bigarray.c_layout) Bigarray.Array1.t -> unit
+
+    val host_ptr_to_device :
+      src_ptr:unit Ctypes.ptr -> byte_size:int -> dst:'a buffer -> unit
+
+    val device_to_host_ptr :
+      src:'a buffer -> dst_ptr:unit Ctypes.ptr -> byte_size:int -> unit
 
     val device_to_device : src:'a buffer -> dst:'a buffer -> unit
 
@@ -202,6 +210,11 @@ end = struct
       let buf = Opencl_api.Memory.alloc state.context size kind in
       {buf; device_id = device.id}
 
+    let alloc_custom device ~size ~elem_size =
+      let state = get_state device.Opencl_api.Device.id in
+      let buf = Opencl_api.Memory.alloc_custom state.context ~size ~elem_size in
+      {buf; device_id = device.id}
+
     let free b = Opencl_api.Memory.free b.buf
 
     let host_to_device ~src ~dst =
@@ -211,6 +224,22 @@ end = struct
     let device_to_host ~src ~dst =
       let state = get_state src.device_id in
       Opencl_api.Memory.device_to_host state.queue ~src:src.buf ~dst
+
+    let host_ptr_to_device ~src_ptr ~byte_size ~dst =
+      let state = get_state dst.device_id in
+      Opencl_api.Memory.host_ptr_to_device
+        state.queue
+        ~src_ptr
+        ~byte_size
+        ~dst:dst.buf
+
+    let device_to_host_ptr ~src ~dst_ptr ~byte_size =
+      let state = get_state src.device_id in
+      Opencl_api.Memory.device_to_host_ptr
+        state.queue
+        ~src:src.buf
+        ~dst_ptr
+        ~byte_size
 
     let device_to_device ~src ~dst =
       (* OpenCL doesn't have direct D2D copy across contexts *)

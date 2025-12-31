@@ -123,6 +123,14 @@ CAMLprim value spoc_sub_custom_array(value customArray, value custom, value star
 	CAMLreturn(ret);
 }
 
+/* Get the raw pointer from a customarray as a nativeint */
+CAMLprim value spoc_customarray_ptr(value customArray)
+{
+	CAMLparam1(customArray);
+	void* ptr = Custom_ptr_val(customArray);
+	CAMLreturn(caml_copy_nativeint((intnat)ptr));
+}
+
 #ifdef __cplusplus
 extern }
 #endif

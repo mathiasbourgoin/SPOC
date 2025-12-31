@@ -39,6 +39,8 @@ module Cuda : sig
 
     val alloc : Device.t -> int -> ('a, 'b) Bigarray.kind -> 'a buffer
 
+    val alloc_custom : Device.t -> size:int -> elem_size:int -> 'a buffer
+
     val free : 'a buffer -> unit
 
     val host_to_device :
@@ -46,6 +48,12 @@ module Cuda : sig
 
     val device_to_host :
       src:'a buffer -> dst:('a, 'b, Bigarray.c_layout) Bigarray.Array1.t -> unit
+
+    val host_ptr_to_device :
+      src_ptr:unit Ctypes.ptr -> byte_size:int -> dst:'a buffer -> unit
+
+    val device_to_host_ptr :
+      src:'a buffer -> dst_ptr:unit Ctypes.ptr -> byte_size:int -> unit
 
     val device_to_device : src:'a buffer -> dst:'a buffer -> unit
 
@@ -167,11 +175,17 @@ end = struct
 
     let alloc = Cuda_api.Memory.alloc
 
+    let alloc_custom = Cuda_api.Memory.alloc_custom
+
     let free = Cuda_api.Memory.free
 
     let host_to_device = Cuda_api.Memory.host_to_device
 
     let device_to_host = Cuda_api.Memory.device_to_host
+
+    let host_ptr_to_device = Cuda_api.Memory.host_ptr_to_device
+
+    let device_to_host_ptr = Cuda_api.Memory.device_to_host_ptr
 
     let device_to_device = Cuda_api.Memory.device_to_device
 

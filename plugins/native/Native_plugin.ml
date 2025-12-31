@@ -57,6 +57,8 @@ module Native : sig
 
     val alloc : Device.t -> int -> ('a, 'b) Bigarray.kind -> 'a buffer
 
+    val alloc_custom : Device.t -> size:int -> elem_size:int -> 'a buffer
+
     val free : 'a buffer -> unit
 
     val host_to_device :
@@ -64,6 +66,12 @@ module Native : sig
 
     val device_to_host :
       src:'a buffer -> dst:('a, 'b, Bigarray.c_layout) Bigarray.Array1.t -> unit
+
+    val host_ptr_to_device :
+      src_ptr:unit Ctypes.ptr -> byte_size:int -> dst:'a buffer -> unit
+
+    val device_to_host_ptr :
+      src:'a buffer -> dst_ptr:unit Ctypes.ptr -> byte_size:int -> unit
 
     val device_to_device : src:'a buffer -> dst:'a buffer -> unit
 
@@ -209,12 +217,26 @@ end = struct
   end
 
   module Memory = struct
-    (* For CPU, buffers are just bigarrays. No actual device transfer. *)
-    type 'a buffer = {data : Obj.t; size : int; device : Device.t}
+    (* For CPU, buffers are just bigarrays or raw ctypes memory.
+       No actual device transfer - we just keep pointers. *)
+    type 'a buffer = {
+      data : Obj.t;
+      size : int;
+      elem_size : int;
+      device : Device.t;
+    }
 
     let alloc device size kind =
       let arr = Bigarray.Array1.create kind Bigarray.c_layout size in
-      {data = Obj.repr arr; size; device}
+      let elem_size = Ctypes_static.sizeof (Ctypes.typ_of_bigarray_kind kind) in
+      {data = Obj.repr arr; size; elem_size; device}
+
+    (** Allocate buffer for custom types with explicit element size in bytes.
+        For native, we allocate raw ctypes memory. *)
+    let alloc_custom device ~size ~elem_size =
+      let bytes = size * elem_size in
+      let ptr = Ctypes.allocate_n Ctypes.char ~count:bytes in
+      {data = Obj.repr ptr; size; elem_size; device}
 
     let free _buf = ()
 
@@ -231,6 +253,25 @@ end = struct
       Bigarray.Array1.blit
         (Bigarray.Array1.sub src_arr 0 len)
         (Bigarray.Array1.sub dst 0 len)
+
+    (** Transfer from raw pointer to native buffer (for custom types). For
+        native, this is a memcpy using ctypes. *)
+    let host_ptr_to_device ~src_ptr ~byte_size ~dst =
+      let open Ctypes in
+      let dst_ptr : char ptr = Obj.obj dst.data in
+      let src_char_ptr = from_voidp char src_ptr in
+      for i = 0 to byte_size - 1 do
+        dst_ptr +@ i <-@ !@(src_char_ptr +@ i)
+      done
+
+    (** Transfer from native buffer to raw pointer (for custom types). *)
+    let device_to_host_ptr ~src ~dst_ptr ~byte_size =
+      let open Ctypes in
+      let src_ptr : char ptr = Obj.obj src.data in
+      let dst_char_ptr = from_voidp char dst_ptr in
+      for i = 0 to byte_size - 1 do
+        dst_char_ptr +@ i <-@ !@(src_ptr +@ i)
+      done
 
     let device_to_device ~src ~dst =
       let src_arr = Obj.obj src.data in

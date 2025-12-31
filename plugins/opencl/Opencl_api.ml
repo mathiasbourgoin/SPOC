@@ -347,6 +347,21 @@ module Memory = struct
     check "clCreateBuffer" !@err ;
     {handle = mem; size; elem_size; context}
 
+  (** Allocate buffer for custom types with explicit element size in bytes *)
+  let alloc_custom context ~size ~elem_size =
+    let bytes = Unsigned.Size_t.of_int (size * elem_size) in
+    let err = allocate cl_int 0l in
+    let mem =
+      clCreateBuffer
+        context.Context.handle
+        cl_mem_read_write
+        bytes
+        (from_voidp void null)
+        err
+    in
+    check "clCreateBuffer (custom)" !@err ;
+    {handle = mem; size; elem_size; context}
+
   let free buf = check "clReleaseMemObject" (clReleaseMemObject buf.handle)
 
   let host_to_device queue ~src ~dst =
@@ -370,6 +385,38 @@ module Memory = struct
     let dst_ptr = bigarray_start array1 dst |> to_voidp in
     check
       "clEnqueueReadBuffer"
+      (clEnqueueReadBuffer
+         queue.CommandQueue.handle
+         src.handle
+         cl_true
+         Unsigned.Size_t.zero
+         bytes
+         dst_ptr
+         Unsigned.UInt32.zero
+         (from_voidp cl_event null)
+         (from_voidp cl_event null))
+
+  (** Transfer from raw pointer to device buffer (for custom types) *)
+  let host_ptr_to_device queue ~src_ptr ~byte_size ~dst =
+    let bytes = Unsigned.Size_t.of_int byte_size in
+    check
+      "clEnqueueWriteBuffer (ptr)"
+      (clEnqueueWriteBuffer
+         queue.CommandQueue.handle
+         dst.handle
+         cl_true
+         Unsigned.Size_t.zero
+         bytes
+         src_ptr
+         Unsigned.UInt32.zero
+         (from_voidp cl_event null)
+         (from_voidp cl_event null))
+
+  (** Transfer from device buffer to raw pointer (for custom types) *)
+  let device_to_host_ptr queue ~src ~dst_ptr ~byte_size =
+    let bytes = Unsigned.Size_t.of_int byte_size in
+    check
+      "clEnqueueReadBuffer (ptr)"
       (clEnqueueReadBuffer
          queue.CommandQueue.handle
          src.handle

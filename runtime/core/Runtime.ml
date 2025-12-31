@@ -110,11 +110,20 @@ let alloc_int32 device n = Memory.alloc device n Bigarray.int32
 
 let alloc_int64 device n = Memory.alloc device n Bigarray.int64
 
+(** Allocate a buffer for custom types with explicit element size *)
+let alloc_custom = Memory.alloc_custom
+
 (** Host-to-device transfer *)
 let to_device = Memory.host_to_device
 
 (** Device-to-host transfer *)
 let from_device = Memory.device_to_host
+
+(** Host-to-device transfer for custom types (raw pointer) *)
+let to_device_ptr = Memory.host_ptr_to_device
+
+(** Device-to-host transfer for custom types (raw pointer) *)
+let from_device_ptr = Memory.device_to_host_ptr
 
 (** Free a buffer *)
 let free = Memory.free

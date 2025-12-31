@@ -1,0 +1,26 @@
+; Tests for the new ctypes-based runtime
+
+(executable
+ (name test_new_runtime)
+ (modules test_new_runtime)
+ (libraries spoc sarek sarek.stdlib sarek_core sarek_cuda sarek_opencl unix)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33 -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc)))
+
+(executable
+ (name test_new_runtime_custom)
+ (modules test_new_runtime_custom)
+ (libraries spoc sarek sarek.stdlib sarek_core sarek_cuda sarek_opencl unix)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33 -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc)))
+
+(executable
+ (name test_native_runtime)
+ (modules test_native_runtime)
+ (libraries spoc sarek sarek_core sarek_native unix)
+ (preprocess
+  (pps sarek_ppx)))

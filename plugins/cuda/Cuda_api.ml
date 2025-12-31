@@ -153,6 +153,14 @@ module Memory = struct
     check "cuMemAlloc" (cuMemAlloc ptr bytes) ;
     {ptr = !@ptr; size; elem_size; device}
 
+  (** Allocate buffer for custom types with explicit element size in bytes *)
+  let alloc_custom device ~size ~elem_size =
+    Device.set_current device ;
+    let bytes = Unsigned.Size_t.of_int (size * elem_size) in
+    let ptr = allocate cu_deviceptr Unsigned.UInt64.zero in
+    check "cuMemAlloc (custom)" (cuMemAlloc ptr bytes) ;
+    {ptr = !@ptr; size; elem_size; device}
+
   let free buf =
     Device.set_current buf.device ;
     check "cuMemFree" (cuMemFree buf.ptr)
@@ -168,6 +176,18 @@ module Memory = struct
     let dst_ptr = bigarray_start array1 dst |> to_voidp in
     let bytes = Unsigned.Size_t.of_int (Bigarray.Array1.size_in_bytes dst) in
     check "cuMemcpyDtoH" (cuMemcpyDtoH dst_ptr src.ptr bytes)
+
+  (** Transfer from raw pointer to device buffer (for custom types) *)
+  let host_ptr_to_device ~src_ptr ~byte_size ~dst =
+    Device.set_current dst.device ;
+    let bytes = Unsigned.Size_t.of_int byte_size in
+    check "cuMemcpyHtoD (ptr)" (cuMemcpyHtoD dst.ptr src_ptr bytes)
+
+  (** Transfer from device buffer to raw pointer (for custom types) *)
+  let device_to_host_ptr ~src ~dst_ptr ~byte_size =
+    Device.set_current src.device ;
+    let bytes = Unsigned.Size_t.of_int byte_size in
+    check "cuMemcpyDtoH (ptr)" (cuMemcpyDtoH dst_ptr src.ptr bytes)
 
   let device_to_device ~src ~dst =
     Device.set_current src.device ;

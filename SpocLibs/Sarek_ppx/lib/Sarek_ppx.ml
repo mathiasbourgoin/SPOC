@@ -595,19 +595,10 @@ let expand_kernel ~ctxt payload =
   Sarek_debug.log "expand_kernel: %s" loc.loc_start.pos_fname ;
 
   try
-    let dir = Filename.dirname loc.loc_start.pos_fname in
-    scan_dir_for_sarek_types dir ;
-    let real_dir = Filename.dirname (Unix.realpath loc.loc_start.pos_fname) in
-    if not (String.equal dir real_dir) then scan_dir_for_sarek_types real_dir ;
-    (match Sys.getenv_opt "PWD" with
-    | Some cwd -> (
-        let source_dir = Filename.concat cwd dir in
-        try
-          if Sys.is_directory source_dir then
-            scan_dir_for_sarek_types source_dir
-        with Sys_error _ -> ())
-    | None -> ()) ;
-    (* Types and module items registered in the current compilation unit *)
+    (* Types and module items registered in the current compilation unit.
+       Note: We no longer scan sibling .ml files for types - this caused issues
+       when multiple files in the same directory defined [@@sarek.type] types.
+       Cross-file types should use proper module references instead. *)
     let pre_types = dedup_tdecls !registered_types in
     let pre_mods = dedup_mods !registered_mods in
     Sarek_debug.log "pre_mods count=%d" (List.length pre_mods) ;

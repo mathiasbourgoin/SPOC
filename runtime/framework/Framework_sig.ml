@@ -85,6 +85,9 @@ module type BACKEND = sig
 
     val alloc : Device.t -> int -> ('a, 'b) Bigarray.kind -> 'a buffer
 
+    (** Allocate buffer for custom types with explicit element size in bytes *)
+    val alloc_custom : Device.t -> size:int -> elem_size:int -> 'a buffer
+
     val free : 'a buffer -> unit
 
     val host_to_device :
@@ -92,6 +95,15 @@ module type BACKEND = sig
 
     val device_to_host :
       src:'a buffer -> dst:('a, 'b, Bigarray.c_layout) Bigarray.Array1.t -> unit
+
+    (** Transfer from raw pointer to device (for custom types). src_ptr should
+        be obtained via Ctypes from a customarray. *)
+    val host_ptr_to_device :
+      src_ptr:unit Ctypes.ptr -> byte_size:int -> dst:'a buffer -> unit
+
+    (** Transfer from device to raw pointer (for custom types) *)
+    val device_to_host_ptr :
+      src:'a buffer -> dst_ptr:unit Ctypes.ptr -> byte_size:int -> unit
 
     val device_to_device : src:'a buffer -> dst:'a buffer -> unit
 
