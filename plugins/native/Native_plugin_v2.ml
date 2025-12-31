@@ -17,10 +17,18 @@ module Native_base = struct
   include Native_plugin.Native
 end
 
+(** Native-specific intrinsic implementation *)
+type native_intrinsic = {
+  intr_name : string;
+  intr_codegen : string;
+  intr_convergence : Framework_sig.convergence;
+}
+
 (** Intrinsic registry for Native-specific intrinsics *)
 module Native_intrinsics : Framework_sig.INTRINSIC_REGISTRY = struct
-  let table : (string, Framework_sig.intrinsic_impl) Hashtbl.t =
-    Hashtbl.create 64
+  type intrinsic_impl = native_intrinsic
+
+  let table : (string, intrinsic_impl) Hashtbl.t = Hashtbl.create 64
 
   let register name impl = Hashtbl.replace table name impl
 
@@ -37,80 +45,70 @@ module Native_intrinsics : Framework_sig.INTRINSIC_REGISTRY = struct
       "thread_id_x"
       {
         intr_name = "thread_id_x";
-        intr_typing = (fun _ -> Sarek_ir.TInt32);
-        intr_codegen = (fun _ -> "Sarek_cpu_runtime.thread_id_x ()");
+        intr_codegen = "Sarek_cpu_runtime.thread_id_x ()";
         intr_convergence = Framework_sig.Divergent;
       } ;
     register
       "thread_id_y"
       {
         intr_name = "thread_id_y";
-        intr_typing = (fun _ -> Sarek_ir.TInt32);
-        intr_codegen = (fun _ -> "Sarek_cpu_runtime.thread_id_y ()");
+        intr_codegen = "Sarek_cpu_runtime.thread_id_y ()";
         intr_convergence = Framework_sig.Divergent;
       } ;
     register
       "thread_id_z"
       {
         intr_name = "thread_id_z";
-        intr_typing = (fun _ -> Sarek_ir.TInt32);
-        intr_codegen = (fun _ -> "Sarek_cpu_runtime.thread_id_z ()");
+        intr_codegen = "Sarek_cpu_runtime.thread_id_z ()";
         intr_convergence = Framework_sig.Divergent;
       } ;
     register
       "block_id_x"
       {
         intr_name = "block_id_x";
-        intr_typing = (fun _ -> Sarek_ir.TInt32);
-        intr_codegen = (fun _ -> "Sarek_cpu_runtime.block_id_x ()");
+        intr_codegen = "Sarek_cpu_runtime.block_id_x ()";
         intr_convergence = Framework_sig.Uniform;
       } ;
     register
       "block_id_y"
       {
         intr_name = "block_id_y";
-        intr_typing = (fun _ -> Sarek_ir.TInt32);
-        intr_codegen = (fun _ -> "Sarek_cpu_runtime.block_id_y ()");
+        intr_codegen = "Sarek_cpu_runtime.block_id_y ()";
         intr_convergence = Framework_sig.Uniform;
       } ;
     register
       "block_id_z"
       {
         intr_name = "block_id_z";
-        intr_typing = (fun _ -> Sarek_ir.TInt32);
-        intr_codegen = (fun _ -> "Sarek_cpu_runtime.block_id_z ()");
+        intr_codegen = "Sarek_cpu_runtime.block_id_z ()";
         intr_convergence = Framework_sig.Uniform;
       } ;
     register
       "block_dim_x"
       {
         intr_name = "block_dim_x";
-        intr_typing = (fun _ -> Sarek_ir.TInt32);
-        intr_codegen = (fun _ -> "Sarek_cpu_runtime.block_dim_x ()");
+        intr_codegen = "Sarek_cpu_runtime.block_dim_x ()";
         intr_convergence = Framework_sig.Uniform;
       } ;
     register
       "block_dim_y"
       {
         intr_name = "block_dim_y";
-        intr_typing = (fun _ -> Sarek_ir.TInt32);
-        intr_codegen = (fun _ -> "Sarek_cpu_runtime.block_dim_y ()");
+        intr_codegen = "Sarek_cpu_runtime.block_dim_y ()";
         intr_convergence = Framework_sig.Uniform;
       } ;
     register
       "block_dim_z"
       {
         intr_name = "block_dim_z";
-        intr_typing = (fun _ -> Sarek_ir.TInt32);
-        intr_codegen = (fun _ -> "Sarek_cpu_runtime.block_dim_z ()");
+        intr_codegen = "Sarek_cpu_runtime.block_dim_z ()";
         intr_convergence = Framework_sig.Uniform;
       } ;
     register
       "global_thread_id"
       {
         intr_name = "global_thread_id";
-        intr_typing = (fun _ -> Sarek_ir.TInt32);
-        intr_codegen = (fun _ -> "Sarek_cpu_runtime.global_thread_id ()");
+        intr_codegen = "Sarek_cpu_runtime.global_thread_id ()";
         intr_convergence = Framework_sig.Divergent;
       } ;
 
@@ -119,25 +117,21 @@ module Native_intrinsics : Framework_sig.INTRINSIC_REGISTRY = struct
       "block_barrier"
       {
         intr_name = "block_barrier";
-        intr_typing = (fun _ -> Sarek_ir.TUnit);
-        intr_codegen = (fun _ -> "Sarek_cpu_runtime.block_barrier ()");
+        intr_codegen = "Sarek_cpu_runtime.block_barrier ()";
         intr_convergence = Framework_sig.Sync;
       } ;
     register
       "warp_barrier"
       {
         intr_name = "warp_barrier";
-        intr_typing = (fun _ -> Sarek_ir.TUnit);
-        intr_codegen = (fun _ -> "()" (* No-op on CPU *));
+        intr_codegen = "()" (* No-op on CPU *);
         intr_convergence = Framework_sig.Sync;
       } ;
     register
       "memory_fence"
       {
         intr_name = "memory_fence";
-        intr_typing = (fun _ -> Sarek_ir.TUnit);
-        intr_codegen =
-          (fun _ -> "()" (* No-op on CPU with proper memory model *));
+        intr_codegen = "()" (* No-op on CPU with proper memory model *);
         intr_convergence = Framework_sig.Uniform;
       }
 end
@@ -150,8 +144,8 @@ module Native_v2 : Framework_sig.BACKEND_V2 = struct
   (** Execution model: Native uses Direct execution *)
   let execution_model = Framework_sig.Direct
 
-  (** Generate source - not used for Direct backend *)
-  let generate_source (_ir : Sarek_ir.kernel) : string option = None
+  (** Generate source - not used for Direct backend (wrapped as Obj.t) *)
+  let generate_source (_ir_obj : Obj.t) : string option = None
 
   (** Execute directly using pre-compiled OCaml function *)
   let execute_direct

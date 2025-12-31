@@ -7,6 +7,7 @@
   unix
   ctypes
   sarek_framework
+  sarek
   (re_export sarek_core))
- (modules Native_plugin)
+ (modules Native_plugin Native_plugin_v2)
  (preprocess no_preprocessing))

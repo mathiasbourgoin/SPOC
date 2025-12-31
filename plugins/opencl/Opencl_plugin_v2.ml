@@ -17,10 +17,18 @@ module Opencl_base = struct
   include Opencl_plugin.Opencl
 end
 
+(** OpenCL-specific intrinsic implementation *)
+type opencl_intrinsic = {
+  intr_name : string;
+  intr_codegen : string;
+  intr_convergence : Framework_sig.convergence;
+}
+
 (** Intrinsic registry for OpenCL-specific intrinsics *)
 module Opencl_intrinsics : Framework_sig.INTRINSIC_REGISTRY = struct
-  let table : (string, Framework_sig.intrinsic_impl) Hashtbl.t =
-    Hashtbl.create 64
+  type intrinsic_impl = opencl_intrinsic
+
+  let table : (string, intrinsic_impl) Hashtbl.t = Hashtbl.create 64
 
   let register name impl = Hashtbl.replace table name impl
 
@@ -36,112 +44,98 @@ module Opencl_intrinsics : Framework_sig.INTRINSIC_REGISTRY = struct
       "thread_id_x"
       {
         intr_name = "thread_id_x";
-        intr_typing = (fun _ -> Sarek_ir.TInt32);
-        intr_codegen = (fun _ -> "get_local_id(0)");
+        intr_codegen = "get_local_id(0)";
         intr_convergence = Framework_sig.Divergent;
       } ;
     register
       "thread_id_y"
       {
         intr_name = "thread_id_y";
-        intr_typing = (fun _ -> Sarek_ir.TInt32);
-        intr_codegen = (fun _ -> "get_local_id(1)");
+        intr_codegen = "get_local_id(1)";
         intr_convergence = Framework_sig.Divergent;
       } ;
     register
       "thread_id_z"
       {
         intr_name = "thread_id_z";
-        intr_typing = (fun _ -> Sarek_ir.TInt32);
-        intr_codegen = (fun _ -> "get_local_id(2)");
+        intr_codegen = "get_local_id(2)";
         intr_convergence = Framework_sig.Divergent;
       } ;
     register
       "block_id_x"
       {
         intr_name = "block_id_x";
-        intr_typing = (fun _ -> Sarek_ir.TInt32);
-        intr_codegen = (fun _ -> "get_group_id(0)");
+        intr_codegen = "get_group_id(0)";
         intr_convergence = Framework_sig.Uniform;
       } ;
     register
       "block_id_y"
       {
         intr_name = "block_id_y";
-        intr_typing = (fun _ -> Sarek_ir.TInt32);
-        intr_codegen = (fun _ -> "get_group_id(1)");
+        intr_codegen = "get_group_id(1)";
         intr_convergence = Framework_sig.Uniform;
       } ;
     register
       "block_id_z"
       {
         intr_name = "block_id_z";
-        intr_typing = (fun _ -> Sarek_ir.TInt32);
-        intr_codegen = (fun _ -> "get_group_id(2)");
+        intr_codegen = "get_group_id(2)";
         intr_convergence = Framework_sig.Uniform;
       } ;
     register
       "block_dim_x"
       {
         intr_name = "block_dim_x";
-        intr_typing = (fun _ -> Sarek_ir.TInt32);
-        intr_codegen = (fun _ -> "get_local_size(0)");
+        intr_codegen = "get_local_size(0)";
         intr_convergence = Framework_sig.Uniform;
       } ;
     register
       "block_dim_y"
       {
         intr_name = "block_dim_y";
-        intr_typing = (fun _ -> Sarek_ir.TInt32);
-        intr_codegen = (fun _ -> "get_local_size(1)");
+        intr_codegen = "get_local_size(1)";
         intr_convergence = Framework_sig.Uniform;
       } ;
     register
       "block_dim_z"
       {
         intr_name = "block_dim_z";
-        intr_typing = (fun _ -> Sarek_ir.TInt32);
-        intr_codegen = (fun _ -> "get_local_size(2)");
+        intr_codegen = "get_local_size(2)";
         intr_convergence = Framework_sig.Uniform;
       } ;
     register
       "grid_dim_x"
       {
         intr_name = "grid_dim_x";
-        intr_typing = (fun _ -> Sarek_ir.TInt32);
-        intr_codegen = (fun _ -> "get_num_groups(0)");
+        intr_codegen = "get_num_groups(0)";
         intr_convergence = Framework_sig.Uniform;
       } ;
     register
       "grid_dim_y"
       {
         intr_name = "grid_dim_y";
-        intr_typing = (fun _ -> Sarek_ir.TInt32);
-        intr_codegen = (fun _ -> "get_num_groups(1)");
+        intr_codegen = "get_num_groups(1)";
         intr_convergence = Framework_sig.Uniform;
       } ;
     register
       "grid_dim_z"
       {
         intr_name = "grid_dim_z";
-        intr_typing = (fun _ -> Sarek_ir.TInt32);
-        intr_codegen = (fun _ -> "get_num_groups(2)");
+        intr_codegen = "get_num_groups(2)";
         intr_convergence = Framework_sig.Uniform;
       } ;
     register
       "global_thread_id"
       {
         intr_name = "global_thread_id";
-        intr_typing = (fun _ -> Sarek_ir.TInt32);
-        intr_codegen = (fun _ -> "get_global_id(0)");
+        intr_codegen = "get_global_id(0)";
         intr_convergence = Framework_sig.Divergent;
       } ;
     register
       "global_size"
       {
         intr_name = "global_size";
-        intr_typing = (fun _ -> Sarek_ir.TInt32);
-        intr_codegen = (fun _ -> "get_global_size(0)");
+        intr_codegen = "get_global_size(0)";
         intr_convergence = Framework_sig.Uniform;
       } ;
 
@@ -150,24 +144,21 @@ module Opencl_intrinsics : Framework_sig.INTRINSIC_REGISTRY = struct
       "block_barrier"
       {
         intr_name = "block_barrier";
-        intr_typing = (fun _ -> Sarek_ir.TUnit);
-        intr_codegen = (fun _ -> "barrier(CLK_LOCAL_MEM_FENCE)");
+        intr_codegen = "barrier(CLK_LOCAL_MEM_FENCE)";
         intr_convergence = Framework_sig.Sync;
       } ;
     register
       "warp_barrier"
       {
         intr_name = "warp_barrier";
-        intr_typing = (fun _ -> Sarek_ir.TUnit);
-        intr_codegen = (fun _ -> "sub_group_barrier(CLK_LOCAL_MEM_FENCE)");
+        intr_codegen = "sub_group_barrier(CLK_LOCAL_MEM_FENCE)";
         intr_convergence = Framework_sig.Sync;
       } ;
     register
       "memory_fence"
       {
         intr_name = "memory_fence";
-        intr_typing = (fun _ -> Sarek_ir.TUnit);
-        intr_codegen = (fun _ -> "mem_fence(CLK_GLOBAL_MEM_FENCE)");
+        intr_codegen = "mem_fence(CLK_GLOBAL_MEM_FENCE)";
         intr_convergence = Framework_sig.Uniform;
       }
 end
@@ -180,9 +171,9 @@ module Opencl_v2 : Framework_sig.BACKEND_V2 = struct
   (** Execution model: OpenCL uses JIT compilation *)
   let execution_model = Framework_sig.JIT
 
-  (** Generate OpenCL source from Sarek IR *)
-  let generate_source (ir : Sarek_ir.kernel) : string option =
-    try Some (Sarek_ir_opencl.generate ir) with _ -> None
+  (** Generate OpenCL source from Sarek IR (wrapped as Obj.t) *)
+  let generate_source (ir_obj : Obj.t) : string option =
+    try Some (Sarek.Sarek_ir_opencl.generate (Obj.obj ir_obj)) with _ -> None
 
   (** Execute directly - not supported for JIT backend *)
   let execute_direct ~native_fn:_ ~block:_ ~grid:_ _args =
@@ -215,10 +206,10 @@ let register_intrinsic = Opencl_intrinsics.register
 let find_intrinsic = Opencl_intrinsics.find
 
 (** Generate OpenCL source with custom types *)
-let generate_with_types = Sarek_ir_opencl.generate_with_types
+let generate_with_types = Sarek.Sarek_ir_opencl.generate_with_types
 
 (** Generate OpenCL source for a kernel *)
-let generate_source = Sarek_ir_opencl.generate
+let generate_source = Sarek.Sarek_ir_opencl.generate
 
 (** Generate OpenCL source with FP64 extension if needed *)
-let generate_with_fp64 = Sarek_ir_opencl.generate_with_fp64
+let generate_with_fp64 = Sarek.Sarek_ir_opencl.generate_with_fp64

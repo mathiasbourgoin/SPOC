@@ -9,6 +9,13 @@
   ctypes
   ctypes.foreign
   sarek_framework
+  sarek
   (re_export sarek_core))
- (modules Cuda_types Cuda_bindings Cuda_nvrtc Cuda_api Cuda_plugin)
+ (modules
+  Cuda_types
+  Cuda_bindings
+  Cuda_nvrtc
+  Cuda_api
+  Cuda_plugin
+  Cuda_plugin_v2)
  (preprocess no_preprocessing))

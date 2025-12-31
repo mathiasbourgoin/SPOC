@@ -10,6 +10,12 @@
   ctypes.foreign
   str
   sarek_framework
+  sarek
   (re_export sarek_core))
- (modules Opencl_types Opencl_bindings Opencl_api Opencl_plugin)
+ (modules
+  Opencl_types
+  Opencl_bindings
+  Opencl_api
+  Opencl_plugin
+  Opencl_plugin_v2)
  (preprocess no_preprocessing))
