@@ -54,6 +54,10 @@ let rec expr_uses_array arr expr =
   | ETuple es -> List.exists (expr_uses_array arr) es
   | EApp (fn, args) ->
       expr_uses_array arr fn || List.exists (expr_uses_array arr) args
+  | ERecord (_, fields) ->
+      List.exists (fun (_, e) -> expr_uses_array arr e) fields
+  | EVariant (_, _, args) -> List.exists (expr_uses_array arr) args
+  | EArrayLen _ -> false
   | EConst _ | EVar _ -> false
 
 (** Substitute array reads in an expression *)
@@ -79,7 +83,16 @@ let rec subst_array_read arr idx_var replacement expr =
       EApp
         ( subst_array_read arr idx_var replacement fn,
           List.map (subst_array_read arr idx_var replacement) args )
-  | EConst _ | EVar _ -> expr
+  | ERecord (name, fields) ->
+      ERecord
+        ( name,
+          List.map
+            (fun (f, e) -> (f, subst_array_read arr idx_var replacement e))
+            fields )
+  | EVariant (ty, tag, args) ->
+      EVariant
+        (ty, tag, List.map (subst_array_read arr idx_var replacement) args)
+  | EArrayLen _ | EConst _ | EVar _ -> expr
 
 (** {1 Statement utilities} *)
 
@@ -118,7 +131,13 @@ let rec subst_array_read_stmt arr idx_var replacement stmt =
             cases )
   | SReturn e -> SReturn (subst_e e)
   | SExpr e -> SExpr (subst_e e)
-  | SBarrier | SWarpBarrier | SEmpty -> stmt
+  | SLet (v, e, body) ->
+      SLet (v, subst_e e, subst_array_read_stmt arr idx_var replacement body)
+  | SLetMut (v, e, body) ->
+      SLetMut (v, subst_e e, subst_array_read_stmt arr idx_var replacement body)
+  | SPragma (hints, body) ->
+      SPragma (hints, subst_array_read_stmt arr idx_var replacement body)
+  | SBarrier | SWarpBarrier | SMemFence | SEmpty -> stmt
 
 (** Check if statement uses an array *)
 let rec stmt_uses_array arr stmt =
@@ -138,7 +157,10 @@ let rec stmt_uses_array arr stmt =
       expr_uses_array arr e
       || List.exists (fun (_, s) -> stmt_uses_array arr s) cases
   | SReturn e | SExpr e -> expr_uses_array arr e
-  | SBarrier | SWarpBarrier | SEmpty -> false
+  | SLet (_, e, body) | SLetMut (_, e, body) ->
+      expr_uses_array arr e || stmt_uses_array arr body
+  | SPragma (_, body) -> stmt_uses_array arr body
+  | SBarrier | SWarpBarrier | SMemFence | SEmpty -> false
 
 (** {1 Analysis} *)
 
@@ -154,7 +176,10 @@ let rec collect_reads_expr acc expr =
   | ETuple es -> List.fold_left collect_reads_expr acc es
   | EApp (fn, args) ->
       List.fold_left collect_reads_expr (collect_reads_expr acc fn) args
-  | EConst _ | EVar _ -> acc
+  | ERecord (_, fields) ->
+      List.fold_left (fun acc (_, e) -> collect_reads_expr acc e) acc fields
+  | EVariant (_, _, args) -> List.fold_left collect_reads_expr acc args
+  | EArrayLen _ | EConst _ | EVar _ -> acc
 
 (** Collect all array writes from a statement *)
 let rec collect_writes_stmt acc stmt =
@@ -168,7 +193,9 @@ let rec collect_writes_stmt acc stmt =
   | SWhile (_, body) | SFor (_, _, _, _, body) -> collect_writes_stmt acc body
   | SMatch (_, cases) ->
       List.fold_left (fun acc (_, s) -> collect_writes_stmt acc s) acc cases
-  | SReturn _ | SExpr _ | SBarrier | SWarpBarrier | SEmpty -> acc
+  | SLet (_, _, body) | SLetMut (_, _, body) | SPragma (_, body) ->
+      collect_writes_stmt acc body
+  | SReturn _ | SExpr _ | SBarrier | SWarpBarrier | SMemFence | SEmpty -> acc
 
 (** Collect all array reads from a statement *)
 let rec collect_reads_stmt acc stmt =
@@ -189,7 +216,10 @@ let rec collect_reads_stmt acc stmt =
       let acc' = collect_reads_expr acc e in
       List.fold_left (fun acc (_, s) -> collect_reads_stmt acc s) acc' cases
   | SReturn e | SExpr e -> collect_reads_expr acc e
-  | SBarrier | SWarpBarrier | SEmpty -> acc
+  | SLet (_, e, body) | SLetMut (_, e, body) ->
+      collect_reads_stmt (collect_reads_expr acc e) body
+  | SPragma (_, body) -> collect_reads_stmt acc body
+  | SBarrier | SWarpBarrier | SMemFence | SEmpty -> acc
 
 (** Check if statement contains barriers *)
 let rec has_barrier stmt =
@@ -200,7 +230,9 @@ let rec has_barrier stmt =
       has_barrier s1 || Option.fold ~none:false ~some:has_barrier s2
   | SWhile (_, body) | SFor (_, _, _, _, body) -> has_barrier body
   | SMatch (_, cases) -> List.exists (fun (_, s) -> has_barrier s) cases
-  | SAssign _ | SReturn _ | SExpr _ | SEmpty -> false
+  | SLet (_, _, body) | SLetMut (_, _, body) | SPragma (_, body) ->
+      has_barrier body
+  | SAssign _ | SReturn _ | SExpr _ | SMemFence | SEmpty -> false
 
 (** Extract constant offset from index expression. Returns Some (base, offset)
     if idx = base + const or base - const. *)
@@ -278,7 +310,11 @@ let rec find_write_expr stmt arr idx =
   | SIf _ | SWhile _ | SFor _ | SMatch _ ->
       (* Can't safely extract from conditional *)
       None
-  | SAssign _ | SReturn _ | SExpr _ | SBarrier | SWarpBarrier | SEmpty -> None
+  | SLet (_, _, body) | SLetMut (_, _, body) | SPragma (_, body) ->
+      find_write_expr body arr idx
+  | SAssign _ | SReturn _ | SExpr _ | SBarrier | SWarpBarrier | SMemFence
+  | SEmpty ->
+      None
 
 (** Check if two kernels can be fused via an intermediate array.
 

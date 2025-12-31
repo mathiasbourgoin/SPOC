@@ -3,11 +3,24 @@
     This IR separates expressions, statements, and declarations for easier
     analysis and transformation (fusion, AoS-to-SoA, etc.). *)
 
-(** Element types *)
-type elttype = TInt32 | TInt64 | TFloat32 | TFloat64 | TBool | TUnit
-
 (** Memory spaces *)
 type memspace = Global | Shared | Local
+
+(** Element types *)
+type elttype =
+  | TInt32
+  | TInt64
+  | TFloat32
+  | TFloat64
+  | TBool
+  | TUnit
+  | TRecord of string * (string * elttype) list
+      (** Record type: name and field list *)
+  | TVariant of string * (string * elttype list) list
+      (** Variant type: name and constructor list with arg types *)
+  | TArray of elttype * memspace
+      (** Array type with element type and memory space *)
+  | TVec of elttype  (** Vector (GPU array parameter) *)
 
 (** Variables with type info *)
 type var = {
@@ -51,12 +64,18 @@ type expr =
   | EVar of var
   | EBinop of binop * expr * expr
   | EUnop of unop * expr
-  | EArrayRead of string * expr (* arr[idx] *)
-  | ERecordField of expr * string (* r.field *)
-  | EIntrinsic of string list * string * expr list (* module path, name, args *)
+  | EArrayRead of string * expr  (** arr[idx] *)
+  | ERecordField of expr * string  (** r.field *)
+  | EIntrinsic of string list * string * expr list
+      (** module path, name, args *)
   | ECast of elttype * expr
   | ETuple of expr list
   | EApp of expr * expr list
+  | ERecord of string * (string * expr) list
+      (** Record construction: type name, field values *)
+  | EVariant of string * string * expr list
+      (** Variant construction: type name, constructor, args *)
+  | EArrayLen of string  (** Array length intrinsic *)
 
 (** L-values (assignable locations) *)
 type lvalue =
@@ -73,10 +92,14 @@ type stmt =
   | SFor of var * expr * expr * for_dir * stmt
   | SMatch of expr * (pattern * stmt) list
   | SReturn of expr
-  | SBarrier (* block_barrier *)
-  | SWarpBarrier (* warp-level sync *)
-  | SExpr of expr (* side-effecting expression *)
+  | SBarrier  (** Block-level barrier (__syncthreads) *)
+  | SWarpBarrier  (** Warp-level sync (__syncwarp) *)
+  | SExpr of expr  (** Side-effecting expression *)
   | SEmpty
+  | SLet of var * expr * stmt  (** Let binding: let v = e in body *)
+  | SLetMut of var * expr * stmt  (** Mutable let: let v = ref e in body *)
+  | SPragma of string list * stmt  (** Pragma hints wrapping a statement *)
+  | SMemFence  (** Memory fence (threadfence) *)
 
 and for_dir = Upto | Downto
 
@@ -104,15 +127,20 @@ type kernel = {
 
 (** {1 Pretty printing} *)
 
-let string_of_elttype = function
+let rec string_of_elttype = function
   | TInt32 -> "int32"
   | TInt64 -> "int64"
   | TFloat32 -> "float32"
   | TFloat64 -> "float64"
   | TBool -> "bool"
   | TUnit -> "unit"
+  | TRecord (name, _) -> name
+  | TVariant (name, _) -> name
+  | TArray (elt, ms) ->
+      Printf.sprintf "%s %s[]" (string_of_memspace ms) (string_of_elttype elt)
+  | TVec elt -> Printf.sprintf "%s vector" (string_of_elttype elt)
 
-let string_of_memspace = function
+and string_of_memspace = function
   | Global -> "global"
   | Shared -> "shared"
   | Local -> "local"
@@ -157,6 +185,18 @@ let rec pp_expr fmt = function
       Format.fprintf fmt "(%s)%a" (string_of_elttype ty) pp_expr e
   | ETuple exprs -> Format.fprintf fmt "(%a)" pp_exprs exprs
   | EApp (fn, args) -> Format.fprintf fmt "%a(%a)" pp_expr fn pp_exprs args
+  | ERecord (name, fields) ->
+      Format.fprintf fmt "%s{" name ;
+      List.iteri
+        (fun i (f, e) ->
+          if i > 0 then Format.fprintf fmt ", " ;
+          Format.fprintf fmt "%s = %a" f pp_expr e)
+        fields ;
+      Format.fprintf fmt "}"
+  | EVariant (_, constr, []) -> Format.fprintf fmt "%s" constr
+  | EVariant (_, constr, args) ->
+      Format.fprintf fmt "%s(%a)" constr pp_exprs args
+  | EArrayLen arr -> Format.fprintf fmt "len(%s)" arr
 
 and pp_exprs fmt = function
   | [] -> ()
@@ -212,6 +252,28 @@ let rec pp_stmt fmt = function
   | SWarpBarrier -> Format.fprintf fmt "__syncwarp();"
   | SExpr e -> Format.fprintf fmt "%a;" pp_expr e
   | SEmpty -> ()
+  | SLet (v, e, body) ->
+      Format.fprintf
+        fmt
+        "@[<v 2>let %s = %a in@ %a@]"
+        v.var_name
+        pp_expr
+        e
+        pp_stmt
+        body
+  | SLetMut (v, e, body) ->
+      Format.fprintf
+        fmt
+        "@[<v 2>let %s = ref %a in@ %a@]"
+        v.var_name
+        pp_expr
+        e
+        pp_stmt
+        body
+  | SPragma (hints, body) ->
+      Format.fprintf fmt "#pragma %s@," (String.concat " " hints) ;
+      pp_stmt fmt body
+  | SMemFence -> Format.fprintf fmt "__threadfence();"
 
 and pp_pattern fmt = function
   | PConstr (name, vars) ->
@@ -387,6 +449,17 @@ let rec expr_of_k_ext : Kirc_Ast.k_ext -> expr = function
               var_type = TFloat32;
               var_mutable = false;
             } )
+  (* Record construction *)
+  | Kirc_Ast.Record (name, fields) ->
+      let field_exprs =
+        List.mapi
+          (fun i e -> (Printf.sprintf "field%d" i, expr_of_k_ext e))
+          fields
+      in
+      ERecord (name, field_exprs)
+  (* Variant construction *)
+  | Kirc_Ast.Constr (type_name, constr_name, args) ->
+      EVariant (type_name, constr_name, List.map expr_of_k_ext args)
   | k ->
       conv_error
         (Printf.sprintf
@@ -470,9 +543,7 @@ let rec stmt_of_k_ext : Kirc_Ast.k_ext -> stmt = function
       SSeq [SAssign (LVar v, init_expr); body_stmt]
   (* Block/Pragma *)
   | Kirc_Ast.Block body -> stmt_of_k_ext body
-  | Kirc_Ast.Pragma (_hints, body) ->
-      (* TODO: convert pragmas *)
-      stmt_of_k_ext body
+  | Kirc_Ast.Pragma (hints, body) -> SPragma (hints, stmt_of_k_ext body)
   (* Declarations treated as statements *)
   | Kirc_Ast.Decl _var -> SEmpty (* declaration only, no init *)
   (* Expression as statement *)
@@ -617,13 +688,18 @@ and collect_params : Kirc_Ast.k_ext -> decl list = function
 
 (** {1 Conversion back to Kirc_Ast.k_ext} *)
 
-let kirc_elttype : elttype -> Kirc_Ast.elttype = function
+let rec kirc_elttype : elttype -> Kirc_Ast.elttype = function
   | TInt32 -> Kirc_Ast.EInt32
   | TInt64 -> Kirc_Ast.EInt64
   | TFloat32 -> Kirc_Ast.EFloat32
   | TFloat64 -> Kirc_Ast.EFloat64
   | TBool -> Kirc_Ast.EInt32 (* bool as int *)
   | TUnit -> Kirc_Ast.EInt32
+  | TRecord _ ->
+      Kirc_Ast.EInt32 (* custom types use pointer-like representation *)
+  | TVariant _ -> Kirc_Ast.EInt32
+  | TArray (elt, _) -> kirc_elttype elt
+  | TVec elt -> kirc_elttype elt
 
 let kirc_memspace : memspace -> Kirc_Ast.memspace = function
   | Global -> Kirc_Ast.Global
@@ -645,7 +721,10 @@ let rec k_ext_of_expr : expr -> Kirc_Ast.k_ext = function
       | TFloat32 -> Kirc_Ast.FloatVar (v.var_id, v.var_name, v.var_mutable)
       | TFloat64 -> Kirc_Ast.DoubleVar (v.var_id, v.var_name, v.var_mutable)
       | TBool -> Kirc_Ast.BoolVar (v.var_id, v.var_name, v.var_mutable)
-      | TUnit -> Kirc_Ast.UnitVar (v.var_id, v.var_name, v.var_mutable))
+      | TUnit -> Kirc_Ast.UnitVar (v.var_id, v.var_name, v.var_mutable)
+      | TRecord _ | TVariant _ | TArray _ | TVec _ ->
+          (* Custom types use IntVar as placeholder for pointer-like values *)
+          Kirc_Ast.IntVar (v.var_id, v.var_name, v.var_mutable))
   | EBinop (Add, e1, e2) -> Kirc_Ast.Plus (k_ext_of_expr e1, k_ext_of_expr e2)
   | EBinop (Sub, e1, e2) -> Kirc_Ast.Min (k_ext_of_expr e1, k_ext_of_expr e2)
   | EBinop (Mul, e1, e2) -> Kirc_Ast.Mul (k_ext_of_expr e1, k_ext_of_expr e2)
@@ -679,6 +758,11 @@ let rec k_ext_of_expr : expr -> Kirc_Ast.k_ext = function
   | EApp (fn, args) ->
       Kirc_Ast.App
         (k_ext_of_expr fn, Array.of_list (List.map k_ext_of_expr args))
+  | ERecord (name, fields) ->
+      Kirc_Ast.Record (name, List.map (fun (_, e) -> k_ext_of_expr e) fields)
+  | EVariant (type_name, constr, args) ->
+      Kirc_Ast.Constr (type_name, constr, List.map k_ext_of_expr args)
+  | EArrayLen arr -> Kirc_Ast.App (Kirc_Ast.Id "len", [|Kirc_Ast.Id arr|])
 
 let rec k_ext_of_stmt : stmt -> Kirc_Ast.k_ext = function
   | SEmpty -> Kirc_Ast.Empty
@@ -739,6 +823,24 @@ let rec k_ext_of_stmt : stmt -> Kirc_Ast.k_ext = function
   | SWarpBarrier ->
       Kirc_Ast.IntrinsicRef (["Sarek_stdlib"; "Gpu"], "warp_barrier")
   | SExpr e -> k_ext_of_expr e
+  | SLet (v, e, body) ->
+      Kirc_Ast.SetLocalVar (k_ext_of_var v, k_ext_of_expr e, k_ext_of_stmt body)
+  | SLetMut (v, e, body) ->
+      Kirc_Ast.SetLocalVar (k_ext_of_var v, k_ext_of_expr e, k_ext_of_stmt body)
+  | SPragma (hints, body) -> Kirc_Ast.Pragma (hints, k_ext_of_stmt body)
+  | SMemFence -> Kirc_Ast.IntrinsicRef (["Sarek_stdlib"; "Gpu"], "memory_fence")
+
+and k_ext_of_var (v : var) : Kirc_Ast.k_ext =
+  match v.var_type with
+  | TInt32 -> Kirc_Ast.IntVar (v.var_id, v.var_name, v.var_mutable)
+  | TInt64 -> Kirc_Ast.IntVar (v.var_id, v.var_name, v.var_mutable)
+  | TFloat32 -> Kirc_Ast.FloatVar (v.var_id, v.var_name, v.var_mutable)
+  | TFloat64 -> Kirc_Ast.DoubleVar (v.var_id, v.var_name, v.var_mutable)
+  | TBool -> Kirc_Ast.BoolVar (v.var_id, v.var_name, v.var_mutable)
+  | TUnit -> Kirc_Ast.UnitVar (v.var_id, v.var_name, v.var_mutable)
+  | TRecord _ | TVariant _ | TArray _ | TVec _ ->
+      (* Custom types use generic variable representation *)
+      Kirc_Ast.IntVar (v.var_id, v.var_name, v.var_mutable)
 
 and k_ext_of_lvalue : lvalue -> Kirc_Ast.k_ext = function
   | LVar v -> k_ext_of_expr (EVar v)
@@ -747,24 +849,10 @@ and k_ext_of_lvalue : lvalue -> Kirc_Ast.k_ext = function
   | LRecordField (lv, field) -> Kirc_Ast.RecGet (k_ext_of_lvalue lv, field)
 
 let k_ext_of_decl : decl -> Kirc_Ast.k_ext = function
-  | DParam (v, None) -> (
-      match v.var_type with
-      | TInt32 -> Kirc_Ast.IntVar (v.var_id, v.var_name, v.var_mutable)
-      | TFloat32 -> Kirc_Ast.FloatVar (v.var_id, v.var_name, v.var_mutable)
-      | TFloat64 -> Kirc_Ast.DoubleVar (v.var_id, v.var_name, v.var_mutable)
-      | TBool -> Kirc_Ast.BoolVar (v.var_id, v.var_name, v.var_mutable)
-      | TUnit -> Kirc_Ast.UnitVar (v.var_id, v.var_name, v.var_mutable)
-      | TInt64 -> Kirc_Ast.IntVar (v.var_id, v.var_name, v.var_mutable))
+  | DParam (v, None) -> k_ext_of_var v
   | DParam (v, Some _arr) ->
       Kirc_Ast.VecVar (Kirc_Ast.Empty, v.var_id, v.var_name)
-  | DLocal (v, _) -> (
-      match v.var_type with
-      | TInt32 -> Kirc_Ast.IntVar (v.var_id, v.var_name, v.var_mutable)
-      | TFloat32 -> Kirc_Ast.FloatVar (v.var_id, v.var_name, v.var_mutable)
-      | TFloat64 -> Kirc_Ast.DoubleVar (v.var_id, v.var_name, v.var_mutable)
-      | TBool -> Kirc_Ast.BoolVar (v.var_id, v.var_name, v.var_mutable)
-      | TUnit -> Kirc_Ast.UnitVar (v.var_id, v.var_name, v.var_mutable)
-      | TInt64 -> Kirc_Ast.IntVar (v.var_id, v.var_name, v.var_mutable))
+  | DLocal (v, _) -> k_ext_of_var v
   | DShared (name, elt, size) ->
       let size_k =
         match size with Some s -> k_ext_of_expr s | None -> Kirc_Ast.Int 0
