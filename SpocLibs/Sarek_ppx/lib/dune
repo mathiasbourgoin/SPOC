@@ -18,6 +18,9 @@
   Sarek_typer
   Sarek_convergence
   Sarek_lower
+  Sarek_ir_ppx
+  Sarek_lower_v2
+  Sarek_quote_ir
   Sarek_parse
   Sarek_quote
   Sarek_native_gen
