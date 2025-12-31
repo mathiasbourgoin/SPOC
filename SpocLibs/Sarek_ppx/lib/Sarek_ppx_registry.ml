@@ -42,12 +42,35 @@ type const_info = {
   ci_module : string list;  (** Module path *)
 }
 
+(** Module item information for [@sarek.module] functions and constants. Unlike
+    intrinsics, these are user-defined functions that get inlined into the
+    generated GPU code. *)
+type module_item_info = {
+  mi_name : string;  (** Function/constant name *)
+  mi_qualified_name : string;
+      (** Qualified name, e.g., "Registered_defs.add_vec" *)
+  mi_module : string;  (** Module name, e.g., "Registered_defs" *)
+  mi_item : Sarek_ast.module_item;  (** The parsed AST item (MFun or MConst) *)
+}
+
+(** Record type information for [@sarek.type] records *)
+type record_type_info = {
+  rti_name : string;  (** Type name *)
+  rti_qualified_name : string;  (** Qualified name *)
+  rti_module : string;  (** Module name *)
+  rti_decl : Sarek_ast.type_decl;  (** The type declaration *)
+}
+
 (** The registries - populated at PPX load time *)
 let types : (string, type_info) Hashtbl.t = Hashtbl.create 16
 
 let intrinsics : (string, intrinsic_info) Hashtbl.t = Hashtbl.create 64
 
 let consts : (string, const_info) Hashtbl.t = Hashtbl.create 32
+
+let module_items : (string, module_item_info) Hashtbl.t = Hashtbl.create 32
+
+let record_types : (string, record_type_info) Hashtbl.t = Hashtbl.create 32
 
 (** Register a type *)
 let register_type (info : type_info) : unit =
@@ -63,6 +86,16 @@ let register_intrinsic (info : intrinsic_info) : unit =
 let register_const (info : const_info) : unit =
   Hashtbl.replace consts info.ci_name info ;
   Hashtbl.replace consts info.ci_qualified_name info
+
+(** Register a module item ([@sarek.module] function or constant) *)
+let register_module_item (info : module_item_info) : unit =
+  Hashtbl.replace module_items info.mi_name info ;
+  Hashtbl.replace module_items info.mi_qualified_name info
+
+(** Register a record type ([@sarek.type]) *)
+let register_record_type (info : record_type_info) : unit =
+  Hashtbl.replace record_types info.rti_name info ;
+  Hashtbl.replace record_types info.rti_qualified_name info
 
 (** Find a type by name *)
 let find_type (name : string) : type_info option = Hashtbl.find_opt types name
@@ -80,6 +113,20 @@ let is_intrinsic (name : string) : bool = Hashtbl.mem intrinsics name
 
 (** Check if a name is a registered constant *)
 let is_const (name : string) : bool = Hashtbl.mem consts name
+
+(** Find a module item by name (short or qualified) *)
+let find_module_item (name : string) : module_item_info option =
+  Hashtbl.find_opt module_items name
+
+(** Find a record type by name (short or qualified) *)
+let find_record_type (name : string) : record_type_info option =
+  Hashtbl.find_opt record_types name
+
+(** Check if a name is a registered module item *)
+let is_module_item (name : string) : bool = Hashtbl.mem module_items name
+
+(** Check if a name is a registered record type *)
+let is_record_type (name : string) : bool = Hashtbl.mem record_types name
 
 (** Get all registered types *)
 let all_types () : type_info list =
@@ -110,6 +157,32 @@ let all_consts () : const_info list =
         v :: acc
       end)
     consts
+    []
+
+(** Get all registered module items *)
+let all_module_items () : module_item_info list =
+  let seen = Hashtbl.create 32 in
+  Hashtbl.fold
+    (fun _ v acc ->
+      if Hashtbl.mem seen v.mi_qualified_name then acc
+      else begin
+        Hashtbl.add seen v.mi_qualified_name () ;
+        v :: acc
+      end)
+    module_items
+    []
+
+(** Get all registered record types *)
+let all_record_types () : record_type_info list =
+  let seen = Hashtbl.create 32 in
+  Hashtbl.fold
+    (fun _ v acc ->
+      if Hashtbl.mem seen v.rti_qualified_name then acc
+      else begin
+        Hashtbl.add seen v.rti_qualified_name () ;
+        v :: acc
+      end)
+    record_types
     []
 
 (** Helper: create type_info for a numeric type *)
@@ -143,6 +216,26 @@ let make_const_info ~name ~module_path ~typ ~device : const_info =
     ci_module = module_path;
   }
 
+(** Helper: create module_item_info *)
+let make_module_item_info ~name ~module_name ~item : module_item_info =
+  let qualified = module_name ^ "." ^ name in
+  {
+    mi_name = name;
+    mi_qualified_name = qualified;
+    mi_module = module_name;
+    mi_item = item;
+  }
+
+(** Helper: create record_type_info *)
+let make_record_type_info ~name ~module_name ~decl : record_type_info =
+  let qualified = module_name ^ "." ^ name in
+  {
+    rti_name = name;
+    rti_qualified_name = qualified;
+    rti_module = module_name;
+    rti_decl = decl;
+  }
+
 (** Debug: print registered items *)
 let debug_print () =
   Printf.eprintf "=== Sarek PPX Registry ===\n" ;
@@ -160,4 +253,12 @@ let debug_print () =
   List.iter
     (fun c -> Printf.eprintf "  - %s\n" c.ci_qualified_name)
     (all_consts ()) ;
+  Printf.eprintf "Module items: %d\n" (List.length (all_module_items ())) ;
+  List.iter
+    (fun m -> Printf.eprintf "  - %s\n" m.mi_qualified_name)
+    (all_module_items ()) ;
+  Printf.eprintf "Record types: %d\n" (List.length (all_record_types ())) ;
+  List.iter
+    (fun r -> Printf.eprintf "  - %s\n" r.rti_qualified_name)
+    (all_record_types ()) ;
   Printf.eprintf "==========================\n"

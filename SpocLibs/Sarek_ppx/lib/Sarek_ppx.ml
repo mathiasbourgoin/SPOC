@@ -145,95 +145,94 @@ let register_sarek_module_item ~loc:_ item =
       Format.eprintf "Sarek PPX: register module const %s@." name) ;
   registered_mods := item :: !registered_mods
 
-let scan_dir_for_sarek_types directory =
-  Array.iter
-    (fun fname ->
-      if Filename.check_suffix fname ".ml" then
-        let path = Filename.concat directory fname in
-        try
-          let ic = open_in path in
-          let lexbuf = Lexing.from_channel ic in
-          lexbuf.lex_curr_p <-
-            {lexbuf.lex_curr_p with pos_fname = path; pos_bol = 0; pos_lnum = 1} ;
-          let st = Parse.implementation lexbuf in
-          close_in ic ;
-          List.iter
-            (fun item ->
-              match item.pstr_desc with
-              | Pstr_type (_rf, decls) ->
-                  List.iter
-                    (fun d ->
-                      let has_attr name a = String.equal a.attr_name.txt name in
-                      if
-                        List.exists (has_attr "sarek.type") d.ptype_attributes
-                        || List.exists
-                             (has_attr "sarek.type_private")
-                             d.ptype_attributes
-                      then register_sarek_type_decl ~loc:d.ptype_loc d)
-                    decls
-              | Pstr_value (rec_flag, vbs) ->
-                  let is_rec = rec_flag = Recursive in
-                  List.iter
-                    (fun vb ->
-                      let has_attr name a = String.equal a.attr_name.txt name in
-                      if
-                        List.exists (has_attr "sarek.module") vb.pvb_attributes
-                        || List.exists
-                             (has_attr "sarek.module_private")
-                             vb.pvb_attributes
-                      then (
-                        Format.eprintf
-                          "Sarek PPX: sarek.module binding %s@."
-                          (Option.value
-                             (Sarek_parse.extract_name_from_pattern vb.pvb_pat)
-                             ~default:"<anon>") ;
-                        let name =
-                          match
-                            Sarek_parse.extract_name_from_pattern vb.pvb_pat
-                          with
-                          | Some n -> n
+(** Scan a single .ml file for [@@sarek.type] and [@sarek.module] declarations
+*)
+let scan_file_for_sarek_types path =
+  try
+    let ic = open_in path in
+    let lexbuf = Lexing.from_channel ic in
+    lexbuf.lex_curr_p <-
+      {lexbuf.lex_curr_p with pos_fname = path; pos_bol = 0; pos_lnum = 1} ;
+    let st = Parse.implementation lexbuf in
+    close_in ic ;
+    List.iter
+      (fun item ->
+        match item.pstr_desc with
+        | Pstr_type (_rf, decls) ->
+            List.iter
+              (fun d ->
+                let has_attr name a = String.equal a.attr_name.txt name in
+                if
+                  List.exists (has_attr "sarek.type") d.ptype_attributes
+                  || List.exists
+                       (has_attr "sarek.type_private")
+                       d.ptype_attributes
+                then register_sarek_type_decl ~loc:d.ptype_loc d)
+              decls
+        | Pstr_value (rec_flag, vbs) ->
+            let is_rec = rec_flag = Recursive in
+            List.iter
+              (fun vb ->
+                let has_attr name a = String.equal a.attr_name.txt name in
+                if
+                  List.exists (has_attr "sarek.module") vb.pvb_attributes
+                  || List.exists
+                       (has_attr "sarek.module_private")
+                       vb.pvb_attributes
+                then (
+                  Format.eprintf
+                    "Sarek PPX: sarek.module binding %s@."
+                    (Option.value
+                       (Sarek_parse.extract_name_from_pattern vb.pvb_pat)
+                       ~default:"<anon>") ;
+                  let name =
+                    match Sarek_parse.extract_name_from_pattern vb.pvb_pat with
+                    | Some n -> n
+                    | None ->
+                        Location.raise_errorf
+                          ~loc:vb.pvb_pat.ppat_loc
+                          "Expected variable name"
+                  in
+                  let ty = Sarek_parse.extract_type_from_pattern vb.pvb_pat in
+                  let item =
+                    match vb.pvb_expr.pexp_desc with
+                    | Pexp_function (params, _, Pfunction_body body_expr) ->
+                        let params =
+                          List.map Sarek_parse.extract_param_from_pparam params
+                        in
+                        let body = Sarek_parse.parse_expression body_expr in
+                        Sarek_ast.MFun (name, is_rec, params, body)
+                    | _ ->
+                        let value = Sarek_parse.parse_expression vb.pvb_expr in
+                        let ty =
+                          match ty with
+                          | Some t -> t
                           | None ->
                               Location.raise_errorf
                                 ~loc:vb.pvb_pat.ppat_loc
-                                "Expected variable name"
+                                "[@sarek.module] constants require a type \
+                                 annotation"
                         in
-                        let ty =
-                          Sarek_parse.extract_type_from_pattern vb.pvb_pat
-                        in
-                        let item =
-                          match vb.pvb_expr.pexp_desc with
-                          | Pexp_function (params, _, Pfunction_body body_expr)
-                            ->
-                              let params =
-                                List.map
-                                  Sarek_parse.extract_param_from_pparam
-                                  params
-                              in
-                              let body =
-                                Sarek_parse.parse_expression body_expr
-                              in
-                              Sarek_ast.MFun (name, is_rec, params, body)
-                          | _ ->
-                              let value =
-                                Sarek_parse.parse_expression vb.pvb_expr
-                              in
-                              let ty =
-                                match ty with
-                                | Some t -> t
-                                | None ->
-                                    Location.raise_errorf
-                                      ~loc:vb.pvb_pat.ppat_loc
-                                      "[@sarek.module] constants require a \
-                                       type annotation"
-                              in
-                              Sarek_ast.MConst (name, ty, value)
-                        in
-                        register_sarek_module_item ~loc:vb.pvb_loc item))
-                    vbs
-              | _ -> ())
-            st
-        with _ -> ())
-    (try Sys.readdir directory with Sys_error _ -> [||])
+                        Sarek_ast.MConst (name, ty, value)
+                  in
+                  register_sarek_module_item ~loc:vb.pvb_loc item))
+              vbs
+        | _ -> ())
+      st
+  with _ -> ()
+
+(** Scan a directory for .ml files with Sarek declarations, or scan a single
+    file *)
+let scan_dir_for_sarek_types ?single_file directory =
+  match single_file with
+  | Some path -> scan_file_for_sarek_types path
+  | None ->
+      Array.iter
+        (fun fname ->
+          if Filename.check_suffix fname ".ml" then
+            let path = Filename.concat directory fname in
+            scan_file_for_sarek_types path)
+        (try Sys.readdir directory with Sys_error _ -> [||])
 
 (* Attribute used to mark Sarek-visible type declarations *)
 let sarek_type_attr =
@@ -595,13 +594,26 @@ let expand_kernel ~ctxt payload =
   Sarek_debug.log "expand_kernel: %s" loc.loc_start.pos_fname ;
 
   try
-    (* Types and module items registered in the current compilation unit.
-       Note: We no longer scan sibling .ml files for types - this caused issues
-       when multiple files in the same directory defined [@@sarek.type] types.
-       Cross-file types should use proper module references instead. *)
+    (* Scan the current file for [@sarek.module] and [@@sarek.type] declarations.
+       This is needed because the impl pass (process_structure_for_module_items)
+       runs AFTER extensions are expanded, so we need to scan now. *)
+    let current_file = loc.loc_start.pos_fname in
+    if Sys.file_exists current_file then scan_file_for_sarek_types current_file ;
+    (* Types and module items registered in the current compilation unit. *)
     let pre_types = dedup_tdecls !registered_types in
-    let pre_mods = dedup_mods !registered_mods in
-    Sarek_debug.log "pre_mods count=%d" (List.length pre_mods) ;
+    let local_mods = dedup_mods !registered_mods in
+    (* Also include module items from the registry (populated by linked libraries) *)
+    let registry_mods =
+      List.map
+        (fun (info : Sarek_ppx_registry.module_item_info) -> info.mi_item)
+        (Sarek_ppx_registry.all_module_items ())
+    in
+    let pre_mods = dedup_mods (local_mods @ registry_mods) in
+    Sarek_debug.log
+      "pre_mods count=%d (local=%d, registry=%d)"
+      (List.length pre_mods)
+      (List.length local_mods)
+      (List.length registry_mods) ;
     (* 1. Parse the PPX payload to Sarek AST *)
     Sarek_debug.log_enter "parse_payload" ;
     let ast = Sarek_parse.parse_payload payload in
@@ -703,13 +715,19 @@ let expand_sarek_type ~ctxt payload =
 let sarek_type_extension = ()
 
 (** Register sarek.module bindings on any structure we process, so libraries can
-    publish module items for use in kernels. *)
+    publish module items for use in kernels.
+
+    This generates registration code that runs at module initialization time,
+    registering the items in Sarek_ppx_registry. This allows cross-module
+    references: a library can define [@sarek.module] items and link with the PPX
+    so they become available to kernels in other compilation units. *)
 let process_structure_for_module_items (str : structure) : structure =
   let process_vb ~is_rec vb =
     let has_attr name a = String.equal a.attr_name.txt name in
-    if
-      List.exists (has_attr "sarek.module") vb.pvb_attributes
-      || List.exists (has_attr "sarek.module_private") vb.pvb_attributes
+    let is_private =
+      List.exists (has_attr "sarek.module_private") vb.pvb_attributes
+    in
+    if List.exists (has_attr "sarek.module") vb.pvb_attributes || is_private
     then (
       let loc = vb.pvb_loc in
       let name =
@@ -741,8 +759,23 @@ let process_structure_for_module_items (str : structure) : structure =
             in
             Sarek_ast.MConst (name, ty, value)
       in
+      (* Register locally for this compilation unit *)
       register_sarek_module_item ~loc item ;
-      None)
+      (* For non-private items, generate registration code for cross-module use *)
+      if is_private then None
+      else
+        let module_name = module_name_of_loc loc in
+        let name_str = Ast_builder.Default.estring ~loc name in
+        let module_name_str = Ast_builder.Default.estring ~loc module_name in
+        let item_expr = Sarek_quote.quote_sarek_module_item ~loc item in
+        Some
+          [%stri
+            let () =
+              Sarek_ppx_lib.Sarek_ppx_registry.register_module_item
+                (Sarek_ppx_lib.Sarek_ppx_registry.make_module_item_info
+                   ~name:[%e name_str]
+                   ~module_name:[%e module_name_str]
+                   ~item:[%e item_expr])])
     else None
   in
   let extra_items =
@@ -759,6 +792,88 @@ let process_structure_for_module_items (str : structure) : structure =
   in
   str @ extra_items
 
+(** [%sarek_include "path/to/file.ml"] - Include types and module items from
+    another file.
+
+    This scans the specified file for [@@sarek.type] and [@sarek.module]
+    declarations and registers them for use in kernels in the current file. The
+    path is relative to the current file's directory.
+
+    Usage: [%sarek_include "registered_defs.ml"]
+
+    let kernel =
+    [%kernel fun ... -> let open Registered_defs in ... use types and functions
+     from registered_defs.ml ... ] *)
+let expand_sarek_include ~ctxt payload =
+  let loc = Expansion_context.Extension.extension_point_loc ctxt in
+  (* Extract path string from various payload forms *)
+  let extract_path () =
+    match payload with
+    (* [%sarek_include "path"] *)
+    | PStr
+        [
+          {
+            pstr_desc =
+              Pstr_eval
+                ({pexp_desc = Pexp_constant (Pconst_string (path, _, _)); _}, _);
+            _;
+          };
+        ] ->
+        Some path
+    (* let%sarek_include _ = "path" *)
+    | PStr
+        [
+          {
+            pstr_desc =
+              Pstr_value
+                ( _,
+                  [
+                    {
+                      pvb_expr =
+                        {
+                          pexp_desc = Pexp_constant (Pconst_string (path, _, _));
+                          _;
+                        };
+                      _;
+                    };
+                  ] );
+            _;
+          };
+        ] ->
+        Some path
+    | _ -> None
+  in
+  match extract_path () with
+  | Some path ->
+      (* Resolve path relative to current file *)
+      let current_file = loc.loc_start.pos_fname in
+      let dir = Filename.dirname current_file in
+      let full_path =
+        if Filename.is_relative path then Filename.concat dir path else path
+      in
+      (* Scan the file for types and module items *)
+      (try scan_file_for_sarek_types full_path
+       with e ->
+         Location.raise_errorf
+           ~loc
+           "%%sarek_include: failed to scan %s: %s"
+           full_path
+           (Printexc.to_string e)) ;
+      (* Return empty structure item - the side effect is registration *)
+      [%stri let () = ()]
+  | None ->
+      Location.raise_errorf
+        ~loc
+        "%%sarek_include expects a string path, e.g. [%%sarek_include \
+         \"file.ml\"]"
+
+let sarek_include_extension =
+  Extension.V3.declare
+    "sarek_include"
+    Extension.Context.structure_item
+    Ast_pattern.(pstr __)
+    (fun ~ctxt payload -> expand_sarek_include ~ctxt (PStr payload))
+
 (** Register the transformation *)
 let () =
   let rules =
@@ -766,6 +881,7 @@ let () =
       sarek_type_rule;
       sarek_type_private_rule;
       Context_free.Rule.extension kernel_extension;
+      Context_free.Rule.extension sarek_include_extension;
       (* NOTE: %sarek_intrinsic and %sarek_extend are handled by sarek_ppx_intrinsic *)
     ]
   in

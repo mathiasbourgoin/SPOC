@@ -6,6 +6,9 @@ open Spoc
 
 type float32 = float
 
+(* Include types and functions from registered_defs.ml *)
+let%sarek_include _ = "registered_defs.ml"
+
 let () =
   let kernel =
     [%kernel
