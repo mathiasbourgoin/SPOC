@@ -16,7 +16,7 @@ open Sarek_ir
 (** {1 Type Mapping} *)
 
 (** Map Sarek IR element type to CUDA C type string *)
-let cuda_type_of_elttype = function
+let rec cuda_type_of_elttype = function
   | TInt32 -> "int"
   | TInt64 -> "long long"
   | TFloat32 -> "float"
