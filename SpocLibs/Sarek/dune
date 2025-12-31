@@ -17,6 +17,7 @@
   Sarek_float32
   Gen
   Kirc
+  Kirc_v2
   Kirc_Cuda
   Kirc_OpenCL
   Profile

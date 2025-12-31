@@ -13,6 +13,7 @@
  ******************************************************************************)
 
 open Sarek_framework
+open Sarek_core
 
 (** {1 Kernel Type} *)
 
@@ -25,9 +26,7 @@ type 'a kernel_v2 = {
     (block:Framework_sig.dims -> grid:Framework_sig.dims -> Obj.t array -> unit)
     option;
       (** Pre-compiled OCaml function for Direct backends *)
-  typed_ast : Sarek_typed_ast.tkernel Lazy.t option;
-      (** Typed AST for Custom backends or analysis *)
-  param_types : Sarek_types.typ list;
+  param_types : Sarek_ir.elttype list;
       (** Parameter types for argument marshalling *)
   extensions : Kirc.extension array;
       (** Extensions required (ExFloat32, ExFloat64) *)
@@ -36,14 +35,12 @@ type 'a kernel_v2 = {
 (** {1 Constructors} *)
 
 (** Create a kernel with both IR and native function *)
-let make ~name ~ir ~native_fn ~param_types ?(typed_ast = None)
-    ?(extensions = [||]) () =
-  {name; ir; native_fn; typed_ast; param_types; extensions}
+let make ~name ~ir ~native_fn ~param_types ?(extensions = [||]) () =
+  {name; ir; native_fn; param_types; extensions}
 
 (** Create a JIT-only kernel (no native function) *)
-let make_jit ~name ~ir ~param_types ?(typed_ast = None) ?(extensions = [||]) ()
-    =
-  {name; ir; native_fn = None; typed_ast; param_types; extensions}
+let make_jit ~name ~ir ~param_types ?(extensions = [||]) () =
+  {name; ir; native_fn = None; param_types; extensions}
 
 (** Create a Native-only kernel (no IR) *)
 let make_native ~name ~native_fn ~param_types () =
@@ -51,7 +48,6 @@ let make_native ~name ~native_fn ~param_types () =
     name;
     ir = lazy (failwith "Native-only kernel has no IR");
     native_fn = Some native_fn;
-    typed_ast = None;
     param_types;
     extensions = [||];
   }
@@ -91,21 +87,17 @@ let of_kirc_kernel (kk : ('a, 'b, 'c) Kirc.kirc_kernel) ~name ~param_types :
     | None -> None
     | Some fn ->
         Some
-          (fun ~block ~grid args ->
+          (fun ~(block : Framework_sig.dims)
+               ~(grid : Framework_sig.dims)
+               args
+             ->
             fn
               ~mode:Sarek_cpu_runtime.Parallel
               ~block:(block.x, block.y, block.z)
               ~grid:(grid.x, grid.y, grid.z)
               args)
   in
-  {
-    name;
-    ir;
-    native_fn;
-    typed_ast = None;
-    param_types;
-    extensions = kk.Kirc.extensions;
-  }
+  {name; ir; native_fn; param_types; extensions = kk.Kirc.extensions}
 
 (** Convert a legacy sarek_kernel to kernel_v2 *)
 let of_sarek_kernel ((_spoc_k, kirc_k) : ('a, 'b, 'c, 'd, 'e) Kirc.sarek_kernel)
@@ -128,14 +120,14 @@ let to_kirc_kernel (k : 'a kernel_v2) :
             let bx, by, bz = block in
             let gx, gy, gz = grid in
             fn
-              ~block:{x = bx; y = by; z = bz}
-              ~grid:{x = gx; y = gy; z = gz}
+              ~block:(Framework_sig.dims_3d bx by bz)
+              ~grid:(Framework_sig.dims_3d gx gy gz)
               args)
   in
   {
     Kirc.ml_kern = (fun () -> ());
     Kirc.body;
-    Kirc.ret_val = (Kirc_Ast.Empty, Spoc.Vector.int32);
+    Kirc.ret_val = (Kirc_Ast.Empty, Obj.magic Spoc.Vector.int32);
     Kirc.extensions = k.extensions;
     Kirc.cpu_kern;
   }
@@ -146,6 +138,7 @@ let to_kirc_kernel (k : 'a kernel_v2) :
 let run ~(device : Device.t) ~(block : Framework_sig.dims)
     ~(grid : Framework_sig.dims) (k : 'a kernel_v2) (args : Obj.t array) : unit
     =
+  let arg_list = Array.to_list args |> List.map (fun o -> Execute.ArgRaw o) in
   Execute.run_v2
     ~device
     ~name:k.name
@@ -153,28 +146,24 @@ let run ~(device : Device.t) ~(block : Framework_sig.dims)
     ~native_fn:k.native_fn
     ~block
     ~grid
-    args
+    arg_list
 
 (** Execute a kernel_v2 with explicit typed arguments *)
 let run_with_args ~(device : Device.t) ~(block : Framework_sig.dims)
     ~(grid : Framework_sig.dims) (k : 'a kernel_v2) (args : Execute.arg list) :
     unit =
-  let source =
-    match device.framework with
-    | "CUDA" -> Sarek_ir_cuda.generate (Lazy.force k.ir)
-    | "OpenCL" -> Sarek_ir_opencl.generate (Lazy.force k.ir)
-    | "Native" -> (
-        match k.native_fn with
-        | Some fn ->
-            fn ~block ~grid (Execute.args_to_obj_array args) ;
-            (* Return early for native *)
-            return ()
-        | None -> failwith "Native kernel has no native function")
-    | fw -> failwith ("Unsupported framework: " ^ fw)
-  in
-  Execute.run_typed ~device ~name:k.name ~source ~block ~grid args
-
-and return () = ()
+  match device.framework with
+  | "Native" -> (
+      match k.native_fn with
+      | Some fn -> fn ~block ~grid (Execute.args_to_obj_array args)
+      | None -> failwith "Native kernel has no native function")
+  | "CUDA" ->
+      let source = Sarek_ir_cuda.generate (Lazy.force k.ir) in
+      Execute.run_typed ~device ~name:k.name ~source ~block ~grid args
+  | "OpenCL" ->
+      let source = Sarek_ir_opencl.generate (Lazy.force k.ir) in
+      Execute.run_typed ~device ~name:k.name ~source ~block ~grid args
+  | fw -> failwith ("Unsupported framework: " ^ fw)
 
 (** {1 Utilities} *)
 
