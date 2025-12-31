@@ -4,11 +4,26 @@
  * Implements the Framework_sig.BACKEND interface for CPU execution.
  * This is a Direct backend - no JIT compilation needed.
  *
- * For now, this is a minimal implementation that allows device discovery.
- * Full integration with Sarek_cpu_runtime will come when we connect the PPX.
+ * Kernels are pre-compiled OCaml functions registered by the PPX at module
+ * load time. The "compile" step is a no-op - we look up registered functions.
  ******************************************************************************)
 
 open Sarek_framework
+
+(** Registry for native kernel functions.
+
+    Kernels are registered by name. The function signature is:
+    - args: Obj.t array of kernel arguments
+    - grid: (gx, gy, gz) grid dimensions
+    - block: (bx, by, bz) block dimensions
+
+    Defined at module level so it can be accessed by both the Native module and
+    the external registration functions. *)
+let native_kernels :
+    ( string,
+      Obj.t array -> int * int * int -> int * int * int -> unit )
+    Hashtbl.t =
+  Hashtbl.create 16
 
 module Native : sig
   val name : string
@@ -272,15 +287,9 @@ end = struct
       | ArgInt64 of int64
       | ArgFloat32 of float
       | ArgFloat64 of float
+      | ArgRaw of Obj.t  (** Raw OCaml value - for SPOC Vector/customarray *)
 
     type args = {mutable list : arg list}
-
-    (* Registry for native kernel functions *)
-    let native_kernels :
-        ( string,
-          Obj.t array -> int * int * int -> int * int * int -> unit )
-        Hashtbl.t =
-      Hashtbl.create 16
 
     let compile _device ~name ~source:_ = {name}
 
@@ -299,6 +308,11 @@ end = struct
 
     let set_arg_float64 args _idx v = args.list <- ArgFloat64 v :: args.list
 
+    (** Set a raw OCaml value argument (for SPOC Vector/customarray). This
+        passes the value directly to the kernel without unwrapping. *)
+    let[@warning "-32"] set_arg_raw args _idx v =
+      args.list <- ArgRaw v :: args.list
+
     let launch kernel ~args ~(grid : Framework_sig.dims)
         ~(block : Framework_sig.dims) ~shared_mem:_ ~stream:_ =
       match Hashtbl.find_opt native_kernels kernel.name with
@@ -306,11 +320,16 @@ end = struct
           let arg_array =
             args.list |> List.rev
             |> List.map (function
-              | ArgBuffer o -> o
+              | ArgBuffer o ->
+                  (* Extract the underlying bigarray from the buffer record.
+                     The buffer is {data; size; device} where data is the bigarray. *)
+                  let buf : _ Memory.buffer = Obj.obj o in
+                  buf.Memory.data
               | ArgInt32 v -> Obj.repr v
               | ArgInt64 v -> Obj.repr v
               | ArgFloat32 v -> Obj.repr v
-              | ArgFloat64 v -> Obj.repr v)
+              | ArgFloat64 v -> Obj.repr v
+              | ArgRaw o -> o (* Pass raw OCaml value directly *))
             |> Array.of_list
           in
           fn arg_array (grid.x, grid.y, grid.z) (block.x, block.y, block.z)
@@ -344,5 +363,50 @@ let () = Lazy.force registered
 
 let init () = Lazy.force registered
 
-(* Note: Native kernel registration will be exposed when PPX integration is done.
-   For now, native kernels must be registered via Native.Kernel module directly. *)
+(** Register a native kernel function by name.
+
+    This is called by PPX-generated code at module load time to register the
+    pre-compiled OCaml kernel function. The function signature matches what
+    Sarek_cpu_runtime expects:
+    - args: Obj.t array of kernel arguments
+    - grid: (gx, gy, gz) grid dimensions
+    - block: (bx, by, bz) block dimensions
+
+    Example:
+    {[
+      let () =
+        Sarek_native.Native_plugin.register_kernel
+          "my_kernel"
+          (fun args grid block ->
+            Sarek_cpu_runtime.run_threadpool
+              ~has_barriers:false
+              ~block
+              ~grid
+              my_kernel_fn
+              args)
+    ]} *)
+let register_kernel name fn = Hashtbl.replace native_kernels name fn
+
+(** Check if a kernel is registered *)
+let kernel_registered name = Hashtbl.mem native_kernels name
+
+(** List all registered kernels (for debugging) *)
+let list_kernels () =
+  Hashtbl.fold (fun name _ acc -> name :: acc) native_kernels []
+
+(** Run a kernel directly with raw arguments. This bypasses the Runtime API and
+    is useful for testing or when using SPOC Vector/customarray which aren't
+    wrapped by the new runtime yet.
+
+    @param name The registered kernel name
+    @param args Array of Obj.t arguments (customarrays, scalars, etc.)
+    @param grid (gx, gy, gz) grid dimensions
+    @param block (bx, by, bz) block dimensions *)
+let run_kernel_raw ~name ~args ~grid ~block =
+  match Hashtbl.find_opt native_kernels name with
+  | Some fn -> fn args grid block
+  | None ->
+      failwith
+        (Printf.sprintf
+           "Native_plugin.run_kernel_raw: kernel '%s' not registered"
+           name)

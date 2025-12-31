@@ -105,6 +105,15 @@
  (flags
   (:standard -w -33 -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc)))
 
+; Test for Native plugin integration (with custom types via SPOC Vector)
+
+(executable
+ (name test_native_runtime)
+ (modules test_native_runtime)
+ (libraries spoc sarek sarek_core sarek_native unix)
+ (preprocess
+  (pps sarek_ppx)))
+
 (alias
  (name runtest)
  (deps
