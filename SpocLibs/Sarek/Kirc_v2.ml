@@ -127,6 +127,7 @@ let to_kirc_kernel (k : 'a kernel_v2) :
   {
     Kirc.ml_kern = (fun () -> ());
     Kirc.body;
+    (* ret_val is unused in V2 path; dummy value for type compatibility *)
     Kirc.ret_val = (Kirc_Ast.Empty, Obj.magic Spoc.Vector.int32);
     Kirc.extensions = k.extensions;
     Kirc.cpu_kern;
@@ -134,24 +135,30 @@ let to_kirc_kernel (k : 'a kernel_v2) :
 
 (** {1 Execution} *)
 
-(** Execute a kernel_v2 on a device *)
+(** Execute a kernel_v2 on a device with Obj.t array args. Note: Only works for
+    Native backend. For JIT backends (CUDA/OpenCL), use run_with_args which
+    provides properly typed arguments. *)
 let run ~(device : Device.t) ~(block : Framework_sig.dims)
-    ~(grid : Framework_sig.dims) (k : 'a kernel_v2) (args : Obj.t array) : unit
-    =
-  let arg_list = Array.to_list args |> List.map (fun o -> Execute.ArgRaw o) in
-  Execute.run_v2
-    ~device
-    ~name:k.name
-    ~ir:(Some k.ir)
-    ~native_fn:k.native_fn
-    ~block
-    ~grid
-    arg_list
+    ~(grid : Framework_sig.dims) ?(shared_mem = 0) (k : 'a kernel_v2)
+    (args : Obj.t array) : unit =
+  ignore shared_mem ;
+  match device.framework with
+  | "Native" -> (
+      match k.native_fn with
+      | Some fn -> fn ~block ~grid args
+      | None -> failwith ("Kernel " ^ k.name ^ " has no native function"))
+  | fw ->
+      failwith
+        (Printf.sprintf
+           "run with Obj.t array only works for Native backend; got %s. Use \
+            run_with_args for JIT backends."
+           fw)
 
-(** Execute a kernel_v2 with explicit typed arguments *)
+(** Execute a kernel_v2 with explicit typed arguments. Works for all backends
+    (Native, CUDA, OpenCL). *)
 let run_with_args ~(device : Device.t) ~(block : Framework_sig.dims)
-    ~(grid : Framework_sig.dims) (k : 'a kernel_v2) (args : Execute.arg list) :
-    unit =
+    ~(grid : Framework_sig.dims) ?(shared_mem = 0) (k : 'a kernel_v2)
+    (args : Execute.arg list) : unit =
   match device.framework with
   | "Native" -> (
       match k.native_fn with
@@ -159,10 +166,24 @@ let run_with_args ~(device : Device.t) ~(block : Framework_sig.dims)
       | None -> failwith "Native kernel has no native function")
   | "CUDA" ->
       let source = Sarek_ir_cuda.generate (Lazy.force k.ir) in
-      Execute.run_typed ~device ~name:k.name ~source ~block ~grid args
+      Execute.run_typed
+        ~device
+        ~name:k.name
+        ~source
+        ~block
+        ~grid
+        ~shared_mem
+        args
   | "OpenCL" ->
       let source = Sarek_ir_opencl.generate (Lazy.force k.ir) in
-      Execute.run_typed ~device ~name:k.name ~source ~block ~grid args
+      Execute.run_typed
+        ~device
+        ~name:k.name
+        ~source
+        ~block
+        ~grid
+        ~shared_mem
+        args
   | fw -> failwith ("Unsupported framework: " ^ fw)
 
 (** {1 Utilities} *)
@@ -173,7 +194,8 @@ let source_for_backend (k : 'a kernel_v2) ~backend : string =
   match backend with
   | "CUDA" -> Sarek_ir_cuda.generate ir
   | "OpenCL" -> Sarek_ir_opencl.generate ir
-  | _ -> failwith ("No source generation for backend: " ^ backend)
+  | "Native" -> failwith "Native backend uses pre-compiled code, no source"
+  | _ -> failwith ("Unknown backend: " ^ backend)
 
 (** Check if kernel requires FP64 extension *)
 let requires_fp64 k = Array.mem Kirc.ExFloat64 k.extensions
