@@ -80,6 +80,12 @@ let rec gen_expr buf = function
       Buffer.add_char buf '[' ;
       gen_expr buf idx ;
       Buffer.add_char buf ']'
+  | EArrayReadExpr (base, idx) ->
+      Buffer.add_char buf '(' ;
+      gen_expr buf base ;
+      Buffer.add_string buf ")[" ;
+      gen_expr buf idx ;
+      Buffer.add_char buf ']'
   | ERecordField (e, field) ->
       gen_expr buf e ;
       Buffer.add_char buf '.' ;
@@ -127,6 +133,39 @@ let rec gen_expr buf = function
         args ;
       Buffer.add_char buf ')'
   | EArrayLen arr -> Buffer.add_string buf (arr ^ "_len")
+  | EIf (cond, then_, else_) ->
+      (* Ternary operator for value-returning if *)
+      Buffer.add_char buf '(' ;
+      gen_expr buf cond ;
+      Buffer.add_string buf " ? " ;
+      gen_expr buf then_ ;
+      Buffer.add_string buf " : " ;
+      gen_expr buf else_ ;
+      Buffer.add_char buf ')'
+  | EMatch (_, []) -> failwith "gen_expr: empty match"
+  | EMatch (_, [(_, body)]) ->
+      (* Single case - just emit the body *)
+      gen_expr buf body
+  | EMatch (e, cases) ->
+      (* Multi-case match as nested ternary - check tag field *)
+      let rec gen_cases = function
+        | [] -> failwith "gen_expr: empty match cases"
+        | [(_, body)] -> gen_expr buf body
+        | (pat, body) :: rest ->
+            Buffer.add_char buf '(' ;
+            (match pat with
+            | PConstr (name, _) ->
+                Buffer.add_char buf '(' ;
+                gen_expr buf e ;
+                Buffer.add_string buf (".tag == " ^ name ^ ")")
+            | PWild -> Buffer.add_string buf "1") ;
+            Buffer.add_string buf " ? " ;
+            gen_expr buf body ;
+            Buffer.add_string buf " : " ;
+            gen_cases rest ;
+            Buffer.add_char buf ')'
+      in
+      gen_cases cases
 
 and gen_binop = function
   | Add -> " + "
@@ -257,6 +296,12 @@ let rec gen_lvalue buf = function
   | LArrayElem (arr, idx) ->
       Buffer.add_string buf arr ;
       Buffer.add_char buf '[' ;
+      gen_expr buf idx ;
+      Buffer.add_char buf ']'
+  | LArrayElemExpr (base, idx) ->
+      Buffer.add_char buf '(' ;
+      gen_expr buf base ;
+      Buffer.add_string buf ")[" ;
       gen_expr buf idx ;
       Buffer.add_char buf ']'
   | LRecordField (lv, field) ->

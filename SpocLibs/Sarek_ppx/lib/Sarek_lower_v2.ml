@@ -143,6 +143,11 @@ let variant_constructor_strings name constrs =
   in
   constr_structs @ (union_def :: main_struct :: builders)
 
+(* Debug counter for V2 lowering *)
+let v2_lower_expr_count = ref 0
+
+let v2_lower_stmt_count = ref 0
+
 (** Lowering state *)
 type state = {
   mutable next_var_id : int;
@@ -211,8 +216,37 @@ let lower_decl ~mutable_ id name ty : Ir.decl =
   let v = make_var name id ty mutable_ in
   Ir.DLocal (v, None)
 
+(** Transform a statement to ensure it returns a value. This adds SReturn to
+    leaf statements without re-traversing the original AST. *)
+let rec make_returning stmt =
+  match stmt with
+  | Ir.SReturn _ -> stmt (* Already returns *)
+  | Ir.SExpr e -> Ir.SReturn e (* Expression -> return it *)
+  | Ir.SIf (c, t, Some e) ->
+      Ir.SIf (c, make_returning t, Some (make_returning e))
+  | Ir.SIf (c, t, None) ->
+      Ir.SIf (c, make_returning t, Some (Ir.SReturn (Ir.EConst Ir.CUnit)))
+  | Ir.SMatch (e, cases) ->
+      Ir.SMatch (e, List.map (fun (p, b) -> (p, make_returning b)) cases)
+  | Ir.SSeq stmts -> (
+      match List.rev stmts with
+      | [] -> Ir.SReturn (Ir.EConst Ir.CUnit)
+      | last :: rest -> Ir.SSeq (List.rev (make_returning last :: rest)))
+  | Ir.SLet (v, e, body) -> Ir.SLet (v, e, make_returning body)
+  | Ir.SLetMut (v, e, body) -> Ir.SLetMut (v, e, make_returning body)
+  | Ir.SPragma (opts, body) -> Ir.SPragma (opts, make_returning body)
+  | Ir.SFor _ | Ir.SWhile _ | Ir.SAssign _ | Ir.SBarrier | Ir.SWarpBarrier
+  | Ir.SMemFence | Ir.SEmpty ->
+      (* These are side-effect statements; return unit after *)
+      Ir.SSeq [stmt; Ir.SReturn (Ir.EConst Ir.CUnit)]
+
 (** Convert a typed expression to IR expression *)
 let rec lower_expr (state : state) (te : texpr) : Ir.expr =
+  incr v2_lower_expr_count ;
+  (* Log progress every 10000 calls *)
+  if !v2_lower_expr_count mod 10000 = 0 then
+    Sarek_debug.log_to_file
+      (Printf.sprintf "    [V2] lower_expr progress: %d" !v2_lower_expr_count) ;
   match te.te with
   | TEUnit -> Ir.EConst Ir.CUnit
   | TEBool b -> Ir.EConst (Ir.CBool b)
@@ -233,11 +267,11 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
   | TEVecGet (vec, idx) -> (
       match vec.te with
       | TEVar (name, _) -> Ir.EArrayRead (name, lower_expr state idx)
-      | _ -> failwith "lower_expr: VecGet on non-variable")
+      | _ -> Ir.EArrayReadExpr (lower_expr state vec, lower_expr state idx))
   | TEArrGet (arr, idx) -> (
       match arr.te with
       | TEVar (name, _) -> Ir.EArrayRead (name, lower_expr state idx)
-      | _ -> failwith "lower_expr: ArrGet on non-variable")
+      | _ -> Ir.EArrayReadExpr (lower_expr state arr, lower_expr state idx))
   | TEFieldGet (r, field, _) -> Ir.ERecordField (lower_expr state r, field)
   | TEBinop (op, a, b) ->
       Ir.EBinop (ir_binop op te.ty, lower_expr state a, lower_expr state b)
@@ -261,11 +295,8 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
             Hashtbl.add state.lowering_stack name () ;
             let fun_body_ir = lower_stmt state body in
             Hashtbl.remove state.lowering_stack name ;
-            let fun_body_ir =
-              match fun_body_ir with
-              | Ir.SReturn _ -> fun_body_ir
-              | _ -> Ir.SReturn (lower_expr state body)
-            in
+            (* Use make_returning to add return statements without re-traversing *)
+            let fun_body_ir = make_returning fun_body_ir in
             Hashtbl.add state.lowered_funs name (fun_body_ir, ret_str) ;
             Ir.EApp (Ir.EVar (make_var name 0 fn.ty false), args_ir)
       | _ -> Ir.EApp (lower_expr state fn, args_ir))
@@ -288,15 +319,30 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
           Ir.EIntrinsic (path, name, List.map (lower_expr state) args)
       | Sarek_env.CorePrimitiveRef name ->
           Ir.EIntrinsic ([], name, List.map (lower_expr state) args))
+  (* If-then-else as expression (returns a value) *)
+  | TEIf (cond, then_, Some else_) ->
+      Ir.EIf
+        (lower_expr state cond, lower_expr state then_, lower_expr state else_)
+  | TEIf (cond, then_, None) ->
+      (* No else branch - only valid for unit-returning expressions *)
+      Ir.EIf (lower_expr state cond, lower_expr state then_, Ir.EConst Ir.CUnit)
+  (* Match as expression *)
+  | TEMatch (e, cases) ->
+      let ir_cases =
+        List.map
+          (fun (pat, body) -> (lower_pattern pat, lower_expr state body))
+          cases
+      in
+      Ir.EMatch (lower_expr state e, ir_cases)
   (* These need statement context *)
   | TEVecSet _ | TEArrSet _ | TEFieldSet _ | TEAssign _ | TELet _ | TELetRec _
-  | TELetMut _ | TEIf _ | TEFor _ | TEWhile _ | TESeq _ | TEMatch _ | TEReturn _
-  | TECreateArray _ | TENative _ | TEPragma _ | TELetShared _ | TESuperstep _
-  | TEOpen _ ->
+  | TELetMut _ | TEFor _ | TEWhile _ | TESeq _ | TEReturn _ | TECreateArray _
+  | TENative _ | TEPragma _ | TELetShared _ | TESuperstep _ | TEOpen _ ->
       failwith "lower_expr: expression requires statement context"
 
 (** Convert a typed expression to IR statement *)
 and lower_stmt (state : state) (te : texpr) : Ir.stmt =
+  incr v2_lower_stmt_count ;
   match te.te with
   | TEUnit -> Ir.SEmpty
   | TESeq [] -> Ir.SEmpty
@@ -393,7 +439,24 @@ and lower_lvalue (state : state) (r : texpr) (field : string) : Ir.lvalue =
       Ir.LRecordField (Ir.LVar v, field)
   | TEFieldGet (base, inner_field, _) ->
       Ir.LRecordField (lower_lvalue state base inner_field, field)
-  | _ -> failwith "lower_lvalue: expected variable or field access"
+  | TEVecGet (vec, idx) -> (
+      match vec.te with
+      | TEVar (name, _) ->
+          Ir.LRecordField (Ir.LArrayElem (name, lower_expr state idx), field)
+      | _ ->
+          Ir.LRecordField
+            ( Ir.LArrayElemExpr (lower_expr state vec, lower_expr state idx),
+              field ))
+  | TEArrGet (arr, idx) -> (
+      match arr.te with
+      | TEVar (name, _) ->
+          Ir.LRecordField (Ir.LArrayElem (name, lower_expr state idx), field)
+      | _ ->
+          Ir.LRecordField
+            ( Ir.LArrayElemExpr (lower_expr state arr, lower_expr state idx),
+              field ))
+  | _ ->
+      failwith "lower_lvalue: expected variable, field access, or array access"
 
 and lower_pattern (pat : tpattern) : Ir.pattern =
   match pat.tpat with
@@ -435,6 +498,12 @@ let lower_param (p : tparam) : Ir.decl =
 
 (** Lower a complete kernel *)
 let lower_kernel (kernel : tkernel) : Ir.kernel * string list =
+  (* Reset and log counters *)
+  v2_lower_expr_count := 0 ;
+  v2_lower_stmt_count := 0 ;
+  let kern_name = Option.value kernel.tkern_name ~default:"anon" in
+  Sarek_debug.log_to_file
+    (Printf.sprintf "  [V2] lower_kernel start: %s" kern_name) ;
   (* Build fun_map from module items *)
   let fun_map = Hashtbl.create 8 in
   List.iter
@@ -474,6 +543,12 @@ let lower_kernel (kernel : tkernel) : Ir.kernel * string list =
 
   (* Lower body *)
   let body_ir = lower_stmt state kernel.tkern_body in
+  Sarek_debug.log_to_file
+    (Printf.sprintf
+       "  [V2] lower_kernel done: %s (expr=%d, stmt=%d)"
+       kern_name
+       !v2_lower_expr_count
+       !v2_lower_stmt_count) ;
   let full_body =
     match module_items_ir with
     | Ir.SEmpty -> body_ir

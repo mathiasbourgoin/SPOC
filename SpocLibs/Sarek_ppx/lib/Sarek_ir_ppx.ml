@@ -63,6 +63,12 @@ type binop =
 (** Unary operators *)
 type unop = Neg | Not | BitNot
 
+(** Loop direction *)
+type for_dir = Upto | Downto
+
+(** Match pattern *)
+type pattern = PConstr of string * string list | PWild
+
 (** Expressions (pure, no side effects) *)
 type expr =
   | EConst of const
@@ -70,6 +76,8 @@ type expr =
   | EBinop of binop * expr * expr
   | EUnop of unop * expr
   | EArrayRead of string * expr
+  | EArrayReadExpr of
+      expr * expr (* base expr, index expr - for complex bases *)
   | ERecordField of expr * string
   | EIntrinsic of string list * string * expr list
   | ECast of elttype * expr
@@ -78,18 +86,19 @@ type expr =
   | ERecord of string * (string * expr) list
   | EVariant of string * string * expr list
   | EArrayLen of string
+  | EIf of
+      expr * expr * expr (* condition, then, else - for value-returning if *)
+  | EMatch of
+      expr
+      * (pattern * expr) list (* scrutinee, cases - for value-returning match *)
 
 (** L-values (assignable locations) *)
 type lvalue =
   | LVar of var
   | LArrayElem of string * expr
+  | LArrayElemExpr of
+      expr * expr (* base expr, index expr - for complex bases *)
   | LRecordField of lvalue * string
-
-(** Loop direction *)
-type for_dir = Upto | Downto
-
-(** Match pattern *)
-type pattern = PConstr of string * string list | PWild
 
 (** Statements (imperative, side effects) *)
 type stmt =

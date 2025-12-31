@@ -28,3 +28,17 @@ let log_int name v =
 
 let log_string name v =
   if enabled then Format.eprintf "SAREK DEBUG: %s = %s@.%!" name v
+
+(** Log to file (bypasses dune's output capture) - only when SAREK_DEBUG is
+    enabled *)
+let log_to_file msg =
+  if enabled then begin
+    let log_file =
+      open_out_gen
+        [Open_creat; Open_append; Open_text]
+        0o644
+        "/tmp/sarek_ppx.log"
+    in
+    Printf.fprintf log_file "%s\n%!" msg ;
+    close_out log_file
+  end

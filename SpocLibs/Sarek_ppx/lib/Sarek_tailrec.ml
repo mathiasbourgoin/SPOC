@@ -1036,7 +1036,7 @@ let inline_with_pragma (fname : string) (params : tparam list) (body : texpr)
     Sarek_debug.log "inline_n finished" ;
     (* Check for remaining recursive calls *)
     let remaining = count_recursive_calls fname result in
-    if remaining > 0 then (
+    if remaining > 0 && Sarek_debug.enabled then (
       (* Warn but allow - these should be in dead code branches *)
       Format.eprintf
         "Sarek warning: %d recursive calls remain after %d inlines.@."
@@ -1092,9 +1092,10 @@ let transform_kernel (kernel : tkernel) : tkernel =
                     "  Use 'pragma [\"unroll N\"]' instead of 'sarek.inline'.@." ;
                   failwith "Cannot use sarek.inline on tail-recursive function"
               | _ -> ()) ;
-              Format.eprintf
-                "Sarek: transforming tail-recursive function '%s' to loop@."
-                name ;
+              if Sarek_debug.enabled then
+                Format.eprintf
+                  "Sarek: transforming tail-recursive function '%s' to loop@."
+                  name ;
               let new_body =
                 eliminate_tail_recursion
                   name
@@ -1126,16 +1127,18 @@ let transform_kernel (kernel : tkernel) : tkernel =
               | Some opts -> (
                   match parse_sarek_inline_pragma opts with
                   | Some depth -> (
-                      Format.eprintf
-                        "Sarek: inlining recursive function '%s' %d times@."
-                        name
-                        depth ;
+                      if Sarek_debug.enabled then
+                        Format.eprintf
+                          "Sarek: inlining recursive function '%s' %d times@."
+                          name
+                          depth ;
                       match inline_with_pragma name params inner_body depth with
                       | Ok new_body ->
-                          Format.eprintf
-                            "Sarek: successfully inlined '%s' (%d nodes)@."
-                            name
-                            (count_nodes new_body) ;
+                          if Sarek_debug.enabled then
+                            Format.eprintf
+                              "Sarek: successfully inlined '%s' (%d nodes)@."
+                              name
+                              (count_nodes new_body) ;
                           TMFun (name, is_rec, params, new_body)
                       | Error msg ->
                           Format.eprintf "Sarek error in '%s': %s@." name msg ;

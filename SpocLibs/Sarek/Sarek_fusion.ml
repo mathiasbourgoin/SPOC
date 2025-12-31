@@ -59,6 +59,14 @@ let rec expr_uses_array arr expr =
   | EVariant (_, _, args) -> List.exists (expr_uses_array arr) args
   | EArrayLen _ -> false
   | EConst _ | EVar _ -> false
+  | EArrayReadExpr (base, idx) ->
+      expr_uses_array arr base || expr_uses_array arr idx
+  | EIf (cond, then_, else_) ->
+      expr_uses_array arr cond || expr_uses_array arr then_
+      || expr_uses_array arr else_
+  | EMatch (e, cases) ->
+      expr_uses_array arr e
+      || List.exists (fun (_, body) -> expr_uses_array arr body) cases
 
 (** Substitute array reads in an expression *)
 let rec subst_array_read arr idx_var replacement expr =
@@ -93,6 +101,22 @@ let rec subst_array_read arr idx_var replacement expr =
       EVariant
         (ty, tag, List.map (subst_array_read arr idx_var replacement) args)
   | EArrayLen _ | EConst _ | EVar _ -> expr
+  | EArrayReadExpr (base, idx) ->
+      EArrayReadExpr
+        ( subst_array_read arr idx_var replacement base,
+          subst_array_read arr idx_var replacement idx )
+  | EIf (cond, then_, else_) ->
+      EIf
+        ( subst_array_read arr idx_var replacement cond,
+          subst_array_read arr idx_var replacement then_,
+          subst_array_read arr idx_var replacement else_ )
+  | EMatch (e, cases) ->
+      EMatch
+        ( subst_array_read arr idx_var replacement e,
+          List.map
+            (fun (p, body) ->
+              (p, subst_array_read arr idx_var replacement body))
+            cases )
 
 (** {1 Statement utilities} *)
 
@@ -180,6 +204,17 @@ let rec collect_reads_expr acc expr =
       List.fold_left (fun acc (_, e) -> collect_reads_expr acc e) acc fields
   | EVariant (_, _, args) -> List.fold_left collect_reads_expr acc args
   | EArrayLen _ | EConst _ | EVar _ -> acc
+  | EArrayReadExpr (base, idx) ->
+      collect_reads_expr (collect_reads_expr acc base) idx
+  | EIf (cond, then_, else_) ->
+      collect_reads_expr
+        (collect_reads_expr (collect_reads_expr acc cond) then_)
+        else_
+  | EMatch (e, cases) ->
+      List.fold_left
+        (fun acc (_, body) -> collect_reads_expr acc body)
+        (collect_reads_expr acc e)
+        cases
 
 (** Collect all array writes from a statement *)
 let rec collect_writes_stmt acc stmt =

@@ -72,7 +72,7 @@ type extension = ExFloat32 | ExFloat64
 type ('a, 'b, 'c) kirc_kernel = {
   ml_kern : 'a;
   body : Kirc_Ast.k_ext;
-  body_v2 : Sarek_ir.kernel option;  (* V2 IR for new execution path *)
+  body_v2 : Sarek_ir.kernel option; (* V2 IR for new execution path *)
   ret_val : Kirc_Ast.k_ext * ('b, 'c) Vector.kind;
   extensions : extension array;
   cpu_kern :

@@ -131,6 +131,15 @@ let quote_for_dir ~loc (d : Ir.for_dir) : expression =
   | Ir.Upto -> [%expr Sarek.Sarek_ir.Upto]
   | Ir.Downto -> [%expr Sarek.Sarek_ir.Downto]
 
+(** Quote pattern - must come before quote_expr since EMatch uses it *)
+let quote_pattern ~loc (p : Ir.pattern) : expression =
+  match p with
+  | Ir.PConstr (name, vars) ->
+      [%expr
+        Sarek.Sarek_ir.PConstr
+          ([%e quote_string ~loc name], [%e quote_list ~loc quote_string vars])]
+  | Ir.PWild -> [%expr Sarek.Sarek_ir.PWild]
+
 (** Quote expr *)
 let rec quote_expr ~loc (e : Ir.expr) : expression =
   match e with
@@ -186,6 +195,25 @@ let rec quote_expr ~loc (e : Ir.expr) : expression =
             [%e quote_list ~loc quote_expr args] )]
   | Ir.EArrayLen name ->
       [%expr Sarek.Sarek_ir.EArrayLen [%e quote_string ~loc name]]
+  | Ir.EArrayReadExpr (base, idx) ->
+      [%expr
+        Sarek.Sarek_ir.EArrayReadExpr
+          ([%e quote_expr ~loc base], [%e quote_expr ~loc idx])]
+  | Ir.EIf (cond, then_, else_) ->
+      [%expr
+        Sarek.Sarek_ir.EIf
+          ( [%e quote_expr ~loc cond],
+            [%e quote_expr ~loc then_],
+            [%e quote_expr ~loc else_] )]
+  | Ir.EMatch (e, cases) ->
+      let cases_expr =
+        quote_list
+          ~loc
+          (fun ~loc (p, body) ->
+            [%expr [%e quote_pattern ~loc p], [%e quote_expr ~loc body]])
+          cases
+      in
+      [%expr Sarek.Sarek_ir.EMatch ([%e quote_expr ~loc e], [%e cases_expr])]
 
 (** Quote lvalue *)
 let rec quote_lvalue ~loc (lv : Ir.lvalue) : expression =
@@ -199,15 +227,10 @@ let rec quote_lvalue ~loc (lv : Ir.lvalue) : expression =
       [%expr
         Sarek.Sarek_ir.LRecordField
           ([%e quote_lvalue ~loc lv], [%e quote_string ~loc f])]
-
-(** Quote pattern *)
-let quote_pattern ~loc (p : Ir.pattern) : expression =
-  match p with
-  | Ir.PConstr (name, vars) ->
+  | Ir.LArrayElemExpr (base, idx) ->
       [%expr
-        Sarek.Sarek_ir.PConstr
-          ([%e quote_string ~loc name], [%e quote_list ~loc quote_string vars])]
-  | Ir.PWild -> [%expr Sarek.Sarek_ir.PWild]
+        Sarek.Sarek_ir.LArrayElemExpr
+          ([%e quote_expr ~loc base], [%e quote_expr ~loc idx])]
 
 (** Quote stmt *)
 let rec quote_stmt ~loc (s : Ir.stmt) : expression =

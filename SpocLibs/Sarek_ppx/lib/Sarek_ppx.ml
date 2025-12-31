@@ -138,11 +138,12 @@ let register_sarek_type_decl ~loc (td : type_declaration) =
   ()
 
 let register_sarek_module_item ~loc:_ item =
-  (match item with
-  | Sarek_ast.MFun (name, _, _, _) ->
-      Format.eprintf "Sarek PPX: register module fun %s@." name
-  | Sarek_ast.MConst (name, _, _) ->
-      Format.eprintf "Sarek PPX: register module const %s@." name) ;
+  (if Sarek_debug.enabled then
+     match item with
+     | Sarek_ast.MFun (name, _, _, _) ->
+         Format.eprintf "Sarek PPX: register module fun %s@." name
+     | Sarek_ast.MConst (name, _, _) ->
+         Format.eprintf "Sarek PPX: register module const %s@." name) ;
   registered_mods := item :: !registered_mods
 
 (** Scan a single .ml file for [@@sarek.type] and [@sarek.module] declarations
@@ -180,11 +181,12 @@ let scan_file_for_sarek_types path =
                        (has_attr "sarek.module_private")
                        vb.pvb_attributes
                 then (
-                  Format.eprintf
-                    "Sarek PPX: sarek.module binding %s@."
-                    (Option.value
-                       (Sarek_parse.extract_name_from_pattern vb.pvb_pat)
-                       ~default:"<anon>") ;
+                  if Sarek_debug.enabled then
+                    Format.eprintf
+                      "Sarek PPX: sarek.module binding %s@."
+                      (Option.value
+                         (Sarek_parse.extract_name_from_pattern vb.pvb_pat)
+                         ~default:"<anon>") ;
                   let name =
                     match Sarek_parse.extract_name_from_pattern vb.pvb_pat with
                     | Some n -> n
@@ -591,6 +593,8 @@ let sarek_type_private_rule =
 (** The main kernel expansion function *)
 let expand_kernel ~ctxt payload =
   let loc = Expansion_context.Extension.extension_point_loc ctxt in
+  Sarek_debug.log_to_file
+    (Printf.sprintf "=== expand_kernel: %s ===" loc.loc_start.pos_fname) ;
   Sarek_debug.log "expand_kernel: %s" loc.loc_start.pos_fname ;
 
   try
@@ -633,6 +637,7 @@ let expand_kernel ~ctxt payload =
     let env = Sarek_env.(empty |> with_stdlib) in
 
     (* 3. Type inference *)
+    Sarek_debug.log_to_file "  step 3: type inference start" ;
     Sarek_debug.log_enter "infer_kernel" ;
     match Sarek_typer.infer_kernel env ast with
     | Error errors ->
@@ -641,54 +646,93 @@ let expand_kernel ~ctxt payload =
         (* If we get here, generate dummy expression *)
         [%expr assert false]
     | Ok tkernel -> (
+        Sarek_debug.log_to_file "  step 3: type inference done" ;
         Sarek_debug.log_exit "infer_kernel" ;
         (* 4. Convergence analysis - check barrier safety *)
+        Sarek_debug.log_to_file "  step 4: convergence check start" ;
         match Sarek_convergence.check_kernel tkernel with
         | Error (err :: _) ->
             (* Raise as Sarek_error to be caught by the handler below *)
             raise (Sarek_error.Sarek_error err)
         | Error [] | Ok () ->
+            Sarek_debug.log_to_file "  step 4: convergence check done" ;
             (* 5. Monomorphization pass - specialize polymorphic functions *)
+            Sarek_debug.log_to_file "  step 5: monomorphization start" ;
             Sarek_debug.log_enter "monomorphize" ;
             let tkernel = Sarek_mono.monomorphize tkernel in
+            Sarek_debug.log_to_file "  step 5: monomorphization done" ;
             Sarek_debug.log_exit "monomorphize" ;
 
             (* 6. Tail recursion elimination pass (for GPU code) *)
             (* Keep original kernel for native OCaml which handles recursion *)
             let native_kernel = tkernel in
+            Sarek_debug.log_to_file "  step 6: tailrec transform start" ;
             Sarek_debug.log_enter "transform_kernel" ;
             let tkernel = Sarek_tailrec.transform_kernel tkernel in
+            Sarek_debug.log_to_file "  step 6: tailrec transform done" ;
             Sarek_debug.log_exit "transform_kernel" ;
 
             (* 7. Lower to Kirc_Ast (legacy) *)
+            let kern_name = Option.value ~default:"anon" tkernel.tkern_name in
+            Sarek_debug.log_to_file
+              (Printf.sprintf "[%s] step 7: V1 lowering start" kern_name) ;
             Sarek_debug.log_enter "lower_kernel" ;
             let ir, constructors = Sarek_lower.lower_kernel tkernel in
+            Sarek_debug.log_to_file
+              (Printf.sprintf "[%s] step 7: V1 lowering done" kern_name) ;
             Sarek_debug.log_exit "lower_kernel" ;
             let ret_val = Sarek_lower.lower_return_value tkernel in
 
             (* 7b. Lower to Sarek_ir (V2) - optional, fails gracefully *)
+            Sarek_debug.log_to_file
+              (Printf.sprintf "[%s] step 7b: V2 lowering start" kern_name) ;
             let v2_kernel =
               try
+                let t0 = Unix.gettimeofday () in
                 Sarek_debug.log_enter "lower_kernel_v2" ;
-                let k, _constructors_v2 =
-                  Sarek_lower_v2.lower_kernel tkernel
-                in
+                let k, _constructors_v2 = Sarek_lower_v2.lower_kernel tkernel in
+                let t1 = Unix.gettimeofday () in
+                Sarek_debug.log_to_file
+                  (Printf.sprintf
+                     "[%s] step 7b: V2 lowering done (%.3fs)"
+                     kern_name
+                     (t1 -. t0)) ;
                 Sarek_debug.log_exit "lower_kernel_v2" ;
                 Some k
-              with _ ->
+              with e ->
                 Sarek_debug.log_exit "lower_kernel_v2 (failed)" ;
+                Sarek_debug.log_to_file
+                  (Printf.sprintf
+                     "[%s] step 7b: V2 lowering failed: %s"
+                     kern_name
+                     (Printexc.to_string e)) ;
                 None
             in
 
             (* 8. Quote the IR back to OCaml *)
-            Sarek_quote.quote_kernel
-              ~loc
-              ~native_kernel
-              ?ir_v2:v2_kernel
-              tkernel
-              ir
-              constructors
-              ret_val)
+            Sarek_debug.log_to_file
+              (Printf.sprintf
+                 "[%s] step 8: quote start (v2=%b)"
+                 kern_name
+                 (Option.is_some v2_kernel)) ;
+            let t0 = Unix.gettimeofday () in
+            let result =
+              Sarek_quote.quote_kernel
+                ~loc
+                ~native_kernel
+                ?ir_v2:v2_kernel
+                tkernel
+                ir
+                constructors
+                ret_val
+            in
+            let t1 = Unix.gettimeofday () in
+            Sarek_debug.log_to_file
+              (Printf.sprintf
+                 "[%s] step 8: quote done (%.3fs)"
+                 kern_name
+                 (t1 -. t0)) ;
+            result)
   with
   | Sarek_parse.Parse_error_exn (msg, ploc) ->
       Location.raise_errorf ~loc:ploc "Sarek parse error: %s" msg

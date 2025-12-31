@@ -63,6 +63,14 @@ type binop =
 (** Unary operators *)
 type unop = Neg | Not
 
+(** Loop direction *)
+type for_dir = Upto | Downto
+
+(** Match pattern *)
+type pattern =
+  | PConstr of string * string list (* Constructor name, bound vars *)
+  | PWild
+
 (** Expressions (pure, no side effects) *)
 type expr =
   | EConst of const
@@ -70,6 +78,7 @@ type expr =
   | EBinop of binop * expr * expr
   | EUnop of unop * expr
   | EArrayRead of string * expr  (** arr[idx] *)
+  | EArrayReadExpr of expr * expr  (** base_expr[idx] for complex bases *)
   | ERecordField of expr * string  (** r.field *)
   | EIntrinsic of string list * string * expr list
       (** module path, name, args *)
@@ -81,11 +90,15 @@ type expr =
   | EVariant of string * string * expr list
       (** Variant construction: type name, constructor, args *)
   | EArrayLen of string  (** Array length intrinsic *)
+  | EIf of expr * expr * expr  (** condition, then, else - value-returning if *)
+  | EMatch of expr * (pattern * expr) list
+      (** scrutinee, cases - value-returning match *)
 
 (** L-values (assignable locations) *)
 type lvalue =
   | LVar of var
   | LArrayElem of string * expr (* arr[idx] *)
+  | LArrayElemExpr of expr * expr (* base_expr[idx] for complex bases *)
   | LRecordField of lvalue * string (* r.field *)
 
 (** Statements (imperative, side effects) *)
@@ -105,12 +118,6 @@ type stmt =
   | SLetMut of var * expr * stmt  (** Mutable let: let v = ref e in body *)
   | SPragma of string list * stmt  (** Pragma hints wrapping a statement *)
   | SMemFence  (** Memory fence (threadfence) *)
-
-and for_dir = Upto | Downto
-
-and pattern =
-  | PConstr of string * string list (* Constructor name, bound vars *)
-  | PWild
 
 (** Declarations *)
 type decl =
@@ -207,6 +214,24 @@ let rec pp_expr fmt = function
   | EVariant (_, constr, args) ->
       Format.fprintf fmt "%s(%a)" constr pp_exprs args
   | EArrayLen arr -> Format.fprintf fmt "len(%s)" arr
+  | EArrayReadExpr (base, idx) ->
+      Format.fprintf fmt "(%a)[%a]" pp_expr base pp_expr idx
+  | EIf (cond, then_, else_) ->
+      Format.fprintf
+        fmt
+        "(%a ? %a : %a)"
+        pp_expr
+        cond
+        pp_expr
+        then_
+        pp_expr
+        else_
+  | EMatch (e, cases) ->
+      Format.fprintf fmt "match %a { " pp_expr e ;
+      List.iter
+        (fun (_, body) -> Format.fprintf fmt "_ => %a; " pp_expr body)
+        cases ;
+      Format.fprintf fmt "}"
 
 and pp_exprs fmt = function
   | [] -> ()
@@ -216,6 +241,8 @@ and pp_exprs fmt = function
 let rec pp_lvalue fmt = function
   | LVar v -> pp_var fmt v
   | LArrayElem (arr, idx) -> Format.fprintf fmt "%s[%a]" arr pp_expr idx
+  | LArrayElemExpr (base, idx) ->
+      Format.fprintf fmt "(%a)[%a]" pp_expr base pp_expr idx
   | LRecordField (lv, field) -> Format.fprintf fmt "%a.%s" pp_lvalue lv field
 
 let rec pp_stmt fmt = function
@@ -751,19 +778,19 @@ let rec k_ext_of_expr : expr -> Kirc_Ast.k_ext = function
   | EBinop (Or, e1, e2) -> Kirc_Ast.Or (k_ext_of_expr e1, k_ext_of_expr e2)
   | EBinop (Shl, e1, e2) ->
       (* Use intrinsic call for shift left *)
-      Kirc_Ast.App (Kirc_Ast.Id "__shl", [| k_ext_of_expr e1; k_ext_of_expr e2 |])
+      Kirc_Ast.App (Kirc_Ast.Id "__shl", [|k_ext_of_expr e1; k_ext_of_expr e2|])
   | EBinop (Shr, e1, e2) ->
       (* Use intrinsic call for shift right *)
-      Kirc_Ast.App (Kirc_Ast.Id "__shr", [| k_ext_of_expr e1; k_ext_of_expr e2 |])
+      Kirc_Ast.App (Kirc_Ast.Id "__shr", [|k_ext_of_expr e1; k_ext_of_expr e2|])
   | EBinop (BitAnd, e1, e2) ->
       (* Use intrinsic call for bitwise and *)
-      Kirc_Ast.App (Kirc_Ast.Id "__band", [| k_ext_of_expr e1; k_ext_of_expr e2 |])
+      Kirc_Ast.App (Kirc_Ast.Id "__band", [|k_ext_of_expr e1; k_ext_of_expr e2|])
   | EBinop (BitOr, e1, e2) ->
       (* Use intrinsic call for bitwise or *)
-      Kirc_Ast.App (Kirc_Ast.Id "__bor", [| k_ext_of_expr e1; k_ext_of_expr e2 |])
+      Kirc_Ast.App (Kirc_Ast.Id "__bor", [|k_ext_of_expr e1; k_ext_of_expr e2|])
   | EBinop (BitXor, e1, e2) ->
       (* Use intrinsic call for bitwise xor *)
-      Kirc_Ast.App (Kirc_Ast.Id "__bxor", [| k_ext_of_expr e1; k_ext_of_expr e2 |])
+      Kirc_Ast.App (Kirc_Ast.Id "__bxor", [|k_ext_of_expr e1; k_ext_of_expr e2|])
   | EUnop (Neg, e) -> Kirc_Ast.Min (Kirc_Ast.Int 0, k_ext_of_expr e)
   | EUnop (Not, e) -> Kirc_Ast.Not (k_ext_of_expr e)
   | EArrayRead (arr, idx) ->
@@ -788,6 +815,25 @@ let rec k_ext_of_expr : expr -> Kirc_Ast.k_ext = function
   | EVariant (type_name, constr, args) ->
       Kirc_Ast.Constr (type_name, constr, List.map k_ext_of_expr args)
   | EArrayLen arr -> Kirc_Ast.App (Kirc_Ast.Id "len", [|Kirc_Ast.Id arr|])
+  | EArrayReadExpr (base, idx) ->
+      Kirc_Ast.IntVecAcc (k_ext_of_expr base, k_ext_of_expr idx)
+  | EIf (cond, then_, else_) ->
+      Kirc_Ast.Ife (k_ext_of_expr cond, k_ext_of_expr then_, k_ext_of_expr else_)
+  | EMatch (e, cases) ->
+      let cases' =
+        Array.of_list
+          (List.mapi
+             (fun i (p, body) ->
+               let binding =
+                 match p with
+                 | PConstr (_, []) -> None
+                 | PConstr (_, [v]) -> Some ("", v, 0, "")
+                 | _ -> None
+               in
+               (i, binding, k_ext_of_expr body))
+             cases)
+      in
+      Kirc_Ast.Match ("", k_ext_of_expr e, cases')
 
 let rec k_ext_of_stmt : stmt -> Kirc_Ast.k_ext = function
   | SEmpty -> Kirc_Ast.Empty
@@ -803,6 +849,10 @@ let rec k_ext_of_stmt : stmt -> Kirc_Ast.k_ext = function
   | SAssign (LRecordField (lv, field), e) ->
       Kirc_Ast.RecSet
         (Kirc_Ast.RecGet (k_ext_of_lvalue lv, field), k_ext_of_expr e)
+  | SAssign (LArrayElemExpr (base, idx), e) ->
+      Kirc_Ast.SetV
+        ( Kirc_Ast.IntVecAcc (k_ext_of_expr base, k_ext_of_expr idx),
+          k_ext_of_expr e )
   | SIf (cond, then_, None) ->
       Kirc_Ast.If (k_ext_of_expr cond, k_ext_of_stmt then_)
   | SIf (cond, then_, Some else_) ->
@@ -871,6 +921,8 @@ and k_ext_of_lvalue : lvalue -> Kirc_Ast.k_ext = function
   | LVar v -> k_ext_of_expr (EVar v)
   | LArrayElem (arr, idx) ->
       Kirc_Ast.IntVecAcc (Kirc_Ast.Id arr, k_ext_of_expr idx)
+  | LArrayElemExpr (base, idx) ->
+      Kirc_Ast.IntVecAcc (k_ext_of_expr base, k_ext_of_expr idx)
   | LRecordField (lv, field) -> Kirc_Ast.RecGet (k_ext_of_lvalue lv, field)
 
 let k_ext_of_decl : decl -> Kirc_Ast.k_ext = function
