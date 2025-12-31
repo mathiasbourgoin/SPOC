@@ -178,3 +178,68 @@ module type BACKEND = sig
 
   val disable_profiling : unit -> unit
 end
+
+(** {1 Phase 4: Unified Execution Architecture} *)
+
+(** Execution model for backends.
+    - JIT: Generate source code at runtime, compile with GPU compiler (CUDA,
+      OpenCL)
+    - Direct: Execute pre-compiled OCaml functions directly (Native CPU)
+    - Custom: Full control over compilation pipeline (LLVM, SPIR-V, future) *)
+type execution_model = JIT | Direct | Custom
+
+(** Convergence behavior of an intrinsic.
+    - Uniform: All threads in warp/wavefront compute same value
+    - Divergent: Threads may compute different values
+    - Sync: Intrinsic contains synchronization (barrier) *)
+type convergence = Uniform | Divergent | Sync
+
+(** Intrinsic registry interface for backend-specific intrinsics. Note: The
+    actual intrinsic_impl type is defined in each backend's intrinsic registry
+    module to avoid circular dependencies with Sarek_ir. *)
+module type INTRINSIC_REGISTRY = sig
+  (** Backend-specific intrinsic implementation type *)
+  type intrinsic_impl
+
+  (** Register an intrinsic by name *)
+  val register : string -> intrinsic_impl -> unit
+
+  (** Look up an intrinsic by name *)
+  val find : string -> intrinsic_impl option
+
+  (** List all registered intrinsic names *)
+  val list_all : unit -> string list
+end
+
+(** Extended backend signature for Phase 4 unified execution. Adds execution
+    model discrimination and IR-based code generation.
+
+    Note: generate_source takes an Obj.t to avoid circular dependency with
+    Sarek_ir. Backends should cast to Sarek_ir.kernel internally. *)
+module type BACKEND_V2 = sig
+  include BACKEND
+
+  (** The execution model this backend uses *)
+  val execution_model : execution_model
+
+  (** Generate source code from Sarek IR (for JIT backends). The ir parameter is
+      Sarek_ir.kernel wrapped as Obj.t to avoid circular dependencies. Returns
+      None for Direct/Custom backends. *)
+  val generate_source : Obj.t -> string option
+
+  (** Execute a kernel directly (for Direct backends). JIT backends should raise
+      an error if this is called.
+      @param native_fn Pre-compiled OCaml function (from PPX)
+      @param block Block dimensions
+      @param grid Grid dimensions
+      @param args Kernel arguments as Obj.t array *)
+  val execute_direct :
+    native_fn:(block:dims -> grid:dims -> Obj.t array -> unit) option ->
+    block:dims ->
+    grid:dims ->
+    Obj.t array ->
+    unit
+
+  (** Backend-specific intrinsic registry *)
+  module Intrinsics : INTRINSIC_REGISTRY
+end
