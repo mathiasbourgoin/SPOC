@@ -82,10 +82,10 @@ module Future = struct
         | Ready v -> v
         | Pending _ -> failwith "Future: await failed"
 
-  let map f fut =
+  let map _f fut =
     {state = Pending (fun () ->
       match fut.state with
-      | Ready v ->
+      | Ready _v ->
           (* Already ready, apply function *)
           true
       | Pending _ -> is_ready fut)}

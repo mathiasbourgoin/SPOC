@@ -23,7 +23,7 @@ let set_auto enabled = auto_mode := enabled
 (** Allocate a device buffer for a scalar vector, returning a DEVICE_BUFFER module.
     The buffer is packaged with its backend for type-safe operations. *)
 let alloc_scalar_buffer (type a b) (dev : Device.t) (length : int)
-    (sk : Vector.scalar_kind) : Vector.device_buffer =
+    (sk : (a, b) Vector.scalar_kind) : Vector.device_buffer =
   match Framework_registry.find_backend dev.framework with
   | None -> failwith ("Unknown framework: " ^ dev.framework)
   | Some (module B : Framework_sig.BACKEND) ->
