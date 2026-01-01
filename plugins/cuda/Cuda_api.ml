@@ -283,9 +283,10 @@ module Kernel = struct
   let compile device ~name ~source =
     Device.set_current device ;
 
-    (* Compile to PTX using NVRTC - use sm_XX format for compatibility *)
+    (* Compile to PTX - use compute_52 as safe baseline, driver will JIT for actual GPU *)
     let major, minor = device.Device.compute_capability in
-    let arch = Printf.sprintf "sm_%d%d" major minor in
+    let arch = "compute_52" in  (* Safe baseline that most NVRTC versions support *)
+    ignore (major, minor) ;  (* Logged for info but not used for arch *)
     Sarek_core.Log.debugf
       Sarek_core.Log.Kernel
       "CUDA compile: kernel='%s' arch=%s (cc %d.%d) device=%d"
