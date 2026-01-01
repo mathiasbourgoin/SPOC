@@ -34,36 +34,109 @@ type 'a custom_type = {
   name : string;  (** Type name for debugging *)
 }
 
-(** Helper functions for custom type implementations.
-    These wrap Ctypes operations to provide simpler APIs for PPX-generated code. *)
+(** Helper functions for custom type implementations. These wrap Ctypes
+    operations to provide simpler APIs for PPX-generated code. *)
 module Custom_helpers = struct
   (** Read a float32 value at byte offset from a void pointer *)
   let read_float32 (ptr : unit Ctypes.ptr) (byte_offset : int) : float =
     let byte_ptr = Ctypes.from_voidp Ctypes.uint8_t ptr in
     let target_ptr = Ctypes.(byte_ptr +@ byte_offset) in
-    let float_ptr = Ctypes.from_voidp Ctypes.float (Ctypes.to_voidp target_ptr) in
+    let float_ptr =
+      Ctypes.from_voidp Ctypes.float (Ctypes.to_voidp target_ptr)
+    in
     Ctypes.(!@float_ptr)
 
   (** Write a float32 value at byte offset to a void pointer *)
-  let write_float32 (ptr : unit Ctypes.ptr) (byte_offset : int) (v : float) : unit =
+  let write_float32 (ptr : unit Ctypes.ptr) (byte_offset : int) (v : float) :
+      unit =
     let byte_ptr = Ctypes.from_voidp Ctypes.uint8_t ptr in
     let target_ptr = Ctypes.(byte_ptr +@ byte_offset) in
-    let float_ptr = Ctypes.from_voidp Ctypes.float (Ctypes.to_voidp target_ptr) in
+    let float_ptr =
+      Ctypes.from_voidp Ctypes.float (Ctypes.to_voidp target_ptr)
+    in
     Ctypes.(float_ptr <-@ v)
 
   (** Read an int32 value at byte offset from a void pointer *)
   let read_int32 (ptr : unit Ctypes.ptr) (byte_offset : int) : int32 =
     let byte_ptr = Ctypes.from_voidp Ctypes.uint8_t ptr in
     let target_ptr = Ctypes.(byte_ptr +@ byte_offset) in
-    let int_ptr = Ctypes.from_voidp Ctypes.int32_t (Ctypes.to_voidp target_ptr) in
+    let int_ptr =
+      Ctypes.from_voidp Ctypes.int32_t (Ctypes.to_voidp target_ptr)
+    in
     Ctypes.(!@int_ptr)
 
   (** Write an int32 value at byte offset to a void pointer *)
-  let write_int32 (ptr : unit Ctypes.ptr) (byte_offset : int) (v : int32) : unit =
+  let write_int32 (ptr : unit Ctypes.ptr) (byte_offset : int) (v : int32) : unit
+      =
     let byte_ptr = Ctypes.from_voidp Ctypes.uint8_t ptr in
     let target_ptr = Ctypes.(byte_ptr +@ byte_offset) in
-    let int_ptr = Ctypes.from_voidp Ctypes.int32_t (Ctypes.to_voidp target_ptr) in
+    let int_ptr =
+      Ctypes.from_voidp Ctypes.int32_t (Ctypes.to_voidp target_ptr)
+    in
     Ctypes.(int_ptr <-@ v)
+
+  (** Read an int64 value at byte offset from a void pointer *)
+  let read_int64 (ptr : unit Ctypes.ptr) (byte_offset : int) : int64 =
+    let byte_ptr = Ctypes.from_voidp Ctypes.uint8_t ptr in
+    let target_ptr = Ctypes.(byte_ptr +@ byte_offset) in
+    let int_ptr =
+      Ctypes.from_voidp Ctypes.int64_t (Ctypes.to_voidp target_ptr)
+    in
+    Ctypes.(!@int_ptr)
+
+  (** Write an int64 value at byte offset to a void pointer *)
+  let write_int64 (ptr : unit Ctypes.ptr) (byte_offset : int) (v : int64) : unit
+      =
+    let byte_ptr = Ctypes.from_voidp Ctypes.uint8_t ptr in
+    let target_ptr = Ctypes.(byte_ptr +@ byte_offset) in
+    let int_ptr =
+      Ctypes.from_voidp Ctypes.int64_t (Ctypes.to_voidp target_ptr)
+    in
+    Ctypes.(int_ptr <-@ v)
+
+  (** Read a float64 (double) value at byte offset from a void pointer *)
+  let read_float64 (ptr : unit Ctypes.ptr) (byte_offset : int) : float =
+    let byte_ptr = Ctypes.from_voidp Ctypes.uint8_t ptr in
+    let target_ptr = Ctypes.(byte_ptr +@ byte_offset) in
+    let float_ptr =
+      Ctypes.from_voidp Ctypes.double (Ctypes.to_voidp target_ptr)
+    in
+    Ctypes.(!@float_ptr)
+
+  (** Write a float64 (double) value at byte offset to a void pointer *)
+  let write_float64 (ptr : unit Ctypes.ptr) (byte_offset : int) (v : float) :
+      unit =
+    let byte_ptr = Ctypes.from_voidp Ctypes.uint8_t ptr in
+    let target_ptr = Ctypes.(byte_ptr +@ byte_offset) in
+    let float_ptr =
+      Ctypes.from_voidp Ctypes.double (Ctypes.to_voidp target_ptr)
+    in
+    Ctypes.(float_ptr <-@ v)
+
+  (** Read an int value (stored as 4-byte int32) at byte offset from a void
+      pointer *)
+  let read_int (ptr : unit Ctypes.ptr) (byte_offset : int) : int =
+    Int32.to_int (read_int32 ptr byte_offset)
+
+  (** Write an int value (stored as 4-byte int32) at byte offset to a void
+      pointer *)
+  let write_int (ptr : unit Ctypes.ptr) (byte_offset : int) (v : int) : unit =
+    write_int32 ptr byte_offset (Int32.of_int v)
+
+  (** Read a nested custom type at byte offset. This allows composable custom
+      types where one record contains another. *)
+  let read_custom (custom : 'a custom_type) (ptr : unit Ctypes.ptr)
+      (byte_offset : int) : 'a =
+    let byte_ptr = Ctypes.from_voidp Ctypes.uint8_t ptr in
+    let target_ptr = Ctypes.to_voidp Ctypes.(byte_ptr +@ byte_offset) in
+    custom.get target_ptr 0
+
+  (** Write a nested custom type at byte offset. *)
+  let write_custom (custom : 'a custom_type) (ptr : unit Ctypes.ptr)
+      (byte_offset : int) (v : 'a) : unit =
+    let byte_ptr = Ctypes.from_voidp Ctypes.uint8_t ptr in
+    let target_ptr = Ctypes.to_voidp Ctypes.(byte_ptr +@ byte_offset) in
+    custom.set target_ptr 0 v
 end
 
 (** Unified kind type supporting both scalar and custom types *)

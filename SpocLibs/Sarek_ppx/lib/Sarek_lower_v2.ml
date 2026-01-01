@@ -412,8 +412,9 @@ and lower_stmt (state : state) (te : texpr) : Ir.stmt =
   | TELetMut (name, id, value, body) ->
       let v = make_var name id value.ty true in
       Ir.SLetMut (v, lower_expr state value, lower_stmt state body)
-  | TELetRec (_name, _id, _params, _fn_body, cont) ->
-      (* Inline functions - just emit continuation *)
+  | TELetRec (name, _id, params, fn_body, cont) ->
+      (* Register function in fun_map for later inlining when called *)
+      Hashtbl.add state.fun_map name (params, fn_body) ;
       lower_stmt state cont
   | TEIf (cond, then_, else_opt) ->
       Ir.SIf

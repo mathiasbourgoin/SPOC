@@ -6,7 +6,6 @@
  ******************************************************************************)
 
 open Spoc
-
 module V2_Vector = Sarek_core.Vector
 module V2_Device = Sarek_core.Device
 module V2_Transfer = Sarek_core.Transfer
@@ -33,7 +32,8 @@ type particle = {
   vel_x : float32;
   vel_y : float32;
   mass : float32;
-} [@@sarek.type]
+}
+[@@sarek.type]
 
 type color = {r : float32; g : float32; b : float32; a : float32} [@@sarek.type]
 
@@ -107,7 +107,11 @@ let run_point2d_test_v2 dev n =
     if abs_float (got -. expected) > 1e-3 then (
       ok := false ;
       if i < 3 then
-        Printf.printf "    Mismatch at %d: got %f expected %f\n%!" i got expected)
+        Printf.printf
+          "    Mismatch at %d: got %f expected %f\n%!"
+          i
+          got
+          expected)
   done ;
   (!ok, time_ms)
 
@@ -169,8 +173,7 @@ let run_point3d_test_v2 dev n =
     ~block:(Sarek.Execute.dims1d threads)
     ~grid:(Sarek.Execute.dims1d grid_x)
     ~ir
-    ~args:
-      [Sarek.Execute.Vec points; Sarek.Execute.Int32 (Int32.of_int n)]
+    ~args:[Sarek.Execute.Vec points; Sarek.Execute.Int32 (Int32.of_int n)]
     () ;
   V2_Transfer.flush dev ;
   let t1 = Unix.gettimeofday () in
@@ -201,7 +204,13 @@ let particle_update_kirc =
           let new_pos_x = p.pos_x +. (p.vel_x *. dt) in
           let new_pos_y = p.pos_y +. (p.vel_y *. dt) in
           particles.(tid) <-
-            {pos_x = new_pos_x; pos_y = new_pos_y; vel_x = p.vel_x; vel_y = p.vel_y; mass = p.mass}
+            {
+              pos_x = new_pos_x;
+              pos_y = new_pos_y;
+              vel_x = p.vel_x;
+              vel_y = p.vel_y;
+              mass = p.mass;
+            }
         end]
 
 let run_particle_test dev =
@@ -214,9 +223,13 @@ let run_particle_test dev =
         if tid < n then begin
           let p = particles.(tid) in
           particles.(tid) <-
-            {pos_x = p.pos_x +. (p.vel_x *. dt);
-             pos_y = p.pos_y +. (p.vel_y *. dt);
-             vel_x = p.vel_x; vel_y = p.vel_y; mass = p.mass}
+            {
+              pos_x = p.pos_x +. (p.vel_x *. dt);
+              pos_y = p.pos_y +. (p.vel_y *. dt);
+              vel_x = p.vel_x;
+              vel_y = p.vel_y;
+              mass = p.mass;
+            }
         end]
   in
   ignore (Sarek.Kirc.gen kern dev) ;
@@ -229,7 +242,9 @@ let run_particle_test_v2 dev n =
   let dt = 0.1 in
   for i = 0 to n - 1 do
     let fi = float_of_int i in
-    V2_Vector.set particles i
+    V2_Vector.set
+      particles
+      i
       {pos_x = fi; pos_y = fi *. 2.0; vel_x = 1.0; vel_y = 2.0; mass = 1.0}
   done ;
   let threads = 64 in
@@ -262,11 +277,19 @@ let run_particle_test_v2 dev n =
     let p = V2_Vector.get particles i in
     let expected_x = fi +. (1.0 *. dt) in
     let expected_y = (fi *. 2.0) +. (2.0 *. dt) in
-    if abs_float (p.pos_x -. expected_x) > 1e-3 || abs_float (p.pos_y -. expected_y) > 1e-3 then (
+    if
+      abs_float (p.pos_x -. expected_x) > 1e-3
+      || abs_float (p.pos_y -. expected_y) > 1e-3
+    then (
       ok := false ;
       if i < 3 then
-        Printf.printf "    Particle %d: pos=(%.2f,%.2f) expected=(%.2f,%.2f)\n%!"
-          i p.pos_x p.pos_y expected_x expected_y)
+        Printf.printf
+          "    Particle %d: pos=(%.2f,%.2f) expected=(%.2f,%.2f)\n%!"
+          i
+          p.pos_x
+          p.pos_y
+          expected_x
+          expected_y)
   done ;
   (!ok, time_ms)
 
@@ -281,18 +304,19 @@ let color_blend_kirc =
           (c2 : color vector)
           (output : color vector)
           (t : float32)
-          (n : int32)
-        ->
+          (n : int32) ->
         let tid = thread_idx_x + (block_dim_x * block_idx_x) in
         if tid < n then begin
           let a = c1.(tid) in
           let b = c2.(tid) in
           let one_minus_t = 1.0 -. t in
           output.(tid) <-
-            {r = (a.r *. one_minus_t) +. (b.r *. t);
-             g = (a.g *. one_minus_t) +. (b.g *. t);
-             b = (a.b *. one_minus_t) +. (b.b *. t);
-             a = (a.a *. one_minus_t) +. (b.a *. t)}
+            {
+              r = (a.r *. one_minus_t) +. (b.r *. t);
+              g = (a.g *. one_minus_t) +. (b.g *. t);
+              b = (a.b *. one_minus_t) +. (b.b *. t);
+              a = (a.a *. one_minus_t) +. (b.a *. t);
+            }
         end]
 
 let run_color_test dev =
@@ -300,17 +324,23 @@ let run_color_test dev =
   let t0 = Unix.gettimeofday () in
   let kern =
     [%kernel
-      fun (c1 : color vector) (c2 : color vector) (out : color vector) (t : float32) (n : int32) ->
+      fun (c1 : color vector)
+          (c2 : color vector)
+          (out : color vector)
+          (t : float32)
+          (n : int32) ->
         let tid = thread_idx_x + (block_dim_x * block_idx_x) in
         if tid < n then begin
           let a = c1.(tid) in
           let b = c2.(tid) in
           let omt = 1.0 -. t in
           out.(tid) <-
-            {r = (a.r *. omt) +. (b.r *. t);
-             g = (a.g *. omt) +. (b.g *. t);
-             b = (a.b *. omt) +. (b.b *. t);
-             a = (a.a *. omt) +. (b.a *. t)}
+            {
+              r = (a.r *. omt) +. (b.r *. t);
+              g = (a.g *. omt) +. (b.g *. t);
+              b = (a.b *. omt) +. (b.b *. t);
+              a = (a.a *. omt) +. (b.a *. t);
+            }
         end]
   in
   ignore (Sarek.Kirc.gen kern dev) ;
@@ -360,8 +390,13 @@ let run_color_test_v2 dev n =
     if abs_float (c.r -. 0.5) > 1e-3 || abs_float (c.g -. 0.5) > 1e-3 then (
       ok := false ;
       if i < 3 then
-        Printf.printf "    Color %d: (%.2f,%.2f,%.2f,%.2f) expected (0.5,0.5,0.0,1.0)\n%!"
-          i c.r c.g c.b c.a)
+        Printf.printf
+          "    Color %d: (%.2f,%.2f,%.2f,%.2f) expected (0.5,0.5,0.0,1.0)\n%!"
+          i
+          c.r
+          c.g
+          c.b
+          c.a)
   done ;
   (!ok, time_ms)
 
@@ -413,24 +448,36 @@ let () =
     print_endline "Point2D distance:" ;
     (try
        let ok, time = run_point2d_test_v2 v2_dev n in
-       Printf.printf "  V2 exec: %.2f ms, %s\n%!" time (if ok then "PASSED" else "FAILED")
+       Printf.printf
+         "  V2 exec: %.2f ms, %s\n%!"
+         time
+         (if ok then "PASSED" else "FAILED")
      with e -> Printf.printf "  FAIL (%s)\n%!" (Printexc.to_string e)) ;
 
     print_endline "Point3D normalize:" ;
     (try
        let ok, time = run_point3d_test_v2 v2_dev n in
-       Printf.printf "  V2 exec: %.2f ms, %s\n%!" time (if ok then "PASSED" else "FAILED")
+       Printf.printf
+         "  V2 exec: %.2f ms, %s\n%!"
+         time
+         (if ok then "PASSED" else "FAILED")
      with e -> Printf.printf "  FAIL (%s)\n%!" (Printexc.to_string e)) ;
 
     print_endline "Particle update:" ;
     (try
        let ok, time = run_particle_test_v2 v2_dev n in
-       Printf.printf "  V2 exec: %.2f ms, %s\n%!" time (if ok then "PASSED" else "FAILED")
+       Printf.printf
+         "  V2 exec: %.2f ms, %s\n%!"
+         time
+         (if ok then "PASSED" else "FAILED")
      with e -> Printf.printf "  FAIL (%s)\n%!" (Printexc.to_string e)) ;
 
     print_endline "Color blend:" ;
-    (try
-       let ok, time = run_color_test_v2 v2_dev n in
-       Printf.printf "  V2 exec: %.2f ms, %s\n%!" time (if ok then "PASSED" else "FAILED")
-     with e -> Printf.printf "  FAIL (%s)\n%!" (Printexc.to_string e))
+    try
+      let ok, time = run_color_test_v2 v2_dev n in
+      Printf.printf
+        "  V2 exec: %.2f ms, %s\n%!"
+        time
+        (if ok then "PASSED" else "FAILED")
+    with e -> Printf.printf "  FAIL (%s)\n%!" (Printexc.to_string e)
   end

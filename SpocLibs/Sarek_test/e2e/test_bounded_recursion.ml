@@ -8,6 +8,28 @@
 
 open Spoc
 open Sarek
+module V2_Vector = Sarek_core.Vector
+module V2_Device = Sarek_core.Device
+module V2_Transfer = Sarek_core.Transfer
+
+(* Force backend registration *)
+let () =
+  Sarek_cuda.Cuda_plugin.init () ;
+  Sarek_cuda.Cuda_plugin_v2.init () ;
+  Sarek_opencl.Opencl_plugin.init () ;
+  Sarek_opencl.Opencl_plugin_v2.init ()
+
+(* Extract kirc for V2 - factorial *)
+let factorial_kirc =
+  snd
+    [%kernel
+      let open Std in
+      let rec fact_aux (acc : int32) (n : int32) : int32 =
+        if n <= 1l then acc else fact_aux (acc * n) (n - 1l)
+      in
+      fun (output : int32 vector) (n : int32) ->
+        let idx = global_idx_x in
+        if idx = 0l then output.(idx) <- fact_aux 1l n]
 
 (* Test 1: Tail-recursive factorial with accumulator *)
 let test_factorial () =
@@ -149,25 +171,92 @@ let test_gcd () =
       Printf.printf "FAIL: gcd(%d, %d) = %ld, expected %ld\n" a b got expected ;
       false)
 
+(* V2 test for tail-recursive factorial *)
+let test_factorial_v2 () =
+  let v2_devs = V2_Device.init ~frameworks:["CUDA"; "OpenCL"] () in
+  if Array.length v2_devs = 0 then (
+    print_endline "No V2 devices - skipping" ;
+    true)
+  else
+    let v2_dev = v2_devs.(0) in
+    Printf.printf "V2 Testing on: %s\n%!" v2_dev.V2_Device.name ;
+
+    let output = V2_Vector.create V2_Vector.int32 1 in
+    V2_Vector.set output 0 0l ;
+    let n = 10l in
+
+    let ir =
+      match factorial_kirc.Kirc.body_v2 with
+      | Some ir -> ir
+      | None -> failwith "Kernel has no V2 IR"
+    in
+
+    let t0 = Unix.gettimeofday () in
+    try
+      Sarek.Execute.run_vectors
+        ~device:v2_dev
+        ~block:(Sarek.Execute.dims1d 1)
+        ~grid:(Sarek.Execute.dims1d 1)
+        ~ir
+        ~args:[Sarek.Execute.Vec output; Sarek.Execute.Int32 n]
+        () ;
+      V2_Transfer.flush v2_dev ;
+      let t1 = Unix.gettimeofday () in
+      Printf.printf "  V2 exec: %.2f ms\n%!" ((t1 -. t0) *. 1000.0) ;
+
+      let got = V2_Vector.get output 0 in
+      (* 10! = 3628800 *)
+      let expected = 3628800l in
+      if got = expected then (
+        Printf.printf "V2 PASS: fact(10) = %ld\n%!" got ;
+        true)
+      else (
+        Printf.printf "V2 FAIL: fact(10) = %ld, expected %ld\n%!" got expected ;
+        false)
+    with e ->
+      Printf.printf "V2 FAIL: %s\n%!" (Printexc.to_string e) ;
+      false
+
 let () =
   print_endline "=== Tail Recursion Transformation Tests ===" ;
   print_endline "" ;
 
-  let t1 = test_factorial () in
+  print_endline "--- SPOC Path ---" ;
+  let t1 =
+    try test_factorial ()
+    with e ->
+      Printf.printf "SPOC Factorial FAIL: %s\n%!" (Printexc.to_string e) ;
+      false
+  in
   print_endline "" ;
 
-  let t2 = test_power () in
+  let t2 =
+    try test_power ()
+    with e ->
+      Printf.printf "SPOC Power FAIL: %s\n%!" (Printexc.to_string e) ;
+      false
+  in
   print_endline "" ;
 
-  let t3 = test_gcd () in
+  let t3 =
+    try test_gcd ()
+    with e ->
+      Printf.printf "SPOC GCD FAIL: %s\n%!" (Printexc.to_string e) ;
+      false
+  in
+  print_endline "" ;
+
+  print_endline "--- V2 Path ---" ;
+  let t4 = test_factorial_v2 () in
   print_endline "" ;
 
   print_endline "=== Summary ===" ;
-  Printf.printf "Factorial: %s\n" (if t1 then "PASS" else "FAIL") ;
-  Printf.printf "Power: %s\n" (if t2 then "PASS" else "FAIL") ;
-  Printf.printf "GCD: %s\n" (if t3 then "PASS" else "FAIL") ;
+  Printf.printf "SPOC Factorial: %s\n" (if t1 then "PASS" else "FAIL") ;
+  Printf.printf "SPOC Power: %s\n" (if t2 then "PASS" else "FAIL") ;
+  Printf.printf "SPOC GCD: %s\n" (if t3 then "PASS" else "FAIL") ;
+  Printf.printf "V2 Factorial: %s\n" (if t4 then "PASS" else "FAIL") ;
 
-  if t1 && t2 && t3 then (
+  if t1 && t2 && t3 && t4 then (
     print_endline "\nAll tests passed!" ;
     exit 0)
   else (

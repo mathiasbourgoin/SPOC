@@ -20,7 +20,8 @@ let current_device : Device.t option ref = ref None
 
 (** {1 Type Mapping} *)
 
-(** Mangle OCaml type name to valid C identifier (e.g., "Module.point" -> "Module_point") *)
+(** Mangle OCaml type name to valid C identifier (e.g., "Module.point" ->
+    "Module_point") *)
 let mangle_name name = String.map (fun c -> if c = '.' then '_' else c) name
 
 (** Map Sarek IR element type to CUDA C type string *)

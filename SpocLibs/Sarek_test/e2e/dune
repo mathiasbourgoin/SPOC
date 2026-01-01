@@ -40,7 +40,8 @@
   test_polymorphism
   test_module_poly
   test_bounded_recursion
-  test_inline_pragma)
+  test_inline_pragma
+  test_nested_types)
  (modules
   test_vector_add
   test_module_const
@@ -78,7 +79,8 @@
   test_polymorphism
   test_module_poly
   test_bounded_recursion
-  test_inline_pragma)
+  test_inline_pragma
+  test_nested_types)
  (libraries
   spoc
   sarek

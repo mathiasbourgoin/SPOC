@@ -88,7 +88,43 @@ let module_name_of_loc loc =
   let base = Filename.(remove_extension (basename file)) in
   String.capitalize_ascii base
 
+(* Registry of known type sizes, populated during PPX processing.
+   This allows nested types to look up sizes of previously processed types. *)
+let type_size_registry : (string, int) Hashtbl.t = Hashtbl.create 16
+
+(* Get size of a type, checking registry for custom types *)
+let get_type_size_from_core_type (ct : core_type) : int =
+  match ct.ptyp_desc with
+  | Ptyp_constr ({txt = Lident "int32"; _}, _) -> 4
+  | Ptyp_constr ({txt = Lident "int64"; _}, _) -> 8
+  | Ptyp_constr ({txt = Lident "float32"; _}, _) -> 4
+  | Ptyp_constr ({txt = Lident "float"; _}, _) -> 4 (* GPU float32 *)
+  | Ptyp_constr ({txt = Lident "int"; _}, _) -> 4
+  | Ptyp_constr ({txt = Lident type_name; _}, _) -> (
+      (* Check if it's a known custom type *)
+      try Hashtbl.find type_size_registry type_name with Not_found -> 4)
+  | _ -> 4
+
+let calc_type_size_early (labels : label_declaration list) : int =
+  List.fold_left
+    (fun acc ld -> acc + get_type_size_from_core_type ld.pld_type)
+    0
+    labels
+
+(* Compute type size and register it in the registry for nested type lookup. *)
+let register_type_size (td : type_declaration) =
+  let type_name = td.ptype_name.txt in
+  let size =
+    match td.ptype_kind with
+    | Ptype_record labels -> calc_type_size_early labels
+    | Ptype_variant _ -> 4 (* Variants are stored as int32 tag *)
+    | _ -> 4
+  in
+  Hashtbl.replace type_size_registry type_name size
+
 let register_sarek_type_decl ~loc (td : type_declaration) =
+  (* Register type size first so nested types can look it up *)
+  register_type_size td ;
   let tdecl =
     match td.ptype_kind with
     | Ptype_record labels ->
@@ -300,20 +336,7 @@ let type_name_of_core_type (ct : core_type) : string =
 (** Calculate the size in bytes of a sarek type based on its fields. Uses 4
     bytes for int32/float32, 8 bytes for int64/float64. *)
 let calc_type_size (labels : label_declaration list) : int =
-  List.fold_left
-    (fun acc ld ->
-      let field_size =
-        match ld.pld_type.ptyp_desc with
-        | Ptyp_constr ({txt = Lident "int32"; _}, _) -> 4
-        | Ptyp_constr ({txt = Lident "int64"; _}, _) -> 8
-        | Ptyp_constr ({txt = Lident "float32"; _}, _) -> 4
-        | Ptyp_constr ({txt = Lident "float"; _}, _) -> 8
-        | Ptyp_constr ({txt = Lident "int"; _}, _) -> 4
-        | _ -> 4
-      in
-      acc + field_size)
-    0
-    labels
+  calc_type_size_early labels
 
 (** Get the accessor function for a field type *)
 let get_accessor_for_type ~loc (ct : core_type) : expression =
@@ -325,6 +348,15 @@ let get_accessor_for_type ~loc (ct : core_type) : expression =
   | Ptyp_constr ({txt = Lident "int"; _}, _) ->
       (* For int32, we'd need custom_int32get - for now use float32 as placeholder *)
       [%expr fun arr idx -> Int32.of_float (Spoc.Tools.float32get arr idx)]
+  | Ptyp_constr ({txt = Lident type_name; _}, _) ->
+      (* Nested custom type - use its _custom accessor *)
+      let custom_get =
+        Ast_builder.Default.pexp_field
+          ~loc
+          (Ast_builder.Default.evar ~loc (type_name ^ "_custom"))
+          {txt = Lident "get"; loc}
+      in
+      [%expr fun arr idx -> [%e custom_get] arr idx]
   | _ -> [%expr Spoc.Tools.float32get]
 
 (** Get the setter function for a field type *)
@@ -336,6 +368,15 @@ let set_accessor_for_type ~loc (ct : core_type) : expression =
   | Ptyp_constr ({txt = Lident "int32"; _}, _)
   | Ptyp_constr ({txt = Lident "int"; _}, _) ->
       [%expr fun arr idx v -> Spoc.Tools.float32set arr idx (Int32.to_float v)]
+  | Ptyp_constr ({txt = Lident type_name; _}, _) ->
+      (* Nested custom type - use its _custom accessor *)
+      let custom_set =
+        Ast_builder.Default.pexp_field
+          ~loc
+          (Ast_builder.Default.evar ~loc (type_name ^ "_custom"))
+          {txt = Lident "set"; loc}
+      in
+      [%expr fun arr idx v -> [%e custom_set] arr idx v]
   | _ -> [%expr Spoc.Tools.float32set]
 
 (** Get the field count (number of primitive fields, counting nested as 1 for
@@ -349,14 +390,7 @@ let field_element_count (ct : core_type) : int =
   | _ -> 1
 
 (** Get field size in bytes for V2 custom types *)
-let field_byte_size (ct : core_type) : int =
-  match ct.ptyp_desc with
-  | Ptyp_constr ({txt = Lident "float32"; _}, _) -> 4
-  | Ptyp_constr ({txt = Lident "float"; _}, _) -> 8
-  | Ptyp_constr ({txt = Lident "int32"; _}, _) -> 4
-  | Ptyp_constr ({txt = Lident "int64"; _}, _) -> 8
-  | Ptyp_constr ({txt = Lident "int"; _}, _) -> 4
-  | _ -> 4
+let field_byte_size (ct : core_type) : int = get_type_size_from_core_type ct
 
 (** Generate a <name>_custom value for Vector.Custom.
     For type float4 = { mutable x: float32; mutable y: float32; ... } [@@sarek.type],
@@ -451,7 +485,212 @@ let generate_custom_value ~loc (td : type_declaration) : structure_item list =
               set = [%e set_fn];
             }];
       ]
+  | Ptype_variant constrs ->
+      (* Generate SPOC custom type for simple enums (variants with no args).
+         Stored as float32 in SPOC arrays, converted to/from int tag. *)
+      let type_name = td.ptype_name.txt in
+      let custom_name = type_name ^ "_custom" in
+      let custom_pat = Ast_builder.Default.pvar ~loc custom_name in
+
+      (* Build match cases for get: int tag -> constructor *)
+      let get_cases =
+        List.mapi
+          (fun i cd ->
+            let tag_pat = Ast_builder.Default.pint ~loc i in
+            let ctor_expr =
+              Ast_builder.Default.pexp_construct
+                ~loc
+                {txt = Lident cd.pcd_name.txt; loc}
+                None
+            in
+            {pc_lhs = tag_pat; pc_guard = None; pc_rhs = ctor_expr})
+          constrs
+      in
+      let fallback_case =
+        {
+          pc_lhs = Ast_builder.Default.ppat_any ~loc;
+          pc_guard = None;
+          pc_rhs =
+            Ast_builder.Default.pexp_construct
+              ~loc
+              {txt = Lident (List.hd constrs).pcd_name.txt; loc}
+              None;
+        }
+      in
+      let get_match =
+        Ast_builder.Default.pexp_match
+          ~loc
+          [%expr int_of_float (Spoc.Tools.float32get arr idx)]
+          (get_cases @ [fallback_case])
+      in
+      let get_fn = [%expr fun arr idx -> [%e get_match]] in
+
+      (* Build match cases for set: constructor -> int tag *)
+      let set_cases =
+        List.mapi
+          (fun i cd ->
+            let ctor_pat =
+              Ast_builder.Default.ppat_construct
+                ~loc
+                {txt = Lident cd.pcd_name.txt; loc}
+                None
+            in
+            let tag_expr =
+              Ast_builder.Default.efloat ~loc (string_of_float (float_of_int i))
+            in
+            {
+              pc_lhs = ctor_pat;
+              pc_guard = None;
+              pc_rhs = [%expr Spoc.Tools.float32set arr idx [%e tag_expr]];
+            })
+          constrs
+      in
+      let set_match = Ast_builder.Default.pexp_match ~loc [%expr v] set_cases in
+      let set_fn = [%expr fun arr idx v -> [%e set_match]] in
+
+      [
+        [%stri
+          let [%p custom_pat] =
+            {Spoc.Vector.size = 1; get = [%e get_fn]; set = [%e set_fn]}];
+      ]
   | _ -> []
+
+(** Helper to generate a V2 field read expression based on field type.
+    Dispatches to the correct Custom_helpers function. For nested custom types,
+    generates a call using the nested type's _custom_v2 accessor. *)
+let gen_v2_field_read ~loc (ftype : core_type) (byte_off_expr : expression) :
+    expression =
+  match ftype.ptyp_desc with
+  | Ptyp_constr ({txt = Lident "float32"; _}, _) ->
+      [%expr
+        Sarek_core.Vector.Custom_helpers.read_float32
+          raw_ptr
+          (base_off + [%e byte_off_expr])]
+  | Ptyp_constr ({txt = Lident "float"; _}, _) ->
+      (* OCaml float is 8 bytes (float64) in GPU land - but for compatibility,
+         check if this is meant to be float32 or float64 based on context.
+         For now treat bare 'float' as float32 for GPU compatibility. *)
+      [%expr
+        Sarek_core.Vector.Custom_helpers.read_float32
+          raw_ptr
+          (base_off + [%e byte_off_expr])]
+  | Ptyp_constr ({txt = Lident "int32"; _}, _) ->
+      [%expr
+        Sarek_core.Vector.Custom_helpers.read_int32
+          raw_ptr
+          (base_off + [%e byte_off_expr])]
+  | Ptyp_constr ({txt = Lident "int64"; _}, _) ->
+      [%expr
+        Sarek_core.Vector.Custom_helpers.read_int64
+          raw_ptr
+          (base_off + [%e byte_off_expr])]
+  | Ptyp_constr ({txt = Lident "int"; _}, _) ->
+      [%expr
+        Sarek_core.Vector.Custom_helpers.read_int
+          raw_ptr
+          (base_off + [%e byte_off_expr])]
+  | Ptyp_constr ({txt = Lident type_name; _}, _) ->
+      (* Nested custom type - call its _custom_v2.get directly with adjusted pointer *)
+      let custom_v2_get =
+        Ast_builder.Default.pexp_field
+          ~loc
+          (Ast_builder.Default.evar ~loc (type_name ^ "_custom_v2"))
+          {txt = Lident "get"; loc}
+      in
+      (* Adjust pointer to field offset, then read at index 0 *)
+      [%expr
+        let field_ptr =
+          let byte_ptr = Ctypes.from_voidp Ctypes.uint8_t raw_ptr in
+          Ctypes.to_voidp Ctypes.(byte_ptr +@ (base_off + [%e byte_off_expr]))
+        in
+        [%e custom_v2_get] field_ptr 0]
+  | Ptyp_constr ({txt = Ldot (_, type_name); _}, _) ->
+      let custom_v2_get =
+        Ast_builder.Default.pexp_field
+          ~loc
+          (Ast_builder.Default.evar ~loc (type_name ^ "_custom_v2"))
+          {txt = Lident "get"; loc}
+      in
+      [%expr
+        let field_ptr =
+          let byte_ptr = Ctypes.from_voidp Ctypes.uint8_t raw_ptr in
+          Ctypes.to_voidp Ctypes.(byte_ptr +@ (base_off + [%e byte_off_expr]))
+        in
+        [%e custom_v2_get] field_ptr 0]
+  | _ ->
+      (* Fallback to float32 for unknown types *)
+      [%expr
+        Sarek_core.Vector.Custom_helpers.read_float32
+          raw_ptr
+          (base_off + [%e byte_off_expr])]
+
+(** Helper to generate a V2 field write expression based on field type. *)
+let gen_v2_field_write ~loc (ftype : core_type) (byte_off_expr : expression)
+    (value_expr : expression) : expression =
+  match ftype.ptyp_desc with
+  | Ptyp_constr ({txt = Lident "float32"; _}, _) ->
+      [%expr
+        Sarek_core.Vector.Custom_helpers.write_float32
+          raw_ptr
+          (base_off + [%e byte_off_expr])
+          [%e value_expr]]
+  | Ptyp_constr ({txt = Lident "float"; _}, _) ->
+      [%expr
+        Sarek_core.Vector.Custom_helpers.write_float32
+          raw_ptr
+          (base_off + [%e byte_off_expr])
+          [%e value_expr]]
+  | Ptyp_constr ({txt = Lident "int32"; _}, _) ->
+      [%expr
+        Sarek_core.Vector.Custom_helpers.write_int32
+          raw_ptr
+          (base_off + [%e byte_off_expr])
+          [%e value_expr]]
+  | Ptyp_constr ({txt = Lident "int64"; _}, _) ->
+      [%expr
+        Sarek_core.Vector.Custom_helpers.write_int64
+          raw_ptr
+          (base_off + [%e byte_off_expr])
+          [%e value_expr]]
+  | Ptyp_constr ({txt = Lident "int"; _}, _) ->
+      [%expr
+        Sarek_core.Vector.Custom_helpers.write_int
+          raw_ptr
+          (base_off + [%e byte_off_expr])
+          [%e value_expr]]
+  | Ptyp_constr ({txt = Lident type_name; _}, _) ->
+      (* Nested custom type - call its _custom_v2.set directly with adjusted pointer *)
+      let custom_v2_set =
+        Ast_builder.Default.pexp_field
+          ~loc
+          (Ast_builder.Default.evar ~loc (type_name ^ "_custom_v2"))
+          {txt = Lident "set"; loc}
+      in
+      [%expr
+        let field_ptr =
+          let byte_ptr = Ctypes.from_voidp Ctypes.uint8_t raw_ptr in
+          Ctypes.to_voidp Ctypes.(byte_ptr +@ (base_off + [%e byte_off_expr]))
+        in
+        [%e custom_v2_set] field_ptr 0 [%e value_expr]]
+  | Ptyp_constr ({txt = Ldot (_, type_name); _}, _) ->
+      let custom_v2_set =
+        Ast_builder.Default.pexp_field
+          ~loc
+          (Ast_builder.Default.evar ~loc (type_name ^ "_custom_v2"))
+          {txt = Lident "set"; loc}
+      in
+      [%expr
+        let field_ptr =
+          let byte_ptr = Ctypes.from_voidp Ctypes.uint8_t raw_ptr in
+          Ctypes.to_voidp Ctypes.(byte_ptr +@ (base_off + [%e byte_off_expr]))
+        in
+        [%e custom_v2_set] field_ptr 0 [%e value_expr]]
+  | _ ->
+      [%expr
+        Sarek_core.Vector.Custom_helpers.write_float32
+          raw_ptr
+          (base_off + [%e byte_off_expr])
+          [%e value_expr]]
 
 (** Generate a <name>_custom_v2 value for Sarek_core.Vector.custom_type.
     For type point = { x: float32; y: float32 } [@@sarek.type], generates:
@@ -463,7 +702,8 @@ let generate_custom_value ~loc (td : type_declaration) : structure_item list =
       }
 
     This uses Ctypes to cast the void pointer to float pointer and access
-    fields at byte offsets. *)
+    fields at byte offsets. Supports composable nested types where one record
+    contains another - uses the nested type's _custom_v2 accessor. *)
 let generate_custom_v2_value ~loc (td : type_declaration) : structure_item list
     =
   match td.ptype_kind with
@@ -477,8 +717,13 @@ let generate_custom_v2_value ~loc (td : type_declaration) : structure_item list
       let type_annot =
         Ast_builder.Default.ptyp_constr
           ~loc
-          {txt = Ldot (Ldot (Lident "Sarek_core", "Vector"), "custom_type"); loc}
-          [Ast_builder.Default.ptyp_constr ~loc {txt = Lident type_name; loc} []]
+          {
+            txt = Ldot (Ldot (Lident "Sarek_core", "Vector"), "custom_type");
+            loc;
+          }
+          [
+            Ast_builder.Default.ptyp_constr ~loc {txt = Lident type_name; loc} [];
+          ]
       in
 
       (* Calculate byte offsets for each field *)
@@ -494,44 +739,51 @@ let generate_custom_v2_value ~loc (td : type_declaration) : structure_item list
       in
 
       (* Generate V2 custom type - use a helper function to avoid value restriction issues *)
-      let _ = type_annot in (* suppress unused warning *)
+      let _ = type_annot in
+      (* suppress unused warning *)
 
       (* Generate a function that creates the custom_type when called.
          This avoids the value restriction since it's a function definition. *)
       let make_fn_name = type_name ^ "_make_custom_v2" in
       let make_fn_pat = Ast_builder.Default.pvar ~loc make_fn_name in
-      let make_fn_call = Ast_builder.Default.eapply ~loc
-        (Ast_builder.Default.evar ~loc make_fn_name)
-        [[%expr ()]]
+      let make_fn_call =
+        Ast_builder.Default.eapply
+          ~loc
+          (Ast_builder.Default.evar ~loc make_fn_name)
+          [[%expr ()]]
       in
 
       (* Generate get function that reads each field and constructs record *)
       let get_field_exprs =
         List.map
-          (fun (name, byte_off, _ftype) ->
+          (fun (name, byte_off, ftype) ->
             let byte_off_expr = Ast_builder.Default.eint ~loc byte_off in
-            let field_expr =
-              [%expr Sarek_core.Vector.Custom_helpers.read_float32 raw_ptr (base_off + [%e byte_off_expr])]
-            in
+            let field_expr = gen_v2_field_read ~loc ftype byte_off_expr in
             ({txt = Lident name; loc}, field_expr))
           field_infos
       in
-      let get_record = Ast_builder.Default.pexp_record ~loc get_field_exprs None in
+      let get_record =
+        Ast_builder.Default.pexp_record ~loc get_field_exprs None
+      in
       let get_fn =
-        [%expr fun raw_ptr idx ->
-          let base_off = idx * [%e size_expr] in
-          [%e get_record]]
+        [%expr
+          fun raw_ptr idx ->
+            let base_off = idx * [%e size_expr] in
+            [%e get_record]]
       in
 
       (* Generate set function that writes each field *)
       let set_stmts =
         List.map
-          (fun (name, byte_off, _ftype) ->
+          (fun (name, byte_off, ftype) ->
             let byte_off_expr = Ast_builder.Default.eint ~loc byte_off in
             let field_access =
-              Ast_builder.Default.pexp_field ~loc [%expr v] {txt = Lident name; loc}
+              Ast_builder.Default.pexp_field
+                ~loc
+                [%expr v]
+                {txt = Lident name; loc}
             in
-            [%expr Sarek_core.Vector.Custom_helpers.write_float32 raw_ptr (base_off + [%e byte_off_expr]) [%e field_access]])
+            gen_v2_field_write ~loc ftype byte_off_expr field_access)
           field_infos
       in
       let set_body =
@@ -539,25 +791,142 @@ let generate_custom_v2_value ~loc (td : type_declaration) : structure_item list
         | [] -> [%expr ()]
         | [stmt] -> stmt
         | stmt :: rest ->
-            List.fold_left (fun acc s -> [%expr [%e acc]; [%e s]]) stmt rest
+            List.fold_left
+              (fun acc s ->
+                [%expr
+                  [%e acc] ;
+                  [%e s]])
+              stmt
+              rest
       in
       let set_fn =
-        [%expr fun raw_ptr idx v ->
-          let base_off = idx * [%e size_expr] in
-          [%e set_body]]
+        [%expr
+          fun raw_ptr idx v ->
+            let base_off = idx * [%e size_expr] in
+            [%e set_body]]
       in
 
       [
         (* Generate: let point_make_custom_v2 = fun () -> { ... } *)
         [%stri
-          let [%p make_fn_pat] = fun () ->
+          let [%p make_fn_pat] =
+           fun () ->
             ({
-              Sarek_core.Vector.elem_size = [%e size_expr];
-              name = [%e name_expr];
-              get = [%e get_fn];
-              set = [%e set_fn];
-            } : [%t type_annot])];
+               Sarek_core.Vector.elem_size = [%e size_expr];
+               name = [%e name_expr];
+               get = [%e get_fn];
+               set = [%e set_fn];
+             }
+              : [%t type_annot])];
         (* Generate: let point_custom_v2 = point_make_custom_v2 () *)
+        [%stri let [%p custom_v2_pat] = [%e make_fn_call]];
+      ]
+  | Ptype_variant constrs ->
+      (* Generate V2 custom type for simple enums (variants with no args).
+         Stored as int32 tag, converted to/from OCaml constructors. *)
+      let type_name = td.ptype_name.txt in
+      let custom_v2_name = type_name ^ "_custom_v2" in
+      let custom_v2_pat = Ast_builder.Default.pvar ~loc custom_v2_name in
+      let size_expr = Ast_builder.Default.eint ~loc 4 in
+      (* int32 tag *)
+      let name_expr = Ast_builder.Default.estring ~loc type_name in
+      let type_annot =
+        Ast_builder.Default.ptyp_constr
+          ~loc
+          {
+            txt = Ldot (Ldot (Lident "Sarek_core", "Vector"), "custom_type");
+            loc;
+          }
+          [
+            Ast_builder.Default.ptyp_constr ~loc {txt = Lident type_name; loc} [];
+          ]
+      in
+
+      (* Build match cases for get: int32 tag -> constructor *)
+      let get_cases =
+        List.mapi
+          (fun i cd ->
+            let tag_pat =
+              Ast_builder.Default.pint ~loc (Int32.to_int (Int32.of_int i))
+            in
+            let ctor_expr =
+              Ast_builder.Default.pexp_construct
+                ~loc
+                {txt = Lident cd.pcd_name.txt; loc}
+                None
+            in
+            {pc_lhs = tag_pat; pc_guard = None; pc_rhs = ctor_expr})
+          constrs
+      in
+      (* Add a fallback case *)
+      let fallback_case =
+        {
+          pc_lhs = Ast_builder.Default.ppat_any ~loc;
+          pc_guard = None;
+          pc_rhs =
+            Ast_builder.Default.pexp_construct
+              ~loc
+              {txt = Lident (List.hd constrs).pcd_name.txt; loc}
+              None;
+        }
+      in
+      let get_match =
+        Ast_builder.Default.pexp_match
+          ~loc
+          [%expr
+            Int32.to_int
+              (Sarek_core.Vector.Custom_helpers.read_int32 raw_ptr (idx * 4))]
+          (get_cases @ [fallback_case])
+      in
+      let get_fn = [%expr fun raw_ptr idx -> [%e get_match]] in
+
+      (* Build match cases for set: constructor -> int32 tag *)
+      let set_cases =
+        List.mapi
+          (fun i cd ->
+            let ctor_pat =
+              Ast_builder.Default.ppat_construct
+                ~loc
+                {txt = Lident cd.pcd_name.txt; loc}
+                None
+            in
+            let tag_expr = Ast_builder.Default.eint ~loc i in
+            {
+              pc_lhs = ctor_pat;
+              pc_guard = None;
+              pc_rhs =
+                [%expr
+                  Sarek_core.Vector.Custom_helpers.write_int32
+                    raw_ptr
+                    (idx * 4)
+                    (Int32.of_int [%e tag_expr])];
+            })
+          constrs
+      in
+      let set_match = Ast_builder.Default.pexp_match ~loc [%expr v] set_cases in
+      let set_fn = [%expr fun raw_ptr idx v -> [%e set_match]] in
+
+      let make_fn_name = type_name ^ "_make_custom_v2" in
+      let make_fn_pat = Ast_builder.Default.pvar ~loc make_fn_name in
+      let make_fn_call =
+        Ast_builder.Default.eapply
+          ~loc
+          (Ast_builder.Default.evar ~loc make_fn_name)
+          [[%expr ()]]
+      in
+      let _ = type_annot in
+
+      [
+        [%stri
+          let [%p make_fn_pat] =
+           fun () ->
+            ({
+               Sarek_core.Vector.elem_size = [%e size_expr];
+               name = [%e name_expr];
+               get = [%e get_fn];
+               set = [%e set_fn];
+             }
+              : [%t type_annot])];
         [%stri let [%p custom_v2_pat] = [%e make_fn_call]];
       ]
   | _ -> []
