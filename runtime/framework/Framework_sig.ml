@@ -32,6 +32,7 @@ type capabilities = {
   max_registers_per_block : int;
   clock_rate_khz : int;
   multiprocessor_count : int;
+  is_cpu : bool;  (** True for CPU devices - enables zero-copy optimization *)
 }
 
 (** {1 Plugin Module Signature} *)
@@ -101,6 +102,15 @@ module type BACKEND = sig
     (** Allocate buffer for custom types with explicit element size in bytes *)
     val alloc_custom : Device.t -> size:int -> elem_size:int -> 'a buffer
 
+    (** Allocate zero-copy buffer using host bigarray memory directly. For CPU
+        OpenCL devices, this avoids memory copies entirely. Returns None if
+        zero-copy not supported by this backend. *)
+    val alloc_zero_copy :
+      Device.t ->
+      ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t ->
+      ('a, 'b) Bigarray.kind ->
+      'a buffer option
+
     val free : 'a buffer -> unit
 
     (** {2 Synchronous Transfers} *)
@@ -127,6 +137,9 @@ module type BACKEND = sig
     val size : 'a buffer -> int
 
     val device_ptr : 'a buffer -> nativeint
+
+    (** Check if buffer uses zero-copy (no transfers needed) *)
+    val is_zero_copy : 'a buffer -> bool
   end
 
   (** Timing events *)

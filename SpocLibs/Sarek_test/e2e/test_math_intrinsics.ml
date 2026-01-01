@@ -37,7 +37,9 @@ let ocaml_complex_math x y output n =
 (* ========== Shared test data ========== *)
 
 let input_x = ref [||]
+
 let input_y = ref [||]
+
 let expected_complex = ref [||]
 
 let init_complex_data () =
@@ -110,15 +112,19 @@ let run_complex_math_spoc dev =
 let run_complex_math_v2 (dev : V2_Device.t) =
   let n = cfg.size in
   let _, kirc = complex_math_kernel in
-  let ir = match kirc.Sarek.Kirc.body_v2 with Some ir -> ir | None -> failwith "No V2 IR" in
+  let ir =
+    match kirc.Sarek.Kirc.body_v2 with
+    | Some ir -> ir
+    | None -> failwith "No V2 IR"
+  in
 
   let x = V2_Vector.create V2_Vector.float32 n in
   let y = V2_Vector.create V2_Vector.float32 n in
   let output = V2_Vector.create V2_Vector.float32 n in
 
   for i = 0 to n - 1 do
-    V2_Vector.set x i (!input_x).(i) ;
-    V2_Vector.set y i (!input_y).(i) ;
+    V2_Vector.set x i !input_x.(i) ;
+    V2_Vector.set y i !input_y.(i) ;
     V2_Vector.set output i 0.0
   done ;
 
@@ -128,14 +134,19 @@ let run_complex_math_v2 (dev : V2_Device.t) =
   let grid = Sarek.Execute.dims1d grid_size in
 
   let t0 = Unix.gettimeofday () in
-  Sarek.Execute.run_vectors ~device:dev ~ir
-    ~args:[
-      Sarek.Execute.Vec x;
-      Sarek.Execute.Vec y;
-      Sarek.Execute.Vec output;
-      Sarek.Execute.Int n;
-    ]
-    ~block ~grid () ;
+  Sarek.Execute.run_vectors
+    ~device:dev
+    ~ir
+    ~args:
+      [
+        Sarek.Execute.Vec x;
+        Sarek.Execute.Vec y;
+        Sarek.Execute.Vec output;
+        Sarek.Execute.Int n;
+      ]
+    ~block
+    ~grid
+    () ;
   V2_Transfer.flush dev ;
   let t1 = Unix.gettimeofday () in
 
@@ -150,8 +161,13 @@ let verify_float_arrays name result expected tolerance =
     let diff = abs_float (result.(i) -. expected.(i)) in
     if diff > tolerance then begin
       if !errors < 5 then
-        Printf.printf "  %s mismatch at %d: expected %.6f, got %.6f (diff=%.6f)\n"
-          name i expected.(i) result.(i) diff ;
+        Printf.printf
+          "  %s mismatch at %d: expected %.6f, got %.6f (diff=%.6f)\n"
+          name
+          i
+          expected.(i)
+          result.(i)
+          diff ;
       incr errors
     end
   done ;
@@ -187,44 +203,62 @@ let () =
 
   if cfg.benchmark_all then begin
     print_endline (String.make 80 '-') ;
-    Printf.printf "%-35s %10s %10s %8s %8s\n" "Device" "SPOC(ms)" "V2(ms)" "SPOC" "V2" ;
+    Printf.printf
+      "%-35s %10s %10s %8s %8s\n"
+      "Device"
+      "SPOC(ms)"
+      "V2(ms)"
+      "SPOC"
+      "V2" ;
     print_endline (String.make 80 '-') ;
 
     let all_ok = ref true in
 
-    Array.iter (fun v2_dev ->
-      let name = v2_dev.V2_Device.name in
-      let framework = v2_dev.V2_Device.framework in
+    Array.iter
+      (fun v2_dev ->
+        let name = v2_dev.V2_Device.name in
+        let framework = v2_dev.V2_Device.framework in
 
-      let spoc_dev_opt =
-        Array.find_opt (fun d -> d.Spoc_Devices.general_info.Spoc_Devices.name = name) spoc_devs
-      in
+        let spoc_dev_opt =
+          Array.find_opt
+            (fun d -> d.Spoc_Devices.general_info.Spoc_Devices.name = name)
+            spoc_devs
+        in
 
-      let spoc_time, spoc_ok =
-        match spoc_dev_opt with
-        | Some spoc_dev ->
-            let time, result = run_complex_math_spoc spoc_dev in
-            let ok = not cfg.verify || verify_float_arrays "SPOC" result !expected_complex 0.01 in
-            (Printf.sprintf "%.4f" time, if ok then "OK" else "FAIL")
-        | None -> ("-", "SKIP")
-      in
+        let spoc_time, spoc_ok =
+          match spoc_dev_opt with
+          | Some spoc_dev ->
+              let time, result = run_complex_math_spoc spoc_dev in
+              let ok =
+                (not cfg.verify)
+                || verify_float_arrays "SPOC" result !expected_complex 0.01
+              in
+              (Printf.sprintf "%.4f" time, if ok then "OK" else "FAIL")
+          | None -> ("-", "SKIP")
+        in
 
-      let v2_time, v2_result = run_complex_math_v2 v2_dev in
-      let v2_ok = not cfg.verify || verify_float_arrays "V2" v2_result !expected_complex 0.01 in
-      let v2_status = if v2_ok then "OK" else "FAIL" in
+        let v2_time, v2_result = run_complex_math_v2 v2_dev in
+        let v2_ok =
+          (not cfg.verify)
+          || verify_float_arrays "V2" v2_result !expected_complex 0.01
+        in
+        let v2_status = if v2_ok then "OK" else "FAIL" in
 
-      if not v2_ok then all_ok := false ;
-      if spoc_ok = "FAIL" then all_ok := false ;
+        if not v2_ok then all_ok := false ;
+        if spoc_ok = "FAIL" then all_ok := false ;
 
-      Printf.printf "%-35s %10s %10.4f %8s %8s\n"
-        (Printf.sprintf "%s (%s)" name framework)
-        spoc_time v2_time spoc_ok v2_status
-    ) v2_devs ;
+        Printf.printf
+          "%-35s %10s %10.4f %8s %8s\n"
+          (Printf.sprintf "%s (%s)" name framework)
+          spoc_time
+          v2_time
+          spoc_ok
+          v2_status)
+      v2_devs ;
 
     print_endline (String.make 80 '-') ;
 
-    if !all_ok then
-      print_endline "\n=== All math intrinsics tests PASSED ==="
+    if !all_ok then print_endline "\n=== All math intrinsics tests PASSED ==="
     else begin
       print_endline "\n=== Some math intrinsics tests FAILED ===" ;
       exit 1
@@ -239,17 +273,25 @@ let () =
     Printf.printf "\nRunning SPOC path (complex math: sqrt/exp/cos)...\n%!" ;
     let spoc_time, spoc_result = run_complex_math_spoc dev in
     Printf.printf "  Time: %.4f ms\n%!" spoc_time ;
-    let spoc_ok = not cfg.verify || verify_float_arrays "SPOC" spoc_result !expected_complex 0.01 in
+    let spoc_ok =
+      (not cfg.verify)
+      || verify_float_arrays "SPOC" spoc_result !expected_complex 0.01
+    in
     Printf.printf "  Status: %s\n%!" (if spoc_ok then "PASSED" else "FAILED") ;
 
     (* Run V2 *)
-    let v2_dev_opt = Array.find_opt (fun d -> d.V2_Device.name = dev_name) v2_devs in
-    (match v2_dev_opt with
+    let v2_dev_opt =
+      Array.find_opt (fun d -> d.V2_Device.name = dev_name) v2_devs
+    in
+    match v2_dev_opt with
     | Some v2_dev ->
         Printf.printf "\nRunning V2 path (complex math: sqrt/exp/cos)...\n%!" ;
         let v2_time, v2_result = run_complex_math_v2 v2_dev in
         Printf.printf "  Time: %.4f ms\n%!" v2_time ;
-        let v2_ok = not cfg.verify || verify_float_arrays "V2" v2_result !expected_complex 0.01 in
+        let v2_ok =
+          (not cfg.verify)
+          || verify_float_arrays "V2" v2_result !expected_complex 0.01
+        in
         Printf.printf "  Status: %s\n%!" (if v2_ok then "PASSED" else "FAILED") ;
 
         if spoc_ok && v2_ok then
@@ -260,9 +302,10 @@ let () =
         end
     | None ->
         Printf.printf "\nNo matching V2 device found\n%!" ;
-        if spoc_ok then print_endline "\nMath intrinsics tests PASSED (SPOC only)"
+        if spoc_ok then
+          print_endline "\nMath intrinsics tests PASSED (SPOC only)"
         else begin
           print_endline "\nMath intrinsics tests FAILED" ;
           exit 1
-        end)
+        end
   end

@@ -89,12 +89,12 @@ let string_of_nvrtc_result = function
 
 (** {1 Library Loading} *)
 
-(** Load NVRTC library dynamically (lazy).
-    Prefer unversioned to get system default that matches driver. *)
+(** Load NVRTC library dynamically (lazy). Prefer unversioned to get system
+    default that matches driver. *)
 let nvrtc_lib : Dl.library option Lazy.t =
   lazy
-    ((* Try unversioned first - should match driver *)
-     try Some (Dl.dlopen ~filename:"libnvrtc.so" ~flags:[Dl.RTLD_LAZY])
+    (* Try unversioned first - should match driver *)
+    (try Some (Dl.dlopen ~filename:"libnvrtc.so" ~flags:[Dl.RTLD_LAZY])
      with _ -> (
        try Some (Dl.dlopen ~filename:"libnvrtc.so.12" ~flags:[Dl.RTLD_LAZY])
        with _ -> (
@@ -263,8 +263,13 @@ let compile_to_ptx ?(name = "kernel") ?(arch = "compute_70") (source : string) :
 
   (* Compile with no options - NVRTC on this system doesn't support --gpu-architecture.
      The driver will JIT the PTX to the target GPU. *)
-  Sarek_core.Log.debugf Sarek_core.Log.Kernel "NVRTC compiling (no arch option, target %s)" arch ;
-  let compile_result = nvrtcCompileProgram prog_handle 0 (from_voidp string null) in
+  Sarek_core.Log.debugf
+    Sarek_core.Log.Kernel
+    "NVRTC compiling (no arch option, target %s)"
+    arch ;
+  let compile_result =
+    nvrtcCompileProgram prog_handle 0 (from_voidp string null)
+  in
   Sarek_core.Log.debugf
     Sarek_core.Log.Kernel
     "NVRTC compile result: %s"

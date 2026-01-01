@@ -203,11 +203,21 @@ let run_typed ~(device : Device.t) ~(name : string) ~(source : string)
       raise
         (Execution_error ("No backend found for framework: " ^ device.framework))
   | Some (module B : Framework_sig.BACKEND) ->
+      let t0 = Unix.gettimeofday () in
       let dev = B.Device.get device.backend_id in
       let compiled = B.Kernel.compile_cached dev ~name ~source in
+      let t1 = Unix.gettimeofday () in
       let kargs = B.Kernel.create_args () in
       bind_args (module B) kargs args ;
-      B.Kernel.launch compiled ~args:kargs ~grid ~block ~shared_mem ~stream:None
+      let t2 = Unix.gettimeofday () in
+      B.Kernel.launch compiled ~args:kargs ~grid ~block ~shared_mem ~stream:None ;
+      let t3 = Unix.gettimeofday () in
+      Log.debugf
+        Log.Execute
+        "    compile=%.3fms bind=%.3fms launch=%.3fms"
+        ((t1 -. t0) *. 1000.0)
+        ((t2 -. t1) *. 1000.0)
+        ((t3 -. t2) *. 1000.0)
 
 (** {1 IR-based Execution} *)
 
@@ -244,10 +254,18 @@ let run_from_ir ~(device : Device.t) ~(ir : Sarek_ir.kernel)
       Log.debugf Log.Execute "  CUDA source (%d bytes)" (String.length source) ;
       run_typed ~device ~name:ir.kern_name ~source ~block ~grid ~shared_mem args
   | "OpenCL" ->
+      let t0 = Unix.gettimeofday () in
       Log.debug Log.Execute "  generating OpenCL source..." ;
       let source = Sarek_ir_opencl.generate ir in
-      Log.debugf Log.Execute "  OpenCL source (%d bytes)" (String.length source) ;
-      run_typed ~device ~name:ir.kern_name ~source ~block ~grid ~shared_mem args
+      let t1 = Unix.gettimeofday () in
+      Log.debugf
+        Log.Execute
+        "  OpenCL source (%d bytes, gen=%.3fms)"
+        (String.length source)
+        ((t1 -. t0) *. 1000.0) ;
+      run_typed ~device ~name:ir.kern_name ~source ~block ~grid ~shared_mem args ;
+      let t2 = Unix.gettimeofday () in
+      Log.debugf Log.Execute "  run_typed took %.3fms" ((t2 -. t1) *. 1000.0)
   | "Native" -> (
       (* Native path: use native_fn directly *)
       match native_fn with
@@ -286,8 +304,8 @@ let transfer_vectors_to_device (args : vector_arg list) (dev : Device.t) : unit
   List.iter (function Vec v -> Transfer.to_device v dev | _ -> ()) args
 
 (** Expand V2 Vector args to (buffer, length) pairs for kernel binding. Each Vec
-    expands to two args: buffer and length (SPOC convention). The buffer binds
-    itself via DEVICE_BUFFER.bind_to_kernel. *)
+    expands to two args: buffer and length (matches OpenCL/CUDA codegen which
+    adds a length parameter for each vector). *)
 let expand_vector_args (args : vector_arg list) (dev : Device.t) : arg list =
   List.concat_map
     (function

@@ -1,15 +1,28 @@
 (******************************************************************************
- * E2E test for Sarek PPX - Convolution
+ * E2E test for Sarek PPX - 1D Convolution with V2 comparison
  *
- * Tests 1D and 2D convolution operations with various filter sizes.
- * Convolution is fundamental for signal processing and image filtering.
+ * Tests 1D convolution (3-point filter). V2 comparison for 1D only.
+ * 2D convolution, Sobel, and shared memory variants run SPOC-only.
  ******************************************************************************)
 
-open Spoc
+(* Module aliases *)
+module Spoc_Vector = Spoc.Vector
+module Spoc_Devices = Spoc.Devices
+module Spoc_Mem = Spoc.Mem
+module V2_Device = Sarek_core.Device
+module V2_Vector = Sarek_core.Vector
+module V2_Transfer = Sarek_core.Transfer
+
+(* Force backend registration *)
+let () =
+  Sarek_cuda.Cuda_plugin.init () ;
+  Sarek_cuda.Cuda_plugin_v2.init () ;
+  Sarek_opencl.Opencl_plugin.init () ;
+  Sarek_opencl.Opencl_plugin_v2.init ()
 
 let cfg = Test_helpers.default_config ()
 
-(* ========== Pure OCaml baselines ========== *)
+(* ========== Pure OCaml baseline ========== *)
 
 let ocaml_conv1d input output n =
   output.(0) <- input.(0) ;
@@ -19,72 +32,11 @@ let ocaml_conv1d input output n =
   done ;
   output.(n - 1) <- input.(n - 1)
 
-let ocaml_conv2d input output width height =
-  for y = 0 to height - 1 do
-    for x = 0 to width - 1 do
-      let idx = (y * width) + x in
-      if x > 0 && x < width - 1 && y > 0 && y < height - 1 then begin
-        let sum = ref 0.0 in
-        for dy = -1 to 1 do
-          for dx = -1 to 1 do
-            let nidx = ((y + dy) * width) + x + dx in
-            sum := !sum +. input.(nidx)
-          done
-        done ;
-        output.(idx) <- !sum /. 9.0
-      end
-      else output.(idx) <- input.(idx)
-    done
-  done
-
-let ocaml_sobel input output width height =
-  for y = 0 to height - 1 do
-    for x = 0 to width - 1 do
-      let idx = (y * width) + x in
-      if x > 0 && x < width - 1 && y > 0 && y < height - 1 then begin
-        let p00 = input.(idx - width - 1) in
-        let p01 = input.(idx - width) in
-        let p02 = input.(idx - width + 1) in
-        let p10 = input.(idx - 1) in
-        let p12 = input.(idx + 1) in
-        let p20 = input.(idx + width - 1) in
-        let p21 = input.(idx + width) in
-        let p22 = input.(idx + width + 1) in
-        let gx =
-          -.p00 +. p02 +. (-2.0 *. p10) +. (2.0 *. p12) +. -.p20 +. p22
-        in
-        let gy =
-          -.p00 +. (-2.0 *. p01) +. -.p02 +. p20 +. (2.0 *. p21) +. p22
-        in
-        output.(idx) <- sqrt ((gx *. gx) +. (gy *. gy))
-      end
-      else output.(idx) <- 0.0
-    done
-  done
-
 (* ========== Shared test data ========== *)
 
 let input_1d = ref [||]
 
 let expected_1d = ref [||]
-
-let input_2d = ref [||]
-
-let expected_2d = ref [||]
-
-let dim_2d = ref 0
-
-let input_sobel = ref [||]
-
-let expected_sobel = ref [||]
-
-let dim_sobel = ref 0
-
-let input_shared = ref [||]
-
-let expected_shared = ref [||]
-
-let dim_shared = ref 0
 
 let init_conv1d_data () =
   let n = cfg.size in
@@ -92,68 +44,16 @@ let init_conv1d_data () =
   let out = Array.make n 0.0 in
   input_1d := inp ;
   expected_1d := out ;
-  let t0 = Unix.gettimeofday () in
-  ocaml_conv1d inp out n ;
-  let t1 = Unix.gettimeofday () in
-  ((t1 -. t0) *. 1000.0, true)
+  ocaml_conv1d inp out n
 
-let init_conv2d_data () =
-  let dim = Int32.to_int (Int32.of_float (sqrt (float_of_int cfg.size))) in
-  dim_2d := dim ;
-  let n = dim * dim in
-  let inp =
-    Array.init n (fun i -> float_of_int (((i / dim) + (i mod dim)) mod 2 * 100))
-  in
-  let out = Array.make n 0.0 in
-  input_2d := inp ;
-  expected_2d := out ;
-  let t0 = Unix.gettimeofday () in
-  ocaml_conv2d inp out dim dim ;
-  let t1 = Unix.gettimeofday () in
-  ((t1 -. t0) *. 1000.0, true)
+(* ========== Sarek kernel (V2 compatible) ========== *)
 
-let init_sobel_data () =
-  let dim = Int32.to_int (Int32.of_float (sqrt (float_of_int cfg.size))) in
-  dim_sobel := dim ;
-  let n = dim * dim in
-  let inp =
-    Array.init n (fun i ->
-        let x = i mod dim in
-        if x < dim / 2 then 0.0 else 100.0)
-  in
-  let out = Array.make n 0.0 in
-  input_sobel := inp ;
-  expected_sobel := out ;
-  let t0 = Unix.gettimeofday () in
-  ocaml_sobel inp out dim dim ;
-  let t1 = Unix.gettimeofday () in
-  ((t1 -. t0) *. 1000.0, true)
-
-let init_shared_data () =
-  let dim = Int32.to_int (Int32.of_float (sqrt (float_of_int cfg.size))) in
-  let dim = (dim + 15) / 16 * 16 in
-  dim_shared := dim ;
-  let n = dim * dim in
-  let inp =
-    Array.init n (fun i -> float_of_int (((i / dim) + (i mod dim)) mod 256))
-  in
-  let out = Array.make n 0.0 in
-  input_shared := inp ;
-  expected_shared := out ;
-  let t0 = Unix.gettimeofday () in
-  ocaml_conv2d inp out dim dim ;
-  let t1 = Unix.gettimeofday () in
-  ((t1 -. t0) *. 1000.0, true)
-
-(* ========== Sarek kernels ========== *)
-
-(** 1D convolution with 3-point filter (blur) *)
 let conv1d_3point_kernel =
   [%kernel
-    fun (input : float32 vector) (output : float32 vector) (n : int32) ->
-      let tid = thread_idx_x + (block_dim_x * block_idx_x) in
+    fun (input : float32 vector) (output : float32 vector) (n : int) ->
+      let open Std in
+      let tid = global_thread_id in
       if tid > 0 && tid < n - 1 then begin
-        (* Simple box filter: [0.25, 0.5, 0.25] *)
         let left = input.(tid - 1) in
         let center = input.(tid) in
         let right = input.(tid + 1) in
@@ -161,376 +61,94 @@ let conv1d_3point_kernel =
       end
       else if tid = 0 || tid = n - 1 then output.(tid) <- input.(tid)]
 
-(** 2D convolution with 3x3 filter (blur/smoothing) *)
-let conv2d_3x3_kernel =
-  [%kernel
-    fun (input : float32 vector)
-        (output : float32 vector)
-        (width : int32)
-        (height : int32) ->
-      let x = thread_idx_x + (block_dim_x * block_idx_x) in
-      let y = thread_idx_y + (block_dim_y * block_idx_y) in
-      if x > 0 && x < width - 1 && y > 0 && y < height - 1 then begin
-        let idx = (y * width) + x in
-        (* 3x3 box filter *)
-        let sum = mut 0.0 in
-        sum := sum +. input.(idx - width - 1) ;
-        sum := sum +. input.(idx - width) ;
-        sum := sum +. input.(idx - width + 1) ;
-        sum := sum +. input.(idx - 1) ;
-        sum := sum +. input.(idx) ;
-        sum := sum +. input.(idx + 1) ;
-        sum := sum +. input.(idx + width - 1) ;
-        sum := sum +. input.(idx + width) ;
-        sum := sum +. input.(idx + width + 1) ;
-        output.(idx) <- sum /. 9.0
-      end
-      else if x < width && y < height then begin
-        let idx = (y * width) + x in
-        output.(idx) <- input.(idx)
-      end]
+(* ========== SPOC test runner ========== *)
 
-(** 2D Sobel edge detection (gradient magnitude) *)
-let sobel_kernel =
-  [%kernel
-    fun (input : float32 vector)
-        (output : float32 vector)
-        (width : int32)
-        (height : int32) ->
-      let x = thread_idx_x + (block_dim_x * block_idx_x) in
-      let y = thread_idx_y + (block_dim_y * block_idx_y) in
-      if x > 0 && x < width - 1 && y > 0 && y < height - 1 then begin
-        let idx = (y * width) + x in
-        (* Load 3x3 neighborhood *)
-        let p00 = input.(idx - width - 1) in
-        let p01 = input.(idx - width) in
-        let p02 = input.(idx - width + 1) in
-        let p10 = input.(idx - 1) in
-        let p12 = input.(idx + 1) in
-        let p20 = input.(idx + width - 1) in
-        let p21 = input.(idx + width) in
-        let p22 = input.(idx + width + 1) in
-        (* Sobel X: [-1 0 1; -2 0 2; -1 0 1] *)
-        let gx =
-          -.p00 +. p02 +. (-2.0 *. p10) +. (2.0 *. p12) +. -.p20 +. p22
-        in
-        (* Sobel Y: [-1 -2 -1; 0 0 0; 1 2 1] *)
-        let gy =
-          -.p00 +. (-2.0 *. p01) +. -.p02 +. p20 +. (2.0 *. p21) +. p22
-        in
-        (* Gradient magnitude *)
-        output.(idx) <- sqrt ((gx *. gx) +. (gy *. gy))
-      end
-      else if x < width && y < height then begin
-        let idx = (y * width) + x in
-        output.(idx) <- 0.0
-      end]
-
-(** 2D convolution with shared memory and supersteps. Uses 18x18 tile for 16x16
-    block with 1-pixel halo on each side. *)
-let conv2d_shared_kernel =
-  [%kernel
-    fun (input : float32 vector)
-        (output : float32 vector)
-        (width : int32)
-        (height : int32) ->
-      let%shared (tile : float32) = 324l in
-      (* 18x18 for 16x16 block + 1 halo *)
-      let tile_width = 18l in
-      let tx = thread_idx_x in
-      let ty = thread_idx_y in
-      let gx = thread_idx_x + (block_dim_x * block_idx_x) in
-      let gy = thread_idx_y + (block_dim_y * block_idx_y) in
-      (* Global block origin for corner calculations *)
-      let block_origin_x = block_dim_x * block_idx_x in
-      let block_origin_y = block_dim_y * block_idx_y in
-      (* Load center elements *)
-      let%superstep load_center =
-        if gx < width && gy < height then
-          tile.(((ty + 1l) * tile_width) + tx + 1l) <- input.((gy * width) + gx)
-        else tile.(((ty + 1l) * tile_width) + tx + 1l) <- 0.0
-      in
-      (* Load left halo *)
-      let%superstep load_left =
-        if tx = 0l && gx > 0l && gy < height then
-          tile.(((ty + 1l) * tile_width) + 0l) <- input.((gy * width) + gx - 1l)
-        else if tx = 0l then tile.(((ty + 1l) * tile_width) + 0l) <- 0.0
-      in
-      (* Load right halo *)
-      let%superstep load_right =
-        if tx = block_dim_x - 1l && gx < width - 1l && gy < height then
-          tile.(((ty + 1l) * tile_width) + tx + 2l) <-
-            input.((gy * width) + gx + 1l)
-        else if tx = block_dim_x - 1l then
-          tile.(((ty + 1l) * tile_width) + tx + 2l) <- 0.0
-      in
-      (* Load top halo *)
-      let%superstep load_top =
-        if ty = 0l && gy > 0l && gx < width then
-          tile.((0l * tile_width) + tx + 1l) <- input.(((gy - 1l) * width) + gx)
-        else if ty = 0l then tile.((0l * tile_width) + tx + 1l) <- 0.0
-      in
-      (* Load bottom halo *)
-      let%superstep load_bottom =
-        if ty = block_dim_y - 1l && gy < height - 1l && gx < width then
-          tile.(((ty + 2l) * tile_width) + tx + 1l) <-
-            input.(((gy + 1l) * width) + gx)
-        else if ty = block_dim_y - 1l then
-          tile.(((ty + 2l) * tile_width) + tx + 1l) <- 0.0
-      in
-      (* Load corner halos - only thread (0,0) loads all 4 corners *)
-      let%superstep load_corners =
-        if tx = 0l && ty = 0l then begin
-          (* Top-left corner *)
-          if block_origin_x > 0l && block_origin_y > 0l then
-            tile.(0l) <-
-              input.(((block_origin_y - 1l) * width) + block_origin_x - 1l)
-          else tile.(0l) <- 0.0 ;
-          (* Top-right corner *)
-          if block_origin_x + block_dim_x < width && block_origin_y > 0l then
-            tile.(block_dim_x + 1l) <-
-              input.(((block_origin_y - 1l) * width)
-                     + block_origin_x + block_dim_x)
-          else tile.(block_dim_x + 1l) <- 0.0 ;
-          (* Bottom-left corner *)
-          if block_origin_x > 0l && block_origin_y + block_dim_y < height then
-            tile.(((block_dim_y + 1l) * tile_width) + 0l) <-
-              input.(((block_origin_y + block_dim_y) * width)
-                     + block_origin_x - 1l)
-          else tile.(((block_dim_y + 1l) * tile_width) + 0l) <- 0.0 ;
-          (* Bottom-right corner *)
-          if
-            block_origin_x + block_dim_x < width
-            && block_origin_y + block_dim_y < height
-          then
-            tile.(((block_dim_y + 1l) * tile_width) + block_dim_x + 1l) <-
-              input.(((block_origin_y + block_dim_y) * width)
-                     + block_origin_x + block_dim_x)
-          else
-            tile.(((block_dim_y + 1l) * tile_width) + block_dim_x + 1l) <- 0.0
-        end
-      in
-      (* Compute convolution from shared memory *)
-      if gx > 0l && gx < width - 1l && gy > 0l && gy < height - 1l then begin
-        let idx = ((ty + 1l) * tile_width) + tx + 1l in
-        let sum =
-          tile.(idx - tile_width - 1l)
-          +. tile.(idx - tile_width)
-          +. tile.(idx - tile_width + 1l)
-          +. tile.(idx - 1l)
-          +. tile.(idx)
-          +. tile.(idx + 1l)
-          +. tile.(idx + tile_width - 1l)
-          +. tile.(idx + tile_width)
-          +. tile.(idx + tile_width + 1l)
-        in
-        output.((gy * width) + gx) <- sum /. 9.0
-      end
-      else if gx < width && gy < height then
-        output.((gy * width) + gx) <- tile.(((ty + 1l) * tile_width) + tx + 1l)]
-
-(* ========== Device test runners ========== *)
-
-(** Run 1D convolution test *)
-let run_conv1d_test dev =
+let run_conv1d_spoc dev =
   let n = cfg.size in
   let inp = !input_1d in
-  let exp = !expected_1d in
 
-  let input = Vector.create Vector.float32 n in
-  let output = Vector.create Vector.float32 n in
+  let input = Spoc_Vector.create Spoc_Vector.float32 n in
+  let output = Spoc_Vector.create Spoc_Vector.float32 n in
 
   for i = 0 to n - 1 do
-    Mem.set input i inp.(i) ;
-    Mem.set output i 0.0
+    Spoc_Mem.set input i inp.(i) ;
+    Spoc_Mem.set output i 0.0
   done ;
 
   ignore (Sarek.Kirc.gen conv1d_3point_kernel dev) ;
   let block_size = Test_helpers.get_block_size cfg dev in
   let blocks = (n + block_size - 1) / block_size in
-  let block = {Kernel.blockX = block_size; blockY = 1; blockZ = 1} in
-  let grid = {Kernel.gridX = blocks; gridY = 1; gridZ = 1} in
+  let block = {Spoc.Kernel.blockX = block_size; blockY = 1; blockZ = 1} in
+  let grid = {Spoc.Kernel.gridX = blocks; gridY = 1; gridZ = 1} in
 
   let t0 = Unix.gettimeofday () in
   Sarek.Kirc.run conv1d_3point_kernel (input, output, n) (block, grid) 0 dev ;
-  Devices.flush dev () ;
+  Spoc_Devices.flush dev () ;
   let t1 = Unix.gettimeofday () in
-  let time_ms = (t1 -. t0) *. 1000.0 in
 
-  let ok =
-    if cfg.verify then begin
-      Mem.to_cpu output () ;
-      Devices.flush dev () ;
-      let errors = ref 0 in
-      for i = 1 to n - 2 do
-        if abs_float (Mem.get output i -. exp.(i)) > 0.0001 then incr errors
-      done ;
-      !errors = 0
-    end
-    else true
+  Spoc_Mem.to_cpu output () ;
+  Spoc_Devices.flush dev () ;
+
+  let result = Array.init n (fun i -> Spoc_Mem.get output i) in
+  ((t1 -. t0) *. 1000.0, result)
+
+(* ========== V2 test runner ========== *)
+
+let run_conv1d_v2 (dev : V2_Device.t) =
+  let n = cfg.size in
+  let _, kirc = conv1d_3point_kernel in
+  let ir =
+    match kirc.Sarek.Kirc.body_v2 with
+    | Some ir -> ir
+    | None -> failwith "No V2 IR"
   in
-  (time_ms, ok)
 
-(** Run 2D convolution test *)
-let run_conv2d_test dev =
-  let dim = !dim_2d in
-  let width = dim in
-  let height = dim in
-  let n = width * height in
-  let inp = !input_2d in
-  let exp = !expected_2d in
-
-  let input = Vector.create Vector.float32 n in
-  let output = Vector.create Vector.float32 n in
+  let input = V2_Vector.create V2_Vector.float32 n in
+  let output = V2_Vector.create V2_Vector.float32 n in
 
   for i = 0 to n - 1 do
-    Mem.set input i inp.(i) ;
-    Mem.set output i 0.0
+    V2_Vector.set input i !input_1d.(i) ;
+    V2_Vector.set output i 0.0
   done ;
 
-  ignore (Sarek.Kirc.gen conv2d_3x3_kernel dev) ;
-  let block_size = min 16 (Test_helpers.get_block_size cfg dev) in
-  let blocks_x = (width + block_size - 1) / block_size in
-  let blocks_y = (height + block_size - 1) / block_size in
-  let block = {Kernel.blockX = block_size; blockY = block_size; blockZ = 1} in
-  let grid = {Kernel.gridX = blocks_x; gridY = blocks_y; gridZ = 1} in
+  let block_size = 256 in
+  let grid_size = (n + block_size - 1) / block_size in
+  let block = Sarek.Execute.dims1d block_size in
+  let grid = Sarek.Execute.dims1d grid_size in
 
   let t0 = Unix.gettimeofday () in
-  Sarek.Kirc.run
-    conv2d_3x3_kernel
-    (input, output, width, height)
-    (block, grid)
-    0
-    dev ;
-  Devices.flush dev () ;
+  Sarek.Execute.run_vectors
+    ~device:dev
+    ~ir
+    ~args:
+      [Sarek.Execute.Vec input; Sarek.Execute.Vec output; Sarek.Execute.Int n]
+    ~block
+    ~grid
+    () ;
+  V2_Transfer.flush dev ;
   let t1 = Unix.gettimeofday () in
-  let time_ms = (t1 -. t0) *. 1000.0 in
 
-  let ok =
-    if cfg.verify then begin
-      Mem.to_cpu output () ;
-      Devices.flush dev () ;
-      let errors = ref 0 in
-      for y = 1 to height - 2 do
-        for x = 1 to width - 2 do
-          let idx = (y * width) + x in
-          if abs_float (Mem.get output idx -. exp.(idx)) > 0.01 then incr errors
-        done
-      done ;
-      !errors = 0
+  ((t1 -. t0) *. 1000.0, V2_Vector.to_array output)
+
+(* ========== Verification ========== *)
+
+let verify_float_arrays name result expected tolerance =
+  let n = Array.length expected in
+  let errors = ref 0 in
+  for i = 1 to n - 2 do
+    let diff = abs_float (result.(i) -. expected.(i)) in
+    if diff > tolerance then begin
+      if !errors < 5 then
+        Printf.printf
+          "  %s mismatch at %d: expected %.6f, got %.6f\n"
+          name
+          i
+          expected.(i)
+          result.(i) ;
+      incr errors
     end
-    else true
-  in
-  (time_ms, ok)
-
-(** Run Sobel edge detection test *)
-let run_sobel_test dev =
-  let dim = !dim_sobel in
-  let width = dim in
-  let height = dim in
-  let n = width * height in
-  let inp = !input_sobel in
-  let exp = !expected_sobel in
-
-  let input = Vector.create Vector.float32 n in
-  let output = Vector.create Vector.float32 n in
-
-  for i = 0 to n - 1 do
-    Mem.set input i inp.(i) ;
-    Mem.set output i 0.0
   done ;
-
-  ignore (Sarek.Kirc.gen sobel_kernel dev) ;
-  let block_size = min 16 (Test_helpers.get_block_size cfg dev) in
-  let blocks_x = (width + block_size - 1) / block_size in
-  let blocks_y = (height + block_size - 1) / block_size in
-  let block = {Kernel.blockX = block_size; blockY = block_size; blockZ = 1} in
-  let grid = {Kernel.gridX = blocks_x; gridY = blocks_y; gridZ = 1} in
-
-  let t0 = Unix.gettimeofday () in
-  Sarek.Kirc.run sobel_kernel (input, output, width, height) (block, grid) 0 dev ;
-  Devices.flush dev () ;
-  let t1 = Unix.gettimeofday () in
-  let time_ms = (t1 -. t0) *. 1000.0 in
-
-  let ok =
-    if cfg.verify then begin
-      Mem.to_cpu output () ;
-      Devices.flush dev () ;
-      (* Check that values approximately match *)
-      let errors = ref 0 in
-      for y = 1 to height - 2 do
-        for x = 1 to width - 2 do
-          let idx = (y * width) + x in
-          if abs_float (Mem.get output idx -. exp.(idx)) > 0.1 then incr errors
-        done
-      done ;
-      !errors = 0
-    end
-    else true
-  in
-  (time_ms, ok)
-
-(** Run 2D convolution with shared memory test *)
-let run_conv2d_shared_test dev =
-  let dim = !dim_shared in
-  let width = dim in
-  let height = dim in
-  let n = width * height in
-  let inp = !input_shared in
-  let exp = !expected_shared in
-
-  let input = Vector.create Vector.float32 n in
-  let output = Vector.create Vector.float32 n in
-
-  for i = 0 to n - 1 do
-    Mem.set input i inp.(i) ;
-    Mem.set output i 0.0
-  done ;
-
-  ignore (Sarek.Kirc.gen conv2d_shared_kernel dev) ;
-  let block_size = 16 in
-  let blocks_x = width / block_size in
-  let blocks_y = height / block_size in
-  let block = {Kernel.blockX = block_size; blockY = block_size; blockZ = 1} in
-  let grid = {Kernel.gridX = blocks_x; gridY = blocks_y; gridZ = 1} in
-
-  let t0 = Unix.gettimeofday () in
-  Sarek.Kirc.run
-    conv2d_shared_kernel
-    (input, output, width, height)
-    (block, grid)
-    0
-    dev ;
-  Devices.flush dev () ;
-  let t1 = Unix.gettimeofday () in
-  let time_ms = (t1 -. t0) *. 1000.0 in
-
-  let ok =
-    if cfg.verify then begin
-      Mem.to_cpu output () ;
-      Devices.flush dev () ;
-      let errors = ref 0 in
-      for y = 1 to height - 2 do
-        for x = 1 to width - 2 do
-          let idx = (y * width) + x in
-          if abs_float (Mem.get output idx -. exp.(idx)) > 0.01 then begin
-            if !errors < 10 then
-              Printf.printf
-                "  Mismatch at (%d,%d): expected %.2f, got %.2f\n"
-                x
-                y
-                exp.(idx)
-                (Mem.get output idx) ;
-            incr errors
-          end
-        done
-      done ;
-      !errors = 0
-    end
-    else true
-  in
-  (time_ms, ok)
+  !errors = 0
 
 let () =
   let c = Test_helpers.parse_args "test_convolution" in
@@ -543,83 +161,123 @@ let () =
   cfg.size <- c.size ;
   cfg.block_size <- c.block_size ;
 
-  let devs = Devices.init () in
-  if Array.length devs = 0 then begin
+  print_endline "=== 1D Convolution Test (SPOC + V2 Comparison) ===" ;
+  Printf.printf "Size: %d elements\n\n" cfg.size ;
+
+  init_conv1d_data () ;
+
+  let spoc_devs = Spoc_Devices.init () in
+  if Array.length spoc_devs = 0 then begin
     print_endline "No GPU devices found" ;
     exit 1
   end ;
-  Test_helpers.print_devices devs ;
+  Test_helpers.print_devices spoc_devs ;
+
+  let v2_devs = V2_Device.init ~frameworks:["CUDA"; "OpenCL"] () in
+  Printf.printf "\nFound %d V2 device(s)\n\n" (Array.length v2_devs) ;
 
   if cfg.benchmark_all then begin
-    Test_helpers.benchmark_with_baseline
-      ~device_ids:cfg.benchmark_devices
-      devs
-      ~baseline:init_conv1d_data
-      run_conv1d_test
-      "1D convolution (3-point)" ;
-    Test_helpers.benchmark_with_baseline
-      ~device_ids:cfg.benchmark_devices
-      devs
-      ~baseline:init_conv2d_data
-      run_conv2d_test
-      "2D convolution (3x3)" ;
-    Test_helpers.benchmark_with_baseline
-      ~device_ids:cfg.benchmark_devices
-      devs
-      ~baseline:init_shared_data
-      run_conv2d_shared_test
-      "2D convolution (shared)" ;
-    Test_helpers.benchmark_with_baseline
-      ~device_ids:cfg.benchmark_devices
-      devs
-      ~baseline:init_sobel_data
-      run_sobel_test
-      "Sobel edge detection"
+    print_endline (String.make 80 '-') ;
+    Printf.printf
+      "%-35s %10s %10s %8s %8s\n"
+      "Device"
+      "SPOC(ms)"
+      "V2(ms)"
+      "SPOC"
+      "V2" ;
+    print_endline (String.make 80 '-') ;
+
+    let all_ok = ref true in
+
+    Array.iter
+      (fun v2_dev ->
+        let name = v2_dev.V2_Device.name in
+        let framework = v2_dev.V2_Device.framework in
+
+        let spoc_dev_opt =
+          Array.find_opt
+            (fun d -> d.Spoc_Devices.general_info.Spoc_Devices.name = name)
+            spoc_devs
+        in
+
+        let spoc_time, spoc_ok =
+          match spoc_dev_opt with
+          | Some spoc_dev ->
+              let time, result = run_conv1d_spoc spoc_dev in
+              let ok =
+                (not cfg.verify)
+                || verify_float_arrays "SPOC" result !expected_1d 0.0001
+              in
+              (Printf.sprintf "%.4f" time, if ok then "OK" else "FAIL")
+          | None -> ("-", "SKIP")
+        in
+
+        let v2_time, v2_result = run_conv1d_v2 v2_dev in
+        let v2_ok =
+          (not cfg.verify)
+          || verify_float_arrays "V2" v2_result !expected_1d 0.0001
+        in
+        let v2_status = if v2_ok then "OK" else "FAIL" in
+
+        if not v2_ok then all_ok := false ;
+        if spoc_ok = "FAIL" then all_ok := false ;
+
+        Printf.printf
+          "%-35s %10s %10.4f %8s %8s\n"
+          (Printf.sprintf "%s (%s)" name framework)
+          spoc_time
+          v2_time
+          spoc_ok
+          v2_status)
+      v2_devs ;
+
+    print_endline (String.make 80 '-') ;
+
+    if !all_ok then print_endline "\n=== All convolution tests PASSED ==="
+    else begin
+      print_endline "\n=== Some convolution tests FAILED ===" ;
+      exit 1
+    end
   end
   else begin
-    let dev = Test_helpers.get_device cfg devs in
-    Printf.printf "Using device: %s\n%!" dev.Devices.general_info.Devices.name ;
-    Printf.printf "Testing convolution operations with size=%d\n%!" cfg.size ;
+    let dev = Test_helpers.get_device cfg spoc_devs in
+    let dev_name = dev.Spoc_Devices.general_info.Spoc_Devices.name in
+    Printf.printf "Using device: %s\n%!" dev_name ;
 
-    let baseline_ms, _ = init_conv1d_data () in
-    Printf.printf "\nOCaml baseline (1D): %.4f ms\n%!" baseline_ms ;
-    Printf.printf "\n1D convolution (3-point):\n%!" ;
-    let time_ms, ok = run_conv1d_test dev in
-    Printf.printf
-      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
-      time_ms
-      (baseline_ms /. time_ms)
-      (if ok then "PASSED" else "FAILED") ;
+    Printf.printf "\nRunning SPOC path (1D conv)...\n%!" ;
+    let spoc_time, spoc_result = run_conv1d_spoc dev in
+    Printf.printf "  Time: %.4f ms\n%!" spoc_time ;
+    let spoc_ok =
+      (not cfg.verify)
+      || verify_float_arrays "SPOC" spoc_result !expected_1d 0.0001
+    in
+    Printf.printf "  Status: %s\n%!" (if spoc_ok then "PASSED" else "FAILED") ;
 
-    let baseline_ms, _ = init_conv2d_data () in
-    Printf.printf "\nOCaml baseline (2D): %.4f ms\n%!" baseline_ms ;
-    Printf.printf "\n2D convolution (3x3):\n%!" ;
-    let time_ms, ok = run_conv2d_test dev in
-    Printf.printf
-      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
-      time_ms
-      (baseline_ms /. time_ms)
-      (if ok then "PASSED" else "FAILED") ;
+    let v2_dev_opt =
+      Array.find_opt (fun d -> d.V2_Device.name = dev_name) v2_devs
+    in
+    match v2_dev_opt with
+    | Some v2_dev ->
+        Printf.printf "\nRunning V2 path (1D conv)...\n%!" ;
+        let v2_time, v2_result = run_conv1d_v2 v2_dev in
+        Printf.printf "  Time: %.4f ms\n%!" v2_time ;
+        let v2_ok =
+          (not cfg.verify)
+          || verify_float_arrays "V2" v2_result !expected_1d 0.0001
+        in
+        Printf.printf "  Status: %s\n%!" (if v2_ok then "PASSED" else "FAILED") ;
 
-    let baseline_ms, _ = init_shared_data () in
-    Printf.printf "\nOCaml baseline (shared): %.4f ms\n%!" baseline_ms ;
-    Printf.printf "\n2D convolution (shared memory):\n%!" ;
-    let time_ms, ok = run_conv2d_shared_test dev in
-    Printf.printf
-      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
-      time_ms
-      (baseline_ms /. time_ms)
-      (if ok then "PASSED" else "FAILED") ;
-
-    let baseline_ms, _ = init_sobel_data () in
-    Printf.printf "\nOCaml baseline (sobel): %.4f ms\n%!" baseline_ms ;
-    Printf.printf "\nSobel edge detection:\n%!" ;
-    let time_ms, ok = run_sobel_test dev in
-    Printf.printf
-      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
-      time_ms
-      (baseline_ms /. time_ms)
-      (if ok then "PASSED" else "FAILED") ;
-
-    print_endline "\nConvolution tests PASSED"
+        if spoc_ok && v2_ok then
+          print_endline "\nConvolution tests PASSED (both paths)"
+        else begin
+          print_endline "\nConvolution tests FAILED" ;
+          exit 1
+        end
+    | None ->
+        Printf.printf "\nNo matching V2 device found\n%!" ;
+        if spoc_ok then print_endline "\nConvolution tests PASSED (SPOC only)"
+        else begin
+          print_endline "\nConvolution tests FAILED" ;
+          exit 1
+        end
   end

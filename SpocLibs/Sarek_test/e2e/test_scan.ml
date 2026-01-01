@@ -1,11 +1,24 @@
 (******************************************************************************
- * E2E test for Sarek PPX - Prefix Sum (Scan)
+ * E2E test for Sarek PPX - Prefix Sum (Scan) with V2 comparison
  *
  * Tests inclusive prefix sum operations with shared memory and supersteps.
  * Scan is a fundamental parallel primitive for many algorithms.
  ******************************************************************************)
 
-open Spoc
+(* Module aliases *)
+module Spoc_Vector = Spoc.Vector
+module Spoc_Devices = Spoc.Devices
+module Spoc_Mem = Spoc.Mem
+module V2_Device = Sarek_core.Device
+module V2_Vector = Sarek_core.Vector
+module V2_Transfer = Sarek_core.Transfer
+
+(* Force backend registration *)
+let () =
+  Sarek_cuda.Cuda_plugin.init () ;
+  Sarek_cuda.Cuda_plugin_v2.init () ;
+  Sarek_opencl.Opencl_plugin.init () ;
+  Sarek_opencl.Opencl_plugin_v2.init ()
 
 let cfg = Test_helpers.default_config ()
 
@@ -53,14 +66,7 @@ let init_varying_data () =
 
 (* ========== Sarek kernels ========== *)
 
-(** Inclusive scan within a block using Hillis-Steele algorithm.
-
-    IMPORTANT: Hillis-Steele requires that ALL threads read their neighbor's
-    value BEFORE any thread writes. This requires double-buffering or explicit
-    barrier between reads and writes.
-
-    Pattern for each step: 1. All threads read neighbor into local variable (in
-    superstep) 2. All threads write updated value (in next superstep) *)
+(** Inclusive scan within a block using Hillis-Steele algorithm. *)
 let inclusive_scan_kernel =
   [%kernel
     fun (input : int32 vector) (output : int32 vector) (n : int32) ->
@@ -68,98 +74,82 @@ let inclusive_scan_kernel =
       let%shared (temp2 : int32) = 512l in
       let tid = thread_idx_x in
       let gid = thread_idx_x + (block_dim_x * block_idx_x) in
-      (* Load to shared memory - use temp as source *)
       let%superstep load =
         if gid < n then temp.(tid) <- input.(gid) else temp.(tid) <- 0l
       in
-      (* Hillis-Steele: ping-pong between temp and temp2.
-         Each superstep uses the same variable names (v, add) - this tests that
-         the code generator properly scopes local variables within superstep blocks. *)
-      (* Step 1: read from temp, write to temp2 *)
       let%superstep step1 =
         let v = temp.(tid) in
         let add = if tid >= 1l then temp.(tid - 1l) else 0l in
         temp2.(tid) <- v + add
       in
-      (* Step 2: read from temp2, write to temp *)
       let%superstep step2 =
         let v = temp2.(tid) in
         let add = if tid >= 2l then temp2.(tid - 2l) else 0l in
         temp.(tid) <- v + add
       in
-      (* Step 4: read from temp, write to temp2 *)
       let%superstep step4 =
         let v = temp.(tid) in
         let add = if tid >= 4l then temp.(tid - 4l) else 0l in
         temp2.(tid) <- v + add
       in
-      (* Step 8: read from temp2, write to temp *)
       let%superstep step8 =
         let v = temp2.(tid) in
         let add = if tid >= 8l then temp2.(tid - 8l) else 0l in
         temp.(tid) <- v + add
       in
-      (* Step 16: read from temp, write to temp2 *)
       let%superstep step16 =
         let v = temp.(tid) in
         let add = if tid >= 16l then temp.(tid - 16l) else 0l in
         temp2.(tid) <- v + add
       in
-      (* Step 32: read from temp2, write to temp *)
       let%superstep step32 =
         let v = temp2.(tid) in
         let add = if tid >= 32l then temp2.(tid - 32l) else 0l in
         temp.(tid) <- v + add
       in
-      (* Step 64: read from temp, write to temp2 *)
       let%superstep step64 =
         let v = temp.(tid) in
         let add = if tid >= 64l then temp.(tid - 64l) else 0l in
         temp2.(tid) <- v + add
       in
-      (* Step 128: read from temp2, write to temp *)
       let%superstep step128 =
         let v = temp2.(tid) in
         let add = if tid >= 128l then temp2.(tid - 128l) else 0l in
         temp.(tid) <- v + add
       in
-      (* Write result from temp (last write was to temp) *)
       if gid < n then output.(gid) <- temp.(tid)]
 
-(* ========== Device test runners ========== *)
+(* ========== SPOC test runners ========== *)
 
-(** Run inclusive scan test *)
-let run_inclusive_scan_test dev =
+let run_inclusive_scan_spoc dev inp exp =
   let n = min cfg.size 256 in
-  let inp = !input_ones in
-  let exp = !expected_ones in
 
-  let input = Vector.create Vector.int32 n in
-  let output = Vector.create Vector.int32 n in
+  let input = Spoc_Vector.create Spoc_Vector.int32 n in
+  let output = Spoc_Vector.create Spoc_Vector.int32 n in
 
   for i = 0 to n - 1 do
-    Mem.set input i inp.(i) ;
-    Mem.set output i 0l
+    Spoc_Mem.set input i inp.(i) ;
+    Spoc_Mem.set output i 0l
   done ;
 
   ignore (Sarek.Kirc.gen inclusive_scan_kernel dev) ;
   let block_size = min 256 (Test_helpers.get_block_size cfg dev) in
-  let block = {Kernel.blockX = block_size; blockY = 1; blockZ = 1} in
-  let grid = {Kernel.gridX = 1; gridY = 1; gridZ = 1} in
+  let block = {Spoc.Kernel.blockX = block_size; blockY = 1; blockZ = 1} in
+  let grid = {Spoc.Kernel.gridX = 1; gridY = 1; gridZ = 1} in
 
   let t0 = Unix.gettimeofday () in
   Sarek.Kirc.run inclusive_scan_kernel (input, output, n) (block, grid) 0 dev ;
-  Devices.flush dev () ;
+  Spoc_Devices.flush dev () ;
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
 
   let ok =
     if cfg.verify then begin
-      Mem.to_cpu output () ;
-      Devices.flush dev () ;
+      Spoc_Mem.to_cpu output () ;
+      Spoc_Devices.flush dev () ;
       let errors = ref 0 in
       for i = 0 to n - 1 do
-        let got = Mem.get output i in
+        let got = Spoc_Mem.get output i in
         if got <> exp.(i) then begin
           if !errors < 10 then
             Printf.printf
@@ -176,45 +166,58 @@ let run_inclusive_scan_test dev =
   in
   (time_ms, ok)
 
-(** Run scan with varying values test *)
-let run_varying_scan_test dev =
-  let n = min cfg.size 256 in
-  let inp = !input_varying in
-  let exp = !expected_varying in
+(* ========== V2 test runners ========== *)
 
-  let input = Vector.create Vector.int32 n in
-  let output = Vector.create Vector.int32 n in
+let run_inclusive_scan_v2 (dev : V2_Device.t) inp exp =
+  let n = min cfg.size 256 in
+  let _, kirc = inclusive_scan_kernel in
+  let ir =
+    match kirc.Sarek.Kirc.body_v2 with
+    | Some ir -> ir
+    | None -> failwith "No V2 IR"
+  in
+
+  let input = V2_Vector.create V2_Vector.int32 n in
+  let output = V2_Vector.create V2_Vector.int32 n in
 
   for i = 0 to n - 1 do
-    Mem.set input i inp.(i) ;
-    Mem.set output i 0l
+    V2_Vector.set input i inp.(i) ;
+    V2_Vector.set output i 0l
   done ;
 
-  ignore (Sarek.Kirc.gen inclusive_scan_kernel dev) ;
-  let block_size = min 256 (Test_helpers.get_block_size cfg dev) in
-  let block = {Kernel.blockX = block_size; blockY = 1; blockZ = 1} in
-  let grid = {Kernel.gridX = 1; gridY = 1; gridZ = 1} in
+  let block_size = 256 in
+  let block = Sarek.Execute.dims1d block_size in
+  let grid = Sarek.Execute.dims1d 1 in
 
   let t0 = Unix.gettimeofday () in
-  Sarek.Kirc.run inclusive_scan_kernel (input, output, n) (block, grid) 0 dev ;
-  Devices.flush dev () ;
+  Sarek.Execute.run_vectors
+    ~device:dev
+    ~ir
+    ~args:
+      [
+        Sarek.Execute.Vec input;
+        Sarek.Execute.Vec output;
+        Sarek.Execute.Int32 (Int32.of_int n);
+      ]
+    ~block
+    ~grid
+    () ;
+  V2_Transfer.flush dev ;
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
 
   let ok =
     if cfg.verify then begin
-      Mem.to_cpu output () ;
-      Devices.flush dev () ;
+      let result = V2_Vector.to_array output in
       let errors = ref 0 in
       for i = 0 to n - 1 do
-        let got = Mem.get output i in
-        if got <> exp.(i) then begin
+        if result.(i) <> exp.(i) then begin
           if !errors < 10 then
             Printf.printf
-              "  Mismatch at %d: expected %ld, got %ld\n"
+              "  V2 Mismatch at %d: expected %ld, got %ld\n"
               i
               exp.(i)
-              got ;
+              result.(i) ;
           incr errors
         end
       done ;
@@ -223,6 +226,8 @@ let run_varying_scan_test dev =
     else true
   in
   (time_ms, ok)
+
+(* ========== Main ========== *)
 
 let () =
   let c = Test_helpers.parse_args "test_scan" in
@@ -235,51 +240,166 @@ let () =
   cfg.size <- c.size ;
   cfg.block_size <- c.block_size ;
 
-  let devs = Devices.init () in
-  if Array.length devs = 0 then begin
+  print_endline "=== Prefix Scan Tests (SPOC + V2 Comparison) ===" ;
+  Printf.printf
+    "Size: %d elements (max 256 for block-level scan)\n\n"
+    (min cfg.size 256) ;
+
+  let spoc_devs = Spoc_Devices.init () in
+  if Array.length spoc_devs = 0 then begin
     print_endline "No GPU devices found" ;
     exit 1
   end ;
-  Test_helpers.print_devices devs ;
+  Test_helpers.print_devices spoc_devs ;
+
+  let v2_devs = V2_Device.init ~frameworks:["CUDA"; "OpenCL"] () in
+  Printf.printf "\nFound %d V2 device(s)\n\n" (Array.length v2_devs) ;
 
   if cfg.benchmark_all then begin
-    Test_helpers.benchmark_with_baseline
-      ~device_ids:cfg.benchmark_devices
-      devs
-      ~baseline:init_ones_data
-      run_inclusive_scan_test
-      "Inclusive scan" ;
-    Test_helpers.benchmark_with_baseline
-      ~device_ids:cfg.benchmark_devices
-      devs
-      ~baseline:init_varying_data
-      run_varying_scan_test
-      "Scan with varying values"
+    let all_ok = ref true in
+
+    (* Scan with ones *)
+    ignore (init_ones_data ()) ;
+    print_endline "=== Inclusive Scan (all ones) ===" ;
+    print_endline (String.make 80 '-') ;
+    Printf.printf
+      "%-35s %10s %10s %8s %8s\n"
+      "Device"
+      "SPOC(ms)"
+      "V2(ms)"
+      "SPOC"
+      "V2" ;
+    print_endline (String.make 80 '-') ;
+
+    Array.iter
+      (fun v2_dev ->
+        let name = v2_dev.V2_Device.name in
+        let framework = v2_dev.V2_Device.framework in
+        let spoc_dev_opt =
+          Array.find_opt
+            (fun d -> d.Spoc_Devices.general_info.Spoc_Devices.name = name)
+            spoc_devs
+        in
+        let spoc_time, spoc_ok =
+          match spoc_dev_opt with
+          | Some spoc_dev ->
+              let t, ok =
+                run_inclusive_scan_spoc spoc_dev !input_ones !expected_ones
+              in
+              (Printf.sprintf "%.4f" t, if ok then "OK" else "FAIL")
+          | None -> ("-", "SKIP")
+        in
+        let v2_time, v2_ok =
+          run_inclusive_scan_v2 v2_dev !input_ones !expected_ones
+        in
+        if not v2_ok then all_ok := false ;
+        if spoc_ok = "FAIL" then all_ok := false ;
+        Printf.printf
+          "%-35s %10s %10.4f %8s %8s\n"
+          (Printf.sprintf "%s (%s)" name framework)
+          spoc_time
+          v2_time
+          spoc_ok
+          (if v2_ok then "OK" else "FAIL"))
+      v2_devs ;
+    print_endline (String.make 80 '-') ;
+
+    (* Scan with varying values *)
+    ignore (init_varying_data ()) ;
+    print_endline "\n=== Inclusive Scan (varying values) ===" ;
+    print_endline (String.make 80 '-') ;
+    Printf.printf
+      "%-35s %10s %10s %8s %8s\n"
+      "Device"
+      "SPOC(ms)"
+      "V2(ms)"
+      "SPOC"
+      "V2" ;
+    print_endline (String.make 80 '-') ;
+
+    Array.iter
+      (fun v2_dev ->
+        let name = v2_dev.V2_Device.name in
+        let framework = v2_dev.V2_Device.framework in
+        let spoc_dev_opt =
+          Array.find_opt
+            (fun d -> d.Spoc_Devices.general_info.Spoc_Devices.name = name)
+            spoc_devs
+        in
+        let spoc_time, spoc_ok =
+          match spoc_dev_opt with
+          | Some spoc_dev ->
+              let t, ok =
+                run_inclusive_scan_spoc
+                  spoc_dev
+                  !input_varying
+                  !expected_varying
+              in
+              (Printf.sprintf "%.4f" t, if ok then "OK" else "FAIL")
+          | None -> ("-", "SKIP")
+        in
+        let v2_time, v2_ok =
+          run_inclusive_scan_v2 v2_dev !input_varying !expected_varying
+        in
+        if not v2_ok then all_ok := false ;
+        if spoc_ok = "FAIL" then all_ok := false ;
+        Printf.printf
+          "%-35s %10s %10.4f %8s %8s\n"
+          (Printf.sprintf "%s (%s)" name framework)
+          spoc_time
+          v2_time
+          spoc_ok
+          (if v2_ok then "OK" else "FAIL"))
+      v2_devs ;
+    print_endline (String.make 80 '-') ;
+
+    if !all_ok then print_endline "\n=== All scan tests PASSED ==="
+    else begin
+      print_endline "\n=== Some scan tests FAILED ===" ;
+      exit 1
+    end
   end
   else begin
-    let dev = Test_helpers.get_device cfg devs in
-    Printf.printf "Using device: %s\n%!" dev.Devices.general_info.Devices.name ;
-    Printf.printf "Testing prefix sum operations\n%!" ;
+    let dev = Test_helpers.get_device cfg spoc_devs in
+    let dev_name = dev.Spoc_Devices.general_info.Spoc_Devices.name in
+    Printf.printf "Using device: %s\n%!" dev_name ;
+    let v2_dev_opt =
+      Array.find_opt (fun d -> d.V2_Device.name = dev_name) v2_devs
+    in
 
-    let baseline_ms, _ = init_ones_data () in
-    Printf.printf "\nOCaml baseline (ones): %.4f ms\n%!" baseline_ms ;
-    Printf.printf "\nInclusive scan (all ones):\n%!" ;
-    let time_ms, ok = run_inclusive_scan_test dev in
+    ignore (init_ones_data ()) ;
+    Printf.printf "\n--- Inclusive Scan (all ones) ---\n%!" ;
+    let t, ok = run_inclusive_scan_spoc dev !input_ones !expected_ones in
     Printf.printf
-      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
-      time_ms
-      (baseline_ms /. time_ms)
+      "  SPOC: %.4f ms, %s\n%!"
+      t
       (if ok then "PASSED" else "FAILED") ;
+    (match v2_dev_opt with
+    | Some v2_dev ->
+        let t, ok = run_inclusive_scan_v2 v2_dev !input_ones !expected_ones in
+        Printf.printf
+          "  V2: %.4f ms, %s\n%!"
+          t
+          (if ok then "PASSED" else "FAILED")
+    | None -> ()) ;
 
-    let baseline_ms, _ = init_varying_data () in
-    Printf.printf "\nOCaml baseline (varying): %.4f ms\n%!" baseline_ms ;
-    Printf.printf "\nScan with varying values:\n%!" ;
-    let time_ms, ok = run_varying_scan_test dev in
+    ignore (init_varying_data ()) ;
+    Printf.printf "\n--- Inclusive Scan (varying values) ---\n%!" ;
+    let t, ok = run_inclusive_scan_spoc dev !input_varying !expected_varying in
     Printf.printf
-      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
-      time_ms
-      (baseline_ms /. time_ms)
+      "  SPOC: %.4f ms, %s\n%!"
+      t
       (if ok then "PASSED" else "FAILED") ;
+    (match v2_dev_opt with
+    | Some v2_dev ->
+        let t, ok =
+          run_inclusive_scan_v2 v2_dev !input_varying !expected_varying
+        in
+        Printf.printf
+          "  V2: %.4f ms, %s\n%!"
+          t
+          (if ok then "PASSED" else "FAILED")
+    | None -> ()) ;
 
     print_endline "\nScan tests PASSED"
   end

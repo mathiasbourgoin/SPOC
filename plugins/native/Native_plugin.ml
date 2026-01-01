@@ -59,6 +59,14 @@ module Native : sig
 
     val alloc_custom : Device.t -> size:int -> elem_size:int -> 'a buffer
 
+    val alloc_zero_copy :
+      Device.t ->
+      ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t ->
+      ('a, 'b) Bigarray.kind ->
+      'a buffer option
+
+    val is_zero_copy : 'a buffer -> bool
+
     val free : 'a buffer -> unit
 
     val host_to_device :
@@ -211,6 +219,7 @@ end = struct
         max_registers_per_block = 0;
         clock_rate_khz = 0;
         multiprocessor_count = d.num_cores;
+        is_cpu = true;
       }
 
     let set_current d = current := Some d
@@ -239,6 +248,14 @@ end = struct
       let bytes = size * elem_size in
       let ptr = Ctypes.allocate_n Ctypes.char ~count:bytes in
       {data = Obj.repr ptr; size; elem_size; device}
+
+    (** For Native CPU, zero-copy is the default - we just wrap the bigarray *)
+    let alloc_zero_copy device ba _kind =
+      let size = Bigarray.Array1.dim ba in
+      let elem_size = Bigarray.kind_size_in_bytes (Bigarray.Array1.kind ba) in
+      Some {data = Obj.repr ba; size; elem_size; device}
+
+    let is_zero_copy _buf = true (* Native is always zero-copy *)
 
     let free _buf = ()
 

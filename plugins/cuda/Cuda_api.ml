@@ -285,8 +285,10 @@ module Kernel = struct
 
     (* Compile to PTX - use compute_52 as safe baseline, driver will JIT for actual GPU *)
     let major, minor = device.Device.compute_capability in
-    let arch = "compute_52" in  (* Safe baseline that most NVRTC versions support *)
-    ignore (major, minor) ;  (* Logged for info but not used for arch *)
+    let arch = "compute_52" in
+    (* Safe baseline that most NVRTC versions support *)
+    ignore (major, minor) ;
+    (* Logged for info but not used for arch *)
     Sarek_core.Log.debugf
       Sarek_core.Log.Kernel
       "CUDA compile: kernel='%s' arch=%s (cc %d.%d) device=%d"
@@ -296,21 +298,27 @@ module Kernel = struct
       minor
       device.Device.id ;
     let ptx = Cuda_nvrtc.compile_to_ptx ~name ~arch source in
-    Sarek_core.Log.debugf Sarek_core.Log.Kernel "CUDA PTX generated (%d bytes)" (String.length ptx) ;
+    Sarek_core.Log.debugf
+      Sarek_core.Log.Kernel
+      "CUDA PTX generated (%d bytes)"
+      (String.length ptx) ;
 
     (* Load module from PTX - simple version *)
     let module_ = allocate cu_module_ptr (from_voidp cu_module null) in
     let ptx_ptr = CArray.of_string ptx |> CArray.start |> to_voidp in
     let load_result = cuModuleLoadData module_ ptx_ptr in
     (match load_result with
-     | CUDA_SUCCESS ->
-         Sarek_core.Log.debug Sarek_core.Log.Kernel "cuModuleLoadData succeeded"
-     | err ->
-         (* Log PTX header for debugging *)
-         let ptx_header = String.sub ptx 0 (min 200 (String.length ptx)) in
-         Sarek_core.Log.errorf Sarek_core.Log.Kernel "cuModuleLoadData failed: %s\nPTX header: %s"
-           (string_of_cu_result err) ptx_header ;
-         raise (Cuda_error (err, "cuModuleLoadData"))) ;
+    | CUDA_SUCCESS ->
+        Sarek_core.Log.debug Sarek_core.Log.Kernel "cuModuleLoadData succeeded"
+    | err ->
+        (* Log PTX header for debugging *)
+        let ptx_header = String.sub ptx 0 (min 200 (String.length ptx)) in
+        Sarek_core.Log.errorf
+          Sarek_core.Log.Kernel
+          "cuModuleLoadData failed: %s\nPTX header: %s"
+          (string_of_cu_result err)
+          ptx_header ;
+        raise (Cuda_error (err, "cuModuleLoadData"))) ;
 
     (* Get function *)
     let func = allocate cu_function_ptr (from_voidp cu_function null) in

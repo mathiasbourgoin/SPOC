@@ -90,6 +90,7 @@ module Device = struct
     local_mem_size : int64;
     max_clock_freq : int;
     supports_fp64 : bool;
+    is_cpu : bool; (* True for CPU OpenCL devices - enables zero-copy *)
   }
 
   let get_devices platform device_type =
@@ -221,6 +222,11 @@ module Device = struct
       contains "cl_khr_fp64" extensions || contains "cl_amd_fp64" extensions
     in
 
+    (* Check if device is CPU type *)
+    let device_type = get_info_long handle CL_DEVICE_TYPE in
+    let is_cpu = Int64.logand device_type 2L <> 0L in
+    (* CL_DEVICE_TYPE_CPU = 2 *)
+
     {
       id = idx;
       handle;
@@ -235,6 +241,7 @@ module Device = struct
       local_mem_size;
       max_clock_freq;
       supports_fp64;
+      is_cpu;
     }
 
   let init () = () (* OpenCL doesn't require explicit init *)
@@ -330,6 +337,7 @@ module Memory = struct
     size : int;
     elem_size : int;
     context : Context.t;
+    zero_copy : bool; (* True if using CL_MEM_USE_HOST_PTR - skip transfers *)
   }
 
   let alloc context size kind =
@@ -345,7 +353,19 @@ module Memory = struct
         err
     in
     check "clCreateBuffer" !@err ;
-    {handle = mem; size; elem_size; context}
+    {handle = mem; size; elem_size; context; zero_copy = false}
+
+  (** Allocate buffer with zero-copy using host pointer. For CPU OpenCL devices,
+      this avoids memory copies entirely. *)
+  let alloc_with_host_ptr context size kind host_ptr =
+    let elem_size = Ctypes_static.sizeof (Ctypes.typ_of_bigarray_kind kind) in
+    let bytes = Unsigned.Size_t.of_int (size * elem_size) in
+    let err = allocate cl_int 0l in
+    (* CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR *)
+    let flags = Unsigned.UInt64.logor cl_mem_read_write cl_mem_use_host_ptr in
+    let mem = clCreateBuffer context.Context.handle flags bytes host_ptr err in
+    check "clCreateBuffer (use_host_ptr)" !@err ;
+    {handle = mem; size; elem_size; context; zero_copy = true}
 
   (** Allocate buffer for custom types with explicit element size in bytes *)
   let alloc_custom context ~size ~elem_size =
@@ -360,73 +380,92 @@ module Memory = struct
         err
     in
     check "clCreateBuffer (custom)" !@err ;
-    {handle = mem; size; elem_size; context}
+    {handle = mem; size; elem_size; context; zero_copy = false}
+
+  (** Check if buffer uses zero-copy (no transfers needed) *)
+  let is_zero_copy buf = buf.zero_copy
 
   let free buf = check "clReleaseMemObject" (clReleaseMemObject buf.handle)
 
   let host_to_device queue ~src ~dst =
-    let bytes = Unsigned.Size_t.of_int (Bigarray.Array1.size_in_bytes src) in
-    let src_ptr = bigarray_start array1 src |> to_voidp in
-    check
-      "clEnqueueWriteBuffer"
-      (clEnqueueWriteBuffer
-         queue.CommandQueue.handle
-         dst.handle
-         cl_true
-         Unsigned.Size_t.zero
-         bytes
-         src_ptr
-         Unsigned.UInt32.zero
-         (from_voidp cl_event null)
-         (from_voidp cl_event null))
+    (* Skip transfer for zero-copy buffers - data is already shared *)
+    if dst.zero_copy then ()
+    else begin
+      let bytes = Unsigned.Size_t.of_int (Bigarray.Array1.size_in_bytes src) in
+      let src_ptr = bigarray_start array1 src |> to_voidp in
+      check
+        "clEnqueueWriteBuffer"
+        (clEnqueueWriteBuffer
+           queue.CommandQueue.handle
+           dst.handle
+           cl_true
+           Unsigned.Size_t.zero
+           bytes
+           src_ptr
+           Unsigned.UInt32.zero
+           (from_voidp cl_event null)
+           (from_voidp cl_event null))
+    end
 
   let device_to_host queue ~src ~dst =
-    let bytes = Unsigned.Size_t.of_int (Bigarray.Array1.size_in_bytes dst) in
-    let dst_ptr = bigarray_start array1 dst |> to_voidp in
-    check
-      "clEnqueueReadBuffer"
-      (clEnqueueReadBuffer
-         queue.CommandQueue.handle
-         src.handle
-         cl_true
-         Unsigned.Size_t.zero
-         bytes
-         dst_ptr
-         Unsigned.UInt32.zero
-         (from_voidp cl_event null)
-         (from_voidp cl_event null))
+    (* Skip transfer for zero-copy buffers - data is already shared *)
+    if src.zero_copy then ()
+    else begin
+      let bytes = Unsigned.Size_t.of_int (Bigarray.Array1.size_in_bytes dst) in
+      let dst_ptr = bigarray_start array1 dst |> to_voidp in
+      check
+        "clEnqueueReadBuffer"
+        (clEnqueueReadBuffer
+           queue.CommandQueue.handle
+           src.handle
+           cl_true
+           Unsigned.Size_t.zero
+           bytes
+           dst_ptr
+           Unsigned.UInt32.zero
+           (from_voidp cl_event null)
+           (from_voidp cl_event null))
+    end
 
   (** Transfer from raw pointer to device buffer (for custom types) *)
   let host_ptr_to_device queue ~src_ptr ~byte_size ~dst =
-    let bytes = Unsigned.Size_t.of_int byte_size in
-    check
-      "clEnqueueWriteBuffer (ptr)"
-      (clEnqueueWriteBuffer
-         queue.CommandQueue.handle
-         dst.handle
-         cl_true
-         Unsigned.Size_t.zero
-         bytes
-         src_ptr
-         Unsigned.UInt32.zero
-         (from_voidp cl_event null)
-         (from_voidp cl_event null))
+    (* Skip transfer for zero-copy buffers *)
+    if dst.zero_copy then ()
+    else begin
+      let bytes = Unsigned.Size_t.of_int byte_size in
+      check
+        "clEnqueueWriteBuffer (ptr)"
+        (clEnqueueWriteBuffer
+           queue.CommandQueue.handle
+           dst.handle
+           cl_true
+           Unsigned.Size_t.zero
+           bytes
+           src_ptr
+           Unsigned.UInt32.zero
+           (from_voidp cl_event null)
+           (from_voidp cl_event null))
+    end
 
   (** Transfer from device buffer to raw pointer (for custom types) *)
   let device_to_host_ptr queue ~src ~dst_ptr ~byte_size =
-    let bytes = Unsigned.Size_t.of_int byte_size in
-    check
-      "clEnqueueReadBuffer (ptr)"
-      (clEnqueueReadBuffer
-         queue.CommandQueue.handle
-         src.handle
-         cl_true
-         Unsigned.Size_t.zero
-         bytes
-         dst_ptr
-         Unsigned.UInt32.zero
-         (from_voidp cl_event null)
-         (from_voidp cl_event null))
+    (* Skip transfer for zero-copy buffers *)
+    if src.zero_copy then ()
+    else begin
+      let bytes = Unsigned.Size_t.of_int byte_size in
+      check
+        "clEnqueueReadBuffer (ptr)"
+        (clEnqueueReadBuffer
+           queue.CommandQueue.handle
+           src.handle
+           cl_true
+           Unsigned.Size_t.zero
+           bytes
+           dst_ptr
+           Unsigned.UInt32.zero
+           (from_voidp cl_event null)
+           (from_voidp cl_event null))
+    end
 end
 
 (** {1 Program Management} *)

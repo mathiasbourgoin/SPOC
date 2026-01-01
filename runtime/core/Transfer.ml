@@ -24,7 +24,10 @@ let set_auto enabled = auto_mode := enabled
 (** {1 Device Buffer Allocation} *)
 
 (** Allocate a device buffer for a scalar vector, returning a DEVICE_BUFFER
-    module. The buffer is packaged with its backend for type-safe operations. *)
+    module. The buffer is packaged with its backend for type-safe operations.
+
+    For CPU devices (OpenCL CPU, Native), uses zero-copy allocation when
+    possible to avoid memory transfers entirely. *)
 let alloc_scalar_buffer (type a b) (dev : Device.t) (length : int)
     (sk : (a, b) Vector.scalar_kind) : Vector.device_buffer =
   match Framework_registry.find_backend dev.framework with
@@ -54,13 +57,56 @@ let alloc_scalar_buffer (type a b) (dev : Device.t) (length : int)
           B.Kernel.set_arg_buffer kargs idx buf
 
         let from_ptr src_ptr ~byte_size =
-          B.Memory.host_ptr_to_device ~src_ptr ~byte_size ~dst:buf
+          if B.Memory.is_zero_copy buf then () (* Skip for zero-copy *)
+          else B.Memory.host_ptr_to_device ~src_ptr ~byte_size ~dst:buf
 
         let to_ptr dst_ptr ~byte_size =
-          B.Memory.device_to_host_ptr ~src:buf ~dst_ptr ~byte_size
+          if B.Memory.is_zero_copy buf then () (* Skip for zero-copy *)
+          else B.Memory.device_to_host_ptr ~src:buf ~dst_ptr ~byte_size
 
         let free () = B.Memory.free buf
       end : Vector.DEVICE_BUFFER)
+
+(** Allocate a device buffer using zero-copy (host memory sharing) if supported.
+    Returns None if the backend doesn't support zero-copy for this device. *)
+let alloc_scalar_buffer_zero_copy (type a b) (dev : Device.t)
+    (ba : (a, b, Bigarray.c_layout) Bigarray.Array1.t)
+    (sk : (a, b) Vector.scalar_kind) : Vector.device_buffer option =
+  match Framework_registry.find_backend dev.framework with
+  | None -> None
+  | Some (module B : Framework_sig.BACKEND) -> (
+      let backend_dev = B.Device.get dev.backend_id in
+      let ba_kind = Vector.to_bigarray_kind sk in
+      match B.Memory.alloc_zero_copy backend_dev ba ba_kind with
+      | None -> None
+      | Some buf ->
+          let elem_sz = Vector.scalar_elem_size sk in
+          let length = Bigarray.Array1.dim ba in
+          Some
+            (module struct
+              let device = dev
+
+              let size = length
+
+              let elem_size = elem_sz
+
+              let ptr = B.Memory.device_ptr buf
+
+              let bind_to_kernel ~kargs ~idx =
+                Log.debugf
+                  Log.Transfer
+                  "bind_to_kernel (zero-copy): idx=%d ptr=%Ld"
+                  idx
+                  (Int64.of_nativeint ptr) ;
+                let kargs : B.Kernel.args = Obj.obj kargs in
+                B.Kernel.set_arg_buffer kargs idx buf
+
+              let from_ptr _src_ptr ~byte_size:_ = () (* No-op for zero-copy *)
+
+              let to_ptr _dst_ptr ~byte_size:_ = () (* No-op for zero-copy *)
+
+              let free () = B.Memory.free buf
+            end : Vector.DEVICE_BUFFER))
 
 (** Allocate a device buffer for a custom vector *)
 let alloc_custom_buffer (dev : Device.t) (length : int) (elem_sz : int) :
@@ -102,16 +148,60 @@ let alloc_custom_buffer (dev : Device.t) (length : int) (elem_sz : int) :
 
 (** {1 Buffer Management for Vectors} *)
 
-(** Ensure vector has a device buffer, allocating if needed *)
+(** Check if a device is a CPU (supports zero-copy) *)
+let is_cpu_device (dev : Device.t) : bool =
+  match Framework_registry.find_backend dev.framework with
+  | None ->
+      Log.debugf Log.Transfer "is_cpu_device: no backend for %s" dev.framework ;
+      false
+  | Some (module B : Framework_sig.BACKEND) ->
+      let backend_dev = B.Device.get dev.backend_id in
+      let is_cpu = (B.Device.capabilities backend_dev).is_cpu in
+      Log.debugf
+        Log.Transfer
+        "is_cpu_device: dev=%d framework=%s is_cpu=%b"
+        dev.id
+        dev.framework
+        is_cpu ;
+      is_cpu
+
+(** Ensure vector has a device buffer, allocating if needed. For CPU devices
+    with bigarray storage, automatically uses zero-copy to avoid memory transfer
+    overhead. *)
 let ensure_buffer (type a b) (vec : (a, b) Vector.t) (dev : Device.t) :
     Vector.device_buffer =
   match Vector.get_buffer vec dev with
   | Some buf -> buf
   | None ->
+      Log.debugf
+        Log.Transfer
+        "ensure_buffer: allocating for dev=%d len=%d"
+        dev.id
+        vec.length ;
       let buf =
-        match vec.kind with
-        | Vector.Scalar sk -> alloc_scalar_buffer dev vec.length sk
-        | Vector.Custom c -> alloc_custom_buffer dev vec.length c.elem_size
+        match (vec.kind, vec.host) with
+        | Vector.Scalar sk, Vector.Bigarray_storage ba when is_cpu_device dev
+          -> (
+            (* Try zero-copy for CPU devices with bigarray storage *)
+            Log.debug Log.Transfer "  -> trying zero-copy path" ;
+            match alloc_scalar_buffer_zero_copy dev ba sk with
+            | Some zc_buf ->
+                Log.debugf
+                  Log.Transfer
+                  "  -> using zero-copy for CPU device %d"
+                  dev.id ;
+                zc_buf
+            | None ->
+                Log.debug
+                  Log.Transfer
+                  "  -> zero-copy failed, using regular alloc" ;
+                alloc_scalar_buffer dev vec.length sk)
+        | Vector.Scalar sk, _ ->
+            Log.debug Log.Transfer "  -> regular scalar alloc" ;
+            alloc_scalar_buffer dev vec.length sk
+        | Vector.Custom c, _ ->
+            Log.debug Log.Transfer "  -> custom alloc" ;
+            alloc_custom_buffer dev vec.length c.elem_size
       in
       Hashtbl.replace vec.device_buffers dev.id buf ;
       buf

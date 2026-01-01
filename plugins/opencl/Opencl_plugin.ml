@@ -41,7 +41,15 @@ module Opencl : sig
 
     val alloc_custom : Device.t -> size:int -> elem_size:int -> 'a buffer
 
+    val alloc_zero_copy :
+      Device.t ->
+      ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t ->
+      ('a, 'b) Bigarray.kind ->
+      'a buffer option
+
     val free : 'a buffer -> unit
+
+    val is_zero_copy : 'a buffer -> bool
 
     val host_to_device :
       src:('a, 'b, Bigarray.c_layout) Bigarray.Array1.t -> dst:'a buffer -> unit
@@ -193,6 +201,7 @@ end = struct
         (* Not exposed in OpenCL *)
         clock_rate_khz = d.max_clock_freq * 1000;
         multiprocessor_count = d.max_compute_units;
+        is_cpu = d.is_cpu;
       }
 
     let set_current (d : t) =
@@ -211,6 +220,20 @@ end = struct
       let state = get_state device.Opencl_api.Device.id in
       let buf = Opencl_api.Memory.alloc state.context size kind in
       {buf; device_id = device.id}
+
+    let alloc_zero_copy device ba kind =
+      if not device.Opencl_api.Device.is_cpu then None
+      else begin
+        let state = get_state device.Opencl_api.Device.id in
+        let size = Bigarray.Array1.dim ba in
+        let host_ptr = Ctypes.(to_voidp (bigarray_start array1 ba)) in
+        let buf =
+          Opencl_api.Memory.alloc_with_host_ptr state.context size kind host_ptr
+        in
+        Some {buf; device_id = device.id}
+      end
+
+    let is_zero_copy b = Opencl_api.Memory.is_zero_copy b.buf
 
     let alloc_custom device ~size ~elem_size =
       let state = get_state device.Opencl_api.Device.id in

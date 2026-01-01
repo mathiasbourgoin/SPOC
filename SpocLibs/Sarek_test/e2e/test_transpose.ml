@@ -36,7 +36,9 @@ let ocaml_transpose input output width height =
 (* ========== Shared test data ========== *)
 
 let input_data = ref [||]
+
 let expected_data = ref [||]
+
 let matrix_dim = ref 0
 
 let init_transpose_data () =
@@ -92,7 +94,12 @@ let run_transpose_spoc dev =
   let grid = {Spoc.Kernel.gridX = blocks; gridY = 1; gridZ = 1} in
 
   let t0 = Unix.gettimeofday () in
-  Sarek.Kirc.run transpose_naive_kernel (input, output, dim, dim) (block, grid) 0 dev ;
+  Sarek.Kirc.run
+    transpose_naive_kernel
+    (input, output, dim, dim)
+    (block, grid)
+    0
+    dev ;
   Spoc_Devices.flush dev () ;
   let t1 = Unix.gettimeofday () in
 
@@ -108,13 +115,17 @@ let run_transpose_v2 (dev : V2_Device.t) =
   let dim = !matrix_dim in
   let n = dim * dim in
   let _, kirc = transpose_naive_kernel in
-  let ir = match kirc.Sarek.Kirc.body_v2 with Some ir -> ir | None -> failwith "No V2 IR" in
+  let ir =
+    match kirc.Sarek.Kirc.body_v2 with
+    | Some ir -> ir
+    | None -> failwith "No V2 IR"
+  in
 
   let input = V2_Vector.create V2_Vector.float32 n in
   let output = V2_Vector.create V2_Vector.float32 n in
 
   for i = 0 to n - 1 do
-    V2_Vector.set input i (!input_data).(i) ;
+    V2_Vector.set input i !input_data.(i) ;
     V2_Vector.set output i 0.0
   done ;
 
@@ -125,14 +136,19 @@ let run_transpose_v2 (dev : V2_Device.t) =
   let grid = Sarek.Execute.dims1d grid_size in
 
   let t0 = Unix.gettimeofday () in
-  Sarek.Execute.run_vectors ~device:dev ~ir
-    ~args:[
-      Sarek.Execute.Vec input;
-      Sarek.Execute.Vec output;
-      Sarek.Execute.Int dim;
-      Sarek.Execute.Int dim;
-    ]
-    ~block ~grid () ;
+  Sarek.Execute.run_vectors
+    ~device:dev
+    ~ir
+    ~args:
+      [
+        Sarek.Execute.Vec input;
+        Sarek.Execute.Vec output;
+        Sarek.Execute.Int dim;
+        Sarek.Execute.Int dim;
+      ]
+    ~block
+    ~grid
+    () ;
   V2_Transfer.flush dev ;
   let t1 = Unix.gettimeofday () in
 
@@ -147,8 +163,12 @@ let verify_float_arrays name result expected tolerance =
     let diff = abs_float (result.(i) -. expected.(i)) in
     if diff > tolerance then begin
       if !errors < 5 then
-        Printf.printf "  %s mismatch at %d: expected %.2f, got %.2f\n"
-          name i expected.(i) result.(i) ;
+        Printf.printf
+          "  %s mismatch at %d: expected %.2f, got %.2f\n"
+          name
+          i
+          expected.(i)
+          result.(i) ;
       incr errors
     end
   done ;
@@ -185,44 +205,62 @@ let () =
 
   if cfg.benchmark_all then begin
     print_endline (String.make 80 '-') ;
-    Printf.printf "%-35s %10s %10s %8s %8s\n" "Device" "SPOC(ms)" "V2(ms)" "SPOC" "V2" ;
+    Printf.printf
+      "%-35s %10s %10s %8s %8s\n"
+      "Device"
+      "SPOC(ms)"
+      "V2(ms)"
+      "SPOC"
+      "V2" ;
     print_endline (String.make 80 '-') ;
 
     let all_ok = ref true in
 
-    Array.iter (fun v2_dev ->
-      let name = v2_dev.V2_Device.name in
-      let framework = v2_dev.V2_Device.framework in
+    Array.iter
+      (fun v2_dev ->
+        let name = v2_dev.V2_Device.name in
+        let framework = v2_dev.V2_Device.framework in
 
-      let spoc_dev_opt =
-        Array.find_opt (fun d -> d.Spoc_Devices.general_info.Spoc_Devices.name = name) spoc_devs
-      in
+        let spoc_dev_opt =
+          Array.find_opt
+            (fun d -> d.Spoc_Devices.general_info.Spoc_Devices.name = name)
+            spoc_devs
+        in
 
-      let spoc_time, spoc_ok =
-        match spoc_dev_opt with
-        | Some spoc_dev ->
-            let time, result = run_transpose_spoc spoc_dev in
-            let ok = not cfg.verify || verify_float_arrays "SPOC" result !expected_data 0.001 in
-            (Printf.sprintf "%.4f" time, if ok then "OK" else "FAIL")
-        | None -> ("-", "SKIP")
-      in
+        let spoc_time, spoc_ok =
+          match spoc_dev_opt with
+          | Some spoc_dev ->
+              let time, result = run_transpose_spoc spoc_dev in
+              let ok =
+                (not cfg.verify)
+                || verify_float_arrays "SPOC" result !expected_data 0.001
+              in
+              (Printf.sprintf "%.4f" time, if ok then "OK" else "FAIL")
+          | None -> ("-", "SKIP")
+        in
 
-      let v2_time, v2_result = run_transpose_v2 v2_dev in
-      let v2_ok = not cfg.verify || verify_float_arrays "V2" v2_result !expected_data 0.001 in
-      let v2_status = if v2_ok then "OK" else "FAIL" in
+        let v2_time, v2_result = run_transpose_v2 v2_dev in
+        let v2_ok =
+          (not cfg.verify)
+          || verify_float_arrays "V2" v2_result !expected_data 0.001
+        in
+        let v2_status = if v2_ok then "OK" else "FAIL" in
 
-      if not v2_ok then all_ok := false ;
-      if spoc_ok = "FAIL" then all_ok := false ;
+        if not v2_ok then all_ok := false ;
+        if spoc_ok = "FAIL" then all_ok := false ;
 
-      Printf.printf "%-35s %10s %10.4f %8s %8s\n"
-        (Printf.sprintf "%s (%s)" name framework)
-        spoc_time v2_time spoc_ok v2_status
-    ) v2_devs ;
+        Printf.printf
+          "%-35s %10s %10.4f %8s %8s\n"
+          (Printf.sprintf "%s (%s)" name framework)
+          spoc_time
+          v2_time
+          spoc_ok
+          v2_status)
+      v2_devs ;
 
     print_endline (String.make 80 '-') ;
 
-    if !all_ok then
-      print_endline "\n=== All transpose tests PASSED ==="
+    if !all_ok then print_endline "\n=== All transpose tests PASSED ==="
     else begin
       print_endline "\n=== Some transpose tests FAILED ===" ;
       exit 1
@@ -237,17 +275,25 @@ let () =
     Printf.printf "\nRunning SPOC path (naive transpose)...\n%!" ;
     let spoc_time, spoc_result = run_transpose_spoc dev in
     Printf.printf "  Time: %.4f ms\n%!" spoc_time ;
-    let spoc_ok = not cfg.verify || verify_float_arrays "SPOC" spoc_result !expected_data 0.001 in
+    let spoc_ok =
+      (not cfg.verify)
+      || verify_float_arrays "SPOC" spoc_result !expected_data 0.001
+    in
     Printf.printf "  Status: %s\n%!" (if spoc_ok then "PASSED" else "FAILED") ;
 
     (* Run V2 *)
-    let v2_dev_opt = Array.find_opt (fun d -> d.V2_Device.name = dev_name) v2_devs in
-    (match v2_dev_opt with
+    let v2_dev_opt =
+      Array.find_opt (fun d -> d.V2_Device.name = dev_name) v2_devs
+    in
+    match v2_dev_opt with
     | Some v2_dev ->
         Printf.printf "\nRunning V2 path (naive transpose)...\n%!" ;
         let v2_time, v2_result = run_transpose_v2 v2_dev in
         Printf.printf "  Time: %.4f ms\n%!" v2_time ;
-        let v2_ok = not cfg.verify || verify_float_arrays "V2" v2_result !expected_data 0.001 in
+        let v2_ok =
+          (not cfg.verify)
+          || verify_float_arrays "V2" v2_result !expected_data 0.001
+        in
         Printf.printf "  Status: %s\n%!" (if v2_ok then "PASSED" else "FAILED") ;
 
         if spoc_ok && v2_ok then
@@ -262,5 +308,5 @@ let () =
         else begin
           print_endline "\nTranspose tests FAILED" ;
           exit 1
-        end)
+        end
   end

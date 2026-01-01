@@ -70,7 +70,13 @@ let opencl_thread_intrinsic = function
 let rec gen_expr buf = function
   | EConst (CInt32 n) -> Buffer.add_string buf (Int32.to_string n)
   | EConst (CInt64 n) -> Buffer.add_string buf (Int64.to_string n ^ "L")
-  | EConst (CFloat32 f) -> Buffer.add_string buf (Printf.sprintf "%.17gf" f)
+  | EConst (CFloat32 f) ->
+      let s = Printf.sprintf "%.17g" f in
+      (* Ensure decimal point for OpenCL compatibility *)
+      let s =
+        if String.contains s '.' || String.contains s 'e' then s else s ^ ".0"
+      in
+      Buffer.add_string buf (s ^ "f")
   | EConst (CFloat64 f) -> Buffer.add_string buf (Printf.sprintf "%.17g" f)
   | EConst (CBool true) -> Buffer.add_string buf "1"
   | EConst (CBool false) -> Buffer.add_string buf "0"
@@ -356,8 +362,9 @@ let rec gen_stmt buf indent = function
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
   | SFor (v, start, stop, dir, body) ->
+      (* OCaml 'for i = a to b' is inclusive, so use <= not < *)
       let op, incr =
-        match dir with Upto -> ("<", "++") | Downto -> (">", "--")
+        match dir with Upto -> ("<=", "++") | Downto -> (">=", "--")
       in
       Buffer.add_string buf indent ;
       Buffer.add_string buf "for (" ;

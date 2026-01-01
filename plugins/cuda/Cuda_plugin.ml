@@ -41,6 +41,14 @@ module Cuda : sig
 
     val alloc_custom : Device.t -> size:int -> elem_size:int -> 'a buffer
 
+    val alloc_zero_copy :
+      Device.t ->
+      ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t ->
+      ('a, 'b) Bigarray.kind ->
+      'a buffer option
+
+    val is_zero_copy : 'a buffer -> bool
+
     val free : 'a buffer -> unit
 
     val host_to_device :
@@ -169,6 +177,7 @@ end = struct
         clock_rate_khz = 0;
         (* Would need another query *)
         multiprocessor_count = d.multiprocessor_count;
+        is_cpu = false;
       }
   end
 
@@ -178,6 +187,11 @@ end = struct
     let alloc = Cuda_api.Memory.alloc
 
     let alloc_custom = Cuda_api.Memory.alloc_custom
+
+    (** CUDA doesn't support zero-copy with host memory *)
+    let alloc_zero_copy _device _ba _kind = None
+
+    let is_zero_copy _buf = false
 
     let free = Cuda_api.Memory.free
 

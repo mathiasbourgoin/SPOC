@@ -21,11 +21,17 @@ let () =
   Sarek_opencl.Opencl_plugin_v2.init ()
 
 let size = ref 1024
+
 let dev_id = ref 0
+
 let block_size = ref 256
+
 let verify = ref true
+
 let use_interpreter = ref false
+
 let use_native = ref false
+
 let benchmark_all = ref false
 
 let usage () =
@@ -98,10 +104,18 @@ let run_spoc_on_device dev =
   in
   let blocksPerGrid = (!size + threadsPerBlock - 1) / threadsPerBlock in
   let block =
-    {Spoc.Kernel.blockX = threadsPerBlock; Spoc.Kernel.blockY = 1; Spoc.Kernel.blockZ = 1}
+    {
+      Spoc.Kernel.blockX = threadsPerBlock;
+      Spoc.Kernel.blockY = 1;
+      Spoc.Kernel.blockZ = 1;
+    }
   in
   let grid =
-    {Spoc.Kernel.gridX = blocksPerGrid; Spoc.Kernel.gridY = 1; Spoc.Kernel.gridZ = 1}
+    {
+      Spoc.Kernel.gridX = blocksPerGrid;
+      Spoc.Kernel.gridY = 1;
+      Spoc.Kernel.gridZ = 1;
+    }
   in
 
   let t0 = Unix.gettimeofday () in
@@ -148,12 +162,13 @@ let run_v2_on_device (dev : V2_Device.t) =
   Sarek.Execute.run_vectors
     ~device:dev
     ~ir
-    ~args:[
-      Sarek.Execute.Vec a;
-      Sarek.Execute.Vec b;
-      Sarek.Execute.Vec c;
-      Sarek.Execute.Int !size;
-    ]
+    ~args:
+      [
+        Sarek.Execute.Vec a;
+        Sarek.Execute.Vec b;
+        Sarek.Execute.Vec c;
+        Sarek.Execute.Int !size;
+      ]
     ~block
     ~grid
     () ;
@@ -174,8 +189,12 @@ let verify_results name result expected =
     let diff = abs_float (result.(i) -. expected.(i)) in
     if diff > 0.001 then begin
       if !errors < 5 then
-        Printf.printf "  %s mismatch at %d: expected %.2f, got %.2f\n"
-          name i expected.(i) result.(i) ;
+        Printf.printf
+          "  %s mismatch at %d: expected %.2f, got %.2f\n"
+          name
+          i
+          expected.(i)
+          result.(i) ;
       incr errors
     end
   done ;
@@ -190,7 +209,10 @@ let () =
   (* Initialize SPOC devices *)
   let spoc_devs =
     if !use_interpreter then
-      Spoc_Devices.init ~interpreter:(Some Spoc_Devices.Sequential) ~native:!use_native ()
+      Spoc_Devices.init
+        ~interpreter:(Some Spoc_Devices.Sequential)
+        ~native:!use_native
+        ()
     else Spoc_Devices.init ~native:!use_native ()
   in
   if Array.length spoc_devs = 0 then begin
@@ -201,56 +223,71 @@ let () =
   (* Initialize V2 devices *)
   let v2_devs = V2_Device.init ~frameworks:["CUDA"; "OpenCL"] () in
 
-  Printf.printf "Found %d SPOC device(s), %d V2 device(s)\n\n"
-    (Array.length spoc_devs) (Array.length v2_devs) ;
+  Printf.printf
+    "Found %d SPOC device(s), %d V2 device(s)\n\n"
+    (Array.length spoc_devs)
+    (Array.length v2_devs) ;
 
   let expected = compute_expected () in
 
   if !benchmark_all then begin
     print_endline (String.make 90 '-') ;
-    Printf.printf "%-35s %10s %10s %10s %10s\n"
-      "Device" "SPOC(ms)" "V2(ms)" "SPOC" "V2" ;
+    Printf.printf
+      "%-35s %10s %10s %10s %10s\n"
+      "Device"
+      "SPOC(ms)"
+      "V2(ms)"
+      "SPOC"
+      "V2" ;
     print_endline (String.make 90 '-') ;
 
     let all_ok = ref true in
 
     (* Test each V2 device *)
-    Array.iter (fun v2_dev ->
-      let name = v2_dev.V2_Device.name in
-      let framework = v2_dev.V2_Device.framework in
+    Array.iter
+      (fun v2_dev ->
+        let name = v2_dev.V2_Device.name in
+        let framework = v2_dev.V2_Device.framework in
 
-      (* Find matching SPOC device *)
-      let spoc_dev_opt =
-        Array.find_opt
-          (fun d -> d.Spoc_Devices.general_info.Spoc_Devices.name = name)
-          spoc_devs
-      in
+        (* Find matching SPOC device *)
+        let spoc_dev_opt =
+          Array.find_opt
+            (fun d -> d.Spoc_Devices.general_info.Spoc_Devices.name = name)
+            spoc_devs
+        in
 
-      let spoc_time, spoc_ok =
-        match spoc_dev_opt with
-        | Some spoc_dev ->
-            let time, result = run_spoc_on_device spoc_dev in
-            let ok = if !verify then verify_results "SPOC" result expected else true in
-            (Printf.sprintf "%.4f" time, if ok then "OK" else "FAIL")
-        | None -> ("-", "SKIP")
-      in
+        let spoc_time, spoc_ok =
+          match spoc_dev_opt with
+          | Some spoc_dev ->
+              let time, result = run_spoc_on_device spoc_dev in
+              let ok =
+                if !verify then verify_results "SPOC" result expected else true
+              in
+              (Printf.sprintf "%.4f" time, if ok then "OK" else "FAIL")
+          | None -> ("-", "SKIP")
+        in
 
-      let v2_time, v2_result = run_v2_on_device v2_dev in
-      let v2_ok = if !verify then verify_results "V2" v2_result expected else true in
-      let v2_status = if v2_ok then "OK" else "FAIL" in
+        let v2_time, v2_result = run_v2_on_device v2_dev in
+        let v2_ok =
+          if !verify then verify_results "V2" v2_result expected else true
+        in
+        let v2_status = if v2_ok then "OK" else "FAIL" in
 
-      if not v2_ok then all_ok := false ;
-      if spoc_ok = "FAIL" then all_ok := false ;
+        if not v2_ok then all_ok := false ;
+        if spoc_ok = "FAIL" then all_ok := false ;
 
-      Printf.printf "%-35s %10s %10.4f %10s %10s\n"
-        (Printf.sprintf "%s (%s)" name framework)
-        spoc_time v2_time spoc_ok v2_status
-    ) v2_devs ;
+        Printf.printf
+          "%-35s %10s %10.4f %10s %10s\n"
+          (Printf.sprintf "%s (%s)" name framework)
+          spoc_time
+          v2_time
+          spoc_ok
+          v2_status)
+      v2_devs ;
 
     print_endline (String.make 90 '-') ;
 
-    if !all_ok then
-      print_endline "\n=== All tests PASSED ==="
+    if !all_ok then print_endline "\n=== All tests PASSED ==="
     else begin
       print_endline "\n=== Some tests FAILED ===" ;
       exit 1
@@ -280,7 +317,9 @@ let () =
     Printf.printf "\nRunning SPOC path...\n%!" ;
     let spoc_time, spoc_result = run_spoc_on_device dev in
     Printf.printf "  Time: %.4f ms\n%!" spoc_time ;
-    let spoc_ok = if !verify then verify_results "SPOC" spoc_result expected else true in
+    let spoc_ok =
+      if !verify then verify_results "SPOC" spoc_result expected else true
+    in
     Printf.printf "  Status: %s\n%!" (if spoc_ok then "PASSED" else "FAILED") ;
 
     (* Find matching V2 device *)
@@ -288,16 +327,17 @@ let () =
       Array.find_opt (fun d -> d.V2_Device.name = dev_name) v2_devs
     in
 
-    (match v2_dev_opt with
+    match v2_dev_opt with
     | Some v2_dev ->
         Printf.printf "\nRunning V2 path...\n%!" ;
         let v2_time, v2_result = run_v2_on_device v2_dev in
         Printf.printf "  Time: %.4f ms\n%!" v2_time ;
-        let v2_ok = if !verify then verify_results "V2" v2_result expected else true in
+        let v2_ok =
+          if !verify then verify_results "V2" v2_result expected else true
+        in
         Printf.printf "  Status: %s\n%!" (if v2_ok then "PASSED" else "FAILED") ;
 
-        if spoc_ok && v2_ok then
-          print_endline "\nE2E Test PASSED (both paths)"
+        if spoc_ok && v2_ok then print_endline "\nE2E Test PASSED (both paths)"
         else begin
           print_endline "\nE2E Test FAILED" ;
           exit 1
@@ -308,5 +348,5 @@ let () =
         else begin
           print_endline "\nE2E Test FAILED" ;
           exit 1
-        end)
+        end
   end
