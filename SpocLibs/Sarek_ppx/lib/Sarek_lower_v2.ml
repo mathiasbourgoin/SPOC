@@ -430,13 +430,17 @@ and lower_stmt (state : state) (te : texpr) : Ir.stmt =
   | TEReturn e -> Ir.SReturn (lower_expr state e)
   | TEPragma (opts, body) -> Ir.SPragma (opts, lower_stmt state body)
   | TELetShared (name, id, elem_ty, size_opt, body) ->
+      (* Shared memory declaration: __shared__ type name[size]; or __local type name[size]; *)
       let size_ir =
         match size_opt with
         | Some size -> lower_expr state size
         | None -> Ir.EIntrinsic (["Sarek_stdlib"; "Gpu"], "block_dim_x", [])
       in
       let v = make_var name id (TArr (elem_ty, Sarek_types.Shared)) false in
-      Ir.SLet (v, size_ir, lower_stmt state body)
+      let elem_ir = elttype_of_typ elem_ty in
+      (* Use EArrayCreate with Shared memspace - codegen will emit proper declaration *)
+      Ir.SLet
+        (v, Ir.EArrayCreate (elem_ir, size_ir, Ir.Shared), lower_stmt state body)
   | TESuperstep (_name, _divergent, step_body, cont) ->
       (* Wrap step_body in SBlock to create C scope for variable isolation *)
       Ir.SSeq

@@ -49,19 +49,22 @@ let opencl_param_type = function
 (** {1 Thread Intrinsics} *)
 
 let opencl_thread_intrinsic = function
-  | "thread_id_x" -> "get_local_id(0)"
-  | "thread_id_y" -> "get_local_id(1)"
-  | "thread_id_z" -> "get_local_id(2)"
-  | "block_id_x" -> "get_group_id(0)"
-  | "block_id_y" -> "get_group_id(1)"
-  | "block_id_z" -> "get_group_id(2)"
+  (* Support both idx and id naming conventions *)
+  | "thread_id_x" | "thread_idx_x" -> "get_local_id(0)"
+  | "thread_id_y" | "thread_idx_y" -> "get_local_id(1)"
+  | "thread_id_z" | "thread_idx_z" -> "get_local_id(2)"
+  | "block_id_x" | "block_idx_x" -> "get_group_id(0)"
+  | "block_id_y" | "block_idx_y" -> "get_group_id(1)"
+  | "block_id_z" | "block_idx_z" -> "get_group_id(2)"
   | "block_dim_x" -> "get_local_size(0)"
   | "block_dim_y" -> "get_local_size(1)"
   | "block_dim_z" -> "get_local_size(2)"
   | "grid_dim_x" -> "get_num_groups(0)"
   | "grid_dim_y" -> "get_num_groups(1)"
   | "grid_dim_z" -> "get_num_groups(2)"
-  | "global_thread_id" -> "get_global_id(0)"
+  | "global_thread_id" | "global_idx" | "global_idx_x" -> "get_global_id(0)"
+  | "global_idx_y" -> "get_global_id(1)"
+  | "global_idx_z" -> "get_global_id(2)"
   | "global_size" -> "get_global_size(0)"
   | name -> failwith ("Unknown thread intrinsic: " ^ name)
 
@@ -212,17 +215,23 @@ and gen_intrinsic buf path name args =
   let full_name =
     match path with [] -> name | _ -> String.concat "." path ^ "." ^ name
   in
-  (* Try thread intrinsics *)
+  (* Try thread intrinsics - support both idx and id naming *)
   if
     List.mem
       name
       [
         "thread_id_x";
+        "thread_idx_x";
         "thread_id_y";
+        "thread_idx_y";
         "thread_id_z";
+        "thread_idx_z";
         "block_id_x";
+        "block_idx_x";
         "block_id_y";
+        "block_idx_y";
         "block_id_z";
+        "block_idx_z";
         "block_dim_x";
         "block_dim_y";
         "block_dim_z";
@@ -230,6 +239,10 @@ and gen_intrinsic buf path name args =
         "grid_dim_y";
         "grid_dim_z";
         "global_thread_id";
+        "global_idx";
+        "global_idx_x";
+        "global_idx_y";
+        "global_idx_z";
         "global_size";
       ]
   then Buffer.add_string buf (opencl_thread_intrinsic name)
@@ -256,7 +269,9 @@ and gen_intrinsic buf path name args =
             gen_expr buf e)
           args ;
         Buffer.add_char buf ')'
-    | "atomic_add" ->
+    (* Barrier synchronization *)
+    | "block_barrier" -> Buffer.add_string buf "barrier(CLK_LOCAL_MEM_FENCE)"
+    | "atomic_add" | "atomic_add_int32" | "atomic_add_global_int32" ->
         Buffer.add_string buf "atomic_add(" ;
         (match args with
         | [addr; value] ->
@@ -264,7 +279,15 @@ and gen_intrinsic buf path name args =
             gen_expr buf addr ;
             Buffer.add_string buf ", " ;
             gen_expr buf value
-        | _ -> failwith "atomic_add requires 2 arguments") ;
+        | [arr; idx; value] ->
+            (* Array element atomic: atomic_add(&arr[idx], value) *)
+            Buffer.add_char buf '&' ;
+            gen_expr buf arr ;
+            Buffer.add_char buf '[' ;
+            gen_expr buf idx ;
+            Buffer.add_string buf "], " ;
+            gen_expr buf value
+        | _ -> failwith "atomic_add requires 2 or 3 arguments") ;
         Buffer.add_char buf ')'
     | "atomic_sub" ->
         Buffer.add_string buf "atomic_sub(" ;

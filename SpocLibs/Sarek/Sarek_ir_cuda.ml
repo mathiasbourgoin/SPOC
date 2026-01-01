@@ -42,19 +42,23 @@ let cuda_param_type = function
 (** {1 Thread Intrinsics} *)
 
 let cuda_thread_intrinsic = function
-  | "thread_id_x" -> "threadIdx.x"
-  | "thread_id_y" -> "threadIdx.y"
-  | "thread_id_z" -> "threadIdx.z"
-  | "block_id_x" -> "blockIdx.x"
-  | "block_id_y" -> "blockIdx.y"
-  | "block_id_z" -> "blockIdx.z"
+  (* Support both idx and id naming conventions *)
+  | "thread_id_x" | "thread_idx_x" -> "threadIdx.x"
+  | "thread_id_y" | "thread_idx_y" -> "threadIdx.y"
+  | "thread_id_z" | "thread_idx_z" -> "threadIdx.z"
+  | "block_id_x" | "block_idx_x" -> "blockIdx.x"
+  | "block_id_y" | "block_idx_y" -> "blockIdx.y"
+  | "block_id_z" | "block_idx_z" -> "blockIdx.z"
   | "block_dim_x" -> "blockDim.x"
   | "block_dim_y" -> "blockDim.y"
   | "block_dim_z" -> "blockDim.z"
   | "grid_dim_x" -> "gridDim.x"
   | "grid_dim_y" -> "gridDim.y"
   | "grid_dim_z" -> "gridDim.z"
-  | "global_thread_id" -> "(threadIdx.x + blockIdx.x * blockDim.x)"
+  | "global_thread_id" | "global_idx" | "global_idx_x" ->
+      "(threadIdx.x + blockIdx.x * blockDim.x)"
+  | "global_idx_y" -> "(threadIdx.y + blockIdx.y * blockDim.y)"
+  | "global_idx_z" -> "(threadIdx.z + blockIdx.z * blockDim.z)"
   | "global_size" -> "(blockDim.x * gridDim.x)"
   | name -> failwith ("Unknown thread intrinsic: " ^ name)
 
@@ -213,11 +217,17 @@ and gen_intrinsic buf path name args =
       name
       [
         "thread_id_x";
+        "thread_idx_x";
         "thread_id_y";
+        "thread_idx_y";
         "thread_id_z";
+        "thread_idx_z";
         "block_id_x";
+        "block_idx_x";
         "block_id_y";
+        "block_idx_y";
         "block_id_z";
+        "block_idx_z";
         "block_dim_x";
         "block_dim_y";
         "block_dim_z";
@@ -225,6 +235,10 @@ and gen_intrinsic buf path name args =
         "grid_dim_y";
         "grid_dim_z";
         "global_thread_id";
+        "global_idx";
+        "global_idx_x";
+        "global_idx_y";
+        "global_idx_z";
         "global_size";
       ]
   then Buffer.add_string buf (cuda_thread_intrinsic name)
@@ -251,7 +265,9 @@ and gen_intrinsic buf path name args =
             gen_expr buf e)
           args ;
         Buffer.add_char buf ')'
-    | "atomic_add" ->
+    (* Barrier synchronization *)
+    | "block_barrier" -> Buffer.add_string buf "__syncthreads()"
+    | "atomic_add" | "atomic_add_int32" | "atomic_add_global_int32" ->
         Buffer.add_string buf "atomicAdd(" ;
         (match args with
         | [addr; value] ->
@@ -259,7 +275,15 @@ and gen_intrinsic buf path name args =
             gen_expr buf addr ;
             Buffer.add_string buf ", " ;
             gen_expr buf value
-        | _ -> failwith "atomic_add requires 2 arguments") ;
+        | [arr; idx; value] ->
+            (* Array element atomic: atomicAdd(&arr[idx], value) *)
+            Buffer.add_char buf '&' ;
+            gen_expr buf arr ;
+            Buffer.add_char buf '[' ;
+            gen_expr buf idx ;
+            Buffer.add_string buf "], " ;
+            gen_expr buf value
+        | _ -> failwith "atomic_add requires 2 or 3 arguments") ;
         Buffer.add_char buf ')'
     | "atomic_sub" ->
         Buffer.add_string buf "atomicSub(" ;
