@@ -259,14 +259,10 @@ let compile_to_ptx ?(name = "kernel") ?(arch = "compute_70") (source : string) :
 
   let prog_handle = !@prog in
 
-  (* Set architecture using --gpu-architecture with compute_XX format *)
-  let arch_opt = Printf.sprintf "--gpu-architecture=%s" arch in
-  let opts_list = [arch_opt] in
-  Sarek_core.Log.debugf Sarek_core.Log.Kernel "NVRTC options: [%s]" (String.concat "; " opts_list) ;
-  let opts = CArray.of_list string opts_list in
-
-  (* Compile *)
-  let compile_result = nvrtcCompileProgram prog_handle 1 (CArray.start opts) in
+  (* Compile with no options - NVRTC on this system doesn't support --gpu-architecture.
+     The driver will JIT the PTX to the target GPU. *)
+  Sarek_core.Log.debugf Sarek_core.Log.Kernel "NVRTC compiling (no arch option, target %s)" arch ;
+  let compile_result = nvrtcCompileProgram prog_handle 0 (from_voidp string null) in
   Sarek_core.Log.debugf
     Sarek_core.Log.Kernel
     "NVRTC compile result: %s"

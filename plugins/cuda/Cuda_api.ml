@@ -298,16 +298,24 @@ module Kernel = struct
     let ptx = Cuda_nvrtc.compile_to_ptx ~name ~arch source in
     Sarek_core.Log.debugf Sarek_core.Log.Kernel "CUDA PTX generated (%d bytes)" (String.length ptx) ;
 
-    (* Load module from PTX *)
+    (* Load module from PTX using JIT with target from context *)
     let module_ = allocate cu_module_ptr (from_voidp cu_module null) in
     let ptx_ptr = CArray.of_string ptx |> CArray.start |> to_voidp in
-    let load_result = cuModuleLoadData module_ ptx_ptr in
+
+    (* Use CU_JIT_TARGET_FROM_CUCONTEXT to let driver pick target *)
+    let jit_opts = CArray.of_list int [int_of_jit_option CU_JIT_TARGET_FROM_CUCONTEXT] in
+    let jit_vals = CArray.of_list (ptr void) [from_voidp void null] in
+    let load_result = cuModuleLoadDataEx module_ ptx_ptr
+        (Unsigned.UInt.of_int 1)
+        (CArray.start jit_opts)
+        (CArray.start jit_vals) in
     (match load_result with
-     | CUDA_SUCCESS -> ()
+     | CUDA_SUCCESS ->
+         Sarek_core.Log.debug Sarek_core.Log.Kernel "cuModuleLoadDataEx succeeded"
      | err ->
-         Sarek_core.Log.errorf Sarek_core.Log.Kernel "cuModuleLoadData failed: %s"
+         Sarek_core.Log.errorf Sarek_core.Log.Kernel "cuModuleLoadDataEx failed: %s"
            (string_of_cu_result err) ;
-         raise (Cuda_error (err, "cuModuleLoadData"))) ;
+         raise (Cuda_error (err, "cuModuleLoadDataEx"))) ;
 
     (* Get function *)
     let func = allocate cu_function_ptr (from_voidp cu_function null) in
