@@ -89,7 +89,7 @@ __kernel void vector_add(__global float *a, __global float *b,
 |} in
 
   let source = if Device.is_cuda dev then cuda_source else opencl_source in
-  let kernel = Kernel.compile dev ~name:"vector_add" ~source in
+  let _kernel = Kernel.compile dev ~name:"vector_add" ~source in
   print_endline "Kernel compiled" ;
 
   (* Step 6: Setup arguments and launch *)

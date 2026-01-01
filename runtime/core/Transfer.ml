@@ -37,8 +37,6 @@ let alloc_scalar_buffer (type a b) (dev : Device.t) (length : int)
         let elem_size = elem_sz
         let ptr = B.Memory.device_ptr buf
 
-        let from_bigarray ba = B.Memory.host_to_device ~src:ba ~dst:buf
-        let to_bigarray ba = B.Memory.device_to_host ~src:buf ~dst:ba
         let from_ptr src_ptr ~byte_size =
           B.Memory.host_ptr_to_device ~src_ptr ~byte_size ~dst:buf
         let to_ptr dst_ptr ~byte_size =
@@ -60,10 +58,6 @@ let alloc_custom_buffer (dev : Device.t) (length : int) (elem_sz : int) :
         let elem_size = elem_sz
         let ptr = B.Memory.device_ptr buf
 
-        let from_bigarray _ba =
-          failwith "from_bigarray: not supported for custom buffers"
-        let to_bigarray _ba =
-          failwith "to_bigarray: not supported for custom buffers"
         let from_ptr src_ptr ~byte_size =
           B.Memory.host_ptr_to_device ~src_ptr ~byte_size ~dst:buf
         let to_ptr dst_ptr ~byte_size =
@@ -89,6 +83,14 @@ let ensure_buffer (type a b) (vec : (a, b) Vector.t) (dev : Device.t) :
 
 (** {1 Transfer Operations} *)
 
+(** Convert bigarray to raw pointer and byte size *)
+let bigarray_to_ptr (type a b) (ba : (a, b, Bigarray.c_layout) Bigarray.Array1.t)
+    (elem_size : int) : unit Ctypes.ptr * int =
+  let len = Bigarray.Array1.dim ba in
+  let byte_size = len * elem_size in
+  let ptr = Ctypes.bigarray_start Ctypes.array1 ba in
+  (Ctypes.to_voidp ptr, byte_size)
+
 (** Transfer vector data to a device *)
 let to_device (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : unit =
   (* Check if already up-to-date on this device *)
@@ -101,7 +103,9 @@ let to_device (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : unit =
       let buf = ensure_buffer vec dev in
       let (module B : Vector.DEVICE_BUFFER) = buf in
       (match vec.host with
-      | Vector.Bigarray_storage ba -> B.from_bigarray ba
+      | Vector.Bigarray_storage ba ->
+          let ptr, byte_size = bigarray_to_ptr ba B.elem_size in
+          B.from_ptr ptr ~byte_size
       | Vector.Custom_storage {ptr; custom; length} ->
           B.from_ptr ptr ~byte_size:(length * custom.elem_size)) ;
       vec.location <- Vector.Both dev
@@ -119,7 +123,9 @@ let to_cpu (type a b) (vec : (a, b) Vector.t) : unit =
       | Some buf ->
           let (module B : Vector.DEVICE_BUFFER) = buf in
           (match vec.host with
-          | Vector.Bigarray_storage ba -> B.to_bigarray ba
+          | Vector.Bigarray_storage ba ->
+              let ptr, byte_size = bigarray_to_ptr ba B.elem_size in
+              B.to_ptr ptr ~byte_size
           | Vector.Custom_storage {ptr; custom; length} ->
               B.to_ptr ptr ~byte_size:(length * custom.elem_size))) ;
       vec.location <-
