@@ -584,3 +584,190 @@ let sub_ok_range (vec : ('a, 'b) t) : int option =
 (** Get ko_range (unsafe write range) *)
 let sub_ko_range (vec : ('a, 'b) t) : int option =
   match get_sub_info vec with Some info -> Some info.ko_range | None -> None
+
+(** {1 Phase 6: Vector Utilities} *)
+
+(** {2 Iteration} *)
+
+(** Iterate over all elements (CPU-side, ensures data is on CPU) *)
+let iter : type a b. (a -> unit) -> (a, b) t -> unit =
+ fun f vec ->
+  for i = 0 to vec.length - 1 do
+    f (unsafe_get vec i)
+  done
+
+(** Iterate with index *)
+let iteri : type a b. (int -> a -> unit) -> (a, b) t -> unit =
+ fun f vec ->
+  for i = 0 to vec.length - 1 do
+    f i (unsafe_get vec i)
+  done
+
+(** {2 Mapping} *)
+
+(** Map function over vector, creating new vector with given kind *)
+let map : type a b c d. (a -> c) -> (c, d) kind -> (a, b) t -> (c, d) t =
+ fun f target_kind vec ->
+  let result = create target_kind vec.length in
+  for i = 0 to vec.length - 1 do
+    unsafe_set result i (f (unsafe_get vec i))
+  done ;
+  result
+
+(** Map with index *)
+let mapi : type a b c d. (int -> a -> c) -> (c, d) kind -> (a, b) t -> (c, d) t =
+ fun f target_kind vec ->
+  let result = create target_kind vec.length in
+  for i = 0 to vec.length - 1 do
+    unsafe_set result i (f i (unsafe_get vec i))
+  done ;
+  result
+
+(** In-place map (same type) *)
+let map_inplace : type a b. (a -> a) -> (a, b) t -> unit =
+ fun f vec ->
+  for i = 0 to vec.length - 1 do
+    unsafe_set vec i (f (unsafe_get vec i))
+  done
+
+(** {2 Folding} *)
+
+(** Fold left *)
+let fold_left : type a b acc. (acc -> a -> acc) -> acc -> (a, b) t -> acc =
+ fun f init vec ->
+  let acc = ref init in
+  for i = 0 to vec.length - 1 do
+    acc := f !acc (unsafe_get vec i)
+  done ;
+  !acc
+
+(** Fold right *)
+let fold_right : type a b acc. (a -> acc -> acc) -> (a, b) t -> acc -> acc =
+ fun f vec init ->
+  let acc = ref init in
+  for i = vec.length - 1 downto 0 do
+    acc := f (unsafe_get vec i) !acc
+  done ;
+  !acc
+
+(** {2 Predicates} *)
+
+(** Check if all elements satisfy predicate *)
+let for_all : type a b. (a -> bool) -> (a, b) t -> bool =
+ fun p vec ->
+  let result = ref true in
+  let i = ref 0 in
+  while !result && !i < vec.length do
+    result := p (unsafe_get vec !i) ;
+    incr i
+  done ;
+  !result
+
+(** Check if any element satisfies predicate *)
+let exists : type a b. (a -> bool) -> (a, b) t -> bool =
+ fun p vec ->
+  let result = ref false in
+  let i = ref 0 in
+  while not !result && !i < vec.length do
+    result := p (unsafe_get vec !i) ;
+    incr i
+  done ;
+  !result
+
+(** Find first element satisfying predicate *)
+let find : type a b. (a -> bool) -> (a, b) t -> a option =
+ fun p vec ->
+  let result = ref None in
+  let i = ref 0 in
+  while Option.is_none !result && !i < vec.length do
+    let v = unsafe_get vec !i in
+    if p v then result := Some v ;
+    incr i
+  done ;
+  !result
+
+(** Find index of first element satisfying predicate *)
+let find_index : type a b. (a -> bool) -> (a, b) t -> int option =
+ fun p vec ->
+  let result = ref None in
+  let i = ref 0 in
+  while Option.is_none !result && !i < vec.length do
+    if p (unsafe_get vec !i) then result := Some !i ;
+    incr i
+  done ;
+  !result
+
+(** {2 Aggregation} *)
+
+(** Sum elements (requires + operation via fold) *)
+let sum (type a b) ~(zero : a) ~(add : a -> a -> a) (vec : (a, b) t) : a =
+  fold_left add zero vec
+
+(** Find minimum element *)
+let min_elt (type a b) ~(compare : a -> a -> int) (vec : (a, b) t) : a option =
+  if vec.length = 0 then None
+  else
+    let m = ref (unsafe_get vec 0) in
+    for i = 1 to vec.length - 1 do
+      let v = unsafe_get vec i in
+      if compare v !m < 0 then m := v
+    done ;
+    Some !m
+
+(** Find maximum element *)
+let max_elt (type a b) ~(compare : a -> a -> int) (vec : (a, b) t) : a option =
+  if vec.length = 0 then None
+  else
+    let m = ref (unsafe_get vec 0) in
+    for i = 1 to vec.length - 1 do
+      let v = unsafe_get vec i in
+      if compare v !m > 0 then m := v
+    done ;
+    Some !m
+
+(** {2 Conversion} *)
+
+(** Convert to OCaml list *)
+let to_list : type a b. (a, b) t -> a list =
+ fun vec -> fold_right (fun x acc -> x :: acc) vec []
+
+(** Create from OCaml list *)
+let of_list : type a b. (a, b) kind -> a list -> (a, b) t =
+ fun kind lst ->
+  let len = List.length lst in
+  let vec = create kind len in
+  List.iteri (fun i v -> unsafe_set vec i v) lst ;
+  vec
+
+(** Convert to OCaml array *)
+let to_array : type a b. (a, b) t -> a array =
+ fun vec ->
+  if vec.length = 0 then [||]
+  else
+    let arr = Array.make vec.length (unsafe_get vec 0) in
+    for i = 1 to vec.length - 1 do
+      arr.(i) <- unsafe_get vec i
+    done ;
+    arr
+
+(** Create from OCaml array *)
+let of_array : type a b. (a, b) kind -> a array -> (a, b) t =
+ fun kind arr ->
+  let vec = create kind (Array.length arr) in
+  Array.iteri (fun i v -> unsafe_set vec i v) arr ;
+  vec
+
+(** {2 Blitting} *)
+
+(** Copy elements from one vector to another *)
+let blit : type a b.
+    src:(a, b) t -> src_off:int -> dst:(a, b) t -> dst_off:int -> len:int -> unit
+    =
+ fun ~src ~src_off ~dst ~dst_off ~len ->
+  if src_off < 0 || src_off + len > src.length then
+    invalid_arg "Vector.blit: source range out of bounds" ;
+  if dst_off < 0 || dst_off + len > dst.length then
+    invalid_arg "Vector.blit: destination range out of bounds" ;
+  for i = 0 to len - 1 do
+    unsafe_set dst (dst_off + i) (unsafe_get src (src_off + i))
+  done
