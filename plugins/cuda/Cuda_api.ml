@@ -289,7 +289,8 @@ module Kernel = struct
     {module_ = !@module_; function_ = !@func; name}
 
   let compile_cached device ~name ~source =
-    let key = Digest.string source |> Digest.to_hex in
+    (* Cache key must include device ID - modules are device-specific *)
+    let key = Printf.sprintf "%d:%s" device.Device.id (Digest.string source |> Digest.to_hex) in
     match Hashtbl.find_opt cache key with
     | Some k -> k
     | None ->

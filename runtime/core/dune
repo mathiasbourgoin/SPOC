@@ -5,5 +5,5 @@
  (name sarek_core)
  (public_name sarek.core)
  (libraries sarek_framework ctypes unix)
- (modules Device Memory Kernel Runtime Vector Transfer Profiling Error Advanced)
+ (modules Log Device Memory Kernel Runtime Vector Transfer Profiling Error Advanced)
  (preprocess no_preprocessing))

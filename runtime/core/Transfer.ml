@@ -37,6 +37,12 @@ let alloc_scalar_buffer (type a b) (dev : Device.t) (length : int)
         let elem_size = elem_sz
         let ptr = B.Memory.device_ptr buf
 
+        let bind_to_kernel ~kargs ~idx =
+          (* Cast kargs back to the backend's kernel args type and bind buffer *)
+          Log.debugf Log.Transfer "bind_to_kernel: idx=%d ptr=%Ld" idx (Int64.of_nativeint ptr) ;
+          let kargs : B.Kernel.args = Obj.obj kargs in
+          B.Kernel.set_arg_buffer kargs idx buf
+
         let from_ptr src_ptr ~byte_size =
           B.Memory.host_ptr_to_device ~src_ptr ~byte_size ~dst:buf
         let to_ptr dst_ptr ~byte_size =
@@ -57,6 +63,12 @@ let alloc_custom_buffer (dev : Device.t) (length : int) (elem_sz : int) :
         let size = length
         let elem_size = elem_sz
         let ptr = B.Memory.device_ptr buf
+
+        let bind_to_kernel ~kargs ~idx =
+          (* Cast kargs back to the backend's kernel args type and bind buffer *)
+          Log.debugf Log.Transfer "bind_to_kernel: idx=%d ptr=%Ld" idx (Int64.of_nativeint ptr) ;
+          let kargs : B.Kernel.args = Obj.obj kargs in
+          B.Kernel.set_arg_buffer kargs idx buf
 
         let from_ptr src_ptr ~byte_size =
           B.Memory.host_ptr_to_device ~src_ptr ~byte_size ~dst:buf
@@ -93,15 +105,27 @@ let bigarray_to_ptr (type a b) (ba : (a, b, Bigarray.c_layout) Bigarray.Array1.t
 
 (** Transfer vector data to a device *)
 let to_device (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : unit =
+  let loc_str = match vec.location with
+    | Vector.CPU -> "CPU"
+    | Vector.GPU _ -> "GPU"
+    | Vector.Both _ -> "Both"
+    | Vector.Stale_CPU _ -> "Stale_CPU"
+    | Vector.Stale_GPU _ -> "Stale_GPU"
+  in
+  Log.debugf Log.Transfer "to_device: location=%s dev=%d" loc_str dev.id ;
   (* Check if already up-to-date on this device *)
   match vec.location with
-  | Vector.GPU d when d.id = dev.id -> ()
-  | Vector.Both d when d.id = dev.id -> ()
-  | Vector.Stale_CPU d when d.id = dev.id -> ()  (* GPU already authoritative *)
+  | Vector.GPU d when d.id = dev.id ->
+      Log.debug Log.Transfer "-> skip (GPU)"
+  | Vector.Both d when d.id = dev.id ->
+      Log.debug Log.Transfer "-> skip (Both)"
+  | Vector.Stale_CPU d when d.id = dev.id ->
+      Log.debug Log.Transfer "-> skip (Stale_CPU)"
   | _ ->
       (* Ensure buffer exists and transfer *)
       let buf = ensure_buffer vec dev in
       let (module B : Vector.DEVICE_BUFFER) = buf in
+      Log.debugf Log.Transfer "-> transferring %d bytes" (vec.length * B.elem_size) ;
       (match vec.host with
       | Vector.Bigarray_storage ba ->
           let ptr, byte_size = bigarray_to_ptr ba B.elem_size in
@@ -110,29 +134,39 @@ let to_device (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : unit =
           B.from_ptr ptr ~byte_size:(length * custom.elem_size)) ;
       vec.location <- Vector.Both dev
 
-(** Transfer vector data from device to CPU *)
-let to_cpu (type a b) (vec : (a, b) Vector.t) : unit =
-  match vec.location with
-  | Vector.CPU -> ()  (* Already on CPU only *)
-  | Vector.Both _ -> ()  (* Already synced *)
-  | Vector.Stale_GPU _ -> ()  (* CPU already authoritative *)
-  | Vector.GPU dev | Vector.Stale_CPU dev ->
-      (* Transfer from GPU to CPU *)
-      (match Vector.get_buffer vec dev with
-      | None -> failwith "to_cpu: no device buffer to transfer from"
-      | Some buf ->
-          let (module B : Vector.DEVICE_BUFFER) = buf in
-          (match vec.host with
-          | Vector.Bigarray_storage ba ->
-              let ptr, byte_size = bigarray_to_ptr ba B.elem_size in
-              B.to_ptr ptr ~byte_size
-          | Vector.Custom_storage {ptr; custom; length} ->
-              B.to_ptr ptr ~byte_size:(length * custom.elem_size))) ;
-      vec.location <-
-        (match vec.location with
-        | Vector.GPU dev -> Vector.Both dev
-        | Vector.Stale_CPU dev -> Vector.Both dev
-        | other -> other)
+(** Transfer vector data from device to CPU.
+    @param force If true, always transfer even if location is Both (useful after kernel writes) *)
+let to_cpu ?(force = false) (type a b) (vec : (a, b) Vector.t) : unit =
+  let needs_transfer = match vec.location with
+    | Vector.CPU -> false  (* No device buffer *)
+    | Vector.Both _ -> force  (* Transfer if forced *)
+    | Vector.Stale_GPU _ -> false  (* CPU already authoritative *)
+    | Vector.GPU _ | Vector.Stale_CPU _ -> true
+  in
+  if needs_transfer then begin
+    let dev = match vec.location with
+      | Vector.GPU d | Vector.Stale_CPU d | Vector.Both d -> d
+      | _ -> failwith "to_cpu: no device"
+    in
+    Log.debugf Log.Transfer "to_cpu: transferring from dev=%d (force=%b)" dev.id force ;
+    match Vector.get_buffer vec dev with
+    | None -> failwith "to_cpu: no device buffer to transfer from"
+    | Some buf ->
+        let (module B : Vector.DEVICE_BUFFER) = buf in
+        (match vec.host with
+        | Vector.Bigarray_storage ba ->
+            let ptr, byte_size = bigarray_to_ptr ba B.elem_size in
+            B.to_ptr ptr ~byte_size
+        | Vector.Custom_storage {ptr; custom; length} ->
+            B.to_ptr ptr ~byte_size:(length * custom.elem_size)) ;
+        vec.location <- Vector.Both dev
+  end else
+    Log.debugf Log.Transfer "to_cpu: skip (location=%s, force=%b)"
+      (match vec.location with
+       | Vector.CPU -> "CPU" | Vector.GPU _ -> "GPU"
+       | Vector.Both _ -> "Both" | Vector.Stale_CPU _ -> "Stale_CPU"
+       | Vector.Stale_GPU _ -> "Stale_GPU")
+      force
 
 (** Ensure vector is fully synchronized *)
 let sync (type a b) (vec : (a, b) Vector.t) : unit =
@@ -236,3 +270,17 @@ let to_cpu_all (vecs : (_, _) Vector.t list) : unit =
 
 let sync_all (vecs : (_, _) Vector.t list) : unit =
   List.iter sync vecs
+
+(** {1 Auto-sync Callback Registration} *)
+
+(** Register auto-sync callback with Vector module.
+    The callback respects the global auto_mode setting. *)
+let () =
+  Vector.register_sync_callback {
+    Vector.sync = fun (type a b) (vec : (a, b) Vector.t) ->
+      if not !auto_mode then false
+      else begin
+        to_cpu vec ;
+        true
+      end
+  }

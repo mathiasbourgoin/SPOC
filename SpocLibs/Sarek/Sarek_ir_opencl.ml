@@ -143,7 +143,7 @@ let rec gen_expr buf = function
           gen_expr buf e)
         args ;
       Buffer.add_char buf ')'
-  | EArrayLen arr -> Buffer.add_string buf (arr ^ "_len")
+  | EArrayLen arr -> Buffer.add_string buf ("sarek_" ^ arr ^ "_length")
   | EArrayCreate _ ->
       failwith "gen_expr: EArrayCreate should be handled in gen_stmt SLet"
   | EIf (cond, then_, else_) ->
@@ -469,17 +469,30 @@ let rec gen_stmt buf indent = function
 
 (** {1 Declaration Generation} *)
 
+(** Check if a type is a vector (requires length parameter) *)
+let is_vec_type = function TVec _ -> true | _ -> false
+
 let gen_param buf = function
   | DParam (v, None) ->
       Buffer.add_string buf (opencl_param_type v.var_type) ;
       Buffer.add_char buf ' ' ;
-      Buffer.add_string buf v.var_name
+      Buffer.add_string buf v.var_name ;
+      (* Add length parameter for vectors *)
+      if is_vec_type v.var_type then begin
+        Buffer.add_string buf ", int sarek_" ;
+        Buffer.add_string buf v.var_name ;
+        Buffer.add_string buf "_length"
+      end
   | DParam (v, Some arr) ->
+      (* Array with explicit info - always needs length *)
       Buffer.add_string buf (opencl_memspace arr.arr_memspace) ;
       Buffer.add_char buf ' ' ;
       Buffer.add_string buf (opencl_type_of_elttype arr.arr_elttype) ;
       Buffer.add_string buf "* restrict " ;
-      Buffer.add_string buf v.var_name
+      Buffer.add_string buf v.var_name ;
+      Buffer.add_string buf ", int sarek_" ;
+      Buffer.add_string buf v.var_name ;
+      Buffer.add_string buf "_length"
   | DLocal _ | DShared _ -> failwith "gen_param: expected DParam"
 
 let gen_local buf indent = function

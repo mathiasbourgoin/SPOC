@@ -28,6 +28,17 @@
 (executable
  (name test_vector_add_v2)
  (modules test_vector_add_v2)
- (libraries sarek_core sarek_cuda sarek_opencl unix)
+ (libraries spoc sarek sarek.stdlib sarek_core sarek_cuda sarek_opencl sarek_native unix)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33 -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc)))
+
+(executable
+ (name test_v2_comparison)
+ (modules test_v2_comparison)
+ (libraries spoc sarek sarek.stdlib sarek_core sarek_cuda sarek_opencl unix)
+ (preprocess
+  (pps sarek_ppx))
  (flags
   (:standard -w -33 -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc)))

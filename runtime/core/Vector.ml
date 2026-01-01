@@ -109,7 +109,15 @@ module type DEVICE_BUFFER = sig
   val device : Device.t
   val size : int
   val elem_size : int
-  val ptr : nativeint  (** Raw device pointer for kernel args *)
+  val ptr : nativeint  (** Raw device pointer (CUDA) or 0 (OpenCL) *)
+
+  (** {2 Kernel Binding}
+      Backend-specific kernel argument binding. The backend knows how to
+      bind its own buffer type (CUdeviceptr for CUDA, cl_mem for OpenCL). *)
+
+  (** Bind this buffer to a kernel argument. kargs is the backend's kernel
+      args structure (Obj.t for type erasure), idx is the argument index. *)
+  val bind_to_kernel : kargs:Obj.t -> idx:int -> unit
 
   (** {2 Transfer Operations}
       All transfers use raw pointers with byte sizes to avoid
@@ -332,6 +340,28 @@ let set_auto_sync (vec : ('a, 'b) t) (enabled : bool) : unit =
 
 let auto_sync (vec : ('a, 'b) t) : bool = vec.auto_sync
 
+(** {1 Sync Callback (for Transfer module)} *)
+
+(** Callback to sync vector to CPU. Set by Transfer module at init.
+    Takes a vector and syncs it to CPU if needed. Returns true if sync occurred. *)
+type sync_callback = { sync : 'a 'b. ('a, 'b) t -> bool }
+let sync_to_cpu_callback : sync_callback option ref = ref None
+
+(** Register the sync callback (called by Transfer module) *)
+let register_sync_callback (cb : sync_callback) : unit =
+  sync_to_cpu_callback := Some cb
+
+(** Ensure vector data is on CPU before iteration (called once per iterator).
+    Only syncs if auto_sync is enabled and location is Stale_CPU. *)
+let ensure_cpu_sync (type a b) (vec : (a, b) t) : unit =
+  if vec.auto_sync then
+    match vec.location with
+    | Stale_CPU _ -> (
+        match !sync_to_cpu_callback with
+        | Some cb -> ignore (cb.sync vec)
+        | None -> ())
+    | _ -> ()
+
 (** {1 Location Queries} *)
 
 let is_on_cpu (vec : ('a, 'b) t) : bool =
@@ -415,9 +445,10 @@ let init : type a b. (a, b) kind -> int -> (int -> a) -> (a, b) t =
   done ;
   vec
 
-(** Copy vector (CPU data only) *)
+(** Copy vector (CPU data only, auto-syncs source if needed) *)
 let copy : type a b. (a, b) t -> (a, b) t =
  fun vec ->
+  ensure_cpu_sync vec ;
   incr next_id ;
   let host =
     match vec.host with
@@ -582,9 +613,10 @@ let sub_ko_range (vec : ('a, 'b) t) : int option =
 
 (** {2 Iteration} *)
 
-(** Iterate over all elements (CPU-side, ensures data is on CPU) *)
+(** Iterate over all elements (CPU-side, auto-syncs if needed) *)
 let iter : type a b. (a -> unit) -> (a, b) t -> unit =
  fun f vec ->
+  ensure_cpu_sync vec ;
   for i = 0 to vec.length - 1 do
     f (unsafe_get vec i)
   done
@@ -592,6 +624,7 @@ let iter : type a b. (a -> unit) -> (a, b) t -> unit =
 (** Iterate with index *)
 let iteri : type a b. (int -> a -> unit) -> (a, b) t -> unit =
  fun f vec ->
+  ensure_cpu_sync vec ;
   for i = 0 to vec.length - 1 do
     f i (unsafe_get vec i)
   done
@@ -601,6 +634,7 @@ let iteri : type a b. (int -> a -> unit) -> (a, b) t -> unit =
 (** Map function over vector, creating new vector with given kind *)
 let map : type a b c d. (a -> c) -> (c, d) kind -> (a, b) t -> (c, d) t =
  fun f target_kind vec ->
+  ensure_cpu_sync vec ;
   let result = create target_kind vec.length in
   for i = 0 to vec.length - 1 do
     unsafe_set result i (f (unsafe_get vec i))
@@ -610,6 +644,7 @@ let map : type a b c d. (a -> c) -> (c, d) kind -> (a, b) t -> (c, d) t =
 (** Map with index *)
 let mapi : type a b c d. (int -> a -> c) -> (c, d) kind -> (a, b) t -> (c, d) t =
  fun f target_kind vec ->
+  ensure_cpu_sync vec ;
   let result = create target_kind vec.length in
   for i = 0 to vec.length - 1 do
     unsafe_set result i (f i (unsafe_get vec i))
@@ -619,6 +654,7 @@ let mapi : type a b c d. (int -> a -> c) -> (c, d) kind -> (a, b) t -> (c, d) t 
 (** In-place map (same type) *)
 let map_inplace : type a b. (a -> a) -> (a, b) t -> unit =
  fun f vec ->
+  ensure_cpu_sync vec ;
   for i = 0 to vec.length - 1 do
     unsafe_set vec i (f (unsafe_get vec i))
   done
@@ -628,6 +664,7 @@ let map_inplace : type a b. (a -> a) -> (a, b) t -> unit =
 (** Fold left *)
 let fold_left : type a b acc. (acc -> a -> acc) -> acc -> (a, b) t -> acc =
  fun f init vec ->
+  ensure_cpu_sync vec ;
   let acc = ref init in
   for i = 0 to vec.length - 1 do
     acc := f !acc (unsafe_get vec i)
@@ -637,6 +674,7 @@ let fold_left : type a b acc. (acc -> a -> acc) -> acc -> (a, b) t -> acc =
 (** Fold right *)
 let fold_right : type a b acc. (a -> acc -> acc) -> (a, b) t -> acc -> acc =
  fun f vec init ->
+  ensure_cpu_sync vec ;
   let acc = ref init in
   for i = vec.length - 1 downto 0 do
     acc := f (unsafe_get vec i) !acc
@@ -648,6 +686,7 @@ let fold_right : type a b acc. (a -> acc -> acc) -> (a, b) t -> acc -> acc =
 (** Check if all elements satisfy predicate *)
 let for_all : type a b. (a -> bool) -> (a, b) t -> bool =
  fun p vec ->
+  ensure_cpu_sync vec ;
   let result = ref true in
   let i = ref 0 in
   while !result && !i < vec.length do
@@ -659,6 +698,7 @@ let for_all : type a b. (a -> bool) -> (a, b) t -> bool =
 (** Check if any element satisfies predicate *)
 let exists : type a b. (a -> bool) -> (a, b) t -> bool =
  fun p vec ->
+  ensure_cpu_sync vec ;
   let result = ref false in
   let i = ref 0 in
   while not !result && !i < vec.length do
@@ -670,6 +710,7 @@ let exists : type a b. (a -> bool) -> (a, b) t -> bool =
 (** Find first element satisfying predicate *)
 let find : type a b. (a -> bool) -> (a, b) t -> a option =
  fun p vec ->
+  ensure_cpu_sync vec ;
   let result = ref None in
   let i = ref 0 in
   while Option.is_none !result && !i < vec.length do
@@ -682,6 +723,7 @@ let find : type a b. (a -> bool) -> (a, b) t -> a option =
 (** Find index of first element satisfying predicate *)
 let find_index : type a b. (a -> bool) -> (a, b) t -> int option =
  fun p vec ->
+  ensure_cpu_sync vec ;
   let result = ref None in
   let i = ref 0 in
   while Option.is_none !result && !i < vec.length do
@@ -694,35 +736,39 @@ let find_index : type a b. (a -> bool) -> (a, b) t -> int option =
 
 (** Sum elements (requires + operation via fold) *)
 let sum (type a b) ~(zero : a) ~(add : a -> a -> a) (vec : (a, b) t) : a =
-  fold_left add zero vec
+  fold_left add zero vec  (* fold_left already calls ensure_cpu_sync *)
 
 (** Find minimum element *)
 let min_elt (type a b) ~(compare : a -> a -> int) (vec : (a, b) t) : a option =
   if vec.length = 0 then None
-  else
+  else begin
+    ensure_cpu_sync vec ;
     let m = ref (unsafe_get vec 0) in
     for i = 1 to vec.length - 1 do
       let v = unsafe_get vec i in
       if compare v !m < 0 then m := v
     done ;
     Some !m
+  end
 
 (** Find maximum element *)
 let max_elt (type a b) ~(compare : a -> a -> int) (vec : (a, b) t) : a option =
   if vec.length = 0 then None
-  else
+  else begin
+    ensure_cpu_sync vec ;
     let m = ref (unsafe_get vec 0) in
     for i = 1 to vec.length - 1 do
       let v = unsafe_get vec i in
       if compare v !m > 0 then m := v
     done ;
     Some !m
+  end
 
 (** {2 Conversion} *)
 
 (** Convert to OCaml list *)
 let to_list : type a b. (a, b) t -> a list =
- fun vec -> fold_right (fun x acc -> x :: acc) vec []
+ fun vec -> fold_right (fun x acc -> x :: acc) vec []  (* fold_right already syncs *)
 
 (** Create from OCaml list *)
 let of_list : type a b. (a, b) kind -> a list -> (a, b) t =
@@ -736,12 +782,14 @@ let of_list : type a b. (a, b) kind -> a list -> (a, b) t =
 let to_array : type a b. (a, b) t -> a array =
  fun vec ->
   if vec.length = 0 then [||]
-  else
+  else begin
+    ensure_cpu_sync vec ;
     let arr = Array.make vec.length (unsafe_get vec 0) in
     for i = 1 to vec.length - 1 do
       arr.(i) <- unsafe_get vec i
     done ;
     arr
+  end
 
 (** Create from OCaml array *)
 let of_array : type a b. (a, b) kind -> a array -> (a, b) t =
@@ -761,6 +809,7 @@ let blit : type a b.
     invalid_arg "Vector.blit: source range out of bounds" ;
   if dst_off < 0 || dst_off + len > dst.length then
     invalid_arg "Vector.blit: destination range out of bounds" ;
+  ensure_cpu_sync src ;
   for i = 0 to len - 1 do
     unsafe_set dst (dst_off + i) (unsafe_get src (src_off + i))
   done
