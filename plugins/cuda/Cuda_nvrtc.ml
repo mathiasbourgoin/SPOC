@@ -259,14 +259,12 @@ let compile_to_ptx ?(name = "kernel") ?(arch = "compute_70") (source : string) :
 
   let prog_handle = !@prog in
 
-  (* Set up options - use -arch for broader NVRTC compatibility *)
-  let arch_opt = Printf.sprintf "-arch=%s" arch in
-  let opts_list = [arch_opt] in
-  Sarek_core.Log.debugf Sarek_core.Log.Kernel "NVRTC arch=%s options=[%s]" arch (String.concat "; " opts_list) ;
-  let opts = CArray.of_list string opts_list in
+  (* No architecture option - let NVRTC use its default.
+     The target arch is set when loading the module into the CUDA context. *)
+  Sarek_core.Log.debugf Sarek_core.Log.Kernel "NVRTC compiling (default arch, requested %s)" arch ;
 
-  (* Compile *)
-  let compile_result = nvrtcCompileProgram prog_handle 1 (CArray.start opts) in
+  (* Compile with no options *)
+  let compile_result = nvrtcCompileProgram prog_handle 0 (from_voidp string null) in
   Sarek_core.Log.debugf
     Sarek_core.Log.Kernel
     "NVRTC compile result: %s"
