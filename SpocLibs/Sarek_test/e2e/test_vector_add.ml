@@ -1,24 +1,31 @@
 (******************************************************************************
- * E2E test for Sarek PPX
+ * E2E test for Sarek PPX - Vector Add with V2 comparison
  *
  * This test verifies that kernels compiled with the PPX can generate valid
- * GPU code and execute correctly.
+ * GPU code and execute correctly via both SPOC and V2 runtime paths.
  ******************************************************************************)
 
-open Spoc
+(* Module aliases to avoid conflicts *)
+module Spoc_Vector = Spoc.Vector
+module Spoc_Devices = Spoc.Devices
+module Spoc_Mem = Spoc.Mem
+module V2_Device = Sarek_core.Device
+module V2_Vector = Sarek_core.Vector
+module V2_Transfer = Sarek_core.Transfer
+
+(* Force backend registration *)
+let () =
+  Sarek_cuda.Cuda_plugin.init () ;
+  Sarek_cuda.Cuda_plugin_v2.init () ;
+  Sarek_opencl.Opencl_plugin.init () ;
+  Sarek_opencl.Opencl_plugin_v2.init ()
 
 let size = ref 1024
-
 let dev_id = ref 0
-
 let block_size = ref 256
-
 let verify = ref true
-
 let use_interpreter = ref false
-
 let use_native = ref false
-
 let benchmark_all = ref false
 
 let usage () =
@@ -56,162 +63,250 @@ let parse_args () =
     incr i
   done
 
-(* Run kernel on a single device and return time in ms *)
-let run_on_device vector_add _devs dev =
-  (* Create vectors *)
-  let a = Vector.create Vector.float32 !size in
-  let b = Vector.create Vector.float32 !size in
-  let c = Vector.create Vector.float32 !size in
+(* Define kernel - works with both SPOC and V2 *)
+let vector_add =
+  [%kernel
+    fun (a : float32 vector)
+        (b : float32 vector)
+        (c : float32 vector)
+        (n : int) ->
+      let open Std in
+      let tid = global_thread_id in
+      if tid < n then c.(tid) <- a.(tid) +. b.(tid)]
 
-  (* Initialize *)
+(* Run kernel via SPOC path *)
+let run_spoc_on_device dev =
+  let a = Spoc_Vector.create Spoc_Vector.float32 !size in
+  let b = Spoc_Vector.create Spoc_Vector.float32 !size in
+  let c = Spoc_Vector.create Spoc_Vector.float32 !size in
+
   for i = 0 to !size - 1 do
-    Mem.set a i (float_of_int i) ;
-    Mem.set b i (float_of_int (i * 2)) ;
-    Mem.set c i 0.0
+    Spoc_Mem.set a i (float_of_int i) ;
+    Spoc_Mem.set b i (float_of_int (i * 2)) ;
+    Spoc_Mem.set c i 0.0
   done ;
 
-  (* Generate kernel for this device *)
   ignore (Sarek.Kirc.gen vector_add dev) ;
 
-  (* Setup grid/block *)
   let threadsPerBlock =
-    match dev.Devices.specific_info with
-    | Devices.OpenCLInfo clI -> (
-        match clI.Devices.device_type with
-        | Devices.CL_DEVICE_TYPE_CPU -> 1
+    match dev.Spoc_Devices.specific_info with
+    | Spoc_Devices.OpenCLInfo clI -> (
+        match clI.Spoc_Devices.device_type with
+        | Spoc_Devices.CL_DEVICE_TYPE_CPU -> 1
         | _ -> !block_size)
     | _ -> !block_size
   in
   let blocksPerGrid = (!size + threadsPerBlock - 1) / threadsPerBlock in
   let block =
-    {Kernel.blockX = threadsPerBlock; Kernel.blockY = 1; Kernel.blockZ = 1}
+    {Spoc.Kernel.blockX = threadsPerBlock; Spoc.Kernel.blockY = 1; Spoc.Kernel.blockZ = 1}
   in
   let grid =
-    {Kernel.gridX = blocksPerGrid; Kernel.gridY = 1; Kernel.gridZ = 1}
+    {Spoc.Kernel.gridX = blocksPerGrid; Spoc.Kernel.gridY = 1; Spoc.Kernel.gridZ = 1}
   in
 
-  (* Run kernel *)
   let t0 = Unix.gettimeofday () in
   Sarek.Kirc.run vector_add (a, b, c, !size) (block, grid) 0 dev ;
-  Devices.flush dev () ;
+  Spoc_Devices.flush dev () ;
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
 
-  (* Verify results if requested *)
-  let ok =
-    if !verify then begin
-      Mem.to_cpu c () ;
-      Devices.flush dev () ;
-      let errors = ref 0 in
-      for i = 0 to !size - 1 do
-        let expected = float_of_int i +. float_of_int (i * 2) in
-        let got = Mem.get c i in
-        if abs_float (got -. expected) > 0.001 then begin
-          if !errors < 5 then
-            Printf.printf
-              "Mismatch at %d: expected %.2f, got %.2f (a=%.2f, b=%.2f)\n"
-              i
-              expected
-              got
-              (Mem.get a i)
-              (Mem.get b i) ;
-          incr errors
-        end
-      done ;
-      if !errors > 0 then Printf.printf "Total errors: %d\n" !errors ;
-      !errors = 0
-    end
-    else true
+  (* Read back results *)
+  Spoc_Mem.to_cpu c () ;
+  Spoc_Devices.flush dev () ;
+
+  let result = Array.make !size 0.0 in
+  for i = 0 to !size - 1 do
+    result.(i) <- Spoc_Mem.get c i
+  done ;
+  (time_ms, result)
+
+(* Run kernel via V2 path *)
+let run_v2_on_device (dev : V2_Device.t) =
+  let _, kirc = vector_add in
+  let ir =
+    match kirc.Sarek.Kirc.body_v2 with
+    | Some ir -> ir
+    | None -> failwith "Kernel has no V2 IR"
   in
-  (time_ms, ok)
+
+  let a = V2_Vector.create V2_Vector.float32 !size in
+  let b = V2_Vector.create V2_Vector.float32 !size in
+  let c = V2_Vector.create V2_Vector.float32 !size in
+
+  for i = 0 to !size - 1 do
+    V2_Vector.set a i (float_of_int i) ;
+    V2_Vector.set b i (float_of_int (i * 2)) ;
+    V2_Vector.set c i 0.0
+  done ;
+
+  let block_sz = 256 in
+  let grid_sz = (!size + block_sz - 1) / block_sz in
+  let block = Sarek.Execute.dims1d block_sz in
+  let grid = Sarek.Execute.dims1d grid_sz in
+
+  let t0 = Unix.gettimeofday () in
+  Sarek.Execute.run_vectors
+    ~device:dev
+    ~ir
+    ~args:[
+      Sarek.Execute.Vec a;
+      Sarek.Execute.Vec b;
+      Sarek.Execute.Vec c;
+      Sarek.Execute.Int !size;
+    ]
+    ~block
+    ~grid
+    () ;
+  V2_Transfer.flush dev ;
+  let t1 = Unix.gettimeofday () in
+  let time_ms = (t1 -. t0) *. 1000.0 in
+
+  (time_ms, V2_Vector.to_array c)
+
+(* Compute expected results on CPU *)
+let compute_expected () =
+  Array.init !size (fun i -> float_of_int i +. float_of_int (i * 2))
+
+(* Verify results against expected *)
+let verify_results name result expected =
+  let errors = ref 0 in
+  for i = 0 to !size - 1 do
+    let diff = abs_float (result.(i) -. expected.(i)) in
+    if diff > 0.001 then begin
+      if !errors < 5 then
+        Printf.printf "  %s mismatch at %d: expected %.2f, got %.2f\n"
+          name i expected.(i) result.(i) ;
+      incr errors
+    end
+  done ;
+  !errors = 0
 
 let () =
   parse_args () ;
 
-  (* Define kernel inside function to avoid value restriction.
-     Uses global_thread_id to enable Simple1D optimization for native runtime. *)
-  let vector_add =
-    [%kernel
-      fun (a : float32 vector)
-          (b : float32 vector)
-          (c : float32 vector)
-          (n : int) ->
-        let open Std in
-        let tid = global_thread_id in
-        if tid < n then c.(tid) <- a.(tid) +. b.(tid)]
-  in
+  print_endline "=== Vector Add Test (SPOC + V2 Comparison) ===" ;
+  Printf.printf "Size: %d elements\n\n" !size ;
 
-  (* Initialize SPOC and get devices *)
-  let devs =
+  (* Initialize SPOC devices *)
+  let spoc_devs =
     if !use_interpreter then
-      Devices.init ~interpreter:(Some Devices.Sequential) ~native:!use_native ()
-    else Devices.init ~native:!use_native ()
+      Spoc_Devices.init ~interpreter:(Some Spoc_Devices.Sequential) ~native:!use_native ()
+    else Spoc_Devices.init ~native:!use_native ()
   in
-  if Array.length devs = 0 then begin
+  if Array.length spoc_devs = 0 then begin
     print_endline "No GPU devices found" ;
     exit 1
   end ;
 
-  Printf.printf "Available devices:\n" ;
-  Array.iteri
-    (fun i d ->
-      Printf.printf "  [%d] %s\n" i d.Devices.general_info.Devices.name)
-    devs ;
+  (* Initialize V2 devices *)
+  let v2_devs = V2_Device.init ~frameworks:["CUDA"; "OpenCL"] () in
+
+  Printf.printf "Found %d SPOC device(s), %d V2 device(s)\n\n"
+    (Array.length spoc_devs) (Array.length v2_devs) ;
+
+  let expected = compute_expected () in
 
   if !benchmark_all then begin
-    (* Benchmark mode: run on all devices including parallel native *)
-    Printf.printf "\nBenchmark: vector_add with %d elements\n" !size ;
-    Printf.printf "%-40s %12s %10s\n" "Device" "Time (ms)" "Status" ;
-    Printf.printf "%s\n" (String.make 64 '-') ;
-    (* Run on all standard devices *)
-    Array.iter
-      (fun dev ->
-        let name = dev.Devices.general_info.Devices.name in
-        let time_ms, ok = run_on_device vector_add devs dev in
-        let status = if ok then "OK" else "FAIL" in
-        Printf.printf "%-40s %12.4f %10s\n" name time_ms status)
-      devs ;
-    (* Also run on parallel native device *)
-    let parallel_dev = Devices.create_native_device ~parallel:true () in
-    let name = parallel_dev.Devices.general_info.Devices.name in
-    let time_ms, ok = run_on_device vector_add devs parallel_dev in
-    let status = if ok then "OK" else "FAIL" in
-    Printf.printf "%-40s %12.4f %10s\n" name time_ms status ;
-    print_endline "\nBenchmark complete."
+    print_endline (String.make 90 '-') ;
+    Printf.printf "%-35s %10s %10s %10s %10s\n"
+      "Device" "SPOC(ms)" "V2(ms)" "SPOC" "V2" ;
+    print_endline (String.make 90 '-') ;
+
+    let all_ok = ref true in
+
+    (* Test each V2 device *)
+    Array.iter (fun v2_dev ->
+      let name = v2_dev.V2_Device.name in
+      let framework = v2_dev.V2_Device.framework in
+
+      (* Find matching SPOC device *)
+      let spoc_dev_opt =
+        Array.find_opt
+          (fun d -> d.Spoc_Devices.general_info.Spoc_Devices.name = name)
+          spoc_devs
+      in
+
+      let spoc_time, spoc_ok =
+        match spoc_dev_opt with
+        | Some spoc_dev ->
+            let time, result = run_spoc_on_device spoc_dev in
+            let ok = if !verify then verify_results "SPOC" result expected else true in
+            (Printf.sprintf "%.4f" time, if ok then "OK" else "FAIL")
+        | None -> ("-", "SKIP")
+      in
+
+      let v2_time, v2_result = run_v2_on_device v2_dev in
+      let v2_ok = if !verify then verify_results "V2" v2_result expected else true in
+      let v2_status = if v2_ok then "OK" else "FAIL" in
+
+      if not v2_ok then all_ok := false ;
+      if spoc_ok = "FAIL" then all_ok := false ;
+
+      Printf.printf "%-35s %10s %10.4f %10s %10s\n"
+        (Printf.sprintf "%s (%s)" name framework)
+        spoc_time v2_time spoc_ok v2_status
+    ) v2_devs ;
+
+    print_endline (String.make 90 '-') ;
+
+    if !all_ok then
+      print_endline "\n=== All tests PASSED ==="
+    else begin
+      print_endline "\n=== Some tests FAILED ===" ;
+      exit 1
+    end
   end
   else begin
     (* Single device mode *)
     let dev =
       if !use_native then (
-        match Devices.find_native_id devs with
-        | Some id -> devs.(id)
+        match Spoc_Devices.find_native_id spoc_devs with
+        | Some id -> spoc_devs.(id)
         | None ->
             print_endline "No native CPU device found" ;
             exit 1)
       else if !use_interpreter then (
-        match Devices.find_interpreter_id devs with
-        | Some id -> devs.(id)
+        match Spoc_Devices.find_interpreter_id spoc_devs with
+        | Some id -> spoc_devs.(id)
         | None ->
             print_endline "No interpreter device found" ;
             exit 1)
-      else devs.(!dev_id)
+      else spoc_devs.(!dev_id)
     in
-    Printf.printf "Using device: %s\n%!" dev.Devices.general_info.Devices.name ;
-    Printf.printf "Configuration: size=%d, block_size=%d\n%!" !size !block_size ;
+    let dev_name = dev.Spoc_Devices.general_info.Spoc_Devices.name in
+    Printf.printf "Using device: %s\n%!" dev_name ;
 
-    let blocks = (!size + !block_size - 1) / !block_size in
-    Printf.printf
-      "  -> blocks=%d, total_threads=%d\n%!"
-      blocks
-      (blocks * !block_size) ;
+    (* Run SPOC *)
+    Printf.printf "\nRunning SPOC path...\n%!" ;
+    let spoc_time, spoc_result = run_spoc_on_device dev in
+    Printf.printf "  Time: %.4f ms\n%!" spoc_time ;
+    let spoc_ok = if !verify then verify_results "SPOC" spoc_result expected else true in
+    Printf.printf "  Status: %s\n%!" (if spoc_ok then "PASSED" else "FAILED") ;
 
-    Printf.printf "Running kernel...\n%!" ;
-    let time_ms, ok = run_on_device vector_add devs dev in
-    Printf.printf "Kernel time: %.4f ms\n%!" time_ms ;
+    (* Find matching V2 device *)
+    let v2_dev_opt =
+      Array.find_opt (fun d -> d.V2_Device.name = dev_name) v2_devs
+    in
 
-    if !verify then
-      if ok then Printf.printf "Verification PASSED\n%!"
-      else Printf.printf "Verification FAILED\n%!" ;
+    (match v2_dev_opt with
+    | Some v2_dev ->
+        Printf.printf "\nRunning V2 path...\n%!" ;
+        let v2_time, v2_result = run_v2_on_device v2_dev in
+        Printf.printf "  Time: %.4f ms\n%!" v2_time ;
+        let v2_ok = if !verify then verify_results "V2" v2_result expected else true in
+        Printf.printf "  Status: %s\n%!" (if v2_ok then "PASSED" else "FAILED") ;
 
-    print_endline "E2E Test PASSED"
+        if spoc_ok && v2_ok then
+          print_endline "\nE2E Test PASSED (both paths)"
+        else begin
+          print_endline "\nE2E Test FAILED" ;
+          exit 1
+        end
+    | None ->
+        Printf.printf "\nNo matching V2 device found for comparison\n%!" ;
+        if spoc_ok then print_endline "\nE2E Test PASSED (SPOC only)"
+        else begin
+          print_endline "\nE2E Test FAILED" ;
+          exit 1
+        end)
   end

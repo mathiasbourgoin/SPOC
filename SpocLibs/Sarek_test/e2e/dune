@@ -87,6 +87,9 @@
   sarek_geometry
   sarek.visibility
   sarek_ppx.lib
+  sarek_core
+  sarek_cuda
+  sarek_opencl
   test_helpers
   unix)
  (preprocess

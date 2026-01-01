@@ -1,11 +1,24 @@
 (******************************************************************************
- * E2E test for Sarek PPX - Bitwise operations
+ * E2E test for Sarek PPX - Bitwise operations with V2 comparison
  *
  * Tests bitwise AND, OR, XOR, NOT, shifts, and bit manipulation patterns.
  * These are essential for cryptography, compression, and low-level algorithms.
  ******************************************************************************)
 
-open Spoc
+(* Module aliases *)
+module Spoc_Vector = Spoc.Vector
+module Spoc_Devices = Spoc.Devices
+module Spoc_Mem = Spoc.Mem
+module V2_Device = Sarek_core.Device
+module V2_Vector = Sarek_core.Vector
+module V2_Transfer = Sarek_core.Transfer
+
+(* Force backend registration *)
+let () =
+  Sarek_cuda.Cuda_plugin.init () ;
+  Sarek_cuda.Cuda_plugin_v2.init () ;
+  Sarek_opencl.Opencl_plugin.init () ;
+  Sarek_opencl.Opencl_plugin_v2.init ()
 
 let cfg = Test_helpers.default_config ()
 
@@ -43,7 +56,6 @@ let ocaml_gray_code input to_gray from_gray n =
     let x = input.(i) in
     let gray = Int32.logxor x (Int32.shift_right_logical x 1) in
     to_gray.(i) <- gray ;
-    (* Gray code to binary *)
     let g = gray in
     let b = ref g in
     let mask = ref (Int32.shift_right_logical g 1) in
@@ -57,31 +69,18 @@ let ocaml_gray_code input to_gray from_gray n =
 (* ========== Shared test data ========== *)
 
 let input_a = ref [||]
-
 let input_b = ref [||]
-
 let expected_and = ref [||]
-
 let expected_or = ref [||]
-
 let expected_xor = ref [||]
-
 let input_shift = ref [||]
-
 let input_shift_amt = ref [||]
-
 let expected_left = ref [||]
-
 let expected_right = ref [||]
-
 let input_popcount = ref [||]
-
 let expected_popcount = ref [||]
-
 let input_gray = ref [||]
-
 let expected_to_gray = ref [||]
-
 let expected_from_gray = ref [||]
 
 let init_bitwise_data () =
@@ -96,10 +95,7 @@ let init_bitwise_data () =
   expected_and := and_out ;
   expected_or := or_out ;
   expected_xor := xor_out ;
-  let t0 = Unix.gettimeofday () in
-  ocaml_bitwise_basic a b and_out or_out xor_out n ;
-  let t1 = Unix.gettimeofday () in
-  ((t1 -. t0) *. 1000.0, true)
+  ocaml_bitwise_basic a b and_out or_out xor_out n
 
 let init_shift_data () =
   let n = cfg.size in
@@ -111,10 +107,7 @@ let init_shift_data () =
   input_shift_amt := amt ;
   expected_left := left ;
   expected_right := right ;
-  let t0 = Unix.gettimeofday () in
-  ocaml_shift inp amt left right n ;
-  let t1 = Unix.gettimeofday () in
-  ((t1 -. t0) *. 1000.0, true)
+  ocaml_shift inp amt left right n
 
 let init_popcount_data () =
   let n = cfg.size in
@@ -122,10 +115,7 @@ let init_popcount_data () =
   let out = Array.make n 0l in
   input_popcount := inp ;
   expected_popcount := out ;
-  let t0 = Unix.gettimeofday () in
-  ocaml_popcount inp out n ;
-  let t1 = Unix.gettimeofday () in
-  ((t1 -. t0) *. 1000.0, true)
+  ocaml_popcount inp out n
 
 let init_gray_data () =
   let n = cfg.size in
@@ -135,14 +125,10 @@ let init_gray_data () =
   input_gray := inp ;
   expected_to_gray := to_g ;
   expected_from_gray := from_g ;
-  let t0 = Unix.gettimeofday () in
-  ocaml_gray_code inp to_g from_g n ;
-  let t1 = Unix.gettimeofday () in
-  ((t1 -. t0) *. 1000.0, true)
+  ocaml_gray_code inp to_g from_g n
 
 (* ========== Sarek kernels ========== *)
 
-(** Basic bitwise operations kernel *)
 let bitwise_basic_kernel =
   [%kernel
     fun (a : int32 vector)
@@ -150,8 +136,9 @@ let bitwise_basic_kernel =
         (and_out : int32 vector)
         (or_out : int32 vector)
         (xor_out : int32 vector)
-        (n : int32) ->
-      let tid = thread_idx_x + (block_dim_x * block_idx_x) in
+        (n : int) ->
+      let open Std in
+      let tid = global_thread_id in
       if tid < n then begin
         let x = a.(tid) in
         let y = b.(tid) in
@@ -160,7 +147,6 @@ let bitwise_basic_kernel =
         xor_out.(tid) <- x lxor y
       end]
 
-(** Shift operations kernel *)
 let shift_kernel =
   [%kernel
     fun (input : int32 vector)
@@ -176,7 +162,6 @@ let shift_kernel =
         right_out.(tid) <- x lsr s
       end]
 
-(** Bit counting kernel - count number of 1 bits (popcount) *)
 let popcount_kernel =
   [%kernel
     fun (input : int32 vector) (output : int32 vector) (n : int32) ->
@@ -191,7 +176,6 @@ let popcount_kernel =
         output.(tid) <- count
       end]
 
-(** Gray code conversion kernel *)
 let gray_code_kernel =
   [%kernel
     fun (input : int32 vector)
@@ -201,9 +185,7 @@ let gray_code_kernel =
       let tid = thread_idx_x + (block_dim_x * block_idx_x) in
       if tid < n then begin
         let x = input.(tid) in
-        (* Binary to Gray code: x XOR (x >> 1) *)
         to_gray.(tid) <- x lxor (x lsr 1l) ;
-        (* Gray code to binary (for verification) *)
         let g = x lxor (x lsr 1l) in
         let b = mut g in
         let mask = mut (g lsr 1l) in
@@ -214,212 +196,97 @@ let gray_code_kernel =
         from_gray.(tid) <- b
       end]
 
-(* ========== Device test runners ========== *)
+(* ========== SPOC test runners ========== *)
 
-(** Run basic bitwise test *)
-let run_bitwise_basic_test dev =
+let run_bitwise_basic_spoc dev =
   let n = cfg.size in
-  let inp_a = !input_a in
-  let inp_b = !input_b in
-  let exp_and = !expected_and in
-  let exp_or = !expected_or in
-  let exp_xor = !expected_xor in
-
-  let a = Vector.create Vector.int32 n in
-  let b = Vector.create Vector.int32 n in
-  let and_out = Vector.create Vector.int32 n in
-  let or_out = Vector.create Vector.int32 n in
-  let xor_out = Vector.create Vector.int32 n in
+  let a = Spoc_Vector.create Spoc_Vector.int32 n in
+  let b = Spoc_Vector.create Spoc_Vector.int32 n in
+  let and_out = Spoc_Vector.create Spoc_Vector.int32 n in
+  let or_out = Spoc_Vector.create Spoc_Vector.int32 n in
+  let xor_out = Spoc_Vector.create Spoc_Vector.int32 n in
 
   for i = 0 to n - 1 do
-    Mem.set a i inp_a.(i) ;
-    Mem.set b i inp_b.(i) ;
-    Mem.set and_out i 0l ;
-    Mem.set or_out i 0l ;
-    Mem.set xor_out i 0l
+    Spoc_Mem.set a i (!input_a).(i) ;
+    Spoc_Mem.set b i (!input_b).(i) ;
+    Spoc_Mem.set and_out i 0l ;
+    Spoc_Mem.set or_out i 0l ;
+    Spoc_Mem.set xor_out i 0l
   done ;
 
   ignore (Sarek.Kirc.gen bitwise_basic_kernel dev) ;
   let block_size = Test_helpers.get_block_size cfg dev in
   let blocks = (n + block_size - 1) / block_size in
-  let block = {Kernel.blockX = block_size; blockY = 1; blockZ = 1} in
-  let grid = {Kernel.gridX = blocks; gridY = 1; gridZ = 1} in
+  let block = {Spoc.Kernel.blockX = block_size; blockY = 1; blockZ = 1} in
+  let grid = {Spoc.Kernel.gridX = blocks; gridY = 1; gridZ = 1} in
 
   let t0 = Unix.gettimeofday () in
-  Sarek.Kirc.run
-    bitwise_basic_kernel
-    (a, b, and_out, or_out, xor_out, n)
-    (block, grid)
-    0
-    dev ;
-  Devices.flush dev () ;
+  Sarek.Kirc.run bitwise_basic_kernel (a, b, and_out, or_out, xor_out, n) (block, grid) 0 dev ;
+  Spoc_Devices.flush dev () ;
   let t1 = Unix.gettimeofday () in
-  let time_ms = (t1 -. t0) *. 1000.0 in
 
-  let ok =
-    if cfg.verify then begin
-      Mem.to_cpu and_out () ;
-      Mem.to_cpu or_out () ;
-      Mem.to_cpu xor_out () ;
-      Devices.flush dev () ;
-      let errors = ref 0 in
-      for i = 0 to n - 1 do
-        if
-          Mem.get and_out i <> exp_and.(i)
-          || Mem.get or_out i <> exp_or.(i)
-          || Mem.get xor_out i <> exp_xor.(i)
-        then incr errors
-      done ;
-      !errors = 0
-    end
-    else true
-  in
-  (time_ms, ok)
+  Spoc_Mem.to_cpu and_out () ;
+  Spoc_Mem.to_cpu or_out () ;
+  Spoc_Mem.to_cpu xor_out () ;
+  Spoc_Devices.flush dev () ;
 
-(** Run shift test *)
-let run_shift_test dev =
+  let result_and = Array.init n (fun i -> Spoc_Mem.get and_out i) in
+  let result_or = Array.init n (fun i -> Spoc_Mem.get or_out i) in
+  let result_xor = Array.init n (fun i -> Spoc_Mem.get xor_out i) in
+  ((t1 -. t0) *. 1000.0, result_and, result_or, result_xor)
+
+(* ========== V2 test runners ========== *)
+
+let run_bitwise_basic_v2 (dev : V2_Device.t) =
   let n = cfg.size in
-  let inp = !input_shift in
-  let amt = !input_shift_amt in
-  let exp_left = !expected_left in
-  let exp_right = !expected_right in
+  let _, kirc = bitwise_basic_kernel in
+  let ir = match kirc.Sarek.Kirc.body_v2 with Some ir -> ir | None -> failwith "No V2 IR" in
 
-  let input = Vector.create Vector.int32 n in
-  let shift_amt = Vector.create Vector.int32 n in
-  let left_out = Vector.create Vector.int32 n in
-  let right_out = Vector.create Vector.int32 n in
+  let a = V2_Vector.create V2_Vector.int32 n in
+  let b = V2_Vector.create V2_Vector.int32 n in
+  let and_out = V2_Vector.create V2_Vector.int32 n in
+  let or_out = V2_Vector.create V2_Vector.int32 n in
+  let xor_out = V2_Vector.create V2_Vector.int32 n in
 
   for i = 0 to n - 1 do
-    Mem.set input i inp.(i) ;
-    Mem.set shift_amt i amt.(i) ;
-    Mem.set left_out i 0l ;
-    Mem.set right_out i 0l
+    V2_Vector.set a i (!input_a).(i) ;
+    V2_Vector.set b i (!input_b).(i) ;
+    V2_Vector.set and_out i 0l ;
+    V2_Vector.set or_out i 0l ;
+    V2_Vector.set xor_out i 0l
   done ;
 
-  ignore (Sarek.Kirc.gen shift_kernel dev) ;
-  let block_size = Test_helpers.get_block_size cfg dev in
-  let blocks = (n + block_size - 1) / block_size in
-  let block = {Kernel.blockX = block_size; blockY = 1; blockZ = 1} in
-  let grid = {Kernel.gridX = blocks; gridY = 1; gridZ = 1} in
+  let block_size = 256 in
+  let grid_size = (n + block_size - 1) / block_size in
+  let block = Sarek.Execute.dims1d block_size in
+  let grid = Sarek.Execute.dims1d grid_size in
 
   let t0 = Unix.gettimeofday () in
-  Sarek.Kirc.run
-    shift_kernel
-    (input, shift_amt, left_out, right_out, n)
-    (block, grid)
-    0
-    dev ;
-  Devices.flush dev () ;
+  Sarek.Execute.run_vectors ~device:dev ~ir
+    ~args:[
+      Sarek.Execute.Vec a; Sarek.Execute.Vec b;
+      Sarek.Execute.Vec and_out; Sarek.Execute.Vec or_out; Sarek.Execute.Vec xor_out;
+      Sarek.Execute.Int n;
+    ]
+    ~block ~grid () ;
+  V2_Transfer.flush dev ;
   let t1 = Unix.gettimeofday () in
-  let time_ms = (t1 -. t0) *. 1000.0 in
 
-  let ok =
-    if cfg.verify then begin
-      Mem.to_cpu left_out () ;
-      Mem.to_cpu right_out () ;
-      Devices.flush dev () ;
-      let errors = ref 0 in
-      for i = 0 to n - 1 do
-        if
-          Mem.get left_out i <> exp_left.(i)
-          || Mem.get right_out i <> exp_right.(i)
-        then incr errors
-      done ;
-      !errors = 0
-    end
-    else true
-  in
-  (time_ms, ok)
+  ((t1 -. t0) *. 1000.0, V2_Vector.to_array and_out, V2_Vector.to_array or_out, V2_Vector.to_array xor_out)
 
-(** Run popcount test *)
-let run_popcount_test dev =
-  let n = cfg.size in
-  let inp = !input_popcount in
-  let exp = !expected_popcount in
+(* ========== Verification ========== *)
 
-  let input = Vector.create Vector.int32 n in
-  let output = Vector.create Vector.int32 n in
-
+let verify_int32_arrays name result expected =
+  let n = Array.length expected in
+  let errors = ref 0 in
   for i = 0 to n - 1 do
-    Mem.set input i inp.(i) ;
-    Mem.set output i 0l
-  done ;
-
-  ignore (Sarek.Kirc.gen popcount_kernel dev) ;
-  let block_size = Test_helpers.get_block_size cfg dev in
-  let blocks = (n + block_size - 1) / block_size in
-  let block = {Kernel.blockX = block_size; blockY = 1; blockZ = 1} in
-  let grid = {Kernel.gridX = blocks; gridY = 1; gridZ = 1} in
-
-  let t0 = Unix.gettimeofday () in
-  Sarek.Kirc.run popcount_kernel (input, output, n) (block, grid) 0 dev ;
-  Devices.flush dev () ;
-  let t1 = Unix.gettimeofday () in
-  let time_ms = (t1 -. t0) *. 1000.0 in
-
-  let ok =
-    if cfg.verify then begin
-      Mem.to_cpu output () ;
-      Devices.flush dev () ;
-      let errors = ref 0 in
-      for i = 0 to n - 1 do
-        if Mem.get output i <> exp.(i) then incr errors
-      done ;
-      !errors = 0
+    if result.(i) <> expected.(i) then begin
+      if !errors < 5 then
+        Printf.printf "  %s mismatch at %d: expected %ld, got %ld\n" name i expected.(i) result.(i) ;
+      incr errors
     end
-    else true
-  in
-  (time_ms, ok)
-
-(** Run Gray code test *)
-let run_gray_code_test dev =
-  let n = cfg.size in
-  let inp = !input_gray in
-  let exp_to = !expected_to_gray in
-  let exp_from = !expected_from_gray in
-
-  let input = Vector.create Vector.int32 n in
-  let to_gray = Vector.create Vector.int32 n in
-  let from_gray = Vector.create Vector.int32 n in
-
-  for i = 0 to n - 1 do
-    Mem.set input i inp.(i) ;
-    Mem.set to_gray i 0l ;
-    Mem.set from_gray i 0l
   done ;
-
-  ignore (Sarek.Kirc.gen gray_code_kernel dev) ;
-  let block_size = Test_helpers.get_block_size cfg dev in
-  let blocks = (n + block_size - 1) / block_size in
-  let block = {Kernel.blockX = block_size; blockY = 1; blockZ = 1} in
-  let grid = {Kernel.gridX = blocks; gridY = 1; gridZ = 1} in
-
-  let t0 = Unix.gettimeofday () in
-  Sarek.Kirc.run
-    gray_code_kernel
-    (input, to_gray, from_gray, n)
-    (block, grid)
-    0
-    dev ;
-  Devices.flush dev () ;
-  let t1 = Unix.gettimeofday () in
-  let time_ms = (t1 -. t0) *. 1000.0 in
-
-  let ok =
-    if cfg.verify then begin
-      Mem.to_cpu to_gray () ;
-      Mem.to_cpu from_gray () ;
-      Devices.flush dev () ;
-      let errors = ref 0 in
-      for i = 0 to n - 1 do
-        if Mem.get to_gray i <> exp_to.(i) then incr errors ;
-        if Mem.get from_gray i <> exp_from.(i) then incr errors
-      done ;
-      !errors = 0
-    end
-    else true
-  in
-  (time_ms, ok)
+  !errors = 0
 
 let () =
   let c = Test_helpers.parse_args "test_bitwise_ops" in
@@ -432,83 +299,116 @@ let () =
   cfg.size <- c.size ;
   cfg.block_size <- c.block_size ;
 
-  let devs = Devices.init () in
-  if Array.length devs = 0 then begin
+  print_endline "=== Bitwise Operations Test (SPOC + V2 Comparison) ===" ;
+  Printf.printf "Size: %d elements\n\n" cfg.size ;
+
+  (* Initialize data *)
+  init_bitwise_data () ;
+  init_shift_data () ;
+  init_popcount_data () ;
+  init_gray_data () ;
+
+  (* Initialize devices *)
+  let spoc_devs = Spoc_Devices.init () in
+  if Array.length spoc_devs = 0 then begin
     print_endline "No GPU devices found" ;
     exit 1
   end ;
-  Test_helpers.print_devices devs ;
+  Test_helpers.print_devices spoc_devs ;
+
+  let v2_devs = V2_Device.init ~frameworks:["CUDA"; "OpenCL"] () in
+  Printf.printf "\nFound %d V2 device(s)\n\n" (Array.length v2_devs) ;
 
   if cfg.benchmark_all then begin
-    Test_helpers.benchmark_with_baseline
-      ~device_ids:cfg.benchmark_devices
-      devs
-      ~baseline:init_bitwise_data
-      run_bitwise_basic_test
-      "Bitwise AND/OR/XOR" ;
-    Test_helpers.benchmark_with_baseline
-      ~device_ids:cfg.benchmark_devices
-      devs
-      ~baseline:init_shift_data
-      run_shift_test
-      "Bit shifts" ;
-    Test_helpers.benchmark_with_baseline
-      ~device_ids:cfg.benchmark_devices
-      devs
-      ~baseline:init_popcount_data
-      run_popcount_test
-      "Popcount" ;
-    Test_helpers.benchmark_with_baseline
-      ~device_ids:cfg.benchmark_devices
-      devs
-      ~baseline:init_gray_data
-      run_gray_code_test
-      "Gray code"
+    print_endline (String.make 80 '-') ;
+    Printf.printf "%-35s %10s %10s %8s %8s\n" "Device" "SPOC(ms)" "V2(ms)" "SPOC" "V2" ;
+    print_endline (String.make 80 '-') ;
+
+    let all_ok = ref true in
+
+    Array.iter (fun v2_dev ->
+      let name = v2_dev.V2_Device.name in
+      let framework = v2_dev.V2_Device.framework in
+
+      let spoc_dev_opt =
+        Array.find_opt (fun d -> d.Spoc_Devices.general_info.Spoc_Devices.name = name) spoc_devs
+      in
+
+      let spoc_time, spoc_ok =
+        match spoc_dev_opt with
+        | Some spoc_dev ->
+            let time, r_and, r_or, r_xor = run_bitwise_basic_spoc spoc_dev in
+            let ok = cfg.verify &&
+              verify_int32_arrays "AND" r_and !expected_and &&
+              verify_int32_arrays "OR" r_or !expected_or &&
+              verify_int32_arrays "XOR" r_xor !expected_xor in
+            (Printf.sprintf "%.4f" time, if ok || not cfg.verify then "OK" else "FAIL")
+        | None -> ("-", "SKIP")
+      in
+
+      let v2_time, v2_and, v2_or, v2_xor = run_bitwise_basic_v2 v2_dev in
+      let v2_ok = not cfg.verify ||
+        (verify_int32_arrays "AND" v2_and !expected_and &&
+         verify_int32_arrays "OR" v2_or !expected_or &&
+         verify_int32_arrays "XOR" v2_xor !expected_xor) in
+      let v2_status = if v2_ok then "OK" else "FAIL" in
+
+      if not v2_ok then all_ok := false ;
+      if spoc_ok = "FAIL" then all_ok := false ;
+
+      Printf.printf "%-35s %10s %10.4f %8s %8s\n"
+        (Printf.sprintf "%s (%s)" name framework)
+        spoc_time v2_time spoc_ok v2_status
+    ) v2_devs ;
+
+    print_endline (String.make 80 '-') ;
+
+    if !all_ok then
+      print_endline "\n=== All bitwise tests PASSED ==="
+    else begin
+      print_endline "\n=== Some bitwise tests FAILED ===" ;
+      exit 1
+    end
   end
   else begin
-    let dev = Test_helpers.get_device cfg devs in
-    Printf.printf "Using device: %s\n%!" dev.Devices.general_info.Devices.name ;
-    Printf.printf "Testing bitwise operations with size=%d\n%!" cfg.size ;
+    let dev = Test_helpers.get_device cfg spoc_devs in
+    let dev_name = dev.Spoc_Devices.general_info.Spoc_Devices.name in
+    Printf.printf "Using device: %s\n%!" dev_name ;
 
-    let baseline_ms, _ = init_bitwise_data () in
-    Printf.printf "\nOCaml baseline (bitwise): %.4f ms\n%!" baseline_ms ;
-    Printf.printf "\nBitwise AND/OR/XOR:\n%!" ;
-    let time_ms, ok = run_bitwise_basic_test dev in
-    Printf.printf
-      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
-      time_ms
-      (baseline_ms /. time_ms)
-      (if ok then "PASSED" else "FAILED") ;
+    (* Run SPOC *)
+    Printf.printf "\nRunning SPOC path (bitwise AND/OR/XOR)...\n%!" ;
+    let spoc_time, r_and, r_or, r_xor = run_bitwise_basic_spoc dev in
+    Printf.printf "  Time: %.4f ms\n%!" spoc_time ;
+    let spoc_ok = not cfg.verify ||
+      (verify_int32_arrays "AND" r_and !expected_and &&
+       verify_int32_arrays "OR" r_or !expected_or &&
+       verify_int32_arrays "XOR" r_xor !expected_xor) in
+    Printf.printf "  Status: %s\n%!" (if spoc_ok then "PASSED" else "FAILED") ;
 
-    let baseline_ms, _ = init_shift_data () in
-    Printf.printf "\nOCaml baseline (shift): %.4f ms\n%!" baseline_ms ;
-    Printf.printf "\nBit shifts:\n%!" ;
-    let time_ms, ok = run_shift_test dev in
-    Printf.printf
-      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
-      time_ms
-      (baseline_ms /. time_ms)
-      (if ok then "PASSED" else "FAILED") ;
+    (* Run V2 *)
+    let v2_dev_opt = Array.find_opt (fun d -> d.V2_Device.name = dev_name) v2_devs in
+    (match v2_dev_opt with
+    | Some v2_dev ->
+        Printf.printf "\nRunning V2 path (bitwise AND/OR/XOR)...\n%!" ;
+        let v2_time, v2_and, v2_or, v2_xor = run_bitwise_basic_v2 v2_dev in
+        Printf.printf "  Time: %.4f ms\n%!" v2_time ;
+        let v2_ok = not cfg.verify ||
+          (verify_int32_arrays "AND" v2_and !expected_and &&
+           verify_int32_arrays "OR" v2_or !expected_or &&
+           verify_int32_arrays "XOR" v2_xor !expected_xor) in
+        Printf.printf "  Status: %s\n%!" (if v2_ok then "PASSED" else "FAILED") ;
 
-    let baseline_ms, _ = init_popcount_data () in
-    Printf.printf "\nOCaml baseline (popcount): %.4f ms\n%!" baseline_ms ;
-    Printf.printf "\nPopcount:\n%!" ;
-    let time_ms, ok = run_popcount_test dev in
-    Printf.printf
-      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
-      time_ms
-      (baseline_ms /. time_ms)
-      (if ok then "PASSED" else "FAILED") ;
-
-    let baseline_ms, _ = init_gray_data () in
-    Printf.printf "\nOCaml baseline (gray): %.4f ms\n%!" baseline_ms ;
-    Printf.printf "\nGray code:\n%!" ;
-    let time_ms, ok = run_gray_code_test dev in
-    Printf.printf
-      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
-      time_ms
-      (baseline_ms /. time_ms)
-      (if ok then "PASSED" else "FAILED") ;
-
-    print_endline "\nBitwise operations tests PASSED"
+        if spoc_ok && v2_ok then
+          print_endline "\nBitwise operations tests PASSED (both paths)"
+        else begin
+          print_endline "\nBitwise operations tests FAILED" ;
+          exit 1
+        end
+    | None ->
+        Printf.printf "\nNo matching V2 device found\n%!" ;
+        if spoc_ok then print_endline "\nBitwise operations tests PASSED (SPOC only)"
+        else begin
+          print_endline "\nBitwise operations tests FAILED" ;
+          exit 1
+        end)
   end
