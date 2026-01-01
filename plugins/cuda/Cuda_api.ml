@@ -295,12 +295,18 @@ module Kernel = struct
       minor
       device.Device.id ;
     let ptx = Cuda_nvrtc.compile_to_ptx ~name ~arch source in
-    Sarek_core.Log.debug Sarek_core.Log.Kernel "CUDA PTX generated successfully" ;
+    Sarek_core.Log.debugf Sarek_core.Log.Kernel "CUDA PTX generated (%d bytes)" (String.length ptx) ;
 
     (* Load module from PTX *)
     let module_ = allocate cu_module_ptr (from_voidp cu_module null) in
     let ptx_ptr = CArray.of_string ptx |> CArray.start |> to_voidp in
-    check "cuModuleLoadData" (cuModuleLoadData module_ ptx_ptr) ;
+    let load_result = cuModuleLoadData module_ ptx_ptr in
+    (match load_result with
+     | CUDA_SUCCESS -> ()
+     | err ->
+         Sarek_core.Log.errorf Sarek_core.Log.Kernel "cuModuleLoadData failed: %s"
+           (string_of_cu_result err) ;
+         raise (Cuda_error (err, "cuModuleLoadData"))) ;
 
     (* Get function *)
     let func = allocate cu_function_ptr (from_voidp cu_function null) in
