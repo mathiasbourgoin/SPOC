@@ -86,6 +86,14 @@ let set_arg_float64 (args : args) (idx : int) (v : float) : unit =
       let a : B.Kernel.args = Obj.obj args.handle in
       B.Kernel.set_arg_float64 a idx v
 
+(** Set raw device pointer argument (CUDA only) *)
+let set_arg_ptr (args : args) (idx : int) (ptr : nativeint) : unit =
+  match Framework_registry.find_backend args.device.framework with
+  | None -> ()
+  | Some (module B : Framework_sig.BACKEND) ->
+      let a : B.Kernel.args = Obj.obj args.handle in
+      B.Kernel.set_arg_ptr a idx ptr
+
 (** Launch a kernel *)
 let launch (kernel : t) ~(args : args) ~(grid : Framework_sig.dims)
     ~(block : Framework_sig.dims) ?(shared_mem = 0) () : unit =

@@ -1,11 +1,11 @@
 (******************************************************************************
  * E2E test for Sarek Runtime V2
  *
- * This test demonstrates the new V2 runtime API:
+ * This test demonstrates the new V2 runtime API with actual GPU execution:
  * - Vector module with location tracking
  * - Transfer module for explicit data movement
+ * - Kernel module with set_arg_ptr for device pointers
  * - Profiling for timing
- * - Error module for structured errors
  ******************************************************************************)
 
 (* Force plugin initialization *)
@@ -17,7 +17,7 @@ open Sarek_core
 let size = 1024
 
 let () =
-  print_endline "=== Runtime V2 Vector Add Test ===" ;
+  print_endline "=== Runtime V2 Vector Add Test (GPU Execution) ===" ;
 
   (* Step 1: Initialize devices using V2 Device module *)
   print_endline "\n[1] Initializing devices..." ;
@@ -68,7 +68,6 @@ let () =
   (* Step 5: Define and compile kernel *)
   print_endline "\n[5] Compiling kernel..." ;
 
-  (* For now, use inline source - later will integrate with Sarek PPX *)
   let cuda_source = {|
 extern "C" __global__ void vector_add(float *a, float *b, float *c, int n) {
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -88,12 +87,13 @@ __kernel void vector_add(__global float *a, __global float *b,
 }
 |} in
 
-  let source = if Device.is_cuda dev then cuda_source else opencl_source in
-  let _kernel = Kernel.compile dev ~name:"vector_add" ~source in
+  let is_cuda = Device.is_cuda dev in
+  let source = if is_cuda then cuda_source else opencl_source in
+  let kernel = Kernel.compile dev ~name:"vector_add" ~source in
   print_endline "Kernel compiled" ;
 
   (* Step 6: Setup arguments and launch *)
-  print_endline "\n[6] Launching kernel..." ;
+  print_endline "\n[6] Setting up kernel arguments..." ;
   let args = Kernel.create_args dev in
 
   (* Get device buffer pointers *)
@@ -103,44 +103,53 @@ __kernel void vector_add(__global float *a, __global float *b,
     | None -> failwith "No device buffer"
   in
 
-  (* Set arguments - this is low-level, would be wrapped in Sarek *)
-  (* For now we use the raw Memory API *)
-  let buf_a =
-    match Vector.get_buffer a dev with
-    | Some b -> b
-    | None -> failwith "No buffer"
-  in
-  let buf_b =
-    match Vector.get_buffer b dev with
-    | Some b -> b
-    | None -> failwith "No buffer"
-  in
-  let buf_c =
-    match Vector.get_buffer c dev with
-    | Some b -> b
-    | None -> failwith "No buffer"
-  in
+  let ptr_a = get_ptr a in
+  let ptr_b = get_ptr b in
+  let ptr_c = get_ptr c in
 
-  (* Note: Kernel.set_arg_buffer expects Memory.buffer but we have Vector.device_buffer
-     This is a gap in the current design - we need to bridge this.
-     For now, let's use the device ptr directly via a lower-level approach *)
-  ignore (buf_a, buf_b, buf_c, get_ptr, args) ;
+  Printf.printf "ptr_a = 0x%Lx\n" (Int64.of_nativeint ptr_a) ;
+  Printf.printf "ptr_b = 0x%Lx\n" (Int64.of_nativeint ptr_b) ;
+  Printf.printf "ptr_c = 0x%Lx\n" (Int64.of_nativeint ptr_c) ;
 
-  (* For demonstration, show that we can still use the old Runtime for execution *)
-  print_endline "Note: Full kernel execution requires bridging Vector buffers to Kernel args" ;
-  print_endline "This will be completed when V2 Kernel module is updated" ;
+  if is_cuda then begin
+    (* CUDA: Use raw device pointers *)
+    Kernel.set_arg_ptr args 0 ptr_a ;
+    Kernel.set_arg_ptr args 1 ptr_b ;
+    Kernel.set_arg_ptr args 2 ptr_c ;
+    Kernel.set_arg_int32 args 3 (Int32.of_int size) ;
 
-  (* Step 7: Simulate computation on CPU for verification demo *)
-  print_endline "\n[7] Simulating computation (CPU fallback)..." ;
-  (* Sync back to CPU first *)
-  Transfer.to_cpu a ;
-  Transfer.to_cpu b ;
-  for i = 0 to size - 1 do
-    Vector.set c i (Vector.get a i +. Vector.get b i)
-  done ;
+    print_endline "\n[7] Launching kernel on GPU..." ;
+    let block_size = 256 in
+    let grid_size = (size + block_size - 1) / block_size in
+    let grid = {Sarek_framework.Framework_sig.x = grid_size; y = 1; z = 1} in
+    let block = {Sarek_framework.Framework_sig.x = block_size; y = 1; z = 1} in
 
-  (* Step 8: Verify results *)
-  print_endline "\n[8] Verifying results..." ;
+    let (), gpu_time = Profiling.cpu_timed (fun () ->
+      Kernel.launch kernel ~args ~grid ~block () ;
+      Transfer.flush dev
+    ) in
+    Printf.printf "GPU kernel + sync time: %.3f ms\n" gpu_time ;
+
+    (* Step 8: Transfer result back to CPU *)
+    print_endline "\n[8] Transferring result to CPU..." ;
+    Transfer.to_cpu c ;
+    Printf.printf "After transfer back: %s\n" (Vector.to_string c) ;
+  end else begin
+    (* OpenCL: Fallback to CPU computation since OpenCL doesn't support raw ptrs *)
+    print_endline "\n[7] OpenCL detected - using CPU fallback..." ;
+    Transfer.to_cpu a ;
+    Transfer.to_cpu b ;
+    for i = 0 to size - 1 do
+      Vector.set c i (Vector.get a i +. Vector.get b i)
+    done
+  end ;
+
+  (* Step 9: Verify results *)
+  print_endline "\n[9] Verifying results..." ;
+  Printf.printf "c[0..4] = [%.0f, %.0f, %.0f, %.0f, %.0f]\n"
+    (Vector.get c 0) (Vector.get c 1) (Vector.get c 2)
+    (Vector.get c 3) (Vector.get c 4) ;
+
   let errors = ref 0 in
   for i = 0 to size - 1 do
     let expected = float_of_int i +. float_of_int (i * 2) in
@@ -158,20 +167,13 @@ __kernel void vector_add(__global float *a, __global float *b,
     exit 1
   end ;
 
-  (* Step 9: Cleanup *)
-  print_endline "\n[9] Cleanup..." ;
+  print_endline "All values correct!" ;
+
+  (* Step 10: Cleanup *)
+  print_endline "\n[10] Cleanup..." ;
   Transfer.free_all_buffers a ;
   Transfer.free_all_buffers b ;
   Transfer.free_all_buffers c ;
   Printf.printf "Final state: %s\n" (Vector.to_string a) ;
-
-  (* Step 10: Demo profiling *)
-  print_endline "\n[10] Profiling demo..." ;
-  let result, time = Profiling.cpu_timed (fun () ->
-    let v = Vector.create Vector.float32 10000 in
-    Vector.fill v 42.0 ;
-    Vector.fold_left ( +. ) 0.0 v
-  ) in
-  Printf.printf "Created and summed 10000 floats: sum=%.0f, time=%.3fms\n" result time ;
 
   print_endline "\n=== Runtime V2 Test PASSED ==="

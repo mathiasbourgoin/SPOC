@@ -111,6 +111,8 @@ module Opencl : sig
 
     val set_arg_float64 : args -> int -> float -> unit
 
+    val set_arg_ptr : args -> int -> nativeint -> unit
+
     val launch :
       t ->
       args:args ->
@@ -347,6 +349,9 @@ end = struct
 
     let set_arg_float64 args idx value =
       args := ArgFloat64 {value; idx} :: !args
+
+    let set_arg_ptr _args _idx _ptr =
+      failwith "OpenCL does not support raw pointer arguments"
 
     let launch kernel ~args ~grid ~block ~shared_mem:_ ~stream =
       let open Framework_sig in

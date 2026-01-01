@@ -168,6 +168,8 @@ module type BACKEND = sig
 
     val set_arg_float64 : args -> int -> float -> unit
 
+    val set_arg_ptr : args -> int -> nativeint -> unit
+
     val launch :
       t ->
       args:args ->

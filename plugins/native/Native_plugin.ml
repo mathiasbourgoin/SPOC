@@ -127,6 +127,8 @@ module Native : sig
 
     val set_arg_float64 : args -> int -> float -> unit
 
+    val set_arg_ptr : args -> int -> nativeint -> unit
+
     val launch :
       t ->
       args:args ->
@@ -348,6 +350,9 @@ end = struct
     let set_arg_float32 args _idx v = args.list <- ArgFloat32 v :: args.list
 
     let set_arg_float64 args _idx v = args.list <- ArgFloat64 v :: args.list
+
+    let set_arg_ptr _args _idx _ptr =
+      failwith "Native backend does not support raw pointer arguments"
 
     (** Set a raw OCaml value argument (for SPOC Vector/customarray). This
         passes the value directly to the kernel without unwrapping. *)

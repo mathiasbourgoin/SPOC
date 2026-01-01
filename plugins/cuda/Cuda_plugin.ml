@@ -111,6 +111,8 @@ module Cuda : sig
 
     val set_arg_float64 : args -> int -> float -> unit
 
+    val set_arg_ptr : args -> int -> nativeint -> unit
+
     val launch :
       t ->
       args:args ->
@@ -247,6 +249,9 @@ end = struct
 
     let set_arg_float64 args _idx v =
       args := !args @ [Cuda_api.Kernel.ArgFloat64 v]
+
+    let set_arg_ptr args _idx ptr =
+      args := !args @ [Cuda_api.Kernel.ArgPtr ptr]
 
     let launch kernel ~args ~grid ~block ~shared_mem ~stream =
       let open Framework_sig in
