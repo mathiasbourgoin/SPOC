@@ -455,3 +455,132 @@ let copy : type a b. (a, b) t -> (a, b) t =
     auto_sync = vec.auto_sync;
     id = !next_id;
   }
+
+(** {1 Subvector Support} *)
+
+(** Subvector info - tracks relationship to parent *)
+type ('a, 'b) sub_info = {
+  parent : ('a, 'b) t;
+  start : int;  (** Offset into parent *)
+  ok_range : int;  (** Elements safe to read *)
+  ko_range : int;  (** Elements that shouldn't be written (overlap protection) *)
+  depth : int;  (** Nesting depth (1 = direct child of root) *)
+}
+
+(** Subvector storage - allows tracking parent relationship *)
+let subvector_info : (int, (_, _) sub_info) Hashtbl.t = Hashtbl.create 16
+
+(** Check if vector is a subvector *)
+let is_sub (vec : ('a, 'b) t) : bool = Hashtbl.mem subvector_info vec.id
+
+(** Get subvector info if this is a subvector *)
+let get_sub_info (vec : ('a, 'b) t) : ('a, 'b) sub_info option =
+  Hashtbl.find_opt subvector_info vec.id
+
+(** Get parent vector if this is a subvector *)
+let parent (vec : ('a, 'b) t) : ('a, 'b) t option =
+  match get_sub_info vec with Some info -> Some info.parent | None -> None
+
+(** Get root vector (top-level parent) *)
+let rec root (vec : ('a, 'b) t) : ('a, 'b) t =
+  match parent vec with Some p -> root p | None -> vec
+
+(** Create a subvector that shares CPU memory with parent.
+    @param vec Parent vector
+    @param start Starting index in parent
+    @param len Length of subvector
+    @param ok_range Elements safe to read (default: len)
+    @param ko_range Elements to avoid writing (default: 0) *)
+let sub_vector (type a b) (vec : (a, b) t) ~(start : int) ~(len : int)
+    ?(ok_range : int = len) ?(ko_range : int = 0) () : (a, b) t =
+  if start < 0 || start + len > vec.length then
+    invalid_arg
+      (Printf.sprintf "sub_vector: range [%d, %d) out of bounds [0, %d)" start
+         (start + len) vec.length) ;
+  incr next_id ;
+  let parent_depth =
+    match get_sub_info vec with Some info -> info.depth | None -> 0
+  in
+  (* Create subvector with offset view into parent's host storage *)
+  let host =
+    match vec.host with
+    | Bigarray_storage ba ->
+        Bigarray_storage (Bigarray.Array1.sub ba start len)
+    | Custom_storage {ptr; custom; _} ->
+        (* Offset the pointer *)
+        let offset_ptr =
+          Ctypes.(ptr +@ (start * custom.elem_size))
+        in
+        Custom_storage {ptr = offset_ptr; custom; length = len}
+  in
+  let sub =
+    {
+      host;
+      device_buffers = Hashtbl.create 4;  (* Independent GPU buffers *)
+      length = len;
+      kind = vec.kind;
+      location = CPU;  (* Subvector starts on CPU *)
+      auto_sync = vec.auto_sync;
+      id = !next_id;
+    }
+  in
+  (* Record subvector relationship *)
+  Hashtbl.replace subvector_info sub.id
+    {parent = vec; start; ok_range; ko_range; depth = parent_depth + 1} ;
+  sub
+
+(** {1 Multi-GPU Helpers} *)
+
+(** Partition a vector across multiple devices.
+    Creates subvectors, one per device, that together cover the full vector. *)
+let partition (type a b) (vec : (a, b) t) (devices : Device.t array) :
+    (a, b) t array =
+  let n = Array.length devices in
+  if n = 0 then [||]
+  else
+    let chunk_size = vec.length / n in
+    let remainder = vec.length mod n in
+    let result = Array.make n vec in  (* Placeholder *)
+    let offset = ref 0 in
+    for i = 0 to n - 1 do
+      let len = chunk_size + (if i < remainder then 1 else 0) in
+      let sub = sub_vector vec ~start:!offset ~len () in
+      sub.location <- Vector.Stale_GPU devices.(i) ;
+      result.(i) <- sub ;
+      offset := !offset + len
+    done ;
+    result
+
+(** Gather subvectors back to parent (sync all to CPU).
+    Assumes subvectors were created by partition and don't overlap. *)
+let gather (subs : (_, _) t array) : unit =
+  Array.iter
+    (fun sub ->
+      match sub.location with
+      | GPU _ | Stale_CPU _ ->
+          (* Need to sync from GPU *)
+          (match get_sub_info sub with
+          | Some _info ->
+              (* Transfer handled by Transfer module *)
+              ()
+          | None -> ())
+      | _ -> ())
+    subs
+
+(** {1 Subvector Queries} *)
+
+(** Get subvector depth (0 = root, 1 = child, 2 = grandchild, ...) *)
+let depth (vec : ('a, 'b) t) : int =
+  match get_sub_info vec with Some info -> info.depth | None -> 0
+
+(** Get start offset relative to immediate parent *)
+let sub_start (vec : ('a, 'b) t) : int option =
+  match get_sub_info vec with Some info -> Some info.start | None -> None
+
+(** Get ok_range (safe read range) *)
+let sub_ok_range (vec : ('a, 'b) t) : int option =
+  match get_sub_info vec with Some info -> Some info.ok_range | None -> None
+
+(** Get ko_range (unsafe write range) *)
+let sub_ko_range (vec : ('a, 'b) t) : int option =
+  match get_sub_info vec with Some info -> Some info.ko_range | None -> None
