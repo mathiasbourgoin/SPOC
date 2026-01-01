@@ -361,13 +361,21 @@ and lower_stmt (state : state) (te : texpr) : Ir.stmt =
       | TEVar (name, _id) ->
           Ir.SAssign
             (Ir.LArrayElem (name, lower_expr state idx), lower_expr state value)
-      | _ -> failwith "lower_stmt: VecSet on non-variable")
+      | _ ->
+          (* Complex base expression - use LArrayElemExpr *)
+          Ir.SAssign
+            ( Ir.LArrayElemExpr (lower_expr state vec, lower_expr state idx),
+              lower_expr state value ))
   | TEArrSet (arr, idx, value) -> (
       match arr.te with
       | TEVar (name, _id) ->
           Ir.SAssign
             (Ir.LArrayElem (name, lower_expr state idx), lower_expr state value)
-      | _ -> failwith "lower_stmt: ArrSet on non-variable")
+      | _ ->
+          (* Complex base expression - use LArrayElemExpr *)
+          Ir.SAssign
+            ( Ir.LArrayElemExpr (lower_expr state arr, lower_expr state idx),
+              lower_expr state value ))
   | TEFieldSet (r, field, _, value) ->
       let lv = lower_lvalue state r field in
       Ir.SAssign (lv, lower_expr state value)
