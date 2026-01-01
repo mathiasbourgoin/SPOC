@@ -729,7 +729,8 @@ let rec of_k_ext : Kirc_Ast.k_ext -> kernel = function
       let params' = collect_params params in
       let body' = stmt_of_k_ext body in
       {
-        kern_name = "sarek_kern";  (* "kernel" is reserved in OpenCL *)
+        kern_name = "sarek_kern";
+        (* "kernel" is reserved in OpenCL *)
         kern_params = params';
         kern_locals = [];
         kern_body = body';

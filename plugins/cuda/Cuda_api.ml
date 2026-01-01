@@ -111,23 +111,30 @@ module Device = struct
       "cuCtxCreate"
       (cuCtxCreate ctx (Unsigned.UInt.of_int cu_ctx_sched_auto) handle) ;
 
-    let dev = {
-      id = idx;
-      handle;
-      context = !@ctx;
-      name;
-      total_mem;
-      compute_capability = (major, minor);
-      max_threads_per_block = max_threads;
-      max_block_dims = (max_block_x, max_block_y, max_block_z);
-      max_grid_dims = (max_grid_x, max_grid_y, max_grid_z);
-      shared_mem_per_block = shared_mem;
-      warp_size = warp;
-      multiprocessor_count = mp_count;
-    } in
-    Sarek_core.Log.debugf Sarek_core.Log.Device
+    let dev =
+      {
+        id = idx;
+        handle;
+        context = !@ctx;
+        name;
+        total_mem;
+        compute_capability = (major, minor);
+        max_threads_per_block = max_threads;
+        max_block_dims = (max_block_x, max_block_y, max_block_z);
+        max_grid_dims = (max_grid_x, max_grid_y, max_grid_z);
+        shared_mem_per_block = shared_mem;
+        warp_size = warp;
+        multiprocessor_count = mp_count;
+      }
+    in
+    Sarek_core.Log.debugf
+      Sarek_core.Log.Device
       "CUDA device %d: %s (cc %d.%d, %Ld MB)"
-      idx name major minor (Int64.div total_mem (Int64.of_int (1024 * 1024))) ;
+      idx
+      name
+      major
+      minor
+      (Int64.div total_mem (Int64.of_int (1024 * 1024))) ;
     dev
 
   let set_current dev = check "cuCtxSetCurrent" (cuCtxSetCurrent dev.context)
@@ -279,14 +286,15 @@ module Kernel = struct
     (* Compile to PTX using NVRTC *)
     let major, minor = device.Device.compute_capability in
     let arch = Printf.sprintf "compute_%d%d" major minor in
-    (* Force output for debugging *)
-    Printf.eprintf "[CUDA] compile kernel='%s' arch=%s (cc %d.%d) device=%d\n%!"
-      name arch major minor device.Device.id ;
-    Sarek_core.Log.debugf Sarek_core.Log.Kernel
+    Sarek_core.Log.debugf
+      Sarek_core.Log.Kernel
       "CUDA compile: kernel='%s' arch=%s (cc %d.%d) device=%d"
-      name arch major minor device.Device.id ;
+      name
+      arch
+      major
+      minor
+      device.Device.id ;
     let ptx = Cuda_nvrtc.compile_to_ptx ~name ~arch source in
-    Printf.eprintf "[CUDA] PTX generated successfully\n%!" ;
     Sarek_core.Log.debug Sarek_core.Log.Kernel "CUDA PTX generated successfully" ;
 
     (* Load module from PTX *)
@@ -302,7 +310,12 @@ module Kernel = struct
 
   let compile_cached device ~name ~source =
     (* Cache key must include device ID - modules are device-specific *)
-    let key = Printf.sprintf "%d:%s" device.Device.id (Digest.string source |> Digest.to_hex) in
+    let key =
+      Printf.sprintf
+        "%d:%s"
+        device.Device.id
+        (Digest.string source |> Digest.to_hex)
+    in
     match Hashtbl.find_opt cache key with
     | Some k -> k
     | None ->

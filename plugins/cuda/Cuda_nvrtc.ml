@@ -259,20 +259,20 @@ let compile_to_ptx ?(name = "kernel") ?(arch = "compute_70") (source : string) :
 
   let prog_handle = !@prog in
 
-  (* Set up options *)
+  (* Set up options - just the architecture, our code uses explicit __global__ *)
   let arch_opt = Printf.sprintf "--gpu-architecture=%s" arch in
-  let opts_list = [arch_opt; "-default-device"] in
-  (* Force output to stderr for debugging *)
-  Printf.eprintf "[NVRTC] arch=%s options=[%s]\n%!" arch (String.concat "; " opts_list) ;
-  Printf.eprintf "[NVRTC] source:\n%s\n%!" source ;
-  Sarek_core.Log.debugf Sarek_core.Log.Kernel "NVRTC options: [%s]"
+  let opts_list = [arch_opt] in
+  Sarek_core.Log.debugf
+    Sarek_core.Log.Kernel
+    "NVRTC options: [%s]"
     (String.concat "; " opts_list) ;
   let opts = CArray.of_list string opts_list in
 
   (* Compile *)
-  let compile_result = nvrtcCompileProgram prog_handle 2 (CArray.start opts) in
-  Printf.eprintf "[NVRTC] compile result: %s\n%!" (string_of_nvrtc_result compile_result) ;
-  Sarek_core.Log.debugf Sarek_core.Log.Kernel "NVRTC compile result: %s"
+  let compile_result = nvrtcCompileProgram prog_handle 1 (CArray.start opts) in
+  Sarek_core.Log.debugf
+    Sarek_core.Log.Kernel
+    "NVRTC compile result: %s"
     (string_of_nvrtc_result compile_result) ;
 
   (* Get log regardless of result *)
@@ -310,7 +310,9 @@ let compile_to_ptx ?(name = "kernel") ?(arch = "compute_70") (source : string) :
       let _ = nvrtcDestroyProgram prog in
       failwith msg
   | err ->
-      Sarek_core.Log.errorf Sarek_core.Log.Kernel "NVRTC error: %s"
+      Sarek_core.Log.errorf
+        Sarek_core.Log.Kernel
+        "NVRTC error: %s"
         (string_of_nvrtc_result err) ;
       let _ = nvrtcDestroyProgram prog in
       raise (Nvrtc_error (err, "nvrtcCompileProgram"))) ;

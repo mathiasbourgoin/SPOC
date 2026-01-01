@@ -51,9 +51,7 @@ let run_on_device dev =
   let block =
     {Kernel.blockX = block_size; Kernel.blockY = 1; Kernel.blockZ = 1}
   in
-  let grid =
-    {Kernel.gridX = grid_size; Kernel.gridY = 1; Kernel.gridZ = 1}
-  in
+  let grid = {Kernel.gridX = grid_size; Kernel.gridY = 1; Kernel.gridZ = 1} in
 
   (* Run kernel *)
   let t0 = Unix.gettimeofday () in
@@ -71,7 +69,11 @@ let run_on_device dev =
     let got = Mem.get c i in
     if abs_float (got -. expected) > 0.001 then begin
       if !errors < 5 then
-        Printf.printf "  Mismatch at %d: expected %.2f, got %.2f\n" i expected got ;
+        Printf.printf
+          "  Mismatch at %d: expected %.2f, got %.2f\n"
+          i
+          expected
+          got ;
       incr errors
     end
   done ;
@@ -90,7 +92,8 @@ let () =
 
   Printf.printf "Found %d device(s):\n" (Array.length devs) ;
   Array.iteri
-    (fun i d -> Printf.printf "  [%d] %s\n" i d.Devices.general_info.Devices.name)
+    (fun i d ->
+      Printf.printf "  [%d] %s\n" i d.Devices.general_info.Devices.name)
     devs ;
 
   print_endline "\nRunning vector_add on each device:" ;
@@ -110,8 +113,7 @@ let () =
 
   print_endline (String.make 70 '-') ;
 
-  if !all_ok then
-    print_endline "\n=== All devices PASSED ==="
+  if !all_ok then print_endline "\n=== All devices PASSED ==="
   else begin
     print_endline "\n=== Some devices FAILED ===" ;
     exit 1

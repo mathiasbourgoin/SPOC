@@ -28,7 +28,15 @@
 (executable
  (name test_vector_add_v2)
  (modules test_vector_add_v2)
- (libraries spoc sarek sarek.stdlib sarek_core sarek_cuda sarek_opencl sarek_native unix)
+ (libraries
+  spoc
+  sarek
+  sarek.stdlib
+  sarek_core
+  sarek_cuda
+  sarek_opencl
+  sarek_native
+  unix)
  (preprocess
   (pps sarek_ppx))
  (flags

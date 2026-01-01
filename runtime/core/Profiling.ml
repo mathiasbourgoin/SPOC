@@ -12,7 +12,9 @@ open Sarek_framework
 let enabled = ref false
 
 let enable () = enabled := true
+
 let disable () = enabled := false
+
 let is_enabled () = !enabled
 
 (** {1 Event-Based Timing} *)
@@ -20,8 +22,11 @@ let is_enabled () = !enabled
 (** Event handle - packages backend event with operations *)
 module type EVENT = sig
   val device : Device.t
+
   val record : unit -> unit
+
   val synchronize : unit -> unit
+
   val destroy : unit -> unit
 end
 
@@ -36,8 +41,11 @@ let create_event (dev : Device.t) : event =
       let default_stream = B.Stream.default (B.Device.get dev.backend_id) in
       (module struct
         let device = dev
+
         let record () = B.Event.record e default_stream
+
         let synchronize () = B.Event.synchronize e
+
         let destroy () = B.Event.destroy e
       end : EVENT)
 
@@ -61,9 +69,13 @@ let destroy_event (e : event) =
 (** Event pair for timing - packages start/stop with backend *)
 module type EVENT_PAIR = sig
   val device : Device.t
+
   val start : unit -> unit
+
   val stop : unit -> unit
+
   val elapsed_ms : unit -> float
+
   val destroy : unit -> unit
 end
 
@@ -79,11 +91,15 @@ let create_timer (dev : Device.t) : timer =
       let default_stream = B.Stream.default (B.Device.get dev.backend_id) in
       (module struct
         let device = dev
+
         let start () = B.Event.record start_event default_stream
+
         let stop () = B.Event.record stop_event default_stream
+
         let elapsed_ms () =
           B.Event.synchronize stop_event ;
           B.Event.elapsed ~start:start_event ~stop:stop_event
+
         let destroy () =
           B.Event.destroy start_event ;
           B.Event.destroy stop_event
@@ -154,7 +170,9 @@ let record_kernel_invocation ~(name : string) ~(time_ms : float) =
       stats.invocations <- stats.invocations + 1 ;
       stats.total_time_ms <- stats.total_time_ms +. time_ms
   | None ->
-      Hashtbl.replace kernel_stats_table name
+      Hashtbl.replace
+        kernel_stats_table
+        name
         {name; invocations = 1; total_time_ms = time_ms}
 
 (** Get all kernel statistics *)
@@ -170,24 +188,33 @@ let reset_stats () = Hashtbl.clear kernel_stats_table
 
 (** Average time per invocation *)
 let avg_time_ms (stats : kernel_stats) : float =
-  if stats.invocations > 0 then stats.total_time_ms /. float_of_int stats.invocations
+  if stats.invocations > 0 then
+    stats.total_time_ms /. float_of_int stats.invocations
   else 0.0
 
 (** Print kernel statistics summary *)
 let print_stats () =
   let stats = kernel_stats () in
-  if List.length stats = 0 then
-    print_endline "No kernel statistics recorded."
+  if List.length stats = 0 then print_endline "No kernel statistics recorded."
   else begin
-    print_endline "Kernel Statistics:";
-    print_endline "----------------------------------------";
-    Printf.printf "%-30s %8s %12s %12s\n" "Kernel" "Calls" "Total (ms)" "Avg (ms)";
-    print_endline "----------------------------------------";
+    print_endline "Kernel Statistics:" ;
+    print_endline "----------------------------------------" ;
+    Printf.printf
+      "%-30s %8s %12s %12s\n"
+      "Kernel"
+      "Calls"
+      "Total (ms)"
+      "Avg (ms)" ;
+    print_endline "----------------------------------------" ;
     List.iter
       (fun s ->
-        Printf.printf "%-30s %8d %12.3f %12.3f\n" s.name s.invocations
-          s.total_time_ms (avg_time_ms s))
-      (List.sort (fun a b -> compare b.total_time_ms a.total_time_ms) stats);
+        Printf.printf
+          "%-30s %8d %12.3f %12.3f\n"
+          s.name
+          s.invocations
+          s.total_time_ms
+          (avg_time_ms s))
+      (List.sort (fun a b -> compare b.total_time_ms a.total_time_ms) stats) ;
     print_endline "----------------------------------------"
   end
 

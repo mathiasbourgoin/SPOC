@@ -58,9 +58,19 @@ let run_spoc (dev : Spoc_Devices.device) : float array =
   in
   let grid_size = (size + block_size - 1) / block_size in
   let block =
-    {Spoc.Kernel.blockX = block_size; Spoc.Kernel.blockY = 1; Spoc.Kernel.blockZ = 1}
+    {
+      Spoc.Kernel.blockX = block_size;
+      Spoc.Kernel.blockY = 1;
+      Spoc.Kernel.blockZ = 1;
+    }
   in
-  let grid = {Spoc.Kernel.gridX = grid_size; Spoc.Kernel.gridY = 1; Spoc.Kernel.gridZ = 1} in
+  let grid =
+    {
+      Spoc.Kernel.gridX = grid_size;
+      Spoc.Kernel.gridY = 1;
+      Spoc.Kernel.gridZ = 1;
+    }
+  in
 
   Sarek.Kirc.run vector_add (a, b, c, size) (block, grid) 0 dev ;
   Spoc_Devices.flush dev () ;
@@ -107,8 +117,15 @@ let run_v2 (dev : V2_Device.t) : float array =
   Sarek.Execute.run_vectors
     ~device:dev
     ~ir
-    ~args:[Sarek.Execute.Vec a; Sarek.Execute.Vec b; Sarek.Execute.Vec c; Sarek.Execute.Int size]
-    ~block ~grid
+    ~args:
+      [
+        Sarek.Execute.Vec a;
+        Sarek.Execute.Vec b;
+        Sarek.Execute.Vec c;
+        Sarek.Execute.Int size;
+      ]
+    ~block
+    ~grid
     () ;
 
   (* Flush to ensure kernel is complete, then auto-sync handles the rest *)
@@ -118,13 +135,18 @@ let run_v2 (dev : V2_Device.t) : float array =
   V2_Vector.to_array c
 
 (* Compare two float arrays *)
-let compare_results (spoc_result : float array) (v2_result : float array) : int =
+let compare_results (spoc_result : float array) (v2_result : float array) : int
+    =
   let errors = ref 0 in
   for i = 0 to Array.length spoc_result - 1 do
     let diff = abs_float (spoc_result.(i) -. v2_result.(i)) in
     if diff > 0.001 then begin
       if !errors < 5 then
-        Printf.printf "  Mismatch at %d: SPOC=%.2f, V2=%.2f\n" i spoc_result.(i) v2_result.(i) ;
+        Printf.printf
+          "  Mismatch at %d: SPOC=%.2f, V2=%.2f\n"
+          i
+          spoc_result.(i)
+          v2_result.(i) ;
       incr errors
     end
   done ;
@@ -144,8 +166,10 @@ let () =
   (* Initialize V2 devices *)
   let v2_devs = V2_Device.init ~frameworks:["CUDA"; "OpenCL"] () in
 
-  Printf.printf "Found %d SPOC device(s), %d V2 device(s)\n\n"
-    (Array.length spoc_devs) (Array.length v2_devs) ;
+  Printf.printf
+    "Found %d SPOC device(s), %d V2 device(s)\n\n"
+    (Array.length spoc_devs)
+    (Array.length v2_devs) ;
 
   print_endline (String.make 80 '-') ;
   Printf.printf "%-40s %15s %15s %10s\n" "Device" "SPOC" "V2" "Status" ;
@@ -154,47 +178,51 @@ let () =
   let all_ok = ref true in
 
   (* Compute expected results (CPU reference) *)
-  let expected = Array.init size (fun i -> float_of_int i +. float_of_int (i * 2)) in
+  let expected =
+    Array.init size (fun i -> float_of_int i +. float_of_int (i * 2))
+  in
 
   (* Test each V2 device *)
-  Array.iter (fun v2_dev ->
-    let name = v2_dev.V2_Device.name in
-    let framework = v2_dev.V2_Device.framework in
+  Array.iter
+    (fun v2_dev ->
+      let name = v2_dev.V2_Device.name in
+      let framework = v2_dev.V2_Device.framework in
 
-    (* For OpenCL: compare with SPOC. For CUDA: compare with CPU reference *)
-    if framework = "OpenCL" then begin
-      (* Find matching SPOC device for OpenCL *)
-      let spoc_dev_opt =
-        Array.find_opt (fun d ->
-          d.Spoc_Devices.general_info.Spoc_Devices.name = name
-        ) spoc_devs
-      in
-      match spoc_dev_opt with
-      | None ->
-          Printf.printf "%-40s %15s %15s %10s\n" name "-" "found" "SKIP"
-      | Some spoc_dev ->
-          let spoc_result = run_spoc spoc_dev in
-          let v2_result = run_v2 v2_dev in
-          let errors = compare_results spoc_result v2_result in
-          let status = if errors = 0 then "MATCH" else "DIFFER" in
-          if errors > 0 then all_ok := false ;
-          Printf.printf "%-40s %15s %15s %10s\n" name "OK" "OK" status
-    end else begin
-      (* CUDA or other: compare V2 with CPU reference *)
-      let v2_result = run_v2 v2_dev in
-      let errors = compare_results expected v2_result in
-      let status = if errors = 0 then "PASS" else "FAIL" in
-      if errors > 0 then all_ok := false ;
-      Printf.printf "%-40s %15s %15s %10s\n" name "-" "OK" status
-    end
-  ) v2_devs ;
+      (* For OpenCL: compare with SPOC. For CUDA: compare with CPU reference *)
+      if framework = "OpenCL" then begin
+        (* Find matching SPOC device for OpenCL *)
+        let spoc_dev_opt =
+          Array.find_opt
+            (fun d -> d.Spoc_Devices.general_info.Spoc_Devices.name = name)
+            spoc_devs
+        in
+        match spoc_dev_opt with
+        | None -> Printf.printf "%-40s %15s %15s %10s\n" name "-" "found" "SKIP"
+        | Some spoc_dev ->
+            let spoc_result = run_spoc spoc_dev in
+            let v2_result = run_v2 v2_dev in
+            let errors = compare_results spoc_result v2_result in
+            let status = if errors = 0 then "MATCH" else "DIFFER" in
+            if errors > 0 then all_ok := false ;
+            Printf.printf "%-40s %15s %15s %10s\n" name "OK" "OK" status
+      end
+      else begin
+        (* CUDA or other: compare V2 with CPU reference *)
+        let v2_result = run_v2 v2_dev in
+        let errors = compare_results expected v2_result in
+        let status = if errors = 0 then "PASS" else "FAIL" in
+        if errors > 0 then all_ok := false ;
+        Printf.printf "%-40s %15s %15s %10s\n" name "-" "OK" status
+      end)
+    v2_devs ;
 
   print_endline (String.make 80 '-') ;
 
   if !all_ok then begin
     print_endline "\n=== All results MATCH ===" ;
     print_endline "V2 runtime produces identical results to SPOC"
-  end else begin
+  end
+  else begin
     print_endline "\n=== Some results DIFFER ===" ;
     exit 1
   end

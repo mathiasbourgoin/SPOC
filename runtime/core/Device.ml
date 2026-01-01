@@ -121,52 +121,67 @@ let print_all () = all () |> Array.iter (fun d -> print_endline (to_string d))
 (** {2 Type Predicates} *)
 
 let is_cuda d = d.framework = "CUDA"
+
 let is_opencl d = d.framework = "OpenCL"
+
 let is_native d = d.framework = "Native"
 
 let is_gpu d =
   (* GPUs are CUDA or OpenCL devices that aren't CPU-type *)
   is_cuda d || (is_opencl d && not (String.sub d.name 0 3 = "CPU"))
 
-let is_cpu d = is_native d || (is_opencl d && String.length d.name >= 3 && String.sub d.name 0 3 = "CPU")
+let is_cpu d =
+  is_native d
+  || (is_opencl d && String.length d.name >= 3 && String.sub d.name 0 3 = "CPU")
 
 (** {2 Capability Queries} *)
 
 let allows_fp64 d = d.capabilities.supports_fp64
+
 let supports_atomics d = d.capabilities.supports_atomics
+
 let compute_capability d = d.capabilities.compute_capability
+
 let warp_size d = d.capabilities.warp_size
+
 let max_threads_per_block d = d.capabilities.max_threads_per_block
+
 let max_block_dims d = d.capabilities.max_block_dims
+
 let max_grid_dims d = d.capabilities.max_grid_dims
+
 let shared_mem_per_block d = d.capabilities.shared_mem_per_block
+
 let total_memory d = d.capabilities.total_global_mem
+
 let multiprocessor_count d = d.capabilities.multiprocessor_count
+
 let clock_rate_khz d = d.capabilities.clock_rate_khz
+
 let max_registers_per_block d = d.capabilities.max_registers_per_block
 
 (** {2 Finders} *)
 
 let find_cuda devices = Array.find_opt is_cuda devices
+
 let find_opencl devices = Array.find_opt is_opencl devices
+
 let find_native devices = Array.find_opt is_native devices
 
-let find_by_name devices name =
-  Array.find_opt (fun d -> d.name = name) devices
+let find_by_name devices name = Array.find_opt (fun d -> d.name = name) devices
 
-let find_by_id devices id =
-  Array.find_opt (fun d -> d.id = id) devices
+let find_by_id devices id = Array.find_opt (fun d -> d.id = id) devices
 
 (** {2 Filters} *)
 
 let filter_cuda () = by_framework "CUDA"
+
 let filter_opencl () = by_framework "OpenCL"
+
 let filter_native () = by_framework "Native"
 
 let with_atomics () =
-  all () |> Array.to_list
-  |> List.filter supports_atomics
-  |> Array.of_list
+  all () |> Array.to_list |> List.filter supports_atomics |> Array.of_list
 
 let with_min_memory min_bytes =
   all () |> Array.to_list
@@ -189,7 +204,7 @@ let free_memory d : int64 option =
   | Some (module B : Framework_sig.BACKEND) ->
       (* Note: Would need to extend BACKEND to support this *)
       (* For now, return None - backends can override *)
-      Some d.capabilities.total_global_mem  (* Placeholder *)
+      Some d.capabilities.total_global_mem (* Placeholder *)
 
 (** {2 Synchronization} *)
 

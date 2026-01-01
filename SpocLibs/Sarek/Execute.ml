@@ -27,7 +27,8 @@ type arg =
   | ArgFloat64 of float
   | ArgCustom of Obj.t * int (* buffer + elem_size for custom types *)
   | ArgRaw of Obj.t (* passthrough for SPOC Vector compatibility *)
-  | ArgDeviceBuffer of (module Vector.DEVICE_BUFFER) (* V2 Vector buffer - backend binds itself *)
+  | ArgDeviceBuffer of (module Vector.DEVICE_BUFFER)
+(* V2 Vector buffer - backend binds itself *)
 
 (** Create a buffer argument from any Memory.buffer *)
 let arg_buffer (buf : _ Memory.buffer) : arg = ArgBuffer (Obj.repr buf)
@@ -220,10 +221,22 @@ let run_from_ir ~(device : Device.t) ~(ir : Sarek_ir.kernel)
        Obj.t array ->
        unit)
        option) (args : arg list) : unit =
-  Log.debugf Log.Execute "run_from_ir: kernel='%s' framework=%s device=%d"
-    ir.kern_name device.framework device.id ;
-  Log.debugf Log.Execute "  grid=(%d,%d,%d) block=(%d,%d,%d) args=%d"
-    grid.x grid.y grid.z block.x block.y block.z (List.length args) ;
+  Log.debugf
+    Log.Execute
+    "run_from_ir: kernel='%s' framework=%s device=%d"
+    ir.kern_name
+    device.framework
+    device.id ;
+  Log.debugf
+    Log.Execute
+    "  grid=(%d,%d,%d) block=(%d,%d,%d) args=%d"
+    grid.x
+    grid.y
+    grid.z
+    block.x
+    block.y
+    block.z
+    (List.length args) ;
   match device.framework with
   | "CUDA" ->
       Log.debug Log.Execute "  generating CUDA source..." ;
@@ -249,42 +262,44 @@ let run_from_ir ~(device : Device.t) ~(ir : Sarek_ir.kernel)
 
 (** {1 V2 Vector Execution} *)
 
-(** V2 Vector argument type - supports automatic transfers and length expansion *)
+(** V2 Vector argument type - supports automatic transfers and length expansion
+*)
 type vector_arg =
-  | Vec : ('a, 'b) Vector.t -> vector_arg  (** V2 Vector - expands to (buffer, length) *)
-  | Int : int -> vector_arg                (** Integer scalar *)
-  | Int32 : int32 -> vector_arg            (** 32-bit integer scalar *)
-  | Int64 : int64 -> vector_arg            (** 64-bit integer scalar *)
-  | Float32 : float -> vector_arg          (** 32-bit float scalar *)
-  | Float64 : float -> vector_arg          (** 64-bit float scalar *)
+  | Vec : ('a, 'b) Vector.t -> vector_arg
+      (** V2 Vector - expands to (buffer, length) *)
+  | Int : int -> vector_arg  (** Integer scalar *)
+  | Int32 : int32 -> vector_arg  (** 32-bit integer scalar *)
+  | Int64 : int64 -> vector_arg  (** 64-bit integer scalar *)
+  | Float32 : float -> vector_arg  (** 32-bit float scalar *)
+  | Float64 : float -> vector_arg  (** 64-bit float scalar *)
 
 (** Get device buffer for a V2 Vector *)
-let get_device_buffer (type a b) (v : (a, b) Vector.t) (dev : Device.t) : (module Vector.DEVICE_BUFFER) =
+let get_device_buffer (type a b) (v : (a, b) Vector.t) (dev : Device.t) :
+    (module Vector.DEVICE_BUFFER) =
   match Vector.get_buffer v dev with
   | Some buf -> buf
   | None -> failwith "Vector has no device buffer"
 
 (** Transfer all V2 Vector args to device *)
-let transfer_vectors_to_device (args : vector_arg list) (dev : Device.t) : unit =
-  List.iter (function
-    | Vec v -> Transfer.to_device v dev
-    | _ -> ()
-  ) args
+let transfer_vectors_to_device (args : vector_arg list) (dev : Device.t) : unit
+    =
+  List.iter (function Vec v -> Transfer.to_device v dev | _ -> ()) args
 
-(** Expand V2 Vector args to (buffer, length) pairs for kernel binding.
-    Each Vec expands to two args: buffer and length (SPOC convention).
-    The buffer binds itself via DEVICE_BUFFER.bind_to_kernel. *)
+(** Expand V2 Vector args to (buffer, length) pairs for kernel binding. Each Vec
+    expands to two args: buffer and length (SPOC convention). The buffer binds
+    itself via DEVICE_BUFFER.bind_to_kernel. *)
 let expand_vector_args (args : vector_arg list) (dev : Device.t) : arg list =
-  List.concat_map (function
-    | Vec v ->
-        let buf = get_device_buffer v dev in
-        [ArgDeviceBuffer buf; ArgInt32 (Int32.of_int (Vector.length v))]
-    | Int n -> [ArgInt32 (Int32.of_int n)]
-    | Int32 n -> [ArgInt32 n]
-    | Int64 n -> [ArgInt64 n]
-    | Float32 f -> [ArgFloat32 f]
-    | Float64 f -> [ArgFloat64 f]
-  ) args
+  List.concat_map
+    (function
+      | Vec v ->
+          let buf = get_device_buffer v dev in
+          [ArgDeviceBuffer buf; ArgInt32 (Int32.of_int (Vector.length v))]
+      | Int n -> [ArgInt32 (Int32.of_int n)]
+      | Int32 n -> [ArgInt32 n]
+      | Int64 n -> [ArgInt64 n]
+      | Float32 f -> [ArgFloat32 f]
+      | Float64 f -> [ArgFloat64 f])
+    args
 
 (** Mark all vectors as Stale_CPU after kernel execution (GPU backends only).
     Native backend doesn't need this since CPU memory is directly modified. *)
@@ -292,27 +307,27 @@ let mark_vectors_stale (args : vector_arg list) (dev : Device.t) : unit =
   (* Only mark stale for GPU backends *)
   if dev.framework = "Native" then ()
   else
-    List.iter (function
-      | Vec v ->
-          (* Mark as Stale_CPU: GPU has authoritative data, CPU is stale *)
-          (match v.Vector.location with
-          | Vector.Both _ -> v.Vector.location <- Vector.Stale_CPU dev
-          | _ -> ())
-      | _ -> ()
-    ) args
+    List.iter
+      (function
+        | Vec v -> (
+            (* Mark as Stale_CPU: GPU has authoritative data, CPU is stale *)
+            match v.Vector.location with
+            | Vector.Both _ -> v.Vector.location <- Vector.Stale_CPU dev
+            | _ -> ())
+        | _ -> ())
+      args
 
-(** Execute a kernel with V2 Vectors. Auto-transfers, expands args, compiles/runs. *)
+(** Execute a kernel with V2 Vectors. Auto-transfers, expands args,
+    compiles/runs. *)
 let run_vectors ~(device : Device.t) ~(ir : Sarek_ir.kernel)
-    ~(args : vector_arg list)
-    ~(block : Framework_sig.dims) ~(grid : Framework_sig.dims)
-    ?(shared_mem : int = 0)
+    ~(args : vector_arg list) ~(block : Framework_sig.dims)
+    ~(grid : Framework_sig.dims) ?(shared_mem : int = 0)
     ?(native_fn :
        (block:Framework_sig.dims ->
        grid:Framework_sig.dims ->
        Obj.t array ->
        unit)
-       option)
-    () : unit =
+       option) () : unit =
   (* 1. Transfer all vectors to device *)
   transfer_vectors_to_device args device ;
 
@@ -327,10 +342,7 @@ let run_vectors ~(device : Device.t) ~(ir : Sarek_ir.kernel)
 
 (** Sync all V2 Vector outputs back to CPU *)
 let sync_vectors_to_cpu (args : vector_arg list) : unit =
-  List.iter (function
-    | Vec v -> Transfer.to_cpu v
-    | _ -> ()
-  ) args
+  List.iter (function Vec v -> Transfer.to_cpu v | _ -> ()) args
 
 (** {1 Convenience Functions} *)
 

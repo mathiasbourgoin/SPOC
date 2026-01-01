@@ -581,7 +581,8 @@ let lower_kernel (kernel : tkernel) : Ir.kernel * string list =
   in
 
   ( {
-      Ir.kern_name = Option.value kernel.tkern_name ~default:"sarek_kern";  (* "kernel" is reserved in OpenCL *)
+      Ir.kern_name = Option.value kernel.tkern_name ~default:"sarek_kern";
+      (* "kernel" is reserved in OpenCL *)
       kern_params = List.map lower_param kernel.tkern_params;
       kern_locals = [];
       kern_body = full_body;

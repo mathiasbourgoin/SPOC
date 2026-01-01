@@ -319,7 +319,12 @@ end = struct
 
     let compile_cached device ~name ~source =
       (* Cache key must include device ID - kernels are context-specific *)
-      let key = Printf.sprintf "%d:%s" device.Opencl_api.Device.id (Digest.string source |> Digest.to_hex) in
+      let key =
+        Printf.sprintf
+          "%d:%s"
+          device.Opencl_api.Device.id
+          (Digest.string source |> Digest.to_hex)
+      in
       match Hashtbl.find_opt cache key with
       | Some k -> k
       | None ->
@@ -338,13 +343,23 @@ end = struct
     let create_args () = ref []
 
     let set_arg_buffer args idx buf =
-      Sarek_core.Log.debugf Sarek_core.Log.Kernel "OpenCL set_arg_buffer idx=%d (before=%d)" idx (List.length !args) ;
+      Sarek_core.Log.debugf
+        Sarek_core.Log.Kernel
+        "OpenCL set_arg_buffer idx=%d (before=%d)"
+        idx
+        (List.length !args) ;
       args :=
         ArgBuffer {buf = buf.Memory.buf.Opencl_api.Memory.handle; idx} :: !args ;
-      Sarek_core.Log.debugf Sarek_core.Log.Kernel "OpenCL set_arg_buffer done (after=%d)" (List.length !args)
+      Sarek_core.Log.debugf
+        Sarek_core.Log.Kernel
+        "OpenCL set_arg_buffer done (after=%d)"
+        (List.length !args)
 
     let set_arg_int32 args idx value =
-      Sarek_core.Log.debugf Sarek_core.Log.Kernel "OpenCL set_arg_int32 idx=%d" idx ;
+      Sarek_core.Log.debugf
+        Sarek_core.Log.Kernel
+        "OpenCL set_arg_int32 idx=%d"
+        idx ;
       args := ArgInt32 {value; idx} :: !args
 
     let set_arg_int64 args idx value = args := ArgInt64 {value; idx} :: !args
@@ -360,7 +375,10 @@ end = struct
 
     let launch kernel ~args ~grid ~block ~shared_mem:_ ~stream =
       let open Framework_sig in
-      Sarek_core.Log.debugf Sarek_core.Log.Kernel "OpenCL launch: args count=%d" (List.length !args) ;
+      Sarek_core.Log.debugf
+        Sarek_core.Log.Kernel
+        "OpenCL launch: args count=%d"
+        (List.length !args) ;
       let state = get_state kernel.device_id in
       let queue =
         match stream with Some s -> s.Stream.queue | None -> state.queue

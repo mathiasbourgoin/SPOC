@@ -103,25 +103,29 @@ type location =
 
 (** {1 Device Buffer Abstraction} *)
 
-(** Existential wrapper for backend-specific device buffers.
-    Packages the backend module with its buffer for type-safe operations. *)
+(** Existential wrapper for backend-specific device buffers. Packages the
+    backend module with its buffer for type-safe operations. *)
 module type DEVICE_BUFFER = sig
   val device : Device.t
+
   val size : int
+
   val elem_size : int
-  val ptr : nativeint  (** Raw device pointer (CUDA) or 0 (OpenCL) *)
+
+  (** Raw device pointer (CUDA) or 0 (OpenCL) *)
+  val ptr : nativeint
 
   (** {2 Kernel Binding}
-      Backend-specific kernel argument binding. The backend knows how to
-      bind its own buffer type (CUdeviceptr for CUDA, cl_mem for OpenCL). *)
+      Backend-specific kernel argument binding. The backend knows how to bind
+      its own buffer type (CUdeviceptr for CUDA, cl_mem for OpenCL). *)
 
-  (** Bind this buffer to a kernel argument. kargs is the backend's kernel
-      args structure (Obj.t for type erasure), idx is the argument index. *)
+  (** Bind this buffer to a kernel argument. kargs is the backend's kernel args
+      structure (Obj.t for type erasure), idx is the argument index. *)
   val bind_to_kernel : kargs:Obj.t -> idx:int -> unit
 
   (** {2 Transfer Operations}
-      All transfers use raw pointers with byte sizes to avoid
-      type parameter escaping issues in first-class modules. *)
+      All transfers use raw pointers with byte sizes to avoid type parameter
+      escaping issues in first-class modules. *)
 
   (** Transfer from host pointer to device buffer *)
   val from_ptr : unit Ctypes.ptr -> byte_size:int -> unit
@@ -173,9 +177,7 @@ let create_scalar (sk : ('a, 'b) scalar_kind) ?(dev : Device.t option)
       id = !next_id;
     }
   in
-  (match dev with
-  | Some d -> vec.location <- Stale_GPU d
-  | None -> ()) ;
+  (match dev with Some d -> vec.location <- Stale_GPU d | None -> ()) ;
   vec
 
 (** Create from scalar kind (convenience wrapper) *)
@@ -187,7 +189,9 @@ let create : type a b. (a, b) kind -> ?dev:Device.t -> int -> (a, b) t =
       incr next_id ;
       let byte_size = length * c.elem_size in
       let ptr = Ctypes.(allocate_n (array 1 char) ~count:byte_size) in
-      let ptr = Ctypes.coerce Ctypes.(ptr (array 1 char)) Ctypes.(ptr void) ptr in
+      let ptr =
+        Ctypes.coerce Ctypes.(ptr (array 1 char)) Ctypes.(ptr void) ptr
+      in
       let vec =
         {
           host = Custom_storage {ptr; custom = c; length};
@@ -261,25 +265,28 @@ let device (vec : ('a, 'b) t) : Device.t option =
 (** {1 Raw Data Access} *)
 
 (** Get underlying Bigarray (only for scalar vectors) *)
-let to_bigarray : type a b. (a, b) t -> (a, b, Bigarray.c_layout) Bigarray.Array1.t =
+let to_bigarray : type a b.
+    (a, b) t -> (a, b, Bigarray.c_layout) Bigarray.Array1.t =
  fun vec ->
   match vec.host with
   | Bigarray_storage ba -> ba
   | Custom_storage _ -> invalid_arg "to_bigarray: vector uses custom storage"
 
 (** Get underlying ctypes pointer (only for custom vectors) *)
-let to_ctypes_ptr : type a. (a, unit) t -> unit Ctypes.ptr = fun vec ->
+let to_ctypes_ptr : type a. (a, unit) t -> unit Ctypes.ptr =
+ fun vec ->
   match vec.host with
   | Custom_storage {ptr; _} -> ptr
-  | Bigarray_storage _ -> invalid_arg "to_ctypes_ptr: vector uses bigarray storage"
+  | Bigarray_storage _ ->
+      invalid_arg "to_ctypes_ptr: vector uses bigarray storage"
 
 (** Get raw host pointer for any vector type *)
-let host_ptr : type a b. (a, b) t -> nativeint = fun vec ->
+let host_ptr : type a b. (a, b) t -> nativeint =
+ fun vec ->
   match vec.host with
   | Bigarray_storage ba ->
       Ctypes.(raw_address_of_ptr (bigarray_start array1 ba |> to_voidp))
-  | Custom_storage {ptr; _} ->
-      Ctypes.raw_address_of_ptr ptr
+  | Custom_storage {ptr; _} -> Ctypes.raw_address_of_ptr ptr
 
 (** {1 Element Access} *)
 
@@ -288,7 +295,9 @@ let get : type a b. (a, b) t -> int -> a =
  fun vec idx ->
   if idx < 0 || idx >= vec.length then
     invalid_arg
-      (Printf.sprintf "Vector.get: index %d out of bounds [0, %d)" idx
+      (Printf.sprintf
+         "Vector.get: index %d out of bounds [0, %d)"
+         idx
          vec.length) ;
   match vec.host with
   | Bigarray_storage ba -> Bigarray.Array1.get ba idx
@@ -299,7 +308,9 @@ let set : type a b. (a, b) t -> int -> a -> unit =
  fun vec idx value ->
   if idx < 0 || idx >= vec.length then
     invalid_arg
-      (Printf.sprintf "Vector.set: index %d out of bounds [0, %d)" idx
+      (Printf.sprintf
+         "Vector.set: index %d out of bounds [0, %d)"
+         idx
          vec.length) ;
   (match vec.host with
   | Bigarray_storage ba -> Bigarray.Array1.set ba idx value
@@ -342,9 +353,10 @@ let auto_sync (vec : ('a, 'b) t) : bool = vec.auto_sync
 
 (** {1 Sync Callback (for Transfer module)} *)
 
-(** Callback to sync vector to CPU. Set by Transfer module at init.
-    Takes a vector and syncs it to CPU if needed. Returns true if sync occurred. *)
-type sync_callback = { sync : 'a 'b. ('a, 'b) t -> bool }
+(** Callback to sync vector to CPU. Set by Transfer module at init. Takes a
+    vector and syncs it to CPU if needed. Returns true if sync occurred. *)
+type sync_callback = {sync : 'a 'b. ('a, 'b) t -> bool}
+
 let sync_to_cpu_callback : sync_callback option ref = ref None
 
 (** Register the sync callback (called by Transfer module) *)
@@ -403,21 +415,33 @@ let location_to_string : location -> string = function
   | Stale_GPU d -> Printf.sprintf "Stale_GPU(%s)" d.name
 
 let to_string (vec : ('a, 'b) t) : string =
-  Printf.sprintf "Vector#%d<%s>[%d] @ %s" vec.id (kind_name vec.kind) vec.length
+  Printf.sprintf
+    "Vector#%d<%s>[%d] @ %s"
+    vec.id
+    (kind_name vec.kind)
+    vec.length
     (location_to_string vec.location)
 
 (** {1 Convenience Constructors for Scalar Types} *)
 
 let float32 = Scalar Float32
+
 let float64 = Scalar Float64
+
 let int32 = Scalar Int32
+
 let int64 = Scalar Int64
+
 let char = Scalar Char
+
 let complex32 = Scalar Complex32
 
 let create_float32 ?dev n = create float32 ?dev n
+
 let create_float64 ?dev n = create float64 ?dev n
+
 let create_int32 ?dev n = create int32 ?dev n
+
 let create_int64 ?dev n = create int64 ?dev n
 
 (** {1 Initialization Helpers} *)
@@ -454,16 +478,16 @@ let copy : type a b. (a, b) t -> (a, b) t =
     match vec.host with
     | Bigarray_storage ba ->
         let new_ba =
-          Bigarray.Array1.create (Bigarray.Array1.kind ba) Bigarray.c_layout
+          Bigarray.Array1.create
+            (Bigarray.Array1.kind ba)
+            Bigarray.c_layout
             vec.length
         in
         Bigarray.Array1.blit ba new_ba ;
         Bigarray_storage new_ba
     | Custom_storage {ptr; custom; length} ->
         let byte_size = length * custom.elem_size in
-        let new_ptr =
-          Ctypes.(allocate_n (array 1 char) ~count:byte_size)
-        in
+        let new_ptr = Ctypes.(allocate_n (array 1 char) ~count:byte_size) in
         let new_ptr =
           Ctypes.coerce Ctypes.(ptr (array 1 char)) Ctypes.(ptr void) new_ptr
         in
@@ -514,8 +538,11 @@ let sub_vector (type a b) (vec : (a, b) t) ~(start : int) ~(len : int)
     ?(ok_range : int = len) ?(ko_range : int = 0) () : (a, b) t =
   if start < 0 || start + len > vec.length then
     invalid_arg
-      (Printf.sprintf "sub_vector: range [%d, %d) out of bounds [0, %d)" start
-         (start + len) vec.length) ;
+      (Printf.sprintf
+         "sub_vector: range [%d, %d) out of bounds [0, %d)"
+         start
+         (start + len)
+         vec.length) ;
   incr next_id ;
   let parent_depth =
     match get_sub_meta vec with Some meta -> meta.depth | None -> 0
@@ -523,36 +550,41 @@ let sub_vector (type a b) (vec : (a, b) t) ~(start : int) ~(len : int)
   (* Create subvector with offset view into parent's host storage *)
   let host =
     match vec.host with
-    | Bigarray_storage ba ->
-        Bigarray_storage (Bigarray.Array1.sub ba start len)
+    | Bigarray_storage ba -> Bigarray_storage (Bigarray.Array1.sub ba start len)
     | Custom_storage {ptr; custom; _} ->
         (* Offset the pointer by byte offset *)
         let byte_offset = start * custom.elem_size in
         let raw_addr = Ctypes.raw_address_of_ptr ptr in
-        let offset_addr = Nativeint.add raw_addr (Nativeint.of_int byte_offset) in
+        let offset_addr =
+          Nativeint.add raw_addr (Nativeint.of_int byte_offset)
+        in
         let offset_ptr = Ctypes.ptr_of_raw_address offset_addr in
         Custom_storage {ptr = offset_ptr; custom; length = len}
   in
   let sub =
     {
       host;
-      device_buffers = Hashtbl.create 4;  (* Independent GPU buffers *)
+      device_buffers = Hashtbl.create 4;
+      (* Independent GPU buffers *)
       length = len;
       kind = vec.kind;
-      location = CPU;  (* Subvector starts on CPU *)
+      location = CPU;
+      (* Subvector starts on CPU *)
       auto_sync = vec.auto_sync;
       id = !next_id;
     }
   in
   (* Record subvector relationship *)
-  Hashtbl.replace subvector_meta sub.id
+  Hashtbl.replace
+    subvector_meta
+    sub.id
     {parent_id = vec.id; start; ok_range; ko_range; depth = parent_depth + 1} ;
   sub
 
 (** {1 Multi-GPU Helpers} *)
 
-(** Partition a vector across multiple devices.
-    Creates subvectors, one per device, that together cover the full vector. *)
+(** Partition a vector across multiple devices. Creates subvectors, one per
+    device, that together cover the full vector. *)
 let partition (type a b) (vec : (a, b) t) (devices : Device.t array) :
     (a, b) t array =
   let n = Array.length devices in
@@ -560,10 +592,11 @@ let partition (type a b) (vec : (a, b) t) (devices : Device.t array) :
   else
     let chunk_size = vec.length / n in
     let remainder = vec.length mod n in
-    let result = Array.make n vec in  (* Placeholder *)
+    let result = Array.make n vec in
+    (* Placeholder *)
     let offset = ref 0 in
     for i = 0 to n - 1 do
-      let len = chunk_size + (if i < remainder then 1 else 0) in
+      let len = chunk_size + if i < remainder then 1 else 0 in
       let sub = sub_vector vec ~start:!offset ~len () in
       sub.location <- Stale_GPU devices.(i) ;
       result.(i) <- sub ;
@@ -571,15 +604,15 @@ let partition (type a b) (vec : (a, b) t) (devices : Device.t array) :
     done ;
     result
 
-(** Gather subvectors back to parent (sync all to CPU).
-    Assumes subvectors were created by partition and don't overlap. *)
+(** Gather subvectors back to parent (sync all to CPU). Assumes subvectors were
+    created by partition and don't overlap. *)
 let gather (subs : (_, _) t array) : unit =
   Array.iter
     (fun sub ->
       match sub.location with
-      | GPU _ | Stale_CPU _ ->
+      | GPU _ | Stale_CPU _ -> (
           (* Need to sync from GPU *)
-          (match get_sub_meta sub with
+          match get_sub_meta sub with
           | Some _meta ->
               (* Transfer handled by Transfer module *)
               ()
@@ -642,7 +675,8 @@ let map : type a b c d. (a -> c) -> (c, d) kind -> (a, b) t -> (c, d) t =
   result
 
 (** Map with index *)
-let mapi : type a b c d. (int -> a -> c) -> (c, d) kind -> (a, b) t -> (c, d) t =
+let mapi : type a b c d. (int -> a -> c) -> (c, d) kind -> (a, b) t -> (c, d) t
+    =
  fun f target_kind vec ->
   ensure_cpu_sync vec ;
   let result = create target_kind vec.length in
@@ -701,7 +735,7 @@ let exists : type a b. (a -> bool) -> (a, b) t -> bool =
   ensure_cpu_sync vec ;
   let result = ref false in
   let i = ref 0 in
-  while not !result && !i < vec.length do
+  while (not !result) && !i < vec.length do
     result := p (unsafe_get vec !i) ;
     incr i
   done ;
@@ -736,7 +770,7 @@ let find_index : type a b. (a -> bool) -> (a, b) t -> int option =
 
 (** Sum elements (requires + operation via fold) *)
 let sum (type a b) ~(zero : a) ~(add : a -> a -> a) (vec : (a, b) t) : a =
-  fold_left add zero vec  (* fold_left already calls ensure_cpu_sync *)
+  fold_left add zero vec (* fold_left already calls ensure_cpu_sync *)
 
 (** Find minimum element *)
 let min_elt (type a b) ~(compare : a -> a -> int) (vec : (a, b) t) : a option =
@@ -768,7 +802,8 @@ let max_elt (type a b) ~(compare : a -> a -> int) (vec : (a, b) t) : a option =
 
 (** Convert to OCaml list *)
 let to_list : type a b. (a, b) t -> a list =
- fun vec -> fold_right (fun x acc -> x :: acc) vec []  (* fold_right already syncs *)
+ fun vec ->
+  fold_right (fun x acc -> x :: acc) vec [] (* fold_right already syncs *)
 
 (** Create from OCaml list *)
 let of_list : type a b. (a, b) kind -> a list -> (a, b) t =
@@ -802,8 +837,12 @@ let of_array : type a b. (a, b) kind -> a array -> (a, b) t =
 
 (** Copy elements from one vector to another *)
 let blit : type a b.
-    src:(a, b) t -> src_off:int -> dst:(a, b) t -> dst_off:int -> len:int -> unit
-    =
+    src:(a, b) t ->
+    src_off:int ->
+    dst:(a, b) t ->
+    dst_off:int ->
+    len:int ->
+    unit =
  fun ~src ~src_off ~dst ~dst_off ~len ->
   if src_off < 0 || src_off + len > src.length then
     invalid_arg "Vector.blit: source range out of bounds" ;

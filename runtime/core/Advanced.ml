@@ -9,8 +9,8 @@ open Sarek_framework
 
 (** {1 8a. Unified Memory (CUDA Managed Memory)} *)
 
-(** Unified memory allows automatic page migration between CPU and GPU.
-    Note: Requires backend support - currently a placeholder API. *)
+(** Unified memory allows automatic page migration between CPU and GPU. Note:
+    Requires backend support - currently a placeholder API. *)
 module Unified = struct
   (** Create a vector with unified memory (automatic migration) *)
   let create (kind : ('a, 'b) Vector.kind) (length : int) : ('a, 'b) Vector.t =
@@ -23,13 +23,14 @@ module Unified = struct
   (** Check if unified memory is available on device *)
   let is_available (_dev : Device.t) : bool =
     (* Would check for managed memory support *)
-    false  (* Placeholder *)
+    false
+  (* Placeholder *)
 end
 
 (** {1 8b. Pinned/Mapped Memory} *)
 
-(** Pinned memory enables faster transfers and zero-copy access.
-    Note: Requires backend support - currently a placeholder API. *)
+(** Pinned memory enables faster transfers and zero-copy access. Note: Requires
+    backend support - currently a placeholder API. *)
 module Pinned = struct
   (** Create a vector with pinned (page-locked) host memory *)
   let create (kind : ('a, 'b) Vector.kind) (length : int) : ('a, 'b) Vector.t =
@@ -40,7 +41,8 @@ module Pinned = struct
   (** Check if pinned memory is available on device *)
   let is_available (_dev : Device.t) : bool =
     (* Most CUDA devices support this *)
-    false  (* Placeholder *)
+    false
+  (* Placeholder *)
 end
 
 (** {1 8c. Async Kernel Launch with Futures} *)
@@ -48,14 +50,18 @@ end
 (** Future representing a pending async operation *)
 module type FUTURE = sig
   type 'a t
+
   val is_ready : 'a t -> bool
+
   val await : 'a t -> 'a
+
   val map : ('a -> 'b) -> 'a t -> 'b t
 end
 
 module Future = struct
   type 'a state =
-    | Pending of (unit -> bool)  (* Check if ready *)
+    | Pending of (unit -> bool)
+    (* Check if ready *)
     | Ready of 'a
 
   type 'a t = {mutable state : 'a state}
@@ -68,27 +74,32 @@ module Future = struct
           (* Transition to ready - but we don't have the value yet *)
           (* This is a limitation of the simple design *)
           true
-        end else false
+        end
+        else false
 
   let await fut =
     match fut.state with
     | Ready v -> v
-    | Pending check ->
+    | Pending check -> (
         (* Busy wait - in practice would use events *)
         while not (check ()) do
           Unix.sleepf 0.001
         done ;
         match fut.state with
         | Ready v -> v
-        | Pending _ -> failwith "Future: await failed"
+        | Pending _ -> failwith "Future: await failed")
 
   let map _f fut =
-    {state = Pending (fun () ->
-      match fut.state with
-      | Ready _v ->
-          (* Already ready, apply function *)
-          true
-      | Pending _ -> is_ready fut)}
+    {
+      state =
+        Pending
+          (fun () ->
+            match fut.state with
+            | Ready _v ->
+                (* Already ready, apply function *)
+                true
+            | Pending _ -> is_ready fut);
+    }
 
   (** Create a completed future *)
   let return v = {state = Ready v}
@@ -125,7 +136,8 @@ module Pool = struct
     let vec = Vector.create kind ~dev:pool.device length in
     pool.allocations <- pool.allocations + 1 ;
     pool.total_allocated <-
-      Int64.add pool.total_allocated
+      Int64.add
+        pool.total_allocated
         (Int64.of_int (length * Vector.elem_size kind)) ;
     vec
 
@@ -141,14 +153,13 @@ module Pool = struct
     ()
 
   (** Get pool statistics *)
-  let stats pool =
-    (pool.allocations, pool.total_allocated)
+  let stats pool = (pool.allocations, pool.total_allocated)
 end
 
 (** {1 8e. Graph-based Execution (CUDA Graphs)} *)
 
-(** Computation graph for capturing and replaying operations.
-    Note: Full implementation requires deep backend integration. *)
+(** Computation graph for capturing and replaying operations. Note: Full
+    implementation requires deep backend integration. *)
 module Graph = struct
   type node_id = int
 
@@ -157,16 +168,9 @@ module Graph = struct
     | Transfer of [`H2D | `D2H]
     | Sync
 
-  type node = {
-    id : node_id;
-    node_type : node_type;
-    dependencies : node_id list;
-  }
+  type node = {id : node_id; node_type : node_type; dependencies : node_id list}
 
-  type t = {
-    mutable nodes : node list;
-    mutable next_id : node_id;
-  }
+  type t = {mutable nodes : node list; mutable next_id : node_id}
 
   (** Create empty graph *)
   let create () : t = {nodes = []; next_id = 0}
@@ -175,8 +179,8 @@ module Graph = struct
   let add_kernel (graph : t) ~(name : string) ~(deps : node_id list) : node_id =
     let id = graph.next_id in
     graph.next_id <- id + 1 ;
-    graph.nodes <- {id; node_type = Kernel {name}; dependencies = deps}
-                   :: graph.nodes ;
+    graph.nodes <-
+      {id; node_type = Kernel {name}; dependencies = deps} :: graph.nodes ;
     id
 
   (** Add transfer node *)
@@ -184,8 +188,8 @@ module Graph = struct
       ~(deps : node_id list) : node_id =
     let id = graph.next_id in
     graph.next_id <- id + 1 ;
-    graph.nodes <- {id; node_type = Transfer direction; dependencies = deps}
-                   :: graph.nodes ;
+    graph.nodes <-
+      {id; node_type = Transfer direction; dependencies = deps} :: graph.nodes ;
     id
 
   (** Add sync node *)
@@ -196,10 +200,7 @@ module Graph = struct
     id
 
   (** Executable graph (compiled for specific device) *)
-  type executable = {
-    graph : t;
-    device : Device.t;
-  }
+  type executable = {graph : t; device : Device.t}
 
   (** Instantiate graph for device *)
   let instantiate (graph : t) (dev : Device.t) : executable =
@@ -226,7 +227,10 @@ module Graph = struct
           | Transfer `D2H -> "Transfer(D2H)"
           | Sync -> "Sync"
         in
-        Printf.printf "  [%d] %s <- [%s]\n" n.id type_str
+        Printf.printf
+          "  [%d] %s <- [%s]\n"
+          n.id
+          type_str
           (String.concat ", " (List.map string_of_int n.dependencies)))
       (List.rev graph.nodes)
 end
