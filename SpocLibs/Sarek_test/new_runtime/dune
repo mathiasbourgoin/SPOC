@@ -24,3 +24,10 @@
  (libraries spoc sarek sarek_core sarek_native unix)
  (preprocess
   (pps sarek_ppx)))
+
+(executable
+ (name test_vector_add_v2)
+ (modules test_vector_add_v2)
+ (libraries sarek_core sarek_cuda sarek_opencl unix)
+ (flags
+  (:standard -w -33 -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc)))
