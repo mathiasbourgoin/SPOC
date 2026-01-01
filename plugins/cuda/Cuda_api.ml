@@ -279,11 +279,14 @@ module Kernel = struct
     (* Compile to PTX using NVRTC *)
     let major, minor = device.Device.compute_capability in
     let arch = Printf.sprintf "compute_%d%d" major minor in
+    (* Force output for debugging *)
+    Printf.eprintf "[CUDA] compile kernel='%s' arch=%s (cc %d.%d) device=%d\n%!"
+      name arch major minor device.Device.id ;
     Sarek_core.Log.debugf Sarek_core.Log.Kernel
       "CUDA compile: kernel='%s' arch=%s (cc %d.%d) device=%d"
       name arch major minor device.Device.id ;
-    Sarek_core.Log.debugf Sarek_core.Log.Kernel "CUDA source:\n%s" source ;
     let ptx = Cuda_nvrtc.compile_to_ptx ~name ~arch source in
+    Printf.eprintf "[CUDA] PTX generated successfully\n%!" ;
     Sarek_core.Log.debug Sarek_core.Log.Kernel "CUDA PTX generated successfully" ;
 
     (* Load module from PTX *)
