@@ -554,6 +554,26 @@ let lower_kernel (kernel : tkernel) : Ir.kernel * string list =
     kernel.tkern_module_items ;
   let state = create_state fun_map in
 
+  (* Register record types from parameter types (especially vector element types) *)
+  let rec register_types_from_typ ty =
+    match repr ty with
+    | TRecord (name, fields) ->
+        if not (Hashtbl.mem state.types name) then begin
+          let field_types =
+            List.map (fun (n, t) -> (n, elttype_of_typ t)) fields
+          in
+          Hashtbl.add state.types name field_types
+        end ;
+        List.iter (fun (_, t) -> register_types_from_typ t) fields
+    | TVec elem_ty -> register_types_from_typ elem_ty
+    | TArr (elem_ty, _) -> register_types_from_typ elem_ty
+    | TTuple tys -> List.iter register_types_from_typ tys
+    | _ -> ()
+  in
+  List.iter
+    (fun (p : tparam) -> register_types_from_typ p.tparam_type)
+    kernel.tkern_params ;
+
   (* Lower module-level constants *)
   let module_items_ir =
     List.fold_right

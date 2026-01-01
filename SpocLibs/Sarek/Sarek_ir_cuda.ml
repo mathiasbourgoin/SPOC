@@ -20,6 +20,9 @@ let current_device : Device.t option ref = ref None
 
 (** {1 Type Mapping} *)
 
+(** Mangle OCaml type name to valid C identifier (e.g., "Module.point" -> "Module_point") *)
+let mangle_name name = String.map (fun c -> if c = '.' then '_' else c) name
+
 (** Map Sarek IR element type to CUDA C type string *)
 let rec cuda_type_of_elttype = function
   | TInt32 -> "int"
@@ -28,8 +31,8 @@ let rec cuda_type_of_elttype = function
   | TFloat64 -> "double"
   | TBool -> "int"
   | TUnit -> "void"
-  | TRecord (name, _) -> name
-  | TVariant (name, _) -> name
+  | TRecord (name, _) -> mangle_name name
+  | TVariant (name, _) -> mangle_name name
   | TArray (elt, _) -> cuda_type_of_elttype elt ^ "*"
   | TVec elt -> cuda_type_of_elttype elt ^ "*"
 
@@ -130,7 +133,7 @@ let rec gen_expr buf = function
         args ;
       Buffer.add_char buf ')'
   | ERecord (name, fields) ->
-      Buffer.add_string buf ("(" ^ name ^ "){") ;
+      Buffer.add_string buf ("(" ^ mangle_name name ^ "){") ;
       List.iteri
         (fun i (f, e) ->
           if i > 0 then Buffer.add_string buf ", " ;
@@ -620,7 +623,7 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
           Buffer.add_string buf ";\n")
         fields ;
       Buffer.add_string buf "} " ;
-      Buffer.add_string buf name ;
+      Buffer.add_string buf (mangle_name name) ;
       Buffer.add_string buf ";\n\n")
     types ;
 

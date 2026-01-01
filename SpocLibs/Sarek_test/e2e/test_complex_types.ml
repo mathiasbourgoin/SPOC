@@ -7,30 +7,92 @@
 
 open Spoc
 
+module V2_Vector = Sarek_core.Vector
+module V2_Device = Sarek_core.Device
+module V2_Transfer = Sarek_core.Transfer
+
+(* Force backend registration *)
+let () =
+  Sarek_cuda.Cuda_plugin.init () ;
+  Sarek_cuda.Cuda_plugin_v2.init () ;
+  Sarek_opencl.Opencl_plugin.init () ;
+  Sarek_opencl.Opencl_plugin_v2.init ()
+
 let cfg = Test_helpers.default_config ()
 
-(** Run 2D point distance test *)
+(** Point2D kernel - defined at top level for V2 access *)
+let point2d_distance_kernel =
+  [%kernel
+    let module Types = struct
+      type point2d = {x : float32; y : float32}
+    end in
+    fun (xs : float32 vector)
+        (ys : float32 vector)
+        (distances : float32 vector)
+        (n : int32)
+      ->
+      let tid = thread_idx_x + (block_dim_x * block_idx_x) in
+      if tid < n then begin
+        let p : point2d = {x = xs.(tid); y = ys.(tid)} in
+        let dx = p.x in
+        let dy = p.y in
+        distances.(tid) <- sqrt ((dx *. dx) +. (dy *. dy))
+      end]
+
+(** Run 2D point distance test - SPOC path *)
 let run_point2d_test dev =
-  let point2d_distance_kernel =
-    [%kernel
-      let module Types = struct
-        type point2d = {x : float32; y : float32}
-      end in
-      fun (points : point2d vector) (distances : float32 vector) (n : int32) ->
-        let tid = thread_idx_x + (block_dim_x * block_idx_x) in
-        if tid < n then begin
-          let p = points.(tid) in
-          let dx = p.x in
-          let dy = p.y in
-          distances.(tid) <- sqrt ((dx *. dx) +. (dy *. dy))
-        end]
-  in
   Printf.printf "  Point2D distance: kernel generation test\n%!" ;
   let t0 = Unix.gettimeofday () in
   ignore (Sarek.Kirc.gen point2d_distance_kernel dev) ;
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
   (time_ms, true)
+
+(** Run 2D point distance test - V2 path with execution *)
+let run_point2d_test_v2 dev n =
+  let xs = V2_Vector.create V2_Vector.float32 n in
+  let ys = V2_Vector.create V2_Vector.float32 n in
+  let distances = V2_Vector.create V2_Vector.float32 n in
+  for i = 0 to n - 1 do
+    V2_Vector.set xs i (float_of_int i) ;
+    V2_Vector.set ys i (float_of_int (n - i)) ;
+    V2_Vector.set distances i 0.0
+  done ;
+  let threads = 64 in
+  let grid_x = (n + threads - 1) / threads in
+  let _, kirc = point2d_distance_kernel in
+  let ir =
+    match kirc.Sarek.Kirc.body_v2 with
+    | Some ir -> ir
+    | None -> failwith "Kernel has no V2 IR"
+  in
+  Sarek.Execute.run_vectors
+    ~device:dev
+    ~block:(Sarek.Execute.dims1d threads)
+    ~grid:(Sarek.Execute.dims1d grid_x)
+    ~ir
+    ~args:
+      [
+        Sarek.Execute.Vec xs;
+        Sarek.Execute.Vec ys;
+        Sarek.Execute.Vec distances;
+        Sarek.Execute.Int32 (Int32.of_int n);
+      ]
+    () ;
+  V2_Transfer.flush dev ;
+  (* Verify *)
+  let ok = ref true in
+  for i = 0 to n - 1 do
+    let x = V2_Vector.get xs i in
+    let y = V2_Vector.get ys i in
+    let expected = sqrt ((x *. x) +. (y *. y)) in
+    let got = V2_Vector.get distances i in
+    if abs_float (got -. expected) > 1e-3 then (
+      ok := false ;
+      if i < 5 then
+        Printf.printf "  Mismatch at %d: got %f expected %f\n%!" i got expected)
+  done ;
+  !ok
 
 (** Run 3D point normalize test *)
 let run_point3d_normalize_test dev =
@@ -205,5 +267,23 @@ let () =
       time_ms
       (if ok then "PASSED" else "FAILED") ;
 
-    print_endline "\nComplex types tests PASSED"
+    print_endline "\nSPOC path tests PASSED"
+  end ;
+
+  (* V2 execution tests *)
+  print_endline "\n=== V2 Path Tests ===" ;
+  let v2_devs = V2_Device.init ~frameworks:["CUDA"; "OpenCL"] () in
+  if Array.length v2_devs = 0 then
+    print_endline "No V2 devices found - skipping V2 tests"
+  else begin
+    let v2_dev = v2_devs.(0) in
+    Printf.printf "V2 device: %s\n%!" v2_dev.V2_Device.name ;
+
+    Printf.printf "\nPoint2D distance (V2 execution):\n%!" ;
+    (try
+       let ok = run_point2d_test_v2 v2_dev 128 in
+       Printf.printf "  %s\n%!" (if ok then "PASSED" else "FAILED")
+     with e -> Printf.printf "  FAIL (%s)\n%!" (Printexc.to_string e)) ;
+
+    print_endline "\nV2 path tests completed"
   end

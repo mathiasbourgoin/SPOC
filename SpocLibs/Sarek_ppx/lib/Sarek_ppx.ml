@@ -348,6 +348,16 @@ let field_element_count (ct : core_type) : int =
   | Ptyp_constr ({txt = Lident "int"; _}, _) -> 1
   | _ -> 1
 
+(** Get field size in bytes for V2 custom types *)
+let field_byte_size (ct : core_type) : int =
+  match ct.ptyp_desc with
+  | Ptyp_constr ({txt = Lident "float32"; _}, _) -> 4
+  | Ptyp_constr ({txt = Lident "float"; _}, _) -> 8
+  | Ptyp_constr ({txt = Lident "int32"; _}, _) -> 4
+  | Ptyp_constr ({txt = Lident "int64"; _}, _) -> 8
+  | Ptyp_constr ({txt = Lident "int"; _}, _) -> 4
+  | _ -> 4
+
 (** Generate a <name>_custom value for Vector.Custom.
     For type float4 = { mutable x: float32; mutable y: float32; ... } [@@sarek.type],
     generates proper get/set functions using Spoc.Tools.float32get/set *)
@@ -440,6 +450,115 @@ let generate_custom_value ~loc (td : type_declaration) : structure_item list =
               get = [%e get_fn];
               set = [%e set_fn];
             }];
+      ]
+  | _ -> []
+
+(** Generate a <name>_custom_v2 value for Sarek_core.Vector.custom_type.
+    For type point = { x: float32; y: float32 } [@@sarek.type], generates:
+      let point_custom_v2 : point Sarek_core.Vector.custom_type = {
+        elem_size = 8;
+        name = "point";
+        get = (fun ptr idx -> ... Ctypes pointer arithmetic ...);
+        set = (fun ptr idx v -> ... Ctypes pointer arithmetic ...);
+      }
+
+    This uses Ctypes to cast the void pointer to float pointer and access
+    fields at byte offsets. *)
+let generate_custom_v2_value ~loc (td : type_declaration) : structure_item list
+    =
+  match td.ptype_kind with
+  | Ptype_record labels ->
+      let type_name = td.ptype_name.txt in
+      let custom_v2_name = type_name ^ "_custom_v2" in
+      let custom_v2_pat = Ast_builder.Default.pvar ~loc custom_v2_name in
+      let size = calc_type_size labels in
+      let size_expr = Ast_builder.Default.eint ~loc size in
+      let name_expr = Ast_builder.Default.estring ~loc type_name in
+      let type_annot =
+        Ast_builder.Default.ptyp_constr
+          ~loc
+          {txt = Ldot (Ldot (Lident "Sarek_core", "Vector"), "custom_type"); loc}
+          [Ast_builder.Default.ptyp_constr ~loc {txt = Lident type_name; loc} []]
+      in
+
+      (* Calculate byte offsets for each field *)
+      let field_infos =
+        let rec calc_offsets byte_off = function
+          | [] -> []
+          | ld :: rest ->
+              let fsize = field_byte_size ld.pld_type in
+              (ld.pld_name.txt, byte_off, ld.pld_type)
+              :: calc_offsets (byte_off + fsize) rest
+        in
+        calc_offsets 0 labels
+      in
+
+      (* Generate V2 custom type - use a helper function to avoid value restriction issues *)
+      let _ = type_annot in (* suppress unused warning *)
+
+      (* Generate a function that creates the custom_type when called.
+         This avoids the value restriction since it's a function definition. *)
+      let make_fn_name = type_name ^ "_make_custom_v2" in
+      let make_fn_pat = Ast_builder.Default.pvar ~loc make_fn_name in
+      let make_fn_call = Ast_builder.Default.eapply ~loc
+        (Ast_builder.Default.evar ~loc make_fn_name)
+        [[%expr ()]]
+      in
+
+      (* Generate get function that reads each field and constructs record *)
+      let get_field_exprs =
+        List.map
+          (fun (name, byte_off, _ftype) ->
+            let byte_off_expr = Ast_builder.Default.eint ~loc byte_off in
+            let field_expr =
+              [%expr Sarek_core.Vector.Custom_helpers.read_float32 raw_ptr (base_off + [%e byte_off_expr])]
+            in
+            ({txt = Lident name; loc}, field_expr))
+          field_infos
+      in
+      let get_record = Ast_builder.Default.pexp_record ~loc get_field_exprs None in
+      let get_fn =
+        [%expr fun raw_ptr idx ->
+          let base_off = idx * [%e size_expr] in
+          [%e get_record]]
+      in
+
+      (* Generate set function that writes each field *)
+      let set_stmts =
+        List.map
+          (fun (name, byte_off, _ftype) ->
+            let byte_off_expr = Ast_builder.Default.eint ~loc byte_off in
+            let field_access =
+              Ast_builder.Default.pexp_field ~loc [%expr v] {txt = Lident name; loc}
+            in
+            [%expr Sarek_core.Vector.Custom_helpers.write_float32 raw_ptr (base_off + [%e byte_off_expr]) [%e field_access]])
+          field_infos
+      in
+      let set_body =
+        match set_stmts with
+        | [] -> [%expr ()]
+        | [stmt] -> stmt
+        | stmt :: rest ->
+            List.fold_left (fun acc s -> [%expr [%e acc]; [%e s]]) stmt rest
+      in
+      let set_fn =
+        [%expr fun raw_ptr idx v ->
+          let base_off = idx * [%e size_expr] in
+          [%e set_body]]
+      in
+
+      [
+        (* Generate: let point_make_custom_v2 = fun () -> { ... } *)
+        [%stri
+          let [%p make_fn_pat] = fun () ->
+            ({
+              Sarek_core.Vector.elem_size = [%e size_expr];
+              name = [%e name_expr];
+              get = [%e get_fn];
+              set = [%e set_fn];
+            } : [%t type_annot])];
+        (* Generate: let point_custom_v2 = point_make_custom_v2 () *)
+        [%stri let [%p custom_v2_pat] = [%e make_fn_call]];
       ]
   | _ -> []
 
@@ -559,15 +678,17 @@ let sarek_type_rule =
                 register_sarek_type_decl ~loc:td.ptype_loc td ;
                 (* Generate field accessor functions for compile-time validation *)
                 let accessors = generate_field_accessors ~loc td in
-                (* Generate <name>_custom value for Vector.Custom *)
+                (* Generate <name>_custom value for SPOC Vector.Custom *)
                 let custom_val = generate_custom_value ~loc td in
+                (* Generate <name>_custom_v2 value for V2 Sarek_core.Vector.custom_type *)
+                let custom_v2_val = generate_custom_v2_value ~loc td in
                 (* Generate runtime registration code for cross-module composability.
                    This follows the ppx_deriving pattern: the PPX generates OCaml code
                    that registers the type at module initialization time. When another
                    module depends on this library, the registration runs before any
                    kernels are JIT-compiled, making the type info available. *)
                 let registration = generate_type_registration ~loc td in
-                accessors @ custom_val @ registration
+                accessors @ custom_val @ custom_v2_val @ registration
             | None -> [])
           (List.combine decls payloads)
       in

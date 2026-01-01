@@ -34,6 +34,38 @@ type 'a custom_type = {
   name : string;  (** Type name for debugging *)
 }
 
+(** Helper functions for custom type implementations.
+    These wrap Ctypes operations to provide simpler APIs for PPX-generated code. *)
+module Custom_helpers = struct
+  (** Read a float32 value at byte offset from a void pointer *)
+  let read_float32 (ptr : unit Ctypes.ptr) (byte_offset : int) : float =
+    let byte_ptr = Ctypes.from_voidp Ctypes.uint8_t ptr in
+    let target_ptr = Ctypes.(byte_ptr +@ byte_offset) in
+    let float_ptr = Ctypes.from_voidp Ctypes.float (Ctypes.to_voidp target_ptr) in
+    Ctypes.(!@float_ptr)
+
+  (** Write a float32 value at byte offset to a void pointer *)
+  let write_float32 (ptr : unit Ctypes.ptr) (byte_offset : int) (v : float) : unit =
+    let byte_ptr = Ctypes.from_voidp Ctypes.uint8_t ptr in
+    let target_ptr = Ctypes.(byte_ptr +@ byte_offset) in
+    let float_ptr = Ctypes.from_voidp Ctypes.float (Ctypes.to_voidp target_ptr) in
+    Ctypes.(float_ptr <-@ v)
+
+  (** Read an int32 value at byte offset from a void pointer *)
+  let read_int32 (ptr : unit Ctypes.ptr) (byte_offset : int) : int32 =
+    let byte_ptr = Ctypes.from_voidp Ctypes.uint8_t ptr in
+    let target_ptr = Ctypes.(byte_ptr +@ byte_offset) in
+    let int_ptr = Ctypes.from_voidp Ctypes.int32_t (Ctypes.to_voidp target_ptr) in
+    Ctypes.(!@int_ptr)
+
+  (** Write an int32 value at byte offset to a void pointer *)
+  let write_int32 (ptr : unit Ctypes.ptr) (byte_offset : int) (v : int32) : unit =
+    let byte_ptr = Ctypes.from_voidp Ctypes.uint8_t ptr in
+    let target_ptr = Ctypes.(byte_ptr +@ byte_offset) in
+    let int_ptr = Ctypes.from_voidp Ctypes.int32_t (Ctypes.to_voidp target_ptr) in
+    Ctypes.(int_ptr <-@ v)
+end
+
 (** Unified kind type supporting both scalar and custom types *)
 type (_, _) kind =
   | Scalar : ('a, 'b) scalar_kind -> ('a, 'b) kind
