@@ -153,32 +153,40 @@ let () =
 
   let all_ok = ref true in
 
+  (* Compute expected results (CPU reference) *)
+  let expected = Array.init size (fun i -> float_of_int i +. float_of_int (i * 2)) in
+
   (* Test each V2 device *)
   Array.iter (fun v2_dev ->
     let name = v2_dev.V2_Device.name in
+    let framework = v2_dev.V2_Device.framework in
 
-    (* Find matching SPOC device *)
-    let spoc_dev_opt =
-      Array.find_opt (fun d ->
-        d.Spoc_Devices.general_info.Spoc_Devices.name = name
-      ) spoc_devs
-    in
-
-    match spoc_dev_opt with
-    | None ->
-        Printf.printf "%-40s %15s %15s %10s\n" name "-" "found" "SKIP" ;
-    | Some spoc_dev ->
-        (* Run both paths *)
-        let spoc_result = run_spoc spoc_dev in
-        let v2_result = run_v2 v2_dev in
-
-        (* Compare *)
-        let errors = compare_results spoc_result v2_result in
-        let status = if errors = 0 then "MATCH" else "DIFFER" in
-        if errors > 0 then all_ok := false ;
-
-        Printf.printf "%-40s %15s %15s %10s\n"
-          name "OK" "OK" status
+    (* For OpenCL: compare with SPOC. For CUDA: compare with CPU reference *)
+    if framework = "OpenCL" then begin
+      (* Find matching SPOC device for OpenCL *)
+      let spoc_dev_opt =
+        Array.find_opt (fun d ->
+          d.Spoc_Devices.general_info.Spoc_Devices.name = name
+        ) spoc_devs
+      in
+      match spoc_dev_opt with
+      | None ->
+          Printf.printf "%-40s %15s %15s %10s\n" name "-" "found" "SKIP"
+      | Some spoc_dev ->
+          let spoc_result = run_spoc spoc_dev in
+          let v2_result = run_v2 v2_dev in
+          let errors = compare_results spoc_result v2_result in
+          let status = if errors = 0 then "MATCH" else "DIFFER" in
+          if errors > 0 then all_ok := false ;
+          Printf.printf "%-40s %15s %15s %10s\n" name "OK" "OK" status
+    end else begin
+      (* CUDA or other: compare V2 with CPU reference *)
+      let v2_result = run_v2 v2_dev in
+      let errors = compare_results expected v2_result in
+      let status = if errors = 0 then "PASS" else "FAIL" in
+      if errors > 0 then all_ok := false ;
+      Printf.printf "%-40s %15s %15s %10s\n" name "-" "OK" status
+    end
   ) v2_devs ;
 
   print_endline (String.make 80 '-') ;
