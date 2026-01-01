@@ -89,14 +89,16 @@ let string_of_nvrtc_result = function
 
 (** {1 Library Loading} *)
 
-(** Load NVRTC library dynamically (lazy) *)
+(** Load NVRTC library dynamically (lazy).
+    Prefer unversioned to get system default that matches driver. *)
 let nvrtc_lib : Dl.library option Lazy.t =
   lazy
-    (try Some (Dl.dlopen ~filename:"libnvrtc.so.12" ~flags:[Dl.RTLD_LAZY])
+    ((* Try unversioned first - should match driver *)
+     try Some (Dl.dlopen ~filename:"libnvrtc.so" ~flags:[Dl.RTLD_LAZY])
      with _ -> (
-       try Some (Dl.dlopen ~filename:"libnvrtc.so.11" ~flags:[Dl.RTLD_LAZY])
+       try Some (Dl.dlopen ~filename:"libnvrtc.so.12" ~flags:[Dl.RTLD_LAZY])
        with _ -> (
-         try Some (Dl.dlopen ~filename:"libnvrtc.so" ~flags:[Dl.RTLD_LAZY])
+         try Some (Dl.dlopen ~filename:"libnvrtc.so.11" ~flags:[Dl.RTLD_LAZY])
          with _ -> (
            try Some (Dl.dlopen ~filename:"libnvrtc.dylib" ~flags:[Dl.RTLD_LAZY])
            with _ -> (
