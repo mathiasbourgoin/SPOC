@@ -4,6 +4,10 @@
  * Provides a unified Vector type that tracks data location (CPU/GPU) and
  * supports automatic synchronization. Replaces the old SPOC Vector module.
  *
+ * Supports two storage modes:
+ * - Bigarray: Standard numeric types (Float32, Float64, Int32, etc.)
+ * - Custom: User-defined ctypes structures with custom get/set
+ *
  * Design principles:
  * - Type-safe: Uses GADTs and existentials instead of Obj.t
  * - Location-aware: Tracks where data resides (CPU, GPU, or both)
@@ -11,19 +15,35 @@
  * - Auto-sync: Element access triggers sync when needed
  ******************************************************************************)
 
-(** {1 Element Types (GADT)} *)
+(** {1 Element Types} *)
 
-(** Element kind with type witness - replaces Bigarray.kind wrapper *)
+(** Standard numeric kinds backed by Bigarray *)
+type (_, _) scalar_kind =
+  | Float32 : (float, Bigarray.float32_elt) scalar_kind
+  | Float64 : (float, Bigarray.float64_elt) scalar_kind
+  | Int32 : (int32, Bigarray.int32_elt) scalar_kind
+  | Int64 : (int64, Bigarray.int64_elt) scalar_kind
+  | Char : (char, Bigarray.int8_unsigned_elt) scalar_kind
+  | Complex32 : (Complex.t, Bigarray.complex32_elt) scalar_kind
+
+(** Custom type descriptor for ctypes-based structures *)
+type 'a custom_type = {
+  elem_size : int;  (** Size of each element in bytes *)
+  get : unit Ctypes.ptr -> int -> 'a;  (** Read element at index *)
+  set : unit Ctypes.ptr -> int -> 'a -> unit;  (** Write element at index *)
+  name : string;  (** Type name for debugging *)
+}
+
+(** Unified kind type supporting both scalar and custom types *)
 type (_, _) kind =
-  | Float32 : (float, Bigarray.float32_elt) kind
-  | Float64 : (float, Bigarray.float64_elt) kind
-  | Int32 : (int32, Bigarray.int32_elt) kind
-  | Int64 : (int64, Bigarray.int64_elt) kind
-  | Char : (char, Bigarray.int8_unsigned_elt) kind
-  | Complex32 : (Complex.t, Bigarray.complex32_elt) kind
+  | Scalar : ('a, 'b) scalar_kind -> ('a, 'b) kind
+  | Custom : 'a custom_type -> ('a, unit) kind
 
-(** Convert our kind to Bigarray.kind *)
-let to_bigarray_kind : type a b. (a, b) kind -> (a, b) Bigarray.kind = function
+(** {1 Kind Helpers} *)
+
+(** Convert scalar kind to Bigarray.kind *)
+let to_bigarray_kind : type a b. (a, b) scalar_kind -> (a, b) Bigarray.kind =
+  function
   | Float32 -> Bigarray.Float32
   | Float64 -> Bigarray.Float64
   | Int32 -> Bigarray.Int32
@@ -32,7 +52,7 @@ let to_bigarray_kind : type a b. (a, b) kind -> (a, b) Bigarray.kind = function
   | Complex32 -> Bigarray.Complex32
 
 (** Element size in bytes *)
-let elem_size : type a b. (a, b) kind -> int = function
+let scalar_elem_size : type a b. (a, b) scalar_kind -> int = function
   | Float32 -> 4
   | Float64 -> 8
   | Int32 -> 4
@@ -40,14 +60,36 @@ let elem_size : type a b. (a, b) kind -> int = function
   | Char -> 1
   | Complex32 -> 8
 
+let elem_size : type a b. (a, b) kind -> int = function
+  | Scalar k -> scalar_elem_size k
+  | Custom c -> c.elem_size
+
 (** Kind name for debugging *)
-let kind_name : type a b. (a, b) kind -> string = function
+let scalar_kind_name : type a b. (a, b) scalar_kind -> string = function
   | Float32 -> "Float32"
   | Float64 -> "Float64"
   | Int32 -> "Int32"
   | Int64 -> "Int64"
   | Char -> "Char"
   | Complex32 -> "Complex32"
+
+let kind_name : type a b. (a, b) kind -> string = function
+  | Scalar k -> scalar_kind_name k
+  | Custom c -> "Custom(" ^ c.name ^ ")"
+
+(** {1 Host Storage (GADT)} *)
+
+(** CPU-side storage - either Bigarray or raw ctypes pointer *)
+type (_, _) host_storage =
+  | Bigarray_storage :
+      ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t
+      -> ('a, 'b) host_storage
+  | Custom_storage : {
+      ptr : unit Ctypes.ptr;
+      custom : 'a custom_type;
+      length : int;
+    }
+      -> ('a, unit) host_storage
 
 (** {1 Location Tracking} *)
 
@@ -64,7 +106,6 @@ type location =
 (** Existential wrapper for backend-specific device buffers.
     Uses first-class modules to avoid Obj.t. *)
 module type DEVICE_BUFFER = sig
-  type t
   val device : Device.t
   val size : int
   val elem_size : int
@@ -80,7 +121,7 @@ type device_buffers = (int, device_buffer) Hashtbl.t
 
 (** High-level vector with location tracking *)
 type ('a, 'b) t = {
-  mutable cpu_data : ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t;
+  host : ('a, 'b) host_storage;
   device_buffers : device_buffers;
   length : int;
   kind : ('a, 'b) kind;
@@ -92,50 +133,93 @@ type ('a, 'b) t = {
 (** Global vector ID counter *)
 let next_id = ref 0
 
-(** {1 Creation} *)
+(** {1 Creation - Scalar Types} *)
 
-(** Create a new vector on CPU *)
-let create (kind : ('a, 'b) kind) ?(dev : Device.t option) (length : int) :
-    ('a, 'b) t =
+(** Create a new scalar vector on CPU *)
+let create_scalar (sk : ('a, 'b) scalar_kind) ?(dev : Device.t option)
+    (length : int) : ('a, 'b) t =
   incr next_id ;
-  let ba_kind = to_bigarray_kind kind in
-  let cpu_data = Bigarray.Array1.create ba_kind Bigarray.c_layout length in
+  let ba_kind = to_bigarray_kind sk in
+  let ba = Bigarray.Array1.create ba_kind Bigarray.c_layout length in
   let vec =
     {
-      cpu_data;
+      host = Bigarray_storage ba;
       device_buffers = Hashtbl.create 4;
       length;
-      kind;
+      kind = Scalar sk;
       location = CPU;
       auto_sync = true;
       id = !next_id;
     }
   in
-  (* If device specified, mark as target but don't allocate yet (lazy) *)
   (match dev with
-  | Some d -> vec.location <- Stale_GPU d  (* CPU authoritative, GPU will need update *)
+  | Some d -> vec.location <- Stale_GPU d
   | None -> ()) ;
   vec
 
+(** Create from scalar kind (convenience wrapper) *)
+let create : type a b. (a, b) kind -> ?dev:Device.t -> int -> (a, b) t =
+ fun kind ?dev length ->
+  match kind with
+  | Scalar sk -> create_scalar sk ?dev length
+  | Custom c -> (
+      incr next_id ;
+      let byte_size = length * c.elem_size in
+      let ptr = Ctypes.(allocate_n (array 1 char) ~count:byte_size) in
+      let ptr = Ctypes.coerce Ctypes.(ptr (array 1 char)) Ctypes.(ptr void) ptr in
+      let vec =
+        {
+          host = Custom_storage {ptr; custom = c; length};
+          device_buffers = Hashtbl.create 4;
+          length;
+          kind = Custom c;
+          location = CPU;
+          auto_sync = true;
+          id = !next_id;
+        }
+      in
+      match dev with
+      | Some d ->
+          vec.location <- Stale_GPU d ;
+          vec
+      | None -> vec)
+
+(** {1 Creation - Custom Types} *)
+
+(** Create a custom vector with explicit type descriptor *)
+let create_custom (c : 'a custom_type) ?(dev : Device.t option) (length : int) :
+    ('a, unit) t =
+  create (Custom c) ?dev length
+
+(** {1 Creation from Existing Data} *)
+
 (** Create from existing Bigarray (shares memory) *)
-let of_bigarray (kind : ('a, 'b) kind)
+let of_bigarray (sk : ('a, 'b) scalar_kind)
     (ba : ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t) : ('a, 'b) t =
   incr next_id ;
   {
-    cpu_data = ba;
+    host = Bigarray_storage ba;
     device_buffers = Hashtbl.create 4;
     length = Bigarray.Array1.dim ba;
-    kind;
+    kind = Scalar sk;
     location = CPU;
     auto_sync = true;
     id = !next_id;
   }
 
-(** Get underlying Bigarray (syncs to CPU if needed) *)
-let to_bigarray (vec : ('a, 'b) t) :
-    ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t =
-  (* TODO: sync_to_cpu if location is GPU-only *)
-  vec.cpu_data
+(** Create from existing ctypes pointer (shares memory) *)
+let of_ctypes_ptr (c : 'a custom_type) (ptr : unit Ctypes.ptr) (length : int) :
+    ('a, unit) t =
+  incr next_id ;
+  {
+    host = Custom_storage {ptr; custom = c; length};
+    device_buffers = Hashtbl.create 4;
+    length;
+    kind = Custom c;
+    location = CPU;
+    auto_sync = true;
+    id = !next_id;
+  }
 
 (** {1 Accessors} *)
 
@@ -153,30 +237,56 @@ let device (vec : ('a, 'b) t) : Device.t option =
   | CPU -> None
   | GPU d | Both d | Stale_CPU d | Stale_GPU d -> Some d
 
+(** {1 Raw Data Access} *)
+
+(** Get underlying Bigarray (only for scalar vectors) *)
+let to_bigarray : type a b. (a, b) t -> (a, b, Bigarray.c_layout) Bigarray.Array1.t =
+ fun vec ->
+  match vec.host with
+  | Bigarray_storage ba -> ba
+  | Custom_storage _ -> invalid_arg "to_bigarray: vector uses custom storage"
+
+(** Get underlying ctypes pointer (only for custom vectors) *)
+let to_ctypes_ptr : type a. (a, unit) t -> unit Ctypes.ptr = fun vec ->
+  match vec.host with
+  | Custom_storage {ptr; _} -> ptr
+  | Bigarray_storage _ -> invalid_arg "to_ctypes_ptr: vector uses bigarray storage"
+
+(** Get raw host pointer for any vector type *)
+let host_ptr : type a b. (a, b) t -> nativeint = fun vec ->
+  match vec.host with
+  | Bigarray_storage ba ->
+      Ctypes.(raw_address_of_ptr (bigarray_start array1 ba |> to_voidp))
+  | Custom_storage {ptr; _} ->
+      Ctypes.raw_address_of_ptr ptr
+
 (** {1 Element Access} *)
 
-(** Get element (syncs to CPU if needed and auto_sync enabled) *)
-let get (vec : ('a, 'b) t) (idx : int) : 'a =
+(** Get element (works for both storage types) *)
+let get : type a b. (a, b) t -> int -> a =
+ fun vec idx ->
   if idx < 0 || idx >= vec.length then
     invalid_arg
       (Printf.sprintf "Vector.get: index %d out of bounds [0, %d)" idx
          vec.length) ;
-  (* TODO: If auto_sync and data is GPU-only, sync first *)
-  Bigarray.Array1.get vec.cpu_data idx
+  match vec.host with
+  | Bigarray_storage ba -> Bigarray.Array1.get ba idx
+  | Custom_storage {ptr; custom; _} -> custom.get ptr idx
 
-(** Set element (marks GPU as stale if synced) *)
-let set (vec : ('a, 'b) t) (idx : int) (value : 'a) : unit =
+(** Set element (works for both storage types) *)
+let set : type a b. (a, b) t -> int -> a -> unit =
+ fun vec idx value ->
   if idx < 0 || idx >= vec.length then
     invalid_arg
       (Printf.sprintf "Vector.set: index %d out of bounds [0, %d)" idx
          vec.length) ;
-  Bigarray.Array1.set vec.cpu_data idx value ;
+  (match vec.host with
+  | Bigarray_storage ba -> Bigarray.Array1.set ba idx value
+  | Custom_storage {ptr; custom; _} -> custom.set ptr idx value) ;
   (* Mark GPU as stale if we had synced data *)
   match vec.location with
   | Both d -> vec.location <- Stale_GPU d
-  | GPU d ->
-      (* Data was GPU-only, now we have CPU copy that's authoritative *)
-      vec.location <- Stale_GPU d
+  | GPU d -> vec.location <- Stale_GPU d
   | CPU | Stale_CPU _ | Stale_GPU _ -> ()
 
 (** Indexing operators *)
@@ -186,11 +296,17 @@ let ( .%[]<- ) = set
 
 (** {1 Unsafe Access (no bounds check)} *)
 
-let unsafe_get (vec : ('a, 'b) t) (idx : int) : 'a =
-  Bigarray.Array1.unsafe_get vec.cpu_data idx
+let unsafe_get : type a b. (a, b) t -> int -> a =
+ fun vec idx ->
+  match vec.host with
+  | Bigarray_storage ba -> Bigarray.Array1.unsafe_get ba idx
+  | Custom_storage {ptr; custom; _} -> custom.get ptr idx
 
-let unsafe_set (vec : ('a, 'b) t) (idx : int) (value : 'a) : unit =
-  Bigarray.Array1.unsafe_set vec.cpu_data idx value ;
+let unsafe_set : type a b. (a, b) t -> int -> a -> unit =
+ fun vec idx value ->
+  (match vec.host with
+  | Bigarray_storage ba -> Bigarray.Array1.unsafe_set ba idx value
+  | Custom_storage {ptr; custom; _} -> custom.set ptr idx value) ;
   match vec.location with
   | Both d -> vec.location <- Stale_GPU d
   | GPU d -> vec.location <- Stale_GPU d
@@ -216,9 +332,7 @@ let is_on_gpu (vec : ('a, 'b) t) : bool =
   | CPU | Stale_GPU _ -> false
 
 let is_synced (vec : ('a, 'b) t) : bool =
-  match vec.location with
-  | Both _ -> true
-  | CPU | GPU _ | Stale_CPU _ | Stale_GPU _ -> false
+  match vec.location with Both _ -> true | _ -> false
 
 let needs_gpu_update (vec : ('a, 'b) t) : bool =
   match vec.location with Stale_GPU _ -> true | _ -> false
@@ -246,53 +360,81 @@ let location_to_string : location -> string = function
   | Stale_GPU d -> Printf.sprintf "Stale_GPU(%s)" d.name
 
 let to_string (vec : ('a, 'b) t) : string =
-  Printf.sprintf "Vector#%d<%s>[%d] @ %s" vec.id (kind_name vec.kind)
-    vec.length
+  Printf.sprintf "Vector#%d<%s>[%d] @ %s" vec.id (kind_name vec.kind) vec.length
     (location_to_string vec.location)
 
-(** {1 Convenience Constructors} *)
+(** {1 Convenience Constructors for Scalar Types} *)
 
-let create_float32 ?dev n = create Float32 ?dev n
+let float32 = Scalar Float32
+let float64 = Scalar Float64
+let int32 = Scalar Int32
+let int64 = Scalar Int64
+let char = Scalar Char
+let complex32 = Scalar Complex32
 
-let create_float64 ?dev n = create Float64 ?dev n
-
-let create_int32 ?dev n = create Int32 ?dev n
-
-let create_int64 ?dev n = create Int64 ?dev n
+let create_float32 ?dev n = create float32 ?dev n
+let create_float64 ?dev n = create float64 ?dev n
+let create_int32 ?dev n = create int32 ?dev n
+let create_int64 ?dev n = create int64 ?dev n
 
 (** {1 Initialization Helpers} *)
 
 (** Fill vector with a value *)
-let fill (vec : ('a, 'b) t) (value : 'a) : unit =
-  Bigarray.Array1.fill vec.cpu_data value ;
+let fill : type a b. (a, b) t -> a -> unit =
+ fun vec value ->
+  (match vec.host with
+  | Bigarray_storage ba -> Bigarray.Array1.fill ba value
+  | Custom_storage {ptr; custom; length; _} ->
+      for i = 0 to length - 1 do
+        custom.set ptr i value
+      done) ;
   match vec.location with
   | Both d -> vec.location <- Stale_GPU d
   | GPU d -> vec.location <- Stale_GPU d
-  | CPU | Stale_CPU _ | Stale_GPU _ -> ()
+  | _ -> ()
 
 (** Initialize with a function *)
-let init (kind : ('a, 'b) kind) (length : int) (f : int -> 'a) : ('a, 'b) t =
+let init : type a b. (a, b) kind -> int -> (int -> a) -> (a, b) t =
+ fun kind length f ->
   let vec = create kind length in
   for i = 0 to length - 1 do
-    Bigarray.Array1.unsafe_set vec.cpu_data i (f i)
+    unsafe_set vec i (f i)
   done ;
   vec
 
-(** Copy vector *)
-let copy (vec : ('a, 'b) t) : ('a, 'b) t =
+(** Copy vector (CPU data only) *)
+let copy : type a b. (a, b) t -> (a, b) t =
+ fun vec ->
   incr next_id ;
-  let cpu_data =
-    Bigarray.Array1.create
-      (to_bigarray_kind vec.kind)
-      Bigarray.c_layout vec.length
+  let host =
+    match vec.host with
+    | Bigarray_storage ba ->
+        let new_ba =
+          Bigarray.Array1.create (Bigarray.Array1.kind ba) Bigarray.c_layout
+            vec.length
+        in
+        Bigarray.Array1.blit ba new_ba ;
+        Bigarray_storage new_ba
+    | Custom_storage {ptr; custom; length} ->
+        let byte_size = length * custom.elem_size in
+        let new_ptr =
+          Ctypes.(allocate_n (array 1 char) ~count:byte_size)
+        in
+        let new_ptr =
+          Ctypes.coerce Ctypes.(ptr (array 1 char)) Ctypes.(ptr void) new_ptr
+        in
+        (* Copy data element by element *)
+        for i = 0 to length - 1 do
+          custom.set new_ptr i (custom.get ptr i)
+        done ;
+        Custom_storage {ptr = new_ptr; custom; length}
   in
-  Bigarray.Array1.blit vec.cpu_data cpu_data ;
   {
-    cpu_data;
-    device_buffers = Hashtbl.create 4;  (* Don't copy GPU buffers *)
+    host;
+    device_buffers = Hashtbl.create 4;
     length = vec.length;
     kind = vec.kind;
-    location = CPU;  (* Copy is on CPU only *)
+    location = CPU;
     auto_sync = vec.auto_sync;
     id = !next_id;
   }

@@ -4,6 +4,6 @@
 (library
  (name sarek_core)
  (public_name sarek.core)
- (libraries sarek_framework)
+ (libraries sarek_framework ctypes)
  (modules Device Memory Kernel Runtime Vector)
  (preprocess no_preprocessing))
