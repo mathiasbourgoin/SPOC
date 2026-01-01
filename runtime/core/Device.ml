@@ -31,12 +31,14 @@ let init ?(frameworks = ["CUDA"; "OpenCL"]) () =
     frameworks
     |> List.iter (fun fw_name ->
         match Framework_registry.find_backend fw_name with
-        | None -> () (* Backend not registered *)
+        | None ->
+            Log.debugf Log.Device "Framework %s: not registered" fw_name
         | Some (module B : Framework_sig.BACKEND) ->
             if B.is_available () then begin
               try
                 B.Device.init () ;
                 let count = B.Device.count () in
+                Log.debugf Log.Device "Framework %s: %d device(s)" fw_name count ;
                 for i = 0 to count - 1 do
                   let dev = B.Device.get i in
                   let device =
@@ -48,11 +50,14 @@ let init ?(frameworks = ["CUDA"; "OpenCL"]) () =
                       capabilities = B.Device.capabilities dev;
                     }
                   in
+                  Log.debugf Log.Device "  [%d] %s (%s)" !global_id device.name fw_name ;
                   all_devices := device :: !all_devices ;
                   incr global_id
                 done
-              with _ -> () (* Skip backends that fail to initialize *)
-            end) ;
+              with e ->
+                Log.debugf Log.Device "Framework %s: init failed (%s)" fw_name (Printexc.to_string e)
+            end else
+              Log.debugf Log.Device "Framework %s: not available" fw_name) ;
 
     devices := Array.of_list (List.rev !all_devices) ;
     initialized := true ;

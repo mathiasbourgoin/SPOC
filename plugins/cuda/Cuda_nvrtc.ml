@@ -259,15 +259,14 @@ let compile_to_ptx ?(name = "kernel") ?(arch = "compute_70") (source : string) :
 
   let prog_handle = !@prog in
 
-  (* Set up options - just the architecture, our code uses explicit __global__ *)
-  let arch_opt = Printf.sprintf "--gpu-architecture=%s" arch in
+  (* Set up options - use -arch for broader NVRTC compatibility *)
+  let arch_opt = Printf.sprintf "-arch=%s" arch in
   let opts_list = [arch_opt] in
-  Printf.eprintf "[NVRTC] arch=%s options=[%s]\n%!" arch (String.concat "; " opts_list) ;
+  Sarek_core.Log.debugf Sarek_core.Log.Kernel "NVRTC arch=%s options=[%s]" arch (String.concat "; " opts_list) ;
   let opts = CArray.of_list string opts_list in
 
   (* Compile *)
   let compile_result = nvrtcCompileProgram prog_handle 1 (CArray.start opts) in
-  Printf.eprintf "[NVRTC] result=%s\n%!" (string_of_nvrtc_result compile_result) ;
   Sarek_core.Log.debugf
     Sarek_core.Log.Kernel
     "NVRTC compile result: %s"

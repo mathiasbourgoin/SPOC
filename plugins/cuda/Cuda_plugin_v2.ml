@@ -159,14 +159,14 @@ end
 (** Auto-register V2 backend when module is loaded *)
 let registered_v2 =
   lazy
-    (Printf.eprintf "[Cuda_plugin_v2] checking availability...\n%!" ;
+    (Sarek_core.Log.debug Sarek_core.Log.Device "Cuda_plugin_v2: checking availability" ;
      if Cuda_v2.is_available () then begin
-       Printf.eprintf "[Cuda_plugin_v2] CUDA available, registering V2 backend\n%!" ;
+       Sarek_core.Log.debug Sarek_core.Log.Device "Cuda_plugin_v2: CUDA available, registering V2 backend" ;
        Framework_registry.register_backend_v2
          ~priority:100
          (module Cuda_v2 : Framework_sig.BACKEND_V2)
      end else
-       Printf.eprintf "[Cuda_plugin_v2] CUDA not available\n%!")
+       Sarek_core.Log.debug Sarek_core.Log.Device "Cuda_plugin_v2: CUDA not available")
 
 let () = Lazy.force registered_v2
 
