@@ -195,6 +195,12 @@ let rec quote_expr ~loc (e : Ir.expr) : expression =
             [%e quote_list ~loc quote_expr args] )]
   | Ir.EArrayLen name ->
       [%expr Sarek.Sarek_ir.EArrayLen [%e quote_string ~loc name]]
+  | Ir.EArrayCreate (elem_ty, size, mem) ->
+      [%expr
+        Sarek.Sarek_ir.EArrayCreate
+          ( [%e quote_elttype ~loc elem_ty],
+            [%e quote_expr ~loc size],
+            [%e quote_memspace ~loc mem] )]
   | Ir.EArrayReadExpr (base, idx) ->
       [%expr
         Sarek.Sarek_ir.EArrayReadExpr
@@ -288,6 +294,7 @@ let rec quote_stmt ~loc (s : Ir.stmt) : expression =
         Sarek.Sarek_ir.SPragma
           ([%e quote_list ~loc quote_string opts], [%e quote_stmt ~loc body])]
   | Ir.SMemFence -> [%expr Sarek.Sarek_ir.SMemFence]
+  | Ir.SBlock body -> [%expr Sarek.Sarek_ir.SBlock [%e quote_stmt ~loc body]]
   | Ir.SNative {gpu; ocaml} ->
       (* gpu is already (device -> string), ocaml needs Obj.repr *)
       [%expr

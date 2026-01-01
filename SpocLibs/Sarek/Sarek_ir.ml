@@ -61,7 +61,7 @@ type binop =
   | BitXor
 
 (** Unary operators *)
-type unop = Neg | Not
+type unop = Neg | Not | BitNot
 
 (** Loop direction *)
 type for_dir = Upto | Downto
@@ -90,6 +90,7 @@ type expr =
   | EVariant of string * string * expr list
       (** Variant construction: type name, constructor, args *)
   | EArrayLen of string  (** Array length intrinsic *)
+  | EArrayCreate of elttype * expr * memspace  (** elem type, size, memspace *)
   | EIf of expr * expr * expr  (** condition, then, else - value-returning if *)
   | EMatch of expr * (pattern * expr) list
       (** scrutinee, cases - value-returning match *)
@@ -118,6 +119,8 @@ type stmt =
   | SLetMut of var * expr * stmt  (** Mutable let: let v = ref e in body *)
   | SPragma of string list * stmt  (** Pragma hints wrapping a statement *)
   | SMemFence  (** Memory fence (threadfence) *)
+  | SBlock of stmt
+      (** Scoped block - creates C {} scope for variable isolation *)
   | SNative of {
       gpu : Sarek_core.Device.t -> string;  (** Generate GPU code for device *)
       ocaml : Obj.t;  (** OCaml fallback (polymorphic via Obj.t) *)
@@ -181,7 +184,11 @@ let string_of_binop = function
   | BitOr -> "|"
   | BitXor -> "^"
 
-let string_of_unop = function Neg -> "-" | Not -> "!"
+let string_of_unop = function Neg -> "-" | Not -> "!" | BitNot -> "~"
+
+let pp_elttype fmt ty = Format.fprintf fmt "%s" (string_of_elttype ty)
+
+let pp_memspace fmt ms = Format.fprintf fmt "%s" (string_of_memspace ms)
 
 let pp_var fmt v = Format.fprintf fmt "%s" v.var_name
 
@@ -218,6 +225,16 @@ let rec pp_expr fmt = function
   | EVariant (_, constr, args) ->
       Format.fprintf fmt "%s(%a)" constr pp_exprs args
   | EArrayLen arr -> Format.fprintf fmt "len(%s)" arr
+  | EArrayCreate (ty, size, mem) ->
+      Format.fprintf
+        fmt
+        "create_array<%a,%a>[%a]"
+        pp_elttype
+        ty
+        pp_memspace
+        mem
+        pp_expr
+        size
   | EArrayReadExpr (base, idx) ->
       Format.fprintf fmt "(%a)[%a]" pp_expr base pp_expr idx
   | EIf (cond, then_, else_) ->
@@ -315,6 +332,7 @@ let rec pp_stmt fmt = function
       Format.fprintf fmt "#pragma %s@," (String.concat " " hints) ;
       pp_stmt fmt body
   | SMemFence -> Format.fprintf fmt "__threadfence();"
+  | SBlock body -> Format.fprintf fmt "@[<v 2>{@ %a@]@ }" pp_stmt body
   | SNative _ -> Format.fprintf fmt "/* native code */"
 
 and pp_pattern fmt = function
@@ -798,6 +816,7 @@ let rec k_ext_of_expr : expr -> Kirc_Ast.k_ext = function
       Kirc_Ast.App (Kirc_Ast.Id "__bxor", [|k_ext_of_expr e1; k_ext_of_expr e2|])
   | EUnop (Neg, e) -> Kirc_Ast.Min (Kirc_Ast.Int 0, k_ext_of_expr e)
   | EUnop (Not, e) -> Kirc_Ast.Not (k_ext_of_expr e)
+  | EUnop (BitNot, e) -> Kirc_Ast.App (Kirc_Ast.Id "__bnot", [|k_ext_of_expr e|])
   | EArrayRead (arr, idx) ->
       Kirc_Ast.IntVecAcc (Kirc_Ast.Id arr, k_ext_of_expr idx)
   | ERecordField (e, field) -> Kirc_Ast.RecGet (k_ext_of_expr e, field)
@@ -820,6 +839,7 @@ let rec k_ext_of_expr : expr -> Kirc_Ast.k_ext = function
   | EVariant (type_name, constr, args) ->
       Kirc_Ast.Constr (type_name, constr, List.map k_ext_of_expr args)
   | EArrayLen arr -> Kirc_Ast.App (Kirc_Ast.Id "len", [|Kirc_Ast.Id arr|])
+  | EArrayCreate _ -> assert false (* V2 only *)
   | EArrayReadExpr (base, idx) ->
       Kirc_Ast.IntVecAcc (k_ext_of_expr base, k_ext_of_expr idx)
   | EIf (cond, then_, else_) ->
@@ -909,6 +929,7 @@ let rec k_ext_of_stmt : stmt -> Kirc_Ast.k_ext = function
       Kirc_Ast.SetLocalVar (k_ext_of_var v, k_ext_of_expr e, k_ext_of_stmt body)
   | SPragma (hints, body) -> Kirc_Ast.Pragma (hints, k_ext_of_stmt body)
   | SMemFence -> Kirc_Ast.IntrinsicRef (["Sarek_stdlib"; "Gpu"], "memory_fence")
+  | SBlock body -> Kirc_Ast.Block (k_ext_of_stmt body)
   | SNative _ -> assert false (* V2 only, not used in Kirc_Ast path *)
 
 and k_ext_of_var (v : var) : Kirc_Ast.k_ext =

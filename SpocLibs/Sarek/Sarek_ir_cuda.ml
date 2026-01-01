@@ -138,6 +138,8 @@ let rec gen_expr buf = function
         args ;
       Buffer.add_char buf ')'
   | EArrayLen arr -> Buffer.add_string buf (arr ^ "_len")
+  | EArrayCreate _ ->
+      failwith "gen_expr: EArrayCreate should be handled in gen_stmt SLet"
   | EIf (cond, then_, else_) ->
       (* Ternary operator for value-returning if *)
       Buffer.add_char buf '(' ;
@@ -192,7 +194,7 @@ and gen_binop = function
   | BitOr -> " | "
   | BitXor -> " ^ "
 
-and gen_unop = function Neg -> "-" | Not -> "!"
+and gen_unop = function Neg -> "-" | Not -> "!" | BitNot -> "~"
 
 and gen_intrinsic buf path name args =
   (* Check for thread intrinsics first *)
@@ -416,6 +418,17 @@ let rec gen_stmt buf indent = function
       Buffer.add_string buf indent ;
       gen_expr buf e ;
       Buffer.add_string buf ";\n"
+  | SLet (v, EArrayCreate (elem_ty, size, mem), body) ->
+      (* Array declaration: type arr[size]; *)
+      Buffer.add_string buf indent ;
+      (match mem with Shared -> Buffer.add_string buf "__shared__ " | _ -> ()) ;
+      Buffer.add_string buf (cuda_type_of_elttype elem_ty) ;
+      Buffer.add_char buf ' ' ;
+      Buffer.add_string buf v.var_name ;
+      Buffer.add_char buf '[' ;
+      gen_expr buf size ;
+      Buffer.add_string buf "];\n" ;
+      gen_stmt buf indent body
   | SLet (v, e, body) ->
       Buffer.add_string buf indent ;
       Buffer.add_string buf (cuda_type_of_elttype v.var_type) ;
@@ -440,6 +453,12 @@ let rec gen_stmt buf indent = function
       Buffer.add_string buf (String.concat " " hints) ;
       Buffer.add_char buf '\n' ;
       gen_stmt buf indent body
+  | SBlock body ->
+      Buffer.add_string buf indent ;
+      Buffer.add_string buf "{\n" ;
+      gen_stmt buf (indent ^ "  ") body ;
+      Buffer.add_string buf indent ;
+      Buffer.add_string buf "}\n"
 
 (** {1 Declaration Generation} *)
 

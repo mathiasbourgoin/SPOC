@@ -46,6 +46,13 @@ let rec elttype_of_typ (ty : typ) : Ir.elttype =
   | TVar _ -> Ir.TInt32
   | TReg _ -> Ir.TInt32
 
+(** Convert Sarek_types.memspace to Sarek_ir_ppx.memspace *)
+let memspace_of_memspace (mem : Sarek_types.memspace) : Ir.memspace =
+  match mem with
+  | Sarek_types.Global -> Ir.Global
+  | Sarek_types.Shared -> Ir.Shared
+  | Sarek_types.Local -> Ir.Local
+
 (** Get C type string for a typ *)
 let rec c_type_of_typ ty =
   match repr ty with
@@ -239,6 +246,7 @@ let rec make_returning stmt =
   | Ir.SMemFence | Ir.SEmpty | Ir.SNative _ ->
       (* These are side-effect statements; return unit after *)
       Ir.SSeq [stmt; Ir.SReturn (Ir.EConst Ir.CUnit)]
+  | Ir.SBlock body -> Ir.SBlock (make_returning body)
 
 (** Convert a typed expression to IR expression *)
 let rec lower_expr (state : state) (te : texpr) : Ir.expr =
@@ -370,11 +378,14 @@ and lower_stmt (state : state) (te : texpr) : Ir.stmt =
       match value.te with
       (* Special case: create_array - need proper array declaration *)
       | TECreateArray (size, elem_ty, mem) ->
-          let _size_ir = lower_expr state size in
+          let size_ir = lower_expr state size in
           let v = make_var name id (TArr (elem_ty, mem)) false in
           let body_ir = lower_stmt state body in
-          (* Emit as let with array length expression *)
-          Ir.SLet (v, Ir.EArrayLen (string_of_int (fresh_id state)), body_ir)
+          Ir.SLet
+            ( v,
+              Ir.EArrayCreate
+                (elttype_of_typ elem_ty, size_ir, memspace_of_memspace mem),
+              body_ir )
       (* Normal let binding *)
       | _ ->
           let v = make_var name id value.ty false in
@@ -419,7 +430,13 @@ and lower_stmt (state : state) (te : texpr) : Ir.stmt =
       let v = make_var name id (TArr (elem_ty, Sarek_types.Shared)) false in
       Ir.SLet (v, size_ir, lower_stmt state body)
   | TESuperstep (_name, _divergent, step_body, cont) ->
-      Ir.SSeq [lower_stmt state step_body; Ir.SBarrier; lower_stmt state cont]
+      (* Wrap step_body in SBlock to create C scope for variable isolation *)
+      Ir.SSeq
+        [
+          Ir.SBlock (lower_stmt state step_body);
+          Ir.SBarrier;
+          lower_stmt state cont;
+        ]
   | TEOpen (_path, body) -> lower_stmt state body
   | TECreateArray (_size, _elem_ty, _mem) ->
       (* Standalone array creation - just emit unit *)

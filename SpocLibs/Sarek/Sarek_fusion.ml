@@ -57,7 +57,7 @@ let rec expr_uses_array arr expr =
   | ERecord (_, fields) ->
       List.exists (fun (_, e) -> expr_uses_array arr e) fields
   | EVariant (_, _, args) -> List.exists (expr_uses_array arr) args
-  | EArrayLen _ -> false
+  | EArrayLen _ | EArrayCreate _ -> false
   | EConst _ | EVar _ -> false
   | EArrayReadExpr (base, idx) ->
       expr_uses_array arr base || expr_uses_array arr idx
@@ -100,7 +100,7 @@ let rec subst_array_read arr idx_var replacement expr =
   | EVariant (ty, tag, args) ->
       EVariant
         (ty, tag, List.map (subst_array_read arr idx_var replacement) args)
-  | EArrayLen _ | EConst _ | EVar _ -> expr
+  | EArrayLen _ | EArrayCreate _ | EConst _ | EVar _ -> expr
   | EArrayReadExpr (base, idx) ->
       EArrayReadExpr
         ( subst_array_read arr idx_var replacement base,
@@ -161,6 +161,7 @@ let rec subst_array_read_stmt arr idx_var replacement stmt =
       SLetMut (v, subst_e e, subst_array_read_stmt arr idx_var replacement body)
   | SPragma (hints, body) ->
       SPragma (hints, subst_array_read_stmt arr idx_var replacement body)
+  | SBlock body -> SBlock (subst_array_read_stmt arr idx_var replacement body)
   | SBarrier | SWarpBarrier | SMemFence | SEmpty | SNative _ -> stmt
 
 (** Check if statement uses an array *)
@@ -183,7 +184,7 @@ let rec stmt_uses_array arr stmt =
   | SReturn e | SExpr e -> expr_uses_array arr e
   | SLet (_, e, body) | SLetMut (_, e, body) ->
       expr_uses_array arr e || stmt_uses_array arr body
-  | SPragma (_, body) -> stmt_uses_array arr body
+  | SPragma (_, body) | SBlock body -> stmt_uses_array arr body
   | SBarrier | SWarpBarrier | SMemFence | SEmpty | SNative _ -> false
 
 (** {1 Analysis} *)
@@ -203,7 +204,7 @@ let rec collect_reads_expr acc expr =
   | ERecord (_, fields) ->
       List.fold_left (fun acc (_, e) -> collect_reads_expr acc e) acc fields
   | EVariant (_, _, args) -> List.fold_left collect_reads_expr acc args
-  | EArrayLen _ | EConst _ | EVar _ -> acc
+  | EArrayLen _ | EArrayCreate _ | EConst _ | EVar _ -> acc
   | EArrayReadExpr (base, idx) ->
       collect_reads_expr (collect_reads_expr acc base) idx
   | EIf (cond, then_, else_) ->
@@ -228,7 +229,8 @@ let rec collect_writes_stmt acc stmt =
   | SWhile (_, body) | SFor (_, _, _, _, body) -> collect_writes_stmt acc body
   | SMatch (_, cases) ->
       List.fold_left (fun acc (_, s) -> collect_writes_stmt acc s) acc cases
-  | SLet (_, _, body) | SLetMut (_, _, body) | SPragma (_, body) ->
+  | SLet (_, _, body) | SLetMut (_, _, body) | SPragma (_, body) | SBlock body
+    ->
       collect_writes_stmt acc body
   | SReturn _ | SExpr _ | SBarrier | SWarpBarrier | SMemFence | SEmpty
   | SNative _ ->
@@ -255,7 +257,7 @@ let rec collect_reads_stmt acc stmt =
   | SReturn e | SExpr e -> collect_reads_expr acc e
   | SLet (_, e, body) | SLetMut (_, e, body) ->
       collect_reads_stmt (collect_reads_expr acc e) body
-  | SPragma (_, body) -> collect_reads_stmt acc body
+  | SPragma (_, body) | SBlock body -> collect_reads_stmt acc body
   | SBarrier | SWarpBarrier | SMemFence | SEmpty | SNative _ -> acc
 
 (** Check if statement contains barriers *)
@@ -267,7 +269,8 @@ let rec has_barrier stmt =
       has_barrier s1 || Option.fold ~none:false ~some:has_barrier s2
   | SWhile (_, body) | SFor (_, _, _, _, body) -> has_barrier body
   | SMatch (_, cases) -> List.exists (fun (_, s) -> has_barrier s) cases
-  | SLet (_, _, body) | SLetMut (_, _, body) | SPragma (_, body) ->
+  | SLet (_, _, body) | SLetMut (_, _, body) | SPragma (_, body) | SBlock body
+    ->
       has_barrier body
   | SAssign _ | SReturn _ | SExpr _ | SMemFence | SEmpty | SNative _ -> false
 
@@ -347,7 +350,8 @@ let rec find_write_expr stmt arr idx =
   | SIf _ | SWhile _ | SFor _ | SMatch _ ->
       (* Can't safely extract from conditional *)
       None
-  | SLet (_, _, body) | SLetMut (_, _, body) | SPragma (_, body) ->
+  | SLet (_, _, body) | SLetMut (_, _, body) | SPragma (_, body) | SBlock body
+    ->
       find_write_expr body arr idx
   | SAssign _ | SReturn _ | SExpr _ | SBarrier | SWarpBarrier | SMemFence
   | SEmpty | SNative _ ->

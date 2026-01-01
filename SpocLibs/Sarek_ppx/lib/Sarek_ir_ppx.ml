@@ -86,6 +86,7 @@ type expr =
   | ERecord of string * (string * expr) list
   | EVariant of string * string * expr list
   | EArrayLen of string
+  | EArrayCreate of elttype * expr * memspace  (** elem type, size, memspace *)
   | EIf of
       expr * expr * expr (* condition, then, else - for value-returning if *)
   | EMatch of
@@ -117,6 +118,7 @@ type stmt =
   | SLetMut of var * expr * stmt
   | SPragma of string list * stmt
   | SMemFence
+  | SBlock of stmt  (** Scoped block for C variable isolation *)
   | SNative of {
       gpu : Ppxlib.expression;  (** fun dev -> "cuda/opencl code" *)
       ocaml : Ppxlib.expression;  (** OCaml fallback for interpreter/native *)
