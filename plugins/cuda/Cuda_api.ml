@@ -111,7 +111,7 @@ module Device = struct
       "cuCtxCreate"
       (cuCtxCreate ctx (Unsigned.UInt.of_int cu_ctx_sched_auto) handle) ;
 
-    {
+    let dev = {
       id = idx;
       handle;
       context = !@ctx;
@@ -124,7 +124,11 @@ module Device = struct
       shared_mem_per_block = shared_mem;
       warp_size = warp;
       multiprocessor_count = mp_count;
-    }
+    } in
+    Sarek_core.Log.debugf Sarek_core.Log.Device
+      "CUDA device %d: %s (cc %d.%d, %Ld MB)"
+      idx name major minor (Int64.div total_mem (Int64.of_int (1024 * 1024))) ;
+    dev
 
   let set_current dev = check "cuCtxSetCurrent" (cuCtxSetCurrent dev.context)
 
@@ -275,7 +279,12 @@ module Kernel = struct
     (* Compile to PTX using NVRTC *)
     let major, minor = device.Device.compute_capability in
     let arch = Printf.sprintf "compute_%d%d" major minor in
+    Sarek_core.Log.debugf Sarek_core.Log.Kernel
+      "CUDA compile: kernel='%s' arch=%s (cc %d.%d) device=%d"
+      name arch major minor device.Device.id ;
+    Sarek_core.Log.debugf Sarek_core.Log.Kernel "CUDA source:\n%s" source ;
     let ptx = Cuda_nvrtc.compile_to_ptx ~name ~arch source in
+    Sarek_core.Log.debug Sarek_core.Log.Kernel "CUDA PTX generated successfully" ;
 
     (* Load module from PTX *)
     let module_ = allocate cu_module_ptr (from_voidp cu_module null) in

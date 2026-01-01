@@ -220,12 +220,20 @@ let run_from_ir ~(device : Device.t) ~(ir : Sarek_ir.kernel)
        Obj.t array ->
        unit)
        option) (args : arg list) : unit =
+  Log.debugf Log.Execute "run_from_ir: kernel='%s' framework=%s device=%d"
+    ir.kern_name device.framework device.id ;
+  Log.debugf Log.Execute "  grid=(%d,%d,%d) block=(%d,%d,%d) args=%d"
+    grid.x grid.y grid.z block.x block.y block.z (List.length args) ;
   match device.framework with
   | "CUDA" ->
+      Log.debug Log.Execute "  generating CUDA source..." ;
       let source = Sarek_ir_cuda.generate ir in
+      Log.debugf Log.Execute "  CUDA source (%d bytes)" (String.length source) ;
       run_typed ~device ~name:ir.kern_name ~source ~block ~grid ~shared_mem args
   | "OpenCL" ->
+      Log.debug Log.Execute "  generating OpenCL source..." ;
       let source = Sarek_ir_opencl.generate ir in
+      Log.debugf Log.Execute "  OpenCL source (%d bytes)" (String.length source) ;
       run_typed ~device ~name:ir.kern_name ~source ~block ~grid ~shared_mem args
   | "Native" -> (
       (* Native path: use native_fn directly *)

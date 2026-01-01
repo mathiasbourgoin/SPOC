@@ -54,7 +54,8 @@ let disable comp =
   end ;
   Hashtbl.replace enabled_components comp false
 
-(** Enable from environment variable SAREK_DEBUG=transfer,kernel,... *)
+(** Enable from environment variable SAREK_DEBUG=transfer,kernel,...
+    Use "*" or "all" to enable all components. *)
 let init_from_env () =
   match Sys.getenv_opt "SAREK_DEBUG" with
   | None -> ()
@@ -67,7 +68,7 @@ let init_from_env () =
         | "device" -> enable Device
         | "memory" -> enable Memory
         | "execute" -> enable Execute
-        | "all" -> enable All
+        | "all" | "*" -> enable All
         | "debug" -> log_level := Debug
         | "info" -> log_level := Info
         | "warn" -> log_level := Warn
