@@ -499,10 +499,11 @@ let sub_vector (type a b) (vec : (a, b) t) ~(start : int) ~(len : int)
     | Bigarray_storage ba ->
         Bigarray_storage (Bigarray.Array1.sub ba start len)
     | Custom_storage {ptr; custom; _} ->
-        (* Offset the pointer *)
-        let offset_ptr =
-          Ctypes.(ptr +@ (start * custom.elem_size))
-        in
+        (* Offset the pointer by byte offset *)
+        let byte_offset = start * custom.elem_size in
+        let raw_addr = Ctypes.raw_address_of_ptr ptr in
+        let offset_addr = Nativeint.add raw_addr (Nativeint.of_int byte_offset) in
+        let offset_ptr = Ctypes.ptr_of_raw_address offset_addr in
         Custom_storage {ptr = offset_ptr; custom; length = len}
   in
   let sub =
