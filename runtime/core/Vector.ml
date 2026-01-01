@@ -538,7 +538,7 @@ let partition (type a b) (vec : (a, b) t) (devices : Device.t array) :
     for i = 0 to n - 1 do
       let len = chunk_size + (if i < remainder then 1 else 0) in
       let sub = sub_vector vec ~start:!offset ~len () in
-      sub.location <- Vector.Stale_GPU devices.(i) ;
+      sub.location <- Stale_GPU devices.(i) ;
       result.(i) <- sub ;
       offset := !offset + len
     done ;
