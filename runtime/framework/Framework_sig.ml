@@ -79,6 +79,19 @@ module type BACKEND = sig
     val synchronize : t -> unit
   end
 
+  (** Async execution streams / command queues *)
+  module Stream : sig
+    type t
+
+    val create : Device.t -> t
+
+    val destroy : t -> unit
+
+    val synchronize : t -> unit
+
+    val default : Device.t -> t
+  end
+
   (** GPU memory allocation and transfer *)
   module Memory : sig
     type 'a buffer
@@ -89,6 +102,8 @@ module type BACKEND = sig
     val alloc_custom : Device.t -> size:int -> elem_size:int -> 'a buffer
 
     val free : 'a buffer -> unit
+
+    (** {2 Synchronous Transfers} *)
 
     val host_to_device :
       src:('a, 'b, Bigarray.c_layout) Bigarray.Array1.t -> dst:'a buffer -> unit
@@ -107,22 +122,39 @@ module type BACKEND = sig
 
     val device_to_device : src:'a buffer -> dst:'a buffer -> unit
 
+    (** {2 Async Transfers (with stream)} *)
+
+    val host_to_device_async :
+      src:('a, 'b, Bigarray.c_layout) Bigarray.Array1.t ->
+      dst:'a buffer ->
+      stream:Stream.t ->
+      unit
+
+    val device_to_host_async :
+      src:'a buffer ->
+      dst:('a, 'b, Bigarray.c_layout) Bigarray.Array1.t ->
+      stream:Stream.t ->
+      unit
+
+    val host_ptr_to_device_async :
+      src_ptr:unit Ctypes.ptr ->
+      byte_size:int ->
+      dst:'a buffer ->
+      stream:Stream.t ->
+      unit
+
+    val device_to_host_ptr_async :
+      src:'a buffer ->
+      dst_ptr:unit Ctypes.ptr ->
+      byte_size:int ->
+      stream:Stream.t ->
+      unit
+
+    (** {2 Buffer Info} *)
+
     val size : 'a buffer -> int
 
     val device_ptr : 'a buffer -> nativeint
-  end
-
-  (** Async execution streams / command queues *)
-  module Stream : sig
-    type t
-
-    val create : Device.t -> t
-
-    val destroy : t -> unit
-
-    val synchronize : t -> unit
-
-    val default : Device.t -> t
   end
 
   (** Timing events *)

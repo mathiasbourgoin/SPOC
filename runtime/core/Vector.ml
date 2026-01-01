@@ -104,12 +104,29 @@ type location =
 (** {1 Device Buffer Abstraction} *)
 
 (** Existential wrapper for backend-specific device buffers.
-    Uses first-class modules to avoid Obj.t. *)
+    Packages the backend module with its buffer for type-safe operations. *)
 module type DEVICE_BUFFER = sig
   val device : Device.t
   val size : int
   val elem_size : int
   val ptr : nativeint  (** Raw device pointer for kernel args *)
+
+  (** {2 Transfer Operations} *)
+
+  (** Transfer from host Bigarray to device buffer *)
+  val from_bigarray : ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t -> unit
+
+  (** Transfer from device buffer to host Bigarray *)
+  val to_bigarray : ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t -> unit
+
+  (** Transfer from host ctypes pointer to device buffer *)
+  val from_ptr : unit Ctypes.ptr -> byte_size:int -> unit
+
+  (** Transfer from device buffer to host ctypes pointer *)
+  val to_ptr : unit Ctypes.ptr -> byte_size:int -> unit
+
+  (** Free the device buffer *)
+  val free : unit -> unit
 end
 
 type device_buffer = (module DEVICE_BUFFER)
