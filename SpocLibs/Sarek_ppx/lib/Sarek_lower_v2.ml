@@ -161,6 +161,9 @@ type state = {
   fun_map : (string, tparam list * texpr) Hashtbl.t;
   lowering_stack : (string, unit) Hashtbl.t;
   lowered_funs : (string, Ir.stmt * string) Hashtbl.t;
+  types : (string, (string * Ir.elttype) list) Hashtbl.t;
+      (** Collected record types: type_name -> [(field_name, field_type); ...]
+      *)
 }
 
 let create_state fun_map =
@@ -169,6 +172,7 @@ let create_state fun_map =
     fun_map;
     lowering_stack = Hashtbl.create 8;
     lowered_funs = Hashtbl.create 8;
+    types = Hashtbl.create 8;
   }
 
 let fresh_id state =
@@ -309,6 +313,13 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
             Ir.EApp (Ir.EVar (make_var name 0 fn.ty false), args_ir)
       | _ -> Ir.EApp (lower_expr state fn, args_ir))
   | TERecord (name, fields) ->
+      (* Register the record type if not already registered *)
+      if not (Hashtbl.mem state.types name) then begin
+        let field_types =
+          List.map (fun (n, e) -> (n, elttype_of_typ e.ty)) fields
+        in
+        Hashtbl.add state.types name field_types
+      end ;
       Ir.ERecord (name, List.map (fun (n, e) -> (n, lower_expr state e)) fields)
   | TEConstr (ty_name, constr, arg) ->
       let args = match arg with None -> [] | Some e -> [lower_expr state e] in
@@ -584,12 +595,17 @@ let lower_kernel (kernel : tkernel) : Ir.kernel * string list =
     | _ -> Ir.SSeq [module_items_ir; body_ir]
   in
 
+  (* Collect types from state *)
+  let types_list =
+    Hashtbl.fold (fun name fields acc -> (name, fields) :: acc) state.types []
+  in
   ( {
       Ir.kern_name = Option.value kernel.tkern_name ~default:"sarek_kern";
       (* "kernel" is reserved in OpenCL *)
       kern_params = List.map lower_param kernel.tkern_params;
       kern_locals = [];
       kern_body = full_body;
+      kern_types = types_list;
     },
     constructors )
 

@@ -139,4 +139,7 @@ type kernel = {
   kern_params : decl list;
   kern_locals : decl list;
   kern_body : stmt;
+  kern_types : (string * (string * elttype) list) list;
+      (** Record type definitions: (type_name, [(field_name, field_type); ...])
+      *)
 }

@@ -326,6 +326,17 @@ let quote_decl ~loc (d : Ir.decl) : expression =
             [%e quote_elttype ~loc elt],
             [%e quote_option ~loc quote_expr size_opt] )]
 
+(** Quote a type definition (name, field list) *)
+let quote_type_def ~loc (name, fields) : expression =
+  let fields_expr =
+    quote_list
+      ~loc
+      (fun ~loc (n, ty) ->
+        [%expr [%e quote_string ~loc n], [%e quote_elttype ~loc ty]])
+      fields
+  in
+  [%expr [%e quote_string ~loc name], [%e fields_expr]]
+
 (** Quote kernel *)
 let quote_kernel ~loc (k : Ir.kernel) : expression =
   [%expr
@@ -334,4 +345,5 @@ let quote_kernel ~loc (k : Ir.kernel) : expression =
       kern_params = [%e quote_list ~loc quote_decl k.kern_params];
       kern_locals = [%e quote_list ~loc quote_decl k.kern_locals];
       kern_body = [%e quote_stmt ~loc k.kern_body];
+      kern_types = [%e quote_list ~loc quote_type_def k.kern_types];
     }]

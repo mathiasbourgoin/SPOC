@@ -288,9 +288,33 @@ let host_ptr : type a b. (a, b) t -> nativeint =
       Ctypes.(raw_address_of_ptr (bigarray_start array1 ba |> to_voidp))
   | Custom_storage {ptr; _} -> Ctypes.raw_address_of_ptr ptr
 
+(** {1 Sync Callback (for Transfer module)} *)
+
+(** Callback to sync vector to CPU. Set by Transfer module at init. Takes a
+    vector and syncs it to CPU if needed. Returns true if sync occurred. *)
+type sync_callback = {sync : 'a 'b. ('a, 'b) t -> bool}
+
+let sync_to_cpu_callback : sync_callback option ref = ref None
+
+(** Register the sync callback (called by Transfer module) *)
+let register_sync_callback (cb : sync_callback) : unit =
+  sync_to_cpu_callback := Some cb
+
+(** Ensure vector data is on CPU before access. Only syncs if auto_sync is
+    enabled and location is Stale_CPU. *)
+let ensure_cpu_sync (type a b) (vec : (a, b) t) : unit =
+  if vec.auto_sync then
+    match vec.location with
+    | Stale_CPU _ -> (
+        match !sync_to_cpu_callback with
+        | Some cb -> ignore (cb.sync vec)
+        | None -> ())
+    | _ -> ()
+
 (** {1 Element Access} *)
 
-(** Get element (works for both storage types) *)
+(** Get element (works for both storage types). Auto-syncs from GPU if location
+    is Stale_CPU and auto_sync is enabled. *)
 let get : type a b. (a, b) t -> int -> a =
  fun vec idx ->
   if idx < 0 || idx >= vec.length then
@@ -299,6 +323,7 @@ let get : type a b. (a, b) t -> int -> a =
          "Vector.get: index %d out of bounds [0, %d)"
          idx
          vec.length) ;
+  ensure_cpu_sync vec ;
   match vec.host with
   | Bigarray_storage ba -> Bigarray.Array1.get ba idx
   | Custom_storage {ptr; custom; _} -> custom.get ptr idx
@@ -350,29 +375,6 @@ let set_auto_sync (vec : ('a, 'b) t) (enabled : bool) : unit =
   vec.auto_sync <- enabled
 
 let auto_sync (vec : ('a, 'b) t) : bool = vec.auto_sync
-
-(** {1 Sync Callback (for Transfer module)} *)
-
-(** Callback to sync vector to CPU. Set by Transfer module at init. Takes a
-    vector and syncs it to CPU if needed. Returns true if sync occurred. *)
-type sync_callback = {sync : 'a 'b. ('a, 'b) t -> bool}
-
-let sync_to_cpu_callback : sync_callback option ref = ref None
-
-(** Register the sync callback (called by Transfer module) *)
-let register_sync_callback (cb : sync_callback) : unit =
-  sync_to_cpu_callback := Some cb
-
-(** Ensure vector data is on CPU before iteration (called once per iterator).
-    Only syncs if auto_sync is enabled and location is Stale_CPU. *)
-let ensure_cpu_sync (type a b) (vec : (a, b) t) : unit =
-  if vec.auto_sync then
-    match vec.location with
-    | Stale_CPU _ -> (
-        match !sync_to_cpu_callback with
-        | Some cb -> ignore (cb.sync vec)
-        | None -> ())
-    | _ -> ()
 
 (** {1 Location Queries} *)
 

@@ -250,19 +250,26 @@ let run_from_ir ~(device : Device.t) ~(ir : Sarek_ir.kernel)
   match device.framework with
   | "CUDA" ->
       Log.debug Log.Execute "  generating CUDA source..." ;
-      let source = Sarek_ir_cuda.generate ir in
+      let source = Sarek_ir_cuda.generate_with_types ~types:ir.kern_types ir in
       Log.debugf Log.Execute "  CUDA source (%d bytes)" (String.length source) ;
       run_typed ~device ~name:ir.kern_name ~source ~block ~grid ~shared_mem args
   | "OpenCL" ->
       let t0 = Unix.gettimeofday () in
       Log.debug Log.Execute "  generating OpenCL source..." ;
-      let source = Sarek_ir_opencl.generate ir in
+      Log.debugf
+        Log.Execute
+        "  kern_types count: %d"
+        (List.length ir.kern_types) ;
+      let source =
+        Sarek_ir_opencl.generate_with_types ~types:ir.kern_types ir
+      in
       let t1 = Unix.gettimeofday () in
       Log.debugf
         Log.Execute
         "  OpenCL source (%d bytes, gen=%.3fms)"
         (String.length source)
         ((t1 -. t0) *. 1000.0) ;
+      Log.debugf Log.Execute "  OpenCL code:\n%s" source ;
       run_typed ~device ~name:ir.kern_name ~source ~block ~grid ~shared_mem args ;
       let t2 = Unix.gettimeofday () in
       Log.debugf Log.Execute "  run_typed took %.3fms" ((t2 -. t1) *. 1000.0)

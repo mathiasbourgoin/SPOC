@@ -142,6 +142,9 @@ type kernel = {
   kern_params : decl list;
   kern_locals : decl list;
   kern_body : stmt;
+  kern_types : (string * (string * elttype) list) list;
+      (** Record type definitions: (type_name, [(field_name, field_type); ...])
+      *)
 }
 
 (** {1 Pretty printing} *)
@@ -734,6 +737,7 @@ let rec of_k_ext : Kirc_Ast.k_ext -> kernel = function
         kern_params = params';
         kern_locals = [];
         kern_body = body';
+        kern_types = [];
       }
   | k ->
       conv_error
