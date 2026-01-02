@@ -36,9 +36,13 @@ module Interpreter : sig
 
     val name : t -> string
 
+    val is_parallel : t -> bool
+
     val capabilities : t -> Framework_sig.capabilities
 
     val set_current : t -> unit
+
+    val current : t option ref
 
     val synchronize : t -> unit
   end
@@ -151,7 +155,7 @@ end = struct
   let version = (1, 0, 0)
 
   module Device = struct
-    type t = {id : int; name : string}
+    type t = {id : int; name : string; parallel : bool; num_cores : int}
 
     type id = int
 
@@ -160,8 +164,25 @@ end = struct
     let current : t option ref = ref None
 
     let init () =
-      if Array.length !devices = 0 then
-        devices := [|{id = 0; name = "CPU Interpreter (Sequential)"}|]
+      if Array.length !devices = 0 then begin
+        let num_cores = try Domain.recommended_domain_count () with _ -> 1 in
+        devices :=
+          [|
+            {
+              id = 0;
+              name = "CPU Interpreter (Sequential)";
+              parallel = false;
+              num_cores = 1;
+            };
+            {
+              id = 1;
+              name =
+                Printf.sprintf "CPU Interpreter (Parallel, %d cores)" num_cores;
+              parallel = true;
+              num_cores;
+            };
+          |]
+      end
 
     let count () = Array.length !devices
 
@@ -174,7 +195,9 @@ end = struct
 
     let name d = d.name
 
-    let capabilities _d : Framework_sig.capabilities =
+    let is_parallel d = d.parallel
+
+    let capabilities d : Framework_sig.capabilities =
       {
         max_threads_per_block = 256;
         (* Reasonable limit for interpretation *)
@@ -185,11 +208,10 @@ end = struct
         compute_capability = (0, 0);
         supports_fp64 = true;
         supports_atomics = true;
-        warp_size = 1;
-        (* Sequential execution *)
+        warp_size = (if d.parallel then 32 else 1);
         max_registers_per_block = 0;
         clock_rate_khz = 0;
-        multiprocessor_count = 1;
+        multiprocessor_count = d.num_cores;
         is_cpu = true;
       }
 

@@ -67,8 +67,8 @@ module Interpreter_v2 : Framework_sig.BACKEND_V2 = struct
   let generate_source (_ir_obj : Obj.t) : string option = None
 
   (** Execute directly by interpreting the IR. Interpreter prefers IR but can
-      use native_fn if provided. Interpreter backend always uses sequential
-      execution (single-threaded). *)
+      use native_fn if provided. Uses parallel or sequential mode based on the
+      current device selection. *)
   let execute_direct
       ~(native_fn :
          (block:Framework_sig.dims ->
@@ -77,8 +77,13 @@ module Interpreter_v2 : Framework_sig.BACKEND_V2 = struct
          unit)
          option) ~(ir : Obj.t option) ~(block : Framework_sig.dims)
       ~(grid : Framework_sig.dims) (args : Obj.t array) : unit =
-    (* Interpreter always uses sequential mode - decision is in the plugin *)
-    Sarek.Sarek_ir_interp.parallel_mode := false ;
+    (* Set parallel mode based on current device *)
+    let use_parallel =
+      match !Device.current with
+      | Some d -> Device.is_parallel d
+      | None -> false
+    in
+    Sarek.Sarek_ir_interp.parallel_mode := use_parallel ;
     (* Interpreter prefers IR for true interpretation, falls back to native_fn *)
     match ir with
     | Some ir_obj ->

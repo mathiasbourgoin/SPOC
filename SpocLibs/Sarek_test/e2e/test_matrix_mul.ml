@@ -1,11 +1,11 @@
 (******************************************************************************
- * E2E test for Sarek PPX - Matrix Multiplication with V2 comparison
+ * E2E test for Sarek PPX - Matrix Multiplication (Unified V2)
  *
  * Tests naive and tiled matrix multiplication with shared memory.
  * Matrix multiplication is the canonical GPU compute benchmark.
  *
- * V2 comparison: naive kernel (1D indexing) only.
- * Tiled kernel (shared memory + supersteps) runs SPOC-only.
+ * Uses unified V2 path for all backends (CUDA, OpenCL, Native, Interpreter).
+ * Tiled kernel (shared memory + supersteps) runs SPOC-only for now.
  ******************************************************************************)
 
 (* Module aliases *)
@@ -18,14 +18,15 @@ module V2_Transfer = Sarek_core.Transfer
 
 (* Force backend registration *)
 let () =
-  Sarek_cuda.Cuda_plugin.init () ;
   Sarek_cuda.Cuda_plugin_v2.init () ;
-  Sarek_opencl.Opencl_plugin.init () ;
   Sarek_opencl.Opencl_plugin_v2.init () ;
-  Sarek_native.Native_plugin.init () ;
   Sarek_native.Native_plugin_v2.init () ;
-  Sarek_interpreter.Interpreter_plugin.init () ;
-  Sarek_interpreter.Interpreter_plugin_v2.init ()
+  Sarek_interpreter.Interpreter_plugin_v2.init () ;
+  (* Legacy SPOC plugins for tiled kernel *)
+  Sarek_cuda.Cuda_plugin.init () ;
+  Sarek_opencl.Opencl_plugin.init () ;
+  Sarek_native.Native_plugin.init () ;
+  Sarek_interpreter.Interpreter_plugin.init ()
 
 let cfg = Test_helpers.default_config ()
 
@@ -139,77 +140,9 @@ let matmul_tiled_kernel =
       done ;
       if row < m && col < n then c.((row * n) + col) <- sum]
 
-(* ========== SPOC test runners ========== *)
+(* ========== SPOC test runners (tiled kernel only) ========== *)
 
-(** Run naive matrix multiplication test - returns (compile_ms, exec_ms, ok) *)
-let run_matmul_naive_spoc dev =
-  let dim = !matrix_dim in
-  let m, n, k = (dim, dim, dim) in
-  let inp_a = !input_a in
-  let inp_b = !input_b in
-  let exp_c = !expected_c in
-
-  let a = Spoc_Vector.create Spoc_Vector.float32 (m * k) in
-  let b = Spoc_Vector.create Spoc_Vector.float32 (k * n) in
-  let c = Spoc_Vector.create Spoc_Vector.float32 (m * n) in
-
-  for i = 0 to (m * k) - 1 do
-    Spoc_Mem.set a i inp_a.(i)
-  done ;
-  for i = 0 to (k * n) - 1 do
-    Spoc_Mem.set b i inp_b.(i)
-  done ;
-  for i = 0 to (m * n) - 1 do
-    Spoc_Mem.set c i 0.0
-  done ;
-
-  (* Use 1D block/grid for V2 compatibility *)
-  let block_size = 256 in
-  let total_elements = m * n in
-  let blocks = (total_elements + block_size - 1) / block_size in
-  let block = {Spoc.Kernel.blockX = block_size; blockY = 1; blockZ = 1} in
-  let grid = {Spoc.Kernel.gridX = blocks; gridY = 1; gridZ = 1} in
-
-  (* Measure compile time separately *)
-  let tc0 = Unix.gettimeofday () in
-  ignore (Sarek.Kirc.gen matmul_naive_kernel dev) ;
-  let tc1 = Unix.gettimeofday () in
-  let compile_ms = (tc1 -. tc0) *. 1000.0 in
-
-  (* Measure execution time *)
-  let t0 = Unix.gettimeofday () in
-  Sarek.Kirc.run matmul_naive_kernel (a, b, c, m, n, k) (block, grid) 0 dev ;
-  Spoc_Devices.flush dev () ;
-  let t1 = Unix.gettimeofday () in
-  let exec_ms = (t1 -. t0) *. 1000.0 in
-
-  let ok =
-    if cfg.verify then begin
-      Spoc_Mem.to_cpu c () ;
-      Spoc_Devices.flush dev () ;
-      Spoc_Mem.unsafe_rw true ;
-      let errors = ref 0 in
-      let check_count = min 100 (m * n) in
-      for idx = 0 to check_count - 1 do
-        let expected = exp_c.(idx) in
-        let got = Spoc_Mem.get c idx in
-        (* Use relative tolerance for float32 accumulation *)
-        let rel_tol = 0.001 in
-        let abs_tol = 0.1 in
-        let diff = abs_float (got -. expected) in
-        let rel_err =
-          if abs_float expected > 1e-6 then diff /. abs_float expected else diff
-        in
-        if diff > abs_tol && rel_err > rel_tol then incr errors
-      done ;
-      Spoc_Mem.unsafe_rw false ;
-      !errors = 0
-    end
-    else true
-  in
-  (compile_ms, exec_ms, ok)
-
-(** Run tiled matrix multiplication test *)
+(** Run tiled matrix multiplication test (SPOC only - uses shared memory) *)
 let run_matmul_tiled_spoc dev =
   let dim = !matrix_dim in
   let dim = (dim + !tile_size - 1) / !tile_size * !tile_size in
@@ -407,79 +340,6 @@ let run_matmul_naive_v2 (dev : V2_Device.t) =
   in
   (compile_ms, exec_ms, ok)
 
-(* ========== Interpreter test runner ========== *)
-
-(** Run naive matrix multiplication on interpreter - returns (time_ms, ok) *)
-let run_matmul_interpreter () =
-  let dim = !matrix_dim in
-  let m, n, k = (dim, dim, dim) in
-  let inp_a = !input_a in
-  let inp_b = !input_b in
-  let exp_c = !expected_c in
-  let _, kirc = matmul_naive_kernel in
-  let ir =
-    match kirc.Sarek.Kirc.body_v2 with
-    | Some ir -> ir
-    | None -> failwith "No V2 IR"
-  in
-
-  (* Create interpreter arrays *)
-  let a =
-    Array.init (m * k) (fun i -> Sarek.Sarek_ir_interp.VFloat32 inp_a.(i))
-  in
-  let b =
-    Array.init (k * n) (fun i -> Sarek.Sarek_ir_interp.VFloat32 inp_b.(i))
-  in
-  let c = Array.make (m * n) (Sarek.Sarek_ir_interp.VFloat32 0.0) in
-
-  let block_size = min 256 (m * n) in
-  let grid_size = ((m * n) + block_size - 1) / block_size in
-
-  let t0 = Unix.gettimeofday () in
-  Sarek.Sarek_ir_interp.run_kernel
-    ir
-    ~block:(block_size, 1, 1)
-    ~grid:(grid_size, 1, 1)
-    [
-      ("a", Sarek.Sarek_ir_interp.ArgArray a);
-      ("b", Sarek.Sarek_ir_interp.ArgArray b);
-      ("c", Sarek.Sarek_ir_interp.ArgArray c);
-      ( "m",
-        Sarek.Sarek_ir_interp.ArgScalar
-          (Sarek.Sarek_ir_interp.VInt32 (Int32.of_int m)) );
-      ( "n",
-        Sarek.Sarek_ir_interp.ArgScalar
-          (Sarek.Sarek_ir_interp.VInt32 (Int32.of_int n)) );
-      ( "k",
-        Sarek.Sarek_ir_interp.ArgScalar
-          (Sarek.Sarek_ir_interp.VInt32 (Int32.of_int k)) );
-    ] ;
-  let t1 = Unix.gettimeofday () in
-  let time_ms = (t1 -. t0) *. 1000.0 in
-
-  let ok =
-    if cfg.verify then begin
-      let errors = ref 0 in
-      let check_count = min 100 (m * n) in
-      for idx = 0 to check_count - 1 do
-        let expected = exp_c.(idx) in
-        let got =
-          match c.(idx) with Sarek.Sarek_ir_interp.VFloat32 f -> f | _ -> 0.0
-        in
-        let rel_tol = 0.001 in
-        let abs_tol = 0.1 in
-        let diff = abs_float (got -. expected) in
-        let rel_err =
-          if abs_float expected > 1e-6 then diff /. abs_float expected else diff
-        in
-        if diff > abs_tol && rel_err > rel_tol then incr errors
-      done ;
-      !errors = 0
-    end
-    else true
-  in
-  (time_ms, ok)
-
 (* ========== Main ========== *)
 
 let () =
@@ -493,7 +353,7 @@ let () =
   cfg.size <- c.size ;
   cfg.block_size <- c.block_size ;
 
-  print_endline "=== Matrix Multiplication Test (SPOC + V2 Comparison) ===" ;
+  print_endline "=== Matrix Multiplication Test (Unified V2) ===" ;
 
   let dim = int_of_float (sqrt (float_of_int cfg.size)) in
   Printf.printf
@@ -502,34 +362,33 @@ let () =
     dim
     (dim * dim) ;
 
-  let spoc_devs = Spoc_Devices.init () in
-  if Array.length spoc_devs = 0 then begin
-    print_endline "No GPU devices found" ;
-    exit 1
-  end ;
-  Test_helpers.print_devices spoc_devs ;
-
+  (* Init V2 devices - unified path for all backends *)
   let v2_devs =
     V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
-  Printf.printf "\nFound %d V2 device(s)\n\n" (Array.length v2_devs) ;
+  Printf.printf "Found %d V2 device(s)\n" (Array.length v2_devs) ;
+  Array.iteri
+    (fun i d ->
+      Printf.printf "  [%d] %s (%s)\n" i d.V2_Device.name d.V2_Device.framework)
+    v2_devs ;
+  print_newline () ;
+
+  (* Init SPOC devices for tiled kernel *)
+  let spoc_devs = Spoc_Devices.init () in
 
   ignore (init_matmul_data ()) ;
 
   if cfg.benchmark_all then begin
-    (* Benchmark naive *)
-    print_endline "=== Naive Matrix Multiplication ===" ;
-    print_endline (String.make 120 '-') ;
+    (* Benchmark naive - unified V2 path *)
+    print_endline "=== Naive Matrix Multiplication (Unified V2) ===" ;
+    print_endline (String.make 80 '-') ;
     Printf.printf
-      "%-35s %12s %12s %12s %12s %6s %6s\n"
+      "%-40s %12s %12s %8s\n"
       "Device"
-      "SPOC Comp"
-      "SPOC Exec"
-      "V2 Comp"
-      "V2 Exec"
-      "SPOC"
-      "V2" ;
-    print_endline (String.make 120 '-') ;
+      "Compile(ms)"
+      "Exec(ms)"
+      "Status" ;
+    print_endline (String.make 80 '-') ;
 
     let all_ok = ref true in
 
@@ -537,46 +396,23 @@ let () =
       (fun v2_dev ->
         let name = v2_dev.V2_Device.name in
         let framework = v2_dev.V2_Device.framework in
-
-        let spoc_dev_opt =
-          Array.find_opt
-            (fun d -> d.Spoc_Devices.general_info.Spoc_Devices.name = name)
-            spoc_devs
-        in
-
-        let spoc_comp, spoc_exec, spoc_ok =
-          match spoc_dev_opt with
-          | Some spoc_dev ->
-              let comp, exec, ok = run_matmul_naive_spoc spoc_dev in
-              ( Printf.sprintf "%.2f" comp,
-                Printf.sprintf "%.2f" exec,
-                if ok then "OK" else "FAIL" )
-          | None -> ("-", "-", "SKIP")
-        in
-
         let v2_comp, v2_exec, v2_ok = run_matmul_naive_v2 v2_dev in
-        let v2_status = if v2_ok then "OK" else "FAIL" in
-
+        let status = if v2_ok then "OK" else "FAIL" in
         if not v2_ok then all_ok := false ;
-        if spoc_ok = "FAIL" then all_ok := false ;
-
         Printf.printf
-          "%-35s %12s %12s %12.2f %12.2f %6s %6s\n"
+          "%-40s %12.2f %12.2f %8s\n"
           (Printf.sprintf "%s (%s)" name framework)
-          spoc_comp
-          spoc_exec
           v2_comp
           v2_exec
-          spoc_ok
-          v2_status)
+          status)
       v2_devs ;
 
-    print_endline (String.make 120 '-') ;
+    print_endline (String.make 80 '-') ;
 
-    (* Benchmark tiled (SPOC only) *)
-    print_endline "\n=== Tiled Matrix Multiplication (SPOC only) ===" ;
+    (* Benchmark tiled (SPOC only - uses shared memory) *)
+    print_endline "\n=== Tiled Matrix Multiplication (SPOC - shared memory) ===" ;
     print_endline (String.make 60 '-') ;
-    Printf.printf "%-35s %10s %8s\n" "Device" "SPOC(ms)" "Status" ;
+    Printf.printf "%-40s %10s %8s\n" "Device" "Exec(ms)" "Status" ;
     print_endline (String.make 60 '-') ;
 
     Array.iter
@@ -584,7 +420,7 @@ let () =
         let name = spoc_dev.Spoc_Devices.general_info.Spoc_Devices.name in
         let time, ok = run_matmul_tiled_spoc spoc_dev in
         Printf.printf
-          "%-35s %10.4f %8s\n"
+          "%-40s %10.4f %8s\n"
           name
           time
           (if ok then "OK" else "FAIL") ;
@@ -592,15 +428,6 @@ let () =
       spoc_devs ;
 
     print_endline (String.make 60 '-') ;
-
-    (* Interpreter test *)
-    print_endline "\n=== Interpreter Test (naive only) ===" ;
-    let interp_time, interp_ok = run_matmul_interpreter () in
-    Printf.printf
-      "Interpreter: %.4f ms - %s\n"
-      interp_time
-      (if interp_ok then "OK" else "FAIL") ;
-    if not interp_ok then all_ok := false ;
 
     if !all_ok then
       print_endline "\n=== All matrix multiplication tests PASSED ==="
@@ -610,39 +437,42 @@ let () =
     end
   end
   else begin
-    let dev = Test_helpers.get_device cfg spoc_devs in
-    let dev_name = dev.Spoc_Devices.general_info.Spoc_Devices.name in
-    Printf.printf "Using device: %s\n%!" dev_name ;
+    (* Single device mode - use V2 *)
+    let v2_dev =
+      if cfg.dev_id >= 0 && cfg.dev_id < Array.length v2_devs then
+        v2_devs.(cfg.dev_id)
+      else v2_devs.(0)
+    in
+    Printf.printf
+      "Using device: %s (%s)\n%!"
+      v2_dev.V2_Device.name
+      v2_dev.V2_Device.framework ;
 
-    Printf.printf "\n--- Naive Matrix Multiplication ---\n%!" ;
-    Printf.printf "Running SPOC path...\n%!" ;
-    let spoc_comp, spoc_exec, spoc_ok = run_matmul_naive_spoc dev in
+    Printf.printf "\n--- Naive Matrix Multiplication (V2) ---\n%!" ;
+    let v2_comp, v2_exec, v2_ok = run_matmul_naive_v2 v2_dev in
     Printf.printf
       "  Compile: %.2f ms, Exec: %.2f ms, %s\n%!"
-      spoc_comp
-      spoc_exec
-      (if spoc_ok then "PASSED" else "FAILED") ;
+      v2_comp
+      v2_exec
+      (if v2_ok then "PASSED" else "FAILED") ;
 
-    let v2_dev_opt =
-      Array.find_opt (fun d -> d.V2_Device.name = dev_name) v2_devs
+    (* Tiled kernel only for GPU devices via SPOC *)
+    let spoc_dev_opt =
+      Array.find_opt
+        (fun d ->
+          d.Spoc_Devices.general_info.Spoc_Devices.name = v2_dev.V2_Device.name)
+        spoc_devs
     in
-    (match v2_dev_opt with
-    | Some v2_dev ->
-        Printf.printf "Running V2 path...\n%!" ;
-        let v2_comp, v2_exec, v2_ok = run_matmul_naive_v2 v2_dev in
+    (match spoc_dev_opt with
+    | Some spoc_dev ->
+        Printf.printf "\n--- Tiled Matrix Multiplication (SPOC) ---\n%!" ;
+        let time, ok = run_matmul_tiled_spoc spoc_dev in
         Printf.printf
-          "  Compile: %.2f ms, Exec: %.2f ms, %s\n%!"
-          v2_comp
-          v2_exec
-          (if v2_ok then "PASSED" else "FAILED")
-    | None -> Printf.printf "No matching V2 device\n%!") ;
-
-    Printf.printf "\n--- Tiled Matrix Multiplication (SPOC only) ---\n%!" ;
-    let time, ok = run_matmul_tiled_spoc dev in
-    Printf.printf
-      "  Time: %.4f ms, %s\n%!"
-      time
-      (if ok then "PASSED" else "FAILED") ;
+          "  Time: %.4f ms, %s\n%!"
+          time
+          (if ok then "PASSED" else "FAILED")
+    | None ->
+        Printf.printf "\n(Tiled kernel skipped - SPOC device not available)\n%!") ;
 
     print_endline "\nMatrix multiplication tests PASSED"
   end
