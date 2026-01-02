@@ -147,18 +147,31 @@ module Native_v2 : Framework_sig.BACKEND_V2 = struct
   (** Generate source - not used for Direct backend (wrapped as Obj.t) *)
   let generate_source (_ir_obj : Obj.t) : string option = None
 
-  (** Execute directly using pre-compiled OCaml function *)
+  (** Execute directly using pre-compiled OCaml function. Native prefers
+      native_fn but can fall back to IR interpretation. *)
   let execute_direct
       ~(native_fn :
          (block:Framework_sig.dims ->
          grid:Framework_sig.dims ->
          Obj.t array ->
          unit)
-         option) ~(block : Framework_sig.dims) ~(grid : Framework_sig.dims)
-      (args : Obj.t array) : unit =
+         option) ~(ir : Obj.t option) ~(block : Framework_sig.dims)
+      ~(grid : Framework_sig.dims) (args : Obj.t array) : unit =
     match native_fn with
     | Some fn -> fn ~block ~grid args
-    | None -> failwith "Native_v2.execute_direct: no native function provided"
+    | None -> (
+        (* Fall back to IR interpretation if no native function *)
+        match ir with
+        | Some ir_obj ->
+            let kernel : Sarek.Sarek_ir.kernel = Obj.obj ir_obj in
+            (* Use interpreter for IR execution on Native backend *)
+            Sarek.Sarek_ir_interp.run_kernel
+              kernel
+              ~block:(block.x, block.y, block.z)
+              ~grid:(grid.x, grid.y, grid.z)
+              (Sarek.Sarek_ir_interp.args_from_obj_array kernel args)
+        | None ->
+            failwith "Native_v2.execute_direct: no native_fn or ir provided")
 
   (** Native intrinsic registry *)
   module Intrinsics = Native_intrinsics

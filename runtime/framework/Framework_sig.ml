@@ -246,14 +246,20 @@ module type BACKEND_V2 = sig
       None for Direct/Custom backends. *)
   val generate_source : Obj.t -> string option
 
-  (** Execute a kernel directly (for Direct backends). JIT backends should raise
-      an error if this is called.
+  (** Execute a kernel directly (for Direct/Custom backends). JIT backends
+      should raise an error if this is called. The backend chooses which
+      component to use:
+      - Direct backends (Native): use native_fn
+      - Custom backends (Interpreter): use ir
+
       @param native_fn Pre-compiled OCaml function (from PPX)
+      @param ir Sarek_ir.kernel wrapped as Obj.t (for interpretation)
       @param block Block dimensions
       @param grid Grid dimensions
       @param args Kernel arguments as Obj.t array *)
   val execute_direct :
     native_fn:(block:dims -> grid:dims -> Obj.t array -> unit) option ->
+    ir:Obj.t option ->
     block:dims ->
     grid:dims ->
     Obj.t array ->

@@ -198,7 +198,9 @@ let () =
   end ;
   Test_helpers.print_devices spoc_devs ;
 
-  let v2_devs = V2_Device.init ~frameworks:["CUDA"; "OpenCL"] () in
+  let v2_devs =
+    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+  in
   Printf.printf "\nFound %d V2 device(s)\n\n" (Array.length v2_devs) ;
 
   if cfg.benchmark_all then begin

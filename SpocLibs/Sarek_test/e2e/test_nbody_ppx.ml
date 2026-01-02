@@ -148,7 +148,9 @@ let () =
   (* ========== V2 Path ========== *)
   print_endline "\n=== Running V2 path ===" ;
   let _, kirc = accel_kernel in
-  let v2_devs = V2_Device.init ~frameworks:["CUDA"; "OpenCL"] () in
+  let v2_devs =
+    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+  in
   let v2_dev = if Array.length v2_devs > 0 then Some v2_devs.(0) else None in
   match v2_dev with
   | None ->

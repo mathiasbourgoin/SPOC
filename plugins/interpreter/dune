@@ -1,0 +1,13 @@
+; Interpreter Plugin - CPU interpretation backend
+; Uses Sarek_ir_interp for BSP-style execution
+
+(library
+ (name sarek_interpreter)
+ (libraries
+  unix
+  ctypes
+  sarek_framework
+  sarek
+  (re_export sarek_core))
+ (modules Interpreter_plugin Interpreter_plugin_v2)
+ (preprocess no_preprocessing))

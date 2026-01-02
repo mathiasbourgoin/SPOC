@@ -437,7 +437,9 @@ let () =
 
   (* V2 execution tests *)
   print_endline "\n=== V2 Path ===" ;
-  let v2_devs = V2_Device.init ~frameworks:["CUDA"; "OpenCL"] () in
+  let v2_devs =
+    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+  in
   if Array.length v2_devs = 0 then
     print_endline "No V2 devices found - skipping V2 tests"
   else begin

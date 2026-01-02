@@ -173,7 +173,9 @@ let test_gcd () =
 
 (* V2 test for tail-recursive factorial *)
 let test_factorial_v2 () =
-  let v2_devs = V2_Device.init ~frameworks:["CUDA"; "OpenCL"] () in
+  let v2_devs =
+    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+  in
   if Array.length v2_devs = 0 then (
     print_endline "No V2 devices - skipping" ;
     true)

@@ -18,7 +18,11 @@ let () =
   Sarek_cuda.Cuda_plugin.init () ;
   Sarek_cuda.Cuda_plugin_v2.init () ;
   Sarek_opencl.Opencl_plugin.init () ;
-  Sarek_opencl.Opencl_plugin_v2.init ()
+  Sarek_opencl.Opencl_plugin_v2.init () ;
+  Sarek_native.Native_plugin.init () ;
+  Sarek_native.Native_plugin_v2.init () ;
+  Sarek_interpreter.Interpreter_plugin.init () ;
+  Sarek_interpreter.Interpreter_plugin_v2.init ()
 
 let size = ref 1024
 
@@ -178,6 +182,51 @@ let run_v2_on_device (dev : V2_Device.t) =
 
   (time_ms, V2_Vector.to_array c)
 
+(* Run kernel via interpreter directly *)
+let run_interpreter () =
+  let _, kirc = vector_add in
+  let ir =
+    match kirc.Sarek.Kirc.body_v2 with
+    | Some ir -> ir
+    | None -> failwith "Kernel has no V2 IR"
+  in
+
+  (* Create interpreter arrays *)
+  let a =
+    Array.init !size (fun i -> Sarek.Sarek_ir_interp.VFloat32 (float_of_int i))
+  in
+  let b =
+    Array.init !size (fun i ->
+        Sarek.Sarek_ir_interp.VFloat32 (float_of_int (i * 2)))
+  in
+  let c = Array.make !size (Sarek.Sarek_ir_interp.VFloat32 0.0) in
+
+  let block_sz = min 256 !size in
+  let grid_sz = (!size + block_sz - 1) / block_sz in
+
+  let t0 = Unix.gettimeofday () in
+  Sarek.Sarek_ir_interp.run_kernel
+    ir
+    ~block:(block_sz, 1, 1)
+    ~grid:(grid_sz, 1, 1)
+    [
+      ("a", Sarek.Sarek_ir_interp.ArgArray a);
+      ("b", Sarek.Sarek_ir_interp.ArgArray b);
+      ("c", Sarek.Sarek_ir_interp.ArgArray c);
+      ( "n",
+        Sarek.Sarek_ir_interp.ArgScalar
+          (Sarek.Sarek_ir_interp.VInt32 (Int32.of_int !size)) );
+    ] ;
+  let t1 = Unix.gettimeofday () in
+  let time_ms = (t1 -. t0) *. 1000.0 in
+
+  (* Extract results *)
+  let result =
+    Array.map (function Sarek.Sarek_ir_interp.VFloat32 f -> f | _ -> 0.0) c
+  in
+
+  (time_ms, result)
+
 (* Compute expected results on CPU *)
 let compute_expected () =
   Array.init !size (fun i -> float_of_int i +. float_of_int (i * 2))
@@ -220,8 +269,10 @@ let () =
     exit 1
   end ;
 
-  (* Initialize V2 devices *)
-  let v2_devs = V2_Device.init ~frameworks:["CUDA"; "OpenCL"] () in
+  (* Initialize V2 devices - include all frameworks *)
+  let v2_devs =
+    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+  in
 
   Printf.printf
     "Found %d SPOC device(s), %d V2 device(s)\n\n"
@@ -286,6 +337,19 @@ let () =
       v2_devs ;
 
     print_endline (String.make 90 '-') ;
+
+    (* Run interpreter test *)
+    print_endline "\n=== Interpreter Test ===" ;
+    let interp_time, interp_result = run_interpreter () in
+    let interp_ok =
+      if !verify then verify_results "Interpreter" interp_result expected
+      else true
+    in
+    Printf.printf
+      "Interpreter: %.4f ms - %s\n"
+      interp_time
+      (if interp_ok then "OK" else "FAIL") ;
+    if not interp_ok then all_ok := false ;
 
     if !all_ok then print_endline "\n=== All tests PASSED ==="
     else begin

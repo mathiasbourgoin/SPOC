@@ -80,7 +80,9 @@ let () =
   Sarek.Kirc.print_ast kirc_kernel.Sarek.Kirc.body ;
   print_endline "==========================" ;
 
-  let v2_devs = V2_Device.init ~frameworks:["CUDA"; "OpenCL"] () in
+  let v2_devs =
+    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+  in
 
   if Array.length v2_devs = 0 then (
     print_endline "No V2 devices found - skipping execution" ;

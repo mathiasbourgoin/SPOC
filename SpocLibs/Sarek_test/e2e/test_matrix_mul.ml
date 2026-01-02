@@ -21,7 +21,11 @@ let () =
   Sarek_cuda.Cuda_plugin.init () ;
   Sarek_cuda.Cuda_plugin_v2.init () ;
   Sarek_opencl.Opencl_plugin.init () ;
-  Sarek_opencl.Opencl_plugin_v2.init ()
+  Sarek_opencl.Opencl_plugin_v2.init () ;
+  Sarek_native.Native_plugin.init () ;
+  Sarek_native.Native_plugin_v2.init () ;
+  Sarek_interpreter.Interpreter_plugin.init () ;
+  Sarek_interpreter.Interpreter_plugin_v2.init ()
 
 let cfg = Test_helpers.default_config ()
 
@@ -403,6 +407,79 @@ let run_matmul_naive_v2 (dev : V2_Device.t) =
   in
   (compile_ms, exec_ms, ok)
 
+(* ========== Interpreter test runner ========== *)
+
+(** Run naive matrix multiplication on interpreter - returns (time_ms, ok) *)
+let run_matmul_interpreter () =
+  let dim = !matrix_dim in
+  let m, n, k = (dim, dim, dim) in
+  let inp_a = !input_a in
+  let inp_b = !input_b in
+  let exp_c = !expected_c in
+  let _, kirc = matmul_naive_kernel in
+  let ir =
+    match kirc.Sarek.Kirc.body_v2 with
+    | Some ir -> ir
+    | None -> failwith "No V2 IR"
+  in
+
+  (* Create interpreter arrays *)
+  let a =
+    Array.init (m * k) (fun i -> Sarek.Sarek_ir_interp.VFloat32 inp_a.(i))
+  in
+  let b =
+    Array.init (k * n) (fun i -> Sarek.Sarek_ir_interp.VFloat32 inp_b.(i))
+  in
+  let c = Array.make (m * n) (Sarek.Sarek_ir_interp.VFloat32 0.0) in
+
+  let block_size = min 256 (m * n) in
+  let grid_size = ((m * n) + block_size - 1) / block_size in
+
+  let t0 = Unix.gettimeofday () in
+  Sarek.Sarek_ir_interp.run_kernel
+    ir
+    ~block:(block_size, 1, 1)
+    ~grid:(grid_size, 1, 1)
+    [
+      ("a", Sarek.Sarek_ir_interp.ArgArray a);
+      ("b", Sarek.Sarek_ir_interp.ArgArray b);
+      ("c", Sarek.Sarek_ir_interp.ArgArray c);
+      ( "m",
+        Sarek.Sarek_ir_interp.ArgScalar
+          (Sarek.Sarek_ir_interp.VInt32 (Int32.of_int m)) );
+      ( "n",
+        Sarek.Sarek_ir_interp.ArgScalar
+          (Sarek.Sarek_ir_interp.VInt32 (Int32.of_int n)) );
+      ( "k",
+        Sarek.Sarek_ir_interp.ArgScalar
+          (Sarek.Sarek_ir_interp.VInt32 (Int32.of_int k)) );
+    ] ;
+  let t1 = Unix.gettimeofday () in
+  let time_ms = (t1 -. t0) *. 1000.0 in
+
+  let ok =
+    if cfg.verify then begin
+      let errors = ref 0 in
+      let check_count = min 100 (m * n) in
+      for idx = 0 to check_count - 1 do
+        let expected = exp_c.(idx) in
+        let got =
+          match c.(idx) with Sarek.Sarek_ir_interp.VFloat32 f -> f | _ -> 0.0
+        in
+        let rel_tol = 0.001 in
+        let abs_tol = 0.1 in
+        let diff = abs_float (got -. expected) in
+        let rel_err =
+          if abs_float expected > 1e-6 then diff /. abs_float expected else diff
+        in
+        if diff > abs_tol && rel_err > rel_tol then incr errors
+      done ;
+      !errors = 0
+    end
+    else true
+  in
+  (time_ms, ok)
+
 (* ========== Main ========== *)
 
 let () =
@@ -432,7 +509,9 @@ let () =
   end ;
   Test_helpers.print_devices spoc_devs ;
 
-  let v2_devs = V2_Device.init ~frameworks:["CUDA"; "OpenCL"] () in
+  let v2_devs =
+    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+  in
   Printf.printf "\nFound %d V2 device(s)\n\n" (Array.length v2_devs) ;
 
   ignore (init_matmul_data ()) ;
@@ -513,6 +592,15 @@ let () =
       spoc_devs ;
 
     print_endline (String.make 60 '-') ;
+
+    (* Interpreter test *)
+    print_endline "\n=== Interpreter Test (naive only) ===" ;
+    let interp_time, interp_ok = run_matmul_interpreter () in
+    Printf.printf
+      "Interpreter: %.4f ms - %s\n"
+      interp_time
+      (if interp_ok then "OK" else "FAIL") ;
+    if not interp_ok then all_ok := false ;
 
     if !all_ok then
       print_endline "\n=== All matrix multiplication tests PASSED ==="

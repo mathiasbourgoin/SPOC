@@ -15,10 +15,16 @@ module V2_Device = Sarek_core.Device
 module V2_Vector = Sarek_core.Vector
 module V2_Transfer = Sarek_core.Transfer
 
-(* Force V2 backend registration *)
+(* Force backend registration *)
 let () =
+  Sarek_cuda.Cuda_plugin.init () ;
   Sarek_cuda.Cuda_plugin_v2.init () ;
-  Sarek_opencl.Opencl_plugin_v2.init ()
+  Sarek_opencl.Opencl_plugin.init () ;
+  Sarek_opencl.Opencl_plugin_v2.init () ;
+  Sarek_native.Native_plugin.init () ;
+  Sarek_native.Native_plugin_v2.init () ;
+  Sarek_interpreter.Interpreter_plugin.init () ;
+  Sarek_interpreter.Interpreter_plugin_v2.init ()
 
 let basic_kernel =
   [%kernel
@@ -197,7 +203,9 @@ let test_polymorphic_identity () =
 
 let test_basic_v2 () =
   let _, kirc = basic_kernel in
-  let v2_devs = V2_Device.init ~frameworks:["CUDA"; "OpenCL"] () in
+  let v2_devs =
+    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+  in
   if Array.length v2_devs = 0 then (
     print_endline "V2: No device - SKIPPED" ;
     true)
@@ -217,17 +225,24 @@ let test_basic_v2 () =
 
         let block = Execute.dims1d 256 in
         let grid = Execute.dims1d (n / 256) in
-        Execute.run_vectors ~device:dev ~ir
+        Execute.run_vectors
+          ~device:dev
+          ~ir
           ~args:[Execute.Vec src; Execute.Vec dst]
-          ~block ~grid () ;
+          ~block
+          ~grid
+          () ;
         V2_Transfer.flush dev ;
 
         let ok = ref true in
         for i = 0 to n - 1 do
           let expected = Int32.of_int (i + 1) in
           if V2_Vector.get dst i <> expected then (
-            Printf.printf "V2 FAIL: dst[%d] = %ld, expected %ld\n"
-              i (V2_Vector.get dst i) expected ;
+            Printf.printf
+              "V2 FAIL: dst[%d] = %ld, expected %ld\n"
+              i
+              (V2_Vector.get dst i)
+              expected ;
             ok := false)
         done ;
         if !ok then print_endline "PASS: Basic module function (V2)" ;
@@ -235,7 +250,9 @@ let test_basic_v2 () =
 
 let test_times_two_v2 () =
   let _, kirc = times_two_kernel in
-  let v2_devs = V2_Device.init ~frameworks:["CUDA"; "OpenCL"] () in
+  let v2_devs =
+    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+  in
   if Array.length v2_devs = 0 then (
     print_endline "V2: No device - SKIPPED" ;
     true)
@@ -255,17 +272,24 @@ let test_times_two_v2 () =
 
         let block = Execute.dims1d 256 in
         let grid = Execute.dims1d (n / 256) in
-        Execute.run_vectors ~device:dev ~ir
+        Execute.run_vectors
+          ~device:dev
+          ~ir
           ~args:[Execute.Vec src; Execute.Vec dst]
-          ~block ~grid () ;
+          ~block
+          ~grid
+          () ;
         V2_Transfer.flush dev ;
 
         let ok = ref true in
         for i = 0 to n - 1 do
           let expected = Int32.of_int (2 * i) in
           if V2_Vector.get dst i <> expected then (
-            Printf.printf "V2 FAIL: dst[%d] = %ld, expected %ld\n"
-              i (V2_Vector.get dst i) expected ;
+            Printf.printf
+              "V2 FAIL: dst[%d] = %ld, expected %ld\n"
+              i
+              (V2_Vector.get dst i)
+              expected ;
             ok := false)
         done ;
         if !ok then print_endline "PASS: Times two (V2)" ;
@@ -273,7 +297,9 @@ let test_times_two_v2 () =
 
 let test_identity_v2 () =
   let _, kirc = identity_kernel in
-  let v2_devs = V2_Device.init ~frameworks:["CUDA"; "OpenCL"] () in
+  let v2_devs =
+    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+  in
   if Array.length v2_devs = 0 then (
     print_endline "V2: No device - SKIPPED" ;
     true)
@@ -296,10 +322,19 @@ let test_identity_v2 () =
 
         let block = Execute.dims1d 256 in
         let grid = Execute.dims1d (n / 256) in
-        Execute.run_vectors ~device:dev ~ir
-          ~args:[Execute.Vec src_i; Execute.Vec src_f;
-                 Execute.Vec dst_i; Execute.Vec dst_f]
-          ~block ~grid () ;
+        Execute.run_vectors
+          ~device:dev
+          ~ir
+          ~args:
+            [
+              Execute.Vec src_i;
+              Execute.Vec src_f;
+              Execute.Vec dst_i;
+              Execute.Vec dst_f;
+            ]
+          ~block
+          ~grid
+          () ;
         V2_Transfer.flush dev ;
 
         let ok = ref true in
@@ -307,16 +342,64 @@ let test_identity_v2 () =
           let expected_i = Int32.of_int i in
           let expected_f = float_of_int i in
           if V2_Vector.get dst_i i <> expected_i then (
-            Printf.printf "V2 FAIL: dst_i[%d] = %ld, expected %ld\n"
-              i (V2_Vector.get dst_i i) expected_i ;
+            Printf.printf
+              "V2 FAIL: dst_i[%d] = %ld, expected %ld\n"
+              i
+              (V2_Vector.get dst_i i)
+              expected_i ;
             ok := false) ;
           if abs_float (V2_Vector.get dst_f i -. expected_f) > 0.001 then (
-            Printf.printf "V2 FAIL: dst_f[%d] = %f, expected %f\n"
-              i (V2_Vector.get dst_f i) expected_f ;
+            Printf.printf
+              "V2 FAIL: dst_f[%d] = %f, expected %f\n"
+              i
+              (V2_Vector.get dst_f i)
+              expected_f ;
             ok := false)
         done ;
         if !ok then print_endline "PASS: Polymorphic identity (V2)" ;
         !ok
+
+(* ========== Interpreter Tests ========== *)
+
+let test_basic_interpreter () =
+  let _, kirc = basic_kernel in
+  match kirc.Kirc.body_v2 with
+  | None ->
+      print_endline "Interpreter: No V2 IR - SKIPPED" ;
+      true
+  | Some ir ->
+      let n = 1024 in
+      let src =
+        Array.init n (fun i -> Sarek_ir_interp.VInt32 (Int32.of_int i))
+      in
+      let dst = Array.make n (Sarek_ir_interp.VInt32 0l) in
+
+      Sarek_ir_interp.run_kernel
+        ir
+        ~block:(256, 1, 1)
+        ~grid:(n / 256, 1, 1)
+        [
+          ("src", Sarek_ir_interp.ArgArray src);
+          ("dst", Sarek_ir_interp.ArgArray dst);
+        ] ;
+
+      let ok = ref true in
+      for i = 0 to n - 1 do
+        let expected = Int32.of_int (i + 1) in
+        let got =
+          match dst.(i) with Sarek_ir_interp.VInt32 v -> v | _ -> 0l
+        in
+        if got <> expected then (
+          if !ok then
+            Printf.printf
+              "Interpreter FAIL: dst[%d] = %ld, expected %ld\n"
+              i
+              got
+              expected ;
+          ok := false)
+      done ;
+      if !ok then print_endline "PASS: Basic module function (Interpreter)" ;
+      !ok
 
 let () =
   print_endline "=== Module Functions & Polymorphism Tests ===" ;
@@ -337,15 +420,30 @@ let () =
   let v3 = test_identity_v2 () in
   print_endline "" ;
 
-  print_endline "=== Summary ===" ;
-  Printf.printf "Basic module function (SPOC): %s\n" (if t1 then "PASS" else "FAIL") ;
-  Printf.printf "Times two (SPOC): %s\n" (if t2 then "PASS" else "FAIL") ;
-  Printf.printf "Polymorphic identity (SPOC): %s\n" (if t3 then "PASS" else "FAIL") ;
-  Printf.printf "Basic module function (V2): %s\n" (if v1 then "PASS" else "FAIL") ;
-  Printf.printf "Times two (V2): %s\n" (if v2 then "PASS" else "FAIL") ;
-  Printf.printf "Polymorphic identity (V2): %s\n" (if v3 then "PASS" else "FAIL") ;
+  print_endline "=== Interpreter Tests ===" ;
+  let i1 = test_basic_interpreter () in
+  print_endline "" ;
 
-  if t1 && t2 && t3 && v1 && v2 && v3 then (
+  print_endline "=== Summary ===" ;
+  Printf.printf
+    "Basic module function (SPOC): %s\n"
+    (if t1 then "PASS" else "FAIL") ;
+  Printf.printf "Times two (SPOC): %s\n" (if t2 then "PASS" else "FAIL") ;
+  Printf.printf
+    "Polymorphic identity (SPOC): %s\n"
+    (if t3 then "PASS" else "FAIL") ;
+  Printf.printf
+    "Basic module function (V2): %s\n"
+    (if v1 then "PASS" else "FAIL") ;
+  Printf.printf "Times two (V2): %s\n" (if v2 then "PASS" else "FAIL") ;
+  Printf.printf
+    "Polymorphic identity (V2): %s\n"
+    (if v3 then "PASS" else "FAIL") ;
+  Printf.printf
+    "Basic module function (Interpreter): %s\n"
+    (if i1 then "PASS" else "FAIL") ;
+
+  if t1 && t2 && t3 && v1 && v2 && v3 && i1 then (
     print_endline "\nAll tests passed!" ;
     exit 0)
   else (

@@ -92,6 +92,8 @@
   sarek_core
   sarek_cuda
   sarek_opencl
+  sarek_native
+  sarek_interpreter
   test_helpers
   unix)
  (preprocess

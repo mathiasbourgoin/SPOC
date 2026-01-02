@@ -148,7 +148,7 @@ module Cuda_v2 : Framework_sig.BACKEND_V2 = struct
     try Some (Sarek.Sarek_ir_cuda.generate (Obj.obj ir_obj)) with _ -> None
 
   (** Execute directly - not supported for JIT backend *)
-  let execute_direct ~native_fn:_ ~block:_ ~grid:_ _args =
+  let execute_direct ~native_fn:_ ~ir:_ ~block:_ ~grid:_ _args =
     failwith
       "Cuda_v2.execute_direct: JIT backend does not support direct execution"
 

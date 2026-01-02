@@ -11,6 +11,7 @@
   Sarek_ir
   Sarek_ir_cuda
   Sarek_ir_opencl
+  Sarek_ir_interp
   Sarek_fusion
   Sarek_interp
   Sarek_cpu_runtime

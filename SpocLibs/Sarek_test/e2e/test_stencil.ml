@@ -18,7 +18,11 @@ let () =
   Sarek_cuda.Cuda_plugin.init () ;
   Sarek_cuda.Cuda_plugin_v2.init () ;
   Sarek_opencl.Opencl_plugin.init () ;
-  Sarek_opencl.Opencl_plugin_v2.init ()
+  Sarek_opencl.Opencl_plugin_v2.init () ;
+  Sarek_native.Native_plugin.init () ;
+  Sarek_native.Native_plugin_v2.init () ;
+  Sarek_interpreter.Interpreter_plugin.init () ;
+  Sarek_interpreter.Interpreter_plugin_v2.init ()
 
 let cfg = Test_helpers.default_config ()
 
@@ -171,7 +175,9 @@ let () =
   end ;
   Test_helpers.print_devices spoc_devs ;
 
-  let v2_devs = V2_Device.init ~frameworks:["CUDA"; "OpenCL"] () in
+  let v2_devs =
+    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+  in
   Printf.printf "\nFound %d V2 device(s)\n\n" (Array.length v2_devs) ;
 
   if cfg.benchmark_all then begin

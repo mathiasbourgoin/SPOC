@@ -17,10 +17,16 @@ module V2_Device = Sarek_core.Device
 module V2_Vector = Sarek_core.Vector
 module V2_Transfer = Sarek_core.Transfer
 
-(* Force V2 backend registration *)
+(* Force backend registration *)
 let () =
+  Sarek_cuda.Cuda_plugin.init () ;
   Sarek_cuda.Cuda_plugin_v2.init () ;
-  Sarek_opencl.Opencl_plugin_v2.init ()
+  Sarek_opencl.Opencl_plugin.init () ;
+  Sarek_opencl.Opencl_plugin_v2.init () ;
+  Sarek_native.Native_plugin.init () ;
+  Sarek_native.Native_plugin_v2.init () ;
+  Sarek_interpreter.Interpreter_plugin.init () ;
+  Sarek_interpreter.Interpreter_plugin_v2.init ()
 
 let cfg = Test_helpers.default_config ()
 
@@ -639,7 +645,9 @@ let () =
   Test_helpers.print_devices devs ;
 
   (* Initialize V2 devices *)
-  let v2_devs = V2_Device.init ~frameworks:["CUDA"; "OpenCL"] () in
+  let v2_devs =
+    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+  in
 
   let dim = int_of_float (sqrt (float_of_int cfg.size)) in
   Printf.printf "Image dimensions: %dx%d, max_iter=%d\n%!" dim dim !max_iter ;
@@ -685,16 +693,20 @@ let () =
     let baseline_ms, _ = init_mandelbrot_data () in
     Array.iter
       (fun v2_dev ->
-        Printf.printf "\nV2 Mandelbrot on %s:\n%!" v2_dev.V2_Device.name ;
+        let dev_label =
+          Printf.sprintf
+            "%s (%s)"
+            v2_dev.V2_Device.name
+            v2_dev.V2_Device.framework
+        in
+        Printf.printf "\nV2 Mandelbrot on %s:\n%!" dev_label ;
         let time_ms, ok = run_mandelbrot_v2_test v2_dev in
         Printf.printf
           "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
           time_ms
           (baseline_ms /. time_ms)
           (if ok then "PASSED" else "FAILED") ;
-        Printf.printf
-          "\nV2 Mandelbrot (tailrec) on %s:\n%!"
-          v2_dev.V2_Device.name ;
+        Printf.printf "\nV2 Mandelbrot (tailrec) on %s:\n%!" dev_label ;
         let tr_time_ms, tr_ok = run_mandelbrot_tailrec_v2_test v2_dev in
         Printf.printf
           "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"

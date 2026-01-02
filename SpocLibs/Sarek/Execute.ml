@@ -167,13 +167,15 @@ let run_v2 ~(device : Device.t) ~(name : string)
                     ~shared_mem
                     ~stream:None))
       | Framework_sig.Direct ->
-          (* Direct path: call native function *)
+          (* Direct path: call native function or interpret IR *)
           let obj_args = args_to_obj_array args in
-          B.execute_direct ~native_fn ~block ~grid obj_args
+          let ir_obj = Option.map (fun l -> Obj.repr (Lazy.force l)) ir in
+          B.execute_direct ~native_fn ~ir:ir_obj ~block ~grid obj_args
       | Framework_sig.Custom ->
-          (* Custom path: delegate to backend *)
+          (* Custom path: delegate to backend with IR *)
           let obj_args = args_to_obj_array args in
-          B.execute_direct ~native_fn ~block ~grid obj_args)
+          let ir_obj = Option.map (fun l -> Obj.repr (Lazy.force l)) ir in
+          B.execute_direct ~native_fn ~ir:ir_obj ~block ~grid obj_args)
   | None -> (
       (* Fall back to BACKEND (non-V2) if available *)
       match Framework_registry.find_backend device.framework with
@@ -280,6 +282,37 @@ let run_from_ir ~(device : Device.t) ~(ir : Sarek_ir.kernel)
           let obj_args = args_to_obj_array args in
           fn ~block ~grid obj_args
       | None -> raise (Execution_error "Native backend requires native_fn"))
+  | "Interpreter" ->
+      (* Interpreter path: use Sarek_ir_interp directly.
+         Note: For interpreter, use Sarek_ir_interp.run_kernel directly
+         with pre-prepared value arrays rather than going through Execute. *)
+      Log.debug Log.Execute "  interpreting IR..." ;
+      (* Convert Execute.arg list to interpreter format - scalars only *)
+      let interp_args =
+        List.mapi
+          (fun i arg ->
+            let name = Printf.sprintf "param%d" i in
+            match arg with
+            | ArgInt32 n ->
+                (name, Sarek_ir_interp.ArgScalar (Sarek_ir_interp.VInt32 n))
+            | ArgInt64 n ->
+                (name, Sarek_ir_interp.ArgScalar (Sarek_ir_interp.VInt64 n))
+            | ArgFloat32 f ->
+                (name, Sarek_ir_interp.ArgScalar (Sarek_ir_interp.VFloat32 f))
+            | ArgFloat64 f ->
+                (name, Sarek_ir_interp.ArgScalar (Sarek_ir_interp.VFloat64 f))
+            | ArgDeviceBuffer _ ->
+                (* Device buffers not directly supported - use interpreter API directly *)
+                failwith
+                  "Interpreter: use Sarek_ir_interp.run_kernel for array args"
+            | _ -> failwith "Interpreter: unsupported arg type")
+          args
+      in
+      Sarek_ir_interp.run_kernel
+        ir
+        ~block:(block.x, block.y, block.z)
+        ~grid:(grid.x, grid.y, grid.z)
+        interp_args
   | fw ->
       raise
         (Execution_error
@@ -342,6 +375,109 @@ let mark_vectors_stale (args : vector_arg list) (dev : Device.t) : unit =
         | _ -> ())
       args
 
+(** Convert a V2 Vector to interpreter value array *)
+let vector_to_interp_array : type a b.
+    (a, b) Vector.t -> Sarek_ir_interp.value array =
+ fun vec ->
+  let len = Vector.length vec in
+  match Vector.kind vec with
+  | Vector.Scalar Vector.Int32 ->
+      Array.init len (fun i -> Sarek_ir_interp.VInt32 (Vector.get vec i))
+  | Vector.Scalar Vector.Int64 ->
+      Array.init len (fun i -> Sarek_ir_interp.VInt64 (Vector.get vec i))
+  | Vector.Scalar Vector.Float32 ->
+      Array.init len (fun i -> Sarek_ir_interp.VFloat32 (Vector.get vec i))
+  | Vector.Scalar Vector.Float64 ->
+      Array.init len (fun i -> Sarek_ir_interp.VFloat64 (Vector.get vec i))
+  | _ ->
+      (* For other types, use float32 as default *)
+      Array.init len (fun i ->
+          Sarek_ir_interp.VFloat32 (Obj.magic (Vector.get vec i) : float))
+
+(** Copy interpreter value array back to V2 Vector *)
+let interp_array_to_vector : type a b.
+    Sarek_ir_interp.value array -> (a, b) Vector.t -> unit =
+ fun arr vec ->
+  let len = min (Array.length arr) (Vector.length vec) in
+  match Vector.kind vec with
+  | Vector.Scalar Vector.Int32 ->
+      for i = 0 to len - 1 do
+        Vector.set vec i (Sarek_ir_interp.to_int32 arr.(i))
+      done
+  | Vector.Scalar Vector.Int64 ->
+      for i = 0 to len - 1 do
+        Vector.set vec i (Sarek_ir_interp.to_int64 arr.(i))
+      done
+  | Vector.Scalar Vector.Float32 ->
+      for i = 0 to len - 1 do
+        Vector.set vec i (Sarek_ir_interp.to_float32 arr.(i))
+      done
+  | Vector.Scalar Vector.Float64 ->
+      for i = 0 to len - 1 do
+        Vector.set vec i (Sarek_ir_interp.to_float64 arr.(i))
+      done
+  | _ ->
+      for i = 0 to len - 1 do
+        Vector.set vec i (Obj.magic (Sarek_ir_interp.to_float32 arr.(i)))
+      done
+
+(** Run kernel via interpreter with V2 Vectors. Note: Interpreter works with IR
+    params directly - one arg per param. Vectors map to ArgArray (length is
+    intrinsic to array). *)
+let run_interpreter_vectors ~(ir : Sarek_ir.kernel) ~(args : vector_arg list)
+    ~(block : Framework_sig.dims) ~(grid : Framework_sig.dims) : unit =
+  (* Convert vector args to interpreter format, tracking arrays for writeback *)
+  let interp_arrays : (Obj.t * Sarek_ir_interp.value array) list ref = ref [] in
+
+  (* Extract param names from kernel IR (only DParam entries) *)
+  let param_names =
+    List.filter_map
+      (function
+        | Sarek_ir.DParam (v, _) -> Some v.Sarek_ir.var_name | _ -> None)
+      ir.Sarek_ir.kern_params
+  in
+
+  (* Build args matching kernel params 1:1, using actual param names *)
+  let interp_args =
+    List.mapi
+      (fun i arg ->
+        let name =
+          if i < List.length param_names then List.nth param_names i
+          else Printf.sprintf "param%d" i
+        in
+        match arg with
+        | Vec v ->
+            let arr = vector_to_interp_array v in
+            interp_arrays := (Obj.repr v, arr) :: !interp_arrays ;
+            (name, Sarek_ir_interp.ArgArray arr)
+        | Int n ->
+            ( name,
+              Sarek_ir_interp.ArgScalar
+                (Sarek_ir_interp.VInt32 (Int32.of_int n)) )
+        | Int32 n -> (name, Sarek_ir_interp.ArgScalar (Sarek_ir_interp.VInt32 n))
+        | Int64 n -> (name, Sarek_ir_interp.ArgScalar (Sarek_ir_interp.VInt64 n))
+        | Float32 f ->
+            (name, Sarek_ir_interp.ArgScalar (Sarek_ir_interp.VFloat32 f))
+        | Float64 f ->
+            (name, Sarek_ir_interp.ArgScalar (Sarek_ir_interp.VFloat64 f)))
+      args
+  in
+
+  (* Run interpreter *)
+  Sarek_ir_interp.run_kernel
+    ir
+    ~block:(block.x, block.y, block.z)
+    ~grid:(grid.x, grid.y, grid.z)
+    interp_args ;
+
+  (* Copy results back to vectors - use Obj.magic to recover the type *)
+  List.iter
+    (fun (vec_obj, arr) ->
+      (* We stored the vector as Obj.t, recover it with magic *)
+      let vec : (float, Bigarray.float32_elt) Vector.t = Obj.magic vec_obj in
+      interp_array_to_vector arr vec)
+    !interp_arrays
+
 (** Execute a kernel with V2 Vectors. Auto-transfers, expands args,
     compiles/runs. *)
 let run_vectors ~(device : Device.t) ~(ir : Sarek_ir.kernel)
@@ -353,17 +489,22 @@ let run_vectors ~(device : Device.t) ~(ir : Sarek_ir.kernel)
        Obj.t array ->
        unit)
        option) () : unit =
-  (* 1. Transfer all vectors to device *)
-  transfer_vectors_to_device args device ;
+  (* Special path for CPU backends - work directly with vectors via interpreter *)
+  if device.framework = "Interpreter" || device.framework = "Native" then
+    run_interpreter_vectors ~ir ~args ~block ~grid
+  else begin
+    (* 1. Transfer all vectors to device *)
+    transfer_vectors_to_device args device ;
 
-  (* 2. Expand vector args to (buffer, length) pairs *)
-  let expanded_args = expand_vector_args args device in
+    (* 2. Expand vector args to (buffer, length) pairs *)
+    let expanded_args = expand_vector_args args device in
 
-  (* 3. Dispatch to appropriate backend *)
-  run_from_ir ~device ~ir ~block ~grid ~shared_mem ?native_fn expanded_args ;
+    (* 3. Dispatch to appropriate backend *)
+    run_from_ir ~device ~ir ~block ~grid ~shared_mem ?native_fn expanded_args ;
 
-  (* 4. Mark vectors as stale (GPU wrote to them, CPU copy is outdated) *)
-  mark_vectors_stale args device
+    (* 4. Mark vectors as stale (GPU wrote to them, CPU copy is outdated) *)
+    mark_vectors_stale args device
+  end
 
 (** Sync all V2 Vector outputs back to CPU *)
 let sync_vectors_to_cpu (args : vector_arg list) : unit =
