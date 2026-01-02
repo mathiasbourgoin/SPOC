@@ -166,7 +166,8 @@ let run_with_args ~(device : Device.t) ~(block : Framework_sig.dims)
       | Some fn -> fn ~block ~grid (Execute.args_to_obj_array args)
       | None -> failwith "Native kernel has no native function")
   | "CUDA" ->
-      let source = Sarek_ir_cuda.generate (Lazy.force k.ir) in
+      let ir = Lazy.force k.ir in
+      let source = Sarek_ir_cuda.generate_with_types ~types:ir.kern_types ir in
       Execute.run_typed
         ~device
         ~name:k.name
@@ -176,7 +177,8 @@ let run_with_args ~(device : Device.t) ~(block : Framework_sig.dims)
         ~shared_mem
         args
   | "OpenCL" ->
-      let source = Sarek_ir_opencl.generate (Lazy.force k.ir) in
+      let ir = Lazy.force k.ir in
+      let source = Sarek_ir_opencl.generate_with_types ~types:ir.kern_types ir in
       Execute.run_typed
         ~device
         ~name:k.name
@@ -193,8 +195,8 @@ let run_with_args ~(device : Device.t) ~(block : Framework_sig.dims)
 let source_for_backend (k : 'a kernel_v2) ~backend : string =
   let ir = Lazy.force k.ir in
   match backend with
-  | "CUDA" -> Sarek_ir_cuda.generate ir
-  | "OpenCL" -> Sarek_ir_opencl.generate ir
+  | "CUDA" -> Sarek_ir_cuda.generate_with_types ~types:ir.kern_types ir
+  | "OpenCL" -> Sarek_ir_opencl.generate_with_types ~types:ir.kern_types ir
   | "Native" -> failwith "Native backend uses pre-compiled code, no source"
   | _ -> failwith ("Unknown backend: " ^ backend)
 

@@ -173,7 +173,10 @@ module Opencl_v2 : Framework_sig.BACKEND_V2 = struct
 
   (** Generate OpenCL source from Sarek IR (wrapped as Obj.t) *)
   let generate_source (ir_obj : Obj.t) : string option =
-    try Some (Sarek.Sarek_ir_opencl.generate (Obj.obj ir_obj)) with _ -> None
+    try
+      let ir : Sarek.Sarek_ir.kernel = Obj.obj ir_obj in
+      Some (Sarek.Sarek_ir_opencl.generate_with_types ~types:ir.kern_types ir)
+    with _ -> None
 
   (** Execute directly - not supported for JIT backend *)
   let execute_direct ~native_fn:_ ~ir:_ ~block:_ ~grid:_ _args =
