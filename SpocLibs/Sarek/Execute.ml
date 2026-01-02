@@ -425,7 +425,10 @@ let interp_array_to_vector : type a b.
     params directly - one arg per param. Vectors map to ArgArray (length is
     intrinsic to array). *)
 let run_interpreter_vectors ~(ir : Sarek_ir.kernel) ~(args : vector_arg list)
-    ~(block : Framework_sig.dims) ~(grid : Framework_sig.dims) : unit =
+    ~(block : Framework_sig.dims) ~(grid : Framework_sig.dims)
+    ~(parallel : bool) : unit =
+  (* Set interpreter parallel mode *)
+  Sarek_ir_interp.parallel_mode := parallel ;
   (* Convert vector args to interpreter format, tracking arrays for writeback *)
   let interp_arrays : (Obj.t * Sarek_ir_interp.value array) list ref = ref [] in
 
@@ -491,7 +494,9 @@ let run_vectors ~(device : Device.t) ~(ir : Sarek_ir.kernel)
        option) () : unit =
   (* Special path for CPU backends - work directly with vectors via interpreter *)
   if device.framework = "Interpreter" || device.framework = "Native" then
-    run_interpreter_vectors ~ir ~args ~block ~grid
+    (* Native uses parallel, Interpreter uses sequential *)
+    let parallel = device.framework = "Native" in
+    run_interpreter_vectors ~ir ~args ~block ~grid ~parallel
   else begin
     (* 1. Transfer all vectors to device *)
     transfer_vectors_to_device args device ;

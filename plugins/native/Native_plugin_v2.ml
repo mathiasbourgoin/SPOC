@@ -164,7 +164,8 @@ module Native_v2 : Framework_sig.BACKEND_V2 = struct
         match ir with
         | Some ir_obj ->
             let kernel : Sarek.Sarek_ir.kernel = Obj.obj ir_obj in
-            (* Use interpreter for IR execution on Native backend *)
+            (* Native uses parallel interpreter *)
+            Sarek.Sarek_ir_interp.parallel_mode := true ;
             Sarek.Sarek_ir_interp.run_kernel
               kernel
               ~block:(block.x, block.y, block.z)

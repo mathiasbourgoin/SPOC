@@ -80,6 +80,8 @@ module Interpreter_v2 : Framework_sig.BACKEND_V2 = struct
     match ir with
     | Some ir_obj ->
         let kernel : Sarek.Sarek_ir.kernel = Obj.obj ir_obj in
+        (* Interpreter uses sequential execution *)
+        Sarek.Sarek_ir_interp.parallel_mode := false ;
         Sarek.Sarek_ir_interp.run_kernel
           kernel
           ~block:(block.x, block.y, block.z)

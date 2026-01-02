@@ -732,8 +732,8 @@ let run_block env body block_idx block_dim grid_dim =
       failwith "BSP deadlock in interpreter"
   done
 
-(** Run all blocks in a grid *)
-let run_grid env body block_dim grid_dim =
+(** Run all blocks in a grid (sequential) *)
+let run_grid_sequential env body block_dim grid_dim =
   let gx, gy, gz = grid_dim in
   for bz = 0 to gz - 1 do
     for by = 0 to gy - 1 do
@@ -743,6 +743,116 @@ let run_grid env body block_dim grid_dim =
       done
     done
   done
+
+(** {1 Domain Pool for Parallel Execution} *)
+
+module DomainPool = struct
+  type task = unit -> unit
+
+  type t = {
+    num_domains : int;
+    task_queue : task Queue.t;
+    mutex : Mutex.t;
+    cond : Condition.t;
+    mutable shutdown : bool;
+    domains : unit Domain.t array;
+    mutable active_tasks : int;
+    done_cond : Condition.t;
+  }
+
+  let worker pool =
+    let rec loop () =
+      Mutex.lock pool.mutex ;
+      while Queue.is_empty pool.task_queue && not pool.shutdown do
+        Condition.wait pool.cond pool.mutex
+      done ;
+      if pool.shutdown && Queue.is_empty pool.task_queue then begin
+        Mutex.unlock pool.mutex
+      end
+      else begin
+        let task = Queue.pop pool.task_queue in
+        pool.active_tasks <- pool.active_tasks + 1 ;
+        Mutex.unlock pool.mutex ;
+        (try task () with _ -> ()) ;
+        Mutex.lock pool.mutex ;
+        pool.active_tasks <- pool.active_tasks - 1 ;
+        if pool.active_tasks = 0 && Queue.is_empty pool.task_queue then
+          Condition.broadcast pool.done_cond ;
+        Mutex.unlock pool.mutex ;
+        loop ()
+      end
+    in
+    loop ()
+
+  let create num_domains =
+    let pool =
+      {
+        num_domains;
+        task_queue = Queue.create ();
+        mutex = Mutex.create ();
+        cond = Condition.create ();
+        shutdown = false;
+        domains = [||];
+        active_tasks = 0;
+        done_cond = Condition.create ();
+      }
+    in
+    let domains =
+      Array.init num_domains (fun _ -> Domain.spawn (fun () -> worker pool))
+    in
+    {pool with domains}
+
+  let submit pool task =
+    Mutex.lock pool.mutex ;
+    Queue.add task pool.task_queue ;
+    Condition.signal pool.cond ;
+    Mutex.unlock pool.mutex
+
+  let wait_all pool =
+    Mutex.lock pool.mutex ;
+    while pool.active_tasks > 0 || not (Queue.is_empty pool.task_queue) do
+      Condition.wait pool.done_cond pool.mutex
+    done ;
+    Mutex.unlock pool.mutex
+end
+
+(** Global pool - lazily initialized *)
+let global_pool : DomainPool.t option ref = ref None
+
+let get_pool () =
+  match !global_pool with
+  | Some pool -> pool
+  | None ->
+      let num_cores = try Domain.recommended_domain_count () with _ -> 4 in
+      let pool = DomainPool.create num_cores in
+      global_pool := Some pool ;
+      pool
+
+(** Run all blocks in a grid (parallel - distributes blocks across domain pool)
+*)
+let run_grid_parallel env body block_dim grid_dim =
+  let pool = get_pool () in
+  let gx, gy, gz = grid_dim in
+  for bz = 0 to gz - 1 do
+    for by = 0 to gy - 1 do
+      for bx = 0 to gx - 1 do
+        DomainPool.submit pool (fun () ->
+            (* Each block gets its own shared memory *)
+            let block_env = copy_env env in
+            Hashtbl.clear block_env.shared ;
+            run_block block_env body (bx, by, bz) block_dim grid_dim)
+      done
+    done
+  done ;
+  DomainPool.wait_all pool
+
+(** Parallel execution mode flag *)
+let parallel_mode = ref true
+
+(** Run all blocks in a grid (uses parallel or sequential based on flag) *)
+let run_grid env body block_dim grid_dim =
+  if !parallel_mode then run_grid_parallel env body block_dim grid_dim
+  else run_grid_sequential env body block_dim grid_dim
 
 (** {1 Public API} *)
 
