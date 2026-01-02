@@ -111,13 +111,27 @@ let calc_type_size_early (labels : label_declaration list) : int =
     0
     labels
 
+(* Helper to get payload size in bytes for a variant constructor *)
+let variant_payload_byte_size (cd : constructor_declaration) : int =
+  match cd.pcd_args with
+  | Pcstr_tuple [] -> 0
+  | Pcstr_tuple [ct] -> get_type_size_from_core_type ct
+  | Pcstr_tuple cts ->
+      List.fold_left ( + ) 0 (List.map get_type_size_from_core_type cts)
+  | Pcstr_record _ -> 0 (* TODO: support inline records *)
+
 (* Compute type size and register it in the registry for nested type lookup. *)
 let register_type_size (td : type_declaration) =
   let type_name = td.ptype_name.txt in
   let size =
     match td.ptype_kind with
     | Ptype_record labels -> calc_type_size_early labels
-    | Ptype_variant _ -> 4 (* Variants are stored as int32 tag *)
+    | Ptype_variant constrs ->
+        (* 4 bytes for tag + max payload size *)
+        let max_payload =
+          List.fold_left max 0 (List.map variant_payload_byte_size constrs)
+        in
+        4 + max_payload
     | _ -> 4
   in
   Hashtbl.replace type_size_registry type_name size
@@ -486,72 +500,216 @@ let generate_custom_value ~loc (td : type_declaration) : structure_item list =
             }];
       ]
   | Ptype_variant constrs ->
-      (* Generate SPOC custom type for simple enums (variants with no args).
-         Stored as float32 in SPOC arrays, converted to/from int tag. *)
+      (* Generate SPOC custom type for variants (with or without payloads).
+         Layout: [tag:float32][payload:max_payload_size floats]
+         For simple enums (no args), size=1.
+         For variants with payloads, size=1+max_payload_size. *)
       let type_name = td.ptype_name.txt in
       let custom_name = type_name ^ "_custom" in
       let custom_pat = Ast_builder.Default.pvar ~loc custom_name in
 
-      (* Build match cases for get: int tag -> constructor *)
+      (* Helper to get payload size in float32 units for a constructor *)
+      let payload_size cd =
+        match cd.pcd_args with
+        | Pcstr_tuple [] -> 0
+        | Pcstr_tuple [ct] -> field_element_count ct
+        | Pcstr_tuple cts ->
+            List.fold_left ( + ) 0 (List.map field_element_count cts)
+        | Pcstr_record _ -> 0 (* TODO: support inline records *)
+      in
+      let max_payload = List.fold_left max 0 (List.map payload_size constrs) in
+      let total_size = 1 + max_payload in
+      (* 1 for tag *)
+      let total_size_expr = Ast_builder.Default.eint ~loc total_size in
+
+      (* Build match cases for get: int tag -> constructor with payload *)
       let get_cases =
         List.mapi
           (fun i cd ->
             let tag_pat = Ast_builder.Default.pint ~loc i in
             let ctor_expr =
-              Ast_builder.Default.pexp_construct
-                ~loc
-                {txt = Lident cd.pcd_name.txt; loc}
-                None
+              match cd.pcd_args with
+              | Pcstr_tuple [] ->
+                  Ast_builder.Default.pexp_construct
+                    ~loc
+                    {txt = Lident cd.pcd_name.txt; loc}
+                    None
+              | Pcstr_tuple [ct] ->
+                  (* Read payload at base+1 *)
+                  let getter = get_accessor_for_type ~loc ct in
+                  let payload_expr = [%expr [%e getter] arr (base + 1)] in
+                  Ast_builder.Default.pexp_construct
+                    ~loc
+                    {txt = Lident cd.pcd_name.txt; loc}
+                    (Some payload_expr)
+              | Pcstr_tuple cts ->
+                  (* Multiple args: read each at base+1, base+2, ... *)
+                  let args =
+                    List.mapi
+                      (fun j ct ->
+                        let getter = get_accessor_for_type ~loc ct in
+                        let off = Ast_builder.Default.eint ~loc (1 + j) in
+                        [%expr [%e getter] arr (base + [%e off])])
+                      cts
+                  in
+                  Ast_builder.Default.pexp_construct
+                    ~loc
+                    {txt = Lident cd.pcd_name.txt; loc}
+                    (Some (Ast_builder.Default.pexp_tuple ~loc args))
+              | Pcstr_record _ ->
+                  (* Fallback for inline records - not yet supported *)
+                  Ast_builder.Default.pexp_construct
+                    ~loc
+                    {txt = Lident cd.pcd_name.txt; loc}
+                    None
             in
             {pc_lhs = tag_pat; pc_guard = None; pc_rhs = ctor_expr})
           constrs
+      in
+      let fallback_ctor = List.hd constrs in
+      let fallback_expr =
+        match fallback_ctor.pcd_args with
+        | Pcstr_tuple [] ->
+            Ast_builder.Default.pexp_construct
+              ~loc
+              {txt = Lident fallback_ctor.pcd_name.txt; loc}
+              None
+        | Pcstr_tuple [ct] ->
+            let getter = get_accessor_for_type ~loc ct in
+            let payload_expr = [%expr [%e getter] arr (base + 1)] in
+            Ast_builder.Default.pexp_construct
+              ~loc
+              {txt = Lident fallback_ctor.pcd_name.txt; loc}
+              (Some payload_expr)
+        | _ ->
+            Ast_builder.Default.pexp_construct
+              ~loc
+              {txt = Lident fallback_ctor.pcd_name.txt; loc}
+              None
       in
       let fallback_case =
         {
           pc_lhs = Ast_builder.Default.ppat_any ~loc;
           pc_guard = None;
-          pc_rhs =
-            Ast_builder.Default.pexp_construct
-              ~loc
-              {txt = Lident (List.hd constrs).pcd_name.txt; loc}
-              None;
+          pc_rhs = fallback_expr;
         }
       in
       let get_match =
         Ast_builder.Default.pexp_match
           ~loc
-          [%expr int_of_float (Spoc.Tools.float32get arr idx)]
+          [%expr int_of_float (Spoc.Tools.float32get arr base)]
           (get_cases @ [fallback_case])
       in
-      let get_fn = [%expr fun arr idx -> [%e get_match]] in
+      let get_body =
+        [%expr
+          let base = idx * [%e total_size_expr] in
+          [%e get_match]]
+      in
+      let get_fn = [%expr fun arr idx -> [%e get_body]] in
 
-      (* Build match cases for set: constructor -> int tag *)
+      (* Build match cases for set: constructor -> write tag + payload *)
       let set_cases =
         List.mapi
           (fun i cd ->
-            let ctor_pat =
-              Ast_builder.Default.ppat_construct
-                ~loc
-                {txt = Lident cd.pcd_name.txt; loc}
-                None
-            in
             let tag_expr =
               Ast_builder.Default.efloat ~loc (string_of_float (float_of_int i))
             in
-            {
-              pc_lhs = ctor_pat;
-              pc_guard = None;
-              pc_rhs = [%expr Spoc.Tools.float32set arr idx [%e tag_expr]];
-            })
+            match cd.pcd_args with
+            | Pcstr_tuple [] ->
+                let ctor_pat =
+                  Ast_builder.Default.ppat_construct
+                    ~loc
+                    {txt = Lident cd.pcd_name.txt; loc}
+                    None
+                in
+                {
+                  pc_lhs = ctor_pat;
+                  pc_guard = None;
+                  pc_rhs = [%expr Spoc.Tools.float32set arr base [%e tag_expr]];
+                }
+            | Pcstr_tuple [ct] ->
+                let payload_pat = Ast_builder.Default.pvar ~loc "payload" in
+                let ctor_pat =
+                  Ast_builder.Default.ppat_construct
+                    ~loc
+                    {txt = Lident cd.pcd_name.txt; loc}
+                    (Some payload_pat)
+                in
+                let setter = set_accessor_for_type ~loc ct in
+                {
+                  pc_lhs = ctor_pat;
+                  pc_guard = None;
+                  pc_rhs =
+                    [%expr
+                      Spoc.Tools.float32set arr base [%e tag_expr] ;
+                      [%e setter] arr (base + 1) payload];
+                }
+            | Pcstr_tuple cts ->
+                (* Multiple args: match tuple, write each *)
+                let arg_pats =
+                  List.mapi
+                    (fun j _ ->
+                      Ast_builder.Default.pvar ~loc (Printf.sprintf "arg%d" j))
+                    cts
+                in
+                let ctor_pat =
+                  Ast_builder.Default.ppat_construct
+                    ~loc
+                    {txt = Lident cd.pcd_name.txt; loc}
+                    (Some (Ast_builder.Default.ppat_tuple ~loc arg_pats))
+                in
+                let write_stmts =
+                  List.mapi
+                    (fun j ct ->
+                      let setter = set_accessor_for_type ~loc ct in
+                      let off = Ast_builder.Default.eint ~loc (1 + j) in
+                      let arg_var =
+                        Ast_builder.Default.evar ~loc (Printf.sprintf "arg%d" j)
+                      in
+                      [%expr [%e setter] arr (base + [%e off]) [%e arg_var]])
+                    cts
+                in
+                let body =
+                  List.fold_left
+                    (fun acc s ->
+                      [%expr
+                        [%e acc] ;
+                        [%e s]])
+                    [%expr Spoc.Tools.float32set arr base [%e tag_expr]]
+                    write_stmts
+                in
+                {pc_lhs = ctor_pat; pc_guard = None; pc_rhs = body}
+            | Pcstr_record _ ->
+                (* Fallback for inline records *)
+                let ctor_pat =
+                  Ast_builder.Default.ppat_construct
+                    ~loc
+                    {txt = Lident cd.pcd_name.txt; loc}
+                    None
+                in
+                {
+                  pc_lhs = ctor_pat;
+                  pc_guard = None;
+                  pc_rhs = [%expr Spoc.Tools.float32set arr base [%e tag_expr]];
+                })
           constrs
       in
       let set_match = Ast_builder.Default.pexp_match ~loc [%expr v] set_cases in
-      let set_fn = [%expr fun arr idx v -> [%e set_match]] in
+      let set_body =
+        [%expr
+          let base = idx * [%e total_size_expr] in
+          [%e set_match]]
+      in
+      let set_fn = [%expr fun arr idx v -> [%e set_body]] in
 
       [
         [%stri
           let [%p custom_pat] =
-            {Spoc.Vector.size = 1; get = [%e get_fn]; set = [%e set_fn]}];
+            {
+              Spoc.Vector.size = [%e total_size_expr];
+              get = [%e get_fn];
+              set = [%e set_fn];
+            }];
       ]
   | _ -> []
 
@@ -822,13 +980,13 @@ let generate_custom_v2_value ~loc (td : type_declaration) : structure_item list
         [%stri let [%p custom_v2_pat] = [%e make_fn_call]];
       ]
   | Ptype_variant constrs ->
-      (* Generate V2 custom type for simple enums (variants with no args).
-         Stored as int32 tag, converted to/from OCaml constructors. *)
+      (* Generate V2 custom type for variants (with or without payloads).
+         Layout: [tag:4 bytes (int32)][payload:max_payload_bytes]
+         For simple enums (no args), elem_size=4.
+         For variants with payloads, elem_size=4+max_payload_bytes. *)
       let type_name = td.ptype_name.txt in
       let custom_v2_name = type_name ^ "_custom_v2" in
       let custom_v2_pat = Ast_builder.Default.pvar ~loc custom_v2_name in
-      let size_expr = Ast_builder.Default.eint ~loc 4 in
-      (* int32 tag *)
       let name_expr = Ast_builder.Default.estring ~loc type_name in
       let type_annot =
         Ast_builder.Default.ptyp_constr
@@ -842,69 +1000,227 @@ let generate_custom_v2_value ~loc (td : type_declaration) : structure_item list
           ]
       in
 
-      (* Build match cases for get: int32 tag -> constructor *)
+      (* Helper to get payload size in bytes for a constructor *)
+      let payload_byte_size cd =
+        match cd.pcd_args with
+        | Pcstr_tuple [] -> 0
+        | Pcstr_tuple [ct] -> get_type_size_from_core_type ct
+        | Pcstr_tuple cts ->
+            List.fold_left ( + ) 0 (List.map get_type_size_from_core_type cts)
+        | Pcstr_record _ -> 0 (* TODO: support inline records *)
+      in
+      let max_payload_bytes =
+        List.fold_left max 0 (List.map payload_byte_size constrs)
+      in
+      let total_size = 4 + max_payload_bytes in
+      (* 4 for int32 tag *)
+      let size_expr = Ast_builder.Default.eint ~loc total_size in
+
+      (* Build match cases for get: int32 tag -> constructor with payload *)
       let get_cases =
         List.mapi
           (fun i cd ->
-            let tag_pat =
-              Ast_builder.Default.pint ~loc (Int32.to_int (Int32.of_int i))
-            in
+            let tag_pat = Ast_builder.Default.pint ~loc i in
             let ctor_expr =
-              Ast_builder.Default.pexp_construct
-                ~loc
-                {txt = Lident cd.pcd_name.txt; loc}
-                None
+              match cd.pcd_args with
+              | Pcstr_tuple [] ->
+                  Ast_builder.Default.pexp_construct
+                    ~loc
+                    {txt = Lident cd.pcd_name.txt; loc}
+                    None
+              | Pcstr_tuple [ct] ->
+                  (* Read payload at base_off+4 *)
+                  let payload_off = Ast_builder.Default.eint ~loc 4 in
+                  let payload_expr = gen_v2_field_read ~loc ct payload_off in
+                  Ast_builder.Default.pexp_construct
+                    ~loc
+                    {txt = Lident cd.pcd_name.txt; loc}
+                    (Some payload_expr)
+              | Pcstr_tuple cts ->
+                  (* Multiple args: read each at successive offsets *)
+                  let _, args =
+                    List.fold_left
+                      (fun (off, acc) ct ->
+                        let off_expr = Ast_builder.Default.eint ~loc off in
+                        let arg_expr = gen_v2_field_read ~loc ct off_expr in
+                        let size = get_type_size_from_core_type ct in
+                        (off + size, acc @ [arg_expr]))
+                      (4, [])
+                      cts
+                  in
+                  Ast_builder.Default.pexp_construct
+                    ~loc
+                    {txt = Lident cd.pcd_name.txt; loc}
+                    (Some (Ast_builder.Default.pexp_tuple ~loc args))
+              | Pcstr_record _ ->
+                  Ast_builder.Default.pexp_construct
+                    ~loc
+                    {txt = Lident cd.pcd_name.txt; loc}
+                    None
             in
             {pc_lhs = tag_pat; pc_guard = None; pc_rhs = ctor_expr})
           constrs
       in
       (* Add a fallback case *)
+      let fallback_ctor = List.hd constrs in
+      let fallback_expr =
+        match fallback_ctor.pcd_args with
+        | Pcstr_tuple [] ->
+            Ast_builder.Default.pexp_construct
+              ~loc
+              {txt = Lident fallback_ctor.pcd_name.txt; loc}
+              None
+        | Pcstr_tuple [ct] ->
+            let payload_off = Ast_builder.Default.eint ~loc 4 in
+            let payload_expr = gen_v2_field_read ~loc ct payload_off in
+            Ast_builder.Default.pexp_construct
+              ~loc
+              {txt = Lident fallback_ctor.pcd_name.txt; loc}
+              (Some payload_expr)
+        | _ ->
+            Ast_builder.Default.pexp_construct
+              ~loc
+              {txt = Lident fallback_ctor.pcd_name.txt; loc}
+              None
+      in
       let fallback_case =
         {
           pc_lhs = Ast_builder.Default.ppat_any ~loc;
           pc_guard = None;
-          pc_rhs =
-            Ast_builder.Default.pexp_construct
-              ~loc
-              {txt = Lident (List.hd constrs).pcd_name.txt; loc}
-              None;
+          pc_rhs = fallback_expr;
         }
       in
+      let total_size_expr = Ast_builder.Default.eint ~loc total_size in
       let get_match =
         Ast_builder.Default.pexp_match
           ~loc
           [%expr
             Int32.to_int
-              (Sarek_core.Vector.Custom_helpers.read_int32 raw_ptr (idx * 4))]
+              (Sarek_core.Vector.Custom_helpers.read_int32 raw_ptr base_off)]
           (get_cases @ [fallback_case])
       in
-      let get_fn = [%expr fun raw_ptr idx -> [%e get_match]] in
+      let get_body =
+        [%expr
+          let base_off = idx * [%e total_size_expr] in
+          [%e get_match]]
+      in
+      let get_fn = [%expr fun raw_ptr idx -> [%e get_body]] in
 
-      (* Build match cases for set: constructor -> int32 tag *)
+      (* Build match cases for set: constructor -> write tag + payload *)
       let set_cases =
         List.mapi
           (fun i cd ->
-            let ctor_pat =
-              Ast_builder.Default.ppat_construct
-                ~loc
-                {txt = Lident cd.pcd_name.txt; loc}
-                None
-            in
             let tag_expr = Ast_builder.Default.eint ~loc i in
-            {
-              pc_lhs = ctor_pat;
-              pc_guard = None;
-              pc_rhs =
-                [%expr
-                  Sarek_core.Vector.Custom_helpers.write_int32
-                    raw_ptr
-                    (idx * 4)
-                    (Int32.of_int [%e tag_expr])];
-            })
+            match cd.pcd_args with
+            | Pcstr_tuple [] ->
+                let ctor_pat =
+                  Ast_builder.Default.ppat_construct
+                    ~loc
+                    {txt = Lident cd.pcd_name.txt; loc}
+                    None
+                in
+                {
+                  pc_lhs = ctor_pat;
+                  pc_guard = None;
+                  pc_rhs =
+                    [%expr
+                      Sarek_core.Vector.Custom_helpers.write_int32
+                        raw_ptr
+                        base_off
+                        (Int32.of_int [%e tag_expr])];
+                }
+            | Pcstr_tuple [ct] ->
+                let payload_pat = Ast_builder.Default.pvar ~loc "payload" in
+                let ctor_pat =
+                  Ast_builder.Default.ppat_construct
+                    ~loc
+                    {txt = Lident cd.pcd_name.txt; loc}
+                    (Some payload_pat)
+                in
+                let payload_off = Ast_builder.Default.eint ~loc 4 in
+                let write_payload =
+                  gen_v2_field_write ~loc ct payload_off [%expr payload]
+                in
+                {
+                  pc_lhs = ctor_pat;
+                  pc_guard = None;
+                  pc_rhs =
+                    [%expr
+                      Sarek_core.Vector.Custom_helpers.write_int32
+                        raw_ptr
+                        base_off
+                        (Int32.of_int [%e tag_expr]) ;
+                      [%e write_payload]];
+                }
+            | Pcstr_tuple cts ->
+                (* Multiple args: match tuple, write each *)
+                let arg_pats =
+                  List.mapi
+                    (fun j _ ->
+                      Ast_builder.Default.pvar ~loc (Printf.sprintf "arg%d" j))
+                    cts
+                in
+                let ctor_pat =
+                  Ast_builder.Default.ppat_construct
+                    ~loc
+                    {txt = Lident cd.pcd_name.txt; loc}
+                    (Some (Ast_builder.Default.ppat_tuple ~loc arg_pats))
+                in
+                let _, write_stmts =
+                  List.fold_left
+                    (fun (off, acc) (j, ct) ->
+                      let off_expr = Ast_builder.Default.eint ~loc off in
+                      let arg_var =
+                        Ast_builder.Default.evar ~loc (Printf.sprintf "arg%d" j)
+                      in
+                      let write_stmt =
+                        gen_v2_field_write ~loc ct off_expr arg_var
+                      in
+                      let size = get_type_size_from_core_type ct in
+                      (off + size, acc @ [write_stmt]))
+                    (4, [])
+                    (List.mapi (fun j ct -> (j, ct)) cts)
+                in
+                let body =
+                  List.fold_left
+                    (fun acc s ->
+                      [%expr
+                        [%e acc] ;
+                        [%e s]])
+                    [%expr
+                      Sarek_core.Vector.Custom_helpers.write_int32
+                        raw_ptr
+                        base_off
+                        (Int32.of_int [%e tag_expr])]
+                    write_stmts
+                in
+                {pc_lhs = ctor_pat; pc_guard = None; pc_rhs = body}
+            | Pcstr_record _ ->
+                let ctor_pat =
+                  Ast_builder.Default.ppat_construct
+                    ~loc
+                    {txt = Lident cd.pcd_name.txt; loc}
+                    None
+                in
+                {
+                  pc_lhs = ctor_pat;
+                  pc_guard = None;
+                  pc_rhs =
+                    [%expr
+                      Sarek_core.Vector.Custom_helpers.write_int32
+                        raw_ptr
+                        base_off
+                        (Int32.of_int [%e tag_expr])];
+                })
           constrs
       in
       let set_match = Ast_builder.Default.pexp_match ~loc [%expr v] set_cases in
-      let set_fn = [%expr fun raw_ptr idx v -> [%e set_match]] in
+      let set_body =
+        [%expr
+          let base_off = idx * [%e total_size_expr] in
+          [%e set_match]]
+      in
+      let set_fn = [%expr fun raw_ptr idx v -> [%e set_body]] in
 
       let make_fn_name = type_name ^ "_make_custom_v2" in
       let make_fn_pat = Ast_builder.Default.pvar ~loc make_fn_name in

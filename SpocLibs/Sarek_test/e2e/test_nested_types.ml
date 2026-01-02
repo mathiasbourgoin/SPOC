@@ -139,6 +139,65 @@ let test_mixed_record () =
   if !ok then print_endline "PASSED" else print_endline "FAILED" ;
   !ok
 
+(* Test 4: Variant with composable nested type payloads *)
+type maybe_colored_point =
+  | Red_pt of point
+  | Blue_pt of point
+  | Any_pt of colored_point
+  | No_point
+[@@sarek.type]
+
+let test_maybe_colored_point () =
+  print_endline "=== Test: Variant with nested type payloads ===" ;
+  let n = 4 in
+  let v = V2_Vector.create_custom maybe_colored_point_custom_v2 n in
+  (* Set up test data *)
+  V2_Vector.set v 0 (Red_pt {x = 1.0; y = 2.0}) ;
+  V2_Vector.set v 1 (Blue_pt {x = 3.0; y = 4.0}) ;
+  V2_Vector.set v 2 (Any_pt {color = Green; pt = {x = 5.0; y = 6.0}}) ;
+  V2_Vector.set v 3 No_point ;
+  let ok = ref true in
+  (* Check element 0: Red_pt *)
+  (match V2_Vector.get v 0 with
+  | Red_pt p when abs_float (p.x -. 1.0) < 1e-6 && abs_float (p.y -. 2.0) < 1e-6
+    ->
+      ()
+  | other ->
+      Printf.printf
+        "  FAIL at 0: expected Red_pt {1.0, 2.0}, got %s\n"
+        (match other with
+        | Red_pt p -> Printf.sprintf "Red_pt {%.1f, %.1f}" p.x p.y
+        | Blue_pt p -> Printf.sprintf "Blue_pt {%.1f, %.1f}" p.x p.y
+        | Any_pt cp -> Printf.sprintf "Any_pt {pt={%.1f, %.1f}}" cp.pt.x cp.pt.y
+        | No_point -> "No_point") ;
+      ok := false) ;
+  (* Check element 1: Blue_pt *)
+  (match V2_Vector.get v 1 with
+  | Blue_pt p
+    when abs_float (p.x -. 3.0) < 1e-6 && abs_float (p.y -. 4.0) < 1e-6 ->
+      ()
+  | _ ->
+      print_endline "  FAIL at 1: expected Blue_pt {3.0, 4.0}" ;
+      ok := false) ;
+  (* Check element 2: Any_pt with nested colored_point *)
+  (match V2_Vector.get v 2 with
+  | Any_pt cp
+    when cp.color = Green
+         && abs_float (cp.pt.x -. 5.0) < 1e-6
+         && abs_float (cp.pt.y -. 6.0) < 1e-6 ->
+      ()
+  | _ ->
+      print_endline "  FAIL at 2: expected Any_pt {Green, {5.0, 6.0}}" ;
+      ok := false) ;
+  (* Check element 3: No_point *)
+  (match V2_Vector.get v 3 with
+  | No_point -> ()
+  | _ ->
+      print_endline "  FAIL at 3: expected No_point" ;
+      ok := false) ;
+  if !ok then print_endline "PASSED" else print_endline "FAILED" ;
+  !ok
+
 let () =
   print_endline "=== Nested/Composable Custom Types Test ===" ;
   print_endline "" ;
@@ -148,11 +207,14 @@ let () =
   print_endline "" ;
   let t3 = test_mixed_record () in
   print_endline "" ;
+  let t4 = test_maybe_colored_point () in
+  print_endline "" ;
   print_endline "=== Summary ===" ;
   Printf.printf "Basic point: %s\n" (if t1 then "PASS" else "FAIL") ;
   Printf.printf "Nested colored_point: %s\n" (if t2 then "PASS" else "FAIL") ;
   Printf.printf "Mixed int32/float32: %s\n" (if t3 then "PASS" else "FAIL") ;
-  if t1 && t2 && t3 then (
+  Printf.printf "Variant with payloads: %s\n" (if t4 then "PASS" else "FAIL") ;
+  if t1 && t2 && t3 && t4 then (
     print_endline "\nAll tests passed!" ;
     exit 0)
   else (
