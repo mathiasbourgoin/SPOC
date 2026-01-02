@@ -1,9 +1,20 @@
 (******************************************************************************
  * E2E test: simple ray tracing with PPX Sarek.
  * Renders a small sphere scene to a float32 RGB buffer and checks against CPU.
+ * Compares SPOC and V2 runtime paths.
  ******************************************************************************)
 
 open Spoc
+
+(* V2 module aliases *)
+module V2_Device = Sarek_core.Device
+module V2_Vector = Sarek_core.Vector
+module V2_Transfer = Sarek_core.Transfer
+
+(* Force V2 backend registration *)
+let () =
+  Sarek_cuda.Cuda_plugin_v2.init () ;
+  Sarek_opencl.Opencl_plugin_v2.init ()
 
 let () =
   let ray_kernel =
@@ -164,8 +175,112 @@ let () =
     done
   done ;
   close_out ppm ;
-  if !ok then
-    Printf.printf "Ray PPX execution PASSED (ppm: /tmp/ray_ppx.ppm)\n%!"
+  if !ok then Printf.printf "Ray PPX (SPOC) PASSED (ppm: /tmp/ray_ppx.ppm)\n%!"
   else (
-    print_endline "Ray PPX execution FAILED" ;
-    exit 1)
+    print_endline "Ray PPX (SPOC) FAILED" ;
+    exit 1) ;
+
+  (* ========== V2 Path ========== *)
+  print_endline "\n=== Running V2 path ===" ;
+  let _, kirc = ray_kernel in
+  let v2_devs = V2_Device.init ~frameworks:["CUDA"; "OpenCL"] () in
+  let v2_dev = if Array.length v2_devs > 0 then Some v2_devs.(0) else None in
+  match v2_dev with
+  | None ->
+      print_endline "V2: No device found - SKIPPED" ;
+      print_endline "Ray PPX tests PASSED"
+  | Some dev -> (
+      match kirc.Sarek.Kirc.body_v2 with
+      | None ->
+          print_endline "V2: No V2 IR available - SKIPPED" ;
+          print_endline "Ray PPX tests PASSED"
+      | Some ir ->
+          let v2_dirx = V2_Vector.create V2_Vector.float32 n in
+          let v2_diry = V2_Vector.create V2_Vector.float32 n in
+          let v2_dirz = V2_Vector.create V2_Vector.float32 n in
+          let v2_out = V2_Vector.create V2_Vector.float32 (n * 3) in
+          for i = 0 to n - 1 do
+            V2_Vector.set v2_dirx i (Bigarray.Array1.get bax i) ;
+            V2_Vector.set v2_diry i (Bigarray.Array1.get bay i) ;
+            V2_Vector.set v2_dirz i (Bigarray.Array1.get baz i)
+          done ;
+          for i = 0 to (n * 3) - 1 do
+            V2_Vector.set v2_out i 0.0
+          done ;
+
+          let block = Sarek.Execute.dims1d threads in
+          let grid = Sarek.Execute.dims1d grid_x in
+
+          Sarek.Execute.run_vectors
+            ~device:dev
+            ~ir
+            ~args:
+              [
+                Sarek.Execute.Vec v2_dirx;
+                Sarek.Execute.Vec v2_diry;
+                Sarek.Execute.Vec v2_dirz;
+                Sarek.Execute.Vec v2_out;
+                Sarek.Execute.Int n;
+              ]
+            ~block
+            ~grid
+            () ;
+          V2_Transfer.flush dev ;
+
+          (* Verify V2 results *)
+          let v2_ok = ref true in
+          for y = 0 to h - 1 do
+            for x = 0 to w - 1 do
+              let i = (y * w) + x in
+              let idx = i * 3 in
+              let dx = Bigarray.Array1.get bax i in
+              let dy = Bigarray.Array1.get bay i in
+              let dz = Bigarray.Array1.get baz i in
+              let dir_len = sqrt ((dx *. dx) +. (dy *. dy) +. (dz *. dz)) in
+              let dxn = dx /. dir_len
+              and dyn = dy /. dir_len
+              and dzn = dz /. dir_len in
+              let a = (dxn *. dxn) +. (dyn *. dyn) +. (dzn *. dzn) in
+              let half_b = (0.0 *. dxn) +. (0.0 *. dyn) +. (2.0 *. dzn) in
+              let c = (2.0 *. 2.0) -. (0.5 *. 0.5) in
+              let disc = (half_b *. half_b) -. (a *. c) in
+              let r, g, b =
+                if disc > 0.0 then
+                  let t = (-.half_b -. sqrt disc) /. a in
+                  let hx = t *. dxn and hy = t *. dyn and hz = t *. dzn in
+                  let nx = hx -. 0.0 and ny = hy -. 0.0 and nz = hz +. 2.0 in
+                  let inv =
+                    1.0 /. sqrt ((nx *. nx) +. (ny *. ny) +. (nz *. nz))
+                  in
+                  let nx = nx *. inv and ny = ny *. inv and nz = nz *. inv in
+                  (0.5 *. (nx +. 1.0), 0.5 *. (ny +. 1.0), 0.5 *. (nz +. 1.0))
+                else
+                  let t = 0.5 *. (dyn +. 1.0) in
+                  (1.0 -. t +. (t *. 0.5), 1.0 -. t +. (t *. 0.7), 1.0)
+              in
+              let gx = V2_Vector.get v2_out (idx + 0) in
+              let gy = V2_Vector.get v2_out (idx + 1) in
+              let gz = V2_Vector.get v2_out (idx + 2) in
+              if
+                abs_float (gx -. r) > 1e-3
+                || abs_float (gy -. g) > 1e-3
+                || abs_float (gz -. b) > 1e-3
+              then (
+                v2_ok := false ;
+                Printf.printf
+                  "V2 Mismatch at %d,%d GPU (%f,%f,%f) CPU (%f,%f,%f)\n%!"
+                  x
+                  y
+                  gx
+                  gy
+                  gz
+                  r
+                  g
+                  b)
+            done
+          done ;
+          if !v2_ok then print_endline "Ray PPX (V2) PASSED"
+          else (
+            print_endline "Ray PPX (V2) FAILED" ;
+            exit 1) ;
+          print_endline "Ray PPX tests PASSED")

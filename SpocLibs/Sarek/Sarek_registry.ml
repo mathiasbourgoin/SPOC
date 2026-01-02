@@ -157,6 +157,17 @@ let fun_device_code ?(module_path = []) name dev =
       let path = String.concat "." (module_path @ [name]) in
       failwith ("Unknown intrinsic function: " ^ path)
 
+(** Get device code template for a function, using a dummy device. This is for
+    V2 IR codegens that don't have SPOC device objects. *)
+let fun_device_template ?(module_path = []) name =
+  match find_fun ~module_path name with
+  | Some fi ->
+      (* Most intrinsics ignore the device parameter, so pass a dummy.
+         If an intrinsic needs the device, it should be handled specially. *)
+      let dummy_dev = Obj.magic () in
+      Some (fi.fi_device dummy_dev)
+  | None -> None
+
 (** Get record field info *)
 let record_fields name =
   match find_record name with

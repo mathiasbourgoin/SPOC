@@ -133,6 +133,14 @@ type decl =
   | DLocal of var * expr option
   | DShared of string * elttype * expr option
 
+(** Helper function (device function called from kernel) *)
+type helper_func = {
+  hf_name : string;
+  hf_params : var list;
+  hf_ret_type : elttype;
+  hf_body : stmt;
+}
+
 (** Kernel representation *)
 type kernel = {
   kern_name : string;
@@ -142,4 +150,5 @@ type kernel = {
   kern_types : (string * (string * elttype) list) list;
       (** Record type definitions: (type_name, [(field_name, field_type); ...])
       *)
+  kern_funcs : helper_func list;  (** Helper functions defined in kernel scope *)
 }

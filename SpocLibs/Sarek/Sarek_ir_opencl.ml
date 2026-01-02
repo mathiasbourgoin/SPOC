@@ -323,16 +323,64 @@ and gen_intrinsic buf path name args =
             gen_expr buf value
         | _ -> failwith "atomic_max requires 2 arguments") ;
         Buffer.add_char buf ')'
-    | _ ->
-        (* Unknown intrinsic - emit as function call *)
-        Buffer.add_string buf full_name ;
-        Buffer.add_char buf '(' ;
-        List.iteri
-          (fun i e ->
-            if i > 0 then Buffer.add_string buf ", " ;
-            gen_expr buf e)
-          args ;
-        Buffer.add_char buf ')'
+    | _ -> (
+        (* Try registry lookup for intrinsics like float, int_of_float, etc. *)
+        match Sarek_registry.fun_device_template ~module_path:path name with
+        | Some template ->
+            (* Generate argument strings *)
+            let arg_strs =
+              List.map
+                (fun e ->
+                  let b = Buffer.create 64 in
+                  gen_expr b e ;
+                  Buffer.contents b)
+                args
+            in
+            (* Count %s placeholders in template *)
+            let count_placeholders s =
+              let rec count i acc =
+                if i >= String.length s - 1 then acc
+                else if s.[i] = '%' && s.[i + 1] = 's' then
+                  count (i + 2) (acc + 1)
+                else count (i + 1) acc
+              in
+              count 0 0
+            in
+            let num_placeholders = count_placeholders template in
+            let result =
+              if num_placeholders = 0 then
+                (* Plain function/cast like "(float)" -> call as function *)
+                template ^ "(" ^ String.concat ", " arg_strs ^ ")"
+              else if num_placeholders = 1 && List.length arg_strs = 1 then
+                Printf.sprintf
+                  (Scanf.format_from_string template "%s")
+                  (List.hd arg_strs)
+              else if num_placeholders = 2 && List.length arg_strs = 2 then
+                Printf.sprintf
+                  (Scanf.format_from_string template "%s%s")
+                  (List.nth arg_strs 0)
+                  (List.nth arg_strs 1)
+              else if num_placeholders = 3 && List.length arg_strs = 3 then
+                Printf.sprintf
+                  (Scanf.format_from_string template "%s%s%s")
+                  (List.nth arg_strs 0)
+                  (List.nth arg_strs 1)
+                  (List.nth arg_strs 2)
+              else
+                (* Fallback: treat as function call *)
+                template ^ "(" ^ String.concat ", " arg_strs ^ ")"
+            in
+            Buffer.add_string buf result
+        | None ->
+            (* Unknown intrinsic - emit as function call *)
+            Buffer.add_string buf full_name ;
+            Buffer.add_char buf '(' ;
+            List.iteri
+              (fun i e ->
+                if i > 0 then Buffer.add_string buf ", " ;
+                gen_expr buf e)
+              args ;
+            Buffer.add_char buf ')')
 
 (** {1 L-value Generation} *)
 
@@ -562,11 +610,36 @@ let gen_local buf indent = function
       Buffer.add_string buf "];\n"
   | DParam _ -> failwith "gen_local: expected DLocal or DShared"
 
+(** {1 Helper Function Generation} *)
+
+(** Generate a helper function (OpenCL device function) *)
+let gen_helper_func buf (hf : helper_func) =
+  (* In OpenCL, helper functions don't need any special decoration *)
+  Buffer.add_string buf (opencl_type_of_elttype hf.hf_ret_type) ;
+  Buffer.add_char buf ' ' ;
+  Buffer.add_string buf hf.hf_name ;
+  Buffer.add_char buf '(' ;
+  (* Parameters *)
+  List.iteri
+    (fun i (v : var) ->
+      if i > 0 then Buffer.add_string buf ", " ;
+      Buffer.add_string buf (opencl_type_of_elttype v.var_type) ;
+      Buffer.add_char buf ' ' ;
+      Buffer.add_string buf v.var_name)
+    hf.hf_params ;
+  Buffer.add_string buf ") {\n" ;
+  (* Body *)
+  gen_stmt buf "  " hf.hf_body ;
+  Buffer.add_string buf "}\n\n"
+
 (** {1 Kernel Generation} *)
 
 (** Generate complete OpenCL source for a kernel *)
 let generate (k : kernel) : string =
   let buf = Buffer.create 4096 in
+
+  (* Generate helper functions before kernel *)
+  List.iter (gen_helper_func buf) k.kern_funcs ;
 
   (* Kernel signature *)
   Buffer.add_string buf "__kernel void " ;
@@ -621,6 +694,9 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
       Buffer.add_string buf (mangle_name name) ;
       Buffer.add_string buf ";\n\n")
     types ;
+
+  (* Generate helper functions before kernel *)
+  List.iter (gen_helper_func buf) k.kern_funcs ;
 
   (* Kernel signature *)
   Buffer.add_string buf "__kernel void " ;

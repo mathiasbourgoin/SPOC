@@ -160,7 +160,10 @@ type state = {
   mutable next_var_id : int;
   fun_map : (string, tparam list * texpr) Hashtbl.t;
   lowering_stack : (string, unit) Hashtbl.t;
-  lowered_funs : (string, Ir.stmt * string) Hashtbl.t;
+  lowered_funs : (string, Ir.helper_func) Hashtbl.t;
+      (** Lowered helper functions: name -> helper_func *)
+  mutable lowered_funs_order : string list;
+      (** Order in which functions were lowered (for dependency ordering) *)
   types : (string, (string * Ir.elttype) list) Hashtbl.t;
       (** Collected record types: type_name -> [(field_name, field_type); ...]
       *)
@@ -172,6 +175,7 @@ let create_state fun_map =
     fun_map;
     lowering_stack = Hashtbl.create 8;
     lowered_funs = Hashtbl.create 8;
+    lowered_funs_order = [];
     types = Hashtbl.create 8;
   }
 
@@ -301,15 +305,30 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
             Ir.EApp (Ir.EVar (make_var name 0 fn.ty false), args_ir)
           else
             (* First time - lower the function *)
-            let _params, body = Hashtbl.find state.fun_map name in
+            let params, body = Hashtbl.find state.fun_map name in
             let ret_ty = repr body.ty in
-            let ret_str = c_type_of_typ ret_ty in
             Hashtbl.add state.lowering_stack name () ;
             let fun_body_ir = lower_stmt state body in
             Hashtbl.remove state.lowering_stack name ;
             (* Use make_returning to add return statements without re-traversing *)
             let fun_body_ir = make_returning fun_body_ir in
-            Hashtbl.add state.lowered_funs name (fun_body_ir, ret_str) ;
+            (* Convert tparam list to var list *)
+            let hf_params =
+              List.mapi
+                (fun i (p : tparam) ->
+                  make_var p.tparam_name i p.tparam_type false)
+                params
+            in
+            let helper_func : Ir.helper_func =
+              {
+                hf_name = name;
+                hf_params;
+                hf_ret_type = elttype_of_typ ret_ty;
+                hf_body = fun_body_ir;
+              }
+            in
+            Hashtbl.add state.lowered_funs name helper_func ;
+            state.lowered_funs_order <- name :: state.lowered_funs_order ;
             Ir.EApp (Ir.EVar (make_var name 0 fn.ty false), args_ir)
       | _ -> Ir.EApp (lower_expr state fn, args_ir))
   | TERecord (name, fields) ->
@@ -620,6 +639,11 @@ let lower_kernel (kernel : tkernel) : Ir.kernel * string list =
   let types_list =
     Hashtbl.fold (fun name fields acc -> (name, fields) :: acc) state.types []
   in
+  (* Collect helper functions from state, in dependency order *)
+  let funcs_list =
+    List.rev state.lowered_funs_order
+    |> List.filter_map (fun name -> Hashtbl.find_opt state.lowered_funs name)
+  in
   ( {
       Ir.kern_name = Option.value kernel.tkern_name ~default:"sarek_kern";
       (* "kernel" is reserved in OpenCL *)
@@ -627,6 +651,7 @@ let lower_kernel (kernel : tkernel) : Ir.kernel * string list =
       kern_locals = [];
       kern_body = full_body;
       kern_types = types_list;
+      kern_funcs = funcs_list;
     },
     constructors )
 
