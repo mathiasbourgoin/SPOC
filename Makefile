@@ -226,6 +226,102 @@ test_sarek:
 	# dune exec SpocLibs/Benchmarks/Pi/Pi.exe
 	# dune exec SpocLibs/Benchmarks/Mandelbrot_Sarek/Mandelbrot.exe
 
+# Tiered test suite - tests organized by complexity
+# Tier 1: Simple kernels (low complexity, good starting point)
+TIER1_TESTS = test_vector_add test_bitwise_ops test_math_intrinsics test_transpose
+
+# Tier 2: Medium complexity (2D indexing, neighbor access, atomics, shared memory)
+TIER2_TESTS = test_matrix_mul test_stencil test_convolution test_histogram test_reduce test_scan test_sort
+
+# Tier 3: Complex types (custom types, type registration, variants)
+TIER3_TESTS = test_ktype_record test_registered_type test_registered_variant test_complex_types test_nested_types
+
+# Tier 4: Advanced features (real algorithms, physics, raytracing, polymorphism)
+TIER4_TESTS = test_mandelbrot test_nbody_ppx test_ray_ppx test_polymorphism
+
+# Run a single tier
+test-tier1:
+	@echo "=============================================="
+	@echo "  TIER 1: Simple Kernels"
+	@echo "=============================================="
+	@dune build $(addprefix SpocLibs/Sarek_test/e2e/,$(addsuffix .exe,$(TIER1_TESTS)))
+	@for t in $(TIER1_TESTS); do \
+		echo ""; \
+		echo "--- $$t ---"; \
+		LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/$$t.exe -- -s 1024 || exit 1; \
+	done
+	@echo ""
+	@echo "=== Tier 1 PASSED ==="
+
+test-tier2:
+	@echo "=============================================="
+	@echo "  TIER 2: Medium Complexity"
+	@echo "=============================================="
+	@dune build $(addprefix SpocLibs/Sarek_test/e2e/,$(addsuffix .exe,$(TIER2_TESTS)))
+	@echo ""
+	@echo "--- test_matrix_mul ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_matrix_mul.exe -- -s 256
+	@echo ""
+	@echo "--- test_stencil ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_stencil.exe -- -s 1024
+	@echo ""
+	@echo "--- test_convolution ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_convolution.exe -- -s 1024
+	@echo ""
+	@echo "--- test_histogram ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_histogram.exe -- -s 1024
+	@echo ""
+	@echo "--- test_reduce ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_reduce.exe -- -s 2048
+	@echo ""
+	@echo "--- test_scan ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_scan.exe -- -s 256
+	@echo ""
+	@echo "--- test_sort ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_sort.exe -- -s 256
+	@echo ""
+	@echo "=== Tier 2 PASSED ==="
+
+test-tier3:
+	@echo "=============================================="
+	@echo "  TIER 3: Complex Types"
+	@echo "=============================================="
+	@dune build $(addprefix SpocLibs/Sarek_test/e2e/,$(addsuffix .exe,$(TIER3_TESTS)))
+	@for t in $(TIER3_TESTS); do \
+		echo ""; \
+		echo "--- $$t ---"; \
+		LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/$$t.exe || exit 1; \
+	done
+	@echo ""
+	@echo "=== Tier 3 PASSED ==="
+
+test-tier4:
+	@echo "=============================================="
+	@echo "  TIER 4: Advanced Features"
+	@echo "=============================================="
+	@dune build $(addprefix SpocLibs/Sarek_test/e2e/,$(addsuffix .exe,$(TIER4_TESTS)))
+	@echo ""
+	@echo "--- test_mandelbrot ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_mandelbrot.exe -- -s 1024
+	@echo ""
+	@echo "--- test_nbody_ppx ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_nbody_ppx.exe -- --device 0
+	@echo ""
+	@echo "--- test_ray_ppx ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_ray_ppx.exe -- --device 0
+	@echo ""
+	@echo "--- test_polymorphism ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_polymorphism.exe
+	@echo ""
+	@echo "=== Tier 4 PASSED ==="
+
+# Run all tiers sequentially
+test-tiers: test-tier1 test-tier2 test-tier3 test-tier4
+	@echo ""
+	@echo "=============================================="
+	@echo "  ALL TIERS PASSED"
+	@echo "=============================================="
+
 check: all install install_sarek samples test test_sarek
 
 mr_proper: clean
