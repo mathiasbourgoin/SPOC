@@ -39,6 +39,9 @@ exception Float32_underflow of string
 (** Truncate a float64 to float32 precision *)
 val to_float32 : float -> float
 
+(** Alias for to_float32 - convert float64 to float32 *)
+val of_float : float -> float
+
 val of_int32 : int32 -> float
 
 val to_int32 : float -> int32

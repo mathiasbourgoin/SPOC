@@ -50,6 +50,9 @@ let float32_of_float_impl x =
 
 let to_float32 = float32_of_float_impl
 
+(** Alias for to_float32 - convert float64 to float32 *)
+let of_float = float32_of_float_impl [@@warning "-32"]
+
 (** Check for overflow and handle according to mode *)
 let check_overflow name result =
   match !overflow_mode with
