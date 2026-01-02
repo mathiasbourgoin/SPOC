@@ -10,6 +10,7 @@
   Device
   Memory
   Kernel
+  Kernel_arg
   Runtime
   Vector
   Transfer

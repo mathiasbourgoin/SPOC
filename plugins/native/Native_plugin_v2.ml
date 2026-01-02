@@ -147,9 +147,9 @@ module Native_v2 : Framework_sig.BACKEND_V2 = struct
   (** Generate source - not used for Direct backend (wrapped as Obj.t) *)
   let generate_source (_ir_obj : Obj.t) : string option = None
 
-  (** Execute directly using pre-compiled OCaml function. Native prefers
-      native_fn but can fall back to IR interpretation. Native backend always
-      uses parallel execution (multiple cores). *)
+  (** Execute directly using V2 native function from IR.
+      Args contain V2 Vectors directly (not expanded buffer/length pairs).
+      The V2 native function uses Sarek_core.Vector.get/set for access. *)
   let execute_direct
       ~(native_fn :
          (block:Framework_sig.dims ->
@@ -158,23 +158,26 @@ module Native_v2 : Framework_sig.BACKEND_V2 = struct
          unit)
          option) ~(ir : Obj.t option) ~(block : Framework_sig.dims)
       ~(grid : Framework_sig.dims) (args : Obj.t array) : unit =
-    (* Native always uses parallel mode - decision is in the plugin *)
-    Sarek.Sarek_ir_interp.parallel_mode := true ;
-    match native_fn with
-    | Some fn -> fn ~block ~grid args
-    | None -> (
-        (* Fall back to IR interpretation if no native function *)
-        match ir with
-        | Some ir_obj ->
-            let kernel : Sarek.Sarek_ir.kernel = Obj.obj ir_obj in
-            (* Use run_kernel_with_buffers for proper buffer handling *)
-            Sarek.Sarek_ir_interp.run_kernel_with_buffers
+    ignore native_fn ;  (* We use kern_native_fn from IR *)
+    match ir with
+    | Some ir_obj ->
+        let kernel : Sarek.Sarek_ir.kernel = Obj.obj ir_obj in
+        (match kernel.kern_native_fn with
+        | Some (Sarek.Sarek_ir.NativeFn fn) ->
+            (* Use V2 native function - args are V2 Vectors directly *)
+            let block_tuple = (block.x, block.y, block.z) in
+            let grid_tuple = (grid.x, grid.y, grid.z) in
+            fn ~parallel:true ~block:block_tuple ~grid:grid_tuple args
+        | None ->
+            (* Fall back to IR interpretation with V2 Vector support *)
+            Sarek.Sarek_ir_interp.parallel_mode := true ;
+            Sarek.Sarek_ir_interp.run_kernel_with_v2_obj_args
               kernel
               ~block:(block.x, block.y, block.z)
               ~grid:(grid.x, grid.y, grid.z)
-              args
-        | None ->
-            failwith "Native_v2.execute_direct: no native_fn or ir provided")
+              args)
+    | None ->
+        failwith "Native_v2.execute_direct: IR required"
 
   (** Native intrinsic registry *)
   module Intrinsics = Native_intrinsics

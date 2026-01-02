@@ -26,6 +26,7 @@ let test_analyze_one_to_one () =
       kern_body = body;
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   let info = analyze kernel in
@@ -58,6 +59,7 @@ let test_analyze_with_barrier () =
       kern_body = body;
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   let info = analyze kernel in
@@ -79,6 +81,7 @@ let test_can_fuse_compatible () =
           );
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   (* Consumer: output[i] = temp[i] + 1 *)
@@ -94,6 +97,7 @@ let test_can_fuse_compatible () =
           );
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   let result = can_fuse producer consumer "temp" in
@@ -117,6 +121,7 @@ let test_can_fuse_with_barrier () =
           ];
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   let consumer =
@@ -130,6 +135,7 @@ let test_can_fuse_with_barrier () =
             EArrayRead ("temp", thread_idx_x) );
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   let result = can_fuse producer consumer "temp" in
@@ -151,6 +157,7 @@ let test_fuse_simple () =
           );
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   (* Consumer: output[i] = temp[i] + 1 *)
@@ -166,6 +173,7 @@ let test_fuse_simple () =
           );
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   let fused = fuse producer consumer "temp" in
@@ -193,6 +201,7 @@ let test_fuse_pipeline () =
           );
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   (* K2: b[i] = a[i] + 1 *)
@@ -207,6 +216,7 @@ let test_fuse_pipeline () =
             EBinop (Add, EArrayRead ("a", thread_idx_x), EConst (CInt32 1l)) );
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   (* K3: output[i] = b[i] * 3 *)
@@ -221,6 +231,7 @@ let test_fuse_pipeline () =
             EBinop (Mul, EArrayRead ("b", thread_idx_x), EConst (CInt32 3l)) );
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   let fused, eliminated = fuse_pipeline [k1; k2; k3] in
@@ -317,6 +328,7 @@ let test_is_reduction_kernel () =
           ];
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   let result = is_reduction_kernel kernel "temp" in
@@ -338,6 +350,7 @@ let test_can_fuse_reduction () =
           );
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   (* Reduce: sum = fold(+, temp) *)
@@ -368,6 +381,7 @@ let test_can_fuse_reduction () =
           ];
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   let result = can_fuse_reduction map_kernel reduce_kernel "temp" in
@@ -389,6 +403,7 @@ let test_fuse_reduction () =
           );
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   (* Reduce: sum = fold(+, temp) with loop var i *)
@@ -419,6 +434,7 @@ let test_fuse_reduction () =
           ];
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   let fused = fuse_reduction map_kernel reduce_kernel "temp" in
@@ -443,6 +459,7 @@ let test_try_fuse_reduction () =
           );
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   let loop_var =
@@ -472,6 +489,7 @@ let test_try_fuse_reduction () =
           ];
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   let result = try_fuse map_kernel reduce_kernel "temp" in
@@ -505,6 +523,7 @@ let test_stencil_pattern () =
                 EConst (CInt32 3l) ) );
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   let info = analyze kernel in
@@ -545,6 +564,7 @@ let test_can_fuse_stencil () =
                   ("input", EBinop (Add, thread_idx_x, EConst (CInt32 1l))) ) );
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   (* Consumer: output[i] = temp[i-1] + temp[i] + temp[i+1] *)
@@ -567,6 +587,7 @@ let test_can_fuse_stencil () =
                   ("temp", EBinop (Add, thread_idx_x, EConst (CInt32 1l))) ) );
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   let result = can_fuse_stencil producer consumer "temp" in
@@ -588,6 +609,7 @@ let test_fuse_stencil () =
           );
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   (* Consumer: output[i] = temp[i-1] + temp[i+1] *)
@@ -607,6 +629,7 @@ let test_fuse_stencil () =
                   ("temp", EBinop (Add, thread_idx_x, EConst (CInt32 1l))) ) );
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   let fused = fuse_stencil producer consumer "temp" in
@@ -631,6 +654,7 @@ let test_try_fuse_all () =
           );
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   let consumer =
@@ -645,6 +669,7 @@ let test_try_fuse_all () =
           );
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   let result = try_fuse_all producer consumer "temp" in
@@ -665,6 +690,7 @@ let test_should_fuse_one_to_one () =
           );
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   let consumer =
@@ -679,6 +705,7 @@ let test_should_fuse_one_to_one () =
           );
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   let hint = should_fuse producer consumer "temp" in
@@ -702,6 +729,7 @@ let test_should_fuse_barrier () =
           ];
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   let consumer =
@@ -715,6 +743,7 @@ let test_should_fuse_barrier () =
             EArrayRead ("temp", thread_idx_x) );
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   let hint = should_fuse producer consumer "temp" in
@@ -735,6 +764,7 @@ let test_should_fuse_small_stencil () =
           );
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   (* Consumer reads temp[i-1], temp[i], temp[i+1] *)
@@ -757,6 +787,7 @@ let test_should_fuse_small_stencil () =
                   ("temp", EBinop (Add, thread_idx_x, EConst (CInt32 1l))) ) );
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   let hint = should_fuse producer consumer "temp" in
@@ -778,6 +809,7 @@ let test_auto_fuse_pipeline () =
           );
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   (* K2: b[i] = a[i] + 1 *)
@@ -792,6 +824,7 @@ let test_auto_fuse_pipeline () =
             EBinop (Add, EArrayRead ("a", thread_idx_x), EConst (CInt32 1l)) );
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   (* K3: output[i] = b[i] * 3 *)
@@ -806,6 +839,7 @@ let test_auto_fuse_pipeline () =
             EBinop (Mul, EArrayRead ("b", thread_idx_x), EConst (CInt32 3l)) );
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   let fused, eliminated, skipped = auto_fuse_pipeline [k1; k2; k3] in
@@ -834,6 +868,7 @@ let test_auto_fuse_pipeline_skip_stencil () =
           );
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   (* K2: output[i] = temp[i-1] + temp[i+1] (stencil) *)
@@ -853,6 +888,7 @@ let test_auto_fuse_pipeline_skip_stencil () =
                   ("temp", EBinop (Add, thread_idx_x, EConst (CInt32 1l))) ) );
       kern_types = [];
       kern_funcs = [];
+      kern_native_fn = None;
     }
   in
   let _fused, eliminated, skipped = auto_fuse_pipeline [k1; k2] in

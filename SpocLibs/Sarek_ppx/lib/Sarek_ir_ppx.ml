@@ -151,4 +151,6 @@ type kernel = {
       (** Record type definitions: (type_name, [(field_name, field_type); ...])
       *)
   kern_funcs : helper_func list;  (** Helper functions defined in kernel scope *)
+  kern_native_fn : unit option;
+      (** Placeholder for native function - actual function added during quoting *)
 }

@@ -318,6 +318,8 @@ type gen_context = {
       (** Current module name for same-module type detection *)
   gen_mode : gen_mode;
       (** Generation mode - affects how thread indices are accessed *)
+  use_v2 : bool;
+      (** Use V2 Vector API (Sarek_core.Vector) instead of SPOC (Spoc.Mem) *)
 }
 
 (** Empty generation context *)
@@ -327,6 +329,7 @@ let empty_ctx =
     inline_types = StringSet.empty;
     current_module = None;
     gen_mode = FullMode;
+    use_v2 = false;
   }
 
 (** Check if a qualified type name is from the current module. For
@@ -412,17 +415,22 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
         (* Mutable variable - dereference the ref *)
         [%expr ![%e var_e]]
       else var_e
-  (* Vector/array access - use Spoc.Mem.get/set for SPOC vectors.
-     This handles GPU-resident data and custom types correctly. *)
+  (* Vector/array access - use Spoc.Mem or Sarek_core.Vector depending on mode *)
   | TEVecGet (vec, idx) ->
       let vec_e = gen_expr ~loc vec in
       let idx_e = gen_expr ~loc idx in
-      [%expr Spoc.Mem.get [%e vec_e] (Int32.to_int [%e idx_e])]
+      if ctx.use_v2 then
+        [%expr Sarek_core.Vector.get [%e vec_e] (Int32.to_int [%e idx_e])]
+      else
+        [%expr Spoc.Mem.get [%e vec_e] (Int32.to_int [%e idx_e])]
   | TEVecSet (vec, idx, value) ->
       let vec_e = gen_expr ~loc vec in
       let idx_e = gen_expr ~loc idx in
       let val_e = gen_expr ~loc value in
-      [%expr Spoc.Mem.set [%e vec_e] (Int32.to_int [%e idx_e]) [%e val_e]]
+      if ctx.use_v2 then
+        [%expr Sarek_core.Vector.set [%e vec_e] (Int32.to_int [%e idx_e]) [%e val_e]]
+      else
+        [%expr Spoc.Mem.set [%e vec_e] (Int32.to_int [%e idx_e]) [%e val_e]]
   (* Array access - for shared memory (regular OCaml arrays) *)
   | TEArrGet (arr, idx) ->
       let arr_e = gen_expr ~loc arr in
@@ -1561,6 +1569,49 @@ let gen_arg_cast ~loc (param : tparam) (idx : int) : expression =
       (* Default - just return as Obj.t and let caller deal with it *)
       arr_access
 
+(** Generate argument extraction for V2 native code.
+    V2 uses Sarek_core.Vector.t instead of Spoc.Vector.vector. *)
+let gen_arg_cast_v2 ~loc (param : tparam) (idx : int) : expression =
+  let arr_access =
+    [%expr Array.get __args [%e Ast_builder.Default.eint ~loc idx]]
+  in
+  match repr param.tparam_type with
+  | TVec elem_ty -> (
+      (* Vector types - cast to Sarek_core.Vector.t *)
+      match repr elem_ty with
+      | TReg "float32" ->
+          [%expr
+            (Obj.obj [%e arr_access]
+              : (float, Sarek_core.Vector.Float32.elt) Sarek_core.Vector.t)]
+      | TReg "float64" ->
+          [%expr
+            (Obj.obj [%e arr_access]
+              : (float, Sarek_core.Vector.Float64.elt) Sarek_core.Vector.t)]
+      | TReg "int32" | TPrim TInt32 ->
+          [%expr
+            (Obj.obj [%e arr_access]
+              : (int32, Sarek_core.Vector.Int32.elt) Sarek_core.Vector.t)]
+      | TReg "int64" ->
+          [%expr
+            (Obj.obj [%e arr_access]
+              : (int64, Sarek_core.Vector.Int64.elt) Sarek_core.Vector.t)]
+      | TRecord _ | TVariant _ ->
+          (* Custom types - use generic vector type *)
+          [%expr (Obj.obj [%e arr_access] : (_, _) Sarek_core.Vector.t)]
+      | _ ->
+          (* Default to float32 for unknown types *)
+          [%expr
+            (Obj.obj [%e arr_access]
+              : (float, Sarek_core.Vector.Float32.elt) Sarek_core.Vector.t)])
+  | TReg "float32" -> [%expr (Obj.obj [%e arr_access] : float)]
+  | TReg "float64" -> [%expr (Obj.obj [%e arr_access] : float)]
+  | TReg "int32" | TPrim TInt32 -> [%expr (Obj.obj [%e arr_access] : int32)]
+  | TReg "int64" -> [%expr (Obj.obj [%e arr_access] : int64)]
+  | TPrim TBool -> [%expr (Obj.obj [%e arr_access] : bool)]
+  | _ ->
+      (* Default - just return as Obj.t and let caller deal with it *)
+      arr_access
+
 (** Generate an object expression with accessor methods for FCM.
     For type point = {x: float; y: float}, generates:
       object
@@ -1959,3 +2010,101 @@ let gen_cpu_kern_wrapper ~loc (kernel : tkernel) : expression =
               __args ->
             let __native_kern = [%e native_kern] in
             [%e body_with_bindings]]
+
+(** Generate V2 cpu_kern - uses Sarek_core.Vector.get/set instead of Spoc.Mem *)
+let gen_cpu_kern_v2 ~loc (kernel : tkernel) : expression =
+  let current_module = Some (module_name_of_sarek_loc kernel.tkern_loc) in
+  let inline_type_names =
+    List.filter_map
+      (fun d ->
+        match d with
+        | Sarek_typed_ast.TTypeRecord {tdecl_name; _} -> Some tdecl_name
+        | Sarek_typed_ast.TTypeVariant {tdecl_name; _} -> Some tdecl_name)
+      kernel.tkern_type_decls
+    |> StringSet.of_list
+  in
+  let ctx =
+    {empty_ctx with inline_types = inline_type_names; current_module; use_v2 = true}
+  in
+  let body_expr = gen_expr_impl ~loc ~ctx kernel.tkern_body in
+  (* Build the function with state parameter and kernel params *)
+  let kernel_fun =
+    List.fold_right
+      (fun param body ->
+        let param_pat =
+          Ast_builder.Default.ppat_var ~loc {txt = param.tparam_name; loc}
+        in
+        [%expr fun [%p param_pat] -> [%e body]])
+      kernel.tkern_params
+      body_expr
+  in
+  [%expr fun [%p Ast_builder.Default.ppat_var ~loc {txt = state_var; loc}] -> [%e kernel_fun]]
+
+(** Generate the V2 cpu_kern wrapper for use with native_fn_t.
+
+    Generated function type:
+    parallel:bool -> block:int*int*int -> grid:int*int*int -> Obj.t array -> unit
+
+    V2 version uses Sarek_core.Vector instead of Spoc.Vector.
+    Expects V2 Vectors directly in the Obj.t array (not expanded buffer/length pairs). *)
+let gen_cpu_kern_v2_wrapper ~loc (kernel : tkernel) : expression =
+  let native_kern = gen_cpu_kern_v2 ~loc kernel in
+
+  (* Generate V2 argument extraction bindings *)
+  let arg_bindings =
+    List.mapi
+      (fun i param ->
+        let var_pat =
+          Ast_builder.Default.ppat_var ~loc {txt = param.tparam_name; loc}
+        in
+        let cast_expr = gen_arg_cast_v2 ~loc param i in
+        (var_pat, cast_expr))
+      kernel.tkern_params
+  in
+
+  (* Build the args tuple expression *)
+  let args_tuple =
+    let arg_exprs =
+      List.map (fun p -> evar ~loc p.tparam_name) kernel.tkern_params
+    in
+    match arg_exprs with
+    | [] -> [%expr ()]
+    | [e] -> e
+    | es -> Ast_builder.Default.pexp_tuple ~loc es
+  in
+
+  (* V2 uses the same runtime functions but with parallel:bool instead of mode *)
+  let run_call =
+    [%expr
+      if __parallel then
+        Sarek.Sarek_cpu_runtime.run_parallel
+          ~block
+          ~grid
+          __native_kern
+          [%e args_tuple]
+      else
+        Sarek.Sarek_cpu_runtime.run_sequential
+          ~block
+          ~grid
+          __native_kern
+          [%e args_tuple]]
+  in
+
+  (* Build the nested let bindings *)
+  let body_with_bindings =
+    List.fold_right
+      (fun (pat, expr) body ->
+        [%expr
+          let [%p pat] = [%e expr] in
+          [%e body]])
+      arg_bindings
+      run_call
+  in
+
+  [%expr
+    fun ~parallel:(__parallel : bool)
+        ~block
+        ~grid
+        __args ->
+      let __native_kern = [%e native_kern] in
+      [%e body_with_bindings]]

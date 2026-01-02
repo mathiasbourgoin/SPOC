@@ -66,9 +66,9 @@ module Interpreter_v2 : Framework_sig.BACKEND_V2 = struct
   (** Generate source - not used for Interpreter (returns None) *)
   let generate_source (_ir_obj : Obj.t) : string option = None
 
-  (** Execute directly by interpreting the IR. Interpreter prefers IR but can
-      use native_fn if provided. Uses parallel or sequential mode based on the
-      current device selection. *)
+  (** Execute directly by interpreting the IR. Interpreter always interprets,
+      ignoring native_fn (use Native backend for compiled execution).
+      Uses parallel or sequential mode based on current device. *)
   let execute_direct
       ~(native_fn :
          (block:Framework_sig.dims ->
@@ -77,29 +77,25 @@ module Interpreter_v2 : Framework_sig.BACKEND_V2 = struct
          unit)
          option) ~(ir : Obj.t option) ~(block : Framework_sig.dims)
       ~(grid : Framework_sig.dims) (args : Obj.t array) : unit =
-    (* Set parallel mode based on current device *)
+    ignore native_fn ;  (* Interpreter ignores native_fn - always interprets *)
+    (* Determine parallel mode based on current device *)
     let use_parallel =
       match !Device.current with
       | Some d -> Device.is_parallel d
       | None -> false
     in
-    Sarek.Sarek_ir_interp.parallel_mode := use_parallel ;
-    (* Interpreter prefers IR for true interpretation, falls back to native_fn *)
     match ir with
     | Some ir_obj ->
         let kernel : Sarek.Sarek_ir.kernel = Obj.obj ir_obj in
-        (* Use run_kernel_with_buffers for proper buffer handling *)
-        Sarek.Sarek_ir_interp.run_kernel_with_buffers
+        Sarek.Sarek_ir_interp.parallel_mode := use_parallel ;
+        (* Use V2-aware interpreter that handles V2 Vectors directly *)
+        Sarek.Sarek_ir_interp.run_kernel_with_v2_obj_args
           kernel
           ~block:(block.x, block.y, block.z)
           ~grid:(grid.x, grid.y, grid.z)
           args
-    | None -> (
-        match native_fn with
-        | Some fn -> fn ~block ~grid args
-        | None ->
-            failwith
-              "Interpreter_v2.execute_direct: no ir or native_fn provided")
+    | None ->
+        failwith "Interpreter_v2.execute_direct: IR required for interpretation"
 
   module Intrinsics = Interpreter_intrinsics
 end

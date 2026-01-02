@@ -109,12 +109,67 @@ let bind_args_v2 (type kargs)
           let backend_buf : _ B.Memory.buffer = Obj.obj buf.Memory.handle in
           B.Kernel.set_arg_buffer kargs i backend_buf
       | ArgRaw _obj ->
-          (* Raw args need type info - for now skip (caller must handle) *)
-          ()
+          (* Raw args not handled in JIT path - use expand_vector_args *)
+          failwith "bind_args_v2: ArgRaw not supported, use expand_vector_args"
       | ArgDeviceBuffer buf ->
           (* V2 Vector buffer - let the backend bind itself *)
           let (module DB : Vector.DEVICE_BUFFER) = buf in
           DB.bind_to_kernel ~kargs:(Obj.repr kargs) ~idx:i)
+    args
+
+(** {1 V2 Vector Argument Type} *)
+
+(** V2 Vector argument type - supports automatic transfers and length expansion.
+    Defined before run_v2 so it can be used in the signature. *)
+type vector_arg =
+  | Vec : ('a, 'b) Vector.t -> vector_arg
+      (** V2 Vector - expands to (buffer, length) for JIT *)
+  | Int : int -> vector_arg  (** Integer scalar *)
+  | Int32 : int32 -> vector_arg  (** 32-bit integer scalar *)
+  | Int64 : int64 -> vector_arg  (** 64-bit integer scalar *)
+  | Float32 : float -> vector_arg  (** 32-bit float scalar *)
+  | Float64 : float -> vector_arg  (** 64-bit float scalar *)
+
+(** Convert vector_arg list to Obj.t array for backend dispatch.
+    Passes V2 Vectors directly - backends handle extraction. *)
+let vector_args_to_obj_array (args : vector_arg list) : Obj.t array =
+  Array.of_list
+    (List.map
+       (function
+         | Vec v -> Obj.repr v
+         | Int n -> Obj.repr (Int32.of_int n)
+         | Int32 n -> Obj.repr n
+         | Int64 n -> Obj.repr n
+         | Float32 f -> Obj.repr f
+         | Float64 f -> Obj.repr f)
+       args)
+
+(** Get device buffer for a V2 Vector *)
+let get_device_buffer (type a b) (v : (a, b) Vector.t) (dev : Device.t) :
+    (module Vector.DEVICE_BUFFER) =
+  match Vector.get_buffer v dev with
+  | Some buf -> buf
+  | None -> failwith "Vector has no device buffer"
+
+(** Transfer all V2 Vector args to device *)
+let transfer_vectors_to_device (args : vector_arg list) (dev : Device.t) : unit
+    =
+  List.iter (function Vec v -> Transfer.to_device v dev | _ -> ()) args
+
+(** Expand V2 Vector args to (buffer, length) pairs for kernel binding. Each Vec
+    expands to two args: buffer and length (matches OpenCL/CUDA codegen which
+    adds a length parameter for each vector). *)
+let expand_vector_args (args : vector_arg list) (dev : Device.t) : arg list =
+  List.concat_map
+    (function
+      | Vec v ->
+          let buf = get_device_buffer v dev in
+          [ArgDeviceBuffer buf; ArgInt32 (Int32.of_int (Vector.length v))]
+      | Int n -> [ArgInt32 (Int32.of_int n)]
+      | Int32 n -> [ArgInt32 n]
+      | Int64 n -> [ArgInt64 n]
+      | Float32 f -> [ArgFloat32 f]
+      | Float64 f -> [ArgFloat64 f])
     args
 
 (** {1 Execution Dispatch} *)
@@ -128,7 +183,8 @@ let bind_args_v2 (type kargs)
     @param block Block dimensions
     @param grid Grid dimensions
     @param shared_mem Shared memory size in bytes (default 0)
-    @param args Kernel arguments (typed)
+    @param vector_args Original V2 vector args (optional, for unified dispatch)
+    @param args Kernel arguments (typed) - used if vector_args not provided
     @raise Execution_error if execution fails *)
 let run_v2 ~(device : Device.t) ~(name : string)
     ~(ir : Sarek_ir.kernel Lazy.t option)
@@ -138,12 +194,18 @@ let run_v2 ~(device : Device.t) ~(name : string)
        Obj.t array ->
        unit)
        option) ~(block : Framework_sig.dims) ~(grid : Framework_sig.dims)
-    ?(shared_mem : int = 0) (args : arg list) : unit =
+    ?(shared_mem : int = 0) ?vector_args (args : arg list) : unit =
   match Framework_registry.find_backend_v2 device.framework with
   | Some (module B : Framework_sig.BACKEND_V2) -> (
       match B.execution_model with
       | Framework_sig.JIT -> (
-          (* JIT path: generate source, compile, launch *)
+          (* JIT path: generate source, compile, launch
+             For JIT, expand vector_args to (buffer, length) format *)
+          let expanded_args =
+            match vector_args with
+            | Some vargs -> expand_vector_args vargs device
+            | None -> args
+          in
           match ir with
           | None ->
               raise
@@ -158,7 +220,7 @@ let run_v2 ~(device : Device.t) ~(name : string)
                   let dev = B.Device.get device.backend_id in
                   let compiled = B.Kernel.compile_cached dev ~name ~source in
                   let kargs = B.Kernel.create_args () in
-                  bind_args_v2 (module B) kargs args ;
+                  bind_args_v2 (module B) kargs expanded_args ;
                   B.Kernel.launch
                     compiled
                     ~args:kargs
@@ -167,13 +229,27 @@ let run_v2 ~(device : Device.t) ~(name : string)
                     ~shared_mem
                     ~stream:None))
       | Framework_sig.Direct ->
-          (* Direct path: call native function or interpret IR *)
-          let obj_args = args_to_obj_array args in
+          (* Direct path: call native function or interpret IR
+             For Direct, pass V2 Vectors directly (not expanded) *)
+          let dev = B.Device.get device.backend_id in
+          B.Device.set_current dev ;
+          let obj_args =
+            match vector_args with
+            | Some vargs -> vector_args_to_obj_array vargs
+            | None -> args_to_obj_array args
+          in
           let ir_obj = Option.map (fun l -> Obj.repr (Lazy.force l)) ir in
           B.execute_direct ~native_fn ~ir:ir_obj ~block ~grid obj_args
       | Framework_sig.Custom ->
-          (* Custom path: delegate to backend with IR *)
-          let obj_args = args_to_obj_array args in
+          (* Custom path: delegate to backend with IR
+             For Custom (Interpreter), pass V2 Vectors directly *)
+          let dev = B.Device.get device.backend_id in
+          B.Device.set_current dev ;
+          let obj_args =
+            match vector_args with
+            | Some vargs -> vector_args_to_obj_array vargs
+            | None -> args_to_obj_array args
+          in
           let ir_obj = Option.map (fun l -> Obj.repr (Lazy.force l)) ir in
           B.execute_direct ~native_fn ~ir:ir_obj ~block ~grid obj_args)
   | None -> (
@@ -318,46 +394,7 @@ let run_from_ir ~(device : Device.t) ~(ir : Sarek_ir.kernel)
         (Execution_error
            ("IR-based execution not supported for framework: " ^ fw))
 
-(** {1 V2 Vector Execution} *)
-
-(** V2 Vector argument type - supports automatic transfers and length expansion
-*)
-type vector_arg =
-  | Vec : ('a, 'b) Vector.t -> vector_arg
-      (** V2 Vector - expands to (buffer, length) *)
-  | Int : int -> vector_arg  (** Integer scalar *)
-  | Int32 : int32 -> vector_arg  (** 32-bit integer scalar *)
-  | Int64 : int64 -> vector_arg  (** 64-bit integer scalar *)
-  | Float32 : float -> vector_arg  (** 32-bit float scalar *)
-  | Float64 : float -> vector_arg  (** 64-bit float scalar *)
-
-(** Get device buffer for a V2 Vector *)
-let get_device_buffer (type a b) (v : (a, b) Vector.t) (dev : Device.t) :
-    (module Vector.DEVICE_BUFFER) =
-  match Vector.get_buffer v dev with
-  | Some buf -> buf
-  | None -> failwith "Vector has no device buffer"
-
-(** Transfer all V2 Vector args to device *)
-let transfer_vectors_to_device (args : vector_arg list) (dev : Device.t) : unit
-    =
-  List.iter (function Vec v -> Transfer.to_device v dev | _ -> ()) args
-
-(** Expand V2 Vector args to (buffer, length) pairs for kernel binding. Each Vec
-    expands to two args: buffer and length (matches OpenCL/CUDA codegen which
-    adds a length parameter for each vector). *)
-let expand_vector_args (args : vector_arg list) (dev : Device.t) : arg list =
-  List.concat_map
-    (function
-      | Vec v ->
-          let buf = get_device_buffer v dev in
-          [ArgDeviceBuffer buf; ArgInt32 (Int32.of_int (Vector.length v))]
-      | Int n -> [ArgInt32 (Int32.of_int n)]
-      | Int32 n -> [ArgInt32 n]
-      | Int64 n -> [ArgInt64 n]
-      | Float32 f -> [ArgFloat32 f]
-      | Float64 f -> [ArgFloat64 f])
-    args
+(** {1 V2 Vector Execution Helpers} *)
 
 (** Mark all vectors as Stale_CPU after kernel execution. CPU backends with
     zero-copy don't need this since host memory is directly modified. Uses
@@ -482,41 +519,32 @@ let run_interpreter_vectors ~(ir : Sarek_ir.kernel) ~(args : vector_arg list)
       interp_array_to_vector arr vec)
     !interp_arrays
 
-(** Execute a kernel with V2 Vectors. Auto-transfers, expands args,
-    compiles/runs. Unified path for all backends - no capability checks. *)
+(** Execute a kernel with V2 Vectors. Auto-transfers, dispatches to backend.
+    Unified path for all backends - run_v2 handles expansion based on backend. *)
 let run_vectors ~(device : Device.t) ~(ir : Sarek_ir.kernel)
     ~(args : vector_arg list) ~(block : Framework_sig.dims)
-    ~(grid : Framework_sig.dims) ?(shared_mem : int = 0)
-    ?(native_fn :
-       (block:Framework_sig.dims ->
-       grid:Framework_sig.dims ->
-       Obj.t array ->
-       unit)
-       option) () : unit =
+    ~(grid : Framework_sig.dims) ?(shared_mem : int = 0) () : unit =
   (* Unified path for all backends:
      1. Transfer to device (CPU backends: zero-copy, no actual transfer)
-     2. Expand args to (buffer, length) pairs
-     3. Dispatch via run_v2 (plugin handles execution)
-     4. Mark stale (CPU backends: no-op due to zero-copy) *)
+     2. Pass vector_args to run_v2 (it expands for JIT, passes direct for Direct)
+     3. Mark stale (CPU backends: no-op due to zero-copy) *)
 
   (* 1. Transfer all vectors to device *)
   transfer_vectors_to_device args device ;
 
-  (* 2. Expand vector args to (buffer, length) pairs *)
-  let expanded_args = expand_vector_args args device in
-
-  (* 3. Dispatch via run_v2 which uses BACKEND_V2 interface *)
+  (* 2. Dispatch via run_v2 with vector_args - it handles expansion per backend *)
   run_v2
     ~device
     ~name:ir.kern_name
     ~ir:(Some (lazy ir))
-    ~native_fn
+    ~native_fn:None
     ~block
     ~grid
     ~shared_mem
-    expanded_args ;
+    ~vector_args:args
+    [] ;
 
-  (* 4. Mark vectors as stale (no-op for CPU backends due to zero-copy) *)
+  (* 3. Mark vectors as stale (no-op for CPU backends due to zero-copy) *)
   mark_vectors_stale args device
 
 (** Sync all V2 Vector outputs back to CPU *)

@@ -144,6 +144,16 @@ type helper_func = {
   hf_body : stmt;
 }
 
+(** Native function type for V2 execution.
+    Uses Obj.t to avoid type parameter propagation. *)
+type native_fn_t =
+  | NativeFn of
+      (parallel:bool ->
+      block:int * int * int ->
+      grid:int * int * int ->
+      Obj.t array ->
+      unit)
+
 (** Kernel representation *)
 type kernel = {
   kern_name : string;
@@ -154,6 +164,8 @@ type kernel = {
       (** Record type definitions: (type_name, [(field_name, field_type); ...])
       *)
   kern_funcs : helper_func list;  (** Helper functions defined in kernel scope *)
+  kern_native_fn : native_fn_t option;
+      (** Optional pre-compiled native function for CPU execution *)
 }
 
 (** {1 Pretty printing} *)
@@ -748,6 +760,7 @@ let rec of_k_ext : Kirc_Ast.k_ext -> kernel = function
         kern_body = body';
         kern_types = [];
         kern_funcs = [];
+        kern_native_fn = None;
       }
   | k ->
       conv_error

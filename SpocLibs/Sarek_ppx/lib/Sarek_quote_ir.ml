@@ -347,8 +347,18 @@ let quote_helper_func ~loc (hf : Ir.helper_func) : expression =
       hf_body = [%e quote_stmt ~loc hf.hf_body];
     }]
 
-(** Quote kernel *)
-let quote_kernel ~loc (k : Ir.kernel) : expression =
+(** Quote kernel.
+    @param native_fn_expr Optional expression that generates the native function
+           (adapted from cpu_kern). If provided, it should have type:
+           parallel:bool -> block:int*int*int -> grid:int*int*int -> Obj.t array -> unit *)
+let quote_kernel ~loc ?(native_fn_expr : expression option) (k : Ir.kernel) :
+    expression =
+  let native_fn_field =
+    match native_fn_expr with
+    | Some e ->
+        [%expr Some (Sarek.Sarek_ir.NativeFn [%e e])]
+    | None -> [%expr None]
+  in
   [%expr
     {
       Sarek.Sarek_ir.kern_name = [%e quote_string ~loc k.kern_name];
@@ -357,4 +367,5 @@ let quote_kernel ~loc (k : Ir.kernel) : expression =
       kern_body = [%e quote_stmt ~loc k.kern_body];
       kern_types = [%e quote_list ~loc quote_type_def k.kern_types];
       kern_funcs = [%e quote_list ~loc quote_helper_func k.kern_funcs];
+      kern_native_fn = [%e native_fn_field];
     }]

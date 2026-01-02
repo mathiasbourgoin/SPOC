@@ -1076,3 +1076,167 @@ let args_from_obj_array (k : kernel) (obj_args : Obj.t array) :
       | DShared _ -> None
       | DLocal _ -> None)
     k.kern_params
+
+(** {1 V2 Vector Support}
+
+    These functions work with typed Kernel_arg.t values instead of Obj.t.
+    This is the preferred interface for Native/Interpreter backends. *)
+
+(** Convert V2 Vector to interpreter value array.
+    Uses the vector's element type to create properly typed values. *)
+let v2_vector_to_array : type a b. (a, b) Sarek_core.Vector.t -> value array =
+ fun vec ->
+  let len = Sarek_core.Vector.length vec in
+  match Sarek_core.Vector.kind vec with
+  | Sarek_core.Vector.Scalar Sarek_core.Vector.Int32 ->
+      Array.init len (fun i -> VInt32 (Sarek_core.Vector.get vec i))
+  | Sarek_core.Vector.Scalar Sarek_core.Vector.Int64 ->
+      Array.init len (fun i -> VInt64 (Sarek_core.Vector.get vec i))
+  | Sarek_core.Vector.Scalar Sarek_core.Vector.Float32 ->
+      Array.init len (fun i -> VFloat32 (Sarek_core.Vector.get vec i))
+  | Sarek_core.Vector.Scalar Sarek_core.Vector.Float64 ->
+      Array.init len (fun i -> VFloat64 (Sarek_core.Vector.get vec i))
+  | _ ->
+      (* For other types, try float32 as default *)
+      Array.init len (fun i ->
+          VFloat32 (Obj.magic (Sarek_core.Vector.get vec i) : float))
+
+(** Write interpreter value array back to V2 Vector *)
+let array_to_v2_vector : type a b. value array -> (a, b) Sarek_core.Vector.t -> unit =
+ fun arr vec ->
+  let len = min (Array.length arr) (Sarek_core.Vector.length vec) in
+  match Sarek_core.Vector.kind vec with
+  | Sarek_core.Vector.Scalar Sarek_core.Vector.Int32 ->
+      for i = 0 to len - 1 do
+        Sarek_core.Vector.set vec i (to_int32 arr.(i))
+      done
+  | Sarek_core.Vector.Scalar Sarek_core.Vector.Int64 ->
+      for i = 0 to len - 1 do
+        Sarek_core.Vector.set vec i (to_int64 arr.(i))
+      done
+  | Sarek_core.Vector.Scalar Sarek_core.Vector.Float32 ->
+      for i = 0 to len - 1 do
+        Sarek_core.Vector.set vec i (to_float32 arr.(i))
+      done
+  | Sarek_core.Vector.Scalar Sarek_core.Vector.Float64 ->
+      for i = 0 to len - 1 do
+        Sarek_core.Vector.set vec i (to_float64 arr.(i))
+      done
+  | _ ->
+      for i = 0 to len - 1 do
+        Sarek_core.Vector.set vec i (Obj.magic (to_float32 arr.(i)))
+      done
+
+(** Existential wrapper to track V2 Vector + its interpreter array for writeback *)
+type v2_writeback =
+  | V2Writeback : (('a, 'b) Sarek_core.Vector.t * value array) -> v2_writeback
+
+(** Convert Kernel_arg.t list to interpreter args, tracking vectors for writeback *)
+let args_from_kernel_args (k : kernel) (kargs : Sarek_core.Kernel_arg.t list) :
+    (string * arg) list * v2_writeback list =
+  let writebacks = ref [] in
+  let idx = ref 0 in
+  let args =
+    List.filter_map
+      (fun decl ->
+        match decl with
+        | DParam (v, Some _arr_info) ->
+            (* Vector parameter: expects a Vec in Kernel_arg *)
+            if !idx >= List.length kargs then None
+            else begin
+              let karg = List.nth kargs !idx in
+              incr idx ;
+              match karg with
+              | Sarek_core.Kernel_arg.Vec vec ->
+                  let arr = v2_vector_to_array vec in
+                  writebacks := V2Writeback (vec, arr) :: !writebacks ;
+                  Some (v.var_name, ArgArray arr)
+              | _ ->
+                  failwith
+                    ("Expected Vec for param " ^ v.var_name ^ " but got scalar")
+            end
+        | DParam (v, None) ->
+            (* Scalar parameter *)
+            if !idx >= List.length kargs then None
+            else begin
+              let karg = List.nth kargs !idx in
+              incr idx ;
+              let value =
+                match karg with
+                | Sarek_core.Kernel_arg.Int n -> VInt32 (Int32.of_int n)
+                | Sarek_core.Kernel_arg.Int32 n -> VInt32 n
+                | Sarek_core.Kernel_arg.Int64 n -> VInt64 n
+                | Sarek_core.Kernel_arg.Float32 f -> VFloat32 f
+                | Sarek_core.Kernel_arg.Float64 f -> VFloat64 f
+                | Sarek_core.Kernel_arg.Vec _ ->
+                    failwith ("Expected scalar for param " ^ v.var_name)
+              in
+              Some (v.var_name, ArgScalar value)
+            end
+        | DShared _ -> None
+        | DLocal _ -> None)
+      k.kern_params
+  in
+  (args, List.rev !writebacks)
+
+(** Run kernel with V2 Vector arguments (Kernel_arg.t list).
+    This is the preferred entry point for Native/Interpreter backends.
+    Handles conversion to/from interpreter format with proper writeback. *)
+let run_kernel_with_v2_args (k : kernel) ~(block : int * int * int)
+    ~(grid : int * int * int) (kargs : Sarek_core.Kernel_arg.t list) : unit =
+  let args, writebacks = args_from_kernel_args k kargs in
+  run_kernel k ~block ~grid args ;
+  (* Write modified arrays back to V2 Vectors *)
+  List.iter
+    (fun (V2Writeback (vec, arr)) -> array_to_v2_vector arr vec)
+    writebacks
+
+(** Convert Obj.t array (with V2 Vectors) to Kernel_arg.t list.
+    Uses kernel param declarations to determine which args are vectors.
+    This bridges the legacy Obj.t interface with the typed Kernel_arg interface. *)
+let obj_array_to_kernel_args (k : kernel) (obj_args : Obj.t array) :
+    Sarek_core.Kernel_arg.t list =
+  let idx = ref 0 in
+  List.filter_map
+    (fun decl ->
+      match decl with
+      | DParam (_v, Some _arr_info) ->
+          (* Vector parameter: obj_args has the V2 Vector directly *)
+          if !idx >= Array.length obj_args then None
+          else begin
+            let obj = obj_args.(!idx) in
+            incr idx ;
+            (* Cast to V2 Vector - we assume it's a float32 vector for now *)
+            let vec : (float, Bigarray.float32_elt) Sarek_core.Vector.t =
+              Obj.obj obj
+            in
+            Some (Sarek_core.Kernel_arg.Vec vec)
+          end
+      | DParam (_v, None) ->
+          (* Scalar parameter *)
+          if !idx >= Array.length obj_args then None
+          else begin
+            let obj = obj_args.(!idx) in
+            incr idx ;
+            (* Try int32 first, then float *)
+            let karg =
+              try Sarek_core.Kernel_arg.Int32 (Obj.obj obj : int32)
+              with _ -> (
+                try Sarek_core.Kernel_arg.Float32 (Obj.obj obj : float)
+                with _ ->
+                  try Sarek_core.Kernel_arg.Int64 (Obj.obj obj : int64)
+                  with _ -> Sarek_core.Kernel_arg.Int 0)
+            in
+            Some karg
+          end
+      | DShared _ -> None
+      | DLocal _ -> None)
+    k.kern_params
+
+(** Run kernel with Obj.t array containing V2 Vectors.
+    This is the entry point for backends that receive Obj.t arrays.
+    Converts to Kernel_arg.t list and uses the typed interface internally. *)
+let run_kernel_with_v2_obj_args (k : kernel) ~(block : int * int * int)
+    ~(grid : int * int * int) (obj_args : Obj.t array) : unit =
+  let kargs = obj_array_to_kernel_args k obj_args in
+  run_kernel_with_v2_args k ~block ~grid kargs

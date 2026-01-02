@@ -700,16 +700,21 @@ let quote_kernel ~loc ?(native_kernel : tkernel option)
     end in
     let open Sarek.Kirc in
     let body_ir = [%e quote_k_ext ~loc ir] in
+    let ret_ir = [%e quote_k_ext ~loc ret_val] in
+    let _intrinsic_check = [%e generate_intrinsic_check ~loc kernel] in
+    (* cpu_kern_fn must be defined before body_v2_ir which references it *)
+    let cpu_kern_fn =
+      [%e Sarek_native_gen.gen_cpu_kern_wrapper ~loc kernel_for_native]
+    in
+    (* V2 native execution not yet fully implemented - set native_fn to None.
+       This makes Native backend fall back to IR interpretation. *)
     let body_v2_ir =
       [%e
         match ir_v2 with
-        | Some k -> [%expr Some [%e Sarek_quote_ir.quote_kernel ~loc k]]
+        | Some k ->
+            (* No V2 native function yet - pass None to fall back to interpretation *)
+            [%expr Some [%e Sarek_quote_ir.quote_kernel ~loc k]]
         | None -> [%expr None]]
-    in
-    let ret_ir = [%e quote_k_ext ~loc ret_val] in
-    let _intrinsic_check = [%e generate_intrinsic_check ~loc kernel] in
-    let cpu_kern_fn =
-      [%e Sarek_native_gen.gen_cpu_kern_wrapper ~loc kernel_for_native]
     in
     let kirc_kernel =
       {

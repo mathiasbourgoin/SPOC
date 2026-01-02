@@ -652,6 +652,7 @@ let lower_kernel (kernel : tkernel) : Ir.kernel * string list =
       kern_body = full_body;
       kern_types = types_list;
       kern_funcs = funcs_list;
+      kern_native_fn = None;  (* Native fn is added during quoting *)
     },
     constructors )
 

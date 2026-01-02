@@ -486,6 +486,7 @@ let fuse (producer : kernel) (consumer : kernel) (intermediate : string) :
             kern_body = fused_body;
             kern_types = consumer.kern_types @ producer.kern_types;
             kern_funcs = consumer.kern_funcs @ producer.kern_funcs;
+            kern_native_fn = None;
           })
 
 (** {1 High-level interface} *)
@@ -674,6 +675,7 @@ let fuse_reduction (map_kernel : kernel) (reduce_kernel : kernel)
             kern_body = fused_body;
             kern_types = reduce_kernel.kern_types @ map_kernel.kern_types;
             kern_funcs = reduce_kernel.kern_funcs @ map_kernel.kern_funcs;
+            kern_native_fn = None;
           })
 
 (** Try to fuse map+reduce, falling back to regular fusion if not applicable *)
@@ -934,6 +936,7 @@ let fuse_stencil (producer : kernel) (consumer : kernel) (intermediate : string)
             kern_body = fused_body;
             kern_types = consumer.kern_types @ producer.kern_types;
             kern_funcs = consumer.kern_funcs @ producer.kern_funcs;
+            kern_native_fn = None;
           })
 
 (** Enhanced try_fuse that includes stencil fusion *)
