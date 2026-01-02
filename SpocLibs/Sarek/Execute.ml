@@ -359,11 +359,12 @@ let expand_vector_args (args : vector_arg list) (dev : Device.t) : arg list =
       | Float64 f -> [ArgFloat64 f])
     args
 
-(** Mark all vectors as Stale_CPU after kernel execution (GPU backends only).
-    Native backend doesn't need this since CPU memory is directly modified. *)
+(** Mark all vectors as Stale_CPU after kernel execution. CPU backends with
+    zero-copy don't need this since host memory is directly modified. Uses
+    device capabilities, not framework names. *)
 let mark_vectors_stale (args : vector_arg list) (dev : Device.t) : unit =
-  (* Only mark stale for GPU backends *)
-  if dev.framework = "Native" then ()
+  (* CPU devices use zero-copy - no stale marking needed *)
+  if dev.capabilities.is_cpu then ()
   else
     List.iter
       (function
@@ -482,7 +483,7 @@ let run_interpreter_vectors ~(ir : Sarek_ir.kernel) ~(args : vector_arg list)
     !interp_arrays
 
 (** Execute a kernel with V2 Vectors. Auto-transfers, expands args,
-    compiles/runs. *)
+    compiles/runs. Unified path for all backends - no capability checks. *)
 let run_vectors ~(device : Device.t) ~(ir : Sarek_ir.kernel)
     ~(args : vector_arg list) ~(block : Framework_sig.dims)
     ~(grid : Framework_sig.dims) ?(shared_mem : int = 0)
@@ -492,24 +493,31 @@ let run_vectors ~(device : Device.t) ~(ir : Sarek_ir.kernel)
        Obj.t array ->
        unit)
        option) () : unit =
-  (* Special path for CPU backends - work directly with vectors via interpreter *)
-  if device.framework = "Interpreter" || device.framework = "Native" then
-    (* Native uses parallel, Interpreter uses sequential *)
-    let parallel = device.framework = "Native" in
-    run_interpreter_vectors ~ir ~args ~block ~grid ~parallel
-  else begin
-    (* 1. Transfer all vectors to device *)
-    transfer_vectors_to_device args device ;
+  (* Unified path for all backends:
+     1. Transfer to device (CPU backends: zero-copy, no actual transfer)
+     2. Expand args to (buffer, length) pairs
+     3. Dispatch via run_v2 (plugin handles execution)
+     4. Mark stale (CPU backends: no-op due to zero-copy) *)
 
-    (* 2. Expand vector args to (buffer, length) pairs *)
-    let expanded_args = expand_vector_args args device in
+  (* 1. Transfer all vectors to device *)
+  transfer_vectors_to_device args device ;
 
-    (* 3. Dispatch to appropriate backend *)
-    run_from_ir ~device ~ir ~block ~grid ~shared_mem ?native_fn expanded_args ;
+  (* 2. Expand vector args to (buffer, length) pairs *)
+  let expanded_args = expand_vector_args args device in
 
-    (* 4. Mark vectors as stale (GPU wrote to them, CPU copy is outdated) *)
-    mark_vectors_stale args device
-  end
+  (* 3. Dispatch via run_v2 which uses BACKEND_V2 interface *)
+  run_v2
+    ~device
+    ~name:ir.kern_name
+    ~ir:(Some (lazy ir))
+    ~native_fn
+    ~block
+    ~grid
+    ~shared_mem
+    expanded_args ;
+
+  (* 4. Mark vectors as stale (no-op for CPU backends due to zero-copy) *)
+  mark_vectors_stale args device
 
 (** Sync all V2 Vector outputs back to CPU *)
 let sync_vectors_to_cpu (args : vector_arg list) : unit =

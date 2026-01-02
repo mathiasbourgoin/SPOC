@@ -67,7 +67,8 @@ module Interpreter_v2 : Framework_sig.BACKEND_V2 = struct
   let generate_source (_ir_obj : Obj.t) : string option = None
 
   (** Execute directly by interpreting the IR. Interpreter prefers IR but can
-      use native_fn if provided. *)
+      use native_fn if provided. Interpreter backend always uses sequential
+      execution (single-threaded). *)
   let execute_direct
       ~(native_fn :
          (block:Framework_sig.dims ->
@@ -76,17 +77,18 @@ module Interpreter_v2 : Framework_sig.BACKEND_V2 = struct
          unit)
          option) ~(ir : Obj.t option) ~(block : Framework_sig.dims)
       ~(grid : Framework_sig.dims) (args : Obj.t array) : unit =
+    (* Interpreter always uses sequential mode - decision is in the plugin *)
+    Sarek.Sarek_ir_interp.parallel_mode := false ;
     (* Interpreter prefers IR for true interpretation, falls back to native_fn *)
     match ir with
     | Some ir_obj ->
         let kernel : Sarek.Sarek_ir.kernel = Obj.obj ir_obj in
-        (* Interpreter uses sequential execution *)
-        Sarek.Sarek_ir_interp.parallel_mode := false ;
-        Sarek.Sarek_ir_interp.run_kernel
+        (* Use run_kernel_with_buffers for proper buffer handling *)
+        Sarek.Sarek_ir_interp.run_kernel_with_buffers
           kernel
           ~block:(block.x, block.y, block.z)
           ~grid:(grid.x, grid.y, grid.z)
-          (Sarek.Sarek_ir_interp.args_from_obj_array kernel args)
+          args
     | None -> (
         match native_fn with
         | Some fn -> fn ~block ~grid args

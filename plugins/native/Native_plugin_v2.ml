@@ -148,7 +148,8 @@ module Native_v2 : Framework_sig.BACKEND_V2 = struct
   let generate_source (_ir_obj : Obj.t) : string option = None
 
   (** Execute directly using pre-compiled OCaml function. Native prefers
-      native_fn but can fall back to IR interpretation. *)
+      native_fn but can fall back to IR interpretation. Native backend always
+      uses parallel execution (multiple cores). *)
   let execute_direct
       ~(native_fn :
          (block:Framework_sig.dims ->
@@ -157,6 +158,8 @@ module Native_v2 : Framework_sig.BACKEND_V2 = struct
          unit)
          option) ~(ir : Obj.t option) ~(block : Framework_sig.dims)
       ~(grid : Framework_sig.dims) (args : Obj.t array) : unit =
+    (* Native always uses parallel mode - decision is in the plugin *)
+    Sarek.Sarek_ir_interp.parallel_mode := true ;
     match native_fn with
     | Some fn -> fn ~block ~grid args
     | None -> (
@@ -164,13 +167,12 @@ module Native_v2 : Framework_sig.BACKEND_V2 = struct
         match ir with
         | Some ir_obj ->
             let kernel : Sarek.Sarek_ir.kernel = Obj.obj ir_obj in
-            (* Native uses parallel interpreter *)
-            Sarek.Sarek_ir_interp.parallel_mode := true ;
-            Sarek.Sarek_ir_interp.run_kernel
+            (* Use run_kernel_with_buffers for proper buffer handling *)
+            Sarek.Sarek_ir_interp.run_kernel_with_buffers
               kernel
               ~block:(block.x, block.y, block.z)
               ~grid:(grid.x, grid.y, grid.z)
-              (Sarek.Sarek_ir_interp.args_from_obj_array kernel args)
+              args
         | None ->
             failwith "Native_v2.execute_direct: no native_fn or ir provided")
 

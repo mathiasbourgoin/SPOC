@@ -148,26 +148,9 @@ let alloc_custom_buffer (dev : Device.t) (length : int) (elem_sz : int) :
 
 (** {1 Buffer Management for Vectors} *)
 
-(** Check if a device is a CPU (supports zero-copy) *)
-let is_cpu_device (dev : Device.t) : bool =
-  match Framework_registry.find_backend dev.framework with
-  | None ->
-      Log.debugf Log.Transfer "is_cpu_device: no backend for %s" dev.framework ;
-      false
-  | Some (module B : Framework_sig.BACKEND) ->
-      let backend_dev = B.Device.get dev.backend_id in
-      let is_cpu = (B.Device.capabilities backend_dev).is_cpu in
-      Log.debugf
-        Log.Transfer
-        "is_cpu_device: dev=%d framework=%s is_cpu=%b"
-        dev.id
-        dev.framework
-        is_cpu ;
-      is_cpu
-
-(** Ensure vector has a device buffer, allocating if needed. For CPU devices
-    with bigarray storage, automatically uses zero-copy to avoid memory transfer
-    overhead. *)
+(** Ensure vector has a device buffer, allocating if needed. For backends that
+    support zero-copy (typically CPU backends), automatically uses zero-copy to
+    avoid memory transfer overhead. The backend decides via alloc_zero_copy. *)
 let ensure_buffer (type a b) (vec : (a, b) Vector.t) (dev : Device.t) :
     Vector.device_buffer =
   match Vector.get_buffer vec dev with
@@ -180,25 +163,22 @@ let ensure_buffer (type a b) (vec : (a, b) Vector.t) (dev : Device.t) :
         vec.length ;
       let buf =
         match (vec.kind, vec.host) with
-        | Vector.Scalar sk, Vector.Bigarray_storage ba when is_cpu_device dev
-          -> (
-            (* Try zero-copy for CPU devices with bigarray storage *)
+        | Vector.Scalar sk, Vector.Bigarray_storage ba -> (
+            (* Try zero-copy first - backend decides if supported *)
             Log.debug Log.Transfer "  -> trying zero-copy path" ;
             match alloc_scalar_buffer_zero_copy dev ba sk with
             | Some zc_buf ->
                 Log.debugf
                   Log.Transfer
-                  "  -> using zero-copy for CPU device %d"
+                  "  -> using zero-copy for device %d"
                   dev.id ;
                 zc_buf
             | None ->
                 Log.debug
                   Log.Transfer
-                  "  -> zero-copy failed, using regular alloc" ;
+                  "  -> zero-copy not supported, using regular alloc" ;
                 alloc_scalar_buffer dev vec.length sk)
-        | Vector.Scalar sk, _ ->
-            Log.debug Log.Transfer "  -> regular scalar alloc" ;
-            alloc_scalar_buffer dev vec.length sk
+        | Vector.Scalar _, Vector.Custom_storage _ -> .
         | Vector.Custom c, _ ->
             Log.debug Log.Transfer "  -> custom alloc" ;
             alloc_custom_buffer dev vec.length c.elem_size

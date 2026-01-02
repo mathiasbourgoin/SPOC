@@ -898,8 +898,136 @@ let run_kernel (k : kernel) ~block:(bx, by, bz) ~grid:(gx, gy, gz)
 
   run_grid env k.kern_body (bx, by, bz) (gx, gy, gz)
 
+(** Convert buffer pointer to interpreter value array. For CPU backends with
+    zero-copy, the pointer IS host memory. *)
+let buffer_ptr_to_array (buf_ptr : nativeint) (len : int) (elem_type : elttype)
+    : value array =
+  let open Ctypes in
+  let void_ptr = ptr_of_raw_address buf_ptr in
+  match elem_type with
+  | TFloat32 ->
+      let float_ptr = from_voidp float void_ptr in
+      Array.init len (fun i -> VFloat32 !@(float_ptr +@ i))
+  | TFloat64 ->
+      let double_ptr = from_voidp double void_ptr in
+      Array.init len (fun i -> VFloat64 !@(double_ptr +@ i))
+  | TInt32 ->
+      let int_ptr = from_voidp int32_t void_ptr in
+      Array.init len (fun i -> VInt32 !@(int_ptr +@ i))
+  | TInt64 ->
+      let int64_ptr = from_voidp int64_t void_ptr in
+      Array.init len (fun i -> VInt64 !@(int64_ptr +@ i))
+  | _ ->
+      (* Default to float32 for unknown types *)
+      let float_ptr = from_voidp float void_ptr in
+      Array.init len (fun i -> VFloat32 !@(float_ptr +@ i))
+
+(** Write interpreter value array back to buffer pointer. For CPU backends with
+    zero-copy, this writes directly to host memory. *)
+let array_to_buffer_ptr (arr : value array) (buf_ptr : nativeint)
+    (elem_type : elttype) : unit =
+  let open Ctypes in
+  let void_ptr = ptr_of_raw_address buf_ptr in
+  let len = Array.length arr in
+  match elem_type with
+  | TFloat32 ->
+      let float_ptr = from_voidp float void_ptr in
+      for i = 0 to len - 1 do
+        float_ptr +@ i <-@ to_float32 arr.(i)
+      done
+  | TFloat64 ->
+      let double_ptr = from_voidp double void_ptr in
+      for i = 0 to len - 1 do
+        double_ptr +@ i <-@ to_float64 arr.(i)
+      done
+  | TInt32 ->
+      let int_ptr = from_voidp int32_t void_ptr in
+      for i = 0 to len - 1 do
+        int_ptr +@ i <-@ to_int32 arr.(i)
+      done
+  | TInt64 ->
+      let int64_ptr = from_voidp int64_t void_ptr in
+      for i = 0 to len - 1 do
+        int64_ptr +@ i <-@ to_int64 arr.(i)
+      done
+  | _ ->
+      let float_ptr = from_voidp float void_ptr in
+      for i = 0 to len - 1 do
+        float_ptr +@ i <-@ to_float32 arr.(i)
+      done
+
+(** Info for writing back array results to buffer *)
+type buffer_writeback = {
+  ptr : nativeint;
+  elem_type : elttype;
+  arr : value array;
+}
+
+(** Convert Obj.t array from Execute.ml to interpreter arg list, also returning
+    writeback info for arrays. Uses kernel param declarations to determine
+    types. For CPU backends with zero-copy, buffer pointers directly access host
+    memory. *)
+let args_from_obj_array_with_writeback (k : kernel) (obj_args : Obj.t array) :
+    (string * arg) list * buffer_writeback list =
+  let writebacks = ref [] in
+  let idx = ref 0 in
+  let args =
+    List.filter_map
+      (fun decl ->
+        match decl with
+        | DParam (v, Some arr_info) ->
+            if !idx >= Array.length obj_args then None
+            else begin
+              let buf_ptr : nativeint = Obj.obj obj_args.(!idx) in
+              incr idx ;
+              let len : int32 =
+                if !idx < Array.length obj_args then begin
+                  incr idx ;
+                  Obj.obj obj_args.(!idx - 1)
+                end
+                else 0l
+              in
+              let elem_type = arr_info.arr_elttype in
+              let arr =
+                buffer_ptr_to_array buf_ptr (Int32.to_int len) elem_type
+              in
+              writebacks := {ptr = buf_ptr; elem_type; arr} :: !writebacks ;
+              Some (v.var_name, ArgArray arr)
+            end
+        | DParam (v, None) ->
+            if !idx >= Array.length obj_args then None
+            else begin
+              let obj = obj_args.(!idx) in
+              incr idx ;
+              let value =
+                try VInt32 (Obj.obj obj : int32)
+                with _ -> (
+                  try VFloat32 (Obj.obj obj : float)
+                  with _ -> (
+                    try VInt64 (Obj.obj obj : int64) with _ -> VUnit))
+              in
+              Some (v.var_name, ArgScalar value)
+            end
+        | DShared _ -> None
+        | DLocal _ -> None)
+      k.kern_params
+  in
+  (args, List.rev !writebacks)
+
+(** Run kernel with buffer pointers (for CPU backends). Converts buffers to
+    arrays, runs kernel, writes results back. *)
+let run_kernel_with_buffers (k : kernel) ~(block : int * int * int)
+    ~(grid : int * int * int) (obj_args : Obj.t array) : unit =
+  let args, writebacks = args_from_obj_array_with_writeback k obj_args in
+  run_kernel k ~block ~grid args ;
+  (* Write modified arrays back to buffers *)
+  List.iter
+    (fun wb -> array_to_buffer_ptr wb.arr wb.ptr wb.elem_type)
+    writebacks
+
 (** Convert Obj.t array from Execute.ml to interpreter arg list. Uses kernel
-    param declarations to determine types. *)
+    param declarations to determine types. For CPU backends with zero-copy,
+    buffer pointers directly access host memory. *)
 let args_from_obj_array (k : kernel) (obj_args : Obj.t array) :
     (string * arg) list =
   (* Flatten params to actual args (each vector becomes buf + len) *)
@@ -907,24 +1035,27 @@ let args_from_obj_array (k : kernel) (obj_args : Obj.t array) :
   List.filter_map
     (fun decl ->
       match decl with
-      | DParam (v, Some _) ->
+      | DParam (v, Some arr_info) ->
           (* Array parameter: obj_args has ptr, then length *)
           if !idx >= Array.length obj_args then None
           else begin
-            let arr_obj = obj_args.(!idx) in
+            let buf_ptr : nativeint = Obj.obj obj_args.(!idx) in
             incr idx ;
-            let _len : int32 =
+            let len : int32 =
               if !idx < Array.length obj_args then begin
                 incr idx ;
                 Obj.obj obj_args.(!idx - 1)
               end
               else 0l
             in
-            (* For interpreter, we need actual array access. The Obj.t from
-               Execute contains V2 Vector data. We'll need to convert. *)
-            (* For now, create empty array - real conversion happens in run_vectors *)
-            let arr = [||] in
-            ignore arr_obj ;
+            (* Convert buffer pointer to value array - for zero-copy CPU,
+               this directly accesses host memory *)
+            let arr =
+              buffer_ptr_to_array
+                buf_ptr
+                (Int32.to_int len)
+                arr_info.arr_elttype
+            in
             Some (v.var_name, ArgArray arr)
           end
       | DParam (v, None) ->
