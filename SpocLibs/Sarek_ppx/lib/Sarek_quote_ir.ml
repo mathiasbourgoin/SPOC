@@ -337,6 +337,16 @@ let quote_type_def ~loc (name, fields) : expression =
   in
   [%expr [%e quote_string ~loc name], [%e fields_expr]]
 
+(** Quote helper_func *)
+let quote_helper_func ~loc (hf : Ir.helper_func) : expression =
+  [%expr
+    {
+      Sarek.Sarek_ir.hf_name = [%e quote_string ~loc hf.hf_name];
+      hf_params = [%e quote_list ~loc quote_var hf.hf_params];
+      hf_ret_type = [%e quote_elttype ~loc hf.hf_ret_type];
+      hf_body = [%e quote_stmt ~loc hf.hf_body];
+    }]
+
 (** Quote kernel *)
 let quote_kernel ~loc (k : Ir.kernel) : expression =
   [%expr
@@ -346,4 +356,5 @@ let quote_kernel ~loc (k : Ir.kernel) : expression =
       kern_locals = [%e quote_list ~loc quote_decl k.kern_locals];
       kern_body = [%e quote_stmt ~loc k.kern_body];
       kern_types = [%e quote_list ~loc quote_type_def k.kern_types];
+      kern_funcs = [%e quote_list ~loc quote_helper_func k.kern_funcs];
     }]
