@@ -1383,8 +1383,39 @@ let expand_sarek_include ~ctxt payload =
       (* Resolve path relative to current file *)
       let current_file = loc.loc_start.pos_fname in
       let dir = Filename.dirname current_file in
-      let full_path =
+      let resolve () =
         if Filename.is_relative path then Filename.concat dir path else path
+      in
+      let full_path = resolve () in
+      let full_path =
+        if Sys.file_exists full_path then full_path
+        else if Filename.is_relative path then
+          (* When expanding from _build/<context>/..., fall back to source tree
+             by stripping the _build/<context> prefix. *)
+          let cwd = Sys.getcwd () in
+          let build_prefix = Filename.concat cwd "_build/default" in
+          if
+            String.length dir >= String.length build_prefix
+            && String.equal
+                 (String.sub dir 0 (String.length build_prefix))
+                 build_prefix
+          then
+            let rel =
+              String.sub
+                dir
+                (String.length build_prefix)
+                (String.length dir - String.length build_prefix)
+            in
+            let rel =
+              if String.length rel > 0 && rel.[0] = '/' then
+                String.sub rel 1 (String.length rel - 1)
+              else rel
+            in
+            let alt_dir = Filename.concat cwd rel in
+            let alt_path = Filename.concat alt_dir path in
+            if Sys.file_exists alt_path then alt_path else full_path
+          else full_path
+        else full_path
       in
       if Sarek_debug.enabled then
         Sarek_debug.log
