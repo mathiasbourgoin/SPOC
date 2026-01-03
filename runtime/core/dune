@@ -4,7 +4,7 @@
 (library
  (name spoc_core)
  (public_name spoc.core)
- (libraries spoc_framework ctypes unix)
+ (libraries spoc_framework spoc_framework_registry ctypes unix)
  (modules
   Log
   Device

@@ -11,6 +11,7 @@
  ******************************************************************************)
 
 open Spoc_framework
+open Spoc_framework_registry
 
 (** Reuse the existing Native implementation *)
 module Native_base = struct

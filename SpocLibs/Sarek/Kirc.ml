@@ -34,6 +34,7 @@
  *******************************************************************************)
 open Spoc
 open Kernel
+open Spoc_framework_registry
 
 (* Register flush hook for fission devices at module load time *)
 let () =

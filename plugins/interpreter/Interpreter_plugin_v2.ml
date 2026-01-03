@@ -12,6 +12,7 @@
  ******************************************************************************)
 
 open Spoc_framework
+open Spoc_framework_registry
 
 (** Reuse the existing Interpreter implementation *)
 module Interpreter_base = struct

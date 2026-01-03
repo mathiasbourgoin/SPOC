@@ -10,6 +10,7 @@
  ******************************************************************************)
 
 open Spoc_framework
+open Spoc_framework_registry
 open Spoc_core
 
 (** Kernel execution error *)

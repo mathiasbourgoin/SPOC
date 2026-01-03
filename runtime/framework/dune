@@ -2,8 +2,8 @@
 ; Core interfaces and registry for GPU backends
 
 (library
- (name spoc_framework)
- (public_name spoc.framework)
- (modules Framework_sig Framework_registry)
- (libraries ctypes sarek_ir)
+ (name spoc_framework_registry)
+ (public_name spoc.framework.registry)
+ (modules Framework_registry Intrinsic_registry)
+ (libraries spoc_framework)
  (preprocess no_preprocessing))

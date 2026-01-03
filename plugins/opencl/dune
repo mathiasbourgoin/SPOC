@@ -10,6 +10,7 @@
   ctypes.foreign
   str
   spoc_framework
+  spoc_framework_registry
   sarek
   (re_export spoc_core))
  (modules

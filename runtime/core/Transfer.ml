@@ -8,6 +8,7 @@
  ******************************************************************************)
 
 open Spoc_framework
+open Spoc_framework_registry
 
 (** {1 Auto-Transfer Mode} *)
 

@@ -5,6 +5,7 @@
  ******************************************************************************)
 
 open Spoc_framework
+open Spoc_framework_registry
 
 (** Compiled kernel handle *)
 type t = {

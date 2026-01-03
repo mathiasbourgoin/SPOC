@@ -10,6 +10,7 @@
  ******************************************************************************)
 
 open Spoc_framework
+open Spoc_framework_registry
 
 (** Registry for interpreter kernels. Maps kernel name to IR for interpretation.
 *)

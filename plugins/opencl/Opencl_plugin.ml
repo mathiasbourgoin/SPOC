@@ -6,6 +6,7 @@
  ******************************************************************************)
 
 open Spoc_framework
+open Spoc_framework_registry
 
 module Opencl : sig
   val name : string

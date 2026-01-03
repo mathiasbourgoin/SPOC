@@ -6,6 +6,7 @@
  ******************************************************************************)
 
 open Spoc_framework
+open Spoc_framework_registry
 
 (** Unified buffer type - wraps backend-specific buffers *)
 type 'a buffer = {

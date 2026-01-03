@@ -5,25 +5,26 @@
  * on module load and can be queried by name or capability.
  ******************************************************************************)
 
+open Spoc_framework.Framework_sig
+
 (** Registered plugins - keyed by name *)
-let plugins : (string, (module Framework_sig.S)) Hashtbl.t = Hashtbl.create 8
+let plugins : (string, (module S)) Hashtbl.t = Hashtbl.create 8
 
 (** Full backend plugins with complete functionality *)
-let backends : (string, (module Framework_sig.BACKEND)) Hashtbl.t =
-  Hashtbl.create 8
+let backends : (string, (module BACKEND)) Hashtbl.t = Hashtbl.create 8
 
 (** Priority ordering for auto-selection (higher = preferred) *)
 let priorities : (string, int) Hashtbl.t = Hashtbl.create 8
 
 (** Register a minimal plugin (name, version, is_available) *)
-let register ?(priority = 50) (module P : Framework_sig.S) =
-  Hashtbl.replace plugins P.name (module P : Framework_sig.S) ;
+let register ?(priority = 50) (module P : S) =
+  Hashtbl.replace plugins P.name (module P : S) ;
   Hashtbl.replace priorities P.name priority
 
 (** Register a full backend plugin *)
-let register_backend ?(priority = 50) (module B : Framework_sig.BACKEND) =
-  Hashtbl.replace backends B.name (module B : Framework_sig.BACKEND) ;
-  Hashtbl.replace plugins B.name (module B : Framework_sig.S) ;
+let register_backend ?(priority = 50) (module B : BACKEND) =
+  Hashtbl.replace backends B.name (module B : BACKEND) ;
+  Hashtbl.replace plugins B.name (module B : S) ;
   Hashtbl.replace priorities B.name priority
 
 (** Find a plugin by name *)
@@ -38,14 +39,13 @@ let names () = Hashtbl.to_seq_keys plugins |> List.of_seq
 (** List all available plugins (those where is_available returns true) *)
 let available () =
   Hashtbl.to_seq_values plugins
-  |> Seq.filter (fun (module P : Framework_sig.S) ->
-      try P.is_available () with _ -> false)
+  |> Seq.filter (fun (module P : S) -> try P.is_available () with _ -> false)
   |> List.of_seq
 
 (** List all available full backends *)
 let available_backends () =
   Hashtbl.to_seq_values backends
-  |> Seq.filter (fun (module B : Framework_sig.BACKEND) ->
+  |> Seq.filter (fun (module B : BACKEND) ->
       try B.is_available () with _ -> false)
   |> List.of_seq
 
@@ -53,7 +53,7 @@ let available_backends () =
 let best_backend () =
   let available =
     Hashtbl.to_seq backends
-    |> Seq.filter (fun (_name, (module B : Framework_sig.BACKEND)) ->
+    |> Seq.filter (fun (_name, (module B : BACKEND)) ->
         try B.is_available () with _ -> false)
     |> List.of_seq
   in
@@ -80,14 +80,13 @@ let priority name = Hashtbl.find_opt priorities name |> Option.value ~default:50
 (** {1 Phase 4: BACKEND_V2 Support} *)
 
 (** V2 backend plugins with execution model support *)
-let backends_v2 : (string, (module Framework_sig.BACKEND_V2)) Hashtbl.t =
-  Hashtbl.create 8
+let backends_v2 : (string, (module BACKEND_V2)) Hashtbl.t = Hashtbl.create 8
 
 (** Register a V2 backend plugin *)
-let register_backend_v2 ?(priority = 50) (module B : Framework_sig.BACKEND_V2) =
-  Hashtbl.replace backends_v2 B.name (module B : Framework_sig.BACKEND_V2) ;
-  Hashtbl.replace backends B.name (module B : Framework_sig.BACKEND) ;
-  Hashtbl.replace plugins B.name (module B : Framework_sig.S) ;
+let register_backend_v2 ?(priority = 50) (module B : BACKEND_V2) =
+  Hashtbl.replace backends_v2 B.name (module B : BACKEND_V2) ;
+  Hashtbl.replace backends B.name (module B : BACKEND) ;
+  Hashtbl.replace plugins B.name (module B : S) ;
   Hashtbl.replace priorities B.name priority
 
 (** Find a V2 backend by name *)
@@ -96,7 +95,7 @@ let find_backend_v2 name = Hashtbl.find_opt backends_v2 name
 (** List all available V2 backends *)
 let available_backends_v2 () =
   Hashtbl.to_seq_values backends_v2
-  |> Seq.filter (fun (module B : Framework_sig.BACKEND_V2) ->
+  |> Seq.filter (fun (module B : BACKEND_V2) ->
       try B.is_available () with _ -> false)
   |> List.of_seq
 
@@ -104,7 +103,7 @@ let available_backends_v2 () =
 let best_backend_v2 () =
   let available =
     Hashtbl.to_seq backends_v2
-    |> Seq.filter (fun (_name, (module B : Framework_sig.BACKEND_V2)) ->
+    |> Seq.filter (fun (_name, (module B : BACKEND_V2)) ->
         try B.is_available () with _ -> false)
     |> List.of_seq
   in

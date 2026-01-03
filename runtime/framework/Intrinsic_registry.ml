@@ -11,7 +11,7 @@
  * - atomic_add: CUDA → atomicAdd, OpenCL → atomic_add
  ******************************************************************************)
 
-open Framework_sig
+open Spoc_framework.Framework_sig
 
 (** Generic intrinsic implementation record. This is the concrete type used by
     backends; the module type INTRINSIC_REGISTRY uses an abstract type to allow
