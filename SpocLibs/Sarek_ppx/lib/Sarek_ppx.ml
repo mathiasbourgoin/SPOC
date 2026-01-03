@@ -1382,7 +1382,18 @@ let expand_sarek_include ~ctxt payload =
   | Some path ->
       (* Resolve path relative to current file *)
       let current_file = loc.loc_start.pos_fname in
-      let dir = Filename.dirname current_file in
+      let dir0 = Filename.dirname current_file in
+      let dir =
+        if Filename.is_relative dir0 then Filename.concat (Sys.getcwd ()) dir0
+        else dir0
+      in
+      let rec find_repo_root d =
+        let marker = Filename.concat d "dune-project" in
+        if Sys.file_exists marker then Some d
+        else
+          let parent = Filename.dirname d in
+          if String.equal d parent then None else find_repo_root parent
+      in
       let rec find_build_root d =
         let parent = Filename.dirname d in
         if String.equal d parent then None
@@ -1402,6 +1413,7 @@ let expand_sarek_include ~ctxt payload =
         | [] -> None
       in
       let build_root = find_build_root dir in
+      let repo_root = find_repo_root dir in
       let candidates =
         List.filter_map
           (fun p -> p)
@@ -1413,6 +1425,13 @@ let expand_sarek_include ~ctxt payload =
                 match build_root with
                 | Some root -> Some (Filename.concat root rel)
                 | None -> Some (Filename.concat (Sys.getcwd ()) rel))
+            | None -> None);
+            (* Same drop_build, but anchored at repository root if found *)
+            (match drop_build parts with
+            | Some rel -> (
+                match repo_root with
+                | Some root -> Some (Filename.concat root rel)
+                | None -> None)
             | None -> None);
             (* If still not found, try resolving relative to the repo root *)
             (match build_root with
