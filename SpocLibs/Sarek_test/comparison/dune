@@ -13,7 +13,8 @@
 
 (library
  (name test_ktype)
- (libraries sarek_ppx_lib spoc sarek sarek.stdlib)
+ (enabled_if false) ; legacy SPOC/V1 comparison
+ (libraries sarek_ppx_lib sarek sarek.stdlib)
  (preprocess
   (pps sarek_ppx))
  (flags
@@ -24,17 +25,10 @@
 
 (executable
  (name test_comparison)
- (libraries str alcotest spoc sarek sarek.stdlib)
+ (enabled_if false) ; legacy SPOC/V1 comparison
+ (libraries str alcotest sarek sarek.stdlib)
  (preprocess
   (pps sarek_ppx))
  (flags
   (:standard -w -33 -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc))
  (modules test_comparison))
-
-(rule
- (alias runtest)
- (deps ../regression/reference_ir.txt)
- (action
-  (chdir
-   %{project_root}
-   (run %{exe:test_comparison.exe}))))

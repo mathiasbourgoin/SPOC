@@ -1,19 +1,17 @@
+[@@@warning "-33"]
+
 (******************************************************************************
  * E2E test for Native plugin integration with new runtime
  *
  * This test verifies that:
  * 1. Native plugin can be used through the new runtime
  * 2. Kernels registered with Native_plugin.register_kernel are executed
- * 3. SPOC custom type vectors work with the native plugin
- * 4. Results are correct
+ * 3. Results are correct
  *
  * NOTE ON BUFFER ARCHITECTURE (Phase 4 TODO):
  *
- * Currently this test uses two separate buffer systems:
- * - sarek_core.Memory.buffer for simple numeric arrays (new runtime)
- * - Spoc.Vector for custom types (old SPOC infrastructure)
- *
- * This is a temporary situation. In Phase 4, we should unify these into a
+ * We removed the SPOC custom-vector path. When V2 custom buffers are ready,
+ * reintroduce a dedicated test that exercises them. The desired design is a
  * single buffer type that:
  *
  * 1. Uses ctypes raw memory (works on all backends: CUDA, OpenCL, Native)
@@ -23,16 +21,11 @@
  * 3. Is completely backend-agnostic - the buffer doesn't know about frameworks
  * 4. Supports multi-device: same buffer can have copies on multiple devices
  * 5. Tracks dirty state to know which copies need synchronization
- *
- * The key insight is that custom types work IDENTICALLY on all backends:
- * - Same memory layout (ctypes-allocated raw memory)
- * - Same get/set functions
- * - Only difference is where memory lives (GPU vs host) and transfer ops
- *
- * For now, we use SPOC Vector for custom types since it already works.
  ******************************************************************************)
 
-open Spoc
+module V2_Vector = Sarek_core.Vector
+module V2_Transfer = Sarek_core.Transfer
+module Execute = Sarek.Execute
 
 (* Force plugin initialization *)
 let () = Sarek_native.Native_plugin.init ()
@@ -41,31 +34,17 @@ let size = 1024
 
 type float32 = float
 
-(* Custom record type for 2D points - PPX generates point_custom for Vector.Custom *)
+(* Custom record type for 2D points - PPX generates point_custom_v2 *)
 type point = {x : float32; y : float32} [@@sarek.type]
 
-(* A kernel that transforms points: dst[i] = {x = src[i].x + 1; y = src[i].y * 2} *)
-let transform_points_kernel args (gx, _gy, _gz) (bx, _by, _bz) =
-  (* Extract arguments from Obj.t array - these are SPOC customarrays *)
-  let src : Vector.customarray = Obj.obj args.(0) in
-  let dst : Vector.customarray = Obj.obj args.(1) in
-  let n : int32 = Obj.obj args.(2) in
-  let n = Int32.to_int n in
-
-  (* Compute total threads and iterate *)
-  let total_threads = gx * bx in
-  for tid = 0 to total_threads - 1 do
-    if tid < n then begin
-      let p : point = point_custom.get src tid in
-      point_custom.set dst tid {x = p.x +. 1.0; y = p.y *. 2.0}
-    end
-  done
-
-(* Register the kernel *)
-let () =
-  Sarek_native.Native_plugin.register_kernel
-    "transform_points"
-    transform_points_kernel
+let transform_points_kirc =
+  snd
+    [%kernel
+      fun (src : point vector) (dst : point vector) (n : int32) ->
+        let tid = thread_idx_x in
+        if tid < n then
+          let p = src.(tid) in
+          dst.(tid) <- {x = p.x +. 1.0; y = p.y *. 2.0}]
 
 (* A simple kernel function that adds vectors: c[i] = a[i] + b[i] *)
 let vector_add_kernel args (gx, _gy, _gz) (bx, _by, _bz) =
@@ -195,59 +174,45 @@ let () =
   print_endline "Vector add test passed!" ;
 
   (* ============================================================ *)
-  (* Part 2: Custom type test using SPOC Vector                   *)
+  (* Part 2: Custom type test using V2 Vector + Execute           *)
   (* ============================================================ *)
-  print_endline "\n[7] Testing custom types with SPOC Vector..." ;
+  print_endline "\n[7] Testing custom types with V2 Vector..." ;
 
   let n_points = 100 in
+  let src = V2_Vector.create_custom point_custom_v2 n_points in
+  let dst = V2_Vector.create_custom point_custom_v2 n_points in
 
-  (* Create custom type vectors using SPOC infrastructure *)
-  let src = Vector.create (Vector.Custom point_custom) n_points in
-  let dst = Vector.create (Vector.Custom point_custom) n_points in
-
-  (* Initialize source points *)
   for i = 0 to n_points - 1 do
-    Mem.set src i {x = float_of_int i; y = float_of_int (i * 2)}
+    V2_Vector.set src i {x = float_of_int i; y = float_of_int (i * 2)} ;
+    V2_Vector.set dst i {x = 0.0; y = 0.0}
   done ;
-  print_endline "Custom type vectors created and initialized" ;
 
-  (* Check kernel is registered *)
-  let registered =
-    Sarek_native.Native_plugin.kernel_registered "transform_points"
-  in
-  Printf.printf "Kernel 'transform_points' registered: %b\n" registered ;
-
-  (* Extract the underlying customarrays from SPOC Vectors *)
-  let src_data =
-    match Vector.vector src with
-    | Vector.CustomArray (arr, _) -> arr
-    | _ -> failwith "Expected CustomArray"
-  in
-  let dst_data =
-    match Vector.vector dst with
-    | Vector.CustomArray (arr, _) -> arr
-    | _ -> failwith "Expected CustomArray"
+  let threads = min 256 n_points in
+  let grid_x = (n_points + threads - 1) / threads in
+  let ir =
+    match transform_points_kirc.Sarek.Kirc_types.body_v2 with
+    | Some ir -> ir
+    | None -> failwith "Kernel has no V2 IR"
   in
 
-  (* Run kernel using run_kernel_raw *)
   print_endline "\n[8] Executing custom type kernel..." ;
-  let grid = ((n_points + 255) / 256, 1, 1) in
-  let block = (256, 1, 1) in
-  Sarek_native.Native_plugin.run_kernel_raw
-    ~name:"transform_points"
+  Execute.run_vectors
+    ~device:dev
+    ~block:(Execute.dims1d threads)
+    ~grid:(Execute.dims1d grid_x)
+    ~ir
     ~args:
-      [|Obj.repr src_data; Obj.repr dst_data; Obj.repr (Int32.of_int n_points)|]
-    ~grid
-    ~block ;
+      [Execute.Vec src; Execute.Vec dst; Execute.Int32 (Int32.of_int n_points)]
+    () ;
+  V2_Transfer.flush dev ;
   print_endline "Custom type kernel executed" ;
 
-  (* Verify results *)
   print_endline "\n[9] Verifying custom type results..." ;
   let errors = ref 0 in
   for i = 0 to n_points - 1 do
     let expected_x = float_of_int i +. 1.0 in
     let expected_y = float_of_int (i * 2) *. 2.0 in
-    let result = Mem.get dst i in
+    let result = V2_Vector.get dst i in
     if
       abs_float (result.x -. expected_x) > 1e-3
       || abs_float (result.y -. expected_y) > 1e-3

@@ -3,6 +3,6 @@
  (public_name sarek.visibility)
  (wrapped false)
  (modules visibility_lib)
- (libraries spoc sarek sarek.stdlib)
+ (libraries sarek sarek.stdlib)
  (preprocess
   (pps sarek_ppx)))

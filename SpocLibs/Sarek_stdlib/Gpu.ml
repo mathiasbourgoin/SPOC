@@ -1,5 +1,5 @@
 (******************************************************************************
- * Sarek GPU Standard Library
+ * Sarek GPU Standard Library (V2)
  *
  * Provides GPU thread/block indices, dimensions, and synchronization primitives.
  * Uses %sarek_intrinsic to define GPU intrinsics that auto-register.
@@ -11,7 +11,8 @@
  * - Registry entry for JIT code generation
  ******************************************************************************)
 
-let dev cuda opencl d = Sarek.Sarek_registry.cuda_or_opencl d cuda opencl
+let dev cuda opencl (d : Sarek_core.Device.t) =
+  match d.framework with "CUDA" -> cuda | _ -> opencl
 
 (******************************************************************************
  * Thread indices within the block
@@ -167,8 +168,8 @@ let%sarek_intrinsic
       (fun vec idx value ->
         Mutex.lock atomic_mutex ;
         let i = Stdlib.Int32.to_int idx in
-        let old = Spoc.Mem.get vec i in
-        Spoc.Mem.set vec i (Stdlib.Int32.add old value) ;
+        let old = Sarek_core.Vector.get vec i in
+        Sarek_core.Vector.set vec i (Stdlib.Int32.add old value) ;
         Mutex.unlock atomic_mutex ;
         old);
   }
@@ -181,8 +182,8 @@ let%sarek_intrinsic (atomic_inc_global_int32 : int32 vector -> int32 -> int32) =
       (fun vec idx ->
         Mutex.lock atomic_mutex ;
         let i = Stdlib.Int32.to_int idx in
-        let old = Spoc.Mem.get vec i in
-        Spoc.Mem.set vec i (Stdlib.Int32.add old 1l) ;
+        let old = Sarek_core.Vector.get vec i in
+        Sarek_core.Vector.set vec i (Stdlib.Int32.add old 1l) ;
         Mutex.unlock atomic_mutex ;
         old);
   }

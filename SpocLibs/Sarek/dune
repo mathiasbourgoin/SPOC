@@ -19,8 +19,6 @@
   Sarek_cpu_runtime
   Sarek_float32
   Kirc_v2
-  Kirc_Cuda
-  Kirc_OpenCL
   Sarek_registry
   Execute
   Transform))

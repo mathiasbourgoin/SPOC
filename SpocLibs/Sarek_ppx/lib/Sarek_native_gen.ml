@@ -138,8 +138,8 @@ let gid_y_var = "__gid_y"
 
 let gid_z_var = "__gid_z"
 
-(** Map stdlib module paths to their runtime module paths.
-    Sarek stdlib modules need to be mapped to their actual OCaml locations. *)
+(** Map stdlib module paths to their runtime module paths. Sarek stdlib modules
+    need to be mapped to their actual OCaml locations. *)
 let map_stdlib_path path =
   match path with
   | ["Float32"] | ["Sarek_stdlib"; "Float32"] ->
@@ -147,10 +147,8 @@ let map_stdlib_path path =
   | ["Float64"] | ["Sarek_stdlib"; "Float64"] ->
       (* Float64 is just OCaml float, use stdlib *)
       ["Float"]
-  | ["Int32"] | ["Sarek_stdlib"; "Int32"] ->
-      ["Int32"]
-  | ["Int64"] | ["Sarek_stdlib"; "Int64"] ->
-      ["Int64"]
+  | ["Int32"] | ["Sarek_stdlib"; "Int32"] -> ["Int32"]
+  | ["Int64"] | ["Sarek_stdlib"; "Int64"] -> ["Int64"]
   | _ -> path
 
 (** Generate intrinsic constant based on generation mode. For simple modes,
@@ -347,7 +345,8 @@ let empty_ctx =
     inline_types = StringSet.empty;
     current_module = None;
     gen_mode = FullMode;
-    use_v2 = true;  (* V2 is now the default - SPOC path removed *)
+    use_v2 = true;
+    (* V2 is now the default - SPOC path removed *)
   }
 
 (** Check if a qualified type name is from the current module. For
@@ -423,7 +422,8 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
              to the runtime path. *)
           let parts = String.split_on_char '.' name in
           (* Split into module path and function name *)
-          let module_path, func_name = match List.rev parts with
+          let module_path, func_name =
+            match List.rev parts with
             | fn :: rest -> (List.rev rest, fn)
             | [] -> assert false
           in
@@ -436,22 +436,17 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
         (* Mutable variable - dereference the ref *)
         [%expr ![%e var_e]]
       else var_e
-  (* Vector/array access - use Spoc.Mem or Sarek_core.Vector depending on mode *)
+  (* Vector/array access - V2 only *)
   | TEVecGet (vec, idx) ->
       let vec_e = gen_expr ~loc vec in
       let idx_e = gen_expr ~loc idx in
-      if ctx.use_v2 then
-        [%expr Sarek_core.Vector.get [%e vec_e] (Int32.to_int [%e idx_e])]
-      else
-        [%expr Spoc.Mem.get [%e vec_e] (Int32.to_int [%e idx_e])]
+      [%expr Sarek_core.Vector.get [%e vec_e] (Int32.to_int [%e idx_e])]
   | TEVecSet (vec, idx, value) ->
       let vec_e = gen_expr ~loc vec in
       let idx_e = gen_expr ~loc idx in
       let val_e = gen_expr ~loc value in
-      if ctx.use_v2 then
-        [%expr Sarek_core.Vector.set [%e vec_e] (Int32.to_int [%e idx_e]) [%e val_e]]
-      else
-        [%expr Spoc.Mem.set [%e vec_e] (Int32.to_int [%e idx_e]) [%e val_e]]
+      [%expr
+        Sarek_core.Vector.set [%e vec_e] (Int32.to_int [%e idx_e]) [%e val_e]]
   (* Array access - for shared memory (regular OCaml arrays) *)
   | TEArrGet (arr, idx) ->
       let arr_e = gen_expr ~loc arr in
@@ -1545,8 +1540,8 @@ let gen_simple_cpu_kern ~loc ~exec_strategy (kernel : tkernel) : expression =
 
 (** Generate a type cast expression for extracting a kernel argument.
 
-    For vectors: cast Obj.t to Sarek_core.Vector.t (V2 path).
-    For scalars: cast Obj.t to the primitive type.
+    For vectors: cast Obj.t to Sarek_core.Vector.t (V2 path). For scalars: cast
+    Obj.t to the primitive type.
 
     V2 uses type-safe vectors that abstract over storage. *)
 let gen_arg_cast ~loc (param : tparam) (idx : int) : expression =
@@ -1566,9 +1561,9 @@ let gen_arg_cast ~loc (param : tparam) (idx : int) : expression =
       (* Default - just return as Obj.t and let caller deal with it *)
       arr_access
 
-(** Generate argument extraction for V2 native code.
-    V2 uses Sarek_core.Vector.t - type-safe vectors that abstract over storage.
-    We use wildcard types since Vector.get/set are polymorphic. *)
+(** Generate argument extraction for V2 native code. V2 uses Sarek_core.Vector.t
+    \- type-safe vectors that abstract over storage. We use wildcard types since
+    Vector.get/set are polymorphic. *)
 let gen_arg_cast_v2 ~loc (param : tparam) (idx : int) : expression =
   let arr_access =
     [%expr Array.get __args [%e Ast_builder.Default.eint ~loc idx]]
@@ -1987,8 +1982,8 @@ let gen_cpu_kern_wrapper ~loc (kernel : tkernel) : expression =
 
 (** Generate V2 cpu_kern - uses Sarek_core.Vector.get/set instead of Spoc.Mem.
 
-    Generated signature: thread_state -> shared_mem -> args_tuple -> unit
-    This matches the signature expected by run_parallel/run_sequential. *)
+    Generated signature: thread_state -> shared_mem -> args_tuple -> unit This
+    matches the signature expected by run_parallel/run_sequential. *)
 let gen_cpu_kern_v2 ~loc (kernel : tkernel) : expression =
   let use_fcm = has_inline_types kernel in
   let inline_type_names =
@@ -2088,8 +2083,8 @@ let gen_cpu_kern_v2 ~loc (kernel : tkernel) : expression =
       ];
   }
 
-(** Generate V2 simple kernel for optimized threadpool execution.
-    Like gen_simple_cpu_kern but with use_v2=true for Sarek_core.Vector. *)
+(** Generate V2 simple kernel for optimized threadpool execution. Like
+    gen_simple_cpu_kern but with use_v2=true for Sarek_core.Vector. *)
 let gen_simple_cpu_kern_v2 ~loc ~exec_strategy (kernel : tkernel) : expression =
   let use_fcm = has_inline_types kernel in
   let inline_type_names =
@@ -2110,7 +2105,13 @@ let gen_simple_cpu_kern_v2 ~loc ~exec_strategy (kernel : tkernel) : expression =
   let gen_mode = gen_mode_of_exec_strategy exec_strategy in
 
   let ctx =
-    {empty_ctx with current_module; inline_types = inline_type_names; gen_mode; use_v2 = true}
+    {
+      empty_ctx with
+      current_module;
+      inline_types = inline_type_names;
+      gen_mode;
+      use_v2 = true;
+    }
   in
   let body_e = gen_expr_impl ~loc ~ctx kernel.tkern_body in
 
@@ -2213,11 +2214,11 @@ let gen_simple_cpu_kern_v2 ~loc ~exec_strategy (kernel : tkernel) : expression =
 
 (** Generate the V2 cpu_kern wrapper for use with native_fn_t.
 
-    Generated function type:
-    parallel:bool -> block:int*int*int -> grid:int*int*int -> Obj.t array -> unit
+    Generated function type: parallel:bool -> block:int*int*int ->
+    grid:int*int*int -> Obj.t array -> unit
 
-    V2 version uses Sarek_core.Vector instead of Spoc.Vector.
-    Expects V2 Vectors directly in the Obj.t array (not expanded buffer/length pairs).
+    V2 version uses Sarek_core.Vector instead of Spoc.Vector. Expects V2 Vectors
+    directly in the Obj.t array (not expanded buffer/length pairs).
 
     This is a port of gen_cpu_kern_wrapper with V2 callsites:
     - Uses gen_cpu_kern_v2 instead of gen_cpu_kern
@@ -2439,26 +2440,17 @@ let gen_cpu_kern_v2_wrapper ~loc (kernel : tkernel) : expression =
         inner_body
     in
     [%expr
-      fun ~parallel:(__parallel : bool)
-          ~block
-          ~grid
-          __args -> [%e with_module]]
+      fun ~parallel:(__parallel : bool) ~block ~grid __args -> [%e with_module]]
   else
     match simple_kern_opt with
     | Some simple_kern ->
         [%expr
-          fun ~parallel:(__parallel : bool)
-              ~block
-              ~grid
-              __args ->
+          fun ~parallel:(__parallel : bool) ~block ~grid __args ->
             let __native_kern = [%e native_kern] in
             let __simple_kern = [%e simple_kern] in
             [%e body_with_bindings]]
     | None ->
         [%expr
-          fun ~parallel:(__parallel : bool)
-              ~block
-              ~grid
-              __args ->
+          fun ~parallel:(__parallel : bool) ~block ~grid __args ->
             let __native_kern = [%e native_kern] in
             [%e body_with_bindings]]

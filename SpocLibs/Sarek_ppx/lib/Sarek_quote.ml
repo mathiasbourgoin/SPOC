@@ -355,16 +355,6 @@ and quote_k_ext ~loc (k : Kirc_Ast.k_ext) : expression =
       [%expr Sarek.Kirc_Ast.IntrinsicRef ([%e path_expr], [%e name_expr])]
   | Kirc_Ast.Unit -> [%expr Sarek.Kirc_Ast.Unit]
 
-(** Build argument handling for spoc_kernel methods *)
-let kernel_ctor_lid ~loc name =
-  {txt = Ldot (Ldot (Lident "Spoc", "Kernel"), name); loc}
-
-let kernel_ctor_expr ~loc name arg =
-  Ast_builder.Default.pexp_construct ~loc (kernel_ctor_lid ~loc name) (Some arg)
-
-let kernel_ctor_pat ~loc name arg =
-  Ast_builder.Default.ppat_construct ~loc (kernel_ctor_lid ~loc name) (Some arg)
-
 let core_type_of_typ ~loc (t : typ) : core_type option =
   match repr t with
   | TPrim TUnit -> Some [%type: unit]
@@ -403,11 +393,14 @@ let kernel_ctor_name (t : typ) : string =
   | TRecord _ | TVariant _ -> "Custom"
   | _ -> "Vector"
 
-let kernel_arg_expr ~loc ty var =
-  (* V2: Don't use Spoc.Kernel.relax_vector - just pass vectors directly *)
-  kernel_ctor_expr ~loc (kernel_ctor_name ty) var
+let kernel_arg_expr ~loc:_ ty var =
+  ignore ty ;
+  (* V2-only path: pass arguments directly without SPOC constructors *)
+  var
 
-let kernel_arg_pat ~loc ty var = kernel_ctor_pat ~loc (kernel_ctor_name ty) var
+let kernel_arg_pat ~loc:_ ty var =
+  ignore ty ;
+  var
 
 let build_kernel_args ~loc (params : tparam list) =
   let names = List.mapi (fun idx _ -> Printf.sprintf "spoc_arg%d" idx) params in
@@ -674,7 +667,13 @@ let quote_kernel ~loc ?(native_kernel : tkernel option)
         match ir_v2 with
         | Some k ->
             (* Pass V2 native function for Native backend execution *)
-            [%expr Some [%e Sarek_quote_ir.quote_kernel ~loc ~native_fn_expr:[%expr v2_native_fn] k]]
+            [%expr
+              Some
+                [%e
+                  Sarek_quote_ir.quote_kernel
+                    ~loc
+                    ~native_fn_expr:[%expr v2_native_fn]
+                    k]]
         | None -> [%expr None]]
     in
     let kirc_kernel =

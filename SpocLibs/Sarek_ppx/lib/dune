@@ -1,7 +1,7 @@
 (library
  (name sarek_ppx_lib)
  (public_name sarek_ppx.lib)
- (libraries ppxlib sarek_core spoc)  ; spoc still needed for generated code - TODO: migrate to V2
+ (libraries ppxlib sarek_core) ; spoc removed - V2 codegen only
  (preprocess
   (pps ppxlib.metaquot))
  (modules
@@ -37,4 +37,6 @@
  (libraries ppxlib sarek_ppx_lib sarek_stdlib sarek_float64 unix)
  (preprocess
   (pps ppxlib.metaquot))
- (modules Sarek_ppx))  ; Sarek_external removed - was legacy SPOC feature
+ (modules Sarek_ppx))
+
+; Sarek_external removed - was legacy SPOC feature

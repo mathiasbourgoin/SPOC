@@ -2,6 +2,6 @@
  (name sarek_geometry)
  (public_name sarek.geometry)
  (modules geometry_lib)
- (libraries spoc sarek sarek.stdlib)
+ (libraries sarek sarek.stdlib)
  (preprocess
   (pps sarek_ppx)))

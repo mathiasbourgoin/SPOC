@@ -1,0 +1,3 @@
+(dirs SpocLibs plugins runtime)
+
+; Exclude legacy SPOC/ppx/sample builds while transitioning to V2-only

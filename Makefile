@@ -6,9 +6,8 @@ clean:
 
 opam:
 	dune build @install
-	echo 'available: [ os = "linux" ]'  >> spoc.opam
 	echo 'available: [ os = "linux" ]'  >> sarek.opam
-	echo 'available: [ os = "linux" ]'  >> spoc_ppx.opam
+	echo 'available: [ os = "linux" ]'  >> sarek_ppx.opam
 
 
 install: opam
