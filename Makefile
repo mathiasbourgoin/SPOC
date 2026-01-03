@@ -217,9 +217,6 @@ benchmarks:
 	@echo "       BENCHMARK COMPLETE"
 	@echo "=============================================="
 
-test_sarek:
-	@echo "No sample/benchmark binaries present after repo reorg; target skipped."
-
 # Tiered test suite - tests organized by complexity
 # Tier 1: Simple kernels (low complexity, good starting point)
 TIER1_TESTS = test_vector_add test_bitwise_ops test_math_intrinsics test_transpose
@@ -313,7 +310,7 @@ test-tiers: test-tier1 test-tier2 test-tier3 test-tier4
 	@echo "  ALL TIERS PASSED"
 	@echo "=============================================="
 
-check: all install install_sarek samples test test_sarek
+check: all install install_sarek samples test 
 
 mr_proper: clean
 	rm -rf _build
