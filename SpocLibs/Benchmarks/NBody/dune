@@ -1,8 +1,0 @@
-(executable
- (name NBody_ppx)
- (modules NBody_ppx)
- (libraries sarek sarek.stdlib sarek_core sarek_cuda sarek_opencl unix)
- (preprocess
-  (pps sarek_ppx))
- (flags
-  (:standard -w -33 -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc)))

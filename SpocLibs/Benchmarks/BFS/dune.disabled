@@ -1,7 +1,0 @@
-(executable
- (name BFS)
- (flags
-  (-ccopt -L$CUDA_PATH -cclib -lnvrtc))
- (preprocess
-  (pps sarek_ppx))
- (libraries spoc sarek sarek.stdlib unix))
