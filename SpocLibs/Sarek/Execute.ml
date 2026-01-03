@@ -325,7 +325,10 @@ let run_typed ~(device : Device.t) ~(name : string) ~(source : string)
 
 (** {1 IR-based Execution} *)
 
-(** Execute a kernel from Sarek IR (Phase 4 path) *)
+(** Execute a kernel from Sarek IR (Phase 4 path). Dispatches to the appropriate
+    backend via plugin registry. JIT backends (CUDA, OpenCL) use
+    B.generate_source. Direct/Custom backends (Native, Interpreter) use
+    B.execute_direct. *)
 let run_from_ir ~(device : Device.t) ~(ir : Sarek_ir.kernel)
     ~(block : Framework_sig.dims) ~(grid : Framework_sig.dims)
     ?(shared_mem : int = 0)
@@ -351,74 +354,17 @@ let run_from_ir ~(device : Device.t) ~(ir : Sarek_ir.kernel)
     block.y
     block.z
     (List.length args) ;
-  match device.framework with
-  | "CUDA" ->
-      Log.debug Log.Execute "  generating CUDA source..." ;
-      let source = Sarek_ir_cuda.generate_with_types ~types:ir.kern_types ir in
-      Log.debugf Log.Execute "  CUDA source (%d bytes)" (String.length source) ;
-      run_typed ~device ~name:ir.kern_name ~source ~block ~grid ~shared_mem args
-  | "OpenCL" ->
-      let t0 = Unix.gettimeofday () in
-      Log.debug Log.Execute "  generating OpenCL source..." ;
-      Log.debugf
-        Log.Execute
-        "  kern_types count: %d"
-        (List.length ir.kern_types) ;
-      let source =
-        Sarek_ir_opencl.generate_with_types ~types:ir.kern_types ir
-      in
-      let t1 = Unix.gettimeofday () in
-      Log.debugf
-        Log.Execute
-        "  OpenCL source (%d bytes, gen=%.3fms)"
-        (String.length source)
-        ((t1 -. t0) *. 1000.0) ;
-      Log.debugf Log.Execute "  OpenCL code:\n%s" source ;
-      run_typed ~device ~name:ir.kern_name ~source ~block ~grid ~shared_mem args ;
-      let t2 = Unix.gettimeofday () in
-      Log.debugf Log.Execute "  run_typed took %.3fms" ((t2 -. t1) *. 1000.0)
-  | "Native" -> (
-      (* Native path: use native_fn directly *)
-      match native_fn with
-      | Some fn ->
-          let obj_args = args_to_obj_array args in
-          fn ~block ~grid obj_args
-      | None -> raise (Execution_error "Native backend requires native_fn"))
-  | "Interpreter" ->
-      (* Interpreter path: use Sarek_ir_interp directly.
-         Note: For interpreter, use Sarek_ir_interp.run_kernel directly
-         with pre-prepared value arrays rather than going through Execute. *)
-      Log.debug Log.Execute "  interpreting IR..." ;
-      (* Convert Execute.arg list to interpreter format - scalars only *)
-      let interp_args =
-        List.mapi
-          (fun i arg ->
-            let name = Printf.sprintf "param%d" i in
-            match arg with
-            | ArgInt32 n ->
-                (name, Sarek_ir_interp.ArgScalar (Sarek_ir_interp.VInt32 n))
-            | ArgInt64 n ->
-                (name, Sarek_ir_interp.ArgScalar (Sarek_ir_interp.VInt64 n))
-            | ArgFloat32 f ->
-                (name, Sarek_ir_interp.ArgScalar (Sarek_ir_interp.VFloat32 f))
-            | ArgFloat64 f ->
-                (name, Sarek_ir_interp.ArgScalar (Sarek_ir_interp.VFloat64 f))
-            | ArgDeviceBuffer _ ->
-                (* Device buffers not directly supported - use interpreter API directly *)
-                failwith
-                  "Interpreter: use Sarek_ir_interp.run_kernel for array args"
-            | _ -> failwith "Interpreter: unsupported arg type")
-          args
-      in
-      Sarek_ir_interp.run_kernel
-        ir
-        ~block:(block.x, block.y, block.z)
-        ~grid:(grid.x, grid.y, grid.z)
-        interp_args
-  | fw ->
-      raise
-        (Execution_error
-           ("IR-based execution not supported for framework: " ^ fw))
+
+  (* Dispatch via plugin registry - no hardcoded framework checks *)
+  run_v2
+    ~device
+    ~name:ir.kern_name
+    ~ir:(Some (lazy ir))
+    ~native_fn
+    ~block
+    ~grid
+    ~shared_mem
+    args
 
 (** {1 V2 Vector Execution Helpers} *)
 

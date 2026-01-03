@@ -6,9 +6,13 @@
  ******************************************************************************)
 
 let enabled =
-  match Sys.getenv_opt "SAREK_DEBUG" with
+  match Sys.getenv_opt "SAREK_PPX_DEBUG" with
   | Some "1" | Some "true" | Some "yes" -> true
-  | _ -> false
+  | _ -> (
+      (* Backward-compatible fallback to SAREK_DEBUG as a boolean *)
+      match Sys.getenv_opt "SAREK_DEBUG" with
+      | Some "1" | Some "true" | Some "yes" -> true
+      | _ -> false)
 
 let () = if enabled then Format.eprintf "SAREK DEBUG: Debug logging enabled@.%!"
 

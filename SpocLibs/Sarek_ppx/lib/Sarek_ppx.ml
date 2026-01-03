@@ -269,7 +269,8 @@ let scan_file_for_sarek_types path =
                   in
                   register_sarek_module_item ~loc:vb.pvb_loc item ;
                   let module_name =
-                    Filename.chop_extension (Filename.basename path)
+                    String.capitalize_ascii
+                      (Filename.chop_extension (Filename.basename path))
                   in
                   let item_name =
                     match item with
@@ -1075,6 +1076,22 @@ let expand_kernel ~ctxt payload =
       (List.length pre_mods)
       (List.length local_mods)
       (List.length registry_mods) ;
+    if Sarek_debug.enabled then begin
+      Sarek_debug.log "  local_mods:" ;
+      List.iter
+        (fun m ->
+          match m with
+          | Sarek_ast.MFun (name, _, _, _) -> Sarek_debug.log "    fun %s" name
+          | Sarek_ast.MConst (name, _, _) -> Sarek_debug.log "    const %s" name)
+        local_mods ;
+      Sarek_debug.log "  registry_mods:" ;
+      List.iter
+        (fun m ->
+          match m with
+          | Sarek_ast.MFun (name, _, _, _) -> Sarek_debug.log "    fun %s" name
+          | Sarek_ast.MConst (name, _, _) -> Sarek_debug.log "    const %s" name)
+        registry_mods
+    end ;
     (* 1. Parse the PPX payload to Sarek AST *)
     Sarek_debug.log_enter "parse_payload" ;
     let ast = Sarek_parse.parse_payload payload in
@@ -1083,6 +1100,7 @@ let expand_kernel ~ctxt payload =
       {
         ast with
         Sarek_ast.kern_types = pre_types @ ast.kern_types;
+        (* Merge module items from registry and local scope into the kernel. *)
         kern_module_items = pre_mods @ ast.kern_module_items;
         (* External items are prepended first, then inline items from payload.
            Track how many are external so native code gen can skip them. *)
@@ -1368,6 +1386,11 @@ let expand_sarek_include ~ctxt payload =
       let full_path =
         if Filename.is_relative path then Filename.concat dir path else path
       in
+      if Sarek_debug.enabled then
+        Sarek_debug.log
+          "sarek_include: scanning %s (exists=%b)"
+          full_path
+          (Sys.file_exists full_path) ;
       (* Scan the file for types and module items *)
       (try scan_file_for_sarek_types full_path
        with e ->
