@@ -6,7 +6,6 @@
  ******************************************************************************)
 
 open Spoc_framework
-open Spoc_framework_registry
 
 module Cuda : sig
   val name : string
@@ -298,15 +297,6 @@ end = struct
   let is_available = Cuda_api.is_available
 end
 
-(* Auto-register when module is loaded - only if available *)
-let registered =
-  lazy
-    (if Cuda.is_available () then
-       Framework_registry.register_backend
-         ~priority:100
-         (module Cuda : Framework_sig.BACKEND))
-
-let () = Lazy.force registered
-
-(* Force module initialization - call this to ensure plugin is loaded *)
-let init () = Lazy.force registered
+(* Legacy init retained for compatibility; backend registration now handled by
+   Cuda_plugin_v2. *)
+let init () = ()

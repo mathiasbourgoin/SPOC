@@ -9,7 +9,6 @@
  ******************************************************************************)
 
 open Spoc_framework
-open Spoc_framework_registry
 
 (** Registry for native kernel functions.
 
@@ -415,17 +414,9 @@ end = struct
   let is_available () = true
 end
 
-(* Auto-register when module is loaded *)
-let registered =
-  lazy
-    (if Native.is_available () then
-       Framework_registry.register_backend
-         ~priority:10
-         (module Native : Framework_sig.BACKEND))
-
-let () = Lazy.force registered
-
-let init () = Lazy.force registered
+(* Legacy init retained for compatibility; backend registration now handled by
+   Native_plugin_v2. *)
+let init () = ()
 
 (** Register a native kernel function by name.
 

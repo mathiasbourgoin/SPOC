@@ -10,7 +10,6 @@
  ******************************************************************************)
 
 open Spoc_framework
-open Spoc_framework_registry
 
 (** Registry for interpreter kernels. Maps kernel name to IR for interpretation.
 *)
@@ -435,17 +434,9 @@ end = struct
   let is_available () = true
 end
 
-(* Auto-register when module is loaded *)
-let registered =
-  lazy
-    (if Interpreter.is_available () then
-       Framework_registry.register_backend
-         ~priority:5 (* Lower than Native and GPU backends *)
-         (module Interpreter : Framework_sig.BACKEND))
-
-let () = Lazy.force registered
-
-let init () = Lazy.force registered
+(* Legacy init retained for compatibility; backend registration now handled by
+   Interpreter_plugin_v2. *)
+let init () = ()
 
 (** Register an IR kernel for interpretation *)
 let register_kernel name ir = Hashtbl.replace interpreter_kernels name ir
