@@ -219,14 +219,14 @@ benchmarks:
 
 test_sarek:
 	echo "Compiling Sarek samples"
-	dune build SpocLibs/Benchmarks/Pi/Pi.exe
-	dune build SpocLibs/Benchmarks/Mandelbrot_Sarek/Mandelbrot.exe
-	dune build SpocLibs/Samples/Bitonic_sort/Bitonic_sort.exe
+	dune build runtime/tests/Benchmarks/Pi/Pi.exe
+	dune build runtime/tests/Benchmarks/Mandelbrot_Sarek/Mandelbrot.exe
+	dune build runtime/tests/Samples/Bitonic_sort/Bitonic_sort.exe
 	echo "Running OpenCL compatible samples"
-	dune exec SpocLibs/Samples/Bitonic_sort/Bitonic_sort.exe
+	dune exec runtime/tests/Samples/Bitonic_sort/Bitonic_sort.exe
 	## Cuda Samples cannot be executed on CI
-	# dune exec SpocLibs/Benchmarks/Pi/Pi.exe
-	# dune exec SpocLibs/Benchmarks/Mandelbrot_Sarek/Mandelbrot.exe
+	# dune exec runtime/tests/Benchmarks/Pi/Pi.exe
+	# dune exec runtime/tests/Benchmarks/Mandelbrot_Sarek/Mandelbrot.exe
 
 # Tiered test suite - tests organized by complexity
 # Tier 1: Simple kernels (low complexity, good starting point)
