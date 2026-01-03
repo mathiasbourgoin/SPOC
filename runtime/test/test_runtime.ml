@@ -7,12 +7,12 @@
  * 3. Execute kernels and transfer data
  ******************************************************************************)
 
-(* Force plugin initialization *)
-let () = Sarek_cuda.Cuda_plugin.init ()
+(* Force plugin initialization (V2 backends) *)
+let () = Sarek_cuda.Cuda_plugin_v2.init ()
 
-let () = Sarek_opencl.Opencl_plugin.init ()
+let () = Sarek_opencl.Opencl_plugin_v2.init ()
 
-let () = Sarek_native.Native_plugin.init ()
+let () = Sarek_native.Native_plugin_v2.init ()
 
 let () =
   print_endline "=== Sarek Runtime Test ===" ;

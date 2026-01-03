@@ -18,9 +18,7 @@ module V2_Transfer = Spoc_core.Transfer
 let () =
   Sarek_cuda.Cuda_plugin_v2.init () ;
   Sarek_opencl.Opencl_plugin_v2.init () ;
-  Sarek_native.Native_plugin.init () ;
   Sarek_native.Native_plugin_v2.init () ;
-  Sarek_interpreter.Interpreter_plugin.init () ;
   Sarek_interpreter.Interpreter_plugin_v2.init ()
 
 let cfg = Test_helpers.default_config ()
