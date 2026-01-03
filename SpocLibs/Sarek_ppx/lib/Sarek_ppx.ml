@@ -1393,29 +1393,42 @@ let expand_sarek_include ~ctxt payload =
         if Filename.is_relative p then Filename.concat base_dir p else p
       in
       let full_path = resolve_relative dir path in
+      (* When dune runs the PPX from _build/... the source path can be rewritten.
+         Collect plausible candidates and pick the first that exists. *)
+      let parts = String.split_on_char '/' full_path in
+      let rec drop_build = function
+        | "_build" :: _ctx :: rest -> Some (String.concat "/" rest)
+        | _ :: tl -> drop_build tl
+        | [] -> None
+      in
+      let build_root = find_build_root dir in
+      let candidates =
+        List.filter_map
+          (fun p -> p)
+          [
+            Some full_path;
+            (* Strip _build/<ctx>/ prefix if present *)
+            (match drop_build parts with
+            | Some rel -> (
+                match build_root with
+                | Some root -> Some (Filename.concat root rel)
+                | None -> Some (Filename.concat (Sys.getcwd ()) rel))
+            | None -> None);
+            (* If still not found, try resolving relative to the repo root *)
+            (match build_root with
+            | Some root when Filename.is_relative path ->
+                Some (Filename.concat root path)
+            | _ -> None);
+            (* Fallback to cwd *)
+            (if Filename.is_relative path then
+               Some (Filename.concat (Sys.getcwd ()) path)
+             else None);
+          ]
+      in
       let full_path =
-        if Sys.file_exists full_path then full_path
-        else
-          (* When dune runs the PPX from _build/... the source path can be
-             rewritten. Try stripping the _build/<context>/ prefix and resolve
-             relative to the repository root (Sys.getcwd). *)
-          let parts = String.split_on_char '/' full_path in
-          let rec drop_build = function
-            | "_build" :: _ctx :: rest -> Some (String.concat "/" rest)
-            | _ :: tl -> drop_build tl
-            | [] -> None
-          in
-          match (drop_build parts, find_build_root dir) with
-          | Some rel, Some build_root ->
-              let alt = Filename.concat build_root rel in
-              if Sys.file_exists alt then alt else full_path
-          | Some rel, None ->
-              let alt = Filename.concat (Sys.getcwd ()) rel in
-              if Sys.file_exists alt then alt else full_path
-          | None, Some build_root when Filename.is_relative path ->
-              let alt = Filename.concat build_root path in
-              if Sys.file_exists alt then alt else full_path
-          | None, _ -> full_path
+        match List.find_opt Sys.file_exists candidates with
+        | Some p -> p
+        | None -> full_path
       in
       if Sarek_debug.enabled then
         Sarek_debug.log
