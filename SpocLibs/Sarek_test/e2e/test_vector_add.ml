@@ -1,27 +1,23 @@
 (******************************************************************************
- * E2E test for Sarek PPX - Vector Add with V2 comparison
+ * E2E test for Sarek PPX - Vector Add
  *
  * This test verifies that kernels compiled with the PPX can generate valid
- * GPU code and execute correctly via both SPOC and V2 runtime paths.
+ * GPU code and execute correctly via the V2 runtime.
  ******************************************************************************)
 
-(* Module aliases to avoid conflicts *)
-module Spoc_Vector = Spoc.Vector
-module Spoc_Devices = Spoc.Devices
-module Spoc_Mem = Spoc.Mem
+open Sarek
+module Std = Sarek_stdlib.Std
+
+(* Module aliases *)
 module V2_Device = Sarek_core.Device
 module V2_Vector = Sarek_core.Vector
 module V2_Transfer = Sarek_core.Transfer
 
 (* Force backend registration *)
 let () =
-  Sarek_cuda.Cuda_plugin.init () ;
   Sarek_cuda.Cuda_plugin_v2.init () ;
-  Sarek_opencl.Opencl_plugin.init () ;
   Sarek_opencl.Opencl_plugin_v2.init () ;
-  Sarek_native.Native_plugin.init () ;
   Sarek_native.Native_plugin_v2.init () ;
-  Sarek_interpreter.Interpreter_plugin.init () ;
   Sarek_interpreter.Interpreter_plugin_v2.init ()
 
 let size = ref 1024
@@ -73,7 +69,7 @@ let parse_args () =
     incr i
   done
 
-(* Define kernel - works with both SPOC and V2 *)
+(* Define kernel *)
 let vector_add =
   [%kernel
     fun (a : float32 vector)
@@ -84,65 +80,11 @@ let vector_add =
       let tid = global_thread_id in
       if tid < n then c.(tid) <- a.(tid) +. b.(tid)]
 
-(* Run kernel via SPOC path *)
-let run_spoc_on_device dev =
-  let a = Spoc_Vector.create Spoc_Vector.float32 !size in
-  let b = Spoc_Vector.create Spoc_Vector.float32 !size in
-  let c = Spoc_Vector.create Spoc_Vector.float32 !size in
-
-  for i = 0 to !size - 1 do
-    Spoc_Mem.set a i (float_of_int i) ;
-    Spoc_Mem.set b i (float_of_int (i * 2)) ;
-    Spoc_Mem.set c i 0.0
-  done ;
-
-  ignore (Sarek.Kirc.gen vector_add dev) ;
-
-  let threadsPerBlock =
-    match dev.Spoc_Devices.specific_info with
-    | Spoc_Devices.OpenCLInfo clI -> (
-        match clI.Spoc_Devices.device_type with
-        | Spoc_Devices.CL_DEVICE_TYPE_CPU -> 1
-        | _ -> !block_size)
-    | _ -> !block_size
-  in
-  let blocksPerGrid = (!size + threadsPerBlock - 1) / threadsPerBlock in
-  let block =
-    {
-      Spoc.Kernel.blockX = threadsPerBlock;
-      Spoc.Kernel.blockY = 1;
-      Spoc.Kernel.blockZ = 1;
-    }
-  in
-  let grid =
-    {
-      Spoc.Kernel.gridX = blocksPerGrid;
-      Spoc.Kernel.gridY = 1;
-      Spoc.Kernel.gridZ = 1;
-    }
-  in
-
-  let t0 = Unix.gettimeofday () in
-  Sarek.Kirc.run vector_add (a, b, c, !size) (block, grid) 0 dev ;
-  Spoc_Devices.flush dev () ;
-  let t1 = Unix.gettimeofday () in
-  let time_ms = (t1 -. t0) *. 1000.0 in
-
-  (* Read back results *)
-  Spoc_Mem.to_cpu c () ;
-  Spoc_Devices.flush dev () ;
-
-  let result = Array.make !size 0.0 in
-  for i = 0 to !size - 1 do
-    result.(i) <- Spoc_Mem.get c i
-  done ;
-  (time_ms, result)
-
 (* Run kernel via V2 path *)
 let run_v2_on_device (dev : V2_Device.t) =
   let _, kirc = vector_add in
   let ir =
-    match kirc.Sarek.Kirc.body_v2 with
+    match kirc.Sarek.Kirc_types.body_v2 with
     | Some ir -> ir
     | None -> failwith "Kernel has no V2 IR"
   in
@@ -157,22 +99,17 @@ let run_v2_on_device (dev : V2_Device.t) =
     V2_Vector.set c i 0.0
   done ;
 
-  let block_sz = 256 in
+  let block_sz = !block_size in
   let grid_sz = (!size + block_sz - 1) / block_sz in
-  let block = Sarek.Execute.dims1d block_sz in
-  let grid = Sarek.Execute.dims1d grid_sz in
+  let block = Execute.dims1d block_sz in
+  let grid = Execute.dims1d grid_sz in
 
   let t0 = Unix.gettimeofday () in
-  Sarek.Execute.run_vectors
+  Execute.run_vectors
     ~device:dev
     ~ir
     ~args:
-      [
-        Sarek.Execute.Vec a;
-        Sarek.Execute.Vec b;
-        Sarek.Execute.Vec c;
-        Sarek.Execute.Int !size;
-      ]
+      [Execute.Vec a; Execute.Vec b; Execute.Vec c; Execute.Int !size]
     ~block
     ~grid
     () ;
@@ -186,43 +123,43 @@ let run_v2_on_device (dev : V2_Device.t) =
 let run_interpreter () =
   let _, kirc = vector_add in
   let ir =
-    match kirc.Sarek.Kirc.body_v2 with
+    match kirc.Sarek.Kirc_types.body_v2 with
     | Some ir -> ir
     | None -> failwith "Kernel has no V2 IR"
   in
 
   (* Create interpreter arrays *)
   let a =
-    Array.init !size (fun i -> Sarek.Sarek_ir_interp.VFloat32 (float_of_int i))
+    Array.init !size (fun i -> Sarek_ir_interp.VFloat32 (float_of_int i))
   in
   let b =
     Array.init !size (fun i ->
-        Sarek.Sarek_ir_interp.VFloat32 (float_of_int (i * 2)))
+        Sarek_ir_interp.VFloat32 (float_of_int (i * 2)))
   in
-  let c = Array.make !size (Sarek.Sarek_ir_interp.VFloat32 0.0) in
+  let c = Array.make !size (Sarek_ir_interp.VFloat32 0.0) in
 
   let block_sz = min 256 !size in
   let grid_sz = (!size + block_sz - 1) / block_sz in
 
   let t0 = Unix.gettimeofday () in
-  Sarek.Sarek_ir_interp.run_kernel
+  Sarek_ir_interp.run_kernel
     ir
     ~block:(block_sz, 1, 1)
     ~grid:(grid_sz, 1, 1)
     [
-      ("a", Sarek.Sarek_ir_interp.ArgArray a);
-      ("b", Sarek.Sarek_ir_interp.ArgArray b);
-      ("c", Sarek.Sarek_ir_interp.ArgArray c);
+      ("a", Sarek_ir_interp.ArgArray a);
+      ("b", Sarek_ir_interp.ArgArray b);
+      ("c", Sarek_ir_interp.ArgArray c);
       ( "n",
-        Sarek.Sarek_ir_interp.ArgScalar
-          (Sarek.Sarek_ir_interp.VInt32 (Int32.of_int !size)) );
+        Sarek_ir_interp.ArgScalar
+          (Sarek_ir_interp.VInt32 (Int32.of_int !size)) );
     ] ;
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
 
   (* Extract results *)
   let result =
-    Array.map (function Sarek.Sarek_ir_interp.VFloat32 f -> f | _ -> 0.0) c
+    Array.map (function Sarek_ir_interp.VFloat32 f -> f | _ -> 0.0) c
   in
 
   (time_ms, result)
@@ -252,45 +189,27 @@ let verify_results name result expected =
 let () =
   parse_args () ;
 
-  print_endline "=== Vector Add Test (SPOC + V2 Comparison) ===" ;
+  print_endline "=== Vector Add Test (V2) ===" ;
   Printf.printf "Size: %d elements\n\n" !size ;
-
-  (* Initialize SPOC devices *)
-  let spoc_devs =
-    if !use_interpreter then
-      Spoc_Devices.init
-        ~interpreter:(Some Spoc_Devices.Sequential)
-        ~native:!use_native
-        ()
-    else Spoc_Devices.init ~native:!use_native ()
-  in
-  if Array.length spoc_devs = 0 then begin
-    print_endline "No GPU devices found" ;
-    exit 1
-  end ;
 
   (* Initialize V2 devices - include all frameworks *)
   let v2_devs =
     V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
 
-  Printf.printf
-    "Found %d SPOC device(s), %d V2 device(s)\n\n"
-    (Array.length spoc_devs)
-    (Array.length v2_devs) ;
+  if Array.length v2_devs = 0 then begin
+    print_endline "No devices found" ;
+    exit 1
+  end ;
+
+  Printf.printf "Found %d device(s)\n\n" (Array.length v2_devs) ;
 
   let expected = compute_expected () in
 
   if !benchmark_all then begin
-    print_endline (String.make 90 '-') ;
-    Printf.printf
-      "%-35s %10s %10s %10s %10s\n"
-      "Device"
-      "SPOC(ms)"
-      "V2(ms)"
-      "SPOC"
-      "V2" ;
-    print_endline (String.make 90 '-') ;
+    print_endline (String.make 60 '-') ;
+    Printf.printf "%-35s %10s %10s\n" "Device" "Time(ms)" "Status" ;
+    print_endline (String.make 60 '-') ;
 
     let all_ok = ref true in
 
@@ -300,24 +219,6 @@ let () =
         let name = v2_dev.V2_Device.name in
         let framework = v2_dev.V2_Device.framework in
 
-        (* Find matching SPOC device *)
-        let spoc_dev_opt =
-          Array.find_opt
-            (fun d -> d.Spoc_Devices.general_info.Spoc_Devices.name = name)
-            spoc_devs
-        in
-
-        let spoc_time, spoc_ok =
-          match spoc_dev_opt with
-          | Some spoc_dev ->
-              let time, result = run_spoc_on_device spoc_dev in
-              let ok =
-                if !verify then verify_results "SPOC" result expected else true
-              in
-              (Printf.sprintf "%.4f" time, if ok then "OK" else "FAIL")
-          | None -> ("-", "SKIP")
-        in
-
         let v2_time, v2_result = run_v2_on_device v2_dev in
         let v2_ok =
           if !verify then verify_results "V2" v2_result expected else true
@@ -325,18 +226,15 @@ let () =
         let v2_status = if v2_ok then "OK" else "FAIL" in
 
         if not v2_ok then all_ok := false ;
-        if spoc_ok = "FAIL" then all_ok := false ;
 
         Printf.printf
-          "%-35s %10s %10.4f %10s %10s\n"
+          "%-35s %10.4f %10s\n"
           (Printf.sprintf "%s (%s)" name framework)
-          spoc_time
           v2_time
-          spoc_ok
           v2_status)
       v2_devs ;
 
-    print_endline (String.make 90 '-') ;
+    print_endline (String.make 60 '-') ;
 
     (* Run interpreter test *)
     print_endline "\n=== Interpreter Test ===" ;
@@ -359,58 +257,42 @@ let () =
   end
   else begin
     (* Single device mode *)
-    let dev =
-      if !use_native then (
-        match Spoc_Devices.find_native_id spoc_devs with
-        | Some id -> spoc_devs.(id)
+    let v2_dev =
+      if !use_native then
+        match
+          Array.find_opt (fun d -> d.V2_Device.framework = "Native") v2_devs
+        with
+        | Some d -> d
         | None ->
             print_endline "No native CPU device found" ;
-            exit 1)
-      else if !use_interpreter then (
-        match Spoc_Devices.find_interpreter_id spoc_devs with
-        | Some id -> spoc_devs.(id)
+            exit 1
+      else if !use_interpreter then
+        match
+          Array.find_opt
+            (fun d -> d.V2_Device.framework = "Interpreter")
+            v2_devs
+        with
+        | Some d -> d
         | None ->
             print_endline "No interpreter device found" ;
-            exit 1)
-      else spoc_devs.(!dev_id)
+            exit 1
+      else v2_devs.(!dev_id)
     in
-    let dev_name = dev.Spoc_Devices.general_info.Spoc_Devices.name in
+    let dev_name = v2_dev.V2_Device.name in
     Printf.printf "Using device: %s\n%!" dev_name ;
 
-    (* Run SPOC *)
-    Printf.printf "\nRunning SPOC path...\n%!" ;
-    let spoc_time, spoc_result = run_spoc_on_device dev in
-    Printf.printf "  Time: %.4f ms\n%!" spoc_time ;
-    let spoc_ok =
-      if !verify then verify_results "SPOC" spoc_result expected else true
+    (* Run V2 *)
+    Printf.printf "\nRunning V2 path...\n%!" ;
+    let v2_time, v2_result = run_v2_on_device v2_dev in
+    Printf.printf "  Time: %.4f ms\n%!" v2_time ;
+    let v2_ok =
+      if !verify then verify_results "V2" v2_result expected else true
     in
-    Printf.printf "  Status: %s\n%!" (if spoc_ok then "PASSED" else "FAILED") ;
+    Printf.printf "  Status: %s\n%!" (if v2_ok then "PASSED" else "FAILED") ;
 
-    (* Find matching V2 device *)
-    let v2_dev_opt =
-      Array.find_opt (fun d -> d.V2_Device.name = dev_name) v2_devs
-    in
-
-    match v2_dev_opt with
-    | Some v2_dev ->
-        Printf.printf "\nRunning V2 path...\n%!" ;
-        let v2_time, v2_result = run_v2_on_device v2_dev in
-        Printf.printf "  Time: %.4f ms\n%!" v2_time ;
-        let v2_ok =
-          if !verify then verify_results "V2" v2_result expected else true
-        in
-        Printf.printf "  Status: %s\n%!" (if v2_ok then "PASSED" else "FAILED") ;
-
-        if spoc_ok && v2_ok then print_endline "\nE2E Test PASSED (both paths)"
-        else begin
-          print_endline "\nE2E Test FAILED" ;
-          exit 1
-        end
-    | None ->
-        Printf.printf "\nNo matching V2 device found for comparison\n%!" ;
-        if spoc_ok then print_endline "\nE2E Test PASSED (SPOC only)"
-        else begin
-          print_endline "\nE2E Test FAILED" ;
-          exit 1
-        end
+    if v2_ok then print_endline "\nE2E Test PASSED"
+    else begin
+      print_endline "\nE2E Test FAILED" ;
+      exit 1
+    end
   end

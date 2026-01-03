@@ -3,8 +3,11 @@
     Executes Kirc_Ast on CPU for debugging and testing without GPU. Supports
     BSP-style barrier synchronization using OCaml 5 effects. *)
 
-open Kirc_Ast
-module F32 = Sarek_float32
+open Sarek.Kirc_Ast
+module F32 = Sarek.Sarek_float32
+
+(* Module alias for use in function calls *)
+module Kirc_Ast = Sarek.Kirc_Ast
 
 (** {1 Native Code Warnings}
 

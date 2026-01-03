@@ -1,5 +1,4 @@
 (* Test kernel using external Geometry_lib types via convention *)
-open Spoc
 open Sarek_geometry
 
 (* This kernel takes Geometry_lib.point vectors and computes distance to origin *)
@@ -23,6 +22,6 @@ let () =
 
   let _, kirc = distance_to_origin_kernel in
   print_endline "=== Distance to origin kernel IR ===" ;
-  Sarek.Kirc.print_ast kirc.Sarek.Kirc.body ;
+  Sarek.Kirc_Ast.print_ast kirc.Sarek.Kirc_types.body ;
   print_endline "=====================================" ;
   print_endline "Convention kernel test PASSED"

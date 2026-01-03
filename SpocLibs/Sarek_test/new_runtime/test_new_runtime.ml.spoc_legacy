@@ -7,6 +7,7 @@
  ******************************************************************************)
 
 open Spoc
+module Std = Sarek_stdlib.Std
 
 (* Force plugin initialization *)
 let () = Sarek_cuda.Cuda_plugin.init ()

@@ -41,8 +41,8 @@ let () =
       match dev.Devices.specific_info with
       | Devices.NativeInfo ni when ni.Devices.native_fission ->
           (match queue_id with
-          | Some q -> Sarek_cpu_runtime.flush_fission_queue q
-          | None -> Sarek_cpu_runtime.flush_fission ()) ;
+          | Some q -> Sarek.Sarek_cpu_runtime.flush_fission_queue q
+          | None -> Sarek.Sarek_cpu_runtime.flush_fission ()) ;
           true
       | _ -> false)
 
@@ -58,9 +58,9 @@ let profile_default () =
 
 let idkern = ref 0
 
-open Kirc_Ast
-module Kirc_OpenCL = Gen.Generator (Kirc_OpenCL)
-module Kirc_Cuda = Gen.Generator (Kirc_Cuda)
+open Sarek.Kirc_Ast
+module Kirc_OpenCL = Gen.Generator (Sarek.Kirc_OpenCL)
+module Kirc_Cuda = Gen.Generator (Sarek.Kirc_Cuda)
 module Kirc_Profile = Gen.Generator (Profile)
 
 type float64 = float
@@ -72,11 +72,11 @@ type extension = ExFloat32 | ExFloat64
 type ('a, 'b, 'c) kirc_kernel = {
   ml_kern : 'a;
   body : Kirc_Ast.k_ext;
-  body_v2 : Sarek_ir.kernel option; (* V2 IR for new execution path *)
+  body_v2 : Sarek.Sarek_ir.kernel option; (* V2 IR for new execution path *)
   ret_val : Kirc_Ast.k_ext * ('b, 'c) Vector.kind;
   extensions : extension array;
   cpu_kern :
-    (mode:Sarek_cpu_runtime.exec_mode ->
+    (mode:Sarek.Sarek_cpu_runtime.exec_mode ->
     block:int * int * int ->
     grid:int * int * int ->
     Obj.t array ->
@@ -1258,7 +1258,7 @@ let run ?recompile:(r = false) (ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel) a
             (grid.Kernel.gridX, grid.Kernel.gridY, grid.Kernel.gridZ)
           in
           (* Select execution mode based on device flags *)
-          let mode : Sarek_cpu_runtime.exec_mode =
+          let mode : Sarek.Sarek_cpu_runtime.exec_mode =
             if ni.Devices.native_fission then Threadpool
             else if ni.Devices.native_parallel then Parallel
             else Sequential
@@ -1571,19 +1571,19 @@ module Fusion = struct
   let can_fuse_bodies (producer_body : Kirc_Ast.k_ext)
       (consumer_body : Kirc_Ast.k_ext) ~intermediate =
     try
-      let prod_ir = Sarek_ir.of_k_ext producer_body in
-      let cons_ir = Sarek_ir.of_k_ext consumer_body in
-      Sarek_fusion.can_fuse prod_ir cons_ir intermediate
-    with Sarek_ir.Conversion_error _ -> false
+      let prod_ir = Sarek.Sarek_ir.of_k_ext producer_body in
+      let cons_ir = Sarek.Sarek_ir.of_k_ext consumer_body in
+      Sarek.Sarek_fusion.can_fuse prod_ir cons_ir intermediate
+    with Sarek.Sarek_ir.Conversion_error _ -> false
 
   (** Fuse two kernel bodies, eliminating the intermediate array. Returns the
       fused k_ext body. *)
   let fuse_bodies (producer_body : Kirc_Ast.k_ext)
       (consumer_body : Kirc_Ast.k_ext) ~intermediate =
-    let prod_ir = Sarek_ir.of_k_ext producer_body in
-    let cons_ir = Sarek_ir.of_k_ext consumer_body in
-    let fused_ir = Sarek_fusion.fuse prod_ir cons_ir intermediate in
-    Sarek_ir.to_k_ext fused_ir
+    let prod_ir = Sarek.Sarek_ir.of_k_ext producer_body in
+    let cons_ir = Sarek.Sarek_ir.of_k_ext consumer_body in
+    let fused_ir = Sarek.Sarek_fusion.fuse prod_ir cons_ir intermediate in
+    Sarek.Sarek_ir.to_k_ext fused_ir
 
   (** Fuse two kirc_kernels, eliminating the intermediate array. The consumer's
       structure is preserved with the producer inlined.
@@ -1611,10 +1611,10 @@ module Fusion = struct
       @return (fused_body, list of eliminated intermediate array names) *)
   let fuse_pipeline_bodies (bodies : Kirc_Ast.k_ext list) =
     try
-      let irs = List.map Sarek_ir.of_k_ext bodies in
-      let fused_ir, eliminated = Sarek_fusion.fuse_pipeline irs in
-      (Sarek_ir.to_k_ext fused_ir, eliminated)
-    with Sarek_ir.Conversion_error msg -> failwith ("Fusion failed: " ^ msg)
+      let irs = List.map Sarek.Sarek_ir.of_k_ext bodies in
+      let fused_ir, eliminated = Sarek.Sarek_fusion.fuse_pipeline irs in
+      (Sarek.Sarek_ir.to_k_ext fused_ir, eliminated)
+    with Sarek.Sarek_ir.Conversion_error msg -> failwith ("Fusion failed: " ^ msg)
 end
 
 module Sarek_vector = struct
@@ -1776,8 +1776,8 @@ let flush dev ?queue_id () =
   | Devices.NativeInfo ni when ni.Devices.native_fission -> (
       (* Fission device: flush the launch queue *)
       match queue_id with
-      | Some q -> Sarek_cpu_runtime.flush_fission_queue q
-      | None -> Sarek_cpu_runtime.flush_fission ())
+      | Some q -> Sarek.Sarek_cpu_runtime.flush_fission_queue q
+      | None -> Sarek.Sarek_cpu_runtime.flush_fission ())
   | _ ->
       (* Other devices: use standard flush *)
       Devices.flush dev ?queue_id ()

@@ -323,11 +323,11 @@ let expand_sarek_intrinsic_fun ~ctxt payload =
         (* Expose the device function for extensions to chain to.
            The user provides the device function directly. *)
         [%stri
-          let [%p device_fun_pat] : Spoc.Devices.device -> string =
+          let [%p device_fun_pat] : Sarek_core.Device.t -> string =
             [%e device_expr]];
         (* Mutable ref for extension chaining *)
         [%stri
-          let [%p device_fun_ref_pat] : (Spoc.Devices.device -> string) ref =
+          let [%p device_fun_ref_pat] : (Sarek_core.Device.t -> string) ref =
             ref [%e Ast_builder.Default.evar ~loc device_fun_name]];
         (* Runtime registration for JIT - uses the ref for extensibility *)
         [%stri

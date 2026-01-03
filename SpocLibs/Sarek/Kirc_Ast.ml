@@ -114,9 +114,9 @@ type k_ext =
       (** Global float32 variable by name - for PPX quoting *)
   | GFloat64Var of string
       (** Global float64 variable by name - for PPX quoting *)
-  | Native of (Spoc.Devices.device -> string)
+  | Native of (Sarek_core.Device.t -> string)
   | NativeWithFallback of {
-      gpu : Spoc.Devices.device -> string;  (** GPU code generator *)
+      gpu : Sarek_core.Device.t -> string;  (** GPU code generator *)
       ocaml : Obj.t;  (** OCaml fallback function (polymorphic) *)
     }
       (** Native code with GPU and OCaml fallback. The ocaml field holds a

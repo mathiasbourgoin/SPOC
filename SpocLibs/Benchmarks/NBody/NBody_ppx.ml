@@ -13,7 +13,16 @@
 
   0. You just DO WHAT THE FUCK YOU WANT TO.
 *)
-open Spoc
+
+module V2_Device = Sarek_core.Device
+module V2_Vector = Sarek_core.Vector
+module V2_Transfer = Sarek_core.Transfer
+module Std = Sarek_stdlib.Std
+
+(* Force backend registration *)
+let () =
+  Sarek_cuda.Cuda_plugin_v2.init () ;
+  Sarek_opencl.Opencl_plugin_v2.init ()
 
 type float32 = float
 
@@ -30,13 +39,11 @@ let measure_time f s =
   incr cpt ;
   a
 
-let devices = measure_time Spoc.Devices.init "init"
-
 let blockSize = ref 64l
 
 let softening = ref 1e-9
 
-(* PPX version: ktype -> [@@sarek.type] *)
+(* Custom type for float4 *)
 type float4 = {
   mutable x : float32;
   mutable y : float32;
@@ -51,12 +58,10 @@ let randomizeBodies data n =
     and y = (2.0 *. Random.float 1.) -. 1.
     and z = (2.0 *. Random.float 1.) -. 1.
     and w = 0. in
-    Mem.unsafe_set data i {x; y; z; w}
+    V2_Vector.set data i {x; y; z; w}
   done
 
-(* PPX version: kern -> [%kernel fun ...]
-   Use a function to avoid value restriction issues with kernel objects
-   that contain mutable state (hashtables for binaries, sources, etc.) *)
+(* Kernel wrapped in a function to avoid value restriction *)
 let bodyForce () =
   [%kernel
     fun (p : float4 vector) (v : float4 vector) (dt : float32) (n : int32) ->
@@ -110,54 +115,64 @@ let () =
   in
   Arg.parse [arg1; arg2; arg3] (fun _ -> ()) "" ;
 
+  let devices =
+    measure_time
+      (fun () -> V2_Device.init ~frameworks:["CUDA"; "OpenCL"] ())
+      "init"
+  in
+  if Array.length devices = 0 then begin
+    Printf.eprintf "No devices found\n%!" ;
+    exit 1
+  end ;
   let dev = devices.(!devid) in
   let dt = 0.01 in
 
-  Printf.printf
-    "Will use device : %s\n%!"
-    dev.Spoc.Devices.general_info.Spoc.Devices.name ;
-  let bodiesPos = Vector.create (Vector.Custom float4_custom) !nBodies in
-  let bodiesVel = Vector.create (Vector.Custom float4_custom) !nBodies in
+  Printf.printf "Will use device : %s (%s)\n%!" dev.V2_Device.name dev.V2_Device.framework ;
+
+  (* Create V2 vectors with custom type *)
+  let bodiesPos = V2_Vector.create_custom float4_custom_v2 !nBodies in
+  let bodiesVel = V2_Vector.create_custom float4_custom_v2 !nBodies in
 
   randomizeBodies bodiesPos !nBodies ;
   randomizeBodies bodiesVel !nBodies ;
 
   let blockSize = Int32.to_int !blockSize in
   let blocksPerGrid = (!nBodies + blockSize - 1) / blockSize in
-  let block = Kernel.{blockX = blockSize; blockY = 1; blockZ = 1}
-  and grid = Kernel.{gridX = blocksPerGrid; gridY = 1; gridZ = 1} in
-  measure_time
-    (fun () ->
-      for _iter = 1 to !nIters do
-        ignore
-          (Sarek.Kirc.gen
-             ~only:Devices.Cuda
-             ~nvrtc_options:[|"-ftz=true"|]
-             (bodyForce ())
-             dev)
-      done)
-    "CUDA Code generation" ;
+  let block = Sarek.Execute.dims1d blockSize in
+  let grid = Sarek.Execute.dims1d blocksPerGrid in
 
-  measure_time
-    (fun () ->
-      for _iter = 1 to !nIters do
-        ignore (Sarek.Kirc.gen ~only:Devices.OpenCL (bodyForce ()) dev)
-      done)
-    "OpenCL Code generation" ;
+  (* Get V2 IR *)
+  let _, kirc = bodyForce () in
+  let ir =
+    match kirc.Sarek.Kirc_types.body_v2 with
+    | Some ir -> ir
+    | None -> failwith "Kernel has no V2 IR"
+  in
 
   let tot_time = ref 0.0 in
 
   for iter = 1 to !nIters do
     let t0 = Unix.gettimeofday () in
-    Sarek.Kirc.run
-      (bodyForce ())
-      (bodiesPos, bodiesVel, dt, !nBodies)
-      (block, grid)
-      0
-      dev ;
+    Sarek.Execute.run_vectors
+      ~device:dev
+      ~ir
+      ~args:
+        [
+          Sarek.Execute.Vec bodiesPos;
+          Sarek.Execute.Vec bodiesVel;
+          Sarek.Execute.Float32 dt;
+          Sarek.Execute.Int32 (Int32.of_int !nBodies);
+        ]
+      ~block
+      ~grid
+      () ;
+    V2_Transfer.flush dev ;
+
+    (* Update positions on CPU *)
     for i = 0 to !nBodies - 1 do
-      let bP, bV = (Mem.get bodiesPos i, Mem.get bodiesVel i) in
-      Mem.set
+      let bP = V2_Vector.get bodiesPos i in
+      let bV = V2_Vector.get bodiesVel i in
+      V2_Vector.set
         bodiesPos
         i
         {

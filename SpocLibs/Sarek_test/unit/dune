@@ -22,13 +22,7 @@
  (flags
   (:standard -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc)))
 
-; Interpreter tests use sarek library directly (no ppx needed)
-
-(test
- (name test_interp)
- (libraries sarek)
- (flags
-  (:standard -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc)))
+; Interpreter tests removed - Sarek_interp was legacy SPOC-dependent
 
 ; Float32 module tests
 

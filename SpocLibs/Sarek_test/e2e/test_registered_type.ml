@@ -2,16 +2,13 @@
  * E2E test: register a Sarek record type outside kernels via [%sarek.type].
  ******************************************************************************)
 
-open Spoc
 module V2_Vector = Sarek_core.Vector
 module V2_Device = Sarek_core.Device
 module V2_Transfer = Sarek_core.Transfer
 
 (* Force backend registration *)
 let () =
-  Sarek_cuda.Cuda_plugin.init () ;
   Sarek_cuda.Cuda_plugin_v2.init () ;
-  Sarek_opencl.Opencl_plugin.init () ;
   Sarek_opencl.Opencl_plugin_v2.init ()
 
 type float32 = float
@@ -42,7 +39,7 @@ let run_v2 dev n bax bay =
   let grid_x = (n + threads - 1) / threads in
   let _, kirc = kernel in
   let ir =
-    match kirc.Sarek.Kirc.body_v2 with
+    match kirc.Sarek.Kirc_types.body_v2 with
     | Some ir -> ir
     | None -> failwith "Kernel has no V2 IR"
   in
@@ -77,7 +74,7 @@ let run_v2 dev n bax bay =
 let () =
   let _, kirc_kernel = kernel in
   print_endline "=== Registered type IR ===" ;
-  Sarek.Kirc.print_ast kirc_kernel.Sarek.Kirc.body ;
+  Sarek.Kirc_Ast.print_ast kirc_kernel.Sarek.Kirc_types.body ;
   print_endline "==========================" ;
 
   let v2_devs =

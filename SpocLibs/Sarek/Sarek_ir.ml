@@ -163,6 +163,9 @@ type kernel = {
   kern_types : (string * (string * elttype) list) list;
       (** Record type definitions: (type_name, [(field_name, field_type); ...])
       *)
+  kern_variants : (string * (string * elttype list) list) list;
+      (** Variant type definitions: (type_name, [(constructor_name, payload_types); ...])
+      *)
   kern_funcs : helper_func list;  (** Helper functions defined in kernel scope *)
   kern_native_fn : native_fn_t option;
       (** Optional pre-compiled native function for CPU execution *)
@@ -408,6 +411,9 @@ let pp_kernel fmt k =
   List.iter (fun d -> Format.fprintf fmt "  %a@," pp_decl d) k.kern_locals ;
   Format.fprintf fmt "  %a@," pp_stmt k.kern_body ;
   Format.fprintf fmt "}@]"
+
+let print_kernel k =
+  Format.fprintf Format.std_formatter "%a@." pp_kernel k
 
 (** {1 Conversion from Kirc_Ast.k_ext} *)
 
@@ -759,6 +765,7 @@ let rec of_k_ext : Kirc_Ast.k_ext -> kernel = function
         kern_locals = [];
         kern_body = body';
         kern_types = [];
+        kern_variants = [];
         kern_funcs = [];
         kern_native_fn = None;
       }

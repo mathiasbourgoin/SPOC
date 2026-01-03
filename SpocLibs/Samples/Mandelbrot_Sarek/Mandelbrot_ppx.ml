@@ -1,8 +1,19 @@
 (******************************************************************************
  * Mandelbrot Sarek (PPX) - headless PPM output
+ * V2 runtime only.
  ******************************************************************************)
 
-open Spoc
+module V2_Device = Sarek_core.Device
+module V2_Vector = Sarek_core.Vector
+module V2_Transfer = Sarek_core.Transfer
+module Std = Sarek_stdlib.Std
+
+(* Force backend registration *)
+let () =
+  Sarek_cuda.Cuda_plugin_v2.init () ;
+  Sarek_opencl.Opencl_plugin_v2.init () ;
+  Sarek_native.Native_plugin_v2.init () ;
+  Sarek_interpreter.Interpreter_plugin_v2.init ()
 
 let make_mandelbrot () =
   [%kernel
@@ -14,7 +25,6 @@ let make_mandelbrot () =
         (shifty : int)
         (zoom : float32) ->
       let open Std in
-      (* Use global_idx_x/y to enable Simple2D optimization for native runtime *)
       let x = global_idx_x in
       let y = global_idx_y in
       if x < width && y < height then begin
@@ -46,13 +56,13 @@ let color_rgb n max_iter =
     in
     (f (n + 16), f (n + 32), f n)
 
-let write_ppm filename width height data max_iter =
+let write_ppm filename width height (data : (int32, Bigarray.int32_elt) V2_Vector.t) max_iter =
   let oc = open_out_bin filename in
   Printf.fprintf oc "P6\n%d %d\n255\n" width height ;
   for y = 0 to pred height do
     for x = 0 to pred width do
       let idx = (y * width) + x in
-      let v = Int32.to_int (Spoc.Mem.unsafe_get data idx) in
+      let v = Int32.to_int (V2_Vector.get data idx) in
       let r, g, b = color_rgb v max_iter in
       output_byte oc r ;
       output_byte oc g ;
@@ -77,16 +87,12 @@ let () =
   let zoom = ref 1.0 in
   let dev_id = ref 0 in
   let open_file = ref false in
-  let dump_opencl = ref None in
   let args =
     [
       ("-ppm", Arg.String (fun s -> output_file := s), "output PPM file");
       ( "-open",
         Arg.Unit (fun () -> open_file := true),
         "open output PPM with xdg-open" );
-      ( "-dump-opencl",
-        Arg.String (fun s -> dump_opencl := Some s),
-        "write OpenCL kernel to file" );
       ("-width", Arg.Int (fun v -> width := v), "image width [800]");
       ("-height", Arg.Int (fun v -> height := v), "image height [800]");
       ("-max_iter", Arg.Int (fun v -> max_iter := v), "max iterations [512]");
@@ -98,62 +104,53 @@ let () =
   in
   Arg.parse args (fun _ -> ()) "" ;
 
-  let devs = Devices.init () in
+  let devs =
+    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+  in
   if Array.length devs = 0 then begin
     Printf.eprintf "No GPU devices found\n%!" ;
     exit 1
   end ;
   let dev = devs.(!dev_id) in
-  Printf.printf "Using device: %s\n%!" dev.Devices.general_info.Devices.name ;
+  Printf.printf "Using device: %s (%s)\n%!" dev.V2_Device.name dev.V2_Device.framework ;
 
   let w = !width in
   let h = !height in
   let total = w * h in
-  let img = Spoc.Vector.create Spoc.Vector.int32 ~dev total in
+  let img = V2_Vector.create V2_Vector.int32 total in
 
-  let threads =
-    match dev.Devices.specific_info with
-    | Devices.OpenCLInfo clI -> (
-        match clI.Devices.device_type with
-        | Devices.CL_DEVICE_TYPE_CPU -> 1
-        | _ -> 16)
-    | _ -> 16
+  (* Get V2 IR *)
+  let _, kirc = make_mandelbrot () in
+  let ir =
+    match kirc.Sarek.Kirc_types.body_v2 with
+    | Some ir -> ir
+    | None -> failwith "Kernel has no V2 IR"
   in
+
+  let threads = if dev.V2_Device.capabilities.is_cpu then 1 else 16 in
   let grid_x = (w + threads - 1) / threads in
   let grid_y = (h + threads - 1) / threads in
-  let block =
-    {
-      Spoc.Kernel.blockX = threads;
-      Spoc.Kernel.blockY = threads;
-      Spoc.Kernel.blockZ = 1;
-    }
-  in
-  let grid =
-    {
-      Spoc.Kernel.gridX = grid_x;
-      Spoc.Kernel.gridY = grid_y;
-      Spoc.Kernel.gridZ = 1;
-    }
-  in
+  let block = Sarek.Execute.dims2d threads threads in
+  let grid = Sarek.Execute.dims2d grid_x grid_y in
 
-  let mandelbrot = make_mandelbrot () in
-  (match !dump_opencl with
-  | None -> ()
-  | Some path ->
-      let src = Sarek.Kirc.opencl_source mandelbrot dev in
-      let oc = open_out path in
-      output_string oc src ;
-      close_out oc) ;
-  let mandelbrot = Sarek.Kirc.gen mandelbrot dev in
-  Sarek.Kirc.run
-    mandelbrot
-    (img, w, h, !max_iter, !shiftx, !shifty, !zoom)
-    (block, grid)
-    0
-    dev ;
+  Sarek.Execute.run_vectors
+    ~device:dev
+    ~ir
+    ~args:
+      [
+        Sarek.Execute.Vec img;
+        Sarek.Execute.Int w;
+        Sarek.Execute.Int h;
+        Sarek.Execute.Int !max_iter;
+        Sarek.Execute.Int !shiftx;
+        Sarek.Execute.Int !shifty;
+        Sarek.Execute.Float32 !zoom;
+      ]
+    ~block
+    ~grid
+    () ;
+  V2_Transfer.flush dev ;
 
-  Spoc.Mem.to_cpu img () ;
-  Spoc.Devices.flush dev () ;
   write_ppm !output_file w h img !max_iter ;
   if !open_file then open_ppm !output_file ;
   Printf.printf "Wrote %s\n%!" !output_file

@@ -147,9 +147,13 @@ let rec gen_expr buf = function
           gen_expr buf e)
         fields ;
       Buffer.add_string buf "}"
-  | EVariant (_, constr, []) -> Buffer.add_string buf constr
+  | EVariant (type_name, constr, []) ->
+      (* Nullary constructor - use constructor function for proper struct init *)
+      let mangled = mangle_name type_name in
+      Buffer.add_string buf ("make_" ^ mangled ^ "_" ^ constr ^ "()")
   | EVariant (type_name, constr, args) ->
-      Buffer.add_string buf ("make_" ^ type_name ^ "_" ^ constr ^ "(") ;
+      let mangled = mangle_name type_name in
+      Buffer.add_string buf ("make_" ^ mangled ^ "_" ^ constr ^ "(") ;
       List.iteri
         (fun i e ->
           if i > 0 then Buffer.add_string buf ", " ;
@@ -673,12 +677,79 @@ let generate_for_device ~(device : Device.t) (k : kernel) : string =
   current_device := None ;
   result
 
+(** Generate variant type definition for OpenCL *)
+let gen_variant_def buf (name, constrs) =
+  let mangled = mangle_name name in
+  (* Enum for tags - use simple names for switch case labels *)
+  Buffer.add_string buf "enum { " ;
+  List.iteri (fun i (cname, _) ->
+    if i > 0 then Buffer.add_string buf ", " ;
+    Buffer.add_string buf cname ;
+    Buffer.add_string buf " = " ;
+    Buffer.add_string buf (string_of_int i))
+    constrs ;
+  Buffer.add_string buf " };\n" ;
+  (* Struct with tag and union *)
+  Buffer.add_string buf ("typedef struct {\n  int tag;\n") ;
+  (* Generate union if any constructor has payload *)
+  let has_payload = List.exists (fun (_, args) -> args <> []) constrs in
+  if has_payload then begin
+    Buffer.add_string buf "  union {\n" ;
+    List.iter (fun (cname, args) ->
+      match args with
+      | [] -> () (* No payload for this constructor *)
+      | [ty] ->
+          Buffer.add_string buf "    " ;
+          Buffer.add_string buf (opencl_type_of_elttype ty) ;
+          Buffer.add_string buf (" " ^ cname ^ "_v;\n")
+      | _ ->
+          (* Multiple args - generate struct *)
+          Buffer.add_string buf ("    struct { ") ;
+          List.iteri (fun i ty ->
+            if i > 0 then Buffer.add_string buf " " ;
+            Buffer.add_string buf (opencl_type_of_elttype ty) ;
+            Buffer.add_string buf (Printf.sprintf " _%d;" i))
+            args ;
+          Buffer.add_string buf (" } " ^ cname ^ "_v;\n"))
+      constrs ;
+    Buffer.add_string buf "  } data;\n"
+  end ;
+  Buffer.add_string buf ("} " ^ mangled ^ ";\n\n") ;
+  (* Constructor functions *)
+  List.iteri (fun _i (cname, args) ->
+    Buffer.add_string buf ("static inline " ^ mangled ^ " make_" ^ mangled ^ "_" ^ cname ^ "(") ;
+    (match args with
+    | [] -> ()
+    | [ty] ->
+        Buffer.add_string buf (opencl_type_of_elttype ty) ;
+        Buffer.add_string buf " v"
+    | _ ->
+        List.iteri (fun j ty ->
+          if j > 0 then Buffer.add_string buf ", " ;
+          Buffer.add_string buf (opencl_type_of_elttype ty) ;
+          Buffer.add_string buf (Printf.sprintf " v%d" j))
+          args) ;
+    Buffer.add_string buf (") {\n  " ^ mangled ^ " r;\n") ;
+    Buffer.add_string buf ("  r.tag = " ^ cname ^ ";\n") ;
+    (match args with
+    | [] -> ()
+    | [_] -> Buffer.add_string buf ("  r.data." ^ cname ^ "_v = v;\n")
+    | _ ->
+        List.iteri (fun j _ ->
+          Buffer.add_string buf (Printf.sprintf "  r.data.%s_v._%d = v%d;\n" cname j j))
+          args) ;
+    Buffer.add_string buf "  return r;\n}\n\n")
+    constrs
+
 (** Generate OpenCL source with custom type definitions *)
 let generate_with_types ~(types : (string * (string * elttype) list) list)
     (k : kernel) : string =
   let buf = Buffer.create 4096 in
 
-  (* Type definitions *)
+  (* Variant type definitions first (may be needed by records) *)
+  List.iter (gen_variant_def buf) k.kern_variants ;
+
+  (* Record type definitions *)
   List.iter
     (fun (name, fields) ->
       Buffer.add_string buf "typedef struct {\n" ;

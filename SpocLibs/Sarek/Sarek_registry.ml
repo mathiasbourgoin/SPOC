@@ -37,7 +37,7 @@
 (** Information about a primitive/intrinsic type (float32, int64, etc.) *)
 type type_info = {
   ti_name : string;
-  ti_device : Spoc.Devices.device -> string;
+  ti_device : Sarek_core.Device.t -> string;
   ti_size : int; (* bytes *)
 }
 
@@ -65,7 +65,7 @@ type variant_info = {vi_name : string; vi_constructors : constructor_info list}
 type fun_info = {
   fi_name : string;
   fi_arity : int;
-  fi_device : Spoc.Devices.device -> string;
+  fi_device : Sarek_core.Device.t -> string;
   fi_arg_types : string list;
   fi_ret_type : string;
 }
@@ -197,13 +197,11 @@ let () =
  * Helper function for device-specific code
  ******************************************************************************)
 
-let cuda_or_opencl dev cuda_code opencl_code =
-  match dev.Spoc.Devices.specific_info with
-  | Spoc.Devices.CudaInfo _ -> cuda_code
-  | Spoc.Devices.OpenCLInfo _ -> opencl_code
-  | Spoc.Devices.InterpreterInfo _ -> cuda_code
-  | Spoc.Devices.NativeInfo _ -> cuda_code
-(* Use CUDA syntax for interpreter and native *)
+let cuda_or_opencl (dev : Sarek_core.Device.t) cuda_code opencl_code =
+  match dev.framework with
+  | "OpenCL" -> opencl_code
+  | "CUDA" | "Native" | "Interpreter" | _ -> cuda_code
+(* Use CUDA syntax for CUDA, interpreter, and native *)
 
 (* Note: All intrinsics (Float32, Float64, Int32, Int64, GPU) are defined in
    Sarek_stdlib modules and auto-register via %sarek_intrinsic when that

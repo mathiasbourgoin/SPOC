@@ -372,16 +372,13 @@ let core_type_of_typ ~loc (t : typ) : core_type option =
   | TReg "int64" -> Some [%type: int]
   | TReg ("float32" | "float64") -> Some [%type: float]
   | TVec elem -> (
+      (* V2: Use Sarek_core.Vector.t instead of Spoc.Vector.vector *)
       match repr elem with
-      | TPrim TInt32 ->
-          Some [%type: (int32, Bigarray.int32_elt) Spoc.Vector.vector]
-      | TReg "int64" ->
-          Some [%type: (int64, Bigarray.int64_elt) Spoc.Vector.vector]
-      | TReg "float32" ->
-          Some [%type: (float, Bigarray.float32_elt) Spoc.Vector.vector]
-      | TReg "float64" ->
-          Some [%type: (float, Bigarray.float64_elt) Spoc.Vector.vector]
-      | TPrim TBool -> Some [%type: (bool, bool) Spoc.Vector.vector]
+      | TPrim TInt32 -> Some [%type: (int32, _) Sarek_core.Vector.t]
+      | TReg "int64" -> Some [%type: (int64, _) Sarek_core.Vector.t]
+      | TReg "float32" -> Some [%type: (float, _) Sarek_core.Vector.t]
+      | TReg "float64" -> Some [%type: (float, _) Sarek_core.Vector.t]
+      | TPrim TBool -> Some [%type: (bool, _) Sarek_core.Vector.t]
       | TRecord _ | TVariant _ ->
           (* Don't add type constraint for custom vectors - let OCaml infer *)
           None
@@ -407,11 +404,8 @@ let kernel_ctor_name (t : typ) : string =
   | _ -> "Vector"
 
 let kernel_arg_expr ~loc ty var =
-  match repr ty with
-  | TVec _ ->
-      let relaxed = [%expr Spoc.Kernel.relax_vector [%e var]] in
-      kernel_ctor_expr ~loc (kernel_ctor_name ty) relaxed
-  | _ -> kernel_ctor_expr ~loc (kernel_ctor_name ty) var
+  (* V2: Don't use Spoc.Kernel.relax_vector - just pass vectors directly *)
+  kernel_ctor_expr ~loc (kernel_ctor_name ty) var
 
 let kernel_arg_pat ~loc ty var = kernel_ctor_pat ~loc (kernel_ctor_name ty) var
 
@@ -452,25 +446,10 @@ let build_kernel_args ~loc (params : tparam list) =
     Ast_builder.Default.ppat_array ~loc pats
   in
   let list_to_args_expr =
-    let first_vec = ref false in
-    let exprs =
-      List.map2
-        (fun p (_, v) ->
-          let base =
-            match repr p.tparam_type with
-            | TVec _ ->
-                if not !first_vec then (
-                  first_vec := true ;
-                  v)
-                else [%expr Spoc.Kernel.relax_vector [%e v]]
-            | _ -> v
-          in
-          match core_type_of_typ ~loc p.tparam_type with
-          | Some ty -> Ast_builder.Default.pexp_constraint ~loc base ty
-          | None -> base)
-        params
-        vars
-    in
+    (* Don't add type constraints here - let types be inferred from context.
+       The args_pat already has user's type annotations which may use either
+       Spoc.Vector.vector or Sarek_core.Vector.t depending on what's in scope. *)
+    let exprs = List.map2 (fun _p (_, v) -> v) params vars in
     match exprs with
     | [] -> [%expr ()]
     | [e] -> e
@@ -671,62 +650,45 @@ let quote_kernel ~loc ?(native_kernel : tkernel option)
   let args_pat, args_array_expr, list_to_args_pat, list_to_args_expr =
     build_kernel_args ~loc kernel.tkern_params
   in
+  (* Suppress unused variable warnings for legacy args handling *)
+  let _ = (args_pat, args_array_expr, list_to_args_pat, list_to_args_expr) in
   [%expr
-    let open Spoc in
     let () =
       List.iter
-        Sarek.Kirc.register_constructor_string
+        Sarek.Kirc_types.register_constructor_string
         [%e
           Ast_builder.Default.elist
             ~loc
             (List.map (Ast_builder.Default.estring ~loc) constructors)]
     in
-    let module M = struct
-      let exec_fun [%p args_pat] = Spoc.Kernel.exec [%e args_array_expr]
-
-      class ['a, 'b] sarek_kern =
-        object
-          inherit ['a, 'b] Spoc.Kernel.spoc_kernel "kirc_kernel" "spoc_dummy"
-
-          method exec = exec_fun
-
-          method args_to_list = fun [%p args_pat] -> [%e args_array_expr]
-
-          method list_to_args =
-            function
-            | [%p list_to_args_pat] -> [%e list_to_args_expr]
-            | _ -> failwith "spoc_kernel_extension error"
-        end
-    end in
-    let open Sarek.Kirc in
+    let open Sarek.Kirc_types in
     let body_ir = [%e quote_k_ext ~loc ir] in
     let ret_ir = [%e quote_k_ext ~loc ret_val] in
     let _intrinsic_check = [%e generate_intrinsic_check ~loc kernel] in
-    (* cpu_kern_fn must be defined before body_v2_ir which references it *)
-    let cpu_kern_fn =
-      [%e Sarek_native_gen.gen_cpu_kern_wrapper ~loc kernel_for_native]
+    (* v2_native_fn for V2 path (uses Sarek_core.Vector) *)
+    let v2_native_fn =
+      [%e Sarek_native_gen.gen_cpu_kern_v2_wrapper ~loc kernel_for_native]
     in
-    (* V2 native execution not yet fully implemented - set native_fn to None.
-       This makes Native backend fall back to IR interpretation. *)
     let body_v2_ir =
       [%e
         match ir_v2 with
         | Some k ->
-            (* No V2 native function yet - pass None to fall back to interpretation *)
-            [%expr Some [%e Sarek_quote_ir.quote_kernel ~loc k]]
+            (* Pass V2 native function for Native backend execution *)
+            [%expr Some [%e Sarek_quote_ir.quote_kernel ~loc ~native_fn_expr:[%expr v2_native_fn] k]]
         | None -> [%expr None]]
     in
     let kirc_kernel =
       {
-        Sarek.Kirc.ml_kern = (fun () -> ());
-        Sarek.Kirc.body = body_ir;
-        Sarek.Kirc.body_v2 = body_v2_ir;
-        Sarek.Kirc.ret_val = (ret_ir, Spoc.Vector.int32);
-        Sarek.Kirc.extensions = [||];
-        Sarek.Kirc.cpu_kern = Some cpu_kern_fn;
+        Sarek.Kirc_types.ml_kern = (fun () -> ());
+        Sarek.Kirc_types.body = body_ir;
+        Sarek.Kirc_types.body_v2 = body_v2_ir;
+        Sarek.Kirc_types.ret_val = (ret_ir, ());
+        Sarek.Kirc_types.extensions = [||];
+        (* Legacy SPOC cpu_kern removed - use V2 native_fn via body_v2 *)
+        Sarek.Kirc_types.cpu_kern = None;
       }
     in
-    (new M.sarek_kern, kirc_kernel)]
+    ((), kirc_kernel)]
 
 (******************************************************************************
  * Sarek_ast Quoting

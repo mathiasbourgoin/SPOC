@@ -1,10 +1,8 @@
 (executable
  (name mandelbrot_ppx)
- (enabled_if
-  (= %{profile} "cuda"))
  (modules mandelbrot_ppx)
- (libraries spoc sarek sarek.stdlib unix)
+ (libraries sarek sarek.stdlib sarek_core sarek_cuda sarek_opencl sarek_native sarek_interpreter unix)
  (preprocess
   (pps sarek_ppx))
  (flags
-  (:standard -w -33 -ccopt -L$CUDA_PATH -cclib -lnvrtc)))
+  (:standard -w -33 -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc)))

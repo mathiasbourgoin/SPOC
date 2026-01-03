@@ -5,16 +5,13 @@
  * Uses [@@sarek.type] for V2-compatible custom vector types.
  ******************************************************************************)
 
-open Spoc
 module V2_Vector = Sarek_core.Vector
 module V2_Device = Sarek_core.Device
 module V2_Transfer = Sarek_core.Transfer
 
 (* Force backend registration *)
 let () =
-  Sarek_cuda.Cuda_plugin.init () ;
   Sarek_cuda.Cuda_plugin_v2.init () ;
-  Sarek_opencl.Opencl_plugin.init () ;
   Sarek_opencl.Opencl_plugin_v2.init ()
 
 let cfg = Test_helpers.default_config ()
@@ -51,23 +48,6 @@ let point2d_distance_kirc =
           distances.(tid) <- sqrt ((p.px *. p.px) +. (p.py *. p.py))
         end]
 
-let run_point2d_test dev =
-  Printf.printf "  SPOC codegen: %!" ;
-  let t0 = Unix.gettimeofday () in
-  let kern =
-    [%kernel
-      fun (points : point2d vector) (distances : float32 vector) (n : int32) ->
-        let tid = thread_idx_x + (block_dim_x * block_idx_x) in
-        if tid < n then begin
-          let p = points.(tid) in
-          distances.(tid) <- sqrt ((p.px *. p.px) +. (p.py *. p.py))
-        end]
-  in
-  ignore (Sarek.Kirc.gen kern dev) ;
-  let t1 = Unix.gettimeofday () in
-  Printf.printf "%.2f ms\n%!" ((t1 -. t0) *. 1000.0) ;
-  (true, (t1 -. t0) *. 1000.0)
-
 let run_point2d_test_v2 dev n =
   let points = V2_Vector.create_custom point2d_custom_v2 n in
   let distances = V2_Vector.create V2_Vector.float32 n in
@@ -78,7 +58,7 @@ let run_point2d_test_v2 dev n =
   let threads = 64 in
   let grid_x = (n + threads - 1) / threads in
   let ir =
-    match point2d_distance_kirc.Sarek.Kirc.body_v2 with
+    match point2d_distance_kirc.Sarek.Kirc_types.body_v2 with
     | Some ir -> ir
     | None -> failwith "Kernel has no V2 IR"
   in
@@ -135,25 +115,6 @@ let point3d_normalize_kirc =
           end
         end]
 
-let run_point3d_test dev =
-  Printf.printf "  SPOC codegen: %!" ;
-  let t0 = Unix.gettimeofday () in
-  let kern =
-    [%kernel
-      fun (points : point3d vector) (n : int32) ->
-        let tid = thread_idx_x + (block_dim_x * block_idx_x) in
-        if tid < n then begin
-          let p = points.(tid) in
-          let len = sqrt ((p.x *. p.x) +. (p.y *. p.y) +. (p.z *. p.z)) in
-          if len > 0.0 then
-            points.(tid) <- {x = p.x /. len; y = p.y /. len; z = p.z /. len}
-        end]
-  in
-  ignore (Sarek.Kirc.gen kern dev) ;
-  let t1 = Unix.gettimeofday () in
-  Printf.printf "%.2f ms\n%!" ((t1 -. t0) *. 1000.0) ;
-  (true, (t1 -. t0) *. 1000.0)
-
 let run_point3d_test_v2 dev n =
   let points = V2_Vector.create_custom point3d_custom_v2 n in
   for i = 0 to n - 1 do
@@ -163,7 +124,7 @@ let run_point3d_test_v2 dev n =
   let threads = 64 in
   let grid_x = (n + threads - 1) / threads in
   let ir =
-    match point3d_normalize_kirc.Sarek.Kirc.body_v2 with
+    match point3d_normalize_kirc.Sarek.Kirc_types.body_v2 with
     | Some ir -> ir
     | None -> failwith "Kernel has no V2 IR"
   in
@@ -213,30 +174,6 @@ let particle_update_kirc =
             }
         end]
 
-let run_particle_test dev =
-  Printf.printf "  SPOC codegen: %!" ;
-  let t0 = Unix.gettimeofday () in
-  let kern =
-    [%kernel
-      fun (particles : particle vector) (dt : float32) (n : int32) ->
-        let tid = thread_idx_x + (block_dim_x * block_idx_x) in
-        if tid < n then begin
-          let p = particles.(tid) in
-          particles.(tid) <-
-            {
-              pos_x = p.pos_x +. (p.vel_x *. dt);
-              pos_y = p.pos_y +. (p.vel_y *. dt);
-              vel_x = p.vel_x;
-              vel_y = p.vel_y;
-              mass = p.mass;
-            }
-        end]
-  in
-  ignore (Sarek.Kirc.gen kern dev) ;
-  let t1 = Unix.gettimeofday () in
-  Printf.printf "%.2f ms\n%!" ((t1 -. t0) *. 1000.0) ;
-  (true, (t1 -. t0) *. 1000.0)
-
 let run_particle_test_v2 dev n =
   let particles = V2_Vector.create_custom particle_custom_v2 n in
   let dt = 0.1 in
@@ -250,7 +187,7 @@ let run_particle_test_v2 dev n =
   let threads = 64 in
   let grid_x = (n + threads - 1) / threads in
   let ir =
-    match particle_update_kirc.Sarek.Kirc.body_v2 with
+    match particle_update_kirc.Sarek.Kirc_types.body_v2 with
     | Some ir -> ir
     | None -> failwith "Kernel has no V2 IR"
   in
@@ -319,35 +256,6 @@ let color_blend_kirc =
             }
         end]
 
-let run_color_test dev =
-  Printf.printf "  SPOC codegen: %!" ;
-  let t0 = Unix.gettimeofday () in
-  let kern =
-    [%kernel
-      fun (c1 : color vector)
-          (c2 : color vector)
-          (out : color vector)
-          (t : float32)
-          (n : int32) ->
-        let tid = thread_idx_x + (block_dim_x * block_idx_x) in
-        if tid < n then begin
-          let a = c1.(tid) in
-          let b = c2.(tid) in
-          let omt = 1.0 -. t in
-          out.(tid) <-
-            {
-              r = (a.r *. omt) +. (b.r *. t);
-              g = (a.g *. omt) +. (b.g *. t);
-              b = (a.b *. omt) +. (b.b *. t);
-              a = (a.a *. omt) +. (b.a *. t);
-            }
-        end]
-  in
-  ignore (Sarek.Kirc.gen kern dev) ;
-  let t1 = Unix.gettimeofday () in
-  Printf.printf "%.2f ms\n%!" ((t1 -. t0) *. 1000.0) ;
-  (true, (t1 -. t0) *. 1000.0)
-
 let run_color_test_v2 dev n =
   let c1 = V2_Vector.create_custom color_custom_v2 n in
   let c2 = V2_Vector.create_custom color_custom_v2 n in
@@ -361,7 +269,7 @@ let run_color_test_v2 dev n =
   let threads = 64 in
   let grid_x = (n + threads - 1) / threads in
   let ir =
-    match color_blend_kirc.Sarek.Kirc.body_v2 with
+    match color_blend_kirc.Sarek.Kirc_types.body_v2 with
     | Some ir -> ir
     | None -> failwith "Kernel has no V2 IR"
   in
@@ -415,71 +323,67 @@ let () =
   cfg.size <- c.size ;
   cfg.block_size <- c.block_size ;
 
-  let devs = Devices.init () in
-  if Array.length devs = 0 then begin
-    print_endline "No GPU devices found" ;
-    exit 1
-  end ;
-  Test_helpers.print_devices devs ;
-
-  let dev = Test_helpers.get_device cfg devs in
-  Printf.printf "Using device: %s\n%!" dev.Devices.general_info.Devices.name ;
-
-  print_endline "\n=== SPOC Path ===" ;
-  print_endline "Point2D distance:" ;
-  ignore (run_point2d_test dev) ;
-  print_endline "Point3D normalize:" ;
-  ignore (run_point3d_test dev) ;
-  print_endline "Particle update:" ;
-  ignore (run_particle_test dev) ;
-  print_endline "Color blend:" ;
-  ignore (run_color_test dev) ;
-
   (* V2 execution tests *)
-  print_endline "\n=== V2 Path ===" ;
+  print_endline "=== Complex Types V2 Tests ===" ;
   let v2_devs =
     V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
-  if Array.length v2_devs = 0 then
-    print_endline "No V2 devices found - skipping V2 tests"
-  else begin
-    let v2_dev = v2_devs.(0) in
-    Printf.printf "V2 device: %s\n%!" v2_dev.V2_Device.name ;
-    let n = 1024 in
+  if Array.length v2_devs = 0 then begin
+    print_endline "No devices found" ;
+    exit 1
+  end ;
+  Test_helpers.print_devices v2_devs ;
 
-    print_endline "Point2D distance:" ;
-    (try
-       let ok, time = run_point2d_test_v2 v2_dev n in
-       Printf.printf
-         "  V2 exec: %.2f ms, %s\n%!"
-         time
-         (if ok then "PASSED" else "FAILED")
-     with e -> Printf.printf "  FAIL (%s)\n%!" (Printexc.to_string e)) ;
+  let v2_dev = Test_helpers.get_device cfg v2_devs in
+  Printf.printf "Using device: %s\n%!" v2_dev.V2_Device.name ;
+  let n = cfg.size in
 
-    print_endline "Point3D normalize:" ;
-    (try
-       let ok, time = run_point3d_test_v2 v2_dev n in
-       Printf.printf
-         "  V2 exec: %.2f ms, %s\n%!"
-         time
-         (if ok then "PASSED" else "FAILED")
-     with e -> Printf.printf "  FAIL (%s)\n%!" (Printexc.to_string e)) ;
+  print_endline "\nPoint2D distance:" ;
+  (try
+     let ok, time = run_point2d_test_v2 v2_dev n in
+     Printf.printf
+       "  V2 exec: %.2f ms, %s\n%!"
+       time
+       (if ok then "PASSED" else "FAILED") ;
+     if not ok then exit 1
+   with e ->
+     Printf.printf "  FAIL (%s)\n%!" (Printexc.to_string e) ;
+     exit 1) ;
 
-    print_endline "Particle update:" ;
-    (try
-       let ok, time = run_particle_test_v2 v2_dev n in
-       Printf.printf
-         "  V2 exec: %.2f ms, %s\n%!"
-         time
-         (if ok then "PASSED" else "FAILED")
-     with e -> Printf.printf "  FAIL (%s)\n%!" (Printexc.to_string e)) ;
+  print_endline "Point3D normalize:" ;
+  (try
+     let ok, time = run_point3d_test_v2 v2_dev n in
+     Printf.printf
+       "  V2 exec: %.2f ms, %s\n%!"
+       time
+       (if ok then "PASSED" else "FAILED") ;
+     if not ok then exit 1
+   with e ->
+     Printf.printf "  FAIL (%s)\n%!" (Printexc.to_string e) ;
+     exit 1) ;
 
-    print_endline "Color blend:" ;
-    try
-      let ok, time = run_color_test_v2 v2_dev n in
-      Printf.printf
-        "  V2 exec: %.2f ms, %s\n%!"
-        time
-        (if ok then "PASSED" else "FAILED")
-    with e -> Printf.printf "  FAIL (%s)\n%!" (Printexc.to_string e)
-  end
+  print_endline "Particle update:" ;
+  (try
+     let ok, time = run_particle_test_v2 v2_dev n in
+     Printf.printf
+       "  V2 exec: %.2f ms, %s\n%!"
+       time
+       (if ok then "PASSED" else "FAILED") ;
+     if not ok then exit 1
+   with e ->
+     Printf.printf "  FAIL (%s)\n%!" (Printexc.to_string e) ;
+     exit 1) ;
+
+  print_endline "Color blend:" ;
+  (try
+     let ok, time = run_color_test_v2 v2_dev n in
+     Printf.printf
+       "  V2 exec: %.2f ms, %s\n%!"
+       time
+       (if ok then "PASSED" else "FAILED") ;
+     if not ok then exit 1
+   with e ->
+     Printf.printf "  FAIL (%s)\n%!" (Printexc.to_string e) ;
+     exit 1) ;
+
+  print_endline "\n=== All complex types tests PASSED ==="

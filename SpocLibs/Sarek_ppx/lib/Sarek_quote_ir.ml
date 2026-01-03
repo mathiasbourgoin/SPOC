@@ -337,6 +337,18 @@ let quote_type_def ~loc (name, fields) : expression =
   in
   [%expr [%e quote_string ~loc name], [%e fields_expr]]
 
+(** Quote a variant definition (name, constructors with payload types) *)
+let quote_variant_def ~loc (name, constrs) : expression =
+  let constrs_expr =
+    quote_list
+      ~loc
+      (fun ~loc (cname, payload_types) ->
+        let payloads = quote_list ~loc quote_elttype payload_types in
+        [%expr [%e quote_string ~loc cname], [%e payloads]])
+      constrs
+  in
+  [%expr [%e quote_string ~loc name], [%e constrs_expr]]
+
 (** Quote helper_func *)
 let quote_helper_func ~loc (hf : Ir.helper_func) : expression =
   [%expr
@@ -366,6 +378,7 @@ let quote_kernel ~loc ?(native_fn_expr : expression option) (k : Ir.kernel) :
       kern_locals = [%e quote_list ~loc quote_decl k.kern_locals];
       kern_body = [%e quote_stmt ~loc k.kern_body];
       kern_types = [%e quote_list ~loc quote_type_def k.kern_types];
+      kern_variants = [%e quote_list ~loc quote_variant_def k.kern_variants];
       kern_funcs = [%e quote_list ~loc quote_helper_func k.kern_funcs];
       kern_native_fn = [%e native_fn_field];
     }]

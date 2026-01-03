@@ -132,7 +132,7 @@ let profile_head () =
 let fun_counter = ref 0
 
 let rec parse_fun i a _b n dev =
-  let open Kirc_Ast in
+  let open Sarek.Kirc_Ast in
   let aux _name a =
     let rec aux2 i a =
       match a with
@@ -180,7 +180,7 @@ let rec parse_fun i a _b n dev =
 *)
 
 and parse i a dev =
-  let open Kirc_Ast in
+  let open Sarek.Kirc_Ast in
   let aux = function
     | Kern (args, body) ->
         "kern " ^ parse i args dev ^ " ->\n" ^ profile_head ()

@@ -2,27 +2,24 @@
 
 (dirs ir_extract)
 
+; Main sarek library - V2 path, no SPOC dependency
 (library
  (name sarek)
  (public_name sarek)
- (libraries spoc ctypes sarek_framework sarek_core)
+ (libraries ctypes sarek_framework sarek_core)
  (modules
   Kirc_Ast
+  Kirc_types
   Sarek_ir
   Sarek_ir_cuda
   Sarek_ir_opencl
   Sarek_ir_interp
   Sarek_fusion
-  Sarek_interp
   Sarek_cpu_runtime
   Sarek_float32
-  Gen
-  Kirc
   Kirc_v2
   Kirc_Cuda
   Kirc_OpenCL
-  Profile
-  Skeletons
-  Transform
   Sarek_registry
   Execute))
+

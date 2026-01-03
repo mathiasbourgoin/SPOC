@@ -1,7 +1,11 @@
 open Spoc
 open Kirc
-open Kirc_Ast
+open Sarek.Kirc_Ast
 open Skeletons
+
+(* Module aliases for sarek library modules *)
+module Sarek_ir = Sarek.Sarek_ir
+module Sarek_fusion = Sarek.Sarek_fusion
 (************** Composition ****************)
 
 let a_to_vect = function
@@ -156,7 +160,7 @@ let propagate f expr =
   | _ ->
       failwith
         ("Kirk Transform : "
-        ^ Kirc_Ast.string_of_ast expr
+        ^ Sarek.Kirc_Ast.string_of_ast expr
         ^ " unimplemented yet")
 
 let map2 (ker : ('a, 'b, 'c -> 'd -> 'e, 'f, 'g) sarek_kernel)
@@ -478,7 +482,7 @@ let fuse_pipeline_bodies bodies =
 
 (** Pipeline module for composing and executing fused kernels *)
 module Pipeline = struct
-  type 'a stage = {body : Kirc_Ast.k_ext; info : 'a}
+  type 'a stage = {body : Sarek.Kirc_Ast.k_ext; info : 'a}
 
   (** Create a pipeline from a list of kernel bodies *)
   let of_bodies bodies = List.map (fun b -> {body = b; info = ()}) bodies

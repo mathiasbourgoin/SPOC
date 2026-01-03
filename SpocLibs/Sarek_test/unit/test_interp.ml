@@ -1,7 +1,7 @@
 (** Unit tests for Sarek_interp - CPU interpreter *)
 
 open Sarek.Kirc_Ast
-open Sarek.Sarek_interp
+open Sarek_legacy.Sarek_interp
 
 (** Test: simple thread index intrinsic *)
 let test_thread_idx () =

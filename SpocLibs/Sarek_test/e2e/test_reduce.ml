@@ -1,23 +1,19 @@
 (******************************************************************************
- * E2E test for Sarek PPX - Parallel Reduction with V2 comparison
+ * E2E test for Sarek PPX - Parallel Reduction
  *
  * Tests tree-based parallel reduction with shared memory and barriers.
  * Reduction is a fundamental parallel primitive for computing sums, min, max.
+ * V2 runtime only.
  ******************************************************************************)
 
 (* Module aliases *)
-module Spoc_Vector = Spoc.Vector
-module Spoc_Devices = Spoc.Devices
-module Spoc_Mem = Spoc.Mem
 module V2_Device = Sarek_core.Device
 module V2_Vector = Sarek_core.Vector
 module V2_Transfer = Sarek_core.Transfer
 
 (* Force backend registration *)
 let () =
-  Sarek_cuda.Cuda_plugin.init () ;
   Sarek_cuda.Cuda_plugin_v2.init () ;
-  Sarek_opencl.Opencl_plugin.init () ;
   Sarek_opencl.Opencl_plugin_v2.init ()
 
 let cfg = Test_helpers.default_config ()
@@ -240,132 +236,6 @@ let dot_product_kernel =
       in
       if tid = 0l then output.(block_idx_x) <- sdata.(0l)]
 
-(* ========== SPOC test runners ========== *)
-
-let run_reduce_sum_spoc dev =
-  let n = cfg.size in
-  let block_size = min 256 (Test_helpers.get_block_size cfg dev) in
-  let num_blocks = (n + block_size - 1) / block_size in
-  let inp = !input_sum in
-
-  let input = Spoc_Vector.create Spoc_Vector.float32 n in
-  let output = Spoc_Vector.create Spoc_Vector.float32 num_blocks in
-
-  for i = 0 to n - 1 do
-    Spoc_Mem.set input i inp.(i)
-  done ;
-  for i = 0 to num_blocks - 1 do
-    Spoc_Mem.set output i 0.0
-  done ;
-
-  ignore (Sarek.Kirc.gen reduce_sum_kernel dev) ;
-  let block = {Spoc.Kernel.blockX = block_size; blockY = 1; blockZ = 1} in
-  let grid = {Spoc.Kernel.gridX = num_blocks; gridY = 1; gridZ = 1} in
-
-  let t0 = Unix.gettimeofday () in
-  Sarek.Kirc.run reduce_sum_kernel (input, output, n) (block, grid) 0 dev ;
-  Spoc_Devices.flush dev () ;
-  let t1 = Unix.gettimeofday () in
-  let time_ms = (t1 -. t0) *. 1000.0 in
-
-  let ok =
-    if cfg.verify then begin
-      Spoc_Mem.to_cpu output () ;
-      Spoc_Devices.flush dev () ;
-      let total = ref 0.0 in
-      for i = 0 to num_blocks - 1 do
-        total := !total +. Spoc_Mem.get output i
-      done ;
-      abs_float (!total -. !expected_sum) < 0.1
-    end
-    else true
-  in
-  (time_ms, ok)
-
-let run_reduce_max_spoc dev =
-  let n = cfg.size in
-  let block_size = min 256 (Test_helpers.get_block_size cfg dev) in
-  let num_blocks = (n + block_size - 1) / block_size in
-  let inp = !input_max in
-
-  let input = Spoc_Vector.create Spoc_Vector.float32 n in
-  let output = Spoc_Vector.create Spoc_Vector.float32 num_blocks in
-
-  for i = 0 to n - 1 do
-    Spoc_Mem.set input i inp.(i)
-  done ;
-  for i = 0 to num_blocks - 1 do
-    Spoc_Mem.set output i (-1000000.0)
-  done ;
-
-  ignore (Sarek.Kirc.gen reduce_max_kernel dev) ;
-  let block = {Spoc.Kernel.blockX = block_size; blockY = 1; blockZ = 1} in
-  let grid = {Spoc.Kernel.gridX = num_blocks; gridY = 1; gridZ = 1} in
-
-  let t0 = Unix.gettimeofday () in
-  Sarek.Kirc.run reduce_max_kernel (input, output, n) (block, grid) 0 dev ;
-  Spoc_Devices.flush dev () ;
-  let t1 = Unix.gettimeofday () in
-  let time_ms = (t1 -. t0) *. 1000.0 in
-
-  let ok =
-    if cfg.verify then begin
-      Spoc_Mem.to_cpu output () ;
-      Spoc_Devices.flush dev () ;
-      let max_val = ref (-1000000.0) in
-      for i = 0 to num_blocks - 1 do
-        let v = Spoc_Mem.get output i in
-        if v > !max_val then max_val := v
-      done ;
-      abs_float (!max_val -. !expected_max) < 0.1
-    end
-    else true
-  in
-  (time_ms, ok)
-
-let run_dot_product_spoc dev =
-  let n = cfg.size in
-  let block_size = min 256 (Test_helpers.get_block_size cfg dev) in
-  let num_blocks = (n + block_size - 1) / block_size in
-  let inp_a = !input_a in
-  let inp_b = !input_b in
-
-  let a = Spoc_Vector.create Spoc_Vector.float32 n in
-  let b = Spoc_Vector.create Spoc_Vector.float32 n in
-  let output = Spoc_Vector.create Spoc_Vector.float32 num_blocks in
-
-  for i = 0 to n - 1 do
-    Spoc_Mem.set a i inp_a.(i) ;
-    Spoc_Mem.set b i inp_b.(i)
-  done ;
-  for i = 0 to num_blocks - 1 do
-    Spoc_Mem.set output i 0.0
-  done ;
-
-  ignore (Sarek.Kirc.gen dot_product_kernel dev) ;
-  let block = {Spoc.Kernel.blockX = block_size; blockY = 1; blockZ = 1} in
-  let grid = {Spoc.Kernel.gridX = num_blocks; gridY = 1; gridZ = 1} in
-
-  let t0 = Unix.gettimeofday () in
-  Sarek.Kirc.run dot_product_kernel (a, b, output, n) (block, grid) 0 dev ;
-  Spoc_Devices.flush dev () ;
-  let t1 = Unix.gettimeofday () in
-  let time_ms = (t1 -. t0) *. 1000.0 in
-
-  let ok =
-    if cfg.verify then begin
-      Spoc_Mem.to_cpu output () ;
-      Spoc_Devices.flush dev () ;
-      let total = ref 0.0 in
-      for i = 0 to num_blocks - 1 do
-        total := !total +. Spoc_Mem.get output i
-      done ;
-      abs_float (!total -. !expected_dot) < float_of_int n *. 0.01
-    end
-    else true
-  in
-  (time_ms, ok)
-
 (* ========== V2 test runners ========== *)
 
 let run_reduce_sum_v2 (dev : V2_Device.t) =
@@ -376,7 +246,7 @@ let run_reduce_sum_v2 (dev : V2_Device.t) =
 
   let _, kirc = reduce_sum_kernel in
   let ir =
-    match kirc.Sarek.Kirc.body_v2 with
+    match kirc.Sarek.Kirc_types.body_v2 with
     | Some ir -> ir
     | None -> failwith "Kernel has no V2 IR"
   in
@@ -429,7 +299,7 @@ let run_reduce_max_v2 (dev : V2_Device.t) =
 
   let _, kirc = reduce_max_kernel in
   let ir =
-    match kirc.Sarek.Kirc.body_v2 with
+    match kirc.Sarek.Kirc_types.body_v2 with
     | Some ir -> ir
     | None -> failwith "Kernel has no V2 IR"
   in
@@ -483,7 +353,7 @@ let run_dot_product_v2 (dev : V2_Device.t) =
 
   let _, kirc = dot_product_kernel in
   let ir =
-    match kirc.Sarek.Kirc.body_v2 with
+    match kirc.Sarek.Kirc_types.body_v2 with
     | Some ir -> ir
     | None -> failwith "Kernel has no V2 IR"
   in
@@ -544,226 +414,74 @@ let () =
   cfg.size <- c.size ;
   cfg.block_size <- c.block_size ;
 
-  print_endline "=== Reduction Tests (SPOC + V2 Comparison) ===" ;
+  print_endline "=== Reduction Tests (V2) ===" ;
   Printf.printf "Size: %d elements\n\n" cfg.size ;
-
-  let spoc_devs = Spoc_Devices.init () in
-  if Array.length spoc_devs = 0 then begin
-    print_endline "No GPU devices found" ;
-    exit 1
-  end ;
-  Test_helpers.print_devices spoc_devs ;
 
   let v2_devs =
     V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
+  if Array.length v2_devs = 0 then begin
+    print_endline "No devices found" ;
+    exit 1
+  end ;
+  Test_helpers.print_devices v2_devs ;
   Printf.printf "\nFound %d V2 device(s)\n\n" (Array.length v2_devs) ;
 
-  if cfg.benchmark_all then begin
-    let all_ok = ref true in
+  let all_ok = ref true in
 
-    (* Sum reduction *)
-    ignore (init_sum_data ()) ;
-    print_endline "=== Sum Reduction ===" ;
-    print_endline (String.make 80 '-') ;
-    Printf.printf
-      "%-35s %10s %10s %8s %8s\n"
-      "Device"
-      "SPOC(ms)"
-      "V2(ms)"
-      "SPOC"
-      "V2" ;
-    print_endline (String.make 80 '-') ;
+  (* Sum reduction *)
+  ignore (init_sum_data ()) ;
+  print_endline "=== Sum Reduction ===" ;
+  Array.iter
+    (fun v2_dev ->
+      let name = v2_dev.V2_Device.name in
+      let framework = v2_dev.V2_Device.framework in
+      let v2_time, v2_ok = run_reduce_sum_v2 v2_dev in
+      Printf.printf
+        "  %s (%s): %.4f ms, %s\n%!"
+        name
+        framework
+        v2_time
+        (if v2_ok then "OK" else "FAIL") ;
+      if not v2_ok then all_ok := false)
+    v2_devs ;
 
-    Array.iter
-      (fun v2_dev ->
-        let name = v2_dev.V2_Device.name in
-        let framework = v2_dev.V2_Device.framework in
-        let spoc_dev_opt =
-          Array.find_opt
-            (fun d -> d.Spoc_Devices.general_info.Spoc_Devices.name = name)
-            spoc_devs
-        in
-        let spoc_time, spoc_ok =
-          match spoc_dev_opt with
-          | Some spoc_dev ->
-              let t, ok = run_reduce_sum_spoc spoc_dev in
-              (Printf.sprintf "%.4f" t, if ok then "OK" else "FAIL")
-          | None -> ("-", "SKIP")
-        in
-        let v2_time, v2_ok = run_reduce_sum_v2 v2_dev in
-        let v2_time_str, v2_status =
-          if v2_time < 0.0 then ("-", "SKIP")
-          else (Printf.sprintf "%.4f" v2_time, if v2_ok then "OK" else "FAIL")
-        in
-        if spoc_ok = "FAIL" || v2_status = "FAIL" then all_ok := false ;
-        Printf.printf
-          "%-35s %10s %10s %8s %8s\n"
-          (Printf.sprintf "%s (%s)" name framework)
-          spoc_time
-          v2_time_str
-          spoc_ok
-          v2_status)
-      v2_devs ;
-    print_endline (String.make 80 '-') ;
+  (* Max reduction *)
+  ignore (init_max_data ()) ;
+  print_endline "\n=== Max Reduction ===" ;
+  Array.iter
+    (fun v2_dev ->
+      let name = v2_dev.V2_Device.name in
+      let framework = v2_dev.V2_Device.framework in
+      let v2_time, v2_ok = run_reduce_max_v2 v2_dev in
+      Printf.printf
+        "  %s (%s): %.4f ms, %s\n%!"
+        name
+        framework
+        v2_time
+        (if v2_ok then "OK" else "FAIL") ;
+      if not v2_ok then all_ok := false)
+    v2_devs ;
 
-    (* Max reduction *)
-    ignore (init_max_data ()) ;
-    print_endline "\n=== Max Reduction ===" ;
-    print_endline (String.make 80 '-') ;
-    Printf.printf
-      "%-35s %10s %10s %8s %8s\n"
-      "Device"
-      "SPOC(ms)"
-      "V2(ms)"
-      "SPOC"
-      "V2" ;
-    print_endline (String.make 80 '-') ;
+  (* Dot product *)
+  ignore (init_dot_data ()) ;
+  print_endline "\n=== Dot Product ===" ;
+  Array.iter
+    (fun v2_dev ->
+      let name = v2_dev.V2_Device.name in
+      let framework = v2_dev.V2_Device.framework in
+      let v2_time, v2_ok = run_dot_product_v2 v2_dev in
+      Printf.printf
+        "  %s (%s): %.4f ms, %s\n%!"
+        name
+        framework
+        v2_time
+        (if v2_ok then "OK" else "FAIL") ;
+      if not v2_ok then all_ok := false)
+    v2_devs ;
 
-    Array.iter
-      (fun v2_dev ->
-        let name = v2_dev.V2_Device.name in
-        let framework = v2_dev.V2_Device.framework in
-        let spoc_dev_opt =
-          Array.find_opt
-            (fun d -> d.Spoc_Devices.general_info.Spoc_Devices.name = name)
-            spoc_devs
-        in
-        let spoc_time, spoc_ok =
-          match spoc_dev_opt with
-          | Some spoc_dev ->
-              let t, ok = run_reduce_max_spoc spoc_dev in
-              (Printf.sprintf "%.4f" t, if ok then "OK" else "FAIL")
-          | None -> ("-", "SKIP")
-        in
-        let v2_time, v2_ok = run_reduce_max_v2 v2_dev in
-        let v2_time_str, v2_status =
-          if v2_time < 0.0 then ("-", "SKIP")
-          else (Printf.sprintf "%.4f" v2_time, if v2_ok then "OK" else "FAIL")
-        in
-        if spoc_ok = "FAIL" || v2_status = "FAIL" then all_ok := false ;
-        Printf.printf
-          "%-35s %10s %10s %8s %8s\n"
-          (Printf.sprintf "%s (%s)" name framework)
-          spoc_time
-          v2_time_str
-          spoc_ok
-          v2_status)
-      v2_devs ;
-    print_endline (String.make 80 '-') ;
-
-    (* Dot product *)
-    ignore (init_dot_data ()) ;
-    print_endline "\n=== Dot Product ===" ;
-    print_endline (String.make 80 '-') ;
-    Printf.printf
-      "%-35s %10s %10s %8s %8s\n"
-      "Device"
-      "SPOC(ms)"
-      "V2(ms)"
-      "SPOC"
-      "V2" ;
-    print_endline (String.make 80 '-') ;
-
-    Array.iter
-      (fun v2_dev ->
-        let name = v2_dev.V2_Device.name in
-        let framework = v2_dev.V2_Device.framework in
-        let spoc_dev_opt =
-          Array.find_opt
-            (fun d -> d.Spoc_Devices.general_info.Spoc_Devices.name = name)
-            spoc_devs
-        in
-        let spoc_time, spoc_ok =
-          match spoc_dev_opt with
-          | Some spoc_dev ->
-              let t, ok = run_dot_product_spoc spoc_dev in
-              (Printf.sprintf "%.4f" t, if ok then "OK" else "FAIL")
-          | None -> ("-", "SKIP")
-        in
-        let v2_time, v2_ok = run_dot_product_v2 v2_dev in
-        let v2_time_str, v2_status =
-          if v2_time < 0.0 then ("-", "SKIP")
-          else (Printf.sprintf "%.4f" v2_time, if v2_ok then "OK" else "FAIL")
-        in
-        if spoc_ok = "FAIL" || v2_status = "FAIL" then all_ok := false ;
-        Printf.printf
-          "%-35s %10s %10s %8s %8s\n"
-          (Printf.sprintf "%s (%s)" name framework)
-          spoc_time
-          v2_time_str
-          spoc_ok
-          v2_status)
-      v2_devs ;
-    print_endline (String.make 80 '-') ;
-
-    if !all_ok then print_endline "\n=== All reduction tests PASSED ==="
-    else begin
-      print_endline "\n=== Some reduction tests FAILED ===" ;
-      exit 1
-    end
-  end
+  if !all_ok then print_endline "\n=== All reduction tests PASSED ==="
   else begin
-    let dev = Test_helpers.get_device cfg spoc_devs in
-    let dev_name = dev.Spoc_Devices.general_info.Spoc_Devices.name in
-    Printf.printf "Using device: %s\n%!" dev_name ;
-    let v2_dev_opt =
-      Array.find_opt (fun d -> d.V2_Device.name = dev_name) v2_devs
-    in
-
-    ignore (init_sum_data ()) ;
-    Printf.printf "\n--- Sum Reduction ---\n%!" ;
-    let t, ok = run_reduce_sum_spoc dev in
-    Printf.printf
-      "  SPOC: %.4f ms, %s\n%!"
-      t
-      (if ok then "PASSED" else "FAILED") ;
-    (match v2_dev_opt with
-    | Some v2_dev ->
-        let t, ok = run_reduce_sum_v2 v2_dev in
-        if t < 0.0 then Printf.printf "  V2: SKIP (no V2 IR)\n%!"
-        else
-          Printf.printf
-            "  V2: %.4f ms, %s\n%!"
-            t
-            (if ok then "PASSED" else "FAILED")
-    | None -> ()) ;
-
-    ignore (init_max_data ()) ;
-    Printf.printf "\n--- Max Reduction ---\n%!" ;
-    let t, ok = run_reduce_max_spoc dev in
-    Printf.printf
-      "  SPOC: %.4f ms, %s\n%!"
-      t
-      (if ok then "PASSED" else "FAILED") ;
-    (match v2_dev_opt with
-    | Some v2_dev ->
-        let t, ok = run_reduce_max_v2 v2_dev in
-        if t < 0.0 then Printf.printf "  V2: SKIP (no V2 IR)\n%!"
-        else
-          Printf.printf
-            "  V2: %.4f ms, %s\n%!"
-            t
-            (if ok then "PASSED" else "FAILED")
-    | None -> ()) ;
-
-    ignore (init_dot_data ()) ;
-    Printf.printf "\n--- Dot Product ---\n%!" ;
-    let t, ok = run_dot_product_spoc dev in
-    Printf.printf
-      "  SPOC: %.4f ms, %s\n%!"
-      t
-      (if ok then "PASSED" else "FAILED") ;
-    (match v2_dev_opt with
-    | Some v2_dev ->
-        let t, ok = run_dot_product_v2 v2_dev in
-        if t < 0.0 then Printf.printf "  V2: SKIP (no V2 IR)\n%!"
-        else
-          Printf.printf
-            "  V2: %.4f ms, %s\n%!"
-            t
-            (if ok then "PASSED" else "FAILED")
-    | None -> ()) ;
-
-    print_endline "\nReduction tests PASSED"
+    print_endline "\n=== Some reduction tests FAILED ===" ;
+    exit 1
   end

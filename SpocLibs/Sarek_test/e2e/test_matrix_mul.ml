@@ -1,17 +1,17 @@
 (******************************************************************************
- * E2E test for Sarek PPX - Matrix Multiplication (Unified V2)
+ * E2E test for Sarek PPX - Matrix Multiplication (V2)
  *
  * Tests naive and tiled matrix multiplication with shared memory.
  * Matrix multiplication is the canonical GPU compute benchmark.
  *
- * Uses unified V2 path for all backends (CUDA, OpenCL, Native, Interpreter).
- * Tiled kernel (shared memory + supersteps) runs SPOC-only for now.
+ * Uses V2 path for all backends (CUDA, OpenCL, Native, Interpreter).
+ * Tiled kernel demonstrates shared memory + supersteps (barriers).
  ******************************************************************************)
 
+open Sarek
+module Std = Sarek_stdlib.Std
+
 (* Module aliases *)
-module Spoc_Vector = Spoc.Vector
-module Spoc_Devices = Spoc.Devices
-module Spoc_Mem = Spoc.Mem
 module V2_Device = Sarek_core.Device
 module V2_Vector = Sarek_core.Vector
 module V2_Transfer = Sarek_core.Transfer
@@ -21,12 +21,7 @@ let () =
   Sarek_cuda.Cuda_plugin_v2.init () ;
   Sarek_opencl.Opencl_plugin_v2.init () ;
   Sarek_native.Native_plugin_v2.init () ;
-  Sarek_interpreter.Interpreter_plugin_v2.init () ;
-  (* Legacy SPOC plugins for tiled kernel *)
-  Sarek_cuda.Cuda_plugin.init () ;
-  Sarek_opencl.Opencl_plugin.init () ;
-  Sarek_native.Native_plugin.init () ;
-  Sarek_interpreter.Interpreter_plugin.init ()
+  Sarek_interpreter.Interpreter_plugin_v2.init ()
 
 let cfg = Test_helpers.default_config ()
 
@@ -140,90 +135,112 @@ let matmul_tiled_kernel =
       done ;
       if row < m && col < n then c.((row * n) + col) <- sum]
 
-(* ========== SPOC test runners (tiled kernel only) ========== *)
+(* ========== V2 test runners ========== *)
 
-(** Run tiled matrix multiplication test (SPOC only - uses shared memory) *)
-let run_matmul_tiled_spoc dev =
+(** Run tiled matrix multiplication on V2 - uses shared memory and supersteps *)
+let run_matmul_tiled_v2 (dev : V2_Device.t) =
   let dim = !matrix_dim in
+  (* Pad to tile_size multiple *)
   let dim = (dim + !tile_size - 1) / !tile_size * !tile_size in
   let m, n, k = (dim, dim, dim) in
-
-  (* Need to recompute expected for padded dimension *)
   let inp_a = !input_a in
   let inp_b = !input_b in
   let orig_dim = !matrix_dim in
 
-  let a = Spoc_Vector.create Spoc_Vector.float32 (m * k) in
-  let b = Spoc_Vector.create Spoc_Vector.float32 (k * n) in
-  let c = Spoc_Vector.create Spoc_Vector.float32 (m * n) in
+  let _, kirc = matmul_tiled_kernel in
+  let ir =
+    match kirc.Sarek.Kirc_types.body_v2 with
+    | Some ir -> ir
+    | None -> failwith "Tiled kernel: No V2 IR"
+  in
 
-  (* Initialize with padding *)
+  let a = V2_Vector.create V2_Vector.float32 (m * k) in
+  let b = V2_Vector.create V2_Vector.float32 (k * n) in
+  let c = V2_Vector.create V2_Vector.float32 (m * n) in
+
+  (* Initialize with padding - zero-pad to tile boundary *)
   for row = 0 to m - 1 do
     for col = 0 to k - 1 do
       let idx = (row * k) + col in
       if row < orig_dim && col < orig_dim then
-        Spoc_Mem.set a idx inp_a.((row * orig_dim) + col)
-      else Spoc_Mem.set a idx 0.0
+        V2_Vector.set a idx inp_a.((row * orig_dim) + col)
+      else V2_Vector.set a idx 0.0
     done
   done ;
   for row = 0 to k - 1 do
     for col = 0 to n - 1 do
       let idx = (row * n) + col in
       if row < orig_dim && col < orig_dim then
-        Spoc_Mem.set b idx inp_b.((row * orig_dim) + col)
-      else Spoc_Mem.set b idx 0.0
+        V2_Vector.set b idx inp_b.((row * orig_dim) + col)
+      else V2_Vector.set b idx 0.0
     done
   done ;
   for i = 0 to (m * n) - 1 do
-    Spoc_Mem.set c i 0.0
+    V2_Vector.set c i 0.0
   done ;
 
+  (* 2D launch configuration *)
   let block_size = !tile_size in
   let blocks_x = n / block_size in
   let blocks_y = m / block_size in
-  let block =
-    {Spoc.Kernel.blockX = block_size; blockY = block_size; blockZ = 1}
-  in
-  let grid = {Spoc.Kernel.gridX = blocks_x; gridY = blocks_y; gridZ = 1} in
+  let block = Sarek.Execute.dims2d block_size block_size in
+  let grid = Sarek.Execute.dims2d blocks_x blocks_y in
 
-  (* Pre-compile (excluded from timing) *)
-  ignore (Sarek.Kirc.gen matmul_tiled_kernel dev) ;
+  (* Shared memory: 2 tiles × tile_size² × 4 bytes *)
+  let shared_mem = 2 * block_size * block_size * 4 in
+
   let t0 = Unix.gettimeofday () in
-  Sarek.Kirc.run matmul_tiled_kernel (a, b, c, m, n, k) (block, grid) 0 dev ;
-  Spoc_Devices.flush dev () ;
+  Sarek.Execute.run_vectors
+    ~device:dev
+    ~ir
+    ~args:
+      [
+        Sarek.Execute.Vec a;
+        Sarek.Execute.Vec b;
+        Sarek.Execute.Vec c;
+        Sarek.Execute.Int32 (Int32.of_int m);
+        Sarek.Execute.Int32 (Int32.of_int n);
+        Sarek.Execute.Int32 (Int32.of_int k);
+      ]
+    ~block
+    ~grid
+    ~shared_mem
+    () ;
+  V2_Transfer.flush dev ;
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
 
   let ok =
     if cfg.verify then begin
-      Spoc_Mem.to_cpu c () ;
-      Spoc_Devices.flush dev () ;
-      Spoc_Mem.unsafe_rw true ;
-      let errors = ref 0 in
+      let result = V2_Vector.to_array c in
       let exp_c = !expected_c in
+      let errors = ref 0 in
       let check_count = min 100 (orig_dim * orig_dim) in
       for idx = 0 to check_count - 1 do
         let row = idx / orig_dim in
         let col = idx mod orig_dim in
         let expected = exp_c.(idx) in
-        let got = Spoc_Mem.get c ((row * n) + col) in
-        (* Use relative tolerance for float32 accumulation *)
+        (* Access padded matrix: row * padded_n + col *)
+        let got = result.((row * n) + col) in
         let rel_tol = 0.001 in
         let abs_tol = 0.1 in
         let diff = abs_float (got -. expected) in
         let rel_err =
           if abs_float expected > 1e-6 then diff /. abs_float expected else diff
         in
-        if diff > abs_tol && rel_err > rel_tol then incr errors
+        if diff > abs_tol && rel_err > rel_tol then begin
+          if !errors < 5 then
+            Printf.printf
+              "  Tiled V2 mismatch at [%d,%d]: expected %.6f, got %.6f (rel_err=%.4f%%)\n"
+              row col expected got (rel_err *. 100.0) ;
+          incr errors
+        end
       done ;
-      Spoc_Mem.unsafe_rw false ;
       !errors = 0
     end
     else true
   in
   (time_ms, ok)
-
-(* ========== V2 test runner ========== *)
 
 (** Run naive matrix multiplication on V2 - returns (compile_ms, exec_ms, ok) *)
 let run_matmul_naive_v2 (dev : V2_Device.t) =
@@ -234,7 +251,7 @@ let run_matmul_naive_v2 (dev : V2_Device.t) =
   let exp_c = !expected_c in
   let _, kirc = matmul_naive_kernel in
   let ir =
-    match kirc.Sarek.Kirc.body_v2 with
+    match kirc.Sarek.Kirc_types.body_v2 with
     | Some ir -> ir
     | None -> failwith "No V2 IR"
   in
@@ -373,9 +390,6 @@ let () =
     v2_devs ;
   print_newline () ;
 
-  (* Init SPOC devices for tiled kernel *)
-  let spoc_devs = Spoc_Devices.init () in
-
   ignore (init_matmul_data ()) ;
 
   if cfg.benchmark_all then begin
@@ -409,23 +423,32 @@ let () =
 
     print_endline (String.make 80 '-') ;
 
-    (* Benchmark tiled (SPOC only - uses shared memory) *)
-    print_endline "\n=== Tiled Matrix Multiplication (SPOC - shared memory) ===" ;
+    (* Benchmark tiled V2 (shared memory + supersteps) *)
+    print_endline "\n=== Tiled Matrix Multiplication (V2 - shared memory) ===" ;
     print_endline (String.make 60 '-') ;
     Printf.printf "%-40s %10s %8s\n" "Device" "Exec(ms)" "Status" ;
     print_endline (String.make 60 '-') ;
 
     Array.iter
-      (fun spoc_dev ->
-        let name = spoc_dev.Spoc_Devices.general_info.Spoc_Devices.name in
-        let time, ok = run_matmul_tiled_spoc spoc_dev in
-        Printf.printf
-          "%-40s %10.4f %8s\n"
-          name
-          time
-          (if ok then "OK" else "FAIL") ;
-        if not ok then all_ok := false)
-      spoc_devs ;
+      (fun v2_dev ->
+        let name = v2_dev.V2_Device.name in
+        let framework = v2_dev.V2_Device.framework in
+        (* Skip interpreter for tiled - barrier semantics differ *)
+        if framework <> "Interpreter" then begin
+          let time, ok = run_matmul_tiled_v2 v2_dev in
+          Printf.printf
+            "%-40s %10.4f %8s\n"
+            (Printf.sprintf "%s (%s)" name framework)
+            time
+            (if ok then "OK" else "FAIL") ;
+          if not ok then all_ok := false
+        end
+        else
+          Printf.printf
+            "%-40s %10s %8s\n"
+            (Printf.sprintf "%s (%s)" name framework)
+            "-" "SKIP")
+      v2_devs ;
 
     print_endline (String.make 60 '-') ;
 
@@ -456,23 +479,16 @@ let () =
       v2_exec
       (if v2_ok then "PASSED" else "FAILED") ;
 
-    (* Tiled kernel only for GPU devices via SPOC *)
-    let spoc_dev_opt =
-      Array.find_opt
-        (fun d ->
-          d.Spoc_Devices.general_info.Spoc_Devices.name = v2_dev.V2_Device.name)
-        spoc_devs
-    in
-    (match spoc_dev_opt with
-    | Some spoc_dev ->
-        Printf.printf "\n--- Tiled Matrix Multiplication (SPOC) ---\n%!" ;
-        let time, ok = run_matmul_tiled_spoc spoc_dev in
-        Printf.printf
-          "  Time: %.4f ms, %s\n%!"
-          time
-          (if ok then "PASSED" else "FAILED")
-    | None ->
-        Printf.printf "\n(Tiled kernel skipped - SPOC device not available)\n%!") ;
+    (* Tiled kernel via V2 (shared memory + supersteps) *)
+    if v2_dev.V2_Device.framework <> "Interpreter" then begin
+      Printf.printf "\n--- Tiled Matrix Multiplication (V2) ---\n%!" ;
+      let time, ok = run_matmul_tiled_v2 v2_dev in
+      Printf.printf
+        "  Time: %.4f ms, %s\n%!"
+        time
+        (if ok then "PASSED" else "FAILED")
+    end
+    else Printf.printf "\n(Tiled kernel skipped for interpreter)\n%!" ;
 
     print_endline "\nMatrix multiplication tests PASSED"
   end

@@ -28,7 +28,7 @@ type 'a kernel_v2 = {
       (** Pre-compiled OCaml function for Direct backends *)
   param_types : Sarek_ir.elttype list;
       (** Parameter types for argument marshalling *)
-  extensions : Kirc.extension array;
+  extensions : Kirc_types.extension array;
       (** Extensions required (ExFloat32, ExFloat64) *)
 }
 
@@ -79,11 +79,11 @@ let extensions k = k.extensions
 
 (** Convert a legacy kirc_kernel to kernel_v2. Note: This creates a lazy IR that
     converts from Kirc_Ast when forced. *)
-let of_kirc_kernel (kk : ('a, 'b, 'c) Kirc.kirc_kernel) ~name ~param_types :
+let of_kirc_kernel (kk : ('a, 'b, 'c) Kirc_types.kirc_kernel) ~name ~param_types :
     'a kernel_v2 =
-  let ir = lazy (Sarek_ir.of_k_ext kk.Kirc.body) in
+  let ir = lazy (Sarek_ir.of_k_ext kk.Kirc_types.body) in
   let native_fn =
-    match kk.Kirc.cpu_kern with
+    match kk.Kirc_types.cpu_kern with
     | None -> None
     | Some fn ->
         Some
@@ -97,10 +97,10 @@ let of_kirc_kernel (kk : ('a, 'b, 'c) Kirc.kirc_kernel) ~name ~param_types :
               ~grid:(grid.x, grid.y, grid.z)
               args)
   in
-  {name; ir; native_fn; param_types; extensions = kk.Kirc.extensions}
+  {name; ir; native_fn; param_types; extensions = kk.Kirc_types.extensions}
 
 (** Convert a legacy sarek_kernel to kernel_v2 *)
-let of_sarek_kernel ((_spoc_k, kirc_k) : ('a, 'b, 'c, 'd, 'e) Kirc.sarek_kernel)
+let of_sarek_kernel ((_spoc_k, kirc_k) : ('a, 'b, 'c, 'd, 'e) Kirc_types.sarek_kernel)
     ~name ~param_types : 'd kernel_v2 =
   of_kirc_kernel kirc_k ~name ~param_types
 
@@ -109,7 +109,7 @@ let of_sarek_kernel ((_spoc_k, kirc_k) : ('a, 'b, 'c, 'd, 'e) Kirc.sarek_kernel)
 (** Convert kernel_v2 to legacy kirc_kernel. Note: This may force IR evaluation.
 *)
 let to_kirc_kernel (k : 'a kernel_v2) :
-    (unit -> unit, unit, unit) Kirc.kirc_kernel =
+    (unit -> unit, unit, unit) Kirc_types.kirc_kernel =
   let body = Sarek_ir.to_k_ext (Lazy.force k.ir) in
   let cpu_kern =
     match k.native_fn with
@@ -125,13 +125,13 @@ let to_kirc_kernel (k : 'a kernel_v2) :
               args)
   in
   {
-    Kirc.ml_kern = (fun () -> ());
-    Kirc.body;
-    Kirc.body_v2 = None;
-    (* ret_val is unused in V2 path; dummy value for type compatibility *)
-    Kirc.ret_val = (Kirc_Ast.Empty, Obj.magic Spoc.Vector.int32);
-    Kirc.extensions = k.extensions;
-    Kirc.cpu_kern;
+    Kirc_types.ml_kern = (fun () -> ());
+    Kirc_types.body;
+    Kirc_types.body_v2 = None;
+    (* ret_val is unused in V2 path; dummy value with stub type *)
+    Kirc_types.ret_val = (Kirc_Ast.Empty, ());
+    Kirc_types.extensions = k.extensions;
+    Kirc_types.cpu_kern;
   }
 
 (** {1 Execution} *)
@@ -201,10 +201,10 @@ let source_for_backend (k : 'a kernel_v2) ~backend : string =
   | _ -> failwith ("Unknown backend: " ^ backend)
 
 (** Check if kernel requires FP64 extension *)
-let requires_fp64 k = Array.mem Kirc.ExFloat64 k.extensions
+let requires_fp64 k = Array.mem Kirc_types.ExFloat64 k.extensions
 
 (** Check if kernel requires FP32 extension *)
-let requires_fp32 k = Array.mem Kirc.ExFloat32 k.extensions
+let requires_fp32 k = Array.mem Kirc_types.ExFloat32 k.extensions
 
 (** {1 Debugging} *)
 

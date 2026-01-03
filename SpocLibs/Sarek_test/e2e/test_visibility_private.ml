@@ -1,4 +1,3 @@
-open Spoc
 
 type float32 = float
 
@@ -18,6 +17,6 @@ let () =
 
   let _, kirc_kernel = kernel in
   print_endline "=== Visibility kernel IR ===" ;
-  Sarek.Kirc.print_ast kirc_kernel.Sarek.Kirc.body ;
+  Sarek.Kirc_Ast.print_ast kirc_kernel.Sarek.Kirc_types.body ;
   print_endline "===========================" ;
   print_endline "Visibility test PASSED (public_add accessible in kernel)"

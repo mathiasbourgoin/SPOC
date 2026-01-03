@@ -1,7 +1,7 @@
 (library
  (name test_helpers)
  (modules test_helpers)
- (libraries spoc unix))
+ (libraries sarek_core unix))
 
 (executables
  (names
@@ -18,7 +18,6 @@
   test_cross_module_type
   test_registered_const
   test_visibility_private
-  test_external_kernel_ppx
   test_convention
   test_convention_kernel
   test_pragma
@@ -28,7 +27,6 @@
   test_stencil
   test_matrix_mul
   test_reduce
-  test_histogram
   test_complex_types
   test_math_intrinsics
   test_bitwise_ops
@@ -57,7 +55,6 @@
   test_cross_module_type
   test_registered_const
   test_visibility_private
-  test_external_kernel_ppx
   test_convention
   test_convention_kernel
   test_pragma
@@ -67,7 +64,6 @@
   test_stencil
   test_matrix_mul
   test_reduce
-  test_histogram
   test_complex_types
   test_math_intrinsics
   test_bitwise_ops
@@ -82,7 +78,6 @@
   test_inline_pragma
   test_nested_types)
  (libraries
-  spoc
   sarek
   sarek.stdlib
   sarek.float64
@@ -117,7 +112,6 @@
   test_cross_module_type.exe
   test_registered_const.exe
   test_visibility_private.exe
-  test_external_kernel_ppx.exe
   test_convention.exe
   test_convention_kernel.exe
   test_pragma.exe
@@ -127,7 +121,6 @@
   test_stencil.exe
   test_matrix_mul.exe
   test_reduce.exe
-  test_histogram.exe
   test_complex_types.exe
   test_math_intrinsics.exe
   test_bitwise_ops.exe
@@ -137,3 +130,9 @@
   test_convolution.exe
   test_mandelbrot.exe
   test_polymorphism.exe))
+
+(executable
+  (name test_debug_native)
+  (modules test_debug_native)
+  (libraries sarek sarek_native sarek_stdlib sarek_core unix)
+  (preprocess (pps sarek_ppx)))

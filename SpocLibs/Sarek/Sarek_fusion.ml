@@ -485,6 +485,7 @@ let fuse (producer : kernel) (consumer : kernel) (intermediate : string) :
             kern_locals = consumer.kern_locals @ producer.kern_locals;
             kern_body = fused_body;
             kern_types = consumer.kern_types @ producer.kern_types;
+            kern_variants = consumer.kern_variants @ producer.kern_variants;
             kern_funcs = consumer.kern_funcs @ producer.kern_funcs;
             kern_native_fn = None;
           })
@@ -674,6 +675,7 @@ let fuse_reduction (map_kernel : kernel) (reduce_kernel : kernel)
             kern_locals = reduce_kernel.kern_locals @ map_kernel.kern_locals;
             kern_body = fused_body;
             kern_types = reduce_kernel.kern_types @ map_kernel.kern_types;
+            kern_variants = reduce_kernel.kern_variants @ map_kernel.kern_variants;
             kern_funcs = reduce_kernel.kern_funcs @ map_kernel.kern_funcs;
             kern_native_fn = None;
           })
@@ -935,6 +937,7 @@ let fuse_stencil (producer : kernel) (consumer : kernel) (intermediate : string)
             kern_locals = consumer.kern_locals @ producer.kern_locals;
             kern_body = fused_body;
             kern_types = consumer.kern_types @ producer.kern_types;
+            kern_variants = consumer.kern_variants @ producer.kern_variants;
             kern_funcs = consumer.kern_funcs @ producer.kern_funcs;
             kern_native_fn = None;
           })

@@ -1569,7 +1569,7 @@ let expand_sarek_type ~ctxt payload =
       in
       let register =
         [%stri
-          let () = List.iter Sarek.Kirc.register_constructor_string [%e ctors]]
+          let () = List.iter Sarek.Kirc_types.register_constructor_string [%e ctors]]
       in
       items @ [register]
   | _ ->

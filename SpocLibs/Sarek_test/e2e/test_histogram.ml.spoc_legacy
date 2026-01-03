@@ -5,19 +5,18 @@
  * Histogram is a common pattern for data analysis and image processing.
  ******************************************************************************)
 
-(* Module aliases *)
-module Spoc_Vector = Spoc.Vector
-module Spoc_Devices = Spoc.Devices
-module Spoc_Mem = Spoc.Mem
+
+(* V2 module aliases - SPOC removed *)
 module V2_Device = Sarek_core.Device
 module V2_Vector = Sarek_core.Vector
 module V2_Transfer = Sarek_core.Transfer
+module Std = Sarek_stdlib.Std
+(* Type alias for kernel parameter annotations *)
+type ('a, 'b) vector = ('a, 'b) V2_Vector.t
 
 (* Force backend registration *)
 let () =
-  Sarek_cuda.Cuda_plugin.init () ;
   Sarek_cuda.Cuda_plugin_v2.init () ;
-  Sarek_opencl.Opencl_plugin.init () ;
   Sarek_opencl.Opencl_plugin_v2.init ()
 
 let cfg = Test_helpers.default_config ()

@@ -88,6 +88,9 @@ val pow : float -> float -> float
 
 val sqrt : float -> float
 
+(** Reciprocal square root: rsqrt x = 1 / sqrt(x) *)
+val rsqrt : float -> float
+
 val sin : float -> float
 
 val cos : float -> float

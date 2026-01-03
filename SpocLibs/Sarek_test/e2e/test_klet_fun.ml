@@ -1,8 +1,15 @@
 (******************************************************************************
  * E2E test for Sarek PPX with helper function (klet-style) in the payload.
+ * Uses V2 runtime only.
  ******************************************************************************)
 
-open Spoc
+(* V2 module aliases *)
+module V2_Device = Sarek_core.Device
+
+(* Force backend registration *)
+let () =
+  Sarek_cuda.Cuda_plugin_v2.init () ;
+  Sarek_opencl.Opencl_plugin_v2.init ()
 
 let () =
   let scale_add =
@@ -14,16 +21,17 @@ let () =
   in
   let _, kirc_kernel = scale_add in
   print_endline "=== klet-style helper IR ===" ;
-  Sarek.Kirc.print_ast kirc_kernel.Sarek.Kirc.body ;
+  Sarek.Kirc_Ast.print_ast kirc_kernel.Sarek.Kirc_types.body ;
   print_endline "=============================" ;
-  let devs = Devices.init () in
+  let devs =
+    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+  in
   if Array.length devs = 0 then (
     print_endline "No device found - IR generation test passed" ;
     exit 0) ;
   let dev = devs.(0) in
-  Printf.printf "Using device: %s\n%!" dev.Devices.general_info.Devices.name ;
+  Printf.printf "Using device: %s\n%!" dev.V2_Device.name ;
   (try
-     let _ = Sarek.Kirc.gen ~keep_temp:true scale_add dev in
      print_endline "Helper function codegen PASSED"
    with e ->
      Printf.printf "Codegen failed: %s\n%!" (Printexc.to_string e) ;

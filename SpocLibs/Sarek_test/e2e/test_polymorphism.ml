@@ -4,10 +4,10 @@
  * Tests:
  * 1. Basic module functions with concrete types
  * 2. Polymorphic module functions used at multiple types
- * Compares SPOC and V2 runtime paths.
+ * V2 runtime only.
  ******************************************************************************)
 
-open Spoc
+module Std = Sarek_stdlib.Std
 open Sarek
 
 (* V2 module aliases *)
@@ -17,9 +17,7 @@ module V2_Transfer = Sarek_core.Transfer
 
 (* Force backend registration *)
 let () =
-  Sarek_cuda.Cuda_plugin.init () ;
   Sarek_cuda.Cuda_plugin_v2.init () ;
-  Sarek_opencl.Opencl_plugin.init () ;
   Sarek_opencl.Opencl_plugin_v2.init () ;
   Sarek_native.Native_plugin.init () ;
   Sarek_native.Native_plugin_v2.init () ;
@@ -34,49 +32,6 @@ let basic_kernel =
       let idx = global_idx_x in
       dst.(idx) <- add_one src.(idx)]
 
-(** Test 1: Basic module function with concrete type *)
-let test_basic_module_fun () =
-  let _, kirc = basic_kernel in
-  print_endline "=== Basic module function ===" ;
-  Kirc.print_ast kirc.Kirc.body ;
-  print_endline "==============================" ;
-
-  let devs = Devices.init () in
-  if Array.length devs = 0 then (
-    print_endline "No devices - skipping runtime test" ;
-    true)
-  else
-    let dev = devs.(0) in
-    Printf.printf "Testing on: %s\n%!" dev.Devices.general_info.Devices.name ;
-
-    let n = 1024 in
-    let src = Vector.create Vector.int32 n in
-    let dst = Vector.create Vector.int32 n in
-
-    for i = 0 to n - 1 do
-      Mem.set src i (Int32.of_int i)
-    done ;
-
-    let block = {Kernel.blockX = 256; blockY = 1; blockZ = 1} in
-    let grid = {Kernel.gridX = n / 256; gridY = 1; gridZ = 1} in
-    Kirc.run basic_kernel (src, dst) (block, grid) 0 dev ;
-    Mem.to_cpu dst () ;
-    Spoc.Devices.flush dev () ;
-
-    let ok = ref true in
-    for i = 0 to n - 1 do
-      let expected = Int32.of_int (i + 1) in
-      if Mem.get dst i <> expected then (
-        Printf.printf
-          "FAIL: dst[%d] = %ld, expected %ld\n"
-          i
-          (Mem.get dst i)
-          expected ;
-        ok := false)
-    done ;
-    if !ok then print_endline "PASS: Basic module function (SPOC)" ;
-    !ok
-
 let times_two_kernel =
   [%kernel
     let times_two (x : int32) : int32 = x + x in
@@ -84,50 +39,6 @@ let times_two_kernel =
       let open Std in
       let idx = global_idx_x in
       dst.(idx) <- times_two src.(idx)]
-
-(** Test 2: Multiple module functions - times_two *)
-let test_multiple_module_funs () =
-  let _, kirc = times_two_kernel in
-  print_endline "=== Multiple module functions (times_two) ===" ;
-  Kirc.print_ast kirc.Kirc.body ;
-  print_endline "==============================================" ;
-
-  let devs = Devices.init () in
-  if Array.length devs = 0 then (
-    print_endline "No devices - skipping runtime test" ;
-    true)
-  else
-    let dev = devs.(0) in
-    Printf.printf "Testing on: %s\n%!" dev.Devices.general_info.Devices.name ;
-
-    let n = 1024 in
-    let src = Vector.create Vector.int32 n in
-    let dst = Vector.create Vector.int32 n in
-
-    for i = 0 to n - 1 do
-      Mem.set src i (Int32.of_int i)
-    done ;
-
-    let block = {Kernel.blockX = 256; blockY = 1; blockZ = 1} in
-    let grid = {Kernel.gridX = n / 256; gridY = 1; gridZ = 1} in
-    Kirc.run times_two_kernel (src, dst) (block, grid) 0 dev ;
-    Mem.to_cpu dst () ;
-    Spoc.Devices.flush dev () ;
-
-    let ok = ref true in
-    for i = 0 to n - 1 do
-      (* double(i) = 2*i *)
-      let expected = Int32.of_int (2 * i) in
-      if Mem.get dst i <> expected then (
-        Printf.printf
-          "FAIL: dst[%d] = %ld, expected %ld\n"
-          i
-          (Mem.get dst i)
-          expected ;
-        ok := false)
-    done ;
-    if !ok then print_endline "PASS: Multiple module functions (SPOC)" ;
-    !ok
 
 let identity_kernel =
   [%kernel
@@ -144,61 +55,6 @@ let identity_kernel =
       (* Use identity at float32 *)
       dst_f.(idx) <- identity src_f.(idx)]
 
-(** Test 3: Polymorphic identity function used at different types *)
-let test_polymorphic_identity () =
-  let _, kirc = identity_kernel in
-  print_endline "=== Polymorphic identity ===" ;
-  Kirc.print_ast kirc.Kirc.body ;
-  print_endline "=============================" ;
-
-  let devs = Devices.init () in
-  if Array.length devs = 0 then (
-    print_endline "No devices - skipping runtime test" ;
-    true)
-  else
-    let dev = devs.(0) in
-    Printf.printf "Testing on: %s\n%!" dev.Devices.general_info.Devices.name ;
-
-    let n = 1024 in
-    let src_i = Vector.create Vector.int32 n in
-    let src_f = Vector.create Vector.float32 n in
-    let dst_i = Vector.create Vector.int32 n in
-    let dst_f = Vector.create Vector.float32 n in
-
-    for i = 0 to n - 1 do
-      Mem.set src_i i (Int32.of_int i) ;
-      Mem.set src_f i (float_of_int i)
-    done ;
-
-    let block = {Kernel.blockX = 256; blockY = 1; blockZ = 1} in
-    let grid = {Kernel.gridX = n / 256; gridY = 1; gridZ = 1} in
-    Kirc.run identity_kernel (src_i, src_f, dst_i, dst_f) (block, grid) 0 dev ;
-    Mem.to_cpu dst_i () ;
-    Mem.to_cpu dst_f () ;
-    Spoc.Devices.flush dev () ;
-
-    let ok = ref true in
-    for i = 0 to n - 1 do
-      let expected_i = Int32.of_int i in
-      let expected_f = float_of_int i in
-      if Mem.get dst_i i <> expected_i then (
-        Printf.printf
-          "FAIL: dst_i[%d] = %ld, expected %ld\n"
-          i
-          (Mem.get dst_i i)
-          expected_i ;
-        ok := false) ;
-      if abs_float (Mem.get dst_f i -. expected_f) > 0.001 then (
-        Printf.printf
-          "FAIL: dst_f[%d] = %f, expected %f\n"
-          i
-          (Mem.get dst_f i)
-          expected_f ;
-        ok := false)
-    done ;
-    if !ok then print_endline "PASS: Polymorphic identity (SPOC)" ;
-    !ok
-
 (* ========== V2 Tests ========== *)
 
 let test_basic_v2 () =
@@ -211,7 +67,7 @@ let test_basic_v2 () =
     true)
   else
     let dev = v2_devs.(0) in
-    match kirc.Kirc.body_v2 with
+    match kirc.Sarek.Kirc_types.body_v2 with
     | None ->
         print_endline "V2: No V2 IR - SKIPPED" ;
         true
@@ -258,7 +114,7 @@ let test_times_two_v2 () =
     true)
   else
     let dev = v2_devs.(0) in
-    match kirc.Kirc.body_v2 with
+    match kirc.Sarek.Kirc_types.body_v2 with
     | None ->
         print_endline "V2: No V2 IR - SKIPPED" ;
         true
@@ -305,7 +161,7 @@ let test_identity_v2 () =
     true)
   else
     let dev = v2_devs.(0) in
-    match kirc.Kirc.body_v2 with
+    match kirc.Sarek.Kirc_types.body_v2 with
     | None ->
         print_endline "V2: No V2 IR - SKIPPED" ;
         true
@@ -363,7 +219,7 @@ let test_identity_v2 () =
 
 let test_basic_interpreter () =
   let _, kirc = basic_kernel in
-  match kirc.Kirc.body_v2 with
+  match kirc.Sarek.Kirc_types.body_v2 with
   | None ->
       print_endline "Interpreter: No V2 IR - SKIPPED" ;
       true
@@ -402,16 +258,7 @@ let test_basic_interpreter () =
       !ok
 
 let () =
-  print_endline "=== Module Functions & Polymorphism Tests ===" ;
-  print_endline "" ;
-
-  let t1 = test_basic_module_fun () in
-  print_endline "" ;
-
-  let t2 = test_multiple_module_funs () in
-  print_endline "" ;
-
-  let t3 = test_polymorphic_identity () in
+  print_endline "=== Module Functions & Polymorphism Tests (V2) ===" ;
   print_endline "" ;
 
   print_endline "=== V2 Tests ===" ;
@@ -426,13 +273,6 @@ let () =
 
   print_endline "=== Summary ===" ;
   Printf.printf
-    "Basic module function (SPOC): %s\n"
-    (if t1 then "PASS" else "FAIL") ;
-  Printf.printf "Times two (SPOC): %s\n" (if t2 then "PASS" else "FAIL") ;
-  Printf.printf
-    "Polymorphic identity (SPOC): %s\n"
-    (if t3 then "PASS" else "FAIL") ;
-  Printf.printf
     "Basic module function (V2): %s\n"
     (if v1 then "PASS" else "FAIL") ;
   Printf.printf "Times two (V2): %s\n" (if v2 then "PASS" else "FAIL") ;
@@ -443,7 +283,7 @@ let () =
     "Basic module function (Interpreter): %s\n"
     (if i1 then "PASS" else "FAIL") ;
 
-  if t1 && t2 && t3 && v1 && v2 && v3 && i1 then (
+  if v1 && v2 && v3 && i1 then (
     print_endline "\nAll tests passed!" ;
     exit 0)
   else (

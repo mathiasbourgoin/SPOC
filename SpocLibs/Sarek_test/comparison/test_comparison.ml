@@ -106,7 +106,7 @@ let ir_matches expected got =
 (* Helper to extract kernel IR from a sarek_kernel tuple *)
 let extract_kernel_ir kern =
   let (_spoc_kernel, kirc_kernel) = kern in
-  Sarek.Kirc_Ast.string_of_ast kirc_kernel.Sarek.Kirc.body
+  Sarek.Kirc_Ast.string_of_ast kirc_kernel.Sarek.Kirc_types.body
 
 (* ============================================================================
  * Test Kernels - must match extract_ir.ml from camlp4 version

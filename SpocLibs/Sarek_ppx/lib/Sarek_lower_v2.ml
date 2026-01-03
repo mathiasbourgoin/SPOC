@@ -167,6 +167,9 @@ type state = {
   types : (string, (string * Ir.elttype) list) Hashtbl.t;
       (** Collected record types: type_name -> [(field_name, field_type); ...]
       *)
+  variants : (string, (string * Ir.elttype list) list) Hashtbl.t;
+      (** Collected variant types: type_name -> [(constructor_name, payload_types); ...]
+      *)
 }
 
 let create_state fun_map =
@@ -177,6 +180,7 @@ let create_state fun_map =
     lowered_funs = Hashtbl.create 8;
     lowered_funs_order = [];
     types = Hashtbl.create 8;
+    variants = Hashtbl.create 8;
   }
 
 let fresh_id state =
@@ -341,6 +345,18 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
       end ;
       Ir.ERecord (name, List.map (fun (n, e) -> (n, lower_expr state e)) fields)
   | TEConstr (ty_name, constr, arg) ->
+      (* Register the variant type if not already registered *)
+      (match repr te.ty with
+      | TVariant (name, constrs) when not (Hashtbl.mem state.variants name) ->
+          let constr_types =
+            List.map (fun (cname, ty_opt) ->
+              (cname, match ty_opt with
+                | None -> []
+                | Some ty -> [elttype_of_typ ty]))
+              constrs
+          in
+          Hashtbl.add state.variants name constr_types
+      | _ -> ()) ;
       let args = match arg with None -> [] | Some e -> [lower_expr state e] in
       Ir.EVariant (ty_name, constr, args)
   | TETuple exprs -> Ir.ETuple (List.map (lower_expr state) exprs)
@@ -639,6 +655,10 @@ let lower_kernel (kernel : tkernel) : Ir.kernel * string list =
   let types_list =
     Hashtbl.fold (fun name fields acc -> (name, fields) :: acc) state.types []
   in
+  (* Collect variant types from state *)
+  let variants_list =
+    Hashtbl.fold (fun name constrs acc -> (name, constrs) :: acc) state.variants []
+  in
   (* Collect helper functions from state, in dependency order *)
   let funcs_list =
     List.rev state.lowered_funs_order
@@ -651,6 +671,7 @@ let lower_kernel (kernel : tkernel) : Ir.kernel * string list =
       kern_locals = [];
       kern_body = full_body;
       kern_types = types_list;
+      kern_variants = variants_list;
       kern_funcs = funcs_list;
       kern_native_fn = None;  (* Native fn is added during quoting *)
     },

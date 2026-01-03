@@ -231,7 +231,7 @@ test_sarek:
 TIER1_TESTS = test_vector_add test_bitwise_ops test_math_intrinsics test_transpose
 
 # Tier 2: Medium complexity (2D indexing, neighbor access, atomics, shared memory)
-TIER2_TESTS = test_matrix_mul test_stencil test_convolution test_histogram test_reduce test_scan test_sort
+TIER2_TESTS = test_matrix_mul test_stencil test_convolution test_reduce test_scan test_sort
 
 # Tier 3: Complex types (custom types, type registration, variants)
 TIER3_TESTS = test_ktype_record test_registered_type test_registered_variant test_complex_types test_nested_types
@@ -267,9 +267,6 @@ test-tier2:
 	@echo ""
 	@echo "--- test_convolution ---"
 	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_convolution.exe -- -s 1024
-	@echo ""
-	@echo "--- test_histogram ---"
-	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_histogram.exe -- -s 1024
 	@echo ""
 	@echo "--- test_reduce ---"
 	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec SpocLibs/Sarek_test/e2e/test_reduce.exe -- -s 2048

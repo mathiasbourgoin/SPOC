@@ -124,6 +124,8 @@ let pow x y =
 
 let sqrt x = if x < 0. then nan else to_float32 (Stdlib.sqrt x)
 
+let rsqrt x = if x <= 0. then nan else to_float32 (1. /. Stdlib.sqrt x)
+
 let sin x = to_float32 (Stdlib.sin x)
 
 let cos x = to_float32 (Stdlib.cos x)

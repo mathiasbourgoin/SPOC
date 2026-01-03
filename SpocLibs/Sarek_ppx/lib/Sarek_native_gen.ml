@@ -347,7 +347,7 @@ let empty_ctx =
     inline_types = StringSet.empty;
     current_module = None;
     gen_mode = FullMode;
-    use_v2 = false;
+    use_v2 = true;  (* V2 is now the default - SPOC path removed *)
   }
 
 (** Check if a qualified type name is from the current module. For
@@ -1545,45 +1545,18 @@ let gen_simple_cpu_kern ~loc ~exec_strategy (kernel : tkernel) : expression =
 
 (** Generate a type cast expression for extracting a kernel argument.
 
-    For vectors: cast Obj.t to the appropriate Spoc.Vector.vector type. For
-    scalars: cast Obj.t to the primitive type.
+    For vectors: cast Obj.t to Sarek_core.Vector.t (V2 path).
+    For scalars: cast Obj.t to the primitive type.
 
-    We use Spoc vectors directly (not bigarrays) because:
-    - Supports custom types (records/variants)
-    - Handles GPU-resident data correctly via Spoc.Mem.get/set
-    - No copy overhead *)
+    V2 uses type-safe vectors that abstract over storage. *)
 let gen_arg_cast ~loc (param : tparam) (idx : int) : expression =
   let arr_access =
     [%expr Array.get __args [%e Ast_builder.Default.eint ~loc idx]]
   in
   match repr param.tparam_type with
-  | TVec elem_ty -> (
-      (* Vector types - cast to Spoc.Vector.vector with appropriate element type *)
-      match repr elem_ty with
-      | TReg "float32" ->
-          [%expr
-            (Obj.obj [%e arr_access]
-              : (float, Bigarray.float32_elt) Spoc.Vector.vector)]
-      | TReg "float64" ->
-          [%expr
-            (Obj.obj [%e arr_access]
-              : (float, Bigarray.float64_elt) Spoc.Vector.vector)]
-      | TReg "int32" | TPrim TInt32 ->
-          [%expr
-            (Obj.obj [%e arr_access]
-              : (int32, Bigarray.int32_elt) Spoc.Vector.vector)]
-      | TReg "int64" ->
-          [%expr
-            (Obj.obj [%e arr_access]
-              : (int64, Bigarray.int64_elt) Spoc.Vector.vector)]
-      | TRecord _ | TVariant _ ->
-          (* Custom types - use generic vector type *)
-          [%expr (Obj.obj [%e arr_access] : (_, _) Spoc.Vector.vector)]
-      | _ ->
-          (* Default to float32 for unknown types *)
-          [%expr
-            (Obj.obj [%e arr_access]
-              : (float, Bigarray.float32_elt) Spoc.Vector.vector)])
+  | TVec _ ->
+      (* All vector types use the same generic cast - Vector.get/set handle the types *)
+      [%expr (Obj.obj [%e arr_access] : (_, _) Sarek_core.Vector.t)]
   | TReg "float32" -> [%expr (Obj.obj [%e arr_access] : float)]
   | TReg "float64" -> [%expr (Obj.obj [%e arr_access] : float)]
   | TReg "int32" | TPrim TInt32 -> [%expr (Obj.obj [%e arr_access] : int32)]
@@ -1736,8 +1709,8 @@ let gen_types_object ~loc (decls : ttype_decl list) : expression =
     run_1d/2d/3d_threadpool. This eliminates the per-element thread_state
     overhead. *)
 let gen_cpu_kern_wrapper ~loc (kernel : tkernel) : expression =
-  (* We now use Spoc vectors directly (via Spoc.Mem.get/set) instead of
-     bigarrays, so record/variant vectors are supported. *)
+  (* V2: Uses Sarek_core.Vector with get/set for type-safe access.
+     Record/variant vectors are supported via custom_type descriptors. *)
   let use_fcm = has_inline_types kernel in
   let native_kern = gen_cpu_kern ~loc kernel in
 

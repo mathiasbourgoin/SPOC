@@ -25,18 +25,18 @@ module type CodeGenerator = sig
 
   val kern_end : string
 
-  val parse_intrinsics : Kirc_Ast.intrinsics -> string
+  val parse_intrinsics : Sarek.Kirc_Ast.intrinsics -> string
 
   val default_parser : bool
 
   val parse_fun :
-    int -> Kirc_Ast.k_ext -> string -> string -> Spoc.Devices.device -> string
+    int -> Sarek.Kirc_Ast.k_ext -> string -> string -> Spoc.Devices.device -> string
 
-  val parse : int -> Kirc_Ast.k_ext -> Spoc.Devices.device -> string
+  val parse : int -> Sarek.Kirc_Ast.k_ext -> Spoc.Devices.device -> string
 end
 
 module Generator : functor (M : CodeGenerator) -> sig
-  val global_funs : (Kirc_Ast.k_ext, string * string) Hashtbl.t
+  val global_funs : (Sarek.Kirc_Ast.k_ext, string * string) Hashtbl.t
 
   val return_v : (string * string) ref
 
@@ -47,7 +47,7 @@ module Generator : functor (M : CodeGenerator) -> sig
   val parse_fun :
     ?profile:bool ->
     int ->
-    Kirc_Ast.k_ext ->
+    Sarek.Kirc_Ast.k_ext ->
     string ->
     string ->
     Spoc.Devices.device ->
@@ -58,13 +58,13 @@ module Generator : functor (M : CodeGenerator) -> sig
   val get_profile_counter : unit -> int
 
   val parse :
-    ?profile:bool -> int -> Kirc_Ast.k_ext -> Spoc.Devices.device -> string
+    ?profile:bool -> int -> Sarek.Kirc_Ast.k_ext -> Spoc.Devices.device -> string
 
   val parse_int :
-    ?profile:bool -> int -> Kirc_Ast.k_ext -> Spoc.Devices.device -> string
+    ?profile:bool -> int -> Sarek.Kirc_Ast.k_ext -> Spoc.Devices.device -> string
 
   val parse_float :
-    ?profile:bool -> int -> Kirc_Ast.k_ext -> Spoc.Devices.device -> string
+    ?profile:bool -> int -> Sarek.Kirc_Ast.k_ext -> Spoc.Devices.device -> string
 
-  val parse_vect : Kirc_Ast.kvect -> int
+  val parse_vect : Sarek.Kirc_Ast.kvect -> int
 end

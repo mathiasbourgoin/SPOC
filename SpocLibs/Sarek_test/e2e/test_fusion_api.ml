@@ -1,6 +1,7 @@
-(** Integration test for Sarek.Kirc.Fusion API
+(** Integration test for Sarek_fusion API
 
     Tests kernel fusion using the runtime API with actual PPX-defined kernels.
+    Uses V2 IR (Sarek_ir.kernel) with Sarek_fusion module.
 *)
 
 (** Producer kernel: temp[i] = input[i] * 2 *)
@@ -15,49 +16,38 @@ let consumer =
     fun (output : int32 vector) (temp : int32 vector) ->
       output.(thread_idx_x) <- temp.(thread_idx_x) + 1l]
 
+(** Helper to get V2 IR from kernel *)
+let get_ir kirc =
+  match kirc.Sarek.Kirc_types.body_v2 with
+  | Some ir -> ir
+  | None -> failwith "Kernel has no V2 IR"
+
 (** Test that fusion API is accessible and works *)
 let test_can_fuse () =
-  let _spoc_prod, kirc_prod = producer in
-  let _spoc_cons, kirc_cons = consumer in
+  let _, kirc_prod = producer in
+  let _, kirc_cons = consumer in
+  let ir_prod = get_ir kirc_prod in
+  let ir_cons = get_ir kirc_cons in
   (* Check if fusion is possible *)
   let can_fuse =
-    Sarek.Kirc.Fusion.can_fuse_bodies
-      kirc_prod.Sarek.Kirc.body
-      kirc_cons.Sarek.Kirc.body
-      ~intermediate:"temp"
+    Sarek.Sarek_fusion.can_fuse ir_prod ir_cons "temp"
   in
   Printf.printf "can_fuse: %b\n" can_fuse ;
   assert can_fuse ;
   Printf.printf "test_can_fuse: PASSED\n"
 
-(** Test fusing kernel bodies directly *)
-let test_fuse_bodies () =
-  let _spoc_prod, kirc_prod = producer in
-  let _spoc_cons, kirc_cons = consumer in
-  let fused_body =
-    Sarek.Kirc.Fusion.fuse_bodies
-      kirc_prod.Sarek.Kirc.body
-      kirc_cons.Sarek.Kirc.body
-      ~intermediate:"temp"
-  in
-  (* Verify the fused body is a valid Kern *)
-  (match fused_body with
-  | Sarek.Kirc_Ast.Kern _ -> Printf.printf "fused_body is a Kern: OK\n"
-  | _ -> failwith "Expected Kern") ;
-  Printf.printf "test_fuse_bodies: PASSED\n"
-
-(** Test fusing full kirc_kernel records *)
-let test_fuse_kernels () =
-  let _spoc_prod, kirc_prod = producer in
-  let _spoc_cons, kirc_cons = consumer in
+(** Test fusing kernels directly *)
+let test_fuse () =
+  let _, kirc_prod = producer in
+  let _, kirc_cons = consumer in
+  let ir_prod = get_ir kirc_prod in
+  let ir_cons = get_ir kirc_cons in
   let fused =
-    Sarek.Kirc.Fusion.fuse_kernels kirc_prod kirc_cons ~intermediate:"temp"
+    Sarek.Sarek_fusion.fuse ir_prod ir_cons "temp"
   in
-  (* Verify the fused kernel has a body *)
-  (match fused.Sarek.Kirc.body with
-  | Sarek.Kirc_Ast.Kern _ -> Printf.printf "fused kernel body is a Kern: OK\n"
-  | _ -> failwith "Expected Kern in fused kernel") ;
-  Printf.printf "test_fuse_kernels: PASSED\n"
+  (* Verify the fused kernel has a name *)
+  Printf.printf "fused kernel name: %s\n" fused.Sarek.Sarek_ir.kern_name ;
+  Printf.printf "test_fuse: PASSED\n"
 
 (** Three-stage pipeline: a[i] = in[i]*2, b[i] = a[i]+1, out[i] = b[i]*3 *)
 let stage1 =
@@ -80,22 +70,19 @@ let test_fuse_pipeline () =
   let _, k1 = stage1 in
   let _, k2 = stage2 in
   let _, k3 = stage3 in
-  let bodies = [k1.Sarek.Kirc.body; k2.Sarek.Kirc.body; k3.Sarek.Kirc.body] in
-  let fused_body, eliminated = Sarek.Kirc.Fusion.fuse_pipeline_bodies bodies in
+  let kernels = [get_ir k1; get_ir k2; get_ir k3] in
+  let fused, eliminated = Sarek.Sarek_fusion.fuse_pipeline kernels in
   Printf.printf "Eliminated intermediates: %s\n" (String.concat ", " eliminated) ;
   (* Should eliminate both a and b *)
   assert (List.mem "a" eliminated) ;
   assert (List.mem "b" eliminated) ;
-  (* Verify result is a Kern *)
-  (match fused_body with
-  | Sarek.Kirc_Ast.Kern _ -> Printf.printf "pipeline fused body is a Kern: OK\n"
-  | _ -> failwith "Expected Kern") ;
+  (* Verify result has a kernel name *)
+  Printf.printf "fused kernel name: %s\n" fused.Sarek.Sarek_ir.kern_name ;
   Printf.printf "test_fuse_pipeline: PASSED\n"
 
 let () =
-  Printf.printf "=== Fusion API Integration Tests ===\n" ;
+  Printf.printf "=== Fusion API Integration Tests (V2) ===\n" ;
   test_can_fuse () ;
-  test_fuse_bodies () ;
-  test_fuse_kernels () ;
+  test_fuse () ;
   test_fuse_pipeline () ;
   Printf.printf "=== All integration tests passed! ===\n"
