@@ -4,7 +4,7 @@
  * This module tests that the PPX implementation produces IR that is
  * structurally equivalent to the reference IR from the camlp4 implementation.
  *
- * The reference IR is in SpocLibs/Sarek_test/regression/reference_ir.txt
+ * The reference IR is in runtime/tests/Sarek_test/regression/reference_ir.txt
  *
  * Note: Variable IDs may differ between implementations, so we normalize them.
  ******************************************************************************)
@@ -38,7 +38,11 @@ let parse_reference_ir filename =
             + String.length body_marker
           in
           let body_end =
-            try Str.search_forward (Str.regexp_string ret_marker) section body_start
+            try
+              Str.search_forward
+                (Str.regexp_string ret_marker)
+                section
+                body_start
             with Not_found -> String.length section
           in
           String.trim (String.sub section body_start (body_end - body_start))
@@ -62,7 +66,7 @@ let parse_reference_ir filename =
 (* Get reference for a specific kernel *)
 let reference_ir =
   lazy
-    (let filename = "SpocLibs/Sarek_test/regression/reference_ir.txt" in
+    (let filename = "runtime/tests/Sarek_test/regression/reference_ir.txt" in
      if Sys.file_exists filename then parse_reference_ir filename
      else
        (* Try relative path from test execution directory *)
@@ -90,9 +94,13 @@ let normalize_ir s =
   let lines = remove_seq_empty lines in
   let s = String.concat "\n" lines in
   (* Replace variable IDs: "IntVar 8 -> a" -> "IntVar # -> a" *)
-  let s = Str.global_replace (Str.regexp "\\([A-Za-z]+Var\\) [0-9]+ ->") "\\1 # ->" s in
+  let s =
+    Str.global_replace (Str.regexp "\\([A-Za-z]+Var\\) [0-9]+ ->") "\\1 # ->" s
+  in
   (* Replace "IntId a 8" -> "IntId a #" *)
-  let s = Str.global_replace (Str.regexp "\\(IntId [a-z_]+ \\)[0-9]+") "\\1#" s in
+  let s =
+    Str.global_replace (Str.regexp "\\(IntId [a-z_]+ \\)[0-9]+") "\\1#" s
+  in
   (* Replace "VecVar 0 ->v" -> "VecVar # ->v" *)
   let s = Str.global_replace (Str.regexp "VecVar [0-9]+ ->") "VecVar # ->" s in
   s
@@ -105,7 +113,7 @@ let ir_matches expected got =
 
 (* Helper to extract kernel IR from a sarek_kernel tuple *)
 let extract_kernel_ir kern =
-  let (_spoc_kernel, kirc_kernel) = kern in
+  let _spoc_kernel, kirc_kernel = kern in
   Sarek.Kirc_Ast.string_of_ast kirc_kernel.Sarek.Kirc_types.body
 
 (* ============================================================================
@@ -113,12 +121,10 @@ let extract_kernel_ir kern =
  * ============================================================================ *)
 
 (* Simple integer assignment *)
-let k_int_literal =
-  [%kernel fun (v : int32 vector) -> v.(0) <- 42]
+let k_int_literal = [%kernel fun (v : int32 vector) -> v.(0) <- 42]
 
 (* Float literal *)
-let k_float_literal =
-  [%kernel fun (v : float32 vector) -> v.(0) <- 3.14]
+let k_float_literal = [%kernel fun (v : float32 vector) -> v.(0) <- 3.14]
 
 (* Integer arithmetic *)
 let k_arithmetic_int =
@@ -153,28 +159,35 @@ let test_kernel_ir name kern () =
   | Some (expected_body, _expected_ret) ->
       let got_body = extract_kernel_ir kern in
       if not (ir_matches expected_body got_body) then (
-        Printf.printf "\n=== Expected (normalized) ===\n%s\n"
+        Printf.printf
+          "\n=== Expected (normalized) ===\n%s\n"
           (normalize_ir expected_body) ;
         Printf.printf "\n=== Got (normalized) ===\n%s\n" (normalize_ir got_body) ;
         Alcotest.fail "IR mismatch")
 
 let () =
   let refs = Lazy.force reference_ir in
-  Printf.printf "Comparison tests - found %d kernels in reference file\n"
+  Printf.printf
+    "Comparison tests - found %d kernels in reference file\n"
     (List.length refs) ;
 
   (* Run actual comparison tests
      Note: PPX uses flat Seq(Decl, Set, ...) while camlp4 used nested Local blocks.
      Both are semantically equivalent. Only simple kernels without let-bindings
      will match exactly. *)
-  Alcotest.run "IR Comparison"
+  Alcotest.run
+    "IR Comparison"
     [
       ( "simple",
         [
           (* These simple kernels have no let-bindings, so IR matches exactly *)
-          Alcotest.test_case "k_int_literal" `Quick
+          Alcotest.test_case
+            "k_int_literal"
+            `Quick
             (test_kernel_ir "k_int_literal" k_int_literal);
-          Alcotest.test_case "k_float_literal" `Quick
+          Alcotest.test_case
+            "k_float_literal"
+            `Quick
             (test_kernel_ir "k_float_literal" k_float_literal);
         ] );
       (* Kernels with let-bindings have structural differences (Local vs Seq+Decl)

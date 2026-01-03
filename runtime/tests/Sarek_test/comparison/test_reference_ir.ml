@@ -65,7 +65,7 @@ let expected_kernels =
 let find_reference_file () =
   let candidates =
     [
-      "SpocLibs/Sarek_test/regression/reference_ir.txt";
+      "runtime/tests/Sarek_test/regression/reference_ir.txt";
       "../regression/reference_ir.txt";
       "../../Sarek_test/regression/reference_ir.txt";
     ]
