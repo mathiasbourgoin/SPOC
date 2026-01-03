@@ -3,6 +3,7 @@
 (dirs ir_extract)
 
 ; Main sarek library - V2 path, no SPOC dependency
+
 (library
  (name sarek)
  (public_name sarek)
@@ -21,5 +22,5 @@
   Kirc_Cuda
   Kirc_OpenCL
   Sarek_registry
-  Execute))
-
+  Execute
+  Transform))
