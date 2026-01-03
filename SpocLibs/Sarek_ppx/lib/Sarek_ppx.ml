@@ -1383,39 +1383,39 @@ let expand_sarek_include ~ctxt payload =
       (* Resolve path relative to current file *)
       let current_file = loc.loc_start.pos_fname in
       let dir = Filename.dirname current_file in
-      let resolve () =
-        if Filename.is_relative path then Filename.concat dir path else path
+      let rec find_build_root d =
+        let parent = Filename.dirname d in
+        if String.equal d parent then None
+        else if String.equal (Filename.basename d) "_build" then Some parent
+        else find_build_root parent
       in
-      let full_path = resolve () in
+      let resolve_relative base_dir p =
+        if Filename.is_relative p then Filename.concat base_dir p else p
+      in
+      let full_path = resolve_relative dir path in
       let full_path =
         if Sys.file_exists full_path then full_path
-        else if Filename.is_relative path then
-          (* When expanding from _build/<context>/..., fall back to source tree
-             by stripping the _build/<context> prefix. *)
-          let cwd = Sys.getcwd () in
-          let build_prefix = Filename.concat cwd "_build/default" in
-          if
-            String.length dir >= String.length build_prefix
-            && String.equal
-                 (String.sub dir 0 (String.length build_prefix))
-                 build_prefix
-          then
-            let rel =
-              String.sub
-                dir
-                (String.length build_prefix)
-                (String.length dir - String.length build_prefix)
-            in
-            let rel =
-              if String.length rel > 0 && rel.[0] = '/' then
-                String.sub rel 1 (String.length rel - 1)
-              else rel
-            in
-            let alt_dir = Filename.concat cwd rel in
-            let alt_path = Filename.concat alt_dir path in
-            if Sys.file_exists alt_path then alt_path else full_path
-          else full_path
-        else full_path
+        else
+          (* When dune runs the PPX from _build/... the source path can be
+             rewritten. Try stripping the _build/<context>/ prefix and resolve
+             relative to the repository root (Sys.getcwd). *)
+          let parts = String.split_on_char '/' full_path in
+          let rec drop_build = function
+            | "_build" :: _ctx :: rest -> Some (String.concat "/" rest)
+            | _ :: tl -> drop_build tl
+            | [] -> None
+          in
+          match (drop_build parts, find_build_root dir) with
+          | Some rel, Some build_root ->
+              let alt = Filename.concat build_root rel in
+              if Sys.file_exists alt then alt else full_path
+          | Some rel, None ->
+              let alt = Filename.concat (Sys.getcwd ()) rel in
+              if Sys.file_exists alt then alt else full_path
+          | None, Some build_root when Filename.is_relative path ->
+              let alt = Filename.concat build_root path in
+              if Sys.file_exists alt then alt else full_path
+          | None, _ -> full_path
       in
       if Sarek_debug.enabled then
         Sarek_debug.log
