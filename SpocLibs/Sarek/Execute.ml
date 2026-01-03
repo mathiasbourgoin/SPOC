@@ -130,8 +130,8 @@ type vector_arg =
   | Float32 : float -> vector_arg  (** 32-bit float scalar *)
   | Float64 : float -> vector_arg  (** 64-bit float scalar *)
 
-(** Convert vector_arg list to Obj.t array for backend dispatch.
-    Passes V2 Vectors directly - backends handle extraction. *)
+(** Convert vector_arg list to Obj.t array for backend dispatch. Passes V2
+    Vectors directly - backends handle extraction. *)
 let vector_args_to_obj_array (args : vector_arg list) : Obj.t array =
   Array.of_list
     (List.map
@@ -520,7 +520,8 @@ let run_interpreter_vectors ~(ir : Sarek_ir.kernel) ~(args : vector_arg list)
     !interp_arrays
 
 (** Execute a kernel with V2 Vectors. Auto-transfers, dispatches to backend.
-    Unified path for all backends - run_v2 handles expansion based on backend. *)
+    Unified path for all backends - run_v2 handles expansion based on backend.
+*)
 let run_vectors ~(device : Device.t) ~(ir : Sarek_ir.kernel)
     ~(args : vector_arg list) ~(block : Framework_sig.dims)
     ~(grid : Framework_sig.dims) ?(shared_mem : int = 0) () : unit =

@@ -54,8 +54,7 @@ let () =
   let n = 256 in
 
   (match kirc.Sarek.Kirc_types.body_v2 with
-  | None ->
-      print_endline "No V2 IR - SKIPPED"
+  | None -> print_endline "No V2 IR - SKIPPED"
   | Some ir ->
       let xv = V2_Vector.create V2_Vector.float32 n in
       let yv = V2_Vector.create V2_Vector.float32 n in
@@ -74,12 +73,13 @@ let () =
       Sarek.Execute.run_vectors
         ~device:dev
         ~ir
-        ~args:[
-          Sarek.Execute.Vec xv;
-          Sarek.Execute.Vec yv;
-          Sarek.Execute.Vec dst;
-          Sarek.Execute.Int n;
-        ]
+        ~args:
+          [
+            Sarek.Execute.Vec xv;
+            Sarek.Execute.Vec yv;
+            Sarek.Execute.Vec dst;
+            Sarek.Execute.Int n;
+          ]
         ~block
         ~grid
         () ;

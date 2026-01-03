@@ -675,7 +675,8 @@ let fuse_reduction (map_kernel : kernel) (reduce_kernel : kernel)
             kern_locals = reduce_kernel.kern_locals @ map_kernel.kern_locals;
             kern_body = fused_body;
             kern_types = reduce_kernel.kern_types @ map_kernel.kern_types;
-            kern_variants = reduce_kernel.kern_variants @ map_kernel.kern_variants;
+            kern_variants =
+              reduce_kernel.kern_variants @ map_kernel.kern_variants;
             kern_funcs = reduce_kernel.kern_funcs @ map_kernel.kern_funcs;
             kern_native_fn = None;
           })

@@ -69,18 +69,31 @@ let ocaml_gray_code input to_gray from_gray n =
 (* ========== Shared test data ========== *)
 
 let input_a = ref [||]
+
 let input_b = ref [||]
+
 let expected_and = ref [||]
+
 let expected_or = ref [||]
+
 let expected_xor = ref [||]
+
 let input_shift = ref [||]
+
 let input_shift_amt = ref [||]
+
 let expected_left = ref [||]
+
 let expected_right = ref [||]
+
 let input_popcount = ref [||]
+
 let expected_popcount = ref [||]
+
 let input_gray = ref [||]
+
 let expected_to_gray = ref [||]
+
 let expected_from_gray = ref [||]
 
 let init_bitwise_data () =

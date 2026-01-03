@@ -53,8 +53,8 @@ let memspace_of_memspace (mem : Sarek_types.memspace) : Ir.memspace =
   | Sarek_types.Shared -> Ir.Shared
   | Sarek_types.Local -> Ir.Local
 
-(** Convert Sarek_ast.type_expr to Sarek_ir_ppx.elttype
-    Used for registered types where we have AST type expressions. *)
+(** Convert Sarek_ast.type_expr to Sarek_ir_ppx.elttype Used for registered
+    types where we have AST type expressions. *)
 let elttype_of_type_expr (te : Sarek_ast.type_expr) : Ir.elttype =
   match te with
   | TEConstr ("float32", []) | TEConstr ("Sarek_float32.t", []) -> Ir.TFloat32
@@ -63,12 +63,13 @@ let elttype_of_type_expr (te : Sarek_ast.type_expr) : Ir.elttype =
   | TEConstr ("int32", []) | TEConstr ("int", []) -> Ir.TInt32
   | TEConstr ("bool", []) -> Ir.TBool
   | TEConstr ("unit", []) -> Ir.TUnit
-  | TEConstr ("float", []) -> Ir.TFloat32  (* OCaml float -> float32 in GPU *)
+  | TEConstr ("float", []) -> Ir.TFloat32 (* OCaml float -> float32 in GPU *)
   | TETuple ts ->
-      failwith ("Tuple types in variant constructors not supported: " ^
-                String.concat ", " (List.map (fun _ -> "_") ts))
+      failwith
+        ("Tuple types in variant constructors not supported: "
+        ^ String.concat ", " (List.map (fun _ -> "_") ts))
   | TEArrow _ -> failwith "Function types in variant constructors not supported"
-  | TEVar _ -> Ir.TInt32  (* Type variable - default to int32 *)
+  | TEVar _ -> Ir.TInt32 (* Type variable - default to int32 *)
   | TEConstr (name, _) ->
       (* Could be a custom type - not yet supported *)
       failwith ("Unknown type in variant constructor: " ^ name)
@@ -188,8 +189,8 @@ type state = {
       (** Collected record types: type_name -> [(field_name, field_type); ...]
       *)
   variants : (string, (string * Ir.elttype list) list) Hashtbl.t;
-      (** Collected variant types: type_name -> [(constructor_name, payload_types); ...]
-      *)
+      (** Collected variant types: type_name ->
+          [(constructor_name, payload_types); ...] *)
 }
 
 let create_state fun_map =
@@ -371,10 +372,12 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
         match repr te.ty with
         | TVariant (_, constrs) ->
             let constr_types =
-              List.map (fun (cname, ty_opt) ->
-                (cname, match ty_opt with
-                  | None -> []
-                  | Some ty -> [elttype_of_typ ty]))
+              List.map
+                (fun (cname, ty_opt) ->
+                  ( cname,
+                    match ty_opt with
+                    | None -> []
+                    | Some ty -> [elttype_of_typ ty] ))
                 constrs
             in
             Hashtbl.add state.variants ty_name constr_types
@@ -680,7 +683,10 @@ let lower_kernel (kernel : tkernel) : Ir.kernel * string list =
   in
   (* Collect variant types from state *)
   let variants_list =
-    Hashtbl.fold (fun name constrs acc -> (name, constrs) :: acc) state.variants []
+    Hashtbl.fold
+      (fun name constrs acc -> (name, constrs) :: acc)
+      state.variants
+      []
   in
   (* Collect helper functions from state, in dependency order *)
   let funcs_list =
@@ -696,7 +702,8 @@ let lower_kernel (kernel : tkernel) : Ir.kernel * string list =
       kern_types = types_list;
       kern_variants = variants_list;
       kern_funcs = funcs_list;
-      kern_native_fn = None;  (* Native fn is added during quoting *)
+      kern_native_fn = None;
+      (* Native fn is added during quoting *)
     },
     constructors )
 

@@ -37,7 +37,9 @@ let ocaml_complex_math x y output n =
 (* ========== Shared test data ========== *)
 
 let input_x = ref [||]
+
 let input_y = ref [||]
+
 let expected_complex = ref [||]
 
 let init_complex_data () =
@@ -99,8 +101,7 @@ let run_complex_math_v2 (dev : V2_Device.t) =
   Execute.run_vectors
     ~device:dev
     ~ir
-    ~args:
-      [Execute.Vec x; Execute.Vec y; Execute.Vec output; Execute.Int n]
+    ~args:[Execute.Vec x; Execute.Vec y; Execute.Vec output; Execute.Int n]
     ~block
     ~grid
     () ;
@@ -120,7 +121,11 @@ let verify_float_arrays name result expected tolerance =
       if !errors < 5 then
         Printf.printf
           "  %s mismatch at %d: expected %.6f, got %.6f (diff=%.6f)\n"
-          name i expected.(i) result.(i) diff ;
+          name
+          i
+          expected.(i)
+          result.(i)
+          diff ;
       incr errors
     end
   done ;
@@ -170,8 +175,11 @@ let () =
 
         if not v2_ok then all_ok := false ;
 
-        Printf.printf "%-35s %10.4f %10s\n"
-          (Printf.sprintf "%s (%s)" name framework) v2_time v2_status)
+        Printf.printf
+          "%-35s %10.4f %10s\n"
+          (Printf.sprintf "%s (%s)" name framework)
+          v2_time
+          v2_status)
       v2_devs ;
 
     print_endline (String.make 60 '-') ;

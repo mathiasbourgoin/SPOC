@@ -1,4 +1,3 @@
-
 type float32 = float
 
 (* Test that public functions are accessible in kernels.

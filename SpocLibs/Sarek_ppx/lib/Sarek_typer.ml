@@ -505,11 +505,18 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
           in
           match (arg_opt, expected_arg) with
           | None, None ->
-              Ok (mk_texpr (TEConstr (type_name, name, None)) full_variant_ty loc, env)
+              Ok
+                ( mk_texpr (TEConstr (type_name, name, None)) full_variant_ty loc,
+                  env )
           | Some arg, Some expected_ty ->
               let* targ, env = infer env arg in
               let* () = unify_or_error targ.ty expected_ty arg.expr_loc in
-              Ok (mk_texpr (TEConstr (type_name, name, Some targ)) full_variant_ty loc, env)
+              Ok
+                ( mk_texpr
+                    (TEConstr (type_name, name, Some targ))
+                    full_variant_ty
+                    loc,
+                  env )
           | None, Some _ -> Error [Wrong_arity {expected = 1; got = 0; loc}]
           | Some _, None -> Error [Wrong_arity {expected = 0; got = 1; loc}])
       | None -> Error [Unbound_constructor (name, loc)])

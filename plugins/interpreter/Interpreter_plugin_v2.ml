@@ -67,8 +67,8 @@ module Interpreter_v2 : Framework_sig.BACKEND_V2 = struct
   let generate_source (_ir_obj : Obj.t) : string option = None
 
   (** Execute directly by interpreting the IR. Interpreter always interprets,
-      ignoring native_fn (use Native backend for compiled execution).
-      Uses parallel or sequential mode based on current device. *)
+      ignoring native_fn (use Native backend for compiled execution). Uses
+      parallel or sequential mode based on current device. *)
   let execute_direct
       ~(native_fn :
          (block:Framework_sig.dims ->
@@ -77,7 +77,8 @@ module Interpreter_v2 : Framework_sig.BACKEND_V2 = struct
          unit)
          option) ~(ir : Obj.t option) ~(block : Framework_sig.dims)
       ~(grid : Framework_sig.dims) (args : Obj.t array) : unit =
-    ignore native_fn ;  (* Interpreter ignores native_fn - always interprets *)
+    ignore native_fn ;
+    (* Interpreter ignores native_fn - always interprets *)
     (* Determine parallel mode based on current device *)
     let use_parallel =
       match !Device.current with

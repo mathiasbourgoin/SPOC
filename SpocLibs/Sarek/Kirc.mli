@@ -72,13 +72,15 @@ val new_array :
 
 val var : int -> string -> Sarek.Kirc_Ast.k_ext
 
-val spoc_gen_kernel : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
+val spoc_gen_kernel :
+  Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
 val spoc_fun_kernel : 'a -> 'b -> unit
 
 val seq : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
-val app : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext array -> Sarek.Kirc_Ast.k_ext
+val app :
+  Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext array -> Sarek.Kirc_Ast.k_ext
 
 val spoc_unit : unit -> Sarek.Kirc_Ast.k_ext
 
@@ -100,31 +102,47 @@ val spoc_int_id : int -> Sarek.Kirc_Ast.k_ext
 
 val spoc_float_id : float -> Sarek.Kirc_Ast.k_ext
 
-val spoc_plus : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
+val spoc_plus :
+  Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
-val spoc_plus_float : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
+val spoc_plus_float :
+  Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
-val spoc_min : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
+val spoc_min :
+  Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
-val spoc_min_float : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
+val spoc_min_float :
+  Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
-val spoc_mul : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
+val spoc_mul :
+  Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
-val spoc_mul_float : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
+val spoc_mul_float :
+  Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
-val spoc_div : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
+val spoc_div :
+  Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
-val spoc_div_float : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
+val spoc_div_float :
+  Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
-val spoc_mod : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
+val spoc_mod :
+  Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
 val spoc_ife :
-  Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
+  Sarek.Kirc_Ast.k_ext ->
+  Sarek.Kirc_Ast.k_ext ->
+  Sarek.Kirc_Ast.k_ext ->
+  Sarek.Kirc_Ast.k_ext
 
-val spoc_if : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
+val spoc_if :
+  Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
 val spoc_match :
-  string -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.case array -> Sarek.Kirc_Ast.k_ext
+  string ->
+  Sarek.Kirc_Ast.k_ext ->
+  Sarek.Kirc_Ast.case array ->
+  Sarek.Kirc_Ast.k_ext
 
 val spoc_case :
   int ->
@@ -139,23 +157,27 @@ val spoc_do :
   Sarek.Kirc_Ast.k_ext ->
   Sarek.Kirc_Ast.k_ext
 
-val spoc_while : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
+val spoc_while :
+  Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
 val params : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
 val spoc_id : 'a -> Sarek.Kirc_Ast.k_ext
 
-val spoc_constr : string -> string -> Sarek.Kirc_Ast.k_ext list -> Sarek.Kirc_Ast.k_ext
+val spoc_constr :
+  string -> string -> Sarek.Kirc_Ast.k_ext list -> Sarek.Kirc_Ast.k_ext
 
 val spoc_record : string -> Sarek.Kirc_Ast.k_ext list -> Sarek.Kirc_Ast.k_ext
 
 val spoc_rec_get : Sarek.Kirc_Ast.k_ext -> string -> Sarek.Kirc_Ast.k_ext
 
-val spoc_rec_set : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
+val spoc_rec_set :
+  Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
 val spoc_return : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
-val concat : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
+val concat :
+  Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
 val empty_arg : unit -> Sarek.Kirc_Ast.k_ext
 
@@ -181,21 +203,26 @@ val new_custom_vec_var : string -> int -> string -> Sarek.Kirc_Ast.k_ext
 
 val int_vect : int -> Sarek.Kirc_Ast.kvect
 
-val set_vect_var : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
+val set_vect_var :
+  Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
-val set_arr_var : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
+val set_arr_var :
+  Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
 val intrinsics : string -> string -> Sarek.Kirc_Ast.k_ext
 
-val spoc_local_env : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
+val spoc_local_env :
+  Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
-val spoc_set : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
+val spoc_set :
+  Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
 val spoc_declare : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
 val spoc_local_var : 'a -> 'a
 
-val spoc_acc : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
+val spoc_acc :
+  Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
 val int_var : 'a -> 'a
 
@@ -205,17 +232,23 @@ val float_var : 'a -> 'a
 
 val double_var : int -> Sarek.Kirc_Ast.k_ext
 
-val equals : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
+val equals :
+  Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
-val equals_custom : string -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
+val equals_custom :
+  string -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
-val equals32 : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
+val equals32 :
+  Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
-val equals64 : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
+val equals64 :
+  Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
-val equalsF : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
+val equalsF :
+  Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
-val equalsF64 : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
+val equalsF64 :
+  Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
 val b_or : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
@@ -251,7 +284,8 @@ val lte64 : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
 val lteF : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
-val lteF64 : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
+val lteF64 :
+  Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
 val gte : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
@@ -261,11 +295,14 @@ val gte64 : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
 val gteF : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
-val gteF64 : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
+val gteF64 :
+  Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
-val get_vec : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
+val get_vec :
+  Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
-val get_arr : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
+val get_arr :
+  Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
 
 val return_unit : unit -> Sarek.Kirc_Ast.k_ext
 
@@ -291,7 +328,11 @@ val save : string -> string -> unit
 
 val load_file : string -> bytes
 
-val map : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext
+val map :
+  Sarek.Kirc_Ast.k_ext ->
+  Sarek.Kirc_Ast.k_ext ->
+  Sarek.Kirc_Ast.k_ext ->
+  Sarek.Kirc_Ast.k_ext
 
 val gen_profile :
   ('a, 'b, 'c, 'd, 'e) sarek_kernel -> Spoc.Devices.device -> unit
@@ -555,7 +596,10 @@ module Fusion : sig
 
   (** Fuse two kernel bodies, eliminating the intermediate array *)
   val fuse_bodies :
-    Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext -> intermediate:string -> Sarek.Kirc_Ast.k_ext
+    Sarek.Kirc_Ast.k_ext ->
+    Sarek.Kirc_Ast.k_ext ->
+    intermediate:string ->
+    Sarek.Kirc_Ast.k_ext
 
   (** Fuse two kirc_kernel records *)
   val fuse_kernels :
@@ -566,7 +610,8 @@ module Fusion : sig
 
   (** Fuse a pipeline of kernel bodies, returning fused body and eliminated
       arrays *)
-  val fuse_pipeline_bodies : Sarek.Kirc_Ast.k_ext list -> Sarek.Kirc_Ast.k_ext * string list
+  val fuse_pipeline_bodies :
+    Sarek.Kirc_Ast.k_ext list -> Sarek.Kirc_Ast.k_ext * string list
 end
 
 (*val a_to_vect : Sarek.Kirc_Ast.k_ext -> Sarek.Kirc_Ast.k_ext

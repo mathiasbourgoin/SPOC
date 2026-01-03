@@ -127,7 +127,11 @@ let () =
       let errors = verify_results v2_result expected in
       let status = if errors = 0 then "PASS" else "FAIL" in
       if errors > 0 then all_ok := false ;
-      Printf.printf "%-40s %10s %10s\n" (name ^ " (" ^ framework ^ ")") "OK" status)
+      Printf.printf
+        "%-40s %10s %10s\n"
+        (name ^ " (" ^ framework ^ ")")
+        "OK"
+        status)
     v2_devs ;
 
   print_endline (String.make 60 '-') ;

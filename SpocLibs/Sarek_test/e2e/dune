@@ -132,7 +132,8 @@
   test_polymorphism.exe))
 
 (executable
-  (name test_debug_native)
-  (modules test_debug_native)
-  (libraries sarek sarek_native sarek_stdlib sarek_core unix)
-  (preprocess (pps sarek_ppx)))
+ (name test_debug_native)
+ (modules test_debug_native)
+ (libraries sarek sarek_native sarek_stdlib sarek_core unix)
+ (preprocess
+  (pps sarek_ppx)))

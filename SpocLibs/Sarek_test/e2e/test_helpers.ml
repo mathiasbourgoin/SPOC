@@ -87,25 +87,26 @@ let init_devices _cfg =
 
 (** Get device based on config *)
 let get_device cfg devs =
-  if cfg.use_native then
+  if cfg.use_native then (
     match Array.find_opt (fun d -> d.Device.framework = "Native") devs with
     | Some d -> d
     | None ->
         print_endline "No native CPU device found" ;
-        exit 1
-  else if cfg.use_interpreter then
+        exit 1)
+  else if cfg.use_interpreter then (
     match Array.find_opt (fun d -> d.Device.framework = "Interpreter") devs with
     | Some d -> d
     | None ->
         print_endline "No interpreter device found" ;
-        exit 1
+        exit 1)
   else devs.(cfg.dev_id)
 
 (** Print available devices *)
 let print_devices devs =
   Printf.printf "Available devices:\n" ;
   Array.iteri
-    (fun i d -> Printf.printf "  [%d] %s (%s)\n" i d.Device.name d.Device.framework)
+    (fun i d ->
+      Printf.printf "  [%d] %s (%s)\n" i d.Device.name d.Device.framework)
     devs ;
   flush stdout
 

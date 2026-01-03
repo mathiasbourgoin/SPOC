@@ -31,8 +31,7 @@ let () =
     exit 0) ;
   let dev = devs.(0) in
   Printf.printf "Using device: %s\n%!" dev.V2_Device.name ;
-  (try
-     print_endline "Helper function codegen PASSED"
+  (try print_endline "Helper function codegen PASSED"
    with e ->
      Printf.printf "Codegen failed: %s\n%!" (Printexc.to_string e) ;
      ()) ;

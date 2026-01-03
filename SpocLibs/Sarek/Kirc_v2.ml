@@ -79,8 +79,8 @@ let extensions k = k.extensions
 
 (** Convert a legacy kirc_kernel to kernel_v2. Note: This creates a lazy IR that
     converts from Kirc_Ast when forced. *)
-let of_kirc_kernel (kk : ('a, 'b, 'c) Kirc_types.kirc_kernel) ~name ~param_types :
-    'a kernel_v2 =
+let of_kirc_kernel (kk : ('a, 'b, 'c) Kirc_types.kirc_kernel) ~name ~param_types
+    : 'a kernel_v2 =
   let ir = lazy (Sarek_ir.of_k_ext kk.Kirc_types.body) in
   let native_fn =
     match kk.Kirc_types.cpu_kern with
@@ -100,8 +100,9 @@ let of_kirc_kernel (kk : ('a, 'b, 'c) Kirc_types.kirc_kernel) ~name ~param_types
   {name; ir; native_fn; param_types; extensions = kk.Kirc_types.extensions}
 
 (** Convert a legacy sarek_kernel to kernel_v2 *)
-let of_sarek_kernel ((_spoc_k, kirc_k) : ('a, 'b, 'c, 'd, 'e) Kirc_types.sarek_kernel)
-    ~name ~param_types : 'd kernel_v2 =
+let of_sarek_kernel
+    ((_spoc_k, kirc_k) : ('a, 'b, 'c, 'd, 'e) Kirc_types.sarek_kernel) ~name
+    ~param_types : 'd kernel_v2 =
   of_kirc_kernel kirc_k ~name ~param_types
 
 (** {1 Conversion to Legacy Kirc} *)
@@ -178,7 +179,9 @@ let run_with_args ~(device : Device.t) ~(block : Framework_sig.dims)
         args
   | "OpenCL" ->
       let ir = Lazy.force k.ir in
-      let source = Sarek_ir_opencl.generate_with_types ~types:ir.kern_types ir in
+      let source =
+        Sarek_ir_opencl.generate_with_types ~types:ir.kern_types ir
+      in
       Execute.run_typed
         ~device
         ~name:k.name

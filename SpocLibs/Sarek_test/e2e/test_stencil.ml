@@ -34,6 +34,7 @@ let ocaml_stencil_1d input output n =
 (* ========== Shared test data ========== *)
 
 let input_1d = ref [||]
+
 let expected_1d = ref [||]
 
 let init_1d_data () =
@@ -103,8 +104,12 @@ let verify_float_arrays name result expected tolerance =
     let diff = abs_float (result.(i) -. expected.(i)) in
     if diff > tolerance then begin
       if !errors < 5 then
-        Printf.printf "  %s mismatch at %d: expected %.6f, got %.6f\n"
-          name i expected.(i) result.(i) ;
+        Printf.printf
+          "  %s mismatch at %d: expected %.6f, got %.6f\n"
+          name
+          i
+          expected.(i)
+          result.(i) ;
       incr errors
     end
   done ;
@@ -154,8 +159,11 @@ let () =
 
         if not v2_ok then all_ok := false ;
 
-        Printf.printf "%-35s %10.4f %10s\n"
-          (Printf.sprintf "%s (%s)" name framework) v2_time v2_status)
+        Printf.printf
+          "%-35s %10.4f %10s\n"
+          (Printf.sprintf "%s (%s)" name framework)
+          v2_time
+          v2_status)
       v2_devs ;
 
     print_endline (String.make 60 '-') ;
@@ -174,8 +182,7 @@ let () =
     let v2_time, v2_result = run_stencil_1d_v2 dev in
     Printf.printf "  Time: %.4f ms\n%!" v2_time ;
     let v2_ok =
-      (not cfg.verify)
-      || verify_float_arrays "V2" v2_result !expected_1d 0.0001
+      (not cfg.verify) || verify_float_arrays "V2" v2_result !expected_1d 0.0001
     in
     Printf.printf "  Status: %s\n%!" (if v2_ok then "PASSED" else "FAILED") ;
 

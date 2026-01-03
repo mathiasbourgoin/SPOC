@@ -49,8 +49,9 @@ let () =
   Printf.printf "Using device: %s\n%!" dev.V2_Device.name ;
   (match kirc.Sarek.Kirc_types.body_v2 with
   | Some ir ->
-      Printf.printf "V2 IR available, kernel name: %s\n%!" ir.Sarek.Sarek_ir.kern_name ;
+      Printf.printf
+        "V2 IR available, kernel name: %s\n%!"
+        ir.Sarek.Sarek_ir.kern_name ;
       print_endline "Variant helper V2 IR PASSED"
-  | None ->
-      print_endline "No V2 IR - SKIPPED") ;
+  | None -> print_endline "No V2 IR - SKIPPED") ;
   print_endline "test_klet_variant PASSED"

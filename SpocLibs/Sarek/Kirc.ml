@@ -1614,7 +1614,8 @@ module Fusion = struct
       let irs = List.map Sarek.Sarek_ir.of_k_ext bodies in
       let fused_ir, eliminated = Sarek.Sarek_fusion.fuse_pipeline irs in
       (Sarek.Sarek_ir.to_k_ext fused_ir, eliminated)
-    with Sarek.Sarek_ir.Conversion_error msg -> failwith ("Fusion failed: " ^ msg)
+    with Sarek.Sarek_ir.Conversion_error msg ->
+      failwith ("Fusion failed: " ^ msg)
 end
 
 module Sarek_vector = struct

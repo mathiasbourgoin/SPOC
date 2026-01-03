@@ -20,9 +20,7 @@ type any_vec = AnyVec : ('a, 'b) Vector.t * ('a, 'b) Vector.kind -> any_vec
 
 (** Extract vector if argument is a Vec, with type info *)
 let as_vector (arg : t) : any_vec option =
-  match arg with
-  | Vec v -> Some (AnyVec (v, Vector.kind v))
-  | _ -> None
+  match arg with Vec v -> Some (AnyVec (v, Vector.kind v)) | _ -> None
 
 (** Get vector length if argument is a Vec *)
 let vector_length (arg : t) : int option =
@@ -47,11 +45,11 @@ let as_int64 (arg : t) : int64 option =
 let as_float (arg : t) : float option =
   match arg with Float32 f | Float64 f -> Some f | _ -> None
 
-(** Fold over kernel arguments with typed handlers.
-    This is the main way backends consume args in a type-safe manner.
+(** Fold over kernel arguments with typed handlers. This is the main way
+    backends consume args in a type-safe manner.
 
-    For JIT backends, the vector handler receives the vector and should
-    bind (buffer_ptr, length) to the kernel args.
+    For JIT backends, the vector handler receives the vector and should bind
+    (buffer_ptr, length) to the kernel args.
 
     For Direct backends, the vector handler can access the vector directly. *)
 type 'acc folder = {

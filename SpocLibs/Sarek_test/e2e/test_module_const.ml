@@ -39,8 +39,7 @@ let () =
   Printf.printf "Using device: %s\n%!" dev.V2_Device.name ;
 
   (* Try to generate kernel code *)
-  (try
-     print_endline "Kernel code generation PASSED"
+  (try print_endline "Kernel code generation PASSED"
    with e ->
      Printf.printf "Kernel code generation failed: %s\n" (Printexc.to_string e) ;
      print_endline "IR generation test PASSED (code gen skipped)" ;

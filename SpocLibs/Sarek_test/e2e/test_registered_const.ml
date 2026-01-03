@@ -46,9 +46,8 @@ let () =
   Printf.printf "Using device: %s\n%!" dev.V2_Device.name ;
 
   (* Get V2 IR and execute *)
-  (match kirc.Sarek.Kirc_types.body_v2 with
-  | None ->
-      print_endline "No V2 IR - IR generation test PASSED"
+  match kirc.Sarek.Kirc_types.body_v2 with
+  | None -> print_endline "No V2 IR - IR generation test PASSED"
   | Some ir ->
       let n = 64 in
       let xs = V2_Vector.create V2_Vector.float32 n in
@@ -90,4 +89,4 @@ let () =
       if !ok then print_endline "Registered const execution PASSED"
       else (
         print_endline "Registered const execution FAILED" ;
-        exit 1))
+        exit 1)

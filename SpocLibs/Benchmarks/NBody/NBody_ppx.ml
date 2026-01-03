@@ -127,7 +127,10 @@ let () =
   let dev = devices.(!devid) in
   let dt = 0.01 in
 
-  Printf.printf "Will use device : %s (%s)\n%!" dev.V2_Device.name dev.V2_Device.framework ;
+  Printf.printf
+    "Will use device : %s (%s)\n%!"
+    dev.V2_Device.name
+    dev.V2_Device.framework ;
 
   (* Create V2 vectors with custom type *)
   let bodiesPos = V2_Vector.create_custom float4_custom_v2 !nBodies in

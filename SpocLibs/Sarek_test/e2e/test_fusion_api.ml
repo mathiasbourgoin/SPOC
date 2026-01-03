@@ -1,8 +1,7 @@
 (** Integration test for Sarek_fusion API
 
     Tests kernel fusion using the runtime API with actual PPX-defined kernels.
-    Uses V2 IR (Sarek_ir.kernel) with Sarek_fusion module.
-*)
+    Uses V2 IR (Sarek_ir.kernel) with Sarek_fusion module. *)
 
 (** Producer kernel: temp[i] = input[i] * 2 *)
 let producer =
@@ -29,9 +28,7 @@ let test_can_fuse () =
   let ir_prod = get_ir kirc_prod in
   let ir_cons = get_ir kirc_cons in
   (* Check if fusion is possible *)
-  let can_fuse =
-    Sarek.Sarek_fusion.can_fuse ir_prod ir_cons "temp"
-  in
+  let can_fuse = Sarek.Sarek_fusion.can_fuse ir_prod ir_cons "temp" in
   Printf.printf "can_fuse: %b\n" can_fuse ;
   assert can_fuse ;
   Printf.printf "test_can_fuse: PASSED\n"
@@ -42,9 +39,7 @@ let test_fuse () =
   let _, kirc_cons = consumer in
   let ir_prod = get_ir kirc_prod in
   let ir_cons = get_ir kirc_cons in
-  let fused =
-    Sarek.Sarek_fusion.fuse ir_prod ir_cons "temp"
-  in
+  let fused = Sarek.Sarek_fusion.fuse ir_prod ir_cons "temp" in
   (* Verify the fused kernel has a name *)
   Printf.printf "fused kernel name: %s\n" fused.Sarek.Sarek_ir.kern_name ;
   Printf.printf "test_fuse: PASSED\n"

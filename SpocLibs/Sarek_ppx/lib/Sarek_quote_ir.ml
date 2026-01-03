@@ -360,15 +360,15 @@ let quote_helper_func ~loc (hf : Ir.helper_func) : expression =
     }]
 
 (** Quote kernel.
-    @param native_fn_expr Optional expression that generates the native function
-           (adapted from cpu_kern). If provided, it should have type:
-           parallel:bool -> block:int*int*int -> grid:int*int*int -> Obj.t array -> unit *)
+    @param native_fn_expr
+      Optional expression that generates the native function (adapted from
+      cpu_kern). If provided, it should have type: parallel:bool ->
+      block:int*int*int -> grid:int*int*int -> Obj.t array -> unit *)
 let quote_kernel ~loc ?(native_fn_expr : expression option) (k : Ir.kernel) :
     expression =
   let native_fn_field =
     match native_fn_expr with
-    | Some e ->
-        [%expr Some (Sarek.Sarek_ir.NativeFn [%e e])]
+    | Some e -> [%expr Some (Sarek.Sarek_ir.NativeFn [%e e])]
     | None -> [%expr None]
   in
   [%expr

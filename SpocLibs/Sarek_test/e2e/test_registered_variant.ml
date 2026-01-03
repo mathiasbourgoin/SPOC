@@ -51,7 +51,12 @@ let run_test dev =
   Sarek.Execute.run_vectors
     ~device:dev
     ~ir
-    ~args:[Sarek.Execute.Vec xs; Sarek.Execute.Vec dst; Sarek.Execute.Int32 (Int32.of_int n)]
+    ~args:
+      [
+        Sarek.Execute.Vec xs;
+        Sarek.Execute.Vec dst;
+        Sarek.Execute.Int32 (Int32.of_int n);
+      ]
     ~block:(Sarek.Execute.dims1d threads)
     ~grid:(Sarek.Execute.dims1d grid_x)
     () ;
@@ -101,17 +106,22 @@ let () =
   if cfg.benchmark_all || Option.is_some cfg.benchmark_devices then begin
     (* Run on all devices *)
     print_endline "\nBenchmarking on all devices:" ;
-    Array.iteri (fun i dev ->
-      Printf.printf "\n[%d] %s:\n%!" i dev.V2_Device.name ;
-      try
-        let ok, time = run_test dev in
-        Printf.printf "  %.2f ms, %s\n%!" time (if ok then "PASSED" else "FAILED") ;
-        if not ok then exit 1
-      with e ->
-        Printf.printf "  FAIL (%s)\n%!" (Printexc.to_string e) ;
-        exit 1)
+    Array.iteri
+      (fun i dev ->
+        Printf.printf "\n[%d] %s:\n%!" i dev.V2_Device.name ;
+        try
+          let ok, time = run_test dev in
+          Printf.printf
+            "  %.2f ms, %s\n%!"
+            time
+            (if ok then "PASSED" else "FAILED") ;
+          if not ok then exit 1
+        with e ->
+          Printf.printf "  FAIL (%s)\n%!" (Printexc.to_string e) ;
+          exit 1)
       devs
-  end else begin
+  end
+  else begin
     (* Run on selected device *)
     let dev = Test_helpers.get_device cfg devs in
     Printf.printf "\nUsing device: %s\n%!" dev.V2_Device.name ;

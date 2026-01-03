@@ -231,8 +231,13 @@ let run_matmul_tiled_v2 (dev : V2_Device.t) =
         if diff > abs_tol && rel_err > rel_tol then begin
           if !errors < 5 then
             Printf.printf
-              "  Tiled V2 mismatch at [%d,%d]: expected %.6f, got %.6f (rel_err=%.4f%%)\n"
-              row col expected got (rel_err *. 100.0) ;
+              "  Tiled V2 mismatch at [%d,%d]: expected %.6f, got %.6f \
+               (rel_err=%.4f%%)\n"
+              row
+              col
+              expected
+              got
+              (rel_err *. 100.0) ;
           incr errors
         end
       done ;
@@ -447,7 +452,8 @@ let () =
           Printf.printf
             "%-40s %10s %8s\n"
             (Printf.sprintf "%s (%s)" name framework)
-            "-" "SKIP")
+            "-"
+            "SKIP")
       v2_devs ;
 
     print_endline (String.make 60 '-') ;

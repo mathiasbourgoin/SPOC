@@ -36,7 +36,9 @@ let ocaml_transpose input output width height =
 (* ========== Shared test data ========== *)
 
 let input_data = ref [||]
+
 let expected_data = ref [||]
+
 let matrix_dim = ref 0
 
 let init_transpose_data () =
@@ -116,8 +118,12 @@ let verify_float_arrays name result expected tolerance =
     let diff = abs_float (result.(i) -. expected.(i)) in
     if diff > tolerance then begin
       if !errors < 5 then
-        Printf.printf "  %s mismatch at %d: expected %.2f, got %.2f\n"
-          name i expected.(i) result.(i) ;
+        Printf.printf
+          "  %s mismatch at %d: expected %.2f, got %.2f\n"
+          name
+          i
+          expected.(i)
+          result.(i) ;
       incr errors
     end
   done ;
@@ -168,8 +174,11 @@ let () =
 
         if not v2_ok then all_ok := false ;
 
-        Printf.printf "%-35s %10.4f %10s\n"
-          (Printf.sprintf "%s (%s)" name framework) v2_time v2_status)
+        Printf.printf
+          "%-35s %10.4f %10s\n"
+          (Printf.sprintf "%s (%s)" name framework)
+          v2_time
+          v2_status)
       v2_devs ;
 
     print_endline (String.make 60 '-') ;

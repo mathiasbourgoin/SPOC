@@ -1079,11 +1079,11 @@ let args_from_obj_array (k : kernel) (obj_args : Obj.t array) :
 
 (** {1 V2 Vector Support}
 
-    These functions work with typed Kernel_arg.t values instead of Obj.t.
-    This is the preferred interface for Native/Interpreter backends. *)
+    These functions work with typed Kernel_arg.t values instead of Obj.t. This
+    is the preferred interface for Native/Interpreter backends. *)
 
-(** Convert V2 Vector to interpreter value array.
-    Uses the vector's element type to create properly typed values. *)
+(** Convert V2 Vector to interpreter value array. Uses the vector's element type
+    to create properly typed values. *)
 let v2_vector_to_array : type a b. (a, b) Sarek_core.Vector.t -> value array =
  fun vec ->
   let len = Sarek_core.Vector.length vec in
@@ -1102,7 +1102,8 @@ let v2_vector_to_array : type a b. (a, b) Sarek_core.Vector.t -> value array =
           VFloat32 (Obj.magic (Sarek_core.Vector.get vec i) : float))
 
 (** Write interpreter value array back to V2 Vector *)
-let array_to_v2_vector : type a b. value array -> (a, b) Sarek_core.Vector.t -> unit =
+let array_to_v2_vector : type a b.
+    value array -> (a, b) Sarek_core.Vector.t -> unit =
  fun arr vec ->
   let len = min (Array.length arr) (Sarek_core.Vector.length vec) in
   match Sarek_core.Vector.kind vec with
@@ -1127,11 +1128,13 @@ let array_to_v2_vector : type a b. value array -> (a, b) Sarek_core.Vector.t -> 
         Sarek_core.Vector.set vec i (Obj.magic (to_float32 arr.(i)))
       done
 
-(** Existential wrapper to track V2 Vector + its interpreter array for writeback *)
+(** Existential wrapper to track V2 Vector + its interpreter array for writeback
+*)
 type v2_writeback =
   | V2Writeback : (('a, 'b) Sarek_core.Vector.t * value array) -> v2_writeback
 
-(** Convert Kernel_arg.t list to interpreter args, tracking vectors for writeback *)
+(** Convert Kernel_arg.t list to interpreter args, tracking vectors for
+    writeback *)
 let args_from_kernel_args (k : kernel) (kargs : Sarek_core.Kernel_arg.t list) :
     (string * arg) list * v2_writeback list =
   let writebacks = ref [] in
@@ -1179,9 +1182,9 @@ let args_from_kernel_args (k : kernel) (kargs : Sarek_core.Kernel_arg.t list) :
   in
   (args, List.rev !writebacks)
 
-(** Run kernel with V2 Vector arguments (Kernel_arg.t list).
-    This is the preferred entry point for Native/Interpreter backends.
-    Handles conversion to/from interpreter format with proper writeback. *)
+(** Run kernel with V2 Vector arguments (Kernel_arg.t list). This is the
+    preferred entry point for Native/Interpreter backends. Handles conversion
+    to/from interpreter format with proper writeback. *)
 let run_kernel_with_v2_args (k : kernel) ~(block : int * int * int)
     ~(grid : int * int * int) (kargs : Sarek_core.Kernel_arg.t list) : unit =
   let args, writebacks = args_from_kernel_args k kargs in
@@ -1191,9 +1194,9 @@ let run_kernel_with_v2_args (k : kernel) ~(block : int * int * int)
     (fun (V2Writeback (vec, arr)) -> array_to_v2_vector arr vec)
     writebacks
 
-(** Convert Obj.t array (with V2 Vectors) to Kernel_arg.t list.
-    Uses kernel param declarations to determine which args are vectors.
-    This bridges the legacy Obj.t interface with the typed Kernel_arg interface. *)
+(** Convert Obj.t array (with V2 Vectors) to Kernel_arg.t list. Uses kernel
+    param declarations to determine which args are vectors. This bridges the
+    legacy Obj.t interface with the typed Kernel_arg interface. *)
 let obj_array_to_kernel_args (k : kernel) (obj_args : Obj.t array) :
     Sarek_core.Kernel_arg.t list =
   let idx = ref 0 in
@@ -1223,9 +1226,9 @@ let obj_array_to_kernel_args (k : kernel) (obj_args : Obj.t array) :
               try Sarek_core.Kernel_arg.Int32 (Obj.obj obj : int32)
               with _ -> (
                 try Sarek_core.Kernel_arg.Float32 (Obj.obj obj : float)
-                with _ ->
+                with _ -> (
                   try Sarek_core.Kernel_arg.Int64 (Obj.obj obj : int64)
-                  with _ -> Sarek_core.Kernel_arg.Int 0)
+                  with _ -> Sarek_core.Kernel_arg.Int 0))
             in
             Some karg
           end
@@ -1233,9 +1236,9 @@ let obj_array_to_kernel_args (k : kernel) (obj_args : Obj.t array) :
       | DLocal _ -> None)
     k.kern_params
 
-(** Run kernel with Obj.t array containing V2 Vectors.
-    This is the entry point for backends that receive Obj.t arrays.
-    Converts to Kernel_arg.t list and uses the typed interface internally. *)
+(** Run kernel with Obj.t array containing V2 Vectors. This is the entry point
+    for backends that receive Obj.t arrays. Converts to Kernel_arg.t list and
+    uses the typed interface internally. *)
 let run_kernel_with_v2_obj_args (k : kernel) ~(block : int * int * int)
     ~(grid : int * int * int) (obj_args : Obj.t array) : unit =
   let kargs = obj_array_to_kernel_args k obj_args in

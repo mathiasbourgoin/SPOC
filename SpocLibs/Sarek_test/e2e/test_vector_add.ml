@@ -108,8 +108,7 @@ let run_v2_on_device (dev : V2_Device.t) =
   Execute.run_vectors
     ~device:dev
     ~ir
-    ~args:
-      [Execute.Vec a; Execute.Vec b; Execute.Vec c; Execute.Int !size]
+    ~args:[Execute.Vec a; Execute.Vec b; Execute.Vec c; Execute.Int !size]
     ~block
     ~grid
     () ;
@@ -133,8 +132,7 @@ let run_interpreter () =
     Array.init !size (fun i -> Sarek_ir_interp.VFloat32 (float_of_int i))
   in
   let b =
-    Array.init !size (fun i ->
-        Sarek_ir_interp.VFloat32 (float_of_int (i * 2)))
+    Array.init !size (fun i -> Sarek_ir_interp.VFloat32 (float_of_int (i * 2)))
   in
   let c = Array.make !size (Sarek_ir_interp.VFloat32 0.0) in
 
@@ -151,8 +149,8 @@ let run_interpreter () =
       ("b", Sarek_ir_interp.ArgArray b);
       ("c", Sarek_ir_interp.ArgArray c);
       ( "n",
-        Sarek_ir_interp.ArgScalar
-          (Sarek_ir_interp.VInt32 (Int32.of_int !size)) );
+        Sarek_ir_interp.ArgScalar (Sarek_ir_interp.VInt32 (Int32.of_int !size))
+      );
     ] ;
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
@@ -258,15 +256,15 @@ let () =
   else begin
     (* Single device mode *)
     let v2_dev =
-      if !use_native then
+      if !use_native then (
         match
           Array.find_opt (fun d -> d.V2_Device.framework = "Native") v2_devs
         with
         | Some d -> d
         | None ->
             print_endline "No native CPU device found" ;
-            exit 1
-      else if !use_interpreter then
+            exit 1)
+      else if !use_interpreter then (
         match
           Array.find_opt
             (fun d -> d.V2_Device.framework = "Interpreter")
@@ -275,7 +273,7 @@ let () =
         | Some d -> d
         | None ->
             print_endline "No interpreter device found" ;
-            exit 1
+            exit 1)
       else v2_devs.(!dev_id)
     in
     let dev_name = v2_dev.V2_Device.name in

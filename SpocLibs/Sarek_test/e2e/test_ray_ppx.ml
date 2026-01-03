@@ -102,12 +102,16 @@ let () =
       let grid_x = (n + threads - 1) / threads in
 
       (* Initialize ray directions *)
-      let bax = Array.init n (fun i ->
-        let x = i mod w in
-        (2.0 *. float_of_int x /. float_of_int (w - 1)) -. 1.0) in
-      let bay = Array.init n (fun i ->
-        let y = i / w in
-        (2.0 *. float_of_int y /. float_of_int (h - 1)) -. 1.0) in
+      let bax =
+        Array.init n (fun i ->
+            let x = i mod w in
+            (2.0 *. float_of_int x /. float_of_int (w - 1)) -. 1.0)
+      in
+      let bay =
+        Array.init n (fun i ->
+            let y = i / w in
+            (2.0 *. float_of_int y /. float_of_int (h - 1)) -. 1.0)
+      in
       let baz = Array.make n (-1.5) in
 
       let v2_dirx = V2_Vector.create V2_Vector.float32 n in
@@ -166,9 +170,7 @@ let () =
               let t = (-.half_b -. sqrt disc) /. a in
               let hx = t *. dxn and hy = t *. dyn and hz = t *. dzn in
               let nx = hx -. 0.0 and ny = hy -. 0.0 and nz = hz +. 2.0 in
-              let inv =
-                1.0 /. sqrt ((nx *. nx) +. (ny *. ny) +. (nz *. nz))
-              in
+              let inv = 1.0 /. sqrt ((nx *. nx) +. (ny *. ny) +. (nz *. nz)) in
               let nx = nx *. inv and ny = ny *. inv and nz = nz *. inv in
               (0.5 *. (nx +. 1.0), 0.5 *. (ny +. 1.0), 0.5 *. (nz +. 1.0))
             else
@@ -202,7 +204,8 @@ let () =
         done
       done ;
       close_out ppm ;
-      if !v2_ok then Printf.printf "Ray PPX (V2) PASSED (ppm: /tmp/ray_ppx.ppm)\n%!"
+      if !v2_ok then
+        Printf.printf "Ray PPX (V2) PASSED (ppm: /tmp/ray_ppx.ppm)\n%!"
       else (
         print_endline "Ray PPX (V2) FAILED" ;
         exit 1)) ;

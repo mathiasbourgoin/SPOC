@@ -465,9 +465,11 @@ let rec gen_stmt buf indent = function
       let scrutinee = Buffer.contents scrutinee_buf in
       (* Lookup constructor types from the first PConstr case *)
       let find_constr_types cname =
-        List.find_map (fun (_vname, constrs) ->
-          List.find_map (fun (cn, args) ->
-            if cn = cname then Some args else None) constrs)
+        List.find_map
+          (fun (_vname, constrs) ->
+            List.find_map
+              (fun (cn, args) -> if cn = cname then Some args else None)
+              constrs)
           !current_variants
       in
       Buffer.add_string buf indent ;
@@ -478,10 +480,10 @@ let rec gen_stmt buf indent = function
         (fun (pattern, body) ->
           Buffer.add_string buf indent ;
           (match pattern with
-          | PConstr (cname, bindings) ->
+          | PConstr (cname, bindings) -> (
               Buffer.add_string buf ("  case " ^ cname ^ ": {\n") ;
               (* Generate bindings: extract payload from scrutinee *)
-              (match bindings, find_constr_types cname with
+              match (bindings, find_constr_types cname) with
               | [var_name], Some [ty] ->
                   (* Single payload: access data.Constructor_v *)
                   Buffer.add_string buf (indent ^ "    ") ;
@@ -495,19 +497,22 @@ let rec gen_stmt buf indent = function
                   Buffer.add_string buf "_v;\n"
               | vars, Some types when List.length vars = List.length types ->
                   (* Multiple payloads: access data.Constructor_v._0, ._1, etc. *)
-                  List.iteri (fun i (var_name, ty) ->
-                    Buffer.add_string buf (indent ^ "    ") ;
-                    Buffer.add_string buf (cuda_type_of_elttype ty) ;
-                    Buffer.add_string buf " " ;
-                    Buffer.add_string buf var_name ;
-                    Buffer.add_string buf " = " ;
-                    Buffer.add_string buf scrutinee ;
-                    Buffer.add_string buf ".data." ;
-                    Buffer.add_string buf cname ;
-                    Buffer.add_string buf (Printf.sprintf "_v._%d;\n" i))
+                  List.iteri
+                    (fun i (var_name, ty) ->
+                      Buffer.add_string buf (indent ^ "    ") ;
+                      Buffer.add_string buf (cuda_type_of_elttype ty) ;
+                      Buffer.add_string buf " " ;
+                      Buffer.add_string buf var_name ;
+                      Buffer.add_string buf " = " ;
+                      Buffer.add_string buf scrutinee ;
+                      Buffer.add_string buf ".data." ;
+                      Buffer.add_string buf cname ;
+                      Buffer.add_string buf (Printf.sprintf "_v._%d;\n" i))
                     (List.combine vars types)
               | [], _ | _, None | _, Some [] -> () (* No bindings needed *)
-              | _ -> failwith "Mismatch between pattern bindings and constructor args")
+              | _ ->
+                  failwith
+                    "Mismatch between pattern bindings and constructor args")
           | PWild -> Buffer.add_string buf "  default: {\n") ;
           gen_stmt buf (indent ^ "    ") body ;
           Buffer.add_string buf (indent ^ "    break;\n") ;
@@ -726,63 +731,74 @@ let gen_variant_def buf (name, constrs) =
   let mangled = mangle_name name in
   (* Enum for tags - use simple names for switch case labels *)
   Buffer.add_string buf "enum { " ;
-  List.iteri (fun i (cname, _) ->
-    if i > 0 then Buffer.add_string buf ", " ;
-    Buffer.add_string buf cname ;
-    Buffer.add_string buf " = " ;
-    Buffer.add_string buf (string_of_int i))
+  List.iteri
+    (fun i (cname, _) ->
+      if i > 0 then Buffer.add_string buf ", " ;
+      Buffer.add_string buf cname ;
+      Buffer.add_string buf " = " ;
+      Buffer.add_string buf (string_of_int i))
     constrs ;
   Buffer.add_string buf " };\n" ;
   (* Struct with tag and union *)
-  Buffer.add_string buf ("typedef struct {\n  int tag;\n") ;
+  Buffer.add_string buf "typedef struct {\n  int tag;\n" ;
   (* Generate union if any constructor has payload *)
   let has_payload = List.exists (fun (_, args) -> args <> []) constrs in
   if has_payload then begin
     Buffer.add_string buf "  union {\n" ;
-    List.iter (fun (cname, args) ->
-      match args with
-      | [] -> () (* No payload for this constructor *)
-      | [ty] ->
-          Buffer.add_string buf "    " ;
-          Buffer.add_string buf (cuda_type_of_elttype ty) ;
-          Buffer.add_string buf (" " ^ cname ^ "_v;\n")
-      | _ ->
-          (* Multiple args - generate struct *)
-          Buffer.add_string buf ("    struct { ") ;
-          List.iteri (fun i ty ->
-            if i > 0 then Buffer.add_string buf " " ;
+    List.iter
+      (fun (cname, args) ->
+        match args with
+        | [] -> () (* No payload for this constructor *)
+        | [ty] ->
+            Buffer.add_string buf "    " ;
             Buffer.add_string buf (cuda_type_of_elttype ty) ;
-            Buffer.add_string buf (Printf.sprintf " _%d;" i))
-            args ;
-          Buffer.add_string buf (" } " ^ cname ^ "_v;\n"))
+            Buffer.add_string buf (" " ^ cname ^ "_v;\n")
+        | _ ->
+            (* Multiple args - generate struct *)
+            Buffer.add_string buf "    struct { " ;
+            List.iteri
+              (fun i ty ->
+                if i > 0 then Buffer.add_string buf " " ;
+                Buffer.add_string buf (cuda_type_of_elttype ty) ;
+                Buffer.add_string buf (Printf.sprintf " _%d;" i))
+              args ;
+            Buffer.add_string buf (" } " ^ cname ^ "_v;\n"))
       constrs ;
     Buffer.add_string buf "  } data;\n"
   end ;
   Buffer.add_string buf ("} " ^ mangled ^ ";\n\n") ;
   (* Constructor functions *)
-  List.iteri (fun _i (cname, args) ->
-    Buffer.add_string buf ("__device__ __host__ inline " ^ mangled ^ " make_" ^ mangled ^ "_" ^ cname ^ "(") ;
-    (match args with
-    | [] -> ()
-    | [ty] ->
-        Buffer.add_string buf (cuda_type_of_elttype ty) ;
-        Buffer.add_string buf " v"
-    | _ ->
-        List.iteri (fun j ty ->
-          if j > 0 then Buffer.add_string buf ", " ;
+  List.iteri
+    (fun _i (cname, args) ->
+      Buffer.add_string
+        buf
+        ("__device__ __host__ inline " ^ mangled ^ " make_" ^ mangled ^ "_"
+       ^ cname ^ "(") ;
+      (match args with
+      | [] -> ()
+      | [ty] ->
           Buffer.add_string buf (cuda_type_of_elttype ty) ;
-          Buffer.add_string buf (Printf.sprintf " v%d" j))
-          args) ;
-    Buffer.add_string buf (") {\n  " ^ mangled ^ " r;\n") ;
-    Buffer.add_string buf ("  r.tag = " ^ cname ^ ";\n") ;
-    (match args with
-    | [] -> ()
-    | [_] -> Buffer.add_string buf ("  r.data." ^ cname ^ "_v = v;\n")
-    | _ ->
-        List.iteri (fun j _ ->
-          Buffer.add_string buf (Printf.sprintf "  r.data.%s_v._%d = v%d;\n" cname j j))
-          args) ;
-    Buffer.add_string buf "  return r;\n}\n\n")
+          Buffer.add_string buf " v"
+      | _ ->
+          List.iteri
+            (fun j ty ->
+              if j > 0 then Buffer.add_string buf ", " ;
+              Buffer.add_string buf (cuda_type_of_elttype ty) ;
+              Buffer.add_string buf (Printf.sprintf " v%d" j))
+            args) ;
+      Buffer.add_string buf (") {\n  " ^ mangled ^ " r;\n") ;
+      Buffer.add_string buf ("  r.tag = " ^ cname ^ ";\n") ;
+      (match args with
+      | [] -> ()
+      | [_] -> Buffer.add_string buf ("  r.data." ^ cname ^ "_v = v;\n")
+      | _ ->
+          List.iteri
+            (fun j _ ->
+              Buffer.add_string
+                buf
+                (Printf.sprintf "  r.data.%s_v._%d = v%d;\n" cname j j))
+            args) ;
+      Buffer.add_string buf "  return r;\n}\n\n")
     constrs
 
 (** Generate CUDA source with custom type definitions *)

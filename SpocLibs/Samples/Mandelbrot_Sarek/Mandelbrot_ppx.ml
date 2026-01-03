@@ -56,7 +56,8 @@ let color_rgb n max_iter =
     in
     (f (n + 16), f (n + 32), f n)
 
-let write_ppm filename width height (data : (int32, Bigarray.int32_elt) V2_Vector.t) max_iter =
+let write_ppm filename width height
+    (data : (int32, Bigarray.int32_elt) V2_Vector.t) max_iter =
   let oc = open_out_bin filename in
   Printf.fprintf oc "P6\n%d %d\n255\n" width height ;
   for y = 0 to pred height do
@@ -112,7 +113,10 @@ let () =
     exit 1
   end ;
   let dev = devs.(!dev_id) in
-  Printf.printf "Using device: %s (%s)\n%!" dev.V2_Device.name dev.V2_Device.framework ;
+  Printf.printf
+    "Using device: %s (%s)\n%!"
+    dev.V2_Device.name
+    dev.V2_Device.framework ;
 
   let w = !width in
   let h = !height in

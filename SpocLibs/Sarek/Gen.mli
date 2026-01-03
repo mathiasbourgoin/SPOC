@@ -30,7 +30,12 @@ module type CodeGenerator = sig
   val default_parser : bool
 
   val parse_fun :
-    int -> Sarek.Kirc_Ast.k_ext -> string -> string -> Spoc.Devices.device -> string
+    int ->
+    Sarek.Kirc_Ast.k_ext ->
+    string ->
+    string ->
+    Spoc.Devices.device ->
+    string
 
   val parse : int -> Sarek.Kirc_Ast.k_ext -> Spoc.Devices.device -> string
 end
@@ -58,13 +63,25 @@ module Generator : functor (M : CodeGenerator) -> sig
   val get_profile_counter : unit -> int
 
   val parse :
-    ?profile:bool -> int -> Sarek.Kirc_Ast.k_ext -> Spoc.Devices.device -> string
+    ?profile:bool ->
+    int ->
+    Sarek.Kirc_Ast.k_ext ->
+    Spoc.Devices.device ->
+    string
 
   val parse_int :
-    ?profile:bool -> int -> Sarek.Kirc_Ast.k_ext -> Spoc.Devices.device -> string
+    ?profile:bool ->
+    int ->
+    Sarek.Kirc_Ast.k_ext ->
+    Spoc.Devices.device ->
+    string
 
   val parse_float :
-    ?profile:bool -> int -> Sarek.Kirc_Ast.k_ext -> Spoc.Devices.device -> string
+    ?profile:bool ->
+    int ->
+    Sarek.Kirc_Ast.k_ext ->
+    Spoc.Devices.device ->
+    string
 
   val parse_vect : Sarek.Kirc_Ast.kvect -> int
 end
