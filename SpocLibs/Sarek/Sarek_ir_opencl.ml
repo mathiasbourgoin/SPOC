@@ -18,6 +18,9 @@ open Sarek_core
 *)
 let current_device : Device.t option ref = ref None
 
+(** Current kernel's variant definitions (set during generate) *)
+let current_variants : (string * (string * elttype list) list) list ref = ref []
+
 (** {1 Type Mapping} *)
 
 (** Mangle OCaml type name to valid C identifier (e.g., "Module.point" ->
@@ -464,18 +467,59 @@ let rec gen_stmt buf indent = function
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
   | SMatch (e, cases) ->
+      (* Generate scrutinee into a temp buffer to get its string representation *)
+      let scrutinee_buf = Buffer.create 64 in
+      gen_expr scrutinee_buf e ;
+      let scrutinee = Buffer.contents scrutinee_buf in
+      (* Lookup constructor types from the first PConstr case *)
+      let find_constr_types cname =
+        List.find_map (fun (_vname, constrs) ->
+          List.find_map (fun (cn, args) ->
+            if cn = cname then Some args else None) constrs)
+          !current_variants
+      in
       Buffer.add_string buf indent ;
       Buffer.add_string buf "switch (" ;
-      gen_expr buf e ;
+      Buffer.add_string buf scrutinee ;
       Buffer.add_string buf ".tag) {\n" ;
       List.iter
         (fun (pattern, body) ->
           Buffer.add_string buf indent ;
           (match pattern with
-          | PConstr (name, _) -> Buffer.add_string buf ("  case " ^ name ^ ":\n")
-          | PWild -> Buffer.add_string buf "  default:\n") ;
+          | PConstr (cname, bindings) ->
+              Buffer.add_string buf ("  case " ^ cname ^ ": {\n") ;
+              (* Generate bindings: extract payload from scrutinee *)
+              (match bindings, find_constr_types cname with
+              | [var_name], Some [ty] ->
+                  (* Single payload: access data.Constructor_v *)
+                  Buffer.add_string buf (indent ^ "    ") ;
+                  Buffer.add_string buf (opencl_type_of_elttype ty) ;
+                  Buffer.add_string buf " " ;
+                  Buffer.add_string buf var_name ;
+                  Buffer.add_string buf " = " ;
+                  Buffer.add_string buf scrutinee ;
+                  Buffer.add_string buf ".data." ;
+                  Buffer.add_string buf cname ;
+                  Buffer.add_string buf "_v;\n"
+              | vars, Some types when List.length vars = List.length types ->
+                  (* Multiple payloads: access data.Constructor_v._0, ._1, etc. *)
+                  List.iteri (fun i (var_name, ty) ->
+                    Buffer.add_string buf (indent ^ "    ") ;
+                    Buffer.add_string buf (opencl_type_of_elttype ty) ;
+                    Buffer.add_string buf " " ;
+                    Buffer.add_string buf var_name ;
+                    Buffer.add_string buf " = " ;
+                    Buffer.add_string buf scrutinee ;
+                    Buffer.add_string buf ".data." ;
+                    Buffer.add_string buf cname ;
+                    Buffer.add_string buf (Printf.sprintf "_v._%d;\n" i))
+                    (List.combine vars types)
+              | [], _ | _, None | _, Some [] -> () (* No bindings needed *)
+              | _ -> failwith "Mismatch between pattern bindings and constructor args")
+          | PWild -> Buffer.add_string buf "  default: {\n") ;
           gen_stmt buf (indent ^ "    ") body ;
-          Buffer.add_string buf (indent ^ "    break;\n"))
+          Buffer.add_string buf (indent ^ "    break;\n") ;
+          Buffer.add_string buf (indent ^ "  }\n"))
         cases ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
@@ -744,6 +788,8 @@ let gen_variant_def buf (name, constrs) =
 (** Generate OpenCL source with custom type definitions *)
 let generate_with_types ~(types : (string * (string * elttype) list) list)
     (k : kernel) : string =
+  (* Set current_variants for SMatch binding extraction *)
+  current_variants := k.kern_variants ;
   let buf = Buffer.create 4096 in
 
   (* Variant type definitions first (may be needed by records) *)

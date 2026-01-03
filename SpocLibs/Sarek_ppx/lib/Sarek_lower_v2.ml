@@ -53,6 +53,26 @@ let memspace_of_memspace (mem : Sarek_types.memspace) : Ir.memspace =
   | Sarek_types.Shared -> Ir.Shared
   | Sarek_types.Local -> Ir.Local
 
+(** Convert Sarek_ast.type_expr to Sarek_ir_ppx.elttype
+    Used for registered types where we have AST type expressions. *)
+let elttype_of_type_expr (te : Sarek_ast.type_expr) : Ir.elttype =
+  match te with
+  | TEConstr ("float32", []) | TEConstr ("Sarek_float32.t", []) -> Ir.TFloat32
+  | TEConstr ("float64", []) | TEConstr ("Sarek_float64.t", []) -> Ir.TFloat64
+  | TEConstr ("int64", []) | TEConstr ("Sarek_int64.t", []) -> Ir.TInt64
+  | TEConstr ("int32", []) | TEConstr ("int", []) -> Ir.TInt32
+  | TEConstr ("bool", []) -> Ir.TBool
+  | TEConstr ("unit", []) -> Ir.TUnit
+  | TEConstr ("float", []) -> Ir.TFloat32  (* OCaml float -> float32 in GPU *)
+  | TETuple ts ->
+      failwith ("Tuple types in variant constructors not supported: " ^
+                String.concat ", " (List.map (fun _ -> "_") ts))
+  | TEArrow _ -> failwith "Function types in variant constructors not supported"
+  | TEVar _ -> Ir.TInt32  (* Type variable - default to int32 *)
+  | TEConstr (name, _) ->
+      (* Could be a custom type - not yet supported *)
+      failwith ("Unknown type in variant constructor: " ^ name)
+
 (** Get C type string for a typ *)
 let rec c_type_of_typ ty =
   match repr ty with
@@ -345,18 +365,21 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
       end ;
       Ir.ERecord (name, List.map (fun (n, e) -> (n, lower_expr state e)) fields)
   | TEConstr (ty_name, constr, arg) ->
-      (* Register the variant type if not already registered *)
-      (match repr te.ty with
-      | TVariant (name, constrs) when not (Hashtbl.mem state.variants name) ->
-          let constr_types =
-            List.map (fun (cname, ty_opt) ->
-              (cname, match ty_opt with
-                | None -> []
-                | Some ty -> [elttype_of_typ ty]))
-              constrs
-          in
-          Hashtbl.add state.variants name constr_types
-      | _ -> ()) ;
+      (* Register the variant type if not already registered.
+         Get constructors from the expression's type (which has full variant info) *)
+      if not (Hashtbl.mem state.variants ty_name) then begin
+        match repr te.ty with
+        | TVariant (_, constrs) ->
+            let constr_types =
+              List.map (fun (cname, ty_opt) ->
+                (cname, match ty_opt with
+                  | None -> []
+                  | Some ty -> [elttype_of_typ ty]))
+                constrs
+            in
+            Hashtbl.add state.variants ty_name constr_types
+        | _ -> ()
+      end ;
       let args = match arg with None -> [] | Some e -> [lower_expr state e] in
       Ir.EVariant (ty_name, constr, args)
   | TETuple exprs -> Ir.ETuple (List.map (lower_expr state) exprs)

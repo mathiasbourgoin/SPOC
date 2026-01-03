@@ -18,6 +18,9 @@ open Sarek_core
 *)
 let current_device : Device.t option ref = ref None
 
+(** Current kernel's variant definitions (set during generate) *)
+let current_variants : (string * (string * elttype list) list) list ref = ref []
+
 (** {1 Type Mapping} *)
 
 (** Mangle OCaml type name to valid C identifier (e.g., "Module.point" ->
@@ -456,18 +459,59 @@ let rec gen_stmt buf indent = function
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
   | SMatch (e, cases) ->
+      (* Generate scrutinee into a temp buffer to get its string representation *)
+      let scrutinee_buf = Buffer.create 64 in
+      gen_expr scrutinee_buf e ;
+      let scrutinee = Buffer.contents scrutinee_buf in
+      (* Lookup constructor types from the first PConstr case *)
+      let find_constr_types cname =
+        List.find_map (fun (_vname, constrs) ->
+          List.find_map (fun (cn, args) ->
+            if cn = cname then Some args else None) constrs)
+          !current_variants
+      in
       Buffer.add_string buf indent ;
       Buffer.add_string buf "switch (" ;
-      gen_expr buf e ;
+      Buffer.add_string buf scrutinee ;
       Buffer.add_string buf ".tag) {\n" ;
       List.iter
         (fun (pattern, body) ->
           Buffer.add_string buf indent ;
           (match pattern with
-          | PConstr (name, _) -> Buffer.add_string buf ("  case " ^ name ^ ":\n")
-          | PWild -> Buffer.add_string buf "  default:\n") ;
+          | PConstr (cname, bindings) ->
+              Buffer.add_string buf ("  case " ^ cname ^ ": {\n") ;
+              (* Generate bindings: extract payload from scrutinee *)
+              (match bindings, find_constr_types cname with
+              | [var_name], Some [ty] ->
+                  (* Single payload: access data.Constructor_v *)
+                  Buffer.add_string buf (indent ^ "    ") ;
+                  Buffer.add_string buf (cuda_type_of_elttype ty) ;
+                  Buffer.add_string buf " " ;
+                  Buffer.add_string buf var_name ;
+                  Buffer.add_string buf " = " ;
+                  Buffer.add_string buf scrutinee ;
+                  Buffer.add_string buf ".data." ;
+                  Buffer.add_string buf cname ;
+                  Buffer.add_string buf "_v;\n"
+              | vars, Some types when List.length vars = List.length types ->
+                  (* Multiple payloads: access data.Constructor_v._0, ._1, etc. *)
+                  List.iteri (fun i (var_name, ty) ->
+                    Buffer.add_string buf (indent ^ "    ") ;
+                    Buffer.add_string buf (cuda_type_of_elttype ty) ;
+                    Buffer.add_string buf " " ;
+                    Buffer.add_string buf var_name ;
+                    Buffer.add_string buf " = " ;
+                    Buffer.add_string buf scrutinee ;
+                    Buffer.add_string buf ".data." ;
+                    Buffer.add_string buf cname ;
+                    Buffer.add_string buf (Printf.sprintf "_v._%d;\n" i))
+                    (List.combine vars types)
+              | [], _ | _, None | _, Some [] -> () (* No bindings needed *)
+              | _ -> failwith "Mismatch between pattern bindings and constructor args")
+          | PWild -> Buffer.add_string buf "  default: {\n") ;
           gen_stmt buf (indent ^ "    ") body ;
-          Buffer.add_string buf (indent ^ "    break;\n"))
+          Buffer.add_string buf (indent ^ "    break;\n") ;
+          Buffer.add_string buf (indent ^ "  }\n"))
         cases ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
@@ -677,15 +721,84 @@ let generate_for_device ~(device : Device.t) (k : kernel) : string =
   current_device := None ;
   result
 
+(** Generate CUDA variant type definition *)
+let gen_variant_def buf (name, constrs) =
+  let mangled = mangle_name name in
+  (* Enum for tags - use simple names for switch case labels *)
+  Buffer.add_string buf "enum { " ;
+  List.iteri (fun i (cname, _) ->
+    if i > 0 then Buffer.add_string buf ", " ;
+    Buffer.add_string buf cname ;
+    Buffer.add_string buf " = " ;
+    Buffer.add_string buf (string_of_int i))
+    constrs ;
+  Buffer.add_string buf " };\n" ;
+  (* Struct with tag and union *)
+  Buffer.add_string buf ("typedef struct {\n  int tag;\n") ;
+  (* Generate union if any constructor has payload *)
+  let has_payload = List.exists (fun (_, args) -> args <> []) constrs in
+  if has_payload then begin
+    Buffer.add_string buf "  union {\n" ;
+    List.iter (fun (cname, args) ->
+      match args with
+      | [] -> () (* No payload for this constructor *)
+      | [ty] ->
+          Buffer.add_string buf "    " ;
+          Buffer.add_string buf (cuda_type_of_elttype ty) ;
+          Buffer.add_string buf (" " ^ cname ^ "_v;\n")
+      | _ ->
+          (* Multiple args - generate struct *)
+          Buffer.add_string buf ("    struct { ") ;
+          List.iteri (fun i ty ->
+            if i > 0 then Buffer.add_string buf " " ;
+            Buffer.add_string buf (cuda_type_of_elttype ty) ;
+            Buffer.add_string buf (Printf.sprintf " _%d;" i))
+            args ;
+          Buffer.add_string buf (" } " ^ cname ^ "_v;\n"))
+      constrs ;
+    Buffer.add_string buf "  } data;\n"
+  end ;
+  Buffer.add_string buf ("} " ^ mangled ^ ";\n\n") ;
+  (* Constructor functions *)
+  List.iteri (fun _i (cname, args) ->
+    Buffer.add_string buf ("__device__ __host__ inline " ^ mangled ^ " make_" ^ mangled ^ "_" ^ cname ^ "(") ;
+    (match args with
+    | [] -> ()
+    | [ty] ->
+        Buffer.add_string buf (cuda_type_of_elttype ty) ;
+        Buffer.add_string buf " v"
+    | _ ->
+        List.iteri (fun j ty ->
+          if j > 0 then Buffer.add_string buf ", " ;
+          Buffer.add_string buf (cuda_type_of_elttype ty) ;
+          Buffer.add_string buf (Printf.sprintf " v%d" j))
+          args) ;
+    Buffer.add_string buf (") {\n  " ^ mangled ^ " r;\n") ;
+    Buffer.add_string buf ("  r.tag = " ^ cname ^ ";\n") ;
+    (match args with
+    | [] -> ()
+    | [_] -> Buffer.add_string buf ("  r.data." ^ cname ^ "_v = v;\n")
+    | _ ->
+        List.iteri (fun j _ ->
+          Buffer.add_string buf (Printf.sprintf "  r.data.%s_v._%d = v%d;\n" cname j j))
+          args) ;
+    Buffer.add_string buf "  return r;\n}\n\n")
+    constrs
+
 (** Generate CUDA source with custom type definitions *)
 let generate_with_types ~(types : (string * (string * elttype) list) list)
     (k : kernel) : string =
+  (* Set current_variants for SMatch binding extraction *)
+  current_variants := k.kern_variants ;
   let buf = Buffer.create 4096 in
 
   (* Header *)
   Buffer.add_string buf cuda_header ;
 
-  (* Type definitions *)
+  (* Variant type definitions first (may be needed by records) *)
+  List.iter (gen_variant_def buf) k.kern_variants ;
+
+  (* Record type definitions *)
   List.iter
     (fun (name, fields) ->
       Buffer.add_string buf "typedef struct {\n" ;

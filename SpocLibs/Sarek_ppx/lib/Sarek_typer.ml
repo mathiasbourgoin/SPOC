@@ -494,15 +494,22 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
   | EConstr (name, arg_opt) -> (
       match find_constructor name env with
       | Some (type_name, expected_arg) -> (
+          (* Get the full variant type with ALL constructors from the environment *)
+          let full_variant_ty =
+            match find_type type_name env with
+            | Some (TIVariant {ti_constrs; ti_name}) ->
+                TVariant (ti_name, ti_constrs)
+            | _ ->
+                (* Fallback: shouldn't happen for registered variants *)
+                TVariant (type_name, [(name, expected_arg)])
+          in
           match (arg_opt, expected_arg) with
           | None, None ->
-              let ty = TVariant (type_name, [(name, None)]) in
-              Ok (mk_texpr (TEConstr (type_name, name, None)) ty loc, env)
+              Ok (mk_texpr (TEConstr (type_name, name, None)) full_variant_ty loc, env)
           | Some arg, Some expected_ty ->
               let* targ, env = infer env arg in
               let* () = unify_or_error targ.ty expected_ty arg.expr_loc in
-              let ty = TVariant (type_name, [(name, Some targ.ty)]) in
-              Ok (mk_texpr (TEConstr (type_name, name, Some targ)) ty loc, env)
+              Ok (mk_texpr (TEConstr (type_name, name, Some targ)) full_variant_ty loc, env)
           | None, Some _ -> Error [Wrong_arity {expected = 1; got = 0; loc}]
           | Some _, None -> Error [Wrong_arity {expected = 0; got = 1; loc}])
       | None -> Error [Unbound_constructor (name, loc)])
