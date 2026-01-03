@@ -145,7 +145,7 @@ module Cuda_v2 : Framework_sig.BACKEND_V2 = struct
 
   (** Generate CUDA source from Sarek IR *)
   let generate_source (ir : Sarek_ir_types.kernel) : string option =
-    try Some (Sarek.Sarek_ir_cuda.generate_with_types ~types:ir.kern_types ir)
+    try Some (Sarek_ir_cuda.generate_with_types ~types:ir.kern_types ir)
     with _ -> None
 
   (** Execute directly - not supported for JIT backend *)
@@ -240,7 +240,7 @@ let register_intrinsic = Cuda_intrinsics.register
 let find_intrinsic = Cuda_intrinsics.find
 
 (** Generate CUDA source with custom types *)
-let generate_with_types = Sarek.Sarek_ir_cuda.generate_with_types
+let generate_with_types = Sarek_ir_cuda.generate_with_types
 
 (** Generate CUDA source for a kernel *)
-let generate_source = Sarek.Sarek_ir_cuda.generate
+let generate_source = Sarek_ir_cuda.generate

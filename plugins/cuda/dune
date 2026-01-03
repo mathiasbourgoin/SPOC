@@ -17,5 +17,6 @@
   Cuda_nvrtc
   Cuda_api
   Cuda_plugin
-  Cuda_plugin_v2)
+  Cuda_plugin_v2
+  Sarek_ir_cuda)
  (preprocess no_preprocessing))

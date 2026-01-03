@@ -1,7 +1,7 @@
 (******************************************************************************
- * Sarek_ir_cuda - CUDA Code Generation from Sarek IR
+ * Sarek_ir_opencl - OpenCL Code Generation from Sarek IR
  *
- * Generates CUDA C source code from Sarek_ir.kernel.
+ * Generates OpenCL C source code from Sarek_ir.kernel.
  * This is the Phase 4 replacement for the Kirc_Ast-based Gen.ml generator.
  *
  * Features:
@@ -11,7 +11,7 @@
  * - Pragma support for optimization hints
  ******************************************************************************)
 
-open Sarek_ir
+open Sarek.Sarek_ir
 open Sarek_core
 
 (** Current device for SNative code generation (set during generate_for_device)
@@ -27,56 +27,62 @@ let current_variants : (string * (string * elttype list) list) list ref = ref []
     "Module_point") *)
 let mangle_name name = String.map (fun c -> if c = '.' then '_' else c) name
 
-(** Map Sarek IR element type to CUDA C type string *)
-let rec cuda_type_of_elttype = function
+(** Map Sarek IR element type to OpenCL C type string *)
+let rec opencl_type_of_elttype = function
   | TInt32 -> "int"
-  | TInt64 -> "long long"
+  | TInt64 -> "long"
   | TFloat32 -> "float"
   | TFloat64 -> "double"
   | TBool -> "int"
   | TUnit -> "void"
   | TRecord (name, _) -> mangle_name name
   | TVariant (name, _) -> mangle_name name
-  | TArray (elt, _) -> cuda_type_of_elttype elt ^ "*"
-  | TVec elt -> cuda_type_of_elttype elt ^ "*"
+  | TArray (elt, _) -> opencl_type_of_elttype elt ^ "*"
+  | TVec elt -> opencl_type_of_elttype elt ^ "*"
 
-(** Map Sarek IR element type to CUDA C type for kernel parameters *)
-let cuda_param_type = function
-  | TVec elt -> cuda_type_of_elttype elt ^ "* __restrict__"
-  | TArray (elt, _) -> cuda_type_of_elttype elt ^ "*"
-  | t -> cuda_type_of_elttype t
+(** Map memory space to OpenCL qualifier *)
+let opencl_memspace = function
+  | Global -> "__global"
+  | Shared -> "__local"
+  | Local -> ""
+
+(** Map Sarek IR element type to OpenCL C type for kernel parameters *)
+let opencl_param_type = function
+  | TVec elt -> "__global " ^ opencl_type_of_elttype elt ^ "* restrict"
+  | TArray (elt, ms) ->
+      opencl_memspace ms ^ " " ^ opencl_type_of_elttype elt ^ "*"
+  | t -> opencl_type_of_elttype t
 
 (** {1 Thread Intrinsics} *)
 
-let cuda_thread_intrinsic = function
+let opencl_thread_intrinsic = function
   (* Support both idx and id naming conventions *)
-  | "thread_id_x" | "thread_idx_x" -> "threadIdx.x"
-  | "thread_id_y" | "thread_idx_y" -> "threadIdx.y"
-  | "thread_id_z" | "thread_idx_z" -> "threadIdx.z"
-  | "block_id_x" | "block_idx_x" -> "blockIdx.x"
-  | "block_id_y" | "block_idx_y" -> "blockIdx.y"
-  | "block_id_z" | "block_idx_z" -> "blockIdx.z"
-  | "block_dim_x" -> "blockDim.x"
-  | "block_dim_y" -> "blockDim.y"
-  | "block_dim_z" -> "blockDim.z"
-  | "grid_dim_x" -> "gridDim.x"
-  | "grid_dim_y" -> "gridDim.y"
-  | "grid_dim_z" -> "gridDim.z"
-  | "global_thread_id" | "global_idx" | "global_idx_x" ->
-      "(threadIdx.x + blockIdx.x * blockDim.x)"
-  | "global_idx_y" -> "(threadIdx.y + blockIdx.y * blockDim.y)"
-  | "global_idx_z" -> "(threadIdx.z + blockIdx.z * blockDim.z)"
-  | "global_size" -> "(blockDim.x * gridDim.x)"
+  | "thread_id_x" | "thread_idx_x" -> "get_local_id(0)"
+  | "thread_id_y" | "thread_idx_y" -> "get_local_id(1)"
+  | "thread_id_z" | "thread_idx_z" -> "get_local_id(2)"
+  | "block_id_x" | "block_idx_x" -> "get_group_id(0)"
+  | "block_id_y" | "block_idx_y" -> "get_group_id(1)"
+  | "block_id_z" | "block_idx_z" -> "get_group_id(2)"
+  | "block_dim_x" -> "get_local_size(0)"
+  | "block_dim_y" -> "get_local_size(1)"
+  | "block_dim_z" -> "get_local_size(2)"
+  | "grid_dim_x" -> "get_num_groups(0)"
+  | "grid_dim_y" -> "get_num_groups(1)"
+  | "grid_dim_z" -> "get_num_groups(2)"
+  | "global_thread_id" | "global_idx" | "global_idx_x" -> "get_global_id(0)"
+  | "global_idx_y" -> "get_global_id(1)"
+  | "global_idx_z" -> "get_global_id(2)"
+  | "global_size" -> "get_global_size(0)"
   | name -> failwith ("Unknown thread intrinsic: " ^ name)
 
 (** {1 Expression Generation} *)
 
 let rec gen_expr buf = function
   | EConst (CInt32 n) -> Buffer.add_string buf (Int32.to_string n)
-  | EConst (CInt64 n) -> Buffer.add_string buf (Int64.to_string n ^ "LL")
+  | EConst (CInt64 n) -> Buffer.add_string buf (Int64.to_string n ^ "L")
   | EConst (CFloat32 f) ->
       let s = Printf.sprintf "%.17g" f in
-      (* Ensure decimal point for valid C/CUDA float literal *)
+      (* Ensure decimal point for OpenCL compatibility *)
       let s =
         if String.contains s '.' || String.contains s 'e' then s else s ^ ".0"
       in
@@ -115,11 +121,10 @@ let rec gen_expr buf = function
   | EIntrinsic (path, name, args) -> gen_intrinsic buf path name args
   | ECast (ty, e) ->
       Buffer.add_char buf '(' ;
-      Buffer.add_string buf (cuda_type_of_elttype ty) ;
+      Buffer.add_string buf (opencl_type_of_elttype ty) ;
       Buffer.add_char buf ')' ;
       gen_expr buf e
   | ETuple exprs ->
-      (* Tuples become struct literals in CUDA *)
       Buffer.add_string buf "{" ;
       List.iteri
         (fun i e ->
@@ -145,9 +150,13 @@ let rec gen_expr buf = function
           gen_expr buf e)
         fields ;
       Buffer.add_string buf "}"
-  | EVariant (_, constr, []) -> Buffer.add_string buf constr
+  | EVariant (type_name, constr, []) ->
+      (* Nullary constructor - use constructor function for proper struct init *)
+      let mangled = mangle_name type_name in
+      Buffer.add_string buf ("make_" ^ mangled ^ "_" ^ constr ^ "()")
   | EVariant (type_name, constr, args) ->
-      Buffer.add_string buf ("make_" ^ type_name ^ "_" ^ constr ^ "(") ;
+      let mangled = mangle_name type_name in
+      Buffer.add_string buf ("make_" ^ mangled ^ "_" ^ constr ^ "(") ;
       List.iteri
         (fun i e ->
           if i > 0 then Buffer.add_string buf ", " ;
@@ -214,11 +223,10 @@ and gen_binop = function
 and gen_unop = function Neg -> "-" | Not -> "!" | BitNot -> "~"
 
 and gen_intrinsic buf path name args =
-  (* Check for thread intrinsics first *)
   let full_name =
     match path with [] -> name | _ -> String.concat "." path ^ "." ^ name
   in
-  (* Try thread intrinsics *)
+  (* Try thread intrinsics - support both idx and id naming *)
   if
     List.mem
       name
@@ -248,9 +256,9 @@ and gen_intrinsic buf path name args =
         "global_idx_z";
         "global_size";
       ]
-  then Buffer.add_string buf (cuda_thread_intrinsic name)
+  then Buffer.add_string buf (opencl_thread_intrinsic name)
   else
-    (* Standard math intrinsics *)
+    (* Standard math intrinsics - OpenCL uses same names *)
     match name with
     | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "sinh" | "cosh"
     | "tanh" | "exp" | "exp2" | "log" | "log2" | "log10" | "sqrt" | "rsqrt"
@@ -273,9 +281,9 @@ and gen_intrinsic buf path name args =
           args ;
         Buffer.add_char buf ')'
     (* Barrier synchronization *)
-    | "block_barrier" -> Buffer.add_string buf "__syncthreads()"
+    | "block_barrier" -> Buffer.add_string buf "barrier(CLK_LOCAL_MEM_FENCE)"
     | "atomic_add" | "atomic_add_int32" | "atomic_add_global_int32" ->
-        Buffer.add_string buf "atomicAdd(" ;
+        Buffer.add_string buf "atomic_add(" ;
         (match args with
         | [addr; value] ->
             Buffer.add_char buf '&' ;
@@ -283,7 +291,7 @@ and gen_intrinsic buf path name args =
             Buffer.add_string buf ", " ;
             gen_expr buf value
         | [arr; idx; value] ->
-            (* Array element atomic: atomicAdd(&arr[idx], value) *)
+            (* Array element atomic: atomic_add(&arr[idx], value) *)
             Buffer.add_char buf '&' ;
             gen_expr buf arr ;
             Buffer.add_char buf '[' ;
@@ -293,7 +301,7 @@ and gen_intrinsic buf path name args =
         | _ -> failwith "atomic_add requires 2 or 3 arguments") ;
         Buffer.add_char buf ')'
     | "atomic_sub" ->
-        Buffer.add_string buf "atomicSub(" ;
+        Buffer.add_string buf "atomic_sub(" ;
         (match args with
         | [addr; value] ->
             Buffer.add_char buf '&' ;
@@ -303,7 +311,7 @@ and gen_intrinsic buf path name args =
         | _ -> failwith "atomic_sub requires 2 arguments") ;
         Buffer.add_char buf ')'
     | "atomic_min" ->
-        Buffer.add_string buf "atomicMin(" ;
+        Buffer.add_string buf "atomic_min(" ;
         (match args with
         | [addr; value] ->
             Buffer.add_char buf '&' ;
@@ -313,7 +321,7 @@ and gen_intrinsic buf path name args =
         | _ -> failwith "atomic_min requires 2 arguments") ;
         Buffer.add_char buf ')'
     | "atomic_max" ->
-        Buffer.add_string buf "atomicMax(" ;
+        Buffer.add_string buf "atomic_max(" ;
         (match args with
         | [addr; value] ->
             Buffer.add_char buf '&' ;
@@ -324,7 +332,9 @@ and gen_intrinsic buf path name args =
         Buffer.add_char buf ')'
     | _ -> (
         (* Try registry lookup for intrinsics like float, int_of_float, etc. *)
-        match Sarek_registry.fun_device_template ~module_path:path name with
+        match
+          Sarek.Sarek_registry.fun_device_template ~module_path:path name
+        with
         | Some template ->
             (* Generate argument strings *)
             let arg_strs =
@@ -442,7 +452,7 @@ let rec gen_stmt buf indent = function
       in
       Buffer.add_string buf indent ;
       Buffer.add_string buf "for (" ;
-      Buffer.add_string buf (cuda_type_of_elttype v.var_type) ;
+      Buffer.add_string buf (opencl_type_of_elttype v.var_type) ;
       Buffer.add_char buf ' ' ;
       Buffer.add_string buf v.var_name ;
       Buffer.add_string buf " = " ;
@@ -487,7 +497,7 @@ let rec gen_stmt buf indent = function
               | [var_name], Some [ty] ->
                   (* Single payload: access data.Constructor_v *)
                   Buffer.add_string buf (indent ^ "    ") ;
-                  Buffer.add_string buf (cuda_type_of_elttype ty) ;
+                  Buffer.add_string buf (opencl_type_of_elttype ty) ;
                   Buffer.add_string buf " " ;
                   Buffer.add_string buf var_name ;
                   Buffer.add_string buf " = " ;
@@ -500,7 +510,7 @@ let rec gen_stmt buf indent = function
                   List.iteri
                     (fun i (var_name, ty) ->
                       Buffer.add_string buf (indent ^ "    ") ;
-                      Buffer.add_string buf (cuda_type_of_elttype ty) ;
+                      Buffer.add_string buf (opencl_type_of_elttype ty) ;
                       Buffer.add_string buf " " ;
                       Buffer.add_string buf var_name ;
                       Buffer.add_string buf " = " ;
@@ -527,13 +537,14 @@ let rec gen_stmt buf indent = function
       Buffer.add_string buf ";\n"
   | SBarrier ->
       Buffer.add_string buf indent ;
-      Buffer.add_string buf "__syncthreads();\n"
+      Buffer.add_string buf "barrier(CLK_LOCAL_MEM_FENCE);\n"
   | SWarpBarrier ->
+      (* OpenCL doesn't have warp-level sync, use sub_group_barrier if available *)
       Buffer.add_string buf indent ;
-      Buffer.add_string buf "__syncwarp();\n"
+      Buffer.add_string buf "sub_group_barrier(CLK_LOCAL_MEM_FENCE);\n"
   | SMemFence ->
       Buffer.add_string buf indent ;
-      Buffer.add_string buf "__threadfence();\n"
+      Buffer.add_string buf "mem_fence(CLK_GLOBAL_MEM_FENCE);\n"
   | SNative {gpu; ocaml = _} -> (
       match !current_device with
       | Some dev ->
@@ -553,8 +564,8 @@ let rec gen_stmt buf indent = function
   | SLet (v, EArrayCreate (elem_ty, size, mem), body) ->
       (* Array declaration: type arr[size]; *)
       Buffer.add_string buf indent ;
-      (match mem with Shared -> Buffer.add_string buf "__shared__ " | _ -> ()) ;
-      Buffer.add_string buf (cuda_type_of_elttype elem_ty) ;
+      (match mem with Shared -> Buffer.add_string buf "__local " | _ -> ()) ;
+      Buffer.add_string buf (opencl_type_of_elttype elem_ty) ;
       Buffer.add_char buf ' ' ;
       Buffer.add_string buf v.var_name ;
       Buffer.add_char buf '[' ;
@@ -563,7 +574,7 @@ let rec gen_stmt buf indent = function
       gen_stmt buf indent body
   | SLet (v, e, body) ->
       Buffer.add_string buf indent ;
-      Buffer.add_string buf (cuda_type_of_elttype v.var_type) ;
+      Buffer.add_string buf (opencl_type_of_elttype v.var_type) ;
       Buffer.add_char buf ' ' ;
       Buffer.add_string buf v.var_name ;
       Buffer.add_string buf " = " ;
@@ -572,7 +583,7 @@ let rec gen_stmt buf indent = function
       gen_stmt buf indent body
   | SLetMut (v, e, body) ->
       Buffer.add_string buf indent ;
-      Buffer.add_string buf (cuda_type_of_elttype v.var_type) ;
+      Buffer.add_string buf (opencl_type_of_elttype v.var_type) ;
       Buffer.add_char buf ' ' ;
       Buffer.add_string buf v.var_name ;
       Buffer.add_string buf " = " ;
@@ -580,6 +591,7 @@ let rec gen_stmt buf indent = function
       Buffer.add_string buf ";\n" ;
       gen_stmt buf indent body
   | SPragma (hints, body) ->
+      (* OpenCL uses #pragma for hints *)
       Buffer.add_string buf indent ;
       Buffer.add_string buf "#pragma " ;
       Buffer.add_string buf (String.concat " " hints) ;
@@ -599,7 +611,7 @@ let is_vec_type = function TVec _ -> true | _ -> false
 
 let gen_param buf = function
   | DParam (v, None) ->
-      Buffer.add_string buf (cuda_param_type v.var_type) ;
+      Buffer.add_string buf (opencl_param_type v.var_type) ;
       Buffer.add_char buf ' ' ;
       Buffer.add_string buf v.var_name ;
       (* Add length parameter for vectors *)
@@ -608,10 +620,12 @@ let gen_param buf = function
         Buffer.add_string buf v.var_name ;
         Buffer.add_string buf "_length"
       end
-  | DParam (v, Some _arr) ->
+  | DParam (v, Some arr) ->
       (* Array with explicit info - always needs length *)
-      Buffer.add_string buf (cuda_param_type v.var_type) ;
-      Buffer.add_string buf " " ;
+      Buffer.add_string buf (opencl_memspace arr.arr_memspace) ;
+      Buffer.add_char buf ' ' ;
+      Buffer.add_string buf (opencl_type_of_elttype arr.arr_elttype) ;
+      Buffer.add_string buf "* restrict " ;
       Buffer.add_string buf v.var_name ;
       Buffer.add_string buf ", int sarek_" ;
       Buffer.add_string buf v.var_name ;
@@ -621,13 +635,13 @@ let gen_param buf = function
 let gen_local buf indent = function
   | DLocal (v, None) ->
       Buffer.add_string buf indent ;
-      Buffer.add_string buf (cuda_type_of_elttype v.var_type) ;
+      Buffer.add_string buf (opencl_type_of_elttype v.var_type) ;
       Buffer.add_char buf ' ' ;
       Buffer.add_string buf v.var_name ;
       Buffer.add_string buf ";\n"
   | DLocal (v, Some e) ->
       Buffer.add_string buf indent ;
-      Buffer.add_string buf (cuda_type_of_elttype v.var_type) ;
+      Buffer.add_string buf (opencl_type_of_elttype v.var_type) ;
       Buffer.add_char buf ' ' ;
       Buffer.add_string buf v.var_name ;
       Buffer.add_string buf " = " ;
@@ -635,15 +649,15 @@ let gen_local buf indent = function
       Buffer.add_string buf ";\n"
   | DShared (name, elt, None) ->
       Buffer.add_string buf indent ;
-      Buffer.add_string buf "__shared__ " ;
-      Buffer.add_string buf (cuda_type_of_elttype elt) ;
+      Buffer.add_string buf "__local " ;
+      Buffer.add_string buf (opencl_type_of_elttype elt) ;
       Buffer.add_char buf ' ' ;
       Buffer.add_string buf name ;
       Buffer.add_string buf "[];\n"
   | DShared (name, elt, Some size) ->
       Buffer.add_string buf indent ;
-      Buffer.add_string buf "__shared__ " ;
-      Buffer.add_string buf (cuda_type_of_elttype elt) ;
+      Buffer.add_string buf "__local " ;
+      Buffer.add_string buf (opencl_type_of_elttype elt) ;
       Buffer.add_char buf ' ' ;
       Buffer.add_string buf name ;
       Buffer.add_char buf '[' ;
@@ -653,11 +667,10 @@ let gen_local buf indent = function
 
 (** {1 Helper Function Generation} *)
 
-(** Generate a device helper function *)
+(** Generate a helper function (OpenCL device function) *)
 let gen_helper_func buf (hf : helper_func) =
-  (* __device__ ret_type name(params) { body } *)
-  Buffer.add_string buf "__device__ " ;
-  Buffer.add_string buf (cuda_type_of_elttype hf.hf_ret_type) ;
+  (* In OpenCL, helper functions don't need any special decoration *)
+  Buffer.add_string buf (opencl_type_of_elttype hf.hf_ret_type) ;
   Buffer.add_char buf ' ' ;
   Buffer.add_string buf hf.hf_name ;
   Buffer.add_char buf '(' ;
@@ -665,7 +678,7 @@ let gen_helper_func buf (hf : helper_func) =
   List.iteri
     (fun i (v : var) ->
       if i > 0 then Buffer.add_string buf ", " ;
-      Buffer.add_string buf (cuda_type_of_elttype v.var_type) ;
+      Buffer.add_string buf (opencl_type_of_elttype v.var_type) ;
       Buffer.add_char buf ' ' ;
       Buffer.add_string buf v.var_name)
     hf.hf_params ;
@@ -676,23 +689,15 @@ let gen_helper_func buf (hf : helper_func) =
 
 (** {1 Kernel Generation} *)
 
-(** Generate the CUDA kernel header *)
-let cuda_header = {|
-extern "C" {
-|}
-
-(** Generate complete CUDA source for a kernel *)
+(** Generate complete OpenCL source for a kernel *)
 let generate (k : kernel) : string =
   let buf = Buffer.create 4096 in
-
-  (* Header *)
-  Buffer.add_string buf cuda_header ;
 
   (* Generate helper functions before kernel *)
   List.iter (gen_helper_func buf) k.kern_funcs ;
 
   (* Kernel signature *)
-  Buffer.add_string buf "__global__ void " ;
+  Buffer.add_string buf "__kernel void " ;
   Buffer.add_string buf k.kern_name ;
   Buffer.add_char buf '(' ;
 
@@ -714,19 +719,16 @@ let generate (k : kernel) : string =
   (* Close kernel *)
   Buffer.add_string buf "}\n" ;
 
-  (* Close extern "C" *)
-  Buffer.add_string buf "}\n" ;
-
   Buffer.contents buf
 
-(** Generate complete CUDA source with device context for SNative *)
+(** Generate complete OpenCL source with device context for SNative *)
 let generate_for_device ~(device : Device.t) (k : kernel) : string =
   current_device := Some device ;
   let result = generate k in
   current_device := None ;
   result
 
-(** Generate CUDA variant type definition *)
+(** Generate variant type definition for OpenCL *)
 let gen_variant_def buf (name, constrs) =
   let mangled = mangle_name name in
   (* Enum for tags - use simple names for switch case labels *)
@@ -751,7 +753,7 @@ let gen_variant_def buf (name, constrs) =
         | [] -> () (* No payload for this constructor *)
         | [ty] ->
             Buffer.add_string buf "    " ;
-            Buffer.add_string buf (cuda_type_of_elttype ty) ;
+            Buffer.add_string buf (opencl_type_of_elttype ty) ;
             Buffer.add_string buf (" " ^ cname ^ "_v;\n")
         | _ ->
             (* Multiple args - generate struct *)
@@ -759,7 +761,7 @@ let gen_variant_def buf (name, constrs) =
             List.iteri
               (fun i ty ->
                 if i > 0 then Buffer.add_string buf " " ;
-                Buffer.add_string buf (cuda_type_of_elttype ty) ;
+                Buffer.add_string buf (opencl_type_of_elttype ty) ;
                 Buffer.add_string buf (Printf.sprintf " _%d;" i))
               args ;
             Buffer.add_string buf (" } " ^ cname ^ "_v;\n"))
@@ -772,18 +774,17 @@ let gen_variant_def buf (name, constrs) =
     (fun _i (cname, args) ->
       Buffer.add_string
         buf
-        ("__device__ __host__ inline " ^ mangled ^ " make_" ^ mangled ^ "_"
-       ^ cname ^ "(") ;
+        ("static inline " ^ mangled ^ " make_" ^ mangled ^ "_" ^ cname ^ "(") ;
       (match args with
       | [] -> ()
       | [ty] ->
-          Buffer.add_string buf (cuda_type_of_elttype ty) ;
+          Buffer.add_string buf (opencl_type_of_elttype ty) ;
           Buffer.add_string buf " v"
       | _ ->
           List.iteri
             (fun j ty ->
               if j > 0 then Buffer.add_string buf ", " ;
-              Buffer.add_string buf (cuda_type_of_elttype ty) ;
+              Buffer.add_string buf (opencl_type_of_elttype ty) ;
               Buffer.add_string buf (Printf.sprintf " v%d" j))
             args) ;
       Buffer.add_string buf (") {\n  " ^ mangled ^ " r;\n") ;
@@ -801,15 +802,12 @@ let gen_variant_def buf (name, constrs) =
       Buffer.add_string buf "  return r;\n}\n\n")
     constrs
 
-(** Generate CUDA source with custom type definitions *)
+(** Generate OpenCL source with custom type definitions *)
 let generate_with_types ~(types : (string * (string * elttype) list) list)
     (k : kernel) : string =
   (* Set current_variants for SMatch binding extraction *)
   current_variants := k.kern_variants ;
   let buf = Buffer.create 4096 in
-
-  (* Header *)
-  Buffer.add_string buf cuda_header ;
 
   (* Variant type definitions first (may be needed by records) *)
   List.iter (gen_variant_def buf) k.kern_variants ;
@@ -821,7 +819,7 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
       List.iter
         (fun (fname, ftype) ->
           Buffer.add_string buf "  " ;
-          Buffer.add_string buf (cuda_type_of_elttype ftype) ;
+          Buffer.add_string buf (opencl_type_of_elttype ftype) ;
           Buffer.add_char buf ' ' ;
           Buffer.add_string buf fname ;
           Buffer.add_string buf ";\n")
@@ -835,7 +833,7 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
   List.iter (gen_helper_func buf) k.kern_funcs ;
 
   (* Kernel signature *)
-  Buffer.add_string buf "__global__ void " ;
+  Buffer.add_string buf "__kernel void " ;
   Buffer.add_string buf k.kern_name ;
   Buffer.add_char buf '(' ;
 
@@ -857,7 +855,11 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
   (* Close kernel *)
   Buffer.add_string buf "}\n" ;
 
-  (* Close extern "C" *)
-  Buffer.add_string buf "}\n" ;
-
   Buffer.contents buf
+
+(** Generate OpenCL source with double precision extension if needed *)
+let generate_with_fp64 (k : kernel) : string =
+  let source = generate k in
+  if String.contains source 'd' then
+    "#pragma OPENCL EXTENSION cl_khr_fp64 : enable\n\n" ^ source
+  else source

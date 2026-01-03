@@ -173,7 +173,7 @@ module Opencl_v2 : Framework_sig.BACKEND_V2 = struct
 
   (** Generate OpenCL source from Sarek IR *)
   let generate_source (ir : Sarek_ir_types.kernel) : string option =
-    try Some (Sarek.Sarek_ir_opencl.generate_with_types ~types:ir.kern_types ir)
+    try Some (Sarek_ir_opencl.generate_with_types ~types:ir.kern_types ir)
     with _ -> None
 
   (** Execute directly - not supported for JIT backend *)
@@ -255,10 +255,10 @@ let register_intrinsic = Opencl_intrinsics.register
 let find_intrinsic = Opencl_intrinsics.find
 
 (** Generate OpenCL source with custom types *)
-let generate_with_types = Sarek.Sarek_ir_opencl.generate_with_types
+let generate_with_types = Sarek_ir_opencl.generate_with_types
 
 (** Generate OpenCL source for a kernel *)
-let generate_source = Sarek.Sarek_ir_opencl.generate
+let generate_source = Sarek_ir_opencl.generate
 
 (** Generate OpenCL source with FP64 extension if needed *)
-let generate_with_fp64 = Sarek.Sarek_ir_opencl.generate_with_fp64
+let generate_with_fp64 = Sarek_ir_opencl.generate_with_fp64

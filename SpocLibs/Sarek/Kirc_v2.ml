@@ -157,51 +157,34 @@ let run ~(device : Device.t) ~(block : Framework_sig.dims)
            fw)
 
 (** Execute a kernel_v2 with explicit typed arguments. Works for all backends
-    (Native, CUDA, OpenCL). *)
+    (Native, CUDA, OpenCL). Uses plugin dispatch via Execute.run_v2. *)
 let run_with_args ~(device : Device.t) ~(block : Framework_sig.dims)
     ~(grid : Framework_sig.dims) ?(shared_mem = 0) (k : 'a kernel_v2)
     (args : Execute.arg list) : unit =
-  match device.framework with
-  | "Native" -> (
-      match k.native_fn with
-      | Some fn -> fn ~block ~grid (Execute.args_to_obj_array args)
-      | None -> failwith "Native kernel has no native function")
-  | "CUDA" ->
-      let ir = Lazy.force k.ir in
-      let source = Sarek_ir_cuda.generate_with_types ~types:ir.kern_types ir in
-      Execute.run_typed
-        ~device
-        ~name:k.name
-        ~source
-        ~block
-        ~grid
-        ~shared_mem
-        args
-  | "OpenCL" ->
-      let ir = Lazy.force k.ir in
-      let source =
-        Sarek_ir_opencl.generate_with_types ~types:ir.kern_types ir
-      in
-      Execute.run_typed
-        ~device
-        ~name:k.name
-        ~source
-        ~block
-        ~grid
-        ~shared_mem
-        args
-  | fw -> failwith ("Unsupported framework: " ^ fw)
+  Execute.run_v2
+    ~device
+    ~name:k.name
+    ~ir:(Some k.ir)
+    ~native_fn:k.native_fn
+    ~block
+    ~grid
+    ~shared_mem
+    args
 
 (** {1 Utilities} *)
 
-(** Get generated source for a specific backend *)
+(** Get generated source for a specific backend. Uses plugin's generate_source.
+*)
 let source_for_backend (k : 'a kernel_v2) ~backend : string =
-  let ir = Lazy.force k.ir in
-  match backend with
-  | "CUDA" -> Sarek_ir_cuda.generate_with_types ~types:ir.kern_types ir
-  | "OpenCL" -> Sarek_ir_opencl.generate_with_types ~types:ir.kern_types ir
-  | "Native" -> failwith "Native backend uses pre-compiled code, no source"
-  | _ -> failwith ("Unknown backend: " ^ backend)
+  match Framework_registry.find_backend_v2 backend with
+  | Some (module B : Framework_sig.BACKEND_V2) -> (
+      let ir = Lazy.force k.ir in
+      match B.generate_source ir with
+      | Some source -> source
+      | None ->
+          failwith
+            (Printf.sprintf "%s backend does not generate source" backend))
+  | None -> failwith ("Unknown backend: " ^ backend)
 
 (** Check if kernel requires FP64 extension *)
 let requires_fp64 k = Array.mem Kirc_types.ExFloat64 k.extensions
