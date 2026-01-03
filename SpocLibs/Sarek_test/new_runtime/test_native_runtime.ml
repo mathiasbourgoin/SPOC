@@ -23,8 +23,8 @@
  * 5. Tracks dirty state to know which copies need synchronization
  ******************************************************************************)
 
-module V2_Vector = Sarek_core.Vector
-module V2_Transfer = Sarek_core.Transfer
+module V2_Vector = Spoc_core.Vector
+module V2_Transfer = Spoc_core.Transfer
 module Execute = Sarek.Execute
 
 (* Force plugin initialization *)
@@ -80,7 +80,7 @@ let () =
 
   (* Step 1: Initialize native devices *)
   print_endline "\n[1] Initializing Native devices..." ;
-  let devices = Sarek_core.Device.init ~frameworks:["Native"] () in
+  let devices = Spoc_core.Device.init ~frameworks:["Native"] () in
   Printf.printf "Found %d Native device(s)\n" (Array.length devices) ;
   if Array.length devices = 0 then begin
     print_endline "No Native devices found - test failed" ;
@@ -100,9 +100,9 @@ let () =
 
   (* Step 3: Allocate buffers *)
   print_endline "\n[3] Allocating buffers..." ;
-  let buf_a = Sarek_core.Runtime.alloc_float32 dev size in
-  let buf_b = Sarek_core.Runtime.alloc_float32 dev size in
-  let buf_c = Sarek_core.Runtime.alloc_float32 dev size in
+  let buf_a = Spoc_core.Runtime.alloc_float32 dev size in
+  let buf_b = Spoc_core.Runtime.alloc_float32 dev size in
+  let buf_c = Spoc_core.Runtime.alloc_float32 dev size in
   print_endline "Buffers allocated" ;
 
   (* Step 4: Initialize data *)
@@ -115,26 +115,26 @@ let () =
     Bigarray.Array1.set host_b i (float_of_int (i * 2)) ;
     Bigarray.Array1.set host_c i 0.0
   done ;
-  Sarek_core.Runtime.to_device ~src:host_a ~dst:buf_a ;
-  Sarek_core.Runtime.to_device ~src:host_b ~dst:buf_b ;
-  Sarek_core.Runtime.to_device ~src:host_c ~dst:buf_c ;
+  Spoc_core.Runtime.to_device ~src:host_a ~dst:buf_a ;
+  Spoc_core.Runtime.to_device ~src:host_b ~dst:buf_b ;
+  Spoc_core.Runtime.to_device ~src:host_c ~dst:buf_c ;
   print_endline "Data initialized and transferred" ;
 
   (* Step 5: Execute kernel *)
   print_endline "\n[5] Executing kernel via new runtime..." ;
-  let block = Sarek_core.Runtime.dims1d 256 in
-  let grid = Sarek_core.Runtime.dims1d ((size + 255) / 256) in
+  let block = Spoc_core.Runtime.dims1d 256 in
+  let grid = Spoc_core.Runtime.dims1d ((size + 255) / 256) in
 
-  Sarek_core.Runtime.run
+  Spoc_core.Runtime.run
     dev
     ~name:"vector_add"
     ~source:"" (* Native doesn't need source *)
     ~args:
       [
-        Sarek_core.Runtime.ArgBuffer buf_a;
-        Sarek_core.Runtime.ArgBuffer buf_b;
-        Sarek_core.Runtime.ArgBuffer buf_c;
-        Sarek_core.Runtime.ArgInt32 (Int32.of_int size);
+        Spoc_core.Runtime.ArgBuffer buf_a;
+        Spoc_core.Runtime.ArgBuffer buf_b;
+        Spoc_core.Runtime.ArgBuffer buf_c;
+        Spoc_core.Runtime.ArgInt32 (Int32.of_int size);
       ]
     ~grid
     ~block
@@ -143,7 +143,7 @@ let () =
 
   (* Step 6: Verify results *)
   print_endline "\n[6] Verifying results..." ;
-  Sarek_core.Runtime.from_device ~src:buf_c ~dst:host_c ;
+  Spoc_core.Runtime.from_device ~src:buf_c ~dst:host_c ;
 
   let errors = ref 0 in
   for i = 0 to size - 1 do
@@ -167,9 +167,9 @@ let () =
   end ;
 
   (* Cleanup *)
-  Sarek_core.Runtime.free buf_a ;
-  Sarek_core.Runtime.free buf_b ;
-  Sarek_core.Runtime.free buf_c ;
+  Spoc_core.Runtime.free buf_a ;
+  Spoc_core.Runtime.free buf_b ;
+  Spoc_core.Runtime.free buf_c ;
 
   print_endline "Vector add test passed!" ;
 

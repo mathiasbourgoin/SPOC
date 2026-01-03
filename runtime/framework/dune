@@ -1,10 +1,9 @@
 ; Framework Plugin System
 ; Core interfaces and registry for GPU backends
-; NOTE: Internal library for now
 
 (library
- (name sarek_framework)
- (public_name sarek.framework)
+ (name spoc_framework)
+ (public_name spoc.framework)
  (modules Framework_sig Framework_registry)
  (libraries ctypes sarek_ir)
  (preprocess no_preprocessing))

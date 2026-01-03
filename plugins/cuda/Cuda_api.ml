@@ -127,8 +127,8 @@ module Device = struct
         multiprocessor_count = mp_count;
       }
     in
-    Sarek_core.Log.debugf
-      Sarek_core.Log.Device
+    Spoc_core.Log.debugf
+      Spoc_core.Log.Device
       "CUDA device %d: %s (cc %d.%d, %Ld MB)"
       idx
       name
@@ -289,8 +289,8 @@ module Kernel = struct
     (* Safe baseline that most NVRTC versions support *)
     ignore (major, minor) ;
     (* Logged for info but not used for arch *)
-    Sarek_core.Log.debugf
-      Sarek_core.Log.Kernel
+    Spoc_core.Log.debugf
+      Spoc_core.Log.Kernel
       "CUDA compile: kernel='%s' arch=%s (cc %d.%d) device=%d"
       name
       arch
@@ -298,8 +298,8 @@ module Kernel = struct
       minor
       device.Device.id ;
     let ptx = Cuda_nvrtc.compile_to_ptx ~name ~arch source in
-    Sarek_core.Log.debugf
-      Sarek_core.Log.Kernel
+    Spoc_core.Log.debugf
+      Spoc_core.Log.Kernel
       "CUDA PTX generated (%d bytes)"
       (String.length ptx) ;
 
@@ -309,12 +309,12 @@ module Kernel = struct
     let load_result = cuModuleLoadData module_ ptx_ptr in
     (match load_result with
     | CUDA_SUCCESS ->
-        Sarek_core.Log.debug Sarek_core.Log.Kernel "cuModuleLoadData succeeded"
+        Spoc_core.Log.debug Spoc_core.Log.Kernel "cuModuleLoadData succeeded"
     | err ->
         (* Log PTX header for debugging *)
         let ptx_header = String.sub ptx 0 (min 200 (String.length ptx)) in
-        Sarek_core.Log.errorf
-          Sarek_core.Log.Kernel
+        Spoc_core.Log.errorf
+          Spoc_core.Log.Kernel
           "cuModuleLoadData failed: %s\nPTX header: %s"
           (string_of_cu_result err)
           ptx_header ;

@@ -10,7 +10,7 @@
  * This plugin coexists with Native_plugin during the transition period.
  ******************************************************************************)
 
-open Sarek_framework
+open Spoc_framework
 
 (** Reuse the existing Native implementation *)
 module Native_base = struct
@@ -149,7 +149,7 @@ module Native_v2 : Framework_sig.BACKEND_V2 = struct
 
   (** Execute directly using V2 native function from IR. Args contain V2 Vectors
       directly (not expanded buffer/length pairs). The V2 native function uses
-      Sarek_core.Vector.get/set for access. *)
+      Spoc_core.Vector.get/set for access. *)
   let execute_direct
       ~(native_fn :
          (block:Framework_sig.dims ->

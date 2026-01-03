@@ -335,7 +335,7 @@ type gen_context = {
   gen_mode : gen_mode;
       (** Generation mode - affects how thread indices are accessed *)
   use_v2 : bool;
-      (** Use V2 Vector API (Sarek_core.Vector) instead of SPOC (Spoc.Mem) *)
+      (** Use V2 Vector API (Spoc_core.Vector) instead of SPOC (Spoc.Mem) *)
 }
 
 (** Empty generation context *)
@@ -440,13 +440,13 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
   | TEVecGet (vec, idx) ->
       let vec_e = gen_expr ~loc vec in
       let idx_e = gen_expr ~loc idx in
-      [%expr Sarek_core.Vector.get [%e vec_e] (Int32.to_int [%e idx_e])]
+      [%expr Spoc_core.Vector.get [%e vec_e] (Int32.to_int [%e idx_e])]
   | TEVecSet (vec, idx, value) ->
       let vec_e = gen_expr ~loc vec in
       let idx_e = gen_expr ~loc idx in
       let val_e = gen_expr ~loc value in
       [%expr
-        Sarek_core.Vector.set [%e vec_e] (Int32.to_int [%e idx_e]) [%e val_e]]
+        Spoc_core.Vector.set [%e vec_e] (Int32.to_int [%e idx_e]) [%e val_e]]
   (* Array access - for shared memory (regular OCaml arrays) *)
   | TEArrGet (arr, idx) ->
       let arr_e = gen_expr ~loc arr in
@@ -1538,7 +1538,7 @@ let gen_simple_cpu_kern ~loc ~exec_strategy (kernel : tkernel) : expression =
 
 (** Generate a type cast expression for extracting a kernel argument.
 
-    For vectors: cast Obj.t to Sarek_core.Vector.t (V2 path). For scalars: cast
+    For vectors: cast Obj.t to Spoc_core.Vector.t (V2 path). For scalars: cast
     Obj.t to the primitive type.
 
     V2 uses type-safe vectors that abstract over storage. *)
@@ -1549,7 +1549,7 @@ let gen_arg_cast ~loc (param : tparam) (idx : int) : expression =
   match repr param.tparam_type with
   | TVec _ ->
       (* All vector types use the same generic cast - Vector.get/set handle the types *)
-      [%expr (Obj.obj [%e arr_access] : (_, _) Sarek_core.Vector.t)]
+      [%expr (Obj.obj [%e arr_access] : (_, _) Spoc_core.Vector.t)]
   | TReg "float32" -> [%expr (Obj.obj [%e arr_access] : float)]
   | TReg "float64" -> [%expr (Obj.obj [%e arr_access] : float)]
   | TReg "int32" | TPrim TInt32 -> [%expr (Obj.obj [%e arr_access] : int32)]
@@ -1559,7 +1559,7 @@ let gen_arg_cast ~loc (param : tparam) (idx : int) : expression =
       (* Default - just return as Obj.t and let caller deal with it *)
       arr_access
 
-(** Generate argument extraction for V2 native code. V2 uses Sarek_core.Vector.t
+(** Generate argument extraction for V2 native code. V2 uses Spoc_core.Vector.t
     \- type-safe vectors that abstract over storage. We use wildcard types since
     Vector.get/set are polymorphic. *)
 let gen_arg_cast_v2 ~loc (param : tparam) (idx : int) : expression =
@@ -1569,7 +1569,7 @@ let gen_arg_cast_v2 ~loc (param : tparam) (idx : int) : expression =
   match repr param.tparam_type with
   | TVec _ ->
       (* All vector types use the same generic cast - Vector.get/set handle the types *)
-      [%expr (Obj.obj [%e arr_access] : (_, _) Sarek_core.Vector.t)]
+      [%expr (Obj.obj [%e arr_access] : (_, _) Spoc_core.Vector.t)]
   | TReg "float32" -> [%expr (Obj.obj [%e arr_access] : float)]
   | TReg "float64" -> [%expr (Obj.obj [%e arr_access] : float)]
   | TReg "int32" | TPrim TInt32 -> [%expr (Obj.obj [%e arr_access] : int32)]
@@ -1698,7 +1698,7 @@ let gen_types_object ~loc (decls : ttype_decl list) : expression =
     run_1d/2d/3d_threadpool. This eliminates the per-element thread_state
     overhead. *)
 let gen_cpu_kern_wrapper ~loc (kernel : tkernel) : expression =
-  (* V2: Uses Sarek_core.Vector with get/set for type-safe access.
+  (* V2: Uses Spoc_core.Vector with get/set for type-safe access.
      Record/variant vectors are supported via custom_type descriptors. *)
   let use_fcm = has_inline_types kernel in
   let native_kern = gen_cpu_kern ~loc kernel in
@@ -1974,7 +1974,7 @@ let gen_cpu_kern_wrapper ~loc (kernel : tkernel) : expression =
             let __native_kern = [%e native_kern] in
             [%e body_with_bindings]]
 
-(** Generate V2 cpu_kern - uses Sarek_core.Vector.get/set instead of Spoc.Mem.
+(** Generate V2 cpu_kern - uses Spoc_core.Vector.get/set instead of Spoc.Mem.
 
     Generated signature: thread_state -> shared_mem -> args_tuple -> unit This
     matches the signature expected by run_parallel/run_sequential. *)
@@ -2078,7 +2078,7 @@ let gen_cpu_kern_v2 ~loc (kernel : tkernel) : expression =
   }
 
 (** Generate V2 simple kernel for optimized threadpool execution. Like
-    gen_simple_cpu_kern but with use_v2=true for Sarek_core.Vector. *)
+    gen_simple_cpu_kern but with use_v2=true for Spoc_core.Vector. *)
 let gen_simple_cpu_kern_v2 ~loc ~exec_strategy (kernel : tkernel) : expression =
   let use_fcm = has_inline_types kernel in
   let inline_type_names =
@@ -2211,7 +2211,7 @@ let gen_simple_cpu_kern_v2 ~loc ~exec_strategy (kernel : tkernel) : expression =
     Generated function type: parallel:bool -> block:int*int*int ->
     grid:int*int*int -> Obj.t array -> unit
 
-    V2 version uses Sarek_core.Vector instead of Spoc.Vector. Expects V2 Vectors
+    V2 version uses Spoc_core.Vector instead of Spoc.Vector. Expects V2 Vectors
     directly in the Obj.t array (not expanded buffer/length pairs).
 
     This is a port of gen_cpu_kern_wrapper with V2 callsites:

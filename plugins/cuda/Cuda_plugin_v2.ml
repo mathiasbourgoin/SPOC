@@ -10,7 +10,7 @@
  * This plugin coexists with Cuda_plugin during the transition period.
  ******************************************************************************)
 
-open Sarek_framework
+open Spoc_framework
 
 (** Reuse the existing CUDA implementation *)
 module Cuda_base = struct
@@ -210,20 +210,20 @@ end
 (** Auto-register V2 backend when module is loaded *)
 let registered_v2 =
   lazy
-    (Sarek_core.Log.debug
-       Sarek_core.Log.Device
+    (Spoc_core.Log.debug
+       Spoc_core.Log.Device
        "Cuda_plugin_v2: checking availability" ;
      if Cuda_v2.is_available () then begin
-       Sarek_core.Log.debug
-         Sarek_core.Log.Device
+       Spoc_core.Log.debug
+         Spoc_core.Log.Device
          "Cuda_plugin_v2: CUDA available, registering V2 backend" ;
        Framework_registry.register_backend_v2
          ~priority:100
          (module Cuda_v2 : Framework_sig.BACKEND_V2)
      end
      else
-       Sarek_core.Log.debug
-         Sarek_core.Log.Device
+       Spoc_core.Log.debug
+         Spoc_core.Log.Device
          "Cuda_plugin_v2: CUDA not available")
 
 let () = Lazy.force registered_v2

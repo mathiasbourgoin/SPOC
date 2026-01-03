@@ -5,12 +5,12 @@
  ******************************************************************************)
 
 (* Shadow SPOC's vector with V2 vector for kernel compatibility *)
-type ('a, 'b) vector = ('a, 'b) Sarek_core.Vector.t
+type ('a, 'b) vector = ('a, 'b) Spoc_core.Vector.t
 
 (* V2 module aliases *)
-module V2_Device = Sarek_core.Device
-module V2_Vector = Sarek_core.Vector
-module V2_Transfer = Sarek_core.Transfer
+module V2_Device = Spoc_core.Device
+module V2_Vector = Spoc_core.Vector
+module V2_Transfer = Spoc_core.Transfer
 
 (* Force V2 backend registration *)
 let () =

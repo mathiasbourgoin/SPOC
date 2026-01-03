@@ -3,5 +3,5 @@
 
 (executable
  (name test_runtime)
- (libraries sarek_cuda sarek_opencl sarek_native sarek_core)
+ (libraries sarek_cuda sarek_opencl sarek_native spoc_core)
  (modules test_runtime))

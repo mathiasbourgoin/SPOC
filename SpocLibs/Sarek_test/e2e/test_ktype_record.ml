@@ -2,12 +2,12 @@
  * E2E test for Sarek PPX with record type declarations at top level.
  *
  * The [@@sarek.type] attribute generates:
- *   - point_custom_v2 (for V2 Sarek_core.Vector)
+ *   - point_custom_v2 (for V2 Spoc_core.Vector)
  ******************************************************************************)
 
-module V2_Vector = Sarek_core.Vector
-module V2_Device = Sarek_core.Device
-module V2_Transfer = Sarek_core.Transfer
+module V2_Vector = Spoc_core.Vector
+module V2_Device = Spoc_core.Device
+module V2_Transfer = Spoc_core.Transfer
 
 (* Force backend registration *)
 let () =

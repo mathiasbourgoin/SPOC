@@ -12,7 +12,7 @@
  ******************************************************************************)
 
 open Sarek.Sarek_ir
-open Sarek_core
+open Spoc_core
 
 (** Current device for SNative code generation (set during generate_for_device)
 *)

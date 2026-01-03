@@ -11,7 +11,7 @@
  * actually interprets the IR at runtime using Sarek_ir_interp.
  ******************************************************************************)
 
-open Sarek_framework
+open Spoc_framework
 
 (** Reuse the existing Interpreter implementation *)
 module Interpreter_base = struct

@@ -16,7 +16,7 @@ open Sarek_types
 (** Type information for registered types (like float32, int64, etc.) *)
 type type_info = {
   ti_name : string;  (** Type name, e.g., "float32" *)
-  ti_device : Sarek_core.Device.t -> string;
+  ti_device : Spoc_core.Device.t -> string;
       (** Device type string, e.g., "float" *)
   ti_size : int;  (** Size in bytes *)
   ti_sarek_type : typ;  (** Sarek type representation *)
@@ -27,7 +27,7 @@ type intrinsic_info = {
   ii_name : string;  (** Function name, e.g., "sin" *)
   ii_qualified_name : string;  (** Qualified name, e.g., "Float32.sin" *)
   ii_type : typ;  (** Type signature *)
-  ii_device : Sarek_core.Device.t -> string;
+  ii_device : Spoc_core.Device.t -> string;
       (** Device code generator - more generic than storing cuda/opencl
           separately *)
   ii_module : string list;  (** Module path, e.g., ["Sarek_stdlib"; "Float32"] *)
@@ -38,7 +38,7 @@ type const_info = {
   ci_name : string;  (** Constant name *)
   ci_qualified_name : string;  (** Qualified name *)
   ci_type : typ;  (** Type *)
-  ci_device : Sarek_core.Device.t -> string;  (** Device code generator *)
+  ci_device : Spoc_core.Device.t -> string;  (** Device code generator *)
   ci_module : string list;  (** Module path *)
 }
 

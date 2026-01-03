@@ -12,8 +12,8 @@
  * - Clean separation: No legacy Kirc_Ast.k_ext in the primary interface
  ******************************************************************************)
 
-open Sarek_framework
-open Sarek_core
+open Spoc_framework
+open Spoc_core
 
 (** {1 Kernel Type} *)
 

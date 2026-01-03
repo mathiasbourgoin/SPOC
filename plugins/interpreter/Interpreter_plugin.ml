@@ -9,7 +9,7 @@
  * - Interpreter walks the IR tree at runtime (slower, but no compilation)
  ******************************************************************************)
 
-open Sarek_framework
+open Spoc_framework
 
 (** Registry for interpreter kernels. Maps kernel name to IR for interpretation.
 *)

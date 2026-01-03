@@ -403,7 +403,7 @@ let gen_v2_field_read ~loc (ftype : core_type) (byte_off_expr : expression) :
   match ftype.ptyp_desc with
   | Ptyp_constr ({txt = Lident "float32"; _}, _) ->
       [%expr
-        Sarek_core.Vector.Custom_helpers.read_float32
+        Spoc_core.Vector.Custom_helpers.read_float32
           raw_ptr
           (base_off + [%e byte_off_expr])]
   | Ptyp_constr ({txt = Lident "float"; _}, _) ->
@@ -411,22 +411,22 @@ let gen_v2_field_read ~loc (ftype : core_type) (byte_off_expr : expression) :
          check if this is meant to be float32 or float64 based on context.
          For now treat bare 'float' as float32 for GPU compatibility. *)
       [%expr
-        Sarek_core.Vector.Custom_helpers.read_float32
+        Spoc_core.Vector.Custom_helpers.read_float32
           raw_ptr
           (base_off + [%e byte_off_expr])]
   | Ptyp_constr ({txt = Lident "int32"; _}, _) ->
       [%expr
-        Sarek_core.Vector.Custom_helpers.read_int32
+        Spoc_core.Vector.Custom_helpers.read_int32
           raw_ptr
           (base_off + [%e byte_off_expr])]
   | Ptyp_constr ({txt = Lident "int64"; _}, _) ->
       [%expr
-        Sarek_core.Vector.Custom_helpers.read_int64
+        Spoc_core.Vector.Custom_helpers.read_int64
           raw_ptr
           (base_off + [%e byte_off_expr])]
   | Ptyp_constr ({txt = Lident "int"; _}, _) ->
       [%expr
-        Sarek_core.Vector.Custom_helpers.read_int
+        Spoc_core.Vector.Custom_helpers.read_int
           raw_ptr
           (base_off + [%e byte_off_expr])]
   | Ptyp_constr ({txt = Lident type_name; _}, _) ->
@@ -460,7 +460,7 @@ let gen_v2_field_read ~loc (ftype : core_type) (byte_off_expr : expression) :
   | _ ->
       (* Fallback to float32 for unknown types *)
       [%expr
-        Sarek_core.Vector.Custom_helpers.read_float32
+        Spoc_core.Vector.Custom_helpers.read_float32
           raw_ptr
           (base_off + [%e byte_off_expr])]
 
@@ -470,31 +470,31 @@ let gen_v2_field_write ~loc (ftype : core_type) (byte_off_expr : expression)
   match ftype.ptyp_desc with
   | Ptyp_constr ({txt = Lident "float32"; _}, _) ->
       [%expr
-        Sarek_core.Vector.Custom_helpers.write_float32
+        Spoc_core.Vector.Custom_helpers.write_float32
           raw_ptr
           (base_off + [%e byte_off_expr])
           [%e value_expr]]
   | Ptyp_constr ({txt = Lident "float"; _}, _) ->
       [%expr
-        Sarek_core.Vector.Custom_helpers.write_float32
+        Spoc_core.Vector.Custom_helpers.write_float32
           raw_ptr
           (base_off + [%e byte_off_expr])
           [%e value_expr]]
   | Ptyp_constr ({txt = Lident "int32"; _}, _) ->
       [%expr
-        Sarek_core.Vector.Custom_helpers.write_int32
+        Spoc_core.Vector.Custom_helpers.write_int32
           raw_ptr
           (base_off + [%e byte_off_expr])
           [%e value_expr]]
   | Ptyp_constr ({txt = Lident "int64"; _}, _) ->
       [%expr
-        Sarek_core.Vector.Custom_helpers.write_int64
+        Spoc_core.Vector.Custom_helpers.write_int64
           raw_ptr
           (base_off + [%e byte_off_expr])
           [%e value_expr]]
   | Ptyp_constr ({txt = Lident "int"; _}, _) ->
       [%expr
-        Sarek_core.Vector.Custom_helpers.write_int
+        Spoc_core.Vector.Custom_helpers.write_int
           raw_ptr
           (base_off + [%e byte_off_expr])
           [%e value_expr]]
@@ -527,12 +527,12 @@ let gen_v2_field_write ~loc (ftype : core_type) (byte_off_expr : expression)
         [%e custom_v2_set] field_ptr 0 [%e value_expr]]
   | _ ->
       [%expr
-        Sarek_core.Vector.Custom_helpers.write_float32
+        Spoc_core.Vector.Custom_helpers.write_float32
           raw_ptr
           (base_off + [%e byte_off_expr])
           [%e value_expr]]
 
-(** Generate a <name>_custom_v2 value for Sarek_core.Vector.custom_type. For a
+(** Generate a <name>_custom_v2 value for Spoc_core.Vector.custom_type. For a
     record type (e.g., point with float32 fields), generates get/set functions
     using Ctypes pointer arithmetic. Supports nested custom types via their
     _custom_v2 accessor. *)
@@ -549,10 +549,7 @@ let generate_custom_v2_value ~loc (td : type_declaration) : structure_item list
       let type_annot =
         Ast_builder.Default.ptyp_constr
           ~loc
-          {
-            txt = Ldot (Ldot (Lident "Sarek_core", "Vector"), "custom_type");
-            loc;
-          }
+          {txt = Ldot (Ldot (Lident "Spoc_core", "Vector"), "custom_type"); loc}
           [
             Ast_builder.Default.ptyp_constr ~loc {txt = Lident type_name; loc} [];
           ]
@@ -644,7 +641,7 @@ let generate_custom_v2_value ~loc (td : type_declaration) : structure_item list
           let [%p make_fn_pat] =
            fun () ->
             ({
-               Sarek_core.Vector.elem_size = [%e size_expr];
+               Spoc_core.Vector.elem_size = [%e size_expr];
                name = [%e name_expr];
                get = [%e get_fn];
                set = [%e set_fn];
@@ -665,10 +662,7 @@ let generate_custom_v2_value ~loc (td : type_declaration) : structure_item list
       let type_annot =
         Ast_builder.Default.ptyp_constr
           ~loc
-          {
-            txt = Ldot (Ldot (Lident "Sarek_core", "Vector"), "custom_type");
-            loc;
-          }
+          {txt = Ldot (Ldot (Lident "Spoc_core", "Vector"), "custom_type"); loc}
           [
             Ast_builder.Default.ptyp_constr ~loc {txt = Lident type_name; loc} [];
           ]
@@ -770,7 +764,7 @@ let generate_custom_v2_value ~loc (td : type_declaration) : structure_item list
           ~loc
           [%expr
             Int32.to_int
-              (Sarek_core.Vector.Custom_helpers.read_int32 raw_ptr base_off)]
+              (Spoc_core.Vector.Custom_helpers.read_int32 raw_ptr base_off)]
           (get_cases @ [fallback_case])
       in
       let get_body =
@@ -798,7 +792,7 @@ let generate_custom_v2_value ~loc (td : type_declaration) : structure_item list
                   pc_guard = None;
                   pc_rhs =
                     [%expr
-                      Sarek_core.Vector.Custom_helpers.write_int32
+                      Spoc_core.Vector.Custom_helpers.write_int32
                         raw_ptr
                         base_off
                         (Int32.of_int [%e tag_expr])];
@@ -820,7 +814,7 @@ let generate_custom_v2_value ~loc (td : type_declaration) : structure_item list
                   pc_guard = None;
                   pc_rhs =
                     [%expr
-                      Sarek_core.Vector.Custom_helpers.write_int32
+                      Spoc_core.Vector.Custom_helpers.write_int32
                         raw_ptr
                         base_off
                         (Int32.of_int [%e tag_expr]) ;
@@ -862,7 +856,7 @@ let generate_custom_v2_value ~loc (td : type_declaration) : structure_item list
                         [%e acc] ;
                         [%e s]])
                     [%expr
-                      Sarek_core.Vector.Custom_helpers.write_int32
+                      Spoc_core.Vector.Custom_helpers.write_int32
                         raw_ptr
                         base_off
                         (Int32.of_int [%e tag_expr])]
@@ -881,7 +875,7 @@ let generate_custom_v2_value ~loc (td : type_declaration) : structure_item list
                   pc_guard = None;
                   pc_rhs =
                     [%expr
-                      Sarek_core.Vector.Custom_helpers.write_int32
+                      Spoc_core.Vector.Custom_helpers.write_int32
                         raw_ptr
                         base_off
                         (Int32.of_int [%e tag_expr])];
@@ -911,7 +905,7 @@ let generate_custom_v2_value ~loc (td : type_declaration) : structure_item list
           let [%p make_fn_pat] =
            fun () ->
             ({
-               Sarek_core.Vector.elem_size = [%e size_expr];
+               Spoc_core.Vector.elem_size = [%e size_expr];
                name = [%e name_expr];
                get = [%e get_fn];
                set = [%e set_fn];
@@ -1017,7 +1011,7 @@ let sarek_type_rule =
                 let accessors = generate_field_accessors ~loc td in
                 (* Generate <name>_custom value for SPOC Vector.Custom *)
                 let custom_val = generate_custom_value ~loc td in
-                (* Generate <name>_custom_v2 value for V2 Sarek_core.Vector.custom_type *)
+                (* Generate <name>_custom_v2 value for V2 Spoc_core.Vector.custom_type *)
                 let custom_v2_val = generate_custom_v2_value ~loc td in
                 (* Generate runtime registration code for cross-module composability.
                    This follows the ppx_deriving pattern: the PPX generates OCaml code

@@ -5,7 +5,7 @@
  * This plugin is auto-registered when loaded.
  ******************************************************************************)
 
-open Sarek_framework
+open Spoc_framework
 
 module Opencl : sig
   val name : string
@@ -373,21 +373,21 @@ end = struct
     let create_args () = ref []
 
     let set_arg_buffer args idx buf =
-      Sarek_core.Log.debugf
-        Sarek_core.Log.Kernel
+      Spoc_core.Log.debugf
+        Spoc_core.Log.Kernel
         "OpenCL set_arg_buffer idx=%d (before=%d)"
         idx
         (List.length !args) ;
       args :=
         ArgBuffer {buf = buf.Memory.buf.Opencl_api.Memory.handle; idx} :: !args ;
-      Sarek_core.Log.debugf
-        Sarek_core.Log.Kernel
+      Spoc_core.Log.debugf
+        Spoc_core.Log.Kernel
         "OpenCL set_arg_buffer done (after=%d)"
         (List.length !args)
 
     let set_arg_int32 args idx value =
-      Sarek_core.Log.debugf
-        Sarek_core.Log.Kernel
+      Spoc_core.Log.debugf
+        Spoc_core.Log.Kernel
         "OpenCL set_arg_int32 idx=%d"
         idx ;
       args := ArgInt32 {value; idx} :: !args
@@ -405,8 +405,8 @@ end = struct
 
     let launch kernel ~args ~grid ~block ~shared_mem:_ ~stream =
       let open Framework_sig in
-      Sarek_core.Log.debugf
-        Sarek_core.Log.Kernel
+      Spoc_core.Log.debugf
+        Spoc_core.Log.Kernel
         "OpenCL launch: args count=%d"
         (List.length !args) ;
       let state = get_state kernel.device_id in

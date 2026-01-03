@@ -1,10 +1,10 @@
-; Sarek Runtime Core
+; SPOC Runtime Core
 ; Unified abstractions for devices, memory, and kernel execution
 
 (library
- (name sarek_core)
- (public_name sarek.core)
- (libraries sarek_framework ctypes unix)
+ (name spoc_core)
+ (public_name spoc.core)
+ (libraries spoc_framework ctypes unix)
  (modules
   Log
   Device

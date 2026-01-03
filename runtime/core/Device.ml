@@ -5,7 +5,7 @@
  * Queries registered plugins and presents a single array of devices.
  ******************************************************************************)
 
-open Sarek_framework
+open Spoc_framework
 
 (** Unified device representation *)
 type t = {

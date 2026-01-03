@@ -2,9 +2,9 @@
  * E2E test: register a Sarek record type outside kernels via [%sarek.type].
  ******************************************************************************)
 
-module V2_Vector = Sarek_core.Vector
-module V2_Device = Sarek_core.Device
-module V2_Transfer = Sarek_core.Transfer
+module V2_Vector = Spoc_core.Vector
+module V2_Device = Spoc_core.Device
+module V2_Transfer = Spoc_core.Transfer
 
 (* Force backend registration *)
 let () =

@@ -4,7 +4,7 @@
  * Provides unified kernel compilation and execution across backends.
  ******************************************************************************)
 
-open Sarek_framework
+open Spoc_framework
 
 (** Compiled kernel handle *)
 type t = {

@@ -663,12 +663,12 @@ module NewRuntime : sig
   (** Run a kernel using the new plugin-based runtime. For vector arguments,
       buffers must be pre-allocated and passed as ArgBuffer. *)
   val run_with_buffers :
-    device:Sarek_core.Device.t ->
+    device:Spoc_core.Device.t ->
     name:string ->
     source:string ->
-    args:Sarek_core.Runtime.arg list ->
-    grid:Sarek_core.Runtime.dims ->
-    block:Sarek_core.Runtime.dims ->
+    args:Spoc_core.Runtime.arg list ->
+    grid:Spoc_core.Runtime.dims ->
+    block:Spoc_core.Runtime.dims ->
     ?shared_mem:int ->
     unit ->
     unit

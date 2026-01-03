@@ -9,7 +9,7 @@
  *   Runtime.run kernel ~device:dev ~block:(256,1,1) ~grid:(n/256,1,1) args
  ******************************************************************************)
 
-open Sarek_framework
+open Spoc_framework
 
 (** Grid/block dimensions *)
 type dims = {x : int; y : int; z : int}

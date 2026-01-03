@@ -5,7 +5,7 @@
  *
  * Exports:
  * - Std/Gpu: GPU intrinsics module (thread_idx_x, global_thread_id, etc.)
- * - Vector: V2 Vector module (Sarek_core.Vector)
+ * - Vector: V2 Vector module (Spoc_core.Vector)
  * - vector: Type alias for kernel parameter annotations
  * - Float32, Int32, Int64, Math: GPU numeric intrinsics (use inside kernels)
  *
@@ -27,11 +27,11 @@ module Math = Math
 module Std = Gpu
 
 (* V2 Vector module - replaces SPOC's Vector *)
-module Vector = Sarek_core.Vector
+module Vector = Spoc_core.Vector
 
 (* Type alias for kernel parameter annotations.
    When code writes `(x : float32 vector)`, this resolves to V2 Vector.t *)
-type ('a, 'b) vector = ('a, 'b) Sarek_core.Vector.t
+type ('a, 'b) vector = ('a, 'b) Spoc_core.Vector.t
 
 (******************************************************************************
  * Force initialization

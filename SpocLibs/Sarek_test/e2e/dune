@@ -1,7 +1,7 @@
 (library
  (name test_helpers)
  (modules test_helpers)
- (libraries sarek_core unix))
+ (libraries spoc_core unix))
 
 (executables
  (names
@@ -84,7 +84,7 @@
   sarek_geometry
   sarek.visibility
   sarek_ppx.lib
-  sarek_core
+  spoc_core
   sarek_cuda
   sarek_opencl
   sarek_native
@@ -134,7 +134,7 @@
 (executable
  (name test_debug_native)
  (modules test_debug_native)
- (libraries sarek sarek_native sarek_stdlib sarek_core unix)
+ (libraries sarek sarek_native sarek_stdlib spoc_core unix)
  (preprocess
   (pps sarek_ppx)))
 
@@ -149,7 +149,7 @@
  (optional)
  (libraries
   sarek
-  sarek_core
+  spoc_core
   sarek_cuda
   sarek_opencl
   sarek_native

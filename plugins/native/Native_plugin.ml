@@ -8,7 +8,7 @@
  * load time. The "compile" step is a no-op - we look up registered functions.
  ******************************************************************************)
 
-open Sarek_framework
+open Spoc_framework
 
 (** Registry for native kernel functions.
 

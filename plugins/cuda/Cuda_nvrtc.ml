@@ -263,15 +263,15 @@ let compile_to_ptx ?(name = "kernel") ?(arch = "compute_70") (source : string) :
 
   (* Compile with no options - NVRTC on this system doesn't support --gpu-architecture.
      The driver will JIT the PTX to the target GPU. *)
-  Sarek_core.Log.debugf
-    Sarek_core.Log.Kernel
+  Spoc_core.Log.debugf
+    Spoc_core.Log.Kernel
     "NVRTC compiling (no arch option, target %s)"
     arch ;
   let compile_result =
     nvrtcCompileProgram prog_handle 0 (from_voidp string null)
   in
-  Sarek_core.Log.debugf
-    Sarek_core.Log.Kernel
+  Spoc_core.Log.debugf
+    Spoc_core.Log.Kernel
     "NVRTC compile result: %s"
     (string_of_nvrtc_result compile_result) ;
 
@@ -293,25 +293,25 @@ let compile_to_ptx ?(name = "kernel") ?(arch = "compute_70") (source : string) :
   (* Log the compile log if available *)
   (match log with
   | Some l when String.length l > 0 ->
-      Sarek_core.Log.debugf Sarek_core.Log.Kernel "NVRTC log:\n%s" l
+      Spoc_core.Log.debugf Spoc_core.Log.Kernel "NVRTC log:\n%s" l
   | _ -> ()) ;
 
   (* Check compilation result *)
   (match compile_result with
   | NVRTC_SUCCESS ->
-      Sarek_core.Log.debug Sarek_core.Log.Kernel "NVRTC compilation successful"
+      Spoc_core.Log.debug Spoc_core.Log.Kernel "NVRTC compilation successful"
   | NVRTC_ERROR_COMPILATION ->
       let msg =
         match log with
         | Some l -> Printf.sprintf "NVRTC compilation failed:\n%s" l
         | None -> "NVRTC compilation failed (no log available)"
       in
-      Sarek_core.Log.error Sarek_core.Log.Kernel msg ;
+      Spoc_core.Log.error Spoc_core.Log.Kernel msg ;
       let _ = nvrtcDestroyProgram prog in
       failwith msg
   | err ->
-      Sarek_core.Log.errorf
-        Sarek_core.Log.Kernel
+      Spoc_core.Log.errorf
+        Spoc_core.Log.Kernel
         "NVRTC error: %s"
         (string_of_nvrtc_result err) ;
       let _ = nvrtcDestroyProgram prog in

@@ -11,7 +11,7 @@
  * - Registry entry for JIT code generation
  ******************************************************************************)
 
-let dev cuda opencl (d : Sarek_core.Device.t) =
+let dev cuda opencl (d : Spoc_core.Device.t) =
   match d.framework with "CUDA" -> cuda | _ -> opencl
 
 (******************************************************************************
@@ -168,8 +168,8 @@ let%sarek_intrinsic
       (fun vec idx value ->
         Mutex.lock atomic_mutex ;
         let i = Stdlib.Int32.to_int idx in
-        let old = Sarek_core.Vector.get vec i in
-        Sarek_core.Vector.set vec i (Stdlib.Int32.add old value) ;
+        let old = Spoc_core.Vector.get vec i in
+        Spoc_core.Vector.set vec i (Stdlib.Int32.add old value) ;
         Mutex.unlock atomic_mutex ;
         old);
   }
@@ -182,8 +182,8 @@ let%sarek_intrinsic (atomic_inc_global_int32 : int32 vector -> int32 -> int32) =
       (fun vec idx ->
         Mutex.lock atomic_mutex ;
         let i = Stdlib.Int32.to_int idx in
-        let old = Sarek_core.Vector.get vec i in
-        Sarek_core.Vector.set vec i (Stdlib.Int32.add old 1l) ;
+        let old = Spoc_core.Vector.get vec i in
+        Spoc_core.Vector.set vec i (Stdlib.Int32.add old 1l) ;
         Mutex.unlock atomic_mutex ;
         old);
   }

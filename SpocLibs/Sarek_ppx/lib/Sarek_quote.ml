@@ -362,13 +362,13 @@ let core_type_of_typ ~loc (t : typ) : core_type option =
   | TReg "int64" -> Some [%type: int]
   | TReg ("float32" | "float64") -> Some [%type: float]
   | TVec elem -> (
-      (* V2: Use Sarek_core.Vector.t instead of Spoc.Vector.vector *)
+      (* V2: Use Spoc_core.Vector.t instead of Spoc.Vector.vector *)
       match repr elem with
-      | TPrim TInt32 -> Some [%type: (int32, _) Sarek_core.Vector.t]
-      | TReg "int64" -> Some [%type: (int64, _) Sarek_core.Vector.t]
-      | TReg "float32" -> Some [%type: (float, _) Sarek_core.Vector.t]
-      | TReg "float64" -> Some [%type: (float, _) Sarek_core.Vector.t]
-      | TPrim TBool -> Some [%type: (bool, _) Sarek_core.Vector.t]
+      | TPrim TInt32 -> Some [%type: (int32, _) Spoc_core.Vector.t]
+      | TReg "int64" -> Some [%type: (int64, _) Spoc_core.Vector.t]
+      | TReg "float32" -> Some [%type: (float, _) Spoc_core.Vector.t]
+      | TReg "float64" -> Some [%type: (float, _) Spoc_core.Vector.t]
+      | TPrim TBool -> Some [%type: (bool, _) Spoc_core.Vector.t]
       | TRecord _ | TVariant _ ->
           (* Don't add type constraint for custom vectors - let OCaml infer *)
           None
@@ -441,7 +441,7 @@ let build_kernel_args ~loc (params : tparam list) =
   let list_to_args_expr =
     (* Don't add type constraints here - let types be inferred from context.
        The args_pat already has user's type annotations which may use either
-       Spoc.Vector.vector or Sarek_core.Vector.t depending on what's in scope. *)
+       Spoc.Vector.vector or Spoc_core.Vector.t depending on what's in scope. *)
     let exprs = List.map2 (fun _p (_, v) -> v) params vars in
     match exprs with
     | [] -> [%expr ()]
@@ -658,7 +658,7 @@ let quote_kernel ~loc ?(native_kernel : tkernel option)
     let body_ir = [%e quote_k_ext ~loc ir] in
     let ret_ir = [%e quote_k_ext ~loc ret_val] in
     let _intrinsic_check = [%e generate_intrinsic_check ~loc kernel] in
-    (* v2_native_fn for V2 path (uses Sarek_core.Vector) *)
+    (* v2_native_fn for V2 path (uses Spoc_core.Vector) *)
     let v2_native_fn =
       [%e Sarek_native_gen.gen_cpu_kern_v2_wrapper ~loc kernel_for_native]
     in

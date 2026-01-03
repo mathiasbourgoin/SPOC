@@ -1786,7 +1786,7 @@ let flush dev ?queue_id () =
 (******************************************************************************
  * New Runtime Integration Module
  *
- * Provides integration with the new ctypes-based plugin runtime (sarek_core).
+ * Provides integration with the new ctypes-based plugin runtime (spoc_core).
  * This allows Sarek kernels to run on devices discovered via the new plugin
  * architecture, with source code generation from the IR at runtime.
  ******************************************************************************)
@@ -1867,14 +1867,14 @@ module NewRuntime = struct
     | "OpenCL" -> generate_opencl_source ker spoc_dev
     | _ -> failwith ("Unsupported framework for source generation: " ^ framework)
 
-  (** Convert SPOC kernel argument to sarek_core Runtime.arg *)
+  (** Convert SPOC kernel argument to spoc_core Runtime.arg *)
   let convert_arg (type a b) (arg : (a, b) Kernel.kernelArgs) :
-      Sarek_core.Runtime.arg option =
+      Spoc_core.Runtime.arg option =
     match arg with
-    | Kernel.Int32 n -> Some (Sarek_core.Runtime.ArgInt32 (Int32.of_int n))
-    | Kernel.Int64 n -> Some (Sarek_core.Runtime.ArgInt64 (Int64.of_int n))
-    | Kernel.Float32 f -> Some (Sarek_core.Runtime.ArgFloat32 f)
-    | Kernel.Float64 f -> Some (Sarek_core.Runtime.ArgFloat64 f)
+    | Kernel.Int32 n -> Some (Spoc_core.Runtime.ArgInt32 (Int32.of_int n))
+    | Kernel.Int64 n -> Some (Spoc_core.Runtime.ArgInt64 (Int64.of_int n))
+    | Kernel.Float32 f -> Some (Spoc_core.Runtime.ArgFloat32 f)
+    | Kernel.Float64 f -> Some (Spoc_core.Runtime.ArgFloat64 f)
     | Kernel.VInt32 _ | Kernel.VInt64 _ | Kernel.VFloat32 _ | Kernel.VFloat64 _
     | Kernel.VChar _ | Kernel.VComplex32 _ | Kernel.VCustom _ | Kernel.Vector _
     | Kernel.Custom _ ->
@@ -1885,29 +1885,20 @@ module NewRuntime = struct
 
   (** Check if a device can be run via the new runtime *)
   let is_new_runtime_device (framework : string) : bool =
-    match Sarek_framework.Framework_registry.find_backend framework with
+    match Spoc_framework.Framework_registry.find_backend framework with
     | Some _ -> true
     | None -> false
 
   (** Run a kernel using the new plugin-based runtime. This function generates
-      source code from the IR and dispatches to sarek_core.Runtime for
-      execution.
+      source code from the IR and dispatches to spoc_core.Runtime for execution.
 
       Note: This is a lower-level function. For vector arguments, buffers must
       be pre-allocated and passed as ArgBuffer. *)
-  let run_with_buffers ~(device : Sarek_core.Device.t) ~(name : string)
-      ~(source : string) ~(args : Sarek_core.Runtime.arg list)
-      ~(grid : Sarek_core.Runtime.dims) ~(block : Sarek_core.Runtime.dims)
+  let run_with_buffers ~(device : Spoc_core.Device.t) ~(name : string)
+      ~(source : string) ~(args : Spoc_core.Runtime.arg list)
+      ~(grid : Spoc_core.Runtime.dims) ~(block : Spoc_core.Runtime.dims)
       ?(shared_mem = 0) () : unit =
-    Sarek_core.Runtime.run
-      device
-      ~name
-      ~source
-      ~args
-      ~grid
-      ~block
-      ~shared_mem
-      ()
+    Spoc_core.Runtime.run device ~name ~source ~args ~grid ~block ~shared_mem ()
 
   (** Get kernel name from a sarek_kernel *)
   let kernel_name (_ker : ('a, 'b, 'c, 'd, 'e) sarek_kernel) : string =

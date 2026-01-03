@@ -1,5 +1,5 @@
 ; Sarek IR Types - Pure type definitions for GPU kernel IR
-; No dependencies on sarek_core or Kirc_Ast to break circular deps
+; No dependencies on spoc_core or Kirc_Ast to break circular deps
 
 (library
  (name sarek_ir)

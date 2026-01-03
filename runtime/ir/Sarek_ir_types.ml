@@ -1,7 +1,7 @@
 (** Sarek_ir_types - Pure type definitions for GPU kernel IR
 
     This module contains only type definitions with no external dependencies.
-    Used by sarek_framework for typed generate_source signature. *)
+    Used by spoc_framework for typed generate_source signature. *)
 
 (** Memory spaces *)
 type memspace = Global | Shared | Local

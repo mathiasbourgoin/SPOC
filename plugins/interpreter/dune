@@ -6,8 +6,8 @@
  (libraries
   unix
   ctypes
-  sarek_framework
+  spoc_framework
   sarek
-  (re_export sarek_core))
+  (re_export spoc_core))
  (modules Interpreter_plugin Interpreter_plugin_v2)
  (preprocess no_preprocessing))

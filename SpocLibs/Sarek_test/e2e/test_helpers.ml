@@ -2,10 +2,10 @@
  * Test helpers for Sarek E2E tests
  *
  * Shared utilities for device selection, verification, and benchmarking.
- * V2-only version using Sarek_core.
+ * V2-only version using Spoc_core.
  ******************************************************************************)
 
-open Sarek_core
+open Spoc_core
 
 (** Command line options *)
 type config = {

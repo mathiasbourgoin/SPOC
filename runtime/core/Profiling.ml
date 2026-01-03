@@ -5,7 +5,7 @@
  * Phase 5 of runtime V2 feature parity roadmap.
  ******************************************************************************)
 
-open Sarek_framework
+open Spoc_framework
 
 (** {1 Profiling State} *)
 

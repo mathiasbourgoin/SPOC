@@ -10,7 +10,7 @@
  * This plugin coexists with Opencl_plugin during the transition period.
  ******************************************************************************)
 
-open Sarek_framework
+open Spoc_framework
 
 (** Reuse the existing OpenCL implementation *)
 module Opencl_base = struct

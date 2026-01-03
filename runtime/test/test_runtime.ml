@@ -20,11 +20,11 @@ let () =
   (* Test 1: Device discovery (including Native) *)
   print_endline "\n[1] Testing device discovery..." ;
   let devices =
-    Sarek_core.Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"] ()
+    Spoc_core.Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"] ()
   in
   Printf.printf "Found %d device(s)\n" (Array.length devices) ;
   Array.iter
-    (fun d -> Printf.printf "  - %s\n" (Sarek_core.Device.to_string d))
+    (fun d -> Printf.printf "  - %s\n" (Spoc_core.Device.to_string d))
     devices ;
 
   if Array.length devices = 0 then begin
@@ -36,7 +36,7 @@ let () =
   (* Test 2: Get best device *)
   print_endline "\n[2] Testing device selection..." ;
   let dev =
-    match Sarek_core.Device.best () with
+    match Spoc_core.Device.best () with
     | Some d -> d
     | None -> failwith "No device available"
   in
@@ -45,7 +45,7 @@ let () =
   (* Test 3: Memory allocation *)
   print_endline "\n[3] Testing memory allocation..." ;
   let size = 1024 in
-  let buf = Sarek_core.Runtime.alloc_float32 dev size in
+  let buf = Spoc_core.Runtime.alloc_float32 dev size in
   Printf.printf "Allocated buffer of %d float32 elements\n" size ;
 
   (* Test 4: Data transfer *)
@@ -56,7 +56,7 @@ let () =
   for i = 0 to size - 1 do
     Bigarray.Array1.set host_data i (float_of_int i)
   done ;
-  Sarek_core.Runtime.to_device ~src:host_data ~dst:buf ;
+  Spoc_core.Runtime.to_device ~src:host_data ~dst:buf ;
   print_endline "Host-to-device transfer complete" ;
 
   (* Test 5: Kernel compilation *)
@@ -84,22 +84,22 @@ __kernel void add_one(__global float* arr, int n) {
     | _ -> failwith ("Unknown framework: " ^ dev.framework)
   in
   let _kernel =
-    Sarek_core.Kernel.compile dev ~name:"add_one" ~source:kernel_source
+    Spoc_core.Kernel.compile dev ~name:"add_one" ~source:kernel_source
   in
   print_endline "Kernel compiled successfully" ;
 
   (* Test 6: Kernel execution *)
   print_endline "\n[6] Testing kernel execution..." ;
-  let block = Sarek_core.Runtime.dims1d 256 in
-  let grid = Sarek_core.Runtime.dims1d ((size + 255) / 256) in
-  Sarek_core.Runtime.run
+  let block = Spoc_core.Runtime.dims1d 256 in
+  let grid = Spoc_core.Runtime.dims1d ((size + 255) / 256) in
+  Spoc_core.Runtime.run
     dev
     ~name:"add_one"
     ~source:kernel_source
     ~args:
       [
-        Sarek_core.Runtime.ArgBuffer buf;
-        Sarek_core.Runtime.ArgInt32 (Int32.of_int size);
+        Spoc_core.Runtime.ArgBuffer buf;
+        Spoc_core.Runtime.ArgInt32 (Int32.of_int size);
       ]
     ~grid
     ~block
@@ -109,7 +109,7 @@ __kernel void add_one(__global float* arr, int n) {
   (* Test 7: Device-to-host transfer and verification *)
   print_endline "\n[7] Testing device-to-host transfer and verification..." ;
   let result = Bigarray.Array1.create Bigarray.float32 Bigarray.c_layout size in
-  Sarek_core.Runtime.from_device ~src:buf ~dst:result ;
+  Spoc_core.Runtime.from_device ~src:buf ~dst:result ;
 
   let errors = ref 0 in
   for i = 0 to size - 1 do
@@ -133,6 +133,6 @@ __kernel void add_one(__global float* arr, int n) {
   end ;
 
   (* Cleanup *)
-  Sarek_core.Runtime.free buf ;
+  Spoc_core.Runtime.free buf ;
 
   print_endline "\n=== Test PASSED ==="

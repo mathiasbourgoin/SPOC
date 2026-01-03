@@ -4,7 +4,7 @@
  ******************************************************************************)
 
 (* V2 module aliases *)
-module V2_Device = Sarek_core.Device
+module V2_Device = Spoc_core.Device
 
 (* Force backend registration *)
 let () =

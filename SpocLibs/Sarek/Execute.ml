@@ -9,8 +9,8 @@
  * - Custom: Delegate to backend's custom pipeline
  ******************************************************************************)
 
-open Sarek_framework
-open Sarek_core
+open Spoc_framework
+open Spoc_core
 
 (** Kernel execution error *)
 exception Execution_error of string

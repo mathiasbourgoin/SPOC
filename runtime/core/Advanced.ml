@@ -5,7 +5,7 @@
  * Phase 8 of runtime V2 feature parity roadmap.
  ******************************************************************************)
 
-open Sarek_framework
+open Spoc_framework
 
 (** {1 8a. Unified Memory (CUDA Managed Memory)} *)
 

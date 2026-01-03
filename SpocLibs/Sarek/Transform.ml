@@ -1,4 +1,4 @@
-open Sarek_core
+open Spoc_core
 open Kirc_Ast
 
 (* NOTE: This module is being rewritten for the V2 runtime. The APIs stay

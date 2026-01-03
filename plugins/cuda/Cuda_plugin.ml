@@ -5,7 +5,7 @@
  * This plugin is auto-registered when loaded.
  ******************************************************************************)
 
-open Sarek_framework
+open Spoc_framework
 
 module Cuda : sig
   val name : string

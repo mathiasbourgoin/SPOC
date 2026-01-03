@@ -5,7 +5,7 @@
  * Wraps backend-specific buffers with a common type.
  ******************************************************************************)
 
-open Sarek_framework
+open Spoc_framework
 
 (** Unified buffer type - wraps backend-specific buffers *)
 type 'a buffer = {

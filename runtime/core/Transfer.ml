@@ -7,7 +7,7 @@
  * Uses the framework plugin system directly - no Obj.t.
  ******************************************************************************)
 
-open Sarek_framework
+open Spoc_framework
 
 (** {1 Auto-Transfer Mode} *)
 

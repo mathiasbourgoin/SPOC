@@ -4,14 +4,14 @@
 (executable
  (name test_native_runtime)
  (modules test_native_runtime)
- (libraries sarek sarek.stdlib sarek_core sarek_native unix)
+ (libraries sarek sarek.stdlib spoc_core sarek_native unix)
  (preprocess
   (pps sarek_ppx)))
 
 (executable
  (name test_v2_comparison)
  (modules test_v2_comparison)
- (libraries sarek sarek.stdlib sarek_core sarek_cuda sarek_opencl unix)
+ (libraries sarek sarek.stdlib spoc_core sarek_cuda sarek_opencl unix)
  (preprocess
   (pps sarek_ppx))
  (flags
