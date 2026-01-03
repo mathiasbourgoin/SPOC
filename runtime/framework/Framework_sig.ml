@@ -215,10 +215,12 @@ type source_lang =
   | SPIR_V  (** SPIR-V binary (future) *)
 
 (** Argument type for run_source. Includes a binder function for device buffers
-    so each backend can properly bind its buffer type (cl_mem, CUdeviceptr, etc.) *)
+    so each backend can properly bind its buffer type (cl_mem, CUdeviceptr,
+    etc.) *)
 type run_source_arg =
   | RSA_Buffer of {
-      binder : kargs:Obj.t -> idx:int -> unit;  (** Binds buffer to kernel arg *)
+      binder : kargs:Obj.t -> idx:int -> unit;
+          (** Binds buffer to kernel arg *)
       length : int;  (** Vector length for generated kernels *)
     }
   | RSA_Int32 of int32
@@ -250,20 +252,16 @@ module type INTRINSIC_REGISTRY = sig
 end
 
 (** Extended backend signature for Phase 4 unified execution. Adds execution
-    model discrimination and IR-based code generation.
-
-    Note: generate_source takes an Obj.t to avoid circular dependency with
-    Sarek_ir. Backends should cast to Sarek_ir.kernel internally. *)
+    model discrimination and IR-based code generation. *)
 module type BACKEND_V2 = sig
   include BACKEND
 
   (** The execution model this backend uses *)
   val execution_model : execution_model
 
-  (** Generate source code from Sarek IR (for JIT backends). The ir parameter is
-      Sarek_ir.kernel wrapped as Obj.t to avoid circular dependencies. Returns
-      None for Direct/Custom backends. *)
-  val generate_source : Obj.t -> string option
+  (** Generate source code from Sarek IR (for JIT backends). Returns None for
+      Direct/Custom backends. *)
+  val generate_source : Sarek_ir_types.kernel -> string option
 
   (** Execute a kernel directly (for Direct/Custom backends). JIT backends
       should raise an error if this is called. The backend chooses which

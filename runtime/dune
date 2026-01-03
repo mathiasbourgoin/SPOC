@@ -1,4 +1,3 @@
 ; Parent dune file for runtime directory
-; Each subdirectory has its own dune file
-
-(include_subdirs no)
+; Subdirectories: core, framework, ir, test
+; Each has its own dune file defining libraries

@@ -22,7 +22,8 @@ type config = {
 
 let default_config () =
   {
-    dev_id = -1;  (* -1 means run on all devices *)
+    dev_id = -1;
+    (* -1 means run on all devices *)
     use_interpreter = false;
     use_native = false;
     benchmark_all = false;
@@ -100,7 +101,8 @@ let get_device cfg devs =
         print_endline "No interpreter device found" ;
         exit 1)
   else if cfg.dev_id >= 0 then devs.(cfg.dev_id)
-  else devs.(0)  (* default to first device *)
+  else devs.(0)
+(* default to first device *)
 
 (** Print available devices *)
 let print_devices devs =

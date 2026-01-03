@@ -19,7 +19,8 @@ let () =
 let cfg = Test_helpers.default_config ()
 
 (** OpenCL vector add kernel source *)
-let opencl_vector_add = {|
+let opencl_vector_add =
+  {|
 __kernel void vector_add(
     __global const float* a,
     int a_len,
@@ -37,7 +38,8 @@ __kernel void vector_add(
 |}
 
 (** CUDA vector add kernel source *)
-let cuda_vector_add = {|
+let cuda_vector_add =
+  {|
 extern "C" __global__ void vector_add(
     const float* a,
     int a_len,
@@ -161,12 +163,12 @@ let () =
   let gpu_devs =
     Array.to_list devs
     |> List.filter (fun d ->
-           d.V2_Device.framework = "CUDA" || d.V2_Device.framework = "OpenCL")
-    |> (fun devs ->
-         (* If -d flag specified, filter to just that device *)
-         if cfg.dev_id >= 0 && cfg.dev_id < List.length devs then
-           [List.nth devs cfg.dev_id]
-         else devs)
+        d.V2_Device.framework = "CUDA" || d.V2_Device.framework = "OpenCL")
+    |> fun devs ->
+    (* If -d flag specified, filter to just that device *)
+    if cfg.dev_id >= 0 && cfg.dev_id < List.length devs then
+      [List.nth devs cfg.dev_id]
+    else devs
   in
 
   if List.length gpu_devs = 0 then
@@ -177,7 +179,10 @@ let () =
         Printf.printf "  [%s] %s: %!" dev.V2_Device.framework dev.V2_Device.name ;
         try
           let ok, time = run_test dev in
-          Printf.printf "%.2f ms, %s\n%!" time (if ok then "PASSED" else "FAILED") ;
+          Printf.printf
+            "%.2f ms, %s\n%!"
+            time
+            (if ok then "PASSED" else "FAILED") ;
           if not ok then exit 1
         with e ->
           Printf.printf "FAIL (%s)\n%!" (Printexc.to_string e) ;
@@ -189,8 +194,8 @@ let () =
   let non_gpu_devs =
     Array.to_list devs
     |> List.filter (fun d ->
-           d.V2_Device.framework = "Native"
-           || d.V2_Device.framework = "Interpreter")
+        d.V2_Device.framework = "Native"
+        || d.V2_Device.framework = "Interpreter")
   in
 
   List.iter

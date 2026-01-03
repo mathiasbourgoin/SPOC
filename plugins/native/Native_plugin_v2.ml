@@ -144,8 +144,8 @@ module Native_v2 : Framework_sig.BACKEND_V2 = struct
   (** Execution model: Native uses Direct execution *)
   let execution_model = Framework_sig.Direct
 
-  (** Generate source - not used for Direct backend (wrapped as Obj.t) *)
-  let generate_source (_ir_obj : Obj.t) : string option = None
+  (** Generate source - not used for Direct backend *)
+  let generate_source (_ir : Sarek_ir_types.kernel) : string option = None
 
   (** Execute directly using V2 native function from IR. Args contain V2 Vectors
       directly (not expanded buffer/length pairs). The V2 native function uses
@@ -190,15 +190,18 @@ module Native_v2 : Framework_sig.BACKEND_V2 = struct
   (** External kernel execution not supported on Native backend *)
   let run_source ~source:_ ~lang ~kernel_name:_ ~block:_ ~grid:_ ~shared_mem:_
       (_args : Framework_sig.run_source_arg list) =
-    let lang_str = match lang with
+    let lang_str =
+      match lang with
       | Framework_sig.CUDA_Source -> "CUDA source"
       | Framework_sig.OpenCL_Source -> "OpenCL source"
       | Framework_sig.PTX -> "PTX"
       | Framework_sig.SPIR_V -> "SPIR-V"
     in
-    failwith (Printf.sprintf
-      "Native backend cannot execute external %s kernels. \
-       Use CUDA or OpenCL backend instead." lang_str)
+    failwith
+      (Printf.sprintf
+         "Native backend cannot execute external %s kernels. Use CUDA or \
+          OpenCL backend instead."
+         lang_str)
 end
 
 (** Auto-register V2 backend when module is loaded *)

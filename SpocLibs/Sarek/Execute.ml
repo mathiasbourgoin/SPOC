@@ -172,24 +172,25 @@ let expand_vector_args (args : vector_arg list) (dev : Device.t) : arg list =
       | Float64 f -> [ArgFloat64 f])
     args
 
-(** Expand V2 Vector args to run_source_arg format for external kernel execution.
-    Each Vec expands to buffer (with binder) + length. The binder function
-    properly binds the device buffer using the backend's set_arg_buffer. *)
-let expand_to_run_source_args (args : vector_arg list) (dev : Device.t)
-    : Framework_sig.run_source_arg list =
+(** Expand vector args to run_source_arg format.
+    @param inject_lengths
+      If true (default), auto-inject vector length as Int32 after each buffer.
+      This matches Sarek-generated kernels which expect (ptr, len) pairs. Set to
+      false for external kernels with different signatures. *)
+let expand_to_run_source_args ?(inject_lengths = true) (args : vector_arg list)
+    (dev : Device.t) : Framework_sig.run_source_arg list =
   List.concat_map
     (function
       | Vec v ->
           let buf = get_device_buffer v dev in
           let (module B : Vector.DEVICE_BUFFER) = buf in
           let len = Vector.length v in
-          [
-            Framework_sig.RSA_Buffer {
-              binder = B.bind_to_kernel;
-              length = len;
-            };
-            Framework_sig.RSA_Int32 (Int32.of_int len);
-          ]
+          let buf_arg =
+            Framework_sig.RSA_Buffer {binder = B.bind_to_kernel; length = len}
+          in
+          if inject_lengths then
+            [buf_arg; Framework_sig.RSA_Int32 (Int32.of_int len)]
+          else [buf_arg]
       | Int n -> [Framework_sig.RSA_Int32 (Int32.of_int n)]
       | Int32 n -> [Framework_sig.RSA_Int32 n]
       | Int64 n -> [Framework_sig.RSA_Int64 n]
@@ -237,7 +238,7 @@ let run_v2 ~(device : Device.t) ~(name : string)
                 (Execution_error "JIT backend requires IR but none provided")
           | Some ir_lazy -> (
               let ir = Lazy.force ir_lazy in
-              match B.generate_source (Obj.repr ir) with
+              match B.generate_source ir with
               | None ->
                   raise
                     (Execution_error "JIT backend failed to generate source")
@@ -624,12 +625,16 @@ let supports_lang (dev : Device.t) (lang : source_lang) : bool =
     @param block Block dimensions
     @param grid Grid dimensions
     @param shared_mem Shared memory size in bytes (default 0)
+    @param inject_lengths
+      If true (default), auto-inject vector length as Int32 after each buffer
+      argument. Sarek-generated kernels expect (ptr, len) pairs. Set to false
+      for external kernels that don't follow this convention.
     @param args Kernel arguments as vector_arg list
     @raise Execution_error if device doesn't support the source language *)
 let run_source ~(device : Device.t) ~(source : string) ~(lang : source_lang)
     ~(kernel_name : string) ~(block : Framework_sig.dims)
     ~(grid : Framework_sig.dims) ?(shared_mem : int = 0)
-    (args : vector_arg list) : unit =
+    ?(inject_lengths : bool = true) (args : vector_arg list) : unit =
   (* Transfer vectors to device first *)
   transfer_vectors_to_device args device ;
 
@@ -638,16 +643,17 @@ let run_source ~(device : Device.t) ~(source : string) ~(lang : source_lang)
       if not (List.mem lang B.supported_source_langs) then
         raise
           (Execution_error
-             (Printf.sprintf "%s backend does not support %s"
+             (Printf.sprintf
+                "%s backend does not support %s"
                 device.framework
                 (match lang with
-                 | CUDA_Source -> "CUDA source"
-                 | OpenCL_Source -> "OpenCL source"
-                 | PTX -> "PTX"
-                 | SPIR_V -> "SPIR-V"))) ;
+                | CUDA_Source -> "CUDA source"
+                | OpenCL_Source -> "OpenCL source"
+                | PTX -> "PTX"
+                | SPIR_V -> "SPIR-V"))) ;
 
       (* Expand vector args to run_source_arg format for external kernels *)
-      let rs_args = expand_to_run_source_args args device in
+      let rs_args = expand_to_run_source_args ~inject_lengths args device in
 
       (* Set current device and run *)
       let dev = B.Device.get device.backend_id in
@@ -673,12 +679,21 @@ let detect_lang (path : string) : source_lang =
   else if String.ends_with ~suffix:".spv" path then SPIR_V
   else failwith ("Unknown source file extension: " ^ path)
 
-(** Execute an external kernel from a file.
-    Source language is detected from file extension (.cu, .cl, .ptx, .spv) *)
+(** Execute an external kernel from a file. Source language is detected from
+    file extension (.cu, .cl, .ptx, .spv) *)
 let run_source_file ~(device : Device.t) ~(path : string)
     ~(kernel_name : string) ~(block : Framework_sig.dims)
     ~(grid : Framework_sig.dims) ?(shared_mem : int = 0)
-    (args : vector_arg list) : unit =
+    ?(inject_lengths : bool = true) (args : vector_arg list) : unit =
   let source = load_source path in
   let lang = detect_lang path in
-  run_source ~device ~source ~lang ~kernel_name ~block ~grid ~shared_mem args
+  run_source
+    ~device
+    ~source
+    ~lang
+    ~kernel_name
+    ~block
+    ~grid
+    ~shared_mem
+    ~inject_lengths
+    args

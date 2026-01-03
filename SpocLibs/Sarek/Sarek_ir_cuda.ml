@@ -537,7 +537,7 @@ let rec gen_stmt buf indent = function
   | SNative {gpu; ocaml = _} -> (
       match !current_device with
       | Some dev ->
-          let code = gpu dev in
+          let code = gpu ~framework:dev.framework in
           Buffer.add_string buf indent ;
           Buffer.add_string buf code ;
           if not (String.length code > 0 && code.[String.length code - 1] = '\n')

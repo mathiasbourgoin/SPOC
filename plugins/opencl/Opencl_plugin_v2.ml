@@ -171,11 +171,9 @@ module Opencl_v2 : Framework_sig.BACKEND_V2 = struct
   (** Execution model: OpenCL uses JIT compilation *)
   let execution_model = Framework_sig.JIT
 
-  (** Generate OpenCL source from Sarek IR (wrapped as Obj.t) *)
-  let generate_source (ir_obj : Obj.t) : string option =
-    try
-      let ir : Sarek.Sarek_ir.kernel = Obj.obj ir_obj in
-      Some (Sarek.Sarek_ir_opencl.generate_with_types ~types:ir.kern_types ir)
+  (** Generate OpenCL source from Sarek IR *)
+  let generate_source (ir : Sarek_ir_types.kernel) : string option =
+    try Some (Sarek.Sarek_ir_opencl.generate_with_types ~types:ir.kern_types ir)
     with _ -> None
 
   (** Execute directly - not supported for JIT backend *)
@@ -196,7 +194,8 @@ module Opencl_v2 : Framework_sig.BACKEND_V2 = struct
     match lang with
     | Framework_sig.OpenCL_Source ->
         (* Get current device (must be set by Execute before calling) *)
-        let dev = match Opencl_plugin.Opencl.Device.get_current_device () with
+        let dev =
+          match Opencl_plugin.Opencl.Device.get_current_device () with
           | Some d -> d
           | None -> failwith "run_source: no current OpenCL device set"
         in
@@ -206,28 +205,30 @@ module Opencl_v2 : Framework_sig.BACKEND_V2 = struct
 
         (* Set up kernel arguments using typed run_source_arg list *)
         let kargs = Kernel.create_args () in
-        List.iteri (fun i arg ->
-          match arg with
-          | Framework_sig.RSA_Buffer { binder; _ } ->
-              (* Use the binder function to properly bind the device buffer *)
-              binder ~kargs:(Obj.repr kargs) ~idx:i
-          | Framework_sig.RSA_Int32 n ->
-              Kernel.set_arg_int32 kargs i n
-          | Framework_sig.RSA_Int64 n ->
-              Kernel.set_arg_int64 kargs i n
-          | Framework_sig.RSA_Float32 f ->
-              Kernel.set_arg_float32 kargs i f
-          | Framework_sig.RSA_Float64 f ->
-              Kernel.set_arg_float64 kargs i f
-        ) args ;
+        List.iteri
+          (fun i arg ->
+            match arg with
+            | Framework_sig.RSA_Buffer {binder; _} ->
+                (* Use the binder function to properly bind the device buffer *)
+                binder ~kargs:(Obj.repr kargs) ~idx:i
+            | Framework_sig.RSA_Int32 n -> Kernel.set_arg_int32 kargs i n
+            | Framework_sig.RSA_Int64 n -> Kernel.set_arg_int64 kargs i n
+            | Framework_sig.RSA_Float32 f -> Kernel.set_arg_float32 kargs i f
+            | Framework_sig.RSA_Float64 f -> Kernel.set_arg_float64 kargs i f)
+          args ;
 
         (* Launch *)
         let stream = Stream.default dev in
-        Kernel.launch compiled ~args:kargs ~grid ~block ~shared_mem ~stream:(Some stream)
+        Kernel.launch
+          compiled
+          ~args:kargs
+          ~grid
+          ~block
+          ~shared_mem
+          ~stream:(Some stream)
     | Framework_sig.CUDA_Source ->
         failwith "OpenCL backend does not support CUDA source"
-    | Framework_sig.PTX ->
-        failwith "OpenCL backend does not support PTX"
+    | Framework_sig.PTX -> failwith "OpenCL backend does not support PTX"
     | Framework_sig.SPIR_V ->
         failwith "OpenCL backend does not support SPIR-V (yet)"
 end

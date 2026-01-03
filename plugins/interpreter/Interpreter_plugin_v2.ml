@@ -64,7 +64,7 @@ module Interpreter_v2 : Framework_sig.BACKEND_V2 = struct
   let execution_model = Framework_sig.Custom
 
   (** Generate source - not used for Interpreter (returns None) *)
-  let generate_source (_ir_obj : Obj.t) : string option = None
+  let generate_source (_ir : Sarek_ir_types.kernel) : string option = None
 
   (** Execute directly by interpreting the IR. Interpreter always interprets,
       ignoring native_fn (use Native backend for compiled execution). Uses
@@ -108,15 +108,18 @@ module Interpreter_v2 : Framework_sig.BACKEND_V2 = struct
   (** External kernel execution not supported on Interpreter backend *)
   let run_source ~source:_ ~lang ~kernel_name:_ ~block:_ ~grid:_ ~shared_mem:_
       (_args : Framework_sig.run_source_arg list) =
-    let lang_str = match lang with
+    let lang_str =
+      match lang with
       | Framework_sig.CUDA_Source -> "CUDA source"
       | Framework_sig.OpenCL_Source -> "OpenCL source"
       | Framework_sig.PTX -> "PTX"
       | Framework_sig.SPIR_V -> "SPIR-V"
     in
-    failwith (Printf.sprintf
-      "Interpreter backend cannot execute external %s kernels. \
-       Use CUDA or OpenCL backend instead." lang_str)
+    failwith
+      (Printf.sprintf
+         "Interpreter backend cannot execute external %s kernels. Use CUDA or \
+          OpenCL backend instead."
+         lang_str)
 end
 
 (** Run IR directly without going through execute_direct. This is the preferred
