@@ -31,6 +31,8 @@ module Opencl : sig
 
     val set_current : t -> unit
 
+    val get_current_device : unit -> t option
+
     val synchronize : t -> unit
   end
 
@@ -150,6 +152,9 @@ end = struct
 
   let device_states : (int, device_state) Hashtbl.t = Hashtbl.create 8
 
+  (** Current device for kernel compilation/execution *)
+  let current_device : Opencl_api.Device.t option ref = ref None
+
   let get_state device_id =
     match Hashtbl.find_opt device_states device_id with
     | Some s -> s
@@ -206,7 +211,9 @@ end = struct
 
     let set_current (d : t) =
       let _ = get_state d.id in
-      ()
+      current_device := Some d
+
+    let get_current_device () = !current_device
 
     let synchronize (d : t) =
       let state = get_state d.id in

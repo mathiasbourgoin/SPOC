@@ -172,6 +172,31 @@ let expand_vector_args (args : vector_arg list) (dev : Device.t) : arg list =
       | Float64 f -> [ArgFloat64 f])
     args
 
+(** Expand V2 Vector args to run_source_arg format for external kernel execution.
+    Each Vec expands to buffer (with binder) + length. The binder function
+    properly binds the device buffer using the backend's set_arg_buffer. *)
+let expand_to_run_source_args (args : vector_arg list) (dev : Device.t)
+    : Framework_sig.run_source_arg list =
+  List.concat_map
+    (function
+      | Vec v ->
+          let buf = get_device_buffer v dev in
+          let (module B : Vector.DEVICE_BUFFER) = buf in
+          let len = Vector.length v in
+          [
+            Framework_sig.RSA_Buffer {
+              binder = B.bind_to_kernel;
+              length = len;
+            };
+            Framework_sig.RSA_Int32 (Int32.of_int len);
+          ]
+      | Int n -> [Framework_sig.RSA_Int32 (Int32.of_int n)]
+      | Int32 n -> [Framework_sig.RSA_Int32 n]
+      | Int64 n -> [Framework_sig.RSA_Int64 n]
+      | Float32 f -> [Framework_sig.RSA_Float32 f]
+      | Float64 f -> [Framework_sig.RSA_Float64 f])
+    args
+
 (** {1 Execution Dispatch} *)
 
 (** Execute a kernel on a device using the unified dispatch mechanism.
@@ -570,3 +595,90 @@ let grid_for_size ~problem_size ~block_size =
 (** Calculate 1D grid dimensions for a problem size *)
 let grid_for ~problem_size ~block_size =
   dims1d (grid_for_size ~problem_size ~block_size)
+
+(** {1 External Kernel Execution} *)
+
+(** Re-export source language type *)
+type source_lang = Framework_sig.source_lang =
+  | CUDA_Source
+  | OpenCL_Source
+  | PTX
+  | SPIR_V
+
+(** Check if a device supports a given source language *)
+let supports_lang (dev : Device.t) (lang : source_lang) : bool =
+  match Framework_registry.find_backend_v2 dev.framework with
+  | Some (module B : Framework_sig.BACKEND_V2) ->
+      List.mem lang B.supported_source_langs
+  | None -> false
+
+(** Execute an external kernel from source code.
+
+    This function allows running pre-written GPU kernels (CUDA, OpenCL, PTX)
+    directly without going through the Sarek DSL.
+
+    @param device Target device
+    @param source Kernel source code as string
+    @param lang Source language (CUDA_Source, OpenCL_Source, PTX)
+    @param kernel_name Name of the kernel function in the source
+    @param block Block dimensions
+    @param grid Grid dimensions
+    @param shared_mem Shared memory size in bytes (default 0)
+    @param args Kernel arguments as vector_arg list
+    @raise Execution_error if device doesn't support the source language *)
+let run_source ~(device : Device.t) ~(source : string) ~(lang : source_lang)
+    ~(kernel_name : string) ~(block : Framework_sig.dims)
+    ~(grid : Framework_sig.dims) ?(shared_mem : int = 0)
+    (args : vector_arg list) : unit =
+  (* Transfer vectors to device first *)
+  transfer_vectors_to_device args device ;
+
+  match Framework_registry.find_backend_v2 device.framework with
+  | Some (module B : Framework_sig.BACKEND_V2) ->
+      if not (List.mem lang B.supported_source_langs) then
+        raise
+          (Execution_error
+             (Printf.sprintf "%s backend does not support %s"
+                device.framework
+                (match lang with
+                 | CUDA_Source -> "CUDA source"
+                 | OpenCL_Source -> "OpenCL source"
+                 | PTX -> "PTX"
+                 | SPIR_V -> "SPIR-V"))) ;
+
+      (* Expand vector args to run_source_arg format for external kernels *)
+      let rs_args = expand_to_run_source_args args device in
+
+      (* Set current device and run *)
+      let dev = B.Device.get device.backend_id in
+      B.Device.set_current dev ;
+      B.run_source ~source ~lang ~kernel_name ~block ~grid ~shared_mem rs_args ;
+
+      (* Mark vectors as stale *)
+      mark_vectors_stale args device
+  | None ->
+      raise
+        (Execution_error
+           ("No V2 backend found for framework: " ^ device.framework))
+
+(** Load kernel source from a file *)
+let load_source (path : string) : string =
+  In_channel.with_open_text path In_channel.input_all
+
+(** Detect source language from file extension *)
+let detect_lang (path : string) : source_lang =
+  if String.ends_with ~suffix:".cu" path then CUDA_Source
+  else if String.ends_with ~suffix:".cl" path then OpenCL_Source
+  else if String.ends_with ~suffix:".ptx" path then PTX
+  else if String.ends_with ~suffix:".spv" path then SPIR_V
+  else failwith ("Unknown source file extension: " ^ path)
+
+(** Execute an external kernel from a file.
+    Source language is detected from file extension (.cu, .cl, .ptx, .spv) *)
+let run_source_file ~(device : Device.t) ~(path : string)
+    ~(kernel_name : string) ~(block : Framework_sig.dims)
+    ~(grid : Framework_sig.dims) ?(shared_mem : int = 0)
+    (args : vector_arg list) : unit =
+  let source = load_source path in
+  let lang = detect_lang path in
+  run_source ~device ~source ~lang ~kernel_name ~block ~grid ~shared_mem args

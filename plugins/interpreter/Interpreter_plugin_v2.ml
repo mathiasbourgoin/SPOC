@@ -99,6 +99,24 @@ module Interpreter_v2 : Framework_sig.BACKEND_V2 = struct
         failwith "Interpreter_v2.execute_direct: IR required for interpretation"
 
   module Intrinsics = Interpreter_intrinsics
+
+  (** {2 External Kernel Support} *)
+
+  (** Interpreter backend does not support external GPU sources *)
+  let supported_source_langs = []
+
+  (** External kernel execution not supported on Interpreter backend *)
+  let run_source ~source:_ ~lang ~kernel_name:_ ~block:_ ~grid:_ ~shared_mem:_
+      (_args : Framework_sig.run_source_arg list) =
+    let lang_str = match lang with
+      | Framework_sig.CUDA_Source -> "CUDA source"
+      | Framework_sig.OpenCL_Source -> "OpenCL source"
+      | Framework_sig.PTX -> "PTX"
+      | Framework_sig.SPIR_V -> "SPIR-V"
+    in
+    failwith (Printf.sprintf
+      "Interpreter backend cannot execute external %s kernels. \
+       Use CUDA or OpenCL backend instead." lang_str)
 end
 
 (** Run IR directly without going through execute_direct. This is the preferred

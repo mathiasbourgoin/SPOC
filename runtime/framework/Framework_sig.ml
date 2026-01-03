@@ -207,6 +207,25 @@ end
     - Custom: Full control over compilation pipeline (LLVM, SPIR-V, future) *)
 type execution_model = JIT | Direct | Custom
 
+(** Source language for external kernels *)
+type source_lang =
+  | CUDA_Source  (** CUDA C/C++ source (.cu) *)
+  | OpenCL_Source  (** OpenCL C source (.cl) *)
+  | PTX  (** NVIDIA PTX assembly *)
+  | SPIR_V  (** SPIR-V binary (future) *)
+
+(** Argument type for run_source. Includes a binder function for device buffers
+    so each backend can properly bind its buffer type (cl_mem, CUdeviceptr, etc.) *)
+type run_source_arg =
+  | RSA_Buffer of {
+      binder : kargs:Obj.t -> idx:int -> unit;  (** Binds buffer to kernel arg *)
+      length : int;  (** Vector length for generated kernels *)
+    }
+  | RSA_Int32 of int32
+  | RSA_Int64 of int64
+  | RSA_Float32 of float
+  | RSA_Float64 of float
+
 (** Convergence behavior of an intrinsic.
     - Uniform: All threads in warp/wavefront compute same value
     - Divergent: Threads may compute different values
@@ -267,4 +286,28 @@ module type BACKEND_V2 = sig
 
   (** Backend-specific intrinsic registry *)
   module Intrinsics : INTRINSIC_REGISTRY
+
+  (** {2 External Kernel Execution} *)
+
+  (** List of source languages this backend supports *)
+  val supported_source_langs : source_lang list
+
+  (** Execute an external kernel from source code.
+      @param source The kernel source code (CUDA/OpenCL/PTX string)
+      @param lang The source language
+      @param kernel_name The name of the kernel function to execute
+      @param block Block dimensions
+      @param grid Grid dimensions
+      @param shared_mem Shared memory size in bytes
+      @param args Kernel arguments as run_source_arg list
+      @raise Failure if source language is not supported *)
+  val run_source :
+    source:string ->
+    lang:source_lang ->
+    kernel_name:string ->
+    block:dims ->
+    grid:dims ->
+    shared_mem:int ->
+    run_source_arg list ->
+    unit
 end

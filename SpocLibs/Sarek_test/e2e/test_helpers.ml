@@ -22,7 +22,7 @@ type config = {
 
 let default_config () =
   {
-    dev_id = 0;
+    dev_id = -1;  (* -1 means run on all devices *)
     use_interpreter = false;
     use_native = false;
     benchmark_all = false;
@@ -35,7 +35,7 @@ let default_config () =
 let usage name extra_opts =
   Printf.printf "Usage: %s [options]\n" name ;
   Printf.printf "Options:\n" ;
-  Printf.printf "  -d <id>       Device ID (default: 0)\n" ;
+  Printf.printf "  -d <id>       Device ID (default: all GPU devices)\n" ;
   Printf.printf "  --interpreter Use CPU interpreter device\n" ;
   Printf.printf "  --native      Use native CPU runtime device\n" ;
   Printf.printf "  --benchmark, --benchmark-all  Run on all devices\n" ;
@@ -99,7 +99,8 @@ let get_device cfg devs =
     | None ->
         print_endline "No interpreter device found" ;
         exit 1)
-  else devs.(cfg.dev_id)
+  else if cfg.dev_id >= 0 then devs.(cfg.dev_id)
+  else devs.(0)  (* default to first device *)
 
 (** Print available devices *)
 let print_devices devs =

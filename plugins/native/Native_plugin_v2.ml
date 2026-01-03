@@ -181,6 +181,24 @@ module Native_v2 : Framework_sig.BACKEND_V2 = struct
 
   (** Native intrinsic registry *)
   module Intrinsics = Native_intrinsics
+
+  (** {2 External Kernel Support} *)
+
+  (** Native backend does not support external GPU sources *)
+  let supported_source_langs = []
+
+  (** External kernel execution not supported on Native backend *)
+  let run_source ~source:_ ~lang ~kernel_name:_ ~block:_ ~grid:_ ~shared_mem:_
+      (_args : Framework_sig.run_source_arg list) =
+    let lang_str = match lang with
+      | Framework_sig.CUDA_Source -> "CUDA source"
+      | Framework_sig.OpenCL_Source -> "OpenCL source"
+      | Framework_sig.PTX -> "PTX"
+      | Framework_sig.SPIR_V -> "SPIR-V"
+    in
+    failwith (Printf.sprintf
+      "Native backend cannot execute external %s kernels. \
+       Use CUDA or OpenCL backend instead." lang_str)
 end
 
 (** Auto-register V2 backend when module is loaded *)

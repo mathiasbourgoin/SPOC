@@ -137,3 +137,19 @@
  (libraries sarek sarek_native sarek_stdlib sarek_core unix)
  (preprocess
   (pps sarek_ppx)))
+
+; External kernel test - no PPX needed (tests raw source execution)
+(executable
+ (name test_external_kernel)
+ (modules test_external_kernel)
+ (libraries
+  sarek
+  sarek_core
+  sarek_cuda
+  sarek_opencl
+  sarek_native
+  sarek_interpreter
+  test_helpers
+  unix)
+ (flags
+  (:standard -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc)))

@@ -157,6 +157,51 @@ module Cuda_v2 : Framework_sig.BACKEND_V2 = struct
 
   (** CUDA intrinsic registry *)
   module Intrinsics = Cuda_intrinsics
+
+  (** {2 External Kernel Support} *)
+
+  (** Supported source languages: CUDA only (PTX requires direct loading, not yet implemented) *)
+  let supported_source_langs = [Framework_sig.CUDA_Source]
+
+  (** Execute external kernel from source *)
+  let run_source ~source ~lang ~kernel_name ~block ~grid ~shared_mem args =
+    match lang with
+    | Framework_sig.CUDA_Source ->
+        (* Get current device (must be set by Execute before calling) *)
+        let dev = match Cuda_plugin.Cuda.Device.get_current_device () with
+          | Some d -> d
+          | None -> failwith "run_source: no current CUDA device set"
+        in
+
+        (* Compile and get kernel *)
+        let compiled = Kernel.compile_cached dev ~name:kernel_name ~source in
+
+        (* Set up kernel arguments using typed run_source_arg list *)
+        let kargs = Kernel.create_args () in
+        List.iteri (fun i arg ->
+          match arg with
+          | Framework_sig.RSA_Buffer { binder; _ } ->
+              (* Use the binder function to properly bind the device buffer *)
+              binder ~kargs:(Obj.repr kargs) ~idx:i
+          | Framework_sig.RSA_Int32 n ->
+              Kernel.set_arg_int32 kargs i n
+          | Framework_sig.RSA_Int64 n ->
+              Kernel.set_arg_int64 kargs i n
+          | Framework_sig.RSA_Float32 f ->
+              Kernel.set_arg_float32 kargs i f
+          | Framework_sig.RSA_Float64 f ->
+              Kernel.set_arg_float64 kargs i f
+        ) args ;
+
+        (* Launch *)
+        let stream = Stream.default dev in
+        Kernel.launch compiled ~args:kargs ~grid ~block ~shared_mem ~stream:(Some stream)
+    | Framework_sig.PTX ->
+        failwith "CUDA backend does not support PTX loading yet (use CUDA source)"
+    | Framework_sig.OpenCL_Source ->
+        failwith "CUDA backend does not support OpenCL source"
+    | Framework_sig.SPIR_V ->
+        failwith "CUDA backend does not support SPIR-V"
 end
 
 (** Auto-register V2 backend when module is loaded *)

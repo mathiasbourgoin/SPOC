@@ -31,6 +31,8 @@ module Cuda : sig
 
     val set_current : t -> unit
 
+    val get_current_device : unit -> t option
+
     val synchronize : t -> unit
   end
 
@@ -141,6 +143,9 @@ end = struct
 
   let version = (12, 0, 0)
 
+  (** Current device for kernel compilation/execution *)
+  let current_device : Cuda_api.Device.t option ref = ref None
+
   module Device = struct
     type t = Cuda_api.Device.t
 
@@ -156,7 +161,11 @@ end = struct
 
     let name (d : t) = d.Cuda_api.Device.name
 
-    let set_current = Cuda_api.Device.set_current
+    let set_current (d : t) =
+      Cuda_api.Device.set_current d ;
+      current_device := Some d
+
+    let get_current_device () = !current_device
 
     let synchronize = Cuda_api.Device.synchronize
 
