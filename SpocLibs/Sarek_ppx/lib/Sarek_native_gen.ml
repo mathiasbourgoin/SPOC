@@ -1215,13 +1215,11 @@ let wrap_module_items ~loc (items : tmodule_item list) (body : expression) :
     This keeps the concrete types hidden behind an existential type. *)
 
 (** Generate a concrete module implementation for inline types (types only).
-    Example for record type point with fields x and y:
-      struct
-        type point = {x: float; y: float}
-      end
+    Example for record type point with fields x and y: struct type point =
+    record with fields x: float and y: float end
 
-    Note: We only generate type declarations here, not accessor functions.
-    The accessor functions are generated as object methods by gen_types_object. *)
+    Note: We only generate type declarations here, not accessor functions. The
+    accessor functions are generated as object methods by gen_types_object. *)
 let gen_module_impl ~loc (decls : ttype_decl list) : module_expr =
   let struct_items =
     List.map
@@ -1581,13 +1579,9 @@ let gen_arg_cast_v2 ~loc (param : tparam) (idx : int) : expression =
       (* Default - just return as Obj.t and let caller deal with it *)
       arr_access
 
-(** Generate an object expression with accessor methods for FCM.
-    Example for type point with fields x and y:
-      object
-        method get_point_x r = r.x
-        method get_point_y r = r.y
-        method make_point ~x ~y = {x; y}
-      end
+(** Generate an object expression with accessor methods for FCM. Example for
+    type point with fields x and y: object method get_point_x r = r.x method
+    get_point_y r = r.y method make_point ~x ~y = record with fields x and y end
 
     Using an object avoids needing to define a record type for the accessors. *)
 let gen_types_object ~loc (decls : ttype_decl list) : expression =

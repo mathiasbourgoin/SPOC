@@ -1132,8 +1132,8 @@ module ParallelPool = struct
           Domain.spawn (fun () -> worker_fn pool id)) ;
     pool
 
-  (** Run a parallel_for over the range 0 to total (exclusive) with custom
-      chunk size *)
+  (** Run a parallel_for over the range 0 to total (exclusive) with custom chunk
+      size *)
   let parallel_for_chunk pool ~total ~chunk_size (work_fn : int -> int -> unit)
       =
     if total <= 0 then ()

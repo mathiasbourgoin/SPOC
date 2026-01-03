@@ -314,10 +314,9 @@ let sarek_type_private_attr =
     Ast_pattern.(pstr nil)
     ()
 
-(** Generate field accessor functions for a record type.
-    Example: for type point with fields x and y, generates:
-      let sarek_get_point_x (p : point) : float32 = p.x
-      let sarek_get_point_y (p : point) : float32 = p.y *)
+(** Generate field accessor functions for a record type. Example: for type point
+    with fields x and y, generates: let sarek_get_point_x (p : point) : float32
+    = p.x let sarek_get_point_y (p : point) : float32 = p.y *)
 let generate_field_accessors ~loc (td : type_declaration) : structure_item list
     =
   match td.ptype_kind with
@@ -388,9 +387,9 @@ let field_element_count (ct : core_type) : int =
 (** Get field size in bytes for V2 custom types *)
 let field_byte_size (ct : core_type) : int = get_type_size_from_core_type ct
 
-(** Generate a <name>_custom value for Vector.Custom.
-    For a record type like float4 with float32 fields, generates get/set
-    functions using Spoc.Tools.float32get/set *)
+(** Generate a <name>_custom value for Vector.Custom. For a record type like
+    float4 with float32 fields, generates get/set functions using
+    Spoc.Tools.float32get/set *)
 let generate_custom_value ~loc:_ (_td : type_declaration) : structure_item list
     =
   []
@@ -532,10 +531,10 @@ let gen_v2_field_write ~loc (ftype : core_type) (byte_off_expr : expression)
           (base_off + [%e byte_off_expr])
           [%e value_expr]]
 
-(** Generate a <name>_custom_v2 value for Sarek_core.Vector.custom_type.
-    For a record type (e.g., point with float32 fields), generates get/set
-    functions using Ctypes pointer arithmetic. Supports nested custom types via
-    their _custom_v2 accessor. *)
+(** Generate a <name>_custom_v2 value for Sarek_core.Vector.custom_type. For a
+    record type (e.g., point with float32 fields), generates get/set functions
+    using Ctypes pointer arithmetic. Supports nested custom types via their
+    _custom_v2 accessor. *)
 let generate_custom_v2_value ~loc (td : type_declaration) : structure_item list
     =
   match td.ptype_kind with
