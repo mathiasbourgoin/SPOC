@@ -606,14 +606,15 @@ let lower_kernel (kernel : tkernel) : Ir.kernel * string list =
   let kern_name = Option.value kernel.tkern_name ~default:"anon" in
   Sarek_debug.log_to_file
     (Printf.sprintf "  [V2] lower_kernel start: %s" kern_name) ;
-  (* Build fun_map from module items *)
+  (* Build fun_map from module items (local + registry) *)
   let fun_map = Hashtbl.create 8 in
+  let all_mod_items = kernel.tkern_module_items in
   List.iter
     (function
       | TMFun (name, _, params, body) ->
           Hashtbl.replace fun_map name (params, body)
       | _ -> ())
-    kernel.tkern_module_items ;
+    all_mod_items ;
   let state = create_state fun_map in
 
   (* Register record types from parameter types (especially vector element types) *)
@@ -645,7 +646,7 @@ let lower_kernel (kernel : tkernel) : Ir.kernel * string list =
             let v = make_var name id ty false in
             Ir.SSeq [Ir.SLet (v, lower_expr state expr, Ir.SEmpty); acc]
         | TMFun _ -> acc)
-      kernel.tkern_module_items
+      all_mod_items
       Ir.SEmpty
   in
 

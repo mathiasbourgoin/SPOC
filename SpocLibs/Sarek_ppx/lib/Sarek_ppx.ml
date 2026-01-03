@@ -267,7 +267,20 @@ let scan_file_for_sarek_types path =
                         in
                         Sarek_ast.MConst (name, ty, value)
                   in
-                  register_sarek_module_item ~loc:vb.pvb_loc item))
+                  register_sarek_module_item ~loc:vb.pvb_loc item ;
+                  let module_name =
+                    Filename.chop_extension (Filename.basename path)
+                  in
+                  let item_name =
+                    match item with
+                    | Sarek_ast.MFun (n, _, _, _) -> n
+                    | Sarek_ast.MConst (n, _, _) -> n
+                  in
+                  Sarek_ppx_registry.register_module_item
+                    (Sarek_ppx_registry.make_module_item_info
+                       ~name:item_name
+                       ~module_name
+                       ~item)))
               vbs
         | _ -> ())
       st

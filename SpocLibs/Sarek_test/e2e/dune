@@ -15,8 +15,8 @@
   test_ray_ppx
   test_registered_type
   test_registered_variant
-  ; test_cross_module_type (disabled - registered modules broken)
-  ; test_registered_const (disabled - registered modules broken)
+  test_cross_module_type
+  test_registered_const
   test_visibility_private
   test_convention
   test_convention_kernel
@@ -52,8 +52,8 @@
   registered_defs
   test_registered_type
   test_registered_variant
-  ; test_cross_module_type
-  ; test_registered_const
+  test_cross_module_type
+  test_registered_const
   test_visibility_private
   test_convention
   test_convention_kernel
@@ -109,8 +109,8 @@
   test_ray_ppx.exe
   test_registered_type.exe
   test_registered_variant.exe
-  ; test_cross_module_type.exe
-  ; test_registered_const.exe
+  test_cross_module_type.exe
+  test_registered_const.exe
   test_visibility_private.exe
   test_convention.exe
   test_convention_kernel.exe
