@@ -315,7 +315,7 @@ let sarek_type_private_attr =
     ()
 
 (** Generate field accessor functions for a record type.
-    For type point = { x: float32; y: float32 }, generates:
+    Example: for type point with fields x and y, generates:
       let sarek_get_point_x (p : point) : float32 = p.x
       let sarek_get_point_y (p : point) : float32 = p.y *)
 let generate_field_accessors ~loc (td : type_declaration) : structure_item list
@@ -389,8 +389,8 @@ let field_element_count (ct : core_type) : int =
 let field_byte_size (ct : core_type) : int = get_type_size_from_core_type ct
 
 (** Generate a <name>_custom value for Vector.Custom.
-    For type float4 = { mutable x: float32; mutable y: float32; ... } [@@sarek.type],
-    generates proper get/set functions using Spoc.Tools.float32get/set *)
+    For a record type like float4 with float32 fields, generates get/set
+    functions using Spoc.Tools.float32get/set *)
 let generate_custom_value ~loc:_ (_td : type_declaration) : structure_item list
     =
   []
@@ -533,17 +533,9 @@ let gen_v2_field_write ~loc (ftype : core_type) (byte_off_expr : expression)
           [%e value_expr]]
 
 (** Generate a <name>_custom_v2 value for Sarek_core.Vector.custom_type.
-    For type point = { x: float32; y: float32 } [@@sarek.type], generates:
-      let point_custom_v2 : point Sarek_core.Vector.custom_type = {
-        elem_size = 8;
-        name = "point";
-        get = (fun ptr idx -> ... Ctypes pointer arithmetic ...);
-        set = (fun ptr idx v -> ... Ctypes pointer arithmetic ...);
-      }
-
-    This uses Ctypes to cast the void pointer to float pointer and access
-    fields at byte offsets. Supports composable nested types where one record
-    contains another - uses the nested type's _custom_v2 accessor. *)
+    For a record type (e.g., point with float32 fields), generates get/set
+    functions using Ctypes pointer arithmetic. Supports nested custom types via
+    their _custom_v2 accessor. *)
 let generate_custom_v2_value ~loc (td : type_declaration) : structure_item list
     =
   match td.ptype_kind with
@@ -929,31 +921,9 @@ let generate_custom_v2_value ~loc (td : type_declaration) : structure_item list
       ]
   | _ -> []
 
-(** Generate runtime registration code for a type.
-
-    This implements the ppx_deriving-style composability pattern:
-    - The PPX generates OCaml code that calls Sarek.Sarek_registry.register_*
-    - This code runs at module initialization time (when the library is linked)
-    - When another module depends on this library, the type is already registered
-    - At JIT time, the code generator can look up the type info
-
-    For a record type:
-      type point = { x: float32; y: float32 } [@@sarek.type]
-
-    Generates:
-      let () = Sarek.Sarek_registry.register_record
-        "Module.point"
-        ~fields:[{field_name="x"; field_type="float32"; field_mutable=false}; ...]
-        ~size:8
-
-    For a variant type:
-      type shape = Circle of float32 | Square of float32 [@@sarek.type]
-
-    Generates:
-      let () = Sarek.Sarek_registry.register_variant
-        "Module.shape"
-        ~constructors:[{ctor_name="Circle"; ctor_arg_type=Some "float32"}; ...]
-*)
+(** Generate runtime registration code for a type. The PPX emits calls to
+    Sarek.Sarek_registry at module initialization time so type info is available
+    to codegen (record fields, variants, sizes). *)
 let generate_type_registration ~loc (td : type_declaration) :
     structure_item list =
   let type_name = td.ptype_name.txt in

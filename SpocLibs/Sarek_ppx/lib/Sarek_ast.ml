@@ -144,13 +144,13 @@ and expr_desc =
   | EMatch of expr * (pattern * expr) list
   (* Records and variants *)
   | ERecord of string option * (string * expr) list
-      (** { field = value; ... } with optional type name *)
+      (** Record literal with optional type name *)
   | EConstr of string * expr option  (** Constructor application *)
   | ETuple of expr list  (** (a, b, c) *)
   (* Special forms *)
   | EReturn of expr
   | ECreateArray of expr * type_expr * memspace
-  | EGlobalRef of string  (** @name - reference to OCaml value *)
+  | EGlobalRef of string  (** Reference to OCaml value by name *)
   | ENative of {
       gpu : Ppxlib.expression;  (** fun dev -> "cuda/opencl code" *)
       ocaml : Ppxlib.expression;  (** fun arg1 arg2 ... -> OCaml fallback *)

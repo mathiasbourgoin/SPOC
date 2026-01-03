@@ -1215,7 +1215,7 @@ let wrap_module_items ~loc (items : tmodule_item list) (body : expression) :
     This keeps the concrete types hidden behind an existential type. *)
 
 (** Generate a concrete module implementation for inline types (types only).
-    For a record type point = {x: float; y: float}, generates:
+    Example for record type point with fields x and y:
       struct
         type point = {x: float; y: float}
       end
@@ -1582,7 +1582,7 @@ let gen_arg_cast_v2 ~loc (param : tparam) (idx : int) : expression =
       arr_access
 
 (** Generate an object expression with accessor methods for FCM.
-    For type point = {x: float; y: float}, generates:
+    Example for type point with fields x and y:
       object
         method get_point_x r = r.x
         method get_point_y r = r.y

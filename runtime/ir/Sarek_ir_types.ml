@@ -120,7 +120,7 @@ type stmt =
   | SPragma of string list * stmt  (** Pragma hints wrapping a statement *)
   | SMemFence  (** Memory fence (threadfence) *)
   | SBlock of stmt
-      (** Scoped block - creates C {} scope for variable isolation *)
+      (** Scoped block - creates a C scope for variable isolation *)
   | SNative of {
       gpu : framework:string -> string;  (** Generate GPU code for framework *)
       ocaml : Obj.t;  (** OCaml fallback (polymorphic via Obj.t) *)

@@ -47,7 +47,7 @@ let intrinsic_ref_name = function
   | IntrinsicRef (path, name) -> String.concat "." (path @ [name])
   | CorePrimitiveRef name -> "@core:" ^ name
 
-(** Get user-friendly display name for error messages (no @core: prefix) *)
+(** Get user-friendly display name for error messages (no core prefix) *)
 let intrinsic_ref_display_name = function
   | IntrinsicRef (path, name) -> String.concat "." (path @ [name])
   | CorePrimitiveRef name -> name

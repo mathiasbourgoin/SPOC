@@ -1132,7 +1132,8 @@ module ParallelPool = struct
           Domain.spawn (fun () -> worker_fn pool id)) ;
     pool
 
-  (** Run a parallel_for over [0, total) with custom chunk size *)
+  (** Run a parallel_for over the range 0 to total (exclusive) with custom
+      chunk size *)
   let parallel_for_chunk pool ~total ~chunk_size (work_fn : int -> int -> unit)
       =
     if total <= 0 then ()
@@ -1156,7 +1157,8 @@ module ParallelPool = struct
       Mutex.unlock pool.mutex
     end
 
-  (** Run a parallel_for over [0, total) with default chunk size *)
+  (** Run a parallel_for over the range 0 to total (exclusive) with default
+      chunk size *)
   let parallel_for pool ~total work_fn =
     parallel_for_chunk pool ~total ~chunk_size:default_chunk_size work_fn
 
