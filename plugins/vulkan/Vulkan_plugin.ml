@@ -224,9 +224,18 @@ let registered_backend =
        Spoc_core.Log.debug
          Spoc_core.Log.Device
          "Vulkan_plugin: Vulkan available, registering backend" ;
-       Framework_registry.register_backend
-         ~priority:80
-         (module Backend : Framework_sig.BACKEND)
+       try
+         Framework_registry.register_backend
+           ~priority:80
+           (module Backend : Framework_sig.BACKEND) ;
+         Spoc_core.Log.debug
+           Spoc_core.Log.Device
+           "Vulkan_plugin: registration succeeded"
+       with exn ->
+         Spoc_core.Log.debugf
+           Spoc_core.Log.Device
+           "Vulkan_plugin: registration failed with exception: %s"
+           (Printexc.to_string exn)
      end
      else
        Spoc_core.Log.debug

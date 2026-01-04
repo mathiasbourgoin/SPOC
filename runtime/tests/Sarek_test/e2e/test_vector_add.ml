@@ -17,6 +17,7 @@ module Transfer = Spoc_core.Transfer
 let () =
   Sarek_cuda.Cuda_plugin.init () ;
   Sarek_opencl.Opencl_plugin.init () ;
+  Sarek_vulkan.Vulkan_plugin.init () ;
   Sarek_native.Native_plugin.init () ;
   Sarek_interpreter.Interpreter_plugin.init ()
 
@@ -96,7 +97,8 @@ let run_v2_on_device (dev : Device.t) =
   for i = 0 to !size - 1 do
     Vector.set a i (float_of_int i) ;
     Vector.set b i (float_of_int (i * 2)) ;
-    Vector.set c i 0.0
+    (* Initialize output with a sentinel to detect missing writes *)
+    Vector.set c i (-1.0)
   done ;
 
   let block_sz = !block_size in
@@ -134,7 +136,8 @@ let run_interpreter () =
   let b =
     Array.init !size (fun i -> Sarek_ir_interp.VFloat32 (float_of_int (i * 2)))
   in
-  let c = Array.make !size (Sarek_ir_interp.VFloat32 0.0) in
+  (* Initialize output with a sentinel to detect missing writes *)
+  let c = Array.make !size (Sarek_ir_interp.VFloat32 (-1.0)) in
 
   let block_sz = min 256 !size in
   let grid_sz = (!size + block_sz - 1) / block_sz in
@@ -192,7 +195,9 @@ let () =
 
   (* Initialize runtime devices - include all frameworks *)
   let devs =
-    Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+    Device.init
+      ~frameworks:["CUDA"; "OpenCL"; "Vulkan"; "Native"; "Interpreter"]
+      ()
   in
 
   if Array.length devs = 0 then begin

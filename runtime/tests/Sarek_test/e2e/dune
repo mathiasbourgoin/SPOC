@@ -87,6 +87,7 @@
   spoc_core
   sarek_cuda
   sarek_opencl
+  sarek_vulkan
   sarek_native
   sarek_interpreter
   test_helpers
@@ -152,6 +153,7 @@
   spoc_core
   sarek_cuda
   sarek_opencl
+  sarek_vulkan
   sarek_native
   sarek_interpreter
   test_helpers

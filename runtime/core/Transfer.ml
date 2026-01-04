@@ -178,13 +178,25 @@ let ensure_buffer (type a b) (vec : (a, b) Vector.t) (dev : Device.t) :
                 Log.debug
                   Log.Transfer
                   "  -> zero-copy not supported, using regular alloc" ;
-                alloc_scalar_buffer dev vec.length sk)
+                let buf = alloc_scalar_buffer dev vec.length sk in
+                buf)
         | Vector.Scalar _, Vector.Custom_storage _ -> .
         | Vector.Custom c, _ ->
             Log.debug Log.Transfer "  -> custom alloc" ;
             alloc_custom_buffer dev vec.length c.elem_size
       in
+      Log.debugf
+        Log.Transfer
+        "ensure_buffer: storing buffer for dev=%d (hashtbl key=%d)"
+        dev.id
+        dev.id ;
       Hashtbl.replace vec.device_buffers dev.id buf ;
+      let (module B : Vector.DEVICE_BUFFER) = buf in
+      Log.debugf
+        Log.Transfer
+        "ensure_buffer: stored buffer ptr=%Ld size=%d"
+        (Int64.of_nativeint B.ptr)
+        B.size ;
       buf
 
 (** {1 Transfer Operations} *)
@@ -258,6 +270,11 @@ let to_cpu ?(force = false) (type a b) (vec : (a, b) Vector.t) : unit =
     | None -> failwith "to_cpu: no device buffer to transfer from"
     | Some buf ->
         let (module B : Vector.DEVICE_BUFFER) = buf in
+        Log.debugf
+          Log.Transfer
+          "to_cpu: got buffer ptr=%Ld size=%d"
+          (Int64.of_nativeint B.ptr)
+          B.size ;
         (match vec.host with
         | Vector.Bigarray_storage ba ->
             let ptr, byte_size = bigarray_to_ptr ba B.elem_size in

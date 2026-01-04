@@ -9,7 +9,7 @@ open Spoc_framework
 
 (** Vulkan Backend Implementation *)
 module Vulkan = struct
-  let name = "vulkan"
+  let name = "Vulkan"
 
   let version = (1, 0, 0)
 

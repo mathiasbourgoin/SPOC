@@ -17,6 +17,7 @@ module Transfer = Spoc_core.Transfer
 let () =
   Sarek_cuda.Cuda_plugin.init () ;
   Sarek_opencl.Opencl_plugin.init () ;
+  Sarek_vulkan.Vulkan_plugin.init () ;
   Sarek_native.Native_plugin.init () ;
   Sarek_interpreter.Interpreter_plugin.init ()
 
