@@ -10,5 +10,5 @@
   spoc_framework_registry
   sarek
   (re_export spoc_core))
- (modules Interpreter_plugin Interpreter_plugin_v2)
+ (modules Interpreter_plugin_v2)
  (preprocess no_preprocessing))

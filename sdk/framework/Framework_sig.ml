@@ -47,9 +47,59 @@ module type S = sig
   val is_available : unit -> bool
 end
 
-(** Full plugin signature with Device, Memory, Stream, Event, and Kernel
-    modules. This is the complete interface that backends (CUDA, OpenCL)
-    implement. *)
+(** Execution model for backends.
+    - JIT: Generate source code at runtime, compile with GPU compiler (CUDA,
+      OpenCL)
+    - Direct: Execute pre-compiled OCaml functions directly (Native CPU)
+    - Custom: Full control over compilation pipeline (LLVM, SPIR-V, future) *)
+type execution_model = JIT | Direct | Custom
+
+(** Source language for external kernels *)
+type source_lang =
+  | CUDA_Source  (** CUDA C/C++ source (.cu) *)
+  | OpenCL_Source  (** OpenCL C source (.cl) *)
+  | PTX  (** NVIDIA PTX assembly *)
+  | SPIR_V  (** SPIR-V binary (future) *)
+
+(** Argument type for run_source. Includes a binder function for device buffers
+    so each backend can properly bind its buffer type (cl_mem, CUdeviceptr,
+    etc.) *)
+type run_source_arg =
+  | RSA_Buffer of {
+      binder : kargs:Obj.t -> idx:int -> unit;
+          (** Binds buffer to kernel arg *)
+      length : int;  (** Vector length for generated kernels *)
+    }
+  | RSA_Int32 of int32
+  | RSA_Int64 of int64
+  | RSA_Float32 of float
+  | RSA_Float64 of float
+
+(** Convergence behavior of an intrinsic.
+    - Uniform: All threads in warp/wavefront compute same value
+    - Divergent: Threads may compute different values
+    - Sync: Intrinsic contains synchronization (barrier) *)
+type convergence = Uniform | Divergent | Sync
+
+(** Intrinsic registry interface for backend-specific intrinsics. Note: The
+    actual intrinsic_impl type is defined in each backend's intrinsic registry
+    module to avoid circular dependencies with Sarek_ir. *)
+module type INTRINSIC_REGISTRY = sig
+  (** Backend-specific intrinsic implementation type *)
+  type intrinsic_impl
+
+  (** Register an intrinsic by name *)
+  val register : string -> intrinsic_impl -> unit
+
+  (** Look up an intrinsic by name *)
+  val find : string -> intrinsic_impl option
+
+  (** List all registered intrinsic names *)
+  val list_all : unit -> string list
+end
+
+(** Extended backend signature for Phase 4 unified execution. Adds execution
+    model discrimination and IR-based code generation. *)
 module type BACKEND = sig
   val name : string
 
@@ -196,65 +246,6 @@ module type BACKEND = sig
   val enable_profiling : unit -> unit
 
   val disable_profiling : unit -> unit
-end
-
-(** {1 Phase 4: Unified Execution Architecture} *)
-
-(** Execution model for backends.
-    - JIT: Generate source code at runtime, compile with GPU compiler (CUDA,
-      OpenCL)
-    - Direct: Execute pre-compiled OCaml functions directly (Native CPU)
-    - Custom: Full control over compilation pipeline (LLVM, SPIR-V, future) *)
-type execution_model = JIT | Direct | Custom
-
-(** Source language for external kernels *)
-type source_lang =
-  | CUDA_Source  (** CUDA C/C++ source (.cu) *)
-  | OpenCL_Source  (** OpenCL C source (.cl) *)
-  | PTX  (** NVIDIA PTX assembly *)
-  | SPIR_V  (** SPIR-V binary (future) *)
-
-(** Argument type for run_source. Includes a binder function for device buffers
-    so each backend can properly bind its buffer type (cl_mem, CUdeviceptr,
-    etc.) *)
-type run_source_arg =
-  | RSA_Buffer of {
-      binder : kargs:Obj.t -> idx:int -> unit;
-          (** Binds buffer to kernel arg *)
-      length : int;  (** Vector length for generated kernels *)
-    }
-  | RSA_Int32 of int32
-  | RSA_Int64 of int64
-  | RSA_Float32 of float
-  | RSA_Float64 of float
-
-(** Convergence behavior of an intrinsic.
-    - Uniform: All threads in warp/wavefront compute same value
-    - Divergent: Threads may compute different values
-    - Sync: Intrinsic contains synchronization (barrier) *)
-type convergence = Uniform | Divergent | Sync
-
-(** Intrinsic registry interface for backend-specific intrinsics. Note: The
-    actual intrinsic_impl type is defined in each backend's intrinsic registry
-    module to avoid circular dependencies with Sarek_ir. *)
-module type INTRINSIC_REGISTRY = sig
-  (** Backend-specific intrinsic implementation type *)
-  type intrinsic_impl
-
-  (** Register an intrinsic by name *)
-  val register : string -> intrinsic_impl -> unit
-
-  (** Look up an intrinsic by name *)
-  val find : string -> intrinsic_impl option
-
-  (** List all registered intrinsic names *)
-  val list_all : unit -> string list
-end
-
-(** Extended backend signature for Phase 4 unified execution. Adds execution
-    model discrimination and IR-based code generation. *)
-module type BACKEND_V2 = sig
-  include BACKEND
 
   (** The execution model this backend uses *)
   val execution_model : execution_model

@@ -1,13 +1,11 @@
 (******************************************************************************
- * CUDA Plugin V2 - Phase 4 Backend Implementation
+ * CUDA Plugin - Backend Implementation
  *
- * Implements the Framework_sig.BACKEND_V2 interface for CUDA devices.
- * Extends Cuda_plugin with:
+ * Implements the unified Framework_sig.BACKEND interface for CUDA devices.
+ * Extends the CUDA base with:
  * - Execution model discrimination (JIT)
  * - IR-based source generation via Sarek_ir_cuda
  * - Intrinsic registry support
- *
- * This plugin coexists with Cuda_plugin during the transition period.
  ******************************************************************************)
 
 open Spoc_framework
@@ -137,7 +135,7 @@ module Cuda_intrinsics : Framework_sig.INTRINSIC_REGISTRY = struct
 end
 
 (** CUDA V2 Backend - implements BACKEND_V2 *)
-module Cuda_v2 : Framework_sig.BACKEND_V2 = struct
+module Cuda_v2 : Framework_sig.BACKEND = struct
   (* Include all of BACKEND from Cuda_base *)
   include Cuda_base
 
@@ -218,9 +216,9 @@ let registered_v2 =
        Spoc_core.Log.debug
          Spoc_core.Log.Device
          "Cuda_plugin_v2: CUDA available, registering V2 backend" ;
-       Framework_registry.register_backend_v2
+       Framework_registry.register_backend
          ~priority:100
-         (module Cuda_v2 : Framework_sig.BACKEND_V2)
+         (module Cuda_v2 : Framework_sig.BACKEND)
      end
      else
        Spoc_core.Log.debug

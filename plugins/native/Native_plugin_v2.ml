@@ -138,7 +138,7 @@ module Native_intrinsics : Framework_sig.INTRINSIC_REGISTRY = struct
 end
 
 (** Native V2 Backend - implements BACKEND_V2 *)
-module Native_v2 : Framework_sig.BACKEND_V2 = struct
+module Native_v2 : Framework_sig.BACKEND = struct
   (* Include all of BACKEND from Native_base *)
   include Native_base
 
@@ -209,9 +209,9 @@ end
 let registered_v2 =
   lazy
     (if Native_v2.is_available () then
-       Framework_registry.register_backend_v2
+       Framework_registry.register_backend
          ~priority:10
-         (module Native_v2 : Framework_sig.BACKEND_V2))
+         (module Native_v2 : Framework_sig.BACKEND))
 
 let () = Lazy.force registered_v2
 

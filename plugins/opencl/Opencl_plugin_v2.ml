@@ -1,13 +1,11 @@
 (******************************************************************************
- * OpenCL Plugin V2 - Phase 4 Backend Implementation
+ * OpenCL Plugin - Backend Implementation
  *
- * Implements the Framework_sig.BACKEND_V2 interface for OpenCL devices.
- * Extends Opencl_plugin with:
+ * Implements the unified Framework_sig.BACKEND interface for OpenCL devices.
+ * Extends the OpenCL base with:
  * - Execution model discrimination (JIT)
  * - IR-based source generation via Sarek_ir_opencl
  * - Intrinsic registry support
- *
- * This plugin coexists with Opencl_plugin during the transition period.
  ******************************************************************************)
 
 open Spoc_framework
@@ -165,7 +163,7 @@ module Opencl_intrinsics : Framework_sig.INTRINSIC_REGISTRY = struct
 end
 
 (** OpenCL V2 Backend - implements BACKEND_V2 *)
-module Opencl_v2 : Framework_sig.BACKEND_V2 = struct
+module Opencl_v2 : Framework_sig.BACKEND = struct
   (* Include all of BACKEND from Opencl_base *)
   include Opencl_base
 
@@ -238,9 +236,9 @@ end
 let registered_v2 =
   lazy
     (if Opencl_v2.is_available () then
-       Framework_registry.register_backend_v2
+       Framework_registry.register_backend
          ~priority:90
-         (module Opencl_v2 : Framework_sig.BACKEND_V2))
+         (module Opencl_v2 : Framework_sig.BACKEND))
 
 let () = Lazy.force registered_v2
 

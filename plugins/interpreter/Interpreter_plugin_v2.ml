@@ -58,7 +58,7 @@ module Interpreter_intrinsics : Framework_sig.INTRINSIC_REGISTRY = struct
 end
 
 (** Interpreter V2 Backend - implements BACKEND_V2 *)
-module Interpreter_v2 : Framework_sig.BACKEND_V2 = struct
+module Interpreter_v2 : Framework_sig.BACKEND = struct
   include Interpreter_base
 
   (** Execution model: Custom (interprets IR directly) *)
@@ -138,9 +138,9 @@ let run_ir ~(ir : Sarek.Sarek_ir.kernel) ~(block : Framework_sig.dims)
 let registered_v2 =
   lazy
     (if Interpreter_v2.is_available () then
-       Framework_registry.register_backend_v2
+       Framework_registry.register_backend
          ~priority:5
-         (module Interpreter_v2 : Framework_sig.BACKEND_V2))
+         (module Interpreter_v2 : Framework_sig.BACKEND))
 
 let () = Lazy.force registered_v2
 
