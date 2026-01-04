@@ -427,6 +427,15 @@ let vkCmdBindDescriptorSets buf bind_point layout first count sets dyn_count
     dyn_count
     dyn_offsets
 
+let vkCmdPushConstants_lazy =
+  foreign_vk_lazy
+    "vkCmdPushConstants"
+    (vk_command_buffer_ptr @-> vk_pipeline_layout @-> uint32_t @-> uint32_t
+   @-> uint32_t @-> ptr void @-> returning void)
+
+let vkCmdPushConstants buf layout stage_flags offset size values =
+  Lazy.force vkCmdPushConstants_lazy buf layout stage_flags offset size values
+
 let vkCmdDispatch_lazy =
   foreign_vk_lazy
     "vkCmdDispatch"

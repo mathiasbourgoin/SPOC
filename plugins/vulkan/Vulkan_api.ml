@@ -24,9 +24,31 @@ let memcpy dst src size =
 
 exception Vulkan_error of vk_result * string
 
+let vk_result_to_string = function
+  | VK_SUCCESS -> "VK_SUCCESS"
+  | VK_ERROR_OUT_OF_HOST_MEMORY -> "VK_ERROR_OUT_OF_HOST_MEMORY"
+  | VK_ERROR_OUT_OF_DEVICE_MEMORY -> "VK_ERROR_OUT_OF_DEVICE_MEMORY"
+  | VK_ERROR_INITIALIZATION_FAILED -> "VK_ERROR_INITIALIZATION_FAILED"
+  | VK_ERROR_DEVICE_LOST -> "VK_ERROR_DEVICE_LOST"
+  | VK_ERROR_MEMORY_MAP_FAILED -> "VK_ERROR_MEMORY_MAP_FAILED"
+  | VK_ERROR_LAYER_NOT_PRESENT -> "VK_ERROR_LAYER_NOT_PRESENT"
+  | VK_ERROR_EXTENSION_NOT_PRESENT -> "VK_ERROR_EXTENSION_NOT_PRESENT"
+  | VK_ERROR_FEATURE_NOT_PRESENT -> "VK_ERROR_FEATURE_NOT_PRESENT"
+  | VK_ERROR_INCOMPATIBLE_DRIVER -> "VK_ERROR_INCOMPATIBLE_DRIVER"
+  | VK_ERROR_TOO_MANY_OBJECTS -> "VK_ERROR_TOO_MANY_OBJECTS"
+  | VK_ERROR_FORMAT_NOT_SUPPORTED -> "VK_ERROR_FORMAT_NOT_SUPPORTED"
+  | r -> Printf.sprintf "VK_ERROR_%d" (Obj.magic r : int)
+
 (** Check Vulkan result and raise exception on error *)
 let check (ctx : string) (result : vk_result) : unit =
-  match result with VK_SUCCESS -> () | err -> raise (Vulkan_error (err, ctx))
+  match result with
+  | VK_SUCCESS -> ()
+  | err ->
+      Printf.eprintf
+        "[Vulkan] %s failed with %s\n%!"
+        ctx
+        (vk_result_to_string err) ;
+      raise (Vulkan_error (err, ctx))
 
 (** {1 SPIR-V Compilation} *)
 
@@ -700,6 +722,7 @@ module Kernel = struct
   type args = {
     mutable bindings : (int * any_buffer) list;
     mutable descriptor_set : vk_descriptor_set;
+    mutable push_constants : bytes option; (* Raw bytes for push constants *)
   }
 
   (* Compilation cache *)
@@ -809,11 +832,23 @@ module Kernel = struct
     setf pl_create_info pl_create_flags (Unsigned.UInt32.of_int 0) ;
     setf pl_create_info pl_create_setLayoutCount (Unsigned.UInt32.of_int 1) ;
     setf pl_create_info pl_create_pSetLayouts dsl ;
+
+    (* Add push constant range for scalar parameters *)
+    (* TODO: Calculate exact size from IR metadata instead of fixed size *)
+    let push_constant_range = make vk_push_constant_range in
+    setf
+      push_constant_range
+      push_const_stageFlags
+      (Unsigned.UInt32.of_int vk_shader_stage_compute_bit) ;
+    setf push_constant_range push_const_offset (Unsigned.UInt32.of_int 0) ;
+    setf push_constant_range push_const_size (Unsigned.UInt32.of_int 128) ;
+
+    (* 128 bytes max *)
     setf
       pl_create_info
       pl_create_pushConstantRangeCount
-      (Unsigned.UInt32.of_int 0) ;
-    setf pl_create_info pl_create_pPushConstantRanges null ;
+      (Unsigned.UInt32.of_int 1) ;
+    setf pl_create_info pl_create_pPushConstantRanges (addr push_constant_range) ;
 
     let pipeline_layout = allocate vk_pipeline_layout vk_null_handle in
     check
@@ -923,22 +958,42 @@ module Kernel = struct
       cache ;
     Hashtbl.clear cache
 
-  let create_args () = {bindings = []; descriptor_set = vk_null_handle}
+  let create_args () =
+    {bindings = []; descriptor_set = vk_null_handle; push_constants = None}
 
   let set_arg_buffer args idx buf =
     args.bindings <- (idx, AnyBuf buf) :: args.bindings
 
-  let set_arg_int32 _args _idx _n =
-    failwith "Vulkan: scalar args not supported (use push constants or UBO)"
+  let ensure_push_constants args =
+    match args.push_constants with
+    | Some pc -> pc
+    | None ->
+        let pc = Bytes.create 128 in
+        (* 128 bytes max for push constants *)
+        args.push_constants <- Some pc ;
+        pc
 
-  let set_arg_int64 _args _idx _n =
-    failwith "Vulkan: scalar args not supported (use push constants or UBO)"
+  let set_arg_int32 args idx n =
+    let pc = ensure_push_constants args in
+    let offset = idx * 4 in
+    (* Assuming 4-byte alignment *)
+    Bytes.set_int32_le pc offset n
 
-  let set_arg_float32 _args _idx _f =
-    failwith "Vulkan: scalar args not supported (use push constants or UBO)"
+  let set_arg_int64 args idx n =
+    let pc = ensure_push_constants args in
+    let offset = idx * 8 in
+    (* Assuming 8-byte alignment *)
+    Bytes.set_int64_le pc offset n
 
-  let set_arg_float64 _args _idx _f =
-    failwith "Vulkan: scalar args not supported (use push constants or UBO)"
+  let set_arg_float32 args idx f =
+    let pc = ensure_push_constants args in
+    let offset = idx * 4 in
+    Bytes.set_int32_le pc offset (Int32.bits_of_float f)
+
+  let set_arg_float64 args idx f =
+    let pc = ensure_push_constants args in
+    let offset = idx * 8 in
+    Bytes.set_int64_le pc offset (Int64.bits_of_float f)
 
   let set_arg_ptr _args _idx _p =
     failwith "Vulkan: raw pointer args not supported"
@@ -1044,6 +1099,20 @@ module Kernel = struct
       desc_set
       (Unsigned.UInt32.of_int 0)
       (from_voidp uint32_t null) ;
+
+    (* Push constants for scalar arguments *)
+    (match args.push_constants with
+    | Some pc ->
+        let pc_ptr = Ctypes.ocaml_bytes_start pc in
+        let pc_void = Ctypes.coerce Ctypes.ocaml_bytes (ptr void) pc_ptr in
+        vkCmdPushConstants
+          stream.Stream.command_buffer
+          kernel.pipeline_layout
+          (Unsigned.UInt32.of_int vk_shader_stage_compute_bit)
+          (Unsigned.UInt32.of_int 0) (* offset *)
+          (Unsigned.UInt32.of_int (Bytes.length pc)) (* size *)
+          pc_void
+    | None -> ()) ;
 
     (* Vulkan dispatch uses workgroup counts, not total threads *)
     let gx = (grid.x + block.x - 1) / block.x in

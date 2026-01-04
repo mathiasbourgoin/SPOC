@@ -749,6 +749,20 @@ let dsl_create_pBindings =
 
 let () = seal vk_descriptor_set_layout_create_info
 
+(** VkPushConstantRange *)
+type vk_push_constant_range
+
+let vk_push_constant_range : vk_push_constant_range structure typ =
+  structure "VkPushConstantRange"
+
+let push_const_stageFlags = field vk_push_constant_range "stageFlags" uint32_t
+
+let push_const_offset = field vk_push_constant_range "offset" uint32_t
+
+let push_const_size = field vk_push_constant_range "size" uint32_t
+
+let () = seal vk_push_constant_range
+
 (** VkPipelineLayoutCreateInfo *)
 type vk_pipeline_layout_create_info
 
@@ -775,7 +789,10 @@ let pl_create_pushConstantRangeCount =
   field vk_pipeline_layout_create_info "pushConstantRangeCount" uint32_t
 
 let pl_create_pPushConstantRanges =
-  field vk_pipeline_layout_create_info "pPushConstantRanges" (ptr void)
+  field
+    vk_pipeline_layout_create_info
+    "pPushConstantRanges"
+    (ptr vk_push_constant_range)
 
 let () = seal vk_pipeline_layout_create_info
 
