@@ -22,5 +22,6 @@
   Vulkan_api
   Vulkan_plugin_base
   Vulkan_plugin
-  Sarek_ir_glsl)
+  Sarek_ir_glsl
+  Shaderc)
  (preprocess no_preprocessing))

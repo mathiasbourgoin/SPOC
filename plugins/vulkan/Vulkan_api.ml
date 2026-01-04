@@ -43,7 +43,7 @@ let check (ctx : string) (result : vk_result) : unit =
 
 (** Compile GLSL to SPIR-V using glslangValidator. Requires glslangValidator in
     PATH. *)
-let compile_glsl_to_spirv ~(entry_point : string) (glsl_source : string) :
+let compile_glsl_to_spirv_cli ~(entry_point : string) (glsl_source : string) :
     string =
   (* Write GLSL to temp file *)
   let glsl_file = Filename.temp_file "sarek_" ".comp" in
@@ -121,6 +121,29 @@ let compile_glsl_to_spirv ~(entry_point : string) (glsl_source : string) :
 
   spirv
 
+(** Compile GLSL to SPIR-V using Shaderc if available, otherwise fallback to CLI
+*)
+let compile_glsl_to_spirv ~(entry_point : string) (glsl_source : string) :
+    string =
+  if Shaderc.is_available () then begin
+    Spoc_core.Log.debug
+      Spoc_core.Log.Device
+      "[Vulkan] Compiling with libshaderc" ;
+    try Shaderc.compile_glsl_to_spirv ~entry_point glsl_source
+    with e ->
+      Spoc_core.Log.errorf
+        Spoc_core.Log.Device
+        "[Vulkan] libshaderc failed: %s"
+        (Printexc.to_string e) ;
+      compile_glsl_to_spirv_cli ~entry_point glsl_source
+  end
+  else begin
+    Spoc_core.Log.debug
+      Spoc_core.Log.Device
+      "[Vulkan] libshaderc not found, using glslangValidator" ;
+    compile_glsl_to_spirv_cli ~entry_point glsl_source
+  end
+
 (** Check if glslangValidator is available *)
 let glslang_available () : bool =
   try
@@ -143,6 +166,7 @@ module Device = struct
     name : string;
     api_version : int * int * int;
     memory_properties : vk_physical_device_memory_properties structure;
+    command_pool : vk_command_pool;
   }
 
   let instance_ref : vk_instance structure ptr option ref = ref None
@@ -364,6 +388,25 @@ module Device = struct
           (Unsigned.UInt32.of_int 0)
           queue ;
 
+        (* Create persistent command pool *)
+        let pool_info = make vk_command_pool_create_info in
+        setf
+          pool_info
+          cmd_pool_create_sType
+          (u32 vk_structure_type_command_pool_create_info) ;
+        setf pool_info cmd_pool_create_pNext null ;
+        setf pool_info cmd_pool_create_flags (Unsigned.UInt32.of_int 0x02) ;
+        (* VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT *)
+        setf
+          pool_info
+          cmd_pool_create_queueFamilyIndex
+          (Unsigned.UInt32.of_int queue_family) ;
+
+        let pool = allocate vk_command_pool vk_null_handle in
+        check
+          "vkCreateCommandPool"
+          (vkCreateCommandPool !@device (addr pool_info) null pool) ;
+
         Spoc_core.Log.debugf
           Spoc_core.Log.Device
           "Vulkan device %d: %s (API %d.%d.%d)"
@@ -384,6 +427,7 @@ module Device = struct
             name;
             api_version = (api_major, api_minor, api_patch);
             memory_properties = mem_props;
+            command_pool = !@pool;
           }
         in
         Hashtbl.add device_cache idx dev ;
@@ -394,7 +438,9 @@ module Device = struct
 
   let synchronize dev = check "vkDeviceWaitIdle" (vkDeviceWaitIdle dev.device)
 
-  let destroy dev = vkDestroyDevice dev.device null
+  let destroy dev =
+    vkDestroyCommandPool dev.device dev.command_pool null ;
+    vkDestroyDevice dev.device null
 end
 
 (** {1 Memory Management} *)
@@ -778,7 +824,15 @@ module Stream = struct
          vk_true
          (Unsigned.UInt64.of_int64 Int64.max_int))
 
-  let default device = create device
+  let default_streams : (int, t) Hashtbl.t = Hashtbl.create 4
+
+  let default device =
+    match Hashtbl.find_opt default_streams device.Device.id with
+    | Some s -> s
+    | None ->
+        let s = create device in
+        Hashtbl.add default_streams device.Device.id s ;
+        s
 end
 
 (** {1 Event Management} *)
@@ -826,6 +880,7 @@ module Kernel = struct
     pipeline_layout : vk_pipeline_layout;
     descriptor_set_layout : vk_descriptor_set_layout;
     descriptor_pool : vk_descriptor_pool;
+    descriptor_set : vk_descriptor_set;
     name : string;
     num_bindings : int;
     device : Device.t;
@@ -1057,12 +1112,32 @@ module Kernel = struct
       "vkCreateDescriptorPool"
       (vkCreateDescriptorPool device.Device.device (addr pool_info) null pool) ;
 
+    (* Allocate persistent descriptor set *)
+    let ds_ai = make vk_descriptor_set_allocate_info in
+    setf
+      ds_ai
+      desc_set_alloc_sType
+      (u32 vk_structure_type_descriptor_set_allocate_info) ;
+    setf ds_ai desc_set_alloc_pNext null ;
+    setf ds_ai desc_set_alloc_descriptorPool !@pool ;
+    setf ds_ai desc_set_alloc_descriptorSetCount (u32 1) ;
+    setf
+      ds_ai
+      desc_set_alloc_pSetLayouts
+      (allocate vk_descriptor_set_layout !@dsl) ;
+
+    let desc_set = allocate vk_descriptor_set vk_null_handle in
+    check
+      "vkAllocateDescriptorSets"
+      (vkAllocateDescriptorSets device.Device.device (addr ds_ai) desc_set) ;
+
     {
       shader_module;
       pipeline = !@pipeline;
       pipeline_layout = !@pipeline_layout;
       descriptor_set_layout = !@dsl;
       descriptor_pool = !@pool;
+      descriptor_set = !@desc_set;
       name;
       num_bindings;
       device;
@@ -1147,7 +1222,7 @@ module Kernel = struct
     failwith "Vulkan: raw pointer args not supported"
 
   let launch kernel ~args ~(grid : Spoc_framework.Framework_sig.dims)
-      ~(block : Spoc_framework.Framework_sig.dims) ~shared_mem:_ ~stream:_ =
+      ~(block : Spoc_framework.Framework_sig.dims) ~shared_mem:_ ~stream =
     ignore block ;
     (* Vulkan doesn't use block size in dispatch, only grid *)
     let device = kernel.device in
@@ -1155,36 +1230,13 @@ module Kernel = struct
     let u64 = Unsigned.UInt64.of_int in
 
     try
-      (* 1. Descriptor Set Layout - use the one from kernel *)
-      let dsl = kernel.descriptor_set_layout in
+      (* 1. Get Stream (Command Buffer + Fence) *)
+      let s = match stream with Some s -> s | None -> Stream.default device in
+      let cmd_buf = s.Stream.command_buffer in
+      let fence = s.Stream.fence in
 
-      (* 2. Pipeline - use the one from kernel *)
-      let pipeline = kernel.pipeline in
-      let pipeline_layout = kernel.pipeline_layout in
-
-      (* 3. Descriptor Pool - use the one from kernel *)
-      let pool = kernel.descriptor_pool in
-
-      (* 4. Allocate Descriptor Set *)
-      let ds_ai = make vk_descriptor_set_allocate_info in
-      setf
-        ds_ai
-        desc_set_alloc_sType
-        (u32 vk_structure_type_descriptor_set_allocate_info) ;
-      setf ds_ai desc_set_alloc_pNext null ;
-      setf ds_ai desc_set_alloc_descriptorPool pool ;
-      setf ds_ai desc_set_alloc_descriptorSetCount (u32 1) ;
-      setf
-        ds_ai
-        desc_set_alloc_pSetLayouts
-        (allocate vk_descriptor_set_layout dsl) ;
-
-      let desc_set = allocate vk_descriptor_set vk_null_handle in
-      check
-        "vkAllocateDescriptorSets"
-        (vkAllocateDescriptorSets device.Device.device (addr ds_ai) desc_set) ;
-
-      (* 5. Update Descriptor Set *)
+      (* 2. Update Descriptor Set (reuse persistent set) *)
+      let desc_set = kernel.descriptor_set in
       let num_bindings = List.length args.bindings in
       let writes = CArray.make vk_write_descriptor_set num_bindings in
       let buf_infos = CArray.make vk_descriptor_buffer_info num_bindings in
@@ -1207,7 +1259,7 @@ module Kernel = struct
             write_desc_sType
             (u32 vk_structure_type_write_descriptor_set) ;
           setf write write_desc_pNext null ;
-          setf write write_desc_dstSet !@desc_set ;
+          setf write write_desc_dstSet desc_set ;
           setf write write_desc_dstBinding (u32 binding_idx) ;
           setf write write_desc_dstArrayElement (u32 0) ;
           setf write write_desc_descriptorCount (u32 1) ;
@@ -1228,43 +1280,8 @@ module Kernel = struct
           (u32 0)
           null ;
 
-      (* 6. Create command pool *)
-      let cp_ci = make vk_command_pool_create_info in
-      setf
-        cp_ci
-        cmd_pool_create_sType
-        (u32 vk_structure_type_command_pool_create_info) ;
-      setf cp_ci cmd_pool_create_pNext null ;
-      setf cp_ci cmd_pool_create_flags (u32 0) ;
-      setf
-        cp_ci
-        cmd_pool_create_queueFamilyIndex
-        (u32 device.Device.queue_family) ;
-
-      let cmd_pool = allocate vk_command_pool vk_null_handle in
-      check
-        "vkCreateCommandPool"
-        (vkCreateCommandPool device.Device.device (addr cp_ci) null cmd_pool) ;
-
-      (* 7. Allocate command buffer *)
-      let cb_ai = make vk_command_buffer_allocate_info in
-      setf
-        cb_ai
-        cmd_buf_alloc_sType
-        (u32 vk_structure_type_command_buffer_allocate_info) ;
-      setf cb_ai cmd_buf_alloc_pNext null ;
-      setf cb_ai cmd_buf_alloc_commandPool !@cmd_pool ;
-      setf cb_ai cmd_buf_alloc_level (u32 vk_command_buffer_level_primary) ;
-      setf cb_ai cmd_buf_alloc_commandBufferCount (u32 1) ;
-
-      let cmd_buf =
-        allocate vk_command_buffer_ptr (from_voidp vk_command_buffer null)
-      in
-      check
-        "vkAllocateCommandBuffers"
-        (vkAllocateCommandBuffers device.Device.device (addr cb_ai) cmd_buf) ;
-
-      (* 8. Record command buffer *)
+      (* 3. Record Command Buffer *)
+      (* Reset command buffer implicitly by beginning with ONE_TIME_SUBMIT *)
       let begin_info = make vk_command_buffer_begin_info in
       setf
         begin_info
@@ -1279,16 +1296,19 @@ module Kernel = struct
 
       check
         "vkBeginCommandBuffer"
-        (vkBeginCommandBuffer !@cmd_buf (addr begin_info)) ;
+        (vkBeginCommandBuffer cmd_buf (addr begin_info)) ;
 
-      vkCmdBindPipeline !@cmd_buf (u32 vk_pipeline_bind_point_compute) pipeline ;
-      vkCmdBindDescriptorSets
-        !@cmd_buf
+      vkCmdBindPipeline
+        cmd_buf
         (u32 vk_pipeline_bind_point_compute)
-        pipeline_layout
+        kernel.pipeline ;
+      vkCmdBindDescriptorSets
+        cmd_buf
+        (u32 vk_pipeline_bind_point_compute)
+        kernel.pipeline_layout
         (u32 0)
         (u32 1)
-        desc_set
+        (allocate vk_descriptor_set desc_set)
         (u32 0)
         (from_voidp uint32_t null) ;
 
@@ -1301,30 +1321,24 @@ module Kernel = struct
             pc_ptr +@ i <-@ Bytes.get pc i
           done ;
           vkCmdPushConstants
-            !@cmd_buf
-            pipeline_layout
+            cmd_buf
+            kernel.pipeline_layout
             (u32 vk_shader_stage_compute_bit)
             (u32 0)
             (u32 len)
             (Ctypes.to_voidp pc_ptr)
       | None -> ()) ;
 
-      vkCmdDispatch !@cmd_buf (u32 grid.x) (u32 grid.y) (u32 grid.z) ;
+      vkCmdDispatch cmd_buf (u32 grid.x) (u32 grid.y) (u32 grid.z) ;
 
-      check "vkEndCommandBuffer" (vkEndCommandBuffer !@cmd_buf) ;
+      check "vkEndCommandBuffer" (vkEndCommandBuffer cmd_buf) ;
 
-      (* 9. Create fence *)
-      let fence_ci = make vk_fence_create_info in
-      setf fence_ci fence_create_sType (u32 vk_structure_type_fence_create_info) ;
-      setf fence_ci fence_create_pNext null ;
-      setf fence_ci fence_create_flags (u32 0) ;
-
-      let fence = allocate vk_fence vk_null_handle in
+      (* 4. Submit *)
+      (* Reset fence before use *)
       check
-        "vkCreateFence"
-        (vkCreateFence device.Device.device (addr fence_ci) null fence) ;
+        "vkResetFences"
+        (vkResetFences device.Device.device (u32 1) (allocate vk_fence fence)) ;
 
-      (* 10. Submit *)
       let submit_info = make vk_submit_info in
       setf submit_info submit_sType (u32 vk_structure_type_submit_info) ;
       setf submit_info submit_pNext null ;
@@ -1332,7 +1346,10 @@ module Kernel = struct
       setf submit_info submit_pWaitSemaphores (from_voidp vk_semaphore null) ;
       setf submit_info submit_pWaitDstStageMask (from_voidp vk_flags null) ;
       setf submit_info submit_commandBufferCount (u32 1) ;
-      setf submit_info submit_pCommandBuffers cmd_buf ;
+      setf
+        submit_info
+        submit_pCommandBuffers
+        (allocate vk_command_buffer_ptr cmd_buf) ;
       setf submit_info submit_signalSemaphoreCount (u32 0) ;
       setf submit_info submit_pSignalSemaphores (from_voidp vk_semaphore null) ;
 
@@ -1342,26 +1359,19 @@ module Kernel = struct
            device.Device.compute_queue
            (u32 1)
            (addr submit_info)
-           !@fence) ;
+           fence) ;
 
-      (* 11. Wait *)
+      (* 5. Wait *)
       check
         "vkWaitForFences"
         (vkWaitForFences
            device.Device.device
            (u32 1)
-           fence
+           (allocate vk_fence fence)
            vk_true
            (Unsigned.UInt64.of_int64 Int64.max_int)) ;
 
-      check "vkDeviceWaitIdle" (vkDeviceWaitIdle device.Device.device) ;
-
-      (* Cleanup *)
-      vkDestroyFence device.Device.device !@fence null ;
-      vkDestroyCommandPool device.Device.device !@cmd_pool null ;
-
       (* Keep structures alive *)
-      ignore !@desc_set ;
       ignore buf_infos ;
       ignore writes
     with e ->
@@ -1383,10 +1393,10 @@ let vulkan_version () =
 
 let is_available () =
   if not (Vulkan_bindings.is_available ()) then false
-  else if not (glslang_available ()) then begin
+  else if (not (glslang_available ())) && not (Shaderc.is_available ()) then begin
     Spoc_core.Log.debug
       Spoc_core.Log.Device
-      "Vulkan: glslangValidator not found in PATH" ;
+      "Vulkan: neither glslangValidator nor libshaderc found" ;
     false
   end
   else
