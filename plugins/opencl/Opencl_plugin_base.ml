@@ -335,8 +335,8 @@ end = struct
 
     type args = arg list ref
 
-    (* Compilation cache *)
-    let cache : (string, compiled) Hashtbl.t = Hashtbl.create 16
+    (* Cache: key -> compiled kernel *)
+    let cache : (string, t) Hashtbl.t = Hashtbl.create 16
 
     let compile device ~name ~source =
       let state = get_state device.Opencl_api.Device.id in
@@ -348,11 +348,11 @@ end = struct
       {kernel; program; device_id = device.id}
 
     let compile_cached device ~name ~source =
-      (* Cache key must include device ID - kernels are context-specific *)
       let key =
         Printf.sprintf
-          "%d:%s"
+          "%d:%s:%s"
           device.Opencl_api.Device.id
+          name
           (Digest.string source |> Digest.to_hex)
       in
       match Hashtbl.find_opt cache key with
