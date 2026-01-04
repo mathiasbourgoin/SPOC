@@ -246,27 +246,27 @@ test-tier1:
 
 test-tier2:
 	@echo "=============================================="
-	@echo "  TIER 2: Medium Complexity"
+	@echo "  TIER 2: Medium Complexity (Vulkan)"
 	@echo "=============================================="
 	@dune build $(addprefix runtime/tests/Sarek_test/e2e/,$(addsuffix .exe,$(TIER2_TESTS)))
 	@echo ""
 	@echo "--- test_matrix_mul ---"
-	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec runtime/tests/Sarek_test/e2e/test_matrix_mul.exe -- -s 256
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec runtime/tests/Sarek_test/e2e/test_matrix_mul.exe -- --vulkan -s 256
 	@echo ""
 	@echo "--- test_stencil ---"
-	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec runtime/tests/Sarek_test/e2e/test_stencil.exe -- -s 1024
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec runtime/tests/Sarek_test/e2e/test_stencil.exe -- --vulkan -s 1024
 	@echo ""
 	@echo "--- test_convolution ---"
-	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec runtime/tests/Sarek_test/e2e/test_convolution.exe -- -s 1024
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec runtime/tests/Sarek_test/e2e/test_convolution.exe -- --vulkan -s 1024
 	@echo ""
 	@echo "--- test_reduce ---"
-	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec runtime/tests/Sarek_test/e2e/test_reduce.exe -- -s 2048
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec runtime/tests/Sarek_test/e2e/test_reduce.exe -- --vulkan -s 2048
 	@echo ""
 	@echo "--- test_scan ---"
-	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec runtime/tests/Sarek_test/e2e/test_scan.exe -- -s 256
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec runtime/tests/Sarek_test/e2e/test_scan.exe -- --vulkan -s 256
 	@echo ""
 	@echo "--- test_sort ---"
-	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec runtime/tests/Sarek_test/e2e/test_sort.exe -- -s 256
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec runtime/tests/Sarek_test/e2e/test_sort.exe -- --vulkan -s 256
 	@echo ""
 	@echo "=== Tier 2 PASSED ==="
 

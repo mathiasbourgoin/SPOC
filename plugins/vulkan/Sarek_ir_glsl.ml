@@ -22,6 +22,116 @@ let current_variants : (string * (string * elttype list) list) list ref = ref []
 (** Mangle OCaml type name to valid GLSL identifier *)
 let mangle_name name = String.map (fun c -> if c = '.' then '_' else c) name
 
+(** GLSL reserved keywords that cannot be used as identifiers *)
+let glsl_reserved_keywords =
+  [
+    (* Storage qualifiers *)
+    "input";
+    "output";
+    "uniform";
+    "buffer";
+    "shared";
+    "attribute";
+    "varying";
+    "const";
+    (* Types *)
+    "void";
+    "bool";
+    "int";
+    "uint";
+    "float";
+    "double";
+    "vec2";
+    "vec3";
+    "vec4";
+    "ivec2";
+    "ivec3";
+    "ivec4";
+    "uvec2";
+    "uvec3";
+    "uvec4";
+    "bvec2";
+    "bvec3";
+    "bvec4";
+    "mat2";
+    "mat3";
+    "mat4";
+    "sampler2D";
+    "sampler3D";
+    "samplerCube";
+    (* Control flow *)
+    "if";
+    "else";
+    "for";
+    "while";
+    "do";
+    "switch";
+    "case";
+    "default";
+    "break";
+    "continue";
+    "return";
+    "discard";
+    (* Other reserved *)
+    "true";
+    "false";
+    "struct";
+    "layout";
+    "in";
+    "out";
+    "inout";
+    "lowp";
+    "mediump";
+    "highp";
+    "precision";
+    "invariant";
+    "flat";
+    "smooth";
+    "centroid";
+    "noperspective";
+    "patch";
+    "sample";
+    "subroutine";
+    "common";
+    "partition";
+    "active";
+    "asm";
+    "class";
+    "union";
+    "enum";
+    "typedef";
+    "template";
+    "this";
+    "packed";
+    "goto";
+    "inline";
+    "noinline";
+    "volatile";
+    "public";
+    "static";
+    "extern";
+    "external";
+    "interface";
+    "long";
+    "short";
+    "half";
+    "fixed";
+    "unsigned";
+    "superp";
+    "cast";
+    "namespace";
+    "using";
+    "row_major";
+    "gl_FragCoord";
+    "gl_FragColor";
+    "main";
+  ]
+
+(** Escape reserved GLSL keywords by adding 'v' suffix (avoids double underscore
+    with _len) *)
+let escape_glsl_name name =
+  if List.mem name glsl_reserved_keywords then name ^ "v" else name
+
 (** Map Sarek IR element type to GLSL type string *)
 let rec glsl_type_of_elttype = function
   | TInt32 -> "int"
@@ -77,7 +187,7 @@ let rec gen_expr buf = function
   | EConst (CBool true) -> Buffer.add_string buf "true"
   | EConst (CBool false) -> Buffer.add_string buf "false"
   | EConst CUnit -> Buffer.add_string buf "/* unit */"
-  | EVar v -> Buffer.add_string buf v.var_name
+  | EVar v -> Buffer.add_string buf (escape_glsl_name v.var_name)
   | EBinop (op, e1, e2) ->
       Buffer.add_char buf '(' ;
       gen_expr buf e1 ;
@@ -90,7 +200,7 @@ let rec gen_expr buf = function
       gen_expr buf e ;
       Buffer.add_char buf ')'
   | EArrayRead (arr, idx) ->
-      Buffer.add_string buf arr ;
+      Buffer.add_string buf (escape_glsl_name arr) ;
       Buffer.add_char buf '[' ;
       gen_expr buf idx ;
       Buffer.add_char buf ']'
@@ -147,7 +257,8 @@ let rec gen_expr buf = function
           gen_expr buf e)
         args ;
       Buffer.add_char buf ')'
-  | EArrayLen arr -> Buffer.add_string buf ("sarek_" ^ arr ^ "_length")
+  | EArrayLen arr ->
+      Buffer.add_string buf ("sarek_" ^ escape_glsl_name arr ^ "_length")
   | EArrayCreate _ ->
       failwith "gen_expr: EArrayCreate should be handled in gen_stmt SLet"
   | EIf (cond, then_, else_) ->
@@ -345,9 +456,9 @@ and gen_intrinsic buf path name args =
 (** {1 L-value Generation} *)
 
 let rec gen_lvalue buf = function
-  | LVar v -> Buffer.add_string buf v.var_name
+  | LVar v -> Buffer.add_string buf (escape_glsl_name v.var_name)
   | LArrayElem (arr, idx) ->
-      Buffer.add_string buf arr ;
+      Buffer.add_string buf (escape_glsl_name arr) ;
       Buffer.add_char buf '[' ;
       gen_expr buf idx ;
       Buffer.add_char buf ']'
@@ -401,19 +512,20 @@ let rec gen_stmt buf indent = function
       let op, incr =
         match dir with Upto -> ("<=", "++") | Downto -> (">=", "--")
       in
+      let loop_var = escape_glsl_name v.var_name in
       Buffer.add_string buf indent ;
       Buffer.add_string buf "for (" ;
       Buffer.add_string buf (glsl_type_of_elttype v.var_type) ;
       Buffer.add_char buf ' ' ;
-      Buffer.add_string buf v.var_name ;
+      Buffer.add_string buf loop_var ;
       Buffer.add_string buf " = " ;
       gen_expr buf start ;
       Buffer.add_string buf "; " ;
-      Buffer.add_string buf v.var_name ;
+      Buffer.add_string buf loop_var ;
       Buffer.add_string buf (" " ^ op ^ " ") ;
       gen_expr buf stop ;
       Buffer.add_string buf "; " ;
-      Buffer.add_string buf v.var_name ;
+      Buffer.add_string buf loop_var ;
       Buffer.add_string buf incr ;
       Buffer.add_string buf ") {\n" ;
       gen_stmt buf (indent ^ "  ") body ;
@@ -443,10 +555,11 @@ let rec gen_stmt buf indent = function
               Buffer.add_string buf ("  case " ^ cname ^ ": {\n") ;
               match (bindings, find_constr_types cname) with
               | [var_name], Some [ty] ->
+                  let vn = escape_glsl_name var_name in
                   Buffer.add_string buf (indent ^ "    ") ;
                   Buffer.add_string buf (glsl_type_of_elttype ty) ;
                   Buffer.add_string buf " " ;
-                  Buffer.add_string buf var_name ;
+                  Buffer.add_string buf vn ;
                   Buffer.add_string buf " = " ;
                   Buffer.add_string buf scrutinee ;
                   Buffer.add_char buf '.' ;
@@ -455,10 +568,11 @@ let rec gen_stmt buf indent = function
               | vars, Some types when List.length vars = List.length types ->
                   List.iteri
                     (fun i (var_name, ty) ->
+                      let vn = escape_glsl_name var_name in
                       Buffer.add_string buf (indent ^ "    ") ;
                       Buffer.add_string buf (glsl_type_of_elttype ty) ;
                       Buffer.add_string buf " " ;
-                      Buffer.add_string buf var_name ;
+                      Buffer.add_string buf vn ;
                       Buffer.add_string buf " = " ;
                       Buffer.add_string buf scrutinee ;
                       Buffer.add_char buf '.' ;
@@ -498,38 +612,42 @@ let rec gen_stmt buf indent = function
       gen_expr buf e ;
       Buffer.add_string buf ";\n"
   | SLet (v, EArrayCreate (elem_ty, size, Shared), body) ->
+      let vn = escape_glsl_name v.var_name in
       Buffer.add_string buf indent ;
       Buffer.add_string buf "shared " ;
       Buffer.add_string buf (glsl_type_of_elttype elem_ty) ;
       Buffer.add_char buf ' ' ;
-      Buffer.add_string buf v.var_name ;
+      Buffer.add_string buf vn ;
       Buffer.add_char buf '[' ;
       gen_expr buf size ;
       Buffer.add_string buf "];\n" ;
       gen_stmt buf indent body
   | SLet (v, EArrayCreate (elem_ty, size, _), body) ->
+      let vn = escape_glsl_name v.var_name in
       Buffer.add_string buf indent ;
       Buffer.add_string buf (glsl_type_of_elttype elem_ty) ;
       Buffer.add_char buf ' ' ;
-      Buffer.add_string buf v.var_name ;
+      Buffer.add_string buf vn ;
       Buffer.add_char buf '[' ;
       gen_expr buf size ;
       Buffer.add_string buf "];\n" ;
       gen_stmt buf indent body
   | SLet (v, e, body) ->
+      let vn = escape_glsl_name v.var_name in
       Buffer.add_string buf indent ;
       Buffer.add_string buf (glsl_type_of_elttype v.var_type) ;
       Buffer.add_char buf ' ' ;
-      Buffer.add_string buf v.var_name ;
+      Buffer.add_string buf vn ;
       Buffer.add_string buf " = " ;
       gen_expr buf e ;
       Buffer.add_string buf ";\n" ;
       gen_stmt buf indent body
   | SLetMut (v, e, body) ->
+      let vn = escape_glsl_name v.var_name in
       Buffer.add_string buf indent ;
       Buffer.add_string buf (glsl_type_of_elttype v.var_type) ;
       Buffer.add_char buf ' ' ;
-      Buffer.add_string buf v.var_name ;
+      Buffer.add_string buf vn ;
       Buffer.add_string buf " = " ;
       gen_expr buf e ;
       Buffer.add_string buf ";\n" ;
@@ -556,7 +674,7 @@ let gen_helper_func buf (hf : helper_func) =
       if i > 0 then Buffer.add_string buf ", " ;
       Buffer.add_string buf (glsl_type_of_elttype v.var_type) ;
       Buffer.add_char buf ' ' ;
-      Buffer.add_string buf v.var_name)
+      Buffer.add_string buf (escape_glsl_name v.var_name))
     hf.hf_params ;
   Buffer.add_string buf ") {\n" ;
   gen_stmt buf "  " hf.hf_body ;
@@ -587,15 +705,16 @@ layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
 (** Generate buffer binding for a vector parameter *)
 let gen_buffer_binding buf binding_idx v elem_type =
+  let name = escape_glsl_name v.var_name in
   Buffer.add_string
     buf
     (Printf.sprintf
        "layout(std430, set=0, binding = %d) buffer Buffer_%s {\n"
        binding_idx
-       v.var_name) ;
+       name) ;
   Buffer.add_string
     buf
-    (Printf.sprintf "  %s %s[];\n" (glsl_type_of_elttype elem_type) v.var_name) ;
+    (Printf.sprintf "  %s %s[];\n" (glsl_type_of_elttype elem_type) name) ;
   Buffer.add_string buf "};\n"
 
 let gen_push_constants buf params =
@@ -618,31 +737,30 @@ let gen_push_constants buf params =
     (* Add length parameter for each vector *)
     List.iter
       (fun v ->
-        Buffer.add_string buf (Printf.sprintf "  int %s_len;\n" v.var_name))
+        let name = escape_glsl_name v.var_name in
+        Buffer.add_string buf (Printf.sprintf "  int %s_len;\n" name))
       vectors ;
     (* Add user-defined scalar parameters *)
     List.iter
       (fun v ->
+        let name = escape_glsl_name v.var_name in
         Buffer.add_string
           buf
-          (Printf.sprintf
-             "  %s %s;\n"
-             (glsl_type_of_elttype v.var_type)
-             v.var_name))
+          (Printf.sprintf "  %s %s;\n" (glsl_type_of_elttype v.var_type) name))
       scalars ;
     Buffer.add_string buf "} pc;\n\n" ;
     (* Define convenience aliases *)
     List.iter
       (fun v ->
+        let name = escape_glsl_name v.var_name in
         Buffer.add_string
           buf
-          (Printf.sprintf "#define %s_len pc.%s_len\n" v.var_name v.var_name))
+          (Printf.sprintf "#define %s_len pc.%s_len\n" name name))
       vectors ;
     List.iter
       (fun v ->
-        Buffer.add_string
-          buf
-          (Printf.sprintf "#define %s pc.%s\n" v.var_name v.var_name))
+        let name = escape_glsl_name v.var_name in
+        Buffer.add_string buf (Printf.sprintf "#define %s pc.%s\n" name name))
       scalars ;
     Buffer.add_string buf "\n"
   end

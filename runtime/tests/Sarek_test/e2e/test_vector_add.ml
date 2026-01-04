@@ -113,6 +113,17 @@ let run_v2_on_device (dev : Device.t) =
   let block = Execute.dims1d block_sz in
   let grid = Execute.dims1d grid_sz in
 
+  (* Warmup run to exclude compilation time *)
+  if !benchmark_all then (
+    Execute.run_vectors
+      ~device:dev
+      ~ir
+      ~args:[Execute.Vec a; Execute.Vec b; Execute.Vec c; Execute.Int !size]
+      ~block
+      ~grid
+      () ;
+    Transfer.flush dev) ;
+
   let t0 = Unix.gettimeofday () in
   Execute.run_vectors
     ~device:dev
