@@ -9,8 +9,8 @@
   (pps sarek_ppx)))
 
 (executable
- (name test_v2_comparison)
- (modules test_v2_comparison)
+ (name test_runtime_comparison)
+ (modules test_runtime_comparison)
  (libraries sarek sarek.stdlib spoc_core sarek_cuda sarek_opencl unix)
  (preprocess
   (pps sarek_ppx))

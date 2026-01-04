@@ -7,9 +7,9 @@
  ******************************************************************************)
 
 (* Module aliases *)
-module V2_Device = Spoc_core.Device
-module V2_Vector = Spoc_core.Vector
-module V2_Transfer = Spoc_core.Transfer
+module Device = Spoc_core.Device
+module Vector = Spoc_core.Vector
+module Transfer = Spoc_core.Transfer
 
 (* Force backend registration *)
 let () =
@@ -117,21 +117,21 @@ let inclusive_scan_kernel =
 
 (* ========== V2 test runners ========== *)
 
-let run_inclusive_scan_v2 (dev : V2_Device.t) inp exp =
+let run_inclusive_scan (dev : Device.t) inp exp =
   let n = min cfg.size 256 in
   let _, kirc = inclusive_scan_kernel in
   let ir =
-    match kirc.Sarek.Kirc_types.body_v2 with
+    match kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
     | None -> failwith "No V2 IR"
   in
 
-  let input = V2_Vector.create V2_Vector.int32 n in
-  let output = V2_Vector.create V2_Vector.int32 n in
+  let input = Vector.create Vector.int32 n in
+  let output = Vector.create Vector.int32 n in
 
   for i = 0 to n - 1 do
-    V2_Vector.set input i inp.(i) ;
-    V2_Vector.set output i 0l
+    Vector.set input i inp.(i) ;
+    Vector.set output i 0l
   done ;
 
   let block_size = 256 in
@@ -151,13 +151,13 @@ let run_inclusive_scan_v2 (dev : V2_Device.t) inp exp =
     ~block
     ~grid
     () ;
-  V2_Transfer.flush dev ;
+  Transfer.flush dev ;
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
 
   let ok =
     if cfg.verify then begin
-      let result = V2_Vector.to_array output in
+      let result = Vector.to_array output in
       let errors = ref 0 in
       for i = 0 to n - 1 do
         if result.(i) <> exp.(i) then begin
@@ -195,7 +195,7 @@ let () =
     (min cfg.size 256) ;
 
   let v2_devs =
-    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+    Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
   if Array.length v2_devs = 0 then begin
     print_endline "No devices found" ;
@@ -211,10 +211,10 @@ let () =
   print_endline "=== Inclusive Scan (all ones) ===" ;
   Array.iter
     (fun v2_dev ->
-      let name = v2_dev.V2_Device.name in
-      let framework = v2_dev.V2_Device.framework in
+      let name = v2_dev.Device.name in
+      let framework = v2_dev.Device.framework in
       let v2_time, v2_ok =
-        run_inclusive_scan_v2 v2_dev !input_ones !expected_ones
+        run_inclusive_scan v2_dev !input_ones !expected_ones
       in
       Printf.printf
         "  %s (%s): %.4f ms, %s\n%!"
@@ -230,10 +230,10 @@ let () =
   print_endline "\n=== Inclusive Scan (varying values) ===" ;
   Array.iter
     (fun v2_dev ->
-      let name = v2_dev.V2_Device.name in
-      let framework = v2_dev.V2_Device.framework in
+      let name = v2_dev.Device.name in
+      let framework = v2_dev.Device.framework in
       let v2_time, v2_ok =
-        run_inclusive_scan_v2 v2_dev !input_varying !expected_varying
+        run_inclusive_scan v2_dev !input_varying !expected_varying
       in
       Printf.printf
         "  %s (%s): %.4f ms, %s\n%!"

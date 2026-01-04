@@ -391,14 +391,14 @@ let field_byte_size (ct : core_type) : int = get_type_size_from_core_type ct
 (** Generate a <name>_custom value for Vector.Custom. For a record type like
     float4 with float32 fields, generates get/set functions using
     Spoc.Tools.float32get/set *)
-let generate_custom_value ~loc:_ (_td : type_declaration) : structure_item list
-    =
+let[@warning "-32"] generate_custom_value ~loc:_ (_td : type_declaration) :
+    structure_item list =
   []
 
 (** Helper to generate a V2 field read expression based on field type.
     Dispatches to the correct Custom_helpers function. For nested custom types,
-    generates a call using the nested type's _custom_v2 accessor. *)
-let gen_v2_field_read ~loc (ftype : core_type) (byte_off_expr : expression) :
+    generates a call using the nested type's _custom accessor. *)
+let gen_field_read ~loc (ftype : core_type) (byte_off_expr : expression) :
     expression =
   match ftype.ptyp_desc with
   | Ptyp_constr ({txt = Lident "float32"; _}, _) ->
@@ -430,11 +430,11 @@ let gen_v2_field_read ~loc (ftype : core_type) (byte_off_expr : expression) :
           raw_ptr
           (base_off + [%e byte_off_expr])]
   | Ptyp_constr ({txt = Lident type_name; _}, _) ->
-      (* Nested custom type - call its _custom_v2.get directly with adjusted pointer *)
-      let custom_v2_get =
+      (* Nested custom type - call its _custom.get directly with adjusted pointer *)
+      let custom_get =
         Ast_builder.Default.pexp_field
           ~loc
-          (Ast_builder.Default.evar ~loc (type_name ^ "_custom_v2"))
+          (Ast_builder.Default.evar ~loc (type_name ^ "_custom"))
           {txt = Lident "get"; loc}
       in
       (* Adjust pointer to field offset, then read at index 0 *)
@@ -443,12 +443,12 @@ let gen_v2_field_read ~loc (ftype : core_type) (byte_off_expr : expression) :
           let byte_ptr = Ctypes.from_voidp Ctypes.uint8_t raw_ptr in
           Ctypes.to_voidp Ctypes.(byte_ptr +@ (base_off + [%e byte_off_expr]))
         in
-        [%e custom_v2_get] field_ptr 0]
+        [%e custom_get] field_ptr 0]
   | Ptyp_constr ({txt = Ldot (_, type_name); _}, _) ->
-      let custom_v2_get =
+      let custom_get =
         Ast_builder.Default.pexp_field
           ~loc
-          (Ast_builder.Default.evar ~loc (type_name ^ "_custom_v2"))
+          (Ast_builder.Default.evar ~loc (type_name ^ "_custom"))
           {txt = Lident "get"; loc}
       in
       [%expr
@@ -456,7 +456,7 @@ let gen_v2_field_read ~loc (ftype : core_type) (byte_off_expr : expression) :
           let byte_ptr = Ctypes.from_voidp Ctypes.uint8_t raw_ptr in
           Ctypes.to_voidp Ctypes.(byte_ptr +@ (base_off + [%e byte_off_expr]))
         in
-        [%e custom_v2_get] field_ptr 0]
+        [%e custom_get] field_ptr 0]
   | _ ->
       (* Fallback to float32 for unknown types *)
       [%expr
@@ -465,7 +465,7 @@ let gen_v2_field_read ~loc (ftype : core_type) (byte_off_expr : expression) :
           (base_off + [%e byte_off_expr])]
 
 (** Helper to generate a V2 field write expression based on field type. *)
-let gen_v2_field_write ~loc (ftype : core_type) (byte_off_expr : expression)
+let gen_field_write ~loc (ftype : core_type) (byte_off_expr : expression)
     (value_expr : expression) : expression =
   match ftype.ptyp_desc with
   | Ptyp_constr ({txt = Lident "float32"; _}, _) ->
@@ -499,11 +499,11 @@ let gen_v2_field_write ~loc (ftype : core_type) (byte_off_expr : expression)
           (base_off + [%e byte_off_expr])
           [%e value_expr]]
   | Ptyp_constr ({txt = Lident type_name; _}, _) ->
-      (* Nested custom type - call its _custom_v2.set directly with adjusted pointer *)
-      let custom_v2_set =
+      (* Nested custom type - call its _custom.set directly with adjusted pointer *)
+      let custom_set =
         Ast_builder.Default.pexp_field
           ~loc
-          (Ast_builder.Default.evar ~loc (type_name ^ "_custom_v2"))
+          (Ast_builder.Default.evar ~loc (type_name ^ "_custom"))
           {txt = Lident "set"; loc}
       in
       [%expr
@@ -511,12 +511,12 @@ let gen_v2_field_write ~loc (ftype : core_type) (byte_off_expr : expression)
           let byte_ptr = Ctypes.from_voidp Ctypes.uint8_t raw_ptr in
           Ctypes.to_voidp Ctypes.(byte_ptr +@ (base_off + [%e byte_off_expr]))
         in
-        [%e custom_v2_set] field_ptr 0 [%e value_expr]]
+        [%e custom_set] field_ptr 0 [%e value_expr]]
   | Ptyp_constr ({txt = Ldot (_, type_name); _}, _) ->
-      let custom_v2_set =
+      let custom_set =
         Ast_builder.Default.pexp_field
           ~loc
-          (Ast_builder.Default.evar ~loc (type_name ^ "_custom_v2"))
+          (Ast_builder.Default.evar ~loc (type_name ^ "_custom"))
           {txt = Lident "set"; loc}
       in
       [%expr
@@ -524,7 +524,7 @@ let gen_v2_field_write ~loc (ftype : core_type) (byte_off_expr : expression)
           let byte_ptr = Ctypes.from_voidp Ctypes.uint8_t raw_ptr in
           Ctypes.to_voidp Ctypes.(byte_ptr +@ (base_off + [%e byte_off_expr]))
         in
-        [%e custom_v2_set] field_ptr 0 [%e value_expr]]
+        [%e custom_set] field_ptr 0 [%e value_expr]]
   | _ ->
       [%expr
         Spoc_core.Vector.Custom_helpers.write_float32
@@ -532,17 +532,16 @@ let gen_v2_field_write ~loc (ftype : core_type) (byte_off_expr : expression)
           (base_off + [%e byte_off_expr])
           [%e value_expr]]
 
-(** Generate a <name>_custom_v2 value for Spoc_core.Vector.custom_type. For a
+(** Generate a <name>_custom value for Spoc_core.Vector.custom_type. For a
     record type (e.g., point with float32 fields), generates get/set functions
     using Ctypes pointer arithmetic. Supports nested custom types via their
-    _custom_v2 accessor. *)
-let generate_custom_v2_value ~loc (td : type_declaration) : structure_item list
-    =
+    _custom accessor. *)
+let generate_custom_value ~loc (td : type_declaration) : structure_item list =
   match td.ptype_kind with
   | Ptype_record labels ->
       let type_name = td.ptype_name.txt in
-      let custom_v2_name = type_name ^ "_custom_v2" in
-      let custom_v2_pat = Ast_builder.Default.pvar ~loc custom_v2_name in
+      let custom_name = type_name ^ "_custom" in
+      let custom_pat = Ast_builder.Default.pvar ~loc custom_name in
       let size = calc_type_size labels in
       let size_expr = Ast_builder.Default.eint ~loc size in
       let name_expr = Ast_builder.Default.estring ~loc type_name in
@@ -573,7 +572,7 @@ let generate_custom_v2_value ~loc (td : type_declaration) : structure_item list
 
       (* Generate a function that creates the custom_type when called.
          This avoids the value restriction since it's a function definition. *)
-      let make_fn_name = type_name ^ "_make_custom_v2" in
+      let make_fn_name = type_name ^ "_make_custom" in
       let make_fn_pat = Ast_builder.Default.pvar ~loc make_fn_name in
       let make_fn_call =
         Ast_builder.Default.eapply
@@ -587,7 +586,7 @@ let generate_custom_v2_value ~loc (td : type_declaration) : structure_item list
         List.map
           (fun (name, byte_off, ftype) ->
             let byte_off_expr = Ast_builder.Default.eint ~loc byte_off in
-            let field_expr = gen_v2_field_read ~loc ftype byte_off_expr in
+            let field_expr = gen_field_read ~loc ftype byte_off_expr in
             ({txt = Lident name; loc}, field_expr))
           field_infos
       in
@@ -612,7 +611,7 @@ let generate_custom_v2_value ~loc (td : type_declaration) : structure_item list
                 [%expr v]
                 {txt = Lident name; loc}
             in
-            gen_v2_field_write ~loc ftype byte_off_expr field_access)
+            gen_field_write ~loc ftype byte_off_expr field_access)
           field_infos
       in
       let set_body =
@@ -636,7 +635,7 @@ let generate_custom_v2_value ~loc (td : type_declaration) : structure_item list
       in
 
       [
-        (* Generate: let point_make_custom_v2 = fun () -> { ... } *)
+        (* Generate: let point_make_custom = fun () -> { ... } *)
         [%stri
           let [%p make_fn_pat] =
            fun () ->
@@ -647,8 +646,8 @@ let generate_custom_v2_value ~loc (td : type_declaration) : structure_item list
                set = [%e set_fn];
              }
               : [%t type_annot])];
-        (* Generate: let point_custom_v2 = point_make_custom_v2 () *)
-        [%stri let [%p custom_v2_pat] = [%e make_fn_call]];
+        (* Generate: let point_custom = point_make_custom () *)
+        [%stri let [%p custom_pat] = [%e make_fn_call]];
       ]
   | Ptype_variant constrs ->
       (* Generate V2 custom type for variants (with or without payloads).
@@ -656,8 +655,8 @@ let generate_custom_v2_value ~loc (td : type_declaration) : structure_item list
          For simple enums (no args), elem_size=4.
          For variants with payloads, elem_size=4+max_payload_bytes. *)
       let type_name = td.ptype_name.txt in
-      let custom_v2_name = type_name ^ "_custom_v2" in
-      let custom_v2_pat = Ast_builder.Default.pvar ~loc custom_v2_name in
+      let custom_name = type_name ^ "_custom" in
+      let custom_pat = Ast_builder.Default.pvar ~loc custom_name in
       let name_expr = Ast_builder.Default.estring ~loc type_name in
       let type_annot =
         Ast_builder.Default.ptyp_constr
@@ -699,7 +698,7 @@ let generate_custom_v2_value ~loc (td : type_declaration) : structure_item list
               | Pcstr_tuple [ct] ->
                   (* Read payload at base_off+4 *)
                   let payload_off = Ast_builder.Default.eint ~loc 4 in
-                  let payload_expr = gen_v2_field_read ~loc ct payload_off in
+                  let payload_expr = gen_field_read ~loc ct payload_off in
                   Ast_builder.Default.pexp_construct
                     ~loc
                     {txt = Lident cd.pcd_name.txt; loc}
@@ -710,7 +709,7 @@ let generate_custom_v2_value ~loc (td : type_declaration) : structure_item list
                     List.fold_left
                       (fun (off, acc) ct ->
                         let off_expr = Ast_builder.Default.eint ~loc off in
-                        let arg_expr = gen_v2_field_read ~loc ct off_expr in
+                        let arg_expr = gen_field_read ~loc ct off_expr in
                         let size = get_type_size_from_core_type ct in
                         (off + size, acc @ [arg_expr]))
                       (4, [])
@@ -740,7 +739,7 @@ let generate_custom_v2_value ~loc (td : type_declaration) : structure_item list
               None
         | Pcstr_tuple [ct] ->
             let payload_off = Ast_builder.Default.eint ~loc 4 in
-            let payload_expr = gen_v2_field_read ~loc ct payload_off in
+            let payload_expr = gen_field_read ~loc ct payload_off in
             Ast_builder.Default.pexp_construct
               ~loc
               {txt = Lident fallback_ctor.pcd_name.txt; loc}
@@ -807,7 +806,7 @@ let generate_custom_v2_value ~loc (td : type_declaration) : structure_item list
                 in
                 let payload_off = Ast_builder.Default.eint ~loc 4 in
                 let write_payload =
-                  gen_v2_field_write ~loc ct payload_off [%expr payload]
+                  gen_field_write ~loc ct payload_off [%expr payload]
                 in
                 {
                   pc_lhs = ctor_pat;
@@ -842,7 +841,7 @@ let generate_custom_v2_value ~loc (td : type_declaration) : structure_item list
                         Ast_builder.Default.evar ~loc (Printf.sprintf "arg%d" j)
                       in
                       let write_stmt =
-                        gen_v2_field_write ~loc ct off_expr arg_var
+                        gen_field_write ~loc ct off_expr arg_var
                       in
                       let size = get_type_size_from_core_type ct in
                       (off + size, acc @ [write_stmt]))
@@ -890,7 +889,7 @@ let generate_custom_v2_value ~loc (td : type_declaration) : structure_item list
       in
       let set_fn = [%expr fun raw_ptr idx v -> [%e set_body]] in
 
-      let make_fn_name = type_name ^ "_make_custom_v2" in
+      let make_fn_name = type_name ^ "_make_custom" in
       let make_fn_pat = Ast_builder.Default.pvar ~loc make_fn_name in
       let make_fn_call =
         Ast_builder.Default.eapply
@@ -911,7 +910,7 @@ let generate_custom_v2_value ~loc (td : type_declaration) : structure_item list
                set = [%e set_fn];
              }
               : [%t type_annot])];
-        [%stri let [%p custom_v2_pat] = [%e make_fn_call]];
+        [%stri let [%p custom_pat] = [%e make_fn_call]];
       ]
   | _ -> []
 
@@ -1011,15 +1010,15 @@ let sarek_type_rule =
                 let accessors = generate_field_accessors ~loc td in
                 (* Generate <name>_custom value for SPOC Vector.Custom *)
                 let custom_val = generate_custom_value ~loc td in
-                (* Generate <name>_custom_v2 value for V2 Spoc_core.Vector.custom_type *)
-                let custom_v2_val = generate_custom_v2_value ~loc td in
+                (* Generate <name>_custom value for Spoc_core.Vector.custom_type *)
+                let custom_ir_val = generate_custom_value ~loc td in
                 (* Generate runtime registration code for cross-module composability.
                    This follows the ppx_deriving pattern: the PPX generates OCaml code
                    that registers the type at module initialization time. When another
                    module depends on this library, the registration runs before any
                    kernels are JIT-compiled, making the type info available. *)
                 let registration = generate_type_registration ~loc td in
-                accessors @ custom_val @ custom_v2_val @ registration
+                accessors @ custom_val @ custom_ir_val @ registration
             | None -> [])
           (List.combine decls payloads)
       in
@@ -1152,27 +1151,27 @@ let expand_kernel ~ctxt payload =
             Sarek_debug.log_exit "lower_kernel" ;
             let ret_val = Sarek_lower.lower_return_value tkernel in
 
-            (* 7b. Lower to Sarek_ir (V2) - optional, fails gracefully *)
+            (* 7b. Lower to Sarek_ir - optional, fails gracefully *)
             Sarek_debug.log_to_file
-              (Printf.sprintf "[%s] step 7b: V2 lowering start" kern_name) ;
+              (Printf.sprintf "[%s] step 7b: IR lowering start" kern_name) ;
             let v2_kernel =
               try
                 let t0 = Unix.gettimeofday () in
-                Sarek_debug.log_enter "lower_kernel_v2" ;
-                let k, _constructors_v2 = Sarek_lower_v2.lower_kernel tkernel in
+                Sarek_debug.log_enter "lower_kernel_ir" ;
+                let k, _constructors_ir = Sarek_lower_ir.lower_kernel tkernel in
                 let t1 = Unix.gettimeofday () in
                 Sarek_debug.log_to_file
                   (Printf.sprintf
-                     "[%s] step 7b: V2 lowering done (%.3fs)"
+                     "[%s] step 7b: IR lowering done (%.3fs)"
                      kern_name
                      (t1 -. t0)) ;
-                Sarek_debug.log_exit "lower_kernel_v2" ;
+                Sarek_debug.log_exit "lower_kernel_ir" ;
                 Some k
               with e ->
-                Sarek_debug.log_exit "lower_kernel_v2 (failed)" ;
+                Sarek_debug.log_exit "lower_kernel_ir (failed)" ;
                 Sarek_debug.log_to_file
                   (Printf.sprintf
-                     "[%s] step 7b: V2 lowering failed: %s"
+                     "[%s] step 7b: IR lowering failed: %s"
                      kern_name
                      (Printexc.to_string e)) ;
                 None
@@ -1189,7 +1188,7 @@ let expand_kernel ~ctxt payload =
               Sarek_quote.quote_kernel
                 ~loc
                 ~native_kernel
-                ?ir_v2:v2_kernel
+                ?ir_opt:v2_kernel
                 tkernel
                 ir
                 constructors

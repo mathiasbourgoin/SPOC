@@ -1084,7 +1084,7 @@ let args_from_obj_array (k : kernel) (obj_args : Obj.t array) :
 
 (** Convert V2 Vector to interpreter value array. Uses the vector's element type
     to create properly typed values. *)
-let v2_vector_to_array : type a b. (a, b) Spoc_core.Vector.t -> value array =
+let vector_to_array : type a b. (a, b) Spoc_core.Vector.t -> value array =
  fun vec ->
   let len = Spoc_core.Vector.length vec in
   match Spoc_core.Vector.kind vec with
@@ -1102,8 +1102,8 @@ let v2_vector_to_array : type a b. (a, b) Spoc_core.Vector.t -> value array =
           VFloat32 (Obj.magic (Spoc_core.Vector.get vec i) : float))
 
 (** Write interpreter value array back to V2 Vector *)
-let array_to_v2_vector : type a b.
-    value array -> (a, b) Spoc_core.Vector.t -> unit =
+let array_to_vector : type a b. value array -> (a, b) Spoc_core.Vector.t -> unit
+    =
  fun arr vec ->
   let len = min (Array.length arr) (Spoc_core.Vector.length vec) in
   match Spoc_core.Vector.kind vec with
@@ -1130,13 +1130,13 @@ let array_to_v2_vector : type a b.
 
 (** Existential wrapper to track V2 Vector + its interpreter array for writeback
 *)
-type v2_writeback =
-  | V2Writeback : (('a, 'b) Spoc_core.Vector.t * value array) -> v2_writeback
+type writeback =
+  | Writeback : (('a, 'b) Spoc_core.Vector.t * value array) -> writeback
 
 (** Convert Kernel_arg.t list to interpreter args, tracking vectors for
     writeback *)
 let args_from_kernel_args (k : kernel) (kargs : Spoc_core.Kernel_arg.t list) :
-    (string * arg) list * v2_writeback list =
+    (string * arg) list * writeback list =
   let writebacks = ref [] in
   let idx = ref 0 in
   let args =
@@ -1151,8 +1151,8 @@ let args_from_kernel_args (k : kernel) (kargs : Spoc_core.Kernel_arg.t list) :
               incr idx ;
               match karg with
               | Spoc_core.Kernel_arg.Vec vec ->
-                  let arr = v2_vector_to_array vec in
-                  writebacks := V2Writeback (vec, arr) :: !writebacks ;
+                  let arr = vector_to_array vec in
+                  writebacks := Writeback (vec, arr) :: !writebacks ;
                   Some (v.var_name, ArgArray arr)
               | _ ->
                   failwith
@@ -1185,14 +1185,12 @@ let args_from_kernel_args (k : kernel) (kargs : Spoc_core.Kernel_arg.t list) :
 (** Run kernel with V2 Vector arguments (Kernel_arg.t list). This is the
     preferred entry point for Native/Interpreter backends. Handles conversion
     to/from interpreter format with proper writeback. *)
-let run_kernel_with_v2_args (k : kernel) ~(block : int * int * int)
+let run_kernel_with_args (k : kernel) ~(block : int * int * int)
     ~(grid : int * int * int) (kargs : Spoc_core.Kernel_arg.t list) : unit =
   let args, writebacks = args_from_kernel_args k kargs in
   run_kernel k ~block ~grid args ;
   (* Write modified arrays back to V2 Vectors *)
-  List.iter
-    (fun (V2Writeback (vec, arr)) -> array_to_v2_vector arr vec)
-    writebacks
+  List.iter (fun (Writeback (vec, arr)) -> array_to_vector arr vec) writebacks
 
 (** Convert Obj.t array (with V2 Vectors) to Kernel_arg.t list. Uses kernel
     param declarations to determine which args are vectors. This bridges the
@@ -1239,7 +1237,7 @@ let obj_array_to_kernel_args (k : kernel) (obj_args : Obj.t array) :
 (** Run kernel with Obj.t array containing V2 Vectors. This is the entry point
     for backends that receive Obj.t arrays. Converts to Kernel_arg.t list and
     uses the typed interface internally. *)
-let run_kernel_with_v2_obj_args (k : kernel) ~(block : int * int * int)
+let run_kernel_with_obj_args (k : kernel) ~(block : int * int * int)
     ~(grid : int * int * int) (obj_args : Obj.t array) : unit =
   let kargs = obj_array_to_kernel_args k obj_args in
-  run_kernel_with_v2_args k ~block ~grid kargs
+  run_kernel_with_args k ~block ~grid kargs

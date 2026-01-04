@@ -17,7 +17,7 @@ let consumer =
 
 (** Helper to get V2 IR from kernel *)
 let get_ir kirc =
-  match kirc.Sarek.Kirc_types.body_v2 with
+  match kirc.Sarek.Kirc_types.body_ir with
   | Some ir -> ir
   | None -> failwith "Kernel has no V2 IR"
 

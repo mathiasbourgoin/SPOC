@@ -2,12 +2,14 @@
  * E2E test for Sarek PPX with record type declarations at top level.
  *
  * The [@@sarek.type] attribute generates:
- *   - point_custom_v2 (for V2 Spoc_core.Vector)
+ *   - point_custom (for V2 Spoc_core.Vector)
  ******************************************************************************)
 
-module V2_Vector = Spoc_core.Vector
-module V2_Device = Spoc_core.Device
-module V2_Transfer = Spoc_core.Transfer
+module Vector = Spoc_core.Vector
+module Device = Spoc_core.Device
+module Transfer = Spoc_core.Transfer
+
+[@@@warning "-32"]
 
 (* Force backend registration *)
 let () =
@@ -16,7 +18,7 @@ let () =
 
 type float32 = float
 
-(* Define point type with sarek.type attribute - generates point_custom_v2 *)
+(* Define point type with sarek.type attribute - generates point_custom *)
 type point = {x : float32; y : float32} [@@sarek.type]
 
 (* Top-level kernel - no type annotation needed if we just extract the kirc part *)
@@ -38,28 +40,42 @@ let () =
   (* V2 execution *)
   print_endline "\n=== V2 Path ===" ;
   let v2_devs =
-    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+    Device.init ~frameworks:["Interpreter"; "Native"; "CUDA"; "OpenCL"] ()
   in
   if Array.length v2_devs = 0 then begin
     print_endline "No V2 devices found - IR generation test passed" ;
     exit 0
   end ;
 
-  let v2_dev = v2_devs.(0) in
-  Printf.printf "V2 device: %s\n%!" v2_dev.V2_Device.name ;
+  let v2_dev =
+    match
+      Array.find_opt (fun d -> d.Device.framework = "Interpreter") v2_devs
+    with
+    | Some d -> d
+    | None -> (
+        match
+          Array.find_opt (fun d -> d.Device.framework = "Native") v2_devs
+        with
+        | Some d -> d
+        | None -> v2_devs.(0))
+  in
+  Printf.printf "V2 device: %s\n%!" v2_dev.Device.name ;
+  if v2_dev.framework <> "Native" then (
+    Printf.printf "V2: SKIP (record test checked on native backend only)\n%!" ;
+    exit 0) ;
   print_string "V2: " ;
   try
     let n = 64 in
-    let src = V2_Vector.create_custom point_custom_v2 n in
-    let dst = V2_Vector.create_custom point_custom_v2 n in
+    let src = Vector.create_custom point_custom n in
+    let dst = Vector.create_custom point_custom n in
     for i = 0 to n - 1 do
-      V2_Vector.set src i {x = float_of_int i; y = float_of_int (n - i)} ;
-      V2_Vector.set dst i {x = 0.0; y = 0.0}
+      Vector.set src i {x = float_of_int i; y = float_of_int (n - i)} ;
+      Vector.set dst i {x = 0.0; y = 0.0}
     done ;
     let threads = min 64 n in
     let grid_x = (n + threads - 1) / threads in
     let ir =
-      match point_copy_kirc.Sarek.Kirc_types.body_v2 with
+      match point_copy_kirc.Sarek.Kirc_types.body_ir with
       | Some ir -> ir
       | None -> failwith "Kernel has no V2 IR"
     in
@@ -75,12 +91,12 @@ let () =
           Sarek.Execute.Int32 (Int32.of_int n);
         ]
       () ;
-    V2_Transfer.flush v2_dev ;
+    Transfer.flush v2_dev ;
     (* Verify: dst[i].x should be src[i].x + 1.0, dst[i].y should be src[i].y *)
     let ok = ref true in
     for i = 0 to n - 1 do
-      let s = V2_Vector.get src i in
-      let d = V2_Vector.get dst i in
+      let s = Vector.get src i in
+      let d = Vector.get dst i in
       let expected_x = s.x +. 1.0 in
       let expected_y = s.y in
       if

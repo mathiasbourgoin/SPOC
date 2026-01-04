@@ -1,5 +1,5 @@
 (******************************************************************************
- * Native Plugin V2 - Phase 4 Backend Implementation
+ * Native Plugin Backend Implementation
  *
  * Implements the Framework_sig.BACKEND interface for CPU execution.
  * Extends Native_plugin with:
@@ -138,7 +138,7 @@ module Native_intrinsics : Framework_sig.INTRINSIC_REGISTRY = struct
 end
 
 (** Native Backend - implements BACKEND *)
-module Native_v2 : Framework_sig.BACKEND = struct
+module Backend : Framework_sig.BACKEND = struct
   (* Include all of BACKEND from Native_base *)
   include Native_base
 
@@ -148,8 +148,8 @@ module Native_v2 : Framework_sig.BACKEND = struct
   (** Generate source - not used for Direct backend *)
   let generate_source (_ir : Sarek_ir_types.kernel) : string option = None
 
-  (** Execute directly using V2 native function from IR. Args contain V2 Vectors
-      directly (not expanded buffer/length pairs). The V2 native function uses
+  (** Execute directly using native function from IR. Args contain vectors
+      directly (not expanded buffer/length pairs). The native function uses
       Spoc_core.Vector.get/set for access. *)
   let execute_direct
       ~(native_fn :
@@ -166,19 +166,19 @@ module Native_v2 : Framework_sig.BACKEND = struct
         let kernel : Sarek.Sarek_ir.kernel = Obj.obj ir_obj in
         match kernel.kern_native_fn with
         | Some (Sarek.Sarek_ir.NativeFn fn) ->
-            (* Use V2 native function - args are V2 Vectors directly *)
+            (* Use native function - args are vectors directly *)
             let block_tuple = (block.x, block.y, block.z) in
             let grid_tuple = (grid.x, grid.y, grid.z) in
             fn ~parallel:true ~block:block_tuple ~grid:grid_tuple args
         | None ->
-            (* Fall back to IR interpretation with V2 Vector support *)
+            (* Fall back to IR interpretation with vector support *)
             Sarek.Sarek_ir_interp.parallel_mode := true ;
-            Sarek.Sarek_ir_interp.run_kernel_with_v2_obj_args
+            Sarek.Sarek_ir_interp.run_kernel_with_obj_args
               kernel
               ~block:(block.x, block.y, block.z)
               ~grid:(grid.x, grid.y, grid.z)
               args)
-    | None -> failwith "Native_v2.execute_direct: IR required"
+    | None -> failwith "Native backend execute_direct: IR required"
 
   (** Native intrinsic registry *)
   module Intrinsics = Native_intrinsics
@@ -205,18 +205,18 @@ module Native_v2 : Framework_sig.BACKEND = struct
          lang_str)
 end
 
-(** Auto-register V2 backend when module is loaded *)
-let registered_v2 =
+(** Auto-register backend when module is loaded *)
+let registered_backend =
   lazy
-    (if Native_v2.is_available () then
+    (if Backend.is_available () then
        Framework_registry.register_backend
          ~priority:10
-         (module Native_v2 : Framework_sig.BACKEND))
+         (module Backend : Framework_sig.BACKEND))
 
-let () = Lazy.force registered_v2
+let () = Lazy.force registered_backend
 
 (** Force module initialization *)
-let init () = Lazy.force registered_v2
+let init () = Lazy.force registered_backend
 
 (** {1 Additional Native-specific Functions} *)
 
@@ -235,8 +235,8 @@ let run_kernel_direct ~name
   ignore name ;
   native_fn args grid block
 
-(** Register a kernel for direct execution (wraps Native_plugin_base.register_kernel)
-*)
+(** Register a kernel for direct execution (wraps
+    Native_plugin_base.register_kernel) *)
 let register_kernel = Native_plugin_base.register_kernel
 
 (** Check if a kernel is registered *)

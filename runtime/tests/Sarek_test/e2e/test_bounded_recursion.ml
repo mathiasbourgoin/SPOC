@@ -9,9 +9,9 @@
 
 module Std = Sarek_stdlib.Std
 open Sarek
-module V2_Vector = Spoc_core.Vector
-module V2_Device = Spoc_core.Device
-module V2_Transfer = Spoc_core.Transfer
+module Vector = Spoc_core.Vector
+module Device = Spoc_core.Device
+module Transfer = Spoc_core.Transfer
 
 (* Force backend registration *)
 let () =
@@ -57,14 +57,14 @@ let gcd_kirc =
 (* V2 test for tail-recursive factorial *)
 let test_factorial_v2 dev =
   print_endline "=== Tail-recursive factorial ===" ;
-  Printf.printf "V2 Testing on: %s\n%!" dev.V2_Device.name ;
+  Printf.printf "V2 Testing on: %s\n%!" dev.Device.name ;
 
-  let output = V2_Vector.create V2_Vector.int32 1 in
-  V2_Vector.set output 0 0l ;
+  let output = Vector.create Vector.int32 1 in
+  Vector.set output 0 0l ;
   let n = 10l in
 
   let ir =
-    match factorial_kirc.Sarek.Kirc_types.body_v2 with
+    match factorial_kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
     | None -> failwith "Kernel has no V2 IR"
   in
@@ -78,11 +78,11 @@ let test_factorial_v2 dev =
       ~ir
       ~args:[Sarek.Execute.Vec output; Sarek.Execute.Int32 n]
       () ;
-    V2_Transfer.flush dev ;
+    Transfer.flush dev ;
     let t1 = Unix.gettimeofday () in
     Printf.printf "  V2 exec: %.2f ms\n%!" ((t1 -. t0) *. 1000.0) ;
 
-    let got = V2_Vector.get output 0 in
+    let got = Vector.get output 0 in
     (* 10! = 3628800 *)
     let expected = 3628800l in
     if got = expected then (
@@ -98,15 +98,15 @@ let test_factorial_v2 dev =
 (* V2 test for tail-recursive power *)
 let test_power_v2 dev =
   print_endline "=== Tail-recursive power ===" ;
-  Printf.printf "V2 Testing on: %s\n%!" dev.V2_Device.name ;
+  Printf.printf "V2 Testing on: %s\n%!" dev.Device.name ;
 
-  let output = V2_Vector.create V2_Vector.int32 1 in
-  V2_Vector.set output 0 0l ;
+  let output = Vector.create Vector.int32 1 in
+  Vector.set output 0 0l ;
   let base = 2l in
   let exp = 10l in
 
   let ir =
-    match power_kirc.Sarek.Kirc_types.body_v2 with
+    match power_kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
     | None -> failwith "Kernel has no V2 IR"
   in
@@ -125,11 +125,11 @@ let test_power_v2 dev =
           Sarek.Execute.Int32 exp;
         ]
       () ;
-    V2_Transfer.flush dev ;
+    Transfer.flush dev ;
     let t1 = Unix.gettimeofday () in
     Printf.printf "  V2 exec: %.2f ms\n%!" ((t1 -. t0) *. 1000.0) ;
 
-    let got = V2_Vector.get output 0 in
+    let got = Vector.get output 0 in
     (* 2^10 = 1024 *)
     let expected = 1024l in
     if got = expected then (
@@ -145,15 +145,15 @@ let test_power_v2 dev =
 (* V2 test for tail-recursive GCD *)
 let test_gcd_v2 dev =
   print_endline "=== Tail-recursive GCD ===" ;
-  Printf.printf "V2 Testing on: %s\n%!" dev.V2_Device.name ;
+  Printf.printf "V2 Testing on: %s\n%!" dev.Device.name ;
 
-  let output = V2_Vector.create V2_Vector.int32 1 in
-  V2_Vector.set output 0 0l ;
+  let output = Vector.create Vector.int32 1 in
+  Vector.set output 0 0l ;
   let a = 48l in
   let b = 18l in
 
   let ir =
-    match gcd_kirc.Sarek.Kirc_types.body_v2 with
+    match gcd_kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
     | None -> failwith "Kernel has no V2 IR"
   in
@@ -168,11 +168,11 @@ let test_gcd_v2 dev =
       ~args:
         [Sarek.Execute.Vec output; Sarek.Execute.Int32 a; Sarek.Execute.Int32 b]
       () ;
-    V2_Transfer.flush dev ;
+    Transfer.flush dev ;
     let t1 = Unix.gettimeofday () in
     Printf.printf "  V2 exec: %.2f ms\n%!" ((t1 -. t0) *. 1000.0) ;
 
-    let got = V2_Vector.get output 0 in
+    let got = Vector.get output 0 in
     (* gcd(48, 18) = 6 *)
     let expected = 6l in
     if got = expected then (
@@ -190,7 +190,7 @@ let () =
   print_endline "" ;
 
   let v2_devs =
-    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+    Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
   if Array.length v2_devs = 0 then (
     print_endline "No V2 devices found - skipping" ;

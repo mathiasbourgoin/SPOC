@@ -4,7 +4,7 @@
  ******************************************************************************)
 
 (* V2 module aliases *)
-module V2_Device = Spoc_core.Device
+module Device = Spoc_core.Device
 
 (* Force backend registration *)
 let () =
@@ -28,7 +28,7 @@ let () =
   print_endline "=========================================" ;
 
   let devs =
-    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+    Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
   if Array.length devs = 0 then begin
     print_endline "No GPU devices found - IR generation test PASSED" ;
@@ -36,7 +36,7 @@ let () =
   end ;
 
   let dev = devs.(0) in
-  Printf.printf "Using device: %s\n%!" dev.V2_Device.name ;
+  Printf.printf "Using device: %s\n%!" dev.Device.name ;
 
   (* Try to generate kernel code *)
   (try print_endline "Kernel code generation PASSED"

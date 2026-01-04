@@ -5,9 +5,9 @@
  * without using the Sarek DSL.
  ******************************************************************************)
 
-module V2_Device = Spoc_core.Device
-module V2_Vector = Spoc_core.Vector
-module V2_Transfer = Spoc_core.Transfer
+module Device = Spoc_core.Device
+module Vector = Spoc_core.Vector
+module Transfer = Spoc_core.Transfer
 
 (* Force backend registration *)
 let () =
@@ -59,15 +59,15 @@ extern "C" __global__ void vector_add(
 (** Run external kernel test on a device *)
 let run_test dev =
   let n = cfg.size in
-  let a = V2_Vector.create V2_Vector.float32 n in
-  let b = V2_Vector.create V2_Vector.float32 n in
-  let c = V2_Vector.create V2_Vector.float32 n in
+  let a = Vector.create Vector.float32 n in
+  let b = Vector.create Vector.float32 n in
+  let c = Vector.create Vector.float32 n in
 
   (* Initialize vectors *)
   for i = 0 to n - 1 do
-    V2_Vector.set a i (float_of_int i) ;
-    V2_Vector.set b i (float_of_int (i * 2)) ;
-    V2_Vector.set c i 0.0
+    Vector.set a i (float_of_int i) ;
+    Vector.set b i (float_of_int (i * 2)) ;
+    Vector.set c i 0.0
   done ;
 
   let threads = cfg.block_size in
@@ -75,7 +75,7 @@ let run_test dev =
 
   (* Select source based on device framework *)
   let source, lang =
-    match dev.V2_Device.framework with
+    match dev.Device.framework with
     | "CUDA" -> (cuda_vector_add, Sarek.Execute.CUDA_Source)
     | "OpenCL" -> (opencl_vector_add, Sarek.Execute.OpenCL_Source)
     | fw -> failwith ("External kernels not supported on " ^ fw)
@@ -98,8 +98,8 @@ let run_test dev =
       Sarek.Execute.Int32 (Int32.of_int n);
     ] ;
 
-  V2_Transfer.flush dev ;
-  V2_Transfer.to_cpu c ;
+  Transfer.flush dev ;
+  Transfer.to_cpu c ;
 
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
@@ -108,7 +108,7 @@ let run_test dev =
   let ok = ref true in
   for i = 0 to n - 1 do
     let expected = float_of_int i +. float_of_int (i * 2) in
-    let got = V2_Vector.get c i in
+    let got = Vector.get c i in
     if abs_float (got -. expected) > 1e-3 then begin
       ok := false ;
       if i < 5 then
@@ -121,7 +121,7 @@ let run_test dev =
 (** Test that Native/Interpreter correctly reject external kernels *)
 let test_rejection dev =
   let n = 10 in
-  let a = V2_Vector.create V2_Vector.float32 n in
+  let a = Vector.create Vector.float32 n in
   try
     Sarek.Execute.run_source
       ~device:dev
@@ -150,7 +150,7 @@ let () =
 
   print_endline "=== External Kernel Test ===" ;
   let devs =
-    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+    Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
   if Array.length devs = 0 then begin
     print_endline "No devices found" ;
@@ -163,7 +163,7 @@ let () =
   let gpu_devs =
     Array.to_list devs
     |> List.filter (fun d ->
-        d.V2_Device.framework = "CUDA" || d.V2_Device.framework = "OpenCL")
+        d.Device.framework = "CUDA" || d.Device.framework = "OpenCL")
     |> fun devs ->
     (* If -d flag specified, filter to just that device *)
     if cfg.dev_id >= 0 && cfg.dev_id < List.length devs then
@@ -176,7 +176,7 @@ let () =
   else
     List.iter
       (fun dev ->
-        Printf.printf "  [%s] %s: %!" dev.V2_Device.framework dev.V2_Device.name ;
+        Printf.printf "  [%s] %s: %!" dev.Device.framework dev.Device.name ;
         try
           let ok, time = run_test dev in
           Printf.printf
@@ -194,13 +194,12 @@ let () =
   let non_gpu_devs =
     Array.to_list devs
     |> List.filter (fun d ->
-        d.V2_Device.framework = "Native"
-        || d.V2_Device.framework = "Interpreter")
+        d.Device.framework = "Native" || d.Device.framework = "Interpreter")
   in
 
   List.iter
     (fun dev ->
-      Printf.printf "  [%s] %s: %!" dev.V2_Device.framework dev.V2_Device.name ;
+      Printf.printf "  [%s] %s: %!" dev.Device.framework dev.Device.name ;
       if test_rejection dev then print_endline "correctly rejected"
       else begin
         print_endline "FAIL (should have been rejected)" ;

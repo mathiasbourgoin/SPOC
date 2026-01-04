@@ -4,12 +4,12 @@
  ******************************************************************************)
 
 (* V2 module aliases *)
-module V2_Device = Spoc_core.Device
-module V2_Vector = Spoc_core.Vector
-module V2_Transfer = Spoc_core.Transfer
+module Device = Spoc_core.Device
+module Vector = Spoc_core.Vector
+module Transfer = Spoc_core.Transfer
 
 (* Type alias for kernel parameter annotations *)
-type ('a, 'b) vector = ('a, 'b) V2_Vector.t
+type ('a, 'b) vector = ('a, 'b) Vector.t
 
 (* Force backend registration *)
 let () =
@@ -33,21 +33,21 @@ let () =
   (* Get V2 IR *)
   let _, kirc = dispatch in
   print_endline "=== Variant helper IR ===" ;
-  (match kirc.Sarek.Kirc_types.body_v2 with
+  (match kirc.Sarek.Kirc_types.body_ir with
   | Some ir -> Sarek.Sarek_ir.print_kernel ir
   | None -> print_endline "(No V2 IR available)") ;
   print_endline "=========================" ;
 
   (* Run with V2 runtime *)
   let v2_devs =
-    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+    Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
   if Array.length v2_devs = 0 then (
     print_endline "No device found - IR generation test passed" ;
     exit 0) ;
   let dev = v2_devs.(0) in
-  Printf.printf "Using device: %s\n%!" dev.V2_Device.name ;
-  (match kirc.Sarek.Kirc_types.body_v2 with
+  Printf.printf "Using device: %s\n%!" dev.Device.name ;
+  (match kirc.Sarek.Kirc_types.body_ir with
   | Some ir ->
       Printf.printf
         "V2 IR available, kernel name: %s\n%!"

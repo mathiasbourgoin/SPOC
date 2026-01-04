@@ -19,7 +19,7 @@
   Sarek_convergence
   Sarek_lower
   Sarek_ir_ppx
-  Sarek_lower_v2
+  Sarek_lower_ir
   Sarek_quote_ir
   Sarek_parse
   Sarek_quote

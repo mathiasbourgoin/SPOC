@@ -2,6 +2,8 @@
  * Cross-module Sarek type definitions
  ******************************************************************************)
 
+[@@@warning "-32"]
+
 type float32 = float
 
 type vec2 = {x : float32; y : float32} [@@sarek.type]

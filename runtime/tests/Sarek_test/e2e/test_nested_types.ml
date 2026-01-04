@@ -5,13 +5,15 @@
  *   type point = { x: float32; y: float32 } [@@sarek.type]
  *   type colored_point = { color: int32; point: point } [@@sarek.type]
  *
- * The PPX generates composable _custom_v2 accessors that can read/write
+ * The PPX generates composable _custom accessors that can read/write
  * nested records by delegating to the inner type's accessor.
  ******************************************************************************)
 
-module V2_Vector = Spoc_core.Vector
-module V2_Device = Spoc_core.Device
-module V2_Transfer = Spoc_core.Transfer
+module Vector = Spoc_core.Vector
+module Device = Spoc_core.Device
+module Transfer = Spoc_core.Transfer
+
+[@@@warning "-32"]
 
 (* Force backend registration *)
 let () =
@@ -33,13 +35,13 @@ type colored_point = {color : color; pt : point} [@@sarek.type]
 let test_point () =
   print_endline "=== Test: Basic point type ===" ;
   let n = 4 in
-  let v = V2_Vector.create_custom point_custom_v2 n in
+  let v = Vector.create_custom point_custom n in
   for i = 0 to n - 1 do
-    V2_Vector.set v i {x = float_of_int i; y = float_of_int (i * 2)}
+    Vector.set v i {x = float_of_int i; y = float_of_int (i * 2)}
   done ;
   let ok = ref true in
   for i = 0 to n - 1 do
-    let p = V2_Vector.get v i in
+    let p = Vector.get v i in
     let expected_x = float_of_int i in
     let expected_y = float_of_int (i * 2) in
     if
@@ -63,16 +65,16 @@ let test_colored_point () =
   print_endline "=== Test: Nested colored_point type ===" ;
   let colors = [|Red; Green; Blue; Red|] in
   let n = 4 in
-  let v = V2_Vector.create_custom colored_point_custom_v2 n in
+  let v = Vector.create_custom colored_point_custom n in
   for i = 0 to n - 1 do
-    V2_Vector.set
+    Vector.set
       v
       i
       {color = colors.(i); pt = {x = float_of_int i; y = float_of_int (i * 2)}}
   done ;
   let ok = ref true in
   for i = 0 to n - 1 do
-    let cp = V2_Vector.get v i in
+    let cp = Vector.get v i in
     let expected_color = colors.(i) in
     let expected_x = float_of_int i in
     let expected_y = float_of_int (i * 2) in
@@ -106,9 +108,9 @@ type mixed_record = {count : int32; value : float32; flags : int32}
 let test_mixed_record () =
   print_endline "=== Test: Mixed int32/float32 record ===" ;
   let n = 4 in
-  let v = V2_Vector.create_custom mixed_record_custom_v2 n in
+  let v = Vector.create_custom mixed_record_custom n in
   for i = 0 to n - 1 do
-    V2_Vector.set
+    Vector.set
       v
       i
       {
@@ -119,7 +121,7 @@ let test_mixed_record () =
   done ;
   let ok = ref true in
   for i = 0 to n - 1 do
-    let r = V2_Vector.get v i in
+    let r = Vector.get v i in
     let expected_count = Int32.of_int i in
     let expected_value = float_of_int i *. 1.5 in
     let expected_flags = Int32.of_int (i * 10) in
@@ -150,15 +152,15 @@ type maybe_colored_point =
 let test_maybe_colored_point () =
   print_endline "=== Test: Variant with nested type payloads ===" ;
   let n = 4 in
-  let v = V2_Vector.create_custom maybe_colored_point_custom_v2 n in
+  let v = Vector.create_custom maybe_colored_point_custom n in
   (* Set up test data *)
-  V2_Vector.set v 0 (Red_pt {x = 1.0; y = 2.0}) ;
-  V2_Vector.set v 1 (Blue_pt {x = 3.0; y = 4.0}) ;
-  V2_Vector.set v 2 (Any_pt {color = Green; pt = {x = 5.0; y = 6.0}}) ;
-  V2_Vector.set v 3 No_point ;
+  Vector.set v 0 (Red_pt {x = 1.0; y = 2.0}) ;
+  Vector.set v 1 (Blue_pt {x = 3.0; y = 4.0}) ;
+  Vector.set v 2 (Any_pt {color = Green; pt = {x = 5.0; y = 6.0}}) ;
+  Vector.set v 3 No_point ;
   let ok = ref true in
   (* Check element 0: Red_pt *)
-  (match V2_Vector.get v 0 with
+  (match Vector.get v 0 with
   | Red_pt p when abs_float (p.x -. 1.0) < 1e-6 && abs_float (p.y -. 2.0) < 1e-6
     ->
       ()
@@ -172,7 +174,7 @@ let test_maybe_colored_point () =
         | No_point -> "No_point") ;
       ok := false) ;
   (* Check element 1: Blue_pt *)
-  (match V2_Vector.get v 1 with
+  (match Vector.get v 1 with
   | Blue_pt p
     when abs_float (p.x -. 3.0) < 1e-6 && abs_float (p.y -. 4.0) < 1e-6 ->
       ()
@@ -180,7 +182,7 @@ let test_maybe_colored_point () =
       print_endline "  FAIL at 1: expected Blue_pt {3.0, 4.0}" ;
       ok := false) ;
   (* Check element 2: Any_pt with nested colored_point *)
-  (match V2_Vector.get v 2 with
+  (match Vector.get v 2 with
   | Any_pt cp
     when cp.color = Green
          && abs_float (cp.pt.x -. 5.0) < 1e-6
@@ -190,7 +192,7 @@ let test_maybe_colored_point () =
       print_endline "  FAIL at 2: expected Any_pt {Green, {5.0, 6.0}}" ;
       ok := false) ;
   (* Check element 3: No_point *)
-  (match V2_Vector.get v 3 with
+  (match Vector.get v 3 with
   | No_point -> ()
   | _ ->
       print_endline "  FAIL at 3: expected No_point" ;

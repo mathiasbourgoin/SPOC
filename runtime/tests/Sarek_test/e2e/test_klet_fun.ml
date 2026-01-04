@@ -4,7 +4,7 @@
  ******************************************************************************)
 
 (* V2 module aliases *)
-module V2_Device = Spoc_core.Device
+module Device = Spoc_core.Device
 
 (* Force backend registration *)
 let () =
@@ -24,13 +24,13 @@ let () =
   Sarek.Kirc_Ast.print_ast kirc_kernel.Sarek.Kirc_types.body ;
   print_endline "=============================" ;
   let devs =
-    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+    Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
   if Array.length devs = 0 then (
     print_endline "No device found - IR generation test passed" ;
     exit 0) ;
   let dev = devs.(0) in
-  Printf.printf "Using device: %s\n%!" dev.V2_Device.name ;
+  Printf.printf "Using device: %s\n%!" dev.Device.name ;
   (try print_endline "Helper function codegen PASSED"
    with e ->
      Printf.printf "Codegen failed: %s\n%!" (Printexc.to_string e) ;

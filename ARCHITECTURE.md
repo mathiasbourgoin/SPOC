@@ -13,7 +13,7 @@ backends).
 ## runtime/
 - `framework/` — `spoc_framework_registry` (runtime registry + intrinsic registry).
 - `core/` — `spoc_core` (Device, Vector, Memory, Transfer, Profiling).
-- `sarek/` — `sarek` library (Execute, Kirc_v2, registry glue, IR interpreter).
+- `sarek/` — `sarek` library (Execute, Kirc_kernel, registry glue, IR interpreter).
 - `stdlib/` — `sarek_stdlib` (GPU intrinsics, Float32/Int32/Int64/Math, Gpu).
 - `float64/` — `sarek_float64` (Float64 helpers).
 - `geometry/`, `visibility/` — small helper libs used by tests/samples.

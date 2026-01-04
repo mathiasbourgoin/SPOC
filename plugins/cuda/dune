@@ -12,12 +12,12 @@
   spoc_framework_registry
   sarek
   (re_export spoc_core))
-(modules
- Cuda_types
- Cuda_bindings
- Cuda_nvrtc
- Cuda_api
- Cuda_plugin_base
- Cuda_plugin
- Sarek_ir_cuda)
+ (modules
+  Cuda_types
+  Cuda_bindings
+  Cuda_nvrtc
+  Cuda_api
+  Cuda_plugin_base
+  Cuda_plugin
+  Sarek_ir_cuda)
  (preprocess no_preprocessing))

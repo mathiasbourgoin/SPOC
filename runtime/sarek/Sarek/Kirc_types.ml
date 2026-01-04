@@ -20,7 +20,7 @@ type ('a, 'b) spoc_kernel_stub = unit
 type ('a, 'b, 'c) kirc_kernel = {
   ml_kern : 'a;
   body : Kirc_Ast.k_ext;
-  body_v2 : Sarek_ir.kernel option;
+  body_ir : Sarek_ir.kernel option;
   ret_val : Kirc_Ast.k_ext * ('b, 'c) vector_kind_stub;
   extensions : extension array;
   cpu_kern :

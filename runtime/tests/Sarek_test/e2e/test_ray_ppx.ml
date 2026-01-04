@@ -8,9 +8,9 @@
 type ('a, 'b) vector = ('a, 'b) Spoc_core.Vector.t
 
 (* V2 module aliases *)
-module V2_Device = Spoc_core.Device
-module V2_Vector = Spoc_core.Vector
-module V2_Transfer = Spoc_core.Transfer
+module Device = Spoc_core.Device
+module Vector = Spoc_core.Vector
+module Transfer = Spoc_core.Transfer
 
 (* Force V2 backend registration *)
 let () =
@@ -82,16 +82,16 @@ let () =
 
   print_endline "\n=== Running V2 path ===" ;
   let v2_devs =
-    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+    Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
   if Array.length v2_devs = 0 then (
     print_endline "V2: No device found - IR test passed" ;
     exit 0) ;
 
   let dev = v2_devs.(0) in
-  Printf.printf "Using device: %s\n%!" dev.V2_Device.name ;
+  Printf.printf "Using device: %s\n%!" dev.Device.name ;
 
-  (match kirc_kernel.Sarek.Kirc_types.body_v2 with
+  (match kirc_kernel.Sarek.Kirc_types.body_ir with
   | None ->
       print_endline "V2: No V2 IR available - IR test passed" ;
       exit 0
@@ -114,17 +114,17 @@ let () =
       in
       let baz = Array.make n (-1.5) in
 
-      let v2_dirx = V2_Vector.create V2_Vector.float32 n in
-      let v2_diry = V2_Vector.create V2_Vector.float32 n in
-      let v2_dirz = V2_Vector.create V2_Vector.float32 n in
-      let v2_out = V2_Vector.create V2_Vector.float32 (n * 3) in
+      let v2_dirx = Vector.create Vector.float32 n in
+      let v2_diry = Vector.create Vector.float32 n in
+      let v2_dirz = Vector.create Vector.float32 n in
+      let v2_out = Vector.create Vector.float32 (n * 3) in
       for i = 0 to n - 1 do
-        V2_Vector.set v2_dirx i bax.(i) ;
-        V2_Vector.set v2_diry i bay.(i) ;
-        V2_Vector.set v2_dirz i baz.(i)
+        Vector.set v2_dirx i bax.(i) ;
+        Vector.set v2_diry i bay.(i) ;
+        Vector.set v2_dirz i baz.(i)
       done ;
       for i = 0 to (n * 3) - 1 do
-        V2_Vector.set v2_out i 0.0
+        Vector.set v2_out i 0.0
       done ;
 
       let block = Sarek.Execute.dims1d threads in
@@ -144,7 +144,7 @@ let () =
         ~block
         ~grid
         () ;
-      V2_Transfer.flush dev ;
+      Transfer.flush dev ;
 
       (* Verify V2 results and output PPM *)
       let v2_ok = ref true in
@@ -177,9 +177,9 @@ let () =
               let t = 0.5 *. (dyn +. 1.0) in
               (1.0 -. t +. (t *. 0.5), 1.0 -. t +. (t *. 0.7), 1.0)
           in
-          let gx = V2_Vector.get v2_out (idx + 0) in
-          let gy = V2_Vector.get v2_out (idx + 1) in
-          let gz = V2_Vector.get v2_out (idx + 2) in
+          let gx = Vector.get v2_out (idx + 0) in
+          let gy = Vector.get v2_out (idx + 1) in
+          let gz = Vector.get v2_out (idx + 2) in
           if
             abs_float (gx -. r) > 1e-3
             || abs_float (gy -. g) > 1e-3

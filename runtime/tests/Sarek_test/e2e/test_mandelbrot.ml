@@ -10,9 +10,9 @@
 module Std = Sarek_stdlib.Std
 
 (* V2 module aliases *)
-module V2_Device = Spoc_core.Device
-module V2_Vector = Spoc_core.Vector
-module V2_Transfer = Spoc_core.Transfer
+module Device = Spoc_core.Device
+module Vector = Spoc_core.Vector
+module Transfer = Spoc_core.Transfer
 
 (* Force backend registration *)
 let () =
@@ -62,9 +62,9 @@ let init_mandelbrot_data () =
   let t1 = Unix.gettimeofday () in
   ((t1 -. t0) *. 1000.0, true)
 
-(* ========== V2 Mandelbrot kernel ========== *)
+(* ========== Mandelbrot kernel ========== *)
 
-let mandelbrot_kernel_v2 =
+let mandelbrot_kernel =
   [%kernel
     fun (output : int32 vector) (width : int) (height : int) (max_iter : int) ->
       let open Std in
@@ -85,12 +85,12 @@ let mandelbrot_kernel_v2 =
         output.((py * width) + px) <- iter
       end]
 
-let run_mandelbrot_v2_test (dev : V2_Device.t) =
-  let _, kirc = mandelbrot_kernel_v2 in
+let run_mandelbrot_test (dev : Device.t) =
+  let _, kirc = mandelbrot_kernel in
   let ir =
-    match kirc.Sarek.Kirc_types.body_v2 with
+    match kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
-    | None -> failwith "Mandelbrot kernel has no V2 IR"
+    | None -> failwith "Mandelbrot kernel has no IR"
   in
 
   let dim = !image_dim in
@@ -99,10 +99,10 @@ let run_mandelbrot_v2_test (dev : V2_Device.t) =
   let n = width * height in
   let exp = !expected_mandelbrot in
 
-  let output = V2_Vector.create V2_Vector.int32 n in
+  let output = Vector.create Vector.int32 n in
 
   for i = 0 to n - 1 do
-    V2_Vector.set output i 0l
+    Vector.set output i 0l
   done ;
 
   let block_size = 16 in
@@ -125,11 +125,11 @@ let run_mandelbrot_v2_test (dev : V2_Device.t) =
     ~block
     ~grid
     () ;
-  V2_Transfer.flush dev ;
+  Transfer.flush dev ;
 
   (* Reset output for timed run *)
   for i = 0 to n - 1 do
-    V2_Vector.set output i 0l
+    Vector.set output i 0l
   done ;
 
   let t0 = Unix.gettimeofday () in
@@ -146,13 +146,13 @@ let run_mandelbrot_v2_test (dev : V2_Device.t) =
     ~block
     ~grid
     () ;
-  V2_Transfer.flush dev ;
+  Transfer.flush dev ;
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
 
   let ok =
     if cfg.verify then begin
-      let result = V2_Vector.to_array output in
+      let result = Vector.to_array output in
       let errors = ref 0 in
       for i = 0 to min 1000 (n - 1) do
         if result.(i) <> exp.(i) then incr errors
@@ -163,9 +163,9 @@ let run_mandelbrot_v2_test (dev : V2_Device.t) =
   in
   (time_ms, ok)
 
-(* ========== V2 Tail-recursive Mandelbrot ========== *)
+(* ========== Tail-recursive Mandelbrot ========== *)
 
-let mandelbrot_tailrec_kernel_v2 =
+let mandelbrot_tailrec_kernel =
   [%kernel
     (* Tail-recursive iteration using module function *)
     let open Std in
@@ -188,12 +188,12 @@ let mandelbrot_tailrec_kernel_v2 =
         output.((py * width) + px) <- iter
       end]
 
-let run_mandelbrot_tailrec_v2_test (dev : V2_Device.t) =
-  let _, kirc = mandelbrot_tailrec_kernel_v2 in
+let run_mandelbrot_tailrec_test (dev : Device.t) =
+  let _, kirc = mandelbrot_tailrec_kernel in
   let ir =
-    match kirc.Sarek.Kirc_types.body_v2 with
+    match kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
-    | None -> failwith "Mandelbrot tailrec kernel has no V2 IR"
+    | None -> failwith "Mandelbrot tailrec kernel has no IR"
   in
 
   let dim = !image_dim in
@@ -202,10 +202,10 @@ let run_mandelbrot_tailrec_v2_test (dev : V2_Device.t) =
   let n = width * height in
   let exp = !expected_mandelbrot in
 
-  let output = V2_Vector.create V2_Vector.int32 n in
+  let output = Vector.create Vector.int32 n in
 
   for i = 0 to n - 1 do
-    V2_Vector.set output i 0l
+    Vector.set output i 0l
   done ;
 
   let block_size = 16 in
@@ -228,11 +228,11 @@ let run_mandelbrot_tailrec_v2_test (dev : V2_Device.t) =
     ~block
     ~grid
     () ;
-  V2_Transfer.flush dev ;
+  Transfer.flush dev ;
 
   (* Reset output for timed run *)
   for i = 0 to n - 1 do
-    V2_Vector.set output i 0l
+    Vector.set output i 0l
   done ;
 
   let t0 = Unix.gettimeofday () in
@@ -249,13 +249,13 @@ let run_mandelbrot_tailrec_v2_test (dev : V2_Device.t) =
     ~block
     ~grid
     () ;
-  V2_Transfer.flush dev ;
+  Transfer.flush dev ;
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
 
   let ok =
     if cfg.verify then begin
-      let result = V2_Vector.to_array output in
+      let result = Vector.to_array output in
       let errors = ref 0 in
       for i = 0 to min 1000 (n - 1) do
         if result.(i) <> exp.(i) then incr errors
@@ -279,7 +279,7 @@ let () =
 
   (* Initialize V2 devices *)
   let v2_devs =
-    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+    Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
   if Array.length v2_devs = 0 then begin
     print_endline "No GPU devices found" ;
@@ -298,20 +298,17 @@ let () =
     Array.iter
       (fun v2_dev ->
         let dev_label =
-          Printf.sprintf
-            "%s (%s)"
-            v2_dev.V2_Device.name
-            v2_dev.V2_Device.framework
+          Printf.sprintf "%s (%s)" v2_dev.Device.name v2_dev.Device.framework
         in
         Printf.printf "\nV2 Mandelbrot on %s:\n%!" dev_label ;
-        let time_ms, ok = run_mandelbrot_v2_test v2_dev in
+        let time_ms, ok = run_mandelbrot_test v2_dev in
         Printf.printf
           "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
           time_ms
           (baseline_ms /. time_ms)
           (if ok then "PASSED" else "FAILED") ;
         Printf.printf "\nV2 Mandelbrot (tailrec) on %s:\n%!" dev_label ;
-        let tr_time_ms, tr_ok = run_mandelbrot_tailrec_v2_test v2_dev in
+        let tr_time_ms, tr_ok = run_mandelbrot_tailrec_test v2_dev in
         Printf.printf
           "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
           tr_time_ms
@@ -321,11 +318,11 @@ let () =
   end
   else begin
     let v2_dev = Test_helpers.get_device cfg v2_devs in
-    Printf.printf "Using device: %s\n%!" v2_dev.V2_Device.name ;
+    Printf.printf "Using device: %s\n%!" v2_dev.Device.name ;
 
     (* Run V2 Mandelbrot *)
     Printf.printf "\nMandelbrot (V2):\n%!" ;
-    let v2_time, v2_ok = run_mandelbrot_v2_test v2_dev in
+    let v2_time, v2_ok = run_mandelbrot_test v2_dev in
     Printf.printf
       "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
       v2_time
@@ -338,7 +335,7 @@ let () =
 
     (* V2 Tail-recursive test *)
     Printf.printf "\nMandelbrot (tail-recursive V2):\n%!" ;
-    let v2_tr_time, v2_tr_ok = run_mandelbrot_tailrec_v2_test v2_dev in
+    let v2_tr_time, v2_tr_ok = run_mandelbrot_tailrec_test v2_dev in
     Printf.printf
       "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
       v2_tr_time

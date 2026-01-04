@@ -6,9 +6,9 @@
  ******************************************************************************)
 
 (* Module aliases to avoid conflicts *)
-module V2_Device = Spoc_core.Device
-module V2_Vector = Spoc_core.Vector
-module V2_Transfer = Spoc_core.Transfer
+module Device = Spoc_core.Device
+module Vector = Spoc_core.Vector
+module Transfer = Spoc_core.Transfer
 open Sarek
 module Std = Sarek_stdlib.Std
 
@@ -50,23 +50,23 @@ let fib_kernel =
 (* === V2 Tests === *)
 
 let test_pow2_v2 () =
-  let devs = V2_Device.all () in
+  let devs = Device.all () in
   if Array.length devs = 0 then (
     print_endline "No V2 devices - skipping V2 runtime test" ;
     true)
   else
     let dev = devs.(0) in
-    Printf.printf "V2: Testing pow2 on: %s\n%!" dev.V2_Device.name ;
+    Printf.printf "V2: Testing pow2 on: %s\n%!" dev.Device.name ;
 
     let _, kirc = pow2_kernel in
     let ir =
-      match kirc.Sarek.Kirc_types.body_v2 with
+      match kirc.Sarek.Kirc_types.body_ir with
       | Some ir -> ir
       | None -> failwith "Kernel has no V2 IR"
     in
 
-    let output = V2_Vector.create V2_Vector.int32 1 in
-    V2_Vector.set output 0 0l ;
+    let output = Vector.create Vector.int32 1 in
+    Vector.set output 0 0l ;
     let n = 5 in
 
     let block = Execute.dims1d 1 in
@@ -78,9 +78,9 @@ let test_pow2_v2 () =
       ~block
       ~grid
       () ;
-    V2_Transfer.flush dev ;
+    Transfer.flush dev ;
 
-    let got = V2_Vector.get output 0 in
+    let got = Vector.get output 0 in
     let expected = 32l in
     if got = expected then (
       Printf.printf "  PASS: pow2(%d) = %ld (expected %ld)\n" n got expected ;
@@ -90,17 +90,17 @@ let test_pow2_v2 () =
       false)
 
 let test_fib_v2 () =
-  let devs = V2_Device.all () in
+  let devs = Device.all () in
   if Array.length devs = 0 then (
     print_endline "No V2 devices - skipping V2 runtime test" ;
     true)
   else
     let dev = devs.(0) in
-    Printf.printf "V2: Testing fib on: %s\n%!" dev.V2_Device.name ;
+    Printf.printf "V2: Testing fib on: %s\n%!" dev.Device.name ;
 
     let _, kirc = fib_kernel in
     let ir =
-      match kirc.Sarek.Kirc_types.body_v2 with
+      match kirc.Sarek.Kirc_types.body_ir with
       | Some ir -> ir
       | None -> failwith "Kernel has no V2 IR"
     in
@@ -109,8 +109,8 @@ let test_fib_v2 () =
     let all_pass = ref true in
     List.iter
       (fun (n, expected) ->
-        let output = V2_Vector.create V2_Vector.int32 1 in
-        V2_Vector.set output 0 0l ;
+        let output = Vector.create Vector.int32 1 in
+        Vector.set output 0 0l ;
         let block = Execute.dims1d 1 in
         let grid = Execute.dims1d 1 in
         Execute.run_vectors
@@ -120,8 +120,8 @@ let test_fib_v2 () =
           ~block
           ~grid
           () ;
-        V2_Transfer.flush dev ;
-        let got = V2_Vector.get output 0 in
+        Transfer.flush dev ;
+        let got = Vector.get output 0 in
         if got = Int32.of_int expected then
           Printf.printf "  PASS: fib(%d) = %ld\n" n got
         else (

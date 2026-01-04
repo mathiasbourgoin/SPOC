@@ -135,7 +135,7 @@ module Cuda_intrinsics : Framework_sig.INTRINSIC_REGISTRY = struct
 end
 
 (** CUDA Backend - implements BACKEND *)
-module Cuda_v2 : Framework_sig.BACKEND = struct
+module Backend : Framework_sig.BACKEND = struct
   (* Include all of BACKEND from Cuda_base *)
   include Cuda_base
 
@@ -150,7 +150,8 @@ module Cuda_v2 : Framework_sig.BACKEND = struct
   (** Execute directly - not supported for JIT backend *)
   let execute_direct ~native_fn:_ ~ir:_ ~block:_ ~grid:_ _args =
     failwith
-      "Cuda_v2.execute_direct: JIT backend does not support direct execution"
+      "CUDA backend execute_direct: JIT backend does not support direct \
+       execution"
 
   (** CUDA intrinsic registry *)
   module Intrinsics = Cuda_intrinsics
@@ -206,29 +207,29 @@ module Cuda_v2 : Framework_sig.BACKEND = struct
     | Framework_sig.SPIR_V -> failwith "CUDA backend does not support SPIR-V"
 end
 
-(** Auto-register V2 backend when module is loaded *)
-let registered_v2 =
+(** Auto-register backend when module is loaded *)
+let registered_backend =
   lazy
     (Spoc_core.Log.debug
        Spoc_core.Log.Device
        "Cuda_plugin: checking availability" ;
-     if Cuda_v2.is_available () then begin
+     if Backend.is_available () then begin
        Spoc_core.Log.debug
          Spoc_core.Log.Device
-         "Cuda_plugin: CUDA available, registering V2 backend" ;
+         "Cuda_plugin: CUDA available, registering backend" ;
        Framework_registry.register_backend
          ~priority:100
-         (module Cuda_v2 : Framework_sig.BACKEND)
+         (module Backend : Framework_sig.BACKEND)
      end
      else
        Spoc_core.Log.debug
          Spoc_core.Log.Device
          "Cuda_plugin: CUDA not available")
 
-let () = Lazy.force registered_v2
+let () = Lazy.force registered_backend
 
 (** Force module initialization *)
-let init () = Lazy.force registered_v2
+let init () = Lazy.force registered_backend
 
 (** {1 Additional CUDA-specific Functions} *)
 

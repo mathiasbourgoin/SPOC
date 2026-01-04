@@ -1,5 +1,5 @@
 (******************************************************************************
- * Interpreter Plugin V2 - Phase 4 Backend Implementation
+ * Interpreter Plugin Backend Implementation
  *
  * Implements the Framework_sig.BACKEND interface for CPU interpretation.
  * Extends Interpreter_plugin with:
@@ -7,7 +7,7 @@
  * - Direct execution of IR via interpretation
  * - Intrinsic registry support
  *
- * Unlike Native_v2 which calls pre-compiled functions, Interpreter_v2
+ * Unlike Native backend which calls pre-compiled functions, the interpreter
  * actually interprets the IR at runtime using Sarek_ir_interp.
  ******************************************************************************)
 
@@ -58,7 +58,7 @@ module Interpreter_intrinsics : Framework_sig.INTRINSIC_REGISTRY = struct
 end
 
 (** Interpreter Backend - implements BACKEND *)
-module Interpreter_v2 : Framework_sig.BACKEND = struct
+module Backend : Framework_sig.BACKEND = struct
   include Interpreter_base
 
   (** Execution model: Custom (interprets IR directly) *)
@@ -90,14 +90,15 @@ module Interpreter_v2 : Framework_sig.BACKEND = struct
     | Some ir_obj ->
         let kernel : Sarek.Sarek_ir.kernel = Obj.obj ir_obj in
         Sarek.Sarek_ir_interp.parallel_mode := use_parallel ;
-        (* Use V2-aware interpreter that handles V2 Vectors directly *)
-        Sarek.Sarek_ir_interp.run_kernel_with_v2_obj_args
+        (* Interpreter handles vectors directly *)
+        Sarek.Sarek_ir_interp.run_kernel_with_obj_args
           kernel
           ~block:(block.x, block.y, block.z)
           ~grid:(grid.x, grid.y, grid.z)
           args
     | None ->
-        failwith "Interpreter_v2.execute_direct: IR required for interpretation"
+        failwith
+          "Interpreter backend execute_direct: IR required for interpretation"
 
   module Intrinsics = Interpreter_intrinsics
 
@@ -123,8 +124,7 @@ module Interpreter_v2 : Framework_sig.BACKEND = struct
          lang_str)
 end
 
-(** Run IR directly without going through execute_direct. This is the preferred
-    way to use the interpreter V2. *)
+(** Run IR directly without going through execute_direct. *)
 let run_ir ~(ir : Sarek.Sarek_ir.kernel) ~(block : Framework_sig.dims)
     ~(grid : Framework_sig.dims)
     ~(args : (string * Sarek.Sarek_ir_interp.arg) list) : unit =
@@ -134,17 +134,17 @@ let run_ir ~(ir : Sarek.Sarek_ir.kernel) ~(block : Framework_sig.dims)
     ~grid:(grid.x, grid.y, grid.z)
     args
 
-(** Auto-register V2 backend when module is loaded *)
-let registered_v2 =
+(** Auto-register backend when module is loaded *)
+let registered_backend =
   lazy
-    (if Interpreter_v2.is_available () then
+    (if Backend.is_available () then
        Framework_registry.register_backend
          ~priority:5
-         (module Interpreter_v2 : Framework_sig.BACKEND))
+         (module Backend : Framework_sig.BACKEND))
 
-let () = Lazy.force registered_v2
+let () = Lazy.force registered_backend
 
-let init () = Lazy.force registered_v2
+let init () = Lazy.force registered_backend
 
 (** Register a custom interpreter intrinsic *)
 let register_intrinsic = Interpreter_intrinsics.register

@@ -23,8 +23,8 @@
  * 5. Tracks dirty state to know which copies need synchronization
  ******************************************************************************)
 
-module V2_Vector = Spoc_core.Vector
-module V2_Transfer = Spoc_core.Transfer
+module Vector = Spoc_core.Vector
+module Transfer = Spoc_core.Transfer
 module Execute = Sarek.Execute
 
 (* Force plugin initialization *)
@@ -34,7 +34,7 @@ let size = 1024
 
 type float32 = float
 
-(* Custom record type for 2D points - PPX generates point_custom_v2 *)
+(* Custom record type for 2D points - PPX generates point_custom *)
 type point = {x : float32; y : float32} [@@sarek.type]
 
 let transform_points_kirc =
@@ -179,18 +179,18 @@ let () =
   print_endline "\n[7] Testing custom types with V2 Vector..." ;
 
   let n_points = 100 in
-  let src = V2_Vector.create_custom point_custom_v2 n_points in
-  let dst = V2_Vector.create_custom point_custom_v2 n_points in
+  let src = Vector.create_custom point_custom n_points in
+  let dst = Vector.create_custom point_custom n_points in
 
   for i = 0 to n_points - 1 do
-    V2_Vector.set src i {x = float_of_int i; y = float_of_int (i * 2)} ;
-    V2_Vector.set dst i {x = 0.0; y = 0.0}
+    Vector.set src i {x = float_of_int i; y = float_of_int (i * 2)} ;
+    Vector.set dst i {x = 0.0; y = 0.0}
   done ;
 
   let threads = min 256 n_points in
   let grid_x = (n_points + threads - 1) / threads in
   let ir =
-    match transform_points_kirc.Sarek.Kirc_types.body_v2 with
+    match transform_points_kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
     | None -> failwith "Kernel has no V2 IR"
   in
@@ -204,7 +204,7 @@ let () =
     ~args:
       [Execute.Vec src; Execute.Vec dst; Execute.Int32 (Int32.of_int n_points)]
     () ;
-  V2_Transfer.flush dev ;
+  Transfer.flush dev ;
   print_endline "Custom type kernel executed" ;
 
   print_endline "\n[9] Verifying custom type results..." ;
@@ -212,7 +212,7 @@ let () =
   for i = 0 to n_points - 1 do
     let expected_x = float_of_int i +. 1.0 in
     let expected_y = float_of_int (i * 2) *. 2.0 in
-    let result = V2_Vector.get dst i in
+    let result = Vector.get dst i in
     if
       abs_float (result.x -. expected_x) > 1e-3
       || abs_float (result.y -. expected_y) > 1e-3

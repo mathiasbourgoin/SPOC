@@ -3,9 +3,9 @@
  * Uses V2 runtime only.
  ******************************************************************************)
 
-module V2_Device = Spoc_core.Device
-module V2_Vector = Spoc_core.Vector
-module V2_Transfer = Spoc_core.Transfer
+module Device = Spoc_core.Device
+module Vector = Spoc_core.Vector
+module Transfer = Spoc_core.Transfer
 
 (* Force backend registration *)
 let () =
@@ -15,6 +15,8 @@ let () =
   Sarek_interpreter.Interpreter_plugin.init ()
 
 let cfg = Test_helpers.default_config ()
+
+[@@@warning "-32"]
 
 type float32 = float
 
@@ -33,16 +35,16 @@ let variant_kernel =
 
 let run_test dev =
   let ir =
-    match variant_kernel.Sarek.Kirc_types.body_v2 with
+    match variant_kernel.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
     | None -> failwith "Kernel has no V2 IR"
   in
   let n = cfg.size in
-  let xs = V2_Vector.create V2_Vector.float32 n in
-  let dst = V2_Vector.create V2_Vector.float32 n in
+  let xs = Vector.create Vector.float32 n in
+  let dst = Vector.create Vector.float32 n in
   for i = 0 to n - 1 do
-    V2_Vector.set xs i (if i mod 2 = 0 then -1.0 else float_of_int i) ;
-    V2_Vector.set dst i 0.0
+    Vector.set xs i (if i mod 2 = 0 then -1.0 else float_of_int i) ;
+    Vector.set dst i 0.0
   done ;
 
   let threads = cfg.block_size in
@@ -60,14 +62,14 @@ let run_test dev =
     ~block:(Sarek.Execute.dims1d threads)
     ~grid:(Sarek.Execute.dims1d grid_x)
     () ;
-  V2_Transfer.flush dev ;
+  Transfer.flush dev ;
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
 
   let ok = ref true in
   for i = 0 to n - 1 do
     let expected = if i mod 2 = 0 then 0.0 else float_of_int i +. 1.0 in
-    let got = V2_Vector.get dst i in
+    let got = Vector.get dst i in
     if abs_float (got -. expected) > 1e-3 then (
       ok := false ;
       if i < 5 then
@@ -95,7 +97,7 @@ let () =
 
   print_endline "=== Registered Variant Test ===" ;
   let devs =
-    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+    Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
   if Array.length devs = 0 then begin
     print_endline "No devices found" ;
@@ -108,7 +110,7 @@ let () =
     print_endline "\nBenchmarking on all devices:" ;
     Array.iteri
       (fun i dev ->
-        Printf.printf "\n[%d] %s:\n%!" i dev.V2_Device.name ;
+        Printf.printf "\n[%d] %s:\n%!" i dev.Device.name ;
         try
           let ok, time = run_test dev in
           Printf.printf
@@ -124,7 +126,7 @@ let () =
   else begin
     (* Run on selected device *)
     let dev = Test_helpers.get_device cfg devs in
-    Printf.printf "\nUsing device: %s\n%!" dev.V2_Device.name ;
+    Printf.printf "\nUsing device: %s\n%!" dev.Device.name ;
     let ok, time = run_test dev in
     Printf.printf "  %.2f ms, %s\n%!" time (if ok then "PASSED" else "FAILED") ;
     if not ok then exit 1

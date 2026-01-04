@@ -7,9 +7,9 @@
  ******************************************************************************)
 
 (* Module aliases *)
-module V2_Device = Spoc_core.Device
-module V2_Vector = Spoc_core.Vector
-module V2_Transfer = Spoc_core.Transfer
+module Device = Spoc_core.Device
+module Vector = Spoc_core.Vector
+module Transfer = Spoc_core.Transfer
 module Std = Sarek_stdlib.Std
 
 (* Force backend registration *)
@@ -103,21 +103,21 @@ let odd_even_step_kernel =
 (* ========== V2 test runners ========== *)
 
 (** Run global bitonic sort on V2 *)
-let run_bitonic_sort_global_v2 (dev : V2_Device.t) =
+let run_bitonic_sort_global (dev : Device.t) =
   let n = !sort_size_global in
   let inp = !input_bitonic_global in
   let exp = !expected_bitonic_global in
   let _, kirc = bitonic_sort_step_kernel in
   let ir =
-    match kirc.Sarek.Kirc_types.body_v2 with
+    match kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
     | None -> failwith "No V2 IR"
   in
 
-  let data = V2_Vector.create V2_Vector.int32 n in
+  let data = Vector.create Vector.int32 n in
 
   for i = 0 to n - 1 do
-    V2_Vector.set data i inp.(i)
+    Vector.set data i inp.(i)
   done ;
 
   let block_size = 256 in
@@ -143,7 +143,7 @@ let run_bitonic_sort_global_v2 (dev : V2_Device.t) =
         ~block
         ~grid
         () ;
-      V2_Transfer.flush dev ;
+      Transfer.flush dev ;
       j := !j / 2
     done ;
     k := !k * 2
@@ -153,7 +153,7 @@ let run_bitonic_sort_global_v2 (dev : V2_Device.t) =
 
   let ok =
     if cfg.verify then begin
-      let result = V2_Vector.to_array data in
+      let result = Vector.to_array data in
       let errors = ref 0 in
       for i = 0 to n - 2 do
         if result.(i) > result.(i + 1) then incr errors
@@ -168,21 +168,21 @@ let run_bitonic_sort_global_v2 (dev : V2_Device.t) =
   (time_ms, ok)
 
 (** Run odd-even transposition sort on V2 *)
-let run_odd_even_sort_v2 (dev : V2_Device.t) =
+let run_odd_even_sort (dev : Device.t) =
   let n = !sort_size_odd_even in
   let inp = !input_odd_even in
   let exp = !expected_odd_even in
   let _, kirc = odd_even_step_kernel in
   let ir =
-    match kirc.Sarek.Kirc_types.body_v2 with
+    match kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
     | None -> failwith "No V2 IR"
   in
 
-  let data = V2_Vector.create V2_Vector.int32 n in
+  let data = Vector.create Vector.int32 n in
 
   for i = 0 to n - 1 do
-    V2_Vector.set data i inp.(i)
+    Vector.set data i inp.(i)
   done ;
 
   let block_size = 256 in
@@ -205,14 +205,14 @@ let run_odd_even_sort_v2 (dev : V2_Device.t) =
       ~block
       ~grid
       () ;
-    V2_Transfer.flush dev
+    Transfer.flush dev
   done ;
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
 
   let ok =
     if cfg.verify then begin
-      let result = V2_Vector.to_array data in
+      let result = Vector.to_array data in
       let errors = ref 0 in
       for i = 0 to n - 2 do
         if result.(i) > result.(i + 1) then incr errors
@@ -243,7 +243,7 @@ let () =
   Printf.printf "Size: %d elements\n\n" cfg.size ;
 
   let v2_devs =
-    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+    Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
   if Array.length v2_devs = 0 then begin
     print_endline "No devices found" ;
@@ -262,9 +262,9 @@ let () =
   print_endline "=== Bitonic Sort (global) ===" ;
   Array.iter
     (fun v2_dev ->
-      let name = v2_dev.V2_Device.name in
-      let framework = v2_dev.V2_Device.framework in
-      let v2_time, v2_ok = run_bitonic_sort_global_v2 v2_dev in
+      let name = v2_dev.Device.name in
+      let framework = v2_dev.Device.framework in
+      let v2_time, v2_ok = run_bitonic_sort_global v2_dev in
       Printf.printf
         "  %s (%s): %.4f ms, %s\n%!"
         name
@@ -278,9 +278,9 @@ let () =
   print_endline "\n=== Odd-Even Sort ===" ;
   Array.iter
     (fun v2_dev ->
-      let name = v2_dev.V2_Device.name in
-      let framework = v2_dev.V2_Device.framework in
-      let v2_time, v2_ok = run_odd_even_sort_v2 v2_dev in
+      let name = v2_dev.Device.name in
+      let framework = v2_dev.Device.framework in
+      let v2_time, v2_ok = run_odd_even_sort v2_dev in
       Printf.printf
         "  %s (%s): %.4f ms, %s\n%!"
         name

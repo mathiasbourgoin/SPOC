@@ -1,5 +1,5 @@
 (******************************************************************************
- * Kirc_v2 - Phase 4 Kernel Type
+ * Kirc kernel type (modern path)
  *
  * Defines a new kernel record type with lazy IR generation for the unified
  * execution architecture. Coexists with the existing Kirc module during
@@ -19,7 +19,7 @@ open Spoc_core
 (** {1 Kernel Type} *)
 
 (** Phase 4 kernel record with lazy IR generation *)
-type 'a kernel_v2 = {
+type 'a kernel = {
   name : string;  (** Kernel name (used for compilation cache key) *)
   ir : Sarek_ir.kernel Lazy.t;
       (** Lazy IR generation - only forced for JIT backends *)
@@ -78,10 +78,10 @@ let extensions k = k.extensions
 
 (** {1 Conversion from Legacy Kirc} *)
 
-(** Convert a legacy kirc_kernel to kernel_v2. Note: This creates a lazy IR that
+(** Convert a legacy kirc_kernel to kernel. Note: This creates a lazy IR that
     converts from Kirc_Ast when forced. *)
 let of_kirc_kernel (kk : ('a, 'b, 'c) Kirc_types.kirc_kernel) ~name ~param_types
-    : 'a kernel_v2 =
+    : 'a kernel =
   let ir = lazy (Sarek_ir.of_k_ext kk.Kirc_types.body) in
   let native_fn =
     match kk.Kirc_types.cpu_kern with
@@ -100,17 +100,16 @@ let of_kirc_kernel (kk : ('a, 'b, 'c) Kirc_types.kirc_kernel) ~name ~param_types
   in
   {name; ir; native_fn; param_types; extensions = kk.Kirc_types.extensions}
 
-(** Convert a legacy sarek_kernel to kernel_v2 *)
+(** Convert a legacy sarek_kernel to kernel *)
 let of_sarek_kernel
     ((_spoc_k, kirc_k) : ('a, 'b, 'c, 'd, 'e) Kirc_types.sarek_kernel) ~name
-    ~param_types : 'd kernel_v2 =
+    ~param_types : 'd kernel =
   of_kirc_kernel kirc_k ~name ~param_types
 
 (** {1 Conversion to Legacy Kirc} *)
 
-(** Convert kernel_v2 to legacy kirc_kernel. Note: This may force IR evaluation.
-*)
-let to_kirc_kernel (k : 'a kernel_v2) :
+(** Convert kernel to legacy kirc_kernel. Note: This may force IR evaluation. *)
+let to_kirc_kernel (k : 'a kernel) :
     (unit -> unit, unit, unit) Kirc_types.kirc_kernel =
   let body = Sarek_ir.to_k_ext (Lazy.force k.ir) in
   let cpu_kern =
@@ -129,7 +128,7 @@ let to_kirc_kernel (k : 'a kernel_v2) :
   {
     Kirc_types.ml_kern = (fun () -> ());
     Kirc_types.body;
-    Kirc_types.body_v2 = None;
+    Kirc_types.body_ir = None;
     (* ret_val is unused in V2 path; dummy value with stub type *)
     Kirc_types.ret_val = (Kirc_Ast.Empty, ());
     Kirc_types.extensions = k.extensions;
@@ -138,11 +137,11 @@ let to_kirc_kernel (k : 'a kernel_v2) :
 
 (** {1 Execution} *)
 
-(** Execute a kernel_v2 on a device with Obj.t array args. Note: Only works for
+(** Execute a kernel on a device with Obj.t array args. Note: Only works for
     Native backend. For JIT backends (CUDA/OpenCL), use run_with_args which
     provides properly typed arguments. *)
 let run ~(device : Device.t) ~(block : Framework_sig.dims)
-    ~(grid : Framework_sig.dims) ?(shared_mem = 0) (k : 'a kernel_v2)
+    ~(grid : Framework_sig.dims) ?(shared_mem = 0) (k : 'a kernel)
     (args : Obj.t array) : unit =
   ignore shared_mem ;
   match device.framework with
@@ -157,10 +156,10 @@ let run ~(device : Device.t) ~(block : Framework_sig.dims)
             run_with_args for JIT backends."
            fw)
 
-(** Execute a kernel_v2 with explicit typed arguments. Works for all backends
+(** Execute a kernel with explicit typed arguments. Works for all backends
     (Native, CUDA, OpenCL). Uses plugin dispatch via Execute.run. *)
 let run_with_args ~(device : Device.t) ~(block : Framework_sig.dims)
-    ~(grid : Framework_sig.dims) ?(shared_mem = 0) (k : 'a kernel_v2)
+    ~(grid : Framework_sig.dims) ?(shared_mem = 0) (k : 'a kernel)
     (args : Execute.arg list) : unit =
   Execute.run
     ~device
@@ -176,7 +175,7 @@ let run_with_args ~(device : Device.t) ~(block : Framework_sig.dims)
 
 (** Get generated source for a specific backend. Uses plugin's generate_source.
 *)
-let source_for_backend (k : 'a kernel_v2) ~backend : string =
+let source_for_backend (k : 'a kernel) ~backend : string =
   match Framework_registry.find_backend backend with
   | Some (module B : Framework_sig.BACKEND) -> (
       let ir = Lazy.force k.ir in

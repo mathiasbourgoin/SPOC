@@ -163,7 +163,7 @@ module Opencl_intrinsics : Framework_sig.INTRINSIC_REGISTRY = struct
 end
 
 (** OpenCL Backend - implements BACKEND *)
-module Opencl_v2 : Framework_sig.BACKEND = struct
+module Backend : Framework_sig.BACKEND = struct
   (* Include all of BACKEND from Opencl_base *)
   include Opencl_base
 
@@ -178,7 +178,8 @@ module Opencl_v2 : Framework_sig.BACKEND = struct
   (** Execute directly - not supported for JIT backend *)
   let execute_direct ~native_fn:_ ~ir:_ ~block:_ ~grid:_ _args =
     failwith
-      "Opencl_v2.execute_direct: JIT backend does not support direct execution"
+      "OpenCL backend execute_direct: JIT backend does not support direct \
+       execution"
 
   (** OpenCL intrinsic registry *)
   module Intrinsics = Opencl_intrinsics
@@ -232,18 +233,18 @@ module Opencl_v2 : Framework_sig.BACKEND = struct
         failwith "OpenCL backend does not support SPIR-V (yet)"
 end
 
-(** Auto-register V2 backend when module is loaded *)
-let registered_v2 =
+(** Auto-register backend when module is loaded *)
+let registered_backend =
   lazy
-    (if Opencl_v2.is_available () then
+    (if Backend.is_available () then
        Framework_registry.register_backend
          ~priority:90
-         (module Opencl_v2 : Framework_sig.BACKEND))
+         (module Backend : Framework_sig.BACKEND))
 
-let () = Lazy.force registered_v2
+let () = Lazy.force registered_backend
 
 (** Force module initialization *)
-let init () = Lazy.force registered_v2
+let init () = Lazy.force registered_backend
 
 (** {1 Additional OpenCL-specific Functions} *)
 

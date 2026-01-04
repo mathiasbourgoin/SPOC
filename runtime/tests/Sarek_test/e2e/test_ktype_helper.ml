@@ -4,12 +4,12 @@
  ******************************************************************************)
 
 (* V2 module aliases *)
-module V2_Device = Spoc_core.Device
-module V2_Vector = Spoc_core.Vector
-module V2_Transfer = Spoc_core.Transfer
+module Device = Spoc_core.Device
+module Vector = Spoc_core.Vector
+module Transfer = Spoc_core.Transfer
 
 (* Type alias for kernel parameter annotations *)
-type ('a, 'b) vector = ('a, 'b) V2_Vector.t
+type ('a, 'b) vector = ('a, 'b) Vector.t
 
 (* Force backend registration *)
 let () =
@@ -36,33 +36,33 @@ let () =
 
   let _, kirc = length_kernel in
   print_endline "=== ktype helper IR ===" ;
-  (match kirc.Sarek.Kirc_types.body_v2 with
+  (match kirc.Sarek.Kirc_types.body_ir with
   | Some ir -> Sarek.Sarek_ir.print_kernel ir
   | None -> print_endline "(No V2 IR available)") ;
   print_endline "=======================" ;
 
   (* Run with V2 runtime *)
   let v2_devs =
-    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+    Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
   if Array.length v2_devs = 0 then (
     print_endline "No device found - IR generation test passed" ;
     exit 0) ;
   let dev = v2_devs.(0) in
-  Printf.printf "Using device: %s\n%!" dev.V2_Device.name ;
+  Printf.printf "Using device: %s\n%!" dev.Device.name ;
 
   let n = 256 in
 
-  (match kirc.Sarek.Kirc_types.body_v2 with
+  (match kirc.Sarek.Kirc_types.body_ir with
   | None -> print_endline "No V2 IR - SKIPPED"
   | Some ir ->
-      let xv = V2_Vector.create V2_Vector.float32 n in
-      let yv = V2_Vector.create V2_Vector.float32 n in
-      let dst = V2_Vector.create V2_Vector.float32 n in
+      let xv = Vector.create Vector.float32 n in
+      let yv = Vector.create Vector.float32 n in
+      let dst = Vector.create Vector.float32 n in
       for i = 0 to n - 1 do
-        V2_Vector.set xv i (float_of_int i) ;
-        V2_Vector.set yv i (float_of_int (n - i)) ;
-        V2_Vector.set dst i 0.0
+        Vector.set xv i (float_of_int i) ;
+        Vector.set yv i (float_of_int (n - i)) ;
+        Vector.set dst i 0.0
       done ;
 
       let threads = 128 in
@@ -83,15 +83,15 @@ let () =
         ~block
         ~grid
         () ;
-      V2_Transfer.flush dev ;
+      Transfer.flush dev ;
 
       (* Verify results *)
       let ok = ref true in
       for i = 0 to n - 1 do
-        let x = V2_Vector.get xv i in
-        let y = V2_Vector.get yv i in
+        let x = Vector.get xv i in
+        let y = Vector.get yv i in
         let expected = sqrt ((x *. x) +. (y *. y)) in
-        let got = V2_Vector.get dst i in
+        let got = Vector.get dst i in
         if abs_float (got -. expected) > 1e-3 then (
           ok := false ;
           Printf.printf "Mismatch at %d: got %f expected %f\n%!" i got expected)

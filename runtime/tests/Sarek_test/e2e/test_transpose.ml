@@ -9,9 +9,9 @@ open Sarek
 module Std = Sarek_stdlib.Std
 
 (* Module aliases *)
-module V2_Device = Spoc_core.Device
-module V2_Vector = Spoc_core.Vector
-module V2_Transfer = Spoc_core.Transfer
+module Device = Spoc_core.Device
+module Vector = Spoc_core.Vector
+module Transfer = Spoc_core.Transfer
 
 (* Force backend registration *)
 let () =
@@ -72,22 +72,22 @@ let transpose_naive_kernel =
 
 (* ========== V2 test runner ========== *)
 
-let run_transpose_v2 (dev : V2_Device.t) =
+let run_transpose (dev : Device.t) =
   let dim = !matrix_dim in
   let n = dim * dim in
   let _, kirc = transpose_naive_kernel in
   let ir =
-    match kirc.Sarek.Kirc_types.body_v2 with
+    match kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
     | None -> failwith "No V2 IR"
   in
 
-  let input = V2_Vector.create V2_Vector.float32 n in
-  let output = V2_Vector.create V2_Vector.float32 n in
+  let input = Vector.create Vector.float32 n in
+  let output = Vector.create Vector.float32 n in
 
   for i = 0 to n - 1 do
-    V2_Vector.set input i !input_data.(i) ;
-    V2_Vector.set output i 0.0
+    Vector.set input i !input_data.(i) ;
+    Vector.set output i 0.0
   done ;
 
   let block_size = 256 in
@@ -104,10 +104,10 @@ let run_transpose_v2 (dev : V2_Device.t) =
     ~block
     ~grid
     () ;
-  V2_Transfer.flush dev ;
+  Transfer.flush dev ;
   let t1 = Unix.gettimeofday () in
 
-  ((t1 -. t0) *. 1000.0, V2_Vector.to_array output)
+  ((t1 -. t0) *. 1000.0, Vector.to_array output)
 
 (* ========== Verification ========== *)
 
@@ -162,10 +162,10 @@ let () =
 
     Array.iter
       (fun v2_dev ->
-        let name = v2_dev.V2_Device.name in
-        let framework = v2_dev.V2_Device.framework in
+        let name = v2_dev.Device.name in
+        let framework = v2_dev.Device.framework in
 
-        let v2_time, v2_result = run_transpose_v2 v2_dev in
+        let v2_time, v2_result = run_transpose v2_dev in
         let v2_ok =
           (not cfg.verify)
           || verify_float_arrays "V2" v2_result !expected_data 0.001
@@ -191,10 +191,10 @@ let () =
   end
   else begin
     let dev = Test_helpers.get_device cfg v2_devs in
-    Printf.printf "Using device: %s\n%!" dev.V2_Device.name ;
+    Printf.printf "Using device: %s\n%!" dev.Device.name ;
 
     Printf.printf "\nRunning V2 path (naive transpose)...\n%!" ;
-    let v2_time, v2_result = run_transpose_v2 dev in
+    let v2_time, v2_result = run_transpose dev in
     Printf.printf "  Time: %.4f ms\n%!" v2_time ;
     let v2_ok =
       (not cfg.verify)

@@ -9,9 +9,9 @@ open Sarek
 module Std = Sarek_stdlib.Std
 
 (* Module aliases *)
-module V2_Device = Spoc_core.Device
-module V2_Vector = Spoc_core.Vector
-module V2_Transfer = Spoc_core.Transfer
+module Device = Spoc_core.Device
+module Vector = Spoc_core.Vector
+module Transfer = Spoc_core.Transfer
 
 (* Force backend registration *)
 let () =
@@ -211,27 +211,27 @@ let gray_code_kernel =
 
 (* ========== V2 test runner ========== *)
 
-let run_bitwise_basic_v2 (dev : V2_Device.t) =
+let run_bitwise_basic (dev : Device.t) =
   let n = cfg.size in
   let _, kirc = bitwise_basic_kernel in
   let ir =
-    match kirc.Sarek.Kirc_types.body_v2 with
+    match kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
     | None -> failwith "No V2 IR"
   in
 
-  let a = V2_Vector.create V2_Vector.int32 n in
-  let b = V2_Vector.create V2_Vector.int32 n in
-  let and_out = V2_Vector.create V2_Vector.int32 n in
-  let or_out = V2_Vector.create V2_Vector.int32 n in
-  let xor_out = V2_Vector.create V2_Vector.int32 n in
+  let a = Vector.create Vector.int32 n in
+  let b = Vector.create Vector.int32 n in
+  let and_out = Vector.create Vector.int32 n in
+  let or_out = Vector.create Vector.int32 n in
+  let xor_out = Vector.create Vector.int32 n in
 
   for i = 0 to n - 1 do
-    V2_Vector.set a i !input_a.(i) ;
-    V2_Vector.set b i !input_b.(i) ;
-    V2_Vector.set and_out i 0l ;
-    V2_Vector.set or_out i 0l ;
-    V2_Vector.set xor_out i 0l
+    Vector.set a i !input_a.(i) ;
+    Vector.set b i !input_b.(i) ;
+    Vector.set and_out i 0l ;
+    Vector.set or_out i 0l ;
+    Vector.set xor_out i 0l
   done ;
 
   let block_size = 256 in
@@ -255,13 +255,13 @@ let run_bitwise_basic_v2 (dev : V2_Device.t) =
     ~block
     ~grid
     () ;
-  V2_Transfer.flush dev ;
+  Transfer.flush dev ;
   let t1 = Unix.gettimeofday () in
 
   ( (t1 -. t0) *. 1000.0,
-    V2_Vector.to_array and_out,
-    V2_Vector.to_array or_out,
-    V2_Vector.to_array xor_out )
+    Vector.to_array and_out,
+    Vector.to_array or_out,
+    Vector.to_array xor_out )
 
 (* ========== Verification ========== *)
 
@@ -319,10 +319,10 @@ let () =
 
     Array.iter
       (fun v2_dev ->
-        let name = v2_dev.V2_Device.name in
-        let framework = v2_dev.V2_Device.framework in
+        let name = v2_dev.Device.name in
+        let framework = v2_dev.Device.framework in
 
-        let v2_time, v2_and, v2_or, v2_xor = run_bitwise_basic_v2 v2_dev in
+        let v2_time, v2_and, v2_or, v2_xor = run_bitwise_basic v2_dev in
         let v2_ok =
           (not cfg.verify)
           || verify_int32_arrays "AND" v2_and !expected_and
@@ -350,11 +350,11 @@ let () =
   end
   else begin
     let dev = Test_helpers.get_device cfg v2_devs in
-    let dev_name = dev.V2_Device.name in
+    let dev_name = dev.Device.name in
     Printf.printf "Using device: %s\n%!" dev_name ;
 
     Printf.printf "\nRunning V2 path (bitwise AND/OR/XOR)...\n%!" ;
-    let v2_time, v2_and, v2_or, v2_xor = run_bitwise_basic_v2 dev in
+    let v2_time, v2_and, v2_or, v2_xor = run_bitwise_basic dev in
     Printf.printf "  Time: %.4f ms\n%!" v2_time ;
     let v2_ok =
       (not cfg.verify)

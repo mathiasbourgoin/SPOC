@@ -1559,26 +1559,6 @@ let gen_arg_cast ~loc (param : tparam) (idx : int) : expression =
       (* Default - just return as Obj.t and let caller deal with it *)
       arr_access
 
-(** Generate argument extraction for V2 native code. V2 uses Spoc_core.Vector.t
-    \- type-safe vectors that abstract over storage. We use wildcard types since
-    Vector.get/set are polymorphic. *)
-let gen_arg_cast_v2 ~loc (param : tparam) (idx : int) : expression =
-  let arr_access =
-    [%expr Array.get __args [%e Ast_builder.Default.eint ~loc idx]]
-  in
-  match repr param.tparam_type with
-  | TVec _ ->
-      (* All vector types use the same generic cast - Vector.get/set handle the types *)
-      [%expr (Obj.obj [%e arr_access] : (_, _) Spoc_core.Vector.t)]
-  | TReg "float32" -> [%expr (Obj.obj [%e arr_access] : float)]
-  | TReg "float64" -> [%expr (Obj.obj [%e arr_access] : float)]
-  | TReg "int32" | TPrim TInt32 -> [%expr (Obj.obj [%e arr_access] : int32)]
-  | TReg "int64" -> [%expr (Obj.obj [%e arr_access] : int64)]
-  | TPrim TBool -> [%expr (Obj.obj [%e arr_access] : bool)]
-  | _ ->
-      (* Default - just return as Obj.t and let caller deal with it *)
-      arr_access
-
 (** Generate an object expression with accessor methods for FCM. Example for
     type point with fields x and y: object method get_point_x r = r.x method
     get_point_y r = r.y method make_point ~x ~y = record with fields x and y end
@@ -1978,7 +1958,7 @@ let gen_cpu_kern_wrapper ~loc (kernel : tkernel) : expression =
 
     Generated signature: thread_state -> shared_mem -> args_tuple -> unit This
     matches the signature expected by run_parallel/run_sequential. *)
-let gen_cpu_kern_v2 ~loc (kernel : tkernel) : expression =
+let gen_cpu_kern_native ~loc (kernel : tkernel) : expression =
   let use_fcm = has_inline_types kernel in
   let inline_type_names =
     if use_fcm then
@@ -2077,9 +2057,10 @@ let gen_cpu_kern_v2 ~loc (kernel : tkernel) : expression =
       ];
   }
 
-(** Generate V2 simple kernel for optimized threadpool execution. Like
-    gen_simple_cpu_kern but with use_v2=true for Spoc_core.Vector. *)
-let gen_simple_cpu_kern_v2 ~loc ~exec_strategy (kernel : tkernel) : expression =
+(** Generate simple kernel for optimized threadpool execution using the modern
+    vector path (Spoc_core.Vector). *)
+let gen_simple_cpu_kern_native ~loc ~exec_strategy (kernel : tkernel) :
+    expression =
   let use_fcm = has_inline_types kernel in
   let inline_type_names =
     if use_fcm then
@@ -2167,7 +2148,7 @@ let gen_simple_cpu_kern_v2 ~loc ~exec_strategy (kernel : tkernel) : expression =
                 ([%p gid_z_pat] : int32)
                 [%p params_pat] -> [%e body_with_items]]
       | Sarek_convergence.FullState ->
-          failwith "gen_simple_cpu_kern_v2 called with FullState strategy"
+          failwith "gen_simple_cpu_kern_native called with FullState strategy"
     else
       match exec_strategy with
       | Sarek_convergence.Simple1D ->
@@ -2185,7 +2166,7 @@ let gen_simple_cpu_kern_v2 ~loc ~exec_strategy (kernel : tkernel) : expression =
                 ([%p gid_z_pat] : int32)
                 [%p params_pat] -> [%e body_with_items]]
       | Sarek_convergence.FullState ->
-          failwith "gen_simple_cpu_kern_v2 called with FullState strategy"
+          failwith "gen_simple_cpu_kern_native called with FullState strategy"
   in
   (* Add warning suppression attribute *)
   {
@@ -2206,22 +2187,21 @@ let gen_simple_cpu_kern_v2 ~loc ~exec_strategy (kernel : tkernel) : expression =
       ];
   }
 
-(** Generate the V2 cpu_kern wrapper for use with native_fn_t.
+(** Generate the cpu_kern wrapper for use with native_fn_t.
 
     Generated function type: parallel:bool -> block:int*int*int ->
     grid:int*int*int -> Obj.t array -> unit
 
-    V2 version uses Spoc_core.Vector instead of Spoc.Vector. Expects V2 Vectors
-    directly in the Obj.t array (not expanded buffer/length pairs).
+    Uses Spoc_core.Vector instead of Spoc.Vector. Expects vectors directly in
+    the Obj.t array (not expanded buffer/length pairs).
 
-    This is a port of gen_cpu_kern_wrapper with V2 callsites:
-    - Uses gen_cpu_kern_v2 instead of gen_cpu_kern
-    - Uses gen_arg_cast_v2 instead of gen_arg_cast
-    - Uses gen_simple_cpu_kern_v2 instead of gen_simple_cpu_kern
+    This is a port of gen_cpu_kern_wrapper with updated callsites:
+    - Uses gen_cpu_kern_native instead of gen_cpu_kern
+    - Uses gen_simple_cpu_kern_native instead of gen_simple_cpu_kern
     - Uses parallel:bool instead of mode:exec_mode *)
-let gen_cpu_kern_v2_wrapper ~loc (kernel : tkernel) : expression =
+let gen_cpu_kern_native_wrapper ~loc (kernel : tkernel) : expression =
   let use_fcm = has_inline_types kernel in
-  let native_kern = gen_cpu_kern_v2 ~loc kernel in
+  let native_kern = gen_cpu_kern_native ~loc kernel in
 
   (* Detect execution strategy for optimization *)
   let exec_strategy = Sarek_convergence.kernel_exec_strategy kernel in
@@ -2237,7 +2217,7 @@ let gen_cpu_kern_v2_wrapper ~loc (kernel : tkernel) : expression =
         let var_pat =
           Ast_builder.Default.ppat_var ~loc {txt = param.tparam_name; loc}
         in
-        let cast_expr = gen_arg_cast_v2 ~loc param i in
+        let cast_expr = gen_arg_cast ~loc param i in
         (var_pat, cast_expr))
       kernel.tkern_params
   in
@@ -2258,7 +2238,7 @@ let gen_cpu_kern_v2_wrapper ~loc (kernel : tkernel) : expression =
     match exec_strategy with
     | Sarek_convergence.Simple1D | Sarek_convergence.Simple2D
     | Sarek_convergence.Simple3D ->
-        Some (gen_simple_cpu_kern_v2 ~loc ~exec_strategy kernel)
+        Some (gen_simple_cpu_kern_native ~loc ~exec_strategy kernel)
     | Sarek_convergence.FullState -> None
   in
 

@@ -633,7 +633,7 @@ let generate_intrinsic_check ~loc (kernel : tkernel) : expression =
 
 (** Quote a kernel to create a sarek_kernel expression *)
 let quote_kernel ~loc ?(native_kernel : tkernel option)
-    ?(ir_v2 : Sarek_ir_ppx.kernel option) (kernel : tkernel)
+    ?(ir_opt : Sarek_ir_ppx.kernel option) (kernel : tkernel)
     (ir : Kirc_Ast.k_ext) (constructors : string list)
     (ret_val : Kirc_Ast.k_ext) : expression =
   (* Use native_kernel for CPU code generation if provided, otherwise use kernel.
@@ -658,21 +658,21 @@ let quote_kernel ~loc ?(native_kernel : tkernel option)
     let body_ir = [%e quote_k_ext ~loc ir] in
     let ret_ir = [%e quote_k_ext ~loc ret_val] in
     let _intrinsic_check = [%e generate_intrinsic_check ~loc kernel] in
-    (* v2_native_fn for V2 path (uses Spoc_core.Vector) *)
-    let v2_native_fn =
-      [%e Sarek_native_gen.gen_cpu_kern_v2_wrapper ~loc kernel_for_native]
+    (* Native function for host execution (uses Spoc_core.Vector) *)
+    let native_fn =
+      [%e Sarek_native_gen.gen_cpu_kern_native_wrapper ~loc kernel_for_native]
     in
-    let body_v2_ir =
+    let body_ir_ir =
       [%e
-        match ir_v2 with
+        match ir_opt with
         | Some k ->
-            (* Pass V2 native function for Native backend execution *)
+            (* Pass native function for Native backend execution *)
             [%expr
               Some
                 [%e
                   Sarek_quote_ir.quote_kernel
                     ~loc
-                    ~native_fn_expr:[%expr v2_native_fn]
+                    ~native_fn_expr:[%expr native_fn]
                     k]]
         | None -> [%expr None]]
     in
@@ -680,10 +680,10 @@ let quote_kernel ~loc ?(native_kernel : tkernel option)
       {
         Sarek.Kirc_types.ml_kern = (fun () -> ());
         Sarek.Kirc_types.body = body_ir;
-        Sarek.Kirc_types.body_v2 = body_v2_ir;
+        Sarek.Kirc_types.body_ir = body_ir_ir;
         Sarek.Kirc_types.ret_val = (ret_ir, ());
         Sarek.Kirc_types.extensions = [||];
-        (* Legacy SPOC cpu_kern removed - use V2 native_fn via body_v2 *)
+        (* Legacy SPOC cpu_kern removed - use V2 native_fn via body_ir *)
         Sarek.Kirc_types.cpu_kern = None;
       }
     in

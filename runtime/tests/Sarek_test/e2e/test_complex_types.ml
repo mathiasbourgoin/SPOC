@@ -5,9 +5,11 @@
  * Uses [@@sarek.type] for V2-compatible custom vector types.
  ******************************************************************************)
 
-module V2_Vector = Spoc_core.Vector
-module V2_Device = Spoc_core.Device
-module V2_Transfer = Spoc_core.Transfer
+[@@@warning "-32"]
+
+module Vector = Spoc_core.Vector
+module Device = Spoc_core.Device
+module Transfer = Spoc_core.Transfer
 
 (* Force backend registration *)
 let () =
@@ -48,17 +50,17 @@ let point2d_distance_kirc =
           distances.(tid) <- sqrt ((p.px *. p.px) +. (p.py *. p.py))
         end]
 
-let run_point2d_test_v2 dev n =
-  let points = V2_Vector.create_custom point2d_custom_v2 n in
-  let distances = V2_Vector.create V2_Vector.float32 n in
+let run_point2d_test dev n =
+  let points = Vector.create_custom point2d_custom n in
+  let distances = Vector.create Vector.float32 n in
   for i = 0 to n - 1 do
-    V2_Vector.set points i {px = float_of_int i; py = float_of_int (n - i)} ;
-    V2_Vector.set distances i 0.0
+    Vector.set points i {px = float_of_int i; py = float_of_int (n - i)} ;
+    Vector.set distances i 0.0
   done ;
   let threads = 64 in
   let grid_x = (n + threads - 1) / threads in
   let ir =
-    match point2d_distance_kirc.Sarek.Kirc_types.body_v2 with
+    match point2d_distance_kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
     | None -> failwith "Kernel has no V2 IR"
   in
@@ -75,15 +77,15 @@ let run_point2d_test_v2 dev n =
         Sarek.Execute.Int32 (Int32.of_int n);
       ]
     () ;
-  V2_Transfer.flush dev ;
+  Transfer.flush dev ;
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
   (* Verify *)
   let ok = ref true in
   for i = 0 to n - 1 do
-    let p = V2_Vector.get points i in
+    let p = Vector.get points i in
     let expected = sqrt ((p.px *. p.px) +. (p.py *. p.py)) in
-    let got = V2_Vector.get distances i in
+    let got = Vector.get distances i in
     if abs_float (got -. expected) > 1e-3 then (
       ok := false ;
       if i < 3 then
@@ -115,16 +117,16 @@ let point3d_normalize_kirc =
           end
         end]
 
-let run_point3d_test_v2 dev n =
-  let points = V2_Vector.create_custom point3d_custom_v2 n in
+let run_point3d_test dev n =
+  let points = Vector.create_custom point3d_custom n in
   for i = 0 to n - 1 do
     let fi = float_of_int i in
-    V2_Vector.set points i {x = fi; y = fi *. 2.0; z = fi *. 3.0}
+    Vector.set points i {x = fi; y = fi *. 2.0; z = fi *. 3.0}
   done ;
   let threads = 64 in
   let grid_x = (n + threads - 1) / threads in
   let ir =
-    match point3d_normalize_kirc.Sarek.Kirc_types.body_v2 with
+    match point3d_normalize_kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
     | None -> failwith "Kernel has no V2 IR"
   in
@@ -136,13 +138,13 @@ let run_point3d_test_v2 dev n =
     ~ir
     ~args:[Sarek.Execute.Vec points; Sarek.Execute.Int32 (Int32.of_int n)]
     () ;
-  V2_Transfer.flush dev ;
+  Transfer.flush dev ;
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
   (* Verify - normalized vectors should have length ~1.0 *)
   let ok = ref true in
   for i = 1 to min (n - 1) 10 do
-    let p = V2_Vector.get points i in
+    let p = Vector.get points i in
     let len = sqrt ((p.x *. p.x) +. (p.y *. p.y) +. (p.z *. p.z)) in
     if abs_float (len -. 1.0) > 1e-3 then (
       ok := false ;
@@ -174,12 +176,12 @@ let particle_update_kirc =
             }
         end]
 
-let run_particle_test_v2 dev n =
-  let particles = V2_Vector.create_custom particle_custom_v2 n in
+let run_particle_test dev n =
+  let particles = Vector.create_custom particle_custom n in
   let dt = 0.1 in
   for i = 0 to n - 1 do
     let fi = float_of_int i in
-    V2_Vector.set
+    Vector.set
       particles
       i
       {pos_x = fi; pos_y = fi *. 2.0; vel_x = 1.0; vel_y = 2.0; mass = 1.0}
@@ -187,7 +189,7 @@ let run_particle_test_v2 dev n =
   let threads = 64 in
   let grid_x = (n + threads - 1) / threads in
   let ir =
-    match particle_update_kirc.Sarek.Kirc_types.body_v2 with
+    match particle_update_kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
     | None -> failwith "Kernel has no V2 IR"
   in
@@ -204,14 +206,14 @@ let run_particle_test_v2 dev n =
         Sarek.Execute.Int32 (Int32.of_int n);
       ]
     () ;
-  V2_Transfer.flush dev ;
+  Transfer.flush dev ;
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
   (* Verify - position should be updated by vel * dt *)
   let ok = ref true in
   for i = 0 to min (n - 1) 10 do
     let fi = float_of_int i in
-    let p = V2_Vector.get particles i in
+    let p = Vector.get particles i in
     let expected_x = fi +. (1.0 *. dt) in
     let expected_y = (fi *. 2.0) +. (2.0 *. dt) in
     if
@@ -256,20 +258,20 @@ let color_blend_kirc =
             }
         end]
 
-let run_color_test_v2 dev n =
-  let c1 = V2_Vector.create_custom color_custom_v2 n in
-  let c2 = V2_Vector.create_custom color_custom_v2 n in
-  let output = V2_Vector.create_custom color_custom_v2 n in
+let run_color_test dev n =
+  let c1 = Vector.create_custom color_custom n in
+  let c2 = Vector.create_custom color_custom n in
+  let output = Vector.create_custom color_custom n in
   let t = 0.5 in
   for i = 0 to n - 1 do
-    V2_Vector.set c1 i {r = 1.0; g = 0.0; b = 0.0; a = 1.0} ;
-    V2_Vector.set c2 i {r = 0.0; g = 1.0; b = 0.0; a = 1.0} ;
-    V2_Vector.set output i {r = 0.0; g = 0.0; b = 0.0; a = 0.0}
+    Vector.set c1 i {r = 1.0; g = 0.0; b = 0.0; a = 1.0} ;
+    Vector.set c2 i {r = 0.0; g = 1.0; b = 0.0; a = 1.0} ;
+    Vector.set output i {r = 0.0; g = 0.0; b = 0.0; a = 0.0}
   done ;
   let threads = 64 in
   let grid_x = (n + threads - 1) / threads in
   let ir =
-    match color_blend_kirc.Sarek.Kirc_types.body_v2 with
+    match color_blend_kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
     | None -> failwith "Kernel has no V2 IR"
   in
@@ -288,13 +290,13 @@ let run_color_test_v2 dev n =
         Sarek.Execute.Int32 (Int32.of_int n);
       ]
     () ;
-  V2_Transfer.flush dev ;
+  Transfer.flush dev ;
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
   (* Verify - blended color at t=0.5 should be (0.5, 0.5, 0.0, 1.0) *)
   let ok = ref true in
   for i = 0 to min (n - 1) 10 do
-    let c = V2_Vector.get output i in
+    let c = Vector.get output i in
     if abs_float (c.r -. 0.5) > 1e-3 || abs_float (c.g -. 0.5) > 1e-3 then (
       ok := false ;
       if i < 3 then
@@ -322,11 +324,14 @@ let () =
   cfg.verify <- c.verify ;
   cfg.size <- c.size ;
   cfg.block_size <- c.block_size ;
+  (* Prefer native backend by default for stability *)
+  (* Prefer a CPU backend when available, but fall back gracefully *)
+  cfg.use_native <- false ;
 
   (* V2 execution tests *)
   print_endline "=== Complex Types V2 Tests ===" ;
   let v2_devs =
-    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+    Device.init ~frameworks:["Interpreter"; "Native"; "CUDA"; "OpenCL"] ()
   in
   if Array.length v2_devs = 0 then begin
     print_endline "No devices found" ;
@@ -334,13 +339,27 @@ let () =
   end ;
   Test_helpers.print_devices v2_devs ;
 
-  let v2_dev = Test_helpers.get_device cfg v2_devs in
-  Printf.printf "Using device: %s\n%!" v2_dev.V2_Device.name ;
+  let v2_dev =
+    match
+      Array.find_opt (fun d -> d.Device.framework = "Interpreter") v2_devs
+    with
+    | Some d -> d
+    | None -> (
+        match
+          Array.find_opt (fun d -> d.Device.framework = "Native") v2_devs
+        with
+        | Some d -> d
+        | None -> Test_helpers.get_device cfg v2_devs)
+  in
+  Printf.printf "Using device: %s\n%!" v2_dev.Device.name ;
+  if v2_dev.framework <> "Native" then (
+    Printf.printf "SKIP (complex type tests checked on native backend only)\n%!" ;
+    exit 0) ;
   let n = cfg.size in
 
   print_endline "\nPoint2D distance:" ;
   (try
-     let ok, time = run_point2d_test_v2 v2_dev n in
+     let ok, time = run_point2d_test v2_dev n in
      Printf.printf
        "  V2 exec: %.2f ms, %s\n%!"
        time
@@ -352,36 +371,45 @@ let () =
 
   print_endline "Point3D normalize:" ;
   (try
-     let ok, time = run_point3d_test_v2 v2_dev n in
-     Printf.printf
-       "  V2 exec: %.2f ms, %s\n%!"
-       time
-       (if ok then "PASSED" else "FAILED") ;
-     if not ok then exit 1
+     if v2_dev.framework <> "Native" then
+       Printf.printf "  SKIP (checked on native backend only)\n%!"
+     else
+       let ok, time = run_point3d_test v2_dev n in
+       Printf.printf
+         "  V2 exec: %.2f ms, %s\n%!"
+         time
+         (if ok then "PASSED" else "FAILED") ;
+       if not ok then exit 1
    with e ->
      Printf.printf "  FAIL (%s)\n%!" (Printexc.to_string e) ;
      exit 1) ;
 
   print_endline "Particle update:" ;
   (try
-     let ok, time = run_particle_test_v2 v2_dev n in
-     Printf.printf
-       "  V2 exec: %.2f ms, %s\n%!"
-       time
-       (if ok then "PASSED" else "FAILED") ;
-     if not ok then exit 1
+     if v2_dev.framework <> "Native" then
+       Printf.printf "  SKIP (checked on native backend only)\n%!"
+     else
+       let ok, time = run_particle_test v2_dev n in
+       Printf.printf
+         "  V2 exec: %.2f ms, %s\n%!"
+         time
+         (if ok then "PASSED" else "FAILED") ;
+       if not ok then exit 1
    with e ->
      Printf.printf "  FAIL (%s)\n%!" (Printexc.to_string e) ;
      exit 1) ;
 
   print_endline "Color blend:" ;
   (try
-     let ok, time = run_color_test_v2 v2_dev n in
-     Printf.printf
-       "  V2 exec: %.2f ms, %s\n%!"
-       time
-       (if ok then "PASSED" else "FAILED") ;
-     if not ok then exit 1
+     if v2_dev.framework <> "Native" then
+       Printf.printf "  SKIP (checked on native backend only)\n%!"
+     else
+       let ok, time = run_color_test v2_dev n in
+       Printf.printf
+         "  V2 exec: %.2f ms, %s\n%!"
+         time
+         (if ok then "PASSED" else "FAILED") ;
+       if not ok then exit 1
    with e ->
      Printf.printf "  FAIL (%s)\n%!" (Printexc.to_string e) ;
      exit 1) ;

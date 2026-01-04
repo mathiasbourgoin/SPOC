@@ -2,14 +2,16 @@
  * E2E test: register a Sarek record type outside kernels via [%sarek.type].
  ******************************************************************************)
 
-module V2_Vector = Spoc_core.Vector
-module V2_Device = Spoc_core.Device
-module V2_Transfer = Spoc_core.Transfer
+module Vector = Spoc_core.Vector
+module Device = Spoc_core.Device
+module Transfer = Spoc_core.Transfer
 
 (* Force backend registration *)
 let () =
   Sarek_cuda.Cuda_plugin.init () ;
   Sarek_opencl.Opencl_plugin.init ()
+
+[@@@warning "-32"]
 
 type float32 = float
 
@@ -27,19 +29,19 @@ let kernel =
         dst.(tid) <- sqrt ((p.x *. p.x) +. (p.y *. p.y))]
 
 let run_v2 dev n bax bay =
-  let xv = V2_Vector.create V2_Vector.float32 n in
-  let yv = V2_Vector.create V2_Vector.float32 n in
-  let dst = V2_Vector.create V2_Vector.float32 n in
+  let xv = Vector.create Vector.float32 n in
+  let yv = Vector.create Vector.float32 n in
+  let dst = Vector.create Vector.float32 n in
   for i = 0 to n - 1 do
-    V2_Vector.set xv i (Bigarray.Array1.get bax i) ;
-    V2_Vector.set yv i (Bigarray.Array1.get bay i) ;
-    V2_Vector.set dst i 0.0
+    Vector.set xv i (Bigarray.Array1.get bax i) ;
+    Vector.set yv i (Bigarray.Array1.get bay i) ;
+    Vector.set dst i 0.0
   done ;
   let threads = 64 in
   let grid_x = (n + threads - 1) / threads in
   let _, kirc = kernel in
   let ir =
-    match kirc.Sarek.Kirc_types.body_v2 with
+    match kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
     | None -> failwith "Kernel has no V2 IR"
   in
@@ -56,14 +58,14 @@ let run_v2 dev n bax bay =
         Sarek.Execute.Int32 (Int32.of_int n);
       ]
     () ;
-  V2_Transfer.flush dev ;
+  Transfer.flush dev ;
   (* Verify *)
   let ok = ref true in
   for i = 0 to n - 1 do
-    let x = V2_Vector.get xv i in
-    let y = V2_Vector.get yv i in
+    let x = Vector.get xv i in
+    let y = Vector.get yv i in
     let expected = sqrt ((x *. x) +. (y *. y)) in
-    let got = V2_Vector.get dst i in
+    let got = Vector.get dst i in
     if abs_float (got -. expected) > 1e-3 then (
       ok := false ;
       if i < 5 then
@@ -78,14 +80,14 @@ let () =
   print_endline "==========================" ;
 
   let v2_devs =
-    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+    Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
 
   if Array.length v2_devs = 0 then (
     print_endline "No V2 devices found - skipping execution" ;
     exit 0) ;
 
-  Printf.printf "Using device: %s\n%!" v2_devs.(0).V2_Device.name ;
+  Printf.printf "Using device: %s\n%!" v2_devs.(0).Device.name ;
 
   let n = 128 in
   let bax = Bigarray.Array1.create Bigarray.float32 Bigarray.c_layout n in

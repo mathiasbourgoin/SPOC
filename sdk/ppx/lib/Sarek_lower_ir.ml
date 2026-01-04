@@ -171,10 +171,10 @@ let variant_constructor_strings name constrs =
   in
   constr_structs @ (union_def :: main_struct :: builders)
 
-(* Debug counter for V2 lowering *)
-let v2_lower_expr_count = ref 0
+(* Debug counters for IR lowering *)
+let ir_lower_expr_count = ref 0
 
-let v2_lower_stmt_count = ref 0
+let ir_lower_stmt_count = ref 0
 
 (** Lowering state *)
 type state = {
@@ -283,11 +283,11 @@ let rec make_returning stmt =
 
 (** Convert a typed expression to IR expression *)
 let rec lower_expr (state : state) (te : texpr) : Ir.expr =
-  incr v2_lower_expr_count ;
+  incr ir_lower_expr_count ;
   (* Log progress every 10000 calls *)
-  if !v2_lower_expr_count mod 10000 = 0 then
+  if !ir_lower_expr_count mod 10000 = 0 then
     Sarek_debug.log_to_file
-      (Printf.sprintf "    [V2] lower_expr progress: %d" !v2_lower_expr_count) ;
+      (Printf.sprintf "    [IR] lower_expr progress: %d" !ir_lower_expr_count) ;
   match te.te with
   | TEUnit -> Ir.EConst Ir.CUnit
   | TEBool b -> Ir.EConst (Ir.CBool b)
@@ -422,7 +422,7 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
 
 (** Convert a typed expression to IR statement *)
 and lower_stmt (state : state) (te : texpr) : Ir.stmt =
-  incr v2_lower_stmt_count ;
+  incr ir_lower_stmt_count ;
   match te.te with
   | TEUnit -> Ir.SEmpty
   | TESeq [] -> Ir.SEmpty
@@ -601,11 +601,11 @@ let lower_param (p : tparam) : Ir.decl =
 (** Lower a complete kernel *)
 let lower_kernel (kernel : tkernel) : Ir.kernel * string list =
   (* Reset and log counters *)
-  v2_lower_expr_count := 0 ;
-  v2_lower_stmt_count := 0 ;
+  ir_lower_expr_count := 0 ;
+  ir_lower_stmt_count := 0 ;
   let kern_name = Option.value kernel.tkern_name ~default:"anon" in
   Sarek_debug.log_to_file
-    (Printf.sprintf "  [V2] lower_kernel start: %s" kern_name) ;
+    (Printf.sprintf "  [IR] lower_kernel start: %s" kern_name) ;
   (* Build fun_map from module items (local + registry) *)
   let fun_map = Hashtbl.create 8 in
   let all_mod_items = kernel.tkern_module_items in
@@ -668,10 +668,10 @@ let lower_kernel (kernel : tkernel) : Ir.kernel * string list =
   let body_ir = lower_stmt state kernel.tkern_body in
   Sarek_debug.log_to_file
     (Printf.sprintf
-       "  [V2] lower_kernel done: %s (expr=%d, stmt=%d)"
+       "  [IR] lower_kernel done: %s (expr=%d, stmt=%d)"
        kern_name
-       !v2_lower_expr_count
-       !v2_lower_stmt_count) ;
+       !ir_lower_expr_count
+       !ir_lower_stmt_count) ;
   let full_body =
     match module_items_ir with
     | Ir.SEmpty -> body_ir

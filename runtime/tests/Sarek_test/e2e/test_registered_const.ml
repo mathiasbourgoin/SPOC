@@ -3,9 +3,9 @@
  * Uses V2 runtime only.
  ******************************************************************************)
 
-module V2_Device = Spoc_core.Device
-module V2_Vector = Spoc_core.Vector
-module V2_Transfer = Spoc_core.Transfer
+module Device = Spoc_core.Device
+module Vector = Spoc_core.Vector
+module Transfer = Spoc_core.Transfer
 
 (* Force backend registration *)
 let () =
@@ -37,26 +37,26 @@ let () =
   print_endline "============================" ;
 
   let devs =
-    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+    Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
   if Array.length devs = 0 then (
     print_endline "No devices found - IR generation test passed" ;
     exit 0) ;
   let dev = devs.(0) in
-  Printf.printf "Using device: %s\n%!" dev.V2_Device.name ;
+  Printf.printf "Using device: %s\n%!" dev.Device.name ;
 
   (* Get V2 IR and execute *)
-  match kirc.Sarek.Kirc_types.body_v2 with
+  match kirc.Sarek.Kirc_types.body_ir with
   | None -> print_endline "No V2 IR - IR generation test PASSED"
   | Some ir ->
       let n = 64 in
-      let xs = V2_Vector.create V2_Vector.float32 n in
-      let ys = V2_Vector.create V2_Vector.float32 n in
-      let dst = V2_Vector.create V2_Vector.float32 n in
+      let xs = Vector.create Vector.float32 n in
+      let ys = Vector.create Vector.float32 n in
+      let dst = Vector.create Vector.float32 n in
       for i = 0 to n - 1 do
-        V2_Vector.set xs i (float_of_int i) ;
-        V2_Vector.set ys i (float_of_int (n - i)) ;
-        V2_Vector.set dst i 0.0
+        Vector.set xs i (float_of_int i) ;
+        Vector.set ys i (float_of_int (n - i)) ;
+        Vector.set dst i 0.0
       done ;
 
       let threads = 64 in
@@ -74,14 +74,14 @@ let () =
         ~block:(Sarek.Execute.dims1d threads)
         ~grid:(Sarek.Execute.dims1d grid_x)
         () ;
-      V2_Transfer.flush dev ;
+      Transfer.flush dev ;
 
       let ok = ref true in
       for i = 0 to n - 1 do
-        let x = V2_Vector.get xs i in
-        let y = V2_Vector.get ys i in
+        let x = Vector.get xs i in
+        let y = Vector.get ys i in
         let expected = Registered_defs.scale_fun (x +. y) in
-        let got = V2_Vector.get dst i in
+        let got = Vector.get dst i in
         if abs_float (got -. expected) > 1e-4 then (
           ok := false ;
           Printf.printf "Mismatch at %d: got %f expected %f\n%!" i got expected)

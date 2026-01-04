@@ -12,9 +12,9 @@ open Sarek
 module Std = Sarek_stdlib.Std
 
 (* Module aliases *)
-module V2_Device = Spoc_core.Device
-module V2_Vector = Spoc_core.Vector
-module V2_Transfer = Spoc_core.Transfer
+module Device = Spoc_core.Device
+module Vector = Spoc_core.Vector
+module Transfer = Spoc_core.Transfer
 
 (* Force backend registration *)
 let () =
@@ -138,7 +138,7 @@ let matmul_tiled_kernel =
 (* ========== V2 test runners ========== *)
 
 (** Run tiled matrix multiplication on V2 - uses shared memory and supersteps *)
-let run_matmul_tiled_v2 (dev : V2_Device.t) =
+let run_matmul_tiled (dev : Device.t) =
   let dim = !matrix_dim in
   (* Pad to tile_size multiple *)
   let dim = (dim + !tile_size - 1) / !tile_size * !tile_size in
@@ -149,34 +149,34 @@ let run_matmul_tiled_v2 (dev : V2_Device.t) =
 
   let _, kirc = matmul_tiled_kernel in
   let ir =
-    match kirc.Sarek.Kirc_types.body_v2 with
+    match kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
     | None -> failwith "Tiled kernel: No V2 IR"
   in
 
-  let a = V2_Vector.create V2_Vector.float32 (m * k) in
-  let b = V2_Vector.create V2_Vector.float32 (k * n) in
-  let c = V2_Vector.create V2_Vector.float32 (m * n) in
+  let a = Vector.create Vector.float32 (m * k) in
+  let b = Vector.create Vector.float32 (k * n) in
+  let c = Vector.create Vector.float32 (m * n) in
 
   (* Initialize with padding - zero-pad to tile boundary *)
   for row = 0 to m - 1 do
     for col = 0 to k - 1 do
       let idx = (row * k) + col in
       if row < orig_dim && col < orig_dim then
-        V2_Vector.set a idx inp_a.((row * orig_dim) + col)
-      else V2_Vector.set a idx 0.0
+        Vector.set a idx inp_a.((row * orig_dim) + col)
+      else Vector.set a idx 0.0
     done
   done ;
   for row = 0 to k - 1 do
     for col = 0 to n - 1 do
       let idx = (row * n) + col in
       if row < orig_dim && col < orig_dim then
-        V2_Vector.set b idx inp_b.((row * orig_dim) + col)
-      else V2_Vector.set b idx 0.0
+        Vector.set b idx inp_b.((row * orig_dim) + col)
+      else Vector.set b idx 0.0
     done
   done ;
   for i = 0 to (m * n) - 1 do
-    V2_Vector.set c i 0.0
+    Vector.set c i 0.0
   done ;
 
   (* 2D launch configuration *)
@@ -206,13 +206,13 @@ let run_matmul_tiled_v2 (dev : V2_Device.t) =
     ~grid
     ~shared_mem
     () ;
-  V2_Transfer.flush dev ;
+  Transfer.flush dev ;
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
 
   let ok =
     if cfg.verify then begin
-      let result = V2_Vector.to_array c in
+      let result = Vector.to_array c in
       let exp_c = !expected_c in
       let errors = ref 0 in
       let check_count = min 100 (orig_dim * orig_dim) in
@@ -248,7 +248,7 @@ let run_matmul_tiled_v2 (dev : V2_Device.t) =
   (time_ms, ok)
 
 (** Run naive matrix multiplication on V2 - returns (compile_ms, exec_ms, ok) *)
-let run_matmul_naive_v2 (dev : V2_Device.t) =
+let run_matmul_naive (dev : Device.t) =
   let dim = !matrix_dim in
   let m, n, k = (dim, dim, dim) in
   let inp_a = !input_a in
@@ -256,23 +256,23 @@ let run_matmul_naive_v2 (dev : V2_Device.t) =
   let exp_c = !expected_c in
   let _, kirc = matmul_naive_kernel in
   let ir =
-    match kirc.Sarek.Kirc_types.body_v2 with
+    match kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
     | None -> failwith "No V2 IR"
   in
 
-  let a = V2_Vector.create V2_Vector.float32 (m * k) in
-  let b = V2_Vector.create V2_Vector.float32 (k * n) in
-  let c = V2_Vector.create V2_Vector.float32 (m * n) in
+  let a = Vector.create Vector.float32 (m * k) in
+  let b = Vector.create Vector.float32 (k * n) in
+  let c = Vector.create Vector.float32 (m * n) in
 
   for i = 0 to (m * k) - 1 do
-    V2_Vector.set a i inp_a.(i)
+    Vector.set a i inp_a.(i)
   done ;
   for i = 0 to (k * n) - 1 do
-    V2_Vector.set b i inp_b.(i)
+    Vector.set b i inp_b.(i)
   done ;
   for i = 0 to (m * n) - 1 do
-    V2_Vector.set c i 0.0
+    Vector.set c i 0.0
   done ;
 
   let block_size = 256 in
@@ -298,13 +298,13 @@ let run_matmul_naive_v2 (dev : V2_Device.t) =
     ~block
     ~grid
     () ;
-  V2_Transfer.flush dev ;
+  Transfer.flush dev ;
   let tc1 = Unix.gettimeofday () in
   let compile_ms = (tc1 -. tc0) *. 1000.0 in
 
   (* Reset output for execution timing *)
   for i = 0 to (m * n) - 1 do
-    V2_Vector.set c i 0.0
+    Vector.set c i 0.0
   done ;
 
   (* Measure execution time (cached kernel) *)
@@ -324,13 +324,13 @@ let run_matmul_naive_v2 (dev : V2_Device.t) =
     ~block
     ~grid
     () ;
-  V2_Transfer.flush dev ;
+  Transfer.flush dev ;
   let t1 = Unix.gettimeofday () in
   let exec_ms = (t1 -. t0) *. 1000.0 in
 
   let ok =
     if cfg.verify then begin
-      let result = V2_Vector.to_array c in
+      let result = Vector.to_array c in
       let errors = ref 0 in
       let check_count = min 100 (m * n) in
       for idx = 0 to check_count - 1 do
@@ -386,12 +386,12 @@ let () =
 
   (* Init V2 devices - unified path for all backends *)
   let v2_devs =
-    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+    Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
   Printf.printf "Found %d V2 device(s)\n" (Array.length v2_devs) ;
   Array.iteri
     (fun i d ->
-      Printf.printf "  [%d] %s (%s)\n" i d.V2_Device.name d.V2_Device.framework)
+      Printf.printf "  [%d] %s (%s)\n" i d.Device.name d.Device.framework)
     v2_devs ;
   print_newline () ;
 
@@ -413,9 +413,9 @@ let () =
 
     Array.iter
       (fun v2_dev ->
-        let name = v2_dev.V2_Device.name in
-        let framework = v2_dev.V2_Device.framework in
-        let v2_comp, v2_exec, v2_ok = run_matmul_naive_v2 v2_dev in
+        let name = v2_dev.Device.name in
+        let framework = v2_dev.Device.framework in
+        let v2_comp, v2_exec, v2_ok = run_matmul_naive v2_dev in
         let status = if v2_ok then "OK" else "FAIL" in
         if not v2_ok then all_ok := false ;
         Printf.printf
@@ -436,11 +436,11 @@ let () =
 
     Array.iter
       (fun v2_dev ->
-        let name = v2_dev.V2_Device.name in
-        let framework = v2_dev.V2_Device.framework in
+        let name = v2_dev.Device.name in
+        let framework = v2_dev.Device.framework in
         (* Skip interpreter for tiled - barrier semantics differ *)
         if framework <> "Interpreter" then begin
-          let time, ok = run_matmul_tiled_v2 v2_dev in
+          let time, ok = run_matmul_tiled v2_dev in
           Printf.printf
             "%-40s %10.4f %8s\n"
             (Printf.sprintf "%s (%s)" name framework)
@@ -474,11 +474,11 @@ let () =
     in
     Printf.printf
       "Using device: %s (%s)\n%!"
-      v2_dev.V2_Device.name
-      v2_dev.V2_Device.framework ;
+      v2_dev.Device.name
+      v2_dev.Device.framework ;
 
     Printf.printf "\n--- Naive Matrix Multiplication (V2) ---\n%!" ;
-    let v2_comp, v2_exec, v2_ok = run_matmul_naive_v2 v2_dev in
+    let v2_comp, v2_exec, v2_ok = run_matmul_naive v2_dev in
     Printf.printf
       "  Compile: %.2f ms, Exec: %.2f ms, %s\n%!"
       v2_comp
@@ -486,9 +486,9 @@ let () =
       (if v2_ok then "PASSED" else "FAILED") ;
 
     (* Tiled kernel via V2 (shared memory + supersteps) *)
-    if v2_dev.V2_Device.framework <> "Interpreter" then begin
+    if v2_dev.Device.framework <> "Interpreter" then begin
       Printf.printf "\n--- Tiled Matrix Multiplication (V2) ---\n%!" ;
-      let time, ok = run_matmul_tiled_v2 v2_dev in
+      let time, ok = run_matmul_tiled v2_dev in
       Printf.printf
         "  Time: %.4f ms, %s\n%!"
         time

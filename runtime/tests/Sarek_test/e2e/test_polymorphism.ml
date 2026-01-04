@@ -11,9 +11,9 @@ module Std = Sarek_stdlib.Std
 open Sarek
 
 (* V2 module aliases *)
-module V2_Device = Spoc_core.Device
-module V2_Vector = Spoc_core.Vector
-module V2_Transfer = Spoc_core.Transfer
+module Device = Spoc_core.Device
+module Vector = Spoc_core.Vector
+module Transfer = Spoc_core.Transfer
 
 (* Force backend registration *)
 let () =
@@ -58,23 +58,23 @@ let identity_kernel =
 let test_basic_v2 () =
   let _, kirc = basic_kernel in
   let v2_devs =
-    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+    Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
   if Array.length v2_devs = 0 then (
     print_endline "V2: No device - SKIPPED" ;
     true)
   else
     let dev = v2_devs.(0) in
-    match kirc.Sarek.Kirc_types.body_v2 with
+    match kirc.Sarek.Kirc_types.body_ir with
     | None ->
         print_endline "V2: No V2 IR - SKIPPED" ;
         true
     | Some ir ->
         let n = 1024 in
-        let src = V2_Vector.create V2_Vector.int32 n in
-        let dst = V2_Vector.create V2_Vector.int32 n in
+        let src = Vector.create Vector.int32 n in
+        let dst = Vector.create Vector.int32 n in
         for i = 0 to n - 1 do
-          V2_Vector.set src i (Int32.of_int i)
+          Vector.set src i (Int32.of_int i)
         done ;
 
         let block = Execute.dims1d 256 in
@@ -86,16 +86,16 @@ let test_basic_v2 () =
           ~block
           ~grid
           () ;
-        V2_Transfer.flush dev ;
+        Transfer.flush dev ;
 
         let ok = ref true in
         for i = 0 to n - 1 do
           let expected = Int32.of_int (i + 1) in
-          if V2_Vector.get dst i <> expected then (
+          if Vector.get dst i <> expected then (
             Printf.printf
               "V2 FAIL: dst[%d] = %ld, expected %ld\n"
               i
-              (V2_Vector.get dst i)
+              (Vector.get dst i)
               expected ;
             ok := false)
         done ;
@@ -105,23 +105,23 @@ let test_basic_v2 () =
 let test_times_two_v2 () =
   let _, kirc = times_two_kernel in
   let v2_devs =
-    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+    Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
   if Array.length v2_devs = 0 then (
     print_endline "V2: No device - SKIPPED" ;
     true)
   else
     let dev = v2_devs.(0) in
-    match kirc.Sarek.Kirc_types.body_v2 with
+    match kirc.Sarek.Kirc_types.body_ir with
     | None ->
         print_endline "V2: No V2 IR - SKIPPED" ;
         true
     | Some ir ->
         let n = 1024 in
-        let src = V2_Vector.create V2_Vector.int32 n in
-        let dst = V2_Vector.create V2_Vector.int32 n in
+        let src = Vector.create Vector.int32 n in
+        let dst = Vector.create Vector.int32 n in
         for i = 0 to n - 1 do
-          V2_Vector.set src i (Int32.of_int i)
+          Vector.set src i (Int32.of_int i)
         done ;
 
         let block = Execute.dims1d 256 in
@@ -133,16 +133,16 @@ let test_times_two_v2 () =
           ~block
           ~grid
           () ;
-        V2_Transfer.flush dev ;
+        Transfer.flush dev ;
 
         let ok = ref true in
         for i = 0 to n - 1 do
           let expected = Int32.of_int (2 * i) in
-          if V2_Vector.get dst i <> expected then (
+          if Vector.get dst i <> expected then (
             Printf.printf
               "V2 FAIL: dst[%d] = %ld, expected %ld\n"
               i
-              (V2_Vector.get dst i)
+              (Vector.get dst i)
               expected ;
             ok := false)
         done ;
@@ -152,26 +152,26 @@ let test_times_two_v2 () =
 let test_identity_v2 () =
   let _, kirc = identity_kernel in
   let v2_devs =
-    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+    Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
   if Array.length v2_devs = 0 then (
     print_endline "V2: No device - SKIPPED" ;
     true)
   else
     let dev = v2_devs.(0) in
-    match kirc.Sarek.Kirc_types.body_v2 with
+    match kirc.Sarek.Kirc_types.body_ir with
     | None ->
         print_endline "V2: No V2 IR - SKIPPED" ;
         true
     | Some ir ->
         let n = 1024 in
-        let src_i = V2_Vector.create V2_Vector.int32 n in
-        let src_f = V2_Vector.create V2_Vector.float32 n in
-        let dst_i = V2_Vector.create V2_Vector.int32 n in
-        let dst_f = V2_Vector.create V2_Vector.float32 n in
+        let src_i = Vector.create Vector.int32 n in
+        let src_f = Vector.create Vector.float32 n in
+        let dst_i = Vector.create Vector.int32 n in
+        let dst_f = Vector.create Vector.float32 n in
         for i = 0 to n - 1 do
-          V2_Vector.set src_i i (Int32.of_int i) ;
-          V2_Vector.set src_f i (float_of_int i)
+          Vector.set src_i i (Int32.of_int i) ;
+          Vector.set src_f i (float_of_int i)
         done ;
 
         let block = Execute.dims1d 256 in
@@ -189,24 +189,24 @@ let test_identity_v2 () =
           ~block
           ~grid
           () ;
-        V2_Transfer.flush dev ;
+        Transfer.flush dev ;
 
         let ok = ref true in
         for i = 0 to n - 1 do
           let expected_i = Int32.of_int i in
           let expected_f = float_of_int i in
-          if V2_Vector.get dst_i i <> expected_i then (
+          if Vector.get dst_i i <> expected_i then (
             Printf.printf
               "V2 FAIL: dst_i[%d] = %ld, expected %ld\n"
               i
-              (V2_Vector.get dst_i i)
+              (Vector.get dst_i i)
               expected_i ;
             ok := false) ;
-          if abs_float (V2_Vector.get dst_f i -. expected_f) > 0.001 then (
+          if abs_float (Vector.get dst_f i -. expected_f) > 0.001 then (
             Printf.printf
               "V2 FAIL: dst_f[%d] = %f, expected %f\n"
               i
-              (V2_Vector.get dst_f i)
+              (Vector.get dst_f i)
               expected_f ;
             ok := false)
         done ;
@@ -217,7 +217,7 @@ let test_identity_v2 () =
 
 let test_basic_interpreter () =
   let _, kirc = basic_kernel in
-  match kirc.Sarek.Kirc_types.body_v2 with
+  match kirc.Sarek.Kirc_types.body_ir with
   | None ->
       print_endline "Interpreter: No V2 IR - SKIPPED" ;
       true

@@ -1,3 +1,5 @@
+[@@@warning "-32"]
+
 type float32 = float
 
 type point = {x : float32; y : float32} [@@sarek.type]

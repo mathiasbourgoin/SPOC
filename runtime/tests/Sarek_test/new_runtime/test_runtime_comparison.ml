@@ -6,9 +6,9 @@
  ******************************************************************************)
 
 (* Module aliases *)
-module V2_Device = Spoc_core.Device
-module V2_Vector = Spoc_core.Vector
-module V2_Transfer = Spoc_core.Transfer
+module Device = Spoc_core.Device
+module Vector = Spoc_core.Vector
+module Transfer = Spoc_core.Transfer
 module Std = Sarek_stdlib.Std
 
 (* Force backend registration *)
@@ -30,25 +30,25 @@ let vector_add =
       if tid < n then c.(tid) <- a.(tid) +. b.(tid)]
 
 (* Run via V2 runtime path and return results *)
-let run_v2 (dev : V2_Device.t) : float array =
+let run_v2 (dev : Device.t) : float array =
   (* Get the IR from the kernel *)
   let _, kirc = vector_add in
   let ir =
-    match kirc.Sarek.Kirc_types.body_v2 with
+    match kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
     | None -> failwith "Kernel has no V2 IR"
   in
 
   (* Create V2 vectors *)
-  let a = V2_Vector.create V2_Vector.float32 size in
-  let b = V2_Vector.create V2_Vector.float32 size in
-  let c = V2_Vector.create V2_Vector.float32 size in
+  let a = Vector.create Vector.float32 size in
+  let b = Vector.create Vector.float32 size in
+  let c = Vector.create Vector.float32 size in
 
   (* Initialize *)
   for i = 0 to size - 1 do
-    V2_Vector.set a i (float_of_int i) ;
-    V2_Vector.set b i (float_of_int (i * 2)) ;
-    V2_Vector.set c i 0.0
+    Vector.set a i (float_of_int i) ;
+    Vector.set b i (float_of_int (i * 2)) ;
+    Vector.set c i 0.0
   done ;
 
   (* Configure grid/block *)
@@ -72,8 +72,8 @@ let run_v2 (dev : V2_Device.t) : float array =
     ~grid
     () ;
 
-  V2_Transfer.flush dev ;
-  V2_Vector.to_array c
+  Transfer.flush dev ;
+  Vector.to_array c
 
 (* Compare result array against expected *)
 let verify_results (result : float array) (expected : float array) : int =
@@ -98,7 +98,7 @@ let () =
 
   (* Initialize V2 devices *)
   let v2_devs =
-    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+    Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
   if Array.length v2_devs = 0 then begin
     print_endline "No devices found" ;
@@ -121,8 +121,8 @@ let () =
   (* Test each V2 device *)
   Array.iter
     (fun v2_dev ->
-      let name = v2_dev.V2_Device.name in
-      let framework = v2_dev.V2_Device.framework in
+      let name = v2_dev.Device.name in
+      let framework = v2_dev.Device.framework in
       let v2_result = run_v2 v2_dev in
       let errors = verify_results v2_result expected in
       let status = if errors = 0 then "PASS" else "FAIL" in

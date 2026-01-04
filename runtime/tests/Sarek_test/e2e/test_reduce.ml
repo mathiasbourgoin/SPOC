@@ -7,9 +7,9 @@
  ******************************************************************************)
 
 (* Module aliases *)
-module V2_Device = Spoc_core.Device
-module V2_Vector = Spoc_core.Vector
-module V2_Transfer = Spoc_core.Transfer
+module Device = Spoc_core.Device
+module Vector = Spoc_core.Vector
+module Transfer = Spoc_core.Transfer
 
 (* Force backend registration *)
 let () =
@@ -19,7 +19,7 @@ let () =
 let cfg = Test_helpers.default_config ()
 
 (** Get appropriate block size for V2 device *)
-let get_block_size_v2 (dev : V2_Device.t) =
+let get_block_size (dev : Device.t) =
   if dev.capabilities.is_cpu then
     if cfg.block_size > 1 then cfg.block_size else 64
   else cfg.block_size
@@ -236,29 +236,29 @@ let dot_product_kernel =
       in
       if tid = 0l then output.(block_idx_x) <- sdata.(0l)]
 
-(* ========== V2 test runners ========== *)
+(* ========== Test runners ========== *)
 
-let run_reduce_sum_v2 (dev : V2_Device.t) =
+let run_reduce_sum (dev : Device.t) =
   let n = cfg.size in
-  let block_size = min 256 (get_block_size_v2 dev) in
+  let block_size = min 256 (get_block_size dev) in
   let num_blocks = (n + block_size - 1) / block_size in
   let inp = !input_sum in
 
   let _, kirc = reduce_sum_kernel in
   let ir =
-    match kirc.Sarek.Kirc_types.body_v2 with
+    match kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
     | None -> failwith "Kernel has no V2 IR"
   in
 
-  let input = V2_Vector.create V2_Vector.float32 n in
-  let output = V2_Vector.create V2_Vector.float32 num_blocks in
+  let input = Vector.create Vector.float32 n in
+  let output = Vector.create Vector.float32 num_blocks in
 
   for i = 0 to n - 1 do
-    V2_Vector.set input i inp.(i)
+    Vector.set input i inp.(i)
   done ;
   for i = 0 to num_blocks - 1 do
-    V2_Vector.set output i 0.0
+    Vector.set output i 0.0
   done ;
 
   let block = Sarek.Execute.dims1d block_size in
@@ -277,13 +277,13 @@ let run_reduce_sum_v2 (dev : V2_Device.t) =
     ~block
     ~grid
     () ;
-  V2_Transfer.flush dev ;
+  Transfer.flush dev ;
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
 
   let ok =
     if cfg.verify then begin
-      let result = V2_Vector.to_array output in
+      let result = Vector.to_array output in
       let total = Array.fold_left ( +. ) 0.0 result in
       abs_float (total -. !expected_sum) < 0.1
     end
@@ -291,27 +291,27 @@ let run_reduce_sum_v2 (dev : V2_Device.t) =
   in
   (time_ms, ok)
 
-let run_reduce_max_v2 (dev : V2_Device.t) =
+let run_reduce_max (dev : Device.t) =
   let n = cfg.size in
-  let block_size = min 256 (get_block_size_v2 dev) in
+  let block_size = min 256 (get_block_size dev) in
   let num_blocks = (n + block_size - 1) / block_size in
   let inp = !input_max in
 
   let _, kirc = reduce_max_kernel in
   let ir =
-    match kirc.Sarek.Kirc_types.body_v2 with
+    match kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
     | None -> failwith "Kernel has no V2 IR"
   in
 
-  let input = V2_Vector.create V2_Vector.float32 n in
-  let output = V2_Vector.create V2_Vector.float32 num_blocks in
+  let input = Vector.create Vector.float32 n in
+  let output = Vector.create Vector.float32 num_blocks in
 
   for i = 0 to n - 1 do
-    V2_Vector.set input i inp.(i)
+    Vector.set input i inp.(i)
   done ;
   for i = 0 to num_blocks - 1 do
-    V2_Vector.set output i (-1000000.0)
+    Vector.set output i (-1000000.0)
   done ;
 
   let block = Sarek.Execute.dims1d block_size in
@@ -330,13 +330,13 @@ let run_reduce_max_v2 (dev : V2_Device.t) =
     ~block
     ~grid
     () ;
-  V2_Transfer.flush dev ;
+  Transfer.flush dev ;
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
 
   let ok =
     if cfg.verify then begin
-      let result = V2_Vector.to_array output in
+      let result = Vector.to_array output in
       let max_val = Array.fold_left max (-1000000.0) result in
       abs_float (max_val -. !expected_max) < 0.1
     end
@@ -344,30 +344,30 @@ let run_reduce_max_v2 (dev : V2_Device.t) =
   in
   (time_ms, ok)
 
-let run_dot_product_v2 (dev : V2_Device.t) =
+let run_dot_product (dev : Device.t) =
   let n = cfg.size in
-  let block_size = min 256 (get_block_size_v2 dev) in
+  let block_size = min 256 (get_block_size dev) in
   let num_blocks = (n + block_size - 1) / block_size in
   let inp_a = !input_a in
   let inp_b = !input_b in
 
   let _, kirc = dot_product_kernel in
   let ir =
-    match kirc.Sarek.Kirc_types.body_v2 with
+    match kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
     | None -> failwith "Kernel has no V2 IR"
   in
 
-  let a = V2_Vector.create V2_Vector.float32 n in
-  let b = V2_Vector.create V2_Vector.float32 n in
-  let output = V2_Vector.create V2_Vector.float32 num_blocks in
+  let a = Vector.create Vector.float32 n in
+  let b = Vector.create Vector.float32 n in
+  let output = Vector.create Vector.float32 num_blocks in
 
   for i = 0 to n - 1 do
-    V2_Vector.set a i inp_a.(i) ;
-    V2_Vector.set b i inp_b.(i)
+    Vector.set a i inp_a.(i) ;
+    Vector.set b i inp_b.(i)
   done ;
   for i = 0 to num_blocks - 1 do
-    V2_Vector.set output i 0.0
+    Vector.set output i 0.0
   done ;
 
   let block = Sarek.Execute.dims1d block_size in
@@ -387,13 +387,13 @@ let run_dot_product_v2 (dev : V2_Device.t) =
     ~block
     ~grid
     () ;
-  V2_Transfer.flush dev ;
+  Transfer.flush dev ;
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
 
   let ok =
     if cfg.verify then begin
-      let result = V2_Vector.to_array output in
+      let result = Vector.to_array output in
       let total = Array.fold_left ( +. ) 0.0 result in
       abs_float (total -. !expected_dot) < float_of_int n *. 0.01
     end
@@ -418,7 +418,7 @@ let () =
   Printf.printf "Size: %d elements\n\n" cfg.size ;
 
   let v2_devs =
-    V2_Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+    Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
   if Array.length v2_devs = 0 then begin
     print_endline "No devices found" ;
@@ -434,9 +434,9 @@ let () =
   print_endline "=== Sum Reduction ===" ;
   Array.iter
     (fun v2_dev ->
-      let name = v2_dev.V2_Device.name in
-      let framework = v2_dev.V2_Device.framework in
-      let v2_time, v2_ok = run_reduce_sum_v2 v2_dev in
+      let name = v2_dev.Device.name in
+      let framework = v2_dev.Device.framework in
+      let v2_time, v2_ok = run_reduce_sum v2_dev in
       Printf.printf
         "  %s (%s): %.4f ms, %s\n%!"
         name
@@ -451,9 +451,9 @@ let () =
   print_endline "\n=== Max Reduction ===" ;
   Array.iter
     (fun v2_dev ->
-      let name = v2_dev.V2_Device.name in
-      let framework = v2_dev.V2_Device.framework in
-      let v2_time, v2_ok = run_reduce_max_v2 v2_dev in
+      let name = v2_dev.Device.name in
+      let framework = v2_dev.Device.framework in
+      let v2_time, v2_ok = run_reduce_max v2_dev in
       Printf.printf
         "  %s (%s): %.4f ms, %s\n%!"
         name
@@ -468,9 +468,9 @@ let () =
   print_endline "\n=== Dot Product ===" ;
   Array.iter
     (fun v2_dev ->
-      let name = v2_dev.V2_Device.name in
-      let framework = v2_dev.V2_Device.framework in
-      let v2_time, v2_ok = run_dot_product_v2 v2_dev in
+      let name = v2_dev.Device.name in
+      let framework = v2_dev.Device.framework in
+      let v2_time, v2_ok = run_dot_product v2_dev in
       Printf.printf
         "  %s (%s): %.4f ms, %s\n%!"
         name
