@@ -137,7 +137,7 @@ module Native_intrinsics : Framework_sig.INTRINSIC_REGISTRY = struct
       }
 end
 
-(** Native V2 Backend - implements BACKEND_V2 *)
+(** Native Backend - implements BACKEND *)
 module Native_v2 : Framework_sig.BACKEND = struct
   (* Include all of BACKEND from Native_base *)
   include Native_base

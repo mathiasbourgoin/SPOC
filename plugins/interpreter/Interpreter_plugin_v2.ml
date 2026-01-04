@@ -57,7 +57,7 @@ module Interpreter_intrinsics : Framework_sig.INTRINSIC_REGISTRY = struct
       }
 end
 
-(** Interpreter V2 Backend - implements BACKEND_V2 *)
+(** Interpreter Backend - implements BACKEND *)
 module Interpreter_v2 : Framework_sig.BACKEND = struct
   include Interpreter_base
 

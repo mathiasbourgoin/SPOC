@@ -80,38 +80,8 @@ let bind_args (type kargs)
           let backend_buf : _ B.Memory.buffer = Obj.obj buf.Memory.handle in
           B.Kernel.set_arg_buffer kargs i backend_buf
       | ArgRaw _obj ->
-          (* Raw args need type info - for now skip (caller must handle) *)
-          ()
-      | ArgDeviceBuffer buf ->
-          (* V2 Vector buffer - let the backend bind itself *)
-          let (module DB : Vector.DEVICE_BUFFER) = buf in
-          DB.bind_to_kernel ~kargs:(Obj.repr kargs) ~idx:i)
-    args
-
-(** Bind typed arguments to a kernel (for BACKEND_V2) *)
-let bind_args_v2 (type kargs)
-    (module B : Framework_sig.BACKEND_V2 with type Kernel.args = kargs)
-    (kargs : kargs) (args : arg list) : unit =
-  List.iteri
-    (fun i arg ->
-      match arg with
-      | ArgBuffer obj ->
-          (* obj is Obj.repr of Memory.buffer, extract the backend handle *)
-          let buf : _ Memory.buffer = Obj.obj obj in
-          let backend_buf : _ B.Memory.buffer = Obj.obj buf.Memory.handle in
-          B.Kernel.set_arg_buffer kargs i backend_buf
-      | ArgInt32 n -> B.Kernel.set_arg_int32 kargs i n
-      | ArgInt64 n -> B.Kernel.set_arg_int64 kargs i n
-      | ArgFloat32 f -> B.Kernel.set_arg_float32 kargs i f
-      | ArgFloat64 f -> B.Kernel.set_arg_float64 kargs i f
-      | ArgCustom (obj, _elem_size) ->
-          (* Same as ArgBuffer - custom types use same buffer mechanism *)
-          let buf : _ Memory.buffer = Obj.obj obj in
-          let backend_buf : _ B.Memory.buffer = Obj.obj buf.Memory.handle in
-          B.Kernel.set_arg_buffer kargs i backend_buf
-      | ArgRaw _obj ->
           (* Raw args not handled in JIT path - use expand_vector_args *)
-          failwith "bind_args_v2: ArgRaw not supported, use expand_vector_args"
+          failwith "bind_args: ArgRaw not supported, use expand_vector_args"
       | ArgDeviceBuffer buf ->
           (* V2 Vector buffer - let the backend bind itself *)
           let (module DB : Vector.DEVICE_BUFFER) = buf in
@@ -121,7 +91,7 @@ let bind_args_v2 (type kargs)
 (** {1 V2 Vector Argument Type} *)
 
 (** V2 Vector argument type - supports automatic transfers and length expansion.
-    Defined before run_v2 so it can be used in the signature. *)
+    Defined before run so it can be used in the signature. *)
 type vector_arg =
   | Vec : ('a, 'b) Vector.t -> vector_arg
       (** V2 Vector - expands to (buffer, length) for JIT *)
@@ -213,7 +183,7 @@ let expand_to_run_source_args ?(inject_lengths = true) (args : vector_arg list)
     @param vector_args Original V2 vector args (optional, for unified dispatch)
     @param args Kernel arguments (typed) - used if vector_args not provided
     @raise Execution_error if execution fails *)
-let run_v2 ~(device : Device.t) ~(name : string)
+let run ~(device : Device.t) ~(name : string)
     ~(ir : Sarek_ir.kernel Lazy.t option)
     ~(native_fn :
        (block:Framework_sig.dims ->
@@ -222,8 +192,11 @@ let run_v2 ~(device : Device.t) ~(name : string)
        unit)
        option) ~(block : Framework_sig.dims) ~(grid : Framework_sig.dims)
     ?(shared_mem : int = 0) ?vector_args (args : arg list) : unit =
-  match Framework_registry.find_backend_v2 device.framework with
-  | Some (module B : Framework_sig.BACKEND_V2) -> (
+  match Framework_registry.find_backend device.framework with
+  | None ->
+      raise
+        (Execution_error ("No backend found for framework: " ^ device.framework))
+  | Some (module B : Framework_sig.BACKEND) -> (
       match B.execution_model with
       | Framework_sig.JIT -> (
           (* JIT path: generate source, compile, launch
@@ -247,7 +220,7 @@ let run_v2 ~(device : Device.t) ~(name : string)
                   let dev = B.Device.get device.backend_id in
                   let compiled = B.Kernel.compile_cached dev ~name ~source in
                   let kargs = B.Kernel.create_args () in
-                  bind_args_v2 (module B) kargs expanded_args ;
+                  bind_args (module B) kargs expanded_args ;
                   B.Kernel.launch
                     compiled
                     ~args:kargs
@@ -279,23 +252,6 @@ let run_v2 ~(device : Device.t) ~(name : string)
           in
           let ir_obj = Option.map (fun l -> Obj.repr (Lazy.force l)) ir in
           B.execute_direct ~native_fn ~ir:ir_obj ~block ~grid obj_args)
-  | None -> (
-      (* Fall back to BACKEND (non-V2) if available *)
-      match Framework_registry.find_backend device.framework with
-      | None ->
-          raise
-            (Execution_error
-               ("No backend found for framework: " ^ device.framework))
-      | Some (module B : Framework_sig.BACKEND) -> (
-          (* Legacy path: use old BACKEND interface *)
-          match native_fn with
-          | Some fn ->
-              let obj_args = args_to_obj_array args in
-              fn ~block ~grid obj_args
-          | None ->
-              raise
-                (Execution_error
-                   "Legacy backend requires native_fn for execution")))
 
 (** {1 Typed Execution Interface} *)
 
@@ -357,7 +313,7 @@ let run_from_ir ~(device : Device.t) ~(ir : Sarek_ir.kernel)
     (List.length args) ;
 
   (* Dispatch via plugin registry - no hardcoded framework checks *)
-  run_v2
+  run
     ~device
     ~name:ir.kern_name
     ~ir:(Some (lazy ir))
@@ -493,21 +449,20 @@ let run_interpreter_vectors ~(ir : Sarek_ir.kernel) ~(args : vector_arg list)
     !interp_arrays
 
 (** Execute a kernel with V2 Vectors. Auto-transfers, dispatches to backend.
-    Unified path for all backends - run_v2 handles expansion based on backend.
-*)
+    Unified path for all backends - run handles expansion based on backend. *)
 let run_vectors ~(device : Device.t) ~(ir : Sarek_ir.kernel)
     ~(args : vector_arg list) ~(block : Framework_sig.dims)
     ~(grid : Framework_sig.dims) ?(shared_mem : int = 0) () : unit =
   (* Unified path for all backends:
      1. Transfer to device (CPU backends: zero-copy, no actual transfer)
-     2. Pass vector_args to run_v2 (it expands for JIT, passes direct for Direct)
+     2. Pass vector_args to run (it expands for JIT, passes direct for Direct)
      3. Mark stale (CPU backends: no-op due to zero-copy) *)
 
   (* 1. Transfer all vectors to device *)
   transfer_vectors_to_device args device ;
 
-  (* 2. Dispatch via run_v2 with vector_args - it handles expansion per backend *)
-  run_v2
+  (* 2. Dispatch via run with vector_args - it handles expansion per backend *)
+  run
     ~device
     ~name:ir.kern_name
     ~ir:(Some (lazy ir))
@@ -555,8 +510,8 @@ type source_lang = Framework_sig.source_lang =
 
 (** Check if a device supports a given source language *)
 let supports_lang (dev : Device.t) (lang : source_lang) : bool =
-  match Framework_registry.find_backend_v2 dev.framework with
-  | Some (module B : Framework_sig.BACKEND_V2) ->
+  match Framework_registry.find_backend dev.framework with
+  | Some (module B : Framework_sig.BACKEND) ->
       List.mem lang B.supported_source_langs
   | None -> false
 
@@ -585,8 +540,8 @@ let run_source ~(device : Device.t) ~(source : string) ~(lang : source_lang)
   (* Transfer vectors to device first *)
   transfer_vectors_to_device args device ;
 
-  match Framework_registry.find_backend_v2 device.framework with
-  | Some (module B : Framework_sig.BACKEND_V2) ->
+  match Framework_registry.find_backend device.framework with
+  | Some (module B : Framework_sig.BACKEND) ->
       if not (List.mem lang B.supported_source_langs) then
         raise
           (Execution_error

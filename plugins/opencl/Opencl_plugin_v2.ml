@@ -162,7 +162,7 @@ module Opencl_intrinsics : Framework_sig.INTRINSIC_REGISTRY = struct
       }
 end
 
-(** OpenCL V2 Backend - implements BACKEND_V2 *)
+(** OpenCL Backend - implements BACKEND *)
 module Opencl_v2 : Framework_sig.BACKEND = struct
   (* Include all of BACKEND from Opencl_base *)
   include Opencl_base

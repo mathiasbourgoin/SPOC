@@ -134,7 +134,7 @@ module Cuda_intrinsics : Framework_sig.INTRINSIC_REGISTRY = struct
       }
 end
 
-(** CUDA V2 Backend - implements BACKEND_V2 *)
+(** CUDA Backend - implements BACKEND *)
 module Cuda_v2 : Framework_sig.BACKEND = struct
   (* Include all of BACKEND from Cuda_base *)
   include Cuda_base
