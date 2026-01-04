@@ -158,11 +158,11 @@ let run ~(device : Device.t) ~(block : Framework_sig.dims)
            fw)
 
 (** Execute a kernel_v2 with explicit typed arguments. Works for all backends
-    (Native, CUDA, OpenCL). Uses plugin dispatch via Execute.run_v2. *)
+    (Native, CUDA, OpenCL). Uses plugin dispatch via Execute.run. *)
 let run_with_args ~(device : Device.t) ~(block : Framework_sig.dims)
     ~(grid : Framework_sig.dims) ?(shared_mem = 0) (k : 'a kernel_v2)
     (args : Execute.arg list) : unit =
-  Execute.run_v2
+  Execute.run
     ~device
     ~name:k.name
     ~ir:(Some k.ir)
@@ -177,8 +177,8 @@ let run_with_args ~(device : Device.t) ~(block : Framework_sig.dims)
 (** Get generated source for a specific backend. Uses plugin's generate_source.
 *)
 let source_for_backend (k : 'a kernel_v2) ~backend : string =
-  match Framework_registry.find_backend_v2 backend with
-  | Some (module B : Framework_sig.BACKEND_V2) -> (
+  match Framework_registry.find_backend backend with
+  | Some (module B : Framework_sig.BACKEND) -> (
       let ir = Lazy.force k.ir in
       match B.generate_source ir with
       | Some source -> source

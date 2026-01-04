@@ -235,12 +235,12 @@ let run_kernel_direct ~name
   ignore name ;
   native_fn args grid block
 
-(** Register a kernel for direct execution (wraps Native_plugin.register_kernel)
+(** Register a kernel for direct execution (wraps Native_plugin_base.register_kernel)
 *)
-let register_kernel = Native_plugin.register_kernel
+let register_kernel = Native_plugin_base.register_kernel
 
 (** Check if a kernel is registered *)
-let kernel_registered = Native_plugin.kernel_registered
+let kernel_registered = Native_plugin_base.kernel_registered
 
 (** List all registered kernels *)
-let list_kernels = Native_plugin.list_kernels
+let list_kernels = Native_plugin_base.list_kernels

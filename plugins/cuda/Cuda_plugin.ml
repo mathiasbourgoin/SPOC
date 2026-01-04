@@ -167,7 +167,7 @@ module Cuda_v2 : Framework_sig.BACKEND = struct
     | Framework_sig.CUDA_Source ->
         (* Get current device (must be set by Execute before calling) *)
         let dev =
-          match Cuda_plugin.Cuda.Device.get_current_device () with
+          match Cuda_plugin_base.Cuda.Device.get_current_device () with
           | Some d -> d
           | None -> failwith "run_source: no current CUDA device set"
         in

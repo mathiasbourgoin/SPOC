@@ -194,7 +194,7 @@ module Opencl_v2 : Framework_sig.BACKEND = struct
     | Framework_sig.OpenCL_Source ->
         (* Get current device (must be set by Execute before calling) *)
         let dev =
-          match Opencl_plugin.Opencl.Device.get_current_device () with
+          match Opencl_plugin_base.Opencl.Device.get_current_device () with
           | Some d -> d
           | None -> failwith "run_source: no current OpenCL device set"
         in
