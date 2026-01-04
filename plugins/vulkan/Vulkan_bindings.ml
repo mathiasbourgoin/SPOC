@@ -402,7 +402,7 @@ let vkResetCommandBuffer buf flags =
 let vkCmdBindPipeline_lazy =
   foreign_vk_lazy
     "vkCmdBindPipeline"
-    (vk_command_buffer_ptr @-> int @-> vk_pipeline @-> returning void)
+    (vk_command_buffer_ptr @-> uint32_t @-> vk_pipeline @-> returning void)
 
 let vkCmdBindPipeline buf bind_point pipeline =
   Lazy.force vkCmdBindPipeline_lazy buf bind_point pipeline
@@ -410,7 +410,7 @@ let vkCmdBindPipeline buf bind_point pipeline =
 let vkCmdBindDescriptorSets_lazy =
   foreign_vk_lazy
     "vkCmdBindDescriptorSets"
-    (vk_command_buffer_ptr @-> int @-> vk_pipeline_layout @-> uint32_t
+    (vk_command_buffer_ptr @-> uint32_t @-> vk_pipeline_layout @-> uint32_t
    @-> uint32_t @-> ptr vk_descriptor_set @-> uint32_t @-> ptr uint32_t
    @-> returning void)
 
@@ -443,6 +443,15 @@ let vkCmdDispatch_lazy =
    @-> returning void)
 
 let vkCmdDispatch buf gx gy gz = Lazy.force vkCmdDispatch_lazy buf gx gy gz
+
+let vkCmdFillBuffer_lazy =
+  foreign_vk_lazy
+    "vkCmdFillBuffer"
+    (vk_command_buffer_ptr @-> vk_buffer @-> vk_device_size @-> vk_device_size
+   @-> uint32_t @-> returning void)
+
+let vkCmdFillBuffer buf dst_buf dst_offset size data =
+  Lazy.force vkCmdFillBuffer_lazy buf dst_buf dst_offset size data
 
 let vkCmdPipelineBarrier_lazy =
   foreign_vk_lazy

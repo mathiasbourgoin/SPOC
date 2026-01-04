@@ -76,8 +76,9 @@ module Backend : Framework_sig.BACKEND = struct
          grid:Framework_sig.dims ->
          Obj.t array ->
          unit)
-         option) ~(ir : Obj.t option) ~(block : Framework_sig.dims)
-      ~(grid : Framework_sig.dims) (args : Obj.t array) : unit =
+         option) ~(ir : Sarek_ir_types.kernel option)
+      ~(block : Framework_sig.dims) ~(grid : Framework_sig.dims)
+      (args : Obj.t array) : unit =
     ignore native_fn ;
     (* Interpreter ignores native_fn - always interprets *)
     (* Determine parallel mode based on current device *)
@@ -87,12 +88,11 @@ module Backend : Framework_sig.BACKEND = struct
       | None -> false
     in
     match ir with
-    | Some ir_obj ->
-        let kernel : Sarek.Sarek_ir.kernel = Obj.obj ir_obj in
+    | Some kernel ->
         Sarek.Sarek_ir_interp.parallel_mode := use_parallel ;
         (* Interpreter handles vectors directly *)
         Sarek.Sarek_ir_interp.run_kernel_with_obj_args
-          kernel
+          (Obj.magic kernel) (* TODO: Fix Sarek_ir_interp signature *)
           ~block:(block.x, block.y, block.z)
           ~grid:(grid.x, grid.y, grid.z)
           args

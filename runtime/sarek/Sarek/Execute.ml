@@ -118,8 +118,16 @@ let vector_args_to_obj_array (args : vector_arg list) : Obj.t array =
 (** Get device buffer for a V2 Vector *)
 let get_device_buffer (type a b) (v : (a, b) Vector.t) (dev : Device.t) :
     (module Vector.DEVICE_BUFFER) =
+  Log.debugf Log.Execute "get_device_buffer for dev=%d" dev.Device.id ;
   match Vector.get_buffer v dev with
-  | Some buf -> buf
+  | Some buf ->
+      let (module B : Vector.DEVICE_BUFFER) = buf in
+      Log.debugf
+        Log.Execute
+        "got buffer: ptr=%Ld size=%d"
+        (Int64.of_nativeint B.ptr)
+        B.size ;
+      buf
   | None -> failwith "Vector has no device buffer"
 
 (** Transfer all V2 Vector args to device *)
@@ -238,8 +246,8 @@ let run ~(device : Device.t) ~(name : string)
             | Some vargs -> vector_args_to_obj_array vargs
             | None -> args_to_obj_array args
           in
-          let ir_obj = Option.map (fun l -> Obj.repr (Lazy.force l)) ir in
-          B.execute_direct ~native_fn ~ir:ir_obj ~block ~grid obj_args
+          let ir_val = Option.map Lazy.force ir in
+          B.execute_direct ~native_fn ~ir:ir_val ~block ~grid obj_args
       | Framework_sig.Custom ->
           (* Custom path: delegate to backend with IR
              For Custom (Interpreter), pass V2 Vectors directly *)
@@ -250,8 +258,8 @@ let run ~(device : Device.t) ~(name : string)
             | Some vargs -> vector_args_to_obj_array vargs
             | None -> args_to_obj_array args
           in
-          let ir_obj = Option.map (fun l -> Obj.repr (Lazy.force l)) ir in
-          B.execute_direct ~native_fn ~ir:ir_obj ~block ~grid obj_args)
+          let ir_val = Option.map Lazy.force ir in
+          B.execute_direct ~native_fn ~ir:ir_val ~block ~grid obj_args)
 
 (** {1 Typed Execution Interface} *)
 

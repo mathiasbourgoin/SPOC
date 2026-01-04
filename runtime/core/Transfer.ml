@@ -38,6 +38,8 @@ let alloc_scalar_buffer (type a b) (dev : Device.t) (length : int)
       let ba_kind = Vector.to_bigarray_kind sk in
       let buf = B.Memory.alloc backend_dev length ba_kind in
       let elem_sz = Vector.scalar_elem_size sk in
+      let buf_id = Obj.repr buf |> Obj.obj |> Hashtbl.hash in
+      Log.debugf Log.Transfer "alloc_scalar_buffer: buf_id=%d" buf_id ;
       (module struct
         let device = dev
 
@@ -49,6 +51,12 @@ let alloc_scalar_buffer (type a b) (dev : Device.t) (length : int)
 
         let bind_to_kernel ~kargs ~idx =
           (* Cast kargs back to the backend's kernel args type and bind buffer *)
+          let cur_id = Obj.repr buf |> Obj.obj |> Hashtbl.hash in
+          Log.debugf
+            Log.Transfer
+            "bind_to_kernel: buf_id=%d (was %d)"
+            cur_id
+            buf_id ;
           Log.debugf
             Log.Transfer
             "bind_to_kernel: idx=%d ptr=%Ld"
@@ -58,6 +66,8 @@ let alloc_scalar_buffer (type a b) (dev : Device.t) (length : int)
           B.Kernel.set_arg_buffer kargs idx buf
 
         let from_ptr src_ptr ~byte_size =
+          let cur_id = Obj.repr buf |> Obj.obj |> Hashtbl.hash in
+          Log.debugf Log.Transfer "from_ptr: buf_id=%d (was %d)" cur_id buf_id ;
           if B.Memory.is_zero_copy buf then () (* Skip for zero-copy *)
           else B.Memory.host_ptr_to_device ~src_ptr ~byte_size ~dst:buf
 
@@ -233,11 +243,20 @@ let to_device (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : unit =
       let (module B : Vector.DEVICE_BUFFER) = buf in
       Log.debugf
         Log.Transfer
+        "to_device: transferring %d bytes to dev=%d"
+        (vec.length * B.elem_size)
+        dev.id ;
+      Log.debugf
+        Log.Transfer
         "-> transferring %d bytes"
         (vec.length * B.elem_size) ;
       (match vec.host with
       | Vector.Bigarray_storage ba ->
           let ptr, byte_size = bigarray_to_ptr ba B.elem_size in
+          Log.debugf
+            Log.Transfer
+            "to_device: calling from_ptr byte_size=%d"
+            byte_size ;
           B.from_ptr ptr ~byte_size
       | Vector.Custom_storage {ptr; custom; length} ->
           B.from_ptr ptr ~byte_size:(length * custom.elem_size)) ;
@@ -248,14 +267,16 @@ let to_device (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : unit =
       If true, always transfer even if location is Both (useful after kernel
       writes) *)
 let to_cpu ?(force = false) (type a b) (vec : (a, b) Vector.t) : unit =
-  Printf.eprintf "[Transfer.to_cpu] CALLED: force=%b location=" force ;
-  (match vec.location with
-  | Vector.CPU -> Printf.eprintf "CPU"
-  | Vector.GPU _ -> Printf.eprintf "GPU"
-  | Vector.Both _ -> Printf.eprintf "Both"
-  | Vector.Stale_GPU _ -> Printf.eprintf "Stale_GPU"
-  | Vector.Stale_CPU _ -> Printf.eprintf "Stale_CPU") ;
-  Printf.eprintf "\n%!" ;
+  Log.debugf
+    Log.Transfer
+    "to_cpu: CALLED: force=%b location=%s"
+    force
+    (match vec.location with
+    | Vector.CPU -> "CPU"
+    | Vector.GPU _ -> "GPU"
+    | Vector.Both _ -> "Both"
+    | Vector.Stale_GPU _ -> "Stale_GPU"
+    | Vector.Stale_CPU _ -> "Stale_CPU") ;
   let needs_transfer =
     match vec.location with
     | Vector.CPU -> false (* No device buffer *)
@@ -263,7 +284,7 @@ let to_cpu ?(force = false) (type a b) (vec : (a, b) Vector.t) : unit =
     | Vector.Stale_GPU _ -> false (* CPU already authoritative *)
     | Vector.GPU _ | Vector.Stale_CPU _ -> true
   in
-  Printf.eprintf "[Transfer.to_cpu] needs_transfer=%b\n%!" needs_transfer ;
+  Log.debugf Log.Transfer "to_cpu: needs_transfer=%b" needs_transfer ;
   if needs_transfer then begin
     let dev =
       match vec.location with

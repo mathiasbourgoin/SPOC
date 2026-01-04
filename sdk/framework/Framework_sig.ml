@@ -267,7 +267,7 @@ module type BACKEND = sig
       @param args Kernel arguments as Obj.t array *)
   val execute_direct :
     native_fn:(block:dims -> grid:dims -> Obj.t array -> unit) option ->
-    ir:Obj.t option ->
+    ir:Sarek_ir_types.kernel option ->
     block:dims ->
     grid:dims ->
     Obj.t array ->

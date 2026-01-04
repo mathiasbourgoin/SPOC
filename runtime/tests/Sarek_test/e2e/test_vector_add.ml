@@ -70,7 +70,7 @@ let parse_args () =
     incr i
   done
 
-(* Define kernel - write to all three buffers to test which ones work *)
+(* Define kernel - vector addition c = a + b *)
 let vector_add =
   [%kernel
     fun (a : float32 vector)
@@ -79,13 +79,7 @@ let vector_add =
         (n : int) ->
       let open Std in
       let tid = global_thread_id in
-      if tid < n then begin
-        a.(tid) <- 100.0 ;
-        (* Write constant to a *)
-        b.(tid) <- 200.0 ;
-        (* Write constant to b *)
-        c.(tid) <- 300.0 (* Write constant to c *)
-      end]
+      if tid < n then c.(tid) <- a.(tid) + b.(tid)]
 
 (* Run kernel via runtime path *)
 let run_v2_on_device (dev : Device.t) =
@@ -109,12 +103,11 @@ let run_v2_on_device (dev : Device.t) =
   done ;
 
   (* DEBUG: Also initialize a and b with distinct sentinels first *)
-  Printf.eprintf
+  (* Printf.eprintf
     "[TEST] Before compute: a[0]=%.1f b[0]=%.1f c[0]=%.1f\n%!"
     (Vector.get a 0)
     (Vector.get b 0)
-    (Vector.get c 0) ;
-
+    (Vector.get c 0) ; *)
   let block_sz = !block_size in
   let grid_sz = (!size + block_sz - 1) / block_sz in
   let block = Execute.dims1d block_sz in
@@ -133,10 +126,10 @@ let run_v2_on_device (dev : Device.t) =
   let time_ms = (t1 -. t0) *. 1000.0 in
 
   (* Read back all three vectors to see what's in them *)
-  let result_a = Vector.to_array a in
-  let result_b = Vector.to_array b in
+  (* let result_a = Vector.to_array a in
+  let result_b = Vector.to_array b in *)
   let result_c = Vector.to_array c in
-  Printf.eprintf "[TEST] After compute:\n" ;
+  (* Printf.eprintf "[TEST] After compute:\n" ;
   Printf.eprintf
     "  a[0]=%.1f a[1]=%.1f a[2]=%.1f\n%!"
     result_a.(0)
@@ -151,7 +144,7 @@ let run_v2_on_device (dev : Device.t) =
     "  c[0]=%.1f c[1]=%.1f c[2]=%.1f\n%!"
     result_c.(0)
     result_c.(1)
-    result_c.(2) ;
+    result_c.(2) ; *)
   (time_ms, result_c)
 
 (* Run kernel via interpreter directly *)

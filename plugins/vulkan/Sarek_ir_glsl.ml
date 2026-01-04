@@ -91,13 +91,14 @@ let rec gen_expr buf = function
       Buffer.add_char buf ')'
   | EArrayRead (arr, idx) ->
       Buffer.add_string buf arr ;
-      Buffer.add_string buf ".data[" ;
+      Buffer.add_char buf '[' ;
       gen_expr buf idx ;
       Buffer.add_char buf ']'
   | EArrayReadExpr (base, idx) ->
       Buffer.add_char buf '(' ;
       gen_expr buf base ;
-      Buffer.add_string buf ")[" ;
+      Buffer.add_char buf ')' ;
+      Buffer.add_char buf '[' ;
       gen_expr buf idx ;
       Buffer.add_char buf ']'
   | ERecordField (e, field) ->
@@ -298,7 +299,7 @@ and gen_intrinsic buf path name args =
             gen_expr buf value
         | [arr; idx; value] ->
             gen_expr buf arr ;
-            Buffer.add_string buf ".data[" ;
+            Buffer.add_char buf '[' ;
             gen_expr buf idx ;
             Buffer.add_string buf "], " ;
             gen_expr buf value
@@ -347,13 +348,14 @@ let rec gen_lvalue buf = function
   | LVar v -> Buffer.add_string buf v.var_name
   | LArrayElem (arr, idx) ->
       Buffer.add_string buf arr ;
-      Buffer.add_string buf ".data[" ;
+      Buffer.add_char buf '[' ;
       gen_expr buf idx ;
       Buffer.add_char buf ']'
   | LArrayElemExpr (base, idx) ->
       Buffer.add_char buf '(' ;
       gen_expr buf base ;
-      Buffer.add_string buf ")[" ;
+      Buffer.add_char buf ')' ;
+      Buffer.add_char buf '[' ;
       gen_expr buf idx ;
       Buffer.add_char buf ']'
   | LRecordField (lv, field) ->
@@ -447,7 +449,7 @@ let rec gen_stmt buf indent = function
                   Buffer.add_string buf var_name ;
                   Buffer.add_string buf " = " ;
                   Buffer.add_string buf scrutinee ;
-                  Buffer.add_string buf ".data." ;
+                  Buffer.add_char buf '.' ;
                   Buffer.add_string buf cname ;
                   Buffer.add_string buf "_v;\n"
               | vars, Some types when List.length vars = List.length types ->
@@ -459,7 +461,7 @@ let rec gen_stmt buf indent = function
                       Buffer.add_string buf var_name ;
                       Buffer.add_string buf " = " ;
                       Buffer.add_string buf scrutinee ;
-                      Buffer.add_string buf ".data." ;
+                      Buffer.add_char buf '.' ;
                       Buffer.add_string buf cname ;
                       Buffer.add_string buf (Printf.sprintf "_v._%d;\n" i))
                     (List.combine vars types)
@@ -588,13 +590,13 @@ let gen_buffer_binding buf binding_idx v elem_type =
   Buffer.add_string
     buf
     (Printf.sprintf
-       "layout(set=0, binding = %d) buffer Buffer_%s {\n"
+       "layout(std430, set=0, binding = %d) buffer Buffer_%s {\n"
        binding_idx
        v.var_name) ;
   Buffer.add_string
     buf
-    (Printf.sprintf "  %s data[];\n" (glsl_type_of_elttype elem_type)) ;
-  Buffer.add_string buf (Printf.sprintf "} %s;\n" v.var_name)
+    (Printf.sprintf "  %s %s[];\n" (glsl_type_of_elttype elem_type) v.var_name) ;
+  Buffer.add_string buf "};\n"
 
 let gen_push_constants buf params =
   let vectors = ref [] in
@@ -638,25 +640,19 @@ let gen_push_constants buf params =
       vectors ;
     List.iter
       (fun v ->
-        (* TEMPORARY DEBUG: Hardcode n to 10 *)
-        if v.var_name = "n" then
-          Buffer.add_string buf "#define n 10  /* HARDCODED FOR DEBUG */\n"
-        else
-          Buffer.add_string
-            buf
-            (Printf.sprintf "#define %s pc.%s\n" v.var_name v.var_name))
+        Buffer.add_string
+          buf
+          (Printf.sprintf "#define %s pc.%s\n" v.var_name v.var_name))
       scalars ;
     Buffer.add_string buf "\n"
   end
 
 (** Generate complete GLSL source for a kernel *)
 let generate (k : kernel) : string =
-  let buf = Buffer.create 4096 in
-
-  (* Header *)
+  let buf = Buffer.create 1024 in
   Buffer.add_string buf (glsl_header ~kernel_name:k.kern_name) ;
 
-  (* Generate buffer bindings for vector parameters *)
+  (* Generate buffer bindings *)
   let binding_idx = ref 0 in
   List.iter
     (fun decl ->
@@ -670,34 +666,23 @@ let generate (k : kernel) : string =
       | _ -> ())
     k.kern_params ;
 
-  Buffer.add_char buf '\n' ;
-
-  (* Generate push constants for scalar parameters *)
+  (* Generate push constants *)
   gen_push_constants buf k.kern_params ;
 
-  Buffer.add_char buf '\n' ;
-
-  (* Generate helper functions before main *)
+  (* Generate helper functions *)
   List.iter (gen_helper_func buf) k.kern_funcs ;
 
-  (* Main function *)
+  (* Generate main function *)
   Buffer.add_string buf "void main() {\n" ;
-
-  (* TEMPORARY DEBUG: Unconditional write to test shader execution *)
-  Buffer.add_string buf "  // DEBUG: Write 999.0 to c[0] if this shader runs\n" ;
-  Buffer.add_string
-    buf
-    "  if (gl_GlobalInvocationID.x == 0) { c.data[0] = 999.0; }\n" ;
-
-  (* Body *)
   gen_stmt buf "  " k.kern_body ;
-
-  (* Close main *)
   Buffer.add_string buf "}\n" ;
 
-  let result = Buffer.contents buf in
-  Printf.eprintf "[GLSL] Generated shader:\n%s\n%!" result ;
-  result
+  let shader = Buffer.contents buf in
+  Spoc_core.Log.debugf
+    Spoc_core.Log.Device
+    "[GLSL] Generated shader:\n%s"
+    shader ;
+  shader
 
 (** Generate GLSL variant type definition *)
 let gen_variant_def buf (name, constrs) =
@@ -756,29 +741,22 @@ let gen_variant_def buf (name, constrs) =
 (** Generate GLSL source with custom type definitions *)
 let generate_with_types ~(types : (string * (string * elttype) list) list)
     (k : kernel) : string =
-  current_variants := k.kern_variants ;
-  let buf = Buffer.create 4096 in
+  (* Convert types to internal format (single arg -> list of args) *)
+  let internal_types =
+    List.map
+      (fun (name, constrs) ->
+        (name, List.map (fun (cname, arg) -> (cname, [arg])) constrs))
+      types
+  in
+  current_variants := internal_types ;
 
-  (* Header *)
+  let buf = Buffer.create 1024 in
   Buffer.add_string buf (glsl_header ~kernel_name:k.kern_name) ;
 
-  (* Variant type definitions first *)
-  List.iter (gen_variant_def buf) k.kern_variants ;
+  (* Generate type definitions *)
+  List.iter (gen_variant_def buf) internal_types ;
 
-  (* Record type definitions *)
-  List.iter
-    (fun (name, fields) ->
-      Buffer.add_string buf (Printf.sprintf "struct %s {\n" (mangle_name name)) ;
-      List.iter
-        (fun (fname, ftype) ->
-          Buffer.add_string
-            buf
-            (Printf.sprintf "  %s %s;\n" (glsl_type_of_elttype ftype) fname))
-        fields ;
-      Buffer.add_string buf "};\n\n")
-    types ;
-
-  (* Generate buffer bindings for vector parameters *)
+  (* Generate buffer bindings *)
   let binding_idx = ref 0 in
   List.iter
     (fun decl ->
@@ -792,25 +770,20 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
       | _ -> ())
     k.kern_params ;
 
-  Buffer.add_char buf '\n' ;
-
-  (* Generate push constants for scalar parameters *)
+  (* Generate push constants *)
   gen_push_constants buf k.kern_params ;
 
-  Buffer.add_char buf '\n' ;
-
-  (* Generate helper functions before main *)
+  (* Generate helper functions *)
   List.iter (gen_helper_func buf) k.kern_funcs ;
 
-  (* Main function *)
+  (* Generate main function *)
   Buffer.add_string buf "void main() {\n" ;
-
-  (* Body *)
   gen_stmt buf "  " k.kern_body ;
-
-  (* Close main *)
   Buffer.add_string buf "}\n" ;
 
-  let result = Buffer.contents buf in
-  Printf.eprintf "[GLSL] Generated shader:\n%s\n%!" result ;
-  result
+  let shader = Buffer.contents buf in
+  Spoc_core.Log.debugf
+    Spoc_core.Log.Device
+    "[GLSL] Generated shader:\n%s"
+    shader ;
+  shader

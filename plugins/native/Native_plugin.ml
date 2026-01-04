@@ -157,15 +157,15 @@ module Backend : Framework_sig.BACKEND = struct
          grid:Framework_sig.dims ->
          Obj.t array ->
          unit)
-         option) ~(ir : Obj.t option) ~(block : Framework_sig.dims)
-      ~(grid : Framework_sig.dims) (args : Obj.t array) : unit =
+         option) ~(ir : Sarek_ir_types.kernel option)
+      ~(block : Framework_sig.dims) ~(grid : Framework_sig.dims)
+      (args : Obj.t array) : unit =
     ignore native_fn ;
     (* We use kern_native_fn from IR *)
     match ir with
-    | Some ir_obj -> (
-        let kernel : Sarek.Sarek_ir.kernel = Obj.obj ir_obj in
+    | Some kernel -> (
         match kernel.kern_native_fn with
-        | Some (Sarek.Sarek_ir.NativeFn fn) ->
+        | Some (Sarek_ir_types.NativeFn fn) ->
             (* Use native function - args are vectors directly *)
             let block_tuple = (block.x, block.y, block.z) in
             let grid_tuple = (grid.x, grid.y, grid.z) in
@@ -174,7 +174,7 @@ module Backend : Framework_sig.BACKEND = struct
             (* Fall back to IR interpretation with vector support *)
             Sarek.Sarek_ir_interp.parallel_mode := true ;
             Sarek.Sarek_ir_interp.run_kernel_with_obj_args
-              kernel
+              (Obj.magic kernel) (* TODO: Fix Sarek_ir_interp signature *)
               ~block:(block.x, block.y, block.z)
               ~grid:(grid.x, grid.y, grid.z)
               args)

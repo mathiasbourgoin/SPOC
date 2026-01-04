@@ -344,7 +344,7 @@ type vk_application_info
 let vk_application_info : vk_application_info structure typ =
   structure "VkApplicationInfo"
 
-let app_info_sType = field vk_application_info "sType" int
+let app_info_sType = field vk_application_info "sType" uint32_t
 
 let app_info_pNext = field vk_application_info "pNext" (ptr void)
 
@@ -368,7 +368,7 @@ type vk_instance_create_info
 let vk_instance_create_info : vk_instance_create_info structure typ =
   structure "VkInstanceCreateInfo"
 
-let inst_create_sType = field vk_instance_create_info "sType" int
+let inst_create_sType = field vk_instance_create_info "sType" uint32_t
 
 let inst_create_pNext = field vk_instance_create_info "pNext" (ptr void)
 
@@ -410,7 +410,8 @@ let phys_props_vendorID =
 let phys_props_deviceID =
   field vk_physical_device_properties "deviceID" uint32_t
 
-let phys_props_deviceType = field vk_physical_device_properties "deviceType" int
+let phys_props_deviceType =
+  field vk_physical_device_properties "deviceType" uint32_t
 
 let phys_props_deviceName =
   field vk_physical_device_properties "deviceName" (array 256 char)
@@ -454,7 +455,7 @@ type vk_device_queue_create_info
 let vk_device_queue_create_info : vk_device_queue_create_info structure typ =
   structure "VkDeviceQueueCreateInfo"
 
-let dev_queue_create_sType = field vk_device_queue_create_info "sType" int
+let dev_queue_create_sType = field vk_device_queue_create_info "sType" uint32_t
 
 let dev_queue_create_pNext =
   field vk_device_queue_create_info "pNext" (ptr void)
@@ -478,7 +479,7 @@ type vk_device_create_info
 let vk_device_create_info : vk_device_create_info structure typ =
   structure "VkDeviceCreateInfo"
 
-let dev_create_sType = field vk_device_create_info "sType" int
+let dev_create_sType = field vk_device_create_info "sType" uint32_t
 
 let dev_create_pNext = field vk_device_create_info "pNext" (ptr void)
 
@@ -516,7 +517,7 @@ type vk_memory_allocate_info
 let vk_memory_allocate_info : vk_memory_allocate_info structure typ =
   structure "VkMemoryAllocateInfo"
 
-let mem_alloc_sType = field vk_memory_allocate_info "sType" int
+let mem_alloc_sType = field vk_memory_allocate_info "sType" uint32_t
 
 let mem_alloc_pNext = field vk_memory_allocate_info "pNext" (ptr void)
 
@@ -534,7 +535,7 @@ type vk_buffer_create_info
 let vk_buffer_create_info : vk_buffer_create_info structure typ =
   structure "VkBufferCreateInfo"
 
-let buf_create_sType = field vk_buffer_create_info "sType" int
+let buf_create_sType = field vk_buffer_create_info "sType" uint32_t
 
 let buf_create_pNext = field vk_buffer_create_info "pNext" (ptr void)
 
@@ -544,7 +545,7 @@ let buf_create_size = field vk_buffer_create_info "size" vk_device_size
 
 let buf_create_usage = field vk_buffer_create_info "usage" vk_flags
 
-let buf_create_sharingMode = field vk_buffer_create_info "sharingMode" int
+let buf_create_sharingMode = field vk_buffer_create_info "sharingMode" uint32_t
 
 let buf_create_queueFamilyIndexCount =
   field vk_buffer_create_info "queueFamilyIndexCount" uint32_t
@@ -622,7 +623,7 @@ type vk_shader_module_create_info
 let vk_shader_module_create_info : vk_shader_module_create_info structure typ =
   structure "VkShaderModuleCreateInfo"
 
-let shader_create_sType = field vk_shader_module_create_info "sType" int
+let shader_create_sType = field vk_shader_module_create_info "sType" uint32_t
 
 let shader_create_pNext = field vk_shader_module_create_info "pNext" (ptr void)
 
@@ -642,7 +643,7 @@ type vk_command_pool_create_info
 let vk_command_pool_create_info : vk_command_pool_create_info structure typ =
   structure "VkCommandPoolCreateInfo"
 
-let cmd_pool_create_sType = field vk_command_pool_create_info "sType" int
+let cmd_pool_create_sType = field vk_command_pool_create_info "sType" uint32_t
 
 let cmd_pool_create_pNext = field vk_command_pool_create_info "pNext" (ptr void)
 
@@ -660,7 +661,7 @@ let vk_command_buffer_allocate_info :
     vk_command_buffer_allocate_info structure typ =
   structure "VkCommandBufferAllocateInfo"
 
-let cmd_buf_alloc_sType = field vk_command_buffer_allocate_info "sType" int
+let cmd_buf_alloc_sType = field vk_command_buffer_allocate_info "sType" uint32_t
 
 let cmd_buf_alloc_pNext =
   field vk_command_buffer_allocate_info "pNext" (ptr void)
@@ -668,7 +669,7 @@ let cmd_buf_alloc_pNext =
 let cmd_buf_alloc_commandPool =
   field vk_command_buffer_allocate_info "commandPool" vk_command_pool
 
-let cmd_buf_alloc_level = field vk_command_buffer_allocate_info "level" int
+let cmd_buf_alloc_level = field vk_command_buffer_allocate_info "level" uint32_t
 
 let cmd_buf_alloc_commandBufferCount =
   field vk_command_buffer_allocate_info "commandBufferCount" uint32_t
@@ -681,7 +682,7 @@ type vk_fence_create_info
 let vk_fence_create_info : vk_fence_create_info structure typ =
   structure "VkFenceCreateInfo"
 
-let fence_create_sType = field vk_fence_create_info "sType" int
+let fence_create_sType = field vk_fence_create_info "sType" uint32_t
 
 let fence_create_pNext = field vk_fence_create_info "pNext" (ptr void)
 
@@ -694,7 +695,7 @@ type vk_submit_info
 
 let vk_submit_info : vk_submit_info structure typ = structure "VkSubmitInfo"
 
-let submit_sType = field vk_submit_info "sType" int
+let submit_sType = field vk_submit_info "sType" uint32_t
 
 let submit_pNext = field vk_submit_info "pNext" (ptr void)
 
@@ -712,6 +713,7 @@ let submit_commandBufferCount =
 
 let submit_pCommandBuffers =
   field vk_submit_info "pCommandBuffers" (ptr vk_command_buffer_ptr)
+(* ptr VkCommandBuffer = VkCommandBuffer* - pointer to array of command buffers *)
 
 let submit_signalSemaphoreCount =
   field vk_submit_info "signalSemaphoreCount" uint32_t
@@ -732,7 +734,7 @@ let dsl_binding_binding =
   field vk_descriptor_set_layout_binding "binding" uint32_t
 
 let dsl_binding_descriptorType =
-  field vk_descriptor_set_layout_binding "descriptorType" int
+  field vk_descriptor_set_layout_binding "descriptorType" uint32_t
 
 let dsl_binding_descriptorCount =
   field vk_descriptor_set_layout_binding "descriptorCount" uint32_t
@@ -752,7 +754,8 @@ let vk_descriptor_set_layout_create_info :
     vk_descriptor_set_layout_create_info structure typ =
   structure "VkDescriptorSetLayoutCreateInfo"
 
-let dsl_create_sType = field vk_descriptor_set_layout_create_info "sType" int
+let dsl_create_sType =
+  field vk_descriptor_set_layout_create_info "sType" uint32_t
 
 let dsl_create_pNext =
   field vk_descriptor_set_layout_create_info "pNext" (ptr void)
@@ -791,7 +794,7 @@ type vk_buffer_memory_barrier
 let vk_buffer_memory_barrier : vk_buffer_memory_barrier structure typ =
   structure "VkBufferMemoryBarrier"
 
-let buf_barrier_sType = field vk_buffer_memory_barrier "sType" int
+let buf_barrier_sType = field vk_buffer_memory_barrier "sType" uint32_t
 
 let buf_barrier_pNext = field vk_buffer_memory_barrier "pNext" (ptr void)
 
@@ -822,7 +825,7 @@ let vk_pipeline_layout_create_info :
     vk_pipeline_layout_create_info structure typ =
   structure "VkPipelineLayoutCreateInfo"
 
-let pl_create_sType = field vk_pipeline_layout_create_info "sType" int
+let pl_create_sType = field vk_pipeline_layout_create_info "sType" uint32_t
 
 let pl_create_pNext = field vk_pipeline_layout_create_info "pNext" (ptr void)
 
@@ -855,7 +858,8 @@ let vk_pipeline_shader_stage_create_info :
     vk_pipeline_shader_stage_create_info structure typ =
   structure "VkPipelineShaderStageCreateInfo"
 
-let shader_stage_sType = field vk_pipeline_shader_stage_create_info "sType" int
+let shader_stage_sType =
+  field vk_pipeline_shader_stage_create_info "sType" uint32_t
 
 let shader_stage_pNext =
   field vk_pipeline_shader_stage_create_info "pNext" (ptr void)
@@ -884,7 +888,7 @@ let vk_compute_pipeline_create_info :
     vk_compute_pipeline_create_info structure typ =
   structure "VkComputePipelineCreateInfo"
 
-let compute_pipe_sType = field vk_compute_pipeline_create_info "sType" int
+let compute_pipe_sType = field vk_compute_pipeline_create_info "sType" uint32_t
 
 let compute_pipe_pNext =
   field vk_compute_pipeline_create_info "pNext" (ptr void)
@@ -904,7 +908,7 @@ let compute_pipe_basePipelineHandle =
   field vk_compute_pipeline_create_info "basePipelineHandle" vk_pipeline
 
 let compute_pipe_basePipelineIndex =
-  field vk_compute_pipeline_create_info "basePipelineIndex" int
+  field vk_compute_pipeline_create_info "basePipelineIndex" int32_t
 
 let () = seal vk_compute_pipeline_create_info
 
@@ -914,7 +918,7 @@ type vk_descriptor_pool_size
 let vk_descriptor_pool_size : vk_descriptor_pool_size structure typ =
   structure "VkDescriptorPoolSize"
 
-let pool_size_type = field vk_descriptor_pool_size "type" int
+let pool_size_type = field vk_descriptor_pool_size "type" uint32_t
 
 let pool_size_descriptorCount =
   field vk_descriptor_pool_size "descriptorCount" uint32_t
@@ -928,7 +932,7 @@ let vk_descriptor_pool_create_info :
     vk_descriptor_pool_create_info structure typ =
   structure "VkDescriptorPoolCreateInfo"
 
-let desc_pool_sType = field vk_descriptor_pool_create_info "sType" int
+let desc_pool_sType = field vk_descriptor_pool_create_info "sType" uint32_t
 
 let desc_pool_pNext = field vk_descriptor_pool_create_info "pNext" (ptr void)
 
@@ -954,7 +958,8 @@ let vk_descriptor_set_allocate_info :
     vk_descriptor_set_allocate_info structure typ =
   structure "VkDescriptorSetAllocateInfo"
 
-let desc_set_alloc_sType = field vk_descriptor_set_allocate_info "sType" int
+let desc_set_alloc_sType =
+  field vk_descriptor_set_allocate_info "sType" uint32_t
 
 let desc_set_alloc_pNext =
   field vk_descriptor_set_allocate_info "pNext" (ptr void)
@@ -993,7 +998,7 @@ type vk_write_descriptor_set
 let vk_write_descriptor_set : vk_write_descriptor_set structure typ =
   structure "VkWriteDescriptorSet"
 
-let write_desc_sType = field vk_write_descriptor_set "sType" int
+let write_desc_sType = field vk_write_descriptor_set "sType" uint32_t
 
 let write_desc_pNext = field vk_write_descriptor_set "pNext" (ptr void)
 
@@ -1008,7 +1013,7 @@ let write_desc_descriptorCount =
   field vk_write_descriptor_set "descriptorCount" uint32_t
 
 let write_desc_descriptorType =
-  field vk_write_descriptor_set "descriptorType" int
+  field vk_write_descriptor_set "descriptorType" uint32_t
 
 let write_desc_pImageInfo =
   field vk_write_descriptor_set "pImageInfo" (ptr void)
@@ -1027,7 +1032,7 @@ type vk_command_buffer_begin_info
 let vk_command_buffer_begin_info : vk_command_buffer_begin_info structure typ =
   structure "VkCommandBufferBeginInfo"
 
-let cmd_buf_begin_sType = field vk_command_buffer_begin_info "sType" int
+let cmd_buf_begin_sType = field vk_command_buffer_begin_info "sType" uint32_t
 
 let cmd_buf_begin_pNext = field vk_command_buffer_begin_info "pNext" (ptr void)
 

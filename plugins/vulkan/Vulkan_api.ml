@@ -20,6 +20,9 @@ let memcpy dst src size =
   in
   memcpy_c dst src size
 
+(** Helper to convert OCaml int to Unsigned.UInt32.t *)
+let u32 = Unsigned.UInt32.of_int
+
 (** {1 Exceptions} *)
 
 exception Vulkan_error of vk_result * string
@@ -29,8 +32,9 @@ let check (ctx : string) (result : vk_result) : unit =
   match result with
   | VK_SUCCESS -> ()
   | err ->
-      Printf.eprintf
-        "[Vulkan] %s failed with %s\n%!"
+      Spoc_core.Log.errorf
+        Spoc_core.Log.Device
+        "[Vulkan] %s failed with %s"
         ctx
         (string_of_vk_result err) ;
       raise (Vulkan_error (err, ctx))
@@ -49,16 +53,19 @@ let compile_glsl_to_spirv ~(entry_point : string) (glsl_source : string) :
   close_out oc ;
 
   (* Compile with glslangValidator *)
-  (* Always use "main" as entry point since that's what our GLSL generator produces *)
+  (* NOTE: Don't use --target-env vulkan1.1 - it changes storage classes from
+     Uniform to StorageBuffer which may cause issues with some drivers *)
   let _entry_point = entry_point in
-  (* Kept for API compatibility *)
   let cmd =
     Printf.sprintf
-      "glslangValidator -V --target-env vulkan1.1 -S comp -e main -o %s %s 2>&1"
+      "glslangValidator -V -S comp -o %s %s 2>&1"
       spirv_file
       glsl_file
   in
-  Printf.eprintf "[Vulkan] Compiling GLSL to SPIR-V: %s\n%!" cmd ;
+  Spoc_core.Log.debugf
+    Spoc_core.Log.Device
+    "[Vulkan] Compiling GLSL to SPIR-V: %s"
+    cmd ;
   let ic = Unix.open_process_in cmd in
   let output = Buffer.create 256 in
   (try
@@ -68,37 +75,40 @@ let compile_glsl_to_spirv ~(entry_point : string) (glsl_source : string) :
    with End_of_file -> ()) ;
   let status = Unix.close_process_in ic in
 
-  (* Clean up GLSL file *)
-  (try Unix.unlink glsl_file with _ -> ()) ;
-
   (* Check result *)
   (match status with
   | Unix.WEXITED 0 -> (
-      Printf.eprintf
-        "[Vulkan] SPIR-V compilation succeeded, file size: %d bytes\n%!"
+      Spoc_core.Log.debugf
+        Spoc_core.Log.Device
+        "[Vulkan] SPIR-V compilation succeeded, file size: %d bytes"
         Unix.((stat spirv_file).st_size) ;
-      (* Save both SPIR-V and GLSL for debugging *)
-      let debug_spirv = "/tmp/sarek_debug.spv" in
-      let debug_glsl = "/tmp/sarek_debug.comp" in
-      try
-        let cmd =
-          Printf.sprintf
-            "cp %s %s && cp %s %s"
-            spirv_file
+      (* Save both SPIR-V and GLSL for debugging if logging is enabled *)
+      if Spoc_core.Log.is_enabled Spoc_core.Log.Device then
+        let debug_spirv = "/tmp/sarek_debug.spv" in
+        let debug_glsl = "/tmp/sarek_debug.comp" in
+        try
+          let cmd =
+            Printf.sprintf
+              "cp %s %s && cp %s %s"
+              spirv_file
+              debug_spirv
+              glsl_file
+              debug_glsl
+          in
+          ignore (Sys.command cmd) ;
+          Spoc_core.Log.debugf
+            Spoc_core.Log.Device
+            "[Vulkan] Saved SPIR-V to %s and GLSL to %s for debugging"
             debug_spirv
-            glsl_file
             debug_glsl
-        in
-        ignore (Sys.command cmd) ;
-        Printf.eprintf
-          "[Vulkan] Saved SPIR-V to %s and GLSL to %s for debugging\n%!"
-          debug_spirv
-          debug_glsl
-      with _ -> ())
+        with _ -> ())
   | _ ->
       (try Unix.unlink spirv_file with _ -> ()) ;
       failwith
         (Printf.sprintf "glslangValidator failed:\n%s" (Buffer.contents output))) ;
+
+  (* Clean up GLSL file *)
+  (try Unix.unlink glsl_file with _ -> ()) ;
 
   (* Read SPIR-V binary *)
   let ic = open_in_bin spirv_file in
@@ -139,6 +149,10 @@ module Device = struct
 
   let initialized = ref false
 
+  (* Cache for logical devices to ensure we don't create multiple vk_device handles
+     for the same physical device, which would prevent sharing resources. *)
+  let device_cache : (int, t) Hashtbl.t = Hashtbl.create 4
+
   let init () =
     if not !initialized then begin
       if not (is_available ()) then failwith "Vulkan library not found" ;
@@ -152,24 +166,24 @@ module Device = struct
     | None ->
         (* Application info *)
         let app_info = make vk_application_info in
-        setf app_info app_info_sType vk_structure_type_application_info ;
+        setf app_info app_info_sType (u32 vk_structure_type_application_info) ;
         setf app_info app_info_pNext null ;
         setf app_info app_info_pApplicationName (Some "Sarek") ;
         setf app_info app_info_applicationVersion (Unsigned.UInt32.of_int 1) ;
         setf app_info app_info_pEngineName (Some "SPOC") ;
         setf app_info app_info_engineVersion (Unsigned.UInt32.of_int 1) ;
-        (* Vulkan 1.1 - required for modern SPIR-V *)
+        (* Vulkan 1.2 *)
         setf
           app_info
           app_info_apiVersion
-          (Unsigned.UInt32.of_int ((1 lsl 22) lor (1 lsl 12) lor 0)) ;
+          (Unsigned.UInt32.of_int ((1 lsl 22) lor (2 lsl 12) lor 0)) ;
 
         (* Instance create info *)
         let create_info = make vk_instance_create_info in
         setf
           create_info
           inst_create_sType
-          vk_structure_type_instance_create_info ;
+          (u32 vk_structure_type_instance_create_info) ;
         setf create_info inst_create_pNext null ;
         setf create_info inst_create_flags (Unsigned.UInt32.of_int 0) ;
         setf create_info inst_create_pApplicationInfo (addr app_info) ;
@@ -229,130 +243,151 @@ module Device = struct
     find 0
 
   let get idx =
-    init () ;
-    let inst = get_or_create_instance () in
+    match Hashtbl.find_opt device_cache idx with
+    | Some dev -> dev
+    | None ->
+        init () ;
+        let inst = get_or_create_instance () in
 
-    (* Get physical device *)
-    let count = allocate uint32_t (Unsigned.UInt32.of_int 0) in
-    check
-      "vkEnumeratePhysicalDevices"
-      (vkEnumeratePhysicalDevices
-         inst
-         count
-         (from_voidp vk_physical_device_ptr null)) ;
-    let n = Unsigned.UInt32.to_int !@count in
-    if idx >= n then
-      failwith (Printf.sprintf "Device %d not found (have %d)" idx n) ;
+        (* Get physical device *)
+        let count = allocate uint32_t (Unsigned.UInt32.of_int 0) in
+        check
+          "vkEnumeratePhysicalDevices"
+          (vkEnumeratePhysicalDevices
+             inst
+             count
+             (from_voidp vk_physical_device_ptr null)) ;
+        let n = Unsigned.UInt32.to_int !@count in
+        if idx >= n then
+          failwith (Printf.sprintf "Device %d not found (have %d)" idx n) ;
 
-    let phys_devs = CArray.make vk_physical_device_ptr n in
-    check
-      "vkEnumeratePhysicalDevices"
-      (vkEnumeratePhysicalDevices inst count (CArray.start phys_devs)) ;
-    let phys_dev = CArray.get phys_devs idx in
+        let phys_devs = CArray.make vk_physical_device_ptr n in
+        check
+          "vkEnumeratePhysicalDevices"
+          (vkEnumeratePhysicalDevices inst count (CArray.start phys_devs)) ;
+        let phys_dev = CArray.get phys_devs idx in
 
-    (* Get properties *)
-    let props = make vk_physical_device_properties in
-    vkGetPhysicalDeviceProperties phys_dev (addr props) ;
-    let name_arr = getf props phys_props_deviceName in
-    let name_chars = CArray.to_list name_arr in
-    let name =
-      String.init
-        (min
-           255
-           (let rec find_nul i =
-              if i >= 255 then 255
-              else if List.nth name_chars i = '\000' then i
-              else find_nul (i + 1)
-            in
-            find_nul 0))
-        (fun i -> List.nth name_chars i)
-    in
+        (* Get properties *)
+        let props = make vk_physical_device_properties in
+        vkGetPhysicalDeviceProperties phys_dev (addr props) ;
+        let name_arr = getf props phys_props_deviceName in
+        let name_chars = CArray.to_list name_arr in
+        let name =
+          String.init
+            (min
+               255
+               (let rec find_nul i =
+                  if i >= 255 then 255
+                  else if List.nth name_chars i = '\000' then i
+                  else find_nul (i + 1)
+                in
+                find_nul 0))
+            (fun i -> List.nth name_chars i)
+        in
 
-    let api_ver = Unsigned.UInt32.to_int (getf props phys_props_apiVersion) in
-    let api_major = api_ver lsr 22 in
-    let api_minor = (api_ver lsr 12) land 0x3FF in
-    let api_patch = api_ver land 0xFFF in
+        let api_ver =
+          Unsigned.UInt32.to_int (getf props phys_props_apiVersion)
+        in
+        let api_major = api_ver lsr 22 in
+        let api_minor = (api_ver lsr 12) land 0x3FF in
+        let api_patch = api_ver land 0xFFF in
 
-    (* Get memory properties *)
-    let mem_props = make vk_physical_device_memory_properties in
-    vkGetPhysicalDeviceMemoryProperties phys_dev (addr mem_props) ;
+        (* Get memory properties *)
+        let mem_props = make vk_physical_device_memory_properties in
+        vkGetPhysicalDeviceMemoryProperties phys_dev (addr mem_props) ;
 
-    (* Find compute queue family *)
-    let queue_family = find_compute_queue_family phys_dev in
+        (* Find compute queue family *)
+        let queue_family = find_compute_queue_family phys_dev in
 
-    (* Create logical device with compute queue *)
-    let queue_priority = allocate float 1.0 in
-    let queue_create_info = make vk_device_queue_create_info in
-    setf
-      queue_create_info
-      dev_queue_create_sType
-      vk_structure_type_device_queue_create_info ;
-    setf queue_create_info dev_queue_create_pNext null ;
-    setf queue_create_info dev_queue_create_flags (Unsigned.UInt32.of_int 0) ;
-    setf
-      queue_create_info
-      dev_queue_create_queueFamilyIndex
-      (Unsigned.UInt32.of_int queue_family) ;
-    setf
-      queue_create_info
-      dev_queue_create_queueCount
-      (Unsigned.UInt32.of_int 1) ;
-    setf queue_create_info dev_queue_create_pQueuePriorities queue_priority ;
+        (* Create logical device with compute queue *)
+        let queue_priority = allocate float 1.0 in
+        let queue_create_info = make vk_device_queue_create_info in
+        setf
+          queue_create_info
+          dev_queue_create_sType
+          (u32 vk_structure_type_device_queue_create_info) ;
+        setf queue_create_info dev_queue_create_pNext null ;
+        setf queue_create_info dev_queue_create_flags (Unsigned.UInt32.of_int 0) ;
+        setf
+          queue_create_info
+          dev_queue_create_queueFamilyIndex
+          (Unsigned.UInt32.of_int queue_family) ;
+        setf
+          queue_create_info
+          dev_queue_create_queueCount
+          (Unsigned.UInt32.of_int 1) ;
+        setf queue_create_info dev_queue_create_pQueuePriorities queue_priority ;
 
-    let dev_create_info = make vk_device_create_info in
-    setf dev_create_info dev_create_sType vk_structure_type_device_create_info ;
-    setf dev_create_info dev_create_pNext null ;
-    setf dev_create_info dev_create_flags (Unsigned.UInt32.of_int 0) ;
-    setf
-      dev_create_info
-      dev_create_queueCreateInfoCount
-      (Unsigned.UInt32.of_int 1) ;
-    setf dev_create_info dev_create_pQueueCreateInfos (addr queue_create_info) ;
-    setf dev_create_info dev_create_enabledLayerCount (Unsigned.UInt32.of_int 0) ;
-    setf dev_create_info dev_create_ppEnabledLayerNames (from_voidp string null) ;
-    setf
-      dev_create_info
-      dev_create_enabledExtensionCount
-      (Unsigned.UInt32.of_int 0) ;
-    setf
-      dev_create_info
-      dev_create_ppEnabledExtensionNames
-      (from_voidp string null) ;
-    setf dev_create_info dev_create_pEnabledFeatures null ;
+        let dev_create_info = make vk_device_create_info in
+        setf
+          dev_create_info
+          dev_create_sType
+          (u32 vk_structure_type_device_create_info) ;
+        setf dev_create_info dev_create_pNext null ;
+        setf dev_create_info dev_create_flags (Unsigned.UInt32.of_int 0) ;
+        setf
+          dev_create_info
+          dev_create_queueCreateInfoCount
+          (Unsigned.UInt32.of_int 1) ;
+        setf
+          dev_create_info
+          dev_create_pQueueCreateInfos
+          (addr queue_create_info) ;
+        setf
+          dev_create_info
+          dev_create_enabledLayerCount
+          (Unsigned.UInt32.of_int 0) ;
+        setf
+          dev_create_info
+          dev_create_ppEnabledLayerNames
+          (from_voidp string null) ;
+        setf
+          dev_create_info
+          dev_create_enabledExtensionCount
+          (Unsigned.UInt32.of_int 0) ;
+        setf
+          dev_create_info
+          dev_create_ppEnabledExtensionNames
+          (from_voidp string null) ;
+        setf dev_create_info dev_create_pEnabledFeatures null ;
 
-    let device = allocate vk_device_ptr (from_voidp vk_device null) in
-    check
-      "vkCreateDevice"
-      (vkCreateDevice phys_dev (addr dev_create_info) null device) ;
+        let device = allocate vk_device_ptr (from_voidp vk_device null) in
+        check
+          "vkCreateDevice"
+          (vkCreateDevice phys_dev (addr dev_create_info) null device) ;
 
-    (* Get compute queue *)
-    let queue = allocate vk_queue_ptr (from_voidp vk_queue null) in
-    vkGetDeviceQueue
-      !@device
-      (Unsigned.UInt32.of_int queue_family)
-      (Unsigned.UInt32.of_int 0)
-      queue ;
+        (* Get compute queue *)
+        let queue = allocate vk_queue_ptr (from_voidp vk_queue null) in
+        vkGetDeviceQueue
+          !@device
+          (Unsigned.UInt32.of_int queue_family)
+          (Unsigned.UInt32.of_int 0)
+          queue ;
 
-    Spoc_core.Log.debugf
-      Spoc_core.Log.Device
-      "Vulkan device %d: %s (API %d.%d.%d)"
-      idx
-      name
-      api_major
-      api_minor
-      api_patch ;
+        Spoc_core.Log.debugf
+          Spoc_core.Log.Device
+          "Vulkan device %d: %s (API %d.%d.%d)"
+          idx
+          name
+          api_major
+          api_minor
+          api_patch ;
 
-    {
-      id = idx;
-      physical_device = phys_dev;
-      device = !@device;
-      compute_queue = !@queue;
-      queue_family;
-      instance = inst;
-      name;
-      api_version = (api_major, api_minor, api_patch);
-      memory_properties = mem_props;
-    }
+        let dev =
+          {
+            id = idx;
+            physical_device = phys_dev;
+            device = !@device;
+            compute_queue = !@queue;
+            queue_family;
+            instance = inst;
+            name;
+            api_version = (api_major, api_minor, api_patch);
+            memory_properties = mem_props;
+          }
+        in
+        Hashtbl.add device_cache idx dev ;
+        dev
 
   let set_current _dev = ()
   (* Vulkan doesn't have a global "current device" concept *)
@@ -371,6 +406,7 @@ module Memory = struct
     size : int;
     elem_size : int;
     device : Device.t;
+    mutable mapped_ptr : unit Ctypes.ptr option; (* Persistent mapping *)
   }
 
   (** Find suitable memory type *)
@@ -389,13 +425,16 @@ module Memory = struct
     in
     find 0
 
+  (* VK_WHOLE_SIZE = ~0ULL - map entire memory range *)
+  let vk_whole_size = Unsigned.UInt64.max_int
+
   let alloc device size kind =
     let elem_size = Ctypes_static.sizeof (Ctypes.typ_of_bigarray_kind kind) in
     let byte_size = size * elem_size in
 
     (* Create buffer *)
     let buf_info = make vk_buffer_create_info in
-    setf buf_info buf_create_sType vk_structure_type_buffer_create_info ;
+    setf buf_info buf_create_sType (u32 vk_structure_type_buffer_create_info) ;
     setf buf_info buf_create_pNext null ;
     setf buf_info buf_create_flags (Unsigned.UInt32.of_int 0) ;
     setf buf_info buf_create_size (Unsigned.UInt64.of_int byte_size) ;
@@ -406,7 +445,7 @@ module Memory = struct
          (vk_buffer_usage_storage_buffer_bit
         lor vk_buffer_usage_transfer_src_bit
         lor vk_buffer_usage_transfer_dst_bit)) ;
-    setf buf_info buf_create_sharingMode 0 ;
+    setf buf_info buf_create_sharingMode (u32 0) ;
     (* VK_SHARING_MODE_EXCLUSIVE *)
     setf buf_info buf_create_queueFamilyIndexCount (Unsigned.UInt32.of_int 0) ;
     setf buf_info buf_create_pQueueFamilyIndices (from_voidp uint32_t null) ;
@@ -430,14 +469,10 @@ module Memory = struct
         (vk_memory_property_host_visible_bit
        lor vk_memory_property_host_coherent_bit)
     in
-    Printf.eprintf
-      "[Vulkan] Memory allocation: type_idx=%d size=%d\n%!"
-      mem_type_idx
-      byte_size ;
 
     (* Allocate memory *)
     let alloc_info = make vk_memory_allocate_info in
-    setf alloc_info mem_alloc_sType vk_structure_type_memory_allocate_info ;
+    setf alloc_info mem_alloc_sType (u32 vk_structure_type_memory_allocate_info) ;
     setf alloc_info mem_alloc_pNext null ;
     setf alloc_info mem_alloc_allocationSize (getf mem_reqs mem_req_size) ;
     setf
@@ -459,13 +494,32 @@ module Memory = struct
          !@memory
          (Unsigned.UInt64.of_int 0)) ;
 
-    {buffer = !@buffer; memory = !@memory; size; elem_size; device}
+    (* Map memory persistently like C example does *)
+    let data_ptr = allocate (ptr void) null in
+    check
+      "vkMapMemory (persistent)"
+      (vkMapMemory
+         device.Device.device
+         !@memory
+         (Unsigned.UInt64.of_int 0)
+         vk_whole_size
+         (Unsigned.UInt32.of_int 0)
+         data_ptr) ;
+
+    {
+      buffer = !@buffer;
+      memory = !@memory;
+      size;
+      elem_size;
+      device;
+      mapped_ptr = Some !@data_ptr;
+    }
 
   let alloc_custom device ~size ~elem_size =
     let byte_size = size * elem_size in
 
     let buf_info = make vk_buffer_create_info in
-    setf buf_info buf_create_sType vk_structure_type_buffer_create_info ;
+    setf buf_info buf_create_sType (u32 vk_structure_type_buffer_create_info) ;
     setf buf_info buf_create_pNext null ;
     setf buf_info buf_create_flags (Unsigned.UInt32.of_int 0) ;
     setf buf_info buf_create_size (Unsigned.UInt64.of_int byte_size) ;
@@ -476,7 +530,7 @@ module Memory = struct
          (vk_buffer_usage_storage_buffer_bit
         lor vk_buffer_usage_transfer_src_bit
         lor vk_buffer_usage_transfer_dst_bit)) ;
-    setf buf_info buf_create_sharingMode 0 ;
+    setf buf_info buf_create_sharingMode (u32 0) ;
     setf buf_info buf_create_queueFamilyIndexCount (Unsigned.UInt32.of_int 0) ;
     setf buf_info buf_create_pQueueFamilyIndices (from_voidp uint32_t null) ;
 
@@ -500,7 +554,7 @@ module Memory = struct
     in
 
     let alloc_info = make vk_memory_allocate_info in
-    setf alloc_info mem_alloc_sType vk_structure_type_memory_allocate_info ;
+    setf alloc_info mem_alloc_sType (u32 vk_structure_type_memory_allocate_info) ;
     setf alloc_info mem_alloc_pNext null ;
     setf alloc_info mem_alloc_allocationSize (getf mem_reqs mem_req_size) ;
     setf
@@ -521,9 +575,31 @@ module Memory = struct
          !@memory
          (Unsigned.UInt64.of_int 0)) ;
 
-    {buffer = !@buffer; memory = !@memory; size; elem_size; device}
+    (* Map memory persistently *)
+    let data_ptr = allocate (ptr void) null in
+    check
+      "vkMapMemory (persistent custom)"
+      (vkMapMemory
+         device.Device.device
+         !@memory
+         (Unsigned.UInt64.of_int 0)
+         vk_whole_size
+         (Unsigned.UInt32.of_int 0)
+         data_ptr) ;
+
+    {
+      buffer = !@buffer;
+      memory = !@memory;
+      size;
+      elem_size;
+      device;
+      mapped_ptr = Some !@data_ptr;
+    }
 
   let free buf =
+    (match buf.mapped_ptr with
+    | Some _ -> vkUnmapMemory buf.device.Device.device buf.memory
+    | None -> ()) ;
     vkDestroyBuffer buf.device.Device.device buf.buffer null ;
     vkFreeMemory buf.device.Device.device buf.memory null
 
@@ -537,71 +613,89 @@ module Memory = struct
 
   let host_to_device ~src ~dst =
     let bytes = Bigarray.Array1.size_in_bytes src in
-    Printf.eprintf "[Vulkan] host_to_device: copying %d bytes\n%!" bytes ;
-    let data = allocate (ptr void) null in
-    check
-      "vkMapMemory"
-      (vkMapMemory
-         dst.device.Device.device
-         dst.memory
-         (Unsigned.UInt64.of_int 0)
-         (Unsigned.UInt64.of_int bytes)
-         (Unsigned.UInt32.of_int 0)
-         data) ;
+    let data =
+      match dst.mapped_ptr with
+      | Some p -> p
+      | None ->
+          let data = allocate (ptr void) null in
+          check
+            "vkMapMemory"
+            (vkMapMemory
+               dst.device.Device.device
+               dst.memory
+               (Unsigned.UInt64.of_int 0)
+               vk_whole_size
+               (Unsigned.UInt32.of_int 0)
+               data) ;
+          !@data
+    in
     let src_ptr = bigarray_start array1 src |> to_voidp in
-    let _ = memcpy !@data src_ptr (Unsigned.Size_t.of_int bytes) in
-    vkUnmapMemory dst.device.Device.device dst.memory ;
-    Printf.eprintf "[Vulkan] host_to_device: done\n%!"
+    let _ = memcpy data src_ptr (Unsigned.Size_t.of_int bytes) in
+    ()
 
   let device_to_host ~src ~dst =
     let bytes = Bigarray.Array1.size_in_bytes dst in
-    Printf.eprintf "[Vulkan] device_to_host: copying %d bytes\n%!" bytes ;
-    let data = allocate (ptr void) null in
-    check
-      "vkMapMemory"
-      (vkMapMemory
-         src.device.Device.device
-         src.memory
-         (Unsigned.UInt64.of_int 0)
-         (Unsigned.UInt64.of_int bytes)
-         (Unsigned.UInt32.of_int 0)
-         data) ;
+    let data =
+      match src.mapped_ptr with
+      | Some p -> p
+      | None ->
+          let data = allocate (ptr void) null in
+          check
+            "vkMapMemory"
+            (vkMapMemory
+               src.device.Device.device
+               src.memory
+               (Unsigned.UInt64.of_int 0)
+               vk_whole_size
+               (Unsigned.UInt32.of_int 0)
+               data) ;
+          !@data
+    in
     let dst_ptr = bigarray_start array1 dst |> to_voidp in
-    let _ = memcpy dst_ptr !@data (Unsigned.Size_t.of_int bytes) in
-    vkUnmapMemory src.device.Device.device src.memory ;
-    Printf.eprintf "[Vulkan] device_to_host: done\n%!"
+    let _ = memcpy dst_ptr data (Unsigned.Size_t.of_int bytes) in
+    ()
 
   let host_ptr_to_device ~src_ptr ~byte_size ~dst =
-    Printf.eprintf "[Vulkan] host_ptr_to_device: byte_size=%d\n%!" byte_size ;
-    let data = allocate (ptr void) null in
-    check
-      "vkMapMemory"
-      (vkMapMemory
-         dst.device.Device.device
-         dst.memory
-         (Unsigned.UInt64.of_int 0)
-         (Unsigned.UInt64.of_int byte_size)
-         (Unsigned.UInt32.of_int 0)
-         data) ;
-    let _ = memcpy !@data src_ptr (Unsigned.Size_t.of_int byte_size) in
-    vkUnmapMemory dst.device.Device.device dst.memory ;
-    Printf.eprintf "[Vulkan] host_ptr_to_device: done\n%!"
+    (* Use persistent mapping if available *)
+    let data =
+      match dst.mapped_ptr with
+      | Some p -> p
+      | None ->
+          let data = allocate (ptr void) null in
+          check
+            "vkMapMemory"
+            (vkMapMemory
+               dst.device.Device.device
+               dst.memory
+               (Unsigned.UInt64.of_int 0)
+               vk_whole_size
+               (Unsigned.UInt32.of_int 0)
+               data) ;
+          !@data
+    in
+    let _ = memcpy data src_ptr (Unsigned.Size_t.of_int byte_size) in
+    ()
 
   let device_to_host_ptr ~src ~dst_ptr ~byte_size =
-    Printf.eprintf "[Vulkan] device_to_host_ptr: byte_size=%d\n%!" byte_size ;
-    let data = allocate (ptr void) null in
-    check
-      "vkMapMemory"
-      (vkMapMemory
-         src.device.Device.device
-         src.memory
-         (Unsigned.UInt64.of_int 0)
-         (Unsigned.UInt64.of_int byte_size)
-         (Unsigned.UInt32.of_int 0)
-         data) ;
-    let _ = memcpy dst_ptr !@data (Unsigned.Size_t.of_int byte_size) in
-    vkUnmapMemory src.device.Device.device src.memory ;
-    Printf.eprintf "[Vulkan] device_to_host_ptr: done\n%!"
+    (* Use persistent mapping if available *)
+    let data =
+      match src.mapped_ptr with
+      | Some p -> p
+      | None ->
+          let data = allocate (ptr void) null in
+          check
+            "vkMapMemory"
+            (vkMapMemory
+               src.device.Device.device
+               src.memory
+               (Unsigned.UInt64.of_int 0)
+               vk_whole_size
+               (Unsigned.UInt32.of_int 0)
+               data) ;
+          !@data
+    in
+    let _ = memcpy dst_ptr data (Unsigned.Size_t.of_int byte_size) in
+    ()
 
   let device_to_device ~src:_ ~dst:_ =
     failwith "Vulkan device_to_device: not implemented (use staging buffer)"
@@ -625,7 +719,7 @@ module Stream = struct
     setf
       pool_info
       cmd_pool_create_sType
-      vk_structure_type_command_pool_create_info ;
+      (u32 vk_structure_type_command_pool_create_info) ;
     setf pool_info cmd_pool_create_pNext null ;
     setf pool_info cmd_pool_create_flags (Unsigned.UInt32.of_int 0x02) ;
     (* VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT *)
@@ -644,10 +738,10 @@ module Stream = struct
     setf
       alloc_info
       cmd_buf_alloc_sType
-      vk_structure_type_command_buffer_allocate_info ;
+      (u32 vk_structure_type_command_buffer_allocate_info) ;
     setf alloc_info cmd_buf_alloc_pNext null ;
     setf alloc_info cmd_buf_alloc_commandPool !@pool ;
-    setf alloc_info cmd_buf_alloc_level vk_command_buffer_level_primary ;
+    setf alloc_info cmd_buf_alloc_level (u32 vk_command_buffer_level_primary) ;
     setf alloc_info cmd_buf_alloc_commandBufferCount (Unsigned.UInt32.of_int 1) ;
 
     let cmd_buf =
@@ -659,7 +753,7 @@ module Stream = struct
 
     (* Create fence *)
     let fence_info = make vk_fence_create_info in
-    setf fence_info fence_create_sType vk_structure_type_fence_create_info ;
+    setf fence_info fence_create_sType (u32 vk_structure_type_fence_create_info) ;
     setf fence_info fence_create_pNext null ;
     setf fence_info fence_create_flags (Unsigned.UInt32.of_int 0) ;
 
@@ -694,7 +788,7 @@ module Event = struct
 
   let create_with_device device =
     let fence_info = make vk_fence_create_info in
-    setf fence_info fence_create_sType vk_structure_type_fence_create_info ;
+    setf fence_info fence_create_sType (u32 vk_structure_type_fence_create_info) ;
     setf fence_info fence_create_pNext null ;
     setf fence_info fence_create_flags (Unsigned.UInt32.of_int 0) ;
 
@@ -782,7 +876,7 @@ module Kernel = struct
     setf
       create_info
       shader_create_sType
-      vk_structure_type_shader_module_create_info ;
+      (u32 vk_structure_type_shader_module_create_info) ;
     setf create_info shader_create_pNext null ;
     setf create_info shader_create_flags (Unsigned.UInt32.of_int 0) ;
     setf create_info shader_create_codeSize (Unsigned.Size_t.of_int code_size) ;
@@ -822,14 +916,16 @@ module Kernel = struct
       in
       max 1 !count
     in
-    Printf.eprintf "[Vulkan] Detected %d buffer bindings\n%!" num_bindings ;
 
     (* Create descriptor set layout *)
     let bindings = CArray.make vk_descriptor_set_layout_binding num_bindings in
     for i = 0 to num_bindings - 1 do
-      let binding = CArray.get bindings i in
+      let binding = make vk_descriptor_set_layout_binding in
       setf binding dsl_binding_binding (Unsigned.UInt32.of_int i) ;
-      setf binding dsl_binding_descriptorType vk_descriptor_type_storage_buffer ;
+      setf
+        binding
+        dsl_binding_descriptorType
+        (u32 vk_descriptor_type_storage_buffer) ;
       setf binding dsl_binding_descriptorCount (Unsigned.UInt32.of_int 1) ;
       setf
         binding
@@ -843,7 +939,7 @@ module Kernel = struct
     setf
       dsl_create_info
       dsl_create_sType
-      vk_structure_type_descriptor_set_layout_create_info ;
+      (u32 vk_structure_type_descriptor_set_layout_create_info) ;
     setf dsl_create_info dsl_create_pNext null ;
     setf dsl_create_info dsl_create_flags (Unsigned.UInt32.of_int 0) ;
     setf
@@ -866,14 +962,13 @@ module Kernel = struct
     setf
       pl_create_info
       pl_create_sType
-      vk_structure_type_pipeline_layout_create_info ;
+      (u32 vk_structure_type_pipeline_layout_create_info) ;
     setf pl_create_info pl_create_pNext null ;
     setf pl_create_info pl_create_flags (Unsigned.UInt32.of_int 0) ;
     setf pl_create_info pl_create_setLayoutCount (Unsigned.UInt32.of_int 1) ;
     setf pl_create_info pl_create_pSetLayouts dsl ;
 
     (* Add push constant range for scalar parameters *)
-    (* TODO: Calculate exact size from IR metadata instead of fixed size *)
     let push_constant_range = make vk_push_constant_range in
     setf
       push_constant_range
@@ -882,7 +977,7 @@ module Kernel = struct
     setf push_constant_range push_const_offset (Unsigned.UInt32.of_int 0) ;
     setf push_constant_range push_const_size (Unsigned.UInt32.of_int 128) ;
 
-    (* 128 bytes max *)
+    (* 128 bytes max for push constants *)
     setf
       pl_create_info
       pl_create_pushConstantRangeCount
@@ -890,7 +985,6 @@ module Kernel = struct
     setf pl_create_info pl_create_pPushConstantRanges (addr push_constant_range) ;
 
     let pipeline_layout = allocate vk_pipeline_layout vk_null_handle in
-    Printf.eprintf "[Vulkan] Creating pipeline layout...\n%!" ;
     check
       "vkCreatePipelineLayout"
       (vkCreatePipelineLayout
@@ -898,14 +992,13 @@ module Kernel = struct
          (addr pl_create_info)
          null
          pipeline_layout) ;
-    Printf.eprintf "[Vulkan] Pipeline layout created successfully\n%!" ;
 
     (* Create compute pipeline *)
     let stage_info = make vk_pipeline_shader_stage_create_info in
     setf
       stage_info
       shader_stage_sType
-      vk_structure_type_pipeline_shader_stage_create_info ;
+      (u32 vk_structure_type_pipeline_shader_stage_create_info) ;
     setf stage_info shader_stage_pNext null ;
     setf stage_info shader_stage_flags (Unsigned.UInt32.of_int 0) ;
     setf
@@ -913,7 +1006,6 @@ module Kernel = struct
       shader_stage_stage
       (Unsigned.UInt32.of_int vk_shader_stage_compute_bit) ;
     setf stage_info shader_stage_module shader_module ;
-    Printf.eprintf "[Vulkan] Entry point name: 'main' (hardcoded)\n%!" ;
     setf stage_info shader_stage_pName "main" ;
     setf stage_info shader_stage_pSpecializationInfo null ;
 
@@ -921,16 +1013,15 @@ module Kernel = struct
     setf
       pipeline_info
       compute_pipe_sType
-      vk_structure_type_compute_pipeline_create_info ;
+      (u32 vk_structure_type_compute_pipeline_create_info) ;
     setf pipeline_info compute_pipe_pNext null ;
     setf pipeline_info compute_pipe_flags (Unsigned.UInt32.of_int 0) ;
     setf pipeline_info compute_pipe_stage stage_info ;
     setf pipeline_info compute_pipe_layout !@pipeline_layout ;
     setf pipeline_info compute_pipe_basePipelineHandle vk_null_handle ;
-    setf pipeline_info compute_pipe_basePipelineIndex (-1) ;
+    setf pipeline_info compute_pipe_basePipelineIndex (Int32.of_int (-1)) ;
 
     let pipeline = allocate vk_pipeline vk_null_handle in
-    Printf.eprintf "[Vulkan] Creating compute pipeline...\n%!" ;
     let result =
       vkCreateComputePipelines
         device.Device.device
@@ -940,22 +1031,21 @@ module Kernel = struct
         null
         pipeline
     in
-    Printf.eprintf
-      "[Vulkan] vkCreateComputePipelines returned: %s\n%!"
-      (string_of_vk_result result) ;
     check "vkCreateComputePipelines" result ;
-    Printf.eprintf "[Vulkan] Compute pipeline created successfully\n%!" ;
 
     (* Create descriptor pool *)
     let pool_size = make vk_descriptor_pool_size in
-    setf pool_size pool_size_type vk_descriptor_type_storage_buffer ;
+    setf pool_size pool_size_type (u32 vk_descriptor_type_storage_buffer) ;
     setf
       pool_size
       pool_size_descriptorCount
       (Unsigned.UInt32.of_int (num_bindings * 10)) ;
 
     let pool_info = make vk_descriptor_pool_create_info in
-    setf pool_info desc_pool_sType vk_structure_type_descriptor_pool_create_info ;
+    setf
+      pool_info
+      desc_pool_sType
+      (u32 vk_structure_type_descriptor_pool_create_info) ;
     setf pool_info desc_pool_pNext null ;
     setf pool_info desc_pool_flags (Unsigned.UInt32.of_int 0) ;
     setf pool_info desc_pool_maxSets (Unsigned.UInt32.of_int 10) ;
@@ -1017,7 +1107,6 @@ module Kernel = struct
 
   let set_arg_buffer args _idx buf =
     let binding = args.buffer_binding in
-    Printf.eprintf "[Vulkan] set_arg_buffer: assigning binding=%d\n%!" binding ;
     args.bindings <- (binding, AnyBuf buf) :: args.bindings ;
     args.buffer_binding <- binding + 1
 
@@ -1025,18 +1114,14 @@ module Kernel = struct
     match args.push_constants with
     | Some pc -> pc
     | None ->
-        let pc = Bytes.create 128 in
-        (* 128 bytes max for push constants *)
+        let pc = Bytes.create 16 in
+        (* 16 bytes: 4 ints (a_len, b_len, c_len, n) *)
         args.push_constants <- Some pc ;
         pc
 
   let set_arg_int32 args _idx n =
-    Printf.eprintf "[Vulkan] set_arg_int32: n=%ld\n%!" n ;
     let pc = ensure_push_constants args in
     let offset = args.push_constant_offset in
-    Printf.eprintf
-      "[Vulkan] Writing int32 to push constant offset %d\n%!"
-      offset ;
     Bytes.set_int32_le pc offset n ;
     args.push_constant_offset <- offset + 4
 
@@ -1062,381 +1147,230 @@ module Kernel = struct
     failwith "Vulkan: raw pointer args not supported"
 
   let launch kernel ~args ~(grid : Spoc_framework.Framework_sig.dims)
-      ~(block : Spoc_framework.Framework_sig.dims) ~shared_mem:_ ~stream =
-    let stream =
-      match stream with Some s -> s | None -> Stream.create kernel.device
-    in
+      ~(block : Spoc_framework.Framework_sig.dims) ~shared_mem:_ ~stream:_ =
+    ignore block ;
+    (* Vulkan doesn't use block size in dispatch, only grid *)
     let device = kernel.device in
+    let u32 = Unsigned.UInt32.of_int in
+    let u64 = Unsigned.UInt64.of_int in
 
-    (* Allocate descriptor set *)
-    let alloc_info = make vk_descriptor_set_allocate_info in
-    setf
-      alloc_info
-      desc_set_alloc_sType
-      vk_structure_type_descriptor_set_allocate_info ;
-    setf alloc_info desc_set_alloc_pNext null ;
-    setf alloc_info desc_set_alloc_descriptorPool kernel.descriptor_pool ;
-    setf alloc_info desc_set_alloc_descriptorSetCount (Unsigned.UInt32.of_int 1) ;
-    setf
-      alloc_info
-      desc_set_alloc_pSetLayouts
-      (allocate vk_descriptor_set_layout kernel.descriptor_set_layout) ;
+    try
+      (* 1. Descriptor Set Layout - use the one from kernel *)
+      let dsl = kernel.descriptor_set_layout in
 
-    let desc_set = allocate vk_descriptor_set vk_null_handle in
-    check
-      "vkAllocateDescriptorSets"
-      (vkAllocateDescriptorSets device.Device.device (addr alloc_info) desc_set) ;
+      (* 2. Pipeline - use the one from kernel *)
+      let pipeline = kernel.pipeline in
+      let pipeline_layout = kernel.pipeline_layout in
 
-    (* Update descriptor set with buffer bindings *)
-    (* Reverse the list because we built it with :: (prepend) *)
-    let bindings_in_order = List.rev args.bindings in
-    Printf.eprintf
-      "[Vulkan] Processing %d bindings (reversed list)\n%!"
-      (List.length bindings_in_order) ;
-    let writes =
-      CArray.make vk_write_descriptor_set (List.length bindings_in_order)
-    in
-    let buf_infos =
-      CArray.make vk_descriptor_buffer_info (List.length bindings_in_order)
-    in
-    List.iteri
-      (fun i (binding, AnyBuf buf) ->
-        Printf.eprintf
-          "[Vulkan] Descriptor update %d: binding=%d buffer=%Ld size=%d \
-           elem_size=%d\n\
-           %!"
-          i
-          binding
-          (Unsigned.UInt64.to_int64 buf.buffer)
-          buf.size
-          buf.elem_size ;
-        let buf_info = CArray.get buf_infos i in
-        setf buf_info desc_buf_buffer buf.buffer ;
-        setf buf_info desc_buf_offset (Unsigned.UInt64.of_int 0) ;
-        setf
-          buf_info
-          desc_buf_range
-          (Unsigned.UInt64.of_int (buf.size * buf.elem_size)) ;
-        CArray.set buf_infos i buf_info ;
+      (* 3. Descriptor Pool - use the one from kernel *)
+      let pool = kernel.descriptor_pool in
 
-        let write = CArray.get writes i in
-        setf write write_desc_sType vk_structure_type_write_descriptor_set ;
-        setf write write_desc_pNext null ;
-        setf write write_desc_dstSet !@desc_set ;
-        setf write write_desc_dstBinding (Unsigned.UInt32.of_int binding) ;
-        setf write write_desc_dstArrayElement (Unsigned.UInt32.of_int 0) ;
-        setf write write_desc_descriptorCount (Unsigned.UInt32.of_int 1) ;
-        setf write write_desc_descriptorType vk_descriptor_type_storage_buffer ;
-        setf write write_desc_pImageInfo null ;
-        setf write write_desc_pBufferInfo (CArray.start buf_infos +@ i) ;
-        setf write write_desc_pTexelBufferView null ;
-        CArray.set writes i write)
-      bindings_in_order ;
+      (* 4. Allocate Descriptor Set *)
+      let ds_ai = make vk_descriptor_set_allocate_info in
+      setf
+        ds_ai
+        desc_set_alloc_sType
+        (u32 vk_structure_type_descriptor_set_allocate_info) ;
+      setf ds_ai desc_set_alloc_pNext null ;
+      setf ds_ai desc_set_alloc_descriptorPool pool ;
+      setf ds_ai desc_set_alloc_descriptorSetCount (u32 1) ;
+      setf
+        ds_ai
+        desc_set_alloc_pSetLayouts
+        (allocate vk_descriptor_set_layout dsl) ;
 
-    Printf.eprintf
-      "[Vulkan] Updating descriptor sets with %d bindings\n%!"
-      (List.length bindings_in_order) ;
-    vkUpdateDescriptorSets
-      device.Device.device
-      (Unsigned.UInt32.of_int (List.length args.bindings))
-      (CArray.start writes)
-      (Unsigned.UInt32.of_int 0)
-      null ;
+      let desc_set = allocate vk_descriptor_set vk_null_handle in
+      check
+        "vkAllocateDescriptorSets"
+        (vkAllocateDescriptorSets device.Device.device (addr ds_ai) desc_set) ;
 
-    (* Record command buffer *)
-    let begin_info = make vk_command_buffer_begin_info in
-    setf
-      begin_info
-      cmd_buf_begin_sType
-      vk_structure_type_command_buffer_begin_info ;
-    setf begin_info cmd_buf_begin_pNext null ;
-    setf
-      begin_info
-      cmd_buf_begin_flags
-      (Unsigned.UInt32.of_int vk_command_buffer_usage_one_time_submit_bit) ;
-    setf begin_info cmd_buf_begin_pInheritanceInfo null ;
+      (* 5. Update Descriptor Set *)
+      let num_bindings = List.length args.bindings in
+      let writes = CArray.make vk_write_descriptor_set num_bindings in
+      let buf_infos = CArray.make vk_descriptor_buffer_info num_bindings in
 
-    check
-      "vkResetCommandBuffer"
-      (vkResetCommandBuffer
-         stream.Stream.command_buffer
-         (Unsigned.UInt32.of_int 0)) ;
-    check
-      "vkBeginCommandBuffer"
-      (vkBeginCommandBuffer stream.Stream.command_buffer (addr begin_info)) ;
+      List.iteri
+        (fun i (binding_idx, any_buf) ->
+          let buf_handle, buf_size, buf_elem_size =
+            match any_buf with
+            | AnyBuf buf -> (buf.buffer, buf.size, buf.elem_size)
+          in
 
-    (* Pipeline barrier: Make host writes visible to compute shader *)
-    (* Must come BEFORE binding pipeline, like C example *)
-    (* IMPORTANT: Keep barrier structures alive until after vkQueueSubmit! *)
-    Printf.eprintf
-      "[Vulkan] Adding pipeline barriers (HOST -> COMPUTE_SHADER)...\n%!" ;
-    let pre_barriers = ref [] in
-    (* Keep barriers alive! *)
-    List.iter
-      (fun (_, AnyBuf buf) ->
-        let barrier = make vk_buffer_memory_barrier in
-        setf barrier buf_barrier_sType vk_structure_type_buffer_memory_barrier ;
-        setf barrier buf_barrier_pNext null ;
-        setf
-          barrier
-          buf_barrier_srcAccessMask
-          (Unsigned.UInt32.of_int vk_access_host_write_bit) ;
-        setf
-          barrier
-          buf_barrier_dstAccessMask
-          (Unsigned.UInt32.of_int vk_access_shader_read_bit) ;
-        setf
-          barrier
-          buf_barrier_srcQueueFamilyIndex
-          (Unsigned.UInt32.of_int vk_queue_family_ignored) ;
-        setf
-          barrier
-          buf_barrier_dstQueueFamilyIndex
-          (Unsigned.UInt32.of_int vk_queue_family_ignored) ;
-        setf barrier buf_barrier_buffer buf.buffer ;
-        setf barrier buf_barrier_offset (Unsigned.UInt64.of_int 0) ;
-        setf
-          barrier
-          buf_barrier_size
-          (Unsigned.UInt64.of_int (buf.size * buf.elem_size)) ;
+          let buf_info = CArray.get buf_infos i in
+          setf buf_info desc_buf_buffer buf_handle ;
+          setf buf_info desc_buf_offset (u64 0) ;
+          setf buf_info desc_buf_range (u64 (buf_size * buf_elem_size)) ;
 
-        pre_barriers := barrier :: !pre_barriers ;
+          let write = CArray.get writes i in
+          setf
+            write
+            write_desc_sType
+            (u32 vk_structure_type_write_descriptor_set) ;
+          setf write write_desc_pNext null ;
+          setf write write_desc_dstSet !@desc_set ;
+          setf write write_desc_dstBinding (u32 binding_idx) ;
+          setf write write_desc_dstArrayElement (u32 0) ;
+          setf write write_desc_descriptorCount (u32 1) ;
+          setf
+            write
+            write_desc_descriptorType
+            (u32 vk_descriptor_type_storage_buffer) ;
+          setf write write_desc_pImageInfo null ;
+          setf write write_desc_pBufferInfo (addr buf_info) ;
+          setf write write_desc_pTexelBufferView null)
+        args.bindings ;
 
-        (* Keep alive! *)
-        vkCmdPipelineBarrier
-          stream.Stream.command_buffer
-          (Unsigned.UInt32.of_int vk_pipeline_stage_host_bit) (* src stage *)
-          (Unsigned.UInt32.of_int vk_pipeline_stage_compute_shader_bit)
-          (* dst stage *)
-          (Unsigned.UInt32.of_int 0)
-          (* dependency flags *)
-          (Unsigned.UInt32.of_int 0)
-          (* memory barrier count *)
-          (from_voidp void null)
-          (* memory barriers *)
-          (Unsigned.UInt32.of_int 1)
-          (* buffer barrier count: ONE barrier per call *)
-          (addr barrier)
-          (* buffer barriers *)
-          (Unsigned.UInt32.of_int 0)
-          (* image barrier count *)
-          (from_voidp void null)
-        (* image barriers *))
-      bindings_in_order ;
-    Printf.eprintf "[Vulkan] Pre-compute barriers added\n%!" ;
+      if num_bindings > 0 then
+        vkUpdateDescriptorSets
+          device.Device.device
+          (u32 num_bindings)
+          (CArray.start writes)
+          (u32 0)
+          null ;
 
-    vkCmdBindPipeline
-      stream.Stream.command_buffer
-      vk_pipeline_bind_point_compute
-      kernel.pipeline ;
+      (* 6. Create command pool *)
+      let cp_ci = make vk_command_pool_create_info in
+      setf
+        cp_ci
+        cmd_pool_create_sType
+        (u32 vk_structure_type_command_pool_create_info) ;
+      setf cp_ci cmd_pool_create_pNext null ;
+      setf cp_ci cmd_pool_create_flags (u32 0) ;
+      setf
+        cp_ci
+        cmd_pool_create_queueFamilyIndex
+        (u32 device.Device.queue_family) ;
 
-    Printf.eprintf "[Vulkan] Binding descriptor set...\n%!" ;
-    vkCmdBindDescriptorSets
-      stream.Stream.command_buffer
-      vk_pipeline_bind_point_compute
-      kernel.pipeline_layout
-      (Unsigned.UInt32.of_int 0) (* first set *)
-      (Unsigned.UInt32.of_int 1) (* descriptor set count *)
-      (allocate vk_descriptor_set !@desc_set) (* pointer to descriptor set *)
-      (Unsigned.UInt32.of_int 0) (* dynamic offset count *)
-      (from_voidp uint32_t null) ;
-    (* dynamic offsets *)
-    Printf.eprintf "[Vulkan] Descriptor set bound\n%!" ;
+      let cmd_pool = allocate vk_command_pool vk_null_handle in
+      check
+        "vkCreateCommandPool"
+        (vkCreateCommandPool device.Device.device (addr cp_ci) null cmd_pool) ;
 
-    (* Push constants for scalar arguments *)
-    (match args.push_constants with
-    | Some pc ->
-        Printf.eprintf
-          "[Vulkan] Pushing %d bytes of constants\n%!"
-          (Bytes.length pc) ;
-        (* Debug: print first 16 bytes as hex *)
-        Printf.eprintf "[Vulkan] Push constant bytes (hex): " ;
-        for i = 0 to min 15 (Bytes.length pc - 1) do
-          Printf.eprintf "%02x " (Bytes.get_uint8 pc i)
-        done ;
-        Printf.eprintf "\n%!" ;
-        (* Allocate C buffer and copy bytes *)
-        let pc_len = Bytes.length pc in
-        let pc_cbuf = Ctypes.allocate_n Ctypes.uint8_t ~count:pc_len in
-        for i = 0 to pc_len - 1 do
-          let element_ptr = Ctypes.(pc_cbuf +@ i) in
-          let value = Unsigned.UInt8.of_int (Bytes.get_uint8 pc i) in
-          Ctypes.(element_ptr <-@ value)
-        done ;
-        (* Debug: print push constant bytes *)
-        Printf.eprintf "[Vulkan] Push constant bytes (%d bytes): " pc_len ;
-        for i = 0 to min 31 (pc_len - 1) do
-          Printf.eprintf "%02x " (Bytes.get_uint8 pc i)
-        done ;
-        Printf.eprintf "\n%!" ;
-        vkCmdPushConstants
-          stream.Stream.command_buffer
-          kernel.pipeline_layout
-          (Unsigned.UInt32.of_int vk_shader_stage_compute_bit)
-          (Unsigned.UInt32.of_int 0) (* offset *)
-          (Unsigned.UInt32.of_int pc_len) (* size *)
-          (Ctypes.to_voidp pc_cbuf) ;
-        Printf.eprintf "[Vulkan] Push constants submitted\n%!"
-    | None -> Printf.eprintf "[Vulkan] No push constants\n%!") ;
+      (* 7. Allocate command buffer *)
+      let cb_ai = make vk_command_buffer_allocate_info in
+      setf
+        cb_ai
+        cmd_buf_alloc_sType
+        (u32 vk_structure_type_command_buffer_allocate_info) ;
+      setf cb_ai cmd_buf_alloc_pNext null ;
+      setf cb_ai cmd_buf_alloc_commandPool !@cmd_pool ;
+      setf cb_ai cmd_buf_alloc_level (u32 vk_command_buffer_level_primary) ;
+      setf cb_ai cmd_buf_alloc_commandBufferCount (u32 1) ;
 
-    (* Vulkan dispatch uses workgroup counts, not total threads *)
-    let gx = (grid.x + block.x - 1) / block.x in
-    let gy = (grid.y + block.y - 1) / block.y in
-    let gz = (grid.z + block.z - 1) / block.z in
-    Printf.eprintf
-      "[Vulkan] Dispatching: grid=(%d,%d,%d) block=(%d,%d,%d) \
-       workgroups=(%d,%d,%d)\n\
-       %!"
-      grid.x
-      grid.y
-      grid.z
-      block.x
-      block.y
-      block.z
-      gx
-      gy
-      gz ;
-    vkCmdDispatch
-      stream.Stream.command_buffer
-      (Unsigned.UInt32.of_int gx)
-      (Unsigned.UInt32.of_int gy)
-      (Unsigned.UInt32.of_int gz) ;
+      let cmd_buf =
+        allocate vk_command_buffer_ptr (from_voidp vk_command_buffer null)
+      in
+      check
+        "vkAllocateCommandBuffers"
+        (vkAllocateCommandBuffers device.Device.device (addr cb_ai) cmd_buf) ;
 
-    (* Post-compute barrier: Make shader writes visible to host *)
-    (* IMPORTANT: Keep barrier structures alive until after vkQueueSubmit! *)
-    Printf.eprintf
-      "[Vulkan] Adding post-compute barriers (COMPUTE_SHADER -> HOST)...\n%!" ;
-    let post_barriers = ref [] in
-    (* Keep barriers alive! *)
-    List.iter
-      (fun (_, AnyBuf buf) ->
-        let barrier = make vk_buffer_memory_barrier in
-        setf barrier buf_barrier_sType vk_structure_type_buffer_memory_barrier ;
-        setf barrier buf_barrier_pNext null ;
-        setf
-          barrier
-          buf_barrier_srcAccessMask
-          (Unsigned.UInt32.of_int vk_access_shader_write_bit) ;
-        setf
-          barrier
-          buf_barrier_dstAccessMask
-          (Unsigned.UInt32.of_int vk_access_host_read_bit) ;
-        setf
-          barrier
-          buf_barrier_srcQueueFamilyIndex
-          (Unsigned.UInt32.of_int vk_queue_family_ignored) ;
-        setf
-          barrier
-          buf_barrier_dstQueueFamilyIndex
-          (Unsigned.UInt32.of_int vk_queue_family_ignored) ;
-        setf barrier buf_barrier_buffer buf.buffer ;
-        setf barrier buf_barrier_offset (Unsigned.UInt64.of_int 0) ;
-        setf
-          barrier
-          buf_barrier_size
-          (Unsigned.UInt64.of_int (buf.size * buf.elem_size)) ;
+      (* 8. Record command buffer *)
+      let begin_info = make vk_command_buffer_begin_info in
+      setf
+        begin_info
+        cmd_buf_begin_sType
+        (u32 vk_structure_type_command_buffer_begin_info) ;
+      setf begin_info cmd_buf_begin_pNext null ;
+      setf
+        begin_info
+        cmd_buf_begin_flags
+        (u32 vk_command_buffer_usage_one_time_submit_bit) ;
+      setf begin_info cmd_buf_begin_pInheritanceInfo null ;
 
-        post_barriers := barrier :: !post_barriers ;
+      check
+        "vkBeginCommandBuffer"
+        (vkBeginCommandBuffer !@cmd_buf (addr begin_info)) ;
 
-        (* Keep alive! *)
-        vkCmdPipelineBarrier
-          stream.Stream.command_buffer
-          (Unsigned.UInt32.of_int vk_pipeline_stage_compute_shader_bit)
-          (* src stage *)
-          (Unsigned.UInt32.of_int vk_pipeline_stage_host_bit)
-          (* dst stage *)
-          (Unsigned.UInt32.of_int 0)
-          (* dependency flags *)
-          (Unsigned.UInt32.of_int 0)
-          (* memory barrier count *)
-          (from_voidp void null)
-          (* memory barriers *)
-          (Unsigned.UInt32.of_int 1)
-          (* buffer barrier count: ONE barrier per call *)
-          (addr barrier)
-          (* buffer barriers *)
-          (Unsigned.UInt32.of_int 0)
-          (* image barrier count *)
-          (from_voidp void null)
-        (* image barriers *))
-      bindings_in_order ;
-    Printf.eprintf "[Vulkan] Post-compute barriers added\n%!" ;
+      vkCmdBindPipeline !@cmd_buf (u32 vk_pipeline_bind_point_compute) pipeline ;
+      vkCmdBindDescriptorSets
+        !@cmd_buf
+        (u32 vk_pipeline_bind_point_compute)
+        pipeline_layout
+        (u32 0)
+        (u32 1)
+        desc_set
+        (u32 0)
+        (from_voidp uint32_t null) ;
 
-    check "vkEndCommandBuffer" (vkEndCommandBuffer stream.Stream.command_buffer) ;
+      (* Push constants *)
+      (match args.push_constants with
+      | Some pc ->
+          let len = Bytes.length pc in
+          let pc_ptr = Ctypes.allocate_n Ctypes.char ~count:len in
+          for i = 0 to len - 1 do
+            pc_ptr +@ i <-@ Bytes.get pc i
+          done ;
+          vkCmdPushConstants
+            !@cmd_buf
+            pipeline_layout
+            (u32 vk_shader_stage_compute_bit)
+            (u32 0)
+            (u32 len)
+            (Ctypes.to_voidp pc_ptr)
+      | None -> ()) ;
 
-    (* Submit *)
-    check
-      "vkResetFences"
-      (vkResetFences
-         device.Device.device
-         (Unsigned.UInt32.of_int 1)
-         (allocate vk_fence stream.Stream.fence)) ;
+      vkCmdDispatch !@cmd_buf (u32 grid.x) (u32 grid.y) (u32 grid.z) ;
 
-    let submit_info = make vk_submit_info in
-    setf submit_info submit_sType vk_structure_type_submit_info ;
-    setf submit_info submit_pNext null ;
-    setf submit_info submit_waitSemaphoreCount (Unsigned.UInt32.of_int 0) ;
-    setf submit_info submit_pWaitSemaphores (from_voidp vk_semaphore null) ;
-    setf submit_info submit_pWaitDstStageMask (from_voidp vk_flags null) ;
-    setf submit_info submit_commandBufferCount (Unsigned.UInt32.of_int 1) ;
-    setf
-      submit_info
-      submit_pCommandBuffers
-      (allocate vk_command_buffer_ptr stream.Stream.command_buffer) ;
-    setf submit_info submit_signalSemaphoreCount (Unsigned.UInt32.of_int 0) ;
-    setf submit_info submit_pSignalSemaphores (from_voidp vk_semaphore null) ;
+      check "vkEndCommandBuffer" (vkEndCommandBuffer !@cmd_buf) ;
 
-    check
-      "vkQueueSubmit"
-      (vkQueueSubmit
-         device.Device.compute_queue
-         (Unsigned.UInt32.of_int 1)
-         (addr submit_info)
-         stream.Stream.fence) ;
-    Printf.eprintf "[Vulkan] Command buffer submitted to queue\n%!" ;
+      (* 9. Create fence *)
+      let fence_ci = make vk_fence_create_info in
+      setf fence_ci fence_create_sType (u32 vk_structure_type_fence_create_info) ;
+      setf fence_ci fence_create_pNext null ;
+      setf fence_ci fence_create_flags (u32 0) ;
 
-    (* Wait for completion *)
-    Printf.eprintf "[Vulkan] Waiting for fence...\n%!" ;
-    check
-      "vkWaitForFences"
-      (vkWaitForFences
-         device.Device.device
-         (Unsigned.UInt32.of_int 1)
-         (allocate vk_fence stream.Stream.fence)
-         vk_true
-         (Unsigned.UInt64.of_int64 Int64.max_int)) ;
-    Printf.eprintf "[Vulkan] Fence signaled, compute complete\n%!" ;
+      let fence = allocate vk_fence vk_null_handle in
+      check
+        "vkCreateFence"
+        (vkCreateFence device.Device.device (addr fence_ci) null fence) ;
 
-    (* Keep barriers and submit_info alive until fence completes - prevent GC *)
-    ignore (List.length !pre_barriers) ;
-    ignore (List.length !post_barriers) ;
-    ignore (getf submit_info submit_commandBufferCount) ;
+      (* 10. Submit *)
+      let submit_info = make vk_submit_info in
+      setf submit_info submit_sType (u32 vk_structure_type_submit_info) ;
+      setf submit_info submit_pNext null ;
+      setf submit_info submit_waitSemaphoreCount (u32 0) ;
+      setf submit_info submit_pWaitSemaphores (from_voidp vk_semaphore null) ;
+      setf submit_info submit_pWaitDstStageMask (from_voidp vk_flags null) ;
+      setf submit_info submit_commandBufferCount (u32 1) ;
+      setf submit_info submit_pCommandBuffers cmd_buf ;
+      setf submit_info submit_signalSemaphoreCount (u32 0) ;
+      setf submit_info submit_pSignalSemaphores (from_voidp vk_semaphore null) ;
 
-    (* DEBUG: Directly map and read buffer c to see if data was written *)
-    Printf.eprintf
-      "[Vulkan DEBUG] Directly reading buffer c after compute...\n%!" ;
-    let c_binding =
-      List.find (fun (binding, _) -> binding = 2) bindings_in_order
-    in
-    match c_binding with
-    | _, AnyBuf buf_c ->
-        let data_ptr = allocate (ptr void) null in
-        check
-          "vkMapMemory (debug)"
-          (vkMapMemory
-             device.Device.device
-             buf_c.memory
-             (Unsigned.UInt64.of_int 0)
-             (Unsigned.UInt64.of_int (buf_c.size * buf_c.elem_size))
-             (Unsigned.UInt32.of_int 0)
-             data_ptr) ;
-        let float_ptr = Ctypes.from_voidp Ctypes.float !@data_ptr in
-        Printf.eprintf "[Vulkan DEBUG] Buffer c contents: " ;
-        for i = 0 to min 4 (buf_c.size - 1) do
-          Printf.eprintf "%.1f " Ctypes.(!@(float_ptr +@ i))
-        done ;
-        Printf.eprintf "\n%!" ;
-        vkUnmapMemory device.Device.device buf_c.memory
+      check
+        "vkQueueSubmit"
+        (vkQueueSubmit
+           device.Device.compute_queue
+           (u32 1)
+           (addr submit_info)
+           !@fence) ;
+
+      (* 11. Wait *)
+      check
+        "vkWaitForFences"
+        (vkWaitForFences
+           device.Device.device
+           (u32 1)
+           fence
+           vk_true
+           (Unsigned.UInt64.of_int64 Int64.max_int)) ;
+
+      check "vkDeviceWaitIdle" (vkDeviceWaitIdle device.Device.device) ;
+
+      (* Cleanup *)
+      vkDestroyFence device.Device.device !@fence null ;
+      vkDestroyCommandPool device.Device.device !@cmd_pool null ;
+
+      (* Keep structures alive *)
+      ignore !@desc_set ;
+      ignore buf_infos ;
+      ignore writes
+    with e ->
+      Spoc_core.Log.errorf
+        Spoc_core.Log.Device
+        "[Vulkan] launch() EXCEPTION: %s"
+        (Printexc.to_string e) ;
+      (* Printexc.print_backtrace stderr ; *)
+      raise e
 end
 
 (** {1 Utility Functions} *)
