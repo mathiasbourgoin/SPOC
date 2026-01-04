@@ -43,7 +43,7 @@ let run_v2 dev n bax bay =
   let ir =
     match kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
-    | None -> failwith "Kernel has no V2 IR"
+    | None -> failwith "Kernel has no IR"
   in
   Sarek.Execute.run_vectors
     ~device:dev
@@ -84,7 +84,7 @@ let () =
   in
 
   if Array.length devs = 0 then (
-    print_endline "No V2 devices found - skipping execution" ;
+    print_endline "No runtime devices found - skipping execution" ;
     exit 0) ;
 
   Printf.printf "Using device: %s\n%!" devs.(0).Device.name ;
@@ -97,8 +97,8 @@ let () =
     Bigarray.Array1.set bay i (float_of_int (n - i))
   done ;
 
-  (* V2 execution *)
-  print_string "V2: " ;
+  (* runtime execution *)
+  print_string "runtime: " ;
   flush stdout ;
   (try
      let ok = run_v2 devs.(0) n bax bay in

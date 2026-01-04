@@ -1,6 +1,6 @@
 (******************************************************************************
  * E2E test: register a Sarek variant type outside kernels via [@@sarek.type].
- * Uses V2 runtime only.
+ * Uses GPU runtime only.
  ******************************************************************************)
 
 module Device = Spoc_core.Device
@@ -37,7 +37,7 @@ let run_test dev =
   let ir =
     match variant_kernel.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
-    | None -> failwith "Kernel has no V2 IR"
+    | None -> failwith "Kernel has no IR"
   in
   let n = cfg.size in
   let xs = Vector.create Vector.float32 n in

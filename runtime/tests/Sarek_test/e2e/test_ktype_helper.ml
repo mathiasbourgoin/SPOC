@@ -1,9 +1,9 @@
 (******************************************************************************
  * E2E test: ktype record + helper function executed on device.
- * Uses V2 runtime only.
+ * Uses GPU runtime only.
  ******************************************************************************)
 
-(* V2 module aliases *)
+(* runtime module aliases *)
 module Device = Spoc_core.Device
 module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
@@ -38,10 +38,10 @@ let () =
   print_endline "=== ktype helper IR ===" ;
   (match kirc.Sarek.Kirc_types.body_ir with
   | Some ir -> Sarek.Sarek_ir.print_kernel ir
-  | None -> print_endline "(No V2 IR available)") ;
+  | None -> print_endline "(No IR available)") ;
   print_endline "=======================" ;
 
-  (* Run with V2 runtime *)
+  (* Run with GPU runtime *)
   let devs =
     Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
@@ -54,7 +54,7 @@ let () =
   let n = 256 in
 
   (match kirc.Sarek.Kirc_types.body_ir with
-  | None -> print_endline "No V2 IR - SKIPPED"
+  | None -> print_endline "No IR - SKIPPED"
   | Some ir ->
       let xv = Vector.create Vector.float32 n in
       let yv = Vector.create Vector.float32 n in

@@ -1,9 +1,9 @@
 (******************************************************************************
  * E2E test for Sarek PPX with variant type and helper function.
- * Uses V2 runtime only.
+ * Uses GPU runtime only.
  ******************************************************************************)
 
-(* V2 module aliases *)
+(* runtime module aliases *)
 module Device = Spoc_core.Device
 module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
@@ -30,15 +30,15 @@ let () =
         if tid < n then dst.(tid) <- area src.(tid)]
   in
 
-  (* Get V2 IR *)
+  (* Get IR *)
   let _, kirc = dispatch in
   print_endline "=== Variant helper IR ===" ;
   (match kirc.Sarek.Kirc_types.body_ir with
   | Some ir -> Sarek.Sarek_ir.print_kernel ir
-  | None -> print_endline "(No V2 IR available)") ;
+  | None -> print_endline "(No IR available)") ;
   print_endline "=========================" ;
 
-  (* Run with V2 runtime *)
+  (* Run with GPU runtime *)
   let devs =
     Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
@@ -50,8 +50,8 @@ let () =
   (match kirc.Sarek.Kirc_types.body_ir with
   | Some ir ->
       Printf.printf
-        "V2 IR available, kernel name: %s\n%!"
+        "IR available, kernel name: %s\n%!"
         ir.Sarek.Sarek_ir.kern_name ;
-      print_endline "Variant helper V2 IR PASSED"
-  | None -> print_endline "No V2 IR - SKIPPED") ;
+      print_endline "Variant helper IR PASSED"
+  | None -> print_endline "No IR - SKIPPED") ;
   print_endline "test_klet_variant PASSED"

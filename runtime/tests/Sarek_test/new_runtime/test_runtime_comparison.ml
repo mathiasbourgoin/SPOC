@@ -1,8 +1,8 @@
 (******************************************************************************
- * V2 Runtime Test
+ * GPU Runtime Test
  *
- * Tests V2 runtime produces correct output by comparing against CPU reference.
- * V2 runtime only.
+ * Tests GPU runtime produces correct output by comparing against CPU reference.
+ * GPU runtime only.
  ******************************************************************************)
 
 (* Module aliases *)
@@ -29,17 +29,17 @@ let vector_add =
       let tid = global_thread_id in
       if tid < n then c.(tid) <- a.(tid) +. b.(tid)]
 
-(* Run via V2 runtime path and return results *)
+(* Run via GPU runtime path and return results *)
 let run_v2 (dev : Device.t) : float array =
   (* Get the IR from the kernel *)
   let _, kirc = vector_add in
   let ir =
     match kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
-    | None -> failwith "Kernel has no V2 IR"
+    | None -> failwith "Kernel has no IR"
   in
 
-  (* Create V2 vectors *)
+  (* Create runtime vectors *)
   let a = Vector.create Vector.float32 size in
   let b = Vector.create Vector.float32 size in
   let c = Vector.create Vector.float32 size in
@@ -57,7 +57,7 @@ let run_v2 (dev : Device.t) : float array =
   let block = Sarek.Execute.dims1d block_size in
   let grid = Sarek.Execute.dims1d grid_size in
 
-  (* Run via V2 *)
+  (* Run via runtime *)
   Sarek.Execute.run_vectors
     ~device:dev
     ~ir
@@ -93,10 +93,10 @@ let verify_results (result : float array) (expected : float array) : int =
   !errors
 
 let () =
-  print_endline "=== V2 Runtime Test ===" ;
-  print_endline "Testing V2 execution against CPU reference\n" ;
+  print_endline "=== GPU Runtime Test ===" ;
+  print_endline "Testing runtime execution against CPU reference\n" ;
 
-  (* Initialize V2 devices *)
+  (* Initialize runtime devices *)
   let devs =
     Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
@@ -105,10 +105,10 @@ let () =
     exit 1
   end ;
 
-  Printf.printf "Found %d V2 device(s)\n\n" (Array.length devs) ;
+  Printf.printf "Found %d runtime device(s)\n\n" (Array.length devs) ;
 
   print_endline (String.make 60 '-') ;
-  Printf.printf "%-40s %10s %10s\n" "Device" "V2" "Status" ;
+  Printf.printf "%-40s %10s %10s\n" "Device" "runtime" "Status" ;
   print_endline (String.make 60 '-') ;
 
   let all_ok = ref true in
@@ -118,7 +118,7 @@ let () =
     Array.init size (fun i -> float_of_int i +. float_of_int (i * 2))
   in
 
-  (* Test each V2 device *)
+  (* Test each runtime device *)
   Array.iter
     (fun dev ->
       let name = dev.Device.name in
@@ -138,7 +138,7 @@ let () =
 
   if !all_ok then begin
     print_endline "\n=== All tests PASSED ===" ;
-    print_endline "V2 runtime produces correct results"
+    print_endline "GPU runtime produces correct results"
   end
   else begin
     print_endline "\n=== Some tests FAILED ===" ;

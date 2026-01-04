@@ -4,13 +4,13 @@
  * Tests:
  * 1. Basic module functions with concrete types
  * 2. Polymorphic module functions used at multiple types
- * V2 runtime only.
+ * GPU runtime only.
  ******************************************************************************)
 
 module Std = Sarek_stdlib.Std
 open Sarek
 
-(* V2 module aliases *)
+(* runtime module aliases *)
 module Device = Spoc_core.Device
 module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
@@ -53,7 +53,7 @@ let identity_kernel =
       (* Use identity at float32 *)
       dst_f.(idx) <- identity src_f.(idx)]
 
-(* ========== V2 Tests ========== *)
+(* ========== runtime Tests ========== *)
 
 let test_basic_v2 () =
   let _, kirc = basic_kernel in
@@ -61,13 +61,13 @@ let test_basic_v2 () =
     Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
   if Array.length devs = 0 then (
-    print_endline "V2: No device - SKIPPED" ;
+    print_endline "runtime: No device - SKIPPED" ;
     true)
   else
     let dev = devs.(0) in
     match kirc.Sarek.Kirc_types.body_ir with
     | None ->
-        print_endline "V2: No V2 IR - SKIPPED" ;
+        print_endline "runtime: No IR - SKIPPED" ;
         true
     | Some ir ->
         let n = 1024 in
@@ -93,13 +93,13 @@ let test_basic_v2 () =
           let expected = Int32.of_int (i + 1) in
           if Vector.get dst i <> expected then (
             Printf.printf
-              "V2 FAIL: dst[%d] = %ld, expected %ld\n"
+              "runtime FAIL: dst[%d] = %ld, expected %ld\n"
               i
               (Vector.get dst i)
               expected ;
             ok := false)
         done ;
-        if !ok then print_endline "PASS: Basic module function (V2)" ;
+        if !ok then print_endline "PASS: Basic module function (runtime)" ;
         !ok
 
 let test_times_two_v2 () =
@@ -108,13 +108,13 @@ let test_times_two_v2 () =
     Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
   if Array.length devs = 0 then (
-    print_endline "V2: No device - SKIPPED" ;
+    print_endline "runtime: No device - SKIPPED" ;
     true)
   else
     let dev = devs.(0) in
     match kirc.Sarek.Kirc_types.body_ir with
     | None ->
-        print_endline "V2: No V2 IR - SKIPPED" ;
+        print_endline "runtime: No IR - SKIPPED" ;
         true
     | Some ir ->
         let n = 1024 in
@@ -140,13 +140,13 @@ let test_times_two_v2 () =
           let expected = Int32.of_int (2 * i) in
           if Vector.get dst i <> expected then (
             Printf.printf
-              "V2 FAIL: dst[%d] = %ld, expected %ld\n"
+              "runtime FAIL: dst[%d] = %ld, expected %ld\n"
               i
               (Vector.get dst i)
               expected ;
             ok := false)
         done ;
-        if !ok then print_endline "PASS: Times two (V2)" ;
+        if !ok then print_endline "PASS: Times two (runtime)" ;
         !ok
 
 let test_identity_v2 () =
@@ -155,13 +155,13 @@ let test_identity_v2 () =
     Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
   if Array.length devs = 0 then (
-    print_endline "V2: No device - SKIPPED" ;
+    print_endline "runtime: No device - SKIPPED" ;
     true)
   else
     let dev = devs.(0) in
     match kirc.Sarek.Kirc_types.body_ir with
     | None ->
-        print_endline "V2: No V2 IR - SKIPPED" ;
+        print_endline "runtime: No IR - SKIPPED" ;
         true
     | Some ir ->
         let n = 1024 in
@@ -197,20 +197,20 @@ let test_identity_v2 () =
           let expected_f = float_of_int i in
           if Vector.get dst_i i <> expected_i then (
             Printf.printf
-              "V2 FAIL: dst_i[%d] = %ld, expected %ld\n"
+              "runtime FAIL: dst_i[%d] = %ld, expected %ld\n"
               i
               (Vector.get dst_i i)
               expected_i ;
             ok := false) ;
           if abs_float (Vector.get dst_f i -. expected_f) > 0.001 then (
             Printf.printf
-              "V2 FAIL: dst_f[%d] = %f, expected %f\n"
+              "runtime FAIL: dst_f[%d] = %f, expected %f\n"
               i
               (Vector.get dst_f i)
               expected_f ;
             ok := false)
         done ;
-        if !ok then print_endline "PASS: Polymorphic identity (V2)" ;
+        if !ok then print_endline "PASS: Polymorphic identity (runtime)" ;
         !ok
 
 (* ========== Interpreter Tests ========== *)
@@ -219,7 +219,7 @@ let test_basic_interpreter () =
   let _, kirc = basic_kernel in
   match kirc.Sarek.Kirc_types.body_ir with
   | None ->
-      print_endline "Interpreter: No V2 IR - SKIPPED" ;
+      print_endline "Interpreter: No IR - SKIPPED" ;
       true
   | Some ir ->
       let n = 1024 in
@@ -256,10 +256,10 @@ let test_basic_interpreter () =
       !ok
 
 let () =
-  print_endline "=== Module Functions & Polymorphism Tests (V2) ===" ;
+  print_endline "=== Module Functions & Polymorphism Tests (runtime) ===" ;
   print_endline "" ;
 
-  print_endline "=== V2 Tests ===" ;
+  print_endline "=== runtime Tests ===" ;
   let v1 = test_basic_v2 () in
   let v2 = test_times_two_v2 () in
   let v3 = test_identity_v2 () in
@@ -271,11 +271,11 @@ let () =
 
   print_endline "=== Summary ===" ;
   Printf.printf
-    "Basic module function (V2): %s\n"
+    "Basic module function (runtime): %s\n"
     (if v1 then "PASS" else "FAIL") ;
-  Printf.printf "Times two (V2): %s\n" (if v2 then "PASS" else "FAIL") ;
+  Printf.printf "Times two (runtime): %s\n" (if v2 then "PASS" else "FAIL") ;
   Printf.printf
-    "Polymorphic identity (V2): %s\n"
+    "Polymorphic identity (runtime): %s\n"
     (if v3 then "PASS" else "FAIL") ;
   Printf.printf
     "Basic module function (Interpreter): %s\n"

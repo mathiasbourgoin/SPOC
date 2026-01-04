@@ -2,7 +2,7 @@
  * E2E test for Sarek PPX - pragma ["sarek.inline N"] for non-tail recursion
  *
  * Tests that non-tail-recursive functions can be inlined using pragma.
- * V2 runtime only.
+ * GPU runtime only.
  ******************************************************************************)
 
 (* Module aliases to avoid conflicts *)
@@ -47,22 +47,22 @@ let fib_kernel =
       let idx = global_idx_x in
       if idx = 0l then output.(idx) <- fib n]
 
-(* === V2 Tests === *)
+(* === runtime Tests === *)
 
 let test_pow2_v2 () =
   let devs = Device.all () in
   if Array.length devs = 0 then (
-    print_endline "No V2 devices - skipping V2 runtime test" ;
+    print_endline "No runtime devices - skipping GPU runtime test" ;
     true)
   else
     let dev = devs.(0) in
-    Printf.printf "V2: Testing pow2 on: %s\n%!" dev.Device.name ;
+    Printf.printf "runtime: Testing pow2 on: %s\n%!" dev.Device.name ;
 
     let _, kirc = pow2_kernel in
     let ir =
       match kirc.Sarek.Kirc_types.body_ir with
       | Some ir -> ir
-      | None -> failwith "Kernel has no V2 IR"
+      | None -> failwith "Kernel has no IR"
     in
 
     let output = Vector.create Vector.int32 1 in
@@ -92,17 +92,17 @@ let test_pow2_v2 () =
 let test_fib_v2 () =
   let devs = Device.all () in
   if Array.length devs = 0 then (
-    print_endline "No V2 devices - skipping V2 runtime test" ;
+    print_endline "No runtime devices - skipping GPU runtime test" ;
     true)
   else
     let dev = devs.(0) in
-    Printf.printf "V2: Testing fib on: %s\n%!" dev.Device.name ;
+    Printf.printf "runtime: Testing fib on: %s\n%!" dev.Device.name ;
 
     let _, kirc = fib_kernel in
     let ir =
       match kirc.Sarek.Kirc_types.body_ir with
       | Some ir -> ir
-      | None -> failwith "Kernel has no V2 IR"
+      | None -> failwith "Kernel has no IR"
     in
 
     let test_cases = [(0, 0); (1, 1); (5, 5); (7, 13)] in
@@ -131,14 +131,14 @@ let test_fib_v2 () =
     !all_pass
 
 let () =
-  print_endline "=== Pragma Inline Tests (V2) ===" ;
+  print_endline "=== Pragma Inline Tests (runtime) ===" ;
   print_endline "" ;
 
-  print_endline "--- V2 Path ---" ;
+  print_endline "--- runtime Path ---" ;
   let t1_v2 = test_pow2_v2 () in
-  Printf.printf "pow2 (V2): %s\n" (if t1_v2 then "PASS" else "FAIL") ;
+  Printf.printf "pow2 (runtime): %s\n" (if t1_v2 then "PASS" else "FAIL") ;
   let t2_v2 = test_fib_v2 () in
-  Printf.printf "fib (V2): %s\n" (if t2_v2 then "PASS" else "FAIL") ;
+  Printf.printf "fib (runtime): %s\n" (if t2_v2 then "PASS" else "FAIL") ;
   print_endline "" ;
 
   if t1_v2 && t2_v2 then (

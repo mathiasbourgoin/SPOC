@@ -1,9 +1,9 @@
 (******************************************************************************
  * E2E test for Sarek PPX with helper function (klet-style) in the payload.
- * Uses V2 runtime only.
+ * Uses GPU runtime only.
  ******************************************************************************)
 
-(* V2 module aliases *)
+(* runtime module aliases *)
 module Device = Spoc_core.Device
 
 (* Force backend registration *)

@@ -1,7 +1,7 @@
 (******************************************************************************
  * E2E test: External kernel execution via run_source
  *
- * Tests running pre-written CUDA/OpenCL kernels through the V2 runtime
+ * Tests running pre-written CUDA/OpenCL kernels through the GPU runtime
  * without using the Sarek DSL.
  ******************************************************************************)
 

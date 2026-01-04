@@ -3,7 +3,7 @@
  *
  * Tests tree-based parallel reduction with shared memory and barriers.
  * Reduction is a fundamental parallel primitive for computing sums, min, max.
- * V2 runtime only.
+ * GPU runtime only.
  ******************************************************************************)
 
 (* Module aliases *)
@@ -18,7 +18,7 @@ let () =
 
 let cfg = Test_helpers.default_config ()
 
-(** Get appropriate block size for V2 device *)
+(** Get appropriate block size for runtime device *)
 let get_block_size (dev : Device.t) =
   if dev.capabilities.is_cpu then
     if cfg.block_size > 1 then cfg.block_size else 64
@@ -248,7 +248,7 @@ let run_reduce_sum (dev : Device.t) =
   let ir =
     match kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
-    | None -> failwith "Kernel has no V2 IR"
+    | None -> failwith "Kernel has no IR"
   in
 
   let input = Vector.create Vector.float32 n in
@@ -301,7 +301,7 @@ let run_reduce_max (dev : Device.t) =
   let ir =
     match kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
-    | None -> failwith "Kernel has no V2 IR"
+    | None -> failwith "Kernel has no IR"
   in
 
   let input = Vector.create Vector.float32 n in
@@ -355,7 +355,7 @@ let run_dot_product (dev : Device.t) =
   let ir =
     match kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
-    | None -> failwith "Kernel has no V2 IR"
+    | None -> failwith "Kernel has no IR"
   in
 
   let a = Vector.create Vector.float32 n in
@@ -414,7 +414,7 @@ let () =
   cfg.size <- c.size ;
   cfg.block_size <- c.block_size ;
 
-  print_endline "=== Reduction Tests (V2) ===" ;
+  print_endline "=== Reduction Tests (runtime) ===" ;
   Printf.printf "Size: %d elements\n\n" cfg.size ;
 
   let devs =
@@ -425,7 +425,7 @@ let () =
     exit 1
   end ;
   Test_helpers.print_devices devs ;
-  Printf.printf "\nFound %d V2 device(s)\n\n" (Array.length devs) ;
+  Printf.printf "\nFound %d runtime device(s)\n\n" (Array.length devs) ;
 
   let all_ok = ref true in
 

@@ -1,8 +1,8 @@
 (******************************************************************************
  * E2E test for Sarek PPX - Complex types
  *
- * Tests custom record types with both SPOC and V2 execution paths.
- * Uses [@@sarek.type] for V2-compatible custom vector types.
+ * Tests custom record types with both SPOC and runtime execution paths.
+ * Uses [@@sarek.type] for runtime-compatible custom vector types.
  ******************************************************************************)
 
 [@@@warning "-32"]
@@ -20,7 +20,7 @@ let cfg = Test_helpers.default_config ()
 
 type float32 = float
 
-(* Type definitions with [@@sarek.type] for V2 support *)
+(* Type definitions with [@@sarek.type] for runtime support *)
 type point2d = {px : float32; py : float32} [@@sarek.type]
 
 type point3d = {x : float32; y : float32; z : float32} [@@sarek.type]
@@ -62,7 +62,7 @@ let run_point2d_test dev n =
   let ir =
     match point2d_distance_kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
-    | None -> failwith "Kernel has no V2 IR"
+    | None -> failwith "Kernel has no IR"
   in
   let t0 = Unix.gettimeofday () in
   Sarek.Execute.run_vectors
@@ -128,7 +128,7 @@ let run_point3d_test dev n =
   let ir =
     match point3d_normalize_kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
-    | None -> failwith "Kernel has no V2 IR"
+    | None -> failwith "Kernel has no IR"
   in
   let t0 = Unix.gettimeofday () in
   Sarek.Execute.run_vectors
@@ -191,7 +191,7 @@ let run_particle_test dev n =
   let ir =
     match particle_update_kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
-    | None -> failwith "Kernel has no V2 IR"
+    | None -> failwith "Kernel has no IR"
   in
   let t0 = Unix.gettimeofday () in
   Sarek.Execute.run_vectors
@@ -273,7 +273,7 @@ let run_color_test dev n =
   let ir =
     match color_blend_kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
-    | None -> failwith "Kernel has no V2 IR"
+    | None -> failwith "Kernel has no IR"
   in
   let t0 = Unix.gettimeofday () in
   Sarek.Execute.run_vectors
@@ -328,8 +328,8 @@ let () =
   (* Prefer a CPU backend when available, but fall back gracefully *)
   cfg.use_native <- false ;
 
-  (* V2 execution tests *)
-  print_endline "=== Complex Types V2 Tests ===" ;
+  (* runtime execution tests *)
+  print_endline "=== Complex Types runtime Tests ===" ;
   let devs =
     Device.init ~frameworks:["Interpreter"; "Native"; "CUDA"; "OpenCL"] ()
   in
@@ -357,7 +357,7 @@ let () =
   (try
      let ok, time = run_point2d_test dev n in
      Printf.printf
-       "  V2 exec: %.2f ms, %s\n%!"
+       "  runtime exec: %.2f ms, %s\n%!"
        time
        (if ok then "PASSED" else "FAILED") ;
      if not ok then exit 1
@@ -372,7 +372,7 @@ let () =
      else
        let ok, time = run_point3d_test dev n in
        Printf.printf
-         "  V2 exec: %.2f ms, %s\n%!"
+         "  runtime exec: %.2f ms, %s\n%!"
          time
          (if ok then "PASSED" else "FAILED") ;
        if not ok then exit 1
@@ -387,7 +387,7 @@ let () =
      else
        let ok, time = run_particle_test dev n in
        Printf.printf
-         "  V2 exec: %.2f ms, %s\n%!"
+         "  runtime exec: %.2f ms, %s\n%!"
          time
          (if ok then "PASSED" else "FAILED") ;
        if not ok then exit 1
@@ -402,7 +402,7 @@ let () =
      else
        let ok, time = run_color_test dev n in
        Printf.printf
-         "  V2 exec: %.2f ms, %s\n%!"
+         "  runtime exec: %.2f ms, %s\n%!"
          time
          (if ok then "PASSED" else "FAILED") ;
        if not ok then exit 1

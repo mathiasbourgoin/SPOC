@@ -3,7 +3,7 @@
  *
  * Tests bitonic sort and odd-even merge sort - parallel sorting algorithms
  * that work well on GPUs due to their regular communication patterns.
- * V2 runtime only.
+ * GPU runtime only.
  ******************************************************************************)
 
 (* Module aliases *)
@@ -100,9 +100,9 @@ let odd_even_step_kernel =
         end
       end]
 
-(* ========== V2 test runners ========== *)
+(* ========== runtime test runners ========== *)
 
-(** Run global bitonic sort on V2 *)
+(** Run global bitonic sort on runtime *)
 let run_bitonic_sort_global (dev : Device.t) =
   let n = !sort_size_global in
   let inp = !input_bitonic_global in
@@ -111,7 +111,7 @@ let run_bitonic_sort_global (dev : Device.t) =
   let ir =
     match kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
-    | None -> failwith "No V2 IR"
+    | None -> failwith "No IR"
   in
 
   let data = Vector.create Vector.int32 n in
@@ -167,7 +167,7 @@ let run_bitonic_sort_global (dev : Device.t) =
   in
   (time_ms, ok)
 
-(** Run odd-even transposition sort on V2 *)
+(** Run odd-even transposition sort on runtime *)
 let run_odd_even_sort (dev : Device.t) =
   let n = !sort_size_odd_even in
   let inp = !input_odd_even in
@@ -176,7 +176,7 @@ let run_odd_even_sort (dev : Device.t) =
   let ir =
     match kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
-    | None -> failwith "No V2 IR"
+    | None -> failwith "No IR"
   in
 
   let data = Vector.create Vector.int32 n in
@@ -239,7 +239,7 @@ let () =
   cfg.size <- c.size ;
   cfg.block_size <- c.block_size ;
 
-  print_endline "=== Sorting Tests (V2) ===" ;
+  print_endline "=== Sorting Tests (runtime) ===" ;
   Printf.printf "Size: %d elements\n\n" cfg.size ;
 
   let devs =
@@ -250,7 +250,7 @@ let () =
     exit 1
   end ;
   Test_helpers.print_devices devs ;
-  Printf.printf "\nFound %d V2 device(s)\n\n" (Array.length devs) ;
+  Printf.printf "\nFound %d runtime device(s)\n\n" (Array.length devs) ;
 
   (* Initialize test data *)
   ignore (init_bitonic_global_data ()) ;

@@ -1,4 +1,4 @@
-; Tests for the V2 runtime
+; Tests for the GPU runtime
 ; Legacy SPOC tests have been moved to *.spoc_legacy files
 
 (executable

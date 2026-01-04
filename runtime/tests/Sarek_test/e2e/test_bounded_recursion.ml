@@ -4,7 +4,7 @@
  * Tests that tail-recursive functions are correctly transformed to loops.
  * Non-tail recursion is not currently supported (requires manual conversion
  * to tail-recursive form using accumulators).
- * V2 runtime only.
+ * GPU runtime only.
  ******************************************************************************)
 
 module Std = Sarek_stdlib.Std
@@ -18,7 +18,7 @@ let () =
   Sarek_cuda.Cuda_plugin.init () ;
   Sarek_opencl.Opencl_plugin.init ()
 
-(* Extract kirc for V2 - factorial *)
+(* Extract kirc for runtime - factorial *)
 let factorial_kirc =
   snd
     [%kernel
@@ -30,7 +30,7 @@ let factorial_kirc =
         let idx = global_idx_x in
         if idx = 0l then output.(idx) <- fact_aux 1l n]
 
-(* Extract kirc for V2 - power *)
+(* Extract kirc for runtime - power *)
 let power_kirc =
   snd
     [%kernel
@@ -42,7 +42,7 @@ let power_kirc =
         let idx = global_idx_x in
         if idx = 0l then output.(idx) <- power_aux 1l base exp]
 
-(* Extract kirc for V2 - GCD *)
+(* Extract kirc for runtime - GCD *)
 let gcd_kirc =
   snd
     [%kernel
@@ -54,10 +54,10 @@ let gcd_kirc =
         let idx = global_idx_x in
         if idx = 0l then output.(idx) <- gcd a b]
 
-(* V2 test for tail-recursive factorial *)
+(* runtime test for tail-recursive factorial *)
 let test_factorial_v2 dev =
   print_endline "=== Tail-recursive factorial ===" ;
-  Printf.printf "V2 Testing on: %s\n%!" dev.Device.name ;
+  Printf.printf "runtime Testing on: %s\n%!" dev.Device.name ;
 
   let output = Vector.create Vector.int32 1 in
   Vector.set output 0 0l ;
@@ -66,7 +66,7 @@ let test_factorial_v2 dev =
   let ir =
     match factorial_kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
-    | None -> failwith "Kernel has no V2 IR"
+    | None -> failwith "Kernel has no IR"
   in
 
   let t0 = Unix.gettimeofday () in
@@ -80,25 +80,28 @@ let test_factorial_v2 dev =
       () ;
     Transfer.flush dev ;
     let t1 = Unix.gettimeofday () in
-    Printf.printf "  V2 exec: %.2f ms\n%!" ((t1 -. t0) *. 1000.0) ;
+    Printf.printf "  runtime exec: %.2f ms\n%!" ((t1 -. t0) *. 1000.0) ;
 
     let got = Vector.get output 0 in
     (* 10! = 3628800 *)
     let expected = 3628800l in
     if got = expected then (
-      Printf.printf "V2 PASS: fact(10) = %ld\n%!" got ;
+      Printf.printf "runtime PASS: fact(10) = %ld\n%!" got ;
       true)
     else (
-      Printf.printf "V2 FAIL: fact(10) = %ld, expected %ld\n%!" got expected ;
+      Printf.printf
+        "runtime FAIL: fact(10) = %ld, expected %ld\n%!"
+        got
+        expected ;
       false)
   with e ->
-    Printf.printf "V2 FAIL: %s\n%!" (Printexc.to_string e) ;
+    Printf.printf "runtime FAIL: %s\n%!" (Printexc.to_string e) ;
     false
 
-(* V2 test for tail-recursive power *)
+(* runtime test for tail-recursive power *)
 let test_power_v2 dev =
   print_endline "=== Tail-recursive power ===" ;
-  Printf.printf "V2 Testing on: %s\n%!" dev.Device.name ;
+  Printf.printf "runtime Testing on: %s\n%!" dev.Device.name ;
 
   let output = Vector.create Vector.int32 1 in
   Vector.set output 0 0l ;
@@ -108,7 +111,7 @@ let test_power_v2 dev =
   let ir =
     match power_kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
-    | None -> failwith "Kernel has no V2 IR"
+    | None -> failwith "Kernel has no IR"
   in
 
   let t0 = Unix.gettimeofday () in
@@ -127,25 +130,28 @@ let test_power_v2 dev =
       () ;
     Transfer.flush dev ;
     let t1 = Unix.gettimeofday () in
-    Printf.printf "  V2 exec: %.2f ms\n%!" ((t1 -. t0) *. 1000.0) ;
+    Printf.printf "  runtime exec: %.2f ms\n%!" ((t1 -. t0) *. 1000.0) ;
 
     let got = Vector.get output 0 in
     (* 2^10 = 1024 *)
     let expected = 1024l in
     if got = expected then (
-      Printf.printf "V2 PASS: power(2, 10) = %ld\n%!" got ;
+      Printf.printf "runtime PASS: power(2, 10) = %ld\n%!" got ;
       true)
     else (
-      Printf.printf "V2 FAIL: power(2, 10) = %ld, expected %ld\n%!" got expected ;
+      Printf.printf
+        "runtime FAIL: power(2, 10) = %ld, expected %ld\n%!"
+        got
+        expected ;
       false)
   with e ->
-    Printf.printf "V2 FAIL: %s\n%!" (Printexc.to_string e) ;
+    Printf.printf "runtime FAIL: %s\n%!" (Printexc.to_string e) ;
     false
 
-(* V2 test for tail-recursive GCD *)
+(* runtime test for tail-recursive GCD *)
 let test_gcd_v2 dev =
   print_endline "=== Tail-recursive GCD ===" ;
-  Printf.printf "V2 Testing on: %s\n%!" dev.Device.name ;
+  Printf.printf "runtime Testing on: %s\n%!" dev.Device.name ;
 
   let output = Vector.create Vector.int32 1 in
   Vector.set output 0 0l ;
@@ -155,7 +161,7 @@ let test_gcd_v2 dev =
   let ir =
     match gcd_kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
-    | None -> failwith "Kernel has no V2 IR"
+    | None -> failwith "Kernel has no IR"
   in
 
   let t0 = Unix.gettimeofday () in
@@ -170,30 +176,33 @@ let test_gcd_v2 dev =
       () ;
     Transfer.flush dev ;
     let t1 = Unix.gettimeofday () in
-    Printf.printf "  V2 exec: %.2f ms\n%!" ((t1 -. t0) *. 1000.0) ;
+    Printf.printf "  runtime exec: %.2f ms\n%!" ((t1 -. t0) *. 1000.0) ;
 
     let got = Vector.get output 0 in
     (* gcd(48, 18) = 6 *)
     let expected = 6l in
     if got = expected then (
-      Printf.printf "V2 PASS: gcd(48, 18) = %ld\n%!" got ;
+      Printf.printf "runtime PASS: gcd(48, 18) = %ld\n%!" got ;
       true)
     else (
-      Printf.printf "V2 FAIL: gcd(48, 18) = %ld, expected %ld\n%!" got expected ;
+      Printf.printf
+        "runtime FAIL: gcd(48, 18) = %ld, expected %ld\n%!"
+        got
+        expected ;
       false)
   with e ->
-    Printf.printf "V2 FAIL: %s\n%!" (Printexc.to_string e) ;
+    Printf.printf "runtime FAIL: %s\n%!" (Printexc.to_string e) ;
     false
 
 let () =
-  print_endline "=== Tail Recursion Transformation Tests (V2) ===" ;
+  print_endline "=== Tail Recursion Transformation Tests (runtime) ===" ;
   print_endline "" ;
 
   let devs =
     Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
   if Array.length devs = 0 then (
-    print_endline "No V2 devices found - skipping" ;
+    print_endline "No runtime devices found - skipping" ;
     exit 0) ;
 
   let dev = devs.(0) in
@@ -208,9 +217,9 @@ let () =
   print_endline "" ;
 
   print_endline "=== Summary ===" ;
-  Printf.printf "V2 Factorial: %s\n" (if t1 then "PASS" else "FAIL") ;
-  Printf.printf "V2 Power: %s\n" (if t2 then "PASS" else "FAIL") ;
-  Printf.printf "V2 GCD: %s\n" (if t3 then "PASS" else "FAIL") ;
+  Printf.printf "runtime Factorial: %s\n" (if t1 then "PASS" else "FAIL") ;
+  Printf.printf "runtime Power: %s\n" (if t2 then "PASS" else "FAIL") ;
+  Printf.printf "runtime GCD: %s\n" (if t3 then "PASS" else "FAIL") ;
 
   if t1 && t2 && t3 then (
     print_endline "\nAll tests passed!" ;

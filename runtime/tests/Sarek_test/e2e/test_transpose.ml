@@ -70,7 +70,7 @@ let transpose_naive_kernel =
         output.(out_idx) <- input.(in_idx)
       end]
 
-(* ========== V2 test runner ========== *)
+(* ========== runtime test runner ========== *)
 
 let run_transpose (dev : Device.t) =
   let dim = !matrix_dim in
@@ -79,7 +79,7 @@ let run_transpose (dev : Device.t) =
   let ir =
     match kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
-    | None -> failwith "No V2 IR"
+    | None -> failwith "No IR"
   in
 
   let input = Vector.create Vector.float32 n in
@@ -140,7 +140,7 @@ let () =
   cfg.size <- c.size ;
   cfg.block_size <- c.block_size ;
 
-  print_endline "=== Matrix Transpose Test (V2) ===" ;
+  print_endline "=== Matrix Transpose Test (runtime) ===" ;
   Printf.printf "Size: %d elements\n" cfg.size ;
 
   init_transpose_data () ;
@@ -168,7 +168,7 @@ let () =
         let time, result = run_transpose dev in
         let ok =
           (not cfg.verify)
-          || verify_float_arrays "V2" result !expected_data 0.001
+          || verify_float_arrays "runtime" result !expected_data 0.001
         in
         let status = if ok then "OK" else "FAIL" in
 
@@ -193,11 +193,12 @@ let () =
     let dev = Test_helpers.get_device cfg devs in
     Printf.printf "Using device: %s\n%!" dev.Device.name ;
 
-    Printf.printf "\nRunning V2 path (naive transpose)...\n%!" ;
+    Printf.printf "\nRunning runtime path (naive transpose)...\n%!" ;
     let time, result = run_transpose dev in
     Printf.printf "  Time: %.4f ms\n%!" time ;
     let ok =
-      (not cfg.verify) || verify_float_arrays "V2" result !expected_data 0.001
+      (not cfg.verify)
+      || verify_float_arrays "runtime" result !expected_data 0.001
     in
     Printf.printf "  Status: %s\n%!" (if ok then "PASSED" else "FAILED") ;
 

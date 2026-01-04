@@ -3,7 +3,7 @@
  *
  * Tests that [@sarek.module] functions can be polymorphic and used at
  * multiple types within kernels.
- * V2 runtime only.
+ * GPU runtime only.
  ******************************************************************************)
 
 (* Module aliases to avoid conflicts *)
@@ -36,14 +36,14 @@ let test_kernel =
       (* Use identity at float32 *)
       dst_f.(idx) <- identity src_f.(idx)]
 
-(* === V2 Test === *)
+(* === runtime Test === *)
 
 let test_poly_identity_v2 () =
-  print_endline "=== V2: Polymorphic module identity ===" ;
+  print_endline "=== runtime: Polymorphic module identity ===" ;
 
   let devs = Device.all () in
   if Array.length devs = 0 then (
-    print_endline "No V2 devices - skipping runtime test" ;
+    print_endline "No runtime devices - skipping runtime test" ;
     true)
   else
     let dev = devs.(0) in
@@ -53,7 +53,7 @@ let test_poly_identity_v2 () =
     let ir =
       match kirc.Sarek.Kirc_types.body_ir with
       | Some ir -> ir
-      | None -> failwith "Kernel has no V2 IR"
+      | None -> failwith "Kernel has no IR"
     in
 
     let n = 1024 in
@@ -97,11 +97,11 @@ let test_poly_identity_v2 () =
         Printf.printf "FAIL: dst_f[%d] = %f, expected %f\n" i got_f expected_f ;
         ok := false)
     done ;
-    if !ok then print_endline "PASS: V2 Polymorphic module identity" ;
+    if !ok then print_endline "PASS: runtime Polymorphic module identity" ;
     !ok
 
 let () =
-  print_endline "=== Polymorphic Module Function Tests (V2) ===" ;
+  print_endline "=== Polymorphic Module Function Tests (runtime) ===" ;
   print_endline "" ;
 
   let t1_v2 = test_poly_identity_v2 () in
@@ -109,7 +109,7 @@ let () =
 
   print_endline "=== Summary ===" ;
   Printf.printf
-    "Polymorphic module identity (V2): %s\n"
+    "Polymorphic module identity (runtime): %s\n"
     (if t1_v2 then "PASS" else "FAIL") ;
 
   if t1_v2 then (

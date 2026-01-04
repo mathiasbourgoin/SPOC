@@ -1,18 +1,18 @@
 (******************************************************************************
  * Simplified N-Body example using Sarek PPX with ktype + helper.
  * Uses let x = mut ... syntax for mutable accumulators.
- * V2 runtime only.
+ * GPU runtime only.
  ******************************************************************************)
 
-(* Shadow SPOC's vector with V2 vector for kernel compatibility *)
+(* Shadow SPOC's vector with runtime vector for kernel compatibility *)
 type ('a, 'b) vector = ('a, 'b) Spoc_core.Vector.t
 
-(* V2 module aliases *)
+(* runtime module aliases *)
 module Device = Spoc_core.Device
 module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
 
-(* Force V2 backend registration *)
+(* Force runtime backend registration *)
 let () =
   Sarek_cuda.Cuda_plugin.init () ;
   Sarek_opencl.Opencl_plugin.init ()
@@ -63,12 +63,12 @@ let () =
   Sarek.Kirc_Ast.print_ast kirc_kernel.Sarek.Kirc_types.body ;
   print_endline "======================" ;
 
-  print_endline "\n=== Running V2 path ===" ;
+  print_endline "\n=== Running runtime path ===" ;
   let devs =
     Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
   if Array.length devs = 0 then (
-    print_endline "V2: No device found - IR test passed" ;
+    print_endline "runtime: No device found - IR test passed" ;
     exit 0) ;
 
   let dev = devs.(0) in
@@ -76,7 +76,7 @@ let () =
 
   (match kirc_kernel.Sarek.Kirc_types.body_ir with
   | None ->
-      print_endline "V2: No V2 IR available - IR test passed" ;
+      print_endline "runtime: No IR available - IR test passed" ;
       exit 0
   | Some ir ->
       let n = 64 in
@@ -151,7 +151,7 @@ let () =
         then (
           ok := false ;
           Printf.printf
-            "V2 Mismatch at %d: GPU (%f,%f,%f) CPU (%f,%f,%f)\n%!"
+            "runtime Mismatch at %d: GPU (%f,%f,%f) CPU (%f,%f,%f)\n%!"
             i
             gx
             gy
@@ -160,8 +160,8 @@ let () =
             !rfy
             !rfz)
       done ;
-      if !ok then print_endline "NBody PPX (V2) PASSED"
+      if !ok then print_endline "NBody PPX (runtime) PASSED"
       else (
-        print_endline "NBody PPX (V2) FAILED" ;
+        print_endline "NBody PPX (runtime) FAILED" ;
         exit 1)) ;
   print_endline "NBody PPX tests PASSED"

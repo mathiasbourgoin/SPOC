@@ -1,6 +1,6 @@
 (******************************************************************************
  * E2E test: use a globally registered Sarek constant across modules.
- * Uses V2 runtime only.
+ * Uses GPU runtime only.
  ******************************************************************************)
 
 module Device = Spoc_core.Device
@@ -45,9 +45,9 @@ let () =
   let dev = devs.(0) in
   Printf.printf "Using device: %s\n%!" dev.Device.name ;
 
-  (* Get V2 IR and execute *)
+  (* Get IR and execute *)
   match kirc.Sarek.Kirc_types.body_ir with
-  | None -> print_endline "No V2 IR - IR generation test PASSED"
+  | None -> print_endline "No IR - IR generation test PASSED"
   | Some ir ->
       let n = 64 in
       let xs = Vector.create Vector.float32 n in

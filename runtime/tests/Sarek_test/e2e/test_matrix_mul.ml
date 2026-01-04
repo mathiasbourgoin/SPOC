@@ -1,10 +1,10 @@
 (******************************************************************************
- * E2E test for Sarek PPX - Matrix Multiplication (V2)
+ * E2E test for Sarek PPX - Matrix Multiplication (runtime)
  *
  * Tests naive and tiled matrix multiplication with shared memory.
  * Matrix multiplication is the canonical GPU compute benchmark.
  *
- * Uses V2 path for all backends (CUDA, OpenCL, Native, Interpreter).
+ * Uses runtime path for all backends (CUDA, OpenCL, Native, Interpreter).
  * Tiled kernel demonstrates shared memory + supersteps (barriers).
  ******************************************************************************)
 
@@ -69,7 +69,7 @@ let init_matmul_data () =
 
 (* ========== Sarek kernels ========== *)
 
-(** Naive matrix multiplication - V2 compatible (1D indexing). Each thread
+(** Naive matrix multiplication - runtime compatible (1D indexing). Each thread
     computes one output element. *)
 let matmul_naive_kernel =
   [%kernel
@@ -91,7 +91,7 @@ let matmul_naive_kernel =
         c.((row * n) + col) <- sum
       end]
 
-(* NOTE: Not V2 compatible - uses shared memory and supersteps *)
+(* NOTE: Not runtime compatible - uses shared memory and supersteps *)
 
 (** Tiled matrix multiplication with shared memory and supersteps. *)
 let matmul_tiled_kernel =
@@ -135,9 +135,10 @@ let matmul_tiled_kernel =
       done ;
       if row < m && col < n then c.((row * n) + col) <- sum]
 
-(* ========== V2 test runners ========== *)
+(* ========== runtime test runners ========== *)
 
-(** Run tiled matrix multiplication on V2 - uses shared memory and supersteps *)
+(** Run tiled matrix multiplication on runtime - uses shared memory and
+    supersteps *)
 let run_matmul_tiled (dev : Device.t) =
   let dim = !matrix_dim in
   (* Pad to tile_size multiple *)
@@ -151,7 +152,7 @@ let run_matmul_tiled (dev : Device.t) =
   let ir =
     match kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
-    | None -> failwith "Tiled kernel: No V2 IR"
+    | None -> failwith "Tiled kernel: No IR"
   in
 
   let a = Vector.create Vector.float32 (m * k) in
@@ -231,7 +232,7 @@ let run_matmul_tiled (dev : Device.t) =
         if diff > abs_tol && rel_err > rel_tol then begin
           if !errors < 5 then
             Printf.printf
-              "  Tiled V2 mismatch at [%d,%d]: expected %.6f, got %.6f \
+              "  Tiled runtime mismatch at [%d,%d]: expected %.6f, got %.6f \
                (rel_err=%.4f%%)\n"
               row
               col
@@ -247,7 +248,8 @@ let run_matmul_tiled (dev : Device.t) =
   in
   (time_ms, ok)
 
-(** Run naive matrix multiplication on V2 - returns (compile_ms, exec_ms, ok) *)
+(** Run naive matrix multiplication on runtime - returns (compile_ms, exec_ms,
+    ok) *)
 let run_matmul_naive (dev : Device.t) =
   let dim = !matrix_dim in
   let m, n, k = (dim, dim, dim) in
@@ -258,7 +260,7 @@ let run_matmul_naive (dev : Device.t) =
   let ir =
     match kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
-    | None -> failwith "No V2 IR"
+    | None -> failwith "No IR"
   in
 
   let a = Vector.create Vector.float32 (m * k) in
@@ -348,7 +350,8 @@ let run_matmul_naive (dev : Device.t) =
         if diff > abs_tol && rel_err > rel_tol then begin
           if !errors < 5 then
             Printf.printf
-              "  V2 mismatch at %d: expected %.6f, got %.6f (rel_err=%.4f%%)\n"
+              "  runtime mismatch at %d: expected %.6f, got %.6f \
+               (rel_err=%.4f%%)\n"
               idx
               expected
               got
@@ -375,7 +378,7 @@ let () =
   cfg.size <- c.size ;
   cfg.block_size <- c.block_size ;
 
-  print_endline "=== Matrix Multiplication Test (Unified V2) ===" ;
+  print_endline "=== Matrix Multiplication Test (Unified runtime) ===" ;
 
   let dim = int_of_float (sqrt (float_of_int cfg.size)) in
   Printf.printf
@@ -384,11 +387,11 @@ let () =
     dim
     (dim * dim) ;
 
-  (* Init V2 devices - unified path for all backends *)
+  (* Init runtime devices - unified path for all backends *)
   let devs =
     Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
-  Printf.printf "Found %d V2 device(s)\n" (Array.length devs) ;
+  Printf.printf "Found %d runtime device(s)\n" (Array.length devs) ;
   Array.iteri
     (fun i d ->
       Printf.printf "  [%d] %s (%s)\n" i d.Device.name d.Device.framework)
@@ -398,8 +401,8 @@ let () =
   ignore (init_matmul_data ()) ;
 
   if cfg.benchmark_all then begin
-    (* Benchmark naive - unified V2 path *)
-    print_endline "=== Naive Matrix Multiplication (Unified V2) ===" ;
+    (* Benchmark naive - unified runtime path *)
+    print_endline "=== Naive Matrix Multiplication (Unified runtime) ===" ;
     print_endline (String.make 80 '-') ;
     Printf.printf
       "%-40s %12s %12s %8s\n"
@@ -428,8 +431,9 @@ let () =
 
     print_endline (String.make 80 '-') ;
 
-    (* Benchmark tiled V2 (shared memory + supersteps) *)
-    print_endline "\n=== Tiled Matrix Multiplication (V2 - shared memory) ===" ;
+    (* Benchmark tiled runtime (shared memory + supersteps) *)
+    print_endline
+      "\n=== Tiled Matrix Multiplication (runtime - shared memory) ===" ;
     print_endline (String.make 60 '-') ;
     Printf.printf "%-40s %10s %8s\n" "Device" "Exec(ms)" "Status" ;
     print_endline (String.make 60 '-') ;
@@ -466,7 +470,7 @@ let () =
     end
   end
   else begin
-    (* Single device mode - use V2 *)
+    (* Single device mode - use runtime *)
     let dev =
       if cfg.dev_id >= 0 && cfg.dev_id < Array.length devs then
         devs.(cfg.dev_id)
@@ -477,7 +481,7 @@ let () =
       dev.Device.name
       dev.Device.framework ;
 
-    Printf.printf "\n--- Naive Matrix Multiplication (V2) ---\n%!" ;
+    Printf.printf "\n--- Naive Matrix Multiplication (runtime) ---\n%!" ;
     let comp, exec, ok = run_matmul_naive dev in
     Printf.printf
       "  Compile: %.2f ms, Exec: %.2f ms, %s\n%!"
@@ -485,9 +489,9 @@ let () =
       exec
       (if ok then "PASSED" else "FAILED") ;
 
-    (* Tiled kernel via V2 (shared memory + supersteps) *)
+    (* Tiled kernel via runtime (shared memory + supersteps) *)
     if dev.Device.framework <> "Interpreter" then begin
-      Printf.printf "\n--- Tiled Matrix Multiplication (V2) ---\n%!" ;
+      Printf.printf "\n--- Tiled Matrix Multiplication (runtime) ---\n%!" ;
       let time, ok = run_matmul_tiled dev in
       Printf.printf
         "  Time: %.4f ms, %s\n%!"

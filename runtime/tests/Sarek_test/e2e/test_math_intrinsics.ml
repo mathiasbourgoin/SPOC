@@ -71,7 +71,7 @@ let complex_math_kernel =
         output.(tid) <- r *. decay *. oscillation
       end]
 
-(* ========== V2 test runner ========== *)
+(* ========== runtime test runner ========== *)
 
 let run_complex_math (dev : Device.t) =
   let n = cfg.size in
@@ -79,7 +79,7 @@ let run_complex_math (dev : Device.t) =
   let ir =
     match kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
-    | None -> failwith "No V2 IR"
+    | None -> failwith "No IR"
   in
 
   let x = Vector.create Vector.float32 n in
@@ -142,7 +142,7 @@ let () =
   cfg.size <- c.size ;
   cfg.block_size <- c.block_size ;
 
-  print_endline "=== Math Intrinsics Test (V2) ===" ;
+  print_endline "=== Math Intrinsics Test (runtime) ===" ;
   Printf.printf "Size: %d elements\n\n" cfg.size ;
 
   init_complex_data () ;
@@ -169,7 +169,7 @@ let () =
         let time, result = run_complex_math dev in
         let ok =
           (not cfg.verify)
-          || verify_float_arrays "V2" result !expected_complex 0.01
+          || verify_float_arrays "runtime" result !expected_complex 0.01
         in
         let status = if ok then "OK" else "FAIL" in
 
@@ -194,11 +194,12 @@ let () =
     let dev = Test_helpers.get_device cfg devs in
     Printf.printf "Using device: %s\n%!" dev.Device.name ;
 
-    Printf.printf "\nRunning V2 path (complex math: sqrt/exp/cos)...\n%!" ;
+    Printf.printf "\nRunning runtime path (complex math: sqrt/exp/cos)...\n%!" ;
     let time, result = run_complex_math dev in
     Printf.printf "  Time: %.4f ms\n%!" time ;
     let ok =
-      (not cfg.verify) || verify_float_arrays "V2" result !expected_complex 0.01
+      (not cfg.verify)
+      || verify_float_arrays "runtime" result !expected_complex 0.01
     in
     Printf.printf "  Status: %s\n%!" (if ok then "PASSED" else "FAILED") ;
 

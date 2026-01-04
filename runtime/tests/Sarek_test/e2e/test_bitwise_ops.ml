@@ -209,7 +209,7 @@ let gray_code_kernel =
         from_gray.(tid) <- b
       end]
 
-(* ========== V2 test runner ========== *)
+(* ========== runtime test runner ========== *)
 
 let run_bitwise_basic (dev : Device.t) =
   let n = cfg.size in
@@ -217,7 +217,7 @@ let run_bitwise_basic (dev : Device.t) =
   let ir =
     match kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
-    | None -> failwith "No V2 IR"
+    | None -> failwith "No IR"
   in
 
   let a = Vector.create Vector.int32 n in
@@ -293,7 +293,7 @@ let () =
   cfg.size <- c.size ;
   cfg.block_size <- c.block_size ;
 
-  print_endline "=== Bitwise Operations Test (V2) ===" ;
+  print_endline "=== Bitwise Operations Test (runtime) ===" ;
   Printf.printf "Size: %d elements\n\n" cfg.size ;
 
   (* Initialize data *)
@@ -302,7 +302,7 @@ let () =
   init_popcount_data () ;
   init_gray_data () ;
 
-  (* Initialize V2 devices *)
+  (* Initialize runtime devices *)
   let devs = Test_helpers.init_devices cfg in
   if Array.length devs = 0 then begin
     print_endline "No devices found" ;
@@ -353,7 +353,7 @@ let () =
     let dev_name = dev.Device.name in
     Printf.printf "Using device: %s\n%!" dev_name ;
 
-    Printf.printf "\nRunning V2 path (bitwise AND/OR/XOR)...\n%!" ;
+    Printf.printf "\nRunning runtime path (bitwise AND/OR/XOR)...\n%!" ;
     let time, and_, or_, xor = run_bitwise_basic dev in
     Printf.printf "  Time: %.4f ms\n%!" time ;
     let ok =

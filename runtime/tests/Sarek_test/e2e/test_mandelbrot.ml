@@ -4,12 +4,12 @@
  * Tests iterative computation with complex arithmetic.
  * Mandelbrot is a classic GPU benchmark with high arithmetic intensity.
  *
- * V2 runtime only.
+ * GPU runtime only.
  ******************************************************************************)
 
 module Std = Sarek_stdlib.Std
 
-(* V2 module aliases *)
+(* runtime module aliases *)
 module Device = Spoc_core.Device
 module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
@@ -277,7 +277,7 @@ let () =
   cfg.size <- c.size ;
   cfg.block_size <- c.block_size ;
 
-  (* Initialize V2 devices *)
+  (* Initialize runtime devices *)
   let devs =
     Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
@@ -294,7 +294,7 @@ let () =
   Printf.printf "\nOCaml baseline (Mandelbrot): %.4f ms\n%!" baseline_ms ;
 
   if cfg.benchmark_all then begin
-    Printf.printf "\n=== V2 Runtime Benchmarks ===\n%!" ;
+    Printf.printf "\n=== GPU Runtime Benchmarks ===\n%!" ;
     Array.iter
       (fun dev ->
         let dev_label =
@@ -320,8 +320,8 @@ let () =
     let dev = Test_helpers.get_device cfg devs in
     Printf.printf "Using device: %s\n%!" dev.Device.name ;
 
-    (* Run V2 Mandelbrot *)
-    Printf.printf "\nMandelbrot (V2):\n%!" ;
+    (* Run runtime Mandelbrot *)
+    Printf.printf "\nMandelbrot (runtime):\n%!" ;
     let time, ok = run_mandelbrot_test dev in
     Printf.printf
       "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
@@ -333,8 +333,8 @@ let () =
       exit 1
     end ;
 
-    (* V2 Tail-recursive test *)
-    Printf.printf "\nMandelbrot (tail-recursive V2):\n%!" ;
+    (* runtime Tail-recursive test *)
+    Printf.printf "\nMandelbrot (tail-recursive runtime):\n%!" ;
     let tr_time, tr_ok = run_mandelbrot_tailrec_test dev in
     Printf.printf
       "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"

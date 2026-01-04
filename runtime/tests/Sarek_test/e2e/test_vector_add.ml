@@ -2,7 +2,7 @@
  * E2E test for Sarek PPX - Vector Add
  *
  * This test verifies that kernels compiled with the PPX can generate valid
- * GPU code and execute correctly via the V2 runtime.
+ * GPU code and execute correctly via the GPU runtime.
  ******************************************************************************)
 
 open Sarek
@@ -80,13 +80,13 @@ let vector_add =
       let tid = global_thread_id in
       if tid < n then c.(tid) <- a.(tid) +. b.(tid)]
 
-(* Run kernel via V2 path *)
+(* Run kernel via runtime path *)
 let run_v2_on_device (dev : Device.t) =
   let _, kirc = vector_add in
   let ir =
     match kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
-    | None -> failwith "Kernel has no V2 IR"
+    | None -> failwith "Kernel has no IR"
   in
 
   let a = Vector.create Vector.float32 !size in
@@ -124,7 +124,7 @@ let run_interpreter () =
   let ir =
     match kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
-    | None -> failwith "Kernel has no V2 IR"
+    | None -> failwith "Kernel has no IR"
   in
 
   (* Create interpreter arrays *)
@@ -187,10 +187,10 @@ let verify_results name result expected =
 let () =
   parse_args () ;
 
-  print_endline "=== Vector Add Test (V2) ===" ;
+  print_endline "=== Vector Add Test (runtime) ===" ;
   Printf.printf "Size: %d elements\n\n" !size ;
 
-  (* Initialize V2 devices - include all frameworks *)
+  (* Initialize runtime devices - include all frameworks *)
   let devs =
     Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
@@ -211,7 +211,7 @@ let () =
 
     let all_ok = ref true in
 
-    (* Test each V2 device *)
+    (* Test each runtime device *)
     Array.iter
       (fun dev ->
         let name = dev.Device.name in
@@ -219,7 +219,7 @@ let () =
 
         let time, result = run_v2_on_device dev in
         let ok =
-          if !verify then verify_results "V2" result expected else true
+          if !verify then verify_results "runtime" result expected else true
         in
         let status = if ok then "OK" else "FAIL" in
 
@@ -275,11 +275,13 @@ let () =
     let dev_name = dev.Device.name in
     Printf.printf "Using device: %s\n%!" dev_name ;
 
-    (* Run V2 *)
-    Printf.printf "\nRunning V2 path...\n%!" ;
+    (* Run runtime *)
+    Printf.printf "\nRunning runtime path...\n%!" ;
     let time, result = run_v2_on_device dev in
     Printf.printf "  Time: %.4f ms\n%!" time ;
-    let ok = if !verify then verify_results "V2" result expected else true in
+    let ok =
+      if !verify then verify_results "runtime" result expected else true
+    in
     Printf.printf "  Status: %s\n%!" (if ok then "PASSED" else "FAILED") ;
 
     if ok then print_endline "\nE2E Test PASSED"

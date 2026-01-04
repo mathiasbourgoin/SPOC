@@ -3,7 +3,7 @@
  *
  * Tests inclusive prefix sum operations with shared memory and supersteps.
  * Scan is a fundamental parallel primitive for many algorithms.
- * V2 runtime only.
+ * GPU runtime only.
  ******************************************************************************)
 
 (* Module aliases *)
@@ -115,7 +115,7 @@ let inclusive_scan_kernel =
       in
       if gid < n then output.(gid) <- temp.(tid)]
 
-(* ========== V2 test runners ========== *)
+(* ========== runtime test runners ========== *)
 
 let run_inclusive_scan (dev : Device.t) inp exp =
   let n = min cfg.size 256 in
@@ -123,7 +123,7 @@ let run_inclusive_scan (dev : Device.t) inp exp =
   let ir =
     match kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
-    | None -> failwith "No V2 IR"
+    | None -> failwith "No IR"
   in
 
   let input = Vector.create Vector.int32 n in
@@ -163,7 +163,7 @@ let run_inclusive_scan (dev : Device.t) inp exp =
         if result.(i) <> exp.(i) then begin
           if !errors < 10 then
             Printf.printf
-              "  V2 Mismatch at %d: expected %ld, got %ld\n"
+              "  runtime Mismatch at %d: expected %ld, got %ld\n"
               i
               exp.(i)
               result.(i) ;
@@ -189,7 +189,7 @@ let () =
   cfg.size <- c.size ;
   cfg.block_size <- c.block_size ;
 
-  print_endline "=== Prefix Scan Tests (V2) ===" ;
+  print_endline "=== Prefix Scan Tests (runtime) ===" ;
   Printf.printf
     "Size: %d elements (max 256 for block-level scan)\n\n"
     (min cfg.size 256) ;
@@ -202,7 +202,7 @@ let () =
     exit 1
   end ;
   Test_helpers.print_devices devs ;
-  Printf.printf "\nFound %d V2 device(s)\n\n" (Array.length devs) ;
+  Printf.printf "\nFound %d runtime device(s)\n\n" (Array.length devs) ;
 
   let all_ok = ref true in
 

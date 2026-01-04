@@ -10,7 +10,7 @@
  *
  * NOTE ON BUFFER ARCHITECTURE (Phase 4 TODO):
  *
- * We removed the SPOC custom-vector path. When V2 custom buffers are ready,
+ * We removed the SPOC custom-vector path. When runtime custom buffers are ready,
  * reintroduce a dedicated test that exercises them. The desired design is a
  * single buffer type that:
  *
@@ -176,9 +176,9 @@ let () =
   print_endline "Vector add test passed!" ;
 
   (* ============================================================ *)
-  (* Part 2: Custom type test using V2 Vector + Execute           *)
+  (* Part 2: Custom type test using runtime Vector + Execute           *)
   (* ============================================================ *)
-  print_endline "\n[7] Testing custom types with V2 Vector..." ;
+  print_endline "\n[7] Testing custom types with runtime Vector..." ;
 
   let n_points = 100 in
   let src = Vector.create_custom point_custom n_points in
@@ -194,7 +194,7 @@ let () =
   let ir =
     match transform_points_kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
-    | None -> failwith "Kernel has no V2 IR"
+    | None -> failwith "Kernel has no IR"
   in
 
   print_endline "\n[8] Executing custom type kernel..." ;

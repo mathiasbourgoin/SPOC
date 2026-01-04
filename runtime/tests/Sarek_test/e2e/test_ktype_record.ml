@@ -2,7 +2,7 @@
  * E2E test for Sarek PPX with record type declarations at top level.
  *
  * The [@@sarek.type] attribute generates:
- *   - point_custom (for V2 Spoc_core.Vector)
+ *   - point_custom (for runtime Spoc_core.Vector)
  ******************************************************************************)
 
 module Vector = Spoc_core.Vector
@@ -37,13 +37,13 @@ let () =
   Sarek.Kirc_Ast.print_ast point_copy_kirc.Sarek.Kirc_types.body ;
   print_endline "==========================================" ;
 
-  (* V2 execution *)
-  print_endline "\n=== V2 Path ===" ;
+  (* runtime execution *)
+  print_endline "\n=== runtime Path ===" ;
   let devs =
     Device.init ~frameworks:["Interpreter"; "Native"; "CUDA"; "OpenCL"] ()
   in
   if Array.length devs = 0 then begin
-    print_endline "No V2 devices found - IR generation test passed" ;
+    print_endline "No runtime devices found - IR generation test passed" ;
     exit 0
   end ;
 
@@ -55,11 +55,12 @@ let () =
         | Some d -> d
         | None -> devs.(0))
   in
-  Printf.printf "V2 device: %s\n%!" dev.Device.name ;
+  Printf.printf "runtime device: %s\n%!" dev.Device.name ;
   if dev.framework <> "Native" then (
-    Printf.printf "V2: SKIP (record test checked on native backend only)\n%!" ;
+    Printf.printf
+      "runtime: SKIP (record test checked on native backend only)\n%!" ;
     exit 0) ;
-  print_string "V2: " ;
+  print_string "runtime: " ;
   try
     let n = 64 in
     let src = Vector.create_custom point_custom n in
@@ -73,7 +74,7 @@ let () =
     let ir =
       match point_copy_kirc.Sarek.Kirc_types.body_ir with
       | Some ir -> ir
-      | None -> failwith "Kernel has no V2 IR"
+      | None -> failwith "Kernel has no IR"
     in
     Sarek.Execute.run_vectors
       ~device:dev

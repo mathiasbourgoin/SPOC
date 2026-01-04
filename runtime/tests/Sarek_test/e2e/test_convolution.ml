@@ -60,7 +60,7 @@ let conv1d_3point_kernel =
       end
       else if tid = 0 || tid = n - 1 then output.(tid) <- input.(tid)]
 
-(* ========== V2 test runner ========== *)
+(* ========== runtime test runner ========== *)
 
 let run_conv1d (dev : Device.t) =
   let n = cfg.size in
@@ -68,7 +68,7 @@ let run_conv1d (dev : Device.t) =
   let ir =
     match kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
-    | None -> failwith "No V2 IR"
+    | None -> failwith "No IR"
   in
 
   let input = Vector.create Vector.float32 n in
@@ -128,7 +128,7 @@ let () =
   cfg.size <- c.size ;
   cfg.block_size <- c.block_size ;
 
-  print_endline "=== 1D Convolution Test (V2) ===" ;
+  print_endline "=== 1D Convolution Test (runtime) ===" ;
   Printf.printf "Size: %d elements\n\n" cfg.size ;
 
   init_conv1d_data () ;
@@ -155,7 +155,7 @@ let () =
         let time, result = run_conv1d dev in
         let ok =
           (not cfg.verify)
-          || verify_float_arrays "V2" result !expected_1d 0.0001
+          || verify_float_arrays "runtime" result !expected_1d 0.0001
         in
         let status = if ok then "OK" else "FAIL" in
 
@@ -180,11 +180,12 @@ let () =
     let dev = Test_helpers.get_device cfg devs in
     Printf.printf "Using device: %s\n%!" dev.Device.name ;
 
-    Printf.printf "\nRunning V2 path (1D convolution)...\n%!" ;
+    Printf.printf "\nRunning runtime path (1D convolution)...\n%!" ;
     let time, result = run_conv1d dev in
     Printf.printf "  Time: %.4f ms\n%!" time ;
     let ok =
-      (not cfg.verify) || verify_float_arrays "V2" result !expected_1d 0.0001
+      (not cfg.verify)
+      || verify_float_arrays "runtime" result !expected_1d 0.0001
     in
     Printf.printf "  Status: %s\n%!" (if ok then "PASSED" else "FAILED") ;
 

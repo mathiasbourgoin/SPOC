@@ -2,7 +2,7 @@
  * Test helpers for Sarek E2E tests
  *
  * Shared utilities for device selection, verification, and benchmarking.
- * V2-only version using Spoc_core.
+ * runtime-only version using Spoc_core.
  ******************************************************************************)
 
 open Spoc_core
@@ -82,7 +82,7 @@ let parse_args ?(extra = fun _ _ -> false) ?(extra_usage = fun () -> ()) name =
   done ;
   cfg
 
-(** Initialize V2 devices *)
+(** Initialize runtime devices *)
 let init_devices _cfg =
   Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
 

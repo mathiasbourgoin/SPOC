@@ -1,7 +1,7 @@
 (** Integration test for Sarek_fusion API
 
     Tests kernel fusion using the runtime API with actual PPX-defined kernels.
-    Uses V2 IR (Sarek_ir.kernel) with Sarek_fusion module. *)
+    Uses IR (Sarek_ir.kernel) with Sarek_fusion module. *)
 
 (** Producer kernel: temp[i] = input[i] * 2 *)
 let producer =
@@ -15,11 +15,11 @@ let consumer =
     fun (output : int32 vector) (temp : int32 vector) ->
       output.(thread_idx_x) <- temp.(thread_idx_x) + 1l]
 
-(** Helper to get V2 IR from kernel *)
+(** Helper to get IR from kernel *)
 let get_ir kirc =
   match kirc.Sarek.Kirc_types.body_ir with
   | Some ir -> ir
-  | None -> failwith "Kernel has no V2 IR"
+  | None -> failwith "Kernel has no IR"
 
 (** Test that fusion API is accessible and works *)
 let test_can_fuse () =
@@ -76,7 +76,7 @@ let test_fuse_pipeline () =
   Printf.printf "test_fuse_pipeline: PASSED\n"
 
 let () =
-  Printf.printf "=== Fusion API Integration Tests (V2) ===\n" ;
+  Printf.printf "=== Fusion API Integration Tests (runtime) ===\n" ;
   test_can_fuse () ;
   test_fuse () ;
   test_fuse_pipeline () ;

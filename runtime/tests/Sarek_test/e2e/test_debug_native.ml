@@ -1,4 +1,4 @@
-(* Debug test for Native V2 kernel execution *)
+(* Debug test for Native runtime kernel execution *)
 
 [@@@warning "-33"] (* Suppress unused open warnings from generated code *)
 

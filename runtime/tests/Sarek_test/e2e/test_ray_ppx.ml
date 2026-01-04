@@ -1,18 +1,18 @@
 (******************************************************************************
  * E2E test: simple ray tracing with PPX Sarek.
  * Renders a small sphere scene to a float32 RGB buffer and checks against CPU.
- * V2 runtime only.
+ * GPU runtime only.
  ******************************************************************************)
 
-(* Shadow SPOC's vector with V2 vector for kernel compatibility *)
+(* Shadow SPOC's vector with runtime vector for kernel compatibility *)
 type ('a, 'b) vector = ('a, 'b) Spoc_core.Vector.t
 
-(* V2 module aliases *)
+(* runtime module aliases *)
 module Device = Spoc_core.Device
 module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
 
-(* Force V2 backend registration *)
+(* Force runtime backend registration *)
 let () =
   Sarek_cuda.Cuda_plugin.init () ;
   Sarek_opencl.Opencl_plugin.init ()
@@ -80,12 +80,12 @@ let () =
   Sarek.Kirc_Ast.print_ast kirc_kernel.Sarek.Kirc_types.body ;
   print_endline "==================" ;
 
-  print_endline "\n=== Running V2 path ===" ;
+  print_endline "\n=== Running runtime path ===" ;
   let devs =
     Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
   if Array.length devs = 0 then (
-    print_endline "V2: No device found - IR test passed" ;
+    print_endline "runtime: No device found - IR test passed" ;
     exit 0) ;
 
   let dev = devs.(0) in
@@ -93,7 +93,7 @@ let () =
 
   (match kirc_kernel.Sarek.Kirc_types.body_ir with
   | None ->
-      print_endline "V2: No V2 IR available - IR test passed" ;
+      print_endline "runtime: No IR available - IR test passed" ;
       exit 0
   | Some ir ->
       let w = 64 and h = 64 in
@@ -146,7 +146,7 @@ let () =
         () ;
       Transfer.flush dev ;
 
-      (* Verify V2 results and output PPM *)
+      (* Verify runtime results and output PPM *)
       let ok = ref true in
       let ppm = open_out "/tmp/ray_ppx.ppm" in
       Printf.fprintf ppm "P3\n%d %d\n255\n" w h ;
@@ -187,7 +187,7 @@ let () =
           then (
             ok := false ;
             Printf.printf
-              "V2 Mismatch at %d,%d GPU (%f,%f,%f) CPU (%f,%f,%f)\n%!"
+              "runtime Mismatch at %d,%d GPU (%f,%f,%f) CPU (%f,%f,%f)\n%!"
               x
               y
               gx
@@ -205,8 +205,8 @@ let () =
       done ;
       close_out ppm ;
       if !ok then
-        Printf.printf "Ray PPX (V2) PASSED (ppm: /tmp/ray_ppx.ppm)\n%!"
+        Printf.printf "Ray PPX (runtime) PASSED (ppm: /tmp/ray_ppx.ppm)\n%!"
       else (
-        print_endline "Ray PPX (V2) FAILED" ;
+        print_endline "Ray PPX (runtime) FAILED" ;
         exit 1)) ;
   print_endline "Ray PPX tests PASSED"
