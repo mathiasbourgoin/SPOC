@@ -70,7 +70,7 @@ let parse_args () =
     incr i
   done
 
-(* Define kernel *)
+(* Define kernel - write to all three buffers to test which ones work *)
 let vector_add =
   [%kernel
     fun (a : float32 vector)
@@ -79,7 +79,13 @@ let vector_add =
         (n : int) ->
       let open Std in
       let tid = global_thread_id in
-      if tid < n then c.(tid) <- a.(tid) +. b.(tid)]
+      if tid < n then begin
+        a.(tid) <- 100.0 ;
+        (* Write constant to a *)
+        b.(tid) <- 200.0 ;
+        (* Write constant to b *)
+        c.(tid) <- 300.0 (* Write constant to c *)
+      end]
 
 (* Run kernel via runtime path *)
 let run_v2_on_device (dev : Device.t) =
@@ -98,8 +104,16 @@ let run_v2_on_device (dev : Device.t) =
     Vector.set a i (float_of_int i) ;
     Vector.set b i (float_of_int (i * 2)) ;
     (* Initialize output with a sentinel to detect missing writes *)
-    Vector.set c i (-1.0)
+    Vector.set c i (-999.0)
+    (* Changed to -999 to distinguish from inputs *)
   done ;
+
+  (* DEBUG: Also initialize a and b with distinct sentinels first *)
+  Printf.eprintf
+    "[TEST] Before compute: a[0]=%.1f b[0]=%.1f c[0]=%.1f\n%!"
+    (Vector.get a 0)
+    (Vector.get b 0)
+    (Vector.get c 0) ;
 
   let block_sz = !block_size in
   let grid_sz = (!size + block_sz - 1) / block_sz in
@@ -118,7 +132,27 @@ let run_v2_on_device (dev : Device.t) =
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
 
-  (time_ms, Vector.to_array c)
+  (* Read back all three vectors to see what's in them *)
+  let result_a = Vector.to_array a in
+  let result_b = Vector.to_array b in
+  let result_c = Vector.to_array c in
+  Printf.eprintf "[TEST] After compute:\n" ;
+  Printf.eprintf
+    "  a[0]=%.1f a[1]=%.1f a[2]=%.1f\n%!"
+    result_a.(0)
+    result_a.(1)
+    result_a.(2) ;
+  Printf.eprintf
+    "  b[0]=%.1f b[1]=%.1f b[2]=%.1f\n%!"
+    result_b.(0)
+    result_b.(1)
+    result_b.(2) ;
+  Printf.eprintf
+    "  c[0]=%.1f c[1]=%.1f c[2]=%.1f\n%!"
+    result_c.(0)
+    result_c.(1)
+    result_c.(2) ;
+  (time_ms, result_c)
 
 (* Run kernel via interpreter directly *)
 let run_interpreter () =

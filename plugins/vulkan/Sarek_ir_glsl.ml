@@ -588,7 +588,7 @@ let gen_buffer_binding buf binding_idx v elem_type =
   Buffer.add_string
     buf
     (Printf.sprintf
-       "layout(std430, binding = %d) buffer Buffer_%s {\n"
+       "layout(set=0, binding = %d) buffer Buffer_%s {\n"
        binding_idx
        v.var_name) ;
   Buffer.add_string

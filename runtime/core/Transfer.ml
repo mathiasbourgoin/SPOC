@@ -248,6 +248,14 @@ let to_device (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : unit =
       If true, always transfer even if location is Both (useful after kernel
       writes) *)
 let to_cpu ?(force = false) (type a b) (vec : (a, b) Vector.t) : unit =
+  Printf.eprintf "[Transfer.to_cpu] CALLED: force=%b location=" force ;
+  (match vec.location with
+  | Vector.CPU -> Printf.eprintf "CPU"
+  | Vector.GPU _ -> Printf.eprintf "GPU"
+  | Vector.Both _ -> Printf.eprintf "Both"
+  | Vector.Stale_GPU _ -> Printf.eprintf "Stale_GPU"
+  | Vector.Stale_CPU _ -> Printf.eprintf "Stale_CPU") ;
+  Printf.eprintf "\n%!" ;
   let needs_transfer =
     match vec.location with
     | Vector.CPU -> false (* No device buffer *)
@@ -255,6 +263,7 @@ let to_cpu ?(force = false) (type a b) (vec : (a, b) Vector.t) : unit =
     | Vector.Stale_GPU _ -> false (* CPU already authoritative *)
     | Vector.GPU _ | Vector.Stale_CPU _ -> true
   in
+  Printf.eprintf "[Transfer.to_cpu] needs_transfer=%b\n%!" needs_transfer ;
   if needs_transfer then begin
     let dev =
       match vec.location with

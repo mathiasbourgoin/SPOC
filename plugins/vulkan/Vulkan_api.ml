@@ -419,6 +419,10 @@ module Memory = struct
         (vk_memory_property_host_visible_bit
        lor vk_memory_property_host_coherent_bit)
     in
+    Printf.eprintf
+      "[Vulkan] Memory allocation: type_idx=%d size=%d\n%!"
+      mem_type_idx
+      byte_size ;
 
     (* Allocate memory *)
     let alloc_info = make vk_memory_allocate_info in
@@ -557,6 +561,7 @@ module Memory = struct
     Printf.eprintf "[Vulkan] device_to_host: done\n%!"
 
   let host_ptr_to_device ~src_ptr ~byte_size ~dst =
+    Printf.eprintf "[Vulkan] host_ptr_to_device: byte_size=%d\n%!" byte_size ;
     let data = allocate (ptr void) null in
     check
       "vkMapMemory"
@@ -568,9 +573,11 @@ module Memory = struct
          (Unsigned.UInt32.of_int 0)
          data) ;
     let _ = memcpy !@data src_ptr (Unsigned.Size_t.of_int byte_size) in
-    vkUnmapMemory dst.device.Device.device dst.memory
+    vkUnmapMemory dst.device.Device.device dst.memory ;
+    Printf.eprintf "[Vulkan] host_ptr_to_device: done\n%!"
 
   let device_to_host_ptr ~src ~dst_ptr ~byte_size =
+    Printf.eprintf "[Vulkan] device_to_host_ptr: byte_size=%d\n%!" byte_size ;
     let data = allocate (ptr void) null in
     check
       "vkMapMemory"
@@ -582,7 +589,8 @@ module Memory = struct
          (Unsigned.UInt32.of_int 0)
          data) ;
     let _ = memcpy dst_ptr !@data (Unsigned.Size_t.of_int byte_size) in
-    vkUnmapMemory src.device.Device.device src.memory
+    vkUnmapMemory src.device.Device.device src.memory ;
+    Printf.eprintf "[Vulkan] device_to_host_ptr: done\n%!"
 
   let device_to_device ~src:_ ~dst:_ =
     failwith "Vulkan device_to_device: not implemented (use staging buffer)"
@@ -1069,14 +1077,28 @@ module Kernel = struct
       (vkAllocateDescriptorSets device.Device.device (addr alloc_info) desc_set) ;
 
     (* Update descriptor set with buffer bindings *)
+    (* Reverse the list because we built it with :: (prepend) *)
+    let bindings_in_order = List.rev args.bindings in
+    Printf.eprintf
+      "[Vulkan] Processing %d bindings (reversed list)\n%!"
+      (List.length bindings_in_order) ;
     let writes =
-      CArray.make vk_write_descriptor_set (List.length args.bindings)
+      CArray.make vk_write_descriptor_set (List.length bindings_in_order)
     in
     let buf_infos =
-      CArray.make vk_descriptor_buffer_info (List.length args.bindings)
+      CArray.make vk_descriptor_buffer_info (List.length bindings_in_order)
     in
     List.iteri
       (fun i (binding, AnyBuf buf) ->
+        Printf.eprintf
+          "[Vulkan] Descriptor update %d: binding=%d buffer=%Ld size=%d \
+           elem_size=%d\n\
+           %!"
+          i
+          binding
+          (Unsigned.UInt64.to_int64 buf.buffer)
+          buf.size
+          buf.elem_size ;
         let buf_info = CArray.get buf_infos i in
         setf buf_info desc_buf_buffer buf.buffer ;
         setf buf_info desc_buf_offset (Unsigned.UInt64.of_int 0) ;
@@ -1098,8 +1120,11 @@ module Kernel = struct
         setf write write_desc_pBufferInfo (CArray.start buf_infos +@ i) ;
         setf write write_desc_pTexelBufferView null ;
         CArray.set writes i write)
-      args.bindings ;
+      bindings_in_order ;
 
+    Printf.eprintf
+      "[Vulkan] Updating descriptor sets with %d bindings\n%!"
+      (List.length bindings_in_order) ;
     vkUpdateDescriptorSets
       device.Device.device
       (Unsigned.UInt32.of_int (List.length args.bindings))
@@ -1134,15 +1159,18 @@ module Kernel = struct
       vk_pipeline_bind_point_compute
       kernel.pipeline ;
 
+    Printf.eprintf "[Vulkan] Binding descriptor set...\n%!" ;
     vkCmdBindDescriptorSets
       stream.Stream.command_buffer
       vk_pipeline_bind_point_compute
       kernel.pipeline_layout
-      (Unsigned.UInt32.of_int 0)
-      (Unsigned.UInt32.of_int 1)
-      desc_set
-      (Unsigned.UInt32.of_int 0)
+      (Unsigned.UInt32.of_int 0) (* first set *)
+      (Unsigned.UInt32.of_int 1) (* descriptor set count *)
+      (allocate vk_descriptor_set !@desc_set) (* pointer to descriptor set *)
+      (Unsigned.UInt32.of_int 0) (* dynamic offset count *)
       (from_voidp uint32_t null) ;
+    (* dynamic offsets *)
+    Printf.eprintf "[Vulkan] Descriptor set bound\n%!" ;
 
     (* Push constants for scalar arguments *)
     (match args.push_constants with
@@ -1215,8 +1243,10 @@ module Kernel = struct
          (Unsigned.UInt32.of_int 1)
          (addr submit_info)
          stream.Stream.fence) ;
+    Printf.eprintf "[Vulkan] Command buffer submitted to queue\n%!" ;
 
     (* Wait for completion *)
+    Printf.eprintf "[Vulkan] Waiting for fence...\n%!" ;
     check
       "vkWaitForFences"
       (vkWaitForFences
@@ -1224,7 +1254,34 @@ module Kernel = struct
          (Unsigned.UInt32.of_int 1)
          (allocate vk_fence stream.Stream.fence)
          vk_true
-         (Unsigned.UInt64.of_int64 Int64.max_int))
+         (Unsigned.UInt64.of_int64 Int64.max_int)) ;
+    Printf.eprintf "[Vulkan] Fence signaled, compute complete\n%!" ;
+
+    (* DEBUG: Directly map and read buffer c to see if data was written *)
+    Printf.eprintf
+      "[Vulkan DEBUG] Directly reading buffer c after compute...\n%!" ;
+    let c_binding =
+      List.find (fun (binding, _) -> binding = 2) bindings_in_order
+    in
+    match c_binding with
+    | _, AnyBuf buf_c ->
+        let data_ptr = allocate (ptr void) null in
+        check
+          "vkMapMemory (debug)"
+          (vkMapMemory
+             device.Device.device
+             buf_c.memory
+             (Unsigned.UInt64.of_int 0)
+             (Unsigned.UInt64.of_int (buf_c.size * buf_c.elem_size))
+             (Unsigned.UInt32.of_int 0)
+             data_ptr) ;
+        let float_ptr = Ctypes.from_voidp Ctypes.float !@data_ptr in
+        Printf.eprintf "[Vulkan DEBUG] Buffer c contents: " ;
+        for i = 0 to min 4 (buf_c.size - 1) do
+          Printf.eprintf "%.1f " Ctypes.(!@(float_ptr +@ i))
+        done ;
+        Printf.eprintf "\n%!" ;
+        vkUnmapMemory device.Device.device buf_c.memory
 end
 
 (** {1 Utility Functions} *)
