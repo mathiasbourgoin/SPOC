@@ -611,16 +611,8 @@ let rec gen_stmt buf indent = function
       Buffer.add_string buf indent ;
       gen_expr buf e ;
       Buffer.add_string buf ";\n"
-  | SLet (v, EArrayCreate (elem_ty, size, Shared), body) ->
-      let vn = escape_glsl_name v.var_name in
-      Buffer.add_string buf indent ;
-      Buffer.add_string buf "shared " ;
-      Buffer.add_string buf (glsl_type_of_elttype elem_ty) ;
-      Buffer.add_char buf ' ' ;
-      Buffer.add_string buf vn ;
-      Buffer.add_char buf '[' ;
-      gen_expr buf size ;
-      Buffer.add_string buf "];\n" ;
+  | SLet (_v, EArrayCreate (_, _, Shared), body) ->
+      (* Shared declarations are hoisted to module scope, so just emit the body *)
       gen_stmt buf indent body
   | SLet (v, EArrayCreate (elem_ty, size, _), body) ->
       let vn = escape_glsl_name v.var_name in
@@ -765,6 +757,46 @@ let gen_push_constants buf params =
     Buffer.add_string buf "\n"
   end
 
+(** Collect shared array declarations from a statement tree.
+    Returns list of (name, elem_type, size_expr) *)
+let rec collect_shared_decls (s : stmt) : (string * elttype * expr) list =
+  match s with
+  | SLet (v, EArrayCreate (elem_ty, size, Shared), body) ->
+      (escape_glsl_name v.var_name, elem_ty, size) :: collect_shared_decls body
+  | SLet (_, _, body) | SLetMut (_, _, body) -> collect_shared_decls body
+  | SSeq stmts -> List.concat_map collect_shared_decls stmts
+  | SFor (_, _, _, _, body) -> collect_shared_decls body
+  | SWhile (_, body) -> collect_shared_decls body
+  | SIf (_, st, sf_opt) ->
+      let sf_decls =
+        match sf_opt with Some sf -> collect_shared_decls sf | None -> []
+      in
+      collect_shared_decls st @ sf_decls
+  | SBlock body -> collect_shared_decls body
+  | SPragma (_, body) -> collect_shared_decls body
+  | SMatch (_, cases) ->
+      List.concat_map (fun (_, body) -> collect_shared_decls body) cases
+  | SEmpty | SBarrier | SWarpBarrier | SMemFence | SNative _ | SExpr _
+  | SAssign _ | SReturn _ ->
+      []
+
+(** Generate shared declarations at module scope *)
+let gen_shared_decls buf (decls : (string * elttype * expr) list) =
+  if decls <> [] then begin
+    Buffer.add_string buf "// Shared memory\n" ;
+    List.iter
+      (fun (name, elem_ty, size) ->
+        Buffer.add_string buf "shared " ;
+        Buffer.add_string buf (glsl_type_of_elttype elem_ty) ;
+        Buffer.add_char buf ' ' ;
+        Buffer.add_string buf name ;
+        Buffer.add_char buf '[' ;
+        gen_expr buf size ;
+        Buffer.add_string buf "];\n")
+      decls ;
+    Buffer.add_char buf '\n'
+  end
+
 (** Generate complete GLSL source for a kernel *)
 let generate (k : kernel) : string =
   let buf = Buffer.create 1024 in
@@ -786,6 +818,10 @@ let generate (k : kernel) : string =
 
   (* Generate push constants *)
   gen_push_constants buf k.kern_params ;
+
+  (* Generate shared declarations at module scope (GLSL requirement) *)
+  let shared_decls = collect_shared_decls k.kern_body in
+  gen_shared_decls buf shared_decls ;
 
   (* Generate helper functions *)
   List.iter (gen_helper_func buf) k.kern_funcs ;
@@ -890,6 +926,10 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
 
   (* Generate push constants *)
   gen_push_constants buf k.kern_params ;
+
+  (* Generate shared declarations at module scope (GLSL requirement) *)
+  let shared_decls = collect_shared_decls k.kern_body in
+  gen_shared_decls buf shared_decls ;
 
   (* Generate helper functions *)
   List.iter (gen_helper_func buf) k.kern_funcs ;

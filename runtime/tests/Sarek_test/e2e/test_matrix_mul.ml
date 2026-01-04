@@ -373,6 +373,7 @@ let () =
   cfg.dev_id <- c.dev_id ;
   cfg.use_interpreter <- c.use_interpreter ;
   cfg.use_native <- c.use_native ;
+  cfg.use_vulkan <- c.use_vulkan ;
   cfg.benchmark_all <- c.benchmark_all ;
   cfg.benchmark_devices <- c.benchmark_devices ;
   cfg.verify <- c.verify ;
@@ -390,7 +391,7 @@ let () =
 
   (* Init runtime devices - unified path for all backends *)
   let devs =
-    Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+    Device.init ~frameworks:["CUDA"; "OpenCL"; "Vulkan"; "Native"; "Interpreter"] ()
   in
   Printf.printf "Found %d runtime device(s)\n" (Array.length devs) ;
   Array.iteri
@@ -472,11 +473,7 @@ let () =
   end
   else begin
     (* Single device mode - use runtime *)
-    let dev =
-      if cfg.dev_id >= 0 && cfg.dev_id < Array.length devs then
-        devs.(cfg.dev_id)
-      else devs.(0)
-    in
+    let dev = Test_helpers.get_device cfg devs in
     Printf.printf
       "Using device: %s (%s)\n%!"
       dev.Device.name

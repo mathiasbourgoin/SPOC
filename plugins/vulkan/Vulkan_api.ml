@@ -1189,8 +1189,9 @@ module Kernel = struct
     match args.push_constants with
     | Some pc -> pc
     | None ->
-        let pc = Bytes.create 16 in
-        (* 16 bytes: 4 ints (a_len, b_len, c_len, n) *)
+        (* Vulkan guarantees at least 128 bytes of push constants.
+           This accommodates vector lengths + scalar arguments. *)
+        let pc = Bytes.create 128 in
         args.push_constants <- Some pc ;
         pc
 
