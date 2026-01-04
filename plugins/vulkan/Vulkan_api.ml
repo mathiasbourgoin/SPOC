@@ -1167,8 +1167,11 @@ module Kernel = struct
 
     (* Pipeline barrier: Make host writes visible to compute shader *)
     (* Must come BEFORE binding pipeline, like C example *)
+    (* IMPORTANT: Keep barrier structures alive until after vkQueueSubmit! *)
     Printf.eprintf
       "[Vulkan] Adding pipeline barriers (HOST -> COMPUTE_SHADER)...\n%!" ;
+    let pre_barriers = ref [] in
+    (* Keep barriers alive! *)
     List.iter
       (fun (_, AnyBuf buf) ->
         let barrier = make vk_buffer_memory_barrier in
@@ -1197,6 +1200,9 @@ module Kernel = struct
           buf_barrier_size
           (Unsigned.UInt64.of_int (buf.size * buf.elem_size)) ;
 
+        pre_barriers := barrier :: !pre_barriers ;
+
+        (* Keep alive! *)
         vkCmdPipelineBarrier
           stream.Stream.command_buffer
           (Unsigned.UInt32.of_int vk_pipeline_stage_host_bit) (* src stage *)
@@ -1297,8 +1303,11 @@ module Kernel = struct
       (Unsigned.UInt32.of_int gz) ;
 
     (* Post-compute barrier: Make shader writes visible to host *)
+    (* IMPORTANT: Keep barrier structures alive until after vkQueueSubmit! *)
     Printf.eprintf
       "[Vulkan] Adding post-compute barriers (COMPUTE_SHADER -> HOST)...\n%!" ;
+    let post_barriers = ref [] in
+    (* Keep barriers alive! *)
     List.iter
       (fun (_, AnyBuf buf) ->
         let barrier = make vk_buffer_memory_barrier in
@@ -1327,6 +1336,9 @@ module Kernel = struct
           buf_barrier_size
           (Unsigned.UInt64.of_int (buf.size * buf.elem_size)) ;
 
+        post_barriers := barrier :: !post_barriers ;
+
+        (* Keep alive! *)
         vkCmdPipelineBarrier
           stream.Stream.command_buffer
           (Unsigned.UInt32.of_int vk_pipeline_stage_compute_shader_bit)
@@ -1394,6 +1406,11 @@ module Kernel = struct
          vk_true
          (Unsigned.UInt64.of_int64 Int64.max_int)) ;
     Printf.eprintf "[Vulkan] Fence signaled, compute complete\n%!" ;
+
+    (* Keep barriers and submit_info alive until fence completes - prevent GC *)
+    ignore (List.length !pre_barriers) ;
+    ignore (List.length !post_barriers) ;
+    ignore (getf submit_info submit_commandBufferCount) ;
 
     (* DEBUG: Directly map and read buffer c to see if data was written *)
     Printf.eprintf
