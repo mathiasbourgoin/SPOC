@@ -38,23 +38,23 @@ let rec glsl_type_of_elttype = function
 (** {1 Thread Intrinsics} *)
 
 let glsl_thread_intrinsic = function
-  | "thread_id_x" | "thread_idx_x" -> "gl_LocalInvocationID.x"
-  | "thread_id_y" | "thread_idx_y" -> "gl_LocalInvocationID.y"
-  | "thread_id_z" | "thread_idx_z" -> "gl_LocalInvocationID.z"
-  | "block_id_x" | "block_idx_x" -> "gl_WorkGroupID.x"
-  | "block_id_y" | "block_idx_y" -> "gl_WorkGroupID.y"
-  | "block_id_z" | "block_idx_z" -> "gl_WorkGroupID.z"
-  | "block_dim_x" -> "gl_WorkGroupSize.x"
-  | "block_dim_y" -> "gl_WorkGroupSize.y"
-  | "block_dim_z" -> "gl_WorkGroupSize.z"
-  | "grid_dim_x" -> "gl_NumWorkGroups.x"
-  | "grid_dim_y" -> "gl_NumWorkGroups.y"
-  | "grid_dim_z" -> "gl_NumWorkGroups.z"
+  | "thread_id_x" | "thread_idx_x" -> "int(gl_LocalInvocationID.x)"
+  | "thread_id_y" | "thread_idx_y" -> "int(gl_LocalInvocationID.y)"
+  | "thread_id_z" | "thread_idx_z" -> "int(gl_LocalInvocationID.z)"
+  | "block_id_x" | "block_idx_x" -> "int(gl_WorkGroupID.x)"
+  | "block_id_y" | "block_idx_y" -> "int(gl_WorkGroupID.y)"
+  | "block_id_z" | "block_idx_z" -> "int(gl_WorkGroupID.z)"
+  | "block_dim_x" -> "int(gl_WorkGroupSize.x)"
+  | "block_dim_y" -> "int(gl_WorkGroupSize.y)"
+  | "block_dim_z" -> "int(gl_WorkGroupSize.z)"
+  | "grid_dim_x" -> "int(gl_NumWorkGroups.x)"
+  | "grid_dim_y" -> "int(gl_NumWorkGroups.y)"
+  | "grid_dim_z" -> "int(gl_NumWorkGroups.z)"
   | "global_thread_id" | "global_idx" | "global_idx_x" ->
-      "gl_GlobalInvocationID.x"
-  | "global_idx_y" -> "gl_GlobalInvocationID.y"
-  | "global_idx_z" -> "gl_GlobalInvocationID.z"
-  | "global_size" -> "(gl_WorkGroupSize.x * gl_NumWorkGroups.x)"
+      "int(gl_GlobalInvocationID.x)"
+  | "global_idx_y" -> "int(gl_GlobalInvocationID.y)"
+  | "global_idx_z" -> "int(gl_GlobalInvocationID.z)"
+  | "global_size" -> "int(gl_WorkGroupSize.x * gl_NumWorkGroups.x)"
   | name -> failwith ("Unknown thread intrinsic: " ^ name)
 
 (** {1 Expression Generation} *)
@@ -597,6 +597,31 @@ let gen_buffer_binding buf binding_idx v elem_type =
     (Printf.sprintf "  %s data[];\n" (glsl_type_of_elttype elem_type)) ;
   Buffer.add_string buf (Printf.sprintf "} %s;\n" v.var_name)
 
+let gen_push_constants buf params =
+  (* Collect all scalar parameters *)
+  let scalars =
+    List.filter_map
+      (fun decl ->
+        match decl with
+        | DParam (v, _) -> (
+            match v.var_type with TVec _ -> None | _ -> Some v)
+        | _ -> None)
+      params
+  in
+  if scalars <> [] then begin
+    Buffer.add_string buf "layout(push_constant) uniform PushConstants {\n" ;
+    List.iter
+      (fun v ->
+        Buffer.add_string
+          buf
+          (Printf.sprintf
+             "  %s %s;\n"
+             (glsl_type_of_elttype v.var_type)
+             v.var_name))
+      scalars ;
+    Buffer.add_string buf "};\n"
+  end
+
 (** Generate complete GLSL source for a kernel *)
 let generate (k : kernel) : string =
   let buf = Buffer.create 4096 in
@@ -620,6 +645,11 @@ let generate (k : kernel) : string =
 
   Buffer.add_char buf '\n' ;
 
+  (* Generate push constants for scalar parameters *)
+  gen_push_constants buf k.kern_params ;
+
+  Buffer.add_char buf '\n' ;
+
   (* Generate helper functions before main *)
   List.iter (gen_helper_func buf) k.kern_funcs ;
 
@@ -632,7 +662,9 @@ let generate (k : kernel) : string =
   (* Close main *)
   Buffer.add_string buf "}\n" ;
 
-  Buffer.contents buf
+  let result = Buffer.contents buf in
+  Printf.eprintf "[GLSL] Generated shader:\n%s\n%!" result ;
+  result
 
 (** Generate GLSL variant type definition *)
 let gen_variant_def buf (name, constrs) =
@@ -729,6 +761,11 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
 
   Buffer.add_char buf '\n' ;
 
+  (* Generate push constants for scalar parameters *)
+  gen_push_constants buf k.kern_params ;
+
+  Buffer.add_char buf '\n' ;
+
   (* Generate helper functions before main *)
   List.iter (gen_helper_func buf) k.kern_funcs ;
 
@@ -741,4 +778,6 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
   (* Close main *)
   Buffer.add_string buf "}\n" ;
 
-  Buffer.contents buf
+  let result = Buffer.contents buf in
+  Printf.eprintf "[GLSL] Generated shader (with types):\n%s\n%!" result ;
+  result
