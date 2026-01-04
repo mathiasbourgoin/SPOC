@@ -64,14 +64,14 @@ let () =
   print_endline "======================" ;
 
   print_endline "\n=== Running V2 path ===" ;
-  let v2_devs =
+  let devs =
     Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
-  if Array.length v2_devs = 0 then (
+  if Array.length devs = 0 then (
     print_endline "V2: No device found - IR test passed" ;
     exit 0) ;
 
-  let dev = v2_devs.(0) in
+  let dev = devs.(0) in
   Printf.printf "Using device: %s\n%!" dev.Device.name ;
 
   (match kirc_kernel.Sarek.Kirc_types.body_ir with
@@ -88,19 +88,19 @@ let () =
       let bay = Array.init n (fun i -> float_of_int (i mod 5) /. 10.0) in
       let baz = Array.init n (fun i -> float_of_int (i mod 3) /. 10.0) in
 
-      let v2_xs = Vector.create Vector.float32 n in
-      let v2_ys = Vector.create Vector.float32 n in
-      let v2_zs = Vector.create Vector.float32 n in
-      let v2_ax = Vector.create Vector.float32 n in
-      let v2_ay = Vector.create Vector.float32 n in
-      let v2_az = Vector.create Vector.float32 n in
+      let xs = Vector.create Vector.float32 n in
+      let ys = Vector.create Vector.float32 n in
+      let zs = Vector.create Vector.float32 n in
+      let ax = Vector.create Vector.float32 n in
+      let ay = Vector.create Vector.float32 n in
+      let az = Vector.create Vector.float32 n in
       for i = 0 to n - 1 do
-        Vector.set v2_xs i bax.(i) ;
-        Vector.set v2_ys i bay.(i) ;
-        Vector.set v2_zs i baz.(i) ;
-        Vector.set v2_ax i 0.0 ;
-        Vector.set v2_ay i 0.0 ;
-        Vector.set v2_az i 0.0
+        Vector.set xs i bax.(i) ;
+        Vector.set ys i bay.(i) ;
+        Vector.set zs i baz.(i) ;
+        Vector.set ax i 0.0 ;
+        Vector.set ay i 0.0 ;
+        Vector.set az i 0.0
       done ;
 
       let block = Sarek.Execute.dims1d threads in
@@ -111,12 +111,12 @@ let () =
         ~ir
         ~args:
           [
-            Sarek.Execute.Vec v2_xs;
-            Sarek.Execute.Vec v2_ys;
-            Sarek.Execute.Vec v2_zs;
-            Sarek.Execute.Vec v2_ax;
-            Sarek.Execute.Vec v2_ay;
-            Sarek.Execute.Vec v2_az;
+            Sarek.Execute.Vec xs;
+            Sarek.Execute.Vec ys;
+            Sarek.Execute.Vec zs;
+            Sarek.Execute.Vec ax;
+            Sarek.Execute.Vec ay;
+            Sarek.Execute.Vec az;
             Sarek.Execute.Int n;
           ]
         ~block
@@ -125,7 +125,7 @@ let () =
       Transfer.flush dev ;
 
       (* Verify results against CPU reference *)
-      let v2_ok = ref true in
+      let ok = ref true in
       for i = 0 to n - 1 do
         let px = bax.(i) and py = bay.(i) and pz = baz.(i) in
         let rfx = ref 0.0 and rfy = ref 0.0 and rfz = ref 0.0 in
@@ -141,15 +141,15 @@ let () =
             rfy := !rfy +. (dy *. inv) ;
             rfz := !rfz +. (dz *. inv))
         done ;
-        let gx = Vector.get v2_ax i
-        and gy = Vector.get v2_ay i
-        and gz = Vector.get v2_az i in
+        let gx = Vector.get ax i
+        and gy = Vector.get ay i
+        and gz = Vector.get az i in
         if
           abs_float (gx -. !rfx) > 1e-3
           || abs_float (gy -. !rfy) > 1e-3
           || abs_float (gz -. !rfz) > 1e-3
         then (
-          v2_ok := false ;
+          ok := false ;
           Printf.printf
             "V2 Mismatch at %d: GPU (%f,%f,%f) CPU (%f,%f,%f)\n%!"
             i
@@ -160,7 +160,7 @@ let () =
             !rfy
             !rfz)
       done ;
-      if !v2_ok then print_endline "NBody PPX (V2) PASSED"
+      if !ok then print_endline "NBody PPX (V2) PASSED"
       else (
         print_endline "NBody PPX (V2) FAILED" ;
         exit 1)) ;

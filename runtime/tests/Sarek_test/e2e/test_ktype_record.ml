@@ -39,28 +39,24 @@ let () =
 
   (* V2 execution *)
   print_endline "\n=== V2 Path ===" ;
-  let v2_devs =
+  let devs =
     Device.init ~frameworks:["Interpreter"; "Native"; "CUDA"; "OpenCL"] ()
   in
-  if Array.length v2_devs = 0 then begin
+  if Array.length devs = 0 then begin
     print_endline "No V2 devices found - IR generation test passed" ;
     exit 0
   end ;
 
-  let v2_dev =
-    match
-      Array.find_opt (fun d -> d.Device.framework = "Interpreter") v2_devs
-    with
+  let dev =
+    match Array.find_opt (fun d -> d.Device.framework = "Interpreter") devs with
     | Some d -> d
     | None -> (
-        match
-          Array.find_opt (fun d -> d.Device.framework = "Native") v2_devs
-        with
+        match Array.find_opt (fun d -> d.Device.framework = "Native") devs with
         | Some d -> d
-        | None -> v2_devs.(0))
+        | None -> devs.(0))
   in
-  Printf.printf "V2 device: %s\n%!" v2_dev.Device.name ;
-  if v2_dev.framework <> "Native" then (
+  Printf.printf "V2 device: %s\n%!" dev.Device.name ;
+  if dev.framework <> "Native" then (
     Printf.printf "V2: SKIP (record test checked on native backend only)\n%!" ;
     exit 0) ;
   print_string "V2: " ;
@@ -80,7 +76,7 @@ let () =
       | None -> failwith "Kernel has no V2 IR"
     in
     Sarek.Execute.run_vectors
-      ~device:v2_dev
+      ~device:dev
       ~block:(Sarek.Execute.dims1d threads)
       ~grid:(Sarek.Execute.dims1d grid_x)
       ~ir
@@ -91,7 +87,7 @@ let () =
           Sarek.Execute.Int32 (Int32.of_int n);
         ]
       () ;
-    Transfer.flush v2_dev ;
+    Transfer.flush dev ;
     (* Verify: dst[i].x should be src[i].x + 1.0, dst[i].y should be src[i].y *)
     let ok = ref true in
     for i = 0 to n - 1 do

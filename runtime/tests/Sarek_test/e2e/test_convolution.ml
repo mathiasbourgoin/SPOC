@@ -133,12 +133,12 @@ let () =
 
   init_conv1d_data () ;
 
-  let v2_devs = Test_helpers.init_devices cfg in
-  if Array.length v2_devs = 0 then begin
+  let devs = Test_helpers.init_devices cfg in
+  if Array.length devs = 0 then begin
     print_endline "No devices found" ;
     exit 1
   end ;
-  Test_helpers.print_devices v2_devs ;
+  Test_helpers.print_devices devs ;
 
   if cfg.benchmark_all then begin
     print_endline (String.make 60 '-') ;
@@ -148,25 +148,25 @@ let () =
     let all_ok = ref true in
 
     Array.iter
-      (fun v2_dev ->
-        let name = v2_dev.Device.name in
-        let framework = v2_dev.Device.framework in
+      (fun dev ->
+        let name = dev.Device.name in
+        let framework = dev.Device.framework in
 
-        let v2_time, v2_result = run_conv1d v2_dev in
-        let v2_ok =
+        let time, result = run_conv1d dev in
+        let ok =
           (not cfg.verify)
-          || verify_float_arrays "V2" v2_result !expected_1d 0.0001
+          || verify_float_arrays "V2" result !expected_1d 0.0001
         in
-        let v2_status = if v2_ok then "OK" else "FAIL" in
+        let status = if ok then "OK" else "FAIL" in
 
-        if not v2_ok then all_ok := false ;
+        if not ok then all_ok := false ;
 
         Printf.printf
           "%-35s %10.4f %10s\n"
           (Printf.sprintf "%s (%s)" name framework)
-          v2_time
-          v2_status)
-      v2_devs ;
+          time
+          status)
+      devs ;
 
     print_endline (String.make 60 '-') ;
 
@@ -177,18 +177,18 @@ let () =
     end
   end
   else begin
-    let dev = Test_helpers.get_device cfg v2_devs in
+    let dev = Test_helpers.get_device cfg devs in
     Printf.printf "Using device: %s\n%!" dev.Device.name ;
 
     Printf.printf "\nRunning V2 path (1D convolution)...\n%!" ;
-    let v2_time, v2_result = run_conv1d dev in
-    Printf.printf "  Time: %.4f ms\n%!" v2_time ;
-    let v2_ok =
-      (not cfg.verify) || verify_float_arrays "V2" v2_result !expected_1d 0.0001
+    let time, result = run_conv1d dev in
+    Printf.printf "  Time: %.4f ms\n%!" time ;
+    let ok =
+      (not cfg.verify) || verify_float_arrays "V2" result !expected_1d 0.0001
     in
-    Printf.printf "  Status: %s\n%!" (if v2_ok then "PASSED" else "FAILED") ;
+    Printf.printf "  Status: %s\n%!" (if ok then "PASSED" else "FAILED") ;
 
-    if v2_ok then print_endline "\nConvolution tests PASSED"
+    if ok then print_endline "\nConvolution tests PASSED"
     else begin
       print_endline "\nConvolution tests FAILED" ;
       exit 1

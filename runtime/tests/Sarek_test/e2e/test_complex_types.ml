@@ -330,36 +330,32 @@ let () =
 
   (* V2 execution tests *)
   print_endline "=== Complex Types V2 Tests ===" ;
-  let v2_devs =
+  let devs =
     Device.init ~frameworks:["Interpreter"; "Native"; "CUDA"; "OpenCL"] ()
   in
-  if Array.length v2_devs = 0 then begin
+  if Array.length devs = 0 then begin
     print_endline "No devices found" ;
     exit 1
   end ;
-  Test_helpers.print_devices v2_devs ;
+  Test_helpers.print_devices devs ;
 
-  let v2_dev =
-    match
-      Array.find_opt (fun d -> d.Device.framework = "Interpreter") v2_devs
-    with
+  let dev =
+    match Array.find_opt (fun d -> d.Device.framework = "Interpreter") devs with
     | Some d -> d
     | None -> (
-        match
-          Array.find_opt (fun d -> d.Device.framework = "Native") v2_devs
-        with
+        match Array.find_opt (fun d -> d.Device.framework = "Native") devs with
         | Some d -> d
-        | None -> Test_helpers.get_device cfg v2_devs)
+        | None -> Test_helpers.get_device cfg devs)
   in
-  Printf.printf "Using device: %s\n%!" v2_dev.Device.name ;
-  if v2_dev.framework <> "Native" then (
+  Printf.printf "Using device: %s\n%!" dev.Device.name ;
+  if dev.framework <> "Native" then (
     Printf.printf "SKIP (complex type tests checked on native backend only)\n%!" ;
     exit 0) ;
   let n = cfg.size in
 
   print_endline "\nPoint2D distance:" ;
   (try
-     let ok, time = run_point2d_test v2_dev n in
+     let ok, time = run_point2d_test dev n in
      Printf.printf
        "  V2 exec: %.2f ms, %s\n%!"
        time
@@ -371,10 +367,10 @@ let () =
 
   print_endline "Point3D normalize:" ;
   (try
-     if v2_dev.framework <> "Native" then
+     if dev.framework <> "Native" then
        Printf.printf "  SKIP (checked on native backend only)\n%!"
      else
-       let ok, time = run_point3d_test v2_dev n in
+       let ok, time = run_point3d_test dev n in
        Printf.printf
          "  V2 exec: %.2f ms, %s\n%!"
          time
@@ -386,10 +382,10 @@ let () =
 
   print_endline "Particle update:" ;
   (try
-     if v2_dev.framework <> "Native" then
+     if dev.framework <> "Native" then
        Printf.printf "  SKIP (checked on native backend only)\n%!"
      else
-       let ok, time = run_particle_test v2_dev n in
+       let ok, time = run_particle_test dev n in
        Printf.printf
          "  V2 exec: %.2f ms, %s\n%!"
          time
@@ -401,10 +397,10 @@ let () =
 
   print_endline "Color blend:" ;
   (try
-     if v2_dev.framework <> "Native" then
+     if dev.framework <> "Native" then
        Printf.printf "  SKIP (checked on native backend only)\n%!"
      else
-       let ok, time = run_color_test v2_dev n in
+       let ok, time = run_color_test dev n in
        Printf.printf
          "  V2 exec: %.2f ms, %s\n%!"
          time

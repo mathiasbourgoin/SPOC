@@ -334,8 +334,6 @@ type gen_context = {
       (** Current module name for same-module type detection *)
   gen_mode : gen_mode;
       (** Generation mode - affects how thread indices are accessed *)
-  use_v2 : bool;
-      (** Use V2 Vector API (Spoc_core.Vector) instead of SPOC (Spoc.Mem) *)
 }
 
 (** Empty generation context *)
@@ -345,8 +343,6 @@ let empty_ctx =
     inline_types = StringSet.empty;
     current_module = None;
     gen_mode = FullMode;
-    use_v2 = true;
-    (* V2 is now the default - SPOC path removed *)
   }
 
 (** Check if a qualified type name is from the current module. For
@@ -1068,11 +1064,8 @@ let module_name_of_sarek_loc (loc : Sarek_ast.loc) : string =
 let gen_expr ~loc e = gen_expr_impl ~loc ~ctx:empty_ctx e
 
 (** Generate expression with inline types context for first-class modules. *)
-let gen_expr_with_inline_types ~loc ~inline_type_names ~current_module
-    ?(use_v2 = false) e =
-  let ctx =
-    {empty_ctx with inline_types = inline_type_names; current_module; use_v2}
-  in
+let gen_expr_with_inline_types ~loc ~inline_type_names ~current_module e =
+  let ctx = {empty_ctx with inline_types = inline_type_names; current_module} in
   gen_expr_impl ~loc ~ctx e
 
 (** {1 Module Item Generation} *)
@@ -1982,10 +1975,9 @@ let gen_cpu_kern_native ~loc (kernel : tkernel) : expression =
         ~loc
         ~inline_type_names
         ~current_module
-        ~use_v2:true
         kernel.tkern_body
     else
-      let ctx = {empty_ctx with current_module; use_v2 = true} in
+      let ctx = {empty_ctx with current_module} in
       gen_expr_impl ~loc ~ctx kernel.tkern_body
   in
 
@@ -2080,13 +2072,7 @@ let gen_simple_cpu_kern_native ~loc ~exec_strategy (kernel : tkernel) :
   let gen_mode = gen_mode_of_exec_strategy exec_strategy in
 
   let ctx =
-    {
-      empty_ctx with
-      current_module;
-      inline_types = inline_type_names;
-      gen_mode;
-      use_v2 = true;
-    }
+    {empty_ctx with current_module; inline_types = inline_type_names; gen_mode}
   in
   let body_e = gen_expr_impl ~loc ~ctx kernel.tkern_body in
 

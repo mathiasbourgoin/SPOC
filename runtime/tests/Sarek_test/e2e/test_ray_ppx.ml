@@ -81,14 +81,14 @@ let () =
   print_endline "==================" ;
 
   print_endline "\n=== Running V2 path ===" ;
-  let v2_devs =
+  let devs =
     Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
-  if Array.length v2_devs = 0 then (
+  if Array.length devs = 0 then (
     print_endline "V2: No device found - IR test passed" ;
     exit 0) ;
 
-  let dev = v2_devs.(0) in
+  let dev = devs.(0) in
   Printf.printf "Using device: %s\n%!" dev.Device.name ;
 
   (match kirc_kernel.Sarek.Kirc_types.body_ir with
@@ -114,17 +114,17 @@ let () =
       in
       let baz = Array.make n (-1.5) in
 
-      let v2_dirx = Vector.create Vector.float32 n in
-      let v2_diry = Vector.create Vector.float32 n in
-      let v2_dirz = Vector.create Vector.float32 n in
-      let v2_out = Vector.create Vector.float32 (n * 3) in
+      let dirx = Vector.create Vector.float32 n in
+      let diry = Vector.create Vector.float32 n in
+      let dirz = Vector.create Vector.float32 n in
+      let out = Vector.create Vector.float32 (n * 3) in
       for i = 0 to n - 1 do
-        Vector.set v2_dirx i bax.(i) ;
-        Vector.set v2_diry i bay.(i) ;
-        Vector.set v2_dirz i baz.(i)
+        Vector.set dirx i bax.(i) ;
+        Vector.set diry i bay.(i) ;
+        Vector.set dirz i baz.(i)
       done ;
       for i = 0 to (n * 3) - 1 do
-        Vector.set v2_out i 0.0
+        Vector.set out i 0.0
       done ;
 
       let block = Sarek.Execute.dims1d threads in
@@ -135,10 +135,10 @@ let () =
         ~ir
         ~args:
           [
-            Sarek.Execute.Vec v2_dirx;
-            Sarek.Execute.Vec v2_diry;
-            Sarek.Execute.Vec v2_dirz;
-            Sarek.Execute.Vec v2_out;
+            Sarek.Execute.Vec dirx;
+            Sarek.Execute.Vec diry;
+            Sarek.Execute.Vec dirz;
+            Sarek.Execute.Vec out;
             Sarek.Execute.Int n;
           ]
         ~block
@@ -147,7 +147,7 @@ let () =
       Transfer.flush dev ;
 
       (* Verify V2 results and output PPM *)
-      let v2_ok = ref true in
+      let ok = ref true in
       let ppm = open_out "/tmp/ray_ppx.ppm" in
       Printf.fprintf ppm "P3\n%d %d\n255\n" w h ;
       for y = 0 to h - 1 do
@@ -177,15 +177,15 @@ let () =
               let t = 0.5 *. (dyn +. 1.0) in
               (1.0 -. t +. (t *. 0.5), 1.0 -. t +. (t *. 0.7), 1.0)
           in
-          let gx = Vector.get v2_out (idx + 0) in
-          let gy = Vector.get v2_out (idx + 1) in
-          let gz = Vector.get v2_out (idx + 2) in
+          let gx = Vector.get out (idx + 0) in
+          let gy = Vector.get out (idx + 1) in
+          let gz = Vector.get out (idx + 2) in
           if
             abs_float (gx -. r) > 1e-3
             || abs_float (gy -. g) > 1e-3
             || abs_float (gz -. b) > 1e-3
           then (
-            v2_ok := false ;
+            ok := false ;
             Printf.printf
               "V2 Mismatch at %d,%d GPU (%f,%f,%f) CPU (%f,%f,%f)\n%!"
               x
@@ -204,7 +204,7 @@ let () =
         done
       done ;
       close_out ppm ;
-      if !v2_ok then
+      if !ok then
         Printf.printf "Ray PPX (V2) PASSED (ppm: /tmp/ray_ppx.ppm)\n%!"
       else (
         print_endline "Ray PPX (V2) FAILED" ;

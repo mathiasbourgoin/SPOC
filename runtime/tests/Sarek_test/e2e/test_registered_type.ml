@@ -79,15 +79,15 @@ let () =
   Sarek.Kirc_Ast.print_ast kirc_kernel.Sarek.Kirc_types.body ;
   print_endline "==========================" ;
 
-  let v2_devs =
+  let devs =
     Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
 
-  if Array.length v2_devs = 0 then (
+  if Array.length devs = 0 then (
     print_endline "No V2 devices found - skipping execution" ;
     exit 0) ;
 
-  Printf.printf "Using device: %s\n%!" v2_devs.(0).Device.name ;
+  Printf.printf "Using device: %s\n%!" devs.(0).Device.name ;
 
   let n = 128 in
   let bax = Bigarray.Array1.create Bigarray.float32 Bigarray.c_layout n in
@@ -101,7 +101,7 @@ let () =
   print_string "V2: " ;
   flush stdout ;
   (try
-     let ok = run_v2 v2_devs.(0) n bax bay in
+     let ok = run_v2 devs.(0) n bax bay in
      if ok then print_endline "PASSED" else print_endline "FAIL (verification)"
    with e -> Printf.printf "FAIL (%s)\n%!" (Printexc.to_string e)) ;
 

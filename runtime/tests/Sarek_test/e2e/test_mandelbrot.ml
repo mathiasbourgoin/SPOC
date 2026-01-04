@@ -278,14 +278,14 @@ let () =
   cfg.block_size <- c.block_size ;
 
   (* Initialize V2 devices *)
-  let v2_devs =
+  let devs =
     Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
-  if Array.length v2_devs = 0 then begin
+  if Array.length devs = 0 then begin
     print_endline "No GPU devices found" ;
     exit 1
   end ;
-  Test_helpers.print_devices v2_devs ;
+  Test_helpers.print_devices devs ;
 
   let dim = int_of_float (sqrt (float_of_int cfg.size)) in
   Printf.printf "Image dimensions: %dx%d, max_iter=%d\n%!" dim dim !max_iter ;
@@ -296,52 +296,52 @@ let () =
   if cfg.benchmark_all then begin
     Printf.printf "\n=== V2 Runtime Benchmarks ===\n%!" ;
     Array.iter
-      (fun v2_dev ->
+      (fun dev ->
         let dev_label =
-          Printf.sprintf "%s (%s)" v2_dev.Device.name v2_dev.Device.framework
+          Printf.sprintf "%s (%s)" dev.Device.name dev.Device.framework
         in
         Printf.printf "\nV2 Mandelbrot on %s:\n%!" dev_label ;
-        let time_ms, ok = run_mandelbrot_test v2_dev in
+        let time_ms, ok = run_mandelbrot_test dev in
         Printf.printf
           "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
           time_ms
           (baseline_ms /. time_ms)
           (if ok then "PASSED" else "FAILED") ;
         Printf.printf "\nV2 Mandelbrot (tailrec) on %s:\n%!" dev_label ;
-        let tr_time_ms, tr_ok = run_mandelbrot_tailrec_test v2_dev in
+        let tr_time_ms, tr_ok = run_mandelbrot_tailrec_test dev in
         Printf.printf
           "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
           tr_time_ms
           (baseline_ms /. tr_time_ms)
           (if tr_ok then "PASSED" else "FAILED"))
-      v2_devs
+      devs
   end
   else begin
-    let v2_dev = Test_helpers.get_device cfg v2_devs in
-    Printf.printf "Using device: %s\n%!" v2_dev.Device.name ;
+    let dev = Test_helpers.get_device cfg devs in
+    Printf.printf "Using device: %s\n%!" dev.Device.name ;
 
     (* Run V2 Mandelbrot *)
     Printf.printf "\nMandelbrot (V2):\n%!" ;
-    let v2_time, v2_ok = run_mandelbrot_test v2_dev in
+    let time, ok = run_mandelbrot_test dev in
     Printf.printf
       "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
-      v2_time
-      (baseline_ms /. v2_time)
-      (if v2_ok then "PASSED" else "FAILED") ;
-    if not v2_ok then begin
+      time
+      (baseline_ms /. time)
+      (if ok then "PASSED" else "FAILED") ;
+    if not ok then begin
       print_endline "\nV2 Mandelbrot test FAILED" ;
       exit 1
     end ;
 
     (* V2 Tail-recursive test *)
     Printf.printf "\nMandelbrot (tail-recursive V2):\n%!" ;
-    let v2_tr_time, v2_tr_ok = run_mandelbrot_tailrec_test v2_dev in
+    let tr_time, tr_ok = run_mandelbrot_tailrec_test dev in
     Printf.printf
       "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
-      v2_tr_time
-      (baseline_ms /. v2_tr_time)
-      (if v2_tr_ok then "PASSED" else "FAILED") ;
-    if not v2_tr_ok then begin
+      tr_time
+      (baseline_ms /. tr_time)
+      (if tr_ok then "PASSED" else "FAILED") ;
+    if not tr_ok then begin
       print_endline "\nV2 Mandelbrot tailrec test FAILED" ;
       exit 1
     end ;

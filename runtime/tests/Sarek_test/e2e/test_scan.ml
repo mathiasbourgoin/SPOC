@@ -194,15 +194,15 @@ let () =
     "Size: %d elements (max 256 for block-level scan)\n\n"
     (min cfg.size 256) ;
 
-  let v2_devs =
+  let devs =
     Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
-  if Array.length v2_devs = 0 then begin
+  if Array.length devs = 0 then begin
     print_endline "No devices found" ;
     exit 1
   end ;
-  Test_helpers.print_devices v2_devs ;
-  Printf.printf "\nFound %d V2 device(s)\n\n" (Array.length v2_devs) ;
+  Test_helpers.print_devices devs ;
+  Printf.printf "\nFound %d V2 device(s)\n\n" (Array.length devs) ;
 
   let all_ok = ref true in
 
@@ -210,39 +210,35 @@ let () =
   ignore (init_ones_data ()) ;
   print_endline "=== Inclusive Scan (all ones) ===" ;
   Array.iter
-    (fun v2_dev ->
-      let name = v2_dev.Device.name in
-      let framework = v2_dev.Device.framework in
-      let v2_time, v2_ok =
-        run_inclusive_scan v2_dev !input_ones !expected_ones
-      in
+    (fun dev ->
+      let name = dev.Device.name in
+      let framework = dev.Device.framework in
+      let time, ok = run_inclusive_scan dev !input_ones !expected_ones in
       Printf.printf
         "  %s (%s): %.4f ms, %s\n%!"
         name
         framework
-        v2_time
-        (if v2_ok then "OK" else "FAIL") ;
-      if not v2_ok then all_ok := false)
-    v2_devs ;
+        time
+        (if ok then "OK" else "FAIL") ;
+      if not ok then all_ok := false)
+    devs ;
 
   (* Scan with varying values *)
   ignore (init_varying_data ()) ;
   print_endline "\n=== Inclusive Scan (varying values) ===" ;
   Array.iter
-    (fun v2_dev ->
-      let name = v2_dev.Device.name in
-      let framework = v2_dev.Device.framework in
-      let v2_time, v2_ok =
-        run_inclusive_scan v2_dev !input_varying !expected_varying
-      in
+    (fun dev ->
+      let name = dev.Device.name in
+      let framework = dev.Device.framework in
+      let time, ok = run_inclusive_scan dev !input_varying !expected_varying in
       Printf.printf
         "  %s (%s): %.4f ms, %s\n%!"
         name
         framework
-        v2_time
-        (if v2_ok then "OK" else "FAIL") ;
-      if not v2_ok then all_ok := false)
-    v2_devs ;
+        time
+        (if ok then "OK" else "FAIL") ;
+      if not ok then all_ok := false)
+    devs ;
 
   if !all_ok then print_endline "\n=== All scan tests PASSED ==="
   else begin

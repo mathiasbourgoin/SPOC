@@ -32,6 +32,8 @@ let () = Sarek_native.Native_plugin.init ()
 
 let size = 1024
 
+[@@@warning "-32"]
+
 type float32 = float
 
 (* Custom record type for 2D points - PPX generates point_custom *)

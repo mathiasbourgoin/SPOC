@@ -97,15 +97,15 @@ let () =
   print_endline "Testing V2 execution against CPU reference\n" ;
 
   (* Initialize V2 devices *)
-  let v2_devs =
+  let devs =
     Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
-  if Array.length v2_devs = 0 then begin
+  if Array.length devs = 0 then begin
     print_endline "No devices found" ;
     exit 1
   end ;
 
-  Printf.printf "Found %d V2 device(s)\n\n" (Array.length v2_devs) ;
+  Printf.printf "Found %d V2 device(s)\n\n" (Array.length devs) ;
 
   print_endline (String.make 60 '-') ;
   Printf.printf "%-40s %10s %10s\n" "Device" "V2" "Status" ;
@@ -120,11 +120,11 @@ let () =
 
   (* Test each V2 device *)
   Array.iter
-    (fun v2_dev ->
-      let name = v2_dev.Device.name in
-      let framework = v2_dev.Device.framework in
-      let v2_result = run_v2 v2_dev in
-      let errors = verify_results v2_result expected in
+    (fun dev ->
+      let name = dev.Device.name in
+      let framework = dev.Device.framework in
+      let result = run_v2 dev in
+      let errors = verify_results result expected in
       let status = if errors = 0 then "PASS" else "FAIL" in
       if errors > 0 then all_ok := false ;
       Printf.printf
@@ -132,7 +132,7 @@ let () =
         (name ^ " (" ^ framework ^ ")")
         "OK"
         status)
-    v2_devs ;
+    devs ;
 
   print_endline (String.make 60 '-') ;
 

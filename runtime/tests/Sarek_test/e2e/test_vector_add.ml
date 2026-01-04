@@ -191,16 +191,16 @@ let () =
   Printf.printf "Size: %d elements\n\n" !size ;
 
   (* Initialize V2 devices - include all frameworks *)
-  let v2_devs =
+  let devs =
     Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
 
-  if Array.length v2_devs = 0 then begin
+  if Array.length devs = 0 then begin
     print_endline "No devices found" ;
     exit 1
   end ;
 
-  Printf.printf "Found %d device(s)\n\n" (Array.length v2_devs) ;
+  Printf.printf "Found %d device(s)\n\n" (Array.length devs) ;
 
   let expected = compute_expected () in
 
@@ -213,24 +213,24 @@ let () =
 
     (* Test each V2 device *)
     Array.iter
-      (fun v2_dev ->
-        let name = v2_dev.Device.name in
-        let framework = v2_dev.Device.framework in
+      (fun dev ->
+        let name = dev.Device.name in
+        let framework = dev.Device.framework in
 
-        let v2_time, v2_result = run_v2_on_device v2_dev in
-        let v2_ok =
-          if !verify then verify_results "V2" v2_result expected else true
+        let time, result = run_v2_on_device dev in
+        let ok =
+          if !verify then verify_results "V2" result expected else true
         in
-        let v2_status = if v2_ok then "OK" else "FAIL" in
+        let status = if ok then "OK" else "FAIL" in
 
-        if not v2_ok then all_ok := false ;
+        if not ok then all_ok := false ;
 
         Printf.printf
           "%-35s %10.4f %10s\n"
           (Printf.sprintf "%s (%s)" name framework)
-          v2_time
-          v2_status)
-      v2_devs ;
+          time
+          status)
+      devs ;
 
     print_endline (String.make 60 '-') ;
 
@@ -255,38 +255,34 @@ let () =
   end
   else begin
     (* Single device mode *)
-    let v2_dev =
+    let dev =
       if !use_native then (
-        match
-          Array.find_opt (fun d -> d.Device.framework = "Native") v2_devs
-        with
+        match Array.find_opt (fun d -> d.Device.framework = "Native") devs with
         | Some d -> d
         | None ->
             print_endline "No native CPU device found" ;
             exit 1)
       else if !use_interpreter then (
         match
-          Array.find_opt (fun d -> d.Device.framework = "Interpreter") v2_devs
+          Array.find_opt (fun d -> d.Device.framework = "Interpreter") devs
         with
         | Some d -> d
         | None ->
             print_endline "No interpreter device found" ;
             exit 1)
-      else v2_devs.(!dev_id)
+      else devs.(!dev_id)
     in
-    let dev_name = v2_dev.Device.name in
+    let dev_name = dev.Device.name in
     Printf.printf "Using device: %s\n%!" dev_name ;
 
     (* Run V2 *)
     Printf.printf "\nRunning V2 path...\n%!" ;
-    let v2_time, v2_result = run_v2_on_device v2_dev in
-    Printf.printf "  Time: %.4f ms\n%!" v2_time ;
-    let v2_ok =
-      if !verify then verify_results "V2" v2_result expected else true
-    in
-    Printf.printf "  Status: %s\n%!" (if v2_ok then "PASSED" else "FAILED") ;
+    let time, result = run_v2_on_device dev in
+    Printf.printf "  Time: %.4f ms\n%!" time ;
+    let ok = if !verify then verify_results "V2" result expected else true in
+    Printf.printf "  Status: %s\n%!" (if ok then "PASSED" else "FAILED") ;
 
-    if v2_ok then print_endline "\nE2E Test PASSED"
+    if ok then print_endline "\nE2E Test PASSED"
     else begin
       print_endline "\nE2E Test FAILED" ;
       exit 1

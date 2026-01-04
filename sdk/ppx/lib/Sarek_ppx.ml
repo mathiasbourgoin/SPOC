@@ -1154,7 +1154,7 @@ let expand_kernel ~ctxt payload =
             (* 7b. Lower to Sarek_ir - optional, fails gracefully *)
             Sarek_debug.log_to_file
               (Printf.sprintf "[%s] step 7b: IR lowering start" kern_name) ;
-            let v2_kernel =
+            let kernel =
               try
                 let t0 = Unix.gettimeofday () in
                 Sarek_debug.log_enter "lower_kernel_ir" ;
@@ -1182,13 +1182,13 @@ let expand_kernel ~ctxt payload =
               (Printf.sprintf
                  "[%s] step 8: quote start (v2=%b)"
                  kern_name
-                 (Option.is_some v2_kernel)) ;
+                 (Option.is_some kernel)) ;
             let t0 = Unix.gettimeofday () in
             let result =
               Sarek_quote.quote_kernel
                 ~loc
                 ~native_kernel
-                ?ir_opt:v2_kernel
+                ?ir_opt:kernel
                 tkernel
                 ir
                 constructors

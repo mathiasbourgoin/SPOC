@@ -242,15 +242,15 @@ let () =
   print_endline "=== Sorting Tests (V2) ===" ;
   Printf.printf "Size: %d elements\n\n" cfg.size ;
 
-  let v2_devs =
+  let devs =
     Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
-  if Array.length v2_devs = 0 then begin
+  if Array.length devs = 0 then begin
     print_endline "No devices found" ;
     exit 1
   end ;
-  Test_helpers.print_devices v2_devs ;
-  Printf.printf "\nFound %d V2 device(s)\n\n" (Array.length v2_devs) ;
+  Test_helpers.print_devices devs ;
+  Printf.printf "\nFound %d V2 device(s)\n\n" (Array.length devs) ;
 
   (* Initialize test data *)
   ignore (init_bitonic_global_data ()) ;
@@ -261,34 +261,34 @@ let () =
   (* Benchmark bitonic global *)
   print_endline "=== Bitonic Sort (global) ===" ;
   Array.iter
-    (fun v2_dev ->
-      let name = v2_dev.Device.name in
-      let framework = v2_dev.Device.framework in
-      let v2_time, v2_ok = run_bitonic_sort_global v2_dev in
+    (fun dev ->
+      let name = dev.Device.name in
+      let framework = dev.Device.framework in
+      let time, ok = run_bitonic_sort_global dev in
       Printf.printf
         "  %s (%s): %.4f ms, %s\n%!"
         name
         framework
-        v2_time
-        (if v2_ok then "OK" else "FAIL") ;
-      if not v2_ok then all_ok := false)
-    v2_devs ;
+        time
+        (if ok then "OK" else "FAIL") ;
+      if not ok then all_ok := false)
+    devs ;
 
   (* Benchmark odd-even *)
   print_endline "\n=== Odd-Even Sort ===" ;
   Array.iter
-    (fun v2_dev ->
-      let name = v2_dev.Device.name in
-      let framework = v2_dev.Device.framework in
-      let v2_time, v2_ok = run_odd_even_sort v2_dev in
+    (fun dev ->
+      let name = dev.Device.name in
+      let framework = dev.Device.framework in
+      let time, ok = run_odd_even_sort dev in
       Printf.printf
         "  %s (%s): %.4f ms, %s\n%!"
         name
         framework
-        v2_time
-        (if v2_ok then "OK" else "FAIL") ;
-      if not v2_ok then all_ok := false)
-    v2_devs ;
+        time
+        (if ok then "OK" else "FAIL") ;
+      if not ok then all_ok := false)
+    devs ;
 
   if !all_ok then print_endline "\n=== All sort tests PASSED ==="
   else begin

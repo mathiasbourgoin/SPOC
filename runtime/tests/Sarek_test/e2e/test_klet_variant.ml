@@ -39,13 +39,13 @@ let () =
   print_endline "=========================" ;
 
   (* Run with V2 runtime *)
-  let v2_devs =
+  let devs =
     Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
-  if Array.length v2_devs = 0 then (
+  if Array.length devs = 0 then (
     print_endline "No device found - IR generation test passed" ;
     exit 0) ;
-  let dev = v2_devs.(0) in
+  let dev = devs.(0) in
   Printf.printf "Using device: %s\n%!" dev.Device.name ;
   (match kirc.Sarek.Kirc_types.body_ir with
   | Some ir ->

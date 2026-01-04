@@ -417,15 +417,15 @@ let () =
   print_endline "=== Reduction Tests (V2) ===" ;
   Printf.printf "Size: %d elements\n\n" cfg.size ;
 
-  let v2_devs =
+  let devs =
     Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
-  if Array.length v2_devs = 0 then begin
+  if Array.length devs = 0 then begin
     print_endline "No devices found" ;
     exit 1
   end ;
-  Test_helpers.print_devices v2_devs ;
-  Printf.printf "\nFound %d V2 device(s)\n\n" (Array.length v2_devs) ;
+  Test_helpers.print_devices devs ;
+  Printf.printf "\nFound %d V2 device(s)\n\n" (Array.length devs) ;
 
   let all_ok = ref true in
 
@@ -433,52 +433,52 @@ let () =
   ignore (init_sum_data ()) ;
   print_endline "=== Sum Reduction ===" ;
   Array.iter
-    (fun v2_dev ->
-      let name = v2_dev.Device.name in
-      let framework = v2_dev.Device.framework in
-      let v2_time, v2_ok = run_reduce_sum v2_dev in
+    (fun dev ->
+      let name = dev.Device.name in
+      let framework = dev.Device.framework in
+      let time, ok = run_reduce_sum dev in
       Printf.printf
         "  %s (%s): %.4f ms, %s\n%!"
         name
         framework
-        v2_time
-        (if v2_ok then "OK" else "FAIL") ;
-      if not v2_ok then all_ok := false)
-    v2_devs ;
+        time
+        (if ok then "OK" else "FAIL") ;
+      if not ok then all_ok := false)
+    devs ;
 
   (* Max reduction *)
   ignore (init_max_data ()) ;
   print_endline "\n=== Max Reduction ===" ;
   Array.iter
-    (fun v2_dev ->
-      let name = v2_dev.Device.name in
-      let framework = v2_dev.Device.framework in
-      let v2_time, v2_ok = run_reduce_max v2_dev in
+    (fun dev ->
+      let name = dev.Device.name in
+      let framework = dev.Device.framework in
+      let time, ok = run_reduce_max dev in
       Printf.printf
         "  %s (%s): %.4f ms, %s\n%!"
         name
         framework
-        v2_time
-        (if v2_ok then "OK" else "FAIL") ;
-      if not v2_ok then all_ok := false)
-    v2_devs ;
+        time
+        (if ok then "OK" else "FAIL") ;
+      if not ok then all_ok := false)
+    devs ;
 
   (* Dot product *)
   ignore (init_dot_data ()) ;
   print_endline "\n=== Dot Product ===" ;
   Array.iter
-    (fun v2_dev ->
-      let name = v2_dev.Device.name in
-      let framework = v2_dev.Device.framework in
-      let v2_time, v2_ok = run_dot_product v2_dev in
+    (fun dev ->
+      let name = dev.Device.name in
+      let framework = dev.Device.framework in
+      let time, ok = run_dot_product dev in
       Printf.printf
         "  %s (%s): %.4f ms, %s\n%!"
         name
         framework
-        v2_time
-        (if v2_ok then "OK" else "FAIL") ;
-      if not v2_ok then all_ok := false)
-    v2_devs ;
+        time
+        (if ok then "OK" else "FAIL") ;
+      if not ok then all_ok := false)
+    devs ;
 
   if !all_ok then print_endline "\n=== All reduction tests PASSED ==="
   else begin

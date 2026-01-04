@@ -57,14 +57,14 @@ let identity_kernel =
 
 let test_basic_v2 () =
   let _, kirc = basic_kernel in
-  let v2_devs =
+  let devs =
     Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
-  if Array.length v2_devs = 0 then (
+  if Array.length devs = 0 then (
     print_endline "V2: No device - SKIPPED" ;
     true)
   else
-    let dev = v2_devs.(0) in
+    let dev = devs.(0) in
     match kirc.Sarek.Kirc_types.body_ir with
     | None ->
         print_endline "V2: No V2 IR - SKIPPED" ;
@@ -104,14 +104,14 @@ let test_basic_v2 () =
 
 let test_times_two_v2 () =
   let _, kirc = times_two_kernel in
-  let v2_devs =
+  let devs =
     Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
-  if Array.length v2_devs = 0 then (
+  if Array.length devs = 0 then (
     print_endline "V2: No device - SKIPPED" ;
     true)
   else
-    let dev = v2_devs.(0) in
+    let dev = devs.(0) in
     match kirc.Sarek.Kirc_types.body_ir with
     | None ->
         print_endline "V2: No V2 IR - SKIPPED" ;
@@ -151,14 +151,14 @@ let test_times_two_v2 () =
 
 let test_identity_v2 () =
   let _, kirc = identity_kernel in
-  let v2_devs =
+  let devs =
     Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
-  if Array.length v2_devs = 0 then (
+  if Array.length devs = 0 then (
     print_endline "V2: No device - SKIPPED" ;
     true)
   else
-    let dev = v2_devs.(0) in
+    let dev = devs.(0) in
     match kirc.Sarek.Kirc_types.body_ir with
     | None ->
         print_endline "V2: No V2 IR - SKIPPED" ;

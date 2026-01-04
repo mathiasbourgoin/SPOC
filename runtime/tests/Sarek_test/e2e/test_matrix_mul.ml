@@ -385,14 +385,14 @@ let () =
     (dim * dim) ;
 
   (* Init V2 devices - unified path for all backends *)
-  let v2_devs =
+  let devs =
     Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
-  Printf.printf "Found %d V2 device(s)\n" (Array.length v2_devs) ;
+  Printf.printf "Found %d V2 device(s)\n" (Array.length devs) ;
   Array.iteri
     (fun i d ->
       Printf.printf "  [%d] %s (%s)\n" i d.Device.name d.Device.framework)
-    v2_devs ;
+    devs ;
   print_newline () ;
 
   ignore (init_matmul_data ()) ;
@@ -412,19 +412,19 @@ let () =
     let all_ok = ref true in
 
     Array.iter
-      (fun v2_dev ->
-        let name = v2_dev.Device.name in
-        let framework = v2_dev.Device.framework in
-        let v2_comp, v2_exec, v2_ok = run_matmul_naive v2_dev in
-        let status = if v2_ok then "OK" else "FAIL" in
-        if not v2_ok then all_ok := false ;
+      (fun dev ->
+        let name = dev.Device.name in
+        let framework = dev.Device.framework in
+        let comp, exec, ok = run_matmul_naive dev in
+        let status = if ok then "OK" else "FAIL" in
+        if not ok then all_ok := false ;
         Printf.printf
           "%-40s %12.2f %12.2f %8s\n"
           (Printf.sprintf "%s (%s)" name framework)
-          v2_comp
-          v2_exec
+          comp
+          exec
           status)
-      v2_devs ;
+      devs ;
 
     print_endline (String.make 80 '-') ;
 
@@ -435,12 +435,12 @@ let () =
     print_endline (String.make 60 '-') ;
 
     Array.iter
-      (fun v2_dev ->
-        let name = v2_dev.Device.name in
-        let framework = v2_dev.Device.framework in
+      (fun dev ->
+        let name = dev.Device.name in
+        let framework = dev.Device.framework in
         (* Skip interpreter for tiled - barrier semantics differ *)
         if framework <> "Interpreter" then begin
-          let time, ok = run_matmul_tiled v2_dev in
+          let time, ok = run_matmul_tiled dev in
           Printf.printf
             "%-40s %10.4f %8s\n"
             (Printf.sprintf "%s (%s)" name framework)
@@ -454,7 +454,7 @@ let () =
             (Printf.sprintf "%s (%s)" name framework)
             "-"
             "SKIP")
-      v2_devs ;
+      devs ;
 
     print_endline (String.make 60 '-') ;
 
@@ -467,28 +467,28 @@ let () =
   end
   else begin
     (* Single device mode - use V2 *)
-    let v2_dev =
-      if cfg.dev_id >= 0 && cfg.dev_id < Array.length v2_devs then
-        v2_devs.(cfg.dev_id)
-      else v2_devs.(0)
+    let dev =
+      if cfg.dev_id >= 0 && cfg.dev_id < Array.length devs then
+        devs.(cfg.dev_id)
+      else devs.(0)
     in
     Printf.printf
       "Using device: %s (%s)\n%!"
-      v2_dev.Device.name
-      v2_dev.Device.framework ;
+      dev.Device.name
+      dev.Device.framework ;
 
     Printf.printf "\n--- Naive Matrix Multiplication (V2) ---\n%!" ;
-    let v2_comp, v2_exec, v2_ok = run_matmul_naive v2_dev in
+    let comp, exec, ok = run_matmul_naive dev in
     Printf.printf
       "  Compile: %.2f ms, Exec: %.2f ms, %s\n%!"
-      v2_comp
-      v2_exec
-      (if v2_ok then "PASSED" else "FAILED") ;
+      comp
+      exec
+      (if ok then "PASSED" else "FAILED") ;
 
     (* Tiled kernel via V2 (shared memory + supersteps) *)
-    if v2_dev.Device.framework <> "Interpreter" then begin
+    if dev.Device.framework <> "Interpreter" then begin
       Printf.printf "\n--- Tiled Matrix Multiplication (V2) ---\n%!" ;
-      let time, ok = run_matmul_tiled v2_dev in
+      let time, ok = run_matmul_tiled dev in
       Printf.printf
         "  Time: %.4f ms, %s\n%!"
         time

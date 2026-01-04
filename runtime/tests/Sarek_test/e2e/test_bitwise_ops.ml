@@ -303,12 +303,12 @@ let () =
   init_gray_data () ;
 
   (* Initialize V2 devices *)
-  let v2_devs = Test_helpers.init_devices cfg in
-  if Array.length v2_devs = 0 then begin
+  let devs = Test_helpers.init_devices cfg in
+  if Array.length devs = 0 then begin
     print_endline "No devices found" ;
     exit 1
   end ;
-  Test_helpers.print_devices v2_devs ;
+  Test_helpers.print_devices devs ;
 
   if cfg.benchmark_all then begin
     print_endline (String.make 60 '-') ;
@@ -318,27 +318,27 @@ let () =
     let all_ok = ref true in
 
     Array.iter
-      (fun v2_dev ->
-        let name = v2_dev.Device.name in
-        let framework = v2_dev.Device.framework in
+      (fun dev ->
+        let name = dev.Device.name in
+        let framework = dev.Device.framework in
 
-        let v2_time, v2_and, v2_or, v2_xor = run_bitwise_basic v2_dev in
-        let v2_ok =
+        let time, and_, or_, xor = run_bitwise_basic dev in
+        let ok =
           (not cfg.verify)
-          || verify_int32_arrays "AND" v2_and !expected_and
-             && verify_int32_arrays "OR" v2_or !expected_or
-             && verify_int32_arrays "XOR" v2_xor !expected_xor
+          || verify_int32_arrays "AND" and_ !expected_and
+             && verify_int32_arrays "OR" or_ !expected_or
+             && verify_int32_arrays "XOR" xor !expected_xor
         in
-        let v2_status = if v2_ok then "OK" else "FAIL" in
+        let status = if ok then "OK" else "FAIL" in
 
-        if not v2_ok then all_ok := false ;
+        if not ok then all_ok := false ;
 
         Printf.printf
           "%-35s %10.4f %10s\n"
           (Printf.sprintf "%s (%s)" name framework)
-          v2_time
-          v2_status)
-      v2_devs ;
+          time
+          status)
+      devs ;
 
     print_endline (String.make 60 '-') ;
 
@@ -349,22 +349,22 @@ let () =
     end
   end
   else begin
-    let dev = Test_helpers.get_device cfg v2_devs in
+    let dev = Test_helpers.get_device cfg devs in
     let dev_name = dev.Device.name in
     Printf.printf "Using device: %s\n%!" dev_name ;
 
     Printf.printf "\nRunning V2 path (bitwise AND/OR/XOR)...\n%!" ;
-    let v2_time, v2_and, v2_or, v2_xor = run_bitwise_basic dev in
-    Printf.printf "  Time: %.4f ms\n%!" v2_time ;
-    let v2_ok =
+    let time, and_, or_, xor = run_bitwise_basic dev in
+    Printf.printf "  Time: %.4f ms\n%!" time ;
+    let ok =
       (not cfg.verify)
-      || verify_int32_arrays "AND" v2_and !expected_and
-         && verify_int32_arrays "OR" v2_or !expected_or
-         && verify_int32_arrays "XOR" v2_xor !expected_xor
+      || verify_int32_arrays "AND" and_ !expected_and
+         && verify_int32_arrays "OR" or_ !expected_or
+         && verify_int32_arrays "XOR" xor !expected_xor
     in
-    Printf.printf "  Status: %s\n%!" (if v2_ok then "PASSED" else "FAILED") ;
+    Printf.printf "  Status: %s\n%!" (if ok then "PASSED" else "FAILED") ;
 
-    if v2_ok then print_endline "\nBitwise operations tests PASSED"
+    if ok then print_endline "\nBitwise operations tests PASSED"
     else begin
       print_endline "\nBitwise operations tests FAILED" ;
       exit 1

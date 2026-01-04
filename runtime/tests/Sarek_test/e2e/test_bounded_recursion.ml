@@ -189,14 +189,14 @@ let () =
   print_endline "=== Tail Recursion Transformation Tests (V2) ===" ;
   print_endline "" ;
 
-  let v2_devs =
+  let devs =
     Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
   in
-  if Array.length v2_devs = 0 then (
+  if Array.length devs = 0 then (
     print_endline "No V2 devices found - skipping" ;
     exit 0) ;
 
-  let dev = v2_devs.(0) in
+  let dev = devs.(0) in
 
   let t1 = test_factorial_v2 dev in
   print_endline "" ;
