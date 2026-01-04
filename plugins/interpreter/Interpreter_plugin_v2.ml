@@ -1,7 +1,7 @@
 (******************************************************************************
  * Interpreter Plugin V2 - Phase 4 Backend Implementation
  *
- * Implements the Framework_sig.BACKEND_V2 interface for CPU interpretation.
+ * Implements the Framework_sig.BACKEND interface for CPU interpretation.
  * Extends Interpreter_plugin with:
  * - Execution model discrimination (Direct with Custom behavior)
  * - Direct execution of IR via interpretation

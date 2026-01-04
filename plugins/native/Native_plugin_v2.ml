@@ -1,7 +1,7 @@
 (******************************************************************************
  * Native Plugin V2 - Phase 4 Backend Implementation
  *
- * Implements the Framework_sig.BACKEND_V2 interface for CPU execution.
+ * Implements the Framework_sig.BACKEND interface for CPU execution.
  * Extends Native_plugin with:
  * - Execution model discrimination (Direct)
  * - Direct execution of pre-compiled OCaml functions
