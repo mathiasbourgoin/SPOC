@@ -597,26 +597,53 @@ let gen_buffer_binding buf binding_idx v elem_type =
   Buffer.add_string buf (Printf.sprintf "} %s;\n" v.var_name)
 
 let gen_push_constants buf params =
-  (* TEMPORARILY using globals for debugging instead of push constants *)
-  let scalars =
-    List.filter_map
-      (fun decl ->
-        match decl with
-        | DParam (v, _) -> (
-            match v.var_type with TVec _ -> None | _ -> Some v)
-        | _ -> None)
-      params
-  in
-  (* Declare as constants - values will be hardcoded for now *)
+  let vectors = ref [] in
+  let scalars = ref [] in
   List.iter
-    (fun v ->
-      Buffer.add_string
-        buf
-        (Printf.sprintf
-           "const %s %s = 100000;\n"
-           (glsl_type_of_elttype v.var_type)
-           v.var_name))
-    scalars
+    (fun decl ->
+      match decl with
+      | DParam (v, _) -> (
+          match v.var_type with
+          | TVec _ -> vectors := v :: !vectors
+          | _ -> scalars := v :: !scalars)
+      | _ -> ())
+    params ;
+  let vectors = List.rev !vectors in
+  let scalars = List.rev !scalars in
+  (* Generate push constants if we have vectors (for lengths) or scalars *)
+  if vectors <> [] || scalars <> [] then begin
+    Buffer.add_string buf "layout(push_constant) uniform PushConstants {\n" ;
+    (* Add length parameter for each vector *)
+    List.iter
+      (fun v ->
+        Buffer.add_string buf (Printf.sprintf "  int %s_len;\n" v.var_name))
+      vectors ;
+    (* Add user-defined scalar parameters *)
+    List.iter
+      (fun v ->
+        Buffer.add_string
+          buf
+          (Printf.sprintf
+             "  %s %s;\n"
+             (glsl_type_of_elttype v.var_type)
+             v.var_name))
+      scalars ;
+    Buffer.add_string buf "} pc;\n\n" ;
+    (* Define convenience aliases *)
+    List.iter
+      (fun v ->
+        Buffer.add_string
+          buf
+          (Printf.sprintf "#define %s_len pc.%s_len\n" v.var_name v.var_name))
+      vectors ;
+    List.iter
+      (fun v ->
+        Buffer.add_string
+          buf
+          (Printf.sprintf "#define %s pc.%s\n" v.var_name v.var_name))
+      scalars ;
+    Buffer.add_string buf "\n"
+  end
 
 (** Generate complete GLSL source for a kernel *)
 let generate (k : kernel) : string =
@@ -775,5 +802,5 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
   Buffer.add_string buf "}\n" ;
 
   let result = Buffer.contents buf in
-  Printf.eprintf "[GLSL] Generated shader (with types):\n%s\n%!" result ;
+  Printf.eprintf "[GLSL] Generated shader:\n%s\n%!" result ;
   result

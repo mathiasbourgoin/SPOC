@@ -512,8 +512,17 @@ module Memory = struct
     vkDestroyBuffer buf.device.Device.device buf.buffer null ;
     vkFreeMemory buf.device.Device.device buf.memory null
 
+  (** Vulkan doesn't expose device pointers like CUDA. Return 0 as placeholder.
+      Binding uses the buffer handle directly via set_arg_buffer. *)
+  let device_ptr _buf = Nativeint.zero
+
+  (** Vulkan always uses explicit transfers (vkMapMemory/memcpy), never
+      zero-copy *)
+  let is_zero_copy _buf = false
+
   let host_to_device ~src ~dst =
     let bytes = Bigarray.Array1.size_in_bytes src in
+    Printf.eprintf "[Vulkan] host_to_device: copying %d bytes\n%!" bytes ;
     let data = allocate (ptr void) null in
     check
       "vkMapMemory"
@@ -526,10 +535,12 @@ module Memory = struct
          data) ;
     let src_ptr = bigarray_start array1 src |> to_voidp in
     let _ = memcpy !@data src_ptr (Unsigned.Size_t.of_int bytes) in
-    vkUnmapMemory dst.device.Device.device dst.memory
+    vkUnmapMemory dst.device.Device.device dst.memory ;
+    Printf.eprintf "[Vulkan] host_to_device: done\n%!"
 
   let device_to_host ~src ~dst =
     let bytes = Bigarray.Array1.size_in_bytes dst in
+    Printf.eprintf "[Vulkan] device_to_host: copying %d bytes\n%!" bytes ;
     let data = allocate (ptr void) null in
     check
       "vkMapMemory"
@@ -542,7 +553,8 @@ module Memory = struct
          data) ;
     let dst_ptr = bigarray_start array1 dst |> to_voidp in
     let _ = memcpy dst_ptr !@data (Unsigned.Size_t.of_int bytes) in
-    vkUnmapMemory src.device.Device.device src.memory
+    vkUnmapMemory src.device.Device.device src.memory ;
+    Printf.eprintf "[Vulkan] device_to_host: done\n%!"
 
   let host_ptr_to_device ~src_ptr ~byte_size ~dst =
     let data = allocate (ptr void) null in
@@ -721,6 +733,9 @@ module Kernel = struct
     mutable bindings : (int * any_buffer) list;
     mutable descriptor_set : vk_descriptor_set;
     mutable push_constants : bytes option; (* Raw bytes for push constants *)
+    mutable push_constant_offset : int;
+        (* Current offset in push constant block *)
+    mutable buffer_binding : int; (* Next available buffer binding index *)
   }
 
   (* Compilation cache *)
@@ -840,8 +855,6 @@ module Kernel = struct
 
     (* Add push constant range for scalar parameters *)
     (* TODO: Calculate exact size from IR metadata instead of fixed size *)
-    (* TEMPORARILY DISABLED for debugging *)
-    (*
     let push_constant_range = make vk_push_constant_range in
     setf
       push_constant_range
@@ -856,15 +869,6 @@ module Kernel = struct
       pl_create_pushConstantRangeCount
       (Unsigned.UInt32.of_int 1) ;
     setf pl_create_info pl_create_pPushConstantRanges (addr push_constant_range) ;
-    *)
-    setf
-      pl_create_info
-      pl_create_pushConstantRangeCount
-      (Unsigned.UInt32.of_int 0) ;
-    setf
-      pl_create_info
-      pl_create_pPushConstantRanges
-      (from_voidp vk_push_constant_range null) ;
 
     let pipeline_layout = allocate vk_pipeline_layout vk_null_handle in
     Printf.eprintf "[Vulkan] Creating pipeline layout...\n%!" ;
@@ -984,10 +988,19 @@ module Kernel = struct
     Hashtbl.clear cache
 
   let create_args () =
-    {bindings = []; descriptor_set = vk_null_handle; push_constants = None}
+    {
+      bindings = [];
+      descriptor_set = vk_null_handle;
+      push_constants = None;
+      push_constant_offset = 0;
+      buffer_binding = 0;
+    }
 
-  let set_arg_buffer args idx buf =
-    args.bindings <- (idx, AnyBuf buf) :: args.bindings
+  let set_arg_buffer args _idx buf =
+    let binding = args.buffer_binding in
+    Printf.eprintf "[Vulkan] set_arg_buffer: assigning binding=%d\n%!" binding ;
+    args.bindings <- (binding, AnyBuf buf) :: args.bindings ;
+    args.buffer_binding <- binding + 1
 
   let ensure_push_constants args =
     match args.push_constants with
@@ -998,27 +1011,33 @@ module Kernel = struct
         args.push_constants <- Some pc ;
         pc
 
-  let set_arg_int32 args idx n =
+  let set_arg_int32 args _idx n =
+    Printf.eprintf "[Vulkan] set_arg_int32: n=%ld\n%!" n ;
     let pc = ensure_push_constants args in
-    let offset = idx * 4 in
-    (* Assuming 4-byte alignment *)
-    Bytes.set_int32_le pc offset n
+    let offset = args.push_constant_offset in
+    Printf.eprintf
+      "[Vulkan] Writing int32 to push constant offset %d\n%!"
+      offset ;
+    Bytes.set_int32_le pc offset n ;
+    args.push_constant_offset <- offset + 4
 
-  let set_arg_int64 args idx n =
+  let set_arg_int64 args _idx n =
     let pc = ensure_push_constants args in
-    let offset = idx * 8 in
-    (* Assuming 8-byte alignment *)
-    Bytes.set_int64_le pc offset n
+    let offset = args.push_constant_offset in
+    Bytes.set_int64_le pc offset n ;
+    args.push_constant_offset <- offset + 8
 
-  let set_arg_float32 args idx f =
+  let set_arg_float32 args _idx f =
     let pc = ensure_push_constants args in
-    let offset = idx * 4 in
-    Bytes.set_int32_le pc offset (Int32.bits_of_float f)
+    let offset = args.push_constant_offset in
+    Bytes.set_int32_le pc offset (Int32.bits_of_float f) ;
+    args.push_constant_offset <- offset + 4
 
-  let set_arg_float64 args idx f =
+  let set_arg_float64 args _idx f =
     let pc = ensure_push_constants args in
-    let offset = idx * 8 in
-    Bytes.set_int64_le pc offset (Int64.bits_of_float f)
+    let offset = args.push_constant_offset in
+    Bytes.set_int64_le pc offset (Int64.bits_of_float f) ;
+    args.push_constant_offset <- offset + 8
 
   let set_arg_ptr _args _idx _p =
     failwith "Vulkan: raw pointer args not supported"
@@ -1126,22 +1145,34 @@ module Kernel = struct
       (from_voidp uint32_t null) ;
 
     (* Push constants for scalar arguments *)
-    (* TEMPORARILY DISABLED - coercion issue *)
-    (*
     (match args.push_constants with
     | Some pc ->
-        let pc_ptr = Ctypes.ocaml_bytes_start pc in
-        let pc_void = Ctypes.coerce Ctypes.ocaml_bytes (ptr void) pc_ptr in
+        Printf.eprintf
+          "[Vulkan] Pushing %d bytes of constants\n%!"
+          (Bytes.length pc) ;
+        (* Debug: print first 16 bytes as hex *)
+        Printf.eprintf "[Vulkan] Push constant bytes (hex): " ;
+        for i = 0 to min 15 (Bytes.length pc - 1) do
+          Printf.eprintf "%02x " (Bytes.get_uint8 pc i)
+        done ;
+        Printf.eprintf "\n%!" ;
+        (* Allocate C buffer and copy bytes *)
+        let pc_len = Bytes.length pc in
+        let pc_cbuf = Ctypes.allocate_n Ctypes.uint8_t ~count:pc_len in
+        for i = 0 to pc_len - 1 do
+          let element_ptr = Ctypes.(pc_cbuf +@ i) in
+          let value = Unsigned.UInt8.of_int (Bytes.get_uint8 pc i) in
+          Ctypes.(element_ptr <-@ value)
+        done ;
         vkCmdPushConstants
           stream.Stream.command_buffer
           kernel.pipeline_layout
           (Unsigned.UInt32.of_int vk_shader_stage_compute_bit)
           (Unsigned.UInt32.of_int 0) (* offset *)
-          (Unsigned.UInt32.of_int (Bytes.length pc)) (* size *)
-          pc_void
-    | None -> ()) ;
-    *)
-    ignore args.push_constants ;
+          (Unsigned.UInt32.of_int pc_len) (* size *)
+          (Ctypes.to_voidp pc_cbuf) ;
+        Printf.eprintf "[Vulkan] Push constants submitted\n%!"
+    | None -> Printf.eprintf "[Vulkan] No push constants\n%!") ;
 
     (* Vulkan dispatch uses workgroup counts, not total threads *)
     let gx = (grid.x + block.x - 1) / block.x in
