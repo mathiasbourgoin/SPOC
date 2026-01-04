@@ -1,0 +1,260 @@
+(******************************************************************************
+ * Vulkan Plugin - Backend Implementation
+ *
+ * Implements the unified Framework_sig.BACKEND interface for Vulkan devices.
+ * Features:
+ * - Execution model: JIT (GLSL -> SPIR-V -> Vulkan pipeline)
+ * - IR-based source generation via Sarek_ir_glsl
+ * - Intrinsic registry support for Vulkan-specific intrinsics
+ *
+ * Requirements:
+ * - libvulkan.so.1 at runtime
+ * - glslangValidator in PATH for GLSL to SPIR-V compilation
+ ******************************************************************************)
+
+open Spoc_framework
+open Spoc_framework_registry
+
+(** Reuse the existing Vulkan implementation *)
+module Vulkan_base = struct
+  include Vulkan_plugin_base.Vulkan
+end
+
+(** Vulkan-specific intrinsic implementation *)
+type vulkan_intrinsic = {
+  intr_name : string;
+  intr_codegen : string;
+  intr_convergence : Framework_sig.convergence;
+}
+
+(** Intrinsic registry for Vulkan-specific intrinsics *)
+module Vulkan_intrinsics : Framework_sig.INTRINSIC_REGISTRY = struct
+  type intrinsic_impl = vulkan_intrinsic
+
+  let table : (string, intrinsic_impl) Hashtbl.t = Hashtbl.create 64
+
+  let register name impl = Hashtbl.replace table name impl
+
+  let find name = Hashtbl.find_opt table name
+
+  let list_all () =
+    Hashtbl.fold (fun name _ acc -> name :: acc) table [] |> List.sort compare
+
+  (* Register standard Vulkan/GLSL compute intrinsics *)
+  let () =
+    (* Thread indexing - GLSL compute uses gl_GlobalInvocationID, etc. *)
+    register
+      "thread_id_x"
+      {
+        intr_name = "thread_id_x";
+        intr_codegen = "gl_LocalInvocationID.x";
+        intr_convergence = Framework_sig.Divergent;
+      } ;
+    register
+      "thread_id_y"
+      {
+        intr_name = "thread_id_y";
+        intr_codegen = "gl_LocalInvocationID.y";
+        intr_convergence = Framework_sig.Divergent;
+      } ;
+    register
+      "thread_id_z"
+      {
+        intr_name = "thread_id_z";
+        intr_codegen = "gl_LocalInvocationID.z";
+        intr_convergence = Framework_sig.Divergent;
+      } ;
+    register
+      "block_id_x"
+      {
+        intr_name = "block_id_x";
+        intr_codegen = "gl_WorkGroupID.x";
+        intr_convergence = Framework_sig.Uniform;
+      } ;
+    register
+      "block_id_y"
+      {
+        intr_name = "block_id_y";
+        intr_codegen = "gl_WorkGroupID.y";
+        intr_convergence = Framework_sig.Uniform;
+      } ;
+    register
+      "block_id_z"
+      {
+        intr_name = "block_id_z";
+        intr_codegen = "gl_WorkGroupID.z";
+        intr_convergence = Framework_sig.Uniform;
+      } ;
+    register
+      "block_dim_x"
+      {
+        intr_name = "block_dim_x";
+        intr_codegen = "gl_WorkGroupSize.x";
+        intr_convergence = Framework_sig.Uniform;
+      } ;
+    register
+      "block_dim_y"
+      {
+        intr_name = "block_dim_y";
+        intr_codegen = "gl_WorkGroupSize.y";
+        intr_convergence = Framework_sig.Uniform;
+      } ;
+    register
+      "block_dim_z"
+      {
+        intr_name = "block_dim_z";
+        intr_codegen = "gl_WorkGroupSize.z";
+        intr_convergence = Framework_sig.Uniform;
+      } ;
+    register
+      "grid_dim_x"
+      {
+        intr_name = "grid_dim_x";
+        intr_codegen = "gl_NumWorkGroups.x";
+        intr_convergence = Framework_sig.Uniform;
+      } ;
+    register
+      "grid_dim_y"
+      {
+        intr_name = "grid_dim_y";
+        intr_codegen = "gl_NumWorkGroups.y";
+        intr_convergence = Framework_sig.Uniform;
+      } ;
+    register
+      "grid_dim_z"
+      {
+        intr_name = "grid_dim_z";
+        intr_codegen = "gl_NumWorkGroups.z";
+        intr_convergence = Framework_sig.Uniform;
+      } ;
+    register
+      "global_thread_id"
+      {
+        intr_name = "global_thread_id";
+        intr_codegen = "gl_GlobalInvocationID.x";
+        intr_convergence = Framework_sig.Divergent;
+      } ;
+    register
+      "global_size"
+      {
+        intr_name = "global_size";
+        intr_codegen = "(gl_WorkGroupSize.x * gl_NumWorkGroups.x)";
+        intr_convergence = Framework_sig.Uniform;
+      } ;
+
+    (* Synchronization *)
+    register
+      "block_barrier"
+      {
+        intr_name = "block_barrier";
+        intr_codegen = "barrier()";
+        intr_convergence = Framework_sig.Sync;
+      } ;
+    register
+      "memory_fence"
+      {
+        intr_name = "memory_fence";
+        intr_codegen = "memoryBarrier()";
+        intr_convergence = Framework_sig.Uniform;
+      }
+end
+
+(** Vulkan Backend - implements BACKEND *)
+module Backend : Framework_sig.BACKEND = struct
+  (* Include all of BACKEND from Vulkan_base *)
+  include Vulkan_base
+
+  (** Execution model: Vulkan uses JIT compilation (GLSL -> SPIR-V) *)
+  let execution_model = Framework_sig.JIT
+
+  (** Generate GLSL source from Sarek IR *)
+  let generate_source (ir : Sarek_ir_types.kernel) : string option =
+    try Some (Sarek_ir_glsl.generate_with_types ~types:ir.kern_types ir)
+    with _ -> None
+
+  (** Execute directly - not supported for JIT backend *)
+  let execute_direct ~native_fn:_ ~ir:_ ~block:_ ~grid:_ _args =
+    failwith
+      "Vulkan backend execute_direct: JIT backend does not support direct \
+       execution"
+
+  (** Vulkan intrinsic registry *)
+  module Intrinsics = Vulkan_intrinsics
+
+  (** {2 External Kernel Support} *)
+
+  (** Supported source languages: SPIR-V only for now *)
+  let supported_source_langs = [Framework_sig.SPIR_V]
+
+  (** Execute external kernel from source *)
+  let run_source ~source ~lang ~kernel_name ~block ~grid ~shared_mem args =
+    match lang with
+    | Framework_sig.SPIR_V ->
+        (* Get current device (must be set by Execute before calling) *)
+        let dev =
+          match Vulkan_plugin_base.Vulkan.Device.get_current_device () with
+          | Some d -> d
+          | None -> failwith "run_source: no current Vulkan device set"
+        in
+
+        (* For SPIR-V, we'd load the binary directly *)
+        (* For now, we only support GLSL which gets compiled to SPIR-V *)
+        let _ = source in
+        let _ = kernel_name in
+        let _ = args in
+        let _ = block in
+        let _ = grid in
+        let _ = shared_mem in
+        let _ = dev in
+        failwith "Vulkan SPIR-V direct loading not yet implemented"
+    | Framework_sig.CUDA_Source ->
+        failwith "Vulkan backend does not support CUDA source"
+    | Framework_sig.OpenCL_Source ->
+        failwith "Vulkan backend does not support OpenCL source"
+    | Framework_sig.PTX -> failwith "Vulkan backend does not support PTX"
+end
+
+(** Auto-register backend when module is loaded *)
+let registered_backend =
+  lazy
+    (Spoc_core.Log.debug
+       Spoc_core.Log.Device
+       "Vulkan_plugin: checking availability" ;
+     if Backend.is_available () then begin
+       Spoc_core.Log.debug
+         Spoc_core.Log.Device
+         "Vulkan_plugin: Vulkan available, registering backend" ;
+       Framework_registry.register_backend
+         ~priority:80
+         (module Backend : Framework_sig.BACKEND)
+     end
+     else
+       Spoc_core.Log.debug
+         Spoc_core.Log.Device
+         "Vulkan_plugin: Vulkan not available (missing libvulkan or \
+          glslangValidator)")
+
+let () = Lazy.force registered_backend
+
+(** Force module initialization *)
+let init () = Lazy.force registered_backend
+
+(** {1 Additional Vulkan-specific Functions} *)
+
+(** Register a custom Vulkan intrinsic *)
+let register_intrinsic = Vulkan_intrinsics.register
+
+(** Look up a Vulkan intrinsic *)
+let find_intrinsic = Vulkan_intrinsics.find
+
+(** Generate GLSL source with custom types *)
+let generate_with_types = Sarek_ir_glsl.generate_with_types
+
+(** Generate GLSL source for a kernel *)
+let generate_source = Sarek_ir_glsl.generate
+
+(** Check if glslangValidator is available *)
+let glslang_available = Vulkan_api.glslang_available
+
+(** Compile GLSL to SPIR-V *)
+let compile_glsl_to_spirv = Vulkan_api.compile_glsl_to_spirv
