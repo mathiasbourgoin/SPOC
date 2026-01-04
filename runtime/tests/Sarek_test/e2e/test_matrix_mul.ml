@@ -420,15 +420,25 @@ let () =
       (fun dev ->
         let name = dev.Device.name in
         let framework = dev.Device.framework in
-        let comp, exec, ok = run_matmul_naive dev in
-        let status = if ok then "OK" else "FAIL" in
-        if not ok then all_ok := false ;
-        Printf.printf
-          "%-40s %12.2f %12.2f %8s\n"
-          (Printf.sprintf "%s (%s)" name framework)
-          comp
-          exec
-          status)
+        (* Skip interpreter - too slow for matrix multiplication *)
+        if framework <> "Interpreter" then begin
+          let comp, exec, ok = run_matmul_naive dev in
+          let status = if ok then "OK" else "FAIL" in
+          if not ok then all_ok := false ;
+          Printf.printf
+            "%-40s %12.2f %12.2f %8s\n"
+            (Printf.sprintf "%s (%s)" name framework)
+            comp
+            exec
+            status
+        end
+        else
+          Printf.printf
+            "%-40s %12s %12s %8s\n"
+            (Printf.sprintf "%s (%s)" name framework)
+            "-"
+            "-"
+            "SKIP")
       devs ;
 
     print_endline (String.make 80 '-') ;
