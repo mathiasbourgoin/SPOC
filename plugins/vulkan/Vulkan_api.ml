@@ -10,6 +10,7 @@
 open Ctypes
 open Vulkan_types
 open Vulkan_bindings
+open Spoc_framework_registry
 
 (** memcpy from libc for memory transfers *)
 let memcpy dst src size =
@@ -949,8 +950,35 @@ module Kernel = struct
 
   (** Compile GLSL source to compute pipeline *)
   let compile device ~name ~source =
-    (* Compile GLSL to SPIR-V *)
-    let spirv = compile_glsl_to_spirv ~entry_point:name source in
+    (* 1. Check cache for SPIR-V *)
+    let driver_version =
+      let maj, min, patch = device.Device.api_version in
+      Printf.sprintf "%d.%d.%d" maj min patch
+    in
+    let cache_key =
+      Framework_cache.compute_key
+        ~dev_name:device.Device.name
+        ~driver_version
+        ~source
+    in
+
+    let spirv =
+      match Framework_cache.get ~key:cache_key with
+      | Some data ->
+          Spoc_core.Log.debugf
+            Spoc_core.Log.Device
+            "[Vulkan] Cache hit for kernel %s"
+            name ;
+          data
+      | None ->
+          Spoc_core.Log.debugf
+            Spoc_core.Log.Device
+            "[Vulkan] Cache miss for kernel %s, compiling..."
+            name ;
+          let data = compile_glsl_to_spirv ~entry_point:name source in
+          Framework_cache.put ~key:cache_key ~data ;
+          data
+    in
 
     (* Create shader module *)
     let shader_module = create_shader_module device spirv in

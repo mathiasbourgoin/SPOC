@@ -4,6 +4,6 @@
 (library
  (name spoc_framework_registry)
  (public_name spoc.framework.registry)
- (modules Framework_registry Intrinsic_registry)
- (libraries spoc_framework)
+ (modules Framework_registry Intrinsic_registry Framework_cache)
+ (libraries spoc_framework unix)
  (preprocess no_preprocessing))
