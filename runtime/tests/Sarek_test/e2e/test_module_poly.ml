@@ -15,10 +15,10 @@ module Std = Sarek_stdlib.Std
 
 (* Force backend registration *)
 let () =
-  Sarek_cuda.Cuda_plugin_v2.init () ;
-  Sarek_opencl.Opencl_plugin_v2.init () ;
-  Sarek_native.Native_plugin_v2.init () ;
-  Sarek_interpreter.Interpreter_plugin_v2.init ()
+  Sarek_cuda.Cuda_plugin.init () ;
+  Sarek_opencl.Opencl_plugin.init () ;
+  Sarek_native.Native_plugin.init () ;
+  Sarek_interpreter.Interpreter_plugin.init ()
 
 (* Define a polymorphic identity function in module scope *)
 let[@sarek.module] identity (x : 'a) : 'a = x

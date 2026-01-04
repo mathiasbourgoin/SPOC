@@ -10,5 +10,5 @@
   spoc_framework_registry
   sarek
   (re_export spoc_core))
- (modules Native_plugin_v2)
+ (modules Native_plugin_base Native_plugin)
  (preprocess no_preprocessing))

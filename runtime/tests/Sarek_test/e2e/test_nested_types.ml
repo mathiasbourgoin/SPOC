@@ -15,8 +15,8 @@ module V2_Transfer = Spoc_core.Transfer
 
 (* Force backend registration *)
 let () =
-  Sarek_cuda.Cuda_plugin_v2.init () ;
-  Sarek_opencl.Opencl_plugin_v2.init ()
+  Sarek_cuda.Cuda_plugin.init () ;
+  Sarek_opencl.Opencl_plugin.init ()
 
 type float32 = float
 

@@ -28,7 +28,7 @@ module V2_Transfer = Spoc_core.Transfer
 module Execute = Sarek.Execute
 
 (* Force plugin initialization *)
-let () = Sarek_native.Native_plugin_v2.init ()
+let () = Sarek_native.Native_plugin.init ()
 
 let size = 1024
 

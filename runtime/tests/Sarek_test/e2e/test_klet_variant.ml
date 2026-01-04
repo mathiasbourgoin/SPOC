@@ -13,8 +13,8 @@ type ('a, 'b) vector = ('a, 'b) V2_Vector.t
 
 (* Force backend registration *)
 let () =
-  Sarek_cuda.Cuda_plugin_v2.init () ;
-  Sarek_opencl.Opencl_plugin_v2.init ()
+  Sarek_cuda.Cuda_plugin.init () ;
+  Sarek_opencl.Opencl_plugin.init ()
 
 let () =
   let dispatch =

@@ -8,7 +8,7 @@ module V2_Device = Spoc_core.Device
 module V2_Vector = Spoc_core.Vector
 module V2_Transfer = Spoc_core.Transfer
 
-let () = Sarek_native.Native_plugin_v2.init ()
+let () = Sarek_native.Native_plugin.init ()
 
 (* Super simple kernel that just writes to output *)
 let simple_write_kernel =
