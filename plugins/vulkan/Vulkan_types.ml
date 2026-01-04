@@ -298,6 +298,28 @@ let vk_descriptor_type_storage_buffer = 7
 
 let vk_shader_stage_compute_bit = 0x00000020
 
+(** {1 Pipeline Stage Flags} *)
+
+let vk_pipeline_stage_host_bit = 0x00004000
+
+let vk_pipeline_stage_compute_shader_bit = 0x00000800
+
+(** {1 Access Flags} *)
+
+let vk_access_host_write_bit = 0x00004000
+
+let vk_access_host_read_bit = 0x00008000
+
+let vk_access_shader_read_bit = 0x00000020
+
+let vk_access_shader_write_bit = 0x00000040
+
+(** {1 Misc Constants} *)
+
+let vk_queue_family_ignored = 0xFFFFFFFF
+
+let vk_structure_type_buffer_memory_barrier = 44
+
 (** {1 Pipeline Bind Points} *)
 
 let vk_pipeline_bind_point_compute = 1
@@ -762,6 +784,36 @@ let push_const_offset = field vk_push_constant_range "offset" uint32_t
 let push_const_size = field vk_push_constant_range "size" uint32_t
 
 let () = seal vk_push_constant_range
+
+(** VkBufferMemoryBarrier *)
+type vk_buffer_memory_barrier
+
+let vk_buffer_memory_barrier : vk_buffer_memory_barrier structure typ =
+  structure "VkBufferMemoryBarrier"
+
+let buf_barrier_sType = field vk_buffer_memory_barrier "sType" int
+
+let buf_barrier_pNext = field vk_buffer_memory_barrier "pNext" (ptr void)
+
+let buf_barrier_srcAccessMask =
+  field vk_buffer_memory_barrier "srcAccessMask" vk_flags
+
+let buf_barrier_dstAccessMask =
+  field vk_buffer_memory_barrier "dstAccessMask" vk_flags
+
+let buf_barrier_srcQueueFamilyIndex =
+  field vk_buffer_memory_barrier "srcQueueFamilyIndex" uint32_t
+
+let buf_barrier_dstQueueFamilyIndex =
+  field vk_buffer_memory_barrier "dstQueueFamilyIndex" uint32_t
+
+let buf_barrier_buffer = field vk_buffer_memory_barrier "buffer" vk_buffer
+
+let buf_barrier_offset = field vk_buffer_memory_barrier "offset" vk_device_size
+
+let buf_barrier_size = field vk_buffer_memory_barrier "size" vk_device_size
+
+let () = seal vk_buffer_memory_barrier
 
 (** VkPipelineLayoutCreateInfo *)
 type vk_pipeline_layout_create_info

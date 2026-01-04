@@ -638,9 +638,13 @@ let gen_push_constants buf params =
       vectors ;
     List.iter
       (fun v ->
-        Buffer.add_string
-          buf
-          (Printf.sprintf "#define %s pc.%s\n" v.var_name v.var_name))
+        (* TEMPORARY DEBUG: Hardcode n to 10 *)
+        if v.var_name = "n" then
+          Buffer.add_string buf "#define n 10  /* HARDCODED FOR DEBUG */\n"
+        else
+          Buffer.add_string
+            buf
+            (Printf.sprintf "#define %s pc.%s\n" v.var_name v.var_name))
       scalars ;
     Buffer.add_string buf "\n"
   end
@@ -678,6 +682,12 @@ let generate (k : kernel) : string =
 
   (* Main function *)
   Buffer.add_string buf "void main() {\n" ;
+
+  (* TEMPORARY DEBUG: Unconditional write to test shader execution *)
+  Buffer.add_string buf "  // DEBUG: Write 999.0 to c[0] if this shader runs\n" ;
+  Buffer.add_string
+    buf
+    "  if (gl_GlobalInvocationID.x == 0) { c.data[0] = 999.0; }\n" ;
 
   (* Body *)
   gen_stmt buf "  " k.kern_body ;

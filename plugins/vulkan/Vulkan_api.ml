@@ -49,10 +49,12 @@ let compile_glsl_to_spirv ~(entry_point : string) (glsl_source : string) :
   close_out oc ;
 
   (* Compile with glslangValidator *)
+  (* Always use "main" as entry point since that's what our GLSL generator produces *)
+  let _entry_point = entry_point in
+  (* Kept for API compatibility *)
   let cmd =
     Printf.sprintf
-      "glslangValidator -V --target-env vulkan1.1 -S comp -e %s -o %s %s 2>&1"
-      entry_point
+      "glslangValidator -V --target-env vulkan1.1 -S comp -e main -o %s %s 2>&1"
       spirv_file
       glsl_file
   in
@@ -75,14 +77,23 @@ let compile_glsl_to_spirv ~(entry_point : string) (glsl_source : string) :
       Printf.eprintf
         "[Vulkan] SPIR-V compilation succeeded, file size: %d bytes\n%!"
         Unix.((stat spirv_file).st_size) ;
-      (* Save for debugging *)
+      (* Save both SPIR-V and GLSL for debugging *)
       let debug_spirv = "/tmp/sarek_debug.spv" in
+      let debug_glsl = "/tmp/sarek_debug.comp" in
       try
-        let cmd = Printf.sprintf "cp %s %s" spirv_file debug_spirv in
+        let cmd =
+          Printf.sprintf
+            "cp %s %s && cp %s %s"
+            spirv_file
+            debug_spirv
+            glsl_file
+            debug_glsl
+        in
         ignore (Sys.command cmd) ;
         Printf.eprintf
-          "[Vulkan] Saved SPIR-V to %s for debugging\n%!"
+          "[Vulkan] Saved SPIR-V to %s and GLSL to %s for debugging\n%!"
           debug_spirv
+          debug_glsl
       with _ -> ())
   | _ ->
       (try Unix.unlink spirv_file with _ -> ()) ;
@@ -1154,6 +1165,60 @@ module Kernel = struct
       "vkBeginCommandBuffer"
       (vkBeginCommandBuffer stream.Stream.command_buffer (addr begin_info)) ;
 
+    (* Pipeline barrier: Make host writes visible to compute shader *)
+    (* Must come BEFORE binding pipeline, like C example *)
+    Printf.eprintf
+      "[Vulkan] Adding pipeline barriers (HOST -> COMPUTE_SHADER)...\n%!" ;
+    List.iter
+      (fun (_, AnyBuf buf) ->
+        let barrier = make vk_buffer_memory_barrier in
+        setf barrier buf_barrier_sType vk_structure_type_buffer_memory_barrier ;
+        setf barrier buf_barrier_pNext null ;
+        setf
+          barrier
+          buf_barrier_srcAccessMask
+          (Unsigned.UInt32.of_int vk_access_host_write_bit) ;
+        setf
+          barrier
+          buf_barrier_dstAccessMask
+          (Unsigned.UInt32.of_int vk_access_shader_read_bit) ;
+        setf
+          barrier
+          buf_barrier_srcQueueFamilyIndex
+          (Unsigned.UInt32.of_int vk_queue_family_ignored) ;
+        setf
+          barrier
+          buf_barrier_dstQueueFamilyIndex
+          (Unsigned.UInt32.of_int vk_queue_family_ignored) ;
+        setf barrier buf_barrier_buffer buf.buffer ;
+        setf barrier buf_barrier_offset (Unsigned.UInt64.of_int 0) ;
+        setf
+          barrier
+          buf_barrier_size
+          (Unsigned.UInt64.of_int (buf.size * buf.elem_size)) ;
+
+        vkCmdPipelineBarrier
+          stream.Stream.command_buffer
+          (Unsigned.UInt32.of_int vk_pipeline_stage_host_bit) (* src stage *)
+          (Unsigned.UInt32.of_int vk_pipeline_stage_compute_shader_bit)
+          (* dst stage *)
+          (Unsigned.UInt32.of_int 0)
+          (* dependency flags *)
+          (Unsigned.UInt32.of_int 0)
+          (* memory barrier count *)
+          (from_voidp void null)
+          (* memory barriers *)
+          (Unsigned.UInt32.of_int 1)
+          (* buffer barrier count: ONE barrier per call *)
+          (addr barrier)
+          (* buffer barriers *)
+          (Unsigned.UInt32.of_int 0)
+          (* image barrier count *)
+          (from_voidp void null)
+        (* image barriers *))
+      bindings_in_order ;
+    Printf.eprintf "[Vulkan] Pre-compute barriers added\n%!" ;
+
     vkCmdBindPipeline
       stream.Stream.command_buffer
       vk_pipeline_bind_point_compute
@@ -1192,6 +1257,12 @@ module Kernel = struct
           let value = Unsigned.UInt8.of_int (Bytes.get_uint8 pc i) in
           Ctypes.(element_ptr <-@ value)
         done ;
+        (* Debug: print push constant bytes *)
+        Printf.eprintf "[Vulkan] Push constant bytes (%d bytes): " pc_len ;
+        for i = 0 to min 31 (pc_len - 1) do
+          Printf.eprintf "%02x " (Bytes.get_uint8 pc i)
+        done ;
+        Printf.eprintf "\n%!" ;
         vkCmdPushConstants
           stream.Stream.command_buffer
           kernel.pipeline_layout
@@ -1206,11 +1277,78 @@ module Kernel = struct
     let gx = (grid.x + block.x - 1) / block.x in
     let gy = (grid.y + block.y - 1) / block.y in
     let gz = (grid.z + block.z - 1) / block.z in
+    Printf.eprintf
+      "[Vulkan] Dispatching: grid=(%d,%d,%d) block=(%d,%d,%d) \
+       workgroups=(%d,%d,%d)\n\
+       %!"
+      grid.x
+      grid.y
+      grid.z
+      block.x
+      block.y
+      block.z
+      gx
+      gy
+      gz ;
     vkCmdDispatch
       stream.Stream.command_buffer
       (Unsigned.UInt32.of_int gx)
       (Unsigned.UInt32.of_int gy)
       (Unsigned.UInt32.of_int gz) ;
+
+    (* Post-compute barrier: Make shader writes visible to host *)
+    Printf.eprintf
+      "[Vulkan] Adding post-compute barriers (COMPUTE_SHADER -> HOST)...\n%!" ;
+    List.iter
+      (fun (_, AnyBuf buf) ->
+        let barrier = make vk_buffer_memory_barrier in
+        setf barrier buf_barrier_sType vk_structure_type_buffer_memory_barrier ;
+        setf barrier buf_barrier_pNext null ;
+        setf
+          barrier
+          buf_barrier_srcAccessMask
+          (Unsigned.UInt32.of_int vk_access_shader_write_bit) ;
+        setf
+          barrier
+          buf_barrier_dstAccessMask
+          (Unsigned.UInt32.of_int vk_access_host_read_bit) ;
+        setf
+          barrier
+          buf_barrier_srcQueueFamilyIndex
+          (Unsigned.UInt32.of_int vk_queue_family_ignored) ;
+        setf
+          barrier
+          buf_barrier_dstQueueFamilyIndex
+          (Unsigned.UInt32.of_int vk_queue_family_ignored) ;
+        setf barrier buf_barrier_buffer buf.buffer ;
+        setf barrier buf_barrier_offset (Unsigned.UInt64.of_int 0) ;
+        setf
+          barrier
+          buf_barrier_size
+          (Unsigned.UInt64.of_int (buf.size * buf.elem_size)) ;
+
+        vkCmdPipelineBarrier
+          stream.Stream.command_buffer
+          (Unsigned.UInt32.of_int vk_pipeline_stage_compute_shader_bit)
+          (* src stage *)
+          (Unsigned.UInt32.of_int vk_pipeline_stage_host_bit)
+          (* dst stage *)
+          (Unsigned.UInt32.of_int 0)
+          (* dependency flags *)
+          (Unsigned.UInt32.of_int 0)
+          (* memory barrier count *)
+          (from_voidp void null)
+          (* memory barriers *)
+          (Unsigned.UInt32.of_int 1)
+          (* buffer barrier count: ONE barrier per call *)
+          (addr barrier)
+          (* buffer barriers *)
+          (Unsigned.UInt32.of_int 0)
+          (* image barrier count *)
+          (from_voidp void null)
+        (* image barriers *))
+      bindings_in_order ;
+    Printf.eprintf "[Vulkan] Post-compute barriers added\n%!" ;
 
     check "vkEndCommandBuffer" (vkEndCommandBuffer stream.Stream.command_buffer) ;
 

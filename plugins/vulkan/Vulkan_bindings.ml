@@ -444,6 +444,29 @@ let vkCmdDispatch_lazy =
 
 let vkCmdDispatch buf gx gy gz = Lazy.force vkCmdDispatch_lazy buf gx gy gz
 
+let vkCmdPipelineBarrier_lazy =
+  foreign_vk_lazy
+    "vkCmdPipelineBarrier"
+    (vk_command_buffer_ptr @-> vk_flags @-> vk_flags @-> vk_flags @-> uint32_t
+   @-> ptr void @-> uint32_t
+    @-> ptr vk_buffer_memory_barrier
+    @-> uint32_t @-> ptr void @-> returning void)
+
+let vkCmdPipelineBarrier buf src_stage dst_stage dep_flags mem_barrier_count
+    mem_barriers buf_barrier_count buf_barriers img_barrier_count img_barriers =
+  Lazy.force
+    vkCmdPipelineBarrier_lazy
+    buf
+    src_stage
+    dst_stage
+    dep_flags
+    mem_barrier_count
+    mem_barriers
+    buf_barrier_count
+    buf_barriers
+    img_barrier_count
+    img_barriers
+
 let vkCmdCopyBuffer_lazy =
   foreign_vk_lazy
     "vkCmdCopyBuffer"
