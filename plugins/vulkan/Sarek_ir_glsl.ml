@@ -576,7 +576,6 @@ let count_vec_params params =
 let glsl_header ~kernel_name =
   Printf.sprintf
     {|#version 450
-#extension GL_ARB_gpu_shader_int64 : enable
 
 // Sarek-generated compute shader: %s
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
@@ -598,7 +597,7 @@ let gen_buffer_binding buf binding_idx v elem_type =
   Buffer.add_string buf (Printf.sprintf "} %s;\n" v.var_name)
 
 let gen_push_constants buf params =
-  (* Collect all scalar parameters *)
+  (* TEMPORARILY using globals for debugging instead of push constants *)
   let scalars =
     List.filter_map
       (fun decl ->
@@ -608,19 +607,16 @@ let gen_push_constants buf params =
         | _ -> None)
       params
   in
-  if scalars <> [] then begin
-    Buffer.add_string buf "layout(push_constant) uniform PushConstants {\n" ;
-    List.iter
-      (fun v ->
-        Buffer.add_string
-          buf
-          (Printf.sprintf
-             "  %s %s;\n"
-             (glsl_type_of_elttype v.var_type)
-             v.var_name))
-      scalars ;
-    Buffer.add_string buf "};\n"
-  end
+  (* Declare as constants - values will be hardcoded for now *)
+  List.iter
+    (fun v ->
+      Buffer.add_string
+        buf
+        (Printf.sprintf
+           "const %s %s = 100000;\n"
+           (glsl_type_of_elttype v.var_type)
+           v.var_name))
+    scalars
 
 (** Generate complete GLSL source for a kernel *)
 let generate (k : kernel) : string =

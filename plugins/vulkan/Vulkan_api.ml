@@ -24,21 +24,6 @@ let memcpy dst src size =
 
 exception Vulkan_error of vk_result * string
 
-let vk_result_to_string = function
-  | VK_SUCCESS -> "VK_SUCCESS"
-  | VK_ERROR_OUT_OF_HOST_MEMORY -> "VK_ERROR_OUT_OF_HOST_MEMORY"
-  | VK_ERROR_OUT_OF_DEVICE_MEMORY -> "VK_ERROR_OUT_OF_DEVICE_MEMORY"
-  | VK_ERROR_INITIALIZATION_FAILED -> "VK_ERROR_INITIALIZATION_FAILED"
-  | VK_ERROR_DEVICE_LOST -> "VK_ERROR_DEVICE_LOST"
-  | VK_ERROR_MEMORY_MAP_FAILED -> "VK_ERROR_MEMORY_MAP_FAILED"
-  | VK_ERROR_LAYER_NOT_PRESENT -> "VK_ERROR_LAYER_NOT_PRESENT"
-  | VK_ERROR_EXTENSION_NOT_PRESENT -> "VK_ERROR_EXTENSION_NOT_PRESENT"
-  | VK_ERROR_FEATURE_NOT_PRESENT -> "VK_ERROR_FEATURE_NOT_PRESENT"
-  | VK_ERROR_INCOMPATIBLE_DRIVER -> "VK_ERROR_INCOMPATIBLE_DRIVER"
-  | VK_ERROR_TOO_MANY_OBJECTS -> "VK_ERROR_TOO_MANY_OBJECTS"
-  | VK_ERROR_FORMAT_NOT_SUPPORTED -> "VK_ERROR_FORMAT_NOT_SUPPORTED"
-  | r -> Printf.sprintf "VK_ERROR_%d" (Obj.magic r : int)
-
 (** Check Vulkan result and raise exception on error *)
 let check (ctx : string) (result : vk_result) : unit =
   match result with
@@ -47,7 +32,7 @@ let check (ctx : string) (result : vk_result) : unit =
       Printf.eprintf
         "[Vulkan] %s failed with %s\n%!"
         ctx
-        (vk_result_to_string err) ;
+        (string_of_vk_result err) ;
       raise (Vulkan_error (err, ctx))
 
 (** {1 SPIR-V Compilation} *)
@@ -66,11 +51,12 @@ let compile_glsl_to_spirv ~(entry_point : string) (glsl_source : string) :
   (* Compile with glslangValidator *)
   let cmd =
     Printf.sprintf
-      "glslangValidator -V -S comp -e %s -o %s %s 2>&1"
+      "glslangValidator -V --target-env vulkan1.1 -S comp -e %s -o %s %s 2>&1"
       entry_point
       spirv_file
       glsl_file
   in
+  Printf.eprintf "[Vulkan] Compiling GLSL to SPIR-V: %s\n%!" cmd ;
   let ic = Unix.open_process_in cmd in
   let output = Buffer.create 256 in
   (try
@@ -85,7 +71,19 @@ let compile_glsl_to_spirv ~(entry_point : string) (glsl_source : string) :
 
   (* Check result *)
   (match status with
-  | Unix.WEXITED 0 -> ()
+  | Unix.WEXITED 0 -> (
+      Printf.eprintf
+        "[Vulkan] SPIR-V compilation succeeded, file size: %d bytes\n%!"
+        Unix.((stat spirv_file).st_size) ;
+      (* Save for debugging *)
+      let debug_spirv = "/tmp/sarek_debug.spv" in
+      try
+        let cmd = Printf.sprintf "cp %s %s" spirv_file debug_spirv in
+        ignore (Sys.command cmd) ;
+        Printf.eprintf
+          "[Vulkan] Saved SPIR-V to %s for debugging\n%!"
+          debug_spirv
+      with _ -> ())
   | _ ->
       (try Unix.unlink spirv_file with _ -> ()) ;
       failwith
@@ -149,11 +147,11 @@ module Device = struct
         setf app_info app_info_applicationVersion (Unsigned.UInt32.of_int 1) ;
         setf app_info app_info_pEngineName (Some "SPOC") ;
         setf app_info app_info_engineVersion (Unsigned.UInt32.of_int 1) ;
-        (* Vulkan 1.0 *)
+        (* Vulkan 1.1 - required for modern SPIR-V *)
         setf
           app_info
           app_info_apiVersion
-          (Unsigned.UInt32.of_int ((1 lsl 22) lor (0 lsl 12) lor 0)) ;
+          (Unsigned.UInt32.of_int ((1 lsl 22) lor (1 lsl 12) lor 0)) ;
 
         (* Instance create info *)
         let create_info = make vk_instance_create_info in
@@ -774,16 +772,23 @@ module Kernel = struct
     (* Create shader module *)
     let shader_module = create_shader_module device spirv in
 
-    (* Count buffer bindings from source (simple heuristic) *)
+    (* Count buffer bindings from source (look for "binding = N") *)
     let num_bindings =
       let count = ref 0 in
-      String.iteri
-        (fun i c ->
-          if c = 'b' && i + 7 < String.length source then
-            if String.sub source i 7 = "binding" then incr count)
-        source ;
+      let binding_re = Str.regexp "binding *= *[0-9]+" in
+      let _ =
+        try
+          let pos = ref 0 in
+          while true do
+            let _ = Str.search_forward binding_re source !pos in
+            incr count ;
+            pos := Str.match_end ()
+          done
+        with Not_found -> ()
+      in
       max 1 !count
     in
+    Printf.eprintf "[Vulkan] Detected %d buffer bindings\n%!" num_bindings ;
 
     (* Create descriptor set layout *)
     let bindings = CArray.make vk_descriptor_set_layout_binding num_bindings in
@@ -835,6 +840,8 @@ module Kernel = struct
 
     (* Add push constant range for scalar parameters *)
     (* TODO: Calculate exact size from IR metadata instead of fixed size *)
+    (* TEMPORARILY DISABLED for debugging *)
+    (*
     let push_constant_range = make vk_push_constant_range in
     setf
       push_constant_range
@@ -849,8 +856,18 @@ module Kernel = struct
       pl_create_pushConstantRangeCount
       (Unsigned.UInt32.of_int 1) ;
     setf pl_create_info pl_create_pPushConstantRanges (addr push_constant_range) ;
+    *)
+    setf
+      pl_create_info
+      pl_create_pushConstantRangeCount
+      (Unsigned.UInt32.of_int 0) ;
+    setf
+      pl_create_info
+      pl_create_pPushConstantRanges
+      (from_voidp vk_push_constant_range null) ;
 
     let pipeline_layout = allocate vk_pipeline_layout vk_null_handle in
+    Printf.eprintf "[Vulkan] Creating pipeline layout...\n%!" ;
     check
       "vkCreatePipelineLayout"
       (vkCreatePipelineLayout
@@ -858,6 +875,7 @@ module Kernel = struct
          (addr pl_create_info)
          null
          pipeline_layout) ;
+    Printf.eprintf "[Vulkan] Pipeline layout created successfully\n%!" ;
 
     (* Create compute pipeline *)
     let stage_info = make vk_pipeline_shader_stage_create_info in
@@ -872,7 +890,8 @@ module Kernel = struct
       shader_stage_stage
       (Unsigned.UInt32.of_int vk_shader_stage_compute_bit) ;
     setf stage_info shader_stage_module shader_module ;
-    setf stage_info shader_stage_pName name ;
+    Printf.eprintf "[Vulkan] Entry point name: 'main' (hardcoded)\n%!" ;
+    setf stage_info shader_stage_pName "main" ;
     setf stage_info shader_stage_pSpecializationInfo null ;
 
     let pipeline_info = make vk_compute_pipeline_create_info in
@@ -888,15 +907,21 @@ module Kernel = struct
     setf pipeline_info compute_pipe_basePipelineIndex (-1) ;
 
     let pipeline = allocate vk_pipeline vk_null_handle in
-    check
-      "vkCreateComputePipelines"
-      (vkCreateComputePipelines
-         device.Device.device
-         vk_null_handle
-         (Unsigned.UInt32.of_int 1)
-         (addr pipeline_info)
-         null
-         pipeline) ;
+    Printf.eprintf "[Vulkan] Creating compute pipeline...\n%!" ;
+    let result =
+      vkCreateComputePipelines
+        device.Device.device
+        vk_null_handle
+        (Unsigned.UInt32.of_int 1)
+        (addr pipeline_info)
+        null
+        pipeline
+    in
+    Printf.eprintf
+      "[Vulkan] vkCreateComputePipelines returned: %s\n%!"
+      (string_of_vk_result result) ;
+    check "vkCreateComputePipelines" result ;
+    Printf.eprintf "[Vulkan] Compute pipeline created successfully\n%!" ;
 
     (* Create descriptor pool *)
     let pool_size = make vk_descriptor_pool_size in
@@ -1101,6 +1126,8 @@ module Kernel = struct
       (from_voidp uint32_t null) ;
 
     (* Push constants for scalar arguments *)
+    (* TEMPORARILY DISABLED - coercion issue *)
+    (*
     (match args.push_constants with
     | Some pc ->
         let pc_ptr = Ctypes.ocaml_bytes_start pc in
@@ -1113,6 +1140,8 @@ module Kernel = struct
           (Unsigned.UInt32.of_int (Bytes.length pc)) (* size *)
           pc_void
     | None -> ()) ;
+    *)
+    ignore args.push_constants ;
 
     (* Vulkan dispatch uses workgroup counts, not total threads *)
     let gx = (grid.x + block.x - 1) / block.x in
