@@ -48,7 +48,7 @@ let init_sort_data size =
   input_bitonic_global :=
     Array.init n (fun _ -> Int32.of_int (Random.int 10000)) ;
 
-  let n_oe = min 256 size in
+  let n_oe = min 128 size in
   sort_size_odd_even := n_oe ;
   Random.init 42 ;
   input_odd_even := Array.init n_oe (fun _ -> Int32.of_int (Random.int 10000))
@@ -221,11 +221,9 @@ let () =
     let n = !sort_size_odd_even in
     ocaml_sort !input_odd_even n
   in
-  let filter dev = dev.Device.framework <> "Vulkan" in
   Benchmarks.run
     ~baseline:baseline_odd_even
     ~verify
-    ~filter
     "Odd-Even Sort"
     run_odd_even_sort ;
   Benchmarks.exit ()
