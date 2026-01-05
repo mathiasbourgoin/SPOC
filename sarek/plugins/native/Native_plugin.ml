@@ -149,6 +149,22 @@ module Backend : Framework_sig.BACKEND = struct
   let generate_source ?block:_ (_ir : Sarek_ir_types.kernel) : string option =
     None
 
+  (** Convert exec_arg array to Obj.t array for legacy native_fn *)
+  let exec_args_to_obj (args : Framework_sig.exec_arg array) : Obj.t array =
+    Array.map
+      (fun arg ->
+        match arg with
+        | Framework_sig.EA_Int32 n -> Obj.repr n
+        | Framework_sig.EA_Int64 n -> Obj.repr n
+        | Framework_sig.EA_Float32 f -> Obj.repr f
+        | Framework_sig.EA_Float64 f -> Obj.repr f
+        | Framework_sig.EA_Scalar ((module S), v) -> Obj.repr v
+        | Framework_sig.EA_Composite ((module C), v) -> Obj.repr v
+        | Framework_sig.EA_Vec (module V) ->
+            (* Get the underlying Vector object for legacy native function *)
+            V.underlying_obj ())
+      args
+
   (** Execute directly using native function from IR. Args contain vectors
       directly (not expanded buffer/length pairs). The native function uses
       Spoc_core.Vector.get/set for access. *)
@@ -156,30 +172,27 @@ module Backend : Framework_sig.BACKEND = struct
       ~(native_fn :
          (block:Framework_sig.dims ->
          grid:Framework_sig.dims ->
-         Obj.t array ->
+         Framework_sig.exec_arg array ->
          unit)
          option) ~(ir : Sarek_ir_types.kernel option)
       ~(block : Framework_sig.dims) ~(grid : Framework_sig.dims)
-      (args : Obj.t array) : unit =
-    ignore native_fn ;
-    (* We use kern_native_fn from IR *)
-    match ir with
-    | Some kernel -> (
-        match kernel.kern_native_fn with
-        | Some (Sarek_ir_types.NativeFn fn) ->
-            (* Use native function - args are vectors directly *)
-            let block_tuple = (block.x, block.y, block.z) in
-            let grid_tuple = (grid.x, grid.y, grid.z) in
-            fn ~parallel:true ~block:block_tuple ~grid:grid_tuple args
-        | None ->
-            (* Fall back to IR interpretation with vector support *)
-            Sarek.Sarek_ir_interp.parallel_mode := true ;
-            Sarek.Sarek_ir_interp.run_kernel_with_obj_args
-              (Obj.magic kernel) (* TODO: Fix Sarek_ir_interp signature *)
-              ~block:(block.x, block.y, block.z)
-              ~grid:(grid.x, grid.y, grid.z)
-              args)
-    | None -> failwith "Native backend execute_direct: IR required"
+      (args : Framework_sig.exec_arg array) : unit =
+    (* First try native_fn if provided *)
+    match native_fn with
+    | Some fn -> fn ~block ~grid args
+    | None -> (
+        (* Fall back to IR native function *)
+        match ir with
+        | Some kernel -> (
+            match kernel.kern_native_fn with
+            | Some (Sarek_ir_types.NativeFn fn) ->
+                (* Convert exec_args to Obj.t for legacy native function *)
+                let obj_args = exec_args_to_obj args in
+                let block_tuple = (block.x, block.y, block.z) in
+                let grid_tuple = (grid.x, grid.y, grid.z) in
+                fn ~parallel:true ~block:block_tuple ~grid:grid_tuple obj_args
+            | None -> failwith "Native backend: no native function in IR")
+        | None -> failwith "Native backend execute_direct: IR required")
 
   (** Native intrinsic registry *)
   module Intrinsics = Native_intrinsics

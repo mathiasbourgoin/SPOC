@@ -41,7 +41,7 @@ let arg_custom (buf : _ Memory.buffer) ~(elem_size : int) : arg =
 (** Create a raw argument (for SPOC Vector compatibility) *)
 let arg_raw (v : 'a) : arg = ArgRaw (Obj.repr v)
 
-(** Convert typed arguments to Obj.t array *)
+(** Convert typed arguments to Obj.t array (legacy, for backwards compat) *)
 let args_to_obj_array (args : arg list) : Obj.t array =
   Array.of_list
     (List.map
@@ -56,6 +56,22 @@ let args_to_obj_array (args : arg list) : Obj.t array =
          | ArgDeviceBuffer buf ->
              let (module B : Vector.DEVICE_BUFFER) = buf in
              Obj.repr B.ptr)
+       args)
+
+(** Convert typed arg list to exec_arg array (new typed interface) *)
+let args_to_exec_array (args : arg list) : Framework_sig.exec_arg array =
+  Array.of_list
+    (List.map
+       (function
+         | ArgBuffer _ -> failwith "args_to_exec_array: ArgBuffer not supported"
+         | ArgInt32 n -> Framework_sig.EA_Int32 n
+         | ArgInt64 n -> Framework_sig.EA_Int64 n
+         | ArgFloat32 f -> Framework_sig.EA_Float32 f
+         | ArgFloat64 f -> Framework_sig.EA_Float64 f
+         | ArgCustom _ -> failwith "args_to_exec_array: ArgCustom not supported"
+         | ArgRaw _ -> failwith "args_to_exec_array: ArgRaw not supported"
+         | ArgDeviceBuffer _ ->
+             failwith "args_to_exec_array: ArgDeviceBuffer use vector_args path")
        args)
 
 (** Bind typed arguments to a kernel (for BACKEND) *)
@@ -101,8 +117,8 @@ type vector_arg =
   | Float32 : float -> vector_arg  (** 32-bit float scalar *)
   | Float64 : float -> vector_arg  (** 64-bit float scalar *)
 
-(** Convert vector_arg list to Obj.t array for backend dispatch. Passes V2
-    Vectors directly - backends handle extraction. *)
+(** Convert vector_arg list to Obj.t array for backend dispatch (legacy). Passes
+    V2 Vectors directly - backends handle extraction. *)
 let vector_args_to_obj_array (args : vector_arg list) : Obj.t array =
   Array.of_list
     (List.map
@@ -113,6 +129,94 @@ let vector_args_to_obj_array (args : vector_arg list) : Obj.t array =
          | Int64 n -> Obj.repr n
          | Float32 f -> Obj.repr f
          | Float64 f -> Obj.repr f)
+       args)
+
+(** Convert vector_arg list to exec_arg array (new typed interface). Creates
+    EXEC_VECTOR wrappers for vectors. *)
+let vector_args_to_exec_array (args : vector_arg list) :
+    Framework_sig.exec_arg array =
+  Array.of_list
+    (List.map
+       (function
+         | Vec v ->
+             (* Create an EXEC_VECTOR module wrapping the vector *)
+             let module EV : Typed_value.EXEC_VECTOR = struct
+               let length = Vector.length v
+
+               let type_name = Vector.kind_name (Vector.kind v)
+
+               let elem_size = Vector.elem_size (Vector.kind v)
+
+               let underlying_obj () = Obj.repr v
+
+               let device_ptr () =
+                 (* Get device pointer from location-based buffer *)
+                 match Vector.location v with
+                 | Vector.GPU dev | Vector.Both dev | Vector.Stale_CPU dev -> (
+                     match Vector.get_buffer v dev with
+                     | Some (module B : Vector.DEVICE_BUFFER) -> B.ptr
+                     | None -> failwith "Vector has no device buffer")
+                 | Vector.CPU | Vector.Stale_GPU _ ->
+                     failwith "Vector not on device"
+
+               let get i =
+                 (* Convert element to typed_value based on vector kind *)
+                 match Vector.kind v with
+                 | Vector.Scalar Vector.Int32 ->
+                     Typed_value.TV_Scalar
+                       (Typed_value.SV
+                          ((module Typed_value.Int32_type), Vector.get v i))
+                 | Vector.Scalar Vector.Int64 ->
+                     Typed_value.TV_Scalar
+                       (Typed_value.SV
+                          ((module Typed_value.Int64_type), Vector.get v i))
+                 | Vector.Scalar Vector.Float32 ->
+                     Typed_value.TV_Scalar
+                       (Typed_value.SV
+                          ((module Typed_value.Float32_type), Vector.get v i))
+                 | Vector.Scalar Vector.Float64 ->
+                     Typed_value.TV_Scalar
+                       (Typed_value.SV
+                          ((module Typed_value.Float64_type), Vector.get v i))
+                 | _ ->
+                     (* Custom types: serialize to bytes *)
+                     let _bytes =
+                       Bytes.create (Vector.elem_size (Vector.kind v))
+                     in
+                     (* TODO: proper serialization for custom types *)
+                     Typed_value.TV_Scalar
+                       (Typed_value.SV ((module Typed_value.Float32_type), 0.0))
+
+               let set i tv =
+                 match (tv, Vector.kind v) with
+                 | ( Typed_value.TV_Scalar (Typed_value.SV ((module S), x)),
+                     Vector.Scalar Vector.Int32 ) -> (
+                     match S.to_primitive x with
+                     | Typed_value.PInt32 n -> Vector.set v i n
+                     | _ -> failwith "Type mismatch in set")
+                 | ( Typed_value.TV_Scalar (Typed_value.SV ((module S), x)),
+                     Vector.Scalar Vector.Int64 ) -> (
+                     match S.to_primitive x with
+                     | Typed_value.PInt64 n -> Vector.set v i n
+                     | _ -> failwith "Type mismatch in set")
+                 | ( Typed_value.TV_Scalar (Typed_value.SV ((module S), x)),
+                     Vector.Scalar Vector.Float32 ) -> (
+                     match S.to_primitive x with
+                     | Typed_value.PFloat f -> Vector.set v i f
+                     | _ -> failwith "Type mismatch in set")
+                 | ( Typed_value.TV_Scalar (Typed_value.SV ((module S), x)),
+                     Vector.Scalar Vector.Float64 ) -> (
+                     match S.to_primitive x with
+                     | Typed_value.PFloat f -> Vector.set v i f
+                     | _ -> failwith "Type mismatch in set")
+                 | _ -> failwith "set: unsupported type combination"
+             end in
+             Framework_sig.EA_Vec (module EV)
+         | Int n -> Framework_sig.EA_Int32 (Int32.of_int n)
+         | Int32 n -> Framework_sig.EA_Int32 n
+         | Int64 n -> Framework_sig.EA_Int64 n
+         | Float32 f -> Framework_sig.EA_Float32 f
+         | Float64 f -> Framework_sig.EA_Float64 f)
        args)
 
 (** Get device buffer for a V2 Vector *)
@@ -196,7 +300,7 @@ let run ~(device : Device.t) ~(name : string)
     ~(native_fn :
        (block:Framework_sig.dims ->
        grid:Framework_sig.dims ->
-       Obj.t array ->
+       Framework_sig.exec_arg array ->
        unit)
        option) ~(block : Framework_sig.dims) ~(grid : Framework_sig.dims)
     ?(shared_mem : int = 0) ?vector_args (args : arg list) : unit =
@@ -241,25 +345,25 @@ let run ~(device : Device.t) ~(name : string)
              For Direct, pass V2 Vectors directly (not expanded) *)
           let dev = B.Device.get device.backend_id in
           B.Device.set_current dev ;
-          let obj_args =
+          let exec_args =
             match vector_args with
-            | Some vargs -> vector_args_to_obj_array vargs
-            | None -> args_to_obj_array args
+            | Some vargs -> vector_args_to_exec_array vargs
+            | None -> args_to_exec_array args
           in
           let ir_val = Option.map Lazy.force ir in
-          B.execute_direct ~native_fn ~ir:ir_val ~block ~grid obj_args
+          B.execute_direct ~native_fn ~ir:ir_val ~block ~grid exec_args
       | Framework_sig.Custom ->
           (* Custom path: delegate to backend with IR
              For Custom (Interpreter), pass V2 Vectors directly *)
           let dev = B.Device.get device.backend_id in
           B.Device.set_current dev ;
-          let obj_args =
+          let exec_args =
             match vector_args with
-            | Some vargs -> vector_args_to_obj_array vargs
-            | None -> args_to_obj_array args
+            | Some vargs -> vector_args_to_exec_array vargs
+            | None -> args_to_exec_array args
           in
           let ir_val = Option.map Lazy.force ir in
-          B.execute_direct ~native_fn ~ir:ir_val ~block ~grid obj_args)
+          B.execute_direct ~native_fn ~ir:ir_val ~block ~grid exec_args)
 
 (** {1 Typed Execution Interface} *)
 
@@ -300,7 +404,7 @@ let run_from_ir ~(device : Device.t) ~(ir : Sarek_ir.kernel)
     ?(native_fn :
        (block:Framework_sig.dims ->
        grid:Framework_sig.dims ->
-       Obj.t array ->
+       Framework_sig.exec_arg array ->
        unit)
        option) (args : arg list) : unit =
   Log.debugf

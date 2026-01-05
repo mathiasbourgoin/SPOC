@@ -24,7 +24,10 @@ type 'a kernel = {
   ir : Sarek_ir.kernel Lazy.t;
       (** Lazy IR generation - only forced for JIT backends *)
   native_fn :
-    (block:Framework_sig.dims -> grid:Framework_sig.dims -> Obj.t array -> unit)
+    (block:Framework_sig.dims ->
+    grid:Framework_sig.dims ->
+    Framework_sig.exec_arg array ->
+    unit)
     option;
       (** Pre-compiled OCaml function for Direct backends *)
   param_types : Sarek_ir.elttype list;
@@ -78,6 +81,23 @@ let extensions k = k.extensions
 
 (** {1 Conversion from Legacy Kirc} *)
 
+(** Convert exec_arg array to Obj.t array for legacy cpu_kern compatibility *)
+let exec_args_to_obj_array (args : Framework_sig.exec_arg array) : Obj.t array =
+  Array.map
+    (function
+      | Framework_sig.EA_Int32 n -> Obj.repr n
+      | Framework_sig.EA_Int64 n -> Obj.repr n
+      | Framework_sig.EA_Float32 f -> Obj.repr f
+      | Framework_sig.EA_Float64 f -> Obj.repr f
+      | Framework_sig.EA_Scalar ((module S), v) -> Obj.repr v
+      | Framework_sig.EA_Composite ((module C), v) -> Obj.repr v
+      | Framework_sig.EA_Vec (module V) ->
+          (* For vectors, we need to pass the array data somehow.
+           Legacy code expects the raw vector, but we don't have it here.
+           This path is deprecated - use typed execution instead. *)
+          failwith "EA_Vec not supported in legacy cpu_kern path")
+    args
+
 (** Convert a legacy kirc_kernel to kernel. Note: This creates a lazy IR that
     converts from Kirc_Ast when forced. *)
 let of_kirc_kernel (kk : ('a, 'b, 'c) Kirc_types.kirc_kernel) ~name ~param_types
@@ -90,13 +110,15 @@ let of_kirc_kernel (kk : ('a, 'b, 'c) Kirc_types.kirc_kernel) ~name ~param_types
         Some
           (fun ~(block : Framework_sig.dims)
                ~(grid : Framework_sig.dims)
-               args
+               (args : Framework_sig.exec_arg array)
              ->
+            (* Convert typed args to Obj.t for legacy compatibility *)
+            let obj_args = exec_args_to_obj_array args in
             fn
               ~mode:Sarek_cpu_runtime.Parallel
               ~block:(block.x, block.y, block.z)
               ~grid:(grid.x, grid.y, grid.z)
-              args)
+              obj_args)
   in
   {name; ir; native_fn; param_types; extensions = kk.Kirc_types.extensions}
 
@@ -108,6 +130,20 @@ let of_sarek_kernel
 
 (** {1 Conversion to Legacy Kirc} *)
 
+(** Convert Obj.t array to exec_arg array for legacy compatibility *)
+let obj_array_to_exec_args (args : Obj.t array) : Framework_sig.exec_arg array =
+  (* Best-effort conversion - we don't know the types at runtime,
+     so we try to detect based on the Obj representation.
+     This is inherently unsafe and only for legacy compatibility. *)
+  Array.map
+    (fun obj ->
+      (* Try to determine the type - this is fragile! *)
+      if Obj.is_int obj then Framework_sig.EA_Int32 (Int32.of_int (Obj.obj obj))
+      else
+        (* Assume float for non-int values - legacy kernels typically use floats *)
+        Framework_sig.EA_Float32 (Obj.obj obj))
+    args
+
 (** Convert kernel to legacy kirc_kernel. Note: This may force IR evaluation. *)
 let to_kirc_kernel (k : 'a kernel) :
     (unit -> unit, unit, unit) Kirc_types.kirc_kernel =
@@ -117,13 +153,15 @@ let to_kirc_kernel (k : 'a kernel) :
     | None -> None
     | Some fn ->
         Some
-          (fun ~mode:_ ~block ~grid args ->
+          (fun ~mode:_ ~block ~grid (obj_args : Obj.t array) ->
             let bx, by, bz = block in
             let gx, gy, gz = grid in
+            (* Convert Obj.t array to exec_arg array *)
+            let exec_args = obj_array_to_exec_args obj_args in
             fn
               ~block:(Framework_sig.dims_3d bx by bz)
               ~grid:(Framework_sig.dims_3d gx gy gz)
-              args)
+              exec_args)
   in
   {
     Kirc_types.ml_kern = (fun () -> ());
@@ -137,12 +175,12 @@ let to_kirc_kernel (k : 'a kernel) :
 
 (** {1 Execution} *)
 
-(** Execute a kernel on a device with Obj.t array args. Note: Only works for
+(** Execute a kernel on a device with exec_arg array args. Note: Only works for
     Native backend. For JIT backends (CUDA/OpenCL), use run_with_args which
     provides properly typed arguments. *)
 let run ~(device : Device.t) ~(block : Framework_sig.dims)
     ~(grid : Framework_sig.dims) ?(shared_mem = 0) (k : 'a kernel)
-    (args : Obj.t array) : unit =
+    (args : Framework_sig.exec_arg array) : unit =
   ignore shared_mem ;
   match device.framework with
   | "Native" -> (
@@ -152,7 +190,7 @@ let run ~(device : Device.t) ~(block : Framework_sig.dims)
   | fw ->
       failwith
         (Printf.sprintf
-           "run with Obj.t array only works for Native backend; got %s. Use \
+           "run with exec_arg array only works for Native backend; got %s. Use \
             run_with_args for JIT backends."
            fw)
 

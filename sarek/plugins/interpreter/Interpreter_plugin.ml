@@ -68,6 +68,22 @@ module Backend : Framework_sig.BACKEND = struct
   let generate_source ?block:_ (_ir : Sarek_ir_types.kernel) : string option =
     None
 
+  (** Convert exec_arg array to Obj.t array for interpreter *)
+  let exec_args_to_obj (args : Framework_sig.exec_arg array) : Obj.t array =
+    Array.map
+      (fun arg ->
+        match arg with
+        | Framework_sig.EA_Int32 n -> Obj.repr n
+        | Framework_sig.EA_Int64 n -> Obj.repr n
+        | Framework_sig.EA_Float32 f -> Obj.repr f
+        | Framework_sig.EA_Float64 f -> Obj.repr f
+        | Framework_sig.EA_Scalar ((module S), v) -> Obj.repr v
+        | Framework_sig.EA_Composite ((module C), v) -> Obj.repr v
+        | Framework_sig.EA_Vec (module V) ->
+            (* Get the underlying Vector object *)
+            V.underlying_obj ())
+      args
+
   (** Execute directly by interpreting the IR. Interpreter always interprets,
       ignoring native_fn (use Native backend for compiled execution). Uses
       parallel or sequential mode based on current device. *)
@@ -75,11 +91,11 @@ module Backend : Framework_sig.BACKEND = struct
       ~(native_fn :
          (block:Framework_sig.dims ->
          grid:Framework_sig.dims ->
-         Obj.t array ->
+         Framework_sig.exec_arg array ->
          unit)
          option) ~(ir : Sarek_ir_types.kernel option)
       ~(block : Framework_sig.dims) ~(grid : Framework_sig.dims)
-      (args : Obj.t array) : unit =
+      (args : Framework_sig.exec_arg array) : unit =
     ignore native_fn ;
     (* Interpreter ignores native_fn - always interprets *)
     (* Determine parallel mode based on current device *)
@@ -91,12 +107,13 @@ module Backend : Framework_sig.BACKEND = struct
     match ir with
     | Some kernel ->
         Sarek.Sarek_ir_interp.parallel_mode := use_parallel ;
-        (* Interpreter handles vectors directly *)
+        (* Convert exec_args to Obj.t and use existing interpreter path *)
+        let obj_args = exec_args_to_obj args in
         Sarek.Sarek_ir_interp.run_kernel_with_obj_args
-          (Obj.magic kernel) (* TODO: Fix Sarek_ir_interp signature *)
+          kernel
           ~block:(block.x, block.y, block.z)
           ~grid:(grid.x, grid.y, grid.z)
-          args
+          obj_args
     | None ->
         failwith
           "Interpreter backend execute_direct: IR required for interpretation"

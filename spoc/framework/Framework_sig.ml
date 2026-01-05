@@ -99,6 +99,20 @@ module type INTRINSIC_REGISTRY = sig
   val list_all : unit -> string list
 end
 
+(** Re-export typed value types for convenience *)
+type exec_arg = Typed_value.exec_arg =
+  | EA_Int32 of int32
+  | EA_Int64 of int64
+  | EA_Float32 of float
+  | EA_Float64 of float
+  | EA_Scalar :
+      (module Typed_value.SCALAR_TYPE with type t = 'a) * 'a
+      -> exec_arg
+  | EA_Composite :
+      (module Typed_value.COMPOSITE_TYPE with type t = 'a) * 'a
+      -> exec_arg
+  | EA_Vec of (module Typed_value.EXEC_VECTOR)
+
 (** Extended backend signature for Phase 4 unified execution. Adds execution
     model discrimination and IR-based code generation. *)
 module type BACKEND = sig
@@ -265,16 +279,16 @@ module type BACKEND = sig
       - Custom backends (Interpreter): use ir
 
       @param native_fn Pre-compiled OCaml function (from PPX)
-      @param ir Sarek_ir.kernel wrapped as Obj.t (for interpretation)
+      @param ir Sarek IR kernel (for interpretation)
       @param block Block dimensions
       @param grid Grid dimensions
-      @param args Kernel arguments as Obj.t array *)
+      @param args Kernel arguments - fully typed, no Obj.t *)
   val execute_direct :
-    native_fn:(block:dims -> grid:dims -> Obj.t array -> unit) option ->
+    native_fn:(block:dims -> grid:dims -> exec_arg array -> unit) option ->
     ir:Sarek_ir_types.kernel option ->
     block:dims ->
     grid:dims ->
-    Obj.t array ->
+    exec_arg array ->
     unit
 
   (** Backend-specific intrinsic registry *)
