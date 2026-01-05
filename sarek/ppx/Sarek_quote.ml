@@ -683,8 +683,6 @@ let quote_kernel ~loc ?(native_kernel : tkernel option)
         Sarek.Kirc_types.body_ir = body_ir_ir;
         Sarek.Kirc_types.ret_val = (ret_ir, ());
         Sarek.Kirc_types.extensions = [||];
-        (* Legacy SPOC cpu_kern removed - use V2 native_fn via body_ir *)
-        Sarek.Kirc_types.cpu_kern = None;
       }
     in
     ((), kirc_kernel)]

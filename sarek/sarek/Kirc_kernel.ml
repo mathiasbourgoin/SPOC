@@ -81,44 +81,139 @@ let extensions k = k.extensions
 
 (** {1 Conversion from Legacy Kirc} *)
 
-(** Convert exec_arg array to Obj.t array for legacy cpu_kern compatibility *)
-let exec_args_to_obj_array (args : Framework_sig.exec_arg array) : Obj.t array =
-  Array.map
-    (function
-      | Framework_sig.EA_Int32 n -> Obj.repr n
-      | Framework_sig.EA_Int64 n -> Obj.repr n
-      | Framework_sig.EA_Float32 f -> Obj.repr f
-      | Framework_sig.EA_Float64 f -> Obj.repr f
-      | Framework_sig.EA_Scalar ((module S), v) -> Obj.repr v
-      | Framework_sig.EA_Composite ((module C), v) -> Obj.repr v
-      | Framework_sig.EA_Vec (module V) ->
-          (* For vectors, we need to pass the array data somehow.
-           Legacy code expects the raw vector, but we don't have it here.
-           This path is deprecated - use typed execution instead. *)
-          failwith "EA_Vec not supported in legacy cpu_kern path")
-    args
+(** Convert exec_arg to native_arg. This bridges Framework_sig.exec_arg (typed
+    execution args) to Sarek_ir_types.native_arg (native function args). *)
+let exec_arg_to_native_arg (arg : Framework_sig.exec_arg) :
+    Sarek_ir_types.native_arg =
+  match arg with
+  | Framework_sig.EA_Int32 n -> Sarek_ir_types.NA_Int32 n
+  | Framework_sig.EA_Int64 n -> Sarek_ir_types.NA_Int64 n
+  | Framework_sig.EA_Float32 f -> Sarek_ir_types.NA_Float32 f
+  | Framework_sig.EA_Float64 f -> Sarek_ir_types.NA_Float64 f
+  | Framework_sig.EA_Scalar ((module S), v) -> (
+      (* Convert scalar via primitive *)
+      match S.to_primitive v with
+      | Typed_value.PInt32 n -> Sarek_ir_types.NA_Int32 n
+      | Typed_value.PInt64 n -> Sarek_ir_types.NA_Int64 n
+      | Typed_value.PFloat f -> Sarek_ir_types.NA_Float32 f
+      | Typed_value.PBool b -> Sarek_ir_types.NA_Int32 (if b then 1l else 0l)
+      | Typed_value.PBytes _ -> failwith "PBytes not supported in native_arg")
+  | Framework_sig.EA_Composite _ ->
+      failwith "Composite types not yet supported in native execution"
+  | Framework_sig.EA_Vec (module V) ->
+      (* Create NA_Vec with typed accessors *)
+      let get_as_f32 i =
+        match V.get i with
+        | Typed_value.TV_Scalar (Typed_value.SV ((module S), x)) -> (
+            match S.to_primitive x with
+            | Typed_value.PFloat f -> f
+            | Typed_value.PInt32 n -> Int32.to_float n
+            | _ -> failwith "get_f32: incompatible type")
+        | _ -> failwith "get_f32: not a scalar"
+      in
+      let set_as_f32 i f =
+        V.set
+          i
+          (Typed_value.TV_Scalar
+             (Typed_value.SV ((module Typed_value.Float32_type), f)))
+      in
+      let get_as_f64 i =
+        match V.get i with
+        | Typed_value.TV_Scalar (Typed_value.SV ((module S), x)) -> (
+            match S.to_primitive x with
+            | Typed_value.PFloat f -> f
+            | _ -> failwith "get_f64: incompatible type")
+        | _ -> failwith "get_f64: not a scalar"
+      in
+      let set_as_f64 i f =
+        V.set
+          i
+          (Typed_value.TV_Scalar
+             (Typed_value.SV ((module Typed_value.Float64_type), f)))
+      in
+      let get_as_i32 i =
+        match V.get i with
+        | Typed_value.TV_Scalar (Typed_value.SV ((module S), x)) -> (
+            match S.to_primitive x with
+            | Typed_value.PInt32 n -> n
+            | Typed_value.PFloat f -> Int32.of_float f
+            | _ -> failwith "get_i32: incompatible type")
+        | _ -> failwith "get_i32: not a scalar"
+      in
+      let set_as_i32 i n =
+        V.set
+          i
+          (Typed_value.TV_Scalar
+             (Typed_value.SV ((module Typed_value.Int32_type), n)))
+      in
+      let get_as_i64 i =
+        match V.get i with
+        | Typed_value.TV_Scalar (Typed_value.SV ((module S), x)) -> (
+            match S.to_primitive x with
+            | Typed_value.PInt64 n -> n
+            | Typed_value.PInt32 n -> Int64.of_int32 n
+            | _ -> failwith "get_i64: incompatible type")
+        | _ -> failwith "get_i64: not a scalar"
+      in
+      let set_as_i64 i n =
+        V.set
+          i
+          (Typed_value.TV_Scalar
+             (Typed_value.SV ((module Typed_value.Int64_type), n)))
+      in
+      (* For custom types: use underlying Vector.t with Obj.t *)
+      let get_any i =
+        let vec = Obj.obj (V.underlying_obj ()) in
+        Obj.repr (Vector.get vec i)
+      in
+      let set_any i v =
+        let vec = Obj.obj (V.underlying_obj ()) in
+        Vector.kernel_set vec i (Obj.obj v)
+      in
+      let get_vec () = V.underlying_obj () in
+      Sarek_ir_types.NA_Vec
+        {
+          length = V.length;
+          elem_size = V.elem_size;
+          type_name = V.type_name;
+          get_f32 = get_as_f32;
+          set_f32 = set_as_f32;
+          get_f64 = get_as_f64;
+          set_f64 = set_as_f64;
+          get_i32 = get_as_i32;
+          set_i32 = set_as_i32;
+          get_i64 = get_as_i64;
+          set_i64 = set_as_i64;
+          get_any;
+          set_any;
+          get_vec;
+        }
 
 (** Convert a legacy kirc_kernel to kernel. Note: This creates a lazy IR that
-    converts from Kirc_Ast when forced. *)
+    converts from Kirc_Ast when forced. Native function comes from body_ir. *)
 let of_kirc_kernel (kk : ('a, 'b, 'c) Kirc_types.kirc_kernel) ~name ~param_types
     : 'a kernel =
   let ir = lazy (Sarek_ir.of_k_ext kk.Kirc_types.body) in
+  (* Native function is now in body_ir.kern_native_fn *)
   let native_fn =
-    match kk.Kirc_types.cpu_kern with
+    match kk.Kirc_types.body_ir with
+    | Some k -> (
+        match k.Sarek_ir.kern_native_fn with
+        | Some (Sarek_ir_types.NativeFn fn) ->
+            Some
+              (fun ~(block : Framework_sig.dims)
+                   ~(grid : Framework_sig.dims)
+                   (args : Framework_sig.exec_arg array)
+                 ->
+                (* Convert exec_arg to native_arg for kern_native_fn *)
+                let native_args = Array.map exec_arg_to_native_arg args in
+                fn
+                  ~parallel:true
+                  ~block:(block.x, block.y, block.z)
+                  ~grid:(grid.x, grid.y, grid.z)
+                  native_args)
+        | None -> None)
     | None -> None
-    | Some fn ->
-        Some
-          (fun ~(block : Framework_sig.dims)
-               ~(grid : Framework_sig.dims)
-               (args : Framework_sig.exec_arg array)
-             ->
-            (* Convert typed args to Obj.t for legacy compatibility *)
-            let obj_args = exec_args_to_obj_array args in
-            fn
-              ~mode:Sarek_cpu_runtime.Parallel
-              ~block:(block.x, block.y, block.z)
-              ~grid:(grid.x, grid.y, grid.z)
-              obj_args)
   in
   {name; ir; native_fn; param_types; extensions = kk.Kirc_types.extensions}
 
@@ -130,39 +225,10 @@ let of_sarek_kernel
 
 (** {1 Conversion to Legacy Kirc} *)
 
-(** Convert Obj.t array to exec_arg array for legacy compatibility *)
-let obj_array_to_exec_args (args : Obj.t array) : Framework_sig.exec_arg array =
-  (* Best-effort conversion - we don't know the types at runtime,
-     so we try to detect based on the Obj representation.
-     This is inherently unsafe and only for legacy compatibility. *)
-  Array.map
-    (fun obj ->
-      (* Try to determine the type - this is fragile! *)
-      if Obj.is_int obj then Framework_sig.EA_Int32 (Int32.of_int (Obj.obj obj))
-      else
-        (* Assume float for non-int values - legacy kernels typically use floats *)
-        Framework_sig.EA_Float32 (Obj.obj obj))
-    args
-
 (** Convert kernel to legacy kirc_kernel. Note: This may force IR evaluation. *)
 let to_kirc_kernel (k : 'a kernel) :
     (unit -> unit, unit, unit) Kirc_types.kirc_kernel =
   let body = Sarek_ir.to_k_ext (Lazy.force k.ir) in
-  let cpu_kern =
-    match k.native_fn with
-    | None -> None
-    | Some fn ->
-        Some
-          (fun ~mode:_ ~block ~grid (obj_args : Obj.t array) ->
-            let bx, by, bz = block in
-            let gx, gy, gz = grid in
-            (* Convert Obj.t array to exec_arg array *)
-            let exec_args = obj_array_to_exec_args obj_args in
-            fn
-              ~block:(Framework_sig.dims_3d bx by bz)
-              ~grid:(Framework_sig.dims_3d gx gy gz)
-              exec_args)
-  in
   {
     Kirc_types.ml_kern = (fun () -> ());
     Kirc_types.body;
@@ -170,7 +236,6 @@ let to_kirc_kernel (k : 'a kernel) :
     (* ret_val is unused in V2 path; dummy value with stub type *)
     Kirc_types.ret_val = (Kirc_Ast.Empty, ());
     Kirc_types.extensions = k.extensions;
-    Kirc_types.cpu_kern;
   }
 
 (** {1 Execution} *)

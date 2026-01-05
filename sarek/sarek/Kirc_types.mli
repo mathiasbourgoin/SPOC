@@ -23,13 +23,6 @@ type ('a, 'b, 'c) kirc_kernel = {
   body_ir : Sarek_ir.kernel option;
   ret_val : Kirc_Ast.k_ext * ('b, 'c) vector_kind_stub;
   extensions : extension array;
-  cpu_kern :
-    (mode:Sarek_cpu_runtime.exec_mode ->
-    block:int * int * int ->
-    grid:int * int * int ->
-    Obj.t array ->
-    unit)
-    option;
 }
 
 type ('a, 'b, 'c, 'd) kirc_function = {
