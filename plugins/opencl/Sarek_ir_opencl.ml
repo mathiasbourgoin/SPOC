@@ -860,6 +860,6 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
 (** Generate OpenCL source with double precision extension if needed *)
 let generate_with_fp64 (k : kernel) : string =
   let source = generate k in
-  if String.contains source 'd' then
+  if Sarek_ir_types.kernel_uses_float64 k then
     "#pragma OPENCL EXTENSION cl_khr_fp64 : enable\n\n" ^ source
   else source

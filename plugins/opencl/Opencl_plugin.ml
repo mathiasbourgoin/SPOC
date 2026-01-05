@@ -173,7 +173,18 @@ module Backend : Framework_sig.BACKEND = struct
   (** Generate OpenCL source from Sarek IR.
       @param block Ignored - OpenCL specifies work-group size at launch *)
   let generate_source ?block:_ (ir : Sarek_ir_types.kernel) : string option =
-    try Some (Sarek_ir_opencl.generate_with_types ~types:ir.kern_types ir)
+    try
+      let source =
+        Sarek_ir_opencl.generate_with_types ~types:ir.kern_types ir
+      in
+      (* Add FP64 pragma if kernel uses double precision *)
+      let source =
+        if Sarek_ir_types.kernel_uses_float64 ir then
+          "#pragma OPENCL EXTENSION cl_khr_fp64 : enable\n\n" ^ source
+        else source
+      in
+      Spoc_core.Log.debug Kernel ("OpenCL source:\n" ^ source) ;
+      Some source
     with _ -> None
 
   (** Execute directly - not supported for JIT backend *)
