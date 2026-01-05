@@ -685,7 +685,8 @@ let count_vec_params params =
     params
 
 (** Generate GLSL compute shader header.
-    @param block Optional workgroup dimensions (x, y, z). Defaults to 256x1x1. *)
+    @param block Optional workgroup dimensions (x, y, z). Defaults to 256x1x1.
+*)
 let glsl_header ~kernel_name ?(block = (256, 1, 1)) () =
   let bx, by, bz = block in
   Printf.sprintf
@@ -695,7 +696,10 @@ let glsl_header ~kernel_name ?(block = (256, 1, 1)) () =
 layout(local_size_x = %d, local_size_y = %d, local_size_z = %d) in;
 
 |}
-    kernel_name bx by bz
+    kernel_name
+    bx
+    by
+    bz
 
 (** Generate buffer binding for a vector parameter *)
 let gen_buffer_binding buf binding_idx v elem_type =
@@ -759,8 +763,8 @@ let gen_push_constants buf params =
     Buffer.add_string buf "\n"
   end
 
-(** Collect shared array declarations from a statement tree.
-    Returns list of (name, elem_type, size_expr) *)
+(** Collect shared array declarations from a statement tree. Returns list of
+    (name, elem_type, size_expr) *)
 let rec collect_shared_decls (s : stmt) : (string * elttype * expr) list =
   match s with
   | SLet (v, EArrayCreate (elem_ty, size, Shared), body) ->
@@ -800,7 +804,8 @@ let gen_shared_decls buf (decls : (string * elttype * expr) list) =
   end
 
 (** Generate complete GLSL source for a kernel.
-    @param block Optional workgroup dimensions (x, y, z). Defaults to 256x1x1. *)
+    @param block Optional workgroup dimensions (x, y, z). Defaults to 256x1x1.
+*)
 let generate ?block (k : kernel) : string =
   let buf = Buffer.create 1024 in
   Buffer.add_string buf (glsl_header ~kernel_name:k.kern_name ?block ()) ;
@@ -841,6 +846,20 @@ let generate ?block (k : kernel) : string =
     shader ;
   shader
 
+(** Generate GLSL record type definition - simple struct without tag *)
+let gen_record_def buf (name, fields) =
+  let mangled = mangle_name name in
+  Buffer.add_string buf (Printf.sprintf "struct %s {\n" mangled) ;
+  List.iter
+    (fun (fname, ftype) ->
+      Buffer.add_string buf "  " ;
+      Buffer.add_string buf (glsl_type_of_elttype ftype) ;
+      Buffer.add_char buf ' ' ;
+      Buffer.add_string buf fname ;
+      Buffer.add_string buf ";\n")
+    fields ;
+  Buffer.add_string buf "};\n\n"
+
 (** Generate GLSL variant type definition *)
 let gen_variant_def buf (name, constrs) =
   let mangled = mangle_name name in
@@ -864,12 +883,16 @@ let gen_variant_def buf (name, constrs) =
               buf
               (Printf.sprintf "  %s %s_v;\n" (glsl_type_of_elttype ty) cname)
         | _ ->
-            (* Multiple args - would need struct, simplify for now *)
-            Buffer.add_string
-              buf
-              (Printf.sprintf
-                 "  // %s has multiple args - not supported\n"
-                 cname))
+            (* Multiple args - generate struct *)
+            Buffer.add_string buf (Printf.sprintf "  struct { ") ;
+            List.iteri
+              (fun i ty ->
+                if i > 0 then Buffer.add_string buf " " ;
+                Buffer.add_string
+                  buf
+                  (Printf.sprintf "%s _%d;" (glsl_type_of_elttype ty) i))
+              args ;
+            Buffer.add_string buf (Printf.sprintf " } %s_v;\n" cname))
       constrs
   end ;
   Buffer.add_string buf "};\n\n" ;
@@ -884,35 +907,45 @@ let gen_variant_def buf (name, constrs) =
       | [ty] ->
           Buffer.add_string buf (glsl_type_of_elttype ty) ;
           Buffer.add_string buf " v"
-      | _ -> ()) ;
+      | _ ->
+          List.iteri
+            (fun j ty ->
+              if j > 0 then Buffer.add_string buf ", " ;
+              Buffer.add_string buf (glsl_type_of_elttype ty) ;
+              Buffer.add_string buf (Printf.sprintf " v%d" j))
+            args) ;
       Buffer.add_string buf ") {\n" ;
       Buffer.add_string buf (Printf.sprintf "  %s r;\n" mangled) ;
       Buffer.add_string buf (Printf.sprintf "  r.tag = %s;\n" cname) ;
       (match args with
       | [] -> ()
       | [_] -> Buffer.add_string buf (Printf.sprintf "  r.%s_v = v;\n" cname)
-      | _ -> ()) ;
+      | _ ->
+          List.iteri
+            (fun j _ ->
+              Buffer.add_string
+                buf
+                (Printf.sprintf "  r.%s_v._%d = v%d;\n" cname j j))
+            args) ;
       Buffer.add_string buf "  return r;\n}\n\n")
     constrs
 
 (** Generate GLSL source with custom type definitions.
-    @param block Optional workgroup dimensions (x, y, z). Defaults to 256x1x1. *)
-let generate_with_types ?block ~(types : (string * (string * elttype) list) list)
-    (k : kernel) : string =
-  (* Convert types to internal format (single arg -> list of args) *)
-  let internal_types =
-    List.map
-      (fun (name, constrs) ->
-        (name, List.map (fun (cname, arg) -> (cname, [arg])) constrs))
-      types
-  in
-  current_variants := internal_types ;
+    @param block Optional workgroup dimensions (x, y, z). Defaults to 256x1x1.
+*)
+let generate_with_types ?block
+    ~(types : (string * (string * elttype) list) list) (k : kernel) : string =
+  (* Use variant types directly from kernel IR *)
+  current_variants := k.kern_variants ;
 
   let buf = Buffer.create 1024 in
   Buffer.add_string buf (glsl_header ~kernel_name:k.kern_name ?block ()) ;
 
-  (* Generate type definitions *)
-  List.iter (gen_variant_def buf) internal_types ;
+  (* Generate record type definitions (simple structs without tag) *)
+  List.iter (gen_record_def buf) types ;
+
+  (* Generate variant type definitions (structs with tag) *)
+  List.iter (gen_variant_def buf) k.kern_variants ;
 
   (* Generate buffer bindings *)
   let binding_idx = ref 0 in
