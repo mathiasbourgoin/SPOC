@@ -266,6 +266,18 @@ let () =
     !errors = 0
   in
 
-  Benchmarks.run ~baseline ~verify "Naive Matrix Mul" run_naive ;
-  Benchmarks.run ~baseline ~verify "Tiled Matrix Mul" run_tiled ;
+  (* Matrix mul is too slow on interpreter - exclude it *)
+  Benchmarks.run
+    ~baseline
+    ~verify
+    ~filter:Benchmarks.no_interpreter
+    "Naive Matrix Mul"
+    run_naive ;
+  (* Tiled kernel uses shared memory which interpreter doesn't support *)
+  Benchmarks.run
+    ~baseline
+    ~verify
+    ~filter:Benchmarks.no_interpreter
+    "Tiled Matrix Mul"
+    run_tiled ;
   Benchmarks.exit ()

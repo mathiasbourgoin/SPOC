@@ -76,3 +76,13 @@ let best_backend () =
 
 (** Get plugin priority *)
 let priority name = Hashtbl.find_opt priorities name |> Option.value ~default:50
+
+(** Get all registered backend names sorted by priority (highest first) *)
+let all_backend_names () =
+  Hashtbl.to_seq_keys backends
+  |> List.of_seq
+  |> List.sort (fun name1 name2 ->
+      let p1 = Hashtbl.find_opt priorities name1 |> Option.value ~default:50 in
+      let p2 = Hashtbl.find_opt priorities name2 |> Option.value ~default:50 in
+      compare p2 p1)
+(* descending by priority *)

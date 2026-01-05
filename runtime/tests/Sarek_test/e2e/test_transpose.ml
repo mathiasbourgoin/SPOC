@@ -19,13 +19,7 @@ module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
 module Benchmarks = Test_helpers.Benchmarks
 
-(* Force backend registration *)
-let () =
-  Sarek_cuda.Cuda_plugin.init () ;
-  Sarek_opencl.Opencl_plugin.init () ;
-  Sarek_vulkan.Vulkan_plugin.init () ;
-  Sarek_native.Native_plugin.init () ;
-  Sarek_interpreter.Interpreter_plugin.init ()
+(* Backends auto-register when linked; Benchmarks.init() ensures initialization *)
 
 (* ========== Custom type for polymorphism test ========== *)
 
@@ -432,25 +426,32 @@ let () =
     !errors = 0
   in
 
+  (* Transpose is slow on interpreter (10-19s) - exclude it *)
   Benchmarks.run
     ~baseline:baseline_int32
     ~verify:verify_int32
+    ~filter:Benchmarks.no_interpreter
     "Transpose<int32>"
     run_transpose_int32 ;
   Benchmarks.run
     ~baseline:baseline_float32
     ~verify:verify_float32
+    ~filter:Benchmarks.no_interpreter
     "Transpose<float32>"
     run_transpose_float32 ;
+  (* Float64 needs both fp64 support AND no interpreter *)
+  let fp64_no_interp d = Device.allows_fp64 d && Benchmarks.no_interpreter d in
   Benchmarks.run
     ~baseline:baseline_float64
     ~verify:verify_float64
-    ~filter:Device.allows_fp64
+    ~filter:fp64_no_interp
     "Transpose<float64>"
     run_transpose_float64 ;
+  (* Point3d transpose is very slow on Native (16s) and Interpreter (28-45s) *)
   Benchmarks.run
     ~baseline:baseline_point3d
     ~verify:verify_point3d
+    ~filter:Benchmarks.jit_only
     "Transpose<point3d>"
     run_transpose_point3d ;
   Benchmarks.exit ()

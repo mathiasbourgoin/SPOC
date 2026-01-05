@@ -5,6 +5,8 @@
 ; Requirements:
 ; - libvulkan.so.1 at runtime
 ; - glslangValidator for GLSL to SPIR-V compilation
+;
+; Dependencies: Only framework SDK + IR types, NOT full sarek library
 
 (library
  (name sarek_vulkan)
@@ -14,7 +16,8 @@
   ctypes.foreign
   spoc_framework
   spoc_framework_registry
-  sarek
+  sarek_ir
+  sarek_registry
   (re_export spoc_core))
  (modules
   Vulkan_types

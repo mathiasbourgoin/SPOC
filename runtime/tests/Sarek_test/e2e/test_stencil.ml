@@ -13,13 +13,7 @@ module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
 module Benchmarks = Test_helpers.Benchmarks
 
-(* Force backend registration *)
-let () =
-  Sarek_cuda.Cuda_plugin.init () ;
-  Sarek_opencl.Opencl_plugin.init () ;
-  Sarek_vulkan.Vulkan_plugin.init () ;
-  Sarek_native.Native_plugin.init () ;
-  Sarek_interpreter.Interpreter_plugin.init ()
+(* Backends auto-register when linked; Benchmarks.init() ensures initialization *)
 
 (* ========== Pure OCaml baseline ========== *)
 

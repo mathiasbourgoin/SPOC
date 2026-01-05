@@ -927,8 +927,8 @@ let generate_custom_value ~loc (td : type_declaration) : structure_item list =
   | _ -> []
 
 (** Generate runtime registration code for a type. The PPX emits calls to
-    Sarek.Sarek_registry at module initialization time so type info is available
-    to codegen (record fields, variants, sizes). *)
+    Sarek_registry at module initialization time so type info is available to
+    codegen (record fields, variants, sizes). *)
 let generate_type_registration ~loc (td : type_declaration) :
     structure_item list =
   let type_name = td.ptype_name.txt in
@@ -954,7 +954,7 @@ let generate_type_registration ~loc (td : type_declaration) :
             in
             [%expr
               {
-                Sarek.Sarek_registry.field_name = [%e fname];
+                Sarek_registry.field_name = [%e fname];
                 field_type = [%e ftype];
                 field_mutable = [%e fmut];
               }])
@@ -966,7 +966,7 @@ let generate_type_registration ~loc (td : type_declaration) :
       [
         [%stri
           let () =
-            Sarek.Sarek_registry.register_record
+            Sarek_registry.register_record
               [%e full_name_expr]
               ~fields:[%e fields_list]
               ~size:[%e size_expr]];
@@ -990,17 +990,14 @@ let generate_type_registration ~loc (td : type_declaration) :
               (* Inline record *)
             in
             [%expr
-              {
-                Sarek.Sarek_registry.ctor_name = [%e cname];
-                ctor_arg_type = [%e carg];
-              }])
+              {Sarek_registry.ctor_name = [%e cname]; ctor_arg_type = [%e carg]}])
           constrs
       in
       let ctors_list = Ast_builder.Default.elist ~loc ctor_exprs in
       [
         [%stri
           let () =
-            Sarek.Sarek_registry.register_variant
+            Sarek_registry.register_variant
               [%e full_name_expr]
               ~constructors:[%e ctors_list]];
       ]

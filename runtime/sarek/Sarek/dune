@@ -7,7 +7,13 @@
 (library
  (name sarek)
  (public_name sarek)
- (libraries ctypes spoc_framework spoc_framework_registry sarek_ir spoc_core)
+ (libraries
+  ctypes
+  spoc_framework
+  spoc_framework_registry
+  sarek_ir
+  spoc_core
+  (re_export sarek_registry))
  (modules
   Kirc_Ast
   Kirc_types
@@ -17,6 +23,5 @@
   Sarek_cpu_runtime
   Sarek_float32
   Kirc_kernel
-  Sarek_registry
   Execute
   Transform))

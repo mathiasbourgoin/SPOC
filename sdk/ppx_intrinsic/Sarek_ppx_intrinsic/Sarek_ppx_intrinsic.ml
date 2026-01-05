@@ -6,7 +6,7 @@
  * - %sarek_extend for extending intrinsics for new backends
  *
  * It generates both:
- * 1. Runtime registration (Sarek.Sarek_registry) for JIT code generation
+ * 1. Runtime registration (Sarek_registry) for JIT code generation
  * 2. PPX-time registration (Sarek_ppx_lib.Sarek_ppx_registry) for compile-time type checking
  *
  * This is kept separate from the main kernel PPX to break the circular dependency:
@@ -217,7 +217,7 @@ let expand_sarek_intrinsic_type ~ctxt payload =
         (* Runtime registration for JIT *)
         [%stri
           let () =
-            Sarek.Sarek_registry.register_type
+            Sarek_registry.register_type
               [%e type_name_str]
               ~device:[%e device_expr]
               ~size:(Ctypes.sizeof [%e ctype_expr])];
@@ -349,7 +349,7 @@ let expand_sarek_intrinsic_fun ~ctxt payload =
         (* Runtime registration for JIT - uses the ref for extensibility *)
         [%stri
           let () =
-            Sarek.Sarek_registry.register_fun
+            Sarek_registry.register_fun
               ~module_path:[%e module_path_expr]
               [%e fun_name_str]
               ~arity:[%e arity_expr]

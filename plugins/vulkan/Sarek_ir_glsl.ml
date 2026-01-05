@@ -12,7 +12,7 @@
  * - Workgroup size configuration
  ******************************************************************************)
 
-open Sarek.Sarek_ir
+open Sarek_ir_types
 
 (** Current kernel's variant definitions (set during generate) *)
 let current_variants : (string * (string * elttype list) list) list ref = ref []

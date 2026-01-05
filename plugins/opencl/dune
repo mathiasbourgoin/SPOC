@@ -1,6 +1,8 @@
 ; OpenCL Plugin - Pure OCaml with ctypes
 ; No C stubs required
 ; Linking this library automatically registers the OpenCL backend
+;
+; Dependencies: Only framework SDK + IR types, NOT full sarek library
 
 (library
  (name sarek_opencl)
@@ -11,7 +13,8 @@
   str
   spoc_framework
   spoc_framework_registry
-  sarek
+  sarek_ir
+  sarek_registry
   (re_export spoc_core))
  (modules
   Opencl_types

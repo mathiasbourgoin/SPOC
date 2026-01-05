@@ -251,10 +251,17 @@ let () =
     !errors = 0
   in
 
-  Benchmarks.run ~baseline ~verify "Mandelbrot" run_mandelbrot_test ;
+  (* Mandelbrot is way too slow on interpreter (134s) - exclude it *)
   Benchmarks.run
     ~baseline
     ~verify
+    ~filter:Benchmarks.no_interpreter
+    "Mandelbrot"
+    run_mandelbrot_test ;
+  Benchmarks.run
+    ~baseline
+    ~verify
+    ~filter:Benchmarks.no_interpreter
     "Mandelbrot (Tail Rec)"
     run_mandelbrot_tailrec_test ;
   Benchmarks.exit ()

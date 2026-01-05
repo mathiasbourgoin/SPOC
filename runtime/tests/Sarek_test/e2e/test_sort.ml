@@ -13,13 +13,7 @@ module Transfer = Spoc_core.Transfer
 module Std = Sarek_stdlib.Std
 module Benchmarks = Test_helpers.Benchmarks
 
-(* Force backend registration *)
-let () =
-  Sarek_cuda.Cuda_plugin.init () ;
-  Sarek_opencl.Opencl_plugin.init () ;
-  Sarek_vulkan.Vulkan_plugin.init () ;
-  Sarek_native.Native_plugin.init () ;
-  Sarek_interpreter.Interpreter_plugin.init ()
+(* Backends auto-register when linked; Benchmarks.init() ensures initialization *)
 
 let cfg = Test_helpers.default_config ()
 
@@ -208,23 +202,25 @@ let () =
     !errors = 0
   in
 
-  (* Bitonic *)
+  (* Bitonic - too slow on interpreter *)
   let baseline_bitonic _size =
     let n = !sort_size_global in
     ocaml_sort !input_bitonic_global n
   in
   Benchmarks.run
+    ~filter:Benchmarks.no_interpreter
     ~baseline:baseline_bitonic
     ~verify
     "Bitonic Sort (global)"
     run_bitonic_sort_global ;
 
-  (* Odd-Even *)
+  (* Odd-Even - uses shared memory, interpreter doesn't support it *)
   let baseline_odd_even _size =
     let n = !sort_size_odd_even in
     ocaml_sort !input_odd_even n
   in
   Benchmarks.run
+    ~filter:Benchmarks.no_interpreter
     ~baseline:baseline_odd_even
     ~verify
     "Odd-Even Sort"

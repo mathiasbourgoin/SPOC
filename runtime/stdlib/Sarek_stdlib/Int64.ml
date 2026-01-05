@@ -21,7 +21,7 @@ let%sarek_intrinsic int64 = {device = (fun _ -> "long"); ctype = Ctypes.int64_t}
  * Arithmetic operators
  ******************************************************************************)
 
-let dev cuda opencl d = Sarek.Sarek_registry.cuda_or_opencl d cuda opencl
+let dev cuda opencl d = Sarek_registry.cuda_or_opencl d cuda opencl
 
 let%sarek_intrinsic (add_int64 : int64 -> int64 -> int64) =
   {device = dev "(%s + %s)" "(%s + %s)"; ocaml = Stdlib.Int64.add}

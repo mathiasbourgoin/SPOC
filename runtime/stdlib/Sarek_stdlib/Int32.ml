@@ -21,7 +21,7 @@ let%sarek_intrinsic int32 = {device = (fun _ -> "int"); ctype = Ctypes.int32_t}
  * Arithmetic operators
  ******************************************************************************)
 
-let dev cuda opencl d = Sarek.Sarek_registry.cuda_or_opencl d cuda opencl
+let dev cuda opencl d = Sarek_registry.cuda_or_opencl d cuda opencl
 
 let%sarek_intrinsic (add_int32 : int32 -> int32 -> int32) =
   {device = dev "(%s + %s)" "(%s + %s)"; ocaml = Stdlib.Int32.add}

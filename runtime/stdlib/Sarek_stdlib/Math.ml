@@ -5,7 +5,7 @@
  * These are commonly used in GPU algorithms like bitonic sort.
  ******************************************************************************)
 
-let dev cuda opencl d = Sarek.Sarek_registry.cuda_or_opencl d cuda opencl
+let dev cuda opencl d = Sarek_registry.cuda_or_opencl d cuda opencl
 
 (******************************************************************************
  * Bitwise operations on int32

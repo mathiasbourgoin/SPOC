@@ -247,7 +247,13 @@ module Backend : Framework_sig.BACKEND = struct
         failwith "OpenCL backend does not support GLSL source"
 end
 
-(** Auto-register backend when module is loaded *)
+(** Check if backend is disabled via environment variable. Checked at runtime to
+    allow SPOC_DISABLE_* to work without rebuild. *)
+let is_disabled () =
+  Sys.getenv_opt "SPOC_DISABLE_GPU" = Some "1"
+  || Sys.getenv_opt "SPOC_DISABLE_OPENCL" = Some "1"
+
+(** Backend registration - happens once when first needed *)
 let registered_backend =
   lazy
     (if Backend.is_available () then
@@ -255,10 +261,11 @@ let registered_backend =
          ~priority:90
          (module Backend : Framework_sig.BACKEND))
 
-let () = Lazy.force registered_backend
+(** Auto-register backend when module is loaded, unless disabled *)
+let () = if not (is_disabled ()) then Lazy.force registered_backend
 
 (** Force module initialization *)
-let init () = Lazy.force registered_backend
+let init () = if not (is_disabled ()) then Lazy.force registered_backend
 
 (** {1 Additional OpenCL-specific Functions} *)
 

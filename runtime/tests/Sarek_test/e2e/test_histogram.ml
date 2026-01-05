@@ -13,13 +13,7 @@ module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
 module Benchmarks = Test_helpers.Benchmarks
 
-(* Force backend registration *)
-let () =
-  Sarek_cuda.Cuda_plugin.init () ;
-  Sarek_opencl.Opencl_plugin.init () ;
-  Sarek_vulkan.Vulkan_plugin.init () ;
-  Sarek_native.Native_plugin.init () ;
-  Sarek_interpreter.Interpreter_plugin.init ()
+(* Backends auto-register when linked; Benchmarks.init() ensures initialization *)
 
 (* ========== Pure OCaml baseline ========== *)
 
@@ -226,6 +220,17 @@ let () =
     !errors = 0
   in
 
-  Benchmarks.run ~baseline ~verify "Histogram" run_histogram ;
-  Benchmarks.run ~baseline ~verify "Histogram (strided)" run_histogram_strided ;
+  (* Histogram uses shared memory atomics - interpreter doesn't support it *)
+  Benchmarks.run
+    ~baseline
+    ~verify
+    ~filter:Benchmarks.no_interpreter
+    "Histogram"
+    run_histogram ;
+  Benchmarks.run
+    ~baseline
+    ~verify
+    ~filter:Benchmarks.no_interpreter
+    "Histogram (strided)"
+    run_histogram_strided ;
   Benchmarks.exit ()

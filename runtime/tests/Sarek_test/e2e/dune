@@ -1,14 +1,43 @@
+; Test helper library with optional backend support
+; Uses (select ...) in libraries to conditionally include GPU backends
+;
+; Environment variables to force-disable backends for testing:
+;   SPOC_DISABLE_CUDA=1    - Disable CUDA backend
+;   SPOC_DISABLE_OPENCL=1  - Disable OpenCL backend
+;   SPOC_DISABLE_VULKAN=1  - Disable Vulkan backend
+;   SPOC_DISABLE_GPU=1     - Disable all GPU backends (CUDA, OpenCL, Vulkan)
+
 (library
  (name test_helpers)
- (modules test_helpers Benchmarks)
+ (modules
+  test_helpers
+  Benchmarks
+  backend_loader
+  backend_cuda
+  backend_opencl
+  backend_vulkan)
  (libraries
   spoc_core
-  unix
-  sarek_cuda
-  sarek_opencl
-  sarek_vulkan
+  ; Always-available backends
   sarek_native
-  sarek_interpreter))
+  sarek_interpreter
+  ; Optionally include GPU backends if available and not disabled
+  (select
+   backend_cuda.ml
+   from
+   (sarek_cuda -> backend_cuda.available.ml)
+   (-> backend_cuda.unavailable.ml))
+  (select
+   backend_opencl.ml
+   from
+   (sarek_opencl -> backend_opencl.available.ml)
+   (-> backend_opencl.unavailable.ml))
+  (select
+   backend_vulkan.ml
+   from
+   (sarek_vulkan -> backend_vulkan.available.ml)
+   (-> backend_vulkan.unavailable.ml))
+  unix))
 
 (executables
  (names
@@ -94,17 +123,12 @@
   sarek.visibility
   sarek_ppx.lib
   spoc_core
-  sarek_cuda
-  sarek_opencl
-  sarek_vulkan
-  sarek_native
-  sarek_interpreter
   test_helpers
   unix)
  (preprocess
   (pps sarek_ppx))
  (flags
-  (:standard -w -33 -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc)))
+  (:standard -w -33)))
 
 (alias
  (name runtest)
@@ -149,22 +173,10 @@
  (preprocess
   (pps sarek_ppx)))
 
-; External kernel test - no PPX needed (tests raw source execution)
-; Note: This test works with any available backend. CUDA/OpenCL-specific linker
-; flags are handled by those optional libraries. If no GPU backend is available,
-; the test will still run using Native/Interpreter for rejection tests.
+; External kernel test - works with any available backend
 
 (executable
  (name test_external_kernel)
  (modules test_external_kernel)
  (optional)
- (libraries
-  sarek
-  spoc_core
-  sarek_cuda
-  sarek_opencl
-  sarek_vulkan
-  sarek_native
-  sarek_interpreter
-  test_helpers
-  unix))
+ (libraries sarek spoc_core test_helpers unix))

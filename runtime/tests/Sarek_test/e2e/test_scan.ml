@@ -12,13 +12,7 @@ module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
 module Benchmarks = Test_helpers.Benchmarks
 
-(* Force backend registration *)
-let () =
-  Sarek_cuda.Cuda_plugin.init () ;
-  Sarek_opencl.Opencl_plugin.init () ;
-  Sarek_vulkan.Vulkan_plugin.init () ;
-  Sarek_native.Native_plugin.init () ;
-  Sarek_interpreter.Interpreter_plugin.init ()
+(* Backends auto-register when linked; Benchmarks.init() ensures initialization *)
 
 let cfg = Test_helpers.default_config ()
 
@@ -172,7 +166,9 @@ let () =
     out
   in
   let run_ones dev size _block_size = run_inclusive_scan dev !input_ones size in
+  (* Scan uses shared memory - interpreter doesn't support it *)
   Benchmarks.run
+    ~filter:Benchmarks.no_interpreter
     ~baseline:baseline_ones
     ~verify
     "Inclusive Scan (all ones)"
@@ -189,6 +185,7 @@ let () =
     run_inclusive_scan dev !input_varying size
   in
   Benchmarks.run
+    ~filter:Benchmarks.no_interpreter
     ~baseline:baseline_varying
     ~verify
     "Inclusive Scan (varying)"

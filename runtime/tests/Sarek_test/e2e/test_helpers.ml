@@ -86,11 +86,8 @@ let parse_args ?(extra = fun _ _ -> false) ?(extra_usage = fun () -> ()) name =
   done ;
   cfg
 
-(** Initialize runtime devices *)
-let init_devices _cfg =
-  Device.init
-    ~frameworks:["CUDA"; "OpenCL"; "Vulkan"; "Native"; "Interpreter"]
-    ()
+(** Initialize runtime devices - uses all registered backends *)
+let init_devices _cfg = Device.init ()
 
 (** Get device based on config *)
 let get_device cfg devs =

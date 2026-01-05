@@ -43,19 +43,19 @@ module Kirc_Ast = Sarek.Kirc_Ast
 let elttype_string dev t =
   match t with
   | EInt32 -> (
-      match Sarek.Sarek_registry.find_type "int32" with
+      match Sarek_registry.find_type "int32" with
       | Some ti -> ti.ti_device dev
       | None -> "int")
   | EInt64 -> (
-      match Sarek.Sarek_registry.find_type "int64" with
+      match Sarek_registry.find_type "int64" with
       | Some ti -> ti.ti_device dev
       | None -> "long")
   | EFloat32 -> (
-      match Sarek.Sarek_registry.find_type "float32" with
+      match Sarek_registry.find_type "float32" with
       | Some ti -> ti.ti_device dev
       | None -> "float")
   | EFloat64 -> (
-      match Sarek.Sarek_registry.find_type "float64" with
+      match Sarek_registry.find_type "float64" with
       | Some ti -> ti.ti_device dev
       | None -> "double")
 
@@ -63,7 +63,7 @@ let elttype_string dev t =
     from the registry should be like "(%s + %s)". Returns None if not found in
     registry, so caller can fall back. *)
 let binop_from_registry name a_code b_code dev =
-  match Sarek.Sarek_registry.find_fun name with
+  match Sarek_registry.find_fun name with
   | Some fi ->
       let template = fi.fi_device dev in
       (* Convert string to format and apply arguments *)
@@ -580,7 +580,7 @@ module Generator (M : CodeGenerator) = struct
       | Intrinsics gv -> M.parse_intrinsics gv
       | IntrinsicRef (module_path, name) ->
           (* Look up the intrinsic in the registry and call its device function *)
-          Sarek.Sarek_registry.fun_device_code ~module_path name dev
+          Sarek_registry.fun_device_code ~module_path name dev
       | Seq (a, b) -> (
           match (a, b) with
           | Decl var, Seq (Set (IntId (s, id), value), body) -> (
@@ -807,7 +807,7 @@ module Generator (M : CodeGenerator) = struct
                  - Function names like "sinf" -> generate "sinf(arg)"
                  - Format strings like "(%s + %s)" -> apply sprintf *)
               let template =
-                Sarek.Sarek_registry.fun_device_code ~module_path name dev
+                Sarek_registry.fun_device_code ~module_path name dev
               in
               let args = Array.to_list b in
               let parsed_args =
@@ -946,7 +946,7 @@ module Generator (M : CodeGenerator) = struct
     | SetV (_a, _b) as v -> parse ~profile:prof n v dev
     | Intrinsics gv -> M.parse_intrinsics gv
     | IntrinsicRef (module_path, name) ->
-        Sarek.Sarek_registry.fun_device_code ~module_path name dev
+        Sarek_registry.fun_device_code ~module_path name dev
     | RecGet (_r, _f) as v -> parse ~profile:prof n v dev
     (* Seq and Ife contain statements - use statement expression wrapping *)
     | Seq (_a, _b) as v -> parse_as_expr ~profile:prof n v dev

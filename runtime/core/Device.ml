@@ -8,12 +8,12 @@
 open Spoc_framework
 open Spoc_framework_registry
 
-(** Unified device representation *)
-type t = {
-  id : int;  (** Global device ID (0, 1, 2...) *)
-  backend_id : int;  (** ID within the backend (0, 1...) *)
-  name : string;  (** Human-readable device name *)
-  framework : string;  (** Backend name: "CUDA", "OpenCL", "Native" *)
+(** Device type from SDK *)
+type t = Spoc_framework.Device_type.t = {
+  id : int;
+  backend_id : int;
+  name : string;
+  framework : string;
   capabilities : Framework_sig.capabilities;
 }
 

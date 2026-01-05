@@ -1,6 +1,6 @@
 (library
  (name spoc_framework)
  (public_name spoc.framework)
- (modules Framework_sig)
+ (modules Framework_sig Device_type)
  (libraries ctypes sarek_ir)
  (preprocess no_preprocessing))

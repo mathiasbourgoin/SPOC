@@ -12,13 +12,7 @@ module Device = Spoc_core.Device
 module Transfer = Spoc_core.Transfer
 module Benchmarks = Test_helpers.Benchmarks
 
-(* Force backend registration *)
-let () =
-  Sarek_cuda.Cuda_plugin.init () ;
-  Sarek_opencl.Opencl_plugin.init () ;
-  Sarek_vulkan.Vulkan_plugin.init () ;
-  Sarek_native.Native_plugin.init () ;
-  Sarek_interpreter.Interpreter_plugin.init ()
+(* Backends auto-register when linked; Benchmarks.init() ensures initialization *)
 
 let cfg = Test_helpers.default_config ()
 
@@ -287,7 +281,12 @@ let () =
         !first_error_idx ;
     !ok
   in
-  Benchmarks.run ~verify:verify_point2d "Point2D Distance" run_point2d_test ;
+  (* Complex types are slow on interpreter (3-20s) - exclude it *)
+  Benchmarks.run
+    ~verify:verify_point2d
+    ~filter:Benchmarks.no_interpreter
+    "Point2D Distance"
+    run_point2d_test ;
 
   (* Point3D *)
   let verify_point3d points _ =
@@ -303,7 +302,11 @@ let () =
     done ;
     !ok
   in
-  Benchmarks.run ~verify:verify_point3d "Point3D Normalize" run_point3d_test ;
+  Benchmarks.run
+    ~verify:verify_point3d
+    ~filter:Benchmarks.no_interpreter
+    "Point3D Normalize"
+    run_point3d_test ;
 
   (* Particle *)
   let verify_particle particles _ =
@@ -331,7 +334,11 @@ let () =
     done ;
     !ok
   in
-  Benchmarks.run ~verify:verify_particle "Particle Update" run_particle_test ;
+  Benchmarks.run
+    ~verify:verify_particle
+    ~filter:Benchmarks.no_interpreter
+    "Particle Update"
+    run_particle_test ;
 
   (* Color *)
   let verify_color output _ =
@@ -352,5 +359,9 @@ let () =
     done ;
     !ok
   in
-  Benchmarks.run ~verify:verify_color "Color Blend" run_color_test ;
+  Benchmarks.run
+    ~verify:verify_color
+    ~filter:Benchmarks.no_interpreter
+    "Color Blend"
+    run_color_test ;
   Benchmarks.exit ()

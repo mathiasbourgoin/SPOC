@@ -23,12 +23,10 @@ let config =
     verify = true;
   }
 
-let init_backends () =
-  Sarek_cuda.Cuda_plugin.init () ;
-  Sarek_opencl.Opencl_plugin.init () ;
-  Sarek_vulkan.Vulkan_plugin.init () ;
-  Sarek_native.Native_plugin.init () ;
-  Sarek_interpreter.Interpreter_plugin.init ()
+(* Force backend registration.
+   Uses Backend_loader which conditionally initializes available backends
+   based on dune's (select ...) mechanism. *)
+let init_backends () = Backend_loader.init ()
 
 let parse_args () =
   let usage_msg = "Usage: " ^ Sys.argv.(0) ^ " [options]" in
@@ -99,24 +97,46 @@ let init () =
 
 let exit () = if !global_success then Stdlib.exit 0 else Stdlib.exit 1
 
+(** Convenience filter: exclude interpreter backend *)
+let no_interpreter (d : Device.t) = d.framework <> "Interpreter"
+
+(** Convenience filter: exclude native backend *)
+let no_native (d : Device.t) = d.framework <> "Native"
+
+(** Convenience filter: GPU backends only (excludes Native and Interpreter) *)
+let gpu_only (d : Device.t) =
+  d.framework <> "Native" && d.framework <> "Interpreter"
+
+(** Convenience filter: JIT backends only (CUDA, OpenCL, Vulkan) *)
+let jit_only (d : Device.t) =
+  d.framework = "CUDA" || d.framework = "OpenCL" || d.framework = "Vulkan"
+
 let run ?(baseline : (int -> 'a) option) ?(verify : ('a -> 'a -> bool) option)
-    ?(filter : (Device.t -> bool) option) test_name
+    ?(filter : (Device.t -> bool) option)
+    ?(exclude_frameworks : string list = []) test_name
     (f : Device.t -> int -> int -> float * 'a) =
   init () ;
 
   Printf.printf "=== %s ===\n" test_name ;
   Printf.printf "Size: %d\n" config.size ;
 
-  let frameworks = ["CUDA"; "OpenCL"; "Vulkan"; "Native"] in
-  let frameworks =
-    if config.use_interpreter then frameworks @ ["Interpreter"] else frameworks
-  in
-  let all_devices = Device.init ~frameworks () in
+  (* Use all registered backends - they auto-register when linked *)
+  let all_devices = Device.init () in
   if Array.length all_devices = 0 then (
     Printf.eprintf "No devices found.\n" ;
     Stdlib.exit 1) ;
 
   let targets = get_target_devices all_devices in
+  (* Apply exclude_frameworks filter *)
+  let targets =
+    if exclude_frameworks = [] then targets
+    else
+      Array.to_list targets
+      |> List.filter (fun d ->
+          not (List.mem d.Device.framework exclude_frameworks))
+      |> Array.of_list
+  in
+  (* Apply custom filter *)
   let targets =
     match filter with
     | Some p -> Array.to_list targets |> List.filter p |> Array.of_list

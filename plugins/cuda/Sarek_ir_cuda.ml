@@ -11,7 +11,7 @@
  * - Pragma support for optimization hints
  ******************************************************************************)
 
-open Sarek.Sarek_ir
+open Sarek_ir_types
 open Spoc_core
 
 (** Current device for SNative code generation (set during generate_for_device)
@@ -324,9 +324,7 @@ and gen_intrinsic buf path name args =
         Buffer.add_char buf ')'
     | _ -> (
         (* Try registry lookup for intrinsics like float, int_of_float, etc. *)
-        match
-          Sarek.Sarek_registry.fun_device_template ~module_path:path name
-        with
+        match Sarek_registry.fun_device_template ~module_path:path name with
         | Some template ->
             (* Generate argument strings *)
             let arg_strs =

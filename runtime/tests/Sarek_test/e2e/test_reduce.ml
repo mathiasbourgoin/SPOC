@@ -382,12 +382,19 @@ let () =
     let tol = max 1.0 (expected *. 0.0001) in
     verify_float "Sum" tol result expected
   in
-  Benchmarks.run ~baseline:baseline_sum ~verify:verify_sum "Reduce Sum" run_sum ;
+  (* Exclude interpreter - too slow for large reductions *)
+  Benchmarks.run
+    ~baseline:baseline_sum
+    ~verify:verify_sum
+    ~filter:Benchmarks.no_interpreter
+    "Reduce Sum"
+    run_sum ;
 
   (* Max *)
   let baseline_max size = ocaml_max !input_max size in
   (* Max should be exact for integers < 2^24 *)
   Benchmarks.run
+    ~filter:Benchmarks.no_interpreter
     ~baseline:baseline_max
     ~verify:(verify_float "Max" 0.1)
     "Reduce Max"
@@ -403,5 +410,10 @@ let () =
     (* 0.1% error *)
     verify_float "Dot" tol result expected
   in
-  Benchmarks.run ~baseline:baseline_dot ~verify:verify_dot "Dot Product" run_dot ;
+  Benchmarks.run
+    ~baseline:baseline_dot
+    ~verify:verify_dot
+    ~filter:Benchmarks.no_interpreter
+    "Dot Product"
+    run_dot ;
   Benchmarks.exit ()

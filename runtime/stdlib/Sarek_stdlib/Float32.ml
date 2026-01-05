@@ -31,7 +31,7 @@ let%sarek_intrinsic float32 =
  * These are the fundamental float32 operations used by the kernel code generator.
  ******************************************************************************)
 
-let dev cuda opencl d = Sarek.Sarek_registry.cuda_or_opencl d cuda opencl
+let dev cuda opencl d = Sarek_registry.cuda_or_opencl d cuda opencl
 
 let%sarek_intrinsic (add_float32 : float32 -> float32 -> float32) =
   {device = dev "(%s + %s)" "(%s + %s)"; ocaml = ( +. )}

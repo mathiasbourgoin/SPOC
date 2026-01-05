@@ -22,7 +22,7 @@ let%sarek_intrinsic float64 =
  * Arithmetic operators
  ******************************************************************************)
 
-let dev cuda opencl d = Sarek.Sarek_registry.cuda_or_opencl d cuda opencl
+let dev cuda opencl d = Sarek_registry.cuda_or_opencl d cuda opencl
 
 let%sarek_intrinsic (add_float64 : float -> float -> float) =
   {device = dev "(%s + %s)" "(%s + %s)"; ocaml = ( +. )}
