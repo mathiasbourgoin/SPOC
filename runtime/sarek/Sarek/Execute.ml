@@ -333,17 +333,21 @@ let run_from_ir ~(device : Device.t) ~(ir : Sarek_ir.kernel)
 
 (** {1 V2 Vector Execution Helpers} *)
 
-(** Mark all vectors as Stale_CPU after kernel execution. CPU backends with
-    zero-copy don't need this since host memory is directly modified. Uses
-    device capabilities, not framework names. *)
+(** Mark all vectors as Stale_CPU after kernel execution. Only Native backend
+    uses true zero-copy where host memory is directly modified. JIT backends
+    (OpenCL, CUDA, Vulkan) use device buffers even on CPU, so custom types
+    need explicit sync. Marking stale is safe for zero-copy buffers since
+    Transfer checks the zero_copy flag and skips the actual transfer. *)
 let mark_vectors_stale (args : vector_arg list) (dev : Device.t) : unit =
-  (* CPU devices use zero-copy - no stale marking needed *)
-  if dev.capabilities.is_cpu then ()
+  (* Only Native uses true zero-copy for all vector types.
+     OpenCL CPU uses zero-copy for scalar types but NOT for custom types.
+     Always mark stale for JIT backends - Transfer will check zero_copy. *)
+  if dev.Device.framework = "Native" then ()
   else
     List.iter
       (function
         | Vec v -> (
-            (* Mark as Stale_CPU: GPU has authoritative data, CPU is stale *)
+            (* Mark as Stale_CPU: device has authoritative data, CPU is stale *)
             match v.Vector.location with
             | Vector.Both _ -> v.Vector.location <- Vector.Stale_CPU dev
             | _ -> ())
