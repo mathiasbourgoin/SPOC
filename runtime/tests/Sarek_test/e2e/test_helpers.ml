@@ -239,3 +239,4 @@ let time_it f =
   let result = f () in
   let t1 = Unix.gettimeofday () in
   (result, (t1 -. t0) *. 1000.0)
+module Benchmarks = Benchmarks
