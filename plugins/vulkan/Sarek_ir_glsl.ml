@@ -656,7 +656,24 @@ let rec gen_stmt buf indent = function
 
 (** {1 Helper Function Generation} *)
 
-let gen_helper_func buf (hf : helper_func) =
+(** Generate helper function with #undef/#define guards to avoid macro
+    collisions. Push constant macros (e.g., #define max_iter pc.max_iter) would
+    otherwise expand function parameters with the same name, causing syntax
+    errors.
+    @param pc_names Set of push constant names that have macros defined *)
+let gen_helper_func ~pc_names buf (hf : helper_func) =
+  (* Find parameter names that collide with push constant macros *)
+  let param_names =
+    List.map (fun (v : var) -> escape_glsl_name v.var_name) hf.hf_params
+  in
+  let colliding_names =
+    List.filter (fun name -> List.mem name pc_names) param_names
+  in
+  (* #undef colliding names before the function *)
+  List.iter
+    (fun name -> Buffer.add_string buf (Printf.sprintf "#undef %s\n" name))
+    colliding_names ;
+  (* Generate function *)
   Buffer.add_string buf (glsl_type_of_elttype hf.hf_ret_type) ;
   Buffer.add_char buf ' ' ;
   Buffer.add_string buf hf.hf_name ;
@@ -670,7 +687,13 @@ let gen_helper_func buf (hf : helper_func) =
     hf.hf_params ;
   Buffer.add_string buf ") {\n" ;
   gen_stmt buf "  " hf.hf_body ;
-  Buffer.add_string buf "}\n\n"
+  Buffer.add_string buf "}\n" ;
+  (* Re-#define the colliding macros after the function *)
+  List.iter
+    (fun name ->
+      Buffer.add_string buf (Printf.sprintf "#define %s pc.%s\n" name name))
+    colliding_names ;
+  Buffer.add_char buf '\n'
 
 (** {1 Kernel Generation} *)
 
@@ -747,7 +770,7 @@ let gen_push_constants buf params =
           (Printf.sprintf "  %s %s;\n" (glsl_type_of_elttype v.var_type) name))
       scalars ;
     Buffer.add_string buf "} pc;\n\n" ;
-    (* Define convenience aliases *)
+    (* Define convenience aliases for push constants *)
     List.iter
       (fun v ->
         let name = escape_glsl_name v.var_name in
@@ -824,15 +847,26 @@ let generate ?block (k : kernel) : string =
       | _ -> ())
     k.kern_params ;
 
-  (* Generate push constants *)
+  (* Generate push constants and collect scalar names for macro collision handling *)
   gen_push_constants buf k.kern_params ;
+  let pc_names =
+    List.filter_map
+      (fun decl ->
+        match decl with
+        | DParam (v, _) -> (
+            match v.var_type with
+            | TVec _ -> None (* vectors don't get macros, only their _len *)
+            | _ -> Some (escape_glsl_name v.var_name))
+        | _ -> None)
+      k.kern_params
+  in
 
   (* Generate shared declarations at module scope (GLSL requirement) *)
   let shared_decls = collect_shared_decls k.kern_body in
   gen_shared_decls buf shared_decls ;
 
   (* Generate helper functions *)
-  List.iter (gen_helper_func buf) k.kern_funcs ;
+  List.iter (gen_helper_func ~pc_names buf) k.kern_funcs ;
 
   (* Generate main function *)
   Buffer.add_string buf "void main() {\n" ;
@@ -961,15 +995,26 @@ let generate_with_types ?block
       | _ -> ())
     k.kern_params ;
 
-  (* Generate push constants *)
+  (* Generate push constants and collect scalar names for macro collision handling *)
   gen_push_constants buf k.kern_params ;
+  let pc_names =
+    List.filter_map
+      (fun decl ->
+        match decl with
+        | DParam (v, _) -> (
+            match v.var_type with
+            | TVec _ -> None (* vectors don't get macros, only their _len *)
+            | _ -> Some (escape_glsl_name v.var_name))
+        | _ -> None)
+      k.kern_params
+  in
 
   (* Generate shared declarations at module scope (GLSL requirement) *)
   let shared_decls = collect_shared_decls k.kern_body in
   gen_shared_decls buf shared_decls ;
 
   (* Generate helper functions *)
-  List.iter (gen_helper_func buf) k.kern_funcs ;
+  List.iter (gen_helper_func ~pc_names buf) k.kern_funcs ;
 
   (* Generate main function *)
   Buffer.add_string buf "void main() {\n" ;

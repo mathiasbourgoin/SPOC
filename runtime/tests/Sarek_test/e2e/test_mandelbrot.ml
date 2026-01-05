@@ -252,11 +252,9 @@ let () =
   in
 
   Benchmarks.run ~baseline ~verify "Mandelbrot" run_mandelbrot_test ;
-  let filter dev = dev.Device.framework <> "Vulkan" in
   Benchmarks.run
     ~baseline
     ~verify
-    ~filter
     "Mandelbrot (Tail Rec)"
     run_mandelbrot_tailrec_test ;
   Benchmarks.exit ()
