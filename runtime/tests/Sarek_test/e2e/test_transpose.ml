@@ -445,6 +445,7 @@ let () =
   Benchmarks.run
     ~baseline:baseline_float64
     ~verify:verify_float64
+    ~filter:Device.allows_fp64
     "Transpose<float64>"
     run_transpose_float64 ;
   Benchmarks.run
