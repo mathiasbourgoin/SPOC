@@ -12,6 +12,7 @@ module Std = Sarek_stdlib.Std
 module Device = Spoc_core.Device
 module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
+module Benchmarks = Test_helpers.Benchmarks
 
 (* Force backend registration *)
 let () =
@@ -38,19 +39,11 @@ let ocaml_transpose input output width height =
 
 let input_data = ref [||]
 
-let expected_data = ref [||]
-
-let matrix_dim = ref 0
-
-let init_transpose_data () =
-  let dim = Int32.to_int (Int32.of_float (sqrt (float_of_int cfg.size))) in
-  matrix_dim := dim ;
+let init_transpose_data size =
+  let dim = Int32.to_int (Int32.of_float (sqrt (float_of_int size))) in
   let n = dim * dim in
   let inp = Array.init n (fun i -> float_of_int i) in
-  let out = Array.make n 0.0 in
-  input_data := inp ;
-  expected_data := out ;
-  ocaml_transpose inp out dim dim
+  input_data := inp
 
 (* ========== Sarek kernel ========== *)
 
@@ -73,8 +66,8 @@ let transpose_naive_kernel =
 
 (* ========== runtime test runner ========== *)
 
-let run_transpose (dev : Device.t) =
-  let dim = !matrix_dim in
+let run_transpose (dev : Device.t) size _block_size =
+  let dim = Int32.to_int (Int32.of_float (sqrt (float_of_int size))) in
   let n = dim * dim in
   let _, kirc = transpose_naive_kernel in
   let ir =
@@ -93,15 +86,20 @@ let run_transpose (dev : Device.t) =
 
   let block_size = 256 in
   let grid_size = (n + block_size - 1) / block_size in
-  let block = Execute.dims1d block_size in
-  let grid = Execute.dims1d grid_size in
+  let block = Sarek.Execute.dims1d block_size in
+  let grid = Sarek.Execute.dims1d grid_size in
 
   let t0 = Unix.gettimeofday () in
-  Execute.run_vectors
+  Sarek.Execute.run_vectors
     ~device:dev
     ~ir
     ~args:
-      [Execute.Vec input; Execute.Vec output; Execute.Int dim; Execute.Int dim]
+      [
+        Sarek.Execute.Vec input;
+        Sarek.Execute.Vec output;
+        Sarek.Execute.Int dim;
+        Sarek.Execute.Int dim;
+      ]
     ~block
     ~grid
     () ;
@@ -110,102 +108,40 @@ let run_transpose (dev : Device.t) =
 
   ((t1 -. t0) *. 1000.0, Vector.to_array output)
 
-(* ========== Verification ========== *)
-
-let verify_float_arrays name result expected tolerance =
-  let n = Array.length expected in
-  let errors = ref 0 in
-  for i = 0 to n - 1 do
-    let diff = abs_float (result.(i) -. expected.(i)) in
-    if diff > tolerance then begin
-      if !errors < 5 then
-        Printf.printf
-          "  %s mismatch at %d: expected %.2f, got %.2f\n"
-          name
-          i
-          expected.(i)
-          result.(i) ;
-      incr errors
-    end
-  done ;
-  !errors = 0
+(* ========== Main ========== *)
 
 let () =
-  let c = Test_helpers.parse_args "test_transpose" in
-  cfg.dev_id <- c.dev_id ;
-  cfg.use_interpreter <- c.use_interpreter ;
-  cfg.use_native <- c.use_native ;
-  cfg.benchmark_all <- c.benchmark_all ;
-  cfg.benchmark_devices <- c.benchmark_devices ;
-  cfg.verify <- c.verify ;
-  cfg.size <- c.size ;
-  cfg.block_size <- c.block_size ;
+  Benchmarks.init () ;
+  let size = Benchmarks.config.size in
+  init_transpose_data size ;
 
-  print_endline "=== Matrix Transpose Test (runtime) ===" ;
-  Printf.printf "Size: %d elements\n" cfg.size ;
+  let baseline size =
+    let dim = Int32.to_int (Int32.of_float (sqrt (float_of_int size))) in
+    let n = dim * dim in
+    let inp = !input_data in
+    let out = Array.make n 0.0 in
+    ocaml_transpose inp out dim dim ;
+    out
+  in
 
-  init_transpose_data () ;
-  Printf.printf "Matrix dimensions: %dx%d\n\n" !matrix_dim !matrix_dim ;
+  let verify result expected =
+    let n = Array.length expected in
+    let errors = ref 0 in
+    let tolerance = 0.001 in
+    for i = 0 to n - 1 do
+      let diff = abs_float (result.(i) -. expected.(i)) in
+      if diff > tolerance then begin
+        if !errors < 5 then
+          Printf.printf
+            "  Mismatch at %d: expected %.2f, got %.2f\n"
+            i
+            expected.(i)
+            result.(i) ;
+        incr errors
+      end
+    done ;
+    !errors = 0
+  in
 
-  let devs = Test_helpers.init_devices cfg in
-  if Array.length devs = 0 then begin
-    print_endline "No devices found" ;
-    exit 1
-  end ;
-  Test_helpers.print_devices devs ;
-
-  if cfg.benchmark_all then begin
-    print_endline (String.make 60 '-') ;
-    Printf.printf "%-35s %10s %10s\n" "Device" "Time(ms)" "Status" ;
-    print_endline (String.make 60 '-') ;
-
-    let all_ok = ref true in
-
-    Array.iter
-      (fun dev ->
-        let name = dev.Device.name in
-        let framework = dev.Device.framework in
-
-        let time, result = run_transpose dev in
-        let ok =
-          (not cfg.verify)
-          || verify_float_arrays "runtime" result !expected_data 0.001
-        in
-        let status = if ok then "OK" else "FAIL" in
-
-        if not ok then all_ok := false ;
-
-        Printf.printf
-          "%-35s %10.4f %10s\n"
-          (Printf.sprintf "%s (%s)" name framework)
-          time
-          status)
-      devs ;
-
-    print_endline (String.make 60 '-') ;
-
-    if !all_ok then print_endline "\n=== All transpose tests PASSED ==="
-    else begin
-      print_endline "\n=== Some transpose tests FAILED ===" ;
-      exit 1
-    end
-  end
-  else begin
-    let dev = Test_helpers.get_device cfg devs in
-    Printf.printf "Using device: %s\n%!" dev.Device.name ;
-
-    Printf.printf "\nRunning runtime path (naive transpose)...\n%!" ;
-    let time, result = run_transpose dev in
-    Printf.printf "  Time: %.4f ms\n%!" time ;
-    let ok =
-      (not cfg.verify)
-      || verify_float_arrays "runtime" result !expected_data 0.001
-    in
-    Printf.printf "  Status: %s\n%!" (if ok then "PASSED" else "FAILED") ;
-
-    if ok then print_endline "\nTranspose tests PASSED"
-    else begin
-      print_endline "\nTranspose tests FAILED" ;
-      exit 1
-    end
-  end
+  Benchmarks.run ~baseline ~verify "Matrix Transpose" run_transpose ;
+  Benchmarks.exit ()

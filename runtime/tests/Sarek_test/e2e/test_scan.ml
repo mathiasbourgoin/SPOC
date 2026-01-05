@@ -10,6 +10,7 @@
 module Device = Spoc_core.Device
 module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
+module Benchmarks = Test_helpers.Benchmarks
 
 (* Force backend registration *)
 let () =
@@ -35,33 +36,12 @@ let ocaml_inclusive_scan input output n =
 
 let input_ones = ref [||]
 
-let expected_ones = ref [||]
-
 let input_varying = ref [||]
 
-let expected_varying = ref [||]
-
-let init_ones_data () =
-  let n = min cfg.size 256 in
-  let inp = Array.make n 1l in
-  let out = Array.make n 0l in
-  input_ones := inp ;
-  expected_ones := out ;
-  let t0 = Unix.gettimeofday () in
-  ocaml_inclusive_scan inp out n ;
-  let t1 = Unix.gettimeofday () in
-  ((t1 -. t0) *. 1000.0, true)
-
-let init_varying_data () =
-  let n = min cfg.size 256 in
-  let inp = Array.init n (fun i -> Int32.of_int (i + 1)) in
-  let out = Array.make n 0l in
-  input_varying := inp ;
-  expected_varying := out ;
-  let t0 = Unix.gettimeofday () in
-  ocaml_inclusive_scan inp out n ;
-  let t1 = Unix.gettimeofday () in
-  ((t1 -. t0) *. 1000.0, true)
+let init_scan_data size =
+  let n = min size 256 in
+  input_ones := Array.make n 1l ;
+  input_varying := Array.init n (fun i -> Int32.of_int (i + 1))
 
 (* ========== Sarek kernels ========== *)
 
@@ -120,8 +100,8 @@ let inclusive_scan_kernel =
 
 (* ========== runtime test runners ========== *)
 
-let run_inclusive_scan (dev : Device.t) inp exp =
-  let n = min cfg.size 256 in
+let run_inclusive_scan (dev : Device.t) inp size =
+  let n = min size 256 in
   let _, kirc = inclusive_scan_kernel in
   let ir =
     match kirc.Sarek.Kirc_types.body_ir with
@@ -158,103 +138,59 @@ let run_inclusive_scan (dev : Device.t) inp exp =
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
 
-  let ok =
-    if cfg.verify then begin
-      let result = Vector.to_array output in
-      let errors = ref 0 in
-      for i = 0 to n - 1 do
-        if result.(i) <> exp.(i) then begin
-          if !errors < 10 then
-            Printf.printf
-              "  runtime Mismatch at %d: expected %ld, got %ld\n"
-              i
-              exp.(i)
-              result.(i) ;
-          incr errors
-        end
-      done ;
-      !errors = 0
-    end
-    else true
-  in
-  (time_ms, ok)
+  (time_ms, Vector.to_array output)
 
 (* ========== Main ========== *)
 
 let () =
-  let c = Test_helpers.parse_args "test_scan" in
-  cfg.dev_id <- c.dev_id ;
-  cfg.use_interpreter <- c.use_interpreter ;
-  cfg.use_native <- c.use_native ;
-  cfg.benchmark_all <- c.benchmark_all ;
-  cfg.benchmark_devices <- c.benchmark_devices ;
-  cfg.verify <- c.verify ;
-  cfg.size <- c.size ;
-  cfg.block_size <- c.block_size ;
+  Benchmarks.init () ;
+  let size = Benchmarks.config.size in
+  init_scan_data size ;
 
-  print_endline "=== Prefix Scan Tests (runtime) ===" ;
-  Printf.printf
-    "Size: %d elements (max 256 for block-level scan)\n\n"
-    (min cfg.size 256) ;
-
-  let devs =
-    Device.init ~frameworks:["CUDA"; "OpenCL"; "Vulkan"; "Native"; "Interpreter"] ()
+  let verify result expected =
+    let n = Array.length expected in
+    let errors = ref 0 in
+    for i = 0 to n - 1 do
+      if result.(i) <> expected.(i) then begin
+        if !errors < 10 then
+          Printf.printf
+            "  Mismatch at %d: expected %ld, got %ld\n"
+            i
+            expected.(i)
+            result.(i) ;
+        incr errors
+      end
+    done ;
+    !errors = 0
   in
-  if Array.length devs = 0 then begin
-    print_endline "No devices found" ;
-    exit 1
-  end ;
-  Test_helpers.print_devices devs ;
-  Printf.printf "\nFound %d runtime device(s)\n\n" (Array.length devs) ;
-
-  (* Filter out Interpreter in benchmark mode - too slow *)
-  let devs =
-    if cfg.benchmark_all then
-      Array.of_list
-        (List.filter
-           (fun d -> d.Device.framework <> "Interpreter")
-           (Array.to_list devs))
-    else devs
-  in
-
-  let all_ok = ref true in
 
   (* Scan with ones *)
-  ignore (init_ones_data ()) ;
-  print_endline "=== Inclusive Scan (all ones) ===" ;
-  Array.iter
-    (fun dev ->
-      let name = dev.Device.name in
-      let framework = dev.Device.framework in
-      let time, ok = run_inclusive_scan dev !input_ones !expected_ones in
-      Printf.printf
-        "  %s (%s): %.4f ms, %s\n%!"
-        name
-        framework
-        time
-        (if ok then "OK" else "FAIL") ;
-      if not ok then all_ok := false)
-    devs ;
+  let baseline_ones size =
+    let n = min size 256 in
+    let out = Array.make n 0l in
+    ocaml_inclusive_scan !input_ones out n ;
+    out
+  in
+  let run_ones dev size _block_size = run_inclusive_scan dev !input_ones size in
+  Benchmarks.run
+    ~baseline:baseline_ones
+    ~verify
+    "Inclusive Scan (all ones)"
+    run_ones ;
 
   (* Scan with varying values *)
-  ignore (init_varying_data ()) ;
-  print_endline "\n=== Inclusive Scan (varying values) ===" ;
-  Array.iter
-    (fun dev ->
-      let name = dev.Device.name in
-      let framework = dev.Device.framework in
-      let time, ok = run_inclusive_scan dev !input_varying !expected_varying in
-      Printf.printf
-        "  %s (%s): %.4f ms, %s\n%!"
-        name
-        framework
-        time
-        (if ok then "OK" else "FAIL") ;
-      if not ok then all_ok := false)
-    devs ;
-
-  if !all_ok then print_endline "\n=== All scan tests PASSED ==="
-  else begin
-    print_endline "\n=== Some scan tests FAILED ===" ;
-    exit 1
-  end
+  let baseline_varying size =
+    let n = min size 256 in
+    let out = Array.make n 0l in
+    ocaml_inclusive_scan !input_varying out n ;
+    out
+  in
+  let run_varying dev size _block_size =
+    run_inclusive_scan dev !input_varying size
+  in
+  Benchmarks.run
+    ~baseline:baseline_varying
+    ~verify
+    "Inclusive Scan (varying)"
+    run_varying ;
+  Benchmarks.exit ()

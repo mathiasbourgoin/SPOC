@@ -10,27 +10,13 @@
 
 open Sarek
 module Std = Sarek_stdlib.Std
-
-(* Module aliases *)
 module Device = Spoc_core.Device
 module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
-
-(* Force backend registration *)
-let () =
-  Sarek_cuda.Cuda_plugin.init () ;
-  Sarek_opencl.Opencl_plugin.init () ;
-  Sarek_vulkan.Vulkan_plugin.init () ;
-  Sarek_native.Native_plugin.init () ;
-  Sarek_interpreter.Interpreter_plugin.init ()
-
-let cfg = Test_helpers.default_config ()
-
-let tile_size = ref 16
+module Benchmarks = Test_helpers.Benchmarks
 
 (* ========== Pure OCaml baseline ========== *)
 
-(** Pure OCaml matrix multiplication *)
 let ocaml_matmul a b c m n k =
   for row = 0 to m - 1 do
     for col = 0 to n - 1 do
@@ -50,12 +36,8 @@ let input_b = ref [||]
 
 let expected_c = ref [||]
 
-let matrix_dim = ref 0
-
-(** Initialize matrices and compute expected result *)
-let init_matmul_data () =
-  let dim = int_of_float (sqrt (float_of_int cfg.size)) in
-  matrix_dim := dim ;
+let init_data size =
+  let dim = int_of_float (sqrt (float_of_int size)) in
   let m, n, k = (dim, dim, dim) in
   let a = Array.init (m * k) (fun i -> float_of_int (i mod 10) /. 10.0) in
   let b = Array.init (k * n) (fun i -> float_of_int ((i + 1) mod 10) /. 10.0) in
@@ -63,15 +45,11 @@ let init_matmul_data () =
   input_a := a ;
   input_b := b ;
   expected_c := c ;
-  let t0 = Unix.gettimeofday () in
-  ocaml_matmul a b c m n k ;
-  let t1 = Unix.gettimeofday () in
-  ((t1 -. t0) *. 1000.0, true)
+  (* We don't compute baseline here, we let Benchmarks do it *)
+  ()
 
 (* ========== Sarek kernels ========== *)
 
-(** Naive matrix multiplication - runtime compatible (1D indexing). Each thread
-    computes one output element. *)
 let matmul_naive_kernel =
   [%kernel
     fun (a : float32 vector)
@@ -92,9 +70,6 @@ let matmul_naive_kernel =
         c.((row * n) + col) <- sum
       end]
 
-(* NOTE: Not runtime compatible - uses shared memory and supersteps *)
-
-(** Tiled matrix multiplication with shared memory and supersteps. *)
 let matmul_tiled_kernel =
   [%kernel
     fun (a : float32 vector)
@@ -136,127 +111,14 @@ let matmul_tiled_kernel =
       done ;
       if row < m && col < n then c.((row * n) + col) <- sum]
 
-(* ========== runtime test runners ========== *)
+(* ========== Runners ========== *)
 
-(** Run tiled matrix multiplication on runtime - uses shared memory and
-    supersteps *)
-let run_matmul_tiled (dev : Device.t) =
-  let dim = !matrix_dim in
-  (* Pad to tile_size multiple *)
-  let dim = (dim + !tile_size - 1) / !tile_size * !tile_size in
+let run_naive dev size _block_size =
+  let dim = int_of_float (sqrt (float_of_int size)) in
   let m, n, k = (dim, dim, dim) in
   let inp_a = !input_a in
   let inp_b = !input_b in
-  let orig_dim = !matrix_dim in
 
-  let _, kirc = matmul_tiled_kernel in
-  let ir =
-    match kirc.Sarek.Kirc_types.body_ir with
-    | Some ir -> ir
-    | None -> failwith "Tiled kernel: No IR"
-  in
-
-  let a = Vector.create Vector.float32 (m * k) in
-  let b = Vector.create Vector.float32 (k * n) in
-  let c = Vector.create Vector.float32 (m * n) in
-
-  (* Initialize with padding - zero-pad to tile boundary *)
-  for row = 0 to m - 1 do
-    for col = 0 to k - 1 do
-      let idx = (row * k) + col in
-      if row < orig_dim && col < orig_dim then
-        Vector.set a idx inp_a.((row * orig_dim) + col)
-      else Vector.set a idx 0.0
-    done
-  done ;
-  for row = 0 to k - 1 do
-    for col = 0 to n - 1 do
-      let idx = (row * n) + col in
-      if row < orig_dim && col < orig_dim then
-        Vector.set b idx inp_b.((row * orig_dim) + col)
-      else Vector.set b idx 0.0
-    done
-  done ;
-  for i = 0 to (m * n) - 1 do
-    Vector.set c i 0.0
-  done ;
-
-  (* 2D launch configuration *)
-  let block_size = !tile_size in
-  let blocks_x = n / block_size in
-  let blocks_y = m / block_size in
-  let block = Sarek.Execute.dims2d block_size block_size in
-  let grid = Sarek.Execute.dims2d blocks_x blocks_y in
-
-  (* Shared memory: 2 tiles × tile_size² × 4 bytes *)
-  let shared_mem = 2 * block_size * block_size * 4 in
-
-  let t0 = Unix.gettimeofday () in
-  Sarek.Execute.run_vectors
-    ~device:dev
-    ~ir
-    ~args:
-      [
-        Sarek.Execute.Vec a;
-        Sarek.Execute.Vec b;
-        Sarek.Execute.Vec c;
-        Sarek.Execute.Int32 (Int32.of_int m);
-        Sarek.Execute.Int32 (Int32.of_int n);
-        Sarek.Execute.Int32 (Int32.of_int k);
-      ]
-    ~block
-    ~grid
-    ~shared_mem
-    () ;
-  Transfer.flush dev ;
-  let t1 = Unix.gettimeofday () in
-  let time_ms = (t1 -. t0) *. 1000.0 in
-
-  let ok =
-    if cfg.verify then begin
-      let result = Vector.to_array c in
-      let exp_c = !expected_c in
-      let errors = ref 0 in
-      let check_count = min 100 (orig_dim * orig_dim) in
-      for idx = 0 to check_count - 1 do
-        let row = idx / orig_dim in
-        let col = idx mod orig_dim in
-        let expected = exp_c.(idx) in
-        (* Access padded matrix: row * padded_n + col *)
-        let got = result.((row * n) + col) in
-        let rel_tol = 0.001 in
-        let abs_tol = 0.1 in
-        let diff = abs_float (got -. expected) in
-        let rel_err =
-          if abs_float expected > 1e-6 then diff /. abs_float expected else diff
-        in
-        if diff > abs_tol && rel_err > rel_tol then begin
-          if !errors < 5 then
-            Printf.printf
-              "  Tiled runtime mismatch at [%d,%d]: expected %.6f, got %.6f \
-               (rel_err=%.4f%%)\n"
-              row
-              col
-              expected
-              got
-              (rel_err *. 100.0) ;
-          incr errors
-        end
-      done ;
-      !errors = 0
-    end
-    else true
-  in
-  (time_ms, ok)
-
-(** Run naive matrix multiplication on runtime - returns (compile_ms, exec_ms,
-    ok) *)
-let run_matmul_naive (dev : Device.t) =
-  let dim = !matrix_dim in
-  let m, n, k = (dim, dim, dim) in
-  let inp_a = !input_a in
-  let inp_b = !input_b in
-  let exp_c = !expected_c in
   let _, kirc = matmul_naive_kernel in
   let ir =
     match kirc.Sarek.Kirc_types.body_ir with
@@ -278,39 +140,12 @@ let run_matmul_naive (dev : Device.t) =
     Vector.set c i 0.0
   done ;
 
-  let block_size = 256 in
+  let block_sz = 256 in
   let total_elements = m * n in
-  let grid_size = (total_elements + block_size - 1) / block_size in
-  let block = Sarek.Execute.dims1d block_size in
-  let grid = Sarek.Execute.dims1d grid_size in
+  let grid_sz = (total_elements + block_sz - 1) / block_sz in
+  let block = Sarek.Execute.dims1d block_sz in
+  let grid = Sarek.Execute.dims1d grid_sz in
 
-  (* Measure compile time (first run triggers JIT) *)
-  let tc0 = Unix.gettimeofday () in
-  Sarek.Execute.run_vectors
-    ~device:dev
-    ~ir
-    ~args:
-      [
-        Sarek.Execute.Vec a;
-        Sarek.Execute.Vec b;
-        Sarek.Execute.Vec c;
-        Sarek.Execute.Int32 (Int32.of_int m);
-        Sarek.Execute.Int32 (Int32.of_int n);
-        Sarek.Execute.Int32 (Int32.of_int k);
-      ]
-    ~block
-    ~grid
-    () ;
-  Transfer.flush dev ;
-  let tc1 = Unix.gettimeofday () in
-  let compile_ms = (tc1 -. tc0) *. 1000.0 in
-
-  (* Reset output for execution timing *)
-  for i = 0 to (m * n) - 1 do
-    Vector.set c i 0.0
-  done ;
-
-  (* Measure execution time (cached kernel) *)
   let t0 = Unix.gettimeofday () in
   Sarek.Execute.run_vectors
     ~device:dev
@@ -329,184 +164,108 @@ let run_matmul_naive (dev : Device.t) =
     () ;
   Transfer.flush dev ;
   let t1 = Unix.gettimeofday () in
-  let exec_ms = (t1 -. t0) *. 1000.0 in
 
-  let ok =
-    if cfg.verify then begin
-      let result = Vector.to_array c in
-      let errors = ref 0 in
-      let check_count = min 100 (m * n) in
-      for idx = 0 to check_count - 1 do
-        let expected = exp_c.(idx) in
-        let got = result.(idx) in
-        (* Use relative tolerance for float32 accumulation across k iterations *)
-        let rel_tol = 0.001 in
-        (* 0.1% relative error *)
-        let abs_tol = 0.1 in
-        (* Also allow small absolute error *)
-        let diff = abs_float (got -. expected) in
-        let rel_err =
-          if abs_float expected > 1e-6 then diff /. abs_float expected else diff
-        in
-        if diff > abs_tol && rel_err > rel_tol then begin
-          if !errors < 5 then
-            Printf.printf
-              "  runtime mismatch at %d: expected %.6f, got %.6f \
-               (rel_err=%.4f%%)\n"
-              idx
-              expected
-              got
-              (rel_err *. 100.0) ;
-          incr errors
-        end
-      done ;
-      !errors = 0
-    end
-    else true
+  ((t1 -. t0) *. 1000.0, Vector.to_array c)
+
+let run_tiled dev size _block_size =
+  if dev.Device.framework = "Interpreter" then
+    failwith "Interpreter not supported for tiled kernel" ;
+
+  let dim = int_of_float (sqrt (float_of_int size)) in
+  let m, n, k = (dim, dim, dim) in
+  let inp_a = !input_a in
+  let inp_b = !input_b in
+
+  let _, kirc = matmul_tiled_kernel in
+  let ir =
+    match kirc.Sarek.Kirc_types.body_ir with
+    | Some ir -> ir
+    | None -> failwith "No IR"
   in
-  (compile_ms, exec_ms, ok)
+
+  let a = Vector.create Vector.float32 (m * k) in
+  let b = Vector.create Vector.float32 (k * n) in
+  let c = Vector.create Vector.float32 (m * n) in
+
+  for i = 0 to (m * k) - 1 do
+    Vector.set a i inp_a.(i)
+  done ;
+  for i = 0 to (k * n) - 1 do
+    Vector.set b i inp_b.(i)
+  done ;
+  for i = 0 to (m * n) - 1 do
+    Vector.set c i 0.0
+  done ;
+
+  let tile_sz = 16 in
+  let blocks_x = (n + tile_sz - 1) / tile_sz in
+  let blocks_y = (m + tile_sz - 1) / tile_sz in
+  let block = Sarek.Execute.dims2d tile_sz tile_sz in
+  let grid = Sarek.Execute.dims2d blocks_x blocks_y in
+  let shared_mem = 2 * tile_sz * tile_sz * 4 in
+
+  let t0 = Unix.gettimeofday () in
+  Sarek.Execute.run_vectors
+    ~device:dev
+    ~ir
+    ~args:
+      [
+        Sarek.Execute.Vec a;
+        Sarek.Execute.Vec b;
+        Sarek.Execute.Vec c;
+        Sarek.Execute.Int32 (Int32.of_int m);
+        Sarek.Execute.Int32 (Int32.of_int n);
+        Sarek.Execute.Int32 (Int32.of_int k);
+      ]
+    ~block
+    ~grid
+    ~shared_mem
+    () ;
+  Transfer.flush dev ;
+  let t1 = Unix.gettimeofday () in
+
+  ((t1 -. t0) *. 1000.0, Vector.to_array c)
 
 (* ========== Main ========== *)
 
 let () =
-  let c = Test_helpers.parse_args "test_matrix_mul" in
-  cfg.dev_id <- c.dev_id ;
-  cfg.use_interpreter <- c.use_interpreter ;
-  cfg.use_native <- c.use_native ;
-  cfg.use_vulkan <- c.use_vulkan ;
-  cfg.benchmark_all <- c.benchmark_all ;
-  cfg.benchmark_devices <- c.benchmark_devices ;
-  cfg.verify <- c.verify ;
-  cfg.size <- c.size ;
-  cfg.block_size <- c.block_size ;
+  Benchmarks.init () ;
+  let size = Benchmarks.config.size in
+  init_data size ;
 
-  print_endline "=== Matrix Multiplication Test (Unified runtime) ===" ;
-
-  let dim = int_of_float (sqrt (float_of_int cfg.size)) in
-  Printf.printf
-    "Matrix dimensions: %dx%d (total elements: %d)\n\n"
-    dim
-    dim
-    (dim * dim) ;
-
-  (* Init runtime devices - unified path for all backends *)
-  let devs =
-    Device.init ~frameworks:["CUDA"; "OpenCL"; "Vulkan"; "Native"; "Interpreter"] ()
+  let baseline size =
+    let dim = int_of_float (sqrt (float_of_int size)) in
+    let m, n, k = (dim, dim, dim) in
+    let a = !input_a in
+    let b = !input_b in
+    let c = Array.make (m * n) 0.0 in
+    ocaml_matmul a b c m n k ;
+    c
   in
-  Printf.printf "Found %d runtime device(s)\n" (Array.length devs) ;
-  Array.iteri
-    (fun i d ->
-      Printf.printf "  [%d] %s (%s)\n" i d.Device.name d.Device.framework)
-    devs ;
-  print_newline () ;
 
-  ignore (init_matmul_data ()) ;
-
-  if cfg.benchmark_all then begin
-    (* Benchmark naive - unified runtime path *)
-    print_endline "=== Naive Matrix Multiplication (Unified runtime) ===" ;
-    print_endline (String.make 80 '-') ;
-    Printf.printf
-      "%-40s %12s %12s %8s\n"
-      "Device"
-      "Compile(ms)"
-      "Exec(ms)"
-      "Status" ;
-    print_endline (String.make 80 '-') ;
-
-    let all_ok = ref true in
-
-    Array.iter
-      (fun dev ->
-        let name = dev.Device.name in
-        let framework = dev.Device.framework in
-        (* Skip interpreter - too slow for matrix multiplication *)
-        if framework <> "Interpreter" then begin
-          let comp, exec, ok = run_matmul_naive dev in
-          let status = if ok then "OK" else "FAIL" in
-          if not ok then all_ok := false ;
+  let verify result expected =
+    let size = Array.length expected in
+    let errors = ref 0 in
+    let check_count = min 100 size in
+    for i = 0 to check_count - 1 do
+      let diff = abs_float (result.(i) -. expected.(i)) in
+      let rel_err =
+        if abs_float expected.(i) > 1e-6 then diff /. abs_float expected.(i)
+        else diff
+      in
+      if diff > 0.1 && rel_err > 0.001 then begin
+        if !errors < 5 then
           Printf.printf
-            "%-40s %12.2f %12.2f %8s\n"
-            (Printf.sprintf "%s (%s)" name framework)
-            comp
-            exec
-            status
-        end
-        else
-          Printf.printf
-            "%-40s %12s %12s %8s\n"
-            (Printf.sprintf "%s (%s)" name framework)
-            "-"
-            "-"
-            "SKIP")
-      devs ;
+            "  Mismatch at %d: expected %.6f, got %.6f\n"
+            i
+            expected.(i)
+            result.(i) ;
+        incr errors
+      end
+    done ;
+    !errors = 0
+  in
 
-    print_endline (String.make 80 '-') ;
-
-    (* Benchmark tiled runtime (shared memory + supersteps) *)
-    print_endline
-      "\n=== Tiled Matrix Multiplication (runtime - shared memory) ===" ;
-    print_endline (String.make 60 '-') ;
-    Printf.printf "%-40s %10s %8s\n" "Device" "Exec(ms)" "Status" ;
-    print_endline (String.make 60 '-') ;
-
-    Array.iter
-      (fun dev ->
-        let name = dev.Device.name in
-        let framework = dev.Device.framework in
-        (* Skip interpreter for tiled - barrier semantics differ *)
-        if framework <> "Interpreter" then begin
-          let time, ok = run_matmul_tiled dev in
-          Printf.printf
-            "%-40s %10.4f %8s\n"
-            (Printf.sprintf "%s (%s)" name framework)
-            time
-            (if ok then "OK" else "FAIL") ;
-          if not ok then all_ok := false
-        end
-        else
-          Printf.printf
-            "%-40s %10s %8s\n"
-            (Printf.sprintf "%s (%s)" name framework)
-            "-"
-            "SKIP")
-      devs ;
-
-    print_endline (String.make 60 '-') ;
-
-    if !all_ok then
-      print_endline "\n=== All matrix multiplication tests PASSED ==="
-    else begin
-      print_endline "\n=== Some matrix multiplication tests FAILED ===" ;
-      exit 1
-    end
-  end
-  else begin
-    (* Single device mode - use runtime *)
-    let dev = Test_helpers.get_device cfg devs in
-    Printf.printf
-      "Using device: %s (%s)\n%!"
-      dev.Device.name
-      dev.Device.framework ;
-
-    Printf.printf "\n--- Naive Matrix Multiplication (runtime) ---\n%!" ;
-    let comp, exec, ok = run_matmul_naive dev in
-    Printf.printf
-      "  Compile: %.2f ms, Exec: %.2f ms, %s\n%!"
-      comp
-      exec
-      (if ok then "PASSED" else "FAILED") ;
-
-    (* Tiled kernel via runtime (shared memory + supersteps) *)
-    if dev.Device.framework <> "Interpreter" then begin
-      Printf.printf "\n--- Tiled Matrix Multiplication (runtime) ---\n%!" ;
-      let time, ok = run_matmul_tiled dev in
-      Printf.printf
-        "  Time: %.4f ms, %s\n%!"
-        time
-        (if ok then "PASSED" else "FAILED")
-    end
-    else Printf.printf "\n(Tiled kernel skipped for interpreter)\n%!" ;
-
-    print_endline "\nMatrix multiplication tests PASSED"
-  end
+  Benchmarks.run ~baseline ~verify "Naive Matrix Mul" run_naive ;
+  Benchmarks.run ~baseline ~verify "Tiled Matrix Mul" run_tiled ;
+  Benchmarks.exit ()

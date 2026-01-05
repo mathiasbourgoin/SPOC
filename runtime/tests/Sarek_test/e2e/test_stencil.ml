@@ -11,6 +11,7 @@ module Std = Sarek_stdlib.Std
 module Device = Spoc_core.Device
 module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
+module Benchmarks = Test_helpers.Benchmarks
 
 (* Force backend registration *)
 let () =
@@ -19,8 +20,6 @@ let () =
   Sarek_vulkan.Vulkan_plugin.init () ;
   Sarek_native.Native_plugin.init () ;
   Sarek_interpreter.Interpreter_plugin.init ()
-
-let cfg = Test_helpers.default_config ()
 
 (* ========== Pure OCaml baseline ========== *)
 
@@ -31,20 +30,6 @@ let ocaml_stencil_1d input output n =
     let right = input.(i + 1) in
     output.(i) <- (left +. center +. right) /. 3.0
   done
-
-(* ========== Shared test data ========== *)
-
-let input_1d = ref [||]
-
-let expected_1d = ref [||]
-
-let init_1d_data () =
-  let n = cfg.size in
-  let inp = Array.init n (fun i -> sin (float_of_int i *. 0.1)) in
-  let exp = Array.make n 0.0 in
-  input_1d := inp ;
-  expected_1d := exp ;
-  ocaml_stencil_1d inp exp n
 
 (* ========== Sarek kernel ========== *)
 
@@ -59,138 +44,73 @@ let stencil_1d_kernel =
         let right = input.(tid + 1) in
         output.(tid) <- (left +. center +. right) /. 3.0]
 
-(* ========== runtime test runner ========== *)
-
-let run_stencil_1d (dev : Device.t) =
-  let n = cfg.size in
-  let _, kirc = stencil_1d_kernel in
-  let ir =
-    match kirc.Sarek.Kirc_types.body_ir with
-    | Some ir -> ir
-    | None -> failwith "No IR"
-  in
-
-  let input = Vector.create Vector.float32 n in
-  let output = Vector.create Vector.float32 n in
-
-  for i = 0 to n - 1 do
-    Vector.set input i !input_1d.(i) ;
-    Vector.set output i 0.0
-  done ;
-
-  let block_size = 256 in
-  let grid_size = (n + block_size - 1) / block_size in
-  let block = Execute.dims1d block_size in
-  let grid = Execute.dims1d grid_size in
-
-  let t0 = Unix.gettimeofday () in
-  Execute.run_vectors
-    ~device:dev
-    ~ir
-    ~args:[Execute.Vec input; Execute.Vec output; Execute.Int n]
-    ~block
-    ~grid
-    () ;
-  Transfer.flush dev ;
-  let t1 = Unix.gettimeofday () in
-
-  ((t1 -. t0) *. 1000.0, Vector.to_array output)
-
-(* ========== Verification ========== *)
-
-let verify_float_arrays name result expected tolerance =
-  let n = Array.length expected in
-  let errors = ref 0 in
-  for i = 1 to n - 2 do
-    let diff = abs_float (result.(i) -. expected.(i)) in
-    if diff > tolerance then begin
-      if !errors < 5 then
-        Printf.printf
-          "  %s mismatch at %d: expected %.6f, got %.6f\n"
-          name
-          i
-          expected.(i)
-          result.(i) ;
-      incr errors
-    end
-  done ;
-  !errors = 0
+(* ========== Benchmark Runner ========== *)
 
 let () =
-  let c = Test_helpers.parse_args "test_stencil" in
-  cfg.dev_id <- c.dev_id ;
-  cfg.use_interpreter <- c.use_interpreter ;
-  cfg.use_native <- c.use_native ;
-  cfg.benchmark_all <- c.benchmark_all ;
-  cfg.benchmark_devices <- c.benchmark_devices ;
-  cfg.verify <- c.verify ;
-  cfg.size <- c.size ;
-  cfg.block_size <- c.block_size ;
-
-  print_endline "=== 1D Stencil Test (runtime) ===" ;
-  Printf.printf "Size: %d elements\n\n" cfg.size ;
-
-  init_1d_data () ;
-
-  let devs = Test_helpers.init_devices cfg in
-  if Array.length devs = 0 then begin
-    print_endline "No devices found" ;
-    exit 1
-  end ;
-  Test_helpers.print_devices devs ;
-
-  if cfg.benchmark_all then begin
-    print_endline (String.make 60 '-') ;
-    Printf.printf "%-35s %10s %10s\n" "Device" "Time(ms)" "Status" ;
-    print_endline (String.make 60 '-') ;
-
-    let all_ok = ref true in
-
-    Array.iter
-      (fun dev ->
-        let name = dev.Device.name in
-        let framework = dev.Device.framework in
-
-        let time, result = run_stencil_1d dev in
-        let ok =
-          (not cfg.verify)
-          || verify_float_arrays "runtime" result !expected_1d 0.0001
-        in
-        let status = if ok then "OK" else "FAIL" in
-
-        if not ok then all_ok := false ;
-
-        Printf.printf
-          "%-35s %10.4f %10s\n"
-          (Printf.sprintf "%s (%s)" name framework)
-          time
-          status)
-      devs ;
-
-    print_endline (String.make 60 '-') ;
-
-    if !all_ok then print_endline "\n=== All stencil tests PASSED ==="
-    else begin
-      print_endline "\n=== Some stencil tests FAILED ===" ;
-      exit 1
-    end
-  end
-  else begin
-    let dev = Test_helpers.get_device cfg devs in
-    Printf.printf "Using device: %s\n%!" dev.Device.name ;
-
-    Printf.printf "\nRunning runtime path (1D stencil)...\n%!" ;
-    let time, result = run_stencil_1d dev in
-    Printf.printf "  Time: %.4f ms\n%!" time ;
-    let ok =
-      (not cfg.verify)
-      || verify_float_arrays "runtime" result !expected_1d 0.0001
+  let run_stencil (dev : Device.t) size _block_size =
+    let n = size in
+    let _, kirc = stencil_1d_kernel in
+    let ir =
+      match kirc.Sarek.Kirc_types.body_ir with
+      | Some ir -> ir
+      | None -> failwith "No IR"
     in
-    Printf.printf "  Status: %s\n%!" (if ok then "PASSED" else "FAILED") ;
 
-    if ok then print_endline "\nStencil tests PASSED"
-    else begin
-      print_endline "\nStencil tests FAILED" ;
-      exit 1
-    end
-  end
+    (* Initialize data *)
+    let input_arr = Array.init n (fun i -> sin (float_of_int i *. 0.1)) in
+    let input = Vector.create Vector.float32 n in
+    let output = Vector.create Vector.float32 n in
+
+    for i = 0 to n - 1 do
+      Vector.set input i input_arr.(i) ;
+      Vector.set output i 0.0
+    done ;
+
+    let block_size = 256 in
+    let grid_size = (n + block_size - 1) / block_size in
+    let block = Sarek.Execute.dims1d block_size in
+    let grid = Sarek.Execute.dims1d grid_size in
+
+    let t0 = Unix.gettimeofday () in
+    Sarek.Execute.run_vectors
+      ~device:dev
+      ~ir
+      ~args:
+        [Sarek.Execute.Vec input; Sarek.Execute.Vec output; Sarek.Execute.Int n]
+      ~block
+      ~grid
+      () ;
+    Transfer.flush dev ;
+    let t1 = Unix.gettimeofday () in
+
+    ((t1 -. t0) *. 1000.0, Vector.to_array output)
+  in
+
+  let baseline size =
+    let input = Array.init size (fun i -> sin (float_of_int i *. 0.1)) in
+    let output = Array.make size 0.0 in
+    ocaml_stencil_1d input output size ;
+    output
+  in
+
+  let verify result expected =
+    let n = Array.length expected in
+    let errors = ref 0 in
+    let tolerance = 0.0001 in
+    for i = 1 to n - 2 do
+      let diff = abs_float (result.(i) -. expected.(i)) in
+      if diff > tolerance then begin
+        if !errors < 5 then
+          Printf.printf
+            "  Mismatch at %d: expected %.6f, got %.6f\n"
+            i
+            expected.(i)
+            result.(i) ;
+        incr errors
+      end
+    done ;
+    !errors = 0
+  in
+
+  Benchmarks.run ~baseline ~verify "1D Stencil" run_stencil ;
+  Benchmarks.exit ()

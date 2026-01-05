@@ -96,4 +96,5 @@ let () =
     ~baseline:compute_expected
     ~verify:verify_results
     "Vector Add Test"
-    run_test
+    run_test ;
+  Benchmarks.exit ()

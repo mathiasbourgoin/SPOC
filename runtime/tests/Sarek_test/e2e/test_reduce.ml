@@ -6,26 +6,12 @@
  * GPU runtime only.
  ******************************************************************************)
 
-(* Module aliases *)
+open Sarek
+module Std = Sarek_stdlib.Std
 module Device = Spoc_core.Device
 module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
-
-(* Force backend registration *)
-let () =
-  Sarek_cuda.Cuda_plugin.init () ;
-  Sarek_opencl.Opencl_plugin.init () ;
-  Sarek_vulkan.Vulkan_plugin.init () ;
-  Sarek_native.Native_plugin.init () ;
-  Sarek_interpreter.Interpreter_plugin.init ()
-
-let cfg = Test_helpers.default_config ()
-
-(** Get appropriate block size for runtime device *)
-let get_block_size (dev : Device.t) =
-  if dev.capabilities.is_cpu then
-    if cfg.block_size > 1 then cfg.block_size else 64
-  else cfg.block_size
+module Benchmarks = Test_helpers.Benchmarks
 
 (* ========== Pure OCaml baselines ========== *)
 
@@ -54,46 +40,17 @@ let ocaml_dot a b n =
 
 let input_sum = ref [||]
 
-let expected_sum = ref 0.0
-
 let input_max = ref [||]
-
-let expected_max = ref 0.0
 
 let input_a = ref [||]
 
 let input_b = ref [||]
 
-let expected_dot = ref 0.0
-
-let init_sum_data () =
-  let n = cfg.size in
-  let arr = Array.make n 1.0 in
-  input_sum := arr ;
-  let t0 = Unix.gettimeofday () in
-  expected_sum := ocaml_sum arr n ;
-  let t1 = Unix.gettimeofday () in
-  ((t1 -. t0) *. 1000.0, true)
-
-let init_max_data () =
-  let n = cfg.size in
-  let arr = Array.init n (fun i -> float_of_int i) in
-  input_max := arr ;
-  let t0 = Unix.gettimeofday () in
-  expected_max := ocaml_max arr n ;
-  let t1 = Unix.gettimeofday () in
-  ((t1 -. t0) *. 1000.0, true)
-
-let init_dot_data () =
-  let n = cfg.size in
-  let a = Array.init n (fun i -> float_of_int i) in
-  let b = Array.make n 1.0 in
-  input_a := a ;
-  input_b := b ;
-  let t0 = Unix.gettimeofday () in
-  expected_dot := ocaml_dot a b n ;
-  let t1 = Unix.gettimeofday () in
-  ((t1 -. t0) *. 1000.0, true)
+let init_data size =
+  input_sum := Array.make size 1.0 ;
+  input_max := Array.init size (fun i -> float_of_int i) ;
+  input_a := Array.init size (fun i -> float_of_int i) ;
+  input_b := Array.make size 1.0
 
 (* ========== Sarek kernels ========== *)
 
@@ -239,19 +196,23 @@ let dot_product_kernel =
       in
       if tid = 0l then output.(block_idx_x) <- sdata.(0l)]
 
-(* ========== Test runners ========== *)
+(* ========== Runners ========== *)
 
-let run_reduce_sum (dev : Device.t) =
-  let n = cfg.size in
-  let block_size = min 256 (get_block_size dev) in
-  let num_blocks = (n + block_size - 1) / block_size in
+let run_sum dev size _block_size =
+  if dev.Device.framework = "Interpreter" then
+    failwith "Interpreter not supported for reduction kernel" ;
+
+  let n = size in
+  (* Kernel expects block_size=256 because of hardcoded reduction steps *)
+  let block_sz = 256 in
+  let num_blocks = (n + block_sz - 1) / block_sz in
   let inp = !input_sum in
 
   let _, kirc = reduce_sum_kernel in
   let ir =
     match kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
-    | None -> failwith "Kernel has no IR"
+    | None -> failwith "No IR"
   in
 
   let input = Vector.create Vector.float32 n in
@@ -264,7 +225,7 @@ let run_reduce_sum (dev : Device.t) =
     Vector.set output i 0.0
   done ;
 
-  let block = Sarek.Execute.dims1d block_size in
+  let block = Sarek.Execute.dims1d block_sz in
   let grid = Sarek.Execute.dims1d num_blocks in
 
   let t0 = Unix.gettimeofday () in
@@ -282,29 +243,26 @@ let run_reduce_sum (dev : Device.t) =
     () ;
   Transfer.flush dev ;
   let t1 = Unix.gettimeofday () in
-  let time_ms = (t1 -. t0) *. 1000.0 in
 
-  let ok =
-    if cfg.verify then begin
-      let result = Vector.to_array output in
-      let total = Array.fold_left ( +. ) 0.0 result in
-      abs_float (total -. !expected_sum) < 0.1
-    end
-    else true
-  in
-  (time_ms, ok)
+  let partial_sums = Vector.to_array output in
+  let total = Array.fold_left ( +. ) 0.0 partial_sums in
+  ((t1 -. t0) *. 1000.0, total)
 
-let run_reduce_max (dev : Device.t) =
-  let n = cfg.size in
-  let block_size = min 256 (get_block_size dev) in
-  let num_blocks = (n + block_size - 1) / block_size in
+let run_max dev size _block_size =
+  if dev.Device.framework = "Interpreter" then
+    failwith "Interpreter not supported for reduction kernel" ;
+
+  let n = size in
+  (* Kernel expects block_size=256 *)
+  let block_sz = 256 in
+  let num_blocks = (n + block_sz - 1) / block_sz in
   let inp = !input_max in
 
   let _, kirc = reduce_max_kernel in
   let ir =
     match kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
-    | None -> failwith "Kernel has no IR"
+    | None -> failwith "No IR"
   in
 
   let input = Vector.create Vector.float32 n in
@@ -317,7 +275,7 @@ let run_reduce_max (dev : Device.t) =
     Vector.set output i (-1000000.0)
   done ;
 
-  let block = Sarek.Execute.dims1d block_size in
+  let block = Sarek.Execute.dims1d block_sz in
   let grid = Sarek.Execute.dims1d num_blocks in
 
   let t0 = Unix.gettimeofday () in
@@ -335,22 +293,19 @@ let run_reduce_max (dev : Device.t) =
     () ;
   Transfer.flush dev ;
   let t1 = Unix.gettimeofday () in
-  let time_ms = (t1 -. t0) *. 1000.0 in
 
-  let ok =
-    if cfg.verify then begin
-      let result = Vector.to_array output in
-      let max_val = Array.fold_left max (-1000000.0) result in
-      abs_float (max_val -. !expected_max) < 0.1
-    end
-    else true
-  in
-  (time_ms, ok)
+  let partial_maxs = Vector.to_array output in
+  let total_max = Array.fold_left max (-1000000.0) partial_maxs in
+  ((t1 -. t0) *. 1000.0, total_max)
 
-let run_dot_product (dev : Device.t) =
-  let n = cfg.size in
-  let block_size = min 256 (get_block_size dev) in
-  let num_blocks = (n + block_size - 1) / block_size in
+let run_dot dev size _block_size =
+  if dev.Device.framework = "Interpreter" then
+    failwith "Interpreter not supported for reduction kernel" ;
+
+  let n = size in
+  (* Kernel expects block_size=256 *)
+  let block_sz = 256 in
+  let num_blocks = (n + block_sz - 1) / block_sz in
   let inp_a = !input_a in
   let inp_b = !input_b in
 
@@ -358,7 +313,7 @@ let run_dot_product (dev : Device.t) =
   let ir =
     match kirc.Sarek.Kirc_types.body_ir with
     | Some ir -> ir
-    | None -> failwith "Kernel has no IR"
+    | None -> failwith "No IR"
   in
 
   let a = Vector.create Vector.float32 n in
@@ -373,7 +328,7 @@ let run_dot_product (dev : Device.t) =
     Vector.set output i 0.0
   done ;
 
-  let block = Sarek.Execute.dims1d block_size in
+  let block = Sarek.Execute.dims1d block_sz in
   let grid = Sarek.Execute.dims1d num_blocks in
 
   let t0 = Unix.gettimeofday () in
@@ -392,111 +347,61 @@ let run_dot_product (dev : Device.t) =
     () ;
   Transfer.flush dev ;
   let t1 = Unix.gettimeofday () in
-  let time_ms = (t1 -. t0) *. 1000.0 in
 
-  let ok =
-    if cfg.verify then begin
-      let result = Vector.to_array output in
-      let total = Array.fold_left ( +. ) 0.0 result in
-      abs_float (total -. !expected_dot) < float_of_int n *. 0.01
-    end
-    else true
-  in
-  (time_ms, ok)
+  let partial_sums = Vector.to_array output in
+  let total = Array.fold_left ( +. ) 0.0 partial_sums in
+  ((t1 -. t0) *. 1000.0, total)
 
 (* ========== Main ========== *)
 
 let () =
-  let c = Test_helpers.parse_args "test_reduce" in
-  cfg.dev_id <- c.dev_id ;
-  cfg.use_interpreter <- c.use_interpreter ;
-  cfg.use_native <- c.use_native ;
-  cfg.benchmark_all <- c.benchmark_all ;
-  cfg.benchmark_devices <- c.benchmark_devices ;
-  cfg.verify <- c.verify ;
-  cfg.size <- c.size ;
-  cfg.block_size <- c.block_size ;
+  Benchmarks.init () ;
+  let size = Benchmarks.config.size in
+  init_data size ;
 
-  print_endline "=== Reduction Tests (runtime) ===" ;
-  Printf.printf "Size: %d elements\n\n" cfg.size ;
-
-  let devs =
-    Device.init
-      ~frameworks:["CUDA"; "OpenCL"; "Vulkan"; "Native"; "Interpreter"]
-      ()
-  in
-  if Array.length devs = 0 then begin
-    print_endline "No devices found" ;
-    exit 1
-  end ;
-  Test_helpers.print_devices devs ;
-  Printf.printf "\nFound %d runtime device(s)\n\n" (Array.length devs) ;
-
-  (* Filter out Interpreter in benchmark mode - too slow *)
-  let devs =
-    if cfg.benchmark_all then
-      Array.of_list
-        (List.filter
-           (fun d -> d.Device.framework <> "Interpreter")
-           (Array.to_list devs))
-    else devs
+  let verify_float name tol result expected =
+    let diff = abs_float (result -. expected) in
+    let ok = diff < tol in
+    if not ok then
+      Printf.printf
+        "  %s mismatch: expected %.6f, got %.6f (diff %.6f, tol %.6f)\n"
+        name
+        expected
+        result
+        diff
+        tol ;
+    ok
   in
 
-  let all_ok = ref true in
+  (* Sum *)
+  let baseline_sum size = ocaml_sum !input_sum size in
+  (* Sum of 1.0s: relative error might be needed for large N due to float32 precision *)
+  (* For N=4M, expected is 4194304.0. Float32 precision is ~0.25 at this magnitude. *)
+  (* But accumulation error grows. Let's allow 1.0 or relative error. *)
+  let verify_sum result expected =
+    let tol = max 1.0 (expected *. 0.0001) in
+    verify_float "Sum" tol result expected
+  in
+  Benchmarks.run ~baseline:baseline_sum ~verify:verify_sum "Reduce Sum" run_sum ;
 
-  (* Sum reduction *)
-  ignore (init_sum_data ()) ;
-  print_endline "=== Sum Reduction ===" ;
-  Array.iter
-    (fun dev ->
-      let name = dev.Device.name in
-      let framework = dev.Device.framework in
-      let time, ok = run_reduce_sum dev in
-      Printf.printf
-        "  %s (%s): %.4f ms, %s\n%!"
-        name
-        framework
-        time
-        (if ok then "OK" else "FAIL") ;
-      if not ok then all_ok := false)
-    devs ;
+  (* Max *)
+  let baseline_max size = ocaml_max !input_max size in
+  (* Max should be exact for integers < 2^24 *)
+  Benchmarks.run
+    ~baseline:baseline_max
+    ~verify:(verify_float "Max" 0.1)
+    "Reduce Max"
+    run_max ;
 
-  (* Max reduction *)
-  ignore (init_max_data ()) ;
-  print_endline "\n=== Max Reduction ===" ;
-  Array.iter
-    (fun dev ->
-      let name = dev.Device.name in
-      let framework = dev.Device.framework in
-      let time, ok = run_reduce_max dev in
-      Printf.printf
-        "  %s (%s): %.4f ms, %s\n%!"
-        name
-        framework
-        time
-        (if ok then "OK" else "FAIL") ;
-      if not ok then all_ok := false)
-    devs ;
-
-  (* Dot product *)
-  ignore (init_dot_data ()) ;
-  print_endline "\n=== Dot Product ===" ;
-  Array.iter
-    (fun dev ->
-      let name = dev.Device.name in
-      let framework = dev.Device.framework in
-      let time, ok = run_dot_product dev in
-      Printf.printf
-        "  %s (%s): %.4f ms, %s\n%!"
-        name
-        framework
-        time
-        (if ok then "OK" else "FAIL") ;
-      if not ok then all_ok := false)
-    devs ;
-
-  if !all_ok then print_endline "\n=== All reduction tests PASSED ==="
-  else begin
-    print_endline "\n=== Some reduction tests FAILED ===" ;
-    exit 1
-  end
+  (* Dot *)
+  let baseline_dot size = ocaml_dot !input_a !input_b size in
+  (* Dot product grows as N^2. For N=4M, result is ~8e12. *)
+  (* Float32 has 7 sig figs. 8e12 has precision ~1e6. *)
+  (* We need a very loose tolerance or relative error. *)
+  let verify_dot result expected =
+    let tol = max 1.0 (expected *. 0.001) in
+    (* 0.1% error *)
+    verify_float "Dot" tol result expected
+  in
+  Benchmarks.run ~baseline:baseline_dot ~verify:verify_dot "Dot Product" run_dot ;
+  Benchmarks.exit ()
