@@ -26,7 +26,8 @@ let vector_add =
 let compute_expected size =
   Array.init size (fun i -> float_of_int i +. float_of_int (i * 2))
 
-let verify_results size result expected =
+let verify_results result expected =
+  let size = Array.length expected in
   let errors = ref 0 in
   for i = 0 to size - 1 do
     let diff = abs_float (result.(i) -. expected.(i)) in
@@ -43,38 +44,56 @@ let verify_results size result expected =
   !errors = 0
 
 let run_test dev size block_size =
-  let expected = compute_expected size in
-  
   (* Standard runtime path for all devices *)
   let _, kirc = vector_add in
-  let ir = match kirc.Sarek.Kirc_types.body_ir with Some ir -> ir | None -> failwith "No IR" in
-  
+  let ir =
+    match kirc.Sarek.Kirc_types.body_ir with
+    | Some ir -> ir
+    | None -> failwith "No IR"
+  in
+
   let a = Vector.create Vector.float32 size in
   let b = Vector.create Vector.float32 size in
   let c = Vector.create Vector.float32 size in
-  
+
   for i = 0 to size - 1 do
-    Vector.set a i (float_of_int i);
-    Vector.set b i (float_of_int (i * 2));
-    Vector.set c i (-999.0);
-  done;
-  
+    Vector.set a i (float_of_int i) ;
+    Vector.set b i (float_of_int (i * 2)) ;
+    Vector.set c i (-999.0)
+  done ;
+
   let block_sz = block_size in
   let grid_sz = (size + block_sz - 1) / block_sz in
   let block = Execute.dims1d block_sz in
   let grid = Execute.dims1d grid_sz in
-  
+
   (* Warmup *)
-  Execute.run_vectors ~device:dev ~ir ~args:[Vec a; Vec b; Vec c; Int size] ~block ~grid ();
-  Transfer.flush dev;
-  
+  Execute.run_vectors
+    ~device:dev
+    ~ir
+    ~args:[Vec a; Vec b; Vec c; Int size]
+    ~block
+    ~grid
+    () ;
+  Transfer.flush dev ;
+
   let t0 = Unix.gettimeofday () in
-  Execute.run_vectors ~device:dev ~ir ~args:[Vec a; Vec b; Vec c; Int size] ~block ~grid ();
-  Transfer.flush dev;
+  Execute.run_vectors
+    ~device:dev
+    ~ir
+    ~args:[Vec a; Vec b; Vec c; Int size]
+    ~block
+    ~grid
+    () ;
+  Transfer.flush dev ;
   let t1 = Unix.gettimeofday () in
-  
+
   let result = Vector.to_array c in
-  ((t1 -. t0) *. 1000.0, verify_results size result expected)
+  ((t1 -. t0) *. 1000.0, result)
 
 let () =
-  Benchmarks.run "Vector Add Test" run_test
+  Benchmarks.run
+    ~baseline:compute_expected
+    ~verify:verify_results
+    "Vector Add Test"
+    run_test
