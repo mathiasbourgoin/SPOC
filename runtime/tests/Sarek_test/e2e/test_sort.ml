@@ -221,9 +221,11 @@ let () =
     let n = !sort_size_odd_even in
     ocaml_sort !input_odd_even n
   in
+  let filter dev = dev.Device.framework <> "Vulkan" in
   Benchmarks.run
     ~baseline:baseline_odd_even
     ~verify
+    ~filter
     "Odd-Even Sort"
     run_odd_even_sort ;
   Benchmarks.exit ()
