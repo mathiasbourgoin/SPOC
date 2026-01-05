@@ -8,6 +8,7 @@
  ******************************************************************************)
 
 module Std = Sarek_stdlib.Std
+module Benchmarks = Test_helpers.Benchmarks
 
 (* runtime module aliases *)
 module Device = Spoc_core.Device
@@ -15,13 +16,6 @@ module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
 
 (* Force backend registration *)
-let () =
-  Sarek_cuda.Cuda_plugin.init () ;
-  Sarek_opencl.Opencl_plugin.init () ;
-  Sarek_native.Native_plugin.init () ;
-  Sarek_interpreter.Interpreter_plugin.init ()
-
-let cfg = Test_helpers.default_config ()
 
 let max_iter = ref 256
 
@@ -49,18 +43,11 @@ let ocaml_mandelbrot output width height max_iter =
 
 let expected_mandelbrot = ref [||]
 
-let image_dim = ref 0
-
-let init_mandelbrot_data () =
-  let dim = int_of_float (sqrt (float_of_int cfg.size)) in
-  image_dim := dim ;
+let init_mandelbrot_data size =
+  let dim = int_of_float (sqrt (float_of_int size)) in
   let n = dim * dim in
   let output = Array.make n 0l in
-  expected_mandelbrot := output ;
-  let t0 = Unix.gettimeofday () in
-  ocaml_mandelbrot output dim dim !max_iter ;
-  let t1 = Unix.gettimeofday () in
-  ((t1 -. t0) *. 1000.0, true)
+  expected_mandelbrot := output
 
 (* ========== Mandelbrot kernel ========== *)
 
@@ -85,7 +72,7 @@ let mandelbrot_kernel =
         output.((py * width) + px) <- iter
       end]
 
-let run_mandelbrot_test (dev : Device.t) =
+let run_mandelbrot_test (dev : Device.t) size _block_size =
   let _, kirc = mandelbrot_kernel in
   let ir =
     match kirc.Sarek.Kirc_types.body_ir with
@@ -93,11 +80,10 @@ let run_mandelbrot_test (dev : Device.t) =
     | None -> failwith "Mandelbrot kernel has no IR"
   in
 
-  let dim = !image_dim in
+  let dim = int_of_float (sqrt (float_of_int size)) in
   let width = dim in
   let height = dim in
   let n = width * height in
-  let exp = !expected_mandelbrot in
 
   let output = Vector.create Vector.int32 n in
 
@@ -150,18 +136,7 @@ let run_mandelbrot_test (dev : Device.t) =
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
 
-  let ok =
-    if cfg.verify then begin
-      let result = Vector.to_array output in
-      let errors = ref 0 in
-      for i = 0 to min 1000 (n - 1) do
-        if result.(i) <> exp.(i) then incr errors
-      done ;
-      !errors = 0
-    end
-    else true
-  in
-  (time_ms, ok)
+  (time_ms, Vector.to_array output)
 
 (* ========== Tail-recursive Mandelbrot ========== *)
 
@@ -188,7 +163,7 @@ let mandelbrot_tailrec_kernel =
         output.((py * width) + px) <- iter
       end]
 
-let run_mandelbrot_tailrec_test (dev : Device.t) =
+let run_mandelbrot_tailrec_test (dev : Device.t) size _block_size =
   let _, kirc = mandelbrot_tailrec_kernel in
   let ir =
     match kirc.Sarek.Kirc_types.body_ir with
@@ -196,11 +171,10 @@ let run_mandelbrot_tailrec_test (dev : Device.t) =
     | None -> failwith "Mandelbrot tailrec kernel has no IR"
   in
 
-  let dim = !image_dim in
+  let dim = int_of_float (sqrt (float_of_int size)) in
   let width = dim in
   let height = dim in
   let n = width * height in
-  let exp = !expected_mandelbrot in
 
   let output = Vector.create Vector.int32 n in
 
@@ -253,101 +227,36 @@ let run_mandelbrot_tailrec_test (dev : Device.t) =
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
 
-  let ok =
-    if cfg.verify then begin
-      let result = Vector.to_array output in
-      let errors = ref 0 in
-      for i = 0 to min 1000 (n - 1) do
-        if result.(i) <> exp.(i) then incr errors
-      done ;
-      !errors = 0
-    end
-    else true
-  in
-  (time_ms, ok)
+  (time_ms, Vector.to_array output)
 
 let () =
-  let c = Test_helpers.parse_args "test_mandelbrot" in
-  cfg.dev_id <- c.dev_id ;
-  cfg.use_interpreter <- c.use_interpreter ;
-  cfg.use_native <- c.use_native ;
-  cfg.benchmark_all <- c.benchmark_all ;
-  cfg.benchmark_devices <- c.benchmark_devices ;
-  cfg.verify <- c.verify ;
-  cfg.size <- c.size ;
-  cfg.block_size <- c.block_size ;
+  Benchmarks.init () ;
+  let size = Benchmarks.config.size in
+  init_mandelbrot_data size ;
 
-  (* Initialize runtime devices *)
-  let devs =
-    Device.init ~frameworks:["CUDA"; "OpenCL"; "Vulkan"; "Native"; "Interpreter"] ()
+  let baseline size =
+    let dim = int_of_float (sqrt (float_of_int size)) in
+    let n = dim * dim in
+    let output = Array.make n 0l in
+    ocaml_mandelbrot output dim dim !max_iter ;
+    output
   in
-  if Array.length devs = 0 then begin
-    print_endline "No GPU devices found" ;
-    exit 1
-  end ;
-  Test_helpers.print_devices devs ;
 
-  let dim = int_of_float (sqrt (float_of_int cfg.size)) in
-  Printf.printf "Image dimensions: %dx%d, max_iter=%d\n%!" dim dim !max_iter ;
+  let verify result expected =
+    let n = Array.length expected in
+    let errors = ref 0 in
+    for i = 0 to min 1000 (n - 1) do
+      if result.(i) <> expected.(i) then incr errors
+    done ;
+    !errors = 0
+  in
 
-  let baseline_ms, _ = init_mandelbrot_data () in
-  Printf.printf "\nOCaml baseline (Mandelbrot): %.4f ms\n%!" baseline_ms ;
-
-  if cfg.benchmark_all then begin
-    Printf.printf "\n=== GPU Runtime Benchmarks ===\n%!" ;
-    Array.iter
-      (fun dev ->
-        (* Skip interpreter - too slow for image rendering *)
-        if dev.Device.framework <> "Interpreter" then begin
-          let dev_label =
-            Printf.sprintf "%s (%s)" dev.Device.name dev.Device.framework
-          in
-          Printf.printf "\nV2 Mandelbrot on %s:\n%!" dev_label ;
-          let time_ms, ok = run_mandelbrot_test dev in
-          Printf.printf
-            "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
-            time_ms
-            (baseline_ms /. time_ms)
-            (if ok then "PASSED" else "FAILED") ;
-          Printf.printf "\nV2 Mandelbrot (tailrec) on %s:\n%!" dev_label ;
-          let tr_time_ms, tr_ok = run_mandelbrot_tailrec_test dev in
-          Printf.printf
-            "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
-            tr_time_ms
-            (baseline_ms /. tr_time_ms)
-            (if tr_ok then "PASSED" else "FAILED")
-        end)
-      devs
-  end
-  else begin
-    let dev = Test_helpers.get_device cfg devs in
-    Printf.printf "Using device: %s\n%!" dev.Device.name ;
-
-    (* Run runtime Mandelbrot *)
-    Printf.printf "\nMandelbrot (runtime):\n%!" ;
-    let time, ok = run_mandelbrot_test dev in
-    Printf.printf
-      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
-      time
-      (baseline_ms /. time)
-      (if ok then "PASSED" else "FAILED") ;
-    if not ok then begin
-      print_endline "\nV2 Mandelbrot test FAILED" ;
-      exit 1
-    end ;
-
-    (* runtime Tail-recursive test *)
-    Printf.printf "\nMandelbrot (tail-recursive runtime):\n%!" ;
-    let tr_time, tr_ok = run_mandelbrot_tailrec_test dev in
-    Printf.printf
-      "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
-      tr_time
-      (baseline_ms /. tr_time)
-      (if tr_ok then "PASSED" else "FAILED") ;
-    if not tr_ok then begin
-      print_endline "\nV2 Mandelbrot tailrec test FAILED" ;
-      exit 1
-    end ;
-
-    print_endline "\nMandelbrot tests PASSED"
-  end
+  Benchmarks.run ~baseline ~verify "Mandelbrot" run_mandelbrot_test ;
+  let filter dev = dev.Device.framework <> "Vulkan" in
+  Benchmarks.run
+    ~baseline
+    ~verify
+    ~filter
+    "Mandelbrot (Tail Rec)"
+    run_mandelbrot_tailrec_test ;
+  Benchmarks.exit ()

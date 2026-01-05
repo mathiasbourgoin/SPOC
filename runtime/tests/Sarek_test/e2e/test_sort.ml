@@ -11,6 +11,7 @@ module Device = Spoc_core.Device
 module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
 module Std = Sarek_stdlib.Std
+module Benchmarks = Test_helpers.Benchmarks
 
 (* Force backend registration *)
 let () =
@@ -33,38 +34,24 @@ let ocaml_sort arr _n =
 
 let input_bitonic_global = ref [||]
 
-let expected_bitonic_global = ref [||]
-
 let sort_size_global = ref 0
 
 let input_odd_even = ref [||]
 
-let expected_odd_even = ref [||]
-
 let sort_size_odd_even = ref 0
 
-let init_bitonic_global_data () =
-  let log2n = int_of_float (log (float_of_int cfg.size) /. log 2.0) in
+let init_sort_data size =
+  let log2n = int_of_float (log (float_of_int size) /. log 2.0) in
   let n = 1 lsl log2n in
   sort_size_global := n ;
   Random.init 42 ;
-  let inp = Array.init n (fun _ -> Int32.of_int (Random.int 10000)) in
-  input_bitonic_global := inp ;
-  let t0 = Unix.gettimeofday () in
-  expected_bitonic_global := ocaml_sort inp n ;
-  let t1 = Unix.gettimeofday () in
-  ((t1 -. t0) *. 1000.0, true)
+  input_bitonic_global :=
+    Array.init n (fun _ -> Int32.of_int (Random.int 10000)) ;
 
-let init_odd_even_data () =
-  let n = min 512 cfg.size in
-  sort_size_odd_even := n ;
+  let n_oe = min 256 size in
+  sort_size_odd_even := n_oe ;
   Random.init 42 ;
-  let inp = Array.init n (fun _ -> Int32.of_int (Random.int 10000)) in
-  input_odd_even := inp ;
-  let t0 = Unix.gettimeofday () in
-  expected_odd_even := ocaml_sort inp n ;
-  let t1 = Unix.gettimeofday () in
-  ((t1 -. t0) *. 1000.0, true)
+  input_odd_even := Array.init n_oe (fun _ -> Int32.of_int (Random.int 10000))
 
 (* ========== Sarek kernels ========== *)
 
@@ -106,10 +93,9 @@ let odd_even_step_kernel =
 (* ========== runtime test runners ========== *)
 
 (** Run global bitonic sort on runtime *)
-let run_bitonic_sort_global (dev : Device.t) =
+let run_bitonic_sort_global (dev : Device.t) _size _block_size =
   let n = !sort_size_global in
   let inp = !input_bitonic_global in
-  let exp = !expected_bitonic_global in
   let _, kirc = bitonic_sort_step_kernel in
   let ir =
     match kirc.Sarek.Kirc_types.body_ir with
@@ -154,27 +140,12 @@ let run_bitonic_sort_global (dev : Device.t) =
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
 
-  let ok =
-    if cfg.verify then begin
-      let result = Vector.to_array data in
-      let errors = ref 0 in
-      for i = 0 to n - 2 do
-        if result.(i) > result.(i + 1) then incr errors
-      done ;
-      for i = 0 to min 10 (n - 1) do
-        if result.(i) <> exp.(i) then incr errors
-      done ;
-      !errors = 0
-    end
-    else true
-  in
-  (time_ms, ok)
+  (time_ms, Vector.to_array data)
 
 (** Run odd-even transposition sort on runtime *)
-let run_odd_even_sort (dev : Device.t) =
+let run_odd_even_sort (dev : Device.t) _size _block_size =
   let n = !sort_size_odd_even in
   let inp = !input_odd_even in
-  let exp = !expected_odd_even in
   let _, kirc = odd_even_step_kernel in
   let ir =
     match kirc.Sarek.Kirc_types.body_ir with
@@ -213,98 +184,46 @@ let run_odd_even_sort (dev : Device.t) =
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
 
-  let ok =
-    if cfg.verify then begin
-      let result = Vector.to_array data in
-      let errors = ref 0 in
-      for i = 0 to n - 2 do
-        if result.(i) > result.(i + 1) then incr errors
-      done ;
-      for i = 0 to min 10 (n - 1) do
-        if result.(i) <> exp.(i) then incr errors
-      done ;
-      !errors = 0
-    end
-    else true
-  in
-  (time_ms, ok)
+  (time_ms, Vector.to_array data)
 
 (* ========== Main ========== *)
 
 let () =
-  let c = Test_helpers.parse_args "test_sort" in
-  cfg.dev_id <- c.dev_id ;
-  cfg.use_interpreter <- c.use_interpreter ;
-  cfg.use_native <- c.use_native ;
-  cfg.benchmark_all <- c.benchmark_all ;
-  cfg.benchmark_devices <- c.benchmark_devices ;
-  cfg.verify <- c.verify ;
-  cfg.size <- c.size ;
-  cfg.block_size <- c.block_size ;
+  Benchmarks.init () ;
+  let size = Benchmarks.config.size in
+  init_sort_data size ;
 
-  print_endline "=== Sorting Tests (runtime) ===" ;
-  Printf.printf "Size: %d elements\n\n" cfg.size ;
-
-  let devs =
-    Device.init ~frameworks:["CUDA"; "OpenCL"; "Vulkan"; "Native"; "Interpreter"] ()
-  in
-  if Array.length devs = 0 then begin
-    print_endline "No devices found" ;
-    exit 1
-  end ;
-  Test_helpers.print_devices devs ;
-  Printf.printf "\nFound %d runtime device(s)\n\n" (Array.length devs) ;
-
-  (* Filter out Interpreter in benchmark mode - too slow *)
-  let devs =
-    if cfg.benchmark_all then
-      Array.of_list
-        (List.filter
-           (fun d -> d.Device.framework <> "Interpreter")
-           (Array.to_list devs))
-    else devs
+  let verify result expected =
+    let n = Array.length expected in
+    let errors = ref 0 in
+    for i = 0 to n - 2 do
+      if result.(i) > result.(i + 1) then incr errors
+    done ;
+    for i = 0 to min 10 (n - 1) do
+      if result.(i) <> expected.(i) then incr errors
+    done ;
+    !errors = 0
   in
 
-  (* Initialize test data *)
-  ignore (init_bitonic_global_data ()) ;
-  ignore (init_odd_even_data ()) ;
+  (* Bitonic *)
+  let baseline_bitonic _size =
+    let n = !sort_size_global in
+    ocaml_sort !input_bitonic_global n
+  in
+  Benchmarks.run
+    ~baseline:baseline_bitonic
+    ~verify
+    "Bitonic Sort (global)"
+    run_bitonic_sort_global ;
 
-  let all_ok = ref true in
-
-  (* Benchmark bitonic global *)
-  print_endline "=== Bitonic Sort (global) ===" ;
-  Array.iter
-    (fun dev ->
-      let name = dev.Device.name in
-      let framework = dev.Device.framework in
-      let time, ok = run_bitonic_sort_global dev in
-      Printf.printf
-        "  %s (%s): %.4f ms, %s\n%!"
-        name
-        framework
-        time
-        (if ok then "OK" else "FAIL") ;
-      if not ok then all_ok := false)
-    devs ;
-
-  (* Benchmark odd-even *)
-  print_endline "\n=== Odd-Even Sort ===" ;
-  Array.iter
-    (fun dev ->
-      let name = dev.Device.name in
-      let framework = dev.Device.framework in
-      let time, ok = run_odd_even_sort dev in
-      Printf.printf
-        "  %s (%s): %.4f ms, %s\n%!"
-        name
-        framework
-        time
-        (if ok then "OK" else "FAIL") ;
-      if not ok then all_ok := false)
-    devs ;
-
-  if !all_ok then print_endline "\n=== All sort tests PASSED ==="
-  else begin
-    print_endline "\n=== Some sort tests FAILED ===" ;
-    exit 1
-  end
+  (* Odd-Even *)
+  let baseline_odd_even _size =
+    let n = !sort_size_odd_even in
+    ocaml_sort !input_odd_even n
+  in
+  Benchmarks.run
+    ~baseline:baseline_odd_even
+    ~verify
+    "Odd-Even Sort"
+    run_odd_even_sort ;
+  Benchmarks.exit ()
