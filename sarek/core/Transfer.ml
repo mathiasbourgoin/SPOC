@@ -49,8 +49,8 @@ let alloc_scalar_buffer (type a b) (dev : Device.t) (length : int)
 
         let ptr = B.Memory.device_ptr buf
 
-        let bind_to_kernel ~kargs ~idx =
-          (* Cast kargs back to the backend's kernel args type and bind buffer *)
+        let bind_to_kernel kargs idx =
+          (* Unwrap kargs to the backend's kernel args type and bind buffer *)
           let cur_id = Obj.repr buf |> Obj.obj |> Hashtbl.hash in
           Log.debugf
             Log.Transfer
@@ -62,8 +62,9 @@ let alloc_scalar_buffer (type a b) (dev : Device.t) (length : int)
             "bind_to_kernel: idx=%d ptr=%Ld"
             idx
             (Int64.of_nativeint ptr) ;
-          let kargs : B.Kernel.args = Obj.obj kargs in
-          B.Kernel.set_arg_buffer kargs idx buf
+          match B.unwrap_kargs kargs with
+          | Some args -> B.Kernel.set_arg_buffer args idx buf
+          | None -> failwith "bind_to_kernel: backend mismatch"
 
         let from_ptr src_ptr ~byte_size =
           let cur_id = Obj.repr buf |> Obj.obj |> Hashtbl.hash in
@@ -103,14 +104,15 @@ let alloc_scalar_buffer_zero_copy (type a b) (dev : Device.t)
 
               let ptr = B.Memory.device_ptr buf
 
-              let bind_to_kernel ~kargs ~idx =
+              let bind_to_kernel kargs idx =
                 Log.debugf
                   Log.Transfer
                   "bind_to_kernel (zero-copy): idx=%d ptr=%Ld"
                   idx
                   (Int64.of_nativeint ptr) ;
-                let kargs : B.Kernel.args = Obj.obj kargs in
-                B.Kernel.set_arg_buffer kargs idx buf
+                match B.unwrap_kargs kargs with
+                | Some args -> B.Kernel.set_arg_buffer args idx buf
+                | None -> failwith "bind_to_kernel: backend mismatch"
 
               let from_ptr _src_ptr ~byte_size:_ = () (* No-op for zero-copy *)
 
@@ -138,15 +140,16 @@ let alloc_custom_buffer (dev : Device.t) (length : int) (elem_sz : int) :
 
         let ptr = B.Memory.device_ptr buf
 
-        let bind_to_kernel ~kargs ~idx =
-          (* Cast kargs back to the backend's kernel args type and bind buffer *)
+        let bind_to_kernel kargs idx =
+          (* Unwrap kargs to the backend's kernel args type and bind buffer *)
           Log.debugf
             Log.Transfer
             "bind_to_kernel: idx=%d ptr=%Ld"
             idx
             (Int64.of_nativeint ptr) ;
-          let kargs : B.Kernel.args = Obj.obj kargs in
-          B.Kernel.set_arg_buffer kargs idx buf
+          match B.unwrap_kargs kargs with
+          | Some args -> B.Kernel.set_arg_buffer args idx buf
+          | None -> failwith "bind_to_kernel: backend mismatch"
 
         let from_ptr src_ptr ~byte_size =
           B.Memory.host_ptr_to_device ~src_ptr ~byte_size ~dst:buf

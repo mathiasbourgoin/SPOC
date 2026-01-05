@@ -101,7 +101,7 @@ let bind_args (type kargs)
       | ArgDeviceBuffer buf ->
           (* V2 Vector buffer - let the backend bind itself *)
           let (module DB : Vector.DEVICE_BUFFER) = buf in
-          DB.bind_to_kernel ~kargs:(Obj.repr kargs) ~idx:i)
+          DB.bind_to_kernel (B.wrap_kargs kargs) i)
     args
 
 (** {1 V2 Vector Argument Type} *)

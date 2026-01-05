@@ -18,6 +18,9 @@ module Native_base = struct
   include Native_plugin_base.Native
 end
 
+(** Extend Framework_sig.kargs with Native-specific variant *)
+type Framework_sig.kargs += Native_kargs of Native_base.Kernel.args
+
 (** Native-specific intrinsic implementation *)
 type native_intrinsic = {
   intr_name : string;
@@ -318,6 +321,10 @@ module Backend : Framework_sig.BACKEND = struct
          "Native backend cannot execute external %s kernels. Use CUDA or \
           OpenCL backend instead."
          lang_str)
+
+  let wrap_kargs args = Native_kargs args
+
+  let unwrap_kargs = function Native_kargs args -> Some args | _ -> None
 end
 
 (** Auto-register backend when module is loaded *)

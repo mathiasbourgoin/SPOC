@@ -62,13 +62,15 @@ type source_lang =
   | SPIR_V  (** SPIR-V binary *)
   | GLSL_Source  (** Vulkan GLSL compute shader *)
 
-(** Argument type for run_source. Includes a binder function for device buffers
-    so each backend can properly bind its buffer type (cl_mem, CUdeviceptr,
-    etc.) *)
+(** Extensible type for backend-specific kernel arguments. Each backend extends
+    this type with its own variant. This allows type-safe passing of kernel args
+    across the framework boundary without Obj.t. *)
+type kargs = ..
+
+(** Argument type for run_source. Buffer binder receives typed kargs. *)
 type run_source_arg =
   | RSA_Buffer of {
-      binder : kargs:Obj.t -> idx:int -> unit;
-          (** Binds buffer to kernel arg *)
+      binder : kargs -> int -> unit;  (** Binds buffer to kernel arg *)
       length : int;  (** Vector length for generated kernels *)
     }
   | RSA_Int32 of int32
@@ -317,4 +319,15 @@ module type BACKEND = sig
     shared_mem:int ->
     run_source_arg list ->
     unit
+
+  (** {2 Kernel Args Wrapping}
+      Type-safe wrapping/unwrapping of backend-specific kernel args into the
+      extensible kargs type. Each backend extends kargs with its own variant. *)
+
+  (** Wrap this backend's kernel args into a kargs variant *)
+  val wrap_kargs : Kernel.args -> kargs
+
+  (** Unwrap kargs to this backend's kernel args. Returns None if wrong backend.
+  *)
+  val unwrap_kargs : kargs -> Kernel.args option
 end

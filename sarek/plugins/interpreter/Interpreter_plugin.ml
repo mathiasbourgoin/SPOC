@@ -19,6 +19,9 @@ module Interpreter_base = struct
   include Interpreter_plugin_base.Interpreter
 end
 
+(** Extend Framework_sig.kargs with Interpreter-specific variant *)
+type Framework_sig.kargs += Interpreter_kargs of Interpreter_base.Kernel.args
+
 (** Interpreter-specific intrinsic implementation *)
 type interp_intrinsic = {
   intr_name : string;
@@ -141,6 +144,10 @@ module Backend : Framework_sig.BACKEND = struct
          "Interpreter backend cannot execute external %s kernels. Use CUDA or \
           OpenCL backend instead."
          lang_str)
+
+  let wrap_kargs args = Interpreter_kargs args
+
+  let unwrap_kargs = function Interpreter_kargs args -> Some args | _ -> None
 end
 
 (** Run IR directly without going through execute_direct. *)

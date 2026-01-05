@@ -16,6 +16,9 @@ module Cuda_base = struct
   include Cuda_plugin_base.Cuda
 end
 
+(** Extend Framework_sig.kargs with CUDA-specific variant *)
+type Framework_sig.kargs += Cuda_kargs of Cuda_base.Kernel.args
+
 (** CUDA-specific intrinsic implementation *)
 type cuda_intrinsic = {
   intr_name : string;
@@ -179,12 +182,11 @@ module Backend : Framework_sig.BACKEND = struct
 
         (* Set up kernel arguments using typed run_source_arg list *)
         let kargs = Kernel.create_args () in
+        let wrapped_kargs = Cuda_kargs kargs in
         List.iteri
           (fun i arg ->
             match arg with
-            | Framework_sig.RSA_Buffer {binder; _} ->
-                (* Use the binder function to properly bind the device buffer *)
-                binder ~kargs:(Obj.repr kargs) ~idx:i
+            | Framework_sig.RSA_Buffer {binder; _} -> binder wrapped_kargs i
             | Framework_sig.RSA_Int32 n -> Kernel.set_arg_int32 kargs i n
             | Framework_sig.RSA_Int64 n -> Kernel.set_arg_int64 kargs i n
             | Framework_sig.RSA_Float32 f -> Kernel.set_arg_float32 kargs i f
@@ -208,6 +210,10 @@ module Backend : Framework_sig.BACKEND = struct
     | Framework_sig.SPIR_V -> failwith "CUDA backend does not support SPIR-V"
     | Framework_sig.GLSL_Source ->
         failwith "CUDA backend does not support GLSL source"
+
+  let wrap_kargs args = Cuda_kargs args
+
+  let unwrap_kargs = function Cuda_kargs args -> Some args | _ -> None
 end
 
 (** Check if backend is disabled via environment variable. Checked at runtime to

@@ -225,8 +225,8 @@ module type DEVICE_BUFFER = sig
       its own buffer type (CUdeviceptr for CUDA, cl_mem for OpenCL). *)
 
   (** Bind this buffer to a kernel argument. kargs is the backend's kernel args
-      structure (Obj.t for type erasure), idx is the argument index. *)
-  val bind_to_kernel : kargs:Obj.t -> idx:int -> unit
+      wrapped in an extensible variant, idx is the argument index. *)
+  val bind_to_kernel : Spoc_framework.Framework_sig.kargs -> int -> unit
 
   (** {2 Transfer Operations}
       All transfers use raw pointers with byte sizes to avoid type parameter

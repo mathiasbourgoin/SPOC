@@ -16,6 +16,9 @@ module Opencl_base = struct
   include Opencl_plugin_base.Opencl
 end
 
+(** Extend Framework_sig.kargs with OpenCL-specific variant *)
+type Framework_sig.kargs += Opencl_kargs of Opencl_base.Kernel.args
+
 (** OpenCL-specific intrinsic implementation *)
 type opencl_intrinsic = {
   intr_name : string;
@@ -217,12 +220,11 @@ module Backend : Framework_sig.BACKEND = struct
 
         (* Set up kernel arguments using typed run_source_arg list *)
         let kargs = Kernel.create_args () in
+        let wrapped_kargs = Opencl_kargs kargs in
         List.iteri
           (fun i arg ->
             match arg with
-            | Framework_sig.RSA_Buffer {binder; _} ->
-                (* Use the binder function to properly bind the device buffer *)
-                binder ~kargs:(Obj.repr kargs) ~idx:i
+            | Framework_sig.RSA_Buffer {binder; _} -> binder wrapped_kargs i
             | Framework_sig.RSA_Int32 n -> Kernel.set_arg_int32 kargs i n
             | Framework_sig.RSA_Int64 n -> Kernel.set_arg_int64 kargs i n
             | Framework_sig.RSA_Float32 f -> Kernel.set_arg_float32 kargs i f
@@ -245,6 +247,10 @@ module Backend : Framework_sig.BACKEND = struct
         failwith "OpenCL backend does not support SPIR-V (yet)"
     | Framework_sig.GLSL_Source ->
         failwith "OpenCL backend does not support GLSL source"
+
+  let wrap_kargs args = Opencl_kargs args
+
+  let unwrap_kargs = function Opencl_kargs args -> Some args | _ -> None
 end
 
 (** Check if backend is disabled via environment variable. Checked at runtime to
