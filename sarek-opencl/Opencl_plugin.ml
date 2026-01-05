@@ -182,7 +182,7 @@ module Backend : Framework_sig.BACKEND = struct
       in
       (* Add FP64 pragma if kernel uses double precision *)
       let source =
-        if Sarek_ir_types.kernel_uses_float64 ir then
+        if Sarek_ir_analysis.kernel_uses_float64 ir then
           "#pragma OPENCL EXTENSION cl_khr_fp64 : enable\n\n" ^ source
         else source
       in

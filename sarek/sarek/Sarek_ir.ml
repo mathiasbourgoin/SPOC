@@ -6,6 +6,12 @@
 (* Re-export all types from Sarek_ir_types *)
 include Sarek_ir_types
 
+(* Re-export pretty printing functions *)
+include Sarek_ir_pp
+
+(* Re-export analysis functions *)
+include Sarek_ir_analysis
+
 (** {1 Conversion from Kirc_Ast.k_ext} *)
 
 exception Conversion_error of string

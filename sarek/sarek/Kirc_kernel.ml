@@ -300,7 +300,7 @@ let requires_fp32 k = Array.mem Kirc_types.ExFloat32 k.extensions
 (** Pretty-print the IR *)
 let pp_ir fmt k =
   let ir = Lazy.force k.ir in
-  Sarek_ir.pp_kernel fmt ir
+  Sarek_ir_pp.pp_kernel fmt ir
 
 (** Get IR as string *)
 let ir_to_string k =
