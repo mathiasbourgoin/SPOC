@@ -1,7 +1,14 @@
 (library
  (name test_helpers)
  (modules test_helpers Benchmarks)
- (libraries spoc_core unix sarek_cuda sarek_opencl sarek_vulkan sarek_native sarek_interpreter))
+ (libraries
+  spoc_core
+  unix
+  sarek_cuda
+  sarek_opencl
+  sarek_vulkan
+  sarek_native
+  sarek_interpreter))
 
 (executables
  (names

@@ -63,7 +63,7 @@ let get_target_devices all_devices =
     | Some d -> [|d|]
     | None ->
         Printf.eprintf "Interpreter device not found\n" ;
-        exit 1)
+        Stdlib.exit 1)
   else if config.use_native then (
     match
       Array.find_opt (fun d -> d.Device.framework = "Native") all_devices
@@ -71,7 +71,7 @@ let get_target_devices all_devices =
     | Some d -> [|d|]
     | None ->
         Printf.eprintf "Native device not found\n" ;
-        exit 1)
+        Stdlib.exit 1)
   else if config.use_vulkan then (
     match
       Array.find_opt (fun d -> d.Device.framework = "Vulkan") all_devices
@@ -79,31 +79,49 @@ let get_target_devices all_devices =
     | Some d -> [|d|]
     | None ->
         Printf.eprintf "Vulkan device not found\n" ;
-        exit 1)
+        Stdlib.exit 1)
   else if config.dev_id < Array.length all_devices then
     [|all_devices.(config.dev_id)|]
   else (
     Printf.eprintf "Device ID %d out of range\n" config.dev_id ;
-    exit 1)
+    Stdlib.exit 1)
+
+let initialized = ref false
+
+let global_success = ref true
+
+let init () =
+  if not !initialized then begin
+    init_backends () ;
+    parse_args () ;
+    initialized := true
+  end
+
+let exit () = if !global_success then Stdlib.exit 0 else Stdlib.exit 1
 
 let run ?(baseline : (int -> 'a) option) ?(verify : ('a -> 'a -> bool) option)
-    test_name (f : Device.t -> int -> int -> float * 'a) =
-  init_backends () ;
-  parse_args () ;
+    ?(filter : (Device.t -> bool) option) test_name
+    (f : Device.t -> int -> int -> float * 'a) =
+  init () ;
 
   Printf.printf "=== %s ===\n" test_name ;
   Printf.printf "Size: %d\n" config.size ;
 
-  let all_devices =
-    Device.init
-      ~frameworks:["CUDA"; "OpenCL"; "Vulkan"; "Native"; "Interpreter"]
-      ()
+  let frameworks = ["CUDA"; "OpenCL"; "Vulkan"; "Native"] in
+  let frameworks =
+    if config.use_interpreter then frameworks @ ["Interpreter"] else frameworks
   in
+  let all_devices = Device.init ~frameworks () in
   if Array.length all_devices = 0 then (
     Printf.eprintf "No devices found.\n" ;
-    exit 1) ;
+    Stdlib.exit 1) ;
 
   let targets = get_target_devices all_devices in
+  let targets =
+    match filter with
+    | Some p -> Array.to_list targets |> List.filter p |> Array.of_list
+    | None -> targets
+  in
 
   Printf.printf
     "\n%-40s | %10s | %10s | %10s\n"
@@ -194,4 +212,4 @@ let run ?(baseline : (int -> 'a) option) ?(verify : ('a -> 'a -> bool) option)
   if !all_passed then Printf.printf "Test PASSED\n"
   else (
     Printf.printf "Test FAILED\n" ;
-    exit 1)
+    global_success := false)
