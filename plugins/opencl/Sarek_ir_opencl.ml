@@ -674,11 +674,11 @@ let gen_helper_func buf (hf : helper_func) =
   Buffer.add_char buf ' ' ;
   Buffer.add_string buf hf.hf_name ;
   Buffer.add_char buf '(' ;
-  (* Parameters *)
+  (* Parameters - use opencl_param_type to add __global for vector params *)
   List.iteri
     (fun i (v : var) ->
       if i > 0 then Buffer.add_string buf ", " ;
-      Buffer.add_string buf (opencl_type_of_elttype v.var_type) ;
+      Buffer.add_string buf (opencl_param_type v.var_type) ;
       Buffer.add_char buf ' ' ;
       Buffer.add_string buf v.var_name)
     hf.hf_params ;

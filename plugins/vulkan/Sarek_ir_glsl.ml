@@ -17,6 +17,11 @@ open Sarek.Sarek_ir
 (** Current kernel's variant definitions (set during generate) *)
 let current_variants : (string * (string * elttype list) list) list ref = ref []
 
+(** Helper function vector parameter indices - maps function name to set of
+    parameter indices that are vectors. In GLSL, vectors cannot be passed as
+    function parameters, so these must be filtered out at call sites. *)
+let helper_vec_param_indices : (string, int list) Hashtbl.t = Hashtbl.create 16
+
 (** {1 Type Mapping} *)
 
 (** Mangle OCaml type name to valid GLSL identifier *)
@@ -231,13 +236,29 @@ let rec gen_expr buf = function
         exprs ;
       Buffer.add_string buf "}"
   | EApp (fn, args) ->
+      (* Extract function name to check for vector parameter filtering *)
+      let fn_name = match fn with EVar v -> Some v.var_name | _ -> None in
+      let vec_indices =
+        match fn_name with
+        | Some name -> Hashtbl.find_opt helper_vec_param_indices name
+        | None -> None
+      in
       gen_expr buf fn ;
       Buffer.add_char buf '(' ;
+      let filtered_args =
+        match vec_indices with
+        | Some indices ->
+            (* Filter out vector arguments at registered indices *)
+            List.mapi (fun i e -> (i, e)) args
+            |> List.filter (fun (i, _) -> not (List.mem i indices))
+            |> List.map snd
+        | None -> args
+      in
       List.iteri
         (fun i e ->
           if i > 0 then Buffer.add_string buf ", " ;
           gen_expr buf e)
-        args ;
+        filtered_args ;
       Buffer.add_char buf ')'
   | ERecord (name, fields) ->
       Buffer.add_string buf (mangle_name name ^ "(") ;
@@ -662,9 +683,23 @@ let rec gen_stmt buf indent = function
     errors.
     @param pc_names Set of push constant names that have macros defined *)
 let gen_helper_func ~pc_names buf (hf : helper_func) =
+  (* Filter out vector parameters - in GLSL, buffer arrays can't be passed as
+     function parameters. They are accessed directly via global buffer names. *)
+  let vec_indices =
+    List.mapi (fun i (v : var) -> (i, v)) hf.hf_params
+    |> List.filter_map (fun (i, v) ->
+        match v.var_type with TVec _ -> Some i | _ -> None)
+  in
+  (* Register vector param indices for call site filtering *)
+  Hashtbl.replace helper_vec_param_indices hf.hf_name vec_indices ;
+  let non_vec_params =
+    List.filter
+      (fun (v : var) -> match v.var_type with TVec _ -> false | _ -> true)
+      hf.hf_params
+  in
   (* Find parameter names that collide with push constant macros *)
   let param_names =
-    List.map (fun (v : var) -> escape_glsl_name v.var_name) hf.hf_params
+    List.map (fun (v : var) -> escape_glsl_name v.var_name) non_vec_params
   in
   let colliding_names =
     List.filter (fun name -> List.mem name pc_names) param_names
@@ -684,7 +719,7 @@ let gen_helper_func ~pc_names buf (hf : helper_func) =
       Buffer.add_string buf (glsl_type_of_elttype v.var_type) ;
       Buffer.add_char buf ' ' ;
       Buffer.add_string buf (escape_glsl_name v.var_name))
-    hf.hf_params ;
+    non_vec_params ;
   Buffer.add_string buf ") {\n" ;
   gen_stmt buf "  " hf.hf_body ;
   Buffer.add_string buf "}\n" ;
@@ -830,6 +865,8 @@ let gen_shared_decls buf (decls : (string * elttype * expr) list) =
     @param block Optional workgroup dimensions (x, y, z). Defaults to 256x1x1.
 *)
 let generate ?block (k : kernel) : string =
+  (* Clear per-kernel state *)
+  Hashtbl.clear helper_vec_param_indices ;
   let buf = Buffer.create 1024 in
   Buffer.add_string buf (glsl_header ~kernel_name:k.kern_name ?block ()) ;
 
@@ -969,6 +1006,8 @@ let gen_variant_def buf (name, constrs) =
 *)
 let generate_with_types ?block
     ~(types : (string * (string * elttype) list) list) (k : kernel) : string =
+  (* Clear per-kernel state *)
+  Hashtbl.clear helper_vec_param_indices ;
   (* Use variant types directly from kernel IR *)
   current_variants := k.kern_variants ;
 

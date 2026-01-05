@@ -574,14 +574,30 @@ let monomorphize (kernel : tkernel) : tkernel =
           match List.find_opt (fun (n, _, _, _) -> n = name) poly_funs with
           | None -> acc
           | Some (_, is_rec, params, body) ->
-              (* Build substitution from param types to concrete types *)
+              (* Build substitution by extracting type variables from param types
+                 and matching them with the corresponding concrete types.
+                 This handles nested type variables like TVec (TVar 'a). *)
+              let rec extract_tvar_id ty =
+                match repr ty with
+                | TVar {contents = Unbound (id, _)} -> Some id
+                | TVec t | TArr (t, _) -> extract_tvar_id t
+                | _ -> None
+              in
+              let rec extract_concrete_elem ty =
+                match repr ty with
+                | TVec t | TArr (t, _) -> extract_concrete_elem t
+                | t -> t
+              in
               let subst =
                 List.mapi
                   (fun i p ->
-                    match repr p.tparam_type with
-                    | TVar {contents = Unbound (id, _)} ->
-                        Some (id, List.nth types i)
-                    | _ -> None)
+                    match extract_tvar_id p.tparam_type with
+                    | Some id ->
+                        let concrete =
+                          extract_concrete_elem (List.nth types i)
+                        in
+                        Some (id, concrete)
+                    | None -> None)
                   params
                 |> List.filter_map Fun.id
               in
