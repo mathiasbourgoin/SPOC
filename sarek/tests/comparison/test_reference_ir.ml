@@ -65,9 +65,8 @@ let expected_kernels =
 let find_reference_file () =
   let candidates =
     [
-      "runtime/tests/Sarek_test/regression/reference_ir.txt";
+      "sarek/tests/regression/reference_ir.txt";
       "../regression/reference_ir.txt";
-      "../../Sarek_test/regression/reference_ir.txt";
     ]
   in
   try List.find Sys.file_exists candidates

@@ -1,3 +1,0 @@
-; Parent dune file for runtime directory
-; Subdirectories: core, framework, test
-; Each has its own dune file defining libraries

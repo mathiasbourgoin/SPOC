@@ -1,4 +1,0 @@
-; Parent dune file for plugins directory
-; Each subdirectory has its own dune file
-
-(include_subdirs no)

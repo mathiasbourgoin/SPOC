@@ -23,7 +23,7 @@ let devices : t array ref = ref [||]
 let initialized = ref false
 
 (** Initialize all available backends and enumerate devices *)
-let init ?(frameworks = ["CUDA"; "OpenCL"; "Vulkan"]) () =
+let init ?(frameworks = ["CUDA"; "OpenCL"; "Vulkan"; "Native"; "Interpreter"]) () =
   if !initialized then !devices
   else begin
     let all_devices = ref [] in

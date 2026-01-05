@@ -14,6 +14,7 @@ depends: [
   "sarek" {= version}
   "ctypes"
   "ctypes-foreign"
+  "str"
   "odoc" {with-doc}
 ]
 depopts: ["conf-opencl"]
