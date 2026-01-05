@@ -14,7 +14,10 @@ module Transfer = Spoc_core.Transfer
 (* Force backend registration *)
 let () =
   Sarek_cuda.Cuda_plugin.init () ;
-  Sarek_opencl.Opencl_plugin.init ()
+  Sarek_opencl.Opencl_plugin.init () ;
+  Sarek_vulkan.Vulkan_plugin.init () ;
+  Sarek_native.Native_plugin.init () ;
+  Sarek_interpreter.Interpreter_plugin.init ()
 
 let cfg = Test_helpers.default_config ()
 
@@ -82,19 +85,29 @@ let run_point2d_test dev n =
   let time_ms = (t1 -. t0) *. 1000.0 in
   (* Verify *)
   let ok = ref true in
+  let error_count = ref 0 in
+  let first_error_idx = ref (-1) in
   for i = 0 to n - 1 do
     let p = Vector.get points i in
     let expected = sqrt ((p.px *. p.px) +. (p.py *. p.py)) in
     let got = Vector.get distances i in
-    if abs_float (got -. expected) > 1e-3 then (
+    (* Float32 has ~7 significant digits, use relative tolerance *)
+    let tol = max 1e-4 (abs_float expected *. 1e-6) in
+    if abs_float (got -. expected) > tol then (
       ok := false ;
-      if i < 3 then
+      incr error_count ;
+      if !first_error_idx < 0 then first_error_idx := i ;
+      if !error_count <= 3 then
         Printf.printf
-          "    Mismatch at %d: got %f expected %f\n%!"
+          "    Mismatch at %d: got %f expected %f (p={%.1f,%.1f})\n%!"
           i
           got
-          expected)
+          expected
+          p.px
+          p.py)
   done ;
+  if !error_count > 0 then
+    Printf.printf "    Total errors: %d/%d, first at index %d\n%!" !error_count n !first_error_idx ;
   (!ok, time_ms)
 
 (* ============================================================================
@@ -314,6 +327,65 @@ let run_color_test dev n =
    Main
    ============================================================================ *)
 
+let run_all_tests dev n =
+  let all_ok = ref true in
+  print_endline "\nPoint2D distance:" ;
+  (try
+     let ok, time = run_point2d_test dev n in
+     Printf.printf
+       "  %s (%s): %.2f ms, %s\n%!"
+       dev.Device.name
+       dev.Device.framework
+       time
+       (if ok then "OK" else "FAIL") ;
+     if not ok then all_ok := false
+   with e ->
+     Printf.printf "  FAIL (%s)\n%!" (Printexc.to_string e) ;
+     all_ok := false) ;
+
+  print_endline "Point3D normalize:" ;
+  (try
+     let ok, time = run_point3d_test dev n in
+     Printf.printf
+       "  %s (%s): %.2f ms, %s\n%!"
+       dev.Device.name
+       dev.Device.framework
+       time
+       (if ok then "OK" else "FAIL") ;
+     if not ok then all_ok := false
+   with e ->
+     Printf.printf "  FAIL (%s)\n%!" (Printexc.to_string e) ;
+     all_ok := false) ;
+
+  print_endline "Particle update:" ;
+  (try
+     let ok, time = run_particle_test dev n in
+     Printf.printf
+       "  %s (%s): %.2f ms, %s\n%!"
+       dev.Device.name
+       dev.Device.framework
+       time
+       (if ok then "OK" else "FAIL") ;
+     if not ok then all_ok := false
+   with e ->
+     Printf.printf "  FAIL (%s)\n%!" (Printexc.to_string e) ;
+     all_ok := false) ;
+
+  print_endline "Color blend:" ;
+  (try
+     let ok, time = run_color_test dev n in
+     Printf.printf
+       "  %s (%s): %.2f ms, %s\n%!"
+       dev.Device.name
+       dev.Device.framework
+       time
+       (if ok then "OK" else "FAIL") ;
+     if not ok then all_ok := false
+   with e ->
+     Printf.printf "  FAIL (%s)\n%!" (Printexc.to_string e) ;
+     all_ok := false) ;
+  !all_ok
+
 let () =
   let c = Test_helpers.parse_args "test_complex_types" in
   cfg.dev_id <- c.dev_id ;
@@ -324,12 +396,10 @@ let () =
   cfg.verify <- c.verify ;
   cfg.size <- c.size ;
   cfg.block_size <- c.block_size ;
-  (* Prefer native backend by default for stability *)
-  (* Prefer a CPU backend when available, but fall back gracefully *)
-  cfg.use_native <- false ;
 
-  (* runtime execution tests *)
   print_endline "=== Complex Types runtime Tests ===" ;
+  Printf.printf "Size: %d elements\n\n" cfg.size ;
+
   let devs =
     Device.init ~frameworks:["CUDA"; "OpenCL"; "Vulkan"; "Native"; "Interpreter"] ()
   in
@@ -338,64 +408,50 @@ let () =
     exit 1
   end ;
   Test_helpers.print_devices devs ;
+  Printf.printf "\nFound %d runtime device(s)\n" (Array.length devs) ;
 
-  let dev =
-    match Array.find_opt (fun d -> d.Device.framework = "Interpreter") devs with
-    | Some d -> d
-    | None -> (
-        match Array.find_opt (fun d -> d.Device.framework = "Native") devs with
-        | Some d -> d
-        | None -> Test_helpers.get_device cfg devs)
+  (* Filter out Interpreter in benchmark mode - too slow *)
+  let devs =
+    if cfg.benchmark_all then
+      Array.of_list
+        (List.filter
+           (fun d -> d.Device.framework <> "Interpreter")
+           (Array.to_list devs))
+    else devs
   in
-  Printf.printf "Using device: %s\n%!" dev.Device.name ;
-  let n = cfg.size in
 
-  print_endline "\nPoint2D distance:" ;
-  (try
-     let ok, time = run_point2d_test dev n in
-     Printf.printf
-       "  runtime exec: %.2f ms, %s\n%!"
-       time
-       (if ok then "PASSED" else "FAILED") ;
-     if not ok then exit 1
-   with e ->
-     Printf.printf "  FAIL (%s)\n%!" (Printexc.to_string e) ;
-     exit 1) ;
-
-  print_endline "Point3D normalize:" ;
-  (try
-     let ok, time = run_point3d_test dev n in
-     Printf.printf
-       "  runtime exec: %.2f ms, %s\n%!"
-       time
-       (if ok then "PASSED" else "FAILED") ;
-     if not ok then exit 1
-   with e ->
-     Printf.printf "  FAIL (%s)\n%!" (Printexc.to_string e) ;
-     exit 1) ;
-
-  print_endline "Particle update:" ;
-  (try
-     let ok, time = run_particle_test dev n in
-     Printf.printf
-       "  runtime exec: %.2f ms, %s\n%!"
-       time
-       (if ok then "PASSED" else "FAILED") ;
-     if not ok then exit 1
-   with e ->
-     Printf.printf "  FAIL (%s)\n%!" (Printexc.to_string e) ;
-     exit 1) ;
-
-  print_endline "Color blend:" ;
-  (try
-     let ok, time = run_color_test dev n in
-     Printf.printf
-       "  runtime exec: %.2f ms, %s\n%!"
-       time
-       (if ok then "PASSED" else "FAILED") ;
-     if not ok then exit 1
-   with e ->
-     Printf.printf "  FAIL (%s)\n%!" (Printexc.to_string e) ;
-     exit 1) ;
-
-  print_endline "\n=== All complex types tests PASSED ==="
+  if cfg.benchmark_all then begin
+    (* Benchmark mode: run on all devices *)
+    let all_ok = ref true in
+    Array.iter
+      (fun dev ->
+        Printf.printf "\n=== Device: %s (%s) ===\n%!" dev.Device.name dev.Device.framework ;
+        if not (run_all_tests dev cfg.size) then all_ok := false)
+      devs ;
+    if !all_ok then print_endline "\n=== All complex types tests PASSED ==="
+    else begin
+      print_endline "\n=== Some complex types tests FAILED ===" ;
+      exit 1
+    end
+  end
+  else begin
+    (* Single device mode - respect -d if specified, else prefer Interpreter/Native *)
+    let dev =
+      if cfg.dev_id >= 0 then
+        Test_helpers.get_device cfg devs
+      else
+        match Array.find_opt (fun d -> d.Device.framework = "Interpreter") devs with
+        | Some d -> d
+        | None -> (
+            match Array.find_opt (fun d -> d.Device.framework = "Native") devs with
+            | Some d -> d
+            | None -> Test_helpers.get_device cfg devs)
+    in
+    Printf.printf "Using device: %s\n%!" dev.Device.name ;
+    if run_all_tests dev cfg.size then
+      print_endline "\n=== All complex types tests PASSED ==="
+    else begin
+      print_endline "\n=== Some complex types tests FAILED ===" ;
+      exit 1
+    end
+  end
