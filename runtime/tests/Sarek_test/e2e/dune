@@ -40,6 +40,7 @@
   test_scan
   test_transpose
   test_sort
+  test_histogram
   test_convolution
   test_mandelbrot
   test_polymorphism
@@ -77,6 +78,7 @@
   test_scan
   test_transpose
   test_sort
+  test_histogram
   test_convolution
   test_mandelbrot
   test_polymorphism
@@ -135,6 +137,7 @@
   test_scan.exe
   test_transpose.exe
   test_sort.exe
+  test_histogram.exe
   test_convolution.exe
   test_mandelbrot.exe
   test_polymorphism.exe))

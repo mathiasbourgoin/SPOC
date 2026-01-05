@@ -185,9 +185,9 @@ benchmarks:
 	@echo ""
 	@echo "--- Reduction (sum, max, dot product) ---"
 	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec runtime/tests/Sarek_test/e2e/test_reduce.exe -- --benchmark -s 4194304
-	# @echo ""
-	# @echo "--- Histogram ---"
-	# @LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec runtime/tests/Sarek_test/e2e/test_histogram.exe -- --benchmark -s 4194304
+	@echo ""
+	@echo "--- Histogram (shared memory atomics) ---"
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec runtime/tests/Sarek_test/e2e/test_histogram.exe -- --benchmark -s 4194304
 	@echo ""
 	@echo "--- Complex Types (records, particles) ---"
 	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec runtime/tests/Sarek_test/e2e/test_complex_types.exe -- --benchmark -s 1048576

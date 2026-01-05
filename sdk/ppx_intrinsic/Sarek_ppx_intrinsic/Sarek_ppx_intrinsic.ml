@@ -19,7 +19,8 @@ open Ppxlib
 (** Parsed type representation for intrinsic declarations *)
 type parsed_type =
   | PTSimple of string (* e.g., "int32", "float" *)
-  | PTArray of parsed_type (* e.g., "int32 array" *)
+  | PTArray of parsed_type (* e.g., "int32 array" - shared/local memory *)
+  | PTVec of parsed_type (* e.g., "int32 vector" - global memory *)
   | PTArrow of parsed_type * parsed_type (* for function types if needed *)
 
 (** Extract parsed type from a core_type *)
@@ -27,6 +28,9 @@ let rec parsed_type_of_core_type (ct : core_type) : parsed_type =
   match ct.ptyp_desc with
   | Ptyp_constr ({txt = Lident "array"; _}, [elem_type]) ->
       PTArray (parsed_type_of_core_type elem_type)
+  | Ptyp_constr ({txt = Lident "vector"; _}, [elem_type]) ->
+      (* Vector is for global memory *)
+      PTVec (parsed_type_of_core_type elem_type)
   | Ptyp_constr ({txt = Lident name; _}, _) -> PTSimple name
   | Ptyp_constr ({txt = Ldot (_, name); _}, _) -> PTSimple name
   | Ptyp_arrow (_, arg, ret) ->
@@ -39,6 +43,8 @@ let rec type_name_of_core_type (ct : core_type) : string =
   match ct.ptyp_desc with
   | Ptyp_constr ({txt = Lident "array"; _}, [elem_type]) ->
       type_name_of_core_type elem_type ^ " array"
+  | Ptyp_constr ({txt = Lident "vector"; _}, [elem_type]) ->
+      type_name_of_core_type elem_type ^ " vector"
   | Ptyp_constr ({txt = Lident name; _}, _) -> name
   | Ptyp_constr ({txt = Ldot (_, name); _}, _) -> name
   | _ -> "unknown"
@@ -97,6 +103,10 @@ let rec sarek_type_of_simple_parsed ~loc (pt : parsed_type) : expression =
       [%expr
         Sarek_ppx_lib.Sarek_types.TArr
           ([%e elem_expr], Sarek_ppx_lib.Sarek_types.Local)]
+  | PTVec elem_type ->
+      let elem_expr = sarek_type_of_simple_parsed ~loc elem_type in
+      (* Vector is global memory *)
+      [%expr Sarek_ppx_lib.Sarek_types.TVec [%e elem_expr]]
   | PTArrow _ ->
       (* Should not happen after flattening, but handle gracefully *)
       sarek_type_of_simple_name ~loc "unknown"
@@ -119,7 +129,7 @@ let sarek_type_of_parsed ~loc (pt : parsed_type) : expression =
 (** Convert type name string to Sarek_types representation (for backward compat)
 *)
 let sarek_type_of_name ~loc (name : string) : expression =
-  (* Parse compound types like "int32 array" *)
+  (* Parse compound types like "int32 array" or "int32 vector" *)
   if
     String.length name > 6
     && String.sub name (String.length name - 6) 6 = " array"
@@ -129,6 +139,13 @@ let sarek_type_of_name ~loc (name : string) : expression =
     [%expr
       Sarek_ppx_lib.Sarek_types.TArr
         ([%e elem_expr], Sarek_ppx_lib.Sarek_types.Local)]
+  else if
+    String.length name > 7
+    && String.sub name (String.length name - 7) 7 = " vector"
+  then
+    let elem_name = String.sub name 0 (String.length name - 7) in
+    let elem_expr = sarek_type_of_simple_name ~loc elem_name in
+    [%expr Sarek_ppx_lib.Sarek_types.TVec [%e elem_expr]]
   else sarek_type_of_simple_name ~loc name
 
 (** Build a function type from argument types and return type *)
