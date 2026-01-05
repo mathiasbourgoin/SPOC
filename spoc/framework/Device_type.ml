@@ -1,14 +1,15 @@
 (******************************************************************************
  * Device type - SDK layer
  *
- * Just the type definition. Runtime functions are in spoc_core.Device.
+ * Re-exports Framework_sig.device for backward compatibility.
+ * New code should use Framework_sig.device directly.
  ******************************************************************************)
 
-(** Device representation *)
-type t = {
-  id : int;  (** Global device ID (0, 1, 2...) *)
-  backend_id : int;  (** ID within the backend (0, 1...) *)
-  name : string;  (** Human-readable device name *)
-  framework : string;  (** Backend name: "CUDA", "OpenCL", "Vulkan", "Native" *)
+(** Device representation - alias to Framework_sig.device *)
+type t = Framework_sig.device = {
+  id : int;
+  backend_id : int;
+  name : string;
+  framework : string;
   capabilities : Framework_sig.capabilities;
 }

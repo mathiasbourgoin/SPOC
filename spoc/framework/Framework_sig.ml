@@ -35,6 +35,15 @@ type capabilities = {
   is_cpu : bool;  (** True for CPU devices - enables zero-copy optimization *)
 }
 
+(** Device representation - SDK layer type shared across all backends *)
+type device = {
+  id : int;  (** Global device ID (0, 1, 2...) *)
+  backend_id : int;  (** ID within the backend (0, 1...) *)
+  name : string;  (** Human-readable device name *)
+  framework : string;  (** Backend name: "CUDA", "OpenCL", "Vulkan", "Native" *)
+  capabilities : capabilities;
+}
+
 (** {1 Plugin Module Signature} *)
 
 (** Minimal framework signature for plugin registration. Used by
