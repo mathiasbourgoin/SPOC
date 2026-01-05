@@ -519,6 +519,7 @@ type source_lang = Framework_sig.source_lang =
   | OpenCL_Source
   | PTX
   | SPIR_V
+  | GLSL_Source
 
 (** Check if a device supports a given source language *)
 let supports_lang (dev : Device.t) (lang : source_lang) : bool =
@@ -564,7 +565,8 @@ let run_source ~(device : Device.t) ~(source : string) ~(lang : source_lang)
                 | CUDA_Source -> "CUDA source"
                 | OpenCL_Source -> "OpenCL source"
                 | PTX -> "PTX"
-                | SPIR_V -> "SPIR-V"))) ;
+                | SPIR_V -> "SPIR-V"
+                | GLSL_Source -> "GLSL source"))) ;
 
       (* Expand vector args to run_source_arg format for external kernels *)
       let rs_args = expand_to_run_source_args ~inject_lengths args device in
@@ -591,6 +593,8 @@ let detect_lang (path : string) : source_lang =
   else if String.ends_with ~suffix:".cl" path then OpenCL_Source
   else if String.ends_with ~suffix:".ptx" path then PTX
   else if String.ends_with ~suffix:".spv" path then SPIR_V
+  else if String.ends_with ~suffix:".comp" path then GLSL_Source
+  else if String.ends_with ~suffix:".glsl" path then GLSL_Source
   else failwith ("Unknown source file extension: " ^ path)
 
 (** Execute an external kernel from a file. Source language is detected from

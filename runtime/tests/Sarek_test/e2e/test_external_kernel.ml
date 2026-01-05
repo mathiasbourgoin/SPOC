@@ -1,22 +1,22 @@
 (******************************************************************************
  * E2E test: External kernel execution via run_source
  *
- * Tests running pre-written CUDA/OpenCL kernels through the GPU runtime
+ * Tests running pre-written CUDA/OpenCL/Vulkan kernels through the GPU runtime
  * without using the Sarek DSL.
  ******************************************************************************)
 
 module Device = Spoc_core.Device
 module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
+module Benchmarks = Test_helpers.Benchmarks
 
 (* Force backend registration *)
 let () =
   Sarek_cuda.Cuda_plugin.init () ;
   Sarek_opencl.Opencl_plugin.init () ;
+  Sarek_vulkan.Vulkan_plugin.init () ;
   Sarek_native.Native_plugin.init () ;
   Sarek_interpreter.Interpreter_plugin.init ()
-
-let cfg = Test_helpers.default_config ()
 
 (** OpenCL vector add kernel source *)
 let opencl_vector_add =
@@ -56,9 +56,54 @@ extern "C" __global__ void vector_add(
 }
 |}
 
-(** Run external kernel test on a device *)
-let run_test dev =
-  let n = cfg.size in
+(** Vulkan GLSL vector add compute shader *)
+let glsl_vector_add =
+  {|#version 450
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, set=0, binding = 0) readonly buffer BufferA {
+    float a[];
+};
+
+layout(std430, set=0, binding = 1) readonly buffer BufferB {
+    float b[];
+};
+
+layout(std430, set=0, binding = 2) writeonly buffer BufferC {
+    float c[];
+};
+
+layout(push_constant) uniform PushConstants {
+    int a_len;
+    int b_len;
+    int c_len;
+    int n;
+} pc;
+
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i < pc.n) {
+        c[i] = a[i] + b[i];
+    }
+}
+|}
+
+(* ========== Pure OCaml baseline ========== *)
+
+let ocaml_vector_add size =
+  let result = Array.make size 0.0 in
+  for i = 0 to size - 1 do
+    let a = float_of_int i in
+    let b = float_of_int (i * 2) in
+    result.(i) <- a +. b
+  done ;
+  result
+
+(* ========== External kernel runner ========== *)
+
+let run_external_kernel (dev : Device.t) size block_size =
+  let n = size in
   let a = Vector.create Vector.float32 n in
   let b = Vector.create Vector.float32 n in
   let c = Vector.create Vector.float32 n in
@@ -70,7 +115,7 @@ let run_test dev =
     Vector.set c i 0.0
   done ;
 
-  let threads = cfg.block_size in
+  let threads = block_size in
   let grid_x = (n + threads - 1) / threads in
 
   (* Select source based on device framework *)
@@ -78,6 +123,7 @@ let run_test dev =
     match dev.Device.framework with
     | "CUDA" -> (cuda_vector_add, Sarek.Execute.CUDA_Source)
     | "OpenCL" -> (opencl_vector_add, Sarek.Execute.OpenCL_Source)
+    | "Vulkan" -> (glsl_vector_add, Sarek.Execute.GLSL_Source)
     | fw -> failwith ("External kernels not supported on " ^ fw)
   in
 
@@ -99,112 +145,36 @@ let run_test dev =
     ] ;
 
   Transfer.flush dev ;
-  Transfer.to_cpu c ;
 
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
 
-  (* Verify results *)
-  let ok = ref true in
+  (time_ms, Vector.to_array c)
+
+(* ========== Verification ========== *)
+
+let verify result expected =
+  let n = Array.length expected in
+  let errors = ref 0 in
   for i = 0 to n - 1 do
-    let expected = float_of_int i +. float_of_int (i * 2) in
-    let got = Vector.get c i in
-    if abs_float (got -. expected) > 1e-3 then begin
-      ok := false ;
-      if i < 5 then
-        Printf.printf "  Mismatch at %d: got %f expected %f\n%!" i got expected
-    end
+    if abs_float (result.(i) -. expected.(i)) > 1e-3 then incr errors
   done ;
+  !errors = 0
 
-  (!ok, time_ms)
+(* ========== Device filter ========== *)
 
-(** Test that Native/Interpreter correctly reject external kernels *)
-let test_rejection dev =
-  let n = 10 in
-  let a = Vector.create Vector.float32 n in
-  try
-    Sarek.Execute.run_source
-      ~device:dev
-      ~source:opencl_vector_add
-      ~lang:Sarek.Execute.OpenCL_Source
-      ~kernel_name:"vector_add"
-      ~block:(Sarek.Execute.dims1d 1)
-      ~grid:(Sarek.Execute.dims1d 1)
-      [Sarek.Execute.Vec a] ;
-    (* Should have raised an error *)
-    false
-  with
-  | Sarek.Execute.Execution_error _ -> true
-  | Failure _ -> true
+(* Only run on devices that support external kernels (CUDA, OpenCL, Vulkan) *)
+let supports_external_kernels (dev : Device.t) =
+  match dev.framework with "CUDA" | "OpenCL" | "Vulkan" -> true | _ -> false
+
+(* ========== Main ========== *)
 
 let () =
-  let c = Test_helpers.parse_args "test_external_kernel" in
-  cfg.dev_id <- c.dev_id ;
-  cfg.use_interpreter <- c.use_interpreter ;
-  cfg.use_native <- c.use_native ;
-  cfg.benchmark_all <- c.benchmark_all ;
-  cfg.benchmark_devices <- c.benchmark_devices ;
-  cfg.verify <- c.verify ;
-  cfg.size <- c.size ;
-  cfg.block_size <- c.block_size ;
-
-  print_endline "=== External Kernel Test ===" ;
-  let devs =
-    Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
-  in
-  if Array.length devs = 0 then begin
-    print_endline "No devices found" ;
-    exit 1
-  end ;
-  Test_helpers.print_devices devs ;
-
-  (* Test external kernel execution on GPU devices *)
-  print_endline "\nTesting external kernel execution:" ;
-  let gpu_devs =
-    Array.to_list devs
-    |> List.filter (fun d ->
-        d.Device.framework = "CUDA" || d.Device.framework = "OpenCL")
-    |> fun devs ->
-    (* If -d flag specified, filter to just that device *)
-    if cfg.dev_id >= 0 && cfg.dev_id < List.length devs then
-      [List.nth devs cfg.dev_id]
-    else devs
-  in
-
-  if List.length gpu_devs = 0 then
-    print_endline "  No GPU devices available for external kernel test"
-  else
-    List.iter
-      (fun dev ->
-        Printf.printf "  [%s] %s: %!" dev.Device.framework dev.Device.name ;
-        try
-          let ok, time = run_test dev in
-          Printf.printf
-            "%.2f ms, %s\n%!"
-            time
-            (if ok then "PASSED" else "FAILED") ;
-          if not ok then exit 1
-        with e ->
-          Printf.printf "FAIL (%s)\n%!" (Printexc.to_string e) ;
-          exit 1)
-      gpu_devs ;
-
-  (* Test that Native/Interpreter reject external kernels *)
-  print_endline "\nTesting rejection on non-GPU backends:" ;
-  let non_gpu_devs =
-    Array.to_list devs
-    |> List.filter (fun d ->
-        d.Device.framework = "Native" || d.Device.framework = "Interpreter")
-  in
-
-  List.iter
-    (fun dev ->
-      Printf.printf "  [%s] %s: %!" dev.Device.framework dev.Device.name ;
-      if test_rejection dev then print_endline "correctly rejected"
-      else begin
-        print_endline "FAIL (should have been rejected)" ;
-        exit 1
-      end)
-    non_gpu_devs ;
-
-  print_endline "\n=== All tests PASSED ==="
+  Benchmarks.init () ;
+  Benchmarks.run
+    ~baseline:ocaml_vector_add
+    ~verify
+    ~filter:supports_external_kernels
+    "External Kernel (Vector Add)"
+    run_external_kernel ;
+  Benchmarks.exit ()

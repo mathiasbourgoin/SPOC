@@ -59,7 +59,8 @@ type source_lang =
   | CUDA_Source  (** CUDA C/C++ source (.cu) *)
   | OpenCL_Source  (** OpenCL C source (.cl) *)
   | PTX  (** NVIDIA PTX assembly *)
-  | SPIR_V  (** SPIR-V binary (future) *)
+  | SPIR_V  (** SPIR-V binary *)
+  | GLSL_Source  (** Vulkan GLSL compute shader *)
 
 (** Argument type for run_source. Includes a binder function for device buffers
     so each backend can properly bind its buffer type (cl_mem, CUdeviceptr,

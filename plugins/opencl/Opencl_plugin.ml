@@ -232,6 +232,8 @@ module Backend : Framework_sig.BACKEND = struct
     | Framework_sig.PTX -> failwith "OpenCL backend does not support PTX"
     | Framework_sig.SPIR_V ->
         failwith "OpenCL backend does not support SPIR-V (yet)"
+    | Framework_sig.GLSL_Source ->
+        failwith "OpenCL backend does not support GLSL source"
 end
 
 (** Auto-register backend when module is loaded *)

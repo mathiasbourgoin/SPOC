@@ -195,13 +195,14 @@ module Backend : Framework_sig.BACKEND = struct
 
   (** {2 External Kernel Support} *)
 
-  (** Supported source languages: SPIR-V only for now *)
-  let supported_source_langs = [Framework_sig.SPIR_V]
+  (** Supported source languages: GLSL compute shaders *)
+  let supported_source_langs = [Framework_sig.GLSL_Source]
 
   (** Execute external kernel from source *)
   let run_source ~source ~lang ~kernel_name ~block ~grid ~shared_mem args =
+    ignore shared_mem ;
     match lang with
-    | Framework_sig.SPIR_V ->
+    | Framework_sig.GLSL_Source ->
         (* Get current device (must be set by Execute before calling) *)
         let dev =
           match Vulkan_plugin_base.Vulkan.Device.get_current_device () with
@@ -209,15 +210,33 @@ module Backend : Framework_sig.BACKEND = struct
           | None -> failwith "run_source: no current Vulkan device set"
         in
 
-        (* For SPIR-V, we'd load the binary directly *)
-        (* For now, we only support GLSL which gets compiled to SPIR-V *)
-        let _ = source in
-        let _ = kernel_name in
-        let _ = args in
-        let _ = block in
-        let _ = grid in
-        let _ = shared_mem in
-        let _ = dev in
+        (* Compile GLSL to pipeline *)
+        let compiled = Kernel.compile_cached dev ~name:kernel_name ~source in
+
+        (* Set up kernel arguments using typed run_source_arg list *)
+        let kargs = Kernel.create_args () in
+        List.iteri
+          (fun i arg ->
+            match arg with
+            | Framework_sig.RSA_Buffer {binder; _} ->
+                (* Use the binder function to properly bind the device buffer *)
+                binder ~kargs:(Obj.repr kargs) ~idx:i
+            | Framework_sig.RSA_Int32 n -> Kernel.set_arg_int32 kargs i n
+            | Framework_sig.RSA_Int64 n -> Kernel.set_arg_int64 kargs i n
+            | Framework_sig.RSA_Float32 f -> Kernel.set_arg_float32 kargs i f
+            | Framework_sig.RSA_Float64 f -> Kernel.set_arg_float64 kargs i f)
+          args ;
+
+        (* Launch *)
+        let stream = Stream.default dev in
+        Kernel.launch
+          compiled
+          ~args:kargs
+          ~grid
+          ~block
+          ~shared_mem
+          ~stream:(Some stream)
+    | Framework_sig.SPIR_V ->
         failwith "Vulkan SPIR-V direct loading not yet implemented"
     | Framework_sig.CUDA_Source ->
         failwith "Vulkan backend does not support CUDA source"

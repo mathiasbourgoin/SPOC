@@ -206,6 +206,8 @@ module Backend : Framework_sig.BACKEND = struct
     | Framework_sig.OpenCL_Source ->
         failwith "CUDA backend does not support OpenCL source"
     | Framework_sig.SPIR_V -> failwith "CUDA backend does not support SPIR-V"
+    | Framework_sig.GLSL_Source ->
+        failwith "CUDA backend does not support GLSL source"
 end
 
 (** Auto-register backend when module is loaded *)

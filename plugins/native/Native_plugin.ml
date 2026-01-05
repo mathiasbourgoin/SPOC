@@ -198,6 +198,7 @@ module Backend : Framework_sig.BACKEND = struct
       | Framework_sig.OpenCL_Source -> "OpenCL source"
       | Framework_sig.PTX -> "PTX"
       | Framework_sig.SPIR_V -> "SPIR-V"
+      | Framework_sig.GLSL_Source -> "GLSL source"
     in
     failwith
       (Printf.sprintf
