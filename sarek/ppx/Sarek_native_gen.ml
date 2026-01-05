@@ -334,6 +334,9 @@ type gen_context = {
       (** Current module name for same-module type detection *)
   gen_mode : gen_mode;
       (** Generation mode - affects how thread indices are accessed *)
+  use_native_arg : bool;
+      (** When true, vector params are accessor objects (v#get i, v#set i x)
+          instead of Vector.t (Vector.get v i, Vector.kernel_set v i x) *)
 }
 
 (** Empty generation context *)
@@ -343,6 +346,7 @@ let empty_ctx =
     inline_types = StringSet.empty;
     current_module = None;
     gen_mode = FullMode;
+    use_native_arg = false;
   }
 
 (** Check if a qualified type name is from the current module. For
@@ -436,18 +440,25 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
   | TEVecGet (vec, idx) ->
       let vec_e = gen_expr ~loc vec in
       let idx_e = gen_expr ~loc idx in
-      [%expr Spoc_core.Vector.get [%e vec_e] (Int32.to_int [%e idx_e])]
+      if ctx.use_native_arg then
+        (* Native arg mode: vectors are accessor objects with #get method *)
+        [%expr [%e vec_e]#get (Int32.to_int [%e idx_e])]
+      else [%expr Spoc_core.Vector.get [%e vec_e] (Int32.to_int [%e idx_e])]
   | TEVecSet (vec, idx, value) ->
       let vec_e = gen_expr ~loc vec in
       let idx_e = gen_expr ~loc idx in
       let val_e = gen_expr ~loc value in
-      (* Use kernel_set: no bounds check, no location update race.
-         Safe for parallel execution - kernel code ensures valid indices. *)
-      [%expr
-        Spoc_core.Vector.kernel_set
-          [%e vec_e]
-          (Int32.to_int [%e idx_e])
-          [%e val_e]]
+      if ctx.use_native_arg then
+        (* Native arg mode: vectors are accessor objects with #set method *)
+        [%expr [%e vec_e]#set (Int32.to_int [%e idx_e]) [%e val_e]]
+      else
+        (* Use kernel_set: no bounds check, no location update race.
+           Safe for parallel execution - kernel code ensures valid indices. *)
+        [%expr
+          Spoc_core.Vector.kernel_set
+            [%e vec_e]
+            (Int32.to_int [%e idx_e])
+            [%e val_e]]
   (* Array access - for shared memory (regular OCaml arrays) *)
   | TEArrGet (arr, idx) ->
       let arr_e = gen_expr ~loc arr in
@@ -546,7 +557,17 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
   (* Function application *)
   | TEApp (fn, args) ->
       let fn_e = gen_expr ~loc fn in
-      let args_e = List.map (gen_expr ~loc) args in
+      (* When use_native_arg is true, vector arguments need #underlying
+         to get the actual Vector.t for functions that expect it *)
+      let gen_arg arg =
+        let arg_e = gen_expr ~loc arg in
+        if ctx.use_native_arg then
+          match repr arg.ty with
+          | TVec _ -> [%expr [%e arg_e]#underlying]
+          | _ -> arg_e
+        else arg_e
+      in
+      let args_e = List.map gen_arg args in
       Ast_builder.Default.pexp_apply
         ~loc
         fn_e
@@ -805,7 +826,16 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
   | TEIntrinsicConst ref -> gen_intrinsic_const ~loc ~gen_mode:ctx.gen_mode ref
   (* Intrinsic function - math functions, barriers, etc. *)
   | TEIntrinsicFun (ref, _convergence, args) ->
-      let args_e = List.map (gen_expr ~loc) args in
+      (* When use_native_arg is true, vector arguments need #underlying *)
+      let gen_arg arg =
+        let arg_e = gen_expr ~loc arg in
+        if ctx.use_native_arg then
+          match repr arg.ty with
+          | TVec _ -> [%expr [%e arg_e]#underlying]
+          | _ -> arg_e
+        else arg_e
+      in
+      let args_e = List.map gen_arg args in
       gen_intrinsic_fun ~loc ~gen_mode:ctx.gen_mode ref args_e
   (* BSP let%shared - allocate shared memory using OCaml arrays *)
   | TELetShared (name, _id, elem_ty, size_opt, body) ->
@@ -1536,26 +1566,121 @@ let gen_simple_cpu_kern ~loc ~exec_strategy (kernel : tkernel) : expression =
 
 (** Generate a type cast expression for extracting a kernel argument.
 
-    For vectors: cast Obj.t to Spoc_core.Vector.t (V2 path). For scalars: cast
-    Obj.t to the primitive type.
+    For vectors: extract NA_Vec and create an accessor wrapper. For scalars:
+    match on NA_Int32/NA_Float32/etc and extract the value.
 
-    V2 uses type-safe vectors that abstract over storage. *)
+    Uses typed native_arg instead of Obj.t. *)
 let gen_arg_cast ~loc (param : tparam) (idx : int) : expression =
   let arr_access =
     [%expr Array.get __args [%e Ast_builder.Default.eint ~loc idx]]
   in
   match repr param.tparam_type with
-  | TVec _ ->
-      (* All vector types use the same generic cast - Vector.get/set handle the types *)
-      [%expr (Obj.obj [%e arr_access] : (_, _) Spoc_core.Vector.t)]
-  | TReg "float32" -> [%expr (Obj.obj [%e arr_access] : float)]
-  | TReg "float64" -> [%expr (Obj.obj [%e arr_access] : float)]
-  | TReg "int32" | TPrim TInt32 -> [%expr (Obj.obj [%e arr_access] : int32)]
-  | TReg "int64" -> [%expr (Obj.obj [%e arr_access] : int64)]
-  | TPrim TBool -> [%expr (Obj.obj [%e arr_access] : bool)]
+  | TVec elem_ty -> (
+      (* Generate accessor object based on element type.
+         All accessor objects have an `underlying` method to get the actual
+         Vector.t for passing to functions/intrinsics that need it. *)
+      let vec_arg = [%expr [%e arr_access]] in
+      match repr elem_ty with
+      | TReg "float32" ->
+          [%expr
+            match [%e arr_access] with
+            | Sarek_ir_types.NA_Vec __v ->
+                object
+                  method get i = __v.get_f32 i
+
+                  method set i x = __v.set_f32 i x
+
+                  method length = __v.length
+
+                  method underlying = Sarek_ir_types.vec_as_vector [%e vec_arg]
+                end
+            | _ -> failwith "Expected NA_Vec"]
+      | TReg "float64" ->
+          [%expr
+            match [%e arr_access] with
+            | Sarek_ir_types.NA_Vec __v ->
+                object
+                  method get i = __v.get_f64 i
+
+                  method set i x = __v.set_f64 i x
+
+                  method length = __v.length
+
+                  method underlying = Sarek_ir_types.vec_as_vector [%e vec_arg]
+                end
+            | _ -> failwith "Expected NA_Vec"]
+      | TReg "int32" | TPrim TInt32 ->
+          [%expr
+            match [%e arr_access] with
+            | Sarek_ir_types.NA_Vec __v ->
+                object
+                  method get i = __v.get_i32 i
+
+                  method set i x = __v.set_i32 i x
+
+                  method length = __v.length
+
+                  method underlying = Sarek_ir_types.vec_as_vector [%e vec_arg]
+                end
+            | _ -> failwith "Expected NA_Vec"]
+      | TReg "int64" ->
+          [%expr
+            match [%e arr_access] with
+            | Sarek_ir_types.NA_Vec __v ->
+                object
+                  method get i = __v.get_i64 i
+
+                  method set i x = __v.set_i64 i x
+
+                  method length = __v.length
+
+                  method underlying = Sarek_ir_types.vec_as_vector [%e vec_arg]
+                end
+            | _ -> failwith "Expected NA_Vec"]
+      | _ ->
+          (* Custom types (records, variants): use typed helper functions.
+              The helpers encapsulate the type conversion internally. *)
+          [%expr
+            object
+              method get i = Sarek_ir_types.vec_get_custom [%e vec_arg] i
+
+              method set i x = Sarek_ir_types.vec_set_custom [%e vec_arg] i x
+
+              method length = Sarek_ir_types.vec_length [%e vec_arg]
+
+              method underlying = Sarek_ir_types.vec_as_vector [%e vec_arg]
+            end])
+  | TReg "float32" ->
+      [%expr
+        match [%e arr_access] with
+        | Sarek_ir_types.NA_Float32 v -> v
+        | Sarek_ir_types.NA_Int32 n -> Int32.to_float n
+        | _ -> failwith "Expected NA_Float32"]
+  | TReg "float64" ->
+      [%expr
+        match [%e arr_access] with
+        | Sarek_ir_types.NA_Float64 v -> v
+        | Sarek_ir_types.NA_Float32 v -> v
+        | _ -> failwith "Expected NA_Float64"]
+  | TReg "int32" | TPrim TInt32 ->
+      [%expr
+        match [%e arr_access] with
+        | Sarek_ir_types.NA_Int32 v -> v
+        | _ -> failwith "Expected NA_Int32"]
+  | TReg "int64" ->
+      [%expr
+        match [%e arr_access] with
+        | Sarek_ir_types.NA_Int64 v -> v
+        | Sarek_ir_types.NA_Int32 n -> Int64.of_int32 n
+        | _ -> failwith "Expected NA_Int64"]
+  | TPrim TBool ->
+      [%expr
+        match [%e arr_access] with
+        | Sarek_ir_types.NA_Int32 n -> n <> 0l
+        | _ -> failwith "Expected NA_Int32 for bool"]
   | _ ->
-      (* Default - just return as Obj.t and let caller deal with it *)
-      arr_access
+      (* Default - failwith for unsupported types *)
+      [%expr failwith "Unsupported native_arg type"]
 
 (** Generate an object expression with accessor methods for FCM. Example for
     type point with fields x and y: object method get_point_x r = r.x method
@@ -1974,15 +2099,21 @@ let gen_cpu_kern_native ~loc (kernel : tkernel) : expression =
   in
   let current_module = Some (module_name_of_sarek_loc kernel.tkern_loc) in
 
+  (* Use native_arg mode - vectors are accessor objects with typed helpers.
+     Complex types use vec_get_custom/vec_set_custom from runtime. *)
   let body_e =
     if use_fcm then
-      gen_expr_with_inline_types
-        ~loc
-        ~inline_type_names
-        ~current_module
-        kernel.tkern_body
+      let ctx =
+        {
+          empty_ctx with
+          inline_types = inline_type_names;
+          current_module;
+          use_native_arg = true;
+        }
+      in
+      gen_expr_impl ~loc ~ctx kernel.tkern_body
     else
-      let ctx = {empty_ctx with current_module} in
+      let ctx = {empty_ctx with current_module; use_native_arg = true} in
       gen_expr_impl ~loc ~ctx kernel.tkern_body
   in
 
@@ -1998,15 +2129,11 @@ let gen_cpu_kern_native ~loc (kernel : tkernel) : expression =
   in
   let body_with_items = wrap_module_items ~loc inline_items body_e in
 
-  (* Build parameter tuple pattern with type constraints *)
+  (* Build parameter tuple pattern - no type constraints since vectors are
+     accessor objects, not Vector.t *)
   let param_pats =
     List.map
-      (fun p ->
-        let var_pat =
-          Ast_builder.Default.ppat_var ~loc {txt = p.tparam_name; loc}
-        in
-        let ty = core_type_of_typ ~loc p.tparam_type in
-        Ast_builder.Default.ppat_constraint ~loc var_pat ty)
+      (fun p -> Ast_builder.Default.ppat_var ~loc {txt = p.tparam_name; loc})
       kernel.tkern_params
   in
   let params_pat =
@@ -2077,7 +2204,13 @@ let gen_simple_cpu_kern_native ~loc ~exec_strategy (kernel : tkernel) :
   let gen_mode = gen_mode_of_exec_strategy exec_strategy in
 
   let ctx =
-    {empty_ctx with current_module; inline_types = inline_type_names; gen_mode}
+    {
+      empty_ctx with
+      current_module;
+      inline_types = inline_type_names;
+      gen_mode;
+      use_native_arg = true;
+    }
   in
   let body_e = gen_expr_impl ~loc ~ctx kernel.tkern_body in
 
@@ -2093,15 +2226,11 @@ let gen_simple_cpu_kern_native ~loc ~exec_strategy (kernel : tkernel) :
   in
   let body_with_items = wrap_module_items ~loc inline_items body_e in
 
-  (* Build parameter tuple pattern with type constraints *)
+  (* Build parameter tuple pattern - no type constraints since vectors are
+     accessor objects, not Vector.t *)
   let param_pats =
     List.map
-      (fun p ->
-        let var_pat =
-          Ast_builder.Default.ppat_var ~loc {txt = p.tparam_name; loc}
-        in
-        let ty = core_type_of_typ ~loc p.tparam_type in
-        Ast_builder.Default.ppat_constraint ~loc var_pat ty)
+      (fun p -> Ast_builder.Default.ppat_var ~loc {txt = p.tparam_name; loc})
       kernel.tkern_params
   in
   let params_pat =

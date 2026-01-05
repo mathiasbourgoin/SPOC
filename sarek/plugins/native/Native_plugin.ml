@@ -149,25 +149,121 @@ module Backend : Framework_sig.BACKEND = struct
   let generate_source ?block:_ (_ir : Sarek_ir_types.kernel) : string option =
     None
 
-  (** Convert exec_arg array to Obj.t array for legacy native_fn *)
-  let exec_args_to_obj (args : Framework_sig.exec_arg array) : Obj.t array =
-    Array.map
-      (fun arg ->
-        match arg with
-        | Framework_sig.EA_Int32 n -> Obj.repr n
-        | Framework_sig.EA_Int64 n -> Obj.repr n
-        | Framework_sig.EA_Float32 f -> Obj.repr f
-        | Framework_sig.EA_Float64 f -> Obj.repr f
-        | Framework_sig.EA_Scalar ((module S), v) -> Obj.repr v
-        | Framework_sig.EA_Composite ((module C), v) -> Obj.repr v
-        | Framework_sig.EA_Vec (module V) ->
-            (* Get the underlying Vector object for legacy native function *)
-            V.underlying_obj ())
-      args
+  (** Convert exec_arg to native_arg for typed native function *)
+  let exec_arg_to_native (arg : Framework_sig.exec_arg) :
+      Sarek_ir_types.native_arg =
+    match arg with
+    | Framework_sig.EA_Int32 n -> Sarek_ir_types.NA_Int32 n
+    | Framework_sig.EA_Int64 n -> Sarek_ir_types.NA_Int64 n
+    | Framework_sig.EA_Float32 f -> Sarek_ir_types.NA_Float32 f
+    | Framework_sig.EA_Float64 f -> Sarek_ir_types.NA_Float64 f
+    | Framework_sig.EA_Scalar ((module S), v) -> (
+        (* Convert scalar via primitive *)
+        match S.to_primitive v with
+        | Typed_value.PInt32 n -> Sarek_ir_types.NA_Int32 n
+        | Typed_value.PInt64 n -> Sarek_ir_types.NA_Int64 n
+        | Typed_value.PFloat f -> Sarek_ir_types.NA_Float32 f
+        | Typed_value.PBool b -> Sarek_ir_types.NA_Int32 (if b then 1l else 0l)
+        | Typed_value.PBytes _ -> failwith "PBytes not supported in native_arg")
+    | Framework_sig.EA_Composite _ ->
+        failwith "Composite types not yet supported in native execution"
+    | Framework_sig.EA_Vec (module V) ->
+        (* Create NA_Vec with typed accessors that delegate to EXEC_VECTOR *)
+        let get_as_f32 i =
+          match V.get i with
+          | Typed_value.TV_Scalar (Typed_value.SV ((module S), x)) -> (
+              match S.to_primitive x with
+              | Typed_value.PFloat f -> f
+              | Typed_value.PInt32 n -> Int32.to_float n
+              | _ -> failwith "get_f32: incompatible type")
+          | _ -> failwith "get_f32: not a scalar"
+        in
+        let set_as_f32 i f =
+          V.set
+            i
+            (Typed_value.TV_Scalar
+               (Typed_value.SV ((module Typed_value.Float32_type), f)))
+        in
+        let get_as_f64 i =
+          match V.get i with
+          | Typed_value.TV_Scalar (Typed_value.SV ((module S), x)) -> (
+              match S.to_primitive x with
+              | Typed_value.PFloat f -> f
+              | _ -> failwith "get_f64: incompatible type")
+          | _ -> failwith "get_f64: not a scalar"
+        in
+        let set_as_f64 i f =
+          V.set
+            i
+            (Typed_value.TV_Scalar
+               (Typed_value.SV ((module Typed_value.Float64_type), f)))
+        in
+        let get_as_i32 i =
+          match V.get i with
+          | Typed_value.TV_Scalar (Typed_value.SV ((module S), x)) -> (
+              match S.to_primitive x with
+              | Typed_value.PInt32 n -> n
+              | Typed_value.PFloat f -> Int32.of_float f
+              | _ -> failwith "get_i32: incompatible type")
+          | _ -> failwith "get_i32: not a scalar"
+        in
+        let set_as_i32 i n =
+          V.set
+            i
+            (Typed_value.TV_Scalar
+               (Typed_value.SV ((module Typed_value.Int32_type), n)))
+        in
+        let get_as_i64 i =
+          match V.get i with
+          | Typed_value.TV_Scalar (Typed_value.SV ((module S), x)) -> (
+              match S.to_primitive x with
+              | Typed_value.PInt64 n -> n
+              | Typed_value.PInt32 n -> Int64.of_int32 n
+              | _ -> failwith "get_i64: incompatible type")
+          | _ -> failwith "get_i64: not a scalar"
+        in
+        let set_as_i64 i n =
+          V.set
+            i
+            (Typed_value.TV_Scalar
+               (Typed_value.SV ((module Typed_value.Int64_type), n)))
+        in
+        (* For custom types: use underlying Vector.t with Obj.t *)
+        let get_any i =
+          let vec = Obj.obj (V.underlying_obj ()) in
+          Obj.repr (Spoc_core.Vector.get vec i)
+        in
+        let set_any i v =
+          let vec = Obj.obj (V.underlying_obj ()) in
+          Spoc_core.Vector.kernel_set vec i (Obj.obj v)
+        in
+        let get_vec () = V.underlying_obj () in
+        Sarek_ir_types.NA_Vec
+          {
+            length = V.length;
+            elem_size = V.elem_size;
+            type_name = V.type_name;
+            get_f32 = get_as_f32;
+            set_f32 = set_as_f32;
+            get_f64 = get_as_f64;
+            set_f64 = set_as_f64;
+            get_i32 = get_as_i32;
+            set_i32 = set_as_i32;
+            get_i64 = get_as_i64;
+            set_i64 = set_as_i64;
+            get_any;
+            set_any;
+            get_vec;
+          }
+
+  (** Convert exec_arg array to native_arg array *)
+  let exec_args_to_native (args : Framework_sig.exec_arg array) :
+      Sarek_ir_types.native_arg array =
+    Array.map exec_arg_to_native args
 
   (** Execute directly using native function from IR. Args contain vectors
       directly (not expanded buffer/length pairs). The native function uses
-      Spoc_core.Vector.get/set for access. *)
+      native_arg accessors for element access. *)
   let execute_direct
       ~(native_fn :
          (block:Framework_sig.dims ->
@@ -186,11 +282,15 @@ module Backend : Framework_sig.BACKEND = struct
         | Some kernel -> (
             match kernel.kern_native_fn with
             | Some (Sarek_ir_types.NativeFn fn) ->
-                (* Convert exec_args to Obj.t for legacy native function *)
-                let obj_args = exec_args_to_obj args in
+                (* Convert exec_args to native_arg for typed native function *)
+                let native_args = exec_args_to_native args in
                 let block_tuple = (block.x, block.y, block.z) in
                 let grid_tuple = (grid.x, grid.y, grid.z) in
-                fn ~parallel:true ~block:block_tuple ~grid:grid_tuple obj_args
+                fn
+                  ~parallel:true
+                  ~block:block_tuple
+                  ~grid:grid_tuple
+                  native_args
             | None -> failwith "Native backend: no native function in IR")
         | None -> failwith "Native backend execute_direct: IR required")
 

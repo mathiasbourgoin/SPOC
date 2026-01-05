@@ -144,14 +144,76 @@ type helper_func = {
   hf_body : stmt;
 }
 
-(** Native function type for V2 execution. Uses Obj.t to avoid type parameter
-    propagation. *)
+(** Native argument type for kernel execution. Typed arguments without Obj.t -
+    used by PPX-generated native functions. *)
+type native_arg =
+  | NA_Int32 of int32
+  | NA_Int64 of int64
+  | NA_Float32 of float
+  | NA_Float64 of float
+  | NA_Vec of {
+      length : int;
+      elem_size : int;
+      type_name : string;
+      get_f32 : int -> float;
+      set_f32 : int -> float -> unit;
+      get_f64 : int -> float;
+      set_f64 : int -> float -> unit;
+      get_i32 : int -> int32;
+      set_i32 : int -> int32 -> unit;
+      get_i64 : int -> int64;
+      set_i64 : int -> int64 -> unit;
+      (* For custom types (records/variants): type-erased access.
+         Internal use only - callers should use vec_get_custom/vec_set_custom. *)
+      get_any : int -> Obj.t;
+      set_any : int -> Obj.t -> unit;
+      (* Get underlying Vector.t for passing to functions/intrinsics *)
+      get_vec : unit -> Obj.t;
+    }
+
+(** {2 Typed Helpers for Custom Types}
+
+    These functions encapsulate the Obj operations so that PPX-generated code
+    doesn't need to use Obj directly. The type parameter is inferred from
+    context. *)
+
+(** Get element from NA_Vec as custom type. Type is inferred from usage. *)
+let vec_get_custom : type a. native_arg -> int -> a =
+ fun arg i ->
+  match arg with
+  | NA_Vec v -> Obj.magic (v.get_any i)
+  | _ -> failwith "vec_get_custom: expected NA_Vec"
+
+(** Set element in NA_Vec from custom type. Type is inferred from usage. *)
+let vec_set_custom : type a. native_arg -> int -> a -> unit =
+ fun arg i x ->
+  match arg with
+  | NA_Vec v -> v.set_any i (Obj.magic x)
+  | _ -> failwith "vec_set_custom: expected NA_Vec"
+
+(** Get length from NA_Vec *)
+let vec_length : native_arg -> int =
+ fun arg ->
+  match arg with
+  | NA_Vec v -> v.length
+  | _ -> failwith "vec_length: expected NA_Vec"
+
+(** Get underlying vector. Used when passing vectors to functions/intrinsics
+    that need the actual Vector.t type. Returns type-erased value that the
+    caller casts to the appropriate Vector.t type. *)
+let vec_as_vector : type a. native_arg -> a =
+ fun arg ->
+  match arg with
+  | NA_Vec v -> Obj.magic (v.get_vec ())
+  | _ -> failwith "vec_as_vector: expected NA_Vec"
+
+(** Native function type for V2 execution. Uses typed native_arg. *)
 type native_fn_t =
   | NativeFn of
       (parallel:bool ->
       block:int * int * int ->
       grid:int * int * int ->
-      Obj.t array ->
+      native_arg array ->
       unit)
 
 (** Kernel representation *)
