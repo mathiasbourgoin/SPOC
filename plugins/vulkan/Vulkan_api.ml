@@ -798,11 +798,11 @@ module Stream = struct
       "vkAllocateCommandBuffers"
       (vkAllocateCommandBuffers device.Device.device (addr alloc_info) cmd_buf) ;
 
-    (* Create fence *)
+    (* Create fence in signaled state so first vkWaitForFences succeeds *)
     let fence_info = make vk_fence_create_info in
     setf fence_info fence_create_sType (u32 vk_structure_type_fence_create_info) ;
     setf fence_info fence_create_pNext null ;
-    setf fence_info fence_create_flags (Unsigned.UInt32.of_int 0) ;
+    setf fence_info fence_create_flags (u32 vk_fence_create_signaled_bit) ;
 
     let fence = allocate vk_fence vk_null_handle in
     check
@@ -816,14 +816,16 @@ module Stream = struct
     vkDestroyCommandPool stream.device.Device.device stream.command_pool null
 
   let synchronize stream =
+    let fence_ptr = allocate vk_fence stream.fence in
     check
       "vkWaitForFences"
       (vkWaitForFences
          stream.device.Device.device
          (Unsigned.UInt32.of_int 1)
-         (allocate vk_fence stream.fence)
+         fence_ptr
          vk_true
-         (Unsigned.UInt64.of_int64 Int64.max_int))
+         (Unsigned.UInt64.of_int64 Int64.max_int)) ;
+    ignore fence_ptr
 
   let default_streams : (int, t) Hashtbl.t = Hashtbl.create 4
 
@@ -859,14 +861,16 @@ module Event = struct
   (* Fences work differently in Vulkan - submit with fence *)
 
   let synchronize event =
+    let fence_ptr = allocate vk_fence event.fence in
     check
       "vkWaitForFences"
       (vkWaitForFences
          event.device.Device.device
          (Unsigned.UInt32.of_int 1)
-         (allocate vk_fence event.fence)
+         fence_ptr
          vk_true
-         (Unsigned.UInt64.of_int64 Int64.max_int))
+         (Unsigned.UInt64.of_int64 Int64.max_int)) ;
+    ignore fence_ptr
 
   let elapsed ~start:_ ~stop:_ = 0.0
   (* Would need timestamp queries for real timing *)
@@ -1149,16 +1153,15 @@ module Kernel = struct
     setf ds_ai desc_set_alloc_pNext null ;
     setf ds_ai desc_set_alloc_descriptorPool !@pool ;
     setf ds_ai desc_set_alloc_descriptorSetCount (u32 1) ;
-    setf
-      ds_ai
-      desc_set_alloc_pSetLayouts
-      (allocate vk_descriptor_set_layout !@dsl) ;
+    (* Keep this allocation alive - it's passed by pointer to Vulkan *)
+    let dsl_ptr = allocate vk_descriptor_set_layout !@dsl in
+    setf ds_ai desc_set_alloc_pSetLayouts dsl_ptr ;
 
     let desc_set = allocate vk_descriptor_set vk_null_handle in
     check
       "vkAllocateDescriptorSets"
       (vkAllocateDescriptorSets device.Device.device (addr ds_ai) desc_set) ;
-
+    ignore dsl_ptr ;
     {
       shader_module;
       pipeline = !@pipeline;
@@ -1258,6 +1261,11 @@ module Kernel = struct
     let u32 = Unsigned.UInt32.of_int in
     let u64 = Unsigned.UInt64.of_int in
 
+    (* Helper to prevent GC from collecting Ctypes allocations.
+       Unlike OpenCL which copies values, Vulkan reads from pointers during calls,
+       so we must keep allocations alive through the entire function scope. *)
+    let keep = Sys.opaque_identity in
+
     try
       (* 1. Get Stream (Command Buffer + Fence) *)
       let s = match stream with Some s -> s | None -> Stream.default device in
@@ -1308,9 +1316,28 @@ module Kernel = struct
           (CArray.start writes)
           (u32 0)
           null ;
+      ignore (keep writes) ;
+      ignore (keep buf_infos) ;
 
-      (* 3. Record Command Buffer *)
-      (* Reset command buffer implicitly by beginning with ONE_TIME_SUBMIT *)
+      (* 3. Wait for any previous work to complete before reusing command buffer.
+            This is critical: vkBeginCommandBuffer on an in-flight buffer is UB. *)
+      let fence_ptr = allocate vk_fence fence in
+      check
+        "vkWaitForFences (pre-record)"
+        (vkWaitForFences
+           device.Device.device
+           (u32 1)
+           fence_ptr
+           vk_true
+           (Unsigned.UInt64.of_int64 Int64.max_int)) ;
+
+      (* Reset fence after waiting, before recording new commands *)
+      check
+        "vkResetFences (pre-record)"
+        (vkResetFences device.Device.device (u32 1) fence_ptr) ;
+      ignore (keep fence_ptr) ;
+
+      (* 4. Record Command Buffer *)
       let begin_info = make vk_command_buffer_begin_info in
       setf
         begin_info
@@ -1326,20 +1353,23 @@ module Kernel = struct
       check
         "vkBeginCommandBuffer"
         (vkBeginCommandBuffer cmd_buf (addr begin_info)) ;
+      ignore (keep begin_info) ;
 
       vkCmdBindPipeline
         cmd_buf
         (u32 vk_pipeline_bind_point_compute)
         kernel.pipeline ;
+      let desc_set_ptr = allocate vk_descriptor_set desc_set in
       vkCmdBindDescriptorSets
         cmd_buf
         (u32 vk_pipeline_bind_point_compute)
         kernel.pipeline_layout
         (u32 0)
         (u32 1)
-        (allocate vk_descriptor_set desc_set)
+        desc_set_ptr
         (u32 0)
         (from_voidp uint32_t null) ;
+      ignore (keep desc_set_ptr) ;
 
       (* Push constants *)
       (match args.push_constants with
@@ -1355,19 +1385,16 @@ module Kernel = struct
             (u32 vk_shader_stage_compute_bit)
             (u32 0)
             (u32 len)
-            (Ctypes.to_voidp pc_ptr)
+            (Ctypes.to_voidp pc_ptr) ;
+          ignore (keep pc_ptr)
       | None -> ()) ;
 
       vkCmdDispatch cmd_buf (u32 grid.x) (u32 grid.y) (u32 grid.z) ;
 
       check "vkEndCommandBuffer" (vkEndCommandBuffer cmd_buf) ;
 
-      (* 4. Submit *)
-      (* Reset fence before use *)
-      check
-        "vkResetFences"
-        (vkResetFences device.Device.device (u32 1) (allocate vk_fence fence)) ;
-
+      (* 5. Submit *)
+      let cmd_buf_ptr = allocate vk_command_buffer_ptr cmd_buf in
       let submit_info = make vk_submit_info in
       setf submit_info submit_sType (u32 vk_structure_type_submit_info) ;
       setf submit_info submit_pNext null ;
@@ -1375,10 +1402,7 @@ module Kernel = struct
       setf submit_info submit_pWaitSemaphores (from_voidp vk_semaphore null) ;
       setf submit_info submit_pWaitDstStageMask (from_voidp vk_flags null) ;
       setf submit_info submit_commandBufferCount (u32 1) ;
-      setf
-        submit_info
-        submit_pCommandBuffers
-        (allocate vk_command_buffer_ptr cmd_buf) ;
+      setf submit_info submit_pCommandBuffers cmd_buf_ptr ;
       setf submit_info submit_signalSemaphoreCount (u32 0) ;
       setf submit_info submit_pSignalSemaphores (from_voidp vk_semaphore null) ;
 
@@ -1389,20 +1413,18 @@ module Kernel = struct
            (u32 1)
            (addr submit_info)
            fence) ;
+      ignore (keep cmd_buf_ptr) ;
+      ignore (keep submit_info) ;
 
-      (* 5. Wait *)
+      (* 6. Wait for completion *)
       check
         "vkWaitForFences"
         (vkWaitForFences
            device.Device.device
            (u32 1)
-           (allocate vk_fence fence)
+           fence_ptr
            vk_true
-           (Unsigned.UInt64.of_int64 Int64.max_int)) ;
-
-      (* Keep structures alive *)
-      ignore buf_infos ;
-      ignore writes
+           (Unsigned.UInt64.of_int64 Int64.max_int))
     with e ->
       Spoc_core.Log.errorf
         Spoc_core.Log.Device
