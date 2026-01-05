@@ -251,8 +251,10 @@ module type BACKEND = sig
   val execution_model : execution_model
 
   (** Generate source code from Sarek IR (for JIT backends). Returns None for
-      Direct/Custom backends. *)
-  val generate_source : Sarek_ir_types.kernel -> string option
+      Direct/Custom backends.
+      @param block Optional block dimensions (required for Vulkan/GLSL which
+                   embeds workgroup size in shader) *)
+  val generate_source : ?block:dims -> Sarek_ir_types.kernel -> string option
 
   (** Execute a kernel directly (for Direct/Custom backends). JIT backends
       should raise an error if this is called. The backend chooses which

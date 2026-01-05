@@ -220,7 +220,7 @@ let run ~(device : Device.t) ~(name : string)
                 (Execution_error "JIT backend requires IR but none provided")
           | Some ir_lazy -> (
               let ir = Lazy.force ir_lazy in
-              match B.generate_source ir with
+              match B.generate_source ~block ir with
               | None ->
                   raise
                     (Execution_error "JIT backend failed to generate source")

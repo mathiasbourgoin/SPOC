@@ -170,8 +170,9 @@ module Backend : Framework_sig.BACKEND = struct
   (** Execution model: OpenCL uses JIT compilation *)
   let execution_model = Framework_sig.JIT
 
-  (** Generate OpenCL source from Sarek IR *)
-  let generate_source (ir : Sarek_ir_types.kernel) : string option =
+  (** Generate OpenCL source from Sarek IR.
+      @param block Ignored - OpenCL specifies work-group size at launch *)
+  let generate_source ?block:_ (ir : Sarek_ir_types.kernel) : string option =
     try Some (Sarek_ir_opencl.generate_with_types ~types:ir.kern_types ir)
     with _ -> None
 

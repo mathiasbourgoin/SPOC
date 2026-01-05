@@ -684,16 +684,18 @@ let count_vec_params params =
     0
     params
 
-(** Generate GLSL compute shader header *)
-let glsl_header ~kernel_name =
+(** Generate GLSL compute shader header.
+    @param block Optional workgroup dimensions (x, y, z). Defaults to 256x1x1. *)
+let glsl_header ~kernel_name ?(block = (256, 1, 1)) () =
+  let bx, by, bz = block in
   Printf.sprintf
     {|#version 450
 
 // Sarek-generated compute shader: %s
-layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = %d, local_size_y = %d, local_size_z = %d) in;
 
 |}
-    kernel_name
+    kernel_name bx by bz
 
 (** Generate buffer binding for a vector parameter *)
 let gen_buffer_binding buf binding_idx v elem_type =
@@ -797,10 +799,11 @@ let gen_shared_decls buf (decls : (string * elttype * expr) list) =
     Buffer.add_char buf '\n'
   end
 
-(** Generate complete GLSL source for a kernel *)
-let generate (k : kernel) : string =
+(** Generate complete GLSL source for a kernel.
+    @param block Optional workgroup dimensions (x, y, z). Defaults to 256x1x1. *)
+let generate ?block (k : kernel) : string =
   let buf = Buffer.create 1024 in
-  Buffer.add_string buf (glsl_header ~kernel_name:k.kern_name) ;
+  Buffer.add_string buf (glsl_header ~kernel_name:k.kern_name ?block ()) ;
 
   (* Generate buffer bindings *)
   let binding_idx = ref 0 in
@@ -892,8 +895,9 @@ let gen_variant_def buf (name, constrs) =
       Buffer.add_string buf "  return r;\n}\n\n")
     constrs
 
-(** Generate GLSL source with custom type definitions *)
-let generate_with_types ~(types : (string * (string * elttype) list) list)
+(** Generate GLSL source with custom type definitions.
+    @param block Optional workgroup dimensions (x, y, z). Defaults to 256x1x1. *)
+let generate_with_types ?block ~(types : (string * (string * elttype) list) list)
     (k : kernel) : string =
   (* Convert types to internal format (single arg -> list of args) *)
   let internal_types =
@@ -905,7 +909,7 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
   current_variants := internal_types ;
 
   let buf = Buffer.create 1024 in
-  Buffer.add_string buf (glsl_header ~kernel_name:k.kern_name) ;
+  Buffer.add_string buf (glsl_header ~kernel_name:k.kern_name ?block ()) ;
 
   (* Generate type definitions *)
   List.iter (gen_variant_def buf) internal_types ;
