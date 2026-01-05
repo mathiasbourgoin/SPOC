@@ -6,6 +6,7 @@
 
 (library
  (name sarek_cuda)
+ (public_name sarek-cuda.plugin)
  (optional)
  (libraries
   ctypes

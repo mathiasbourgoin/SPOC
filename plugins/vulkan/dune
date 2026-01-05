@@ -10,6 +10,7 @@
 
 (library
  (name sarek_vulkan)
+ (public_name sarek-vulkan.plugin)
  (optional)
  (libraries
   ctypes

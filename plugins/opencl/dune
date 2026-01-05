@@ -6,6 +6,7 @@
 
 (library
  (name sarek_opencl)
+ (public_name sarek-opencl.plugin)
  (optional)
  (libraries
   ctypes

@@ -3,7 +3,7 @@
 
 (library
  (name sarek_ir)
- (public_name sarek.ir)
+ (public_name spoc.ir)
  (wrapped false)
  (modules Sarek_ir_types)
  (preprocess no_preprocessing))

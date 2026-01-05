@@ -1,6 +1,6 @@
 (library
  (name sarek_ppx_lib)
- (public_name sarek_ppx.lib)
+ (public_name sarek.ppx.lib)
  (libraries ppxlib spoc_core) ; spoc removed - V2 codegen only
  (preprocess
   (pps ppxlib.metaquot))
@@ -30,7 +30,7 @@
 
 (library
  (name sarek_ppx)
- (public_name sarek_ppx)
+ (public_name sarek.ppx)
  (kind ppx_rewriter)
  ; Link sarek_stdlib so its module init registers types/intrinsics at PPX load time
  ; Link sarek_float64 so Float64 intrinsics are available (optional for runtime linking)

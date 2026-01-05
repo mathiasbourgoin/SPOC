@@ -3,7 +3,7 @@
 
 (library
  (name sarek_registry)
- (public_name sarek.registry)
+ (public_name spoc.registry)
  (libraries spoc_framework)
  (modules Sarek_registry)
  (preprocess no_preprocessing))
