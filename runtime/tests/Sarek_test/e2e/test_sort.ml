@@ -246,7 +246,7 @@ let () =
   Printf.printf "Size: %d elements\n\n" cfg.size ;
 
   let devs =
-    Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+    Device.init ~frameworks:["CUDA"; "OpenCL"; "Vulkan"; "Native"; "Interpreter"] ()
   in
   if Array.length devs = 0 then begin
     print_endline "No devices found" ;
@@ -254,6 +254,16 @@ let () =
   end ;
   Test_helpers.print_devices devs ;
   Printf.printf "\nFound %d runtime device(s)\n\n" (Array.length devs) ;
+
+  (* Filter out Interpreter in benchmark mode - too slow *)
+  let devs =
+    if cfg.benchmark_all then
+      Array.of_list
+        (List.filter
+           (fun d -> d.Device.framework <> "Interpreter")
+           (Array.to_list devs))
+    else devs
+  in
 
   (* Initialize test data *)
   ignore (init_bitonic_global_data ()) ;

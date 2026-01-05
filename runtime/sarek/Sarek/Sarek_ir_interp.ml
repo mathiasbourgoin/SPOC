@@ -590,10 +590,33 @@ and exec_stmt state env stmt =
   | SExpr e ->
       let _ = eval_expr state env e in
       ()
-  | SLet (v, e, body) ->
-      let value = eval_expr state env e in
-      bind_var env v value ;
-      exec_stmt state env body
+  | SLet (v, e, body) -> (
+      (* Special handling for shared memory arrays *)
+      match e with
+      | EArrayCreate (ty, size_expr, Shared) ->
+          (* Shared memory: reuse if exists, else create and store in env.shared *)
+          let name = v.var_name in
+          (match Hashtbl.find_opt env.shared name with
+          | Some arr -> bind_var env v (VArray arr)
+          | None ->
+              let size = to_int (eval_expr state env size_expr) in
+              let init =
+                match ty with
+                | TInt32 -> VInt32 0l
+                | TInt64 -> VInt64 0L
+                | TFloat32 -> VFloat32 0.0
+                | TFloat64 -> VFloat64 0.0
+                | TBool -> VBool false
+                | _ -> VUnit
+              in
+              let arr = Array.make size init in
+              Hashtbl.add env.shared name arr ;
+              bind_var env v (VArray arr)) ;
+          exec_stmt state env body
+      | _ ->
+          let value = eval_expr state env e in
+          bind_var env v value ;
+          exec_stmt state env body)
   | SLetMut (v, e, body) ->
       let value = eval_expr state env e in
       bind_var env v value ;
@@ -645,10 +668,32 @@ and exec_stmt_for_return state env stmt =
         match else_s with
         | Some s -> exec_stmt_for_return state env s
         | None -> VUnit)
-  | SLet (v, e, body) ->
-      let value = eval_expr state env e in
-      bind_var env v value ;
-      exec_stmt_for_return state env body
+  | SLet (v, e, body) -> (
+      (* Special handling for shared memory arrays *)
+      match e with
+      | EArrayCreate (ty, size_expr, Shared) ->
+          let name = v.var_name in
+          (match Hashtbl.find_opt env.shared name with
+          | Some arr -> bind_var env v (VArray arr)
+          | None ->
+              let size = to_int (eval_expr state env size_expr) in
+              let init =
+                match ty with
+                | TInt32 -> VInt32 0l
+                | TInt64 -> VInt64 0L
+                | TFloat32 -> VFloat32 0.0
+                | TFloat64 -> VFloat64 0.0
+                | TBool -> VBool false
+                | _ -> VUnit
+              in
+              let arr = Array.make size init in
+              Hashtbl.add env.shared name arr ;
+              bind_var env v (VArray arr)) ;
+          exec_stmt_for_return state env body
+      | _ ->
+          let value = eval_expr state env e in
+          bind_var env v value ;
+          exec_stmt_for_return state env body)
   | SLetMut (v, e, body) ->
       let value = eval_expr state env e in
       bind_var env v value ;
@@ -836,10 +881,12 @@ let run_grid_parallel env body block_dim grid_dim =
   for bz = 0 to gz - 1 do
     for by = 0 to gy - 1 do
       for bx = 0 to gx - 1 do
+        (* Shadow loop vars with local bindings to capture values, not refs *)
+        let bx = bx and by = by and bz = bz in
         DomainPool.submit pool (fun () ->
-            (* Each block gets its own shared memory *)
-            let block_env = copy_env env in
-            Hashtbl.clear block_env.shared ;
+            (* Each block gets its own NEW shared memory hashtable.
+               Don't use copy_env.shared because it's shared by reference. *)
+            let block_env = {(copy_env env) with shared = Hashtbl.create 8} in
             run_block block_env body (bx, by, bz) block_dim grid_dim)
       done
     done

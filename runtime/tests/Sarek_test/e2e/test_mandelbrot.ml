@@ -279,7 +279,7 @@ let () =
 
   (* Initialize runtime devices *)
   let devs =
-    Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
+    Device.init ~frameworks:["CUDA"; "OpenCL"; "Vulkan"; "Native"; "Interpreter"] ()
   in
   if Array.length devs = 0 then begin
     print_endline "No GPU devices found" ;
@@ -297,23 +297,26 @@ let () =
     Printf.printf "\n=== GPU Runtime Benchmarks ===\n%!" ;
     Array.iter
       (fun dev ->
-        let dev_label =
-          Printf.sprintf "%s (%s)" dev.Device.name dev.Device.framework
-        in
-        Printf.printf "\nV2 Mandelbrot on %s:\n%!" dev_label ;
-        let time_ms, ok = run_mandelbrot_test dev in
-        Printf.printf
-          "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
-          time_ms
-          (baseline_ms /. time_ms)
-          (if ok then "PASSED" else "FAILED") ;
-        Printf.printf "\nV2 Mandelbrot (tailrec) on %s:\n%!" dev_label ;
-        let tr_time_ms, tr_ok = run_mandelbrot_tailrec_test dev in
-        Printf.printf
-          "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
-          tr_time_ms
-          (baseline_ms /. tr_time_ms)
-          (if tr_ok then "PASSED" else "FAILED"))
+        (* Skip interpreter - too slow for image rendering *)
+        if dev.Device.framework <> "Interpreter" then begin
+          let dev_label =
+            Printf.sprintf "%s (%s)" dev.Device.name dev.Device.framework
+          in
+          Printf.printf "\nV2 Mandelbrot on %s:\n%!" dev_label ;
+          let time_ms, ok = run_mandelbrot_test dev in
+          Printf.printf
+            "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
+            time_ms
+            (baseline_ms /. time_ms)
+            (if ok then "PASSED" else "FAILED") ;
+          Printf.printf "\nV2 Mandelbrot (tailrec) on %s:\n%!" dev_label ;
+          let tr_time_ms, tr_ok = run_mandelbrot_tailrec_test dev in
+          Printf.printf
+            "  Time: %.4f ms, Speedup: %.2fx, %s\n%!"
+            tr_time_ms
+            (baseline_ms /. tr_time_ms)
+            (if tr_ok then "PASSED" else "FAILED")
+        end)
       devs
   end
   else begin

@@ -331,7 +331,7 @@ let () =
   (* runtime execution tests *)
   print_endline "=== Complex Types runtime Tests ===" ;
   let devs =
-    Device.init ~frameworks:["Interpreter"; "Native"; "CUDA"; "OpenCL"] ()
+    Device.init ~frameworks:["CUDA"; "OpenCL"; "Vulkan"; "Native"; "Interpreter"] ()
   in
   if Array.length devs = 0 then begin
     print_endline "No devices found" ;
@@ -348,9 +348,6 @@ let () =
         | None -> Test_helpers.get_device cfg devs)
   in
   Printf.printf "Using device: %s\n%!" dev.Device.name ;
-  if dev.framework <> "Native" then (
-    Printf.printf "SKIP (complex type tests checked on native backend only)\n%!" ;
-    exit 0) ;
   let n = cfg.size in
 
   print_endline "\nPoint2D distance:" ;
@@ -367,45 +364,36 @@ let () =
 
   print_endline "Point3D normalize:" ;
   (try
-     if dev.framework <> "Native" then
-       Printf.printf "  SKIP (checked on native backend only)\n%!"
-     else
-       let ok, time = run_point3d_test dev n in
-       Printf.printf
-         "  runtime exec: %.2f ms, %s\n%!"
-         time
-         (if ok then "PASSED" else "FAILED") ;
-       if not ok then exit 1
+     let ok, time = run_point3d_test dev n in
+     Printf.printf
+       "  runtime exec: %.2f ms, %s\n%!"
+       time
+       (if ok then "PASSED" else "FAILED") ;
+     if not ok then exit 1
    with e ->
      Printf.printf "  FAIL (%s)\n%!" (Printexc.to_string e) ;
      exit 1) ;
 
   print_endline "Particle update:" ;
   (try
-     if dev.framework <> "Native" then
-       Printf.printf "  SKIP (checked on native backend only)\n%!"
-     else
-       let ok, time = run_particle_test dev n in
-       Printf.printf
-         "  runtime exec: %.2f ms, %s\n%!"
-         time
-         (if ok then "PASSED" else "FAILED") ;
-       if not ok then exit 1
+     let ok, time = run_particle_test dev n in
+     Printf.printf
+       "  runtime exec: %.2f ms, %s\n%!"
+       time
+       (if ok then "PASSED" else "FAILED") ;
+     if not ok then exit 1
    with e ->
      Printf.printf "  FAIL (%s)\n%!" (Printexc.to_string e) ;
      exit 1) ;
 
   print_endline "Color blend:" ;
   (try
-     if dev.framework <> "Native" then
-       Printf.printf "  SKIP (checked on native backend only)\n%!"
-     else
-       let ok, time = run_color_test dev n in
-       Printf.printf
-         "  runtime exec: %.2f ms, %s\n%!"
-         time
-         (if ok then "PASSED" else "FAILED") ;
-       if not ok then exit 1
+     let ok, time = run_color_test dev n in
+     Printf.printf
+       "  runtime exec: %.2f ms, %s\n%!"
+       time
+       (if ok then "PASSED" else "FAILED") ;
+     if not ok then exit 1
    with e ->
      Printf.printf "  FAIL (%s)\n%!" (Printexc.to_string e) ;
      exit 1) ;
