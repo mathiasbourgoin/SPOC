@@ -165,11 +165,13 @@ let register_sarek_type_decl ~loc (td : type_declaration) =
               | Pcstr_tuple [] -> (cd.pcd_name.txt, None)
               | Pcstr_tuple [ct] ->
                   (cd.pcd_name.txt, Some (core_type_to_sarek_type_expr ~loc ct))
-              | Pcstr_tuple _ | Pcstr_record _ ->
+              | Pcstr_tuple cts ->
+                  let args = List.map (core_type_to_sarek_type_expr ~loc) cts in
+                  (cd.pcd_name.txt, Some (Sarek_ast.TETuple args))
+              | Pcstr_record _ ->
                   Location.raise_errorf
                     ~loc
-                    "Only zero or single-argument constructors supported in \
-                     [@@sarek.type]")
+                    "Inline records not supported in [@@sarek.type]")
             constrs
         in
         Sarek_ast.Type_variant
@@ -744,6 +746,16 @@ let generate_custom_value ~loc (td : type_declaration) : structure_item list =
               ~loc
               {txt = Lident fallback_ctor.pcd_name.txt; loc}
               (Some payload_expr)
+        | Pcstr_tuple cts ->
+            let args =
+              List.map (fun _ -> Ast_builder.Default.eint ~loc 0) cts
+            in
+            (* Use Obj.magic to satisfy type checker for dummy values *)
+            let args = List.map (fun e -> [%expr Obj.magic [%e e]]) args in
+            Ast_builder.Default.pexp_construct
+              ~loc
+              {txt = Lident fallback_ctor.pcd_name.txt; loc}
+              (Some (Ast_builder.Default.pexp_tuple ~loc args))
         | _ ->
             Ast_builder.Default.pexp_construct
               ~loc

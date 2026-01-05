@@ -146,7 +146,8 @@ module Backend : Framework_sig.BACKEND = struct
   let execution_model = Framework_sig.Direct
 
   (** Generate source - not used for Direct backend *)
-  let generate_source ?block:_ (_ir : Sarek_ir_types.kernel) : string option = None
+  let generate_source ?block:_ (_ir : Sarek_ir_types.kernel) : string option =
+    None
 
   (** Execute directly using native function from IR. Args contain vectors
       directly (not expanded buffer/length pairs). The native function uses

@@ -243,7 +243,9 @@ end = struct
       let elem_size = Bigarray.kind_size_in_bytes (Bigarray.Array1.kind ba) in
       Some {data = Obj.repr ba; size; elem_size; device}
 
-    let is_zero_copy _buf = true
+    let is_zero_copy buf =
+      (* Custom allocations (char ptr) are not zero-copy; bigarrays are *)
+      Obj.tag buf.data <> Obj.custom_tag
 
     let free _buf = ()
 
@@ -288,10 +290,18 @@ end = struct
     let size buf = buf.size
 
     let device_ptr buf =
-      let arr : (_, _, Bigarray.c_layout) Bigarray.Array1.t =
-        Obj.obj buf.data
-      in
-      Ctypes.bigarray_start Ctypes.array1 arr |> Ctypes.raw_address_of_ptr
+      (* For custom allocations, data is a char ptr (Ctypes fat pointer with tag 0);
+         for scalar allocations, it's a bigarray (custom_tag 255). *)
+      if Obj.tag buf.data = 0 && Obj.size buf.data >= 1 then
+        (* Ctypes fat pointer - extract the raw address *)
+        let ptr : char Ctypes.ptr = Obj.obj buf.data in
+        Ctypes.raw_address_of_ptr (Ctypes.to_voidp ptr)
+      else
+        (* Bigarray - get start address *)
+        let arr : (_, _, Bigarray.c_layout) Bigarray.Array1.t =
+          Obj.obj buf.data
+        in
+        Ctypes.bigarray_start Ctypes.array1 arr |> Ctypes.raw_address_of_ptr
   end
 
   module Stream = struct

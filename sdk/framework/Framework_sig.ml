@@ -252,8 +252,9 @@ module type BACKEND = sig
 
   (** Generate source code from Sarek IR (for JIT backends). Returns None for
       Direct/Custom backends.
-      @param block Optional block dimensions (required for Vulkan/GLSL which
-                   embeds workgroup size in shader) *)
+      @param block
+        Optional block dimensions (required for Vulkan/GLSL which embeds
+        workgroup size in shader) *)
   val generate_source : ?block:dims -> Sarek_ir_types.kernel -> string option
 
   (** Execute a kernel directly (for Direct/Custom backends). JIT backends

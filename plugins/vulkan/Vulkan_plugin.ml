@@ -168,14 +168,20 @@ module Backend : Framework_sig.BACKEND = struct
   let execution_model = Framework_sig.JIT
 
   (** Generate GLSL source from Sarek IR.
-      @param block Workgroup dimensions - required for correct GLSL local_size *)
+      @param block Workgroup dimensions - required for correct GLSL local_size
+  *)
   let generate_source ?block (ir : Sarek_ir_types.kernel) : string option =
     let block_tuple =
       match block with
       | Some b -> Some (b.Framework_sig.x, b.Framework_sig.y, b.Framework_sig.z)
       | None -> None
     in
-    try Some (Sarek_ir_glsl.generate_with_types ?block:block_tuple ~types:ir.kern_types ir)
+    try
+      Some
+        (Sarek_ir_glsl.generate_with_types
+           ?block:block_tuple
+           ~types:ir.kern_types
+           ir)
     with _ -> None
 
   (** Execute directly - not supported for JIT backend *)

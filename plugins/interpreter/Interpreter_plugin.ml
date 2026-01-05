@@ -65,7 +65,8 @@ module Backend : Framework_sig.BACKEND = struct
   let execution_model = Framework_sig.Custom
 
   (** Generate source - not used for Interpreter (returns None) *)
-  let generate_source ?block:_ (_ir : Sarek_ir_types.kernel) : string option = None
+  let generate_source ?block:_ (_ir : Sarek_ir_types.kernel) : string option =
+    None
 
   (** Execute directly by interpreting the IR. Interpreter always interprets,
       ignoring native_fn (use Native backend for compiled execution). Uses

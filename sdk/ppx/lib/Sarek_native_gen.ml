@@ -441,8 +441,13 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
       let vec_e = gen_expr ~loc vec in
       let idx_e = gen_expr ~loc idx in
       let val_e = gen_expr ~loc value in
+      (* Use kernel_set: no bounds check, no location update race.
+         Safe for parallel execution - kernel code ensures valid indices. *)
       [%expr
-        Spoc_core.Vector.set [%e vec_e] (Int32.to_int [%e idx_e]) [%e val_e]]
+        Spoc_core.Vector.kernel_set
+          [%e vec_e]
+          (Int32.to_int [%e idx_e])
+          [%e val_e]]
   (* Array access - for shared memory (regular OCaml arrays) *)
   | TEArrGet (arr, idx) ->
       let arr_e = gen_expr ~loc arr in

@@ -474,6 +474,17 @@ let unsafe_set : type a b. (a, b) t -> int -> a -> unit =
   | GPU d -> vec.location <- Stale_GPU d
   | CPU | Stale_CPU _ | Stale_GPU _ -> ()
 
+(** Kernel-safe set: no bounds check, no location update. Use this in parallel
+    kernel execution where:
+    - Bounds are guaranteed by kernel logic
+    - Location tracking is not needed (data stays on same device)
+    - Multiple threads may write to different indices concurrently *)
+let kernel_set : type a b. (a, b) t -> int -> a -> unit =
+ fun vec idx value ->
+  match vec.host with
+  | Bigarray_storage ba -> Bigarray.Array1.unsafe_set ba idx value
+  | Custom_storage {ptr; custom; _} -> custom.set ptr idx value
+
 (** {1 Auto-sync Control} *)
 
 let set_auto_sync (vec : ('a, 'b) t) (enabled : bool) : unit =

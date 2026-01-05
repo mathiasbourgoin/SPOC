@@ -168,11 +168,35 @@ let fun_device_template ?(module_path = []) name =
       Some (fi.fi_device dummy_dev)
   | None -> None
 
-(** Get record field info *)
+(** Find a record by short name (last component after '.'). This handles cases
+    where the registry uses qualified names like "Module.typename" but the
+    custom_type uses just "typename". *)
+let find_record_by_short_name short_name =
+  Hashtbl.fold
+    (fun full_name ri acc ->
+      match acc with
+      | Some _ -> acc
+      | None ->
+          (* Get last component of full_name *)
+          let last =
+            match String.rindex_opt full_name '.' with
+            | Some i ->
+                String.sub full_name (i + 1) (String.length full_name - i - 1)
+            | None -> full_name
+          in
+          if last = short_name then Some ri else None)
+    record_registry
+    None
+
+(** Get record field info - tries exact match first, then short name *)
 let record_fields name =
   match find_record name with
   | Some ri -> ri.ri_fields
-  | None -> failwith ("Unknown record type: " ^ name)
+  | None -> (
+      (* Try short name search *)
+      match find_record_by_short_name name with
+      | Some ri -> ri.ri_fields
+      | None -> failwith ("Unknown record type: " ^ name))
 
 (** Get variant constructors *)
 let variant_constructors name =

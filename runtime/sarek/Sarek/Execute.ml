@@ -335,9 +335,9 @@ let run_from_ir ~(device : Device.t) ~(ir : Sarek_ir.kernel)
 
 (** Mark all vectors as Stale_CPU after kernel execution. Only Native backend
     uses true zero-copy where host memory is directly modified. JIT backends
-    (OpenCL, CUDA, Vulkan) use device buffers even on CPU, so custom types
-    need explicit sync. Marking stale is safe for zero-copy buffers since
-    Transfer checks the zero_copy flag and skips the actual transfer. *)
+    (OpenCL, CUDA, Vulkan) use device buffers even on CPU, so custom types need
+    explicit sync. Marking stale is safe for zero-copy buffers since Transfer
+    checks the zero_copy flag and skips the actual transfer. *)
 let mark_vectors_stale (args : vector_arg list) (dev : Device.t) : unit =
   (* Only Native uses true zero-copy for all vector types.
      OpenCL CPU uses zero-copy for scalar types but NOT for custom types.

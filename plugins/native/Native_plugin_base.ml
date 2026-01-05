@@ -230,30 +230,33 @@ end = struct
   module Memory = struct
     (* For CPU, buffers are just bigarrays or raw ctypes memory.
        No actual device transfer - we just keep pointers. *)
+    type storage_kind = Bigarray_buf | Ctypes_buf
+
     type 'a buffer = {
       data : Obj.t;
       size : int;
       elem_size : int;
       device : Device.t;
+      storage : storage_kind;
     }
 
     let alloc device size kind =
       let arr = Bigarray.Array1.create kind Bigarray.c_layout size in
       let elem_size = Ctypes_static.sizeof (Ctypes.typ_of_bigarray_kind kind) in
-      {data = Obj.repr arr; size; elem_size; device}
+      {data = Obj.repr arr; size; elem_size; device; storage = Bigarray_buf}
 
     (** Allocate buffer for custom types with explicit element size in bytes.
         For native, we allocate raw ctypes memory. *)
     let alloc_custom device ~size ~elem_size =
       let bytes = size * elem_size in
       let ptr = Ctypes.allocate_n Ctypes.char ~count:bytes in
-      {data = Obj.repr ptr; size; elem_size; device}
+      {data = Obj.repr ptr; size; elem_size; device; storage = Ctypes_buf}
 
     (** For Native CPU, zero-copy is the default - we just wrap the bigarray *)
     let alloc_zero_copy device ba _kind =
       let size = Bigarray.Array1.dim ba in
       let elem_size = Bigarray.kind_size_in_bytes (Bigarray.Array1.kind ba) in
-      Some {data = Obj.repr ba; size; elem_size; device}
+      Some {data = Obj.repr ba; size; elem_size; device; storage = Bigarray_buf}
 
     let is_zero_copy _buf = true (* Native is always zero-copy *)
 
@@ -303,11 +306,17 @@ end = struct
     let size buf = buf.size
 
     let device_ptr buf =
-      (* For native, return the bigarray data pointer *)
-      let arr : (_, _, Bigarray.c_layout) Bigarray.Array1.t =
-        Obj.obj buf.data
-      in
-      Ctypes.bigarray_start Ctypes.array1 arr |> Ctypes.raw_address_of_ptr
+      match buf.storage with
+      | Bigarray_buf ->
+          (* Bigarray storage - get pointer from bigarray *)
+          let arr : (_, _, Bigarray.c_layout) Bigarray.Array1.t =
+            Obj.obj buf.data
+          in
+          Ctypes.bigarray_start Ctypes.array1 arr |> Ctypes.raw_address_of_ptr
+      | Ctypes_buf ->
+          (* Ctypes storage - data is already a pointer *)
+          let ptr : char Ctypes.ptr = Obj.obj buf.data in
+          Ctypes.to_voidp ptr |> Ctypes.raw_address_of_ptr
   end
 
   module Stream = struct
