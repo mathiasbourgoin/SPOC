@@ -48,7 +48,7 @@ let init_sort_data size =
   input_bitonic_global :=
     Array.init n (fun _ -> Int32.of_int (Random.int 10000)) ;
 
-  let n_oe = min 128 size in
+  let n_oe = min 256 size in
   sort_size_odd_even := n_oe ;
   Random.init 42 ;
   input_odd_even := Array.init n_oe (fun _ -> Int32.of_int (Random.int 10000))
@@ -179,8 +179,11 @@ let run_odd_even_sort (dev : Device.t) _size _block_size =
       ~block
       ~grid
       () ;
-    Transfer.flush dev
+    Transfer.flush dev ;
+    (* Explicitly synchronize every 16 iterations to prevent queue overflow on Vulkan *)
+    if phase mod 16 = 0 then Device.synchronize dev
   done ;
+  Device.synchronize dev ;
   let t1 = Unix.gettimeofday () in
   let time_ms = (t1 -. t0) *. 1000.0 in
 
