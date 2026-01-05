@@ -1,15 +1,12 @@
 (******************************************************************************
  * E2E test: register a Sarek record type outside kernels via [%sarek.type].
+ * Adapted for Benchmarks runner.
  ******************************************************************************)
 
 module Vector = Spoc_core.Vector
 module Device = Spoc_core.Device
 module Transfer = Spoc_core.Transfer
-
-(* Force backend registration *)
-let () =
-  Sarek_cuda.Cuda_plugin.init () ;
-  Sarek_opencl.Opencl_plugin.init ()
+module Benchmarks = Test_helpers.Benchmarks
 
 [@@@warning "-32"]
 
@@ -28,13 +25,13 @@ let kernel =
         let p = {x = xs.(tid); y = ys.(tid)} in
         dst.(tid) <- sqrt ((p.x *. p.x) +. (p.y *. p.y))]
 
-let run_v2 dev n bax bay =
+let run_test dev n _block_size =
   let xv = Vector.create Vector.float32 n in
   let yv = Vector.create Vector.float32 n in
   let dst = Vector.create Vector.float32 n in
   for i = 0 to n - 1 do
-    Vector.set xv i (Bigarray.Array1.get bax i) ;
-    Vector.set yv i (Bigarray.Array1.get bay i) ;
+    Vector.set xv i (float_of_int i) ;
+    Vector.set yv i (float_of_int (n - i)) ;
     Vector.set dst i 0.0
   done ;
   let threads = 64 in
@@ -45,6 +42,7 @@ let run_v2 dev n bax bay =
     | Some ir -> ir
     | None -> failwith "Kernel has no IR"
   in
+  let t0 = Unix.gettimeofday () in
   Sarek.Execute.run_vectors
     ~device:dev
     ~block:(Sarek.Execute.dims1d threads)
@@ -59,7 +57,12 @@ let run_v2 dev n bax bay =
       ]
     () ;
   Transfer.flush dev ;
-  (* Verify *)
+  let t1 = Unix.gettimeofday () in
+  let time_ms = (t1 -. t0) *. 1000.0 in
+  (time_ms, (xv, yv, dst))
+
+let verify (xv, yv, dst) _ =
+  let n = Vector.length xv in
   let ok = ref true in
   for i = 0 to n - 1 do
     let x = Vector.get xv i in
@@ -79,31 +82,5 @@ let () =
   Sarek.Kirc_Ast.print_ast kirc_kernel.Sarek.Kirc_types.body ;
   print_endline "==========================" ;
 
-  let devs =
-    Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
-  in
-
-  if Array.length devs = 0 then (
-    print_endline "No runtime devices found - skipping execution" ;
-    exit 0) ;
-
-  Printf.printf "Using device: %s\n%!" devs.(0).Device.name ;
-
-  let n = 128 in
-  let bax = Bigarray.Array1.create Bigarray.float32 Bigarray.c_layout n in
-  let bay = Bigarray.Array1.create Bigarray.float32 Bigarray.c_layout n in
-  for i = 0 to n - 1 do
-    Bigarray.Array1.set bax i (float_of_int i) ;
-    Bigarray.Array1.set bay i (float_of_int (n - i))
-  done ;
-
-  (* runtime execution *)
-  print_string "runtime: " ;
-  flush stdout ;
-  (try
-     let ok = run_v2 devs.(0) n bax bay in
-     if ok then print_endline "PASSED" else print_endline "FAIL (verification)"
-   with e -> Printf.printf "FAIL (%s)\n%!" (Printexc.to_string e)) ;
-
-  (* SPOC execution - disabled (record types not yet supported in legacy path) *)
-  print_endline "SPOC: SKIP (record types not supported)"
+  Benchmarks.run ~verify "Registered Type" run_test ;
+  Benchmarks.exit ()
