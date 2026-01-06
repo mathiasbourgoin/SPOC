@@ -147,6 +147,130 @@ let infer_literal (loc : Sarek_ast.loc) (expr : expr_desc) : texpr result =
   | EDouble f -> Ok (mk_texpr (TEDouble f) t_float64 loc)
   | _ -> failwith "infer_literal: not a literal expression"
 
+(** Infer type of binary and unary operations *)
+let infer_binop_unop ~infer (env : t) (loc : Sarek_ast.loc) (expr : expr_desc) :
+    (texpr * t) result =
+  match expr with
+  | EBinop (op, e1, e2) ->
+      let* t1, env = infer env e1 in
+      let* t2, env = infer env e2 in
+      let* result_ty = infer_binop op t1.ty t2.ty loc in
+      Ok (mk_texpr (TEBinop (op, t1, t2)) result_ty loc, env)
+  | EUnop (op, e) ->
+      let* te, env = infer env e in
+      let* result_ty = infer_unop op te.ty loc in
+      Ok (mk_texpr (TEUnop (op, te)) result_ty loc, env)
+  | _ -> failwith "infer_binop_unop: not a binop/unop expression"
+
+(** Infer type of memory access operations (vectors, arrays, record fields) *)
+let infer_memory_access ~infer (env : t) (loc : Sarek_ast.loc)
+    (expr : expr_desc) : (texpr * t) result =
+  match expr with
+  | EVecGet (vec, idx) ->
+      let* tv, env = infer env vec in
+      let* ti, env = infer env idx in
+      let* () = unify_or_error ti.ty t_int32 idx.expr_loc in
+      let elem_ty = fresh_tvar () in
+      let* () = unify_or_error tv.ty (TVec elem_ty) vec.expr_loc in
+      let resolved_elem = repr elem_ty in
+      Ok (mk_texpr (TEVecGet (tv, ti)) resolved_elem loc, env)
+  | EVecSet (vec, idx, value) ->
+      let* tv, env = infer env vec in
+      let* ti, env = infer env idx in
+      let* tx, env = infer env value in
+      let* () = unify_or_error ti.ty t_int32 idx.expr_loc in
+      let elem_ty = fresh_tvar () in
+      let* () = unify_or_error tv.ty (TVec elem_ty) vec.expr_loc in
+      let* () = unify_or_error tx.ty elem_ty value.expr_loc in
+      Ok (mk_texpr (TEVecSet (tv, ti, tx)) t_unit loc, env)
+  | EArrGet (arr, idx) -> (
+      let* ta, env = infer env arr in
+      let* ti, env = infer env idx in
+      let* () = unify_or_error ti.ty t_int32 idx.expr_loc in
+      let elem_ty = fresh_tvar () in
+      (* Try to unify with vector first, then array *)
+      match unify ta.ty (TVec elem_ty) with
+      | Ok () ->
+          let resolved_elem = repr elem_ty in
+          Ok (mk_texpr (TEVecGet (ta, ti)) resolved_elem loc, env)
+      | Error _ ->
+          let mem = Local in
+          let* () = unify_or_error ta.ty (TArr (elem_ty, mem)) arr.expr_loc in
+          let resolved_elem = repr elem_ty in
+          Ok (mk_texpr (TEArrGet (ta, ti)) resolved_elem loc, env))
+  | EArrSet (arr, idx, value) -> (
+      let* ta, env = infer env arr in
+      let* ti, env = infer env idx in
+      let* tx, env = infer env value in
+      let* () = unify_or_error ti.ty t_int32 idx.expr_loc in
+      let elem_ty = fresh_tvar () in
+      (* Try to unify with vector first, then array *)
+      match unify ta.ty (TVec elem_ty) with
+      | Ok () ->
+          let* () = unify_or_error tx.ty elem_ty value.expr_loc in
+          Ok (mk_texpr (TEVecSet (ta, ti, tx)) t_unit loc, env)
+      | Error _ ->
+          let mem = Local in
+          let* () = unify_or_error ta.ty (TArr (elem_ty, mem)) arr.expr_loc in
+          let* () = unify_or_error tx.ty elem_ty value.expr_loc in
+          Ok (mk_texpr (TEArrSet (ta, ti, tx)) t_unit loc, env))
+  | EFieldGet (record, field) -> (
+      let* tr, env = infer env record in
+      match repr tr.ty with
+      | TRecord (_type_name, fields) when fields <> [] -> (
+          (* Known record type with field info - validate at compile time *)
+          match List.assoc_opt field fields with
+          | Some field_ty ->
+              let idx =
+                match
+                  List.mapi (fun i (f, _) -> (f, i)) fields
+                  |> List.assoc_opt field
+                with
+                | Some i -> i
+                | None -> 0
+              in
+              Ok (mk_texpr (TEFieldGet (tr, field, idx)) field_ty loc, env)
+          | None -> Error [Field_not_found (field, tr.ty, loc)])
+      | TRecord (_type_name, []) ->
+          (* External record type (from another module) - defer field lookup to runtime.
+             This follows the ppx_deriving composability pattern: we trust that the
+             type exists and will be registered at runtime by the dependent library.
+             The field type and index will be resolved during JIT compilation. *)
+          let field_ty = fresh_tvar () in
+          Ok (mk_texpr (TEFieldGet (tr, field, 0)) field_ty loc, env)
+      | t
+        when match repr t with
+             | TVar {contents = Unbound _} -> true
+             | _ -> false ->
+          (* Type not yet known, defer *)
+          let field_ty = fresh_tvar () in
+          Ok (mk_texpr (TEFieldGet (tr, field, 0)) field_ty loc, env)
+      | t -> Error [Not_a_record (t, loc)])
+  | EFieldSet (record, field, value) -> (
+      let* tr, env = infer env record in
+      let* tx, env = infer env value in
+      match repr tr.ty with
+      | TRecord (_type_name, fields) when fields <> [] -> (
+          (* Known record type with field info - validate at compile time *)
+          match List.assoc_opt field fields with
+          | Some field_ty ->
+              let* () = unify_or_error tx.ty field_ty value.expr_loc in
+              let idx =
+                match
+                  List.mapi (fun i (f, _) -> (f, i)) fields
+                  |> List.assoc_opt field
+                with
+                | Some i -> i
+                | None -> 0
+              in
+              Ok (mk_texpr (TEFieldSet (tr, field, idx, tx)) t_unit loc, env)
+          | None -> Error [Field_not_found (field, tr.ty, loc)])
+      | TRecord (_type_name, []) ->
+          (* External record type - defer to runtime (ppx_deriving pattern) *)
+          Ok (mk_texpr (TEFieldSet (tr, field, 0, tx)) t_unit loc, env)
+      | t -> Error [Not_a_record (t, loc)])
+  | _ -> failwith "infer_memory_access: not a memory access expression"
+
 (** Main type inference function *)
 let rec infer (env : t) (expr : expr) : (texpr * t) result =
   let loc = expr.expr_loc in
@@ -194,123 +318,11 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
             let ty = fresh_tvar () in
             Ok (mk_texpr (TEVar (name, id)) ty loc, env)
           else Error [Unbound_variable (name, loc)])
-  (* Vector access: v.[i] *)
-  | EVecGet (vec, idx) ->
-      let* tv, env = infer env vec in
-      let* ti, env = infer env idx in
-      let* () = unify_or_error ti.ty t_int32 idx.expr_loc in
-      let elem_ty = fresh_tvar () in
-      let* () = unify_or_error tv.ty (TVec elem_ty) vec.expr_loc in
-      let resolved_elem = repr elem_ty in
-      Ok (mk_texpr (TEVecGet (tv, ti)) resolved_elem loc, env)
-  (* Vector set: v.[i] <- x *)
-  | EVecSet (vec, idx, value) ->
-      let* tv, env = infer env vec in
-      let* ti, env = infer env idx in
-      let* tx, env = infer env value in
-      let* () = unify_or_error ti.ty t_int32 idx.expr_loc in
-      let elem_ty = fresh_tvar () in
-      let* () = unify_or_error tv.ty (TVec elem_ty) vec.expr_loc in
-      let* () = unify_or_error tx.ty elem_ty value.expr_loc in
-      Ok (mk_texpr (TEVecSet (tv, ti, tx)) t_unit loc, env)
-  (* Array/vector access: a.(i) - works for both TArr and TVec *)
-  | EArrGet (arr, idx) -> (
-      let* ta, env = infer env arr in
-      let* ti, env = infer env idx in
-      let* () = unify_or_error ti.ty t_int32 idx.expr_loc in
-      let elem_ty = fresh_tvar () in
-      (* Try to unify with vector first, then array *)
-      match unify ta.ty (TVec elem_ty) with
-      | Ok () ->
-          let resolved_elem = repr elem_ty in
-          Ok (mk_texpr (TEVecGet (ta, ti)) resolved_elem loc, env)
-      | Error _ ->
-          let mem = Local in
-          let* () = unify_or_error ta.ty (TArr (elem_ty, mem)) arr.expr_loc in
-          let resolved_elem = repr elem_ty in
-          Ok (mk_texpr (TEArrGet (ta, ti)) resolved_elem loc, env))
-  (* Array/vector set: a.(i) <- x - works for both TArr and TVec *)
-  | EArrSet (arr, idx, value) -> (
-      let* ta, env = infer env arr in
-      let* ti, env = infer env idx in
-      let* tx, env = infer env value in
-      let* () = unify_or_error ti.ty t_int32 idx.expr_loc in
-      let elem_ty = fresh_tvar () in
-      (* Try to unify with vector first, then array *)
-      match unify ta.ty (TVec elem_ty) with
-      | Ok () ->
-          let* () = unify_or_error tx.ty elem_ty value.expr_loc in
-          Ok (mk_texpr (TEVecSet (ta, ti, tx)) t_unit loc, env)
-      | Error _ ->
-          let mem = Local in
-          let* () = unify_or_error ta.ty (TArr (elem_ty, mem)) arr.expr_loc in
-          let* () = unify_or_error tx.ty elem_ty value.expr_loc in
-          Ok (mk_texpr (TEArrSet (ta, ti, tx)) t_unit loc, env))
-  (* Field access: r.field *)
-  | EFieldGet (record, field) -> (
-      let* tr, env = infer env record in
-      match repr tr.ty with
-      | TRecord (_type_name, fields) when fields <> [] -> (
-          (* Known record type with field info - validate at compile time *)
-          match List.assoc_opt field fields with
-          | Some field_ty ->
-              let idx =
-                match
-                  List.mapi (fun i (f, _) -> (f, i)) fields
-                  |> List.assoc_opt field
-                with
-                | Some i -> i
-                | None -> 0
-              in
-              Ok (mk_texpr (TEFieldGet (tr, field, idx)) field_ty loc, env)
-          | None -> Error [Field_not_found (field, tr.ty, loc)])
-      | TRecord (_type_name, []) ->
-          (* External record type (from another module) - defer field lookup to runtime.
-             This follows the ppx_deriving composability pattern: we trust that the
-             type exists and will be registered at runtime by the dependent library.
-             The field type and index will be resolved during JIT compilation. *)
-          let field_ty = fresh_tvar () in
-          Ok (mk_texpr (TEFieldGet (tr, field, 0)) field_ty loc, env)
-      | t when is_tvar t ->
-          (* Type not yet known, defer *)
-          let field_ty = fresh_tvar () in
-          Ok (mk_texpr (TEFieldGet (tr, field, 0)) field_ty loc, env)
-      | t -> Error [Not_a_record (t, loc)])
-  (* Field set: r.field <- x *)
-  | EFieldSet (record, field, value) -> (
-      let* tr, env = infer env record in
-      let* tx, env = infer env value in
-      match repr tr.ty with
-      | TRecord (_type_name, fields) when fields <> [] -> (
-          (* Known record type with field info - validate at compile time *)
-          match List.assoc_opt field fields with
-          | Some field_ty ->
-              let* () = unify_or_error tx.ty field_ty value.expr_loc in
-              let idx =
-                match
-                  List.mapi (fun i (f, _) -> (f, i)) fields
-                  |> List.assoc_opt field
-                with
-                | Some i -> i
-                | None -> 0
-              in
-              Ok (mk_texpr (TEFieldSet (tr, field, idx, tx)) t_unit loc, env)
-          | None -> Error [Field_not_found (field, tr.ty, loc)])
-      | TRecord (_type_name, []) ->
-          (* External record type - defer to runtime (ppx_deriving pattern) *)
-          Ok (mk_texpr (TEFieldSet (tr, field, 0, tx)) t_unit loc, env)
-      | t -> Error [Not_a_record (t, loc)])
-  (* Binary operations *)
-  | EBinop (op, e1, e2) ->
-      let* t1, env = infer env e1 in
-      let* t2, env = infer env e2 in
-      let* result_ty = infer_binop op t1.ty t2.ty loc in
-      Ok (mk_texpr (TEBinop (op, t1, t2)) result_ty loc, env)
-  (* Unary operations *)
-  | EUnop (op, e) ->
-      let* te, env = infer env e in
-      let* result_ty = infer_unop op te.ty loc in
-      Ok (mk_texpr (TEUnop (op, te)) result_ty loc, env)
+  (* Memory access *)
+  | EVecGet _ | EVecSet _ | EArrGet _ | EArrSet _ | EFieldGet _ | EFieldSet _ ->
+      infer_memory_access ~infer env loc expr.e
+  (* Binary and unary operations *)
+  | EBinop _ | EUnop _ -> infer_binop_unop ~infer env loc expr.e
   (* Function application *)
   | EApp (fn, args) -> (
       let* tfn, env = infer env fn in
