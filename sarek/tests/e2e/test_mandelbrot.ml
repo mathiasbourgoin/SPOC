@@ -39,6 +39,24 @@ let ocaml_mandelbrot output width height max_iter =
     done
   done
 
+let ocaml_julia output width height max_iter =
+  let c_re = -0.8 in
+  let c_im = 0.156 in
+  for py = 0 to height - 1 do
+    for px = 0 to width - 1 do
+      let x = ref ((4.0 *. float_of_int px /. float_of_int width) -. 2.0) in
+      let y = ref ((3.0 *. float_of_int py /. float_of_int height) -. 1.5) in
+      let iter = ref 0 in
+      while (!x *. !x) +. (!y *. !y) <= 4.0 && !iter < max_iter do
+        let xtemp = (!x *. !x) -. (!y *. !y) +. c_re in
+        y := (2.0 *. !x *. !y) +. c_im ;
+        x := xtemp ;
+        incr iter
+      done ;
+      output.((py * width) + px) <- Int32.of_int !iter
+    done
+  done
+
 (* ========== Shared test data ========== *)
 
 let expected_mandelbrot = ref [||]
@@ -236,6 +254,89 @@ let run_mandelbrot_tailrec_test (dev : Device.t) size _block_size =
 
   (time_ms, Vector.to_array output)
 
+(* ========== Julia Set ========== *)
+
+let julia_c_re = -0.8
+let julia_c_im = 0.156
+
+let julia_kernel =
+  [%kernel
+    fun (output : int32 vector) (width : int) (height : int) (max_iter : int) ->
+      let open Std in
+      let px = global_idx_x in
+      let py = global_idx_y in
+      if px < width && py < height then begin
+        let x = mut ((4.0 *. (float px /. float width)) -. 2.0) in
+        let y = mut ((3.0 *. (float py /. float height)) -. 1.5) in
+        let c_re = -0.8 in
+        let c_im = 0.156 in
+        let iter = mut 0l in
+        while (x *. x) +. (y *. y) <= 4.0 && iter < max_iter do
+          let xtemp = (x *. x) -. (y *. y) +. c_re in
+          y := (2.0 *. x *. y) +. c_im ;
+          x := xtemp ;
+          iter := iter + 1l
+        done ;
+        output.((py * width) + px) <- iter
+      end]
+
+let run_julia_test (dev : Device.t) size _block_size =
+  let _, kirc = julia_kernel in
+  let ir =
+    match kirc.Sarek.Kirc_types.body_ir with
+    | Some ir -> ir
+    | None -> failwith "Julia kernel has no IR"
+  in
+
+  let dim = int_of_float (sqrt (float_of_int size)) in
+  let width = dim in
+  let height = dim in
+  let n = width * height in
+
+  let output = Vector.create Vector.int32 n in
+
+  let block_size = 16 in
+  let blocks_x = (width + block_size - 1) / block_size in
+  let blocks_y = (height + block_size - 1) / block_size in
+  let block = Sarek.Execute.dims2d block_size block_size in
+  let grid = Sarek.Execute.dims2d blocks_x blocks_y in
+
+  (* Warm up *)
+  Sarek.Execute.run_vectors
+    ~device:dev
+    ~ir
+    ~args:
+      [
+        Sarek.Execute.Vec output;
+        Sarek.Execute.Int width;
+        Sarek.Execute.Int height;
+        Sarek.Execute.Int !max_iter;
+      ]
+    ~block
+    ~grid
+    () ;
+  Transfer.flush dev ;
+
+  let t0 = Unix.gettimeofday () in
+  Sarek.Execute.run_vectors
+    ~device:dev
+    ~ir
+    ~args:
+      [
+        Sarek.Execute.Vec output;
+        Sarek.Execute.Int width;
+        Sarek.Execute.Int height;
+        Sarek.Execute.Int !max_iter;
+      ]
+    ~block
+    ~grid
+    () ;
+  Transfer.flush dev ;
+  let t1 = Unix.gettimeofday () in
+  let time_ms = (t1 -. t0) *. 1000.0 in
+
+  (time_ms, Vector.to_array output)
+
 let () =
   Benchmarks.init () ;
   let size = Benchmarks.config.size in
@@ -253,7 +354,31 @@ let () =
     let n = Array.length expected in
     let errors = ref 0 in
     for i = 0 to min 1000 (n - 1) do
-      if result.(i) <> expected.(i) then incr errors
+      if result.(i) <> expected.(i) then begin
+        if !errors < 5 then
+          Printf.printf "Mismatch at %d: expected %ld, got %ld\n" i expected.(i) result.(i);
+        incr errors
+      end
+    done ;
+    !errors = 0
+  in
+
+  let verify_fuzzy result expected =
+    let n = Array.length expected in
+    let errors = ref 0 in
+    for i = 0 to min 1000 (n - 1) do
+      let diff = abs (Int32.to_int result.(i) - Int32.to_int expected.(i)) in
+      (* Allow significant deviation due to fp32 vs fp64 divergence *)
+      if diff > 50 then begin
+        if !errors < 5 then
+          Printf.printf
+            "Mismatch at %d: expected %ld, got %ld (diff %d)\n"
+            i
+            expected.(i)
+            result.(i)
+            diff ;
+        incr errors
+      end
     done ;
     !errors = 0
   in
@@ -271,4 +396,18 @@ let () =
     ~filter:Benchmarks.no_interpreter
     "Mandelbrot (Tail Rec)"
     run_mandelbrot_tailrec_test ;
+  let baseline_julia size =
+    let dim = int_of_float (sqrt (float_of_int size)) in
+    let n = dim * dim in
+    let output = Array.make n 0l in
+    ocaml_julia output dim dim !max_iter ;
+    output
+  in
+
+  Benchmarks.run
+    ~baseline:baseline_julia
+    ~verify:verify_fuzzy
+    ~filter:Benchmarks.no_interpreter
+    "Julia Set"
+    run_julia_test ;
   Benchmarks.exit ()
