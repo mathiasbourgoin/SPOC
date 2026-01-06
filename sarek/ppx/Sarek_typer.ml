@@ -316,6 +316,101 @@ let infer_control_flow ~infer (env : t) (loc : Sarek_ast.loc) (expr : expr_desc)
       Ok (mk_texpr (TESeq [t1; t2]) t2.ty loc, env)
   | _ -> failwith "infer_control_flow: not a control flow expression"
 
+(** Infer type of data structures (records, variants, tuples, arrays) and return
+*)
+let infer_data_structure ~infer ~infer_record_fields ~infer_list (env : t)
+    (loc : Sarek_ast.loc) (expr : expr_desc) : (texpr * t) result =
+  match expr with
+  | ERecord (name_opt, fields) ->
+      let* tfields, env = infer_record_fields env fields in
+      let field_tys = List.map (fun (f, te) -> (f, te.ty)) tfields in
+      let inferred_name, ty =
+        match name_opt with
+        | Some n -> (
+            match find_type n env with
+            | Some (TIRecord {ti_fields; ti_name}) ->
+                ( ti_name,
+                  TRecord (ti_name, List.map (fun (f, t, _) -> (f, t)) ti_fields)
+                )
+            | Some (TIVariant _) ->
+                (* Name provided but not a record *)
+                ("anon_record", TRecord ("anon_record", field_tys))
+            | None -> (n, TRecord (n, field_tys)))
+        | None -> (
+            (* Try to match an existing record type by field names *)
+            let matches =
+              StringMap.fold
+                (fun _name info acc ->
+                  match info with
+                  | TIRecord {ti_fields; ti_name} ->
+                      let names_match =
+                        List.map (fun (f, _, _) -> f) ti_fields
+                        = List.map (fun (f, _) -> f) field_tys
+                      in
+                      if names_match then
+                        (ti_name, List.map (fun (f, t, _) -> (f, t)) ti_fields)
+                        :: acc
+                      else acc
+                  | _ -> acc)
+                env.types
+                []
+            in
+            match matches with
+            | [] -> ("anon_record", TRecord ("anon_record", field_tys))
+            | (n, tys) :: _ ->
+                (* Use first match - prefer local types but also accept registered types *)
+                (n, TRecord (n, tys)))
+      in
+      Ok (mk_texpr (TERecord (inferred_name, tfields)) ty loc, env)
+  | EConstr (name, arg_opt) -> (
+      match find_constructor name env with
+      | Some (type_name, expected_arg) -> (
+          (* Get the full variant type with ALL constructors from the environment *)
+          let full_variant_ty =
+            match find_type type_name env with
+            | Some (TIVariant {ti_constrs; ti_name}) ->
+                TVariant (ti_name, ti_constrs)
+            | _ ->
+                (* Fallback: shouldn't happen for registered variants *)
+                TVariant (type_name, [(name, expected_arg)])
+          in
+          match (arg_opt, expected_arg) with
+          | None, None ->
+              Ok
+                ( mk_texpr (TEConstr (type_name, name, None)) full_variant_ty loc,
+                  env )
+          | Some arg, Some expected_ty ->
+              let* targ, env = infer env arg in
+              let* () = unify_or_error targ.ty expected_ty arg.expr_loc in
+              Ok
+                ( mk_texpr
+                    (TEConstr (type_name, name, Some targ))
+                    full_variant_ty
+                    loc,
+                  env )
+          | None, Some _ -> Error [Wrong_arity {expected = 1; got = 0; loc}]
+          | Some _, None -> Error [Wrong_arity {expected = 0; got = 1; loc}])
+      | None -> Error [Unbound_constructor (name, loc)])
+  | ETuple es ->
+      let* tes, env = infer_list env es in
+      let ty = TTuple (List.map (fun te -> te.ty) tes) in
+      Ok (mk_texpr (TETuple tes) ty loc, env)
+  | EReturn e ->
+      let* te, env = infer env e in
+      Ok (mk_texpr (TEReturn te) te.ty loc, env)
+  | ECreateArray (size, elem_ty, mem) ->
+      let* tsize, env = infer env size in
+      let* () = unify_or_error tsize.ty t_int32 size.expr_loc in
+      let elem_t = type_of_type_expr_env env elem_ty in
+      let arr_ty = TArr (elem_t, memspace_of_ast mem) in
+      Ok
+        ( mk_texpr
+            (TECreateArray (tsize, elem_t, memspace_of_ast mem))
+            arr_ty
+            loc,
+          env )
+  | _ -> failwith "infer_data_structure: not a data structure expression"
+
 (** Main type inference function *)
 let rec infer (env : t) (expr : expr) : (texpr * t) result =
   let loc = expr.expr_loc in
@@ -473,99 +568,15 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
       let* ts, env = infer env scrutinee in
       let* tcases, result_ty, env = infer_match_cases env ts.ty cases loc in
       Ok (mk_texpr (TEMatch (ts, tcases)) result_ty loc, env)
-  (* Record construction *)
-  | ERecord (name_opt, fields) ->
-      let* tfields, env = infer_record_fields env fields in
-      let field_tys = List.map (fun (f, te) -> (f, te.ty)) tfields in
-      let inferred_name, ty =
-        match name_opt with
-        | Some n -> (
-            match find_type n env with
-            | Some (TIRecord {ti_fields; ti_name}) ->
-                ( ti_name,
-                  TRecord (ti_name, List.map (fun (f, t, _) -> (f, t)) ti_fields)
-                )
-            | Some (TIVariant _) ->
-                (* Name provided but not a record *)
-                ("anon_record", TRecord ("anon_record", field_tys))
-            | None -> (n, TRecord (n, field_tys)))
-        | None -> (
-            (* Try to match an existing record type by field names *)
-            let matches =
-              StringMap.fold
-                (fun _name info acc ->
-                  match info with
-                  | TIRecord {ti_fields; ti_name} ->
-                      let names_match =
-                        List.map (fun (f, _, _) -> f) ti_fields
-                        = List.map (fun (f, _) -> f) field_tys
-                      in
-                      if names_match then
-                        (ti_name, List.map (fun (f, t, _) -> (f, t)) ti_fields)
-                        :: acc
-                      else acc
-                  | _ -> acc)
-                env.types
-                []
-            in
-            match matches with
-            | [] -> ("anon_record", TRecord ("anon_record", field_tys))
-            | (n, tys) :: _ ->
-                (* Use first match - prefer local types but also accept registered types *)
-                (n, TRecord (n, tys)))
-      in
-      Ok (mk_texpr (TERecord (inferred_name, tfields)) ty loc, env)
-  (* Constructor application *)
-  | EConstr (name, arg_opt) -> (
-      match find_constructor name env with
-      | Some (type_name, expected_arg) -> (
-          (* Get the full variant type with ALL constructors from the environment *)
-          let full_variant_ty =
-            match find_type type_name env with
-            | Some (TIVariant {ti_constrs; ti_name}) ->
-                TVariant (ti_name, ti_constrs)
-            | _ ->
-                (* Fallback: shouldn't happen for registered variants *)
-                TVariant (type_name, [(name, expected_arg)])
-          in
-          match (arg_opt, expected_arg) with
-          | None, None ->
-              Ok
-                ( mk_texpr (TEConstr (type_name, name, None)) full_variant_ty loc,
-                  env )
-          | Some arg, Some expected_ty ->
-              let* targ, env = infer env arg in
-              let* () = unify_or_error targ.ty expected_ty arg.expr_loc in
-              Ok
-                ( mk_texpr
-                    (TEConstr (type_name, name, Some targ))
-                    full_variant_ty
-                    loc,
-                  env )
-          | None, Some _ -> Error [Wrong_arity {expected = 1; got = 0; loc}]
-          | Some _, None -> Error [Wrong_arity {expected = 0; got = 1; loc}])
-      | None -> Error [Unbound_constructor (name, loc)])
-  (* Tuple *)
-  | ETuple es ->
-      let* tes, env = infer_list env es in
-      let ty = TTuple (List.map (fun te -> te.ty) tes) in
-      Ok (mk_texpr (TETuple tes) ty loc, env)
-  (* Return *)
-  | EReturn e ->
-      let* te, env = infer env e in
-      Ok (mk_texpr (TEReturn te) te.ty loc, env)
-  (* Create array *)
-  | ECreateArray (size, elem_ty, mem) ->
-      let* tsize, env = infer env size in
-      let* () = unify_or_error tsize.ty t_int32 size.expr_loc in
-      let elem_t = type_of_type_expr_env env elem_ty in
-      let arr_ty = TArr (elem_t, memspace_of_ast mem) in
-      Ok
-        ( mk_texpr
-            (TECreateArray (tsize, elem_t, memspace_of_ast mem))
-            arr_ty
-            loc,
-          env )
+  (* Data structures *)
+  | ERecord _ | EConstr _ | ETuple _ | EReturn _ | ECreateArray _ ->
+      infer_data_structure
+        ~infer
+        ~infer_record_fields
+        ~infer_list
+        env
+        loc
+        expr.e
   (* Global reference *)
   | EGlobalRef name ->
       (* Type will be inferred from context or annotated *)
