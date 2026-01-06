@@ -15,10 +15,12 @@ vectors, transfers, and kernel execution, with unified logging and testing.
 - `Transfer`: Device/host transfers, buffer allocation/ensure-buffer, zero-copy path.
 - `Runtime`: High-level run helpers, dims re-export, kernel cache.
 - `Profiling`, `Advanced`: supplemental utilities.
-- Related components: `spoc/` SDK layer, `spoc/framework/`, `spoc/ir/`, `spoc/registry/`
-  (see their directories for plugin interfaces, IR, and registries).
-  Additional dirs: `sarek/ppx/` (Sarek PPX compiler), `sarek/plugins/` (backend
-  implementations), `sarek/tests/` (broader test suites).
+- Related components: [spoc/](../spoc/), [spoc/framework/](../spoc/framework/),
+  [spoc/ir/](../spoc/ir/), [spoc/registry/](../spoc/registry/) for SDK types,
+  plugin interfaces, IR, and registries.
+- Additional dirs: [sarek/ppx/](../sarek/ppx/) (Sarek PPX compiler),
+  [sarek/plugins/](../sarek/plugins/) (backend implementations),
+  [sarek/tests/](../sarek/tests/) (broader test suites).
 
 ## Design Principles
 
