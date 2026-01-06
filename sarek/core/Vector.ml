@@ -245,24 +245,11 @@ let copy : type a b. (a, b) t -> (a, b) t =
 
 (** {1 Subvector Support} *)
 
-(** Subvector metadata - stored as simple record without parent reference *)
-type sub_meta = {
-  parent_id : int;  (** ID of parent vector *)
-  start : int;  (** Offset into parent *)
-  ok_range : int;  (** Elements safe to read *)
-  ko_range : int;  (** Elements that shouldn't be written *)
-  depth : int;  (** Nesting depth (1 = direct child of root) *)
-}
+type sub_meta = Vector_storage.sub_meta
 
-(** Subvector metadata storage *)
-let subvector_meta : (int, sub_meta) Hashtbl.t = Hashtbl.create 16
+let is_sub = Vector_storage.is_sub
 
-(** Check if vector is a subvector *)
-let is_sub (vec : ('a, 'b) t) : bool = Hashtbl.mem subvector_meta vec.id
-
-(** Get subvector metadata *)
-let get_sub_meta (vec : ('a, 'b) t) : sub_meta option =
-  Hashtbl.find_opt subvector_meta vec.id
+let get_sub_meta = Vector_storage.get_sub_meta
 
 (** Create a subvector that shares CPU memory with parent.
     @param vec Parent vector
@@ -272,16 +259,7 @@ let get_sub_meta (vec : ('a, 'b) t) : sub_meta option =
     @param ko_range Elements to avoid writing (default: 0) *)
 let sub_vector (type a b) (vec : (a, b) t) ~(start : int) ~(len : int)
     ?(ok_range : int = len) ?(ko_range : int = 0) () : (a, b) t =
-  let sub = Vector_storage.sub_vector_host vec ~start ~len in
-  let parent_depth =
-    match get_sub_meta vec with Some meta -> meta.depth | None -> 0
-  in
-  (* Record subvector relationship *)
-  Hashtbl.replace
-    subvector_meta
-    sub.id
-    {parent_id = vec.id; start; ok_range; ko_range; depth = parent_depth + 1} ;
-  sub
+  Vector_storage.sub_vector vec ~start ~len ~ok_range ~ko_range
 
 (** {1 Multi-GPU Helpers} *)
 
@@ -289,7 +267,12 @@ let sub_vector (type a b) (vec : (a, b) t) ~(start : int) ~(len : int)
     device, that together cover the full vector. *)
 let partition (type a b) (vec : (a, b) t) (devices : Device.t array) :
     (a, b) t array =
-  Vector_storage.partition_host vec devices
+  let subs = Vector_storage.partition_host vec devices in
+  Array.iteri
+    (fun i sub ->
+      if i < Array.length devices then sub.location <- Stale_GPU devices.(i))
+    subs ;
+  subs
 
 (** Gather subvectors back to parent (sync all to CPU). Assumes subvectors were
     created by partition and don't overlap. *)
@@ -310,24 +293,21 @@ let gather (subs : (_, _) t array) : unit =
 (** {1 Subvector Queries} *)
 
 (** Get subvector depth (0 = root, 1 = child, 2 = grandchild, ...) *)
-let depth (vec : ('a, 'b) t) : int =
-  match get_sub_meta vec with Some meta -> meta.depth | None -> 0
+let depth (vec : ('a, 'b) t) : int = Vector_storage.depth vec
 
 (** Get parent vector ID if this is a subvector *)
-let parent_id (vec : ('a, 'b) t) : int option =
-  match get_sub_meta vec with Some meta -> Some meta.parent_id | None -> None
+let parent_id (vec : ('a, 'b) t) : int option = Vector_storage.parent_id vec
 
 (** Get start offset relative to immediate parent *)
-let sub_start (vec : ('a, 'b) t) : int option =
-  match get_sub_meta vec with Some meta -> Some meta.start | None -> None
+let sub_start (vec : ('a, 'b) t) : int option = Vector_storage.sub_start vec
 
 (** Get ok_range (safe read range) *)
 let sub_ok_range (vec : ('a, 'b) t) : int option =
-  match get_sub_meta vec with Some meta -> Some meta.ok_range | None -> None
+  Vector_storage.sub_ok_range vec
 
 (** Get ko_range (unsafe write range) *)
 let sub_ko_range (vec : ('a, 'b) t) : int option =
-  match get_sub_meta vec with Some meta -> Some meta.ko_range | None -> None
+  Vector_storage.sub_ko_range vec
 
 (** {1 Phase 6: Vector Utilities} *)
 

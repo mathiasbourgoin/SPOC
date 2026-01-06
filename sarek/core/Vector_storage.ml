@@ -137,6 +137,38 @@ let has_buffer (vec : ('a, 'b) t) (dev : Device.t) : bool =
 let get_buffer (vec : ('a, 'b) t) (dev : Device.t) : device_buffer option =
   Hashtbl.find_opt vec.device_buffers dev.id
 
+(** {1 Subvector Metadata} *)
+
+type sub_meta = {
+  parent_id : int;
+  start : int;
+  ok_range : int;
+  ko_range : int;
+  depth : int;
+}
+
+let subvector_meta : (int, sub_meta) Hashtbl.t = Hashtbl.create 16
+
+let is_sub (vec : ('a, 'b) t) : bool = Hashtbl.mem subvector_meta vec.id
+
+let get_sub_meta (vec : ('a, 'b) t) : sub_meta option =
+  Hashtbl.find_opt subvector_meta vec.id
+
+let depth (vec : ('a, 'b) t) : int =
+  match get_sub_meta vec with Some meta -> meta.depth | None -> 0
+
+let parent_id (vec : ('a, 'b) t) : int option =
+  match get_sub_meta vec with Some meta -> Some meta.parent_id | None -> None
+
+let sub_start (vec : ('a, 'b) t) : int option =
+  match get_sub_meta vec with Some meta -> Some meta.start | None -> None
+
+let sub_ok_range (vec : ('a, 'b) t) : int option =
+  match get_sub_meta vec with Some meta -> Some meta.ok_range | None -> None
+
+let sub_ko_range (vec : ('a, 'b) t) : int option =
+  match get_sub_meta vec with Some meta -> Some meta.ko_range | None -> None
+
 (** {1 Copy & Slicing} *)
 
 (** Copy vector (CPU data only). Caller must ensure sync if needed. *)
@@ -207,6 +239,19 @@ let sub_vector_host (type a b) (vec : (a, b) t) ~(start : int) ~(len : int) :
     id = !next_id;
   }
 
+(** Create subvector and record metadata *)
+let sub_vector (type a b) (vec : (a, b) t) ~(start : int) ~(len : int)
+    ~(ok_range : int) ~(ko_range : int) : (a, b) t =
+  let sub = sub_vector_host vec ~start ~len in
+  let parent_depth =
+    match get_sub_meta vec with Some meta -> meta.depth | None -> 0
+  in
+  Hashtbl.replace
+    subvector_meta
+    sub.id
+    {parent_id = vec.id; start; ok_range; ko_range; depth = parent_depth + 1} ;
+  sub
+
 (** Partition host storage evenly across devices (no device buffers) *)
 let partition_host (type a b) (vec : (a, b) t) (devices : Device.t array) :
     (a, b) t array =
@@ -219,4 +264,4 @@ let partition_host (type a b) (vec : (a, b) t) (devices : Device.t array) :
         let extra = if i < rem then 1 else 0 in
         let len = base + extra in
         let start = (i * base) + min i rem in
-        sub_vector_host vec ~start ~len)
+        sub_vector vec ~start ~len ~ok_range:len ~ko_range:0)
