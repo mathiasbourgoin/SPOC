@@ -362,7 +362,7 @@ let quote_helper_func ~loc (hf : Ir.helper_func) : expression =
     @param native_fn_expr
       Optional expression that generates the native function (adapted from
       cpu_kern). If provided, it should have type: parallel:bool ->
-      block:int*int*int -> grid:int*int*int -> Obj.t array -> unit *)
+      block:int*int*int -> grid:int*int*int -> Kernel_arg.t array -> unit *)
 let quote_kernel ~loc ?(native_fn_expr : expression option) (k : Ir.kernel) :
     expression =
   let native_fn_field =

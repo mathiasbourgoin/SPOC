@@ -757,11 +757,27 @@ let generate_custom_value ~loc (td : type_declaration) : structure_item list =
               {txt = Lident fallback_ctor.pcd_name.txt; loc}
               (Some payload_expr)
         | Pcstr_tuple cts ->
+            (* For fallback case with multiple arguments, generate default values *)
             let args =
-              List.map (fun _ -> Ast_builder.Default.eint ~loc 0) cts
+              List.map
+                (fun ct ->
+                  (* Generate default value based on type *)
+                  match ct.ptyp_desc with
+                  | Ptyp_constr ({txt = Lident "float32"; _}, _) -> [%expr 0.0]
+                  | Ptyp_constr ({txt = Lident "float"; _}, _) -> [%expr 0.0]
+                  | Ptyp_constr ({txt = Lident "float64"; _}, _) -> [%expr 0.0]
+                  | Ptyp_constr ({txt = Lident "int32"; _}, _) -> [%expr 0l]
+                  | Ptyp_constr ({txt = Lident "int64"; _}, _) -> [%expr 0L]
+                  | Ptyp_constr ({txt = Lident "int"; _}, _) -> [%expr 0l]
+                  | Ptyp_constr ({txt = Lident "bool"; _}, _) -> [%expr false]
+                  | Ptyp_constr ({txt = Lident "unit"; _}, _) -> [%expr ()]
+                  | Ptyp_constr ({txt = Lident "char"; _}, _) -> [%expr '\000']
+                  | _ ->
+                      (* For custom types, we'd need their default constructor - 
+                         this is a rare fallback case so using unit is acceptable *)
+                      [%expr ()])
+                cts
             in
-            (* Use Obj.magic to satisfy type checker for dummy values *)
-            let args = List.map (fun e -> [%expr Obj.magic [%e e]]) args in
             Ast_builder.Default.pexp_construct
               ~loc
               {txt = Lident fallback_ctor.pcd_name.txt; loc}

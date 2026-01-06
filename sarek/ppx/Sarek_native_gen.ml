@@ -58,6 +58,52 @@ let state_var = "__state"
 (** Shared memory variable name - bound in block wrapper *)
 let shared_var = "__shared"
 
+(** Generate default value expression for a given type. Used for array
+    initialization and other contexts where a default is needed. *)
+let rec default_value_for_type ~loc (ty : typ) : expression =
+  match repr ty with
+  | TPrim TUnit -> [%expr ()]
+  | TPrim TBool -> [%expr false]
+  | TPrim TInt32 -> [%expr 0l]
+  | TReg Int -> [%expr 0l]
+  | TReg Int64 -> [%expr 0L]
+  | TReg Float32 -> [%expr 0.0]
+  | TReg Float64 -> [%expr 0.0]
+  | TReg Char -> [%expr '\000']
+  | TRecord (_name, fields) ->
+      (* Generate record with all fields set to their default values *)
+      let field_defaults =
+        List.map
+          (fun (fname, fty) ->
+            let default_val = default_value_for_type ~loc fty in
+            ({txt = Lident fname; loc}, default_val))
+          fields
+      in
+      Ast_builder.Default.pexp_record ~loc field_defaults None
+  | TVariant (_name, constrs) -> (
+      (* Use the first nullary constructor, or first constructor with default args *)
+      match List.find_opt (fun (_, arg) -> Option.is_none arg) constrs with
+      | Some (cname, None) ->
+          Ast_builder.Default.pexp_construct ~loc {txt = Lident cname; loc} None
+      | _ -> (
+          (* If no nullary constructor, use first constructor with default value for its argument *)
+          match constrs with
+          | (cname, Some arg_ty) :: _ ->
+              let arg_default = default_value_for_type ~loc arg_ty in
+              Ast_builder.Default.pexp_construct
+                ~loc
+                {txt = Lident cname; loc}
+                (Some arg_default)
+          | _ ->
+              (* No constructors? This shouldn't happen, but provide a failsafe *)
+              [%expr failwith "Cannot create default value for empty variant"]))
+  | TReg (Custom _name) ->
+      (* For unknown custom types registered via [@sarek.type], we can't generate
+         a default without knowing the type structure. This should be rare since
+         most custom types are TRecord or TVariant. *)
+      [%expr failwith "Cannot create default value for custom type"]
+  | _ -> [%expr failwith "Cannot create default value for this type"]
+
 (** {1 Type Mapping} *)
 
 (** Generate a core type from a Sarek type (for type annotations).
@@ -798,16 +844,7 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
   (* Create local array - use regular OCaml arrays for native mode *)
   | TECreateArray (size, elem_ty, _memspace) ->
       let size_e = gen_expr ~loc size in
-      (* Generate default value based on element type *)
-      let default_e =
-        match repr elem_ty with
-        | TReg Float32 | TReg Float64 -> [%expr 0.0]
-        | TPrim TInt32 | TReg Int -> [%expr 0l]
-        | TReg Int64 -> [%expr 0L]
-        | TReg Char -> [%expr '\000']
-        | _ -> [%expr Obj.magic 0]
-        (* Fallback for custom types *)
-      in
+      let default_e = default_value_for_type ~loc elem_ty in
       [%expr Array.make [%e size_e] [%e default_e]]
   (* Global ref - reference to external value *)
   | TEGlobalRef (name, _typ) ->
@@ -886,13 +923,14 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
                 [%e size_e]
                 '\000']
         | _ ->
-            (* Fallback for custom types - uses Obj.magic *)
+            (* For custom types, generate proper default value *)
+            let default_val = default_value_for_type ~loc elem_ty in
             [%expr
               Sarek.Sarek_cpu_runtime.alloc_shared
                 [%e shared]
                 [%e name_e]
                 [%e size_e]
-                (Obj.magic 0)]
+                [%e default_val]]
       in
       [%expr
         let [%p pat] = [%e alloc_expr] in
@@ -1285,7 +1323,7 @@ let gen_mode_of_exec_strategy = function
     For vectors: extract NA_Vec and create an accessor wrapper. For scalars:
     match on NA_Int32/NA_Float32/etc and extract the value.
 
-    Uses typed native_arg instead of Obj.t. *)
+    Uses typed native_arg for type safety. *)
 let gen_arg_cast ~loc (param : tparam) (idx : int) : expression =
   let arr_access =
     [%expr Array.get __args [%e Ast_builder.Default.eint ~loc idx]]
