@@ -11,18 +11,16 @@
 
 open Spoc_framework
 
-(** Grid/block dimensions *)
-type dims = {x : int; y : int; z : int}
+(** Re-export framework dims helpers to avoid duplicate types *)
+type dims = Framework_sig.dims = {x : int; y : int; z : int}
 
-let dims1d x = {x; y = 1; z = 1}
+let dims1d = Framework_sig.dims_1d
 
-let dims2d x y = {x; y; z = 1}
+let dims2d = Framework_sig.dims_2d
 
-let dims3d x y z = {x; y; z}
+let dims3d = Framework_sig.dims_3d
 
-(** Convert to framework dims *)
-let to_framework_dims d : Framework_sig.dims =
-  {Framework_sig.x = d.x; y = d.y; z = d.z}
+let to_framework_dims (d : dims) = d
 
 (** Initialize the runtime and get the best available device *)
 let init_device ?framework () =
