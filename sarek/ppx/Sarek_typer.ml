@@ -411,6 +411,39 @@ let infer_data_structure ~infer ~infer_record_fields ~infer_list (env : t)
           env )
   | _ -> failwith "infer_data_structure: not a data structure expression"
 
+(** Infer type of special expressions (global ref, native, pragma, typed, open)
+*)
+let infer_special ~infer (env : t) (loc : Sarek_ast.loc) (expr : expr_desc) :
+    (texpr * t) result =
+  match expr with
+  | EGlobalRef name ->
+      (* Type will be inferred from context or annotated *)
+      let ty = fresh_tvar () in
+      Ok (mk_texpr (TEGlobalRef (name, ty)) ty loc, env)
+  | ENative {gpu; ocaml} ->
+      let ty = fresh_tvar () in
+      Ok (mk_texpr (TENative {gpu; ocaml}) ty loc, env)
+  | EPragma (opts, body) ->
+      Sarek_debug.log "EPragma opts=%s" (String.concat "," opts) ;
+      let* tbody, env = infer env body in
+      Sarek_debug.log "EPragma done" ;
+      Ok (mk_texpr (TEPragma (opts, tbody)) tbody.ty loc, env)
+  | ETyped (e, ty_expr) ->
+      let* te, env = infer env e in
+      let ty = type_of_type_expr_env env ty_expr in
+      let* () = unify_or_error te.ty ty loc in
+      Ok ({te with ty = repr ty}, env)
+  | EOpen (path, e) ->
+      (* Bring module's bindings into scope for the inner expression only.
+         We discard the modified environment to prevent the open from leaking
+         to sibling expressions in sequences.
+         We preserve the TEOpen in the typed AST so native code gen can
+         generate `let open M in ...` *)
+      let env' = Sarek_env.open_module path env in
+      let* te, _env_inner = infer env' e in
+      Ok ({te = TEOpen (path, te); ty = te.ty; te_loc = loc}, env)
+  | _ -> failwith "infer_special: not a special expression"
+
 (** Main type inference function *)
 let rec infer (env : t) (expr : expr) : (texpr * t) result =
   let loc = expr.expr_loc in
@@ -577,38 +610,9 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
         env
         loc
         expr.e
-  (* Global reference *)
-  | EGlobalRef name ->
-      (* Type will be inferred from context or annotated *)
-      let ty = fresh_tvar () in
-      Ok (mk_texpr (TEGlobalRef (name, ty)) ty loc, env)
-  (* Native code with GPU and OCaml fallback *)
-  | ENative {gpu; ocaml} ->
-      let ty = fresh_tvar () in
-      Ok (mk_texpr (TENative {gpu; ocaml}) ty loc, env)
-  (* Pragma *)
-  | EPragma (opts, body) ->
-      Sarek_debug.log "EPragma opts=%s" (String.concat "," opts) ;
-      let* tbody, env = infer env body in
-      Sarek_debug.log "EPragma done" ;
-      Ok (mk_texpr (TEPragma (opts, tbody)) tbody.ty loc, env)
-  (* Type annotation *)
-  | ETyped (e, ty_expr) ->
-      let* te, env = infer env e in
-      let ty = type_of_type_expr_env env ty_expr in
-      let* () = unify_or_error te.ty ty loc in
-      Ok ({te with ty = repr ty}, env)
-  (* Module open: let open M in e *)
-  | EOpen (path, e) ->
-      (* Bring module's bindings into scope for the inner expression only.
-         We discard the modified environment to prevent the open from leaking
-         to sibling expressions in sequences.
-         We preserve the TEOpen in the typed AST so native code gen can
-         generate `let open M in ...` *)
-      let env' = Sarek_env.open_module path env in
-      let* te, _env_inner = infer env' e in
-      Ok ({te = TEOpen (path, te); ty = te.ty; te_loc = loc}, env)
-  (* Return original env, not the one with opened module *)
+  (* Special expressions *)
+  | EGlobalRef _ | ENative _ | EPragma _ | ETyped _ | EOpen _ ->
+      infer_special ~infer env loc expr.e
   (* BSP constructs: let%shared and let%superstep *)
   | ELetShared (name, elem_ty, size_opt, body) ->
       (* Type the optional size expression *)
