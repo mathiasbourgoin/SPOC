@@ -19,6 +19,7 @@
   Runtime
   Vector_types
   Vector_transfer
+  Vector_storage
   Vector
   Transfer
   Profiling

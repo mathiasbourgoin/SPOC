@@ -17,96 +17,16 @@
 
 include Vector_types
 
-(** Global vector ID counter *)
-let next_id = ref 0
+(* Creation helpers are factored into Vector_storage *)
+let create_scalar = Vector_storage.create_scalar
 
-(** {1 Creation - Scalar Types} *)
+let create = Vector_storage.create
 
-(** Create a new scalar vector on CPU *)
-let create_scalar (sk : ('a, 'b) scalar_kind) ?(dev : Device.t option)
-    (length : int) : ('a, 'b) t =
-  incr next_id ;
-  let ba_kind = to_bigarray_kind sk in
-  let ba = Bigarray.Array1.create ba_kind Bigarray.c_layout length in
-  let vec =
-    {
-      host = Bigarray_storage ba;
-      device_buffers = Hashtbl.create 4;
-      length;
-      kind = Scalar sk;
-      location = CPU;
-      auto_sync = true;
-      id = !next_id;
-    }
-  in
-  (match dev with Some d -> vec.location <- Stale_GPU d | None -> ()) ;
-  vec
+let create_custom = Vector_storage.create_custom
 
-(** Create from scalar kind (convenience wrapper) *)
-let create : type a b. (a, b) kind -> ?dev:Device.t -> int -> (a, b) t =
- fun kind ?dev length ->
-  match kind with
-  | Scalar sk -> create_scalar sk ?dev length
-  | Custom c -> (
-      incr next_id ;
-      let byte_size = length * c.elem_size in
-      let ptr = Ctypes.(allocate_n (array 1 char) ~count:byte_size) in
-      let ptr =
-        Ctypes.coerce Ctypes.(ptr (array 1 char)) Ctypes.(ptr void) ptr
-      in
-      let vec =
-        {
-          host = Custom_storage {ptr; custom = c; length};
-          device_buffers = Hashtbl.create 4;
-          length;
-          kind = Custom c;
-          location = CPU;
-          auto_sync = true;
-          id = !next_id;
-        }
-      in
-      match dev with
-      | Some d ->
-          vec.location <- Stale_GPU d ;
-          vec
-      | None -> vec)
+let of_bigarray = Vector_storage.of_bigarray
 
-(** {1 Creation - Custom Types} *)
-
-(** Create a custom vector with explicit type descriptor *)
-let create_custom (c : 'a custom_type) ?(dev : Device.t option) (length : int) :
-    ('a, unit) t =
-  create (Custom c) ?dev length
-
-(** {1 Creation from Existing Data} *)
-
-(** Create from existing Bigarray (shares memory) *)
-let of_bigarray (sk : ('a, 'b) scalar_kind)
-    (ba : ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t) : ('a, 'b) t =
-  incr next_id ;
-  {
-    host = Bigarray_storage ba;
-    device_buffers = Hashtbl.create 4;
-    length = Bigarray.Array1.dim ba;
-    kind = Scalar sk;
-    location = CPU;
-    auto_sync = true;
-    id = !next_id;
-  }
-
-(** Create from existing ctypes pointer (shares memory) *)
-let of_ctypes_ptr (c : 'a custom_type) (ptr : unit Ctypes.ptr) (length : int) :
-    ('a, unit) t =
-  incr next_id ;
-  {
-    host = Custom_storage {ptr; custom = c; length};
-    device_buffers = Hashtbl.create 4;
-    length;
-    kind = Custom c;
-    location = CPU;
-    auto_sync = true;
-    id = !next_id;
-  }
+let of_ctypes_ptr = Vector_storage.of_ctypes_ptr
 
 (** {1 Accessors} *)
 
@@ -248,12 +168,10 @@ let needs_cpu_update (vec : ('a, 'b) t) : bool =
 (** {1 Device Buffer Management} *)
 
 (** Check if vector has buffer on specific device *)
-let has_buffer (vec : ('a, 'b) t) (dev : Device.t) : bool =
-  Hashtbl.mem vec.device_buffers dev.id
+let has_buffer = Vector_storage.has_buffer
 
 (** Get device buffer if allocated *)
-let get_buffer (vec : ('a, 'b) t) (dev : Device.t) : device_buffer option =
-  Hashtbl.find_opt vec.device_buffers dev.id
+let get_buffer = Vector_storage.get_buffer
 
 (** {1 Pretty Printing} *)
 
@@ -323,7 +241,7 @@ let init : type a b. (a, b) kind -> int -> (int -> a) -> (a, b) t =
 let copy : type a b. (a, b) t -> (a, b) t =
  fun vec ->
   ensure_cpu_sync vec ;
-  incr next_id ;
+  incr Vector_storage.next_id ;
   let host =
     match vec.host with
     | Bigarray_storage ba ->
@@ -354,7 +272,7 @@ let copy : type a b. (a, b) t -> (a, b) t =
     kind = vec.kind;
     location = CPU;
     auto_sync = vec.auto_sync;
-    id = !next_id;
+    id = !Vector_storage.next_id;
   }
 
 (** {1 Subvector Support} *)
@@ -393,7 +311,7 @@ let sub_vector (type a b) (vec : (a, b) t) ~(start : int) ~(len : int)
          start
          (start + len)
          vec.length) ;
-  incr next_id ;
+  incr Vector_storage.next_id ;
   let parent_depth =
     match get_sub_meta vec with Some meta -> meta.depth | None -> 0
   in
@@ -421,7 +339,7 @@ let sub_vector (type a b) (vec : (a, b) t) ~(start : int) ~(len : int)
       location = CPU;
       (* Subvector starts on CPU *)
       auto_sync = vec.auto_sync;
-      id = !next_id;
+      id = !Vector_storage.next_id;
     }
   in
   (* Record subvector relationship *)
@@ -656,12 +574,7 @@ let to_list : type a b. (a, b) t -> a list =
   fold_right (fun x acc -> x :: acc) vec [] (* fold_right already syncs *)
 
 (** Create from OCaml list *)
-let of_list : type a b. (a, b) kind -> a list -> (a, b) t =
- fun kind lst ->
-  let len = List.length lst in
-  let vec = create kind len in
-  List.iteri (fun i v -> unsafe_set vec i v) lst ;
-  vec
+let of_list = Vector_storage.of_list
 
 (** Convert to OCaml array *)
 let to_array : type a b. (a, b) t -> a array =
@@ -677,11 +590,7 @@ let to_array : type a b. (a, b) t -> a array =
   end
 
 (** Create from OCaml array *)
-let of_array : type a b. (a, b) kind -> a array -> (a, b) t =
- fun kind arr ->
-  let vec = create kind (Array.length arr) in
-  Array.iteri (fun i v -> unsafe_set vec i v) arr ;
-  vec
+let of_array = Vector_storage.of_array
 
 (** {2 Blitting} *)
 
