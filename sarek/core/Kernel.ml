@@ -46,14 +46,15 @@ let create_args (device : Device.t) : args =
       let a = B.Kernel.create_args () in
       {device; handle = Obj.repr a}
 
-(** Set buffer argument *)
+(** Set buffer argument. Uses Memory's bind_to_kargs which handles backend
+    dispatch internally. *)
 let set_arg_buffer (args : args) (idx : int) (buf : _ Memory.buffer) : unit =
   match Framework_registry.find_backend args.device.framework with
   | None -> ()
   | Some (module B : Framework_sig.BACKEND) ->
       let a : B.Kernel.args = Obj.obj args.handle in
-      let b : _ B.Memory.buffer = Obj.obj buf.Memory.handle in
-      B.Kernel.set_arg_buffer a idx b
+      let kargs = B.wrap_kargs a in
+      Memory.bind_to_kargs buf kargs idx
 
 (** Set int32 argument *)
 let set_arg_int32 (args : args) (idx : int) (v : int32) : unit =

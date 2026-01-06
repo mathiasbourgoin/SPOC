@@ -82,10 +82,9 @@ let bind_args (type kargs)
     (fun i arg ->
       match arg with
       | ArgBuffer obj ->
-          (* obj is Obj.repr of Memory.buffer, extract the backend handle *)
+          (* obj is Obj.repr of Memory.buffer - use bind_to_kargs *)
           let buf : _ Memory.buffer = Obj.obj obj in
-          let backend_buf : _ B.Memory.buffer = Obj.obj buf.Memory.handle in
-          B.Kernel.set_arg_buffer kargs i backend_buf
+          Memory.bind_to_kargs buf (B.wrap_kargs kargs) i
       | ArgInt32 n -> B.Kernel.set_arg_int32 kargs i n
       | ArgInt64 n -> B.Kernel.set_arg_int64 kargs i n
       | ArgFloat32 f -> B.Kernel.set_arg_float32 kargs i f
@@ -93,8 +92,7 @@ let bind_args (type kargs)
       | ArgCustom (obj, _elem_size) ->
           (* Same as ArgBuffer - custom types use same buffer mechanism *)
           let buf : _ Memory.buffer = Obj.obj obj in
-          let backend_buf : _ B.Memory.buffer = Obj.obj buf.Memory.handle in
-          B.Kernel.set_arg_buffer kargs i backend_buf
+          Memory.bind_to_kargs buf (B.wrap_kargs kargs) i
       | ArgRaw _obj ->
           (* Raw args not handled in JIT path - use expand_vector_args *)
           failwith "bind_args: ArgRaw not supported, use expand_vector_args"
