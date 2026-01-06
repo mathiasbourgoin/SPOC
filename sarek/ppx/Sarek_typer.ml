@@ -444,6 +444,130 @@ let infer_special ~infer (env : t) (loc : Sarek_ast.loc) (expr : expr_desc) :
       Ok ({te = TEOpen (path, te); ty = te.ty; te_loc = loc}, env)
   | _ -> failwith "infer_special: not a special expression"
 
+(** Infer type of let bindings (assign, let, let mut, let rec) *)
+let infer_let_binding ~infer (env : t) (loc : Sarek_ast.loc) (expr : expr_desc)
+    : (texpr * t) result =
+  match expr with
+  | EAssign (name, value) -> (
+      let* tv, env = infer env value in
+      match find_var name env with
+      | None -> Error [Unbound_variable (name, loc)]
+      | Some vi ->
+          if (not vi.vi_mutable) || vi.vi_is_param then
+            Error [Immutable_variable (name, loc)]
+          else
+            let* () = unify_or_error tv.ty vi.vi_type value.expr_loc in
+            Ok (mk_texpr (TEAssign (name, vi.vi_index, tv)) t_unit loc, env))
+  | ELet (name, ty_annot, value, body) ->
+      let env' = enter_level env in
+      let* tv, env' = infer env' value in
+      let* () =
+        match ty_annot with
+        | None -> Ok ()
+        | Some te ->
+            let t = type_of_type_expr_env env te in
+            unify_or_error tv.ty t value.expr_loc
+      in
+      let var_id = fresh_var_id () in
+      let vi =
+        {
+          vi_type = tv.ty;
+          vi_mutable = false;
+          vi_is_param = false;
+          vi_index = var_id;
+          vi_is_vec = false;
+        }
+      in
+      let env'' = add_var name vi (exit_level env') in
+      let* tb, env'' = infer env'' body in
+      Ok (mk_texpr (TELet (name, var_id, tv, tb)) tb.ty loc, env'')
+  | ELetMut (name, ty_annot, value, body) ->
+      let* tv, env = infer env value in
+      let* () =
+        match ty_annot with
+        | None -> Ok ()
+        | Some te ->
+            let t = type_of_type_expr_env env te in
+            unify_or_error tv.ty t value.expr_loc
+      in
+      let var_id = fresh_var_id () in
+      let vi =
+        {
+          vi_type = tv.ty;
+          vi_mutable = true;
+          vi_is_param = false;
+          vi_index = var_id;
+          vi_is_vec = false;
+        }
+      in
+      let env' = add_var name vi env in
+      let* tb, env' = infer env' body in
+      Ok (mk_texpr (TELetMut (name, var_id, tv, tb)) tb.ty loc, env')
+  | ELetRec (name, params, ret_ty_opt, fn_body, cont) ->
+      Sarek_debug.log "ELetRec '%s'" name ;
+      (* Enter a level for the function's type variables *)
+      let env_inner = enter_level env in
+      (* Type parameters using shared type variable context at inner level *)
+      let tvar_ctx = fresh_tvar_ctx ~level:env_inner.current_level () in
+      let param_tys =
+        List.map
+          (fun p -> type_of_type_expr_ctx env tvar_ctx p.param_type)
+          params
+      in
+      let fn_id = fresh_var_id () in
+      (* Create function type and add to environment for recursive calls *)
+      let ret_ty =
+        match ret_ty_opt with
+        | Some ty -> type_of_type_expr_ctx env tvar_ctx ty
+        | None -> fresh_tvar ~level:env_inner.current_level ()
+      in
+      let fn_ty = TFun (param_tys, ret_ty) in
+      let env_with_fn = add_local_fun name (mono fn_ty) env_inner in
+      (* Add parameters to environment *)
+      let tparams, env_with_params =
+        List.fold_left2
+          (fun (acc, env) p param_ty ->
+            let pid = fresh_var_id () in
+            let tparam =
+              {
+                tparam_name = p.param_name;
+                tparam_type = param_ty;
+                tparam_index = List.length acc;
+                tparam_is_vec = false;
+                tparam_id = pid;
+              }
+            in
+            let param_vi =
+              {
+                vi_type = param_ty;
+                vi_mutable = false;
+                vi_is_param = false;
+                vi_index = 0;
+                vi_is_vec = false;
+              }
+            in
+            (tparam :: acc, add_var p.param_name param_vi env))
+          ([], env_with_fn)
+          params
+          param_tys
+      in
+      let tparams = List.rev tparams in
+      (* Type the function body *)
+      let* tfn_body, _ = infer env_with_params fn_body in
+      let* () = unify_or_error ret_ty tfn_body.ty fn_body.expr_loc in
+      (* Generalize function type for use in continuation *)
+      let fn_scheme = generalize env.current_level fn_ty in
+      let env_for_cont = add_local_fun name fn_scheme env in
+      (* Type the continuation with the function in scope *)
+      let* tcont, env = infer env_for_cont cont in
+      Ok
+        ( mk_texpr
+            (TELetRec (name, fn_id, tparams, tfn_body, tcont))
+            tcont.ty
+            loc,
+          env )
+  | _ -> failwith "infer_let_binding: not a let binding expression"
+
 (** Main type inference function *)
 let rec infer (env : t) (expr : expr) : (texpr * t) result =
   let loc = expr.expr_loc in
@@ -535,64 +659,9 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
           let expected_fn_ty = TFun (List.map (fun t -> t.ty) targs, ret_ty) in
           let* () = unify_or_error tfn.ty expected_fn_ty fn.expr_loc in
           Ok (mk_texpr (TEApp (tfn, targs)) (repr ret_ty) loc, env))
-  (* Mutable assignment *)
-  | EAssign (name, value) -> (
-      let* tv, env = infer env value in
-      match find_var name env with
-      | None -> Error [Unbound_variable (name, loc)]
-      | Some vi ->
-          if (not vi.vi_mutable) || vi.vi_is_param then
-            Error [Immutable_variable (name, loc)]
-          else
-            let* () = unify_or_error tv.ty vi.vi_type value.expr_loc in
-            Ok (mk_texpr (TEAssign (name, vi.vi_index, tv)) t_unit loc, env))
-  (* Let binding *)
-  | ELet (name, ty_annot, value, body) ->
-      let env' = enter_level env in
-      let* tv, env' = infer env' value in
-      let* () =
-        match ty_annot with
-        | None -> Ok ()
-        | Some te ->
-            let t = type_of_type_expr_env env te in
-            unify_or_error tv.ty t value.expr_loc
-      in
-      let var_id = fresh_var_id () in
-      let vi =
-        {
-          vi_type = tv.ty;
-          vi_mutable = false;
-          vi_is_param = false;
-          vi_index = var_id;
-          vi_is_vec = false;
-        }
-      in
-      let env'' = add_var name vi (exit_level env') in
-      let* tb, env'' = infer env'' body in
-      Ok (mk_texpr (TELet (name, var_id, tv, tb)) tb.ty loc, env'')
-  (* Mutable let binding *)
-  | ELetMut (name, ty_annot, value, body) ->
-      let* tv, env = infer env value in
-      let* () =
-        match ty_annot with
-        | None -> Ok ()
-        | Some te ->
-            let t = type_of_type_expr_env env te in
-            unify_or_error tv.ty t value.expr_loc
-      in
-      let var_id = fresh_var_id () in
-      let vi =
-        {
-          vi_type = tv.ty;
-          vi_mutable = true;
-          vi_is_param = false;
-          vi_index = var_id;
-          vi_is_vec = false;
-        }
-      in
-      let env' = add_var name vi env in
-      let* tb, env' = infer env' body in
-      Ok (mk_texpr (TELetMut (name, var_id, tv, tb)) tb.ty loc, env')
+  (* Let bindings *)
+  | EAssign _ | ELet _ | ELetMut _ | ELetRec _ ->
+      infer_let_binding ~infer env loc expr.e
   (* Control flow *)
   | EIf _ | EFor _ | EWhile _ | ESeq _ ->
       infer_control_flow ~infer env loc expr.e
@@ -654,69 +723,6 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
       Ok
         ( mk_texpr
             (TESuperstep (name, divergent, tstep_body, tcont))
-            tcont.ty
-            loc,
-          env )
-  | ELetRec (name, params, ret_ty_opt, fn_body, cont) ->
-      Sarek_debug.log "ELetRec '%s'" name ;
-      (* Enter a level for the function's type variables *)
-      let env_inner = enter_level env in
-      (* Type parameters using shared type variable context at inner level *)
-      let tvar_ctx = fresh_tvar_ctx ~level:env_inner.current_level () in
-      let param_tys =
-        List.map
-          (fun p -> type_of_type_expr_ctx env tvar_ctx p.param_type)
-          params
-      in
-      let fn_id = fresh_var_id () in
-      (* Create function type and add to environment for recursive calls *)
-      let ret_ty =
-        match ret_ty_opt with
-        | Some ty -> type_of_type_expr_ctx env tvar_ctx ty
-        | None -> fresh_tvar ~level:env_inner.current_level ()
-      in
-      let fn_ty = TFun (param_tys, ret_ty) in
-      let env_with_fn = add_local_fun name (mono fn_ty) env_inner in
-      (* Add parameters to environment *)
-      let tparams, env_with_params =
-        List.fold_left2
-          (fun (acc, env) p param_ty ->
-            let pid = fresh_var_id () in
-            let tparam =
-              {
-                tparam_name = p.param_name;
-                tparam_type = param_ty;
-                tparam_index = List.length acc;
-                tparam_is_vec = false;
-                tparam_id = pid;
-              }
-            in
-            let param_vi =
-              {
-                vi_type = param_ty;
-                vi_mutable = false;
-                vi_is_param = false;
-                vi_index = 0;
-                vi_is_vec = false;
-              }
-            in
-            (tparam :: acc, add_var p.param_name param_vi env))
-          ([], env_with_fn)
-          params
-          param_tys
-      in
-      let tparams = List.rev tparams in
-      (* Type the function body *)
-      let* tfn_body, _ = infer env_with_params fn_body in
-      let* () = unify_or_error ret_ty tfn_body.ty fn_body.expr_loc in
-      (* Generalize function type for use in continuation *)
-      let fn_scheme = generalize env.current_level fn_ty in
-      let env_for_cont = add_local_fun name fn_scheme env in
-      (* Type the continuation with the function in scope *)
-      let* tcont, env = infer env_for_cont cont in
-      Ok
-        ( mk_texpr
-            (TELetRec (name, fn_id, tparams, tfn_body, tcont))
             tcont.ty
             loc,
           env )
