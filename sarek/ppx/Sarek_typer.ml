@@ -197,7 +197,7 @@ let infer_literal (loc : Sarek_ast.loc) (expr : expr_desc) : texpr result =
   | EInt64 i -> Ok (mk_texpr (TEInt64 i) t_int64 loc)
   | EFloat f -> Ok (mk_texpr (TEFloat f) t_float32 loc)
   | EDouble f -> Ok (mk_texpr (TEDouble f) t_float64 loc)
-  | _ -> failwith "infer_literal: not a literal expression"
+  | _ -> assert false (* infer_literal: called with non-literal expression *)
 
 (** Infer type of binary and unary operations (arithmetic, logical, bitwise). *)
 let infer_binop_unop ~infer (env : t) (loc : Sarek_ast.loc) (expr : expr_desc) :
@@ -212,7 +212,8 @@ let infer_binop_unop ~infer (env : t) (loc : Sarek_ast.loc) (expr : expr_desc) :
       let* te, env = infer env e in
       let* result_ty = infer_unop op te.ty loc in
       Ok (mk_texpr (TEUnop (op, te)) result_ty loc, env)
-  | _ -> failwith "infer_binop_unop: not a binop/unop expression"
+  | _ ->
+      assert false (* infer_binop_unop: called with non-binop/unop expression *)
 
 (** Infer type of memory access operations (vectors, arrays, record fields).
     Handles field resolution for both known and external record types. *)
@@ -322,7 +323,8 @@ let infer_memory_access ~infer (env : t) (loc : Sarek_ast.loc)
           (* External record type - defer to runtime (ppx_deriving pattern) *)
           Ok (mk_texpr (TEFieldSet (tr, field, 0, tx)) t_unit loc, env)
       | t -> Error [Not_a_record (t, loc)])
-  | _ -> failwith "infer_memory_access: not a memory access expression"
+  | _ -> assert false
+(* infer_memory_access: called with non-memory-access expression *)
 
 (** Infer type of control flow expressions (if, for, while, sequence). Ensures
     loop bounds are int32 and conditions are boolean. *)
@@ -368,7 +370,9 @@ let infer_control_flow ~infer (env : t) (loc : Sarek_ast.loc) (expr : expr_desc)
       let* t1, env = infer env e1 in
       let* t2, env = infer env e2 in
       Ok (mk_texpr (TESeq [t1; t2]) t2.ty loc, env)
-  | _ -> failwith "infer_control_flow: not a control flow expression"
+  | _ ->
+      assert
+        false (* infer_control_flow: called with non-control-flow expression *)
 
 (** Infer type of data structures (records, variants, tuples, arrays). Uses
     mutual recursion helpers for complex nested structures. *)
@@ -463,7 +467,8 @@ let infer_data_structure ~infer ~infer_record_fields ~infer_list (env : t)
             arr_ty
             loc,
           env )
-  | _ -> failwith "infer_data_structure: not a data structure expression"
+  | _ -> assert false
+(* infer_data_structure: called with non-data-structure expression *)
 
 (** Infer type of special expressions (global refs, native blocks, pragmas, type
     annotations, open). These handle meta-level constructs and environment
@@ -497,7 +502,7 @@ let infer_special ~infer (env : t) (loc : Sarek_ast.loc) (expr : expr_desc) :
       let env' = Sarek_env.open_module path env in
       let* te, _env_inner = infer env' e in
       Ok ({te = TEOpen (path, te); ty = te.ty; te_loc = loc}, env)
-  | _ -> failwith "infer_special: not a special expression"
+  | _ -> assert false (* infer_special: called with non-special expression *)
 
 (** Infer type of let bindings (assign, let, let mut, let rec). Handles
     mutability constraints and recursive binding generalization. *)
@@ -622,7 +627,9 @@ let infer_let_binding ~infer (env : t) (loc : Sarek_ast.loc) (expr : expr_desc)
             tcont.ty
             loc,
           env )
-  | _ -> failwith "infer_let_binding: not a let binding expression"
+  | _ ->
+      assert
+        false (* infer_let_binding: called with non-let-binding expression *)
 
 (** Main type inference function *)
 let rec infer (env : t) (expr : expr) : (texpr * t) result =
