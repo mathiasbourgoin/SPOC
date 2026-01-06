@@ -25,8 +25,8 @@ test_e2e_gpu:
 	dune build \
 		sarek/tests/e2e/test_nbody_ppx.exe \
 		sarek/tests/e2e/test_ray_ppx.exe
-	dune exec sarek/tests/e2e/test_nbody_ppx.exe -- --device 0
-	dune exec sarek/tests/e2e/test_ray_ppx.exe -- --device 0
+	dune exec sarek/tests/e2e/test_nbody_ppx.exe -- -d 0
+	dune exec sarek/tests/e2e/test_ray_ppx.exe -- -d 0
 
 # Force rebuild/re-run of PPX tests even if previously built
 test-force:
@@ -258,27 +258,27 @@ test-tier1:
 
 test-tier2:
 	@echo "=============================================="
-	@echo "  TIER 2: Medium Complexity (Vulkan)"
+	@echo "  TIER 2: Medium Complexity (Metal)"
 	@echo "=============================================="
 	@dune build $(addprefix sarek/tests/e2e/,$(addsuffix .exe,$(TIER2_TESTS)))
 	@echo ""
 	@echo "--- test_matrix_mul ---"
-	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_matrix_mul.exe -- --vulkan -s 256
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_matrix_mul.exe -- --metal -s 256
 	@echo ""
 	@echo "--- test_stencil ---"
-	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_stencil.exe -- --vulkan -s 1024
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_stencil.exe -- --metal -s 1024
 	@echo ""
 	@echo "--- test_convolution ---"
-	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_convolution.exe -- --vulkan -s 1024
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_convolution.exe -- --metal -s 1024
 	@echo ""
 	@echo "--- test_reduce ---"
-	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_reduce.exe -- --vulkan -s 2048
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_reduce.exe -- --metal -s 2048
 	@echo ""
 	@echo "--- test_scan ---"
-	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_scan.exe -- --vulkan -s 256
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_scan.exe -- --metal -s 256
 	@echo ""
 	@echo "--- test_sort ---"
-	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_sort.exe -- --vulkan -s 256
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_sort.exe -- --metal -s 256
 	@echo ""
 	@echo "=== Tier 2 PASSED ==="
 
@@ -305,10 +305,10 @@ test-tier4:
 	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_mandelbrot.exe -- -s 1024
 	@echo ""
 	@echo "--- test_nbody_ppx ---"
-	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_nbody_ppx.exe -- --device 0
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_nbody_ppx.exe -- -d 0
 	@echo ""
 	@echo "--- test_ray_ppx ---"
-	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_ray_ppx.exe -- --device 0
+	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_ray_ppx.exe -- -d 0
 	@echo ""
 	@echo "--- test_polymorphism ---"
 	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_polymorphism.exe

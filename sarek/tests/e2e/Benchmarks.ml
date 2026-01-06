@@ -5,6 +5,7 @@ type config = {
   mutable use_interpreter : bool;
   mutable use_native : bool;
   mutable use_vulkan : bool;
+  mutable use_metal : bool;
   mutable benchmark_all : bool;
   mutable size : int;
   mutable block_size : int;
@@ -17,6 +18,7 @@ let config =
     use_interpreter = false;
     use_native = false;
     use_vulkan = false;
+    use_metal = false;
     benchmark_all = false;
     size = 1024;
     block_size = 256;
@@ -40,6 +42,7 @@ let parse_args () =
         Arg.Unit (fun () -> config.use_native <- true),
         "Use Native CPU" );
       ("--vulkan", Arg.Unit (fun () -> config.use_vulkan <- true), "Use Vulkan");
+      ("--metal", Arg.Unit (fun () -> config.use_metal <- true), "Use Metal");
       ( "--benchmark",
         Arg.Unit (fun () -> config.benchmark_all <- true),
         "Benchmark all devices" );
@@ -77,6 +80,14 @@ let get_target_devices all_devices =
     | Some d -> [|d|]
     | None ->
         Printf.eprintf "Vulkan device not found\n" ;
+        Stdlib.exit 1)
+  else if config.use_metal then (
+    match
+      Array.find_opt (fun d -> d.Device.framework = "Metal") all_devices
+    with
+    | Some d -> [|d|]
+    | None ->
+        Printf.eprintf "Metal device not found\n" ;
         Stdlib.exit 1)
   else if config.dev_id < Array.length all_devices then
     [|all_devices.(config.dev_id)|]

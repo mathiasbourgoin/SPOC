@@ -14,9 +14,21 @@ Device                                   |  Time (ms) |     Status |    Speedup
 -------------------------------------------------------------------------------
 CPU Baseline                             |     0.0062 |       PASS |      1.00x
 Apple M4 (Metal) (Metal)                 |     0.4900 |       PASS |      0.02x
+
+=== Ray Tracing Test (Tier 4) ===
+Size: 1024
+
+Device                                   |  Time (ms) |     Status |    Speedup
+-------------------------------------------------------------------------------
+CPU Baseline                             |     0.0160 |       PASS |      1.00x
+Apple M4 (Metal) (Metal)                 |    47.4200 |       PASS |      0.00x
 ```
 
-**Status:** ✅ Kernel compiles and executes successfully on Metal!
+**Status:** ✅ All tiers (1-4) passing on Metal!
+- Tier 1: Simple Kernels (Vector Add, Bitwise, Math, Transpose)
+- Tier 2: Medium Complexity (Matrix Mul, Stencil, Convolution, Reduce, Scan, Sort)
+- Tier 3: Complex Types (Records, Variants)
+- Tier 4: Advanced (Mandelbrot, NBody, Ray Tracing, Polymorphism)
 
 ## Implementation Summary
 
@@ -90,6 +102,11 @@ The MSL code generator (`Sarek_ir_metal.ml`) was adapted from the OpenCL generat
 - ✅ **Kernel compilation in Metal compiler**
 - ✅ **Kernel execution on GPU**
 - ✅ **Correct results verification**
+
+## Test Suite Updates
+- Updated `test_helpers.ml`, `Benchmarks.ml` to support `--metal` flag
+- Fixed `Makefile` command line arguments for `test_nbody_ppx` and `test_ray_ppx` (switched `--device` to `-d`)
+- Updated `test_bitwise_ops.ml` and `test_math_intrinsics.ml` to use correct backend initialization
 
 ## Performance Notes
 

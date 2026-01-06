@@ -13,6 +13,7 @@ type config = {
   mutable use_interpreter : bool;
   mutable use_native : bool;
   mutable use_vulkan : bool;
+  mutable use_metal : bool;
   mutable benchmark_all : bool;
   mutable benchmark_devices : int list option;
       (** None = all, Some ids = specific *)
@@ -28,6 +29,7 @@ let default_config () =
     use_interpreter = false;
     use_native = false;
     use_vulkan = false;
+    use_metal = false;
     benchmark_all = false;
     benchmark_devices = None;
     verify = true;
@@ -42,6 +44,7 @@ let usage name extra_opts =
   Printf.printf "  --interpreter Use CPU interpreter device\n" ;
   Printf.printf "  --native      Use native CPU runtime device\n" ;
   Printf.printf "  --vulkan      Use Vulkan device\n" ;
+  Printf.printf "  --metal       Use Metal device\n" ;
   Printf.printf "  --benchmark, --benchmark-all  Run on all devices\n" ;
   Printf.printf "  --benchmark-devices <0,1,4>  Run on specific devices\n" ;
   Printf.printf "  -s, --size <size>  Problem size (default: 1024)\n" ;
@@ -64,6 +67,7 @@ let parse_args ?(extra = fun _ _ -> false) ?(extra_usage = fun () -> ()) name =
        | "--interpreter" -> cfg.use_interpreter <- true
        | "--native" -> cfg.use_native <- true
        | "--vulkan" -> cfg.use_vulkan <- true
+       | "--metal" -> cfg.use_metal <- true
        | "--benchmark" | "--benchmark-all" -> cfg.benchmark_all <- true
        | "--benchmark-devices" ->
            incr i ;
@@ -108,6 +112,12 @@ let get_device cfg devs =
     | Some d -> d
     | None ->
         print_endline "No Vulkan device found" ;
+        exit 1)
+  else if cfg.use_metal then (
+    match Array.find_opt (fun d -> d.Device.framework = "Metal") devs with
+    | Some d -> d
+    | None ->
+        print_endline "No Metal device found" ;
         exit 1)
   else if cfg.dev_id >= 0 then devs.(cfg.dev_id)
   else devs.(0)
