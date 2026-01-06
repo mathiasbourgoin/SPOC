@@ -103,7 +103,7 @@ module Device = struct
       name;
       max_threads_per_threadgroup = max_threads;
       max_threadgroup_memory;
-      supports_fp64 = true; (* macOS Metal supports FP64 *)
+      supports_fp64 = false; (* Metal shading language does NOT support double precision *)
       is_cpu = false; (* Metal devices are GPU-like *)
     }
 
