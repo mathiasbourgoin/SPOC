@@ -135,18 +135,26 @@ let infer_unop op t loc =
       let* () = check_integer t loc in
       Ok t
 
+(** Infer type of literal expressions *)
+let infer_literal (loc : Sarek_ast.loc) (expr : expr_desc) : texpr result =
+  match expr with
+  | EUnit -> Ok (mk_texpr TEUnit t_unit loc)
+  | EBool b -> Ok (mk_texpr (TEBool b) t_bool loc)
+  | EInt i -> Ok (mk_texpr (TEInt i) t_int32 loc)
+  | EInt32 i -> Ok (mk_texpr (TEInt32 i) t_int32 loc)
+  | EInt64 i -> Ok (mk_texpr (TEInt64 i) t_int64 loc)
+  | EFloat f -> Ok (mk_texpr (TEFloat f) t_float32 loc)
+  | EDouble f -> Ok (mk_texpr (TEDouble f) t_float64 loc)
+  | _ -> failwith "infer_literal: not a literal expression"
+
 (** Main type inference function *)
 let rec infer (env : t) (expr : expr) : (texpr * t) result =
   let loc = expr.expr_loc in
   match expr.e with
   (* Literals *)
-  | EUnit -> Ok (mk_texpr TEUnit t_unit loc, env)
-  | EBool b -> Ok (mk_texpr (TEBool b) t_bool loc, env)
-  | EInt i -> Ok (mk_texpr (TEInt i) t_int32 loc, env)
-  | EInt32 i -> Ok (mk_texpr (TEInt32 i) t_int32 loc, env)
-  | EInt64 i -> Ok (mk_texpr (TEInt64 i) t_int64 loc, env)
-  | EFloat f -> Ok (mk_texpr (TEFloat f) t_float32 loc, env)
-  | EDouble f -> Ok (mk_texpr (TEDouble f) t_float64 loc, env)
+  | EUnit | EBool _ | EInt _ | EInt32 _ | EInt64 _ | EFloat _ | EDouble _ ->
+      let* te = infer_literal loc expr.e in
+      Ok (te, env)
   (* Variables *)
   | EVar name -> (
       match lookup name env with
