@@ -11,10 +11,11 @@
   test_tailrec_elim
   test_native_helpers
   test_native_intrinsics
+  test_error
   test_scheme
   test_mono)
  ; Link sarek_stdlib to trigger auto-registration of intrinsics
- (libraries sarek_ppx_lib sarek_stdlib alcotest ppxlib)
+ (libraries sarek_ppx_lib sarek_stdlib alcotest ppxlib str)
  (preprocess
   (pps ppxlib.metaquot)))
 
