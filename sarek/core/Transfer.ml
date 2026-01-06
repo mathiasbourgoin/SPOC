@@ -223,15 +223,6 @@ let ensure_buffer (type a b) (vec : (a, b) Vector.t) (dev : Device.t) :
 
 (** {1 Transfer Operations} *)
 
-(** Convert bigarray to raw pointer and byte size *)
-let bigarray_to_ptr (type a b)
-    (ba : (a, b, Bigarray.c_layout) Bigarray.Array1.t) (elem_size : int) :
-    unit Ctypes.ptr * int =
-  let len = Bigarray.Array1.dim ba in
-  let byte_size = len * elem_size in
-  let ptr = Ctypes.bigarray_start Ctypes.array1 ba in
-  (Ctypes.to_voidp ptr, byte_size)
-
 (** Transfer vector data to a device *)
 let to_device (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : unit =
   let loc_str =
@@ -264,7 +255,7 @@ let to_device (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : unit =
         (vec.length * B.elem_size) ;
       (match vec.host with
       | Vector.Bigarray_storage ba ->
-          let ptr, byte_size = bigarray_to_ptr ba B.elem_size in
+          let ptr, byte_size = Vector_transfer.bigarray_to_ptr ba B.elem_size in
           Log.debugf
             Log.Transfer
             "to_device: calling host_ptr_to_device byte_size=%d"
@@ -319,7 +310,9 @@ let to_cpu ?(force = false) (type a b) (vec : (a, b) Vector.t) : unit =
           B.size ;
         (match vec.host with
         | Vector.Bigarray_storage ba ->
-            let ptr, byte_size = bigarray_to_ptr ba B.elem_size in
+            let ptr, byte_size =
+              Vector_transfer.bigarray_to_ptr ba B.elem_size
+            in
             B.device_to_host_ptr ptr ~byte_size
         | Vector.Custom_storage {ptr; custom; length} ->
             B.device_to_host_ptr ptr ~byte_size:(length * custom.elem_size)) ;
