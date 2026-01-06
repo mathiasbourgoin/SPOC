@@ -13,6 +13,7 @@
   test_native_intrinsics
   test_error
   test_quote
+  test_lower_ir
   test_scheme
   test_mono)
  ; Link sarek_stdlib to trigger auto-registration of intrinsics
