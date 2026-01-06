@@ -17,6 +17,8 @@
   Kernel
   Kernel_arg
   Runtime
+  Vector_types
+  Vector_transfer
   Vector
   Transfer
   Profiling
