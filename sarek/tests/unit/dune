@@ -9,11 +9,17 @@
   test_tailrec
   test_tailrec_analysis
   test_tailrec_elim
+  test_tailrec_bounded
+  test_tailrec_pragma
   test_native_helpers
   test_native_intrinsics
   test_error
   test_quote
   test_lower_ir
+  test_reserved
+  test_ppx_registry
+  test_quote_ir
+  test_convergence
   test_scheme
   test_mono)
  ; Link sarek_stdlib to trigger auto-registration of intrinsics
