@@ -424,14 +424,8 @@ let record_maker_name type_name : string = Printf.sprintf "make_%s" type_name
 let variant_ctor_name type_name ctor_name : string =
   Printf.sprintf "make_%s_%s" type_name ctor_name
 
-(** Generate OCaml expression from typed Sarek expression.
-    @param ctx Generation context with mutable vars and inline types *)
-let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
-  let loc = ppxlib_loc_of_sarek te.te_loc in
-  (* Helper to recursively generate, passing ctx *)
-  let gen_expr ~loc e = gen_expr_impl ~loc ~ctx e in
+let gen_literal ~loc (te : texpr) : expression =
   match te.te with
-  (* Literals *)
   | TEUnit -> [%expr ()]
   | TEBool b -> if b then [%expr true] else [%expr false]
   | TEInt n -> (
@@ -452,40 +446,40 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
       [%expr Int64.of_int [%e Ast_builder.Default.eint ~loc (Int64.to_int n)]]
   | TEFloat f | TEDouble f ->
       Ast_builder.Default.efloat ~loc (string_of_float f)
-  (* Variables *)
-  | TEVar (name, id) ->
-      (* Use the original variable name. This works for both:
-         - Local let-bound variables (like "tid")
-         - Module-level functions/constants (like "add_scale")
-         - Mutable variables (need dereferencing with !)
-         - Qualified names (like "Visibility_lib.public_add")
-         OCaml handles shadowing correctly, so using original names is safe. *)
-      let var_e =
-        if String.contains name '.' then
-          (* Qualified name - build a proper Ldot path.
-             For stdlib modules like "Float32.of_float", we need to map
-             to the runtime path. *)
-          let parts = String.split_on_char '.' name in
-          (* Split into module path and function name *)
-          let module_path, func_name =
-            match List.rev parts with
-            | fn :: rest -> (List.rev rest, fn)
-            | [] ->
-                failwith
-                  (Printf.sprintf
-                     "Internal error: String.split_on_char returned empty list \
-                      for '%s'"
-                     name)
-          in
-          (* Map stdlib module paths to runtime locations *)
-          let mapped_path = map_stdlib_path module_path in
-          evar_qualified ~loc mapped_path func_name
-        else evar ~loc name
+  | _ -> failwith "gen_literal: not a literal expression"
+
+(** Generate variable reference (local, module-level, qualified) *)
+let gen_variable ~loc ~ctx (name : string) (id : int) : expression =
+  let var_e =
+    if String.contains name '.' then
+      (* Qualified name - build a proper Ldot path.
+         For stdlib modules like "Float32.of_float", we need to map
+         to the runtime path. *)
+      let parts = String.split_on_char '.' name in
+      (* Split into module path and function name *)
+      let module_path, func_name =
+        match List.rev parts with
+        | fn :: rest -> (List.rev rest, fn)
+        | [] ->
+            failwith
+              (Printf.sprintf
+                 "Internal error: String.split_on_char returned empty list for \
+                  '%s'"
+                 name)
       in
-      if IntSet.mem id ctx.mut_vars then
-        (* Mutable variable - dereference the ref *)
-        [%expr ![%e var_e]]
-      else var_e
+      (* Map stdlib module paths to runtime locations *)
+      let mapped_path = map_stdlib_path module_path in
+      evar_qualified ~loc mapped_path func_name
+    else evar ~loc name
+  in
+  if IntSet.mem id ctx.mut_vars then
+    (* Mutable variable - dereference the ref *)
+    [%expr ![%e var_e]]
+  else var_e
+
+(** Generate memory access operations (vectors, arrays, record fields) *)
+let gen_memory_access ~loc ~ctx ~gen_expr (te : texpr) : expression =
+  match te.te with
   (* Vector/array access - V2 only *)
   | TEVecGet (vec, idx) ->
       let vec_e = gen_expr ~loc vec in
@@ -595,6 +589,87 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
         | _ -> {txt = Lident field_name; loc}
       in
       Ast_builder.Default.pexp_setfield ~loc rec_e field_lid val_e
+  | _ -> failwith "gen_memory_access: not a memory access expression"
+
+(** Generate control flow (if, for, while) *)
+let gen_control_flow ~loc ~gen_expr (te : texpr) : expression =
+  match te.te with
+  | TEIf (cond, then_e, else_e) ->
+      let cond_e = gen_expr ~loc cond in
+      let then_e' = gen_expr ~loc then_e in
+      let else_e' =
+        match else_e with Some e -> gen_expr ~loc e | None -> [%expr ()]
+      in
+      [%expr if [%e cond_e] then [%e then_e'] else [%e else_e']]
+  (* For loop - OCaml for loops use int, but kernel expects int32.
+     We use a temporary int variable for the loop, then shadow it with int32 in body. *)
+  | TEFor (var_name_str, _var_id, lo, hi, dir, body) -> (
+      let lo_e = gen_expr ~loc lo in
+      let hi_e = gen_expr ~loc hi in
+      let body_e = gen_expr ~loc body in
+      (* Use a temporary name for the int loop variable *)
+      let int_var_name = var_name_str ^ "__int" in
+      let int_var_pat =
+        Ast_builder.Default.ppat_var ~loc {txt = int_var_name; loc}
+      in
+      let int_var_e = evar ~loc int_var_name in
+      (* The int32 variable that shadows the int one in the body, using original name *)
+      let int32_var_pat =
+        Ast_builder.Default.ppat_var ~loc {txt = var_name_str; loc}
+      in
+      (* Wrap body with int32 conversion *)
+      let wrapped_body =
+        [%expr
+          let [%p int32_var_pat] = Int32.of_int [%e int_var_e] in
+          [%e body_e]]
+      in
+      match dir with
+      | Sarek_ast.Upto ->
+          (* OCaml for loops are inclusive on both ends, just like Sarek.
+             for i = 0 to k - 1l means iterate from 0 to k-1 inclusive. *)
+          [%expr
+            for
+              [%p int_var_pat] = Int32.to_int [%e lo_e]
+              to Int32.to_int [%e hi_e]
+            do
+              [%e wrapped_body]
+            done]
+      | Sarek_ast.Downto ->
+          [%expr
+            for
+              [%p int_var_pat] = Int32.to_int [%e hi_e]
+              downto Int32.to_int [%e lo_e]
+            do
+              [%e wrapped_body]
+            done])
+  | TEWhile (cond, body) ->
+      let cond_e = gen_expr ~loc cond in
+      let body_e = gen_expr ~loc body in
+      [%expr
+        while [%e cond_e] do
+          [%e body_e]
+        done]
+  | _ -> failwith "gen_control_flow: not a control flow expression"
+
+(** Generate OCaml expression from typed Sarek expression.
+    @param ctx Generation context with mutable vars and inline types *)
+let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
+  let loc = ppxlib_loc_of_sarek te.te_loc in
+  (* Helper to recursively generate, passing ctx *)
+  let gen_expr ~loc e = gen_expr_impl ~loc ~ctx e in
+  match te.te with
+  (* Literals *)
+  | TEUnit | TEBool _ | TEInt _ | TEInt32 _ | TEInt64 _ | TEFloat _ | TEDouble _
+    ->
+      gen_literal ~loc te
+  (* Variables *)
+  | TEVar (name, id) -> gen_variable ~loc ~ctx name id
+  (* Memory access *)
+  | TEVecGet _ | TEVecSet _ | TEArrGet _ | TEArrSet _ | TEFieldGet _
+  | TEFieldSet _ ->
+      gen_memory_access ~loc ~ctx ~gen_expr te
+  (* Control flow *)
+  | TEIf _ | TEFor _ | TEWhile _ -> gen_control_flow ~loc ~gen_expr te
   (* Binary operations *)
   | TEBinop (op, a, b) ->
       let a_e = gen_expr ~loc a in
@@ -652,63 +727,6 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
       [%expr
         let [%p pat] = ref [%e val_e] in
         [%e body_e]]
-  (* Conditionals *)
-  | TEIf (cond, then_e, else_e) ->
-      let cond_e = gen_expr ~loc cond in
-      let then_e' = gen_expr ~loc then_e in
-      let else_e' =
-        match else_e with Some e -> gen_expr ~loc e | None -> [%expr ()]
-      in
-      [%expr if [%e cond_e] then [%e then_e'] else [%e else_e']]
-  (* For loop - OCaml for loops use int, but kernel expects int32.
-     We use a temporary int variable for the loop, then shadow it with int32 in body. *)
-  | TEFor (var_name_str, _var_id, lo, hi, dir, body) -> (
-      let lo_e = gen_expr ~loc lo in
-      let hi_e = gen_expr ~loc hi in
-      let body_e = gen_expr ~loc body in
-      (* Use a temporary name for the int loop variable *)
-      let int_var_name = var_name_str ^ "__int" in
-      let int_var_pat =
-        Ast_builder.Default.ppat_var ~loc {txt = int_var_name; loc}
-      in
-      let int_var_e = evar ~loc int_var_name in
-      (* The int32 variable that shadows the int one in the body, using original name *)
-      let int32_var_pat =
-        Ast_builder.Default.ppat_var ~loc {txt = var_name_str; loc}
-      in
-      (* Wrap body with int32 conversion *)
-      let wrapped_body =
-        [%expr
-          let [%p int32_var_pat] = Int32.of_int [%e int_var_e] in
-          [%e body_e]]
-      in
-      match dir with
-      | Sarek_ast.Upto ->
-          (* OCaml for loops are inclusive on both ends, just like Sarek.
-             for i = 0 to k - 1l means iterate from 0 to k-1 inclusive. *)
-          [%expr
-            for
-              [%p int_var_pat] = Int32.to_int [%e lo_e]
-              to Int32.to_int [%e hi_e]
-            do
-              [%e wrapped_body]
-            done]
-      | Sarek_ast.Downto ->
-          [%expr
-            for
-              [%p int_var_pat] = Int32.to_int [%e hi_e]
-              downto Int32.to_int [%e lo_e]
-            do
-              [%e wrapped_body]
-            done])
-  (* While loop *)
-  | TEWhile (cond, body) ->
-      let cond_e = gen_expr ~loc cond in
-      let body_e = gen_expr ~loc body in
-      [%expr
-        while [%e cond_e] do
-          [%e body_e]
-        done]
   (* Sequence *)
   | TESeq exprs -> (
       let exprs_e = List.map (gen_expr ~loc) exprs in
