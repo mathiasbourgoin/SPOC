@@ -1155,10 +1155,10 @@ let expand_kernel ~ctxt payload =
     Sarek_debug.log_enter "infer_kernel" ;
     match Sarek_typer.infer_kernel env ast with
     | Error errors ->
-        (* Report the first error with location *)
+        (* Report the first error with location - this raises an exception *)
         Sarek_error.report_errors errors ;
-        (* If we get here, generate dummy expression *)
-        [%expr assert false]
+        (* Unreachable: report_errors raises Location.Error *)
+        failwith "Unreachable: report_errors should have raised an exception"
     | Ok tkernel -> (
         Sarek_debug.log_to_file "  step 3: type inference done" ;
         Sarek_debug.log_exit "infer_kernel" ;

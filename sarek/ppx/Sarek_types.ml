@@ -68,7 +68,7 @@ let rec occurs (id : int) (t : typ) : bool =
   match repr t with
   | TVar {contents = Unbound (id', _)} -> id = id'
   | TVar {contents = Link _} ->
-      assert false (* repr should have followed links *)
+      failwith "Internal error: occurs check found Link after repr"
   | TPrim _ -> false
   | TReg _ -> false (* Registered types are concrete *)
   | TVec t -> occurs id t

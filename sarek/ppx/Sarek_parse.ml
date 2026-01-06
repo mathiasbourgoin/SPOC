@@ -393,7 +393,12 @@ and parse_expression (expr : expression) : Sarek_ast.expr =
       when parse_unop op <> None -> (
         match parse_unop op with
         | Some unop -> Sarek_ast.EUnop (unop, parse_expression e)
-        | None -> assert false)
+        | None ->
+            (* Should be unreachable due to when guard, but handle gracefully *)
+            raise
+              (Parse_error_exn
+                 ( "Internal error: unary operator check inconsistency",
+                   expr.pexp_loc )))
     (* Function application *)
     | Pexp_apply (fn, args) ->
         let fn_expr = parse_expression fn in

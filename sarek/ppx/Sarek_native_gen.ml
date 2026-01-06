@@ -470,7 +470,12 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
           let module_path, func_name =
             match List.rev parts with
             | fn :: rest -> (List.rev rest, fn)
-            | [] -> assert false
+            | [] ->
+                failwith
+                  (Printf.sprintf
+                     "Internal error: String.split_on_char returned empty list \
+                      for '%s'"
+                     name)
           in
           (* Map stdlib module paths to runtime locations *)
           let mapped_path = map_stdlib_path module_path in

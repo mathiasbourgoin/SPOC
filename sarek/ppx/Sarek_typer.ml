@@ -796,7 +796,17 @@ and infer_patterns env tys pats =
     | ty :: tys, pat :: pats ->
         let* tpat, env' = infer_pattern env ty pat in
         aux env' (tpat :: acc) (tys, pats)
-    | _ -> assert false
+    | tys, pats ->
+        (* Length mismatch between types and patterns *)
+        Error
+          [
+            Wrong_arity
+              {
+                expected = List.length tys;
+                got = List.length pats;
+                loc = dummy_loc;
+              };
+          ]
   in
   aux env [] (tys, pats)
 

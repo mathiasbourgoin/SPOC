@@ -2,6 +2,9 @@
  (name sarek_ppx_lib)
  (public_name sarek.ppx.lib)
  (libraries ppxlib spoc_core) ; spoc removed - V2 codegen only
+ (flags
+  (:standard -w +8-4))
+ ; Enable exhaustiveness warnings, disable fragile pattern
  (preprocess
   (pps ppxlib.metaquot))
  (modules
