@@ -8,6 +8,7 @@
   test_core_primitives
   test_tailrec
   test_tailrec_analysis
+  test_tailrec_elim
   test_native_helpers
   test_native_intrinsics
   test_scheme
