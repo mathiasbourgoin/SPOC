@@ -12,7 +12,7 @@ open Sarek_typed_ast
 
 let mangle_type_name name = String.map (function '.' -> '_' | c -> c) name
 
-let rec c_type_of_typ ty =
+let rec c_type_of_typ ty : string =
   match repr ty with
   | TPrim TInt32 -> "int"
   | TPrim TBool -> "int"
@@ -57,7 +57,7 @@ let record_constructor_strings name (fields : (string * typ * bool) list) =
      signature. *)
   [struct_def; builder]
 
-let variant_constructor_strings name constrs =
+let variant_constructor_strings name constrs : string list =
   let name = mangle_type_name name in
   let struct_name = name ^ "_sarek" in
   let constr_structs =
@@ -181,7 +181,7 @@ type state = {
   lowered_funs : (string, Kirc_Ast.k_ext * string) Hashtbl.t;
 }
 
-let create_state fun_map =
+let create_state fun_map : state =
   {
     next_var_id = 0;
     declarations = [];
@@ -197,18 +197,18 @@ let fresh_id state =
   id
 
 (** Convert memspace to Kirc_Ast memspace *)
-let lower_memspace = function
+let lower_memspace : memspace -> Kirc_Ast.memspace = function
   | Local -> Kirc_Ast.LocalSpace
   | Shared -> Kirc_Ast.Shared
   | Global -> Kirc_Ast.Global
 
 (** Convert prim_type to Kirc_Ast elttype *)
-let lower_prim_elttype = function
+let lower_prim_elttype : prim_type -> Kirc_Ast.elttype = function
   | TInt32 -> Kirc_Ast.EInt32
   | TUnit | TBool -> Kirc_Ast.EInt32 (* bool as int *)
 
 (** Convert registered type to Kirc_Ast elttype *)
-let lower_reg_elttype = function
+let lower_reg_elttype : registered_type -> Kirc_Ast.elttype = function
   | Int -> Kirc_Ast.EInt32
   | Int64 -> Kirc_Ast.EInt64
   | Float32 -> Kirc_Ast.EFloat32
@@ -217,7 +217,7 @@ let lower_reg_elttype = function
   | Custom _ -> Kirc_Ast.EInt32 (* Default *)
 
 (** Get element type from a typ *)
-let rec elttype_of_typ t =
+let rec elttype_of_typ t : Kirc_Ast.elttype =
   match repr t with
   | TPrim p -> lower_prim_elttype p
   | TReg r -> lower_reg_elttype r

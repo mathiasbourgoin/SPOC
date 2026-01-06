@@ -1077,7 +1077,7 @@ let sarek_type_private_rule =
    sarek_stdlib uses sarek_ppx_intrinsic, and sarek_ppx links sarek_stdlib. *)
 
 (** The main kernel expansion function *)
-let expand_kernel ~ctxt payload =
+let expand_kernel ~ctxt payload : expression =
   let loc = Expansion_context.Extension.extension_point_loc ctxt in
   Sarek_debug.log_to_file
     (Printf.sprintf "=== expand_kernel: %s ===" loc.loc_start.pos_fname) ;

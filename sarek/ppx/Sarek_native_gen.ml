@@ -414,14 +414,14 @@ let types_module_var = "__types"
 (** {1 First-Class Module Name Helpers} *)
 
 (** Generate accessor function name for a field getter *)
-let field_getter_name type_name field_name =
+let field_getter_name type_name field_name : string =
   Printf.sprintf "get_%s_%s" type_name field_name
 
 (** Generate constructor function name for a record *)
-let record_maker_name type_name = Printf.sprintf "make_%s" type_name
+let record_maker_name type_name : string = Printf.sprintf "make_%s" type_name
 
 (** Generate constructor function name for a variant constructor *)
-let variant_ctor_name type_name ctor_name =
+let variant_ctor_name type_name ctor_name : string =
   Printf.sprintf "make_%s_%s" type_name ctor_name
 
 (** Generate OCaml expression from typed Sarek expression.
@@ -1131,10 +1131,11 @@ let module_name_of_sarek_loc (loc : Sarek_ast.loc) : string =
 
 (** Top-level entry point for generating expressions. Starts with empty context.
 *)
-let gen_expr ~loc e = gen_expr_impl ~loc ~ctx:empty_ctx e
+let gen_expr ~loc e : expression = gen_expr_impl ~loc ~ctx:empty_ctx e
 
 (** Generate expression with inline types context for first-class modules. *)
-let gen_expr_with_inline_types ~loc ~inline_type_names ~current_module e =
+let gen_expr_with_inline_types ~loc ~inline_type_names ~current_module e :
+    expression =
   let ctx = {empty_ctx with inline_types = inline_type_names; current_module} in
   gen_expr_impl ~loc ~ctx e
 
@@ -1317,7 +1318,8 @@ let has_inline_types (kernel : tkernel) : bool =
 (** {1 Kernel Generation} *)
 
 (** Convert execution strategy to generation mode *)
-let gen_mode_of_exec_strategy = function
+let gen_mode_of_exec_strategy : Sarek_convergence.exec_strategy -> gen_mode =
+  function
   | Sarek_convergence.Simple1D -> Simple1DMode
   | Sarek_convergence.Simple2D -> Simple2DMode
   | Sarek_convergence.Simple3D -> Simple3DMode
