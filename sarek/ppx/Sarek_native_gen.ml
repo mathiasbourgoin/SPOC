@@ -837,6 +837,105 @@ let gen_special_expr ~loc ~gen_expr (te : texpr) : expression =
         body_e
   | _ -> failwith "gen_special_expr: not a special expression"
 
+(** Generate BSP parallel constructs (let%shared, let%superstep, let rec) *)
+let gen_parallel_construct ~loc ~gen_expr (te : texpr) : expression =
+  match te.te with
+  (* BSP let%shared - allocate shared memory using OCaml arrays *)
+  | TELetShared (name, _id, elem_ty, size_opt, body) ->
+      (* Size needs to be int, but expressions may be int32 (like block_dim_x).
+         Wrap in Int32.to_int for conversion. *)
+      let size_e =
+        match size_opt with
+        | Some s ->
+            let s_e = gen_expr ~loc s in
+            [%expr Int32.to_int [%e s_e]]
+        | None ->
+            (* Default to block_dim_x - convert from int32 to int *)
+            let state = evar ~loc state_var in
+            [%expr Int32.to_int [%e state].Sarek.Sarek_cpu_runtime.block_dim_x]
+      in
+      let shared = evar ~loc shared_var in
+      let body_e = gen_expr ~loc body in
+      let pat = Ast_builder.Default.ppat_var ~loc {txt = name; loc} in
+      let name_e = Ast_builder.Default.estring ~loc name in
+      (* Use typed allocators for common types, generic for custom types *)
+      let alloc_expr =
+        match repr elem_ty with
+        | TReg Float32 | TReg Float64 ->
+            [%expr
+              Sarek.Sarek_cpu_runtime.alloc_shared_float
+                [%e shared]
+                [%e name_e]
+                [%e size_e]
+                0.0]
+        | TPrim TInt32 | TReg Int ->
+            [%expr
+              Sarek.Sarek_cpu_runtime.alloc_shared_int32
+                [%e shared]
+                [%e name_e]
+                [%e size_e]
+                0l]
+        | TReg Int64 ->
+            [%expr
+              Sarek.Sarek_cpu_runtime.alloc_shared_int64
+                [%e shared]
+                [%e name_e]
+                [%e size_e]
+                0L]
+        | TReg Char ->
+            [%expr
+              Sarek.Sarek_cpu_runtime.alloc_shared
+                [%e shared]
+                [%e name_e]
+                [%e size_e]
+                '\000']
+        | _ ->
+            (* For custom types, generate proper default value *)
+            let default_val = default_value_for_type ~loc elem_ty in
+            [%expr
+              Sarek.Sarek_cpu_runtime.alloc_shared
+                [%e shared]
+                [%e name_e]
+                [%e size_e]
+                [%e default_val]]
+      in
+      [%expr
+        let [%p pat] = [%e alloc_expr] in
+        [%e body_e]]
+  (* BSP let%superstep - synchronized block + barrier *)
+  | TESuperstep (_name, _divergent, step_body, cont) ->
+      let body_e = gen_expr ~loc step_body in
+      let cont_e = gen_expr ~loc cont in
+      let state = evar ~loc state_var in
+      [%expr
+        [%e body_e] ;
+        [%e state].Sarek.Sarek_cpu_runtime.barrier () ;
+        [%e cont_e]]
+  (* Recursive let binding *)
+  | TELetRec (name, _id, params, fn_body, cont) ->
+      (* Generate: let rec name p1 p2 ... = body in cont *)
+      let fn_body_e = gen_expr ~loc fn_body in
+      let cont_e = gen_expr ~loc cont in
+      (* Create function with parameters *)
+      let fn_expr =
+        List.fold_right
+          (fun p acc ->
+            let pvar =
+              Ast_builder.Default.ppat_var ~loc {txt = p.tparam_name; loc}
+            in
+            Ast_builder.Default.pexp_fun ~loc Nolabel None pvar acc)
+          params
+          fn_body_e
+      in
+      let binding =
+        Ast_builder.Default.value_binding
+          ~loc
+          ~pat:(Ast_builder.Default.ppat_var ~loc {txt = name; loc})
+          ~expr:fn_expr
+      in
+      Ast_builder.Default.pexp_let ~loc Recursive [binding] cont_e
+  | _ -> failwith "gen_parallel_construct: not a parallel construct"
+
 (** Generate OCaml expression from typed Sarek expression.
     @param ctx Generation context with mutable vars and inline types *)
 let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
@@ -933,99 +1032,9 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
       in
       let args_e = List.map gen_arg args in
       gen_intrinsic_fun ~loc ~gen_mode:ctx.gen_mode ref args_e
-  (* BSP let%shared - allocate shared memory using OCaml arrays *)
-  | TELetShared (name, _id, elem_ty, size_opt, body) ->
-      (* Size needs to be int, but expressions may be int32 (like block_dim_x).
-         Wrap in Int32.to_int for conversion. *)
-      let size_e =
-        match size_opt with
-        | Some s ->
-            let s_e = gen_expr ~loc s in
-            [%expr Int32.to_int [%e s_e]]
-        | None ->
-            (* Default to block_dim_x - convert from int32 to int *)
-            let state = evar ~loc state_var in
-            [%expr Int32.to_int [%e state].Sarek.Sarek_cpu_runtime.block_dim_x]
-      in
-      let shared = evar ~loc shared_var in
-      let body_e = gen_expr ~loc body in
-      let pat = Ast_builder.Default.ppat_var ~loc {txt = name; loc} in
-      let name_e = Ast_builder.Default.estring ~loc name in
-      (* Use typed allocators for common types, generic for custom types *)
-      let alloc_expr =
-        match repr elem_ty with
-        | TReg Float32 | TReg Float64 ->
-            [%expr
-              Sarek.Sarek_cpu_runtime.alloc_shared_float
-                [%e shared]
-                [%e name_e]
-                [%e size_e]
-                0.0]
-        | TPrim TInt32 | TReg Int ->
-            [%expr
-              Sarek.Sarek_cpu_runtime.alloc_shared_int32
-                [%e shared]
-                [%e name_e]
-                [%e size_e]
-                0l]
-        | TReg Int64 ->
-            [%expr
-              Sarek.Sarek_cpu_runtime.alloc_shared_int64
-                [%e shared]
-                [%e name_e]
-                [%e size_e]
-                0L]
-        | TReg Char ->
-            [%expr
-              Sarek.Sarek_cpu_runtime.alloc_shared
-                [%e shared]
-                [%e name_e]
-                [%e size_e]
-                '\000']
-        | _ ->
-            (* For custom types, generate proper default value *)
-            let default_val = default_value_for_type ~loc elem_ty in
-            [%expr
-              Sarek.Sarek_cpu_runtime.alloc_shared
-                [%e shared]
-                [%e name_e]
-                [%e size_e]
-                [%e default_val]]
-      in
-      [%expr
-        let [%p pat] = [%e alloc_expr] in
-        [%e body_e]]
-  (* BSP let%superstep - synchronized block + barrier *)
-  | TESuperstep (_name, _divergent, step_body, cont) ->
-      let body_e = gen_expr ~loc step_body in
-      let cont_e = gen_expr ~loc cont in
-      let state = evar ~loc state_var in
-      [%expr
-        [%e body_e] ;
-        [%e state].Sarek.Sarek_cpu_runtime.barrier () ;
-        [%e cont_e]]
-  | TELetRec (name, _id, params, fn_body, cont) ->
-      (* Generate: let rec name p1 p2 ... = body in cont *)
-      let fn_body_e = gen_expr ~loc fn_body in
-      let cont_e = gen_expr ~loc cont in
-      (* Create function with parameters *)
-      let fn_expr =
-        List.fold_right
-          (fun p acc ->
-            let pvar =
-              Ast_builder.Default.ppat_var ~loc {txt = p.tparam_name; loc}
-            in
-            Ast_builder.Default.pexp_fun ~loc Nolabel None pvar acc)
-          params
-          fn_body_e
-      in
-      let binding =
-        Ast_builder.Default.value_binding
-          ~loc
-          ~pat:(Ast_builder.Default.ppat_var ~loc {txt = name; loc})
-          ~expr:fn_expr
-      in
-      Ast_builder.Default.pexp_let ~loc Recursive [binding] cont_e
+  (* Parallel constructs *)
+  | TELetShared _ | TESuperstep _ | TELetRec _ ->
+      gen_parallel_construct ~loc ~gen_expr te
 
 (** Generate pattern from typed pattern. Takes context to detect same-module
     types that shouldn't be qualified. *)
