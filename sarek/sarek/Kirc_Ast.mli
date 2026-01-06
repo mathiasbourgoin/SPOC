@@ -77,7 +77,14 @@ type k_ext =
   | GFloatVar of string
   | GFloat64Var of string
   | Native of (Spoc_core.Device.t -> string)
-  | NativeWithFallback of {gpu : Spoc_core.Device.t -> string; ocaml : Obj.t}
+  | NativeWithFallback of {
+      gpu : Spoc_core.Device.t -> string;
+      ocaml :
+        block:int * int * int ->
+        grid:int * int * int ->
+        Sarek_ir_types.native_arg array ->
+        unit;
+    }
   | Pragma of string list * k_ext
   | Map of (k_ext * k_ext * k_ext)
   | Unit

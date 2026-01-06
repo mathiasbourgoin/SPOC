@@ -636,16 +636,7 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
         | None -> fresh_tvar ~level:env_inner.current_level ()
       in
       let fn_ty = TFun (param_tys, ret_ty) in
-      let fn_vi =
-        {
-          vi_type = fn_ty;
-          vi_mutable = false;
-          vi_is_param = false;
-          vi_index = 0;
-          vi_is_vec = false;
-        }
-      in
-      let env_with_fn = add_var name fn_vi env in
+      let env_with_fn = add_local_fun name (mono fn_ty) env_inner in
       (* Add parameters to environment *)
       let tparams, env_with_params =
         List.fold_left2
@@ -678,8 +669,11 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
       (* Type the function body *)
       let* tfn_body, _ = infer env_with_params fn_body in
       let* () = unify_or_error ret_ty tfn_body.ty fn_body.expr_loc in
+      (* Generalize function type for use in continuation *)
+      let fn_scheme = generalize env.current_level fn_ty in
+      let env_for_cont = add_local_fun name fn_scheme env in
       (* Type the continuation with the function in scope *)
-      let* tcont, env = infer env_with_fn cont in
+      let* tcont, env = infer env_for_cont cont in
       Ok
         ( mk_texpr
             (TELetRec (name, fn_id, tparams, tfn_body, tcont))
@@ -971,6 +965,11 @@ let infer_kernel (env : t) (kernel : Sarek_ast.kernel) : tkernel result =
               let fn_ty = TFun (param_types, tbody.ty) in
               (* Generalize the function type to create a polymorphic scheme *)
               let fn_scheme = generalize env.current_level fn_ty in
+              if Sarek_debug.enabled then
+                Sarek_debug.log
+                  "MFun %s : %s"
+                  name
+                  (Sarek_types.typ_to_string fn_ty) ;
               let env'' = add_local_fun name fn_scheme env in
               add_module_items
                 env''

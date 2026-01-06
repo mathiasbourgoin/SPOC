@@ -249,13 +249,23 @@ let scan_file_for_sarek_types path =
                   in
                   let ty = Sarek_parse.extract_type_from_pattern vb.pvb_pat in
                   let item =
-                    match vb.pvb_expr.pexp_desc with
-                    | Pexp_function (params, _, Pfunction_body body_expr) ->
+                    match Sarek_parse.collect_fun_params vb.pvb_expr with
+                    | params, Some (Pfunction_body body_expr) when params <> []
+                      ->
                         let params =
-                          List.map Sarek_parse.extract_param_from_pparam params
+                          List.map
+                            (fun p ->
+                              Sarek_parse.extract_param_from_pattern
+                                (Sarek_parse.pattern_of_param p))
+                            params
                         in
                         let body = Sarek_parse.parse_expression body_expr in
                         Sarek_ast.MFun (name, is_rec, params, body)
+                    | _, Some (Pfunction_cases _) ->
+                        Location.raise_errorf
+                          ~loc:vb.pvb_expr.pexp_loc
+                          "Pattern-matching functions are not supported for \
+                           [@sarek.module]"
                     | _ ->
                         let value = Sarek_parse.parse_expression vb.pvb_expr in
                         let ty =
@@ -1109,6 +1119,17 @@ let expand_kernel ~ctxt payload =
         kern_external_item_count = List.length pre_mods;
       }
     in
+    if Sarek_debug.enabled then begin
+      Sarek_debug.log
+        "  merged module_items count=%d"
+        (List.length ast.kern_module_items) ;
+      List.iter
+        (fun m ->
+          match m with
+          | Sarek_ast.MFun (name, _, _, _) -> Sarek_debug.log "    fun %s" name
+          | Sarek_ast.MConst (name, _, _) -> Sarek_debug.log "    const %s" name)
+        ast.kern_module_items
+    end ;
 
     (* 2. Set up the typing environment with stdlib *)
     let env = Sarek_env.(empty |> with_stdlib) in
@@ -1277,13 +1298,21 @@ let process_structure_for_module_items (str : structure) : structure =
       in
       let ty = Sarek_parse.extract_type_from_pattern vb.pvb_pat in
       let item =
-        match vb.pvb_expr.pexp_desc with
-        | Pexp_function (params, _, Pfunction_body body_expr) ->
+        match Sarek_parse.collect_fun_params vb.pvb_expr with
+        | params, Some (Pfunction_body body_expr) when params <> [] ->
             let params =
-              List.map Sarek_parse.extract_param_from_pparam params
+              List.map
+                (fun p ->
+                  Sarek_parse.extract_param_from_pattern
+                    (Sarek_parse.pattern_of_param p))
+                params
             in
             let body = Sarek_parse.parse_expression body_expr in
             Sarek_ast.MFun (name, is_rec, params, body)
+        | _, Some (Pfunction_cases _) ->
+            Location.raise_errorf
+              ~loc:vb.pvb_expr.pexp_loc
+              "Pattern-matching functions are not supported for [@sarek.module]"
         | _ ->
             let value = Sarek_parse.parse_expression vb.pvb_expr in
             let ty =

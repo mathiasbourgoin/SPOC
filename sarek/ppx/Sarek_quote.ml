@@ -331,10 +331,9 @@ and quote_k_ext ~loc (k : Kirc_Ast.k_ext) : expression =
       (* Native code with GPU expression and OCaml fallback function.
          The GPU expression is (fun dev -> "code").
          The ocaml expression is a function that will be applied to args.
-         We use Obj.repr to store the function polymorphically. *)
+         We now store it as a typed function (block/grid/native_args). *)
       [%expr
-        Sarek.Kirc_Ast.NativeWithFallback
-          {gpu = [%e gpu]; ocaml = Obj.repr [%e ocaml]}]
+        Sarek.Kirc_Ast.NativeWithFallback {gpu = [%e gpu]; ocaml = [%e ocaml]}]
   | Kirc_Ast.Pragma (opts, body) ->
       [%expr
         Sarek.Kirc_Ast.Pragma

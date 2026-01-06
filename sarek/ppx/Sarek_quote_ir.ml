@@ -296,9 +296,8 @@ let rec quote_stmt ~loc (s : Ir.stmt) : expression =
   | Ir.SMemFence -> [%expr Sarek.Sarek_ir.SMemFence]
   | Ir.SBlock body -> [%expr Sarek.Sarek_ir.SBlock [%e quote_stmt ~loc body]]
   | Ir.SNative {gpu; ocaml} ->
-      (* gpu is already (device -> string), ocaml needs Obj.repr *)
       [%expr
-        Sarek.Sarek_ir.SNative {gpu = [%e gpu]; ocaml = Obj.repr [%e ocaml]}]
+        Sarek.Sarek_ir.SNative {gpu = [%e gpu]; ocaml = {run = [%e ocaml]}}]
 
 (** Quote array_info *)
 let quote_array_info ~loc (ai : Ir.array_info) : expression =

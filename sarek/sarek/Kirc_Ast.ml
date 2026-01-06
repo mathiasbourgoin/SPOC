@@ -117,11 +117,14 @@ type k_ext =
   | Native of (Spoc_core.Device.t -> string)
   | NativeWithFallback of {
       gpu : Spoc_core.Device.t -> string;  (** GPU code generator *)
-      ocaml : Obj.t;  (** OCaml fallback function (polymorphic) *)
+      ocaml :
+        block:int * int * int ->
+        grid:int * int * int ->
+        Sarek_ir_types.native_arg array ->
+        unit;
     }
       (** Native code with GPU and OCaml fallback. The ocaml field holds a
-          function that will be applied to args. Use Obj.t because we don't know
-          the function's type statically. *)
+          function that will be applied to args. *)
   | Pragma of string list * k_ext
   | Map of (k_ext * k_ext * k_ext)
   | Unit

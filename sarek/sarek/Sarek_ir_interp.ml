@@ -671,9 +671,8 @@ and exec_stmt state env stmt =
   | SMemFence -> ()
   | SBlock body -> exec_stmt state env body
   | SNative {ocaml; _} ->
-      (* Call the OCaml fallback - it's polymorphic via Obj.t *)
-      let fn : unit -> unit = Obj.obj ocaml in
-      fn ()
+      (* Call the typed OCaml fallback *)
+      ocaml.run ~block:state.block_dim ~grid:state.grid_dim [||]
 
 and assign_lvalue state env lv value =
   (* Store values directly - VRecord is handled by ERecordField *)

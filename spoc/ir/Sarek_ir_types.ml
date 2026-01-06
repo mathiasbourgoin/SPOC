@@ -123,11 +123,11 @@ type stmt =
       (** Scoped block - creates a C scope for variable isolation *)
   | SNative of {
       gpu : framework:string -> string;  (** Generate GPU code for framework *)
-      ocaml : Obj.t;  (** OCaml fallback (polymorphic via Obj.t) *)
+      ocaml : ocaml_closure;  (** Typed OCaml fallback *)
     }  (** Inline native GPU code with OCaml fallback *)
 
 (** Declarations *)
-type decl =
+and decl =
   | DParam of
       var * array_info option (* kernel parameter, optional array info *)
   | DLocal of var * expr option (* local variable, optional init *)
@@ -137,7 +137,7 @@ type decl =
 and array_info = {arr_elttype : elttype; arr_memspace : memspace}
 
 (** Helper function (device function called from kernel) *)
-type helper_func = {
+and helper_func = {
   hf_name : string;
   hf_params : var list;
   hf_ret_type : elttype;
@@ -146,7 +146,7 @@ type helper_func = {
 
 (** Native argument type for kernel execution. Typed arguments without Obj.t -
     used by PPX-generated native functions. *)
-type native_arg =
+and native_arg =
   | NA_Int32 of int32
   | NA_Int64 of int64
   | NA_Float32 of float
@@ -170,6 +170,11 @@ type native_arg =
       (* Get underlying Vector.t for passing to functions/intrinsics *)
       get_vec : unit -> Obj.t;
     }
+
+and ocaml_closure = {
+  run :
+    block:int * int * int -> grid:int * int * int -> native_arg array -> unit;
+}
 
 (** {2 Typed Helpers for Custom Types}
 

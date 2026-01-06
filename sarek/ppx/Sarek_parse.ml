@@ -80,6 +80,27 @@ let rec extract_name_from_pattern (pat : Ppxlib.pattern) : string option =
   | Ppat_any -> Some "_"
   | _ -> None
 
+(** Extract parameter from pparam_desc *)
+let extract_param_from_pattern (pat : Ppxlib.pattern) : Sarek_ast.param =
+  let name =
+    match extract_name_from_pattern pat with
+    | Some n -> n
+    | None -> raise (Parse_error_exn ("Expected named parameter", pat.ppat_loc))
+  in
+  let ty =
+    match extract_type_from_pattern pat with
+    | Some t -> t
+    | None ->
+        raise
+          (Parse_error_exn
+             ("Kernel parameters must have type annotations", pat.ppat_loc))
+  in
+  {
+    Sarek_ast.param_name = name;
+    Sarek_ast.param_type = ty;
+    Sarek_ast.param_loc = loc_of_ppxlib pat.ppat_loc;
+  }
+
 (** Parse a Ppxlib pattern to Sarek pattern *)
 let rec parse_pattern (pat : Ppxlib.pattern) : Sarek_ast.pattern =
   let loc = loc_of_ppxlib pat.ppat_loc in
@@ -128,6 +149,33 @@ let parse_unop (op : string) : Sarek_ast.unop option =
   | "not" -> Some Sarek_ast.Not
   | "lnot" -> Some Sarek_ast.Lnot
   | _ -> None
+
+type fun_body =
+  | Pfunction_body of expression
+  | Pfunction_cases of case list * Location.t * attributes
+
+let pattern_of_param (p : _) : Ppxlib.pattern =
+  match p with
+  | {Parsetree.pparam_desc = Pparam_val (Nolabel, None, pat); _} -> pat
+  | {Parsetree.pparam_desc = Pparam_val (_, _, pat); _} ->
+      raise
+        (Parse_error_exn
+           ("Labelled parameters not supported in kernels", pat.ppat_loc))
+  | {Parsetree.pparam_desc = Pparam_newtype _; pparam_loc; _} ->
+      raise
+        (Parse_error_exn
+           ("Newtype parameters not supported in kernels", pparam_loc))
+
+let collect_fun_params (expr : expression) : _ list * fun_body option =
+  match expr.pexp_desc with
+  | Pexp_function (params, _constraint, body) ->
+      let fb =
+        match body with
+        | Pfunction_body e -> Pfunction_body e
+        | Pfunction_cases (c, l, a) -> Pfunction_cases (c, l, a)
+      in
+      (params, Some fb)
+  | _ -> ([], None)
 
 (** Parse let%shared: let%shared name : type [= size] in body Syntax: let%shared
     tile : float32 array in body let%shared tile : float32 array = 64 in body *)
@@ -361,24 +409,46 @@ and parse_expression (expr : expression) : Sarek_ast.expr =
                 (Parse_error_exn ("Expected variable pattern", pvb_pat.ppat_loc))
         in
         let ty = extract_type_from_pattern pvb_pat in
-        let mut_expr =
-          match pvb_expr.pexp_desc with
-          | Pexp_apply
-              ( {pexp_desc = Pexp_ident {txt = Lident "mut"; _}; _},
-                [(Nolabel, inner)] ) ->
-              Some inner
-          | _ -> None
-        in
-        let is_mutable = Option.is_some mut_expr in
-        let value_expr =
-          match mut_expr with Some inner -> inner | None -> pvb_expr
-        in
-        if is_mutable then
-          Sarek_ast.ELetMut
-            (name, ty, parse_expression value_expr, parse_expression body)
+        (* Detect function definitions and emit ELetRec for local functions *)
+        let fun_params, fun_body = collect_fun_params pvb_expr in
+        if fun_params <> [] then
+          match fun_body with
+          | Some (Pfunction_body body_expr) ->
+              let parsed_params =
+                List.map
+                  (fun p -> extract_param_from_pattern (pattern_of_param p))
+                  fun_params
+              in
+              let fn_body = parse_expression body_expr in
+              Sarek_ast.ELetRec
+                (name, parsed_params, ty, fn_body, parse_expression body)
+          | Some (Pfunction_cases _) ->
+              raise
+                (Parse_error_exn
+                   ( "Pattern-matching functions not supported in let bindings",
+                     pvb_expr.pexp_loc ))
+          | None ->
+              raise
+                (Parse_error_exn ("Expected function body", pvb_expr.pexp_loc))
         else
-          Sarek_ast.ELet
-            (name, ty, parse_expression value_expr, parse_expression body)
+          let mut_expr =
+            match pvb_expr.pexp_desc with
+            | Pexp_apply
+                ( {pexp_desc = Pexp_ident {txt = Lident "mut"; _}; _},
+                  [(Nolabel, inner)] ) ->
+                Some inner
+            | _ -> None
+          in
+          let is_mutable = Option.is_some mut_expr in
+          let value_expr =
+            match mut_expr with Some inner -> inner | None -> pvb_expr
+          in
+          if is_mutable then
+            Sarek_ast.ELetMut
+              (name, ty, parse_expression value_expr, parse_expression body)
+          else
+            Sarek_ast.ELet
+              (name, ty, parse_expression value_expr, parse_expression body)
     (* If-then-else *)
     | Pexp_ifthenelse (cond, then_e, else_opt) ->
         Sarek_ast.EIf
@@ -449,29 +519,13 @@ and parse_expression (expr : expression) : Sarek_ast.expr =
           | _ -> []
         in
         Sarek_ast.EOpen (path, parse_expression e)
-    (* Lambda - for local functions in kernels (OCaml 5.2+ uses Pexp_function) *)
-    | Pexp_function
-        ( [{pparam_desc = Pparam_val (Nolabel, None, pat); _}],
-          None,
-          Pfunction_body body ) ->
-        let name =
-          match extract_name_from_pattern pat with Some n -> n | None -> "_"
-        in
-        let ty = extract_type_from_pattern pat in
-        (* Wrap as a let *)
-        Sarek_ast.ELet
-          ( name,
-            ty,
-            parse_expression body,
-            {Sarek_ast.e = Sarek_ast.EVar name; Sarek_ast.expr_loc = loc} )
-    (* Multi-parameter lambda *)
-    | Pexp_function (params, None, Pfunction_body body)
-      when List.length params > 0 ->
-        (* Convert multi-param lambda to nested lets *)
-        let rec make_nested_lets params body_expr =
-          match params with
+    (* Lambda - for local functions in kernels *)
+    | Pexp_function (params, _, Pfunction_body body) when params <> [] ->
+        let pats = List.map pattern_of_param params in
+        let rec make_nested_lets pats body_expr =
+          match pats with
           | [] -> parse_expression body_expr
-          | {pparam_desc = Pparam_val (Nolabel, None, pat); _} :: rest ->
+          | pat :: rest ->
               let name =
                 match extract_name_from_pattern pat with
                 | Some n -> n
@@ -491,12 +545,13 @@ and parse_expression (expr : expression) : Sarek_ast.expr =
                       } );
                 Sarek_ast.expr_loc = loc;
               }
-          | _ ->
-              raise
-                (Parse_error_exn
-                   ("Unsupported function parameter", expr.pexp_loc))
         in
-        (make_nested_lets params body).Sarek_ast.e
+        (make_nested_lets pats body).e
+    | Pexp_function (_, _, Pfunction_cases _) ->
+        raise
+          (Parse_error_exn
+             ( "Pattern-matching functions not supported in kernels",
+               expr.pexp_loc ))
     (* Extension point: [%global name] - reference to OCaml value *)
     | Pexp_extension
         ( {txt = "global"; _},
@@ -544,49 +599,25 @@ and is_array_access (_expr : expression) : bool =
   (* This is a simplified check - real implementation would need more context *)
   false
 
-(** Extract parameter from pparam_desc *)
-let extract_param_from_pparam (pparam : function_param) : Sarek_ast.param =
-  match pparam.pparam_desc with
-  | Pparam_val (Nolabel, None, pat) ->
-      let name =
-        match extract_name_from_pattern pat with
-        | Some n -> n
-        | None ->
-            raise (Parse_error_exn ("Expected named parameter", pat.ppat_loc))
-      in
-      let ty =
-        match extract_type_from_pattern pat with
-        | Some t -> t
-        | None ->
-            raise
-              (Parse_error_exn
-                 ("Kernel parameters must have type annotations", pat.ppat_loc))
-      in
-      {
-        Sarek_ast.param_name = name;
-        Sarek_ast.param_type = ty;
-        Sarek_ast.param_loc = loc_of_ppxlib pat.ppat_loc;
-      }
-  | Pparam_val (_, _, pat) ->
-      raise
-        (Parse_error_exn
-           ("Labelled parameters not supported in kernels", pat.ppat_loc))
-  | Pparam_newtype _ ->
-      raise
-        (Parse_error_exn
-           ("Newtype parameters not supported in kernels", pparam.pparam_loc))
-
 (** Parse a function expression into a kernel *)
 let parse_kernel_function (expr : expression) : Sarek_ast.kernel =
   let loc = loc_of_ppxlib expr.pexp_loc in
-  (* OCaml 5.2+ uses Pexp_function with all params in a list *)
-  match expr.pexp_desc with
-  | Pexp_function (params, _constraint, Pfunction_body body_expr) ->
+  let params, body = collect_fun_params expr in
+  match body with
+  | Some (Pfunction_cases _) ->
+      raise
+        (Parse_error_exn
+           ("Pattern-matching functions not supported as kernels", expr.pexp_loc))
+  | Some (Pfunction_body body_expr) ->
       if params = [] then
         raise
           (Parse_error_exn
              ("Kernel must have at least one parameter", expr.pexp_loc)) ;
-      let parsed_params = List.map extract_param_from_pparam params in
+      let parsed_params =
+        List.map
+          (fun p -> extract_param_from_pattern (pattern_of_param p))
+          params
+      in
       let body = parse_expression body_expr in
       {
         Sarek_ast.kern_name = None;
@@ -597,14 +628,7 @@ let parse_kernel_function (expr : expression) : Sarek_ast.kernel =
         kern_body = body;
         kern_loc = loc;
       }
-  | Pexp_function (_, _, Pfunction_cases _) ->
-      raise
-        (Parse_error_exn
-           ("Pattern-matching functions not supported as kernels", expr.pexp_loc))
-  | _ ->
-      raise
-        (Parse_error_exn
-           ("Expected function expression for kernel", expr.pexp_loc))
+  | None -> raise (Parse_error_exn ("Kernel must be a function", expr.pexp_loc))
 
 (** Parse from ppxlib payload *)
 let parse_payload (payload : expression) : Sarek_ast.kernel =
@@ -657,19 +681,33 @@ let parse_payload (payload : expression) : Sarek_ast.kernel =
                              ("Expected variable pattern", vb.pvb_pat.ppat_loc))
                   in
                   let ty = extract_type_from_pattern vb.pvb_pat in
-                  match vb.pvb_expr.pexp_desc with
-                  | Pexp_function (params, _, Pfunction_body fn_body) ->
-                      let parsed_params =
-                        List.map extract_param_from_pparam params
-                      in
-                      let fn_body = parse_expression fn_body in
-                      Sarek_ast.MFun (name, is_recursive, parsed_params, fn_body)
-                      :: acc
-                  | _ -> (
-                      let value = parse_expression vb.pvb_expr in
-                      match ty with
-                      | Some t -> Sarek_ast.MConst (name, t, value) :: acc
-                      | None -> acc))
+                  let params, body =
+                    match collect_fun_params vb.pvb_expr with
+                    | params, Some (Pfunction_body fn_body) when params <> [] ->
+                        (params, fn_body)
+                    | _, Some (Pfunction_cases _) ->
+                        raise
+                          (Parse_error_exn
+                             ( "Pattern-matching functions not supported in \
+                                module items",
+                               vb.pvb_expr.pexp_loc ))
+                    | _ -> ([], vb.pvb_expr)
+                  in
+                  if params <> [] then
+                    let parsed_params =
+                      List.map
+                        (fun p ->
+                          extract_param_from_pattern (pattern_of_param p))
+                        params
+                    in
+                    let fn_body = parse_expression body in
+                    Sarek_ast.MFun (name, is_recursive, parsed_params, fn_body)
+                    :: acc
+                  else
+                    let value = parse_expression vb.pvb_expr in
+                    match ty with
+                    | Some t -> Sarek_ast.MConst (name, t, value) :: acc
+                    | None -> acc)
                 mods_acc
                 vbs
             in
@@ -706,12 +744,21 @@ let parse_payload (payload : expression) : Sarek_ast.kernel =
         in
         let ty = extract_type_from_pattern pvb_pat in
         let module_items =
-          match pvb_expr.pexp_desc with
-          | Pexp_function (params, _, Pfunction_body fn_body) ->
-              let parsed_params = List.map extract_param_from_pparam params in
+          match collect_fun_params pvb_expr with
+          | params, Some (Pfunction_body fn_body) when params <> [] ->
+              let parsed_params =
+                List.map
+                  (fun p -> extract_param_from_pattern (pattern_of_param p))
+                  params
+              in
               let fn_body = parse_expression fn_body in
               Sarek_ast.MFun (name, is_recursive, parsed_params, fn_body)
               :: mods_acc
+          | _, Some (Pfunction_cases _) ->
+              raise
+                (Parse_error_exn
+                   ( "Pattern-matching functions not supported in module items",
+                     pvb_expr.pexp_loc ))
           | _ ->
               let value = parse_expression pvb_expr in
               let ty =
