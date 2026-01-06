@@ -134,44 +134,19 @@ let to_bigarray : type a b.
   | Bigarray_storage ba -> ba
   | Custom_storage _ -> invalid_arg "to_bigarray: vector uses custom storage"
 
-(** Get underlying ctypes pointer (only for custom vectors) *)
-let to_ctypes_ptr : type a. (a, unit) t -> unit Ctypes.ptr =
- fun vec ->
-  match vec.host with
-  | Custom_storage {ptr; _} -> ptr
-  | Bigarray_storage _ ->
-      invalid_arg "to_ctypes_ptr: vector uses bigarray storage"
+(** {1 Sync and host pointer helpers (delegated)} *)
 
-(** Get raw host pointer for any vector type *)
-let host_ptr : type a b. (a, b) t -> nativeint =
- fun vec ->
-  match vec.host with
-  | Bigarray_storage ba ->
-      Ctypes.(raw_address_of_ptr (bigarray_start array1 ba |> to_voidp))
-  | Custom_storage {ptr; _} -> Ctypes.raw_address_of_ptr ptr
+type sync_callback = Vector_transfer.sync_callback = {
+  sync : 'a 'b. ('a, 'b) t -> bool;
+}
 
-(** {1 Sync Callback (for Transfer module)} *)
+let to_ctypes_ptr = Vector_transfer.to_ctypes_ptr [@@warning "-32"]
 
-(** Callback to sync vector to CPU. Set by Transfer module at init. Takes a
-    vector and syncs it to CPU if needed. Returns true if sync occurred. *)
-type sync_callback = {sync : 'a 'b. ('a, 'b) t -> bool}
+let host_ptr = Vector_transfer.host_ptr [@@warning "-32"]
 
-let sync_to_cpu_callback : sync_callback option ref = ref None
+let register_sync_callback = Vector_transfer.register_sync_callback
 
-(** Register the sync callback (called by Transfer module) *)
-let register_sync_callback (cb : sync_callback) : unit =
-  sync_to_cpu_callback := Some cb
-
-(** Ensure vector data is on CPU before access. Only syncs if auto_sync is
-    enabled and location is Stale_CPU. *)
-let ensure_cpu_sync (type a b) (vec : (a, b) t) : unit =
-  if vec.auto_sync then
-    match vec.location with
-    | Stale_CPU _ -> (
-        match !sync_to_cpu_callback with
-        | Some cb -> ignore (cb.sync vec)
-        | None -> ())
-    | _ -> ()
+let ensure_cpu_sync = Vector_transfer.ensure_cpu_sync
 
 (** {1 Element Access} *)
 
