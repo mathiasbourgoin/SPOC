@@ -1,8 +1,22 @@
 (******************************************************************************
  * Sarek PPX - GPU kernel DSL for OCaml
  *
- * This module implements type inference for Sarek kernels.
- * Uses constraint-based Hindley-Milner style inference with let-polymorphism.
+ * Type Inference Module
+ * =====================
+ *
+ * This module implements type inference for Sarek kernels using constraint-based
+ * Hindley-Milner style inference with let-polymorphism.
+ *
+ * Organization:
+ * - Type validators (Result-returning with error messages)
+ * - Type inference helpers (literals, operators, memory access, etc.)
+ * - Main inference function [infer]
+ * - Pattern matching and auxiliary functions
+ *
+ * See also:
+ * - Sarek_types.ml for type predicates (bool-returning)
+ * - Sarek_error.ml for error type definitions
+ * - Sarek_scheme.ml for type generalization and instantiation
  ******************************************************************************)
 
 open Sarek_ast
@@ -12,19 +26,36 @@ open Sarek_error
 open Sarek_typed_ast
 open Sarek_scheme
 
-(** Unify with error reporting *)
+(** {1 Type Unification with Error Reporting} *)
+
+(** Unify two types and convert unification errors to typed errors with location
+*)
 let unify_or_error t1 t2 loc =
   match unify t1 t2 with
   | Ok () -> Ok ()
   | Error (Cannot_unify (t1, t2)) -> Error [Cannot_unify (t1, t2, loc)]
   | Error (Occurs_check (_, t)) -> Error [Recursive_type (t, loc)]
 
-(** Type validators (Result-returning, for type checking with error messages).
-    For simple bool predicates, use functions in Sarek_types (is_numeric,
-    is_integer, etc.) *)
+(** {1 Type Validators}
 
-(** Check that a type is numeric (int32, int64, float32, float64). See also:
-    Sarek_types.is_numeric for bool predicate version. *)
+    Result-returning validators for type checking with error messages.
+
+    These functions validate types and return detailed error messages on
+    failure. For simple boolean checks without errors, use predicates from
+    [Sarek_types]:
+    - [Sarek_types.is_numeric]
+    - [Sarek_types.is_integer]
+    - [Sarek_types.is_boolean]
+    - [Sarek_types.is_float]
+    - [Sarek_types.is_tvar] *)
+
+(** Check that a type is numeric (int32, int64, float32, float64).
+
+    @param t The type to check
+    @param loc Source location for error reporting
+    @return Ok () if numeric, Error with type mismatch otherwise
+
+    See also: {!Sarek_types.is_numeric} for bool predicate version. *)
 let check_numeric t loc =
   match repr t with
   | TPrim TInt32 -> Ok ()
@@ -32,8 +63,13 @@ let check_numeric t loc =
   | TVar _ -> Ok () (* Will be constrained later *)
   | t -> Error [Type_mismatch {expected = t_int32; got = t; loc}]
 
-(** Check that a type is integer. See also: Sarek_types.is_integer for bool
-    predicate version. *)
+(** Check that a type is integer (int32, int64, int).
+
+    @param t The type to check
+    @param loc Source location for error reporting
+    @return Ok () if integer, Error with type mismatch otherwise
+
+    See also: {!Sarek_types.is_integer} for bool predicate version. *)
 let check_integer t loc =
   match repr t with
   | TPrim TInt32 -> Ok ()
@@ -41,8 +77,13 @@ let check_integer t loc =
   | TVar _ -> Ok ()
   | t -> Error [Type_mismatch {expected = t_int32; got = t; loc}]
 
-(** Check that a type is boolean. See also: Sarek_types.is_boolean for bool
-    predicate version. *)
+(** Check that a type is boolean.
+
+    @param t The type to check
+    @param loc Source location for error reporting
+    @return Ok () if boolean, Error with type mismatch otherwise
+
+    See also: {!Sarek_types.is_boolean} for bool predicate version. *)
 let check_boolean t loc =
   match repr t with
   | TPrim TBool -> Ok ()
@@ -142,7 +183,11 @@ let infer_unop op t loc =
       let* () = check_integer t loc in
       Ok t
 
-(** Infer type of literal expressions *)
+(** {1 Type Inference Helpers}
+
+    These helpers partition the main [infer] function by expression category. *)
+
+(** Infer type of literal expressions (unit, bool, int, float constants). *)
 let infer_literal (loc : Sarek_ast.loc) (expr : expr_desc) : texpr result =
   match expr with
   | EUnit -> Ok (mk_texpr TEUnit t_unit loc)
@@ -154,7 +199,7 @@ let infer_literal (loc : Sarek_ast.loc) (expr : expr_desc) : texpr result =
   | EDouble f -> Ok (mk_texpr (TEDouble f) t_float64 loc)
   | _ -> failwith "infer_literal: not a literal expression"
 
-(** Infer type of binary and unary operations *)
+(** Infer type of binary and unary operations (arithmetic, logical, bitwise). *)
 let infer_binop_unop ~infer (env : t) (loc : Sarek_ast.loc) (expr : expr_desc) :
     (texpr * t) result =
   match expr with
@@ -169,7 +214,8 @@ let infer_binop_unop ~infer (env : t) (loc : Sarek_ast.loc) (expr : expr_desc) :
       Ok (mk_texpr (TEUnop (op, te)) result_ty loc, env)
   | _ -> failwith "infer_binop_unop: not a binop/unop expression"
 
-(** Infer type of memory access operations (vectors, arrays, record fields) *)
+(** Infer type of memory access operations (vectors, arrays, record fields).
+    Handles field resolution for both known and external record types. *)
 let infer_memory_access ~infer (env : t) (loc : Sarek_ast.loc)
     (expr : expr_desc) : (texpr * t) result =
   match expr with
@@ -278,7 +324,8 @@ let infer_memory_access ~infer (env : t) (loc : Sarek_ast.loc)
       | t -> Error [Not_a_record (t, loc)])
   | _ -> failwith "infer_memory_access: not a memory access expression"
 
-(** Infer type of control flow expressions (if, for, while, sequence) *)
+(** Infer type of control flow expressions (if, for, while, sequence). Ensures
+    loop bounds are int32 and conditions are boolean. *)
 let infer_control_flow ~infer (env : t) (loc : Sarek_ast.loc) (expr : expr_desc)
     : (texpr * t) result =
   match expr with
@@ -323,8 +370,8 @@ let infer_control_flow ~infer (env : t) (loc : Sarek_ast.loc) (expr : expr_desc)
       Ok (mk_texpr (TESeq [t1; t2]) t2.ty loc, env)
   | _ -> failwith "infer_control_flow: not a control flow expression"
 
-(** Infer type of data structures (records, variants, tuples, arrays) and return
-*)
+(** Infer type of data structures (records, variants, tuples, arrays). Uses
+    mutual recursion helpers for complex nested structures. *)
 let infer_data_structure ~infer ~infer_record_fields ~infer_list (env : t)
     (loc : Sarek_ast.loc) (expr : expr_desc) : (texpr * t) result =
   match expr with
@@ -418,8 +465,9 @@ let infer_data_structure ~infer ~infer_record_fields ~infer_list (env : t)
           env )
   | _ -> failwith "infer_data_structure: not a data structure expression"
 
-(** Infer type of special expressions (global ref, native, pragma, typed, open)
-*)
+(** Infer type of special expressions (global refs, native blocks, pragmas, type
+    annotations, open). These handle meta-level constructs and environment
+    manipulation. *)
 let infer_special ~infer (env : t) (loc : Sarek_ast.loc) (expr : expr_desc) :
     (texpr * t) result =
   match expr with
@@ -451,7 +499,8 @@ let infer_special ~infer (env : t) (loc : Sarek_ast.loc) (expr : expr_desc) :
       Ok ({te = TEOpen (path, te); ty = te.ty; te_loc = loc}, env)
   | _ -> failwith "infer_special: not a special expression"
 
-(** Infer type of let bindings (assign, let, let mut, let rec) *)
+(** Infer type of let bindings (assign, let, let mut, let rec). Handles
+    mutability constraints and recursive binding generalization. *)
 let infer_let_binding ~infer (env : t) (loc : Sarek_ast.loc) (expr : expr_desc)
     : (texpr * t) result =
   match expr with

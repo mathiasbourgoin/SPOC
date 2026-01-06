@@ -1,8 +1,22 @@
 (******************************************************************************
  * Sarek PPX - GPU kernel DSL for OCaml
  *
- * This module defines the type representation used throughout compilation.
+ * Type System Module
+ * ==================
+ *
+ * This module defines the type representation used throughout the PPX pipeline.
  * Types are framework-independent and support unification for type inference.
+ *
+ * Organization:
+ * - Type definitions (typ, prim_type, registered_type, etc.)
+ * - Unification algorithm
+ * - Type constructors and constants
+ * - Type predicates (bool-returning)
+ * - Type conversions (AST -> typ)
+ *
+ * See also:
+ * - Sarek_typer.ml for type validators (Result-returning with error messages)
+ * - Sarek_error.ml for type error definitions
  ******************************************************************************)
 
 (** Primitive types supported in GPU kernels (core language only). Numeric types
@@ -215,21 +229,28 @@ let rec pp_typ fmt t =
 
 let typ_to_string t = Format.asprintf "%a" pp_typ t
 
-(** Helpers for common types *)
+(** {1 Type Constructors and Constants}
+
+    Helper functions to construct common types. *)
+
+(** Primitive type constructors *)
 let t_unit = TPrim TUnit
 
 let t_bool = TPrim TBool
 
 let t_int32 = TPrim TInt32
 
+(** Composite type constructors *)
 let t_vec t = TVec t
 
 let t_arr t m = TArr (t, m)
 
 let t_fun args ret = TFun (args, ret)
 
-(** Helpers for library-defined numeric types (registered types). These are not
-    built-in primitives but use TReg for type-checking. *)
+(** Registered numeric types (library-defined).
+
+    These are not built-in primitives but use TReg for type-checking. They must
+    be registered via [@@sarek.type] attributes. *)
 let t_float32 = TReg Float32
 
 let t_float64 = TReg Float64
@@ -239,6 +260,15 @@ let t_int64 = TReg Int64
 let t_int = TReg Int
 
 let t_char = TReg Char
+
+(** {1 Type Predicates}
+
+    Boolean-returning functions to check type properties.
+
+    For Result-returning validators with error messages, see [Sarek_typer]:
+    - [check_numeric]: Validates numeric types with location-aware errors
+    - [check_integer]: Validates integer types with location-aware errors
+    - [check_boolean]: Validates boolean types with location-aware errors *)
 
 (** Check if type is numeric (includes both core int32 and registered float/int
     types). *)
@@ -265,6 +295,10 @@ let is_boolean t = match repr t with TPrim TBool -> true | _ -> false
 (** Check if type is an unbound type variable *)
 let is_tvar t =
   match repr t with TVar {contents = Unbound _} -> true | _ -> false
+
+(** {1 Type Conversions}
+
+    Functions to convert between different type representations. *)
 
 (** Convert AST type expression to type (with fresh type variables). Core types
     (unit, bool, int32) are handled directly. Other types (float32, float64,
