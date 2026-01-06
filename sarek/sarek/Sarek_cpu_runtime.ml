@@ -60,17 +60,15 @@ let global_size_z st = Int32.mul st.grid_dim_z st.block_dim_z
     Shared memory is allocated per-block and accessible by all threads in the
     block. Uses regular OCaml arrays to support custom types.
 
-    Implementation note: We use a single hashtable with Obj.t values because
-    shared memory can hold arrays of any type (int, float, custom records, etc.)
-    and the type is only known at the call site. The typed accessors below
-    provide type-safe access for common cases. *)
+    Implementation: We use separate hashtables for each primitive type to avoid
+    Obj.t in the common case, and one Obj.t hashtable for custom types. *)
 
 type shared_mem = {
   int_arrays : (string, int array) Hashtbl.t;
   float_arrays : (string, float array) Hashtbl.t;
   int32_arrays : (string, int32 array) Hashtbl.t;
   int64_arrays : (string, int64 array) Hashtbl.t;
-  other_arrays : (string, Obj.t) Hashtbl.t;
+  custom_arrays : (string, Obj.t) Hashtbl.t; (* Only custom types use Obj.t *)
 }
 
 let create_shared () =
@@ -79,10 +77,10 @@ let create_shared () =
     float_arrays = Hashtbl.create 2;
     int32_arrays = Hashtbl.create 2;
     int64_arrays = Hashtbl.create 2;
-    other_arrays = Hashtbl.create 2;
+    custom_arrays = Hashtbl.create 2;
   }
 
-(** Typed allocators for common array types - no Obj.magic needed *)
+(** Typed allocators for common array types - completely type-safe *)
 
 let alloc_shared_int (shared : shared_mem) name size (default : int) : int array
     =
@@ -120,13 +118,15 @@ let alloc_shared_int64 (shared : shared_mem) name size (default : int64) :
       Hashtbl.add shared.int64_arrays name arr ;
       arr
 
-(** Generic allocator for custom types - uses Obj.t for type erasure *)
-let alloc_shared (shared : shared_mem) name size (default : 'a) : 'a array =
-  match Hashtbl.find_opt shared.other_arrays name with
-  | Some arr -> Obj.obj arr
+(** Generic allocator for custom types - requires Obj.t for type erasure. The
+    caller must ensure they use consistent types for each name. *)
+let alloc_shared (type a) (shared : shared_mem) name size (default : a) :
+    a array =
+  match Hashtbl.find_opt shared.custom_arrays name with
+  | Some obj -> (Obj.obj obj : a array)
   | None ->
       let arr = Array.make size default in
-      Hashtbl.add shared.other_arrays name (Obj.repr arr) ;
+      Hashtbl.add shared.custom_arrays name (Obj.repr arr) ;
       arr
 
 (** {1 Sequential Execution}
@@ -204,7 +204,8 @@ let run_block_sequential_bsp ~block:(bx, by, bz) ~grid:(gx, gy, gz)
           | Barrier ->
               Some
                 (fun (k : (a, unit) Effect.Deep.continuation) ->
-                  waiting.(tid) <- Some (Obj.magic k) ;
+                  (* Barrier returns unit, so a = unit, k : (unit, unit) continuation *)
+                  waiting.(tid) <- Some k ;
                   incr num_waiting)
           | _ -> None);
     }
@@ -348,7 +349,8 @@ let run_block_with_barriers ~block:(bx, by, bz) ~grid:(gx, gy, gz)
           | Barrier ->
               Some
                 (fun (k : (a, unit) Effect.Shallow.continuation) ->
-                  conts.(tid) <- Some (Obj.magic k) ;
+                  (* Barrier returns unit, so a = unit *)
+                  conts.(tid) <- Some k ;
                   status.(tid) <- 1 ;
                   incr num_waiting)
           | _ -> None);
@@ -513,24 +515,6 @@ let run_parallel_simple ~block:(bx, by, bz) ~grid:(gx, gy, gz)
         else
           Some
             (Domain.spawn (fun () ->
-                 (* Reusable mutable state - avoid allocating per thread *)
-                 let state =
-                   {
-                     thread_idx_x = 0l;
-                     thread_idx_y = 0l;
-                     thread_idx_z = 0l;
-                     block_idx_x = 0l;
-                     block_idx_y = 0l;
-                     block_idx_z = 0l;
-                     block_dim_x = bx32;
-                     block_dim_y = by32;
-                     block_dim_z = bz32;
-                     grid_dim_x = gx32;
-                     grid_dim_y = gy32;
-                     grid_dim_z = gz32;
-                     barrier = noop_barrier;
-                   }
-                 in
                  for global_tid = start_tid to end_tid - 1 do
                    (* Compute block and thread indices from global thread ID *)
                    let block_id = global_tid / threads_per_block in
@@ -543,31 +527,24 @@ let run_parallel_simple ~block:(bx, by, bz) ~grid:(gx, gy, gz)
                    let thread_x = local_tid mod bx in
                    let thread_y = local_tid / bx mod by in
                    let thread_z = local_tid / (bx * by) in
-                   (* Use Obj.set_field to mutate immutable record in-place *)
-                   Obj.set_field
-                     (Obj.repr state)
-                     0
-                     (Obj.repr thread_x_table.(thread_x)) ;
-                   Obj.set_field
-                     (Obj.repr state)
-                     1
-                     (Obj.repr thread_y_table.(thread_y)) ;
-                   Obj.set_field
-                     (Obj.repr state)
-                     2
-                     (Obj.repr thread_z_table.(thread_z)) ;
-                   Obj.set_field
-                     (Obj.repr state)
-                     3
-                     (Obj.repr block_x_table.(block_x)) ;
-                   Obj.set_field
-                     (Obj.repr state)
-                     4
-                     (Obj.repr block_y_table.(block_y)) ;
-                   Obj.set_field
-                     (Obj.repr state)
-                     5
-                     (Obj.repr block_z_table.(block_z)) ;
+                   (* Create state for this thread - safe and clean *)
+                   let state =
+                     {
+                       thread_idx_x = thread_x_table.(thread_x);
+                       thread_idx_y = thread_y_table.(thread_y);
+                       thread_idx_z = thread_z_table.(thread_z);
+                       block_idx_x = block_x_table.(block_x);
+                       block_idx_y = block_y_table.(block_y);
+                       block_idx_z = block_z_table.(block_z);
+                       block_dim_x = bx32;
+                       block_dim_y = by32;
+                       block_dim_z = bz32;
+                       grid_dim_x = gx32;
+                       grid_dim_y = gy32;
+                       grid_dim_z = gz32;
+                       barrier = noop_barrier;
+                     }
+                   in
                    kernel state empty_shared args
                  done)))
   in
@@ -747,7 +724,8 @@ module ThreadPool = struct
             | Barrier ->
                 Some
                   (fun (k : (a, unit) Effect.Shallow.continuation) ->
-                    conts.(tid) <- Some (Obj.magic k) ;
+                    (* Barrier returns unit, so a = unit *)
+                    conts.(tid) <- Some k ;
                     status.(tid) <- 1 ;
                     incr num_waiting)
             | _ -> None);
@@ -801,24 +779,6 @@ module ThreadPool = struct
     let block_z_table =
       if w.gz > 1 then Array.init w.gz Int32.of_int else [|0l|]
     in
-    (* Pre-allocate mutable state *)
-    let state =
-      {
-        thread_idx_x = 0l;
-        thread_idx_y = 0l;
-        thread_idx_z = 0l;
-        block_idx_x = 0l;
-        block_idx_y = 0l;
-        block_idx_z = 0l;
-        block_dim_x = bx32;
-        block_dim_y = by32;
-        block_dim_z = bz32;
-        grid_dim_x = gx32;
-        grid_dim_y = gy32;
-        grid_dim_z = gz32;
-        barrier = noop_barrier;
-      }
-    in
     (* Run each global thread in our range *)
     for global_tid = w.start_tid to w.end_tid - 1 do
       let block_id = global_tid / threads_per_block in
@@ -829,12 +789,24 @@ module ThreadPool = struct
       let thread_x = local_tid mod w.bx in
       let thread_y = local_tid / w.bx mod w.by in
       let thread_z = local_tid / (w.bx * w.by) in
-      Obj.set_field (Obj.repr state) 0 (Obj.repr thread_x_table.(thread_x)) ;
-      Obj.set_field (Obj.repr state) 1 (Obj.repr thread_y_table.(thread_y)) ;
-      Obj.set_field (Obj.repr state) 2 (Obj.repr thread_z_table.(thread_z)) ;
-      Obj.set_field (Obj.repr state) 3 (Obj.repr block_x_table.(block_x)) ;
-      Obj.set_field (Obj.repr state) 4 (Obj.repr block_y_table.(block_y)) ;
-      Obj.set_field (Obj.repr state) 5 (Obj.repr block_z_table.(block_z)) ;
+      (* Create fresh state for each thread - safe and clean *)
+      let state =
+        {
+          thread_idx_x = thread_x_table.(thread_x);
+          thread_idx_y = thread_y_table.(thread_y);
+          thread_idx_z = thread_z_table.(thread_z);
+          block_idx_x = block_x_table.(block_x);
+          block_idx_y = block_y_table.(block_y);
+          block_idx_z = block_z_table.(block_z);
+          block_dim_x = bx32;
+          block_dim_y = by32;
+          block_dim_z = bz32;
+          grid_dim_x = gx32;
+          grid_dim_y = gy32;
+          grid_dim_z = gz32;
+          barrier = noop_barrier;
+        }
+      in
       w.kernel state empty_shared w.args
     done
 
@@ -1240,24 +1212,6 @@ let run_threadpool ~has_barriers ~block:(bx, by, bz) ~grid:(gx, gy, gz)
     let block_z_table = if gz > 1 then Array.init gz Int32.of_int else [|0l|] in
     let noop_barrier = fun () -> () in
     ParallelPool.parallel_for pool ~total:total_threads (fun start end_ ->
-        (* Pre-allocate a reusable state record *)
-        let state =
-          {
-            thread_idx_x = 0l;
-            thread_idx_y = 0l;
-            thread_idx_z = 0l;
-            block_idx_x = 0l;
-            block_idx_y = 0l;
-            block_idx_z = 0l;
-            block_dim_x = bx32;
-            block_dim_y = by32;
-            block_dim_z = bz32;
-            grid_dim_x = gx32;
-            grid_dim_y = gy32;
-            grid_dim_z = gz32;
-            barrier = noop_barrier;
-          }
-        in
         for global_tid = start to end_ - 1 do
           let block_id = global_tid / threads_per_block in
           let local_tid = global_tid - (block_id * threads_per_block) in
@@ -1267,13 +1221,24 @@ let run_threadpool ~has_barriers ~block:(bx, by, bz) ~grid:(gx, gy, gz)
           let thread_x = local_tid mod bx in
           let thread_y = local_tid / bx mod by in
           let thread_z = local_tid / (bx * by) in
-          (* Update state using Obj.set_field for efficiency *)
-          Obj.set_field (Obj.repr state) 0 (Obj.repr thread_x_table.(thread_x)) ;
-          Obj.set_field (Obj.repr state) 1 (Obj.repr thread_y_table.(thread_y)) ;
-          Obj.set_field (Obj.repr state) 2 (Obj.repr thread_z_table.(thread_z)) ;
-          Obj.set_field (Obj.repr state) 3 (Obj.repr block_x_table.(block_x)) ;
-          Obj.set_field (Obj.repr state) 4 (Obj.repr block_y_table.(block_y)) ;
-          Obj.set_field (Obj.repr state) 5 (Obj.repr block_z_table.(block_z)) ;
+          (* Create fresh state for each thread *)
+          let state =
+            {
+              thread_idx_x = thread_x_table.(thread_x);
+              thread_idx_y = thread_y_table.(thread_y);
+              thread_idx_z = thread_z_table.(thread_z);
+              block_idx_x = block_x_table.(block_x);
+              block_idx_y = block_y_table.(block_y);
+              block_idx_z = block_z_table.(block_z);
+              block_dim_x = bx32;
+              block_dim_y = by32;
+              block_dim_z = bz32;
+              grid_dim_x = gx32;
+              grid_dim_y = gy32;
+              grid_dim_z = gz32;
+              barrier = noop_barrier;
+            }
+          in
           kernel state empty_shared args
         done)
   end

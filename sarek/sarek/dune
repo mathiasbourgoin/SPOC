@@ -24,4 +24,5 @@
   Sarek_float32
   Kirc_kernel
   Execute
+  Execute_error
   Transform))

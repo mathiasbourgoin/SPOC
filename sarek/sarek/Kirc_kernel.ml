@@ -263,7 +263,7 @@ let run ~(device : Device.t) ~(block : Framework_sig.dims)
     (Native, CUDA, OpenCL). Uses plugin dispatch via Execute.run. *)
 let run_with_args ~(device : Device.t) ~(block : Framework_sig.dims)
     ~(grid : Framework_sig.dims) ?(shared_mem = 0) (k : 'a kernel)
-    (args : Execute.arg list) : unit =
+    (args : Execute.vector_arg list) : unit =
   Execute.run
     ~device
     ~name:k.name

@@ -16,96 +16,10 @@ open Spoc_core
 (** Kernel execution error *)
 exception Execution_error of string
 
-(** {1 Argument Binding Helpers} *)
-
-(** Argument types for explicit binding. ArgBuffer stores the buffer handle as
-    Obj.t to erase the type parameter. *)
-type arg =
-  | ArgBuffer of Obj.t (* Memory.buffer erased *)
-  | ArgInt32 of int32
-  | ArgInt64 of int64
-  | ArgFloat32 of float
-  | ArgFloat64 of float
-  | ArgCustom of Obj.t * int (* buffer + elem_size for custom types *)
-  | ArgRaw of Obj.t (* passthrough for SPOC Vector compatibility *)
-  | ArgDeviceBuffer of (module Vector.DEVICE_BUFFER)
-(* V2 Vector buffer - backend binds itself *)
-
-(** Create a buffer argument from any Memory.buffer *)
-let arg_buffer (buf : _ Memory.buffer) : arg = ArgBuffer (Obj.repr buf)
-
-(** Create a custom buffer argument with explicit element size *)
-let arg_custom (buf : _ Memory.buffer) ~(elem_size : int) : arg =
-  ArgCustom (Obj.repr buf, elem_size)
-
-(** Create a raw argument (for SPOC Vector compatibility) *)
-let arg_raw (v : 'a) : arg = ArgRaw (Obj.repr v)
-
-(** Convert typed arguments to Obj.t array (legacy, for backwards compat) *)
-let args_to_obj_array (args : arg list) : Obj.t array =
-  Array.of_list
-    (List.map
-       (function
-         | ArgBuffer b -> b
-         | ArgInt32 n -> Obj.repr n
-         | ArgInt64 n -> Obj.repr n
-         | ArgFloat32 f -> Obj.repr f
-         | ArgFloat64 f -> Obj.repr f
-         | ArgCustom (b, _) -> b
-         | ArgRaw o -> o
-         | ArgDeviceBuffer buf ->
-             let (module B : Vector.DEVICE_BUFFER) = buf in
-             Obj.repr B.device_ptr)
-       args)
-
-(** Convert typed arg list to exec_arg array (new typed interface) *)
-let args_to_exec_array (args : arg list) : Framework_sig.exec_arg array =
-  Array.of_list
-    (List.map
-       (function
-         | ArgBuffer _ -> failwith "args_to_exec_array: ArgBuffer not supported"
-         | ArgInt32 n -> Framework_sig.EA_Int32 n
-         | ArgInt64 n -> Framework_sig.EA_Int64 n
-         | ArgFloat32 f -> Framework_sig.EA_Float32 f
-         | ArgFloat64 f -> Framework_sig.EA_Float64 f
-         | ArgCustom _ -> failwith "args_to_exec_array: ArgCustom not supported"
-         | ArgRaw _ -> failwith "args_to_exec_array: ArgRaw not supported"
-         | ArgDeviceBuffer _ ->
-             failwith "args_to_exec_array: ArgDeviceBuffer use vector_args path")
-       args)
-
-(** Bind typed arguments to a kernel (for BACKEND) *)
-let bind_args (type kargs)
-    (module B : Framework_sig.BACKEND with type Kernel.args = kargs)
-    (kargs : kargs) (args : arg list) : unit =
-  List.iteri
-    (fun i arg ->
-      match arg with
-      | ArgBuffer obj ->
-          (* obj is Obj.repr of Memory.buffer - use bind_to_kargs *)
-          let buf : _ Memory.buffer = Obj.obj obj in
-          Memory.bind_to_kargs buf (B.wrap_kargs kargs) i
-      | ArgInt32 n -> B.Kernel.set_arg_int32 kargs i n
-      | ArgInt64 n -> B.Kernel.set_arg_int64 kargs i n
-      | ArgFloat32 f -> B.Kernel.set_arg_float32 kargs i f
-      | ArgFloat64 f -> B.Kernel.set_arg_float64 kargs i f
-      | ArgCustom (obj, _elem_size) ->
-          (* Same as ArgBuffer - custom types use same buffer mechanism *)
-          let buf : _ Memory.buffer = Obj.obj obj in
-          Memory.bind_to_kargs buf (B.wrap_kargs kargs) i
-      | ArgRaw _obj ->
-          (* Raw args not handled in JIT path - use expand_vector_args *)
-          failwith "bind_args: ArgRaw not supported, use expand_vector_args"
-      | ArgDeviceBuffer buf ->
-          (* V2 Vector buffer - let the backend bind itself *)
-          let (module DB : Vector.DEVICE_BUFFER) = buf in
-          DB.bind_to_kargs (B.wrap_kargs kargs) i)
-    args
-
 (** {1 V2 Vector Argument Type} *)
 
 (** V2 Vector argument type - supports automatic transfers and length expansion.
-    Defined before run so it can be used in the signature. *)
+    This is the main type-safe way to pass arguments to kernels. *)
 type vector_arg =
   | Vec : ('a, 'b) Vector.t -> vector_arg
       (** V2 Vector - expands to (buffer, length) for JIT *)
@@ -114,20 +28,6 @@ type vector_arg =
   | Int64 : int64 -> vector_arg  (** 64-bit integer scalar *)
   | Float32 : float -> vector_arg  (** 32-bit float scalar *)
   | Float64 : float -> vector_arg  (** 64-bit float scalar *)
-
-(** Convert vector_arg list to Obj.t array for backend dispatch (legacy). Passes
-    V2 Vectors directly - backends handle extraction. *)
-let vector_args_to_obj_array (args : vector_arg list) : Obj.t array =
-  Array.of_list
-    (List.map
-       (function
-         | Vec v -> Obj.repr v
-         | Int n -> Obj.repr (Int32.of_int n)
-         | Int32 n -> Obj.repr n
-         | Int64 n -> Obj.repr n
-         | Float32 f -> Obj.repr f
-         | Float64 f -> Obj.repr f)
-       args)
 
 (** Convert vector_arg list to exec_arg array (new typed interface). Creates
     EXEC_VECTOR wrappers for vectors. *)
@@ -237,22 +137,6 @@ let transfer_vectors_to_device (args : vector_arg list) (dev : Device.t) : unit
     =
   List.iter (function Vec v -> Transfer.to_device v dev | _ -> ()) args
 
-(** Expand V2 Vector args to (buffer, length) pairs for kernel binding. Each Vec
-    expands to two args: buffer and length (matches OpenCL/CUDA codegen which
-    adds a length parameter for each vector). *)
-let expand_vector_args (args : vector_arg list) (dev : Device.t) : arg list =
-  List.concat_map
-    (function
-      | Vec v ->
-          let buf = get_device_buffer v dev in
-          [ArgDeviceBuffer buf; ArgInt32 (Int32.of_int (Vector.length v))]
-      | Int n -> [ArgInt32 (Int32.of_int n)]
-      | Int32 n -> [ArgInt32 n]
-      | Int64 n -> [ArgInt64 n]
-      | Float32 f -> [ArgFloat32 f]
-      | Float64 f -> [ArgFloat64 f])
-    args
-
 (** Expand vector args to run_source_arg format.
     @param inject_lengths
       If true (default), auto-inject vector length as Int32 after each buffer.
@@ -290,8 +174,7 @@ let expand_to_run_source_args ?(inject_lengths = true) (args : vector_arg list)
     @param block Block dimensions
     @param grid Grid dimensions
     @param shared_mem Shared memory size in bytes (default 0)
-    @param vector_args Original V2 vector args (optional, for unified dispatch)
-    @param args Kernel arguments (typed) - used if vector_args not provided
+    @param args Kernel arguments as vector_arg list
     @raise Execution_error if execution fails *)
 let run ~(device : Device.t) ~(name : string)
     ~(ir : Sarek_ir.kernel Lazy.t option)
@@ -301,7 +184,7 @@ let run ~(device : Device.t) ~(name : string)
        Framework_sig.exec_arg array ->
        unit)
        option) ~(block : Framework_sig.dims) ~(grid : Framework_sig.dims)
-    ?(shared_mem : int = 0) ?vector_args (args : arg list) : unit =
+    ?(shared_mem : int = 0) (args : vector_arg list) : unit =
   match Framework_registry.find_backend device.framework with
   | None ->
       raise
@@ -309,13 +192,7 @@ let run ~(device : Device.t) ~(name : string)
   | Some (module B : Framework_sig.BACKEND) -> (
       match B.execution_model with
       | Framework_sig.JIT -> (
-          (* JIT path: generate source, compile, launch
-             For JIT, expand vector_args to (buffer, length) format *)
-          let expanded_args =
-            match vector_args with
-            | Some vargs -> expand_vector_args vargs device
-            | None -> args
-          in
+          (* JIT path: generate source, compile, use B.run_source *)
           match ir with
           | None ->
               raise
@@ -327,111 +204,43 @@ let run ~(device : Device.t) ~(name : string)
                   raise
                     (Execution_error "JIT backend failed to generate source")
               | Some source ->
+                  (* Convert vector args to run_source_arg format (auto-injects lengths) *)
+                  let rs_args = expand_to_run_source_args args device in
+                  (* Set current device *)
                   let dev = B.Device.get device.backend_id in
-                  let compiled = B.Kernel.compile_cached dev ~name ~source in
-                  let kargs = B.Kernel.create_args () in
-                  bind_args (module B) kargs expanded_args ;
-                  B.Kernel.launch
-                    compiled
-                    ~args:kargs
-                    ~grid
+                  B.Device.set_current dev ;
+                  (* Determine source language from backend's supported langs *)
+                  let lang =
+                    match B.supported_source_langs with
+                    | [] ->
+                        raise
+                          (Execution_error
+                             "JIT backend has no supported source languages")
+                    | lang :: _ -> lang
+                  in
+                  (* Use backend's run_source - handles compilation and launch *)
+                  B.run_source
+                    ~source
+                    ~lang
+                    ~kernel_name:name
                     ~block
+                    ~grid
                     ~shared_mem
-                    ~stream:None))
+                    rs_args))
       | Framework_sig.Direct ->
-          (* Direct path: call native function or interpret IR
-             For Direct, pass V2 Vectors directly (not expanded) *)
+          (* Direct path: call native function or interpret IR *)
           let dev = B.Device.get device.backend_id in
           B.Device.set_current dev ;
-          let exec_args =
-            match vector_args with
-            | Some vargs -> vector_args_to_exec_array vargs
-            | None -> args_to_exec_array args
-          in
+          let exec_args = vector_args_to_exec_array args in
           let ir_val = Option.map Lazy.force ir in
           B.execute_direct ~native_fn ~ir:ir_val ~block ~grid exec_args
       | Framework_sig.Custom ->
-          (* Custom path: delegate to backend with IR
-             For Custom (Interpreter), pass V2 Vectors directly *)
+          (* Custom path: delegate to backend with IR *)
           let dev = B.Device.get device.backend_id in
           B.Device.set_current dev ;
-          let exec_args =
-            match vector_args with
-            | Some vargs -> vector_args_to_exec_array vargs
-            | None -> args_to_exec_array args
-          in
+          let exec_args = vector_args_to_exec_array args in
           let ir_val = Option.map Lazy.force ir in
           B.execute_direct ~native_fn ~ir:ir_val ~block ~grid exec_args)
-
-(** {1 Typed Execution Interface} *)
-
-(** Execute a kernel with explicitly typed arguments *)
-let run_typed ~(device : Device.t) ~(name : string) ~(source : string)
-    ~(block : Framework_sig.dims) ~(grid : Framework_sig.dims)
-    ?(shared_mem : int = 0) (args : arg list) : unit =
-  match Framework_registry.find_backend device.framework with
-  | None ->
-      raise
-        (Execution_error ("No backend found for framework: " ^ device.framework))
-  | Some (module B : Framework_sig.BACKEND) ->
-      let t0 = Unix.gettimeofday () in
-      let dev = B.Device.get device.backend_id in
-      let compiled = B.Kernel.compile_cached dev ~name ~source in
-      let t1 = Unix.gettimeofday () in
-      let kargs = B.Kernel.create_args () in
-      bind_args (module B) kargs args ;
-      let t2 = Unix.gettimeofday () in
-      B.Kernel.launch compiled ~args:kargs ~grid ~block ~shared_mem ~stream:None ;
-      let t3 = Unix.gettimeofday () in
-      Log.debugf
-        Log.Execute
-        "    compile=%.3fms bind=%.3fms launch=%.3fms"
-        ((t1 -. t0) *. 1000.0)
-        ((t2 -. t1) *. 1000.0)
-        ((t3 -. t2) *. 1000.0)
-
-(** {1 IR-based Execution} *)
-
-(** Execute a kernel from Sarek IR (Phase 4 path). Dispatches to the appropriate
-    backend via plugin registry. JIT backends (CUDA, OpenCL) use
-    B.generate_source. Direct/Custom backends (Native, Interpreter) use
-    B.execute_direct. *)
-let run_from_ir ~(device : Device.t) ~(ir : Sarek_ir.kernel)
-    ~(block : Framework_sig.dims) ~(grid : Framework_sig.dims)
-    ?(shared_mem : int = 0)
-    ?(native_fn :
-       (block:Framework_sig.dims ->
-       grid:Framework_sig.dims ->
-       Framework_sig.exec_arg array ->
-       unit)
-       option) (args : arg list) : unit =
-  Log.debugf
-    Log.Execute
-    "run_from_ir: kernel='%s' framework=%s device=%d"
-    ir.kern_name
-    device.framework
-    device.id ;
-  Log.debugf
-    Log.Execute
-    "  grid=(%d,%d,%d) block=(%d,%d,%d) args=%d"
-    grid.x
-    grid.y
-    grid.z
-    block.x
-    block.y
-    block.z
-    (List.length args) ;
-
-  (* Dispatch via plugin registry - no hardcoded framework checks *)
-  run
-    ~device
-    ~name:ir.kern_name
-    ~ir:(Some (lazy ir))
-    ~native_fn
-    ~block
-    ~grid
-    ~shared_mem
-    args
 
 (** {1 V2 Vector Execution Helpers} *)
 
@@ -575,7 +384,7 @@ let run_vectors ~(device : Device.t) ~(ir : Sarek_ir.kernel)
   (* 1. Transfer all vectors to device *)
   transfer_vectors_to_device args device ;
 
-  (* 2. Dispatch via run with vector_args - it handles expansion per backend *)
+  (* 2. Dispatch via run - it handles expansion per backend *)
   run
     ~device
     ~name:ir.kern_name
@@ -584,8 +393,7 @@ let run_vectors ~(device : Device.t) ~(ir : Sarek_ir.kernel)
     ~block
     ~grid
     ~shared_mem
-    ~vector_args:args
-    [] ;
+    args ;
 
   (* 3. Mark vectors as stale (no-op for CPU backends due to zero-copy) *)
   mark_vectors_stale args device
