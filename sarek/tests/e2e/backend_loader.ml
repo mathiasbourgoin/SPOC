@@ -8,4 +8,5 @@ let init () =
   (* GPU backends are conditionally included via select *)
   Backend_cuda.init () ;
   Backend_opencl.init () ;
-  Backend_vulkan.init ()
+  Backend_vulkan.init () ;
+  Backend_metal.init ()

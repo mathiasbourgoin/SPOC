@@ -5,7 +5,8 @@
 ;   SPOC_DISABLE_CUDA=1    - Disable CUDA backend
 ;   SPOC_DISABLE_OPENCL=1  - Disable OpenCL backend
 ;   SPOC_DISABLE_VULKAN=1  - Disable Vulkan backend
-;   SPOC_DISABLE_GPU=1     - Disable all GPU backends (CUDA, OpenCL, Vulkan)
+;   SPOC_DISABLE_METAL=1   - Disable Metal backend
+;   SPOC_DISABLE_GPU=1     - Disable all GPU backends (CUDA, OpenCL, Vulkan, Metal)
 
 (library
  (name test_helpers)
@@ -15,7 +16,8 @@
   backend_loader
   backend_cuda
   backend_opencl
-  backend_vulkan)
+  backend_vulkan
+  backend_metal)
  (libraries
   spoc_core
   ; Always-available backends
@@ -37,6 +39,11 @@
    from
    (sarek_vulkan -> backend_vulkan.available.ml)
    (-> backend_vulkan.unavailable.ml))
+  (select
+   backend_metal.ml
+   from
+   (sarek_metal -> backend_metal.available.ml)
+   (-> backend_metal.unavailable.ml))
   unix))
 
 (executables

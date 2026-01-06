@@ -85,3 +85,15 @@ Install sarek-cuda, sarek-opencl, or sarek-vulkan for GPU execution.")
   ctypes-foreign)
  (depopts
   conf-vulkan))
+
+; Metal backend plugin
+(package
+ (name sarek-metal)
+ (synopsis "Metal backend for Sarek GPU kernels")
+ (description "Enables execution of Sarek kernels on Apple GPUs via Metal framework (macOS/iOS).")
+ (depends
+  (ocaml (>= 4.14.0))
+  (dune (>= 2.9))
+  (sarek (= :version))
+  ctypes
+  ctypes-foreign))
