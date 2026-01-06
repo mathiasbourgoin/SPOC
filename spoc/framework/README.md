@@ -11,6 +11,7 @@ spoc_framework/
 ├── Framework_sig.ml    # BACKEND module type and common types
 ├── Typed_value.ml      # Type-safe value representation
 └── Device_type.ml      # Device type alias (backward compatibility)
+../sarek/core/         # Runtime core that consumes BACKEND plugins
 ```
 
 ## Framework_sig.ml

@@ -15,6 +15,8 @@ vectors, transfers, and kernel execution, with unified logging and testing.
 - `Transfer`: Device/host transfers, buffer allocation/ensure-buffer, zero-copy path.
 - `Runtime`: High-level run helpers, dims re-export, kernel cache.
 - `Profiling`, `Advanced`: supplemental utilities.
+- Related components: `spoc/` SDK layer, `spoc/framework/`, `spoc/ir/`, `spoc/registry/`
+  (see their directories for plugin interfaces, IR, and registries).
 
 ## Design Principles
 
