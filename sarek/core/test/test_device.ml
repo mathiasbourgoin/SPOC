@@ -77,15 +77,25 @@ let test_is_native () =
 let test_is_gpu () =
   let cuda_dev = make_fake_device ~framework:"CUDA" () in
   let native_dev = make_fake_device ~framework:"Native" () in
+  let opencl_cpu =
+    make_fake_device
+      ~framework:"OpenCL"
+      ~caps:(make_fake_caps ~is_cpu:true ())
+      ()
+  in
   assert (Spoc_core.Device.is_gpu cuda_dev = true) ;
   assert (Spoc_core.Device.is_gpu native_dev = false) ;
+  assert (Spoc_core.Device.is_gpu opencl_cpu = false) ;
   print_endline "  is_gpu: OK"
 
 let test_is_cpu () =
   let native_dev = make_fake_device ~framework:"Native" () in
   let cuda_dev = make_fake_device ~framework:"CUDA" () in
   let cpu_opencl_dev =
-    make_fake_device ~framework:"OpenCL" ~name:"CPU Core" ()
+    make_fake_device
+      ~framework:"OpenCL"
+      ~caps:(make_fake_caps ~is_cpu:true ())
+      ()
   in
   assert (Spoc_core.Device.is_cpu native_dev = true) ;
   assert (Spoc_core.Device.is_cpu cuda_dev = false) ;

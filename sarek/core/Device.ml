@@ -141,13 +141,10 @@ let is_opencl d = d.framework = "OpenCL"
 
 let is_native d = d.framework = "Native"
 
-let is_gpu d =
-  (* GPUs are CUDA or OpenCL devices that aren't CPU-type *)
-  is_cuda d || (is_opencl d && not (String.sub d.name 0 3 = "CPU"))
+let is_cpu d = d.capabilities.is_cpu || is_native d
 
-let is_cpu d =
-  is_native d
-  || (is_opencl d && String.length d.name >= 3 && String.sub d.name 0 3 = "CPU")
+let is_gpu d =
+  (is_cuda d || is_opencl d || d.framework = "Vulkan") && not (is_cpu d)
 
 (** {2 Capability Queries} *)
 
