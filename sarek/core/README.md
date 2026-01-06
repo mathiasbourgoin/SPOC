@@ -1,58 +1,39 @@
-(******************************************************************************
- * sarek/core - Runtime Core Modules
- *
- * This README documents the core runtime pieces that sit between the Sarek PPX
- * (IR generation) and the backend plugins (CUDA/OpenCL/Vulkan/Native/Interpreter).
- * The goal is type safety (no Obj.t), clean abstraction boundaries, and clear
- * logging/debug hooks.
- ******************************************************************************)
+# sarek/core - Runtime Core Modules
+
+This layer sits between the Sarek PPX (IR generation) and backend plugins
+(CUDA/OpenCL/Vulkan/Native/Interpreter). It provides type-safe devices, memory,
+vectors, transfers, and kernel execution, with unified logging and testing.
 
 ## Module Map
 
-- `Log` / `Error`: Unified logging with `SAREK_DEBUG` env flag; `Error` delegates
-  to `Log` for levels/components.
-- `Device`: Unified device view from registered backends; predicates and
-  capability queries are based on `capabilities.is_cpu`, etc.
-- `Memory`: Typed device buffers via `Memory.BUFFER` (no Obj.t), alloc/transfer
-  helpers, typed `bind_to_kargs`.
-- `Kernel` / `Kernel_arg`: Typed kernel compilation/launch; extensible `kargs`
-  wrapping; `Kernel_arg` GADT for vectors/scalars without Obj.t.
-- `Vector` (with `Vector_types`, `Vector_storage`, `Vector_transfer`): High-level
-  vectors with location tracking, storage helpers, host pointers, sync callbacks,
-  copy/subvector/partition host logic.
-- `Transfer`: Device/host transfers and buffer allocation/ensure-buffer logic,
-  using the unified buffer interface.
-- `Runtime`: High-level run helpers (re-exporting `Framework_sig.dims`), kernel
-  cache, and arg builders.
-- `Profiling`, `Advanced`: supplemental runtime utilities.
+- `Log` / `Error`: Unified logging (`SAREK_DEBUG` env); `Error` delegates to `Log`.
+- `Device`: Device enumeration/predicates using `capabilities.is_cpu`, etc.
+- `Memory`: Typed device buffers (`Memory.BUFFER`), alloc/transfer helpers, `bind_to_kargs`.
+- `Kernel` / `Kernel_arg`: Typed kernel compilation/launch; extensible `kargs`; GADT args.
+- `Vector` (+ `Vector_types`, `Vector_transfer`, `Vector_storage`):
+  kinds/locations, sync callbacks, host pointers, storage/copy/subvector/partition helpers.
+- `Transfer`: Device/host transfers, buffer allocation/ensure-buffer, zero-copy path.
+- `Runtime`: High-level run helpers, dims re-export, kernel cache.
+- `Profiling`, `Advanced`: supplemental utilities.
 
 ## Design Principles
 
-- Type safety: GADTs for vectors/args, `Memory.BUFFER` for typed buffers, no Obj.t.
-- Backend agnostic core: Uses `Framework_registry` to find backends; no backend
-  specifics in core modules.
-- Separation of concerns: Storage vs transfer vs façade modules; logging flows
-  through `Log`.
+- Type safety (no `Obj.t`): GADTs for vectors/args, typed buffers.
+- Backend-agnostic core: uses `Framework_registry`; no backend-specific code.
+- Separation: storage vs transfer vs façade; single logging pipeline.
 
 ## Key Types & Interfaces
 
-- **Device**: `Device.t` with `capabilities.is_cpu`, `supports_fp64`, etc.
-  Predicates `is_cpu`/`is_gpu` use capabilities instead of name heuristics.
-- **Memory.BUFFER**: `device`, `size`, `elem_size`, `device_ptr`, transfer
-  functions, `bind_to_kargs`, `free`. `Vector.DEVICE_BUFFER` reuses this module
-  type.
-- **Kernel args**: `Kernel_arg.t` GADT, `Kernel.args` typed builders; extensible
-  `Framework_sig.kargs` wrapping/unwrapping.
-- **Vector kinds**: `scalar_kind` + `custom_type`; locations (`CPU`, `GPU dev`,
-  `Both`, `Stale_*`), auto-sync flag, subvector metadata (parent/start/depth).
-- **Transfer**: `ensure_buffer`, `to_device`, `to_cpu`; zero-copy path chosen by
-  backend; shared `bigarray_to_ptr` in `Vector_transfer`.
+- Device predicates (`is_cpu`/`is_gpu`) rely on capabilities; `Device.capabilities` mirrors `Framework_sig`.
+- `Memory.BUFFER`: `device`, `size`, `elem_size`, `device_ptr`, transfer fns, `bind_to_kargs`, `free`. `Vector.DEVICE_BUFFER` reuses it.
+- `Kernel_arg.t` GADT, `Kernel.args` builders; extensible `Framework_sig.kargs`.
+- Vector kinds (`scalar_kind`/`custom_type`), locations (`CPU`, `GPU dev`, `Both`, `Stale_*`), subvector metadata.
+- Transfer uses shared `bigarray_to_ptr` (`Vector_transfer`) and attempts zero-copy allocations.
 
 ## Logging & Debugging
 
-- Enable components via `SAREK_DEBUG=kernel,transfer,device,memory,execute,all`.
-- Levels: Debug/Info/Warn/Error; `Error` uses `Log` internally.
-- Format/printf helpers in `Log` (`debugf`, etc.).
+- `SAREK_DEBUG=transfer,kernel,device,memory,execute,all` (comma-separated).
+- Levels: Debug/Info/Warn/Error via `Log`; `Error` formats to `Log`.
 
 ## Usage Snippets
 
@@ -61,35 +42,30 @@
 let v = Vector.create_float32 1024
 let sub = Vector.sub_vector v ~start:100 ~len:50 ()
 
-(* Memory allocation via Runtime *)
+(* Memory allocation and transfer *)
 let buf = Runtime.alloc_float32 dev 256
 Runtime.to_device buf ba; Runtime.from_device buf ba'
 
-(* Kernel args and launch *)
+(* Kernel launch *)
 let args = Kernel.create_args dev in
 Kernel.set_arg_buffer args 0 buf;
 let grid = Runtime.dims1d 4 and block = Runtime.dims1d 256 in
-Kernel.launch kernel ~args ~grid:(Runtime.to_framework_dims grid)
+Kernel.launch k ~args ~grid:(Runtime.to_framework_dims grid)
   ~block:(Runtime.to_framework_dims block) ()
 ```
 
 ## Testing
 
-- Core unit tests: `dune runtest sarek/core/test`
-  - Covers Memory, Kernel, Device, Vector, Kernel_arg, Vector_storage,
-    Vector_transfer.
-- `make test-all` includes these tests (runs `dune runtest` under the hood).
+- Run core tests: `dune runtest sarek/core/test`
+  - Covers Memory, Kernel, Device, Vector, Kernel_arg, Vector_storage, Vector_transfer.
+- `make test-all` includes these tests.
 
 ## Backend Interaction
 
-- Backends are discovered via `Framework_registry`; `Device.init` enumerates
-  available frameworks, `Memory`/`Kernel` call through wrapped `kargs`.
-- Zero-copy allocations are attempted in `Transfer.ensure_buffer` for CPU/host
-  backends when supported by `B.Memory.alloc_zero_copy`.
+- Backends discovered via `Framework_registry`; `Memory`/`Kernel`/`Transfer` unwrap/wrap `kargs`.
+- Zero-copy attempted when backend `alloc_zero_copy` supports CPU/host sharing.
 
-## Notes / Future Work
+## Notes
 
-- Partition/gather is host-side only; device-side redistribution is deferred to
-  `Transfer`/backends.
-- `Vector` façade delegates storage/sync helpers to split modules to keep it
-  slim; further refactors should preserve the typed interfaces.
+- Partition/gather is host-side only; device redistribution is backend/Transfer responsibility.
+- `Vector` façade delegates storage/sync helpers to split modules to stay small.
