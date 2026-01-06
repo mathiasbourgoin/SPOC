@@ -9,6 +9,7 @@
   test_tailrec
   test_tailrec_analysis
   test_native_helpers
+  test_native_intrinsics
   test_scheme
   test_mono)
  ; Link sarek_stdlib to trigger auto-registration of intrinsics
