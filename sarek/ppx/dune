@@ -29,6 +29,10 @@
   Sarek_native_helpers
   Sarek_native_intrinsics
   Sarek_native_gen
+  Sarek_tailrec_analysis
+  Sarek_tailrec_elim
+  Sarek_tailrec_bounded
+  Sarek_tailrec_pragma
   Sarek_tailrec
   Sarek_mono
   Sarek_debug))
