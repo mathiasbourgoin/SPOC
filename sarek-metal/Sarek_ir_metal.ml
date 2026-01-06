@@ -73,9 +73,9 @@ let metal_thread_intrinsic = function
   | "block_dim_x" -> "__metal_tpg.x"
   | "block_dim_y" -> "__metal_tpg.y"
   | "block_dim_z" -> "__metal_tpg.z"
-  | "grid_dim_x" -> "__metal_tpg.x * __metal_num_groups.x"
-  | "grid_dim_y" -> "__metal_tpg.y * __metal_num_groups.y"
-  | "grid_dim_z" -> "__metal_tpg.z * __metal_num_groups.z"
+  | "grid_dim_x" -> "__metal_num_groups.x"
+  | "grid_dim_y" -> "__metal_num_groups.y"
+  | "grid_dim_z" -> "__metal_num_groups.z"
   | "global_thread_id" | "global_idx" | "global_idx_x" -> "__metal_gid.x"
   | "global_idx_y" -> "__metal_gid.y"
   | "global_idx_z" -> "__metal_gid.z"
@@ -294,13 +294,13 @@ and gen_intrinsic buf path name args =
         (match args with
         | [addr; value] ->
             (* Cast pointer to threadgroup atomic type *)
-            Buffer.add_string buf "(threadgroup atomic_int*)&" ;
+            Buffer.add_string buf "(volatile threadgroup atomic_int*)&" ;
             gen_expr buf addr ;
             Buffer.add_string buf ", " ;
             gen_expr buf value
         | [arr; idx; value] ->
             (* Array element atomic with threadgroup cast *)
-            Buffer.add_string buf "(threadgroup atomic_int*)&" ;
+            Buffer.add_string buf "(volatile threadgroup atomic_int*)&" ;
             gen_expr buf arr ;
             Buffer.add_char buf '[' ;
             gen_expr buf idx ;
@@ -313,21 +313,21 @@ and gen_intrinsic buf path name args =
         (match args with
         | [addr; value] ->
             (* Cast pointer to device atomic type *)
-            Buffer.add_string buf "(device atomic_int*)&" ;
+            Buffer.add_string buf "(volatile device atomic_int*)&" ;
             gen_expr buf addr ;
             Buffer.add_string buf ", " ;
             gen_expr buf value
         | [arr; idx; value] ->
             (* Array element atomic with device cast *)
-            Buffer.add_string buf "(device atomic_int*)&" ;
+            Buffer.add_string buf "(volatile device atomic_int*)&" ;
             gen_expr buf arr ;
             Buffer.add_char buf '[' ;
             gen_expr buf idx ;
             Buffer.add_string buf "], " ;
             gen_expr buf value
         | _ -> failwith "atomic_add_global requires 2 or 3 arguments") ;
-        (* Use seq_cst for device memory to ensure visibility across threadgroups *)
-        Buffer.add_string buf ", memory_order_seq_cst)"
+        (* Use relaxed memory order *)
+        Buffer.add_string buf ", memory_order_relaxed)"
     | "atomic_sub" ->
         Buffer.add_string buf "atomic_sub(" ;
         (match args with
@@ -976,14 +976,10 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
 
   (* Collect variables used with atomic operations *)
   let atomic_vars = collect_atomic_vars_stmt k.kern_body in
-  Spoc_core.Log.debug Kernel (Printf.sprintf "Kernel %s: atomic vars [%s]" k.kern_name (String.concat ", " atomic_vars));
 
   (* Metal header *)
   Buffer.add_string buf "#include <metal_stdlib>\n" ;
   Buffer.add_string buf "using namespace metal;\n\n" ;
-
-  (* Variant type definitions first (may be needed by records) *)
-  List.iter (gen_variant_def buf) k.kern_variants ;
 
   (* Record type definitions *)
   List.iter
