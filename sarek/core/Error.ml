@@ -2,7 +2,7 @@
  * Sarek Runtime - Error Handling & Debugging
  *
  * Provides structured exceptions and debugging tools.
- * Phase 7 of runtime V2 feature parity roadmap.
+ * Delegates logging to Log.ml so there is a single logging pipeline.
  ******************************************************************************)
 
 (** {1 Structured Exceptions} *)
@@ -75,15 +75,18 @@ let pp_exn fmt = function
 
 let to_string exn = Format.asprintf "%a" pp_exn exn
 
-(** {1 Debug Mode} *)
+(** {1 Debug Mode (delegates to Log.ml)} *)
 
 type log_level = Silent | Errors | Warnings | Info | Trace
 
 let current_level = ref Errors
 
-let set_level level = current_level := level
-
-let get_level () = !current_level
+let to_log_level = function
+  | Silent -> Log.Error (* filtered by should_log *)
+  | Errors -> Log.Error
+  | Warnings -> Log.Warn
+  | Info -> Log.Info
+  | Trace -> Log.Debug
 
 let level_to_int = function
   | Silent -> 0
@@ -94,14 +97,20 @@ let level_to_int = function
 
 let should_log level = level_to_int level <= level_to_int !current_level
 
+let set_level level =
+  current_level := level ;
+  Log.set_level (to_log_level level)
+
+let get_level () = !current_level
+
+(* Ensure Error logs route through the unified logger *)
+let () = Log.enable Log.All
+
 (** {1 Logging Functions} *)
 
 let log level fmt =
   if should_log level then
-    Format.kfprintf
-      (fun _ -> Format.pp_print_newline Format.err_formatter ())
-      Format.err_formatter
-      fmt
+    Format.kasprintf (fun msg -> Log.log (to_log_level level) Log.All msg) fmt
   else Format.ikfprintf ignore Format.err_formatter fmt
 
 let error fmt = log Errors fmt
