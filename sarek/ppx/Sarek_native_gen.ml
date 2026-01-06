@@ -1,365 +1,29 @@
 (******************************************************************************
  * Sarek PPX - GPU kernel DSL for OCaml
  *
- * This module generates native OCaml code from Sarek's typed AST. The generated
- * code runs on CPU via Sarek_cpu_runtime for fast execution without GPU.
+ * Native Code Generation - Main Module
+ * ====================================
  *
- * Unlike Sarek_interp which walks the AST at runtime, this generates code
- * at compile time that runs at full native speed.
+ * Generates native OCaml code from Sarek's typed AST.
+ * The generated code runs on CPU via Sarek_cpu_runtime.
+ *
+ * Organization:
+ * - Expression generation (literals, operators, memory access, control flow)
+ * - Module and type declaration generation  
+ * - Kernel generation and wrapper functions
+ *
+ * See also:
+ * - Sarek_native_helpers for utility functions and default values
+ * - Sarek_native_intrinsics for type/intrinsic mapping
  ******************************************************************************)
 
 open Ppxlib
 open Sarek_typed_ast
 open Sarek_types
 
-(** Convert Sarek_ast.loc to Ppxlib.location *)
-let ppxlib_loc_of_sarek (l : Sarek_ast.loc) : location =
-  let pos_start =
-    {
-      Lexing.pos_fname = l.loc_file;
-      pos_lnum = l.loc_line;
-      pos_bol = 0;
-      pos_cnum = l.loc_col;
-    }
-  in
-  let pos_end =
-    {
-      Lexing.pos_fname = l.loc_file;
-      pos_lnum = l.loc_end_line;
-      pos_bol = 0;
-      pos_cnum = l.loc_end_col;
-    }
-  in
-  {loc_start = pos_start; loc_end = pos_end; loc_ghost = false}
-
-(** Helper to create an identifier expression *)
-let evar ~loc name =
-  Ast_builder.Default.pexp_ident ~loc {txt = Lident name; loc}
-
-(** Helper to create a qualified identifier expression *)
-let evar_qualified ~loc path name =
-  let lid =
-    List.fold_left
-      (fun acc m -> Ldot (acc, m))
-      (Lident (List.hd path))
-      (List.tl path @ [name])
-  in
-  Ast_builder.Default.pexp_ident ~loc {txt = lid; loc}
-
-(** Create a unique name for a variable by id *)
-let var_name id = Printf.sprintf "__v%d" id
-
-(** Create a unique name for a mutable variable by id *)
-let mut_var_name id = Printf.sprintf "__m%d" id
-
-(** Thread state variable name - bound in kernel wrapper *)
-let state_var = "__state"
-
-(** Shared memory variable name - bound in block wrapper *)
-let shared_var = "__shared"
-
-(** Generate default value expression for a given type. Used for array
-    initialization and other contexts where a default is needed. *)
-let rec default_value_for_type ~loc (ty : typ) : expression =
-  match repr ty with
-  | TPrim TUnit -> [%expr ()]
-  | TPrim TBool -> [%expr false]
-  | TPrim TInt32 -> [%expr 0l]
-  | TReg Int -> [%expr 0l]
-  | TReg Int64 -> [%expr 0L]
-  | TReg Float32 -> [%expr 0.0]
-  | TReg Float64 -> [%expr 0.0]
-  | TReg Char -> [%expr '\000']
-  | TRecord (_name, fields) ->
-      (* Generate record with all fields set to their default values *)
-      let field_defaults =
-        List.map
-          (fun (fname, fty) ->
-            let default_val = default_value_for_type ~loc fty in
-            ({txt = Lident fname; loc}, default_val))
-          fields
-      in
-      Ast_builder.Default.pexp_record ~loc field_defaults None
-  | TVariant (_name, constrs) -> (
-      (* Use the first nullary constructor, or first constructor with default args *)
-      match List.find_opt (fun (_, arg) -> Option.is_none arg) constrs with
-      | Some (cname, None) ->
-          Ast_builder.Default.pexp_construct ~loc {txt = Lident cname; loc} None
-      | _ -> (
-          (* If no nullary constructor, use first constructor with default value for its argument *)
-          match constrs with
-          | (cname, Some arg_ty) :: _ ->
-              let arg_default = default_value_for_type ~loc arg_ty in
-              Ast_builder.Default.pexp_construct
-                ~loc
-                {txt = Lident cname; loc}
-                (Some arg_default)
-          | _ ->
-              (* No constructors? This shouldn't happen, but provide a failsafe *)
-              [%expr failwith "Cannot create default value for empty variant"]))
-  | TReg (Custom _name) ->
-      (* For unknown custom types registered via [@sarek.type], we can't generate
-         a default without knowing the type structure. This should be rare since
-         most custom types are TRecord or TVariant. *)
-      [%expr failwith "Cannot create default value for custom type"]
-  | _ -> [%expr failwith "Cannot create default value for this type"]
-
-(** {1 Type Mapping} *)
-
-(** Generate a core type from a Sarek type (for type annotations).
-
-    For scalar types (int32, float, etc), we generate explicit types to help
-    OCaml infer the correct numeric type.
-
-    For record types, we generate the type name to help OCaml resolve field
-    accesses. The type name may be qualified (e.g., "Module.point").
-
-    For vectors and other complex types, we use wildcards. *)
-let rec core_type_of_typ ~loc typ : Ppxlib.core_type =
-  match repr typ with
-  (* Primitive types - only TUnit, TBool, TInt32 exist as primitives *)
-  | TPrim TUnit -> [%type: unit]
-  | TPrim TBool -> [%type: bool]
-  | TPrim TInt32 -> [%type: int32]
-  (* Registered types - numeric types are registered by stdlib *)
-  | TReg Float32 -> [%type: float]
-  | TReg Float64 -> [%type: float]
-  | TReg Int -> [%type: int32]
-  | TReg Int64 -> [%type: int64]
-  (* Vector/array types - use wildcard to avoid scope issues *)
-  | TVec _ -> [%type: _]
-  | TArr _ -> [%type: _]
-  (* Record types - for qualified types (Module.type), generate the type name
-     to help resolve field accesses. For inline types (no module prefix),
-     use wildcard to avoid scope issues. *)
-  | TRecord (name, _fields) -> (
-      match String.split_on_char '.' name with
-      | [_simple_name] ->
-          (* Inline type - use wildcard to avoid "type escapes scope" errors *)
-          [%type: _]
-      | parts ->
-          (* Qualified type like "Module.type" - generate the type path *)
-          let rec build_lid = function
-            | [] -> failwith "empty type name"
-            | [x] -> Lident x
-            | x :: rest -> Ldot (build_lid rest, x)
-          in
-          let lid = build_lid (List.rev parts) in
-          Ast_builder.Default.ptyp_constr ~loc {txt = lid; loc} [])
-  (* Variant types - same as records *)
-  | TVariant (name, _constrs) -> (
-      match String.split_on_char '.' name with
-      | [_simple_name] ->
-          (* Inline type - use wildcard *)
-          [%type: _]
-      | parts ->
-          let rec build_lid = function
-            | [] -> failwith "empty type name"
-            | [x] -> Lident x
-            | x :: rest -> Ldot (build_lid rest, x)
-          in
-          let lid = build_lid (List.rev parts) in
-          Ast_builder.Default.ptyp_constr ~loc {txt = lid; loc} [])
-  | TTuple tys ->
-      Ast_builder.Default.ptyp_tuple ~loc (List.map (core_type_of_typ ~loc) tys)
-  | TFun _ | TVar _ | TReg _ -> [%type: _]
-
-(** {1 Intrinsic Mapping}
-
-    Map Sarek intrinsics to their OCaml equivalents. For cpu_kern, we call the
-    OCaml implementations directly rather than generating GPU code. *)
-
-(** Kernel generation mode for simple vs full execution - defined early for use
-    below *)
-type gen_mode =
-  | FullMode  (** Standard mode - uses thread_state for all indices *)
-  | Simple1DMode  (** Simple 1D - gid_x passed directly as int32 *)
-  | Simple2DMode  (** Simple 2D - gid_x, gid_y passed directly *)
-  | Simple3DMode  (** Simple 3D - gid_x, gid_y, gid_z passed directly *)
-
-(** Variable names for simple mode global indices *)
-let gid_x_var = "__gid_x"
-
-let gid_y_var = "__gid_y"
-
-let gid_z_var = "__gid_z"
-
-(** Map stdlib module paths to their runtime module paths. Sarek stdlib modules
-    need to be mapped to their actual OCaml locations. *)
-let map_stdlib_path path =
-  match path with
-  | ["Float32"] | ["Sarek_stdlib"; "Float32"] ->
-      ["Sarek"; "Sarek_cpu_runtime"; "Float32"]
-  | ["Float64"] | ["Sarek_stdlib"; "Float64"] ->
-      (* Float64 is just OCaml float, use stdlib *)
-      ["Float"]
-  | ["Int32"] | ["Sarek_stdlib"; "Int32"] -> ["Int32"]
-  | ["Int64"] | ["Sarek_stdlib"; "Int64"] -> ["Int64"]
-  | _ -> path
-
-(** Generate intrinsic constant based on generation mode. For simple modes,
-    global indices are passed as direct parameters. For full mode, all indices
-    come from thread_state. *)
-let gen_intrinsic_const ~loc ~gen_mode (ref : Sarek_env.intrinsic_ref) :
-    expression =
-  (* Helper for simple mode - use direct gid variables for global indices *)
-  let use_simple_gid name =
-    match (gen_mode, name) with
-    (* In simple modes, global_idx_x/global_thread_id is the __gid_x parameter *)
-    | ( (Simple1DMode | Simple2DMode | Simple3DMode),
-        ("global_idx_x" | "global_thread_id") ) ->
-        Some (evar ~loc gid_x_var)
-    | (Simple2DMode | Simple3DMode), "global_idx_y" ->
-        Some (evar ~loc gid_y_var)
-    | Simple3DMode, "global_idx_z" -> Some (evar ~loc gid_z_var)
-    | _ -> None
-  in
-  match ref with
-  | Sarek_env.CorePrimitiveRef name -> (
-      (* Check if this can be simplified for simple modes *)
-      match use_simple_gid name with
-      | Some e -> e
-      | None -> (
-          let state = evar ~loc state_var in
-          match name with
-          | "thread_idx_x" ->
-              [%expr [%e state].Sarek.Sarek_cpu_runtime.thread_idx_x]
-          | "thread_idx_y" ->
-              [%expr [%e state].Sarek.Sarek_cpu_runtime.thread_idx_y]
-          | "thread_idx_z" ->
-              [%expr [%e state].Sarek.Sarek_cpu_runtime.thread_idx_z]
-          | "block_idx_x" ->
-              [%expr [%e state].Sarek.Sarek_cpu_runtime.block_idx_x]
-          | "block_idx_y" ->
-              [%expr [%e state].Sarek.Sarek_cpu_runtime.block_idx_y]
-          | "block_idx_z" ->
-              [%expr [%e state].Sarek.Sarek_cpu_runtime.block_idx_z]
-          | "block_dim_x" ->
-              [%expr [%e state].Sarek.Sarek_cpu_runtime.block_dim_x]
-          | "block_dim_y" ->
-              [%expr [%e state].Sarek.Sarek_cpu_runtime.block_dim_y]
-          | "block_dim_z" ->
-              [%expr [%e state].Sarek.Sarek_cpu_runtime.block_dim_z]
-          | "grid_dim_x" ->
-              [%expr [%e state].Sarek.Sarek_cpu_runtime.grid_dim_x]
-          | "grid_dim_y" ->
-              [%expr [%e state].Sarek.Sarek_cpu_runtime.grid_dim_y]
-          | "grid_dim_z" ->
-              [%expr [%e state].Sarek.Sarek_cpu_runtime.grid_dim_z]
-          | "global_idx_x" ->
-              [%expr Sarek.Sarek_cpu_runtime.global_idx_x [%e state]]
-          | "global_idx_y" ->
-              [%expr Sarek.Sarek_cpu_runtime.global_idx_y [%e state]]
-          | "global_idx_z" ->
-              [%expr Sarek.Sarek_cpu_runtime.global_idx_z [%e state]]
-          | _ ->
-              (* Unknown - try to generate call to Gpu module *)
-              evar_qualified ~loc ["Gpu"] name))
-  | Sarek_env.IntrinsicRef (path, name) -> (
-      (* Check if this can be simplified for simple modes *)
-      match use_simple_gid name with
-      | Some e -> e
-      | None -> (
-          (* Check if this is a Gpu module constant that maps to thread state *)
-          let state = evar ~loc state_var in
-          match (path, name) with
-          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "thread_idx_x" ->
-              [%expr [%e state].Sarek.Sarek_cpu_runtime.thread_idx_x]
-          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "thread_idx_y" ->
-              [%expr [%e state].Sarek.Sarek_cpu_runtime.thread_idx_y]
-          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "thread_idx_z" ->
-              [%expr [%e state].Sarek.Sarek_cpu_runtime.thread_idx_z]
-          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "block_idx_x" ->
-              [%expr [%e state].Sarek.Sarek_cpu_runtime.block_idx_x]
-          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "block_idx_y" ->
-              [%expr [%e state].Sarek.Sarek_cpu_runtime.block_idx_y]
-          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "block_idx_z" ->
-              [%expr [%e state].Sarek.Sarek_cpu_runtime.block_idx_z]
-          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "block_dim_x" ->
-              [%expr [%e state].Sarek.Sarek_cpu_runtime.block_dim_x]
-          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "block_dim_y" ->
-              [%expr [%e state].Sarek.Sarek_cpu_runtime.block_dim_y]
-          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "block_dim_z" ->
-              [%expr [%e state].Sarek.Sarek_cpu_runtime.block_dim_z]
-          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "grid_dim_x" ->
-              [%expr [%e state].Sarek.Sarek_cpu_runtime.grid_dim_x]
-          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "grid_dim_y" ->
-              [%expr [%e state].Sarek.Sarek_cpu_runtime.grid_dim_y]
-          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "grid_dim_z" ->
-              [%expr [%e state].Sarek.Sarek_cpu_runtime.grid_dim_z]
-          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "global_idx_x" ->
-              [%expr Sarek.Sarek_cpu_runtime.global_idx_x [%e state]]
-          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "global_idx_y" ->
-              [%expr Sarek.Sarek_cpu_runtime.global_idx_y [%e state]]
-          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "global_idx_z" ->
-              [%expr Sarek.Sarek_cpu_runtime.global_idx_z [%e state]]
-          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "global_thread_id" ->
-              (* global_thread_id is alias for global_idx_x *)
-              [%expr Sarek.Sarek_cpu_runtime.global_idx_x [%e state]]
-          | _ ->
-              (* For other intrinsic constants from stdlib modules, look up via module path *)
-              evar_qualified ~loc (map_stdlib_path path) name))
-
-(** Generate intrinsic function call based on generation mode. For simple modes,
-    global indices are direct parameters. For full mode, indices come from
-    thread_state. *)
-let gen_intrinsic_fun ~loc ~gen_mode (ref : Sarek_env.intrinsic_ref)
-    (args : expression list) : expression =
-  (* Helper for simple mode global index functions *)
-  let use_simple_gid_fn name =
-    match (gen_mode, name) with
-    | ( (Simple1DMode | Simple2DMode | Simple3DMode),
-        ("global_idx" | "global_idx_x" | "global_thread_id") ) ->
-        Some (evar ~loc gid_x_var)
-    | (Simple2DMode | Simple3DMode), "global_idx_y" ->
-        Some (evar ~loc gid_y_var)
-    | Simple3DMode, "global_idx_z" -> Some (evar ~loc gid_z_var)
-    | _ -> None
-  in
-  match ref with
-  | Sarek_env.CorePrimitiveRef name -> (
-      match use_simple_gid_fn name with
-      | Some e -> e
-      | None -> (
-          let state = evar ~loc state_var in
-          match name with
-          | "block_barrier" | "warp_barrier" ->
-              (* Call the barrier function from thread state *)
-              [%expr [%e state].Sarek.Sarek_cpu_runtime.barrier ()]
-          | "global_idx" | "global_thread_id" ->
-              [%expr Sarek.Sarek_cpu_runtime.global_idx_x [%e state]]
-          | "global_size" ->
-              [%expr Sarek.Sarek_cpu_runtime.global_size_x [%e state]]
-          | _ ->
-              (* Try Gpu module *)
-              let fn = evar_qualified ~loc ["Gpu"] name in
-              Ast_builder.Default.pexp_apply
-                ~loc
-                fn
-                (List.map (fun a -> (Nolabel, a)) args)))
-  | Sarek_env.IntrinsicRef (path, name) -> (
-      match use_simple_gid_fn name with
-      | Some e -> e
-      | None -> (
-          (* Check if this is a Gpu module function that maps to thread state *)
-          let state = evar ~loc state_var in
-          match (path, name) with
-          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "block_barrier" ->
-              [%expr [%e state].Sarek.Sarek_cpu_runtime.barrier ()]
-          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "global_idx" ->
-              [%expr Sarek.Sarek_cpu_runtime.global_idx_x [%e state]]
-          | (["Gpu"] | ["Sarek_stdlib"; "Gpu"]), "global_size" ->
-              [%expr Sarek.Sarek_cpu_runtime.global_size_x [%e state]]
-          | _ -> (
-              (* Call the OCaml implementation from the stdlib module *)
-              let fn = evar_qualified ~loc (map_stdlib_path path) name in
-              match args with
-              | [] -> fn
-              | _ ->
-                  Ast_builder.Default.pexp_apply
-                    ~loc
-                    fn
-                    (List.map (fun a -> (Nolabel, a)) args))))
+(* Import helpers and intrinsics *)
+open Sarek_native_helpers
+open Sarek_native_intrinsics
 
 (** {1 Expression Generation} *)
 
@@ -1754,9 +1418,9 @@ let gen_simple_cpu_kern_native ~loc ~exec_strategy (kernel : tkernel) :
     | ps -> Ast_builder.Default.ppat_tuple ~loc ps
   in
 
-  let gid_x_pat = Ast_builder.Default.ppat_var ~loc {txt = gid_x_var; loc} in
-  let gid_y_pat = Ast_builder.Default.ppat_var ~loc {txt = gid_y_var; loc} in
-  let gid_z_pat = Ast_builder.Default.ppat_var ~loc {txt = gid_z_var; loc} in
+  let gid_x_pat = Ast_builder.Default.ppat_var ~loc {txt = simple_gid_x; loc} in
+  let gid_y_pat = Ast_builder.Default.ppat_var ~loc {txt = simple_gid_y; loc} in
+  let gid_z_pat = Ast_builder.Default.ppat_var ~loc {txt = simple_gid_z; loc} in
 
   let inner_fun =
     if use_fcm then
