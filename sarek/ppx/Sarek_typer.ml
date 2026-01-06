@@ -19,7 +19,12 @@ let unify_or_error t1 t2 loc =
   | Error (Cannot_unify (t1, t2)) -> Error [Cannot_unify (t1, t2, loc)]
   | Error (Occurs_check (_, t)) -> Error [Recursive_type (t, loc)]
 
-(** Check that a type is numeric (int32, int64, float32, float64) *)
+(** Type validators (Result-returning, for type checking with error messages).
+    For simple bool predicates, use functions in Sarek_types (is_numeric,
+    is_integer, etc.) *)
+
+(** Check that a type is numeric (int32, int64, float32, float64). See also:
+    Sarek_types.is_numeric for bool predicate version. *)
 let check_numeric t loc =
   match repr t with
   | TPrim TInt32 -> Ok ()
@@ -27,7 +32,8 @@ let check_numeric t loc =
   | TVar _ -> Ok () (* Will be constrained later *)
   | t -> Error [Type_mismatch {expected = t_int32; got = t; loc}]
 
-(** Check that a type is integer *)
+(** Check that a type is integer. See also: Sarek_types.is_integer for bool
+    predicate version. *)
 let check_integer t loc =
   match repr t with
   | TPrim TInt32 -> Ok ()
@@ -35,7 +41,8 @@ let check_integer t loc =
   | TVar _ -> Ok ()
   | t -> Error [Type_mismatch {expected = t_int32; got = t; loc}]
 
-(** Check that a type is boolean *)
+(** Check that a type is boolean. See also: Sarek_types.is_boolean for bool
+    predicate version. *)
 let check_boolean t loc =
   match repr t with
   | TPrim TBool -> Ok ()
@@ -859,10 +866,6 @@ and infer_patterns env tys pats =
 (** Check if a name is an intrinsic function in the environment *)
 and is_intrinsic_fun name env =
   match find_intrinsic_fun name env with Some _ -> true | None -> false
-
-(** Check if a type is still an unbound type variable *)
-and is_tvar t =
-  match repr t with TVar {contents = Unbound _} -> true | _ -> false
 
 (** Type a complete kernel *)
 let infer_kernel (env : t) (kernel : Sarek_ast.kernel) : tkernel result =

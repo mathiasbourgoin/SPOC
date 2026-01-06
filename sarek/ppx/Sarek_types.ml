@@ -259,6 +259,13 @@ let is_integer t =
 let is_float t =
   match repr t with TReg (Float32 | Float64) -> true | _ -> false
 
+(** Check if type is boolean *)
+let is_boolean t = match repr t with TPrim TBool -> true | _ -> false
+
+(** Check if type is an unbound type variable *)
+let is_tvar t =
+  match repr t with TVar {contents = Unbound _} -> true | _ -> false
+
 (** Convert AST type expression to type (with fresh type variables). Core types
     (unit, bool, int32) are handled directly. Other types (float32, float64,
     int64, etc.) are looked up in the type registry. *)
