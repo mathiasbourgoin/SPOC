@@ -44,20 +44,17 @@ and tvar =
   | Unbound of int * int  (** id, level for generalization *)
   | Link of typ  (** Resolved to this type *)
 
-(** Generate fresh type variable IDs *)
-let tvar_counter = ref 0
+(** Generate fresh type variable IDs (thread-safe) *)
+let tvar_counter = Atomic.make 0
 
-let fresh_tvar_id () =
-  let id = !tvar_counter in
-  incr tvar_counter ;
-  id
+let fresh_tvar_id () = Atomic.fetch_and_add tvar_counter 1
 
 (** Create a fresh unbound type variable at given level *)
 let fresh_tvar ?(level = 0) () : typ =
   TVar (ref (Unbound (fresh_tvar_id (), level)))
 
 (** Reset the type variable counter (for testing) *)
-let reset_tvar_counter () = tvar_counter := 0
+let reset_tvar_counter () = Atomic.set tvar_counter 0
 
 (** Follow links to get the actual type *)
 let rec repr (t : typ) : typ =

@@ -140,15 +140,12 @@ type tdecl_item =
   | TDFun of string * tparam list * texpr
   | TDConst of string * int * typ * texpr
 
-(** Variable ID generator *)
-let var_id_counter = ref 0
+(** Variable ID generator (thread-safe) *)
+let var_id_counter = Atomic.make 0
 
-let fresh_var_id () =
-  let id = !var_id_counter in
-  incr var_id_counter ;
-  id
+let fresh_var_id () = Atomic.fetch_and_add var_id_counter 1
 
-let reset_var_id_counter () = var_id_counter := 0
+let reset_var_id_counter () = Atomic.set var_id_counter 0
 
 (** Create a simple typed expression *)
 let mk_texpr te ty loc = {te; ty; te_loc = loc}

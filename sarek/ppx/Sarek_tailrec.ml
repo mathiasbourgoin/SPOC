@@ -238,13 +238,10 @@ let analyze_recursion (fname : string) (body : texpr) : recursion_info =
 
 (** {1 Tail Recursion Elimination} *)
 
-(** Fresh variable ID generator for transformation *)
-let transform_var_counter = ref 0
+(** Fresh variable ID generator for transformation (thread-safe) *)
+let transform_var_counter = Atomic.make 0
 
-let fresh_transform_id () =
-  let id = !transform_var_counter in
-  incr transform_var_counter ;
-  id
+let fresh_transform_id () = Atomic.fetch_and_add transform_var_counter 1
 
 (** Transform a tail-recursive function into a loop.
 
