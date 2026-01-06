@@ -32,7 +32,7 @@ let rec metal_type_of_elttype = function
   | TInt32 -> "int"
   | TInt64 -> "long"
   | TFloat32 -> "float"
-  | TFloat64 -> "double"
+  | TFloat64 -> "float" (* Metal doesn't support double precision *)
   | TBool -> "bool"
   | TUnit -> "void"
   | TRecord (name, _) -> mangle_name name
@@ -49,6 +49,13 @@ let metal_memspace = function
 (** Map Sarek IR element type to Metal C type for kernel parameters *)
 let metal_param_type = function
   | TVec elt -> "device " ^ metal_type_of_elttype elt ^ "* restrict"
+  | TArray (elt, ms) ->
+      metal_memspace ms ^ " " ^ metal_type_of_elttype elt ^ "*"
+  | t -> metal_type_of_elttype t
+
+(** Map Sarek IR element type to Metal C type for helper function parameters *)
+let metal_helper_param_type = function
+  | TVec elt -> "device " ^ metal_type_of_elttype elt ^ "*"
   | TArray (elt, ms) ->
       metal_memspace ms ^ " " ^ metal_type_of_elttype elt ^ "*"
   | t -> metal_type_of_elttype t
@@ -823,11 +830,11 @@ let gen_helper_func buf (hf : helper_func) =
   Buffer.add_char buf ' ' ;
   Buffer.add_string buf hf.hf_name ;
   Buffer.add_char buf '(' ;
-  (* Parameters - use metal_param_type to add device for vector params *)
+  (* Parameters - use metal_helper_param_type *)
   List.iteri
     (fun i (v : var) ->
       if i > 0 then Buffer.add_string buf ", " ;
-      Buffer.add_string buf (metal_param_type v.var_type) ;
+      Buffer.add_string buf (metal_helper_param_type v.var_type) ;
       Buffer.add_char buf ' ' ;
       Buffer.add_string buf v.var_name)
     hf.hf_params ;
