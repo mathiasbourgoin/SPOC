@@ -33,6 +33,15 @@ type error =
   | Barrier_in_diverged_flow of loc
   | Warp_collective_in_diverged_flow of string * loc
   | Reserved_keyword of string * loc
+  (* Lowering errors - occur during typed AST → IR transformation *)
+  | Unsupported_type_in_registration of string * loc
+  | Unsupported_constructor_form of loc
+  | Unsupported_registration_form of loc
+  | Unsupported_tuple_in_variant of loc
+  | Unsupported_function_in_variant of loc
+  | Unknown_variant_type of string * loc
+  | Expression_needs_statement_context of string * loc
+  | Invalid_lvalue of loc
 
 (** Get the location from an error *)
 let error_loc = function
@@ -59,6 +68,14 @@ let error_loc = function
   | Barrier_in_diverged_flow loc -> loc
   | Warp_collective_in_diverged_flow (_, loc) -> loc
   | Reserved_keyword (_, loc) -> loc
+  | Unsupported_type_in_registration (_, loc) -> loc
+  | Unsupported_constructor_form loc -> loc
+  | Unsupported_registration_form loc -> loc
+  | Unsupported_tuple_in_variant loc -> loc
+  | Unsupported_function_in_variant loc -> loc
+  | Unknown_variant_type (_, loc) -> loc
+  | Expression_needs_statement_context (_, loc) -> loc
+  | Invalid_lvalue loc -> loc
 
 (** Pretty print an error *)
 let pp_error fmt = function
@@ -128,6 +145,45 @@ let pp_error fmt = function
         "'%s' is a reserved C/CUDA/OpenCL keyword and cannot be used as a \
          function or variable name"
         name
+  | Unsupported_type_in_registration (type_desc, _) ->
+      Format.fprintf
+        fmt
+        "Unsupported type in [@@sarek.type] registration: %s"
+        type_desc
+  | Unsupported_constructor_form _ ->
+      Format.fprintf
+        fmt
+        "Only zero or single-argument constructors are supported in variant \
+         types"
+  | Unsupported_registration_form _ ->
+      Format.fprintf
+        fmt
+        "Only record and variant types can be registered with [@@sarek.type]"
+  | Unsupported_tuple_in_variant _ ->
+      Format.fprintf
+        fmt
+        "Tuple types are not yet supported in variant constructor arguments"
+  | Unsupported_function_in_variant _ ->
+      Format.fprintf
+        fmt
+        "Function types are not supported in variant constructor arguments"
+  | Unknown_variant_type (name, _) ->
+      Format.fprintf
+        fmt
+        "Unknown type in variant constructor: %s. Custom types must be \
+         registered with [@@sarek.type]"
+        name
+  | Expression_needs_statement_context (expr_type, _) ->
+      Format.fprintf
+        fmt
+        "Expression of type %s can only appear in statement context (e.g., let \
+         binding, sequence)"
+        expr_type
+  | Invalid_lvalue _ ->
+      Format.fprintf
+        fmt
+        "Invalid left-hand side of assignment. Expected variable, field \
+         access, or array element"
 
 (** Convert error to string *)
 let error_to_string e = Format.asprintf "%a" pp_error e

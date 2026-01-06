@@ -55,27 +55,6 @@ let memspace_of_memspace (mem : Sarek_types.memspace) : Ir.memspace =
   | Sarek_types.Shared -> Ir.Shared
   | Sarek_types.Local -> Ir.Local
 
-(** Convert Sarek_ast.type_expr to Sarek_ir_ppx.elttype Used for registered
-    types where we have AST type expressions. *)
-let elttype_of_type_expr (te : Sarek_ast.type_expr) : Ir.elttype =
-  match te with
-  | TEConstr ("float32", []) | TEConstr ("Sarek_float32.t", []) -> Ir.TFloat32
-  | TEConstr ("float64", []) | TEConstr ("Sarek_float64.t", []) -> Ir.TFloat64
-  | TEConstr ("int64", []) | TEConstr ("Sarek_int64.t", []) -> Ir.TInt64
-  | TEConstr ("int32", []) | TEConstr ("int", []) -> Ir.TInt32
-  | TEConstr ("bool", []) -> Ir.TBool
-  | TEConstr ("unit", []) -> Ir.TUnit
-  | TEConstr ("float", []) -> Ir.TFloat32 (* OCaml float -> float32 in GPU *)
-  | TETuple ts ->
-      failwith
-        ("Tuple types in variant constructors not supported: "
-        ^ String.concat ", " (List.map (fun _ -> "_") ts))
-  | TEArrow _ -> failwith "Function types in variant constructors not supported"
-  | TEVar _ -> Ir.TInt32 (* Type variable - default to int32 *)
-  | TEConstr (name, _) ->
-      (* Could be a custom type - not yet supported *)
-      failwith ("Unknown type in variant constructor: " ^ name)
-
 (** Get C type string for a typ *)
 let rec c_type_of_typ ty =
   match repr ty with
@@ -419,11 +398,13 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
           cases
       in
       Ir.EMatch (lower_expr state e, ir_cases)
-  (* These need statement context *)
+  (* These expression forms require statement context - should be caught by typer *)
   | TEVecSet _ | TEArrSet _ | TEFieldSet _ | TEAssign _ | TELet _ | TELetRec _
   | TELetMut _ | TEFor _ | TEWhile _ | TESeq _ | TEReturn _ | TECreateArray _
   | TENative _ | TEPragma _ | TELetShared _ | TESuperstep _ | TEOpen _ ->
-      failwith "lower_expr: expression requires statement context"
+      failwith
+        "Internal error: lower_expr called with statement-only expression. \
+         This should have been caught by the type checker."
 
 (** Convert a typed expression to IR statement *)
 and lower_stmt (state : state) (te : texpr) : Ir.stmt =
@@ -563,7 +544,9 @@ and lower_lvalue (state : state) (r : texpr) (field : string) : Ir.lvalue =
             ( Ir.LArrayElemExpr (lower_expr state arr, lower_expr state idx),
               field ))
   | _ ->
-      failwith "lower_lvalue: expected variable, field access, or array access"
+      failwith
+        "Internal error: lower_lvalue called with non-lvalue expression. This \
+         should have been caught by the type checker."
 
 and lower_pattern (pat : tpattern) : Ir.pattern =
   match pat.tpat with
