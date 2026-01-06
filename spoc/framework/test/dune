@@ -1,0 +1,3 @@
+(tests
+ (names test_framework_sig test_typed_value test_device_type)
+ (libraries spoc_framework))
