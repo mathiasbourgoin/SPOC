@@ -128,13 +128,20 @@ let clGetContextInfo ctx pn sz v szr =
 (** {1 Command Queue API} *)
 
 let clCreateCommandQueueWithProperties_lazy =
-  foreign_cl_lazy
-    "clCreateCommandQueueWithProperties"
-    (cl_context @-> cl_device_id @-> ptr cl_ulong @-> ptr cl_int
-   @-> returning cl_command_queue)
+  lazy
+    (try
+       Some
+         (foreign
+            ~from:(get_opencl_lib ())
+            "clCreateCommandQueueWithProperties"
+            (cl_context @-> cl_device_id @-> ptr cl_ulong @-> ptr cl_int
+           @-> returning cl_command_queue))
+     with _ -> None)
 
 let clCreateCommandQueueWithProperties ctx d props err =
-  Lazy.force clCreateCommandQueueWithProperties_lazy ctx d props err
+  match Lazy.force clCreateCommandQueueWithProperties_lazy with
+  | Some f -> Some (f ctx d props err)
+  | None -> None
 
 let clCreateCommandQueue_lazy =
   lazy

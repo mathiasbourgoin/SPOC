@@ -302,23 +302,39 @@ module CommandQueue = struct
 
   let create context ?(profiling = false) () =
     let err = allocate cl_int 0l in
-    let props =
-      if profiling then cl_queue_profiling_enable else Unsigned.UInt64.zero
-    in
-    let props_arr = CArray.make cl_ulong 3 in
-    CArray.set props_arr 0 (Unsigned.UInt64.of_int 0x1093) ;
-    (* CL_QUEUE_PROPERTIES *)
-    CArray.set props_arr 1 props ;
-    CArray.set props_arr 2 Unsigned.UInt64.zero ;
-    (* Terminator *)
     let queue =
-      clCreateCommandQueueWithProperties
-        context.Context.handle
-        context.device.Device.handle
-        (CArray.start props_arr)
-        err
+      (* Try OpenCL 2.0+ API first *)
+      let props =
+        if profiling then cl_queue_profiling_enable else Unsigned.UInt64.zero
+      in
+      let props_arr = CArray.make cl_ulong 3 in
+      CArray.set props_arr 0 (Unsigned.UInt64.of_int 0x1093) ;
+      (* CL_QUEUE_PROPERTIES *)
+      CArray.set props_arr 1 props ;
+      CArray.set props_arr 2 Unsigned.UInt64.zero ;
+      (* Terminator *)
+      match
+        clCreateCommandQueueWithProperties
+          context.Context.handle
+          context.device.Device.handle
+          (CArray.start props_arr)
+          err
+      with
+      | Some queue -> queue
+      | None ->
+          (* Fall back to OpenCL 1.x API (for macOS and older implementations) *)
+          let props_bits =
+            if profiling then Unsigned.UInt64.of_int 0x0002
+            else Unsigned.UInt64.zero
+          in
+          (* CL_QUEUE_PROFILING_ENABLE = 0x0002 *)
+          clCreateCommandQueue
+            context.Context.handle
+            context.device.Device.handle
+            props_bits
+            err
     in
-    check "clCreateCommandQueueWithProperties" !@err ;
+    check "clCreateCommandQueue" !@err ;
     {handle = queue; context}
 
   let release queue =
