@@ -136,3 +136,87 @@ let has_buffer (vec : ('a, 'b) t) (dev : Device.t) : bool =
 (** Get device buffer if allocated *)
 let get_buffer (vec : ('a, 'b) t) (dev : Device.t) : device_buffer option =
   Hashtbl.find_opt vec.device_buffers dev.id
+
+(** {1 Copy & Slicing} *)
+
+(** Copy vector (CPU data only). Caller must ensure sync if needed. *)
+let copy_host_only (type a b) (vec : (a, b) t) : (a, b) t =
+  incr next_id ;
+  let host =
+    match vec.host with
+    | Bigarray_storage ba ->
+        let new_ba =
+          Bigarray.Array1.create
+            (Bigarray.Array1.kind ba)
+            Bigarray.c_layout
+            vec.length
+        in
+        Bigarray.Array1.blit ba new_ba ;
+        Bigarray_storage new_ba
+    | Custom_storage {ptr; custom; length} ->
+        let byte_size = length * custom.elem_size in
+        let new_ptr = Ctypes.(allocate_n (array 1 char) ~count:byte_size) in
+        let new_ptr =
+          Ctypes.coerce Ctypes.(ptr (array 1 char)) Ctypes.(ptr void) new_ptr
+        in
+        for i = 0 to length - 1 do
+          custom.set new_ptr i (custom.get ptr i)
+        done ;
+        Custom_storage {ptr = new_ptr; custom; length}
+  in
+  {
+    host;
+    device_buffers = Hashtbl.create 4;
+    length = vec.length;
+    kind = vec.kind;
+    location = CPU;
+    auto_sync = vec.auto_sync;
+    id = !next_id;
+  }
+
+(** Create subvector that views the same host storage with an offset *)
+let sub_vector_host (type a b) (vec : (a, b) t) ~(start : int) ~(len : int) :
+    (a, b) t =
+  if start < 0 || start + len > vec.length then
+    invalid_arg
+      (Printf.sprintf
+         "sub_vector: range [%d, %d) out of bounds [0, %d)"
+         start
+         (start + len)
+         vec.length) ;
+  incr next_id ;
+  let host =
+    match vec.host with
+    | Bigarray_storage ba -> Bigarray_storage (Bigarray.Array1.sub ba start len)
+    | Custom_storage {ptr; custom; _} ->
+        let byte_offset = start * custom.elem_size in
+        let raw_addr = Ctypes.raw_address_of_ptr ptr in
+        let offset_addr =
+          Nativeint.add raw_addr (Nativeint.of_int byte_offset)
+        in
+        let offset_ptr = Ctypes.ptr_of_raw_address offset_addr in
+        Custom_storage {ptr = offset_ptr; custom; length = len}
+  in
+  {
+    host;
+    device_buffers = Hashtbl.create 4;
+    length = len;
+    kind = vec.kind;
+    location = CPU;
+    auto_sync = vec.auto_sync;
+    id = !next_id;
+  }
+
+(** Partition host storage evenly across devices (no device buffers) *)
+let partition_host (type a b) (vec : (a, b) t) (devices : Device.t array) :
+    (a, b) t array =
+  let n = Array.length devices in
+  if n = 0 then [||]
+  else
+    let base = vec.length / n in
+    let rem = vec.length mod n in
+    Array.init n (fun i ->
+        let extra = if i < rem then 1 else 0 in
+        let len = base + extra in
+        let start = (i * base) + min i rem in
+        sub_vector_host vec ~start ~len)

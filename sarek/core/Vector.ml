@@ -241,39 +241,7 @@ let init : type a b. (a, b) kind -> int -> (int -> a) -> (a, b) t =
 let copy : type a b. (a, b) t -> (a, b) t =
  fun vec ->
   ensure_cpu_sync vec ;
-  incr Vector_storage.next_id ;
-  let host =
-    match vec.host with
-    | Bigarray_storage ba ->
-        let new_ba =
-          Bigarray.Array1.create
-            (Bigarray.Array1.kind ba)
-            Bigarray.c_layout
-            vec.length
-        in
-        Bigarray.Array1.blit ba new_ba ;
-        Bigarray_storage new_ba
-    | Custom_storage {ptr; custom; length} ->
-        let byte_size = length * custom.elem_size in
-        let new_ptr = Ctypes.(allocate_n (array 1 char) ~count:byte_size) in
-        let new_ptr =
-          Ctypes.coerce Ctypes.(ptr (array 1 char)) Ctypes.(ptr void) new_ptr
-        in
-        (* Copy data element by element *)
-        for i = 0 to length - 1 do
-          custom.set new_ptr i (custom.get ptr i)
-        done ;
-        Custom_storage {ptr = new_ptr; custom; length}
-  in
-  {
-    host;
-    device_buffers = Hashtbl.create 4;
-    length = vec.length;
-    kind = vec.kind;
-    location = CPU;
-    auto_sync = vec.auto_sync;
-    id = !Vector_storage.next_id;
-  }
+  Vector_storage.copy_host_only vec
 
 (** {1 Subvector Support} *)
 
@@ -304,43 +272,9 @@ let get_sub_meta (vec : ('a, 'b) t) : sub_meta option =
     @param ko_range Elements to avoid writing (default: 0) *)
 let sub_vector (type a b) (vec : (a, b) t) ~(start : int) ~(len : int)
     ?(ok_range : int = len) ?(ko_range : int = 0) () : (a, b) t =
-  if start < 0 || start + len > vec.length then
-    invalid_arg
-      (Printf.sprintf
-         "sub_vector: range [%d, %d) out of bounds [0, %d)"
-         start
-         (start + len)
-         vec.length) ;
-  incr Vector_storage.next_id ;
+  let sub = Vector_storage.sub_vector_host vec ~start ~len in
   let parent_depth =
     match get_sub_meta vec with Some meta -> meta.depth | None -> 0
-  in
-  (* Create subvector with offset view into parent's host storage *)
-  let host =
-    match vec.host with
-    | Bigarray_storage ba -> Bigarray_storage (Bigarray.Array1.sub ba start len)
-    | Custom_storage {ptr; custom; _} ->
-        (* Offset the pointer by byte offset *)
-        let byte_offset = start * custom.elem_size in
-        let raw_addr = Ctypes.raw_address_of_ptr ptr in
-        let offset_addr =
-          Nativeint.add raw_addr (Nativeint.of_int byte_offset)
-        in
-        let offset_ptr = Ctypes.ptr_of_raw_address offset_addr in
-        Custom_storage {ptr = offset_ptr; custom; length = len}
-  in
-  let sub =
-    {
-      host;
-      device_buffers = Hashtbl.create 4;
-      (* Independent GPU buffers *)
-      length = len;
-      kind = vec.kind;
-      location = CPU;
-      (* Subvector starts on CPU *)
-      auto_sync = vec.auto_sync;
-      id = !Vector_storage.next_id;
-    }
   in
   (* Record subvector relationship *)
   Hashtbl.replace
@@ -355,22 +289,7 @@ let sub_vector (type a b) (vec : (a, b) t) ~(start : int) ~(len : int)
     device, that together cover the full vector. *)
 let partition (type a b) (vec : (a, b) t) (devices : Device.t array) :
     (a, b) t array =
-  let n = Array.length devices in
-  if n = 0 then [||]
-  else
-    let chunk_size = vec.length / n in
-    let remainder = vec.length mod n in
-    let result = Array.make n vec in
-    (* Placeholder *)
-    let offset = ref 0 in
-    for i = 0 to n - 1 do
-      let len = chunk_size + if i < remainder then 1 else 0 in
-      let sub = sub_vector vec ~start:!offset ~len () in
-      sub.location <- Stale_GPU devices.(i) ;
-      result.(i) <- sub ;
-      offset := !offset + len
-    done ;
-    result
+  Vector_storage.partition_host vec devices
 
 (** Gather subvectors back to parent (sync all to CPU). Assumes subvectors were
     created by partition and don't overlap. *)
