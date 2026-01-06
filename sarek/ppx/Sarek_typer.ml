@@ -271,6 +271,51 @@ let infer_memory_access ~infer (env : t) (loc : Sarek_ast.loc)
       | t -> Error [Not_a_record (t, loc)])
   | _ -> failwith "infer_memory_access: not a memory access expression"
 
+(** Infer type of control flow expressions (if, for, while, sequence) *)
+let infer_control_flow ~infer (env : t) (loc : Sarek_ast.loc) (expr : expr_desc)
+    : (texpr * t) result =
+  match expr with
+  | EIf (cond, then_e, else_opt) -> (
+      let* tc, env = infer env cond in
+      let* () = check_boolean tc.ty cond.expr_loc in
+      let* tt, env = infer env then_e in
+      match else_opt with
+      | None ->
+          let* () = unify_or_error tt.ty t_unit then_e.expr_loc in
+          Ok (mk_texpr (TEIf (tc, tt, None)) t_unit loc, env)
+      | Some else_e ->
+          let* te, env = infer env else_e in
+          let* () = unify_or_error tt.ty te.ty else_e.expr_loc in
+          Ok (mk_texpr (TEIf (tc, tt, Some te)) tt.ty loc, env))
+  | EFor (var, lo, hi, dir, body) ->
+      let* tlo, env = infer env lo in
+      let* thi, env = infer env hi in
+      let* () = unify_or_error tlo.ty t_int32 lo.expr_loc in
+      let* () = unify_or_error thi.ty t_int32 hi.expr_loc in
+      let var_id = fresh_var_id () in
+      let vi =
+        {
+          vi_type = t_int32;
+          vi_mutable = false;
+          vi_is_param = false;
+          vi_index = var_id;
+          vi_is_vec = false;
+        }
+      in
+      let env' = add_var var vi env in
+      let* tbody, _ = infer env' body in
+      Ok (mk_texpr (TEFor (var, var_id, tlo, thi, dir, tbody)) t_unit loc, env)
+  | EWhile (cond, body) ->
+      let* tc, env = infer env cond in
+      let* () = check_boolean tc.ty cond.expr_loc in
+      let* tbody, _ = infer env body in
+      Ok (mk_texpr (TEWhile (tc, tbody)) t_unit loc, env)
+  | ESeq (e1, e2) ->
+      let* t1, env = infer env e1 in
+      let* t2, env = infer env e2 in
+      Ok (mk_texpr (TESeq [t1; t2]) t2.ty loc, env)
+  | _ -> failwith "infer_control_flow: not a control flow expression"
+
 (** Main type inference function *)
 let rec infer (env : t) (expr : expr) : (texpr * t) result =
   let loc = expr.expr_loc in
@@ -420,49 +465,9 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
       let env' = add_var name vi env in
       let* tb, env' = infer env' body in
       Ok (mk_texpr (TELetMut (name, var_id, tv, tb)) tb.ty loc, env')
-  (* If-then-else *)
-  | EIf (cond, then_e, else_opt) -> (
-      let* tc, env = infer env cond in
-      let* () = check_boolean tc.ty cond.expr_loc in
-      let* tt, env = infer env then_e in
-      match else_opt with
-      | None ->
-          let* () = unify_or_error tt.ty t_unit then_e.expr_loc in
-          Ok (mk_texpr (TEIf (tc, tt, None)) t_unit loc, env)
-      | Some else_e ->
-          let* te, env = infer env else_e in
-          let* () = unify_or_error tt.ty te.ty else_e.expr_loc in
-          Ok (mk_texpr (TEIf (tc, tt, Some te)) tt.ty loc, env))
-  (* For loop *)
-  | EFor (var, lo, hi, dir, body) ->
-      let* tlo, env = infer env lo in
-      let* thi, env = infer env hi in
-      let* () = unify_or_error tlo.ty t_int32 lo.expr_loc in
-      let* () = unify_or_error thi.ty t_int32 hi.expr_loc in
-      let var_id = fresh_var_id () in
-      let vi =
-        {
-          vi_type = t_int32;
-          vi_mutable = false;
-          vi_is_param = false;
-          vi_index = var_id;
-          vi_is_vec = false;
-        }
-      in
-      let env' = add_var var vi env in
-      let* tbody, _ = infer env' body in
-      Ok (mk_texpr (TEFor (var, var_id, tlo, thi, dir, tbody)) t_unit loc, env)
-  (* While loop *)
-  | EWhile (cond, body) ->
-      let* tc, env = infer env cond in
-      let* () = check_boolean tc.ty cond.expr_loc in
-      let* tbody, _ = infer env body in
-      Ok (mk_texpr (TEWhile (tc, tbody)) t_unit loc, env)
-  (* Sequence *)
-  | ESeq (e1, e2) ->
-      let* t1, env = infer env e1 in
-      let* t2, env = infer env e2 in
-      Ok (mk_texpr (TESeq [t1; t2]) t2.ty loc, env)
+  (* Control flow *)
+  | EIf _ | EFor _ | EWhile _ | ESeq _ ->
+      infer_control_flow ~infer env loc expr.e
   (* Match *)
   | EMatch (scrutinee, cases) ->
       let* ts, env = infer env scrutinee in
