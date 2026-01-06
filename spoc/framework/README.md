@@ -12,6 +12,7 @@ spoc_framework/
 ├── Typed_value.ml      # Type-safe value representation
 └── Device_type.ml      # Device type alias (backward compatibility)
 ../sarek/core/         # Runtime core that consumes BACKEND plugins
+../sarek/plugins/      # Backend implementations (CUDA/OpenCL/Vulkan/Native/Interpreter)
 ```
 
 ## Framework_sig.ml

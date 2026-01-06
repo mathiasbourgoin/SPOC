@@ -10,6 +10,7 @@ pattern where PPX-generated code registers types at module initialization.
 spoc_registry/
 └── Sarek_registry.ml   # Type/function lookup and registration
 ../sarek/core/         # Runtime core using registry data at execution time
+../sarek/ppx/          # PPX registers types/functions into the registry
 ```
 
 ## Design Pattern

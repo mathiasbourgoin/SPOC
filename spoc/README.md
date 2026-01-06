@@ -53,6 +53,8 @@ spoc/
 └── registry/           # Runtime type and function registry
     └── Sarek_registry.ml  - Type/function lookup for code generation
 └── ../sarek/core/     # Runtime core (Device, Memory, Vector, Kernel, Transfer)
+└── ../sarek/ppx/      # Sarek PPX compiler (kernel syntax frontend)
+└── ../sarek/plugins/  # Backend plugin implementations
 ```
 
 ## Design Principles

@@ -12,6 +12,7 @@ spoc_ir/
 ├── Sarek_ir_pp.ml         # Pretty printing
 └── Sarek_ir_analysis.ml   # Static analysis (float64 detection)
 ../sarek/core/             # Runtime core that executes generated kernels
+../sarek/ppx/              # Sarek PPX compiler (produces this IR)
 ```
 
 ## IR Type Hierarchy

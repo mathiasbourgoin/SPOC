@@ -17,6 +17,8 @@ vectors, transfers, and kernel execution, with unified logging and testing.
 - `Profiling`, `Advanced`: supplemental utilities.
 - Related components: `spoc/` SDK layer, `spoc/framework/`, `spoc/ir/`, `spoc/registry/`
   (see their directories for plugin interfaces, IR, and registries).
+  Additional dirs: `sarek/ppx/` (Sarek PPX compiler), `sarek/plugins/` (backend
+  implementations), `sarek/tests/` (broader test suites).
 
 ## Design Principles
 
