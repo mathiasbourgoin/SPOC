@@ -800,6 +800,43 @@ let gen_data_structure ~loc ~ctx ~gen_expr (te : texpr) : expression =
       [%expr Array.make [%e size_e] [%e default_e]]
   | _ -> failwith "gen_data_structure: not a data structure expression"
 
+(** Generate special expressions (return, global ref, native, pragma, open) *)
+let gen_special_expr ~loc ~gen_expr (te : texpr) : expression =
+  match te.te with
+  (* Return - just evaluate the expression *)
+  | TEReturn e -> gen_expr ~loc e
+  (* Global ref - reference to external value *)
+  | TEGlobalRef (name, _typ) ->
+      (* Dereference the ref *)
+      let var_e = evar ~loc name in
+      [%expr ![%e var_e]]
+  (* Native code with OCaml fallback - use the OCaml expression directly *)
+  | TENative {ocaml; _} ->
+      (* The ocaml expression is a function that will be applied to arguments.
+         Return it as-is; TEApp will handle the application. *)
+      ocaml
+  (* Pragma - just evaluate body (pragmas are hints for GPU) *)
+  | TEPragma (_opts, body) -> gen_expr ~loc body
+  (* Module open - generate let open M.N in body *)
+  | TEOpen (path, body) ->
+      let body_e = gen_expr ~loc body in
+      (* Build the module path longident: M.N.O *)
+      let mod_lid =
+        match path with
+        | [] -> failwith "empty module path in TEOpen"
+        | [m] -> Lident m
+        | m :: rest ->
+            List.fold_left (fun acc p -> Ldot (acc, p)) (Lident m) rest
+      in
+      Ast_builder.Default.pexp_open
+        ~loc
+        (Ast_builder.Default.open_infos
+           ~loc
+           ~override:Fresh
+           ~expr:(Ast_builder.Default.pmod_ident ~loc {txt = mod_lid; loc}))
+        body_e
+  | _ -> failwith "gen_special_expr: not a special expression"
+
 (** Generate OCaml expression from typed Sarek expression.
     @param ctx Generation context with mutable vars and inline types *)
 let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
@@ -878,20 +915,9 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
   (* Data structures *)
   | TERecord _ | TEConstr _ | TETuple _ | TECreateArray _ ->
       gen_data_structure ~loc ~ctx ~gen_expr te
-  (* Return - just evaluate the expression *)
-  | TEReturn e -> gen_expr ~loc e
-  (* Global ref - reference to external value *)
-  | TEGlobalRef (name, _typ) ->
-      (* Dereference the ref *)
-      let var_e = evar ~loc name in
-      [%expr ![%e var_e]]
-  (* Native code with OCaml fallback - use the OCaml expression directly *)
-  | TENative {ocaml; _} ->
-      (* The ocaml expression is a function that will be applied to arguments.
-         Return it as-is; TEApp will handle the application. *)
-      ocaml
-  (* Pragma - just evaluate body (pragmas are hints for GPU) *)
-  | TEPragma (_opts, body) -> gen_expr ~loc body
+  (* Special expressions *)
+  | TEReturn _ | TEGlobalRef _ | TENative _ | TEPragma _ | TEOpen _ ->
+      gen_special_expr ~loc ~gen_expr te
   (* Intrinsic constant - thread indices, etc. *)
   | TEIntrinsicConst ref -> gen_intrinsic_const ~loc ~gen_mode:ctx.gen_mode ref
   (* Intrinsic function - math functions, barriers, etc. *)
@@ -978,24 +1004,6 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
         [%e body_e] ;
         [%e state].Sarek.Sarek_cpu_runtime.barrier () ;
         [%e cont_e]]
-  (* Module open - generate let open M.N in body *)
-  | TEOpen (path, body) ->
-      let body_e = gen_expr ~loc body in
-      (* Build the module path longident: M.N.O *)
-      let mod_lid =
-        match path with
-        | [] -> failwith "empty module path in TEOpen"
-        | [m] -> Lident m
-        | m :: rest ->
-            List.fold_left (fun acc p -> Ldot (acc, p)) (Lident m) rest
-      in
-      Ast_builder.Default.pexp_open
-        ~loc
-        (Ast_builder.Default.open_infos
-           ~loc
-           ~override:Fresh
-           ~expr:(Ast_builder.Default.pmod_ident ~loc {txt = mod_lid; loc}))
-        body_e
   | TELetRec (name, _id, params, fn_body, cont) ->
       (* Generate: let rec name p1 p2 ... = body in cont *)
       let fn_body_e = gen_expr ~loc fn_body in
