@@ -681,81 +681,9 @@ let gen_control_flow ~loc ~gen_expr (te : texpr) : expression =
         done]
   | _ -> failwith "gen_control_flow: not a control flow expression"
 
-(** Generate OCaml expression from typed Sarek expression.
-    @param ctx Generation context with mutable vars and inline types *)
-let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
-  let loc = ppxlib_loc_of_sarek te.te_loc in
-  (* Helper to recursively generate, passing ctx *)
-  let gen_expr ~loc e = gen_expr_impl ~loc ~ctx e in
+(** Generate data structures (records, variants, tuples, arrays) *)
+let gen_data_structure ~loc ~ctx ~gen_expr (te : texpr) : expression =
   match te.te with
-  (* Literals *)
-  | TEUnit | TEBool _ | TEInt _ | TEInt32 _ | TEInt64 _ | TEFloat _ | TEDouble _
-    ->
-      gen_literal ~loc te
-  (* Variables *)
-  | TEVar (name, id) -> gen_variable ~loc ~ctx name id
-  (* Memory access *)
-  | TEVecGet _ | TEVecSet _ | TEArrGet _ | TEArrSet _ | TEFieldGet _
-  | TEFieldSet _ ->
-      gen_memory_access ~loc ~ctx ~gen_expr te
-  (* Control flow *)
-  | TEIf _ | TEFor _ | TEWhile _ -> gen_control_flow ~loc ~gen_expr te
-  (* Binary operations *)
-  | TEBinop (op, a, b) ->
-      let a_e = gen_expr ~loc a in
-      let b_e = gen_expr ~loc b in
-      gen_binop ~loc op a_e b_e a.ty
-  (* Unary operations *)
-  | TEUnop (op, a) ->
-      let a_e = gen_expr ~loc a in
-      gen_unop ~loc op a_e a.ty
-  (* Function application *)
-  | TEApp (fn, args) ->
-      let fn_e = gen_expr ~loc fn in
-      (* When use_native_arg is true, vector arguments need #underlying
-         to get the actual Vector.t for functions that expect it *)
-      let gen_arg arg =
-        let arg_e = gen_expr ~loc arg in
-        if ctx.use_native_arg then
-          match repr arg.ty with
-          | TVec _ -> [%expr [%e arg_e]#underlying]
-          | _ -> arg_e
-        else arg_e
-      in
-      let args_e = List.map gen_arg args in
-      Ast_builder.Default.pexp_apply
-        ~loc
-        fn_e
-        (List.map (fun a -> (Nolabel, a)) args_e)
-  (* Let bindings and assignment *)
-  | TEAssign _ | TELet _ | TELetMut _ ->
-      gen_let_binding ~loc ~ctx ~gen_expr ~gen_expr_impl te
-  (* Sequence *)
-  | TESeq exprs -> (
-      let exprs_e = List.map (gen_expr ~loc) exprs in
-      match exprs_e with
-      | [] -> [%expr ()]
-      | [e] -> e
-      | es ->
-          List.fold_right
-            (fun e acc ->
-              [%expr
-                [%e e] ;
-                [%e acc]])
-            (List.rev (List.tl (List.rev es)))
-            (List.hd (List.rev es)))
-  (* Match *)
-  | TEMatch (scrutinee, cases) ->
-      let scrut_e = gen_expr ~loc scrutinee in
-      let cases_e =
-        List.map
-          (fun (pat, body) ->
-            let pat_e = gen_pattern_impl ~loc ~ctx pat in
-            let body_e = gen_expr ~loc body in
-            Ast_builder.Default.case ~lhs:pat_e ~guard:None ~rhs:body_e)
-          cases
-      in
-      Ast_builder.Default.pexp_match ~loc scrut_e cases_e
   (* Record construction - qualify field names with module path from type_name.
      For inline types with FCM, use __types.make_typename ~field1:v1 ~field2:v2.
      For same-module types, use unqualified field names. *)
@@ -865,13 +793,93 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
   | TETuple exprs ->
       let exprs_e = List.map (gen_expr ~loc) exprs in
       Ast_builder.Default.pexp_tuple ~loc exprs_e
-  (* Return - just evaluate the expression *)
-  | TEReturn e -> gen_expr ~loc e
   (* Create local array - use regular OCaml arrays for native mode *)
   | TECreateArray (size, elem_ty, _memspace) ->
       let size_e = gen_expr ~loc size in
       let default_e = default_value_for_type ~loc elem_ty in
       [%expr Array.make [%e size_e] [%e default_e]]
+  | _ -> failwith "gen_data_structure: not a data structure expression"
+
+(** Generate OCaml expression from typed Sarek expression.
+    @param ctx Generation context with mutable vars and inline types *)
+let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
+  let loc = ppxlib_loc_of_sarek te.te_loc in
+  (* Helper to recursively generate, passing ctx *)
+  let gen_expr ~loc e = gen_expr_impl ~loc ~ctx e in
+  match te.te with
+  (* Literals *)
+  | TEUnit | TEBool _ | TEInt _ | TEInt32 _ | TEInt64 _ | TEFloat _ | TEDouble _
+    ->
+      gen_literal ~loc te
+  (* Variables *)
+  | TEVar (name, id) -> gen_variable ~loc ~ctx name id
+  (* Memory access *)
+  | TEVecGet _ | TEVecSet _ | TEArrGet _ | TEArrSet _ | TEFieldGet _
+  | TEFieldSet _ ->
+      gen_memory_access ~loc ~ctx ~gen_expr te
+  (* Control flow *)
+  | TEIf _ | TEFor _ | TEWhile _ -> gen_control_flow ~loc ~gen_expr te
+  (* Binary operations *)
+  | TEBinop (op, a, b) ->
+      let a_e = gen_expr ~loc a in
+      let b_e = gen_expr ~loc b in
+      gen_binop ~loc op a_e b_e a.ty
+  (* Unary operations *)
+  | TEUnop (op, a) ->
+      let a_e = gen_expr ~loc a in
+      gen_unop ~loc op a_e a.ty
+  (* Function application *)
+  | TEApp (fn, args) ->
+      let fn_e = gen_expr ~loc fn in
+      (* When use_native_arg is true, vector arguments need #underlying
+         to get the actual Vector.t for functions that expect it *)
+      let gen_arg arg =
+        let arg_e = gen_expr ~loc arg in
+        if ctx.use_native_arg then
+          match repr arg.ty with
+          | TVec _ -> [%expr [%e arg_e]#underlying]
+          | _ -> arg_e
+        else arg_e
+      in
+      let args_e = List.map gen_arg args in
+      Ast_builder.Default.pexp_apply
+        ~loc
+        fn_e
+        (List.map (fun a -> (Nolabel, a)) args_e)
+  (* Let bindings and assignment *)
+  | TEAssign _ | TELet _ | TELetMut _ ->
+      gen_let_binding ~loc ~ctx ~gen_expr ~gen_expr_impl te
+  (* Sequence *)
+  | TESeq exprs -> (
+      let exprs_e = List.map (gen_expr ~loc) exprs in
+      match exprs_e with
+      | [] -> [%expr ()]
+      | [e] -> e
+      | es ->
+          List.fold_right
+            (fun e acc ->
+              [%expr
+                [%e e] ;
+                [%e acc]])
+            (List.rev (List.tl (List.rev es)))
+            (List.hd (List.rev es)))
+  (* Match *)
+  | TEMatch (scrutinee, cases) ->
+      let scrut_e = gen_expr ~loc scrutinee in
+      let cases_e =
+        List.map
+          (fun (pat, body) ->
+            let pat_e = gen_pattern_impl ~loc ~ctx pat in
+            let body_e = gen_expr ~loc body in
+            Ast_builder.Default.case ~lhs:pat_e ~guard:None ~rhs:body_e)
+          cases
+      in
+      Ast_builder.Default.pexp_match ~loc scrut_e cases_e
+  (* Data structures *)
+  | TERecord _ | TEConstr _ | TETuple _ | TECreateArray _ ->
+      gen_data_structure ~loc ~ctx ~gen_expr te
+  (* Return - just evaluate the expression *)
+  | TEReturn e -> gen_expr ~loc e
   (* Global ref - reference to external value *)
   | TEGlobalRef (name, _typ) ->
       (* Dereference the ref *)
