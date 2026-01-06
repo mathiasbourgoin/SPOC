@@ -40,6 +40,7 @@ let alloc_scalar_buffer (type a b) (dev : Device.t) (length : int)
       let elem_sz = Vector.scalar_elem_size sk in
       let buf_id = Obj.repr buf |> Obj.obj |> Hashtbl.hash in
       Log.debugf Log.Transfer "alloc_scalar_buffer: buf_id=%d" buf_id ;
+      let device_ptr = B.Memory.device_ptr buf in
       (module struct
         let device = dev
 
@@ -47,32 +48,36 @@ let alloc_scalar_buffer (type a b) (dev : Device.t) (length : int)
 
         let elem_size = elem_sz
 
-        let ptr = B.Memory.device_ptr buf
+        let device_ptr = device_ptr
 
-        let bind_to_kernel kargs idx =
+        let bind_to_kargs kargs idx =
           (* Unwrap kargs to the backend's kernel args type and bind buffer *)
           let cur_id = Obj.repr buf |> Obj.obj |> Hashtbl.hash in
           Log.debugf
             Log.Transfer
-            "bind_to_kernel: buf_id=%d (was %d)"
+            "bind_to_kargs: buf_id=%d (was %d)"
             cur_id
             buf_id ;
           Log.debugf
             Log.Transfer
-            "bind_to_kernel: idx=%d ptr=%Ld"
+            "bind_to_kargs: idx=%d ptr=%Ld"
             idx
-            (Int64.of_nativeint ptr) ;
+            (Int64.of_nativeint device_ptr) ;
           match B.unwrap_kargs kargs with
           | Some args -> B.Kernel.set_arg_buffer args idx buf
-          | None -> failwith "bind_to_kernel: backend mismatch"
+          | None -> failwith "bind_to_kargs: backend mismatch"
 
-        let from_ptr src_ptr ~byte_size =
+        let host_ptr_to_device src_ptr ~byte_size =
           let cur_id = Obj.repr buf |> Obj.obj |> Hashtbl.hash in
-          Log.debugf Log.Transfer "from_ptr: buf_id=%d (was %d)" cur_id buf_id ;
+          Log.debugf
+            Log.Transfer
+            "host_ptr_to_device: buf_id=%d (was %d)"
+            cur_id
+            buf_id ;
           if B.Memory.is_zero_copy buf then () (* Skip for zero-copy *)
           else B.Memory.host_ptr_to_device ~src_ptr ~byte_size ~dst:buf
 
-        let to_ptr dst_ptr ~byte_size =
+        let device_to_host_ptr dst_ptr ~byte_size =
           if B.Memory.is_zero_copy buf then () (* Skip for zero-copy *)
           else B.Memory.device_to_host_ptr ~src:buf ~dst_ptr ~byte_size
 
@@ -94,6 +99,7 @@ let alloc_scalar_buffer_zero_copy (type a b) (dev : Device.t)
       | Some buf ->
           let elem_sz = Vector.scalar_elem_size sk in
           let length = Bigarray.Array1.dim ba in
+          let device_ptr = B.Memory.device_ptr buf in
           Some
             (module struct
               let device = dev
@@ -102,21 +108,23 @@ let alloc_scalar_buffer_zero_copy (type a b) (dev : Device.t)
 
               let elem_size = elem_sz
 
-              let ptr = B.Memory.device_ptr buf
+              let device_ptr = device_ptr
 
-              let bind_to_kernel kargs idx =
+              let bind_to_kargs kargs idx =
                 Log.debugf
                   Log.Transfer
-                  "bind_to_kernel (zero-copy): idx=%d ptr=%Ld"
+                  "bind_to_kargs (zero-copy): idx=%d ptr=%Ld"
                   idx
-                  (Int64.of_nativeint ptr) ;
+                  (Int64.of_nativeint device_ptr) ;
                 match B.unwrap_kargs kargs with
                 | Some args -> B.Kernel.set_arg_buffer args idx buf
-                | None -> failwith "bind_to_kernel: backend mismatch"
+                | None -> failwith "bind_to_kargs: backend mismatch"
 
-              let from_ptr _src_ptr ~byte_size:_ = () (* No-op for zero-copy *)
+              let host_ptr_to_device _src_ptr ~byte_size:_ =
+                () (* No-op for zero-copy *)
 
-              let to_ptr _dst_ptr ~byte_size:_ = () (* No-op for zero-copy *)
+              let device_to_host_ptr _dst_ptr ~byte_size:_ =
+                () (* No-op for zero-copy *)
 
               let free () = B.Memory.free buf
             end : Vector.DEVICE_BUFFER))
@@ -131,6 +139,7 @@ let alloc_custom_buffer (dev : Device.t) (length : int) (elem_sz : int) :
       let buf =
         B.Memory.alloc_custom backend_dev ~size:length ~elem_size:elem_sz
       in
+      let device_ptr = B.Memory.device_ptr buf in
       (module struct
         let device = dev
 
@@ -138,23 +147,23 @@ let alloc_custom_buffer (dev : Device.t) (length : int) (elem_sz : int) :
 
         let elem_size = elem_sz
 
-        let ptr = B.Memory.device_ptr buf
+        let device_ptr = device_ptr
 
-        let bind_to_kernel kargs idx =
+        let bind_to_kargs kargs idx =
           (* Unwrap kargs to the backend's kernel args type and bind buffer *)
           Log.debugf
             Log.Transfer
-            "bind_to_kernel: idx=%d ptr=%Ld"
+            "bind_to_kargs: idx=%d ptr=%Ld"
             idx
-            (Int64.of_nativeint ptr) ;
+            (Int64.of_nativeint device_ptr) ;
           match B.unwrap_kargs kargs with
           | Some args -> B.Kernel.set_arg_buffer args idx buf
-          | None -> failwith "bind_to_kernel: backend mismatch"
+          | None -> failwith "bind_to_kargs: backend mismatch"
 
-        let from_ptr src_ptr ~byte_size =
+        let host_ptr_to_device src_ptr ~byte_size =
           B.Memory.host_ptr_to_device ~src_ptr ~byte_size ~dst:buf
 
-        let to_ptr dst_ptr ~byte_size =
+        let device_to_host_ptr dst_ptr ~byte_size =
           B.Memory.device_to_host_ptr ~src:buf ~dst_ptr ~byte_size
 
         let free () = B.Memory.free buf
@@ -208,7 +217,7 @@ let ensure_buffer (type a b) (vec : (a, b) Vector.t) (dev : Device.t) :
       Log.debugf
         Log.Transfer
         "ensure_buffer: stored buffer ptr=%Ld size=%d"
-        (Int64.of_nativeint B.ptr)
+        (Int64.of_nativeint B.device_ptr)
         B.size ;
       buf
 
@@ -258,11 +267,11 @@ let to_device (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : unit =
           let ptr, byte_size = bigarray_to_ptr ba B.elem_size in
           Log.debugf
             Log.Transfer
-            "to_device: calling from_ptr byte_size=%d"
+            "to_device: calling host_ptr_to_device byte_size=%d"
             byte_size ;
-          B.from_ptr ptr ~byte_size
+          B.host_ptr_to_device ptr ~byte_size
       | Vector.Custom_storage {ptr; custom; length} ->
-          B.from_ptr ptr ~byte_size:(length * custom.elem_size)) ;
+          B.host_ptr_to_device ptr ~byte_size:(length * custom.elem_size)) ;
       vec.location <- Vector.Both dev
 
 (** Transfer vector data from device to CPU.
@@ -306,14 +315,14 @@ let to_cpu ?(force = false) (type a b) (vec : (a, b) Vector.t) : unit =
         Log.debugf
           Log.Transfer
           "to_cpu: got buffer ptr=%Ld size=%d"
-          (Int64.of_nativeint B.ptr)
+          (Int64.of_nativeint B.device_ptr)
           B.size ;
         (match vec.host with
         | Vector.Bigarray_storage ba ->
             let ptr, byte_size = bigarray_to_ptr ba B.elem_size in
-            B.to_ptr ptr ~byte_size
+            B.device_to_host_ptr ptr ~byte_size
         | Vector.Custom_storage {ptr; custom; length} ->
-            B.to_ptr ptr ~byte_size:(length * custom.elem_size)) ;
+            B.device_to_host_ptr ptr ~byte_size:(length * custom.elem_size)) ;
         vec.location <- Vector.Both dev
   end
   else

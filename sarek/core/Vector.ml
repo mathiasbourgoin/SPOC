@@ -208,39 +208,11 @@ type location =
 
 (** {1 Device Buffer Abstraction} *)
 
-(** Existential wrapper for backend-specific device buffers. Packages the
-    backend module with its buffer for type-safe operations. *)
-module type DEVICE_BUFFER = sig
-  val device : Device.t
-
-  val size : int
-
-  val elem_size : int
-
-  (** Raw device pointer (CUDA) or 0 (OpenCL) *)
-  val ptr : nativeint
-
-  (** {2 Kernel Binding}
-      Backend-specific kernel argument binding. The backend knows how to bind
-      its own buffer type (CUdeviceptr for CUDA, cl_mem for OpenCL). *)
-
-  (** Bind this buffer to a kernel argument. kargs is the backend's kernel args
-      wrapped in an extensible variant, idx is the argument index. *)
-  val bind_to_kernel : Spoc_framework.Framework_sig.kargs -> int -> unit
-
-  (** {2 Transfer Operations}
-      All transfers use raw pointers with byte sizes to avoid type parameter
-      escaping issues in first-class modules. *)
-
-  (** Transfer from host pointer to device buffer *)
-  val from_ptr : unit Ctypes.ptr -> byte_size:int -> unit
-
-  (** Transfer from device buffer to host pointer *)
-  val to_ptr : unit Ctypes.ptr -> byte_size:int -> unit
-
-  (** Free the device buffer *)
-  val free : unit -> unit
-end
+(** Device buffer reuses Memory.BUFFER module type. We use the raw module type
+    here (not the phantom-typed Memory.buffer) because the hashtable stores
+    buffers for a single vector type, and the type safety comes from the
+    Vector's ('a, 'b) t type parameter. *)
+module type DEVICE_BUFFER = Memory.BUFFER
 
 type device_buffer = (module DEVICE_BUFFER)
 

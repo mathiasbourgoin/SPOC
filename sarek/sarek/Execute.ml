@@ -55,7 +55,7 @@ let args_to_obj_array (args : arg list) : Obj.t array =
          | ArgRaw o -> o
          | ArgDeviceBuffer buf ->
              let (module B : Vector.DEVICE_BUFFER) = buf in
-             Obj.repr B.ptr)
+             Obj.repr B.device_ptr)
        args)
 
 (** Convert typed arg list to exec_arg array (new typed interface) *)
@@ -99,7 +99,7 @@ let bind_args (type kargs)
       | ArgDeviceBuffer buf ->
           (* V2 Vector buffer - let the backend bind itself *)
           let (module DB : Vector.DEVICE_BUFFER) = buf in
-          DB.bind_to_kernel (B.wrap_kargs kargs) i)
+          DB.bind_to_kargs (B.wrap_kargs kargs) i)
     args
 
 (** {1 V2 Vector Argument Type} *)
@@ -152,7 +152,7 @@ let vector_args_to_exec_array (args : vector_arg list) :
                  match Vector.location v with
                  | Vector.GPU dev | Vector.Both dev | Vector.Stale_CPU dev -> (
                      match Vector.get_buffer v dev with
-                     | Some (module B : Vector.DEVICE_BUFFER) -> B.ptr
+                     | Some (module B : Vector.DEVICE_BUFFER) -> B.device_ptr
                      | None -> failwith "Vector has no device buffer")
                  | Vector.CPU | Vector.Stale_GPU _ ->
                      failwith "Vector not on device"
@@ -227,7 +227,7 @@ let get_device_buffer (type a b) (v : (a, b) Vector.t) (dev : Device.t) :
       Log.debugf
         Log.Execute
         "got buffer: ptr=%Ld size=%d"
-        (Int64.of_nativeint B.ptr)
+        (Int64.of_nativeint B.device_ptr)
         B.size ;
       buf
   | None -> failwith "Vector has no device buffer"
@@ -267,7 +267,7 @@ let expand_to_run_source_args ?(inject_lengths = true) (args : vector_arg list)
           let (module B : Vector.DEVICE_BUFFER) = buf in
           let len = Vector.length v in
           let buf_arg =
-            Framework_sig.RSA_Buffer {binder = B.bind_to_kernel; length = len}
+            Framework_sig.RSA_Buffer {binder = B.bind_to_kargs; length = len}
           in
           if inject_lengths then
             [buf_arg; Framework_sig.RSA_Int32 (Int32.of_int len)]
