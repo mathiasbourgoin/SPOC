@@ -17,6 +17,7 @@ type error =
   | Missing_native_fn of {kernel : string}
   | Transfer_failed of {vector : string; reason : string}
   | Interp_error of string
+  | Invalid_file of {path : string; reason : string}
 
 (** Exception wrapper for execution errors *)
 exception Execution_error of error
@@ -52,6 +53,8 @@ let error_to_string = function
   | Transfer_failed {vector; reason} ->
       Printf.sprintf "Vector transfer failed for %s: %s" vector reason
   | Interp_error msg -> Printf.sprintf "Interpreter error: %s" msg
+  | Invalid_file {path; reason} ->
+      Printf.sprintf "Invalid file %s: %s" path reason
 
 (** Raise an execution error *)
 let raise_error err = raise (Execution_error err)

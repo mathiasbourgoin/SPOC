@@ -13,8 +13,8 @@ open Spoc_framework
 open Spoc_framework_registry
 open Spoc_core
 
-(** Kernel execution error *)
-exception Execution_error of string
+(** Re-export structured error types *)
+open Execute_error
 
 (** {1 V2 Vector Argument Type} *)
 
@@ -53,9 +53,17 @@ let vector_args_to_exec_array (args : vector_arg list) :
                  | Vector.GPU dev | Vector.Both dev | Vector.Stale_CPU dev -> (
                      match Vector.get_buffer v dev with
                      | Some (module B : Vector.DEVICE_BUFFER) -> B.device_ptr
-                     | None -> failwith "Vector has no device buffer")
+                     | None ->
+                         Execute_error.raise_error
+                           (Transfer_failed
+                              {
+                                vector = "unknown";
+                                reason = "Vector has no device buffer";
+                              }))
                  | Vector.CPU | Vector.Stale_GPU _ ->
-                     failwith "Vector not on device"
+                     Execute_error.raise_error
+                       (Transfer_failed
+                          {vector = "unknown"; reason = "Vector not on device"})
 
                let get i =
                  (* Convert element to typed_value based on vector kind *)
@@ -86,28 +94,55 @@ let vector_args_to_exec_array (args : vector_arg list) :
                        (Typed_value.SV ((module Typed_value.Float32_type), 0.0))
 
                let set i tv =
+                 let type_error expected actual =
+                   Execute_error.raise_error
+                     (Type_mismatch
+                        {
+                          expected;
+                          actual;
+                          context = "vector element assignment";
+                        })
+                 in
                  match (tv, Vector.kind v) with
                  | ( Typed_value.TV_Scalar (Typed_value.SV ((module S), x)),
                      Vector.Scalar Vector.Int32 ) -> (
                      match S.to_primitive x with
                      | Typed_value.PInt32 n -> Vector.set v i n
-                     | _ -> failwith "Type mismatch in set")
+                     | Typed_value.PInt64 _ -> type_error "int32" "int64"
+                     | Typed_value.PFloat _ -> type_error "int32" "float"
+                     | Typed_value.PBool _ -> type_error "int32" "bool"
+                     | Typed_value.PBytes _ -> type_error "int32" "bytes")
                  | ( Typed_value.TV_Scalar (Typed_value.SV ((module S), x)),
                      Vector.Scalar Vector.Int64 ) -> (
                      match S.to_primitive x with
                      | Typed_value.PInt64 n -> Vector.set v i n
-                     | _ -> failwith "Type mismatch in set")
+                     | Typed_value.PInt32 _ -> type_error "int64" "int32"
+                     | Typed_value.PFloat _ -> type_error "int64" "float"
+                     | Typed_value.PBool _ -> type_error "int64" "bool"
+                     | Typed_value.PBytes _ -> type_error "int64" "bytes")
                  | ( Typed_value.TV_Scalar (Typed_value.SV ((module S), x)),
                      Vector.Scalar Vector.Float32 ) -> (
                      match S.to_primitive x with
                      | Typed_value.PFloat f -> Vector.set v i f
-                     | _ -> failwith "Type mismatch in set")
+                     | Typed_value.PInt32 _ -> type_error "float" "int32"
+                     | Typed_value.PInt64 _ -> type_error "float" "int64"
+                     | Typed_value.PBool _ -> type_error "float" "bool"
+                     | Typed_value.PBytes _ -> type_error "float" "bytes")
                  | ( Typed_value.TV_Scalar (Typed_value.SV ((module S), x)),
                      Vector.Scalar Vector.Float64 ) -> (
                      match S.to_primitive x with
                      | Typed_value.PFloat f -> Vector.set v i f
-                     | _ -> failwith "Type mismatch in set")
-                 | _ -> failwith "set: unsupported type combination"
+                     | Typed_value.PInt32 _ -> type_error "float" "int32"
+                     | Typed_value.PInt64 _ -> type_error "float" "int64"
+                     | Typed_value.PBool _ -> type_error "float" "bool"
+                     | Typed_value.PBytes _ -> type_error "float" "bytes")
+                 | _ ->
+                     Execute_error.raise_error
+                       (Unsupported_argument
+                          {
+                            arg_type = "unknown combination";
+                            context = "vector element assignment";
+                          })
              end in
              Framework_sig.EA_Vec (module EV)
          | Int n -> Framework_sig.EA_Int32 (Int32.of_int n)
@@ -130,7 +165,10 @@ let get_device_buffer (type a b) (v : (a, b) Vector.t) (dev : Device.t) :
         (Int64.of_nativeint B.device_ptr)
         B.size ;
       buf
-  | None -> failwith "Vector has no device buffer"
+  | None ->
+      Execute_error.raise_error
+        (Transfer_failed
+           {vector = "unknown"; reason = "Vector has no device buffer"})
 
 (** Transfer all V2 Vector args to device *)
 let transfer_vectors_to_device (args : vector_arg list) (dev : Device.t) : unit
@@ -187,22 +225,28 @@ let run ~(device : Device.t) ~(name : string)
     ?(shared_mem : int = 0) (args : vector_arg list) : unit =
   match Framework_registry.find_backend device.framework with
   | None ->
-      raise
-        (Execution_error ("No backend found for framework: " ^ device.framework))
+      Execute_error.raise_error
+        (Backend_error
+           {
+             backend = device.framework;
+             message = "Backend not found in registry";
+           })
   | Some (module B : Framework_sig.BACKEND) -> (
       match B.execution_model with
       | Framework_sig.JIT -> (
           (* JIT path: generate source, compile, use B.run_source *)
           match ir with
-          | None ->
-              raise
-                (Execution_error "JIT backend requires IR but none provided")
+          | None -> Execute_error.raise_error (Missing_ir {kernel = name})
           | Some ir_lazy -> (
               let ir = Lazy.force ir_lazy in
               match B.generate_source ~block ir with
               | None ->
-                  raise
-                    (Execution_error "JIT backend failed to generate source")
+                  Execute_error.raise_error
+                    (Compilation_failed
+                       {
+                         kernel = name;
+                         reason = "Backend failed to generate source";
+                       })
               | Some source ->
                   (* Convert vector args to run_source_arg format (auto-injects lengths) *)
                   let rs_args = expand_to_run_source_args args device in
@@ -213,9 +257,12 @@ let run ~(device : Device.t) ~(name : string)
                   let lang =
                     match B.supported_source_langs with
                     | [] ->
-                        raise
-                          (Execution_error
-                             "JIT backend has no supported source languages")
+                        Execute_error.raise_error
+                          (Backend_error
+                             {
+                               backend = device.framework;
+                               message = "No supported source languages";
+                             })
                     | lang :: _ -> lang
                   in
                   (* Use backend's run_source - handles compilation and launch *)
@@ -465,18 +512,18 @@ let run_source ~(device : Device.t) ~(source : string) ~(lang : source_lang)
 
   match Framework_registry.find_backend device.framework with
   | Some (module B : Framework_sig.BACKEND) ->
-      if not (List.mem lang B.supported_source_langs) then
-        raise
-          (Execution_error
-             (Printf.sprintf
-                "%s backend does not support %s"
-                device.framework
-                (match lang with
-                | CUDA_Source -> "CUDA source"
-                | OpenCL_Source -> "OpenCL source"
-                | PTX -> "PTX"
-                | SPIR_V -> "SPIR-V"
-                | GLSL_Source -> "GLSL source"))) ;
+      (if not (List.mem lang B.supported_source_langs) then
+         let lang_name =
+           match lang with
+           | CUDA_Source -> "CUDA source"
+           | OpenCL_Source -> "OpenCL source"
+           | PTX -> "PTX"
+           | SPIR_V -> "SPIR-V"
+           | GLSL_Source -> "GLSL source"
+         in
+         Execute_error.raise_error
+           (Unsupported_argument
+              {arg_type = lang_name; context = device.framework ^ " backend"})) ;
 
       (* Expand vector args to run_source_arg format for external kernels *)
       let rs_args = expand_to_run_source_args ~inject_lengths args device in
@@ -489,9 +536,12 @@ let run_source ~(device : Device.t) ~(source : string) ~(lang : source_lang)
       (* Mark vectors as stale *)
       mark_vectors_stale args device
   | None ->
-      raise
-        (Execution_error
-           ("No V2 backend found for framework: " ^ device.framework))
+      Execute_error.raise_error
+        (Backend_error
+           {
+             backend = device.framework;
+             message = "Backend not found in registry";
+           })
 
 (** Load kernel source from a file *)
 let load_source (path : string) : string =
@@ -505,7 +555,15 @@ let detect_lang (path : string) : source_lang =
   else if String.ends_with ~suffix:".spv" path then SPIR_V
   else if String.ends_with ~suffix:".comp" path then GLSL_Source
   else if String.ends_with ~suffix:".glsl" path then GLSL_Source
-  else failwith ("Unknown source file extension: " ^ path)
+  else
+    Execute_error.raise_error
+      (Invalid_file
+         {
+           path;
+           reason =
+             "Unknown source file extension (expected .cu, .cl, .ptx, .spv, \
+              .comp, or .glsl)";
+         })
 
 (** Execute an external kernel from a file. Source language is detected from
     file extension (.cu, .cl, .ptx, .spv) *)
