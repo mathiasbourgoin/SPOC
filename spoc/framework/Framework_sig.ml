@@ -76,6 +76,9 @@ type source_lang =
     across the framework boundary without Obj.t. *)
 type kargs = ..
 
+(** Placeholder kargs for testing - not associated with any backend *)
+type kargs += No_kargs
+
 (** Argument type for run_source. Buffer binder receives typed kargs. *)
 type run_source_arg =
   | RSA_Buffer of {

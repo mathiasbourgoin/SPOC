@@ -23,42 +23,51 @@ let make_fake_caps () : Spoc_framework.Framework_sig.capabilities =
     is_cpu = true;
   }
 
-(** {1 Kernel Type Tests} *)
+let make_fake_device () : Spoc_core.Device.t =
+  {
+    id = 999;
+    backend_id = 0;
+    name = "Fake Device";
+    framework = "NonExistentFramework";
+    capabilities = make_fake_caps ();
+  }
 
-let test_kernel_type_structure () =
-  (* Verify kernel record fields exist and have correct types *)
-  let fake_device : Spoc_core.Device.t =
-    {
-      id = 0;
-      backend_id = 0;
-      name = "Test";
-      framework = "Test";
-      capabilities = make_fake_caps ();
-    }
-  in
-  let kernel : Spoc_core.Kernel.t =
-    {device = fake_device; name = "test_kernel"; handle = Obj.repr ()}
-  in
-  assert (kernel.name = "test_kernel") ;
-  assert (kernel.device.name = "Test") ;
-  print_endline "  kernel type structure: OK"
+(** {1 Module Type Tests} *)
 
-let test_args_type_structure () =
-  (* Verify args record fields exist and have correct types *)
-  let fake_device : Spoc_core.Device.t =
-    {
-      id = 0;
-      backend_id = 0;
-      name = "Test";
-      framework = "Test";
-      capabilities = make_fake_caps ();
-    }
-  in
-  let args : Spoc_core.Kernel.args =
-    {device = fake_device; handle = Obj.repr ()}
-  in
-  assert (args.device.name = "Test") ;
-  print_endline "  args type structure: OK"
+let test_kernel_module_type () =
+  (* Verify KERNEL module type signature by checking we can define a module
+     that satisfies it *)
+  let module FakeKernel : Spoc_core.Kernel.KERNEL = struct
+    let device = make_fake_device ()
+
+    let name = "test_kernel"
+
+    let launch ~args:_ ~grid:_ ~block:_ ~shared_mem:_ = ()
+  end in
+  assert (FakeKernel.name = "test_kernel") ;
+  assert (FakeKernel.device.name = "Fake Device") ;
+  print_endline "  KERNEL module type: OK"
+
+let test_args_module_type () =
+  (* Verify ARGS module type signature by checking we can define a module
+     that satisfies it *)
+  let module FakeArgs : Spoc_core.Kernel.ARGS = struct
+    let device = make_fake_device ()
+
+    let kargs = Spoc_framework.Framework_sig.No_kargs
+
+    let set_int32 _idx _v = ()
+
+    let set_int64 _idx _v = ()
+
+    let set_float32 _idx _v = ()
+
+    let set_float64 _idx _v = ()
+
+    let set_ptr _idx _ptr = ()
+  end in
+  assert (FakeArgs.device.name = "Fake Device") ;
+  print_endline "  ARGS module type: OK"
 
 (** {1 Compilation API Signature Tests} *)
 
@@ -139,16 +148,29 @@ let test_clear_cache_signature () =
   let _f : Spoc_core.Device.t -> unit = Spoc_core.Kernel.clear_cache in
   print_endline "  clear_cache signature: OK"
 
-(** {1 Error Handling Tests} *)
+(** {1 Accessor Signature Tests} *)
 
-let make_fake_device () : Spoc_core.Device.t =
-  {
-    id = 999;
-    backend_id = 0;
-    name = "Fake Device";
-    framework = "NonExistentFramework";
-    capabilities = make_fake_caps ();
-  }
+let test_device_signature () =
+  let _f : Spoc_core.Kernel.t -> Spoc_core.Device.t = Spoc_core.Kernel.device in
+  print_endline "  device signature: OK"
+
+let test_name_signature () =
+  let _f : Spoc_core.Kernel.t -> string = Spoc_core.Kernel.name in
+  print_endline "  name signature: OK"
+
+let test_args_device_signature () =
+  let _f : Spoc_core.Kernel.args -> Spoc_core.Device.t =
+    Spoc_core.Kernel.args_device
+  in
+  print_endline "  args_device signature: OK"
+
+let test_get_kargs_signature () =
+  let _f : Spoc_core.Kernel.args -> Spoc_framework.Framework_sig.kargs =
+    Spoc_core.Kernel.get_kargs
+  in
+  print_endline "  get_kargs signature: OK"
+
+(** {1 Error Handling Tests} *)
 
 let test_compile_unknown_framework () =
   let fake_device = make_fake_device () in
@@ -204,8 +226,8 @@ let test_dims_usage () =
 
 let () =
   print_endline "Kernel module tests:" ;
-  test_kernel_type_structure () ;
-  test_args_type_structure () ;
+  test_kernel_module_type () ;
+  test_args_module_type () ;
   test_compile_signature () ;
   test_compile_cached_signature () ;
   test_create_args_signature () ;
@@ -217,6 +239,10 @@ let () =
   test_set_arg_ptr_signature () ;
   test_launch_signature () ;
   test_clear_cache_signature () ;
+  test_device_signature () ;
+  test_name_signature () ;
+  test_args_device_signature () ;
+  test_get_kargs_signature () ;
   test_compile_unknown_framework () ;
   test_compile_cached_unknown_framework () ;
   test_create_args_unknown_framework () ;
