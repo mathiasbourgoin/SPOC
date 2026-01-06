@@ -123,8 +123,14 @@ test_spoc:
 	dune build @spoc/runtest
 	@echo "=== SPOC package tests passed ==="
 
+# Run sarek/core unit tests
+test_sarek_core:
+	@echo "=== Sarek core unit tests ==="
+	dune build @sarek/core/test/runtest
+	@echo "=== Sarek core tests passed ==="
+
 # Run all tests: unit tests, e2e tests, negative tests, and spoc tests
-test-all: test test_spoc test_interpreter test_negative
+test-all: test test_spoc test_sarek_core test_interpreter test_negative
 	@echo "=== All tests passed ==="
 
 # E2E tests - quick verification with small datasets comparing GPU vs native CPU
