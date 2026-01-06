@@ -591,6 +591,36 @@ let gen_memory_access ~loc ~ctx ~gen_expr (te : texpr) : expression =
       Ast_builder.Default.pexp_setfield ~loc rec_e field_lid val_e
   | _ -> failwith "gen_memory_access: not a memory access expression"
 
+(** Generate let bindings (let, let mut, assignment) *)
+let gen_let_binding ~loc ~ctx ~gen_expr ~gen_expr_impl (te : texpr) : expression
+    =
+  match te.te with
+  | TEAssign (name, _id, value) ->
+      let val_e = gen_expr ~loc value in
+      (* Mutable variables are stored as refs with the original name *)
+      let var_e = evar ~loc name in
+      [%expr [%e var_e] := [%e val_e]]
+  | TELet (name, _id, value, body) ->
+      let val_e = gen_expr ~loc value in
+      let body_e = gen_expr ~loc body in
+      let pat = Ast_builder.Default.ppat_var ~loc {txt = name; loc} in
+      [%expr
+        let [%p pat] = [%e val_e] in
+        [%e body_e]]
+  | TELetMut (name, id, value, body) ->
+      let val_e = gen_expr ~loc value in
+      (* Add this variable to the mutable set for the body *)
+      let ctx' = {ctx with mut_vars = IntSet.add id ctx.mut_vars} in
+      let body_e = gen_expr_impl ~loc ~ctx:ctx' body in
+      let pat = Ast_builder.Default.ppat_var ~loc {txt = name; loc} in
+      (* Create: let x = ref val in body
+         Note: TEVar for mutable vars will dereference with !.
+         TEAssign uses := which works on refs. *)
+      [%expr
+        let [%p pat] = ref [%e val_e] in
+        [%e body_e]]
+  | _ -> failwith "gen_let_binding: not a let binding expression"
+
 (** Generate control flow (if, for, while) *)
 let gen_control_flow ~loc ~gen_expr (te : texpr) : expression =
   match te.te with
@@ -697,36 +727,9 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
         ~loc
         fn_e
         (List.map (fun a -> (Nolabel, a)) args_e)
-  (* Assignment to mutable variable *)
-  | TEAssign (name, _id, value) ->
-      let val_e = gen_expr ~loc value in
-      (* Mutable variables are stored as refs with the original name *)
-      let var_e = evar ~loc name in
-      [%expr [%e var_e] := [%e val_e]]
-  (* Let binding *)
-  | TELet (name, _id, value, body) ->
-      let val_e = gen_expr ~loc value in
-      let body_e = gen_expr ~loc body in
-      let pat = Ast_builder.Default.ppat_var ~loc {txt = name; loc} in
-      [%expr
-        let [%p pat] = [%e val_e] in
-        [%e body_e]]
-  (* Mutable let binding - use a ref cell with same name.
-     TEVar will dereference the ref when reading.
-     TEAssign will update the ref.
-     This isn't ideal for performance but works semantically. *)
-  | TELetMut (name, id, value, body) ->
-      let val_e = gen_expr ~loc value in
-      (* Add this variable to the mutable set for the body *)
-      let ctx' = {ctx with mut_vars = IntSet.add id ctx.mut_vars} in
-      let body_e = gen_expr_impl ~loc ~ctx:ctx' body in
-      let pat = Ast_builder.Default.ppat_var ~loc {txt = name; loc} in
-      (* Create: let x = ref val in body
-         Note: TEVar for mutable vars will dereference with !.
-         TEAssign uses := which works on refs. *)
-      [%expr
-        let [%p pat] = ref [%e val_e] in
-        [%e body_e]]
+  (* Let bindings and assignment *)
+  | TEAssign _ | TELet _ | TELetMut _ ->
+      gen_let_binding ~loc ~ctx ~gen_expr ~gen_expr_impl te
   (* Sequence *)
   | TESeq exprs -> (
       let exprs_e = List.map (gen_expr ~loc) exprs in
