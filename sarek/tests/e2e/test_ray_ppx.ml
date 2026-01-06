@@ -32,7 +32,7 @@ let ray_kernel =
         (diry : float32 vector)
         (dirz : float32 vector)
         (out : float32 vector)
-        (n : int)
+        (n : int32)
       ->
       let tid = thread_idx_x + (block_idx_x * block_dim_x) in
       if tid < n then (

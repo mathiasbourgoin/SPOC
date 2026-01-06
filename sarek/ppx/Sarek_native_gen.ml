@@ -76,10 +76,10 @@ let rec core_type_of_typ ~loc typ : Ppxlib.core_type =
   | TPrim TBool -> [%type: bool]
   | TPrim TInt32 -> [%type: int32]
   (* Registered types - numeric types are registered by stdlib *)
-  | TReg "float32" -> [%type: float]
-  | TReg "float64" -> [%type: float]
-  | TReg "int32" -> [%type: int32]
-  | TReg "int64" -> [%type: int64]
+  | TReg Float32 -> [%type: float]
+  | TReg Float64 -> [%type: float]
+  | TReg Int -> [%type: int32]
+  | TReg Int64 -> [%type: int64]
   (* Vector/array types - use wildcard to avoid scope issues *)
   | TVec _ -> [%type: _]
   | TArr _ -> [%type: _]
@@ -392,10 +392,9 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
       (* Check the type annotation to generate the correct literal type.
          In GPU kernels, integer literals compared with int32 should be int32. *)
       match repr te.ty with
-      | TReg "int32" | TPrim TInt32 ->
+      | TReg Int | TPrim TInt32 ->
           [%expr Int32.of_int [%e Ast_builder.Default.eint ~loc n]]
-      | TReg "int64" ->
-          [%expr Int64.of_int [%e Ast_builder.Default.eint ~loc n]]
+      | TReg Int64 -> [%expr Int64.of_int [%e Ast_builder.Default.eint ~loc n]]
       | _ ->
           (* Default to plain int *)
           Ast_builder.Default.eint ~loc n)
@@ -802,10 +801,10 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
       (* Generate default value based on element type *)
       let default_e =
         match repr elem_ty with
-        | TReg "float32" | TReg "float64" -> [%expr 0.0]
-        | TPrim TInt32 | TReg "int32" -> [%expr 0l]
-        | TReg "int64" -> [%expr 0L]
-        | TReg "char" -> [%expr '\000']
+        | TReg Float32 | TReg Float64 -> [%expr 0.0]
+        | TPrim TInt32 | TReg Int -> [%expr 0l]
+        | TReg Int64 -> [%expr 0L]
+        | TReg Char -> [%expr '\000']
         | _ -> [%expr Obj.magic 0]
         (* Fallback for custom types *)
       in
@@ -858,35 +857,28 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
       (* Use typed allocators for common types, generic for custom types *)
       let alloc_expr =
         match repr elem_ty with
-        | TReg "float32" | TReg "float64" ->
+        | TReg Float32 | TReg Float64 ->
             [%expr
               Sarek.Sarek_cpu_runtime.alloc_shared_float
                 [%e shared]
                 [%e name_e]
                 [%e size_e]
                 0.0]
-        | TPrim TInt32 | TReg "int32" ->
+        | TPrim TInt32 | TReg Int ->
             [%expr
               Sarek.Sarek_cpu_runtime.alloc_shared_int32
                 [%e shared]
                 [%e name_e]
                 [%e size_e]
                 0l]
-        | TReg "int64" ->
+        | TReg Int64 ->
             [%expr
               Sarek.Sarek_cpu_runtime.alloc_shared_int64
                 [%e shared]
                 [%e name_e]
                 [%e size_e]
                 0L]
-        | TReg "int" ->
-            [%expr
-              Sarek.Sarek_cpu_runtime.alloc_shared_int
-                [%e shared]
-                [%e name_e]
-                [%e size_e]
-                0]
-        | TReg "char" ->
+        | TReg Char ->
             [%expr
               Sarek.Sarek_cpu_runtime.alloc_shared
                 [%e shared]
@@ -998,32 +990,32 @@ and gen_binop ~loc op a b ty : expression =
   match op with
   | Sarek_ast.Add -> (
       match ty_repr with
-      | TReg "float32" | TReg "float64" -> [%expr [%e a] +. [%e b]]
-      | TReg "int32" | TPrim TInt32 -> [%expr Int32.add [%e a] [%e b]]
-      | TReg "int64" -> [%expr Int64.add [%e a] [%e b]]
+      | TReg Float32 | TReg Float64 -> [%expr [%e a] +. [%e b]]
+      | TReg Int | TPrim TInt32 -> [%expr Int32.add [%e a] [%e b]]
+      | TReg Int64 -> [%expr Int64.add [%e a] [%e b]]
       | _ -> [%expr [%e a] + [%e b]])
   | Sarek_ast.Sub -> (
       match ty_repr with
-      | TReg "float32" | TReg "float64" -> [%expr [%e a] -. [%e b]]
-      | TReg "int32" | TPrim TInt32 -> [%expr Int32.sub [%e a] [%e b]]
-      | TReg "int64" -> [%expr Int64.sub [%e a] [%e b]]
+      | TReg Float32 | TReg Float64 -> [%expr [%e a] -. [%e b]]
+      | TReg Int | TPrim TInt32 -> [%expr Int32.sub [%e a] [%e b]]
+      | TReg Int64 -> [%expr Int64.sub [%e a] [%e b]]
       | _ -> [%expr [%e a] - [%e b]])
   | Sarek_ast.Mul -> (
       match ty_repr with
-      | TReg "float32" | TReg "float64" -> [%expr [%e a] *. [%e b]]
-      | TReg "int32" | TPrim TInt32 -> [%expr Int32.mul [%e a] [%e b]]
-      | TReg "int64" -> [%expr Int64.mul [%e a] [%e b]]
+      | TReg Float32 | TReg Float64 -> [%expr [%e a] *. [%e b]]
+      | TReg Int | TPrim TInt32 -> [%expr Int32.mul [%e a] [%e b]]
+      | TReg Int64 -> [%expr Int64.mul [%e a] [%e b]]
       | _ -> [%expr [%e a] * [%e b]])
   | Sarek_ast.Div -> (
       match ty_repr with
-      | TReg "float32" | TReg "float64" -> [%expr [%e a] /. [%e b]]
-      | TReg "int32" | TPrim TInt32 -> [%expr Int32.div [%e a] [%e b]]
-      | TReg "int64" -> [%expr Int64.div [%e a] [%e b]]
+      | TReg Float32 | TReg Float64 -> [%expr [%e a] /. [%e b]]
+      | TReg Int | TPrim TInt32 -> [%expr Int32.div [%e a] [%e b]]
+      | TReg Int64 -> [%expr Int64.div [%e a] [%e b]]
       | _ -> [%expr [%e a] / [%e b]])
   | Sarek_ast.Mod -> (
       match ty_repr with
-      | TReg "int32" | TPrim TInt32 -> [%expr Int32.rem [%e a] [%e b]]
-      | TReg "int64" -> [%expr Int64.rem [%e a] [%e b]]
+      | TReg Int | TPrim TInt32 -> [%expr Int32.rem [%e a] [%e b]]
+      | TReg Int64 -> [%expr Int64.rem [%e a] [%e b]]
       | _ -> [%expr [%e a] mod [%e b]])
   | Sarek_ast.And -> [%expr [%e a] && [%e b]]
   | Sarek_ast.Or -> [%expr [%e a] || [%e b]]
@@ -1037,37 +1029,37 @@ and gen_binop ~loc op a b ty : expression =
   (* Bitwise operations *)
   | Sarek_ast.Land -> (
       match ty_repr with
-      | TReg "int32" | TPrim TInt32 -> [%expr Int32.logand [%e a] [%e b]]
-      | TReg "int64" -> [%expr Int64.logand [%e a] [%e b]]
+      | TReg Int | TPrim TInt32 -> [%expr Int32.logand [%e a] [%e b]]
+      | TReg Int64 -> [%expr Int64.logand [%e a] [%e b]]
       | _ -> [%expr [%e a] land [%e b]])
   | Sarek_ast.Lor -> (
       match ty_repr with
-      | TReg "int32" | TPrim TInt32 -> [%expr Int32.logor [%e a] [%e b]]
-      | TReg "int64" -> [%expr Int64.logor [%e a] [%e b]]
+      | TReg Int | TPrim TInt32 -> [%expr Int32.logor [%e a] [%e b]]
+      | TReg Int64 -> [%expr Int64.logor [%e a] [%e b]]
       | _ -> [%expr [%e a] lor [%e b]])
   | Sarek_ast.Lxor -> (
       match ty_repr with
-      | TReg "int32" | TPrim TInt32 -> [%expr Int32.logxor [%e a] [%e b]]
-      | TReg "int64" -> [%expr Int64.logxor [%e a] [%e b]]
+      | TReg Int | TPrim TInt32 -> [%expr Int32.logxor [%e a] [%e b]]
+      | TReg Int64 -> [%expr Int64.logxor [%e a] [%e b]]
       | _ -> [%expr [%e a] lxor [%e b]])
   | Sarek_ast.Lsl -> (
       match ty_repr with
-      | TReg "int32" | TPrim TInt32 ->
+      | TReg Int | TPrim TInt32 ->
           [%expr Int32.shift_left [%e a] (Int32.to_int [%e b])]
-      | TReg "int64" -> [%expr Int64.shift_left [%e a] (Int64.to_int [%e b])]
+      | TReg Int64 -> [%expr Int64.shift_left [%e a] (Int64.to_int [%e b])]
       | _ -> [%expr [%e a] lsl [%e b]])
   | Sarek_ast.Lsr -> (
       match ty_repr with
-      | TReg "int32" | TPrim TInt32 ->
+      | TReg Int | TPrim TInt32 ->
           [%expr Int32.shift_right_logical [%e a] (Int32.to_int [%e b])]
-      | TReg "int64" ->
+      | TReg Int64 ->
           [%expr Int64.shift_right_logical [%e a] (Int64.to_int [%e b])]
       | _ -> [%expr [%e a] lsr [%e b]])
   | Sarek_ast.Asr -> (
       match ty_repr with
-      | TReg "int32" | TPrim TInt32 ->
+      | TReg Int | TPrim TInt32 ->
           [%expr Int32.shift_right [%e a] (Int32.to_int [%e b])]
-      | TReg "int64" -> [%expr Int64.shift_right [%e a] (Int64.to_int [%e b])]
+      | TReg Int64 -> [%expr Int64.shift_right [%e a] (Int64.to_int [%e b])]
       | _ -> [%expr [%e a] asr [%e b]])
 
 (** Generate unary operation *)
@@ -1076,15 +1068,15 @@ and gen_unop ~loc op a ty : expression =
   match op with
   | Sarek_ast.Neg -> (
       match ty_repr with
-      | TReg "float32" | TReg "float64" -> [%expr -.[%e a]]
-      | TReg "int32" | TPrim TInt32 -> [%expr Int32.neg [%e a]]
-      | TReg "int64" -> [%expr Int64.neg [%e a]]
+      | TReg Float32 | TReg Float64 -> [%expr -.[%e a]]
+      | TReg Int | TPrim TInt32 -> [%expr Int32.neg [%e a]]
+      | TReg Int64 -> [%expr Int64.neg [%e a]]
       | _ -> [%expr -[%e a]])
   | Sarek_ast.Not -> [%expr not [%e a]]
   | Sarek_ast.Lnot -> (
       match ty_repr with
-      | TReg "int32" | TPrim TInt32 -> [%expr Int32.lognot [%e a]]
-      | TReg "int64" -> [%expr Int64.lognot [%e a]]
+      | TReg Int | TPrim TInt32 -> [%expr Int32.lognot [%e a]]
+      | TReg Int64 -> [%expr Int64.lognot [%e a]]
       | _ -> [%expr lnot [%e a]])
 
 (** Extract module name from a Sarek location (file path). For
@@ -1305,7 +1297,7 @@ let gen_arg_cast ~loc (param : tparam) (idx : int) : expression =
          Vector.t for passing to functions/intrinsics that need it. *)
       let vec_arg = [%expr [%e arr_access]] in
       match repr elem_ty with
-      | TReg "float32" ->
+      | TReg Float32 ->
           [%expr
             match [%e arr_access] with
             | Sarek_ir_types.NA_Vec __v ->
@@ -1319,7 +1311,7 @@ let gen_arg_cast ~loc (param : tparam) (idx : int) : expression =
                   method underlying = Sarek_ir_types.vec_as_vector [%e vec_arg]
                 end
             | _ -> failwith "Expected NA_Vec"]
-      | TReg "float64" ->
+      | TReg Float64 ->
           [%expr
             match [%e arr_access] with
             | Sarek_ir_types.NA_Vec __v ->
@@ -1333,7 +1325,7 @@ let gen_arg_cast ~loc (param : tparam) (idx : int) : expression =
                   method underlying = Sarek_ir_types.vec_as_vector [%e vec_arg]
                 end
             | _ -> failwith "Expected NA_Vec"]
-      | TReg "int32" | TPrim TInt32 ->
+      | TReg Int | TPrim TInt32 ->
           [%expr
             match [%e arr_access] with
             | Sarek_ir_types.NA_Vec __v ->
@@ -1347,7 +1339,7 @@ let gen_arg_cast ~loc (param : tparam) (idx : int) : expression =
                   method underlying = Sarek_ir_types.vec_as_vector [%e vec_arg]
                 end
             | _ -> failwith "Expected NA_Vec"]
-      | TReg "int64" ->
+      | TReg Int64 ->
           [%expr
             match [%e arr_access] with
             | Sarek_ir_types.NA_Vec __v ->
@@ -1374,24 +1366,24 @@ let gen_arg_cast ~loc (param : tparam) (idx : int) : expression =
 
               method underlying = Sarek_ir_types.vec_as_vector [%e vec_arg]
             end])
-  | TReg "float32" ->
+  | TReg Float32 ->
       [%expr
         match [%e arr_access] with
         | Sarek_ir_types.NA_Float32 v -> v
         | Sarek_ir_types.NA_Int32 n -> Int32.to_float n
         | _ -> failwith "Expected NA_Float32"]
-  | TReg "float64" ->
+  | TReg Float64 ->
       [%expr
         match [%e arr_access] with
         | Sarek_ir_types.NA_Float64 v -> v
         | Sarek_ir_types.NA_Float32 v -> v
         | _ -> failwith "Expected NA_Float64"]
-  | TReg "int32" | TPrim TInt32 ->
+  | TReg Int | TPrim TInt32 ->
       [%expr
         match [%e arr_access] with
         | Sarek_ir_types.NA_Int32 v -> v
         | _ -> failwith "Expected NA_Int32"]
-  | TReg "int64" ->
+  | TReg Int64 ->
       [%expr
         match [%e arr_access] with
         | Sarek_ir_types.NA_Int64 v -> v

@@ -60,7 +60,7 @@ let complex_math_kernel =
     fun (x : float32 vector)
         (y : float32 vector)
         (output : float32 vector)
-        (n : int) ->
+        (n : int32) ->
       let open Std in
       let tid = global_thread_id in
       if tid < n then begin

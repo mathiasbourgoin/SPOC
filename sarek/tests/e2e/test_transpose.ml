@@ -86,7 +86,7 @@ let[@sarek.module] do_transpose (input : 'a vector) (output : 'a vector)
     let row = tid / width in
     let in_idx = (row * width) + col in
     let out_idx = (col * height) + row in
-    Array.set output out_idx (Array.get input in_idx)
+    output.(out_idx) <- input.(in_idx)
   end
 
 (* ========== Sarek kernels using the shared polymorphic transpose ========== *)
@@ -96,8 +96,8 @@ let transpose_int32_kernel =
   [%kernel
     fun (input : int32 vector)
         (output : int32 vector)
-        (width : int)
-        (height : int) ->
+        (width : int32)
+        (height : int32) ->
       let open Std in
       do_transpose input output width height global_thread_id]
 
@@ -106,8 +106,8 @@ let transpose_float32_kernel =
   [%kernel
     fun (input : float32 vector)
         (output : float32 vector)
-        (width : int)
-        (height : int) ->
+        (width : int32)
+        (height : int32) ->
       let open Std in
       do_transpose input output width height global_thread_id]
 
@@ -116,8 +116,8 @@ let transpose_float64_kernel =
   [%kernel
     fun (input : float64 vector)
         (output : float64 vector)
-        (width : int)
-        (height : int) ->
+        (width : int32)
+        (height : int32) ->
       let open Std in
       do_transpose input output width height global_thread_id]
 
@@ -126,8 +126,8 @@ let transpose_point3d_kernel =
   [%kernel
     fun (input : point3d vector)
         (output : point3d vector)
-        (width : int)
-        (height : int) ->
+        (width : int32)
+        (height : int32) ->
       let open Std in
       do_transpose input output width height global_thread_id]
 

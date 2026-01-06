@@ -311,7 +311,7 @@ let test_kernel_module_fun_with_variant () =
         1
         (List.length tk.tkern_module_items) ;
       match repr tk.tkern_return_type with
-      | TReg "float32" -> ()
+      | TReg Float32 -> ()
       | other ->
           Alcotest.failf "expected float32 return, got %s" (typ_to_string other)
       )
@@ -394,7 +394,7 @@ let test_kernel_module_fun_with_record () =
         1
         (List.length tk.tkern_module_items) ;
       match repr tk.tkern_return_type with
-      | TReg "float32" -> ()
+      | TReg Float32 -> ()
       | other ->
           Alcotest.failf "expected float32 return, got %s" (typ_to_string other)
       )
@@ -449,7 +449,7 @@ let test_kernel_type_decl_record () =
           Alcotest.(check string) "type name" "point" tdecl_name
       | _ -> Alcotest.fail "expected record type decl") ;
       match repr tk.tkern_return_type with
-      | TReg "float32" -> ()
+      | TReg Float32 -> ()
       | other ->
           Alcotest.failf "expected float32 return, got %s" (typ_to_string other)
       )

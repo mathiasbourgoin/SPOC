@@ -535,10 +535,12 @@ let eliminate_tail_recursion (fname : string) (params : tparam list)
       | TPrim TInt32 ->
           (* int/int32 use TEInt with t_int32 type *)
           {te = TEInt 0; ty = result_ty; te_loc = loc}
-      | TReg "int32" -> {te = TEInt32 0l; ty = result_ty; te_loc = loc}
-      | TReg "int64" -> {te = TEInt64 0L; ty = result_ty; te_loc = loc}
-      | TReg "float32" -> {te = TEFloat 0.0; ty = result_ty; te_loc = loc}
-      | TReg "float64" -> {te = TEDouble 0.0; ty = result_ty; te_loc = loc}
+      | TReg Int -> {te = TEInt 0; ty = result_ty; te_loc = loc}
+      | TReg Int64 -> {te = TEInt64 0L; ty = result_ty; te_loc = loc}
+      | TReg Float32 -> {te = TEFloat 0.0; ty = result_ty; te_loc = loc}
+      | TReg Float64 -> {te = TEDouble 0.0; ty = result_ty; te_loc = loc}
+      | TReg Char -> {te = TEInt 0; ty = result_ty; te_loc = loc}
+      | TReg (Custom _) -> {te = TEInt 0; ty = result_ty; te_loc = loc}
       | TPrim TBool -> {te = TEBool false; ty = result_ty; te_loc = loc}
       | TPrim TUnit -> {te = TEUnit; ty = result_ty; te_loc = loc}
       | TVar {contents = Link t} -> default_for_type t

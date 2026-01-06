@@ -23,7 +23,7 @@ let unify_or_error t1 t2 loc =
 let check_numeric t loc =
   match repr t with
   | TPrim TInt32 -> Ok ()
-  | TReg ("int64" | "float32" | "float64") -> Ok ()
+  | TReg (Int64 | Int | Float32 | Float64) -> Ok ()
   | TVar _ -> Ok () (* Will be constrained later *)
   | t -> Error [Type_mismatch {expected = t_int32; got = t; loc}]
 
@@ -31,7 +31,7 @@ let check_numeric t loc =
 let check_integer t loc =
   match repr t with
   | TPrim TInt32 -> Ok ()
-  | TReg "int64" -> Ok ()
+  | TReg (Int64 | Int) -> Ok ()
   | TVar _ -> Ok ()
   | t -> Error [Type_mismatch {expected = t_int32; got = t; loc}]
 

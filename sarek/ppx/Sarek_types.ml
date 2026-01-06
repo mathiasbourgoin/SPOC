@@ -12,7 +12,13 @@ type prim_type = TUnit | TBool | TInt32
 (** Registered type name - for library-defined types like float32, float64,
     int64. These are not built-in but are registered by libraries via
     [@@sarek.type]. *)
-type registered_type = string
+type registered_type =
+  | Int  (** OCaml int - alias for int32 on GPU *)
+  | Int64  (** 64-bit integer *)
+  | Float32  (** 32-bit float *)
+  | Float64  (** 64-bit float (double) *)
+  | Char  (** 8-bit character *)
+  | Custom of string  (** User-registered types via [@@sarek.type] *)
 
 (** Memory spaces *)
 type memspace =
@@ -159,6 +165,14 @@ let pp_prim fmt = function
   | TBool -> Format.fprintf fmt "bool"
   | TInt32 -> Format.fprintf fmt "int32"
 
+let pp_registered fmt = function
+  | Int -> Format.fprintf fmt "int"
+  | Int64 -> Format.fprintf fmt "int64"
+  | Float32 -> Format.fprintf fmt "float32"
+  | Float64 -> Format.fprintf fmt "float64"
+  | Char -> Format.fprintf fmt "char"
+  | Custom name -> Format.fprintf fmt "%s" name
+
 let pp_memspace fmt = function
   | Local -> Format.fprintf fmt "local"
   | Shared -> Format.fprintf fmt "shared"
@@ -167,7 +181,7 @@ let pp_memspace fmt = function
 let rec pp_typ fmt t =
   match repr t with
   | TPrim p -> pp_prim fmt p
-  | TReg name -> Format.fprintf fmt "%s" name
+  | TReg r -> pp_registered fmt r
   | TVar {contents = Unbound (id, level)} ->
       Format.fprintf fmt "'t%d[%d]" id level
   | TVar {contents = Link t} -> pp_typ fmt t
@@ -219,27 +233,34 @@ let t_fun args ret = TFun (args, ret)
 
 (** Helpers for library-defined numeric types (registered types). These are not
     built-in primitives but use TReg for type-checking. *)
-let t_float32 = TReg "float32"
+let t_float32 = TReg Float32
 
-let t_float64 = TReg "float64"
+let t_float64 = TReg Float64
 
-let t_int64 = TReg "int64"
+let t_int64 = TReg Int64
+
+let t_int = TReg Int
+
+let t_char = TReg Char
 
 (** Check if type is numeric (includes both core int32 and registered float/int
     types). *)
 let is_numeric t =
   match repr t with
   | TPrim TInt32 -> true
-  | TReg ("float32" | "float64" | "int64") -> true
+  | TReg (Float32 | Float64 | Int64 | Int) -> true
   | _ -> false
 
 (** Check if type is integer (core int32 or registered int64) *)
 let is_integer t =
-  match repr t with TPrim TInt32 -> true | TReg "int64" -> true | _ -> false
+  match repr t with
+  | TPrim TInt32 -> true
+  | TReg (Int64 | Int) -> true
+  | _ -> false
 
 (** Check if type is floating point (registered types) *)
 let is_float t =
-  match repr t with TReg ("float32" | "float64") -> true | _ -> false
+  match repr t with TReg (Float32 | Float64) -> true | _ -> false
 
 (** Convert AST type expression to type (with fresh type variables). Core types
     (unit, bool, int32) are handled directly. Other types (float32, float64,
@@ -249,12 +270,14 @@ let rec type_of_type_expr (te : Sarek_ast.type_expr) : typ =
   | Sarek_ast.TEVar _ -> fresh_tvar ()
   | Sarek_ast.TEConstr ("unit", []) -> t_unit
   | Sarek_ast.TEConstr ("bool", []) -> t_bool
-  | Sarek_ast.TEConstr ("int", []) -> t_int32
+  | Sarek_ast.TEConstr ("int", []) ->
+      t_int32 (* int maps to int32 in GPU context *)
   | Sarek_ast.TEConstr ("int32", []) -> t_int32
   | Sarek_ast.TEConstr ("int64", []) -> t_int64
   | Sarek_ast.TEConstr ("float32", []) -> t_float32
   | Sarek_ast.TEConstr ("float64", []) -> t_float64
   | Sarek_ast.TEConstr ("float", []) -> t_float64 (* OCaml float = float64 *)
+  | Sarek_ast.TEConstr ("char", []) -> t_char
   | Sarek_ast.TEConstr ("vector", [elem]) -> TVec (type_of_type_expr elem)
   | Sarek_ast.TEConstr (name, [elem])
     when String.ends_with ~suffix:"vector" name ->

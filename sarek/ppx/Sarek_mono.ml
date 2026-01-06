@@ -95,10 +95,12 @@ let rec mangle_type (t : typ) : string =
   | TPrim TUnit -> "u"
   | TPrim TBool -> "b"
   | TPrim TInt32 -> "i32"
-  | TReg "float32" -> "f32"
-  | TReg "float64" -> "f64"
-  | TReg "int64" -> "i64"
-  | TReg name -> String.map (fun c -> if c = '.' then '_' else c) name
+  | TReg Int -> "i"
+  | TReg Int64 -> "i64"
+  | TReg Float32 -> "f32"
+  | TReg Float64 -> "f64"
+  | TReg Char -> "c"
+  | TReg (Custom name) -> String.map (fun c -> if c = '.' then '_' else c) name
   | TVec t -> "v" ^ mangle_type t
   | TArr (t, _) -> "a" ^ mangle_type t
   | TFun (args, ret) ->

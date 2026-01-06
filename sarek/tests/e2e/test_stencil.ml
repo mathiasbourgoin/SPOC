@@ -29,7 +29,7 @@ let ocaml_stencil_1d input output n =
 
 let stencil_1d_kernel =
   [%kernel
-    fun (input : float32 vector) (output : float32 vector) (n : int) ->
+    fun (input : float32 vector) (output : float32 vector) (n : int32) ->
       let open Std in
       let tid = global_thread_id in
       if tid > 0 && tid < n - 1 then

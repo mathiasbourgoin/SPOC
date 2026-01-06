@@ -18,7 +18,7 @@ let vector_add =
     fun (a : float32 vector)
         (b : float32 vector)
         (c : float32 vector)
-        (n : int) ->
+        (n : int32) ->
       let open Std in
       let tid = global_thread_id in
       if tid < n then c.(tid) <- a.(tid) + b.(tid)]

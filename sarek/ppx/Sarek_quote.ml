@@ -358,15 +358,15 @@ let core_type_of_typ ~loc (t : typ) : core_type option =
   match repr t with
   | TPrim TUnit -> Some [%type: unit]
   | TPrim (TBool | TInt32) -> Some [%type: int]
-  | TReg "int64" -> Some [%type: int]
-  | TReg ("float32" | "float64") -> Some [%type: float]
+  | TReg Int64 -> Some [%type: int]
+  | TReg (Float32 | Float64) -> Some [%type: float]
   | TVec elem -> (
       (* V2: Use Spoc_core.Vector.t instead of Spoc.Vector.vector *)
       match repr elem with
       | TPrim TInt32 -> Some [%type: (int32, _) Spoc_core.Vector.t]
-      | TReg "int64" -> Some [%type: (int64, _) Spoc_core.Vector.t]
-      | TReg "float32" -> Some [%type: (float, _) Spoc_core.Vector.t]
-      | TReg "float64" -> Some [%type: (float, _) Spoc_core.Vector.t]
+      | TReg Int64 -> Some [%type: (int64, _) Spoc_core.Vector.t]
+      | TReg Float32 -> Some [%type: (float, _) Spoc_core.Vector.t]
+      | TReg Float64 -> Some [%type: (float, _) Spoc_core.Vector.t]
       | TPrim TBool -> Some [%type: (bool, _) Spoc_core.Vector.t]
       | TRecord _ | TVariant _ ->
           (* Don't add type constraint for custom vectors - let OCaml infer *)
@@ -378,15 +378,15 @@ let core_type_of_typ ~loc (t : typ) : core_type option =
 let kernel_ctor_name (t : typ) : string =
   match repr t with
   | TPrim (TBool | TInt32) -> "Int32"
-  | TReg "int64" -> "Int64"
-  | TReg "float32" -> "Float32"
-  | TReg "float64" -> "Float64"
+  | TReg Int64 -> "Int64"
+  | TReg Float32 -> "Float32"
+  | TReg Float64 -> "Float64"
   | TVec elem -> (
       match repr elem with
       | TPrim (TBool | TInt32) -> "VInt32"
-      | TReg "int64" -> "VInt64"
-      | TReg "float32" -> "VFloat32"
-      | TReg "float64" -> "VFloat64"
+      | TReg Int64 -> "VInt64"
+      | TReg Float32 -> "VFloat32"
+      | TReg Float64 -> "VFloat64"
       | TRecord _ | TVariant _ -> "VCustom"
       | _ -> "Vector")
   | TRecord _ | TVariant _ -> "Custom"

@@ -19,9 +19,12 @@ let rec elttype_of_typ (ty : typ) : Ir.elttype =
   | TPrim TInt32 -> Ir.TInt32
   | TPrim TBool -> Ir.TBool
   | TPrim TUnit -> Ir.TUnit
-  | TReg "int64" -> Ir.TInt64
-  | TReg "float32" -> Ir.TFloat32
-  | TReg "float64" -> Ir.TFloat64
+  | TReg Int64 -> Ir.TInt64
+  | TReg Int -> Ir.TInt32 (* int maps to int32 on GPU *)
+  | TReg Float32 -> Ir.TFloat32
+  | TReg Float64 -> Ir.TFloat64
+  | TReg Char -> Ir.TInt32 (* char represented as int32 *)
+  | TReg (Custom _) -> Ir.TInt32 (* Custom types handled separately *)
   | TVec elem_ty -> Ir.TVec (elttype_of_typ elem_ty)
   | TArr (elem_ty, mem) ->
       let ir_mem =
@@ -44,7 +47,6 @@ let rec elttype_of_typ (ty : typ) : Ir.elttype =
   | TTuple _ -> Ir.TInt32
   | TFun _ -> Ir.TInt32
   | TVar _ -> Ir.TInt32
-  | TReg _ -> Ir.TInt32
 
 (** Convert Sarek_types.memspace to Sarek_ir_ppx.memspace *)
 let memspace_of_memspace (mem : Sarek_types.memspace) : Ir.memspace =
@@ -80,9 +82,12 @@ let rec c_type_of_typ ty =
   | TPrim TInt32 -> "int"
   | TPrim TBool -> "int"
   | TPrim TUnit -> "void"
-  | TReg "int64" -> "long"
-  | TReg "float32" -> "float"
-  | TReg "float64" -> "double"
+  | TReg Int -> "int"
+  | TReg Int64 -> "long"
+  | TReg Float32 -> "float"
+  | TReg Float64 -> "double"
+  | TReg Char -> "char"
+  | TReg (Custom name) -> mangle_type_name name
   | TRecord (name, _) -> "struct " ^ mangle_type_name name ^ "_sarek"
   | TVariant (name, _) -> "struct " ^ mangle_type_name name ^ "_sarek"
   | TVec t -> c_type_of_typ t ^ " *"

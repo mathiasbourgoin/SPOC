@@ -150,7 +150,7 @@ let bitwise_basic_kernel =
         (and_out : int32 vector)
         (or_out : int32 vector)
         (xor_out : int32 vector)
-        (n : int) ->
+        (n : int32) ->
       let open Std in
       let tid = global_thread_id in
       if tid < n then begin

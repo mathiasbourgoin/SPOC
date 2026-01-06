@@ -75,14 +75,18 @@ let sarek_type_of_simple_name ~loc (name : string) : expression =
   match name with
   | "unit" -> [%expr Sarek_ppx_lib.Sarek_types.t_unit]
   | "bool" -> [%expr Sarek_ppx_lib.Sarek_types.t_bool]
-  | "int" | "int32" -> [%expr Sarek_ppx_lib.Sarek_types.t_int32]
+  | "int" -> [%expr Sarek_ppx_lib.Sarek_types.t_int]
+  | "int32" -> [%expr Sarek_ppx_lib.Sarek_types.t_int32]
   | "int64" -> [%expr Sarek_ppx_lib.Sarek_types.t_int64]
   | "float32" -> [%expr Sarek_ppx_lib.Sarek_types.t_float32]
   | "float" | "float64" -> [%expr Sarek_ppx_lib.Sarek_types.t_float64]
+  | "char" -> [%expr Sarek_ppx_lib.Sarek_types.t_char]
   | _ ->
-      (* For unknown types, use TReg with the name *)
+      (* For unknown types, use TReg (Custom name) *)
       let name_expr = Ast_builder.Default.estring ~loc name in
-      [%expr Sarek_ppx_lib.Sarek_types.TReg [%e name_expr]]
+      [%expr
+        Sarek_ppx_lib.Sarek_types.TReg
+          (Sarek_ppx_lib.Sarek_types.Custom [%e name_expr])]
 
 (** Flatten a parsed arrow type into (arg_types, return_type). E.g., PTArrow(a,
     PTArrow(b, c)) becomes ([a; b], c) *)

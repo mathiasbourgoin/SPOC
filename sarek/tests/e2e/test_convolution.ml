@@ -36,7 +36,7 @@ let init_conv1d_data size =
 
 let conv1d_3point_kernel =
   [%kernel
-    fun (input : float32 vector) (output : float32 vector) (n : int) ->
+    fun (input : float32 vector) (output : float32 vector) (n : int32) ->
       let open Std in
       let tid = global_thread_id in
       if tid > 0 && tid < n - 1 then begin

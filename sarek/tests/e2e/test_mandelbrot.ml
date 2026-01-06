@@ -53,7 +53,10 @@ let init_mandelbrot_data size =
 
 let mandelbrot_kernel =
   [%kernel
-    fun (output : int32 vector) (width : int) (height : int) (max_iter : int) ->
+    fun (output : int32 vector)
+        (width : int32)
+        (height : int32)
+        (max_iter : int32) ->
       let open Std in
       let px = global_idx_x in
       let py = global_idx_y in
@@ -153,7 +156,11 @@ let mandelbrot_tailrec_kernel =
         iterate xtemp ynew x0 y0 (iter + 1l) max_iter
     in
 
-    fun (output : int32 vector) (width : int) (height : int) (max_iter : int) ->
+    fun (output : int32 vector)
+        (width : int32)
+        (height : int32)
+        (max_iter : int32)
+      ->
       let px = global_idx_x in
       let py = global_idx_y in
       if px < width && py < height then begin

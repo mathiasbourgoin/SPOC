@@ -75,7 +75,7 @@ let test_var_shadowing () =
       Alcotest.(check bool)
         "shadowed var has new type"
         true
-        (match found.vi_type with TReg "float32" -> true | _ -> false) ;
+        (match found.vi_type with TReg Float32 -> true | _ -> false) ;
       Alcotest.(check bool)
         "shadowed var has new mutability"
         true
@@ -150,7 +150,7 @@ let test_intrinsic_funs () =
   match find_intrinsic_fun "sin" env with
   | Some info ->
       (match info.intr_type with
-      | TFun ([TReg "float32"], TReg "float32") ->
+      | TFun ([TReg Float32], TReg Float32) ->
           Alcotest.(check pass) "sin has correct type" () ()
       | _ -> Alcotest.fail "sin should have type float32 -> float32") ;
       (* Now uses IntrinsicRef for JIT resolution - path from registry *)
@@ -241,7 +241,7 @@ let test_custom_types () =
       Alcotest.(check bool)
         "field x has correct type"
         true
-        (match ty with TReg "float32" -> true | _ -> false) ;
+        (match ty with TReg Float32 -> true | _ -> false) ;
       Alcotest.(check bool) "field x is immutable" false mutable_
   | None -> Alcotest.fail "field x should be found"
 
