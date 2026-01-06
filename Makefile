@@ -117,8 +117,14 @@ test_comprehensive:
 	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_inline_pragma.exe
 	@echo "=== Comprehensive e2e tests passed ==="
 
-# Run all tests: unit tests, e2e tests, and negative tests
-test-all: test test_interpreter test_negative
+# Run spoc package unit tests (framework, ir, registry)
+test_spoc:
+	@echo "=== SPOC package unit tests ==="
+	dune build @spoc/runtest
+	@echo "=== SPOC package tests passed ==="
+
+# Run all tests: unit tests, e2e tests, negative tests, and spoc tests
+test-all: test test_spoc test_interpreter test_negative
 	@echo "=== All tests passed ==="
 
 # E2E tests - quick verification with small datasets comparing GPU vs native CPU
