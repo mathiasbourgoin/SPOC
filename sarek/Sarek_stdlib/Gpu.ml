@@ -159,9 +159,7 @@ let%sarek_intrinsic (atomic_inc_int32 : int32 array -> int32 -> int32) =
 
 (* Global memory atomic add - uses Vector type for global memory.
    This MUST be truly atomic because different blocks run on different domains
-   and may access the same global memory location concurrently.
-   
-   THREAD SAFETY: Protect entire operation with mutex, including index conversion. *)
+   and may access the same global memory location concurrently. *)
 let%sarek_intrinsic
     (atomic_add_global_int32 : int32 vector -> int32 -> int32 -> int32) =
   {
@@ -170,8 +168,8 @@ let%sarek_intrinsic
       (fun vec idx value ->
         Mutex.lock atomic_mutex ;
         let i = Stdlib.Int32.to_int idx in
-        let old = Spoc_core.Vector.unsafe_get vec i in
-        Spoc_core.Vector.kernel_set vec i (Stdlib.Int32.add old value) ;
+        let old = Spoc_core.Vector.get vec i in
+        Spoc_core.Vector.set vec i (Stdlib.Int32.add old value) ;
         Mutex.unlock atomic_mutex ;
         old);
   }
@@ -184,8 +182,8 @@ let%sarek_intrinsic (atomic_inc_global_int32 : int32 vector -> int32 -> int32) =
       (fun vec idx ->
         Mutex.lock atomic_mutex ;
         let i = Stdlib.Int32.to_int idx in
-        let old = Spoc_core.Vector.unsafe_get vec i in
-        Spoc_core.Vector.kernel_set vec i (Stdlib.Int32.add old 1l) ;
+        let old = Spoc_core.Vector.get vec i in
+        Spoc_core.Vector.set vec i (Stdlib.Int32.add old 1l) ;
         Mutex.unlock atomic_mutex ;
         old);
   }

@@ -241,23 +241,14 @@ let exec_arg_to_native_arg (arg : Framework_sig.exec_arg) :
           (Typed_value.TV_Scalar
              (Typed_value.SV ((module Typed_value.Int64_type), n)))
       in
-      (* For custom types: use typed_value interface *)
+      (* For custom types: use underlying Vector.t with Obj.t *)
       let get_any i =
-        let tv = V.get i in
-        match tv with
-        | Typed_value.TV_Scalar (Typed_value.SV ((module S), x)) -> Obj.repr x
-        | Typed_value.TV_Composite (Typed_value.CV ((module C), x)) ->
-            Obj.repr x
+        let vec = Obj.obj (V.internal_get_vector_obj ()) in
+        Obj.repr (Vector.get vec i)
       in
       let set_any i v =
-        let current_tv = V.get i in
-        match current_tv with
-        | Typed_value.TV_Scalar (Typed_value.SV ((module S), _)) ->
-            let x : S.t = Obj.obj v in
-            V.set i (Typed_value.TV_Scalar (Typed_value.SV ((module S), x)))
-        | Typed_value.TV_Composite (Typed_value.CV ((module C), _)) ->
-            let x : C.t = Obj.obj v in
-            V.set i (Typed_value.TV_Composite (Typed_value.CV ((module C), x)))
+        let vec = Obj.obj (V.internal_get_vector_obj ()) in
+        Vector.kernel_set vec i (Obj.obj v)
       in
       (* Get underlying Vector.t for passing to intrinsics/functions that expect it *)
       let get_vec () = V.internal_get_vector_obj () in
