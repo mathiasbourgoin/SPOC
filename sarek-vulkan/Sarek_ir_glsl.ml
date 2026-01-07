@@ -509,6 +509,66 @@ let rec gen_lvalue buf = function
 
 (** {1 Statement Generation} *)
 
+(** Nested indentation level *)
+let indent_nested indent = indent ^ "  "
+
+(** Generate match case pattern with variable bindings *)
+and gen_match_pattern buf indent scrutinee cname bindings find_constr_types =
+  Buffer.add_string buf ("  case " ^ cname ^ ": {\n") ;
+  match (bindings, find_constr_types cname) with
+  | [var_name], Some [ty] ->
+      let vn = escape_glsl_name var_name in
+      Buffer.add_string buf (indent ^ "    ") ;
+      Buffer.add_string buf (glsl_type_of_elttype ty) ;
+      Buffer.add_string buf " " ;
+      Buffer.add_string buf vn ;
+      Buffer.add_string buf " = " ;
+      Buffer.add_string buf scrutinee ;
+      Buffer.add_char buf '.' ;
+      Buffer.add_string buf cname ;
+      Buffer.add_string buf "_v;\n"
+  | vars, Some types when List.length vars = List.length types ->
+      List.iteri
+        (fun i (var_name, ty) ->
+          let vn = escape_glsl_name var_name in
+          Buffer.add_string buf (indent ^ "    ") ;
+          Buffer.add_string buf (glsl_type_of_elttype ty) ;
+          Buffer.add_string buf " " ;
+          Buffer.add_string buf vn ;
+          Buffer.add_string buf " = " ;
+          Buffer.add_string buf scrutinee ;
+          Buffer.add_char buf '.' ;
+          Buffer.add_string buf cname ;
+          Buffer.add_string buf (Printf.sprintf "_v._%d;\n" i))
+        (List.combine vars types)
+  | [], _ | _, None | _, Some [] -> ()
+  | _ ->
+      Vulkan_error.raise_error
+        (Vulkan_error.unsupported_construct "pattern"
+           "mismatch between pattern bindings and constructor args")
+
+(** Generate variable declaration with optional initialization *)
+and gen_var_decl buf indent v_name v_type init_expr =
+  let vn = escape_glsl_name v_name in
+  Buffer.add_string buf indent ;
+  Buffer.add_string buf (glsl_type_of_elttype v_type) ;
+  Buffer.add_char buf ' ' ;
+  Buffer.add_string buf vn ;
+  Buffer.add_string buf " = " ;
+  gen_expr buf init_expr ;
+  Buffer.add_string buf ";\n"
+
+(** Generate array declaration *)
+and gen_array_decl buf indent v_name elem_ty size =
+  let vn = escape_glsl_name v_name in
+  Buffer.add_string buf indent ;
+  Buffer.add_string buf (glsl_type_of_elttype elem_ty) ;
+  Buffer.add_char buf ' ' ;
+  Buffer.add_string buf vn ;
+  Buffer.add_char buf '[' ;
+  gen_expr buf size ;
+  Buffer.add_string buf "];\n"
+
 let rec gen_stmt buf indent = function
   | SEmpty -> ()
   | SSeq stmts -> List.iter (gen_stmt buf indent) stmts
@@ -523,14 +583,14 @@ let rec gen_stmt buf indent = function
       Buffer.add_string buf "if (" ;
       gen_expr buf cond ;
       Buffer.add_string buf ") {\n" ;
-      gen_stmt buf (indent ^ "  ") then_ ;
+      gen_stmt buf (indent_nested indent) then_ ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}" ;
       match else_opt with
       | None -> Buffer.add_char buf '\n'
       | Some else_ ->
           Buffer.add_string buf " else {\n" ;
-          gen_stmt buf (indent ^ "  ") else_ ;
+          gen_stmt buf (indent_nested indent) else_ ;
           Buffer.add_string buf indent ;
           Buffer.add_string buf "}\n")
   | SWhile (cond, body) ->
@@ -538,7 +598,7 @@ let rec gen_stmt buf indent = function
       Buffer.add_string buf "while (" ;
       gen_expr buf cond ;
       Buffer.add_string buf ") {\n" ;
-      gen_stmt buf (indent ^ "  ") body ;
+      gen_stmt buf (indent_nested indent) body ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
   | SFor (v, start, stop, dir, body) ->
@@ -561,7 +621,7 @@ let rec gen_stmt buf indent = function
       Buffer.add_string buf loop_var ;
       Buffer.add_string buf incr ;
       Buffer.add_string buf ") {\n" ;
-      gen_stmt buf (indent ^ "  ") body ;
+      gen_stmt buf (indent_nested indent) body ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
   | SMatch (e, cases) ->
@@ -584,39 +644,9 @@ let rec gen_stmt buf indent = function
         (fun (pattern, body) ->
           Buffer.add_string buf indent ;
           (match pattern with
-          | PConstr (cname, bindings) -> (
-              Buffer.add_string buf ("  case " ^ cname ^ ": {\n") ;
-              match (bindings, find_constr_types cname) with
-              | [var_name], Some [ty] ->
-                  let vn = escape_glsl_name var_name in
-                  Buffer.add_string buf (indent ^ "    ") ;
-                  Buffer.add_string buf (glsl_type_of_elttype ty) ;
-                  Buffer.add_string buf " " ;
-                  Buffer.add_string buf vn ;
-                  Buffer.add_string buf " = " ;
-                  Buffer.add_string buf scrutinee ;
-                  Buffer.add_char buf '.' ;
-                  Buffer.add_string buf cname ;
-                  Buffer.add_string buf "_v;\n"
-              | vars, Some types when List.length vars = List.length types ->
-                  List.iteri
-                    (fun i (var_name, ty) ->
-                      let vn = escape_glsl_name var_name in
-                      Buffer.add_string buf (indent ^ "    ") ;
-                      Buffer.add_string buf (glsl_type_of_elttype ty) ;
-                      Buffer.add_string buf " " ;
-                      Buffer.add_string buf vn ;
-                      Buffer.add_string buf " = " ;
-                      Buffer.add_string buf scrutinee ;
-                      Buffer.add_char buf '.' ;
-                      Buffer.add_string buf cname ;
-                      Buffer.add_string buf (Printf.sprintf "_v._%d;\n" i))
-                    (List.combine vars types)
-              | [], _ | _, None | _, Some [] -> ()
-              | _ ->
-                  Vulkan_error.raise_error
-                    (Vulkan_error.unsupported_construct "pattern"
-                       "mismatch between pattern bindings and constructor args"))
+          | PConstr (cname, bindings) ->
+              gen_match_pattern buf indent scrutinee cname bindings
+                find_constr_types
           | PWild -> Buffer.add_string buf "  default: {\n") ;
           gen_stmt buf (indent ^ "    ") body ;
           Buffer.add_string buf (indent ^ "    break;\n") ;
@@ -649,34 +679,13 @@ let rec gen_stmt buf indent = function
       (* Shared declarations are hoisted to module scope, so just emit the body *)
       gen_stmt buf indent body
   | SLet (v, EArrayCreate (elem_ty, size, _), body) ->
-      let vn = escape_glsl_name v.var_name in
-      Buffer.add_string buf indent ;
-      Buffer.add_string buf (glsl_type_of_elttype elem_ty) ;
-      Buffer.add_char buf ' ' ;
-      Buffer.add_string buf vn ;
-      Buffer.add_char buf '[' ;
-      gen_expr buf size ;
-      Buffer.add_string buf "];\n" ;
+      gen_array_decl buf indent v.var_name elem_ty size ;
       gen_stmt buf indent body
   | SLet (v, e, body) ->
-      let vn = escape_glsl_name v.var_name in
-      Buffer.add_string buf indent ;
-      Buffer.add_string buf (glsl_type_of_elttype v.var_type) ;
-      Buffer.add_char buf ' ' ;
-      Buffer.add_string buf vn ;
-      Buffer.add_string buf " = " ;
-      gen_expr buf e ;
-      Buffer.add_string buf ";\n" ;
+      gen_var_decl buf indent v.var_name v.var_type e ;
       gen_stmt buf indent body
   | SLetMut (v, e, body) ->
-      let vn = escape_glsl_name v.var_name in
-      Buffer.add_string buf indent ;
-      Buffer.add_string buf (glsl_type_of_elttype v.var_type) ;
-      Buffer.add_char buf ' ' ;
-      Buffer.add_string buf vn ;
-      Buffer.add_string buf " = " ;
-      gen_expr buf e ;
-      Buffer.add_string buf ";\n" ;
+      gen_var_decl buf indent v.var_name v.var_type e ;
       gen_stmt buf indent body
   | SPragma (_hints, body) ->
       (* GLSL doesn't have #pragma in the same way *)
@@ -684,7 +693,7 @@ let rec gen_stmt buf indent = function
   | SBlock body ->
       Buffer.add_string buf indent ;
       Buffer.add_string buf "{\n" ;
-      gen_stmt buf (indent ^ "  ") body ;
+      gen_stmt buf (indent_nested indent) body ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
 
