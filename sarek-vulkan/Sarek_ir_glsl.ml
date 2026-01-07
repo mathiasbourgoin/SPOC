@@ -170,7 +170,7 @@ let glsl_thread_intrinsic = function
   | "global_idx_y" -> "int(gl_GlobalInvocationID.y)"
   | "global_idx_z" -> "int(gl_GlobalInvocationID.z)"
   | "global_size" -> "int(gl_WorkGroupSize.x * gl_NumWorkGroups.x)"
-  | name -> failwith ("Unknown thread intrinsic: " ^ name)
+  | name -> Vulkan_error.raise_error (Vulkan_error.unknown_intrinsic name)
 
 (** {1 Expression Generation} *)
 
@@ -281,7 +281,9 @@ let rec gen_expr buf = function
   | EArrayLen arr ->
       Buffer.add_string buf ("sarek_" ^ escape_glsl_name arr ^ "_length")
   | EArrayCreate _ ->
-      failwith "gen_expr: EArrayCreate should be handled in gen_stmt SLet"
+      Vulkan_error.raise_error
+        (Vulkan_error.unsupported_construct "EArrayCreate"
+           "should be handled in gen_stmt SLet")
   | EIf (cond, then_, else_) ->
       Buffer.add_char buf '(' ;
       gen_expr buf cond ;
@@ -290,11 +292,15 @@ let rec gen_expr buf = function
       Buffer.add_string buf " : " ;
       gen_expr buf else_ ;
       Buffer.add_char buf ')'
-  | EMatch (_, []) -> failwith "gen_expr: empty match"
+  | EMatch (_, []) ->
+      Vulkan_error.raise_error
+        (Vulkan_error.unsupported_construct "match" "empty match expression")
   | EMatch (_, [(_, body)]) -> gen_expr buf body
   | EMatch (e, cases) ->
       let rec gen_cases = function
-        | [] -> failwith "gen_expr: empty match cases"
+        | [] ->
+            Vulkan_error.raise_error
+              (Vulkan_error.unsupported_construct "match" "empty match cases")
         | [(_, body)] -> gen_expr buf body
         | (pat, body) :: rest ->
             Buffer.add_char buf '(' ;
@@ -435,7 +441,9 @@ and gen_intrinsic buf path name args =
             gen_expr buf idx ;
             Buffer.add_string buf "], " ;
             gen_expr buf value
-        | _ -> failwith "atomic_add requires 2 or 3 arguments") ;
+        | args ->
+            Vulkan_error.raise_error
+              (Vulkan_error.invalid_arg_count "atomic_add" 2 (List.length args))) ;
         Buffer.add_char buf ')'
     | "atomic_min" ->
         Buffer.add_string buf "atomicMin(" ;
@@ -444,7 +452,9 @@ and gen_intrinsic buf path name args =
             gen_expr buf addr ;
             Buffer.add_string buf ", " ;
             gen_expr buf value
-        | _ -> failwith "atomic_min requires 2 arguments") ;
+        | args ->
+            Vulkan_error.raise_error
+              (Vulkan_error.invalid_arg_count "atomic_min" 2 (List.length args))) ;
         Buffer.add_char buf ')'
     | "atomic_max" ->
         Buffer.add_string buf "atomicMax(" ;
@@ -453,7 +463,9 @@ and gen_intrinsic buf path name args =
             gen_expr buf addr ;
             Buffer.add_string buf ", " ;
             gen_expr buf value
-        | _ -> failwith "atomic_max requires 2 arguments") ;
+        | args ->
+            Vulkan_error.raise_error
+              (Vulkan_error.invalid_arg_count "atomic_max" 2 (List.length args))) ;
         Buffer.add_char buf ')'
     | "float" ->
         Buffer.add_string buf "float(" ;
@@ -602,8 +614,9 @@ let rec gen_stmt buf indent = function
                     (List.combine vars types)
               | [], _ | _, None | _, Some [] -> ()
               | _ ->
-                  failwith
-                    "Mismatch between pattern bindings and constructor args")
+                  Vulkan_error.raise_error
+                    (Vulkan_error.unsupported_construct "pattern"
+                       "mismatch between pattern bindings and constructor args"))
           | PWild -> Buffer.add_string buf "  default: {\n") ;
           gen_stmt buf (indent ^ "    ") body ;
           Buffer.add_string buf (indent ^ "    break;\n") ;

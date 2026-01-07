@@ -21,6 +21,7 @@
   sarek_registry
   (re_export spoc_core))
  (modules
+  Vulkan_error
   Vulkan_types
   Vulkan_bindings
   Vulkan_api

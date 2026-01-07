@@ -1,0 +1,14 @@
+(******************************************************************************
+ * Vulkan Error Types - Structured Error Handling for Vulkan Backend
+ *
+ * Uses shared Backend_error module from spoc.framework.
+ * Provides same interface pattern as CUDA/OpenCL backends.
+ ******************************************************************************)
+
+(** Instantiate shared backend error module for Vulkan *)
+include Spoc_framework.Backend_error.Make (struct
+  let name = "Vulkan"
+end)
+
+(** Exception type for Vulkan errors *)
+exception Vulkan_error = Spoc_framework.Backend_error.Backend_error

@@ -111,7 +111,8 @@ module Vulkan = struct
     let create () =
       match !current_device_ref with
       | Some dev -> Vulkan_api.Event.create_with_device dev
-      | None -> failwith "Event.create: no current device"
+      | None ->
+          Vulkan_error.raise_error (Vulkan_error.no_device_selected "Event.create")
 
     let destroy = Vulkan_api.Event.destroy
 
@@ -147,7 +148,8 @@ module Vulkan = struct
     let set_arg_float64 = Vulkan_api.Kernel.set_arg_float64
 
     let set_arg_ptr _args _idx _ptr =
-      failwith "Vulkan: raw pointer args not supported"
+      Vulkan_error.raise_error
+        (Vulkan_error.feature_not_supported "raw pointer kernel arguments")
 
     let launch kernel ~args ~grid ~block ~shared_mem ~stream =
       Vulkan_api.Kernel.launch kernel ~args ~grid ~block ~shared_mem ~stream

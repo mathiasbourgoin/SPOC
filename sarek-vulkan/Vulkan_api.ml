@@ -105,8 +105,10 @@ let compile_glsl_to_spirv_cli ~(entry_point : string) (glsl_source : string) :
         with _ -> ())
   | _ ->
       (try Unix.unlink spirv_file with _ -> ()) ;
-      failwith
-        (Printf.sprintf "glslangValidator failed:\n%s" (Buffer.contents output))) ;
+      Vulkan_error.raise_error
+        (Vulkan_error.compilation_failed ""
+           (Printf.sprintf "glslangValidator failed:\n%s"
+              (Buffer.contents output)))) ;
 
   (* Clean up GLSL file *)
   (try Unix.unlink glsl_file with _ -> ()) ;
@@ -180,7 +182,8 @@ module Device = struct
 
   let init () =
     if not !initialized then begin
-      if not (is_available ()) then failwith "Vulkan library not found" ;
+      if not (is_available ()) then
+        Vulkan_error.raise_error (Vulkan_error.library_not_found "vulkan" []) ;
       initialized := true
     end
 
@@ -258,7 +261,10 @@ module Device = struct
     vkGetPhysicalDeviceQueueFamilyProperties phys_dev count (CArray.start props) ;
     (* Find first queue with compute support *)
     let rec find i =
-      if i >= n then failwith "No compute queue family found"
+      if i >= n then
+        Vulkan_error.raise_error
+          (Vulkan_error.context_error "queue family selection"
+             "no compute queue family found")
       else
         let qf = CArray.get props i in
         let flags = getf qf queue_family_queueFlags in
@@ -284,7 +290,7 @@ module Device = struct
              (from_voidp vk_physical_device_ptr null)) ;
         let n = Unsigned.UInt32.to_int !@count in
         if idx >= n then
-          failwith (Printf.sprintf "Device %d not found (have %d)" idx n) ;
+          Vulkan_error.raise_error (Vulkan_error.device_not_found idx n) ;
 
         let phys_devs = CArray.make vk_physical_device_ptr n in
         check
@@ -462,7 +468,9 @@ module Memory = struct
     let count = Unsigned.UInt32.to_int (getf props mem_props_memoryTypeCount) in
     let types_arr = getf props mem_props_memoryTypes in
     let rec find i =
-      if i >= count then failwith "No suitable memory type found"
+      if i >= count then
+        Vulkan_error.raise_error
+          (Vulkan_error.memory_allocation_failed 0L "no suitable memory type found")
       else if type_filter land (1 lsl i) <> 0 then
         let mem_type = CArray.get types_arr i in
         let flags = getf mem_type mem_type_propertyFlags in
@@ -745,9 +753,11 @@ module Memory = struct
     ()
 
   let device_to_device ~src:_ ~dst:_ =
-    failwith "Vulkan device_to_device: not implemented (use staging buffer)"
+    Vulkan_error.raise_error
+      (Vulkan_error.feature_not_supported "device_to_device transfer")
 
-  let memset _buf _value = failwith "Vulkan memset: not implemented"
+  let memset _buf _value =
+    Vulkan_error.raise_error (Vulkan_error.feature_not_supported "memset")
 end
 
 (** {1 Stream Management} *)
@@ -918,7 +928,10 @@ module Kernel = struct
   let create_shader_module device spirv =
     let code_size = String.length spirv in
     (* SPIR-V must be 4-byte aligned *)
-    if code_size mod 4 <> 0 then failwith "SPIR-V size must be multiple of 4" ;
+    if code_size mod 4 <> 0 then
+      Vulkan_error.raise_error
+        (Vulkan_error.module_load_failed code_size
+           "SPIR-V size must be multiple of 4") ;
 
     (* Convert string to uint32 array *)
     let num_words = code_size / 4 in
@@ -1251,7 +1264,8 @@ module Kernel = struct
     args.push_constant_offset <- offset + 8
 
   let set_arg_ptr _args _idx _p =
-    failwith "Vulkan: raw pointer args not supported"
+    Vulkan_error.raise_error
+      (Vulkan_error.feature_not_supported "raw pointer kernel arguments")
 
   let launch kernel ~args ~(grid : Spoc_framework.Framework_sig.dims)
       ~(block : Spoc_framework.Framework_sig.dims) ~shared_mem:_ ~stream =

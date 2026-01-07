@@ -189,9 +189,9 @@ module Backend : Framework_sig.BACKEND = struct
 
   (** Execute directly - not supported for JIT backend *)
   let execute_direct ~native_fn:_ ~ir:_ ~block:_ ~grid:_ _args =
-    failwith
-      "Vulkan backend execute_direct: JIT backend does not support direct \
-       execution"
+    Vulkan_error.raise_error
+      (Vulkan_error.feature_not_supported
+         "direct execution (JIT backend only supports code generation)")
 
   (** Vulkan intrinsic registry *)
   module Intrinsics = Vulkan_intrinsics
@@ -210,7 +210,9 @@ module Backend : Framework_sig.BACKEND = struct
         let dev =
           match Vulkan_plugin_base.Vulkan.Device.get_current_device () with
           | Some d -> d
-          | None -> failwith "run_source: no current Vulkan device set"
+          | None ->
+              Vulkan_error.raise_error
+                (Vulkan_error.no_device_selected "run_source")
         in
 
         (* Compile GLSL to pipeline *)
@@ -239,12 +241,16 @@ module Backend : Framework_sig.BACKEND = struct
           ~shared_mem
           ~stream:(Some stream)
     | Framework_sig.SPIR_V ->
-        failwith "Vulkan SPIR-V direct loading not yet implemented"
+        Vulkan_error.raise_error
+          (Vulkan_error.feature_not_supported "SPIR-V direct loading")
     | Framework_sig.CUDA_Source ->
-        failwith "Vulkan backend does not support CUDA source"
+        Vulkan_error.raise_error
+          (Vulkan_error.unsupported_source_lang "CUDA")
     | Framework_sig.OpenCL_Source ->
-        failwith "Vulkan backend does not support OpenCL source"
-    | Framework_sig.PTX -> failwith "Vulkan backend does not support PTX"
+        Vulkan_error.raise_error
+          (Vulkan_error.unsupported_source_lang "OpenCL")
+    | Framework_sig.PTX ->
+        Vulkan_error.raise_error (Vulkan_error.unsupported_source_lang "PTX")
 
   let wrap_kargs args = Vulkan_kargs args
 

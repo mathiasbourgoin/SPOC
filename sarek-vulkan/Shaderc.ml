@@ -42,7 +42,7 @@ let is_available () =
 let get_lib () =
   match Lazy.force shaderc_lib with
   | Some lib -> lib
-  | None -> failwith "Shaderc library not found"
+  | None -> Vulkan_error.raise_error (Vulkan_error.library_not_found "shaderc" [])
 
 let foreign_lazy name typ = lazy (foreign ~from:(get_lib ()) name typ)
 
@@ -189,7 +189,7 @@ let compile_glsl_to_spirv ~entry_point source =
       let err = shaderc_result_get_error_message result in
       shaderc_result_release result ;
       (* Don't release global compiler *)
-      failwith ("Shaderc compilation failed: " ^ err)
+      Vulkan_error.raise_error (Vulkan_error.compilation_failed "" err)
   in
 
   shaderc_result_release result ;
