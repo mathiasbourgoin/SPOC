@@ -2,7 +2,34 @@
 
 ## Overview
 
-Complete code quality overhaul of the sarek-cuda package (3,183 LOC) following "Option C" comprehensive approach. Work completed in 4 phases over ~15 hours.
+Complete code quality overhaul of the sarek-cuda package (3,183 LOC) following "Option C" comprehensive approach. Work completed in 5 phases over ~16 hours.
+
+## Phase 5: Shared Error Module Migration (Commit f11e883)
+
+### Changes
+- **Migrated to Backend_error.ml** from spoc.framework
+  - Cuda_error.ml: 169 lines → 17 lines (90% reduction)
+  - Now instantiates `Backend_error.Make(struct let name = "CUDA" end)`
+  - Maintains backward compatibility with same interface
+  - Exception alias: `Cuda_error = Backend_error.Backend_error`
+
+- **Updated unsupported_source_lang calls** (5 locations in Cuda_plugin.ml)
+  - Removed redundant backend parameter (now implicit)
+  - Cleaner call sites: `unsupported_source_lang "PTX"` vs `unsupported_source_lang "PTX" "CUDA"`
+
+- **Updated test expectations** (test_cuda_error.ml)
+  - Fixed unsupported_source_lang test calls
+  - Fixed compilation_failed regex for multiline output
+
+### Benefits
+- **Code reuse**: 175 lines removed from CUDA backend
+- **Consistency**: Same error structure across all backends (CUDA, OpenCL, Vulkan, Metal, Native)
+- **Maintainability**: Single source of truth for error handling
+- **Clear attribution**: Error messages now prefixed with `[CUDA Codegen]`, `[CUDA Runtime]`, `[CUDA Plugin]`
+
+### Tests
+- All 19 tests pass (6 error + 13 IR codegen)
+- e2e tests verified working
 
 ## Phase 1: Structured Error Handling (Commit 68b6095)
 

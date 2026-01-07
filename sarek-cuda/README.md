@@ -625,7 +625,22 @@ SPragma (["unroll"; "4"], for_loop) →
 
 ## Error Handling
 
-The CUDA backend uses structured errors instead of `failwith`:
+The CUDA backend uses the shared `Backend_error` module from `spoc.framework` for structured error handling. This provides consistency across all GPU backends (CUDA, OpenCL, Vulkan, Metal).
+
+### Module Overview
+
+```ocaml
+(** CUDA-specific error module *)
+module Cuda_error = Backend_error.Make(struct let name = "CUDA" end)
+
+(** Exception type for compatibility *)
+exception Cuda_error = Backend_error.Backend_error
+```
+
+All error messages are prefixed with the backend name and category:
+- `[CUDA Codegen]` - Code generation errors (IR translation)
+- `[CUDA Runtime]` - Runtime errors (device, compilation, memory)
+- `[CUDA Plugin]` - Plugin errors (library loading, unsupported features)
 
 ### Codegen Errors
 
@@ -674,7 +689,8 @@ let dev = Device.get 5 in ...  (* only 2 devices available *)
 
 (* Unsupported source language *)
 execute_kernel ~source_lang:"GLSL" ...  (* CUDA only supports CUDA C *)
-→ Error: Unsupported_source_lang { lang = "GLSL"; backend = "CUDA" }
+→ Error: Unsupported_source_lang { lang = "GLSL" }
+  Message: "[CUDA Plugin] Source language not supported: GLSL"
 ```
 
 ### Error Recovery
