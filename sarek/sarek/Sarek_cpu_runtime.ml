@@ -61,10 +61,9 @@ let global_size_z st = Int32.mul st.grid_dim_z st.block_dim_z
     block. Uses regular OCaml arrays to support custom types.
 
     Implementation: We use separate hashtables for each primitive type to avoid
-    boxing, and an existential wrapper for custom types (no Obj.t needed). *)
+    boxing, and an existential wrapper for custom types. *)
 
-(** Existential wrapper for custom type arrays - type-safe alternative to Obj.t
-*)
+(** Existential wrapper for custom type arrays - type-safe alternative *)
 type any_array = AnyArray : 'a array -> any_array
 
 type shared_mem = {
@@ -73,7 +72,6 @@ type shared_mem = {
   int32_arrays : (string, int32 array) Hashtbl.t;
   int64_arrays : (string, int64 array) Hashtbl.t;
   custom_arrays : (string, any_array) Hashtbl.t;
-      (* Existential wrapper, no Obj.t *)
 }
 
 let create_shared () =

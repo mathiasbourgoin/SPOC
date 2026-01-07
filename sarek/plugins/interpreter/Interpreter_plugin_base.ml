@@ -230,14 +230,14 @@ end = struct
           -> 'a element_kind
       | Custom_kind : 'a Spoc_core.Vector_types.custom_type -> 'a element_kind
 
-    (** Buffer storage - GADT eliminates Obj.t *)
+    (** Buffer storage - GADT with typed parameter *)
     type 'a buffer_storage =
       | Bigarray_storage :
           ('a, _, Bigarray.c_layout) Bigarray.Array1.t
           -> 'a buffer_storage
       | Ctypes_storage : unit Ctypes.ptr -> 'a buffer_storage
 
-    (** Typed buffer - no Obj.t needed! *)
+    (** Typed buffer record *)
     type 'a buffer = {
       storage : 'a buffer_storage;
       kind : 'a element_kind;

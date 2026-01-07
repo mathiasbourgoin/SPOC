@@ -37,7 +37,7 @@ let registry : (string, any_helpers) Hashtbl.t = Hashtbl.create 32
 let register (type_name : string) (helpers : any_helpers) : unit =
   Hashtbl.replace registry type_name helpers
 
-(** Helper functions exposed to interpreter - NO Obj.t! *)
+(** Helper functions for custom type conversion *)
 type helpers = {
   from_values : value array -> value;  (** Construct VRecord from field array *)
   to_values : value -> value array;  (** Deconstruct VRecord to field array *)

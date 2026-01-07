@@ -242,17 +242,16 @@ end = struct
           -> 'a element_kind
       | Custom_kind : 'a Spoc_core.Vector_types.custom_type -> 'a element_kind
 
-    (** Buffer storage - GADT eliminates Obj.t. For Bigarray: uses wildcard for
-        elt type (always derivable from element_kind) For Ctypes: raw pointer
-        for custom types *)
+    (** Buffer storage - GADT with typed parameter. For Bigarray: uses wildcard
+        for elt type (always derivable from element_kind). For Ctypes: raw
+        pointer for custom types. *)
     type 'a buffer_storage =
       | Bigarray_storage :
           ('a, _, Bigarray.c_layout) Bigarray.Array1.t
           -> 'a buffer_storage
       | Ctypes_storage : unit Ctypes.ptr -> 'a buffer_storage
 
-    (** Typed buffer - no Obj.t needed! The 'a parameter is now REAL, not
-        phantom. *)
+    (** Typed buffer record - the 'a parameter is real, not phantom. *)
     type 'a buffer = {
       storage : 'a buffer_storage;
       kind : 'a element_kind;
@@ -591,7 +590,7 @@ end = struct
         ~(block : Framework_sig.dims) ~shared_mem:_ ~stream:_ =
       match Hashtbl.find_opt native_kernels kernel.name with
       | Some fn ->
-          (* Just reverse and convert to array - no Obj.t conversion needed! *)
+          (* Convert args list to array for native function call *)
           let arg_array = args.list |> List.rev |> Array.of_list in
           fn arg_array (grid.x, grid.y, grid.z) (block.x, block.y, block.z)
       | None ->
