@@ -161,9 +161,7 @@ let%sarek_intrinsic (atomic_inc_int32 : int32 array -> int32 -> int32) =
    This MUST be truly atomic because different blocks run on different domains
    and may access the same global memory location concurrently.
    
-   THREAD SAFETY: We use unsafe_get (no sync, no bounds check) and kernel_set
-   (no location tracking) to avoid data races on vec.location. The caller
-   (PPX-generated code) ensures indices are in bounds. *)
+   THREAD SAFETY: Protect entire operation with mutex, including index conversion. *)
 let%sarek_intrinsic
     (atomic_add_global_int32 : int32 vector -> int32 -> int32 -> int32) =
   {

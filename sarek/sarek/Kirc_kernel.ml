@@ -259,7 +259,8 @@ let exec_arg_to_native_arg (arg : Framework_sig.exec_arg) :
             let x : C.t = Obj.obj v in
             V.set i (Typed_value.TV_Composite (Typed_value.CV ((module C), x)))
       in
-      let get_vec () = Obj.repr () in
+      (* Get underlying Vector.t for passing to intrinsics/functions that expect it *)
+      let get_vec () = V.internal_get_vector_obj () in
       Sarek_ir_types.NA_Vec
         {
           length = V.length;

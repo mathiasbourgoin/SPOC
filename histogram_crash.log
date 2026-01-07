@@ -1,0 +1,16 @@
+=== Histogram ===
+Size: 4194304
+Available devices:
+  [0] Intel(R) Arc(TM) Graphics (OpenCL)
+  [1] Intel(R) Core(TM) Ultra 9 185H (OpenCL)
+  [2] Intel(R) Arc(tm) Graphics (MTL) (Vulkan)
+  [3] CPU Native (Parallel, 22 cores) (Native)
+  [4] CPU Interpreter (Sequential) (Interpreter)
+  [5] CPU Interpreter (Parallel, 22 cores) (Interpreter)
+
+Device                                   |  Time (ms) |     Status |    Speedup
+-------------------------------------------------------------------------------
+CPU Baseline                             |    27.3890 |       PASS |      1.00x
+Intel(R) Arc(TM) Graphics (OpenCL)       |    13.9308 |       PASS |      1.97x
+Intel(R) Core(TM) Ultra 9 185H (OpenCL   |   242.2450 |       PASS |      0.11x
+Intel(R) Arc(tm) Graphics (MTL) (Vulka   |    15.5151 |       PASS |      1.77x
