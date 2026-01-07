@@ -17,6 +17,7 @@
   sarek_registry
   (re_export spoc_core))
  (modules
+  Cuda_error
   Cuda_types
   Cuda_bindings
   Cuda_nvrtc

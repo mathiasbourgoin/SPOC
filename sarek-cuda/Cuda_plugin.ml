@@ -153,9 +153,9 @@ module Backend : Framework_sig.BACKEND = struct
 
   (** Execute directly - not supported for JIT backend *)
   let execute_direct ~native_fn:_ ~ir:_ ~block:_ ~grid:_ _args =
-    failwith
-      "CUDA backend execute_direct: JIT backend does not support direct \
-       execution"
+    Cuda_error.raise_error
+      (Cuda_error.unsupported_source_lang "direct execution"
+         "CUDA (JIT backend does not support direct execution)")
 
   (** CUDA intrinsic registry *)
   module Intrinsics = Cuda_intrinsics
@@ -174,7 +174,9 @@ module Backend : Framework_sig.BACKEND = struct
         let dev =
           match Cuda_plugin_base.Cuda.Device.get_current_device () with
           | Some d -> d
-          | None -> failwith "run_source: no current CUDA device set"
+          | None ->
+              Cuda_error.raise_error
+                (Cuda_error.no_device_selected "run_source")
         in
 
         (* Compile and get kernel *)
@@ -203,13 +205,18 @@ module Backend : Framework_sig.BACKEND = struct
           ~shared_mem
           ~stream:(Some stream)
     | Framework_sig.PTX ->
-        failwith
-          "CUDA backend does not support PTX loading yet (use CUDA source)"
+        Cuda_error.raise_error
+          (Cuda_error.unsupported_source_lang "PTX"
+             "CUDA backend (PTX loading not yet implemented, use CUDA source)")
     | Framework_sig.OpenCL_Source ->
-        failwith "CUDA backend does not support OpenCL source"
-    | Framework_sig.SPIR_V -> failwith "CUDA backend does not support SPIR-V"
+        Cuda_error.raise_error
+          (Cuda_error.unsupported_source_lang "OpenCL_Source" "CUDA backend")
+    | Framework_sig.SPIR_V ->
+        Cuda_error.raise_error
+          (Cuda_error.unsupported_source_lang "SPIR_V" "CUDA backend")
     | Framework_sig.GLSL_Source ->
-        failwith "CUDA backend does not support GLSL source"
+        Cuda_error.raise_error
+          (Cuda_error.unsupported_source_lang "GLSL_Source" "CUDA backend")
 
   let wrap_kargs args = Cuda_kargs args
 

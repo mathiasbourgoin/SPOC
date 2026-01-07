@@ -22,7 +22,7 @@ let () =
   in
 
   (* Print the IR to verify constant lowering *)
-  let _, kirc_kernel = scaled_copy in
+  let _native, _kirc = scaled_copy in
   print_endline "=== Generated Kernel IR (module const) ===" ;
   print_endline "=========================================" ;
 

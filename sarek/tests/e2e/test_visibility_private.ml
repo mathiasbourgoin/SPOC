@@ -14,7 +14,7 @@ let () =
         if tid < n then dst.(tid) <- Visibility_lib.public_add xs.(tid) ys.(tid)]
   in
 
-  let _, kirc_kernel = kernel in
+  let _native, _kirc = kernel in
   print_endline "=== Visibility kernel IR ===" ;
   print_endline "===========================" ;
   print_endline "Visibility test PASSED (public_add accessible in kernel)"

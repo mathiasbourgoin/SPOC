@@ -115,7 +115,14 @@ let is_available () =
 let get_nvrtc_lib () =
   match Lazy.force nvrtc_lib with
   | Some lib -> lib
-  | None -> failwith "NVRTC library not found"
+  | None ->
+      Cuda_error.raise_error
+        (Cuda_error.library_not_found "libnvrtc"
+           [ "libnvrtc.so";
+             "libnvrtc.so.12";
+             "libnvrtc.so.11";
+             "libnvrtc.dylib";
+             "nvrtc64_120_0.dll" ])
 
 (** Create a lazy foreign binding to NVRTC *)
 let foreign_nvrtc_lazy name typ =
@@ -303,12 +310,13 @@ let compile_to_ptx ?(name = "kernel") ?(arch = "compute_70") (source : string) :
   | NVRTC_ERROR_COMPILATION ->
       let msg =
         match log with
-        | Some l -> Printf.sprintf "NVRTC compilation failed:\n%s" l
-        | None -> "NVRTC compilation failed (no log available)"
+        | Some l -> l
+        | None -> "no log available"
       in
-      Spoc_core.Log.error Spoc_core.Log.Kernel msg ;
+      Spoc_core.Log.error Spoc_core.Log.Kernel
+        (Printf.sprintf "NVRTC compilation failed:\n%s" msg) ;
       let _ = nvrtcDestroyProgram prog in
-      failwith msg
+      Cuda_error.raise_error (Cuda_error.compilation_failed source msg)
   | err ->
       Spoc_core.Log.errorf
         Spoc_core.Log.Kernel

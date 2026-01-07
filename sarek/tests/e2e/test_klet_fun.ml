@@ -19,7 +19,7 @@ let () =
         let tid = thread_idx_x in
         if tid < n then dst.(tid) <- add_scale src.(tid) 3.0]
   in
-  let _, kirc_kernel = scale_add in
+  let _native, _kirc = scale_add in
   print_endline "=== klet-style helper IR ===" ;
   print_endline "=============================" ;
   let devs =

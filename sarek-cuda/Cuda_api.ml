@@ -9,6 +9,14 @@ open Ctypes
 open Cuda_types
 open Cuda_bindings
 
+(** {1 Constants} *)
+
+(** Maximum device name length in characters *)
+let max_device_name_length = 256
+
+(** Maximum PTX header preview length for error messages *)
+let max_ptx_header_preview = 200
+
 (** {1 Exceptions} *)
 
 exception Cuda_error of cu_result * string
@@ -67,11 +75,14 @@ module Device = struct
     let handle = !@dev in
 
     (* Get name *)
-    let name_buf = allocate_n char ~count:256 in
-    check "cuDeviceGetName" (cuDeviceGetName name_buf 256 handle) ;
-    let name = string_from_ptr name_buf ~length:255 in
+    let name_buf = allocate_n char ~count:max_device_name_length in
+    check "cuDeviceGetName"
+      (cuDeviceGetName name_buf max_device_name_length handle) ;
+    let name = string_from_ptr name_buf ~length:(max_device_name_length - 1) in
     let name =
-      String.sub name 0 (try String.index name '\000' with Not_found -> 255)
+      String.sub name 0
+        (try String.index name '\000'
+         with Not_found -> max_device_name_length - 1)
     in
 
     (* Get total memory *)
@@ -325,7 +336,9 @@ module Kernel = struct
         Spoc_core.Log.debug Spoc_core.Log.Kernel "cuModuleLoadData succeeded"
     | err ->
         (* Log PTX header for debugging *)
-        let ptx_header = String.sub ptx 0 (min 200 (String.length ptx)) in
+        let ptx_header =
+          String.sub ptx 0 (min max_ptx_header_preview (String.length ptx))
+        in
         Spoc_core.Log.errorf
           Spoc_core.Log.Kernel
           "cuModuleLoadData failed: %s\nPTX header: %s"

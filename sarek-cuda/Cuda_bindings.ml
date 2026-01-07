@@ -66,7 +66,10 @@ let is_available () =
 let get_cuda_lib () =
   match Lazy.force cuda_lib with
   | Some lib -> lib
-  | None -> failwith "CUDA driver library not found"
+  | None ->
+      Cuda_error.raise_error
+        (Cuda_error.library_not_found "libcuda"
+           ["libcuda.so.1"; "libcuda.so"; "libcuda.dylib"; "nvcuda.dll"])
 
 (** Create a lazy foreign binding to CUDA driver API *)
 let foreign_cuda_lazy name typ = lazy (foreign ~from:(get_cuda_lib ()) name typ)

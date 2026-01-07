@@ -20,7 +20,7 @@ let () =
           distances.(tid) <- sqrt ((x *. x) +. (y *. y))]
   in
 
-  let _, kirc = distance_to_origin_kernel in
+  let _native, _kirc = distance_to_origin_kernel in
   print_endline "=== Distance to origin kernel IR ===" ;
   print_endline "=====================================" ;
   print_endline "Convention kernel test PASSED"

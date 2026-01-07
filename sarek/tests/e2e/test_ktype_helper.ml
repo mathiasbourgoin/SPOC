@@ -37,7 +37,7 @@ let () =
   let _, kirc = length_kernel in
   print_endline "=== ktype helper IR ===" ;
   (match kirc.Sarek.Kirc_types.body_ir with
-  | Some ir -> Sarek.Sarek_ir.print_kernel ir
+  | Some ir -> Sarek_ir_pp.print_kernel ir
   | None -> print_endline "(No IR available)") ;
   print_endline "=======================" ;
 

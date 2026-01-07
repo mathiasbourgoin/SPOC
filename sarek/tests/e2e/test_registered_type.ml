@@ -77,7 +77,7 @@ let verify (xv, yv, dst) _ =
   !ok
 
 let () =
-  let _, kirc_kernel = kernel in
+  let _native, _kirc = kernel in
   print_endline "=== Registered type IR ===" ;
   print_endline "==========================" ;
 
