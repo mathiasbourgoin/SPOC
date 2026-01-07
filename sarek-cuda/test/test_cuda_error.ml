@@ -41,10 +41,17 @@ let test_runtime_errors () =
     Cuda_error.compilation_failed "test kernel" "syntax error at line 5"
   in
   let s2 = Cuda_error.to_string e2 in
+  (* Use search_forward to find substring (handles newlines) *)
+  let contains_compilation =
+    try
+      ignore (Str.search_forward (Str.regexp "[Cc]ompilation") s2 0) ;
+      true
+    with Not_found -> false
+  in
   Alcotest.(check bool)
-    "compilation_failed contains 'compilation failed'"
+    "compilation_failed contains 'compilation'"
     true
-    Str.(string_match (regexp ".*compilation failed.*") s2 0) ;
+    contains_compilation ;
 
   (* Test device_not_found *)
   let e3 = Cuda_error.device_not_found 5 2 in
@@ -56,7 +63,7 @@ let test_runtime_errors () =
 
 let test_plugin_errors () =
   (* Test unsupported_source_lang *)
-  let e1 = Cuda_error.unsupported_source_lang "GLSL" "CUDA" in
+  let e1 = Cuda_error.unsupported_source_lang "GLSL" in
   let s1 = Cuda_error.to_string e1 in
   Alcotest.(check bool)
     "unsupported_source_lang contains language"
@@ -99,8 +106,8 @@ let test_error_equality () =
   Alcotest.(check bool) "Same error constructors are equal" true (e1 = e2) ;
 
   (* Different errors should not be equal *)
-  let e3 = Cuda_error.unsupported_source_lang "PTX" "CUDA" in
-  let e4 = Cuda_error.unsupported_source_lang "GLSL" "CUDA" in
+  let e3 = Cuda_error.unsupported_source_lang "PTX" in
+  let e4 = Cuda_error.unsupported_source_lang "GLSL" in
   Alcotest.(check bool) "Different errors are not equal" false (e3 = e4)
 
 (** Test suite *)

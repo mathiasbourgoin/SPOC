@@ -154,9 +154,7 @@ module Backend : Framework_sig.BACKEND = struct
   (** Execute directly - not supported for JIT backend *)
   let execute_direct ~native_fn:_ ~ir:_ ~block:_ ~grid:_ _args =
     Cuda_error.raise_error
-      (Cuda_error.unsupported_source_lang
-         "direct execution"
-         "CUDA (JIT backend does not support direct execution)")
+      (Cuda_error.unsupported_source_lang "direct execution")
 
   (** CUDA intrinsic registry *)
   module Intrinsics = Cuda_intrinsics
@@ -207,18 +205,16 @@ module Backend : Framework_sig.BACKEND = struct
           ~stream:(Some stream)
     | Framework_sig.PTX ->
         Cuda_error.raise_error
-          (Cuda_error.unsupported_source_lang
-             "PTX"
-             "CUDA backend (PTX loading not yet implemented, use CUDA source)")
+          (Cuda_error.unsupported_source_lang "PTX")
     | Framework_sig.OpenCL_Source ->
         Cuda_error.raise_error
-          (Cuda_error.unsupported_source_lang "OpenCL_Source" "CUDA backend")
+          (Cuda_error.unsupported_source_lang "OpenCL_Source")
     | Framework_sig.SPIR_V ->
         Cuda_error.raise_error
-          (Cuda_error.unsupported_source_lang "SPIR_V" "CUDA backend")
+          (Cuda_error.unsupported_source_lang "SPIR_V")
     | Framework_sig.GLSL_Source ->
         Cuda_error.raise_error
-          (Cuda_error.unsupported_source_lang "GLSL_Source" "CUDA backend")
+          (Cuda_error.unsupported_source_lang "GLSL_Source")
 
   let wrap_kargs args = Cuda_kargs args
 
