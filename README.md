@@ -1,41 +1,199 @@
+# SPOC - Stream Processing with OCaml
+
 [![Build Status](https://github.com/mathiasbourgoin/SPOC/actions/workflows/build.yml/badge.svg)](https://github.com/mathiasbourgoin/SPOC/actions?query=branch%3Amaster)
 
-SPOC is a set of tools for GPGPU programming with OCaml.
+SPOC is a GPU computing framework for OCaml that provides tools for writing and executing kernels on GPUs and other accelerators.
 
-The SPOC library enables the detection and use of GPGPU devices with
-OCaml using Cuda and OpenCL. There is also a PPX extension to handle
-external Cuda or OpenCL kernels, as well as a DSL (Sarek) to express
-GPGPU kernels from OCaml code with compile-time safety analysis.
+## What is SPOC?
 
-This work was part of my PhD thesis (UPMC-LIP6 laboratory, Paris,
-France) and was partially funded by the [OpenGPU](http://opengpu.net/)
-project. I continued this project in 2014-2015 in the
-[Verimag](http://www-verimag.imag.fr) laboratory (Grenoble, France)
-and then from 2015 to 2018 in the
-[LIFO](http://www.univ-orleans.fr/lifo/) laboratory in Orléans,
-France. I'm now working at [Nomadic Labs](https://nomadic-labs.com).
+**SPOC** is the foundational framework providing device abstraction, plugin architecture, and runtime infrastructure for GPU computing in OCaml.
 
-SPOC has been tested on multiple architectures and systems, mostly
-64-bit Linux and 64-bit OSX systems. It should work with Windows too.
+**Sarek** is a PPX-based DSL (Domain Specific Language) that allows writing GPU kernels directly in OCaml syntax. Kernels written with Sarek compile to multiple backend targets (CUDA, OpenCL, Vulkan, Metal, CPU).
 
-To be able to use SPOC, you'll need a computer capable of running
-OCaml (obviously) but also compatible with either OpenCL or Cuda. For
-Cuda you only need a current proprietary NVidia driver while for
-OpenCL you need to install the correct OpenCL implementation for your
-system. SPOC should compile anyway as everything is dynamically
-linked, but you'll need Cuda/OpenCL eventually to run your programs.
+## Recent Development
 
-# Docker image (*Probably deprecated*)
-[![](https://images.microbadger.com/badges/version/mathiasbourgoin/spoc.svg)](https://microbadger.com/images/mathiasbourgoin/spoc) [![](https://images.microbadger.com/badges/image/mathiasbourgoin/spoc.svg)](https://microbadger.com/images/mathiasbourgoin/spoc)
+This codebase has undergone significant modernization:
 
-(*The github page is largely deprecated. While it's being updated, github actions scripts (in
-`.github/workflows`) may show how to build and run tests*)  
-For more information, examples and live tutorials,
-please check the [github page](http://mathiasbourgoin.github.io/SPOC/):
+- **OCaml 5.4 support** with effect handlers and domains
+- **Comprehensive code quality improvements** across all GPU backends
+- **Structured error handling** replacing untyped exceptions
+- **Plugin-based architecture** for extensible backend support
+- **Test coverage** with unit and end-to-end tests
+- **Professional documentation** for all major components
 
-      more infos
-      how to build spoc
-      web examples
-      web tutorials
-      slides from past presentations
-      publications references
+The framework is actively maintained and uses modern OCaml features while preserving compatibility with existing SPOC code.
+
+## Features
+
+### GPU Kernel Development
+
+Write GPU kernels in OCaml syntax using the `[%kernel ...]` PPX extension:
+
+```ocaml
+let%kernel vector_add (a : float32 vector) (b : float32 vector) (c : float32 vector) =
+  let idx = get_global_id 0 in
+  c.(idx) <- a.(idx) + b.(idx)
+```
+
+Kernels compile to multiple backends automatically without code changes.
+
+### Backend Support
+
+| Backend | Target | Status | Documentation |
+|---------|--------|--------|---------------|
+| **CUDA** | NVIDIA GPUs | ✓ | [sarek-cuda/](sarek-cuda/) |
+| **OpenCL** | Multi-vendor GPUs/CPUs | ✓ | [sarek-opencl/](sarek-opencl/) |
+| **Vulkan** | Cross-platform GPUs | ✓ | [sarek-vulkan/](sarek-vulkan/) |
+| **Metal** | Apple Silicon/Intel Macs | ✓ | [sarek-metal/](sarek-metal/) |
+| **Native** | CPU (parallel) | ✓ | [sarek/plugins/native/](sarek/plugins/native/) |
+| **Interpreter** | CPU (debugging) | ✓ | [sarek/plugins/interpreter/](sarek/plugins/interpreter/) |
+
+### Core Features
+
+- **Type Safety**: GADTs and phantom types for compile-time guarantees
+- **Zero-Copy**: Efficient memory sharing between host and device
+- **Automatic Selection**: Runtime backend selection based on available hardware
+- **Intrinsics**: Extensive library of GPU intrinsics (math, atomics, barriers)
+- **Custom Types**: Support for records and variants in kernels
+- **Debug Logging**: Controlled via `SAREK_DEBUG` environment variable
+
+### Framework Architecture
+
+```
+spoc/              Low-level SDK and plugin interface
+├── framework/     Plugin registration and backend interface
+├── ir/            Intermediate representation (IR)
+└── registry/      Intrinsic function registry
+
+sarek/             Runtime and PPX compiler
+├── core/          Device abstraction and memory management
+├── framework/     Framework integration
+├── ppx/           Sarek PPX compiler
+├── sarek/         Unified execution dispatcher
+└── plugins/       Native and Interpreter backends
+
+GPU Backends:
+├── sarek-cuda/    NVIDIA CUDA backend
+├── sarek-opencl/  OpenCL backend (multi-vendor)
+├── sarek-vulkan/  Vulkan/GLSL backend
+└── sarek-metal/   Apple Metal backend
+```
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed architecture documentation.
+
+## Installation
+
+### Prerequisites
+
+- OCaml 5.4.0+ (local opam switch included in repository)
+- dune 3.20+
+- One or more GPU backends:
+  - **CUDA**: NVIDIA driver + CUDA toolkit
+  - **OpenCL**: OpenCL implementation for your device
+  - **Vulkan**: Vulkan SDK + glslangValidator or Shaderc
+  - **Metal**: macOS 10.13+ (included with Xcode)
+
+### Building
+
+```bash
+# Build all packages
+dune build
+
+# Build specific backend
+dune build sarek-cuda
+dune build sarek-opencl
+```
+
+The framework uses dynamic linking, so you can build without GPU drivers installed. GPU support is detected at runtime.
+
+## Usage
+
+### Basic Example
+
+```ocaml
+open Sarek
+
+(* Define a kernel *)
+let%kernel saxpy (a : float32 vector) (x : float32 vector) 
+                  (y : float32 vector) (alpha : float) =
+  let i = get_global_id 0 in
+  y.(i) <- alpha *. x.(i) +. a.(i)
+
+let () =
+  (* Initialize framework *)
+  let device = Device.get_device 0 in
+  
+  (* Create vectors *)
+  let n = 1024 in
+  let a = Vector.create Float32 n in
+  let x = Vector.create Float32 n in
+  let y = Vector.create Float32 n in
+  
+  (* Execute kernel *)
+  saxpy ~grid:(n/256, 1, 1) ~block:(256, 1, 1) a x y 2.5
+```
+
+### Backend Selection
+
+```ocaml
+(* List available devices *)
+let devices = Device.list_devices () in
+List.iter (fun dev ->
+  Printf.printf "%s (%s)\n" 
+    (Device.name dev) 
+    (Device.backend_name dev)
+) devices
+
+(* Select specific backend *)
+let cuda_device = Device.get_device_by_backend "CUDA" in
+let opencl_device = Device.get_device_by_backend "OpenCL" in
+```
+
+See [sarek/sarek/README.md](sarek/sarek/README.md) for comprehensive usage documentation.
+
+## Testing
+
+```bash
+# Run all tests
+dune runtest
+
+# Run specific backend tests
+dune test sarek-cuda
+dune test sarek-opencl
+
+# Run with specific backend
+SAREK_BACKEND=cuda dune runtest
+```
+
+See [COVERAGE.md](COVERAGE.md) for coverage measurement instructions.
+
+## Documentation
+
+- [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture and design
+- [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution guidelines
+- [PROJECT_STATUS.md](PROJECT_STATUS.md) - Current project status
+- [Backend Documentation](sarek-cuda/) - Individual backend READMEs
+
+For API documentation, see inline comments and README files in each package directory.
+
+## Requirements
+
+- **OCaml**: 5.4.0+ (uses domains, effects)
+- **System**: 64-bit Linux, macOS, Windows (limited testing)
+- **GPU**: Optional but recommended for GPU backends
+
+## Project History
+
+This work originates from Mathias Bourgoin's PhD thesis at UPMC-LIP6 laboratory (Paris) and was partially funded by the [OpenGPU](http://opengpu.net/) project. Development continued at Verimag laboratory (Grenoble, 2014-2015) and LIFO laboratory (Orléans, 2015-2018).
+
+Current maintainer: Mathias Bourgoin ([Nomadic Labs](https://nomadic-labs.com))
+
+## License
+
+See [LICENSE.md](LICENSE.md) for license information.
+
+## Resources
+
+- **GitHub Pages**: [http://mathiasbourgoin.github.io/SPOC/](http://mathiasbourgoin.github.io/SPOC/)
+- **GitHub Actions**: [Build status and CI](https://github.com/mathiasbourgoin/SPOC/actions)
+- **Issues**: [Bug reports and feature requests](https://github.com/mathiasbourgoin/SPOC/issues)
