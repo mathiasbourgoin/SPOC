@@ -10,6 +10,8 @@
 
 open Spoc_framework
 
+[@@@warning "-21"]
+
 (** Registry for native kernel functions.
 
     Kernels are registered by name. The function signature uses exec_arg array
@@ -188,7 +190,7 @@ end = struct
 
     let get idx =
       if idx < 0 || idx >= Array.length !devices then
-        failwith (Printf.sprintf "Native.Device.get: invalid index %d" idx)
+        Native_error.(raise_error (device_not_found idx (Array.length !devices)))
       else !devices.(idx)
 
     let id d = d.id
@@ -311,7 +313,9 @@ end = struct
             size;
             device;
           }
-      | _ -> failwith "Unsupported Bigarray kind"
+      | _ ->
+          Native_error.(
+            raise_error (unsupported_construct "bigarray kind" "unknown kind"))
 
     (** Allocate buffer for custom types with explicit element size in bytes.
         For native, we allocate raw ctypes memory. *)
@@ -326,8 +330,14 @@ end = struct
       let custom =
         {
           Spoc_core.Vector_types.elem_size;
-          get = (fun _ _ -> failwith "alloc_custom: get not implemented");
-          set = (fun _ _ _ -> failwith "alloc_custom: set not implemented");
+          get =
+            (fun _ _ ->
+              Native_error.(
+                raise_error (feature_not_supported "custom type get accessor")));
+          set =
+            (fun _ _ _ ->
+              Native_error.(
+                raise_error (feature_not_supported "custom type set accessor")));
           name = "custom";
         }
       in
@@ -395,7 +405,9 @@ end = struct
               size;
               device;
             }
-      | _ -> failwith "Unsupported Bigarray kind"
+      | _ ->
+          Native_error.(
+            raise_error (unsupported_construct "bigarray kind" "unknown kind"))
 
     let is_zero_copy _buf = true (* Native is always zero-copy *)
 
@@ -560,9 +572,13 @@ end = struct
 
         let device_ptr () = Memory.device_ptr buf
 
-        let get _i = failwith "Native buffer: get not implemented"
+        let get _i =
+          Native_error.(
+            raise_error (feature_not_supported "buffer element get accessor"))
 
-        let set _i _v = failwith "Native buffer: set not implemented"
+        let set _i _v =
+          Native_error.(
+            raise_error (feature_not_supported "buffer element set accessor"))
       end in
       args.list <- Framework_sig.EA_Vec (module EV) :: args.list
 
@@ -579,12 +595,12 @@ end = struct
       args.list <- Framework_sig.EA_Float64 v :: args.list
 
     let set_arg_ptr _args _idx _ptr =
-      failwith "Native backend does not support raw pointer arguments"
+      Native_error.(raise_error (feature_not_supported "raw pointer arguments"))
 
     (** Set a raw OCaml value argument (for SPOC Vector/customarray). Note: Not
         yet implemented with exec_arg. *)
     let[@warning "-32"] set_arg_raw _args _idx _v =
-      failwith "Native backend: set_arg_raw not implemented with exec_arg"
+      Native_error.(raise_error (feature_not_supported "set_arg_raw"))
 
     let launch kernel ~args ~(grid : Framework_sig.dims)
         ~(block : Framework_sig.dims) ~shared_mem:_ ~stream:_ =
@@ -594,10 +610,10 @@ end = struct
           let arg_array = args.list |> List.rev |> Array.of_list in
           fn arg_array (grid.x, grid.y, grid.z) (block.x, block.y, block.z)
       | None ->
-          failwith
-            (Printf.sprintf
-               "Native.Kernel.launch: kernel '%s' not registered"
-               kernel.name)
+          Native_error.(
+            raise_error
+              (compilation_failed kernel.name
+                 (Printf.sprintf "kernel '%s' not registered" kernel.name)))
 
     let clear_cache () = Hashtbl.clear native_kernels
   end
@@ -656,7 +672,7 @@ let run_kernel_raw ~name ~args ~grid ~block =
   match Hashtbl.find_opt native_kernels name with
   | Some fn -> fn args grid block
   | None ->
-      failwith
-        (Printf.sprintf
-           "Native_plugin.run_kernel_raw: kernel '%s' not registered"
-           name)
+      Native_error.(
+        raise_error
+          (compilation_failed name
+             (Printf.sprintf "kernel '%s' not registered" name)))

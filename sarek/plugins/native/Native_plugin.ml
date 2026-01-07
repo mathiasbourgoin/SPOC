@@ -167,9 +167,12 @@ module Backend : Framework_sig.BACKEND = struct
         | Typed_value.PInt64 n -> Sarek_ir_types.NA_Int64 n
         | Typed_value.PFloat f -> Sarek_ir_types.NA_Float32 f
         | Typed_value.PBool b -> Sarek_ir_types.NA_Int32 (if b then 1l else 0l)
-        | Typed_value.PBytes _ -> failwith "PBytes not supported in native_arg")
+        | Typed_value.PBytes _ ->
+            Native_error.(raise_error (feature_not_supported "PBytes type")))
     | Framework_sig.EA_Composite _ ->
-        failwith "Composite types not yet supported in native execution"
+        Native_error.(
+          raise_error
+            (feature_not_supported "custom composite types in execution"))
     | Framework_sig.EA_Vec (module V) ->
         (* Create NA_Vec with typed accessors that delegate to EXEC_VECTOR *)
         let get_as_f32 i =
@@ -178,8 +181,13 @@ module Backend : Framework_sig.BACKEND = struct
               match S.to_primitive x with
               | Typed_value.PFloat f -> f
               | Typed_value.PInt32 n -> Int32.to_float n
-              | _ -> failwith "get_f32: incompatible type")
-          | _ -> failwith "get_f32: not a scalar"
+              | _ ->
+                  Native_error.(
+                    raise_error
+                      (unsupported_construct "get_f32" "incompatible type")))
+          | _ ->
+              Native_error.(
+                raise_error (unsupported_construct "get_f32" "not a scalar"))
         in
         let set_as_f32 i f =
           V.set
@@ -192,8 +200,13 @@ module Backend : Framework_sig.BACKEND = struct
           | Typed_value.TV_Scalar (Typed_value.SV ((module S), x)) -> (
               match S.to_primitive x with
               | Typed_value.PFloat f -> f
-              | _ -> failwith "get_f64: incompatible type")
-          | _ -> failwith "get_f64: not a scalar"
+              | _ ->
+                  Native_error.(
+                    raise_error
+                      (unsupported_construct "get_f64" "incompatible type")))
+          | _ ->
+              Native_error.(
+                raise_error (unsupported_construct "get_f64" "not a scalar"))
         in
         let set_as_f64 i f =
           V.set
@@ -207,8 +220,13 @@ module Backend : Framework_sig.BACKEND = struct
               match S.to_primitive x with
               | Typed_value.PInt32 n -> n
               | Typed_value.PFloat f -> Int32.of_float f
-              | _ -> failwith "get_i32: incompatible type")
-          | _ -> failwith "get_i32: not a scalar"
+              | _ ->
+                  Native_error.(
+                    raise_error
+                      (unsupported_construct "get_i32" "incompatible type")))
+          | _ ->
+              Native_error.(
+                raise_error (unsupported_construct "get_i32" "not a scalar"))
         in
         let set_as_i32 i n =
           V.set
@@ -222,8 +240,13 @@ module Backend : Framework_sig.BACKEND = struct
               match S.to_primitive x with
               | Typed_value.PInt64 n -> n
               | Typed_value.PInt32 n -> Int64.of_int32 n
-              | _ -> failwith "get_i64: incompatible type")
-          | _ -> failwith "get_i64: not a scalar"
+              | _ ->
+                  Native_error.(
+                    raise_error
+                      (unsupported_construct "get_i64" "incompatible type")))
+          | _ ->
+              Native_error.(
+                raise_error (unsupported_construct "get_i64" "not a scalar"))
         in
         let set_as_i64 i n =
           V.set
@@ -294,8 +317,14 @@ module Backend : Framework_sig.BACKEND = struct
                   ~block:block_tuple
                   ~grid:grid_tuple
                   native_args
-            | None -> failwith "Native backend: no native function in IR")
-        | None -> failwith "Native backend execute_direct: IR required")
+            | None ->
+                Native_error.(
+                  raise_error
+                    (compilation_failed ""
+                       "no native function found in kernel IR")))
+        | None ->
+            Native_error.(
+              raise_error (compilation_failed "" "kernel IR not available")))
 
   (** Native intrinsic registry *)
   module Intrinsics = Native_intrinsics
@@ -310,17 +339,13 @@ module Backend : Framework_sig.BACKEND = struct
       (_args : Framework_sig.run_source_arg list) =
     let lang_str =
       match lang with
-      | Framework_sig.CUDA_Source -> "CUDA source"
-      | Framework_sig.OpenCL_Source -> "OpenCL source"
+      | Framework_sig.CUDA_Source -> "CUDA"
+      | Framework_sig.OpenCL_Source -> "OpenCL"
       | Framework_sig.PTX -> "PTX"
       | Framework_sig.SPIR_V -> "SPIR-V"
-      | Framework_sig.GLSL_Source -> "GLSL source"
+      | Framework_sig.GLSL_Source -> "GLSL"
     in
-    failwith
-      (Printf.sprintf
-         "Native backend cannot execute external %s kernels. Use CUDA or \
-          OpenCL backend instead."
-         lang_str)
+    Native_error.(raise_error (unsupported_source_lang lang_str))
 
   let wrap_kargs args = Native_kargs args
 
