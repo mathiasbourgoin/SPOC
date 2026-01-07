@@ -68,7 +68,8 @@ let get_cuda_lib () =
   | Some lib -> lib
   | None ->
       Cuda_error.raise_error
-        (Cuda_error.library_not_found "libcuda"
+        (Cuda_error.library_not_found
+           "libcuda"
            ["libcuda.so.1"; "libcuda.so"; "libcuda.dylib"; "nvcuda.dll"])
 
 (** Create a lazy foreign binding to CUDA driver API *)

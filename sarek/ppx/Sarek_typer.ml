@@ -197,7 +197,9 @@ let infer_literal (loc : Sarek_ast.loc) (expr : expr_desc) : texpr result =
   | EInt64 i -> Ok (mk_texpr (TEInt64 i) t_int64 loc)
   | EFloat f -> Ok (mk_texpr (TEFloat f) t_float32 loc)
   | EDouble f -> Ok (mk_texpr (TEDouble f) t_float64 loc)
-  | _ -> assert false (* infer_literal: called with non-literal expression *)
+  | _ ->
+      error
+        (Parse_error ("infer_literal called with non-literal expression", loc))
 
 (** Infer type of binary and unary operations (arithmetic, logical, bitwise). *)
 let infer_binop_unop ~infer (env : t) (loc : Sarek_ast.loc) (expr : expr_desc) :
@@ -213,7 +215,9 @@ let infer_binop_unop ~infer (env : t) (loc : Sarek_ast.loc) (expr : expr_desc) :
       let* result_ty = infer_unop op te.ty loc in
       Ok (mk_texpr (TEUnop (op, te)) result_ty loc, env)
   | _ ->
-      assert false (* infer_binop_unop: called with non-binop/unop expression *)
+      error
+        (Parse_error
+           ("infer_binop_unop called with non-binop/unop expression", loc))
 
 (** Infer type of memory access operations (vectors, arrays, record fields).
     Handles field resolution for both known and external record types. *)
@@ -323,8 +327,10 @@ let infer_memory_access ~infer (env : t) (loc : Sarek_ast.loc)
           (* External record type - defer to runtime (ppx_deriving pattern) *)
           Ok (mk_texpr (TEFieldSet (tr, field, 0, tx)) t_unit loc, env)
       | t -> Error [Not_a_record (t, loc)])
-  | _ -> assert false
-(* infer_memory_access: called with non-memory-access expression *)
+  | _ ->
+      error
+        (Parse_error
+           ("infer_memory_access called with non-memory-access expression", loc))
 
 (** Infer type of control flow expressions (if, for, while, sequence). Ensures
     loop bounds are int32 and conditions are boolean. *)
@@ -467,8 +473,11 @@ let infer_data_structure ~infer ~infer_record_fields ~infer_list (env : t)
             arr_ty
             loc,
           env )
-  | _ -> assert false
-(* infer_data_structure: called with non-data-structure expression *)
+  | _ ->
+      error
+        (Parse_error
+           ( "infer_data_structure called with non-data-structure expression",
+             loc ))
 
 (** Infer type of special expressions (global refs, native blocks, pragmas, type
     annotations, open). These handle meta-level constructs and environment
@@ -502,7 +511,9 @@ let infer_special ~infer (env : t) (loc : Sarek_ast.loc) (expr : expr_desc) :
       let env' = Sarek_env.open_module path env in
       let* te, _env_inner = infer env' e in
       Ok ({te = TEOpen (path, te); ty = te.ty; te_loc = loc}, env)
-  | _ -> assert false (* infer_special: called with non-special expression *)
+  | _ ->
+      error
+        (Parse_error ("infer_special called with non-special expression", loc))
 
 (** Infer type of let bindings (assign, let, let mut, let rec). Handles
     mutability constraints and recursive binding generalization. *)

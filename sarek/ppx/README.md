@@ -373,8 +373,8 @@ type 'a local   = Local of 'a        (* Thread-local / register *)
 Comprehensive test coverage across the compilation pipeline:
 
 ```bash
-# Unit tests (89% module coverage)
-dune runtest sarek/tests/unit/
+# Unit tests for PPX modules (59 tests)
+dune runtest sarek/ppx/test/
 
 # End-to-end tests with multiple backends
 dune runtest sarek/tests/e2e/
@@ -386,8 +386,13 @@ dune runtest sarek/tests/negative/
 _build/default/sarek/tests/e2e/test_histogram.exe --benchmark
 ```
 
+**Unit test coverage (sarek/ppx/test/):**
+- `test_sarek_reserved.ml`: 28 tests for C/CUDA/OpenCL reserved keyword validation
+- `test_sarek_error.ml`: 23 tests for structured error types and error reporting
+- `test_sarek_debug.ml`: 8 tests for debug logging infrastructure
+
 Test organization:
-- **Unit tests**: Test individual PPX modules in isolation ([sarek/tests/unit/](../tests/unit/))
+- **Unit tests**: Test individual PPX modules in isolation ([sarek/ppx/test/](test/))
 - **E2E tests**: Full compilation and execution ([sarek/tests/e2e/](../tests/e2e/))
 - **Negative tests**: Verify safety checks reject invalid code ([sarek/tests/negative/](../tests/negative/))
 

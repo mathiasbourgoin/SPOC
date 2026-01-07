@@ -159,7 +159,8 @@ let rec gen_expr buf = function
   | EArrayLen arr -> Buffer.add_string buf ("sarek_" ^ arr ^ "_length")
   | EArrayCreate _ ->
       Cuda_error.raise_error
-        (Cuda_error.unsupported_construct "EArrayCreate"
+        (Cuda_error.unsupported_construct
+           "EArrayCreate"
            "should be handled in gen_stmt SLet")
   | EIf (cond, then_, else_) ->
       (* Ternary operator for value-returning if *)
@@ -181,7 +182,8 @@ let rec gen_expr buf = function
       let rec gen_cases = function
         | [] ->
             Cuda_error.raise_error
-              (Cuda_error.unsupported_construct "EMatch"
+              (Cuda_error.unsupported_construct
+                 "EMatch"
                  "empty match cases after filtering")
         | [(_, body)] -> gen_expr buf body
         | (pat, body) :: rest ->
@@ -301,8 +303,7 @@ and gen_intrinsic buf path name args =
             gen_expr buf value
         | _ ->
             Cuda_error.raise_error
-              (Cuda_error.invalid_arg_count "atomic_add" 3
-                 (List.length args))) ;
+              (Cuda_error.invalid_arg_count "atomic_add" 3 (List.length args))) ;
         Buffer.add_char buf ')'
     | "atomic_sub" ->
         Buffer.add_string buf "atomicSub(" ;
@@ -369,14 +370,16 @@ and gen_intrinsic buf path name args =
                 (* Plain function/cast like "(float)" -> call as function *)
                 template ^ "(" ^ String.concat ", " arg_strs ^ ")"
               else if num_placeholders = 1 && List.length arg_strs = 1 then
-                (match arg_strs with
+                match arg_strs with
                 | [arg] ->
                     Printf.sprintf (Scanf.format_from_string template "%s") arg
                 | _ ->
                     (* This should never happen due to length check above *)
                     Cuda_error.raise_error
-                      (Cuda_error.type_error "intrinsic template"
-                         "1 placeholder, 1 argument" "unexpected list state"))
+                      (Cuda_error.type_error
+                         "intrinsic template"
+                         "1 placeholder, 1 argument"
+                         "unexpected list state")
               else if num_placeholders = 2 && List.length arg_strs = 2 then
                 Printf.sprintf
                   (Scanf.format_from_string template "%s%s")
@@ -496,7 +499,8 @@ let rec gen_stmt buf indent = function
       Buffer.add_string buf scrutinee ;
       Buffer.add_string buf ".tag) {\n" ;
       List.iter
-        (fun (pattern, body) -> gen_match_case buf indent scrutinee pattern body)
+        (fun (pattern, body) ->
+          gen_match_case buf indent scrutinee pattern body)
         cases ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
@@ -524,7 +528,8 @@ let rec gen_stmt buf indent = function
           then Buffer.add_char buf '\n'
       | None ->
           Cuda_error.raise_error
-            (Cuda_error.unsupported_construct "SNative"
+            (Cuda_error.unsupported_construct
+               "SNative"
                "requires device context - use generate_for_device instead of \
                 generate"))
   | SExpr e ->
@@ -584,7 +589,7 @@ and gen_record_assign buf indent lv fields =
 and gen_match_case buf indent scrutinee pattern body =
   Buffer.add_string buf indent ;
   (match pattern with
-  | PConstr (cname, bindings) ->
+  | PConstr (cname, bindings) -> (
       (* Lookup constructor types from current_variants *)
       let find_constr_types cname =
         List.find_map
@@ -596,7 +601,7 @@ and gen_match_case buf indent scrutinee pattern body =
       in
       Buffer.add_string buf ("  case " ^ cname ^ ": {\n") ;
       (* Generate bindings: extract payload from scrutinee *)
-      (match (bindings, find_constr_types cname) with
+      match (bindings, find_constr_types cname) with
       | [var_name], Some [ty] ->
           (* Single payload: access data.Constructor_v *)
           Buffer.add_string buf (indent ^ "    ") ;
@@ -625,8 +630,10 @@ and gen_match_case buf indent scrutinee pattern body =
       | [], _ | _, None | _, Some [] -> () (* No bindings needed *)
       | _ ->
           Cuda_error.raise_error
-            (Cuda_error.type_error "pattern match"
-               "matching bindings and constructor" "mismatched bindings/args"))
+            (Cuda_error.type_error
+               "pattern match"
+               "matching bindings and constructor"
+               "mismatched bindings/args"))
   | PWild -> Buffer.add_string buf "  default: {\n") ;
   gen_stmt buf (indent ^ "    ") body ;
   Buffer.add_string buf (indent ^ "    break;\n") ;
@@ -634,9 +641,7 @@ and gen_match_case buf indent scrutinee pattern body =
 
 (** Helper: Generate array declaration for SLet with EArrayCreate *)
 and gen_array_decl buf v elem_ty size mem =
-  (match mem with
-  | Shared -> Buffer.add_string buf "__shared__ "
-  | _ -> ()) ;
+  (match mem with Shared -> Buffer.add_string buf "__shared__ " | _ -> ()) ;
   Buffer.add_string buf (cuda_type_of_elttype elem_ty) ;
   Buffer.add_string buf " " ;
   Buffer.add_string buf v.var_name ;

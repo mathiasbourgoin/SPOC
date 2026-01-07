@@ -537,10 +537,8 @@ let eval_float64_math_intrinsic name args =
       | [] ->
           Interp_error.raise_error
             (Unsupported_operation
-               {
-                 operation = "of_int (float64)";
-                 reason = "requires 1 argument";
-               }))
+               {operation = "of_int (float64)"; reason = "requires 1 argument"})
+      )
   | _ -> None
 
 (** Int32 math intrinsics *)
@@ -555,16 +553,14 @@ let eval_int32_math_intrinsic name args =
                {operation = "abs (int32)"; reason = "requires 1 argument"}))
   | "min" -> (
       match args with
-      | arg1 :: arg2 :: _ ->
-          Some (VInt32 (min (to_int32 arg1) (to_int32 arg2)))
+      | arg1 :: arg2 :: _ -> Some (VInt32 (min (to_int32 arg1) (to_int32 arg2)))
       | _ ->
           Interp_error.raise_error
             (Unsupported_operation
                {operation = "min (int32)"; reason = "requires 2 arguments"}))
   | "max" -> (
       match args with
-      | arg1 :: arg2 :: _ ->
-          Some (VInt32 (max (to_int32 arg1) (to_int32 arg2)))
+      | arg1 :: arg2 :: _ -> Some (VInt32 (max (to_int32 arg1) (to_int32 arg2)))
       | _ ->
           Interp_error.raise_error
             (Unsupported_operation

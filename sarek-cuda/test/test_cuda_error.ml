@@ -21,12 +21,11 @@ let test_codegen_errors () =
     (String.length s2 > 0 && Str.(string_match (regexp ".*gen_param.*") s2 0)) ;
 
   (* Test type_error *)
-  let e3 = Cuda_error.type_error "pattern match" "matching bindings" "mismatch" in
+  let e3 =
+    Cuda_error.type_error "pattern match" "matching bindings" "mismatch"
+  in
   let s3 = Cuda_error.to_string e3 in
-  Alcotest.(check bool)
-    "type_error is formatted"
-    true
-    (String.length s3 > 0)
+  Alcotest.(check bool) "type_error is formatted" true (String.length s3 > 0)
 
 let test_runtime_errors () =
   (* Test no_device_selected *)
@@ -35,7 +34,7 @@ let test_runtime_errors () =
   Alcotest.(check bool)
     "no_device_selected contains operation"
     true
-    (Str.(string_match (regexp ".*kernel_execution.*") s1 0)) ;
+    Str.(string_match (regexp ".*kernel_execution.*") s1 0) ;
 
   (* Test compilation_failed *)
   let e2 =
@@ -45,7 +44,7 @@ let test_runtime_errors () =
   Alcotest.(check bool)
     "compilation_failed contains 'compilation failed'"
     true
-    (Str.(string_match (regexp ".*compilation failed.*") s2 0)) ;
+    Str.(string_match (regexp ".*compilation failed.*") s2 0) ;
 
   (* Test device_not_found *)
   let e3 = Cuda_error.device_not_found 5 2 in
@@ -62,7 +61,7 @@ let test_plugin_errors () =
   Alcotest.(check bool)
     "unsupported_source_lang contains language"
     true
-    (Str.(string_match (regexp ".*GLSL.*") s1 0)) ;
+    Str.(string_match (regexp ".*GLSL.*") s1 0) ;
 
   (* Test library_not_found *)
   let e2 = Cuda_error.library_not_found "libcuda.so" ["path1"; "path2"] in
@@ -70,29 +69,28 @@ let test_plugin_errors () =
   Alcotest.(check bool)
     "library_not_found contains library name"
     true
-    (Str.(string_match (regexp ".*libcuda.*") s2 0))
+    Str.(string_match (regexp ".*libcuda.*") s2 0)
 
 let test_with_default () =
   (* Test with_default helper *)
   let err = Cuda_error.no_device_selected "test_op" in
-  let result = Cuda_error.with_default ~default:99 (fun () -> raise (Cuda_error.Cuda_error err)) in
-  Alcotest.(check int)
-    "with_default returns default on error"
-    99
-    result
+  let result =
+    Cuda_error.with_default ~default:99 (fun () ->
+        raise (Cuda_error.Cuda_error err))
+  in
+  Alcotest.(check int) "with_default returns default on error" 99 result
 
 let test_to_result () =
   (* Test to_result helper *)
   let err = Cuda_error.no_device_selected "test_op" in
-  let result = Cuda_error.to_result (fun () -> raise (Cuda_error.Cuda_error err)) in
+  let result =
+    Cuda_error.to_result (fun () -> raise (Cuda_error.Cuda_error err))
+  in
   match result with
   | Ok _ -> Alcotest.fail "Expected Error, got Ok"
   | Error e ->
       let s = Cuda_error.to_string e in
-      Alcotest.(check bool)
-        "to_result captures error"
-        true
-        (String.length s > 0)
+      Alcotest.(check bool) "to_result captures error" true (String.length s > 0)
 
 let test_error_equality () =
   (* Test that same error constructors produce equal errors *)
@@ -111,13 +109,10 @@ let () =
     "Cuda_error"
     [
       ( "codegen_errors",
-        [
-          Alcotest.test_case "unsupported_construct" `Quick test_codegen_errors;
-        ] );
+        [Alcotest.test_case "unsupported_construct" `Quick test_codegen_errors]
+      );
       ( "runtime_errors",
-        [
-          Alcotest.test_case "device operations" `Quick test_runtime_errors;
-        ] );
+        [Alcotest.test_case "device operations" `Quick test_runtime_errors] );
       ( "plugin_errors",
         [Alcotest.test_case "unsupported operations" `Quick test_plugin_errors]
       );

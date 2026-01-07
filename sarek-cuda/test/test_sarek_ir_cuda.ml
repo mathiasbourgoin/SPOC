@@ -5,7 +5,7 @@ open Sarek_ir_types
 
 (** Helper to create a var record *)
 let make_var name ty =
-  { var_name = name; var_id = 0; var_type = ty; var_mutable = false }
+  {var_name = name; var_id = 0; var_type = ty; var_mutable = false}
 
 (** Helper to generate code from an expression *)
 let gen_expr_str e =
@@ -72,14 +72,11 @@ let test_gen_stmt_assignment () =
   let e = EConst (CInt32 42l) in
   let s = SAssign (lv, e) in
   let code = gen_stmt_str s in
-  Alcotest.(check bool)
-    "Assignment contains ="
-    true
-    (String.contains code '=') ;
+  Alcotest.(check bool) "Assignment contains =" true (String.contains code '=') ;
   Alcotest.(check bool)
     "Assignment contains result"
     true
-    (Str.(string_match (regexp ".*result.*") code 0)) ;
+    Str.(string_match (regexp ".*result.*") code 0) ;
   Alcotest.(check bool)
     "Assignment ends with semicolon"
     true
@@ -89,20 +86,17 @@ let test_gen_stmt_assignment () =
 let test_gen_stmt_if () =
   let cond = EConst (CBool true) in
   let then_ = SEmpty in
-  
+
   (* If without else *)
   let s1 = SIf (cond, then_, None) in
   let code1 = gen_stmt_str s1 in
   Alcotest.(check bool) "If contains keyword" true (String.contains code1 'i') ;
-  
+
   (* If with else *)
   let else_ = SEmpty in
   let s2 = SIf (cond, then_, Some else_) in
   let code2 = gen_stmt_str s2 in
-  Alcotest.(check bool)
-    "If-else contains else"
-    true
-    (String.contains code2 'e')
+  Alcotest.(check bool) "If-else contains else" true (String.contains code2 'e')
 
 (** Test while loop generation *)
 let test_gen_stmt_while () =
@@ -114,11 +108,11 @@ let test_gen_stmt_while () =
   Alcotest.(check bool)
     "While contains keyword"
     true
-    (Str.(string_match (regexp ".*while.*") code 0)) ;
+    Str.(string_match (regexp ".*while.*") code 0) ;
   Alcotest.(check bool)
     "While contains condition"
     true
-    (Str.(string_match (regexp ".*i.*10.*") code 0))
+    Str.(string_match (regexp ".*i.*10.*") code 0)
 
 (** Test for loop generation *)
 let test_gen_stmt_for () =
@@ -126,30 +120,30 @@ let test_gen_stmt_for () =
   let start = EConst (CInt32 0l) in
   let stop = EConst (CInt32 9l) in
   let body = SEmpty in
-  
+
   (* Upto loop *)
   let s1 = SFor (var, start, stop, Upto, body) in
   let code1 = gen_stmt_str s1 in
   Alcotest.(check bool)
     "For-upto contains <="
     true
-    (Str.(string_match (regexp ".*<=.*") code1 0)) ;
+    Str.(string_match (regexp ".*<=.*") code1 0) ;
   Alcotest.(check bool)
     "For-upto contains ++"
     true
-    (Str.(string_match (regexp ".*\\+\\+.*") code1 0)) ;
-  
+    Str.(string_match (regexp ".*\\+\\+.*") code1 0) ;
+
   (* Downto loop *)
   let s2 = SFor (var, start, stop, Downto, body) in
   let code2 = gen_stmt_str s2 in
   Alcotest.(check bool)
     "For-downto contains >="
     true
-    (Str.(string_match (regexp ".*>=.*") code2 0)) ;
+    Str.(string_match (regexp ".*>=.*") code2 0) ;
   Alcotest.(check bool)
     "For-downto contains --"
     true
-    (Str.(string_match (regexp ".*--.*") code2 0))
+    Str.(string_match (regexp ".*--.*") code2 0)
 
 (** Test return statement *)
 let test_gen_stmt_return () =
@@ -159,7 +153,7 @@ let test_gen_stmt_return () =
   Alcotest.(check bool)
     "Return contains keyword"
     true
-    (Str.(string_match (regexp ".*return.*") code 0)) ;
+    Str.(string_match (regexp ".*return.*") code 0) ;
   Alcotest.(check bool)
     "Return ends with semicolon"
     true
@@ -173,23 +167,23 @@ let test_gen_stmt_barriers () =
   Alcotest.(check bool)
     "Barrier generates __syncthreads"
     true
-    (Str.(string_match (regexp ".*__syncthreads.*") code1 0)) ;
-  
+    Str.(string_match (regexp ".*__syncthreads.*") code1 0) ;
+
   (* Test SWarpBarrier *)
   let s2 = SWarpBarrier in
   let code2 = gen_stmt_str s2 in
   Alcotest.(check bool)
     "Warp barrier generates __syncwarp"
     true
-    (Str.(string_match (regexp ".*__syncwarp.*") code2 0)) ;
-  
+    Str.(string_match (regexp ".*__syncwarp.*") code2 0) ;
+
   (* Test SMemFence *)
   let s3 = SMemFence in
   let code3 = gen_stmt_str s3 in
   Alcotest.(check bool)
     "Memory fence generates __threadfence"
     true
-    (Str.(string_match (regexp ".*__threadfence.*") code3 0))
+    Str.(string_match (regexp ".*__threadfence.*") code3 0)
 
 (** Test let binding *)
 let test_gen_stmt_let () =
@@ -201,11 +195,11 @@ let test_gen_stmt_let () =
   Alcotest.(check bool)
     "Let contains type"
     true
-    (Str.(string_match (regexp ".*int.*") code 0)) ;
+    Str.(string_match (regexp ".*int.*") code 0) ;
   Alcotest.(check bool)
     "Let contains variable name"
     true
-    (Str.(string_match (regexp ".*x.*") code 0)) ;
+    Str.(string_match (regexp ".*x.*") code 0) ;
   Alcotest.(check bool)
     "Let contains assignment"
     true
@@ -221,15 +215,21 @@ let test_gen_stmt_let_mut () =
   Alcotest.(check bool)
     "LetMut contains variable"
     true
-    (Str.(string_match (regexp ".*y.*") code 0))
+    Str.(string_match (regexp ".*y.*") code 0)
 
 (** Test block statement *)
 let test_gen_stmt_block () =
   let body = SEmpty in
   let s = SBlock body in
   let code = gen_stmt_str s in
-  Alcotest.(check bool) "Block has opening brace" true (String.contains code '{') ;
-  Alcotest.(check bool) "Block has closing brace" true (String.contains code '}')
+  Alcotest.(check bool)
+    "Block has opening brace"
+    true
+    (String.contains code '{') ;
+  Alcotest.(check bool)
+    "Block has closing brace"
+    true
+    (String.contains code '}')
 
 (** Test pragma statement *)
 let test_gen_stmt_pragma () =
@@ -239,11 +239,11 @@ let test_gen_stmt_pragma () =
   Alcotest.(check bool)
     "Pragma contains #pragma"
     true
-    (Str.(string_match (regexp ".*#pragma.*") code 0)) ;
+    Str.(string_match (regexp ".*#pragma.*") code 0) ;
   Alcotest.(check bool)
     "Pragma contains unroll"
     true
-    (Str.(string_match (regexp ".*unroll.*") code 0))
+    Str.(string_match (regexp ".*unroll.*") code 0)
 
 (** Test suite *)
 let () =

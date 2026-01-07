@@ -76,11 +76,14 @@ module Device = struct
 
     (* Get name *)
     let name_buf = allocate_n char ~count:max_device_name_length in
-    check "cuDeviceGetName"
+    check
+      "cuDeviceGetName"
       (cuDeviceGetName name_buf max_device_name_length handle) ;
     let name = string_from_ptr name_buf ~length:(max_device_name_length - 1) in
     let name =
-      String.sub name 0
+      String.sub
+        name
+        0
         (try String.index name '\000'
          with Not_found -> max_device_name_length - 1)
     in
