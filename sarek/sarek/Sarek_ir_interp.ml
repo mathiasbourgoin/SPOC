@@ -283,7 +283,7 @@ let is_int32_path = function
   | ["Int32"] | ["Sarek_stdlib"; "Int32"] -> true
   | _ -> false
 
-let eval_intrinsic state path name args =
+let rec eval_intrinsic state path name args =
   match (path, name) with
   (* Thread indices *)
   | path, "thread_idx_x" when is_gpu_path path ->
@@ -442,18 +442,8 @@ let eval_intrinsic state path name args =
 
 (** {1 Expression Evaluation} *)
 
-let rec eval_expr state env expr =
-  match expr with
-  | EConst (CInt32 n) -> VInt32 n
-  | EConst (CInt64 n) -> VInt64 n
-  | EConst (CFloat32 f) -> VFloat32 f
-  | EConst (CFloat64 f) -> VFloat64 f
-  | EConst (CBool b) -> VBool b
-  | EConst CUnit -> VUnit
-  | EVar v -> lookup_var env v
-  | EBinop (op, e1, e2) ->
-      eval_binop op (eval_expr state env e1) (eval_expr state env e2)
-  | EUnop (op, e) -> eval_unop op (eval_expr state env e)
+(** Array expression evaluation *)
+and eval_array_expr state env = function
   | EArrayRead (arr, idx) ->
       let a = get_array env arr in
       let i = to_int (eval_expr state env idx) in
@@ -472,17 +462,33 @@ let rec eval_expr state env expr =
       in
       let i = to_int (eval_expr state env idx) in
       a.(i)
+  | EArrayLen arr ->
+      let a = get_array env arr in
+      VInt32 (Int32.of_int (Array.length a))
+  | EArrayCreate (ty, size_expr, _memspace) ->
+      let size = to_int (eval_expr state env size_expr) in
+      let init =
+        match ty with
+        | TInt32 -> VInt32 0l
+        | TInt64 -> VInt64 0L
+        | TFloat32 -> VFloat32 0.0
+        | TFloat64 -> VFloat64 0.0
+        | TBool -> VBool false
+        | _ -> VUnit
+      in
+      VArray (Array.make size init)
+  | _ -> assert false
+
+(** Record and variant expression evaluation *)
+and eval_composite_expr state env = function
   | ERecordField (e, field) -> (
       match eval_expr state env e with
       | VRecord (type_name, fields) as vrec -> (
-          (* Try using type-safe helpers first *)
           match Sarek_type_helpers.lookup type_name with
           | Some h ->
-              (* Convert VRecord to typed record, get field, done! *)
               let native_record = h.from_value vrec in
               h.get_field native_record field
           | None ->
-              (* Fallback: direct field array access *)
               let field_infos = Sarek_registry.record_fields type_name in
               let rec find_idx i = function
                 | [] ->
@@ -502,45 +508,18 @@ let rec eval_expr state env expr =
               let idx = find_idx 0 field_infos in
               fields.(idx))
       | _ -> Interp_error.raise_error (Not_a_record {expr = "ERecordField"}))
-  | EIntrinsic (path, name, args) ->
-      let arg_vals = List.map (eval_expr state env) args in
-      eval_intrinsic state path name arg_vals
-  | ECast (ty, e) -> (
-      let v = eval_expr state env e in
-      match ty with
-      | TInt32 -> VInt32 (to_int32 v)
-      | TInt64 -> VInt64 (to_int64 v)
-      | TFloat32 -> VFloat32 (to_float32 v)
-      | TFloat64 -> VFloat64 (to_float64 v)
-      | TBool -> VBool (to_bool v)
-      | _ -> v)
-  | ETuple exprs ->
-      VArray (Array.of_list (List.map (eval_expr state env) exprs))
-  | EApp (fn_expr, args) -> eval_app state env fn_expr args
   | ERecord (name, fields) ->
       VRecord
         ( name,
           Array.of_list (List.map (fun (_, e) -> eval_expr state env e) fields)
         )
   | EVariant (ty, ctor, args) ->
-      (* Tag is assumed from constructor name - simplified *)
       VVariant
         (ty, Hashtbl.hash ctor mod 256, List.map (eval_expr state env) args)
-  | EArrayLen arr ->
-      let a = get_array env arr in
-      VInt32 (Int32.of_int (Array.length a))
-  | EArrayCreate (ty, size_expr, _memspace) ->
-      let size = to_int (eval_expr state env size_expr) in
-      let init =
-        match ty with
-        | TInt32 -> VInt32 0l
-        | TInt64 -> VInt64 0L
-        | TFloat32 -> VFloat32 0.0
-        | TFloat64 -> VFloat64 0.0
-        | TBool -> VBool false
-        | _ -> VUnit
-      in
-      VArray (Array.make size init)
+  | _ -> assert false
+
+(** Control flow expression evaluation *)
+and eval_control_flow state env = function
   | EIf (cond, then_, else_) ->
       if to_bool (eval_expr state env cond) then eval_expr state env then_
       else eval_expr state env else_
@@ -561,6 +540,53 @@ let rec eval_expr state env expr =
         | (PWild, body) :: _ -> body
       in
       eval_expr state env (find_case cases)
+  | _ -> assert false
+
+(** Cast and intrinsic expression evaluation *)
+and eval_special_expr state env = function
+  | EIntrinsic (path, name, args) ->
+      let arg_vals = List.map (eval_expr state env) args in
+      eval_intrinsic state path name arg_vals
+  | ECast (ty, e) -> (
+      let v = eval_expr state env e in
+      match ty with
+      | TInt32 -> VInt32 (to_int32 v)
+      | TInt64 -> VInt64 (to_int64 v)
+      | TFloat32 -> VFloat32 (to_float32 v)
+      | TFloat64 -> VFloat64 (to_float64 v)
+      | TBool -> VBool (to_bool v)
+      | _ -> v)
+  | _ -> assert false
+
+(** Main expression evaluator - dispatches to specialized handlers *)
+and eval_expr state env expr =
+  match expr with
+  (* Simple cases *)
+  | EConst (CInt32 n) -> VInt32 n
+  | EConst (CInt64 n) -> VInt64 n
+  | EConst (CFloat32 f) -> VFloat32 f
+  | EConst (CFloat64 f) -> VFloat64 f
+  | EConst (CBool b) -> VBool b
+  | EConst CUnit -> VUnit
+  | EVar v -> lookup_var env v
+  | ETuple exprs ->
+      VArray (Array.of_list (List.map (eval_expr state env) exprs))
+  (* Operators *)
+  | EBinop (op, e1, e2) ->
+      eval_binop op (eval_expr state env e1) (eval_expr state env e2)
+  | EUnop (op, e) -> eval_unop op (eval_expr state env e)
+  (* Array operations *)
+  | (EArrayRead _ | EArrayReadExpr _ | EArrayLen _ | EArrayCreate _) as e ->
+      eval_array_expr state env e
+  (* Record/Variant operations *)
+  | (ERecordField _ | ERecord _ | EVariant _) as e ->
+      eval_composite_expr state env e
+  (* Control flow *)
+  | (EIf _ | EMatch _) as e -> eval_control_flow state env e
+  (* Special operations *)
+  | (EIntrinsic _ | ECast _) as e -> eval_special_expr state env e
+  (* Function application *)
+  | EApp (fn_expr, args) -> eval_app state env fn_expr args
 
 and get_array env name =
   try Hashtbl.find env.arrays name
