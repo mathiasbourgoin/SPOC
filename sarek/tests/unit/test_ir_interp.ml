@@ -189,6 +189,139 @@ let test_cast_float_to_int () =
   | VInt32 n -> check int32 "cast to int" 42l n
   | _ -> fail "expected VInt32"
 
+(** {1 Tests for binary operations} *)
+
+let test_binop_add () =
+  let env = make_env () in
+  let state = make_state () in
+  (* 10 + 20 = 30 *)
+  let expr = EBinop (Add, EConst (CInt32 10l), EConst (CInt32 20l)) in
+  match eval_expr state env expr with
+  | VInt32 n -> check int32 "add" 30l n
+  | _ -> fail "expected VInt32"
+
+let test_binop_mul () =
+  let env = make_env () in
+  let state = make_state () in
+  (* 5 * 7 = 35 *)
+  let expr = EBinop (Mul, EConst (CInt32 5l), EConst (CInt32 7l)) in
+  match eval_expr state env expr with
+  | VInt32 n -> check int32 "multiply" 35l n
+  | _ -> fail "expected VInt32"
+
+let test_binop_lt () =
+  let env = make_env () in
+  let state = make_state () in
+  (* 10 < 20 = true *)
+  let expr = EBinop (Lt, EConst (CInt32 10l), EConst (CInt32 20l)) in
+  match eval_expr state env expr with
+  | VBool b -> check bool "less than true" true b
+  | _ -> fail "expected VBool"
+
+let test_binop_eq () =
+  let env = make_env () in
+  let state = make_state () in
+  (* 42 = 42 = true *)
+  let expr = EBinop (Eq, EConst (CInt32 42l), EConst (CInt32 42l)) in
+  match eval_expr state env expr with
+  | VBool b -> check bool "equals" true b
+  | _ -> fail "expected VBool"
+
+(** {1 Tests for unary operations} *)
+
+let test_unop_neg () =
+  let env = make_env () in
+  let state = make_state () in
+  (* -42 *)
+  let expr = EUnop (Neg, EConst (CInt32 42l)) in
+  match eval_expr state env expr with
+  | VInt32 n -> check int32 "negate" (-42l) n
+  | _ -> fail "expected VInt32"
+
+let test_unop_not () =
+  let env = make_env () in
+  let state = make_state () in
+  (* not true = false *)
+  let expr = EUnop (Not, EConst (CBool true)) in
+  match eval_expr state env expr with
+  | VBool b -> check bool "not" false b
+  | _ -> fail "expected VBool"
+
+(** {1 Tests for statement execution} *)
+
+let test_stmt_assign () =
+  let env = make_env () in
+  let state = make_state () in
+  let arr = Array.make 5 (VInt32 0l) in
+  Hashtbl.add env.arrays "output" arr ;
+  (* output[2] <- 99 *)
+  let stmt =
+    SAssign (LArrayElem ("output", EConst (CInt32 2l)), EConst (CInt32 99l))
+  in
+  exec_stmt state env stmt ;
+  match arr.(2) with
+  | VInt32 n -> check int32 "assign" 99l n
+  | _ -> fail "expected VInt32"
+
+let test_stmt_let () =
+  let env = make_env () in
+  let state = make_state () in
+  (* let x = 42 in () *)
+  let var =
+    {var_name = "x"; var_id = 1; var_type = TInt32; var_mutable = false}
+  in
+  let stmt = SLet (var, EConst (CInt32 42l), SEmpty) in
+  exec_stmt state env stmt ;
+  match lookup_var env var with
+  | VInt32 n -> check int32 "let binding" 42l n
+  | _ -> fail "expected VInt32"
+
+let test_stmt_if () =
+  let env = make_env () in
+  let state = make_state () in
+  Hashtbl.add env.vars_by_name "counter" (VInt32 0l) ;
+  (* if true then () else () *)
+  let stmt = SIf (EConst (CBool true), SEmpty, Some SEmpty) in
+  exec_stmt state env stmt ;
+  check bool "if executed" true true
+
+let test_stmt_while () =
+  let env = make_env () in
+  let state = make_state () in
+  let counter_var =
+    {var_name = "i"; var_id = 1; var_type = TInt32; var_mutable = true}
+  in
+  bind_var env counter_var (VInt32 0l) ;
+  (* while i < 3 do i <- i + 1 *)
+  let cond = EBinop (Lt, EVar counter_var, EConst (CInt32 3l)) in
+  let body =
+    SAssign
+      (LVar counter_var, EBinop (Add, EVar counter_var, EConst (CInt32 1l)))
+  in
+  let stmt = SWhile (cond, body) in
+  exec_stmt state env stmt ;
+  match lookup_var env counter_var with
+  | VInt32 n -> check int32 "while loop" 3l n
+  | _ -> fail "expected VInt32"
+
+let test_stmt_for () =
+  let env = make_env () in
+  let state = make_state () in
+  let i_var =
+    {var_name = "i"; var_id = 1; var_type = TInt32; var_mutable = true}
+  in
+  let sum_var =
+    {var_name = "sum"; var_id = 2; var_type = TInt32; var_mutable = true}
+  in
+  bind_var env sum_var (VInt32 0l) ;
+  (* for i = 0 to 4 do sum <- sum + i *)
+  let body = SAssign (LVar sum_var, EBinop (Add, EVar sum_var, EVar i_var)) in
+  let stmt = SFor (i_var, EConst (CInt32 0l), EConst (CInt32 4l), Upto, body) in
+  exec_stmt state env stmt ;
+  match lookup_var env sum_var with
+  | VInt32 n -> check int32 "for loop sum" 10l n (* 0+1+2+3+4 = 10 *)
+  | _ -> fail "expected VInt32"
+
 (** {1 Tests for value conversions} *)
 
 let test_to_int32 () =
@@ -231,6 +364,26 @@ let () =
         [
           test_case "cast_int_to_float" `Quick test_cast_int32_to_float;
           test_case "cast_float_to_int" `Quick test_cast_float_to_int;
+        ] );
+      ( "binary_operations",
+        [
+          test_case "add" `Quick test_binop_add;
+          test_case "multiply" `Quick test_binop_mul;
+          test_case "less_than" `Quick test_binop_lt;
+          test_case "equals" `Quick test_binop_eq;
+        ] );
+      ( "unary_operations",
+        [
+          test_case "negate" `Quick test_unop_neg;
+          test_case "not" `Quick test_unop_not;
+        ] );
+      ( "statements",
+        [
+          test_case "assign" `Quick test_stmt_assign;
+          test_case "let_binding" `Quick test_stmt_let;
+          test_case "if_stmt" `Quick test_stmt_if;
+          test_case "while_loop" `Quick test_stmt_while;
+          test_case "for_loop" `Quick test_stmt_for;
         ] );
       ( "value_conversions",
         [
