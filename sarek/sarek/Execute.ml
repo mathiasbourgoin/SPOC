@@ -152,7 +152,16 @@ let vector_args_to_exec_array (args : vector_arg list) :
          | Float64 f -> Framework_sig.EA_Float64 f)
        args)
 
-(** Get device buffer for a V2 Vector *)
+(** Retrieve device buffer for a vector on a specific device.
+    
+    Returns a first-class module containing the device buffer's pointer,
+    size, and binding function. The buffer must exist (typically created
+    by a prior transfer).
+    
+    @param v Vector to get buffer from
+    @param dev Device the buffer should be allocated on
+    @return Device buffer module
+    @raise Transfer_failed if vector has no buffer on this device *)
 let get_device_buffer (type a b) (v : (a, b) Vector.t) (dev : Device.t) :
     (module Vector.DEVICE_BUFFER) =
   Log.debugf Log.Execute "get_device_buffer for dev=%d" dev.Device.id ;
@@ -291,11 +300,19 @@ let run ~(device : Device.t) ~(name : string)
 
 (** {1 V2 Vector Execution Helpers} *)
 
-(** Mark all vectors as Stale_CPU after kernel execution. Only Native backend
-    uses true zero-copy where host memory is directly modified. JIT backends
-    (OpenCL, CUDA, Vulkan) use device buffers even on CPU, so custom types need
-    explicit sync. Marking stale is safe for zero-copy buffers since Transfer
-    checks the zero_copy flag and skips the actual transfer. *)
+(** Mark vectors as stale on CPU after kernel execution.
+    
+    After a kernel modifies vector data on a device, we need to track that
+    the CPU-side data is now stale. This ensures future CPU reads will
+    trigger a device→CPU transfer.
+    
+    Special cases:
+    - Native backend: No-op (uses zero-copy shared memory, no staleness)
+    - JIT backends: Always mark stale (Transfer module handles zero-copy checks)
+    - OpenCL CPU: Mark stale for custom types (scalar types use zero-copy)
+    
+    @param args Arguments that may contain vectors
+    @param dev Device that just executed the kernel *)
 let mark_vectors_stale (args : vector_arg list) (dev : Device.t) : unit =
   (* Only Native uses true zero-copy for all vector types.
      OpenCL CPU uses zero-copy for scalar types but NOT for custom types.
@@ -312,7 +329,17 @@ let mark_vectors_stale (args : vector_arg list) (dev : Device.t) : unit =
         | _ -> ())
       args
 
-(** Convert a V2 Vector to interpreter value array *)
+(** Convert a V2 Vector to interpreter value array.
+    
+    Converts vectors of primitive types (int32, float32, etc.) to the
+    interpreter's runtime value representation. Custom types are converted
+    using registered type helpers from Sarek_type_helpers.
+    
+    This enables the interpreter backend to execute kernels on CPU without
+    requiring GPU infrastructure.
+    
+    @param vec Input vector of any type
+    @return Array of interpreter values matching vector contents *)
 let vector_to_interp_array : type a b.
     (a, b) Vector.t -> Sarek_ir_interp.value array =
  fun vec ->
@@ -345,7 +372,14 @@ let vector_to_interp_array : type a b.
       (* Complex32: not directly supported, skip for now *)
       Array.init len (fun _i -> Sarek_ir_interp.VUnit)
 
-(** Copy interpreter value array back to V2 Vector *)
+(** Copy interpreter value array back to V2 Vector.
+    
+    After interpreter execution, this function copies the runtime values
+    back into the typed vector representation. Performs type checking and
+    conversion for each element.
+    
+    @param arr Array of interpreter runtime values
+    @param vec Destination vector (must match type of values) *)
 let interp_array_to_vector : type a b.
     Sarek_ir_interp.value array -> (a, b) Vector.t -> unit =
  fun arr vec ->
@@ -458,7 +492,26 @@ let run_interpreter_vectors ~(ir : Sarek_ir_types.kernel)
     !writebacks
 
 (** Execute a kernel with V2 Vectors. Auto-transfers, dispatches to backend.
-    Unified path for all backends - run handles expansion based on backend. *)
+    
+    This is the main execution entry point for Sarek-generated kernels.
+    It performs the complete execution pipeline:
+    
+    1. **Transfer**: Move vectors to device (no-op for CPU backends)
+    2. **Dispatch**: Call appropriate backend's execution method
+    3. **Mark stale**: Update vector location tracking
+    
+    The function automatically handles differences between execution models:
+    - JIT backends: Generate source, compile, launch
+    - Direct (Native): Call pre-compiled OCaml function
+    - Custom (Interpreter): Walk IR and evaluate expressions
+    
+    @param device Target device (determines backend)
+    @param ir Sarek IR kernel definition
+    @param args Kernel arguments (vectors and scalars)
+    @param block Thread block dimensions (e.g., (256, 1, 1))
+    @param grid Grid dimensions (e.g., (4, 1, 1))
+    @param shared_mem Optional shared memory size in bytes (default: 0)
+    @raise Execute_error on validation or execution failure *)
 let run_vectors ~(device : Device.t) ~(ir : Sarek_ir_types.kernel)
     ~(args : vector_arg list) ~(block : Framework_sig.dims)
     ~(grid : Framework_sig.dims) ?(shared_mem : int = 0) () : unit =
@@ -517,7 +570,17 @@ type source_lang = Framework_sig.source_lang =
   | SPIR_V
   | GLSL_Source
 
-(** Check if a device supports a given source language *)
+(** Check if a device supports a given source language.
+    
+    Different backends support different source languages:
+    - CUDA: CUDA source (.cu), PTX
+    - OpenCL: OpenCL source (.cl)
+    - Vulkan: SPIR-V, GLSL source (.comp, .glsl)
+    - Native/Interpreter: None (not JIT backends)
+    
+    @param dev Device to check
+    @param lang Source language to query
+    @return true if device can compile and execute this language *)
 let supports_lang (dev : Device.t) (lang : source_lang) : bool =
   match Framework_registry.find_backend dev.framework with
   | Some (module B : Framework_sig.BACKEND) ->
@@ -604,8 +667,41 @@ let detect_lang (path : string) : source_lang =
               .comp, or .glsl)";
          })
 
-(** Execute an external kernel from a file. Source language is detected from
-    file extension (.cu, .cl, .ptx, .spv) *)
+(** Execute an external kernel from a file.
+    
+    Loads pre-written GPU kernel source from a file and executes it.
+    Useful for integrating hand-optimized kernels or using features
+    not yet supported by the Sarek PPX.
+    
+    Source language is auto-detected from file extension:
+    - .cu → CUDA source
+    - .cl → OpenCL source
+    - .ptx → PTX assembly
+    - .spv → SPIR-V binary
+    - .comp / .glsl → GLSL compute shader
+    
+    Example:
+    {[
+      (* Execute hand-written CUDA kernel *)
+      Execute.run_source_file
+        ~device:(Device.get_default ())
+        ~path:"kernels/optimized_matmul.cu"
+        ~kernel_name:"matmul_kernel"
+        ~block:(16, 16, 1)
+        ~grid:(64, 64, 1)
+        [Vec a; Vec b; Vec c; Int32 1024l]
+    ]}
+    
+    @param device Target device
+    @param path Path to kernel source file
+    @param kernel_name Name of kernel function in source
+    @param block Block dimensions
+    @param grid Grid dimensions
+    @param shared_mem Optional shared memory in bytes
+    @param inject_lengths If true (default), inject vector lengths after buffer args
+    @param args Kernel arguments
+    @raise Invalid_file if file extension is not recognized
+    @raise Execute_error if compilation or execution fails *)
 let run_source_file ~(device : Device.t) ~(path : string)
     ~(kernel_name : string) ~(block : Framework_sig.dims)
     ~(grid : Framework_sig.dims) ?(shared_mem : int = 0)
