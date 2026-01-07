@@ -283,162 +283,191 @@ let is_int32_path = function
   | ["Int32"] | ["Sarek_stdlib"; "Int32"] -> true
   | _ -> false
 
-let rec eval_intrinsic state path name args =
-  match (path, name) with
+(** {1 Intrinsic Evaluation Helpers}
+    
+    Split from eval_intrinsic for better maintainability and testability.
+    Each helper handles a specific category of intrinsics. *)
+
+(** GPU thread/block/grid indices and dimensions *)
+let eval_gpu_index_intrinsic state name =
+  match name with
   (* Thread indices *)
-  | path, "thread_idx_x" when is_gpu_path path ->
+  | "thread_idx_x" ->
       let x, _, _ = state.thread_idx in
-      VInt32 (Int32.of_int x)
-  | path, "thread_idx_y" when is_gpu_path path ->
+      Some (VInt32 (Int32.of_int x))
+  | "thread_idx_y" ->
       let _, y, _ = state.thread_idx in
-      VInt32 (Int32.of_int y)
-  | path, "thread_idx_z" when is_gpu_path path ->
+      Some (VInt32 (Int32.of_int y))
+  | "thread_idx_z" ->
       let _, _, z = state.thread_idx in
-      VInt32 (Int32.of_int z)
+      Some (VInt32 (Int32.of_int z))
   (* Block indices *)
-  | path, "block_idx_x" when is_gpu_path path ->
+  | "block_idx_x" ->
       let x, _, _ = state.block_idx in
-      VInt32 (Int32.of_int x)
-  | path, "block_idx_y" when is_gpu_path path ->
+      Some (VInt32 (Int32.of_int x))
+  | "block_idx_y" ->
       let _, y, _ = state.block_idx in
-      VInt32 (Int32.of_int y)
-  | path, "block_idx_z" when is_gpu_path path ->
+      Some (VInt32 (Int32.of_int y))
+  | "block_idx_z" ->
       let _, _, z = state.block_idx in
-      VInt32 (Int32.of_int z)
+      Some (VInt32 (Int32.of_int z))
   (* Block dimensions *)
-  | path, "block_dim_x" when is_gpu_path path ->
+  | "block_dim_x" ->
       let x, _, _ = state.block_dim in
-      VInt32 (Int32.of_int x)
-  | path, "block_dim_y" when is_gpu_path path ->
+      Some (VInt32 (Int32.of_int x))
+  | "block_dim_y" ->
       let _, y, _ = state.block_dim in
-      VInt32 (Int32.of_int y)
-  | path, "block_dim_z" when is_gpu_path path ->
+      Some (VInt32 (Int32.of_int y))
+  | "block_dim_z" ->
       let _, _, z = state.block_dim in
-      VInt32 (Int32.of_int z)
+      Some (VInt32 (Int32.of_int z))
   (* Grid dimensions *)
-  | path, "grid_dim_x" when is_gpu_path path ->
+  | "grid_dim_x" ->
       let x, _, _ = state.grid_dim in
-      VInt32 (Int32.of_int x)
-  | path, "grid_dim_y" when is_gpu_path path ->
+      Some (VInt32 (Int32.of_int x))
+  | "grid_dim_y" ->
       let _, y, _ = state.grid_dim in
-      VInt32 (Int32.of_int y)
-  | path, "grid_dim_z" when is_gpu_path path ->
+      Some (VInt32 (Int32.of_int y))
+  | "grid_dim_z" ->
       let _, _, z = state.grid_dim in
-      VInt32 (Int32.of_int z)
+      Some (VInt32 (Int32.of_int z))
   (* Global index helpers *)
-  | path, "global_idx" when is_gpu_path path ->
+  | "global_idx" | "global_idx_x" | "global_thread_id" ->
       let tx, _, _ = state.thread_idx in
       let bx, _, _ = state.block_idx in
       let bdx, _, _ = state.block_dim in
-      VInt32 (Int32.of_int ((bx * bdx) + tx))
-  | path, "global_idx_x" when is_gpu_path path ->
-      let tx, _, _ = state.thread_idx in
-      let bx, _, _ = state.block_idx in
-      let bdx, _, _ = state.block_dim in
-      VInt32 (Int32.of_int ((bx * bdx) + tx))
-  | path, "global_thread_id" when is_gpu_path path ->
-      let tx, _, _ = state.thread_idx in
-      let bx, _, _ = state.block_idx in
-      let bdx, _, _ = state.block_dim in
-      VInt32 (Int32.of_int ((bx * bdx) + tx))
-  | path, "global_idx_y" when is_gpu_path path ->
+      Some (VInt32 (Int32.of_int ((bx * bdx) + tx)))
+  | "global_idx_y" ->
       let _, ty, _ = state.thread_idx in
       let _, by, _ = state.block_idx in
       let _, bdy, _ = state.block_dim in
-      VInt32 (Int32.of_int ((by * bdy) + ty))
-  | path, "global_idx_z" when is_gpu_path path ->
+      Some (VInt32 (Int32.of_int ((by * bdy) + ty)))
+  | "global_idx_z" ->
       let _, _, tz = state.thread_idx in
       let _, _, bz = state.block_idx in
       let _, _, bdz = state.block_dim in
-      VInt32 (Int32.of_int ((bz * bdz) + tz))
-  | path, "global_size_y" when is_gpu_path path ->
+      Some (VInt32 (Int32.of_int ((bz * bdz) + tz)))
+  (* Global size helpers *)
+  | "global_size" | "global_size_x" ->
+      let bdx, _, _ = state.block_dim in
+      let gdx, _, _ = state.grid_dim in
+      Some (VInt32 (Int32.of_int (bdx * gdx)))
+  | "global_size_y" ->
       let _, bdy, _ = state.block_dim in
       let _, gdy, _ = state.grid_dim in
-      VInt32 (Int32.of_int (bdy * gdy))
-  | path, "global_size_z" when is_gpu_path path ->
+      Some (VInt32 (Int32.of_int (bdy * gdy)))
+  | "global_size_z" ->
       let _, _, bdz = state.block_dim in
       let _, _, gdz = state.grid_dim in
-      VInt32 (Int32.of_int (bdz * gdz))
-  | path, "global_size" when is_gpu_path path ->
-      let bdx, _, _ = state.block_dim in
-      let gdx, _, _ = state.grid_dim in
-      VInt32 (Int32.of_int (bdx * gdx))
-  | path, "global_size_x" when is_gpu_path path ->
-      let bdx, _, _ = state.block_dim in
-      let gdx, _, _ = state.grid_dim in
-      VInt32 (Int32.of_int (bdx * gdx))
-  (* Barriers *)
-  | path, "block_barrier" when is_gpu_path path ->
+      Some (VInt32 (Int32.of_int (bdz * gdz)))
+  | _ -> None
+
+(** Barrier synchronization intrinsics *)
+let eval_barrier_intrinsic name =
+  match name with
+  | "block_barrier" | "warp_barrier" ->
       Effect.perform Barrier ;
-      VUnit
-  | path, "warp_barrier" when is_gpu_path path ->
-      Effect.perform Barrier ;
-      VUnit
-  (* Float32 intrinsics *)
-  | path, "sin" when is_float32_path path ->
-      VFloat32 (F32.sin (to_float32 (List.hd args)))
-  | path, "cos" when is_float32_path path ->
-      VFloat32 (F32.cos (to_float32 (List.hd args)))
-  | path, "tan" when is_float32_path path ->
-      VFloat32 (F32.tan (to_float32 (List.hd args)))
-  | path, "sqrt" when is_float32_path path ->
-      VFloat32 (F32.sqrt (to_float32 (List.hd args)))
-  | path, "exp" when is_float32_path path ->
-      VFloat32 (F32.exp (to_float32 (List.hd args)))
-  | path, "log" when is_float32_path path ->
-      VFloat32 (F32.log (to_float32 (List.hd args)))
-  | path, "abs" when is_float32_path path ->
-      VFloat32 (F32.abs (to_float32 (List.hd args)))
-  | path, "floor" when is_float32_path path ->
-      VFloat32 (F32.floor (to_float32 (List.hd args)))
-  | path, "ceil" when is_float32_path path ->
-      VFloat32 (F32.ceil (to_float32 (List.hd args)))
-  | path, "pow" when is_float32_path path ->
-      VFloat32
-        (F32.pow (to_float32 (List.nth args 0)) (to_float32 (List.nth args 1)))
-  | path, "min" when is_float32_path path ->
-      VFloat32
-        (F32.min (to_float32 (List.nth args 0)) (to_float32 (List.nth args 1)))
-  | path, "max" when is_float32_path path ->
-      VFloat32
-        (F32.max (to_float32 (List.nth args 0)) (to_float32 (List.nth args 1)))
-  | path, "of_int" when is_float32_path path ->
-      VFloat32 (F32.of_int (to_int (List.hd args)))
-  (* Float64 intrinsics *)
-  | path, "sin" when is_float64_path path ->
-      VFloat64 (sin (to_float64 (List.hd args)))
-  | path, "cos" when is_float64_path path ->
-      VFloat64 (cos (to_float64 (List.hd args)))
-  | path, "sqrt" when is_float64_path path ->
-      VFloat64 (sqrt (to_float64 (List.hd args)))
-  | path, "exp" when is_float64_path path ->
-      VFloat64 (exp (to_float64 (List.hd args)))
-  | path, "log" when is_float64_path path ->
-      VFloat64 (log (to_float64 (List.hd args)))
-  | path, "abs" when is_float64_path path ->
-      VFloat64 (Float.abs (to_float64 (List.hd args)))
-  | path, "of_int" when is_float64_path path ->
-      VFloat64 (Float.of_int (to_int (List.hd args)))
-  (* Int32 intrinsics *)
-  | path, "abs" when is_int32_path path ->
-      VInt32 (Int32.abs (to_int32 (List.hd args)))
-  | path, "min" when is_int32_path path ->
-      VInt32 (min (to_int32 (List.nth args 0)) (to_int32 (List.nth args 1)))
-  | path, "max" when is_int32_path path ->
-      VInt32 (max (to_int32 (List.nth args 0)) (to_int32 (List.nth args 1)))
-  (* Type conversions *)
-  | path, "float" when is_gpu_path path ->
-      VFloat32 (F32.of_int (to_int (List.hd args)))
-  | path, "float64" when is_gpu_path path ->
-      VFloat64 (Float.of_int (to_int (List.hd args)))
-  | path, "int_of_float" when is_gpu_path path ->
-      VInt32 (Int32.of_float (to_float32 (List.hd args)))
-  | path, "int_of_float64" when is_gpu_path path ->
-      VInt32 (Int32.of_float (to_float64 (List.hd args)))
-  (* Unknown *)
-  | _ ->
-      let full = String.concat "." (path @ [name]) in
-      Interp_error.raise_error (Unknown_intrinsic {name = full})
+      Some VUnit
+  | _ -> None
+
+(** Float32 math intrinsics *)
+let eval_float32_math_intrinsic name args =
+  match name with
+  | "sin" -> Some (VFloat32 (F32.sin (to_float32 (List.hd args))))
+  | "cos" -> Some (VFloat32 (F32.cos (to_float32 (List.hd args))))
+  | "tan" -> Some (VFloat32 (F32.tan (to_float32 (List.hd args))))
+  | "sqrt" -> Some (VFloat32 (F32.sqrt (to_float32 (List.hd args))))
+  | "exp" -> Some (VFloat32 (F32.exp (to_float32 (List.hd args))))
+  | "log" -> Some (VFloat32 (F32.log (to_float32 (List.hd args))))
+  | "abs" -> Some (VFloat32 (F32.abs (to_float32 (List.hd args))))
+  | "floor" -> Some (VFloat32 (F32.floor (to_float32 (List.hd args))))
+  | "ceil" -> Some (VFloat32 (F32.ceil (to_float32 (List.hd args))))
+  | "pow" ->
+      Some
+        (VFloat32
+           (F32.pow (to_float32 (List.nth args 0)) (to_float32 (List.nth args 1))))
+  | "min" ->
+      Some
+        (VFloat32
+           (F32.min (to_float32 (List.nth args 0)) (to_float32 (List.nth args 1))))
+  | "max" ->
+      Some
+        (VFloat32
+           (F32.max (to_float32 (List.nth args 0)) (to_float32 (List.nth args 1))))
+  | "of_int" -> Some (VFloat32 (F32.of_int (to_int (List.hd args))))
+  | _ -> None
+
+(** Float64 math intrinsics *)
+let eval_float64_math_intrinsic name args =
+  match name with
+  | "sin" -> Some (VFloat64 (sin (to_float64 (List.hd args))))
+  | "cos" -> Some (VFloat64 (cos (to_float64 (List.hd args))))
+  | "sqrt" -> Some (VFloat64 (sqrt (to_float64 (List.hd args))))
+  | "exp" -> Some (VFloat64 (exp (to_float64 (List.hd args))))
+  | "log" -> Some (VFloat64 (log (to_float64 (List.hd args))))
+  | "abs" -> Some (VFloat64 (Float.abs (to_float64 (List.hd args))))
+  | "of_int" -> Some (VFloat64 (Float.of_int (to_int (List.hd args))))
+  | _ -> None
+
+(** Int32 math intrinsics *)
+let eval_int32_math_intrinsic name args =
+  match name with
+  | "abs" -> Some (VInt32 (Int32.abs (to_int32 (List.hd args))))
+  | "min" ->
+      Some (VInt32 (min (to_int32 (List.nth args 0)) (to_int32 (List.nth args 1))))
+  | "max" ->
+      Some (VInt32 (max (to_int32 (List.nth args 0)) (to_int32 (List.nth args 1))))
+  | _ -> None
+
+(** Type conversion intrinsics *)
+let eval_type_conversion_intrinsic name args =
+  match name with
+  | "float" -> Some (VFloat32 (F32.of_int (to_int (List.hd args))))
+  | "float64" -> Some (VFloat64 (Float.of_int (to_int (List.hd args))))
+  | "int_of_float" -> Some (VInt32 (Int32.of_float (to_float32 (List.hd args))))
+  | "int_of_float64" -> Some (VInt32 (Int32.of_float (to_float64 (List.hd args))))
+  | _ -> None
+
+(** Main intrinsic dispatcher - tries each category in order *)
+let rec eval_intrinsic state path name args =
+  (* Try GPU path intrinsics *)
+  if is_gpu_path path then
+    match eval_gpu_index_intrinsic state name with
+    | Some v -> v
+    | None -> (
+        match eval_barrier_intrinsic name with
+        | Some v -> v
+        | None -> (
+            match eval_type_conversion_intrinsic name args with
+            | Some v -> v
+            | None ->
+                (* Not a GPU intrinsic, fall through to type-specific *)
+                eval_intrinsic_by_type path name args))
+  else eval_intrinsic_by_type path name args
+
+(** Try type-specific intrinsics based on path *)
+and eval_intrinsic_by_type path name args =
+  if is_float32_path path then
+    match eval_float32_math_intrinsic name args with
+    | Some v -> v
+    | None ->
+        let full = String.concat "." (path @ [name]) in
+        Interp_error.raise_error (Unknown_intrinsic {name = full})
+  else if is_float64_path path then
+    match eval_float64_math_intrinsic name args with
+    | Some v -> v
+    | None ->
+        let full = String.concat "." (path @ [name]) in
+        Interp_error.raise_error (Unknown_intrinsic {name = full})
+  else if is_int32_path path then
+    match eval_int32_math_intrinsic name args with
+    | Some v -> v
+    | None ->
+        let full = String.concat "." (path @ [name]) in
+        Interp_error.raise_error (Unknown_intrinsic {name = full})
+  else
+    let full = String.concat "." (path @ [name]) in
+    Interp_error.raise_error (Unknown_intrinsic {name = full})
 
 (** {1 Expression Evaluation} *)
 
