@@ -29,4 +29,6 @@
   Kirc_error
   Fusion_error
   Sarek_value
-  Sarek_type_helpers))
+  Sarek_type_helpers)
+ (instrumentation
+  (backend bisect_ppx)))

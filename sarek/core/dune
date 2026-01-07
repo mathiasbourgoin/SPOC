@@ -25,4 +25,6 @@
   Profiling
   Error
   Advanced)
- (preprocess no_preprocessing))
+ (preprocess no_preprocessing)
+ (instrumentation
+  (backend bisect_ppx)))

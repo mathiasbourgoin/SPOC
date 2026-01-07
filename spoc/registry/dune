@@ -6,4 +6,6 @@
  (public_name spoc.registry)
  (libraries spoc_framework)
  (modules Sarek_registry)
- (preprocess no_preprocessing))
+ (preprocess no_preprocessing)
+ (instrumentation
+  (backend bisect_ppx)))

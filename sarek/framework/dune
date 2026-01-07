@@ -6,4 +6,6 @@
  (public_name sarek.framework.registry)
  (modules Framework_registry Intrinsic_registry Framework_cache)
  (libraries spoc_framework unix)
- (preprocess no_preprocessing))
+ (preprocess no_preprocessing)
+ (instrumentation
+  (backend bisect_ppx)))

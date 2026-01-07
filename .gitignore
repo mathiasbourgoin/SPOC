@@ -13,3 +13,4 @@ dune-project
 *.install
 kirc_kernel*.cl
 AGENTS.md
+_coverage/
