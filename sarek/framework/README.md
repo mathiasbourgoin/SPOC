@@ -2,7 +2,6 @@
 
 **Package**: `sarek.framework`  
 **Library**: `sarek.framework.registry`  
-**Status**: Production-ready  
 **Test Coverage**: 48% (framework) | 89-96% (tests)  
 **Lines of Code**: 328 (core) + 476 (tests)
 

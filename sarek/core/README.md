@@ -5,7 +5,7 @@ The `sarek/core` package provides the foundational runtime abstractions for Sare
 **Key responsibilities:**
 - Device enumeration and abstraction across backends
 - Type-safe vector storage with location tracking (CPU/GPU)
-- Memory buffer management with zero-copy optimization
+- Memory buffer management with zero-copy for CPU backends
 - Explicit and automatic data transfer control
 - Unified logging and error handling
 
@@ -119,7 +119,7 @@ module type Vector.DEVICE_BUFFER = sig
 end
 ```
 
-Zero-copy optimization automatically used for CPU backends.
+Zero-copy used for CPU backends when possible.
 
 ## Module Overview
 
@@ -282,7 +282,7 @@ val to_device : (module BUFFER) -> ('a, 'b) Vector.t -> unit
 val from_device : (module BUFFER) -> ('a, 'b) Vector.t -> unit
 ```
 
-Zero-copy automatically used when:
+Zero-copy used when:
 - Device is CPU-type (OpenCL CPU, Native)
 - Backend supports `alloc_zero_copy`
 - Vector uses Bigarray storage

@@ -2,11 +2,10 @@
 
 **Package**: `sarek-cuda`  
 **Library**: `sarek-cuda.plugin`  
-**Status**: Production-ready  
-**Test Coverage**: 19 unit tests (100% passing)  
+**Tests**: 19 unit tests  
 **Lines of Code**: 3,183 (core) + 415 (tests)
 
-The CUDA backend plugin enables SPOC/Sarek to compile and execute GPU kernels on NVIDIA GPUs using the CUDA runtime and NVRTC (NV Runtime Compilation) library. It provides pure OCaml bindings to CUDA via ctypes-foreign, requiring no C stubs.
+The CUDA backend plugin enables SPOC/Sarek to compile and execute GPU kernels on NVIDIA GPUs using the CUDA runtime and NVRTC (NV Runtime Compilation) library. Uses ctypes-foreign for FFI bindings.
 
 ## Table of Contents
 
@@ -58,10 +57,10 @@ The CUDA backend is one of five GPU backends supported by SPOC/Sarek. It transla
 
 ### Key Features
 
-- **Pure OCaml**: No C stubs required - uses `ctypes-foreign` for FFI
-- **JIT Compilation**: Runtime compilation via NVRTC for optimal code generation
+- **Pure OCaml**: Uses `ctypes-foreign` for FFI
+- **JIT Compilation**: Runtime compilation via NVRTC
 - **Type Safety**: GADTs for typed values, structured error types
-- **Full CUDA Support**: All major CUDA features (shared memory, atomics, barriers, etc.)
+- **CUDA Features**: Shared memory, atomics, barriers, synchronization
 - **57 Intrinsics**: Thread IDs, math functions, atomics, memory fences
 - **Error Handling**: Structured errors with context (not failwith)
 - **Debug Logging**: Controlled via `SAREK_DEBUG` environment variable
@@ -103,7 +102,7 @@ The CUDA backend auto-registers with the framework at library load time:
 (* From Cuda_plugin.ml *)
 let () =
   Framework_registry.register_backend
-    ~priority:100  (* Highest priority - preferred when available *)
+    ~priority:100  (* Default priority for CUDA backend *)
     (module Plugin : Framework_sig.BACKEND)
 ```
 
@@ -447,15 +446,15 @@ end
 
 **Priority System**:
 ```ocaml
-(* CUDA gets highest priority (100) when available *)
+(* Backend priority affects selection order *)
 let () = Framework_registry.register_backend ~priority:100 (module Plugin)
 
-(* Priority hierarchy:
-   - CUDA: 100 (best performance, most features)
-   - OpenCL: 80 (portable, good performance)
-   - Vulkan: 70 (compute shaders, good graphics integration)
-   - Native: 50 (CPU fallback, always available)
-   - Interpreter: 30 (debugging, slowest)
+(* Priority values used by backends:
+   - CUDA: 100
+   - OpenCL: 80
+   - Vulkan: 70
+   - Native: 50 (CPU fallback)
+   - Interpreter: 30
 *)
 ```
 
@@ -1259,7 +1258,7 @@ type device_ptr = Obj.t
 
 ### 2. Pure OCaml
 
-**No C stubs** - Uses `ctypes-foreign` for FFI:
+Uses `ctypes-foreign` for FFI:
 ```ocaml
 (* Foreign function binding *)
 let cuDeviceGet = 
@@ -1303,7 +1302,7 @@ failwith "unknown intrinsic: foo"
 
 ### Memory Coalescing
 
-For best performance, access global memory in coalesced patterns:
+Access global memory in coalesced patterns when possible:
 
 ```ocaml
 (* Good: Coalesced access *)

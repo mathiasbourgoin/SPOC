@@ -32,7 +32,7 @@ User Code ([%kernel ...])
 
 ### Complex Types
 
-Sarek supports rich data types that work seamlessly in both GPU and CPU code:
+Sarek supports rich data types in both GPU and CPU code:
 
 ```ocaml
 (* Custom record types with [@sarek.type] attribute *)
@@ -182,7 +182,7 @@ Each kernel gets its own monomorphized version of `do_transpose`.
 
 ```ocaml
 let%kernel factorial output n =
-  (* Tail-recursive helper - automatically converted to loop *)
+  (* Tail-recursive helper - converted to loop *)
   let rec fact_aux (acc : int32) (n : int32) : int32 =
     if n <= 1l then acc
     else fact_aux (acc * n) (n - 1l)
@@ -269,7 +269,7 @@ let%kernel bad input output =
 
 ### 2. Convergence Analysis
 
-**Automatic barrier safety** prevents deadlocks and race conditions:
+Barrier safety analysis detects divergent control flow:
 
 ```ocaml
 (* ✓ OK: Barrier in converged control flow *)
@@ -411,13 +411,13 @@ The PPX generates **[Sarek IR](../../spoc/ir/)** which is independent of any spe
 - Native CPU: Generate pure OCaml for debugging and portability
 - Interpreter: Direct IR evaluation for testing
 
-### 3. Zero Annotations
-Type inference means you don't need type annotations:
+### 3. Type Inference
+Type inference reduces the need for explicit annotations:
 ```ocaml
 let%kernel infer a b c =
   let gid = Std.global_idx_x in
   c.(gid) <- a.(gid) + b.(gid)
-  (* All types inferred from vector operations *)
+  (* Types inferred from vector operations *)
 ```
 
 ### 4. OCaml Semantics

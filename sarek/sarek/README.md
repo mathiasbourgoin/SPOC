@@ -99,10 +99,10 @@ Execute.run vector_add ~device:cpu_device ~block ~grid args
 ```
 
 **Characteristics:**
-- Zero runtime compilation overhead
+- No runtime compilation
 - Uses OCaml 5 Effects for BSP barrier synchronization
-- Full type safety - OCaml type checker validates kernel
-- Best for CPU-only systems, testing, or CI/CD
+- Type checked by OCaml compiler
+- Useful for CPU-only systems, testing, or CI/CD
 - Performance: ~80% of hand-written CPU code
 
 ### 3. Custom (Interpreter)
@@ -645,7 +645,7 @@ make benchmarks
 ### Optimization Tips
 
 1. **Minimize transfers**: Keep data on device as long as possible
-2. **Use shared memory**: Dramatically faster than global memory for block-local data
+2. **Use shared memory**: Much faster than global memory for block-local data
 3. **Coalesce accesses**: Access memory in contiguous patterns
 4. **Occupancy**: Use enough threads to hide latency (typically 128-512 per block)
 5. **Kernel fusion**: Let the runtime fuse adjacent kernels automatically

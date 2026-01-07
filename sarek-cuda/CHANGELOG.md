@@ -140,8 +140,8 @@ Total: 19 tests, 100% passing (0.002s)
 ### Lines of Code
 | Component | Lines | Purpose |
 |-----------|-------|---------|
-| Core modules | 3,183 | Production code |
-| Cuda_error.ml | 169 | New error handling |
+| Core modules | 3,183 | CUDA backend implementation |
+| Cuda_error.ml | 169 | Error handling |
 | Tests | 415 | Unit test suite |
 | README.md | 1,040 | Documentation |
 | **Total added** | **1,624** | **New code** |
