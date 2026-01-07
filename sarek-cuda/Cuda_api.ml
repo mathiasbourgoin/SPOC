@@ -37,6 +37,9 @@ module Device = struct
 
   let initialized = ref false
 
+  (* Device cache - reuse the same device/context to keep kernel handles valid *)
+  let device_cache : (int, t) Hashtbl.t = Hashtbl.create 4
+
   let init () =
     if not !initialized then begin
       check "cuInit" (cuInit 0) ;
@@ -56,7 +59,8 @@ module Device = struct
       (cuDeviceGetAttribute v (int_of_device_attribute attr) dev) ;
     !@v
 
-  let get idx =
+  (* Create a new device with context - internal, use get for cached version *)
+  let create_device idx =
     init () ;
     let dev = allocate cu_device 0 in
     check "cuDeviceGet" (cuDeviceGet dev idx) ;
@@ -136,6 +140,15 @@ module Device = struct
       minor
       (Int64.div total_mem (Int64.of_int (1024 * 1024))) ;
     dev
+
+  (* Get a device, reusing cached context to keep kernel handles valid *)
+  let get idx =
+    match Hashtbl.find_opt device_cache idx with
+    | Some dev -> dev
+    | None ->
+        let dev = create_device idx in
+        Hashtbl.add device_cache idx dev ;
+        dev
 
   let set_current dev = check "cuCtxSetCurrent" (cuCtxSetCurrent dev.context)
 
