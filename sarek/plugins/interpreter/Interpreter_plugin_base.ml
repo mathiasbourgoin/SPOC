@@ -9,6 +9,8 @@
  * - Interpreter walks the IR tree at runtime (slower, but no compilation)
  ******************************************************************************)
 
+[@@@warning "-21"]
+
 open Spoc_framework
 
 (** Registry for interpreter kernels. Maps kernel name to IR for interpretation.
@@ -188,7 +190,7 @@ end = struct
 
     let get idx =
       if idx < 0 || idx >= Array.length !devices then
-        failwith (Printf.sprintf "Interpreter.Device.get: invalid index %d" idx)
+        Interpreter_error.(raise_error (device_not_found idx (Array.length !devices)))
       else !devices.(idx)
 
     let id d = d.id
@@ -296,7 +298,9 @@ end = struct
             size;
             device;
           }
-      | _ -> failwith "Unsupported Bigarray kind"
+      | _ ->
+          Interpreter_error.(
+            raise_error (unsupported_construct "bigarray kind" "unknown kind"))
 
     let alloc_custom : type a. Device.t -> size:int -> elem_size:int -> a buffer
         =
@@ -307,8 +311,14 @@ end = struct
       let custom =
         {
           Spoc_core.Vector_types.elem_size;
-          get = (fun _ _ -> failwith "alloc_custom: get not implemented");
-          set = (fun _ _ _ -> failwith "alloc_custom: set not implemented");
+          get =
+            (fun _ _ ->
+              Interpreter_error.(
+                raise_error (feature_not_supported "custom type get accessor")));
+          set =
+            (fun _ _ _ ->
+              Interpreter_error.(
+                raise_error (feature_not_supported "custom type set accessor")));
           name = "custom";
         }
       in
@@ -375,7 +385,9 @@ end = struct
               size;
               device;
             }
-      | _ -> failwith "Unsupported Bigarray kind"
+      | _ ->
+          Interpreter_error.(
+            raise_error (unsupported_construct "bigarray kind" "unknown kind"))
 
     let is_zero_copy : type a. a buffer -> bool =
      fun buf ->
@@ -528,9 +540,13 @@ end = struct
 
         let device_ptr () = Memory.device_ptr buf
 
-        let get _i = failwith "Interpreter buffer: get not implemented"
+        let get _i =
+          Interpreter_error.(
+            raise_error (feature_not_supported "buffer element get accessor"))
 
-        let set _i _v = failwith "Interpreter buffer: set not implemented"
+        let set _i _v =
+          Interpreter_error.(
+            raise_error (feature_not_supported "buffer element set accessor"))
       end in
       args.list <- Framework_sig.EA_Vec (module EV) :: args.list
 
@@ -547,7 +563,7 @@ end = struct
       args.list <- Framework_sig.EA_Float64 v :: args.list
 
     let set_arg_ptr _args _idx _ptr =
-      failwith "Interpreter backend does not support raw pointer arguments"
+      Interpreter_error.(raise_error (feature_not_supported "raw pointer arguments"))
 
     let launch kernel ~args ~(grid : Framework_sig.dims)
         ~(block : Framework_sig.dims) ~shared_mem:_ ~stream:_ =
@@ -625,7 +641,9 @@ end = struct
                     ( name,
                       Sarek.Sarek_ir_interp.ArgScalar
                         (Sarek.Sarek_ir_interp.VFloat64 f) )
-                | _ -> failwith "Interpreter: unsupported exec_arg type")
+                | _ -> Interpreter_error.(
+                      raise_error
+                        (unsupported_construct "exec_arg" "unsupported type")))
               arg_list
           in
           Sarek.Sarek_ir_interp.run_kernel
@@ -634,10 +652,10 @@ end = struct
             ~grid:(grid.x, grid.y, grid.z)
             param_args
       | None ->
-          failwith
-            (Printf.sprintf
-               "Interpreter.Kernel.launch: kernel '%s' not registered"
-               kernel.name)
+          Interpreter_error.(
+            raise_error
+              (compilation_failed kernel.name
+                 (Printf.sprintf "kernel '%s' not registered" kernel.name)))
 
     let clear_cache () = Hashtbl.clear interpreter_kernels
   end

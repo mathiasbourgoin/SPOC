@@ -88,7 +88,8 @@ module Backend : Framework_sig.BACKEND = struct
             Spoc_core.Kernel_arg.Vec (Obj.magic vec_obj)
         | Framework_sig.EA_Scalar _ | Framework_sig.EA_Composite _ ->
             (* Custom scalars/composites not yet supported by Kernel_arg.t *)
-            failwith "Interpreter: custom types not yet supported")
+            Interpreter_error.(
+              raise_error (feature_not_supported "custom types in exec_arg")))
 
   (** Execute directly by interpreting the IR. Interpreter always interprets,
       ignoring native_fn (use Native backend for compiled execution). Uses
@@ -121,8 +122,8 @@ module Backend : Framework_sig.BACKEND = struct
           ~grid:(grid.x, grid.y, grid.z)
           kargs
     | None ->
-        failwith
-          "Interpreter backend execute_direct: IR required for interpretation"
+        Interpreter_error.(
+          raise_error (compilation_failed "" "kernel IR required"))
 
   module Intrinsics = Interpreter_intrinsics
 
@@ -142,11 +143,7 @@ module Backend : Framework_sig.BACKEND = struct
       | Framework_sig.SPIR_V -> "SPIR-V"
       | Framework_sig.GLSL_Source -> "GLSL source"
     in
-    failwith
-      (Printf.sprintf
-         "Interpreter backend cannot execute external %s kernels. Use CUDA or \
-          OpenCL backend instead."
-         lang_str)
+    Interpreter_error.(raise_error (unsupported_source_lang lang_str))
 
   let wrap_kargs args = Interpreter_kargs args
 
