@@ -285,8 +285,26 @@ let is_int32_path = function
 
 (** {1 Intrinsic Evaluation Helpers}
     
-    Split from eval_intrinsic for better maintainability and testability.
-    Each helper handles a specific category of intrinsics. *)
+    These helper functions handle specific categories of GPU intrinsics.
+    Split from a monolithic eval_intrinsic for better maintainability and testability.
+    Each helper returns Option to enable clean dispatch logic. *)
+
+(** Evaluate GPU thread/block/grid index and dimension intrinsics.
+    
+    Handles the complete GPU execution model intrinsics:
+    - Thread indices: Position of thread within its block (0 to block_dim-1)
+    - Block indices: Position of block within grid (0 to grid_dim-1)
+    - Dimensions: Size of blocks and grid
+    - Global indices: Thread's global position across entire grid
+    - Global sizes: Total number of threads in each dimension
+    
+    @param state Thread execution state containing all index/dimension values
+    @param name Intrinsic name (e.g. "thread_idx_x", "global_size_y")
+    @return Some value if intrinsic matches, None otherwise
+    
+    Example:
+      eval_gpu_index_intrinsic state "global_idx_x"
+      (* Returns: VInt32 (block_idx_x * block_dim_x + thread_idx_x) *) *)
 
 (** GPU thread/block/grid indices and dimensions *)
 let eval_gpu_index_intrinsic state name =
