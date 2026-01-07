@@ -349,10 +349,13 @@ module Kernel = struct
       cache ;
     Hashtbl.clear cache
 
+  (** Existential wrapper for keeping Ctypes-allocated values alive during FFI calls *)
+  type ctype_ref = CTypeRef : 'a typ * 'a ptr -> ctype_ref
+
   let launch kernel ~args ~grid ~block ~shared_mem ~stream =
     (* Build parameter array *)
     let params = CArray.make (ptr void) (List.length args) in
-    let refs = ref [] in
+    let refs : ctype_ref list ref = ref [] in
     (* Keep references alive *)
 
     List.iteri
@@ -361,27 +364,27 @@ module Kernel = struct
           match arg with
           | ArgBuffer buf ->
               let v = allocate cu_deviceptr buf.Memory.ptr in
-              refs := Obj.repr v :: !refs ;
+              refs := CTypeRef (cu_deviceptr, v) :: !refs ;
               to_voidp v
           | ArgInt32 n ->
               let v = allocate int32_t n in
-              refs := Obj.repr v :: !refs ;
+              refs := CTypeRef (int32_t, v) :: !refs ;
               to_voidp v
           | ArgInt64 n ->
               let v = allocate int64_t n in
-              refs := Obj.repr v :: !refs ;
+              refs := CTypeRef (int64_t, v) :: !refs ;
               to_voidp v
           | ArgFloat32 f ->
               let v = allocate float f in
-              refs := Obj.repr v :: !refs ;
+              refs := CTypeRef (float, v) :: !refs ;
               to_voidp v
           | ArgFloat64 f ->
               let v = allocate double f in
-              refs := Obj.repr v :: !refs ;
+              refs := CTypeRef (double, v) :: !refs ;
               to_voidp v
           | ArgPtr p ->
               let v = allocate nativeint p in
-              refs := Obj.repr v :: !refs ;
+              refs := CTypeRef (nativeint, v) :: !refs ;
               to_voidp v
         in
         CArray.set params i ptr)
