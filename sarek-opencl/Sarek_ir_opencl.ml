@@ -14,6 +14,17 @@
 open Sarek_ir_types
 open Spoc_core
 
+(** {1 Constants} *)
+
+(** Buffer size for small temporary string buffers *)
+let small_buffer_size = 64
+
+(** Buffer size for large code generation buffers *)
+let large_buffer_size = 4096
+
+(** Format float with full precision (17 digits for double precision) *)
+let format_float f = Printf.sprintf "%.17g" f
+
 (** Current device for SNative code generation (set during generate_for_device)
 *)
 let current_device : Device.t option ref = ref None
@@ -81,13 +92,13 @@ let rec gen_expr buf = function
   | EConst (CInt32 n) -> Buffer.add_string buf (Int32.to_string n)
   | EConst (CInt64 n) -> Buffer.add_string buf (Int64.to_string n ^ "L")
   | EConst (CFloat32 f) ->
-      let s = Printf.sprintf "%.17g" f in
+      let s = format_float f in
       (* Ensure decimal point for OpenCL compatibility *)
       let s =
         if String.contains s '.' || String.contains s 'e' then s else s ^ ".0"
       in
       Buffer.add_string buf (s ^ "f")
-  | EConst (CFloat64 f) -> Buffer.add_string buf (Printf.sprintf "%.17g" f)
+  | EConst (CFloat64 f) -> Buffer.add_string buf (format_float f)
   | EConst (CBool true) -> Buffer.add_string buf "1"
   | EConst (CBool false) -> Buffer.add_string buf "0"
   | EConst CUnit -> Buffer.add_string buf "(void)0"
@@ -373,24 +384,21 @@ and gen_intrinsic buf path name args =
               if num_placeholders = 0 then
                 (* Plain function/cast like "(float)" -> call as function *)
                 template ^ "(" ^ String.concat ", " arg_strs ^ ")"
-              else if num_placeholders = 1 && List.length arg_strs = 1 then
-                Printf.sprintf
-                  (Scanf.format_from_string template "%s")
-                  (List.hd arg_strs)
-              else if num_placeholders = 2 && List.length arg_strs = 2 then
-                Printf.sprintf
-                  (Scanf.format_from_string template "%s%s")
-                  (List.nth arg_strs 0)
-                  (List.nth arg_strs 1)
-              else if num_placeholders = 3 && List.length arg_strs = 3 then
-                Printf.sprintf
-                  (Scanf.format_from_string template "%s%s%s")
-                  (List.nth arg_strs 0)
-                  (List.nth arg_strs 1)
-                  (List.nth arg_strs 2)
               else
-                (* Fallback: treat as function call *)
-                template ^ "(" ^ String.concat ", " arg_strs ^ ")"
+                match (num_placeholders, arg_strs) with
+                | 1, [arg1] ->
+                    Printf.sprintf (Scanf.format_from_string template "%s") arg1
+                | 2, [arg1; arg2] ->
+                    Printf.sprintf
+                      (Scanf.format_from_string template "%s%s")
+                      arg1 arg2
+                | 3, [arg1; arg2; arg3] ->
+                    Printf.sprintf
+                      (Scanf.format_from_string template "%s%s%s")
+                      arg1 arg2 arg3
+                | _ ->
+                    (* Fallback: treat as function call *)
+                    template ^ "(" ^ String.concat ", " arg_strs ^ ")"
             in
             Buffer.add_string buf result
         | None ->
@@ -483,64 +491,15 @@ let rec gen_stmt buf indent = function
       Buffer.add_string buf "}\n"
   | SMatch (e, cases) ->
       (* Generate scrutinee into a temp buffer to get its string representation *)
-      let scrutinee_buf = Buffer.create 64 in
+      let scrutinee_buf = Buffer.create small_buffer_size in
       gen_expr scrutinee_buf e ;
       let scrutinee = Buffer.contents scrutinee_buf in
-      (* Lookup constructor types from the first PConstr case *)
-      let find_constr_types cname =
-        List.find_map
-          (fun (_vname, constrs) ->
-            List.find_map
-              (fun (cn, args) -> if cn = cname then Some args else None)
-              constrs)
-          !current_variants
-      in
       Buffer.add_string buf indent ;
       Buffer.add_string buf "switch (" ;
       Buffer.add_string buf scrutinee ;
       Buffer.add_string buf ".tag) {\n" ;
       List.iter
-        (fun (pattern, body) ->
-          Buffer.add_string buf indent ;
-          (match pattern with
-          | PConstr (cname, bindings) -> (
-              Buffer.add_string buf ("  case " ^ cname ^ ": {\n") ;
-              (* Generate bindings: extract payload from scrutinee *)
-              match (bindings, find_constr_types cname) with
-              | [var_name], Some [ty] ->
-                  (* Single payload: access data.Constructor_v *)
-                  Buffer.add_string buf (indent ^ "    ") ;
-                  Buffer.add_string buf (opencl_type_of_elttype ty) ;
-                  Buffer.add_string buf " " ;
-                  Buffer.add_string buf var_name ;
-                  Buffer.add_string buf " = " ;
-                  Buffer.add_string buf scrutinee ;
-                  Buffer.add_string buf ".data." ;
-                  Buffer.add_string buf cname ;
-                  Buffer.add_string buf "_v;\n"
-              | vars, Some types when List.length vars = List.length types ->
-                  (* Multiple payloads: access data.Constructor_v._0, ._1, etc. *)
-                  List.iteri
-                    (fun i (var_name, ty) ->
-                      Buffer.add_string buf (indent ^ "    ") ;
-                      Buffer.add_string buf (opencl_type_of_elttype ty) ;
-                      Buffer.add_string buf " " ;
-                      Buffer.add_string buf var_name ;
-                      Buffer.add_string buf " = " ;
-                      Buffer.add_string buf scrutinee ;
-                      Buffer.add_string buf ".data." ;
-                      Buffer.add_string buf cname ;
-                      Buffer.add_string buf (Printf.sprintf "_v._%d;\n" i))
-                    (List.combine vars types)
-              | [], _ | _, None | _, Some [] -> () (* No bindings needed *)
-              | _ ->
-                  Opencl_error.raise_error
-                    (Opencl_error.type_error "pattern match"
-                       "matching bindings" "mismatched constructor args"))
-          | PWild -> Buffer.add_string buf "  default: {\n") ;
-          gen_stmt buf (indent ^ "    ") body ;
-          Buffer.add_string buf (indent ^ "    break;\n") ;
-          Buffer.add_string buf (indent ^ "  }\n"))
+        (fun (pattern, body) -> gen_match_case buf indent scrutinee pattern body)
         cases ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
@@ -576,16 +535,7 @@ let rec gen_stmt buf indent = function
       gen_expr buf e ;
       Buffer.add_string buf ";\n"
   | SLet (v, EArrayCreate (elem_ty, size, mem), body) ->
-      (* Array declaration: type arr[size]; *)
-      Buffer.add_string buf indent ;
-      (match mem with Shared -> Buffer.add_string buf "__local " | _ -> ()) ;
-      Buffer.add_string buf (opencl_type_of_elttype elem_ty) ;
-      Buffer.add_char buf ' ' ;
-      Buffer.add_string buf v.var_name ;
-      Buffer.add_char buf '[' ;
-      gen_expr buf size ;
-      Buffer.add_string buf "];\n" ;
-      gen_stmt buf indent body
+      gen_array_decl buf indent v elem_ty size mem body
   | SLet (v, e, body) ->
       Buffer.add_string buf indent ;
       Buffer.add_string buf (opencl_type_of_elttype v.var_type) ;
@@ -617,6 +567,69 @@ let rec gen_stmt buf indent = function
       gen_stmt buf (indent ^ "  ") body ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
+
+(** Generate a pattern match case (extracted helper) *)
+and gen_match_case buf indent scrutinee pattern body =
+  let find_constr_types cname =
+    List.find_map
+      (fun (_vname, constrs) ->
+        List.find_map
+          (fun (cn, args) -> if cn = cname then Some args else None)
+          constrs)
+      !current_variants
+  in
+  Buffer.add_string buf indent ;
+  (match pattern with
+  | PConstr (cname, bindings) -> (
+      Buffer.add_string buf ("  case " ^ cname ^ ": {\n") ;
+      (* Generate bindings: extract payload from scrutinee *)
+      match (bindings, find_constr_types cname) with
+      | [var_name], Some [ty] ->
+          (* Single payload: access data.Constructor_v *)
+          Buffer.add_string buf (indent ^ "    ") ;
+          Buffer.add_string buf (opencl_type_of_elttype ty) ;
+          Buffer.add_string buf " " ;
+          Buffer.add_string buf var_name ;
+          Buffer.add_string buf " = " ;
+          Buffer.add_string buf scrutinee ;
+          Buffer.add_string buf ".data." ;
+          Buffer.add_string buf cname ;
+          Buffer.add_string buf "_v;\n"
+      | vars, Some types when List.length vars = List.length types ->
+          (* Multiple payloads: access data.Constructor_v._0, ._1, etc. *)
+          List.iteri
+            (fun i (var_name, ty) ->
+              Buffer.add_string buf (indent ^ "    ") ;
+              Buffer.add_string buf (opencl_type_of_elttype ty) ;
+              Buffer.add_string buf " " ;
+              Buffer.add_string buf var_name ;
+              Buffer.add_string buf " = " ;
+              Buffer.add_string buf scrutinee ;
+              Buffer.add_string buf ".data." ;
+              Buffer.add_string buf cname ;
+              Buffer.add_string buf (Printf.sprintf "_v._%d;\n" i))
+            (List.combine vars types)
+      | [], _ | _, None | _, Some [] -> () (* No bindings needed *)
+      | _ ->
+          Opencl_error.raise_error
+            (Opencl_error.type_error "pattern match" "matching bindings"
+               "mismatched constructor args"))
+  | PWild -> Buffer.add_string buf "  default: {\n") ;
+  gen_stmt buf (indent ^ "    ") body ;
+  Buffer.add_string buf (indent ^ "    break;\n") ;
+  Buffer.add_string buf (indent ^ "  }\n")
+
+(** Generate array declaration with optional __local qualifier (extracted helper) *)
+and gen_array_decl buf indent v elem_ty size mem body =
+  Buffer.add_string buf indent ;
+  (match mem with Shared -> Buffer.add_string buf "__local " | _ -> ()) ;
+  Buffer.add_string buf (opencl_type_of_elttype elem_ty) ;
+  Buffer.add_char buf ' ' ;
+  Buffer.add_string buf v.var_name ;
+  Buffer.add_char buf '[' ;
+  gen_expr buf size ;
+  Buffer.add_string buf "];\n" ;
+  gen_stmt buf indent body
 
 (** {1 Declaration Generation} *)
 
@@ -709,7 +722,7 @@ let gen_helper_func buf (hf : helper_func) =
 
 (** Generate complete OpenCL source for a kernel *)
 let generate (k : kernel) : string =
-  let buf = Buffer.create 4096 in
+  let buf = Buffer.create large_buffer_size in
 
   (* Generate helper functions before kernel *)
   List.iter (gen_helper_func buf) k.kern_funcs ;
@@ -825,7 +838,7 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
     (k : kernel) : string =
   (* Set current_variants for SMatch binding extraction *)
   current_variants := k.kern_variants ;
-  let buf = Buffer.create 4096 in
+  let buf = Buffer.create large_buffer_size in
 
   (* Variant type definitions first (may be needed by records) *)
   List.iter (gen_variant_def buf) k.kern_variants ;
