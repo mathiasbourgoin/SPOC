@@ -231,31 +231,14 @@ module Backend : Framework_sig.BACKEND = struct
             (Typed_value.TV_Scalar
                (Typed_value.SV ((module Typed_value.Int64_type), n)))
         in
-        (* For custom types: use typed_value interface *)
+        (* For custom types: use underlying Vector.t with Obj.t *)
         let get_any i =
-          let tv = V.get i in
-          match tv with
-          | Typed_value.TV_Scalar (Typed_value.SV ((module S), x)) ->
-              (* Serialize scalar to Obj.t for native_arg interface *)
-              Obj.repr x
-          | Typed_value.TV_Composite (Typed_value.CV ((module C), x)) ->
-              (* Serialize composite to Obj.t for native_arg interface *)
-              Obj.repr x
+          let vec = Obj.obj (V.internal_get_vector_obj ()) in
+          Obj.repr (Spoc_core.Vector.get vec i)
         in
         let set_any i v =
-          (* This is trickier - we need to know the type to deserialize from Obj.t
-             For now, try to infer from the vector's type_name and use get/modify pattern *)
-          let current_tv = V.get i in
-          match current_tv with
-          | Typed_value.TV_Scalar (Typed_value.SV ((module S), _)) ->
-              (* Cast v to the scalar type - unsafe but unavoidable for custom types *)
-              let x : S.t = Obj.obj v in
-              V.set i (Typed_value.TV_Scalar (Typed_value.SV ((module S), x)))
-          | Typed_value.TV_Composite (Typed_value.CV ((module C), _)) ->
-              let x : C.t = Obj.obj v in
-              V.set
-                i
-                (Typed_value.TV_Composite (Typed_value.CV ((module C), x)))
+          let vec = Obj.obj (V.internal_get_vector_obj ()) in
+          Spoc_core.Vector.kernel_set vec i (Obj.obj v)
         in
         let get_vec () = V.internal_get_vector_obj () in
         Sarek_ir_types.NA_Vec
