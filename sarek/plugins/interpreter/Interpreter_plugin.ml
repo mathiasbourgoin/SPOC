@@ -76,18 +76,18 @@ module Backend : Framework_sig.BACKEND = struct
       Spoc_core.Kernel_arg.t list =
     Array.to_list args
     |> List.map (fun arg ->
-           match arg with
-           | Framework_sig.EA_Int32 n -> Spoc_core.Kernel_arg.Int32 n
-           | Framework_sig.EA_Int64 n -> Spoc_core.Kernel_arg.Int64 n
-           | Framework_sig.EA_Float32 f -> Spoc_core.Kernel_arg.Float32 f
-           | Framework_sig.EA_Float64 f -> Spoc_core.Kernel_arg.Float64 f
-           | Framework_sig.EA_Vec (module V) ->
-               (* Use underlying_obj to get the Vector.t, then wrap in Vec GADT *)
-               let vec_obj = V.underlying_obj () in
-               Spoc_core.Kernel_arg.Vec (Obj.magic vec_obj)
-           | Framework_sig.EA_Scalar _ | Framework_sig.EA_Composite _ ->
-               (* Custom scalars/composites not yet supported by Kernel_arg.t *)
-               failwith "Interpreter: custom types not yet supported")
+        match arg with
+        | Framework_sig.EA_Int32 n -> Spoc_core.Kernel_arg.Int32 n
+        | Framework_sig.EA_Int64 n -> Spoc_core.Kernel_arg.Int64 n
+        | Framework_sig.EA_Float32 f -> Spoc_core.Kernel_arg.Float32 f
+        | Framework_sig.EA_Float64 f -> Spoc_core.Kernel_arg.Float64 f
+        | Framework_sig.EA_Vec (module V) ->
+            (* Use underlying_obj to get the Vector.t, then wrap in Vec GADT *)
+            let vec_obj = V.underlying_obj () in
+            Spoc_core.Kernel_arg.Vec (Obj.magic vec_obj)
+        | Framework_sig.EA_Scalar _ | Framework_sig.EA_Composite _ ->
+            (* Custom scalars/composites not yet supported by Kernel_arg.t *)
+            failwith "Interpreter: custom types not yet supported")
 
   (** Execute directly by interpreting the IR. Interpreter always interprets,
       ignoring native_fn (use Native backend for compiled execution). Uses

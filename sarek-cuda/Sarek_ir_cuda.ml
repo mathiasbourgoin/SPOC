@@ -137,11 +137,12 @@ let rec gen_expr buf = function
         args ;
       Buffer.add_char buf ')'
   | ERecord (name, fields) ->
+      (* CUDA doesn't support designated initializers in compound literals.
+         Use constructor-style initialization with positional values. *)
       Buffer.add_string buf ("(" ^ mangle_name name ^ "){") ;
       List.iteri
-        (fun i (f, e) ->
+        (fun i (_f, e) ->
           if i > 0 then Buffer.add_string buf ", " ;
-          Buffer.add_string buf ("." ^ f ^ " = ") ;
           gen_expr buf e)
         fields ;
       Buffer.add_string buf "}"
@@ -406,12 +407,27 @@ let rec gen_lvalue buf = function
 let rec gen_stmt buf indent = function
   | SEmpty -> ()
   | SSeq stmts -> List.iter (gen_stmt buf indent) stmts
-  | SAssign (lv, e) ->
-      Buffer.add_string buf indent ;
-      gen_lvalue buf lv ;
-      Buffer.add_string buf " = " ;
-      gen_expr buf e ;
-      Buffer.add_string buf ";\n"
+  | SAssign (lv, e) -> (
+      (* Special case: CUDA doesn't support compound literals in assignments.
+         For record assignments, generate field-by-field initialization. *)
+      match e with
+      | ERecord (_, fields) ->
+          List.iter
+            (fun (fname, fexpr) ->
+              Buffer.add_string buf indent ;
+              gen_lvalue buf lv ;
+              Buffer.add_char buf '.' ;
+              Buffer.add_string buf fname ;
+              Buffer.add_string buf " = " ;
+              gen_expr buf fexpr ;
+              Buffer.add_string buf ";\n")
+            fields
+      | _ ->
+          Buffer.add_string buf indent ;
+          gen_lvalue buf lv ;
+          Buffer.add_string buf " = " ;
+          gen_expr buf e ;
+          Buffer.add_string buf ";\n")
   | SIf (cond, then_, else_opt) -> (
       Buffer.add_string buf indent ;
       Buffer.add_string buf "if (" ;

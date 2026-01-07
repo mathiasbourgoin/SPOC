@@ -349,7 +349,8 @@ module Kernel = struct
       cache ;
     Hashtbl.clear cache
 
-  (** Existential wrapper for keeping Ctypes-allocated values alive during FFI calls *)
+  (** Existential wrapper for keeping Ctypes-allocated values alive during FFI
+      calls *)
   type ctype_ref = CTypeRef : 'a typ * 'a ptr -> ctype_ref
 
   let launch kernel ~args ~grid ~block ~shared_mem ~stream =
