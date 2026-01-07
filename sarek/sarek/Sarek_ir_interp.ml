@@ -1198,57 +1198,18 @@ let array_to_vector : type a b. value array -> (a, b) Spoc_core.Vector.t -> unit
       for i = 0 to len - 1 do
         match arr.(i) with
         | VRecord (type_name, _fields) as vrec -> (
-            (* Try using type-safe helpers first *)
+            (* All [@@sarek.type] records have helpers - this should always succeed *)
             match Sarek_type_helpers.lookup type_name with
             | Some h ->
                 (* Use generated helper for type-safe conversion *)
                 let native_record = h.from_value vrec in
                 Spoc_core.Vector.set vec i native_record
             | None ->
-                (* Fallback to Obj for types without helpers *)
-                let num_fields = Array.length _fields in
-                let all_floats =
-                  Array.for_all
-                    (function VFloat32 _ | VFloat64 _ -> true | _ -> false)
-                    _fields
-                in
-                if all_floats then begin
-                  (* Float record: use double array representation *)
-                  let record = Obj.new_block Obj.double_array_tag num_fields in
-                  for j = 0 to num_fields - 1 do
-                    match _fields.(j) with
-                    | VFloat32 f | VFloat64 f -> Obj.set_double_field record j f
-                    | _ -> ()
-                  done ;
-                  Spoc_core.Vector.set vec i (Obj.obj record)
-                end
-                else begin
-                  (* Mixed record: use regular block *)
-                  let record = Obj.new_block 0 num_fields in
-                  for j = 0 to num_fields - 1 do
-                    match _fields.(j) with
-                    | VFloat32 f | VFloat64 f ->
-                        Obj.set_field record j (Obj.repr f)
-                    | VInt32 n -> Obj.set_field record j (Obj.repr n)
-                    | VInt64 n -> Obj.set_field record j (Obj.repr n)
-                    | VBool b -> Obj.set_field record j (Obj.repr b)
-                    | VRecord (_, nested_fields) ->
-                        let nested =
-                          Obj.new_block 0 (Array.length nested_fields)
-                        in
-                        Array.iteri
-                          (fun k fv ->
-                            match fv with
-                            | VFloat32 v | VFloat64 v ->
-                                Obj.set_field nested k (Obj.repr v)
-                            | VInt32 v -> Obj.set_field nested k (Obj.repr v)
-                            | _ -> ())
-                          nested_fields ;
-                        Obj.set_field record j nested
-                    | _ -> ()
-                  done ;
-                  Spoc_core.Vector.set vec i (Obj.obj record)
-                end)
+                failwith
+                  (Printf.sprintf
+                     "No helper found for type '%s'. Did you forget \
+                      [@@sarek.type]?"
+                     type_name))
         | _ -> () (* Skip other values *)
       done
   | _ ->
