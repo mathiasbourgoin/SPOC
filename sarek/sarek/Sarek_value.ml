@@ -16,3 +16,15 @@ type value =
   | VArray of value array
   | VRecord of string * value array  (** type_name, fields *)
   | VVariant of string * int * value list  (** type, tag, args *)
+
+(** Get human-readable type name for a value *)
+let value_type_name = function
+  | VInt32 _ -> "int32"
+  | VInt64 _ -> "int64"
+  | VFloat32 _ -> "float32"
+  | VFloat64 _ -> "float64"
+  | VBool _ -> "bool"
+  | VUnit -> "unit"
+  | VArray _ -> "array"
+  | VRecord (name, _) -> name
+  | VVariant (name, _, _) -> name

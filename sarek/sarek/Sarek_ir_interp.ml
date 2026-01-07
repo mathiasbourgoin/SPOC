@@ -80,7 +80,9 @@ let lookup_var env (v : var) =
   | None -> (
       match Hashtbl.find_opt env.vars_by_name v.var_name with
       | Some value -> value
-      | None -> failwith ("eval_expr: unbound var " ^ v.var_name))
+      | None ->
+          Interp_error.raise_error
+            (Unbound_variable {name = v.var_name; context = "eval_expr"}))
 
 (** {1 Value Operations} *)
 
@@ -90,7 +92,14 @@ let to_int32 = function
   | VFloat32 f -> Int32.of_float f
   | VFloat64 f -> Int32.of_float f
   | VBool b -> if b then 1l else 0l
-  | _ -> failwith "to_int32: not a numeric value"
+  | v ->
+      Interp_error.raise_error
+        (Type_conversion_error
+           {
+             from_type = Sarek_value.value_type_name v;
+             to_type = "int32";
+             context = "to_int32";
+           })
 
 let to_int64 = function
   | VInt64 n -> n
@@ -98,7 +107,14 @@ let to_int64 = function
   | VFloat32 f -> Int64.of_float f
   | VFloat64 f -> Int64.of_float f
   | VBool b -> if b then 1L else 0L
-  | _ -> failwith "to_int64: not a numeric value"
+  | v ->
+      Interp_error.raise_error
+        (Type_conversion_error
+           {
+             from_type = Sarek_value.value_type_name v;
+             to_type = "int64";
+             context = "to_int64";
+           })
 
 let to_int v = Int32.to_int (to_int32 v)
 
@@ -107,14 +123,28 @@ let to_float32 = function
   | VFloat64 f -> F32.to_float32 f
   | VInt32 n -> F32.to_float32 (Int32.to_float n)
   | VInt64 n -> F32.to_float32 (Int64.to_float n)
-  | _ -> failwith "to_float32: not a numeric value"
+  | v ->
+      Interp_error.raise_error
+        (Type_conversion_error
+           {
+             from_type = Sarek_value.value_type_name v;
+             to_type = "float32";
+             context = "to_float32";
+           })
 
 let to_float64 = function
   | VFloat64 f -> f
   | VFloat32 f -> f
   | VInt32 n -> Int32.to_float n
   | VInt64 n -> Int64.to_float n
-  | _ -> failwith "to_float64: not a numeric value"
+  | v ->
+      Interp_error.raise_error
+        (Type_conversion_error
+           {
+             from_type = Sarek_value.value_type_name v;
+             to_type = "float64";
+             context = "to_float64";
+           })
 
 let to_bool = function
   | VBool b -> b
@@ -122,7 +152,14 @@ let to_bool = function
   | VInt64 n -> n <> 0L
   | VFloat32 f -> f <> 0.0
   | VFloat64 f -> f <> 0.0
-  | _ -> failwith "to_bool: not convertible to bool"
+  | v ->
+      Interp_error.raise_error
+        (Type_conversion_error
+           {
+             from_type = Sarek_value.value_type_name v;
+             to_type = "bool";
+             context = "to_bool";
+           })
 
 (** {1 Binary Operations} *)
 
@@ -401,7 +438,7 @@ let eval_intrinsic state path name args =
   (* Unknown *)
   | _ ->
       let full = String.concat "." (path @ [name]) in
-      failwith ("eval_intrinsic: unknown " ^ full)
+      Interp_error.raise_error (Unknown_intrinsic {name = full})
 
 (** {1 Expression Evaluation} *)
 
@@ -421,13 +458,17 @@ let rec eval_expr state env expr =
       let a = get_array env arr in
       let i = to_int (eval_expr state env idx) in
       if i < 0 || i >= Array.length a then
-        failwith (Printf.sprintf "Array %s index %d out of bounds" arr i)
+        Interp_error.raise_error
+          (Array_bounds_error
+             {array_name = arr; index = i; length = Array.length a})
       else a.(i)
   | EArrayReadExpr (base, idx) ->
       let a =
         match eval_expr state env base with
         | VArray arr -> arr
-        | _ -> failwith "EArrayReadExpr: base is not an array"
+        | _ ->
+            Interp_error.raise_error
+              (Not_an_array {expr = "EArrayReadExpr base"})
       in
       let i = to_int (eval_expr state env idx) in
       a.(i)
@@ -445,16 +486,22 @@ let rec eval_expr state env expr =
               let field_infos = Sarek_registry.record_fields type_name in
               let rec find_idx i = function
                 | [] ->
-                    failwith
-                      ("ERecordField: field " ^ field ^ " not found in "
-                     ^ type_name)
+                    Interp_error.raise_error
+                      (Pattern_match_failure
+                         {
+                           context =
+                             Printf.sprintf
+                               "Record field %s not found in %s"
+                               field
+                               type_name;
+                         })
                 | info :: rest ->
                     if info.Sarek_registry.field_name = field then i
                     else find_idx (i + 1) rest
               in
               let idx = find_idx 0 field_infos in
               fields.(idx))
-      | _ -> failwith "ERecordField: not a record")
+      | _ -> Interp_error.raise_error (Not_a_record {expr = "ERecordField"}))
   | EIntrinsic (path, name, args) ->
       let arg_vals = List.map (eval_expr state env) args in
       eval_intrinsic state path name arg_vals
@@ -506,7 +553,9 @@ let rec eval_expr state env expr =
         | _ -> 0
       in
       let rec find_case = function
-        | [] -> failwith "EMatch: no matching case"
+        | [] ->
+            Interp_error.raise_error
+              (Pattern_match_failure {context = "EMatch"})
         | (PConstr (name, _), body) :: rest ->
             if Hashtbl.hash name mod 256 = tag then body else find_case rest
         | (PWild, body) :: _ -> body
@@ -517,7 +566,8 @@ and get_array env name =
   try Hashtbl.find env.arrays name
   with Not_found -> (
     try Hashtbl.find env.shared name
-    with Not_found -> failwith ("get_array: unknown array " ^ name))
+    with Not_found ->
+      Interp_error.raise_error (Unbound_variable {name; context = "get_array"}))
 
 and eval_app state env fn_expr args =
   match fn_expr with
@@ -536,8 +586,14 @@ and eval_app state env fn_expr args =
             arg_vals ;
           (* Execute function body and get return value *)
           exec_stmt_for_return state local_env hf.hf_body
-      | None -> failwith ("eval_app: unknown function " ^ v.var_name))
-  | _ -> failwith "eval_app: unsupported function expression"
+      | None -> Interp_error.raise_error (Unknown_function {name = v.var_name}))
+  | _ ->
+      Interp_error.raise_error
+        (Unsupported_operation
+           {
+             operation = "function call";
+             reason = "unsupported function expression";
+           })
 
 (** {1 Statement Execution} *)
 
@@ -579,7 +635,9 @@ and exec_stmt state env stmt =
         | _ -> 0
       in
       let rec find_case = function
-        | [] -> failwith "SMatch: no matching case"
+        | [] ->
+            Interp_error.raise_error
+              (Pattern_match_failure {context = "SMatch"})
         | (PConstr (name, vars), body) :: rest ->
             if Hashtbl.hash name mod 256 = tag then begin
               (* Bind pattern variables by name *)
@@ -653,14 +711,21 @@ and assign_lvalue state env lv value =
       let a =
         match eval_expr state env base_expr with
         | VArray arr -> arr
-        | _ -> failwith "assign_lvalue: base is not an array"
+        | _ ->
+            Interp_error.raise_error
+              (Not_an_array {expr = "LArrayElemExpr base"})
       in
       let i = to_int (eval_expr state env idx_expr) in
       a.(i) <- value
   | LRecordField (base_lv, _field) ->
       (* Record field assignment is complex - simplified here *)
       ignore base_lv ;
-      failwith "assign_lvalue: record field assignment not fully supported"
+      Interp_error.raise_error
+        (Unsupported_operation
+           {
+             operation = "record field assignment";
+             reason = "not fully supported";
+           })
 
 and exec_stmt_for_return state env stmt =
   match stmt with
@@ -787,7 +852,8 @@ let run_block env body block_idx block_dim grid_dim =
       if Option.is_some waiting.(tid) then resume_thread tid
     done ;
     if !num_waiting = to_resume && !num_completed < num_threads then
-      failwith "BSP deadlock in interpreter"
+      Interp_error.raise_error
+        (BSP_deadlock {message = "no progress made in interpreter"})
   done
 
 (** Run all blocks in a grid (sequential) *)
@@ -1026,11 +1092,16 @@ let array_to_vector : type a b. value array -> (a, b) Spoc_core.Vector.t -> unit
                 let native_record = h.from_value vrec in
                 Spoc_core.Vector.set vec i native_record
             | None ->
-                failwith
-                  (Printf.sprintf
-                     "No helper found for type '%s'. Did you forget \
-                      [@@sarek.type]?"
-                     type_name))
+                Interp_error.raise_error
+                  (Unsupported_operation
+                     {
+                       operation = "vector_to_array";
+                       reason =
+                         Printf.sprintf
+                           "No helper found for type '%s'. Did you forget \
+                            [@@sarek.type]?"
+                           type_name;
+                     }))
         | _ -> () (* Skip other values *)
       done
   | _ ->
@@ -1066,8 +1137,13 @@ let args_from_kernel_args (k : kernel) (kargs : Spoc_core.Kernel_arg.t list) :
                   writebacks := Writeback (vec, arr) :: !writebacks ;
                   Some (v.var_name, ArgArray arr)
               | _ ->
-                  failwith
-                    ("Expected Vec for param " ^ v.var_name ^ " but got scalar")
+                  Interp_error.raise_error
+                    (Type_conversion_error
+                       {
+                         from_type = "scalar";
+                         to_type = "Vec";
+                         context = "param " ^ v.var_name;
+                       })
             end
         | DParam (v, None) ->
             (* Scalar parameter *)
@@ -1083,7 +1159,13 @@ let args_from_kernel_args (k : kernel) (kargs : Spoc_core.Kernel_arg.t list) :
                 | Spoc_core.Kernel_arg.Float32 f -> VFloat32 f
                 | Spoc_core.Kernel_arg.Float64 f -> VFloat64 f
                 | Spoc_core.Kernel_arg.Vec _ ->
-                    failwith ("Expected scalar for param " ^ v.var_name)
+                    Interp_error.raise_error
+                      (Type_conversion_error
+                         {
+                           from_type = "non-scalar";
+                           to_type = "scalar";
+                           context = "param " ^ v.var_name;
+                         })
               in
               Some (v.var_name, ArgScalar value)
             end

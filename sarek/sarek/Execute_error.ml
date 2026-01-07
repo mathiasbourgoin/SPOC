@@ -18,6 +18,7 @@ type error =
   | Transfer_failed of {vector : string; reason : string}
   | Interp_error of string
   | Invalid_file of {path : string; reason : string}
+  | Type_helper_not_found of {type_name : string; context : string}
 
 (** Exception wrapper for execution errors *)
 exception Execution_error of error
@@ -55,6 +56,11 @@ let error_to_string = function
   | Interp_error msg -> Printf.sprintf "Interpreter error: %s" msg
   | Invalid_file {path; reason} ->
       Printf.sprintf "Invalid file %s: %s" path reason
+  | Type_helper_not_found {type_name; context} ->
+      Printf.sprintf
+        "No type helper found for '%s' in %s. Did you forget [@@sarek.type]?"
+        type_name
+        context
 
 (** Raise an execution error *)
 let raise_error err = raise (Execution_error err)

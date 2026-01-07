@@ -50,7 +50,7 @@ let make_jit ~name ~ir ~param_types ?(extensions = [||]) () =
 let make_native ~name ~native_fn ~param_types () =
   {
     name;
-    ir = lazy (failwith "Native-only kernel has no IR");
+    ir = lazy (Kirc_error.raise_error (Kirc_error.No_ir {kernel_name = name}));
     native_fn = Some native_fn;
     param_types;
     extensions = [||];
@@ -71,7 +71,10 @@ let has_native k = Option.is_some k.native_fn
 let native_fn k =
   match k.native_fn with
   | Some fn -> fn
-  | None -> failwith ("Kernel " ^ k.name ^ " has no native function")
+  | None ->
+      Kirc_error.raise_error
+        (Kirc_error.No_native_function
+           {kernel_name = k.name; context = "native_fn accessor"})
 
 (** Get parameter types *)
 let param_types k = k.param_types
@@ -97,9 +100,22 @@ let exec_arg_to_native_arg (arg : Framework_sig.exec_arg) :
       | Typed_value.PInt64 n -> Sarek_ir_types.NA_Int64 n
       | Typed_value.PFloat f -> Sarek_ir_types.NA_Float32 f
       | Typed_value.PBool b -> Sarek_ir_types.NA_Int32 (if b then 1l else 0l)
-      | Typed_value.PBytes _ -> failwith "PBytes not supported in native_arg")
+      | Typed_value.PBytes _ ->
+          Kirc_error.raise_error
+            (Kirc_error.Unsupported_arg_type
+               {
+                 arg_type = "PBytes";
+                 reason = "not supported in native_arg";
+                 context = "exec_arg_to_native_arg";
+               }))
   | Framework_sig.EA_Composite _ ->
-      failwith "Composite types not yet supported in native execution"
+      Kirc_error.raise_error
+        (Kirc_error.Unsupported_arg_type
+           {
+             arg_type = "EA_Composite";
+             reason = "composite types not yet supported";
+             context = "exec_arg_to_native_arg";
+           })
   | Framework_sig.EA_Vec (module V) ->
       (* Create NA_Vec with typed accessors *)
       let get_as_f32 i =
@@ -108,8 +124,24 @@ let exec_arg_to_native_arg (arg : Framework_sig.exec_arg) :
             match S.to_primitive x with
             | Typed_value.PFloat f -> f
             | Typed_value.PInt32 n -> Int32.to_float n
-            | _ -> failwith "get_f32: incompatible type")
-        | _ -> failwith "get_f32: not a scalar"
+            | prim ->
+                Kirc_error.raise_error
+                  (Kirc_error.Type_conversion_failed
+                     {
+                       from_type = Typed_value.primitive_type_name prim;
+                       to_type = "float32";
+                       index = Some i;
+                       context = "get_f32";
+                     }))
+        | tv ->
+            Kirc_error.raise_error
+              (Kirc_error.Type_conversion_failed
+                 {
+                   from_type = Typed_value.typed_value_type_name tv;
+                   to_type = "float32";
+                   index = Some i;
+                   context = "get_f32 (not a scalar)";
+                 })
       in
       let set_as_f32 i f =
         V.set
@@ -122,8 +154,24 @@ let exec_arg_to_native_arg (arg : Framework_sig.exec_arg) :
         | Typed_value.TV_Scalar (Typed_value.SV ((module S), x)) -> (
             match S.to_primitive x with
             | Typed_value.PFloat f -> f
-            | _ -> failwith "get_f64: incompatible type")
-        | _ -> failwith "get_f64: not a scalar"
+            | prim ->
+                Kirc_error.raise_error
+                  (Kirc_error.Type_conversion_failed
+                     {
+                       from_type = Typed_value.primitive_type_name prim;
+                       to_type = "float64";
+                       index = Some i;
+                       context = "get_f64";
+                     }))
+        | tv ->
+            Kirc_error.raise_error
+              (Kirc_error.Type_conversion_failed
+                 {
+                   from_type = Typed_value.typed_value_type_name tv;
+                   to_type = "float64";
+                   index = Some i;
+                   context = "get_f64 (not a scalar)";
+                 })
       in
       let set_as_f64 i f =
         V.set
@@ -137,8 +185,24 @@ let exec_arg_to_native_arg (arg : Framework_sig.exec_arg) :
             match S.to_primitive x with
             | Typed_value.PInt32 n -> n
             | Typed_value.PFloat f -> Int32.of_float f
-            | _ -> failwith "get_i32: incompatible type")
-        | _ -> failwith "get_i32: not a scalar"
+            | prim ->
+                Kirc_error.raise_error
+                  (Kirc_error.Type_conversion_failed
+                     {
+                       from_type = Typed_value.primitive_type_name prim;
+                       to_type = "int32";
+                       index = Some i;
+                       context = "get_i32";
+                     }))
+        | tv ->
+            Kirc_error.raise_error
+              (Kirc_error.Type_conversion_failed
+                 {
+                   from_type = Typed_value.typed_value_type_name tv;
+                   to_type = "int32";
+                   index = Some i;
+                   context = "get_i32 (not a scalar)";
+                 })
       in
       let set_as_i32 i n =
         V.set
@@ -152,8 +216,24 @@ let exec_arg_to_native_arg (arg : Framework_sig.exec_arg) :
             match S.to_primitive x with
             | Typed_value.PInt64 n -> n
             | Typed_value.PInt32 n -> Int64.of_int32 n
-            | _ -> failwith "get_i64: incompatible type")
-        | _ -> failwith "get_i64: not a scalar"
+            | prim ->
+                Kirc_error.raise_error
+                  (Kirc_error.Type_conversion_failed
+                     {
+                       from_type = Typed_value.primitive_type_name prim;
+                       to_type = "int64";
+                       index = Some i;
+                       context = "get_i64";
+                     }))
+        | tv ->
+            Kirc_error.raise_error
+              (Kirc_error.Type_conversion_failed
+                 {
+                   from_type = Typed_value.typed_value_type_name tv;
+                   to_type = "int64";
+                   index = Some i;
+                   context = "get_i64 (not a scalar)";
+                 })
       in
       let set_as_i64 i n =
         V.set
@@ -260,13 +340,18 @@ let run ~(device : Device.t) ~(block : Framework_sig.dims)
   | "Native" -> (
       match k.native_fn with
       | Some fn -> fn ~block ~grid args
-      | None -> failwith ("Kernel " ^ k.name ^ " has no native function"))
+      | None ->
+          Kirc_error.raise_error
+            (Kirc_error.No_native_function
+               {kernel_name = k.name; context = "run"}))
   | fw ->
-      failwith
-        (Printf.sprintf
-           "run with exec_arg array only works for Native backend; got %s. Use \
-            run_with_args for JIT backends."
-           fw)
+      Kirc_error.raise_error
+        (Kirc_error.Wrong_backend
+           {
+             expected = "Native";
+             got = fw;
+             operation = "run with exec_arg array";
+           })
 
 (** Execute a kernel with explicit typed arguments. Works for all backends
     (Native, CUDA, OpenCL). Uses plugin dispatch via Execute.run. *)
@@ -294,9 +379,8 @@ let source_for_backend (k : 'a kernel) ~backend : string =
       match B.generate_source ir with
       | Some source -> source
       | None ->
-          failwith
-            (Printf.sprintf "%s backend does not generate source" backend))
-  | None -> failwith ("Unknown backend: " ^ backend)
+          Kirc_error.raise_error (Kirc_error.No_source_generation {backend}))
+  | None -> Kirc_error.raise_error (Kirc_error.Backend_not_found {backend})
 
 (** Check if kernel requires FP64 extension *)
 let requires_fp64 k = Array.mem Kirc_types.ExFloat64 k.extensions

@@ -280,6 +280,19 @@ let typed_value_of_exec_arg = function
 (** Get primitive value from scalar_value *)
 let primitive_of_scalar (SV ((module S), v)) = S.to_primitive v
 
+(** Get type name from primitive *)
+let primitive_type_name = function
+  | PInt32 _ -> "int32"
+  | PInt64 _ -> "int64"
+  | PFloat _ -> "float"
+  | PBool _ -> "bool"
+  | PBytes _ -> "bytes"
+
+(** Get type name from typed_value *)
+let typed_value_type_name = function
+  | TV_Scalar (SV ((module S), _)) -> S.name
+  | TV_Composite (CV ((module C), _)) -> C.name
+
 (** Get type name from exec_arg *)
 let type_name_of_exec_arg = function
   | EA_Int32 _ -> "int32"

@@ -377,11 +377,13 @@ let interp_array_to_vector : type a b.
                 let native_record = h.from_value vrec in
                 Vector.set vec i native_record
             | None ->
-                failwith
-                  (Printf.sprintf
-                     "No helper found for type '%s'. Did you forget \
-                      [@@sarek.type]?"
-                     type_name))
+                Execute_error.raise_error
+                  (Execute_error.Type_helper_not_found
+                     {
+                       type_name;
+                       context =
+                         "sync_vector_back (record conversion from interpreter)";
+                     }))
         | _ -> () (* Skip other values *)
       done
   | Vector.Scalar Vector.Char ->

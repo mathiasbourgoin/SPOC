@@ -25,6 +25,8 @@
   Kirc_kernel
   Execute
   Execute_error
+  Interp_error
+  Kirc_error
+  Fusion_error
   Sarek_value
-  Sarek_type_helpers
-  Transform))
+  Sarek_type_helpers))

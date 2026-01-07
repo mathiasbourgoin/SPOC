@@ -249,7 +249,16 @@ let run_block_sequential_bsp ~block:(bx, by, bz) ~grid:(gx, gy, gz)
       if Option.is_some waiting.(tid) then resume_thread tid
     done ;
     if !num_waiting = to_resume && !num_completed < num_threads then
-      failwith "BSP deadlock: no progress made"
+      Interp_error.raise_error
+        (Interp_error.BSP_deadlock
+           {
+             message =
+               Printf.sprintf
+                 "No progress made: %d threads waiting, %d completed (context: \
+                  run_block_parallel_bsp)"
+                 !num_waiting
+                 !num_completed;
+           })
   done
 
 let run_sequential ~block:(bx, by, bz) ~grid:(gx, gy, gz)

@@ -496,7 +496,9 @@ let fuse (producer : kernel) (consumer : kernel) (intermediate : string) :
     eliminated intermediates. *)
 let fuse_pipeline (kernels : kernel list) : kernel * string list =
   match kernels with
-  | [] -> failwith "fuse_pipeline: empty list"
+  | [] ->
+      Fusion_error.raise_error
+        (Fusion_error.Empty_pipeline {function_name = "fuse_pipeline"})
   | [k] -> (k, [])
   | k1 :: rest ->
       let rec loop current eliminated = function
@@ -1007,7 +1009,9 @@ let should_fuse (producer : kernel) (consumer : kernel) (intermediate : string)
 let auto_fuse_pipeline (kernels : kernel list) :
     kernel * string list * string list =
   match kernels with
-  | [] -> failwith "auto_fuse_pipeline: empty list"
+  | [] ->
+      Fusion_error.raise_error
+        (Fusion_error.Empty_pipeline {function_name = "auto_fuse_pipeline"})
   | [k] -> (k, [], [])
   | k1 :: rest ->
       let rec loop current eliminated skipped = function
