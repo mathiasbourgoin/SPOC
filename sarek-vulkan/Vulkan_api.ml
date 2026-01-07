@@ -106,8 +106,10 @@ let compile_glsl_to_spirv_cli ~(entry_point : string) (glsl_source : string) :
   | _ ->
       (try Unix.unlink spirv_file with _ -> ()) ;
       Vulkan_error.raise_error
-        (Vulkan_error.compilation_failed ""
-           (Printf.sprintf "glslangValidator failed:\n%s"
+        (Vulkan_error.compilation_failed
+           ""
+           (Printf.sprintf
+              "glslangValidator failed:\n%s"
               (Buffer.contents output)))) ;
 
   (* Clean up GLSL file *)
@@ -263,7 +265,8 @@ module Device = struct
     let rec find i =
       if i >= n then
         Vulkan_error.raise_error
-          (Vulkan_error.context_error "queue family selection"
+          (Vulkan_error.context_error
+             "queue family selection"
              "no compute queue family found")
       else
         let qf = CArray.get props i in
@@ -470,7 +473,9 @@ module Memory = struct
     let rec find i =
       if i >= count then
         Vulkan_error.raise_error
-          (Vulkan_error.memory_allocation_failed 0L "no suitable memory type found")
+          (Vulkan_error.memory_allocation_failed
+             0L
+             "no suitable memory type found")
       else if type_filter land (1 lsl i) <> 0 then
         let mem_type = CArray.get types_arr i in
         let flags = getf mem_type mem_type_propertyFlags in
@@ -930,7 +935,8 @@ module Kernel = struct
     (* SPIR-V must be 4-byte aligned *)
     if code_size mod 4 <> 0 then
       Vulkan_error.raise_error
-        (Vulkan_error.module_load_failed code_size
+        (Vulkan_error.module_load_failed
+           code_size
            "SPIR-V size must be multiple of 4") ;
 
     (* Convert string to uint32 array *)

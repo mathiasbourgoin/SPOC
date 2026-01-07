@@ -42,7 +42,8 @@ let is_available () =
 let get_lib () =
   match Lazy.force shaderc_lib with
   | Some lib -> lib
-  | None -> Vulkan_error.raise_error (Vulkan_error.library_not_found "shaderc" [])
+  | None ->
+      Vulkan_error.raise_error (Vulkan_error.library_not_found "shaderc" [])
 
 let foreign_lazy name typ = lazy (foreign ~from:(get_lib ()) name typ)
 

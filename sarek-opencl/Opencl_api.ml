@@ -270,8 +270,7 @@ module Device = struct
     | Some d -> d
     | None ->
         let max_devices = count () in
-        Opencl_error.raise_error
-          (Opencl_error.device_not_found idx max_devices)
+        Opencl_error.raise_error (Opencl_error.device_not_found idx max_devices)
 end
 
 (** {1 Context Management} *)

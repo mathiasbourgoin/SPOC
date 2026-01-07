@@ -281,8 +281,8 @@ let result_to_string = function
 
 (** {1 Backend-Specific Modules} *)
 
-(** Helper module for creating backend-specific error interfaces.
-    Each backend can instantiate this functor with their name. *)
+(** Helper module for creating backend-specific error interfaces. Each backend
+    can instantiate this functor with their name. *)
 module Make (B : sig
   val name : string
 end) =
@@ -301,8 +301,7 @@ struct
 
   let type_error expr expected got = type_error ~backend expr expected got
 
-  let invalid_memory_space decl space =
-    invalid_memory_space ~backend decl space
+  let invalid_memory_space decl space = invalid_memory_space ~backend decl space
 
   let unsupported_type type_name = unsupported_type ~backend type_name
 
@@ -336,8 +335,7 @@ struct
 
   let backend_unavailable reason = backend_unavailable ~backend reason
 
-  let library_not_found library paths =
-    library_not_found ~backend library paths
+  let library_not_found library paths = library_not_found ~backend library paths
 
   let initialization_failed reason = initialization_failed ~backend reason
 

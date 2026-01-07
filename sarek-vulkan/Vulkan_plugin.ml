@@ -244,11 +244,9 @@ module Backend : Framework_sig.BACKEND = struct
         Vulkan_error.raise_error
           (Vulkan_error.feature_not_supported "SPIR-V direct loading")
     | Framework_sig.CUDA_Source ->
-        Vulkan_error.raise_error
-          (Vulkan_error.unsupported_source_lang "CUDA")
+        Vulkan_error.raise_error (Vulkan_error.unsupported_source_lang "CUDA")
     | Framework_sig.OpenCL_Source ->
-        Vulkan_error.raise_error
-          (Vulkan_error.unsupported_source_lang "OpenCL")
+        Vulkan_error.raise_error (Vulkan_error.unsupported_source_lang "OpenCL")
     | Framework_sig.PTX ->
         Vulkan_error.raise_error (Vulkan_error.unsupported_source_lang "PTX")
 

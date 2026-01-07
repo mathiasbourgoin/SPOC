@@ -177,7 +177,8 @@ let rec gen_expr buf = function
   | EArrayLen arr -> Buffer.add_string buf ("sarek_" ^ arr ^ "_length")
   | EArrayCreate _ ->
       Opencl_error.raise_error
-        (Opencl_error.unsupported_construct "EArrayCreate"
+        (Opencl_error.unsupported_construct
+           "EArrayCreate"
            "should be handled in gen_stmt SLet")
   | EIf (cond, then_, else_) ->
       (* Ternary operator for value-returning if *)
@@ -199,7 +200,8 @@ let rec gen_expr buf = function
       let rec gen_cases = function
         | [] ->
             Opencl_error.raise_error
-              (Opencl_error.unsupported_construct "EMatch"
+              (Opencl_error.unsupported_construct
+                 "EMatch"
                  "empty match cases list")
         | [(_, body)] -> gen_expr buf body
         | (pat, body) :: rest ->
@@ -391,11 +393,14 @@ and gen_intrinsic buf path name args =
                 | 2, [arg1; arg2] ->
                     Printf.sprintf
                       (Scanf.format_from_string template "%s%s")
-                      arg1 arg2
+                      arg1
+                      arg2
                 | 3, [arg1; arg2; arg3] ->
                     Printf.sprintf
                       (Scanf.format_from_string template "%s%s%s")
-                      arg1 arg2 arg3
+                      arg1
+                      arg2
+                      arg3
                 | _ ->
                     (* Fallback: treat as function call *)
                     template ^ "(" ^ String.concat ", " arg_strs ^ ")"
@@ -499,7 +504,8 @@ let rec gen_stmt buf indent = function
       Buffer.add_string buf scrutinee ;
       Buffer.add_string buf ".tag) {\n" ;
       List.iter
-        (fun (pattern, body) -> gen_match_case buf indent scrutinee pattern body)
+        (fun (pattern, body) ->
+          gen_match_case buf indent scrutinee pattern body)
         cases ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
@@ -528,7 +534,8 @@ let rec gen_stmt buf indent = function
           then Buffer.add_char buf '\n'
       | None ->
           Opencl_error.raise_error
-            (Opencl_error.unsupported_construct "SNative"
+            (Opencl_error.unsupported_construct
+               "SNative"
                "requires device context - use generate_for_device"))
   | SExpr e ->
       Buffer.add_string buf indent ;
@@ -612,14 +619,17 @@ and gen_match_case buf indent scrutinee pattern body =
       | [], _ | _, None | _, Some [] -> () (* No bindings needed *)
       | _ ->
           Opencl_error.raise_error
-            (Opencl_error.type_error "pattern match" "matching bindings"
+            (Opencl_error.type_error
+               "pattern match"
+               "matching bindings"
                "mismatched constructor args"))
   | PWild -> Buffer.add_string buf "  default: {\n") ;
   gen_stmt buf (indent ^ "    ") body ;
   Buffer.add_string buf (indent ^ "    break;\n") ;
   Buffer.add_string buf (indent ^ "  }\n")
 
-(** Generate array declaration with optional __local qualifier (extracted helper) *)
+(** Generate array declaration with optional __local qualifier (extracted
+    helper) *)
 and gen_array_decl buf indent v elem_ty size mem body =
   Buffer.add_string buf indent ;
   (match mem with Shared -> Buffer.add_string buf "__local " | _ -> ()) ;

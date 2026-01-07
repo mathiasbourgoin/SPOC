@@ -93,7 +93,9 @@ let test_utilities () =
   in
   Alcotest.(check string) "with_default returns default" "default" result1 ;
 
-  let result2 = Metal_error.with_default ~default:"default" (fun () -> "success") in
+  let result2 =
+    Metal_error.with_default ~default:"default" (fun () -> "success")
+  in
   Alcotest.(check string) "with_default returns result" "success" result2 ;
 
   let result3 =
@@ -117,11 +119,12 @@ let () =
         [Alcotest.test_case "codegen errors" `Quick test_codegen_errors] );
       ( "runtime",
         [Alcotest.test_case "runtime errors" `Quick test_runtime_errors] );
-      ( "plugin",
-        [Alcotest.test_case "plugin errors" `Quick test_plugin_errors] );
+      ("plugin", [Alcotest.test_case "plugin errors" `Quick test_plugin_errors]);
       ( "exception",
         [
-          Alcotest.test_case "Backend_error exception" `Quick
+          Alcotest.test_case
+            "Backend_error exception"
+            `Quick
             test_backend_error_exception;
         ] );
       ("prefix", [Alcotest.test_case "error prefix" `Quick test_error_prefix]);

@@ -46,7 +46,8 @@ let get_opencl_lib () =
   | Some lib -> lib
   | None ->
       Opencl_error.raise_error
-        (Opencl_error.library_not_found "libOpenCL.so"
+        (Opencl_error.library_not_found
+           "libOpenCL.so"
            ["/usr/lib"; "/usr/local/lib"; "/opt/lib"])
 
 (** Create a lazy foreign binding to OpenCL *)

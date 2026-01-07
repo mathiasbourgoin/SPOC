@@ -282,7 +282,8 @@ let rec gen_expr buf = function
       Buffer.add_string buf ("sarek_" ^ escape_glsl_name arr ^ "_length")
   | EArrayCreate _ ->
       Vulkan_error.raise_error
-        (Vulkan_error.unsupported_construct "EArrayCreate"
+        (Vulkan_error.unsupported_construct
+           "EArrayCreate"
            "should be handled in gen_stmt SLet")
   | EIf (cond, then_, else_) ->
       Buffer.add_char buf '(' ;
@@ -544,7 +545,8 @@ and gen_match_pattern buf indent scrutinee cname bindings find_constr_types =
   | [], _ | _, None | _, Some [] -> ()
   | _ ->
       Vulkan_error.raise_error
-        (Vulkan_error.unsupported_construct "pattern"
+        (Vulkan_error.unsupported_construct
+           "pattern"
            "mismatch between pattern bindings and constructor args")
 
 (** Generate variable declaration with optional initialization *)
@@ -645,7 +647,12 @@ let rec gen_stmt buf indent = function
           Buffer.add_string buf indent ;
           (match pattern with
           | PConstr (cname, bindings) ->
-              gen_match_pattern buf indent scrutinee cname bindings
+              gen_match_pattern
+                buf
+                indent
+                scrutinee
+                cname
+                bindings
                 find_constr_types
           | PWild -> Buffer.add_string buf "  default: {\n") ;
           gen_stmt buf (indent ^ "    ") body ;

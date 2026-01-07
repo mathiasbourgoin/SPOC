@@ -149,11 +149,26 @@ let test_atomics () =
     (Str.string_match (Str.regexp ".*atomic_fetch_add_explicit.*") result 0)
 
 let test_type_mapping () =
-  Alcotest.(check string) "int32 maps to int" "int" (Sarek_ir_metal.metal_type_of_elttype TInt32) ;
-  Alcotest.(check string) "int64 maps to long" "long" (Sarek_ir_metal.metal_type_of_elttype TInt64) ;
-  Alcotest.(check string) "float32 maps to float" "float" (Sarek_ir_metal.metal_type_of_elttype TFloat32) ;
-  Alcotest.(check string) "float64 maps to float (no double)" "float" (Sarek_ir_metal.metal_type_of_elttype TFloat64) ;
-  Alcotest.(check string) "bool maps to bool" "bool" (Sarek_ir_metal.metal_type_of_elttype TBool)
+  Alcotest.(check string)
+    "int32 maps to int"
+    "int"
+    (Sarek_ir_metal.metal_type_of_elttype TInt32) ;
+  Alcotest.(check string)
+    "int64 maps to long"
+    "long"
+    (Sarek_ir_metal.metal_type_of_elttype TInt64) ;
+  Alcotest.(check string)
+    "float32 maps to float"
+    "float"
+    (Sarek_ir_metal.metal_type_of_elttype TFloat32) ;
+  Alcotest.(check string)
+    "float64 maps to float (no double)"
+    "float"
+    (Sarek_ir_metal.metal_type_of_elttype TFloat64) ;
+  Alcotest.(check string)
+    "bool maps to bool"
+    "bool"
+    (Sarek_ir_metal.metal_type_of_elttype TBool)
 
 let test_var_decl () =
   let buf = Buffer.create 64 in
@@ -180,18 +195,23 @@ let () =
   Alcotest.run
     "Sarek_ir_metal"
     [
-      ("literals", [Alcotest.test_case "basic literals" `Quick test_basic_literals]);
+      ( "literals",
+        [Alcotest.test_case "basic literals" `Quick test_basic_literals] );
       ("operations", [Alcotest.test_case "operations" `Quick test_operations]);
       ("basics", [Alcotest.test_case "basic statements" `Quick test_basics]);
       ("assignment", [Alcotest.test_case "assignment" `Quick test_assignment]);
       ("if", [Alcotest.test_case "if statement" `Quick test_if_statement]);
       ("while", [Alcotest.test_case "while loop" `Quick test_while_loop]);
       ("for", [Alcotest.test_case "for loop" `Quick test_for_loop]);
-      ("barriers", [Alcotest.test_case "barrier intrinsics" `Quick test_barriers]);
-      ("thread", [Alcotest.test_case "thread intrinsics" `Quick test_thread_intrinsics]);
+      ( "barriers",
+        [Alcotest.test_case "barrier intrinsics" `Quick test_barriers] );
+      ( "thread",
+        [Alcotest.test_case "thread intrinsics" `Quick test_thread_intrinsics]
+      );
       ("atomics", [Alcotest.test_case "atomic operations" `Quick test_atomics]);
       ("types", [Alcotest.test_case "type mapping" `Quick test_type_mapping]);
       ("var_decl", [Alcotest.test_case "var declaration" `Quick test_var_decl]);
-      ("array_decl", [Alcotest.test_case "array declaration" `Quick test_array_decl]);
+      ( "array_decl",
+        [Alcotest.test_case "array declaration" `Quick test_array_decl] );
       ("indent", [Alcotest.test_case "indent helper" `Quick test_indent_nested]);
     ]

@@ -66,7 +66,9 @@ let test_runtime_errors () =
 
 let test_plugin_errors () =
   (* Test library_not_found *)
-  let e1 = Vulkan_error.library_not_found "vulkan" ["/usr/lib"; "/opt/vulkan"] in
+  let e1 =
+    Vulkan_error.library_not_found "vulkan" ["/usr/lib"; "/opt/vulkan"]
+  in
   let s1 = Vulkan_error.to_string e1 in
   Alcotest.(check bool)
     "library_not_found contains library name"
@@ -114,7 +116,9 @@ let test_utilities () =
   in
   Alcotest.(check string) "with_default returns default" "default" result1 ;
 
-  let result2 = Vulkan_error.with_default ~default:"default" (fun () -> "success") in
+  let result2 =
+    Vulkan_error.with_default ~default:"default" (fun () -> "success")
+  in
   Alcotest.(check string) "with_default returns result" "success" result2 ;
 
   (* Test to_result *)
@@ -140,11 +144,12 @@ let () =
         [Alcotest.test_case "codegen errors" `Quick test_codegen_errors] );
       ( "runtime",
         [Alcotest.test_case "runtime errors" `Quick test_runtime_errors] );
-      ( "plugin",
-        [Alcotest.test_case "plugin errors" `Quick test_plugin_errors] );
+      ("plugin", [Alcotest.test_case "plugin errors" `Quick test_plugin_errors]);
       ( "exception",
         [
-          Alcotest.test_case "Backend_error exception" `Quick
+          Alcotest.test_case
+            "Backend_error exception"
+            `Quick
             test_backend_error_exception;
         ] );
       ("prefix", [Alcotest.test_case "error prefix" `Quick test_error_prefix]);

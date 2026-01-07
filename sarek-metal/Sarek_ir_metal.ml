@@ -181,7 +181,8 @@ let rec gen_expr buf = function
   | EArrayLen arr -> Buffer.add_string buf ("sarek_" ^ arr ^ "_length")
   | EArrayCreate _ ->
       Metal_error.raise_error
-        (Metal_error.unsupported_construct "EArrayCreate"
+        (Metal_error.unsupported_construct
+           "EArrayCreate"
            "should be handled in gen_stmt SLet")
   | EIf (cond, then_, else_) ->
       (* Ternary operator for value-returning if *)
@@ -344,7 +345,9 @@ and gen_intrinsic buf path name args =
             gen_expr buf value
         | args ->
             Metal_error.raise_error
-              (Metal_error.invalid_arg_count "atomic_add_global" 2
+              (Metal_error.invalid_arg_count
+                 "atomic_add_global"
+                 2
                  (List.length args))) ;
         (* Use relaxed memory order *)
         Buffer.add_string buf ", memory_order_relaxed)"
@@ -500,7 +503,8 @@ and gen_match_pattern buf indent scrutinee cname bindings find_constr_types =
   | [], _ | _, None | _, Some [] -> () (* No bindings needed *)
   | _ ->
       Metal_error.raise_error
-        (Metal_error.unsupported_construct "pattern"
+        (Metal_error.unsupported_construct
+           "pattern"
            "mismatch between pattern bindings and constructor args")
 
 (** Generate variable declaration with initialization *)
@@ -602,7 +606,12 @@ let rec gen_stmt buf indent = function
           Buffer.add_string buf indent ;
           (match pattern with
           | PConstr (cname, bindings) ->
-              gen_match_pattern buf indent scrutinee cname bindings
+              gen_match_pattern
+                buf
+                indent
+                scrutinee
+                cname
+                bindings
                 find_constr_types
           | PWild -> Buffer.add_string buf "  default: {\n") ;
           gen_stmt buf (indent ^ "    ") body ;
@@ -865,7 +874,9 @@ let gen_local buf indent atomic_vars = function
       Buffer.add_string buf "];\n"
   | DParam _ ->
       Metal_error.raise_error
-        (Metal_error.unsupported_construct "gen_local" "expected DLocal or DShared")
+        (Metal_error.unsupported_construct
+           "gen_local"
+           "expected DLocal or DShared")
 
 (** {1 Helper Function Generation} *)
 

@@ -6,7 +6,8 @@ open Sarek_opencl
 open Sarek_ir_types
 
 (** Helper: Create a variable record *)
-let make_var name ty = {var_id = 0; var_name = name; var_type = ty; var_mutable = false}
+let make_var name ty =
+  {var_id = 0; var_name = name; var_type = ty; var_mutable = false}
 
 (** Test basic expression generation *)
 let test_basic_literals () =
@@ -37,8 +38,8 @@ let test_basic_literals () =
 (** Test operations *)
 let test_operations () =
   let buf = Buffer.create 64 in
-  let x = make_var "x" (TInt32) in
-  let y = make_var "y" (TInt32) in
+  let x = make_var "x" TInt32 in
+  let y = make_var "y" TInt32 in
   Sarek_ir_opencl.gen_expr buf (EBinop (Add, EVar x, EVar y)) ;
   Alcotest.(check string) "addition" "(x + y)" (Buffer.contents buf) ;
 
@@ -59,14 +60,14 @@ let test_basics () =
 (** Test assignment *)
 let test_assignment () =
   let buf = Buffer.create 64 in
-  let x = make_var "x" (TInt32) in
+  let x = make_var "x" TInt32 in
   Sarek_ir_opencl.gen_stmt buf "" (SAssign (LVar x, EConst (CInt32 42l))) ;
   Alcotest.(check string) "assignment" "x = 42;\n" (Buffer.contents buf)
 
 (** Test if statement *)
 let test_if_statement () =
   let buf = Buffer.create 64 in
-  let x = make_var "x" (TInt32) in
+  let x = make_var "x" TInt32 in
   Sarek_ir_opencl.gen_stmt
     buf
     ""
@@ -83,7 +84,7 @@ let test_if_statement () =
 (** Test while loop *)
 let test_while_loop () =
   let buf = Buffer.create 64 in
-  let x = make_var "x" (TInt32) in
+  let x = make_var "x" TInt32 in
   Sarek_ir_opencl.gen_stmt
     buf
     ""
@@ -99,7 +100,7 @@ let test_while_loop () =
 (** Test for loop *)
 let test_for_loop () =
   let buf = Buffer.create 128 in
-  let i = make_var "i" (TInt32) in
+  let i = make_var "i" TInt32 in
   Sarek_ir_opencl.gen_stmt
     buf
     ""
@@ -118,7 +119,10 @@ let test_for_loop () =
 let test_return () =
   let buf = Buffer.create 64 in
   Sarek_ir_opencl.gen_stmt buf "" (SReturn (EConst (CInt32 42l))) ;
-  Alcotest.(check string) "return statement" "return 42;\n" (Buffer.contents buf)
+  Alcotest.(check string)
+    "return statement"
+    "return 42;\n"
+    (Buffer.contents buf)
 
 (** Test barrier *)
 let test_barriers () =
@@ -133,7 +137,7 @@ let test_barriers () =
 (** Test let binding *)
 let test_let_binding () =
   let buf = Buffer.create 64 in
-  let x = make_var "x" (TInt32) in
+  let x = make_var "x" TInt32 in
   Sarek_ir_opencl.gen_stmt buf "" (SLet (x, EConst (CInt32 42l), SEmpty)) ;
   let result = Buffer.contents buf in
   Alcotest.(check bool)
@@ -144,7 +148,7 @@ let test_let_binding () =
 (** Test let mut *)
 let test_let_mut () =
   let buf = Buffer.create 64 in
-  let x = make_var "x" (TInt32) in
+  let x = make_var "x" TInt32 in
   Sarek_ir_opencl.gen_stmt buf "" (SLetMut (x, EConst (CInt32 42l), SEmpty)) ;
   let result = Buffer.contents buf in
   Alcotest.(check bool)

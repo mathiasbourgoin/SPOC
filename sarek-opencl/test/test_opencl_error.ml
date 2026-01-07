@@ -135,9 +135,8 @@ let () =
     "Opencl_error"
     [
       ( "codegen_errors",
-        [
-          Alcotest.test_case "unsupported_construct" `Quick test_codegen_errors;
-        ] );
+        [Alcotest.test_case "unsupported_construct" `Quick test_codegen_errors]
+      );
       ( "runtime_errors",
         [Alcotest.test_case "device operations" `Quick test_runtime_errors] );
       ( "plugin_errors",

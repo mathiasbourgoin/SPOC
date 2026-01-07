@@ -204,14 +204,12 @@ module Backend : Framework_sig.BACKEND = struct
           ~shared_mem
           ~stream:(Some stream)
     | Framework_sig.PTX ->
-        Cuda_error.raise_error
-          (Cuda_error.unsupported_source_lang "PTX")
+        Cuda_error.raise_error (Cuda_error.unsupported_source_lang "PTX")
     | Framework_sig.OpenCL_Source ->
         Cuda_error.raise_error
           (Cuda_error.unsupported_source_lang "OpenCL_Source")
     | Framework_sig.SPIR_V ->
-        Cuda_error.raise_error
-          (Cuda_error.unsupported_source_lang "SPIR_V")
+        Cuda_error.raise_error (Cuda_error.unsupported_source_lang "SPIR_V")
     | Framework_sig.GLSL_Source ->
         Cuda_error.raise_error
           (Cuda_error.unsupported_source_lang "GLSL_Source")

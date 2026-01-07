@@ -91,7 +91,9 @@ let test_plugin_errors () =
     true
     (Str.string_match (Str.regexp ".*no drivers.*") str2 0) ;
   (* Library not found *)
-  let err3 = E.library_not_found "libOpenCL.so" ["/usr/lib"; "/usr/local/lib"] in
+  let err3 =
+    E.library_not_found "libOpenCL.so" ["/usr/lib"; "/usr/local/lib"]
+  in
   let str3 = Spoc_framework.Backend_error.to_string err3 in
   Alcotest.(check bool)
     "library not found shows paths"
@@ -169,34 +171,14 @@ let () =
     "Backend_error"
     [
       ( "codegen",
-        [
-          Alcotest.test_case
-            "codegen errors"
-            `Quick
-            test_codegen_errors;
-        ] );
+        [Alcotest.test_case "codegen errors" `Quick test_codegen_errors] );
       ( "runtime",
-        [
-          Alcotest.test_case
-            "runtime errors"
-            `Quick
-            test_runtime_errors;
-        ] );
-      ( "plugin",
-        [Alcotest.test_case "plugin errors" `Quick test_plugin_errors]
-      );
+        [Alcotest.test_case "runtime errors" `Quick test_runtime_errors] );
+      ("plugin", [Alcotest.test_case "plugin errors" `Quick test_plugin_errors]);
       ( "backends",
-        [
-          Alcotest.test_case
-            "multiple backends"
-            `Quick
-            test_multiple_backends;
-        ] );
+        [Alcotest.test_case "multiple backends" `Quick test_multiple_backends]
+      );
       ( "exceptions",
-        [
-          Alcotest.test_case
-            "exception handling"
-            `Quick
-            test_exception_handling;
-        ] );
+        [Alcotest.test_case "exception handling" `Quick test_exception_handling]
+      );
     ]

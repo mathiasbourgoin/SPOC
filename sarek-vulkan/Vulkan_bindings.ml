@@ -48,7 +48,8 @@ let is_available () =
 let get_vulkan_lib () =
   match Lazy.force vulkan_lib with
   | Some lib -> lib
-  | None -> Vulkan_error.raise_error (Vulkan_error.library_not_found "vulkan" [])
+  | None ->
+      Vulkan_error.raise_error (Vulkan_error.library_not_found "vulkan" [])
 
 (** Create a lazy foreign binding to Vulkan API *)
 let foreign_vk_lazy name typ = lazy (foreign ~from:(get_vulkan_lib ()) name typ)

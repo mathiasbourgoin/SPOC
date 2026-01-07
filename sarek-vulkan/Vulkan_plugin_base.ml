@@ -112,7 +112,8 @@ module Vulkan = struct
       match !current_device_ref with
       | Some dev -> Vulkan_api.Event.create_with_device dev
       | None ->
-          Vulkan_error.raise_error (Vulkan_error.no_device_selected "Event.create")
+          Vulkan_error.raise_error
+            (Vulkan_error.no_device_selected "Event.create")
 
     let destroy = Vulkan_api.Event.destroy
 
