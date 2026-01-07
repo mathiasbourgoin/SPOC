@@ -14,8 +14,7 @@ module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
 
 (* Force backend registration *)
-let () =
-  Test_helpers.Benchmarks.init_backends ()
+let () = Test_helpers.Benchmarks.init_backends ()
 
 let cfg = Test_helpers.default_config ()
 

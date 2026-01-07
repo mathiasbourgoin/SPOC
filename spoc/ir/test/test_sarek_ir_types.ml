@@ -409,6 +409,9 @@ let test_native_arg () =
   print_endline "  native_arg: OK"
 
 let test_vec_length () =
+  (* Create a minimal NA_Vec for testing vec_length.
+     Only the length field is used by vec_length, so we provide
+     no-op implementations for unused fields. *)
   let na =
     NA_Vec
       {
@@ -423,9 +426,12 @@ let test_vec_length () =
         set_i32 = (fun _ _ -> ());
         get_i64 = (fun _ -> 0L);
         set_i64 = (fun _ _ -> ());
-        get_any = (fun _ -> Obj.repr 0);
-        set_any = (fun _ _ -> ());
-        get_vec = (fun () -> Obj.repr ());
+        get_any =
+          (fun _ -> failwith "get_any should not be called in this test");
+        set_any =
+          (fun _ _ -> failwith "set_any should not be called in this test");
+        get_vec =
+          (fun () -> failwith "get_vec should not be called in this test");
       }
   in
   let len = vec_length na in

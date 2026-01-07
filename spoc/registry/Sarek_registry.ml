@@ -157,15 +157,38 @@ let fun_device_code ?(module_path = []) name dev =
       let path = String.concat "." (module_path @ [name]) in
       failwith ("Unknown intrinsic function: " ^ path)
 
-(** Get device code template for a function, using a dummy device. This is for
+(** Get device code template for a function, using a minimal device. This is for
     V2 IR codegens that don't have SPOC device objects. *)
 let fun_device_template ?(module_path = []) name =
   match find_fun ~module_path name with
   | Some fi ->
-      (* Most intrinsics ignore the device parameter, so pass a dummy.
+      (* Most intrinsics ignore the device parameter, so pass a minimal device.
          If an intrinsic needs the device, it should be handled specially. *)
-      let dummy_dev = Obj.magic () in
-      Some (fi.fi_device dummy_dev)
+      let minimal_dev =
+        {
+          Spoc_framework.Device_type.id = 0;
+          backend_id = 0;
+          name = "minimal";
+          framework = "generic";
+          capabilities =
+            {
+              max_threads_per_block = 1024;
+              max_block_dims = (1024, 1024, 64);
+              max_grid_dims = (65535, 65535, 65535);
+              shared_mem_per_block = 49152;
+              total_global_mem = 1073741824L;
+              compute_capability = (0, 0);
+              supports_fp64 = false;
+              supports_atomics = false;
+              warp_size = 1;
+              max_registers_per_block = 32768;
+              clock_rate_khz = 1000000;
+              multiprocessor_count = 1;
+              is_cpu = false;
+            };
+        }
+      in
+      Some (fi.fi_device minimal_dev)
   | None -> None
 
 (** Find a record by short name (last component after '.'). This handles cases

@@ -79,7 +79,8 @@ type mtl_resource_options = Unsigned.uint64
 let mtl_resource_options : mtl_resource_options typ = uint64_t
 
 (** Storage modes *)
-let mtl_storage_mode_shared = Unsigned.UInt64.of_int 0 (* MTLStorageModeShared *)
+let mtl_storage_mode_shared =
+  Unsigned.UInt64.of_int 0 (* MTLStorageModeShared *)
 
 let mtl_storage_mode_managed = Unsigned.UInt64.of_int 1
 (* MTLStorageModeManaged *)
@@ -93,16 +94,16 @@ let mtl_storage_mode_memoryless = Unsigned.UInt64.of_int 3
 (** Resource options (storage mode is bits 0-3) *)
 let mtl_resource_storage_mode_shared = Unsigned.UInt64.of_int 0
 
-let mtl_resource_storage_mode_managed = Unsigned.UInt64.shift_left
-    (Unsigned.UInt64.of_int 1) 4
+let mtl_resource_storage_mode_managed =
+  Unsigned.UInt64.shift_left (Unsigned.UInt64.of_int 1) 4
 
-let mtl_resource_storage_mode_private = Unsigned.UInt64.shift_left
-    (Unsigned.UInt64.of_int 2) 4
+let mtl_resource_storage_mode_private =
+  Unsigned.UInt64.shift_left (Unsigned.UInt64.of_int 2) 4
 
 let mtl_resource_cpu_cache_mode_default_cache = Unsigned.UInt64.of_int 0
 
-let mtl_resource_cpu_cache_mode_write_combined = Unsigned.UInt64.shift_left
-    (Unsigned.UInt64.of_int 1) 8
+let mtl_resource_cpu_cache_mode_write_combined =
+  Unsigned.UInt64.shift_left (Unsigned.UInt64.of_int 1) 8
 
 (** {1 Size and Origin Types} *)
 

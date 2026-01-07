@@ -257,6 +257,7 @@ let run_mandelbrot_tailrec_test (dev : Device.t) size _block_size =
 (* ========== Julia Set ========== *)
 
 let julia_c_re = -0.8
+
 let julia_c_im = 0.156
 
 let julia_kernel =
@@ -356,7 +357,11 @@ let () =
     for i = 0 to min 1000 (n - 1) do
       if result.(i) <> expected.(i) then begin
         if !errors < 5 then
-          Printf.printf "Mismatch at %d: expected %ld, got %ld\n" i expected.(i) result.(i);
+          Printf.printf
+            "Mismatch at %d: expected %ld, got %ld\n"
+            i
+            expected.(i)
+            result.(i) ;
         incr errors
       end
     done ;

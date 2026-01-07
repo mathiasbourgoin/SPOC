@@ -64,7 +64,8 @@ let metal_helper_param_type = function
 let metal_atomic_type_of_elttype = function
   | TInt32 -> "atomic_int"
   | TInt64 -> "atomic_long"
-  | TFloat32 -> "atomic_float"  (* Metal doesn't support atomic float, but let's try *)
+  | TFloat32 ->
+      "atomic_float" (* Metal doesn't support atomic float, but let's try *)
   | t -> metal_type_of_elttype t
 
 (** {1 Thread Intrinsics} *)
@@ -295,7 +296,8 @@ and gen_intrinsic buf path name args =
           args ;
         Buffer.add_char buf ')'
     (* Barrier synchronization *)
-    | "block_barrier" -> Buffer.add_string buf "threadgroup_barrier(mem_flags::mem_threadgroup)"
+    | "block_barrier" ->
+        Buffer.add_string buf "threadgroup_barrier(mem_flags::mem_threadgroup)"
     | "atomic_add" | "atomic_add_int32" ->
         Buffer.add_string buf "atomic_fetch_add_explicit(" ;
         (match args with
@@ -574,7 +576,9 @@ let rec gen_stmt buf indent = function
   | SWarpBarrier ->
       (* Metal doesn't have warp-level sync, use sub_group_barrier if available *)
       Buffer.add_string buf indent ;
-      Buffer.add_string buf "sub_group_threadgroup_barrier(mem_flags::mem_threadgroup);\n"
+      Buffer.add_string
+        buf
+        "sub_group_threadgroup_barrier(mem_flags::mem_threadgroup);\n"
   | SMemFence ->
       Buffer.add_string buf indent ;
       Buffer.add_string buf "threadgroup_barrier(mem_flags::mem_device);\n"
@@ -597,7 +601,9 @@ let rec gen_stmt buf indent = function
   | SLet (v, EArrayCreate (elem_ty, size, mem), body) ->
       (* Array declaration: type arr[size]; *)
       Buffer.add_string buf indent ;
-      (match mem with Shared -> Buffer.add_string buf "threadgroup " | _ -> ()) ;
+      (match mem with
+      | Shared -> Buffer.add_string buf "threadgroup "
+      | _ -> ()) ;
       Buffer.add_string buf (metal_type_of_elttype elem_ty) ;
       Buffer.add_char buf ' ' ;
       Buffer.add_string buf v.var_name ;
@@ -642,7 +648,8 @@ let rec gen_stmt buf indent = function
 (** Check if a type is a vector (requires length parameter) *)
 let is_vec_type = function TVec _ -> true | _ -> false
 
-(** Generate parameter with Metal buffer attributes, returns next buffer index *)
+(** Generate parameter with Metal buffer attributes, returns next buffer index
+*)
 let gen_param_metal buf atomic_vars idx = function
   | DParam (v, None) ->
       (* Scalar parameter - wrap in constant buffer *)
@@ -661,18 +668,17 @@ let gen_param_metal buf atomic_vars idx = function
         Buffer.add_string buf (string_of_int (idx + 1)) ;
         Buffer.add_string buf ")]]" ;
         idx + 2
-      end else
-        idx + 1
+      end
+      else idx + 1
   | DParam (v, Some arr) ->
       (* Array with explicit info - always needs length *)
       Buffer.add_string buf (metal_memspace arr.arr_memspace) ;
       Buffer.add_char buf ' ' ;
       (* Use atomic type if this variable is used with atomics *)
-      let type_str = 
+      let type_str =
         if List.mem v.var_name atomic_vars then
           metal_atomic_type_of_elttype arr.arr_elttype
-        else
-          metal_type_of_elttype arr.arr_elttype
+        else metal_type_of_elttype arr.arr_elttype
       in
       Buffer.add_string buf type_str ;
       Buffer.add_string buf "* " ;
@@ -712,60 +718,73 @@ let gen_param buf = function
 
 (** Collect variable names used in atomic operations *)
 let rec collect_atomic_vars_expr = function
-  | EIntrinsic (_, name, args) when 
-      (String.equal name "atomic_add" || 
-       String.equal name "atomic_add_int32" || 
-       String.equal name "atomic_add_global_int32" ||
-       String.equal name "atomic_sub") ->
-      (match args with
-       (* When atomic operation has 3 args, first is likely the array identifier *)
-       | arr_expr :: _idx :: _value :: _ ->
-           (match arr_expr with
-            | EVar v -> [v.var_name]
-            | EArrayRead (arr, _) -> [arr]
-            | _ -> [])
-       (* When atomic operation has 2 args, first is the lvalue *)
-       | lvalue_expr :: _value :: _ ->
-           (match lvalue_expr with
-            | EVar v -> [v.var_name]
-            | EArrayRead (arr, _) -> [arr]
-            | _ -> [])
-       | _ -> [])
+  | EIntrinsic (_, name, args)
+    when String.equal name "atomic_add"
+         || String.equal name "atomic_add_int32"
+         || String.equal name "atomic_add_global_int32"
+         || String.equal name "atomic_sub" -> (
+      match args with
+      (* When atomic operation has 3 args, first is likely the array identifier *)
+      | arr_expr :: _idx :: _value :: _ -> (
+          match arr_expr with
+          | EVar v -> [v.var_name]
+          | EArrayRead (arr, _) -> [arr]
+          | _ -> [])
+      (* When atomic operation has 2 args, first is the lvalue *)
+      | lvalue_expr :: _value :: _ -> (
+          match lvalue_expr with
+          | EVar v -> [v.var_name]
+          | EArrayRead (arr, _) -> [arr]
+          | _ -> [])
+      | _ -> [])
   | EIntrinsic (_, _, args) -> List.concat_map collect_atomic_vars_expr args
-  | EBinop (_, e1, e2) -> collect_atomic_vars_expr e1 @ collect_atomic_vars_expr e2
+  | EBinop (_, e1, e2) ->
+      collect_atomic_vars_expr e1 @ collect_atomic_vars_expr e2
   | EUnop (_, e) -> collect_atomic_vars_expr e
   | EArrayRead (_, idx) -> collect_atomic_vars_expr idx
-  | EArrayReadExpr (base, idx) -> collect_atomic_vars_expr base @ collect_atomic_vars_expr idx
+  | EArrayReadExpr (base, idx) ->
+      collect_atomic_vars_expr base @ collect_atomic_vars_expr idx
   | ERecordField (e, _) -> collect_atomic_vars_expr e
   | ECast (_, e) -> collect_atomic_vars_expr e
   | ETuple exprs -> List.concat_map collect_atomic_vars_expr exprs
-  | EApp (f, args) -> collect_atomic_vars_expr f @ List.concat_map collect_atomic_vars_expr args
-  | ERecord (_, fields) -> List.concat_map (fun (_, e) -> collect_atomic_vars_expr e) fields
+  | EApp (f, args) ->
+      collect_atomic_vars_expr f @ List.concat_map collect_atomic_vars_expr args
+  | ERecord (_, fields) ->
+      List.concat_map (fun (_, e) -> collect_atomic_vars_expr e) fields
   | EVariant (_, _, args) -> List.concat_map collect_atomic_vars_expr args
   | EArrayCreate (_, size, _) -> collect_atomic_vars_expr size
-  | EIf (c, t, e) -> collect_atomic_vars_expr c @ collect_atomic_vars_expr t @ collect_atomic_vars_expr e
-  | EMatch (scrut, cases) -> 
-      collect_atomic_vars_expr scrut @ 
-      List.concat_map (fun (_, e) -> collect_atomic_vars_expr e) cases
+  | EIf (c, t, e) ->
+      collect_atomic_vars_expr c @ collect_atomic_vars_expr t
+      @ collect_atomic_vars_expr e
+  | EMatch (scrut, cases) ->
+      collect_atomic_vars_expr scrut
+      @ List.concat_map (fun (_, e) -> collect_atomic_vars_expr e) cases
   | _ -> []
 
 let rec collect_atomic_vars_lvalue = function
   | LArrayElem (_, idx) -> collect_atomic_vars_expr idx
-  | LArrayElemExpr (base, idx) -> collect_atomic_vars_expr base @ collect_atomic_vars_expr idx
+  | LArrayElemExpr (base, idx) ->
+      collect_atomic_vars_expr base @ collect_atomic_vars_expr idx
   | LRecordField (lv, _) -> collect_atomic_vars_lvalue lv
   | _ -> []
 
 let rec collect_atomic_vars_stmt = function
-  | SAssign (lv, e) -> collect_atomic_vars_lvalue lv @ collect_atomic_vars_expr e
+  | SAssign (lv, e) ->
+      collect_atomic_vars_lvalue lv @ collect_atomic_vars_expr e
   | SSeq stmts -> List.concat_map collect_atomic_vars_stmt stmts
-  | SIf (e, s1, Some s2) -> collect_atomic_vars_expr e @ collect_atomic_vars_stmt s1 @ collect_atomic_vars_stmt s2
+  | SIf (e, s1, Some s2) ->
+      collect_atomic_vars_expr e
+      @ collect_atomic_vars_stmt s1
+      @ collect_atomic_vars_stmt s2
   | SIf (e, s, None) -> collect_atomic_vars_expr e @ collect_atomic_vars_stmt s
   | SWhile (e, s) -> collect_atomic_vars_expr e @ collect_atomic_vars_stmt s
-  | SFor (_, start, stop, _, body) -> 
-      collect_atomic_vars_expr start @ collect_atomic_vars_expr stop @ collect_atomic_vars_stmt body
+  | SFor (_, start, stop, _, body) ->
+      collect_atomic_vars_expr start
+      @ collect_atomic_vars_expr stop
+      @ collect_atomic_vars_stmt body
   | SMatch (e, cases) ->
-      collect_atomic_vars_expr e @
-      List.concat_map (fun (_, s) -> collect_atomic_vars_stmt s) cases
+      collect_atomic_vars_expr e
+      @ List.concat_map (fun (_, s) -> collect_atomic_vars_stmt s) cases
   | SReturn e -> collect_atomic_vars_expr e
   | SExpr e -> collect_atomic_vars_expr e
   | SLet (_, e, s) -> collect_atomic_vars_expr e @ collect_atomic_vars_stmt s
@@ -793,11 +812,9 @@ let gen_local buf indent atomic_vars = function
       Buffer.add_string buf indent ;
       Buffer.add_string buf "threadgroup " ;
       (* Use atomic type if this variable is used with atomics *)
-      let type_str = 
-        if List.mem name atomic_vars then
-          metal_atomic_type_of_elttype elt
-        else
-          metal_type_of_elttype elt
+      let type_str =
+        if List.mem name atomic_vars then metal_atomic_type_of_elttype elt
+        else metal_type_of_elttype elt
       in
       Buffer.add_string buf type_str ;
       Buffer.add_char buf ' ' ;
@@ -807,11 +824,9 @@ let gen_local buf indent atomic_vars = function
       Buffer.add_string buf indent ;
       Buffer.add_string buf "threadgroup " ;
       (* Use atomic type if this variable is used with atomics *)
-      let type_str = 
-        if List.mem name atomic_vars then
-          metal_atomic_type_of_elttype elt
-        else
-          metal_type_of_elttype elt
+      let type_str =
+        if List.mem name atomic_vars then metal_atomic_type_of_elttype elt
+        else metal_type_of_elttype elt
       in
       Buffer.add_string buf type_str ;
       Buffer.add_char buf ' ' ;
@@ -875,8 +890,12 @@ let generate (k : kernel) : string =
   (* Add thread position parameters *)
   if !buffer_idx > 0 then Buffer.add_string buf ", " ;
   Buffer.add_string buf "\n  uint3 __metal_gid [[thread_position_in_grid]],\n" ;
-  Buffer.add_string buf "  uint3 __metal_tid [[thread_position_in_threadgroup]],\n" ;
-  Buffer.add_string buf "  uint3 __metal_bid [[threadgroup_position_in_grid]],\n" ;
+  Buffer.add_string
+    buf
+    "  uint3 __metal_tid [[thread_position_in_threadgroup]],\n" ;
+  Buffer.add_string
+    buf
+    "  uint3 __metal_bid [[threadgroup_position_in_grid]],\n" ;
   Buffer.add_string buf "  uint3 __metal_tpg [[threads_per_threadgroup]],\n" ;
   Buffer.add_string buf "  uint3 __metal_num_groups [[threadgroups_per_grid]]" ;
 
@@ -1024,8 +1043,12 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
   (* Add thread position parameters *)
   if !buffer_idx > 0 then Buffer.add_string buf ", " ;
   Buffer.add_string buf "\n  uint3 __metal_gid [[thread_position_in_grid]],\n" ;
-  Buffer.add_string buf "  uint3 __metal_tid [[thread_position_in_threadgroup]],\n" ;
-  Buffer.add_string buf "  uint3 __metal_bid [[threadgroup_position_in_grid]],\n" ;
+  Buffer.add_string
+    buf
+    "  uint3 __metal_tid [[thread_position_in_threadgroup]],\n" ;
+  Buffer.add_string
+    buf
+    "  uint3 __metal_bid [[threadgroup_position_in_grid]],\n" ;
   Buffer.add_string buf "  uint3 __metal_tpg [[threads_per_threadgroup]],\n" ;
   Buffer.add_string buf "  uint3 __metal_num_groups [[threadgroups_per_grid]]" ;
 
@@ -1042,5 +1065,6 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
 
   Buffer.contents buf
 
-(** Generate Metal source with double precision (Metal supports FP64 natively) *)
+(** Generate Metal source with double precision (Metal supports FP64 natively)
+*)
 let generate_with_fp64 (k : kernel) : string = generate k

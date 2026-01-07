@@ -120,9 +120,7 @@ let gpu_only (d : Device.t) =
 
 (** Convenience filter: JIT backends only (CUDA, OpenCL, Vulkan, Metal) *)
 let jit_only (d : Device.t) =
-  d.framework = "CUDA"
-  || d.framework = "OpenCL"
-  || d.framework = "Vulkan"
+  d.framework = "CUDA" || d.framework = "OpenCL" || d.framework = "Vulkan"
   || d.framework = "Metal"
 
 let run ?(baseline : (int -> 'a) option) ?(verify : ('a -> 'a -> bool) option)
@@ -140,8 +138,11 @@ let run ?(baseline : (int -> 'a) option) ?(verify : ('a -> 'a -> bool) option)
     Printf.eprintf "No devices found.\n" ;
     Stdlib.exit 1) ;
 
-  Printf.printf "Available devices:\n";
-  Array.iteri (fun i d -> Printf.printf "  [%d] %s (%s)\n" i d.Device.name d.Device.framework) all_devices;
+  Printf.printf "Available devices:\n" ;
+  Array.iteri
+    (fun i d ->
+      Printf.printf "  [%d] %s (%s)\n" i d.Device.name d.Device.framework)
+    all_devices ;
 
   let targets = get_target_devices all_devices in
   (* Apply exclude_frameworks filter *)

@@ -13,9 +13,7 @@ open Metal_bindings
 (** memcpy from libc for memory transfers *)
 let memcpy ~dst ~src ~size =
   let memcpy_c =
-    foreign
-      "memcpy"
-      (ptr void @-> ptr void @-> size_t @-> returning (ptr void))
+    foreign "memcpy" (ptr void @-> ptr void @-> size_t @-> returning (ptr void))
   in
   let _ = memcpy_c dst src (Unsigned.Size_t.of_int size) in
   ()
@@ -54,8 +52,12 @@ module Device = struct
       else
         (* Get count from NSArray *)
         let sel = sel_registerName "count" in
-        let fn = foreign ~from:(get_objc_lib ()) "objc_msgSend"
-            (ptr void @-> ptr void @-> returning uint64_t) in
+        let fn =
+          foreign
+            ~from:(get_objc_lib ())
+            "objc_msgSend"
+            (ptr void @-> ptr void @-> returning uint64_t)
+        in
         Unsigned.UInt64.to_int (fn devices_array sel)
     in
     if n > 0 then n
@@ -69,42 +71,47 @@ module Device = struct
     if is_null devices_array then [||]
     else
       let sel_count = sel_registerName "count" in
-      let fn_count = foreign ~from:(get_objc_lib ()) "objc_msgSend"
-          (ptr void @-> ptr void @-> returning uint64_t) in
+      let fn_count =
+        foreign
+          ~from:(get_objc_lib ())
+          "objc_msgSend"
+          (ptr void @-> ptr void @-> returning uint64_t)
+      in
       let count = Unsigned.UInt64.to_int (fn_count devices_array sel_count) in
-      
+
       let sel_obj = sel_registerName "objectAtIndex:" in
-      let fn_obj = foreign ~from:(get_objc_lib ()) "objc_msgSend"
-          (ptr void @-> ptr void @-> uint64_t @-> returning mtl_device) in
-      
+      let fn_obj =
+        foreign
+          ~from:(get_objc_lib ())
+          "objc_msgSend"
+          (ptr void @-> ptr void @-> uint64_t @-> returning mtl_device)
+      in
+
       Array.init count (fun i ->
-        fn_obj devices_array sel_obj (Unsigned.UInt64.of_int i))
+          fn_obj devices_array sel_obj (Unsigned.UInt64.of_int i))
 
   let make_device idx handle =
     let name = mtl_device_name handle in
-    
+
     let max_threads =
-      try 
-        mtl_device_max_threads_per_threadgroup handle 
-      with _ ->
-        make_mtl_size ~width:1024 ~height:1024 ~depth:64
+      try mtl_device_max_threads_per_threadgroup handle
+      with _ -> make_mtl_size ~width:1024 ~height:1024 ~depth:64
     in
-    
+
     let max_threadgroup_memory =
-      try
-        mtl_device_max_threadgroup_memory_length handle
-      with _ ->
-        32768
+      try mtl_device_max_threadgroup_memory_length handle with _ -> 32768
     in
-    
+
     {
       id = idx;
       handle;
       name;
       max_threads_per_threadgroup = max_threads;
       max_threadgroup_memory;
-      supports_fp64 = false; (* Metal shading language does NOT support double precision *)
-      is_cpu = false; (* Metal devices are GPU-like *)
+      supports_fp64 = false;
+      (* Metal shading language does NOT support double precision *)
+      is_cpu = false;
+      (* Metal devices are GPU-like *)
     }
 
   let get idx =
@@ -116,15 +123,13 @@ module Device = struct
         let devices = get_all_handles () in
         if Array.length devices > 0 then make_device 0 devices.(0)
         else failwith "No Metal device found"
-      else
-        make_device 0 dev
+      else make_device 0 dev
     else
       (* Get from device list *)
       let devices = get_all_handles () in
       if idx >= Array.length devices then
         failwith (Printf.sprintf "Device %d not found" idx)
-      else
-        make_device idx devices.(idx)
+      else make_device idx devices.(idx)
 
   let id dev = dev.id
 
@@ -136,17 +141,12 @@ end
 (** {1 Command Queue Management} *)
 
 module CommandQueue = struct
-  type t = {
-    handle : mtl_command_queue;
-    device : Device.t;
-  }
+  type t = {handle : mtl_command_queue; device : Device.t}
 
   let create device =
     let queue = mtl_device_new_command_queue device.Device.handle in
-    if is_null queue then
-      raise (Metal_error "Failed to create command queue")
-    else
-      {handle = queue; device}
+    if is_null queue then raise (Metal_error "Failed to create command queue")
+    else {handle = queue; device}
 
   let release queue = release queue.handle
 
@@ -173,17 +173,10 @@ module Memory = struct
         byte_size
         mtl_resource_storage_mode_shared
     in
-    if is_null buf then
-      raise (Metal_error "Failed to allocate buffer")
+    if is_null buf then raise (Metal_error "Failed to allocate buffer")
     else
       let contents = mtl_buffer_contents buf in
-      {
-        handle = buf;
-        size;
-        elem_size;
-        device;
-        contents;
-      }
+      {handle = buf; size; elem_size; device; contents}
 
   let alloc_bigarray device ba elem_size =
     let size = Bigarray.Array1.dim ba in
@@ -191,7 +184,7 @@ module Memory = struct
     (* Copy data to GPU *)
     let ba_ptr = bigarray_start array1 ba in
     let byte_size = size * elem_size in
-    memcpy ~dst:(buf.contents) ~src:(to_voidp ba_ptr) ~size:byte_size ;
+    memcpy ~dst:buf.contents ~src:(to_voidp ba_ptr) ~size:byte_size ;
     buf
 
   let to_bigarray (type a b) buf (kind : (a, b) Bigarray.kind) =
@@ -213,13 +206,12 @@ end
 (** {1 Library and Function Management} *)
 
 module Library = struct
-  type t = {
-    handle : mtl_library;
-    device : Device.t;
-  }
+  type t = {handle : mtl_library; device : Device.t}
 
   let create_from_source device source =
-    match mtl_device_new_library_with_source device.Device.handle source None with
+    match
+      mtl_device_new_library_with_source device.Device.handle source None
+    with
     | Ok lib -> {handle = lib; device}
     | Error msg -> raise (Metal_error ("Library compilation failed: " ^ msg))
 
@@ -229,8 +221,7 @@ module Library = struct
     let func = mtl_library_new_function_with_name lib.handle name in
     if is_null func then
       raise (Metal_error ("Function '" ^ name ^ "' not found in library"))
-    else
-      func
+    else func
 end
 
 (** {1 Compute Pipeline Management} *)
@@ -249,14 +240,17 @@ module ComputePipeline = struct
         let max_threads =
           mtl_compute_pipeline_state_max_total_threads_per_threadgroup pso
         in
-        let thread_width = mtl_compute_pipeline_state_threadgroup_memory_length pso in
+        let thread_width =
+          mtl_compute_pipeline_state_threadgroup_memory_length pso
+        in
         {
           handle = pso;
           device;
           max_threads_per_threadgroup = max_threads;
           thread_execution_width = thread_width;
         }
-    | Error msg -> raise (Metal_error ("Pipeline state creation failed: " ^ msg))
+    | Error msg ->
+        raise (Metal_error ("Pipeline state creation failed: " ^ msg))
 
   let release pipeline = release pipeline.handle
 
@@ -275,16 +269,15 @@ module Kernel = struct
 
   type args = arg list
 
-  type t = {
-    pipeline : ComputePipeline.t;
-    function_name : string;
-  }
+  type t = {pipeline : ComputePipeline.t; function_name : string}
 
   let create pipeline function_name = {pipeline; function_name}
 
   let execute queue kernel ~grid_size ~block_size args =
     (* Create command buffer *)
-    let cmd_buffer = mtl_command_queue_command_buffer queue.CommandQueue.handle in
+    let cmd_buffer =
+      mtl_command_queue_command_buffer queue.CommandQueue.handle
+    in
     if is_null cmd_buffer then
       raise (Metal_error "Failed to create command buffer") ;
 
@@ -307,27 +300,41 @@ module Kernel = struct
             mtl_compute_command_encoder_set_buffer encoder ptr offset idx
         | Int32 v ->
             let ptr = allocate int32_t v in
-            mtl_compute_command_encoder_set_bytes encoder
-              (to_voidp ptr) (sizeof int32_t) idx
+            mtl_compute_command_encoder_set_bytes
+              encoder
+              (to_voidp ptr)
+              (sizeof int32_t)
+              idx
         | Int64 v ->
             let ptr = allocate int64_t v in
-            mtl_compute_command_encoder_set_bytes encoder
-              (to_voidp ptr) (sizeof int64_t) idx
+            mtl_compute_command_encoder_set_bytes
+              encoder
+              (to_voidp ptr)
+              (sizeof int64_t)
+              idx
         | Float32 v ->
             let ptr = allocate float v in
-            mtl_compute_command_encoder_set_bytes encoder
-              (to_voidp ptr) (sizeof float) idx
+            mtl_compute_command_encoder_set_bytes
+              encoder
+              (to_voidp ptr)
+              (sizeof float)
+              idx
         | Float64 v ->
             let ptr = allocate double v in
-            mtl_compute_command_encoder_set_bytes encoder
-              (to_voidp ptr) (sizeof double) idx)
+            mtl_compute_command_encoder_set_bytes
+              encoder
+              (to_voidp ptr)
+              (sizeof double)
+              idx)
       args ;
 
     (* Dispatch threads *)
     let grid_x, grid_y, grid_z = grid_size in
     let block_x, block_y, block_z = block_size in
     let threads = make_mtl_size ~width:grid_x ~height:grid_y ~depth:grid_z in
-    let threadgroup = make_mtl_size ~width:block_x ~height:block_y ~depth:block_z in
+    let threadgroup =
+      make_mtl_size ~width:block_x ~height:block_y ~depth:block_z
+    in
     mtl_compute_command_encoder_dispatch_threads encoder threads threadgroup ;
 
     (* End encoding *)

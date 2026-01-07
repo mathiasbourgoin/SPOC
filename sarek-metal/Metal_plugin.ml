@@ -170,9 +170,7 @@ module Backend : Framework_sig.BACKEND = struct
       @param block Ignored - Metal specifies work-group size at launch *)
   let generate_source ?block:_ (ir : Sarek_ir_types.kernel) : string option =
     try
-      let source =
-        Sarek_ir_metal.generate_with_types ~types:ir.kern_types ir
-      in
+      let source = Sarek_ir_metal.generate_with_types ~types:ir.kern_types ir in
       Spoc_core.Log.debug Kernel ("Metal source:\n" ^ source) ;
       Some source
     with _ -> None
@@ -240,13 +238,12 @@ let is_disabled () =
 (** Backend registration - happens once when first needed *)
 let registered_backend =
   lazy
-    (if Backend.is_available () then (
+    (if Backend.is_available () then
        Framework_registry.register_backend
          ~priority:95
          (* Higher priority than OpenCL on macOS *)
-         (module Backend : Framework_sig.BACKEND))
-     else (
-     ))
+         (module Backend : Framework_sig.BACKEND)
+     else ())
 
 (** Auto-register backend when module is loaded, unless disabled *)
 let () = if not (is_disabled ()) then Lazy.force registered_backend

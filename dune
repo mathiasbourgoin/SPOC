@@ -1,1 +1,8 @@
-(dirs spoc sarek sarek-cuda sarek-opencl sarek-vulkan sarek-metal test_verification)
+(dirs
+ spoc
+ sarek
+ sarek-cuda
+ sarek-opencl
+ sarek-vulkan
+ sarek-metal
+ test_verification)

@@ -186,7 +186,9 @@ end = struct
       try
         let max_threads = d.max_threads_per_threadgroup in
         let width = Unsigned.Size_t.to_int (getf max_threads mtl_size_width) in
-        let height = Unsigned.Size_t.to_int (getf max_threads mtl_size_height) in
+        let height =
+          Unsigned.Size_t.to_int (getf max_threads mtl_size_height)
+        in
         let depth = Unsigned.Size_t.to_int (getf max_threads mtl_size_depth) in
         {
           Framework_sig.max_threads_per_block = width * height * depth;
@@ -206,8 +208,7 @@ end = struct
           (* Metal doesn't expose these *)
           is_cpu = d.is_cpu;
         }
-      with e ->
-        raise e
+      with e -> raise e
 
     let set_current (d : t) =
       let _ = get_state d.id in
@@ -245,33 +246,39 @@ end = struct
     let host_to_device ~src ~dst =
       (* Metal shared memory: just memcpy *)
       let ba_ptr = Ctypes.(bigarray_start array1 src) in
-      let byte_size = Bigarray.Array1.dim src * dst.buf.Metal_api.Memory.elem_size in
+      let byte_size =
+        Bigarray.Array1.dim src * dst.buf.Metal_api.Memory.elem_size
+      in
       Metal_api.memcpy
-        ~dst:(dst.buf.contents)
+        ~dst:dst.buf.contents
         ~src:(Ctypes.to_voidp ba_ptr)
         ~size:byte_size
 
     let device_to_host ~src ~dst =
       (* Metal shared memory: just memcpy *)
       let ba_ptr = Ctypes.(bigarray_start array1 dst) in
-      let byte_size = Bigarray.Array1.dim dst * src.buf.Metal_api.Memory.elem_size in
+      let byte_size =
+        Bigarray.Array1.dim dst * src.buf.Metal_api.Memory.elem_size
+      in
       Metal_api.memcpy
         ~dst:(Ctypes.to_voidp ba_ptr)
-        ~src:(src.buf.contents)
+        ~src:src.buf.contents
         ~size:byte_size
 
     let host_ptr_to_device ~src_ptr ~byte_size ~dst =
-      Metal_api.memcpy ~dst:(dst.buf.contents) ~src:src_ptr ~size:byte_size
+      Metal_api.memcpy ~dst:dst.buf.contents ~src:src_ptr ~size:byte_size
 
     let device_to_host_ptr ~src ~dst_ptr ~byte_size =
-      Metal_api.memcpy ~dst:dst_ptr ~src:(src.buf.contents) ~size:byte_size
+      Metal_api.memcpy ~dst:dst_ptr ~src:src.buf.contents ~size:byte_size
 
     let device_to_device ~src ~dst =
-      let byte_size = min
-          (src.buf.size * src.buf.elem_size)
-          (dst.buf.size * dst.buf.elem_size)
+      let byte_size =
+        min (src.buf.size * src.buf.elem_size) (dst.buf.size * dst.buf.elem_size)
       in
-      Metal_api.memcpy ~dst:(dst.buf.contents) ~src:(src.buf.contents) ~size:byte_size
+      Metal_api.memcpy
+        ~dst:dst.buf.contents
+        ~src:src.buf.contents
+        ~size:byte_size
 
     let size b = b.buf.Metal_api.Memory.size
 
@@ -365,15 +372,18 @@ end = struct
     let create_args () = ref []
 
     let set_arg_buffer args idx buf =
-      args := ArgBuffer {buf = buf.Memory.buf.Metal_api.Memory.handle; idx} :: !args
+      args :=
+        ArgBuffer {buf = buf.Memory.buf.Metal_api.Memory.handle; idx} :: !args
 
     let set_arg_int32 args idx value = args := ArgInt32 {value; idx} :: !args
 
     let set_arg_int64 args idx value = args := ArgInt64 {value; idx} :: !args
 
-    let set_arg_float32 args idx value = args := ArgFloat32 {value; idx} :: !args
+    let set_arg_float32 args idx value =
+      args := ArgFloat32 {value; idx} :: !args
 
-    let set_arg_float64 args idx value = args := ArgFloat64 {value; idx} :: !args
+    let set_arg_float64 args idx value =
+      args := ArgFloat64 {value; idx} :: !args
 
     let set_arg_ptr _args _idx _ptr =
       failwith "Metal raw pointer arguments not yet implemented"
@@ -403,8 +413,15 @@ end = struct
       let block_size = (block.x, block.y, block.z) in
 
       (* Execute kernel *)
-      let metal_kernel = Metal_api.Kernel.create kernel.pipeline kernel.function_name in
-      Metal_api.Kernel.execute queue metal_kernel ~grid_size ~block_size metal_args
+      let metal_kernel =
+        Metal_api.Kernel.create kernel.pipeline kernel.function_name
+      in
+      Metal_api.Kernel.execute
+        queue
+        metal_kernel
+        ~grid_size
+        ~block_size
+        metal_args
   end
 
   let profiling_enabled = ref false
