@@ -257,10 +257,7 @@ module Backend : Framework_sig.BACKEND = struct
                 i
                 (Typed_value.TV_Composite (Typed_value.CV ((module C), x)))
         in
-        let get_vec () =
-          (* Return a dummy Obj for now - this is only used by get_vec which is rarely called *)
-          Obj.repr ()
-        in
+        let get_vec () = V.internal_get_vector_obj () in
         Sarek_ir_types.NA_Vec
           {
             length = V.length;
