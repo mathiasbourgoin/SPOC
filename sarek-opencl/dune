@@ -18,6 +18,7 @@
   sarek_registry
   (re_export spoc_core))
  (modules
+  Opencl_error
   Opencl_types
   Opencl_bindings
   Opencl_api

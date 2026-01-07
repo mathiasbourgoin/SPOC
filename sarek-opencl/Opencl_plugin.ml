@@ -192,9 +192,8 @@ module Backend : Framework_sig.BACKEND = struct
 
   (** Execute directly - not supported for JIT backend *)
   let execute_direct ~native_fn:_ ~ir:_ ~block:_ ~grid:_ _args =
-    failwith
-      "OpenCL backend execute_direct: JIT backend does not support direct \
-       execution"
+    Opencl_error.raise_error
+      (Opencl_error.unsupported_source_lang "direct execution")
 
   (** OpenCL intrinsic registry *)
   module Intrinsics = Opencl_intrinsics
@@ -212,7 +211,9 @@ module Backend : Framework_sig.BACKEND = struct
         let dev =
           match Opencl_plugin_base.Opencl.Device.get_current_device () with
           | Some d -> d
-          | None -> failwith "run_source: no current OpenCL device set"
+          | None ->
+              Opencl_error.raise_error
+                (Opencl_error.no_device_selected "run_source")
         in
 
         (* Compile and get kernel *)
@@ -241,12 +242,15 @@ module Backend : Framework_sig.BACKEND = struct
           ~shared_mem
           ~stream:(Some stream)
     | Framework_sig.CUDA_Source ->
-        failwith "OpenCL backend does not support CUDA source"
-    | Framework_sig.PTX -> failwith "OpenCL backend does not support PTX"
+        Opencl_error.raise_error
+          (Opencl_error.unsupported_source_lang "CUDA_Source")
+    | Framework_sig.PTX ->
+        Opencl_error.raise_error (Opencl_error.unsupported_source_lang "PTX")
     | Framework_sig.SPIR_V ->
-        failwith "OpenCL backend does not support SPIR-V (yet)"
+        Opencl_error.raise_error (Opencl_error.unsupported_source_lang "SPIR_V")
     | Framework_sig.GLSL_Source ->
-        failwith "OpenCL backend does not support GLSL source"
+        Opencl_error.raise_error
+          (Opencl_error.unsupported_source_lang "GLSL_Source")
 
   let wrap_kargs args = Opencl_kargs args
 

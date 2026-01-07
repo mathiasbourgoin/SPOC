@@ -277,7 +277,8 @@ end = struct
       (* OpenCL doesn't have direct D2D copy across contexts *)
       (* Would need to implement via host staging *)
       ignore (src, dst) ;
-      failwith "OpenCL device-to-device copy not implemented"
+      Opencl_error.raise_error
+        (Opencl_error.feature_not_supported "device-to-device copy")
 
     let size b = b.buf.Opencl_api.Memory.size
 
@@ -401,7 +402,8 @@ end = struct
       args := ArgFloat64 {value; idx} :: !args
 
     let set_arg_ptr _args _idx _ptr =
-      failwith "OpenCL does not support raw pointer arguments"
+      Opencl_error.raise_error
+        (Opencl_error.feature_not_supported "raw pointer arguments")
 
     let launch kernel ~args ~grid ~block ~shared_mem:_ ~stream =
       let open Framework_sig in

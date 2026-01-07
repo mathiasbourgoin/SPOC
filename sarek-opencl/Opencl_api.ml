@@ -268,7 +268,10 @@ module Device = struct
       platforms ;
     match !result with
     | Some d -> d
-    | None -> failwith (Printf.sprintf "Device %d not found" idx)
+    | None ->
+        let max_devices = count () in
+        Opencl_error.raise_error
+          (Opencl_error.device_not_found idx max_devices)
 end
 
 (** {1 Context Management} *)
@@ -544,7 +547,8 @@ module Program = struct
           size
       in
       let log = string_from_ptr log_buf ~length:(log_size - 1) in
-      failwith (Printf.sprintf "OpenCL build failed:\n%s" log)
+      Opencl_error.raise_error
+        (Opencl_error.compilation_failed "OpenCL kernel source" log)
     end
 
   let release program =

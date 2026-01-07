@@ -44,7 +44,10 @@ let is_available () =
 let get_opencl_lib () =
   match Lazy.force opencl_lib with
   | Some lib -> lib
-  | None -> failwith "OpenCL library not found"
+  | None ->
+      Opencl_error.raise_error
+        (Opencl_error.library_not_found "libOpenCL.so"
+           ["/usr/lib"; "/usr/local/lib"; "/opt/lib"])
 
 (** Create a lazy foreign binding to OpenCL *)
 let foreign_cl_lazy name typ = lazy (foreign ~from:(get_opencl_lib ()) name typ)
