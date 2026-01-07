@@ -221,87 +221,260 @@ end = struct
   end
 
   module Memory = struct
+    (* Interpreter uses same memory model as Native - just wraps host memory *)
+
+    (** Element kind - carries type information for buffers *)
+    type 'a element_kind =
+      | Scalar_kind :
+          ('a, 'b) Spoc_core.Vector_types.scalar_kind
+          -> 'a element_kind
+      | Custom_kind : 'a Spoc_core.Vector_types.custom_type -> 'a element_kind
+
+    (** Buffer storage - GADT eliminates Obj.t *)
+    type 'a buffer_storage =
+      | Bigarray_storage :
+          ('a, _, Bigarray.c_layout) Bigarray.Array1.t
+          -> 'a buffer_storage
+      | Ctypes_storage : unit Ctypes.ptr -> 'a buffer_storage
+
+    (** Typed buffer - no Obj.t needed! *)
     type 'a buffer = {
-      data : Obj.t;
+      storage : 'a buffer_storage;
+      kind : 'a element_kind;
       size : int;
-      elem_size : int;
       device : Device.t;
     }
 
-    let alloc device size kind =
-      let arr = Bigarray.Array1.create kind Bigarray.c_layout size in
-      let elem_size = Ctypes_static.sizeof (Ctypes.typ_of_bigarray_kind kind) in
-      {data = Obj.repr arr; size; elem_size; device}
+    (** Get element size from kind *)
+    let elem_size : type a. a element_kind -> int = function
+      | Scalar_kind k -> Spoc_core.Vector_types.scalar_elem_size k
+      | Custom_kind c -> c.elem_size
 
-    let alloc_custom device ~size ~elem_size =
+    let alloc : type a b. Device.t -> int -> (a, b) Bigarray.kind -> a buffer =
+     fun device size kind ->
+      let arr = Bigarray.Array1.create kind Bigarray.c_layout size in
+      match kind with
+      | Bigarray.Float32 ->
+          {
+            storage = Bigarray_storage arr;
+            kind = Scalar_kind Spoc_core.Vector_types.Float32;
+            size;
+            device;
+          }
+      | Bigarray.Float64 ->
+          {
+            storage = Bigarray_storage arr;
+            kind = Scalar_kind Spoc_core.Vector_types.Float64;
+            size;
+            device;
+          }
+      | Bigarray.Int32 ->
+          {
+            storage = Bigarray_storage arr;
+            kind = Scalar_kind Spoc_core.Vector_types.Int32;
+            size;
+            device;
+          }
+      | Bigarray.Int64 ->
+          {
+            storage = Bigarray_storage arr;
+            kind = Scalar_kind Spoc_core.Vector_types.Int64;
+            size;
+            device;
+          }
+      | Bigarray.Char ->
+          {
+            storage = Bigarray_storage arr;
+            kind = Scalar_kind Spoc_core.Vector_types.Char;
+            size;
+            device;
+          }
+      | Bigarray.Complex32 ->
+          {
+            storage = Bigarray_storage arr;
+            kind = Scalar_kind Spoc_core.Vector_types.Complex32;
+            size;
+            device;
+          }
+      | _ -> failwith "Unsupported Bigarray kind"
+
+    let alloc_custom : type a. Device.t -> size:int -> elem_size:int -> a buffer
+        =
+     fun device ~size ~elem_size ->
       let bytes = size * elem_size in
       let ptr = Ctypes.allocate_n Ctypes.char ~count:bytes in
-      {data = Obj.repr ptr; size; elem_size; device}
+      let unit_ptr = Ctypes.to_voidp ptr in
+      let custom =
+        {
+          Spoc_core.Vector_types.elem_size;
+          get = (fun _ _ -> failwith "alloc_custom: get not implemented");
+          set = (fun _ _ _ -> failwith "alloc_custom: set not implemented");
+          name = "custom";
+        }
+      in
+      {
+        storage = Ctypes_storage unit_ptr;
+        kind = Custom_kind custom;
+        size;
+        device;
+      }
 
-    let alloc_zero_copy device ba _kind =
+    let alloc_zero_copy : type a b.
+        Device.t ->
+        (a, b, Bigarray.c_layout) Bigarray.Array1.t ->
+        (a, b) Bigarray.kind ->
+        a buffer option =
+     fun device ba kind ->
       let size = Bigarray.Array1.dim ba in
-      let elem_size = Bigarray.kind_size_in_bytes (Bigarray.Array1.kind ba) in
-      Some {data = Obj.repr ba; size; elem_size; device}
+      match kind with
+      | Bigarray.Float32 ->
+          Some
+            {
+              storage = Bigarray_storage ba;
+              kind = Scalar_kind Spoc_core.Vector_types.Float32;
+              size;
+              device;
+            }
+      | Bigarray.Float64 ->
+          Some
+            {
+              storage = Bigarray_storage ba;
+              kind = Scalar_kind Spoc_core.Vector_types.Float64;
+              size;
+              device;
+            }
+      | Bigarray.Int32 ->
+          Some
+            {
+              storage = Bigarray_storage ba;
+              kind = Scalar_kind Spoc_core.Vector_types.Int32;
+              size;
+              device;
+            }
+      | Bigarray.Int64 ->
+          Some
+            {
+              storage = Bigarray_storage ba;
+              kind = Scalar_kind Spoc_core.Vector_types.Int64;
+              size;
+              device;
+            }
+      | Bigarray.Char ->
+          Some
+            {
+              storage = Bigarray_storage ba;
+              kind = Scalar_kind Spoc_core.Vector_types.Char;
+              size;
+              device;
+            }
+      | Bigarray.Complex32 ->
+          Some
+            {
+              storage = Bigarray_storage ba;
+              kind = Scalar_kind Spoc_core.Vector_types.Complex32;
+              size;
+              device;
+            }
+      | _ -> failwith "Unsupported Bigarray kind"
 
-    let is_zero_copy buf =
-      (* Custom allocations (char ptr) are not zero-copy; bigarrays are *)
-      Obj.tag buf.data <> Obj.custom_tag
+    let is_zero_copy : type a. a buffer -> bool =
+     fun buf ->
+      match buf.storage with
+      | Bigarray_storage _ -> true
+      | Ctypes_storage _ -> false
 
     let free _buf = ()
 
-    let host_to_device ~src ~dst =
-      let dst_arr = Obj.obj dst.data in
-      let len = min (Bigarray.Array1.dim src) dst.size in
-      Bigarray.Array1.blit
-        (Bigarray.Array1.sub src 0 len)
-        (Bigarray.Array1.sub dst_arr 0 len)
+    let host_to_device : type a b.
+        src:(a, b, Bigarray.c_layout) Bigarray.Array1.t -> dst:a buffer -> unit
+        =
+     fun ~src ~dst ->
+      match dst.storage with
+      | Bigarray_storage dst_arr ->
+          let len = min (Bigarray.Array1.dim src) dst.size in
+          let dst_arr_typed =
+            (Obj.magic dst_arr : (a, b, Bigarray.c_layout) Bigarray.Array1.t)
+          in
+          Bigarray.Array1.blit
+            (Bigarray.Array1.sub src 0 len)
+            (Bigarray.Array1.sub dst_arr_typed 0 len)
+      | Ctypes_storage _ ->
+          invalid_arg "host_to_device: destination is ctypes buffer"
 
-    let device_to_host ~src ~dst =
-      let src_arr = Obj.obj src.data in
-      let len = min src.size (Bigarray.Array1.dim dst) in
-      Bigarray.Array1.blit
-        (Bigarray.Array1.sub src_arr 0 len)
-        (Bigarray.Array1.sub dst 0 len)
+    let device_to_host : type a b.
+        src:a buffer -> dst:(a, b, Bigarray.c_layout) Bigarray.Array1.t -> unit
+        =
+     fun ~src ~dst ->
+      match src.storage with
+      | Bigarray_storage src_arr ->
+          let len = min src.size (Bigarray.Array1.dim dst) in
+          let src_arr_typed =
+            (Obj.magic src_arr : (a, b, Bigarray.c_layout) Bigarray.Array1.t)
+          in
+          Bigarray.Array1.blit
+            (Bigarray.Array1.sub src_arr_typed 0 len)
+            (Bigarray.Array1.sub dst 0 len)
+      | Ctypes_storage _ ->
+          invalid_arg "device_to_host: source is ctypes buffer"
 
     let host_ptr_to_device ~src_ptr ~byte_size ~dst =
       let open Ctypes in
-      let dst_ptr : char ptr = Obj.obj dst.data in
-      let src_char_ptr = from_voidp char src_ptr in
-      for i = 0 to byte_size - 1 do
-        dst_ptr +@ i <-@ !@(src_char_ptr +@ i)
-      done
+      match dst.storage with
+      | Ctypes_storage dst_ptr ->
+          let dst_char_ptr = from_voidp char dst_ptr in
+          let src_char_ptr = from_voidp char src_ptr in
+          for i = 0 to byte_size - 1 do
+            dst_char_ptr +@ i <-@ !@(src_char_ptr +@ i)
+          done
+      | Bigarray_storage _ ->
+          invalid_arg "host_ptr_to_device: destination is bigarray"
 
     let device_to_host_ptr ~src ~dst_ptr ~byte_size =
       let open Ctypes in
-      let src_ptr : char ptr = Obj.obj src.data in
-      let dst_char_ptr = from_voidp char dst_ptr in
-      for i = 0 to byte_size - 1 do
-        dst_char_ptr +@ i <-@ !@(src_ptr +@ i)
-      done
+      match src.storage with
+      | Ctypes_storage src_ptr ->
+          let src_char_ptr = from_voidp char src_ptr in
+          let dst_char_ptr = from_voidp char dst_ptr in
+          for i = 0 to byte_size - 1 do
+            dst_char_ptr +@ i <-@ !@(src_char_ptr +@ i)
+          done
+      | Bigarray_storage _ ->
+          invalid_arg "device_to_host_ptr: source is bigarray"
 
-    let device_to_device ~src ~dst =
-      let src_arr = Obj.obj src.data in
-      let dst_arr = Obj.obj dst.data in
-      let len = min src.size dst.size in
-      Bigarray.Array1.blit
-        (Bigarray.Array1.sub src_arr 0 len)
-        (Bigarray.Array1.sub dst_arr 0 len)
+    let device_to_device : type a. src:a buffer -> dst:a buffer -> unit =
+     fun ~src ~dst ->
+      match (src.storage, dst.storage) with
+      | Bigarray_storage src_arr, Bigarray_storage dst_arr ->
+          let len = min src.size dst.size in
+          let src_typed =
+            (Obj.magic src_arr : (a, _, Bigarray.c_layout) Bigarray.Array1.t)
+          in
+          let dst_typed =
+            (Obj.magic dst_arr : (a, _, Bigarray.c_layout) Bigarray.Array1.t)
+          in
+          Bigarray.Array1.blit
+            (Bigarray.Array1.sub src_typed 0 len)
+            (Bigarray.Array1.sub dst_typed 0 len)
+      | Ctypes_storage src_ptr, Ctypes_storage dst_ptr ->
+          let src_char_ptr = Ctypes.from_voidp Ctypes.char src_ptr in
+          let dst_char_ptr = Ctypes.from_voidp Ctypes.char dst_ptr in
+          let bytes =
+            min (src.size * elem_size src.kind) (dst.size * elem_size dst.kind)
+          in
+          for i = 0 to bytes - 1 do
+            Ctypes.(dst_char_ptr +@ i <-@ !@(src_char_ptr +@ i))
+          done
+      | _ -> invalid_arg "device_to_device: storage type mismatch"
 
-    let size buf = buf.size
+    let size : type a. a buffer -> int = fun buf -> buf.size
 
-    let device_ptr buf =
-      (* For custom allocations, data is a char ptr (Ctypes fat pointer with tag 0);
-         for scalar allocations, it's a bigarray (custom_tag 255). *)
-      if Obj.tag buf.data = 0 && Obj.size buf.data >= 1 then
-        (* Ctypes fat pointer - extract the raw address *)
-        let ptr : char Ctypes.ptr = Obj.obj buf.data in
-        Ctypes.raw_address_of_ptr (Ctypes.to_voidp ptr)
-      else
-        (* Bigarray - get start address *)
-        let arr : (_, _, Bigarray.c_layout) Bigarray.Array1.t =
-          Obj.obj buf.data
-        in
-        Ctypes.bigarray_start Ctypes.array1 arr |> Ctypes.raw_address_of_ptr
+    let device_ptr : type a. a buffer -> nativeint =
+     fun buf ->
+      match buf.storage with
+      | Bigarray_storage arr ->
+          let ptr = Ctypes.bigarray_start Ctypes.array1 arr in
+          Ctypes.to_voidp ptr |> Ctypes.raw_address_of_ptr
+      | Ctypes_storage ptr -> Ctypes.raw_address_of_ptr ptr
   end
 
   module Stream = struct
@@ -349,7 +522,7 @@ end = struct
 
         let type_name = "buffer"
 
-        let elem_size = match buf with {elem_size; _} -> elem_size
+        let elem_size = Memory.elem_size buf.Memory.kind
 
         let underlying_obj () = Obj.repr buf
 
@@ -401,7 +574,15 @@ end = struct
                                   Bigarray.c_layout )
                                 Bigarray.Array1.t =
                               match (buf : _ Memory.buffer) with
-                              | {data; _} -> Obj.obj data
+                              | {storage = Bigarray_storage arr; _} ->
+                                  (Obj.magic arr
+                                    : ( float,
+                                        Bigarray.float32_elt,
+                                        Bigarray.c_layout )
+                                      Bigarray.Array1.t)
+                              | {storage = Ctypes_storage _; _} ->
+                                  failwith
+                                    "Interpreter: Ctypes buffers not supported"
                             in
                             Sarek.Sarek_ir_interp.VFloat32
                               (Bigarray.Array1.get ba j)
@@ -413,7 +594,15 @@ end = struct
                                   Bigarray.c_layout )
                                 Bigarray.Array1.t =
                               match (buf : _ Memory.buffer) with
-                              | {data; _} -> Obj.obj data
+                              | {storage = Bigarray_storage arr; _} ->
+                                  (Obj.magic arr
+                                    : ( float,
+                                        Bigarray.float64_elt,
+                                        Bigarray.c_layout )
+                                      Bigarray.Array1.t)
+                              | {storage = Ctypes_storage _; _} ->
+                                  failwith
+                                    "Interpreter: Ctypes buffers not supported"
                             in
                             Sarek.Sarek_ir_interp.VFloat64
                               (Bigarray.Array1.get ba j)

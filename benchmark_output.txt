@@ -1,0 +1,11 @@
+==============================================
+       SAREK BENCHMARK SUITE
+==============================================
+
+File "sarek/ppx/dune", line 46, characters 12-18:
+46 |  (libraries ppxlib sarek_ppx_lib sarek_stdlib sarek_float64 unix)
+                 ^^^^^^
+Error: Library "ppxlib" not found.
+-> required by library "sarek.ppx" in _build/default/sarek/ppx
+-> required by _build/default/sarek/tests/e2e/test_stencil.exe
+make: *** [Makefile:190: benchmarks] Error 1
