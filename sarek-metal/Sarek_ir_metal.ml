@@ -465,6 +465,67 @@ let rec gen_lvalue buf = function
 
 (** {1 Statement Generation} *)
 
+(** Nested indentation level *)
+let indent_nested indent = indent ^ "  "
+
+(** Generate match case pattern with variable bindings *)
+and gen_match_pattern buf indent scrutinee cname bindings find_constr_types =
+  Buffer.add_string buf ("  case " ^ cname ^ ": {\n") ;
+  match (bindings, find_constr_types cname) with
+  | [var_name], Some [ty] ->
+      (* Single payload: access data.Constructor_v *)
+      Buffer.add_string buf (indent ^ "    ") ;
+      Buffer.add_string buf (metal_type_of_elttype ty) ;
+      Buffer.add_string buf " " ;
+      Buffer.add_string buf var_name ;
+      Buffer.add_string buf " = " ;
+      Buffer.add_string buf scrutinee ;
+      Buffer.add_string buf ".data." ;
+      Buffer.add_string buf cname ;
+      Buffer.add_string buf "_v;\n"
+  | vars, Some types when List.length vars = List.length types ->
+      (* Multiple payloads: access data.Constructor_v._0, ._1, etc. *)
+      List.iteri
+        (fun i (var_name, ty) ->
+          Buffer.add_string buf (indent ^ "    ") ;
+          Buffer.add_string buf (metal_type_of_elttype ty) ;
+          Buffer.add_string buf " " ;
+          Buffer.add_string buf var_name ;
+          Buffer.add_string buf " = " ;
+          Buffer.add_string buf scrutinee ;
+          Buffer.add_string buf ".data." ;
+          Buffer.add_string buf cname ;
+          Buffer.add_string buf (Printf.sprintf "_v._%d;\n" i))
+        (List.combine vars types)
+  | [], _ | _, None | _, Some [] -> () (* No bindings needed *)
+  | _ ->
+      Metal_error.raise_error
+        (Metal_error.unsupported_construct "pattern"
+           "mismatch between pattern bindings and constructor args")
+
+(** Generate variable declaration with initialization *)
+and gen_var_decl buf indent v_name v_type init_expr =
+  Buffer.add_string buf indent ;
+  Buffer.add_string buf (metal_type_of_elttype v_type) ;
+  Buffer.add_char buf ' ' ;
+  Buffer.add_string buf v_name ;
+  Buffer.add_string buf " = " ;
+  gen_expr buf init_expr ;
+  Buffer.add_string buf ";\n"
+
+(** Generate array declaration *)
+and gen_array_decl buf indent v_name elem_ty size memspace =
+  Buffer.add_string buf indent ;
+  if memspace <> "" then (
+    Buffer.add_string buf memspace ;
+    Buffer.add_char buf ' ') ;
+  Buffer.add_string buf (metal_type_of_elttype elem_ty) ;
+  Buffer.add_char buf ' ' ;
+  Buffer.add_string buf v_name ;
+  Buffer.add_char buf '[' ;
+  gen_expr buf size ;
+  Buffer.add_string buf "];\n"
+
 let rec gen_stmt buf indent = function
   | SEmpty -> ()
   | SSeq stmts -> List.iter (gen_stmt buf indent) stmts
@@ -479,14 +540,14 @@ let rec gen_stmt buf indent = function
       Buffer.add_string buf "if (" ;
       gen_expr buf cond ;
       Buffer.add_string buf ") {\n" ;
-      gen_stmt buf (indent ^ "  ") then_ ;
+      gen_stmt buf (indent_nested indent) then_ ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}" ;
       match else_opt with
       | None -> Buffer.add_char buf '\n'
       | Some else_ ->
           Buffer.add_string buf " else {\n" ;
-          gen_stmt buf (indent ^ "  ") else_ ;
+          gen_stmt buf (indent_nested indent) else_ ;
           Buffer.add_string buf indent ;
           Buffer.add_string buf "}\n")
   | SWhile (cond, body) ->
@@ -494,7 +555,7 @@ let rec gen_stmt buf indent = function
       Buffer.add_string buf "while (" ;
       gen_expr buf cond ;
       Buffer.add_string buf ") {\n" ;
-      gen_stmt buf (indent ^ "  ") body ;
+      gen_stmt buf (indent_nested indent) body ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
   | SFor (v, start, stop, dir, body) ->
@@ -517,15 +578,13 @@ let rec gen_stmt buf indent = function
       Buffer.add_string buf v.var_name ;
       Buffer.add_string buf incr ;
       Buffer.add_string buf ") {\n" ;
-      gen_stmt buf (indent ^ "  ") body ;
+      gen_stmt buf (indent_nested indent) body ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
   | SMatch (e, cases) ->
-      (* Generate scrutinee into a temp buffer to get its string representation *)
       let scrutinee_buf = Buffer.create 64 in
       gen_expr scrutinee_buf e ;
       let scrutinee = Buffer.contents scrutinee_buf in
-      (* Lookup constructor types from the first PConstr case *)
       let find_constr_types cname =
         List.find_map
           (fun (_vname, constrs) ->
@@ -542,40 +601,9 @@ let rec gen_stmt buf indent = function
         (fun (pattern, body) ->
           Buffer.add_string buf indent ;
           (match pattern with
-          | PConstr (cname, bindings) -> (
-              Buffer.add_string buf ("  case " ^ cname ^ ": {\n") ;
-              (* Generate bindings: extract payload from scrutinee *)
-              match (bindings, find_constr_types cname) with
-              | [var_name], Some [ty] ->
-                  (* Single payload: access data.Constructor_v *)
-                  Buffer.add_string buf (indent ^ "    ") ;
-                  Buffer.add_string buf (metal_type_of_elttype ty) ;
-                  Buffer.add_string buf " " ;
-                  Buffer.add_string buf var_name ;
-                  Buffer.add_string buf " = " ;
-                  Buffer.add_string buf scrutinee ;
-                  Buffer.add_string buf ".data." ;
-                  Buffer.add_string buf cname ;
-                  Buffer.add_string buf "_v;\n"
-              | vars, Some types when List.length vars = List.length types ->
-                  (* Multiple payloads: access data.Constructor_v._0, ._1, etc. *)
-                  List.iteri
-                    (fun i (var_name, ty) ->
-                      Buffer.add_string buf (indent ^ "    ") ;
-                      Buffer.add_string buf (metal_type_of_elttype ty) ;
-                      Buffer.add_string buf " " ;
-                      Buffer.add_string buf var_name ;
-                      Buffer.add_string buf " = " ;
-                      Buffer.add_string buf scrutinee ;
-                      Buffer.add_string buf ".data." ;
-                      Buffer.add_string buf cname ;
-                      Buffer.add_string buf (Printf.sprintf "_v._%d;\n" i))
-                    (List.combine vars types)
-              | [], _ | _, None | _, Some [] -> () (* No bindings needed *)
-              | _ ->
-                  Metal_error.raise_error
-                    (Metal_error.unsupported_construct "pattern"
-                       "mismatch between pattern bindings and constructor args"))
+          | PConstr (cname, bindings) ->
+              gen_match_pattern buf indent scrutinee cname bindings
+                find_constr_types
           | PWild -> Buffer.add_string buf "  default: {\n") ;
           gen_stmt buf (indent ^ "    ") body ;
           Buffer.add_string buf (indent ^ "    break;\n") ;
@@ -617,35 +645,14 @@ let rec gen_stmt buf indent = function
       gen_expr buf e ;
       Buffer.add_string buf ";\n"
   | SLet (v, EArrayCreate (elem_ty, size, mem), body) ->
-      (* Array declaration: type arr[size]; *)
-      Buffer.add_string buf indent ;
-      (match mem with
-      | Shared -> Buffer.add_string buf "threadgroup "
-      | _ -> ()) ;
-      Buffer.add_string buf (metal_type_of_elttype elem_ty) ;
-      Buffer.add_char buf ' ' ;
-      Buffer.add_string buf v.var_name ;
-      Buffer.add_char buf '[' ;
-      gen_expr buf size ;
-      Buffer.add_string buf "];\n" ;
+      let ms = match mem with Shared -> "threadgroup" | _ -> "" in
+      gen_array_decl buf indent v.var_name elem_ty size ms ;
       gen_stmt buf indent body
   | SLet (v, e, body) ->
-      Buffer.add_string buf indent ;
-      Buffer.add_string buf (metal_type_of_elttype v.var_type) ;
-      Buffer.add_char buf ' ' ;
-      Buffer.add_string buf v.var_name ;
-      Buffer.add_string buf " = " ;
-      gen_expr buf e ;
-      Buffer.add_string buf ";\n" ;
+      gen_var_decl buf indent v.var_name v.var_type e ;
       gen_stmt buf indent body
   | SLetMut (v, e, body) ->
-      Buffer.add_string buf indent ;
-      Buffer.add_string buf (metal_type_of_elttype v.var_type) ;
-      Buffer.add_char buf ' ' ;
-      Buffer.add_string buf v.var_name ;
-      Buffer.add_string buf " = " ;
-      gen_expr buf e ;
-      Buffer.add_string buf ";\n" ;
+      gen_var_decl buf indent v.var_name v.var_type e ;
       gen_stmt buf indent body
   | SPragma (hints, body) ->
       (* Metal uses #pragma for hints *)
@@ -657,7 +664,7 @@ let rec gen_stmt buf indent = function
   | SBlock body ->
       Buffer.add_string buf indent ;
       Buffer.add_string buf "{\n" ;
-      gen_stmt buf (indent ^ "  ") body ;
+      gen_stmt buf (indent_nested indent) body ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
 
