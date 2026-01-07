@@ -333,14 +333,8 @@ end = struct
   module Kernel = struct
     type t = {name : string}
 
-    type arg =
-      | ArgBuffer of Obj.t
-      | ArgInt32 of int32
-      | ArgInt64 of int64
-      | ArgFloat32 of float
-      | ArgFloat64 of float
-
-    type args = {mutable list : arg list}
+    (** Use exec_arg directly - no intermediate type needed! *)
+    type args = {mutable list : Framework_sig.exec_arg list}
 
     let compile _device ~name ~source:_ = {name}
 
@@ -349,15 +343,35 @@ end = struct
     let create_args () = {list = []}
 
     let set_arg_buffer args _idx buf =
-      args.list <- ArgBuffer (Obj.repr buf) :: args.list
+      (* Wrap buffer in EXEC_VECTOR for exec_arg *)
+      let module EV : Typed_value.EXEC_VECTOR = struct
+        let length = Memory.size buf
 
-    let set_arg_int32 args _idx v = args.list <- ArgInt32 v :: args.list
+        let type_name = "buffer"
 
-    let set_arg_int64 args _idx v = args.list <- ArgInt64 v :: args.list
+        let elem_size = match buf with {elem_size; _} -> elem_size
 
-    let set_arg_float32 args _idx v = args.list <- ArgFloat32 v :: args.list
+        let underlying_obj () = Obj.repr buf
 
-    let set_arg_float64 args _idx v = args.list <- ArgFloat64 v :: args.list
+        let device_ptr () = Memory.device_ptr buf
+
+        let get _i = failwith "Interpreter buffer: get not implemented"
+
+        let set _i _v = failwith "Interpreter buffer: set not implemented"
+      end in
+      args.list <- Framework_sig.EA_Vec (module EV) :: args.list
+
+    let set_arg_int32 args _idx v =
+      args.list <- Framework_sig.EA_Int32 v :: args.list
+
+    let set_arg_int64 args _idx v =
+      args.list <- Framework_sig.EA_Int64 v :: args.list
+
+    let set_arg_float32 args _idx v =
+      args.list <- Framework_sig.EA_Float32 v :: args.list
+
+    let set_arg_float64 args _idx v =
+      args.list <- Framework_sig.EA_Float64 v :: args.list
 
     let set_arg_ptr _args _idx _ptr =
       failwith "Interpreter backend does not support raw pointer arguments"
@@ -366,26 +380,28 @@ end = struct
         ~(block : Framework_sig.dims) ~shared_mem:_ ~stream:_ =
       match Hashtbl.find_opt interpreter_kernels kernel.name with
       | Some ir ->
-          (* Convert args to interpreter format *)
+          (* Convert exec_arg list to interpreter format *)
           let arg_list = List.rev args.list in
           let param_args =
             List.mapi
               (fun i arg ->
                 let name = Printf.sprintf "param%d" i in
                 match arg with
-                | ArgBuffer o ->
-                    let buf : _ Memory.buffer = Obj.obj o in
+                | Framework_sig.EA_Vec (module V) ->
+                    (* Extract buffer from EXEC_VECTOR *)
+                    let buf = Obj.obj (V.underlying_obj ()) in
                     (* Convert bigarray to value array - detect type dynamically *)
                     let arr =
-                      Array.init buf.size (fun j ->
+                      Array.init (Memory.size buf) (fun j ->
                           (* Use elem_size to detect type: 4=float32/int32, 8=float64/int64 *)
-                          if buf.elem_size = 4 then begin
+                          if V.elem_size = 4 then begin
                             let ba :
                                 ( float,
                                   Bigarray.float32_elt,
                                   Bigarray.c_layout )
                                 Bigarray.Array1.t =
-                              Obj.obj buf.Memory.data
+                              match (buf : _ Memory.buffer) with
+                              | {data; _} -> Obj.obj data
                             in
                             Sarek.Sarek_ir_interp.VFloat32
                               (Bigarray.Array1.get ba j)
@@ -396,29 +412,31 @@ end = struct
                                   Bigarray.float64_elt,
                                   Bigarray.c_layout )
                                 Bigarray.Array1.t =
-                              Obj.obj buf.Memory.data
+                              match (buf : _ Memory.buffer) with
+                              | {data; _} -> Obj.obj data
                             in
                             Sarek.Sarek_ir_interp.VFloat64
                               (Bigarray.Array1.get ba j)
                           end)
                     in
                     (name, Sarek.Sarek_ir_interp.ArgArray arr)
-                | ArgInt32 n ->
+                | Framework_sig.EA_Int32 n ->
                     ( name,
                       Sarek.Sarek_ir_interp.ArgScalar
                         (Sarek.Sarek_ir_interp.VInt32 n) )
-                | ArgInt64 n ->
+                | Framework_sig.EA_Int64 n ->
                     ( name,
                       Sarek.Sarek_ir_interp.ArgScalar
                         (Sarek.Sarek_ir_interp.VInt64 n) )
-                | ArgFloat32 f ->
+                | Framework_sig.EA_Float32 f ->
                     ( name,
                       Sarek.Sarek_ir_interp.ArgScalar
                         (Sarek.Sarek_ir_interp.VFloat32 f) )
-                | ArgFloat64 f ->
+                | Framework_sig.EA_Float64 f ->
                     ( name,
                       Sarek.Sarek_ir_interp.ArgScalar
-                        (Sarek.Sarek_ir_interp.VFloat64 f) ))
+                        (Sarek.Sarek_ir_interp.VFloat64 f) )
+                | _ -> failwith "Interpreter: unsupported exec_arg type")
               arg_list
           in
           Sarek.Sarek_ir_interp.run_kernel
