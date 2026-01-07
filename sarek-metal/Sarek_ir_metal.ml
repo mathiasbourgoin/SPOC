@@ -88,7 +88,7 @@ let metal_thread_intrinsic = function
   | "global_idx_y" -> "__metal_gid.y"
   | "global_idx_z" -> "__metal_gid.z"
   | "global_size" -> "__metal_tpg.x * __metal_num_groups.x"
-  | name -> failwith ("Unknown thread intrinsic: " ^ name)
+  | name -> Metal_error.raise_error (Metal_error.unknown_intrinsic name)
 
 (** {1 Expression Generation} *)
 
@@ -180,7 +180,9 @@ let rec gen_expr buf = function
       Buffer.add_char buf ')'
   | EArrayLen arr -> Buffer.add_string buf ("sarek_" ^ arr ^ "_length")
   | EArrayCreate _ ->
-      failwith "gen_expr: EArrayCreate should be handled in gen_stmt SLet"
+      Metal_error.raise_error
+        (Metal_error.unsupported_construct "EArrayCreate"
+           "should be handled in gen_stmt SLet")
   | EIf (cond, then_, else_) ->
       (* Ternary operator for value-returning if *)
       Buffer.add_char buf '(' ;
@@ -190,14 +192,18 @@ let rec gen_expr buf = function
       Buffer.add_string buf " : " ;
       gen_expr buf else_ ;
       Buffer.add_char buf ')'
-  | EMatch (_, []) -> failwith "gen_expr: empty match"
+  | EMatch (_, []) ->
+      Metal_error.raise_error
+        (Metal_error.unsupported_construct "match" "empty match expression")
   | EMatch (_, [(_, body)]) ->
       (* Single case - just emit the body *)
       gen_expr buf body
   | EMatch (e, cases) ->
       (* Multi-case match as nested ternary - check tag field *)
       let rec gen_cases = function
-        | [] -> failwith "gen_expr: empty match cases"
+        | [] ->
+            Metal_error.raise_error
+              (Metal_error.unsupported_construct "match" "empty match cases")
         | [(_, body)] -> gen_expr buf body
         | (pat, body) :: rest ->
             Buffer.add_char buf '(' ;
@@ -315,7 +321,9 @@ and gen_intrinsic buf path name args =
             gen_expr buf idx ;
             Buffer.add_string buf "], " ;
             gen_expr buf value
-        | _ -> failwith "atomic_add requires 2 or 3 arguments") ;
+        | args ->
+            Metal_error.raise_error
+              (Metal_error.invalid_arg_count "atomic_add" 2 (List.length args))) ;
         Buffer.add_string buf ", memory_order_relaxed)"
     | "atomic_add_global_int32" ->
         Buffer.add_string buf "atomic_fetch_add_explicit(" ;
@@ -334,7 +342,10 @@ and gen_intrinsic buf path name args =
             gen_expr buf idx ;
             Buffer.add_string buf "], " ;
             gen_expr buf value
-        | _ -> failwith "atomic_add_global requires 2 or 3 arguments") ;
+        | args ->
+            Metal_error.raise_error
+              (Metal_error.invalid_arg_count "atomic_add_global" 2
+                 (List.length args))) ;
         (* Use relaxed memory order *)
         Buffer.add_string buf ", memory_order_relaxed)"
     | "atomic_sub" ->
@@ -345,7 +356,9 @@ and gen_intrinsic buf path name args =
             gen_expr buf addr ;
             Buffer.add_string buf ", " ;
             gen_expr buf value
-        | _ -> failwith "atomic_sub requires 2 arguments") ;
+        | args ->
+            Metal_error.raise_error
+              (Metal_error.invalid_arg_count "atomic_sub" 2 (List.length args))) ;
         Buffer.add_char buf ')'
     | "atomic_min" ->
         Buffer.add_string buf "atomic_min(" ;
@@ -355,7 +368,9 @@ and gen_intrinsic buf path name args =
             gen_expr buf addr ;
             Buffer.add_string buf ", " ;
             gen_expr buf value
-        | _ -> failwith "atomic_min requires 2 arguments") ;
+        | args ->
+            Metal_error.raise_error
+              (Metal_error.invalid_arg_count "atomic_min" 2 (List.length args))) ;
         Buffer.add_char buf ')'
     | "atomic_max" ->
         Buffer.add_string buf "atomic_max(" ;
@@ -365,7 +380,9 @@ and gen_intrinsic buf path name args =
             gen_expr buf addr ;
             Buffer.add_string buf ", " ;
             gen_expr buf value
-        | _ -> failwith "atomic_max requires 2 arguments") ;
+        | args ->
+            Metal_error.raise_error
+              (Metal_error.invalid_arg_count "atomic_max" 2 (List.length args))) ;
         Buffer.add_char buf ')'
     | _ -> (
         (* Try registry lookup for intrinsics like float, int_of_float, etc. *)
@@ -556,8 +573,9 @@ let rec gen_stmt buf indent = function
                     (List.combine vars types)
               | [], _ | _, None | _, Some [] -> () (* No bindings needed *)
               | _ ->
-                  failwith
-                    "Mismatch between pattern bindings and constructor args")
+                  Metal_error.raise_error
+                    (Metal_error.unsupported_construct "pattern"
+                       "mismatch between pattern bindings and constructor args"))
           | PWild -> Buffer.add_string buf "  default: {\n") ;
           gen_stmt buf (indent ^ "    ") body ;
           Buffer.add_string buf (indent ^ "    break;\n") ;
@@ -591,9 +609,9 @@ let rec gen_stmt buf indent = function
           if not (String.length code > 0 && code.[String.length code - 1] = '\n')
           then Buffer.add_char buf '\n'
       | None ->
-          failwith
-            "SNative requires device context - use generate_for_device instead \
-             of generate")
+          Metal_error.raise_error
+            (Metal_error.no_device_selected
+               "SNative (use generate_for_device instead of generate)"))
   | SExpr e ->
       Buffer.add_string buf indent ;
       gen_expr buf e ;
@@ -691,7 +709,9 @@ let gen_param_metal buf atomic_vars idx = function
       Buffer.add_string buf (string_of_int (idx + 1)) ;
       Buffer.add_string buf ")]]" ;
       idx + 2
-  | DLocal _ | DShared _ -> failwith "gen_param_metal: expected DParam"
+  | DLocal _ | DShared _ ->
+      Metal_error.raise_error
+        (Metal_error.unsupported_construct "gen_param_metal" "expected DParam")
 
 let gen_param buf = function
   | DParam (v, None) ->
@@ -714,7 +734,9 @@ let gen_param buf = function
       Buffer.add_string buf ", int sarek_" ;
       Buffer.add_string buf v.var_name ;
       Buffer.add_string buf "_length"
-  | DLocal _ | DShared _ -> failwith "gen_param: expected DParam"
+  | DLocal _ | DShared _ ->
+      Metal_error.raise_error
+        (Metal_error.unsupported_construct "gen_param" "expected DParam")
 
 (** Collect variable names used in atomic operations *)
 let rec collect_atomic_vars_expr = function
@@ -834,7 +856,9 @@ let gen_local buf indent atomic_vars = function
       Buffer.add_char buf '[' ;
       gen_expr buf size ;
       Buffer.add_string buf "];\n"
-  | DParam _ -> failwith "gen_local: expected DLocal or DShared"
+  | DParam _ ->
+      Metal_error.raise_error
+        (Metal_error.unsupported_construct "gen_local" "expected DLocal or DShared")
 
 (** {1 Helper Function Generation} *)
 

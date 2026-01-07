@@ -17,6 +17,7 @@
   sarek_registry
   (re_export spoc_core))
  (modules
+  Metal_error
   Metal_types
   Metal_bindings
   Metal_api

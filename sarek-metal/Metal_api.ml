@@ -122,13 +122,16 @@ module Device = struct
         (* Fallback: Try to get from list *)
         let devices = get_all_handles () in
         if Array.length devices > 0 then make_device 0 devices.(0)
-        else failwith "No Metal device found"
+        else
+          Metal_error.raise_error
+            (Metal_error.backend_unavailable "No Metal device found")
       else make_device 0 dev
     else
       (* Get from device list *)
       let devices = get_all_handles () in
       if idx >= Array.length devices then
-        failwith (Printf.sprintf "Device %d not found" idx)
+        Metal_error.raise_error
+          (Metal_error.device_not_found idx (Array.length devices))
       else make_device idx devices.(idx)
 
   let id dev = dev.id

@@ -177,9 +177,9 @@ module Backend : Framework_sig.BACKEND = struct
 
   (** Execute directly - not supported for JIT backend *)
   let execute_direct ~native_fn:_ ~ir:_ ~block:_ ~grid:_ _args =
-    failwith
-      "Metal backend execute_direct: JIT backend does not support direct \
-       execution"
+    Metal_error.raise_error
+      (Metal_error.feature_not_supported
+         "direct execution (JIT backend only supports code generation)")
 
   (** Metal intrinsic registry *)
   module Intrinsics = Metal_intrinsics
@@ -196,7 +196,8 @@ module Backend : Framework_sig.BACKEND = struct
     let dev =
       match Metal_plugin_base.Metal.Device.get_current_device () with
       | Some d -> d
-      | None -> failwith "run_source: no current Metal device set"
+      | None ->
+          Metal_error.raise_error (Metal_error.no_device_selected "run_source")
     in
 
     (* Compile and get kernel *)

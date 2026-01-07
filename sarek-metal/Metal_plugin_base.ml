@@ -386,7 +386,8 @@ end = struct
       args := ArgFloat64 {value; idx} :: !args
 
     let set_arg_ptr _args _idx _ptr =
-      failwith "Metal raw pointer arguments not yet implemented"
+      Metal_error.raise_error
+        (Metal_error.feature_not_supported "raw pointer kernel arguments")
 
     let launch kernel ~args ~grid ~block ~shared_mem:_ ~stream =
       let open Framework_sig in

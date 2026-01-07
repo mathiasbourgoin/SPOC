@@ -35,7 +35,7 @@ let is_available () =
 let get_metal_lib () =
   match Lazy.force metal_lib with
   | Some lib -> lib
-  | None -> failwith "Metal framework not found"
+  | None -> Metal_error.raise_error (Metal_error.library_not_found "Metal" [])
 
 (** {1 Objective-C Runtime Helpers} *)
 
@@ -48,7 +48,7 @@ let objc_lib : Dl.library option Lazy.t =
 let get_objc_lib () =
   match Lazy.force objc_lib with
   | Some lib -> lib
-  | None -> failwith "libobjc not found"
+  | None -> Metal_error.raise_error (Metal_error.library_not_found "libobjc" [])
 
 (** objc_msgSend - the core Objective-C message dispatch *)
 let objc_msgSend_lazy =
@@ -96,7 +96,8 @@ let foundation_lib : Dl.library option Lazy.t =
 let get_foundation_lib () =
   match Lazy.force foundation_lib with
   | Some lib -> lib
-  | None -> failwith "Foundation framework not found"
+  | None ->
+      Metal_error.raise_error (Metal_error.library_not_found "Foundation" [])
 
 (** Helper: Create NSString from C string *)
 let nsstring_from_cstring str =
