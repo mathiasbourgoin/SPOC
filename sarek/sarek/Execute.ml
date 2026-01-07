@@ -326,10 +326,24 @@ let vector_to_interp_array : type a b.
       Array.init len (fun i -> Sarek_ir_interp.VFloat32 (Vector.get vec i))
   | Vector.Scalar Vector.Float64 ->
       Array.init len (fun i -> Sarek_ir_interp.VFloat64 (Vector.get vec i))
-  | _ ->
-      (* For other types, use float32 as default *)
+  | Vector.Custom custom -> (
+      (* Custom types: use helpers to convert to VRecord *)
+      let type_name = custom.Vector.name in
+      match Sarek_type_helpers.lookup type_name with
+      | Some h ->
+          Array.init len (fun i ->
+              let native_record = Vector.get vec i in
+              h.to_value native_record)
+      | None ->
+          (* Fallback: wrap in VRecord with empty fields *)
+          Array.init len (fun _i -> Sarek_ir_interp.VRecord (type_name, [||])))
+  | Vector.Scalar Vector.Char ->
+      (* Char type: convert to int32 *)
       Array.init len (fun i ->
-          Sarek_ir_interp.VFloat32 (Obj.magic (Vector.get vec i) : float))
+          Sarek_ir_interp.VInt32 (Int32.of_int (Char.code (Vector.get vec i))))
+  | Vector.Scalar Vector.Complex32 ->
+      (* Complex32: not directly supported, skip for now *)
+      Array.init len (fun _i -> Sarek_ir_interp.VUnit)
 
 (** Copy interpreter value array back to V2 Vector *)
 let interp_array_to_vector : type a b.
@@ -353,10 +367,34 @@ let interp_array_to_vector : type a b.
       for i = 0 to len - 1 do
         Vector.set vec i (Sarek_ir_interp.to_float64 arr.(i))
       done
-  | _ ->
+  | Vector.Custom _ ->
+      (* Custom types: convert VRecord to native OCaml values using helpers *)
       for i = 0 to len - 1 do
-        Vector.set vec i (Obj.magic (Sarek_ir_interp.to_float32 arr.(i)))
+        match arr.(i) with
+        | Sarek_ir_interp.VRecord (type_name, _fields) as vrec -> (
+            match Sarek_type_helpers.lookup type_name with
+            | Some h ->
+                let native_record = h.from_value vrec in
+                Vector.set vec i native_record
+            | None ->
+                failwith
+                  (Printf.sprintf
+                     "No helper found for type '%s'. Did you forget \
+                      [@@sarek.type]?"
+                     type_name))
+        | _ -> () (* Skip other values *)
       done
+  | Vector.Scalar Vector.Char ->
+      (* Char type: convert from int32 *)
+      for i = 0 to len - 1 do
+        Vector.set
+          vec
+          i
+          (Char.chr (Int32.to_int (Sarek_ir_interp.to_int32 arr.(i))))
+      done
+  | Vector.Scalar Vector.Complex32 ->
+      (* Complex32: not directly supported, skip for now *)
+      ()
 
 (** Run kernel via interpreter with V2 Vectors. Note: Interpreter works with IR
     params directly - one arg per param. Vectors map to ArgArray (length is
@@ -367,7 +405,7 @@ let run_interpreter_vectors ~(ir : Sarek_ir.kernel) ~(args : vector_arg list)
   (* Set interpreter parallel mode *)
   Sarek_ir_interp.parallel_mode := parallel ;
   (* Convert vector args to interpreter format, tracking arrays for writeback *)
-  let interp_arrays : (Obj.t * Sarek_ir_interp.value array) list ref = ref [] in
+  let writebacks : Sarek_ir_interp.writeback list ref = ref [] in
 
   (* Extract param names from kernel IR (only DParam entries) *)
   let param_names =
@@ -388,7 +426,7 @@ let run_interpreter_vectors ~(ir : Sarek_ir.kernel) ~(args : vector_arg list)
         match arg with
         | Vec v ->
             let arr = vector_to_interp_array v in
-            interp_arrays := (Obj.repr v, arr) :: !interp_arrays ;
+            writebacks := Sarek_ir_interp.Writeback (v, arr) :: !writebacks ;
             (name, Sarek_ir_interp.ArgArray arr)
         | Int n ->
             ( name,
@@ -410,13 +448,11 @@ let run_interpreter_vectors ~(ir : Sarek_ir.kernel) ~(args : vector_arg list)
     ~grid:(grid.x, grid.y, grid.z)
     interp_args ;
 
-  (* Copy results back to vectors - use Obj.magic to recover the type *)
+  (* Copy results back to vectors *)
   List.iter
-    (fun (vec_obj, arr) ->
-      (* We stored the vector as Obj.t, recover it with magic *)
-      let vec : (float, Bigarray.float32_elt) Vector.t = Obj.magic vec_obj in
+    (fun (Sarek_ir_interp.Writeback (vec, arr)) ->
       interp_array_to_vector arr vec)
-    !interp_arrays
+    !writebacks
 
 (** Execute a kernel with V2 Vectors. Auto-transfers, dispatches to backend.
     Unified path for all backends - run handles expansion based on backend. *)
