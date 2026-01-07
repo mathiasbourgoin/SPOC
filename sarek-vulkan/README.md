@@ -1,9 +1,7 @@
 # sarek-vulkan - Vulkan/GLSL Backend Plugin for SPOC/Sarek
 
 **Package**: `sarek-vulkan`  
-**Library**: `sarek-vulkan.plugin`  
-**Tests**: 20 unit tests  
-**Lines of Code**: 4,799 (core) + 383 (tests)
+**Library**: `sarek-vulkan.plugin`
 
 The Vulkan backend plugin enables SPOC/Sarek to compile and execute GPU kernels on Vulkan-compatible devices using GLSL compute shaders and SPIR-V. Uses ctypes-foreign for FFI bindings.
 
@@ -60,10 +58,8 @@ The Vulkan backend is one of several GPU backends supported by SPOC/Sarek. It tr
 - **Pure OCaml**: Uses `ctypes-foreign` for FFI
 - **GLSL Shaders**: Generate compute shaders with layout qualifiers
 - **SPIR-V**: Two compilation paths (glslangValidator or Shaderc library)
-- **Structured Errors**: Shared `Backend_error` module
 - **Multi-Vendor**: Works across vendors (NVIDIA, AMD, Intel, mobile)
 - **Kernel Cache**: Global on-disk cache at `~/.cache/sarek/vulkan/`
-- **Tested**: 20 unit tests covering errors and code generation
 
 ### Supported Devices
 
@@ -540,7 +536,7 @@ GLSL provides standard math functions:
 
 ## Testing
 
-The Vulkan backend includes 20 unit tests:
+The Vulkan backend includes unit tests:
 
 ```bash
 # Run all tests
@@ -622,15 +618,17 @@ echo 'void main() {}' | glslangValidator --stdin -S comp
 
 ## Design Principles
 
-### Code Quality
+### Type Safety
 
-The Vulkan backend follows SPOC/Sarek design principles:
+Uses GADTs and phantom types for typed memory and kernel arguments.
 
-1. **Type Safety**: No `Obj.t` usage; GADTs and phantom types throughout
-2. **Structured Errors**: All failures use `Backend_error.t`
-3. **Code Organization**: Helper functions extracted, gen_stmt reduced by 29%
-4. **Zero Unsafe Patterns**: No `List.hd`, `List.nth`, or `List.tl`
-5. **Comprehensive Tests**: 20 unit tests covering all error paths
+### Structured Errors
+
+Uses shared `Backend_error` module for consistent error handling.
+
+### Code Organization
+
+Code generation uses extracted helper functions for maintainability.
 
 ### Performance Considerations
 

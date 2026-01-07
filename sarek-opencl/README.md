@@ -1,9 +1,7 @@
 # sarek-opencl - OpenCL Backend Plugin for SPOC/Sarek
 
 **Package**: `sarek-opencl`  
-**Library**: `sarek-opencl.plugin`  
-**Tests**: 19 unit tests  
-**Lines of Code**: 3,237 (core) + 364 (tests)
+**Library**: `sarek-opencl.plugin`
 
 The OpenCL backend plugin enables SPOC/Sarek to compile and execute GPU kernels on OpenCL-compatible devices (GPUs, CPUs, FPGAs) using the OpenCL runtime. Uses ctypes-foreign for FFI bindings.
 
@@ -59,10 +57,8 @@ The OpenCL backend is one of several GPU backends supported by SPOC/Sarek. It tr
 
 - **Pure OCaml**: Uses `ctypes-foreign` for FFI
 - **JIT Compilation**: Runtime compilation with OpenCL compiler
-- **Structured Errors**: Shared `Backend_error` module
 - **Multi-Platform**: Works across vendors (NVIDIA, AMD, Intel)
 - **Device Discovery**: Automatic platform/device enumeration
-- **Tested**: 19 unit tests covering errors and code generation
 
 ### Supported Devices
 
@@ -772,9 +768,9 @@ _build/default/sarek/tests/e2e/test_vector_add.exe  # Should list OpenCL devices
 
 ## Design Principles
 
-### 1. Pure OCaml FFI
+### Pure OCaml FFI
 
-No C stubs required. All OpenCL bindings use `ctypes-foreign`:
+All OpenCL bindings use `ctypes-foreign`:
 
 ```ocaml
 let clGetPlatformIDs = 
@@ -782,22 +778,17 @@ let clGetPlatformIDs =
     (cl_uint @-> ptr cl_platform_id @-> ptr cl_uint @-> returning cl_int)
 ```
 
-### 2. Structured Error Handling
+### Structured Error Handling
 
-Shared `Backend_error` module provides consistent errors across all backends:
+Uses shared `Backend_error` module for consistent error handling:
 
 ```ocaml
 include Backend_error.Make(struct let name = "OpenCL" end)
 ```
 
-Benefits:
-- Consistent error messages
-- Type-safe error data
-- Cross-backend error handling patterns
+### Code Organization
 
-### 3. Code Organization
-
-Refactored code generation with extracted helpers:
+Code generation uses extracted helpers for maintainability:
 - `gen_stmt`: 190 → 134 lines (30% reduction)
 - Helper functions: `gen_match_case`, `gen_array_decl`
 - Named constants: `small_buffer_size`, `large_buffer_size`

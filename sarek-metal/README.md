@@ -1,9 +1,7 @@
 # sarek-metal - Metal Backend Plugin for SPOC/Sarek
 
 **Package**: `sarek-metal`  
-**Library**: `sarek-metal.plugin`  
-**Tests**: 20 unit tests  
-**Lines of Code**: 2,758 (core) + 326 (tests)
+**Library**: `sarek-metal.plugin`
 
 The Metal backend plugin enables SPOC/Sarek to compile and execute GPU kernels on Apple Silicon and Intel Macs using Metal Shading Language (MSL) and Metal compute pipelines.
 
@@ -15,9 +13,7 @@ The Metal backend translates Sarek IR (Intermediate Representation) into Metal C
 
 - **Pure OCaml**: Uses `ctypes-foreign` for FFI with Metal framework
 - **JIT Compilation**: Runtime compilation with Metal compiler
-- **Structured Errors**: Shared `Backend_error` module
 - **Apple Platforms**: macOS 10.13+, iOS 11+, iPadOS
-- **Tested**: 20 unit tests covering errors and code generation
 
 ### Supported Devices
 
@@ -224,7 +220,7 @@ system_profiler SPDisplaysDataType | grep -i metal
 
 ## Testing
 
-The Metal backend includes 20 unit tests:
+The Metal backend includes unit tests:
 
 ```bash
 # Run all tests
@@ -251,13 +247,17 @@ _build/default/sarek-metal/test/test_sarek_ir_metal.exe
 
 ## Design Principles
 
-### Code Quality
+### Type Safety
 
-1. **Type Safety**: No `Obj.t` usage
-2. **Structured Errors**: All failures use `Backend_error.t`
-3. **Code Organization**: gen_stmt reduced by 27%
-4. **Zero Unsafe Patterns**: No `List.hd`, `List.nth`, or `List.tl`
-5. **Comprehensive Tests**: 20 unit tests
+Uses GADTs and phantom types for typed memory and kernel arguments.
+
+### Structured Errors
+
+Uses shared `Backend_error` module for consistent error handling.
+
+### Code Organization
+
+Code generation uses extracted helper functions for maintainability.
 
 ### Limitations
 

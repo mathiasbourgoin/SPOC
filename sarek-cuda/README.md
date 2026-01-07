@@ -1,9 +1,7 @@
 # sarek-cuda - CUDA Backend Plugin for SPOC/Sarek
 
 **Package**: `sarek-cuda`  
-**Library**: `sarek-cuda.plugin`  
-**Tests**: 19 unit tests  
-**Lines of Code**: 3,183 (core) + 415 (tests)
+**Library**: `sarek-cuda.plugin`
 
 The CUDA backend plugin enables SPOC/Sarek to compile and execute GPU kernels on NVIDIA GPUs using the CUDA runtime and NVRTC (NV Runtime Compilation) library. Uses ctypes-foreign for FFI bindings.
 
@@ -59,10 +57,8 @@ The CUDA backend is one of five GPU backends supported by SPOC/Sarek. It transla
 
 - **Pure OCaml**: Uses `ctypes-foreign` for FFI
 - **JIT Compilation**: Runtime compilation via NVRTC
-- **Type Safety**: GADTs for typed values, structured error types
 - **CUDA Features**: Shared memory, atomics, barriers, synchronization
-- **57 Intrinsics**: Thread IDs, math functions, atomics, memory fences
-- **Error Handling**: Structured errors with context (not failwith)
+- **Intrinsics**: Thread IDs, math functions, atomics, memory fences
 - **Debug Logging**: Controlled via `SAREK_DEBUG` environment variable
 
 ## Architecture
@@ -1261,30 +1257,28 @@ let () =
 
 ## Design Principles
 
-### 1. Type Safety
+### Type Safety
 
-**No `Obj.t`** - Uses GADTs, phantom types, and first-class modules:
+Uses GADTs and phantom types for typed device pointers and kernel arguments:
 ```ocaml
-(* Good: Typed device pointer *)
 type 'a device_ptr = private int64
-
-(* Bad: Untyped pointer *)
-type device_ptr = Obj.t
+type _ kernel_arg =
+  | Scalar : ('a, 'b) scalar_kind * 'a -> ('a, 'b) kernel_arg
+  | Vector : ('a, 'b) Vector.t -> ('a, 'b) kernel_arg
 ```
 
-### 2. Pure OCaml
+### Pure OCaml FFI
 
-Uses `ctypes-foreign` for FFI:
+All CUDA bindings use `ctypes-foreign` for FFI without C stubs:
 ```ocaml
-(* Foreign function binding *)
 let cuDeviceGet = 
   Foreign.foreign "cuDeviceGet"
     (int @-> ptr cuda_device @-> returning cuda_result)
 ```
 
-### 3. Structured Errors
+### Structured Errors
 
-**No `failwith`** - Uses inline record types:
+Uses inline record types for structured error handling:
 ```ocaml
 (* Good: Structured error *)
 type codegen_error =
