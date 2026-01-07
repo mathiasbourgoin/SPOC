@@ -953,7 +953,7 @@ let generate_custom_value ~loc (td : type_declaration) : structure_item list =
   | _ -> []
 
 (** Generate interpreter helper module for type-safe value conversion.
-    Eliminates Obj.t from interpreter by generating typed constructors. *)
+    Provides typed constructors for custom type handling. *)
 let generate_interp_helpers ~loc (td : type_declaration) : structure_item list =
   let type_name = td.ptype_name.txt in
   let module_name = module_name_of_loc loc in
@@ -1352,8 +1352,7 @@ let sarek_type_rule =
                    module depends on this library, the registration runs before any
                    kernels are JIT-compiled, making the type info available. *)
                 let registration = generate_type_registration ~loc td in
-                (* Generate interpreter helpers for type-safe value conversion.
-                   Eliminates Obj.t from interpreter by providing typed constructors. *)
+                (* Generate interpreter helpers for type-safe value conversion. *)
                 let interp_helpers = generate_interp_helpers ~loc td in
                 accessors @ custom_val @ custom_ir_val @ registration
                 @ interp_helpers
