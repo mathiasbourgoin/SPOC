@@ -390,68 +390,218 @@ let eval_barrier_intrinsic name =
 (** Float32 math intrinsics *)
 let eval_float32_math_intrinsic name args =
   match name with
-  | "sin" -> Some (VFloat32 (F32.sin (to_float32 (List.hd args))))
-  | "cos" -> Some (VFloat32 (F32.cos (to_float32 (List.hd args))))
-  | "tan" -> Some (VFloat32 (F32.tan (to_float32 (List.hd args))))
-  | "sqrt" -> Some (VFloat32 (F32.sqrt (to_float32 (List.hd args))))
-  | "exp" -> Some (VFloat32 (F32.exp (to_float32 (List.hd args))))
-  | "log" -> Some (VFloat32 (F32.log (to_float32 (List.hd args))))
-  | "abs" -> Some (VFloat32 (F32.abs (to_float32 (List.hd args))))
-  | "floor" -> Some (VFloat32 (F32.floor (to_float32 (List.hd args))))
-  | "ceil" -> Some (VFloat32 (F32.ceil (to_float32 (List.hd args))))
-  | "pow" ->
-      Some
-        (VFloat32
-           (F32.pow
-              (to_float32 (List.nth args 0))
-              (to_float32 (List.nth args 1))))
-  | "min" ->
-      Some
-        (VFloat32
-           (F32.min
-              (to_float32 (List.nth args 0))
-              (to_float32 (List.nth args 1))))
-  | "max" ->
-      Some
-        (VFloat32
-           (F32.max
-              (to_float32 (List.nth args 0))
-              (to_float32 (List.nth args 1))))
-  | "of_int" -> Some (VFloat32 (F32.of_int (to_int (List.hd args))))
+  | "sin" -> (
+      match args with
+      | arg :: _ -> Some (VFloat32 (F32.sin (to_float32 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "sin"; reason = "requires 1 argument"}))
+  | "cos" -> (
+      match args with
+      | arg :: _ -> Some (VFloat32 (F32.cos (to_float32 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "cos"; reason = "requires 1 argument"}))
+  | "tan" -> (
+      match args with
+      | arg :: _ -> Some (VFloat32 (F32.tan (to_float32 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "tan"; reason = "requires 1 argument"}))
+  | "sqrt" -> (
+      match args with
+      | arg :: _ -> Some (VFloat32 (F32.sqrt (to_float32 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "sqrt"; reason = "requires 1 argument"}))
+  | "exp" -> (
+      match args with
+      | arg :: _ -> Some (VFloat32 (F32.exp (to_float32 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "exp"; reason = "requires 1 argument"}))
+  | "log" -> (
+      match args with
+      | arg :: _ -> Some (VFloat32 (F32.log (to_float32 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "log"; reason = "requires 1 argument"}))
+  | "abs" -> (
+      match args with
+      | arg :: _ -> Some (VFloat32 (F32.abs (to_float32 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "abs"; reason = "requires 1 argument"}))
+  | "floor" -> (
+      match args with
+      | arg :: _ -> Some (VFloat32 (F32.floor (to_float32 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "floor"; reason = "requires 1 argument"}))
+  | "ceil" -> (
+      match args with
+      | arg :: _ -> Some (VFloat32 (F32.ceil (to_float32 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "ceil"; reason = "requires 1 argument"}))
+  | "pow" -> (
+      match args with
+      | arg1 :: arg2 :: _ ->
+          Some (VFloat32 (F32.pow (to_float32 arg1) (to_float32 arg2)))
+      | _ ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "pow"; reason = "requires 2 arguments"}))
+  | "min" -> (
+      match args with
+      | arg1 :: arg2 :: _ ->
+          Some (VFloat32 (F32.min (to_float32 arg1) (to_float32 arg2)))
+      | _ ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "min"; reason = "requires 2 arguments"}))
+  | "max" -> (
+      match args with
+      | arg1 :: arg2 :: _ ->
+          Some (VFloat32 (F32.max (to_float32 arg1) (to_float32 arg2)))
+      | _ ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "max"; reason = "requires 2 arguments"}))
+  | "of_int" -> (
+      match args with
+      | arg :: _ -> Some (VFloat32 (F32.of_int (to_int arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "of_int"; reason = "requires 1 argument"}))
   | _ -> None
 
 (** Float64 math intrinsics *)
 let eval_float64_math_intrinsic name args =
   match name with
-  | "sin" -> Some (VFloat64 (sin (to_float64 (List.hd args))))
-  | "cos" -> Some (VFloat64 (cos (to_float64 (List.hd args))))
-  | "sqrt" -> Some (VFloat64 (sqrt (to_float64 (List.hd args))))
-  | "exp" -> Some (VFloat64 (exp (to_float64 (List.hd args))))
-  | "log" -> Some (VFloat64 (log (to_float64 (List.hd args))))
-  | "abs" -> Some (VFloat64 (Float.abs (to_float64 (List.hd args))))
-  | "of_int" -> Some (VFloat64 (Float.of_int (to_int (List.hd args))))
+  | "sin" -> (
+      match args with
+      | arg :: _ -> Some (VFloat64 (sin (to_float64 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "sin (float64)"; reason = "requires 1 argument"}))
+  | "cos" -> (
+      match args with
+      | arg :: _ -> Some (VFloat64 (cos (to_float64 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "cos (float64)"; reason = "requires 1 argument"}))
+  | "sqrt" -> (
+      match args with
+      | arg :: _ -> Some (VFloat64 (sqrt (to_float64 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "sqrt (float64)"; reason = "requires 1 argument"}))
+  | "exp" -> (
+      match args with
+      | arg :: _ -> Some (VFloat64 (exp (to_float64 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "exp (float64)"; reason = "requires 1 argument"}))
+  | "log" -> (
+      match args with
+      | arg :: _ -> Some (VFloat64 (log (to_float64 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "log (float64)"; reason = "requires 1 argument"}))
+  | "abs" -> (
+      match args with
+      | arg :: _ -> Some (VFloat64 (Float.abs (to_float64 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "abs (float64)"; reason = "requires 1 argument"}))
+  | "of_int" -> (
+      match args with
+      | arg :: _ -> Some (VFloat64 (Float.of_int (to_int arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {
+                 operation = "of_int (float64)";
+                 reason = "requires 1 argument";
+               }))
   | _ -> None
 
 (** Int32 math intrinsics *)
 let eval_int32_math_intrinsic name args =
   match name with
-  | "abs" -> Some (VInt32 (Int32.abs (to_int32 (List.hd args))))
-  | "min" ->
-      Some
-        (VInt32 (min (to_int32 (List.nth args 0)) (to_int32 (List.nth args 1))))
-  | "max" ->
-      Some
-        (VInt32 (max (to_int32 (List.nth args 0)) (to_int32 (List.nth args 1))))
+  | "abs" -> (
+      match args with
+      | arg :: _ -> Some (VInt32 (Int32.abs (to_int32 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "abs (int32)"; reason = "requires 1 argument"}))
+  | "min" -> (
+      match args with
+      | arg1 :: arg2 :: _ ->
+          Some (VInt32 (min (to_int32 arg1) (to_int32 arg2)))
+      | _ ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "min (int32)"; reason = "requires 2 arguments"}))
+  | "max" -> (
+      match args with
+      | arg1 :: arg2 :: _ ->
+          Some (VInt32 (max (to_int32 arg1) (to_int32 arg2)))
+      | _ ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "max (int32)"; reason = "requires 2 arguments"}))
   | _ -> None
 
 (** Type conversion intrinsics *)
 let eval_type_conversion_intrinsic name args =
   match name with
-  | "float" -> Some (VFloat32 (F32.of_int (to_int (List.hd args))))
-  | "float64" -> Some (VFloat64 (Float.of_int (to_int (List.hd args))))
-  | "int_of_float" -> Some (VInt32 (Int32.of_float (to_float32 (List.hd args))))
-  | "int_of_float64" ->
-      Some (VInt32 (Int32.of_float (to_float64 (List.hd args))))
+  | "float" -> (
+      match args with
+      | arg :: _ -> Some (VFloat32 (F32.of_int (to_int arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "float"; reason = "requires 1 argument"}))
+  | "float64" -> (
+      match args with
+      | arg :: _ -> Some (VFloat64 (Float.of_int (to_int arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "float64"; reason = "requires 1 argument"}))
+  | "int_of_float" -> (
+      match args with
+      | arg :: _ -> Some (VInt32 (Int32.of_float (to_float32 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "int_of_float"; reason = "requires 1 argument"}))
+  | "int_of_float64" -> (
+      match args with
+      | arg :: _ -> Some (VInt32 (Int32.of_float (to_float64 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "int_of_float64"; reason = "requires 1 argument"}))
   | _ -> None
 
 (** Main intrinsic dispatcher - tries each category in order *)
@@ -532,7 +682,10 @@ and eval_array_expr state env = function
         | _ -> VUnit
       in
       VArray (Array.make size init)
-  | _ -> assert false
+  | _ ->
+      Interp_error.raise_error
+        (Pattern_match_failure
+           {context = Printf.sprintf "eval_array_expr: unexpected expression"})
 
 (** Record and variant expression evaluation *)
 and eval_composite_expr state env = function
@@ -571,7 +724,10 @@ and eval_composite_expr state env = function
   | EVariant (ty, ctor, args) ->
       VVariant
         (ty, Hashtbl.hash ctor mod 256, List.map (eval_expr state env) args)
-  | _ -> assert false
+  | _ ->
+      Interp_error.raise_error
+        (Pattern_match_failure
+           {context = "eval_composite_expr: unexpected expression"})
 
 (** Control flow expression evaluation *)
 and eval_control_flow state env = function
@@ -595,7 +751,10 @@ and eval_control_flow state env = function
         | (PWild, body) :: _ -> body
       in
       eval_expr state env (find_case cases)
-  | _ -> assert false
+  | _ ->
+      Interp_error.raise_error
+        (Pattern_match_failure
+           {context = "eval_control_flow: unexpected expression"})
 
 (** Cast and intrinsic expression evaluation *)
 and eval_special_expr state env = function
@@ -611,7 +770,10 @@ and eval_special_expr state env = function
       | TFloat64 -> VFloat64 (to_float64 v)
       | TBool -> VBool (to_bool v)
       | _ -> v)
-  | _ -> assert false
+  | _ ->
+      Interp_error.raise_error
+        (Pattern_match_failure
+           {context = "eval_special_expr: unexpected expression"})
 
 (** Main expression evaluator - dispatches to specialized handlers *)
 and eval_expr state env expr =

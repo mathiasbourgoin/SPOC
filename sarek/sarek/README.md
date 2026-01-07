@@ -528,25 +528,30 @@ let result = Vector.get_int32 v 0 in  (* Device → Host *)
 
 ## Testing
 
-### Unit Tests (40 tests)
+### Unit Tests (161 tests)
 
-Located in `tests/unit/`:
+Located in `sarek/sarek/test/`:
 
 ```bash
 # Run all unit tests
-dune runtest runtime/tests/unit
+dune runtest sarek/sarek/test
 
 # Run specific test
-dune exec runtime/tests/unit/test_cpu_runtime.exe
+dune exec sarek/sarek/test/test_sarek_value.exe
+dune exec sarek/sarek/test/test_sarek_float32.exe
 
 # With coverage
-BISECT_FILE=_coverage/unit dune runtest runtime/tests/unit --force
+BISECT_FILE=_coverage/sarek dune runtest sarek/sarek/test --force
 ```
 
 **Test coverage:**
-- `test_cpu_runtime.ml` (28 tests): Thread state, shared memory, barriers, parallel execution
-- `test_execute.ml` (15 tests): Kernel dispatch, argument validation, error handling
-- Other modules: Fusion, interpreter, types
+- `test_sarek_value.ml` (20 tests): Runtime value types, type names, construction, edge cases
+- `test_sarek_float32.ml` (61 tests): Float32 arithmetic, math intrinsics, NaN/infinity handling, conversions
+- `test_sarek_type_helpers.ml` (10 tests): Type helper registration, lookup, conversion functions
+- `test_execute_error.ml` (19 tests): Execution error types, formatting, exception handling
+- `test_interp_error.ml` (17 tests): Interpreter error types, array bounds, type conversions
+- `test_kirc_error.ml` (18 tests): Kernel error types, backend errors, marshalling failures
+- `test_fusion_error.ml` (16 tests): Fusion error types, compatibility checks, pipeline validation
 
 ### End-to-End Tests (23 tests)
 

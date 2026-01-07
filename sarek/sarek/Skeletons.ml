@@ -11,7 +11,14 @@ let f_to_kir f l =
          | Vector.Custom _ -> (
              match fst f.ret_val with
              | CustomVar (s, _, _) -> "struct " ^ s ^ "_sarek"
-             | _ -> assert false)
+             | _ ->
+                 Kirc_error.raise_error
+                   (Unsupported_arg_type
+                      {
+                        arg_type = "custom return type";
+                        reason = "not a CustomVar";
+                        context = "f_to_kir";
+                      }))
          | _ -> "void"),
          "f" ))
     l
