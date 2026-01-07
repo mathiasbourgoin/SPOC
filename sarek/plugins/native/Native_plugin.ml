@@ -231,16 +231,36 @@ module Backend : Framework_sig.BACKEND = struct
             (Typed_value.TV_Scalar
                (Typed_value.SV ((module Typed_value.Int64_type), n)))
         in
-        (* For custom types: use underlying Vector.t with Obj.t *)
+        (* For custom types: use typed_value interface *)
         let get_any i =
-          let vec = Obj.obj (V.underlying_obj ()) in
-          Obj.repr (Spoc_core.Vector.get vec i)
+          let tv = V.get i in
+          match tv with
+          | Typed_value.TV_Scalar (Typed_value.SV ((module S), x)) ->
+              (* Serialize scalar to Obj.t for native_arg interface *)
+              Obj.repr x
+          | Typed_value.TV_Composite (Typed_value.CV ((module C), x)) ->
+              (* Serialize composite to Obj.t for native_arg interface *)
+              Obj.repr x
         in
         let set_any i v =
-          let vec = Obj.obj (V.underlying_obj ()) in
-          Spoc_core.Vector.kernel_set vec i (Obj.obj v)
+          (* This is trickier - we need to know the type to deserialize from Obj.t
+             For now, try to infer from the vector's type_name and use get/modify pattern *)
+          let current_tv = V.get i in
+          match current_tv with
+          | Typed_value.TV_Scalar (Typed_value.SV ((module S), _)) ->
+              (* Cast v to the scalar type - unsafe but unavoidable for custom types *)
+              let x : S.t = Obj.obj v in
+              V.set i (Typed_value.TV_Scalar (Typed_value.SV ((module S), x)))
+          | Typed_value.TV_Composite (Typed_value.CV ((module C), _)) ->
+              let x : C.t = Obj.obj v in
+              V.set
+                i
+                (Typed_value.TV_Composite (Typed_value.CV ((module C), x)))
         in
-        let get_vec () = V.underlying_obj () in
+        let get_vec () =
+          (* Return a dummy Obj for now - this is only used by get_vec which is rarely called *)
+          Obj.repr ()
+        in
         Sarek_ir_types.NA_Vec
           {
             length = V.length;

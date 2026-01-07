@@ -55,7 +55,7 @@ let vector_add_kernel args (gx, _gy, _gz) (bx, _by, _bz) =
   let a =
     match args.(0) with
     | EA_Vec (module V) ->
-        let vec = Obj.obj (V.underlying_obj ()) in
+        let vec = Obj.obj (V.internal_get_vector_obj ()) in
         (vec
           : (float, Bigarray.float32_elt, Bigarray.c_layout) Bigarray.Array1.t)
     | _ -> failwith "Expected vector for arg 0"
@@ -63,7 +63,7 @@ let vector_add_kernel args (gx, _gy, _gz) (bx, _by, _bz) =
   let b =
     match args.(1) with
     | EA_Vec (module V) ->
-        let vec = Obj.obj (V.underlying_obj ()) in
+        let vec = Obj.obj (V.internal_get_vector_obj ()) in
         (vec
           : (float, Bigarray.float32_elt, Bigarray.c_layout) Bigarray.Array1.t)
     | _ -> failwith "Expected vector for arg 1"
@@ -71,7 +71,7 @@ let vector_add_kernel args (gx, _gy, _gz) (bx, _by, _bz) =
   let c =
     match args.(2) with
     | EA_Vec (module V) ->
-        let vec = Obj.obj (V.underlying_obj ()) in
+        let vec = Obj.obj (V.internal_get_vector_obj ()) in
         (vec
           : (float, Bigarray.float32_elt, Bigarray.c_layout) Bigarray.Array1.t)
     | _ -> failwith "Expected vector for arg 2"

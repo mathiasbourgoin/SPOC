@@ -556,7 +556,7 @@ end = struct
 
         let elem_size = Memory.elem_size buf.Memory.kind
 
-        let underlying_obj () = Obj.repr buf
+        let internal_get_vector_obj () = Obj.repr buf
 
         let device_ptr () = Memory.device_ptr buf
 

@@ -524,7 +524,7 @@ end = struct
 
         let elem_size = Memory.elem_size buf.Memory.kind
 
-        let underlying_obj () = Obj.repr buf
+        let internal_get_vector_obj () = Obj.repr buf
 
         let device_ptr () = Memory.device_ptr buf
 
@@ -562,7 +562,7 @@ end = struct
                 match arg with
                 | Framework_sig.EA_Vec (module V) ->
                     (* Extract buffer from EXEC_VECTOR *)
-                    let buf = Obj.obj (V.underlying_obj ()) in
+                    let buf = Obj.obj (V.internal_get_vector_obj ()) in
                     (* Convert bigarray to value array - detect type dynamically *)
                     let arr =
                       Array.init (Memory.size buf) (fun j ->

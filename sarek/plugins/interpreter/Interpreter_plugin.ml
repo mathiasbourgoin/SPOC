@@ -82,8 +82,9 @@ module Backend : Framework_sig.BACKEND = struct
         | Framework_sig.EA_Float32 f -> Spoc_core.Kernel_arg.Float32 f
         | Framework_sig.EA_Float64 f -> Spoc_core.Kernel_arg.Float64 f
         | Framework_sig.EA_Vec (module V) ->
-            (* Use underlying_obj to get the Vector.t, then wrap in Vec GADT *)
-            let vec_obj = V.underlying_obj () in
+            (* For interpreter, we need to recover the typed Vector.t.
+               Use internal_get_vector_obj which is marked for internal backend use only. *)
+            let vec_obj = V.internal_get_vector_obj () in
             Spoc_core.Kernel_arg.Vec (Obj.magic vec_obj)
         | Framework_sig.EA_Scalar _ | Framework_sig.EA_Composite _ ->
             (* Custom scalars/composites not yet supported by Kernel_arg.t *)

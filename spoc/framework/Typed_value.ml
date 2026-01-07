@@ -119,10 +119,10 @@ module type EXEC_VECTOR = sig
   (** Element size in bytes *)
   val elem_size : int
 
-  (** Get underlying object for legacy compatibility. Returns the original
-      Vector.t as Obj.t for backends that need direct access (Native,
-      Interpreter). *)
-  val underlying_obj : unit -> Obj.t
+  (** INTERNAL: Get underlying vector as Obj.t. Only for use by interpreter
+      backend which needs access to the typed Vector.t. This is marked internal
+      to discourage general use - prefer the typed get/set interface. *)
+  val internal_get_vector_obj : unit -> Obj.t
 end
 
 (** {1 Execution Arguments}

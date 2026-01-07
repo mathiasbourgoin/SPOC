@@ -45,7 +45,7 @@ let vector_args_to_exec_array (args : vector_arg list) :
 
                let elem_size = Vector.elem_size (Vector.kind v)
 
-               let underlying_obj () = Obj.repr v
+               let internal_get_vector_obj () = Obj.repr v
 
                let device_ptr () =
                  (* Get device pointer from location-based buffer *)
