@@ -19,6 +19,7 @@ LIBRARY_PATH=/opt/cuda/targets/x86_64-linux/lib:$LIBRARY_PATH \
   dune build --force --instrument-with bisect_ppx \
               sarek/tests/unit/ \
               sarek/core/test/ \
+              sarek/framework/test/ \
               spoc/framework/test/ \
               spoc/ir/test/ \
               spoc/registry/test/ \
@@ -45,6 +46,13 @@ done
 echo ""
 echo "=== Running Core Tests ==="
 for test in _build/default/sarek/core/test/test_*.exe; do
+  echo "Running $(basename $test)..."
+  $test
+done
+
+echo ""
+echo "=== Running Framework Tests ==="
+for test in _build/default/sarek/framework/test/test_*.exe; do
   echo "Running $(basename $test)..."
   $test
 done

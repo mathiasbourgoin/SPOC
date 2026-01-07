@@ -13,7 +13,8 @@ let debug_enabled =
   with Not_found -> false
 
 let debugf fmt =
-  if debug_enabled then Printf.eprintf ("[Cache] " ^^ fmt ^^ "\n%!") else Printf.ifprintf stderr fmt
+  if debug_enabled then Printf.eprintf ("[Cache] " ^^ fmt ^^ "\n%!")
+  else Printf.ifprintf stderr fmt
 
 let warnf fmt = Printf.eprintf ("[Cache] WARNING: " ^^ fmt ^^ "\n%!")
 
@@ -25,17 +26,22 @@ type stats = {
   mutable errors : int;  (** I/O errors *)
 }
 
-let stats = { hits = 0; misses = 0; puts = 0; errors = 0 }
+let stats = {hits = 0; misses = 0; puts = 0; errors = 0}
 
 (** Get current cache statistics *)
 let get_stats () =
-  { hits = stats.hits; misses = stats.misses; puts = stats.puts; errors = stats.errors }
+  {
+    hits = stats.hits;
+    misses = stats.misses;
+    puts = stats.puts;
+    errors = stats.errors;
+  }
 
 (** Reset statistics *)
 let reset_stats () =
-  stats.hits <- 0;
-  stats.misses <- 0;
-  stats.puts <- 0;
+  stats.hits <- 0 ;
+  stats.misses <- 0 ;
+  stats.puts <- 0 ;
   stats.errors <- 0
 
 (** Calculate hit rate (0.0 - 1.0) *)
@@ -46,13 +52,12 @@ let hit_rate () =
 (** Print statistics to stdout *)
 let print_stats () =
   let total = stats.hits + stats.misses in
-  Printf.printf "Cache Statistics:\n";
-  Printf.printf "  Hits:   %d\n" stats.hits;
-  Printf.printf "  Misses: %d\n" stats.misses;
-  Printf.printf "  Puts:   %d\n" stats.puts;
-  Printf.printf "  Errors: %d\n" stats.errors;
-  if total > 0 then
-    Printf.printf "  Hit rate: %.1f%%\n" (hit_rate () *. 100.0)
+  Printf.printf "Cache Statistics:\n" ;
+  Printf.printf "  Hits:   %d\n" stats.hits ;
+  Printf.printf "  Misses: %d\n" stats.misses ;
+  Printf.printf "  Puts:   %d\n" stats.puts ;
+  Printf.printf "  Errors: %d\n" stats.errors ;
+  if total > 0 then Printf.printf "  Hit rate: %.1f%%\n" (hit_rate () *. 100.0)
 
 let cache_dir_name = "spoc"
 
@@ -67,20 +72,20 @@ let get_cache_dir () =
     in
     let dir = Filename.concat base_dir cache_dir_name in
     if not (Sys.file_exists dir) then begin
-      debugf "Creating cache directory: %s" dir;
+      debugf "Creating cache directory: %s" dir ;
       Unix.mkdir dir 0o755
-    end;
+    end ;
     dir
   with e ->
-    warnf "Failed to create cache directory: %s" (Printexc.to_string e);
+    warnf "Failed to create cache directory: %s" (Printexc.to_string e) ;
     Framework_error.raise_error
-      (Cache_error { operation = "get_cache_dir"; reason = Printexc.to_string e })
+      (Cache_error {operation = "get_cache_dir"; reason = Printexc.to_string e})
 
 (** Compute cache key from device, driver, and source *)
 let compute_key ~dev_name ~driver_version ~source =
   let ctx = Digest.string (dev_name ^ driver_version ^ source) in
   let key = Digest.to_hex ctx in
-  debugf "Cache key: %s (dev=%s, driver=%s)" key dev_name driver_version;
+  debugf "Cache key: %s (dev=%s, driver=%s)" key dev_name driver_version ;
   key
 
 (** Retrieve cached data by key *)
@@ -93,21 +98,22 @@ let get ~key =
         let ic = open_in_bin filename in
         let len = in_channel_length ic in
         let data = really_input_string ic len in
-        close_in ic;
-        stats.hits <- stats.hits + 1;
-        debugf "Cache hit: %s (%d bytes)" key len;
+        close_in ic ;
+        stats.hits <- stats.hits + 1 ;
+        debugf "Cache hit: %s (%d bytes)" key len ;
         Some data
       with e ->
-        stats.errors <- stats.errors + 1;
-        warnf "Cache read error for key %s: %s" key (Printexc.to_string e);
+        stats.errors <- stats.errors + 1 ;
+        warnf "Cache read error for key %s: %s" key (Printexc.to_string e) ;
         None
-    end else begin
-      stats.misses <- stats.misses + 1;
-      debugf "Cache miss: %s" key;
+    end
+    else begin
+      stats.misses <- stats.misses + 1 ;
+      debugf "Cache miss: %s" key ;
       None
     end
   with Framework_error.Framework_error _ as e ->
-    stats.errors <- stats.errors + 1;
+    stats.errors <- stats.errors + 1 ;
     raise e
 
 (** Store data in cache with given key *)
@@ -117,14 +123,14 @@ let put ~key ~data =
     let filename = Filename.concat dir key in
     try
       let oc = open_out_bin filename in
-      output_string oc data;
-      close_out oc;
-      stats.puts <- stats.puts + 1;
+      output_string oc data ;
+      close_out oc ;
+      stats.puts <- stats.puts + 1 ;
       debugf "Cache put: %s (%d bytes)" key (String.length data)
     with e ->
-      stats.errors <- stats.errors + 1;
+      stats.errors <- stats.errors + 1 ;
       warnf "Cache write error for key %s: %s" key (Printexc.to_string e)
   with Framework_error.Framework_error _ ->
-    stats.errors <- stats.errors + 1;
+    stats.errors <- stats.errors + 1 ;
     (* Don't propagate cache errors, just log them *)
     ()

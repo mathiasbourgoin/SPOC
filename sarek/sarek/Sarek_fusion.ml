@@ -317,19 +317,19 @@ let analyze_pattern reads arr =
       else Gather
 
 (** Analyze a kernel to extract fusion information.
-    
+
     Performs static analysis to determine:
     - Which arrays are read and with what access patterns
     - Which arrays are written and with what access patterns
     - Whether barriers are present (prevents fusion)
     - Whether atomic operations are present (TODO: not yet detected)
-    
+
     Access patterns determine fusability:
     - OneToOne: Element-wise access (arr[tid]) - always fusable
     - Stencil: Neighbor access (arr[tid±k]) - fusable with care
     - Reduction: Associative reduction - special fusion rules
     - Gather: Irregular access (arr[f(tid)]) - generally not fusable
-    
+
     @param k Kernel to analyze
     @return Fusion information record *)
 let analyze (k : kernel) : fusion_info =
@@ -373,23 +373,22 @@ let rec find_write_expr stmt arr idx =
       None
 
 (** Check if two kernels can be fused via an intermediate array.
-    
+
     Vertical fusion eliminates intermediate arrays by inlining the producer's
     computation into the consumer. Requirements:
-    
-    1. Producer writes to intermediate with OneToOne pattern
-    2. Consumer reads from intermediate with OneToOne pattern  
-    3. Both use same index expression (typically thread ID)
-    4. No barriers in either kernel (would break synchronization)
-    5. Intermediate not used elsewhere in consumer
-    
+
+    1. Producer writes to intermediate with OneToOne pattern 2. Consumer reads
+    from intermediate with OneToOne pattern 3. Both use same index expression
+    (typically thread ID) 4. No barriers in either kernel (would break
+    synchronization) 5. Intermediate not used elsewhere in consumer
+
     Example fusable pattern:
     {[
       (* Producer: temp[tid] = a[tid] * 2 *)
       (* Consumer: b[tid] = temp[tid] + 1 *)
       (* Fused: b[tid] = (a[tid] * 2) + 1 *)
     ]}
-    
+
     @param producer First kernel (writes to intermediate)
     @param consumer Second kernel (reads from intermediate)
     @param intermediate Name of array to eliminate
@@ -427,28 +426,27 @@ let can_fuse (producer : kernel) (consumer : kernel) (intermediate : string) :
   prod_writes_inter && cons_reads_inter && patterns_ok && no_barriers
 
 (** Fuse producer into consumer, eliminating intermediate array.
-    
-    Creates a new kernel that combines both computations:
-    1. Takes consumer's structure (parameters, signature)
-    2. Replaces reads of intermediate[idx] with producer's computation
-    3. Removes intermediate array from parameters
-    4. Preserves all other operations from both kernels
-    
+
+    Creates a new kernel that combines both computations: 1. Takes consumer's
+    structure (parameters, signature) 2. Replaces reads of intermediate[idx]
+    with producer's computation 3. Removes intermediate array from parameters 4.
+    Preserves all other operations from both kernels
+
     The transformation is safe because can_fuse verified:
     - Same index expression used by both
     - No barriers (so no ordering requirements)
     - OneToOne access patterns (no data races)
-    
+
     Example:
     {[
       (* Before: *)
       let prod = temp[tid] <- a[tid] * 2 in
       let cons = b[tid] <- temp[tid] + 1 in
-      
+
       (* After fusion: *)
       let fused = b[tid] <- (a[tid] * 2) + 1 in
     ]}
-    
+
     @param producer First kernel (computation to inline)
     @param consumer Second kernel (receives inlined code)
     @param intermediate Array to eliminate
@@ -546,22 +544,21 @@ let fuse (producer : kernel) (consumer : kernel) (intermediate : string) :
 (** {1 High-level interface} *)
 
 (** Fuse a pipeline of kernels sequentially.
-    
+
     Attempts to fuse each consecutive kernel pair, eliminating intermediate
     arrays. Processes left-to-right, greedily fusing when possible.
-    
-    Algorithm:
-    1. Start with first kernel as current
-    2. For each subsequent kernel:
-       - Find arrays that current writes and next reads (candidates)
-       - If fusable, inline current into next and eliminate intermediate
-       - Otherwise, advance to next kernel
-    3. Return final fused kernel and list of eliminated arrays
-    
-    Note: This is greedy and may not find optimal fusion. For example,
-    fusing A→B might prevent better fusion of B→C. Use auto_fuse_pipeline
-    for heuristic-based fusion that considers these tradeoffs.
-    
+
+    Algorithm: 1. Start with first kernel as current 2. For each subsequent
+    kernel:
+    - Find arrays that current writes and next reads (candidates)
+    - If fusable, inline current into next and eliminate intermediate
+    - Otherwise, advance to next kernel 3. Return final fused kernel and list of
+      eliminated arrays
+
+    Note: This is greedy and may not find optimal fusion. For example, fusing
+    A→B might prevent better fusion of B→C. Use auto_fuse_pipeline for
+    heuristic-based fusion that considers these tradeoffs.
+
     @param kernels List of kernels to fuse (must be non-empty)
     @return (fused_kernel, eliminated_intermediates)
     @raise Empty_pipeline if kernel list is empty *)
@@ -1042,23 +1039,23 @@ type fusion_decision =
 type fusion_hint = {decision : fusion_decision; reason : string}
 
 (** Heuristic: decide if fusion should be applied.
-    
-    Not all legal fusions are beneficial. This function applies heuristics
-    to decide when fusion improves performance:
-    
+
+    Not all legal fusions are beneficial. This function applies heuristics to
+    decide when fusion improves performance:
+
     **Fuse (always beneficial):**
     - Element-wise producer → element-wise consumer (eliminates memory)
     - Map → Reduction (eliminates temporary, enables tree reduction)
-    
+
     **Don't fuse (likely harmful):**
     - Any kernel with barriers (breaks synchronization semantics)
     - Producer → Gather consumer (unpredictable memory access)
     - Large stencil radius (>3 neighbors, shared memory better)
-    
+
     **Maybe fuse (profile to decide):**
     - Small stencil (≤3 neighbors, computation cost vs memory)
     - Unknown patterns (conservative - don't auto-fuse)
-    
+
     @param producer First kernel
     @param consumer Second kernel
     @param intermediate Array between them
@@ -1096,33 +1093,35 @@ let should_fuse (producer : kernel) (consumer : kernel) (intermediate : string)
         {decision = MaybeFuse; reason = "Unknown pattern - profile to decide"}
 
 (** Auto-fuse a pipeline using heuristics.
-    
-    Similar to fuse_pipeline, but uses should_fuse heuristics to decide
-    which fusions to apply. This prevents harmful fusions while still
-    eliminating obvious intermediates.
-    
+
+    Similar to fuse_pipeline, but uses should_fuse heuristics to decide which
+    fusions to apply. This prevents harmful fusions while still eliminating
+    obvious intermediates.
+
     Decision process for each candidate fusion:
     - **Fuse**: Apply fusion, eliminate intermediate
     - **DontFuse**: Skip this pair, keep intermediate
-    - **MaybeFuse**: Conservative - skip (user can manually fuse if profiling shows benefit)
-    
-    This is the recommended entry point for automatic optimization.
-    Manual fusion (via fuse_pipeline) is available for expert users
-    who have profiled specific fusion decisions.
-    
+    - **MaybeFuse**: Conservative - skip (user can manually fuse if profiling
+      shows benefit)
+
+    This is the recommended entry point for automatic optimization. Manual
+    fusion (via fuse_pipeline) is available for expert users who have profiled
+    specific fusion decisions.
+
     Example usage:
     {[
       (* Define pipeline *)
       let kernels = [map_kernel; filter_kernel; reduce_kernel] in
-      
+
       (* Auto-fuse with heuristics *)
-      let fused, eliminated, skipped = 
-        Sarek_fusion.auto_fuse_pipeline kernels in
-      
+      let fused, eliminated, skipped =
+        Sarek_fusion.auto_fuse_pipeline kernels
+      in
+
       (* Execute fused kernel (1 launch instead of 3) *)
       Execute.run_vectors ~device ~ir:fused ~args ~block ~grid ()
     ]}
-    
+
     @param kernels Pipeline to optimize (must be non-empty)
     @return (fused_kernel, eliminated_arrays, skipped_reasons)
     @raise Empty_pipeline if kernel list is empty *)
@@ -1161,17 +1160,17 @@ let auto_fuse_pipeline (kernels : kernel list) :
       loop k1 [] [] rest
 
 (** Print fusion analysis for a pipeline.
-    
-    Diagnostic function that analyzes each consecutive kernel pair and
-    prints detailed information about fusability:
+
+    Diagnostic function that analyzes each consecutive kernel pair and prints
+    detailed information about fusability:
     - Access patterns (OneToOne, Stencil, Reduction, etc.)
     - Candidate intermediate arrays
     - Fusion decision and reasoning
     - Potential benefits or risks
-    
-    Useful for understanding why auto_fuse_pipeline made specific decisions
-    or for identifying manual fusion opportunities.
-    
+
+    Useful for understanding why auto_fuse_pipeline made specific decisions or
+    for identifying manual fusion opportunities.
+
     @param kernels Pipeline to analyze *)
 let analyze_pipeline (kernels : kernel list) : unit =
   Printf.printf "=== Fusion Analysis ===\n" ;

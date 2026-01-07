@@ -284,27 +284,26 @@ let is_int32_path = function
   | _ -> false
 
 (** {1 Intrinsic Evaluation Helpers}
-    
-    These helper functions handle specific categories of GPU intrinsics.
-    Split from a monolithic eval_intrinsic for better maintainability and testability.
+
+    These helper functions handle specific categories of GPU intrinsics. Split
+    from a monolithic eval_intrinsic for better maintainability and testability.
     Each helper returns Option to enable clean dispatch logic. *)
 
 (** Evaluate GPU thread/block/grid index and dimension intrinsics.
-    
+
     Handles the complete GPU execution model intrinsics:
     - Thread indices: Position of thread within its block (0 to block_dim-1)
     - Block indices: Position of block within grid (0 to grid_dim-1)
     - Dimensions: Size of blocks and grid
     - Global indices: Thread's global position across entire grid
     - Global sizes: Total number of threads in each dimension
-    
+
     @param state Thread execution state containing all index/dimension values
     @param name Intrinsic name (e.g. "thread_idx_x", "global_size_y")
     @return Some value if intrinsic matches, None otherwise
-    
-    Example:
-      eval_gpu_index_intrinsic state "global_idx_x"
-      (* Returns: VInt32 (block_idx_x * block_dim_x + thread_idx_x) *) *)
+
+    Example: eval_gpu_index_intrinsic state "global_idx_x" (* Returns: VInt32
+    (block_idx_x * block_dim_x + thread_idx_x) *) *)
 
 (** GPU thread/block/grid indices and dimensions *)
 let eval_gpu_index_intrinsic state name =
@@ -403,15 +402,21 @@ let eval_float32_math_intrinsic name args =
   | "pow" ->
       Some
         (VFloat32
-           (F32.pow (to_float32 (List.nth args 0)) (to_float32 (List.nth args 1))))
+           (F32.pow
+              (to_float32 (List.nth args 0))
+              (to_float32 (List.nth args 1))))
   | "min" ->
       Some
         (VFloat32
-           (F32.min (to_float32 (List.nth args 0)) (to_float32 (List.nth args 1))))
+           (F32.min
+              (to_float32 (List.nth args 0))
+              (to_float32 (List.nth args 1))))
   | "max" ->
       Some
         (VFloat32
-           (F32.max (to_float32 (List.nth args 0)) (to_float32 (List.nth args 1))))
+           (F32.max
+              (to_float32 (List.nth args 0))
+              (to_float32 (List.nth args 1))))
   | "of_int" -> Some (VFloat32 (F32.of_int (to_int (List.hd args))))
   | _ -> None
 
@@ -432,9 +437,11 @@ let eval_int32_math_intrinsic name args =
   match name with
   | "abs" -> Some (VInt32 (Int32.abs (to_int32 (List.hd args))))
   | "min" ->
-      Some (VInt32 (min (to_int32 (List.nth args 0)) (to_int32 (List.nth args 1))))
+      Some
+        (VInt32 (min (to_int32 (List.nth args 0)) (to_int32 (List.nth args 1))))
   | "max" ->
-      Some (VInt32 (max (to_int32 (List.nth args 0)) (to_int32 (List.nth args 1))))
+      Some
+        (VInt32 (max (to_int32 (List.nth args 0)) (to_int32 (List.nth args 1))))
   | _ -> None
 
 (** Type conversion intrinsics *)
@@ -443,7 +450,8 @@ let eval_type_conversion_intrinsic name args =
   | "float" -> Some (VFloat32 (F32.of_int (to_int (List.hd args))))
   | "float64" -> Some (VFloat64 (Float.of_int (to_int (List.hd args))))
   | "int_of_float" -> Some (VInt32 (Int32.of_float (to_float32 (List.hd args))))
-  | "int_of_float64" -> Some (VInt32 (Int32.of_float (to_float64 (List.hd args))))
+  | "int_of_float64" ->
+      Some (VInt32 (Int32.of_float (to_float64 (List.hd args))))
   | _ -> None
 
 (** Main intrinsic dispatcher - tries each category in order *)

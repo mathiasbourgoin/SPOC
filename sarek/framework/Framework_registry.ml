@@ -15,7 +15,8 @@ let debug_enabled =
   with Not_found -> false
 
 let debugf fmt =
-  if debug_enabled then Printf.eprintf ("[Framework] " ^^ fmt ^^ "\n%!") else Printf.ifprintf stderr fmt
+  if debug_enabled then Printf.eprintf ("[Framework] " ^^ fmt ^^ "\n%!")
+  else Printf.ifprintf stderr fmt
 
 let warnf fmt = Printf.eprintf ("[Framework] WARNING: " ^^ fmt ^^ "\n%!")
 
@@ -30,36 +31,38 @@ let priorities : (string, int) Hashtbl.t = Hashtbl.create 8
 
 (** Register a minimal plugin (name, version, is_available) *)
 let register ?(priority = 50) (module P : S) =
-  debugf "Registering plugin: %s (priority=%d)" P.name priority;
-  Hashtbl.replace plugins P.name (module P : S);
+  debugf "Registering plugin: %s (priority=%d)" P.name priority ;
+  Hashtbl.replace plugins P.name (module P : S) ;
   Hashtbl.replace priorities P.name priority
 
 (** Register a full backend plugin *)
 let register_backend ?(priority = 50) (module B : BACKEND) =
-  debugf "Registering backend: %s (priority=%d, model=%s)"
-    B.name priority
+  debugf
+    "Registering backend: %s (priority=%d, model=%s)"
+    B.name
+    priority
     (match B.execution_model with
-     | JIT -> "JIT"
-     | Direct -> "Direct"
-     | Custom -> "Custom");
-  Hashtbl.replace backends B.name (module B : BACKEND);
-  Hashtbl.replace plugins B.name (module B : S);
+    | JIT -> "JIT"
+    | Direct -> "Direct"
+    | Custom -> "Custom") ;
+  Hashtbl.replace backends B.name (module B : BACKEND) ;
+  Hashtbl.replace plugins B.name (module B : S) ;
   Hashtbl.replace priorities B.name priority
 
 (** Find a plugin by name *)
 let find name =
   let result = Hashtbl.find_opt plugins name in
   (match result with
-   | Some _ -> debugf "Plugin found: %s" name
-   | None -> debugf "Plugin not found: %s" name);
+  | Some _ -> debugf "Plugin found: %s" name
+  | None -> debugf "Plugin not found: %s" name) ;
   result
 
 (** Find a full backend by name *)
 let find_backend name =
   let result = Hashtbl.find_opt backends name in
   (match result with
-   | Some _ -> debugf "Backend found: %s" name
-   | None -> debugf "Backend not found: %s" name);
+  | Some _ -> debugf "Backend found: %s" name
+  | None -> debugf "Backend not found: %s" name) ;
   result
 
 (** List all registered plugin names *)
@@ -88,7 +91,7 @@ let best_backend () =
   in
   match available with
   | [] ->
-      warnf "No backends available";
+      warnf "No backends available" ;
       None
   | backends ->
       let sorted =
@@ -103,10 +106,11 @@ let best_backend () =
             compare p2 p1) (* descending *)
           backends
       in
-      let (best_name, best_backend) = List.hd sorted in
-      debugf "Best backend: %s (priority=%d)"
+      let best_name, best_backend = List.hd sorted in
+      debugf
+        "Best backend: %s (priority=%d)"
         best_name
-        (Hashtbl.find_opt priorities best_name |> Option.value ~default:50);
+        (Hashtbl.find_opt priorities best_name |> Option.value ~default:50) ;
       Some best_backend
 
 (** Get plugin priority *)
