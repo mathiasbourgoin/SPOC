@@ -952,8 +952,8 @@ let generate_custom_value ~loc (td : type_declaration) : structure_item list =
       ]
   | _ -> []
 
-(** Generate interpreter helper module for type-safe value conversion.
-    Provides typed constructors for custom type handling. *)
+(** Generate interpreter helper module for type-safe value conversion. Provides
+    typed constructors for custom type handling. *)
 let generate_interp_helpers ~loc (td : type_declaration) : structure_item list =
   let type_name = td.ptype_name.txt in
   let module_name = module_name_of_loc loc in

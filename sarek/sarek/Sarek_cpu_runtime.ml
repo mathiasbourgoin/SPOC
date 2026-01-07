@@ -121,8 +121,8 @@ let alloc_shared_int64 (shared : shared_mem) name size (default : int64) :
       Hashtbl.add shared.int64_arrays name arr ;
       arr
 
-(** Generic allocator for custom types - uses existential wrapper instead of
-    Obj.t. The caller must ensure they use consistent types for each name. *)
+(** Generic allocator for custom types. The caller must ensure they use
+    consistent types for each name. *)
 let alloc_shared (type a) (shared : shared_mem) name size (default : a) :
     a array =
   match Hashtbl.find_opt shared.custom_arrays name with

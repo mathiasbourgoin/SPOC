@@ -64,9 +64,7 @@ type shared_mem
 (** Create a new empty shared memory container. *)
 val create_shared : unit -> shared_mem
 
-(** {2 Typed Allocators}
-
-    These allocators are type-safe and don't use Obj.magic. *)
+(** {2 Typed Allocators} *)
 
 val alloc_shared_int : shared_mem -> string -> int -> int -> int array
 
