@@ -21,7 +21,7 @@ open Spoc_core
 (** Phase 4 kernel record with lazy IR generation *)
 type 'a kernel = {
   name : string;  (** Kernel name (used for compilation cache key) *)
-  ir : Sarek_ir.kernel Lazy.t;
+  ir : Sarek_ir_types.kernel Lazy.t;
       (** Lazy IR generation - only forced for JIT backends *)
   native_fn :
     (block:Framework_sig.dims ->
@@ -30,7 +30,7 @@ type 'a kernel = {
     unit)
     option;
       (** Pre-compiled OCaml function for Direct backends *)
-  param_types : Sarek_ir.elttype list;
+  param_types : Sarek_ir_types.elttype list;
       (** Parameter types for argument marshalling *)
   extensions : Kirc_types.extension array;
       (** Extensions required (ExFloat32, ExFloat64) *)
@@ -269,55 +269,6 @@ let exec_arg_to_native_arg (arg : Framework_sig.exec_arg) :
           set_any;
           get_vec;
         }
-
-(** Convert a legacy kirc_kernel to kernel. Note: This creates a lazy IR that
-    converts from Kirc_Ast when forced. Native function comes from body_ir. *)
-let of_kirc_kernel (kk : ('a, 'b, 'c) Kirc_types.kirc_kernel) ~name ~param_types
-    : 'a kernel =
-  let ir = lazy (Sarek_ir.of_k_ext kk.Kirc_types.body) in
-  (* Native function is now in body_ir.kern_native_fn *)
-  let native_fn =
-    match kk.Kirc_types.body_ir with
-    | Some k -> (
-        match k.Sarek_ir.kern_native_fn with
-        | Some (Sarek_ir_types.NativeFn fn) ->
-            Some
-              (fun ~(block : Framework_sig.dims)
-                   ~(grid : Framework_sig.dims)
-                   (args : Framework_sig.exec_arg array)
-                 ->
-                (* Convert exec_arg to native_arg for kern_native_fn *)
-                let native_args = Array.map exec_arg_to_native_arg args in
-                fn
-                  ~parallel:true
-                  ~block:(block.x, block.y, block.z)
-                  ~grid:(grid.x, grid.y, grid.z)
-                  native_args)
-        | None -> None)
-    | None -> None
-  in
-  {name; ir; native_fn; param_types; extensions = kk.Kirc_types.extensions}
-
-(** Convert a legacy sarek_kernel to kernel *)
-let of_sarek_kernel
-    ((_spoc_k, kirc_k) : ('a, 'b, 'c, 'd, 'e) Kirc_types.sarek_kernel) ~name
-    ~param_types : 'd kernel =
-  of_kirc_kernel kirc_k ~name ~param_types
-
-(** {1 Conversion to Legacy Kirc} *)
-
-(** Convert kernel to legacy kirc_kernel. Note: This may force IR evaluation. *)
-let to_kirc_kernel (k : 'a kernel) :
-    (unit -> unit, unit, unit) Kirc_types.kirc_kernel =
-  let body = Sarek_ir.to_k_ext (Lazy.force k.ir) in
-  {
-    Kirc_types.ml_kern = (fun () -> ());
-    Kirc_types.body;
-    Kirc_types.body_ir = None;
-    (* ret_val is unused in V2 path; dummy value with stub type *)
-    Kirc_types.ret_val = (Kirc_Ast.Empty, ());
-    Kirc_types.extensions = k.extensions;
-  }
 
 (** {1 Execution} *)
 

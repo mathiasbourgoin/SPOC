@@ -7,7 +7,7 @@
  * This is the V2 counterpart to Sarek_interp (which works on Kirc_Ast).
  ******************************************************************************)
 
-open Sarek_ir
+open Sarek_ir_types
 module F32 = Sarek_float32
 
 (** Re-export value type from Sarek_value for convenience *)

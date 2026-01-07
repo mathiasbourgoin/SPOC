@@ -1,6 +1,6 @@
 (** Unit tests for Sarek_fusion *)
 
-open Sarek.Sarek_ir
+open Sarek_ir_types
 open Sarek.Sarek_fusion
 
 (** Helper to create a simple variable *)

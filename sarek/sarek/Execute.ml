@@ -215,7 +215,7 @@ let expand_to_run_source_args ?(inject_lengths = true) (args : vector_arg list)
     @param args Kernel arguments as vector_arg list
     @raise Execution_error if execution fails *)
 let run ~(device : Device.t) ~(name : string)
-    ~(ir : Sarek_ir.kernel Lazy.t option)
+    ~(ir : Sarek_ir_types.kernel Lazy.t option)
     ~(native_fn :
        (block:Framework_sig.dims ->
        grid:Framework_sig.dims ->
@@ -401,9 +401,9 @@ let interp_array_to_vector : type a b.
 (** Run kernel via interpreter with V2 Vectors. Note: Interpreter works with IR
     params directly - one arg per param. Vectors map to ArgArray (length is
     intrinsic to array). *)
-let run_interpreter_vectors ~(ir : Sarek_ir.kernel) ~(args : vector_arg list)
-    ~(block : Framework_sig.dims) ~(grid : Framework_sig.dims)
-    ~(parallel : bool) : unit =
+let run_interpreter_vectors ~(ir : Sarek_ir_types.kernel)
+    ~(args : vector_arg list) ~(block : Framework_sig.dims)
+    ~(grid : Framework_sig.dims) ~(parallel : bool) : unit =
   (* Set interpreter parallel mode *)
   Sarek_ir_interp.parallel_mode := parallel ;
   (* Convert vector args to interpreter format, tracking arrays for writeback *)
@@ -413,8 +413,9 @@ let run_interpreter_vectors ~(ir : Sarek_ir.kernel) ~(args : vector_arg list)
   let param_names =
     List.filter_map
       (function
-        | Sarek_ir.DParam (v, _) -> Some v.Sarek_ir.var_name | _ -> None)
-      ir.Sarek_ir.kern_params
+        | Sarek_ir_types.DParam (v, _) -> Some v.Sarek_ir_types.var_name
+        | _ -> None)
+      ir.Sarek_ir_types.kern_params
   in
 
   (* Build args matching kernel params 1:1, using actual param names *)
@@ -458,7 +459,7 @@ let run_interpreter_vectors ~(ir : Sarek_ir.kernel) ~(args : vector_arg list)
 
 (** Execute a kernel with V2 Vectors. Auto-transfers, dispatches to backend.
     Unified path for all backends - run handles expansion based on backend. *)
-let run_vectors ~(device : Device.t) ~(ir : Sarek_ir.kernel)
+let run_vectors ~(device : Device.t) ~(ir : Sarek_ir_types.kernel)
     ~(args : vector_arg list) ~(block : Framework_sig.dims)
     ~(grid : Framework_sig.dims) ?(shared_mem : int = 0) () : unit =
   (* Unified path for all backends:

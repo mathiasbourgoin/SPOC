@@ -1,7 +1,7 @@
 (** Unit tests for Sarek_ir_interp - IR-based interpreter *)
 
 open Sarek.Sarek_ir_interp
-open Sarek.Sarek_ir
+open Sarek_ir_types
 open Alcotest
 
 (** Helper to create a test environment *)

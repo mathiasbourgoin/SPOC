@@ -15,9 +15,7 @@
   spoc_core
   (re_export sarek_registry))
  (modules
-  Kirc_Ast
   Kirc_types
-  Sarek_ir
   Sarek_ir_interp
   Sarek_fusion
   Sarek_cpu_runtime

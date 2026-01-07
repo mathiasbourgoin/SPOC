@@ -4,7 +4,7 @@
     that kernel B reads, fuse them by inlining A's computation into B,
     eliminating the intermediate array. *)
 
-open Sarek_ir
+open Sarek_ir_types
 
 (** {1 Access pattern analysis} *)
 

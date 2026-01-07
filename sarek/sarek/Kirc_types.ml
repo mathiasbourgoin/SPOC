@@ -3,6 +3,9 @@
  *
  * Type definitions for Sarek kernels. Separated from Kirc to allow the V2
  * path to use these types without depending on SPOC.
+ *
+ * NOTE: These types are legacy and only used by the PPX's intermediate
+ * representation. Modern V2 kernels use Kirc_kernel.t directly.
  ******************************************************************************)
 
 type float64 = float
@@ -17,19 +20,22 @@ type ('a, 'b) vector_kind_stub = unit
 (** Stub type replacing Spoc.Kernel.spoc_kernel - V2 path doesn't use this *)
 type ('a, 'b) spoc_kernel_stub = unit
 
+(** Legacy AST stub - V2 path doesn't use this *)
+type k_ext_stub = unit
+
 type ('a, 'b, 'c) kirc_kernel = {
   ml_kern : 'a;
-  body : Kirc_Ast.k_ext;
-  body_ir : Sarek_ir.kernel option;
-  ret_val : Kirc_Ast.k_ext * ('b, 'c) vector_kind_stub;
+  body : k_ext_stub;
+  body_ir : Sarek_ir_types.kernel option;
+  ret_val : k_ext_stub * ('b, 'c) vector_kind_stub;
   extensions : extension array;
 }
 
 type ('a, 'b, 'c, 'd) kirc_function = {
   fun_name : string;
   ml_fun : 'a;
-  funbody : Kirc_Ast.k_ext;
-  fun_ret : Kirc_Ast.k_ext * ('b, 'c) vector_kind_stub;
+  funbody : k_ext_stub;
+  fun_ret : k_ext_stub * ('b, 'c) vector_kind_stub;
   fastflow_acc : 'd;
   fun_extensions : extension array;
 }
