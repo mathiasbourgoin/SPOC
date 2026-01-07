@@ -38,8 +38,6 @@ let alloc_scalar_buffer (type a b) (dev : Device.t) (length : int)
       let ba_kind = Vector.to_bigarray_kind sk in
       let buf = B.Memory.alloc backend_dev length ba_kind in
       let elem_sz = Vector.scalar_elem_size sk in
-      let buf_id = Obj.repr buf |> Obj.obj |> Hashtbl.hash in
-      Log.debugf Log.Transfer "alloc_scalar_buffer: buf_id=%d" buf_id ;
       let device_ptr = B.Memory.device_ptr buf in
       (module struct
         let device = dev
@@ -52,12 +50,6 @@ let alloc_scalar_buffer (type a b) (dev : Device.t) (length : int)
 
         let bind_to_kargs kargs idx =
           (* Unwrap kargs to the backend's kernel args type and bind buffer *)
-          let cur_id = Obj.repr buf |> Obj.obj |> Hashtbl.hash in
-          Log.debugf
-            Log.Transfer
-            "bind_to_kargs: buf_id=%d (was %d)"
-            cur_id
-            buf_id ;
           Log.debugf
             Log.Transfer
             "bind_to_kargs: idx=%d ptr=%Ld"
@@ -68,12 +60,11 @@ let alloc_scalar_buffer (type a b) (dev : Device.t) (length : int)
           | None -> failwith "bind_to_kargs: backend mismatch"
 
         let host_ptr_to_device src_ptr ~byte_size =
-          let cur_id = Obj.repr buf |> Obj.obj |> Hashtbl.hash in
           Log.debugf
             Log.Transfer
-            "host_ptr_to_device: buf_id=%d (was %d)"
-            cur_id
-            buf_id ;
+            "host_ptr_to_device: ptr=%Ld size=%d"
+            (Int64.of_nativeint device_ptr)
+            byte_size ;
           if B.Memory.is_zero_copy buf then () (* Skip for zero-copy *)
           else B.Memory.host_ptr_to_device ~src_ptr ~byte_size ~dst:buf
 
