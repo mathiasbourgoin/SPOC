@@ -50,18 +50,37 @@ let transform_points_kirc =
 
 (* A simple kernel function that adds vectors: c[i] = a[i] + b[i] *)
 let vector_add_kernel args (gx, _gy, _gz) (bx, _by, _bz) =
-  (* Extract arguments from Obj.t array *)
-  let a : (float, Bigarray.float32_elt, Bigarray.c_layout) Bigarray.Array1.t =
-    Obj.obj args.(0)
+  (* Extract arguments from exec_arg array *)
+  let open Spoc_framework.Framework_sig in
+  let a =
+    match args.(0) with
+    | EA_Vec (module V) ->
+        let vec = Obj.obj (V.underlying_obj ()) in
+        (vec
+          : (float, Bigarray.float32_elt, Bigarray.c_layout) Bigarray.Array1.t)
+    | _ -> failwith "Expected vector for arg 0"
   in
-  let b : (float, Bigarray.float32_elt, Bigarray.c_layout) Bigarray.Array1.t =
-    Obj.obj args.(1)
+  let b =
+    match args.(1) with
+    | EA_Vec (module V) ->
+        let vec = Obj.obj (V.underlying_obj ()) in
+        (vec
+          : (float, Bigarray.float32_elt, Bigarray.c_layout) Bigarray.Array1.t)
+    | _ -> failwith "Expected vector for arg 1"
   in
-  let c : (float, Bigarray.float32_elt, Bigarray.c_layout) Bigarray.Array1.t =
-    Obj.obj args.(2)
+  let c =
+    match args.(2) with
+    | EA_Vec (module V) ->
+        let vec = Obj.obj (V.underlying_obj ()) in
+        (vec
+          : (float, Bigarray.float32_elt, Bigarray.c_layout) Bigarray.Array1.t)
+    | _ -> failwith "Expected vector for arg 2"
   in
-  let n : int32 = Obj.obj args.(3) in
-  let n = Int32.to_int n in
+  let n =
+    match args.(3) with
+    | EA_Int32 n -> Int32.to_int n
+    | _ -> failwith "Expected int32 for arg 3"
+  in
 
   (* Compute total threads and iterate *)
   let total_threads = gx * bx in

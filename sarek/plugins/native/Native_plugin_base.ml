@@ -12,8 +12,9 @@ open Spoc_framework
 
 (** Registry for native kernel functions.
 
-    Kernels are registered by name. The function signature is:
-    - args: Obj.t array of kernel arguments
+    Kernels are registered by name. The function signature uses exec_arg array
+    for type-safe argument passing (no Obj.t):
+    - args: Framework_sig.exec_arg array (typed kernel arguments)
     - grid: (gx, gy, gz) grid dimensions
     - block: (bx, by, bz) block dimensions
 
@@ -21,7 +22,8 @@ open Spoc_framework
     the external registration functions. *)
 let native_kernels :
     ( string,
-      Obj.t array -> int * int * int -> int * int * int -> unit )
+      Framework_sig.exec_arg array -> int * int * int -> int * int * int -> unit
+    )
     Hashtbl.t =
   Hashtbl.create 16
 
@@ -350,15 +352,8 @@ end = struct
        The "compile" here is a no-op - we look up registered functions. *)
     type t = {name : string}
 
-    type arg =
-      | ArgBuffer of Obj.t
-      | ArgInt32 of int32
-      | ArgInt64 of int64
-      | ArgFloat32 of float
-      | ArgFloat64 of float
-      | ArgRaw of Obj.t  (** Raw OCaml value - for SPOC Vector/customarray *)
-
-    type args = {mutable list : arg list}
+    (** Use exec_arg directly - no intermediate type needed! *)
+    type args = {mutable list : Framework_sig.exec_arg list}
 
     let compile _device ~name ~source:_ = {name}
 
@@ -367,43 +362,50 @@ end = struct
     let create_args () = {list = []}
 
     let set_arg_buffer args _idx buf =
-      args.list <- ArgBuffer (Obj.repr buf) :: args.list
+      (* Wrap buffer in EXEC_VECTOR for exec_arg *)
+      let module EV : Typed_value.EXEC_VECTOR = struct
+        let length = Memory.size buf
 
-    let set_arg_int32 args _idx v = args.list <- ArgInt32 v :: args.list
+        let type_name = "buffer"
 
-    let set_arg_int64 args _idx v = args.list <- ArgInt64 v :: args.list
+        let elem_size = match buf with {elem_size; _} -> elem_size
 
-    let set_arg_float32 args _idx v = args.list <- ArgFloat32 v :: args.list
+        let underlying_obj () = Obj.repr buf
 
-    let set_arg_float64 args _idx v = args.list <- ArgFloat64 v :: args.list
+        let device_ptr () = Memory.device_ptr buf
+
+        let get _i = failwith "Native buffer: get not implemented"
+
+        let set _i _v = failwith "Native buffer: set not implemented"
+      end in
+      args.list <- Framework_sig.EA_Vec (module EV) :: args.list
+
+    let set_arg_int32 args _idx v =
+      args.list <- Framework_sig.EA_Int32 v :: args.list
+
+    let set_arg_int64 args _idx v =
+      args.list <- Framework_sig.EA_Int64 v :: args.list
+
+    let set_arg_float32 args _idx v =
+      args.list <- Framework_sig.EA_Float32 v :: args.list
+
+    let set_arg_float64 args _idx v =
+      args.list <- Framework_sig.EA_Float64 v :: args.list
 
     let set_arg_ptr _args _idx _ptr =
       failwith "Native backend does not support raw pointer arguments"
 
-    (** Set a raw OCaml value argument (for SPOC Vector/customarray). This
-        passes the value directly to the kernel without unwrapping. *)
-    let[@warning "-32"] set_arg_raw args _idx v =
-      args.list <- ArgRaw v :: args.list
+    (** Set a raw OCaml value argument (for SPOC Vector/customarray). Note: Not
+        yet implemented with exec_arg. *)
+    let[@warning "-32"] set_arg_raw _args _idx _v =
+      failwith "Native backend: set_arg_raw not implemented with exec_arg"
 
     let launch kernel ~args ~(grid : Framework_sig.dims)
         ~(block : Framework_sig.dims) ~shared_mem:_ ~stream:_ =
       match Hashtbl.find_opt native_kernels kernel.name with
       | Some fn ->
-          let arg_array =
-            args.list |> List.rev
-            |> List.map (function
-              | ArgBuffer o ->
-                  (* Extract the underlying bigarray from the buffer record.
-                     The buffer is {data; size; device} where data is the bigarray. *)
-                  let buf : _ Memory.buffer = Obj.obj o in
-                  buf.Memory.data
-              | ArgInt32 v -> Obj.repr v
-              | ArgInt64 v -> Obj.repr v
-              | ArgFloat32 v -> Obj.repr v
-              | ArgFloat64 v -> Obj.repr v
-              | ArgRaw o -> o (* Pass raw OCaml value directly *))
-            |> Array.of_list
-          in
+          (* Just reverse and convert to array - no Obj.t conversion needed! *)
+          let arg_array = args.list |> List.rev |> Array.of_list in
           fn arg_array (grid.x, grid.y, grid.z) (block.x, block.y, block.z)
       | None ->
           failwith
@@ -458,12 +460,10 @@ let kernel_registered name = Hashtbl.mem native_kernels name
 let list_kernels () =
   Hashtbl.fold (fun name _ acc -> name :: acc) native_kernels []
 
-(** Run a kernel directly with raw arguments. This bypasses the Runtime API and
-    is useful for testing or when using SPOC Vector/customarray which aren't
-    wrapped by the new runtime yet.
+(** Run a kernel directly with typed arguments. This bypasses the Runtime API.
 
     @param name The registered kernel name
-    @param args Array of Obj.t arguments (customarrays, scalars, etc.)
+    @param args Array of exec_arg (typed kernel arguments)
     @param grid (gx, gy, gz) grid dimensions
     @param block (bx, by, bz) block dimensions *)
 let run_kernel_raw ~name ~args ~grid ~block =

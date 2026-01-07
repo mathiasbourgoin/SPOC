@@ -148,9 +148,9 @@ val enqueue_fission :
     (mode:exec_mode ->
     block:int * int * int ->
     grid:int * int * int ->
-    Obj.t array ->
+    Spoc_framework.Framework_sig.exec_arg array ->
     unit) ->
-  args:Obj.t array ->
+  args:Spoc_framework.Framework_sig.exec_arg array ->
   block:int * int * int ->
   grid:int * int * int ->
   unit ->

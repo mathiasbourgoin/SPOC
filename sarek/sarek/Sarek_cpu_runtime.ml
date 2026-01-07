@@ -61,14 +61,19 @@ let global_size_z st = Int32.mul st.grid_dim_z st.block_dim_z
     block. Uses regular OCaml arrays to support custom types.
 
     Implementation: We use separate hashtables for each primitive type to avoid
-    Obj.t in the common case, and one Obj.t hashtable for custom types. *)
+    boxing, and an existential wrapper for custom types (no Obj.t needed). *)
+
+(** Existential wrapper for custom type arrays - type-safe alternative to Obj.t
+*)
+type any_array = AnyArray : 'a array -> any_array
 
 type shared_mem = {
   int_arrays : (string, int array) Hashtbl.t;
   float_arrays : (string, float array) Hashtbl.t;
   int32_arrays : (string, int32 array) Hashtbl.t;
   int64_arrays : (string, int64 array) Hashtbl.t;
-  custom_arrays : (string, Obj.t) Hashtbl.t; (* Only custom types use Obj.t *)
+  custom_arrays : (string, any_array) Hashtbl.t;
+      (* Existential wrapper, no Obj.t *)
 }
 
 let create_shared () =
@@ -118,15 +123,17 @@ let alloc_shared_int64 (shared : shared_mem) name size (default : int64) :
       Hashtbl.add shared.int64_arrays name arr ;
       arr
 
-(** Generic allocator for custom types - requires Obj.t for type erasure. The
-    caller must ensure they use consistent types for each name. *)
+(** Generic allocator for custom types - uses existential wrapper instead of
+    Obj.t. The caller must ensure they use consistent types for each name. *)
 let alloc_shared (type a) (shared : shared_mem) name size (default : a) :
     a array =
   match Hashtbl.find_opt shared.custom_arrays name with
-  | Some obj -> (Obj.obj obj : a array)
+  | Some (AnyArray arr) ->
+      (* Pattern match extracts the array, but we need unsafe coercion to recover type *)
+      (Obj.obj (Obj.repr arr) : a array)
   | None ->
       let arr = Array.make size default in
-      Hashtbl.add shared.custom_arrays name (Obj.repr arr) ;
+      Hashtbl.add shared.custom_arrays name (AnyArray arr) ;
       arr
 
 (** {1 Sequential Execution}
@@ -627,8 +634,12 @@ module ThreadPool = struct
       - With barriers: block distribution (start_block/end_block) - preserves
         BSP *)
   type work_item = {
-    kernel : thread_state -> shared_mem -> Obj.t array -> unit;
-    args : Obj.t array;
+    kernel :
+      thread_state ->
+      shared_mem ->
+      Spoc_framework.Framework_sig.exec_arg array ->
+      unit;
+    args : Spoc_framework.Framework_sig.exec_arg array;
     uses_barriers : bool;  (** Whether kernel uses barriers *)
     (* Thread distribution (uses_barriers=false) *)
     start_tid : int;  (** First global thread ID (inclusive) *)
@@ -662,8 +673,11 @@ module ThreadPool = struct
   (** Run a single block with BSP barriers using Effect.Shallow fibers *)
   let run_block_bsp ~block:(bx, by, bz) ~grid:(gx, gy, gz)
       ~block_idx:(block_x, block_y, block_z)
-      (kernel : thread_state -> shared_mem -> Obj.t array -> unit)
-      (args : Obj.t array) =
+      (kernel :
+        thread_state ->
+        shared_mem ->
+        Spoc_framework.Framework_sig.exec_arg array ->
+        unit) (args : Spoc_framework.Framework_sig.exec_arg array) =
     let num_threads = bx * by * bz in
     let shared = create_shared () in
     (* Thread status: 0 = running, 1 = waiting at barrier, 2 = completed *)
@@ -890,8 +904,11 @@ module ThreadPool = struct
       - uses_barriers=false: distribute threads (more granular)
       - uses_barriers=true: distribute blocks (preserves BSP) *)
   let run_kernel pool ~block:(bx, by, bz) ~grid:(gx, gy, gz) ~uses_barriers
-      (kernel : thread_state -> shared_mem -> Obj.t array -> unit)
-      (args : Obj.t array) =
+      (kernel :
+        thread_state ->
+        shared_mem ->
+        Spoc_framework.Framework_sig.exec_arg array ->
+        unit) (args : Spoc_framework.Framework_sig.exec_arg array) =
     let threads_per_block = bx * by * bz in
     let total_blocks = gx * gy * gz in
     let total_threads = total_blocks * threads_per_block in
@@ -1260,9 +1277,9 @@ module LaunchQueue = struct
       mode:exec_mode ->
       block:int * int * int ->
       grid:int * int * int ->
-      Obj.t array ->
+      Spoc_framework.Framework_sig.exec_arg array ->
       unit;
-    args : Obj.t array;
+    args : Spoc_framework.Framework_sig.exec_arg array;
     block : int * int * int;
     grid : int * int * int;
   }
