@@ -433,17 +433,7 @@ let rec gen_stmt buf indent = function
       (* Special case: CUDA doesn't support compound literals in assignments.
          For record assignments, generate field-by-field initialization. *)
       match e with
-      | ERecord (_, fields) ->
-          List.iter
-            (fun (fname, fexpr) ->
-              Buffer.add_string buf indent ;
-              gen_lvalue buf lv ;
-              Buffer.add_char buf '.' ;
-              Buffer.add_string buf fname ;
-              Buffer.add_string buf " = " ;
-              gen_expr buf fexpr ;
-              Buffer.add_string buf ";\n")
-            fields
+      | ERecord (_, fields) -> gen_record_assign buf indent lv fields
       | _ ->
           Buffer.add_string buf indent ;
           gen_lvalue buf lv ;
@@ -501,62 +491,12 @@ let rec gen_stmt buf indent = function
       let scrutinee_buf = Buffer.create 64 in
       gen_expr scrutinee_buf e ;
       let scrutinee = Buffer.contents scrutinee_buf in
-      (* Lookup constructor types from the first PConstr case *)
-      let find_constr_types cname =
-        List.find_map
-          (fun (_vname, constrs) ->
-            List.find_map
-              (fun (cn, args) -> if cn = cname then Some args else None)
-              constrs)
-          !current_variants
-      in
       Buffer.add_string buf indent ;
       Buffer.add_string buf "switch (" ;
       Buffer.add_string buf scrutinee ;
       Buffer.add_string buf ".tag) {\n" ;
       List.iter
-        (fun (pattern, body) ->
-          Buffer.add_string buf indent ;
-          (match pattern with
-          | PConstr (cname, bindings) -> (
-              Buffer.add_string buf ("  case " ^ cname ^ ": {\n") ;
-              (* Generate bindings: extract payload from scrutinee *)
-              match (bindings, find_constr_types cname) with
-              | [var_name], Some [ty] ->
-                  (* Single payload: access data.Constructor_v *)
-                  Buffer.add_string buf (indent ^ "    ") ;
-                  Buffer.add_string buf (cuda_type_of_elttype ty) ;
-                  Buffer.add_string buf " " ;
-                  Buffer.add_string buf var_name ;
-                  Buffer.add_string buf " = " ;
-                  Buffer.add_string buf scrutinee ;
-                  Buffer.add_string buf ".data." ;
-                  Buffer.add_string buf cname ;
-                  Buffer.add_string buf "_v;\n"
-              | vars, Some types when List.length vars = List.length types ->
-                  (* Multiple payloads: access data.Constructor_v._0, ._1, etc. *)
-                  List.iteri
-                    (fun i (var_name, ty) ->
-                      Buffer.add_string buf (indent ^ "    ") ;
-                      Buffer.add_string buf (cuda_type_of_elttype ty) ;
-                      Buffer.add_string buf " " ;
-                      Buffer.add_string buf var_name ;
-                      Buffer.add_string buf " = " ;
-                      Buffer.add_string buf scrutinee ;
-                      Buffer.add_string buf ".data." ;
-                      Buffer.add_string buf cname ;
-                      Buffer.add_string buf (Printf.sprintf "_v._%d;\n" i))
-                    (List.combine vars types)
-              | [], _ | _, None | _, Some [] -> () (* No bindings needed *)
-              | _ ->
-                  Cuda_error.raise_error
-                    (Cuda_error.type_error "pattern match"
-                       "matching bindings and constructor"
-                       "mismatched bindings/args"))
-          | PWild -> Buffer.add_string buf "  default: {\n") ;
-          gen_stmt buf (indent ^ "    ") body ;
-          Buffer.add_string buf (indent ^ "    break;\n") ;
-          Buffer.add_string buf (indent ^ "  }\n"))
+        (fun (pattern, body) -> gen_match_case buf indent scrutinee pattern body)
         cases ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
@@ -594,13 +534,7 @@ let rec gen_stmt buf indent = function
   | SLet (v, EArrayCreate (elem_ty, size, mem), body) ->
       (* Array declaration: type arr[size]; *)
       Buffer.add_string buf indent ;
-      (match mem with Shared -> Buffer.add_string buf "__shared__ " | _ -> ()) ;
-      Buffer.add_string buf (cuda_type_of_elttype elem_ty) ;
-      Buffer.add_char buf ' ' ;
-      Buffer.add_string buf v.var_name ;
-      Buffer.add_char buf '[' ;
-      gen_expr buf size ;
-      Buffer.add_string buf "];\n" ;
+      gen_array_decl buf v elem_ty size mem ;
       gen_stmt buf indent body
   | SLet (v, e, body) ->
       Buffer.add_string buf indent ;
@@ -632,6 +566,83 @@ let rec gen_stmt buf indent = function
       gen_stmt buf (indent ^ "  ") body ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
+
+(** Helper: Generate record field assignment *)
+and gen_record_assign buf indent lv fields =
+  List.iter
+    (fun (fname, fexpr) ->
+      Buffer.add_string buf indent ;
+      gen_lvalue buf lv ;
+      Buffer.add_char buf '.' ;
+      Buffer.add_string buf fname ;
+      Buffer.add_string buf " = " ;
+      gen_expr buf fexpr ;
+      Buffer.add_string buf ";\n")
+    fields
+
+(** Helper: Generate switch case for pattern match *)
+and gen_match_case buf indent scrutinee pattern body =
+  Buffer.add_string buf indent ;
+  (match pattern with
+  | PConstr (cname, bindings) ->
+      (* Lookup constructor types from current_variants *)
+      let find_constr_types cname =
+        List.find_map
+          (fun (_vname, constrs) ->
+            List.find_map
+              (fun (cn, args) -> if cn = cname then Some args else None)
+              constrs)
+          !current_variants
+      in
+      Buffer.add_string buf ("  case " ^ cname ^ ": {\n") ;
+      (* Generate bindings: extract payload from scrutinee *)
+      (match (bindings, find_constr_types cname) with
+      | [var_name], Some [ty] ->
+          (* Single payload: access data.Constructor_v *)
+          Buffer.add_string buf (indent ^ "    ") ;
+          Buffer.add_string buf (cuda_type_of_elttype ty) ;
+          Buffer.add_string buf " " ;
+          Buffer.add_string buf var_name ;
+          Buffer.add_string buf " = " ;
+          Buffer.add_string buf scrutinee ;
+          Buffer.add_string buf ".data." ;
+          Buffer.add_string buf cname ;
+          Buffer.add_string buf "_v;\n"
+      | vars, Some types when List.length vars = List.length types ->
+          (* Multiple payloads: access data.Constructor_v._0, ._1, etc. *)
+          List.iteri
+            (fun i (var_name, ty) ->
+              Buffer.add_string buf (indent ^ "    ") ;
+              Buffer.add_string buf (cuda_type_of_elttype ty) ;
+              Buffer.add_string buf " " ;
+              Buffer.add_string buf var_name ;
+              Buffer.add_string buf " = " ;
+              Buffer.add_string buf scrutinee ;
+              Buffer.add_string buf ".data." ;
+              Buffer.add_string buf cname ;
+              Buffer.add_string buf (Printf.sprintf "_v._%d;\n" i))
+            (List.combine vars types)
+      | [], _ | _, None | _, Some [] -> () (* No bindings needed *)
+      | _ ->
+          Cuda_error.raise_error
+            (Cuda_error.type_error "pattern match"
+               "matching bindings and constructor" "mismatched bindings/args"))
+  | PWild -> Buffer.add_string buf "  default: {\n") ;
+  gen_stmt buf (indent ^ "    ") body ;
+  Buffer.add_string buf (indent ^ "    break;\n") ;
+  Buffer.add_string buf (indent ^ "  }\n")
+
+(** Helper: Generate array declaration for SLet with EArrayCreate *)
+and gen_array_decl buf v elem_ty size mem =
+  (match mem with
+  | Shared -> Buffer.add_string buf "__shared__ "
+  | _ -> ()) ;
+  Buffer.add_string buf (cuda_type_of_elttype elem_ty) ;
+  Buffer.add_string buf " " ;
+  Buffer.add_string buf v.var_name ;
+  Buffer.add_char buf '[' ;
+  gen_expr buf size ;
+  Buffer.add_string buf "];\n"
 
 (** {1 Declaration Generation} *)
 
