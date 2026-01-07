@@ -443,7 +443,7 @@ Fundamental types for the entire runtime:
 - `dims`: 3D dimensions for grids/blocks
 - `scalar_kind`: Bigarray kind descriptors
 
-**Coverage:** 100% - All type constructors used
+All type constructors have test coverage.
 
 ### Error Handling
 
@@ -613,10 +613,10 @@ firefox _coverage/aggregate-report/index.html
 ```
 
 **Coverage by module:**
-- ✅ Kirc_types: 100%
-- ✅ Sarek_cpu_runtime: 71.56%
-- ⚠️  Execute: 26.07% (needs more error path tests)
-- ⚠️  Sarek_ir_interp: 22.49% (needs more intrinsic tests)
+- Kirc_types: Fully tested
+- Sarek_cpu_runtime: 71.56%
+- Execute: 26.07% (needs more error path tests)
+- Sarek_ir_interp: 22.49% (needs more intrinsic tests)
 
 See [../../COVERAGE.md](../../COVERAGE.md) for detailed coverage documentation.
 

@@ -766,7 +766,7 @@ bisect-ppx-report html
 - **53 tests total**: 37 unit + 16 integration
 - **All tests passing** in <0.002s per suite
 - **Test coverage**: 89-96% of test code
-- **Module coverage**: Cache 61%, Registry 68%, Intrinsic 100%
+- **Module coverage**: Cache 61%, Registry 68%, Intrinsic tested
 - **Overall project coverage**: 48.03% (+6.2pp from framework tests)
 
 ### Dummy Backend
@@ -826,7 +826,7 @@ end
 
 - **Debug logging**: `SAREK_DEBUG=all` for detailed output
 - **Clear errors**: Structured errors with context
-- **Comprehensive tests**: 53 tests covering all scenarios
+- **Tests**: 53 tests covering error and execution paths
 - **Documentation**: Inline comments + README
 
 ## Debug Logging

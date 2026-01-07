@@ -370,7 +370,7 @@ type 'a local   = Local of 'a        (* Thread-local / register *)
 
 ## Testing
 
-Comprehensive test coverage across the compilation pipeline:
+Test coverage across the compilation pipeline:
 
 ```bash
 # Unit tests for PPX modules (59 tests)
