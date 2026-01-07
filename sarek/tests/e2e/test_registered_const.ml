@@ -33,7 +33,6 @@ let () =
 
   (* Print IR for verification *)
   print_endline "=== Registered Const IR ===" ;
-  Sarek.Kirc_Ast.print_ast kirc.Sarek.Kirc_types.body ;
   print_endline "============================" ;
 
   let devs =

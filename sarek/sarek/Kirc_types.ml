@@ -20,22 +20,17 @@ type ('a, 'b) vector_kind_stub = unit
 (** Stub type replacing Spoc.Kernel.spoc_kernel - V2 path doesn't use this *)
 type ('a, 'b) spoc_kernel_stub = unit
 
-(** Legacy AST stub - V2 path doesn't use this *)
-type k_ext_stub = unit
-
 type ('a, 'b, 'c) kirc_kernel = {
   ml_kern : 'a;
-  body : k_ext_stub;
   body_ir : Sarek_ir_types.kernel option;
-  ret_val : k_ext_stub * ('b, 'c) vector_kind_stub;
+  ret_val : ('b, 'c) vector_kind_stub;
   extensions : extension array;
 }
 
 type ('a, 'b, 'c, 'd) kirc_function = {
   fun_name : string;
   ml_fun : 'a;
-  funbody : k_ext_stub;
-  fun_ret : k_ext_stub * ('b, 'c) vector_kind_stub;
+  fun_ret : ('b, 'c) vector_kind_stub;
   fastflow_acc : 'd;
   fun_extensions : extension array;
 }

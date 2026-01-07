@@ -34,7 +34,6 @@ let point_copy_kirc =
 
 let () =
   print_endline "=== Generated Kernel IR (ktype record) ===" ;
-  Sarek.Kirc_Ast.print_ast point_copy_kirc.Sarek.Kirc_types.body ;
   print_endline "==========================================" ;
 
   (* runtime execution *)

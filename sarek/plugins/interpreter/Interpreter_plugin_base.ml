@@ -13,7 +13,7 @@ open Spoc_framework
 
 (** Registry for interpreter kernels. Maps kernel name to IR for interpretation.
 *)
-let interpreter_kernels : (string, Sarek.Sarek_ir.kernel) Hashtbl.t =
+let interpreter_kernels : (string, Sarek_ir_types.kernel) Hashtbl.t =
   Hashtbl.create 16
 
 module Interpreter : sig

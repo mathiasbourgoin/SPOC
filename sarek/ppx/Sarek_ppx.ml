@@ -1488,59 +1488,45 @@ let expand_kernel ~ctxt payload : expression =
             Sarek_debug.log_to_file "  step 6: tailrec transform done" ;
             Sarek_debug.log_exit "transform_kernel" ;
 
-            (* 7. Lower to Kirc_Ast (legacy) *)
+            (* 7. Lower to Sarek_ir *)
             let kern_name = Option.value ~default:"anon" tkernel.tkern_name in
             Sarek_debug.log_to_file
-              (Printf.sprintf "[%s] step 7: V1 lowering start" kern_name) ;
+              (Printf.sprintf "[%s] step 7: IR lowering start" kern_name) ;
             Sarek_debug.log_enter "lower_kernel" ;
-            let ir, constructors = Sarek_lower.lower_kernel tkernel in
-            Sarek_debug.log_to_file
-              (Printf.sprintf "[%s] step 7: V1 lowering done" kern_name) ;
-            Sarek_debug.log_exit "lower_kernel" ;
-            let ret_val = Sarek_lower.lower_return_value tkernel in
-
-            (* 7b. Lower to Sarek_ir - optional, fails gracefully *)
-            Sarek_debug.log_to_file
-              (Printf.sprintf "[%s] step 7b: IR lowering start" kern_name) ;
-            let kernel =
-              try
-                let t0 = Unix.gettimeofday () in
-                Sarek_debug.log_enter "lower_kernel_ir" ;
-                let k, _constructors_ir = Sarek_lower_ir.lower_kernel tkernel in
-                let t1 = Unix.gettimeofday () in
-                Sarek_debug.log_to_file
-                  (Printf.sprintf
-                     "[%s] step 7b: IR lowering done (%.3fs)"
-                     kern_name
-                     (t1 -. t0)) ;
-                Sarek_debug.log_exit "lower_kernel_ir" ;
-                Some k
+            let t0 = Unix.gettimeofday () in
+            let kernel, constructors =
+              try Sarek_lower_ir.lower_kernel tkernel
               with e ->
-                Sarek_debug.log_exit "lower_kernel_ir (failed)" ;
                 Sarek_debug.log_to_file
                   (Printf.sprintf
-                     "[%s] step 7b: IR lowering failed: %s"
+                     "[%s] step 7: IR lowering failed: %s"
                      kern_name
                      (Printexc.to_string e)) ;
-                None
+                Sarek_debug.log_exit "lower_kernel (failed)" ;
+                Location.raise_errorf
+                  ~loc
+                  "Kernel lowering failed: %s"
+                  (Printexc.to_string e)
             in
+            let t1 = Unix.gettimeofday () in
+            Sarek_debug.log_to_file
+              (Printf.sprintf
+                 "[%s] step 7: IR lowering done (%.3fs)"
+                 kern_name
+                 (t1 -. t0)) ;
+            Sarek_debug.log_exit "lower_kernel" ;
 
             (* 8. Quote the IR back to OCaml *)
             Sarek_debug.log_to_file
-              (Printf.sprintf
-                 "[%s] step 8: quote start (v2=%b)"
-                 kern_name
-                 (Option.is_some kernel)) ;
+              (Printf.sprintf "[%s] step 8: quote start" kern_name) ;
             let t0 = Unix.gettimeofday () in
             let result =
               Sarek_quote.quote_kernel
                 ~loc
                 ~native_kernel
-                ?ir_opt:kernel
+                ~ir_opt:kernel
+                ~constructors
                 tkernel
-                ir
-                constructors
-                ret_val
             in
             let t1 = Unix.gettimeofday () in
             Sarek_debug.log_to_file

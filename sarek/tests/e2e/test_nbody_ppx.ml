@@ -109,7 +109,6 @@ let verify (gax, gay, gaz) (rax, ray, raz) =
 let () =
   let _, kirc_kernel = accel_kernel in
   print_endline "=== NBody (PPX) IR ===" ;
-  Sarek.Kirc_Ast.print_ast kirc_kernel.Sarek.Kirc_types.body ;
   print_endline "======================" ;
 
   Benchmarks.run ~baseline:cpu_nbody ~verify "NBody PPX" (fun dev n _ ->

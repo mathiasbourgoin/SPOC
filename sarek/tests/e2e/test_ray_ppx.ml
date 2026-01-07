@@ -168,7 +168,6 @@ let verify gpu_out expected =
 let () =
   let _, kirc_kernel = ray_kernel in
   print_endline "=== Ray PPX IR ===" ;
-  Sarek.Kirc_Ast.print_ast kirc_kernel.Sarek.Kirc_types.body ;
   print_endline "==================" ;
 
   Benchmarks.run ~baseline:cpu_ray ~verify "Ray PPX" (fun dev n _ ->

@@ -632,9 +632,8 @@ let generate_intrinsic_check ~loc (kernel : tkernel) : expression =
 
 (** Quote a kernel to create a sarek_kernel expression *)
 let quote_kernel ~loc ?(native_kernel : tkernel option)
-    ?(ir_opt : Sarek_ir_ppx.kernel option) (kernel : tkernel)
-    (ir : Kirc_Ast.k_ext) (constructors : string list)
-    (ret_val : Kirc_Ast.k_ext) : expression =
+    ~(ir_opt : Sarek_ir_ppx.kernel) ~(constructors : string list)
+    (kernel : tkernel) : expression =
   (* Use native_kernel for CPU code generation if provided, otherwise use kernel.
      This allows passing the original kernel (before tailrec transformation)
      for native OCaml, since OCaml handles recursion natively. *)
@@ -654,33 +653,24 @@ let quote_kernel ~loc ?(native_kernel : tkernel option)
             (List.map (Ast_builder.Default.estring ~loc) constructors)]
     in
     let open Sarek.Kirc_types in
-    let body_ir = [%e quote_k_ext ~loc ir] in
-    let ret_ir = [%e quote_k_ext ~loc ret_val] in
     let _intrinsic_check = [%e generate_intrinsic_check ~loc kernel] in
     (* Native function for host execution (uses Spoc_core.Vector) *)
     let native_fn =
       [%e Sarek_native_gen.gen_cpu_kern_native_wrapper ~loc kernel_for_native]
     in
     let body_ir_ir =
-      [%e
-        match ir_opt with
-        | Some k ->
-            (* Pass native function for Native backend execution *)
-            [%expr
-              Some
-                [%e
-                  Sarek_quote_ir.quote_kernel
-                    ~loc
-                    ~native_fn_expr:[%expr native_fn]
-                    k]]
-        | None -> [%expr None]]
+      Some
+        [%e
+          Sarek_quote_ir.quote_kernel
+            ~loc
+            ~native_fn_expr:[%expr native_fn]
+            ir_opt]
     in
     let kirc_kernel =
       {
         Sarek.Kirc_types.ml_kern = (fun () -> ());
-        Sarek.Kirc_types.body = body_ir;
         Sarek.Kirc_types.body_ir = body_ir_ir;
-        Sarek.Kirc_types.ret_val = (ret_ir, ());
+        Sarek.Kirc_types.ret_val = ();
         Sarek.Kirc_types.extensions = [||];
       }
     in

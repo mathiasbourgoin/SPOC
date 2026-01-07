@@ -74,7 +74,6 @@ let verify dst _ =
 
 let () =
   print_endline "=== Registered Variant IR ===" ;
-  Sarek.Kirc_Ast.print_ast variant_kernel.Sarek.Kirc_types.body ;
   print_endline "==============================" ;
 
   Benchmarks.run ~verify "Registered Variant" run_test ;

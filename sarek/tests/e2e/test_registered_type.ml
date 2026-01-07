@@ -79,7 +79,6 @@ let verify (xv, yv, dst) _ =
 let () =
   let _, kirc_kernel = kernel in
   print_endline "=== Registered type IR ===" ;
-  Sarek.Kirc_Ast.print_ast kirc_kernel.Sarek.Kirc_types.body ;
   print_endline "==========================" ;
 
   Benchmarks.run ~verify "Registered Type" run_test ;

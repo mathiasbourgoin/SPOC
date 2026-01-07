@@ -154,7 +154,7 @@ module Backend : Framework_sig.BACKEND = struct
 end
 
 (** Run IR directly without going through execute_direct. *)
-let run_ir ~(ir : Sarek.Sarek_ir.kernel) ~(block : Framework_sig.dims)
+let run_ir ~(ir : Sarek_ir_types.kernel) ~(block : Framework_sig.dims)
     ~(grid : Framework_sig.dims)
     ~(args : (string * Sarek.Sarek_ir_interp.arg) list) : unit =
   Sarek.Sarek_ir_interp.run_kernel

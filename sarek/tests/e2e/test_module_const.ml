@@ -24,7 +24,6 @@ let () =
   (* Print the IR to verify constant lowering *)
   let _, kirc_kernel = scaled_copy in
   print_endline "=== Generated Kernel IR (module const) ===" ;
-  Sarek.Kirc_Ast.print_ast kirc_kernel.Sarek.Kirc_types.body ;
   print_endline "=========================================" ;
 
   let devs =

@@ -21,7 +21,6 @@ let () =
   in
   let _, kirc_kernel = scale_add in
   print_endline "=== klet-style helper IR ===" ;
-  Sarek.Kirc_Ast.print_ast kirc_kernel.Sarek.Kirc_types.body ;
   print_endline "=============================" ;
   let devs =
     Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] ()
