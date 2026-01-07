@@ -25,4 +25,6 @@
   Kirc_kernel
   Execute
   Execute_error
+  Sarek_value
+  Sarek_type_helpers
   Transform))
