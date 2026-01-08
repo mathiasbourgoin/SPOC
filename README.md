@@ -108,6 +108,16 @@ dune build sarek-opencl
 
 The framework uses dynamic linking, so you can build without GPU drivers installed. GPU support is detected at runtime.
 
+### Verifying Installation
+
+```bash
+# Run benchmarks on all available devices
+make benchmarks
+
+# This will test kernels on all detected backends
+# and report performance and correctness
+```
+
 ## Usage
 
 ### Basic Example
@@ -182,7 +192,7 @@ For API documentation, see inline comments and README files in each package dire
 
 - **OCaml**: 5.4.0+ (uses domains, effects)
 - **System**: 64-bit Linux, macOS, Windows (limited testing)
-- **GPU**: Optional but recommended for GPU backends
+- **GPU**: Optional - Native and Interpreter backends work on any system
 
 ## Project History
 
