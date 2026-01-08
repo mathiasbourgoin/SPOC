@@ -229,6 +229,40 @@ benchmarks:
 	@echo "       BENCHMARK COMPLETE"
 	@echo "=============================================="
 
+# Fast benchmarks for CI - small sizes, Native+OpenCL only
+benchmarks-fast:
+	@echo "=============================================="
+	@echo "   SAREK FAST BENCHMARK (CI-friendly)"
+	@echo "=============================================="
+	@echo ""
+	@dune build sarek/tests/e2e/test_vector_add.exe \
+		sarek/tests/e2e/test_matrix_mul.exe \
+		sarek/tests/e2e/test_reduce.exe \
+		sarek/tests/e2e/test_transpose.exe \
+		sarek/tests/e2e/test_math_intrinsics.exe
+	@echo ""
+	@echo "--- Vector Add (Native + OpenCL) ---"
+	@dune exec sarek/tests/e2e/test_vector_add.exe -- --native -s 4096
+	@if command -v clinfo >/dev/null 2>&1; then \
+		dune exec sarek/tests/e2e/test_vector_add.exe -- --opencl -s 4096 || echo "  OpenCL not available"; \
+	fi
+	@echo ""
+	@echo "--- Matrix Mul (Native) ---"
+	@dune exec sarek/tests/e2e/test_matrix_mul.exe -- --native -s 1024
+	@echo ""
+	@echo "--- Reduction (Native) ---"
+	@dune exec sarek/tests/e2e/test_reduce.exe -- --native -s 8192
+	@echo ""
+	@echo "--- Transpose (Native) ---"
+	@dune exec sarek/tests/e2e/test_transpose.exe -- --native -s 4096
+	@echo ""
+	@echo "--- Math Intrinsics (Native) ---"
+	@dune exec sarek/tests/e2e/test_math_intrinsics.exe -- --native -s 4096
+	@echo ""
+	@echo "=============================================="
+	@echo "   FAST BENCHMARK COMPLETE"
+	@echo "=============================================="
+
 # Tiered test suite - tests organized by complexity
 # Tier 1: Simple kernels (low complexity, good starting point)
 TIER1_TESTS = test_vector_add test_bitwise_ops test_math_intrinsics test_transpose

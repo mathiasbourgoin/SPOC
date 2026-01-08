@@ -50,7 +50,7 @@ jobs:
           restore-keys: |
             opam-${{ runner.os }}-${{ matrix.ocaml-compiler }}-
 
-      - name: Build SPOC and samples
+      - name: Build SPOC packages
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/work \
@@ -64,118 +64,25 @@ jobs:
                   opam switch create ${{ matrix.ocaml-compiler }}; \
               fi && \
               eval $(opam env --switch=${{ matrix.ocaml-compiler }}) && \
-              opam install ./spoc.opam ./spoc_ppx.opam --deps-only && \
-              opam install graphics && \
-              dune build --profile cuda -p spoc,spoc_ppx && \
-              dune build --profile cuda -- Samples/src/DeviceQuery/DeviceQuery.exe && \
-              dune build --profile cuda -- Samples/src/VecAdd/VecAdd.exe && \
-              dune build --profile cuda -- Samples/src/Mandelbrot/Mandelbrot.exe'
+              opam install . --deps-only && \
+              dune build'
 
-      - name: Collect sample artifacts
-        run: |
-          rm -rf ci_artifacts
-          mkdir -p ci_artifacts
-          for f in \
-            _build/default/Samples/src/DeviceQuery/DeviceQuery.exe \
-            _build/default/Samples/src/VecAdd/VecAdd.exe \
-            _build/default/Samples/src/Mandelbrot/Mandelbrot.exe; do
-            [ -f "$f" ] || continue
-            mkdir -p "ci_artifacts/$(dirname "$f")"
-            cp "$f" "ci_artifacts/$f"
-          done
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: dune-build-${{ matrix.os }}-ocaml-${{ matrix.ocaml-compiler }}
-          path: ci_artifacts
-          retention-days: 7
-
-  test:
-    needs: build
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - ubuntu-latest
-        ocaml-compiler:
-          - 5.4.0
-        cache:
-          - true
-
-    runs-on: ${{ matrix.os }}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Cache key
-        run: echo "CACHE_WEEK=$(date +%G-%V)" >> $GITHUB_ENV
-
-      - name: Build CI image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ci/Dockerfile
-          tags: spoc-ci:latest
-          load: true
-          build-args: |
-            CACHEBUST=${{ env.CACHE_WEEK }}
-          cache-from: type=gha,scope=spoc-ci-${{ hashFiles('ci/Dockerfile') }}
-          cache-to: type=gha,scope=spoc-ci-${{ hashFiles('ci/Dockerfile') }},mode=max
-
-      - name: Cache opam root
-        uses: actions/cache@v4
-        with:
-          path: .opam-ci
-          key: opam-${{ runner.os }}-${{ matrix.ocaml-compiler }}-${{ hashFiles('*.opam') }}
-          restore-keys: |
-            opam-${{ runner.os }}-${{ matrix.ocaml-compiler }}-
-
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: dune-build-${{ matrix.os }}-ocaml-${{ matrix.ocaml-compiler }}
-          path: ci_artifacts
-
-      - name: Restore executable bits
-        run: |
-          chmod -R u+rwX,go+rX ci_artifacts
-          find ci_artifacts -type f -name "*.exe" -exec chmod a+x {} +
-          # Ensure kernel sources are colocated with executables (Spoc loads from argv[0] dir).
-          for d in Samples/src/*/kernels; do
-            [ -d "$d" ] || continue
-            rel="${d#Samples/src/}"
-            mkdir -p "ci_artifacts/_build/default/Samples/src/$rel"
-            cp -R "$d/." "ci_artifacts/_build/default/Samples/src/$rel/"
-          done
-
-      - name: Detect GPU availability
-        id: gpu
-        run: |
-          if command -v nvidia-smi >/dev/null 2>&1; then
-            echo "has_gpu=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_gpu=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Run tests
+      - name: Run unit tests
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/work \
             -w /work \
             spoc-ci:latest \
-            bash -lc './ci_artifacts/_build/default/Samples/src/DeviceQuery/DeviceQuery.exe'
+            bash -lc 'export OPAMROOT=/work/.opam-ci && \
+              eval $(opam env --switch=${{ matrix.ocaml-compiler }}) && \
+              dune runtest'
 
-      - name: Run CUDA samples (GPU only)
-        if: steps.gpu.outputs.has_gpu == 'true'
+      - name: Run fast benchmarks
         run: |
-          docker run --rm --gpus all \
+          docker run --rm \
             -v ${{ github.workspace }}:/work \
             -w /work \
             spoc-ci:latest \
-            bash -lc './ci_artifacts/_build/default/Samples/src/VecAdd/VecAdd.exe && \
-              ./ci_artifacts/_build/default/Samples/src/Mandelbrot/Mandelbrot.exe -ppm /tmp/mandelbrot.ppm'
+            bash -lc 'export OPAMROOT=/work/.opam-ci && \
+              eval $(opam env --switch=${{ matrix.ocaml-compiler }}) && \
+              make benchmarks-fast'
