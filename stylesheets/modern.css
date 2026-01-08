@@ -14,9 +14,24 @@
   --card-shadow: rgba(0,0,0,0.05);
 }
 
+/* Base Dark Theme variables */
+.dark-theme {
+  --secondary-color: #ecf0f1;
+  --text-color: #e1e4e8;
+  --bg-color: #0d1117;
+  --code-bg: #161b22;
+  --border-color: #30363d;
+  
+  --nav-bg: #0d1117;
+  --nav-text: #c9d1d9;
+  --hero-bg: #0d1117;
+  --card-bg: #161b22;
+  --card-shadow: rgba(0,0,0,0.5);
+}
+
+/* Support system preference if no class is set */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --primary-color: #f39c12;
+  body:not(.light-theme) {
     --secondary-color: #ecf0f1;
     --text-color: #e1e4e8;
     --bg-color: #0d1117;
@@ -39,6 +54,7 @@ body {
   margin: 0;
   padding: 0;
   background: var(--bg-color);
+  transition: background-color 0.3s, color 0.3s;
 }
 
 .container {
@@ -80,6 +96,7 @@ body {
 
 .nav-links {
   display: flex;
+  align-items: center;
   gap: 20px;
 }
 
@@ -95,13 +112,33 @@ body {
   text-decoration: none;
 }
 
-/* Hero Section (OCaml.org Style) */
+/* Theme Toggle Button */
+#theme-toggle {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--nav-text);
+  cursor: pointer;
+  padding: 5px 10px;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+#theme-toggle:hover {
+  border-color: var(--primary-color);
+  background: rgba(255,255,255,0.1);
+}
+
+/* Hero Section */
 .hero {
-  background: var(--hero-bg); /* Darker, flatter background like OCaml.org */
+  background: var(--hero-bg);
   color: white;
   padding: 80px 0;
   border-bottom: none;
-  text-align: left; /* Switch to left align */
+  text-align: left;
 }
 
 .hero .container {
@@ -121,10 +158,9 @@ body {
 }
 
 .hero img {
-  max-width: 400px; /* Smaller, sharper logo */
+  max-width: 400px;
   width: 100%;
   height: auto;
-  margin-bottom: 0;
 }
 
 .hero h1 {
@@ -142,12 +178,10 @@ body {
   font-weight: 300;
   color: #aeb6bf;
   margin: 0 0 30px 0;
-  max-width: none;
 }
 
-.hero .btn-group {
+.btn-group {
   display: flex;
-  justify-content: flex-start; /* Left align buttons */
   gap: 15px;
   margin-top: 20px;
 }
@@ -178,7 +212,7 @@ body {
 
 .btn-outline:hover {
   background: white;
-  color: var(--secondary-color) !important;
+  color: #2c3e50 !important;
 }
 
 /* Feature Grid */
@@ -192,14 +226,6 @@ body {
 .feature-item h3 {
   color: var(--primary-color);
   margin-top: 0;
-}
-
-.feature-card {
-  padding: 30px;
-  background: var(--card-bg);
-  border-radius: 12px;
-  border: 1px solid var(--border-color);
-  box-shadow: 0 4px 6px var(--card-shadow);
 }
 
 /* Main Content */
@@ -239,6 +265,7 @@ pre {
   border: 1px solid var(--border-color);
   overflow-x: auto;
   font-size: 16px;
+  position: relative;
 }
 
 code {
@@ -287,13 +314,12 @@ footer {
 /* Responsive */
 @media (max-width: 768px) {
   .hero .container {
-    flex-direction: column-reverse; /* Text on top on mobile */
+    flex-direction: column-reverse;
     text-align: center;
   }
   
   .hero h1 { font-size: 2.5rem; }
-  .hero .tagline { font-size: 1.1rem; }
-  .hero .btn-group { justify-content: center; padding: 0 40px; }
+  .hero .btn-group { justify-content: center; }
   
   .navbar .container {
     flex-direction: column;
