@@ -130,7 +130,7 @@ add_ocaml_header() {
     
     cat > "$tmpfile" << 'HEADER_EOF'
 (******************************************************************************)
-(* SPDX-License-Identifier: CECILL-B                                         *)
+(* SPDX-License-Identifier: CECILL-B                                          *)
 HEADER_EOF
     
     echo "(* SPDX-FileCopyrightText: $years $contributor *)" >> "$tmpfile"
