@@ -55,16 +55,33 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
   </head>
   <body>
+    
+    <!-- Top Navigation Bar -->
+    <nav class="navbar">
+      <div class="container">
+        <a href="{{ site.baseurl }}/" class="nav-brand">
+          <img src="{{ site.baseurl }}/pres_resources/logo_sarek.png" alt="Sarek Logo">
+          Sarek
+        </a>
+        <div class="nav-links">
+          <a href="{{ site.baseurl }}/">Home</a>
+          <a href="{{ site.baseurl }}/spoc_docs/index.html">Documentation</a>
+          <a href="https://github.com/mathiasbourgoin/Sarek">GitHub</a>
+        </div>
+      </div>
+    </nav>
+
     <div class="doc-wrapper">
       <nav class="sidebar">
-        <a href="{{ site.baseurl }}/"><img src="{{ site.baseurl }}/pres_resources/logo_sarek_spoc.png" alt="Sarek Logo"/></a>
         <ul class="sidebar-nav">
-          <li><a href="{{ site.baseurl }}/">← Home</a></li>
-          <li><a href="https://github.com/mathiasbourgoin/Sarek">View on GitHub</a></li>
-          <li><a href="{{ site.baseurl }}/spoc_docs/index.html">API Docs</a></li>
+          <li><strong>Examples</strong></li>
+          <li><a href="{{ site.baseurl }}/docs/bitonic.html">Bitonic Sort</a></li>
+          <li><a href="{{ site.baseurl }}/docs/imageFilter.html">Image Filter</a></li>
+          <li><a href="{{ site.baseurl }}/docs/mandelbrot.html">Mandelbrot</a></li>
+          <li><a href="{{ site.baseurl }}/docs/testOpenCL.html">OpenCL Test</a></li>
+          <li style="margin-top: 20px;"><strong>Resources</strong></li>
+          <li><a href="{{ site.baseurl }}/spoc_docs/index.html">API Reference</a></li>
         </ul>
-        <hr>
-        <p><small>Sarek Project</small></p>
       </nav>
 
       <main class="doc-content">

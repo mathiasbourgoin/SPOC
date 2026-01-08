@@ -2,18 +2,44 @@
 layout: index
 ---
 
-Sarek is the core component of the SPOC framework: an embedded DSL for expressing GPU kernels
-directly in OCaml. It provides the runtime infrastructure
-for device detection, memory management, and kernel execution across
-multiple backends (CUDA, OpenCL, Vulkan, Metal, and Native CPU).
+<div class="features-grid">
+  <div class="feature-item">
+    <h3>Sarek</h3>
+    <p>The core DSL for expressing GPU kernels directly in OCaml. Write type-safe, high-level code that compiles to efficient CUDA or OpenCL kernels.</p>
+  </div>
+  <div class="feature-item">
+    <h3>SPOC Runtime</h3>
+    <p>Manages device detection, memory transfers, and kernel execution. Seamlessly switch between backends without changing your code.</p>
+  </div>
+  <div class="feature-item">
+    <h3>Multi-Backend</h3>
+    <p>Support for <strong>CUDA</strong>, <strong>OpenCL</strong>, <strong>Vulkan</strong>, <strong>Metal</strong>, and native CPU execution.</p>
+  </div>
+</div>
 
-This work was part of my PhD thesis (UPMC-LIP6 laboratory, Paris,
-France) and was partially funded by the [OpenGPU](http://opengpu.net/)
-project. I continued this project in 2014-2015 in the
-[Verimag](http://www-verimag.imag.fr) laboratory (Grenoble, France)
-and then from 2015 to 2018 in the
-[LIFO](http://www.univ-orleans.fr/lifo/) laboratory in Orléans,
-France. I currently work at [Nomadic Labs](https://nomadic-labs.com)
+<hr style="margin: 50px 0; border: 0; border-top: 1px solid #eee;">
+
+## Installation
+
+You can install SPOC and Sarek easily via Opam:
+
+```bash
+opam install spoc sarek
+```
+
+## How it works
+
+Sarek allows you to write kernels as OCaml functions. Here is a simple vector addition:
+
+```ocaml
+let kernel_vadd = kern a b c ->
+  let i = thread_idx_x + block_dim_x * block_idx_x in
+  c.[<i>] <- a.[<i>] + b.[<i>]
+```
+
+## History & Acknowledgments
+
+This work was part of my PhD thesis (UPMC-LIP6 laboratory, Paris, France) and was partially funded by the [OpenGPU](http://opengpu.net/) project. I continued this project in 2014-2015 in the [Verimag](http://www-verimag.imag.fr) laboratory (Grenoble, France) and then from 2015 to 2018 in the [LIFO](http://www.univ-orleans.fr/lifo/) laboratory in Orléans, France. I currently work at [Nomadic Labs](https://nomadic-labs.com).
 
 It has currently been tested on multiple architectures and systems,
 mostly 64-bit Linux and 64-bit OSX systems. It should work with

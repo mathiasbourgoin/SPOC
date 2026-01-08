@@ -14,20 +14,42 @@
   </head>
   <body>
 
+    <!-- Top Navigation Bar -->
+    <nav class="navbar">
+      <div class="container">
+        <a href="{{ site.baseurl }}/" class="nav-brand">
+          <img src="{{ site.baseurl }}/pres_resources/logo_sarek.png" alt="Sarek Logo">
+          Sarek
+        </a>
+        <div class="nav-links">
+          <a href="{{ site.baseurl }}/">Home</a>
+          <a href="{{ site.baseurl }}/spoc_docs/index.html">Documentation</a>
+          <a href="https://github.com/mathiasbourgoin/Sarek">GitHub</a>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Split Hero Section -->
     <header class="hero">
       <div class="container">
-        <img src="{{ site.baseurl }}/pres_resources/logo_sarek_spoc.png" alt="Sarek Logo"/>
-        <p class="tagline">A High-Performance Framework for GPGPU Programming with OCaml</p>
-        
-        <div style="margin-bottom: 20px;">
-          <a href="https://github.com/mathiasbourgoin/Sarek/actions/workflows/ci.yml">
-            <img src="https://github.com/mathiasbourgoin/Sarek/actions/workflows/ci.yml/badge.svg" alt="CI Status" style="max-width: 150px; margin-bottom: 0;">
-          </a>
+        <div class="hero-content">
+          <h1>Parallel Programming with OCaml</h1>
+          <p class="tagline">A high-performance framework for GPGPU programming. Express kernels directly in OCaml and run them on CUDA, OpenCL, and more.</p>
+          
+          <div style="margin-bottom: 30px;">
+             <a href="https://github.com/mathiasbourgoin/Sarek/actions/workflows/ci.yml">
+               <img src="https://github.com/mathiasbourgoin/Sarek/actions/workflows/ci.yml/badge.svg" alt="CI Status" style="max-width: 150px;">
+             </a>
+          </div>
+
+          <div class="btn-group">
+            <a href="https://github.com/mathiasbourgoin/Sarek" class="btn btn-primary">Get Started</a>
+            <a href="{{ site.baseurl }}/spoc_docs/index.html" class="btn btn-outline">Read the Docs</a>
+          </div>
         </div>
 
-        <div class="btn-group">
-          <a href="https://github.com/mathiasbourgoin/Sarek" class="btn btn-primary">View on GitHub</a>
-          <a href="{{ site.baseurl }}/spoc_docs/index.html" class="btn btn-outline">API Documentation</a>
+        <div class="hero-visual">
+          <img src="{{ site.baseurl }}/pres_resources/logo_sarek_spoc.png" alt="Sarek and SPOC Logo"/>
         </div>
       </div>
     </header>

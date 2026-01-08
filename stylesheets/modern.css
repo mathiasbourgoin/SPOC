@@ -24,45 +24,139 @@ body {
   padding: 0 20px;
 }
 
-/* Hero Section */
-.hero {
-  background: radial-gradient(circle at center, #2c3e50 0%, #000000 100%);
+/* Navbar */
+.navbar {
+  background: #1a1a1a;
+  border-bottom: 3px solid var(--primary-color);
+  padding: 0 20px;
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+}
+
+.navbar .container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 70px;
+}
+
+.nav-brand {
+  font-weight: 700;
+  font-size: 1.2rem;
   color: white;
-  padding: 100px 0;
-  text-align: center;
-  border-bottom: 4px solid var(--primary-color);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.nav-brand img {
+  height: 40px;
+}
+
+.nav-links {
+  display: flex;
+  gap: 20px;
+}
+
+.nav-links a {
+  color: #ecf0f1;
+  font-weight: 500;
+  font-size: 0.95rem;
+  transition: color 0.2s;
+}
+
+.nav-links a:hover {
+  color: var(--primary-color);
+  text-decoration: none;
+}
+
+/* Hero Section (OCaml.org Style) */
+.hero {
+  background: #24292e; /* Darker, flatter background like OCaml.org */
+  color: white;
+  padding: 80px 0;
+  border-bottom: none;
+  text-align: left; /* Switch to left align */
+}
+
+.hero .container {
+  display: flex;
+  align-items: center;
+  gap: 60px;
+}
+
+.hero-content {
+  flex: 1;
+}
+
+.hero-visual {
+  flex: 1;
+  display: flex;
+  justify-content: center;
 }
 
 .hero img {
-  max-width: 500px;
+  max-width: 400px; /* Smaller, sharper logo */
   width: 100%;
   height: auto;
-  margin-bottom: 30px;
+  margin-bottom: 0;
+}
+
+.hero h1 {
+  font-size: 3.5rem;
+  margin: 0 0 20px 0;
+  font-weight: 800;
+  line-height: 1.1;
+  background: -webkit-linear-gradient(45deg, #fff, #bdc3c7);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 .hero .tagline {
-  font-size: 1.8rem;
+  font-size: 1.4rem;
   font-weight: 300;
-  max-width: 800px;
-  margin: 0 auto 40px;
-  line-height: 1.4;
-  color: #ecf0f1;
+  color: #aeb6bf;
+  margin: 0 0 30px 0;
+  max-width: none;
 }
 
-/* Feature Grid (Optional for future use) */
-.features {
+.hero .btn-group {
+  justify-content: flex-start; /* Left align buttons */
+}
+
+/* Feature Grid */
+.features-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 30px;
-  margin-top: 40px;
+  gap: 40px;
+  margin: 60px 0;
 }
 
-.feature-card {
-  padding: 30px;
-  background: white;
-  border-radius: 12px;
-  border: 1px solid var(--border-color);
-  box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+.feature-item h3 {
+  color: var(--primary-color);
+  margin-top: 0;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .hero .container {
+    flex-direction: column-reverse; /* Text on top on mobile */
+    text-align: center;
+  }
+  
+  .hero h1 { font-size: 2.5rem; }
+  
+  .hero .btn-group { justify-content: center; }
+  
+  .navbar .container {
+    flex-direction: column;
+    height: auto;
+    padding: 15px 0;
+  }
+  
+  .nav-links { margin-top: 15px; }
 }
 
 /* Typography */
