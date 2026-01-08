@@ -9,7 +9,9 @@ let test_device_not_found () =
     Alcotest.fail "Should have raised error"
   with Spoc_framework.Backend_error.Backend_error err ->
     let msg = Spoc_framework.Backend_error.to_string err in
-    Alcotest.(check bool) "contains device_not_found" true
+    Alcotest.(check bool)
+      "contains device_not_found"
+      true
       (String.length msg > 0)
 
 let test_feature_not_supported () =
@@ -19,22 +21,28 @@ let test_feature_not_supported () =
     Alcotest.fail "Should have raised error"
   with Spoc_framework.Backend_error.Backend_error err ->
     let msg = Spoc_framework.Backend_error.to_string err in
-    Alcotest.(check bool) "contains feature" true
-      (String.length msg > 0)
+    Alcotest.(check bool) "contains feature" true (String.length msg > 0)
 
 let test_error_prefix () =
   let module E = Sarek_interpreter.Interpreter_error in
   let err = E.feature_not_supported "test" in
   let msg = E.to_string err in
-  Alcotest.(check bool) "has Interpreter prefix" true
+  Alcotest.(check bool)
+    "has Interpreter prefix"
+    true
     (Str.string_match (Str.regexp ".*Interpreter.*") msg 0)
 
 let () =
-  Alcotest.run "Interpreter_error"
+  Alcotest.run
+    "Interpreter_error"
     [
-      ("errors", [
-        Alcotest.test_case "device_not_found" `Quick test_device_not_found;
-        Alcotest.test_case "feature_not_supported" `Quick test_feature_not_supported;
-        Alcotest.test_case "error_prefix" `Quick test_error_prefix;
-      ]);
+      ( "errors",
+        [
+          Alcotest.test_case "device_not_found" `Quick test_device_not_found;
+          Alcotest.test_case
+            "feature_not_supported"
+            `Quick
+            test_feature_not_supported;
+          Alcotest.test_case "error_prefix" `Quick test_error_prefix;
+        ] );
     ]

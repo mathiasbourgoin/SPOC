@@ -14,3 +14,10 @@ dune-project
 kirc_kernel*.cl
 AGENTS.md
 _coverage/
+
+# Build artifacts and test outputs
+*.exe
+*.out
+a.out
+*.log
+bisect*.coverage

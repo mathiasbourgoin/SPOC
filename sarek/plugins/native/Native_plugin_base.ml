@@ -190,7 +190,8 @@ end = struct
 
     let get idx =
       if idx < 0 || idx >= Array.length !devices then
-        Native_error.(raise_error (device_not_found idx (Array.length !devices)))
+        Native_error.(
+          raise_error (device_not_found idx (Array.length !devices)))
       else !devices.(idx)
 
     let id d = d.id
@@ -612,7 +613,8 @@ end = struct
       | None ->
           Native_error.(
             raise_error
-              (compilation_failed kernel.name
+              (compilation_failed
+                 kernel.name
                  (Printf.sprintf "kernel '%s' not registered" kernel.name)))
 
     let clear_cache () = Hashtbl.clear native_kernels
@@ -674,5 +676,6 @@ let run_kernel_raw ~name ~args ~grid ~block =
   | None ->
       Native_error.(
         raise_error
-          (compilation_failed name
+          (compilation_failed
+             name
              (Printf.sprintf "kernel '%s' not registered" name)))

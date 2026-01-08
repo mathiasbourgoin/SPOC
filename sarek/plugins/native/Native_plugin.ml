@@ -320,7 +320,8 @@ module Backend : Framework_sig.BACKEND = struct
             | None ->
                 Native_error.(
                   raise_error
-                    (compilation_failed ""
+                    (compilation_failed
+                       ""
                        "no native function found in kernel IR")))
         | None ->
             Native_error.(

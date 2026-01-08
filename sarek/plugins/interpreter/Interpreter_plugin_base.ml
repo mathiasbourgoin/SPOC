@@ -190,7 +190,8 @@ end = struct
 
     let get idx =
       if idx < 0 || idx >= Array.length !devices then
-        Interpreter_error.(raise_error (device_not_found idx (Array.length !devices)))
+        Interpreter_error.(
+          raise_error (device_not_found idx (Array.length !devices)))
       else !devices.(idx)
 
     let id d = d.id
@@ -563,7 +564,8 @@ end = struct
       args.list <- Framework_sig.EA_Float64 v :: args.list
 
     let set_arg_ptr _args _idx _ptr =
-      Interpreter_error.(raise_error (feature_not_supported "raw pointer arguments"))
+      Interpreter_error.(
+        raise_error (feature_not_supported "raw pointer arguments"))
 
     let launch kernel ~args ~(grid : Framework_sig.dims)
         ~(block : Framework_sig.dims) ~shared_mem:_ ~stream:_ =
@@ -641,7 +643,8 @@ end = struct
                     ( name,
                       Sarek.Sarek_ir_interp.ArgScalar
                         (Sarek.Sarek_ir_interp.VFloat64 f) )
-                | _ -> Interpreter_error.(
+                | _ ->
+                    Interpreter_error.(
                       raise_error
                         (unsupported_construct "exec_arg" "unsupported type")))
               arg_list
@@ -654,7 +657,8 @@ end = struct
       | None ->
           Interpreter_error.(
             raise_error
-              (compilation_failed kernel.name
+              (compilation_failed
+                 kernel.name
                  (Printf.sprintf "kernel '%s' not registered" kernel.name)))
 
     let clear_cache () = Hashtbl.clear interpreter_kernels
