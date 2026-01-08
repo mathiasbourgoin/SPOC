@@ -1,16 +1,16 @@
-# SPOC - Stream Processing with OCaml
+# Sarek - GPU Computing for OCaml
+
+**SIMT Abstraction for Runtime Extensible Kernels**
 
 [![Build Status](https://github.com/mathiasbourgoin/SPOC/actions/workflows/ci.yml/badge.svg)](https://github.com/mathiasbourgoin/SPOC/actions)
 
-SPOC is a GPU computing framework for OCaml that provides tools for writing and executing kernels on GPUs and other accelerators.
+Sarek is a PPX-based DSL that lets you write GPU kernels directly in OCaml syntax. Kernels compile to multiple backends (CUDA, OpenCL, Vulkan, Metal) without code changes.
 
-**Current test coverage**: ~48% (unit tests)
+## What is Sarek?
 
-## What is SPOC?
+**Sarek** is the user-facing DSL and compiler. Write kernels in OCaml with `[%kernel ...]`, and Sarek compiles them to GPU code at build time.
 
-**SPOC** is the foundational framework providing device abstraction, plugin architecture, and runtime infrastructure for GPU computing in OCaml.
-
-**Sarek** is a PPX-based DSL (Domain Specific Language) that allows writing GPU kernels directly in OCaml syntax. Kernels written with Sarek compile to multiple backend targets (CUDA, OpenCL, Vulkan, Metal, CPU).
+**SPOC** (SIMT Programming for OCaml) is the underlying runtime providing device abstraction, plugin architecture, and backend infrastructure.
 
 ## Recent Development
 
