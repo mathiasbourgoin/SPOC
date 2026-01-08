@@ -35,8 +35,7 @@ SPOC compiles with dynamic linking, so GPU backends are optional at build
 time.
 
 SPOC comes with some examples and I strongly advise anyone interested
-to look into the slides and papers. For basic tutorials, you should
-look into our [live demos](#demos).
+to look into the slides and papers.
 
 
 # Current work
@@ -55,48 +54,6 @@ Spoc and Sarek are under active development:
 CI builds use an Intel oneAPI runtime base image for OpenCL support.
 The old SPOC Docker images are deprecated.
 
-
-# Demos in your browser (experimental)<a name="demos"></a>
-
-
-## Using WebCL and [js\_of\_ocaml][3] :
-
-**Sadly WebCL development seems stopped**, [WebGPU]https://github.com/gpuweb/gpuweb/wiki/Implementation-Status) might be an alternative...  
-This has been tested with Firefox 26-34 and [this plugin][5] under
-Windows 8.1 (32bit or 64bit), multiple Linux distributions (32bit and
-64 bit) and Mac OS/X Mavericks and Yosemite.
-
-Of course, you'll also need to have OpenCL on your system.
-
-### How to test?
-
-You should install/have :
-
-* [Firefox 28-34][4]
-on your system,
-* [Nokia's plugin][5]
-* an OpenCL implementation for your sytem ([AMD's one][6]
-should work for most multicore x86 CPUs)
-
-___
-
-<div id="contentBox" style="margin:0px auto; display:flex; width:100%">
-<div id="column1" style="float:left; margin:7%; width:40%">
-<pre><h2>Samples:</h2>
-<h4><a href="docs/bitonic.html"><strong><u>Bitonic sort</u></strong></a></h4>
-<h4><a href="docs/imageFilter.html"><strong><u>Image filter</u></strong></a></h4>
-<h4><a href="docs/mandelbrot.html"><strong><u>Mandelbrot</u></strong></a></h4>
-<h4><a href="docs/testOpenCL.html"><strong><u>Test OpenCL</u></strong></a></h4>
-</pre></div>
-<div id="column2" style="float:left; margin:7%;width:40%;">
-<pre><h2>Tutorials :</h2>
-<h4><a href="tutos/array2015.html"><strong><u>Array-2015 Demo</u></strong></a></h4>
-<h4><a href="tutos/OCaml2014.html"><strong><u>OCaml-2014 Demo</u></strong></a></h4>
-<h4><a href="tutos/imageFilter.html"><strong><u>ImageFilter</u></strong></a></h4>
-<h4><a href="tutos/mandel.html"><strong><u>Mandelbrot</u></strong></a></h4>
-<h4><a href="tutos/sarek2cl.html"><strong><u>Sarek2CL</u></strong></a></h4>
-</pre></div>
-</div>
 
 # I - How to Build SPOC
 
@@ -213,20 +170,5 @@ Sarek supports custom types through Ctypes, allowing structured data in kernels.
 
 ## Contact ##
 
-LIFO - Bâtiment IIIA  
-Rue Léonard de Vinci  
-B.P. 6759  
-F-45067 ORLEANS Cedex 2  
-France  
-Mathias.Bourgoin (at) univ-orleans.fr
-
-
-
-[1]: docs/bitonic.html
-[2]: docs/imageFilter.html
-[7]: docs/mandelbrot.html
-[8]: docs/testOpenCL.html
-[3]: http://ocsigen.org/js_of_ocaml/ 
-[4]: http://ftp.mozilla.org/pub/mozilla.org/firefox/releases/34.0/
-[5]: http://webcl.nokiaresearch.com/
-[6]: http://developer.amd.com/tools-and-sdks/heterogeneous-computing/amd-accelerated-parallel-processing-app-sdk/downloads/
+Mathias Bourgoin  
+mathias.bourgoin (at) gmail.com
