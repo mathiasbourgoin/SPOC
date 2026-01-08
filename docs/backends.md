@@ -70,7 +70,6 @@ Executes kernels directly on the host CPU without GPU compilation.
 
 - **Mechanism**: Uses OCaml 5 Domains for parallel execution.
 - **Use Case**: High-performance fallback when no GPU is available, or for debugging logic with standard debuggers.
-- **Performance**: ~80% of hand-written C code; zero-copy data transfer.
 
 ## Interpreter Backend (`sarek.interpreter`)
 
