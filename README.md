@@ -97,15 +97,18 @@ The Native (CPU parallel) and Interpreter (CPU sequential) backends work without
 
 ### Installing via OPAM
 
+SPOC is not yet published to the OPAM repository, but you can use OPAM to install from source with all dependencies:
+
 ```bash
-# Install SPOC framework
-opam install spoc
+# Clone repository
+git clone https://github.com/mathiasbourgoin/SPOC.git
+cd SPOC
 
-# Install Sarek with specific backends
-opam install sarek sarek-cuda sarek-opencl sarek-vulkan sarek-metal
+# Install dependencies via OPAM
+opam install . --deps-only
 
-# Or install all at once
-opam install spoc sarek sarek-cuda sarek-opencl sarek-vulkan sarek-metal
+# Build
+dune build
 ```
 
 ### Building from Source
