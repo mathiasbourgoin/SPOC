@@ -1,0 +1,38 @@
+name: Build and Deploy Documentation
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Use OCaml
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: 5.4.0
+
+      - name: Install dependencies
+        run: |
+          opam install . --deps-only --with-doc
+          opam install odoc ppxlib dune
+
+      - name: Build Documentation
+        run: |
+          opam exec -- dune build @doc
+
+      - name: Deploy to GitHub Pages
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: _build/default/_doc/_html
+          target-folder: spoc_docs
+          branch: gh-pages
+          clean: false # Don't wipe the rest of the site (Jekyll sources)
