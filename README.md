@@ -87,11 +87,13 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed architecture documentation.
 
 - OCaml 5.4.0+ (local opam switch included in repository)
 - dune 3.20+
-- One or more GPU backends:
+- GPU backends (optional):
   - **CUDA**: NVIDIA driver + CUDA toolkit
   - **OpenCL**: OpenCL implementation for your device
   - **Vulkan**: Vulkan SDK + glslangValidator or Shaderc
   - **Metal**: macOS 10.13+ (included with Xcode)
+
+The Native (CPU parallel) and Interpreter (CPU sequential) backends work without any GPU drivers.
 
 ### Building
 
