@@ -257,15 +257,55 @@ a:hover {
   text-decoration: underline;
 }
 
-/* Code Blocks */
-pre {
-  background: var(--code-bg);
-  padding: 20px;
-  border-radius: 8px;
+/* Tabbed Code Blocks */
+.code-tabs {
+  margin: 2rem 0;
   border: 1px solid var(--border-color);
-  overflow-x: auto;
-  font-size: 16px;
-  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.tab-headers {
+  display: flex;
+  background: var(--code-bg);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.tab-header {
+  padding: 10px 20px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-color);
+  opacity: 0.6;
+  border-right: 1px solid var(--border-color);
+  transition: all 0.2s;
+}
+
+.tab-header:hover {
+  opacity: 1;
+  background: rgba(0,0,0,0.05);
+}
+
+.tab-header.active {
+  opacity: 1;
+  background: var(--bg-color);
+  border-bottom: 2px solid var(--primary-color);
+}
+
+.tab-content {
+  display: none;
+  padding: 0;
+}
+
+.tab-content.active {
+  display: block;
+}
+
+.tab-content pre {
+  margin: 0;
+  border: none;
+  border-radius: 0;
 }
 
 code {
