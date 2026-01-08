@@ -139,12 +139,17 @@ The framework uses dynamic linking, so you can build without GPU drivers install
 ### Verifying Installation
 
 ```bash
-# Run benchmarks on all available devices
-make benchmarks
+# Run unit tests
+dune runtest
 
-# This will test kernels on all detected backends
-# and report performance and correctness
+# Run fast benchmarks (Native + OpenCL if available)
+make benchmarks-fast
+
+# Run full benchmark suite on all available devices
+make benchmarks
 ```
+
+The fast benchmarks use small problem sizes and complete in ~20 seconds, while the full benchmark suite exercises all backends with larger datasets.
 
 ## Usage
 
