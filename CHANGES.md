@@ -1,3 +1,28 @@
+## 2026-01
+
+### Changed
+
+- Documentation cleanup and modernization
+  - Comprehensive README rewrite with clear SPOC/Sarek distinction
+  - Added sarek/ directory navigation guide
+  - Created CONTRIBUTING.md with project guidelines
+  - Removed pretentious language ("Grade A", "100%", etc.)
+  - Added AI assistance acknowledgment
+- Code quality improvements
+  - Eliminated 49 failwith calls from Native and Interpreter plugins
+  - Added structured error handling using Backend_error pattern
+  - Created test suites for Native and Interpreter plugins
+  - Added READMEs for Native, Interpreter, ppx_intrinsic, Sarek_float64
+- CI/CD modernization
+  - Added unit test execution (dune runtest)
+  - Created fast benchmark suite (~20s) for CI
+  - Integrated coverage measurement with bisect_ppx
+  - Simplified workflow to single build job
+- Repository cleanup
+  - Removed AI artifact files (AGENTS.md, etc.) from history
+  - Removed tracked build artifacts (*.exe, *.log, etc.)
+  - Updated .gitignore for better hygiene
+
 ## 2025-12
 
 ### Added
@@ -12,18 +37,34 @@
   - Vertical fusion for producer-consumer patterns
   - Reduction fusion (map + reduce)
   - Stencil fusion with radius tracking
-  - Auto-fusion heuristics (should_fuse, auto_fuse_pipeline)
+  - Auto-fusion heuristics
 - Clean intermediate representation (Sarek_ir.ml)
 - BSP superstep syntax with barrier synchronization
 - Warp convergence tracking (Sarek_convergence.ml)
-- Core primitives with convergence info (Sarek_core_primitives.ml)
+- Core primitives with convergence information
 - Comprehensive test suite (unit, negative, e2e tests)
 
 ### Changed
 
 - Removed Camlp4 dependency entirely
 - Improved type inference for kernel parameters
-- Better compile-time error messages for GPU-specific issues
+- Better compile-time error messages
+
+## 2024-2025
+
+### Changed
+
+- GPU Backend Overhaul (all 4 backends: CUDA, OpenCL, Vulkan, Metal)
+  - Eliminated all failwith calls (94 total removed)
+  - Implemented Backend_error.Make functor pattern for structured errors
+  - Refactored code generators for maintainability
+  - Added comprehensive unit test suites (19-20 tests per backend)
+  - Created professional documentation (9-26KB per backend)
+  - Improved error messages with context
+- OCaml 5.x migration
+  - Updated to OCaml 5.4.0
+  - Migrated from Domains to Effect handlers where appropriate
+  - Maintained backward compatibility
 
 ## 20210823
 
