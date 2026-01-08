@@ -42,11 +42,11 @@ to look into the slides and papers.
 
 Spoc and Sarek are under active development:
 
- - Performance optimization for Native backend
- - Enhanced custom type support (using Ctypes)
- - Improved error messages and diagnostics
- - Recursive function support in Sarek
- - CI/CD pipeline with GitHub Actions
+ - OCaml 5.4.0 support with effect handlers
+ - Multi-backend support: CUDA, OpenCL, Vulkan, Metal, Native CPU, Interpreter
+ - Custom type support using Ctypes
+ - Tail recursion optimization in Sarek kernels
+ - Automated testing with GitHub Actions CI
 
 
 # Docker image
