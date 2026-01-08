@@ -1,8 +1,10 @@
 # SPOC - Stream Processing with OCaml
 
-[![Build Status](https://github.com/mathiasbourgoin/SPOC/actions/workflows/build.yml/badge.svg)](https://github.com/mathiasbourgoin/SPOC/actions?query=branch%3Amaster)
+[![Build Status](https://github.com/mathiasbourgoin/SPOC/actions/workflows/ci.yml/badge.svg)](https://github.com/mathiasbourgoin/SPOC/actions)
 
 SPOC is a GPU computing framework for OCaml that provides tools for writing and executing kernels on GPUs and other accelerators.
+
+**Current test coverage**: ~48% (unit tests)
 
 ## What is SPOC?
 
