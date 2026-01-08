@@ -107,9 +107,15 @@ cd SPOC
 # Install dependencies via OPAM
 opam install . --deps-only
 
-# Build
+# Build all backends
 dune build
+
+# Or build only specific backends you need
+dune build sarek sarek-cuda
+dune build sarek sarek-opencl
 ```
+
+Backends detect compatible drivers at runtime. You can install backends even without corresponding GPU drivers - they will simply not be available for use.
 
 ### Building from Source
 
