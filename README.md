@@ -15,11 +15,11 @@ SPOC is a GPU computing framework for OCaml that provides tools for writing and 
 This codebase has undergone significant modernization:
 
 - **OCaml 5.4 support** with effect handlers and domains
-- **Comprehensive code quality improvements** across all GPU backends
+- **Code quality improvements** across all GPU backends
 - **Structured error handling** replacing untyped exceptions
 - **Plugin-based architecture** for extensible backend support
 - **Test coverage** with unit and end-to-end tests
-- **Professional documentation** for all major components
+- **Documentation** for all major components
 
 The framework is actively maintained and uses modern OCaml features while preserving compatibility with existing SPOC code.
 
