@@ -1,13 +1,9 @@
 ---
 layout: index
 ---
-[![CI](https://github.com/mathiasbourgoin/SPOC/actions/workflows/ci.yml/badge.svg)](https://github.com/mathiasbourgoin/SPOC/actions/workflows/ci.yml)
 
-
-SPOC is a framework for GPGPU programming with OCaml.
-
-Sarek is the core component: an embedded DSL for expressing GPU kernels
-directly in OCaml. The SPOC framework provides the runtime infrastructure
+Sarek is the core component of the SPOC framework: an embedded DSL for expressing GPU kernels
+directly in OCaml. It provides the runtime infrastructure
 for device detection, memory management, and kernel execution across
 multiple backends (CUDA, OpenCL, Vulkan, Metal, and Native CPU).
 
