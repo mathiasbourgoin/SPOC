@@ -19,6 +19,15 @@ layout: index
 
 <hr style="margin: 50px 0; border: 0; border-top: 1px solid #eee;">
 
+## Recent Developments (2024-2026)
+
+The framework has undergone significant modernization to support the latest OCaml ecosystem and GPU technologies:
+
+- **OCaml 5.4 Support**: Full integration with OCaml 5 effects and domains for the Native CPU backend.
+- **New Backends**: Added support for **Vulkan** (SPIR-V) and **Apple Metal** (MSL).
+- **Structured Error Handling**: Replaced untyped exceptions with a robust result-based error system.
+- **Plugin Architecture**: Backends are now dynamic plugins, allowing for modular builds and smaller executables.
+
 ## Installation
 
 You can install SPOC and Sarek easily via Opam:
