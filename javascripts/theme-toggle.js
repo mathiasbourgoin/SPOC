@@ -3,23 +3,34 @@ document.addEventListener('DOMContentLoaded', () => {
   const body = document.body;
   const icon = themeToggle.querySelector('span');
 
+  const applyTheme = (theme) => {
+    if (theme === 'dark') {
+      body.classList.add('dark-theme');
+      body.classList.remove('light-theme');
+      icon.innerText = '☀️';
+    } else {
+      body.classList.add('light-theme');
+      body.classList.remove('dark-theme');
+      icon.innerText = '🌙';
+    }
+  };
+
   // Check for saved theme preference or use system default
   const savedTheme = localStorage.getItem('theme');
   const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   
-  if (savedTheme === 'dark' || (!savedTheme && systemDark)) {
-    body.classList.add('dark-theme');
-    icon.innerText = '☀️';
+  if (savedTheme) {
+    applyTheme(savedTheme);
+  } else if (systemDark) {
+    applyTheme('dark');
   } else {
-    body.classList.remove('dark-theme');
-    icon.innerText = '🌙';
+    applyTheme('light');
   }
 
   themeToggle.addEventListener('click', () => {
-    body.classList.toggle('dark-theme');
     const isDark = body.classList.contains('dark-theme');
-    
-    localStorage.setItem('theme', isDark ? 'dark' : 'light');
-    icon.innerText = isDark ? '☀️' : '🌙';
+    const newTheme = isDark ? 'light' : 'dark';
+    applyTheme(newTheme);
+    localStorage.setItem('theme', newTheme);
   });
 });

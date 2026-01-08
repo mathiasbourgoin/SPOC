@@ -14,7 +14,7 @@
   --card-shadow: rgba(0,0,0,0.05);
 }
 
-/* Base Dark Theme variables */
+/* Explicit Dark Theme */
 .dark-theme {
   --secondary-color: #ecf0f1;
   --text-color: #e1e4e8;
@@ -29,7 +29,7 @@
   --card-shadow: rgba(0,0,0,0.5);
 }
 
-/* Support system preference if no class is set */
+/* Support system preference if no explicit class is set */
 @media (prefers-color-scheme: dark) {
   body:not(.light-theme) {
     --secondary-color: #ecf0f1;
@@ -301,6 +301,30 @@ pre:hover .copy-code-btn {
   color: white;
   border-color: var(--primary-color);
 }
+
+/* Dark Mode Syntax Highlighting */
+.dark-theme .highlight, 
+@media (prefers-color-scheme: dark) { 
+  body:not(.light-theme) .highlight { background: transparent !important; }
+  body:not(.light-theme) .highlight .c, body:not(.light-theme) .highlight .cm, body:not(.light-theme) .highlight .c1 { color: #8b949e !important; } /* Comment */
+  body:not(.light-theme) .highlight .k, body:not(.light-theme) .highlight .kd, body:not(.light-theme) .highlight .kn, body:not(.light-theme) .highlight .kp, body:not(.light-theme) .highlight .kr { color: #ff7b72 !important; } /* Keyword */
+  body:not(.light-theme) .highlight .o, body:not(.light-theme) .highlight .ow { color: #d2a8ff !important; } /* Operator */
+  body:not(.light-theme) .highlight .m, body:not(.light-theme) .highlight .mf, body:not(.light-theme) .highlight .mh, body:not(.light-theme) .highlight .mi, body:not(.light-theme) .highlight .mo, body:not(.light-theme) .highlight .il { color: #79c0ff !important; } /* Number */
+  body:not(.light-theme) .highlight .s, body:not(.light-theme) .highlight .sb, body:not(.light-theme) .highlight .sc, body:not(.light-theme) .highlight .sd, body:not(.light-theme) .highlight .s2, body:not(.light-theme) .highlight .se, body:not(.light-theme) .highlight .sh, body:not(.light-theme) .highlight .si, body:not(.light-theme) .highlight .sx, body:not(.light-theme) .highlight .s1 { color: #a5d6ff !important; } /* String */
+  body:not(.light-theme) .highlight .nf { color: #d2a8ff !important; } /* Function */
+  body:not(.light-theme) .highlight .nc { color: #f0883e !important; } /* Class */
+  body:not(.light-theme) .highlight .nn { color: #e1e4e8 !important; } /* Namespace */
+}
+
+/* Explicit class-based dark mode syntax */
+.dark-theme .highlight .c, .dark-theme .highlight .cm, .dark-theme .highlight .c1 { color: #8b949e !important; }
+.dark-theme .highlight .k, .dark-theme .highlight .kd, .dark-theme .highlight .kn, .dark-theme .highlight .kp, .dark-theme .highlight .kr { color: #ff7b72 !important; }
+.dark-theme .highlight .o, .dark-theme .highlight .ow { color: #d2a8ff !important; }
+.dark-theme .highlight .m, .dark-theme .highlight .mf, .dark-theme .highlight .mh, .dark-theme .highlight .mi, .dark-theme .highlight .mo, .dark-theme .highlight .il { color: #79c0ff !important; }
+.dark-theme .highlight .s, .dark-theme .highlight .sb, .dark-theme .highlight .sc, .dark-theme .highlight .sd, .dark-theme .highlight .s2, .dark-theme .highlight .se, .dark-theme .highlight .sh, .dark-theme .highlight .si, .dark-theme .highlight .sx, .dark-theme .highlight .s1 { color: #a5d6ff !important; }
+.dark-theme .highlight .nf { color: #d2a8ff !important; }
+.dark-theme .highlight .nc { color: #f0883e !important; }
+.dark-theme .highlight .nn { color: #e1e4e8 !important; }
 
 /* Footer */
 footer {
