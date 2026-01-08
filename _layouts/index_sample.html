@@ -84,6 +84,8 @@
           <li><a href="{{ site.baseurl }}/docs/concepts.html">Concepts</a></li>
           <li><a href="{{ site.baseurl }}/docs/interactive.html">Interactive (Jupyter)</a></li>
           <li><a href="{{ site.baseurl }}/docs/binder.html">Try Online (Binder)</a></li>
+          <li style="margin-top: 10px; margin-left: 10px;"><a href="{{ site.baseurl }}/docs/live_mandelbrot.html">✨ Live Mandelbrot</a></li>
+          <li style="margin-left: 10px;"><a href="{{ site.baseurl }}/docs/live_transpiler.html">✨ Live Transpiler</a></li>
           <li><a href="{{ site.baseurl }}/docs/transpiler.html">Inspector</a></li>
           <li><a href="{{ site.baseurl }}/docs/architecture.html">Architecture</a></li>
           <li><a href="{{ site.baseurl }}/docs/backends.html">Backends</a></li>
@@ -123,6 +125,37 @@
     <script src="{{ site.baseurl }}/javascripts/theme-toggle.js"></script>
     <script src="{{ site.baseurl }}/javascripts/code-tabs.js"></script>
     <script src="{{ site.baseurl }}/javascripts/init-mermaid.js"></script>
+    
+    <!-- Thebe for Live Execution -->
+    <link rel="stylesheet" href="https://unpkg.com/thebe@latest/lib/index.css">
+    <script src="https://unpkg.com/thebe@latest/lib/index.js"></script>
+    <script>
+      window.bootstrapThebe = function() {
+        const btn = document.getElementById('thebe-activate');
+        btn.innerText = "⏳ Connecting to Binder...";
+        btn.disabled = true;
+
+        thebe.bootstrap({
+          binderOptions: {
+            repo: "mathiasbourgoin/Sarek",
+            ref: "main",
+          },
+          kernelOptions: {
+            name: "ocaml-jupyter",
+          },
+          selector: "[data-executable]",
+          requestKernel: true,
+        }).then(kernel => {
+            btn.innerText = "✅ Live Environment Active";
+            console.log("Thebe kernel initialized:", kernel);
+        }).catch(err => {
+            btn.innerText = "❌ Connection Failed";
+            console.error("Thebe error:", err);
+            btn.disabled = false;
+        });
+      }
+    </script>
+
     <script type="module">
       import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
       
