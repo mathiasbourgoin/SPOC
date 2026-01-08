@@ -95,9 +95,26 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed architecture documentation.
 
 The Native (CPU parallel) and Interpreter (CPU sequential) backends work without any GPU drivers.
 
-### Building
+### Installing via OPAM
 
 ```bash
+# Install SPOC framework
+opam install spoc
+
+# Install Sarek with specific backends
+opam install sarek sarek-cuda sarek-opencl sarek-vulkan sarek-metal
+
+# Or install all at once
+opam install spoc sarek sarek-cuda sarek-opencl sarek-vulkan sarek-metal
+```
+
+### Building from Source
+
+```bash
+# Clone and use local opam switch
+cd SPOC
+opam install . --deps-only
+
 # Build all packages
 dune build
 
