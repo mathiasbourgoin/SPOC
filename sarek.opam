@@ -21,6 +21,7 @@ depends: [
   "ctypes-foreign"
   "unix"
   "alcotest" {with-test}
+  "bisect_ppx" {with-test}
   "odoc" {with-doc}
 ]
 build: [

@@ -21,7 +21,8 @@ Install sarek for the full runtime and DSL.")
  (depends
   (ocaml (>= 4.14.0))
   (dune (>= 2.9))
-  ctypes))
+  ctypes
+  (bisect_ppx :with-test)))
 
 ; Sarek: full runtime, DSL, PPX, stdlib, and CPU backends
 (package
@@ -41,7 +42,8 @@ Install sarek-cuda, sarek-opencl, or sarek-vulkan for GPU execution.")
   ctypes
   ctypes-foreign
   unix
-  (alcotest :with-test)))
+  (alcotest :with-test)
+  (bisect_ppx :with-test)))
 
 ; CUDA backend plugin
 (package

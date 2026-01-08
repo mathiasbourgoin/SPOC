@@ -8,18 +8,19 @@ RUN echo "cache bust: ${CACHEBUST}" > /tmp/cachebust
 RUN apt-get update && apt-get install --no-install-recommends -y \
     build-essential \
     ca-certificates \
+    clang \
     cuda-nvrtc-12-4 \
     cuda-nvrtc-dev-12-4 \
-    clinfo \
     curl \
     git \
+    intel-opencl-icd \
     libffi-dev \
     libx11-dev \
     m4 \
+    ocl-icd-libopencl1 \
     ocl-icd-opencl-dev \
     opam \
     pkg-config \
-    pocl-opencl-icd \
   && rm -rf /var/lib/apt/lists/*
 
 ENV CUDA_PATH=/usr/local/cuda

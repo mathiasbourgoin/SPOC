@@ -14,6 +14,18 @@ cd "$PROJECT_ROOT"
 rm -f _coverage/*.coverage 2>/dev/null || true
 mkdir -p _coverage
 
+# Try to install bisect_ppx if not already installed
+echo "Checking for bisect_ppx..."
+if ! opam list bisect_ppx --installed --short 2>/dev/null; then
+  echo "Installing bisect_ppx from alpha repository..."
+  opam repo add alpha git+https://github.com/kit-ty-kate/opam-alpha-repository.git || true
+  opam update
+  opam install -y bisect_ppx.2.8.3.1~alpha-repo || {
+    echo "Warning: Failed to install bisect_ppx, coverage will be skipped"
+    exit 0
+  }
+fi
+
 echo "Building with coverage instrumentation..."
 LIBRARY_PATH=/opt/cuda/targets/x86_64-linux/lib:$LIBRARY_PATH \
   OPAM_SWITCH_PREFIX="$PROJECT_ROOT/_opam" \

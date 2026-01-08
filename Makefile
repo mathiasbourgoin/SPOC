@@ -100,19 +100,19 @@ test_comprehensive:
 		sarek/tests/e2e/test_convolution.exe \
 		sarek/tests/e2e/test_mandelbrot.exe \
 		sarek/tests/e2e/test_inline_pragma.exe
-	@echo "Running on native CPU..."
-	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_stencil.exe -- --native -s 4096
-	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_matrix_mul.exe -- --native -s 1024
-	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_reduce.exe -- --native -s 8192
-	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_histogram.exe -- --native -s 4096
-	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_complex_types.exe -- --native -s 4096
-	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_math_intrinsics.exe -- --native -s 4096
-	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_bitwise_ops.exe -- --native -s 4096
-	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_scan.exe -- --native -s 256
-	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_transpose.exe -- --native -s 4096
-	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_sort.exe -- --native -s 512
-	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_convolution.exe -- --native -s 4096
-	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_mandelbrot.exe -- --native -s 4096
+	@echo "Running comprehensive tests..."
+	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_stencil.exe -- -s 4096
+	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_matrix_mul.exe -- -s 1024
+	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_reduce.exe -- -s 8192
+	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_histogram.exe -- -s 4096
+	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_complex_types.exe -- -s 4096
+	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_math_intrinsics.exe -- -s 4096
+	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_bitwise_ops.exe -- -s 4096
+	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_scan.exe -- -s 256
+	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_transpose.exe -- -s 4096
+	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_sort.exe -- -s 512
+	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_convolution.exe -- -s 4096
+	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_mandelbrot.exe -- -s 4096
 	@echo "Running inline pragma tests on GPU..."
 	LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_inline_pragma.exe
 	@echo "=== Comprehensive e2e tests passed ==="
@@ -241,23 +241,20 @@ benchmarks-fast:
 		sarek/tests/e2e/test_transpose.exe \
 		sarek/tests/e2e/test_math_intrinsics.exe
 	@echo ""
-	@echo "--- Vector Add (Native + OpenCL) ---"
-	@dune exec sarek/tests/e2e/test_vector_add.exe -- --native -s 4096
-	@if command -v clinfo >/dev/null 2>&1; then \
-		dune exec sarek/tests/e2e/test_vector_add.exe -- --opencl -s 4096 || echo "  OpenCL not available"; \
-	fi
+	@echo "--- Vector Add ---"
+	@dune exec sarek/tests/e2e/test_vector_add.exe -- -s 4096
 	@echo ""
-	@echo "--- Matrix Mul (Native) ---"
-	@dune exec sarek/tests/e2e/test_matrix_mul.exe -- --native -s 1024
+	@echo "--- Matrix Mul ---"
+	@dune exec sarek/tests/e2e/test_matrix_mul.exe -- -s 1024
 	@echo ""
-	@echo "--- Reduction (Native) ---"
-	@dune exec sarek/tests/e2e/test_reduce.exe -- --native -s 8192
+	@echo "--- Reduction ---"
+	@dune exec sarek/tests/e2e/test_reduce.exe -- -s 8192
 	@echo ""
-	@echo "--- Transpose (Native) ---"
-	@dune exec sarek/tests/e2e/test_transpose.exe -- --native -s 4096
+	@echo "--- Transpose ---"
+	@dune exec sarek/tests/e2e/test_transpose.exe -- -s 4096
 	@echo ""
-	@echo "--- Math Intrinsics (Native) ---"
-	@dune exec sarek/tests/e2e/test_math_intrinsics.exe -- --native -s 4096
+	@echo "--- Math Intrinsics ---"
+	@dune exec sarek/tests/e2e/test_math_intrinsics.exe -- -s 4096
 	@echo ""
 	@echo "=============================================="
 	@echo "   FAST BENCHMARK COMPLETE"

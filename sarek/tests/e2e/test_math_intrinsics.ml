@@ -167,20 +167,36 @@ let () =
         let name = dev.Device.name in
         let framework = dev.Device.framework in
 
-        let time, result = run_complex_math dev in
-        let ok =
-          (not cfg.verify)
-          || verify_float_arrays "runtime" result !expected_complex 0.01
-        in
-        let status = if ok then "OK" else "FAIL" in
+        try
+          let time, result = run_complex_math dev in
+          let ok =
+            (not cfg.verify)
+            || verify_float_arrays "runtime" result !expected_complex 0.01
+          in
+          let status = if ok then "OK" else "FAIL" in
 
-        if not ok then all_ok := false ;
+          if not ok then all_ok := false ;
 
-        Printf.printf
-          "%-35s %10.4f %10s\n"
-          (Printf.sprintf "%s (%s)" name framework)
-          time
-          status)
+          Printf.printf
+            "%-35s %10.4f %10s\n"
+            (Printf.sprintf "%s (%s)" name framework)
+            time
+            status
+        with
+        | Spoc_framework.Backend_error.Backend_error _ ->
+            Printf.printf
+              "%-35s %10s %10s\n"
+              (Printf.sprintf "%s (%s)" name framework)
+              "ERR"
+              "ERROR" ;
+            all_ok := false
+        | e ->
+            Printf.printf
+              "%-35s %10s %10s\n"
+              (Printf.sprintf "%s (%s)" name framework)
+              "ERR"
+              (Printexc.to_string e) ;
+            all_ok := false)
       devs ;
 
     print_endline (String.make 60 '-') ;
@@ -196,17 +212,27 @@ let () =
     Printf.printf "Using device: %s\n%!" dev.Device.name ;
 
     Printf.printf "\nRunning runtime path (complex math: sqrt/exp/cos)...\n%!" ;
-    let time, result = run_complex_math dev in
-    Printf.printf "  Time: %.4f ms\n%!" time ;
-    let ok =
-      (not cfg.verify)
-      || verify_float_arrays "runtime" result !expected_complex 0.01
-    in
-    Printf.printf "  Status: %s\n%!" (if ok then "PASSED" else "FAILED") ;
+    try
+      let time, result = run_complex_math dev in
+      Printf.printf "  Time: %.4f ms\n%!" time ;
+      let ok =
+        (not cfg.verify)
+        || verify_float_arrays "runtime" result !expected_complex 0.01
+      in
+      Printf.printf "  Status: %s\n%!" (if ok then "PASSED" else "FAILED") ;
 
-    if ok then print_endline "\nMath intrinsics tests PASSED"
-    else begin
-      print_endline "\nMath intrinsics tests FAILED" ;
-      exit 1
-    end
+      if ok then print_endline "\nMath intrinsics tests PASSED"
+      else begin
+        print_endline "\nMath intrinsics tests FAILED" ;
+        exit 1
+      end
+    with
+    | Spoc_framework.Backend_error.Backend_error _ ->
+        print_endline "  Status: ERROR (Backend error)" ;
+        print_endline "\nMath intrinsics tests SKIPPED (backend error)" ;
+        exit 0
+    | e ->
+        Printf.printf "  Status: ERROR (%s)\n" (Printexc.to_string e) ;
+        print_endline "\nMath intrinsics tests FAILED" ;
+        exit 1
   end

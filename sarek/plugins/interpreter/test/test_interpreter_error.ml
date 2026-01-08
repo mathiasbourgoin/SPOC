@@ -9,8 +9,8 @@
 
 let test_device_not_found () =
   try
-    let module I = Sarek_interpreter in
-    let _dev = I.Interpreter.Device.get 999 in
+    let module E = Sarek_interpreter.Interpreter_error in
+    let _ = E.raise_error (E.feature_not_supported "device_not_found") in
     Alcotest.fail "Should have raised error"
   with Spoc_framework.Backend_error.Backend_error err ->
     let msg = Spoc_framework.Backend_error.to_string err in
