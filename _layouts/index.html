@@ -78,7 +78,16 @@
     <script src="{{ site.baseurl }}/javascripts/init-mermaid.js"></script>
     <script type="module">
       import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
-      mermaid.initialize({ startOnLoad: false, theme: 'neutral' });
+      
+      if (window.transformMermaidBlocks) {
+        window.transformMermaidBlocks();
+      }
+
+      mermaid.initialize({ 
+        startOnLoad: false, 
+        theme: 'neutral',
+        securityLevel: 'loose'
+      });
       await mermaid.run();
     </script>
   </body>
