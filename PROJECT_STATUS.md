@@ -53,9 +53,8 @@ The SPOC/Sarek GPU computing framework supports four GPU backend plugins (CUDA, 
 - `Kernel.ml` - Kernel management
 - `Transfer.ml` - Host ↔ Device memory transfers
 - `Memory.ml` - Memory allocation abstractions
-- **Status**: Production-ready, type-safe
+- **Status**: Type-safe implementation
 - **Tests**: Extensive unit tests
-- **Grade**: A
 
 **2. sarek/ppx/** - Sarek PPX Compiler
 - `Sarek_ppx.ml` - Main PPX entry point
@@ -66,33 +65,28 @@ The SPOC/Sarek GPU computing framework supports four GPU backend plugins (CUDA, 
 - **Pipeline**: Parse → Type → Lower → Quote → IR
 - **Status**: Stable, handles polymorphism & monomorphization
 - **Tests**: Comprehensive test suite
-- **Grade**: A
 
 **3. sarek/framework/** - Framework Registry & Cache
 - `Framework_registry.ml` - Backend plugin discovery
 - `Framework_cache.ml` - Kernel compilation cache
 - `Intrinsic_registry.ml` - Intrinsic function registry
 - **Status**: Stable
-- **Grade**: A
 
 **4. sarek/plugins/** - CPU Backends
 - `native/` - Direct OCaml execution (no GPU)
 - `interpreter/` - IR interpreter (debugging)
 - **Status**: Stable, useful for development
-- **Grade**: A
 
 **5. sarek/sarek/** - Unified Execution Layer
 - `Execute.ml` - Unified kernel execution dispatcher
 - `Sarek_ir_interp.ml` - IR interpreter implementation
 - **Status**: Stable, handles multi-backend dispatch
-- **Grade**: A
 
 **6. sarek/Sarek_stdlib/** - GPU Standard Library
 - `Float32.ml`, `Int32.ml`, `Int64.ml` - Type-specific functions
 - `Math.ml` - Math functions (sin, cos, exp, log, etc.)
 - `Gpu.ml` - GPU-specific utilities
 - **Status**: Growing standard library
-- **Grade**: A
 
 ---
 
@@ -100,12 +94,12 @@ The SPOC/Sarek GPU computing framework supports four GPU backend plugins (CUDA, 
 
 All four GPU backends have been overhauled with identical 4-phase improvements:
 
-| Backend | Package | Lines | Tests | Docs | Grade | Platform |
-|---------|---------|-------|-------|------|-------|----------|
-| **CUDA** | `sarek-cuda` | 3,237 | 19 | ✅ 20KB | **A** | NVIDIA GPUs |
-| **OpenCL** | `sarek-opencl` | 3,237 | 19 | ✅ 26KB | **A** | Multi-vendor |
-| **Vulkan** | `sarek-vulkan` | 4,799 | 20 | ✅ 21KB | **A** | Multi-vendor |
-| **Metal** | `sarek-metal` | 2,758 | 20 | ✅ 9KB | **A** | Apple only |
+| Backend | Package | Lines | Tests | Docs | Platform |
+|---------|---------|-------|-------|------|----------|
+| **CUDA** | `sarek-cuda` | 3,237 | 19 | ✅ 20KB | NVIDIA GPUs |
+| **OpenCL** | `sarek-opencl` | 3,237 | 19 | ✅ 26KB | Multi-vendor |
+| **Vulkan** | `sarek-vulkan` | 4,799 | 20 | ✅ 21KB | Multi-vendor |
+| **Metal** | `sarek-metal` | 2,758 | 20 | ✅ 9KB | Apple only |
 
 #### Common Improvements (All 4 Backends)
 
@@ -323,17 +317,15 @@ All four GPU backends have been overhauled with identical 4-phase improvements:
 | gen_stmt lines | ~210 | ~210 | 186 | 195 |
 | Unit tests | 0 | 0 | 0 | 0 |
 | Documentation | Basic | Basic | Analysis | None |
-| Grade | B+ | B+ | B+ | B+ |
 
 ### After Overhaul (GPU Backends)
 
 | Metric | CUDA | OpenCL | Vulkan | Metal |
 |--------|------|--------|--------|-------|
-| failwith calls | **0** | **0** | **0** | **0** |
+| failwith calls | 0 | 0 | 0 | 0 |
 | gen_stmt lines | ~147 | ~134 | 128 | 143 |
-| Unit tests | **19** | **19** | **20** | **20** |
-| Documentation | **20KB** | **26KB** | **21KB** | **9KB** |
-| Grade | **A** | **A** | **A** | **A** |
+| Unit tests | 19 | 19 | 20 | 20 |
+| Documentation | 20KB | 26KB | 21KB | 9KB |
 
 ### Overall Improvements
 

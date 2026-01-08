@@ -21,3 +21,4 @@ _coverage/
 a.out
 *.log
 bisect*.coverage
+benchmark_output.txt
