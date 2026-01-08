@@ -1,15 +1,15 @@
 ---
 layout: index
 ---
-[![Build Status](https://travis-ci.org/mathiasbourgoin/SPOC.png?branch=master)](https://travis-ci.org/mathiasbourgoin/SPOC)
+[![CI](https://github.com/mathiasbourgoin/SPOC/actions/workflows/ci.yml/badge.svg)](https://github.com/mathiasbourgoin/SPOC/actions/workflows/ci.yml)
 
 
-SPOC is a set of tools for GPGPU programming with OCaml.
+SPOC is a framework for GPGPU programming with OCaml.
 
-The SPOC library enables the detection and use of GPGPU devices with
-OCaml using Cuda and OpenCL. There is also a camlp4 syntax extension
-to handle external Cuda or OpenCL kernels, as well as a DSL (called
-Sarek) to express GPGPU kernels from the OCaml code.
+Sarek is the core component: an embedded DSL for expressing GPU kernels
+directly in OCaml. The SPOC framework provides the runtime infrastructure
+for device detection, memory management, and kernel execution across
+multiple backends (CUDA, OpenCL, Vulkan, Metal, and Native CPU).
 
 This work was part of my PhD thesis (UPMC-LIP6 laboratory, Paris,
 France) and was partially funded by the [OpenGPU](http://opengpu.net/)
@@ -23,12 +23,16 @@ It has currently been tested on multiple architectures and systems,
 mostly 64-bit Linux and 64-bit OSX systems. It should work with
 Windows too.
 
-To be able to use SPOC, you'll need a computer capable of running
-OCaml (obviously) but also compatible with either OpenCL or Cuda. For
-Cuda you only need a current proprietary NVidia driver while for
-OpenCL you need to install the correct OpenCL implementation for your
-system.  SPOC should compile anyway as everything is dynamically
-linked, but you'll need Cuda/OpenCL eventually to run your programs.
+To use SPOC, you need OCaml 5.4.0 or later. For GPU acceleration, you'll
+need compatible hardware and drivers:
+- **OpenCL**: Install the appropriate OpenCL runtime for your system
+- **CUDA**: Requires NVIDIA GPU with current proprietary driver
+- **Vulkan**: Requires Vulkan-capable GPU and drivers  
+- **Metal**: macOS only, requires Metal-capable hardware
+- **Native/Interpreter**: Works on any system with multicore CPU support
+
+SPOC compiles with dynamic linking, so GPU backends are optional at build
+time.
 
 SPOC comes with some examples and I strongly advise anyone interested
 to look into the slides and papers. For basic tutorials, you should
@@ -37,19 +41,19 @@ look into our [live demos](#demos).
 
 # Current work
 
-Spoc and Sarek are still in development, here is a list of features we
-plan to add (bold ones are currently in development) :
+Spoc and Sarek are under active development:
 
- - **Add a performance model to Sarek**
- - **Add custom types to Sarek (using Ctypes/Js\_of\_ocaml)** ->
-   [example with Cards](https://github.com/mathiasbourgoin/SPOC/blob/master/SpocLibs/Sarek/extension/belote.ml)
- - **Allow recursive functions in Sarek**
- - Enable *List* handling with Spoc and Sarek
- - Add interoperability with OpenGL
+ - Performance optimization for Native backend
+ - Enhanced custom type support (using Ctypes)
+ - Improved error messages and diagnostics
+ - Recursive function support in Sarek
+ - CI/CD pipeline with GitHub Actions
 
 
-# Docker image (*Probably deprecated*)
-[![](https://images.microbadger.com/badges/version/mathiasbourgoin/spoc.svg)](https://microbadger.com/images/mathiasbourgoin/spoc) [![](https://images.microbadger.com/badges/image/mathiasbourgoin/spoc.svg)](https://microbadger.com/images/mathiasbourgoin/spoc)
+# Docker image
+
+CI builds use an Intel oneAPI runtime base image for OpenCL support.
+The old SPOC Docker images are deprecated.
 
 
 # Demos in your browser (experimental)<a name="demos"></a>
@@ -100,77 +104,62 @@ ___
 
 ## 1 - Dependencies 
 
-Requires :
+Requires:
     
-    * ocaml >= 4.01.0 (mainly tested with ocaml 4.02.1)
-    * camlp4
+    * OCaml >= 5.4.0
+    * dune >= 3.0
     * ocamlfind 
-    * camlp4-extra (for ubuntu)
-    * m4
-    
-For cuda compilation :
-
-    * nvcc    
+    * ctypes
+    * ctypes-foreign
+    * ppxlib
+    * alcotest (for tests)    
 
 ## 2 - Compilation & Installation
 
-### From Opam (*Deprecated for now*, new packages may be developed in the future)
-
-SPOC and Sarek should be in the opam repository. 
-
-For development releases (more up to date but maybe instable),
-simply add our repository :
-
-    opam repository add spoc_repo https://github.com/mathiasbourgoin/opam_repo_dev.git
-
-then
-
-    opam update spoc_repo
-    opam install spoc
-    
-
 ### From sources
 
-To compile SPOC:
+Install dependencies:
 
-    cd Spoc
-    make
-    make install
+    opam install ctypes ctypes-foreign ppxlib alcotest dune
+
+Build and install:
+
+    dune build
+    dune install
 
 
 ## 3 - Build Documentation
 
-From the sources : 
+Generate API documentation:
 
-    make doc
+    dune build @doc
 
-Will build the ocamldoc html pages in the Spoc/docs directory
-
-
-# II - Testing SPOC
+Documentation will be in `_build/default/_doc/_html/`
 
 
-The "Samples" directory contains few programs using SPOC.
+# II - Testing
 
-To compile those programs:
+Run the test suite:
 
-    cd Samples
-    make
+    dune test
 
-Binaries will be located in the Samples/build folder
+Run benchmarks:
+
+    make benchmarks-fast
+
+The benchmarks will automatically detect available backends and test
+them.
 
 
-# III - SPOCLIBS
+# III - Components
 
+The SPOC framework consists of several components:
 
-The "SpocLibs" directory contains few libraries based on Spoc.
+* **Sarek** - Embedded DSL for expressing GPU kernels in OCaml
+* **SPOC Framework** - Runtime infrastructure for device management and kernel execution
+* **Backend plugins** - Support for CUDA, OpenCL, Vulkan, Metal, Native CPU, and Interpreter
 
-* **Compose** allows basic composition over GPGPU kernels
-* **Cublas** allows to use some functions of the Cublas library 
-   (Cublas needs Cuda SDK to compile)
-* **Sarek** is an *experimental* embedded DSL for OCaml to express kernels from the OCaml program
-
-The Sample directory contains few samples using those libraries
+Sarek supports custom types through Ctypes, allowing structured data in kernels.
 
 
 # Publications #
