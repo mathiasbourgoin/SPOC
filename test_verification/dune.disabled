@@ -1,5 +1,0 @@
-(executable
- (name test_variant)
- (libraries spoc.core sarek sarek_vulkan)
- (preprocess
-  (pps sarek_ppx)))
