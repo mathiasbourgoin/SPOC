@@ -27,22 +27,36 @@ You can use Sarek interactively using the [ocaml-jupyter](https://github.com/aka
    jupyter lab
    ```
 
-## Using Sarek in a Notebook
+## Using the Native Parallel Backend
 
-In an OCaml Jupyter cell, you can load Sarek and define kernels exactly as you would in a standard project.
+A major advantage of Sarek's modern architecture is the **Native CPU backend**. This is perfect for Jupyter environments (like Binder or local laptops) where a GPU might not be available.
+
+You can still experiment with parallel algorithms by targeting your CPU's multiple cores:
 
 ```ocaml
-(* Load Sarek *)
+(* 1. Initialize Sarek *)
 #require "sarek";;
 #require "sarek.ppx";;
-
 open Sarek;;
 
-(* Define a kernel *)
-let%kernel hello_gpu (out : float32 vector) =
-  let tid = get_global_id 0 in
-  out.(tid) <- 42.0
+(* 2. Define your parallel kernel *)
+let%kernel compute_pi (out : float32 vector) (n : int32) =
+  let gid = get_global_id 0 in
+  if gid < n then
+    let x = (float gid +. 0.5) /. float n in
+    out.(gid) <- 4.0 /. (1.0 +. x *. x)
+
+(* 3. Select the Native Parallel Device *)
+let dev = Device.get_device_by_name "Native Parallel" in
+Printf.printf "Running on: %s\n" (Device.name dev);;
+
+(* 4. Execute (Runs across all available OCaml 5 Domains) *)
+let n = 1000000 in
+let results = Vector.create Float32 n in
+Execute.run compute_pi ~device:dev ~grid:(n/256, 1, 1) ~block:(256, 1, 1) [Vec results; Int n];;
 ```
+
+This allows you to prototype and verify the **exact same logic** that will later run on a high-end NVIDIA or AMD GPU.
 
 ## Visualizing Results
 
