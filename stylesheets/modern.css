@@ -34,11 +34,15 @@ body {
 }
 
 .hero img {
-  max-width: 900px; /* Even bigger */
+  max-width: 900px;
   width: 100%;
   height: auto;
   margin-bottom: 30px;
-  filter: drop-shadow(0 10px 20px rgba(0,0,0,0.5));
+  /* Temporary styling for non-transparent logo */
+  background: white;
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.3);
 }
 
 .hero .tagline {
