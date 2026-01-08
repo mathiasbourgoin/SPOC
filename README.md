@@ -83,8 +83,6 @@ GPU Backends:
 └── sarek-metal/   Apple Metal backend
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed architecture documentation.
-
 ## Installation
 
 ### Prerequisites
