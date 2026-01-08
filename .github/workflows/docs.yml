@@ -29,6 +29,11 @@ jobs:
         run: |
           opam exec -- dune build @doc
 
+      - name: Apply Custom Style
+        run: |
+          # Append custom CSS to the odoc support file
+          cat docs/odoc_custom.css >> _build/default/_doc/_html/odoc.support/odoc.css
+
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
         with:
