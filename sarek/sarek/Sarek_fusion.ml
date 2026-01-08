@@ -1,3 +1,8 @@
+(******************************************************************************)
+(* SPDX-License-Identifier: CECILL-B                                         *)
+(* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
+(******************************************************************************)
+
 (** Sarek_fusion - Kernel fusion on Sarek_ir
 
     Implements vertical fusion: when kernel A writes to an intermediate array

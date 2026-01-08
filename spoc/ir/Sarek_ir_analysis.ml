@@ -1,3 +1,8 @@
+(******************************************************************************)
+(* SPDX-License-Identifier: CECILL-B                                         *)
+(* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
+(******************************************************************************)
+
 (** Sarek_ir_analysis - Analysis functions for GPU kernel IR *)
 
 open Sarek_ir_types

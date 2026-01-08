@@ -1,3 +1,8 @@
+(******************************************************************************)
+(* SPDX-License-Identifier: CECILL-B                                         *)
+(* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
+(******************************************************************************)
+
 (* Test that field accessors are generated and accessible from external module *)
 open Sarek_geometry
 

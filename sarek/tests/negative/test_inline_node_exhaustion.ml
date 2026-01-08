@@ -1,3 +1,8 @@
+(******************************************************************************)
+(* SPDX-License-Identifier: CECILL-B                                         *)
+(* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
+(******************************************************************************)
+
 (******************************************************************************
  * Negative test: Compile-time error when inline depth causes node exhaustion
  *

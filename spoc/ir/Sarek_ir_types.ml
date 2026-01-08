@@ -1,3 +1,8 @@
+(******************************************************************************)
+(* SPDX-License-Identifier: CECILL-B                                         *)
+(* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
+(******************************************************************************)
+
 (** Sarek_ir_types - Pure type definitions for GPU kernel IR
 
     This module contains only type definitions with no external dependencies.

@@ -1,3 +1,8 @@
+(******************************************************************************)
+(* SPDX-License-Identifier: CECILL-B                                         *)
+(* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
+(******************************************************************************)
+
 (******************************************************************************
  * E2E test: simple ray tracing with PPX Sarek.
  * Renders a small sphere scene to a float32 RGB buffer and checks against CPU.

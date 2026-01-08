@@ -1,3 +1,8 @@
+(******************************************************************************)
+(* SPDX-License-Identifier: CECILL-B                                         *)
+(* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
+(******************************************************************************)
+
 (******************************************************************************
  * E2E test: register a Sarek variant type outside kernels via [@@sarek.type].
  * Uses GPU runtime only.

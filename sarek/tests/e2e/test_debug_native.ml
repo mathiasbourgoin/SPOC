@@ -1,3 +1,8 @@
+(******************************************************************************)
+(* SPDX-License-Identifier: CECILL-B                                         *)
+(* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
+(******************************************************************************)
+
 (* Debug test for Native runtime kernel execution *)
 
 [@@@warning "-33"] (* Suppress unused open warnings from generated code *)

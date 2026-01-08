@@ -1,3 +1,8 @@
+(******************************************************************************)
+(* SPDX-License-Identifier: CECILL-B                                         *)
+(* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
+(******************************************************************************)
+
 (** Unit tests for Sarek_cpu_runtime - CPU native kernel runtime *)
 
 open Sarek.Sarek_cpu_runtime

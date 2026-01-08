@@ -1,4 +1,6 @@
 #!/bin/bash
+# SPDX-License-Identifier: CECILL-B
+# SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com>
 # Generate aggregate coverage report from all test types
 
 set -e
