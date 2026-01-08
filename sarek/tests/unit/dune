@@ -35,9 +35,7 @@
 
 (test
  (name test_fusion)
- (libraries sarek)
- (flags
-  (:standard -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc)))
+ (libraries sarek))
 
 ; Interpreter tests removed - Sarek_interp was legacy SPOC-dependent
 
@@ -45,14 +43,10 @@
 
 (test
  (name test_float32)
- (libraries sarek)
- (flags
-  (:standard -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc)))
+ (libraries sarek))
 
 ; Float64 module tests
 
 (test
  (name test_float64)
- (libraries sarek.float64)
- (flags
-  (:standard -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc)))
+ (libraries sarek.float64))
