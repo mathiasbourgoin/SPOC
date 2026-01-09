@@ -32,7 +32,28 @@ RUN opam exec -- dune build @install && \
 
 # 4. Final configuration
 RUN opam exec -- ocaml-jupyter-opam-genspec && \
-    opam exec -- jupyter kernelspec install --user --name ocaml-jupyter $(opam var share)/jupyter
+    opam exec -- jupyter kernelspec install --user --name ocaml-jupyter $(opam var share)/jupyter && \
+    cat <<'EOF' > /home/opam/.ocaml-jupyter-init.ml && \
+#use "topfind";;
+#directory "/home/opam/.opam/5.4/lib/ocaml";;
+#load "Stdlib__Effect.cma";;
+EOF && \
+    python3 - <<'PY'
+import json
+import pathlib
+
+path = pathlib.Path("/home/opam/.local/share/jupyter/kernels/ocaml-jupyter/kernel.json")
+data = json.loads(path.read_text())
+argv = data["argv"]
+if "--init-file" not in argv:
+    argv[1:1] = ["--init-file", "/home/opam/.ocaml-jupyter-init.ml"]
+else:
+    idx = argv.index("--init-file")
+    if idx + 1 >= len(argv) or argv[idx + 1] != "/home/opam/.ocaml-jupyter-init.ml":
+        argv[idx + 1:idx + 2] = ["/home/opam/.ocaml-jupyter-init.ml"]
+
+path.write_text(json.dumps(data, indent=2))
+PY
 
 # Provide the Stdlib__Effect bytecode so the toplevel can load it
 RUN opam exec -- sh -c "cd \$(opam var lib)/ocaml && \
