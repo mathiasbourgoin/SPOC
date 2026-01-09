@@ -31,8 +31,15 @@ jobs:
 
       - name: Apply Custom Style
         run: |
-          # Append custom CSS to the odoc support file
-          cat docs/odoc_custom.css >> _build/default/_doc/_html/odoc.support/odoc.css
+          # Find where odoc.css actually is
+          CSS_FILE=$(find _build -name "odoc.css" | head -n 1)
+          if [ -f "$CSS_FILE" ]; then
+            echo "Found odoc.css at $CSS_FILE"
+            cat docs/odoc_custom.css >> "$CSS_FILE"
+          else
+            echo "Error: odoc.css not found"
+            exit 1
+          fi
 
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
