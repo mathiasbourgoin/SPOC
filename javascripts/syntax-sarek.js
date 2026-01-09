@@ -1,38 +1,48 @@
 document.addEventListener('DOMContentLoaded', () => {
   const highlightSarek = () => {
-    const codeBlocks = document.querySelectorAll('pre code, .highlight pre');
+    // Target both standard code blocks and Jekyll's highlighted blocks
+    const codeBlocks = document.querySelectorAll('pre code, .highlight pre, .tab-content pre');
     
-    // Sarek specific keywords and extensions
-    const patterns = [
-      { regex: /%(kernel|shared|superstep)/g, class: 'k' },
-      { regex: /@sarek\.(module|type)/g, class: 'k' },
-      { regex: /@@sarek\.type/g, class: 'k' },
-      { regex: /\b(mut)\b/g, class: 'k' } // Sarek mutable keyword
-    ];
-
     codeBlocks.forEach(block => {
       let html = block.innerHTML;
-      let modified = false;
+      
+      // 1. Sarek OCaml Extensions
+      // Matches %kernel, %shared, %superstep even if separated by tags
+      html = html.replace(/%(kernel|shared|superstep)/g, '<span class="k">%$1</span>');
+      
+      // Matches attributes like [@sarek.module] or [@@sarek.type]
+      html = html.replace(/@sarek\.(module|type)/g, '<span class="k">@sarek.$1</span>');
+      html = html.replace(/@@sarek\.type/g, '<span class="k">@@sarek.type</span>');
+      
+      // 2. Sarek OCaml Keywords
+      // Highlighting 'mut' as a keyword
+      html = html.replace(/\b(mut)\b/g, '<span class="k">$1</span>');
 
-      patterns.forEach(item => {
-        // We use a simple replacement. To avoid matching inside existing HTML tags, 
-        // we'd need a more complex parser, but for these specific tokens in OCaml blocks,
-        // it's generally safe.
-        if (item.regex.test(html)) {
-          html = html.replace(item.regex, `<span class="${item.class}">$1</span>`);
-          modified = true;
-        }
+      // 3. OpenCL Keywords (since we use 'c' highlighting as a base)
+      const openClKeywords = ['__kernel', '__global', '__local', 'get_global_id', 'get_local_id', 'get_group_id', 'get_local_size', 'barrier', 'CLK_LOCAL_MEM_FENCE', 'CLK_GLOBAL_MEM_FENCE'];
+      openClKeywords.forEach(kw => {
+        const reg = new RegExp(`\b(${kw})\b`, 'g');
+        html = html.replace(reg, '<span class="k">$1</span>');
       });
 
-      if (modified) {
-        block.innerHTML = html;
-      }
+      // 4. Metal Keywords
+      const metalKeywords = ['kernel', 'device', 'threadgroup', 'thread_position_in_grid', 'thread_index_in_threadgroup'];
+      metalKeywords.forEach(kw => {
+        const reg = new RegExp(`\b(${kw})\b`, 'g');
+        html = html.replace(reg, '<span class="k">$1</span>');
+      });
+
+      block.innerHTML = html;
     });
   };
 
+  // Run immediately
   highlightSarek();
   
-  // Also run after Thebe activation if possible
-  // Since Thebe uses CodeMirror, it has its own highlighting, 
-  // but for the static parts, this works well.
+  // Re-run when tabs are switched to ensure visibility
+  document.querySelectorAll('.tab-header').forEach(tab => {
+    tab.addEventListener('click', () => {
+      setTimeout(highlightSarek, 10);
+    });
+  });
 });
