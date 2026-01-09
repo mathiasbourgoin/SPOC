@@ -322,7 +322,7 @@ module Kernel = struct
     let cc_num = (major * 10) + minor in
     let arch =
       if cc_num >= 90 then "compute_90"
-        (* Clamp to sm_90 for Hopper and newer *)
+        (* Clamp to compute_90 for Hopper and newer *)
       else Printf.sprintf "compute_%d%d" major minor
     in
     Spoc_core.Log.debugf
