@@ -15,7 +15,7 @@
 
 open Spoc_framework
 
-[@@@warning "-21"]
+[@@@warning "-21-69"]
 
 (** Registry for native kernel functions.
 

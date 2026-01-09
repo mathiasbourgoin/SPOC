@@ -5,6 +5,8 @@
 
 (** Unit tests for Sarek_fusion *)
 
+[@@@warning "-32-34"]
+
 open Sarek_ir_types
 open Sarek.Sarek_fusion
 
