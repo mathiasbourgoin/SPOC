@@ -34,7 +34,16 @@ RUN opam exec -- dune build @install && \
 RUN opam exec -- ocaml-jupyter-opam-genspec && \
     opam exec -- jupyter kernelspec install --user --name ocaml-jupyter $(opam var share)/jupyter
 
-# 5. Fix for OCaml 5 Effects in Toplevel
+# Provide the Stdlib__Effect bytecode so the toplevel can load it
+RUN opam exec -- sh -c "cd \$(opam var lib)/ocaml && \
+    cp effect.mli stdlib__Effect.mli && \
+    cp effect.ml stdlib__Effect.ml && \
+    ocamlc.opt -c stdlib__Effect.mli && \
+    ocamlc.opt -c stdlib__Effect.ml && \
+    ocamlc.opt -a -o Stdlib__Effect.cma stdlib__Effect.cmo && \
+    rm -f stdlib__Effect.mli stdlib__Effect.ml"
+
+# Fix for OCaml 5 Effects in Toplevel
 RUN echo '#use "topfind";;' > /home/opam/.ocamlinit && \
     echo '#directory "^";;' >> /home/opam/.ocamlinit
 
