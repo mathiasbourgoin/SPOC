@@ -276,8 +276,14 @@ let compile_to_ptx ?(name = "kernel") ~arch (source : string) : string =
   let prog_handle = !@prog in
 
   (* Try compiling with an explicit architecture; fall back to no options if
-     the NVRTC version rejects the flag. *)
-  let arch_candidates = [arch; "compute_90"; "compute_80"; "compute_75"] in
+     the NVRTC version rejects the flag. 
+     For newer architectures (>= compute_90), prioritize compute_90 since 
+     older targets may not be compatible with the device. *)
+  let arch_candidates =
+    if arch >= "compute_90" then
+      [arch; "compute_90"; "compute_89"; "compute_86"; "compute_80"]
+    else [arch; "compute_80"; "compute_75"; "compute_70"]
+  in
 
   let compile_with_opts numopts opt_ptr =
     nvrtcCompileProgram prog_handle numopts opt_ptr
@@ -294,9 +300,7 @@ let compile_to_ptx ?(name = "kernel") ~arch (source : string) : string =
         let opt_arch = "--gpu-architecture=" ^ a in
         let opt_array = CArray.of_list string [opt_arch] in
         let res =
-          compile_with_opts
-            (CArray.length opt_array)
-            (CArray.start opt_array)
+          compile_with_opts (CArray.length opt_array) (CArray.start opt_array)
         in
         match res with
         | NVRTC_SUCCESS -> (res, Some a)
@@ -313,10 +317,7 @@ let compile_to_ptx ?(name = "kernel") ~arch (source : string) : string =
 
   (match used_arch with
   | Some a ->
-      Spoc_core.Log.debugf
-        Spoc_core.Log.Kernel
-        "NVRTC compiling (arch=%s)"
-        a
+      Spoc_core.Log.debugf Spoc_core.Log.Kernel "NVRTC compiling (arch=%s)" a
   | None ->
       Spoc_core.Log.debug
         Spoc_core.Log.Kernel

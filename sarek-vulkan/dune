@@ -13,14 +13,14 @@
  (public_name sarek-vulkan.plugin)
  (optional)
  (libraries
- ctypes
- ctypes.foreign
- spoc_framework
- spoc_framework_registry
- sarek_ir
- str
- sarek_registry
- (re_export spoc_core))
+  ctypes
+  ctypes.foreign
+  spoc_framework
+  spoc_framework_registry
+  sarek_ir
+  str
+  sarek_registry
+  (re_export spoc_core))
  (modules
   Vulkan_error
   Vulkan_types
