@@ -14,7 +14,7 @@
  * - Interpreter walks the IR tree at runtime (slower, but no compilation)
  ******************************************************************************)
 
-[@@@warning "-21"]
+[@@@warning "-21-69"]
 
 open Spoc_framework
 

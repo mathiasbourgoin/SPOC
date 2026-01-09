@@ -7,6 +7,8 @@
  * Unit tests for Sarek_lower_ir module
  *
  * Tests IR lowering from typed AST to Sarek_ir_ppx
+
+[@@@warning "-32-34"]
  ******************************************************************************)
 
 (* Force stdlib initialization *)

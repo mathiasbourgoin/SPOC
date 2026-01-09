@@ -9,6 +9,8 @@
  * Tests reserved keyword checking for C, CUDA, OpenCL identifiers
  ******************************************************************************)
 
+[@@@warning "-32-34"]
+
 (* Force stdlib initialization *)
 let () = Sarek_stdlib.force_init ()
 

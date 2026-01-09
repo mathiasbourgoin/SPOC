@@ -10,6 +10,8 @@
  * This plugin is auto-registered when loaded.
  ******************************************************************************)
 
+[@@@warning "-69"]
+
 open Spoc_framework
 
 module Metal : sig
