@@ -372,10 +372,14 @@ module Kernel = struct
     let load_result =
       match load_result with
       | CUDA_SUCCESS -> load_result
-      | _ ->
-          Spoc_core.Log.debug
+      | err ->
+          Spoc_core.Log.debugf
             Spoc_core.Log.Kernel
-            "cuModuleLoadDataEx failed, trying cuModuleLoadData fallback" ;
+            "cuModuleLoadDataEx (with JIT target %d) failed: %s, trying \
+             cuModuleLoadData fallback"
+            jit_target
+            (string_of_cu_result err) ;
+          (* Try without any JIT options - let driver decide from PTX *)
           cuModuleLoadData module_ ptx_ptr
     in
 
