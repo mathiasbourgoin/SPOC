@@ -35,6 +35,7 @@ jobs:
           CSS_FILE=$(find _build -name "odoc.css" | head -n 1)
           if [ -f "$CSS_FILE" ]; then
             echo "Found odoc.css at $CSS_FILE"
+            chmod +w "$CSS_FILE"
             cat docs/odoc_custom.css >> "$CSS_FILE"
           else
             echo "Error: odoc.css not found"
