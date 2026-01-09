@@ -1,48 +1,49 @@
 document.addEventListener('DOMContentLoaded', () => {
   const highlightSarek = () => {
-    // Target both standard code blocks and Jekyll's highlighted blocks
+    // Target code blocks
     const codeBlocks = document.querySelectorAll('pre code, .highlight pre, .tab-content pre');
     
     codeBlocks.forEach(block => {
       let html = block.innerHTML;
       
+      // Fix for word boundary regex: need double backslash in constructor
+      const wrapKeyword = (regex, text) => {
+        // Simple replacement but careful with already highlighted spans
+        html = html.replace(regex, `<span class="k">${text}</span>`);
+      };
+
       // 1. Sarek OCaml Extensions
-      // Matches %kernel, %shared, %superstep even if separated by tags
       html = html.replace(/%(kernel|shared|superstep)/g, '<span class="k">%$1</span>');
-      
-      // Matches attributes like [@sarek.module] or [@@sarek.type]
       html = html.replace(/@sarek\.(module|type)/g, '<span class="k">@sarek.$1</span>');
       html = html.replace(/@@sarek\.type/g, '<span class="k">@@sarek.type</span>');
       
       // 2. Sarek OCaml Keywords
-      // Highlighting 'mut' as a keyword
-      html = html.replace(/\b(mut)\b/g, '<span class="k">$1</span>');
+      html = html.replace(/\bmut\b/g, '<span class="k">mut</span>');
 
-      // 3. OpenCL Keywords (since we use 'c' highlighting as a base)
-      const openClKeywords = ['__kernel', '__global', '__local', 'get_global_id', 'get_local_id', 'get_group_id', 'get_local_size', 'barrier', 'CLK_LOCAL_MEM_FENCE', 'CLK_GLOBAL_MEM_FENCE'];
-      openClKeywords.forEach(kw => {
-        const reg = new RegExp(`\b(${kw})\b`, 'g');
-        html = html.replace(reg, '<span class="k">$1</span>');
-      });
-
-      // 4. Metal Keywords
-      const metalKeywords = ['kernel', 'device', 'threadgroup', 'thread_position_in_grid', 'thread_index_in_threadgroup'];
-      metalKeywords.forEach(kw => {
-        const reg = new RegExp(`\b(${kw})\b`, 'g');
-        html = html.replace(reg, '<span class="k">$1</span>');
+      // 3. OpenCL / CUDA / Metal Keywords
+      const gpuKeywords = [
+        '__kernel', '__global', '__local', 'get_global_id', 'get_local_id', 
+        'get_group_id', 'get_local_size', 'barrier', 'CLK_LOCAL_MEM_FENCE', 
+        'CLK_GLOBAL_MEM_FENCE', 'thread_idx_x', 'block_idx_x', 'block_dim_x',
+        'device', 'threadgroup', 'thread_position_in_grid'
+      ];
+      
+      gpuKeywords.forEach(kw => {
+        const reg = new RegExp(`\\b${kw}\\b`, 'g');
+        html = html.replace(reg, `<span class="k">${kw}</span>`);
       });
 
       block.innerHTML = html;
     });
   };
 
-  // Run immediately
+  // Initial Run
   highlightSarek();
   
-  // Re-run when tabs are switched to ensure visibility
+  // Re-run on tab switch
   document.querySelectorAll('.tab-header').forEach(tab => {
     tab.addEventListener('click', () => {
-      setTimeout(highlightSarek, 10);
+      setTimeout(highlightSarek, 50);
     });
   });
 });
