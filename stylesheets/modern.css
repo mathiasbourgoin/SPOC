@@ -342,6 +342,22 @@ pre:hover .copy-code-btn {
   opacity: 1;
 }
 
+.dark-theme .tab-content,
+.dark-theme .code-tabs,
+.dark-theme .tab-headers,
+@media (prefers-color-scheme: dark) {
+  body:not(.light-theme) .tab-content,
+  body:not(.light-theme) .code-tabs,
+  body:not(.light-theme) .tab-headers {
+    background-color: #161b22 !important;
+    border-color: #30363d !important;
+  }
+}
+
+/* Explicit class-based overrides for manual toggle */
+body.dark-theme .tab-header.active { background-color: #161b22 !important; color: #f39c12 !important; }
+body.dark-theme .tab-header { color: #c9d1d9 !important; }
+
 /* DARK MODE OVERRIDES (HIGH SPECIFICITY) */
 body.dark-theme pre,
 body.dark-theme .highlight,
