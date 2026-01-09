@@ -17,16 +17,6 @@ let () = Sarek_stdlib.force_init ()
 open Sarek_ppx_lib
 module Ir = Sarek_ir_ppx
 
-let dummy_loc =
-  Sarek_ast.
-    {
-      loc_file = "test.ml";
-      loc_line = 1;
-      loc_col = 0;
-      loc_end_line = 1;
-      loc_end_col = 10;
-    }
-
 (* Test: mangle_type_name converts dots to underscores *)
 let test_mangle_type_name_simple () =
   let result = Sarek_lower_ir.mangle_type_name "Point" in
