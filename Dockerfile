@@ -8,8 +8,13 @@ RUN apt-get update && apt-get install -y \
 
 RUN pip3 install jupyterlab thebe
 
+ARG NB_USER=opam
+ARG NB_UID=1000
+ENV USER ${NB_USER}
+ENV HOME /home/${NB_USER}
+
 USER opam
-WORKDIR /home/opam/Sarek
+WORKDIR ${HOME}/Sarek
 
 # 1. Update opam
 RUN opam update
