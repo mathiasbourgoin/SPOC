@@ -9,6 +9,13 @@
 ;   SPOC_DISABLE_GPU=1     - Disable all GPU backends (CUDA, OpenCL, Vulkan, Metal)
 
 (library
+ (name registered_defs)
+ (modules registered_defs)
+ (libraries sarek sarek_stdlib spoc_core)
+ (preprocess
+  (pps sarek_ppx)))
+
+(library
  (name test_helpers)
  (modules
   test_helpers
@@ -71,67 +78,67 @@
   test_matrix_mul
   test_reduce
   test_complex_types
-  test_math_intrinsics
-  test_bitwise_ops
-  test_scan
-  test_transpose
-  test_sort
-  test_histogram
-  test_convolution
-  test_mandelbrot
-  test_polymorphism
-  test_module_poly
-  test_bounded_recursion
-  test_inline_pragma
-  test_nested_types)
- (modules
-  test_vector_add
-  test_module_const
-  test_ktype_record
-  test_klet_fun
-  test_klet_variant
-  test_ktype_helper
-  test_nbody_ppx
-  test_ray_ppx
-  registered_defs
-  test_registered_type
-  test_registered_variant
-  test_cross_module_type
-  test_registered_const
-  test_visibility_private
-  test_convention
-  test_convention_kernel
-  test_pragma
-  test_barrier_converged
-  test_superstep
-  test_fusion_api
-  test_stencil
-  test_matrix_mul
-  test_reduce
-  test_complex_types
-  test_math_intrinsics
-  test_bitwise_ops
-  test_scan
-  test_transpose
-  test_sort
-  test_histogram
-  test_convolution
-  test_mandelbrot
-  test_polymorphism
-  test_module_poly
-  test_bounded_recursion
-  test_inline_pragma
-  test_nested_types)
- (libraries
-  sarek
-  sarek.stdlib
-  sarek.float64
-  sarek_geometry
-  sarek.visibility
-  sarek.ppx.lib
-  spoc_core
-  test_helpers
-  unix)
+ test_math_intrinsics
+ test_bitwise_ops
+ test_scan
+ test_transpose
+ test_sort
+ test_histogram
+ test_convolution
+ test_mandelbrot
+ test_polymorphism
+ test_module_poly
+ test_bounded_recursion
+ test_inline_pragma
+ test_nested_types)
+(modules
+ test_vector_add
+ test_module_const
+ test_ktype_record
+ test_klet_fun
+ test_klet_variant
+ test_ktype_helper
+ test_nbody_ppx
+ test_ray_ppx
+ test_registered_type
+ test_registered_variant
+ test_cross_module_type
+ test_registered_const
+ test_visibility_private
+ test_convention
+ test_convention_kernel
+ test_pragma
+ test_barrier_converged
+ test_superstep
+ test_fusion_api
+ test_stencil
+ test_matrix_mul
+ test_reduce
+ test_complex_types
+ test_math_intrinsics
+ test_bitwise_ops
+ test_scan
+ test_transpose
+ test_sort
+ test_histogram
+ test_convolution
+ test_mandelbrot
+ test_polymorphism
+ test_module_poly
+ test_bounded_recursion
+ test_inline_pragma
+ test_nested_types)
+(libraries
+ sarek
+ sarek.stdlib
+ sarek.float64
+ sarek_geometry
+ sarek.visibility
+ sarek.ppx.lib
+ registered_defs
+ spoc_core
+ test_helpers
+ unix)
  (preprocess
   (pps sarek_ppx))
  (flags
