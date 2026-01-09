@@ -6,38 +6,36 @@ document.addEventListener('DOMContentLoaded', () => {
     codeBlocks.forEach(block => {
       let html = block.innerHTML;
       
-      // Fix for word boundary regex: need double backslash in constructor
-      const wrapKeyword = (regex, text) => {
-        // Simple replacement but careful with already highlighted spans
-        html = html.replace(regex, `<span class="k">${text}</span>`);
-      };
+      // 1. Handle Sarek OCaml Extensions that might be split by Rouge
+      // Example: <span class="o">%</span><span class="n">kernel</span>
+      const extensions = ['kernel', 'shared', 'superstep'];
+      extensions.forEach(ext => {
+        // Match % optionally followed by HTML tags, then the extension name
+        const reg = new RegExp('%(?:<[^>]+>)*' + ext, 'g');
+        html = html.replace(reg, (match) => `<span class="k">${match}</span>`);
+      });
 
-      // 1. Sarek OCaml Extensions
-      html = html.replace(/%(kernel|shared|superstep)/g, '<span class="k">%$1</span>');
-      html = html.replace(/@sarek\.(module|type)/g, '<span class="k">@sarek.$1</span>');
-      html = html.replace(/@@sarek\.type/g, '<span class="k">@@sarek.type</span>');
-      
-      // 2. Sarek OCaml Keywords
-      html = html.replace(/\bmut\b/g, '<span class="k">mut</span>');
+      // 2. Handle Sarek attributes
+      const attributes = [/@sarek\.module/g, /@sarek\.type/g, /@@sarek\.type/g];
+      attributes.forEach(attr => {
+        html = html.replace(attr, (match) => `<span class="k">${match}</span>`);
+      });
 
-      // 3. OpenCL / CUDA / Metal Keywords
-      const gpuKeywords = [
-        '__kernel', '__global', '__local', 'get_global_id', 'get_local_id', 
-        'get_group_id', 'get_local_size', 'barrier', 'CLK_LOCAL_MEM_FENCE', 
-        'CLK_GLOBAL_MEM_FENCE', 'thread_idx_x', 'block_idx_x', 'block_dim_x',
-        'device', 'threadgroup', 'thread_position_in_grid'
-      ];
-      
-      gpuKeywords.forEach(kw => {
-        const reg = new RegExp(`\\b${kw}\\b`, 'g');
-        html = html.replace(reg, `<span class="k">${kw}</span>`);
+      // 3. Keywords
+      const keywords = ['mut', '__kernel', '__global', '__local', 'get_global_id', 'get_local_id', 'barrier'];
+      keywords.forEach(kw => {
+        // Use a negative lookbehind/lookahead to avoid matching inside existing tags or partial words
+        const reg = new RegExp('\b' + kw + '\b', 'g');
+        // Simple check to avoid double-wrapping
+        if (!html.includes(`<span class="k">${kw}</span>`)) {
+           html = html.replace(reg, `<span class="k">${kw}</span>`);
+        }
       });
 
       block.innerHTML = html;
     });
   };
 
-  // Initial Run
   highlightSarek();
   
   // Re-run on tab switch
@@ -46,4 +44,17 @@ document.addEventListener('DOMContentLoaded', () => {
       setTimeout(highlightSarek, 50);
     });
   });
+
+  // Re-run when Thebe is activated
+  const thebeBtn = document.getElementById('thebe-activate');
+  if (thebeBtn) {
+    thebeBtn.addEventListener('click', () => {
+      // Periodic check for 10 seconds as Thebe loads
+      let checks = 0;
+      const interval = setInterval(() => {
+        highlightSarek();
+        if (checks++ > 20) clearInterval(interval);
+      }, 500);
+    });
+  }
 });
