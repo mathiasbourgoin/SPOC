@@ -279,8 +279,14 @@ let compile_to_ptx ?(name = "kernel") ~arch (source : string) : string =
      the NVRTC version rejects the flag. 
      For newer architectures (>= compute_90), prioritize compute_90 since 
      older targets may not be compatible with the device. *)
+  let arch_num (a : string) : int option =
+    match String.split_on_char '_' a with
+    | [_prefix; n] -> ( try Some (int_of_string n) with _ -> None)
+    | _ -> None
+  in
+
   let arch_candidates =
-    if arch >= "compute_90" then
+    if arch_num arch |> Option.value ~default:0 >= 90 then
       [arch; "compute_90"; "compute_89"; "compute_86"; "compute_80"]
     else [arch; "compute_80"; "compute_75"; "compute_70"]
   in
