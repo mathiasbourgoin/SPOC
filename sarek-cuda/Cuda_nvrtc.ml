@@ -260,8 +260,7 @@ let check ctx result =
     @param name Optional program name
     @param arch Target architecture (e.g., "compute_75")
     @return PTX code as string *)
-let compile_to_ptx ?(name = "kernel") ?(arch = "compute_70") (source : string) :
-    string =
+let compile_to_ptx ?(name = "kernel") ~arch (source : string) : string =
   (* Create program *)
   let prog = allocate nvrtc_program_ptr (from_voidp nvrtc_program null) in
   check
@@ -276,15 +275,53 @@ let compile_to_ptx ?(name = "kernel") ?(arch = "compute_70") (source : string) :
 
   let prog_handle = !@prog in
 
-  (* Compile with no options - NVRTC on this system doesn't support --gpu-architecture.
-     The driver will JIT the PTX to the target GPU. *)
-  Spoc_core.Log.debugf
-    Spoc_core.Log.Kernel
-    "NVRTC compiling (no arch option, target %s)"
-    arch ;
-  let compile_result =
-    nvrtcCompileProgram prog_handle 0 (from_voidp string null)
+  (* Try compiling with an explicit architecture; fall back to no options if
+     the NVRTC version rejects the flag. *)
+  let arch_candidates = [arch; "compute_90"; "compute_80"; "compute_75"] in
+
+  let compile_with_opts numopts opt_ptr =
+    nvrtcCompileProgram prog_handle numopts opt_ptr
   in
+
+  let rec try_arch = function
+    | [] ->
+        (* Last resort: no arch flag *)
+        Spoc_core.Log.warn
+          Spoc_core.Log.Kernel
+          "NVRTC: falling back to no arch option" ;
+        (compile_with_opts 0 (from_voidp string null), None)
+    | a :: rest -> (
+        let opt_arch = "--gpu-architecture=" ^ a in
+        let opt_array = CArray.of_list string [opt_arch] in
+        let res =
+          compile_with_opts
+            (CArray.length opt_array)
+            (CArray.start opt_array)
+        in
+        match res with
+        | NVRTC_SUCCESS -> (res, Some a)
+        | NVRTC_ERROR_INVALID_OPTION | NVRTC_ERROR_INVALID_INPUT ->
+            Spoc_core.Log.warnf
+              Spoc_core.Log.Kernel
+              "NVRTC rejected arch option %s, trying next fallback"
+              opt_arch ;
+            try_arch rest
+        | other -> (other, Some a))
+  in
+
+  let compile_result, used_arch = try_arch arch_candidates in
+
+  (match used_arch with
+  | Some a ->
+      Spoc_core.Log.debugf
+        Spoc_core.Log.Kernel
+        "NVRTC compiling (arch=%s)"
+        a
+  | None ->
+      Spoc_core.Log.debug
+        Spoc_core.Log.Kernel
+        "NVRTC compiling (no arch option)") ;
+
   Spoc_core.Log.debugf
     Spoc_core.Log.Kernel
     "NVRTC compile result: %s"

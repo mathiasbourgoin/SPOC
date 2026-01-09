@@ -10,7 +10,7 @@ homepage: "https://github.com/mathiasbourgoin/SPOC"
 bug-reports: "https://github.com/mathiasbourgoin/SPOC/issues"
 depends: [
   "ocaml" {>= "5.4.0"}
-  "dune" {>= "2.9" & >= "2.9"}
+  "dune" {>= "3.15"}
   "sarek" {= version}
   "ctypes"
   "ctypes-foreign"

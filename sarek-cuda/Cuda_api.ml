@@ -315,12 +315,9 @@ module Kernel = struct
   let compile device ~name ~source =
     Device.set_current device ;
 
-    (* Compile to PTX - use compute_52 as safe baseline, driver will JIT for actual GPU *)
+    (* Compile to PTX - target the actual device architecture when possible *)
     let major, minor = device.Device.compute_capability in
-    let arch = "compute_52" in
-    (* Safe baseline that most NVRTC versions support *)
-    ignore (major, minor) ;
-    (* Logged for info but not used for arch *)
+    let arch = Printf.sprintf "compute_%d%d" major minor in
     Spoc_core.Log.debugf
       Spoc_core.Log.Kernel
       "CUDA compile: kernel='%s' arch=%s (cc %d.%d) device=%d"
@@ -338,10 +335,30 @@ module Kernel = struct
     (* Load module from PTX - simple version *)
     let module_ = allocate cu_module_ptr (from_voidp cu_module null) in
     let ptx_ptr = CArray.of_string ptx |> CArray.start |> to_voidp in
-    let load_result = cuModuleLoadData module_ ptx_ptr in
+
+    (* Ask the driver to pick the target from the current context; fall back to
+       the basic loader if needed. *)
+    let opt_arr =
+      CArray.of_list int [int_of_jit_option CU_JIT_TARGET_FROM_CUCONTEXT]
+    in
+    let opt_vals = CArray.of_list (ptr void) [from_voidp void null] in
+    let load_result =
+      cuModuleLoadDataEx
+        module_
+        ptx_ptr
+        (Unsigned.UInt.of_int (CArray.length opt_arr))
+        (CArray.start opt_arr)
+        (CArray.start opt_vals)
+    in
+    let load_result =
+      match load_result with
+      | CUDA_SUCCESS -> load_result
+      | _ -> cuModuleLoadData module_ ptx_ptr
+    in
+
     (match load_result with
     | CUDA_SUCCESS ->
-        Spoc_core.Log.debug Spoc_core.Log.Kernel "cuModuleLoadData succeeded"
+        Spoc_core.Log.debug Spoc_core.Log.Kernel "PTX module load succeeded"
     | err ->
         (* Log PTX header for debugging *)
         let ptx_header =

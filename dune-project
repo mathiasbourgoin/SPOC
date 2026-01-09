@@ -1,4 +1,4 @@
-(lang dune 2.9)
+(lang dune 3.15)
 (name spoc)
 (cram enable)
 
@@ -20,7 +20,7 @@ IR types, and plugin registration interface.
 Install sarek for the full runtime and DSL.")
  (depends
   (ocaml (>= 5.4.0))
-  (dune (>= 2.9))
+  (dune (>= 3.15))
   ctypes
   (bisect_ppx :with-test)))
 
@@ -36,7 +36,7 @@ and CPU backends (native, interpreter) for development and testing.
 Install sarek-cuda, sarek-opencl, or sarek-vulkan for GPU execution.")
  (depends
   (ocaml (>= 5.4.0))
-  (dune (>= 2.9))
+  (dune (>= 3.15))
   (spoc (= :version))
   (ppxlib (>= 0.22.0))
   ctypes
@@ -51,7 +51,7 @@ Install sarek-cuda, sarek-opencl, or sarek-vulkan for GPU execution.")
  (description "Enables execution of Sarek kernels on NVIDIA GPUs via CUDA.")
  (depends
   (ocaml (>= 5.4.0))
-  (dune (>= 2.9))
+  (dune (>= 3.15))
   (sarek (= :version))
   ctypes
   ctypes-foreign)
@@ -65,7 +65,7 @@ Install sarek-cuda, sarek-opencl, or sarek-vulkan for GPU execution.")
  (description "Enables execution of Sarek kernels on GPUs and CPUs via OpenCL.")
  (depends
   (ocaml (>= 5.4.0))
-  (dune (>= 2.9))
+  (dune (>= 3.15))
   (sarek (= :version))
   ctypes
   ctypes-foreign)
@@ -79,7 +79,7 @@ Install sarek-cuda, sarek-opencl, or sarek-vulkan for GPU execution.")
  (description "Enables execution of Sarek kernels on GPUs via Vulkan compute shaders.")
  (depends
   (ocaml (>= 5.4.0))
-  (dune (>= 2.9))
+  (dune (>= 3.15))
   (sarek (= :version))
   ctypes
   ctypes-foreign)
