@@ -342,92 +342,46 @@ pre:hover .copy-code-btn {
   opacity: 1;
 }
 
-/* DARK MODE OVERRIDES */
-body.dark-theme .tab-content,
-body.dark-theme .code-tabs,
-body.dark-theme .tab-headers,
-@media (prefers-color-scheme: dark) {
-  body:not(.light-theme) .tab-content,
-  body:not(.light-theme) .code-tabs,
-  body:not(.light-theme) .tab-headers {
-    background-color: #161b22 !important;
-    border-color: #30363d !important;
-  }
-}
-
-/* Explicit class-based overrides for manual toggle */
-body.dark-theme .tab-header.active { background-color: #161b22 !important; color: #f39c12 !important; }
-body.dark-theme .tab-header { color: #c9d1d9 !important; }
-
-/* DARK MODE OVERRIDES (HIGH SPECIFICITY) */
-body.dark-theme pre,
-body.dark-theme .highlight,
-body.dark-theme .CodeMirror,
-body.dark-theme .CodeMirror-scroll,
-body.dark-theme .thebe-input,
-body.dark-theme .thebe-inner-cell,
-body.dark-theme .thebe-output,
-body.dark-theme .CodeMirror-lines,
-body.dark-theme .CodeMirror-measure,
+/* GLOBAL DARK MODE OVERRIDES */
+.dark-theme,
 @media (prefers-color-scheme: dark) {
   body:not(.light-theme) pre,
   body:not(.light-theme) .highlight,
   body:not(.light-theme) .CodeMirror,
-  body:not(.light-theme) .CodeMirror-scroll,
   body:not(.light-theme) .thebe-input,
-  body:not(.light-theme) .thebe-inner-cell,
-  body:not(.light-theme) .thebe-output,
-  body:not(.light-theme) .CodeMirror-lines,
-  body:not(.light-theme) .CodeMirror-measure {
+  body:not(.light-theme) .tab-content,
+  body:not(.light-theme) .tab-headers {
     background-color: #161b22 !important;
     color: #e1e4e8 !important;
     border-color: #30363d !important;
   }
 
-  /* CodeMirror Inner Tokens */
-  body:not(.light-theme) .cm-s-default .cm-keyword { color: #ff7b72 !important; }
-  body:not(.light-theme) .cm-s-default .cm-operator { color: #79c0ff !important; }
-  body:not(.light-theme) .cm-s-default .cm-variable { color: #e1e4e8 !important; }
-  body:not(.light-theme) .cm-s-default .cm-variable-2 { color: #79c0ff !important; }
-  body:not(.light-theme) .cm-s-default .cm-string { color: #a5d6ff !important; }
-  body:not(.light-theme) .cm-s-default .cm-comment { color: #8b949e !important; }
-  body:not(.light-theme) .cm-s-default .cm-number { color: #79c0ff !important; }
-  body:not(.light-theme) .cm-s-default .cm-type { color: #ff7b72 !important; }
-  body:not(.light-theme) .cm-s-default .cm-def { color: #d2a8ff !important; }
+  body:not(.light-theme) .tab-header.active {
+    background-color: #161b22 !important;
+    color: var(--primary-color) !important;
+  }
 
-  /* CodeMirror UI */
-  body:not(.light-theme) .CodeMirror-gutters { background-color: #161b22 !important; border-right: 1px solid #30363d !important; }
-  body:not(.light-theme) .CodeMirror-linenumber { color: #484f58 !important; }
-  body:not(.light-theme) .CodeMirror-cursor { border-left: 2px solid #58a6ff !important; }
-  body:not(.light-theme) .CodeMirror-selected { background: rgba(56, 139, 253, 0.3) !important; }
+  /* Target all tokens in all languages */
+  body:not(.light-theme) .highlight span,
+  body:not(.light-theme) .cm-s-default span {
+    color: #e1e4e8; /* Default text color */
+  }
 
-  /* Pygments tokens (Targeting ALL tabs) */
-  body:not(.light-theme) .highlight .c, body:not(.light-theme) .highlight .cm, body:not(.light-theme) .highlight .c1 { color: #8b949e !important; }
-  body:not(.light-theme) .highlight .k, body:not(.light-theme) .highlight .kd, body:not(.light-theme) .highlight .kn, body:not(.light-theme) .highlight .kp, body:not(.light-theme) .highlight .kr { color: #ff7b72 !important; }
-  body:not(.light-theme) .highlight .o, body:not(.light-theme) .highlight .ow { color: #d2a8ff !important; }
-  body:not(.light-theme) .highlight .m, body:not(.light-theme) .highlight .mf, body:not(.light-theme) .highlight .mh, body:not(.light-theme) .highlight .mi, body:not(.light-theme) .highlight .mo, body:not(.light-theme) .highlight .il { color: #79c0ff !important; }
-  body:not(.light-theme) .highlight .s, body:not(.light-theme) .highlight .sb, body:not(.light-theme) .highlight .sc, body:not(.light-theme) .highlight .sd, body:not(.light-theme) .highlight .s2, body:not(.light-theme) .highlight .se, body:not(.light-theme) .highlight .sh, body:not(.light-theme) .highlight .si, body:not(.light-theme) .highlight .sx, body:not(.light-theme) .highlight .s1 { color: #a5d6ff !important; }
-  body:not(.light-theme) .highlight .nf { color: #d2a8ff !important; }
-  body:not(.light-theme) .highlight .nc { color: #f0883e !important; }
-  body:not(.light-theme) .highlight .nn { color: #e1e4e8 !important; }
+  /* Specific Syntax Tokens */
+  body:not(.light-theme) .highlight .c, body:not(.light-theme) .highlight .cm, body:not(.light-theme) .highlight .c1, body:not(.light-theme) .cm-s-default .cm-comment { color: #8b949e !important; }
+  body:not(.light-theme) .highlight .k, body:not(.light-theme) .highlight .kd, body:not(.light-theme) .highlight .kn, body:not(.light-theme) .highlight .kp, body:not(.light-theme) .highlight .kr, body:not(.light-theme) .cm-s-default .cm-keyword { color: #ff7b72 !important; }
+  body:not(.light-theme) .highlight .o, body:not(.light-theme) .highlight .ow, body:not(.light-theme) .cm-s-default .cm-operator { color: #79c0ff !important; }
+  body:not(.light-theme) .highlight .m, body:not(.light-theme) .highlight .mf, body:not(.light-theme) .highlight .mh, body:not(.light-theme) .highlight .mi, body:not(.light-theme) .highlight .mo, body:not(.light-theme) .highlight .il, body:not(.light-theme) .cm-s-default .cm-number { color: #79c0ff !important; }
+  body:not(.light-theme) .highlight .s, body:not(.light-theme) .highlight .sb, body:not(.light-theme) .highlight .sc, body:not(.light-theme) .highlight .sd, body:not(.light-theme) .highlight .s2, body:not(.light-theme) .highlight .se, body:not(.light-theme) .highlight .sh, body:not(.light-theme) .highlight .si, body:not(.light-theme) .highlight .sx, body:not(.light-theme) .highlight .s1, body:not(.light-theme) .cm-s-default .cm-string { color: #a5d6ff !important; }
+  body:not(.light-theme) .highlight .nf, body:not(.light-theme) .cm-s-default .cm-def { color: #d2a8ff !important; }
+  body:not(.light-theme) .highlight .nc, body:not(.light-theme) .cm-s-default .cm-type { color: #f0883e !important; }
 }
 
-/* Explicit class-based overrides for manual toggle */
-body.dark-theme .cm-s-default .cm-keyword { color: #ff7b72 !important; }
-body.dark-theme .cm-s-default .cm-operator { color: #79c0ff !important; }
-body.dark-theme .cm-s-default .cm-string { color: #a5d6ff !important; }
-body.dark-theme .cm-s-default .cm-comment { color: #8b949e !important; }
-body.dark-theme .CodeMirror-gutters { background-color: #161b22 !important; }
-
-/* Explicit class-based syntax tokens for tabs */
-body.dark-theme .highlight .c, body.dark-theme .highlight .cm, body.dark-theme .highlight .c1 { color: #8b949e !important; }
-body.dark-theme .highlight .k, body.dark-theme .highlight .kd, body.dark-theme .highlight .kn, body.dark-theme .highlight .kp, body.dark-theme .highlight .kr { color: #ff7b72 !important; }
-body.dark-theme .highlight .o, body.dark-theme .highlight .ow { color: #d2a8ff !important; }
-body.dark-theme .highlight .m, body.dark-theme .highlight .mf, body.dark-theme .highlight .mh, body.dark-theme .highlight .mi, body.dark-theme .highlight .mo, body.dark-theme .highlight .il { color: #79c0ff !important; }
-body.dark-theme .highlight .s, body.dark-theme .highlight .sb, body.dark-theme .highlight .sc, body.dark-theme .highlight .sd, body.dark-theme .highlight .s2, body.dark-theme .highlight .se, body.dark-theme .highlight .sh, body.dark-theme .highlight .si, body.dark-theme .highlight .sx, body.dark-theme .highlight .s1 { color: #a5d6ff !important; }
-body.dark-theme .highlight .nf { color: #d2a8ff !important; }
-body.dark-theme .highlight .nc { color: #f0883e !important; }
-body.dark-theme .highlight .nn { color: #e1e4e8 !important; }
+/* Explicit class-based for manual toggle */
+body.dark-theme .highlight, body.dark-theme pre { background-color: #161b22 !important; }
+body.dark-theme .highlight .c { color: #8b949e !important; }
+body.dark-theme .highlight .k { color: #ff7b72 !important; }
+body.dark-theme .highlight .s { color: #a5d6ff !important; }
 
 /* Footer */
 footer {
