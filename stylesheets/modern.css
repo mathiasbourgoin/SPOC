@@ -257,7 +257,17 @@ a:hover {
   text-decoration: underline;
 }
 
-/* Tabbed Code Blocks */
+/* Code Blocks & Tabs */
+pre {
+  background: var(--code-bg);
+  padding: 20px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  overflow-x: auto;
+  font-size: 16px;
+  position: relative;
+}
+
 .code-tabs {
   margin: 2rem 0;
   border: 1px solid var(--border-color);
@@ -295,7 +305,6 @@ a:hover {
 
 .tab-content {
   display: none;
-  padding: 0;
 }
 
 .tab-content.active {
@@ -312,7 +321,7 @@ code {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
 }
 
-/* Copy Code Button */
+/* Copy Button */
 .copy-code-btn {
   position: absolute;
   top: 10px;
@@ -325,74 +334,49 @@ code {
   color: var(--text-color);
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.2s, background-color 0.2s;
+  transition: opacity 0.2s;
+  z-index: 10;
 }
 
 pre:hover .copy-code-btn {
   opacity: 1;
 }
 
-.copy-code-btn:hover {
-  background: var(--border-color);
-}
-
-.copy-code-btn.copied {
-  background: var(--primary-color);
-  color: white;
-  border-color: var(--primary-color);
-}
-
-/* Default Syntax Highlighting */
-pre {
-  background: var(--code-bg);
-  padding: 20px;
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
-  overflow-x: auto;
-  font-size: 16px;
-  position: relative;
-}
-
-/* Dark Mode Overrides for Syntax Highlighting & Thebe/CodeMirror */
-.dark-theme pre,
-.dark-theme .highlight,
-.dark-theme .CodeMirror,
-.dark-theme .thebe-input,
-@media (prefers-color-scheme: dark) { 
+/* DARK MODE OVERRIDES (HIGH SPECIFICITY) */
+body.dark-theme pre,
+body.dark-theme .highlight,
+body.dark-theme .CodeMirror,
+body.dark-theme .CodeMirror-scroll,
+body.dark-theme .thebe-input,
+@media (prefers-color-scheme: dark) {
   body:not(.light-theme) pre,
   body:not(.light-theme) .highlight,
   body:not(.light-theme) .CodeMirror,
-  body:not(.light-theme) .thebe-input { 
-    background: #161b22 !important; 
+  body:not(.light-theme) .CodeMirror-scroll,
+  body:not(.light-theme) .thebe-input {
+    background-color: #161b22 !important;
     color: #e1e4e8 !important;
     border-color: #30363d !important;
   }
 
-  body:not(.light-theme) .CodeMirror-gutters {
-    background: #161b22 !important;
-    border-right: 1px solid #30363d !important;
-  }
+  /* CodeMirror Inner Tokens */
+  body:not(.light-theme) .cm-s-default .cm-keyword { color: #ff7b72 !important; }
+  body:not(.light-theme) .cm-s-default .cm-operator { color: #79c0ff !important; }
+  body:not(.light-theme) .cm-s-default .cm-variable { color: #e1e4e8 !important; }
+  body:not(.light-theme) .cm-s-default .cm-variable-2 { color: #79c0ff !important; }
+  body:not(.light-theme) .cm-s-default .cm-string { color: #a5d6ff !important; }
+  body:not(.light-theme) .cm-s-default .cm-comment { color: #8b949e !important; }
+  body:not(.light-theme) .cm-s-default .cm-number { color: #79c0ff !important; }
+  body:not(.light-theme) .cm-s-default .cm-type { color: #ff7b72 !important; }
+  body:not(.light-theme) .cm-s-default .cm-def { color: #d2a8ff !important; }
 
-  body:not(.light-theme) .CodeMirror-linenumber {
-    color: #8b949e !important;
-  }
+  /* CodeMirror UI */
+  body:not(.light-theme) .CodeMirror-gutters { background-color: #161b22 !important; border-right: 1px solid #30363d !important; }
+  body:not(.light-theme) .CodeMirror-linenumber { color: #484f58 !important; }
+  body:not(.light-theme) .CodeMirror-cursor { border-left: 2px solid #58a6ff !important; }
+  body:not(.light-theme) .CodeMirror-selected { background: rgba(56, 139, 253, 0.3) !important; }
 
-  /* Thebe UI Buttons */
-  body:not(.light-theme) .thebe-run-button,
-  body:not(.light-theme) .thebe-run-all-button,
-  body:not(.light-theme) .thebe-restart-button,
-  body:not(.light-theme) .thebe-restart-all-button {
-    background: #21262d !important;
-    color: #c9d1d9 !important;
-    border: 1px solid #30363d !important;
-  }
-
-  body:not(.light-theme) .thebe-run-button:hover {
-    background: #30363d !important;
-    border-color: #8b949e !important;
-  }
-
-  /* Pygments tokens in Dark Mode */
+  /* Pygments tokens */
   body:not(.light-theme) .highlight .c, body:not(.light-theme) .highlight .cm, body:not(.light-theme) .highlight .c1 { color: #8b949e !important; }
   body:not(.light-theme) .highlight .k, body:not(.light-theme) .highlight .kd, body:not(.light-theme) .highlight .kn, body:not(.light-theme) .highlight .kp, body:not(.light-theme) .highlight .kr { color: #ff7b72 !important; }
   body:not(.light-theme) .highlight .o, body:not(.light-theme) .highlight .ow { color: #d2a8ff !important; }
@@ -403,18 +387,12 @@ pre {
   body:not(.light-theme) .highlight .nn { color: #e1e4e8 !important; }
 }
 
-/* Explicit class-based overrides for manual toggle */
-.dark-theme .CodeMirror-gutters { background: #161b22 !important; border-right: 1px solid #30363d !important; }
-.dark-theme .CodeMirror-linenumber { color: #8b949e !important; }
-.dark-theme .thebe-run-button, .dark-theme .thebe-run-all-button { background: #21262d !important; color: #c9d1d9 !important; border: 1px solid #30363d !important; }
-.dark-theme .highlight .c, .dark-theme .highlight .cm, .dark-theme .highlight .c1 { color: #8b949e !important; }
-.dark-theme .highlight .k, .dark-theme .highlight .kd, .dark-theme .highlight .kn, .dark-theme .highlight .kp, .dark-theme .highlight .kr { color: #ff7b72 !important; }
-.dark-theme .highlight .o, .dark-theme .highlight .ow { color: #d2a8ff !important; }
-.dark-theme .highlight .m, .dark-theme .highlight .mf, .dark-theme .highlight .mh, .dark-theme .highlight .mi, .dark-theme .highlight .mo, .dark-theme .highlight .il { color: #79c0ff !important; }
-.dark-theme .highlight .s, .dark-theme .highlight .sb, .dark-theme .highlight .sc, .dark-theme .highlight .sd, .dark-theme .highlight .s2, .dark-theme .highlight .se, .dark-theme .highlight .sh, .dark-theme .highlight .si, .dark-theme .highlight .sx, .dark-theme .highlight .s1 { color: #a5d6ff !important; }
-.dark-theme .highlight .nf { color: #d2a8ff !important; }
-.dark-theme .highlight .nc { color: #f0883e !important; }
-.dark-theme .highlight .nn { color: #e1e4e8 !important; }
+/* Explicit class-based overrides for manual toggle (redundant but safe) */
+body.dark-theme .cm-s-default .cm-keyword { color: #ff7b72 !important; }
+body.dark-theme .cm-s-default .cm-operator { color: #79c0ff !important; }
+body.dark-theme .cm-s-default .cm-string { color: #a5d6ff !important; }
+body.dark-theme .cm-s-default .cm-comment { color: #8b949e !important; }
+body.dark-theme .CodeMirror-gutters { background-color: #161b22 !important; }
 
 /* Footer */
 footer {
@@ -431,15 +409,8 @@ footer {
     flex-direction: column-reverse;
     text-align: center;
   }
-  
   .hero h1 { font-size: 2.5rem; }
-  .hero .btn-group { justify-content: center; }
-  
-  .navbar .container {
-    flex-direction: column;
-    height: auto;
-    padding: 15px 0;
-  }
-  
+  .btn-group { justify-content: center; }
+  .navbar .container { flex-direction: column; height: auto; padding: 15px 0; }
   .nav-links { margin-top: 15px; }
 }
