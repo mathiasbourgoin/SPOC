@@ -339,16 +339,28 @@ module Kernel = struct
       "CUDA PTX generated (%d bytes)"
       (String.length ptx) ;
 
-    (* Load module from PTX - simple version *)
+    (* Load module from PTX.
+       For devices with cc >= 9.0, we compiled PTX for compute_90, so we must
+       tell the JIT to target sm_90 (not the device's actual cc like sm_120). *)
     let module_ = allocate cu_module_ptr (from_voidp cu_module null) in
     let ptx_ptr = CArray.of_string ptx |> CArray.start |> to_voidp in
 
-    (* Ask the driver to pick the target from the current context; fall back to
-       the basic loader if needed. *)
-    let opt_arr =
-      CArray.of_list int [int_of_jit_option CU_JIT_TARGET_FROM_CUCONTEXT]
+    (* Extract target architecture number from arch string (e.g. "compute_90" -> 90) *)
+    let jit_target =
+      try Scanf.sscanf arch "compute_%d" (fun n -> n) with _ -> cc_num
     in
-    let opt_vals = CArray.of_list (ptr void) [from_voidp void null] in
+
+    Spoc_core.Log.debugf
+      Spoc_core.Log.Kernel
+      "CUDA module load: JIT target sm_%d (device cc=%d.%d)"
+      jit_target
+      major
+      minor ;
+
+    (* Use CU_JIT_TARGET to explicitly tell the driver what SM version to JIT-compile for *)
+    let opt_arr = CArray.of_list int [int_of_jit_option CU_JIT_TARGET] in
+    let target_ptr = allocate int jit_target in
+    let opt_vals = CArray.of_list (ptr void) [to_voidp target_ptr] in
     let load_result =
       cuModuleLoadDataEx
         module_
@@ -360,7 +372,11 @@ module Kernel = struct
     let load_result =
       match load_result with
       | CUDA_SUCCESS -> load_result
-      | _ -> cuModuleLoadData module_ ptx_ptr
+      | _ ->
+          Spoc_core.Log.debug
+            Spoc_core.Log.Kernel
+            "cuModuleLoadDataEx failed, trying cuModuleLoadData fallback" ;
+          cuModuleLoadData module_ ptx_ptr
     in
 
     (match load_result with
