@@ -14,5 +14,7 @@
  (libraries sarek sarek.stdlib spoc_core sarek_cuda sarek_opencl unix)
  (preprocess
   (pps sarek_ppx))
+ (enabled_if
+  (<> %{env:CUDA_PATH=not-set} "not-set"))
  (flags
   (:standard -w -33 -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc)))

@@ -12,7 +12,7 @@ license: "Cecill-B"
 homepage: "https://github.com/mathiasbourgoin/SPOC"
 bug-reports: "https://github.com/mathiasbourgoin/SPOC/issues"
 depends: [
-  "ocaml" {>= "5.0.0"}
+  "ocaml" {>= "5.4.0"}
   "dune" {>= "2.9" & >= "2.9"}
   "ctypes"
   "bisect_ppx" {with-test}

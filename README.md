@@ -106,8 +106,9 @@ SPOC is not yet published to the OPAM repository, but you can use OPAM to instal
 git clone https://github.com/mathiasbourgoin/SPOC.git
 cd SPOC
 
-# Install dependencies via OPAM
-opam install . --deps-only
+# Install dependencies via OPAM (OCaml 5.4+)
+opam update
+opam install . --deps-only --working-dir
 
 # Build all backends
 dune build
