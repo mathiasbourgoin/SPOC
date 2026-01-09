@@ -315,9 +315,16 @@ module Kernel = struct
   let compile device ~name ~source =
     Device.set_current device ;
 
-    (* Compile to PTX - target the actual device architecture when possible *)
+    (* Compile to PTX - clamp architecture to what NVRTC likely supports.
+       CUDA 13.x NVRTC supports up to compute_90. Newer devices will use
+       the highest supported arch and rely on driver JIT. *)
     let major, minor = device.Device.compute_capability in
-    let arch = Printf.sprintf "compute_%d%d" major minor in
+    let cc_num = (major * 10) + minor in
+    let arch =
+      if cc_num >= 90 then "compute_90"
+        (* Clamp to sm_90 for Hopper and newer *)
+      else Printf.sprintf "compute_%d%d" major minor
+    in
     Spoc_core.Log.debugf
       Spoc_core.Log.Kernel
       "CUDA compile: kernel='%s' arch=%s (cc %d.%d) device=%d"

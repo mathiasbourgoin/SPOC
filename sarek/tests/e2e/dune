@@ -53,68 +53,96 @@
    (-> backend_metal.unavailable.ml))
   unix))
 
-(executable
- (name test_vector_add)
- (modules test_vector_add)
- (libraries sarek sarek.stdlib sarek.visibility sarek.ppx.lib registered_defs spoc_core test_helpers unix)
- (preprocess (pps sarek_ppx))
- (flags (:standard -w -32-33-34-69)))
-
-(executable
- (name test_module_const)
- (modules test_module_const)
- (libraries sarek sarek.stdlib sarek.float64 sarek_geometry sarek.visibility sarek.ppx.lib registered_defs spoc_core test_helpers unix)
- (preprocess (pps sarek_ppx))
- (flags (:standard -w -32-33-34-69)))
-
-(executable
- (name test_ktype_record)
- (modules test_ktype_record)
- (libraries sarek sarek.stdlib sarek.visibility sarek.ppx.lib registered_defs spoc_core test_helpers unix)
- (preprocess (pps sarek_ppx))
- (flags (:standard -w -32-33-34-69)))
-
-(executable
- (name test_klet_fun)
- (modules test_klet_fun)
- (libraries sarek sarek.stdlib sarek.visibility sarek.ppx.lib registered_defs spoc_core test_helpers unix)
- (preprocess (pps sarek_ppx))
- (flags (:standard -w -32-33-34-69)))
-
-(executable
- (name test_klet_variant)
- (modules test_klet_variant)
- (libraries sarek sarek.stdlib sarek.visibility sarek.ppx.lib registered_defs spoc_core test_helpers unix)
- (preprocess (pps sarek_ppx))
- (flags (:standard -w -32-33-34-69)))
-
-(executable
- (name test_ktype_helper)
- (modules test_ktype_helper)
- (libraries sarek sarek.stdlib sarek.visibility sarek.ppx.lib registered_defs spoc_core test_helpers unix)
- (preprocess (pps sarek_ppx))
- (flags (:standard -w -32-33-34-69)))
-
-(executable
- (name test_nbody_ppx)
- (modules test_nbody_ppx)
- (libraries sarek sarek.stdlib sarek.visibility sarek.ppx.lib registered_defs spoc_core test_helpers unix)
- (preprocess (pps sarek_ppx))
- (flags (:standard -w -32-33-34-69)))
-
-(executable
- (name test_ray_ppx)
- (modules test_ray_ppx)
- (libraries sarek sarek.stdlib sarek.visibility sarek.ppx.lib registered_defs spoc_core test_helpers unix)
- (preprocess (pps sarek_ppx))
- (flags (:standard -w -32-33-34-69)))
-
-(executable
- (name test_registered_type)
- (modules test_registered_type)
- (libraries sarek sarek.stdlib sarek.visibility sarek.ppx.lib spoc_core test_helpers unix)
- (preprocess (pps sarek_ppx))
- (flags (:standard -w -32-33-34-69)))
+(executables
+ (names
+  test_vector_add
+  test_module_const
+  test_ktype_record
+  test_klet_fun
+  test_klet_variant
+  test_ktype_helper
+  test_nbody_ppx
+  test_ray_ppx
+  test_registered_type
+  test_registered_variant
+  test_cross_module_type
+  test_registered_const
+  test_visibility_private
+  test_convention
+  test_convention_kernel
+  test_pragma
+  test_barrier_converged
+  test_superstep
+  test_fusion_api
+  test_stencil
+  test_matrix_mul
+  test_reduce
+  test_complex_types
+  test_math_intrinsics
+  test_bitwise_ops
+  test_scan
+  test_transpose
+  test_sort
+  test_histogram
+  test_convolution
+  test_mandelbrot
+  test_polymorphism
+  test_module_poly
+  test_bounded_recursion
+  test_inline_pragma
+  test_nested_types)
+ (modules
+  test_vector_add
+  test_module_const
+  test_ktype_record
+  test_klet_fun
+  test_klet_variant
+  test_ktype_helper
+  test_nbody_ppx
+  test_ray_ppx
+  test_registered_type
+  test_registered_variant
+  test_cross_module_type
+  test_registered_const
+  test_visibility_private
+  test_convention
+  test_convention_kernel
+  test_pragma
+  test_barrier_converged
+  test_superstep
+  test_fusion_api
+  test_stencil
+  test_matrix_mul
+  test_reduce
+  test_complex_types
+  test_math_intrinsics
+  test_bitwise_ops
+  test_scan
+  test_transpose
+  test_sort
+  test_histogram
+  test_convolution
+  test_mandelbrot
+  test_polymorphism
+  test_module_poly
+  test_bounded_recursion
+  test_inline_pragma
+  test_nested_types)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek.float64
+  sarek_geometry
+  sarek.visibility
+  sarek.ppx.lib
+  registered_defs
+  spoc_core
+  test_helpers
+  unix)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
 
 (alias
  (name runtest)
