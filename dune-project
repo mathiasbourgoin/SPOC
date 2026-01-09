@@ -19,7 +19,7 @@ This package contains the SDK: framework types, device abstraction,
 IR types, and plugin registration interface.
 Install sarek for the full runtime and DSL.")
  (depends
-  (ocaml (>= 4.14.0))
+  (ocaml (>= 5.0.0))
   (dune (>= 2.9))
   ctypes
   (bisect_ppx :with-test)))
@@ -35,13 +35,12 @@ PPX preprocessor, standard library (Float32, Int32, etc.),
 and CPU backends (native, interpreter) for development and testing.
 Install sarek-cuda, sarek-opencl, or sarek-vulkan for GPU execution.")
  (depends
-  (ocaml (>= 4.14.0))
+  (ocaml (>= 5.0.0))
   (dune (>= 2.9))
   (spoc (= :version))
   (ppxlib (>= 0.22.0))
   ctypes
   ctypes-foreign
-  unix
   (alcotest :with-test)
   (bisect_ppx :with-test)))
 
@@ -51,7 +50,7 @@ Install sarek-cuda, sarek-opencl, or sarek-vulkan for GPU execution.")
  (synopsis "CUDA backend for Sarek GPU kernels")
  (description "Enables execution of Sarek kernels on NVIDIA GPUs via CUDA.")
  (depends
-  (ocaml (>= 4.14.0))
+  (ocaml (>= 5.0.0))
   (dune (>= 2.9))
   (sarek (= :version))
   ctypes
@@ -65,12 +64,11 @@ Install sarek-cuda, sarek-opencl, or sarek-vulkan for GPU execution.")
  (synopsis "OpenCL backend for Sarek GPU kernels")
  (description "Enables execution of Sarek kernels on GPUs and CPUs via OpenCL.")
  (depends
-  (ocaml (>= 4.14.0))
+  (ocaml (>= 5.0.0))
   (dune (>= 2.9))
   (sarek (= :version))
   ctypes
-  ctypes-foreign
-  str)
+  ctypes-foreign)
  (depopts
   conf-opencl))
 
@@ -80,7 +78,7 @@ Install sarek-cuda, sarek-opencl, or sarek-vulkan for GPU execution.")
  (synopsis "Vulkan compute backend for Sarek GPU kernels")
  (description "Enables execution of Sarek kernels on GPUs via Vulkan compute shaders.")
  (depends
-  (ocaml (>= 4.14.0))
+  (ocaml (>= 5.0.0))
   (dune (>= 2.9))
   (sarek (= :version))
   ctypes
@@ -94,7 +92,7 @@ Install sarek-cuda, sarek-opencl, or sarek-vulkan for GPU execution.")
  (synopsis "Metal backend for Sarek GPU kernels")
  (description "Enables execution of Sarek kernels on Apple GPUs via Metal framework (macOS/iOS).")
  (depends
-  (ocaml (>= 4.14.0))
+  (ocaml (>= 5.0.0))
   (dune (>= 2.9))
   (sarek (= :version))
   ctypes
