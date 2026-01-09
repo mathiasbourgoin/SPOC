@@ -7,15 +7,13 @@ document.addEventListener('DOMContentLoaded', () => {
       header.addEventListener('click', () => {
         // Remove active class from all headers and contents
         headers.forEach(h => h.classList.remove('active'));
-        contents.forEach(c => h.classList.remove('active')); // Oops typo in thinking, fixing in code
-
-        // Correction:
-        headers.forEach(h => h.classList.remove('active'));
         contents.forEach(c => c.classList.remove('active'));
 
-        // Add active class to current
+        // Add active class to current header and corresponding content
         header.classList.add('active');
-        contents[index].classList.add('active');
+        if (contents[index]) {
+          contents[index].classList.add('active');
+        }
       });
     });
   });
