@@ -15,6 +15,6 @@
  (preprocess
   (pps sarek_ppx))
  (enabled_if
-  %{pkg:conf-cuda:installed})
+  (<> %{env:CUDA_PATH=} ""))
  (flags
   (:standard -w -33 -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc)))
