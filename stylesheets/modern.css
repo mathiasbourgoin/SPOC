@@ -364,12 +364,20 @@ body.dark-theme .highlight,
 body.dark-theme .CodeMirror,
 body.dark-theme .CodeMirror-scroll,
 body.dark-theme .thebe-input,
+body.dark-theme .thebe-inner-cell,
+body.dark-theme .thebe-output,
+body.dark-theme .CodeMirror-lines,
+body.dark-theme .CodeMirror-measure,
 @media (prefers-color-scheme: dark) {
   body:not(.light-theme) pre,
   body:not(.light-theme) .highlight,
   body:not(.light-theme) .CodeMirror,
   body:not(.light-theme) .CodeMirror-scroll,
-  body:not(.light-theme) .thebe-input {
+  body:not(.light-theme) .thebe-input,
+  body:not(.light-theme) .thebe-inner-cell,
+  body:not(.light-theme) .thebe-output,
+  body:not(.light-theme) .CodeMirror-lines,
+  body:not(.light-theme) .CodeMirror-measure {
     background-color: #161b22 !important;
     color: #e1e4e8 !important;
     border-color: #30363d !important;
