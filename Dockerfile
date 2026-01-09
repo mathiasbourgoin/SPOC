@@ -37,8 +37,7 @@ RUN opam exec -- ocaml-jupyter-opam-genspec && \
 #use "topfind";;
 #directory "/home/opam/.opam/5.4/lib/ocaml";;
 #load "Stdlib__Effect.cma";;
-EOF
-    && \
+EOF && \
     python3 - <<'PY'
 import json
 import pathlib
