@@ -111,7 +111,7 @@
 
 (executable
  (name test_registered_type)
- (modules test_registered_type registered_defs)
+ (modules test_registered_type)
  (libraries sarek sarek.stdlib sarek.visibility sarek.ppx.lib spoc_core test_helpers unix)
  (preprocess (pps sarek_ppx))
  (flags (:standard -w -32-33-34-69)))
