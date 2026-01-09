@@ -367,14 +367,56 @@ pre:hover .copy-code-btn {
     color: #e1e4e8; /* Default text color */
   }
 
-  /* Specific Syntax Tokens */
-  body:not(.light-theme) .highlight .c, body:not(.light-theme) .highlight .cm, body:not(.light-theme) .highlight .c1, body:not(.light-theme) .cm-s-default .cm-comment { color: #8b949e !important; }
-  body:not(.light-theme) .highlight .k, body:not(.light-theme) .highlight .kd, body:not(.light-theme) .highlight .kn, body:not(.light-theme) .highlight .kp, body:not(.light-theme) .highlight .kr, body:not(.light-theme) .cm-s-default .cm-keyword { color: #ff7b72 !important; }
-  body:not(.light-theme) .highlight .o, body:not(.light-theme) .highlight .ow, body:not(.light-theme) .cm-s-default .cm-operator { color: #79c0ff !important; }
-  body:not(.light-theme) .highlight .m, body:not(.light-theme) .highlight .mf, body:not(.light-theme) .highlight .mh, body:not(.light-theme) .highlight .mi, body:not(.light-theme) .highlight .mo, body:not(.light-theme) .highlight .il, body:not(.light-theme) .cm-s-default .cm-number { color: #79c0ff !important; }
-  body:not(.light-theme) .highlight .s, body:not(.light-theme) .highlight .sb, body:not(.light-theme) .highlight .sc, body:not(.light-theme) .highlight .sd, body:not(.light-theme) .highlight .s2, body:not(.light-theme) .highlight .se, body:not(.light-theme) .highlight .sh, body:not(.light-theme) .highlight .si, body:not(.light-theme) .highlight .sx, body:not(.light-theme) .highlight .s1, body:not(.light-theme) .cm-s-default .cm-string { color: #a5d6ff !important; }
-  body:not(.light-theme) .highlight .nf, body:not(.light-theme) .cm-s-default .cm-def { color: #d2a8ff !important; }
-  body:not(.light-theme) .highlight .nc, body:not(.light-theme) .cm-s-default .cm-type { color: #f0883e !important; }
+  /* Pygments tokens (Targeting ALL languages and aliases) */
+  body:not(.light-theme) .highlight .c, 
+  body:not(.light-theme) .highlight .cm, 
+  body:not(.light-theme) .highlight .c1, 
+  body:not(.light-theme) .highlight .cp, 
+  body:not(.light-theme) .highlight .cs,
+  body:not(.light-theme) .cm-s-default .cm-comment { color: #8b949e !important; }
+
+  body:not(.light-theme) .highlight .k, 
+  body:not(.light-theme) .highlight .kd, 
+  body:not(.light-theme) .highlight .kn, 
+  body:not(.light-theme) .highlight .kp, 
+  body:not(.light-theme) .highlight .kr, 
+  body:not(.light-theme) .highlight .kt,
+  body:not(.light-theme) .cm-s-default .cm-keyword { color: #ff7b72 !important; }
+
+  body:not(.light-theme) .highlight .o, 
+  body:not(.light-theme) .highlight .ow, 
+  body:not(.light-theme) .cm-s-default .cm-operator { color: #79c0ff !important; }
+
+  body:not(.light-theme) .highlight .m, 
+  body:not(.light-theme) .highlight .mf, 
+  body:not(.light-theme) .highlight .mh, 
+  body:not(.light-theme) .highlight .mi, 
+  body:not(.light-theme) .highlight .mo, 
+  body:not(.light-theme) .highlight .il, 
+  body:not(.light-theme) .cm-s-default .cm-number { color: #79c0ff !important; }
+
+  body:not(.light-theme) .highlight .s, 
+  body:not(.light-theme) .highlight .sb, 
+  body:not(.light-theme) .highlight .sc, 
+  body:not(.light-theme) .highlight .sd, 
+  body:not(.light-theme) .highlight .s2, 
+  body:not(.light-theme) .highlight .se, 
+  body:not(.light-theme) .highlight .sh, 
+  body:not(.light-theme) .highlight .si, 
+  body:not(.light-theme) .highlight .sx, 
+  body:not(.light-theme) .highlight .s1,
+  body:not(.light-theme) .highlight .ss,
+  body:not(.light-theme) .cm-s-default .cm-string { color: #a5d6ff !important; }
+
+  body:not(.light-theme) .highlight .nf, 
+  body:not(.light-theme) .cm-s-default .cm-def { color: #d2a8ff !important; }
+
+  body:not(.light-theme) .highlight .nc, 
+  body:not(.light-theme) .highlight .no,
+  body:not(.light-theme) .highlight .nd,
+  body:not(.light-theme) .highlight .ni,
+  body:not(.light-theme) .highlight .ne,
+  body:not(.light-theme) .cm-s-default .cm-type { color: #f0883e !important; }
 }
 
 /* Explicit class-based for manual toggle */
