@@ -32,14 +32,15 @@ RUN opam exec -- dune build @install && \
 
 # 4. Final configuration
 RUN opam exec -- ocaml-jupyter-opam-genspec && \
-    opam exec -- jupyter kernelspec install --user --name ocaml-jupyter $(opam var share)/jupyter && \
-    cat <<'EOF' > /home/opam/.ocaml-jupyter-init.ml && \
+    opam exec -- jupyter kernelspec install --user --name ocaml-jupyter $(opam var share)/jupyter
+
+RUN cat > /home/opam/.ocaml-jupyter-init.ml <<'EOF'
 #use "topfind";;
 #directory "/home/opam/.opam/5.4/lib/ocaml";;
 #load "Stdlib__Effect.cma";;
 EOF
-    && \
-    python3 - <<'PY'
+
+RUN python3 - <<'PY'
 import json
 import pathlib
 
@@ -67,7 +68,8 @@ RUN opam exec -- sh -c "cd \$(opam var lib)/ocaml && \
 
 # Fix for OCaml 5 Effects in Toplevel
 RUN echo '#use "topfind";;' > /home/opam/.ocamlinit && \
-    echo '#directory "^";;' >> /home/opam/.ocamlinit
+    echo '#directory "^";;' >> /home/opam/.ocamlinit && \
+    echo '#load "Stdlib__Effect.cma";;' >> /home/opam/.ocamlinit
 
 EXPOSE 8888
 ENTRYPOINT ["opam", "exec", "--"]
