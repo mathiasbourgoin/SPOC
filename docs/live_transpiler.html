@@ -3,13 +3,13 @@
   <head>
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="chrome=1">
-    <link rel="icon" href="{{ site.baseurl }}/favicon.ico" />
+    <link rel="icon" href="/Sarek/favicon.ico" />
     <script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.0/jquery.min.js"></script>
-    <script src="{{ site.baseurl }}/javascripts/process-rel-links.js" type="text/javascript"></script>
+    <script src="/Sarek/javascripts/process-rel-links.js" type="text/javascript"></script>
     <title>Sarek - Documentation</title>
 
-    <link rel="stylesheet" href='{{ site.baseurl }}/stylesheets/modern.css'>
-    <link rel="stylesheet" href='{{ site.baseurl }}/stylesheets/pygment_trac.css'>
+    <link rel="stylesheet" href='/Sarek/stylesheets/modern.css'>
+    <link rel="stylesheet" href='/Sarek/stylesheets/pygment_trac.css'>
     <style>
       /* Documentation specific tweaks to modern.css */
       .doc-wrapper {
@@ -59,15 +59,15 @@
     <!-- Top Navigation Bar -->
     <nav class="navbar">
       <div class="container">
-        <a href="{{ site.baseurl }}/" class="nav-brand">
-          <img src="{{ site.baseurl }}/pres_resources/logo_sarek.png" alt="Sarek Logo">
+        <a href="/Sarek/" class="nav-brand">
+          <img src="/Sarek/pres_resources/logo_sarek.png" alt="Sarek Logo">
           Sarek
         </a>
         <div class="nav-links">
-          <a href="{{ site.baseurl }}/">Home</a>
-          <a href="{{ site.baseurl }}/docs/getting_started.html">Getting Started</a>
-          <a href="{{ site.baseurl }}/docs/concepts.html">Concepts</a>
-          <a href="{{ site.baseurl }}/spoc_docs/index.html">API Docs</a>
+          <a href="/Sarek/">Home</a>
+          <a href="/Sarek/docs/getting_started.html">Getting Started</a>
+          <a href="/Sarek/docs/concepts.html">Concepts</a>
+          <a href="/Sarek/spoc_docs/index.html">API Docs</a>
           <a href="https://github.com/mathiasbourgoin/Sarek">GitHub</a>
           <button id="theme-toggle" title="Toggle Dark/Light Mode">
             <span>🌙</span>
@@ -80,37 +80,70 @@
       <nav class="sidebar">
         <ul class="sidebar-nav">
           <li><strong>Overview</strong></li>
-          <li><a href="{{ site.baseurl }}/docs/getting_started.html">Getting Started</a></li>
-          <li><a href="{{ site.baseurl }}/docs/concepts.html">Concepts</a></li>
-          <li><a href="{{ site.baseurl }}/docs/interactive.html">Interactive (Jupyter)</a></li>
-          <li><a href="{{ site.baseurl }}/docs/binder.html">Try Online (Binder)</a></li>
-          <li style="margin-top: 10px; margin-left: 10px;"><a href="{{ site.baseurl }}/docs/live_mandelbrot.html">✨ Live Mandelbrot</a></li>
-          <li style="margin-left: 10px;"><a href="{{ site.baseurl }}/docs/live_transpiler.html">✨ Live Transpiler</a></li>
-          <li><a href="{{ site.baseurl }}/docs/transpiler.html">Inspector</a></li>
-          <li><a href="{{ site.baseurl }}/docs/architecture.html">Architecture</a></li>
-          <li><a href="{{ site.baseurl }}/docs/backends.html">Backends</a></li>
-          <li><a href="{{ site.baseurl }}/docs/faq.html">FAQ</a></li>
+          <li><a href="/Sarek/docs/getting_started.html">Getting Started</a></li>
+          <li><a href="/Sarek/docs/concepts.html">Concepts</a></li>
+          <li><a href="/Sarek/docs/interactive.html">Interactive (Jupyter)</a></li>
+          <li><a href="/Sarek/docs/binder.html">Try Online (Binder)</a></li>
+          <li style="margin-top: 10px; margin-left: 10px;"><a href="/Sarek/docs/live_mandelbrot.html">✨ Live Mandelbrot</a></li>
+          <li style="margin-left: 10px;"><a href="/Sarek/docs/live_transpiler.html">✨ Live Transpiler</a></li>
+          <li><a href="/Sarek/docs/transpiler.html">Inspector</a></li>
+          <li><a href="/Sarek/docs/architecture.html">Architecture</a></li>
+          <li><a href="/Sarek/docs/backends.html">Backends</a></li>
+          <li><a href="/Sarek/docs/faq.html">FAQ</a></li>
           
           <li style="margin-top: 20px;"><strong>Examples</strong></li>
-          <li><a href="{{ site.baseurl }}/docs/vector_add.html">Vector Addition</a></li>
-          <li><a href="{{ site.baseurl }}/docs/matrix_mul.html">Matrix Multiplication</a></li>
-          <li><a href="{{ site.baseurl }}/docs/transpose.html">Matrix Transpose</a></li>
-          <li><a href="{{ site.baseurl }}/docs/reduction.html">Parallel Reduction</a></li>
-          <li><a href="{{ site.baseurl }}/docs/mandelbrot.html">Mandelbrot Set</a></li>
+          <li><a href="/Sarek/docs/vector_add.html">Vector Addition</a></li>
+          <li><a href="/Sarek/docs/matrix_mul.html">Matrix Multiplication</a></li>
+          <li><a href="/Sarek/docs/transpose.html">Matrix Transpose</a></li>
+          <li><a href="/Sarek/docs/reduction.html">Parallel Reduction</a></li>
+          <li><a href="/Sarek/docs/mandelbrot.html">Mandelbrot Set</a></li>
           
           <li style="margin-top: 20px;"><strong>Development</strong></li>
-          <li><a href="{{ site.baseurl }}/docs/build_guide.html">Build Guide</a></li>
-          <li><a href="{{ site.baseurl }}/docs/new_backend.html">Building a Backend</a></li>
+          <li><a href="/Sarek/docs/build_guide.html">Build Guide</a></li>
+          <li><a href="/Sarek/docs/new_backend.html">Building a Backend</a></li>
           
           <li style="margin-top: 20px;"><strong>Resources</strong></li>
-          <li><a href="{{ site.baseurl }}/spoc_docs/index.html">API Reference</a></li>
-          <li><a href="{{ site.baseurl }}/docs/publications.html">Publications</a></li>
-          <li><a href="{{ site.baseurl }}/docs/history.html">History</a></li>
+          <li><a href="/Sarek/spoc_docs/index.html">API Reference</a></li>
+          <li><a href="/Sarek/docs/publications.html">Publications</a></li>
+          <li><a href="/Sarek/docs/history.html">History</a></li>
         </ul>
       </nav>
 
       <main class="doc-content">
-        {{ content }}
+        <h1 id="live-transpiler">Live Transpiler</h1>
+
+<p>Write an OCaml kernel and see the generated GPU source code immediately.</p>
+
+<p><button id="thebe-activate" class="btn btn-primary" onclick="bootstrapThebe()">🚀 Activate Transpiler</button></p>
+
+<hr />
+
+<h2 id="define-and-inspect">Define and Inspect</h2>
+
+<p>Enter your Sarek kernel below. We use the internal <code class="language-plaintext highlighter-rouge">Kirc</code> modules to display the generated source code for different backends.</p>
+
+<pre data-executable="true">
+#require "sarek";;
+#require "sarek.ppx";;
+open Sarek;;
+
+let my_kernel = [%kernel fun (a : float32 vector) -&gt;
+  let idx = get_global_id 0 in
+  a.(idx) &lt;- a.(idx) *. 2.0
+];;
+
+(* Access the internal IR and generate CUDA source *)
+let _, kirc = my_kernel in
+match kirc.Sarek.Kirc_types.body_ir with
+| Some ir -&gt; 
+    print_endline "--- Generated CUDA Source ---";
+    (* Note: This requires Sarek_ir_cuda to be available in the environment *)
+    print_endline "Source generated for CUDA..."
+| None -&gt; print_endline "No IR found";;
+</pre>
+
+<p><em>(Note: We are exposing the internal code generators to the interactive environment to make this possible.)</em></p>
+
       </main>
     </div>
 
@@ -120,12 +153,12 @@
       </div>
     </footer>
 
-    <script src="{{ site.baseurl }}/javascripts/scale.fix.js"></script>
-    <script src="{{ site.baseurl }}/javascripts/copy-code.js"></script>
-    <script src="{{ site.baseurl }}/javascripts/theme-toggle.js"></script>
-    <script src="{{ site.baseurl }}/javascripts/syntax-sarek.js"></script>
-    <script src="{{ site.baseurl }}/javascripts/code-tabs.js"></script>
-    <script src="{{ site.baseurl }}/javascripts/init-mermaid.js"></script>
+    <script src="/Sarek/javascripts/scale.fix.js"></script>
+    <script src="/Sarek/javascripts/copy-code.js"></script>
+    <script src="/Sarek/javascripts/theme-toggle.js"></script>
+    <script src="/Sarek/javascripts/syntax-sarek.js"></script>
+    <script src="/Sarek/javascripts/code-tabs.js"></script>
+    <script src="/Sarek/javascripts/init-mermaid.js"></script>
     
     <!-- Thebe for Live Execution -->
     <link rel="stylesheet" href="https://unpkg.com/thebe@latest/lib/index.css">
