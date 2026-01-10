@@ -154,6 +154,9 @@ The framework uses dynamic linking, so you can build without GPU drivers install
 ### Verifying Installation
 
 ```bash
+# List all available devices
+dune exec -- sarek-device-info
+
 # Run unit tests
 dune runtest
 
