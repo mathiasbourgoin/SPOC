@@ -79,7 +79,10 @@ let () =
 
     print_separator () ;
     Printf.printf "Usage:\n" ;
-    Printf.printf "  • Set SAREK_DEVICE=N to select device N\n" ;
+    Printf.printf "  • Device.get N returns device N (0-%d)\n" (count - 1) ;
+    Printf.printf
+      "  • Device.best () selects best device (CUDA > OpenCL > Native)\n" ;
+    Printf.printf "  • Device.by_framework \"CUDA\" filters by backend\n" ;
     Printf.printf "  • Run 'make benchmarks' to test all devices\n" ;
     Printf.printf "  • Run 'dune runtest' to verify functionality\n" ;
     print_separator () ;
