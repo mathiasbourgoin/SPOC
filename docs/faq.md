@@ -29,3 +29,41 @@ Yes. By using the `[@@sarek.type]` attribute on record definitions, Sarek automa
 
 ### Is OCaml 5 required?
 Yes. The latest version of Sarek leverages **OCaml 5 Effects and Domains** for the Native CPU backend to provide high-performance parallel execution on multi-core processors.
+
+## CUDA Backend Questions
+
+### What CUDA version do I need for newer GPUs?
+For **Blackwell architecture** GPUs (RTX 5000 series, compute capability 12.0):
+- **Minimum**: CUDA 12.9 with driver 575+
+- **Recommended**: CUDA 13.1 with driver 580+
+
+Sarek automatically handles forward compatibility by compiling PTX for `compute_90` and letting the driver JIT-compile for newer architectures.
+
+### I get `CUDA_ERROR_UNKNOWN(222)` when loading kernels. What's wrong?
+This error typically occurs with newer GPU architectures when there's a version mismatch:
+
+1. **Check your versions**:
+   ```bash
+   nvidia-smi        # Shows driver version and API level
+   nvcc --version    # Shows CUDA toolkit version
+   ```
+
+2. **Common causes**:
+   - CUDA 13.1 with driver < 580 (downgrade to CUDA 12.9)
+   - CUDA toolkit older than 12.9 on Blackwell GPUs (upgrade toolkit)
+
+3. **Verify your setup**:
+   ```bash
+   dune exec -- sarek-device-info
+   ```
+
+### What does "CUDA Version" in nvidia-smi mean?
+The "CUDA Version" shown by `nvidia-smi` (e.g., "12.9") is the maximum CUDA runtime API version your **driver** supports, not your installed toolkit version. It's normal and expected for these to differ. For example, driver 575 supports CUDA API 12.9, even if you have CUDA toolkit 13.1 installed (though it won't work fully without driver 580+).
+
+### How do I list available CUDA devices?
+Use the device info utility:
+```bash
+dune exec -- sarek-device-info
+```
+
+This shows all detected devices across all backends (CUDA, OpenCL, Vulkan, Metal, Native, Interpreter) with their capabilities.
