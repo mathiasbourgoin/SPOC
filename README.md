@@ -246,13 +246,13 @@ This error typically occurs on newer GPU architectures (e.g., Blackwell/RTX 5000
   ```
 - **Common cause**: CUDA 13.1 requires driver 580+. If you have driver 575, use CUDA 12.9 instead.
 
-**PTX compilation succeeds but module loading fails**
+#### PTX compilation succeeds but module loading fails
 
 Sarek automatically handles forward compatibility by compiling PTX for `compute_90` on compute capability 9.0+ devices. The CUDA driver then JIT-compiles for your actual hardware (e.g., sm_120 for RTX 5070 Ti). This requires:
 - CUDA toolkit 12.9+ (for Blackwell GPU support)
 - Compatible driver version (see requirements above)
 
-**Verifying CUDA setup**
+#### Verifying CUDA setup
 
 ```bash
 # Check if CUDA devices are detected
