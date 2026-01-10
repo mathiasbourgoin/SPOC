@@ -315,10 +315,16 @@ module Kernel = struct
   let compile device ~name ~source =
     Device.set_current device ;
 
-    (* Compile to PTX - use native architecture for the device.
-       CUDA 13.x should support all modern architectures including Blackwell (12.0). *)
+    (* Compile to PTX - clamp architecture to what NVRTC likely supports.
+       CUDA 13.x NVRTC supports up to compute_90. Newer devices will use
+       the highest supported arch and rely on driver JIT. *)
     let major, minor = device.Device.compute_capability in
-    let arch = Printf.sprintf "compute_%d%d" major minor in
+    let cc_num = (major * 10) + minor in
+    let arch =
+      if cc_num >= 90 then "compute_90"
+        (* Clamp to compute_90 for Hopper and newer *)
+      else Printf.sprintf "compute_%d%d" major minor
+    in
     Spoc_core.Log.debugf
       Spoc_core.Log.Kernel
       "CUDA compile: kernel='%s' arch=%s (cc %d.%d) device=%d"
@@ -334,20 +340,41 @@ module Kernel = struct
       (String.length ptx) ;
 
     (* Load module from PTX.
-       Let the driver automatically detect the target from PTX metadata.
-       The PTX contains .target sm_XX which tells the driver what to do. *)
+       For newer architectures (cc >= 9.0), we compile PTX for compute_90 which
+       provides forward compatibility via JIT to actual device architecture. *)
     let module_ = allocate cu_module_ptr (from_voidp cu_module null) in
     let ptx_ptr = CArray.of_string ptx |> CArray.start |> to_voidp in
 
     Spoc_core.Log.debugf
       Spoc_core.Log.Kernel
-      "CUDA module load: PTX for %s, device cc=%d.%d"
+      "CUDA module load: PTX arch=%s, device cc=%d.%d"
       arch
       major
       minor ;
 
-    (* Use simple cuModuleLoadData - driver will infer target from PTX .target directive *)
-    let load_result = cuModuleLoadData module_ ptx_ptr in
+    (* Use CU_JIT_TARGET_FROM_CUCONTEXT to let driver select appropriate target.
+       This allows compute_90 PTX to run on compute_120 devices via JIT. *)
+    let opt_arr =
+      CArray.of_list int [int_of_jit_option CU_JIT_TARGET_FROM_CUCONTEXT]
+    in
+    let opt_vals = CArray.of_list (ptr void) [from_voidp void null] in
+    let load_result =
+      cuModuleLoadDataEx
+        module_
+        ptx_ptr
+        (Unsigned.UInt.of_int (CArray.length opt_arr))
+        (CArray.start opt_arr)
+        (CArray.start opt_vals)
+    in
+    let load_result =
+      match load_result with
+      | CUDA_SUCCESS -> load_result
+      | _ ->
+          Spoc_core.Log.debug
+            Spoc_core.Log.Kernel
+            "cuModuleLoadDataEx failed, trying cuModuleLoadData fallback" ;
+          cuModuleLoadData module_ ptx_ptr
+    in
 
     (match load_result with
     | CUDA_SUCCESS ->
