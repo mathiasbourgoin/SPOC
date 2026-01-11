@@ -38,7 +38,11 @@ let parse_json_file path =
       | [] -> ("unknown", "unknown")
       | first :: _ ->
           let device_name = first |> member "device_name" |> to_string in
-          let backend = first |> member "backend" |> to_string in
+          (* Try 'backend' first, fall back to 'framework' for compatibility *)
+          let backend =
+            try first |> member "backend" |> to_string
+            with _ -> first |> member "framework" |> to_string
+          in
           (device_name, backend)
     in
 
@@ -51,7 +55,8 @@ let parse_json_file path =
             hostname = system |> member "hostname" |> to_string;
             benchmark_name = benchmark |> member "name" |> to_string;
             size =
-              benchmark |> member "parameters" |> member "size" |> to_string;
+              benchmark |> member "parameters" |> member "size" |> to_int
+              |> string_of_int;
             device_name;
             backend;
           };
