@@ -31,6 +31,7 @@ module Device = Spoc_core.Device
 module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
 open Benchmark_common
+open Benchmark_runner
 
 (** Pure OCaml baseline: inclusive prefix sum *)
 let cpu_inclusive_scan input n =
@@ -108,7 +109,7 @@ let inclusive_scan_kernel =
 [@@warning "-33"]
 
 (** Run scan benchmark on specified device for given size *)
-let benchmark_scan device size =
+let benchmark_scan ~device ~size ~config =
   let backend_name = device.Device.framework in
 
   (* Limit to 256 elements (single block) *)
@@ -134,26 +135,26 @@ let benchmark_scan device size =
   let block = Sarek.Execute.dims1d block_size in
   let grid = Sarek.Execute.dims1d 1 in
 
-  (* Warmup run *)
-  Sarek.Execute.run_vectors
-    ~device
-    ~ir
-    ~args:
-      [
-        Sarek.Execute.Vec input;
-        Sarek.Execute.Vec output;
-        Sarek.Execute.Int32 (Int32.of_int n);
-      ]
-    ~block
-    ~grid
-    () ;
-  Transfer.flush device ;
+  (* Warmup *)
+  for _ = 1 to config.warmup do
+    Sarek.Execute.run_vectors
+      ~device
+      ~ir
+      ~args:
+        [
+          Sarek.Execute.Vec input;
+          Sarek.Execute.Vec output;
+          Sarek.Execute.Int32 (Int32.of_int n);
+        ]
+      ~block
+      ~grid
+      () ;
+    Transfer.flush device
+  done ;
 
   (* Timed runs *)
-  let num_runs = 100 in
   let times = ref [] in
-
-  for _ = 1 to num_runs do
+  for _ = 1 to config.iterations do
     let t0 = Unix.gettimeofday () in
     Sarek.Execute.run_vectors
       ~device
@@ -169,16 +170,8 @@ let benchmark_scan device size =
       () ;
     Transfer.flush device ;
     let t1 = Unix.gettimeofday () in
-    times := (t1 -. t0) :: !times
+    times := ((t1 -. t0) *. 1000.0) :: !times
   done ;
-
-  (* Compute statistics *)
-  let sorted_times = List.sort compare !times in
-  let avg_time =
-    List.fold_left ( +. ) 0.0 sorted_times /. float_of_int num_runs
-  in
-  let min_time = List.hd sorted_times in
-  let median_time = List.nth sorted_times (num_runs / 2) in
 
   (* Verify correctness *)
   let gpu_result = Vector.to_array output in
@@ -198,36 +191,44 @@ let benchmark_scan device size =
     end
   done ;
 
+  let verified = !errors = 0 in
+  let times_array = Array.of_list (List.rev !times) in
+  let median_ms = Common.median times_array in
+
   (* Report results *)
-  Printf.printf "\n=== Prefix Sum (Scan) Benchmark ===\n" ;
-  Printf.printf "Backend: %s\n" backend_name ;
-  Printf.printf "Array size: %d elements\n" n ;
-  Printf.printf "Block size: %d\n" block_size ;
-  Printf.printf "Supersteps: 9 (1 load + 8 scan)\n" ;
-  Printf.printf "\nTiming (%d runs):\n" num_runs ;
-  Printf.printf "  Min:    %.3f ms\n" (min_time *. 1000.0) ;
-  Printf.printf "  Median: %.3f ms\n" (median_time *. 1000.0) ;
-  Printf.printf "  Mean:   %.3f ms\n" (avg_time *. 1000.0) ;
+  Printf.printf
+    "  %s: size=%d, median=%.3f ms, verified=%s\n"
+    device.Device.name
+    n
+    median_ms
+    (if verified then "✓" else "✗") ;
 
-  let throughput_melems = float_of_int n /. (median_time *. 1e6) in
-  Printf.printf "  Throughput: %.2f M elements/s\n" throughput_melems ;
+  let throughput_melems = float_of_int n /. (median_ms /. 1000.0 *. 1e6) in
 
-  Printf.printf "\nVerification: " ;
-  if !errors = 0 then Printf.printf "PASS ✓ (all %d values correct)\n" n
-  else Printf.printf "FAIL ✗ (%d/%d errors)\n" !errors n ;
-
-  Printf.printf "Expected sum at position %d: %ld\n" (n - 1) cpu_result.(n - 1) ;
-  Printf.printf "GPU result at position %d: %ld\n" (n - 1) gpu_result.(n - 1) ;
-  Printf.printf "====================================\n" ;
-
-  !errors = 0
+  Output.
+    {
+      device_id = device.Device.id;
+      device_name = device.Device.name;
+      framework = backend_name;
+      iterations = times_array;
+      mean_ms = Common.mean times_array;
+      stddev_ms = Common.stddev times_array;
+      median_ms;
+      min_ms = Common.min times_array;
+      max_ms = Common.max times_array;
+      throughput = Some throughput_melems;
+      verified = Some verified;
+    }
 
 (** Main benchmark runner *)
 let () =
-  Printf.printf "Prefix Sum (Inclusive Scan) Benchmark\n" ;
-  Printf.printf "Single-block Hillis-Steele algorithm\n\n" ;
-
-  Benchmark_runner.run_simple
+  let config =
+    Benchmark_runner.parse_args
+      ~benchmark_name:"scan"
+      ~default_sizes:[64; 128; 256]
+      ()
+  in
+  Benchmark_runner.run_benchmark
     ~benchmark_name:"scan"
-    ~default_size:256
+    ~config
     ~run_fn:benchmark_scan
