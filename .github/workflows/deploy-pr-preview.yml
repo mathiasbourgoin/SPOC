@@ -16,6 +16,8 @@ permissions:
 jobs:
   deploy-preview:
     runs-on: ubuntu-22.04  # Use 22.04 where darcs is available
+    # Only run for PRs from the main repository (not forks) to prevent malicious gh-pages content
+    if: github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - name: Checkout PR
         uses: actions/checkout@v4
