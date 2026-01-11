@@ -194,19 +194,6 @@ let generate_backend_code kernel_name kernel_func output_dir =
   (* Write markdown header *)
   Printf.fprintf oc "# Generated Backend Code: %s\n\n" kernel_name ;
   Printf.fprintf oc "This file is auto-generated. Do not edit manually.\n\n" ;
-  Printf.fprintf
-    oc
-    "Generated on: %s\n\n"
-    (let t = Unix.time () in
-     let tm = Unix.localtime t in
-     Printf.sprintf
-       "%04d-%02d-%02d %02d:%02d:%02d"
-       (tm.Unix.tm_year + 1900)
-       (tm.Unix.tm_mon + 1)
-       tm.Unix.tm_mday
-       tm.Unix.tm_hour
-       tm.Unix.tm_min
-       tm.Unix.tm_sec) ;
 
   (* Generate CUDA code *)
   (try

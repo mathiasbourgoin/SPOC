@@ -2,8 +2,6 @@
 
 This file is auto-generated. Do not edit manually.
 
-Generated on: 2026-01-11 13:14:53
-
 ## CUDA C
 
 ```cuda
