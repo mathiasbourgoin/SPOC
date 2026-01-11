@@ -57,47 +57,73 @@
 <p>Each thread computes the color of one pixel by iterating the complex function $z_{n+1} = z_n^2 + c$.</p>
 
 <div class="language-ocaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">open</span> <span class="nc">Sarek</span>
+<span class="k">module</span> <span class="nc">Std</span> <span class="o">=</span> <span class="nn">Sarek_stdlib</span><span class="p">.</span><span class="nc">Std</span>
 
-<span class="k">let</span><span class="o">%</span><span class="n">kernel</span> <span class="n">mandelbrot</span> <span class="p">(</span><span class="n">output</span> <span class="o">:</span> <span class="n">int32</span> <span class="n">vector</span><span class="p">)</span> 
-                      <span class="p">(</span><span class="n">width</span> <span class="o">:</span> <span class="n">int32</span><span class="p">)</span> <span class="p">(</span><span class="n">height</span> <span class="o">:</span> <span class="n">int32</span><span class="p">)</span> 
-                      <span class="p">(</span><span class="n">max_iter</span> <span class="o">:</span> <span class="n">int32</span><span class="p">)</span> <span class="o">=</span>
-  <span class="k">let</span> <span class="n">px</span> <span class="o">=</span> <span class="n">get_global_id</span> <span class="mi">0</span> <span class="k">in</span> <span class="c">(* x-coordinate *)</span>
-  <span class="k">let</span> <span class="n">py</span> <span class="o">=</span> <span class="n">get_global_id</span> <span class="mi">1</span> <span class="k">in</span> <span class="c">(* y-coordinate *)</span>
-  
-  <span class="k">if</span> <span class="n">px</span> <span class="o">&lt;</span> <span class="n">width</span> <span class="o">&amp;&amp;</span> <span class="n">py</span> <span class="o">&lt;</span> <span class="n">height</span> <span class="k">then</span> <span class="k">begin</span>
-    <span class="c">(* Map pixel to complex plane coordinates *)</span>
-    <span class="k">let</span> <span class="n">x0</span> <span class="o">=</span> <span class="p">(</span><span class="mi">4</span><span class="o">.</span><span class="mi">0</span> <span class="o">*.</span> <span class="p">(</span><span class="kt">float</span> <span class="n">px</span> <span class="o">/.</span> <span class="kt">float</span> <span class="n">width</span><span class="p">))</span> <span class="o">-.</span> <span class="mi">2</span><span class="o">.</span><span class="mi">5</span> <span class="k">in</span>
-    <span class="k">let</span> <span class="n">y0</span> <span class="o">=</span> <span class="p">(</span><span class="mi">3</span><span class="o">.</span><span class="mi">0</span> <span class="o">*.</span> <span class="p">(</span><span class="kt">float</span> <span class="n">py</span> <span class="o">/.</span> <span class="kt">float</span> <span class="n">height</span><span class="p">))</span> <span class="o">-.</span> <span class="mi">1</span><span class="o">.</span><span class="mi">5</span> <span class="k">in</span>
-    
-    <span class="k">let</span> <span class="n">x</span> <span class="o">=</span> <span class="n">ref</span> <span class="mi">0</span><span class="o">.</span><span class="mi">0</span> <span class="k">in</span>
-    <span class="k">let</span> <span class="n">y</span> <span class="o">=</span> <span class="n">ref</span> <span class="mi">0</span><span class="o">.</span><span class="mi">0</span> <span class="k">in</span>
-    <span class="k">let</span> <span class="n">iter</span> <span class="o">=</span> <span class="n">ref</span> <span class="mi">0</span><span class="n">l</span> <span class="k">in</span>
-    
-    <span class="c">(* Main iteration loop *)</span>
-    <span class="k">while</span> <span class="p">(</span><span class="o">!</span><span class="n">x</span> <span class="o">*.</span> <span class="o">!</span><span class="n">x</span><span class="p">)</span> <span class="o">+.</span> <span class="p">(</span><span class="o">!</span><span class="n">y</span> <span class="o">*.</span> <span class="o">!</span><span class="n">y</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">4</span><span class="o">.</span><span class="mi">0</span> <span class="o">&amp;&amp;</span> <span class="o">!</span><span class="n">iter</span> <span class="o">&lt;</span> <span class="n">max_iter</span> <span class="k">do</span>
-      <span class="k">let</span> <span class="n">xtemp</span> <span class="o">=</span> <span class="p">(</span><span class="o">!</span><span class="n">x</span> <span class="o">*.</span> <span class="o">!</span><span class="n">x</span><span class="p">)</span> <span class="o">-.</span> <span class="p">(</span><span class="o">!</span><span class="n">y</span> <span class="o">*.</span> <span class="o">!</span><span class="n">y</span><span class="p">)</span> <span class="o">+.</span> <span class="n">x0</span> <span class="k">in</span>
-      <span class="n">y</span> <span class="o">:=</span> <span class="p">(</span><span class="mi">2</span><span class="o">.</span><span class="mi">0</span> <span class="o">*.</span> <span class="o">!</span><span class="n">x</span> <span class="o">*.</span> <span class="o">!</span><span class="n">y</span><span class="p">)</span> <span class="o">+.</span> <span class="n">y0</span><span class="p">;</span>
-      <span class="n">x</span> <span class="o">:=</span> <span class="n">xtemp</span><span class="p">;</span>
-      <span class="n">iter</span> <span class="o">:=</span> <span class="o">!</span><span class="n">iter</span> <span class="o">+</span> <span class="mi">1</span><span class="n">l</span>
-    <span class="k">done</span><span class="p">;</span>
-    
-    <span class="c">(* Store iteration count as pixel value *)</span>
-    <span class="n">output</span><span class="o">.</span><span class="p">((</span><span class="n">py</span> <span class="o">*</span> <span class="n">width</span><span class="p">)</span> <span class="o">+</span> <span class="n">px</span><span class="p">)</span> <span class="o">&lt;-</span> <span class="o">!</span><span class="n">iter</span>
-  <span class="k">end</span>
+<span class="k">let</span> <span class="n">mandelbrot_kernel</span> <span class="o">=</span>
+  <span class="p">[</span><span class="o">%</span><span class="n">kernel</span>
+    <span class="k">fun</span> <span class="p">(</span><span class="n">output</span> <span class="o">:</span> <span class="n">int32</span> <span class="n">vector</span><span class="p">)</span>
+        <span class="p">(</span><span class="n">width</span> <span class="o">:</span> <span class="n">int32</span><span class="p">)</span>
+        <span class="p">(</span><span class="n">height</span> <span class="o">:</span> <span class="n">int32</span><span class="p">)</span>
+        <span class="p">(</span><span class="n">max_iter</span> <span class="o">:</span> <span class="n">int32</span><span class="p">)</span> <span class="o">-&gt;</span>
+      <span class="k">let</span> <span class="k">open</span> <span class="nc">Std</span> <span class="k">in</span>
+      <span class="k">let</span> <span class="n">px</span> <span class="o">=</span> <span class="n">global_idx_x</span> <span class="k">in</span>
+      <span class="k">let</span> <span class="n">py</span> <span class="o">=</span> <span class="n">global_idx_y</span> <span class="k">in</span>
+      
+      <span class="k">if</span> <span class="n">px</span> <span class="o">&lt;</span> <span class="n">width</span> <span class="o">&amp;&amp;</span> <span class="n">py</span> <span class="o">&lt;</span> <span class="n">height</span> <span class="k">then</span> <span class="k">begin</span>
+        <span class="c">(* Map pixel to complex plane coordinates *)</span>
+        <span class="k">let</span> <span class="n">x0</span> <span class="o">=</span> <span class="p">(</span><span class="mi">4</span><span class="o">.</span><span class="mi">0</span> <span class="o">*.</span> <span class="p">(</span><span class="kt">float</span> <span class="n">px</span> <span class="o">/.</span> <span class="kt">float</span> <span class="n">width</span><span class="p">))</span> <span class="o">-.</span> <span class="mi">2</span><span class="o">.</span><span class="mi">5</span> <span class="k">in</span>
+        <span class="k">let</span> <span class="n">y0</span> <span class="o">=</span> <span class="p">(</span><span class="mi">3</span><span class="o">.</span><span class="mi">0</span> <span class="o">*.</span> <span class="p">(</span><span class="kt">float</span> <span class="n">py</span> <span class="o">/.</span> <span class="kt">float</span> <span class="n">height</span><span class="p">))</span> <span class="o">-.</span> <span class="mi">1</span><span class="o">.</span><span class="mi">5</span> <span class="k">in</span>
+        
+        <span class="c">(* Use mut for mutable variables *)</span>
+        <span class="k">let</span> <span class="n">x</span> <span class="o">=</span> <span class="n">mut</span> <span class="mi">0</span><span class="o">.</span><span class="mi">0</span> <span class="k">in</span>
+        <span class="k">let</span> <span class="n">y</span> <span class="o">=</span> <span class="n">mut</span> <span class="mi">0</span><span class="o">.</span><span class="mi">0</span> <span class="k">in</span>
+        <span class="k">let</span> <span class="n">iter</span> <span class="o">=</span> <span class="n">mut</span> <span class="mi">0</span><span class="n">l</span> <span class="k">in</span>
+        
+        <span class="c">(* Main iteration loop *)</span>
+        <span class="k">while</span> <span class="p">(</span><span class="n">x</span> <span class="o">*.</span> <span class="n">x</span><span class="p">)</span> <span class="o">+.</span> <span class="p">(</span><span class="n">y</span> <span class="o">*.</span> <span class="n">y</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">4</span><span class="o">.</span><span class="mi">0</span> <span class="o">&amp;&amp;</span> <span class="n">iter</span> <span class="o">&lt;</span> <span class="n">max_iter</span> <span class="k">do</span>
+          <span class="k">let</span> <span class="n">xtemp</span> <span class="o">=</span> <span class="p">(</span><span class="n">x</span> <span class="o">*.</span> <span class="n">x</span><span class="p">)</span> <span class="o">-.</span> <span class="p">(</span><span class="n">y</span> <span class="o">*.</span> <span class="n">y</span><span class="p">)</span> <span class="o">+.</span> <span class="n">x0</span> <span class="k">in</span>
+          <span class="n">y</span> <span class="o">:=</span> <span class="p">(</span><span class="mi">2</span><span class="o">.</span><span class="mi">0</span> <span class="o">*.</span> <span class="n">x</span> <span class="o">*.</span> <span class="n">y</span><span class="p">)</span> <span class="o">+.</span> <span class="n">y0</span><span class="p">;</span>
+          <span class="n">x</span> <span class="o">:=</span> <span class="n">xtemp</span><span class="p">;</span>
+          <span class="n">iter</span> <span class="o">:=</span> <span class="n">iter</span> <span class="o">+</span> <span class="mi">1</span><span class="n">l</span>
+        <span class="k">done</span><span class="p">;</span>
+        
+        <span class="c">(* Store iteration count as pixel value *)</span>
+        <span class="n">output</span><span class="o">.</span><span class="p">((</span><span class="n">py</span> <span class="o">*</span> <span class="n">width</span><span class="p">)</span> <span class="o">+</span> <span class="n">px</span><span class="p">)</span> <span class="o">&lt;-</span> <span class="n">iter</span>
+      <span class="k">end</span><span class="p">]</span>
 </code></pre></div></div>
 
 <h2 id="host-code">Host Code</h2>
 
-<div class="language-ocaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">let</span> <span class="n">run_mandelbrot</span> <span class="bp">()</span> <span class="o">=</span>
+<div class="language-ocaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">open</span> <span class="nc">Sarek</span>
+<span class="k">module</span> <span class="nc">Device</span> <span class="o">=</span> <span class="nn">Spoc_core</span><span class="p">.</span><span class="nc">Device</span>
+<span class="k">module</span> <span class="nc">Vector</span> <span class="o">=</span> <span class="nn">Spoc_core</span><span class="p">.</span><span class="nc">Vector</span>
+
+<span class="k">let</span> <span class="n">run_mandelbrot</span> <span class="bp">()</span> <span class="o">=</span>
   <span class="k">let</span> <span class="n">width</span><span class="o">,</span> <span class="n">height</span> <span class="o">=</span> <span class="mi">1024</span><span class="o">,</span> <span class="mi">1024</span> <span class="k">in</span>
   <span class="k">let</span> <span class="n">max_iter</span> <span class="o">=</span> <span class="mi">256</span><span class="n">l</span> <span class="k">in</span>
-  <span class="k">let</span> <span class="n">output</span> <span class="o">=</span> <span class="nn">Vector</span><span class="p">.</span><span class="n">create</span> <span class="nc">Int32</span> <span class="p">(</span><span class="n">width</span> <span class="o">*</span> <span class="n">height</span><span class="p">)</span> <span class="k">in</span>
   
-  <span class="nn">Execute</span><span class="p">.</span><span class="n">run</span> <span class="n">mandelbrot</span>
-    <span class="o">~</span><span class="n">device</span><span class="o">:</span><span class="p">(</span><span class="nn">Device</span><span class="p">.</span><span class="n">get_default</span> <span class="bp">()</span><span class="p">)</span>
-    <span class="o">~</span><span class="n">block</span><span class="o">:</span><span class="p">(</span><span class="mi">16</span><span class="o">,</span> <span class="mi">16</span><span class="o">,</span> <span class="mi">1</span><span class="p">)</span>
-    <span class="o">~</span><span class="n">grid</span><span class="o">:</span><span class="p">((</span><span class="n">width</span><span class="o">+</span><span class="mi">15</span><span class="p">)</span><span class="o">/</span><span class="mi">16</span><span class="o">,</span> <span class="p">(</span><span class="n">height</span><span class="o">+</span><span class="mi">15</span><span class="p">)</span><span class="o">/</span><span class="mi">16</span><span class="o">,</span> <span class="mi">1</span><span class="p">)</span>
-    <span class="p">[</span><span class="nc">Vec</span> <span class="n">output</span><span class="p">;</span> <span class="nc">Int32</span> <span class="n">width</span><span class="p">;</span> <span class="nc">Int32</span> <span class="n">height</span><span class="p">;</span> <span class="nc">Int32</span> <span class="n">max_iter</span><span class="p">]</span>
+  <span class="c">(* Compile kernel to IR *)</span>
+  <span class="k">let</span> <span class="n">ir</span> <span class="o">=</span> <span class="nn">Sarek</span><span class="p">.</span><span class="nn">Compile</span><span class="p">.</span><span class="n">kernel</span> <span class="n">mandelbrot_kernel</span> <span class="k">in</span>
+  
+  <span class="c">(* Create output vector *)</span>
+  <span class="k">let</span> <span class="n">output</span> <span class="o">=</span> <span class="nn">Vector</span><span class="p">.</span><span class="n">create</span> <span class="nn">Vector</span><span class="p">.</span><span class="n">int32</span> <span class="p">(</span><span class="n">width</span> <span class="o">*</span> <span class="n">height</span><span class="p">)</span> <span class="k">in</span>
+  
+  <span class="c">(* Calculate grid dimensions - using 16x16 blocks *)</span>
+  <span class="k">let</span> <span class="n">block</span> <span class="o">=</span> <span class="nn">Execute</span><span class="p">.</span><span class="n">dims2d</span> <span class="mi">16</span> <span class="mi">16</span> <span class="k">in</span>
+  <span class="k">let</span> <span class="n">grid</span> <span class="o">=</span> <span class="nn">Execute</span><span class="p">.</span><span class="n">dims2d</span> <span class="p">((</span><span class="n">width</span> <span class="o">+</span> <span class="mi">15</span><span class="p">)</span> <span class="o">/</span> <span class="mi">16</span><span class="p">)</span> <span class="p">((</span><span class="n">height</span> <span class="o">+</span> <span class="mi">15</span><span class="p">)</span> <span class="o">/</span> <span class="mi">16</span><span class="p">)</span> <span class="k">in</span>
+  <span class="k">let</span> <span class="n">device</span> <span class="o">=</span> <span class="nn">Device</span><span class="p">.</span><span class="n">get_default</span> <span class="bp">()</span> <span class="k">in</span>
+  
+  <span class="c">(* Run kernel *)</span>
+  <span class="nn">Execute</span><span class="p">.</span><span class="n">run_vectors</span>
+    <span class="o">~</span><span class="n">device</span>
+    <span class="o">~</span><span class="n">ir</span>
+    <span class="o">~</span><span class="n">args</span><span class="o">:</span><span class="p">[</span><span class="nc">Vec</span> <span class="n">output</span><span class="p">;</span> <span class="nc">Int</span> <span class="n">width</span><span class="p">;</span> <span class="nc">Int</span> <span class="n">height</span><span class="p">;</span> <span class="nc">Int</span> <span class="p">(</span><span class="nn">Int32</span><span class="p">.</span><span class="n">to_int</span> <span class="n">max_iter</span><span class="p">)]</span>
+    <span class="o">~</span><span class="n">block</span>
+    <span class="o">~</span><span class="n">grid</span>
+    <span class="bp">()</span><span class="p">;</span>
+  
+  <span class="c">(* Output can now be saved as an image *)</span>
+  <span class="nn">Printf</span><span class="p">.</span><span class="n">printf</span> <span class="s2">"Generated %dx%d Mandelbrot set</span><span class="se">\n</span><span class="s2">"</span> <span class="n">width</span> <span class="n">height</span>
 </code></pre></div></div>
 
       </div>
