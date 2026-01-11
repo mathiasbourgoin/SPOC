@@ -48,7 +48,7 @@ let default_config =
     iterations = 20;
     warmup = 5;
     tile_size = 16;
-    output_dir = "results";
+    output_dir = "benchmarks/results";
     device_filter =
       (fun dev ->
         (* By default, exclude slow CPU backends (Native, Interpreter) *)

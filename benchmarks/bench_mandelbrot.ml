@@ -32,7 +32,7 @@ let default_config =
     max_iterations = 256;
     iterations = 20;
     warmup = 5;
-    output_dir = "results";
+    output_dir = "benchmarks/results";
     generate_images = true;
     device_filter =
       (fun dev ->

@@ -14,26 +14,27 @@ Usage: $0 [output_dir] [--generate-backend-code]
 Runs all benchmarks and updates web viewer data.
 
 Arguments:
-  output_dir              Base directory for results (default: results)
+  output_dir              Base directory for results (default: benchmarks/results)
                           Results saved to output_dir/run_TIMESTAMP/
   --generate-backend-code Also regenerate backend code for all benchmarks
 
 Examples:
-  $0                              # Save to results/run_TIMESTAMP/
+  $0                              # Save to benchmarks/results/run_TIMESTAMP/
   $0 my_results                   # Save to my_results/run_TIMESTAMP/
   $0 --generate-backend-code      # Also regenerate CUDA/OpenCL/Vulkan/Metal code
   make benchmarks                 # Same as running script directly
 
 After running:
   1. Review results in the timestamped directory
-  2. Commit updated gh-pages/benchmarks/data/latest.json
-  3. Push to update web viewer
+  2. Optionally run 'make bench-deduplicate' to check for duplicates
+  3. Commit updated benchmarks/results/*.json files in PR
+  4. Reviewer will deduplicate before merging
 EOF
   exit 0
 fi
 
 # Parse arguments
-OUTPUT_DIR="results"
+OUTPUT_DIR="benchmarks/results"
 GENERATE_CODE=false
 
 for arg in "$@"; do

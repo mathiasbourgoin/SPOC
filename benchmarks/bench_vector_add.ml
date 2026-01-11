@@ -29,7 +29,7 @@ let default_config =
     sizes = [1_000_000; 10_000_000; 50_000_000; 100_000_000];
     iterations = 20;
     warmup = 5;
-    output_dir = "results";
+    output_dir = "benchmarks/results";
     device_filter =
       (fun dev ->
         (* By default, exclude slow CPU backends (Native, Interpreter) *)
