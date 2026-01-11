@@ -76,6 +76,11 @@ dune build \
   benchmarks/bench_transpose.exe \
   benchmarks/bench_transpose_tiled.exe \
   benchmarks/bench_mandelbrot.exe \
+  benchmarks/bench_scan.exe \
+  benchmarks/bench_bitonic_sort.exe \
+  benchmarks/bench_histogram.exe \
+  benchmarks/bench_gather_scatter.exe \
+  benchmarks/bench_radix_sort.exe \
   benchmarks/to_web.exe
 
 echo ""
@@ -143,9 +148,31 @@ dune exec benchmarks/bench_mandelbrot.exe -- --output "${RUN_DIR}"
 echo "  ✓ Complete"
 echo ""
 
-# NOTE: Sprint 2 benchmarks are not yet integrated with the benchmark runner.
-# They currently only support --size/-s flags and output to console (no JSON).
-# TODO: Complete migration to use benchmark_runner.ml infrastructure
+# Sprint 2 Benchmarks
+echo "▶ Prefix Sum (Scan)..."
+dune exec benchmarks/bench_scan.exe -- --output "${RUN_DIR}"
+echo "  ✓ Complete"
+echo ""
+
+echo "▶ Bitonic Sort..."
+dune exec benchmarks/bench_bitonic_sort.exe -- --output "${RUN_DIR}"
+echo "  ✓ Complete"
+echo ""
+
+echo "▶ Histogram (256 bins)..."
+dune exec benchmarks/bench_histogram.exe -- --output "${RUN_DIR}"
+echo "  ✓ Complete"
+echo ""
+
+echo "▶ Gather/Scatter..."
+dune exec benchmarks/bench_gather_scatter.exe -- --output "${RUN_DIR}"
+echo "  ✓ Complete"
+echo ""
+
+echo "▶ Radix Sort..."
+dune exec benchmarks/bench_radix_sort.exe -- --output "${RUN_DIR}"
+echo "  ✓ Complete"
+echo ""
 
 # Count results
 RESULT_COUNT=$(ls -1 "${RUN_DIR}"/*.json 2>/dev/null | wc -l)
