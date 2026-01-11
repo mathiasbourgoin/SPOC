@@ -100,12 +100,12 @@ void main() {
 #include <metal_stdlib>
 using namespace metal;
 
-kernel void sarek_kern(device int* output [[buffer(0)]], constant int &sarek_output_length [[buffer(1)]], constant int &width [[buffer(2)]], constant int &height [[buffer(3)]], constant int &max_iter [[buffer(4)]], 
-  uint3 __metal_gid [[thread_position_in_grid]],
-  uint3 __metal_tid [[thread_position_in_threadgroup]],
-  uint3 __metal_bid [[threadgroup_position_in_grid]],
-  uint3 __metal_tpg [[threads_per_threadgroup]],
-  uint3 __metal_num_groups [[threadgroups_per_grid]]) {
+kernel void sarek_kern(device int* output [[buffer(0)]], constant int &sarek_output_length [[buffer(1)]], constant int &width [[buffer(2)]], constant int &height [[buffer(3)]], constant int &max_iter [[buffer(4)]],
+uint3 __metal_gid [[thread_position_in_grid]],
+uint3 __metal_tid [[thread_position_in_threadgroup]],
+uint3 __metal_bid [[threadgroup_position_in_grid]],
+uint3 __metal_tpg [[threads_per_threadgroup]],
+uint3 __metal_num_groups [[threadgroups_per_grid]]) {
   int px = __metal_gid.x;
   int py = __metal_gid.y;
   if (((px < width) && (py < height))) {
@@ -123,5 +123,6 @@ kernel void sarek_kern(device int* output [[buffer(0)]], constant int &sarek_out
     output[((py * width) + px)] = iter;
   }
 }
+
 ```
 

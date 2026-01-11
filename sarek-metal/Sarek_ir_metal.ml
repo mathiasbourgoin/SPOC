@@ -907,6 +907,41 @@ let gen_helper_func buf (hf : helper_func) =
 
 (** {1 Kernel Generation} *)
 
+(** Pretty-print Metal source code *)
+let pretty_print_metal (source : string) : string =
+  let lines = String.split_on_char '\n' source in
+  let buf = Buffer.create (String.length source + 1024) in
+  let rec process_lines indent = function
+    | [] -> ()
+    | line :: rest ->
+        let trimmed = String.trim line in
+        (* Decrease indent for closing braces *)
+        let new_indent =
+          if String.length trimmed > 0 && trimmed.[0] = '}' then
+            max 0 (indent - 2)
+          else indent
+        in
+        (* Add indentation *)
+        if String.length trimmed > 0 then (
+          for _ = 1 to new_indent do
+            Buffer.add_char buf ' '
+          done ;
+          Buffer.add_string buf trimmed ;
+          Buffer.add_char buf '\n')
+        else Buffer.add_char buf '\n' ;
+        (* Increase indent for opening braces *)
+        let next_indent =
+          if
+            String.length trimmed > 0
+            && trimmed.[String.length trimmed - 1] = '{'
+          then new_indent + 2
+          else new_indent
+        in
+        process_lines next_indent rest
+  in
+  process_lines 0 lines ;
+  Buffer.contents buf
+
 (** Generate complete Metal source for a kernel *)
 let generate (k : kernel) : string =
   let buf = Buffer.create 4096 in
@@ -957,7 +992,7 @@ let generate (k : kernel) : string =
   (* Close kernel *)
   Buffer.add_string buf "}\n" ;
 
-  Buffer.contents buf
+  pretty_print_metal (Buffer.contents buf)
 
 (** Generate complete Metal source with device context for SNative *)
 let generate_for_device ~(device : Device.t) (k : kernel) : string =
@@ -1110,7 +1145,8 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
   (* Close kernel *)
   Buffer.add_string buf "}\n" ;
 
-  Buffer.contents buf
+  (* Pretty-print the generated code *)
+  pretty_print_metal (Buffer.contents buf)
 
 (** Generate Metal source with double precision (Metal supports FP64 natively)
 *)
