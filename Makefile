@@ -9,6 +9,7 @@
 #   make bench-all         - Same as 'benchmarks'
 #   make bench-update      - Run benchmarks and update result files
 #   make bench-deduplicate - Check for duplicate benchmark results
+#   make bench-preview     - Preview benchmarks locally (setup: cd gh-pages && bundle install --path vendor/bundle)
 #
 
 all:
@@ -379,7 +380,7 @@ release:
 	dune-release opam submit
 
 # Benchmark suite targets - standalone benchmarks with JSON output
-.PHONY: benchmarks bench-all bench-update bench-generate-code bench-deduplicate
+.PHONY: benchmarks bench-all bench-update bench-generate-code bench-deduplicate bench-preview
 
 # Run all benchmarks in benchmarks/ directory
 benchmarks: bench-all
@@ -396,6 +397,33 @@ bench-deduplicate:
 	@echo "Checking for duplicate benchmark results..."
 	@dune build benchmarks/deduplicate_results.exe
 	@dune exec benchmarks/deduplicate_results.exe -- --dry-run
+
+# Preview benchmark results locally with Jekyll
+# Usage: make bench-preview
+# Then open http://localhost:4000/Sarek/benchmarks/ in your browser
+bench-preview:
+	@echo "📊 Starting local benchmark viewer..."
+	@echo ""
+	@echo "Prerequisites:"
+	@echo "  1. Ruby and Bundler installed (gem install bundler)"
+	@echo "  2. Run 'cd gh-pages && bundle install --path vendor/bundle' once"
+	@echo ""
+	@if [ ! -f gh-pages/Gemfile.lock ]; then \
+		echo "⚠️  Jekyll dependencies not installed. Run:"; \
+		echo "   cd gh-pages && bundle config set --local path 'vendor/bundle' && bundle install"; \
+		exit 1; \
+	fi
+	@echo "🔄 Converting benchmark results to web format..."
+	@opam exec -- dune build benchmarks/to_web.exe
+	@opam exec -- dune exec benchmarks/to_web.exe -- \
+		gh-pages/benchmarks/data/latest.json \
+		benchmarks/results/*.json || echo "No results found"
+	@echo ""
+	@echo "🚀 Starting Jekyll server..."
+	@echo "   Preview at: http://localhost:4000/Sarek/benchmarks/"
+	@echo "   Press Ctrl+C to stop"
+	@echo ""
+	@cd gh-pages && bundle exec jekyll serve
 
 bench-generate-code:
 	@echo "Regenerating backend code for all benchmarks..."
