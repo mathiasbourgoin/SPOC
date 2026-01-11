@@ -29,3 +29,4 @@ benchmark_output.txt
 # Benchmark results (processed by CI, not committed)
 benchmarks/results/*.json
 benchmarks/results/*.csv
+results/
