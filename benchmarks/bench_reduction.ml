@@ -37,7 +37,7 @@ let default_config =
   {
     sizes = [1_000_000; 10_000_000; 50_000_000; 100_000_000];
     iterations = 20;
-    warmup = 5;
+    warmup = 10;
     block_size = 256;
     output_dir = "benchmarks/results";
     device_filter =
@@ -323,7 +323,7 @@ let run config =
 let () =
   let sizes = ref [] in
   let iterations = ref 20 in
-  let warmup = ref 5 in
+  let warmup = ref 10 in
   let output_dir = ref "benchmarks/results" in
   let include_cpu = ref false in
 

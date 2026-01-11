@@ -194,11 +194,14 @@ let benchmark_gpu ~dev ~warmup ~iterations ~init ~compute ~verify =
   (* Create fresh vectors from host data for warmup *)
   let kernel_args = init () in
 
-  (* First run to trigger kernel compilation *)
+  (* First run to trigger kernel compilation and driver initialization *)
   compute kernel_args ;
   Device.synchronize dev ;
 
-  (* Warmup runs with compiled kernel *)
+  (* Warmup runs with compiled kernel to stabilize driver state *)
+  (* Note: Even with warmup, the first timed iteration may show higher
+     latency due to GPU frequency scaling, power management, or driver
+     overhead. Consider using median or trimmed mean for robust statistics. *)
   for _ = 1 to warmup do
     compute kernel_args ;
     Device.synchronize dev

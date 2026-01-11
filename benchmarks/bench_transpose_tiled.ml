@@ -46,7 +46,7 @@ let default_config =
   {
     sizes = [256; 512; 1024; 2048; 4096; 8192];
     iterations = 20;
-    warmup = 5;
+    warmup = 10;
     tile_size = 16;
     output_dir = "benchmarks/results";
     device_filter =
