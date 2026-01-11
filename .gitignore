@@ -25,3 +25,6 @@ a.out
 *.log
 bisect*.coverage
 benchmark_output.txt
+
+# Local test results directory at root level (not benchmark results to share)
+/results/

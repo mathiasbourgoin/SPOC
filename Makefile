@@ -1,3 +1,17 @@
+# SPOC/Sarek Makefile
+#
+# Key targets:
+#   make test              - Run unit tests
+#   make test-e2e          - Run e2e verification tests (small datasets, CPU vs GPU comparison)
+#   make e2e               - Run e2e performance benchmarks (large datasets, all devices)
+#   make e2e-fast          - Run fast e2e tests (CI-friendly, small datasets)
+#   make benchmarks        - Run standalone benchmark suite (benchmarks/ directory, JSON output)
+#   make bench-all         - Same as 'benchmarks'
+#   make bench-update      - Run benchmarks and update result files
+#   make bench-deduplicate - Check for duplicate benchmark results
+#   make bench-preview     - Preview benchmarks locally (setup: cd gh-pages && bundle install --path vendor/bundle)
+#
+
 all:
 	dune build
 
@@ -181,10 +195,10 @@ test-e2e:
 	@echo ""
 	@echo "=== All E2E tests passed ==="
 
-# Benchmarks - run all tests with --benchmark to compare all devices
-benchmarks:
+# E2E Performance Benchmarks - run all e2e tests with --benchmark to compare devices
+e2e:
 	@echo "=============================================="
-	@echo "       SAREK BENCHMARK SUITE"
+	@echo "       SAREK E2E PERFORMANCE BENCHMARKS"
 	@echo "=============================================="
 	@echo ""
 	@dune build $(addprefix sarek/tests/e2e/,$(addsuffix .exe,$(E2E_TESTS)))
@@ -226,13 +240,13 @@ benchmarks:
 	@LD_LIBRARY_PATH=/opt/cuda/lib64:$$LD_LIBRARY_PATH dune exec sarek/tests/e2e/test_mandelbrot.exe -- --benchmark -s 4194304
 	@echo ""
 	@echo "=============================================="
-	@echo "       BENCHMARK COMPLETE"
+	@echo "       E2E BENCHMARK COMPLETE"
 	@echo "=============================================="
 
-# Fast benchmarks for CI - small sizes, Native+OpenCL only
-benchmarks-fast:
+# Fast e2e benchmarks for CI - small sizes, Native+OpenCL only
+e2e-fast:
 	@echo "=============================================="
-	@echo "   SAREK FAST BENCHMARK (CI-friendly)"
+	@echo "   SAREK FAST E2E (CI-friendly)"
 	@echo "=============================================="
 	@echo ""
 	@dune build sarek/tests/e2e/test_vector_add.exe \
@@ -257,7 +271,7 @@ benchmarks-fast:
 	@dune exec sarek/tests/e2e/test_math_intrinsics.exe -- -s 4096
 	@echo ""
 	@echo "=============================================="
-	@echo "   FAST BENCHMARK COMPLETE"
+	@echo "   FAST E2E COMPLETE"
 	@echo "=============================================="
 
 # Tiered test suite - tests organized by complexity
@@ -364,3 +378,62 @@ release:
 	dune-release publish
 	dune-release opam pkg
 	dune-release opam submit
+
+# Benchmark suite targets - standalone benchmarks with JSON output
+.PHONY: benchmarks bench-all bench-update bench-generate-code bench-deduplicate bench-preview
+
+# Run all benchmarks in benchmarks/ directory
+benchmarks: bench-all
+
+bench-all:
+	@./benchmarks/run_all_benchmarks.sh
+
+bench-update:
+	@echo "Running benchmarks and updating web data..."
+	@./benchmarks/run_all_benchmarks.sh results
+	@echo "Benchmark data updated. Review and commit changes."
+
+bench-deduplicate:
+	@echo "Checking for duplicate benchmark results..."
+	@dune build benchmarks/deduplicate_results.exe
+	@dune exec benchmarks/deduplicate_results.exe -- --dry-run
+
+# Preview benchmark results locally with Jekyll
+# Usage: make bench-preview
+# Then open http://localhost:4000/Sarek/benchmarks/ in your browser
+bench-preview:
+	@echo "📊 Starting local benchmark viewer..."
+	@echo ""
+	@echo "Prerequisites:"
+	@echo "  1. Ruby and Bundler installed (gem install bundler)"
+	@echo "  2. Run 'cd gh-pages && bundle install --path vendor/bundle' once"
+	@echo ""
+	@if [ ! -f gh-pages/Gemfile.lock ]; then \
+		echo "⚠️  Jekyll dependencies not installed. Run:"; \
+		echo "   cd gh-pages && bundle config set --local path 'vendor/bundle' && bundle install"; \
+		exit 1; \
+	fi
+	@echo "🔄 Converting benchmark results to web format..."
+	@opam exec -- dune build benchmarks/to_web.exe
+	@opam exec -- dune exec benchmarks/to_web.exe -- \
+		gh-pages/benchmarks/data/latest.json \
+		benchmarks/results/*.json || echo "No results found"
+	@echo ""
+	@echo "🚀 Starting Jekyll server..."
+	@echo "   Preview at: http://localhost:4000/Sarek/benchmarks/"
+	@echo "   Press Ctrl+C to stop"
+	@echo ""
+	@cd gh-pages && bundle exec jekyll serve
+
+bench-generate-code:
+	@echo "Regenerating backend code for all benchmarks..."
+	@dune build benchmarks/generate_backend_code.exe
+	@dune exec benchmarks/generate_backend_code.exe
+	@echo "Copying to gh-pages..."
+	@mkdir -p gh-pages/benchmarks/descriptions/generated
+	@cp benchmarks/descriptions/generated/*.md gh-pages/benchmarks/descriptions/generated/
+	@echo "✓ Backend code regenerated"
+	@echo ""
+	@echo "Review changes:"
+	@git diff --stat benchmarks/descriptions/generated/ gh-pages/benchmarks/descriptions/generated/
+
