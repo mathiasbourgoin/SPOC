@@ -299,7 +299,7 @@ let run config =
         Output.
           {
             params = benchmark_params;
-            timestamp = Common.timestamp_filename ();
+            timestamp = Common.get_timestamp ();
             git_commit;
             system = system_info;
             results = Array.to_list results;
