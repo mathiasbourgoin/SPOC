@@ -122,10 +122,24 @@ echo "All benchmarks complete!"
 echo "Generated ${RESULT_COUNT} result files in ${RUN_DIR}"
 echo ""
 
+# Move results to benchmarks/results/ for git tracking and CI
+echo "Moving results to benchmarks/results/ for git tracking..."
+if [ ${RESULT_COUNT} -gt 0 ]; then
+  mv "${RUN_DIR}"/*.json "benchmarks/results/"
+  echo "  ✓ Moved ${RESULT_COUNT} files to benchmarks/results/"
+  
+  # Remove empty run directory
+  rmdir "${RUN_DIR}" 2>/dev/null || rm -rf "${RUN_DIR}"
+  echo "  ✓ Cleaned up ${RUN_DIR}"
+else
+  echo "  ⚠ No results found to move"
+fi
+echo ""
+
 # Update web data
 echo "Updating web viewer data..."
 WEB_OUTPUT="gh-pages/benchmarks/data/latest.json"
-dune exec benchmarks/to_web.exe -- "${WEB_OUTPUT}" "${RUN_DIR}"/*.json
+dune exec benchmarks/to_web.exe -- "${WEB_OUTPUT}" benchmarks/results/*.json
 
 echo "  ✓ Updated ${WEB_OUTPUT}"
 echo ""
@@ -147,15 +161,30 @@ if [ "$GENERATE_CODE" = true ]; then
 fi
 
 echo "================================================"
+echo "✅ Benchmark run complete!"
+echo ""
+echo "Results are ready in benchmarks/results/"
+echo "Web viewer data updated: ${WEB_OUTPUT}"
+echo ""
 echo "Next steps:"
-echo "  1. Review results in ${RUN_DIR}/"
-echo "  2. Commit updated web data:"
+echo "  1. (Optional) Check for duplicates:"
+echo "     make bench-deduplicate"
+echo ""
+echo "  2. Add results to git:"
+echo "     git add benchmarks/results/*.json"
 echo "     git add ${WEB_OUTPUT}"
 if [ "$GENERATE_CODE" = true ]; then
   echo "     git add benchmarks/descriptions/generated/"
   echo "     git add gh-pages/benchmarks/descriptions/generated/"
 fi
-echo "     git commit -m \"Update benchmark results ($(date +%Y-%m-%d))\""
-echo "     git push"
-echo "  3. View at: https://mathiasbourgoin.github.io/Sarek/benchmarks/"
+echo ""
+echo "  3. Commit and push:"
+echo "     git commit -m \"Add benchmark results from $(hostname) ($(date +%Y-%m-%d))\""
+echo "     git push origin <your-branch>"
+echo ""
+echo "  4. Create PR - CI will generate preview at:"
+echo "     https://mathiasbourgoin.github.io/Sarek/preview/pr-<number>/benchmarks/"
+echo ""
+echo "Reviewers can deduplicate before merging with:"
+echo "  dune exec benchmarks/deduplicate_results.exe"
 echo "================================================"

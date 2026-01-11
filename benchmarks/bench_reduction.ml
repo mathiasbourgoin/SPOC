@@ -319,5 +319,48 @@ let run config =
 
   Printf.printf "\n=== Benchmark Complete ===\n"
 
-(** Main entry point *)
-let () = run default_config
+(** Command line interface *)
+let () =
+  let sizes = ref [] in
+  let iterations = ref 20 in
+  let warmup = ref 5 in
+  let output_dir = ref "benchmarks/results" in
+  let include_cpu = ref false in
+
+  let usage =
+    "Usage: bench_reduction [options]\n\
+     Benchmark parallel reduction (sum) across devices\n"
+  in
+
+  let specs =
+    [
+      ( "--sizes",
+        Arg.String
+          (fun s ->
+            sizes := List.map int_of_string (String.split_on_char ',' s)),
+        "Comma-separated list of input sizes (default: \
+         1000000,10000000,50000000,100000000)" );
+      ("--iterations", Arg.Set_int iterations, "Number of iterations per size");
+      ("--warmup", Arg.Set_int warmup, "Number of warmup iterations");
+      ("--output", Arg.Set_string output_dir, "Output directory for results");
+      ( "--include-cpu",
+        Arg.Set include_cpu,
+        "Include Native/Interpreter backends" );
+    ]
+  in
+
+  Arg.parse specs (fun _ -> ()) usage ;
+
+  let config =
+    {
+      sizes = (if !sizes = [] then default_config.sizes else !sizes);
+      iterations = !iterations;
+      warmup = !warmup;
+      block_size = default_config.block_size;
+      output_dir = !output_dir;
+      device_filter =
+        (if !include_cpu then fun _ -> true else default_config.device_filter);
+    }
+  in
+
+  run config
