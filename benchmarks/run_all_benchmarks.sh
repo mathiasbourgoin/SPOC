@@ -66,7 +66,6 @@ mkdir -p "${RUN_DIR}"
 
 echo "Building all benchmarks..."
 dune build \
-  benchmarks/bench_matrix_mul.exe \
   benchmarks/bench_matrix_mul_tiled.exe \
   benchmarks/bench_vector_add.exe \
   benchmarks/bench_vector_copy.exe \
@@ -82,12 +81,6 @@ dune build \
 echo ""
 echo "Running benchmarks..."
 echo "This may take several minutes depending on your hardware."
-echo ""
-
-# Matrix Multiplication
-echo "▶ Matrix Multiplication (naive)..."
-dune exec benchmarks/bench_matrix_mul.exe -- --output "${RUN_DIR}"
-echo "  ✓ Complete"
 echo ""
 
 # Matrix Multiplication (Tiled)
