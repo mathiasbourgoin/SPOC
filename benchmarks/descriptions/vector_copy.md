@@ -20,7 +20,7 @@ Understanding pure memory bandwidth is crucial for:
 
 The kernel is trivial:
 
-```
+```text
 for each element i in parallel:
     B[i] = A[i]
 ```
@@ -73,7 +73,7 @@ Still, 80-90% is excellent for production code.
 
 For a vector copy of N elements (float32):
 
-```
+```text
 Bytes Transferred = 2 × N × 4 bytes
                   = 8N bytes
                   (1 read + 1 write, 4 bytes per float)
@@ -100,13 +100,13 @@ This shows that Vector Add is also memory-bound, not compute-bound.
 ## Use Cases
 
 ### 1. Bandwidth Measurement
-```
+```text
 Peak Bandwidth = median(Vector Copy measurements)
 Efficiency = (Actual BW) / (Theoretical Peak BW) × 100%
 ```
 
 ### 2. Identifying Bottlenecks
-```
+```text
 if (Kernel BW ≈ Vector Copy BW):
     "Your kernel is memory-bound"
 else if (Kernel BW < 50% of Vector Copy BW):
