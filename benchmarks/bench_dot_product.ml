@@ -97,6 +97,8 @@ let benchmark_device dev size config =
     Vector.set va i a.(i) ;
     Vector.set vb i b.(i)
   done ;
+  if config.block_size <> 256 then
+    failwith "dot_product kernel requires block_size = 256" ;
   let block_sz = config.block_size in
   let grid_sz = (n + block_sz - 1) / block_sz in
   let vout = Vector.create Vector.float32 grid_sz in
@@ -139,14 +141,16 @@ let benchmark_device dev size config =
       () ;
     Spoc_core.Transfer.flush dev ;
     let t1 = Unix.gettimeofday () in
-    times := (t1 -. t0) :: !times
+    times := ((t1 -. t0) *. 1000.0) :: !times
   done ;
   let partial = Vector.to_array vout in
   let result = Array.fold_left ( +. ) 0.0 partial in
   let verified = abs_float (result -. !expected) < 0.001 *. !expected in
   let times_array = Array.of_list !times in
   let median_ms = Common.median times_array in
-  let bandwidth_gb_s = 2.0 *. float_of_int n *. 4.0 /. (median_ms *. 1e9) in
+  let bandwidth_gb_s =
+    2.0 *. float_of_int n *. 4.0 /. (median_ms /. 1000.0 *. 1e9)
+  in
   Printf.printf
     "  Median: %.3f ms, BW: %.3f GB/s, Verified: %s\n"
     median_ms
