@@ -235,6 +235,9 @@ let () =
   Printf.printf "Bitonic Sort Benchmark\n" ;
   Printf.printf "Data-oblivious parallel sorting\n\n" ;
 
+  (* Default size is smaller than other benchmarks due to O(n log²n) complexity.
+     Bitonic sort performs log(n)*(log(n)+1)/2 passes, making larger sizes slow.
+     For n=1024: 55 passes; for n=65536: 136 passes. *)
   Benchmark_runner.run_simple
     ~benchmark_name:"bitonic_sort"
     ~default_size:1024
