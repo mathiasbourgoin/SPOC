@@ -293,8 +293,10 @@ let run_radix_sort_benchmark device backend_name size =
   let median_time = List.nth sorted_times (num_runs / 2) in
 
   (* Verify correctness *)
-  (* After even number of passes, result is in input buffer *)
-  let final_buffer = if num_passes mod 2 = 0 then output else input in
+  (* Trace through ping-pong: after n passes, result is in current_input ref *)
+  (* Pass 0: input->output, swap. Pass 1: output->input, swap. ... *)
+  (* After 8 passes (even): current_input points to input buffer *)
+  let final_buffer = if num_passes mod 2 = 0 then input else output in
   let gpu_result = Vector.to_array final_buffer in
 
   Random.init 42 ;
