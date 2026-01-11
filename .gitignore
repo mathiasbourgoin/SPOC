@@ -28,3 +28,6 @@ benchmark_output.txt
 
 # Local test results directory at root level (not benchmark results to share)
 /results/
+
+# Jupyter kernel JavaScript build artifacts (generated, not source)
+gh-pages/static/services/kernels/js/*.js
