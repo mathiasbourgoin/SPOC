@@ -82,8 +82,8 @@ let benchmark_device dev size config =
     size ;
   flush stdout ;
 
-  let dim = int_of_float (sqrt (float_of_int size)) in
-  let m, n, k = (dim, dim, dim) in
+  (* Size parameter is the matrix dimension (e.g., 256 means 256×256) *)
+  let m, n, k = (size, size, size) in
 
   (* Prepare host data *)
   let a = Array.init (m * k) (fun i -> float_of_int (i mod 10) /. 10.0) in
