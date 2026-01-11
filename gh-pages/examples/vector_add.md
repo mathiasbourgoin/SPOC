@@ -13,15 +13,17 @@ The kernel takes two input vectors `a` and `b`, and writes the result to `c`. Ea
 
 ```ocaml
 open Sarek
+module Std = Sarek_stdlib.Std
 
-let%kernel vector_add (a : float32 vector) (b : float32 vector) (c : float32 vector) (n : int32) =
-  (* Get global thread ID *)
-  let tid = get_global_id 0 in
-  
-  (* Check bounds to prevent out-of-bounds access *)
-  if tid < n then
-    (* Perform element-wise addition *)
-    c.(tid) <- a.(tid) + b.(tid)
+let vector_add_kernel =
+  [%kernel
+    fun (a : float32 vector)
+        (b : float32 vector)
+        (c : float32 vector)
+        (n : int32) ->
+      let open Std in
+      let tid = global_thread_id in
+      if tid < n then c.(tid) <- a.(tid) +. b.(tid)]
 ```
 
 ## Host Code
@@ -29,14 +31,21 @@ let%kernel vector_add (a : float32 vector) (b : float32 vector) (c : float32 vec
 The host code initializes the data, selects a device, and launches the kernel.
 
 ```ocaml
+open Sarek
+module Device = Spoc_core.Device
+module Vector = Spoc_core.Vector
+
 let () =
   (* Problem size *)
   let n = 1_000_000 in
   
+  (* Compile kernel to IR *)
+  let ir = Sarek.Compile.kernel vector_add_kernel in
+  
   (* Create vectors *)
-  let a = Vector.create Float32 n in
-  let b = Vector.create Float32 n in
-  let c = Vector.create Float32 n in
+  let a = Vector.create Vector.float32 n in
+  let b = Vector.create Vector.float32 n in
+  let c = Vector.create Vector.float32 n in
   
   (* Initialize data *)
   for i = 0 to n - 1 do
@@ -50,13 +59,17 @@ let () =
   (* Calculate grid dimensions *)
   let block_size = 256 in
   let grid_size = (n + block_size - 1) / block_size in
+  let block = Execute.dims1d block_size in
+  let grid = Execute.dims1d grid_size in
   
   (* Run kernel *)
-  Execute.run vector_add 
-    ~device 
-    ~grid:(grid_size, 1, 1) 
-    ~block:(block_size, 1, 1) 
-    [Vec a; Vec b; Vec c; Int32 (Int32.of_int n)];
+  Execute.run_vectors
+    ~device
+    ~ir
+    ~args:[Vec a; Vec b; Vec c; Int n]
+    ~block
+    ~grid
+    ();
     
   (* Verify result *)
   let result = Vector.get c 10 in

@@ -14,56 +14,95 @@ Each thread block reduces a portion of the array into a single value. These part
 ```ocaml
 open Sarek
 
-let%kernel reduce_sum (input : float32 vector) (output : float32 vector) (n : int32) =
-  (* Shared memory for the block *)
-  let%shared sdata = Array.create Float32 256 in
-  
-  let tid = thread_idx_x in
-  let gid = get_global_id 0 in
-  
-  (* Load data: each thread loads one element *)
-  (* For better performance, each thread could load/sum multiple elements first *)
-  let%superstep load =
-    if gid < n then 
-      sdata.(tid) <- input.(gid)
-    else 
-      sdata.(tid) <- 0.0
-  in
-  
-  (* Tree reduction in shared memory *)
-  (* Unrolled for warp efficiency (simulated here with supersteps) *)
-  let%superstep reduce128 =
-    if tid < 128 then sdata.(tid) <- sdata.(tid) +. sdata.(tid + 128)
-  in
-  let%superstep reduce64 =
-    if tid < 64 then sdata.(tid) <- sdata.(tid) +. sdata.(tid + 64)
-  in
-  (* ... unrolling continues ... *)
-  let%superstep reduce2 =
-    if tid < 2 then sdata.(tid) <- sdata.(tid) +. sdata.(tid + 2)
-  in
-  let%superstep reduce1 =
-    if tid < 1 then sdata.(tid) <- sdata.(tid) +. sdata.(tid + 1)
-  in
-  
-  (* Write result for this block *)
-  if tid = 0 then
-    output.(block_idx_x) <- sdata.(0)
+let reduce_sum_kernel =
+  [%kernel
+    fun (input : float32 vector) (output : float32 vector) (n : int32) ->
+      (* Shared memory for the block - 256 elements *)
+      let%shared (sdata : float32) = 256l in
+      
+      let tid = thread_idx_x in
+      let gid = thread_idx_x + (block_dim_x * block_idx_x) in
+      
+      (* Load data: each thread loads one element *)
+      let%superstep load =
+        if gid < n then sdata.(tid) <- input.(gid) 
+        else sdata.(tid) <- 0.0
+      in
+      
+      (* Tree reduction in shared memory - unrolled for efficiency *)
+      let%superstep reduce128 =
+        if tid < 128l then sdata.(tid) <- sdata.(tid) +. sdata.(tid + 128l)
+      in
+      let%superstep reduce64 =
+        if tid < 64l then sdata.(tid) <- sdata.(tid) +. sdata.(tid + 64l)
+      in
+      let%superstep reduce32 =
+        if tid < 32l then sdata.(tid) <- sdata.(tid) +. sdata.(tid + 32l)
+      in
+      let%superstep reduce16 =
+        if tid < 16l then sdata.(tid) <- sdata.(tid) +. sdata.(tid + 16l)
+      in
+      let%superstep reduce8 =
+        if tid < 8l then sdata.(tid) <- sdata.(tid) +. sdata.(tid + 8l)
+      in
+      let%superstep reduce4 =
+        if tid < 4l then sdata.(tid) <- sdata.(tid) +. sdata.(tid + 4l)
+      in
+      let%superstep reduce2 =
+        if tid < 2l then sdata.(tid) <- sdata.(tid) +. sdata.(tid + 2l)
+      in
+      let%superstep reduce1 =
+        if tid < 1l then sdata.(tid) <- sdata.(tid) +. sdata.(tid + 1l)
+      in
+      
+      (* Write result for this block *)
+      if tid = 0l then output.(block_idx_x) <- sdata.(0l)]
 ```
 
 ## Host Code
 
 ```ocaml
+open Sarek
+module Device = Spoc_core.Device
+module Vector = Spoc_core.Vector
+
 let run_reduction () =
   let n = 1_000_000 in
   let block_size = 256 in
   let num_blocks = (n + block_size - 1) / block_size in
   
-  let output = Vector.create Float32 num_blocks in
+  (* Compile kernel to IR *)
+  let ir = Sarek.Compile.kernel reduce_sum_kernel in
   
-  (* First pass: Reduce array to `num_blocks` partial sums *)
-  Execute.run reduce_sum
-    ~device:(Device.get_default ())
+  (* Create input and output vectors *)
+  let input = Vector.create Vector.float32 n in
+  let output = Vector.create Vector.float32 num_blocks in
+  
+  (* Initialize input data *)
+  for i = 0 to n - 1 do
+    Vector.set input i 1.0;
+  done;
+  
+  (* Calculate grid dimensions *)
+  let block = Execute.dims1d block_size in
+  let grid = Execute.dims1d num_blocks in
+  let device = Device.get_default () in
+  
+  (* First pass: Reduce array to num_blocks partial sums *)
+  Execute.run_vectors
+    ~device
+    ~ir
+    ~args:[Vec input; Vec output; Int n]
+    ~block
+    ~grid
+    ();
+  
+  (* Second pass: Sum the partial results on CPU *)
+  let partial_sums = Vector.to_array output in
+  let final_sum = Array.fold_left (+.) 0.0 partial_sums in
+  
+  Printf.printf "Sum of %d elements: %f\n" n final_sum
+```
     ~block:(256, 1, 1)
     ~grid:(num_blocks, 1, 1)
     [Vec input; Vec output; Int32 n];
