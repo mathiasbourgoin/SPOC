@@ -35,6 +35,7 @@ module Transfer = Spoc_core.Transfer
 module Std = Sarek_stdlib.Std
 module Gpu = Sarek_stdlib.Gpu
 open Benchmark_common
+open Benchmark_runner
 
 (** Pure OCaml baseline: gather operation *)
 let cpu_gather input indices output n =
@@ -75,7 +76,7 @@ let scatter_kernel =
 [@@warning "-33"]
 
 (** Run gather benchmark on specified device *)
-let run_gather_benchmark device size =
+let run_gather_benchmark ~device ~size ~config =
   let backend_name = device.Device.framework in
   let n = size in
 
@@ -108,27 +109,27 @@ let run_gather_benchmark device size =
   let block = Sarek.Execute.dims1d block_size in
   let grid = Sarek.Execute.dims1d num_blocks in
 
-  (* Warmup run *)
-  Sarek.Execute.run_vectors
-    ~device
-    ~ir
-    ~args:
-      [
-        Sarek.Execute.Vec input;
-        Sarek.Execute.Vec indices;
-        Sarek.Execute.Vec output;
-        Sarek.Execute.Int32 (Int32.of_int n);
-      ]
-    ~block
-    ~grid
-    () ;
-  Transfer.flush device ;
+  (* Warmup *)
+  for _ = 1 to config.warmup do
+    Sarek.Execute.run_vectors
+      ~device
+      ~ir
+      ~args:
+        [
+          Sarek.Execute.Vec input;
+          Sarek.Execute.Vec indices;
+          Sarek.Execute.Vec output;
+          Sarek.Execute.Int32 (Int32.of_int n);
+        ]
+      ~block
+      ~grid
+      () ;
+    Transfer.flush device
+  done ;
 
   (* Timed runs *)
-  let num_runs = 100 in
   let times = ref [] in
-
-  for _ = 1 to num_runs do
+  for _ = 1 to config.iterations do
     let t0 = Unix.gettimeofday () in
     Sarek.Execute.run_vectors
       ~device
@@ -145,16 +146,8 @@ let run_gather_benchmark device size =
       () ;
     Transfer.flush device ;
     let t1 = Unix.gettimeofday () in
-    times := (t1 -. t0) :: !times
+    times := ((t1 -. t0) *. 1000.0) :: !times
   done ;
-
-  (* Compute statistics *)
-  let sorted_times = List.sort compare !times in
-  let avg_time =
-    List.fold_left ( +. ) 0.0 sorted_times /. float_of_int num_runs
-  in
-  let min_time = List.hd sorted_times in
-  let median_time = List.nth sorted_times (num_runs / 2) in
 
   (* Verify correctness *)
   let gpu_result = Vector.to_array output in
@@ -177,29 +170,37 @@ let run_gather_benchmark device size =
     end
   done ;
 
+  let verified = !errors = 0 in
+  let times_array = Array.of_list (List.rev !times) in
+  let median_ms = Common.median times_array in
+
   (* Report results *)
-  Printf.printf "\n=== Gather Benchmark ===\n" ;
-  Printf.printf "Backend: %s\n" backend_name ;
-  Printf.printf "Array size: %d elements\n" n ;
-  Printf.printf "Block size: %d\n" block_size ;
-  Printf.printf "Grid size: %d blocks\n" num_blocks ;
-  Printf.printf "\nTiming (%d runs):\n" num_runs ;
-  Printf.printf "  Min:    %.3f ms\n" (min_time *. 1000.0) ;
-  Printf.printf "  Median: %.3f ms\n" (median_time *. 1000.0) ;
-  Printf.printf "  Mean:   %.3f ms\n" (avg_time *. 1000.0) ;
+  Printf.printf
+    "  %s (gather): size=%d, median=%.3f ms, verified=%s\n"
+    device.Device.name
+    n
+    median_ms
+    (if verified then "✓" else "✗") ;
 
-  let throughput_melems = float_of_int n /. (median_time *. 1e6) in
-  Printf.printf "  Throughput: %.2f M elements/s\n" throughput_melems ;
+  let throughput_melems = float_of_int n /. (median_ms /. 1000.0 *. 1e6) in
 
-  Printf.printf "\nVerification: " ;
-  if !errors = 0 then Printf.printf "PASS ✓ (all %d values correct)\n" n
-  else Printf.printf "FAIL ✗ (%d/%d errors)\n" !errors n ;
-  Printf.printf "========================\n" ;
-
-  !errors = 0
+  Output.
+    {
+      device_id = device.Device.id;
+      device_name = device.Device.name ^ " (gather)";
+      framework = backend_name;
+      iterations = times_array;
+      mean_ms = Common.mean times_array;
+      stddev_ms = Common.stddev times_array;
+      median_ms;
+      min_ms = Common.min times_array;
+      max_ms = Common.max times_array;
+      throughput = Some throughput_melems;
+      verified = Some verified;
+    }
 
 (** Run scatter benchmark on specified device *)
-let run_scatter_benchmark device size =
+let run_scatter_benchmark ~device ~size ~config =
   let backend_name = device.Device.framework in
   let n = size in
 
@@ -237,27 +238,30 @@ let run_scatter_benchmark device size =
   let block = Sarek.Execute.dims1d block_size in
   let grid = Sarek.Execute.dims1d num_blocks in
 
-  (* Warmup run *)
-  Sarek.Execute.run_vectors
-    ~device
-    ~ir
-    ~args:
-      [
-        Sarek.Execute.Vec input;
-        Sarek.Execute.Vec indices;
-        Sarek.Execute.Vec output;
-        Sarek.Execute.Int32 (Int32.of_int n);
-      ]
-    ~block
-    ~grid
-    () ;
-  Transfer.flush device ;
+  (* Warmup *)
+  for _ = 1 to config.warmup do
+    for i = 0 to n - 1 do
+      Vector.set output i 0l
+    done ;
+    Sarek.Execute.run_vectors
+      ~device
+      ~ir
+      ~args:
+        [
+          Sarek.Execute.Vec input;
+          Sarek.Execute.Vec indices;
+          Sarek.Execute.Vec output;
+          Sarek.Execute.Int32 (Int32.of_int n);
+        ]
+      ~block
+      ~grid
+      () ;
+    Transfer.flush device
+  done ;
 
   (* Timed runs *)
-  let num_runs = 100 in
   let times = ref [] in
-
-  for _ = 1 to num_runs do
+  for _ = 1 to config.iterations do
     (* Clear output *)
     for i = 0 to n - 1 do
       Vector.set output i 0l
@@ -279,16 +283,8 @@ let run_scatter_benchmark device size =
       () ;
     Transfer.flush device ;
     let t1 = Unix.gettimeofday () in
-    times := (t1 -. t0) :: !times
+    times := ((t1 -. t0) *. 1000.0) :: !times
   done ;
-
-  (* Compute statistics *)
-  let sorted_times = List.sort compare !times in
-  let avg_time =
-    List.fold_left ( +. ) 0.0 sorted_times /. float_of_int num_runs
-  in
-  let min_time = List.hd sorted_times in
-  let median_time = List.nth sorted_times (num_runs / 2) in
 
   (* Verify correctness - for scatter with conflicts, we check that:
      1. Values in output are from the input (or 0 for unwritten locations)
@@ -301,10 +297,8 @@ let run_scatter_benchmark device size =
   done ;
 
   let errors = ref 0 in
-  let non_zero = ref 0 in
   for i = 0 to n - 1 do
     if gpu_result.(i) <> 0l then begin
-      incr non_zero ;
       (* Check if this value exists in input *)
       if not (Hashtbl.mem input_set gpu_result.(i)) then begin
         if !errors < 5 then
@@ -317,40 +311,52 @@ let run_scatter_benchmark device size =
     end
   done ;
 
+  let verified = !errors = 0 in
+  let times_array = Array.of_list (List.rev !times) in
+  let median_ms = Common.median times_array in
+
   (* Report results *)
-  Printf.printf "\n=== Scatter Benchmark ===\n" ;
-  Printf.printf "Backend: %s\n" backend_name ;
-  Printf.printf "Array size: %d elements\n" n ;
-  Printf.printf "Block size: %d\n" block_size ;
-  Printf.printf "Grid size: %d blocks\n" num_blocks ;
-  Printf.printf "Non-zero outputs: %d\n" !non_zero ;
-  Printf.printf "\nTiming (%d runs):\n" num_runs ;
-  Printf.printf "  Min:    %.3f ms\n" (min_time *. 1000.0) ;
-  Printf.printf "  Median: %.3f ms\n" (median_time *. 1000.0) ;
-  Printf.printf "  Mean:   %.3f ms\n" (avg_time *. 1000.0) ;
+  Printf.printf
+    "  %s (scatter): size=%d, median=%.3f ms, verified=%s\n"
+    device.Device.name
+    n
+    median_ms
+    (if verified then "✓" else "✗") ;
 
-  let throughput_melems = float_of_int n /. (median_time *. 1e6) in
-  Printf.printf "  Throughput: %.2f M elements/s\n" throughput_melems ;
+  let throughput_melems = float_of_int n /. (median_ms /. 1000.0 *. 1e6) in
 
-  Printf.printf "\nVerification: " ;
-  if !errors = 0 then Printf.printf "PASS ✓ (scatter completed)\n"
-  else Printf.printf "FAIL ✗ (%d errors)\n" !errors ;
-  Printf.printf "========================\n" ;
-
-  !errors = 0
-
-(** Run both gather and scatter benchmarks *)
-let run_both_benchmarks device size =
-  let success1 = run_gather_benchmark device size in
-  let success2 = run_scatter_benchmark device size in
-  success1 && success2
+  Output.
+    {
+      device_id = device.Device.id;
+      device_name = device.Device.name ^ " (scatter)";
+      framework = backend_name;
+      iterations = times_array;
+      mean_ms = Common.mean times_array;
+      stddev_ms = Common.stddev times_array;
+      median_ms;
+      min_ms = Common.min times_array;
+      max_ms = Common.max times_array;
+      throughput = Some throughput_melems;
+      verified = Some verified;
+    }
 
 (** Main benchmark runner *)
 let () =
-  Printf.printf "Gather/Scatter Benchmark\n" ;
-  Printf.printf "Indirect memory access patterns\n\n" ;
+  let config =
+    Benchmark_runner.parse_args
+      ~benchmark_name:"gather_scatter"
+      ~default_sizes:[1_000_000; 10_000_000; 50_000_000]
+      ()
+  in
 
-  Benchmark_runner.run_simple
-    ~benchmark_name:"gather_scatter"
-    ~default_size:10_000_000
-    ~run_fn:run_both_benchmarks
+  Printf.printf "=== Running Gather Benchmark ===\n" ;
+  Benchmark_runner.run_benchmark
+    ~benchmark_name:"gather"
+    ~config
+    ~run_fn:run_gather_benchmark ;
+
+  Printf.printf "\n=== Running Scatter Benchmark ===\n" ;
+  Benchmark_runner.run_benchmark
+    ~benchmark_name:"scatter"
+    ~config
+    ~run_fn:run_scatter_benchmark

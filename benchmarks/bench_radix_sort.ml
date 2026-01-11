@@ -34,6 +34,7 @@ module Transfer = Spoc_core.Transfer
 module Std = Sarek_stdlib.Std
 module Gpu = Sarek_stdlib.Gpu
 open Benchmark_common
+open Benchmark_runner
 
 (** Pure OCaml baseline: radix sort *)
 let cpu_radix_sort input n =
@@ -148,7 +149,7 @@ let cpu_prefix_sum arr n =
   result
 
 (** Run radix sort benchmark on specified device *)
-let run_radix_sort_benchmark device size =
+let run_radix_sort_benchmark ~device ~size ~config =
   let backend_name = device.Device.framework in
   let n = size in
   let bits_per_pass = 4 in
@@ -185,32 +186,67 @@ let run_radix_sort_benchmark device size =
   let block = Sarek.Execute.dims1d block_size in
   let grid = Sarek.Execute.dims1d num_blocks in
 
-  (* Warmup run - single pass *)
-  let histogram = Vector.create Vector.int32 num_bins in
-  for i = 0 to num_bins - 1 do
-    Vector.set histogram i 0l
+  (* Warmup *)
+  for _ = 1 to config.warmup do
+    Random.init 42 ;
+    for i = 0 to n - 1 do
+      Vector.set input i (Int32.of_int (Random.int 100000))
+    done ;
+
+    let current_input = ref input in
+    let current_output = ref output in
+    for pass = 0 to num_passes - 1 do
+      let shift = Int32.of_int (pass * bits_per_pass) in
+      let histogram = Vector.create Vector.int32 num_bins in
+      for i = 0 to num_bins - 1 do
+        Vector.set histogram i 0l
+      done ;
+      Sarek.Execute.run_vectors
+        ~device
+        ~ir:hist_ir
+        ~args:
+          [
+            Sarek.Execute.Vec !current_input;
+            Sarek.Execute.Vec histogram;
+            Sarek.Execute.Int32 (Int32.of_int n);
+            Sarek.Execute.Int32 shift;
+            Sarek.Execute.Int32 mask;
+          ]
+        ~block
+        ~grid
+        () ;
+      Transfer.flush device ;
+      let hist_arr = Vector.to_array histogram in
+      let prefix_arr = cpu_prefix_sum hist_arr num_bins in
+      let prefix_sum = Vector.create Vector.int32 num_bins in
+      for i = 0 to num_bins - 1 do
+        Vector.set prefix_sum i prefix_arr.(i)
+      done ;
+      Sarek.Execute.run_vectors
+        ~device
+        ~ir:scatter_ir
+        ~args:
+          [
+            Sarek.Execute.Vec !current_input;
+            Sarek.Execute.Vec !current_output;
+            Sarek.Execute.Vec prefix_sum;
+            Sarek.Execute.Int32 (Int32.of_int n);
+            Sarek.Execute.Int32 shift;
+            Sarek.Execute.Int32 mask;
+          ]
+        ~block
+        ~grid
+        () ;
+      Transfer.flush device ;
+      let temp = !current_input in
+      current_input := !current_output ;
+      current_output := temp
+    done
   done ;
-  Sarek.Execute.run_vectors
-    ~device
-    ~ir:hist_ir
-    ~args:
-      [
-        Sarek.Execute.Vec input;
-        Sarek.Execute.Vec histogram;
-        Sarek.Execute.Int32 (Int32.of_int n);
-        Sarek.Execute.Int32 0l;
-        Sarek.Execute.Int32 mask;
-      ]
-    ~block
-    ~grid
-    () ;
-  Transfer.flush device ;
 
   (* Timed runs *)
-  let num_runs = 100 in
   let times = ref [] in
-
-  for _ = 1 to num_runs do
+  for _ = 1 to config.iterations do
     (* Reset input *)
     Random.init 42 ;
     for i = 0 to n - 1 do
@@ -282,16 +318,8 @@ let run_radix_sort_benchmark device size =
     done ;
 
     let t1 = Unix.gettimeofday () in
-    times := (t1 -. t0) :: !times
+    times := ((t1 -. t0) *. 1000.0) :: !times
   done ;
-
-  (* Compute statistics *)
-  let sorted_times = List.sort compare !times in
-  let avg_time =
-    List.fold_left ( +. ) 0.0 sorted_times /. float_of_int num_runs
-  in
-  let min_time = List.hd sorted_times in
-  let median_time = List.nth sorted_times (num_runs / 2) in
 
   (* Verify correctness *)
   (* Trace through ping-pong: after n passes, result is in current_input ref *)
@@ -323,52 +351,45 @@ let run_radix_sort_benchmark device size =
     if gpu_result.(i) < gpu_result.(i - 1) then is_sorted := false
   done ;
 
+  let verified = !errors = 0 && !is_sorted in
+  let times_array = Array.of_list (List.rev !times) in
+  let median_ms = Common.median times_array in
+
   (* Report results *)
-  Printf.printf "\n=== Radix Sort Benchmark ===\n" ;
-  Printf.printf "Backend: %s\n" backend_name ;
-  Printf.printf "Array size: %d elements\n" n ;
-  Printf.printf "Block size: %d\n" block_size ;
-  Printf.printf "Grid size: %d blocks\n" num_blocks ;
-  Printf.printf "Radix passes: %d (%d bits per pass)\n" num_passes bits_per_pass ;
-  Printf.printf "Bins per pass: %d\n" num_bins ;
-  Printf.printf "\nTiming (%d runs):\n" num_runs ;
-  Printf.printf "  Min:    %.3f ms\n" (min_time *. 1000.0) ;
-  Printf.printf "  Median: %.3f ms\n" (median_time *. 1000.0) ;
-  Printf.printf "  Mean:   %.3f ms\n" (avg_time *. 1000.0) ;
+  Printf.printf
+    "  %s: size=%d, median=%.3f ms, verified=%s%s\n"
+    device.Device.name
+    n
+    median_ms
+    (if verified then "✓" else "✗")
+    (if not verified then " (KNOWN ISSUE)" else "") ;
 
-  let throughput_melems = float_of_int n /. (median_time *. 1e6) in
-  Printf.printf "  Throughput: %.2f M elements/s\n" throughput_melems ;
+  let throughput_melems = float_of_int n /. (median_ms /. 1000.0 *. 1e6) in
 
-  Printf.printf "\nVerification: " ;
-  if !errors = 0 && !is_sorted then Printf.printf "PASS ✓ (sorted correctly)\n"
-  else Printf.printf "FAIL ✗ (%d errors, sorted=%b)\n" !errors !is_sorted ;
-
-  if n <= 16 then begin
-    Printf.printf "GPU result: [" ;
-    for i = 0 to n - 1 do
-      Printf.printf "%ld%s" gpu_result.(i) (if i < n - 1 then "; " else "")
-    done ;
-    Printf.printf "]\n"
-  end
-  else begin
-    Printf.printf "First 8 GPU results: [" ;
-    for i = 0 to 7 do
-      Printf.printf "%ld%s" gpu_result.(i) (if i < 7 then "; " else "")
-    done ;
-    Printf.printf "]\n"
-  end ;
-  Printf.printf "============================\n" ;
-
-  !errors = 0 && !is_sorted
+  Output.
+    {
+      device_id = device.Device.id;
+      device_name = device.Device.name;
+      framework = backend_name;
+      iterations = times_array;
+      mean_ms = Common.mean times_array;
+      stddev_ms = Common.stddev times_array;
+      median_ms;
+      min_ms = Common.min times_array;
+      max_ms = Common.max times_array;
+      throughput = Some throughput_melems;
+      verified = Some verified;
+    }
 
 (** Main benchmark runner *)
 let () =
-  Printf.printf "Radix Sort Benchmark\n" ;
-  Printf.printf "4-bit radix, 8-pass implementation\n" ;
-  Printf.printf
-    "⚠️  WARNING: Verification currently failing - under investigation\n\n" ;
-
-  Benchmark_runner.run_simple
+  let config =
+    Benchmark_runner.parse_args
+      ~benchmark_name:"radix_sort"
+      ~default_sizes:[1_000_000; 10_000_000; 50_000_000]
+      ()
+  in
+  Benchmark_runner.run_benchmark
     ~benchmark_name:"radix_sort"
-    ~default_size:10_000_000
+    ~config
     ~run_fn:run_radix_sort_benchmark
