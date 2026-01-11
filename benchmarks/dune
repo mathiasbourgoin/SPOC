@@ -85,6 +85,27 @@
  (preprocess
   (pps sarek_ppx)))
 
+(executable
+ (name bench_matrix_mul_tiled)
+ (modules bench_matrix_mul_tiled)
+ (libraries benchmark_common benchmark_backends sarek sarek_stdlib spoc_core)
+ (preprocess
+  (pps sarek_ppx)))
+
+(executable
+ (name bench_vector_copy)
+ (modules bench_vector_copy)
+ (libraries benchmark_common benchmark_backends sarek sarek_stdlib spoc_core)
+ (preprocess
+  (pps sarek_ppx)))
+
+(executable
+ (name bench_stream_triad)
+ (modules bench_stream_triad)
+ (libraries benchmark_common benchmark_backends sarek sarek_stdlib spoc_core)
+ (preprocess
+  (pps sarek_ppx)))
+
 ; Data aggregation and analysis tools
 
 (executable
@@ -122,3 +143,17 @@
 ;  (modules bench_runner)
 ;  (libraries benchmark_common benchmark_backends sarek sarek_stdlib spoc_core)
 ;  (preprocess (pps sarek_ppx)))
+
+(executable
+ (name bench_reduction_max)
+ (modules bench_reduction_max)
+ (libraries benchmark_common benchmark_backends sarek sarek_stdlib spoc_core)
+ (preprocess
+  (pps sarek_ppx)))
+
+(executable
+ (name bench_dot_product)
+ (modules bench_dot_product)
+ (libraries benchmark_common benchmark_backends sarek sarek_stdlib spoc_core)
+ (preprocess
+  (pps sarek_ppx)))

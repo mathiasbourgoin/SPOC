@@ -66,7 +66,10 @@ mkdir -p "${RUN_DIR}"
 echo "Building all benchmarks..."
 dune build \
   benchmarks/bench_matrix_mul.exe \
+  benchmarks/bench_matrix_mul_tiled.exe \
   benchmarks/bench_vector_add.exe \
+  benchmarks/bench_vector_copy.exe \
+  benchmarks/bench_stream_triad.exe \
   benchmarks/bench_reduction.exe \
   benchmarks/bench_transpose.exe \
   benchmarks/bench_transpose_tiled.exe \
@@ -84,9 +87,27 @@ dune exec benchmarks/bench_matrix_mul.exe -- --output "${RUN_DIR}"
 echo "  ✓ Complete"
 echo ""
 
+# Matrix Multiplication (Tiled)
+echo "▶ Matrix Multiplication (tiled)..."
+dune exec benchmarks/bench_matrix_mul_tiled.exe -- --output "${RUN_DIR}"
+echo "  ✓ Complete"
+echo ""
+
 # Vector Addition
 echo "▶ Vector Addition..."
 dune exec benchmarks/bench_vector_add.exe -- --output "${RUN_DIR}"
+echo "  ✓ Complete"
+echo ""
+
+# Vector Copy
+echo "▶ Vector Copy..."
+dune exec benchmarks/bench_vector_copy.exe -- --output "${RUN_DIR}"
+echo "  ✓ Complete"
+echo ""
+
+# STREAM Triad
+echo "▶ STREAM Triad..."
+dune exec benchmarks/bench_stream_triad.exe -- --output "${RUN_DIR}"
 echo "  ✓ Complete"
 echo ""
 
