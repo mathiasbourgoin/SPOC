@@ -12,7 +12,7 @@ Max Reduction finds the maximum value in an array using parallel tree-based redu
 
 Same tree structure as sum reduction, but with comparison instead of addition:
 
-```
+```text
 Step 1: Compare pairs (256 → 128 elements)
 Step 2: Compare pairs (128 → 64 elements)  
 ...
