@@ -160,7 +160,7 @@ let reduction_max_kernel =
       let gid = thread_idx_x + (block_dim_x * block_idx_x) in
       let%superstep load =
         if gid < n then sdata.(tid) <- input.(gid)
-        else sdata.(tid) <- -1000000.0
+        else sdata.(tid) <- Float.neg_infinity
       in
       let%superstep reduce128 =
         if tid < 128l then begin
