@@ -12,6 +12,12 @@
 
 open Yojson.Basic.Util
 
+(** Escape a CSV field value by quoting if it contains special characters *)
+let escape_csv_field s =
+  if String.contains s ',' || String.contains s '"' || String.contains s '\n'
+  then "\"" ^ String.concat "\"\"" (String.split_on_char '"' s) ^ "\""
+  else s
+
 (** Extract results from either single benchmark or aggregated format *)
 let extract_results json =
   (* Check if this is an aggregated file with "aggregated_at" field *)
@@ -54,18 +60,18 @@ let result_to_csv_rows json =
       let verified = result |> member "verified" |> to_bool in
       let throughput_gflops =
         try Some (result |> member "throughput_gflops" |> to_float)
-        with _ -> None
+        with Type_error _ -> None
       in
 
       Printf.sprintf
         "%s,%s,%d,%d,%s,%s,%s,%f,%f,%f,%f,%f,%b,%s"
-        hostname
+        (escape_csv_field hostname)
         timestamp
         size
         iterations
-        benchmark_name
-        device_name
-        framework
+        (escape_csv_field benchmark_name)
+        (escape_csv_field device_name)
+        (escape_csv_field framework)
         mean_ms
         stddev_ms
         median_ms
