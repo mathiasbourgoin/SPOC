@@ -116,6 +116,13 @@
  (preprocess
   (pps sarek_ppx)))
 
+; Deduplication tool for managing submitted benchmark results
+
+(executable
+ (name deduplicate_results)
+ (modules deduplicate_results)
+ (libraries yojson))
+
 ; Main benchmark runner (to be implemented)
 ; (executable
 ;  (name bench_runner)

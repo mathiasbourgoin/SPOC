@@ -26,7 +26,5 @@ a.out
 bisect*.coverage
 benchmark_output.txt
 
-# Benchmark results (processed by CI, not committed)
-benchmarks/results/*.json
-benchmarks/results/*.csv
+# Local test results directory (not benchmark results to share)
 results/
