@@ -69,14 +69,45 @@ let get_cpu_info () =
     let model = match find_model () with Some m -> m | None -> "unknown" in
     close_in ic ;
 
-    (* Get core count *)
+    (* Get thread count *)
     let ic = Unix.open_process_in "nproc" in
     let threads =
       try int_of_string (String.trim (input_line ic)) with _ -> 1
     in
     let _ = Unix.close_process_in ic in
 
-    {model; cores = threads; threads}
+    (* Try to obtain physical core count from lscpu; fallback to threads/2 *)
+    let cores =
+      try
+        let ic2 = Unix.open_process_in "lscpu 2>/dev/null" in
+        let rec loop cps sockets =
+          try
+            let line = input_line ic2 in
+            if String.starts_with ~prefix:"Core(s) per socket" line then
+              let v =
+                int_of_string
+                  (String.trim (List.nth (String.split_on_char ':' line) 1))
+              in
+              loop (Some v) sockets
+            else if String.starts_with ~prefix:"Socket(s)" line then
+              let v =
+                int_of_string
+                  (String.trim (List.nth (String.split_on_char ':' line) 1))
+              in
+              loop cps (Some v)
+            else loop cps sockets
+          with End_of_file -> (
+            match (cps, sockets) with
+            | Some cps, Some s -> cps * s
+            | _ -> threads / 2)
+        in
+        let result = loop None None in
+        let _ = Unix.close_process_in ic2 in
+        result
+      with _ -> threads / 2
+    in
+
+    {model; cores; threads}
   with _ -> {model = "unknown"; cores = 1; threads = 1}
 
 let get_memory_gb () =
