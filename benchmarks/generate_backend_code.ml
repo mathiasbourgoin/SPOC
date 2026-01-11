@@ -352,6 +352,37 @@ let mandelbrot_kernel =
       end]
 [@@warning "-33"]
 
+(** Gather kernel (Sprint 2) *)
+let gather_kernel =
+  [%kernel
+    fun (input : int32 vector)
+        (indices : int32 vector)
+        (output : int32 vector)
+        (n : int32) ->
+      let open Std in
+      let i = global_thread_id in
+      if i < n then begin
+        let idx = indices.(i) in
+        output.(i) <- input.(idx)
+      end]
+[@@warning "-33"]
+
+(** Scatter kernel (Sprint 2) *)
+let scatter_kernel =
+  [%kernel
+    fun (input : int32 vector)
+        (indices : int32 vector)
+        (output : int32 vector)
+        (n : int32) ->
+      let open Std in
+      let i = global_thread_id in
+      if i < n then begin
+        let idx = indices.(i) in
+        (* Direct write - last write wins semantics *)
+        output.(idx) <- input.(i)
+      end]
+[@@warning "-33"]
+
 (** Generate backend code for a kernel *)
 let generate_backend_code kernel_name kernel_func output_dir =
   Printf.printf "Generating backend code for: %s\n" kernel_name ;
@@ -459,5 +490,7 @@ let () =
   generate_backend_code "transpose_naive" transpose_naive_kernel !output_dir ;
   generate_backend_code "transpose_tiled" transpose_tiled_kernel !output_dir ;
   generate_backend_code "mandelbrot" mandelbrot_kernel !output_dir ;
+  generate_backend_code "gather" gather_kernel !output_dir ;
+  generate_backend_code "scatter" scatter_kernel !output_dir ;
 
   Printf.printf "=== Generation Complete ===\n"
