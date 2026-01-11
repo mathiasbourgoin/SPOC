@@ -105,9 +105,10 @@ let transpose_tiled_kernel =
       in
       (* Write transposed tile to output in coalesced manner *)
       let%superstep store =
-        if write_row < height && write_col < width then
-          (* Read from transposed position in tile *)
-          output.((write_row * width) + write_col) <-
+        (* Output is width×height (transposed), so check against swapped dimensions *)
+        if write_row < width && write_col < height then
+          (* Read from transposed position in tile, write with transposed stride *)
+          output.((write_row * height) + write_col) <-
             tile.((tx * (tile_size + 1l)) + ty)
       in
       ()]

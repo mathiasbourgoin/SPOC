@@ -104,6 +104,8 @@ jobs:
               comment.body.includes('Preview your changes')
             );
             
+            const benchmarkSummary = await getBenchmarkSummary();
+            
             const commentBody = `## 🔍 Preview Deployment
             
             Your changes are ready to preview:
@@ -114,7 +116,7 @@ jobs:
             <details>
             <summary>📊 Benchmark Results</summary>
             
-            ${await getBenchmarkSummary()}
+            ${benchmarkSummary}
             
             </details>
             
