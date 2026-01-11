@@ -346,12 +346,12 @@ void main() {
 #include <metal_stdlib>
 using namespace metal;
 
-kernel void sarek_kern(device float* input [[buffer(0)]], constant int &sarek_input_length [[buffer(1)]], device float* output [[buffer(2)]], constant int &sarek_output_length [[buffer(3)]], constant int &n [[buffer(4)]], 
-  uint3 __metal_gid [[thread_position_in_grid]],
-  uint3 __metal_tid [[thread_position_in_threadgroup]],
-  uint3 __metal_bid [[threadgroup_position_in_grid]],
-  uint3 __metal_tpg [[threads_per_threadgroup]],
-  uint3 __metal_num_groups [[threadgroups_per_grid]]) {
+kernel void sarek_kern(device float* input [[buffer(0)]], constant int &sarek_input_length [[buffer(1)]], device float* output [[buffer(2)]], constant int &sarek_output_length [[buffer(3)]], constant int &n [[buffer(4)]],
+uint3 __metal_gid [[thread_position_in_grid]],
+uint3 __metal_tid [[thread_position_in_threadgroup]],
+uint3 __metal_bid [[threadgroup_position_in_grid]],
+uint3 __metal_tpg [[threads_per_threadgroup]],
+uint3 __metal_num_groups [[threadgroups_per_grid]]) {
   threadgroup float sdata[256];
   int tid = __metal_tid.x;
   int gid = (__metal_tid.x + (__metal_tpg.x * __metal_bid.x));
@@ -450,5 +450,6 @@ kernel void sarek_kern(device float* input [[buffer(0)]], constant int &sarek_in
   }
   threadgroup_barrier(mem_flags::mem_threadgroup);
 }
+
 ```
 
