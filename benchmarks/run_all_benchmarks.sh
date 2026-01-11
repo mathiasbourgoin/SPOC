@@ -143,6 +143,10 @@ dune exec benchmarks/bench_mandelbrot.exe -- --output "${RUN_DIR}"
 echo "  ✓ Complete"
 echo ""
 
+# NOTE: Sprint 2 benchmarks below output to console only (no JSON/CSV support yet)
+# They accept a single size argument but don't integrate with the benchmark infrastructure
+# TODO: Add proper CLI parsing, JSON output, multiple sizes, etc. (issue to be created)
+
 # Count results
 RESULT_COUNT=$(ls -1 "${RUN_DIR}"/*.json 2>/dev/null | wc -l)
 echo "================================================"

@@ -30,7 +30,7 @@
 module Device = Spoc_core.Device
 module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
-open Benchmark_backends
+open Benchmark_common
 
 (** Pure OCaml baseline: inclusive prefix sum *)
 let cpu_inclusive_scan input n =
@@ -107,8 +107,10 @@ let inclusive_scan_kernel =
       if gid < n then output.(gid) <- temp.(tid)]
 [@@warning "-33"]
 
-(** Run scan benchmark on specified device *)
-let run_scan_benchmark device backend_name size =
+(** Run scan benchmark on specified device for given size *)
+let benchmark_scan device size =
+  let backend_name = device.Device.framework in
+
   (* Limit to 256 elements (single block) *)
   let n = min size 256 in
 
@@ -225,26 +227,7 @@ let () =
   Printf.printf "Prefix Sum (Inclusive Scan) Benchmark\n" ;
   Printf.printf "Single-block Hillis-Steele algorithm\n\n" ;
 
-  let size =
-    if Array.length Sys.argv > 1 then int_of_string Sys.argv.(1) else 256
-  in
-
-  (* Initialize backends *)
-  Backend_loader.init () ;
-
-  (* Initialize SPOC and discover devices *)
-  let devices = Device.init () in
-
-  if Array.length devices = 0 then begin
-    Printf.printf "No GPU devices found. Cannot run benchmark.\n" ;
-    exit 1
-  end ;
-
-  (* Run on first available device *)
-  let device = devices.(0) in
-  let backend_name = device.Device.framework in
-
-  Printf.printf "Using device: %s (%s)\n\n" device.Device.name backend_name ;
-
-  let success = run_scan_benchmark device backend_name size in
-  (exit (if success then 0 else 1) [@warning "-33"])
+  Benchmark_runner.run_simple
+    ~benchmark_name:"scan"
+    ~default_size:256
+    ~run_fn:benchmark_scan
