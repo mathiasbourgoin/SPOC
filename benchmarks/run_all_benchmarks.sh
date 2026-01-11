@@ -72,6 +72,8 @@ dune build \
   benchmarks/bench_vector_copy.exe \
   benchmarks/bench_stream_triad.exe \
   benchmarks/bench_reduction.exe \
+  benchmarks/bench_reduction_max.exe \
+  benchmarks/bench_dot_product.exe \
   benchmarks/bench_transpose.exe \
   benchmarks/bench_transpose_tiled.exe \
   benchmarks/bench_mandelbrot.exe \
@@ -112,9 +114,21 @@ dune exec benchmarks/bench_stream_triad.exe -- --output "${RUN_DIR}"
 echo "  ✓ Complete"
 echo ""
 
-# Reduction
+# Reduction (sum)
 echo "▶ Parallel Reduction (sum)..."
 dune exec benchmarks/bench_reduction.exe -- --output "${RUN_DIR}"
+echo "  ✓ Complete"
+echo ""
+
+# Reduction (max)
+echo "▶ Parallel Reduction (max)..."
+dune exec benchmarks/bench_reduction_max.exe -- --output "${RUN_DIR}"
+echo "  ✓ Complete"
+echo ""
+
+# Dot Product
+echo "▶ Dot Product..."
+dune exec benchmarks/bench_dot_product.exe -- --output "${RUN_DIR}"
 echo "  ✓ Complete"
 echo ""
 
