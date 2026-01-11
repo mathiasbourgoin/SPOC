@@ -2,8 +2,6 @@
 
 This file is auto-generated. Do not edit manually.
 
-Generated on: 2026-01-11 02:11:36
-
 ## CUDA C
 
 ```cuda
@@ -17,7 +15,7 @@ __global__ void sarek_kern(float* __restrict__ input, int sarek_input_length, fl
     if ((gid < n)) {
       sdata[tid] = input[gid];
     } else {
-      sdata[tid] = -1000000.0f;
+      sdata[tid] = Float.neg_infinity;
     }
   }
   __syncthreads();
@@ -122,7 +120,7 @@ __kernel void sarek_kern(__global float* restrict input, int sarek_input_length,
     if ((gid < n)) {
       sdata[tid] = input[gid];
     } else {
-      sdata[tid] = -1000000.0f;
+      sdata[tid] = Float.neg_infinity;
     }
   }
   barrier(CLK_LOCAL_MEM_FENCE);
@@ -249,7 +247,7 @@ void main() {
     if ((gid < n)) {
       sdata[tid] = inputv[gid];
     } else {
-      sdata[tid] = -1000000.0;
+      sdata[tid] = Float.neg_infinity;
     }
   }
   barrier();
@@ -361,7 +359,7 @@ kernel void sarek_kern(device float* input [[buffer(0)]], constant int &sarek_in
     if ((gid < n)) {
       sdata[tid] = input[gid];
     } else {
-      sdata[tid] = -1000000.0f;
+      sdata[tid] = Float.neg_infinity;
     }
   }
   threadgroup_barrier(mem_flags::mem_threadgroup);
