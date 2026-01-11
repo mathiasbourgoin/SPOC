@@ -50,7 +50,7 @@ let stream_triad_kernel =
 
 For N elements (float32):
 
-```
+```text
 Reads:  2 vectors (B, C) = 2 × N × 4 bytes = 8N bytes
 Writes: 1 vector (A)     = 1 × N × 4 bytes = 4N bytes
 Total:                                        12N bytes
@@ -77,7 +77,7 @@ Unlike burst benchmarks, STREAM measures **sustained** memory bandwidth:
 - Real-world memory access patterns
 
 ### 3. System Bottleneck Identification
-```
+```text
 if (STREAM BW < 50% of theoretical peak):
     "Memory subsystem has issues"
     "Check: memory clocks, channel config, NUMA"
@@ -86,7 +86,7 @@ else if (STREAM BW ≈ 80-90% of peak):
 ```
 
 ### 4. Power Efficiency Metric
-```
+```text
 Energy Efficiency = Bandwidth (GB/s) / Power (Watts)
                   = GB/s/W
 ```
@@ -124,7 +124,7 @@ Triad and Add have identical memory traffic, but Triad has 2× FLOPs.
 ## Running STREAM Properly
 
 ### Array Size Requirements
-```
+```text
 Minimum Size = 4 × L3 Cache Size
 ```
 
@@ -141,7 +141,7 @@ This ensures data doesn't fit in cache.
 
 ### Verification
 Always verify results:
-```
+```text
 A[i] = B[i] + C[i] × scalar
 
 With B[i] = 2.0, C[i] = 1.0, scalar = 3.0:
@@ -176,7 +176,7 @@ STREAM Triad sits at the **memory-bound region** of the Roofline:
 - Performance: Limited by memory bandwidth, not compute
 
 On a Roofline plot:
-```
+```text
           │    /  Compute Bound
  GFLOPS   │   /   (flat roof)
           │  /
@@ -194,6 +194,6 @@ On a Roofline plot:
 ## References
 
 - McCalpin, John D., "STREAM: Sustainable Memory Bandwidth in High Performance Computers" (1995-present)
-- https://www.cs.virginia.edu/stream/
+- [STREAM Benchmark Website](https://www.cs.virginia.edu/stream/)
 - Standard Performance Evaluation Corporation (SPEC), STREAM documentation
 - Top500.org - Uses STREAM for memory benchmarking
