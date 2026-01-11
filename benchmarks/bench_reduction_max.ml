@@ -11,27 +11,8 @@ module Std = Sarek_stdlib.Std
 module Device = Spoc_core.Device
 module Vector = Spoc_core.Vector
 
-type config = {
-  sizes : int list;
-  block_size : int;
-  iterations : int;
-  warmup : int;
-  output_dir : string;
-  device_filter : Device.t -> bool;
-}
-
-let default_config =
-  {
-    sizes = [1_000_000; 10_000_000; 50_000_000; 100_000_000];
-    block_size = 256;
-    iterations = 20;
-    warmup = 5;
-    output_dir = "results";
-    device_filter =
-      (fun dev ->
-        dev.Device.framework <> "Native"
-        && dev.Device.framework <> "Interpreter");
-  }
+(* Use shared config type from Benchmark_runner *)
+open Benchmark_runner
 
 let reduce_max_kernel =
   [%kernel
@@ -271,40 +252,11 @@ let run_benchmark config =
       Printf.printf "Written: %s\n" filename)
     config.sizes
 
-let parse_args () =
-  let config = ref default_config in
-  let specs =
-    [
-      ( "--sizes",
-        Arg.String
-          (fun s ->
-            config :=
-              {
-                !config with
-                sizes = List.map int_of_string (String.split_on_char ',' s);
-              }),
-        "Comma-separated list of sizes (default: 1M,10M,50M,100M)" );
-      ( "--iterations",
-        Arg.Int (fun n -> config := {!config with iterations = n}),
-        "Number of benchmark iterations (default: 20)" );
-      ( "--warmup",
-        Arg.Int (fun n -> config := {!config with warmup = n}),
-        "Number of warmup iterations (default: 5)" );
-      ( "--block-size",
-        Arg.Int (fun n -> config := {!config with block_size = n}),
-        "Block size (default: 256)" );
-      ( "--output",
-        Arg.String (fun s -> config := {!config with output_dir = s}),
-        "Output directory (default: results)" );
-      ( "--all-backends",
-        Arg.Unit
-          (fun () -> config := {!config with device_filter = (fun _ -> true)}),
-        "Include all backends (Native, Interpreter)" );
-    ]
-  in
-  Arg.parse specs (fun _ -> ()) "Max reduction benchmark" ;
-  !config
-
 let () =
-  let config = parse_args () in
+  let config =
+    Benchmark_runner.parse_args
+      ~benchmark_name:"reduction_max"
+      ~default_sizes:[1_000_000; 10_000_000; 50_000_000; 100_000_000]
+      ()
+  in
   run_benchmark config
