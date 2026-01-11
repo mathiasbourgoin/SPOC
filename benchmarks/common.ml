@@ -82,14 +82,21 @@ type 'a result = {
   value : 'a; (* The computed result for verification *)
 }
 
+let stats_values values =
+  if Array.length values <= 1 then values
+  else
+    let n = Array.length values - 1 in
+    Array.init n (fun i -> values.(i + 1))
+
 let make_result iterations value =
+  let sv = stats_values iterations in
   {
     iterations;
-    mean_ms = mean iterations;
-    stddev_ms = stddev iterations;
-    median_ms = median iterations;
-    min_ms = min iterations;
-    max_ms = max iterations;
+    mean_ms = mean sv;
+    stddev_ms = stddev sv;
+    median_ms = median sv;
+    min_ms = min sv;
+    max_ms = max sv;
     value;
   }
 
