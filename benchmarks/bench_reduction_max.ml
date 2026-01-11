@@ -271,7 +271,40 @@ let run_benchmark config =
       Printf.printf "Written: %s\n" filename)
     config.sizes
 
-let () =
+let parse_args () =
   let config = ref default_config in
-  Arg.parse [] (fun _ -> ()) "Max reduction benchmark" ;
-  run_benchmark !config
+  let specs =
+    [
+      ( "--sizes",
+        Arg.String
+          (fun s ->
+            config :=
+              {
+                !config with
+                sizes = List.map int_of_string (String.split_on_char ',' s);
+              }),
+        "Comma-separated list of sizes (default: 1M,10M,50M,100M)" );
+      ( "--iterations",
+        Arg.Int (fun n -> config := {!config with iterations = n}),
+        "Number of benchmark iterations (default: 20)" );
+      ( "--warmup",
+        Arg.Int (fun n -> config := {!config with warmup = n}),
+        "Number of warmup iterations (default: 5)" );
+      ( "--block-size",
+        Arg.Int (fun n -> config := {!config with block_size = n}),
+        "Block size (default: 256)" );
+      ( "--output",
+        Arg.String (fun s -> config := {!config with output_dir = s}),
+        "Output directory (default: results)" );
+      ( "--all-backends",
+        Arg.Unit
+          (fun () -> config := {!config with device_filter = (fun _ -> true)}),
+        "Include all backends (Native, Interpreter)" );
+    ]
+  in
+  Arg.parse specs (fun _ -> ()) "Max reduction benchmark" ;
+  !config
+
+let () =
+  let config = parse_args () in
+  run_benchmark config
