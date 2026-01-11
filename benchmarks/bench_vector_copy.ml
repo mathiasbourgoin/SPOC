@@ -120,7 +120,7 @@ let benchmark_device dev size config =
       () ;
     Spoc_core.Transfer.flush dev ;
     let end_time = Unix.gettimeofday () in
-    times := (end_time -. start_time) :: !times
+    times := ((end_time -. start_time) *. 1000.0) :: !times
   done ;
 
   (* Copy result back *)
@@ -160,7 +160,7 @@ let benchmark_device dev size config =
   (* Compute bandwidth in GB/s *)
   (* 2 memory operations: 1 read + 1 write = 2 * n * 4 bytes *)
   let bytes_transferred = 2.0 *. float_of_int n *. 4.0 in
-  let bandwidth_gb_s = bytes_transferred /. (median_ms *. 1e9) in
+  let bandwidth_gb_s = bytes_transferred /. (median_ms /. 1000.0 *. 1e9) in
 
   (* Print results *)
   Printf.printf
