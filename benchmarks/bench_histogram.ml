@@ -32,7 +32,7 @@ module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
 module Std = Sarek_stdlib.Std
 module Gpu = Sarek_stdlib.Gpu
-open Benchmark_backends
+open Benchmark_common
 
 (** Pure OCaml baseline: simple histogram *)
 let cpu_histogram input n bins =
@@ -76,7 +76,8 @@ let histogram_kernel =
 [@@warning "-33"]
 
 (** Run histogram benchmark on specified device *)
-let run_histogram_benchmark device backend_name size =
+let run_histogram_benchmark device size =
+  let backend_name = device.Device.framework in
   let n = size in
   let num_bins = 256 in
 
@@ -218,29 +219,10 @@ let run_histogram_benchmark device backend_name size =
 
 (** Main benchmark runner *)
 let () =
-  Printf.printf "Histogram Computation Benchmark\n" ;
-  Printf.printf "Atomic operations with shared memory\n\n" ;
+  Printf.printf "Histogram Benchmark\n" ;
+  Printf.printf "256-bin histogram with atomic operations\n\n" ;
 
-  let size =
-    if Array.length Sys.argv > 1 then int_of_string Sys.argv.(1) else 65536
-  in
-
-  (* Initialize backends *)
-  Backend_loader.init () ;
-
-  (* Initialize SPOC and discover devices *)
-  let devices = Device.init () in
-
-  if Array.length devices = 0 then begin
-    Printf.printf "No GPU devices found. Cannot run benchmark.\n" ;
-    exit 1
-  end ;
-
-  (* Run on first available device *)
-  let device = devices.(0) in
-  let backend_name = device.Device.framework in
-
-  Printf.printf "Using device: %s (%s)\n\n" device.Device.name backend_name ;
-
-  let success = run_histogram_benchmark device backend_name size in
-  (exit (if success then 0 else 1) [@warning "-33"])
+  Benchmark_runner.run_simple
+    ~benchmark_name:"histogram"
+    ~default_size:10_000_000
+    ~run_fn:run_histogram_benchmark

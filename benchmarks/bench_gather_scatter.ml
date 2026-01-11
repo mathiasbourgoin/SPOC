@@ -34,7 +34,7 @@ module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
 module Std = Sarek_stdlib.Std
 module Gpu = Sarek_stdlib.Gpu
-open Benchmark_backends
+open Benchmark_common
 
 (** Pure OCaml baseline: gather operation *)
 let cpu_gather input indices output n =
@@ -75,7 +75,8 @@ let scatter_kernel =
 [@@warning "-33"]
 
 (** Run gather benchmark on specified device *)
-let run_gather_benchmark device backend_name size =
+let run_gather_benchmark device size =
+  let backend_name = device.Device.framework in
   let n = size in
 
   let _, kirc = gather_kernel in
@@ -198,7 +199,8 @@ let run_gather_benchmark device backend_name size =
   !errors = 0
 
 (** Run scatter benchmark on specified device *)
-let run_scatter_benchmark device backend_name size =
+let run_scatter_benchmark device size =
+  let backend_name = device.Device.framework in
   let n = size in
 
   let _, kirc = scatter_kernel in
@@ -337,33 +339,18 @@ let run_scatter_benchmark device backend_name size =
 
   !errors = 0
 
+(** Run both gather and scatter benchmarks *)
+let run_both_benchmarks device size =
+  let success1 = run_gather_benchmark device size in
+  let success2 = run_scatter_benchmark device size in
+  success1 && success2
+
 (** Main benchmark runner *)
 let () =
-  Printf.printf "Gather/Scatter Memory Patterns Benchmark\n" ;
-  Printf.printf "Indirect memory access operations\n\n" ;
+  Printf.printf "Gather/Scatter Benchmark\n" ;
+  Printf.printf "Indirect memory access patterns\n\n" ;
 
-  let size =
-    if Array.length Sys.argv > 1 then int_of_string Sys.argv.(1) else 65536
-  in
-
-  (* Initialize backends *)
-  Backend_loader.init () ;
-
-  (* Initialize SPOC and discover devices *)
-  let devices = Device.init () in
-
-  if Array.length devices = 0 then begin
-    Printf.printf "No GPU devices found. Cannot run benchmark.\n" ;
-    exit 1
-  end ;
-
-  (* Run on first available device *)
-  let device = devices.(0) in
-  let backend_name = device.Device.framework in
-
-  Printf.printf "Using device: %s (%s)\n\n" device.Device.name backend_name ;
-
-  let success1 = run_gather_benchmark device backend_name size in
-  let success2 = run_scatter_benchmark device backend_name size in
-
-  (exit (if success1 && success2 then 0 else 1) [@warning "-33"])
+  Benchmark_runner.run_simple
+    ~benchmark_name:"gather_scatter"
+    ~default_size:10_000_000
+    ~run_fn:run_both_benchmarks

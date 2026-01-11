@@ -31,7 +31,7 @@ module Device = Spoc_core.Device
 module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
 module Std = Sarek_stdlib.Std
-open Benchmark_backends
+open Benchmark_common
 
 (** Pure OCaml baseline: standard sort *)
 let cpu_sort arr n =
@@ -60,7 +60,8 @@ let bitonic_sort_step_kernel =
 [@@warning "-33"]
 
 (** Run bitonic sort benchmark on specified device *)
-let run_bitonic_sort_benchmark device backend_name size =
+let run_bitonic_sort_benchmark device size =
+  let backend_name = device.Device.framework in
   (* Round to nearest power of 2 *)
   let log2n = int_of_float (log (float_of_int size) /. log 2.0) in
   let n = 1 lsl log2n in
@@ -234,26 +235,7 @@ let () =
   Printf.printf "Bitonic Sort Benchmark\n" ;
   Printf.printf "Data-oblivious parallel sorting\n\n" ;
 
-  let size =
-    if Array.length Sys.argv > 1 then int_of_string Sys.argv.(1) else 1024
-  in
-
-  (* Initialize backends *)
-  Backend_loader.init () ;
-
-  (* Initialize SPOC and discover devices *)
-  let devices = Device.init () in
-
-  if Array.length devices = 0 then begin
-    Printf.printf "No GPU devices found. Cannot run benchmark.\n" ;
-    exit 1
-  end ;
-
-  (* Run on first available device *)
-  let device = devices.(0) in
-  let backend_name = device.Device.framework in
-
-  Printf.printf "Using device: %s (%s)\n\n" device.Device.name backend_name ;
-
-  let success = run_bitonic_sort_benchmark device backend_name size in
-  (exit (if success then 0 else 1) [@warning "-33"])
+  Benchmark_runner.run_simple
+    ~benchmark_name:"bitonic_sort"
+    ~default_size:1024
+    ~run_fn:run_bitonic_sort_benchmark
