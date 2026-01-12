@@ -96,7 +96,7 @@ This is a **memory-bound** operation without optimization.
 | 1024×1024  | 1.05M   | 0.28      | 3,750      | 150   |
 | 2048×2048  | 4.19M   | 1.12      | 3,741      | 150   |
 
-**Intel Arc A770 GPU (OpenCL backend)**
+#### Intel Arc A770 GPU (OpenCL backend)
 
 Performance is consistent across sizes, indicating good scaling and memory system utilization.
 
@@ -114,7 +114,7 @@ For each block:
   Compute TILE_SIZE² outputs from shared memory
 ```
 
-**Benefit**: Reduces global memory reads from 9N to ~2.25N (with proper tile sizes)
+**Benefit:** Reduces global memory reads from 9N to ~2.25N (with proper tile sizes)
 
 ### 2. Separable Kernels
 Many kernels (Gaussian, Sobel) are separable into row × column passes:
@@ -123,7 +123,7 @@ Many kernels (Gaussian, Sobel) are separable into row × column passes:
 output = row_conv(col_conv(input))
 ```
 
-**Benefit**: Reduces 9 reads to 6 reads (3 per pass), improves cache locality
+**Benefit:** Reduces 9 reads to 6 reads (3 per pass), improves cache locality
 
 ### 3. Constant Memory for Kernel
 Store convolution weights in constant memory (read-only cache):
@@ -132,7 +132,7 @@ Store convolution weights in constant memory (read-only cache):
 let kernel_weights = constant_array [1./9.; 1./9.; ...; 1./9.]
 ```
 
-**Benefit**: Faster access, reduced register pressure
+**Benefit:** Faster access, reduced register pressure
 
 ### 4. Specialized Border Handling
 Use separate kernels for border vs. interior, or use texture memory with border modes.
