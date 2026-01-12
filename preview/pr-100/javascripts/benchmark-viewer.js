@@ -607,8 +607,32 @@ function updateChart() {
             timeLabel: 'Execution Time (ms)',
             timeUnit: 'ms'
         },
+        'matrix_mul_tiled': {
+            title: 'Matrix Multiplication Performance (Tiled Kernel)',
+            xLabel: 'Matrix Size (elements)',
+            throughputLabel: 'Throughput (GFLOPS)',
+            throughputUnit: 'GFLOPS',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
+        },
         'vector_add': {
-            title: 'Vector Addition Performance (Memory Bandwidth)',
+            title: 'Vector Addition Performance',
+            xLabel: 'Vector Size (elements)',
+            throughputLabel: 'Memory Bandwidth (GB/s)',
+            throughputUnit: 'GB/s',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
+        },
+        'vector_copy': {
+            title: 'Vector Copy Performance',
+            xLabel: 'Vector Size (elements)',
+            throughputLabel: 'Memory Bandwidth (GB/s)',
+            throughputUnit: 'GB/s',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
+        },
+        'dot_product': {
+            title: 'Dot Product Performance',
             xLabel: 'Vector Size (elements)',
             throughputLabel: 'Memory Bandwidth (GB/s)',
             throughputUnit: 'GB/s',
@@ -623,9 +647,25 @@ function updateChart() {
             timeLabel: 'Execution Time (ms)',
             timeUnit: 'ms'
         },
+        'reduction_max': {
+            title: 'Parallel Reduction Performance (Max)',
+            xLabel: 'Array Size (elements)',
+            throughputLabel: 'Memory Bandwidth (GB/s)',
+            throughputUnit: 'GB/s',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
+        },
+        'stream_triad': {
+            title: 'STREAM Triad Performance',
+            xLabel: 'Array Size (elements)',
+            throughputLabel: 'Memory Bandwidth (GB/s)',
+            throughputUnit: 'GB/s',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
+        },
         'transpose': {
             title: 'Matrix Transpose Performance (Naive Kernel)',
-            xLabel: 'Matrix Size (NxN)',
+            xLabel: 'Matrix Size (N×N)',
             throughputLabel: 'Memory Bandwidth (GB/s)',
             throughputUnit: 'GB/s',
             timeLabel: 'Execution Time (ms)',
@@ -633,9 +673,41 @@ function updateChart() {
         },
         'transpose_tiled': {
             title: 'Matrix Transpose Performance (Tiled with Shared Memory)',
-            xLabel: 'Matrix Size (NxN)',
+            xLabel: 'Matrix Size (N×N)',
             throughputLabel: 'Memory Bandwidth (GB/s)',
             throughputUnit: 'GB/s',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
+        },
+        'mandelbrot': {
+            title: 'Mandelbrot Set Performance',
+            xLabel: 'Resolution (pixels)',
+            throughputLabel: 'Throughput (M pixels/s)',
+            throughputUnit: 'M pixels/s',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
+        },
+        'nbody': {
+            title: 'N-Body Simulation Performance',
+            xLabel: 'Number of Particles',
+            throughputLabel: 'Throughput (G interactions/s)',
+            throughputUnit: 'G interactions/s',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
+        },
+        'conv2d': {
+            title: '2D Convolution Performance (3×3 Box Blur)',
+            xLabel: 'Image Size (W×H)',
+            throughputLabel: 'Throughput (M pixels/s)',
+            throughputUnit: 'M pixels/s',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
+        },
+        'stencil_2d': {
+            title: '2D Stencil Performance (5-Point Jacobi)',
+            xLabel: 'Grid Size (N×N)',
+            throughputLabel: 'Throughput (M cells/s)',
+            throughputUnit: 'M cells/s',
             timeLabel: 'Execution Time (ms)',
             timeUnit: 'ms'
         }
