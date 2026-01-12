@@ -20,6 +20,7 @@ depends: [
   "ppxlib" {>= "0.22.0"}
   "ctypes"
   "ctypes-foreign"
+  "yojson" {with-test}
   "alcotest" {with-test}
   "bisect_ppx" {with-test}
   "odoc" {with-doc}
