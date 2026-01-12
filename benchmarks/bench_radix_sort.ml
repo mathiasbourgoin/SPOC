@@ -238,6 +238,16 @@ let run_radix_sort_benchmark ~device ~size ~config =
 
       (* Compute prefix sum on CPU - histogram must be transferred back *)
       let hist_arr = Vector.to_array histogram in
+
+      (* Debug: print histogram for first pass *)
+      if pass = 0 then begin
+        Printf.printf "DEBUG pass 0 histogram: " ;
+        Array.iter (fun x -> Printf.printf "%ld " x) hist_arr ;
+        Printf.printf "\n" ;
+        let sum = Array.fold_left Int32.add 0l hist_arr in
+        Printf.printf "DEBUG histogram sum: %ld (expected %d)\n" sum n
+      end ;
+
       let prefix_arr = cpu_prefix_sum hist_arr num_bins in
       for i = 0 to num_bins - 1 do
         Vector.set counters i prefix_arr.(i)
