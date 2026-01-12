@@ -179,7 +179,21 @@ let run_radix_sort_benchmark ~device ~size ~config =
   (* Prepare host data for verification *)
   Random.init 42 ;
   let input_arr = Array.init n (fun _ -> Int32.of_int (Random.int 100000)) in
+  Printf.printf
+    "DEBUG input_arr[0..4]: %ld %ld %ld %ld %ld\n"
+    input_arr.(0)
+    input_arr.(1)
+    input_arr.(2)
+    input_arr.(3)
+    input_arr.(4) ;
   let cpu_result = cpu_radix_sort input_arr n in
+  Printf.printf
+    "DEBUG cpu_result[0..4] after sort: %ld %ld %ld %ld %ld\n"
+    cpu_result.(0)
+    cpu_result.(1)
+    cpu_result.(2)
+    cpu_result.(3)
+    cpu_result.(4) ;
 
   (* init: Create fresh vectors from host data *)
   let init () =
