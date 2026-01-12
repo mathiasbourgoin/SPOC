@@ -246,18 +246,20 @@ let run_radix_sort_benchmark ~device ~size ~config =
         () ;
       Transfer.flush device ;
 
-      (* Swap buffers *)
-      let temp = !current_input in
-      current_input := !current_output ;
-      current_output := temp
+      (* Swap buffers for next pass *)
+      if pass < num_passes - 1 then begin
+        let temp = !current_input in
+        current_input := !current_output ;
+        current_output := temp
+      end
     done
+    (* After all passes without final swap, result is in current_output *)
   in
 
   (* verify: Check correctness *)
-  let verify (input, output) =
-    (* After 8 passes (even), result is in input buffer *)
-    let final_buffer = if num_passes mod 2 = 0 then input else output in
-    let gpu_result = Vector.to_array final_buffer in
+  let verify (_input, output) =
+    (* Result is always in output buffer (we don't swap on last pass) *)
+    let gpu_result = Vector.to_array output in
 
     let errors = ref 0 in
     for i = 0 to n - 1 do
