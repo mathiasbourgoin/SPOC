@@ -266,6 +266,22 @@ let run_radix_sort_benchmark ~device ~size ~config =
     (* After 7 swaps (odd), final result is in the input buffer *)
     let gpu_result = Vector.to_array input in
 
+    (* Debug output *)
+    Printf.printf
+      "DEBUG: First 5 GPU values: %ld %ld %ld %ld %ld\n"
+      gpu_result.(0)
+      gpu_result.(1)
+      gpu_result.(2)
+      gpu_result.(3)
+      gpu_result.(4) ;
+    Printf.printf
+      "DEBUG: First 5 CPU values: %ld %ld %ld %ld %ld\n"
+      cpu_result.(0)
+      cpu_result.(1)
+      cpu_result.(2)
+      cpu_result.(3)
+      cpu_result.(4) ;
+
     let errors = ref 0 in
     for i = 0 to n - 1 do
       if gpu_result.(i) <> cpu_result.(i) then begin
