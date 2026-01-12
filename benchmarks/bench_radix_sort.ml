@@ -258,6 +258,10 @@ let run_radix_sort_benchmark ~device ~size ~config =
 
   (* verify: Check correctness *)
   let verify (input, _output) =
+    (* Ensure all GPU work is complete and data is back on host *)
+    Transfer.flush device ;
+    Device.synchronize device ;
+
     (* After 7 swaps (odd), final result is in the input buffer *)
     let gpu_result = Vector.to_array input in
 
