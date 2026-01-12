@@ -218,6 +218,8 @@ let run_radix_sort_benchmark ~device ~size ~config =
       for i = 0 to num_bins - 1 do
         Vector.set histogram i 0l
       done ;
+      (* Transfer histogram to GPU *)
+      Transfer.to_device histogram device ;
 
       (* Compute histogram *)
       Sarek.Execute.run_vectors
@@ -252,6 +254,8 @@ let run_radix_sort_benchmark ~device ~size ~config =
       for i = 0 to num_bins - 1 do
         Vector.set counters i prefix_arr.(i)
       done ;
+      (* Transfer counters to GPU *)
+      Transfer.to_device counters device ;
 
       (* Scatter elements *)
       Sarek.Execute.run_vectors
