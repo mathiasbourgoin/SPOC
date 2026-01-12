@@ -1095,6 +1095,11 @@ function showComparisonView() {
         return;
     }
     
+    // Reset system filter to 'all' for comparison view (shows all systems)
+    currentSystem = 'all';
+    const systemSelect = document.getElementById('system-select');
+    if (systemSelect) systemSelect.value = 'all';
+    
     // Hide filters for multi-view (they don't apply)
     const filterControls = document.querySelector('.filter-controls');
     if (filterControls) filterControls.style.display = 'none';
@@ -1142,6 +1147,11 @@ function showSystemRanking() {
         return;
     }
     
+    // Reset system filter to 'all' for ranking view (shows all systems)
+    currentSystem = 'all';
+    const systemSelect = document.getElementById('system-select');
+    if (systemSelect) systemSelect.value = 'all';
+    
     // Hide filters
     const filterControls = document.querySelector('.filter-controls');
     if (filterControls) filterControls.style.display = 'none';
@@ -1171,6 +1181,11 @@ function showDeviceMatrix() {
         chartArea.innerHTML = '<p style="text-align:center; color: #888; padding: 40px;">Configuration not available for this benchmark.</p>';
         return;
     }
+    
+    // Reset system filter to 'all' for matrix view (shows all systems)
+    currentSystem = 'all';
+    const systemSelect = document.getElementById('system-select');
+    if (systemSelect) systemSelect.value = 'all';
     
     // Hide filters
     const filterControls = document.querySelector('.filter-controls');
