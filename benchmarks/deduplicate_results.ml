@@ -101,6 +101,28 @@ let find_duplicates files =
     table
     []
 
+let print_help () =
+  print_endline "Deduplication tool for benchmark results" ;
+  print_endline "" ;
+  print_endline
+    "Usage: dune exec benchmarks/deduplicate_results.exe -- [OPTIONS]" ;
+  print_endline "" ;
+  print_endline "Options:" ;
+  print_endline "  --dry-run       Report duplicates without deleting files" ;
+  print_endline "  --keep-latest   Keep newest result (default: keep oldest)" ;
+  print_endline "  -h, --help      Show this help message" ;
+  print_endline "" ;
+  print_endline
+    "This script identifies and removes duplicate benchmark results based on:" ;
+  print_endline "  - Same hostname" ;
+  print_endline "  - Same benchmark name" ;
+  print_endline "  - Same size/parameters" ;
+  print_endline "  - Same device name and backend" ;
+  print_endline "" ;
+  print_endline "By default, keeps the oldest result (first submitted)." ;
+  print_endline "With --keep-latest, keeps the newest result (most recent run)." ;
+  exit 0
+
 let main () =
   let results_dir = "benchmarks/results" in
   let dry_run = ref false in
@@ -112,8 +134,10 @@ let main () =
     (function
       | "--dry-run" -> dry_run := true
       | "--keep-latest" -> keep_latest := true
+      | "--help" | "-h" -> print_help ()
       | arg ->
           Printf.eprintf "Unknown argument: %s\n" arg ;
+          Printf.eprintf "Use --help for usage information.\n" ;
           exit 1)
     args ;
 
