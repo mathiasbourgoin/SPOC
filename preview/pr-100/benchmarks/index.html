@@ -194,14 +194,6 @@
     border-radius: 4px;
 }
 
-.benchmark-content {
-    display: none;
-}
-
-.benchmark-content.active {
-    display: block;
-}
-
 .info-box {
     padding: 15px;
     background: var(--highlight-bg, #fff3cd);
@@ -435,12 +427,8 @@
     </select>
 </div>
 
-<!-- Matrix Multiplication Benchmark -->
-<div id="matrix_mul" class="benchmark-content active">
-    <h3>Matrix Multiplication (Naive)</h3>
-    <p>Dense matrix multiplication: <code>C = A × B</code> where A, B, C are N×N matrices.</p>
-    <p><strong>Metric:</strong> GFLOPS (billions of floating-point operations per second)</p>
-    
+<!-- Benchmark Content Area (shared by all benchmarks) -->
+<div id="benchmark-content-area">
     <div class="filter-controls">
         <div class="filter-group">
             <label>System:</label>
@@ -497,27 +485,6 @@
     <div class="system-info" id="system-info">
         Loading system information...
     </div>
-</div>
-
-<!-- Vector Add Benchmark (placeholder) -->
-<div id="vector_add" class="benchmark-content">
-    <h3>Vector Add</h3>
-    <p>Element-wise vector addition: <code>C[i] = A[i] + B[i]</code></p>
-    <p><strong>Coming Soon</strong> - This benchmark is being implemented.</p>
-</div>
-
-<!-- Reduction Benchmark (placeholder) -->
-<div id="reduction" class="benchmark-content">
-    <h3>Parallel Reduction (Sum)</h3>
-    <p>Parallel sum reduction of array elements.</p>
-    <p><strong>Coming Soon</strong> - This benchmark is being implemented.</p>
-</div>
-
-<!-- Transpose Benchmark (placeholder) -->
-<div id="transpose" class="benchmark-content">
-    <h3>Matrix Transpose</h3>
-    <p>Out-of-place matrix transpose measuring memory access patterns.</p>
-    <p><strong>Coming Soon</strong> - This benchmark is being implemented.</p>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
