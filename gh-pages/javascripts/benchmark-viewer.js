@@ -888,17 +888,14 @@ function prepareChartData(benchmarkName, selectedBackends, showCpu) {
     const datasets = [];
     const deviceData = new Map(); // device_name -> {framework, data: [{x, y}]}
     
-    // Map benchmark tab names to JSON benchmark names
-    const benchmarkNameMap = {
-        'matrix_mul': 'matrix_mul_naive',
-        'vector_add': 'vector_add',
-        'reduction': 'reduction_sum',
-        'transpose': 'transpose_naive',
-        'transpose_tiled': 'transpose_tiled'
-    };
+    // Get variant names from BENCHMARK_CONFIGS
+    const config = BENCHMARK_CONFIGS[benchmarkName];
+    if (!config || !config.variants || config.variants.length === 0) {
+        console.warn('No config or variants found for benchmark:', benchmarkName);
+        return [];
+    }
     
-    const targetBenchmark = benchmarkNameMap[benchmarkName];
-    if (!targetBenchmark) return [];
+    const targetBenchmarks = config.variants;
     
     // Process all results
     benchmarkData.results.forEach(result => {
@@ -908,7 +905,7 @@ function prepareChartData(benchmarkName, selectedBackends, showCpu) {
             return;
         }
         
-        if (result.benchmark.name !== targetBenchmark) return;
+        if (!targetBenchmarks.includes(result.benchmark.name)) return;
         
         // Filter by system if not "all"
         if (currentSystem !== 'all') {
