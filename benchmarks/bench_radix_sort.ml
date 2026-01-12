@@ -234,9 +234,9 @@ let run_radix_sort_benchmark ~device ~size ~config =
         ~block
         ~grid
         () ;
-      Transfer.flush device ;
+      Device.synchronize device ;
 
-      (* Compute prefix sum on CPU and reset counters array *)
+      (* Compute prefix sum on CPU - histogram must be transferred back *)
       let hist_arr = Vector.to_array histogram in
       let prefix_arr = cpu_prefix_sum hist_arr num_bins in
       for i = 0 to num_bins - 1 do
@@ -259,7 +259,7 @@ let run_radix_sort_benchmark ~device ~size ~config =
         ~block
         ~grid
         () ;
-      Transfer.flush device ;
+      Device.synchronize device ;
 
       (* Swap buffers for next pass *)
       if pass < num_passes - 1 then begin
