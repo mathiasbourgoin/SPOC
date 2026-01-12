@@ -66,6 +66,7 @@ mkdir -p "${RUN_DIR}"
 
 echo "Building all benchmarks..."
 dune build \
+  benchmarks/bench_matrix_mul.exe \
   benchmarks/bench_matrix_mul_tiled.exe \
   benchmarks/bench_vector_add.exe \
   benchmarks/bench_vector_copy.exe \
@@ -115,6 +116,7 @@ run_benchmark() {
 }
 
 # Run all benchmarks
+run_benchmark "Matrix Multiplication (naive)" "bench_matrix_mul"
 run_benchmark "Matrix Multiplication (tiled)" "bench_matrix_mul_tiled"
 run_benchmark "Vector Addition" "bench_vector_add"
 run_benchmark "Vector Copy" "bench_vector_copy"
