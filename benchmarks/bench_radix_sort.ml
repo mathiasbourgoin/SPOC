@@ -121,7 +121,7 @@ let radix_scatter_kernel =
   [%kernel
     fun (input : int32 vector)
         (output : int32 vector)
-        (prefix_sum : int32 vector)
+        (counters : int32 vector)
         (n : int32)
         (shift : int32)
         (mask : int32) ->
@@ -131,8 +131,8 @@ let radix_scatter_kernel =
       if gid < n then begin
         let value = input.(gid) in
         let digit = (value lsr shift) land mask in
-        (* Atomically get and increment position *)
-        let pos = atomic_add_global_int32 prefix_sum digit 1l in
+        (* Atomically get and increment counter for this digit *)
+        let pos = atomic_add_global_int32 counters digit 1l in
         output.(pos) <- value
       end]
 [@@warning "-33"]
@@ -150,7 +150,6 @@ let cpu_prefix_sum arr n =
 
 (** Run radix sort benchmark on specified device *)
 let run_radix_sort_benchmark ~device ~size ~config =
-  let backend_name = device.Device.framework in
   let n = size in
   let bits_per_pass = 4 in
   let num_bins = 1 lsl bits_per_pass in
@@ -171,91 +170,27 @@ let run_radix_sort_benchmark ~device ~size ~config =
     | None -> failwith "Scatter kernel has no IR"
   in
 
-  (* Create test data: random values *)
-  Random.init 42 ;
-  let input = Vector.create Vector.int32 n in
-  let output = Vector.create Vector.int32 n in
-
-  for i = 0 to n - 1 do
-    Vector.set input i (Int32.of_int (Random.int 100000))
-  done ;
-
   (* Launch configuration *)
   let block_size = 256 in
   let num_blocks = (n + block_size - 1) / block_size in
   let block = Sarek.Execute.dims1d block_size in
   let grid = Sarek.Execute.dims1d num_blocks in
 
-  (* Warmup *)
-  for _ = 1 to config.warmup do
-    Random.init 42 ;
-    for i = 0 to n - 1 do
-      Vector.set input i (Int32.of_int (Random.int 100000))
-    done ;
+  (* Prepare host data for verification *)
+  Random.init 42 ;
+  let input_arr = Array.init n (fun _ -> Int32.of_int (Random.int 100000)) in
+  let cpu_result = cpu_radix_sort input_arr n in
 
-    let current_input = ref input in
-    let current_output = ref output in
-    for pass = 0 to num_passes - 1 do
-      let shift = Int32.of_int (pass * bits_per_pass) in
-      let histogram = Vector.create Vector.int32 num_bins in
-      for i = 0 to num_bins - 1 do
-        Vector.set histogram i 0l
-      done ;
-      Sarek.Execute.run_vectors
-        ~device
-        ~ir:hist_ir
-        ~args:
-          [
-            Sarek.Execute.Vec !current_input;
-            Sarek.Execute.Vec histogram;
-            Sarek.Execute.Int32 (Int32.of_int n);
-            Sarek.Execute.Int32 shift;
-            Sarek.Execute.Int32 mask;
-          ]
-        ~block
-        ~grid
-        () ;
-      Transfer.flush device ;
-      let hist_arr = Vector.to_array histogram in
-      let prefix_arr = cpu_prefix_sum hist_arr num_bins in
-      let prefix_sum = Vector.create Vector.int32 num_bins in
-      for i = 0 to num_bins - 1 do
-        Vector.set prefix_sum i prefix_arr.(i)
-      done ;
-      Sarek.Execute.run_vectors
-        ~device
-        ~ir:scatter_ir
-        ~args:
-          [
-            Sarek.Execute.Vec !current_input;
-            Sarek.Execute.Vec !current_output;
-            Sarek.Execute.Vec prefix_sum;
-            Sarek.Execute.Int32 (Int32.of_int n);
-            Sarek.Execute.Int32 shift;
-            Sarek.Execute.Int32 mask;
-          ]
-        ~block
-        ~grid
-        () ;
-      Transfer.flush device ;
-      let temp = !current_input in
-      current_input := !current_output ;
-      current_output := temp
-    done
-  done ;
+  (* init: Create fresh vectors from host data *)
+  let init () =
+    let input = Vector.create Vector.int32 n in
+    let output = Vector.create Vector.int32 n in
+    Array.iteri (fun i x -> Vector.set input i x) input_arr ;
+    (input, output)
+  in
 
-  (* Timed runs *)
-  let times = ref [] in
-  for _ = 1 to config.iterations do
-    (* Reset input *)
-    Random.init 42 ;
-    for i = 0 to n - 1 do
-      Vector.set input i (Int32.of_int (Random.int 100000))
-    done ;
-
-    let t0 = Unix.gettimeofday () in
-
-    (* Perform all radix passes *)
+  (* compute: Run all radix passes *)
+  let compute (input, output) =
     let current_input = ref input in
     let current_output = ref output in
 
@@ -285,12 +220,12 @@ let run_radix_sort_benchmark ~device ~size ~config =
         () ;
       Transfer.flush device ;
 
-      (* Compute prefix sum on CPU and create fresh prefix_sum vector *)
+      (* Compute prefix sum on CPU and create counters array *)
       let hist_arr = Vector.to_array histogram in
       let prefix_arr = cpu_prefix_sum hist_arr num_bins in
-      let prefix_sum = Vector.create Vector.int32 num_bins in
+      let counters = Vector.create Vector.int32 num_bins in
       for i = 0 to num_bins - 1 do
-        Vector.set prefix_sum i prefix_arr.(i)
+        Vector.set counters i prefix_arr.(i)
       done ;
 
       (* Scatter elements *)
@@ -301,7 +236,7 @@ let run_radix_sort_benchmark ~device ~size ~config =
           [
             Sarek.Execute.Vec !current_input;
             Sarek.Execute.Vec !current_output;
-            Sarek.Execute.Vec prefix_sum;
+            Sarek.Execute.Vec counters;
             Sarek.Execute.Int32 (Int32.of_int n);
             Sarek.Execute.Int32 shift;
             Sarek.Execute.Int32 mask;
@@ -315,54 +250,58 @@ let run_radix_sort_benchmark ~device ~size ~config =
       let temp = !current_input in
       current_input := !current_output ;
       current_output := temp
+    done
+  in
+
+  (* verify: Check correctness *)
+  let verify (input, output) =
+    (* After 8 passes (even), result is in input buffer *)
+    let final_buffer = if num_passes mod 2 = 0 then input else output in
+    let gpu_result = Vector.to_array final_buffer in
+
+    let errors = ref 0 in
+    for i = 0 to n - 1 do
+      if gpu_result.(i) <> cpu_result.(i) then begin
+        if !errors < 5 then
+          Printf.printf
+            "  ERROR at %d: GPU=%ld CPU=%ld\n"
+            i
+            gpu_result.(i)
+            cpu_result.(i) ;
+        incr errors
+      end
     done ;
 
-    let t1 = Unix.gettimeofday () in
-    times := ((t1 -. t0) *. 1000.0) :: !times
-  done ;
+    (* Check if sorted *)
+    let is_sorted = ref true in
+    for i = 1 to n - 1 do
+      if gpu_result.(i) < gpu_result.(i - 1) then is_sorted := false
+    done ;
 
-  (* Verify correctness *)
-  (* Trace through ping-pong: after n passes, result is in current_input ref *)
-  (* Pass 0: input->output, swap. Pass 1: output->input, swap. ... *)
-  (* After 8 passes (even): current_input points to input buffer *)
-  let final_buffer = if num_passes mod 2 = 0 then input else output in
-  let gpu_result = Vector.to_array final_buffer in
+    !errors = 0 && !is_sorted
+  in
 
-  Random.init 42 ;
-  let input_arr = Array.init n (fun _ -> Int32.of_int (Random.int 100000)) in
-  let cpu_result = cpu_radix_sort input_arr n in
+  (* Run benchmark using Common infrastructure *)
+  let times, verified =
+    Common.benchmark_gpu
+      ~dev:device
+      ~warmup:config.warmup
+      ~iterations:config.iterations
+      ~init
+      ~compute
+      ~verify
+  in
 
-  let errors = ref 0 in
-  for i = 0 to n - 1 do
-    if gpu_result.(i) <> cpu_result.(i) then begin
-      if !errors < 5 then
-        Printf.printf
-          "  ERROR at %d: GPU=%ld CPU=%ld\n"
-          i
-          gpu_result.(i)
-          cpu_result.(i) ;
-      incr errors
-    end
-  done ;
-
-  (* Check if sorted *)
-  let is_sorted = ref true in
-  for i = 1 to n - 1 do
-    if gpu_result.(i) < gpu_result.(i - 1) then is_sorted := false
-  done ;
-
-  let verified = !errors = 0 && !is_sorted in
-  let times_array = Array.of_list (List.rev !times) in
+  let times_array = times in
   let median_ms = Common.median times_array in
 
   (* Report results *)
   Printf.printf
-    "  %s: size=%d, median=%.3f ms, verified=%s%s\n"
+    "  %s: size=%d, median=%.3f ms, verified=%s\n"
     device.Device.name
     n
     median_ms
-    (if verified then "✓" else "✗")
-    (if not verified then " (KNOWN ISSUE)" else "") ;
+    (if verified then "✓" else "✗") ;
 
   let throughput_melems = float_of_int n /. (median_ms /. 1000.0 *. 1e6) in
 
@@ -370,7 +309,7 @@ let run_radix_sort_benchmark ~device ~size ~config =
     {
       device_id = device.Device.id;
       device_name = device.Device.name;
-      framework = backend_name;
+      framework = device.Device.framework;
       iterations = times_array;
       mean_ms = Common.mean times_array;
       stddev_ms = Common.stddev times_array;
