@@ -132,6 +132,48 @@ const BENCHMARK_CONFIGS = {
         throughputLabel: 'M cells/s',
         variants: ['stencil_2d'],
         readme: 'descriptions/stencil_2d.md'
+    },
+    'scan': {
+        title: 'Prefix Sum (Inclusive Scan)',
+        xLabel: 'Array Size (elements)',
+        throughputLabel: 'MElements/s',
+        variants: ['scan'],
+        readme: 'descriptions/scan.md'
+    },
+    'bitonic_sort': {
+        title: 'Bitonic Sort',
+        xLabel: 'Array Size (elements)',
+        throughputLabel: 'MElements/s',
+        variants: ['bitonic_sort'],
+        readme: 'descriptions/bitonic_sort.md'
+    },
+    'histogram': {
+        title: 'Histogram (256 bins)',
+        xLabel: 'Array Size (elements)',
+        throughputLabel: 'MElements/s',
+        variants: ['histogram'],
+        readme: 'descriptions/histogram.md'
+    },
+    'gather': {
+        title: 'Gather (Indexed Read)',
+        xLabel: 'Array Size (elements)',
+        throughputLabel: 'GB/s',
+        variants: ['gather'],
+        readme: 'descriptions/gather.md'
+    },
+    'scatter': {
+        title: 'Scatter (Indexed Write)',
+        xLabel: 'Array Size (elements)',
+        throughputLabel: 'GB/s',
+        variants: ['scatter'],
+        readme: 'descriptions/scatter.md'
+    },
+    'radix_sort': {
+        title: 'Radix Sort',
+        xLabel: 'Array Size (elements)',
+        throughputLabel: 'MElements/s',
+        variants: ['radix_sort'],
+        readme: 'descriptions/radix_sort.md'
     }
 };
 
@@ -713,6 +755,54 @@ function updateChart() {
             xLabel: 'Grid Size (N×N)',
             throughputLabel: 'Throughput (M cells/s)',
             throughputUnit: 'M cells/s',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
+        },
+        'scan': {
+            title: 'Prefix Sum Performance (Inclusive Scan)',
+            xLabel: 'Array Size (elements)',
+            throughputLabel: 'Throughput (MElements/s)',
+            throughputUnit: 'MElements/s',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
+        },
+        'bitonic_sort': {
+            title: 'Bitonic Sort Performance',
+            xLabel: 'Array Size (elements)',
+            throughputLabel: 'Throughput (MElements/s)',
+            throughputUnit: 'MElements/s',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
+        },
+        'histogram': {
+            title: 'Histogram Performance (256 bins)',
+            xLabel: 'Array Size (elements)',
+            throughputLabel: 'Throughput (MElements/s)',
+            throughputUnit: 'MElements/s',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
+        },
+        'gather': {
+            title: 'Gather Performance (Indexed Read)',
+            xLabel: 'Array Size (elements)',
+            throughputLabel: 'Throughput (GB/s)',
+            throughputUnit: 'GB/s',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
+        },
+        'scatter': {
+            title: 'Scatter Performance (Indexed Write)',
+            xLabel: 'Array Size (elements)',
+            throughputLabel: 'Throughput (GB/s)',
+            throughputUnit: 'GB/s',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
+        },
+        'radix_sort': {
+            title: 'Radix Sort Performance',
+            xLabel: 'Array Size (elements)',
+            throughputLabel: 'Throughput (MElements/s)',
+            throughputUnit: 'MElements/s',
             timeLabel: 'Execution Time (ms)',
             timeUnit: 'ms'
         }
