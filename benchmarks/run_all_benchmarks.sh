@@ -2,7 +2,7 @@
 # Run all benchmarks and update web data
 # Usage: ./run_all_benchmarks.sh [output_dir] [--generate-backend-code]
 
-set -e
+set -e  # Exit on error during setup phase only
 
 # Show help
 if [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]]; then
@@ -91,114 +91,75 @@ echo "Running benchmarks..."
 echo "This may take several minutes depending on your hardware."
 echo ""
 
-# Matrix Multiplication (Tiled)
-echo "▶ Matrix Multiplication (tiled)..."
-dune exec benchmarks/bench_matrix_mul_tiled.exe -- --output "${RUN_DIR}"
-echo "  ✓ Complete"
-echo ""
+# Disable exit-on-error for benchmark runs (continue on failure)
+set +e
 
-# Vector Addition
-echo "▶ Vector Addition..."
-dune exec benchmarks/bench_vector_add.exe -- --output "${RUN_DIR}"
-echo "  ✓ Complete"
-echo ""
+# Track failed benchmarks
+FAILED_BENCHMARKS=()
+SUCCESSFUL_BENCHMARKS=()
 
-# Vector Copy
-echo "▶ Vector Copy..."
-dune exec benchmarks/bench_vector_copy.exe -- --output "${RUN_DIR}"
-echo "  ✓ Complete"
-echo ""
+# Helper function to run a benchmark
+run_benchmark() {
+  local name="$1"
+  local exe="$2"
+  
+  echo "▶ ${name}..."
+  if dune exec "benchmarks/${exe}.exe" -- --output "${RUN_DIR}"; then
+    echo "  ✓ Complete"
+    SUCCESSFUL_BENCHMARKS+=("${name}")
+  else
+    echo "  ✗ FAILED"
+    FAILED_BENCHMARKS+=("${name}")
+  fi
+  echo ""
+}
 
-# STREAM Triad
-echo "▶ STREAM Triad..."
-dune exec benchmarks/bench_stream_triad.exe -- --output "${RUN_DIR}"
-echo "  ✓ Complete"
-echo ""
+# Run all benchmarks
+run_benchmark "Matrix Multiplication (tiled)" "bench_matrix_mul_tiled"
+run_benchmark "Vector Addition" "bench_vector_add"
+run_benchmark "Vector Copy" "bench_vector_copy"
+run_benchmark "STREAM Triad" "bench_stream_triad"
+run_benchmark "Parallel Reduction (sum)" "bench_reduction"
+run_benchmark "Parallel Reduction (max)" "bench_reduction_max"
+run_benchmark "Dot Product" "bench_dot_product"
+run_benchmark "Matrix Transpose (naive)" "bench_transpose"
+run_benchmark "Matrix Transpose (tiled)" "bench_transpose_tiled"
+run_benchmark "Mandelbrot Set" "bench_mandelbrot"
+run_benchmark "N-Body" "bench_nbody"
+run_benchmark "2D Convolution" "bench_conv2d"
+run_benchmark "2D Stencil (Jacobi)" "bench_stencil_2d"
+run_benchmark "Prefix Sum (Scan)" "bench_scan"
+run_benchmark "Bitonic Sort" "bench_bitonic_sort"
+run_benchmark "Histogram (256 bins)" "bench_histogram"
+run_benchmark "Gather/Scatter" "bench_gather_scatter"
+run_benchmark "Radix Sort" "bench_radix_sort"
 
-# Reduction (sum)
-echo "▶ Parallel Reduction (sum)..."
-dune exec benchmarks/bench_reduction.exe -- --output "${RUN_DIR}"
-echo "  ✓ Complete"
-echo ""
-
-# Reduction (max)
-echo "▶ Parallel Reduction (max)..."
-dune exec benchmarks/bench_reduction_max.exe -- --output "${RUN_DIR}"
-echo "  ✓ Complete"
-echo ""
-
-# Dot Product
-echo "▶ Dot Product..."
-dune exec benchmarks/bench_dot_product.exe -- --output "${RUN_DIR}"
-echo "  ✓ Complete"
-echo ""
-
-# Transpose (naive)
-echo "▶ Matrix Transpose (naive)..."
-dune exec benchmarks/bench_transpose.exe -- --output "${RUN_DIR}"
-echo "  ✓ Complete"
-echo ""
-
-# Transpose (tiled)
-echo "▶ Matrix Transpose (tiled)..."
-dune exec benchmarks/bench_transpose_tiled.exe -- --output "${RUN_DIR}"
-echo "  ✓ Complete"
-echo ""
-
-# Mandelbrot
-echo "▶ Mandelbrot Set (with image generation)..."
-dune exec benchmarks/bench_mandelbrot.exe -- --output "${RUN_DIR}"
-echo "  ✓ Complete"
-echo ""
-
-# Sprint 2 Benchmarks
-echo "▶ N-Body..."
-dune exec benchmarks/bench_nbody.exe -- --output "${RUN_DIR}"
-echo "  ✓ Complete"
-echo ""
-
-echo "▶ 2D Convolution..."
-dune exec benchmarks/bench_conv2d.exe -- --output "${RUN_DIR}"
-echo "  ✓ Complete"
-echo ""
-
-echo "▶ 2D Stencil (Jacobi)..."
-dune exec benchmarks/bench_stencil_2d.exe -- --output "${RUN_DIR}"
-echo "  ✓ Complete"
-echo ""
-
-echo "▶ Prefix Sum (Scan)..."
-dune exec benchmarks/bench_scan.exe -- --output "${RUN_DIR}"
-echo "  ✓ Complete"
-echo ""
-
-echo "▶ Bitonic Sort..."
-dune exec benchmarks/bench_bitonic_sort.exe -- --output "${RUN_DIR}"
-echo "  ✓ Complete"
-echo ""
-
-echo "▶ Histogram (256 bins)..."
-dune exec benchmarks/bench_histogram.exe -- --output "${RUN_DIR}"
-echo "  ✓ Complete"
-echo ""
-
-echo "▶ Gather/Scatter..."
-dune exec benchmarks/bench_gather_scatter.exe -- --output "${RUN_DIR}"
-echo "  ✓ Complete"
-echo ""
-
-echo "▶ Radix Sort..."
-if dune exec benchmarks/bench_radix_sort.exe -- --output "${RUN_DIR}"; then
-  echo "  ✓ Complete"
-else
-  echo "  ⚠ Radix sort failed (known issue)"
-fi
-echo ""
+# Re-enable exit-on-error
+set -e
 
 # Count results
 RESULT_COUNT=$(ls -1 "${RUN_DIR}"/*.json 2>/dev/null | wc -l)
+TOTAL_BENCHMARKS=$((${#SUCCESSFUL_BENCHMARKS[@]} + ${#FAILED_BENCHMARKS[@]}))
+
 echo "================================================"
-echo "All benchmarks complete!"
+echo "Benchmark Summary"
+echo "================================================"
+echo "Total benchmarks: ${TOTAL_BENCHMARKS}"
+echo "Successful: ${#SUCCESSFUL_BENCHMARKS[@]}"
+echo "Failed: ${#FAILED_BENCHMARKS[@]}"
+echo ""
+
+if [ ${#FAILED_BENCHMARKS[@]} -gt 0 ]; then
+  echo "⚠️  Failed benchmarks:"
+  for bench in "${FAILED_BENCHMARKS[@]}"; do
+    echo "  - ${bench}"
+  done
+  echo ""
+  echo "Note: Failed benchmarks will not be included in results."
+  echo "Please include this failure list in your PR description."
+  echo ""
+fi
+
 echo "Generated ${RESULT_COUNT} result files in ${RUN_DIR}"
 echo ""
 
@@ -259,7 +220,17 @@ if [ "$GENERATE_CODE" = true ]; then
 fi
 echo ""
 echo "  3. Commit and push:"
-echo "     git commit -m \"Add benchmark results from $(hostname) ($(date +%Y-%m-%d))\""
+if [ ${#FAILED_BENCHMARKS[@]} -gt 0 ]; then
+  echo "     git commit -m \"Add benchmark results from $(hostname) ($(date +%Y-%m-%d))"
+  echo ""
+  echo "Failed benchmarks (excluded from results):"
+  for bench in "${FAILED_BENCHMARKS[@]}"; do
+    echo "- ${bench}"
+  done
+  echo "\""
+else
+  echo "     git commit -m \"Add benchmark results from $(hostname) ($(date +%Y-%m-%d))\""
+fi
 echo "     git push origin <your-branch>"
 echo ""
 echo "  4. Create PR - CI will generate preview at:"

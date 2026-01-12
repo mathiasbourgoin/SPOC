@@ -34,6 +34,5 @@ gh-pages/static/services/kernels/js/*.js
 
 .claude
 .gemini
-.github
 _bmad
-_bmat_output
+_bmad-output
