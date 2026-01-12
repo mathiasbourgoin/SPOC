@@ -224,7 +224,7 @@ let benchmark_device dev size config =
 
   (* Compute throughput in GFLOPS *)
   let ops = 2.0 *. float_of_int m *. float_of_int n *. float_of_int k in
-  let throughput_gflops = ops /. (median_ms *. 1e9) in
+  let throughput_gflops = ops /. (median_ms *. 1e6) in
 
   (* Print results *)
   Printf.printf

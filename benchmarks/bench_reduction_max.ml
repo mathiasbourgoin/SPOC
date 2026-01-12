@@ -163,7 +163,7 @@ let benchmark_device dev size config =
   let times_array = Array.of_list !times in
   let mean_ms = Common.mean times_array in
   let median_ms = Common.median times_array in
-  let bandwidth_gb_s = float_of_int n *. 4.0 /. (median_ms *. 1e9) in
+  let bandwidth_gb_s = float_of_int n *. 4.0 /. (median_ms *. 1e6) in
   Printf.printf
     "  Median: %.3f ms, BW: %.3f GB/s, Verified: %s\n"
     median_ms
