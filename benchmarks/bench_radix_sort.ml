@@ -186,19 +186,21 @@ let run_radix_sort_benchmark ~device ~size ~config =
     let input = Vector.create Vector.int32 n in
     let output = Vector.create Vector.int32 n in
     Array.iteri (fun i x -> Vector.set input i x) input_arr ;
-    (input, output)
+    (* Create reusable histogram and counters vectors *)
+    let histogram = Vector.create Vector.int32 num_bins in
+    let counters = Vector.create Vector.int32 num_bins in
+    (input, output, histogram, counters)
   in
 
   (* compute: Run all radix passes *)
-  let compute (input, output) =
+  let compute (input, output, histogram, counters) =
     let current_input = ref input in
     let current_output = ref output in
 
     for pass = 0 to num_passes - 1 do
       let shift = Int32.of_int (pass * bits_per_pass) in
 
-      (* Create fresh histogram for this pass *)
-      let histogram = Vector.create Vector.int32 num_bins in
+      (* Reset histogram for this pass *)
       for i = 0 to num_bins - 1 do
         Vector.set histogram i 0l
       done ;
@@ -220,10 +222,9 @@ let run_radix_sort_benchmark ~device ~size ~config =
         () ;
       Transfer.flush device ;
 
-      (* Compute prefix sum on CPU and create counters array *)
+      (* Compute prefix sum on CPU and reset counters array *)
       let hist_arr = Vector.to_array histogram in
       let prefix_arr = cpu_prefix_sum hist_arr num_bins in
-      let counters = Vector.create Vector.int32 num_bins in
       for i = 0 to num_bins - 1 do
         Vector.set counters i prefix_arr.(i)
       done ;
@@ -257,7 +258,7 @@ let run_radix_sort_benchmark ~device ~size ~config =
   in
 
   (* verify: Check correctness *)
-  let verify (input, _output) =
+  let verify (input, _output, _histogram, _counters) =
     (* Ensure all GPU work is complete and data is back on host *)
     Transfer.flush device ;
     Device.synchronize device ;
