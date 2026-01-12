@@ -12,8 +12,8 @@ Implements a single pass of radix sort using 8-bit digits (256 bins). This bench
 ## Performance Characteristics
 - **Complexity**: O(n) for a single pass.
 - **Memory Access**:
-    - Histogram: Coalesced reads, atomic updates (shared + global).
-    - Scatter: Coalesced reads, scattered writes (random access pattern depending on data distribution).
+  - Histogram: Coalesced reads, atomic updates (shared + global).
+  - Scatter: Coalesced reads, scattered writes (random access pattern depending on data distribution).
 - **Synchronization**: Requires barrier synchronization between histogram and scatter phases.
 - **Data Distribution**: Performance is sensitive to data distribution (conflicts in atomics). This benchmark uses uniform random data.
 
