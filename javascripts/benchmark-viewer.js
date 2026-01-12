@@ -34,13 +34,26 @@ const ALGO_COLORS = {
 };
 
 // Benchmark configurations
+// IMPORTANT: When adding a new benchmark, you must update:
+//   1. This BENCHMARK_CONFIGS object with benchmark metadata (title, labels, variants, readme)
+//   2. The selector dropdown in index.md with a matching option value
+//   3. The benchmark description markdown file in descriptions/
+//   4. The benchmarkConfig object in updateChart() with detailed chart titles/units (line ~648)
+// The variants array maps the selector value to actual benchmark names in the JSON data.
 const BENCHMARK_CONFIGS = {
     'matrix_mul': {
-        title: 'Matrix Multiplication',
+        title: 'Matrix Multiplication (Naive)',
         xLabel: 'Matrix Size (N×N)',
         throughputLabel: 'GFLOPS',
         variants: ['matrix_mul_naive'],
         readme: 'descriptions/matrix_mul.md'
+    },
+    'matrix_mul_tiled': {
+        title: 'Matrix Multiplication (Tiled)',
+        xLabel: 'Matrix Size (N×N)',
+        throughputLabel: 'GFLOPS',
+        variants: ['matrix_mul_tiled'],
+        readme: 'descriptions/matrix_mul_tiled.md'
     },
     'vector_add': {
         title: 'Vector Addition',
@@ -49,33 +62,124 @@ const BENCHMARK_CONFIGS = {
         variants: ['vector_add'],
         readme: 'descriptions/vector_add.md'
     },
+    'vector_copy': {
+        title: 'Vector Copy',
+        xLabel: 'Vector Size (elements)',
+        throughputLabel: 'GB/s',
+        variants: ['vector_copy'],
+        readme: 'descriptions/vector_copy.md'
+    },
+    'dot_product': {
+        title: 'Dot Product',
+        xLabel: 'Vector Size (elements)',
+        throughputLabel: 'GB/s',
+        variants: ['dot_product'],
+        readme: 'descriptions/dot_product.md'
+    },
     'reduction': {
-        title: 'Parallel Reduction',
+        title: 'Parallel Reduction (Sum)',
         xLabel: 'Array Size (elements)',
         throughputLabel: 'GB/s',
         variants: ['reduction_sum'],
         readme: 'descriptions/reduction.md'
     },
+    'reduction_max': {
+        title: 'Parallel Reduction (Max)',
+        xLabel: 'Array Size (elements)',
+        throughputLabel: 'GB/s',
+        variants: ['reduction_max'],
+        readme: 'descriptions/reduction_max.md'
+    },
+    'stream_triad': {
+        title: 'STREAM Triad',
+        xLabel: 'Array Size (elements)',
+        throughputLabel: 'GB/s',
+        variants: ['stream_triad'],
+        readme: 'descriptions/stream_triad.md'
+    },
     'transpose': {
-        title: 'Matrix Transpose',
+        title: 'Matrix Transpose (Naive)',
         xLabel: 'Matrix Size (N×N)',
         throughputLabel: 'GB/s',
         variants: ['transpose_naive', 'transpose_tiled'],
         readme: 'descriptions/transpose.md'
     },
     'transpose_tiled': {
-        title: 'Matrix Transpose (Tiled)',
+        title: 'Matrix Transpose (Tiled - Optimized)',
         xLabel: 'Matrix Size (N×N)',
         throughputLabel: 'GB/s',
-        variants: ['transpose_tiled'],
+        variants: ['transpose_tiled', 'transpose_naive'],
         readme: 'descriptions/transpose.md'
     },
     'mandelbrot': {
         title: 'Mandelbrot Set',
         xLabel: 'Resolution (pixels)',
-        throughputLabel: 'Mpixels/s',
+        throughputLabel: 'M pixels/s',
         variants: ['mandelbrot'],
         readme: 'descriptions/mandelbrot.md'
+    },
+    'nbody': {
+        title: 'N-Body Simulation',
+        xLabel: 'Number of Particles',
+        throughputLabel: 'G interactions/s',
+        variants: ['nbody'],
+        readme: 'descriptions/nbody.md'
+    },
+    'conv2d': {
+        title: '2D Convolution (3×3 Box Blur)',
+        xLabel: 'Image Size (W×H)',
+        throughputLabel: 'M pixels/s',
+        variants: ['conv2d'],
+        readme: 'descriptions/conv2d.md'
+    },
+    'stencil_2d': {
+        title: '2D Stencil (5-Point Jacobi)',
+        xLabel: 'Grid Size (N×N)',
+        throughputLabel: 'M cells/s',
+        variants: ['stencil_2d'],
+        readme: 'descriptions/stencil_2d.md'
+    },
+    'scan': {
+        title: 'Prefix Sum (Inclusive Scan)',
+        xLabel: 'Array Size (elements)',
+        throughputLabel: 'MElements/s',
+        variants: ['scan'],
+        readme: 'descriptions/scan.md'
+    },
+    'bitonic_sort': {
+        title: 'Bitonic Sort',
+        xLabel: 'Array Size (elements)',
+        throughputLabel: 'MElements/s',
+        variants: ['bitonic_sort'],
+        readme: 'descriptions/bitonic_sort.md'
+    },
+    'histogram': {
+        title: 'Histogram (256 bins)',
+        xLabel: 'Array Size (elements)',
+        throughputLabel: 'MElements/s',
+        variants: ['histogram'],
+        readme: 'descriptions/histogram.md'
+    },
+    'gather': {
+        title: 'Gather (Indexed Read)',
+        xLabel: 'Array Size (elements)',
+        throughputLabel: 'GB/s',
+        variants: ['gather'],
+        readme: 'descriptions/gather.md'
+    },
+    'scatter': {
+        title: 'Scatter (Indexed Write)',
+        xLabel: 'Array Size (elements)',
+        throughputLabel: 'GB/s',
+        variants: ['scatter'],
+        readme: 'descriptions/scatter.md'
+    },
+    'radix_sort': {
+        title: 'Radix Sort',
+        xLabel: 'Array Size (elements)',
+        throughputLabel: 'MElements/s',
+        variants: ['radix_sort'],
+        readme: 'descriptions/radix_sort.md'
     }
 };
 
@@ -374,6 +478,11 @@ async function updateBenchmarkDescription() {
         }
         let markdown = await response.text();
         
+        // Fix relative image paths - they're relative to the markdown file location
+        // If readme is "descriptions/mandelbrot.md", images should be "descriptions/images/..."
+        const readmeDir = config.readme.substring(0, config.readme.lastIndexOf('/'));
+        markdown = markdown.replace(/!\[([^\]]*)\]\(images\//g, `![$1](${readmeDir}/images/`);
+        
         // Process generated code tabs markers
         markdown = await processGeneratedCodeTabs(markdown);
         
@@ -542,6 +651,9 @@ function updateChart() {
     }
     
     // Get benchmark-specific labels and units
+    // IMPORTANT: This benchmarkConfig duplicates info from BENCHMARK_CONFIGS for chart display.
+    // When adding a new benchmark, add it here with detailed chart title, labels, and units.
+    // Consider refactoring to eliminate this duplication in the future.
     const benchmarkConfig = {
         'matrix_mul': {
             title: 'Matrix Multiplication Performance (Naive Kernel)',
@@ -551,8 +663,32 @@ function updateChart() {
             timeLabel: 'Execution Time (ms)',
             timeUnit: 'ms'
         },
+        'matrix_mul_tiled': {
+            title: 'Matrix Multiplication Performance (Tiled Kernel)',
+            xLabel: 'Matrix Size (elements)',
+            throughputLabel: 'Throughput (GFLOPS)',
+            throughputUnit: 'GFLOPS',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
+        },
         'vector_add': {
-            title: 'Vector Addition Performance (Memory Bandwidth)',
+            title: 'Vector Addition Performance',
+            xLabel: 'Vector Size (elements)',
+            throughputLabel: 'Memory Bandwidth (GB/s)',
+            throughputUnit: 'GB/s',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
+        },
+        'vector_copy': {
+            title: 'Vector Copy Performance',
+            xLabel: 'Vector Size (elements)',
+            throughputLabel: 'Memory Bandwidth (GB/s)',
+            throughputUnit: 'GB/s',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
+        },
+        'dot_product': {
+            title: 'Dot Product Performance',
             xLabel: 'Vector Size (elements)',
             throughputLabel: 'Memory Bandwidth (GB/s)',
             throughputUnit: 'GB/s',
@@ -567,9 +703,25 @@ function updateChart() {
             timeLabel: 'Execution Time (ms)',
             timeUnit: 'ms'
         },
+        'reduction_max': {
+            title: 'Parallel Reduction Performance (Max)',
+            xLabel: 'Array Size (elements)',
+            throughputLabel: 'Memory Bandwidth (GB/s)',
+            throughputUnit: 'GB/s',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
+        },
+        'stream_triad': {
+            title: 'STREAM Triad Performance',
+            xLabel: 'Array Size (elements)',
+            throughputLabel: 'Memory Bandwidth (GB/s)',
+            throughputUnit: 'GB/s',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
+        },
         'transpose': {
             title: 'Matrix Transpose Performance (Naive Kernel)',
-            xLabel: 'Matrix Size (NxN)',
+            xLabel: 'Matrix Size (N×N)',
             throughputLabel: 'Memory Bandwidth (GB/s)',
             throughputUnit: 'GB/s',
             timeLabel: 'Execution Time (ms)',
@@ -577,9 +729,89 @@ function updateChart() {
         },
         'transpose_tiled': {
             title: 'Matrix Transpose Performance (Tiled with Shared Memory)',
-            xLabel: 'Matrix Size (NxN)',
+            xLabel: 'Matrix Size (N×N)',
             throughputLabel: 'Memory Bandwidth (GB/s)',
             throughputUnit: 'GB/s',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
+        },
+        'mandelbrot': {
+            title: 'Mandelbrot Set Performance',
+            xLabel: 'Resolution (pixels)',
+            throughputLabel: 'Throughput (M pixels/s)',
+            throughputUnit: 'M pixels/s',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
+        },
+        'nbody': {
+            title: 'N-Body Simulation Performance',
+            xLabel: 'Number of Particles',
+            throughputLabel: 'Throughput (G interactions/s)',
+            throughputUnit: 'G interactions/s',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
+        },
+        'conv2d': {
+            title: '2D Convolution Performance (3×3 Box Blur)',
+            xLabel: 'Image Size (W×H)',
+            throughputLabel: 'Throughput (M pixels/s)',
+            throughputUnit: 'M pixels/s',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
+        },
+        'stencil_2d': {
+            title: '2D Stencil Performance (5-Point Jacobi)',
+            xLabel: 'Grid Size (N×N)',
+            throughputLabel: 'Throughput (M cells/s)',
+            throughputUnit: 'M cells/s',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
+        },
+        'scan': {
+            title: 'Prefix Sum Performance (Inclusive Scan)',
+            xLabel: 'Array Size (elements)',
+            throughputLabel: 'Throughput (MElements/s)',
+            throughputUnit: 'MElements/s',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
+        },
+        'bitonic_sort': {
+            title: 'Bitonic Sort Performance',
+            xLabel: 'Array Size (elements)',
+            throughputLabel: 'Throughput (MElements/s)',
+            throughputUnit: 'MElements/s',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
+        },
+        'histogram': {
+            title: 'Histogram Performance (256 bins)',
+            xLabel: 'Array Size (elements)',
+            throughputLabel: 'Throughput (MElements/s)',
+            throughputUnit: 'MElements/s',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
+        },
+        'gather': {
+            title: 'Gather Performance (Indexed Read)',
+            xLabel: 'Array Size (elements)',
+            throughputLabel: 'Throughput (GB/s)',
+            throughputUnit: 'GB/s',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
+        },
+        'scatter': {
+            title: 'Scatter Performance (Indexed Write)',
+            xLabel: 'Array Size (elements)',
+            throughputLabel: 'Throughput (GB/s)',
+            throughputUnit: 'GB/s',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
+        },
+        'radix_sort': {
+            title: 'Radix Sort Performance',
+            xLabel: 'Array Size (elements)',
+            throughputLabel: 'Throughput (MElements/s)',
+            throughputUnit: 'MElements/s',
             timeLabel: 'Execution Time (ms)',
             timeUnit: 'ms'
         }
@@ -665,17 +897,14 @@ function prepareChartData(benchmarkName, selectedBackends, showCpu) {
     const datasets = [];
     const deviceData = new Map(); // device_name -> {framework, data: [{x, y}]}
     
-    // Map benchmark tab names to JSON benchmark names
-    const benchmarkNameMap = {
-        'matrix_mul': 'matrix_mul_naive',
-        'vector_add': 'vector_add',
-        'reduction': 'reduction_sum',
-        'transpose': 'transpose_naive',
-        'transpose_tiled': 'transpose_tiled'
-    };
+    // Get variant names from BENCHMARK_CONFIGS
+    const config = BENCHMARK_CONFIGS[benchmarkName];
+    if (!config || !config.variants || config.variants.length === 0) {
+        console.warn('No config or variants found for benchmark:', benchmarkName);
+        return [];
+    }
     
-    const targetBenchmark = benchmarkNameMap[benchmarkName];
-    if (!targetBenchmark) return [];
+    const targetBenchmarks = config.variants;
     
     // Process all results
     benchmarkData.results.forEach(result => {
@@ -685,7 +914,7 @@ function prepareChartData(benchmarkName, selectedBackends, showCpu) {
             return;
         }
         
-        if (result.benchmark.name !== targetBenchmark) return;
+        if (!targetBenchmarks.includes(result.benchmark.name)) return;
         
         // Filter by system if not "all"
         if (currentSystem !== 'all') {
@@ -857,9 +1086,14 @@ function updateSystemInfo() {
 
 // Show 4-chart comparison view
 function showComparisonView() {
-    const config = BENCHMARK_CONFIGS[currentBenchmark] || BENCHMARK_CONFIGS['transpose'];
+    const config = BENCHMARK_CONFIGS[currentBenchmark];
     const chartArea = document.getElementById('chart-area');
     if (!chartArea) return;
+    
+    if (!config) {
+        chartArea.innerHTML = '<p style="text-align:center; color: #888; padding: 40px;">Configuration not available for this benchmark.</p>';
+        return;
+    }
     
     // Hide filters for multi-view (they don't apply)
     const filterControls = document.querySelector('.filter-controls');
@@ -899,9 +1133,14 @@ function showComparisonView() {
 
 // Show system ranking view
 function showSystemRanking() {
-    const config = BENCHMARK_CONFIGS[currentBenchmark] || BENCHMARK_CONFIGS['transpose'];
+    const config = BENCHMARK_CONFIGS[currentBenchmark];
     const chartArea = document.getElementById('chart-area');
     if (!chartArea) return;
+    
+    if (!config) {
+        chartArea.innerHTML = '<p style="text-align:center; color: #888; padding: 40px;">Configuration not available for this benchmark.</p>';
+        return;
+    }
     
     // Hide filters
     const filterControls = document.querySelector('.filter-controls');
@@ -924,9 +1163,14 @@ function showSystemRanking() {
 
 // Show device matrix view
 function showDeviceMatrix() {
-    const config = BENCHMARK_CONFIGS[currentBenchmark] || BENCHMARK_CONFIGS['transpose'];
+    const config = BENCHMARK_CONFIGS[currentBenchmark];
     const chartArea = document.getElementById('chart-area');
     if (!chartArea) return;
+    
+    if (!config) {
+        chartArea.innerHTML = '<p style="text-align:center; color: #888; padding: 40px;">Configuration not available for this benchmark.</p>';
+        return;
+    }
     
     // Hide filters
     const filterControls = document.querySelector('.filter-controls');
