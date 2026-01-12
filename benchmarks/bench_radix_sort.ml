@@ -257,9 +257,9 @@ let run_radix_sort_benchmark ~device ~size ~config =
   in
 
   (* verify: Check correctness *)
-  let verify (_input, output) =
-    (* Result is always in output buffer (we don't swap on last pass) *)
-    let gpu_result = Vector.to_array output in
+  let verify (input, _output) =
+    (* After 7 swaps (odd), final result is in the input buffer *)
+    let gpu_result = Vector.to_array input in
 
     let errors = ref 0 in
     for i = 0 to n - 1 do
