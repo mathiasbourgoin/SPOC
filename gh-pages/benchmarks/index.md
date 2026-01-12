@@ -322,12 +322,32 @@ title: Benchmark Results
 <div class="benchmark-selector">
     <label for="benchmark-select">Select Benchmark:</label>
     <select id="benchmark-select">
-        <option value="matrix_mul">Matrix Multiplication (Naive)</option>
-        <option value="vector_add">Vector Addition (Memory Bandwidth)</option>
-        <option value="reduction">Parallel Reduction (Sum)</option>
-        <option value="transpose">Matrix Transpose (Naive)</option>
-        <option value="transpose_tiled">Matrix Transpose (Tiled - Optimized)</option>
-        <option value="mandelbrot">Mandelbrot Set (Fractal Generation)</option>
+        <optgroup label="Matrix Operations">
+            <option value="matrix_mul">Matrix Multiplication (Naive)</option>
+            <option value="matrix_mul_tiled">Matrix Multiplication (Tiled)</option>
+            <option value="transpose">Matrix Transpose (Naive)</option>
+            <option value="transpose_tiled">Matrix Transpose (Tiled - Optimized)</option>
+        </optgroup>
+        <optgroup label="Vector Operations">
+            <option value="vector_add">Vector Addition</option>
+            <option value="vector_copy">Vector Copy</option>
+            <option value="dot_product">Dot Product</option>
+        </optgroup>
+        <optgroup label="Reductions & Scans">
+            <option value="reduction">Parallel Reduction (Sum)</option>
+            <option value="reduction_max">Parallel Reduction (Max)</option>
+            <option value="stream_triad">STREAM Triad</option>
+        </optgroup>
+        <optgroup label="Stencils & Convolution">
+            <option value="conv2d">2D Convolution (3×3 Box Blur)</option>
+            <option value="stencil_2d">2D Stencil (5-Point Jacobi)</option>
+        </optgroup>
+        <optgroup label="N-Body & Physics">
+            <option value="nbody">N-Body Simulation (All-Pairs)</option>
+        </optgroup>
+        <optgroup label="Fractals & Graphics">
+            <option value="mandelbrot">Mandelbrot Set</option>
+        </optgroup>
     </select>
 </div>
 

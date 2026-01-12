@@ -36,11 +36,18 @@ const ALGO_COLORS = {
 // Benchmark configurations
 const BENCHMARK_CONFIGS = {
     'matrix_mul': {
-        title: 'Matrix Multiplication',
+        title: 'Matrix Multiplication (Naive)',
         xLabel: 'Matrix Size (N×N)',
         throughputLabel: 'GFLOPS',
         variants: ['matrix_mul_naive'],
         readme: 'descriptions/matrix_mul.md'
+    },
+    'matrix_mul_tiled': {
+        title: 'Matrix Multiplication (Tiled)',
+        xLabel: 'Matrix Size (N×N)',
+        throughputLabel: 'GFLOPS',
+        variants: ['matrix_mul_tiled'],
+        readme: 'descriptions/matrix_mul_tiled.md'
     },
     'vector_add': {
         title: 'Vector Addition',
@@ -49,33 +56,82 @@ const BENCHMARK_CONFIGS = {
         variants: ['vector_add'],
         readme: 'descriptions/vector_add.md'
     },
+    'vector_copy': {
+        title: 'Vector Copy',
+        xLabel: 'Vector Size (elements)',
+        throughputLabel: 'GB/s',
+        variants: ['vector_copy'],
+        readme: 'descriptions/vector_copy.md'
+    },
+    'dot_product': {
+        title: 'Dot Product',
+        xLabel: 'Vector Size (elements)',
+        throughputLabel: 'GB/s',
+        variants: ['dot_product'],
+        readme: 'descriptions/dot_product.md'
+    },
     'reduction': {
-        title: 'Parallel Reduction',
+        title: 'Parallel Reduction (Sum)',
         xLabel: 'Array Size (elements)',
         throughputLabel: 'GB/s',
         variants: ['reduction_sum'],
         readme: 'descriptions/reduction.md'
     },
+    'reduction_max': {
+        title: 'Parallel Reduction (Max)',
+        xLabel: 'Array Size (elements)',
+        throughputLabel: 'GB/s',
+        variants: ['reduction_max'],
+        readme: 'descriptions/reduction_max.md'
+    },
+    'stream_triad': {
+        title: 'STREAM Triad',
+        xLabel: 'Array Size (elements)',
+        throughputLabel: 'GB/s',
+        variants: ['stream_triad'],
+        readme: 'descriptions/stream_triad.md'
+    },
     'transpose': {
-        title: 'Matrix Transpose',
+        title: 'Matrix Transpose (Naive)',
         xLabel: 'Matrix Size (N×N)',
         throughputLabel: 'GB/s',
         variants: ['transpose_naive', 'transpose_tiled'],
         readme: 'descriptions/transpose.md'
     },
     'transpose_tiled': {
-        title: 'Matrix Transpose (Tiled)',
+        title: 'Matrix Transpose (Tiled - Optimized)',
         xLabel: 'Matrix Size (N×N)',
         throughputLabel: 'GB/s',
-        variants: ['transpose_tiled'],
+        variants: ['transpose_tiled', 'transpose_naive'],
         readme: 'descriptions/transpose.md'
     },
     'mandelbrot': {
         title: 'Mandelbrot Set',
         xLabel: 'Resolution (pixels)',
-        throughputLabel: 'Mpixels/s',
+        throughputLabel: 'M pixels/s',
         variants: ['mandelbrot'],
         readme: 'descriptions/mandelbrot.md'
+    },
+    'nbody': {
+        title: 'N-Body Simulation',
+        xLabel: 'Number of Particles',
+        throughputLabel: 'G interactions/s',
+        variants: ['nbody'],
+        readme: 'descriptions/nbody.md'
+    },
+    'conv2d': {
+        title: '2D Convolution (3×3 Box Blur)',
+        xLabel: 'Image Size (W×H)',
+        throughputLabel: 'M pixels/s',
+        variants: ['conv2d'],
+        readme: 'descriptions/conv2d.md'
+    },
+    'stencil_2d': {
+        title: '2D Stencil (5-Point Jacobi)',
+        xLabel: 'Grid Size (N×N)',
+        throughputLabel: 'M cells/s',
+        variants: ['stencil_2d'],
+        readme: 'descriptions/stencil_2d.md'
     }
 };
 
@@ -857,9 +913,14 @@ function updateSystemInfo() {
 
 // Show 4-chart comparison view
 function showComparisonView() {
-    const config = BENCHMARK_CONFIGS[currentBenchmark] || BENCHMARK_CONFIGS['transpose'];
+    const config = BENCHMARK_CONFIGS[currentBenchmark];
     const chartArea = document.getElementById('chart-area');
     if (!chartArea) return;
+    
+    if (!config) {
+        chartArea.innerHTML = '<p style="text-align:center; color: #888; padding: 40px;">Configuration not available for this benchmark.</p>';
+        return;
+    }
     
     // Hide filters for multi-view (they don't apply)
     const filterControls = document.querySelector('.filter-controls');
@@ -899,9 +960,14 @@ function showComparisonView() {
 
 // Show system ranking view
 function showSystemRanking() {
-    const config = BENCHMARK_CONFIGS[currentBenchmark] || BENCHMARK_CONFIGS['transpose'];
+    const config = BENCHMARK_CONFIGS[currentBenchmark];
     const chartArea = document.getElementById('chart-area');
     if (!chartArea) return;
+    
+    if (!config) {
+        chartArea.innerHTML = '<p style="text-align:center; color: #888; padding: 40px;">Configuration not available for this benchmark.</p>';
+        return;
+    }
     
     // Hide filters
     const filterControls = document.querySelector('.filter-controls');
@@ -924,9 +990,14 @@ function showSystemRanking() {
 
 // Show device matrix view
 function showDeviceMatrix() {
-    const config = BENCHMARK_CONFIGS[currentBenchmark] || BENCHMARK_CONFIGS['transpose'];
+    const config = BENCHMARK_CONFIGS[currentBenchmark];
     const chartArea = document.getElementById('chart-area');
     if (!chartArea) return;
+    
+    if (!config) {
+        chartArea.innerHTML = '<p style="text-align:center; color: #888; padding: 40px;">Configuration not available for this benchmark.</p>';
+        return;
+    }
     
     // Hide filters
     const filterControls = document.querySelector('.filter-controls');
