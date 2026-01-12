@@ -53,69 +53,117 @@ let get_kernel_info () =
   with _ -> "unknown"
 
 let get_cpu_info () =
+  let os = get_os_info () in
   try
-    (* Try to get CPU model from /proc/cpuinfo *)
-    let ic = open_in "/proc/cpuinfo" in
-    let rec find_model () =
-      try
-        let line = input_line ic in
-        if String.starts_with ~prefix:"model name" line then
-          let parts = String.split_on_char ':' line in
-          if List.length parts >= 2 then Some (String.trim (List.nth parts 1))
-          else find_model ()
-        else find_model ()
-      with End_of_file -> None
+    let model =
+      if os = "Darwin" then
+        (* macOS: use sysctl *)
+        try
+          let ic = Unix.open_process_in "sysctl -n machdep.cpu.brand_string" in
+          let m = String.trim (input_line ic) in
+          let _ = Unix.close_process_in ic in
+          m
+        with _ -> "unknown"
+      else
+        (* Linux: read /proc/cpuinfo *)
+        try
+          let ic = open_in "/proc/cpuinfo" in
+          let rec find_model () =
+            try
+              let line = input_line ic in
+              if String.starts_with ~prefix:"model name" line then
+                let parts = String.split_on_char ':' line in
+                if List.length parts >= 2 then
+                  Some (String.trim (List.nth parts 1))
+                else find_model ()
+              else find_model ()
+            with End_of_file -> None
+          in
+          let m = match find_model () with Some m -> m | None -> "unknown" in
+          close_in ic ;
+          m
+        with _ -> "unknown"
     in
-    let model = match find_model () with Some m -> m | None -> "unknown" in
-    close_in ic ;
 
     (* Get thread count *)
-    let ic = Unix.open_process_in "nproc" in
     let threads =
-      try int_of_string (String.trim (input_line ic)) with _ -> 1
+      if os = "Darwin" then
+        (* macOS: use sysctl *)
+        try
+          let ic = Unix.open_process_in "sysctl -n hw.logicalcpu" in
+          let t = int_of_string (String.trim (input_line ic)) in
+          let _ = Unix.close_process_in ic in
+          t
+        with _ -> 1
+      else
+        (* Linux: use nproc *)
+        try
+          let ic = Unix.open_process_in "nproc" in
+          let t = int_of_string (String.trim (input_line ic)) in
+          let _ = Unix.close_process_in ic in
+          t
+        with _ -> 1
     in
-    let _ = Unix.close_process_in ic in
 
-    (* Try to obtain physical core count from lscpu; fallback to threads/2 *)
+    (* Get physical core count *)
     let cores =
-      try
-        let ic2 = Unix.open_process_in "lscpu 2>/dev/null" in
-        let rec loop cps sockets =
-          try
-            let line = input_line ic2 in
-            if String.starts_with ~prefix:"Core(s) per socket" line then
-              let v =
-                int_of_string
-                  (String.trim (List.nth (String.split_on_char ':' line) 1))
-              in
-              loop (Some v) sockets
-            else if String.starts_with ~prefix:"Socket(s)" line then
-              let v =
-                int_of_string
-                  (String.trim (List.nth (String.split_on_char ':' line) 1))
-              in
-              loop cps (Some v)
-            else loop cps sockets
-          with End_of_file -> (
-            match (cps, sockets) with
-            | Some cps, Some s -> cps * s
-            | _ -> threads / 2)
-        in
-        let result = loop None None in
-        let _ = Unix.close_process_in ic2 in
-        result
-      with _ -> threads / 2
+      if os = "Darwin" then
+        (* macOS: use sysctl *)
+        try
+          let ic = Unix.open_process_in "sysctl -n hw.physicalcpu" in
+          let c = int_of_string (String.trim (input_line ic)) in
+          let _ = Unix.close_process_in ic in
+          c
+        with _ -> max 1 (threads / 2)
+      else
+        (* Linux: try lscpu; fallback to threads/2 *)
+        try
+          let ic2 = Unix.open_process_in "lscpu 2>/dev/null" in
+          let rec loop cps sockets =
+            try
+              let line = input_line ic2 in
+              if String.starts_with ~prefix:"Core(s) per socket" line then
+                let v =
+                  int_of_string
+                    (String.trim (List.nth (String.split_on_char ':' line) 1))
+                in
+                loop (Some v) sockets
+              else if String.starts_with ~prefix:"Socket(s)" line then
+                let v =
+                  int_of_string
+                    (String.trim (List.nth (String.split_on_char ':' line) 1))
+                in
+                loop cps (Some v)
+              else loop cps sockets
+            with End_of_file -> (
+              match (cps, sockets) with
+              | Some cps, Some s -> cps * s
+              | _ -> max 1 (threads / 2))
+          in
+          let result = loop None None in
+          let _ = Unix.close_process_in ic2 in
+          result
+        with _ -> max 1 (threads / 2)
     in
 
     {model; cores; threads}
   with _ -> {model = "unknown"; cores = 1; threads = 1}
 
 let get_memory_gb () =
+  let os = get_os_info () in
   try
-    let ic = Unix.open_process_in "free -b | grep Mem | awk '{print $2}'" in
-    let bytes = float_of_string (String.trim (input_line ic)) in
-    let _ = Unix.close_process_in ic in
-    bytes /. (1024.0 *. 1024.0 *. 1024.0)
+    if os = "Darwin" then
+      (* macOS: use sysctl hw.memsize *)
+      let ic = Unix.open_process_in "sysctl -n hw.memsize" in
+      let bytes = float_of_string (String.trim (input_line ic)) in
+      let _ = Unix.close_process_in ic in
+      bytes /. (1024.0 *. 1024.0 *. 1024.0)
+    else
+      (* Linux: use free *)
+      let ic = Unix.open_process_in "free -b | grep Mem | awk '{print $2}'" in
+      let bytes = float_of_string (String.trim (input_line ic)) in
+      let _ = Unix.close_process_in ic in
+      bytes /. (1024.0 *. 1024.0 *. 1024.0)
   with _ -> 0.0
 
 let get_device_info (dev : Device.t) dev_id =
