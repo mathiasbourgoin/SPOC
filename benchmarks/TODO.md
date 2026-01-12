@@ -27,13 +27,17 @@ This document tracks the implementation status of the Sarek benchmark suite.
   - ✅ Default sizes: 1M, 10M, 50M, 100M elements
   - ✅ CPU baseline verification
   
-- [ ] **Vector Copy** - Memory transfer baseline
-  - Simple copy: `B[i] = A[i]`
-  - Baseline for memory operations
+- [x] **Vector Copy** - Memory transfer baseline
+  - ✅ Implemented in bench_vector_copy.ml
+  - ✅ Simple copy: `B[i] = A[i]`
+  - ✅ Baseline for memory operations
+  - ✅ Default sizes: 1M, 10M, 50M, 100M, 500M elements
   
-- [ ] **STREAM Triad** - Industry standard memory benchmark
-  - `A[i] = B[i] + C[i] * scalar`
-  - Compare against published STREAM results
+- [x] **STREAM Triad** - Industry standard memory benchmark
+  - ✅ Implemented in bench_stream_triad.ml
+  - ✅ `A[i] = B[i] + C[i] * scalar`
+  - ✅ Compare against published STREAM results
+  - ✅ Default sizes: 1M, 10M, 50M, 100M, 500M elements
 
 ### Linear Algebra
 - [x] **Matrix Multiplication (naive)** - Basic dense linear algebra
