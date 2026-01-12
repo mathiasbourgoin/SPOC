@@ -31,7 +31,8 @@ module Device = Spoc_core.Device
 module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
 module Std = Sarek_stdlib.Std
-open Benchmark_backends
+open Benchmark_common
+open Benchmark_runner
 
 (** Pure OCaml baseline: 2D convolution with 3×3 kernel *)
 let cpu_conv2d input output width height kernel =
@@ -88,7 +89,8 @@ let conv2d_kernel =
           output.(tid) <- sum /. 9.0]
 
 (** Run 2D convolution benchmark on specified device *)
-let run_conv2d_benchmark device backend_name size =
+let run_conv2d_benchmark ~device ~size ~config =
+  let backend_name = device.Device.framework in
   (* Use square image *)
   let width = size in
   let height = size in
@@ -126,27 +128,28 @@ let run_conv2d_benchmark device backend_name size =
   let block = Sarek.Execute.dims1d block_size in
   let grid = Sarek.Execute.dims1d grid_size in
 
-  (* Warmup run *)
-  Sarek.Execute.run_vectors
-    ~device
-    ~ir
-    ~args:
-      [
-        Sarek.Execute.Vec input;
-        Sarek.Execute.Vec output;
-        Sarek.Execute.Int32 (Int32.of_int width);
-        Sarek.Execute.Int32 (Int32.of_int height);
-      ]
-    ~block
-    ~grid
-    () ;
+  (* Warmup runs *)
+  for _ = 1 to config.warmup do
+    Sarek.Execute.run_vectors
+      ~device
+      ~ir
+      ~args:
+        [
+          Sarek.Execute.Vec input;
+          Sarek.Execute.Vec output;
+          Sarek.Execute.Int32 (Int32.of_int width);
+          Sarek.Execute.Int32 (Int32.of_int height);
+        ]
+      ~block
+      ~grid
+      ()
+  done ;
   Transfer.flush device ;
 
   (* Timed runs *)
-  let num_runs = 100 in
   let times = ref [] in
 
-  for _ = 1 to num_runs do
+  for _ = 1 to config.iterations do
     let t0 = Unix.gettimeofday () in
     Sarek.Execute.run_vectors
       ~device
@@ -163,16 +166,8 @@ let run_conv2d_benchmark device backend_name size =
       () ;
     Transfer.flush device ;
     let t1 = Unix.gettimeofday () in
-    times := (t1 -. t0) :: !times
+    times := ((t1 -. t0) *. 1000.0) :: !times
   done ;
-
-  (* Compute statistics *)
-  let sorted_times = List.sort compare !times in
-  let avg_time =
-    List.fold_left ( +. ) 0.0 sorted_times /. float_of_int num_runs
-  in
-  let min_time = List.hd sorted_times in
-  let median_time = List.nth sorted_times (num_runs / 2) in
 
   (* Verify correctness *)
   let gpu_result = Vector.to_array output in
@@ -185,88 +180,43 @@ let run_conv2d_benchmark device backend_name size =
     for x = 1 to width - 2 do
       let idx = (y * width) + x in
       let diff = abs_float (gpu_result.(idx) -. cpu_result.(idx)) in
-      if diff > tolerance then begin
-        if !errors < 5 then
-          Printf.printf
-            "  ERROR at (%d,%d): GPU=%.6f CPU=%.6f diff=%.6f\n"
-            x
-            y
-            gpu_result.(idx)
-            cpu_result.(idx)
-            diff ;
-        incr errors
-      end
+      if diff > tolerance then incr errors
     done
   done ;
 
-  (* Report results *)
-  Printf.printf "\n=== 2D Convolution Benchmark ===\n" ;
-  Printf.printf "Backend: %s\n" backend_name ;
-  Printf.printf "Image size: %d×%d (%d pixels)\n" width height n ;
-  Printf.printf "Kernel size: 3×3 (box blur)\n" ;
-  Printf.printf
-    "Interior pixels: %d×%d (%d pixels)\n"
-    (width - 2)
-    (height - 2)
-    ((width - 2) * (height - 2)) ;
-  Printf.printf "Block size: %d\n" block_size ;
-  Printf.printf "Grid size: %d blocks\n" grid_size ;
-  Printf.printf "\nTiming (%d runs):\n" num_runs ;
-  Printf.printf "  Min:    %.3f ms\n" (min_time *. 1000.0) ;
-  Printf.printf "  Median: %.3f ms\n" (median_time *. 1000.0) ;
-  Printf.printf "  Mean:   %.3f ms\n" (avg_time *. 1000.0) ;
+  let verified = !errors = 0 in
 
-  let throughput_mpixels = float_of_int n /. (median_time *. 1e6) in
-  Printf.printf "  Throughput: %.2f M pixels/s\n" throughput_mpixels ;
+  (* Compute statistics *)
+  let times_array = Array.of_list (List.rev !times) in
+  let median_ms = Common.median times_array in
 
-  (* Bandwidth: 9 reads + 1 write = 10 floats per pixel = 40 bytes *)
-  let bandwidth_gb = float_of_int n *. 40.0 /. (median_time *. 1e9) in
-  Printf.printf "  Bandwidth: %.2f GB/s\n" bandwidth_gb ;
+  (* Calculate throughput: M pixels/s *)
+  let throughput_mpixels = float_of_int n /. (median_ms /. 1000.0) /. 1e6 in
 
-  (* FLOPs: 9 muls + 8 adds = 17 ops per pixel *)
-  let flops = float_of_int n *. 17.0 in
-  let gflops = flops /. (median_time *. 1e9) in
-  Printf.printf "  Performance: %.2f GFLOPS\n" gflops ;
-
-  Printf.printf "\nVerification: " ;
-  if !errors = 0 then
-    Printf.printf
-      "PASS ✓ (all %d interior pixels correct)\n"
-      ((width - 2) * (height - 2))
-  else Printf.printf "FAIL ✗ (%d errors)\n" !errors ;
-
-  Printf.printf
-    "Sample output (center): %.6f\n"
-    gpu_result.((height / 2 * width) + (width / 2)) ;
-  Printf.printf "================================\n" ;
-
-  !errors = 0
+  Output.
+    {
+      device_id = device.Device.id;
+      device_name = device.Device.name;
+      framework = backend_name;
+      iterations = times_array;
+      mean_ms = Common.mean times_array;
+      stddev_ms = Common.stddev times_array;
+      median_ms;
+      min_ms = Common.min times_array;
+      max_ms = Common.max times_array;
+      throughput = Some throughput_mpixels;
+      verified = Some verified;
+    }
 
 (** Main benchmark runner *)
 let () =
-  Printf.printf "2D Convolution Benchmark\n" ;
-  Printf.printf "3×3 box blur filter\n\n" ;
-
-  let size =
-    if Array.length Sys.argv > 1 then int_of_string Sys.argv.(1) else 512
+  let config =
+    Benchmark_runner.parse_args
+      ~benchmark_name:"conv2d"
+      ~default_sizes:[256; 512; 1024; 2048]
+      ()
   in
-
-  (* Initialize backends *)
-  Backend_loader.init () ;
-
-  (* Initialize SPOC and discover devices *)
-  let devices = Device.init () in
-
-  if Array.length devices = 0 then begin
-    Printf.printf "No GPU devices found. Cannot run benchmark.\n" ;
-    exit 1
-  end ;
-
-  (* Run on first available device *)
-  let device = devices.(0) in
-  let backend_name = device.Device.framework in
-
-  Printf.printf "Using device: %s (%s)\n\n" device.Device.name backend_name ;
-
-  let success = run_conv2d_benchmark device backend_name size in
-  exit (if success then 0 else 1)
+  Benchmark_runner.run_benchmark
+    ~benchmark_name:"conv2d"
+    ~config
+    ~run_fn:run_conv2d_benchmark
