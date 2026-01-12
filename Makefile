@@ -394,7 +394,12 @@ bench-update:
 	@echo "Benchmark data updated. Review and commit changes."
 
 bench-deduplicate:
-	@echo "Checking for duplicate benchmark results..."
+	@echo "Checking for duplicate benchmark results (dry-run)..."
+	@echo "Usage: make bench-deduplicate               (check for duplicates, keep oldest)"
+	@echo "       dune exec benchmarks/deduplicate_results.exe -- --dry-run"
+	@echo "       dune exec benchmarks/deduplicate_results.exe -- --keep-latest"
+	@echo "       dune exec benchmarks/deduplicate_results.exe -- --help"
+	@echo ""
 	@dune build benchmarks/deduplicate_results.exe
 	@dune exec benchmarks/deduplicate_results.exe -- --dry-run
 
