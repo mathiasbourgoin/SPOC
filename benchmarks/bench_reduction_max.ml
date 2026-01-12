@@ -150,7 +150,7 @@ let benchmark_device dev size config =
       () ;
     Spoc_core.Transfer.flush dev ;
     let t1 = Unix.gettimeofday () in
-    times := (t1 -. t0) :: !times
+    times := ((t1 -. t0) *. 1000.0) :: !times
   done ;
   let partial = Vector.to_array voutput in
   let result_max =

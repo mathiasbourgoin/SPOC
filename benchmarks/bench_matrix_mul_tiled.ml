@@ -185,7 +185,7 @@ let benchmark_device dev size config =
       () ;
     Spoc_core.Transfer.flush dev ;
     let end_time = Unix.gettimeofday () in
-    times := (end_time -. start_time) :: !times
+    times := ((end_time -. start_time) *. 1000.0) :: !times
   done ;
 
   (* Copy result back *)
