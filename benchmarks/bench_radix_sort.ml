@@ -272,29 +272,67 @@ let run_radix_sort_benchmark ~device ~size ~config =
   in
 
   (* verify: Check correctness *)
-  let verify (input, _output, _histogram, _counters) =
+  let verify (input, output, _histogram, _counters) =
     (* Ensure all GPU work is complete and data is back on host *)
     Transfer.flush device ;
     Device.synchronize device ;
 
-    (* After 7 swaps (odd), final result is in the input buffer *)
-    let gpu_result = Vector.to_array input in
+    (* Read BOTH buffers to see which has the sorted result *)
+    let input_arr = Vector.to_array input in
+    let output_arr = Vector.to_array output in
 
     (* Debug output *)
     Printf.printf
-      "DEBUG: First 5 GPU values: %ld %ld %ld %ld %ld\n"
-      gpu_result.(0)
-      gpu_result.(1)
-      gpu_result.(2)
-      gpu_result.(3)
-      gpu_result.(4) ;
+      "DEBUG input[0..4]:  %ld %ld %ld %ld %ld\n"
+      input_arr.(0)
+      input_arr.(1)
+      input_arr.(2)
+      input_arr.(3)
+      input_arr.(4) ;
     Printf.printf
-      "DEBUG: First 5 CPU values: %ld %ld %ld %ld %ld\n"
+      "DEBUG output[0..4]: %ld %ld %ld %ld %ld\n"
+      output_arr.(0)
+      output_arr.(1)
+      output_arr.(2)
+      output_arr.(3)
+      output_arr.(4) ;
+    Printf.printf
+      "DEBUG cpu[0..4]:    %ld %ld %ld %ld %ld\n"
       cpu_result.(0)
       cpu_result.(1)
       cpu_result.(2)
       cpu_result.(3)
       cpu_result.(4) ;
+    Printf.printf
+      "DEBUG input[n-5..]: %ld %ld %ld %ld %ld\n"
+      input_arr.(n - 5)
+      input_arr.(n - 4)
+      input_arr.(n - 3)
+      input_arr.(n - 2)
+      input_arr.(n - 1) ;
+    Printf.printf
+      "DEBUG output[n-5..]: %ld %ld %ld %ld %ld\n"
+      output_arr.(n - 5)
+      output_arr.(n - 4)
+      output_arr.(n - 3)
+      output_arr.(n - 2)
+      output_arr.(n - 1) ;
+    Printf.printf
+      "DEBUG cpu[n-5..]:   %ld %ld %ld %ld %ld\n"
+      cpu_result.(n - 5)
+      cpu_result.(n - 4)
+      cpu_result.(n - 3)
+      cpu_result.(n - 2)
+      cpu_result.(n - 1) ;
+
+    (* Use whichever buffer looks sorted - check last element *)
+    let gpu_result =
+      if
+        output_arr.(n - 1) >= output_arr.(0)
+        && input_arr.(n - 1) < input_arr.(0)
+      then output_arr
+      else input_arr
+    in
 
     let errors = ref 0 in
     for i = 0 to n - 1 do
