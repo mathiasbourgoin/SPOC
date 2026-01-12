@@ -179,21 +179,7 @@ let run_radix_sort_benchmark ~device ~size ~config =
   (* Prepare host data for verification *)
   Random.init 42 ;
   let input_arr = Array.init n (fun _ -> Int32.of_int (Random.int 100000)) in
-  Printf.printf
-    "DEBUG input_arr[0..4]: %ld %ld %ld %ld %ld\n"
-    input_arr.(0)
-    input_arr.(1)
-    input_arr.(2)
-    input_arr.(3)
-    input_arr.(4) ;
   let cpu_result = cpu_radix_sort input_arr n in
-  Printf.printf
-    "DEBUG cpu_result[0..4] after sort: %ld %ld %ld %ld %ld\n"
-    cpu_result.(0)
-    cpu_result.(1)
-    cpu_result.(2)
-    cpu_result.(3)
-    cpu_result.(4) ;
 
   (* init: Create fresh vectors from host data *)
   let init () =
@@ -208,6 +194,10 @@ let run_radix_sort_benchmark ~device ~size ~config =
 
   (* compute: Run all radix passes *)
   let compute (input, output, histogram, counters) =
+    (* Reinitialize input data at start of each compute call *)
+    Array.iteri (fun i x -> Vector.set input i x) input_arr ;
+    Transfer.to_device input device ;
+
     let current_input = ref input in
     let current_output = ref output in
 
@@ -240,16 +230,6 @@ let run_radix_sort_benchmark ~device ~size ~config =
 
       (* Compute prefix sum on CPU - histogram must be transferred back *)
       let hist_arr = Vector.to_array histogram in
-
-      (* Debug: print histogram for first pass *)
-      if pass = 0 then begin
-        Printf.printf "DEBUG pass 0 histogram: " ;
-        Array.iter (fun x -> Printf.printf "%ld " x) hist_arr ;
-        Printf.printf "\n" ;
-        let sum = Array.fold_left Int32.add 0l hist_arr in
-        Printf.printf "DEBUG histogram sum: %ld (expected %d)\n" sum n
-      end ;
-
       let prefix_arr = cpu_prefix_sum hist_arr num_bins in
       for i = 0 to num_bins - 1 do
         Vector.set counters i prefix_arr.(i)
@@ -295,51 +275,7 @@ let run_radix_sort_benchmark ~device ~size ~config =
     let input_arr = Vector.to_array input in
     let output_arr = Vector.to_array output in
 
-    (* Debug output *)
-    Printf.printf
-      "DEBUG input[0..4]:  %ld %ld %ld %ld %ld\n"
-      input_arr.(0)
-      input_arr.(1)
-      input_arr.(2)
-      input_arr.(3)
-      input_arr.(4) ;
-    Printf.printf
-      "DEBUG output[0..4]: %ld %ld %ld %ld %ld\n"
-      output_arr.(0)
-      output_arr.(1)
-      output_arr.(2)
-      output_arr.(3)
-      output_arr.(4) ;
-    Printf.printf
-      "DEBUG cpu[0..4]:    %ld %ld %ld %ld %ld\n"
-      cpu_result.(0)
-      cpu_result.(1)
-      cpu_result.(2)
-      cpu_result.(3)
-      cpu_result.(4) ;
-    Printf.printf
-      "DEBUG input[n-5..]: %ld %ld %ld %ld %ld\n"
-      input_arr.(n - 5)
-      input_arr.(n - 4)
-      input_arr.(n - 3)
-      input_arr.(n - 2)
-      input_arr.(n - 1) ;
-    Printf.printf
-      "DEBUG output[n-5..]: %ld %ld %ld %ld %ld\n"
-      output_arr.(n - 5)
-      output_arr.(n - 4)
-      output_arr.(n - 3)
-      output_arr.(n - 2)
-      output_arr.(n - 1) ;
-    Printf.printf
-      "DEBUG cpu[n-5..]:   %ld %ld %ld %ld %ld\n"
-      cpu_result.(n - 5)
-      cpu_result.(n - 4)
-      cpu_result.(n - 3)
-      cpu_result.(n - 2)
-      cpu_result.(n - 1) ;
-
-    (* Use whichever buffer looks sorted - check last element *)
+    (* Determine which buffer has the sorted result by checking first/last values *)
     let gpu_result =
       if
         output_arr.(n - 1) >= output_arr.(0)
