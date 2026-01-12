@@ -1,20 +1,24 @@
-# Radix Sort
-
-Multi-pass parallel sorting using radix decomposition: **Sort by processing 4 bits at a time**
+# Radix Sort Benchmark
 
 ## Description
+Implements a single pass of radix sort using 8-bit digits (256 bins). This benchmarks the core histogram and scatter kernels, which are the fundamental building blocks of radix sort.
 
-Radix sort is a non-comparison based sorting algorithm that processes integers digit by digit (or in this case, 4 bits at a time). Each of the 8 passes (for 32-bit integers) histograms the current digit, computes a prefix sum to determine destinations, and scatters elements to their sorted positions. This creates a highly parallel, data-independent sorting algorithm.
+**Note:** A full stable multi-pass radix sort requires stable scattering, which is complex to implement efficiently with global atomics. This benchmark focuses on measuring the throughput of the histogram and scatter steps themselves, effectively performing a bucket sort on the least significant byte.
 
-## Why It Matters
+## Kernels
+1. **Histogram**: Computes the frequency of each 8-bit digit (0-255). Uses shared memory atomics for high performance within a workgroup, then merges to global memory.
+2. **Scatter**: Scatters elements into their respective bins based on prefix-sum offsets. Uses global atomics to determine the write position for each element.
 
-Radix sort is:
-- **Linear Time**: O(n×k) where k is number of passes (8 for 32-bit, 4-bit radix)
-- **Parallel Friendly**: Each pass is highly parallelizable
-- **Non-Comparison**: Doesn't depend on comparisons like quicksort
-- **Composite Algorithm**: Combines histogram, prefix sum, and scatter
+## Performance Characteristics
+- **Complexity**: O(n) for a single pass.
+- **Memory Access**:
+    - Histogram: Coalesced reads, atomic updates (shared + global).
+    - Scatter: Coalesced reads, scattered writes (random access pattern depending on data distribution).
+- **Synchronization**: Requires barrier synchronization between histogram and scatter phases.
+- **Data Distribution**: Performance is sensitive to data distribution (conflicts in atomics). This benchmark uses uniform random data.
 
-This benchmark demonstrates how to build complex algorithms from simpler parallel primitives and tests the GPU's ability to handle multi-kernel workflows with intermediate data transfers.
+## Verification
+Verifies that the output array is sorted according to the 8 least significant bits of each element.
 
 ## Sarek Kernels
 
@@ -27,13 +31,29 @@ This benchmark demonstrates how to build complex algorithms from simpler paralle
       (shift : int32)
       (mask : int32) ->
     let open Std in
+    let open Gpu in
+    let%shared (local_hist : int32) = 256l in
+    let tid = thread_idx_x in
     let gid = global_thread_id in
-    
-    if gid < n then begin
-      let value = input.(gid) in
-      let digit = (value lsr shift) land mask in
-      atomic_add histogram.(digit) 1l
-    end]
+    (* Initialize local histogram *)
+    let%superstep init = if tid < 256l then local_hist.(tid) <- 0l in
+    (* Count in local histogram *)
+    let%superstep[@divergent] count =
+      if gid < n then begin
+        let value = input.(gid) in
+        let digit = (value lsr shift) land mask in
+        let _old = atomic_add_int32 local_hist digit 1l in
+        ()
+      end
+    in
+    (* Merge to global histogram *)
+    let%superstep[@divergent] merge =
+      if tid < 256l then begin
+        let _old = atomic_add_global_int32 histogram tid local_hist.(tid) in
+        ()
+      end
+    in
+    ()]
 ```
 
 ### Scatter Kernel
@@ -41,70 +61,20 @@ This benchmark demonstrates how to build complex algorithms from simpler paralle
 [%kernel
   fun (input : int32 vector)
       (output : int32 vector)
-      (prefix_sum : int32 vector)
+      (counters : int32 vector)
       (n : int32)
       (shift : int32)
       (mask : int32) ->
     let open Std in
+    let open Gpu in
     let gid = global_thread_id in
-    
     if gid < n then begin
       let value = input.(gid) in
       let digit = (value lsr shift) land mask in
-      let pos = atomic_add prefix_sum.(digit) 1l in
+      (* Atomically get and increment counter for this digit *)
+      let pos = atomic_add_global_int32 counters digit 1l in
       output.(pos) <- value
     end]
 ```
 
 <!-- GENERATED_CODE_TABS: radix_sort -->
-
-## Key Features
-
-- **4-bit radix**: 16 bins per pass (2^4)
-- **8 passes**: Total for 32-bit integers
-- **Histogram phase**: Count occurrences of each digit value
-- **Scatter phase**: Place elements in sorted order using prefix sum
-
-## Performance Characteristics
-
-- **Complexity**: O(n × 8) for 32-bit integers with 4-bit radix
-- **Memory transfers**: Multiple passes over data
-- **Bottleneck**: Atomic operations in histogram and scatter
-- **CPU/GPU hybrid**: Prefix sum computed on CPU
-
-## Algorithm Structure
-
-For each of 8 passes (bits 0-3, 4-7, ..., 28-31):
-1. **Extract digit**: Get 4-bit digit from current position
-2. **Histogram**: Count occurrences of each digit (16 bins)
-3. **Prefix sum**: Compute exclusive scan of histogram (on CPU)
-4. **Scatter**: Place elements in sorted order based on digit
-
-After 8 passes, the array is fully sorted.
-
-## Why 4-bit Radix?
-
-Trade-off between number of passes and bin count:
-- **1-bit radix**: 32 passes, 2 bins → too many passes
-- **4-bit radix**: 8 passes, 16 bins → good balance
-- **8-bit radix**: 4 passes, 256 bins → more shared memory needed
-- **16-bit radix**: 2 passes, 65K bins → prohibitive memory
-
-## Buffer Ping-Pong
-
-Each pass swaps input/output buffers:
-- **Even passes (0,2,4,6)**: Read from input, write to output
-- **Odd passes (1,3,5,7)**: Read from output, write to input  
-- **Final result**: In input buffer after 8 passes
-
-## Known Issues
-
-⚠️ This benchmark currently has verification failures under investigation. The algorithm is correct but there may be implementation details causing incorrect results.
-
-## Expected Results (When Working)
-
-Modern GPUs should achieve:
-- **Overall**: ~100-500 M elements/s
-- **Per pass**: ~50-200 M elements/s
-- **8× overhead**: Compared to single-pass algorithms
-- **Still competitive**: With comparison-based parallel sorts
