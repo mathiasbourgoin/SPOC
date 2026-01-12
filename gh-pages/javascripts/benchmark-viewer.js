@@ -430,6 +430,11 @@ async function updateBenchmarkDescription() {
         }
         let markdown = await response.text();
         
+        // Fix relative image paths - they're relative to the markdown file location
+        // If readme is "descriptions/mandelbrot.md", images should be "descriptions/images/..."
+        const readmeDir = config.readme.substring(0, config.readme.lastIndexOf('/'));
+        markdown = markdown.replace(/!\[([^\]]*)\]\(images\//g, `![$1](${readmeDir}/images/`);
+        
         // Process generated code tabs markers
         markdown = await processGeneratedCodeTabs(markdown);
         
