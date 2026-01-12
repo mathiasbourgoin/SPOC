@@ -11,13 +11,14 @@ title: Benchmark Results
 .benchmark-selector {
     margin: 20px 0;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 10px;
 }
 
 .benchmark-selector label {
     font-weight: 600;
     color: var(--text-color);
+    padding-top: 8px;
 }
 
 .benchmark-selector select {
@@ -29,6 +30,9 @@ title: Benchmark Results
     color: var(--text-color);
     cursor: pointer;
     min-width: 300px;
+    max-width: 400px;
+    /* For size-based listbox, ensure scrolling works */
+    overflow-y: auto;
 }
 
 /* Style for dropdown when expanded (browser-dependent) */
@@ -340,7 +344,7 @@ title: Benchmark Results
 
 <div class="benchmark-selector">
     <label for="benchmark-select">Select Benchmark:</label>
-    <select id="benchmark-select">
+    <select id="benchmark-select" size="8">
         <optgroup label="Matrix Operations">
             <option value="matrix_mul">Matrix Multiplication (Naive)</option>
             <option value="matrix_mul_tiled">Matrix Multiplication (Tiled)</option>
