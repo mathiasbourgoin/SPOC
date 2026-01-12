@@ -152,31 +152,6 @@ echo "  ✓ Complete"
 echo ""
 
 # Sprint 2 Benchmarks
-echo "▶ Prefix Sum (Scan)..."
-dune exec benchmarks/bench_scan.exe -- --output "${RUN_DIR}"
-echo "  ✓ Complete"
-echo ""
-
-echo "▶ Bitonic Sort..."
-dune exec benchmarks/bench_bitonic_sort.exe -- --output "${RUN_DIR}"
-echo "  ✓ Complete"
-echo ""
-
-echo "▶ Histogram (256 bins)..."
-dune exec benchmarks/bench_histogram.exe -- --output "${RUN_DIR}"
-echo "  ✓ Complete"
-echo ""
-
-echo "▶ Gather/Scatter..."
-dune exec benchmarks/bench_gather_scatter.exe -- --output "${RUN_DIR}"
-echo "  ✓ Complete"
-echo ""
-
-echo "▶ Radix Sort..."
-dune exec benchmarks/bench_radix_sort.exe -- --output "${RUN_DIR}"
-echo "  ✓ Complete"
-echo ""
-
 echo "▶ N-Body..."
 dune exec benchmarks/bench_nbody.exe -- --output "${RUN_DIR}"
 echo "  ✓ Complete"
