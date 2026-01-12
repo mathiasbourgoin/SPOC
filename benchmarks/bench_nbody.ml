@@ -30,7 +30,8 @@
 module Device = Spoc_core.Device
 module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
-open Benchmark_backends
+open Benchmark_common
+open Benchmark_runner
 
 (** Pure OCaml baseline: N-body force calculation *)
 let cpu_nbody xs ys zs n =
@@ -99,8 +100,9 @@ let accel_kernel =
         az.(tid) <- fz)]
 
 (** Run N-body benchmark on specified device *)
-let run_nbody_benchmark device backend_name size =
+let run_nbody_benchmark ~device ~size ~config =
   let n = size in
+  let backend_name = device.Device.framework in
 
   let _, kirc = accel_kernel in
   let ir =
@@ -136,30 +138,31 @@ let run_nbody_benchmark device backend_name size =
   let block = Sarek.Execute.dims1d block_size in
   let grid = Sarek.Execute.dims1d grid_size in
 
-  (* Warmup run *)
-  Sarek.Execute.run_vectors
-    ~device
-    ~ir
-    ~args:
-      [
-        Sarek.Execute.Vec xs;
-        Sarek.Execute.Vec ys;
-        Sarek.Execute.Vec zs;
-        Sarek.Execute.Vec ax;
-        Sarek.Execute.Vec ay;
-        Sarek.Execute.Vec az;
-        Sarek.Execute.Int32 (Int32.of_int n);
-      ]
-    ~block
-    ~grid
-    () ;
+  (* Warmup runs *)
+  for _ = 1 to config.warmup do
+    Sarek.Execute.run_vectors
+      ~device
+      ~ir
+      ~args:
+        [
+          Sarek.Execute.Vec xs;
+          Sarek.Execute.Vec ys;
+          Sarek.Execute.Vec zs;
+          Sarek.Execute.Vec ax;
+          Sarek.Execute.Vec ay;
+          Sarek.Execute.Vec az;
+          Sarek.Execute.Int32 (Int32.of_int n);
+        ]
+      ~block
+      ~grid
+      ()
+  done ;
   Transfer.flush device ;
 
   (* Timed runs *)
-  let num_runs = 100 in
   let times = ref [] in
 
-  for _ = 1 to num_runs do
+  for _ = 1 to config.iterations do
     let t0 = Unix.gettimeofday () in
     Sarek.Execute.run_vectors
       ~device
@@ -179,16 +182,8 @@ let run_nbody_benchmark device backend_name size =
       () ;
     Transfer.flush device ;
     let t1 = Unix.gettimeofday () in
-    times := (t1 -. t0) :: !times
+    times := ((t1 -. t0) *. 1000.0) :: !times
   done ;
-
-  (* Compute statistics *)
-  let sorted_times = List.sort compare !times in
-  let avg_time =
-    List.fold_left ( +. ) 0.0 sorted_times /. float_of_int num_runs
-  in
-  let min_time = List.hd sorted_times in
-  let median_time = List.nth sorted_times (num_runs / 2) in
 
   (* Verify correctness *)
   let gpu_ax = Vector.to_array ax in
@@ -208,79 +203,43 @@ let run_nbody_benchmark device backend_name size =
         (check gpu_ax.(i) cpu_ax.(i)
         && check gpu_ay.(i) cpu_ay.(i)
         && check gpu_az.(i) cpu_az.(i))
-    then begin
-      if !errors < 5 then
-        Printf.printf
-          "  ERROR at %d: GPU (%f,%f,%f) CPU (%f,%f,%f)\n"
-          i
-          gpu_ax.(i)
-          gpu_ay.(i)
-          gpu_az.(i)
-          cpu_ax.(i)
-          cpu_ay.(i)
-          cpu_az.(i) ;
-      incr errors
-    end
+    then incr errors
   done ;
 
-  (* Report results *)
-  Printf.printf "\n=== N-Body Simulation Benchmark ===\n" ;
-  Printf.printf "Backend: %s\n" backend_name ;
-  Printf.printf "Particles: %d\n" n ;
-  Printf.printf "Interactions: %d (N²)\n" (n * n) ;
-  Printf.printf "Block size: %d\n" block_size ;
-  Printf.printf "Grid size: %d blocks\n" grid_size ;
-  Printf.printf "\nTiming (%d runs):\n" num_runs ;
-  Printf.printf "  Min:    %.3f ms\n" (min_time *. 1000.0) ;
-  Printf.printf "  Median: %.3f ms\n" (median_time *. 1000.0) ;
-  Printf.printf "  Mean:   %.3f ms\n" (avg_time *. 1000.0) ;
+  let verified = !errors = 0 in
 
-  (* Calculate GFLOPS: ~20 FLOPs per interaction *)
-  let flops = float_of_int (n * n) *. 20.0 in
-  let gflops = flops /. (median_time *. 1e9) in
-  Printf.printf "  Performance: %.2f GFLOPS\n" gflops ;
+  (* Compute statistics *)
+  let times_array = Array.of_list (List.rev !times) in
+  let median_ms = Common.median times_array in
 
-  let interactions_per_sec = float_of_int (n * n) /. median_time /. 1e9 in
-  Printf.printf "  Interactions: %.2f G/s\n" interactions_per_sec ;
+  (* Calculate throughput: interactions per second *)
+  let interactions = float_of_int (n * n) in
+  let throughput_ginteractions = interactions /. (median_ms /. 1000.0) /. 1e9 in
 
-  Printf.printf "\nVerification: " ;
-  if !errors = 0 then Printf.printf "PASS ✓ (all %d particles correct)\n" n
-  else Printf.printf "FAIL ✗ (%d/%d errors)\n" !errors n ;
-
-  Printf.printf
-    "Sample forces (particle 0): ax=%.6f ay=%.6f az=%.6f\n"
-    gpu_ax.(0)
-    gpu_ay.(0)
-    gpu_az.(0) ;
-  Printf.printf "===================================\n" ;
-
-  !errors = 0
+  Output.
+    {
+      device_id = device.Device.id;
+      device_name = device.Device.name;
+      framework = backend_name;
+      iterations = times_array;
+      mean_ms = Common.mean times_array;
+      stddev_ms = Common.stddev times_array;
+      median_ms;
+      min_ms = Common.min times_array;
+      max_ms = Common.max times_array;
+      throughput = Some throughput_ginteractions;
+      verified = Some verified;
+    }
 
 (** Main benchmark runner *)
 let () =
-  Printf.printf "N-Body Simulation Benchmark\n" ;
-  Printf.printf "All-pairs gravitational forces (O(N²))\n\n" ;
-
-  let size =
-    if Array.length Sys.argv > 1 then int_of_string Sys.argv.(1) else 1024
+  let config =
+    Benchmark_runner.parse_args
+      ~benchmark_name:"nbody"
+      ~default_sizes:[512; 1024; 2048; 4096]
+      ()
   in
-
-  (* Initialize backends *)
-  Backend_loader.init () ;
-
-  (* Initialize SPOC and discover devices *)
-  let devices = Device.init () in
-
-  if Array.length devices = 0 then begin
-    Printf.printf "No GPU devices found. Cannot run benchmark.\n" ;
-    exit 1
-  end ;
-
-  (* Run on first available device *)
-  let device = devices.(0) in
-  let backend_name = device.Device.framework in
-
-  Printf.printf "Using device: %s (%s)\n\n" device.Device.name backend_name ;
-
-  let success = run_nbody_benchmark device backend_name size in
-  exit (if success then 0 else 1)
+  Benchmark_runner.run_benchmark
+    ~benchmark_name:"nbody"
+    ~config
+    ~run_fn:run_nbody_benchmark
