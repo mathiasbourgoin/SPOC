@@ -167,6 +167,34 @@ dune exec benchmarks/bench_stencil_2d.exe -- --output "${RUN_DIR}"
 echo "  ✓ Complete"
 echo ""
 
+echo "▶ Prefix Sum (Scan)..."
+dune exec benchmarks/bench_scan.exe -- --output "${RUN_DIR}"
+echo "  ✓ Complete"
+echo ""
+
+echo "▶ Bitonic Sort..."
+dune exec benchmarks/bench_bitonic_sort.exe -- --output "${RUN_DIR}"
+echo "  ✓ Complete"
+echo ""
+
+echo "▶ Histogram (256 bins)..."
+dune exec benchmarks/bench_histogram.exe -- --output "${RUN_DIR}"
+echo "  ✓ Complete"
+echo ""
+
+echo "▶ Gather/Scatter..."
+dune exec benchmarks/bench_gather_scatter.exe -- --output "${RUN_DIR}"
+echo "  ✓ Complete"
+echo ""
+
+echo "▶ Radix Sort..."
+if dune exec benchmarks/bench_radix_sort.exe -- --output "${RUN_DIR}"; then
+  echo "  ✓ Complete"
+else
+  echo "  ⚠ Radix sort failed (known issue)"
+fi
+echo ""
+
 # Count results
 RESULT_COUNT=$(ls -1 "${RUN_DIR}"/*.json 2>/dev/null | wc -l)
 echo "================================================"
