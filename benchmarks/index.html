@@ -358,22 +358,23 @@
     <div class="contribute-content">
         <p>Help build a comprehensive performance database by running benchmarks on your hardware:</p>
         <ol>
-            <li>Clone the repository: <code>git clone https://github.com/mathiasbourgoin/SPOC.git</code></li>
+            <li>Clone the repository: <code>git clone https://github.com/mathiasbourgoin/Sarek.git</code></li>
             <li>Install dependencies: <code>opam install --deps-only -y .</code></li>
-            <li>Run all benchmarks: <code>eval $(opam env) &amp;&amp; ./benchmarks/run_all_benchmarks.sh</code></li>
+            <li>Run all benchmarks: <code>make benchmarks</code> or <code>./benchmarks/run_all_benchmarks.sh</code></li>
+            <li>Check for duplicates: <code>dune exec benchmarks/deduplicate_results.exe -- --dry-run</code></li>
             <li>Submit results as a PR (takes ~5-15 minutes)</li>
         </ol>
 
-<p><strong>Comprehensive benchmark suite covering 20 workloads:</strong> matrix operations, vector operations, reductions, scans, sorting, memory patterns (gather/scatter, histogram), stencils, convolutions, N-body simulations, and fractal generation</p>
+        <p><strong>Comprehensive benchmark suite covering 20 workloads:</strong> matrix operations, vector operations, reductions, scans, sorting, memory patterns (gather/scatter, histogram), stencils, convolutions, N-body simulations, and fractal generation</p>
         <p>We're especially interested in results from:</p>
         <ul>
-            <li>NVIDIA GPUs (RTX 40xx, 30xx, Tesla, etc.)</li>
-            <li>AMD GPUs (RX 7000, 6000 series, MI series)</li>
-            <li>Intel Arc GPUs (A770, A750, A380)</li>
+            <li>NVIDIA GPUs (RTX 50xx, 40xx, 30xx, Tesla, H100)</li>
+            <li>AMD GPUs (RX 7000, 6000 series, MI300X, MI250X)</li>
+            <li>Intel Arc GPUs (A770, A750, A380, Max Series)</li>
             <li>Apple Silicon (M1, M2, M3, M4 series)</li>
             <li>Mobile GPUs (Qualcomm, Mali, PowerVR)</li>
         </ul>
-        <p>See <a href="https://github.com/mathiasbourgoin/SPOC/blob/main/benchmarks/CONTRIBUTING.md">CONTRIBUTING.md</a> for detailed instructions.</p>
+        <p>See <a href="https://github.com/mathiasbourgoin/Sarek/blob/main/benchmarks/CONTRIBUTING.md">CONTRIBUTING.md</a> for detailed instructions.</p>
     </div>
 </details>
 
