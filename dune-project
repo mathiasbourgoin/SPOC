@@ -5,7 +5,7 @@
 
 (generate_opam_files true)
 
-(source (github mathiasbourgoin/SPOC))
+(source (github mathiasbourgoin/Sarek))
 (license Cecill-B)
 (authors "Mathias Bourgoin")
 (maintainers "mathias.bourgoin@gmail.com")
