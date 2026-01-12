@@ -88,7 +88,7 @@ This is **extremely memory-bound** - one of the lowest arithmetic intensities in
 | 1024×1024  | 1.05M   | 0.28      | 3,750     | 90    |
 | 2048×2048  | 4.19M   | 1.12      | 3,741     | 90    |
 
-**Intel Arc A770 GPU (OpenCL backend)**
+#### Intel Arc A770 GPU (OpenCL backend)
 
 Performance limited by memory bandwidth (~90 GB/s ≈ 40% of theoretical peak).
 
@@ -108,7 +108,7 @@ For each block:
   Write results back to global memory
 ```
 
-**Benefit**: Reduces global memory traffic by factor of iterations_per_block
+**Benefit:** Reduces global memory traffic by factor of iterations_per_block
 
 ### 2. Red-Black Ordering
 Use checkerboard pattern (like chess board) to eliminate read-after-write hazards:
@@ -118,7 +118,7 @@ Iteration 1: Update all "red" cells (even x+y)
 Iteration 2: Update all "black" cells (odd x+y)
 ```
 
-**Benefit**: Can update in-place, single array instead of ping-pong
+**Benefit:** Can update in-place, single array instead of ping-pong
 
 ### 3. Multi-Grid Methods
 Use coarse-grain resolution for early iterations, refine later:
@@ -131,7 +131,7 @@ Interpolate to 256×256 grid
 ...
 ```
 
-**Benefit**: Faster convergence, fewer total iterations
+**Benefit:** Faster convergence, fewer total iterations
 
 ### 4. Cache Blocking for CPU
 Tile the grid to fit in L2/L3 cache for CPU implementations.
