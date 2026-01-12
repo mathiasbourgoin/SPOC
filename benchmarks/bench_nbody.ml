@@ -27,6 +27,8 @@
  * - Intel Core CPU (OpenCL)
  ******************************************************************************)
 
+[@@@warning "-33"] (* Suppress unused-open warnings from PPX *)
+
 module Device = Spoc_core.Device
 module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
