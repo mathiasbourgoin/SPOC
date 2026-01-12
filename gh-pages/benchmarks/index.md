@@ -28,7 +28,25 @@ title: Benchmark Results
     background: var(--bg-color);
     color: var(--text-color);
     cursor: pointer;
-    min-width: 250px;
+    min-width: 300px;
+}
+
+/* Style for dropdown when expanded (browser-dependent) */
+.benchmark-selector select option,
+.benchmark-selector select optgroup {
+    font-size: 0.95em;
+    padding: 6px 8px;
+}
+
+.benchmark-selector select optgroup {
+    font-weight: bold;
+    font-style: normal;
+    color: var(--link-color);
+    padding: 8px 4px 4px 4px;
+}
+
+.benchmark-selector select option {
+    padding-left: 20px;
 }
 
 .benchmark-selector select:focus {
