@@ -81,6 +81,9 @@ dune build \
   benchmarks/bench_histogram.exe \
   benchmarks/bench_gather_scatter.exe \
   benchmarks/bench_radix_sort.exe \
+  benchmarks/bench_nbody.exe \
+  benchmarks/bench_conv2d.exe \
+  benchmarks/bench_stencil_2d.exe \
   benchmarks/to_web.exe
 
 echo ""
@@ -171,6 +174,21 @@ echo ""
 
 echo "▶ Radix Sort..."
 dune exec benchmarks/bench_radix_sort.exe -- --output "${RUN_DIR}"
+echo "  ✓ Complete"
+echo ""
+
+echo "▶ N-Body..."
+dune exec benchmarks/bench_nbody.exe -- --output "${RUN_DIR}"
+echo "  ✓ Complete"
+echo ""
+
+echo "▶ 2D Convolution..."
+dune exec benchmarks/bench_conv2d.exe -- --output "${RUN_DIR}"
+echo "  ✓ Complete"
+echo ""
+
+echo "▶ 2D Stencil (Jacobi)..."
+dune exec benchmarks/bench_stencil_2d.exe -- --output "${RUN_DIR}"
 echo "  ✓ Complete"
 echo ""
 
