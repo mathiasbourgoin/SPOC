@@ -31,3 +31,9 @@ benchmark_output.txt
 
 # Jupyter kernel JavaScript build artifacts (generated, not source)
 gh-pages/static/services/kernels/js/*.js
+
+.claude
+.gemini
+.github
+_bmad
+_bmat_output

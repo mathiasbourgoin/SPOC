@@ -1,5 +1,6 @@
 (lang dune 3.15)
 (name spoc)
+(version dev)
 (cram enable)
 
 (generate_opam_files true)
@@ -41,6 +42,7 @@ Install sarek-cuda, sarek-opencl, or sarek-vulkan for GPU execution.")
   (ppxlib (>= 0.22.0))
   ctypes
   ctypes-foreign
+  (yojson :with-test)
   (alcotest :with-test)
   (bisect_ppx :with-test)))
 
