@@ -11,6 +11,7 @@
     Output is saved as markdown files that can be included in documentation. *)
 
 module Std = Sarek_stdlib.Std
+module Gpu = Sarek_stdlib.Gpu
 
 (** Vector addition kernel *)
 let vector_add_kernel =
@@ -383,6 +384,62 @@ let scatter_kernel =
       end]
 [@@warning "-33"]
 
+(** Radix Sort: Histogram Kernel *)
+let radix_histogram_kernel =
+  [%kernel
+    fun (input : int32 vector)
+        (histogram : int32 vector)
+        (n : int32)
+        (shift : int32)
+        (mask : int32) ->
+      let open Std in
+      let open Gpu in
+      let%shared (local_hist : int32) = 256l in
+      let tid = thread_idx_x in
+      let gid = global_thread_id in
+      let num_bins = 256l in
+      (* Initialize local histogram *)
+      let%superstep init = if tid < num_bins then local_hist.(tid) <- 0l in
+      (* Count in local histogram *)
+      let%superstep[@divergent] count =
+        if gid < n then begin
+          let value = input.(gid) in
+          let digit = (value lsr shift) land mask in
+          let _old = atomic_add_int32 local_hist digit 1l in
+          ()
+        end
+      in
+      (* Merge to global histogram *)
+      let%superstep[@divergent] merge =
+        if tid < num_bins then begin
+          let _old = atomic_add_global_int32 histogram tid local_hist.(tid) in
+          ()
+        end
+      in
+      ()]
+[@@warning "-33"]
+
+(** Radix Sort: Scatter Kernel *)
+let radix_scatter_kernel =
+  [%kernel
+    fun (input : int32 vector)
+        (output : int32 vector)
+        (counters : int32 vector)
+        (n : int32)
+        (shift : int32)
+        (mask : int32) ->
+      let open Std in
+      let open Gpu in
+      let gid = global_thread_id in
+      if gid < n then begin
+        let value = input.(gid) in
+        let digit = (value lsr shift) land mask in
+        (* Atomically get and increment counter for this digit *)
+        let pos = atomic_add_global_int32 counters digit 1l in
+        output.(pos) <- value
+      end]
+[@@warning "-33"]
+
 (** Generate backend code for a kernel *)
 let generate_backend_code kernel_name kernel_func output_dir =
   Printf.printf "Generating backend code for: %s\n" kernel_name ;
@@ -492,5 +549,10 @@ let () =
   generate_backend_code "mandelbrot" mandelbrot_kernel !output_dir ;
   generate_backend_code "gather" gather_kernel !output_dir ;
   generate_backend_code "scatter" scatter_kernel !output_dir ;
+  generate_backend_code
+    "radix_sort_histogram"
+    radix_histogram_kernel
+    !output_dir ;
+  generate_backend_code "radix_sort_scatter" radix_scatter_kernel !output_dir ;
 
   Printf.printf "=== Generation Complete ===\n"
