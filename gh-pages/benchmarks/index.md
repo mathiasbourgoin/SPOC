@@ -319,7 +319,7 @@ title: Benchmark Results
             <li>Submit results as a PR (takes ~5-15 minutes)</li>
         </ol>
 
-<p><strong>Comprehensive benchmark suite covering 14 workloads:</strong> matrix operations, vector operations, reductions, stencils, convolutions, N-body simulations, and fractal generation</p>
+<p><strong>Comprehensive benchmark suite covering 20 workloads:</strong> matrix operations, vector operations, reductions, scans, sorting, memory patterns (gather/scatter, histogram), stencils, convolutions, N-body simulations, and fractal generation</p>
         <p>We're especially interested in results from:</p>
         <ul>
             <li>NVIDIA GPUs (RTX 40xx, 30xx, Tesla, etc.)</li>
@@ -352,6 +352,16 @@ title: Benchmark Results
             <option value="reduction">Parallel Reduction (Sum)</option>
             <option value="reduction_max">Parallel Reduction (Max)</option>
             <option value="stream_triad">STREAM Triad</option>
+            <option value="scan">Prefix Sum (Inclusive Scan)</option>
+        </optgroup>
+        <optgroup label="Sorting">
+            <option value="bitonic_sort">Bitonic Sort</option>
+            <option value="radix_sort">Radix Sort</option>
+        </optgroup>
+        <optgroup label="Memory Patterns">
+            <option value="histogram">Histogram (256 bins)</option>
+            <option value="gather">Gather (Indexed Read)</option>
+            <option value="scatter">Scatter (Indexed Write)</option>
         </optgroup>
         <optgroup label="Stencils & Convolution">
             <option value="conv2d">2D Convolution (3×3 Box Blur)</option>
