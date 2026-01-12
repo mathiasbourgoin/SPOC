@@ -43,11 +43,12 @@ This document tracks the implementation status of the Sarek benchmark suite.
   - ✅ Bug fixed: correct kernel arguments (m, n, k)
   - ✅ Default sizes: 256, 512, 1024, 2048 elements
   
-- [ ] **Matrix Multiplication (tiled)** - Shared memory optimization
-  - Use shared memory for tiling
-  - Show optimization impact
-  - Compare naive vs tiled performance
-  - Kernel exists in tests/e2e - adapt for benchmarking
+- [x] **Matrix Multiplication (tiled)** - Shared memory optimization
+  - ✅ Implemented in bench_matrix_mul_tiled.ml
+  - ✅ Uses 16×16 tiles with shared memory
+  - ✅ Shows optimization impact
+  - ✅ Compare naive vs tiled performance
+  - ✅ Default sizes: 128, 256, 512, 1024, 2048, 4096
   
 - [ ] **Matrix Multiplication (optimized)** - Register blocking
   - Advanced optimizations
@@ -73,15 +74,17 @@ This document tracks the implementation status of the Sarek benchmark suite.
   - ✅ Verification passing on all sizes
   - ✅ Measures memory bandwidth (GB/s)
   
-- [ ] **Min/Max Reduction** - Comparison-based reduction
-  - Find minimum/maximum in array
-  - Compare different reduction patterns
-  - Kernel exists in tests/e2e - adapt for benchmarking
+- [x] **Min/Max Reduction** - Comparison-based reduction
+  - ✅ Implemented in bench_reduction_max.ml
+  - ✅ Find maximum in array with tree reduction
+  - ✅ Shared memory optimization
+  - ✅ Default sizes: 1M, 10M, 50M, 100M elements
   
-- [ ] **Dot Product** - Combined multiply-reduce
-  - `sum(A[i] * B[i])`
-  - Common in scientific computing
-  - Kernel exists in tests/e2e - adapt for benchmarking
+- [x] **Dot Product** - Combined multiply-reduce
+  - ✅ Implemented in bench_dot_product.ml
+  - ✅ `sum(A[i] * B[i])`
+  - ✅ Common in scientific computing
+  - ✅ Default sizes: 1M, 10M, 50M, 100M elements
 
 ### Data Movement
 - [x] **Transpose (Naive)** - Memory access pattern benchmark
@@ -102,52 +105,58 @@ This document tracks the implementation status of the Sarek benchmark suite.
   - Shows excellent scaling: 0.87× @ 256 → 3.21× @ 8192
   - CPU benefits even more: 5.37× speedup @ 8192
   
-- [ ] **Scan (Prefix Sum)** - Parallel scan algorithms
-  - Inclusive and exclusive scan
-  - Hillis-Steele and Blelloch algorithms
-  - Already exists in tests/e2e - adapt for benchmarking
+- [x] **Scan (Prefix Sum)** - Parallel scan algorithms
+  - ✅ Implemented in bench_scan.ml
+  - ✅ Hillis-Steele parallel scan algorithm
+  - ✅ Power-of-2 sizes: 64, 128, 256
   
-- [ ] **Gather/Scatter** - Irregular memory access
-  - Index-based array operations
-  - Measure random access performance
+- [x] **Gather/Scatter** - Irregular memory access
+  - ✅ Implemented in bench_gather_scatter.ml
+  - ✅ Index-based array operations (both gather and scatter)
+  - ✅ Measure random access performance
+  - ✅ Default sizes: 1M, 10M, 50M elements
 
 ### Sorting and Searching
-- [ ] **Bitonic Sort** - Parallel sorting network
-  - In-place sorting
-  - Size sweep (powers of 2)
-  - Already exists in tests/e2e - adapt for benchmarking
+- [x] **Bitonic Sort** - Parallel sorting network
+  - ✅ Implemented in bench_bitonic_sort.ml
+  - ✅ In-place sorting network
+  - ✅ Size sweep (powers of 2): 1024, 4096, 16384
   
-- [ ] **Radix Sort** - Integer sorting
+- [x] **Radix Sort** - Integer sorting
+  - ✅ Implemented in bench_radix_sort.ml
+  - ⚠️ Known issue #101: Segmentation fault
   - Multi-pass digit-based sort
-  - Compare against std::sort CPU baseline
   
-- [ ] **Histogram** - Binning with atomics
-  - Various bin counts (64, 256, 1024)
-  - Atomic operations performance
-  - Already exists in tests/e2e - adapt for benchmarking
+- [x] **Histogram** - Binning with atomics
+  - ✅ Implemented in bench_histogram.ml
+  - ✅ 256 bins with atomic operations
+  - ✅ Default sizes: 1M, 10M, 50M elements
 
 ## Scientific Computing
 
 ### Stencil Computations
-- [ ] **2D Jacobi** - Iterative stencil
-  - 5-point stencil (up, down, left, right, center)
-  - Heat diffusion simulation
-  - Already exists in tests/e2e (test_stencil.ml) - adapt for benchmarking
+- [x] **2D Jacobi** - Iterative stencil
+  - ✅ Implemented in bench_stencil_2d.ml
+  - ✅ 5-point stencil (up, down, left, right, center)
+  - ✅ Heat diffusion / Laplace equation
+  - ✅ Default sizes: 256×256, 512×512, 1024×1024, 2048×2048
   
 - [ ] **3D Stencil** - 3D heat equation
   - 7-point or 27-point stencil
   - Volume data processing
   
-- [ ] **Convolution 2D** - Image filtering
-  - Separable and non-separable kernels
-  - Various kernel sizes (3x3, 5x5, 7x7, 11x11)
-  - Already exists in tests/e2e - adapt for benchmarking
+- [x] **Convolution 2D** - Image filtering
+  - ✅ Implemented in bench_conv2d.ml
+  - ✅ 3×3 box blur kernel
+  - ✅ Image processing workload
+  - ✅ Default sizes: 256×256, 512×512, 1024×1024, 2048×2048
 
 ### N-Body Simulation
-- [ ] **N-Body (naive)** - O(N²) particle interactions
-  - All-pairs gravitational forces
-  - Particle counts: 1K, 4K, 16K, 64K
-  - Already exists in tests/e2e (test_nbody_ppx.ml) - adapt for benchmarking
+- [x] **N-Body (naive)** - O(N²) particle interactions
+  - ✅ Implemented in bench_nbody.ml
+  - ✅ All-pairs gravitational forces
+  - ✅ Particle counts: 512, 1024, 2048, 4096
+  - ✅ High arithmetic intensity benchmark
   
 - [ ] **N-Body (optimized)** - Tiled computation
   - Shared memory optimization
@@ -164,9 +173,11 @@ This document tracks the implementation status of the Sarek benchmark suite.
 
 ## Graphics and Rendering
 
-- [ ] **Mandelbrot Set** - Embarrassingly parallel
-  - Complex number iteration
-  - Already exists in tests/e2e - adapt for benchmarking
+- [x] **Mandelbrot Set** - Embarrassingly parallel
+  - ✅ Implemented in bench_mandelbrot.ml
+  - ✅ Complex number iteration
+  - ✅ Generates visualization images
+  - ✅ Default sizes: 512×512, 1024×1024, 2048×2048
   
 - [ ] **Ray Tracing** - Ray-sphere intersection
   - Basic ray tracing kernel
@@ -244,33 +255,38 @@ This document tracks the implementation status of the Sarek benchmark suite.
 - [ ] **Kernel Launch Overhead** - Host-device sync cost
 - [ ] **Memory Transfer Bandwidth** - Host ↔ Device transfer rates
 
-## Implementation Priority
+## Implementation Status Summary
 
-### Phase 1 (Core Benchmarks)
-1. Matrix Multiplication (tiled) - Show optimization capability
-2. Vector Add - Memory bandwidth baseline  
-3. Reduction (sum) - Parallel patterns
-4. Transpose - Memory coalescing
-5. N-Body - Real-world code
+### ✅ Completed (19 benchmarks)
+1. ✅ Vector Add - Memory bandwidth baseline
+2. ✅ Vector Copy - Memory transfer baseline
+3. ✅ STREAM Triad - Industry standard memory benchmark
+4. ✅ Matrix Multiplication (naive) - Basic dense linear algebra
+5. ✅ Matrix Multiplication (tiled) - Shared memory optimization
+6. ✅ Reduction (sum) - Parallel patterns
+7. ✅ Reduction (max) - Comparison-based reduction
+8. ✅ Dot Product - Combined multiply-reduce
+9. ✅ Transpose (naive) - Memory coalescing
+10. ✅ Transpose (tiled) - Optimized transpose
+11. ✅ Scan (prefix sum) - Hillis-Steele algorithm
+12. ✅ Gather/Scatter - Irregular memory access
+13. ✅ Bitonic Sort - Parallel sorting network
+14. ✅ Radix Sort - Integer sorting (⚠️ has segfault issue #101)
+15. ✅ Histogram - Atomic operations
+16. ✅ 2D Jacobi Stencil - Heat diffusion
+17. ✅ 2D Convolution - Image filtering
+18. ✅ N-Body - Gravitational simulation
+19. ✅ Mandelbrot Set - Fractal generation
 
-### Phase 2 (Breadth)
-6. Scan (prefix sum)
-7. Histogram
-8. Convolution
-9. Stencil 2D
-10. Sort (bitonic)
-
-### Phase 3 (Depth)
-11. FFT
-12. GEMM (optimized)
-13. Monte Carlo
-14. Ray Tracing
-
-### Phase 4 (ML/Specialized)
-15. Activation functions
-16. Pooling
-17. Batch normalization
-18. Microbenchmarks
+### 🚧 In Progress / Planned
+- [ ] FFT 1D/2D
+- [ ] GEMM (optimized with register blocking)
+- [ ] 3D Stencil
+- [ ] N-Body (optimized with tiling)
+- [ ] Ray Tracing
+- [ ] Monte Carlo methods
+- [ ] ML primitives (activation functions, pooling, normalization)
+- [ ] Microbenchmarks (atomics, barriers, bank conflicts)
 
 ## Notes
 
