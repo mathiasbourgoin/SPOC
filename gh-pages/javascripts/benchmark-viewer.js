@@ -34,6 +34,12 @@ const ALGO_COLORS = {
 };
 
 // Benchmark configurations
+// IMPORTANT: When adding a new benchmark, you must update:
+//   1. This BENCHMARK_CONFIGS object with benchmark metadata (title, labels, variants, readme)
+//   2. The selector dropdown in index.md with a matching option value
+//   3. The benchmark description markdown file in descriptions/
+//   4. The benchmarkConfig object in updateChart() with detailed chart titles/units (line ~648)
+// The variants array maps the selector value to actual benchmark names in the JSON data.
 const BENCHMARK_CONFIGS = {
     'matrix_mul': {
         title: 'Matrix Multiplication (Naive)',
@@ -645,6 +651,9 @@ function updateChart() {
     }
     
     // Get benchmark-specific labels and units
+    // IMPORTANT: This benchmarkConfig duplicates info from BENCHMARK_CONFIGS for chart display.
+    // When adding a new benchmark, add it here with detailed chart title, labels, and units.
+    // Consider refactoring to eliminate this duplication in the future.
     const benchmarkConfig = {
         'matrix_mul': {
             title: 'Matrix Multiplication Performance (Naive Kernel)',
