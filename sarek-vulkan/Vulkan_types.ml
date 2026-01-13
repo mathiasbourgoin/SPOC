@@ -1050,3 +1050,16 @@ let () = seal vk_command_buffer_begin_info
 
 (** Null handle constant *)
 let vk_null_handle = Unsigned.UInt64.zero
+
+(** VkBufferCopy *)
+type vk_buffer_copy
+
+let vk_buffer_copy : vk_buffer_copy structure typ = structure "VkBufferCopy"
+
+let buffer_copy_srcOffset = field vk_buffer_copy "srcOffset" vk_device_size
+
+let buffer_copy_dstOffset = field vk_buffer_copy "dstOffset" vk_device_size
+
+let buffer_copy_size = field vk_buffer_copy "size" vk_device_size
+
+let () = seal vk_buffer_copy
