@@ -31,7 +31,7 @@ let u32 = Unsigned.UInt32.of_int
 
 (** {1 Exceptions} *)
 
-exception Vulkan_error of vk_result * string
+exception Vk_result_error of vk_result * string
 
 (** Check Vulkan result and raise exception on error *)
 let check (ctx : string) (result : vk_result) : unit =
@@ -43,7 +43,7 @@ let check (ctx : string) (result : vk_result) : unit =
         "[Vulkan] %s failed with %s"
         ctx
         (string_of_vk_result err) ;
-      raise (Vulkan_error (err, ctx))
+      raise (Vk_result_error (err, ctx))
 
 (** {1 SPIR-V Compilation} *)
 
@@ -504,15 +504,11 @@ module Memory = struct
     let count = Unsigned.UInt32.to_int (getf props mem_props_memoryTypeCount) in
     let types_arr = getf props mem_props_memoryTypes in
     let rec find i =
-      if i >= count then
-        Vulkan_error.raise_error
-          (Vulkan_error.memory_allocation_failed
-             0L
-             "no suitable memory type found")
+      if i >= count then None
       else if type_filter land (1 lsl i) <> 0 then
         let mem_type = CArray.get types_arr i in
         let flags = getf mem_type mem_type_propertyFlags in
-        if Unsigned.UInt32.to_int flags land properties = properties then i
+        if Unsigned.UInt32.to_int flags land properties = properties then Some i
         else find (i + 1)
       else find (i + 1)
     in
@@ -520,6 +516,140 @@ module Memory = struct
 
   (* VK_WHOLE_SIZE = ~0ULL - map entire memory range *)
   let vk_whole_size = Unsigned.UInt64.max_int
+
+  (* Helper to allocate a command buffer, record commands, and submit *)
+  let run_single_time_command device record_fn =
+    let alloc_info = make vk_command_buffer_allocate_info in
+    setf
+      alloc_info
+      cmd_buf_alloc_sType
+      (u32 vk_structure_type_command_buffer_allocate_info) ;
+    setf alloc_info cmd_buf_alloc_level (u32 vk_command_buffer_level_primary) ;
+    setf alloc_info cmd_buf_alloc_commandPool device.Device.command_pool ;
+    setf alloc_info cmd_buf_alloc_commandBufferCount (Unsigned.UInt32.of_int 1) ;
+
+    let cmd_buf_ptr =
+      allocate vk_command_buffer_ptr (from_voidp vk_command_buffer null)
+    in
+    check
+      "vkAllocateCommandBuffers"
+      (vkAllocateCommandBuffers
+         device.Device.device
+         (addr alloc_info)
+         cmd_buf_ptr) ;
+    let cmd_buf = !@cmd_buf_ptr in
+
+    let begin_info = make vk_command_buffer_begin_info in
+    setf
+      begin_info
+      cmd_buf_begin_sType
+      (u32 vk_structure_type_command_buffer_begin_info) ;
+    setf
+      begin_info
+      cmd_buf_begin_flags
+      (Unsigned.UInt32.of_int vk_command_buffer_usage_one_time_submit_bit) ;
+
+    check
+      "vkBeginCommandBuffer"
+      (vkBeginCommandBuffer cmd_buf (addr begin_info)) ;
+
+    record_fn cmd_buf ;
+
+    check "vkEndCommandBuffer" (vkEndCommandBuffer cmd_buf) ;
+
+    let submit_info = make vk_submit_info in
+    setf submit_info submit_sType (u32 vk_structure_type_submit_info) ;
+    setf submit_info submit_commandBufferCount (Unsigned.UInt32.of_int 1) ;
+    setf submit_info submit_pCommandBuffers cmd_buf_ptr ;
+
+    check
+      "vkQueueSubmit"
+      (vkQueueSubmit
+         device.Device.compute_queue
+         (Unsigned.UInt32.of_int 1)
+         (addr submit_info)
+         vk_null_handle) ;
+    check "vkQueueWaitIdle" (vkQueueWaitIdle device.Device.compute_queue) ;
+
+    vkFreeCommandBuffers
+      device.Device.device
+      device.Device.command_pool
+      (Unsigned.UInt32.of_int 1)
+      cmd_buf_ptr
+
+  let create_staging_buffer device size usage =
+    let buf_info = make vk_buffer_create_info in
+    setf buf_info buf_create_sType (u32 vk_structure_type_buffer_create_info) ;
+    setf buf_info buf_create_size (Unsigned.UInt64.of_int size) ;
+    setf buf_info buf_create_usage (u32 usage) ;
+    setf buf_info buf_create_sharingMode (u32 0) ;
+    (* VK_SHARING_MODE_EXCLUSIVE *)
+    setf buf_info buf_create_queueFamilyIndexCount (Unsigned.UInt32.of_int 0) ;
+    setf buf_info buf_create_pQueueFamilyIndices (from_voidp uint32_t null) ;
+
+    let buffer = allocate vk_buffer vk_null_handle in
+    check
+      "vkCreateBuffer (staging)"
+      (vkCreateBuffer device.Device.device (addr buf_info) null buffer) ;
+
+    let mem_reqs = make vk_memory_requirements in
+    vkGetBufferMemoryRequirements device.Device.device !@buffer (addr mem_reqs) ;
+
+    let mem_type_bits =
+      Unsigned.UInt32.to_int (getf mem_reqs mem_req_memoryTypeBits)
+    in
+
+    let mem_type_idx =
+      match
+        find_memory_type
+          device
+          mem_type_bits
+          (vk_memory_property_host_visible_bit
+         lor vk_memory_property_host_coherent_bit)
+      with
+      | Some idx -> idx
+      | None ->
+          Vulkan_error.raise_error
+            (Vulkan_error.context_error
+               "memory allocation"
+               "Failed to find HOST_VISIBLE | HOST_COHERENT memory for staging \
+                buffer")
+    in
+
+    let alloc_info = make vk_memory_allocate_info in
+    setf alloc_info mem_alloc_sType (u32 vk_structure_type_memory_allocate_info) ;
+    setf alloc_info mem_alloc_pNext null ;
+    setf alloc_info mem_alloc_allocationSize (getf mem_reqs mem_req_size) ;
+    setf
+      alloc_info
+      mem_alloc_memoryTypeIndex
+      (Unsigned.UInt32.of_int mem_type_idx) ;
+
+    let memory = allocate vk_device_memory vk_null_handle in
+    check
+      "vkAllocateMemory (staging)"
+      (vkAllocateMemory device.Device.device (addr alloc_info) null memory) ;
+
+    check
+      "vkBindBufferMemory (staging)"
+      (vkBindBufferMemory
+         device.Device.device
+         !@buffer
+         !@memory
+         (Unsigned.UInt64.of_int 0)) ;
+
+    let data_ptr = allocate (ptr void) null in
+    check
+      "vkMapMemory (staging)"
+      (vkMapMemory
+         device.Device.device
+         !@memory
+         (Unsigned.UInt64.of_int 0)
+         vk_whole_size
+         (Unsigned.UInt32.of_int 0)
+         data_ptr) ;
+
+    (!@buffer, !@memory, !@data_ptr)
 
   let alloc device size kind =
     let elem_size = Ctypes_static.sizeof (Ctypes.typ_of_bigarray_kind kind) in
@@ -555,12 +685,31 @@ module Memory = struct
     let mem_type_bits =
       Unsigned.UInt32.to_int (getf mem_reqs mem_req_memoryTypeBits)
     in
-    let mem_type_idx =
-      find_memory_type
-        device
-        mem_type_bits
-        (vk_memory_property_host_visible_bit
-       lor vk_memory_property_host_coherent_bit)
+
+    (* Try to find DEVICE_LOCAL memory first (fast VRAM) *)
+    let mem_type_idx, is_mappable =
+      match
+        find_memory_type
+          device
+          mem_type_bits
+          vk_memory_property_device_local_bit
+      with
+      | Some idx -> (idx, false)
+      | None -> (
+          (* Fallback to HOST_VISIBLE | HOST_COHERENT (likely system RAM) *)
+          match
+            find_memory_type
+              device
+              mem_type_bits
+              (vk_memory_property_host_visible_bit
+             lor vk_memory_property_host_coherent_bit)
+          with
+          | Some idx -> (idx, true)
+          | None ->
+              Vulkan_error.raise_error
+                (Vulkan_error.context_error
+                   "memory allocation"
+                   "Failed to find suitable memory type"))
     in
 
     (* Allocate memory *)
@@ -587,26 +736,24 @@ module Memory = struct
          !@memory
          (Unsigned.UInt64.of_int 0)) ;
 
-    (* Map memory persistently like C example does *)
-    let data_ptr = allocate (ptr void) null in
-    check
-      "vkMapMemory (persistent)"
-      (vkMapMemory
-         device.Device.device
-         !@memory
-         (Unsigned.UInt64.of_int 0)
-         vk_whole_size
-         (Unsigned.UInt32.of_int 0)
-         data_ptr) ;
+    (* Map memory persistently only if mappable (HOST_VISIBLE) *)
+    let mapped_ptr =
+      if is_mappable then (
+        let data_ptr = allocate (ptr void) null in
+        check
+          "vkMapMemory (persistent)"
+          (vkMapMemory
+             device.Device.device
+             !@memory
+             (Unsigned.UInt64.of_int 0)
+             vk_whole_size
+             (Unsigned.UInt32.of_int 0)
+             data_ptr) ;
+        Some !@data_ptr)
+      else None
+    in
 
-    {
-      buffer = !@buffer;
-      memory = !@memory;
-      size;
-      elem_size;
-      device;
-      mapped_ptr = Some !@data_ptr;
-    }
+    {buffer = !@buffer; memory = !@memory; size; elem_size; device; mapped_ptr}
 
   let alloc_custom device ~size ~elem_size =
     let byte_size = size * elem_size in
@@ -639,11 +786,19 @@ module Memory = struct
       Unsigned.UInt32.to_int (getf mem_reqs mem_req_memoryTypeBits)
     in
     let mem_type_idx =
-      find_memory_type
-        device
-        mem_type_bits
-        (vk_memory_property_host_visible_bit
-       lor vk_memory_property_host_coherent_bit)
+      match
+        find_memory_type
+          device
+          mem_type_bits
+          (vk_memory_property_host_visible_bit
+         lor vk_memory_property_host_coherent_bit)
+      with
+      | Some idx -> idx
+      | None ->
+          Vulkan_error.raise_error
+            (Vulkan_error.context_error
+               "memory allocation"
+               "Failed to find HOST_VISIBLE | HOST_COHERENT memory")
     in
 
     let alloc_info = make vk_memory_allocate_info in
@@ -706,89 +861,133 @@ module Memory = struct
 
   let host_to_device ~src ~dst =
     let bytes = Bigarray.Array1.size_in_bytes src in
-    let data =
-      match dst.mapped_ptr with
-      | Some p -> p
-      | None ->
-          let data = allocate (ptr void) null in
-          check
-            "vkMapMemory"
-            (vkMapMemory
-               dst.device.Device.device
-               dst.memory
-               (Unsigned.UInt64.of_int 0)
-               vk_whole_size
-               (Unsigned.UInt32.of_int 0)
-               data) ;
-          !@data
-    in
-    let src_ptr = bigarray_start array1 src |> to_voidp in
-    let _ = memcpy data src_ptr (Unsigned.Size_t.of_int bytes) in
-    ()
+    match dst.mapped_ptr with
+    | Some p ->
+        let src_ptr = bigarray_start array1 src |> to_voidp in
+        let _ = memcpy p src_ptr (Unsigned.Size_t.of_int bytes) in
+        ()
+    | None ->
+        (* Staging buffer transfer *)
+        let staging_buf, staging_mem, staging_ptr =
+          create_staging_buffer
+            dst.device
+            bytes
+            vk_buffer_usage_transfer_src_bit
+        in
+        let src_ptr = bigarray_start array1 src |> to_voidp in
+        let _ = memcpy staging_ptr src_ptr (Unsigned.Size_t.of_int bytes) in
+
+        run_single_time_command dst.device (fun cmd_buf ->
+            let region = make vk_buffer_copy in
+            setf region buffer_copy_srcOffset (Unsigned.UInt64.of_int 0) ;
+            setf region buffer_copy_dstOffset (Unsigned.UInt64.of_int 0) ;
+            setf region buffer_copy_size (Unsigned.UInt64.of_int bytes) ;
+
+            vkCmdCopyBuffer
+              cmd_buf
+              staging_buf
+              dst.buffer
+              (Unsigned.UInt32.of_int 1)
+              (addr region)) ;
+
+        vkDestroyBuffer dst.device.Device.device staging_buf null ;
+        vkFreeMemory dst.device.Device.device staging_mem null
 
   let device_to_host ~src ~dst =
     let bytes = Bigarray.Array1.size_in_bytes dst in
-    let data =
-      match src.mapped_ptr with
-      | Some p -> p
-      | None ->
-          let data = allocate (ptr void) null in
-          check
-            "vkMapMemory"
-            (vkMapMemory
-               src.device.Device.device
-               src.memory
-               (Unsigned.UInt64.of_int 0)
-               vk_whole_size
-               (Unsigned.UInt32.of_int 0)
-               data) ;
-          !@data
-    in
-    let dst_ptr = bigarray_start array1 dst |> to_voidp in
-    let _ = memcpy dst_ptr data (Unsigned.Size_t.of_int bytes) in
-    ()
+    match src.mapped_ptr with
+    | Some p ->
+        let dst_ptr = bigarray_start array1 dst |> to_voidp in
+        let _ = memcpy dst_ptr p (Unsigned.Size_t.of_int bytes) in
+        ()
+    | None ->
+        (* Staging buffer transfer *)
+        let staging_buf, staging_mem, staging_ptr =
+          create_staging_buffer
+            src.device
+            bytes
+            vk_buffer_usage_transfer_dst_bit
+        in
+
+        run_single_time_command src.device (fun cmd_buf ->
+            let region = make vk_buffer_copy in
+            setf region buffer_copy_srcOffset (Unsigned.UInt64.of_int 0) ;
+            setf region buffer_copy_dstOffset (Unsigned.UInt64.of_int 0) ;
+            setf region buffer_copy_size (Unsigned.UInt64.of_int bytes) ;
+
+            vkCmdCopyBuffer
+              cmd_buf
+              src.buffer
+              staging_buf
+              (Unsigned.UInt32.of_int 1)
+              (addr region)) ;
+
+        let dst_ptr = bigarray_start array1 dst |> to_voidp in
+        let _ = memcpy dst_ptr staging_ptr (Unsigned.Size_t.of_int bytes) in
+
+        vkDestroyBuffer src.device.Device.device staging_buf null ;
+        vkFreeMemory src.device.Device.device staging_mem null
 
   let host_ptr_to_device ~src_ptr ~byte_size ~dst =
-    (* Use persistent mapping if available *)
-    let data =
-      match dst.mapped_ptr with
-      | Some p -> p
-      | None ->
-          let data = allocate (ptr void) null in
-          check
-            "vkMapMemory"
-            (vkMapMemory
-               dst.device.Device.device
-               dst.memory
-               (Unsigned.UInt64.of_int 0)
-               vk_whole_size
-               (Unsigned.UInt32.of_int 0)
-               data) ;
-          !@data
-    in
-    let _ = memcpy data src_ptr (Unsigned.Size_t.of_int byte_size) in
-    ()
+    match dst.mapped_ptr with
+    | Some p ->
+        let _ = memcpy p src_ptr (Unsigned.Size_t.of_int byte_size) in
+        ()
+    | None ->
+        let staging_buf, staging_mem, staging_ptr =
+          create_staging_buffer
+            dst.device
+            byte_size
+            vk_buffer_usage_transfer_src_bit
+        in
+        let _ = memcpy staging_ptr src_ptr (Unsigned.Size_t.of_int byte_size) in
+
+        run_single_time_command dst.device (fun cmd_buf ->
+            let region = make vk_buffer_copy in
+            setf region buffer_copy_srcOffset (Unsigned.UInt64.of_int 0) ;
+            setf region buffer_copy_dstOffset (Unsigned.UInt64.of_int 0) ;
+            setf region buffer_copy_size (Unsigned.UInt64.of_int byte_size) ;
+
+            vkCmdCopyBuffer
+              cmd_buf
+              staging_buf
+              dst.buffer
+              (Unsigned.UInt32.of_int 1)
+              (addr region)) ;
+
+        vkDestroyBuffer dst.device.Device.device staging_buf null ;
+        vkFreeMemory dst.device.Device.device staging_mem null
 
   let device_to_host_ptr ~src ~dst_ptr ~byte_size =
-    (* Use persistent mapping if available *)
-    let data =
-      match src.mapped_ptr with
-      | Some p -> p
-      | None ->
-          let data = allocate (ptr void) null in
-          check
-            "vkMapMemory"
-            (vkMapMemory
-               src.device.Device.device
-               src.memory
-               (Unsigned.UInt64.of_int 0)
-               vk_whole_size
-               (Unsigned.UInt32.of_int 0)
-               data) ;
-          !@data
-    in
-    let _ = memcpy dst_ptr data (Unsigned.Size_t.of_int byte_size) in
-    ()
+    match src.mapped_ptr with
+    | Some p ->
+        let _ = memcpy dst_ptr p (Unsigned.Size_t.of_int byte_size) in
+        ()
+    | None ->
+        let staging_buf, staging_mem, staging_ptr =
+          create_staging_buffer
+            src.device
+            byte_size
+            vk_buffer_usage_transfer_dst_bit
+        in
+
+        run_single_time_command src.device (fun cmd_buf ->
+            let region = make vk_buffer_copy in
+            setf region buffer_copy_srcOffset (Unsigned.UInt64.of_int 0) ;
+            setf region buffer_copy_dstOffset (Unsigned.UInt64.of_int 0) ;
+            setf region buffer_copy_size (Unsigned.UInt64.of_int byte_size) ;
+
+            vkCmdCopyBuffer
+              cmd_buf
+              src.buffer
+              staging_buf
+              (Unsigned.UInt32.of_int 1)
+              (addr region)) ;
+
+        let _ = memcpy dst_ptr staging_ptr (Unsigned.Size_t.of_int byte_size) in
+
+        vkDestroyBuffer src.device.Device.device staging_buf null ;
+        vkFreeMemory src.device.Device.device staging_mem null
 
   let device_to_device ~src:_ ~dst:_ =
     Vulkan_error.raise_error

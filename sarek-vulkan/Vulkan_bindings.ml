@@ -378,6 +378,15 @@ let vkAllocateCommandBuffers_lazy =
 let vkAllocateCommandBuffers dev info bufs =
   Lazy.force vkAllocateCommandBuffers_lazy dev info bufs
 
+let vkFreeCommandBuffers_lazy =
+  foreign_vk_lazy
+    "vkFreeCommandBuffers"
+    (vk_device_ptr @-> vk_command_pool @-> uint32_t
+   @-> ptr vk_command_buffer_ptr @-> returning void)
+
+let vkFreeCommandBuffers dev pool count bufs =
+  Lazy.force vkFreeCommandBuffers_lazy dev pool count bufs
+
 let vkBeginCommandBuffer_lazy =
   foreign_vk_lazy
     "vkBeginCommandBuffer"
@@ -486,8 +495,7 @@ let vkCmdCopyBuffer_lazy =
   foreign_vk_lazy
     "vkCmdCopyBuffer"
     (vk_command_buffer_ptr @-> vk_buffer @-> vk_buffer @-> uint32_t
-    @-> ptr void (* VkBufferCopy* - we'll allocate inline *)
-    @-> returning void)
+   @-> ptr vk_buffer_copy @-> returning void)
 
 let vkCmdCopyBuffer buf src dst count regions =
   Lazy.force vkCmdCopyBuffer_lazy buf src dst count regions
