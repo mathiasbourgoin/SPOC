@@ -104,9 +104,12 @@
 
 <h2 id="quick-start">Quick Start</h2>
 
-<p>You can install the core Sarek ecosystem via Opam:</p>
+<p>Sarek is not yet in the official opam repository. Install from source:</p>
 
-<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>opam <span class="nb">install </span>sarek spoc
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>git clone https://github.com/mathiasbourgoin/Sarek.git
+<span class="nb">cd </span>Sarek
+opam <span class="nb">install</span> <span class="nb">.</span> <span class="nt">--deps-only</span> <span class="nt">-y</span>
+dune build
 </code></pre></div></div>
 
 <p>Check out the <a href="docs/getting_started.html">Getting Started</a> guide to write your first GPU kernel in minutes, or browse the <a href="examples/">Examples</a> to see common patterns.</p>

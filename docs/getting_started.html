@@ -69,19 +69,25 @@
   </li>
 </ul>
 
-<h3 id="installing-via-opam">Installing via Opam</h3>
+<h3 id="installing-from-source">Installing from Source</h3>
 
-<p>Sarek is available via Opam. To install the core package and specific backends:</p>
+<p>Sarek is not yet in the official opam repository. Install from source:</p>
 
-<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c"># Core packages</span>
-opam <span class="nb">install </span>sarek spoc
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c"># Clone the repository</span>
+git clone https://github.com/mathiasbourgoin/Sarek.git
+<span class="nb">cd </span>Sarek
 
-<span class="c"># Install specific GPU backends (optional)</span>
-opam <span class="nb">install </span>sarek-cuda      <span class="c"># For NVIDIA GPUs</span>
-opam <span class="nb">install </span>sarek-opencl    <span class="c"># For OpenCL devices</span>
-opam <span class="nb">install </span>sarek-vulkan    <span class="c"># For Vulkan support</span>
-opam <span class="nb">install </span>sarek-metal     <span class="c"># For Apple Silicon/Macs</span>
+<span class="c"># Install dependencies</span>
+opam <span class="nb">install</span> <span class="nb">.</span> <span class="nt">--deps-only</span> <span class="nt">-y</span>
+
+<span class="c"># Build</span>
+dune build
+
+<span class="c"># Optional: install locally in your opam switch</span>
+opam <span class="nb">install</span> <span class="nb">.</span>
 </code></pre></div></div>
+
+<p>GPU backends (CUDA, OpenCL, Vulkan, Metal) are automatically detected and enabled based on available drivers and SDKs on your system.</p>
 
 <h2 id="your-first-kernel-vector-addition">Your First Kernel: Vector Addition</h2>
 
