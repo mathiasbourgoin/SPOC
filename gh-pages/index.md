@@ -30,10 +30,13 @@ Sarek has been recently modernized to leverage the latest OCaml features and mod
 
 ## Quick Start
 
-You can install the core Sarek ecosystem via Opam:
+Sarek is not yet in the official opam repository. Install from source:
 
 ```bash
-opam install sarek spoc
+git clone https://github.com/mathiasbourgoin/Sarek.git
+cd Sarek
+opam install . --deps-only -y
+dune build
 ```
 
 Check out the [Getting Started](docs/getting_started.html) guide to write your first GPU kernel in minutes, or browse the [Examples](examples/) to see common patterns.
