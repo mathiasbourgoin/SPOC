@@ -19,20 +19,26 @@ Sarek is a high-performance framework for GPGPU programming in OCaml. It allows 
   - **Vulkan**: Vulkan SDK + glslangValidator
   - **Metal**: macOS 10.13+ (included with Xcode)
 
-### Installing via Opam
+### Installing from Source
 
-Sarek is available via Opam. To install the core package and specific backends:
+Sarek is not yet in the official opam repository. Install from source:
 
 ```bash
-# Core packages
-opam install sarek spoc
+# Clone the repository
+git clone https://github.com/mathiasbourgoin/Sarek.git
+cd Sarek
 
-# Install specific GPU backends (optional)
-opam install sarek-cuda      # For NVIDIA GPUs
-opam install sarek-opencl    # For OpenCL devices
-opam install sarek-vulkan    # For Vulkan support
-opam install sarek-metal     # For Apple Silicon/Macs
+# Install dependencies
+opam install . --deps-only -y
+
+# Build
+dune build
+
+# Optional: install locally in your opam switch
+opam install .
 ```
+
+GPU backends (CUDA, OpenCL, Vulkan, Metal) are automatically detected and enabled based on available drivers and SDKs on your system.
 
 ## Your First Kernel: Vector Addition
 
