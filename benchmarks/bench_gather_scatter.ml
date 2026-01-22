@@ -187,7 +187,7 @@ let run_gather_benchmark ~device ~size ~config =
   Output.
     {
       device_id = device.Device.id;
-      device_name = device.Device.name ^ " (gather)";
+      device_name = device.Device.name;
       framework = backend_name;
       iterations = times_array;
       mean_ms = Common.mean times_array;
@@ -328,7 +328,7 @@ let run_scatter_benchmark ~device ~size ~config =
   Output.
     {
       device_id = device.Device.id;
-      device_name = device.Device.name ^ " (scatter)";
+      device_name = device.Device.name;
       framework = backend_name;
       iterations = times_array;
       mean_ms = Common.mean times_array;

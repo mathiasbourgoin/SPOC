@@ -36,7 +36,7 @@
       "verified": true,
       "throughput_gflops": 815.3620652786688,
       "device_id": 0,
-      "device_name": "Apple M4 (gather)",
+      "device_name": "Apple M4",
       "framework": "OpenCL",
       "iterations": [
         61.28692626953125, 61.32698059082031, 61.32102012634277,
@@ -57,7 +57,7 @@
       "verified": true,
       "throughput_gflops": 832.750079913594,
       "device_id": 1,
-      "device_name": "Apple M4 (Metal) (gather)",
+      "device_name": "Apple M4 (Metal)",
       "framework": "Metal",
       "iterations": [
         60.064077377319336, 60.038089752197266, 60.0428581237793,

@@ -47,7 +47,7 @@
       "verified": true,
       "throughput_gflops": 565.7580662566095,
       "device_id": 0,
-      "device_name": "Intel(R) Arc(TM) Graphics (scatter)",
+      "device_name": "Intel(R) Arc(TM) Graphics",
       "framework": "OpenCL",
       "iterations": [
         89.43510055541992, 90.0418758392334, 86.59195899963379,
@@ -68,7 +68,7 @@
       "verified": true,
       "throughput_gflops": 653.3763901156333,
       "device_id": 1,
-      "device_name": "Intel(R) Core(TM) Ultra 9 185H (scatter)",
+      "device_name": "Intel(R) Core(TM) Ultra 9 185H",
       "framework": "OpenCL",
       "iterations": [
         80.61408996582031, 78.87983322143555, 80.75308799743652,
@@ -89,7 +89,7 @@
       "verified": true,
       "throughput_gflops": 427.92426881164226,
       "device_id": 2,
-      "device_name": "Intel(R) Arc(tm) Graphics (MTL) (scatter)",
+      "device_name": "Intel(R) Arc(tm) Graphics (MTL)",
       "framework": "Vulkan",
       "iterations": [
         101.98402404785156, 94.25616264343262, 118.67403984069824,
