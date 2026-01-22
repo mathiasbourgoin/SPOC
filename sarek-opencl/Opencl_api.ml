@@ -494,24 +494,40 @@ end
 (** {1 Program Management} *)
 
 module Program = struct
-  type t = {handle : cl_program; context : Context.t}
+  type t = {
+    handle : cl_program;
+    context : Context.t;
+    _source :
+      (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t;
+  }
 
   let create_from_source context source =
     let err = allocate cl_int 0l in
-    let sources = CArray.make string 1 in
-    CArray.set sources 0 source ;
-    let lengths = CArray.make size_t 1 in
-    CArray.set lengths 0 (Unsigned.Size_t.of_int (String.length source)) ;
+    (* Use a Bigarray to hold a pinned copy of the source string.
+       The OCaml GC cannot move Bigarray data, so the pointer passed to
+       clCreateProgramWithSource remains valid through clBuildProgram.
+       This fixes a GC-related corruption where ctypes 'string' type
+       pointers become stale on OCaml 5. *)
+    let len = String.length source in
+    let ba = Bigarray.Array1.create Bigarray.char Bigarray.c_layout (len + 1) in
+    for i = 0 to len - 1 do
+      Bigarray.Array1.set ba i source.[i]
+    done ;
+    Bigarray.Array1.set ba len '\000' ;
+    let c_ptr = bigarray_start array1 ba in
+    let src_ptrs = allocate (ptr char) c_ptr in
+    let lengths = allocate size_t (Unsigned.Size_t.of_int len) in
     let prog =
       clCreateProgramWithSource
         context.Context.handle
         Unsigned.UInt32.one
-        (CArray.start sources)
-        (CArray.start lengths)
+        (coerce (ptr (ptr char)) (ptr string) src_ptrs)
+        lengths
         err
     in
     check "clCreateProgramWithSource" !@err ;
-    {handle = prog; context}
+    (* Store bigarray in record to prevent GC until after build *)
+    {handle = prog; context; _source = ba}
 
   let build program ?(options = "") () =
     let devices = CArray.make cl_device_id 1 in
@@ -552,7 +568,7 @@ module Program = struct
       in
       let log = string_from_ptr log_buf ~length:(log_size - 1) in
       Opencl_error.raise_error
-        (Opencl_error.compilation_failed "OpenCL kernel source" log)
+        (Opencl_error.compilation_failed "OpenCL kernel" log)
     end
 
   let release program =

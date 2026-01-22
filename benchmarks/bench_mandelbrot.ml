@@ -276,25 +276,47 @@ let run config =
             try
               let r = benchmark_device dev size config in
               {r with Output.device_id}
-            with e ->
-              Printf.eprintf
-                "Error on %s: %s\n"
-                dev.Device.name
-                (Printexc.to_string e) ;
-              Output.
-                {
-                  device_id;
-                  device_name = dev.Device.name;
-                  framework = dev.Device.framework;
-                  iterations = [||];
-                  mean_ms = 0.0;
-                  stddev_ms = 0.0;
-                  median_ms = 0.0;
-                  min_ms = 0.0;
-                  max_ms = 0.0;
-                  throughput = None;
-                  verified = Some false;
-                })
+            with
+            | Spoc_framework.Backend_error.Backend_error err ->
+                Printf.eprintf
+                  "Error on %s (%s): %s\n"
+                  dev.Device.name
+                  dev.Device.framework
+                  (Spoc_framework.Backend_error.to_string err) ;
+                Output.
+                  {
+                    device_id;
+                    device_name = dev.Device.name;
+                    framework = dev.Device.framework;
+                    iterations = [||];
+                    mean_ms = 0.0;
+                    stddev_ms = 0.0;
+                    median_ms = 0.0;
+                    min_ms = 0.0;
+                    max_ms = 0.0;
+                    throughput = None;
+                    verified = Some false;
+                  }
+            | e ->
+                Printf.eprintf
+                  "Error on %s (%s): %s\n"
+                  dev.Device.name
+                  dev.Device.framework
+                  (Printexc.to_string e) ;
+                Output.
+                  {
+                    device_id;
+                    device_name = dev.Device.name;
+                    framework = dev.Device.framework;
+                    iterations = [||];
+                    mean_ms = 0.0;
+                    stddev_ms = 0.0;
+                    median_ms = 0.0;
+                    min_ms = 0.0;
+                    max_ms = 0.0;
+                    throughput = None;
+                    verified = Some false;
+                  })
       in
 
       (* Create benchmark result *)
