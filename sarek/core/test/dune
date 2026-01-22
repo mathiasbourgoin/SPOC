@@ -1,3 +1,9 @@
 (tests
- (names test_memory test_kernel test_device test_vector test_kernel_arg)
+ (names
+  test_memory
+  test_kernel
+  test_device
+  test_vector
+  test_kernel_arg
+  test_gpu_memory)
  (libraries spoc_core ctypes))

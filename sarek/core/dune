@@ -21,6 +21,7 @@
   Vector_transfer
   Vector_storage
   Vector
+  Gpu_memory
   Transfer
   Profiling
   Error
