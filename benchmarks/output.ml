@@ -88,8 +88,18 @@ let to_json (result : benchmark_result) =
       ("results", `List (List.map device_result_to_json result.results));
     ]
 
+(** Filter out failed results (empty iterations or zero timing with verification
+    failure) *)
+let filter_valid_results results =
+  List.filter
+    (fun r ->
+      Array.length r.iterations > 0
+      && not (r.median_ms = 0.0 && r.verified = Some false))
+    results
+
 (** Write JSON to file *)
 let write_json filename result =
+  let result = {result with results = filter_valid_results result.results} in
   let json = to_json result in
   let json_str = Yojson.Basic.pretty_to_string json in
   let oc = open_out filename in
