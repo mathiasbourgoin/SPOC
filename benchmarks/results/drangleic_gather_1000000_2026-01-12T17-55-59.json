@@ -48,7 +48,7 @@
       "verified": true,
       "throughput_gflops": 33825.032258064515,
       "device_id": 0,
-      "device_name": "NVIDIA GeForce RTX 5070 Ti (gather)",
+      "device_name": "NVIDIA GeForce RTX 5070 Ti",
       "framework": "CUDA",
       "iterations": [
         0.030994415283203125, 0.030994415283203125, 0.030040740966796875,
@@ -69,7 +69,7 @@
       "verified": true,
       "throughput_gflops": 1121.6216071667336,
       "device_id": 1,
-      "device_name": "NVIDIA GeForce RTX 5070 Ti (gather)",
+      "device_name": "NVIDIA GeForce RTX 5070 Ti",
       "framework": "OpenCL",
       "iterations": [
         0.8840560913085938, 1.73187255859375, 0.8831024169921875,
@@ -90,7 +90,7 @@
       "verified": true,
       "throughput_gflops": 249.25294904174714,
       "device_id": 2,
-      "device_name": "NVIDIA GeForce RTX 5070 Ti (gather)",
+      "device_name": "NVIDIA GeForce RTX 5070 Ti",
       "framework": "Vulkan",
       "iterations": [
         4.109859466552734, 4.182100296020508, 3.8950443267822266,
