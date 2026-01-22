@@ -56,6 +56,11 @@ let track_free bytes =
   Atomic.fetch_and_add free_count 1 |> ignore ;
   Atomic.fetch_and_add allocated_bytes (-bytes) |> ignore
 
+(** Decrement allocated bytes without counting as an explicit free (used by GC
+    finalizers) *)
+let track_gc_free bytes =
+  Atomic.fetch_and_add allocated_bytes (-bytes) |> ignore
+
 (** Query current GPU memory usage in bytes *)
 let usage () = Atomic.get allocated_bytes
 
@@ -92,7 +97,7 @@ let print_stats () =
     s.current_bytes
     s.peak_bytes ;
   Printf.eprintf
-    "[GPU Memory] allocations: %d, explicit frees: %d\n"
+    "[GPU Memory] allocations: %d, manual frees: %d\n"
     s.alloc_count
     s.free_count ;
   Printf.eprintf
@@ -165,7 +170,7 @@ let register_finalizer (vec : (_, _) Vector_types.t) =
           (try B.free () with _ -> ()) ;
           Atomic.fetch_and_add gc_free_count 1 |> ignore ;
           Atomic.fetch_and_add gc_freed_bytes bytes |> ignore ;
-          track_free bytes)
+          track_gc_free bytes)
         v.device_buffers ;
       Hashtbl.clear v.device_buffers)
     vec
