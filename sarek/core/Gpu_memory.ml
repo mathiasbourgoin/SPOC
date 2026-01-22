@@ -167,10 +167,12 @@ let register_finalizer (vec : (_, _) Vector_types.t) =
         (fun _dev_id buf ->
           let (module B : Vector_types.DEVICE_BUFFER) = buf in
           let bytes = B.size * B.elem_size in
-          (try B.free () with _ -> ()) ;
-          Atomic.fetch_and_add gc_free_count 1 |> ignore ;
-          Atomic.fetch_and_add gc_freed_bytes bytes |> ignore ;
-          track_gc_free bytes)
+          try
+            B.free () ;
+            Atomic.fetch_and_add gc_free_count 1 |> ignore ;
+            Atomic.fetch_and_add gc_freed_bytes bytes |> ignore ;
+            track_gc_free bytes
+          with _ -> ())
         v.device_buffers ;
       Hashtbl.clear v.device_buffers)
     vec

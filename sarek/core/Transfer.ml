@@ -355,8 +355,8 @@ let free_buffer (vec : (_, _) Vector.t) (dev : Device.t) : unit =
   | None -> ()
   | Some buf -> (
       let (module B : Vector.DEVICE_BUFFER) = buf in
-      Gpu_memory.track_free (B.size * B.elem_size) ;
       B.free () ;
+      Gpu_memory.track_free (B.size * B.elem_size) ;
       Hashtbl.remove vec.device_buffers dev.id ;
       (* Update location *)
       match vec.location with
@@ -371,8 +371,8 @@ let free_all_buffers (vec : (_, _) Vector.t) : unit =
   Hashtbl.iter
     (fun _ buf ->
       let (module B : Vector.DEVICE_BUFFER) = buf in
-      Gpu_memory.track_free (B.size * B.elem_size) ;
-      B.free ())
+      B.free () ;
+      Gpu_memory.track_free (B.size * B.elem_size))
     vec.device_buffers ;
   Hashtbl.clear vec.device_buffers ;
   vec.location <- Vector.CPU
