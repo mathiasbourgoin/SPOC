@@ -341,7 +341,18 @@ module Kernel = struct
 
     (* Load module from PTX - simple version *)
     let module_ = allocate cu_module_ptr (from_voidp cu_module null) in
-    let ptx_ptr = CArray.of_string ptx |> CArray.start |> to_voidp in
+    (* Use a Bigarray to hold the PTX data - it is pinned and won't be
+       moved by the GC, ensuring the pointer stays valid across multiple
+       cuModuleLoad* calls. *)
+    let ptx_len = String.length ptx in
+    let ptx_ba =
+      Bigarray.Array1.create Bigarray.char Bigarray.c_layout (ptx_len + 1)
+    in
+    for i = 0 to ptx_len - 1 do
+      Bigarray.Array1.set ptx_ba i ptx.[i]
+    done ;
+    Bigarray.Array1.set ptx_ba ptx_len '\000' ;
+    let ptx_ptr = bigarray_start array1 ptx_ba |> to_voidp in
 
     (* Ask the driver to pick the target from the current context; fall back to
        the basic loader if needed. *)
@@ -362,6 +373,7 @@ module Kernel = struct
       | CUDA_SUCCESS -> load_result
       | _ -> cuModuleLoadData module_ ptx_ptr
     in
+    ignore (Sys.opaque_identity ptx_ba) ;
 
     (match load_result with
     | CUDA_SUCCESS ->

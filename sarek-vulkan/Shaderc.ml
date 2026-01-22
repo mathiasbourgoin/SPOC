@@ -168,7 +168,15 @@ let get_compiler () =
 
 let compile_glsl_to_spirv ~entry_point source =
   let compiler = get_compiler () in
-  let len = Unsigned.Size_t.of_int (String.length source) in
+  let src_len = String.length source in
+  let len = Unsigned.Size_t.of_int src_len in
+
+  (* Force fresh copies of dynamic strings to prevent GC from moving them
+     during the potentially long-running shaderc compilation. *)
+  let source = String.init src_len (String.get source) in
+  let entry_point =
+    String.init (String.length entry_point) (String.get entry_point)
+  in
 
   (* Compile *)
   let result =
@@ -181,6 +189,7 @@ let compile_glsl_to_spirv ~entry_point source =
       entry_point
       null
   in
+  ignore (Sys.opaque_identity (source, entry_point)) ;
 
   let status = shaderc_result_get_compilation_status result in
 

@@ -308,6 +308,7 @@ let compile_to_ptx ?(name = "kernel") ~arch (source : string) : string =
         let res =
           compile_with_opts (CArray.length opt_array) (CArray.start opt_array)
         in
+        ignore (Sys.opaque_identity (opt_arch, opt_array)) ;
         match res with
         | NVRTC_SUCCESS -> (res, Some a)
         | NVRTC_ERROR_INVALID_OPTION | NVRTC_ERROR_INVALID_INPUT ->
