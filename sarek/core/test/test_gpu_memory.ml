@@ -88,4 +88,24 @@ let () =
   Gpu_memory.trigger_gc () ;
   Printf.printf "PASS: trigger_gc\n" ;
 
+  (* Test 8: stats *)
+  Gpu_memory.reset_stats () ;
+  Gpu_memory.track_alloc 4096 ;
+  Gpu_memory.track_alloc 8192 ;
+  Gpu_memory.track_free 4096 ;
+  let s = Gpu_memory.stats () in
+  assert (s.current_bytes = 8192) ;
+  assert (s.peak_bytes = 12288) ;
+  assert (s.alloc_count = 2) ;
+  assert (s.free_count = 1) ;
+  Printf.printf "PASS: stats tracking\n" ;
+
+  (* Test 9: reset_stats *)
+  Gpu_memory.reset_stats () ;
+  let s = Gpu_memory.stats () in
+  assert (s.current_bytes = 0) ;
+  assert (s.peak_bytes = 0) ;
+  assert (s.alloc_count = 0) ;
+  Printf.printf "PASS: reset_stats\n" ;
+
   Printf.printf "\nAll GPU memory tests passed!\n"
