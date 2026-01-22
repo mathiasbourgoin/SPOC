@@ -1,6 +1,6 @@
 #!/bin/bash
 # Run all benchmarks and update web data
-# Usage: ./run_all_benchmarks.sh [output_dir] [--generate-backend-code]
+# Usage: ./run_all_benchmarks.sh [output_dir] [--generate-backend-code] [--no-clean]
 
 set -e  # Exit on error during setup phase only
 
@@ -9,7 +9,7 @@ if [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]]; then
   cat <<EOF
 SAREK Benchmark Suite Runner
 
-Usage: $0 [output_dir] [--generate-backend-code]
+Usage: $0 [output_dir] [--generate-backend-code] [--no-clean]
 
 Runs all benchmarks and updates web viewer data.
 
@@ -17,6 +17,7 @@ Arguments:
   output_dir              Base directory for results (default: benchmarks/results)
                           Results saved to output_dir/run_TIMESTAMP/
   --generate-backend-code Also regenerate backend code for all benchmarks
+  --no-clean              Do not remove old results from this hostname before saving
 
 Examples:
   $0                              # Save to benchmarks/results/run_TIMESTAMP/
@@ -25,10 +26,10 @@ Examples:
   make benchmarks                 # Same as running script directly
 
 After running:
-  1. Review results in the timestamped directory
-  2. Optionally run 'make bench-deduplicate' to check for duplicates
+  1. Old results from this hostname are automatically replaced (use --no-clean to keep them)
+  2. Review new results in benchmarks/results/
   3. Commit updated benchmarks/results/*.json files in PR
-  4. Reviewer will deduplicate before merging
+  4. Optionally run 'make bench-deduplicate' to check for cross-host duplicates
 EOF
   exit 0
 fi
@@ -36,11 +37,16 @@ fi
 # Parse arguments
 OUTPUT_DIR="benchmarks/results"
 GENERATE_CODE=false
+CLEAN_OLD=true
 
 while [[ $# -gt 0 ]]; do
   case $1 in
     --generate-backend-code)
       GENERATE_CODE=true
+      shift
+      ;;
+    --no-clean)
+      CLEAN_OLD=false
       shift
       ;;
     *)
@@ -168,8 +174,18 @@ echo ""
 # Move results to benchmarks/results/ for git tracking and CI
 echo "Moving results to benchmarks/results/ for git tracking..."
 if [ ${RESULT_COUNT} -gt 0 ]; then
+  # Remove old results from this hostname to prevent duplicates
+  if [ "$CLEAN_OLD" = true ]; then
+    HOSTNAME=$(hostname)
+    OLD_COUNT=$(ls -1 benchmarks/results/${HOSTNAME}_*.json 2>/dev/null | wc -l)
+    if [ ${OLD_COUNT} -gt 0 ]; then
+      rm -f benchmarks/results/${HOSTNAME}_*.json
+      echo "  ✓ Removed ${OLD_COUNT} old results from ${HOSTNAME}"
+    fi
+  fi
+
   mv "${RUN_DIR}"/*.json "benchmarks/results/"
-  echo "  ✓ Moved ${RESULT_COUNT} files to benchmarks/results/"
+  echo "  ✓ Moved ${RESULT_COUNT} new results to benchmarks/results/"
   
   # Remove empty run directory
   rmdir "${RUN_DIR}" 2>/dev/null || rm -rf "${RUN_DIR}"
