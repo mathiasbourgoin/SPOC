@@ -181,35 +181,41 @@ let ensure_buffer (type a b) (vec : (a, b) Vector.t) (dev : Device.t) :
         dev.id
         vec.length ;
       let buf =
-        match (vec.kind, vec.host) with
-        | Vector.Scalar sk, Vector.Bigarray_storage ba -> (
-            (* Try zero-copy first - backend decides if supported *)
-            Log.debug Log.Transfer "  -> trying zero-copy path" ;
-            match alloc_scalar_buffer_zero_copy dev ba sk with
-            | Some zc_buf ->
-                Log.debugf
-                  Log.Transfer
-                  "  -> using zero-copy for device %d"
-                  dev.id ;
-                zc_buf
-            | None ->
-                Log.debug
-                  Log.Transfer
-                  "  -> zero-copy not supported, using regular alloc" ;
-                let buf = alloc_scalar_buffer dev vec.length sk in
-                buf)
-        | Vector.Scalar _, Vector.Custom_storage _ -> .
-        | Vector.Custom c, _ ->
-            Log.debug Log.Transfer "  -> custom alloc" ;
-            alloc_custom_buffer dev vec.length c.elem_size
+        Gpu_memory.with_retry (fun () ->
+            match (vec.kind, vec.host) with
+            | Vector.Scalar sk, Vector.Bigarray_storage ba -> (
+                (* Try zero-copy first - backend decides if supported *)
+                Log.debug Log.Transfer "  -> trying zero-copy path" ;
+                match alloc_scalar_buffer_zero_copy dev ba sk with
+                | Some zc_buf ->
+                    Log.debugf
+                      Log.Transfer
+                      "  -> using zero-copy for device %d"
+                      dev.id ;
+                    zc_buf
+                | None ->
+                    Log.debug
+                      Log.Transfer
+                      "  -> zero-copy not supported, using regular alloc" ;
+                    let buf = alloc_scalar_buffer dev vec.length sk in
+                    buf)
+            | Vector.Scalar _, Vector.Custom_storage _ -> .
+            | Vector.Custom c, _ ->
+                Log.debug Log.Transfer "  -> custom alloc" ;
+                alloc_custom_buffer dev vec.length c.elem_size)
       in
       Log.debugf
         Log.Transfer
         "ensure_buffer: storing buffer for dev=%d (hashtbl key=%d)"
         dev.id
         dev.id ;
+      (* Register GC finalizer on first device buffer allocation *)
+      if Hashtbl.length vec.device_buffers = 0 then
+        Gpu_memory.register_finalizer vec ;
       Hashtbl.replace vec.device_buffers dev.id buf ;
       let (module B : Vector.DEVICE_BUFFER) = buf in
+      (* Track GPU memory usage *)
+      Gpu_memory.track_alloc (B.size * B.elem_size) ;
       Log.debugf
         Log.Transfer
         "ensure_buffer: stored buffer ptr=%Ld size=%d"
@@ -349,6 +355,7 @@ let free_buffer (vec : (_, _) Vector.t) (dev : Device.t) : unit =
   | None -> ()
   | Some buf -> (
       let (module B : Vector.DEVICE_BUFFER) = buf in
+      Gpu_memory.track_free (B.size * B.elem_size) ;
       B.free () ;
       Hashtbl.remove vec.device_buffers dev.id ;
       (* Update location *)
@@ -364,6 +371,7 @@ let free_all_buffers (vec : (_, _) Vector.t) : unit =
   Hashtbl.iter
     (fun _ buf ->
       let (module B : Vector.DEVICE_BUFFER) = buf in
+      Gpu_memory.track_free (B.size * B.elem_size) ;
       B.free ())
     vec.device_buffers ;
   Hashtbl.clear vec.device_buffers ;
