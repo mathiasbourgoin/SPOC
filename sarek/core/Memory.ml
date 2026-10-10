@@ -130,9 +130,45 @@ module type BUFFER = sig
   (** Bind this buffer to kernel args at given index *)
   val bind_to_kargs : Framework_sig.kargs -> int -> unit
 
+  (** Ranged host->device copy into this buffer at [dst_offset] bytes.
+      [~stream:None] is synchronous; [Some r] enqueues on the stream [r] unwraps
+      to (refused if it belongs to another backend). [src_ptr] is not a GC root:
+      the caller keeps it alive until the copy has completed. Backends without
+      ranged copies raise [Feature_not_supported]. *)
+  val range_from_host :
+    src_ptr:nativeint ->
+    dst_offset:int ->
+    byte_size:int ->
+    stream:Framework_sig.stream_ref option ->
+    unit
+
+  (** Ranged device->host copy out of this buffer, same contract. *)
+  val range_to_host :
+    src_offset:int ->
+    dst_ptr:nativeint ->
+    byte_size:int ->
+    stream:Framework_sig.stream_ref option ->
+    unit
+
   (** Free the buffer *)
   val free : unit -> unit
 end
+
+(** Unwrap a core stream handle for backend [backend]; a handle from another
+    backend is a caller error, refused rather than ignored. *)
+let unwrap_stream_for ~(backend : string)
+    (unwrap : Framework_sig.stream_ref -> 's option)
+    (r : Framework_sig.stream_ref option) : 's option =
+  match r with
+  | None -> None
+  | Some r -> (
+      match unwrap r with
+      | Some s -> Some s
+      | None ->
+          invalid_arg
+            (Printf.sprintf
+               "stream belongs to another backend than %s (the buffer's)"
+               backend))
 
 (** Buffer with phantom type parameter for element type safety. The 'a parameter
     is not used at runtime but ensures type-safe transfers. *)
@@ -176,6 +212,22 @@ let alloc (device : Device.t) (size : int) (kind : ('a, 'b) Bigarray.kind) :
             | Some args -> B.Kernel.set_arg_buffer args idx buf
             | None -> failwith "bind_to_kargs: backend mismatch"
 
+          let range_from_host ~src_ptr ~dst_offset ~byte_size ~stream =
+            B.Async.host_to_device
+              ~src_ptr
+              ~dst:buf
+              ~dst_offset
+              ~byte_size
+              ~stream:(unwrap_stream_for ~backend:B.name B.unwrap_stream stream)
+
+          let range_to_host ~src_offset ~dst_ptr ~byte_size ~stream =
+            B.Async.device_to_host
+              ~src:buf
+              ~src_offset
+              ~dst_ptr
+              ~byte_size
+              ~stream:(unwrap_stream_for ~backend:B.name B.unwrap_stream stream)
+
           let free () = B.Memory.free buf
         end : BUFFER)
 
@@ -213,6 +265,22 @@ let alloc_custom (device : Device.t) ~(size : int) ~(elem_size : int) :
             match B.unwrap_kargs kargs with
             | Some args -> B.Kernel.set_arg_buffer args idx buf
             | None -> failwith "bind_to_kargs: backend mismatch"
+
+          let range_from_host ~src_ptr ~dst_offset ~byte_size ~stream =
+            B.Async.host_to_device
+              ~src_ptr
+              ~dst:buf
+              ~dst_offset
+              ~byte_size
+              ~stream:(unwrap_stream_for ~backend:B.name B.unwrap_stream stream)
+
+          let range_to_host ~src_offset ~dst_ptr ~byte_size ~stream =
+            B.Async.device_to_host
+              ~src:buf
+              ~src_offset
+              ~dst_ptr
+              ~byte_size
+              ~stream:(unwrap_stream_for ~backend:B.name B.unwrap_stream stream)
 
           let free () = B.Memory.free buf
         end : BUFFER)

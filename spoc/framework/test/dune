@@ -8,4 +8,4 @@
   test_compile_cache
   test_guarded_cache
   test_cache_hooks)
- (libraries spoc_framework alcotest str))
+ (libraries spoc_framework sarek_backend_error alcotest str))

@@ -252,6 +252,13 @@ let cuMemAllocHost_lazy =
 
 let cuMemAllocHost p size = Lazy.force cuMemAllocHost_lazy p size
 
+let cuMemHostAlloc_lazy =
+  foreign_cuda_lazy
+    "cuMemHostAlloc"
+    (ptr (ptr void) @-> size_t @-> uint @-> returning cu_result)
+
+let cuMemHostAlloc p size flags = Lazy.force cuMemHostAlloc_lazy p size flags
+
 let cuMemFreeHost_lazy =
   foreign_cuda_lazy "cuMemFreeHost" (ptr void @-> returning cu_result)
 

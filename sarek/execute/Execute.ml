@@ -412,6 +412,21 @@ let transfer_vectors_to_device ?(soa_abi = false) (args : vector_arg list)
       | _ -> ())
     args
 
+(** The auto-injected vector length. Kernels index with int32, and
+    [Int32.of_int] WRAPS silently above [Int32.max_int] — a 2^31-element vector
+    would reach the kernel with a negative length. Refused instead (FR-018). *)
+let vector_length_arg (len : int) : Framework_sig.run_source_arg =
+  if len > Int32.to_int Int32.max_int then
+    Execute_error.raise_error
+      (Unsupported_argument
+         {
+           arg_type = Printf.sprintf "vector of %d elements" len;
+           context =
+             "kernel launch: lengths are passed as int32; split the vector (at \
+              most 2147483647 elements)";
+         }) ;
+  Framework_sig.RSA_Vector_Length (Int32.of_int len)
+
 (** Expand vector args to run_source_arg format.
     @param inject_lengths
       If true (default), auto-inject vector length as [RSA_Vector_Length] after
@@ -500,7 +515,7 @@ let expand_to_run_source_args ?(inject_lengths = true) ?(soa_abi = false)
                   {binder = B.bind_to_kargs; length = len})
               bufs
           in
-          leaf_args @ [Framework_sig.RSA_Vector_Length (Int32.of_int len)]
+          leaf_args @ [vector_length_arg len]
       | Vec v ->
           let buf = get_device_buffer v dev in
           let (module B : Vector.DEVICE_BUFFER) = buf in
@@ -508,9 +523,7 @@ let expand_to_run_source_args ?(inject_lengths = true) ?(soa_abi = false)
           let buf_arg =
             Framework_sig.RSA_Buffer {binder = B.bind_to_kargs; length = len}
           in
-          if inject_lengths then
-            [buf_arg; Framework_sig.RSA_Vector_Length (Int32.of_int len)]
-          else [buf_arg]
+          if inject_lengths then [buf_arg; vector_length_arg len] else [buf_arg]
       | Int n -> [Framework_sig.RSA_Int32 (Int32.of_int n)]
       | Int32 n -> [Framework_sig.RSA_Int32 n]
       | Int64 n -> [Framework_sig.RSA_Int64 n]
@@ -901,8 +914,44 @@ let check_interpreter_capabilities (ir : Sarek_ir_types.kernel) : unit =
         ~target:"CPU Interpreter"
         verdict
 
+(** Validate a launch on [stream] for [device] BEFORE anything is transferred:
+    the stream must belong to [device], and a JIT backend must implement stream
+    launches — a launch the caller ordered on a stream must never run on the
+    default queue instead. Direct/Custom backends (Native, Interpreter) execute
+    synchronously, which satisfies any stream ordering. *)
+let check_stream_launch ~(device : Device.t) (stream : Transfer.stream option) :
+    unit =
+  match stream with
+  | None -> ()
+  | Some s -> (
+      let sdev, _ = Transfer.stream_handle s in
+      if sdev.Device.id <> device.Device.id then
+        invalid_arg
+          (Printf.sprintf
+             "Execute: the stream belongs to device %d (%s), the launch \
+              targets device %d (%s)"
+             sdev.Device.id
+             sdev.Device.name
+             device.Device.id
+             device.Device.name) ;
+      match Framework_registry.find_backend device.framework with
+      | None -> ()
+      | Some (module B : Framework_sig.BACKEND) -> (
+          match B.execution_model with
+          | Framework_sig.JIT ->
+              if not B.Async.support.Framework_sig.stream_launch then
+                Framework_sig.refuse_stream_launch ~backend:B.name
+          | Framework_sig.Direct | Framework_sig.Custom -> ()))
+
 (** Execute a kernel on a device using the unified dispatch mechanism.
 
+    @param stream
+      Enqueue the launch on this stream instead of the default one (HIP, CUDA);
+      the call may return before the kernel has run, and the argument vectors
+      stay rooted until the stream or a later event completes. On
+      Native/Interpreter the launch is synchronous. Refused with
+      [Feature_not_supported] on other JIT backends, and with [Invalid_argument]
+      when the stream belongs to another device.
     @param device Target device
     @param name Kernel name
     @param ir Sarek IR kernel (lazy, only forced for JIT backends)
@@ -912,7 +961,7 @@ let check_interpreter_capabilities (ir : Sarek_ir_types.kernel) : unit =
     @param shared_mem Shared memory size in bytes (default 0)
     @param args Kernel arguments as vector_arg list
     @raise Execution_error if execution fails *)
-let run ~(device : Device.t) ~(name : string)
+let run ?(stream : Transfer.stream option) ~(device : Device.t) ~(name : string)
     ~(ir : Sarek_ir_types.kernel Lazy.t option)
     ~(native_fn :
        (block:Framework_sig.dims ->
@@ -921,6 +970,7 @@ let run ~(device : Device.t) ~(name : string)
        unit)
        option) ~(block : Framework_sig.dims) ~(grid : Framework_sig.dims)
     ?(shared_mem : int = 0) (args : vector_arg list) : unit =
+  check_stream_launch ~device stream ;
   match Framework_registry.find_backend device.framework with
   | None ->
       Execute_error.raise_error
@@ -981,7 +1031,7 @@ let run ~(device : Device.t) ~(name : string)
                            ^ ": generate_source returned None (kernel may use \
                               unsupported IR nodes)";
                        })
-              | Some source ->
+              | Some source -> (
                   (* Convert vector args to run_source_arg format (auto-injects lengths) *)
                   (* ~soa_abi:true: this is the generated-JIT path, and the
                      source just produced above was emitted with the matching
@@ -1005,14 +1055,46 @@ let run ~(device : Device.t) ~(name : string)
                     | lang :: _ -> lang
                   in
                   (* Use backend's run_source - handles compilation and launch *)
-                  B.run_source
-                    ~source
-                    ~lang
-                    ~kernel_name:name
-                    ~block
-                    ~grid
-                    ~shared_mem
-                    rs_args))
+                  match stream with
+                  | None ->
+                      B.run_source
+                        ~source
+                        ~lang
+                        ~kernel_name:name
+                        ~block
+                        ~grid
+                        ~shared_mem
+                        rs_args
+                  | Some s ->
+                      let _, sref = Transfer.stream_handle s in
+                      let bs =
+                        match B.unwrap_stream sref with
+                        | Some bs -> bs
+                        | None ->
+                            invalid_arg
+                              "Execute.run: the stream belongs to another \
+                               backend"
+                      in
+                      B.run_source_on_stream
+                        ~stream:bs
+                        ~source
+                        ~lang
+                        ~kernel_name:name
+                        ~block
+                        ~grid
+                        ~shared_mem
+                        rs_args ;
+                      (* The kernel may still be running: keep the vectors
+                         whose buffers it touches alive until the stream (or a
+                         later event) completes — the GC finaliser would
+                         otherwise free them under it. *)
+                      Transfer.retain_on_stream
+                        s
+                        ~keep:(Obj.repr args)
+                        ~vec_ids:
+                          (List.filter_map
+                             (function Vec v -> Some v.Vector.id | _ -> None)
+                             args))))
       | Framework_sig.Direct ->
           (* Direct path: call native function or interpret IR *)
           let dev = B.Device.get device.backend_id in
@@ -1274,6 +1356,10 @@ let run_interpreter_vectors ~(ir : Sarek_ir_types.kernel)
     - Direct (Native): Call pre-compiled OCaml function
     - Custom (Interpreter): Walk IR and evaluate expressions
 
+    @param stream
+      Launch on this stream (see {!run}). Auto-transfers of the arguments still
+      happen synchronously before the launch; vectors already resident (e.g.
+      device-only ones) cost nothing.
     @param device Target device (determines backend)
     @param ir Sarek IR kernel definition
     @param args Kernel arguments (vectors and scalars)
@@ -1281,9 +1367,13 @@ let run_interpreter_vectors ~(ir : Sarek_ir_types.kernel)
     @param grid Grid dimensions (e.g., (4, 1, 1))
     @param shared_mem Optional shared memory size in bytes (default: 0)
     @raise Execute_error on validation or execution failure *)
-let run_vectors ~(device : Device.t) ~(ir : Sarek_ir_types.kernel)
-    ~(args : vector_arg list) ~(block : Framework_sig.dims)
-    ~(grid : Framework_sig.dims) ?(shared_mem : int = 0) () : unit =
+let run_vectors ?(stream : Transfer.stream option) ~(device : Device.t)
+    ~(ir : Sarek_ir_types.kernel) ~(args : vector_arg list)
+    ~(block : Framework_sig.dims) ~(grid : Framework_sig.dims)
+    ?(shared_mem : int = 0) () : unit =
+  (* Refuse an unsupported stream launch before any transfer happens. *)
+  check_stream_launch ~device stream ;
+
   (* Unified path for all backends:
      1. Transfer to device (CPU backends: zero-copy, no actual transfer)
      2. Pass vector_args to run (it expands for JIT, passes direct for Direct)
@@ -1296,6 +1386,7 @@ let run_vectors ~(device : Device.t) ~(ir : Sarek_ir_types.kernel)
 
   (* 2. Dispatch via run - it handles expansion per backend *)
   run
+    ?stream
     ~device
     ~name:ir.kern_name
     ~ir:(Some (lazy ir))

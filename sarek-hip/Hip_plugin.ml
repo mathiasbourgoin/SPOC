@@ -51,14 +51,19 @@ module Backend : Framework_sig.BACKEND = struct
     | Some d -> d
     | None -> Hip_error.raise_error (Hip_error.no_device_selected caller)
 
-  let run_source ~source ~lang ~kernel_name ~block ~grid ~shared_mem args =
+  (* [stream = None] launches on the device's default stream (the historical
+     behaviour of [run_source]); [Some s] enqueues on [s]. *)
+  let launch_source ~stream ~source ~lang ~kernel_name ~block ~grid ~shared_mem
+      args =
     match lang with
     | Framework_sig.CUDA_Source ->
         let dev = get_current_dev "run_source:HIP" in
         let compiled = Kernel.compile_cached dev ~name:kernel_name ~source in
         let kargs = Kernel.create_args () in
         Hip_shared.bind_args (Hip_shared.Hip_kargs kargs) kargs args ;
-        let stream = Stream.default dev in
+        let stream =
+          match stream with Some s -> s | None -> Stream.default dev
+        in
         Kernel.launch
           compiled
           ~args:kargs
@@ -70,6 +75,35 @@ module Backend : Framework_sig.BACKEND = struct
         Hip_error.raise_error
           (Hip_error.unsupported_source_lang
              "HIP device only accepts CUDA_Source (HIP C++)")
+
+  let run_source ~source ~lang ~kernel_name ~block ~grid ~shared_mem args =
+    launch_source
+      ~stream:None
+      ~source
+      ~lang
+      ~kernel_name
+      ~block
+      ~grid
+      ~shared_mem
+      args
+
+  let run_source_on_stream ~stream ~source ~lang ~kernel_name ~block ~grid
+      ~shared_mem args =
+    launch_source
+      ~stream:(Some stream)
+      ~source
+      ~lang
+      ~kernel_name
+      ~block
+      ~grid
+      ~shared_mem
+      args
+
+  include Framework_sig.Make_refs (struct
+    type stream = Stream.t
+
+    type event = Event.t
+  end)
 
   let wrap_kargs args = Hip_shared.Hip_kargs args
 

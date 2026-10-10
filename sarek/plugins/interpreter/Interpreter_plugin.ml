@@ -132,6 +132,19 @@ module Backend : Framework_sig.BACKEND = struct
   let wrap_kargs args = Interpreter_kargs args
 
   let unwrap_kargs = function Interpreter_kargs args -> Some args | _ -> None
+
+  (* No external-source launches on this backend: the stream variant refuses
+     exactly as [run_source] does. Kernels reach this backend through
+     [execute_direct], which is synchronous, so a stream adds nothing. *)
+  let run_source_on_stream ~stream:_ ~source ~lang ~kernel_name ~block ~grid
+      ~shared_mem args =
+    run_source ~source ~lang ~kernel_name ~block ~grid ~shared_mem args
+
+  include Framework_sig.Make_refs (struct
+    type stream = Stream.t
+
+    type event = Event.t
+  end)
 end
 
 (** Run IR directly without going through execute_direct. *)

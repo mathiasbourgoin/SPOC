@@ -183,6 +183,215 @@ type exec_arg = Typed_value.exec_arg =
       -> exec_arg
   | EA_Vec of (module Typed_value.EXEC_VECTOR)
 
+(** {1 Ranged / asynchronous transfers, pinned memory, stream ordering} *)
+
+(** Backend-tagged stream and event handles, extended by each backend exactly
+    like {!kargs}. A backend's [Stream.t] is a fresh abstract type at every
+    first-class-module unpacking, so a stream created by
+    [Spoc_core.Transfer.create_stream] cannot be handed to a buffer closure
+    built by another unpacking of the same backend. Wrapping it in one of these
+    and unwrapping it with the backend's own [unwrap_stream] is the only route
+    that type-checks, and it fails closed ([None]) when the stream belongs to a
+    different backend. *)
+type stream_ref = ..
+
+type event_ref = ..
+
+(** What a backend's {!ASYNC} module actually implements. Read by tests and by
+    callers that want to choose a path up front; the operations themselves still
+    refuse on their own, so a stale or wrong record cannot turn into a silent
+    fallback. *)
+type async_support = {
+  ranged_copy : bool;  (** Synchronous host<->device copies at byte offsets. *)
+  async_copy : bool;  (** The same copies enqueued on a stream. *)
+  pinned_host : bool;
+      (** Page-locked host allocation ([alloc_pinned]/[free_pinned]). On a CPU
+          backend this is ordinary host memory: pinning has no meaning when
+          device memory is host memory. *)
+  host_register : bool;  (** Page-locking existing host memory. *)
+  stream_launch : bool;  (** Kernel launches enqueued on a given stream. *)
+  stream_events : bool;
+      (** [stream_wait_event] and [event_query] with real ordering semantics. *)
+}
+
+let no_async_support =
+  {
+    ranged_copy = false;
+    async_copy = false;
+    pinned_host = false;
+    host_register = false;
+    stream_launch = false;
+    stream_events = false;
+  }
+
+let full_async_support =
+  {
+    ranged_copy = true;
+    async_copy = true;
+    pinned_host = true;
+    host_register = true;
+    stream_launch = true;
+    stream_events = true;
+  }
+
+(** Ranged and stream-ordered host<->device transfers, pinned host memory and
+    inter-stream ordering, as one backend provides them. Byte offsets and sizes
+    throughout; bounds are checked by the caller ([Spoc_core.Transfer]).
+
+    [~stream:None] means synchronous: the call returns once the copy is
+    complete. [~stream:(Some s)] enqueues the copy on [s] and may return before
+    it has run. The raw addresses passed here are NOT GC roots: the caller keeps
+    the memory alive until the stream (or an event recorded after the copy) has
+    completed — [Spoc_core.Transfer] does this for every Bigarray it passes.
+
+    A backend that does not provide an operation raises
+    [Sarek_backend_error.Backend_error.Backend_error] with a
+    [Feature_not_supported] payload from it — see {!Async_refused}. It never
+    degrades to a different operation (for instance a synchronous whole-buffer
+    copy). *)
+module type ASYNC = sig
+  type device
+
+  type stream
+
+  type event
+
+  type 'a buffer
+
+  val support : async_support
+
+  val host_to_device :
+    src_ptr:nativeint ->
+    dst:'a buffer ->
+    dst_offset:int ->
+    byte_size:int ->
+    stream:stream option ->
+    unit
+
+  val device_to_host :
+    src:'a buffer ->
+    src_offset:int ->
+    dst_ptr:nativeint ->
+    byte_size:int ->
+    stream:stream option ->
+    unit
+
+  (** All work enqueued on the stream after this call waits until the work
+      recorded by the event has completed. *)
+  val stream_wait_event : stream -> event -> unit
+
+  (** [true] once the work recorded by the event has completed (or the event was
+      never recorded); never blocks. *)
+  val event_query : event -> bool
+
+  (** Page-locked host memory of [byte_size] bytes, returned as a raw address.
+      Released only by {!free_pinned}. *)
+  val alloc_pinned : device -> byte_size:int -> nativeint
+
+  val free_pinned : device -> nativeint -> unit
+
+  (** Page-lock existing host memory for DMA. The caller keeps it alive until
+      {!unregister_host}. *)
+  val register_host : device -> nativeint -> byte_size:int -> unit
+
+  val unregister_host : device -> nativeint -> unit
+end
+
+(** The refusing implementation of {!ASYNC}, for backends that do not provide
+    it. Every operation raises [Feature_not_supported] naming the backend and
+    the operation. *)
+module Async_refused (X : sig
+  val backend : string
+
+  type device
+
+  type stream
+
+  type event
+
+  type 'a buffer
+end) :
+  ASYNC
+    with type device = X.device
+     and type stream = X.stream
+     and type event = X.event
+     and type 'a buffer = 'a X.buffer = struct
+  type device = X.device
+
+  type stream = X.stream
+
+  type event = X.event
+
+  type 'a buffer = 'a X.buffer
+
+  let support = no_async_support
+
+  let refuse op =
+    Sarek_backend_error.Backend_error.raise_error
+      (Sarek_backend_error.Backend_error.feature_not_supported
+         ~backend:X.backend
+         (op
+        ^ " (ranged/async transfers, pinned host memory and stream ordering \
+           are implemented on HIP, CUDA, Native and Interpreter only)"))
+
+  let host_to_device ~src_ptr:_ ~dst:_ ~dst_offset:_ ~byte_size:_ ~stream:_ =
+    refuse "ranged host-to-device copy"
+
+  let device_to_host ~src:_ ~src_offset:_ ~dst_ptr:_ ~byte_size:_ ~stream:_ =
+    refuse "ranged device-to-host copy"
+
+  let stream_wait_event _ _ = refuse "stream wait on event"
+
+  let event_query _ = refuse "event query"
+
+  let alloc_pinned _ ~byte_size:_ = refuse "pinned host allocation"
+
+  let free_pinned _ _ = refuse "pinned host free"
+
+  let register_host _ _ ~byte_size:_ = refuse "host memory registration"
+
+  let unregister_host _ _ = refuse "host memory unregistration"
+end
+
+(** The refusing [run_source_on_stream] for backends whose
+    [async_support.stream_launch] is [false]. Never falls back to the default
+    stream: a launch the caller ordered on a stream and that ran elsewhere would
+    break the ordering the caller relies on. *)
+let refuse_stream_launch ~backend : 'a =
+  Sarek_backend_error.Backend_error.raise_error
+    (Sarek_backend_error.Backend_error.feature_not_supported
+       ~backend
+       "kernel launch on a stream (implemented on HIP and CUDA only)")
+
+(** Fresh [stream_ref]/[event_ref] constructors for one backend. Each
+    application mints its own extension constructors at run time, so a stream of
+    one backend never unwraps as another's. *)
+module Make_refs (T : sig
+  type stream
+
+  type event
+end) : sig
+  val wrap_stream : T.stream -> stream_ref
+
+  val unwrap_stream : stream_ref -> T.stream option
+
+  val wrap_event : T.event -> event_ref
+
+  val unwrap_event : event_ref -> T.event option
+end = struct
+  type stream_ref += Stream_ref of T.stream
+
+  type event_ref += Event_ref of T.event
+
+  let wrap_stream s = Stream_ref s
+
+  let unwrap_stream = function Stream_ref s -> Some s | _ -> None
+
+  let wrap_event e = Event_ref e
+
+  let unwrap_event = function Event_ref e -> Some e | _ -> None
+end
+
 (** Extended backend signature for Phase 4 unified execution. Adds execution
     model discrimination and IR-based code generation. *)
 module type BACKEND = sig
@@ -336,6 +545,16 @@ module type BACKEND = sig
       unit
   end
 
+  (** Ranged / stream-ordered transfers, pinned host memory and inter-stream
+      ordering (see {!ASYNC}). Backends that do not provide them use
+      {!Async_refused}. *)
+  module Async :
+    ASYNC
+      with type device := Device.t
+       and type stream := Stream.t
+       and type event := Event.t
+       and type 'a buffer := 'a Memory.buffer
+
   val enable_profiling : unit -> unit
 
   val disable_profiling : unit -> unit
@@ -428,6 +647,32 @@ module type BACKEND = sig
   (** Unwrap kargs to this backend's kernel args. Returns None if wrong backend.
   *)
   val unwrap_kargs : kargs -> Kernel.args option
+
+  (** {2 Streams and events across module unpackings} *)
+
+  val wrap_stream : Stream.t -> stream_ref
+
+  val unwrap_stream : stream_ref -> Stream.t option
+
+  val wrap_event : Event.t -> event_ref
+
+  val unwrap_event : event_ref -> Event.t option
+
+  (** {!run_source} enqueued on [stream] instead of the default stream. The call
+      may return before the kernel has run. Backends whose
+      [async_support.stream_launch] is [false] refuse with
+      [Feature_not_supported]; Direct/Custom backends (Native, Interpreter) are
+      never called through this entry point — their launches are synchronous. *)
+  val run_source_on_stream :
+    stream:Stream.t ->
+    source:string ->
+    lang:source_lang ->
+    kernel_name:string ->
+    block:dims ->
+    grid:dims ->
+    shared_mem:int ->
+    run_source_arg list ->
+    unit
 end
 
 (** Low-level backend implementation interface shared by the CUDA, OpenCL, and
@@ -567,6 +812,16 @@ module type PLUGIN_BASE = sig
       stream:Stream.t option ->
       unit
   end
+
+  (** Ranged / stream-ordered transfers, pinned host memory and inter-stream
+      ordering (see {!ASYNC}). Backends that do not provide them use
+      {!Async_refused}. *)
+  module Async :
+    ASYNC
+      with type device := Device.t
+       and type stream := Stream.t
+       and type event := Event.t
+       and type 'a buffer := 'a Memory.buffer
 
   val enable_profiling : unit -> unit
 

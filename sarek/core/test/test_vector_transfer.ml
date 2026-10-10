@@ -68,6 +68,12 @@ let make_buffer dev ba ~device_values ~host_to_device_called
 
     let bind_to_kargs _kargs _idx = ()
 
+    let range_from_host ~src_ptr:_ ~dst_offset:_ ~byte_size:_ ~stream:_ =
+      failwith "mock buffer: no ranged copies"
+
+    let range_to_host ~src_offset:_ ~dst_ptr:_ ~byte_size:_ ~stream:_ =
+      failwith "mock buffer: no ranged copies"
+
     let free () = freed := true
   end : Vector.DEVICE_BUFFER)
 

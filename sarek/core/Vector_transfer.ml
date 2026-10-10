@@ -17,6 +17,8 @@ let to_ctypes_ptr : type a b. (a, b) Vector_types.t -> unit Ctypes.ptr =
   match vec.host with
   | Vector_types.Bigarray_storage ba -> Memory.bigarray_void_ptr ba
   | Vector_types.Custom_storage {ptr; _} -> ptr
+  | Vector_types.Device_only_storage ->
+      Vector_types.device_only_refusal ~op:"to_ctypes_ptr" ~id:vec.id
 
 let host_ptr : type a b. (a, b) Vector_types.t -> nativeint =
  fun vec ->
@@ -24,6 +26,8 @@ let host_ptr : type a b. (a, b) Vector_types.t -> nativeint =
   | Vector_types.Bigarray_storage ba ->
       Ctypes.raw_address_of_ptr (Memory.bigarray_void_ptr ba)
   | Vector_types.Custom_storage {ptr; _} -> Ctypes.raw_address_of_ptr ptr
+  | Vector_types.Device_only_storage ->
+      Vector_types.device_only_refusal ~op:"host_ptr" ~id:vec.id
 
 (** Convert bigarray to raw pointer and byte size *)
 let bigarray_to_ptr (type a b)

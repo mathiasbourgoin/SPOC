@@ -220,6 +220,18 @@ module Vulkan = struct
       Vulkan_api.Kernel.launch kernel ~args ~grid ~block ~shared_mem ~stream
   end
 
+  module Async = Framework_sig.Async_refused (struct
+    let backend = name
+
+    type device = Device.t
+
+    type stream = Stream.t
+
+    type event = Event.t
+
+    type 'a buffer = 'a Memory.buffer
+  end)
+
   let enable_profiling () = ()
 
   let disable_profiling () = ()

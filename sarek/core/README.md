@@ -346,6 +346,91 @@ val get_or_alloc_buffer :
 - Transfers become no-ops
 - Used automatically for CPU backends
 
+#### Device-only vectors, ranged and stream-ordered copies, pinned memory
+
+Added for streaming workloads (spoc_llm M3: MoE expert weights copied into a
+VRAM-resident cache while the GPU computes). Spec:
+`specs/device-buffers-async-copy.md`.
+
+| Capability | HIP | CUDA | Native / Interpreter | OpenCL, Vulkan, Metal, WebGPU |
+|---|---|---|---|---|
+| device-only vectors, ranged copies | yes | yes | yes (memmove) | refused |
+| copies / launches on a stream | yes | yes | accepted, synchronous | refused |
+| events, stream waits on event | yes | yes | trivially complete | refused |
+| pinned host memory | `hipHostMalloc` (portable) | `cuMemHostAlloc` (portable) | plain host memory | refused |
+| `register_host` | `hipHostRegister` | `cuMemHostRegister` (not on ZLUDA) | no-op | refused |
+
+"Refused" is `Backend_error (Plugin {error = Feature_not_supported _})`; caller
+errors (bounds, wrong device, wrong location, freeing in-flight memory) raise
+`Invalid_argument`. Nothing silently falls back.
+
+```ocaml
+(* Device-only: no host mirror on a GPU. Host access refuses. *)
+val create_device_only : Device.t -> ('a, 'b) Vector.kind -> int -> ('a, 'b) Vector.t
+val Vector.is_device_only : ('a, 'b) Vector.t -> bool
+
+(* Ranged copies. Without ~stream: complete on return. With it: enqueued;
+   SPOC roots the Bigarrays and vectors until the stream (or a later event)
+   is synchronised. *)
+val copy_to_device : ?stream:stream -> ('a, 'b, c_layout) Bigarray.Array1.t ->
+  dst:('a, 'b) Vector.t -> dst_offset:int -> unit          (* elements *)
+val copy_bytes_to_device : ?stream:stream -> (_, _, c_layout) Bigarray.Array1.t ->
+  dst:(_, _) Vector.t -> dst_byte_offset:int -> unit       (* bytes *)
+val copy_ptr_to_device : ?stream:stream -> src_ptr:nativeint -> byte_size:int ->
+  dst:(_, _) Vector.t -> dst_byte_offset:int -> unit -> unit  (* caller roots src *)
+val copy_to_host : ?stream:stream -> src:('a, 'b) Vector.t -> src_offset:int ->
+  ('a, 'b, c_layout) Bigarray.Array1.t -> unit
+
+(* Pinned host memory, explicit lifetime (like munmap). *)
+val alloc_pinned : Device.t -> ('a, 'b) Bigarray.kind -> int -> ('a, 'b, c_layout) Bigarray.Array1.t
+val free_pinned : (_, _, c_layout) Bigarray.Array1.t -> unit
+val register_host : Device.t -> (_, _, c_layout) Bigarray.Array1.t -> unit
+val unregister_host : (_, _, c_layout) Bigarray.Array1.t -> unit
+val is_pinned : (_, _, c_layout) Bigarray.Array1.t -> bool
+
+(* Events; Execute.run / run_vectors take ?stream. *)
+val create_event : Device.t -> event
+val record_event : event -> stream -> unit
+val stream_wait_event : stream -> event -> unit
+val event_query : event -> bool
+val synchronize_event : event -> unit
+val destroy_event : event -> unit
+```
+
+The streaming pattern:
+
+```ocaml
+let copy = Transfer.create_stream dev and compute = Transfer.create_stream dev in
+let staged = Transfer.alloc_pinned dev Bigarray.char slot_bytes in   (* pread into it *)
+Transfer.copy_bytes_to_device ~stream:copy staged ~dst:cache ~dst_byte_offset:(slot * slot_bytes) ;
+Transfer.record_event ready copy ;
+Transfer.stream_wait_event compute ready ;
+Execute.run_vectors ~stream:compute ~device:dev ~ir ~args:[Vec cache; Vec x; Vec y] ~block ~grid ()
+```
+
+Rules worth knowing:
+
+- A ranged copy needs the vector's device copy to be current (`GPU`, `Both`,
+  `Stale_CPU` on that device, or device-only); otherwise call `to_device`
+  first. A ranged write turns `Both` into `Stale_CPU`, so auto-sync still
+  reads the right data. Custom (record) kinds are refused.
+- On CPU devices device memory *is* host memory: a device-only vector keeps
+  host storage there and host access works. Do not rely on it.
+- Freeing a device-only vector discards its contents. Freeing anything a
+  pending stream operation references is refused.
+- The keep-alive ledger is released by `synchronize_stream`, `flush`,
+  `synchronize_event`/a `true` `event_query`, and transitively: synchronising
+  a stream that waited on an event releases the work that event covered.
+- Streams from `create_stream` are blocking streams; the auto-sync path
+  depends on it. Any synchronous transfer on the default stream serialises
+  with them (HIP/CUDA legacy default-stream semantics), so a streaming loop
+  should not mix in auto-transfers.
+- Vector lengths are capped at `Int32.max_int` elements (kernels index with
+  int32); `Execute` refuses longer vectors instead of wrapping.
+- Vector location and buffer tables are not synchronised across domains:
+  use a vector from one domain at a time. The ledger and pinned registry are
+  mutex-protected.
+
 ### Kernel Execution
 
 #### `Kernel.ml` - Kernel Compilation & Launch (170 lines)

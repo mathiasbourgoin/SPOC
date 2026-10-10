@@ -85,6 +85,24 @@ let alloc_scalar_buffer (type a b) (dev : Device.t) (length : int)
               ~dst_ptr:(Ctypes.raw_address_of_ptr dst_ptr)
               ~byte_size
 
+        let range_from_host ~src_ptr ~dst_offset ~byte_size ~stream =
+          B.Async.host_to_device
+            ~src_ptr
+            ~dst:buf
+            ~dst_offset
+            ~byte_size
+            ~stream:
+              (Memory.unwrap_stream_for ~backend:B.name B.unwrap_stream stream)
+
+        let range_to_host ~src_offset ~dst_ptr ~byte_size ~stream =
+          B.Async.device_to_host
+            ~src:buf
+            ~src_offset
+            ~dst_ptr
+            ~byte_size
+            ~stream:
+              (Memory.unwrap_stream_for ~backend:B.name B.unwrap_stream stream)
+
         let free () = B.Memory.free buf
       end : Vector.DEVICE_BUFFER)
 
@@ -129,6 +147,30 @@ let alloc_scalar_buffer_zero_copy (type a b) (dev : Device.t)
 
               let device_to_host_ptr _dst_ptr ~byte_size:_ =
                 () (* No-op for zero-copy *)
+
+              let range_from_host ~src_ptr ~dst_offset ~byte_size ~stream =
+                B.Async.host_to_device
+                  ~src_ptr
+                  ~dst:buf
+                  ~dst_offset
+                  ~byte_size
+                  ~stream:
+                    (Memory.unwrap_stream_for
+                       ~backend:B.name
+                       B.unwrap_stream
+                       stream)
+
+              let range_to_host ~src_offset ~dst_ptr ~byte_size ~stream =
+                B.Async.device_to_host
+                  ~src:buf
+                  ~src_offset
+                  ~dst_ptr
+                  ~byte_size
+                  ~stream:
+                    (Memory.unwrap_stream_for
+                       ~backend:B.name
+                       B.unwrap_stream
+                       stream)
 
               let free () = B.Memory.free buf
             end : Vector.DEVICE_BUFFER))
@@ -176,6 +218,24 @@ let alloc_custom_buffer (dev : Device.t) (length : int) (elem_sz : int) :
             ~dst_ptr:(Ctypes.raw_address_of_ptr dst_ptr)
             ~byte_size
 
+        let range_from_host ~src_ptr ~dst_offset ~byte_size ~stream =
+          B.Async.host_to_device
+            ~src_ptr
+            ~dst:buf
+            ~dst_offset
+            ~byte_size
+            ~stream:
+              (Memory.unwrap_stream_for ~backend:B.name B.unwrap_stream stream)
+
+        let range_to_host ~src_offset ~dst_ptr ~byte_size ~stream =
+          B.Async.device_to_host
+            ~src:buf
+            ~src_offset
+            ~dst_ptr
+            ~byte_size
+            ~stream:
+              (Memory.unwrap_stream_for ~backend:B.name B.unwrap_stream stream)
+
         let free () = B.Memory.free buf
       end : Vector.DEVICE_BUFFER)
 
@@ -214,6 +274,10 @@ let ensure_buffer (type a b) (vec : (a, b) Vector.t) (dev : Device.t) :
                     let buf = alloc_scalar_buffer dev vec.length sk in
                     buf)
             | Vector.Scalar _, Vector.Custom_storage _ -> .
+            | Vector.Scalar sk, Vector.Device_only_storage ->
+                (* A device-only vector has no host storage to share, so never
+                   the zero-copy path: real device memory, nothing mirrored. *)
+                alloc_scalar_buffer dev vec.length sk
             | Vector.Custom c, _ ->
                 Log.debug Log.Transfer "  -> custom alloc" ;
                 alloc_custom_buffer dev vec.length c.elem_size)
@@ -288,7 +352,13 @@ end = struct
             ignore (Sys.opaque_identity ba)
         | Vector.Custom_storage {ptr; custom; length} ->
             B.device_to_host_ptr ptr ~byte_size:(length * custom.elem_size) ;
-            ignore (Sys.opaque_identity ptr))
+            ignore (Sys.opaque_identity ptr)
+        | Vector.Device_only_storage ->
+            (* Refuse rather than allocate a host mirror (FR-002): the caller
+               asked for a whole-vector read-back of a vector that has none. *)
+            Vector.device_only_refusal
+              ~op:"Transfer.to_cpu (whole-vector read-back)"
+              ~id:vec.id)
 
   (** Is there device-resident data for [vec] that a read-back could actually
       fetch? Two disjoint sources, and under the SoA ABI it is the second one:
@@ -411,6 +481,18 @@ let to_device (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : unit =
   | Vector.Stale_CPU d when d.id = dev.id ->
       Log.debug Log.Transfer "-> skip (Stale_CPU)"
   | _ -> (
+      (* A device-only vector has nothing to upload: refuse BEFORE
+         [ensure_buffer] would allocate a buffer on [dev]. *)
+      (match vec.host with
+      | Vector.Device_only_storage ->
+          Vector.device_only_refusal
+            ~op:
+              (Printf.sprintf
+                 "Transfer.to_device (upload to %s; a freed device-only vector \
+                  or one resident on another device cannot be uploaded)"
+                 dev.name)
+            ~id:vec.id
+      | Vector.Bigarray_storage _ | Vector.Custom_storage _ -> ()) ;
       (* Ensure buffer exists and transfer *)
       let buf = ensure_buffer vec dev in
       let (module B : Vector.DEVICE_BUFFER) = buf in
@@ -435,7 +517,9 @@ let to_device (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : unit =
           ignore (Sys.opaque_identity ba)
       | Vector.Custom_storage {ptr; custom; length} ->
           B.host_ptr_to_device ptr ~byte_size:(length * custom.elem_size) ;
-          ignore (Sys.opaque_identity ptr)) ;
+          ignore (Sys.opaque_identity ptr)
+      | Vector.Device_only_storage ->
+          Vector.device_only_refusal ~op:"Transfer.to_device" ~id:vec.id) ;
       vec.location <- Vector.Both dev ;
       (* The packed buffer on [dev] now holds host storage, so a read-back must
          read IT and not the leaves — and only this arm may say so, because only
@@ -534,6 +618,143 @@ let sync (type a b) (vec : (a, b) Vector.t) : unit =
       to_device vec dev ;
       vec.location <- Vector.Both dev
 
+(** {1 Keep-alive ledger for stream-ordered work}
+
+    A copy or launch enqueued on a stream may still be reading or writing its
+    operands after the call returns. The backends see raw addresses, which are
+    not GC roots, so SPOC roots the operands here — Bigarray sources and
+    destinations, the vectors involved — until it KNOWS the work has completed:
+
+    - the stream was synchronised ({!synchronize_stream}, {!destroy_stream}), or
+      its device was ({!flush});
+    - an event recorded after the work was synchronised, or queried complete;
+    - transitively: when a stream [b] that waited on an event of stream [a]
+      completes past that wait, [a]'s work up to the event has completed too.
+      This is what releases a copy stream that is never synchronised itself —
+      the spoc_llm M3 pattern (copy on [a], record [e], [b] waits on [e], sync
+      [b]).
+
+    Entries are ordered by a per-stream sequence number. The ledger is protected
+    by a mutex and is never touched from a GC finaliser (which could run inside
+    [Mutex.protect] on the same domain and self-deadlock). *)
+module Ledger = struct
+  type entry = {
+    seq : int;
+    keep : Obj.t;  (** Rooted for liveness only; never inspected. *)
+    vec_ids : int list;
+    host_ranges : (nativeint * int) list;  (** (address, bytes) in flight. *)
+  }
+
+  type stream_state = {
+    sid : int;
+    sdev : Device.t;
+    mutable next_seq : int;
+    mutable pending : entry list;
+    mutable waits : (int * stream_state * int) list;
+        (** (seq of the wait on this stream, waited stream, its seq) *)
+  }
+
+  let lock = Mutex.create ()
+
+  let next_sid = ref 0
+
+  let live : (int, stream_state) Hashtbl.t = Hashtbl.create 8
+
+  let new_stream (dev : Device.t) : stream_state =
+    Mutex.protect lock (fun () ->
+        incr next_sid ;
+        let st =
+          {sid = !next_sid; sdev = dev; next_seq = 0; pending = []; waits = []}
+        in
+        Hashtbl.replace live st.sid st ;
+        st)
+
+  let forget (st : stream_state) =
+    Mutex.protect lock (fun () -> Hashtbl.remove live st.sid)
+
+  let enqueue (st : stream_state) ~(keep : Obj.t) ~(vec_ids : int list)
+      ~(host_ranges : (nativeint * int) list) : unit =
+    Mutex.protect lock (fun () ->
+        let seq = st.next_seq in
+        st.next_seq <- seq + 1 ;
+        st.pending <- {seq; keep; vec_ids; host_ranges} :: st.pending)
+
+  (** Sequence number of the last operation enqueued so far: what an event
+      recorded now covers. *)
+  let mark (st : stream_state) : int =
+    Mutex.protect lock (fun () -> st.next_seq - 1)
+
+  (** A wait is itself an operation on [b]: once [b] has completed past it, the
+      waited work on the other stream has completed. *)
+  let add_wait (b : stream_state) ~(on : stream_state * int) : unit =
+    Mutex.protect lock (fun () ->
+        let seq = b.next_seq in
+        b.next_seq <- seq + 1 ;
+        let a, aseq = on in
+        b.waits <- (seq, a, aseq) :: b.waits)
+
+  (* Each wait is removed before recursing, so a wait cycle terminates. *)
+  let rec release_locked (st : stream_state) (upto : int) : unit =
+    st.pending <- List.filter (fun e -> e.seq > upto) st.pending ;
+    let reached, rest = List.partition (fun (s, _, _) -> s <= upto) st.waits in
+    st.waits <- rest ;
+    List.iter (fun (_, a, aseq) -> release_locked a aseq) reached
+
+  let release (st : stream_state) (upto : int) : unit =
+    Mutex.protect lock (fun () -> release_locked st upto)
+
+  let release_all (st : stream_state) : unit = release st max_int
+
+  let release_device (dev : Device.t) : unit =
+    Mutex.protect lock (fun () ->
+        Hashtbl.iter
+          (fun _ st -> if st.sdev.id = dev.id then release_locked st max_int)
+          live)
+
+  let pending_count (st : stream_state) : int =
+    Mutex.protect lock (fun () -> List.length st.pending)
+
+  let holds_vector (id : int) : bool =
+    Mutex.protect lock (fun () ->
+        Hashtbl.fold
+          (fun _ st acc ->
+            acc || List.exists (fun e -> List.mem id e.vec_ids) st.pending)
+          live
+          false)
+
+  let holds_host_range (addr : nativeint) (bytes : int) : bool =
+    let hi = Nativeint.add addr (Nativeint.of_int bytes) in
+    let overlaps (a, n) =
+      let a_hi = Nativeint.add a (Nativeint.of_int n) in
+      Nativeint.compare a hi < 0 && Nativeint.compare addr a_hi < 0
+    in
+    Mutex.protect lock (fun () ->
+        Hashtbl.fold
+          (fun _ st acc ->
+            acc
+            || List.exists
+                 (fun e -> List.exists overlaps e.host_ranges)
+                 st.pending)
+          live
+          false)
+end
+
+(** Refuse to free device memory that pending stream-ordered work may still
+    touch (FR-021): freeing it would put the DMA engine or a kernel on freed
+    memory. *)
+let refuse_if_in_flight ~(op : string) (vec : (_, _) Vector.t) : unit =
+  if Ledger.holds_vector vec.id then
+    invalid_arg
+      (Printf.sprintf
+         "%s: vector #%d is still referenced by stream-ordered work; \
+          synchronize the stream (or an event recorded after the work) first"
+         op
+         vec.id)
+
+(** [true] iff [vec] has no host storage ({!create_device_only} on a non-CPU
+    device). *)
+let is_device_only = Vector.is_device_only
+
 (** {1 Buffer Cleanup} *)
 
 (** Release the device memory [vec] holds on [dev], draining it to host storage
@@ -565,6 +786,13 @@ let sync (type a b) (vec : (a, b) Vector.t) : unit =
     unconditionally at the end. This function now does the same, scoped to
     [dev]. *)
 let free_buffer (vec : (_, _) Vector.t) (dev : Device.t) : unit =
+  refuse_if_in_flight ~op:"Transfer.free_buffer" vec ;
+  (* A device-only vector has nothing to drain into: freeing it DISCARDS its
+     contents (documented on [create_device_only]). The location reset in step
+     4 then leaves [CPU] over [Device_only_storage], which every host and
+     upload path refuses — the vector is unusable afterwards, never silently
+     re-uploaded from nowhere. *)
+  let drain = not (is_device_only vec) in
   (* 1. Read back BEFORE freeing, and through {!read_back_to_host}: an
      SoA-dispatched vector has no packed buffer of its own, so the old
      [None -> ()] early return threw the output of a transparent launch away
@@ -572,7 +800,7 @@ let free_buffer (vec : (_, _) Vector.t) (dev : Device.t) : unit =
      actually for — an AoS vector with nothing on this device. *)
   (match vec.location with
   | (Vector.GPU d | Vector.Stale_CPU d)
-    when d.id = dev.id && has_device_data vec dev ->
+    when drain && d.id = dev.id && has_device_data vec dev ->
       read_back_to_host vec dev ;
       vec.location <- Vector.Both dev
   | _ -> ()) ;
@@ -609,6 +837,9 @@ let free_buffer (vec : (_, _) Vector.t) (dev : Device.t) : unit =
 
 (** Free all device buffers for a vector *)
 let free_all_buffers (vec : (_, _) Vector.t) : unit =
+  refuse_if_in_flight ~op:"Transfer.free_all_buffers" vec ;
+  (* Device-only: discard, as in {!free_buffer}. *)
+  let drain = not (is_device_only vec) in
   (* Same SoA-aware read-back as {!free_buffer}. Pre-fix this arm called
      [copy_device_to_host] on a vector whose packed buffer does not exist after a
      transparent launch, so freeing without an explicit [to_cpu] raised
@@ -616,7 +847,7 @@ let free_all_buffers (vec : (_, _) Vector.t) : unit =
      buffer DID exist from an earlier AoS launch, silently overwrote the host
      storage with its pre-SoA-launch contents. *)
   (match vec.location with
-  | (Vector.GPU d | Vector.Stale_CPU d) when has_device_data vec d ->
+  | (Vector.GPU d | Vector.Stale_CPU d) when drain && has_device_data vec d ->
       read_back_to_host vec d ;
       vec.location <- Vector.CPU
   | _ -> ()) ;
@@ -645,50 +876,94 @@ let flush (dev : Device.t) : unit =
   | None -> failwith ("Unknown framework: " ^ dev.framework)
   | Some (module B : Framework_sig.BACKEND) ->
       let backend_dev = B.Device.get dev.backend_id in
-      B.Device.synchronize backend_dev
+      B.Device.synchronize backend_dev ;
+      (* Everything enqueued on any stream of [dev] has completed. *)
+      Ledger.release_device dev
 
 (** {1 Stream Operations} *)
 
-(** Stream handle - packages backend stream with its operations *)
+let backend_of (dev : Device.t) : (module Framework_sig.BACKEND) =
+  match Framework_registry.find_backend dev.framework with
+  | None -> failwith ("Unknown framework: " ^ dev.framework)
+  | Some b -> b
+
+(** Raise [Feature_not_supported] for [backend]: the capability refusal of this
+    section, as opposed to [Invalid_argument] for caller errors. *)
+let refuse_capability ~(backend : string) (feature : string) : 'a =
+  Sarek_backend_error.Backend_error.raise_error
+    (Sarek_backend_error.Backend_error.feature_not_supported ~backend feature)
+
+(** Stream handle - packages backend stream with its operations.
+
+    [stream_ref] is the backend stream wrapped by the backend's own
+    [wrap_stream], so any other unpacking of the same backend can recover it
+    ({!Framework_sig.stream_ref}). [state] is this stream's entry in the
+    keep-alive {!Ledger}.
+
+    Streams created by {!create_stream} are BLOCKING streams (they synchronise
+    with the device's legacy default stream). The auto-transfer path relies on
+    that: after an async ranged write the vector is [Stale_CPU], and the
+    implicit read-back runs on the default stream, which then waits for the
+    write. Switching to non-blocking streams requires making auto-sync
+    stream-aware first (FR-019). *)
 module type STREAM = sig
   val device : Device.t
 
   val synchronize : unit -> unit
 
   val destroy : unit -> unit
+
+  val stream_ref : Framework_sig.stream_ref
+
+  val state : Ledger.stream_state
 end
 
 type stream = (module STREAM)
 
 (** Create a new stream on a device *)
 let create_stream (dev : Device.t) : stream =
-  match Framework_registry.find_backend dev.framework with
-  | None -> failwith ("Unknown framework: " ^ dev.framework)
-  | Some (module B : Framework_sig.BACKEND) ->
-      let backend_dev = B.Device.get dev.backend_id in
-      let s = B.Stream.create backend_dev in
-      (module struct
-        let device = dev
+  let (module B : Framework_sig.BACKEND) = backend_of dev in
+  let backend_dev = B.Device.get dev.backend_id in
+  let s = B.Stream.create backend_dev in
+  let st = Ledger.new_stream dev in
+  (module struct
+    let device = dev
 
-        let synchronize () = B.Stream.synchronize s
+    let stream_ref = B.wrap_stream s
 
-        let destroy () = B.Stream.destroy s
-      end : STREAM)
+    let state = st
+
+    let synchronize () =
+      B.Stream.synchronize s ;
+      Ledger.release_all st
+
+    (* Synchronise first: the ledger may only let go of what the stream's work
+       references once that work has completed. *)
+    let destroy () =
+      synchronize () ;
+      B.Stream.destroy s ;
+      Ledger.forget st
+  end : STREAM)
 
 (** Get default stream for a device *)
 let default_stream (dev : Device.t) : stream =
-  match Framework_registry.find_backend dev.framework with
-  | None -> failwith ("Unknown framework: " ^ dev.framework)
-  | Some (module B : Framework_sig.BACKEND) ->
-      let backend_dev = B.Device.get dev.backend_id in
-      let s = B.Stream.default backend_dev in
-      (module struct
-        let device = dev
+  let (module B : Framework_sig.BACKEND) = backend_of dev in
+  let backend_dev = B.Device.get dev.backend_id in
+  let s = B.Stream.default backend_dev in
+  let st = Ledger.new_stream dev in
+  (module struct
+    let device = dev
 
-        let synchronize () = B.Stream.synchronize s
+    let stream_ref = B.wrap_stream s
 
-        let destroy () = () (* Don't destroy default stream *)
-      end : STREAM)
+    let state = st
+
+    let synchronize () =
+      B.Stream.synchronize s ;
+      Ledger.release_all st
+
+    let destroy () = () (* Don't destroy default stream *)
+  end : STREAM)
 
 let synchronize_stream (s : stream) =
   let (module S : STREAM) = s in
@@ -697,6 +972,534 @@ let synchronize_stream (s : stream) =
 let destroy_stream (s : stream) =
   let (module S : STREAM) = s in
   S.destroy ()
+
+let stream_device (s : stream) : Device.t =
+  let (module S : STREAM) = s in
+  S.device
+
+(** The device a stream belongs to and its backend-tagged handle — what
+    [Execute] needs to launch on it. *)
+let stream_handle (s : stream) : Device.t * Framework_sig.stream_ref =
+  let (module S : STREAM) = s in
+  (S.device, S.stream_ref)
+
+(** Root [keep] (and record [vec_ids] as in use) until the work just enqueued on
+    [s] has completed — what [Execute] does for the vectors of a launch it
+    enqueued on [s] (the backend's own kernel-argument retention roots the
+    argument cells, not the vectors whose buffers the kernel touches). *)
+let retain_on_stream (s : stream) ~(keep : Obj.t) ~(vec_ids : int list) : unit =
+  let (module S : STREAM) = s in
+  Ledger.enqueue S.state ~keep ~vec_ids ~host_ranges:[]
+
+(** Recover the backend's own stream from a core [stream]; refused when it
+    belongs to another backend or another device than [dev]. *)
+let backend_stream (type s) ~(op : string) ~(dev : Device.t)
+    (unwrap : Framework_sig.stream_ref -> s option) (st : stream) : s =
+  let (module S : STREAM) = st in
+  if S.device.id <> dev.id then
+    invalid_arg
+      (Printf.sprintf
+         "%s: the stream belongs to device %d (%s), the operation targets \
+          device %d (%s)"
+         op
+         S.device.id
+         S.device.name
+         dev.id
+         dev.name) ;
+  match unwrap S.stream_ref with
+  | Some s -> s
+  | None ->
+      invalid_arg
+        (Printf.sprintf "%s: the stream belongs to another backend" op)
+
+(** {1 Events} *)
+
+(** An event on one device. [ev_recorded] remembers which stream and ledger
+    position the latest {!record_event} covered, so synchronising or querying
+    the event can release exactly the keep-alive entries it proves complete.
+    Recording again replaces it (the latest record is what waits, queries and
+    releases refer to, as in CUDA/HIP). *)
+type event = {
+  ev_device : Device.t;
+  ev_ref : Framework_sig.event_ref;
+  mutable ev_recorded : (Ledger.stream_state * int) option;
+}
+
+(** Create an event on [dev]. The device is selected first: HIP and CUDA create
+    events on the CURRENT device, which a GC finaliser freeing a buffer may have
+    changed. *)
+let create_event (dev : Device.t) : event =
+  let (module B : Framework_sig.BACKEND) = backend_of dev in
+  B.Device.set_current (B.Device.get dev.backend_id) ;
+  {
+    ev_device = dev;
+    ev_ref = B.wrap_event (B.Event.create ());
+    ev_recorded = None;
+  }
+
+let backend_event (type e) ~(op : string)
+    (unwrap : Framework_sig.event_ref -> e option) (ev : event) : e =
+  match unwrap ev.ev_ref with
+  | Some e -> e
+  | None ->
+      invalid_arg (Printf.sprintf "%s: the event belongs to another backend" op)
+
+(** Record [ev] on [s]: it completes once all work enqueued on [s] so far has
+    completed. Refused across devices. *)
+let record_event (ev : event) (s : stream) : unit =
+  let op = "Transfer.record_event" in
+  let (module B : Framework_sig.BACKEND) = backend_of ev.ev_device in
+  let bs = backend_stream ~op ~dev:ev.ev_device B.unwrap_stream s in
+  B.Event.record (backend_event ~op B.unwrap_event ev) bs ;
+  let (module S : STREAM) = s in
+  ev.ev_recorded <- Some (S.state, Ledger.mark S.state)
+
+(** Make every operation enqueued on [s] after this call wait for the work [ev]
+    recorded. Refused across devices. On Native/Interpreter streams are
+    synchronous, so the wait is already satisfied. *)
+let stream_wait_event (s : stream) (ev : event) : unit =
+  let op = "Transfer.stream_wait_event" in
+  let (module B : Framework_sig.BACKEND) = backend_of ev.ev_device in
+  let bs = backend_stream ~op ~dev:ev.ev_device B.unwrap_stream s in
+  B.Async.stream_wait_event bs (backend_event ~op B.unwrap_event ev) ;
+  let (module S : STREAM) = s in
+  match ev.ev_recorded with
+  | Some on -> Ledger.add_wait S.state ~on
+  | None -> ()
+
+let release_event (ev : event) : unit =
+  match ev.ev_recorded with
+  | Some (st, upto) -> Ledger.release st upto
+  | None -> ()
+
+(** [true] once the recorded work has completed (or the event was never
+    recorded). Never blocks. A [true] answer releases what the event covers. *)
+let event_query (ev : event) : bool =
+  let (module B : Framework_sig.BACKEND) = backend_of ev.ev_device in
+  let done_ =
+    B.Async.event_query
+      (backend_event ~op:"Transfer.event_query" B.unwrap_event ev)
+  in
+  if done_ then release_event ev ;
+  done_
+
+(** Block until the recorded work has completed, then release what it covers. *)
+let synchronize_event (ev : event) : unit =
+  let (module B : Framework_sig.BACKEND) = backend_of ev.ev_device in
+  B.Event.synchronize
+    (backend_event ~op:"Transfer.synchronize_event" B.unwrap_event ev) ;
+  release_event ev
+
+(** Destroy the event. Keep-alive entries it would have released stay until
+    their stream is synchronised. *)
+let destroy_event (ev : event) : unit =
+  let (module B : Framework_sig.BACKEND) = backend_of ev.ev_device in
+  B.Event.destroy (backend_event ~op:"Transfer.destroy_event" B.unwrap_event ev)
+
+(** {1 Device-only vectors} *)
+
+(** Allocate a vector of [length] elements that lives only on [dev].
+
+    On a GPU device no host storage is allocated at all: host element access
+    ([Vector.get]/[set]/[fill]/[iter]/[to_bigarray]/...), whole-vector read-back
+    ([to_cpu], auto-sync) and host-side copies all raise [Invalid_argument]
+    naming the vector as device-only. Data moves in and out only through the
+    ranged copies below ({!copy_to_device}, {!copy_bytes_to_device},
+    {!copy_ptr_to_device}, {!copy_to_host}) or kernels. Freeing its buffer
+    ({!free_buffer}, {!free_all_buffers}) discards the contents, and the vector
+    is unusable afterwards.
+
+    On a CPU device (Native, Interpreter) device memory IS host memory — kernels
+    there read the vector's host storage — so the vector gets ordinary host
+    storage, aliased by its device buffer, and host element access works.
+    Portable code must not rely on that.
+
+    Refused ([Invalid_argument]): [length] outside [1 .. Int32.max_int] (kernels
+    index with int32; split larger caches over several vectors) and custom
+    (record) kinds. Refused ([Feature_not_supported]): backends without ranged
+    copies (OpenCL, Vulkan, Metal, WebGPU), where nothing but a kernel could
+    ever fill the vector. *)
+let create_device_only (type a b) (dev : Device.t) (kind : (a, b) Vector.kind)
+    (length : int) : (a, b) Vector.t =
+  if length < 1 || length > Int32.to_int Int32.max_int then
+    invalid_arg
+      (Printf.sprintf
+         "Transfer.create_device_only: length %d outside [1, %ld] (kernels \
+          index with int32; split larger caches over several vectors)"
+         length
+         Int32.max_int) ;
+  (match kind with
+  | Vector.Scalar _ -> ()
+  | Vector.Custom _ ->
+      invalid_arg
+        "Transfer.create_device_only: custom (record) kinds are not supported; \
+         ranged copies are typed over Bigarray element kinds") ;
+  let (module B : Framework_sig.BACKEND) = backend_of dev in
+  if not B.Async.support.ranged_copy then
+    refuse_capability
+      ~backend:B.name
+      "device-only vectors (they need ranged copies, implemented on HIP, CUDA, \
+       Native and Interpreter only)" ;
+  let vec =
+    if dev.capabilities.is_cpu then Vector.create kind length
+    else Vector.create_device_only_record kind dev length
+  in
+  ignore (ensure_buffer vec dev) ;
+  vec.location <- Vector.GPU dev ;
+  vec
+
+(** {1 Ranged copies} *)
+
+(** The device a ranged copy on [vec] targets, and its buffer there, after
+    checking the preconditions. A ranged copy needs the device copy to be
+    CURRENT: a partial write into a stale device copy would leave neither copy
+    authoritative, and a read from one would return stale data.
+
+    Current means: [vec] is device-only (device-current by definition), or its
+    location is [GPU d], [Both d] or [Stale_CPU d], or — on a CPU device, where
+    the buffer aliases host storage — any location naming [d]. *)
+let range_target (type a b) ~(op : string) (vec : (a, b) Vector.t) :
+    Device.t * Vector.device_buffer =
+  (match vec.kind with
+  | Vector.Scalar _ -> ()
+  | Vector.Custom _ ->
+      invalid_arg
+        (op ^ ": custom (record) kinds are not supported by ranged copies")) ;
+  let dev =
+    match vec.location with
+    | Vector.GPU d | Vector.Both d | Vector.Stale_CPU d -> d
+    | Vector.Stale_GPU d when is_device_only vec || d.capabilities.is_cpu -> d
+    | Vector.Stale_GPU _ | Vector.CPU ->
+        if is_device_only vec then
+          invalid_arg
+            (Printf.sprintf
+               "%s: device-only vector #%d has no device buffer (freed)"
+               op
+               vec.id)
+        else
+          invalid_arg
+            (Printf.sprintf
+               "%s: vector #%d's host copy is authoritative (location %s); \
+                upload it with Transfer.to_device first"
+               op
+               vec.id
+               (Vector.location_to_string vec.location))
+  in
+  match Vector.get_buffer vec dev with
+  | Some buf -> (dev, buf)
+  | None ->
+      invalid_arg
+        (Printf.sprintf "%s: vector #%d has no buffer on %s" op vec.id dev.name)
+
+let check_bytes ~(op : string) ~(total : int) ~(off : int) ~(byte_size : int) =
+  if off < 0 || byte_size < 0 || off + byte_size > total then
+    invalid_arg
+      (Printf.sprintf
+         "%s: byte range [%d, %d) outside the vector's %d bytes"
+         op
+         off
+         (off + byte_size)
+         total)
+
+let vector_bytes (vec : (_, _) Vector.t) =
+  vec.length * Vector.elem_size vec.kind
+
+(* The one host->device path every public variant goes through. [keep] is
+   rooted until the copy completes: synchronously across the backend call, in
+   the ledger when enqueued on a stream. *)
+let h2d_range (type a b) ~(op : string) ?(stream : stream option)
+    ~(src_ptr : nativeint) ~(byte_size : int) ~(keep : Obj.t)
+    ~(dst : (a, b) Vector.t) ~(dst_byte_offset : int) () : unit =
+  let dev, buf = range_target ~op dst in
+  check_bytes ~op ~total:(vector_bytes dst) ~off:dst_byte_offset ~byte_size ;
+  let (module Buf : Vector.DEVICE_BUFFER) = buf in
+  (match stream with
+  | None ->
+      Buf.range_from_host
+        ~src_ptr
+        ~dst_offset:dst_byte_offset
+        ~byte_size
+        ~stream:None ;
+      ignore (Sys.opaque_identity keep)
+  | Some s ->
+      let (module S : STREAM) = s in
+      if S.device.id <> dev.id then
+        invalid_arg
+          (Printf.sprintf
+             "%s: the stream belongs to device %d, the vector to device %d"
+             op
+             S.device.id
+             dev.id) ;
+      Buf.range_from_host
+        ~src_ptr
+        ~dst_offset:dst_byte_offset
+        ~byte_size
+        ~stream:(Some S.stream_ref) ;
+      Ledger.enqueue
+        S.state
+        ~keep:(Obj.repr (keep, dst))
+        ~vec_ids:[dst.id]
+        ~host_ranges:[(src_ptr, byte_size)]) ;
+  (* The device copy now holds data the host copy lacks. *)
+  match dst.location with
+  | Vector.Both d when not d.capabilities.is_cpu ->
+      dst.location <- Vector.Stale_CPU d
+  | Vector.Both _ | Vector.GPU _ | Vector.Stale_CPU _ | Vector.Stale_GPU _
+  | Vector.CPU ->
+      ()
+
+let bigarray_addr (ba : (_, _, Bigarray.c_layout) Bigarray.Array1.t) : nativeint
+    =
+  Ctypes.raw_address_of_ptr (Memory.bigarray_void_ptr ba)
+
+(** Copy all of [src] into [dst] starting at element [dst_offset].
+
+    Without [~stream] the copy has completed when the call returns. With it, the
+    copy is enqueued on the stream and may still be running; SPOC keeps [src]
+    and [dst] alive until the stream (or an event recorded after the copy) is
+    synchronised. Writing into [src] before then races with the DMA: ordering
+    that is the caller's job.
+
+    [dst] must be device-current (see {!range_target}); a vector in [Both]
+    becomes [Stale_CPU], so auto-sync later reads the device copy. Raises
+    [Invalid_argument] when the range does not fit, and [Feature_not_supported]
+    on backends without ranged copies. Slice the source with
+    [Bigarray.Array1.sub]. *)
+let copy_to_device (type a b) ?(stream : stream option)
+    (src : (a, b, Bigarray.c_layout) Bigarray.Array1.t) ~(dst : (a, b) Vector.t)
+    ~(dst_offset : int) : unit =
+  let op = "Transfer.copy_to_device" in
+  let n = Bigarray.Array1.dim src in
+  if dst_offset < 0 || dst_offset + n > dst.length then
+    invalid_arg
+      (Printf.sprintf
+         "%s: elements [%d, %d) outside vector of length %d"
+         op
+         dst_offset
+         (dst_offset + n)
+         dst.length) ;
+  let esz = Vector.elem_size dst.kind in
+  h2d_range
+    ~op
+    ?stream
+    ~src_ptr:(bigarray_addr src)
+    ~byte_size:(n * esz)
+    ~keep:(Obj.repr src)
+    ~dst
+    ~dst_byte_offset:(dst_offset * esz)
+    ()
+
+(** Byte-level {!copy_to_device}: copy every byte of [src] (any element kind)
+    into [dst] at byte offset [dst_byte_offset]. For blocks that mix element
+    types (e.g. int32 quant nibbles followed by f32 scales) read into a [char]
+    buffer. Same stream, keep-alive and location contract. *)
+let copy_bytes_to_device ?(stream : stream option)
+    (src : (_, _, Bigarray.c_layout) Bigarray.Array1.t) ~(dst : (_, _) Vector.t)
+    ~(dst_byte_offset : int) : unit =
+  h2d_range
+    ~op:"Transfer.copy_bytes_to_device"
+    ?stream
+    ~src_ptr:(bigarray_addr src)
+    ~byte_size:(Bigarray.Array1.size_in_bytes src)
+    ~keep:(Obj.repr src)
+    ~dst
+    ~dst_byte_offset
+    ()
+
+(** Raw-address {!copy_bytes_to_device}. [src_ptr] is NOT rooted: the caller
+    keeps [byte_size] bytes at [src_ptr] alive and unmodified until the copy has
+    completed — the call's return without [~stream], the stream or a later
+    event's completion with it. *)
+let copy_ptr_to_device ?(stream : stream option) ~(src_ptr : nativeint)
+    ~(byte_size : int) ~(dst : (_, _) Vector.t) ~(dst_byte_offset : int) () :
+    unit =
+  h2d_range
+    ~op:"Transfer.copy_ptr_to_device"
+    ?stream
+    ~src_ptr
+    ~byte_size
+    ~keep:(Obj.repr ())
+    ~dst
+    ~dst_byte_offset
+    ()
+
+(** Copy [Bigarray.Array1.dim dst] elements of [src], starting at element
+    [src_offset], into [dst] — the explicit read-back for device-only vectors.
+    [src] must be device-current. With [~stream] the copy may still be running
+    on return and SPOC roots [dst] until it has completed; read [dst] only after
+    synchronising. [src]'s location is unchanged. *)
+let copy_to_host (type a b) ?(stream : stream option) ~(src : (a, b) Vector.t)
+    ~(src_offset : int) (dst : (a, b, Bigarray.c_layout) Bigarray.Array1.t) :
+    unit =
+  let op = "Transfer.copy_to_host" in
+  let n = Bigarray.Array1.dim dst in
+  if src_offset < 0 || src_offset + n > src.length then
+    invalid_arg
+      (Printf.sprintf
+         "%s: elements [%d, %d) outside vector of length %d"
+         op
+         src_offset
+         (src_offset + n)
+         src.length) ;
+  let dev, buf = range_target ~op src in
+  let esz = Vector.elem_size src.kind in
+  let byte_size = n * esz in
+  let dst_ptr = bigarray_addr dst in
+  let (module Buf : Vector.DEVICE_BUFFER) = buf in
+  match stream with
+  | None ->
+      Buf.range_to_host
+        ~src_offset:(src_offset * esz)
+        ~dst_ptr
+        ~byte_size
+        ~stream:None ;
+      ignore (Sys.opaque_identity dst)
+  | Some s ->
+      let (module S : STREAM) = s in
+      if S.device.id <> dev.id then
+        invalid_arg
+          (Printf.sprintf
+             "%s: the stream belongs to device %d, the vector to device %d"
+             op
+             S.device.id
+             dev.id) ;
+      Buf.range_to_host
+        ~src_offset:(src_offset * esz)
+        ~dst_ptr
+        ~byte_size
+        ~stream:(Some S.stream_ref) ;
+      Ledger.enqueue
+        S.state
+        ~keep:(Obj.repr (dst, src))
+        ~vec_ids:[src.id]
+        ~host_ranges:[(dst_ptr, byte_size)]
+
+(** {1 Pinned host memory} *)
+
+type pinned_kind = Allocated | Registered of Obj.t
+
+type pinned_entry = {
+  pin_device : Device.t;
+  pin_bytes : int;
+  pin_kind : pinned_kind;
+}
+
+(* Keyed by start address; an entry matches a Bigarray only when its byte
+   length matches too, so a sub-array (even at offset 0) is never mistaken for
+   the allocation. *)
+let pinned_table : (nativeint, pinned_entry) Hashtbl.t = Hashtbl.create 8
+
+let pinned_lock = Mutex.create ()
+
+let pinned_lookup (ba : (_, _, Bigarray.c_layout) Bigarray.Array1.t) =
+  let addr = bigarray_addr ba and bytes = Bigarray.Array1.size_in_bytes ba in
+  Mutex.protect pinned_lock (fun () ->
+      match Hashtbl.find_opt pinned_table addr with
+      | Some e when e.pin_bytes = bytes -> Some (addr, e)
+      | _ -> None)
+
+(** [true] iff [ba] is exactly a live {!alloc_pinned} allocation or a live
+    {!register_host} registration. *)
+let is_pinned (ba : (_, _, Bigarray.c_layout) Bigarray.Array1.t) : bool =
+  Option.is_some (pinned_lookup ba)
+
+(** Allocate [n] elements of page-locked host memory for DMA from/to [dev], as a
+    Bigarray (read into it with [pread]/[O_DIRECT], then copy it with [~stream]
+    at full link rate). HIP: [hipHostMalloc] (portable); CUDA: [cuMemHostAlloc]
+    (portable); Native/Interpreter: ordinary host memory. Refused with
+    [Feature_not_supported] elsewhere.
+
+    The memory is released ONLY by {!free_pinned}: there is no finaliser
+    (sub-arrays could outlive the parent). Using the Bigarray, or any sub-array
+    of it, after {!free_pinned} is undefined behaviour, as after [munmap].
+    [Bigarray.float16] is refused: ctypes cannot build that kind over foreign
+    memory; use a [char] or [int16_unsigned] buffer and {!copy_bytes_to_device}.
+*)
+let alloc_pinned (type a b) (dev : Device.t) (kind : (a, b) Bigarray.kind)
+    (n : int) : (a, b, Bigarray.c_layout) Bigarray.Array1.t =
+  if n < 1 then invalid_arg "Transfer.alloc_pinned: length must be positive" ;
+  (match kind with
+  | Bigarray.Float16 ->
+      invalid_arg
+        "Transfer.alloc_pinned: Float16 is not supported (ctypes cannot view \
+         foreign memory as f16); allocate a char buffer instead"
+  | _ -> ()) ;
+  let (module B : Framework_sig.BACKEND) = backend_of dev in
+  let bytes = n * Memory.bigarray_elem_size kind in
+  let addr =
+    B.Async.alloc_pinned (B.Device.get dev.backend_id) ~byte_size:bytes
+  in
+  let ba =
+    Ctypes.bigarray_of_ptr
+      Ctypes.array1
+      n
+      kind
+      (Ctypes.from_voidp
+         (Ctypes.typ_of_bigarray_kind kind)
+         (Ctypes.ptr_of_raw_address addr))
+  in
+  Mutex.protect pinned_lock (fun () ->
+      Hashtbl.replace
+        pinned_table
+        addr
+        {pin_device = dev; pin_bytes = bytes; pin_kind = Allocated}) ;
+  ba
+
+let refuse_pinned_in_flight ~op addr bytes =
+  if Ledger.holds_host_range addr bytes then
+    invalid_arg
+      (op
+     ^ ": the buffer is still referenced by stream-ordered copies; synchronize \
+        the stream (or an event recorded after them) first")
+
+(** Release a buffer returned by {!alloc_pinned}. Refused ([Invalid_argument])
+    for anything else — a sub-array, a registered buffer, a buffer already freed
+    — and while a stream-ordered copy may still read or write it. *)
+let free_pinned (ba : (_, _, Bigarray.c_layout) Bigarray.Array1.t) : unit =
+  let op = "Transfer.free_pinned" in
+  match pinned_lookup ba with
+  | Some (addr, ({pin_kind = Allocated; _} as e)) ->
+      refuse_pinned_in_flight ~op addr e.pin_bytes ;
+      let (module B : Framework_sig.BACKEND) = backend_of e.pin_device in
+      B.Async.free_pinned (B.Device.get e.pin_device.backend_id) addr ;
+      Mutex.protect pinned_lock (fun () -> Hashtbl.remove pinned_table addr)
+  | Some (_, {pin_kind = Registered _; _}) ->
+      invalid_arg (op ^ ": buffer was registered, use Transfer.unregister_host")
+  | None -> invalid_arg (op ^ ": not a live Transfer.alloc_pinned allocation")
+
+(** Page-lock an existing Bigarray for DMA from/to [dev]. SPOC keeps [ba] alive
+    until {!unregister_host}. *)
+let register_host (dev : Device.t)
+    (ba : (_, _, Bigarray.c_layout) Bigarray.Array1.t) : unit =
+  let addr = bigarray_addr ba and bytes = Bigarray.Array1.size_in_bytes ba in
+  if bytes < 1 then invalid_arg "Transfer.register_host: empty buffer" ;
+  if Mutex.protect pinned_lock (fun () -> Hashtbl.mem pinned_table addr) then
+    invalid_arg "Transfer.register_host: buffer already pinned or registered" ;
+  let (module B : Framework_sig.BACKEND) = backend_of dev in
+  B.Async.register_host (B.Device.get dev.backend_id) addr ~byte_size:bytes ;
+  Mutex.protect pinned_lock (fun () ->
+      Hashtbl.replace
+        pinned_table
+        addr
+        {
+          pin_device = dev;
+          pin_bytes = bytes;
+          pin_kind = Registered (Obj.repr ba);
+        })
+
+(** Undo {!register_host}; refused while stream-ordered copies may use it. *)
+let unregister_host (ba : (_, _, Bigarray.c_layout) Bigarray.Array1.t) : unit =
+  let op = "Transfer.unregister_host" in
+  match pinned_lookup ba with
+  | Some (addr, ({pin_kind = Registered _; _} as e)) ->
+      refuse_pinned_in_flight ~op addr e.pin_bytes ;
+      let (module B : Framework_sig.BACKEND) = backend_of e.pin_device in
+      B.Async.unregister_host (B.Device.get e.pin_device.backend_id) addr ;
+      Mutex.protect pinned_lock (fun () -> Hashtbl.remove pinned_table addr)
+  | Some (_, {pin_kind = Allocated; _}) ->
+      invalid_arg
+        (op ^ ": buffer was allocated pinned, use Transfer.free_pinned")
+  | None -> invalid_arg (op ^ ": not a registered buffer")
 
 (** {1 Batch Operations} *)
 

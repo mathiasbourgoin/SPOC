@@ -63,6 +63,10 @@ let test_buffer_module_type () =
 
     let bind_to_kargs _kargs _idx = ()
 
+    let range_from_host ~src_ptr:_ ~dst_offset:_ ~byte_size:_ ~stream:_ = ()
+
+    let range_to_host ~src_offset:_ ~dst_ptr:_ ~byte_size:_ ~stream:_ = ()
+
     let free () = ()
   end in
   assert (FakeBuffer.size = 100) ;

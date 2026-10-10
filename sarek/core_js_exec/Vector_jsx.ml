@@ -38,13 +38,15 @@ let get : type a b. (a, b) t -> int -> a =
   match vec.host with
   | Bigarray_storage ba -> Bigarray.Array1.get ba idx
   | Custom_storage {ptr; custom; _} -> custom.get ptr idx
+  | Device_only_storage -> device_only_refusal ~op:"Vector.get" ~id:vec.id
 
 (** Set element *)
 let set : type a b. (a, b) t -> int -> a -> unit =
  fun vec idx value ->
   (match vec.host with
   | Bigarray_storage ba -> Bigarray.Array1.set ba idx value
-  | Custom_storage {ptr; custom; _} -> custom.set ptr idx value) ;
+  | Custom_storage {ptr; custom; _} -> custom.set ptr idx value
+  | Device_only_storage -> device_only_refusal ~op:"Vector.set" ~id:vec.id) ;
   match vec.location with
   | Both d -> vec.location <- Stale_GPU d
   | GPU d -> vec.location <- Stale_GPU d
@@ -56,6 +58,8 @@ let kernel_set : type a b. (a, b) t -> int -> a -> unit =
   match vec.host with
   | Bigarray_storage ba -> Bigarray.Array1.unsafe_set ba idx value
   | Custom_storage {ptr; custom; _} -> custom.set ptr idx value
+  | Device_only_storage ->
+      device_only_refusal ~op:"Vector.kernel_set" ~id:vec.id
 
 (** get_buffer — look up device buffer for a given device *)
 let get_buffer (type a b) (vec : (a, b) t) (dev : Jsoo_exec_ops.device_t) :

@@ -46,6 +46,46 @@ Reviewed core files: `sarek/core/README.md`, `Advanced.ml`, `Device.ml`, `Error.
 - Kernel argument values must match the backend's expected order and type.
 - (PR #168, branch `feature/spoc-core-decouple`) The pure numeric vector core `spoc_core_base` must NOT link `ctypes` or `unix`; this is enforced at build time by `sarek/core/ffi_free_gate/` (a Bigarray `Vector.create/set/get/to_array` program that builds to bytecode AND js_of_ocaml and runs under `node`). If `ctypes`/`unix` re-enter the numeric core, the gate fails to build.
 
+## Device-only vectors and stream-ordered copies (2026-10, spoc_llm M3)
+
+Spec: `specs/device-buffers-async-copy.md`. Verified against the branch
+`feat/device-buffers-async-copy`.
+
+- `Device_only_storage` is a third `host_storage` constructor
+  (`sarek/core_base/Spoc_core_base.ml`). Chosen over a flag so the compiler
+  finds every host-access site; each one refuses through
+  `device_only_refusal` (`Invalid_argument`). Only `Transfer.create_device_only`
+  builds one, and only off-CPU: on Native/Interpreter the vector keeps host
+  storage, because those backends' kernels read `vec.host` (PPX native code
+  calls `Spoc_core.Vector.get`/`kernel_set`).
+- Freeing a device-only vector discards it; afterwards its location is `CPU`
+  over `Device_only_storage`, which every upload and host path refuses.
+- Ranged copies go through two new `Memory.BUFFER` members,
+  `range_from_host`/`range_to_host`, which call the backend's
+  `Framework_sig.ASYNC`. Streams cross first-class-module unpackings as
+  `Framework_sig.stream_ref` (the `kargs = ..` pattern; `Make_refs` mints
+  per-backend constructors).
+- Invariant: a ranged copy requires the device copy to be current; a ranged
+  write turns `Both d` into `Stale_CPU d` (off-CPU).
+- Invariant: anything an enqueued copy or launch references stays rooted in
+  `Transfer.Ledger` until SPOC knows the work completed (stream sync, `flush`,
+  event sync / completed query, or transitively through `stream_wait_event`).
+  `free_buffer`, `free_all_buffers`, `free_pinned` and `unregister_host`
+  refuse while the ledger holds their target. The ledger is never touched from
+  a GC finaliser.
+- Invariant (FR-019): `Transfer.create_stream` streams are blocking; the
+  auto-sync read-back after an async ranged write relies on it.
+- Backend support is declared in `Framework_sig.async_support`; refusing
+  backends use `Framework_sig.Async_refused` and `refuse_stream_launch`.
+- ZLUDA does not implement `cuMemHostRegister` (observed 2026-10-10,
+  `CUDA_ERROR_OTHER`); everything else in the suite passes on ZLUDA.
+- Tests: `sarek/tests/e2e/device_buffers_suite.ml` (body),
+  `sarek/tests/e2e/test_device_buffers.ml` (runtest: CPU backends, CUDA,
+  refusal on OpenCL/Vulkan/Metal), `sarek-hip/test/test_hip_device_buffers.ml`
+  (alias `e2e-hip`), `sarek-hip/test/bench_hip_pinned_copy.ml` (alias
+  `e2e-hip-bench`, information only), `spoc/framework/test/test_framework_sig.ml`
+  (`Async_refused`, `Make_refs`).
+
 ## Potential Invariant Violations/Bugs
 
 - `Vector_storage.sub_vector_host` creates sub-vector metadata and host storage at `sarek/core/Vector_storage.ml:214-258`, but the public `Vector.gather` path is a placeholder/no-op around sub-vector synchronization at `sarek/core/Vector.ml:282-296`. This makes partition/gather semantics incomplete for device-backed vectors.

@@ -8,6 +8,7 @@
   spoc_framework
   spoc_framework_registry
   spoc_core_base
+  sarek_backend_error
   ctypes
   unix
   sarek_ir
@@ -25,6 +26,7 @@
   Soa
   Soa_vector
   Gpu_memory
+  Host_async
   Transfer
   Profiling
   Error

@@ -191,6 +191,26 @@ module Hip : Framework_sig.PLUGIN_BASE = struct
         ~stream
   end
 
+  module Async = struct
+    let support = Framework_sig.full_async_support
+
+    let host_to_device = Hip_api.Async.host_to_device
+
+    let device_to_host = Hip_api.Async.device_to_host
+
+    let stream_wait_event = Hip_api.Async.stream_wait_event
+
+    let event_query = Hip_api.Async.event_query
+
+    let alloc_pinned = Hip_api.Async.alloc_pinned
+
+    let free_pinned = Hip_api.Async.free_pinned
+
+    let register_host = Hip_api.Async.register_host
+
+    let unregister_host = Hip_api.Async.unregister_host
+  end
+
   let enable_profiling () = ()
 
   let disable_profiling () = ()
