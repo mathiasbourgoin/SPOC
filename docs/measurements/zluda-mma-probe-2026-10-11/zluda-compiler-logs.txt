@@ -1,4 +1,4 @@
-# zluda_trace compiler logs (ZLUDA_CUDA_LIB=~/opt/zluda/libcuda.so LD_LIBRARY_PATH=~/opt/zluda/trace ZLUDA_LOG_DIR=...): module 1 = control, 2-3 = the forms that run (no log), 4-9 = the forms that do not load
+# zluda_trace compiler logs (ZLUDA_CUDA_LIB=~/opt/zluda/libcuda.so LD_LIBRARY_PATH=~/opt/zluda/trace ZLUDA_LOG_DIR=...), 2026-10-10T22:48Z, probe at the PR head: module 1 = control, 2-3 = the forms that run (no log), 4-7 = mma.sync forms that do not load, 8-9 = wmma forms
 log.txt
 module_0001.ptx
 module_0002.ptx
@@ -28,14 +28,14 @@ Unrecognized statement "mma.sync.aligned.m16n8k8.row.col.f32.f16.f16.f32 {%d0,%d
 Unrecognized statement "mma.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16 {%d0,%d1},{%a0,%a1,%a2,%a3},{%b0,%b1},{%c0,%c1};"
 
 == module_0008.log
-Unrecognized statement "wmma.load.a.sync.aligned.row.m16n16k16.global.f16 {%r0, %r1, %r2, %r3, %r4, %r5, %r6, %r7}, [%pa], %ld;"
-Unrecognized statement "wmma.load.b.sync.aligned.row.m16n16k16.global.f16 {%r8, %r9, %r10, %r11, %r12, %r13, %r14, %r15}, [%pb], %ld;"
+Unrecognized statement "wmma.load.a.sync.aligned.row.m16n16k16.global.f16 {%r0, %r1, %r2, %r3, %r4, %r5, %r6, %r7}, [%pa+0], %ld;"
+Unrecognized statement "wmma.load.b.sync.aligned.row.m16n16k16.global.f16 {%r8, %r9, %r10, %r11, %r12, %r13, %r14, %r15}, [%pb+0], %ld;"
 Unrecognized statement "wmma.mma.sync.aligned.row.row.m16n16k16.f32.f32 {%f10, %f11, %f12, %f13, %f14, %f15, %f16, %f17}, {%r0, %r1, %r2, %r3, %r4, %r5, %r6, %r7}, {%r8, %r9, %r10, %r11, %r12, %r13, %r14, %r15}, {%z0, %z0, %z0, %z0, %z0, %z0, %z0, %z0};"
-Unrecognized statement "wmma.store.d.sync.aligned.row.m16n16k16.global.f32 [%pd], {%f10, %f11, %f12, %f13, %f14, %f15, %f16, %f17}, %ld;"
+Unrecognized statement "wmma.store.d.sync.aligned.row.m16n16k16.global.f32 [%pd+0], {%f10, %f11, %f12, %f13, %f14, %f15, %f16, %f17}, %ld;"
 
 == module_0009.log
-Unrecognized statement "wmma.load.a.sync.aligned.row.m16n16k16.global.u8 {%r0, %r1}, [%pa], %ld;"
-Unrecognized statement "wmma.load.b.sync.aligned.row.m16n16k16.global.u8 {%r2, %r3}, [%pb], %ld;"
+Unrecognized statement "wmma.load.a.sync.aligned.row.m16n16k16.global.u8 {%r0, %r1}, [%pa+0], %ld;"
+Unrecognized statement "wmma.load.b.sync.aligned.row.m16n16k16.global.u8 {%r2, %r3}, [%pb+0], %ld;"
 Unrecognized statement "wmma.mma.sync.aligned.row.row.m16n16k16.s32.u8.u8.s32 {%r10, %r11, %r12, %r13, %r14, %r15, %r16, %r17}, {%r0, %r1}, {%r2, %r3}, {%z0, %z0, %z0, %z0, %z0, %z0, %z0, %z0};"
-Unrecognized statement "wmma.store.d.sync.aligned.row.m16n16k16.global.s32 [%pd], {%r10, %r11, %r12, %r13, %r14, %r15, %r16, %r17}, %ld;"
+Unrecognized statement "wmma.store.d.sync.aligned.row.m16n16k16.global.s32 [%pd+0], {%r10, %r11, %r12, %r13, %r14, %r15, %r16, %r17}, %ld;"
 
