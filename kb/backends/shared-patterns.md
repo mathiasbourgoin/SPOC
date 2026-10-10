@@ -45,6 +45,12 @@ Historical snapshot, cross-checked against code as of `49da4768`:
 
 Codegen for `Shr` in all four C-family/GLSL text backends (`Sarek_ir_cuda.ml:228`, `Sarek_ir_opencl.ml:246`, `Sarek_ir_metal.ml:248`, `Sarek_ir_glsl.ml:347`) still emits plain `" >> "`, unchanged — these were already correct (arithmetic shift on a signed operand is what C/MSL/GLSL `>>` does). The actual fix (commit `87864852`, `fix(ppx/lower-ir): give lsr logical-shift semantics, canonicalize Shr to arithmetic`) was in the two backends that previously disagreed: PTX (`shr.u32` → `shr.s32`) and the interpreter (`Int32.shift_right_logical` → `Int32.shift_right`), plus a new width-aware logical-shift IR expansion for `Lsr` in `Sarek_lower_ir.ml` built from existing `Shr`/`Shl`/`BitXor`/`Eq`/`EIf` nodes (no new IR constructor, since `formal`/`codegen-ptx` model `Shr` and are untouchable in that task). Net effect: `Shr` is now consistently arithmetic across every backend that consumes the shared IR; do not read this as "the text backends changed" — they did not need to.
 
+**Update 2026-10-10:** `lsr` is no longer an expansion over `Shr`. It lowers to `Lshr32`/`Lshr64`, which every text backend emits as a cast-to-unsigned shift (`Sarek_ir_codegen.gen_c_logical_shift` for CUDA/OpenCL/Metal; GLSL and WGSL have their own spellings) and PTX as `shr.b32`/`shr.b64`. See `kb/sarek/ppx/lowering.md`.
+
+## Automatic unroll hints (2026-10-10)
+
+`Sarek_ir_unroll.annotate` (`sarek/codegen/Sarek_ir_unroll.ml`) runs at the start of the CUDA (and so HIP), OpenCL, Metal and GLSL generators. It wraps a `for` loop in `SPragma (["unroll"], _)` when both bounds are integer constants, the trip count is 1..16, and trip count × the expansion of the hinted loops inside it is at most 64. A loop under an explicit `pragma` (other than `sarek.*` directives) is left alone; `SAREK_AUTO_UNROLL=0` disables the pass. The C family prints `#pragma unroll`; GLSL prints `[[unroll]]` and declares `GL_EXT_control_flow_attributes`; WGSL and PTX print nothing. Measured on HIP (gfx1100, spec `specs/codegen-lsr-unroll.md`): once `lsr` is a native shift, clang already unrolls spoc_llm's matvec loops at -O3, so the hint leaves their ISA unchanged; it matters when the loop body is large enough for clang to decline (spoc_llm measured 40.7 → 35.9 µs on such a body).
+
 ## Shared Invariants
 
 - Dynamic libraries must be loaded lazily and errors should include the attempted candidates.

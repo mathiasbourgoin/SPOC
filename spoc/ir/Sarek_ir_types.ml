@@ -115,7 +115,12 @@ type binop =
   | And
   | Or
   | Shl
-  | Shr
+  | Shr  (** Arithmetic (sign-extending) shift right: OCaml [asr]. *)
+  | Lshr32
+      (** Logical (zero-filling) shift right of a 32-bit operand: OCaml [lsr] on
+          [int]/[int32]. Its own operator because the C-family emitters must
+          spell the unsigned type and cannot infer it from the operands. *)
+  | Lshr64  (** Logical shift right of a 64-bit operand: [lsr] on [int64]. *)
   | BitAnd
   | BitOr
   | BitXor

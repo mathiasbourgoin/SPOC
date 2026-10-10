@@ -681,13 +681,12 @@ let eval_binop op v1 v2 =
   | Shr -> (
       (* Arithmetic (sign-extending) shift, matching every codegen backend:
          CUDA/OpenCL/Metal/GLSL/WGSL emit plain [>>] on a signed int type,
-         and PTX emits shr.s32/shr.s64. [lsr] is lowered to a separate
-         expression tree in Sarek_lower_ir.ml precisely because this node is
-         arithmetic - see G phase 1 in
-         the unpublished fix-critical-semantics-evidence.md note. *)
+         and PTX emits shr.s32/shr.s64. [lsr] is Lshr32/Lshr64 below. *)
       match v1 with
       | VInt64 a -> VInt64 (Int64.shift_right a (to_int v2))
       | _ -> VInt32 (Int32.shift_right (to_int32 v1) (to_int v2)))
+  | Lshr32 -> VInt32 (Int32.shift_right_logical (to_int32 v1) (to_int v2))
+  | Lshr64 -> VInt64 (Int64.shift_right_logical (to_int64 v1) (to_int v2))
   | BitAnd -> (
       match (v1, v2) with
       | VInt64 _, _ | _, VInt64 _ ->

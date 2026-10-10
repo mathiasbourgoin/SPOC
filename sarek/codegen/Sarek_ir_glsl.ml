@@ -492,6 +492,17 @@ let rec gen_expr st buf = function
       Buffer.add_string buf ", " ;
       gen_expr st buf e2 ;
       Buffer.add_char buf ')'
+  | EBinop (((Lshr32 | Lshr64) as op), e1, e2) ->
+      (* Logical shift: shift the operand as unsigned, convert back. GLSL
+         int <-> uint conversions keep the bit pattern. *)
+      let signed, unsigned =
+        match op with Lshr64 -> ("int64_t", "uint64_t") | _ -> ("int", "uint")
+      in
+      Buffer.add_string buf (signed ^ "(" ^ unsigned ^ "(") ;
+      gen_expr st buf e1 ;
+      Buffer.add_string buf ") >> uint(" ;
+      gen_expr st buf e2 ;
+      Buffer.add_string buf "))"
   | EBinop (op, e1, e2) ->
       Buffer.add_char buf '(' ;
       gen_expr st buf e1 ;
@@ -665,6 +676,12 @@ and gen_binop = function
   | Or -> " || "
   | Shl -> " << "
   | Shr -> " >> "
+  | Lshr32 | Lshr64 ->
+      (* Unreachable: gen_expr emits these in its own EBinop arm. *)
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "logical shift"
+           "internal: Lshr32/Lshr64 reached the infix operator table")
   | BitAnd -> " & "
   | BitOr -> " | "
   | BitXor -> " ^ "
@@ -1212,6 +1229,10 @@ let gen_coopmat_op st op =
         (escape_glsl_name c)
         sat
 
+(** An ["unroll"] hint placed directly on a [for] or [while] loop. *)
+let is_unroll_loop hints body =
+  hints = ["unroll"] && match body with SFor _ | SWhile _ -> true | _ -> false
+
 let rec gen_stmt st buf indent = function
   | SEmpty -> ()
   | SSeq stmts -> List.iter (gen_stmt st buf indent) stmts
@@ -1337,8 +1358,14 @@ let rec gen_stmt st buf indent = function
   | SLetMut (v, e, body) ->
       gen_var_decl st buf indent v.var_name v.var_type e ;
       gen_stmt st buf indent body
-  | SPragma (_hints, body) ->
-      (* GLSL doesn't have #pragma in the same way *)
+  | SPragma (hints, body) ->
+      (* GLSL has no #pragma for loops. An ["unroll"] hint directly on a loop
+         becomes the [[unroll]] attribute of GL_EXT_control_flow_attributes
+         (declared by glsl_header); every other hint is dropped. *)
+      if is_unroll_loop hints body then begin
+        Buffer.add_string buf indent ;
+        Buffer.add_string buf "[[unroll]]\n"
+      end ;
       gen_stmt st buf indent body
   | SBlock body ->
       Buffer.add_string buf indent ;
@@ -1467,6 +1494,23 @@ let gen_helper_func st ~pc_names ~len_names buf (hf : helper_func) =
 
 (** {1 Kernel Generation} *)
 
+(** Whether the kernel has an ["unroll"] pragma directly on a loop, which
+    [gen_stmt] prints as [[[unroll]]] and which needs
+    [GL_EXT_control_flow_attributes]. *)
+let kernel_has_unroll_loop k =
+  let stmt_leaf = function
+    | SPragma (hints, body) -> is_unroll_loop hints body
+    | _ -> false
+  in
+  Sarek_ir_analysis.kernel_fold
+    (Sarek_ir_analysis.exists_folder
+       ~leaf:(fun _ -> false)
+       ~stmt_leaf
+       ~native:false
+       ())
+    false
+    k
+
 (** Generate GLSL compute shader header.
     @param block Optional workgroup dimensions (x, y, z). Defaults to 256x1x1.
     @param uses_float64
@@ -1488,7 +1532,8 @@ let gen_helper_func st ~pc_names ~len_names buf (hf : helper_func) =
       Defaults to [false] on the same byte-identity grounds as [uses_float64].
 *)
 let glsl_header ~kernel_name ?(block = (256, 1, 1)) ?(uses_float64 = false)
-    ?(uses_int64 = false) ?(uses_coopmat = false) ?(uses_uint8 = false) () =
+    ?(uses_int64 = false) ?(uses_coopmat = false) ?(uses_uint8 = false)
+    ?(uses_loop_attributes = false) () =
   let bx, by, bz = block in
   let fp64_extension =
     if uses_float64 then "#extension GL_ARB_gpu_shader_fp64 : require\n" else ""
@@ -1540,9 +1585,16 @@ let glsl_header ~kernel_name ?(block = (256, 1, 1)) ?(uses_float64 = false)
        #extension GL_EXT_shader_explicit_arithmetic_types_int32 : require\n"
     else ""
   in
+  (* [[unroll]] on a loop (Sarek_ir_unroll). Last, so a kernel without one
+     keeps its previous header byte for byte. *)
+  let loop_attributes_extension =
+    if uses_loop_attributes then
+      "#extension GL_EXT_control_flow_attributes : require\n"
+    else ""
+  in
   Printf.sprintf
     {|#version 450
-%s%s%s%s
+%s%s%s%s%s
 // Sarek-generated compute shader: %s
 layout(local_size_x = %d, local_size_y = %d, local_size_z = %d) in;
 
@@ -1551,6 +1603,7 @@ layout(local_size_x = %d, local_size_y = %d, local_size_z = %d) in;
     int64_extension
     coopmat_extension
     uint8_extension
+    loop_attributes_extension
     kernel_name
     bx
     by
@@ -2085,6 +2138,8 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
   (* Inline vector-parameter helpers (buffers cannot be passed as GLSL function
      arguments — see Sarek_ir_inline_vec). *)
   let k = Sarek_ir_inline_vec.inline_vec_helpers ~backend:"Vulkan" k in
+  (* Unroll hints for small constant-trip loops (Sarek_ir_unroll). *)
+  let k = Sarek_ir_unroll.annotate k in
   (* Build this generation's state. Derived from [k] AFTER the vec-helper
      inlining above, which rewrites [kern_funcs] and so changes the identifier
      set the collision-safe helper names are chosen against. *)
@@ -2100,6 +2155,7 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
        ~uses_int64:st.needs_int64
        ~uses_coopmat:(Sarek_ir_analysis.kernel_has_coopmat_op k)
        ~uses_uint8:(Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Coopmat k)
+       ~uses_loop_attributes:(kernel_has_unroll_loop k)
        ()) ;
 
   (* Generate record (plain struct) and variant (struct with tag) definitions

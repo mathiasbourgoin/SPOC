@@ -74,6 +74,8 @@ let conv_binop : P.binop -> T.binop = function
   | P.Or -> T.Or
   | P.Shl -> T.Shl
   | P.Shr -> T.Shr
+  | P.Lshr32 -> T.Lshr32
+  | P.Lshr64 -> T.Lshr64
   | P.BitAnd -> T.BitAnd
   | P.BitOr -> T.BitOr
   | P.BitXor -> T.BitXor

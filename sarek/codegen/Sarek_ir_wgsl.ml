@@ -593,6 +593,20 @@ let rec gen_expr st buf = function
             …)\", even though the same comparison is a legal pointer-equality \
             check in the C-family emitters (clang, glslang). Compare \
             individual elements instead.")
+  | EBinop (Lshr32, e1, e2) ->
+      (* Logical shift: WGSL shifts a u32 with zero fill, and bitcast keeps
+         the bit pattern; the shift amount must be u32. *)
+      Buffer.add_string buf "bitcast<i32>(bitcast<u32>(" ;
+      gen_expr st buf e1 ;
+      Buffer.add_string buf ") >> u32(" ;
+      gen_expr st buf e2 ;
+      Buffer.add_string buf "))"
+  | EBinop (Lshr64, _, _) ->
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "int64 lsr"
+           "WGSL has no 64-bit integer type, so a logical shift of an int64 \
+            cannot be expressed.")
   | EBinop (op, e1, e2) ->
       Buffer.add_char buf '(' ;
       gen_expr st buf e1 ;
@@ -774,6 +788,12 @@ and gen_binop = function
   | Or -> " || "
   | Shl -> " << "
   | Shr -> " >> "
+  | Lshr32 | Lshr64 ->
+      (* Unreachable: gen_expr emits these in its own EBinop arms. *)
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "logical shift"
+           "internal: Lshr32/Lshr64 reached the infix operator table")
   | BitAnd -> " & "
   | BitOr -> " | "
   | BitXor -> " ^ "

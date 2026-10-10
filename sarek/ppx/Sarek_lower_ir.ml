@@ -695,13 +695,10 @@ let ir_binop (op : binop) (_ty : typ) : Ir.binop =
   | Or -> Ir.Or
   | Lsl -> Ir.Shl
   | Lsr ->
-      (* Never reached: TEBinop (Lsr, _, _) is intercepted in lower_expr
-         and rewritten via lower_lsr into a logical-shift expression tree,
-         because Ir.Shr is arithmetic on every backend (see
-         the unpublished fix-critical-semantics-evidence.md note, G phase 1). Kept here
-         so this match stays a total, honest structural map of
-         Sarek_ast.binop. *)
-      Ir.Shr
+      (* Never reached: TEBinop (Lsr, _, _) is intercepted in lower_expr,
+         which picks Lshr32 or Lshr64 from the operand type (see lower_lsr).
+         Kept so this match stays a total map of Sarek_ast.binop. *)
+      Ir.Lshr32
   | Asr -> Ir.Shr (* arithmetic shift; Ir.Shr is arithmetic on every backend *)
   | Land -> Ir.BitAnd
   | Lor -> Ir.BitOr
@@ -760,97 +757,16 @@ let rec make_returning stmt =
       Ir.SSeq [stmt; Ir.SReturn (Ir.EConst Ir.CUnit)]
   | Ir.SBlock body -> Ir.SBlock (make_returning body)
 
-(** [true] iff [e] is a syntactically trivial IR expression ([EVar] or
-    [EConst]). Trivial expressions have no side effects, so duplicating them in
-    the tree built by {!lower_lsr} is semantically inert. *)
-let is_trivial_ir_expr (e : Ir.expr) : bool =
-  match e with Ir.EVar _ | Ir.EConst _ -> true | _ -> false
-
-(** Lower [a lsr b] (logical/unsigned right shift) to an IR expression tree
-    built only from existing IR nodes.
-
-    Ir.Shr is emitted as an *arithmetic* (sign-extending) shift by every
-    consumer (CUDA/OpenCL/Metal/GLSL/WGSL emit plain [>>] on a signed C/GLSL int
-    type; PTX and the interpreter use [shr.s32]/[Int32.shift_right] - see G
-    phase 1 in the unpublished fix-critical-semantics-evidence.md note). There
-    is no IR node for a logical shift and none may be added (formal/codegen-ptx
-    models [Shr] itself), so [lsr] is expressed via the classic arithmetic-shift
-    identity, width-aware via [width_bits]:
-
-    {[
-      lshr (a, n)
-      =
-      if n = 0 then a
-      else
-        ashr (a, n) lxor (ashr (a, width - 1) lsl ((width - n) land (width - 1)))
-    ]}
-
-    [ashr(a, width-1)] is all-1s when [a] is negative and all-0s otherwise;
-    shifted left by [(width - n) land (width - 1)] (equal to [width - n] for
-    every [n] in [1..width-1]) it isolates exactly the [n] sign-extended bits
-    that [ashr(a, n)] filled in, and XOR-ing them off recovers the zero-filled
-    logical shift.
-
-    {b Why the [land (width - 1)] mask, not just an [n = 0] guard.} PTX's [selp]
-    and WGSL's [select()] (see [Sarek_ir_ptx_expr.ml] and [Sarek_ir_wgsl.ml])
-    evaluate BOTH branches of the resulting [EIf] before selecting one - the
-    [EIf] only picks which *value* is used, it does not skip *computing* the
-    other branch's subexpressions on those backends. So even though the
-    then-branch ([a_ir]) is selected when [n = 0], the else-branch's internal
-    [Sub(width_bits, b_ir)] is still evaluated, and without masking it would be
-    exactly [width_bits] (shift-by-32/64), which is undefined/rejected on some
-    backends. Masking with [width_bits - 1] keeps that shift count in
-    [0..width_bits-1] for every [n], including [n = 0] (where it reduces to a
-    well-defined shift-by-0, unused anyway since the [EIf] selects [a_ir]),
-    while leaving the result unchanged for [n] in [1..width_bits-1] (masking a
-    value already in range is a no-op). Shift amounts with [n < 0] or
-    [n >= width] are unspecified, matching the pre-existing behaviour of
-    [Shl]/[Shr] on out-of-range counts.
-
-    {b Duplication / side-effect safety.} [a_ir] and [b_ir] each appear three
-    times in the tree above (in [sign_fill], in [arith_shift]/[top_bits], and in
-    the final [EIf]'s branches/condition). [Sarek_ir_ppx.expr] is documented as
-    "pure, no side effects" and has no let-binding form (only [Ir.stmt]'s
-    [SLet]/[SLetMut] bind values, and those wrap a *statement* continuation, not
-    an expression one) - so there is no way to evaluate a subexpression once and
-    reuse the result across multiple expression positions. Hoisting via a
-    synthetic [EApp] call (which would single-evaluate its arguments) is not
-    viable either: PTX - the backend this rewrite specifically targets - does
-    not implement device function calls ([Sarek_ir_ptx_expr.ml] rejects [EApp]
-    outright). Consequently, if [a_ir] or [b_ir] is *not* trivial (e.g. it
-    embeds an [EIntrinsic] atomic call), this tree would silently evaluate that
-    operand's side effect multiple times. Rather than accept that, this function
-    restricts the rewrite to trivial operands ([EVar]/[EConst], see
-    {!is_trivial_ir_expr}) and raises a located PPX error for every other case,
-    directing the user to hoist the operand into a `let` before the shift. This
-    tree is NOT safe for arbitrary operands - only for trivial ones. *)
-let lower_lsr ~(loc : Ppxlib.Location.t) (a_ir : Ir.expr) (b_ir : Ir.expr)
-    (ty : Ir.elttype) : Ir.expr =
-  if not (is_trivial_ir_expr a_ir && is_trivial_ir_expr b_ir) then
-    Ppxlib.Location.raise_errorf
-      ~loc
-      "lsr: this logical-shift operand is not a plain variable or constant. \
-       Sarek_ir_ppx.expr has no let-binding form, so the lsr expansion would \
-       evaluate this operand multiple times, silently duplicating any side \
-       effect it contains (e.g. an atomic intrinsic call). Bind it to a local \
-       variable first and retry, e.g. `let x = <expr> in x lsr n`." ;
-  let width_bits = match ty with Ir.TInt64 -> 64 | _ -> 32 in
-  let const n =
-    match ty with
-    | Ir.TInt64 -> Ir.EConst (Ir.CInt64 (Int64.of_int n))
-    | _ -> Ir.EConst (Ir.CInt32 (Int32.of_int n))
-  in
-  let sign_fill = Ir.EBinop (Ir.Shr, a_ir, const (width_bits - 1)) in
-  let shift_count =
-    Ir.EBinop
-      ( Ir.BitAnd,
-        Ir.EBinop (Ir.Sub, const width_bits, b_ir),
-        const (width_bits - 1) )
-  in
-  let top_bits = Ir.EBinop (Ir.Shl, sign_fill, shift_count) in
-  let arith_shift = Ir.EBinop (Ir.Shr, a_ir, b_ir) in
-  let logical_shift = Ir.EBinop (Ir.BitXor, arith_shift, top_bits) in
-  Ir.EIf (Ir.EBinop (Ir.Eq, b_ir, const 0), a_ir, logical_shift)
+(** Lower [a lsr b] (logical, zero-filling shift right) to the logical-shift
+    operator of the operand width: [Lshr64] for [int64], [Lshr32] otherwise.
+    [Ir.Shr] is the arithmetic shift ([asr]) on every backend, so [lsr] has its
+    own operators, which each backend emits as its native unsigned shift. Each
+    operand is evaluated once, so any expression is accepted. Shift amounts
+    outside [0 .. width-1] are unspecified, as in OCaml's
+    [Int32.shift_right_logical]. *)
+let lower_lsr (a_ir : Ir.expr) (b_ir : Ir.expr) (ty : Ir.elttype) : Ir.expr =
+  let op = match ty with Ir.TInt64 -> Ir.Lshr64 | _ -> Ir.Lshr32 in
+  Ir.EBinop (op, a_ir, b_ir)
 
 (** Convert a typed expression to IR expression *)
 let rec lower_expr (state : state) (te : texpr) : Ir.expr =
@@ -891,11 +807,7 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
       | _ -> Ir.EArrayReadExpr (lower_expr state arr, lower_expr state idx))
   | TEFieldGet (r, field, _) -> Ir.ERecordField (lower_expr state r, field)
   | TEBinop (Lsr, a, b) ->
-      lower_lsr
-        ~loc:(Sarek_ast.loc_to_ppxlib te.te_loc)
-        (lower_expr state a)
-        (lower_expr state b)
-        (elttype_of_typ te.ty)
+      lower_lsr (lower_expr state a) (lower_expr state b) (elttype_of_typ te.ty)
   | TEBinop (And, a, b) ->
       (* Short-circuit && (audit finding H3): a strict Ir.And evaluates both
          operands eagerly on the PTX and Interpreter backends while the

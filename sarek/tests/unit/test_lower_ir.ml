@@ -261,6 +261,10 @@ let rec eval_ir_int32 (e : Ir.expr) : int32 =
   | Ir.EBinop (Ir.Shr, a, b) ->
       (* Ir.Shr is arithmetic on every backend post-fix (G phase 1) *)
       Int32.shift_right (eval_ir_int32 a) (Int32.to_int (eval_ir_int32 b))
+  | Ir.EBinop (Ir.Lshr32, a, b) ->
+      Int32.shift_right_logical
+        (eval_ir_int32 a)
+        (Int32.to_int (eval_ir_int32 b))
   | Ir.EBinop (Ir.BitAnd, a, b) ->
       Int32.logand (eval_ir_int32 a) (eval_ir_int32 b)
   | Ir.EBinop (Ir.BitXor, a, b) ->
@@ -332,105 +336,52 @@ let test_lsr_positive_matches_asr () =
   Alcotest.(check int32) "16 lsr 2" 4l lsr_result ;
   Alcotest.(check int32) "16 asr 2 matches lsr" lsr_result asr_result
 
-(* Finding 1 (review pass): lower_lsr used to build a tree that references
-   its [a]/[b] IR operands three times each (sign_fill, top_bits, and the
-   final EIf's branches/condition) with no way to evaluate a non-trivial
-   operand once and reuse the result (Sarek_ir_ppx.expr has no let-binding
-   form - see the doc comment on lower_lsr). If the operand carried a side
-   effect (e.g. an EIntrinsic atomic call), it would be silently evaluated
-   multiple times. lower_lsr now raises a located Ppxlib PPX error instead of
-   building the unsafe tree whenever an operand is not a plain EVar/EConst.
-   This test lowers [(1 + 2) lsr n] - the left operand becomes
-   Ir.EBinop(Add, EConst, EConst) after lowering, which is not EVar/EConst,
-   so it is non-trivial - and asserts lower_expr raises. Fails pre-fix
-   (no check existed, so the duplicating tree was built silently) and
-   passes post-fix. *)
-let test_lsr_raises_on_nontrivial_operand () =
+(* [lsr] lowers to ONE logical-shift operator of the operand width, each
+   operand lowered once. It used to expand into a tree that referenced each
+   operand three times, which is why non-trivial operands were refused; with
+   a dedicated operator they are accepted. *)
+let lower_lsr_of ty a b =
+  let mk te = Sarek_typed_ast.{te; ty; te_loc = Sarek_ast.dummy_loc} in
+  let state = Sarek_lower_ir.create_state (Hashtbl.create 1) in
+  Sarek_lower_ir.lower_expr
+    state
+    (mk (Sarek_typed_ast.TEBinop (Sarek_ast.Lsr, mk a, mk b)))
+
+let test_lsr_accepts_nontrivial_operands () =
   let ty = Sarek_types.(TReg Int) in
   let mk te = Sarek_typed_ast.{te; ty; te_loc = Sarek_ast.dummy_loc} in
-  let non_trivial =
-    mk
-      (Sarek_typed_ast.TEBinop (Sarek_ast.Add, mk (TEInt32 1l), mk (TEInt32 2l)))
+  let sum x y =
+    Sarek_typed_ast.TEBinop (Sarek_ast.Add, mk (TEInt32 x), mk (TEInt32 y))
   in
-  let texpr =
-    mk (Sarek_typed_ast.TEBinop (Sarek_ast.Lsr, non_trivial, mk (TEInt32 2l)))
-  in
-  let state = Sarek_lower_ir.create_state (Hashtbl.create 1) in
-  let raised =
-    try
-      let (_ : Ir.expr) = Sarek_lower_ir.lower_expr state texpr in
-      false
-    with Ppxlib.Location.Error _ -> true
-  in
-  Alcotest.(check bool) "lsr with non-trivial operand raises" true raised
+  match lower_lsr_of ty (sum (-17l) 1l) (sum 1l 1l) with
+  | Ir.EBinop (Ir.Lshr32, Ir.EBinop (Ir.Add, _, _), Ir.EBinop (Ir.Add, _, _)) as
+    e ->
+      Alcotest.(check int32)
+        "(-17 + 1) lsr (1 + 1)"
+        1073741820l
+        (eval_ir_int32 e)
+  | _ -> Alcotest.fail "lsr did not lower to one Lshr32 over its operands"
 
-(* Companion case: a non-trivial *right* operand (the shift count) must also
-   be rejected, not just a non-trivial left operand. *)
-let test_lsr_raises_on_nontrivial_shift_count () =
-  let ty = Sarek_types.(TReg Int) in
-  let mk te = Sarek_typed_ast.{te; ty; te_loc = Sarek_ast.dummy_loc} in
-  let non_trivial_count =
-    mk
-      (Sarek_typed_ast.TEBinop (Sarek_ast.Add, mk (TEInt32 1l), mk (TEInt32 1l)))
-  in
-  let texpr =
-    mk
-      (Sarek_typed_ast.TEBinop
-         (Sarek_ast.Lsr, mk (TEInt32 16l), non_trivial_count))
-  in
-  let state = Sarek_lower_ir.create_state (Hashtbl.create 1) in
-  let raised =
-    try
-      let (_ : Ir.expr) = Sarek_lower_ir.lower_expr state texpr in
-      false
-    with Ppxlib.Location.Error _ -> true
-  in
-  Alcotest.(check bool) "lsr with non-trivial shift count raises" true raised
+let test_lsr_int32_is_lshr32 () =
+  match lower_lsr_of Sarek_types.(TReg Int) (TEVar ("x", 0)) (TEInt32 3l) with
+  | Ir.EBinop (Ir.Lshr32, Ir.EVar _, Ir.EConst (Ir.CInt32 3l)) -> ()
+  | _ -> Alcotest.fail "int32 lsr did not lower to Lshr32"
 
-(* Finding 1, negative check: trivial operands (plain int literals, which
-   lower to Ir.EConst) must NOT raise - this must not regress. *)
-let test_lsr_trivial_operands_do_not_raise () =
-  let result = eval_int32_binop Sarek_ast.Lsr (-16l) 2l in
-  Alcotest.(check int32) "(-16) lsr 2 (trivial operands)" 1073741820l result
+let test_lsr_int64_is_lshr64 () =
+  match lower_lsr_of Sarek_types.(TReg Int64) (TEVar ("x", 0)) (TEInt64 3L) with
+  | Ir.EBinop (Ir.Lshr64, Ir.EVar _, Ir.EConst (Ir.CInt64 3L)) -> ()
+  | _ -> Alcotest.fail "int64 lsr did not lower to Lshr64"
 
-(* Finding 2 (review pass): PTX's selp / WGSL's select() evaluate BOTH
-   branches of the EIf lower_lsr builds, so the else-branch's internal
-   [width_bits - n] shift-count must itself be well-defined (in
-   [0..width_bits-1]) for every n, including n = 0 (where the unmasked
-   value would be exactly width_bits - a shift-by-32, undefined/rejected on
-   some backends - even though the EIf "selects" the then-branch for n = 0).
-   lower_lsr now wraps that shift-count in [BitAnd (_, width_bits - 1)].
-   This test lowers a real [x lsr n] end-to-end and inspects the resulting
-   Ir.expr tree structure directly (not just its evaluated value) for a
-   BitAnd node whose mask constant is 31 (= 32 - 1 for TInt32). Fails
-   pre-fix (no BitAnd node exists in the pre-fix tree) and passes
-   post-fix. *)
-let rec contains_bitand_mask (mask : int32) (e : Ir.expr) : bool =
-  match e with
-  | Ir.EBinop (Ir.BitAnd, _, Ir.EConst (Ir.CInt32 m)) when m = mask -> true
-  | Ir.EBinop (_, a, b) ->
-      contains_bitand_mask mask a || contains_bitand_mask mask b
-  | Ir.EIf (c, t, e2) ->
-      contains_bitand_mask mask c
-      || contains_bitand_mask mask t
-      || contains_bitand_mask mask e2
-  | Ir.EUnop (_, a) -> contains_bitand_mask mask a
-  | _ -> false
-
-let test_lsr_shift_count_is_masked () =
-  let ty = Sarek_types.(TReg Int) in
-  let mk te = Sarek_typed_ast.{te; ty; te_loc = Sarek_ast.dummy_loc} in
-  let texpr =
-    mk
-      (Sarek_typed_ast.TEBinop
-         (Sarek_ast.Lsr, mk (TEVar ("x", 0)), mk (TEInt32 0l)))
-  in
-  let state = Sarek_lower_ir.create_state (Hashtbl.create 1) in
-  let ir_expr = Sarek_lower_ir.lower_expr state texpr in
-  Alcotest.(check bool)
-    "lsr lowering masks the shift-count with (width - 1)"
-    true
-    (contains_bitand_mask 31l ir_expr)
+let test_lsr_all_amounts () =
+  List.iter
+    (fun x ->
+      for s = 0 to 31 do
+        Alcotest.(check int32)
+          (Printf.sprintf "0x%08lx lsr %d" x s)
+          (Int32.shift_right_logical x s)
+          (eval_int32_binop Sarek_ast.Lsr x (Int32.of_int s))
+      done)
+    [0l; 1l; -1l; -16l; Int32.min_int; Int32.max_int; 0x12345678l; 0xdeadbeefl]
 
 (* Test suite *)
 let () =
@@ -536,20 +487,17 @@ let () =
             `Quick
             test_and_or_lower_to_short_circuit_eif;
           Alcotest.test_case
-            "lsr raises on non-trivial operand"
+            "lsr accepts non-trivial operands"
             `Quick
-            test_lsr_raises_on_nontrivial_operand;
+            test_lsr_accepts_nontrivial_operands;
           Alcotest.test_case
-            "lsr raises on non-trivial shift count"
+            "int32 lsr is Lshr32"
             `Quick
-            test_lsr_raises_on_nontrivial_shift_count;
+            test_lsr_int32_is_lshr32;
           Alcotest.test_case
-            "lsr trivial operands do not raise"
+            "int64 lsr is Lshr64"
             `Quick
-            test_lsr_trivial_operands_do_not_raise;
-          Alcotest.test_case
-            "lsr shift count is masked"
-            `Quick
-            test_lsr_shift_count_is_masked;
+            test_lsr_int64_is_lshr64;
+          Alcotest.test_case "lsr all amounts 0..31" `Quick test_lsr_all_amounts;
         ] );
     ]
