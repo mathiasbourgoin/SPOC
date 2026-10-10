@@ -113,8 +113,10 @@ Spec: `specs/transfer-pitfalls.md`.
   reused pinned ranges interleaved with launches on the default stream
   sometimes lose a launch. Reproduces without `stage_to_device`
   (`stress_hip_staged_launches`, `SPOC_STRESS_MODE=pinned_ring`); fresh pinned
-  buffers do not; RX 7900 XTX never. Timing-dependent (vanishes with other
-  minor-heap sizes). ZLUDA on the same iGPU also lost launches without staging.
+  buffers do not; RX 7900 XTX never. GC-dependent: `Gc.full_major ()` before
+  the loop removes it (stress 4/20 → 0/20, suite 4/4 → 0/12), so finalisers
+  running mid-loop (Gpu_memory's hipFree, ctypes frees) are the lead. The
+  suite flushes finalisers before its ordering loops for that reason. ZLUDA on the same iGPU also lost launches without staging.
 - Invariant: a staged range is reused only after its event completed. If
   recording the event fails after the copy was enqueued, the stream is
   synchronised before the exception propagates.

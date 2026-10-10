@@ -1739,8 +1739,11 @@ let staged_copy st ~(dev : Device.t) ~(stream : stream) ~src_addr ~byte_size
     Known issue: on a Ryzen 7950X iGPU (HIP, ROCm 7.2) about 1 run in 7 of 300
     staged writes interleaved with launches lost one launch (its kernel never
     wrote). A caller-managed pinned ring using only copy_to_device and events
-    shows it too, so the cause lies below this function and is not established;
-    the RX 7900 XTX never showed it (specs/transfer-pitfalls.md C-9, issue #427,
+    shows it too, so the cause lies below this function. It depends on GC
+    timing: running pending finalisers first ([Gc.full_major ()]) removed it in
+    every run (0 of 20 against 4 of 20), so finaliser work during the loop is
+    the lead; the mechanism is not established. The RX 7900 XTX never showed it
+    (specs/transfer-pitfalls.md C-9, issue #427,
     sarek-hip/test/stress_hip_staged_launches.ml).
 
     HIP, CUDA: as above. Native, Interpreter, Metal (no asynchronous copies): a
@@ -1778,6 +1781,17 @@ let stage_to_device (type a b) ?(stream : stream option)
     copy_to_device ?stream src ~dst ~dst_offset
   else
     let stream = match stream with Some s -> s | None -> default_stream dev in
+    (* A destroyed stream or one of another device is refused here, before
+       staging is allocated or the ring waits on anything (FR-005). *)
+    (let (module S : STREAM) = stream in
+     Ledger.check_live ~op S.state ;
+     if S.device.id <> dev.id then
+       invalid_arg
+         (Printf.sprintf
+            "%s: the stream belongs to device %d, the vector to device %d"
+            op
+            S.device.id
+            dev.id)) ;
     let st = staging_for dev in
     Mutex.protect st.st_lock (fun () ->
         staged_copy
