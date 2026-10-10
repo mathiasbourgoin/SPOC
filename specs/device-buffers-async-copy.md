@@ -21,6 +21,7 @@ the owner's delegation of 2026-10-10; each is marked *(agent decision)*.
 |---|---|
 | Where does the new API live? | `Spoc_core.Transfer` (copies, streams, events, pinned memory, device-only creation), `Spoc_core.Vector.is_device_only`, `Execute.run`/`run_vectors ?stream`. Backends gain `Framework_sig.BACKEND.Async` plus stream/event wrap/unwrap. *(agent decision: Transfer already owns streams and buffer allocation; Vector cannot depend on Transfer.)* |
 | How does a stream created in one place reach a buffer closure built elsewhere? | Through extensible `Framework_sig.stream_ref`/`event_ref` with per-backend wrap/unwrap — the existing `kargs = ..` pattern. A backend's `Stream.t` is a fresh abstract type at each first-class-module unpacking, so no other route type-checks. |
+| Device->device ranged copy? | Dropped *(agent decision)*: optional in the brief, and a typed core API would need a third cross-unpacking handle (buffer refs). `Framework_sig.ASYNC` does not carry it either. |
 | Offsets: elements or bytes? | Typed copies take element offsets; `copy_bytes_to_device` / `copy_ptr_to_device` take byte offsets (an expert block mixes int32 nibbles and f32 scales). Backend `Async` functions take bytes. |
 | What is a device-only vector on Native/Interpreter? | Device memory *is* host memory there, and Native kernels read `vec.host` through `Vector.get`. The vector keeps ordinary host storage and is device-resident (`GPU dev`); ranged copies are memcpy, streams are synchronous. Host element access therefore works on CPU devices and refuses on real devices — documented. *(agent decision)* |
 | Who keeps async copy sources alive? | Core does: every async copy roots its Bigarray source/destination and the destination vector in a per-stream ledger, released by `synchronize_stream`, or by `synchronize_event`/a completed `event_query` for the work recorded before that event. Raw-address variants are the caller's obligation. |
@@ -97,7 +98,7 @@ As the runtime layer loop, I want to launch kernels on a compute stream that wai
 | X-5 | US-1 | `Int32.of_int` wraps silently for lengths ≥ 2^31 in launch-length injection. | `create_device_only` refuses lengths outside `1 .. Int32.max_int`; the length injection in `Execute.expand_to_run_source_args` now refuses instead of wrapping (FR-018). A 20 GB cache is several vectors. |
 | X-6 | US-4 | Vectors bound to `run_vectors ~stream` are not rooted; the GC finalizer can free them under the kernel. | The stream launch adds its argument vectors to the stream's keep-alive ledger (FR-009 widened). |
 | X-7 | US-1 | `free_buffer`/`free_all_buffers` could free under in-flight DMA, and leave `CPU` on a host-less vector. | Freeing a vector the ledger still holds is refused. A freed device-only vector keeps `Device_only_storage`; every later operation refuses with "device-only vector has no device buffer". |
-| X-8 | US-2 | No read-side precondition. | `copy_to_host`/`copy_device_to_device` source must be device-current (`GPU`/`Both`/`Stale_CPU` on that device, or device-only). |
+| X-8 | US-2 | No read-side precondition. | `copy_to_host` source must be device-current (`GPU`/`Both`/`Stale_CPU` on that device, or device-only). |
 | X-9 | US-2, US-4 | Auto-sync after an async ranged write depends on streams being *blocking* (synchronising with the legacy default stream). | Stated as a requirement (FR-019): `Transfer.create_stream` creates blocking streams; switching to non-blocking streams must first make auto-sync stream-aware. |
 | X-10 | US-4 | The M3 pattern never syncs the copy stream; ledger grows; flush/device sync do not release. | Release is transitive: `stream_wait_event b e` records the dependency, and completing b up to that point releases e's stream up to e. `Transfer.flush dev` releases every stream of `dev`. HIP's own kernarg list is unchanged (released by stream/device sync, as today) — documented. |
 | X-11 | US-2, US-4 | Ledger keyed by handle address collides after destroy/re-create. | Each core stream wrapper carries a unique id. `destroy_stream` synchronises and releases before destroying. A copy on `default_stream d` is ledgered like any stream. |
@@ -170,14 +171,13 @@ As the runtime layer loop, I want to launch kernels on a compute stream that wai
 
 ## Runnable Checks
 
-- CHECK-1 [AC-1, AC-3, AC-4, AC-5, AC-6]: `dune exec sarek/tests/e2e/test_device_buffers.exe -- --hip` → exit 0.
-- CHECK-2 [AC-2, AC-3, AC-6]: `dune exec sarek/tests/e2e/test_device_buffers.exe -- --native` → exit 0.
-- CHECK-3 [AC-7]: `dune exec sarek/tests/e2e/bench_pinned_copy.exe` → prints pinned and pageable GB/s.
-- CHECK-4 [AC-8]: `dune exec spoc/framework/test/test_async_refused.exe` → exit 0.
+- CHECK-1 [AC-1, AC-3, AC-4, AC-5, AC-6]: `dune build @sarek-hip/test/e2e-hip` (runs `sarek-hip/test/test_hip_device_buffers.exe`; self-skips without HIP) → exit 0, no `FAIL` line.
+- CHECK-2 [AC-2, AC-3, AC-6, AC-8]: `sarek/tests/e2e/test_device_buffers.exe` (in `dune runtest`) → exit 0; full suite on Native/Interpreter (and CUDA when present), refusal checks on OpenCL/Vulkan/Metal devices when present.
+- CHECK-3 [AC-7]: `dune build @sarek-hip/test/e2e-hip-bench` → prints pinned and pageable GB/s (information only).
+- CHECK-4 [AC-8]: `spoc/framework/test/test_framework_sig.exe` → `Async_refused: OK`, `Make_refs: OK`.
 - CHECK-5 [AC-9]: `dune runtest` → exit 0.
 
-(Exact test paths are fixed in the plan; commands above run through
-`opam exec --switch=/mnt/ssd-external-2to/spoc_llm-env --`.)
+(Commands run through `opam exec --switch=/mnt/ssd-external-2to/spoc_llm-env --`.)
 
 ## Claims Metadata
 
@@ -214,7 +214,7 @@ As the runtime layer loop, I want to launch kernels on a compute stream that wai
 {"record":"acceptance-criterion","id":"AC-8","for":["FR-015"]}
 {"record":"acceptance-criterion","id":"AC-9","for":["FR-016"]}
 {"record":"check","id":"CHECK-1","for":["AC-1","AC-3","AC-4","AC-5","AC-6"]}
-{"record":"check","id":"CHECK-2","for":["AC-2","AC-3","AC-6"]}
+{"record":"check","id":"CHECK-2","for":["AC-2","AC-3","AC-6","AC-8"]}
 {"record":"check","id":"CHECK-3","for":["AC-7"]}
 {"record":"check","id":"CHECK-4","for":["AC-8"]}
 {"record":"check","id":"CHECK-5","for":["AC-9"]}

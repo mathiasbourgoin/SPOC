@@ -356,7 +356,8 @@ VRAM-resident cache while the GPU computes). Spec:
 |---|---|---|---|---|
 | device-only vectors, ranged copies | yes | yes | yes (memmove) | refused |
 | copies / launches on a stream | yes | yes | accepted, synchronous | refused |
-| events, stream waits on event | yes | yes | trivially complete | refused |
+| events: create / record / synchronize | yes | yes | trivially complete | yes (existing `Event`) |
+| `stream_wait_event`, `event_query` | yes | yes | trivially complete | refused |
 | pinned host memory | `hipHostMalloc` (portable) | `cuMemHostAlloc` (portable) | plain host memory | refused |
 | `register_host` | `hipHostRegister` | `cuMemHostRegister` (not on ZLUDA) | no-op | refused |
 
@@ -425,6 +426,8 @@ Rules worth knowing:
   depends on it. Any synchronous transfer on the default stream serialises
   with them (HIP/CUDA legacy default-stream semantics), so a streaming loop
   should not mix in auto-transfers.
+- A stream dropped without `destroy_stream` keeps everything its pending
+  work references rooted (and its backend stream alive): destroy streams.
 - Vector lengths are capped at `Int32.max_int` elements (kernels index with
   int32); `Execute` refuses longer vectors instead of wrapping.
 - Vector location and buffer tables are not synchronised across domains:

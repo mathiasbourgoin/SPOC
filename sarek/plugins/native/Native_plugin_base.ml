@@ -893,7 +893,10 @@ end = struct
 
     let free_pinned _dev addr = Spoc_core.Host_async.free_pinned addr
 
-    let register_host _dev _addr ~byte_size:_ = ()
+    (* Host memory needs no page-locking here; still check the contract. *)
+    let register_host _dev _addr ~byte_size =
+      if byte_size <= 0 then
+        invalid_arg "register_host: byte_size must be positive"
 
     let unregister_host _dev _addr = ()
   end
