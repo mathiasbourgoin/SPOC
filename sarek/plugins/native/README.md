@@ -60,6 +60,23 @@ let () =
 
 The Native backend is selected automatically when no GPU is available or can be explicitly requested.
 
+### Linking from another project
+
+The library is installed as `sarek.native` (dune library name
+`sarek_native`). Link it and force its registration, since nothing else in the
+program may reference the module:
+
+```lisp
+(executable (name main) (libraries sarek sarek.native))
+```
+
+```ocaml
+let () = Sarek_native.Native_plugin.init ()
+```
+
+`sarek/plugins/test/install_consumer.t` builds such a project against the
+install tree only.
+
 ## Limitations
 
 - No external GPU source execution (CUDA/OpenCL/GLSL)

@@ -16,6 +16,9 @@ Reviewed plugin files: `sarek/plugins/native/**` and `sarek/plugins/interpreter/
 - `sarek/plugins/interpreter/Interpreter_plugin.ml`: framework registration for interpreter backend and direct execution hook.
 - `sarek/plugins/interpreter/Interpreter_error.ml`: interpreter plugin errors.
 - `sarek/plugins/interpreter/test/test_interpreter_error.ml`: interpreter plugin error tests.
+- `sarek/plugins/test/install_consumer.t`: cram test that builds an out-of-tree dune project against `_build/install/default/lib` only and links both plugins; red if either loses its `public_name`.
+
+**Packaging (2026-10-10):** both plugins are installed with package `sarek`, as `sarek.native` (`sarek/plugins/native/dune`) and `sarek.interpreter` (`sarek/plugins/interpreter/dune`). Before this they had no `public_name`, so only in-repo code could link them although the plugin READMEs and the `sarek` opam description already advertised them.
 
 ## Features/APIs
 

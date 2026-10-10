@@ -3,6 +3,7 @@
 
 (library
  (name sarek_native)
+ (public_name sarek.native)
  (libraries
   unix
   ctypes
