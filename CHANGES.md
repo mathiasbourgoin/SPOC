@@ -2,6 +2,21 @@
 
 ### Added
 
+- `Transfer.copy_bytes_to_host ?stream ~src ~src_byte_offset dst`: the
+  byte-level read-back, mirror of `copy_bytes_to_device`. Copies
+  `Bigarray.Array1.size_in_bytes dst` bytes of a vector of any scalar element
+  kind, from byte `src_byte_offset`, into a C-layout Bigarray of any element
+  kind (e.g. a range of an `int32` device-only vector into a `char` slot of a
+  host pool). Same stream, keep-alive and location contract as
+  `copy_to_host`, with which it shares one implementation (`d2h_range`); the
+  source's location is unchanged. With `~stream`, the destination's contents
+  are undefined until the stream or a later event has completed, and
+  `free_pinned`/`unregister_host` refuse it meanwhile. Refused with
+  `Feature_not_supported` on OpenCL, Vulkan and WebGPU. Tested on Native,
+  Interpreter, HIP (RX 7900 XTX and the 7950X iGPU) and CUDA through ZLUDA;
+  Metal shares the `copy_to_host` path and was not run. Spec
+  `specs/copy-bytes-to-host.md`.
+
 - Cooperative matrix (`SCoopmat`) on HIP through the RDNA3 matrix units, and
   an explicit opt-in for float accumulation (spec `specs/coopmat-hip-wmma.md`).
   On gfx11 devices with 32-wide wavefronts the CUDA-C generator (shared by HIP)

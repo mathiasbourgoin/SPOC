@@ -396,7 +396,9 @@ val copy_bytes_to_device : ?stream:stream -> (_, _, c_layout) Bigarray.Array1.t 
 val copy_ptr_to_device : ?stream:stream -> src_ptr:nativeint -> byte_size:int ->
   dst:(_, _) Vector.t -> dst_byte_offset:int -> unit -> unit  (* caller roots src *)
 val copy_to_host : ?stream:stream -> src:('a, 'b) Vector.t -> src_offset:int ->
-  ('a, 'b, c_layout) Bigarray.Array1.t -> unit
+  ('a, 'b, c_layout) Bigarray.Array1.t -> unit                (* elements *)
+val copy_bytes_to_host : ?stream:stream -> src:(_, _) Vector.t ->
+  src_byte_offset:int -> (_, _, c_layout) Bigarray.Array1.t -> unit  (* bytes *)
 
 (* Pinned host memory, explicit lifetime (like munmap). *)
 val alloc_pinned : Device.t -> ('a, 'b) Bigarray.kind -> int -> ('a, 'b, c_layout) Bigarray.Array1.t
@@ -436,6 +438,12 @@ Rules worth knowing:
   `Stale_CPU` on that device, or device-only); otherwise call `to_device`
   first. A ranged write turns `Both` into `Stale_CPU`, so auto-sync still
   reads the right data. Custom (record) kinds are refused.
+- A read-back (`copy_to_host`, `copy_bytes_to_host`) leaves the vector's
+  location unchanged. `copy_bytes_to_host` copies `size_in_bytes dst` bytes
+  whatever the two element kinds are (e.g. an `int32` vector range into a
+  `char` slot). With `~stream`, the destination is undefined until the copy
+  has completed: reading it may see old or partial data, writing it races
+  with the DMA, and `free_pinned`/`unregister_host` refuse it meanwhile.
 - On CPU devices device memory *is* host memory: a device-only vector keeps
   host storage there and host access works. Do not rely on it.
 - Freeing a device-only vector discards its contents. Freeing anything a
