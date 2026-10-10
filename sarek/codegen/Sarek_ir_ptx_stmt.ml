@@ -260,7 +260,8 @@ let rec emit_stmt buf alloc (env : env) (stmt : stmt) : unit =
          starts; this arm covers the paths that enter the emitter directly. *)
       unsupported
         "cooperative matrix: the PTX backend has no cooperative-matrix path; \
-         cooperative-matrix statements are emitted only by the Vulkan backend"
+         cooperative-matrix statements are emitted only by the Vulkan and \
+         CUDA/HIP backends"
 
 and emit_assign buf alloc (env : env) (lv : lvalue) (e : expr) : unit =
   match lv with

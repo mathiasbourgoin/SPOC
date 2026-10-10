@@ -459,10 +459,10 @@ and exec_stmt state env stmt =
 (** {1 Cooperative matrix — backlog-62 slice 3}
 
     The interpreter is the ORACLE every backend is checked against, so this is
-    not a courtesy implementation: [test_coopmat_integer_e2e] compares the GLSL
-    and HIP backends' output against these numbers bit for bit, and a skip here
-    would let a coopmat kernel "agree" with an interpreter that never computed
-    the product.
+    not a courtesy implementation: [test_coopmat_integer_e2e] (GLSL) and
+    [test_coopmat_hip_e2e] (HIP) compare the backends' output against these
+    numbers bit for bit, and a skip here would let a coopmat kernel "agree" with
+    an interpreter that never computed the product.
 
     Every invocation holds the whole matrix and performs the whole operation;
     see {!Sarek_ir_interp_value.env}.[coopmats] for why that is exact rather

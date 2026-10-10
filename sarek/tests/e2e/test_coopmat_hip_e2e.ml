@@ -208,7 +208,136 @@ let check_integer dev =
       (C.Sint8, C.Sint8);
     ]
 
+(* A tile at a nonzero offset inside a wider buffer (row 8, column 16 of a
+   32 x 48 matrix, stride 48), so a helper that ignored the index or assumed a
+   stride of 16 would differ; the untouched part of d must stay zero on both. *)
+let check_int_offset dev cfg =
+  let len = 32 * 48 in
+  let ir = tile_ir ~index:((8 * 48) + 16) ~stride:48 cfg in
+  let a = Array.init len (fun p -> ((p * 97) + 13) land 0xff) in
+  let b = Array.init len (fun p -> ((p * 61) + 7) land 0xff) in
+  let c = Array.init len (fun p -> Int32.of_int ((p * 37 mod 1009) - 500)) in
+  let run gpu =
+    let d = i32_vec (Array.make len 0l) in
+    let args =
+      Execute.[Vec (u8_vec a); Vec (u8_vec b); Vec (i32_vec c); Vec d]
+    in
+    let one = Execute.dims1d 1 and wave = Execute.dims1d 32 in
+    (match gpu with
+    | Some dev -> run_gpu dev ir args ~block:wave ~grid:one
+    | None -> run_interp ir args ~block:wave ~grid:one) ;
+    Vector.to_array d
+  in
+  if run (Some dev) = run None then
+    ok
+      "%s: offset tile (index 400, stride 48) bit-identical"
+      (C.config_name cfg)
+  else fail "%s: offset tile differs from the interpreter" (C.config_name cfg)
+
+(* A kernel with fragments but no multiply-add still needs the device's
+   layout: refused wherever the fragment is not offered (Execute's fragment
+   verdicts), permitted on gfx11. *)
+let check_fragment_only_gate devices =
+  let open Sarek_ir_types in
+  let _, _, frag, _ = C.fragments_of_config f16_config in
+  let k16 = EConst (CInt32 16l) and k0 = EConst (CInt32 0l) in
+  let param name =
+    Sarek_ir_types.DParam
+      ( {
+          Sarek_ir_types.var_name = name;
+          var_id = 0;
+          var_type = TVec TFloat32;
+          var_mutable = false;
+        },
+        Some {Sarek_ir_types.arr_elttype = TFloat32; arr_memspace = Global} )
+  in
+  let ir =
+    {
+      Sarek_ir_types.default_kernel with
+      kern_name = "cm_copy";
+      kern_params = [param "c"; param "d"];
+      kern_body =
+        SSeq
+          [
+            SCoopmat (CM_decl {name = "fc"; frag});
+            SCoopmat
+              (CM_load {dst = "fc"; frag; src = "c"; index = k0; stride = k16});
+            SCoopmat
+              (CM_store {src = "fc"; frag; dst = "d"; index = k0; stride = k16});
+          ];
+    }
+  in
+  List.iter
+    (fun dev ->
+      let permitted = refusal (gate dev ir) = None in
+      match (offers dev f16_config, permitted) with
+      | true, true | false, false ->
+          ok
+            "%s: fragment-only kernel %s"
+            dev.Device.name
+            (if permitted then "permitted" else "refused")
+      | false, true ->
+          fail "%s permits a fragment it does not offer" dev.Device.name
+      | true, false -> fail "%s refuses a fragment it offers" dev.Device.name)
+    devices
+
+(* After the opt-in, on any machine: the interpreter evaluates one f16 tile
+   within gamma_16 of the exact result, and still refuses f16 accumulation. *)
+let check_interp_f16 () =
+  let a = operand 256 and b = operand 256 and c = addend 256 in
+  assert_exact_in_binary64 ~a ~b ~c ~k:16 ;
+  let exact, absterms = exact_gemm ~a ~b ~c ~m:16 ~n:16 ~k:16 in
+  let d = f32_vec (Array.make 256 0.0) in
+  let args =
+    Execute.[Vec (f16_vec a); Vec (f16_vec b); Vec (f32_vec c); Vec d]
+  in
+  let one = Execute.dims1d 1 and wave = Execute.dims1d 32 in
+  run_interp (tile_ir f16_config) args ~block:wave ~grid:one ;
+  (match bound_check ~adds:16 ~exact ~absterms (to_floats d) with
+  | 0, w -> ok "interpreter f16 tile within gamma_16 (worst %.3g)" w
+  | bad, _ -> fail "interpreter f16 tile: %d outside gamma_16" bad) ;
+  let f16_acc = config C.Float16 C.Float16 C.Float16 in
+  let h = f16_vec (Array.make 256 0.0) in
+  match
+    refusal (fun () ->
+        run_interp
+          (tile_ir f16_acc)
+          Execute.
+            [
+              Vec (f16_vec a);
+              Vec (f16_vec b);
+              Vec h;
+              Vec (f16_vec (Array.make 256 0.0));
+            ]
+          ~block:wave
+          ~grid:one)
+  with
+  | Some _ -> ok "interpreter refuses f16 accumulation after the opt-in"
+  | None -> fail "interpreter evaluated f16 accumulation"
+
 (* ---------------------------------------------------------------- 4 *)
+
+let check_short_vector dev =
+  (* 64x32x32 tiles under the default tiling, so check_shape passes and only
+     the length of d (512 < 64 * 32) can refuse. *)
+  let v n = f16_vec (Array.make n 0.0) and w n = f32_vec (Array.make n 0.0) in
+  match
+    Gemm.run
+      ~device:dev
+      ~a:(v 2048)
+      ~b:(v 1024)
+      ~c:(w 2048)
+      ~d:(w 512)
+      ~m:64
+      ~n:32
+      ~k:32
+      ()
+  with
+  | () -> fail "Gemm.run launched with a 512-element d for a 64x32 output"
+  | exception Invalid_argument msg when contains ~needle:"d has 512" msg ->
+      ok "Gemm.run refuses a short output vector"
+  | exception e ->
+      fail "short d refused for another reason: %s" (Printexc.to_string e)
 
 (** Run the GEMM kernel ([tile_ir] when [tiling] is [None] and the shape is one
     tile) on [gpu] or the interpreter; return [d]. *)
@@ -318,14 +447,23 @@ let () =
   check_codegen () ;
   check_f16_refusals devices ;
   check_int_gate devices ;
+  check_fragment_only_gate devices ;
+  C.accept_relaxed_accumulation
+    ~reason:"test_coopmat_hip_e2e: Regime B is what is under test" ;
+  check_interp_f16 () ;
   (match List.filter (fun d -> is_hip d && offers d int_cfg) devices with
   | [] ->
       print_endline "[SKIP] no gfx11 HIP device: the device checks did not run"
   | gfx11 ->
       List.iter check_block_refusal gfx11 ;
       List.iter check_integer gfx11 ;
-      C.accept_relaxed_accumulation
-        ~reason:"test_coopmat_hip_e2e: Regime B is what is under test" ;
+      List.iter check_short_vector gfx11 ;
+      List.iter
+        (fun dev ->
+          List.iter
+            (fun (x, y) -> check_int_offset dev (config x y C.Sint32))
+            [(C.Uint8, C.Sint8); (C.Sint8, C.Sint8)])
+        gfx11 ;
       List.iter
         (fun dev ->
           check_f16 dev ~m:64 ~n:64 ~k:128 ~interp:true ;

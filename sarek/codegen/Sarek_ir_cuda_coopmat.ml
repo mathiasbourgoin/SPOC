@@ -230,7 +230,7 @@ let relaxed_comment (k : kernel) =
         "/* Sarek: %s accumulates in floating point in an order the hardware \
          chooses. Results are within gamma_n * (sum|A*B| + |C|) of the exact \
          value (u = 2^-24), NOT bit-identical to the interpreter: Regime B of \
-         docs/design/f16-relaxed-accuracy.md, admitted by \
+         docs/design/f16-relaxed-accuracy.md; launching it requires \
          Sarek_coopmat.accept_relaxed_accumulation. */\n"
         (String.concat ", " (List.map C.config_name cfgs))
 

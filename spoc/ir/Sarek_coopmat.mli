@@ -55,6 +55,14 @@ val verdict :
     refusal says which backend rule refused this device. *)
 val device_lacks_config : ?evidence:string -> config -> Sarek_capability.t
 
+(** [fragment_verdict ~support f]: does the device offer any configuration one
+    of whose four fragments is [f]? A kernel that declares, loads or stores a
+    fragment without ever multiplying still needs the device's per-lane layout
+    for it, so the launch gate asks this for every fragment as well as
+    {!verdict} for every multiply-add. [None] support is [Unknown]. *)
+val fragment_verdict :
+  support:device_support option -> fragment -> Sarek_capability.verdict
+
 (** {1 The accuracy policy (docs/design/f16-relaxed-accuracy.md §6.1)}
 
     A float configuration is {!Relaxed_bounded}: the hardware chooses the order

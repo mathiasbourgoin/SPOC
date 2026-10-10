@@ -469,8 +469,8 @@ let rec wgsl_type_of_elttype = function
         (Codegen_error.unsupported_construct
            "uint8"
            "WGSL: uint8 is a cooperative-matrix operand element type, emitted \
-            only by the Vulkan backend, and WGSL has no cooperative-matrix \
-            path")
+            only by the Vulkan and CUDA/HIP backends, and WGSL has no \
+            cooperative-matrix path")
   | TFloat32 -> "f32"
   | TFloat64 ->
       Codegen_error.raise_error
@@ -1200,8 +1200,8 @@ let rec gen_stmt st buf indent = function
         (Codegen_error.unsupported_construct
            "cooperative matrix"
            "WGSL: the WGSL backend has no cooperative-matrix path; \
-            cooperative-matrix statements are emitted only by the Vulkan \
-            backend")
+            cooperative-matrix statements are emitted only by the Vulkan and \
+            CUDA/HIP backends")
 
 (** Alpha-rename kernel-body binders whose name collides with a scalar kernel
     param.
@@ -1596,7 +1596,7 @@ let reject_coopmat_kernel (k : kernel) : unit =
          "cooperative matrix"
          "WGSL: the WGSL backend has no cooperative-matrix path; cooperative \
           matrices and their uint8 operand buffers are emitted only by the \
-          Vulkan backend (backlog-62)")
+          Vulkan and CUDA/HIP backends (backlog-62)")
 
 (** Generate WGSL source with custom type definitions.
 

@@ -38,7 +38,7 @@ let buffer_elt = function
     [drop_c] never loads C, leaving the declared zero: the C-dropping control
     built from the same IR generator, so it takes the same path as the code it
     controls. *)
-let tile_ir ?(drop_c = false) cfg : kernel =
+let tile_ir ?(drop_c = false) ?(index = 0) ?(stride = 16) cfg : kernel =
   let fa, fb, fc, fd = C.fragments_of_config cfg in
   let v id name elt =
     ( {var_name = name; var_id = id; var_type = TVec elt; var_mutable = false},
@@ -52,7 +52,8 @@ let tile_ir ?(drop_c = false) cfg : kernel =
       v 3 "d" (buffer_elt cfg.C.cfg_result);
     ]
   in
-  let k0 = EConst (CInt32 0l) and k16 = EConst (CInt32 16l) in
+  let k0 = EConst (CInt32 (Int32.of_int index))
+  and k16 = EConst (CInt32 (Int32.of_int stride)) in
   let load dst frag src =
     SCoopmat (CM_load {dst; frag; src; index = k0; stride = k16})
   in

@@ -1122,18 +1122,18 @@ let glsl_coopmat_component (c : Sarek_coopmat_types.component_type) =
       Codegen_error.raise_error
         (Codegen_error.unsupported_construct
            "f16 cooperative matrix"
-           "the numeric contract for float cooperative-matrix accumulation is \
-            unmeasured (docs/design/f16-relaxed-accuracy.md §5, slice 4a). The \
-            INTEGER configurations are available and are under the strict \
-            contract.")
+           "GLSL: the float cooperative-matrix lowering is not written; the \
+            bounded contract of docs/design/f16-relaxed-accuracy.md §5 is \
+            measured on HIP only (specs/coopmat-hip-wmma.md). The INTEGER \
+            configurations are available and are under the strict contract.")
   | Sarek_coopmat_types.Float32 ->
       Codegen_error.raise_error
         (Codegen_error.unsupported_construct
            "f32 cooperative matrix"
-           "the numeric contract for float cooperative-matrix accumulation is \
-            unmeasured (docs/design/f16-relaxed-accuracy.md §5, slice 4a). The \
-            INTEGER configurations are available and are under the strict \
-            contract.")
+           "GLSL: the float cooperative-matrix lowering is not written; the \
+            bounded contract of docs/design/f16-relaxed-accuracy.md §5 is \
+            measured on HIP only (specs/coopmat-hip-wmma.md). The INTEGER \
+            configurations are available and are under the strict contract.")
 
 let glsl_coopmat_scope (sc : Sarek_coopmat_types.scope) =
   match sc with

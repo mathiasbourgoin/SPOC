@@ -43,7 +43,7 @@ let soa_leaves_of_param param_name (elt : elttype) : (string * elttype) list =
                 (Printf.sprintf
                    "PTX codegen: SoA parameter '%s': uint8 field '%s' is a \
                     cooperative-matrix operand element type, emitted only by \
-                    the Vulkan backend"
+                    the Vulkan and CUDA/HIP backends"
                    param_name
                    fname)
           | TRecord _ ->
@@ -248,7 +248,7 @@ let emit_params buf alloc (env : env) ~(soa_params : string list)
                 (Printf.sprintf
                    "PTX codegen: kernel parameter '%s' has type uint8, a \
                     cooperative-matrix operand element type emitted only by \
-                    the Vulkan backend; the PTX backend has no \
+                    the Vulkan and CUDA/HIP backends; the PTX backend has no \
                     cooperative-matrix path"
                    v.var_name)
           | TRecord (tname, _) | TVariant (tname, _) ->
@@ -411,8 +411,8 @@ let reject_coopmat_kernel (k : kernel) : unit =
   if Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Coopmat k then
     Sarek_ir_ptx_types.unsupported
       "kernel-level cooperative-matrix usage: cooperative matrices and their \
-       uint8 operand buffers are emitted only by the Vulkan backend \
-       (backlog-62)"
+       uint8 operand buffers are emitted only by the Vulkan and CUDA/HIP \
+       backends (backlog-62)"
 
 (** Generate PTX for a single kernel. Three-phase: (1) emit body to count
     registers, (2) build header with correct register counts, (3) concatenate.
