@@ -32,7 +32,7 @@ agent under the owner's delegation and are marked *(agent decision)*.
   reference on random integer operands in the PTX ISA fragment layouts: integer
   and f16-accumulate forms bit-exact (operands keep partial sums exact),
   f32-accumulate forms within `γ_K · Σ|terms|`, u = 2^-24
-  (`f16-relaxed-accuracy.md` §5.2), with operands whose sums exceed 2048 so that
+  (`f16-relaxed-accuracy.md` §5.2), with operands whose sums mostly exceed 2048 so that
   binary16 accumulation would leave the bound. The §5.4 positive controls are
   out of scope. Out of bound -> FAIL. Inexact count printed.
 - **FR-004** A kernel that loads but fails to launch -> FAIL.

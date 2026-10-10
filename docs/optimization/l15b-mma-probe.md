@@ -35,7 +35,7 @@ instruction replaced by `mov`s) loads and runs.
 and `u = 2^-24`: the binary32 bound of `docs/design/f16-relaxed-accuracy.md`
 §5.2. The operands are integers in [-64, 64], so every product and partial sum
 is exact in binary32 (and a correctly rounded implementation returns the exact
-result), while the sums exceed 2048, so an implementation that accumulated in
+result), while most sums exceed 2048 (88/128 for k16), so an implementation that accumulated in
 binary16 would round far outside the bound. ZLUDA's emulation is not exact (the
 C probe saw `2^-20` where the exact result is 0) but stays well within the
 bound. Integer forms and the f16-accumulate form are held to bit-exactness:
@@ -95,7 +95,8 @@ The probe has one Alcotest case per form, plus the control:
 
 Each kernel declares the lowest PTX ISA version that admits the device's SM
 (`load_from_ptx` rewrites `.target` to it): 7.0 for sm_80, 7.1 for sm_86, 7.8 for
-sm_89/sm_90, 8.6 for sm_100, 8.7 for sm_120.
+sm_89/sm_90, 8.6 for sm_100, 8.7 for sm_120, 9.0 for SMs not listed (including
+the sm_88 ZLUDA reports, which it parses).
 
 The wmma forms use all-ones A and B, so every D element is 16 whatever the
 fragment layout. Their spellings are the ones nvrtc 13.0 emits for
