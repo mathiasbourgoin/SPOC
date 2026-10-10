@@ -451,6 +451,17 @@ let test_domains_share_one_source () =
   reset () ;
   let dev = device () and ir = kernel Sarek_ir_types.TInt32 in
   let per_domain = 200 in
+  (* Force the race: the first two domains to miss wait for each other INSIDE
+     codegen, so both build a source and the second install must find the
+     first and hand it back. Bounded wait, so a lone miss cannot hang. *)
+  let inside = Atomic.make 0 in
+  (codegen_hook :=
+     fun () ->
+       Atomic.incr inside ;
+       let deadline = Unix.gettimeofday () +. 2.0 in
+       while Atomic.get inside < 2 && Unix.gettimeofday () < deadline do
+         Domain.cpu_relax ()
+       done) ;
   let worker () =
     for i = 1 to per_domain do
       launch ~device:dev ir [Execute.Int32 (Int32.of_int i)]
@@ -458,6 +469,12 @@ let test_domains_share_one_source () =
   in
   let ds = List.init 4 (fun _ -> Domain.spawn worker) in
   List.iter Domain.join ds ;
+  (codegen_hook := fun () -> ()) ;
+  check
+    bool
+    "two domains really raced inside codegen"
+    true
+    (Atomic.get inside >= 2) ;
   let all = !launched in
   check int "every launch recorded" (4 * per_domain) (List.length all) ;
   check
