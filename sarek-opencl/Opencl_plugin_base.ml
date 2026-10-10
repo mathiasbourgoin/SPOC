@@ -387,6 +387,18 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
 
   let profiling_enabled = ref false
 
+  module Async = Framework_sig.Async_refused (struct
+    let backend = name
+
+    type device = Device.t
+
+    type stream = Stream.t
+
+    type event = Event.t
+
+    type 'a buffer = 'a Memory.buffer
+  end)
+
   let enable_profiling () = profiling_enabled := true
 
   let disable_profiling () = profiling_enabled := false

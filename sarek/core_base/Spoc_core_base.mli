@@ -127,6 +127,10 @@ module Make (Ops : CUSTOM_OPS) : sig
         length : int;
       }
         -> ('a, unit) host_storage
+    | Device_only_storage : ('a, 'b) host_storage
+        (** No host storage: the data lives only in one device's memory
+            ([Spoc_core.Transfer.create_device_only]). Every host-access path
+            refuses on it ({!device_only_refusal}) instead of allocating. *)
 
   (** Opt-in Structure-of-Arrays binding for a custom (flat-record) vector
       (backlog-54); present iff the vector came from
@@ -264,6 +268,16 @@ module Make (Ops : CUSTOM_OPS) : sig
   val create : ('a, 'b) kind -> ?dev:Ops.device_t -> int -> ('a, 'b) t
 
   val create_custom : 'a custom_type -> ?dev:Ops.device_t -> int -> ('a, unit) t
+
+  (** Raise [Invalid_argument] naming [op] and the vector id: the refusal every
+      host-access path uses on a {!Device_only_storage} vector. *)
+  val device_only_refusal : op:string -> id:int -> 'a
+
+  (** A {!Device_only_storage} vector resident on the device ([GPU dev]),
+      without a device buffer: [Spoc_core.Transfer.create_device_only] is the
+      only intended caller, and it allocates the buffer. *)
+  val create_device_only_record :
+    ('a, 'b) kind -> Ops.device_t -> int -> ('a, 'b) t
 
   val of_bigarray :
     ('a, 'b) scalar_kind ->

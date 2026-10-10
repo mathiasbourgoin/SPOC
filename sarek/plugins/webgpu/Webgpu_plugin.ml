@@ -152,6 +152,18 @@ module Backend : Framework_sig.BACKEND = struct
     let launch _k ~args:_ ~grid:_ ~block:_ ~shared_mem:_ ~stream:_ = not_impl ()
   end
 
+  module Async = Framework_sig.Async_refused (struct
+    let backend = name
+
+    type device = Device.t
+
+    type stream = Stream.t
+
+    type event = Event.t
+
+    type 'a buffer = 'a Memory.buffer
+  end)
+
   let enable_profiling () = not_impl ()
 
   let disable_profiling () = not_impl ()
@@ -180,6 +192,16 @@ module Backend : Framework_sig.BACKEND = struct
   let wrap_kargs args = Webgpu_kargs args
 
   let unwrap_kargs = function Webgpu_kargs args -> Some args | _ -> None
+
+  let run_source_on_stream ~stream:_ ~source:_ ~lang:_ ~kernel_name:_ ~block:_
+      ~grid:_ ~shared_mem:_ _args =
+    Framework_sig.refuse_stream_launch ~backend:name
+
+  include Framework_sig.Make_refs (struct
+    type stream = Stream.t
+
+    type event = Event.t
+  end)
 end
 
 (** Auto-register backend when module is loaded. Priority 1 - lower than Native

@@ -220,6 +220,50 @@ let hipModuleLaunchKernel f gx gy gz bx by bz shm stream params extra =
     params
     extra
 
+(** {1 Ranged / asynchronous copies and page-locked host memory} *)
+
+let hipMemcpyHtoDAsync_lazy =
+  foreign_hip_lazy
+    "hipMemcpyHtoDAsync"
+    (hip_deviceptr @-> ptr void @-> size_t @-> hip_stream_ptr
+   @-> returning hip_result)
+
+let hipMemcpyHtoDAsync dst src size s =
+  Lazy.force hipMemcpyHtoDAsync_lazy dst src size s
+
+let hipMemcpyDtoHAsync_lazy =
+  foreign_hip_lazy
+    "hipMemcpyDtoHAsync"
+    (ptr void @-> hip_deviceptr @-> size_t @-> hip_stream_ptr
+   @-> returning hip_result)
+
+let hipMemcpyDtoHAsync dst src size s =
+  Lazy.force hipMemcpyDtoHAsync_lazy dst src size s
+
+let hipHostMalloc_lazy =
+  foreign_hip_lazy
+    "hipHostMalloc"
+    (ptr (ptr void) @-> size_t @-> uint @-> returning hip_result)
+
+let hipHostMalloc p size flags = Lazy.force hipHostMalloc_lazy p size flags
+
+let hipHostFree_lazy =
+  foreign_hip_lazy "hipHostFree" (ptr void @-> returning hip_result)
+
+let hipHostFree p = Lazy.force hipHostFree_lazy p
+
+let hipHostRegister_lazy =
+  foreign_hip_lazy
+    "hipHostRegister"
+    (ptr void @-> size_t @-> uint @-> returning hip_result)
+
+let hipHostRegister p size flags = Lazy.force hipHostRegister_lazy p size flags
+
+let hipHostUnregister_lazy =
+  foreign_hip_lazy "hipHostUnregister" (ptr void @-> returning hip_result)
+
+let hipHostUnregister p = Lazy.force hipHostUnregister_lazy p
+
 (** {1 Stream Management} *)
 
 let hipStreamCreate_lazy =
@@ -240,6 +284,13 @@ let hipStreamSynchronize_lazy =
     (hip_stream_ptr @-> returning hip_result)
 
 let hipStreamSynchronize s = Lazy.force hipStreamSynchronize_lazy s
+
+let hipStreamWaitEvent_lazy =
+  foreign_hip_lazy
+    "hipStreamWaitEvent"
+    (hip_stream_ptr @-> hip_event_ptr @-> uint @-> returning hip_result)
+
+let hipStreamWaitEvent s e flags = Lazy.force hipStreamWaitEvent_lazy s e flags
 
 (** {1 Event Management} *)
 
@@ -272,6 +323,11 @@ let hipEventElapsedTime_lazy =
 
 let hipEventElapsedTime t start stop =
   Lazy.force hipEventElapsedTime_lazy t start stop
+
+let hipEventQuery_lazy =
+  foreign_hip_lazy "hipEventQuery" (hip_event_ptr @-> returning hip_result)
+
+let hipEventQuery e = Lazy.force hipEventQuery_lazy e
 
 (** {1 Version} *)
 

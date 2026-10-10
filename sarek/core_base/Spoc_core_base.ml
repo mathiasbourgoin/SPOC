@@ -138,6 +138,13 @@ module Make (Ops : CUSTOM_OPS) = struct
         length : int;
       }
         -> ('a, unit) host_storage
+    | Device_only_storage : ('a, 'b) host_storage
+        (** No host storage at all: the vector's data lives only in one device's
+            memory ([Transfer.create_device_only]). Every host access path
+            refuses on it rather than allocating — see {!device_only_refusal}. A
+            constructor rather than a flag on purpose: the compiler then finds
+            every site that reads host storage, and a forgotten site cannot
+            quietly read a stand-in array. *)
 
   (** Opt-in Structure-of-Arrays binding for a custom (flat-record) vector
       (backlog-54). Present iff the vector came from
@@ -375,6 +382,34 @@ module Make (Ops : CUSTOM_OPS) = struct
 
   let next_id = ref 0
 
+  (** The one refusal every host-access path raises on a device-only vector
+      (FR-002). [Invalid_argument], like an out-of-bounds index: the caller
+      asked for something this vector does not have. *)
+  let device_only_refusal ~(op : string) ~(id : int) : 'a =
+    invalid_arg
+      (Printf.sprintf
+         "%s: vector #%d is device-only (it has no host storage); copy a range \
+          out explicitly with Transfer.copy_to_host"
+         op
+         id)
+
+  (** A vector with no host storage, resident on [dev]. Only
+      [Transfer.create_device_only] calls this: it also allocates the device
+      buffer, which this layer cannot. *)
+  let create_device_only_record (kind : ('a, 'b) kind) (dev : Ops.device_t)
+      (length : int) : ('a, 'b) t =
+    incr next_id ;
+    {
+      host = Device_only_storage;
+      device_buffers = Hashtbl.create 1;
+      length;
+      kind;
+      location = GPU dev;
+      auto_sync = true;
+      id = !next_id;
+      soa = None;
+    }
+
   let create_scalar (sk : ('a, 'b) scalar_kind) ?(dev : Ops.device_t option)
       (length : int) : ('a, 'b) t =
     incr next_id ;
@@ -458,6 +493,7 @@ module Make (Ops : CUSTOM_OPS) = struct
     match vec.host with
     | Bigarray_storage ba -> ba
     | Custom_storage _ -> invalid_arg "to_bigarray: vector uses custom storage"
+    | Device_only_storage -> device_only_refusal ~op:"to_bigarray" ~id:vec.id
 
   let has_buffer (vec : ('a, 'b) t) (dev : Ops.device_t) : bool =
     Hashtbl.mem vec.device_buffers (Ops.device_id dev)
@@ -534,6 +570,7 @@ module Make (Ops : CUSTOM_OPS) = struct
             ~get:custom.get
             ~set:custom.set ;
           Custom_storage {ptr = new_handle; custom; length}
+      | Device_only_storage -> device_only_refusal ~op:"copy" ~id:vec.id
     in
     {
       host;
@@ -574,6 +611,7 @@ module Make (Ops : CUSTOM_OPS) = struct
           let byte_offset = start * custom.elem_size in
           let offset_handle = Ops.add_offset handle byte_offset in
           Custom_storage {ptr = offset_handle; custom; length = len}
+      | Device_only_storage -> device_only_refusal ~op:"sub_vector" ~id:vec.id
     in
     {
       host;
@@ -627,7 +665,8 @@ module Make (Ops : CUSTOM_OPS) = struct
       (fun i v ->
         match vec.host with
         | Bigarray_storage ba -> Bigarray.Array1.set ba i v
-        | Custom_storage {ptr; custom; _} -> custom.set ptr i v)
+        | Custom_storage {ptr; custom; _} -> custom.set ptr i v
+        | Device_only_storage -> device_only_refusal ~op:"of_list" ~id:vec.id)
       lst ;
     vec
 
@@ -638,7 +677,8 @@ module Make (Ops : CUSTOM_OPS) = struct
       (fun i v ->
         match vec.host with
         | Bigarray_storage ba -> Bigarray.Array1.set ba i v
-        | Custom_storage {ptr; custom; _} -> custom.set ptr i v)
+        | Custom_storage {ptr; custom; _} -> custom.set ptr i v
+        | Device_only_storage -> device_only_refusal ~op:"of_array" ~id:vec.id)
       arr ;
     vec
 
@@ -667,12 +707,14 @@ module Make (Ops : CUSTOM_OPS) = struct
     match vec.host with
     | Bigarray_storage ba -> Ops.bigarray_to_handle ba
     | Custom_storage {ptr; _} -> ptr
+    | Device_only_storage -> device_only_refusal ~op:"host_handle" ~id:vec.id
 
   let host_raw : type a b. (a, b) t -> nativeint =
    fun vec ->
     match vec.host with
     | Bigarray_storage ba -> Ops.to_raw (Ops.bigarray_to_handle ba)
     | Custom_storage {ptr; _} -> Ops.to_raw ptr
+    | Device_only_storage -> device_only_refusal ~op:"host_raw" ~id:vec.id
 
   (** {2 Convenience scalar-kind values} *)
 

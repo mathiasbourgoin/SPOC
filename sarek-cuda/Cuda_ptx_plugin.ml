@@ -51,14 +51,19 @@ module Backend : Framework_sig.BACKEND = struct
     | Some d -> d
     | None -> Cuda_error.raise_error (Cuda_error.no_device_selected caller)
 
-  let run_source ~source ~lang ~kernel_name ~block ~grid ~shared_mem args =
+  (* [stream = None] launches on the device's default stream (the historical
+     behaviour of [run_source]); [Some s] enqueues on [s]. *)
+  let launch_source ~stream ~source ~lang ~kernel_name ~block ~grid ~shared_mem
+      args =
     match lang with
     | Framework_sig.PTX ->
         let dev = get_current_dev "run_source:PTX" in
         let compiled = Kernel.load_from_ptx ~name:kernel_name ~ptx:source in
         let kargs = Kernel.create_args () in
         Cuda_shared.bind_args (Cuda_shared.Cuda_kargs kargs) kargs args ;
-        let stream = Stream.default dev in
+        let stream =
+          match stream with Some s -> s | None -> Stream.default dev
+        in
         Kernel.launch
           compiled
           ~args:kargs
@@ -70,6 +75,35 @@ module Backend : Framework_sig.BACKEND = struct
         Cuda_error.raise_error
           (Cuda_error.unsupported_source_lang
              "CUDA/PTX device only accepts PTX source")
+
+  let run_source ~source ~lang ~kernel_name ~block ~grid ~shared_mem args =
+    launch_source
+      ~stream:None
+      ~source
+      ~lang
+      ~kernel_name
+      ~block
+      ~grid
+      ~shared_mem
+      args
+
+  let run_source_on_stream ~stream ~source ~lang ~kernel_name ~block ~grid
+      ~shared_mem args =
+    launch_source
+      ~stream:(Some stream)
+      ~source
+      ~lang
+      ~kernel_name
+      ~block
+      ~grid
+      ~shared_mem
+      args
+
+  include Framework_sig.Make_refs (struct
+    type stream = Stream.t
+
+    type event = Event.t
+  end)
 
   let wrap_kargs args = Cuda_shared.Cuda_kargs args
 

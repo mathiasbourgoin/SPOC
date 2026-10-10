@@ -52,6 +52,7 @@ let to_bigarray : type a b.
   match vec.host with
   | Bigarray_storage ba -> ba
   | Custom_storage _ -> invalid_arg "to_bigarray: vector uses custom storage"
+  | Device_only_storage -> device_only_refusal ~op:"to_bigarray" ~id:vec.id
 
 (** {1 Sync and host pointer helpers (delegated)} *)
 
@@ -83,6 +84,7 @@ let get : type a b. (a, b) t -> int -> a =
   match vec.host with
   | Bigarray_storage ba -> Bigarray.Array1.get ba idx
   | Custom_storage {ptr; custom; _} -> custom.get ptr idx
+  | Device_only_storage -> device_only_refusal ~op:"Vector.get" ~id:vec.id
 
 (** Set element (works for both storage types) *)
 let set : type a b. (a, b) t -> int -> a -> unit =
@@ -110,7 +112,8 @@ let set : type a b. (a, b) t -> int -> a -> unit =
   ensure_cpu_sync vec ;
   (match vec.host with
   | Bigarray_storage ba -> Bigarray.Array1.set ba idx value
-  | Custom_storage {ptr; custom; _} -> custom.set ptr idx value) ;
+  | Custom_storage {ptr; custom; _} -> custom.set ptr idx value
+  | Device_only_storage -> device_only_refusal ~op:"Vector.set" ~id:vec.id) ;
   (* Mark GPU as stale if we had synced data. [ensure_cpu_sync] above turns
      [Stale_CPU] into [Both] on the DEFAULT path, so that arm is unreachable
      there — but not unconditionally, which is what this comment used to claim:
@@ -140,6 +143,8 @@ let unsafe_get : type a b. (a, b) t -> int -> a =
   match vec.host with
   | Bigarray_storage ba -> Bigarray.Array1.unsafe_get ba idx
   | Custom_storage {ptr; custom; _} -> custom.get ptr idx
+  | Device_only_storage ->
+      device_only_refusal ~op:"Vector.unsafe_get" ~id:vec.id
 
 let unsafe_set : type a b. (a, b) t -> int -> a -> unit =
  fun vec idx value ->
@@ -157,7 +162,9 @@ let unsafe_set : type a b. (a, b) t -> int -> a -> unit =
   ensure_cpu_sync vec ;
   (match vec.host with
   | Bigarray_storage ba -> Bigarray.Array1.unsafe_set ba idx value
-  | Custom_storage {ptr; custom; _} -> custom.set ptr idx value) ;
+  | Custom_storage {ptr; custom; _} -> custom.set ptr idx value
+  | Device_only_storage ->
+      device_only_refusal ~op:"Vector.unsafe_set" ~id:vec.id) ;
   (* Same three no-ops, and the same caveat as [set]: [Stale_CPU] is unreachable
      here only on the default path — with [auto_sync] cleared it stands, and the
      no-op remains correct because the device copy is still authoritative. *)
@@ -183,6 +190,8 @@ let kernel_set : type a b. (a, b) t -> int -> a -> unit =
   match vec.host with
   | Bigarray_storage ba -> Bigarray.Array1.unsafe_set ba idx value
   | Custom_storage {ptr; custom; _} -> custom.set ptr idx value
+  | Device_only_storage ->
+      device_only_refusal ~op:"Vector.kernel_set" ~id:vec.id
 
 (** {1 Auto-sync Control} *)
 
@@ -218,6 +227,16 @@ let set_auto_sync (vec : ('a, 'b) t) (enabled : bool) : unit =
 let auto_sync (vec : ('a, 'b) t) : bool = vec.auto_sync
 
 (** {1 Location Queries} *)
+
+(** [true] iff [vec] has no host storage: created by
+    [Transfer.create_device_only] on a non-CPU device. Every host access to it
+    raises [Invalid_argument]; data moves through the ranged copies in
+    [Transfer] or through kernels. *)
+let is_device_only : type a b. (a, b) t -> bool =
+ fun vec ->
+  match vec.host with
+  | Device_only_storage -> true
+  | Bigarray_storage _ | Custom_storage _ -> false
 
 let is_on_cpu (vec : ('a, 'b) t) : bool =
   match vec.location with
@@ -298,7 +317,8 @@ let fill : type a b. (a, b) t -> a -> unit =
   | Custom_storage {ptr; custom; length; _} ->
       for i = 0 to length - 1 do
         custom.set ptr i value
-      done) ;
+      done
+  | Device_only_storage -> device_only_refusal ~op:"Vector.fill" ~id:vec.id) ;
   (* NO [ensure_cpu_sync] here, and that is a decision rather than an omission
      (backlog-190): [fill] overwrites EVERY element, so nothing of the old buffer
      survives and pulling it down from the device first would be pure waste. What

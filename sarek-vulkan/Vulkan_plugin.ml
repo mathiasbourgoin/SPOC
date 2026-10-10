@@ -294,6 +294,16 @@ module Backend : Framework_sig.BACKEND = struct
   let wrap_kargs args = Vulkan_kargs args
 
   let unwrap_kargs = function Vulkan_kargs args -> Some args | _ -> None
+
+  let run_source_on_stream ~stream:_ ~source:_ ~lang:_ ~kernel_name:_ ~block:_
+      ~grid:_ ~shared_mem:_ _args =
+    Framework_sig.refuse_stream_launch ~backend:name
+
+  include Framework_sig.Make_refs (struct
+    type stream = Stream.t
+
+    type event = Event.t
+  end)
 end
 
 (** Check if backend is disabled via environment variable. Checked at runtime to

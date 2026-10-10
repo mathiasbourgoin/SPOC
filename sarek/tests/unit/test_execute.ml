@@ -472,6 +472,12 @@ let fake_leaf_buffer (tag : string) (calls : (int * string) list ref) :
     let bind_to_kargs (_ : Framework_sig.kargs) (idx : int) : unit =
       calls := (idx, tag) :: !calls
 
+    let range_from_host ~src_ptr:_ ~dst_offset:_ ~byte_size:_ ~stream:_ =
+      failwith "mock buffer: no ranged copies"
+
+    let range_to_host ~src_offset:_ ~dst_ptr:_ ~byte_size:_ ~stream:_ =
+      failwith "mock buffer: no ranged copies"
+
     let free () : unit = ()
   end : Vector.DEVICE_BUFFER)
 

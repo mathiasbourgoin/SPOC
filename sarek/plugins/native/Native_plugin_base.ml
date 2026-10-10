@@ -160,6 +160,13 @@ module Native : sig
     val clear_cache : unit -> unit
   end
 
+  module Async :
+    Framework_sig.ASYNC
+      with type device := Device.t
+       and type stream := Stream.t
+       and type event := Event.t
+       and type 'a buffer := 'a Memory.buffer
+
   val enable_profiling : unit -> unit
 
   val disable_profiling : unit -> unit
@@ -834,6 +841,62 @@ end = struct
   end
 
   let profiling_enabled = ref false
+
+  (* Device memory is host memory: ranged copies are memmoves, streams are
+     synchronous (enqueued work has completed when the call returns), events
+     are always complete, pinned memory is ordinary host memory. *)
+  module Async = struct
+    (* Honest about overlap: operations given a stream are accepted and
+       complete before returning (which satisfies any ordering), but nothing
+       runs concurrently, so [async_copy] and [stream_launch] are false. *)
+    let support =
+      {
+        Framework_sig.full_async_support with
+        Framework_sig.async_copy = false;
+        stream_launch = false;
+      }
+
+    let total = Memory.buffer_byte_size
+
+    let host_to_device ~src_ptr ~dst ~dst_offset ~byte_size ~stream:_ =
+      Spoc_core.Host_async.check_range
+        ~what:"Native.Async.host_to_device"
+        ~total:(total dst)
+        ~off:dst_offset
+        ~byte_size ;
+      Spoc_core.Host_async.blit
+        ~src:src_ptr
+        ~dst:
+          (Nativeint.add (Memory.device_ptr dst) (Nativeint.of_int dst_offset))
+        ~byte_size ;
+      ignore (Sys.opaque_identity dst)
+
+    let device_to_host ~src ~src_offset ~dst_ptr ~byte_size ~stream:_ =
+      Spoc_core.Host_async.check_range
+        ~what:"Native.Async.device_to_host"
+        ~total:(total src)
+        ~off:src_offset
+        ~byte_size ;
+      Spoc_core.Host_async.blit
+        ~src:
+          (Nativeint.add (Memory.device_ptr src) (Nativeint.of_int src_offset))
+        ~dst:dst_ptr
+        ~byte_size ;
+      ignore (Sys.opaque_identity src)
+
+    let stream_wait_event _stream _event = ()
+
+    let event_query _event = true
+
+    let alloc_pinned _dev ~byte_size =
+      Spoc_core.Host_async.alloc_pinned ~byte_size
+
+    let free_pinned _dev addr = Spoc_core.Host_async.free_pinned addr
+
+    let register_host _dev _addr ~byte_size:_ = ()
+
+    let unregister_host _dev _addr = ()
+  end
 
   let enable_profiling () = profiling_enabled := true
 

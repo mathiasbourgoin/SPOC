@@ -1941,3 +1941,26 @@
  (alias runtest)
  (action
   (run %{dep:test_undeclared_variant_payload_record.exe})))
+
+; Device-only vectors, ranged/stream-ordered copies, pinned host memory,
+; stream launches and events (specs/device-buffers-async-copy.md). The suite
+; is a library so sarek-hip/test can run the same body on HIP devices.
+
+(library
+ (name device_buffers_suite)
+ (modules device_buffers_suite)
+ (libraries sarek sarek_stdlib spoc_core ctypes sarek_backend_error)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33)))
+
+(executable
+ (name test_device_buffers)
+ (modules test_device_buffers)
+ (libraries device_buffers_suite test_helpers spoc_core))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_device_buffers.exe})))

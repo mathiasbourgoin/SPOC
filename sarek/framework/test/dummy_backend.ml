@@ -183,6 +183,28 @@ module Dummy_backend : BACKEND = struct
     let destroy _event = ()
   end
 
+  module Async = Spoc_framework.Framework_sig.Async_refused (struct
+    let backend = name
+
+    type device = Device.t
+
+    type stream = Stream.t
+
+    type event = Event.t
+
+    type 'a buffer = 'a Memory.buffer
+  end)
+
+  let run_source_on_stream ~stream:_ ~source:_ ~lang:_ ~kernel_name:_ ~block:_
+      ~grid:_ ~shared_mem:_ _args =
+    Spoc_framework.Framework_sig.refuse_stream_launch ~backend:name
+
+  include Spoc_framework.Framework_sig.Make_refs (struct
+    type stream = Stream.t
+
+    type event = Event.t
+  end)
+
   let enable_profiling () = ()
 
   let disable_profiling () = ()

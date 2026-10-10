@@ -25,3 +25,16 @@ let to_cpu (type a b) (vec : (a, b) Vector_jsx.t) : unit =
   | Vector_jsx.CPU | Vector_jsx.Stale_GPU _ -> ()
   | Vector_jsx.GPU _ | Vector_jsx.Stale_CPU _ | Vector_jsx.Both _ ->
       _ns "to_cpu (device path)"
+
+(** Streams: no jsoo device path yet (same status as [to_device]). The type
+    exists so [Execute.ml], compiled against this shim too, type-checks its
+    [?stream] parameter. *)
+type stream = unit
+
+let stream_handle (_ : stream) :
+    Device_jsx.t * Spoc_framework.Framework_sig.stream_ref =
+  _ns "stream_handle"
+
+let retain_on_stream (_ : stream) ~keep:(_ : Obj.t) ~vec_ids:(_ : int list) :
+    unit =
+  _ns "retain_on_stream"

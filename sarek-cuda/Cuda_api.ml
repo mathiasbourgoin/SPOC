@@ -479,6 +479,114 @@ module Event = struct
     !@ms
 end
 
+(** {1 Ranged / asynchronous copies, pinned memory, stream ordering} *)
+
+module Async = struct
+  let offset_dptr (p : cu_deviceptr) off =
+    Unsigned.UInt64.add p (Unsigned.UInt64.of_int off)
+
+  let check_range what (buf : _ Memory.buffer) ~off ~byte_size =
+    let total = buf.Memory.size * buf.Memory.elem_size in
+    if off < 0 || byte_size < 0 || off + byte_size > total then
+      invalid_arg
+        (Printf.sprintf
+           "Cuda_api.Async.%s: byte range [%d, %d) outside buffer of %d bytes"
+           what
+           off
+           (off + byte_size)
+           total)
+
+  let check_stream_device what (s : Stream.t) (d : Device.t) =
+    if s.Stream.device.Device.id <> d.Device.id then
+      invalid_arg
+        (Printf.sprintf
+           "Cuda_api.Async.%s: stream belongs to CUDA device %d, buffer to %d"
+           what
+           s.Stream.device.Device.id
+           d.Device.id)
+
+  let host_to_device ~src_ptr ~(dst : _ Memory.buffer) ~dst_offset ~byte_size
+      ~stream =
+    check_range "host_to_device" dst ~off:dst_offset ~byte_size ;
+    if byte_size > 0 then begin
+      let d = offset_dptr dst.Memory.ptr dst_offset in
+      let src = ptr_of_raw_address src_ptr in
+      let n = Unsigned.Size_t.of_int byte_size in
+      match stream with
+      | None ->
+          Device.set_current dst.Memory.device ;
+          check "cuMemcpyHtoD (range)" (cuMemcpyHtoD d src n) ;
+          retire_stream dst.Memory.device.Device.id default_stream_key
+      | Some s ->
+          check_stream_device "host_to_device" s dst.Memory.device ;
+          Device.set_current s.Stream.device ;
+          check "cuMemcpyHtoDAsync" (cuMemcpyHtoDAsync d src n s.Stream.handle)
+    end
+
+  let device_to_host ~(src : _ Memory.buffer) ~src_offset ~dst_ptr ~byte_size
+      ~stream =
+    check_range "device_to_host" src ~off:src_offset ~byte_size ;
+    if byte_size > 0 then begin
+      let sp = offset_dptr src.Memory.ptr src_offset in
+      let dst = ptr_of_raw_address dst_ptr in
+      let n = Unsigned.Size_t.of_int byte_size in
+      match stream with
+      | None ->
+          Device.set_current src.Memory.device ;
+          check "cuMemcpyDtoH (range)" (cuMemcpyDtoH dst sp n) ;
+          retire_stream src.Memory.device.Device.id default_stream_key
+      | Some s ->
+          check_stream_device "device_to_host" s src.Memory.device ;
+          Device.set_current s.Stream.device ;
+          check "cuMemcpyDtoHAsync" (cuMemcpyDtoHAsync dst sp n s.Stream.handle)
+    end
+
+  let stream_wait_event (s : Stream.t) (e : Event.t) =
+    Device.set_current s.Stream.device ;
+    check
+      "cuStreamWaitEvent"
+      (cuStreamWaitEvent s.Stream.handle e.Event.handle Unsigned.UInt.zero)
+
+  let event_query (e : Event.t) =
+    match cuEventQuery e.Event.handle with
+    | CUDA_SUCCESS -> true
+    | CUDA_ERROR_NOT_READY -> false
+    | r ->
+        check "cuEventQuery" r ;
+        false
+
+  let alloc_pinned (d : Device.t) ~byte_size =
+    if byte_size <= 0 then
+      invalid_arg "Cuda_api.Async.alloc_pinned: byte_size must be positive" ;
+    Device.set_current d ;
+    let pp = allocate (ptr void) null in
+    (* CU_MEMHOSTALLOC_PORTABLE (0x1): pinned for every context, so a copy
+       issued from another device's stream does not silently degrade to a
+       staged copy. *)
+    check
+      "cuMemHostAlloc"
+      (cuMemHostAlloc pp (Unsigned.Size_t.of_int byte_size) Unsigned.UInt.one) ;
+    raw_address_of_ptr !@pp
+
+  let free_pinned (d : Device.t) addr =
+    Device.set_current d ;
+    check "cuMemFreeHost" (cuMemFreeHost (ptr_of_raw_address addr))
+
+  let register_host (d : Device.t) addr ~byte_size =
+    Device.set_current d ;
+    (* CU_MEMHOSTREGISTER_PORTABLE (0x1), for the same reason. *)
+    check
+      "cuMemHostRegister"
+      (cuMemHostRegister
+         (ptr_of_raw_address addr)
+         (Unsigned.Size_t.of_int byte_size)
+         Unsigned.UInt.one)
+
+  let unregister_host (d : Device.t) addr =
+    Device.set_current d ;
+    Memory.unregister_host (ptr_of_raw_address addr)
+end
+
 (** {1 Kernel Management} *)
 
 module Kernel = struct

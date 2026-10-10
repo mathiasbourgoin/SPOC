@@ -139,3 +139,29 @@
  (name test_hip_soa_refusal)
  (modules test_hip_soa_refusal)
  (libraries sarek_hip sarek_ir sarek_backend_error alcotest))
+
+; Device-only vectors, ranged/async copies, pinned memory, stream launches and
+; events on HIP hardware (specs/device-buffers-async-copy.md). Self-skips
+; off-ROCm.
+
+(executable
+ (name test_hip_device_buffers)
+ (modules test_hip_device_buffers)
+ (libraries device_buffers_suite spoc_core sarek_hip))
+
+(rule
+ (alias e2e-hip)
+ (action
+  (run %{dep:test_hip_device_buffers.exe})))
+
+; Pinned vs pageable host->device bandwidth, 256 MiB. Information only.
+
+(executable
+ (name bench_hip_pinned_copy)
+ (modules bench_hip_pinned_copy)
+ (libraries spoc_core sarek_hip unix))
+
+(rule
+ (alias e2e-hip-bench)
+ (action
+  (run %{dep:bench_hip_pinned_copy.exe})))

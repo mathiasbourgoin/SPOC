@@ -14,6 +14,22 @@
   (`Sarek_registry.register_host_impl`) for every all-scalar signature. The
   Interpreter falls back to it, so it now runs intrinsics declared outside its
   built-in tables. Before, it raised `Unknown intrinsic`.
+- Device-only vectors, ranged and stream-ordered copies, pinned host memory,
+  kernel launches on a stream, and events (`Spoc_core.Transfer`,
+  `Execute.run`/`run_vectors ?stream`; spec
+  `specs/device-buffers-async-copy.md`). `create_device_only` allocates a
+  vector with no host mirror; every host access to it refuses instead of
+  allocating. `copy_to_device`, `copy_bytes_to_device`, `copy_ptr_to_device`
+  and `copy_to_host` copy a range at an offset, synchronously or on a
+  stream, and SPOC keeps the operands alive until the stream or a later
+  event completes. `alloc_pinned`/`free_pinned` and
+  `register_host`/`unregister_host` give page-locked Bigarrays. Implemented
+  on HIP and CUDA; synchronous memmove semantics on Native and Interpreter;
+  refused with `Feature_not_supported` on OpenCL, Vulkan, Metal and WebGPU.
+  Measured on an RX 7900 XTX (ROCm 7.2.4), 256 MiB host->device into a
+  device-only vector, best of 5: pageable 28.1 GB/s, pinned 28.6 GB/s
+  synchronous; 27.5 / 28.3 GB/s on a stream
+  (`sarek-hip/test/bench_hip_pinned_copy.exe`, information only).
 
 ### Changed
 
@@ -32,8 +48,25 @@
   `test_visibility_private` now links `sarek.visibility` into its PPX, and
   `test_debug_native` and the `reduction_max` benchmark kernel now spell their
   values in Sarek.
+- **Breaking:** `Framework_sig.BACKEND` gains `Async` (an `ASYNC` module), `wrap_stream`,
+  `unwrap_stream`, `wrap_event`, `unwrap_event` and `run_source_on_stream`;
+  `PLUGIN_BASE` gains `Async`. An out-of-tree backend that does not provide
+  them adds `module Async = Framework_sig.Async_refused (...)`,
+  `include Framework_sig.Make_refs (...)` and a `run_source_on_stream` that
+  calls `Framework_sig.refuse_stream_launch` (about 20 lines; see
+  `sarek-opencl/Opencl_plugin.ml`).
+- **Breaking:** `Vector.host_storage` has a third constructor, `Device_only_storage`. Code
+  that matches on `vec.host` must handle it (every in-tree site refuses).
+- **Breaking:** `Transfer.STREAM` gains `stream_ref` and `state`; `destroy_stream` now
+  synchronises the stream before destroying it.
+- **Breaking:** `Execute` refuses a vector longer than `Int32.max_int` elements at launch;
+  the injected length used to wrap silently.
 
 ### Fixed
+
+- HIP `Stream.synchronize` now selects the stream's device first, as the CUDA
+  backend has since backlog-225: synchronising `default_stream d2` while d1
+  was current drained d1 and released d2's kernel-argument keep-alives.
 
 - The Native and Interpreter CPU backends are now installed, as
   `sarek.native` and `sarek.interpreter`. They had no `public_name`, so code

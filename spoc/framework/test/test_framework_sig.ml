@@ -173,6 +173,82 @@ let test_run_source_arg () =
   (match f64 with RSA_Float64 f -> assert (f = 2.5) | _ -> assert false) ;
   print_endline "  run_source_arg: OK"
 
+(** {1 Async refusal and stream/event refs (device-buffers-async-copy)} *)
+
+module Refused = Async_refused (struct
+  let backend = "TestBackend"
+
+  type device = unit
+
+  type stream = int
+
+  type event = string
+
+  type 'a buffer = 'a list
+end)
+
+let refuses_capability f =
+  match f () with
+  | _ -> false
+  | exception
+      Sarek_backend_error.Backend_error.Backend_error
+        (Sarek_backend_error.Backend_error.Plugin
+           {
+             backend = "TestBackend";
+             error = Sarek_backend_error.Backend_error.Feature_not_supported _;
+           }) ->
+      true
+
+let test_async_refused () =
+  assert (Refused.support = no_async_support) ;
+  assert (
+    refuses_capability (fun () ->
+        Refused.host_to_device
+          ~src_ptr:0n
+          ~dst:[1]
+          ~dst_offset:0
+          ~byte_size:4
+          ~stream:None)) ;
+  assert (
+    refuses_capability (fun () ->
+        Refused.device_to_host
+          ~src:[1]
+          ~src_offset:0
+          ~dst_ptr:0n
+          ~byte_size:4
+          ~stream:(Some 3))) ;
+  assert (refuses_capability (fun () -> Refused.stream_wait_event 1 "e")) ;
+  assert (refuses_capability (fun () -> Refused.event_query "e")) ;
+  assert (refuses_capability (fun () -> Refused.alloc_pinned () ~byte_size:8)) ;
+  assert (refuses_capability (fun () -> Refused.free_pinned () 0n)) ;
+  assert (
+    refuses_capability (fun () -> Refused.register_host () 0n ~byte_size:8)) ;
+  assert (refuses_capability (fun () -> Refused.unregister_host () 0n)) ;
+  assert (
+    refuses_capability (fun () -> refuse_stream_launch ~backend:"TestBackend")) ;
+  print_endline "  Async_refused: OK"
+
+module Refs_a = Make_refs (struct
+  type stream = int
+
+  type event = string
+end)
+
+module Refs_b = Make_refs (struct
+  type stream = int
+
+  type event = string
+end)
+
+let test_make_refs () =
+  (* Round trip through the backend that wrapped it... *)
+  assert (Refs_a.unwrap_stream (Refs_a.wrap_stream 7) = Some 7) ;
+  assert (Refs_a.unwrap_event (Refs_a.wrap_event "e") = Some "e") ;
+  (* ...and fail closed through any other, even with identical types. *)
+  assert (Refs_b.unwrap_stream (Refs_a.wrap_stream 7) = None) ;
+  assert (Refs_b.unwrap_event (Refs_a.wrap_event "e") = None) ;
+  print_endline "  Make_refs: OK"
+
 (** {1 Main} *)
 
 let () =
@@ -188,4 +264,6 @@ let () =
   test_convergence () ;
   test_exec_arg_basic () ;
   test_run_source_arg () ;
+  test_async_refused () ;
+  test_make_refs () ;
   print_endline "All Framework_sig tests passed!"
