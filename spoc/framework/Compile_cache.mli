@@ -42,7 +42,15 @@
     - [options] is an optional association list of compile options (e.g.
       optimization flags). Entries are sorted by key and joined into a single
       canonical string before being digested, so option order never affects
-      cache hits. Defaults to [[]]. *)
+      cache hits. Defaults to [[]]. Repeated calls are cheap: the result is
+      memoised per PHYSICAL [source] string (weakly — the entry dies with the
+      string) and per ([device], [name], [options]). A caller that hands the
+      same physical source string back on every launch therefore pays one digest
+      computation, not one per launch. The returned key is always byte-identical
+      to the un-memoised computation. This relies on OCaml strings being
+      immutable: a [source] obtained through [Bytes.unsafe_to_string] and
+      mutated afterwards violates the Stdlib contract and would be keyed by its
+      old contents. Safe to call from several domains. *)
 val make_key :
   device:string ->
   name:string ->

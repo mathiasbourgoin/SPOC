@@ -1,0 +1,13 @@
+; Launch-preparation memo (specs/cheap-repeated-launches.md, CHECK-1). Own
+; executable: it registers a process-global probe backend.
+
+(test
+ (name test_launch_memo)
+ (modules test_launch_memo)
+ (libraries
+  sarek_execute
+  sarek_ir
+  spoc_core
+  spoc_framework
+  spoc_framework_registry
+  alcotest))

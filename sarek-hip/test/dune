@@ -165,3 +165,39 @@
  (alias e2e-hip-bench)
  (action
   (run %{dep:bench_hip_pinned_copy.exe})))
+
+; Host cost of one Execute.run_vectors launch (enqueue, and enqueue + flush),
+; 3- and 10-argument kernels, HIP and Native. Information only.
+
+(executable
+ (name bench_launch_overhead)
+ (modules bench_launch_overhead)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek_native
+  sarek_ir
+  spoc_core
+  sarek_hip
+  unix)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias e2e-hip-bench)
+ (action
+  (run %{dep:bench_launch_overhead.exe})))
+
+; A buffer freed from a GC finaliser must not change the selected device.
+
+(executable
+ (name test_hip_free_keeps_current)
+ (modules test_hip_free_keeps_current)
+ (libraries sarek_hip spoc_core))
+
+(rule
+ (alias e2e-hip)
+ (action
+  (run %{dep:test_hip_free_keeps_current.exe})))
