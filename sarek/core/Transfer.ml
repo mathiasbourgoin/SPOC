@@ -652,6 +652,10 @@ module Ledger = struct
     mutable pending : entry list;
     mutable waits : (int * stream_state * int) list;
         (** (seq of the wait on this stream, waited stream, its seq) *)
+    mutable destroyed : bool;
+        (** Set by [destroy_stream]. A destroyed handle is refused: the driver
+            may have recycled it, and work enqueued through it would land in a
+            ledger nothing consults any more. *)
   }
 
   let lock = Mutex.create ()
@@ -664,13 +668,25 @@ module Ledger = struct
     Mutex.protect lock (fun () ->
         incr next_sid ;
         let st =
-          {sid = !next_sid; sdev = dev; next_seq = 0; pending = []; waits = []}
+          {
+            sid = !next_sid;
+            sdev = dev;
+            next_seq = 0;
+            pending = [];
+            waits = [];
+            destroyed = false;
+          }
         in
         Hashtbl.replace live st.sid st ;
         st)
 
   let forget (st : stream_state) =
-    Mutex.protect lock (fun () -> Hashtbl.remove live st.sid)
+    Mutex.protect lock (fun () ->
+        st.destroyed <- true ;
+        Hashtbl.remove live st.sid)
+
+  let check_live ~(op : string) (st : stream_state) : unit =
+    if st.destroyed then invalid_arg (op ^ ": the stream has been destroyed")
 
   let enqueue (st : stream_state) ~(keep : Obj.t) ~(vec_ids : int list)
       ~(host_ranges : (nativeint * int) list) : unit =
@@ -934,23 +950,41 @@ let create_stream (dev : Device.t) : stream =
     let state = st
 
     let synchronize () =
+      Ledger.check_live ~op:"Transfer.synchronize_stream" st ;
       B.Stream.synchronize s ;
       Ledger.release_all st
 
     (* Synchronise first: the ledger may only let go of what the stream's work
        references once that work has completed. *)
     let destroy () =
+      Ledger.check_live ~op:"Transfer.destroy_stream" st ;
       synchronize () ;
       B.Stream.destroy s ;
       Ledger.forget st
   end : STREAM)
 
-(** Get default stream for a device *)
+(* One ledger state per device for the default stream: every [default_stream]
+   handle names the same backend stream, so they must share one ledger, or
+   synchronising one handle would not release work enqueued through another. *)
+let default_states : (int, Ledger.stream_state) Hashtbl.t = Hashtbl.create 4
+
+let default_states_lock = Mutex.create ()
+
+(** Get default stream for a device. All handles for one device share one ledger
+    state. *)
 let default_stream (dev : Device.t) : stream =
   let (module B : Framework_sig.BACKEND) = backend_of dev in
   let backend_dev = B.Device.get dev.backend_id in
   let s = B.Stream.default backend_dev in
-  let st = Ledger.new_stream dev in
+  let st =
+    Mutex.protect default_states_lock (fun () ->
+        match Hashtbl.find_opt default_states dev.id with
+        | Some st -> st
+        | None ->
+            let st = Ledger.new_stream dev in
+            Hashtbl.replace default_states dev.id st ;
+            st)
+  in
   (module struct
     let device = dev
 
@@ -981,6 +1015,7 @@ let stream_device (s : stream) : Device.t =
     [Execute] needs to launch on it. *)
 let stream_handle (s : stream) : Device.t * Framework_sig.stream_ref =
   let (module S : STREAM) = s in
+  Ledger.check_live ~op:"Execute (launch on a stream)" S.state ;
   (S.device, S.stream_ref)
 
 (** Root [keep] (and record [vec_ids] as in use) until the work just enqueued on
@@ -996,6 +1031,7 @@ let retain_on_stream (s : stream) ~(keep : Obj.t) ~(vec_ids : int list) : unit =
 let backend_stream (type s) ~(op : string) ~(dev : Device.t)
     (unwrap : Framework_sig.stream_ref -> s option) (st : stream) : s =
   let (module S : STREAM) = st in
+  Ledger.check_live ~op S.state ;
   if S.device.id <> dev.id then
     invalid_arg
       (Printf.sprintf
@@ -1023,6 +1059,10 @@ type event = {
   ev_device : Device.t;
   ev_ref : Framework_sig.event_ref;
   mutable ev_recorded : (Ledger.stream_state * int) option;
+  mutable ev_destroyed : bool;
+      (** A destroyed event is refused: the driver may have recycled its handle,
+          and a query answering for another event could release ledger entries
+          early. *)
 }
 
 (** Create an event on [dev]. The device is selected first: HIP and CUDA create
@@ -1035,10 +1075,12 @@ let create_event (dev : Device.t) : event =
     ev_device = dev;
     ev_ref = B.wrap_event (B.Event.create ());
     ev_recorded = None;
+    ev_destroyed = false;
   }
 
 let backend_event (type e) ~(op : string)
     (unwrap : Framework_sig.event_ref -> e option) (ev : event) : e =
+  if ev.ev_destroyed then invalid_arg (op ^ ": the event has been destroyed") ;
   match unwrap ev.ev_ref with
   | Some e -> e
   | None ->
@@ -1050,9 +1092,16 @@ let record_event (ev : event) (s : stream) : unit =
   let op = "Transfer.record_event" in
   let (module B : Framework_sig.BACKEND) = backend_of ev.ev_device in
   let bs = backend_stream ~op ~dev:ev.ev_device B.unwrap_stream s in
-  B.Event.record (backend_event ~op B.unwrap_event ev) bs ;
   let (module S : STREAM) = s in
-  ev.ev_recorded <- Some (S.state, Ledger.mark S.state)
+  (* Mark BEFORE the backend record: ledger entries are added after their
+     backend call, so a mark taken first never covers work the event does not
+     (another domain may enqueue on the same stream in between). *)
+  let mark = Ledger.mark S.state in
+  (* The default stream is the NULL handle, which the driver reads as the
+     CURRENT device's: select the event's device first. *)
+  B.Device.set_current (B.Device.get ev.ev_device.backend_id) ;
+  B.Event.record (backend_event ~op B.unwrap_event ev) bs ;
+  ev.ev_recorded <- Some (S.state, mark)
 
 (** Make every operation enqueued on [s] after this call wait for the work [ev]
     recorded. Refused across devices. On Native/Interpreter streams are
@@ -1094,7 +1143,8 @@ let synchronize_event (ev : event) : unit =
     their stream is synchronised. *)
 let destroy_event (ev : event) : unit =
   let (module B : Framework_sig.BACKEND) = backend_of ev.ev_device in
-  B.Event.destroy (backend_event ~op:"Transfer.destroy_event" B.unwrap_event ev)
+  B.Event.destroy (backend_event ~op:"Transfer.destroy_event" B.unwrap_event ev) ;
+  ev.ev_destroyed <- true
 
 (** {1 Device-only vectors} *)
 
@@ -1223,6 +1273,7 @@ let h2d_range (type a b) ~(op : string) ?(stream : stream option)
       ignore (Sys.opaque_identity keep)
   | Some s ->
       let (module S : STREAM) = s in
+      Ledger.check_live ~op S.state ;
       if S.device.id <> dev.id then
         invalid_arg
           (Printf.sprintf
@@ -1264,7 +1315,14 @@ let bigarray_addr (ba : (_, _, Bigarray.c_layout) Bigarray.Array1.t) : nativeint
     becomes [Stale_CPU], so auto-sync later reads the device copy. Raises
     [Invalid_argument] when the range does not fit, and [Feature_not_supported]
     on backends without ranged copies. Slice the source with
-    [Bigarray.Array1.sub]. *)
+    [Bigarray.Array1.sub].
+
+    Pageable sources: HIP and CUDA stage a stream copy from pageable memory
+    through a driver bounce buffer. It is correct, but the host call may block
+    and the copy may not overlap compute; source from {!alloc_pinned} or
+    {!register_host} memory when overlap matters. Not refused, because the
+    result is right and the rate can be equal (28.1 vs 28.6 GB/s measured on an
+    RX 7900 XTX, CHANGES.md 2026-10). *)
 let copy_to_device (type a b) ?(stream : stream option)
     (src : (a, b, Bigarray.c_layout) Bigarray.Array1.t) ~(dst : (a, b) Vector.t)
     ~(dst_offset : int) : unit =
@@ -1356,6 +1414,7 @@ let copy_to_host (type a b) ?(stream : stream option) ~(src : (a, b) Vector.t)
       ignore (Sys.opaque_identity dst)
   | Some s ->
       let (module S : STREAM) = s in
+      Ledger.check_live ~op S.state ;
       if S.device.id <> dev.id then
         invalid_arg
           (Printf.sprintf
@@ -1430,13 +1489,18 @@ let alloc_pinned (type a b) (dev : Device.t) (kind : (a, b) Bigarray.kind)
     B.Async.alloc_pinned (B.Device.get dev.backend_id) ~byte_size:bytes
   in
   let ba =
-    Ctypes.bigarray_of_ptr
-      Ctypes.array1
-      n
-      kind
-      (Ctypes.from_voidp
-         (Ctypes.typ_of_bigarray_kind kind)
-         (Ctypes.ptr_of_raw_address addr))
+    try
+      Ctypes.bigarray_of_ptr
+        Ctypes.array1
+        n
+        kind
+        (Ctypes.from_voidp
+           (Ctypes.typ_of_bigarray_kind kind)
+           (Ctypes.ptr_of_raw_address addr))
+    with e ->
+      (* Do not leak the page-locked allocation if the view cannot be built. *)
+      B.Async.free_pinned (B.Device.get dev.backend_id) addr ;
+      raise e
   in
   Mutex.protect pinned_lock (fun () ->
       Hashtbl.replace
@@ -1457,15 +1521,24 @@ let refuse_pinned_in_flight ~op addr bytes =
     — and while a stream-ordered copy may still read or write it. *)
 let free_pinned (ba : (_, _, Bigarray.c_layout) Bigarray.Array1.t) : unit =
   let op = "Transfer.free_pinned" in
-  match pinned_lookup ba with
-  | Some (addr, ({pin_kind = Allocated; _} as e)) ->
-      refuse_pinned_in_flight ~op addr e.pin_bytes ;
-      let (module B : Framework_sig.BACKEND) = backend_of e.pin_device in
-      B.Async.free_pinned (B.Device.get e.pin_device.backend_id) addr ;
-      Mutex.protect pinned_lock (fun () -> Hashtbl.remove pinned_table addr)
-  | Some (_, {pin_kind = Registered _; _}) ->
-      invalid_arg (op ^ ": buffer was registered, use Transfer.unregister_host")
-  | None -> invalid_arg (op ^ ": not a live Transfer.alloc_pinned allocation")
+  let addr = bigarray_addr ba and bytes = Bigarray.Array1.size_in_bytes ba in
+  (* Check and claim the entry in ONE critical section, so two domains cannot
+     both pass the check and free the same allocation twice. *)
+  let e =
+    Mutex.protect pinned_lock (fun () ->
+        match Hashtbl.find_opt pinned_table addr with
+        | Some ({pin_kind = Allocated; pin_bytes; _} as e)
+          when pin_bytes = bytes ->
+            refuse_pinned_in_flight ~op addr bytes ;
+            Hashtbl.remove pinned_table addr ;
+            e
+        | Some {pin_kind = Registered _; pin_bytes; _} when pin_bytes = bytes ->
+            invalid_arg
+              (op ^ ": buffer was registered, use Transfer.unregister_host")
+        | _ -> invalid_arg (op ^ ": not a live Transfer.alloc_pinned allocation"))
+  in
+  let (module B : Framework_sig.BACKEND) = backend_of e.pin_device in
+  B.Async.free_pinned (B.Device.get e.pin_device.backend_id) addr
 
 (** Page-lock an existing Bigarray for DMA from/to [dev]. SPOC keeps [ba] alive
     until {!unregister_host}. *)
@@ -1490,16 +1563,24 @@ let register_host (dev : Device.t)
 (** Undo {!register_host}; refused while stream-ordered copies may use it. *)
 let unregister_host (ba : (_, _, Bigarray.c_layout) Bigarray.Array1.t) : unit =
   let op = "Transfer.unregister_host" in
-  match pinned_lookup ba with
-  | Some (addr, ({pin_kind = Registered _; _} as e)) ->
-      refuse_pinned_in_flight ~op addr e.pin_bytes ;
-      let (module B : Framework_sig.BACKEND) = backend_of e.pin_device in
-      B.Async.unregister_host (B.Device.get e.pin_device.backend_id) addr ;
-      Mutex.protect pinned_lock (fun () -> Hashtbl.remove pinned_table addr)
-  | Some (_, {pin_kind = Allocated; _}) ->
-      invalid_arg
-        (op ^ ": buffer was allocated pinned, use Transfer.free_pinned")
-  | None -> invalid_arg (op ^ ": not a registered buffer")
+  let addr = bigarray_addr ba and bytes = Bigarray.Array1.size_in_bytes ba in
+  let e =
+    Mutex.protect pinned_lock (fun () ->
+        match Hashtbl.find_opt pinned_table addr with
+        | Some ({pin_kind = Registered _; pin_bytes; _} as e)
+          when pin_bytes = bytes ->
+            refuse_pinned_in_flight ~op addr bytes ;
+            Hashtbl.remove pinned_table addr ;
+            e
+        | Some {pin_kind = Allocated; pin_bytes; _} when pin_bytes = bytes ->
+            invalid_arg
+              (op ^ ": buffer was allocated pinned, use Transfer.free_pinned")
+        | _ -> invalid_arg (op ^ ": not a registered buffer"))
+  in
+  let (module B : Framework_sig.BACKEND) = backend_of e.pin_device in
+  B.Async.unregister_host (B.Device.get e.pin_device.backend_id) addr ;
+  (* [e.pin_kind] held the Bigarray; keep it reachable until unregistered. *)
+  ignore (Sys.opaque_identity e)
 
 (** {1 Batch Operations} *)
 

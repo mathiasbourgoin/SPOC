@@ -77,6 +77,13 @@ Spec: `specs/device-buffers-async-copy.md`. Verified against the branch
   auto-sync read-back after an async ranged write relies on it.
 - Backend support is declared in `Framework_sig.async_support`; refusing
   backends use `Framework_sig.Async_refused` and `refuse_stream_launch`.
+- Known leak (not wrong data): the HIP/CUDA backends retain kernel-argument
+  cells per stream until that stream or the device is synchronised; event
+  completion releases only the core ledger. A stream completed only through
+  events accumulates those cells until its next synchronisation.
+- Stream copies from pageable memory are correct but staged by the driver
+  (no guaranteed overlap); documented on `Transfer.copy_to_device`, not
+  refused.
 - ZLUDA does not implement `cuMemHostRegister` (observed 2026-10-10,
   `CUDA_ERROR_OTHER`); everything else in the suite passes on ZLUDA.
 - Tests: `sarek/tests/e2e/device_buffers_suite.ml` (body),

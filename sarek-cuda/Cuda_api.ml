@@ -552,8 +552,10 @@ module Async = struct
     | CUDA_SUCCESS -> true
     | CUDA_ERROR_NOT_READY -> false
     | r ->
+        (* Any other code is an error: raise it rather than report "not
+           ready", which a poller would wait on forever. *)
         check "cuEventQuery" r ;
-        false
+        failwith "cuEventQuery: unexpected result accepted by check"
 
   let alloc_pinned (d : Device.t) ~byte_size =
     if byte_size <= 0 then
@@ -827,7 +829,18 @@ module Kernel = struct
 
     let stream_ptr =
       match stream with
-      | Some s -> s.Stream.handle
+      | Some s ->
+          (* The module was loaded for the CURRENT device; enqueueing it on a
+             stream of another device is refused here rather than left to an
+             opaque driver error (reachable through run_source_on_stream). *)
+          let cur = Device.current_id () in
+          if cur >= 0 && s.Stream.device.Device.id <> cur then
+            invalid_arg
+              (Printf.sprintf
+                 "Kernel.launch: stream of device %d, current device %d"
+                 s.Stream.device.Device.id
+                 cur) ;
+          s.Stream.handle
       | None -> from_voidp cu_stream null
     in
 

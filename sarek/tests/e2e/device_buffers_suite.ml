@@ -321,11 +321,35 @@ let test_streams_pinned dev =
       Transfer.free_all_buffers x ;
       Transfer.free_all_buffers y
 
+(* Destroyed handles are refused: the driver may recycle them. *)
+let test_destroyed dev =
+  let v = Transfer.create_device_only dev Vector.int32 8 in
+  let s = Transfer.create_stream dev in
+  let e = Transfer.create_event dev in
+  Transfer.destroy_stream s ;
+  Transfer.destroy_event e ;
+  check
+    "copy on a destroyed stream refused"
+    (refuses_invalid (fun () ->
+         Transfer.copy_to_device
+           ~stream:s
+           (i32_ba 1 (fun _ -> 0l))
+           ~dst:v
+           ~dst_offset:0)) ;
+  check
+    "destroying a stream twice refused"
+    (refuses_invalid (fun () -> Transfer.destroy_stream s)) ;
+  check
+    "query of a destroyed event refused"
+    (refuses_invalid (fun () -> Transfer.event_query e)) ;
+  Transfer.free_all_buffers v
+
 let run_on (dev : Device.t) =
   Printf.printf "  [%s] %s\n%!" dev.Device.framework dev.Device.name ;
   test_device_only dev ;
   test_ranged dev ;
-  test_streams_pinned dev
+  test_streams_pinned dev ;
+  test_destroyed dev
 
 (** On a backend without ranged copies every entry point refuses with the
     capability error, never a fallback. *)
