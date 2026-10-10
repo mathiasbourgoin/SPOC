@@ -216,13 +216,18 @@
   `libnvrtc.so.13` (no development symlink). The loader tries
   `Cuda_nvrtc.nvrtc_candidates` in order: `libnvrtc.so`, then `.so.13`, `.so.12`,
   `.so.11`, then the macOS and Windows names (`nvrtc64_130_0.dll` added). Test
-  `sarek-cuda/test/test_cuda_nvrtc_candidates.ml`.
+  `sarek-cuda/test/test_cuda_nvrtc_candidates.ml`. Trade-off: a host with a
+  CUDA 12 driver, both `.so.13` and `.so.12`, and no `libnvrtc.so` symlink now
+  gets NVRTC 13, whose PTX the 12.x driver rejects at module load and which has
+  no compute_50..72 targets; install the development symlink pointing at the
+  toolkit that matches the driver.
 - `docs/optimization/l15b-mma-probe.md` no longer says ZLUDA does not execute
   `mma.sync`: on ZLUDA v7-preview.3 (RX 7900 XTX) m16n8k16 f32.f16 runs as a
   dot-product emulation (inexact, within the `γ_K` bound) and m16n8k32 s8 runs
   bit-exact; u8, satfinite, m16n8k8, f16 accumulate and every `wmma` form are not
   translated. `test_ptx_mma_probe` now checks each form separately against a CPU
-  reference, with a control kernel. Its statuses are ZLUDA's, not NVIDIA's.
+  reference, with a control kernel, and declares the PTX ISA version the
+  device's SM needs. Its statuses are ZLUDA's, not NVIDIA's.
 - HIP: freeing a device buffer no longer leaves its device selected. The free
   runs from GC finalisers, so with two HIP devices a finaliser could fire
   inside a launch on the other device and make it fail with

@@ -24,11 +24,17 @@ agent under the owner's delegation and are marked *(agent decision)*.
 
 - **FR-001** The probe has one test case per instruction form: the six `mma.sync`
   forms of F-1 and two `wmma` load/mma/store sequences (f16→f32, u8→s32).
-- **FR-002** A form whose kernel does not load SKIPs with the driver error printed.
+- **FR-002** A form whose kernel does not load SKIPs with the driver error
+  printed on ZLUDA or below sm_80, and FAILs on any other driver at sm_80+ (the
+  form is native there, so the probe's PTX would be wrong). Kernels declare the
+  lowest PTX ISA version admitting the device's SM.
 - **FR-003** A form that runs is checked element by element against a CPU
   reference on random integer operands in the PTX ISA fragment layouts: integer
-  forms bit-exact, float forms within `γ_K · Σ|terms|` (`f16-relaxed-accuracy.md`
-  §5.2, `u` of the accumulator type). Out of bound -> FAIL. Inexact count printed.
+  and f16-accumulate forms bit-exact (operands keep partial sums exact),
+  f32-accumulate forms within `γ_K · Σ|terms|`, u = 2^-24
+  (`f16-relaxed-accuracy.md` §5.2), with operands whose sums exceed 2048 so that
+  binary16 accumulation would leave the bound. The §5.4 positive controls are
+  out of scope. Out of bound -> FAIL. Inexact count printed.
 - **FR-004** A kernel that loads but fails to launch -> FAIL.
 - **FR-005** A control kernel (the first form's kernel with the instruction
   replaced by `mov`s) must load and run, else FAIL.
@@ -66,3 +72,6 @@ agent under the owner's delegation and are marked *(agent decision)*.
   owner approval (escalation rule); left as a follow-up.
 - Validating the generated PTX with NVIDIA `ptxas` (no toolkit on tartarus).
 - The bf16 m16n8k16 form ZLUDA also defines.
+- Freeing the probe's device buffers, and the pre-existing module leak in
+  `Cuda_api.load_module_from_ptx` when `cuModuleGetFunction` fails (review L1).
+- `Cuda_nvrtc.ml` exceeds 500 lines (pre-existing).

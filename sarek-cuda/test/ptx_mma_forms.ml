@@ -82,10 +82,25 @@ let instruction f =
     (reg_list "b" (b_regs f))
     (reg_list "c" (cd_regs f))
 
+(** The lowest PTX ISA version that admits [.target sm_XY]. [load_from_ptx]
+    rewrites [.target] to the device's own SM, so a fixed [.version] would be
+    rejected on newer NVIDIA GPUs (sm_86 needs 7.1, sm_90 7.8, sm_120 8.7).
+    ZLUDA ignores the version; its sm_88 falls in the default arm. *)
+let ptx_isa_version ~major ~minor =
+  match (major, minor) with
+  | 8, 0 -> "7.0"
+  | 8, 6 -> "7.1"
+  | 8, 7 -> "7.4"
+  | 8, 9 | 9, 0 -> "7.8"
+  | 10, 0 | 10, 1 -> "8.6"
+  | 12, 0 -> "8.7"
+  | 11, 0 -> "9.0"
+  | _ -> if major < 8 then "7.0" else "8.8"
+
 (* Each lane loads its A, B and C registers from its own slice of the input
    buffers, runs [body] (default: the form's instruction) once and stores its
    D registers. *)
-let kernel_ptx ?body f =
+let kernel_ptx ~version ?body f =
   let body = match body with Some b -> b | None -> instruction f in
   let lines n fmt = String.concat "" (List.init n fmt) in
   let loads reg ptr n =
@@ -102,7 +117,7 @@ let kernel_ptx ?body f =
   String.concat
     ""
     [
-      ".version 7.0\n.target sm_80\n.address_size 64\n";
+      ".version " ^ version ^ "\n.target sm_80\n.address_size 64\n";
       ".visible .entry probe(.param .u64 pA,.param .u64 pB,.param .u64 pC,";
       ".param .u64 pD){\n";
       ".reg .b32 %a<8>; .reg .b32 %b<4>; .reg .b32 %c<4>; .reg .b32 %d<4>;\n";
@@ -142,19 +157,36 @@ let half_value bits =
   else if exp = 31 then nan
   else sign *. ldexp (1.0 +. (man /. 1024.0)) (exp - 15)
 
-(* Random integer operands. Every product and partial sum is exact in the
-   accumulator type (f16 inputs in [-4, 4]: |sum| <= 16*16 + 2, exact in
-   binary16), so any inexact element is the implementation's own rounding. *)
+(* Random integer operands. Every product and every partial sum is exact in
+   the accumulator type, so the exact result is what a correctly rounded
+   implementation returns and any inexact element is the implementation's own
+   rounding:
+   - f16 -> f32: inputs in [-64, 64], |sum| <= 16*64*64 + 2 < 2^24 (exact in
+     binary32) but above 2048, so an implementation that accumulated in binary16
+     would round and leave the binary32 bound;
+   - f16 -> f16: inputs in [-4, 4], |sum| <= 16*16 + 2 <= 2048 (exact in
+     binary16), so the result must be bit-exact;
+   - 8-bit: row 0 of A and column 0 of B hold the extreme value (-128 or 255),
+     as in the C probe; |sum| <= 32*128*128 + 1000. *)
 let random_operands f =
   let st = Random.State.make [|f.k; Hashtbl.hash f.label|] in
+  let span = match f.acc with F32 -> 64 | F16_acc | S32 -> 4 in
   let pick () =
     match f.elem with
-    | F16 -> Random.State.int st 9 - 4
+    | F16 -> Random.State.int st ((2 * span) + 1) - span
     | S8 -> Random.State.int st 256 - 128
     | U8 -> Random.State.int st 256
   in
   let a = Array.init 16 (fun _ -> Array.init f.k (fun _ -> pick ())) in
   let b = Array.init f.k (fun _ -> Array.init 8 (fun _ -> pick ())) in
+  (match f.elem with
+  | F16 -> ()
+  | S8 | U8 ->
+      let extreme = if f.elem = U8 then 255 else -128 in
+      for kk = 0 to f.k - 1 do
+        a.(0).(kk) <- extreme ;
+        b.(kk).(0) <- extreme
+      done) ;
   let c_range = match f.elem with F16 -> 5 | S8 | U8 -> 2001 in
   let c =
     Array.init 16 (fun _ ->
@@ -248,22 +280,21 @@ let output_value f d ~lane i =
   | F32 -> Int32.float_of_bits d.{(lane * 4) + i}
   | S32 -> Int32.to_float d.{(lane * 4) + i}
 
-(* gamma_K = K u / (1 - K u), u the unit roundoff of the accumulator type;
-   0 for integers (bit-exact). *)
+(* gamma_K = K u / (1 - K u) with u = 2^-24 for binary32 accumulation (the
+   bound of docs/design/f16-relaxed-accuracy.md §5.2); 0 (bit-exact) for
+   integers and for binary16 accumulation, whose operands keep every partial
+   sum exact (see [random_operands]; §5.4 admits no f16-accumulate bound). *)
 let bound_factor f =
   let gamma u =
     let ku = float_of_int f.k *. u in
     ku /. (1.0 -. ku)
   in
-  match f.acc with
-  | F16_acc -> gamma (ldexp 1.0 (-11))
-  | F32 -> gamma (ldexp 1.0 (-24))
-  | S32 -> 0.0
+  match f.acc with F32 -> gamma (ldexp 1.0 (-24)) | F16_acc | S32 -> 0.0
 
 (* Legacy wmma, 16x16x16, the forms nvrtc (CUDA 13.0) emits for nvcuda::wmma:
    load A and B (row-major, leading dimension 16), multiply with C = 0, store
    D. All-ones A and B make every D element 16 whatever the fragment layout. *)
-let wmma_ptx ~entry ~a_regs ~elem ~mma ~d_reg ~d_type ~zero =
+let wmma_ptx ~version ~entry ~a_regs ~elem ~mma ~d_reg ~d_type ~zero =
   let regs prefix first n =
     "{"
     ^ String.concat
@@ -274,7 +305,7 @@ let wmma_ptx ~entry ~a_regs ~elem ~mma ~d_reg ~d_type ~zero =
   let d = regs d_reg 10 8 in
   let c8 = "{" ^ String.concat ", " (List.init 8 (fun _ -> "%z0")) ^ "}" in
   Printf.sprintf
-    ".version 8.0\n\
+    ".version %s\n\
      .target sm_80\n\
      .address_size 64\n\
      .visible .entry %s(.param .u64 pA, .param .u64 pB, .param .u64 pD)\n\
@@ -290,6 +321,7 @@ let wmma_ptx ~entry ~a_regs ~elem ~mma ~d_reg ~d_type ~zero =
      wmma.store.d.sync.aligned.row.m16n16k16.global.%s [%%pd], %s, %%ld;\n\
      ret;\n\
      }\n"
+    version
     entry
     d_type
     d_type
@@ -309,7 +341,7 @@ let wmma_ptx ~entry ~a_regs ~elem ~mma ~d_reg ~d_type ~zero =
 type wmma_form = {
   wlabel : string;
   entry : string;
-  ptx : string;
+  ptx : version:string -> string;
   one_word : int32;  (** a 32-bit word of all-ones A/B elements *)
   words : int;  (** 32-bit words holding the 256 A (or B) elements *)
   d_float : bool;

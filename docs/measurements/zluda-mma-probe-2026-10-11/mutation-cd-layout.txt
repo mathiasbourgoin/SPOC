@@ -1,0 +1,20 @@
+# mutation: in sarek-cuda/test/ptx_mma_forms.ml, cd_coord replaced by
+let cd_coord ~g ~t i = (g + (8 * (i mod 2)), (t * 2) + (i / 2))
+# (rows and columns of the C/D fragment swapped); same machine and command, 2026-10-10T22:14Z
+  [OK]          control           0   same kernel without the matrix instruct...
+> [FAIL]        mma.sync          0   mma m16n8k16 f32.f16.f16.f32.
+  [FAIL]        mma.sync          1   mma m16n8k32 s32.s8.s8.s32.
+  [SKIP]        mma.sync          2   mma m16n8k32 s32.u8.u8.s32.
+  [SKIP]        mma.sync          3   mma m16n8k32 satfinite s32.s8.s8.s32.
+  [SKIP]        mma.sync          4   mma m16n8k8 f32.f16.f16.f32.
+  [SKIP]        mma.sync          5   mma m16n8k16 f16.f16.f16.f16.
+  [SKIP]        wmma              0   wmma m16n16k16 f16 -> f32 (load/mma/sto...
+  [SKIP]        wmma              1   wmma m16n16k16 u8 -> s32 (load/mma/store).
+  [INFO] mma m16n8k16 f32.f16.f16.f32 ran: 79/128 inexact, worst error/bound 1.37e+06
+  [INFO]   D[8][0] = 1494.00024, want 5493
+  [INFO]   D[0][1] = 5494, want 1495
+  [INFO]   D[8][2] = -1927.99976, want -5507
+  [INFO]   D[0][3] = -5503, want -1924
+  [INFO]   D[8][4] = -273.999908, want 5569
+  [INFO]   D[0][5] = 5572, want -271
+FAIL elements outside the bound (integers: not bit-exact)

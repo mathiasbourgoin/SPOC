@@ -38,6 +38,21 @@ let test_order () =
     true
     (index_of "nvrtc64_130_0.dll" < index_of "nvrtc64_120_0.dll")
 
+let test_exact_list () =
+  Alcotest.(check (list string))
+    "the full candidate list, in search order (specs/zluda-mma-nvrtc13.md \
+     FR-008)"
+    [
+      "libnvrtc.so";
+      "libnvrtc.so.13";
+      "libnvrtc.so.12";
+      "libnvrtc.so.11";
+      "libnvrtc.dylib";
+      "nvrtc64_130_0.dll";
+      "nvrtc64_120_0.dll";
+    ]
+    candidates
+
 let test_no_duplicates () =
   Alcotest.(check int)
     "every candidate appears once"
@@ -89,6 +104,7 @@ let () =
         [
           Alcotest.test_case "CUDA 13 soname listed" `Quick test_cuda13_listed;
           Alcotest.test_case "newest first" `Quick test_order;
+          Alcotest.test_case "exact list" `Quick test_exact_list;
           Alcotest.test_case "no duplicates" `Quick test_no_duplicates;
         ] );
       ( "search",
