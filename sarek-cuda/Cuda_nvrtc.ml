@@ -94,23 +94,41 @@ let string_of_nvrtc_result = function
 
 (** {1 Library Loading} *)
 
-(** Load NVRTC library dynamically (lazy). Prefer unversioned to get system
-    default that matches driver. *)
+(** The names [nvrtc_lib] tries to dlopen, in order; the first that opens wins.
+    The unversioned name comes first: it is the toolkit's own development
+    symlink, so it names the libnvrtc that matches the installed toolkit. Then
+    the versioned sonames newest first: an install without the development
+    package has only the soname, and CUDA 13's is [libnvrtc.so.13], which this
+    list lacked, so such an install was reported as having no NVRTC. Newest
+    first because a host carrying two toolkits usually runs the newer driver;
+    the converse case (a newer libnvrtc than the driver) produces PTX whose ISA
+    version the driver rejects at module load, which surfaces as a load error,
+    not a silent fallback. Then macOS and the Windows DLL names (CUDA 13, then
+    12). *)
+let nvrtc_candidates =
+  [
+    "libnvrtc.so";
+    "libnvrtc.so.13";
+    "libnvrtc.so.12";
+    "libnvrtc.so.11";
+    "libnvrtc.dylib";
+    "nvrtc64_130_0.dll";
+    "nvrtc64_120_0.dll";
+  ]
+
+(** [first_loadable ~dlopen names] is [dlopen] applied to the first name of
+    [names] for which it does not raise, or [None] when every name raises. The
+    opener is a parameter so the search order is testable without libnvrtc. *)
+let first_loadable ~(dlopen : string -> 'lib) (names : string list) :
+    'lib option =
+  List.find_map (fun name -> try Some (dlopen name) with _ -> None) names
+
+(** Load NVRTC library dynamically (lazy), trying {!nvrtc_candidates}. *)
 let nvrtc_lib : Dl.library option Lazy.t =
   lazy
-    (* Try unversioned first - should match driver *)
-    (try Some (Dl.dlopen ~filename:"libnvrtc.so" ~flags:[Dl.RTLD_LAZY])
-     with _ -> (
-       try Some (Dl.dlopen ~filename:"libnvrtc.so.12" ~flags:[Dl.RTLD_LAZY])
-       with _ -> (
-         try Some (Dl.dlopen ~filename:"libnvrtc.so.11" ~flags:[Dl.RTLD_LAZY])
-         with _ -> (
-           try Some (Dl.dlopen ~filename:"libnvrtc.dylib" ~flags:[Dl.RTLD_LAZY])
-           with _ -> (
-             try
-               Some
-                 (Dl.dlopen ~filename:"nvrtc64_120_0.dll" ~flags:[Dl.RTLD_LAZY])
-             with _ -> None)))))
+    (first_loadable
+       ~dlopen:(fun filename -> Dl.dlopen ~filename ~flags:[Dl.RTLD_LAZY])
+       nvrtc_candidates)
 
 (** Check if NVRTC library is available *)
 let is_available () =
@@ -122,15 +140,7 @@ let get_nvrtc_lib () =
   | Some lib -> lib
   | None ->
       Cuda_error.raise_error
-        (Cuda_error.library_not_found
-           "libnvrtc"
-           [
-             "libnvrtc.so";
-             "libnvrtc.so.12";
-             "libnvrtc.so.11";
-             "libnvrtc.dylib";
-             "nvrtc64_120_0.dll";
-           ])
+        (Cuda_error.library_not_found "libnvrtc" nvrtc_candidates)
 
 (** Create a lazy foreign binding to NVRTC *)
 let foreign_nvrtc_lazy name typ =
