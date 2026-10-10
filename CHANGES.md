@@ -43,8 +43,9 @@
   per argument. New `Execute.clear_launch_cache` drops the memo; backend
   cache clears and device teardown call it. Host cost per `run_vectors`
   launch on an RX 7900 XTX (`sarek-hip/test/bench_launch_overhead.exe`,
-  10 000 launches, no sync): 3 arguments 11.4 -> 4.6 us, 10 arguments
-  17.4 -> 6.7 us. Native is unchanged (its launch cost is execution).
+  10 000 launches, no sync, tartarus, 2026-10-10, base beb81321 vs this
+  change): 3 arguments 11.4 -> 4.4 us, 10 arguments 17.4 -> 6.5 us. Native
+  is unchanged (its launch cost is execution).
 
 - `let%sarek_intrinsic` registers an intrinsic under its library's module path,
   using the `library-name` cookie dune passes to the PPX, instead of guessing
