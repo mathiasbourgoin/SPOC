@@ -19,7 +19,10 @@ let%sarek_intrinsic float32 =
 (* Define an intrinsic function. [device] maps a framework name ("CUDA",
    "OpenCL", "Metal", ...) to a template in which each %s is an argument. *)
 let%sarek_intrinsic (sin_float32 : float32 -> float32) =
-  {device = (fun _ -> "sinf(%s)"); ocaml = sin}
+  {
+    device = (function "OpenCL" | "Metal" -> "sin(%s)" | _ -> "sinf(%s)");
+    ocaml = sin;
+  }
 ```
 
 ## Using intrinsics from another library
