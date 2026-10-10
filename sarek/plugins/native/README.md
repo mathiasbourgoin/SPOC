@@ -74,8 +74,8 @@ program may reference the module:
 let () = Sarek_native.Native_plugin.init ()
 ```
 
-`sarek/plugins/test/install_consumer.t` builds such a project against the
-install tree only.
+`sarek/plugins/test/install_consumer.t` builds such a project whose
+OCAMLPATH is the install tree.
 
 ## Limitations
 

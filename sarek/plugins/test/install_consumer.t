@@ -19,7 +19,8 @@ project outside this repository can link them as reference backends.
   >   |> List.iter print_endline
   > ML
 
-Only the install tree is on OCAMLPATH, so this resolves the installed copies.
+OCAMLPATH is the install tree (third-party deps still come from the switch),
+and sarek is not installed in the switch, so this resolves the installed copies.
 
   $ DUNE_CACHE=disabled dune build --root . ./consumer.exe 2>&1
   $ ./_build/default/consumer.exe
