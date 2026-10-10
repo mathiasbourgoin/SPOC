@@ -1,0 +1,16 @@
+sam. 10 oct. 2026 19:54:32 CEST
+7.1.2-3-cachyos
+               total       utilisé      libre     partagé tamp/cache   disponible
+Mem:             125          35          84           0           6          89
+AMD Radeon RX 7900 XTX: 480 iterations of (rewrite, 300 us host work, 4 launches), kernel spin 1000, 65536 threads
+  none            322.5 us/iteration (rewrite     0.0 us)
+  vector_set      715.1 us/iteration (rewrite   344.6 us)
+  staged          332.5 us/iteration (rewrite     9.8 us)
+AMD Radeon RX 7900 XTX: 480 iterations of (rewrite, 300 us host work, 4 launches), kernel spin 1000, 65536 threads
+  none            322.4 us/iteration (rewrite     0.0 us)
+  vector_set      712.1 us/iteration (rewrite   346.4 us)
+  staged          338.9 us/iteration (rewrite    11.5 us)
+AMD Radeon RX 7900 XTX: 480 iterations of (rewrite, 300 us host work, 4 launches), kernel spin 1000, 65536 threads
+  none            322.0 us/iteration (rewrite     0.0 us)
+  vector_set      705.2 us/iteration (rewrite   341.3 us)
+  staged          330.1 us/iteration (rewrite     9.1 us)

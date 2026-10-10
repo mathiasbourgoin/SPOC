@@ -27,6 +27,7 @@
   Soa_vector
   Gpu_memory
   Host_async
+  Staging_ring
   Transfer
   Profiling
   Error

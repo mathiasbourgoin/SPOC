@@ -201,3 +201,48 @@
  (alias e2e-hip)
  (action
   (run %{dep:test_hip_free_keeps_current.exe})))
+
+; Registering never-touched host memory, with and without
+; register_host ~populate:true (specs/transfer-pitfalls.md). Information only.
+
+(executable
+ (name bench_hip_register_host)
+ (modules bench_hip_register_host)
+ (libraries spoc_core sarek_hip unix))
+
+(rule
+ (alias e2e-hip-bench)
+ (action
+  (run %{dep:bench_hip_register_host.exe})))
+
+; Small host->device writes between launches: Vector.set vs
+; Transfer.stage_to_device (specs/transfer-pitfalls.md). Exits 1 if the modes
+; disagree; information otherwise.
+
+(executable
+ (name bench_hip_small_writes)
+ (modules bench_hip_small_writes)
+ (libraries sarek sarek.stdlib spoc_core sarek_hip sarek_ir unix)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias e2e-hip-bench)
+ (action
+  (run %{dep:bench_hip_small_writes.exe})))
+
+; Staged writes interleaved with launches, many runs per HIP device
+; (specs/transfer-pitfalls.md C-9). Exits 1 on a lost launch or write. A
+; manual reproducer (declared in scripts/unwired-targets.tsv): it fails on the
+; 7950X iGPU, also without staging (SPOC_STRESS_MODE=pinned_ring).
+
+(executable
+ (name stress_hip_staged_launches)
+ (modules stress_hip_staged_launches)
+ (libraries sarek sarek.stdlib spoc_core sarek_hip sarek_ir)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))

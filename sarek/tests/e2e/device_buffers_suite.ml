@@ -34,6 +34,42 @@ let add_one_ir =
      | Some ir -> ir
      | None -> failwith "add_one: no IR")
 
+let accumulate =
+  [%kernel
+    fun (acc : int32 vector) (x : int32 vector) (n : int32) ->
+      let open Std in
+      let tid = global_thread_id in
+      if tid < n then acc.(tid) <- acc.(tid) + x.(tid)]
+
+let accumulate_ir =
+  lazy
+    (let _, kirc = accumulate in
+     match kirc.Sarek.Kirc_types.body_ir with
+     | Some ir -> ir
+     | None -> failwith "accumulate: no IR")
+
+(* One thread loops [iters] times: keeps the default stream busy so that what
+   is enqueued behind it is observably still pending. *)
+let spin =
+  [%kernel
+    fun (out : int32 vector) (iters : int32) ->
+      let open Std in
+      let tid = global_thread_id in
+      let acc = mut 0l in
+      let i = mut 0l in
+      while i < iters do
+        acc := (acc * 3l) + i ;
+        i := i + 1l
+      done ;
+      if tid = 0l then out.(0) <- acc]
+
+let spin_ir =
+  lazy
+    (let _, kirc = spin in
+     match kirc.Sarek.Kirc_types.body_ir with
+     | Some ir -> ir
+     | None -> failwith "spin: no IR")
+
 let failures = ref 0
 
 let check name cond =
@@ -345,12 +381,255 @@ let test_destroyed dev =
     (refuses_invalid (fun () -> Transfer.event_query e)) ;
   Transfer.free_all_buffers v
 
+(* ------------------------------------------- staged small writes (US-1) *)
+
+let test_staged dev =
+  let n = 1000 in
+  let v = Transfer.create_device_only dev Vector.int32 n in
+  (* A non-zero background: fresh staging memory is zero, so an over-long copy
+     would show. *)
+  Transfer.copy_to_device (i32_ba n (fun _ -> -1l)) ~dst:v ~dst_offset:0 ;
+  (* One source reused for every write, overwritten right after each call:
+     the device must see the values at call time (FR-002). *)
+  let src = i32_ba 10 (fun _ -> 0l) in
+  let stage base off =
+    for i = 0 to 9 do
+      Bigarray.Array1.set src i (Int32.of_int (base + i))
+    done ;
+    Transfer.stage_to_device src ~dst:v ~dst_offset:off ;
+    Bigarray.Array1.fill src (-7l)
+  in
+  stage 10_000 0 ;
+  stage 20_000 500 ;
+  stage 30_000 (n - 10) ;
+  Transfer.flush dev ;
+  let out = read_all v in
+  let expect i =
+    if i < 10 then 10_000 + i
+    else if i >= 500 && i < 510 then 20_000 + (i - 500)
+    else if i >= n - 10 then 30_000 + (i - (n - 10))
+    else -1
+  in
+  let bad = ref 0 in
+  for i = 0 to n - 1 do
+    if Bigarray.Array1.get out i <> Int32.of_int (expect i) then incr bad
+  done ;
+  check
+    (Printf.sprintf
+       "staged writes land exactly in range, source reusable at once (%d \
+        mismatches)"
+       !bad)
+    (!bad = 0) ;
+  check
+    "staged write past the end refused"
+    (refuses_invalid (fun () ->
+         Transfer.stage_to_device src ~dst:v ~dst_offset:(n - 5))) ;
+  check
+    "staged write above max_staged_bytes refused"
+    (refuses_invalid (fun () ->
+         Transfer.stage_to_device
+           (i32_ba ((Transfer.max_staged_bytes / 4) + 1) (fun _ -> 0l))
+           ~dst:(Transfer.create_device_only dev Vector.int32 (1 lsl 15))
+           ~dst_offset:0)) ;
+  (* Zero length: accepted at offset = length, changes nothing; refused past
+     it. *)
+  Transfer.stage_to_device (i32_ba 0 (fun _ -> 0l)) ~dst:v ~dst_offset:n ;
+  check
+    "zero-length staged write past the end refused"
+    (refuses_invalid (fun () ->
+         Transfer.stage_to_device
+           (i32_ba 0 (fun _ -> 0l))
+           ~dst:v
+           ~dst_offset:(n + 1))) ;
+  (* Exactly max_staged_bytes is accepted, and lands. *)
+  let maxn = Transfer.max_staged_bytes / 4 in
+  let big = Transfer.create_device_only dev Vector.int32 maxn in
+  Transfer.stage_to_device
+    (i32_ba maxn (fun i -> Int32.of_int (i * 3)))
+    ~dst:big
+    ~dst_offset:0 ;
+  Transfer.flush dev ;
+  let back = read_all big in
+  check
+    "staged write of exactly max_staged_bytes lands"
+    (Bigarray.Array1.get back 0 = 0l
+    && Bigarray.Array1.get back (maxn - 1) = Int32.of_int ((maxn - 1) * 3)) ;
+  Transfer.free_all_buffers big ;
+  (* Another element size, at a non-zero offset. *)
+  let f = Transfer.create_device_only dev Vector.float64 16 in
+  let fsrc = Bigarray.Array1.create Bigarray.float64 Bigarray.c_layout 16 in
+  Bigarray.Array1.fill fsrc 0.0 ;
+  Transfer.copy_to_device fsrc ~dst:f ~dst_offset:0 ;
+  let three = Bigarray.Array1.create Bigarray.float64 Bigarray.c_layout 3 in
+  Bigarray.Array1.set three 0 1.5 ;
+  Bigarray.Array1.set three 1 (-2.25) ;
+  Bigarray.Array1.set three 2 1e300 ;
+  Transfer.stage_to_device three ~dst:f ~dst_offset:5 ;
+  Transfer.flush dev ;
+  let fback = Bigarray.Array1.create Bigarray.float64 Bigarray.c_layout 16 in
+  Transfer.copy_to_host ~src:f ~src_offset:0 fback ;
+  check
+    "staged float64 write at an offset"
+    (Bigarray.Array1.get fback 4 = 0.0
+    && Bigarray.Array1.get fback 5 = 1.5
+    && Bigarray.Array1.get fback 6 = -2.25
+    && Bigarray.Array1.get fback 7 = 1e300
+    && Bigarray.Array1.get fback 8 = 0.0) ;
+  Transfer.free_all_buffers f ;
+  (* Stale_GPU (host newer) is refused on a GPU: a partial device write would
+     leave neither copy authoritative. *)
+  let sg = Vector.create Vector.int32 16 in
+  Vector.fill sg 1l ;
+  Transfer.to_device sg dev ;
+  Vector.set sg 0 2l ;
+  check
+    "staged write onto a Stale_GPU vector refused off-CPU"
+    (dev.Device.capabilities.is_cpu
+    || refuses_invalid (fun () ->
+        Transfer.stage_to_device (i32_ba 1 (fun _ -> 9l)) ~dst:sg ~dst_offset:3)
+    ) ;
+  let o = Vector.create Vector.int32 16 in
+  Vector.fill o 5l ;
+  check
+    "staged write onto a host-authoritative vector refused"
+    (refuses_invalid (fun () ->
+         Transfer.stage_to_device (i32_ba 1 (fun _ -> 9l)) ~dst:o ~dst_offset:0)) ;
+  Transfer.to_device o dev ;
+  Transfer.stage_to_device (i32_ba 1 (fun _ -> 77l)) ~dst:o ~dst_offset:3 ;
+  check
+    "staged: Both becomes Stale_CPU off-CPU, auto-sync reads it"
+    ((dev.Device.capabilities.is_cpu
+     || match Vector.location o with Vector.Stale_CPU _ -> true | _ -> false)
+    && Vector.get o 3 = 77l
+    && Vector.get o 2 = 5l) ;
+  Transfer.free_all_buffers v
+
+(* Ordering and snapshot across ring wrap-around: each iteration stages x_i
+   (16 KiB) and launches acc += x on the same stream, without synchronising.
+   300 x 16 KiB is several times the 1 MiB staging ring. *)
+let is_async (dev : Device.t) =
+  let (module B : Spoc_framework.Framework_sig.BACKEND) =
+    Transfer.backend_of dev
+  in
+  B.Async.support.async_copy
+
+(* Queue a long single-thread kernel on the default stream and return an event
+   recorded after it. *)
+let busy dev =
+  let out = Transfer.create_device_only dev Vector.int32 1 in
+  Execute.run_vectors
+    ~device:dev
+    ~ir:(Lazy.force spin_ir)
+    ~args:[Execute.Vec out; Execute.Int 100_000_000]
+    ~block:(Execute.dims1d 1)
+    ~grid:(Execute.dims1d 1)
+    () ;
+  let e = Transfer.create_event dev in
+  Transfer.record_event e (Transfer.default_stream dev) ;
+  e
+
+(* HIP/CUDA only: staging does not wait for the GPU (FR-003), snapshots a
+   source the DMA would otherwise read late (FR-002, pinned source), and keeps
+   the destination referenced while the copy is pending. *)
+let test_staged_async dev =
+  let n = 64 in
+  let v = Transfer.create_device_only dev Vector.int32 n in
+  Transfer.copy_to_device (i32_ba n (fun _ -> -1l)) ~dst:v ~dst_offset:0 ;
+  let e = busy dev in
+  let p = Transfer.alloc_pinned dev Bigarray.int32 8 in
+  for i = 0 to 7 do
+    Bigarray.Array1.set p i (Int32.of_int (100 + i))
+  done ;
+  Transfer.stage_to_device p ~dst:v ~dst_offset:0 ;
+  Bigarray.Array1.fill p (-7l) ;
+  Transfer.stage_to_device
+    (i32_ba 8 (fun i -> Int32.of_int (200 + i)))
+    ~dst:v
+    ~dst_offset:8 ;
+  check
+    "stage_to_device returns while the GPU is still busy"
+    (not (Transfer.event_query e)) ;
+  check
+    "freeing the destination of a pending staged copy refused"
+    (refuses_invalid (fun () -> Transfer.free_all_buffers v)) ;
+  Transfer.flush dev ;
+  let out = read_all v in
+  check
+    "pinned source overwritten after the call: device has call-time values"
+    (Bigarray.Array1.get out 0 = 100l
+    && Bigarray.Array1.get out 7 = 107l
+    && Bigarray.Array1.get out 8 = 200l
+    && Bigarray.Array1.get out 16 = -1l) ;
+  Transfer.free_pinned p ;
+  Transfer.destroy_event e ;
+  Transfer.free_all_buffers v
+
+let test_staged_ordering ?stream ?(blocked = false) dev =
+  let n = 4096 and iters = 300 in
+  let acc = Transfer.create_device_only dev Vector.int32 n in
+  let x = Transfer.create_device_only dev Vector.int32 n in
+  Transfer.copy_to_device (i32_ba n (fun _ -> 0l)) ~dst:acc ~dst_offset:0 ;
+  Transfer.copy_to_device (i32_ba n (fun _ -> 0l)) ~dst:x ~dst_offset:0 ;
+  let src = i32_ba n (fun _ -> 0l) in
+  let value it i = Int32.of_int (((it * 31) + i) mod 1009) in
+  (* Blocked: every staged copy is enqueued behind a long kernel, so the ring
+     fills with copies still pending and must wait for them. *)
+  let e = if blocked then Some (busy dev) else None in
+  for it = 0 to iters - 1 do
+    for i = 0 to n - 1 do
+      Bigarray.Array1.set src i (value it i)
+    done ;
+    Transfer.stage_to_device ?stream src ~dst:x ~dst_offset:0 ;
+    Execute.run_vectors
+      ?stream
+      ~device:dev
+      ~ir:(Lazy.force accumulate_ir)
+      ~args:[Execute.Vec acc; Execute.Vec x; Execute.Int n]
+      ~block:(Execute.dims1d 64)
+      ~grid:(Execute.dims1d (n / 64))
+      ()
+  done ;
+  (match stream with
+  | Some s -> Transfer.synchronize_stream s
+  | None -> Transfer.flush dev) ;
+  let out = read_all acc in
+  let bad = ref 0 in
+  for i = 0 to n - 1 do
+    let sum = ref 0 in
+    for it = 0 to iters - 1 do
+      sum := !sum + Int32.to_int (value it i)
+    done ;
+    if Bigarray.Array1.get out i <> Int32.of_int !sum then incr bad
+  done ;
+  check
+    (Printf.sprintf
+       "staged writes ordered with launches across ring wrap-around (%s, %d \
+        mismatches)"
+       (match (stream, blocked) with
+       | None, true -> "default stream, behind a long kernel"
+       | None, false -> "default stream"
+       | Some _, _ -> "created stream")
+       !bad)
+    (!bad = 0) ;
+  Option.iter Transfer.destroy_event e ;
+  Transfer.free_all_buffers acc ;
+  Transfer.free_all_buffers x
+
 let run_on (dev : Device.t) =
   Printf.printf "  [%s] %s\n%!" dev.Device.framework dev.Device.name ;
   test_device_only dev ;
   test_ranged dev ;
   test_streams_pinned dev ;
-  test_destroyed dev
+  test_destroyed dev ;
+  test_staged dev ;
+  test_staged_ordering dev ;
+  if is_async dev then begin
+    test_staged_async dev ;
+    test_staged_ordering ~blocked:true dev
+  end ;
+  let s = Transfer.create_stream dev in
+  test_staged_ordering ~stream:s dev ;
+  Transfer.destroy_stream s
 
 (** On a backend without ranged copies every entry point refuses with the
     capability error, never a fallback. *)
@@ -373,6 +652,10 @@ let check_refused (dev : Device.t) =
     "ranged copy refused (Feature_not_supported)"
     (refuses_capability (fun () ->
          Transfer.copy_to_device (i32_ba 1 (fun _ -> 0l)) ~dst:v ~dst_offset:0)) ;
+  check
+    "stage_to_device refused (Feature_not_supported)"
+    (refuses_capability (fun () ->
+         Transfer.stage_to_device (i32_ba 1 (fun _ -> 0l)) ~dst:v ~dst_offset:0)) ;
   let s = Transfer.create_stream dev in
   check
     "launch on a stream refused before running (Feature_not_supported)"

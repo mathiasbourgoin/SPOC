@@ -95,6 +95,50 @@ launches asynchronous (`Metal_api.Pending`; `specs/metal-ranged-copies.md`,
   `e2e-hip-bench`, information only), `spoc/framework/test/test_framework_sig.ml`
   (`Async_refused`, `Make_refs`).
 
+## Staged small writes and register_host pitfalls (2026-10, spoc_llm)
+
+Spec: `specs/transfer-pitfalls.md`.
+
+- `Transfer.stage_to_device` snapshots a source of at most
+  `max_staged_bytes` (64 KiB) into a per-device 1 MiB pinned ring
+  (`Transfer.stagings`, allocated on first use, never freed) and enqueues the
+  copy with `copy_bytes_to_device ~stream`, so the ledger roots `dst` as for
+  any stream copy. Each ring range is freed by an event recorded after its
+  copy. The bookkeeping is the pure `Staging_ring` (only reclaims from the
+  oldest allocation; an allocation may never end exactly on the oldest live
+  start, which would make a full ring look empty).
+- Ranges are reclaimed only when a request does not fit, by
+  `synchronize_event` on the oldest.
+- Known issue (C-9, unresolved): on the 7950X iGPU under HIP, writes from
+  reused pinned ranges interleaved with launches on the default stream
+  sometimes lose a launch. Reproduces without `stage_to_device`
+  (`stress_hip_staged_launches`, `SPOC_STRESS_MODE=pinned_ring`); fresh pinned
+  buffers do not; RX 7900 XTX never. Timing-dependent (vanishes with other
+  minor-heap sizes). ZLUDA on the same iGPU also lost launches without staging.
+- Invariant: a staged range is reused only after its event completed. If
+  recording the event fails after the copy was enqueued, the stream is
+  synchronised before the exception propagates.
+- Lock order: per-device staging lock, then ledger / pinned locks; never the
+  reverse.
+- Backends without `async_copy` (Native, Interpreter, Metal) take a
+  synchronous `copy_to_device`; without `ranged_copy`, `Feature_not_supported`.
+- `register_host ~populate` (madvise MADV_POPULATE_WRITE before
+  registering) was implemented and withdrawn in the same PR: slow first copy
+  passes after registration occurred with every preparation, populated or not
+  (7 of 50, raw output in `docs/measurements/transfer-pitfalls-2026-10-10/`),
+  so the option had no demonstrated benefit.
+- No default changed for `Vector.set`: the download is required (read-modify-
+  write of a `Stale_CPU` buffer) and launches mark every vector argument
+  `Stale_CPU` because there is no kernel write analysis.
+- Tests: `sarek/core/test/test_staging_ring.ml` (model test, mutation-checked
+  on both strict comparisons), suite cases `test_staged`,
+  `test_staged_ordering` (300 x 16 KiB through the ring, default and created
+  stream, and behind a long kernel), `test_staged_async` (returns while the
+  GPU is busy, pinned-source snapshot, pending destination not freeable),
+  refusal in `check_refused`. Reproducer: `stress_hip_staged_launches`. Benchmarks:
+  `sarek-hip/test/bench_hip_small_writes.ml`,
+  `sarek-hip/test/bench_hip_register_host.ml` (alias `e2e-hip-bench`).
+
 ## Potential Invariant Violations/Bugs
 
 - `Vector_storage.sub_vector_host` creates sub-vector metadata and host storage at `sarek/core/Vector_storage.ml:214-258`, but the public `Vector.gather` path is a placeholder/no-op around sub-vector synchronization at `sarek/core/Vector.ml:282-296`. This makes partition/gather semantics incomplete for device-backed vectors.

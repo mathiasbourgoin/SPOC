@@ -1544,7 +1544,34 @@ let free_pinned (ba : (_, _, Bigarray.c_layout) Bigarray.Array1.t) : unit =
       | _ -> invalid_arg (op ^ ": not a live Transfer.alloc_pinned allocation"))
 
 (** Page-lock an existing Bigarray for DMA from/to [dev]. SPOC keeps [ba] alive
-    until {!unregister_host}. *)
+    until {!unregister_host}.
+
+    Measured pitfalls on HIP (RX 7900 XTX, ROCm 7.2, Linux 7.1.2, 2026-10-10,
+    under memory pressure from other workloads; specs/transfer-pitfalls.md):
+
+    - Copies right after registering can be slow. bench_hip_register_host, 8 GiB
+      registrations, synchronous 5.5 MiB copies: 7 of 50 first passes ran at
+      0.95-6.17 GB/s (about 26 GB/s otherwise; one repeat pass at 1.66),
+      whatever the preparation: memory written before registering, never
+      touched, written after registering, or faulted in with
+      madvise(MADV_POPULATE_WRITE) first. spoc_llm saw 0.45 GB/s for memory
+      registered before it was touched, and attributed it to that; repeated runs
+      here do not support a dependence on touching, only an intermittent,
+      state-dependent effect. [hipHostRegister] faults every page in itself
+      (VmRSS grew by the full 8 GiB for untouched memory).
+    - A copy whose host range spans two registrations fails with
+      [hipErrorInvalidValue], synchronous or on a stream. Registering a large
+      buffer in regions means slicing every copy inside one region.
+    - spoc_llm observed copies from ONE 8 GiB registration fall to 2.3 GB/s
+      after CPU writes into it, against 26.3 GB/s with 64 MiB registrations.
+      That did not reproduce later the same day (26.3 GB/s after an O_DIRECT
+      fill of a single 8 GiB registration): treat region size as something to
+      measure on the target machine, not a rule.
+    - ROCm does not count registered pages as pinned ([VmPin: 0 kB] in
+      [/proc/self/status] with 8 GiB registered), so the kernel may still
+      migrate or compact them. Whether that is what makes copies slow under
+      memory pressure is NOT established. [alloc_pinned] memory is allocated by
+      the driver instead. *)
 let register_host (dev : Device.t)
     (ba : (_, _, Bigarray.c_layout) Bigarray.Array1.t) : unit =
   let addr = bigarray_addr ba and bytes = Bigarray.Array1.size_in_bytes ba in
@@ -1581,6 +1608,187 @@ let unregister_host (ba : (_, _, Bigarray.c_layout) Bigarray.Array1.t) : unit =
           invalid_arg
             (op ^ ": buffer was allocated pinned, use Transfer.free_pinned")
       | _ -> invalid_arg (op ^ ": not a registered buffer"))
+
+(** {1 Staged small writes} *)
+
+(** Largest source {!stage_to_device} accepts, in bytes (64 KiB). *)
+let max_staged_bytes = 64 * 1024
+
+(* Per device: 1 MiB of pinned memory used as a ring. Each staged copy owns
+   its range until the event recorded after it completes. *)
+let staging_capacity = 1024 * 1024
+
+type staging = {
+  st_buffer :
+    (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t;
+  st_base : nativeint;
+  st_ring : event Staging_ring.t;
+  mutable st_spare : event list;  (** Completed events, ready to record. *)
+  st_lock : Mutex.t;
+}
+
+let stagings : (int, staging) Hashtbl.t = Hashtbl.create 4
+
+let stagings_lock = Mutex.create ()
+
+(* Allocated on first use, kept for the process lifetime. *)
+let staging_for (dev : Device.t) : staging =
+  Mutex.protect stagings_lock (fun () ->
+      match Hashtbl.find_opt stagings dev.id with
+      | Some st -> st
+      | None ->
+          let buf = alloc_pinned dev Bigarray.char staging_capacity in
+          let st =
+            {
+              st_buffer = buf;
+              st_base = bigarray_addr buf;
+              st_ring =
+                Staging_ring.create ~capacity:staging_capacity ~align:256;
+              st_spare = [];
+              st_lock = Mutex.create ();
+            }
+          in
+          Hashtbl.replace stagings dev.id st ;
+          st)
+
+(* Snapshot [byte_size] bytes at [src_addr] into the ring, enqueue the copy on
+   [stream], and record the event that frees the range. Called under
+   [st.st_lock]. *)
+let staged_copy st ~(dev : Device.t) ~(stream : stream) ~src_addr ~byte_size
+    ~dst ~dst_byte_offset =
+  let ring = st.st_ring in
+  (* Ranges are reclaimed only when a request does not fit, by synchronising
+     the oldest event (immediate when it has completed). *)
+  (* The event is taken BEFORE the copy is enqueued: once the copy is on the
+     stream, nothing may fail before its range is committed, or a retry could
+     reuse the range under the pending DMA. *)
+  let ev =
+    match st.st_spare with
+    | ev :: rest ->
+        st.st_spare <- rest ;
+        ev
+    | [] -> create_event dev
+  in
+  let give_back () = st.st_spare <- ev :: st.st_spare in
+  let off =
+    try
+      Staging_ring.reserve
+        ring
+        ~size:byte_size
+        ~is_done:(fun _ -> false)
+        ~wait:synchronize_event
+        ~on_free:(fun e -> st.st_spare <- e :: st.st_spare)
+    with e ->
+      give_back () ;
+      raise e
+  in
+  (match
+     Host_async.blit
+       ~src:src_addr
+       ~dst:(Nativeint.add st.st_base (Nativeint.of_int off))
+       ~byte_size ;
+     copy_bytes_to_device
+       ~stream
+       (Bigarray.Array1.sub st.st_buffer off byte_size)
+       ~dst
+       ~dst_byte_offset
+   with
+  | () -> ()
+  | exception e ->
+      (* Refused before anything was enqueued (h2d_range checks first). *)
+      give_back () ;
+      raise e) ;
+  match record_event ev stream with
+  | () -> Staging_ring.commit ring ~off ~size:byte_size ev
+  | exception e ->
+      (* The copy is in flight but nothing marks its range busy: wait for it
+         before the range can be handed out again, and keep [e] whatever the
+         wait does. *)
+      (try synchronize_stream stream with _ -> ()) ;
+      give_back () ;
+      raise e
+
+(** Write all of [src] (at most {!max_staged_bytes}) into [dst] at element
+    [dst_offset], WITHOUT waiting for the GPU: the cheap way to update a small
+    vector that kernels read, e.g. per-layer routing indices.
+
+    [Vector.set] on such a vector is expensive. After a launch the vector is
+    [Stale_CPU], so the first [set] downloads it (waiting for every queued
+    kernel), and the next launch uploads it again with a synchronous copy that
+    waits for the queue once more. Measured (bench_hip_small_writes, RX 7900
+    XTX, 8 int32 + 8 float32 rewritten, then 300 us of host work, then 4
+    launches, three runs): 709-712 us per iteration with [Vector.set] (339-344
+    us of it in the writes), 333-343 us with [stage_to_device] (10-13 us in the
+    writes), 320-324 us with no rewrite at all.
+
+    [src] is copied into SPOC-owned pinned staging memory before the call
+    returns, so the caller may overwrite it immediately. The copy to [dst] is
+    enqueued on [stream] (default: [dev]'s default stream), after the work
+    already there and before what follows; streams from {!create_stream} are
+    blocking, so they order with it too. SPOC keeps [dst] alive until the copy
+    has completed, and refuses to free it until the stream or device is
+    synchronised (or the ring has reused the range).
+
+    Staging is 1 MiB of pinned memory per device, allocated on first use and
+    kept for the process lifetime; when every byte of it is still in flight, the
+    call waits for the oldest staged copy. Same preconditions as
+    {!copy_to_device}: [dst] device-current, [Both] becomes [Stale_CPU]; out of
+    range, or a source above {!max_staged_bytes}, raises [Invalid_argument]
+    before any device call.
+
+    Known issue: on a Ryzen 7950X iGPU (HIP, ROCm 7.2) about 1 run in 7 of 300
+    staged writes interleaved with launches lost one launch (its kernel never
+    wrote). A caller-managed pinned ring using only copy_to_device and events
+    shows it too, so the cause lies below this function and is not established;
+    the RX 7900 XTX never showed it (specs/transfer-pitfalls.md C-9, issue #427,
+    sarek-hip/test/stress_hip_staged_launches.ml).
+
+    HIP, CUDA: as above. Native, Interpreter, Metal (no asynchronous copies): a
+    synchronous {!copy_to_device}, complete on return (on Metal it first waits
+    for kernels that use [dst]). OpenCL, Vulkan, WebGPU:
+    [Feature_not_supported]. *)
+let stage_to_device (type a b) ?(stream : stream option)
+    (src : (a, b, Bigarray.c_layout) Bigarray.Array1.t) ~(dst : (a, b) Vector.t)
+    ~(dst_offset : int) : unit =
+  let op = "Transfer.stage_to_device" in
+  let n = Bigarray.Array1.dim src in
+  if dst_offset < 0 || dst_offset + n > dst.length then
+    invalid_arg
+      (Printf.sprintf
+         "%s: elements [%d, %d) outside vector of length %d"
+         op
+         dst_offset
+         (dst_offset + n)
+         dst.length) ;
+  let byte_size = Bigarray.Array1.size_in_bytes src in
+  if byte_size > max_staged_bytes then
+    invalid_arg
+      (Printf.sprintf
+         "%s: %d bytes exceed max_staged_bytes (%d); use alloc_pinned and \
+          copy_to_device for large transfers"
+         op
+         byte_size
+         max_staged_bytes) ;
+  let dev, _ = range_target ~op dst in
+  let (module B : Framework_sig.BACKEND) = backend_of dev in
+  if not B.Async.support.ranged_copy then
+    refuse_capability ~backend:B.name "staged writes (they need ranged copies)" ;
+  if byte_size = 0 then ()
+  else if not B.Async.support.async_copy then
+    copy_to_device ?stream src ~dst ~dst_offset
+  else
+    let stream = match stream with Some s -> s | None -> default_stream dev in
+    let st = staging_for dev in
+    Mutex.protect st.st_lock (fun () ->
+        staged_copy
+          st
+          ~dev
+          ~stream
+          ~src_addr:(bigarray_addr src)
+          ~byte_size
+          ~dst
+          ~dst_byte_offset:(dst_offset * Vector.elem_size dst.kind)) ;
+    ignore (Sys.opaque_identity src)
 
 (** {1 Batch Operations} *)
 

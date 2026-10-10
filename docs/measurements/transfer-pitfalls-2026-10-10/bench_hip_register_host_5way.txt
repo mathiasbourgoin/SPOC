@@ -1,0 +1,31 @@
+sam. 10 oct. 2026 19:55:40 CEST
+               total       utilisé      libre     partagé tamp/cache   disponible
+Mem:             125          32          85           0           8          92
+AMD Radeon RX 7900 XTX: 8 GiB registrations, 400 synchronous 5.5 MiB copies per pass
+  touched    register  1.27 s (VmRSS + 0.00 GB, VmPin 0 kB)   first pass   0.95 GB/s   repeat  26.20 GB/s
+  untouched  register  3.36 s (VmRSS + 8.39 GB, VmPin 0 kB)   first pass  26.40 GB/s   repeat  26.38 GB/s
+  populated  register  2.76 s (VmRSS + 8.39 GB, VmPin 0 kB)   first pass  25.86 GB/s   repeat  26.05 GB/s
+  reg+write  register  3.51 s (VmRSS + 8.39 GB, VmPin 0 kB)   first pass  25.87 GB/s   repeat  25.77 GB/s
+  pop+write  register  2.60 s (VmRSS + 8.39 GB, VmPin 0 kB)   first pass   2.61 GB/s   repeat  26.12 GB/s
+  copy spanning two registrations: [HIP Runtime] Context error during hipMemcpyHtoD (range): hipErrorInvalidValue
+AMD Radeon RX 7900 XTX: 8 GiB registrations, 400 synchronous 5.5 MiB copies per pass
+  touched    register  0.68 s (VmRSS + 0.00 GB, VmPin 0 kB)   first pass  25.76 GB/s   repeat  26.05 GB/s
+  untouched  register  2.73 s (VmRSS + 8.39 GB, VmPin 0 kB)   first pass  25.21 GB/s   repeat  25.25 GB/s
+  populated  register  2.64 s (VmRSS + 8.38 GB, VmPin 0 kB)   first pass  25.76 GB/s   repeat  26.15 GB/s
+  reg+write  register  2.99 s (VmRSS + 8.39 GB, VmPin 0 kB)   first pass   3.39 GB/s   repeat  26.31 GB/s
+  pop+write  register  2.74 s (VmRSS + 8.39 GB, VmPin 0 kB)   first pass  25.81 GB/s   repeat  26.43 GB/s
+  copy spanning two registrations: [HIP Runtime] Context error during hipMemcpyHtoD (range): hipErrorInvalidValue
+AMD Radeon RX 7900 XTX: 8 GiB registrations, 400 synchronous 5.5 MiB copies per pass
+  touched    register  0.70 s (VmRSS + 0.00 GB, VmPin 0 kB)   first pass  26.39 GB/s   repeat  26.41 GB/s
+  untouched  register  2.40 s (VmRSS + 8.39 GB, VmPin 0 kB)   first pass   3.98 GB/s   repeat  26.58 GB/s
+  populated  register  2.37 s (VmRSS + 8.39 GB, VmPin 0 kB)   first pass  26.24 GB/s   repeat  26.87 GB/s
+  reg+write  register  2.18 s (VmRSS + 8.36 GB, VmPin 0 kB)   first pass  24.62 GB/s   repeat  26.13 GB/s
+  pop+write  register  2.40 s (VmRSS + 8.42 GB, VmPin 0 kB)   first pass  25.70 GB/s   repeat  26.36 GB/s
+  copy spanning two registrations: [HIP Runtime] Context error during hipMemcpyHtoD (range): hipErrorInvalidValue
+AMD Radeon RX 7900 XTX: 8 GiB registrations, 400 synchronous 5.5 MiB copies per pass
+  touched    register  0.68 s (VmRSS + 0.00 GB, VmPin 0 kB)   first pass  26.01 GB/s   repeat  25.50 GB/s
+  untouched  register  2.22 s (VmRSS + 8.39 GB, VmPin 0 kB)   first pass  26.38 GB/s   repeat  26.86 GB/s
+  populated  register  2.33 s (VmRSS + 8.39 GB, VmPin 0 kB)   first pass  26.27 GB/s   repeat  26.39 GB/s
+  reg+write  register  2.14 s (VmRSS + 8.39 GB, VmPin 0 kB)   first pass  26.03 GB/s   repeat  26.48 GB/s
+  pop+write  register  2.36 s (VmRSS + 8.39 GB, VmPin 0 kB)   first pass  24.96 GB/s   repeat  25.02 GB/s
+  copy spanning two registrations: [HIP Runtime] Context error during hipMemcpyHtoD (range): hipErrorInvalidValue
