@@ -139,6 +139,25 @@ let () =
             "SKIP kernel on %s (%s): no registry path for shading languages\n%!"
             dev.Device.name
             dev.Device.framework
+      (* The direct PTX emitter lowers intrinsics from its own table and
+         never consults the registry either; pin that it refuses, naming
+         the intrinsic, rather than producing a wrong value. *)
+      | "CUDA/PTX" -> (
+          match run_on dev with
+          | () ->
+              check
+                (Printf.sprintf
+                   "CUDA/PTX (%s) now runs registry intrinsics: update this \
+                    test and the README"
+                   dev.Device.name)
+                false
+          | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error msg ->
+              check
+                (Printf.sprintf
+                   "KNOWN-GAP CUDA/PTX (%s) refuses: %s"
+                   dev.Device.name
+                   msg)
+                (contains msg "float_of_bits"))
       | _ -> (
           try run_on dev
           with e ->

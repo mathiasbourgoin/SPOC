@@ -5,8 +5,9 @@
 ; executable is compiled the way a downstream project compiles its kernels:
 ; the intrinsic library is BOTH a link dependency and a member of the pps
 ; list. It runs the kernel on every enumerated backend (Native and Interpreter
-; always; OpenCL, CUDA, HIP, Vulkan, Metal when present) and also checks the
-; registered module path and the device source. The negative counterpart, the
+; always; HIP, CUDA C, OpenCL, Metal when present), pins the refusal of the
+; direct PTX emitter, skips Vulkan/WebGPU visibly, and checks the registered
+; module path and the device source. The negative counterpart, the
 ; same call compiled WITHOUT the library in the pps list, is
 ; sarek/tests/negative/test_unlinked_intrinsic.ml.
 
