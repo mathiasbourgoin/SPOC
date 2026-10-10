@@ -50,6 +50,18 @@ intermediate narrowing (§1.3's new note). Separately, RADV returns `-0` for
 §1.2 rather than a relaxation, recorded at §13.6. **The other 18 shapes remain
 refused**: slice 3 is still where a refusal is lifted.
 
+**Amended 2026-10-10 (HIP, Regime B measured).** The f16×f16+f32→f32
+configuration is now lowered and admitted on HIP / gfx11 WMMA, under the bound of
+§5.2 and with the explicit opt-in of §6.1 (`Sarek_coopmat.accept_relaxed_accumulation
+~reason`; the launch gate and the interpreter refuse without it). §5.3's first
+construction (generator restricted, span invariant asserted) and both §5.4
+controls are implemented in `sarek/tests/e2e/test_coopmat_hip_e2e.ml`; on an RX
+7900 XTX the worst observed error is 0.044 of the bound at K = 128 and 0.0073 at
+K = 3072, repeated runs and three dispatch shapes are bit-identical, and the
+device matches the interpreter's sequential binary32 order on only 212 of 4096
+outputs. The GLSL emitter still refuses float components. See
+`specs/coopmat-hip-wmma.md`.
+
 **Read §0.1 first.** It is one paragraph and it is the argument every other
 choice here follows from.
 

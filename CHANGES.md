@@ -2,6 +2,38 @@
 
 ### Added
 
+- Cooperative matrix (`SCoopmat`) on HIP through the RDNA3 matrix units, and
+  an explicit opt-in for float accumulation (spec `specs/coopmat-hip-wmma.md`).
+  On gfx11 devices with 32-wide wavefronts the CUDA-C generator (shared by HIP)
+  lowers 16×16×16 `f16 × f16 + f32 → f32` to
+  `__builtin_amdgcn_wmma_f32_16x16x16_f16_w32` and the eight `u8/s8 × u8/s8 +
+  s32/u32` configurations to `__builtin_amdgcn_wmma_i32_16x16x16_iu8_w32`; the
+  HIP backend now reports these through `capabilities.coopmat`, and any other
+  HIP device (the gfx1036 iGPU, gfx10, gfx12, CDNA, wave64) is reported with no
+  configuration, so the launch gate refuses with the HIP rule in the message.
+  Float accumulation is bounded, not bit-identical (Regime B of
+  `docs/design/f16-relaxed-accuracy.md`): the launch gate and the interpreter
+  refuse it until the program calls
+  `Sarek_coopmat.accept_relaxed_accumulation ~reason`; with it, the interpreter
+  evaluates the f16 configuration in a fixed sequential binary32 order.
+  `Sarek_gemm.Coopmat` is a tiled f16 GEMM built from these statements
+  (`d = a·b + c`, row-major). Measured on an RX 7900 XTX (ROCm 7.2.4): the
+  integer configurations are bit-identical to the interpreter over all 65536
+  8-bit operand pairs; the f16 GEMM is within γ_K·(Σ|a·b| + |c|) of the exact
+  result at 64×64×128 and 256×256×3072 (worst 0.044 of the bound), repeatable,
+  and identical across tilings; at M = 256, K = 3072, N = 1024/3072/12288 it
+  runs at 20–24, 36–43 and 51–53 TFLOP/s (best tiling, median of two sessions)
+  against 3.2–3.3 for the scalar f32 `Sarek_gemm`, 10–16 for rocBLAS with f32
+  output and 26–84 for rocBLAS with f16 output
+  (`sarek-hip/test/bench_hip_coopmat_gemm.exe`,
+  `tools/probes/rocblas_gemm_f16.cpp`). The CUDA arm (`nvcuda::wmma`) is
+  compile-checked only — NVRTC, and HMMA/IMMA in sm_80 SASS — and stays
+  refused at launch because the CUDA backend does not probe `coopmat`. A
+  cooperative-matrix launch whose block is not a whole number of 32-wide waves
+  is refused. Metal, OpenCL, WGSL and PTX still refuse `SCoopmat`.
+  `Sarek_coopmat.device_support` gains `ds_evidence`; `TUint8` is
+  `unsigned char` in CUDA-C.
+
 - `Transfer.stage_to_device ?stream src ~dst ~dst_offset`: the cheap way to
   update a small vector that kernels read (at most
   `Transfer.max_staged_bytes` = 64 KiB per call). The source is copied into a
