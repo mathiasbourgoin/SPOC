@@ -92,6 +92,16 @@
  (instrumentation
   (backend bisect_ppx)))
 
+; The libnvrtc names dlopen'd and their order (CUDA 13 soname). Pure: the opener
+; is injected, no libnvrtc or device needed.
+
+(test
+ (name test_cuda_nvrtc_candidates)
+ (modules test_cuda_nvrtc_candidates)
+ (libraries sarek_cuda alcotest)
+ (instrumentation
+  (backend bisect_ppx)))
+
 ; FP-conformance guard for the nvrtc option array (#111). Pure checks need no
 ; toolchain; the FTZ hazard control uses host-side nvcc/nvdisasm (no device)
 ; and skips without them.
