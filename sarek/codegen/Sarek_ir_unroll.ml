@@ -17,16 +17,25 @@ let hint = ["unroll"]
 let enabled () =
   match Sys.getenv_opt "SAREK_AUTO_UNROLL" with Some "0" -> false | _ -> true
 
-(* Integer value of a constant bound: literals and [+ - *] of literals. *)
+(* Integer value of a constant bound: literals and [+ - *] of literals. Any
+   value outside the int32 range (where a device's int32 arithmetic would
+   wrap) gives up, so a wrapped bound is never mis-counted. *)
 let rec const_int (e : expr) : int64 option =
+  let in_range n =
+    if
+      Int64.compare n (Int64.of_int32 Int32.min_int) >= 0
+      && Int64.compare n (Int64.of_int32 Int32.max_int) <= 0
+    then Some n
+    else None
+  in
   let both a b f =
     match (const_int a, const_int b) with
-    | Some x, Some y -> Some (f x y)
+    | Some x, Some y -> in_range (f x y)
     | _ -> None
   in
   match e with
   | EConst (CInt32 n) -> Some (Int64.of_int32 n)
-  | EConst (CInt64 n) -> Some n
+  | EConst (CInt64 n) -> in_range n
   | ECast ((TInt32 | TInt64), e) -> const_int e
   | EBinop (Add, a, b) -> both a b Int64.add
   | EBinop (Sub, a, b) -> both a b Int64.sub
@@ -45,7 +54,11 @@ let trip_count start stop dir =
       else Some (Int64.to_int n + 1)
   | _ -> None
 
-let is_sarek_directive h = String.length h >= 6 && String.sub h 0 6 = "sarek."
+(* Sarek's own directives ([sarek.inline N], also written as two strings
+   ["sarek.inline"; "N"]) are not loop pragmas. *)
+let is_sarek_directive = function
+  | h :: _ -> String.length h >= 6 && String.sub h 0 6 = "sarek."
+  | [] -> false
 
 (* [walk ~under_pragma s] returns the annotated statement and the largest
    expansion (product of trip counts of hinted loops along one nesting path)
@@ -57,7 +70,13 @@ let rec walk ~under_pragma (s : stmt) : stmt * int =
   | SFor (v, start, stop, dir, body) ->
       let body, inner = walk ~under_pragma:false body in
       let loop = SFor (v, start, stop, dir, body) in
-      if under_pragma then (loop, inner)
+      if under_pragma then
+        (* The author's pragma governs this loop. Count it as fully unrolled
+           when its trip count is known, so an automatic hint around it still
+           respects max_expansion. *)
+        match trip_count start stop dir with
+        | Some n when n >= 1 -> (loop, n * inner)
+        | _ -> (loop, inner)
       else begin
         match trip_count start stop dir with
         | Some n when n >= 1 && n * inner <= max_expansion ->
@@ -65,8 +84,7 @@ let rec walk ~under_pragma (s : stmt) : stmt * int =
         | _ -> (loop, inner)
       end
   | SPragma (h, body) ->
-      (* Sarek's own directives ([sarek.inline N]) are not loop pragmas. *)
-      let explicit = not (List.for_all is_sarek_directive h) in
+      let explicit = not (is_sarek_directive h) in
       let body, e = walk ~under_pragma:(under_pragma || explicit) body in
       (SPragma (h, body), e)
   | SSeq stmts ->

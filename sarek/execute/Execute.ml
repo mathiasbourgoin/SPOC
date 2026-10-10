@@ -948,7 +948,8 @@ let check_interpreter_capabilities (ir : Sarek_ir_types.kernel) : unit =
     kernel whose intrinsic is missing fails codegen (not memoised). Replacing an
     intrinsic's implementation AFTER a kernel using it has launched is not seen
     by that kernel until {!clear_launch_cache} is called. Backend debug logging
-    inside [generate_source] likewise happens on the first launch only.
+    inside [generate_source] likewise happens on the first launch only, and so
+    does the read of [SAREK_AUTO_UNROLL] (Sarek_ir_unroll).
 
     LIFETIME AND CONCURRENCY. The table is weak in the IR (an ephemeron), and
     its data never refers to the IR, so an entry dies with its kernel. One mutex

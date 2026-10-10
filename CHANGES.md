@@ -65,8 +65,9 @@
 
 - `lsr` compiles to one unsigned shift on every backend. It is now its own IR
   operator (`Lshr32`/`Lshr64`) instead of a 4–5 operation expansion over the
-  arithmetic shift: CUDA/HIP, OpenCL and Metal emit
-  `((int)((unsigned)(a) >> (b)))`, GLSL `int(uint(a) >> uint(b))`, WGSL
+  arithmetic shift: CUDA/HIP emits `((int)((unsigned int)(a) >> (b)))`,
+  OpenCL and Metal `((int)((uint)(a) >> (b)))` (64-bit: `unsigned long long`
+  / `ulong`), GLSL `int(uint(a) >> uint(b))`, WGSL
   `bitcast<i32>(bitcast<u32>(a) >> u32(b))`, PTX `shr.b32`/`shr.b64`. Results
   are unchanged for shift amounts 0..width-1 (others stay unspecified, as in
   OCaml), and an `lsr` operand no longer has to be a variable or a constant.
@@ -81,7 +82,8 @@
   `[[unroll]]` with `GL_EXT_control_flow_attributes` in GLSL, nothing in WGSL
   and PTX), as long as the nest they head expands to at most 64 copies. Results
   are unchanged. An explicit `pragma` on the loop takes precedence
-  (`pragma ["unroll 1"]` opts out) and `SAREK_AUTO_UNROLL=0` disables the hint.
+  (`pragma ["unroll 1"]` opts out) and `SAREK_AUTO_UNROLL=0`, set before a
+  kernel's first launch, disables the hint.
   On spoc_llm's current matvec kernels the hint changes nothing on gfx1100:
   clang -O3 already unrolls those loops once `lsr` is a native shift.
 
