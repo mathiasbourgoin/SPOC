@@ -20,7 +20,12 @@ module Device = Spoc_core.Device
 
 let backend_name = "LaunchMemoProbe"
 
-let codegen_calls = ref 0
+let codegen_calls = Atomic.make 0
+
+(* Runs inside generate_source, before it returns (FR-011 race test). *)
+let codegen_hook : (unit -> unit) ref = ref (fun () -> ())
+
+let launched_lock = Mutex.create ()
 
 let codegen_mode : [`Ok | `None | `Raise] ref = ref `Ok
 
@@ -39,7 +44,8 @@ module Probe : BACKEND = struct
   let supported_source_langs = [CUDA_Source]
 
   let generate_source ?block ?soa_params:_ (ir : Sarek_ir_types.kernel) =
-    incr codegen_calls ;
+    Atomic.incr codegen_calls ;
+    !codegen_hook () ;
     match !codegen_mode with
     | `None -> None
     | `Raise -> failwith "probe codegen refused"
@@ -57,7 +63,7 @@ module Probe : BACKEND = struct
 
   let run_source ~source ~lang:_ ~kernel_name:_ ~block:_ ~grid:_ ~shared_mem:_ _
       =
-    launched := source :: !launched
+    Mutex.protect launched_lock (fun () -> launched := source :: !launched)
 
   module Intrinsics = Intrinsic_registry.Make ()
 
@@ -255,7 +261,8 @@ let launch ?(block = 64) ~device ir args =
 
 let reset () =
   Execute.clear_launch_cache () ;
-  codegen_calls := 0 ;
+  Atomic.set codegen_calls 0 ;
+  (codegen_hook := fun () -> ()) ;
   codegen_mode := `Ok ;
   launched := []
 
@@ -268,7 +275,7 @@ let test_repeated_launch_generates_once () =
   for i = 1 to 3 do
     launch ~device:dev ir [Execute.Int32 (Int32.of_int i)]
   done ;
-  check int "generate_source calls" 1 !codegen_calls ;
+  check int "generate_source calls" 1 (Atomic.get codegen_calls) ;
   match !launched with
   | [a; b; c] ->
       check bool "launches share one physical source" true (a == b && b == c)
@@ -283,7 +290,7 @@ let test_distinct_ir_is_a_miss () =
   check bool "structurally equal" true (ir1 = ir2) ;
   launch ~device:dev ir1 [Execute.Int32 1l] ;
   launch ~device:dev ir2 [Execute.Int32 1l] ;
-  check int "one codegen per physical IR" 2 !codegen_calls
+  check int "one codegen per physical IR" 2 (Atomic.get codegen_calls)
 
 (* AC-3 (block part) *)
 let test_block_is_part_of_the_key () =
@@ -292,7 +299,7 @@ let test_block_is_part_of_the_key () =
   launch ~block:64 ~device:dev ir [Execute.Int32 1l] ;
   launch ~block:128 ~device:dev ir [Execute.Int32 1l] ;
   launch ~block:64 ~device:dev ir [Execute.Int32 1l] ;
-  check int "one codegen per block" 2 !codegen_calls ;
+  check int "one codegen per block" 2 (Atomic.get codegen_calls) ;
   match !launched with
   | [s64b; s128; s64a] ->
       check bool "block 64 reused" true (s64a == s64b) ;
@@ -350,10 +357,10 @@ let test_failures_not_memoised () =
     | () -> fail "None codegen was skipped"
     | exception Sarek_execute.Execute_error.Execution_error _ -> ()
   done ;
-  check int "every failing launch ran codegen" 4 !codegen_calls ;
+  check int "every failing launch ran codegen" 4 (Atomic.get codegen_calls) ;
   codegen_mode := `Ok ;
   launch ~device:dev ir [Execute.Int32 1l] ;
-  check int "then succeeds and generates" 5 !codegen_calls
+  check int "then succeeds and generates" 5 (Atomic.get codegen_calls)
 
 (* AC-9 *)
 let test_clear_and_hooks () =
@@ -362,15 +369,15 @@ let test_clear_and_hooks () =
   launch ~device:dev ir [Execute.Int32 1l] ;
   Execute.clear_launch_cache () ;
   launch ~device:dev ir [Execute.Int32 1l] ;
-  check int "clear_launch_cache forces codegen" 2 !codegen_calls ;
+  check int "clear_launch_cache forces codegen" 2 (Atomic.get codegen_calls) ;
   Cache_hooks.notify_clear_all () ;
   launch ~device:dev ir [Execute.Int32 1l] ;
-  check int "notify_clear_all forces codegen" 3 !codegen_calls ;
+  check int "notify_clear_all forces codegen" 3 (Atomic.get codegen_calls) ;
   Cache_hooks.notify_device_destroy ~backend:"HIP" 0 ;
   launch ~device:dev ir [Execute.Int32 1l] ;
-  check int "device destroy forces codegen" 4 !codegen_calls ;
+  check int "device destroy forces codegen" 4 (Atomic.get codegen_calls) ;
   launch ~device:dev ir [Execute.Int32 1l] ;
-  check int "and is memoised again" 4 !codegen_calls
+  check int "and is memoised again" 4 (Atomic.get codegen_calls)
 
 (* FR-005: the memo is weak in the IR. *)
 let test_memo_does_not_retain_ir () =
@@ -383,6 +390,89 @@ let test_memo_does_not_retain_ir () =
   Gc.full_major () ;
   Gc.full_major () ;
   check bool "IR collected after its last launch" false (Weak.check w 0)
+
+(* EC-2: same IR on two devices of one backend: the source is device
+   independent, so one codegen. *)
+let test_two_devices_share_source () =
+  reset () ;
+  let caps = caps () in
+  let d0 = device ~id:0 ~capabilities:caps ()
+  and d1 = device ~id:1 ~capabilities:caps () in
+  let ir = kernel Sarek_ir_types.TInt32 in
+  launch ~device:d0 ir [Execute.Int32 1l] ;
+  launch ~device:d1 ir [Execute.Int32 2l] ;
+  check int "one codegen for both devices" 1 (Atomic.get codegen_calls)
+
+(* FR-011: a clear that lands while a source is being generated must not let
+   that source be installed afterwards. *)
+let test_clear_during_codegen_not_installed () =
+  reset () ;
+  let dev = device () and ir = kernel Sarek_ir_types.TInt32 in
+  codegen_hook := Execute.clear_launch_cache ;
+  launch ~device:dev ir [Execute.Int32 1l] ;
+  (codegen_hook := fun () -> ()) ;
+  launch ~device:dev ir [Execute.Int32 1l] ;
+  check int "regenerated after the racing clear" 2 (Atomic.get codegen_calls) ;
+  launch ~device:dev ir [Execute.Int32 1l] ;
+  check int "then memoised" 2 (Atomic.get codegen_calls)
+
+(* Replacing a backend under the same name (Framework_registry uses
+   Hashtbl.replace) must not hand the replacement its predecessor's source. *)
+module Probe_v2 : BACKEND = struct
+  include Probe
+
+  let generate_source ?block:_ ?soa_params:_ (_ : Sarek_ir_types.kernel) =
+    Atomic.incr codegen_calls ;
+    Some (String.concat "" ["// v2"; "\n"])
+end
+
+let test_replaced_backend_regenerates () =
+  reset () ;
+  let dev = device () and ir = kernel Sarek_ir_types.TInt32 in
+  launch ~device:dev ir [Execute.Int32 1l] ;
+  Framework_registry.register_backend ~priority:1 (module Probe_v2) ;
+  Fun.protect
+    ~finally:(fun () ->
+      Framework_registry.register_backend ~priority:1 (module Probe))
+    (fun () ->
+      launch ~device:dev ir [Execute.Int32 1l] ;
+      check
+        int
+        "replacement generated its own source"
+        2
+        (Atomic.get codegen_calls) ;
+      match !launched with
+      | latest :: _ -> check string "replacement's source ran" "// v2\n" latest
+      | [] -> fail "no launch recorded")
+
+(* FR-006 / EC-4: concurrent launches from several domains all receive the one
+   installed physical source. *)
+let test_domains_share_one_source () =
+  reset () ;
+  let dev = device () and ir = kernel Sarek_ir_types.TInt32 in
+  let per_domain = 200 in
+  let worker () =
+    for i = 1 to per_domain do
+      launch ~device:dev ir [Execute.Int32 (Int32.of_int i)]
+    done
+  in
+  let ds = List.init 4 (fun _ -> Domain.spawn worker) in
+  List.iter Domain.join ds ;
+  let all = !launched in
+  check int "every launch recorded" (4 * per_domain) (List.length all) ;
+  check
+    bool
+    "at most one codegen per racing domain"
+    true
+    (Atomic.get codegen_calls <= 4) ;
+  match all with
+  | first :: rest ->
+      check
+        bool
+        "one physical source for every launch"
+        true
+        (List.for_all (fun s -> s == first) rest)
+  | [] -> fail "no launches"
 
 let () =
   run
@@ -413,5 +503,21 @@ let () =
             "memo does not retain the IR"
             `Quick
             test_memo_does_not_retain_ir;
+          test_case
+            "two devices share one source"
+            `Quick
+            test_two_devices_share_source;
+          test_case
+            "clear during codegen is not installed"
+            `Quick
+            test_clear_during_codegen_not_installed;
+          test_case
+            "replaced backend regenerates"
+            `Quick
+            test_replaced_backend_regenerates;
+          test_case
+            "domains share one source"
+            `Quick
+            test_domains_share_one_source;
         ] );
     ]

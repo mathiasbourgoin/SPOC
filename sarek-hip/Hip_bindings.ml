@@ -82,6 +82,11 @@ let hipSetDevice_lazy =
 
 let hipSetDevice d = Lazy.force hipSetDevice_lazy d
 
+let hipGetDevice_lazy =
+  foreign_hip_lazy "hipGetDevice" (ptr int @-> returning hip_result)
+
+let hipGetDevice p = Lazy.force hipGetDevice_lazy p
+
 let hipDeviceGetName_lazy =
   foreign_hip_lazy
     "hipDeviceGetName"

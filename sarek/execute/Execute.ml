@@ -928,7 +928,7 @@ let check_interpreter_capabilities (ir : Sarek_ir_types.kernel) : unit =
     a PPX kernel hands the same [body_ir] record to every launch, so [==] is a
     sound and free equality. A structurally equal IR rebuilt per launch is
     simply a miss and runs exactly as before. Then, per IR:
-    - generated source by (backend name, [block], [soa_params]) — the inputs of
+    - generated source by (backend, [block], [soa_params]) — the inputs of
       [generate_source] besides the IR ([block] is read by Vulkan; [soa_params]
       is derived from the arguments and is non-empty only on CUDA/PTX);
     - a passed capability check by (device id, the device's [capabilities]
@@ -974,9 +974,27 @@ end
 
 module Launch_memo = Ephemeron.K1.Make (Physical_kernel)
 
+(* The backend is identified by its [generate_source] closure, compared
+   PHYSICALLY, not by its name: [Framework_registry.register_backend] replaces
+   a backend registered under the same name, and the replacement must not be
+   handed its predecessor's source. *)
+type source_key = {
+  codegen : Obj.t;
+  block : Framework_sig.dims;
+  soa_params : string list;
+}
+
+let same_source_key a b =
+  a.codegen == b.codegen && a.block = b.block && a.soa_params = b.soa_params
+
+let find_source key sources =
+  List.find_map
+    (fun (k, s) -> if same_source_key k key then Some s else None)
+    sources
+
 type launch_entry = {
-  mutable sources : ((string * Framework_sig.dims * string list) * string) list;
-      (** (backend name, block, soa_params) -> generated source *)
+  mutable sources : (source_key * string) list;
+      (** generated source per {!source_key} *)
   mutable verified : (int * Framework_sig.capabilities) list;
       (** (device id, physical capabilities record) that passed the check *)
 }
@@ -1039,12 +1057,12 @@ let check_device_capabilities_memo ~(device : Device.t)
     not memoised. *)
 let generate_source_memo (module B : Framework_sig.BACKEND) ~block ~soa_params
     (ir : Sarek_ir_types.kernel) : string option =
-  let key = (B.name, block, soa_params) in
+  let key = {codegen = Obj.repr B.generate_source; block; soa_params} in
   let cached, generation =
     Mutex.protect launch_memo_lock (fun () ->
         let hit =
           match Launch_memo.find_opt launch_memo ir with
-          | Some e -> List.assoc_opt key e.sources
+          | Some e -> find_source key e.sources
           | None -> None
         in
         (hit, !launch_memo_generation))
@@ -1059,7 +1077,7 @@ let generate_source_memo (module B : Framework_sig.BACKEND) ~block ~soa_params
               if !launch_memo_generation <> generation then Some source
               else
                 let e = memo_entry ir in
-                match List.assoc_opt key e.sources with
+                match find_source key e.sources with
                 | Some first -> Some first
                 | None ->
                     e.sources <- (key, source) :: e.sources ;

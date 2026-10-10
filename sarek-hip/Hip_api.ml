@@ -201,6 +201,13 @@ module Device = struct
     set_current_id dev.id ;
     check "hipSetDevice" (hipSetDevice dev.id)
 
+  (* The device the HIP runtime has selected for this thread, as the driver
+     reports it (not the OCaml-side tracker). *)
+  let driver_current () =
+    let d = allocate int (-1) in
+    check "hipGetDevice" (hipGetDevice d) ;
+    !@d
+
   let synchronize dev =
     set_current dev ;
     check "hipDeviceSynchronize" (hipDeviceSynchronize ()) ;
@@ -269,14 +276,25 @@ module Memory = struct
      restored: a finaliser must leave no trace on the code it interrupted. *)
   let free buf =
     let prev = Device.current_id () in
-    Device.set_current buf.device ;
     Fun.protect
       ~finally:(fun () ->
         if prev >= 0 && prev <> buf.device.Device.id then begin
           Device.set_current_id prev ;
-          ignore (hipSetDevice prev)
+          match hipSetDevice prev with
+          | HIP_SUCCESS -> ()
+          | err ->
+              (* Cannot raise from [finally] (and the caller is usually a
+                 finaliser that swallows exceptions): say so instead. *)
+              Spoc_core.Log.errorf
+                Spoc_core.Log.Device
+                "hipSetDevice %d (restoring the device selected before a free) \
+                 failed: %s"
+                prev
+                (string_of_hip_result err)
         end)
-      (fun () -> check "hipFree" (hipFree buf.ptr))
+      (fun () ->
+        Device.set_current buf.device ;
+        check "hipFree" (hipFree buf.ptr))
 
   (* The [Sys.opaque_identity] here is the same keep-alive the sibling
      [load_module_from_code_object] below applies to its code bigarray: the

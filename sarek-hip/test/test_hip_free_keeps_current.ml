@@ -37,7 +37,15 @@ let () =
       b.H.Device.id ;
     exit 1
   end ;
-  (* The driver agrees: an allocation now lands on [b] without reselecting. *)
-  let buf2 = H.Memory.alloc b 16 Bigarray.float32 in
-  H.Memory.free buf2 ;
+  (* The tracker is not enough: the DRIVER must have [b] selected too, or the
+     next module launch on [b] fails exactly as the bug did. *)
+  let drv = H.Device.driver_current () in
+  if drv <> b.H.Device.id then begin
+    Printf.printf
+      "test_hip_free_keeps_current FAILED: the driver has device %d selected \
+       after the free (tracker says %d)\n"
+      drv
+      cur ;
+    exit 1
+  end ;
   print_endline "test_hip_free_keeps_current PASSED"

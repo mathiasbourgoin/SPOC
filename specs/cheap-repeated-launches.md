@@ -87,7 +87,7 @@ As a caller that replaces an intrinsic implementation after kernels have run, I 
 | C-4 | US-2 | Codegen reads mutable registries not in the key | Registries are populated at module initialisation and only grow; a missing intrinsic raises and is not memoised. Replacing an implementation after first use is the one case not tracked: documented on `run`/`run_vectors`, remedied by `clear_launch_cache` (US-5). |
 | C-5 | US-2 | Ordering of argument-dependent checks | `check_launch_args` runs on every launch first, then `soa_param_names`, then the memo lookup. |
 | C-6 | US-2 | Codegen side effects (Vulkan debug log) vanish on a hit; codegen refusals | Debug log only on the miss — accepted, documented. Refusals depend only on key components; failures are never memoised, so they re-raise. |
-| C-7 | US-2 | Ephemeron mechanics: hash, equality, which part is weak | Weak key = IR only, equality `==`, hash = `Hashtbl.hash` of (kern_name, kern_params) (bounded, plain data). Value = small list of (backend, block, soa_params) → source and (device id, capabilities) → verified; values never reference the IR. |
+| C-7 | US-2 | Ephemeron mechanics: hash, equality, which part is weak | Weak key = IR only (review round 1: the backend part of the source key is the physical `generate_source` closure, since a backend can be re-registered under the same name), equality `==`, hash = `Hashtbl.hash` of (kern_name, kern_params) (bounded, plain data). Value = small list of (backend, block, soa_params) → source and (device id, capabilities) → verified; values never reference the IR. |
 | C-8 | US-2 | Concurrency (domains) | One mutex around lookup/insert only; codegen runs outside it. A racing duplicate build is allowed; the first installed entry wins and is returned, so callers still share one physical string. A generation counter bumped by clear drops builds that started before a clear. |
 | C-9 | all | jsoo build compiles Execute.ml | Only `Mutex`, `Ephemeron`, `Hashtbl` from Stdlib are used; QA builds the jsoo smoke target. |
 | C-10 | US-3 | Physical-string memo hits only for reused strings; `Bytes.unsafe_to_string` aliasing | Only reused strings benefit (Execute now reuses them); others pay MD5 exactly as before. Mutating a string obtained by `Bytes.unsafe_to_string` violates the Stdlib contract; documented as a precondition in `Compile_cache.mli`. |
@@ -130,6 +130,8 @@ As a caller that replaces an intrinsic implementation after kernels have run, I 
 - AC-8 [US-4]: HIP e2e suites and the benchmark's result checks pass.
 - AC-9 [US-5, C-14]: `clear_launch_cache` and `notify_clear_all` → next launch regenerates.
 - AC-11 [US-4, FR-013]: free a buffer of device 0 with device 1 selected → device 1 still selected.
+- AC-12 [US-2, FR-006, FR-011, review]: a clear inside codegen is not installed; 4 domains launching one IR all receive one physical source.
+- AC-13 [US-2, review]: a backend re-registered under the same name generates its own source (the source key is the backend's `generate_source` closure, not its name).
 - AC-10 [US-1]: benchmark shows lower host µs/launch on HIP than the baseline in the intake brief.
 
 ## Edge Cases
@@ -145,8 +147,8 @@ As a caller that replaces an intrinsic implementation after kernels have run, I 
 
 ## Runnable Checks
 
-- CHECK-1 [AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-9]: `dune exec sarek/framework/test/test_launch_memo.exe` → exit 0.
-- CHECK-2 [AC-7]: `dune exec spoc/framework/test/test_compile_cache.exe` (extended) → exit 0.
+- CHECK-1 [AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-9, AC-12, AC-13]: `dune build @sarek/execute/test/runtest` (runs `sarek/execute/test/test_launch_memo.ml`) → exit 0.
+- CHECK-2 [AC-7]: `dune build @spoc/framework/test/runtest` (runs the extended `test_compile_cache.ml`) → exit 0.
 - CHECK-3 [AC-8]: `dune build @sarek-hip/test/e2e-hip` on a HIP host → all suites pass.
 - CHECK-4 [AC-10]: `dune exec sarek-hip/test/bench_launch_overhead.exe` → numbers recorded before/after in the PR.
 - CHECK-6 [AC-11]: `dune exec sarek-hip/test/test_hip_free_keeps_current.exe` on a 2-HIP-device host → PASSED (red without the fix: verified).
@@ -180,7 +182,9 @@ As a caller that replaces an intrinsic implementation after kernels have run, I 
 {"record":"acceptance-criterion","id":"AC-9","for":["FR-010","FR-011"]}
 {"record":"acceptance-criterion","id":"AC-10","for":["FR-012","FR-006"]}
 {"record":"acceptance-criterion","id":"AC-11","for":["FR-013"]}
-{"record":"check","id":"CHECK-1","for":["AC-1","AC-2","AC-3","AC-4","AC-5","AC-6","AC-9"]}
+{"record":"acceptance-criterion","id":"AC-12","for":["FR-006","FR-011"]}
+{"record":"acceptance-criterion","id":"AC-13","for":["FR-001"]}
+{"record":"check","id":"CHECK-1","for":["AC-1","AC-2","AC-3","AC-4","AC-5","AC-6","AC-9","AC-12","AC-13"]}
 {"record":"check","id":"CHECK-2","for":["AC-7"]}
 {"record":"check","id":"CHECK-3","for":["AC-8"]}
 {"record":"check","id":"CHECK-4","for":["AC-10"]}
@@ -190,5 +194,5 @@ As a caller that replaces an intrinsic implementation after kernels have run, I 
 
 ## Entities
 
-- `launch memo`: Execute's table from physical kernel IR to its generated sources and verified capability records.
+- `launch memo`: Execute's table from physical kernel IR to its generated sources (keyed by the backend's physical `generate_source` closure, block and soa_params) and verified capability records.
 - `digest memo`: Compile_cache's table from a physical source string to its MD5 hex digest.
