@@ -23,10 +23,16 @@
   `mov.b32`; Native and Interpreter run OCaml's own functions (a signalling
   NaN is quieted there, as in OCaml, because float32 is carried as a double).
   The GLSL, WGSL and PTX lowerings only apply to the stdlib `Int32` path, so
-  another module's `float_of_bits` is not captured. Covered by
-  `sarek/tests/e2e/test_int32_bitcasts.ml` (decode, encode, in-kernel round
-  trip and a packed-record decode over ±0, ±inf, denormals, max finite, a NaN
-  payload and a signalling NaN), which passed 2026-10-10 on HIP, OpenCL,
+  another module's `float_of_bits` is not captured. The C-family backends now print
+  the literal `Int32.min_int` as `(-2147483647 - 1)` and WGSL as
+  `(-2147483647i - 1i)`: `-2147483648` is a `long` in C/OpenCL/MSL, which
+  `as_float` rejects, and `-2147483648i` does not fit `i32`. Covered by
+  `sarek/tests/e2e/test_int32_bitcasts.ml` over ±0, ±inf, denormals, max
+  finite, a NaN payload and a signalling NaN: decode and encode (NaN rows
+  checked for NaN-ness, since the host widens float32 to a double), a round
+  trip inside one kernel and one through a float32 device buffer across two
+  launches (bit-exact, signalling NaN included, on every GPU), a packed-record
+  decode, and a `0x80000000l` literal operand. It passed 2026-10-10 on HIP, OpenCL,
   Vulkan and CUDA/PTX via ZLUDA (RX 7900 XTX and Ryzen 7950X iGPU), on Metal
   and OpenCL (Apple M4), and on Native and Interpreter; and by
   `sarek/tests/unit/test_int32_bitcasts_codegen.ml` (spellings, glslang/naga/

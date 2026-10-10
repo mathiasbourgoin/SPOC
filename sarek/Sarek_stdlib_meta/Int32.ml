@@ -89,7 +89,8 @@ let%sarek_intrinsic (max : int32 -> int32 -> int32) =
  * [Stdlib.Int32.float_of_bits] / [Stdlib.Int32.bits_of_float]: the 32 bits are
  * reused unchanged, there is no numeric conversion. A device moves the bits
  * through a register. Measured (sarek/tests/e2e/test_int32_bitcasts.ml,
- * 2026-10-10): an in-kernel int32 -> float32 -> int32 round trip returned
+ * 2026-10-10): an int32 -> float32 -> int32 round trip, both inside one
+ * kernel and through a float32 device buffer across two launches, returned
  * every tested pattern unchanged - +-0, +-inf, denormals, max finite, a
  * quiet-NaN payload and a signalling NaN - on HIP, OpenCL, Vulkan and
  * CUDA/PTX (ZLUDA) on an RX 7900 XTX and a Ryzen 7950X iGPU, and on Metal and

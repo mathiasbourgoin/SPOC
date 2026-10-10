@@ -543,6 +543,10 @@ let is_array_shaped_operand = function
   | _ -> false
 
 let rec gen_expr st buf = function
+  | EConst (CInt32 n) when n = Int32.min_int ->
+      (* [-2147483648i] is negation applied to [2147483648i], which does not
+         fit i32 and is rejected; spell min_int as an i32 expression. *)
+      Buffer.add_string buf "(-2147483647i - 1i)"
   | EConst (CInt32 n) -> Buffer.add_string buf (Int32.to_string n ^ "i")
   | EConst (CInt64 _) ->
       Codegen_error.raise_error

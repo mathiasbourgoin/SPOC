@@ -66,6 +66,17 @@ let roundtrip_kernel =
       if tid < n then
         c.(tid) <- Int32.bits_of_float (Int32.float_of_bits a.(tid))]
 
+(* A literal operand: Int32.min_int is the -0.0 pattern, and a C-family or
+   WGSL backend that printed it as [-2147483648] handed the reinterpretation a
+   64-bit (C) or out-of-range (WGSL) operand that does not compile. *)
+let literal_kernel =
+  [%kernel
+    fun (c : int32 vector) (n : int32) ->
+      let open Std in
+      let tid = global_thread_id in
+      if tid < n then
+        c.(tid) <- Int32.bits_of_float (Int32.float_of_bits 0x80000000l)]
+
 (* rec_.(2i) holds an f32 scale as its bit pattern, rec_.(2i+1) a small integer
    quantum; out.(i) = scale *. float quantum. *)
 let record_kernel =
@@ -199,6 +210,62 @@ let run_roundtrip dev ir =
         (Vector.get c i)
         (expected i))
 
+(* Through memory: decode into a float32 vector in one launch, encode it back
+   in a second. The float32 bits are stored to and reloaded from device memory,
+   so the compiler cannot fold the pair away as it may in [roundtrip]. The
+   intermediate vector is never read with [Vector.get], whose widening to a
+   double would quiet a signalling NaN on the host. *)
+let run_memory dec enc dev _ =
+  let a = Vector.create Vector.int32 n in
+  let b = Vector.create Vector.float32 n in
+  let c = Vector.create Vector.int32 n in
+  Array.iteri
+    (fun i x ->
+      Vector.set a i x ;
+      Vector.set c i 0x5a5a5a5al)
+    patterns ;
+  launch dev dec [Execute.Vec a; Execute.Vec b; Execute.Int n] ;
+  launch dev enc [Execute.Vec b; Execute.Vec c; Execute.Int n] ;
+  let expected i =
+    let x = patterns.(i) in
+    if is_host_float dev && x = snan then
+      Int32.bits_of_float (Int32.float_of_bits x)
+    else x
+  in
+  compare_rows
+    "memory"
+    (fun i -> Vector.get c i = expected i)
+    (fun i ->
+      Printf.sprintf
+        "got 0x%08lx, expected 0x%08lx"
+        (Vector.get c i)
+        (expected i))
+
+let run_literal dev ir =
+  let c = Vector.create Vector.int32 n in
+  for i = 0 to n - 1 do
+    Vector.set c i 0x5a5a5a5al
+  done ;
+  launch dev ir [Execute.Vec c; Execute.Int n] ;
+  compare_rows
+    "literal"
+    (fun i -> Vector.get c i = 0x80000000l)
+    (fun i -> Printf.sprintf "got 0x%08lx" (Vector.get c i))
+
+(* The device source each GPU framework would compile, generated up front: a
+   codegen exception is a regression of this feature and must FAIL, whereas a
+   device that cannot launch at all is an environment matter and is reported. *)
+let generator (dev : Device.t) =
+  let open Sarek_codegen in
+  match dev.Device.framework with
+  | "CUDA" | "HIP" -> Some Sarek_ir_cuda.generate
+  | "OpenCL" -> Some Sarek_ir_opencl.generate
+  | "Metal" -> Some Sarek_ir_metal.generate
+  | "Vulkan" -> Some (fun k -> Sarek_ir_glsl.generate k)
+  | "WebGPU" -> Some (fun k -> Sarek_ir_wgsl.generate k)
+  | "CUDA/PTX" -> Some (fun k -> Sarek_ir_ptx.generate k)
+  | _ -> None
+
 let scales =
   Array.init n (fun i -> Int32.bits_of_float (0.5 +. (float_of_int i *. 0.25)))
 
@@ -237,6 +304,10 @@ let () =
       ("encode", run_encode, ir_of encode_kernel "encode");
       ("roundtrip", run_roundtrip, ir_of roundtrip_kernel "roundtrip");
       ("record", run_record, ir_of record_kernel "record");
+      ( "memory",
+        run_memory (ir_of decode_kernel "decode") (ir_of encode_kernel "encode"),
+        ir_of decode_kernel "decode" );
+      ("literal", run_literal, ir_of literal_kernel "literal");
     ]
   in
   let devs = Device.init () in
@@ -246,6 +317,22 @@ let () =
   Array.iter
     (fun (dev : Device.t) ->
       let host = is_host_float dev in
+      (match generator dev with
+      | None -> ()
+      | Some gen ->
+          List.iter
+            (fun (label, _, ir) ->
+              match gen ir with
+              | _ -> ()
+              | exception e ->
+                  Printf.printf
+                    "  %-11s %-34s %-9s FAIL (codegen raised: %s)\n%!"
+                    dev.Device.framework
+                    dev.Device.name
+                    label
+                    (Printexc.to_string e) ;
+                  failed := true)
+            cases) ;
       List.iter
         (fun (label, runner, ir) ->
           match runner dev ir with

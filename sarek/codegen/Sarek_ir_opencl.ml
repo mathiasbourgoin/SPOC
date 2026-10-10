@@ -177,7 +177,7 @@ let opencl_thread_intrinsic = function
 (** {1 Expression Generation} *)
 
 let rec gen_expr st buf = function
-  | EConst (CInt32 n) -> Buffer.add_string buf (Int32.to_string n)
+  | EConst (CInt32 n) -> Buffer.add_string buf (Dispatch.c_int32_literal n)
   | EConst (CInt64 n) -> Buffer.add_string buf (Int64.to_string n ^ "L")
   | EConst (CFloat32 f) ->
       let s = format_float f in

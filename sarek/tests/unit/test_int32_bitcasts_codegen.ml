@@ -138,6 +138,31 @@ let ir_kernel ?(extra = []) path : kernel =
             ] );
   }
 
+(* float_of_bits applied to the literal Int32.min_int (the -0.0 pattern). The
+   C family used to print it as [-2147483648] — unary minus on a [long] — so
+   [as_float] saw an 8-byte operand; WGSL's [-2147483648i] does not fit i32. *)
+let literal_kernel : kernel =
+  let tid = var "tid" 3 TInt32 in
+  {
+    default_kernel with
+    kern_name = "bitcast_literal";
+    kern_params = [param "b" 1 TFloat32; param "c" 2 TInt32];
+    kern_body =
+      SLet
+        ( tid,
+          EIntrinsic ([], "global_thread_id", []),
+          SSeq
+            [
+              SAssign
+                ( LArrayElem ("b", EVar tid),
+                  EIntrinsic
+                    ( ["Sarek_stdlib"; "Int32"],
+                      "float_of_bits",
+                      [EConst (CInt32 Int32.min_int)] ) );
+              SAssign (LArrayElem ("c", EVar tid), EConst (CInt32 Int32.min_int));
+            ] );
+  }
+
 let backends : (string * (kernel -> string) * string list * string list) list =
   [
     ("CUDA", Sarek_ir_cuda.generate, ["__int_as_float("; "__float_as_int("], []);
@@ -302,7 +327,11 @@ let check_validators () =
                   label
                   bad
                   good)
-          [("PPX", ppx_ir); ("IR", ir_kernel ["Sarek_stdlib"; "Int32"])]
+          [
+            ("PPX", ppx_ir);
+            ("IR", ir_kernel ["Sarek_stdlib"; "Int32"]);
+            ("min_int literal", literal_kernel);
+          ]
       end)
     validators
 
