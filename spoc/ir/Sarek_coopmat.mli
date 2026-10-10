@@ -50,5 +50,36 @@ val verdict :
   support:device_support option -> config -> Sarek_capability.verdict
 
 (** The {!Sarek_capability.Device_optional} record for a device that provides no
-    cooperative-matrix support at all, or none matching the request. *)
-val device_lacks_config : config -> Sarek_capability.t
+    cooperative-matrix support at all, or none matching the request. [evidence]
+    is the probe's {!device_support.ds_evidence}; {!verdict} passes it, so the
+    refusal says which backend rule refused this device. *)
+val device_lacks_config : ?evidence:string -> config -> Sarek_capability.t
+
+(** {1 The accuracy policy (docs/design/f16-relaxed-accuracy.md §6.1)}
+
+    A float configuration is {!Relaxed_bounded}: the hardware chooses the order
+    of the additions, so its result is within a derived bound of the exact value
+    but not bit-identical to the interpreter. The owner's decision of 2026-07-27
+    is that such a deviation needs an EXPLICIT opt-in and that the launch fails
+    without it; these three values are that opt-in. *)
+
+(** [accept_relaxed_accumulation ~reason] admits the float configurations that
+    have a derived bound (today only [f16 * f16 + f32 -> f32]) for the rest of
+    the process. One-way: there is no withdrawal, so a capability check that has
+    passed stays valid. The first non-empty [reason] is kept.
+
+    @raise Invalid_argument if [reason] is empty or blank. *)
+val accept_relaxed_accumulation : reason:string -> unit
+
+(** The reason recorded by {!accept_relaxed_accumulation}, if it was called. *)
+val relaxed_accumulation_reason : unit -> string option
+
+(** [policy_verdict cfg] judges the accuracy regime, independently of any
+    device: configurations whose four component types are all integer are
+    [Available] (strict: exact accumulation); [f16 * f16 + f32 -> f32] is
+    [Available] after {!accept_relaxed_accumulation} and otherwise [Unavailable]
+    with a {!Sarek_capability.Policy} record naming the call; every other
+    configuration with a float component is [Unavailable] (no derived bound,
+    §5.4). The launch gate and the interpreter apply it after the device
+    verdict. *)
+val policy_verdict : config -> Sarek_capability.verdict

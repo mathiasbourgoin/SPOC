@@ -494,6 +494,9 @@ let probe_coopmat ~instance ~phys_dev ~extensions
         ds_robust_buffer_access = false;
         ds_subgroup_size = subgroup_size;
         ds_advertised_count = 0;
+        ds_evidence =
+          "Vulkan: VK_KHR_cooperative_matrix is not advertised or its \
+           cooperativeMatrix feature is false";
       }
   else
     match get_physical_device_cooperative_matrix_properties instance with
@@ -573,6 +576,11 @@ let probe_coopmat ~instance ~phys_dev ~extensions
             ds_robust_buffer_access = features.ef_coopmat_robust_buffer_access;
             ds_subgroup_size = subgroup_size;
             ds_advertised_count = n;
+            ds_evidence =
+              Printf.sprintf
+                "Vulkan: vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR \
+                 advertises %d configuration(s)"
+                n;
           }
 
 (** Find compute queue family index *)

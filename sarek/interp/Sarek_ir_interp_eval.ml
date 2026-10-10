@@ -459,8 +459,8 @@ and exec_stmt state env stmt =
 (** {1 Cooperative matrix — backlog-62 slice 3}
 
     The interpreter is the ORACLE every backend is checked against, so this is
-    not a courtesy implementation: [test_vulkan_coopmat_ir_e2e] compares the
-    GLSL backend's output against these numbers bit for bit, and a skip here
+    not a courtesy implementation: [test_coopmat_integer_e2e] compares the GLSL
+    and HIP backends' output against these numbers bit for bit, and a skip here
     would let a coopmat kernel "agree" with an interpreter that never computed
     the product.
 
@@ -468,54 +468,46 @@ and exec_stmt state env stmt =
     see {!Sarek_ir_interp_value.env}.[coopmats] for why that is exact rather
     than approximate.
 
-    {b Only the INTEGER configurations are evaluated.} Float accumulation is
-    refused, and refused HERE rather than left to produce a plausible number,
-    because the interpreter cannot honestly model it: SPV_KHR_cooperative_matrix
-    leaves the ORDER of the k+1 additions to the implementation, so there is no
-    single value a strict oracle could compare against (design document §5.1).
-    Integer accumulation has no such freedom — the specification states it is
-    exact at the precision of the result type — which is the entire reason the
-    integer path lands under Sarek's existing strict contract. *)
+    {b Integer configurations are a strict oracle}: the specification states
+    integer accumulation is exact at the precision of the result type.
+
+    {b The one float configuration with a derived bound} —
+    [f16 * f16 + f32 -> f32] — is evaluated only after
+    {!Sarek_coopmat.accept_relaxed_accumulation}, and in ONE FIXED ORDER:
+    [acc := C[m][n]], then for [k = 0 .. K-1],
+    [acc := fl32 (acc + A[m][k] * B[k][n])]. The product of two binary16 values
+    is exact in binary32, so the only rounding is the addition's. The hardware
+    chooses its own order, so this is one admissible member of the bounded set
+    (docs/design/f16-relaxed-accuracy.md §5.2), not a value a device must equal;
+    tests compare both against the exact result under the bound. Every other
+    float configuration is refused ({!Sarek_coopmat.policy_verdict}). *)
 
 and coopmat_zero (c : Sarek_coopmat_types.component_type) =
   match c with
   | Sarek_coopmat_types.Uint8 | Sarek_coopmat_types.Sint8
   | Sarek_coopmat_types.Uint32 | Sarek_coopmat_types.Sint32 ->
       VInt32 0l
-  | Sarek_coopmat_types.Float16 | Sarek_coopmat_types.Float32 ->
-      coopmat_refuse_float c
+  | Sarek_coopmat_types.Float16 | Sarek_coopmat_types.Float32 -> VFloat32 0.0
 
-and coopmat_refuse_float : 'a. Sarek_coopmat_types.component_type -> 'a =
- fun c ->
-  Interp_error.raise_error
-    (Unsupported_operation
-       {
-         operation =
-           "cooperative matrix with "
-           ^ Sarek_coopmat_types.component_name c
-           ^ " components";
-         reason =
-           "float cooperative-matrix accumulation has no single correct value \
-            to be an oracle for: SPV_KHR_cooperative_matrix leaves the order \
-            of the additions to the implementation. The INTEGER configurations \
-            are evaluated, and are exact.";
-       })
+(** Convert a buffer element to the declared component type.
 
-(** Narrow an accumulated Int32 to the declared component type.
-
-    This is what makes the interpreter a faithful oracle for the 8-bit operand
-    types rather than merely a plausible one: a value loaded into a [u8]
+    For the 8-bit operand types this is what makes the interpreter a faithful
+    oracle rather than merely a plausible one: a value loaded into a [u8]
     fragment from a buffer holding 300 is 44 on the device, and an oracle that
-    kept 300 would disagree with correct hardware. *)
-and coopmat_narrow (c : Sarek_coopmat_types.component_type) (n : int32) =
+    kept 300 would disagree with correct hardware. For [f16] it is the
+    round-to-nearest-even narrowing the device performs (the identity on a
+    [float16] buffer). *)
+and coopmat_component (c : Sarek_coopmat_types.component_type) (v : value) =
   match c with
-  | Sarek_coopmat_types.Uint8 -> Int32.logand n 0xffl
+  | Sarek_coopmat_types.Uint8 -> VInt32 (Int32.logand (to_int32 v) 0xffl)
   | Sarek_coopmat_types.Sint8 ->
-      let b = Int32.logand n 0xffl in
-      if Int32.compare b 0x80l >= 0 then Int32.sub b 0x100l else b
-  | Sarek_coopmat_types.Uint32 | Sarek_coopmat_types.Sint32 -> n
-  | Sarek_coopmat_types.Float16 | Sarek_coopmat_types.Float32 ->
-      coopmat_refuse_float c
+      let b = Int32.logand (to_int32 v) 0xffl in
+      VInt32 (if Int32.compare b 0x80l >= 0 then Int32.sub b 0x100l else b)
+  | Sarek_coopmat_types.Uint32 | Sarek_coopmat_types.Sint32 ->
+      VInt32 (to_int32 v)
+  | Sarek_coopmat_types.Float16 ->
+      VFloat32 (Sarek_float16.to_float16 (to_float32 v))
+  | Sarek_coopmat_types.Float32 -> VFloat32 (to_float32 v)
 
 and get_coopmat env name =
   match Hashtbl.find_opt env.coopmats name with
@@ -523,6 +515,58 @@ and get_coopmat env name =
   | None ->
       Interp_error.raise_error
         (Unbound_variable {name; context = "cooperative-matrix fragment"})
+
+and coopmat_refuse_policy (cfg : Sarek_coopmat_types.config) =
+  match Sarek_coopmat.policy_verdict cfg with
+  | Sarek_capability.Available -> ()
+  | Sarek_capability.Unavailable cap ->
+      Interp_error.raise_error
+        (Unsupported_operation
+           {
+             operation =
+               "cooperative matrix " ^ Sarek_coopmat_types.config_name cfg;
+             reason = cap.Sarek_capability.cap_why;
+           })
+  | Sarek_capability.Unknown why ->
+      Interp_error.raise_error
+        (Unsupported_operation
+           {
+             operation =
+               "cooperative matrix " ^ Sarek_coopmat_types.config_name cfg;
+             reason = why;
+           })
+
+and coopmat_muladd_int (cfg : Sarek_coopmat_types.config) ma mb mc =
+  let open Sarek_coopmat_types in
+  let sh = cfg.cfg_shape in
+  Array.init (sh.m * sh.n) (fun idx ->
+      let i = idx / sh.n and j = idx mod sh.n in
+      (* Int32 throughout, so that a result exceeding 32 bits WRAPS exactly as
+         the device wraps, rather than being accidentally right on a 63-bit
+         host int. This is the claim the whole integer path rests on. *)
+      let acc = ref (to_int32 mc.(idx)) in
+      for kk = 0 to sh.k - 1 do
+        let av = to_int32 ma.((i * sh.k) + kk) in
+        let bv = to_int32 mb.((kk * sh.n) + j) in
+        acc := Int32.add !acc (Int32.mul av bv)
+      done ;
+      coopmat_component cfg.cfg_result (VInt32 !acc))
+
+and coopmat_muladd_float (cfg : Sarek_coopmat_types.config) ma mb mc =
+  let open Sarek_coopmat_types in
+  let sh = cfg.cfg_shape in
+  Array.init (sh.m * sh.n) (fun idx ->
+      let i = idx / sh.n and j = idx mod sh.n in
+      let acc = ref (to_float32 mc.(idx)) in
+      for kk = 0 to sh.k - 1 do
+        (* Exact: two binary16 significands (11 bits) multiply into 22 bits,
+           inside binary32's 24, and the exponent range fits. *)
+        let p =
+          to_float32 ma.((i * sh.k) + kk) *. to_float32 mb.((kk * sh.n) + j)
+        in
+        acc := Sarek_float32.add !acc p
+      done ;
+      VFloat32 !acc)
 
 and exec_coopmat state env op =
   let open Sarek_coopmat_types in
@@ -548,8 +592,7 @@ and exec_coopmat state env op =
               (Array_bounds_error
                  {array_name = src; index = i; length = Array.length buf})
           else
-            m.((r * cols) + c) <-
-              VInt32 (coopmat_narrow frag.frag_component (to_int32 buf.(i)))
+            m.((r * cols) + c) <- coopmat_component frag.frag_component buf.(i)
         done
       done ;
       Hashtbl.replace env.coopmats dst m
@@ -580,26 +623,14 @@ and exec_coopmat state env op =
                   the plain one and nothing has executed it, so there is \
                   nothing for an oracle to be faithful to";
              }) ;
+      coopmat_refuse_policy cfg ;
       let ma = get_coopmat env a
       and mb = get_coopmat env b
       and mc = get_coopmat env c in
-      let sh = cfg.cfg_shape in
-      let out = Array.make (sh.m * sh.n) (coopmat_zero cfg.cfg_result) in
-      for i = 0 to sh.m - 1 do
-        for j = 0 to sh.n - 1 do
-          (* Int32 throughout, so that a result exceeding 32 bits WRAPS exactly
-             as the device wraps, rather than being accidentally right on a
-             63-bit host int. This is the claim the whole integer path rests
-             on. *)
-          let acc = ref (to_int32 mc.((i * sh.n) + j)) in
-          for kk = 0 to sh.k - 1 do
-            let av = to_int32 ma.((i * sh.k) + kk) in
-            let bv = to_int32 mb.((kk * sh.n) + j) in
-            acc := Int32.add !acc (Int32.mul av bv)
-          done ;
-          out.((i * sh.n) + j) <- VInt32 (coopmat_narrow cfg.cfg_result !acc)
-        done
-      done ;
+      let out =
+        if accumulation_is_exact cfg then coopmat_muladd_int cfg ma mb mc
+        else coopmat_muladd_float cfg ma mb mc
+      in
       Hashtbl.replace env.coopmats dst out
 
 (* Read the value currently AT an lvalue, sharing rather than copying.

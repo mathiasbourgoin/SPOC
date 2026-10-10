@@ -1,0 +1,285 @@
+(******************************************************************************)
+(* SPDX-License-Identifier: CECILL-B                                          *)
+(* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
+(******************************************************************************)
+
+(** A tiled f16 GEMM built from cooperative-matrix statements
+    (specs/coopmat-hip-wmma.md).
+
+    [D = A x B + C] for row-major matrices: [A] is [m x k] float16, [B] is
+    [k x n] float16, [C] and [D] are [m x n] float32. Each subgroup (wavefront /
+    warp) computes a [16*frags_m x 16*frags_n] tile of [D], stepping through [k]
+    sixteen at a time with one 16x16x16 multiply-add per fragment pair; a block
+    holds [waves] subgroups of 32 invocations.
+
+    The kernel is IR, not a [%kernel]: the DSL has no cooperative-matrix
+    surface. It runs where the configuration [f16 * f16 + f32 -> f32] is offered
+    — today HIP on gfx11 — and on the interpreter, and in both cases only after
+    {!Sarek_coopmat.accept_relaxed_accumulation}: the matrix unit chooses its
+    addition order, so the result is within [gamma_k * (sum |A*B| + |C|)] of the
+    exact value ([u = 2^-24]), not bit-identical to a scalar loop. *)
+
+open Sarek_ir_types
+
+type tiling = {frags_m : int; frags_n : int; waves : int}
+
+(** 2x2 fragments (a 32x32 tile) per wave, 2 waves per block: the best single
+    choice across the spoc_llm prefill shapes measured on the RX 7900 XTX
+    (specs/coopmat-hip-wmma.md, Benchmark). It is not the best per shape: at
+    [N = 1024] one fragment per wave fills more of the 96 compute units, and at
+    [N = 12288] 4x2 is faster. *)
+let default_tiling = {frags_m = 2; frags_n = 2; waves = 2}
+
+let subgroup = 32
+
+let config =
+  {
+    Sarek_coopmat.cfg_shape = {Sarek_coopmat.m = 16; n = 16; k = 16};
+    cfg_a = Sarek_coopmat.Float16;
+    cfg_b = Sarek_coopmat.Float16;
+    cfg_c = Sarek_coopmat.Float32;
+    cfg_result = Sarek_coopmat.Float32;
+    cfg_saturating = false;
+    cfg_scope = Sarek_coopmat.Subgroup;
+  }
+
+let tile_m t = 16 * t.frags_m
+
+let tile_n t = 16 * t.frags_n
+
+(** [check_shape t ~m ~n ~k] raises [Invalid_argument] unless the problem tiles
+    exactly: [m] a multiple of the wave tile height, [n] of its width, [k] of
+    16, and the number of wave tiles a multiple of [t.waves]. *)
+let check_shape t ~m ~n ~k =
+  if t.frags_m < 1 || t.frags_n < 1 || t.waves < 1 then
+    invalid_arg "Sarek_gemm.Coopmat: tiling fields must be positive" ;
+  let fail what = invalid_arg ("Sarek_gemm.Coopmat: " ^ what) in
+  if m <= 0 || n <= 0 || k <= 0 then fail "m, n, k must be positive" ;
+  if m mod tile_m t <> 0 then
+    fail (Printf.sprintf "m = %d is not a multiple of %d" m (tile_m t)) ;
+  if n mod tile_n t <> 0 then
+    fail (Printf.sprintf "n = %d is not a multiple of %d" n (tile_n t)) ;
+  if k mod 16 <> 0 then fail (Printf.sprintf "k = %d is not a multiple of 16" k) ;
+  let tiles = m / tile_m t * (n / tile_n t) in
+  if tiles mod t.waves <> 0 then
+    fail
+      (Printf.sprintf
+         "%d wave tiles is not a multiple of %d waves per block"
+         tiles
+         t.waves)
+
+(** [(block, grid)] for an [m x n] output; call {!check_shape} first. *)
+let launch_dims t ~m ~n =
+  let tiles = m / tile_m t * (n / tile_n t) in
+  ( Sarek.Execute.dims1d (t.waves * subgroup),
+    Sarek.Execute.dims1d (tiles / t.waves) )
+
+(** {1 The IR} *)
+
+let var id name ty =
+  {var_name = name; var_id = id; var_type = ty; var_mutable = false}
+
+let i32 n = EConst (CInt32 (Int32.of_int n))
+
+let ( +: ) a b = EBinop (Add, a, b)
+
+let ( *: ) a b = EBinop (Mul, a, b)
+
+let ( /: ) a b = EBinop (Div, a, b)
+
+let ( %: ) a b = EBinop (Mod, a, b)
+
+let intrinsic name = EIntrinsic ([], name, [])
+
+let frag_a, frag_b, _, frag_acc = Sarek_coopmat.fragments_of_config config
+
+let cm op = SCoopmat op
+
+let a_name i = Printf.sprintf "fa%d" i
+
+let b_name j = Printf.sprintf "fb%d" j
+
+let acc_name i j = Printf.sprintf "facc%d_%d" i j
+
+let range n = List.init n Fun.id
+
+let pairs t =
+  List.concat_map
+    (fun i -> List.map (fun j -> (i, j)) (range t.frags_n))
+    (range t.frags_m)
+
+(** One step of the [k] loop: load the wave's A and B fragments for columns
+    [16*kk .. 16*kk+15] of A, then every multiply-add. *)
+let k_step t ~row0 ~col0 ~kk ~k ~n =
+  let load_a i =
+    cm
+      (CM_load
+         {
+           dst = a_name i;
+           frag = frag_a;
+           src = "a";
+           index = ((row0 +: i32 (16 * i)) *: k) +: (kk *: i32 16);
+           stride = k;
+         })
+  and load_b j =
+    cm
+      (CM_load
+         {
+           dst = b_name j;
+           frag = frag_b;
+           src = "b";
+           index = (kk *: i32 16 *: n) +: (col0 +: i32 (16 * j));
+           stride = n;
+         })
+  and muladd (i, j) =
+    cm
+      (CM_muladd
+         {
+           dst = acc_name i j;
+           a = a_name i;
+           b = b_name j;
+           c = acc_name i j;
+           cfg = config;
+         })
+  in
+  List.map load_a (range t.frags_m)
+  @ List.map load_b (range t.frags_n)
+  @ List.map muladd (pairs t)
+
+(** The accumulator tile at [(row0 + 16i, col0 + 16j)] in an [n]-wide buffer. *)
+let acc_index ~row0 ~col0 ~n (i, j) =
+  ((row0 +: i32 (16 * i)) *: n) +: (col0 +: i32 (16 * j))
+
+let wave_body t ~row0 ~col0 ~k ~n ~kk =
+  let decl name frag = cm (CM_decl {name; frag}) in
+  let decls =
+    List.map (fun i -> decl (a_name i) frag_a) (range t.frags_m)
+    @ List.map (fun j -> decl (b_name j) frag_b) (range t.frags_n)
+    @ List.map (fun (i, j) -> decl (acc_name i j) frag_acc) (pairs t)
+  in
+  let load_c ij =
+    let i, j = ij in
+    cm
+      (CM_load
+         {
+           dst = acc_name i j;
+           frag = frag_acc;
+           src = "c";
+           index = acc_index ~row0 ~col0 ~n ij;
+           stride = n;
+         })
+  and store_d ij =
+    let i, j = ij in
+    cm
+      (CM_store
+         {
+           src = acc_name i j;
+           frag = frag_acc;
+           dst = "d";
+           index = acc_index ~row0 ~col0 ~n ij;
+           stride = n;
+         })
+  in
+  let loop =
+    SFor
+      ( kk,
+        i32 0,
+        (k /: i32 16) +: i32 (-1),
+        Upto,
+        SSeq (k_step t ~row0 ~col0 ~kk:(EVar kk) ~k ~n) )
+  in
+  SSeq (decls @ List.map load_c (pairs t) @ [loop] @ List.map store_d (pairs t))
+
+(** [ir ?tiling ()] is the kernel [(a, b, c, d, m, n, k)]: [d = a * b + c]. [a],
+    [b] are float16 vectors, [c], [d] float32 vectors, [m], [n], [k] int32.
+    Launch with {!launch_dims} after {!check_shape}. *)
+let ir ?(tiling = default_tiling) () : kernel =
+  let t = tiling in
+  let vec id name elt = (var id name (TVec elt), elt) in
+  let a = vec 0 "a" TFloat16 and b = vec 1 "b" TFloat16 in
+  let c = vec 2 "c" TFloat32 and d = vec 3 "d" TFloat32 in
+  let m = var 4 "m" TInt32 and n = var 5 "n" TInt32 and k = var 6 "k" TInt32 in
+  let wave = var 7 "wave" TInt32 and kk = var 8 "kk" TInt32 in
+  let row0 = var 9 "row0" TInt32 and col0 = var 10 "col0" TInt32 in
+  let param (v, elt) =
+    DParam (v, Some {arr_elttype = elt; arr_memspace = Global})
+  in
+  let tiles_n = EVar n /: i32 (tile_n t) in
+  let body =
+    SLet
+      ( wave,
+        (intrinsic "block_idx_x" *: i32 t.waves)
+        +: (intrinsic "thread_idx_x" /: i32 subgroup),
+        SLet
+          ( row0,
+            EVar wave /: tiles_n *: i32 (tile_m t),
+            SLet
+              ( col0,
+                EVar wave %: tiles_n *: i32 (tile_n t),
+                SIf
+                  ( EBinop (Lt, EVar row0, EVar m),
+                    wave_body
+                      t
+                      ~row0:(EVar row0)
+                      ~col0:(EVar col0)
+                      ~k:(EVar k)
+                      ~n:(EVar n)
+                      ~kk,
+                    None ) ) ) )
+  in
+  {
+    default_kernel with
+    kern_name =
+      Printf.sprintf
+        "sarek_coopmat_gemm_f16_%dx%d_w%d"
+        t.frags_m
+        t.frags_n
+        t.waves;
+    kern_params =
+      [param a; param b; param c; param d]
+      @ List.map (fun v -> DParam (v, None)) [m; n; k];
+    kern_body = body;
+  }
+
+(** {1 Host launch} *)
+
+(* One IR value per tiling, so repeated launches hit Execute's launch memo,
+   which keys on the IR's physical identity. *)
+let ir_cache : (tiling, kernel) Hashtbl.t = Hashtbl.create 4
+
+let ir_cache_lock = Mutex.create ()
+
+let cached_ir tiling =
+  Mutex.protect ir_cache_lock (fun () ->
+      match Hashtbl.find_opt ir_cache tiling with
+      | Some k -> k
+      | None ->
+          let k = ir ~tiling () in
+          Hashtbl.add ir_cache tiling k ;
+          k)
+
+(** [run ~device ?tiling ~a ~b ~c ~d ~m ~n ~k ()] launches {!ir} on [device].
+    Raises [Invalid_argument] on a shape {!check_shape} rejects, and the launch
+    gate's capability error where the device does not offer the configuration or
+    the program has not called {!Sarek_coopmat.accept_relaxed_accumulation}.
+    Asynchronous like any launch: read [d] after the usual transfer. *)
+let run ~device ?(tiling = default_tiling) ~a ~b ~c ~d ~m ~n ~k () =
+  check_shape tiling ~m ~n ~k ;
+  let block, grid = launch_dims tiling ~m ~n in
+  let int x = Sarek.Execute.Int32 (Int32.of_int x) in
+  Sarek.Execute.run_vectors
+    ~device
+    ~ir:(cached_ir tiling)
+    ~args:
+      [
+        Sarek.Execute.Vec a;
+        Sarek.Execute.Vec b;
+        Sarek.Execute.Vec c;
+        Sarek.Execute.Vec d;
+        int m;
+        int n;
+        int k;
+      ]
+    ~block
+    ~grid
+    ()

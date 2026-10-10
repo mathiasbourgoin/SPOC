@@ -246,3 +246,36 @@
   (pps sarek_ppx))
  (flags
   (:standard -w -32-33-34-69)))
+
+; The HIP cooperative-matrix probe rule (specs/coopmat-hip-wmma.md). Pure: no
+; device, driven with each device's compute capability and wavefront size.
+
+(test
+ (name test_hip_coopmat_probe)
+ (modules test_hip_coopmat_probe)
+ (libraries sarek_hip spoc.ir alcotest astring))
+
+; f16 GEMM on the RDNA3 matrix units (SCoopmat, Sarek_gemm.Coopmat) vs the
+; scalar f32 Sarek_gemm at spoc_llm prefill shapes; GPU events, median and
+; min-max over rounds. Information only (specs/coopmat-hip-wmma.md).
+
+(executable
+ (name bench_hip_coopmat_gemm)
+ (modules bench_hip_coopmat_gemm)
+ (libraries
+  sarek
+  sarek.gemm
+  sarek_ir
+  spoc_core
+  spoc_framework
+  sarek_hip
+  unix)
+ (preprocessor_deps
+  (file ../../sarek/Sarek_gemm/Sarek_gemm.ml))
+ (preprocess
+  (pps sarek_ppx)))
+
+(rule
+ (alias e2e-hip-bench)
+ (action
+  (run %{dep:bench_hip_coopmat_gemm.exe})))

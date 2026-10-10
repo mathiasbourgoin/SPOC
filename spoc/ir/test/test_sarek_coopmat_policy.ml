@@ -1,0 +1,139 @@
+(******************************************************************************)
+(* SPDX-License-Identifier: CECILL-B                                          *)
+(* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
+(******************************************************************************)
+
+(* The accuracy policy of docs/design/f16-relaxed-accuracy.md §6.1 as
+   implemented by Sarek_coopmat.policy_verdict (specs/coopmat-hip-wmma.md).
+
+   Its own executable because the opt-in is process-wide and one-way: the
+   "before" cases must run in a process that has not opted in, and Alcotest
+   runs the cases below in order. *)
+
+open Sarek_coopmat
+
+let cfg a b c r =
+  {
+    cfg_shape = {m = 16; n = 16; k = 16};
+    cfg_a = a;
+    cfg_b = b;
+    cfg_c = c;
+    cfg_result = r;
+    cfg_saturating = false;
+    cfg_scope = Subgroup;
+  }
+
+let f16_f32 = cfg Float16 Float16 Float32 Float32
+
+let f16_f16 = cfg Float16 Float16 Float16 Float16
+
+let f16_s32 = cfg Float16 Float16 Sint32 Sint32
+
+let u8_s32 = cfg Uint8 Sint8 Sint32 Sint32
+
+let available v = v = Sarek_capability.Available
+
+let policy_refusal v =
+  match v with
+  | Sarek_capability.Unavailable cap ->
+      cap.Sarek_capability.cap_kind = Sarek_capability.Policy
+  | _ -> false
+
+let remedy_names_call v =
+  match v with
+  | Sarek_capability.Unavailable {Sarek_capability.cap_remedy = Some r; _} ->
+      Astring.String.is_infix ~affix:"accept_relaxed_accumulation" r
+  | _ -> false
+
+let test_before () =
+  Alcotest.(check (option string))
+    "no opt-in yet"
+    None
+    (relaxed_accumulation_reason ()) ;
+  Alcotest.(check bool)
+    "integer: available"
+    true
+    (available (policy_verdict u8_s32)) ;
+  let v = policy_verdict f16_f32 in
+  Alcotest.(check bool) "f16*f16+f32: Policy refusal" true (policy_refusal v) ;
+  Alcotest.(check bool) "the refusal names the call" true (remedy_names_call v) ;
+  Alcotest.(check bool)
+    "f16 accumulate: refused"
+    true
+    (policy_refusal (policy_verdict f16_f16)) ;
+  Alcotest.(check bool)
+    "float operands into an integer accumulator: refused, although regime says \
+     Strict"
+    true
+    (regime f16_s32 = Strict && policy_refusal (policy_verdict f16_s32))
+
+let test_empty_reason () =
+  List.iter
+    (fun reason ->
+      Alcotest.check_raises
+        "blank reason"
+        (Invalid_argument
+           "Sarek_coopmat.accept_relaxed_accumulation: the reason must not be \
+            empty (it is the record that the bounded deviation was understood)")
+        (fun () -> accept_relaxed_accumulation ~reason))
+    [""; "   "] ;
+  Alcotest.(check (option string))
+    "a refused call records nothing"
+    None
+    (relaxed_accumulation_reason ())
+
+let test_after () =
+  accept_relaxed_accumulation ~reason:"first" ;
+  accept_relaxed_accumulation ~reason:"second" ;
+  Alcotest.(check (option string))
+    "first reason kept"
+    (Some "first")
+    (relaxed_accumulation_reason ()) ;
+  Alcotest.(check bool)
+    "f16*f16+f32: available"
+    true
+    (available (policy_verdict f16_f32)) ;
+  Alcotest.(check bool)
+    "f16 accumulate: still refused (no derived bound)"
+    true
+    (policy_refusal (policy_verdict f16_f16)) ;
+  Alcotest.(check bool)
+    "saturating f16: still refused"
+    true
+    (policy_refusal (policy_verdict {f16_f32 with cfg_saturating = true}))
+
+let test_device_evidence () =
+  let support =
+    {
+      ds_configs = [];
+      ds_robust_buffer_access = false;
+      ds_subgroup_size = 32;
+      ds_advertised_count = 0;
+      ds_evidence = "HIP: probe rule";
+    }
+  in
+  match verdict ~support:(Some support) u8_s32 with
+  | Sarek_capability.Unavailable cap ->
+      Alcotest.(check bool)
+        "the refusal quotes the probe's evidence"
+        true
+        (Astring.String.is_infix
+           ~affix:"HIP: probe rule"
+           cap.Sarek_capability.cap_why)
+  | _ -> Alcotest.fail "an empty probed list must refuse"
+
+let () =
+  Alcotest.run
+    "Sarek_coopmat policy"
+    [
+      ( "opt-in",
+        [
+          Alcotest.test_case "before the opt-in" `Quick test_before;
+          Alcotest.test_case "blank reason refused" `Quick test_empty_reason;
+          Alcotest.test_case "after the opt-in" `Quick test_after;
+          Alcotest.test_case
+            "device refusal evidence"
+            `Quick
+            test_device_evidence;
+        ] );
+    ]

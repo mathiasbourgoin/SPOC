@@ -131,6 +131,13 @@ let c_family_width = function
   | "long" -> Some (Bytes 8)
   | "long long" -> Some (Bytes 8)
   | "__half" -> Some (Bytes 2)
+  (* The CUDA/HIP spelling of [TUint8] (specs/coopmat-hip-wmma.md). C fixes
+     sizeof(unsigned char) at 1 (C11 6.5.3.4), and both NVRTC and hiprtc are C++
+     compilers; measured too, end to end: test_coopmat_hip_e2e loads 8-bit
+     cooperative-matrix operands from these buffers on gfx1100 and is
+     bit-identical to the interpreter over all 65536 operand pairs, which a
+     4-byte slot would make impossible. *)
+  | "unsigned char" -> Some (Bytes 1)
   | "float" -> Some (Bytes 4)
   | "double" -> Some (Bytes 8)
   | "void" -> Some (No_memory_form "C `void` has no object representation")
