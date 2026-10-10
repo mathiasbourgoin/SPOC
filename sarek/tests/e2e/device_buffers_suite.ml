@@ -360,21 +360,25 @@ let test_streams_pinned dev =
 
 (* ------------------------------------- byte-level read-back (bytes-d2h) *)
 
-(* Little-endian bytes of int32 [x] (every SPOC device is little-endian). *)
-let le_byte x b =
-  Char.chr
-    (Int32.to_int (Int32.logand (Int32.shift_right_logical x (8 * b)) 0xffl))
+(* Byte [b] of int32 [x] as stored in host memory (native byte order): the
+   copy moves raw bytes, so the expected bytes are the host's own encoding,
+   whatever its endianness. The int32 values reach the device through
+   [copy_to_device], which moves the same raw bytes. *)
+let ne_byte x b =
+  let buf = Bytes.create 4 in
+  Bytes.set_int32_ne buf 0 x ;
+  Bytes.get buf b
 
 let char_ba n = Bigarray.Array1.create Bigarray.char Bigarray.c_layout n
 
-(* [true] iff [bytes] holds the little-endian encoding of [value (first + k)]
+(* [true] iff [bytes] holds the native-order encoding of [value (first + k)]
    for k = 0 .. len/4 - 1. *)
-let holds_le bytes ~first value =
+let holds_ne bytes ~first value =
   let ok = ref true in
   for k = 0 to (Bigarray.Array1.dim bytes / 4) - 1 do
     for b = 0 to 3 do
       if
-        Bigarray.Array1.get bytes ((4 * k) + b) <> le_byte (value (first + k)) b
+        Bigarray.Array1.get bytes ((4 * k) + b) <> ne_byte (value (first + k)) b
       then ok := false
     done
   done ;
@@ -398,7 +402,7 @@ let test_bytes_to_host_data dev v n =
     (fun (off, len) ->
       check
         (Printf.sprintf "int32 -> char bytes [%d, %d)" off (off + len))
-        (holds_le (read ~off ~len) ~first:(off / 4) value))
+        (holds_ne (read ~off ~len) ~first:(off / 4) value))
     [(0, 64); (4, 8); (4 * 333, 40); (4096, 4096); ((4 * n) - 4, 4)] ;
   (* Unaligned within an element: bytes 1..6. *)
   let mid = read ~off:5 ~len:6 in
@@ -407,7 +411,7 @@ let test_bytes_to_host_data dev v n =
     (List.for_all
        (fun k ->
          Bigarray.Array1.get mid k
-         = le_byte (value ((5 + k) / 4)) ((5 + k) mod 4))
+         = ne_byte (value ((5 + k) / 4)) ((5 + k) mod 4))
        [0; 1; 2; 3; 4; 5]) ;
   (* Another destination kind: float32 view of the int32 bits. *)
   let f = Bigarray.Array1.create Bigarray.float32 Bigarray.c_layout 4 in
@@ -529,7 +533,7 @@ let test_bytes_to_host_edges dev v n =
   check
     "a Both vector keeps its location across a read-back"
     (was_both && is_both ()) ;
-  check "read-back of a Both vector" (holds_le nine ~first:0 (fun _ -> 9l))
+  check "read-back of a Both vector" (holds_ne nine ~first:0 (fun _ -> 9l))
 
 let test_bytes_to_host dev =
   let n = 2048 in
@@ -561,7 +565,7 @@ let test_bytes_to_host_stream dev =
   Transfer.synchronize_stream s ;
   check
     "stream byte read-back ordered after the launch (y = x + 1)"
-    (holds_le pinned ~first:0 (fun i -> Int32.of_int ((5 * i) + 1))) ;
+    (holds_ne pinned ~first:0 (fun i -> Int32.of_int ((5 * i) + 1))) ;
   (* Pageable destination, at an offset, released through an event. *)
   let e = Transfer.create_event dev in
   let page = char_ba 4096 in
@@ -574,7 +578,7 @@ let test_bytes_to_host_stream dev =
   Transfer.synchronize_event e ;
   check
     "stream byte read-back into pageable memory after synchronize_event"
-    (holds_le page ~first:2048 (fun i -> Int32.of_int ((5 * i) + 1))) ;
+    (holds_ne page ~first:2048 (fun i -> Int32.of_int ((5 * i) + 1))) ;
   Transfer.free_pinned pinned ;
   Transfer.destroy_event e ;
   Transfer.destroy_stream s ;

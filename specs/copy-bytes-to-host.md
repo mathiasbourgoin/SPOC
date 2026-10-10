@@ -37,7 +37,7 @@ As spoc_llm's exclusive tier, I want to copy a byte range of an `int32`
 device vector into a `char` host slot, synchronously or on a stream.
 
 **Acceptance Scenarios**
-1. **Given** an int32 device-only vector filled with a known ramp, **When** `copy_bytes_to_host ~src ~src_byte_offset:o dst` with a `char` dst for o in {0, 4, 4*odd, 4096, end-4}, **Then** dst holds the little-endian bytes of the ramp from byte o.
+1. **Given** an int32 device-only vector filled with a known ramp, **When** `copy_bytes_to_host ~src ~src_byte_offset:o dst` with a `char` dst for o in {0, 4, 4*odd, 4096, end-4}, **Then** dst holds the raw bytes stored in the vector from byte o, with no byte-order conversion (the test derives them with `Bytes.set_int32_ne`, the host's order, which is the order `copy_to_device` stored).
 2. **Given** that `char` buffer, **When** copied back with `copy_bytes_to_device` at another offset, **Then** the vector's elements there equal the original ones (round trip), and the rest is unchanged.
 3. **Given** a zero-length dst at offset = vector bytes, **Then** accepted, no effect; at offset + 1, refused.
 4. **Given** a range past the end or a negative offset, **Then** `Invalid_argument` and dst untouched.
