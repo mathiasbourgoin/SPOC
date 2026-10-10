@@ -103,7 +103,10 @@ exactly.
 
 **Regime B** — cooperative matrix (`OpCooperativeMatrixMulAddKHR` and its Metal
 equivalent). Accepts on a **derived numeric bound**, because the deviation is an ordering
-freedom over 17 terms and there is no finite set to enumerate.
+freedom over 17 terms and there is no finite set to enumerate. Admitted only after
+`Sarek_coopmat.accept_relaxed_accumulation ~reason` (the explicit opt-in of §6.1); the
+launch gate and the interpreter refuse it otherwise. Measured on HIP / gfx1100 WMMA
+(`specs/coopmat-hip-wmma.md`).
 
 > **When quoting the f16 contract, name the regime.** "Sarek's f16 contract" is ambiguous
 > and the two answers differ in kind, not degree. Unifying *downward* — putting scalar
