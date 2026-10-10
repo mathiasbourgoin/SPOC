@@ -822,7 +822,17 @@ and glsl_backend st =
         else if is_f64 && List.mem name glsl_conversions then (
           gen_glsl_conversion buf ~gen_expr:(gen_expr st) name args ;
           true)
-        else false);
+        else
+          (* Int32.float_of_bits / bits_of_float: core GLSL since 3.30. *)
+          Dispatch.emit_int32_bitcast
+            ~gen_expr:(gen_expr st)
+            ~invalid_arg_count:bad_arity
+            ~to_float:"intBitsToFloat"
+            ~to_int:"floatBitsToInt"
+            buf
+            path
+            name
+            args);
     (* INERT ON PURPOSE (backlog-159), not an unfinished symmetry. The three
        C-family backends wire [Dispatch.emit_registry_template] here; doing the
        same for GLSL would route intrinsics through

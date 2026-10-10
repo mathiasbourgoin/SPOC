@@ -338,3 +338,27 @@
  (name test_codegen_generation_state)
  (modules test_codegen_generation_state)
  (libraries sarek.codegen spoc.ir sarek_transpile sarek_stdlib_meta alcotest))
+
+; Stdlib Int32.float_of_bits / Int32.bits_of_float: registry templates of both
+; registrations, per-backend spellings (from a PPX kernel and hand-built IR),
+; glslang/naga/clang validation with negative controls, and the refusals
+; (another module's same-named intrinsic, wrong arity). CPU-only, no device.
+
+(test
+ (name test_int32_bitcasts_codegen)
+ (modules test_int32_bitcasts_codegen)
+ (libraries
+  sarek
+  sarek.codegen
+  sarek.stdlib
+  sarek_stdlib_meta
+  sarek_registry
+  sarek_ir
+  opencl_gate
+  alcotest
+  str
+  unix)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33)))

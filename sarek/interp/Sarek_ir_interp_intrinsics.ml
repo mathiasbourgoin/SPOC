@@ -625,6 +625,23 @@ let eval_int32_math_intrinsic name args =
           Interp_error.raise_error
             (Unsupported_operation
                {operation = "max (int32)"; reason = "requires 2 arguments"}))
+  (* Bit reinterpretation, OCaml's own Int32.float_of_bits / bits_of_float.
+     The decoded float32 is carried as a double: exact for every non-NaN
+     pattern, quiet-NaN payloads survive, a signalling NaN is quieted. *)
+  | "float_of_bits" -> (
+      match args with
+      | [arg] -> Some (VFloat32 (Int32.float_of_bits (to_int32 arg)))
+      | _ ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "float_of_bits"; reason = "requires 1 argument"}))
+  | "bits_of_float" -> (
+      match args with
+      | [arg] -> Some (VInt32 (Int32.bits_of_float (to_float32 arg)))
+      | _ ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "bits_of_float"; reason = "requires 1 argument"}))
   | _ -> None
 
 (** Type conversion intrinsics *)
