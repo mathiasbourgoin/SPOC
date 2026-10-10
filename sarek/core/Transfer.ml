@@ -1155,9 +1155,9 @@ let destroy_event (ev : event) : unit =
     ([to_cpu], auto-sync) and host-side copies all raise [Invalid_argument]
     naming the vector as device-only. Data moves in and out only through the
     ranged copies below ({!copy_to_device}, {!copy_bytes_to_device},
-    {!copy_ptr_to_device}, {!copy_to_host}) or kernels. Freeing its buffer
-    ({!free_buffer}, {!free_all_buffers}) discards the contents, and the vector
-    is unusable afterwards.
+    {!copy_ptr_to_device}, {!copy_to_host}, {!copy_bytes_to_host}) or kernels.
+    Freeing its buffer ({!free_buffer}, {!free_all_buffers}) discards the
+    contents, and the vector is unusable afterwards.
 
     On Metal the buffer is a shared-storage MTLBuffer (Apple silicon unified
     memory): still no host mirror, and the same refusals apply.
@@ -1384,33 +1384,23 @@ let copy_ptr_to_device ?(stream : stream option) ~(src_ptr : nativeint)
     ~dst_byte_offset
     ()
 
-(** Copy [Bigarray.Array1.dim dst] elements of [src], starting at element
-    [src_offset], into [dst] — the explicit read-back for device-only vectors.
-    [src] must be device-current. With [~stream] the copy may still be running
-    on return and SPOC roots [dst] until it has completed; read [dst] only after
-    synchronising. [src]'s location is unchanged. *)
-let copy_to_host (type a b) ?(stream : stream option) ~(src : (a, b) Vector.t)
-    ~(src_offset : int) (dst : (a, b, Bigarray.c_layout) Bigarray.Array1.t) :
-    unit =
-  let op = "Transfer.copy_to_host" in
-  let n = Bigarray.Array1.dim dst in
-  if src_offset < 0 || src_offset + n > src.length then
-    invalid_arg
-      (Printf.sprintf
-         "%s: elements [%d, %d) outside vector of length %d"
-         op
-         src_offset
-         (src_offset + n)
-         src.length) ;
+(* The one device->host path every public variant goes through: copy
+   [size_in_bytes dst] bytes of [src] from byte [src_byte_offset] into [dst].
+   [dst] and [src] are rooted until the copy completes: synchronously across
+   the backend call, in the ledger (with [dst]'s byte range as in flight) when
+   enqueued on a stream. [src]'s location is unchanged. *)
+let d2h_range (type a b) ~(op : string) ?(stream : stream option)
+    ~(src : (a, b) Vector.t) ~(src_byte_offset : int)
+    (dst : (_, _, Bigarray.c_layout) Bigarray.Array1.t) : unit =
   let dev, buf = range_target ~op src in
-  let esz = Vector.elem_size src.kind in
-  let byte_size = n * esz in
+  let byte_size = Bigarray.Array1.size_in_bytes dst in
+  check_bytes ~op ~total:(vector_bytes src) ~off:src_byte_offset ~byte_size ;
   let dst_ptr = bigarray_addr dst in
   let (module Buf : Vector.DEVICE_BUFFER) = buf in
   match stream with
   | None ->
       Buf.range_to_host
-        ~src_offset:(src_offset * esz)
+        ~src_offset:src_byte_offset
         ~dst_ptr
         ~byte_size
         ~stream:None ;
@@ -1426,7 +1416,7 @@ let copy_to_host (type a b) ?(stream : stream option) ~(src : (a, b) Vector.t)
              S.device.id
              dev.id) ;
       Buf.range_to_host
-        ~src_offset:(src_offset * esz)
+        ~src_offset:src_byte_offset
         ~dst_ptr
         ~byte_size
         ~stream:(Some S.stream_ref) ;
@@ -1435,6 +1425,56 @@ let copy_to_host (type a b) ?(stream : stream option) ~(src : (a, b) Vector.t)
         ~keep:(Obj.repr (dst, src))
         ~vec_ids:[src.id]
         ~host_ranges:[(dst_ptr, byte_size)]
+
+(** Copy [Bigarray.Array1.dim dst] elements of [src], starting at element
+    [src_offset], into [dst] — the explicit read-back for device-only vectors.
+    [src] must be device-current. With [~stream] the copy may still be running
+    on return and SPOC roots [dst] until it has completed; read [dst] only after
+    synchronising (see {!copy_bytes_to_host} for the destination's state
+    meanwhile). [src]'s location is unchanged. *)
+let copy_to_host (type a b) ?(stream : stream option) ~(src : (a, b) Vector.t)
+    ~(src_offset : int) (dst : (a, b, Bigarray.c_layout) Bigarray.Array1.t) :
+    unit =
+  let op = "Transfer.copy_to_host" in
+  let n = Bigarray.Array1.dim dst in
+  if src_offset < 0 || src_offset + n > src.length then
+    invalid_arg
+      (Printf.sprintf
+         "%s: elements [%d, %d) outside vector of length %d"
+         op
+         src_offset
+         (src_offset + n)
+         src.length) ;
+  d2h_range
+    ~op
+    ?stream
+    ~src
+    ~src_byte_offset:(src_offset * Vector.elem_size src.kind)
+    dst
+
+(** Byte-level {!copy_to_host}: copy [Bigarray.Array1.size_in_bytes dst] bytes
+    of [src] (any element kind), starting at byte [src_byte_offset], into [dst]
+    (any element kind) — e.g. a range of an [int32] vector into a [char] slot.
+    Slice the destination with [Bigarray.Array1.sub]. The mirror of
+    {!copy_bytes_to_device}; same location rules as {!copy_to_host}: [src] must
+    be device-current and its location is unchanged. Raises [Invalid_argument]
+    when the byte range does not fit, and [Feature_not_supported] on backends
+    without ranged copies.
+
+    Without [~stream] the copy has completed when the call returns. With it, the
+    copy is enqueued and may still be running: until the stream (or an event
+    recorded after the copy) has been synchronised, or {!flush}, [dst]'s
+    contents are undefined — reading it may see old, new or mixed bytes, and
+    writing it races with the DMA, which may overwrite it. SPOC keeps [dst] and
+    [src] alive meanwhile and records [dst]'s bytes as in flight, so
+    {!free_pinned} and {!unregister_host} refuse a buffer they overlap. HIP and
+    CUDA may stage a stream copy into pageable memory through a driver bounce
+    buffer and block the host call; copy into {!alloc_pinned} or
+    {!register_host} memory when overlap matters. *)
+let copy_bytes_to_host ?(stream : stream option) ~(src : (_, _) Vector.t)
+    ~(src_byte_offset : int) (dst : (_, _, Bigarray.c_layout) Bigarray.Array1.t)
+    : unit =
+  d2h_range ~op:"Transfer.copy_bytes_to_host" ?stream ~src ~src_byte_offset dst
 
 (** {1 Pinned host memory} *)
 

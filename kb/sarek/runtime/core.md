@@ -68,7 +68,16 @@ launches asynchronous (`Metal_api.Pending`; `specs/metal-ranged-copies.md`,
   `Framework_sig.stream_ref` (the `kargs = ..` pattern; `Make_refs` mints
   per-backend constructors).
 - Invariant: a ranged copy requires the device copy to be current; a ranged
-  write turns `Both d` into `Stale_CPU d` (off-CPU).
+  write turns `Both d` into `Stale_CPU d` (off-CPU); a read-back leaves the
+  location unchanged.
+- One path per direction: `h2d_range` (`copy_to_device`,
+  `copy_bytes_to_device`, `copy_ptr_to_device`, staging) and `d2h_range`
+  (`copy_to_host`, `copy_bytes_to_host`, 2026-10, spec
+  `specs/copy-bytes-to-host.md`). Each checks the byte range itself, so the
+  refusal names the public call; backends check again. A stream read-back
+  roots `(dst, src)` and records `dst`'s bytes in `host_ranges`, so the
+  destination cannot be freed/unregistered while in flight; its contents are
+  undefined until completion.
 - Invariant: anything an enqueued copy or launch references stays rooted in
   `Transfer.Ledger` until SPOC knows the work completed (stream sync, `flush`,
   event sync / completed query, or transitively through `stream_wait_event`).

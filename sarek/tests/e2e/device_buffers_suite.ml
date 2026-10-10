@@ -358,6 +358,195 @@ let test_streams_pinned dev =
       Transfer.free_all_buffers x ;
       Transfer.free_all_buffers y
 
+(* ------------------------------------- byte-level read-back (bytes-d2h) *)
+
+(* Little-endian bytes of int32 [x] (every SPOC device is little-endian). *)
+let le_byte x b =
+  Char.chr
+    (Int32.to_int (Int32.logand (Int32.shift_right_logical x (8 * b)) 0xffl))
+
+let char_ba n = Bigarray.Array1.create Bigarray.char Bigarray.c_layout n
+
+(* [true] iff [bytes] holds the little-endian encoding of [value (first + k)]
+   for k = 0 .. len/4 - 1. *)
+let holds_le bytes ~first value =
+  let ok = ref true in
+  for k = 0 to (Bigarray.Array1.dim bytes / 4) - 1 do
+    for b = 0 to 3 do
+      if
+        Bigarray.Array1.get bytes ((4 * k) + b) <> le_byte (value (first + k)) b
+      then ok := false
+    done
+  done ;
+  !ok
+
+let bytes_value i = Int32.of_int (i * 2654435 lxor 0x5a5a5a5a)
+
+(* spec: specs/copy-bytes-to-host.md, scenarios 1 and 2. [v] holds
+   [bytes_value] over [n] elements. *)
+let test_bytes_to_host_data dev v n =
+  let value = bytes_value in
+  (* Byte offsets: 0, an odd multiple of 4, 4096 (one page), the last
+     element. *)
+  let read ~off ~len =
+    let dst = char_ba len in
+    Bigarray.Array1.fill dst '\xee' ;
+    Transfer.copy_bytes_to_host ~src:v ~src_byte_offset:off dst ;
+    dst
+  in
+  List.iter
+    (fun (off, len) ->
+      check
+        (Printf.sprintf "int32 -> char bytes [%d, %d)" off (off + len))
+        (holds_le (read ~off ~len) ~first:(off / 4) value))
+    [(0, 64); (4 * 333, 40); (4096, 4096); ((4 * n) - 4, 4)] ;
+  (* Unaligned within an element: bytes 1..6. *)
+  let mid = read ~off:5 ~len:6 in
+  check
+    "byte offset inside an element"
+    (List.for_all
+       (fun k ->
+         Bigarray.Array1.get mid k
+         = le_byte (value ((5 + k) / 4)) ((5 + k) mod 4))
+       [0; 1; 2; 3; 4; 5]) ;
+  (* Another destination kind: float32 view of the int32 bits. *)
+  let f = Bigarray.Array1.create Bigarray.float32 Bigarray.c_layout 4 in
+  Transfer.copy_bytes_to_host ~src:v ~src_byte_offset:(4 * 10) f ;
+  check
+    "int32 -> float32 destination keeps the bits"
+    (List.for_all
+       (fun k -> Int32.bits_of_float (Bigarray.Array1.get f k) = value (10 + k))
+       [0; 1; 2; 3]) ;
+  (* Round trip through copy_bytes_to_device: bytes [4096, 8192) of v land at
+     element 7 of w. *)
+  let w = Transfer.create_device_only dev Vector.int32 n in
+  Transfer.copy_to_device (i32_ba n (fun _ -> 0l)) ~dst:w ~dst_offset:0 ;
+  Transfer.copy_bytes_to_device
+    (read ~off:4096 ~len:4096)
+    ~dst:w
+    ~dst_byte_offset:(4 * 7) ;
+  let back = read_all w in
+  let bad = ref 0 in
+  for i = 0 to n - 1 do
+    let expect = if i >= 7 && i < 7 + 1024 then value (1024 + i - 7) else 0l in
+    if Bigarray.Array1.get back i <> expect then incr bad
+  done ;
+  check
+    (Printf.sprintf
+       "char round trip through copy_bytes_to_device (%d mismatches)"
+       !bad)
+    (!bad = 0) ;
+  Transfer.free_all_buffers w
+
+(* spec: specs/copy-bytes-to-host.md, scenarios 3, 4, 6 and 8. *)
+let test_bytes_to_host_edges dev v n =
+  Transfer.copy_bytes_to_host ~src:v ~src_byte_offset:(4 * n) (char_ba 0) ;
+  check
+    "zero-length read at the end accepted; one byte past it refused"
+    (refuses_invalid (fun () ->
+         Transfer.copy_bytes_to_host
+           ~src:v
+           ~src_byte_offset:((4 * n) + 1)
+           (char_ba 0))) ;
+  let untouched = char_ba 8 in
+  Bigarray.Array1.fill untouched '\x11' ;
+  check
+    "range past the end refused, naming the public call (before the backend)"
+    (match
+       Transfer.copy_bytes_to_host
+         ~src:v
+         ~src_byte_offset:((4 * n) - 7)
+         untouched
+     with
+    | () -> false
+    | exception Invalid_argument msg ->
+        String.starts_with ~prefix:"Transfer.copy_bytes_to_host: byte range" msg) ;
+  check
+    "negative byte offset refused"
+    (refuses_invalid (fun () ->
+         Transfer.copy_bytes_to_host ~src:v ~src_byte_offset:(-1) untouched)) ;
+  check
+    "refused copies leave the destination untouched"
+    (List.for_all
+       (fun k -> Bigarray.Array1.get untouched k = '\x11')
+       [0; 1; 2; 3; 4; 5; 6; 7]) ;
+  check
+    "copy_to_host keeps its element-range refusal"
+    (match
+       Transfer.copy_to_host ~src:v ~src_offset:(n - 1) (i32_ba 2 (fun _ -> 0l))
+     with
+    | () -> false
+    | exception Invalid_argument msg ->
+        String.starts_with ~prefix:"Transfer.copy_to_host: elements" msg) ;
+  let o = Vector.create Vector.int32 16 in
+  Vector.fill o 5l ;
+  check
+    "read-back of a host-authoritative vector refused"
+    (refuses_invalid (fun () ->
+         Transfer.copy_bytes_to_host ~src:o ~src_byte_offset:0 (char_ba 4))) ;
+  let s = Transfer.create_stream dev in
+  Transfer.destroy_stream s ;
+  check
+    "byte read-back on a destroyed stream refused"
+    (refuses_invalid (fun () ->
+         Transfer.copy_bytes_to_host
+           ~stream:s
+           ~src:v
+           ~src_byte_offset:0
+           (char_ba 4))) ;
+  check
+    "src location unchanged by a read-back"
+    (match Vector.location v with Vector.GPU d -> d.id = dev.id | _ -> false)
+
+let test_bytes_to_host dev =
+  let n = 2048 in
+  let v = Transfer.create_device_only dev Vector.int32 n in
+  Transfer.copy_to_device (i32_ba n bytes_value) ~dst:v ~dst_offset:0 ;
+  test_bytes_to_host_data dev v n ;
+  test_bytes_to_host_edges dev v n ;
+  Transfer.free_all_buffers v
+
+(* spec: specs/copy-bytes-to-host.md, scenario 5. The copy is ordered after a
+   launch that writes [src] on the same stream; its pinned destination is in
+   flight until the stream is synchronised. *)
+let test_bytes_to_host_stream dev =
+  let n = 4096 in
+  let x = Transfer.create_device_only dev Vector.int32 n in
+  let y = Transfer.create_device_only dev Vector.int32 n in
+  Transfer.copy_to_device
+    (i32_ba n (fun i -> Int32.of_int (5 * i)))
+    ~dst:x
+    ~dst_offset:0 ;
+  Transfer.copy_to_device (i32_ba n (fun _ -> 0l)) ~dst:y ~dst_offset:0 ;
+  let s = Transfer.create_stream dev in
+  let pinned = Transfer.alloc_pinned dev Bigarray.char (4 * n) in
+  launch ~stream:s dev x y n ;
+  Transfer.copy_bytes_to_host ~stream:s ~src:y ~src_byte_offset:0 pinned ;
+  check
+    "free_pinned refused while a byte read-back targets it"
+    (refuses_invalid (fun () -> Transfer.free_pinned pinned)) ;
+  check
+    "freeing the source of a pending read-back refused"
+    (refuses_invalid (fun () -> Transfer.free_all_buffers y)) ;
+  Transfer.synchronize_stream s ;
+  check
+    "stream byte read-back ordered after the launch (y = x + 1)"
+    (holds_le pinned ~first:0 (fun i -> Int32.of_int ((5 * i) + 1))) ;
+  (* Pageable destination, at an offset, released through an event. *)
+  let e = Transfer.create_event dev in
+  let page = char_ba 4096 in
+  Transfer.copy_bytes_to_host ~stream:s ~src:y ~src_byte_offset:8192 page ;
+  Transfer.record_event e s ;
+  Transfer.synchronize_event e ;
+  check
+    "stream byte read-back into pageable memory after synchronize_event"
+    (holds_le page ~first:2048 (fun i -> Int32.of_int ((5 * i) + 1))) ;
+  Transfer.free_pinned pinned ;
+  Transfer.destroy_event e ;
+  Transfer.destroy_stream s ;
+  Transfer.free_all_buffers x ;
+  Transfer.free_all_buffers y
+
 (* Destroyed handles are refused: the driver may recycle them. *)
 let test_destroyed dev =
   let v = Transfer.create_device_only dev Vector.int32 8 in
@@ -642,6 +831,8 @@ let run_on (dev : Device.t) =
   test_device_only dev ;
   test_ranged dev ;
   test_streams_pinned dev ;
+  test_bytes_to_host dev ;
+  test_bytes_to_host_stream dev ;
   test_destroyed dev ;
   test_staged dev ;
   test_staged_ordering dev ;
@@ -675,6 +866,13 @@ let check_refused (dev : Device.t) =
     "ranged copy refused (Feature_not_supported)"
     (refuses_capability (fun () ->
          Transfer.copy_to_device (i32_ba 1 (fun _ -> 0l)) ~dst:v ~dst_offset:0)) ;
+  check
+    "copy_bytes_to_host refused (Feature_not_supported)"
+    (refuses_capability (fun () ->
+         Transfer.copy_bytes_to_host
+           ~src:v
+           ~src_byte_offset:0
+           (Bigarray.Array1.create Bigarray.char Bigarray.c_layout 4))) ;
   check
     "stage_to_device refused (Feature_not_supported)"
     (refuses_capability (fun () ->

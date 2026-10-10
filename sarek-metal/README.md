@@ -194,6 +194,7 @@ let%kernel histogram (data : int32 vec) (bins : int32 vec) (n : int32) (num_bins
 Implements `Framework_sig.ASYNC` (spec `specs/metal-ranged-copies.md`) for
 `Spoc_core.Transfer.create_device_only`, `copy_to_device`,
 `copy_bytes_to_device`, `copy_ptr_to_device`, `copy_to_host`,
+`copy_bytes_to_host`,
 `alloc_pinned`, `register_host`, streams, events and
 `Execute.run_vectors ?stream`.
 
