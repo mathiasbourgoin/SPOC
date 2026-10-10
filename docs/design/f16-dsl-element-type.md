@@ -1142,8 +1142,9 @@ The matrix layer is named here only to fix the relationship.
   If slice 3 is not going to be funded, slices 1–2 buy little on their own beyond
   storage/interchange. This is the most important strategic question and it is a
   human call, not an engineering one.
-- **Verification substrate:** ZLUDA does not execute `mma`/`wmma`
-  (`l15b-mma-probe.md`), so slice-3 tensor-core validation needs real
+- **Verification substrate:** ZLUDA executes only two `mma` forms, m16n8k16
+  f32.f16 (a dot-product emulation, not the matrix units) and m16n8k32 s8, and no
+  `wmma` (`l15b-mma-probe.md`, corrected 2026-10-11), so slice-3 tensor-core validation needs real
   NVIDIA/AMD/Apple hardware, not the current dev box. Slices 1–2 are validatable on
   the interpreter + one real GPU.
 
