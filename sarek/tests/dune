@@ -1,4 +1,4 @@
-(dirs unit e2e negative native new_runtime codegen_golden)
+(dirs unit e2e negative native new_runtime codegen_golden downstream)
 
 (alias
  (name runtest)
@@ -11,5 +11,7 @@
    (alias codegen_golden/runtest))
   (:new_runtime
    (alias new_runtime/runtest))
+  (:downstream
+   (alias downstream/runtest))
   (:core
    (alias ../core/test/runtest))))

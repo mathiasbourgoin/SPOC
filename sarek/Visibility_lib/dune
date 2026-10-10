@@ -2,6 +2,11 @@
  (name visibility_lib)
  (public_name sarek.visibility)
  (wrapped false)
+ ; A kernel-PPX extension: its [@sarek.module] registrations reach kernels in
+ ; other libraries only when the PPX driver links it, i.e. when a consumer
+ ; lists it in (pps sarek.ppx sarek.visibility); (kind ppx_rewriter) is what
+ ; makes that legal (sarek/ppx_intrinsic/README.md).
+ (kind ppx_rewriter)
  (modules visibility_lib)
  (libraries sarek sarek.stdlib)
  (preprocess

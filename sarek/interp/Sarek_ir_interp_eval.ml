@@ -45,27 +45,48 @@ let rec eval_intrinsic state path name args =
 
 (** Try type-specific intrinsics based on path *)
 and eval_intrinsic_by_type path name args =
-  if is_float32_path path then
-    match eval_float32_math_intrinsic name args with
-    | Some v -> v
-    | None ->
-        let full = String.concat "." (path @ [name]) in
-        Interp_error.raise_error (Unknown_intrinsic {name = full})
-  else if is_float64_path path then
-    match eval_float64_math_intrinsic name args with
-    | Some v -> v
-    | None ->
-        let full = String.concat "." (path @ [name]) in
-        Interp_error.raise_error (Unknown_intrinsic {name = full})
-  else if is_int32_path path then
-    match eval_int32_math_intrinsic name args with
-    | Some v -> v
-    | None ->
-        let full = String.concat "." (path @ [name]) in
-        Interp_error.raise_error (Unknown_intrinsic {name = full})
-  else
-    let full = String.concat "." (path @ [name]) in
-    Interp_error.raise_error (Unknown_intrinsic {name = full})
+  let builtin =
+    if is_float32_path path then eval_float32_math_intrinsic name args
+    else if is_float64_path path then eval_float64_math_intrinsic name args
+    else if is_int32_path path then eval_int32_math_intrinsic name args
+    else None
+  in
+  match builtin with
+  | Some v -> v
+  | None -> eval_registered_intrinsic path name args
+
+(** An intrinsic with no built-in entry: run the host implementation that
+    [let%sarek_intrinsic] registered for it (any library's, sarek's stdlib or a
+    downstream one), converting each argument to its DECLARED type. Raises
+    [Unknown_intrinsic] when nothing is registered, which is the case for a
+    signature with a non-scalar type. *)
+and eval_registered_intrinsic path name args =
+  let unknown () =
+    Interp_error.raise_error
+      (Unknown_intrinsic {name = String.concat "." (path @ [name])})
+  in
+  match
+    ( Sarek_registry.find_host_impl ~module_path:path name,
+      Sarek_registry.find_fun ~module_path:path name )
+  with
+  | Some impl, Some fi when List.length fi.fi_arg_types = List.length args -> (
+      let to_host ty v : Sarek_registry.host_value =
+        match ty with
+        | "int32" -> HInt32 (to_int32 v)
+        | "int64" -> HInt64 (to_int64 v)
+        | "float32" -> HFloat32 (to_float32 v)
+        | "float" | "float64" -> HFloat64 (to_float64 v)
+        | "bool" -> HBool (to_bool v)
+        | _ -> HUnit
+      in
+      match impl (List.map2 to_host fi.fi_arg_types args) with
+      | HInt32 n -> VInt32 n
+      | HInt64 n -> VInt64 n
+      | HFloat32 f -> VFloat32 (Sarek_float32.to_float32 f)
+      | HFloat64 f -> VFloat64 f
+      | HBool b -> VBool b
+      | HUnit -> VUnit)
+  | _ -> unknown ()
 
 (** {1 Expression Evaluation} *)
 

@@ -162,7 +162,7 @@
   sarek_backend_error)
  (preprocessor_deps registered_defs.ml)
  (preprocess
-  (pps sarek_ppx))
+  (pps sarek_ppx sarek.visibility))
  (flags
   (:standard -w -32-33-34-69)))
 

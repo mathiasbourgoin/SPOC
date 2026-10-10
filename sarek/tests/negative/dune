@@ -10,6 +10,9 @@
 ; - test_superstep_diverged: "Barrier called in diverged control flow"
 ; - test_warp_diverged: "Warp collective 'warp_shuffle' called in diverged control flow"
 ; - test_unbound_function: "Unbound variable"
+; - test_unlinked_intrinsic: "Unknown kernel function or constant Bits.float_of_bits"
+;   AND "(pps sarek.ppx <library>)" (an intrinsic from a library the PPX
+;   did not link; refused at PPX time instead of reaching device source)
 ; - test_reserved_keyword: "'double' is a reserved C/CUDA/OpenCL keyword"
 ; - test_convention_kernel_fail: "Field z not found"
 ; - test_convention_kernel_fail2: "Cannot unify types"
@@ -902,6 +905,17 @@
  (name neg_test_fun_eq)
  (modules test_fun_eq)
  (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_unlinked_intrinsic)
+ (modules test_unlinked_intrinsic)
+ (libraries sarek sarek.stdlib sarek.ppx.lib dstest_intrinsics)
  (preprocess
   (pps sarek_ppx))
  (flags

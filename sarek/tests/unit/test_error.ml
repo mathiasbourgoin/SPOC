@@ -238,6 +238,42 @@ let test_all_error_constructors_have_loc () =
       Alcotest.(check string) "location extracted" "test.ml" loc.loc_file)
     errors
 
+(* Test: an unknown qualified kernel name is reported with the call, the fix
+   (link the library into the PPX) and, when the PPX knows other names under
+   the same module, those names *)
+let test_error_to_string_unknown_qualified () =
+  let err =
+    Sarek_error.Unknown_qualified_name
+      {
+        name = "Bits.float_of_bitz";
+        known = ["Bits.float_of_bits"];
+        loc = dummy_loc;
+      }
+  in
+  let s = Sarek_error.error_to_string err in
+  Alcotest.(check bool) "names the call" true (contains s "Bits.float_of_bitz") ;
+  Alcotest.(check bool)
+    "names the fix"
+    true
+    (contains s "(pps sarek.ppx <library>)") ;
+  Alcotest.(check bool)
+    "lists the known names"
+    true
+    (contains s "Names the PPX knows under Bits: Bits.float_of_bits.") ;
+  let bare =
+    Sarek_error.error_to_string
+      (Sarek_error.Unknown_qualified_name
+         {name = "Nowhere.f"; known = []; loc = dummy_loc})
+  in
+  Alcotest.(check bool)
+    "no known-names sentence when there are none"
+    false
+    (contains bare "Names the PPX knows") ;
+  Alcotest.(check string)
+    "location"
+    "test.ml"
+    (Sarek_error.error_loc err).loc_file
+
 (* Test: Error formatting contains expected keywords *)
 let test_error_messages_contain_keywords () =
   let test_cases =
@@ -281,6 +317,10 @@ let () =
             `Quick
             test_error_to_string_type_mismatch;
           Alcotest.test_case "barrier" `Quick test_error_to_string_barrier;
+          Alcotest.test_case
+            "unknown qualified name"
+            `Quick
+            test_error_to_string_unknown_qualified;
           Alcotest.test_case "with location" `Quick test_pp_error_with_loc;
         ] );
       ( "monadic",

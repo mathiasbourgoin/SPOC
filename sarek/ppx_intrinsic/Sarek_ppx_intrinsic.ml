@@ -54,26 +54,50 @@ let rec type_name_of_core_type (ct : core_type) : string =
   | Ptyp_constr ({txt = Ldot (_, name); _}, _) -> name
   | _ -> "unknown"
 
-(** Get the full module path from a location. For wrapped libraries like
-    Sarek_stdlib, modules are accessed as Sarek_stdlib.Float32, so we need
-    [Sarek_stdlib; Float32] as the path. This is derived from the directory
-    structure. *)
+(** Name of the dune library whose module is being preprocessed, from the
+    [library-name] cookie dune passes to every ppx driver it runs on a library's
+    sources ([--cookie 'library-name="foo"']). [None] when the file is not part
+    of a library (an executable or test stanza) or when the driver is run
+    outside dune. *)
+let library_name : string option ref = ref None
+
+let () =
+  Driver.Cookies.add_simple_handler
+    "library-name"
+    Ast_pattern.(estring __)
+    ~f:(fun name -> library_name := name)
+
+(** The OCaml path under which the module being preprocessed is reachable from a
+    consumer, e.g. [["Sarek_stdlib"; "Float32"]] for
+    [sarek/Sarek_stdlib/Float32.ml]. Both registries key the intrinsic on it,
+    and the kernel PPX emits it verbatim as the existence witness and as the
+    Native backend's call target, so it must be the REAL path.
+
+    It comes from the library name dune hands the driver, under dune's default
+    [(wrapped true)]: module [M] of library [lib] is [Lib.M], and the library's
+    main module [lib.ml] is [Lib] itself. Outside a library it is [[M]].
+
+    It used to be guessed from the source DIRECTORY: a directory name containing
+    an underscore was taken to be the library name, any other was dropped. That
+    held for sarek's own trees, whose directories are named after their
+    libraries, and nowhere else: a downstream library [foo_intrinsics] living in
+    [src/intrinsics/] registered [Bits.f] instead of [Foo_intrinsics.Bits.f],
+    and renaming the directory changed the path.
+
+    A [(wrapped false)] library is not detectable from the driver: its modules
+    are top-level, but the path computed here still carries the library prefix,
+    and the witness then fails to compile ("Unbound module"), loudly. Declare
+    intrinsics in a wrapped library. *)
 let module_path_of_loc loc =
   let file = loc.loc_start.pos_fname in
-  let base = Filename.(remove_extension (basename file)) in
-  let module_name = String.capitalize_ascii base in
-  (* Extract directory name - could be the library name for wrapped libraries *)
-  let dir = Filename.dirname file in
-  let dir_base = Filename.basename dir in
-  (* Capitalize and check if it looks like a library name (has underscore or
-     is a known stdlib). If so, include it in the path. *)
-  let lib_name = String.capitalize_ascii dir_base in
-  if String.contains dir_base '_' then
-    (* Looks like a library name like "Sarek_stdlib" or "Sarek_ppx_lib" *)
-    [lib_name; module_name]
-  else
-    (* Just a regular directory, use module name only *)
-    [module_name]
+  let module_name =
+    String.capitalize_ascii Filename.(remove_extension (basename file))
+  in
+  match !library_name with
+  | None -> [module_name]
+  | Some lib ->
+      let lib = String.capitalize_ascii lib in
+      if String.equal lib module_name then [lib] else [lib; module_name]
 
 (** Convert simple type name to Sarek_types representation *)
 let sarek_type_of_simple_name ~loc (name : string) : expression =
@@ -288,6 +312,86 @@ let rec extract_fun_types (ct : core_type) : string list * string =
       (type_name_of_core_type arg_type :: more_args, final_ret)
   | _ -> ([], type_name_of_core_type ct)
 
+(** The {!Sarek_registry.host_value} constructor carrying a scalar of the given
+    declared type, or [None] when the type is not a scalar the registry's host
+    path can carry ([int], arrays, vectors, registered custom types). *)
+let host_ctor_of_type_name = function
+  | "int32" -> Some "HInt32"
+  | "int64" -> Some "HInt64"
+  | "float32" -> Some "HFloat32"
+  | "float" | "float64" -> Some "HFloat64"
+  | "bool" -> Some "HBool"
+  | "unit" -> Some "HUnit"
+  | _ -> None
+
+(** Registration of the host implementation [fun_name] (already bound) for
+    evaluators without a built-in entry for it (the interpreter). [None] when
+    the signature has no argument or a non-scalar type: such an intrinsic is
+    left to the evaluator's own table, as before. *)
+let host_impl_registration ~loc ~module_path_expr ~fun_name arg_types ret_type =
+  let ctors = List.map host_ctor_of_type_name (arg_types @ [ret_type]) in
+  if arg_types = [] || List.mem None ctors then None
+  else
+    let ctor name = {txt = Ldot (Lident "Sarek_registry", name); loc} in
+    let arg_ctors =
+      List.map (fun t -> Option.get (host_ctor_of_type_name t)) arg_types
+    in
+    let ret_ctor = Option.get (host_ctor_of_type_name ret_type) in
+    let pats, args =
+      List.split
+        (List.mapi
+           (fun i c ->
+             if String.equal c "HUnit" then
+               ( Ast_builder.Default.ppat_construct ~loc (ctor c) None,
+                 [%expr ()] )
+             else
+               let v = Printf.sprintf "a%d" i in
+               ( Ast_builder.Default.ppat_construct
+                   ~loc
+                   (ctor c)
+                   (Some (Ast_builder.Default.pvar ~loc v)),
+                 Ast_builder.Default.evar ~loc v ))
+           arg_ctors)
+    in
+    let list_pat =
+      List.fold_right
+        (fun p acc ->
+          Ast_builder.Default.ppat_construct
+            ~loc
+            {txt = Lident "::"; loc}
+            (Some (Ast_builder.Default.ppat_tuple ~loc [p; acc])))
+        pats
+        (Ast_builder.Default.ppat_construct ~loc {txt = Lident "[]"; loc} None)
+    in
+    let call =
+      Ast_builder.Default.pexp_apply
+        ~loc
+        (Ast_builder.Default.evar ~loc fun_name)
+        (List.map (fun a -> (Nolabel, a)) args)
+    in
+    let result =
+      if String.equal ret_ctor "HUnit" then
+        [%expr
+          [%e call] ;
+          Sarek_registry.HUnit]
+      else Ast_builder.Default.pexp_construct ~loc (ctor ret_ctor) (Some call)
+    in
+    let mismatch =
+      Ast_builder.Default.estring
+        ~loc
+        (fun_name ^ ": host arguments do not match the declared signature")
+    in
+    let name_expr = Ast_builder.Default.estring ~loc fun_name in
+    Some
+      [%stri
+        let () =
+          Sarek_registry.register_host_impl
+            ~module_path:[%e module_path_expr]
+            [%e name_expr]
+            (function
+            | [%p list_pat] -> [%e result]
+            | _ -> invalid_arg [%e mismatch])]
+
 (** Extension for let%sarek_intrinsic - handles function registration *)
 let expand_sarek_intrinsic_fun ~ctxt payload =
   let loc = Expansion_context.Extension.extension_point_loc ctxt in
@@ -410,6 +514,13 @@ let expand_sarek_intrinsic_fun ~ctxt payload =
         (* Expose the OCaml implementation for host-side use *)
         [%stri let [%p fun_name_pat] = [%e ocaml_expr]];
       ]
+      @ Option.to_list
+          (host_impl_registration
+             ~loc
+             ~module_path_expr
+             ~fun_name
+             arg_types
+             ret_type)
   | _ ->
       Location.raise_errorf
         ~loc

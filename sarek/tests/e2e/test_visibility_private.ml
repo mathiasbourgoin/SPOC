@@ -18,7 +18,16 @@ let () =
 
 (* Test that public functions are accessible in kernels.
    Private functions (marked with sarek.module_private) should not be
-   visible to external modules - this is enforced by the registry. *)
+   visible to external modules - this is enforced by the registry.
+
+   Visibility_lib's items reach this kernel through the PPX registry: the
+   library is (kind ppx_rewriter) and listed in this stanza's pps. A
+   [@sarek.module] item from another library is called by its short name (the
+   [let open] only documents where it comes from). The call used to be written
+   [Visibility_lib.public_add], which the PPX did NOT resolve: the typer let
+   any unknown [M.f] through untyped, Native happened to run it as an OCaml
+   call, and every source backend would have printed it verbatim. Unknown
+   qualified names are now refused. *)
 let () =
   let kernel =
     [%kernel
@@ -26,8 +35,9 @@ let () =
           (ys : float32 vector)
           (dst : float32 vector)
           (n : int32) ->
+        let open Visibility_lib in
         let tid = thread_idx_x + (block_idx_x * block_dim_x) in
-        if tid < n then dst.(tid) <- Visibility_lib.public_add xs.(tid) ys.(tid)]
+        if tid < n then dst.(tid) <- public_add xs.(tid) ys.(tid)]
   in
 
   let _native, kirc = kernel in

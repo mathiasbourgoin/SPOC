@@ -16,6 +16,10 @@ open Sarek_types
 (** Error types *)
 type error =
   | Unbound_variable of string * loc
+  | Unknown_qualified_name of {name : string; known : string list; loc : loc}
+      (** [M.f] inside a kernel names nothing the kernel PPX knows: no
+          intrinsic, [[@sarek.module]] item or binding. [known] lists the names
+          the PPX does know under the same module prefix (for typos). *)
   | Unbound_constructor of string * loc
   | Unbound_field of string * loc
   | Unbound_type of string * loc
@@ -78,6 +82,7 @@ type error =
 (** Get the location from an error *)
 let error_loc = function
   | Unbound_variable (_, loc) -> loc
+  | Unknown_qualified_name {loc; _} -> loc
   | Unbound_constructor (_, loc) -> loc
   | Unbound_field (_, loc) -> loc
   | Unbound_type (_, loc) -> loc
@@ -192,6 +197,32 @@ let aggregate_equality_body (ty : typ) : string =
 (** Pretty print an error *)
 let pp_error fmt = function
   | Unbound_variable (name, _) -> Format.fprintf fmt "Unbound variable: %s" name
+  | Unknown_qualified_name {name; known; _} ->
+      let modname =
+        match String.rindex_opt name '.' with
+        | Some i -> String.sub name 0 i
+        | None -> name
+      in
+      Format.fprintf
+        fmt
+        "Unknown kernel function or constant %s: the kernel PPX has no \
+         intrinsic, [@sarek.module] item or binding with this name, so it \
+         cannot be compiled to device code. If %s is declared with \
+         let%%sarek_intrinsic in another library, that library must be linked \
+         into the PPX driver: give it (kind ppx_rewriter) and list it in \
+         (preprocess (pps sarek.ppx <library>)) - see \
+         sarek/ppx_intrinsic/README.md, \"Using intrinsics from another \
+         library\". (A [@sarek.module] item of a linked library is called by \
+         its short name.)%s"
+        name
+        name
+        (match known with
+        | [] -> ""
+        | names ->
+            Printf.sprintf
+              " Names the PPX knows under %s: %s."
+              modname
+              (String.concat ", " names))
   | Unbound_constructor (name, _) ->
       Format.fprintf fmt "Unbound constructor: %s" name
   | Unbound_field (name, _) ->

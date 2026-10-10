@@ -161,7 +161,11 @@ let reduction_max_kernel =
       let gid = thread_idx_x + (block_dim_x * block_idx_x) in
       let%superstep load =
         if gid < n then sdata.(tid) <- input.(gid)
-        else sdata.(tid) <- Float.neg_infinity
+        (* -FLT_MAX, the max-reduction identity for finite inputs. This was
+           [Float.neg_infinity], which no kernel PPX resolves: it was emitted
+           verbatim into all four device sources until unknown qualified
+           names became a PPX error. *)
+          else sdata.(tid) <- -3.4028234663852886e38
       in
       let%superstep reduce128 =
         if tid < 128l then begin
