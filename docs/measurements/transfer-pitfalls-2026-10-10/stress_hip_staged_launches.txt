@@ -1,0 +1,9 @@
+sam. 10 oct. 2026 19:51:31 CEST
+7.1.2-3-cachyos
+               total       utilisé      libre     partagé tamp/cache   disponible
+Mem:             125          83          36           0           6          41
+AMD Radeon RX 7900 XTX: 0 of 20 runs with a bad slice
+    iteration 276: slice starts with -5
+    iteration 276: slice starts with -5
+    iteration 276: slice starts with -5
+AMD Ryzen 9 7950X 16-Core Processor: 3 of 20 runs with a bad slice

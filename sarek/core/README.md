@@ -360,6 +360,7 @@ VRAM-resident cache while the GPU computes). Spec:
 | `stream_wait_event`, `event_query` | yes | yes | wait implied by buffer tracking; query real | trivially complete | refused |
 | pinned host memory | `hipHostMalloc` (portable) | `cuMemHostAlloc` (portable) | page-aligned host memory | plain host memory | refused |
 | `register_host` | `hipHostRegister` | `cuMemHostRegister` (not on ZLUDA) | no-op | no-op | refused |
+| `stage_to_device` | asynchronous, staged | asynchronous, staged | synchronous ranged copy | synchronous ranged copy | refused |
 
 Metal (spec `specs/metal-ranged-copies.md`): every buffer is
 `MTLResourceStorageModeShared`; on Apple silicon CPU and GPU share one physical
@@ -402,6 +403,11 @@ val alloc_pinned : Device.t -> ('a, 'b) Bigarray.kind -> int -> ('a, 'b, c_layou
 val free_pinned : (_, _, c_layout) Bigarray.Array1.t -> unit
 val register_host : Device.t -> (_, _, c_layout) Bigarray.Array1.t -> unit
 val unregister_host : (_, _, c_layout) Bigarray.Array1.t -> unit
+
+(* Small writes (<= max_staged_bytes = 64 KiB) to a vector kernels read,
+   without waiting for the GPU; the source may be reused on return. *)
+val stage_to_device : ?stream:stream -> ('a, 'b, c_layout) Bigarray.Array1.t ->
+  dst:('a, 'b) Vector.t -> dst_offset:int -> unit
 val is_pinned : (_, _, c_layout) Bigarray.Array1.t -> bool
 
 (* Events; Execute.run / run_vectors take ?stream. *)
@@ -448,6 +454,51 @@ Rules worth knowing:
 - Vector location and buffer tables are not synchronised across domains:
   use a vector from one domain at a time. The ledger and pinned registry are
   mutex-protected.
+
+#### Small host writes to device-resident vectors
+
+`Vector.set` on a vector a GPU kernel has used is expensive. Every launch
+leaves its vector arguments `Stale_CPU`, so the first `set` downloads the
+whole vector (after every queued kernel), and the next launch re-uploads it
+with a synchronous copy that waits for the queue again. Rewriting a few
+routing indices per layer this way serialises host and GPU.
+`Transfer.stage_to_device` is the cheap path: it copies the source into a
+1 MiB per-device pinned staging ring and enqueues the copy on the stream
+(default stream by default), so it neither waits for the GPU nor requires the
+caller to keep the source unchanged. Reusing one caller-owned pinned buffer
+with `copy_to_device ~stream` instead is a race: a copy still queued reads
+whatever the buffer holds when it runs (seen as wrong results in a first
+version of the benchmark).
+
+`sarek-hip/test/bench_hip_small_writes.exe` (RX 7900 XTX, ROCm 7.2,
+2026-10-10, shared machine; 8 int32 + 8 float32 rewritten, 300 us host work,
+4 launches per iteration; three runs):
+
+| Mode | us / iteration | of which in the writes |
+|---|---|---|
+| no rewrite | 320–324 | 0 |
+| `Vector.set` | 709–712 | 339–344 |
+| `stage_to_device` | 333–343 | 10–13 |
+
+#### Registering host memory on ROCm
+
+Measured with `sarek-hip/test/bench_hip_register_host.exe` and earlier
+versions of it (raw output in `docs/measurements/transfer-pitfalls-2026-10-10/`; 8 GiB,
+synchronous 5.5 MiB copies; tartarus 2026-10-10, under memory pressure from
+other workloads). Details and caveats are on `Transfer.register_host`.
+
+- Copies right after registering are sometimes slow: 7 of 50 first passes
+  ran at 0.95–6.17 GB/s (about 26 otherwise), whatever the preparation —
+  memory written before registering, never touched, written after
+  registering, or faulted in first with `madvise(MADV_POPULATE_WRITE)`.
+  spoc_llm attributed its 0.45 GB/s to registering untouched memory; these
+  runs do not support that, only an intermittent, state-dependent effect.
+- A copy may not span two registrations: `hipErrorInvalidValue`.
+- One large registration slowing to 2.3 GB/s after CPU writes was observed by
+  spoc_llm once and did not reproduce (26.3 GB/s); measure region sizes on
+  the target machine.
+- ROCm does not count registered pages as pinned (`VmPin: 0 kB`); whether that
+  explains slow copies under memory pressure is not established.
 
 ### Kernel Execution
 

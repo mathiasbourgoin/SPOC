@@ -1,0 +1,42 @@
+Earlier runs cited by specs/transfer-pitfalls.md, transcribed from the session
+(tartarus, 2026-10-10, 19:13-19:50 CEST). Probe = first version of
+bench_hip_register_host (20 warm-up copies, a first and a repeat pass).
+
+== probe, 8 GiB (19:15)
+register untouched                         2.45 GB/s
+register untouched                        24.87 GB/s (repeat)
+touch, register                           25.12 GB/s
+populate, register                        24.53 GB/s
+touch, register 64MiB regions             24.73 GB/s
+
+== bench_hip_register_host, 8 GiB, three preparations, 7 runs (first / repeat GB/s)
+run1 touched 26.34/26.90 untouched  6.17/26.66 populated 26.93/27.00
+run2 touched 26.69/26.76 untouched 26.73/26.97 populated 26.87/26.92
+run3 touched 26.37/26.67 untouched 26.46/26.92 populated 26.72/26.55
+run4 untouched 26.68/26.86 populated 26.46/26.28  (touched line not kept)
+run5 untouched 25.71/26.67 populated 26.48/26.85  (touched line not kept)
+run6 untouched 26.24/26.65 populated 26.65/27.01  (touched line not kept)
+run7 untouched 26.54/26.74 populated 26.14/26.63  (touched line not kept)
+4 GiB, one run: touched 26.59/26.81 untouched 26.69/27.03 populated 26.65/26.91
+VmRSS growth when registering 8 GiB of untouched memory: +8.21 to +8.39 GB; VmPin: 0 kB throughout.
+copy spanning two registrations: hipErrorInvalidValue (synchronous: hipMemcpyHtoD (range); stream: hipMemcpyHtoDAsync)
+
+== spoc_llm bench/regbench.exe (spoc_llm commit de225a9), 8 GiB, 5.6 MiB records, 400 copies
+REGBENCH_WRITE=1:            registered copies: 26.52 GB/s
+REGBENCH_FILE=<GGUF shard>:  registered copies after O_DIRECT fill: 26.30 GB/s (1 region)
+REGBENCH_CHUNK_MIB=64 + FILE: registered copies after O_DIRECT fill: 25.94 GB/s (133 regions)
+late:                        register_host first 2.86 s, then touch 0.45 s; registered copies: 10.82 GB/s
+
+== bench_hip_small_writes before the final code (spin 1000, three runs)
+none 323.0 / 320.8 / 323.5   vector_set 708.3 / 706.1 / 705.3 (writes 344.1 / 338.8 / 340.2)   staged 329.8 / 334.1 / 329.4 (writes 8.8 / 10.1 / 8.7)
+First draft with a "pinned" mode (one caller-owned pinned buffer reused, copy_to_device on the default stream):
+  none 270.9  vector_set 301.5  pinned 230.0  ->  RESULT MISMATCH: pinned differs from vector_set
+
+== C-9 stress modes, 20 runs per device each (stress_hip_staged_launches, SPOC_STRESS_MODE)
+pinned        RX 7900 XTX 0/20, 7950X iGPU 0/20
+pinned_event  0/20, 0/20
+pinned_wait   0/20, 0/20
+pinned_sub    0/20, 0/20
+pinned_ring   0/20, 1/20 (iteration 265)
+default (stage_to_device) with OCAMLRUNPARAM=s=4M: 0/12, 0/12; s=64k: 0/12, 0/12
+Count: 50 observed first passes at 8 GiB = probe 4 + runs 1-3 (9) + runs 4-7 untouched/populated (8) + bench_hip_register_host.txt (9) + _5way (20); 7 below 10 GB/s.

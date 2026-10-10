@@ -6,7 +6,8 @@
   test_vector
   test_vector_transfer
   test_kernel_arg
-  test_gpu_memory)
+  test_gpu_memory
+  test_staging_ring)
  (modules
   test_memory
   test_kernel
@@ -14,7 +15,8 @@
   test_vector
   test_vector_transfer
   test_kernel_arg
-  test_gpu_memory)
+  test_gpu_memory
+  test_staging_ring)
  (libraries spoc_core ctypes))
 
 (test

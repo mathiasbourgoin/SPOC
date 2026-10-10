@@ -71,7 +71,13 @@ let ensure_cpu_sync = Vector_transfer.ensure_cpu_sync
 (** {1 Element Access} *)
 
 (** Get element (works for both storage types). Auto-syncs from GPU if location
-    is Stale_CPU and auto_sync is enabled. *)
+    is Stale_CPU and auto_sync is enabled.
+
+    Cost on a vector a kernel has used: every GPU launch leaves its vector
+    arguments [Stale_CPU] (SPOC does not know which ones the kernel wrote), so
+    the first [get] after a launch downloads the WHOLE vector, which waits for
+    every kernel queued before it. Read results once with [Transfer.to_cpu] or
+    [Transfer.copy_to_host] rather than element by element between launches. *)
 let get : type a b. (a, b) t -> int -> a =
  fun vec idx ->
   if idx < 0 || idx >= vec.length then
@@ -86,7 +92,16 @@ let get : type a b. (a, b) t -> int -> a =
   | Custom_storage {ptr; custom; _} -> custom.get ptr idx
   | Device_only_storage -> device_only_refusal ~op:"Vector.get" ~id:vec.id
 
-(** Set element (works for both storage types) *)
+(** Set element (works for both storage types).
+
+    Cost on a vector that lives on a GPU: after a launch the vector is
+    [Stale_CPU], so the first [set] downloads the whole vector (waiting for
+    every queued kernel), and marks the device copy stale; the next launch then
+    uploads the whole vector with a synchronous copy, which waits for the GPU
+    queue again. In a decode loop that rewrites a few elements per layer this
+    serialises host and GPU (bench_hip_small_writes: about 710 us per iteration
+    instead of about 335). To update a small vector that kernels read, use
+    [Transfer.stage_to_device]: it does not wait for the GPU. *)
 let set : type a b. (a, b) t -> int -> a -> unit =
  fun vec idx value ->
   if idx < 0 || idx >= vec.length then

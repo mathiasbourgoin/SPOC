@@ -2,6 +2,28 @@
 
 ### Added
 
+- `Transfer.stage_to_device ?stream src ~dst ~dst_offset`: the cheap way to
+  update a small vector that kernels read (at most
+  `Transfer.max_staged_bytes` = 64 KiB per call). The source is copied into a
+  1 MiB per-device pinned staging ring before the call returns, so the caller
+  may reuse it at once, and the copy is enqueued on the stream (default: the
+  device's default stream) without waiting for the GPU. `Vector.set` on such a
+  vector downloads it after every launch and re-uploads it synchronously at
+  the next one, waiting for the GPU queue both times; its documentation now
+  says so. Measured with `sarek-hip/test/bench_hip_small_writes.exe` (RX 7900
+  XTX, 8 int32 + 8 float32 rewritten, 300 us host work, 4 launches per
+  iteration, three runs): 709–712 us per iteration with `Vector.set`,
+  333–343 with `stage_to_device`, 320–324 without any rewrite. Native,
+  Interpreter and Metal perform a synchronous ranged copy; OpenCL, Vulkan and
+  WebGPU refuse. Spec `specs/transfer-pitfalls.md`.
+
+- `Transfer.register_host` documents measured ROCm pitfalls: copies right
+  after registering are intermittently slow (7 of 50 first passes at
+  0.95–6.17 GB/s, about 26 otherwise, whether the memory was touched before
+  registering or not; `bench_hip_register_host.exe`), a copy may not span two
+  registrations (`hipErrorInvalidValue`), and ROCm does not count registered
+  pages as pinned (`VmPin: 0 kB`).
+
 - Metal implements device-only vectors, ranged copies, pinned memory, streams
   and events (spec `specs/metal-ranged-copies.md`). Buffers stay
   shared-storage MTLBuffers (Apple silicon unified memory), so a ranged copy is
