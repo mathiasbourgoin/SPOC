@@ -151,6 +151,14 @@ let intrinsic_arity =
 let full_name path name =
   match path with [] -> name | _ -> String.concat "." path ^ "." ^ name
 
+(** An int32 literal in C, OpenCL C or MSL source. [-2147483648] is unary minus
+    applied to [2147483648], which has type [long] in all three, so
+    [Int32.min_int] would reach a size-checked reinterpretation ([as_float],
+    [as_type<float>]) as an 8-byte operand and fail to compile.
+    [(-2147483647 - 1)] is an [int]. *)
+let c_int32_literal n =
+  if n = Int32.min_int then "(-2147483647 - 1)" else Int32.to_string n
+
 (** Emit [arg0, arg1, ...] (comma-space separated) using the backend generator.
 *)
 let emit_args ~gen_expr buf args =

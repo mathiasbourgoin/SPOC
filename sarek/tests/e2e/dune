@@ -1984,6 +1984,7 @@
   test_helpers
   unix
   sarek_backend_error
+  sarek.codegen
   (select
    backend_hip.ml
    from

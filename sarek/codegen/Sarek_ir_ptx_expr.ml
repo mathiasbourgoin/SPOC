@@ -31,6 +31,16 @@ let is_f64_reg r = String.length r >= 3 && r.[1] = 'f' && r.[2] = 'd'
 
 let is_f32_reg r = String.length r >= 2 && r.[1] = 'f' && not (is_f64_reg r)
 
+(* Refusal for a same-named intrinsic from another module: PTX lowers its own
+   table only and has no registry fallback, so say which one it does lower. *)
+let off_stdlib_int32 path name =
+  Printf.sprintf
+    "intrinsic %s.%s: PTX lowers only the stdlib Int32.%s; intrinsics declared \
+     in other modules have no PTX lowering"
+    (String.concat "." path)
+    name
+    name
+
 (* A 32-bit integer register ([%rN], not the 64-bit [%rdN]). *)
 let is_s32_reg r = String.length r >= 3 && r.[1] = 'r' && r.[2] <> 'd'
 
@@ -2136,7 +2146,8 @@ and bitcast_intrinsic_handlers () : (string list * intrinsic_handler) list =
        take this lowering. *)
     ( ["float_of_bits"],
       fun buf alloc env path name args ->
-        if not (Sarek_ir_intrinsic_dispatch.is_stdlib_int32_path path) then None
+        if not (Sarek_ir_intrinsic_dispatch.is_stdlib_int32_path path) then
+          unsupported (off_stdlib_int32 path name)
         else
           let r = intr_unary_arg buf alloc env name args in
           if is_s32_reg r then (
@@ -2146,7 +2157,8 @@ and bitcast_intrinsic_handlers () : (string list * intrinsic_handler) list =
           else unsupported "float_of_bits: int32 operand required" );
     ( ["bits_of_float"],
       fun buf alloc env path name args ->
-        if not (Sarek_ir_intrinsic_dispatch.is_stdlib_int32_path path) then None
+        if not (Sarek_ir_intrinsic_dispatch.is_stdlib_int32_path path) then
+          unsupported (off_stdlib_int32 path name)
         else
           let r = intr_unary_arg buf alloc env name args in
           if is_f32_reg r then (
