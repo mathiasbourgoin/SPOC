@@ -78,6 +78,66 @@ let test_different_options_different_key () =
     true
     (key1 <> key2)
 
+(* Key memo (cheap-repeated-launches FR-007). The oracle recomputes the key from
+   the documented format, independently of the memo, so a memo that served a
+   stale or crossed entry cannot agree with it by construction. *)
+let oracle ~device ~name ~source ~options =
+  let hex s = Digest.to_hex (Digest.string s) in
+  let opts =
+    options
+    |> List.sort (fun (a, _) (b, _) -> String.compare a b)
+    |> List.map (fun (k, v) -> hex k ^ "=" ^ hex v)
+    |> String.concat ","
+  in
+  Printf.sprintf "%s:%s:%s:%s" (hex device) (hex name) (hex source) (hex opts)
+
+let test_memo_keys_match_oracle () =
+  let source = String.concat "\n" (List.init 200 (Printf.sprintf "line %d")) in
+  let copy = Bytes.to_string (Bytes.of_string source) in
+  Alcotest.(check bool) "the copy is a distinct string" false (copy == source) ;
+  let expect = oracle ~device:"0" ~name:"k" ~source ~options:[] in
+  for _ = 1 to 3 do
+    Alcotest.(check string)
+      "same physical source, repeated"
+      expect
+      (CC.make_key ~device:"0" ~name:"k" ~source ())
+  done ;
+  Alcotest.(check string)
+    "fresh copy of the source"
+    expect
+    (CC.make_key ~device:"0" ~name:"k" ~source:copy ()) ;
+  Alcotest.(check string)
+    "empty source"
+    (oracle ~device:"0" ~name:"k" ~source:"" ~options:[])
+    (CC.make_key ~device:"0" ~name:"k" ~source:"" ())
+
+(* One physical source keyed for several (device, name, options) triples must
+   give each triple its own key, in any order of first use. *)
+let test_memo_distinguishes_triples () =
+  let source = "extern \"C\" __global__ void a() {} void b() {}" in
+  let triples =
+    [
+      ("0", "a", []);
+      ("0", "b", []);
+      ("1", "a", []);
+      ("0", "a", [("O", "3")]);
+      ("0", "a", [("O", "2")]);
+    ]
+  in
+  for _ = 1 to 2 do
+    List.iter
+      (fun (device, name, options) ->
+        Alcotest.(check string)
+          (Printf.sprintf
+             "device=%s name=%s opts=%d"
+             device
+             name
+             (List.length options))
+          (oracle ~device ~name ~source ~options)
+          (CC.make_key ~device ~name ~source ~options ()))
+      triples
+  done
+
 let () =
   Alcotest.run
     "Compile_cache"
@@ -111,5 +171,16 @@ let () =
             "different option values -> different key"
             `Quick
             test_different_options_different_key;
+        ] );
+      ( "key_memo",
+        [
+          Alcotest.test_case
+            "memoised keys equal the documented format"
+            `Quick
+            test_memo_keys_match_oracle;
+          Alcotest.test_case
+            "one source, several triples"
+            `Quick
+            test_memo_distinguishes_triples;
         ] );
     ]

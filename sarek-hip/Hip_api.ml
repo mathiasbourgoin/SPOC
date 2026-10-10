@@ -258,9 +258,25 @@ module Memory = struct
     check "hipMalloc (custom)" (hipMalloc pp bytes) ;
     {ptr = !@pp; size; elem_size; device}
 
+  (* [free] is called from GC finalisers ([Gpu_memory.register_finalizer]),
+     i.e. at an arbitrary allocation point of whatever code is running — in
+     particular between [Execute]'s [set_current] and [hipModuleLaunchKernel]
+     of a launch on ANOTHER device. Selecting the buffer's device and leaving
+     it selected then made that launch run a module of device B with device A
+     current: hipErrorInvalidDevice. Observed with two HIP devices (RX 7900 XTX
+     + the 7950X iGPU) once launches allocated less and the collector's timing
+     moved (cheap-repeated-launches). So the previously selected device is
+     restored: a finaliser must leave no trace on the code it interrupted. *)
   let free buf =
+    let prev = Device.current_id () in
     Device.set_current buf.device ;
-    check "hipFree" (hipFree buf.ptr)
+    Fun.protect
+      ~finally:(fun () ->
+        if prev >= 0 && prev <> buf.device.Device.id then begin
+          Device.set_current_id prev ;
+          ignore (hipSetDevice prev)
+        end)
+      (fun () -> check "hipFree" (hipFree buf.ptr))
 
   (* The [Sys.opaque_identity] here is the same keep-alive the sibling
      [load_module_from_code_object] below applies to its code bigarray: the
@@ -601,42 +617,35 @@ module Kernel = struct
     Spoc_framework.Cache_hooks.around_clear (fun () ->
         Spoc_framework.Guarded_cache.clear cache)
 
-  type ctype_ref = CTypeRef : 'a typ * 'a ptr -> ctype_ref
+  (* Argument marshalling: ONE 8-byte-slot block holding every argument value
+     and ONE array of pointers into it, i.e. two host allocations per launch
+     whatever the argument count. The previous shape did one ctypes [allocate]
+     per argument; each is a calloc plus a GC finaliser, and on a 10-argument
+     kernel that was ~3 us of a ~6 us launch (RX 7900 XTX, measured).
 
+     Every value is written with its OWN C type at the start of its slot, so a
+     4-byte argument occupies the low-addressed 4 bytes of its slot and the
+     driver, which reads each parameter at the width the compiled kernel
+     declares, sees exactly the bytes it saw before — no endianness assumption.
+     Slots are 8 bytes and the block is [int64_t]-aligned, which covers every
+     argument kind (pointers, int64, double). A zero-argument launch still
+     allocates one slot so the pointer handed to the driver is never dangling.
+     Both blocks are retained below exactly as the per-argument values were. *)
   let launch kernel ~args ~grid ~block ~shared_mem ~stream =
-    let params = CArray.make (ptr void) (List.length args) in
-    let refs : ctype_ref list ref = ref [] in
-
+    let n = List.length args in
+    let slots = allocate_n int64_t ~count:(max 1 n) in
+    let params = allocate_n (ptr void) ~count:(max 1 n) in
     List.iteri
       (fun i arg ->
-        let ptr =
-          match arg with
-          | ArgBuffer buf ->
-              let v = allocate (ptr void) buf.Memory.ptr in
-              refs := CTypeRef (Ctypes.ptr void, v) :: !refs ;
-              to_voidp v
-          | ArgInt32 n ->
-              let v = allocate int32_t n in
-              refs := CTypeRef (int32_t, v) :: !refs ;
-              to_voidp v
-          | ArgInt64 n ->
-              let v = allocate int64_t n in
-              refs := CTypeRef (int64_t, v) :: !refs ;
-              to_voidp v
-          | ArgFloat32 f ->
-              let v = allocate float f in
-              refs := CTypeRef (float, v) :: !refs ;
-              to_voidp v
-          | ArgFloat64 f ->
-              let v = allocate double f in
-              refs := CTypeRef (double, v) :: !refs ;
-              to_voidp v
-          | ArgPtr p ->
-              let v = allocate nativeint p in
-              refs := CTypeRef (nativeint, v) :: !refs ;
-              to_voidp v
-        in
-        CArray.set params i ptr)
+        let slot = to_voidp (slots +@ i) in
+        (match arg with
+        | ArgBuffer buf -> from_voidp (ptr void) slot <-@ buf.Memory.ptr
+        | ArgInt32 v -> from_voidp int32_t slot <-@ v
+        | ArgInt64 v -> from_voidp int64_t slot <-@ v
+        | ArgFloat32 v -> from_voidp float slot <-@ v
+        | ArgFloat64 v -> from_voidp double slot <-@ v
+        | ArgPtr v -> from_voidp nativeint slot <-@ v) ;
+        params +@ i <-@ slot)
       args ;
 
     let stream_ptr =
@@ -671,14 +680,14 @@ module Kernel = struct
          (Unsigned.UInt.of_int bz)
          (Unsigned.UInt.of_int shared_mem)
          stream_ptr
-         (CArray.start params)
+         params
          (from_voidp (ptr void) null)) ;
     let device_id, stream_key =
       match stream with
       | Some s -> (s.Stream.device.id, stream_key_of_ptr s.Stream.handle)
       | None -> (Device.current_id (), default_stream_key)
     in
-    retain_kernargs device_id stream_key (Obj.repr (params, !refs))
+    retain_kernargs device_id stream_key (Obj.repr (params, slots))
 end
 
 (** {1 Utility Functions} *)

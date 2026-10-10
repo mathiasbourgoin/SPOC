@@ -914,6 +914,157 @@ let check_interpreter_capabilities (ir : Sarek_ir_types.kernel) : unit =
         ~target:"CPU Interpreter"
         verdict
 
+(** {1 Launch-preparation memo}
+
+    Everything [run] does to a kernel before binding its arguments depends on
+    the IR and not on the arguments: the device capability analysis (IR folds)
+    and, on JIT backends, generating the kernel source. Measured on HIP (RX 7900
+    XTX), that work was 60-70 % of the host cost of a launch — 5.5 of 18 us for
+    a 10-argument kernel, ~25 of ~40 us for a 2 KB matrix-vector kernel — and it
+    was repeated identically on every launch of the same kernel. This memo
+    performs it once.
+
+    KEYS. The IR by PHYSICAL identity: [Sarek_ir_types.kernel] is immutable and
+    a PPX kernel hands the same [body_ir] record to every launch, so [==] is a
+    sound and free equality. A structurally equal IR rebuilt per launch is
+    simply a miss and runs exactly as before. Then, per IR:
+    - generated source by (backend name, [block], [soa_params]) — the inputs of
+      [generate_source] besides the IR ([block] is read by Vulkan; [soa_params]
+      is derived from the arguments and is non-empty only on CUDA/PTX);
+    - a passed capability check by (device id, the device's [capabilities]
+      record compared PHYSICALLY). The verdict depends on the capabilities, and
+      device ids are reused ([Device.reset], hand-built devices), so the id
+      alone is not enough: a device carrying another capabilities record is
+      re-checked.
+
+    WHAT IS NEVER MEMOISED. Failures: a refused capability check or a
+    [generate_source] that raises or returns [None] stores nothing, so the next
+    identical launch fails the same way. And everything that depends on the
+    arguments — [check_launch_args], transfers, argument expansion — still runs
+    on every launch.
+
+    THE ONE THING IT DOES NOT TRACK. Codegen reads the global intrinsic and type
+    registries. They are filled at module initialisation and only grow, and a
+    kernel whose intrinsic is missing fails codegen (not memoised). Replacing an
+    intrinsic's implementation AFTER a kernel using it has launched is not seen
+    by that kernel until {!clear_launch_cache} is called. Backend debug logging
+    inside [generate_source] likewise happens on the first launch only.
+
+    LIFETIME AND CONCURRENCY. The table is weak in the IR (an ephemeron), and
+    its data never refers to the IR, so an entry dies with its kernel. One mutex
+    guards lookup and insertion only; the analysis and codegen run outside it,
+    so two domains missing at once may both generate — the first installed
+    source wins and both get it. {!clear_launch_cache} bumps a generation
+    number, and a result computed across a clear is returned to its caller but
+    not installed. The memo is cleared by [Cache_hooks.notify_clear_all] (every
+    backend [Kernel.clear_cache], [Device.reset]) and by every device-destroy
+    notification. *)
+
+module Physical_kernel = struct
+  type t = Sarek_ir_types.kernel
+
+  let equal = ( == )
+
+  (* Any function of the contents is consistent with [==]. [Hashtbl.hash]
+     reads a bounded prefix, so this is cheap; spoc_llm names every kernel
+     "sarek_kern", so the parameter list is what spreads them. *)
+  let hash (k : t) =
+    Hashtbl.hash (k.Sarek_ir_types.kern_name, k.Sarek_ir_types.kern_params)
+end
+
+module Launch_memo = Ephemeron.K1.Make (Physical_kernel)
+
+type launch_entry = {
+  mutable sources : ((string * Framework_sig.dims * string list) * string) list;
+      (** (backend name, block, soa_params) -> generated source *)
+  mutable verified : (int * Framework_sig.capabilities) list;
+      (** (device id, physical capabilities record) that passed the check *)
+}
+
+let launch_memo : launch_entry Launch_memo.t = Launch_memo.create 64
+
+let launch_memo_lock = Mutex.create ()
+
+let launch_memo_generation = ref 0
+
+(** Drop every memoised launch preparation: the next launch of every kernel
+    re-runs its device capability check and regenerates its source. Needed only
+    after replacing an intrinsic or type implementation that already-launched
+    kernels use; backend cache clears and device teardown call it already. *)
+let clear_launch_cache () =
+  Mutex.protect launch_memo_lock (fun () ->
+      Launch_memo.reset launch_memo ;
+      incr launch_memo_generation)
+
+let () =
+  Cache_hooks.on_clear_all clear_launch_cache ;
+  Cache_hooks.on_device_destroy (fun ~backend:_ _ -> clear_launch_cache ())
+
+(* Under [launch_memo_lock]. *)
+let memo_entry ir =
+  match Launch_memo.find_opt launch_memo ir with
+  | Some e -> e
+  | None ->
+      let e = {sources = []; verified = []} in
+      Launch_memo.replace launch_memo ir e ;
+      e
+
+(** [check_device_capabilities], performed once per (IR, device id, physical
+    capabilities record). A refusal raises every time. *)
+let check_device_capabilities_memo ~(device : Device.t)
+    (ir : Sarek_ir_types.kernel) : unit =
+  let caps = device.Device.capabilities in
+  let id = device.Device.id in
+  let known, generation =
+    Mutex.protect launch_memo_lock (fun () ->
+        let hit =
+          match Launch_memo.find_opt launch_memo ir with
+          | Some e -> List.exists (fun (i, c) -> i = id && c == caps) e.verified
+          | None -> false
+        in
+        (hit, !launch_memo_generation))
+  in
+  if not known then begin
+    check_device_capabilities ~device ir ;
+    Mutex.protect launch_memo_lock (fun () ->
+        if !launch_memo_generation = generation then
+          let e = memo_entry ir in
+          if not (List.exists (fun (i, c) -> i = id && c == caps) e.verified)
+          then e.verified <- (id, caps) :: e.verified)
+  end
+
+(** [B.generate_source], performed once per (IR, backend, block, soa_params).
+    Every hit returns the same physical string, which also lets the backend's
+    {!Compile_cache.make_key} memo skip its digests. [None] and exceptions are
+    not memoised. *)
+let generate_source_memo (module B : Framework_sig.BACKEND) ~block ~soa_params
+    (ir : Sarek_ir_types.kernel) : string option =
+  let key = (B.name, block, soa_params) in
+  let cached, generation =
+    Mutex.protect launch_memo_lock (fun () ->
+        let hit =
+          match Launch_memo.find_opt launch_memo ir with
+          | Some e -> List.assoc_opt key e.sources
+          | None -> None
+        in
+        (hit, !launch_memo_generation))
+  in
+  match cached with
+  | Some _ -> cached
+  | None -> (
+      match B.generate_source ~block ~soa_params ir with
+      | None -> None
+      | Some source ->
+          Mutex.protect launch_memo_lock (fun () ->
+              if !launch_memo_generation <> generation then Some source
+              else
+                let e = memo_entry ir in
+                match List.assoc_opt key e.sources with
+                | Some first -> Some first
+                | None ->
+                    e.sources <- (key, source) :: e.sources ;
+                    Some source))
+
 (** Validate a launch on [stream] for [device] BEFORE anything is transferred:
     the stream must belong to [device], and a JIT backend must implement stream
     launches — a launch the caller ordered on a stream must never run on the
@@ -951,7 +1102,11 @@ let check_stream_launch ~(device : Device.t) (stream : Transfer.stream option) :
       stay rooted until the stream or a later event completes. On
       Native/Interpreter the launch is synchronous. Refused with
       [Feature_not_supported] on other JIT backends, and with [Invalid_argument]
-      when the stream belongs to another device.
+      when the stream belongs to another device. The capability check and, on
+      JIT backends, source generation are done once per physical IR and reused
+      by later launches (see the launch-preparation memo above and
+      {!clear_launch_cache}); argument checks run every time.
+
     @param device Target device
     @param name Kernel name
     @param ir Sarek IR kernel (lazy, only forced for JIT backends)
@@ -991,7 +1146,7 @@ let run ?(stream : Transfer.stream option) ~(device : Device.t) ~(name : string)
               (* Before generate_source, so the diagnostic names the missing
                  device capability rather than letting the backend emit a
                  shader the device cannot legally load. *)
-              check_device_capabilities ~device ir ;
+              check_device_capabilities_memo ~device ir ;
               (* SoA param names, derived from the ARGUMENTS by the same
                  predicate the transfer and expansion use (backlog-54). The
                  emitted signature and the bound argument list are then two
@@ -1020,7 +1175,7 @@ let run ?(stream : Transfer.stream option) ~(device : Device.t) ~(name : string)
                  no refusal; WebGPU is the one to watch, being a JIT backend
                  whose WGSL codegen is not yet wired. *)
               let soa_params = soa_param_names ir args device in
-              match B.generate_source ~block ~soa_params ir with
+              match generate_source_memo (module B) ~block ~soa_params ir with
               | None ->
                   Execute_error.raise_error
                     (Compilation_failed
@@ -1101,7 +1256,9 @@ let run ?(stream : Transfer.stream option) ~(device : Device.t) ~(name : string)
           B.Device.set_current dev ;
           let ir_val = Option.map Lazy.force ir in
           Option.iter (fun ir -> check_launch_args ~kernel:name ir args) ir_val ;
-          Option.iter (fun ir -> check_device_capabilities ~device ir) ir_val ;
+          Option.iter
+            (fun ir -> check_device_capabilities_memo ~device ir)
+            ir_val ;
           let exec_args = vector_args_to_exec_array args in
           B.execute_direct ~native_fn ~ir:ir_val ~block ~grid exec_args
       | Framework_sig.Custom ->
@@ -1110,7 +1267,9 @@ let run ?(stream : Transfer.stream option) ~(device : Device.t) ~(name : string)
           B.Device.set_current dev ;
           let ir_val = Option.map Lazy.force ir in
           Option.iter (fun ir -> check_launch_args ~kernel:name ir args) ir_val ;
-          Option.iter (fun ir -> check_device_capabilities ~device ir) ir_val ;
+          Option.iter
+            (fun ir -> check_device_capabilities_memo ~device ir)
+            ir_val ;
           let exec_args = vector_args_to_exec_array args in
           B.execute_direct ~native_fn ~ir:ir_val ~block ~grid exec_args)
 

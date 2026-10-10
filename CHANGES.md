@@ -33,6 +33,19 @@
 
 ### Changed
 
+- Repeated launches of the same kernel are cheaper (spec
+  `specs/cheap-repeated-launches.md`). `Execute.run`/`run_vectors` memoise,
+  per physical kernel IR, the device capability check and the generated
+  source (keyed by backend, block and SoA parameters); failures are never
+  memoised and the argument checks still run on every launch.
+  `Compile_cache.make_key` memoises keys per physical source string. The HIP
+  launch marshals all arguments into one buffer instead of one allocation
+  per argument. New `Execute.clear_launch_cache` drops the memo; backend
+  cache clears and device teardown call it. Host cost per `run_vectors`
+  launch on an RX 7900 XTX (`sarek-hip/test/bench_launch_overhead.exe`,
+  10 000 launches, no sync): 3 arguments 11.4 -> 4.6 us, 10 arguments
+  17.4 -> 6.7 us. Native is unchanged (its launch cost is execution).
+
 - `let%sarek_intrinsic` registers an intrinsic under its library's module path,
   using the `library-name` cookie dune passes to the PPX, instead of guessing
   from the source directory name. sarek's own libraries keep their paths. A
@@ -63,6 +76,12 @@
   the injected length used to wrap silently.
 
 ### Fixed
+
+- HIP: freeing a device buffer no longer leaves its device selected. The free
+  runs from GC finalisers, so with two HIP devices a finaliser could fire
+  inside a launch on the other device and make it fail with
+  `hipErrorInvalidDevice`. Regression test
+  `sarek-hip/test/test_hip_free_keeps_current.ml`.
 
 - HIP `Stream.synchronize` now selects the stream's device first, as the CUDA
   backend has since backlog-225: synchronising `default_stream d2` while d1
