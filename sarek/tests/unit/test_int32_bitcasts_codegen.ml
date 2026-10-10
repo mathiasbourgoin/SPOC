@@ -356,7 +356,18 @@ let check_off_path () =
       ("GLSL", fun k -> Sarek_ir_glsl.generate k);
       ("WGSL", fun k -> Sarek_ir_wgsl.generate k);
       ("PTX", fun k -> Sarek_ir_ptx.generate k);
-    ]
+    ] ;
+  (* PTX has no registry fallback: its refusal names the module and says which
+     float_of_bits it does lower. *)
+  match Sarek_ir_ptx.generate k with
+  | _ -> Alcotest.fail "PTX lowered Dstest.Bits.float_of_bits"
+  | exception e ->
+      let msg = Printexc.to_string e in
+      Alcotest.(check bool)
+        (Printf.sprintf "PTX refusal names the path and the stdlib (%s)" msg)
+        true
+        (contains msg "Dstest.Bits.float_of_bits"
+        && contains msg "stdlib Int32.float_of_bits")
 
 let check_arity () =
   let k = ir_kernel ~extra:[EConst (CInt32 1l)] ["Sarek_stdlib"; "Int32"] in
