@@ -1,0 +1,15 @@
+device: AMD Radeon RX 7900 XTX
+shexp_gate   q8_0  rowgrp hot  gpu     6.87 us ( 486.3 GB/s gguf)  wall     8.94 us
+shexp_gate   q8_0  rowgrp cold gpu    10.00 us ( 334.3 GB/s gguf)  wall    10.69 us
+shexp_gate   q8_0  wave   hot  gpu     5.15 us ( 649.1 GB/s gguf)  wall     6.62 us
+shexp_gate   q8_0  wave   cold gpu     8.98 us ( 372.0 GB/s gguf)  wall    11.43 us
+shexp_down   q8_0  rowgrp hot  gpu    13.22 us ( 252.8 GB/s gguf)  wall    18.49 us
+shexp_down   q8_0  rowgrp cold gpu    17.96 us ( 186.1 GB/s gguf)  wall    19.17 us
+shexp_down   q8_0  wave   hot  gpu    17.46 us ( 191.4 GB/s gguf)  wall    12.70 us
+shexp_down   q8_0  wave   cold gpu    14.51 us ( 230.4 GB/s gguf)  wall     9.68 us
+exp_gate     q4_K  wave   hot  gpu    21.24 us ( 666.5 GB/s gguf)  wall    21.16 us
+exp_gate     q4_K  wave   cold gpu    27.88 us ( 507.7 GB/s gguf)  wall    28.29 us
+exp_down     q5_K  wave   hot  gpu    24.28 us ( 712.5 GB/s gguf)  wall    26.35 us
+exp_down     q5_K  wave   cold gpu    32.11 us ( 538.8 GB/s gguf)  wall    30.88 us
+exp_down6    q6_K  wave   hot  gpu    32.77 us ( 629.9 GB/s gguf)  wall    33.71 us
+exp_down6    q6_K  wave   cold gpu    31.59 us ( 653.6 GB/s gguf)  wall    33.25 us
