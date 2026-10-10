@@ -14,8 +14,12 @@
 
     A loop already governed by an explicit [SPragma] (any hint other than
     Sarek's own [sarek.*] directives) is left alone, so [pragma ["unroll 1"]]
-    opts a loop out. Setting [SAREK_AUTO_UNROLL=0] in the environment makes
-    {!annotate} the identity.
+    opts a loop out (a loop under such a pragma with a known trip count is
+    counted as fully unrolled when the enclosing nest is bounded). Setting
+    [SAREK_AUTO_UNROLL=0] in the environment makes {!annotate} the identity. The
+    variable is read at each code generation, but [Execute] memoises the
+    generated source per kernel, so set it before a kernel's first launch (or
+    call [Execute.clear_launch_cache]) for a change to take effect.
 
     Unrolling a constant-trip loop does not change which operations run or their
     order, so results are unchanged; only code size and register use can grow,

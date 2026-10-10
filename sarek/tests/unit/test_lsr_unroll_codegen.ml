@@ -255,6 +255,26 @@ let check_rule () =
     (SPragma (["sarek.inline 3"], loop 1 (i32 0) (i32 3) leaf))
     [4] ;
   case
+    "two-string sarek.inline is not a loop pragma"
+    (SPragma (["sarek.inline"; "3"], loop 1 (i32 0) (i32 3) leaf))
+    [4] ;
+  case
+    "an explicit pragma's loop counts toward the outer bound (16 x 16)"
+    (loop
+       1
+       (i32 0)
+       (i32 15)
+       (SPragma (["unroll 16"], loop 2 (i32 0) (i32 15) leaf)))
+    [] ;
+  case
+    "a bound that wraps in int32 is not counted"
+    (loop
+       1
+       (EConst (CInt32 Int32.max_int))
+       (EBinop (Add, EConst (CInt32 Int32.max_int), i32 2))
+       leaf)
+    [] ;
+  case
     "unroll inside a while"
     (SWhile (EConst (CBool true), loop 1 (i32 0) (i32 3) leaf))
     [4]

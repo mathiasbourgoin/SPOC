@@ -8,7 +8,9 @@ Spec: `specs/codegen-lsr-unroll.md`.
   AMD clang 22.0.0git), Linux 7.1.2-3-cachyos, 2026-10-10 21:50–21:53 CEST.
 - The machine was shared: load average 12–17 from other jobs during the runs.
   Repeated runs of one configuration differ by up to 30 % (see the raw
-  summaries), so only differences larger than that spread are claimed.
+  summaries). A difference is claimed only when the ranges of the per-run
+  medians of the two configurations do not overlap (e.g. lsr q5_K hot: main
+  30.1–38.9, branch 23.4–24.3 µs).
 - ladon (Apple M4, macOS) for the Metal and Apple OpenCL e2e only.
 
 ## Benchmark: spoc_llm `bench/kbench.exe`

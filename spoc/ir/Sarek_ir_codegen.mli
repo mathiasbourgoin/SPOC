@@ -473,10 +473,12 @@ val gen_variant_def_glsl :
 
 (** [gen_c_logical_shift ~signed ~unsigned ~gen_expr buf a b] emits a logical
     (zero-filling) shift right of [a] by [b] in C syntax:
-    [((signed)((unsigned)(a) >> (b)))]. The conversions are value-preserving
-    modulo 2^width in C, C++, OpenCL C and MSL, so the result has [lsr]'s bits
-    for shift amounts in [0 .. width-1]. Used by the CUDA, OpenCL and Metal
-    emitters for {!Sarek_ir_types.Lshr32}/{!Sarek_ir_types.Lshr64}. *)
+    [((signed)((unsigned)(a) >> (b)))]. Signed to unsigned is modulo 2^width by
+    definition; unsigned to signed is implementation-defined before C23 / C++20
+    and wraps in every compiler Sarek targets (clang for HIP, OpenCL and Metal,
+    NVRTC), so the result has [lsr]'s bits for shift amounts in [0 .. width-1].
+    Used by the CUDA, OpenCL and Metal emitters for
+    {!Sarek_ir_types.Lshr32}/{!Sarek_ir_types.Lshr64}. *)
 val gen_c_logical_shift :
   signed:string ->
   unsigned:string ->

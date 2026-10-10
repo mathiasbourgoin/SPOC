@@ -372,6 +372,9 @@ let test_lsr_int64_is_lshr64 () =
   | Ir.EBinop (Ir.Lshr64, Ir.EVar _, Ir.EConst (Ir.CInt64 3L)) -> ()
   | _ -> Alcotest.fail "int64 lsr did not lower to Lshr64"
 
+(* Evaluated by the local evaluator above, so this checks that every amount
+   lowers to a well-formed Lshr32 tree; device semantics are checked by
+   sarek/tests/e2e/test_lsr_unroll.ml. *)
 let test_lsr_all_amounts () =
   List.iter
     (fun x ->
