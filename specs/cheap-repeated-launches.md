@@ -22,7 +22,7 @@ are in the intake brief.
 | Q | A |
 |---|---|
 | What identifies "the same kernel"? | The physical IR record (`==`). `Sarek_ir_types.kernel` is immutable and the PPX hands the same `kirc.body_ir` to every launch. A structurally equal but freshly built IR is a miss and behaves exactly as before. No structural fallback. |
-| What does generated source depend on? | IR, backend, `block` (Vulkan reads it), `soa_params` (derived from the arguments), and the global intrinsic/type registries. The memo key is (IR, backend name, block, soa_params); registries are covered by the documented contract and `clear_launch_cache` (C-4). |
+| What does generated source depend on? | IR, backend, `block` (Vulkan reads it), `soa_params` (derived from the arguments), and the global intrinsic/type registries. The memo key is (IR, the backend's `generate_source` closure compared physically, block, soa_params); registries are covered by the documented contract and `clear_launch_cache` (C-4). |
 | What does the capability verdict depend on? | IR and the device's `capabilities` record. The memo is keyed on the device id AND re-validates that the cached capabilities record is physically the device's current one (C-3). |
 | Which paths are covered? | `Execute.run` (and `run_vectors` through it) on JIT, Direct and Custom backends. `Soa_launch.run_soa` (CUDA/PTX-only SoA path) and `run_source` (caller-supplied source) are out of scope. |
 | Is the CUDA argument marshalling changed? | No. There is no NVIDIA GPU here to verify it. CUDA benefits from the Execute memo and the shared key memo. |
@@ -99,7 +99,7 @@ As a caller that replaces an intrinsic implementation after kernels have run, I 
 ## Functional Requirements
 
 #### Launch-preparation memo
-- **FR-001** [US-1]: `Execute.run` MUST call a JIT backend's `generate_source` at most once per (physical IR, backend name, block, soa_params) while the entry lives, and MUST pass the same physical source string to every launch that hits.
+- **FR-001** [US-1]: `Execute.run` MUST call a JIT backend's `generate_source` at most once per (physical IR, physical `generate_source` closure, block, soa_params) while the entry lives, and MUST pass the same physical source string to every launch that hits.
 - **FR-002** [US-1]: `Execute.run` MUST run `check_device_capabilities` at most once per (physical IR, device id, physical capabilities record) while the entry lives.
 - **FR-003** [US-2]: `Execute.run` MUST run `check_launch_args` on every launch, before any memo lookup.
 - **FR-004** [US-2]: The memo MUST NOT store any failure: a launch whose capability check or codegen raises MUST raise again on the next identical launch.
