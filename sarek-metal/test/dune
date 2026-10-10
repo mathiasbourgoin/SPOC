@@ -22,3 +22,53 @@
  (name test_metal_soa_refusal)
  (modules test_metal_soa_refusal)
  (libraries sarek_metal sarek_ir sarek_backend_error alcotest))
+
+; Device-only vectors, ranged copies, pinned memory, streams/events on a Metal
+; device (specs/metal-ranged-copies.md). Needs an Apple GPU, which no CI
+; runner has: alias e2e-metal is declared in scripts/unwired-targets.tsv and
+; run by hand on a Mac. Self-skips without a Metal device.
+
+(executable
+ (name test_metal_device_buffers)
+ (modules test_metal_device_buffers)
+ (libraries
+  device_buffers_suite
+  spoc_core
+  sarek_metal
+  sarek_backend_error
+  ctypes
+  unix))
+
+(rule
+ (alias e2e-metal)
+ (action
+  (run %{dep:test_metal_device_buffers.exe})))
+
+; 256 MiB ranged-copy bandwidth on Metal. Information only, never a gate.
+
+(executable
+ (name bench_metal_copy)
+ (modules bench_metal_copy)
+ (libraries spoc_core sarek_metal unix))
+
+(rule
+ (alias e2e-metal-bench)
+ (action
+  (run %{dep:bench_metal_copy.exe})))
+
+; Host cost of one Execute.run_vectors launch on Metal (enqueue, and enqueue +
+; flush), 3- and 10-argument kernels. Information only.
+
+(executable
+ (name bench_metal_launch_overhead)
+ (modules bench_metal_launch_overhead)
+ (libraries sarek sarek.stdlib sarek_ir spoc_core sarek_metal unix)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias e2e-metal-bench)
+ (action
+  (run %{dep:bench_metal_launch_overhead.exe})))

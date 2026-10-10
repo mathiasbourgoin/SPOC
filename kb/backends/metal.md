@@ -27,7 +27,24 @@
 
 - Runtime Metal compilation through `newLibraryWithSource`.
 - Shared-storage buffers for CPU/GPU access.
-- Command queues and synchronous command buffer execution.
+- Asynchronous launches (`Metal_api.Pending`): dispatches are appended to one
+  open command buffer per queue; at each launch it is committed if the queue's
+  previous command buffer has completed or once it holds `SPOC_METAL_BATCH`
+  (default 32) dispatches, otherwise by the next launch, wait (any wait commits
+  every open batch), event record or synchronisation. A
+  command buffer ending in `MTLCommandBufferStatusError` raises
+  `kernel_launch_failed` at the wait that observes it. Selectors and typed
+  `objc_msgSend` stubs on the launch path are cached; `Device.get` is
+  memoised.
+- `Framework_sig.ASYNC` (spec `specs/metal-ranged-copies.md`): device-only
+  vectors are shared-storage MTLBuffers with no host mirror; ranged copies are
+  a bounds-checked `memcpy` at `contents + offset` that first waits for the
+  pending work binding the buffer (`async_copy = false`); launches on a stream
+  go to that stream's own command queue; an event is the newest command buffer
+  of its stream;
+  `alloc_pinned` is `posix_memalign` page-aligned memory; `register_host` is a
+  no-op. Buffers above `maxBufferLength` are refused naming the limit;
+  `total_global_mem` is `recommendedMaxWorkingSetSize`.
 - Codegen for Metal kernel signatures with `[[buffer(N)]]` arguments and built-in thread position arguments.
 - Generated source from Sarek IR is Metal Shading Language. External-source advertising is currently incorrect: `supported_source_langs` returns `OpenCL_Source` at `sarek-metal/Metal_plugin.ml:194-196`, and `run_source` ignores `lang` at `sarek-metal/Metal_plugin.ml:198-200`.
 
@@ -36,6 +53,12 @@
 - Objective-C FFI signatures must match platform ABI, especially for struct returns and typed `objc_msgSend`.
 - Metal argument indices must match generated `[[buffer(N)]]` positions.
 - Shared buffer copies must validate byte counts against both endpoints.
+- Every host access to a buffer's `contents` (Memory copies, ranged copies,
+  `to_bigarray`) must first call `Pending.wait_buffers` on it, and a launch must
+  first wait for pending work on other queues binding its buffers; within one
+  queue Metal's tracked-hazard mode orders command buffers. Freeing needs no
+  wait: a command buffer retains the buffers it binds. Removing either wait is
+  caught by `test_metal_device_buffers` (prove-red, 2026-10-10).
 - MSL emitted by `Sarek_ir_metal.ml` must match actual Metal language features.
 - Shared backend errors should be used consistently by runtime and plugin layers.
 
@@ -50,7 +73,7 @@
 - Host/device copies do not validate both endpoint capacities at `sarek-metal/Metal_plugin_base.ml:253-279`. **Still open** — kept live per the copy-size-validation-gap instruction; no fix found.
 - `device_to_device` silently copies the minimum of source and destination sizes at `sarek-metal/Metal_plugin_base.ml:281-288`; truncation can hide caller bugs. Not addressed by this pass — kept live per the "device_to_device copy-size validation gaps" instruction.
 - `alloc_zero_copy` returns `None` and `is_zero_copy` returns false even though comments say shared memory is effectively zero-copy at `sarek-metal/Metal_plugin_base.ml:241-245`. Not addressed by this pass.
-- Event timing is wall-clock placeholder behavior at `sarek-metal/Metal_plugin_base.ml:312-325`; it does not use GPU timestamps. **Still open** — kept live per the "Event wall-clock stubs" instruction.
+- **fixed 2026-10-10 (metal-ranged-copies):** Event timing used host record times (and a fresh start event gave about the epoch). An event now captures the newest pending command buffer of its stream; `elapsed` subtracts, per event, the later of its record time and that command buffer's `GPUEndTime` (both on `CLOCK_UPTIME_RAW`).
 - **fixed 2026-07-02 (merged, source-verified only):** argument setters previously stored indices (`set_arg_*`) but `launch` discarded them and mapped args sequentially by `List.iteri`, so out-of-order setting bound wrong Metal buffers/scalars. All setters now route through the shared `Spoc_framework.Kernel_args` container (`type args = arg Spoc_framework.Kernel_args.t`, `Metal_plugin_base.ml:222`), and `launch` extracts via `Kernel_args.validate_and_extract` keyed on the caller-supplied `idx` (`Metal_plugin_base.ml:265-307`).
 - **KEEP LIVE — arity-validation gap, documented in code (verified 2026-07-02, source-verified only):** same nuance as CUDA/Native — Metal compiled-kernel handles carry no arity metadata, so `expected_count` falls back to `Kernel_args.count args` (the number of distinct indices set), per an explicit code comment: `"KNOWN GAP: Metal compiled-kernel handles carry no arity metadata, so -- as with Native/CUDA -- expected_count falls back to the number of distinct indices actually set. This still rejects internal gaps/duplicates but cannot catch a caller that consistently omits a trailing argument."` (`Metal_plugin_base.ml:296-300`). Gaps/duplicates/out-of-range are caught; pure trailing under-count is not. Intentional, not closed by this pass.
 - **Reclassified 2026-07-02 (source-verified only), not a live bug:** `Metal_api.Kernel.execute` (`sarek-metal/Metal_api.ml:311-337`) still binds Metal buffer/scalar args by `List.iteri` position over the `arg list` it receives — but this is no longer evidence of the same bug, because `Metal_plugin_base.launch` (the only caller reached through the framework) now builds that list from `Kernel_args.validate_and_extract`, which is already ordered by the caller-supplied `idx`, not call order. `execute`'s `List.iteri` here is just the mechanism for turning a correctly-pre-ordered list into sequential `[[buffer(N)]]` FFI calls — that ordering is exactly what Metal's ABI expects. Direct callers of `Metal_api.Kernel.execute` that bypass `Metal_plugin_base` and hand-build an `arg list` in the wrong order would still be able to misbind, but that is a "trust the caller" contract at the low-level API layer, not the previously-documented framework-level bug.
@@ -75,6 +98,12 @@
 
 ## Related Tests
 
+- `sarek-metal/test/test_metal_device_buffers.ml` (alias `e2e-metal`, needs a
+  Mac; declared in `scripts/unwired-targets.tsv`): the device-buffers suite
+  plus `maxBufferLength`, pinned alignment, zero-byte and 50-round
+  copy/kernel ordering checks. `sarek-metal/test/bench_metal_copy.ml` (alias
+  `e2e-metal-bench`): 256 MiB copy bandwidth, information only.
+
 - `sarek-metal/test/dune:3-9` defines two Alcotest executables.
 - `sarek-metal/test/test_metal_error.ml:119-137` covers shared error constructors and formatting.
 - `sarek-metal/test/test_sarek_ir_metal.ml:199-222` covers literals, operations, simple statements, barriers, thread intrinsics, atomic snippets, type mapping, and helper declarations.
@@ -87,7 +116,7 @@
 - Buffer copy bounds tests and device-to-device truncation behavior.
 - Objective-C resource release tests or leak checks around NSString/library/function creation.
 - Device enumeration consistency tests for multi-GPU Macs.
-- GPU event timing or documented placeholder behavior.
+- Failed-command-buffer reporting (FR-012) has no test: no short, deterministic way to make an Apple GPU command buffer fail was found.
 
 ## Concrete Improvement Candidates
 

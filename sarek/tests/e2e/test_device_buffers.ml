@@ -6,8 +6,8 @@
 (******************************************************************************
  * Device-only vectors, ranged/async copies, pinned memory, stream launches and
  * events on every device this test links: the full suite on the CPU backends
- * (Native, Interpreter) and on CUDA devices; the capability refusal on
- * OpenCL, Vulkan and Metal devices. HIP runs the same suite from
+ * (Native, Interpreter) and on CUDA and Metal devices; the capability refusal
+ * on OpenCL and Vulkan devices. HIP runs the same suite from
  * sarek-hip/test/test_hip_device_buffers.exe.
  ******************************************************************************)
 
@@ -44,8 +44,9 @@ let () =
   Array.iter
     (fun (d : Device.t) ->
       match d.framework with
-      | "Native" | "Interpreter" | "CUDA/PTX" | "CUDA/C" -> Suite.run_on d
-      | "OpenCL" | "Vulkan" | "Metal" -> Suite.check_refused d
+      | "Native" | "Interpreter" | "CUDA/PTX" | "CUDA/C" | "Metal" ->
+          Suite.run_on d
+      | "OpenCL" | "Vulkan" -> Suite.check_refused d
       | other -> Printf.printf "  [%s] skipped\n" other)
     devices ;
   exit (Suite.exit_code ())

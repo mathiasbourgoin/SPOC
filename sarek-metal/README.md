@@ -189,6 +189,58 @@ let%kernel histogram (data : int32 vec) (bins : int32 vec) (n : int32) (num_bins
   end
 ```
 
+## Device-only vectors, ranged copies, pinned memory, streams
+
+Implements `Framework_sig.ASYNC` (spec `specs/metal-ranged-copies.md`) for
+`Spoc_core.Transfer.create_device_only`, `copy_to_device`,
+`copy_bytes_to_device`, `copy_ptr_to_device`, `copy_to_host`,
+`alloc_pinned`, `register_host`, streams, events and
+`Execute.run_vectors ?stream`.
+
+- **Storage.** Every buffer, device-only ones included, is
+  `MTLResourceStorageModeShared`. On Apple silicon the GPU reads the same
+  physical memory, so a ranged copy is one `memcpy` at `contents + offset`.
+  Private storage would need a staging buffer and a blit: the same bytes moved
+  twice. A buffer above the device's `maxBufferLength` is refused with an error
+  naming the limit; split large caches over several vectors.
+- **Asynchronous launches.** A launch appends a dispatch to its queue's open
+  command buffer and returns. At each launch the command buffer is committed
+  if the queue's previous one has completed (the GPU would otherwise idle) or
+  once it holds `SPOC_METAL_BATCH` dispatches (default 32); otherwise the next
+  launch, wait (any wait commits every open batch), event record or
+  synchronisation commits it. There is no completion callback: dispatches
+  enqueued last stay open until the host's next SPOC call. Measured on an Apple M4,
+  `bench_metal_launch_overhead`: 195 us per launch before (commit and wait per
+  launch), 4.3 us (3 arguments) / 8.0 us (10 arguments) after.
+- **Ordering.** Every host access to a buffer (whole or ranged copy,
+  read-back) first waits for the pending command buffers that bind it, so a
+  copy never lands under a kernel still reading and always sees what a kernel
+  wrote. A launch first waits for pending work on OTHER queues that binds its
+  buffers; within one queue Metal orders command buffers itself (tracked
+  hazards). `Transfer.flush` waits for everything, `synchronize_stream` for the
+  stream's queue. A failed command buffer raises `kernel_launch_failed`
+  at the first wait that observes it, naming every kernel the command buffer
+  ran (the command buffer, not the dispatch, is the unit of failure; the wait
+  may be for another buffer of the same batch). Two domains touching the
+  same buffers at the same moment must order themselves: the waits run
+  before, not atomically with, the access they guard.
+- **Streams and events.** A launch on a stream goes to that stream's own
+  command queue. An event is the newest command buffer of its stream when
+  recorded; `event_query` reads its status (and raises `kernel_launch_failed`
+  if it failed); `Event.elapsed` uses the later of record time and the
+  command buffer's `GPUEndTime`. `stream_wait_event` adds nothing:
+  kernels depend on each other only through buffers, which the waits above
+  already order. `support.async_copy` is `false`: copies are CPU memcpys that
+  complete before returning.
+- **Pinned memory.** `alloc_pinned` returns page-aligned (`posix_memalign`)
+  host memory; `register_host` is a no-op. Unified memory has no DMA engine to
+  page-lock for, so copies from either run at the same rate as from pageable
+  memory.
+- `capabilities.total_global_mem` is `recommendedMaxWorkingSetSize`.
+
+Tests: `dune build @sarek-metal/test/e2e-metal` (needs a Mac; not run by CI)
+and `@sarek-metal/test/e2e-metal-bench` (bandwidth, information only).
+
 ## Installation
 
 ### Requirements

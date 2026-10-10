@@ -27,18 +27,23 @@ module Metal : Framework_sig.PLUGIN_BASE = struct
 
   let device_states : (int, device_state) Hashtbl.t = Hashtbl.create 8
 
+  (* Several domains may launch or copy at once (spoc_llm issues expert copies
+     from an I/O domain): the lazily filled table is guarded. *)
+  let device_states_lock = Mutex.create ()
+
   (** Current device for kernel compilation/execution *)
   let current_device : Metal_api.Device.t option ref = ref None
 
   let get_state device_id =
-    match Hashtbl.find_opt device_states device_id with
-    | Some s -> s
-    | None ->
-        let device = Metal_api.Device.get device_id in
-        let queue = Metal_api.CommandQueue.create device in
-        let state = {device; queue} in
-        Hashtbl.add device_states device_id state ;
-        state
+    Mutex.protect device_states_lock (fun () ->
+        match Hashtbl.find_opt device_states device_id with
+        | Some s -> s
+        | None ->
+            let device = Metal_api.Device.get device_id in
+            let queue = Metal_api.CommandQueue.create device in
+            let state = {device; queue} in
+            Hashtbl.add device_states device_id state ;
+            state)
 
   module Device = struct
     type t = Metal_api.Device.t
@@ -71,8 +76,12 @@ module Metal : Framework_sig.PLUGIN_BASE = struct
           max_block_dims = (width, height, depth);
           max_grid_dims = (max_int, max_int, max_int);
           shared_mem_per_block = d.max_threadgroup_memory;
-          total_global_mem = Int64.of_int (4 * 1024 * 1024 * 1024);
-          (* Estimate, Metal doesn't expose this *)
+          (* [recommendedMaxWorkingSetSize]: on Apple silicon there is no
+             separate VRAM, and this is the share of unified memory the GPU
+             can keep resident — what a cache sized from this field must stay
+             under. *)
+          total_global_mem =
+            Int64.of_int (Metal_api.Device.recommended_working_set d);
           compute_capability = (0, 0);
           (* [d.supports_fp64] is hardcoded false in Metal_api: MSL has no
              [double] at all, which is Backend_structural and refused at
@@ -103,11 +112,10 @@ module Metal : Framework_sig.PLUGIN_BASE = struct
 
     let get_current_device () = !current_device
 
-    let synchronize (d : t) =
-      let state = get_state d.id in
-      (* Metal synchronizes via command buffers, not devices *)
-      ignore state ;
-      ()
+    (* Launches are asynchronous (Metal_api.Pending): wait for every pending
+       command buffer. Pending work is not tracked per device; on a Mac with
+       one GPU that is the same thing, and on several it only over-waits. *)
+    let synchronize (_ : t) = Metal_api.Pending.wait_all ()
   end
 
   module Memory = struct
@@ -138,7 +146,13 @@ module Metal : Framework_sig.PLUGIN_BASE = struct
        [Ctypes.bigarray_start]: the latter raises Failure "Unsupported bigarray
        kind" for Float16 (MF2), and the former is MANAGED so the bigarray stays
        GC-rooted across the memcpy (MF3). *)
+    (* Every host access to a buffer's [contents] first waits for the pending
+       command buffers that bind it (Metal_api.Pending): a write must not land
+       under a kernel still reading, a read must see what the kernel wrote. *)
+    let wait b = Metal_api.Pending.wait_buffers [b.buf.Metal_api.Memory.handle]
+
     let host_to_device ~src ~dst =
+      wait dst ;
       (* Metal shared memory: just memcpy *)
       let ba_ptr = Spoc_core.Memory.bigarray_void_ptr src in
       let byte_size =
@@ -148,6 +162,7 @@ module Metal : Framework_sig.PLUGIN_BASE = struct
       ignore (Sys.opaque_identity src)
 
     let device_to_host ~src ~dst =
+      wait src ;
       (* Metal shared memory: just memcpy *)
       let ba_ptr = Spoc_core.Memory.bigarray_void_ptr dst in
       let byte_size =
@@ -157,12 +172,14 @@ module Metal : Framework_sig.PLUGIN_BASE = struct
       ignore (Sys.opaque_identity dst)
 
     let host_ptr_to_device ~src_ptr ~byte_size ~dst =
+      wait dst ;
       Metal_api.memcpy
         ~dst:dst.buf.contents
         ~src:(Ctypes.ptr_of_raw_address src_ptr)
         ~size:byte_size
 
     let device_to_host_ptr ~src ~dst_ptr ~byte_size =
+      wait src ;
       Metal_api.memcpy
         ~dst:(Ctypes.ptr_of_raw_address dst_ptr)
         ~src:src.buf.contents
@@ -172,6 +189,8 @@ module Metal : Framework_sig.PLUGIN_BASE = struct
       let byte_size =
         min (src.buf.size * src.buf.elem_size) (dst.buf.size * dst.buf.elem_size)
       in
+      Metal_api.Pending.wait_buffers
+        [src.buf.Metal_api.Memory.handle; dst.buf.Metal_api.Memory.handle] ;
       Metal_api.memcpy
         ~dst:dst.buf.contents
         ~src:src.buf.contents
@@ -189,30 +208,110 @@ module Metal : Framework_sig.PLUGIN_BASE = struct
       let queue = Metal_api.CommandQueue.create device in
       {queue; device_id = device.id}
 
-    let destroy stream = Metal_api.CommandQueue.release stream.queue
+    let synchronize stream =
+      Metal_api.Pending.wait_queue stream.queue.Metal_api.CommandQueue.handle
 
-    let synchronize _stream = ()
-    (* Metal commands are synchronous by default *)
+    (* Released even when the wait reports a failed command buffer. *)
+    let destroy stream =
+      Fun.protect
+        ~finally:(fun () ->
+          Metal_api.Pending.forget_queue
+            stream.queue.Metal_api.CommandQueue.handle ;
+          Metal_api.CommandQueue.release stream.queue)
+        (fun () -> synchronize stream)
 
     let default device =
       let state = get_state device.Metal_api.Device.id in
       {queue = state.queue; device_id = device.id}
   end
 
+  (* An event is the newest pending command buffer of the stream it was
+     recorded on (retained), or none when that stream had no pending work:
+     command buffers on one queue complete in commit order, so it completes
+     after everything enqueued on the stream before the record. *)
   module Event = struct
-    type t = {mutable start_time : float; mutable end_time : float}
+    type t = {
+      mutable host_time : float;
+          (** [CLOCK_UPTIME_RAW] seconds at the last record. *)
+      mutable cmd : unit Ctypes.ptr option;  (** Retained. *)
+      lock : Mutex.t;
+    }
 
-    let create () = {start_time = 0.0; end_time = 0.0}
+    let create () = {host_time = 0.0; cmd = None; lock = Mutex.create ()}
 
-    let destroy _event = ()
+    let take event =
+      Mutex.protect event.lock (fun () ->
+          let c = event.cmd in
+          event.cmd <- None ;
+          c)
 
-    let record event _stream =
-      event.start_time <- event.end_time ;
-      event.end_time <- Unix.gettimeofday ()
+    let destroy event = Option.iter Metal_bindings.release (take event)
 
-    let synchronize _event = ()
+    let record event (stream : Stream.t) =
+      let c =
+        Metal_api.Pending.last_on_queue
+          stream.Stream.queue.Metal_api.CommandQueue.handle
+      in
+      let old =
+        Mutex.protect event.lock (fun () ->
+            let old = event.cmd in
+            event.cmd <- c ;
+            event.host_time <- Metal_bindings.uptime_raw_seconds () ;
+            old)
+      in
+      Option.iter Metal_bindings.release old
 
-    let elapsed ~start ~stop = (stop.end_time -. start.start_time) *. 1000.0
+    (* The recorded command buffer, retained for the caller. *)
+    let cmd_ref event =
+      Mutex.protect event.lock (fun () ->
+          Option.iter (fun c -> ignore (Metal_bindings.retain c)) event.cmd ;
+          event.cmd)
+
+    let with_cmd event f =
+      match cmd_ref event with
+      | None -> None
+      | Some c ->
+          Some
+            (Fun.protect
+               ~finally:(fun () -> Metal_bindings.release c)
+               (fun () -> f c))
+
+    (* Through Pending, so a failure is reported once, whoever observes it. *)
+    let synchronize event =
+      ignore
+        (with_cmd event (fun c ->
+             Metal_api.Pending.wait_cmd c ;
+             (* No longer pending (or never was): another waiter may still be
+                waiting on it and reports it; wait without reporting. *)
+             Metal_bindings.mtl_command_buffer_wait_until_completed c))
+
+    (* Completion, not success, is what is queried; a failed command buffer is
+       reported here, where it is observed. *)
+    let completed event =
+      match
+        with_cmd event (fun c -> Metal_bindings.mtl_command_buffer_status c)
+      with
+      | None -> true
+      | Some s when s = Metal_bindings.mtl_command_buffer_status_error ->
+          synchronize event ;
+          true
+      | Some s -> s >= Metal_api.Pending.mtl_status_completed
+
+    (* When the work the event covers finished, on CLOCK_UPTIME_RAW: the later
+       of the record time and the GPU end time of the command buffer it
+       captured (one that finished before the record must not date the event
+       back). *)
+    let time_point event =
+      synchronize event ;
+      let recorded = Mutex.protect event.lock (fun () -> event.host_time) in
+      match
+        with_cmd event (fun c ->
+            Metal_bindings.mtl_command_buffer_gpu_end_time c)
+      with
+      | Some t -> Float.max t recorded
+      | None -> recorded
+
+    let elapsed ~start ~stop = (time_point stop -. time_point start) *. 1000.0
   end
 
   module Kernel = struct
@@ -322,7 +421,20 @@ module Metal : Framework_sig.PLUGIN_BASE = struct
       let open Framework_sig in
       let state = get_state kernel.device_id in
       let queue =
-        match stream with Some s -> s.Stream.queue | None -> state.queue
+        match stream with
+        | Some s ->
+            (* A pipeline compiled for one device cannot run on another
+               device's queue. *)
+            if s.Stream.device_id <> kernel.device_id then
+              Metal_error.raise_error
+                (Metal_error.kernel_launch_failed
+                   kernel.function_name
+                   (Printf.sprintf
+                      "stream of device %d, kernel compiled for device %d"
+                      s.Stream.device_id
+                      kernel.device_id)) ;
+            s.Stream.queue
+        | None -> state.queue
       in
 
       (* KNOWN GAP: Metal compiled-kernel handles carry no arity metadata, so
@@ -373,17 +485,103 @@ module Metal : Framework_sig.PLUGIN_BASE = struct
 
   let profiling_enabled = ref false
 
-  module Async = Framework_sig.Async_refused (struct
-    let backend = name
+  (* Ranged copies, pinned memory and stream ordering on unified memory.
 
-    type device = Device.t
+     Storage: every Metal buffer, device-only ones included, is
+     [MTLResourceStorageModeShared]. On Apple silicon the GPU reads the same
+     physical memory the CPU writes, so [contents + offset] IS the device
+     range and a ranged copy is one memcpy. Private storage would need a
+     shared staging buffer and a blit encoder: the same bytes moved twice.
 
-    type stream = Stream.t
+     Ordering: launches are asynchronous and batched per command queue
+     (Metal_api.Pending); a launch on a stream goes to that stream's own
+     queue ([stream_launch = true]). Copies are CPU memcpys that complete
+     before returning ([async_copy = false]: overlap with compute comes from
+     the asynchronous launches, or from issuing copies from another domain).
+     Each copy first waits for the pending command buffers that bind its
+     buffer, so it never lands under a kernel still reading it and always
+     sees what a kernel wrote; a copy issued before a launch is visible to it
+     (CPU writes to shared storage before [commit]). An event is the newest
+     command buffer of its stream at record time. [stream_wait_event] adds
+     nothing: kernels depend on one another only through buffers, and a launch
+     already waits for work on other queues that binds its buffers. Core's
+     keep-alive ledger still roots stream operands until the stream or an
+     event is synchronised.
 
-    type event = Event.t
+     Pinned memory: unified memory has no DMA engine to page-lock for, so
+     [alloc_pinned] is page-aligned host memory ([posix_memalign]) and
+     [register_host] has nothing to do. Copies from either run at the same
+     memcpy rate as from pageable memory. *)
+  module Async = struct
+    let support =
+      {Framework_sig.full_async_support with Framework_sig.async_copy = false}
 
-    type 'a buffer = 'a Memory.buffer
-  end)
+    let total (b : _ Memory.buffer) =
+      b.Memory.buf.Metal_api.Memory.size
+      * b.Memory.buf.Metal_api.Memory.elem_size
+
+    let range_addr (b : _ Memory.buffer) off =
+      Nativeint.add (Memory.device_ptr b) (Nativeint.of_int off)
+
+    let host_to_device ~src_ptr ~dst ~dst_offset ~byte_size ~stream:_ =
+      Memory.wait dst ;
+      Spoc_core.Host_async.check_range
+        ~what:"Metal.Async.host_to_device"
+        ~total:(total dst)
+        ~off:dst_offset
+        ~byte_size ;
+      Spoc_core.Host_async.blit
+        ~src:src_ptr
+        ~dst:(range_addr dst dst_offset)
+        ~byte_size ;
+      ignore (Sys.opaque_identity dst)
+
+    let device_to_host ~src ~src_offset ~dst_ptr ~byte_size ~stream:_ =
+      Memory.wait src ;
+      Spoc_core.Host_async.check_range
+        ~what:"Metal.Async.device_to_host"
+        ~total:(total src)
+        ~off:src_offset
+        ~byte_size ;
+      Spoc_core.Host_async.blit
+        ~src:(range_addr src src_offset)
+        ~dst:dst_ptr
+        ~byte_size ;
+      ignore (Sys.opaque_identity src)
+
+    (* Kernels depend on one another only through buffers, and a launch
+       already waits for pending work on other queues that binds its buffers
+       (Metal_api.Pending), while host copies wait for the buffer itself: the
+       ordering a wait would add is already there. *)
+    let stream_wait_event _stream _event = ()
+
+    let event_query event = Event.completed event
+
+    (* Live [alloc_pinned] addresses: [free_pinned] refuses anything else. *)
+    let pinned : (nativeint, unit) Hashtbl.t = Hashtbl.create 8
+
+    let pinned_lock = Mutex.create ()
+
+    let alloc_pinned _dev ~byte_size =
+      if byte_size <= 0 then
+        invalid_arg "Metal.Async.alloc_pinned: byte_size must be positive" ;
+      let addr = Metal_api.alloc_aligned ~byte_size in
+      Mutex.protect pinned_lock (fun () -> Hashtbl.replace pinned addr ()) ;
+      addr
+
+    let free_pinned _dev addr =
+      Mutex.protect pinned_lock (fun () ->
+          if not (Hashtbl.mem pinned addr) then
+            invalid_arg "Metal.Async.free_pinned: not a pinned allocation" ;
+          Hashtbl.remove pinned addr) ;
+      Metal_api.free_aligned addr
+
+    let register_host _dev _addr ~byte_size =
+      if byte_size <= 0 then
+        invalid_arg "Metal.Async.register_host: byte_size must be positive"
+
+    let unregister_host _dev _addr = ()
+  end
 
   let enable_profiling () = profiling_enabled := true
 

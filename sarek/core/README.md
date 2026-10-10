@@ -352,14 +352,29 @@ Added for streaming workloads (spoc_llm M3: MoE expert weights copied into a
 VRAM-resident cache while the GPU computes). Spec:
 `specs/device-buffers-async-copy.md`.
 
-| Capability | HIP | CUDA | Native / Interpreter | OpenCL, Vulkan, Metal, WebGPU |
-|---|---|---|---|---|
-| device-only vectors, ranged copies | yes | yes | yes (memmove) | refused |
-| copies / launches on a stream | yes | yes | accepted, synchronous | refused |
-| events: create / record / synchronize | yes | yes | trivially complete | yes (existing `Event`) |
-| `stream_wait_event`, `event_query` | yes | yes | trivially complete | refused |
-| pinned host memory | `hipHostMalloc` (portable) | `cuMemHostAlloc` (portable) | plain host memory | refused |
-| `register_host` | `hipHostRegister` | `cuMemHostRegister` (not on ZLUDA) | no-op | refused |
+| Capability | HIP | CUDA | Metal | Native / Interpreter | OpenCL, Vulkan, WebGPU |
+|---|---|---|---|---|---|
+| device-only vectors, ranged copies | yes | yes | yes (shared MTLBuffer, memcpy) | yes (memmove) | refused |
+| copies / launches on a stream | yes | yes | launches asynchronous on the stream's queue; copies complete on return | accepted, synchronous | refused |
+| events: create / record / synchronize | yes | yes | yes (newest command buffer of the stream) | trivially complete | yes (existing `Event`) |
+| `stream_wait_event`, `event_query` | yes | yes | wait implied by buffer tracking; query real | trivially complete | refused |
+| pinned host memory | `hipHostMalloc` (portable) | `cuMemHostAlloc` (portable) | page-aligned host memory | plain host memory | refused |
+| `register_host` | `hipHostRegister` | `cuMemHostRegister` (not on ZLUDA) | no-op | no-op | refused |
+
+Metal (spec `specs/metal-ranged-copies.md`): every buffer is
+`MTLResourceStorageModeShared`; on Apple silicon CPU and GPU share one physical
+memory, so a ranged copy is one `memcpy` into the buffer's `contents`. Kernel
+launches are asynchronous: dispatches are batched into one command buffer per
+queue; at each launch the batch is committed if the queue's previous command
+buffer has completed or once it holds `SPOC_METAL_BATCH` (default 32)
+dispatches, otherwise by the next launch, wait, event record or
+synchronisation. Every host access to a buffer (copy, read-back, upload) first
+waits for the pending command buffers that bind it, and a launch waits for
+pending work on other queues that binds its buffers, so a copy never races a
+kernel and always sees what it wrote. A buffer larger than the device's
+`maxBufferLength` is refused with an error naming the limit;
+`capabilities.total_global_mem` reports `recommendedMaxWorkingSetSize`. A
+failed command buffer raises `kernel_launch_failed`.
 
 "Refused" is `Backend_error (Plugin {error = Feature_not_supported _})`; caller
 errors (bounds, wrong device, wrong location, freeing in-flight memory) raise

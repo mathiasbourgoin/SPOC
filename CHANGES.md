@@ -2,6 +2,37 @@
 
 ### Added
 
+- Metal implements device-only vectors, ranged copies, pinned memory, streams
+  and events (spec `specs/metal-ranged-copies.md`). Buffers stay
+  shared-storage MTLBuffers (Apple silicon unified memory), so a ranged copy is
+  one bounds-checked `memcpy` at `contents + offset`; `alloc_pinned` is
+  page-aligned host memory and `register_host` a no-op (nothing to page-lock
+  for the GPU). Buffers above the device's `maxBufferLength` are refused with
+  an error naming the limit, and `capabilities.total_global_mem` reports
+  `recommendedMaxWorkingSetSize` instead of a 4 GiB constant. Measured on an
+  Apple M4 (macOS 15.6.1), 256 MiB ranged copies, best of 5: 42.6 GB/s
+  host->device and 42.5–42.7 GB/s device->host, pageable and page-aligned alike
+  (`sarek-metal/test/bench_metal_copy.exe`, information only).
+
+### Changed
+
+- Metal kernel launches are asynchronous. Dispatches are appended to one open
+  command buffer per queue. At each launch it is committed if the queue's
+  previous command buffer has completed or once it holds `SPOC_METAL_BATCH`
+  dispatches (default 32); otherwise the next launch, wait, event record or
+  synchronisation commits it. Every
+  host access to a buffer waits for the pending command buffers that bind it,
+  and a launch waits for pending work on other queues that binds its buffers.
+  Before, every launch committed its own command buffer and waited for it. A
+  failed command buffer now raises `kernel_launch_failed` (it was ignored), at
+  the first wait that observes it, naming every kernel the command buffer ran.
+  `Event.elapsed` measures GPU end times (it subtracted host record times, and
+  a fresh start event gave about the epoch).
+  Measured on an Apple M4: 195 us per launch before, 4.3 us (3 arguments) /
+  8.0 us (10 arguments) after (`bench_metal_launch_overhead.exe`, 10000
+  launches); spoc_llm Qwen3.5-0.8B Q8_0 greedy decode 8.6 tok/s before, 67–70
+  tok/s after, same tokens.
+
 - Intrinsic libraries outside sarek are a supported extension point
   (`sarek/ppx_intrinsic/README.md`, "Using intrinsics from another library"):
   declare the library `(kind ppx_rewriter)` and list it in
