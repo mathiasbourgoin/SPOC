@@ -316,10 +316,10 @@ let wmma_ptx ~version ~entry ~a_regs ~elem ~mma ~d_reg ~d_type ~zero =
      .reg .u32 %%ld;\n\
      ld.param.u64 %%pa, [pA]; ld.param.u64 %%pb, [pB]; ld.param.u64 %%pd, [pD];\n\
      mov.u32 %%ld, 16; mov.%s %%z0, %s;\n\
-     wmma.load.a.sync.aligned.row.m16n16k16.global.%s %s, [%%pa], %%ld;\n\
-     wmma.load.b.sync.aligned.row.m16n16k16.global.%s %s, [%%pb], %%ld;\n\
+     wmma.load.a.sync.aligned.row.m16n16k16.global.%s %s, [%%pa+0], %%ld;\n\
+     wmma.load.b.sync.aligned.row.m16n16k16.global.%s %s, [%%pb+0], %%ld;\n\
      wmma.mma.sync.aligned.row.row.m16n16k16.%s %s, %s, %s, %s;\n\
-     wmma.store.d.sync.aligned.row.m16n16k16.global.%s [%%pd], %s, %%ld;\n\
+     wmma.store.d.sync.aligned.row.m16n16k16.global.%s [%%pd+0], %s, %%ld;\n\
      ret;\n\
      }\n"
     version
