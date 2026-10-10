@@ -92,6 +92,9 @@ What each piece is for:
   but the path still carries the library prefix. You get a compile error
   (`Unbound module My_intrinsics`), not a silent miscompile. A module named
   after its library (`my_intrinsics.ml`) is registered as `["My_intrinsics"]`.
+  If a wrapped library has a hand-written main module, that module must
+  re-export each intrinsic module (`module Bits = Bits`). Otherwise the
+  witness also fails with `Unbound module`.
 - **`(kind ppx_rewriter)` plus `pps`.** Registration is a side effect of
   module initialisation. The kernel PPX knows only intrinsics whose modules
   were linked into its own driver executable. dune refuses a plain library in
@@ -125,9 +128,10 @@ and the failure surfaced only at JIT time, from the device compiler.
 Interpreter calls it through the host implementation that `let%sarek_intrinsic`
 registers. It does this when every argument and the result are scalars
 (`int32`, `int64`, `float32`, `float`/`float64`, `bool`, `unit`). For other
-signatures it raises `Unknown intrinsic: <path>`. CUDA, HIP, OpenCL and Metal
-expand the `device` template. GLSL (Vulkan) and WGSL (WebGPU) do not consult
-the registry and refuse such a kernel with an unknown-intrinsic error that
+signatures it raises `Unknown intrinsic: <path>`. The C-family source
+backends expand the `device` template: CUDA C (NVRTC), HIP, OpenCL and Metal.
+The direct PTX emitter (framework `CUDA/PTX`), GLSL (Vulkan) and WGSL (WebGPU)
+do not consult the registry. They refuse such a kernel with an error that
 names the intrinsic. Short module names share one namespace in kernels: two
 linked libraries that both define `Bits.f` collide, and the last one linked
 wins.

@@ -6,8 +6,10 @@
   (`sarek/ppx_intrinsic/README.md`, "Using intrinsics from another library"):
   declare the library `(kind ppx_rewriter)` and list it in
   `(pps sarek.ppx <lib>)`. Covered end to end by `sarek/tests/downstream/`,
-  which runs on Native, Interpreter, HIP, CUDA, OpenCL and Metal, depending on
-  which devices are present.
+  which runs on Native and Interpreter, and on HIP, CUDA C, OpenCL and Metal
+  when those devices are present. The PTX, GLSL and WGSL backends do not
+  consult the intrinsic registry. They refuse such kernels with an error that
+  names the intrinsic.
 - `let%sarek_intrinsic` also registers a host implementation
   (`Sarek_registry.register_host_impl`) for every all-scalar signature. The
   Interpreter falls back to it, so it now runs intrinsics declared outside its
