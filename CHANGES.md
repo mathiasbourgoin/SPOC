@@ -227,6 +227,14 @@
 
 ### Fixed
 
+- Ranged-copy range checks no longer overflow: `copy_to_device`,
+  `copy_bytes_to_device`, `copy_ptr_to_device`, `copy_to_host`,
+  `copy_bytes_to_host` and `stage_to_device` compared `offset + size` with the
+  total, which wraps for an offset near `max_int` and let the copy through
+  (Native segfaulted reading `max_int - 2` bytes past the buffer). They now
+  compare `offset > total - size`. The synchronous paths also keep the vector
+  alive across the backend call, not only the Bigarray, so its buffer cannot
+  be finalised mid-copy.
 - CUDA: NVRTC is found on a CUDA 13 install that has only the soname
   `libnvrtc.so.13` (no development symlink). The loader tries
   `Cuda_nvrtc.nvrtc_candidates` in order: `libnvrtc.so`, then `.so.13`, `.so.12`,

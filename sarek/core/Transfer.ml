@@ -1245,7 +1245,9 @@ let range_target (type a b) ~(op : string) (vec : (a, b) Vector.t) :
         (Printf.sprintf "%s: vector #%d has no buffer on %s" op vec.id dev.name)
 
 let check_bytes ~(op : string) ~(total : int) ~(off : int) ~(byte_size : int) =
-  if off < 0 || byte_size < 0 || off + byte_size > total then
+  (* [off > total - byte_size], not [off + byte_size > total]: the sum wraps
+     for an offset near [max_int]. *)
+  if off < 0 || byte_size < 0 || off > total - byte_size then
     invalid_arg
       (Printf.sprintf
          "%s: byte range [%d, %d) outside the vector's %d bytes"
@@ -1273,7 +1275,7 @@ let h2d_range (type a b) ~(op : string) ?(stream : stream option)
         ~dst_offset:dst_byte_offset
         ~byte_size
         ~stream:None ;
-      ignore (Sys.opaque_identity keep)
+      ignore (Sys.opaque_identity (keep, dst))
   | Some s ->
       let (module S : STREAM) = s in
       Ledger.check_live ~op S.state ;
@@ -1331,7 +1333,7 @@ let copy_to_device (type a b) ?(stream : stream option)
     ~(dst_offset : int) : unit =
   let op = "Transfer.copy_to_device" in
   let n = Bigarray.Array1.dim src in
-  if dst_offset < 0 || dst_offset + n > dst.length then
+  if dst_offset < 0 || dst_offset > dst.length - n then
     invalid_arg
       (Printf.sprintf
          "%s: elements [%d, %d) outside vector of length %d"
@@ -1404,7 +1406,7 @@ let d2h_range (type a b) ~(op : string) ?(stream : stream option)
         ~dst_ptr
         ~byte_size
         ~stream:None ;
-      ignore (Sys.opaque_identity dst)
+      ignore (Sys.opaque_identity (dst, src))
   | Some s ->
       let (module S : STREAM) = s in
       Ledger.check_live ~op S.state ;
@@ -1437,7 +1439,7 @@ let copy_to_host (type a b) ?(stream : stream option) ~(src : (a, b) Vector.t)
     unit =
   let op = "Transfer.copy_to_host" in
   let n = Bigarray.Array1.dim dst in
-  if src_offset < 0 || src_offset + n > src.length then
+  if src_offset < 0 || src_offset > src.length - n then
     invalid_arg
       (Printf.sprintf
          "%s: elements [%d, %d) outside vector of length %d"
@@ -1458,19 +1460,21 @@ let copy_to_host (type a b) ?(stream : stream option) ~(src : (a, b) Vector.t)
     Slice the destination with [Bigarray.Array1.sub]. The mirror of
     {!copy_bytes_to_device}; same location rules as {!copy_to_host}: [src] must
     be device-current and its location is unchanged. Raises [Invalid_argument]
-    when the byte range does not fit, and [Feature_not_supported] on backends
-    without ranged copies.
+    when the byte range does not fit and in the other cases {!copy_to_host}
+    refuses (host-authoritative or freed source, destroyed stream, stream of
+    another device), and [Feature_not_supported] on backends without ranged
+    copies.
 
     Without [~stream] the copy has completed when the call returns. With it, the
-    copy is enqueued and may still be running: until the stream (or an event
-    recorded after the copy) has been synchronised, or {!flush}, [dst]'s
-    contents are undefined — reading it may see old, new or mixed bytes, and
-    writing it races with the DMA, which may overwrite it. SPOC keeps [dst] and
-    [src] alive meanwhile and records [dst]'s bytes as in flight, so
-    {!free_pinned} and {!unregister_host} refuse a buffer they overlap. HIP and
-    CUDA may stage a stream copy into pageable memory through a driver bounce
-    buffer and block the host call; copy into {!alloc_pinned} or
-    {!register_host} memory when overlap matters. *)
+    copy is enqueued and may still be running: until the stream has been
+    synchronised, an event recorded after the copy has been synchronised or
+    queried complete, or {!flush}, [dst]'s contents are undefined — reading it
+    may see old, new or mixed bytes, and writing it races with the DMA, which
+    may overwrite it. SPOC keeps [dst] and [src] alive meanwhile and records
+    [dst]'s bytes as in flight, so {!free_pinned} and {!unregister_host} refuse
+    a buffer they overlap. HIP and CUDA may stage a stream copy into pageable
+    memory through a driver bounce buffer and block the host call; copy into
+    {!alloc_pinned} or {!register_host} memory when overlap matters. *)
 let copy_bytes_to_host ?(stream : stream option) ~(src : (_, _) Vector.t)
     ~(src_byte_offset : int) (dst : (_, _, Bigarray.c_layout) Bigarray.Array1.t)
     : unit =
@@ -1795,7 +1799,7 @@ let stage_to_device (type a b) ?(stream : stream option)
     ~(dst_offset : int) : unit =
   let op = "Transfer.stage_to_device" in
   let n = Bigarray.Array1.dim src in
-  if dst_offset < 0 || dst_offset + n > dst.length then
+  if dst_offset < 0 || dst_offset > dst.length - n then
     invalid_arg
       (Printf.sprintf
          "%s: elements [%d, %d) outside vector of length %d"

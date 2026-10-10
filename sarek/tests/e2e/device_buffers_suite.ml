@@ -399,7 +399,7 @@ let test_bytes_to_host_data dev v n =
       check
         (Printf.sprintf "int32 -> char bytes [%d, %d)" off (off + len))
         (holds_le (read ~off ~len) ~first:(off / 4) value))
-    [(0, 64); (4 * 333, 40); (4096, 4096); ((4 * n) - 4, 4)] ;
+    [(0, 64); (4, 8); (4 * 333, 40); (4096, 4096); ((4 * n) - 4, 4)] ;
   (* Unaligned within an element: bytes 1..6. *)
   let mid = read ~off:5 ~len:6 in
   check
@@ -461,6 +461,24 @@ let test_bytes_to_host_edges dev v n =
     | () -> false
     | exception Invalid_argument msg ->
         String.starts_with ~prefix:"Transfer.copy_bytes_to_host: byte range" msg) ;
+  (* An offset near max_int: [off + size] wraps negative, the check must not. *)
+  check
+    "offset near max_int refused (no overflow in the range check)"
+    (refuses_invalid (fun () ->
+         Transfer.copy_bytes_to_host
+           ~src:v
+           ~src_byte_offset:(max_int - 2)
+           untouched)
+    && refuses_invalid (fun () ->
+        Transfer.copy_bytes_to_device
+          untouched
+          ~dst:v
+          ~dst_byte_offset:(max_int - 2))
+    && refuses_invalid (fun () ->
+        Transfer.copy_to_host
+          ~src:v
+          ~src_offset:(max_int - 1)
+          (i32_ba 4 (fun _ -> 0l)))) ;
   check
     "negative byte offset refused"
     (refuses_invalid (fun () ->
@@ -496,7 +514,22 @@ let test_bytes_to_host_edges dev v n =
            (char_ba 4))) ;
   check
     "src location unchanged by a read-back"
-    (match Vector.location v with Vector.GPU d -> d.id = dev.id | _ -> false)
+    (match Vector.location v with Vector.GPU d -> d.id = dev.id | _ -> false) ;
+  (* An ordinary vector in [Both] stays [Both]: a read-back must not mark the
+     host copy stale as a ranged write does. *)
+  let b = Vector.create Vector.int32 16 in
+  Vector.fill b 9l ;
+  Transfer.to_device b dev ;
+  let is_both () =
+    match Vector.location b with Vector.Both d -> d.id = dev.id | _ -> false
+  in
+  let was_both = is_both () in
+  let nine = char_ba 8 in
+  Transfer.copy_bytes_to_host ~src:b ~src_byte_offset:8 nine ;
+  check
+    "a Both vector keeps its location across a read-back"
+    (was_both && is_both ()) ;
+  check "read-back of a Both vector" (holds_le nine ~first:0 (fun _ -> 9l))
 
 let test_bytes_to_host dev =
   let n = 2048 in
@@ -525,9 +558,6 @@ let test_bytes_to_host_stream dev =
   check
     "free_pinned refused while a byte read-back targets it"
     (refuses_invalid (fun () -> Transfer.free_pinned pinned)) ;
-  check
-    "freeing the source of a pending read-back refused"
-    (refuses_invalid (fun () -> Transfer.free_all_buffers y)) ;
   Transfer.synchronize_stream s ;
   check
     "stream byte read-back ordered after the launch (y = x + 1)"
@@ -536,6 +566,10 @@ let test_bytes_to_host_stream dev =
   let e = Transfer.create_event dev in
   let page = char_ba 4096 in
   Transfer.copy_bytes_to_host ~stream:s ~src:y ~src_byte_offset:8192 page ;
+  (* Only the read-back references [y] now (the launch was synchronised). *)
+  check
+    "freeing the source of a pending read-back refused"
+    (refuses_invalid (fun () -> Transfer.free_all_buffers y)) ;
   Transfer.record_event e s ;
   Transfer.synchronize_event e ;
   check
