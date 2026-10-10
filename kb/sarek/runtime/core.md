@@ -49,7 +49,9 @@ Reviewed core files: `sarek/core/README.md`, `Advanced.ml`, `Device.ml`, `Error.
 ## Device-only vectors and stream-ordered copies (2026-10, spoc_llm M3)
 
 Spec: `specs/device-buffers-async-copy.md`. Verified against the branch
-`feat/device-buffers-async-copy`.
+`feat/device-buffers-async-copy`. Metal joined later: copies synchronous,
+launches asynchronous (`Metal_api.Pending`; `specs/metal-ranged-copies.md`,
+`kb/backends/metal.md`).
 
 - `Device_only_storage` is a third `host_storage` constructor
   (`sarek/core_base/Spoc_core_base.ml`). Chosen over a flag so the compiler
@@ -88,7 +90,7 @@ Spec: `specs/device-buffers-async-copy.md`. Verified against the branch
   `CUDA_ERROR_OTHER`); everything else in the suite passes on ZLUDA.
 - Tests: `sarek/tests/e2e/device_buffers_suite.ml` (body),
   `sarek/tests/e2e/test_device_buffers.ml` (runtest: CPU backends, CUDA,
-  refusal on OpenCL/Vulkan/Metal), `sarek-hip/test/test_hip_device_buffers.ml`
+  Metal; refusal on OpenCL/Vulkan), `sarek-hip/test/test_hip_device_buffers.ml`
   (alias `e2e-hip`), `sarek-hip/test/bench_hip_pinned_copy.ml` (alias
   `e2e-hip-bench`, information only), `spoc/framework/test/test_framework_sig.ml`
   (`Async_refused`, `Make_refs`).

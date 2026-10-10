@@ -1159,6 +1159,9 @@ let destroy_event (ev : event) : unit =
     ({!free_buffer}, {!free_all_buffers}) discards the contents, and the vector
     is unusable afterwards.
 
+    On Metal the buffer is a shared-storage MTLBuffer (Apple silicon unified
+    memory): still no host mirror, and the same refusals apply.
+
     On a CPU device (Native, Interpreter) device memory IS host memory — kernels
     there read the vector's host storage — so the vector gets ordinary host
     storage, aliased by its device buffer, and host element access works.
@@ -1167,8 +1170,8 @@ let destroy_event (ev : event) : unit =
     Refused ([Invalid_argument]): [length] outside [1 .. Int32.max_int] (kernels
     index with int32; split larger caches over several vectors) and custom
     (record) kinds. Refused ([Feature_not_supported]): backends without ranged
-    copies (OpenCL, Vulkan, Metal, WebGPU), where nothing but a kernel could
-    ever fill the vector. *)
+    copies (OpenCL, Vulkan, WebGPU), where nothing but a kernel could ever fill
+    the vector. *)
 let create_device_only (type a b) (dev : Device.t) (kind : (a, b) Vector.kind)
     (length : int) : (a, b) Vector.t =
   if length < 1 || length > Int32.to_int Int32.max_int then
@@ -1189,7 +1192,7 @@ let create_device_only (type a b) (dev : Device.t) (kind : (a, b) Vector.kind)
     refuse_capability
       ~backend:B.name
       "device-only vectors (they need ranged copies, implemented on HIP, CUDA, \
-       Native and Interpreter only)" ;
+       Metal, Native and Interpreter only)" ;
   let vec =
     if dev.capabilities.is_cpu then Vector.create kind length
     else Vector.create_device_only_record kind dev length
@@ -1465,7 +1468,8 @@ let is_pinned (ba : (_, _, Bigarray.c_layout) Bigarray.Array1.t) : bool =
 (** Allocate [n] elements of page-locked host memory for DMA from/to [dev], as a
     Bigarray (read into it with [pread]/[O_DIRECT], then copy it with [~stream]
     at full link rate). HIP: [hipHostMalloc] (portable); CUDA: [cuMemHostAlloc]
-    (portable); Native/Interpreter: ordinary host memory. Refused with
+    (portable); Metal: page-aligned host memory (unified memory has nothing to
+    page-lock); Native/Interpreter: ordinary host memory. Refused with
     [Feature_not_supported] elsewhere.
 
     The memory is released ONLY by {!free_pinned}: there is no finaliser

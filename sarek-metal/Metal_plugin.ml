@@ -205,8 +205,13 @@ module Backend : Framework_sig.BACKEND = struct
   let supported_source_langs = [Framework_sig.OpenCL_Source]
   (* Note: Using OpenCL_Source for now as placeholder *)
 
+  (* [stream = None] launches on the device's default queue (the historical
+     [run_source]); [Some s] on [s]'s own command queue. Either way the launch
+     is appended to that queue's open command buffer and may still be running
+     when this returns (Metal_api.Pending). *)
+
   (** Execute external kernel from source *)
-  let run_source ~source ~lang:_ ~kernel_name ~block ~grid ~shared_mem:_ args =
+  let launch_source ~stream ~source ~kernel_name ~block ~grid args =
     (* Get current device (must be set by Execute before calling) *)
     let dev =
       match Metal_plugin_base.Metal.Device.get_current_device () with
@@ -235,7 +240,7 @@ module Backend : Framework_sig.BACKEND = struct
       args ;
 
     (* Launch *)
-    let stream = Stream.default dev in
+    let stream = match stream with Some s -> s | None -> Stream.default dev in
     Kernel.launch
       compiled
       ~args:kargs
@@ -244,13 +249,18 @@ module Backend : Framework_sig.BACKEND = struct
       ~shared_mem:0
       ~stream:(Some stream)
 
+  let run_source ~source ~lang:_ ~kernel_name ~block ~grid ~shared_mem:_ args =
+    launch_source ~stream:None ~source ~kernel_name ~block ~grid args
+
   let wrap_kargs args = Metal_kargs args
 
   let unwrap_kargs = function Metal_kargs args -> Some args | _ -> None
 
-  let run_source_on_stream ~stream:_ ~source:_ ~lang:_ ~kernel_name:_ ~block:_
-      ~grid:_ ~shared_mem:_ _args =
-    Framework_sig.refuse_stream_launch ~backend:name
+  (* Enqueued on the stream's own command queue, asynchronously; ordering
+     against other queues and host copies is kept by Metal_api.Pending. *)
+  let run_source_on_stream ~stream ~source ~lang:_ ~kernel_name ~block ~grid
+      ~shared_mem:_ args =
+    launch_source ~stream:(Some stream) ~source ~kernel_name ~block ~grid args
 
   include Framework_sig.Make_refs (struct
     type stream = Stream.t
@@ -267,11 +277,13 @@ let is_disabled () =
 (** Backend registration - happens once when first needed *)
 let registered_backend =
   lazy
-    (if Backend.is_available () then
+    (if Backend.is_available () then begin
+       Metal_api.force_all () ;
        Framework_registry.register_backend
          ~priority:95
          (* Higher priority than OpenCL on macOS *)
          (module Backend : Framework_sig.BACKEND)
+     end
      else ())
 
 (** Auto-register backend when module is loaded, unless disabled *)

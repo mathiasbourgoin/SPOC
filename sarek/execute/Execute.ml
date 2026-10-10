@@ -1117,13 +1117,14 @@ let check_stream_launch ~(device : Device.t) (stream : Transfer.stream option) :
     @param stream
       Enqueue the launch on this stream instead of the default one (HIP, CUDA);
       the call may return before the kernel has run, and the argument vectors
-      stay rooted until the stream or a later event completes. On
-      Native/Interpreter the launch is synchronous. Refused with
-      [Feature_not_supported] on other JIT backends, and with [Invalid_argument]
-      when the stream belongs to another device. The capability check and, on
-      JIT backends, source generation are done once per physical IR and reused
-      by later launches (see the launch-preparation memo above and
-      {!clear_launch_cache}); argument checks run every time.
+      stay rooted until the stream or a later event completes. On Metal the
+      launch is enqueued on the stream's own command queue (host access to its
+      buffers waits for it); on Native/Interpreter it is synchronous. Refused
+      with [Feature_not_supported] on other JIT backends, and with
+      [Invalid_argument] when the stream belongs to another device. The
+      capability check and, on JIT backends, source generation are done once per
+      physical IR and reused by later launches (see the launch-preparation memo
+      above and {!clear_launch_cache}); argument checks run every time.
 
     @param device Target device
     @param name Kernel name

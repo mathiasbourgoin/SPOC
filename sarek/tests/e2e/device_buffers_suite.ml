@@ -8,8 +8,9 @@
  * stream launches and events (spec: specs/device-buffers-async-copy.md).
  *
  * One body, run per device: by test_device_buffers.exe on every CPU device
- * (Native, Interpreter) and CUDA device present, and by
- * sarek-hip/test/test_hip_device_buffers.exe on HIP devices. Sizes are small
+ * (Native, Interpreter), CUDA and Metal device present, by
+ * sarek-hip/test/test_hip_device_buffers.exe on HIP devices and by
+ * sarek-metal/test/test_metal_device_buffers.exe on Metal devices. Sizes are small
  * on purpose: the GPU these tests run on is shared.
  ******************************************************************************)
 

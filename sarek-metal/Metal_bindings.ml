@@ -85,6 +85,59 @@ let objc_getClass_lazy =
 
 let objc_getClass name = Lazy.force objc_getClass_lazy name
 
+(** Selectors and typed [objc_msgSend] stubs on the launch path are built once.
+    [foreign] creates a libffi call description on every evaluation and
+    [sel_registerName] takes a runtime lock: done per call they dominated the
+    host cost of a Metal launch. *)
+let cached_sel name = lazy (sel_registerName name)
+
+let msg_void_lazy =
+  lazy
+    (foreign
+       ~from:(get_objc_lib ())
+       "objc_msgSend"
+       (ptr void @-> ptr void @-> returning void))
+
+let msg_u64_lazy =
+  lazy
+    (foreign
+       ~from:(get_objc_lib ())
+       "objc_msgSend"
+       (ptr void @-> ptr void @-> returning uint64_t))
+
+(** Send a no-argument, void-returning message through a cached selector. *)
+let send_void sel obj = Lazy.force msg_void_lazy obj (Lazy.force sel)
+
+let send_u64 sel obj =
+  Unsigned.UInt64.to_int (Lazy.force msg_u64_lazy obj (Lazy.force sel))
+
+let send_ptr sel obj = objc_msgSend obj (Lazy.force sel)
+
+let sel_retain = cached_sel "retain"
+
+let sel_release = cached_sel "release"
+
+(** Autorelease pools: objects Metal returns autoreleased (command buffers,
+    encoders) are freed when the enclosing pool is popped; OCaml threads have no
+    pool of their own, so without one they leak. *)
+let autorelease_pool_push_lazy =
+  lazy
+    (foreign
+       ~from:(get_objc_lib ())
+       "objc_autoreleasePoolPush"
+       (void @-> returning (ptr void)))
+
+let autorelease_pool_pop_lazy =
+  lazy
+    (foreign
+       ~from:(get_objc_lib ())
+       "objc_autoreleasePoolPop"
+       (ptr void @-> returning void))
+
+let with_autorelease_pool f =
+  let pool = Lazy.force autorelease_pool_push_lazy () in
+  Fun.protect ~finally:(fun () -> Lazy.force autorelease_pool_pop_lazy pool) f
+
 (** {1 Foundation Helpers} *)
 
 (** Load Foundation framework for NSString, NSArray, etc *)
@@ -190,41 +243,97 @@ let mtl_device_max_threadgroup_memory_length dev =
   in
   Unsigned.UInt64.to_int (fn dev sel)
 
+(** [maxBufferLength]: the largest MTLBuffer this device can allocate, in bytes.
+*)
+let mtl_device_max_buffer_length dev =
+  let sel = sel_registerName "maxBufferLength" in
+  let fn =
+    foreign
+      ~from:(get_objc_lib ())
+      "objc_msgSend"
+      (ptr void @-> ptr void @-> returning uint64_t)
+  in
+  Unsigned.UInt64.to_int (fn dev sel)
+
+(** [recommendedMaxWorkingSetSize]: how many bytes of resources the device can
+    use without degrading performance (on Apple silicon, the share of unified
+    memory the GPU may keep resident). *)
+let mtl_device_recommended_max_working_set_size dev =
+  let sel = sel_registerName "recommendedMaxWorkingSetSize" in
+  let fn =
+    foreign
+      ~from:(get_objc_lib ())
+      "objc_msgSend"
+      (ptr void @-> ptr void @-> returning uint64_t)
+  in
+  Unsigned.UInt64.to_int (fn dev sel)
+
 (** {1 Command Queue API} *)
 
 let mtl_device_new_command_queue dev =
   let sel = sel_registerName "newCommandQueue" in
   objc_msgSend dev sel
 
-let mtl_command_queue_command_buffer queue =
-  let sel = sel_registerName "commandBuffer" in
-  objc_msgSend queue sel
+let sel_command_buffer = cached_sel "commandBuffer"
+
+let mtl_command_queue_command_buffer queue = send_ptr sel_command_buffer queue
 
 (** {1 Command Buffer API} *)
 
-let mtl_command_buffer_compute_command_encoder cmdbuf =
-  let sel = sel_registerName "computeCommandEncoder" in
-  objc_msgSend cmdbuf sel
+let sel_compute_command_encoder = cached_sel "computeCommandEncoder"
 
-let mtl_command_buffer_commit cmdbuf =
-  let sel = sel_registerName "commit" in
-  let fn =
-    foreign
-      ~from:(get_objc_lib ())
-      "objc_msgSend"
-      (ptr void @-> ptr void @-> returning void)
-  in
-  fn cmdbuf sel
+let mtl_command_buffer_compute_command_encoder cmdbuf =
+  send_ptr sel_compute_command_encoder cmdbuf
+
+let sel_commit = cached_sel "commit"
+
+let mtl_command_buffer_commit cmdbuf = send_void sel_commit cmdbuf
+
+let sel_wait_until_completed = cached_sel "waitUntilCompleted"
 
 let mtl_command_buffer_wait_until_completed cmdbuf =
-  let sel = sel_registerName "waitUntilCompleted" in
-  let fn =
-    foreign
-      ~from:(get_objc_lib ())
-      "objc_msgSend"
-      (ptr void @-> ptr void @-> returning void)
-  in
-  fn cmdbuf sel
+  send_void sel_wait_until_completed cmdbuf
+
+(** [MTLCommandBufferStatusError]: the command buffer did not complete. *)
+let mtl_command_buffer_status_error = 5
+
+(** [status] of a command buffer ([MTLCommandBufferStatus], an NSUInteger). *)
+let sel_status = cached_sel "status"
+
+let mtl_command_buffer_status cmdbuf = send_u64 sel_status cmdbuf
+
+(** [error] of a command buffer (an NSError, or null), as its description. *)
+let mtl_command_buffer_error_description cmdbuf =
+  let sel = sel_registerName "error" in
+  (* [localizedDescription] is autoreleased: copy the string out inside a
+     pool. *)
+  with_autorelease_pool (fun () ->
+      nserror_description (objc_msgSend cmdbuf sel))
+
+let sel_gpu_end_time = cached_sel "GPUEndTime"
+
+let msg_double_lazy =
+  lazy
+    (foreign
+       ~from:(get_objc_lib ())
+       "objc_msgSend"
+       (ptr void @-> ptr void @-> returning double))
+
+(** [GPUEndTime] of a completed command buffer, in seconds on the
+    [CLOCK_UPTIME_RAW] (mach absolute time) clock; 0 when not available. *)
+let mtl_command_buffer_gpu_end_time cmdbuf =
+  Lazy.force msg_double_lazy cmdbuf (Lazy.force sel_gpu_end_time)
+
+let clock_gettime_nsec_np_lazy =
+  lazy (foreign "clock_gettime_nsec_np" (int @-> returning uint64_t))
+
+(** Seconds on [CLOCK_UPTIME_RAW], the clock [GPUEndTime] is expressed in. *)
+let uptime_raw_seconds () =
+  let clock_uptime_raw = 8 in
+  Int64.to_float
+    (Unsigned.UInt64.to_int64
+       (Lazy.force clock_gettime_nsec_np_lazy clock_uptime_raw))
+  /. 1e9
 
 (** {1 Buffer API} *)
 
@@ -477,85 +586,123 @@ let mtl_compute_pipeline_state_threadgroup_memory_length pso =
 
 (** {1 Compute Command Encoder API} *)
 
+let sel_set_pipeline = cached_sel "setComputePipelineState:"
+
+let set_pipeline_lazy =
+  lazy
+    (foreign
+       ~from:(get_objc_lib ())
+       "objc_msgSend"
+       (ptr void @-> ptr void @-> mtl_compute_pipeline_state @-> returning void))
+
 let mtl_compute_command_encoder_set_compute_pipeline_state encoder pso =
-  let sel = sel_registerName "setComputePipelineState:" in
-  let fn =
-    foreign
-      ~from:(get_objc_lib ())
-      "objc_msgSend"
-      (ptr void @-> ptr void @-> mtl_compute_pipeline_state @-> returning void)
-  in
-  fn encoder sel pso
+  Lazy.force set_pipeline_lazy encoder (Lazy.force sel_set_pipeline) pso
+
+let sel_set_buffer = cached_sel "setBuffer:offset:atIndex:"
+
+let set_buffer_lazy =
+  lazy
+    (foreign
+       ~from:(get_objc_lib ())
+       "objc_msgSend"
+       (ptr void @-> ptr void @-> mtl_buffer @-> uint64_t @-> uint64_t
+      @-> returning void))
 
 let mtl_compute_command_encoder_set_buffer encoder buffer offset index =
-  let sel = sel_registerName "setBuffer:offset:atIndex:" in
-  let fn =
-    foreign
-      ~from:(get_objc_lib ())
-      "objc_msgSend"
-      (ptr void @-> ptr void @-> mtl_buffer @-> uint64_t @-> uint64_t
-     @-> returning void)
-  in
-  fn
+  Lazy.force
+    set_buffer_lazy
     encoder
-    sel
+    (Lazy.force sel_set_buffer)
     buffer
     (Unsigned.UInt64.of_int offset)
     (Unsigned.UInt64.of_int index)
 
+let sel_set_bytes = cached_sel "setBytes:length:atIndex:"
+
+let set_bytes_lazy =
+  lazy
+    (foreign
+       ~from:(get_objc_lib ())
+       "objc_msgSend"
+       (ptr void @-> ptr void @-> ptr void @-> uint64_t @-> uint64_t
+      @-> returning void))
+
 let mtl_compute_command_encoder_set_bytes encoder bytes length index =
-  let sel = sel_registerName "setBytes:length:atIndex:" in
-  let fn =
-    foreign
-      ~from:(get_objc_lib ())
-      "objc_msgSend"
-      (ptr void @-> ptr void @-> ptr void @-> uint64_t @-> uint64_t
-     @-> returning void)
-  in
-  fn
+  Lazy.force
+    set_bytes_lazy
     encoder
-    sel
+    (Lazy.force sel_set_bytes)
     bytes
     (Unsigned.UInt64.of_int length)
     (Unsigned.UInt64.of_int index)
 
+let sel_dispatch_threads = cached_sel "dispatchThreads:threadsPerThreadgroup:"
+
+let dispatch_threads_lazy =
+  lazy
+    (foreign
+       ~from:(get_objc_lib ())
+       "objc_msgSend"
+       (ptr void @-> ptr void @-> mtl_size @-> mtl_size @-> returning void))
+
 let mtl_compute_command_encoder_dispatch_threads encoder threads
     threads_per_threadgroup =
-  let sel = sel_registerName "dispatchThreads:threadsPerThreadgroup:" in
-  let fn =
-    foreign
-      ~from:(get_objc_lib ())
-      "objc_msgSend"
-      (ptr void @-> ptr void @-> mtl_size @-> mtl_size @-> returning void)
-  in
-  fn encoder sel threads threads_per_threadgroup
+  Lazy.force
+    dispatch_threads_lazy
+    encoder
+    (Lazy.force sel_dispatch_threads)
+    threads
+    threads_per_threadgroup
+
+let sel_end_encoding = cached_sel "endEncoding"
 
 let mtl_compute_command_encoder_end_encoding encoder =
-  let sel = sel_registerName "endEncoding" in
-  let fn =
-    foreign
-      ~from:(get_objc_lib ())
-      "objc_msgSend"
-      (ptr void @-> ptr void @-> returning void)
-  in
-  fn encoder sel
+  send_void sel_end_encoding encoder
 
 (** {1 Memory Management} *)
 
 (** Release any NSObject/Metal object *)
-let release obj =
-  if not (is_null obj) then begin
-    let sel = sel_registerName "release" in
-    let fn =
-      foreign
-        ~from:(get_objc_lib ())
-        "objc_msgSend"
-        (ptr void @-> ptr void @-> returning void)
-    in
-    fn obj sel
-  end
+let release obj = if not (is_null obj) then send_void sel_release obj
 
 (** Retain any NSObject/Metal object *)
-let retain obj =
-  let sel = sel_registerName "retain" in
-  objc_msgSend obj sel
+let retain obj = send_ptr sel_retain obj
+
+(** Force every lazily built stub and selector above. Called once when the
+    backend registers (one domain, before user code runs): in OCaml 5 a lazy
+    forced concurrently from two domains, or re-entrantly from a GC finaliser
+    releasing a buffer, raises [Lazy.Undefined]. *)
+let force_all () =
+  let force l =
+    let _ = Lazy.force l in
+    ()
+  in
+  List.iter
+    force
+    [
+      sel_retain;
+      sel_release;
+      sel_command_buffer;
+      sel_compute_command_encoder;
+      sel_commit;
+      sel_wait_until_completed;
+      sel_status;
+      sel_gpu_end_time;
+      sel_set_pipeline;
+      sel_set_buffer;
+      sel_set_bytes;
+      sel_dispatch_threads;
+      sel_end_encoding;
+    ] ;
+  force objc_msgSend_lazy ;
+  force objc_getClass_lazy ;
+  force sel_registerName_lazy ;
+  force msg_void_lazy ;
+  force msg_u64_lazy ;
+  force msg_double_lazy ;
+  force autorelease_pool_push_lazy ;
+  force autorelease_pool_pop_lazy ;
+  force clock_gettime_nsec_np_lazy ;
+  force set_pipeline_lazy ;
+  force set_buffer_lazy ;
+  force set_bytes_lazy ;
+  force dispatch_threads_lazy
