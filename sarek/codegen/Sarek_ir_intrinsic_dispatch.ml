@@ -186,6 +186,38 @@ let emit_unary ~gen_expr ~invalid_arg_count buf ~prefix ~suffix ~opname args =
       Buffer.add_string buf suffix
   | _ -> invalid_arg_count opname 1 (List.length args)
 
+(** The module paths under which a kernel reaches the stdlib [Int32] module:
+    [Int32.x] as written, the library-qualified form, and the FFI-free metadata
+    twin used by the transpiler. *)
+let is_stdlib_int32_path = function
+  | ["Int32"] | ["Sarek_stdlib"; "Int32"] | ["Sarek_stdlib_meta"; "Int32"] ->
+      true
+  | _ -> false
+
+(** [Int32.float_of_bits] / [Int32.bits_of_float] on a backend that lowers them
+    natively rather than through the FFI registry (GLSL, WGSL). [to_float] and
+    [to_int] are the backend's spellings of the two reinterpretations. The match
+    is scoped to the stdlib [Int32] path so another module's intrinsic of the
+    same bare name is left to its own lowering. Returns [true] iff it emitted.
+*)
+let emit_int32_bitcast ~gen_expr ~invalid_arg_count ~to_float ~to_int buf path
+    name args =
+  if not (is_stdlib_int32_path path) then false
+  else
+    match name with
+    | "float_of_bits" | "bits_of_float" ->
+        let prefix = if name = "float_of_bits" then to_float else to_int in
+        emit_unary
+          ~gen_expr
+          ~invalid_arg_count
+          buf
+          ~prefix:(prefix ^ "(")
+          ~suffix:")"
+          ~opname:name
+          args ;
+        true
+    | _ -> false
+
 (** Emit a plain call [callee(arg0, arg1, ...)]. *)
 let emit_call ~gen_expr buf callee args =
   Buffer.add_string buf callee ;

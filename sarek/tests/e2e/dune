@@ -1964,3 +1964,35 @@
  (alias runtest)
  (action
   (run %{dep:test_device_buffers.exe})))
+
+; Stdlib Int32.float_of_bits / Int32.bits_of_float on every enumerated
+; device: decode, encode, in-kernel round trip and a packed-record decode, over
+; +-0, +-inf, denormals, max finite, a NaN payload and a signalling NaN.
+; Native/Interpreter must run; a GPU backend that cannot launch is reported,
+; a wrong result from any device is a failure. Run with:
+;   LD_LIBRARY_PATH=$HOME/opt/zluda \
+;     dune exec sarek/tests/e2e/test_int32_bitcasts.exe
+
+(executable
+ (name test_int32_bitcasts)
+ (modules test_int32_bitcasts backend_hip)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek_ir
+  spoc_core
+  test_helpers
+  unix
+  sarek_backend_error
+  (select
+   backend_hip.ml
+   from
+   (sarek-hip.plugin -> backend_hip.available.ml)
+   (-> backend_hip.unavailable.ml)))
+ (preprocess
+  (pps sarek_ppx)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_int32_bitcasts.exe})))

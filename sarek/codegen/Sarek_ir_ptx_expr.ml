@@ -31,6 +31,9 @@ let is_f64_reg r = String.length r >= 3 && r.[1] = 'f' && r.[2] = 'd'
 
 let is_f32_reg r = String.length r >= 2 && r.[1] = 'f' && not (is_f64_reg r)
 
+(* A 32-bit integer register ([%rN], not the 64-bit [%rdN]). *)
+let is_s32_reg r = String.length r >= 3 && r.[1] = 'r' && r.[2] <> 'd'
+
 (** Whether an expression must NOT be evaluated speculatively — i.e. an [EIf]
     with such a branch must emit real control flow rather than the eager
     evaluate-both-branches [selp] path. Two reasons a subexpression qualifies:
@@ -2104,8 +2107,9 @@ and float_ops_intrinsic_handlers () : (string list * intrinsic_handler) list =
         Some (intr_unary_round buf alloc env name "cvt.rpi" args) );
   ]
 
-(* Bitcasts between f64 and int64 (mov.b64) — the exponent-field plumbing
-   the softmath f64 transcendentals are built on. *)
+(* Bitcasts: f64 <-> int64 (mov.b64), the exponent-field plumbing the
+   softmath f64 transcendentals are built on, and the stdlib
+   Int32.float_of_bits / bits_of_float pair (mov.b32). *)
 
 and bitcast_intrinsic_handlers () : (string list * intrinsic_handler) list =
   [
@@ -2125,6 +2129,31 @@ and bitcast_intrinsic_handlers () : (string list * intrinsic_handler) list =
           emit buf "mov.b64 %s, %s;" d r ;
           Some d)
         else unsupported "bits_f64: int64 operand required" );
+    (* Int32.float_of_bits / Int32.bits_of_float: the 32-bit reinterpretation,
+       one untyped mov.b32 between the 32-bit integer (%r) and f32 (%f)
+       register files. Scoped to the stdlib Int32 path: dispatch here is by
+       bare name, and a downstream module's [float_of_bits] must not silently
+       take this lowering. *)
+    ( ["float_of_bits"],
+      fun buf alloc env path name args ->
+        if not (Sarek_ir_intrinsic_dispatch.is_stdlib_int32_path path) then None
+        else
+          let r = intr_unary_arg buf alloc env name args in
+          if is_s32_reg r then (
+            let d = new_f32 alloc in
+            emit buf "mov.b32 %s, %s;" d r ;
+            Some d)
+          else unsupported "float_of_bits: int32 operand required" );
+    ( ["bits_of_float"],
+      fun buf alloc env path name args ->
+        if not (Sarek_ir_intrinsic_dispatch.is_stdlib_int32_path path) then None
+        else
+          let r = intr_unary_arg buf alloc env name args in
+          if is_f32_reg r then (
+            let d = new_u32 alloc in
+            emit buf "mov.b32 %s, %s;" d r ;
+            Some d)
+          else unsupported "bits_of_float: float32 operand required" );
   ]
 
 (* Type conversions (Gpu.float / Float32.of_int / …). "of_int"/"to_int"

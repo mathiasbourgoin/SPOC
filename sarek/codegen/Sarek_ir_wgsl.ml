@@ -782,7 +782,7 @@ and wgsl_backend st =
     gen_expr = gen_expr st;
     thread_intrinsic = wgsl_thread_intrinsic;
     pre_hook =
-      (fun buf ~full_name:_ _path name args ->
+      (fun buf ~full_name:_ path name args ->
         if name = "fmod" then
           match args with
           | [x; y] ->
@@ -795,7 +795,17 @@ and wgsl_backend st =
           | _ ->
               Codegen_error.raise_error
                 (Codegen_error.invalid_arg_count "fmod" 2 (List.length args))
-        else false);
+        else
+          (* Int32.float_of_bits / bits_of_float: WGSL's same-width bitcast. *)
+          Dispatch.emit_int32_bitcast
+            ~gen_expr:(gen_expr st)
+            ~invalid_arg_count:bad_arity
+            ~to_float:"bitcast<f32>"
+            ~to_int:"bitcast<i32>"
+            buf
+            path
+            name
+            args);
     (* INERT ON PURPOSE (backlog-159), not an unfinished symmetry. The three
        C-family backends wire [Dispatch.emit_registry_template] here; doing the
        same for WGSL would route intrinsics through

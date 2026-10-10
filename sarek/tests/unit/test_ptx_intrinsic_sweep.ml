@@ -118,6 +118,8 @@ let f64_path = ["Sarek_stdlib"; "Float64"]
 
 let stdlib_path = ["Sarek_stdlib"]
 
+let i32_path = ["Sarek_stdlib"; "Int32"]
+
 (* Arity of every math intrinsic (transcendentals + elementary float ops). An
    entry is REQUIRED: a name added to the emitter's tables with no arity here
    has no recipe and fails [test_every_name_has_a_recipe]. *)
@@ -261,6 +263,24 @@ let cases_for name =
                 "bits_f64"
                 "of64"
                 (EIntrinsic (f64_path, name, [rd "ai64"])) );
+          ]
+    | "float_of_bits" ->
+        Some
+          [
+            ( "float_of_bits",
+              kernel
+                "float_of_bits"
+                "of32"
+                (EIntrinsic (i32_path, name, [rd "ai32"])) );
+          ]
+    | "bits_of_float" ->
+        Some
+          [
+            ( "bits_of_float",
+              kernel
+                "bits_of_float"
+                "oi32"
+                (EIntrinsic (i32_path, name, [rd "af32"])) );
           ]
     | _ -> None
   else if List.mem name Sarek_ir_ptx_expr.convert_intrinsic_names then

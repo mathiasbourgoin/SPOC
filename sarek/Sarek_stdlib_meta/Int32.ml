@@ -83,6 +83,43 @@ let%sarek_intrinsic (max : int32 -> int32 -> int32) =
   {device = dev "max(%s, %s)" "max(%s, %s)"; ocaml = Stdlib.Int32.max}
 
 (******************************************************************************
+ * Bit reinterpretation (float32 <-> int32)
+ *
+ * Same names, argument order and semantics as OCaml's
+ * [Stdlib.Int32.float_of_bits] / [Stdlib.Int32.bits_of_float]: the 32 bits are
+ * reused unchanged, there is no numeric conversion. A device moves the bits
+ * through a register, so every pattern - +-0, +-inf, denormals, NaN payloads -
+ * comes out exactly as it went in.
+ *
+ * NaN caveat (host side only): Native and the Interpreter carry a float32 as an
+ * OCaml double, so [float_of_bits] widens to double. Quiet-NaN payloads survive
+ * the f32 -> f64 -> f32 round trip; a signalling NaN is quieted by that
+ * widening (bit 22 set), as it is by any host read of a float32 vector.
+ *
+ * Spelling: the C-family backends read the template below; MSL has neither
+ * CUDA's [__int_as_float] nor OpenCL C's [as_float], so Metal gets its own
+ * [as_type<T>] branch instead of the [cuda_or_opencl] Metal->OpenCL mapping.
+ * GLSL (intBitsToFloat/floatBitsToInt), WGSL (bitcast<f32>/bitcast<i32>) and
+ * PTX (mov.b32) lower these two names natively; [cuda_or_opencl] still refuses
+ * the shading languages here.
+ ******************************************************************************)
+
+let bitcast_dev cuda opencl metal d =
+  if d = "Metal" then metal else dev cuda opencl d
+
+let%sarek_intrinsic (float_of_bits : int32 -> float32) =
+  {
+    device = bitcast_dev "__int_as_float(%s)" "as_float(%s)" "as_type<float>(%s)";
+    ocaml = Stdlib.Int32.float_of_bits;
+  }
+
+let%sarek_intrinsic (bits_of_float : float32 -> int32) =
+  {
+    device = bitcast_dev "__float_as_int(%s)" "as_int(%s)" "as_type<int>(%s)";
+    ocaml = Stdlib.Int32.bits_of_float;
+  }
+
+(******************************************************************************
  * Conversion functions (pure OCaml; no Spoc_core dependency)
  ******************************************************************************)
 
