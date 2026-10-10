@@ -1,0 +1,36 @@
+; Downstream intrinsic library, end to end (sarek/ppx_intrinsic/README.md,
+; "Using intrinsics from another library").
+;
+; intrinsics/ declares `Bits.float_of_bits` with let%sarek_intrinsic; this
+; executable is compiled the way a downstream project compiles its kernels:
+; the intrinsic library is BOTH a link dependency and a member of the pps
+; list. It runs the kernel on every enumerated backend (Native and Interpreter
+; always; OpenCL, CUDA, HIP, Vulkan, Metal when present) and also checks the
+; registered module path and the device source. The negative counterpart, the
+; same call compiled WITHOUT the library in the pps list, is
+; sarek/tests/negative/test_unlinked_intrinsic.ml.
+
+(executable
+ (name test_downstream_intrinsic)
+ (modules test_downstream_intrinsic backend_hip)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek.codegen
+  spoc_core
+  dstest_intrinsics
+  test_helpers
+  (select
+   backend_hip.ml
+   from
+   (sarek-hip.plugin -> backend_hip.available.ml)
+   (-> backend_hip.unavailable.ml)))
+ (preprocess
+  (pps sarek.ppx dstest_intrinsics))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_downstream_intrinsic.exe})))

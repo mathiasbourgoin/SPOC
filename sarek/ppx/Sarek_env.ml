@@ -374,6 +374,29 @@ let lookup name env =
                   | Some (_name, scheme) -> LLocalFun (name, scheme)
                   | None -> LNotFound))))
 
+(** For a qualified name [M.f], the qualified names the environment binds under
+    the same prefix [M.], sorted (used to suggest a fix for a typo or a module
+    whose intrinsics are only partly linked). [[]] for an unqualified name. *)
+let known_names_in_module_of name env =
+  match String.rindex_opt name '.' with
+  | None -> []
+  | Some i ->
+      let prefix = String.sub name 0 (i + 1) in
+      let plen = String.length prefix in
+      let has_prefix k =
+        String.length k > plen && String.equal (String.sub k 0 plen) prefix
+      in
+      let collect m acc =
+        StringMap.fold
+          (fun k _ acc -> if has_prefix k then k :: acc else acc)
+          m
+          acc
+      in
+      [] |> collect env.intrinsic_funs
+      |> collect env.intrinsic_consts
+      |> collect env.local_funs
+      |> List.sort_uniq String.compare
+
 (** Debug: print environment contents *)
 let pp_env fmt env =
   Format.fprintf fmt "Variables:@." ;

@@ -1,0 +1,18 @@
+; A device-intrinsic library standing in for a DOWNSTREAM project's (spoc_llm's
+; spoc_llm_intrinsics was the reported case). It is deliberately written the
+; way sarek/ppx_intrinsic/README.md tells a downstream project to write one,
+; with public library names only, and it lives in a directory whose name has
+; NO underscore and differs from the library name: the registered module path
+; used to be guessed from the directory, and this layout is the one that broke
+; (Bits.float_of_bits registered as ["Bits"] instead of
+; ["Dstest_intrinsics"; "Bits"]).
+;
+; (kind ppx_rewriter) is what makes `(pps sarek.ppx dstest_intrinsics)` legal
+; and gets this library's registrations linked into the kernel PPX driver.
+
+(library
+ (name dstest_intrinsics)
+ (kind ppx_rewriter)
+ (libraries spoc.registry sarek.ppx.lib)
+ (preprocess
+  (pps sarek.ppx.intrinsic)))

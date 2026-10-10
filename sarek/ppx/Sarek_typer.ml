@@ -838,13 +838,21 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
           let id = fresh_var_id () in
           Ok (mk_texpr (TEVar (name, id)) typ loc, env)
       | LNotFound ->
-          (* Check if this is a qualified name (Module.func) from another module.
-             If so, treat it as an external function that will be resolved at runtime
-             via the Sarek_registry. This follows the ppx_deriving composability pattern. *)
+          (* A qualified name ([M.f]) that nothing in the environment binds.
+             This used to be accepted with a fresh type variable on the theory
+             that it would be "resolved at runtime via the Sarek_registry". No
+             backend ever did that: lowering emitted [Ir.EVar "M.f"] and every
+             source backend printed it verbatim, so an intrinsic declared in a
+             library the PPX had not linked reached the device compiler as
+             [M.f(...)] and failed only at JIT time (seen downstream as hiprtc
+             "use of undeclared identifier 'M'"). Refuse it here, naming the
+             fix. *)
           if String.contains name '.' then
-            let id = fresh_var_id () in
-            let ty = fresh_tvar () in
-            Ok (mk_texpr (TEVar (name, id)) ty loc, env)
+            Error
+              [
+                Unknown_qualified_name
+                  {name; known = known_names_in_module_of name env; loc};
+              ]
           else Error [Unbound_variable (name, loc)])
   (* Memory access *)
   | EVecGet _ | EVecSet _ | EArrGet _ | EArrSet _ | EFieldGet _ | EFieldSet _ ->

@@ -1,5 +1,36 @@
 ## 2026-10
 
+### Added
+
+- Intrinsic libraries outside sarek are a supported extension point
+  (`sarek/ppx_intrinsic/README.md`, "Using intrinsics from another library"):
+  declare the library `(kind ppx_rewriter)` and list it in
+  `(pps sarek.ppx <lib>)`. Covered end to end by `sarek/tests/downstream/`,
+  which runs on Native, Interpreter, HIP, CUDA, OpenCL and Metal, depending on
+  which devices are present.
+- `let%sarek_intrinsic` also registers a host implementation
+  (`Sarek_registry.register_host_impl`) for every all-scalar signature. The
+  Interpreter falls back to it, so it now runs intrinsics declared outside its
+  built-in tables. Before, it raised `Unknown intrinsic`.
+
+### Changed
+
+- `let%sarek_intrinsic` registers an intrinsic under its library's module path,
+  using the `library-name` cookie dune passes to the PPX, instead of guessing
+  from the source directory name. sarek's own libraries keep their paths. A
+  downstream library in a directory not named after it (for example
+  `src/intrinsics/` holding `foo_intrinsics`) used to register as `["Bits"]`
+  rather than `["Foo_intrinsics"; "Bits"]`.
+- **Breaking:** a qualified name in a kernel (`M.f`) that the kernel PPX
+  cannot resolve is now a compile error: "Unknown kernel function or
+  constant M.f ...". The error names the fix and lists the names the PPX knows
+  under `M`. Before, the PPX accepted it untyped. Native ran it as an OCaml
+  call, but every source backend printed it verbatim into device code, so it
+  failed only at JIT time. Three in-tree sites depended on this:
+  `test_visibility_private` now links `sarek.visibility` into its PPX, and
+  `test_debug_native` and the `reduction_max` benchmark kernel now spell their
+  values in Sarek.
+
 ### Fixed
 
 - The Native and Interpreter CPU backends are now installed, as
@@ -8,6 +39,9 @@
   description and both plugin READMEs already advertised them. A cram test
   (`sarek/plugins/test/install_consumer.t`) builds an out-of-tree project
   whose OCAMLPATH is the install tree and links both.
+- `benchmarks/descriptions/generated/reduction_max_generated.md`: all four
+  device sources contained `Float.neg_infinity`, which is not valid device
+  code. They now contain `-FLT_MAX`.
 
 ## 2026-07
 

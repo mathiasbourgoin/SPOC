@@ -12,7 +12,7 @@ let () =
     [%kernel
       fun (v : float32 vector) (pair : int32 * int32) ->
         let tid = thread_idx_x + (block_dim_x * block_idx_x) in
-        v.(tid) <- Float32.of_int (Int32.to_int tid)]
+        v.(tid) <- float tid]
   in
   ignore bad_kernel ;
   print_endline "This should not print - test should have failed to compile"

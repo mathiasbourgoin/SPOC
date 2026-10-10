@@ -122,6 +122,35 @@ let register_fun ?(module_path = []) name ~arity ~device ~arg_types ~ret_type =
       fi_ret_type = ret_type;
     }
 
+(** A scalar crossing between an evaluator and an intrinsic's host (OCaml)
+    implementation. One constructor per scalar type an intrinsic signature can
+    name: [int32], [int64], [float32] (an OCaml [float] holding a binary32
+    value), [float]/[float64], [bool] and [unit]. *)
+type host_value =
+  | HInt32 of int32
+  | HInt64 of int64
+  | HFloat32 of float
+  | HFloat64 of float
+  | HBool of bool
+  | HUnit
+
+(** Host implementations of intrinsic functions, keyed like {!fun_registry}.
+    [let%sarek_intrinsic] registers one for every function whose signature is
+    all scalars; it is what lets an evaluator that has no built-in table entry
+    for an intrinsic (the interpreter, for an intrinsic declared outside sarek's
+    stdlib) run it. The implementation receives its arguments in the declared
+    order, each with the constructor of its declared type, and raises
+    [Invalid_argument] on any other shape. *)
+let host_registry :
+    (string list * string, host_value list -> host_value) Hashtbl.t =
+  Hashtbl.create 64
+
+let register_host_impl ?(module_path = []) name impl =
+  Hashtbl.replace host_registry (module_path, name) impl
+
+let find_host_impl ?(module_path = []) name =
+  Hashtbl.find_opt host_registry (module_path, name)
+
 (** Find a primitive type by name *)
 let find_type name = Hashtbl.find_opt type_registry name
 

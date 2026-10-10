@@ -21,7 +21,7 @@ let simple_write_kernel =
     fun (output : float32 vector) (n : int32) ->
       let open Std in
       let tid = global_thread_id in
-      if tid < n then output.(tid) <- Float32.of_float 42.0]
+      if tid < n then output.(tid) <- 42.0]
 
 (* Kernel that uses the thread id *)
 let tid_kernel =
@@ -29,7 +29,7 @@ let tid_kernel =
     fun (output : float32 vector) (n : int32) ->
       let open Std in
       let tid = global_thread_id in
-      if tid < n then output.(tid) <- Float32.of_int (Int32.to_int tid)]
+      if tid < n then output.(tid) <- float tid]
 
 let () =
   let devs = Device.init ~frameworks:["Native"] () in

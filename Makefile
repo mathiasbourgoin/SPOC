@@ -247,6 +247,8 @@ test_negative:
 	@out=$$(mktemp); pat='two result annotations'; dune build --profile=negative sarek/tests/negative/neg_test_two_result_annotations.cma > "$$out" 2>&1; if grep -qF "$$pat" "$$out"; then echo "  PASS: two result annotations rejected"; else echo "  FAIL: expected [$$pat]; got:"; cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing type nonrec rejected (backlog-192)..."
 	@out=$$(mktemp); pat='`type nonrec` is not supported'; site='type nonrec box'; dune build --profile=negative sarek/tests/negative/neg_test_payload_type_nonrec.cma > "$$out" 2>&1; if grep -qF "$$pat" "$$out" && grep -qF "$$site" "$$out"; then echo "  PASS: type nonrec rejected"; else echo "  FAIL: expected [$$pat] AT [$$site]; got:"; cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
+	@echo "Testing intrinsic from a library not linked into the PPX..."
+	@out=$$(mktemp); pat='Unknown kernel function or constant Bits.float_of_bits'; fix='(pps sarek.ppx <library>)'; dune build --profile=negative sarek/tests/negative/neg_test_unlinked_intrinsic.cma > "$$out" 2>&1; if grep -qF "$$pat" "$$out" && grep -qF "$$fix" "$$out"; then echo "  PASS: unlinked intrinsic refused at PPX time"; else echo "  FAIL: expected [$$pat] and [$$fix]; got:"; cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "All negative tests checked (see KNOWN-ISSUE line above for the one non-blocking gap, if any)"
 
 

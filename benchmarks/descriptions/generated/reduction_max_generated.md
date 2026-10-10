@@ -15,7 +15,7 @@ __global__ void sarek_kern(float* __restrict__ input, int sarek_input_length, fl
     if ((gid < n)) {
       sdata[tid] = input[gid];
     } else {
-      sdata[tid] = Float.neg_infinity;
+      sdata[tid] = -3.4028234663852886e+38f;
     }
   }
   __syncthreads();
@@ -120,7 +120,7 @@ __kernel void sarek_kern(__global float* restrict input, int sarek_input_length,
     if ((gid < n)) {
       sdata[tid] = input[gid];
     } else {
-      sdata[tid] = Float.neg_infinity;
+      sdata[tid] = -3.4028234663852886e+38f;
     }
   }
   barrier(CLK_LOCAL_MEM_FENCE);
@@ -247,7 +247,7 @@ void main() {
     if ((gid < n)) {
       sdata[tid] = inputv[gid];
     } else {
-      sdata[tid] = Float.neg_infinity;
+      sdata[tid] = -3.4028234663852886e+38;
     }
   }
   barrier();
@@ -360,7 +360,7 @@ uint3 __metal_num_groups [[threadgroups_per_grid]]) {
     if ((gid < n)) {
       sdata[tid] = input[gid];
     } else {
-      sdata[tid] = Float.neg_infinity;
+      sdata[tid] = -3.4028234663852886e+38f;
     }
   }
   threadgroup_barrier(mem_flags::mem_threadgroup);
