@@ -10,4 +10,5 @@
   spoc_core
   spoc_framework
   spoc_framework_registry
-  alcotest))
+  alcotest
+  unix))
