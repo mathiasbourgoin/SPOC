@@ -27,8 +27,10 @@ emulation that does not use the WMMA units:
 "Not translated" means the same thing every time. `cuModuleLoadData` succeeds,
 the translator logs `Unrecognized statement "<the instruction>"` and drops the
 kernel, and `cuModuleGetFunction` then returns `CUDA_ERROR_NOT_FOUND` (500). In
-each module the matrix instruction is the only statement rejected
-(`zluda-compiler-logs.txt`). A control kernel (the same kernel with the
+each `mma.sync` module the `mma` instruction is the only statement rejected. In
+each `wmma` module the rejected statements are exactly the four `wmma`
+instructions (`load.a`, `load.b`, `mma`, `store.d`); every other statement
+parses (`zluda-compiler-logs.txt`). A control kernel (the same kernel with the
 instruction replaced by `mov`s) loads and runs.
 
 "Bound" is `γ_K · Σ|terms|` (C and the K products), with `γ_K = K·u/(1 − K·u)`
