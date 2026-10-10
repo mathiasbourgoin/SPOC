@@ -88,8 +88,14 @@ let%sarek_intrinsic (max : int32 -> int32 -> int32) =
  * Same names, argument order and semantics as OCaml's
  * [Stdlib.Int32.float_of_bits] / [Stdlib.Int32.bits_of_float]: the 32 bits are
  * reused unchanged, there is no numeric conversion. A device moves the bits
- * through a register, so every pattern - +-0, +-inf, denormals, NaN payloads -
- * comes out exactly as it went in.
+ * through a register. Measured (sarek/tests/e2e/test_int32_bitcasts.ml,
+ * 2026-10-10): an in-kernel int32 -> float32 -> int32 round trip returned
+ * every tested pattern unchanged - +-0, +-inf, denormals, max finite, a
+ * quiet-NaN payload and a signalling NaN - on HIP, OpenCL, Vulkan and
+ * CUDA/PTX (ZLUDA) on an RX 7900 XTX and a Ryzen 7950X iGPU, and on Metal and
+ * OpenCL on an Apple M4. GLSL and WGSL themselves leave the value of a
+ * non-finite bitcast unspecified, and WGSL may refuse a constant-folded
+ * bitcast that yields NaN or inf at shader creation.
  *
  * NaN caveat (host side only): Native and the Interpreter carry a float32 as an
  * OCaml double, so [float_of_bits] widens to double. Quiet-NaN payloads survive

@@ -24,7 +24,6 @@
 
 open Sarek_ir_types
 open Sarek_codegen
-
 module Std = Sarek_stdlib.Std
 
 let () = Sarek_stdlib.force_init ()
@@ -162,21 +161,21 @@ let check_spellings ?(only = []) label k () =
   List.iter
     (fun (backend, gen, must, must_not) ->
       if only = [] || List.mem backend only then begin
-      let src = gen k in
-      List.iter
-        (fun s ->
-          Alcotest.(check bool)
-            (Printf.sprintf "%s %s emits %s" label backend s)
-            true
-            (contains src s))
-        must ;
-      List.iter
-        (fun s ->
-          Alcotest.(check bool)
-            (Printf.sprintf "%s %s does not emit %s" label backend s)
-            false
-            (contains src s))
-        (must_not @ ["Int32."; "float_of_bits"; "bits_of_float"])
+        let src = gen k in
+        List.iter
+          (fun s ->
+            Alcotest.(check bool)
+              (Printf.sprintf "%s %s emits %s" label backend s)
+              true
+              (contains src s))
+          must ;
+        List.iter
+          (fun s ->
+            Alcotest.(check bool)
+              (Printf.sprintf "%s %s does not emit %s" label backend s)
+              false
+              (contains src s))
+          (must_not @ ["Int32."; "float_of_bits"; "bits_of_float"])
       end)
     backends
 
@@ -327,7 +326,7 @@ let check_off_path () =
     [
       ("GLSL", fun k -> Sarek_ir_glsl.generate k);
       ("WGSL", fun k -> Sarek_ir_wgsl.generate k);
-      ("PTX", (fun k -> Sarek_ir_ptx.generate k));
+      ("PTX", fun k -> Sarek_ir_ptx.generate k);
     ]
 
 let check_arity () =

@@ -22,6 +22,8 @@ Intrinsic support spans `sarek/ppx/Sarek_core_primitives.ml`, `sarek/ppx/Sarek_p
 - `%sarek_extend` tries to register an external OCaml function for Sarek use in `sarek/ppx_intrinsic/Sarek_ppx_intrinsic.ml:442-478`.
 - Intrinsic PPX module-path inference is in `sarek/ppx_intrinsic/Sarek_ppx_intrinsic.ml:61-76`.
 
+- Stdlib bit reinterpretation `Int32.float_of_bits`/`Int32.bits_of_float` (2026-10, `specs/stdlib-bitcasts.md`): declared in `sarek/Sarek_stdlib/Int32.ml` and `sarek/Sarek_stdlib_meta/Int32.ml` with a three-way C-family template (CUDA/OpenCL/Metal; `cuda_or_opencl` alone would hand Metal OpenCL's `as_float`). GLSL and WGSL lower them in `pre_hook` through `Sarek_ir_intrinsic_dispatch.emit_int32_bitcast`, PTX in the `Bitcast` handler category (`mov.b32`); all three are scoped by `Sarek_ir_intrinsic_dispatch.is_stdlib_int32_path` because their dispatch matches bare names. Native reaches OCaml's `Int32` through `map_stdlib_path`; the Interpreter has explicit arms in `eval_int32_math_intrinsic`.
+
 ## Invariants
 
 - Runtime and compile-time registries must receive equivalent type/function metadata.
@@ -48,6 +50,8 @@ Intrinsic support spans `sarek/ppx/Sarek_core_primitives.ml`, `sarek/ppx/Sarek_p
 - Unit intrinsic tests include `test_core_primitives`, `test_native_intrinsics`, and `test_ppx_registry` in `sarek/tests/unit/dune:8-21`.
 - E2E intrinsic coverage includes math and bitwise executables in `sarek/tests/e2e/dune:81-82`.
 - Negative warp/divergence behavior involving intrinsics is documented in `sarek/tests/negative/dune:11`.
+
+- `sarek/tests/unit/test_int32_bitcasts_codegen.ml` and `sarek/tests/e2e/test_int32_bitcasts.ml` cover the stdlib bitcasts on every backend.
 
 ## Missing Tests
 
