@@ -1,0 +1,9 @@
+# mutation: "libnvrtc.so.13" removed from Cuda_nvrtc.nvrtc_candidates; dune exec sarek-cuda/test/test_cuda_nvrtc_candidates.exe, tartarus, 2026-10-10T22:14Z
+> [FAIL]        candidates          0   CUDA 13 soname listed.
+  [FAIL]        candidates          1   newest first.
+  [FAIL]        candidates          2   exact list.
+  [OK]          candidates          3   no duplicates.
+  [FAIL]        search              0   CUDA 13-only host.
+  [FAIL]        search              1   newest wins.
+  [OK]          search              2   none found.
+FAIL libnvrtc.so.13 is a candidate (CUDA 13 soname)

@@ -1,4 +1,20 @@
-# zluda_trace compiler logs (ZLUDA_CUDA_LIB=~/opt/zluda/libcuda.so LD_LIBRARY_PATH=~/opt/zluda/trace ZLUDA_LOG_DIR=...): module 1 = control, 2-3 = executed forms (no log), 4-9 = the forms that do not load
+# zluda_trace compiler logs (ZLUDA_CUDA_LIB=~/opt/zluda/libcuda.so LD_LIBRARY_PATH=~/opt/zluda/trace ZLUDA_LOG_DIR=...): module 1 = control, 2-3 = the forms that run (no log), 4-9 = the forms that do not load
+log.txt
+module_0001.ptx
+module_0002.ptx
+module_0003.ptx
+module_0004.log
+module_0004.ptx
+module_0005.log
+module_0005.ptx
+module_0006.log
+module_0006.ptx
+module_0007.log
+module_0007.ptx
+module_0008.log
+module_0008.ptx
+module_0009.log
+module_0009.ptx
 == module_0004.log
 Unrecognized statement "mma.sync.aligned.m16n8k32.row.col.s32.u8.u8.s32 {%d0,%d1,%d2,%d3},{%a0,%a1,%a2,%a3},{%b0,%b1},{%c0,%c1,%c2,%c3};"
 

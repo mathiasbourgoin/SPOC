@@ -15,8 +15,8 @@ emulation that does not use the WMMA units:
 
 | PTX form (one warp) | ZLUDA v7-preview.3, gfx1100 | How ZLUDA implements it |
 |---|---|---|
-| `mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32` | **runs**; 55/128 elements inexact, worst error 0.045 × the bound | emulated: per-lane `__ockl_fdot2` dot products, no WMMA |
-| `mma.sync.aligned.m16n8k32.row.col.s32.s8.s8.s32` | **runs, bit-exact** (0/128) | gfx11: `llvm.zluda.mma.m16n8k32.s32.s8.s8.s32` (WMMA); otherwise `__ockl_sdot4` |
+| `mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32` | **runs**; 33/128 elements inexact, worst error 0.034 × the bound | emulated: per-lane `__ockl_fdot2` dot products, no WMMA |
+| `mma.sync.aligned.m16n8k32.row.col.s32.s8.s8.s32` | **runs, bit-exact** (0/128) | gfx11: `llvm.zluda.mma.m16n8k32.s32.s8.s8.s32` (WMMA); other GPUs: dot products (`__ockl_sdot4`, scalar on ISA 10.1.3) |
 | `mma.sync.aligned.m16n8k32.row.col.s32.u8.u8.s32` | not translated | n/a |
 | `mma.sync.aligned.m16n8k32.row.col.satfinite.s32.s8.s8.s32` | not translated | n/a |
 | `mma.sync.aligned.m16n8k8.row.col.f32.f16.f16.f32` | not translated | n/a |
@@ -32,12 +32,15 @@ each module the matrix instruction is the only statement rejected
 instruction replaced by `mov`s) loads and runs.
 
 "Bound" is `γ_K · Σ|terms|` (C and the K products), with `γ_K = K·u/(1 − K·u)`
-and `u` the unit roundoff of the accumulator type. This is the contract of
-`docs/design/f16-relaxed-accuracy.md` §5.2. The operands are small integers, so
-every product and partial sum is exact in binary32, and a correctly rounded
-implementation would return the exact result. ZLUDA's emulation does not (for
-example it returns `2^-20` where the exact result is 0), but it stays well within
-the bound.
+and `u = 2^-24`: the binary32 bound of `docs/design/f16-relaxed-accuracy.md`
+§5.2. The operands are integers in [-64, 64], so every product and partial sum
+is exact in binary32 (and a correctly rounded implementation returns the exact
+result), while the sums exceed 2048, so an implementation that accumulated in
+binary16 would round far outside the bound. ZLUDA's emulation is not exact (the
+C probe saw `2^-20` where the exact result is 0) but stays well within the
+bound. Integer forms and the f16-accumulate form are held to bit-exactness:
+their operands keep every partial sum exact. The two positive controls of §5.4
+are not part of this probe.
 
 The ZLUDA source agrees (zluda-src `af8a3b1`, `ptx/lib/zluda_ptx_impl.cpp`).
 It defines three `mma` entry points:
@@ -66,18 +69,23 @@ translation) were correct, and this run confirms both.
 | Raw output | `docs/measurements/zluda-mma-probe-2026-10-11/` (`probe-output.txt`, `zluda-compiler-logs.txt`), tartarus, 2026-10-10 22:05 UTC |
 
 These statuses were first measured on 2026-10-10 with a stand-alone C
-driver-API probe, which reported the same status for every form; with its
-operands, 61/128 elements of the f16 form were inexact.
+driver-API probe: same statuses for the six `mma` forms (61/128 elements of the
+f16 form inexact with its operands); it tested the `wmma` instructions one at a
+time and with other spellings (one of them, `wmma.mma…s32.s8`, is not valid
+PTX), all rejected.
 
 ## The probe
 
 The probe has one Alcotest case per form, plus the control:
 
-- **Not translated** (the kernel does not load): the case SKIPs and prints the
-  driver error. A missing capability is an answer, not a failure.
+- **Not translated** (the kernel does not load): on ZLUDA, or below sm_80, the
+  case SKIPs and prints the driver error; a missing capability is an answer, not
+  a failure. On any other driver at sm_80 or above every form is a native
+  instruction, so a load failure there means the probe's own PTX is wrong: FAIL.
 - **Runs**: the case compares every output element with a CPU reference on random
   integer operands packed into the PTX ISA fragment layouts. It FAILS if an
-  integer form is not bit-exact or a float form exceeds the bound. It prints the
+  integer or f16-accumulate form is not bit-exact or an f32-accumulate form
+  exceeds the bound. It prints the
   number of inexact elements and the worst error/bound ratio.
 - **Loads but does not launch**: FAIL. The control failing to run is a FAIL too.
 - On a device whose name contains `ZLUDA`, the case prints the status recorded
@@ -85,13 +93,18 @@ The probe has one Alcotest case per form, plus the control:
   a ZLUDA upgrade shows up as `** DIFFERS from the record **` in the log
   instead of a red suite.
 
+Each kernel declares the lowest PTX ISA version that admits the device's SM
+(`load_from_ptx` rewrites `.target` to it): 7.0 for sm_80, 7.1 for sm_86, 7.8 for
+sm_89/sm_90, 8.6 for sm_100, 8.7 for sm_120.
+
 The wmma forms use all-ones A and B, so every D element is 16 whatever the
 fragment layout. Their spellings are the ones nvrtc 13.0 emits for
 `nvcuda::wmma`.
 
-Mutation check: with a deliberately wrong C/D layout in the reference, both
-executed forms fail (f16: 89/128 elements inexact, worst error 1.46e6 × the
-bound; s8: mismatches).
+Mutation check (`mutation-cd-layout.txt`): with the C/D fragment layout of the
+reference deliberately transposed, both forms that run FAIL (f16: 79/128
+elements wrong, worst error 1.37e6 × the bound; s8: mismatches) and the control
+still passes.
 
 Not verified: that NVIDIA `ptxas` accepts every generated kernel. This machine
 has no CUDA toolkit. The 2026-07-24 run assembled the m16n8k8 form with
@@ -105,8 +118,8 @@ L15b was specified as an f16 tensor-core GEMM through `mma`/`wmma` PTX. On ZLUDA
   matrix units, which L15b exists to reach. Inferred from the ZLUDA source; not
   benchmarked;
 - the m16n8k8 f16 form, the f16-accumulate form and every `wmma` form are
-  rejected. Emitting a rejected form gives a hard `CUDA_ERROR_NOT_FOUND` at
-  launch, not a slow path.
+  rejected. Emitting a rejected form gives a hard `CUDA_ERROR_NOT_FOUND` when
+  the kernel is looked up after module load, not a slow path.
 
 So L15b stays NO-GO on PTX-through-ZLUDA. On this GPU the HIP backend reaches the
 matrix units directly: `SCoopmat` lowers to RDNA3 WMMA there (PR #430,
@@ -123,7 +136,8 @@ Run the probe again in either case:
 1. **ZLUDA is upgraded** past v7-preview.3. Look for `DIFFERS from the record`.
    A form that starts to load is checked numerically at once, with no code
    change.
-2. **A real NVIDIA sm_80+ device** is available. Every form is expected to run.
+2. **A real NVIDIA sm_80+ device** is available. Every form is expected to run;
+   one that does not load FAILs there (the probe's PTX would be at fault).
    The probe does not print the ZLUDA record lines there.
 
 ## Reproduce

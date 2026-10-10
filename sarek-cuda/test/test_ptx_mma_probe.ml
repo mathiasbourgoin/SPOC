@@ -13,17 +13,21 @@
     (docs/optimization/l15b-mma-probe.md). The statuses recorded below are
     ZLUDA's behaviour, not NVIDIA's.
 
-    One Alcotest case per instruction form:
-    - the kernel does not load (ZLUDA drops a kernel it cannot parse, then
-      [cuModuleGetFunction] returns [CUDA_ERROR_NOT_FOUND]): the case SKIPs and
-      prints the error. Not translating is a capability answer, not a failure.
+    One Alcotest case per instruction form, plus a control kernel:
+    - the kernel does not load: on ZLUDA (which drops a kernel it cannot parse,
+      then [cuModuleGetFunction] returns [CUDA_ERROR_NOT_FOUND]) or below sm_80
+      the case SKIPs and prints the error; not translating is a capability
+      answer. On another driver at sm_80 or above every form is a native
+      instruction, so a load failure means the probe's PTX is wrong: FAIL.
     - the kernel runs: its output is checked against a CPU reference and the
-      case FAILS on a wrong result. Integer forms must be bit-exact. Float forms
-      must stay within [gamma_K * sum |terms|] (C and the K products), the
-      contract of docs/design/f16-relaxed-accuracy.md §5.2, with the unit
-      roundoff of the accumulator type. The number of inexact elements is
+      case FAILS on a wrong result. Integer and f16-accumulate forms must be
+      bit-exact (their operands keep every partial sum exact). The
+      f32-accumulate forms must stay within [gamma_K * sum |terms|] (C and the K
+      products), the bound of docs/design/f16-relaxed-accuracy.md §5.2; their
+      operands make binary16 accumulation leave that bound. The §5.4 positive
+      controls are not part of this probe. The number of inexact elements is
       printed.
-    - the kernel loads but the launch fails: the case FAILS.
+    - the kernel loads but allocation, copy or launch fails: the case FAILS.
 
     On a ZLUDA device the status recorded for ZLUDA v7-preview.3 (zluda-src
     af8a3b1, gfx1100, 2026-10-10) is printed beside the observed one. A
@@ -35,10 +39,11 @@ open Ptx_mma_forms
 
 (** {1 Running a kernel} *)
 
+type failure = Not_loaded of string | Run_failed of string
+
 type outcome =
-  | Not_loaded of string
-  | Launch_failed of string
   | Ran of (int32, Bigarray.int32_elt, Bigarray.c_layout) Bigarray.Array1.t
+  | Failed of failure
 
 let upload dev h =
   let d = Cuda_api.Memory.alloc dev (Bigarray.Array1.dim h) Bigarray.int32 in
@@ -49,7 +54,7 @@ let upload dev h =
    buffer as arguments, and return the output. *)
 let run_kernel dev ~name ~ptx ~inputs ~out_len =
   match Cuda_api.Kernel.load_from_ptx dev ~name ~ptx with
-  | exception e -> Not_loaded (Printexc.to_string e)
+  | exception e -> Failed (Not_loaded (Printexc.to_string e))
   | kernel -> (
       try
         let out = int32_buffer out_len in
@@ -68,12 +73,18 @@ let run_kernel dev ~name ~ptx ~inputs ~out_len =
         Cuda_api.Device.synchronize dev ;
         Cuda_api.Memory.device_to_host ~src:d_out ~dst:out ;
         Ran out
-      with e -> Launch_failed (Printexc.to_string e))
+      with e -> Failed (Run_failed (Printexc.to_string e)))
 
 let contains s sub =
   let n = String.length s and m = String.length sub in
   let rec go i = i + m <= n && (String.sub s i m = sub || go (i + 1)) in
   go 0
+
+let is_zluda dev = contains dev.Cuda_api.Device.name "ZLUDA"
+
+let version_of dev =
+  let major, minor = dev.Cuda_api.Device.compute_capability in
+  ptx_isa_version ~major ~minor
 
 let status_name = function
   | Exact -> "runs, bit-exact"
@@ -82,7 +93,7 @@ let status_name = function
   | Wrong -> "runs, WRONG result"
 
 let report dev ~recorded ~observed =
-  if contains dev.Cuda_api.Device.name "ZLUDA" then
+  if is_zluda dev then
     Printf.printf
       "  [INFO] recorded for ZLUDA v7-preview.3 (af8a3b1, gfx1100): %s; \
        observed: %s%s\n\
@@ -93,13 +104,22 @@ let report dev ~recorded ~observed =
 
 (* Common handling of a kernel that did not produce output. *)
 let not_ran dev ~label ~recorded = function
-  | Not_loaded msg ->
+  | Not_loaded msg
+    when is_zluda dev || fst dev.Cuda_api.Device.compute_capability < 8 ->
       Printf.printf "  [INFO] %s does not load: %s\n%!" label msg ;
       report dev ~recorded ~observed:Not_translated ;
       Alcotest.skip ()
-  | Launch_failed msg ->
-      Alcotest.failf "%s loaded but did not run: %s" label msg
-  | Ran _ -> assert false
+  | Not_loaded msg ->
+      Alcotest.failf
+        "%s does not load on a non-ZLUDA sm_80+ device, where it is native: \
+         the probe's PTX is suspect: %s"
+        label
+        msg
+  | Run_failed msg ->
+      Alcotest.failf
+        "%s loaded but did not run (alloc, copy or launch): %s"
+        label
+        msg
 
 (** {1 The checks} *)
 
@@ -144,25 +164,30 @@ let check_mma f dev =
     run_kernel
       dev
       ~name:"probe"
-      ~ptx:(kernel_ptx f)
+      ~ptx:(kernel_ptx ~version:(version_of dev) f)
       ~inputs:[pa; pb; pc]
       ~out_len:(warp * cd_regs f)
   with
   | Ran d -> verify_mma dev f ops d
-  | outcome -> not_ran dev ~label:f.label ~recorded:f.recorded outcome
+  | Failed why -> not_ran dev ~label:f.label ~recorded:f.recorded why
 
 (* Control: the kernel of the first form with its matrix instruction replaced
-   by four movs. It must load and run, or a "does not load" verdict above
-   could come from the kernel's structure instead of the instruction. *)
+   by one mov per D register. It must load and run, or a "does not load"
+   verdict above could come from the kernel's structure instead of the
+   instruction. *)
 let check_control dev =
   let f = List.hd mma_forms in
-  let body = "mov.b32 %d0,7; mov.b32 %d1,7; mov.b32 %d2,7; mov.b32 %d3,7;" in
+  let body =
+    String.concat
+      " "
+      (List.init (cd_regs f) (Printf.sprintf "mov.b32 %%d%d,7;"))
+  in
   let pa, pb, pc = pack_inputs f (random_operands f) in
   match
     run_kernel
       dev
       ~name:"probe"
-      ~ptx:(kernel_ptx ~body f)
+      ~ptx:(kernel_ptx ~version:(version_of dev) ~body f)
       ~inputs:[pa; pb; pc]
       ~out_len:(warp * cd_regs f)
   with
@@ -172,7 +197,7 @@ let check_control dev =
         "every lane stored 7"
         true
         (List.for_all Fun.id sevens)
-  | Not_loaded msg | Launch_failed msg ->
+  | Failed (Not_loaded msg | Run_failed msg) ->
       Alcotest.failf "the control kernel (no matrix instruction) failed: %s" msg
 
 let check_wmma w dev =
@@ -185,7 +210,7 @@ let check_wmma w dev =
     run_kernel
       dev
       ~name:w.entry
-      ~ptx:w.ptx
+      ~ptx:(w.ptx ~version:(version_of dev))
       ~inputs:[ones (); ones ()]
       ~out_len:256
   with
@@ -205,7 +230,7 @@ let check_wmma w dev =
         ~recorded:Not_translated
         ~observed:(if wrong = [] then Exact else Wrong) ;
       Alcotest.(check int) "elements different from 16" 0 (List.length wrong)
-  | outcome -> not_ran dev ~label:w.wlabel ~recorded:Not_translated outcome
+  | Failed why -> not_ran dev ~label:w.wlabel ~recorded:Not_translated why
 
 (** {1 Runner} *)
 
