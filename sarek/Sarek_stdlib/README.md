@@ -34,7 +34,10 @@ The Sarek stdlib follows a **ppx_deriving-style architecture** where:
 ## Module Structure
 
 - **`Float32.ml`** - 32-bit float type and math functions (sin, cos, sqrt, etc.)
-- **`Int32.ml`** - 32-bit integer type and operations
+- **`Int32.ml`** - 32-bit integer type and operations, including the bit
+  reinterpretations `float_of_bits : int32 -> float32` and
+  `bits_of_float : float32 -> int32` (OCaml `Stdlib.Int32` semantics; one
+  native lowering per backend, see the comment in `Int32.ml`)
 - **`Int64.ml`** - 64-bit integer type and operations
 - **`Gpu.ml`** - GPU thread/block intrinsics (thread_idx_x, block_barrier, etc.)
 - **`Sarek_stdlib.ml`** - Re-exports all modules and forces initialization

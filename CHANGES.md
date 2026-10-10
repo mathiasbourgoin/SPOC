@@ -14,6 +14,25 @@
   host->device and 42.5–42.7 GB/s device->host, pageable and page-aligned alike
   (`sarek-metal/test/bench_metal_copy.exe`, information only).
 
+- `Int32.float_of_bits : int32 -> float32` and
+  `Int32.bits_of_float : float32 -> int32` in the Sarek stdlib: bit
+  reinterpretation with OCaml's `Stdlib.Int32` names and semantics, lowered on
+  every backend — CUDA C/HIP `__int_as_float`/`__float_as_int`, OpenCL
+  `as_float`/`as_int`, Metal `as_type<float>`/`as_type<int>`, GLSL
+  `intBitsToFloat`/`floatBitsToInt`, WGSL `bitcast<f32>`/`bitcast<i32>`, PTX
+  `mov.b32`; Native and Interpreter run OCaml's own functions (a signalling
+  NaN is quieted there, as in OCaml, because float32 is carried as a double).
+  The GLSL, WGSL and PTX lowerings only apply to the stdlib `Int32` path, so
+  another module's `float_of_bits` is not captured. Covered by
+  `sarek/tests/e2e/test_int32_bitcasts.ml` (decode, encode, in-kernel round
+  trip and a packed-record decode over ±0, ±inf, denormals, max finite, a NaN
+  payload and a signalling NaN), which passed 2026-10-10 on HIP, OpenCL,
+  Vulkan and CUDA/PTX via ZLUDA (RX 7900 XTX and Ryzen 7950X iGPU), on Metal
+  and OpenCL (Apple M4), and on Native and Interpreter; and by
+  `sarek/tests/unit/test_int32_bitcasts_codegen.ml` (spellings, glslang/naga/
+  clang validation with negative controls, refusals). Spec
+  `specs/stdlib-bitcasts.md`.
+
 ### Changed
 
 - Metal kernel launches are asynchronous. Dispatches are appended to one open
