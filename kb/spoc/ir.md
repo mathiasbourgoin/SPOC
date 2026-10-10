@@ -68,7 +68,7 @@
 - `spoc/ir/test/test_sarek_ir_types.ml` covers construction of most variants and helpers.
 - `spoc/ir/test/test_sarek_ir_pp.ml` covers primitive string conversions and representative expression/statement/declaration/kernel printing.
 - `spoc/ir/test/test_sarek_ir_analysis.ml` covers float64 detection across many type, expression, statement, declaration, helper, and kernel shapes.
-- **No test targets `Sarek_pure_registry.ml`** — absent from `spoc/ir/test/dune`, which lists only the three files above.
+- `spoc/ir/test/test_sarek_pure_registry.ml` covers `Sarek_pure_registry`; `test_sarek_capability.ml`, `test_sarek_coopmat.ml` and `test_sarek_coopmat_policy.ml` cover the capability model, the cooperative-matrix vocabulary and the float-accumulation opt-in. The full list is on line 14.
 
 ## Missing Tests
 
@@ -86,4 +86,4 @@
 - Make `SNative` carry metadata such as required capabilities or `uses_float64`.
 - Add an `Sarek_ir_validate` module returning structured errors for malformed IR.
 - Rename or document `Sarek_ir_pp` as debug-only if it must not be used as source generation.
-- **Partially done (2026-07-02, merged):** all four float64 tables now derive from shared lists (`float64_list`, `math_float64_list`), preventing re-drift. Still open: backfill `math_float64_list` with the 11 functions missing relative to `float64_list` (requires interpreter/stdlib support for those names under the `Math.Float64` path), or explicitly document the subset as permanent API surface if it will never be backfilled; add a `spoc/ir/test/test_sarek_pure_registry.ml`.
+- **Partially done (2026-07-02, merged):** all four float64 tables now derive from shared lists (`float64_list`, `math_float64_list`), preventing re-drift. Still open: backfill `math_float64_list` with the 11 functions missing relative to `float64_list` (requires interpreter/stdlib support for those names under the `Math.Float64` path), or explicitly document the subset as permanent API surface if it will never be backfilled; `spoc/ir/test/test_sarek_pure_registry.ml` now exists, so extend it rather than add one.

@@ -201,8 +201,8 @@ let unsupported_coopmat_elttype what =
   unsupported
     (Printf.sprintf
        "%s: uint8 is a cooperative-matrix operand element type, emitted only \
-        by the Vulkan backend, and the PTX backend has no cooperative-matrix \
-        path"
+        by the Vulkan and CUDA/HIP backends, and the PTX backend has no \
+        cooperative-matrix path"
        what)
 
 let ptx_reg_type_of = function

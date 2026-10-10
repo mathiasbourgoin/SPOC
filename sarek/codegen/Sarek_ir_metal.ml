@@ -80,8 +80,8 @@ let rec metal_type_of_elttype = function
         (Codegen_error.unsupported_construct
            "uint8"
            "Metal: uint8 is a cooperative-matrix operand element type, emitted \
-            only by the Vulkan backend, and Metal has no cooperative-matrix \
-            path")
+            only by the Vulkan and CUDA/HIP backends, and Metal has no \
+            cooperative-matrix path")
   | TFloat32 -> "float"
   | TFloat64 ->
       (* Until #64 slice 1 this arm was `"float"`, with a comment saying Metal
@@ -786,8 +786,8 @@ let rec gen_stmt st buf indent = function
         (Codegen_error.unsupported_construct
            "cooperative matrix"
            "Metal: the Metal backend has no cooperative-matrix path; \
-            cooperative-matrix statements are emitted only by the Vulkan \
-            backend")
+            cooperative-matrix statements are emitted only by the Vulkan and \
+            CUDA/HIP backends")
 
 (** {1 Declaration Generation} *)
 
@@ -1183,7 +1183,7 @@ let reject_coopmat_kernel (k : kernel) : unit =
          "cooperative matrix"
          "Metal: the Metal backend has no cooperative-matrix path; cooperative \
           matrices and their uint8 operand buffers are emitted only by the \
-          Vulkan backend (backlog-62)")
+          Vulkan and CUDA/HIP backends (backlog-62)")
 
 (** The ONLY thing measured to stop Metal contracting [a*b+c].
 

@@ -156,8 +156,9 @@ buffer). Without the opt-in the interpreter refuses as before.
 
 ### US-2: integer configurations on HIP are exact (P0)
 1. **Given** u8×u8+s32→s32, **When** run on gfx1100, **Then** bit-identical to the
-   interpreter over all 65536 operand pairs (the existing
-   `test_coopmat_integer_e2e`, which now includes HIP devices).
+   interpreter over all 65536 operand pairs (`test_coopmat_hip_e2e`, which
+   reuses the tiling of the Vulkan-only `test_coopmat_integer_e2e`), and a tile
+   at a nonzero index and stride inside a wider buffer is bit-identical too.
 2. **Given** s8×s8, u8×s8, s8×u8 with s32 and u32 accumulators, **Then** bit-identical.
 
 ### US-3: clean refusal (P0)

@@ -341,7 +341,8 @@ let test_interp_refuses_float_coopmat () =
       fail
         "float cooperative-matrix accumulation has no single right answer \
          (SPV_KHR_cooperative_matrix leaves the addition order to the \
-         implementation), so a strict oracle must refuse it"
+         implementation), and a float operand with an integer accumulator has \
+         no derived bound, so the interpreter must refuse it"
   | Some msg ->
       check bool "diagnostic names f16" true (contains_sub msg "f16") ;
       check

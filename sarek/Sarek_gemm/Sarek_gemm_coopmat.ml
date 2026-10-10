@@ -259,12 +259,32 @@ let cached_ir tiling =
           k)
 
 (** [run ~device ?tiling ~a ~b ~c ~d ~m ~n ~k ()] launches {!ir} on [device].
-    Raises [Invalid_argument] on a shape {!check_shape} rejects, and the launch
-    gate's capability error where the device does not offer the configuration or
-    the program has not called {!Sarek_coopmat.accept_relaxed_accumulation}.
-    Asynchronous like any launch: read [d] after the usual transfer. *)
+    Raises [Invalid_argument] on a shape {!check_shape} rejects or a vector
+    shorter than the shape needs, and the launch gate's capability error where
+    the device does not offer the configuration or the program has not called
+    {!Sarek_coopmat.accept_relaxed_accumulation}. Asynchronous like any launch:
+    read [d] after the usual transfer. *)
+let check_lengths ~a ~b ~c ~d ~m ~n ~k =
+  let check what v want =
+    let got = Spoc_core.Vector.length v in
+    if got < want then
+      invalid_arg
+        (Printf.sprintf
+           "Sarek_gemm.Coopmat: %s has %d elements, needs %d"
+           what
+           got
+           want)
+  in
+  check "a" a (m * k) ;
+  check "b" b (k * n) ;
+  check "c" c (m * n) ;
+  check "d" d (m * n)
+
 let run ~device ?(tiling = default_tiling) ~a ~b ~c ~d ~m ~n ~k () =
   check_shape tiling ~m ~n ~k ;
+  (* The kernel has no bounds checks: a vector shorter than its shape would be
+     read or written out of bounds on the device. *)
+  check_lengths ~a ~b ~c ~d ~m ~n ~k ;
   let block, grid = launch_dims tiling ~m ~n in
   let int x = Sarek.Execute.Int32 (Int32.of_int x) in
   Sarek.Execute.run_vectors

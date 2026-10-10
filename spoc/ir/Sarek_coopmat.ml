@@ -144,3 +144,49 @@ let policy_verdict cfg =
   else if Option.is_some (relaxed_accumulation_reason ()) then
     Sarek_capability.Available
   else Sarek_capability.Unavailable (relaxed_not_accepted cfg)
+
+(* ------------------------------------------------------------------------ *)
+(* Fragments without a multiply-add                                         *)
+(* ------------------------------------------------------------------------ *)
+
+let fragment_name f =
+  Printf.sprintf
+    "%s %s fragment of %s (%s scope)"
+    (component_name f.frag_component)
+    (use_name f.frag_use)
+    (shape_name f.frag_shape)
+    (scope_name f.frag_scope)
+
+let device_lacks_fragment ?(evidence = "") f =
+  {
+    Sarek_capability.cap_name = "cooperative-matrix";
+    cap_kind = Sarek_capability.Device_optional;
+    cap_why =
+      Printf.sprintf
+        "the device offers no cooperative-matrix configuration with a %s%s"
+        (fragment_name f)
+        (if evidence = "" then "" else " (" ^ evidence ^ ")");
+    cap_evidence =
+      Sarek_capability.Quoted
+        "a fragment is the per-lane layout of one operand of an advertised \
+         configuration; a device that offers none has no layout to load it \
+         with (specs/coopmat-hip-wmma.md)";
+    cap_remedy =
+      Some "Select a device that offers a configuration with this fragment.";
+  }
+
+let fragment_verdict ~support f =
+  match support with
+  | None ->
+      Sarek_capability.Unknown
+        "device cooperative-matrix support was not probed, so no fragment \
+         layout can be confirmed"
+  | Some s ->
+      let offered cfg =
+        let a, b, c, r = fragments_of_config cfg in
+        List.mem f [a; b; c; r]
+      in
+      if List.exists offered s.ds_configs then Sarek_capability.Available
+      else
+        Sarek_capability.Unavailable
+          (device_lacks_fragment ~evidence:s.ds_evidence f)

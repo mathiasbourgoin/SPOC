@@ -128,8 +128,8 @@ let rec opencl_type_of_elttype = function
         (Codegen_error.unsupported_construct
            "uint8"
            "OpenCL: uint8 is a cooperative-matrix operand element type, \
-            emitted only by the Vulkan backend, and OpenCL has no \
-            cooperative-matrix path")
+            emitted only by the Vulkan and CUDA/HIP backends, and OpenCL has \
+            no cooperative-matrix path")
   | TFloat32 -> "float"
   | TFloat64 -> "double"
   | TBool -> "int"
@@ -617,8 +617,8 @@ let rec gen_stmt st buf indent = function
         (Codegen_error.unsupported_construct
            "cooperative matrix"
            "OpenCL: the OpenCL backend has no cooperative-matrix path; \
-            cooperative-matrix statements are emitted only by the Vulkan \
-            backend")
+            cooperative-matrix statements are emitted only by the Vulkan and \
+            CUDA/HIP backends")
 
 (** Generate a pattern match case (extracted helper) *)
 and gen_match_case st buf indent scrutinee pattern body =
@@ -852,7 +852,7 @@ let reject_coopmat_kernel (k : kernel) : unit =
          "cooperative matrix"
          "OpenCL: the OpenCL backend has no cooperative-matrix path; \
           cooperative matrices and their uint8 operand buffers are emitted \
-          only by the Vulkan backend (backlog-62)")
+          only by the Vulkan and CUDA/HIP backends (backlog-62)")
 
 (** {1 Recursion Resolution}
 
@@ -930,8 +930,8 @@ let rec zero_expr (t : elttype) : expr =
         (Codegen_error.unsupported_construct
            "uint8"
            "OpenCL: uint8 is a cooperative-matrix operand element type, \
-            emitted only by the Vulkan backend, and cannot be the return type \
-            of a helper")
+            emitted only by the Vulkan and CUDA/HIP backends, and cannot be \
+            the return type of a helper")
 
 (** Inline budget declared by [hf], parsed from an [SPragma] at its body root.
 

@@ -862,10 +862,10 @@ let check_device_capabilities ~(device : Device.t) (ir : Sarek_ir_types.kernel)
      [capabilities.coopmat = None] means the backend never probed, which
      {!Sarek_coopmat.verdict} turns into [Unknown] and
      {!Sarek_capability.permits} refuses. That is the safe direction and it is
-     load-bearing: every backend other than Vulkan leaves it [None], so a
-     coopmat kernel aimed at CUDA is refused here by the capability model even
-     before the CUDA backend's own codegen refusal — and the diagnostic names
-     the device rather than the emitter. *)
+     load-bearing: CUDA, Metal, OpenCL and the CPU backends leave it [None]
+     (Vulkan and HIP probe), so a coopmat kernel aimed at CUDA is refused here
+     by the capability model before any source is compiled — and the
+     diagnostic names the device rather than the emitter. *)
   (* The device verdict first, then the accuracy policy (§6.1 of
      docs/design/f16-relaxed-accuracy.md): a device that cannot run the
      configuration is the more useful refusal, and a float configuration the
@@ -881,10 +881,31 @@ let check_device_capabilities ~(device : Device.t) (ir : Sarek_ir_types.kernel)
         ])
       (Sarek_ir_analysis.kernel_coopmat_configs ir)
   in
+  (* Every fragment too, multiply-add or not: a kernel that only loads and
+     stores fragments still needs the device's layout for them, and without
+     this a CUDA device (coopmat = None) or a non-gfx11 HIP device would
+     compile and run such a kernel unprobed. *)
+  let fragment_verdicts =
+    List.map
+      (Sarek_coopmat.fragment_verdict
+         ~support:device.Device.capabilities.Framework_sig.coopmat)
+      (List.sort_uniq
+         compare
+         (List.map
+            (function
+              | Sarek_ir_types.CM_decl {frag; _}
+              | Sarek_ir_types.CM_load {frag; _}
+              | Sarek_ir_types.CM_store {frag; _} ->
+                  frag
+              | Sarek_ir_types.CM_muladd {cfg; _} ->
+                  let _, _, _, r = Sarek_coopmat.fragments_of_config cfg in
+                  r)
+            (Sarek_ir_analysis.kernel_coopmat_ops ir)))
+  in
   match
     Sarek_capability.first_refusal
       (List.map (Sarek_capability.device_verdict ~provided) required
-      @ coopmat_verdicts)
+      @ coopmat_verdicts @ fragment_verdicts)
   with
   | None -> ()
   | Some verdict ->
