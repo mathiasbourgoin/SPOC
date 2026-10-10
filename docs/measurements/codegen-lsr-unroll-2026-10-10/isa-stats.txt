@@ -1,0 +1,21 @@
+# gfx1100 ISA of the generated sarek_kern, hipcc -O3 -ffp-contract=off --offload-arch=gfx1100 (ROCm 7.2), static counts
+config                   kern   insts  valu vgprs  gloads  b128
+ws-main                  q4_k     447   267    63      15    10
+ws-branch-nounroll       q4_k     447   267    63      15    10
+ws-branch                q4_k     447   267    63      15    10
+ws-main-lsr              q4_k     474   289    65      15    10
+ws-branch-lsr-nounroll   q4_k     454   275    65      15    10
+ws-branch-lsr            q4_k     454   275    65      15    10
+ws-main                  q5_k     450   274    72      17    12
+ws-branch-nounroll       q5_k     450   274    72      17    12
+ws-branch                q5_k     450   274    72      17    12
+ws-main-lsr              q5_k     359   193    43       9     2
+ws-main-lsr-pragma       q5_k     506   320    87      17    12
+ws-branch-lsr-nounroll   q5_k     450   274    72      17    12
+ws-branch-lsr            q5_k     450   274    72      17    12
+ws-main                  q6_k     341   197    43       8     6
+ws-branch-nounroll       q6_k     341   197    43       8     6
+ws-branch                q6_k     341   197    43       8     6
+ws-main-lsr              q6_k     375   234    49       8     6
+ws-branch-lsr-nounroll   q6_k     341   197    43       8     6
+ws-branch-lsr            q6_k     341   197    43       8     6

@@ -1,0 +1,10 @@
+--- ws-main/q5_k.hip	2026-10-10 21:50:54.590223812 +0200
++++ ws-branch/q5_k.hip	2026-10-10 21:50:55.509223248 +0200
+@@ -47,6 +47,7 @@
+         int hb = ((base + o_qh) + (blk * 8));
+         float sqx = 0.0f;
+         float sx = 0.0f;
++        #pragma unroll
+         for (int wi = 0; wi <= 7; wi++) {
+           int w = er[(qb + wi)];
+           int wh = er[(hb + wi)];

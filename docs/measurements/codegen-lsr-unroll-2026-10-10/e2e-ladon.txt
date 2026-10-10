@@ -1,0 +1,35 @@
+=== lsr and automatic unroll, E2E ===
+  OpenCL      Apple M4                           lsr32  PASS (768/768 ok)
+  OpenCL      Apple M4                           expr   PASS (768/768 ok)
+  OpenCL      Apple M4                           lsr64  PASS (896/896 ok)
+  OpenCL      Apple M4                           loops  PASS (96/96 ok)
+  Metal       Apple M4 (Metal)                   lsr32  PASS (768/768 ok)
+  Metal       Apple M4 (Metal)                   expr   PASS (768/768 ok)
+  Metal       Apple M4 (Metal)                   lsr64  PASS (896/896 ok)
+  Metal       Apple M4 (Metal)                   loops  PASS (96/96 ok)
+  Native      CPU Native (Parallel, 10 cores)    lsr32  PASS (768/768 ok)
+  Native      CPU Native (Parallel, 10 cores)    expr   PASS (768/768 ok)
+  Native      CPU Native (Parallel, 10 cores)    lsr64  PASS (896/896 ok)
+  Native      CPU Native (Parallel, 10 cores)    loops  PASS (96/96 ok)
+  Interpreter CPU Interpreter (Sequential)       lsr32  PASS (768/768 ok)
+  Interpreter CPU Interpreter (Sequential)       expr   PASS (768/768 ok)
+  Interpreter CPU Interpreter (Sequential)       lsr64  PASS (896/896 ok)
+  Interpreter CPU Interpreter (Sequential)       loops  PASS (96/96 ok)
+  Interpreter CPU Interpreter (Parallel, 10 cores) lsr32  PASS (768/768 ok)
+  Interpreter CPU Interpreter (Parallel, 10 cores) expr   PASS (768/768 ok)
+  Interpreter CPU Interpreter (Parallel, 10 cores) lsr64  PASS (896/896 ok)
+  Interpreter CPU Interpreter (Parallel, 10 cores) loops  PASS (96/96 ok)
+test_lsr_unroll: PASSED
+exit=0
+This run has ID `RUNC04EU'.
+
+  [OK]          lsr                 0   int32 spellings.
+  [OK]          lsr                 1   int64 spellings.
+  [OK]          unroll              0   rule.
+  [OK]          unroll              1   SAREK_AUTO_UNROLL.
+  [OK]          unroll              2   backends.
+  [OK]          validators          0   accept.
+  [OK]          validators          1   glslang needs the extension.
+
+Full test results in `~/spoc-wt-codegen/_build/_tests/lsr-unroll-codegen'.
+Test Successful in 0.241s. 7 tests run.

@@ -1,0 +1,119 @@
+--- ws-main/spoc_llm/src/kernels/matvec.ml	2026-10-10 21:49:47.778939841 +0200
++++ ws-main-lsr/spoc_llm/src/kernels/matvec.ml	2026-10-10 21:51:31.351201384 +0200
+@@ -200,11 +200,11 @@
+             let sh_j = (j - (j / 4l * 4l)) * 8l in
+             let sh_ja = (ja - (ja / 4l * 4l)) * 8l in
+             let sh_jb = (jb - (jb / 4l * 4l)) * 8l in
+-            let b_j = (w_j asr sh_j) land 255l in
+-            let b_ja = (w_ja asr sh_ja) land 255l in
+-            let b_jb = (w_jb asr sh_jb) land 255l in
+-            let hi_jb = b_jb asr 6l in
+-            let hi_j = b_j asr 6l in
++            let b_j = (w_j lsr sh_j) land 255l in
++            let b_ja = (w_ja lsr sh_ja) land 255l in
++            let b_jb = (w_jb lsr sh_jb) land 255l in
++            let hi_jb = b_jb lsr 6l in
++            let hi_j = b_j lsr 6l in
+             let sc = mut 0l in
+             let m = mut 0l in
+             if j < 4l then begin
+@@ -213,7 +213,7 @@
+             end
+             else begin
+               sc := b_ja land 15l lor (hi_jb lsl 4l);
+-              m := (b_ja asr 4l) lor (hi_j lsl 4l)
++              m := (b_ja lsr 4l) lor (hi_j lsl 4l)
+             end;
+             let p = j / 2l in
+             let hi = j - (p * 2l) in
+@@ -224,16 +224,16 @@
+             let sx = mut 0.0 in
+             for wi = 0 to 7l do
+               let w = er.(qb + wi) in
+-              let qw = (w asr nsh) land 0x0F0F0F0Fl in
++              let qw = (w lsr nsh) land 0x0F0F0F0Fl in
+               let xi = xb + (wi * 4l) in
+               let x0 = x.(xi) in
+               let x1 = x.(xi + 1l) in
+               let x2 = x.(xi + 2l) in
+               let x3 = x.(xi + 3l) in
+               let q0 = float (qw land 255l) in
+-              let q1 = float ((qw asr 8l) land 255l) in
+-              let q2 = float ((qw asr 16l) land 255l) in
+-              let q3 = float ((qw asr 24l) land 255l) in
++              let q1 = float ((qw lsr 8l) land 255l) in
++              let q2 = float ((qw lsr 16l) land 255l) in
++              let q3 = float ((qw lsr 24l) land 255l) in
+               sqx := sqx +. (q0 *. x0) +. (q1 *. x1) +. (q2 *. x2) +. (q3 *. x3);
+               sx := sx +. x0 +. x1 +. x2 +. x3
+             done;
+@@ -293,11 +293,11 @@
+             let sh_j = (j - (j / 4l * 4l)) * 8l in
+             let sh_ja = (ja - (ja / 4l * 4l)) * 8l in
+             let sh_jb = (jb - (jb / 4l * 4l)) * 8l in
+-            let b_j = (w_j asr sh_j) land 255l in
+-            let b_ja = (w_ja asr sh_ja) land 255l in
+-            let b_jb = (w_jb asr sh_jb) land 255l in
+-            let hi_jb = b_jb asr 6l in
+-            let hi_j = b_j asr 6l in
++            let b_j = (w_j lsr sh_j) land 255l in
++            let b_ja = (w_ja lsr sh_ja) land 255l in
++            let b_jb = (w_jb lsr sh_jb) land 255l in
++            let hi_jb = b_jb lsr 6l in
++            let hi_j = b_j lsr 6l in
+             let sc = mut 0l in
+             let m = mut 0l in
+             if j < 4l then begin
+@@ -306,7 +306,7 @@
+             end
+             else begin
+               sc := b_ja land 15l lor (hi_jb lsl 4l);
+-              m := (b_ja asr 4l) lor (hi_j lsl 4l)
++              m := (b_ja lsr 4l) lor (hi_j lsl 4l)
+             end;
+             let p = j / 2l in
+             let hi = j - (p * 2l) in
+@@ -319,8 +319,8 @@
+             for wi = 0 to 7l do
+               let w = er.(qb + wi) in
+               let wh = er.(hb + wi) in
+-              let lo = (w asr nsh) land 0x0F0F0F0Fl in
+-              let hbits = (wh asr j) land 0x01010101l in
++              let lo = (w lsr nsh) land 0x0F0F0F0Fl in
++              let hbits = (wh lsr j) land 0x01010101l in
+               let qw = lo + (hbits lsl 4l) in
+               let xi = xb + (wi * 4l) in
+               let x0 = x.(xi) in
+@@ -328,9 +328,9 @@
+               let x2 = x.(xi + 2l) in
+               let x3 = x.(xi + 3l) in
+               let q0 = float (qw land 255l) in
+-              let q1 = float ((qw asr 8l) land 255l) in
+-              let q2 = float ((qw asr 16l) land 255l) in
+-              let q3 = float ((qw asr 24l) land 255l) in
++              let q1 = float ((qw lsr 8l) land 255l) in
++              let q2 = float ((qw lsr 16l) land 255l) in
++              let q3 = float ((qw lsr 24l) land 255l) in
+               sqx := sqx +. (q0 *. x0) +. (q1 *. x1) +. (q2 *. x2) +. (q3 *. x3);
+               sx := sx +. x0 +. x1 +. x2 +. x3
+             done;
+@@ -406,14 +406,14 @@
+             for i = 0 to 3l do
+               let lw = er.(qlw + i) in
+               let hw = er.(qhw + i) in
+-              let lo = (lw asr lsh) land 0x0F0F0F0Fl in
+-              let h2 = (hw asr hsh) land 0x03030303l in
++              let lo = (lw lsr lsh) land 0x0F0F0F0Fl in
++              let h2 = (hw lsr hsh) land 0x03030303l in
+               let qw = lo lor (h2 lsl 4l) in
+               let xi = xb + (i * 4l) in
+               let q0 = float ((qw land 255l) - 32l) in
+-              let q1 = float (((qw asr 8l) land 255l) - 32l) in
+-              let q2 = float (((qw asr 16l) land 255l) - 32l) in
+-              let q3 = float (((qw asr 24l) land 255l) - 32l) in
++              let q1 = float (((qw lsr 8l) land 255l) - 32l) in
++              let q2 = float (((qw lsr 16l) land 255l) - 32l) in
++              let q3 = float (((qw lsr 24l) land 255l) - 32l) in
+               s :=
+                 s
+                 +. (q0 *. x.(xi))

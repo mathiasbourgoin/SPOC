@@ -155,7 +155,7 @@ let test_binop () =
   in
   assert (List.length ops = 20) ;
   let distinct = List.sort_uniq compare ops in
-  assert (List.length distinct = 18) ;
+  assert (List.length distinct = 20) ;
   print_endline "  binop: OK"
 
 (** {1 Unop Tests} *)

@@ -1,0 +1,56 @@
+--- ws-main-lsr/q5_k.hip	2026-10-10 21:51:45.515192820 +0200
++++ ws-branch-lsr/q5_k.hip	2026-10-10 21:51:53.878187783 +0200
+@@ -25,11 +25,11 @@
+         int sh_j = ((j - ((j / 4) * 4)) * 8);
+         int sh_ja = ((ja - ((ja / 4) * 4)) * 8);
+         int sh_jb = ((jb - ((jb / 4) * 4)) * 8);
+-        int b_j = (((sh_j == 0) ? w_j : ((w_j >> sh_j) ^ ((w_j >> 31) << ((32 - sh_j) & 31)))) & 255);
+-        int b_ja = (((sh_ja == 0) ? w_ja : ((w_ja >> sh_ja) ^ ((w_ja >> 31) << ((32 - sh_ja) & 31)))) & 255);
+-        int b_jb = (((sh_jb == 0) ? w_jb : ((w_jb >> sh_jb) ^ ((w_jb >> 31) << ((32 - sh_jb) & 31)))) & 255);
+-        int hi_jb = ((6 == 0) ? b_jb : ((b_jb >> 6) ^ ((b_jb >> 31) << ((32 - 6) & 31))));
+-        int hi_j = ((6 == 0) ? b_j : ((b_j >> 6) ^ ((b_j >> 31) << ((32 - 6) & 31))));
++        int b_j = (((int)((unsigned int)(w_j) >> (sh_j))) & 255);
++        int b_ja = (((int)((unsigned int)(w_ja) >> (sh_ja))) & 255);
++        int b_jb = (((int)((unsigned int)(w_jb) >> (sh_jb))) & 255);
++        int hi_jb = ((int)((unsigned int)(b_jb) >> (6)));
++        int hi_j = ((int)((unsigned int)(b_j) >> (6)));
+         int sc = 0;
+         int m = 0;
+         if ((j < 4)) {
+@@ -37,7 +37,7 @@
+           m = (b_ja & 63);
+         } else {
+           sc = ((b_ja & 15) | (hi_jb << 4));
+-          m = (((4 == 0) ? b_ja : ((b_ja >> 4) ^ ((b_ja >> 31) << ((32 - 4) & 31)))) | (hi_j << 4));
++          m = (((int)((unsigned int)(b_ja) >> (4))) | (hi_j << 4));
+         }
+         int p = (j / 2);
+         int hi = (j - (p * 2));
+@@ -47,11 +47,12 @@
+         int hb = ((base + o_qh) + (blk * 8));
+         float sqx = 0.0f;
+         float sx = 0.0f;
++        #pragma unroll
+         for (int wi = 0; wi <= 7; wi++) {
+           int w = er[(qb + wi)];
+           int wh = er[(hb + wi)];
+-          int lo = (((nsh == 0) ? w : ((w >> nsh) ^ ((w >> 31) << ((32 - nsh) & 31)))) & 252645135);
+-          int hbits = (((j == 0) ? wh : ((wh >> j) ^ ((wh >> 31) << ((32 - j) & 31)))) & 16843009);
++          int lo = (((int)((unsigned int)(w) >> (nsh))) & 252645135);
++          int hbits = (((int)((unsigned int)(wh) >> (j))) & 16843009);
+           int qw = (lo + (hbits << 4));
+           int xi = (xb + (wi * 4));
+           float x0 = x[xi];
+@@ -59,9 +60,9 @@
+           float x2 = x[(xi + 2)];
+           float x3 = x[(xi + 3)];
+           float q0 = (float)((qw & 255));
+-          float q1 = (float)((((8 == 0) ? qw : ((qw >> 8) ^ ((qw >> 31) << ((32 - 8) & 31)))) & 255));
+-          float q2 = (float)((((16 == 0) ? qw : ((qw >> 16) ^ ((qw >> 31) << ((32 - 16) & 31)))) & 255));
+-          float q3 = (float)((((24 == 0) ? qw : ((qw >> 24) ^ ((qw >> 31) << ((32 - 24) & 31)))) & 255));
++          float q1 = (float)((((int)((unsigned int)(qw) >> (8))) & 255));
++          float q2 = (float)((((int)((unsigned int)(qw) >> (16))) & 255));
++          float q3 = (float)((((int)((unsigned int)(qw) >> (24))) & 255));
+           sqx = ((((sqx + (q0 * x0)) + (q1 * x1)) + (q2 * x2)) + (q3 * x3));
+           sx = ((((sx + x0) + x1) + x2) + x3);
+         }
