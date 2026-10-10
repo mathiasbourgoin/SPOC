@@ -258,13 +258,24 @@ let run_literal dev ir =
 let generator (dev : Device.t) =
   let open Sarek_codegen in
   match dev.Device.framework with
-  | "CUDA" | "HIP" -> Some Sarek_ir_cuda.generate
+  | "CUDA" | "CUDA/C" | "HIP" -> Some Sarek_ir_cuda.generate
   | "OpenCL" -> Some Sarek_ir_opencl.generate
   | "Metal" -> Some Sarek_ir_metal.generate
   | "Vulkan" -> Some (fun k -> Sarek_ir_glsl.generate k)
   | "WebGPU" -> Some (fun k -> Sarek_ir_wgsl.generate k)
+  (* The plugin also passes [~soa_params]; these kernels take no SoA
+     vectors, so the default is what it compiles. *)
   | "CUDA/PTX" -> Some (fun k -> Sarek_ir_ptx.generate k)
   | _ -> None
+
+(* The device compiler or module loader rejected what we emitted, or codegen
+   itself raised: a defect in the source, not in the environment. *)
+let rejected_source = function
+  | Sarek_backend_error.Backend_error.Backend_error
+      ( Codegen _
+      | Runtime {error = Compilation_failed _ | Module_load_failed _; _} ) ->
+      true
+  | _ -> false
 
 let scales =
   Array.init n (fun i -> Int32.bits_of_float (0.5 +. (float_of_int i *. 0.25)))
@@ -348,16 +359,21 @@ let () =
               if bad <> 0 then failed := true ;
               if host then host_ran := true
           | exception e ->
+              let regression = host || rejected_source e in
               Printf.printf
                 "  %-11s %-34s %-9s %s (%s)\n%!"
                 dev.Device.framework
                 dev.Device.name
                 label
-                (if host then "ERROR" else "SKIP (backend could not launch)")
+                (if regression then "FAIL"
+                 else "SKIP (backend could not launch)")
                 (Printexc.to_string e) ;
-              (* Native/Interpreter must always run; a GPU backend that cannot
-                 launch is reported. A wrong result is always a failure. *)
-              if host then failed := true)
+              (* Native/Interpreter must always run. On a GPU, a device
+                 compiler that rejects the emitted source is a regression of
+                 this feature (the min_int literal was one); only a backend
+                 that is not there or cannot launch is reported. A wrong
+                 result is always a failure. *)
+              if regression then failed := true)
         cases)
     devs ;
   if not !host_ran then begin
