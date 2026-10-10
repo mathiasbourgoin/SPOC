@@ -63,6 +63,28 @@
 
 ### Changed
 
+- `lsr` compiles to one unsigned shift on every backend. It is now its own IR
+  operator (`Lshr32`/`Lshr64`) instead of a 4–5 operation expansion over the
+  arithmetic shift: CUDA/HIP, OpenCL and Metal emit
+  `((int)((unsigned)(a) >> (b)))`, GLSL `int(uint(a) >> uint(b))`, WGSL
+  `bitcast<i32>(bitcast<u32>(a) >> u32(b))`, PTX `shr.b32`/`shr.b64`. Results
+  are unchanged for shift amounts 0..width-1 (others stay unspecified, as in
+  OCaml), and an `lsr` operand no longer has to be a variable or a constant.
+  spoc_llm's q5_K matvec written with `lsr`, on an RX 7900 XTX: 31.6 -> 23.9 us
+  (hot, median of 3) and 36.3 -> 31.1 us (cold). On gfx1100 the old expansion
+  kept clang from unrolling the inner loop (193 VALU, 2 `global_load_b128`);
+  with the native shift clang unrolls it (274 VALU, 12 `b128`), the same code
+  as the hand-written `asr`-and-mask form. Spec `specs/codegen-lsr-unroll.md`.
+
+- `for` loops with constant bounds and a trip count of at most 16 get an
+  unroll hint by default (`#pragma unroll` in CUDA/HIP, OpenCL and Metal,
+  `[[unroll]]` with `GL_EXT_control_flow_attributes` in GLSL, nothing in WGSL
+  and PTX), as long as the nest they head expands to at most 64 copies. Results
+  are unchanged. An explicit `pragma` on the loop takes precedence
+  (`pragma ["unroll 1"]` opts out) and `SAREK_AUTO_UNROLL=0` disables the hint.
+  On spoc_llm's current matvec kernels the hint changes nothing on gfx1100:
+  clang -O3 already unrolls those loops once `lsr` is a native shift.
+
 - Metal kernel launches are asynchronous. Dispatches are appended to one open
   command buffer per queue. At each launch it is committed if the queue's
   previous command buffer has completed or once it holds `SPOC_METAL_BATCH`
