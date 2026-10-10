@@ -63,6 +63,9 @@ let control =
   || mode = Some "pinned_ring"
 
 let run dev =
+  (* SPOC_STRESS_GC=1: run pending finalisers before the loop (issue #427
+     lead: finaliser hipFree during the loop). *)
+  if Sys.getenv_opt "SPOC_STRESS_GC" = Some "1" then Gc.full_major () ;
   let out = Transfer.create_device_only dev Vector.int32 (n * iters) in
   Transfer.copy_to_device (i32 (n * iters) (-5l)) ~dst:out ~dst_offset:0 ;
   let x = Transfer.create_device_only dev Vector.int32 n in

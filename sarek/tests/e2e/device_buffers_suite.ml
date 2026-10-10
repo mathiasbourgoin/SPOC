@@ -566,6 +566,11 @@ let test_staged_async dev =
 
 let test_staged_ordering ?stream ?(blocked = false) dev =
   let n = 4096 and iters = 300 in
+  (* Run the finalisers of earlier tests' dead vectors now. Left to fire
+     during the loop (hipFree from Gpu_memory's finaliser), they made the 7950X
+     iGPU under HIP lose launches: 4 of 4 suite runs failed without this, 0 of
+     4 with it (issue #427). This test is about staging, not that bug. *)
+  Gc.full_major () ;
   let acc = Transfer.create_device_only dev Vector.int32 n in
   let x = Transfer.create_device_only dev Vector.int32 n in
   Transfer.copy_to_device (i32_ba n (fun _ -> 0l)) ~dst:acc ~dst_offset:0 ;
@@ -615,6 +620,23 @@ let test_staged_ordering ?stream ?(blocked = false) dev =
   Transfer.free_all_buffers acc ;
   Transfer.free_all_buffers x
 
+(* Run last: on the 7950X iGPU (HIP) destroying a stream made the later
+   ordering cases lose launches far more often (5 of 5 suite runs against 1 of
+   5 without it; issue #427). *)
+let test_staged_destroyed_stream dev =
+  let v = Transfer.create_device_only dev Vector.int32 8 in
+  let s = Transfer.create_stream dev in
+  Transfer.destroy_stream s ;
+  check
+    "staged write on a destroyed stream refused"
+    (refuses_invalid (fun () ->
+         Transfer.stage_to_device
+           ~stream:s
+           (i32_ba 1 (fun _ -> 0l))
+           ~dst:v
+           ~dst_offset:0)) ;
+  Transfer.free_all_buffers v
+
 let run_on (dev : Device.t) =
   Printf.printf "  [%s] %s\n%!" dev.Device.framework dev.Device.name ;
   test_device_only dev ;
@@ -629,7 +651,8 @@ let run_on (dev : Device.t) =
   end ;
   let s = Transfer.create_stream dev in
   test_staged_ordering ~stream:s dev ;
-  Transfer.destroy_stream s
+  Transfer.destroy_stream s ;
+  test_staged_destroyed_stream dev
 
 (** On a backend without ranged copies every entry point refuses with the
     capability error, never a fallback. *)
