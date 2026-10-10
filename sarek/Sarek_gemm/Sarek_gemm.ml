@@ -186,3 +186,8 @@ module Host = struct
       finding L5). *)
   let shared_mem_bytes = 2 * tile * tile * 4
 end
+
+(** A tiled f16 GEMM on cooperative-matrix (tensor-core) instructions; see
+    {!Sarek_gemm_coopmat}. Results are bounded, not bit-identical: it needs
+    {!Sarek_coopmat.accept_relaxed_accumulation} before launching. *)
+module Coopmat = Sarek_gemm_coopmat

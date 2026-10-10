@@ -10,46 +10,15 @@ let device_features =
     Sarek_ir_analysis.Float64; Sarek_ir_analysis.Int64; Sarek_ir_analysis.Float16;
   ]
 
-let float_coopmat_refused (c : Sarek_coopmat.component_type) :
-    Sarek_capability.t =
-  {
-    Sarek_capability.cap_name =
-      "coopmat-" ^ Sarek_coopmat.component_name c ^ "-accumulation";
-    cap_kind = Sarek_capability.Policy;
-    cap_why =
-      "the interpreter is a strict oracle and float cooperative-matrix \
-       accumulation has no single right answer to be strict about: \
-       SPV_KHR_cooperative_matrix leaves the order of the k+1 additions to the \
-       implementation";
-    cap_evidence =
-      Sarek_capability.Quoted
-        "SPV_KHR_cooperative_matrix, cooperative-matrix design document 5.1";
-    cap_remedy =
-      Some
-        "use an integer configuration, whose accumulation the specification \
-         states is exact at the precision of the result type, or compare the \
-         float path across devices without an interpreter oracle";
-  }
-
-(* Not [List.exists] over an enumerated config list: the interpreter holds the
-   whole matrix in every invocation, so the shape is unconstrained and the set
-   is infinite. Only the component types decide. *)
+(* The interpreter holds the whole matrix in every invocation, so the shape is
+   unconstrained and no device list applies: the accuracy policy alone decides.
+   Integer configurations are Strict and always evaluated. The one float
+   configuration with a derived bound (f16*f16+f32->f32) is evaluated in a FIXED
+   order once the program has accepted the relaxed accumulation; it is then one
+   admissible member of the bounded set, not "the" answer (see
+   Sarek_ir_interp_eval's [exec_coopmat]). *)
 let coopmat_verdict (cfg : Sarek_coopmat.config) : Sarek_capability.verdict =
-  let components =
-    [
-      cfg.Sarek_coopmat.cfg_a;
-      cfg.Sarek_coopmat.cfg_b;
-      cfg.Sarek_coopmat.cfg_c;
-      cfg.Sarek_coopmat.cfg_result;
-    ]
-  in
-  match
-    List.find_opt
-      (fun c -> not (Sarek_coopmat.component_is_integer c))
-      components
-  with
-  | Some c -> Sarek_capability.Unavailable (float_coopmat_refused c)
-  | None -> Sarek_capability.Available
+  Sarek_coopmat.policy_verdict cfg
 
 (* [Coopmat] is a [Sarek_ir_analysis.feature] but it is NOT a width, and
    judging it by list membership the way the other three are judged is wrong in

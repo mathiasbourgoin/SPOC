@@ -121,3 +121,21 @@
  (libraries sarek_cuda sarek_ir sarek.codegen sarek_backend_error alcotest)
  (instrumentation
   (backend bisect_ppx)))
+
+; The CUDA arm of the cooperative-matrix lowering reaches the tensor cores:
+; NVRTC -> ptxas sm_80 -> nvdisasm, HMMA / IMMA present (specs/coopmat-hip-wmma.md).
+; Host tools only; skips without them.
+
+(test
+ (name test_cuda_coopmat_sass)
+ (modules test_cuda_coopmat_sass)
+ (libraries sarek_cuda sarek.codegen spoc.ir alcotest unix)
+ (instrumentation
+  (backend bisect_ppx)))
+
+(test
+ (name test_cuda_coopmat_codegen)
+ (modules test_cuda_coopmat_codegen)
+ (libraries sarek.codegen sarek_backend_error spoc.ir alcotest astring)
+ (instrumentation
+  (backend bisect_ppx)))

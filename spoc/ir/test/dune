@@ -5,6 +5,7 @@
   test_sarek_ir_analysis
   test_sarek_capability
   test_sarek_coopmat
+  test_sarek_coopmat_policy
   test_sarek_pure_registry
   test_sarek_ir_codegen_decl_order)
- (libraries sarek_ir alcotest str unix))
+ (libraries sarek_ir alcotest astring str unix))

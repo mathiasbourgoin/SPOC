@@ -22,6 +22,7 @@
   Hip_bindings
   Hip_rtc
   Hip_api
+  Hip_coopmat
   Hip_plugin_base
   Hip_shared
   Hip_plugin)

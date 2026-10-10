@@ -47,8 +47,9 @@
     claim in the project is checked against.
 
     "Supports everything" is wrong too, and not only in principle. It is
-    factually false: {!Sarek_ir_interp_eval.coopmat_refuse_float} refuses float
-    cooperative-matrix accumulation, and refuses it for a reason —
+    factually false: the evaluator refuses float cooperative-matrix accumulation
+    unless the program has accepted a BOUNDED result
+    ({!Sarek_coopmat.policy_verdict}), and refuses it for a reason —
     [SPV_KHR_cooperative_matrix] leaves the order of the k+1 additions to the
     implementation, so there is no single value a strict oracle could compare
     against. An interpreter that claimed everything would validate the backends
@@ -102,22 +103,23 @@
 val device_features : Sarek_ir_analysis.feature list
 
 (** [coopmat_verdict cfg] judges a cooperative-matrix configuration against the
-    interpreter's evaluator.
+    interpreter's evaluator. It is {!Sarek_coopmat.policy_verdict}: the
+    interpreter holds the whole matrix in every invocation, so no shape or
+    device restriction applies and only the accuracy regime decides.
 
     [Available] for integer component types at any shape:
     [SPV_KHR_cooperative_matrix] states integer accumulation is exact at the
     precision of the result type, so a strict oracle has a single right answer
     to give.
 
-    {!Sarek_capability.Unavailable} for any float component type, with
-    [cap_kind = Policy]: the interpreter could produce a plausible number, and
-    refuses to, because the specification leaves the addition order to the
-    implementation. [Policy] rather than [Backend_structural] is the honest kind
-    — this is a decision about what an oracle may claim, revisable by a
-    decision, not a property of OCaml. It mirrors
-    {!Sarek_ir_interp_eval.coopmat_refuse_float}, which is where a kernel that
-    slips past this gate lands anyway; the difference is that this one fires
-    before any partial writeback, and names the capability. *)
+    For [f16 * f16 + f32 -> f32], [Available] only after
+    {!Sarek_coopmat.accept_relaxed_accumulation}: the specification leaves the
+    addition order to the implementation, so the interpreter's fixed order is
+    one admissible result within the derived bound, not a strict oracle, and the
+    program has to have accepted that. Every other float configuration is
+    [Unavailable] with [cap_kind = Policy] (no derived bound). [Policy] rather
+    than [Backend_structural] is the honest kind — a decision about what an
+    oracle may claim, revisable by a decision, not a property of OCaml. *)
 val coopmat_verdict : Sarek_coopmat.config -> Sarek_capability.verdict
 
 (** [first_refusal ir] is the first capability [ir] requires that the

@@ -199,6 +199,65 @@ let corpus () =
                        ] ) ))) );
   ]
 
+(** {1 Cooperative matrix (specs/coopmat-hip-wmma.md)}
+
+    The CUDA arm of the [SCoopmat] lowering ([nvcuda::wmma]) is COMPILE-CHECKED
+    ONLY: no NVIDIA GPU was available, and the CUDA backend does not probe
+    [coopmat], so its launch gate refuses. This gate is therefore the only
+    evidence that the emitted wmma calls are well-formed — [mma.h] resolves
+    through NVRTC's include path, the fragment types and [load_matrix_sync] /
+    [mma_sync] / [store_matrix_sync] signatures agree, and the integer arm takes
+    two operands of the same signedness. *)
+let coopmat_tile name (a : Sarek_coopmat.component_type) b acc =
+  let module C = Sarek_coopmat in
+  let cfg =
+    {
+      C.cfg_shape = {C.m = 16; n = 16; k = 16};
+      cfg_a = a;
+      cfg_b = b;
+      cfg_c = acc;
+      cfg_result = acc;
+      cfg_saturating = false;
+      cfg_scope = C.Subgroup;
+    }
+  in
+  let fa, fb, fc, fd = C.fragments_of_config cfg in
+  let elt = function
+    | C.Float16 -> TFloat16
+    | C.Float32 -> TFloat32
+    | C.Uint8 | C.Sint8 -> TUint8
+    | C.Uint32 | C.Sint32 -> TInt32
+  in
+  let i = EConst (CInt32 0l) and s = EConst (CInt32 16l) in
+  let load dst frag src =
+    SCoopmat (CM_load {dst; frag; src; index = i; stride = s})
+  in
+  ( name,
+    base_kernel
+      name
+      [vec "a" (elt a); vec "b" (elt b); vec "c" (elt acc); vec "d" (elt acc)]
+      (SSeq
+         [
+           SCoopmat (CM_decl {name = "fa"; frag = fa});
+           SCoopmat (CM_decl {name = "fb"; frag = fb});
+           SCoopmat (CM_decl {name = "fc"; frag = fc});
+           load "fa" fa "a";
+           load "fb" fb "b";
+           load "fc" fc "c";
+           SCoopmat (CM_muladd {dst = "fc"; a = "fa"; b = "fb"; c = "fc"; cfg});
+           SCoopmat
+             (CM_store {src = "fc"; frag = fd; dst = "d"; index = i; stride = s});
+         ]) )
+
+let coopmat_corpus () =
+  let module C = Sarek_coopmat in
+  [
+    coopmat_tile "coopmat_f16_f32" C.Float16 C.Float16 C.Float32;
+    coopmat_tile "coopmat_u8_s32" C.Uint8 C.Uint8 C.Sint32;
+    coopmat_tile "coopmat_s8_s32" C.Sint8 C.Sint8 C.Sint32;
+    coopmat_tile "coopmat_u8_u32" C.Uint8 C.Uint8 C.Uint32;
+  ]
+
 (** {1 Gate} *)
 
 let nvrtc_available = lazy (Cuda_nvrtc.is_available ())
@@ -264,6 +323,6 @@ let gate_tests () =
                   name
                   e
                   cuda))
-    (corpus ())
+    (corpus () @ coopmat_corpus ())
 
 let () = Alcotest.run "cuda_nvrtc_gate" [("nvrtc-compile-gate", gate_tests ())]

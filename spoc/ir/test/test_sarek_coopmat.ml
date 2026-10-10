@@ -88,6 +88,7 @@ let navi31_support =
     ds_robust_buffer_access = true;
     ds_subgroup_size = 64;
     ds_advertised_count = List.length navi31_configs;
+    ds_evidence = "test: the NAVI31 Vulkan table";
   }
 
 (* The Raphael iGPU, same driver, same Mesa: extension not advertised,
@@ -98,6 +99,7 @@ let raphael_support =
     ds_robust_buffer_access = false;
     ds_subgroup_size = 64;
     ds_advertised_count = 0;
+    ds_evidence = "test: the Raphael iGPU advertises no configuration";
   }
 
 (** {1 The local hardware record} *)

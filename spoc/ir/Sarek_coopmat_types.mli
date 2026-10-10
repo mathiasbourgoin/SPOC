@@ -19,9 +19,11 @@
 
     It does not emit code, and it does not decide accuracy. {!regime} classifies
     a configuration into the two acceptance regimes of the design document's
-    §1.6, but it does not admit anything: nothing in Sarek generates a
-    cooperative-matrix instruction yet, so every configuration here is queryable
-    and none is reachable from the DSL. Slices 4a and 4c are where that changes.
+    §1.6, but it does not admit anything: the device verdict and the accuracy
+    policy ({!Sarek_coopmat.verdict}, {!Sarek_coopmat.policy_verdict}) do. The
+    emitters are GLSL (integer configurations) and CUDA/HIP
+    (specs/coopmat-hip-wmma.md); nothing in the DSL produces a fragment, so a
+    cooperative-matrix kernel is built as IR.
 
     {1 Why the type admits integers}
 
@@ -172,6 +174,14 @@ type device_support = {
           [ds_advertised_count = List.length ds_configs] is the check that
           catches it, and it is hardware-independent — unlike any assertion
           about which configurations a particular GPU offers. *)
+  ds_evidence : string;
+      (** How the probe decided, in one sentence a refusal can quote: the
+          backend's rule and the device facts it read (e.g. the Vulkan extension
+          and feature bits, or the HIP gfx family and warp size).
+          {!Sarek_coopmat.device_lacks_config} puts it in the refusal, so a
+          refused launch says WHY this device, on this backend, offers no
+          configuration — the backends decide by different rules and a single
+          backend's wording would mislead on the others. *)
 }
 
 (** [config_matches ~shape ~a ~b ~c ~result cfg] compares the DIMENSIONS and the

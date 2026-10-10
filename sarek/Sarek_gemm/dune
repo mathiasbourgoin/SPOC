@@ -1,6 +1,6 @@
 (library
  (name sarek_gemm)
  (public_name sarek.gemm)
- (libraries sarek sarek_stdlib spoc_core)
+ (libraries sarek sarek_stdlib sarek_ir spoc_core spoc_framework)
  (preprocess
   (pps sarek_ppx)))

@@ -866,10 +866,19 @@ let check_device_capabilities ~(device : Device.t) (ir : Sarek_ir_types.kernel)
      coopmat kernel aimed at CUDA is refused here by the capability model even
      before the CUDA backend's own codegen refusal — and the diagnostic names
      the device rather than the emitter. *)
+  (* The device verdict first, then the accuracy policy (§6.1 of
+     docs/design/f16-relaxed-accuracy.md): a device that cannot run the
+     configuration is the more useful refusal, and a float configuration the
+     device CAN run still needs the program's explicit opt-in. *)
   let coopmat_verdicts =
-    List.map
-      (Sarek_coopmat.verdict
-         ~support:device.Device.capabilities.Framework_sig.coopmat)
+    List.concat_map
+      (fun cfg ->
+        [
+          Sarek_coopmat.verdict
+            ~support:device.Device.capabilities.Framework_sig.coopmat
+            cfg;
+          Sarek_coopmat.policy_verdict cfg;
+        ])
       (Sarek_ir_analysis.kernel_coopmat_configs ir)
   in
   match

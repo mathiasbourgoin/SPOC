@@ -378,8 +378,8 @@ let test_interp_declares_float16 () =
    the only one that goes red on that deletion, so it is the one that actually
    pins backlog-154.
 
-   It also pins WHICH error: before the gate, this kernel reached
-   Sarek_ir_interp_eval.coopmat_refuse_float from inside the evaluation, after
+   It also pins WHICH error: before the gate, this kernel reached the float
+   refusal inside Sarek_ir_interp_eval.exec_coopmat during the evaluation, after
    the run had begun and could have written back. Now it is refused at the
    launch gate, as an Execute Backend_error, before anything runs. *)
 let test_run_interpreter_vectors_is_gated () =

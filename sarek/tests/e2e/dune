@@ -1974,13 +1974,21 @@
 ;     dune exec sarek/tests/e2e/test_int32_bitcasts.exe
 
 (executables
- (names test_int32_bitcasts test_lsr_unroll)
- (modules test_int32_bitcasts test_lsr_unroll backend_hip)
+ (names test_int32_bitcasts test_lsr_unroll test_coopmat_hip_e2e)
+ (modules
+  test_int32_bitcasts
+  test_lsr_unroll
+  test_coopmat_hip_e2e
+  coopmat_hip_support
+  backend_hip)
  (libraries
   sarek
   sarek.stdlib
+  sarek.gemm
+  sarek.interp
   sarek_ir
   spoc_core
+  spoc_framework
   test_helpers
   unix
   sarek_backend_error
@@ -2008,3 +2016,15 @@
  (alias runtest)
  (action
   (run %{dep:test_lsr_unroll.exe})))
+
+; SCoopmat on HIP / RDNA3 WMMA (specs/coopmat-hip-wmma.md): codegen, the
+; capability and policy refusals on every enumerated device (runs anywhere),
+; then — on a gfx11 HIP device only, skipped otherwise — the integer
+; configurations bit-identical to the interpreter and the f16 configuration
+; under the Regime B bound with its two controls. Built by the
+; test_int32_bitcasts stanza above, which shares backend_hip.
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_coopmat_hip_e2e.exe})))

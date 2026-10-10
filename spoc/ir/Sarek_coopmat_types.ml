@@ -106,6 +106,7 @@ type device_support = {
   ds_robust_buffer_access : bool;
   ds_subgroup_size : int;
   ds_advertised_count : int;
+  ds_evidence : string;
 }
 
 let config_matches ~shape ~a ~b ~c ~result cfg =

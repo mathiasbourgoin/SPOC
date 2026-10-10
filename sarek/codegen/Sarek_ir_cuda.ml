@@ -49,10 +49,17 @@ let bad_arity n e g =
     name. The record survives the shrink deliberately — a one-field record is
     the honest shape for "one run's state", and the next thing that needs
     threading has somewhere to go. *)
-type state = {variants : (string * (string * elttype list) list) list}
+type state = {
+  variants : (string * (string * elttype list) list) list;
+  buffers : (string * elttype) list;
+      (** element types of the kernel's array parameters and shared arrays, read
+          by the [SCoopmat] arm to refuse a fragment loaded from a buffer of the
+          wrong element type *)
+}
 
 (** The state for emitting [k]. *)
-let state (k : kernel) : state = {variants = k.kern_variants}
+let state (k : kernel) : state =
+  {variants = k.kern_variants; buffers = Sarek_ir_cuda_coopmat.kernel_buffers k}
 
 (** {1 Type Mapping} *)
 
@@ -66,19 +73,10 @@ let rec cuda_type_of_elttype = function
   | TFloat32 -> "float"
   | TFloat64 -> "double"
   | TUint8 ->
-      (* Not "CUDA has no 8-bit integer" — it has several. The refusal is that
-         [TUint8] carries a promise this backend cannot keep: it exists only as
-         the element type of a cooperative-matrix operand buffer, and mapping it
-         to `unsigned char` here would let a kernel written for the tensor-core
-         path compile into scalar CUDA that silently computes something else.
-         Mapping it becomes correct the day CUDA grows a wmma lowering, not
-         before. *)
-      Codegen_error.raise_error
-        (Codegen_error.unsupported_construct
-           "uint8"
-           "CUDA: uint8 is a cooperative-matrix operand element type, emitted \
-            only by the Vulkan backend, and CUDA has no cooperative-matrix \
-            path")
+      (* [TUint8] exists as the element type of an 8-bit cooperative-matrix
+         operand buffer; Sarek_ir_cuda_coopmat reads it as unsigned char (u8)
+         or signed char (s8) as the fragment says. *)
+      "unsigned char"
   | TBool -> "int"
   | TUnit -> "void"
   | TRecord (name, _) -> mangle_name name
@@ -568,18 +566,15 @@ let rec gen_stmt st buf indent = function
       gen_stmt st buf (indent ^ "  ") body ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
-  | SCoopmat _ ->
-      (* CUDA does have tensor cores, but reaching them means the wmma
-         fragment API, whose fragment types, ldmatrix layouts and per-shape
-         constraints are a lowering nobody has written or measured here. An
-         approximation emitted from this arm would be a scalar loop wearing a
-         tensor-core name, so the statement is refused outright. *)
-      Codegen_error.raise_error
-        (Codegen_error.unsupported_construct
-           "cooperative matrix"
-           "CUDA: the CUDA backend has no cooperative-matrix path; \
-            cooperative-matrix statements are emitted only by the Vulkan \
-            backend")
+  | SCoopmat op ->
+      let expr_str e =
+        let b = Buffer.create 32 in
+        gen_expr st b e ;
+        Buffer.contents b
+      in
+      Buffer.add_string
+        buf
+        (Sarek_ir_cuda_coopmat.gen_op ~indent ~buffers:st.buffers ~expr_str op)
 
 (** Helper: Generate record field assignment *)
 and gen_record_assign st buf indent lv fields =
@@ -937,9 +932,14 @@ __device__ __forceinline__ float sarek_f32_barrier(float x) {
 (** Prefix for a kernel's generated source: the f16 include (only when the
     kernel uses f16) followed by the standard header. *)
 let cuda_header_for (k : kernel) =
+  let coopmat =
+    if Sarek_ir_analysis.kernel_has_coopmat_op k then
+      Sarek_ir_cuda_coopmat.relaxed_comment k ^ Sarek_ir_cuda_coopmat.preamble
+    else ""
+  in
   if Sarek_ir_analysis.kernel_uses_float16 k then
-    cuda_fp16_include ^ sarek_f32_barrier_decl ^ cuda_header
-  else cuda_header
+    cuda_fp16_include ^ sarek_f32_barrier_decl ^ coopmat ^ cuda_header
+  else coopmat ^ cuda_header
 
 (** Generate CUDA source with custom type definitions.
 
@@ -948,8 +948,12 @@ let cuda_header_for (k : kernel) =
     override it; it was dropped, because every caller passed this backend its
     own name — exactly the value the constant already is — and the one consumer
     that would have distinguished them, [SNative], now refuses outright. *)
-let generate_with_types ~(types : (string * (string * elttype) list) list)
-    (k : kernel) : string =
+let generate_with_types ?block
+    ~(types : (string * (string * elttype) list) list) (k : kernel) : string =
+  (* A cooperative-matrix kernel must run whole 32-wide waves/warps. Checked
+     here, where the launch block is known (Execute passes it), so a bad block
+     is refused before any compile. *)
+  Option.iter (Sarek_ir_cuda_coopmat.check_block k) block ;
   (* Unroll hints for small constant-trip loops (Sarek_ir_unroll). *)
   let k = Sarek_ir_unroll.annotate k in
   let st = state k in
