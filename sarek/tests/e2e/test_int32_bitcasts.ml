@@ -268,14 +268,53 @@ let generator (dev : Device.t) =
   | "CUDA/PTX" -> Some (fun k -> Sarek_ir_ptx.generate k)
   | _ -> None
 
-(* The device compiler or module loader rejected what we emitted, or codegen
-   itself raised: a defect in the source, not in the environment. *)
+(* A failure on an enumerated device that this test must report as FAIL:
+   codegen raised, the device compiler or module loader rejected what we
+   emitted, or the launch itself failed ([Context_error], which is what a
+   failed cuLaunchKernel/hipModuleLaunchKernel becomes). A backend that is
+   unavailable stays a skip. *)
 let rejected_source = function
   | Sarek_backend_error.Backend_error.Backend_error
       ( Codegen _
-      | Runtime {error = Compilation_failed _ | Module_load_failed _; _} ) ->
+      | Runtime
+          {
+            error = Compilation_failed _ | Module_load_failed _ | Context_error _;
+            _;
+          } ) ->
       true
   | _ -> false
+
+(* Self-check of the classification above, run before any device: a launch
+   failure ([Context_error], what [cuLaunchKernel]/[hipModuleLaunchKernel]
+   failures become) must count as a regression, and a backend that is simply
+   not there must stay a skip. *)
+let () =
+  let module E = Sarek_backend_error.Backend_error in
+  let ctx =
+    E.Backend_error
+      (Runtime
+         {
+           backend = "HIP";
+           error = Context_error {operation = "launch"; reason = "selfcheck"};
+         })
+  in
+  let unavailable =
+    E.Backend_error
+      (Plugin
+         {backend = "HIP"; error = Backend_unavailable {reason = "selfcheck"}})
+  in
+  if not (rejected_source ctx) then begin
+    print_endline
+      "test_int32_bitcasts: FAILED - a Context_error launch failure would be \
+       reported as SKIP" ;
+    exit 1
+  end ;
+  if rejected_source unavailable then begin
+    print_endline
+      "test_int32_bitcasts: FAILED - Backend_unavailable would be reported as \
+       FAIL" ;
+    exit 1
+  end
 
 let scales =
   Array.init n (fun i -> Int32.bits_of_float (0.5 +. (float_of_int i *. 0.25)))
