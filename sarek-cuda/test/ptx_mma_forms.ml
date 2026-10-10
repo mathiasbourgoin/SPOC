@@ -85,7 +85,8 @@ let instruction f =
 (** The lowest PTX ISA version that admits [.target sm_XY]. [load_from_ptx]
     rewrites [.target] to the device's own SM, so a fixed [.version] would be
     rejected on newer NVIDIA GPUs (sm_86 needs 7.1, sm_90 7.8, sm_120 8.7).
-    ZLUDA ignores the version; its sm_88 falls in the default arm. *)
+    sm_88 (also what ZLUDA reports), sm_110 and SMs not listed get 9.0, the
+    newest version here; ZLUDA parses it. *)
 let ptx_isa_version ~major ~minor =
   match (major, minor) with
   | 8, 0 -> "7.0"
@@ -94,8 +95,8 @@ let ptx_isa_version ~major ~minor =
   | 8, 9 | 9, 0 -> "7.8"
   | 10, 0 | 10, 1 -> "8.6"
   | 12, 0 -> "8.7"
-  | 11, 0 -> "9.0"
-  | _ -> if major < 8 then "7.0" else "8.8"
+  | 10, 3 | 12, 1 -> "8.8"
+  | _ -> if major < 8 then "7.0" else "9.0"
 
 (* Each lane loads its A, B and C registers from its own slice of the input
    buffers, runs [body] (default: the form's instruction) once and stores its

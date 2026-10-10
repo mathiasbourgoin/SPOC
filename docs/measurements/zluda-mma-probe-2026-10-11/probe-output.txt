@@ -1,5 +1,5 @@
 # command: LD_LIBRARY_PATH=$HOME/opt/zluda dune exec sarek-cuda/test/test_ptx_mma_probe.exe -- -v
-# machine: tartarus (RX 7900 XTX gfx1100, ZLUDA v7-preview.3 libnvcuda.so built from zluda-src af8a3b1), 2026-10-10T22:14Z, branch fix/zluda-mma-nvrtc13 after review round 1
+# machine: tartarus (RX 7900 XTX gfx1100, ZLUDA v7-preview.3 libnvcuda.so built from zluda-src af8a3b1), 2026-10-10T22:16Z, branch fix/zluda-mma-nvrtc13 after review round 2 (kernels declare .version 9.0 for ZLUDA's sm_88)
 Testing `ptx_mma_probe'.
 
   [INFO] device 0: AMD Radeon RX 7900 XTX [ZLUDA], compute capability 8.8
@@ -29,4 +29,4 @@ Testing `ptx_mma_probe'.
   [INFO] recorded for ZLUDA v7-preview.3 (af8a3b1, gfx1100): not translated (kernel does not load); observed: not translated (kernel does not load)
   [SKIP]        wmma              1   wmma m16n16k16 u8 -> s32 (load/mma/store).
 
-Test Successful in 5.108s. 3 tests run.
+Test Successful in 0.957s. 3 tests run.
