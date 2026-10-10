@@ -121,6 +121,8 @@ let quote_binop ~loc (op : Ir.binop) : expression =
   | Ir.Or -> [%expr Sarek.Sarek_ir.Or]
   | Ir.Shl -> [%expr Sarek.Sarek_ir.Shl]
   | Ir.Shr -> [%expr Sarek.Sarek_ir.Shr]
+  | Ir.Lshr32 -> [%expr Sarek.Sarek_ir.Lshr32]
+  | Ir.Lshr64 -> [%expr Sarek.Sarek_ir.Lshr64]
   | Ir.BitAnd -> [%expr Sarek.Sarek_ir.BitAnd]
   | Ir.BitOr -> [%expr Sarek.Sarek_ir.BitOr]
   | Ir.BitXor -> [%expr Sarek.Sarek_ir.BitXor]

@@ -43,6 +43,8 @@ let string_of_binop = function
   | Or -> "||"
   | Shl -> "<<"
   | Shr -> ">>"
+  | Lshr32 -> ">>>"
+  | Lshr64 -> ">>>64"
   | BitAnd -> "&"
   | BitOr -> "|"
   | BitXor -> "^"

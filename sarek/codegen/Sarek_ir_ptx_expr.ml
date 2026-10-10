@@ -1222,10 +1222,9 @@ and emit_binop buf alloc env op e1 e2 : string =
   | Shr ->
       (* Arithmetic (sign-extending) shift: Ir.Shr is arithmetic on every
          backend (CUDA/OpenCL/Metal/GLSL/WGSL emit plain [>>] on a signed
-         int type; the interpreter uses Int32.shift_right). [lsr] is lowered
-         to a separate expression tree in Sarek_lower_ir.ml precisely
-         because this node is arithmetic - see G phase 1 in
-         the unpublished fix-critical-semantics-evidence.md note. Formal spec note:
+         int type; the interpreter uses Int32.shift_right). [lsr] has its
+         own operators, Lshr32/Lshr64, emitted as shr.b32/shr.b64 below.
+         Formal spec note:
          formal/codegen-ptx/theories/PtxTypes.v models Shr as a logical
          Nat.shiftr on U32; that model was written against the old (wrong)
          shr.u32 emission and is now out of sync with this fix. formal/ is
@@ -1242,6 +1241,18 @@ and emit_binop buf alloc env op e1 e2 : string =
         let r = new_u32 alloc in
         emit buf "shr.s32 %s, %s, %s;" r r1 r2 ;
         r
+  | Lshr32 ->
+      (* Logical (zero-filling) shift: [lsr] on int32. *)
+      let r = new_u32 alloc in
+      emit buf "shr.b32 %s, %s, %s;" r r1 r2 ;
+      r
+  | Lshr64 ->
+      (* [lsr] on int64; PTX shift amounts are u32, so a 64-bit amount is
+         narrowed first, as for Shr. *)
+      let amt = if is_u64 r2 then emit_cast buf alloc r2 TInt32 else r2 in
+      let r = new_u64 alloc in
+      emit buf "shr.b64 %s, %s, %s;" r r1 amt ;
+      r
   | BitAnd -> emit_bitwise buf alloc "and" r1 r2
   | BitOr -> emit_bitwise buf alloc "or" r1 r2
   | BitXor -> emit_bitwise buf alloc "xor" r1 r2

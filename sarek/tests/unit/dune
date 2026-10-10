@@ -362,3 +362,20 @@
   (pps sarek_ppx))
  (flags
   (:standard -w -33)))
+
+(test
+ (name test_lsr_unroll_codegen)
+ (modules test_lsr_unroll_codegen)
+ (libraries
+  sarek
+  sarek.codegen
+  sarek.stdlib
+  sarek_ir
+  opencl_gate
+  alcotest
+  str
+  unix)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33)))

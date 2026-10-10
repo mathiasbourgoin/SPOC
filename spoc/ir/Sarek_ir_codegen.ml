@@ -1213,3 +1213,10 @@ let gen_variant_def_glsl ~type_of_elttype buf (name, constrs) =
             args) ;
       Buffer.add_string buf "  return r;\n}\n\n")
     constrs
+
+let gen_c_logical_shift ~signed ~unsigned ~gen_expr buf a b =
+  Buffer.add_string buf ("((" ^ signed ^ ")((" ^ unsigned ^ ")(") ;
+  gen_expr buf a ;
+  Buffer.add_string buf ") >> (" ;
+  gen_expr buf b ;
+  Buffer.add_string buf ")))"

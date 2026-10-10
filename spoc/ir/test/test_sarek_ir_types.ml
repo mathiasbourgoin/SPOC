@@ -146,12 +146,14 @@ let test_binop () =
       Or;
       Shl;
       Shr;
+      Lshr32;
+      Lshr64;
       BitAnd;
       BitOr;
       BitXor;
     ]
   in
-  assert (List.length ops = 18) ;
+  assert (List.length ops = 20) ;
   let distinct = List.sort_uniq compare ops in
   assert (List.length distinct = 18) ;
   print_endline "  binop: OK"

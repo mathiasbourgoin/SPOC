@@ -191,6 +191,17 @@ let rec gen_expr st buf = function
   | EConst (CBool false) -> Buffer.add_string buf "0"
   | EConst CUnit -> Buffer.add_string buf "(void)0"
   | EVar v -> Buffer.add_string buf v.var_name
+  | EBinop (((Lshr32 | Lshr64) as op), e1, e2) ->
+      let signed, unsigned =
+        match op with Lshr64 -> ("long", "ulong") | _ -> ("int", "uint")
+      in
+      Sarek_ir_codegen.gen_c_logical_shift
+        ~signed
+        ~unsigned
+        ~gen_expr:(gen_expr st)
+        buf
+        e1
+        e2
   | EBinop (op, e1, e2) ->
       Buffer.add_char buf '(' ;
       gen_expr st buf e1 ;
@@ -355,6 +366,13 @@ and gen_binop = function
   | Or -> " || "
   | Shl -> " << "
   | Shr -> " >> "
+  | Lshr32 | Lshr64 ->
+      (* Unreachable: gen_expr emits these in its own EBinop arm, which needs
+         a cast around the left operand that an infix string cannot carry. *)
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "logical shift"
+           "internal: Lshr32/Lshr64 reached the infix operator table")
   | BitAnd -> " & "
   | BitOr -> " | "
   | BitXor -> " ^ "
@@ -1144,6 +1162,8 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
   reject_float16_kernel k ;
   reject_coopmat_kernel k ;
   let k = resolve_recursive_helpers k in
+  (* Unroll hints for small constant-trip loops (Sarek_ir_unroll). *)
+  let k = Sarek_ir_unroll.annotate k in
   (* Per-generation state, threaded into the emit calls below: the kernel's
      variants for SMatch bindings. *)
   let st = state k in

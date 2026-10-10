@@ -80,3 +80,4 @@ Reviewed interpreter runtime files: the `Sarek_ir_interp*` module family (now th
 - Assign stable constructor IDs during IR construction or carry constructor identity in the IR instead of hashing names modulo 256.
 - Reuse the CPU runtime's fixed worker-exception mechanism once implemented, rather than maintaining a second pool implementation.
 - Deprecate or harden legacy interpreter `Kernel.launch` so direct execution is the single authoritative path.
+- **`Lshr32`/`Lshr64` (2026-10-10).** `lsr` is now its own IR operator; `eval_binop` evaluates it with `Int32.shift_right_logical`/`Int64.shift_right_logical` (`sarek/interp/Sarek_ir_interp_value.ml`). `Shr` is unchanged (arithmetic).

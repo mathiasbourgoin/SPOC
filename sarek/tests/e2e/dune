@@ -1973,9 +1973,9 @@
 ;   LD_LIBRARY_PATH=$HOME/opt/zluda \
 ;     dune exec sarek/tests/e2e/test_int32_bitcasts.exe
 
-(executable
- (name test_int32_bitcasts)
- (modules test_int32_bitcasts backend_hip)
+(executables
+ (names test_int32_bitcasts test_lsr_unroll)
+ (modules test_int32_bitcasts test_lsr_unroll backend_hip)
  (libraries
   sarek
   sarek.stdlib
@@ -1997,3 +1997,14 @@
  (alias runtest)
  (action
   (run %{dep:test_int32_bitcasts.exe})))
+
+; lsr (Lshr32/Lshr64) and the automatic unroll hint on every device
+; (specs/codegen-lsr-unroll.md). Native/Interpreter must run; a GPU backend
+; that cannot launch is reported, a wrong result from any device is a failure.
+;   LD_LIBRARY_PATH=$HOME/opt/zluda dune exec sarek/tests/e2e/test_lsr_unroll.exe
+; Built by the test_int32_bitcasts stanza above, which shares backend_hip.
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_lsr_unroll.exe})))
