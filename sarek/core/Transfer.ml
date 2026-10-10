@@ -1522,23 +1522,22 @@ let refuse_pinned_in_flight ~op addr bytes =
 let free_pinned (ba : (_, _, Bigarray.c_layout) Bigarray.Array1.t) : unit =
   let op = "Transfer.free_pinned" in
   let addr = bigarray_addr ba and bytes = Bigarray.Array1.size_in_bytes ba in
-  (* Check and claim the entry in ONE critical section, so two domains cannot
-     both pass the check and free the same allocation twice. *)
-  let e =
-    Mutex.protect pinned_lock (fun () ->
-        match Hashtbl.find_opt pinned_table addr with
-        | Some ({pin_kind = Allocated; pin_bytes; _} as e)
-          when pin_bytes = bytes ->
-            refuse_pinned_in_flight ~op addr bytes ;
-            Hashtbl.remove pinned_table addr ;
-            e
-        | Some {pin_kind = Registered _; pin_bytes; _} when pin_bytes = bytes ->
-            invalid_arg
-              (op ^ ": buffer was registered, use Transfer.unregister_host")
-        | _ -> invalid_arg (op ^ ": not a live Transfer.alloc_pinned allocation"))
-  in
-  let (module B : Framework_sig.BACKEND) = backend_of e.pin_device in
-  B.Async.free_pinned (B.Device.get e.pin_device.backend_id) addr
+  (* Check, backend free and removal in ONE critical section: two domains cannot
+     both free the allocation, and the entry stays (retryable) if the backend
+     free raises. The lock order is pinned_lock -> Ledger.lock, never the
+     reverse. *)
+  Mutex.protect pinned_lock (fun () ->
+      match Hashtbl.find_opt pinned_table addr with
+      | Some ({pin_kind = Allocated; pin_bytes; _} as e) when pin_bytes = bytes
+        ->
+          refuse_pinned_in_flight ~op addr bytes ;
+          let (module B : Framework_sig.BACKEND) = backend_of e.pin_device in
+          B.Async.free_pinned (B.Device.get e.pin_device.backend_id) addr ;
+          Hashtbl.remove pinned_table addr
+      | Some {pin_kind = Registered _; pin_bytes; _} when pin_bytes = bytes ->
+          invalid_arg
+            (op ^ ": buffer was registered, use Transfer.unregister_host")
+      | _ -> invalid_arg (op ^ ": not a live Transfer.alloc_pinned allocation"))
 
 (** Page-lock an existing Bigarray for DMA from/to [dev]. SPOC keeps [ba] alive
     until {!unregister_host}. *)
@@ -1546,11 +1545,13 @@ let register_host (dev : Device.t)
     (ba : (_, _, Bigarray.c_layout) Bigarray.Array1.t) : unit =
   let addr = bigarray_addr ba and bytes = Bigarray.Array1.size_in_bytes ba in
   if bytes < 1 then invalid_arg "Transfer.register_host: empty buffer" ;
-  if Mutex.protect pinned_lock (fun () -> Hashtbl.mem pinned_table addr) then
-    invalid_arg "Transfer.register_host: buffer already pinned or registered" ;
   let (module B : Framework_sig.BACKEND) = backend_of dev in
-  B.Async.register_host (B.Device.get dev.backend_id) addr ~byte_size:bytes ;
+  (* Check, backend registration and insert in one critical section. *)
   Mutex.protect pinned_lock (fun () ->
+      if Hashtbl.mem pinned_table addr then
+        invalid_arg
+          "Transfer.register_host: buffer already pinned or registered" ;
+      B.Async.register_host (B.Device.get dev.backend_id) addr ~byte_size:bytes ;
       Hashtbl.replace
         pinned_table
         addr
@@ -1564,23 +1565,18 @@ let register_host (dev : Device.t)
 let unregister_host (ba : (_, _, Bigarray.c_layout) Bigarray.Array1.t) : unit =
   let op = "Transfer.unregister_host" in
   let addr = bigarray_addr ba and bytes = Bigarray.Array1.size_in_bytes ba in
-  let e =
-    Mutex.protect pinned_lock (fun () ->
-        match Hashtbl.find_opt pinned_table addr with
-        | Some ({pin_kind = Registered _; pin_bytes; _} as e)
-          when pin_bytes = bytes ->
-            refuse_pinned_in_flight ~op addr bytes ;
-            Hashtbl.remove pinned_table addr ;
-            e
-        | Some {pin_kind = Allocated; pin_bytes; _} when pin_bytes = bytes ->
-            invalid_arg
-              (op ^ ": buffer was allocated pinned, use Transfer.free_pinned")
-        | _ -> invalid_arg (op ^ ": not a registered buffer"))
-  in
-  let (module B : Framework_sig.BACKEND) = backend_of e.pin_device in
-  B.Async.unregister_host (B.Device.get e.pin_device.backend_id) addr ;
-  (* [e.pin_kind] held the Bigarray; keep it reachable until unregistered. *)
-  ignore (Sys.opaque_identity e)
+  Mutex.protect pinned_lock (fun () ->
+      match Hashtbl.find_opt pinned_table addr with
+      | Some ({pin_kind = Registered _; pin_bytes; _} as e)
+        when pin_bytes = bytes ->
+          refuse_pinned_in_flight ~op addr bytes ;
+          let (module B : Framework_sig.BACKEND) = backend_of e.pin_device in
+          B.Async.unregister_host (B.Device.get e.pin_device.backend_id) addr ;
+          Hashtbl.remove pinned_table addr
+      | Some {pin_kind = Allocated; pin_bytes; _} when pin_bytes = bytes ->
+          invalid_arg
+            (op ^ ": buffer was allocated pinned, use Transfer.free_pinned")
+      | _ -> invalid_arg (op ^ ": not a registered buffer"))
 
 (** {1 Batch Operations} *)
 
