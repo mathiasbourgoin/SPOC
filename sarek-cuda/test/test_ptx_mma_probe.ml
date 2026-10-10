@@ -3,218 +3,254 @@
 (* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
 (******************************************************************************)
 
-(** Hardware probe for tensor-core [mma.sync] PTX (GO/NO-GO evidence for L15b).
+(** Per-shape probe of the warp-level matrix PTX instructions ([mma.sync],
+    [wmma.*]) on whatever CUDA driver is present.
 
-    L15b would optimize the L15a tiled GEMM with warp-level tensor-core
-    matrix-multiply-accumulate. That is only implementable if the runtime stack
-    both (a) ASSEMBLES the [mma.sync] PTX form (ptxas, static) and (b) EXECUTES
-    it correctly on this GPU. On this machine the driver is ZLUDA (CUDA-on-ROCm)
-    on an RX 7900 XTX (RDNA3, which has WMMA hardware) — so whether ZLUDA's PTX
-    translator implements [mma.sync] is an open, empirical question. This probe
-    answers (b), in the style of [test_ptx_atomics_probe]. Skips cleanly with no
-    CUDA driver.
+    This is a PROBE, not a conformance test of NVIDIA hardware: it records which
+    instruction forms the driver translates and whether their results are right.
+    It was written against ZLUDA (CUDA-on-ROCm) on an RX 7900 XTX, where the
+    answer differs from one form to the next
+    (docs/optimization/l15b-mma-probe.md). The statuses recorded below are
+    ZLUDA's behaviour, not NVIDIA's.
 
-    Kernel: one warp (32 threads) computes a single
-    [mma.sync.aligned.m16n8k8.row.col.f32.f16.f16.f32]: D = A * B + C with A
-    (16x8) and B (8x8) all-ones f16, C all-2.0 f32. Because every A/B element is
-    1.0 the K=8 dot product is 8.0 for EVERY output element regardless of the
-    (thread,register)->(row,col) fragment mapping, so D[i,j] = 8.0 + 2.0 = 10.0
-    everywhere. All-ones inputs make the check robust to fragment-layout
-    details; the nonzero C discriminates a translator that drops the accumulator
-    (would give 8.0) from one that drops the product (would give 2.0). Each
-    thread stores its four D registers to out[lane*4..], and the host asserts
-    all 128 lanes equal 10.0.
+    One Alcotest case per instruction form:
+    - the kernel does not load (ZLUDA drops a kernel it cannot parse, then
+      [cuModuleGetFunction] returns [CUDA_ERROR_NOT_FOUND]): the case SKIPs and
+      prints the error. Not translating is a capability answer, not a failure.
+    - the kernel runs: its output is checked against a CPU reference and the
+      case FAILS on a wrong result. Integer forms must be bit-exact. Float forms
+      must stay within [gamma_K * sum |terms|] (C and the K products), the
+      contract of docs/design/f16-relaxed-accuracy.md §5.2, with the unit
+      roundoff of the accumulator type. The number of inexact elements is
+      printed.
+    - the kernel loads but the launch fails: the case FAILS.
 
-    Legacy fallback: if the [mma.sync] module fails to LOAD (ZLUDA rejects the
-    instruction) the probe retries the pre-Volta [wmma.mma.sync] form and
-    reports which, if either, is viable. *)
+    On a ZLUDA device the status recorded for ZLUDA v7-preview.3 (zluda-src
+    af8a3b1, gfx1100, 2026-10-10) is printed beside the observed one. A
+    difference is reported, never failed, so a ZLUDA upgrade re-runs the probe
+    instead of breaking the suite. Skips cleanly with no CUDA driver. *)
 
 open Sarek_cuda
+open Ptx_mma_forms
 
-(* f16 1.0 = 0x3C00; packed x2 into a .b32 = 0x3C003C00 = 1010449920. *)
-let mma_ptx =
-  {|.version 8.0
-.target sm_80
-.address_size 64
+(** {1 Running a kernel} *)
 
-.visible .entry mma_probe(
-    .param .u64 param_out
-)
-{
-    .reg .u64 %ptr<3>;
-    .reg .u32 %t<2>;
-    .reg .b32 %a<2>;
-    .reg .b32 %b<1>;
-    .reg .f32 %c<4>;
-    .reg .f32 %d<4>;
+type outcome =
+  | Not_loaded of string
+  | Launch_failed of string
+  | Ran of (int32, Bigarray.int32_elt, Bigarray.c_layout) Bigarray.Array1.t
 
-    ld.param.u64 %ptr0, [param_out];
-    mov.b32 %a0, 1010449920;
-    mov.b32 %a1, 1010449920;
-    mov.b32 %b0, 1010449920;
-    mov.f32 %c0, 0f40000000;
-    mov.f32 %c1, 0f40000000;
-    mov.f32 %c2, 0f40000000;
-    mov.f32 %c3, 0f40000000;
+let upload dev h =
+  let d = Cuda_api.Memory.alloc dev (Bigarray.Array1.dim h) Bigarray.int32 in
+  Cuda_api.Memory.host_to_device ~src:h ~dst:d ;
+  d
 
-    mma.sync.aligned.m16n8k8.row.col.f32.f16.f16.f32
-        {%d0, %d1, %d2, %d3},
-        {%a0, %a1},
-        {%b0},
-        {%c0, %c1, %c2, %c3};
+(* Load [ptx], launch one warp with the [inputs] then an [out_len]-word output
+   buffer as arguments, and return the output. *)
+let run_kernel dev ~name ~ptx ~inputs ~out_len =
+  match Cuda_api.Kernel.load_from_ptx dev ~name ~ptx with
+  | exception e -> Not_loaded (Printexc.to_string e)
+  | kernel -> (
+      try
+        let out = int32_buffer out_len in
+        Bigarray.Array1.fill out 0x7fc00000l (* NaN / sentinel *) ;
+        let d_out = upload dev out in
+        let args =
+          List.map (fun h -> Cuda_api.Kernel.ArgBuffer (upload dev h)) inputs
+        in
+        Cuda_api.Kernel.launch
+          kernel
+          ~args:(args @ [Cuda_api.Kernel.ArgBuffer d_out])
+          ~grid:(1, 1, 1)
+          ~block:(warp, 1, 1)
+          ~shared_mem:0
+          ~stream:None ;
+        Cuda_api.Device.synchronize dev ;
+        Cuda_api.Memory.device_to_host ~src:d_out ~dst:out ;
+        Ran out
+      with e -> Launch_failed (Printexc.to_string e))
 
-    mov.u32 %t0, %tid.x;
-    mul.wide.u32 %ptr1, %t0, 16;
-    add.u64 %ptr2, %ptr0, %ptr1;
-    st.global.f32 [%ptr2], %d0;
-    st.global.f32 [%ptr2+4], %d1;
-    st.global.f32 [%ptr2+8], %d2;
-    st.global.f32 [%ptr2+12], %d3;
-    ret;
-}
-|}
+let contains s sub =
+  let n = String.length s and m = String.length sub in
+  let rec go i = i + m <= n && (String.sub s i m = sub || go (i + 1)) in
+  go 0
 
-(* Legacy Volta-era wmma path (16x16x16 f16->f32). Load-only smoke: if this
-   module loads where mma.sync did not, that is the fallback lead for L15b. *)
-let wmma_ptx =
-  {|.version 8.0
-.target sm_80
-.address_size 64
+let status_name = function
+  | Exact -> "runs, bit-exact"
+  | Inexact_within_bound -> "runs, inexact within the bound"
+  | Not_translated -> "not translated (kernel does not load)"
+  | Wrong -> "runs, WRONG result"
 
-.visible .entry wmma_probe(
-    .param .u64 param_a,
-    .param .u64 param_b,
-    .param .u64 param_out
-)
-{
-    .reg .u64 %pa, %pb, %po;
-    .reg .b32 %a<8>;
-    .reg .b32 %b<8>;
-    .reg .f32 %c<8>;
+let report dev ~recorded ~observed =
+  if contains dev.Cuda_api.Device.name "ZLUDA" then
+    Printf.printf
+      "  [INFO] recorded for ZLUDA v7-preview.3 (af8a3b1, gfx1100): %s; \
+       observed: %s%s\n\
+       %!"
+      (status_name recorded)
+      (status_name observed)
+      (if recorded = observed then "" else "  ** DIFFERS from the record **")
 
-    ld.param.u64 %pa, [param_a];
-    ld.param.u64 %pb, [param_b];
-    ld.param.u64 %po, [param_out];
-    wmma.load.a.sync.aligned.row.m16n16k16.global.f16 {%a0,%a1,%a2,%a3,%a4,%a5,%a6,%a7}, [%pa];
-    wmma.load.b.sync.aligned.col.m16n16k16.global.f16 {%b0,%b1,%b2,%b3,%b4,%b5,%b6,%b7}, [%pb];
-    wmma.mma.sync.aligned.row.col.m16n16k16.f32.f32
-        {%c0,%c1,%c2,%c3,%c4,%c5,%c6,%c7},
-        {%a0,%a1,%a2,%a3,%a4,%a5,%a6,%a7},
-        {%b0,%b1,%b2,%b3,%b4,%b5,%b6,%b7},
-        {%c0,%c1,%c2,%c3,%c4,%c5,%c6,%c7};
-    wmma.store.d.sync.aligned.row.m16n16k16.global.f32 [%po], {%c0,%c1,%c2,%c3,%c4,%c5,%c6,%c7};
-    ret;
-}
-|}
+(* Common handling of a kernel that did not produce output. *)
+let not_ran dev ~label ~recorded = function
+  | Not_loaded msg ->
+      Printf.printf "  [INFO] %s does not load: %s\n%!" label msg ;
+      report dev ~recorded ~observed:Not_translated ;
+      Alcotest.skip ()
+  | Launch_failed msg ->
+      Alcotest.failf "%s loaded but did not run: %s" label msg
+  | Ran _ -> assert false
 
-let warp = 32
+(** {1 The checks} *)
 
-let n_out = warp * 4 (* four f32 D-fragment registers per lane = 128 *)
+let verify_mma dev f ops d =
+  let inexact = ref 0 and outside = ref [] and worst = ref 0.0 in
+  for lane = 0 to warp - 1 do
+    for i = 0 to 3 do
+      let row, col = cd_coord ~g:(lane / 4) ~t:(lane mod 4) i in
+      let want, abs_sum = reference f ops row col in
+      let got = output_value f d ~lane i in
+      let err = Float.abs (got -. float_of_int want) in
+      let bound = bound_factor f *. float_of_int abs_sum in
+      if not (err = 0.0) then incr inexact ;
+      if not (err <= bound) then outside := (row, col, got, want) :: !outside ;
+      if bound > 0.0 then worst := Float.max !worst (err /. bound)
+    done
+  done ;
+  Printf.printf
+    "  [INFO] %s ran: %d/128 inexact, worst error/bound %.3g\n%!"
+    f.label
+    !inexact
+    !worst ;
+  List.iter
+    (fun (row, col, got, want) ->
+      Printf.printf "  [INFO]   D[%d][%d] = %.9g, want %d\n%!" row col got want)
+    (List.filteri (fun i _ -> i < 6) (List.rev !outside)) ;
+  let observed =
+    if !outside <> [] then Wrong
+    else if !inexact > 0 then Inexact_within_bound
+    else Exact
+  in
+  report dev ~recorded:f.recorded ~observed ;
+  Alcotest.(check int)
+    "elements outside the bound (integers: not bit-exact)"
+    0
+    (List.length !outside)
 
-let expected = 10.0 (* 8 (=sum of eight 1*1) + 2 (accumulator C) *)
+let check_mma f dev =
+  let ops = random_operands f in
+  let pa, pb, pc = pack_inputs f ops in
+  match
+    run_kernel
+      dev
+      ~name:"probe"
+      ~ptx:(kernel_ptx f)
+      ~inputs:[pa; pb; pc]
+      ~out_len:(warp * cd_regs f)
+  with
+  | Ran d -> verify_mma dev f ops d
+  | outcome -> not_ran dev ~label:f.label ~recorded:f.recorded outcome
 
-(* Try to load+launch the mma kernel. Returns [Ok values] on success or
-   [Error msg] if ZLUDA rejects the module or the launch. *)
-let run_mma dev =
-  try
-    let h = Bigarray.Array1.create Bigarray.float32 Bigarray.c_layout n_out in
-    Bigarray.Array1.fill h (-1.0) ;
-    let d = Cuda_api.Memory.alloc dev n_out Bigarray.float32 in
-    Cuda_api.Memory.host_to_device ~src:h ~dst:d ;
-    let kernel =
-      Cuda_api.Kernel.load_from_ptx dev ~name:"mma_probe" ~ptx:mma_ptx
-    in
-    Cuda_api.Kernel.launch
-      kernel
-      ~args:[Cuda_api.Kernel.ArgBuffer d]
-      ~grid:(1, 1, 1)
-      ~block:(warp, 1, 1)
-      ~shared_mem:0
-      ~stream:None ;
-    Cuda_api.Device.synchronize dev ;
-    Cuda_api.Memory.device_to_host ~src:d ~dst:h ;
-    Ok h
-  with e -> Error (Printexc.to_string e)
+(* Control: the kernel of the first form with its matrix instruction replaced
+   by four movs. It must load and run, or a "does not load" verdict above
+   could come from the kernel's structure instead of the instruction. *)
+let check_control dev =
+  let f = List.hd mma_forms in
+  let body = "mov.b32 %d0,7; mov.b32 %d1,7; mov.b32 %d2,7; mov.b32 %d3,7;" in
+  let pa, pb, pc = pack_inputs f (random_operands f) in
+  match
+    run_kernel
+      dev
+      ~name:"probe"
+      ~ptx:(kernel_ptx ~body f)
+      ~inputs:[pa; pb; pc]
+      ~out_len:(warp * cd_regs f)
+  with
+  | Ran d ->
+      let sevens = List.init (warp * cd_regs f) (fun i -> d.{i} = 7l) in
+      Alcotest.(check bool)
+        "every lane stored 7"
+        true
+        (List.for_all Fun.id sevens)
+  | Not_loaded msg | Launch_failed msg ->
+      Alcotest.failf "the control kernel (no matrix instruction) failed: %s" msg
 
-let run_wmma_load dev =
-  try
-    let a = Cuda_api.Memory.alloc dev 256 Bigarray.float32 in
-    let b = Cuda_api.Memory.alloc dev 256 Bigarray.float32 in
-    let o = Cuda_api.Memory.alloc dev 256 Bigarray.float32 in
-    let kernel =
-      Cuda_api.Kernel.load_from_ptx dev ~name:"wmma_probe" ~ptx:wmma_ptx
-    in
-    Cuda_api.Kernel.launch
-      kernel
-      ~args:
-        [
-          Cuda_api.Kernel.ArgBuffer a;
-          Cuda_api.Kernel.ArgBuffer b;
-          Cuda_api.Kernel.ArgBuffer o;
-        ]
-      ~grid:(1, 1, 1)
-      ~block:(warp, 1, 1)
-      ~shared_mem:0
-      ~stream:None ;
-    Cuda_api.Device.synchronize dev ;
-    Ok ()
-  with e -> Error (Printexc.to_string e)
+let check_wmma w dev =
+  let ones () =
+    let b = int32_buffer w.words in
+    Bigarray.Array1.fill b w.one_word ;
+    b
+  in
+  match
+    run_kernel
+      dev
+      ~name:w.entry
+      ~ptx:w.ptx
+      ~inputs:[ones (); ones ()]
+      ~out_len:256
+  with
+  | Ran d ->
+      let value i =
+        if w.d_float then Int32.float_of_bits d.{i} else Int32.to_float d.{i}
+      in
+      let wrong =
+        List.filter (fun i -> value i <> 16.0) (List.init 256 Fun.id)
+      in
+      Printf.printf
+        "  [INFO] %s ran: %d/256 differ from 16\n%!"
+        w.wlabel
+        (List.length wrong) ;
+      report
+        dev
+        ~recorded:Not_translated
+        ~observed:(if wrong = [] then Exact else Wrong) ;
+      Alcotest.(check int) "elements different from 16" 0 (List.length wrong)
+  | outcome -> not_ran dev ~label:w.wlabel ~recorded:Not_translated outcome
 
-let test_mma () =
-  if not (Cuda_api.is_driver_available ()) then begin
-    Printf.printf "  [SKIP] no CUDA device\n%!" ;
-    (* Report a distinct SKIP status to the runner. Printing alone is not
-       enough: Alcotest captures stdout, so a printed skip that returns
-       normally renders as a green [OK] under the test case's name — which
-       here asserts the mma executed correctly. *)
-    Alcotest.skip ()
-  end
-  else begin
-    Cuda_api.Device.init () ;
-    let dev = Cuda_api.Device.get 0 in
-    let major, minor = dev.Cuda_api.Device.compute_capability in
-    Printf.printf "  [INFO] device compute capability sm_%d%d\n%!" major minor ;
-    match run_mma dev with
-    | Ok h ->
-        (* mma.sync loaded and launched. Assert the arithmetic is correct on
-           EVERY lane — this is the GO claim, so it is a hard assertion. *)
-        Printf.printf
-          "  [INFO] mma.sync loaded+launched; out[0]=%g out[127]=%g\n%!"
-          h.{0}
-          h.{n_out - 1} ;
-        for i = 0 to n_out - 1 do
-          Alcotest.(check (float 0.01))
-            (Printf.sprintf "mma D[lane %d]=A*B+C" i)
-            expected
-            h.{i}
-        done
-    | Error msg ->
-        (* mma.sync is not viable on this stack. Record the exact rejection and
-           probe the legacy wmma path so the verdict doc has both data points.
-           This is the documented PARTIAL/NO-GO branch; do not fail the suite —
-           the probe's job is to report capability, not to require it. *)
-        Printf.printf "  [INFO] mma.sync NOT viable: %s\n%!" msg ;
-        (match run_wmma_load dev with
-        | Ok () ->
-            Printf.printf "  [INFO] legacy wmma.mma.sync DID load+launch\n%!"
-        | Error m ->
-            Printf.printf "  [INFO] legacy wmma.mma.sync also failed: %s\n%!" m) ;
-        Printf.printf
-          "  [SKIP] tensor-core mma not available on this driver (see \
-           docs/optimization/l15b-mma-probe.md)\n\
-           %!" ;
-        Alcotest.skip ()
-  end
+(** {1 Runner} *)
+
+let device =
+  lazy
+    (if not (Cuda_api.is_driver_available ()) then None
+     else begin
+       Cuda_api.Device.init () ;
+       let dev = Cuda_api.Device.get 0 in
+       let major, minor = dev.Cuda_api.Device.compute_capability in
+       Printf.printf
+         "  [INFO] device 0: %s, compute capability %d.%d\n%!"
+         dev.Cuda_api.Device.name
+         major
+         minor ;
+       Some dev
+     end)
+
+let on_device check () =
+  match Lazy.force device with
+  | Some dev -> check dev
+  | None ->
+      Printf.printf "  [SKIP] no CUDA device\n%!" ;
+      (* Alcotest captures stdout: a printed skip that returns normally would
+         render as a green [OK] under a name that claims the form ran. *)
+      Alcotest.skip ()
 
 let () =
   Alcotest.run
     "ptx_mma_probe"
     [
-      ( "mma",
+      ( "control",
         [
           Alcotest.test_case
-            "mma.sync tensor-core matmul executes correctly"
+            "same kernel without the matrix instruction runs"
             `Quick
-            test_mma;
+            (on_device check_control);
         ] );
+      ( "mma.sync",
+        List.map
+          (fun f -> Alcotest.test_case f.label `Quick (on_device (check_mma f)))
+          mma_forms );
+      ( "wmma",
+        List.map
+          (fun w ->
+            Alcotest.test_case w.wlabel `Quick (on_device (check_wmma w)))
+          wmma_forms );
     ]

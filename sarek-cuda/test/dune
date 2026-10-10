@@ -44,7 +44,7 @@
 
 (test
  (name test_ptx_mma_probe)
- (modules test_ptx_mma_probe)
+ (modules test_ptx_mma_probe ptx_mma_forms)
  (libraries sarek_cuda alcotest)
  (instrumentation
   (backend bisect_ppx)))

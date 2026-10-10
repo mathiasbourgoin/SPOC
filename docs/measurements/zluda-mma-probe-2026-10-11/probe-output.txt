@@ -1,0 +1,32 @@
+# command: LD_LIBRARY_PATH=$HOME/opt/zluda dune exec sarek-cuda/test/test_ptx_mma_probe.exe -- -v
+# machine: tartarus (RX 7900 XTX gfx1100, ZLUDA v7-preview.3 libnvcuda.so built from zluda-src af8a3b1), 2026-10-10T22:05Z, branch fix/zluda-mma-nvrtc13
+Testing `ptx_mma_probe'.
+
+  [INFO] device 0: AMD Radeon RX 7900 XTX [ZLUDA], compute capability 8.8
+  [OK]          control           0   same kernel without the matrix instruct...
+  [INFO] mma m16n8k16 f32.f16.f16.f32 ran: 55/128 inexact, worst error/bound 0.045
+  [INFO] recorded for ZLUDA v7-preview.3 (af8a3b1, gfx1100): runs, inexact within the bound; observed: runs, inexact within the bound
+  [OK]          mma.sync          0   mma m16n8k16 f32.f16.f16.f32.
+  [INFO] mma m16n8k32 s32.s8.s8.s32 ran: 0/128 inexact, worst error/bound 0
+  [INFO] recorded for ZLUDA v7-preview.3 (af8a3b1, gfx1100): runs, bit-exact; observed: runs, bit-exact
+  [OK]          mma.sync          1   mma m16n8k32 s32.s8.s8.s32.
+  [INFO] mma m16n8k32 s32.u8.u8.s32 does not load: [CUDA Runtime] Context error during cuModuleGetFunction: CUDA_ERROR_NOT_FOUND
+  [INFO] recorded for ZLUDA v7-preview.3 (af8a3b1, gfx1100): not translated (kernel does not load); observed: not translated (kernel does not load)
+  [SKIP]        mma.sync          2   mma m16n8k32 s32.u8.u8.s32.
+  [INFO] mma m16n8k32 satfinite s32.s8.s8.s32 does not load: [CUDA Runtime] Context error during cuModuleGetFunction: CUDA_ERROR_NOT_FOUND
+  [INFO] recorded for ZLUDA v7-preview.3 (af8a3b1, gfx1100): not translated (kernel does not load); observed: not translated (kernel does not load)
+  [SKIP]        mma.sync          3   mma m16n8k32 satfinite s32.s8.s8.s32.
+  [INFO] mma m16n8k8 f32.f16.f16.f32 does not load: [CUDA Runtime] Context error during cuModuleGetFunction: CUDA_ERROR_NOT_FOUND
+  [INFO] recorded for ZLUDA v7-preview.3 (af8a3b1, gfx1100): not translated (kernel does not load); observed: not translated (kernel does not load)
+  [SKIP]        mma.sync          4   mma m16n8k8 f32.f16.f16.f32.
+  [INFO] mma m16n8k16 f16.f16.f16.f16 does not load: [CUDA Runtime] Context error during cuModuleGetFunction: CUDA_ERROR_NOT_FOUND
+  [INFO] recorded for ZLUDA v7-preview.3 (af8a3b1, gfx1100): not translated (kernel does not load); observed: not translated (kernel does not load)
+  [SKIP]        mma.sync          5   mma m16n8k16 f16.f16.f16.f16.
+  [INFO] wmma m16n16k16 f16 -> f32 (load/mma/store) does not load: [CUDA Runtime] Context error during cuModuleGetFunction: CUDA_ERROR_NOT_FOUND
+  [INFO] recorded for ZLUDA v7-preview.3 (af8a3b1, gfx1100): not translated (kernel does not load); observed: not translated (kernel does not load)
+  [SKIP]        wmma              0   wmma m16n16k16 f16 -> f32 (load/mma/sto...
+  [INFO] wmma m16n16k16 u8 -> s32 (load/mma/store) does not load: [CUDA Runtime] Context error during cuModuleGetFunction: CUDA_ERROR_NOT_FOUND
+  [INFO] recorded for ZLUDA v7-preview.3 (af8a3b1, gfx1100): not translated (kernel does not load); observed: not translated (kernel does not load)
+  [SKIP]        wmma              1   wmma m16n16k16 u8 -> s32 (load/mma/store).
+
+Test Successful in 1.278s. 3 tests run.
