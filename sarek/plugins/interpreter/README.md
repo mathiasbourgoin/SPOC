@@ -43,6 +43,23 @@ let device = Sarek.Device.get_device_by_name "CPU Interpreter" in
 vector_add ~block:(256, 1, 1) ~grid:(n/256, 1, 1) a b c
 ```
 
+### Linking from another project
+
+The library is installed as `sarek.interpreter` (dune library name
+`sarek_interpreter`; the evaluator it drives is the separate `sarek.interp`).
+Link it and force its registration:
+
+```lisp
+(executable (name main) (libraries sarek sarek.interpreter))
+```
+
+```ocaml
+let () = Sarek_interpreter.Interpreter_plugin.init ()
+```
+
+`sarek/plugins/test/install_consumer.t` builds such a project against the
+install tree only.
+
 ## Limitations
 
 - Slower than Native backend (interpretation overhead)

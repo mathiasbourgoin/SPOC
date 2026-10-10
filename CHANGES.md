@@ -1,3 +1,14 @@
+## 2026-10
+
+### Fixed
+
+- The Native and Interpreter CPU backends are now installed, as
+  `sarek.native` and `sarek.interpreter`. They had no `public_name`, so code
+  outside this repository could not link them, although the `sarek` package
+  description and both plugin READMEs already advertised them. A cram test
+  (`sarek/plugins/test/install_consumer.t`) builds an out-of-tree project
+  against the install tree only and links both.
+
 ## 2026-07
 
 ### Added

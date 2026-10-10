@@ -1,0 +1,12 @@
+; An out-of-tree consumer must be able to link the CPU backends from the
+; install tree: install_consumer.t builds a fresh dune project against
+; _build/install/default/lib only (OCAMLPATH, set by dune for cram tests), so a
+; library that is not installed -- no public_name -- cannot resolve.
+;
+; The dependency is the root @install alias, not (package sarek): the latter
+; trips a sarek <-> sarek-cuda package-files dependency cycle.
+
+(cram
+ (applies_to install_consumer)
+ (deps
+  (alias_rec %{workspace_root}/install)))
