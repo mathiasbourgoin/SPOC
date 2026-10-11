@@ -6,7 +6,8 @@
  new_runtime
  codegen_golden
  downstream
- matrix_pattern)
+ matrix_pattern
+ doc_snippets)
 
 (alias
  (name runtest)
@@ -21,6 +22,8 @@
    (alias new_runtime/runtest))
   (:downstream
    (alias downstream/runtest))
+  (:doc_snippets
+   (alias doc_snippets/runtest))
   (:matrix_pattern
    (alias matrix_pattern/runtest))
   (:core

@@ -1,0 +1,153 @@
+; Documentation snippets: every ```ocaml block of the Markdown pages listed
+; below is extracted (extract.exe) into one module per page and compiled with
+; the library names a downstream project uses. Nothing is linked or run.
+; `dune build @snippets` is part of `dune runtest`; see CONTRIBUTING.md,
+; "Documentation snippets".
+
+(executable
+ (name extract)
+ (modules extract))
+
+(library
+ (name doc_snippets)
+ (modules :standard \ extract)
+ (libraries
+  sarek
+  sarek.core
+  sarek.stdlib
+  sarek.native
+  sarek.interpreter
+  sarek-cuda.plugin
+  sarek-hip.plugin
+  sarek-opencl.plugin
+  sarek-vulkan.plugin
+  sarek-metal.plugin)
+ (preprocess
+  (pps sarek.ppx))
+ (flags
+  (:standard -w -a -alert -sarek_matrix)))
+
+(rule
+ (targets snip_readme.ml)
+ (action
+  (with-stdout-to
+   snip_readme.ml
+   (run %{exe:extract.exe} %{dep:../../../README.md}))))
+
+(rule
+ (targets snip_site_index.ml)
+ (action
+  (with-stdout-to
+   snip_site_index.ml
+   (run %{exe:extract.exe} %{dep:../../../gh-pages/index.md}))))
+
+(rule
+ (targets snip_docs_concepts.ml)
+ (action
+  (with-stdout-to
+   snip_docs_concepts.ml
+   (run %{exe:extract.exe} %{dep:../../../gh-pages/docs/concepts.md}))))
+
+(rule
+ (targets snip_docs_getting_started.ml)
+ (action
+  (with-stdout-to
+   snip_docs_getting_started.ml
+   (run %{exe:extract.exe} %{dep:../../../gh-pages/docs/getting_started.md}))))
+
+(rule
+ (targets snip_docs_new_backend.ml)
+ (action
+  (with-stdout-to
+   snip_docs_new_backend.ml
+   (run %{exe:extract.exe} %{dep:../../../gh-pages/docs/new_backend.md}))))
+
+(rule
+ (targets snip_docs_transpiler.ml)
+ (action
+  (with-stdout-to
+   snip_docs_transpiler.ml
+   (run %{exe:extract.exe} %{dep:../../../gh-pages/docs/transpiler.md}))))
+
+(rule
+ (targets snip_ex_mandelbrot.ml)
+ (action
+  (with-stdout-to
+   snip_ex_mandelbrot.ml
+   (run %{exe:extract.exe} %{dep:../../../gh-pages/examples/mandelbrot.md}))))
+
+(rule
+ (targets snip_ex_matrix_mul.ml)
+ (action
+  (with-stdout-to
+   snip_ex_matrix_mul.ml
+   (run %{exe:extract.exe} %{dep:../../../gh-pages/examples/matrix_mul.md}))))
+
+(rule
+ (targets snip_ex_reduction.ml)
+ (action
+  (with-stdout-to
+   snip_ex_reduction.ml
+   (run %{exe:extract.exe} %{dep:../../../gh-pages/examples/reduction.md}))))
+
+(rule
+ (targets snip_ex_transpose.ml)
+ (action
+  (with-stdout-to
+   snip_ex_transpose.ml
+   (run %{exe:extract.exe} %{dep:../../../gh-pages/examples/transpose.md}))))
+
+(rule
+ (targets snip_ex_vector_add.ml)
+ (action
+  (with-stdout-to
+   snip_ex_vector_add.ml
+   (run %{exe:extract.exe} %{dep:../../../gh-pages/examples/vector_add.md}))))
+
+(rule
+ (targets snip_core_readme.ml)
+ (action
+  (with-stdout-to
+   snip_core_readme.ml
+   (run %{exe:extract.exe} %{dep:../../../sarek/core/README.md}))))
+
+(rule
+ (targets snip_sarek_readme.ml)
+ (action
+  (with-stdout-to
+   snip_sarek_readme.ml
+   (run %{exe:extract.exe} %{dep:../../../sarek/sarek/README.md}))))
+
+(rule
+ (targets snip_ppx_readme.ml)
+ (action
+  (with-stdout-to
+   snip_ppx_readme.ml
+   (run %{exe:extract.exe} %{dep:../../../sarek/ppx/README.md}))))
+
+; Every page that has an ocaml block must have a rule above: this check fails
+; on a page of the two site folders (or on a listed library README) that the
+; rules do not mention.
+
+(rule
+ (alias snippets)
+ (deps
+  dune
+  ../../../README.md
+  ../../../gh-pages/index.md
+  ../../../sarek/core/README.md
+  ../../../sarek/sarek/README.md
+  ../../../sarek/ppx/README.md
+  (glob_files ../../../gh-pages/docs/*.md)
+  (glob_files ../../../gh-pages/examples/*.md))
+ (action
+  (run %{exe:extract.exe} --check-listed %{deps})))
+
+(alias
+ (name snippets)
+ (deps doc_snippets.cma))
+
+(alias
+ (name runtest)
+ (deps
+  (alias snippets)))
