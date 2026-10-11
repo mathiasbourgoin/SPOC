@@ -239,18 +239,16 @@ let reset_pools device slot =
 (** Kernel names of [slot] in launch order, a repeated name written once with
     its count. *)
 let kernel_names slot =
-  let counts =
-    List.fold_left
-      (fun acc name ->
-        match List.assoc_opt name acc with
-        | Some n -> (name, n + 1) :: List.remove_assoc name acc
-        | None -> (name, 1) :: acc)
-      []
-      (List.rev slot.kernels)
+  let add counts name =
+    if List.mem_assoc name counts then
+      List.map
+        (fun (n, c) -> if String.equal n name then (n, c + 1) else (n, c))
+        counts
+    else counts @ [(name, 1)]
   in
-  List.rev_map
-    (fun (name, n) -> if n = 1 then name else Printf.sprintf "%s x%d" name n)
-    counts
+  List.fold_left add [] (List.rev slot.kernels)
+  |> List.map (fun (name, n) ->
+      if n = 1 then name else Printf.sprintf "%s x%d" name n)
   |> String.concat ", "
 
 (** The slot's work is over (completed, or never submitted): its descriptor sets
