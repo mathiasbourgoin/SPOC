@@ -37,6 +37,8 @@ let fail_fused = ref false
 
 let slow_started = Atomic.make false
 
+let fail_epi = ref false
+
 type Framework_sig.kargs += Probe_kargs
 
 module Probe : BACKEND = struct
@@ -64,6 +66,7 @@ module Probe : BACKEND = struct
     if
       List.mem kernel_name !fail_names
       || (!fail_fused && String.starts_with ~prefix:"sarek_hfused" kernel_name)
+      || (!fail_epi && String.starts_with ~prefix:"sarek_efused" kernel_name)
     then failwith ("probe launch refused: " ^ kernel_name) ;
     if kernel_name = "slow" then begin
       (* Tells the other domain the flush is under way, then takes its time:
@@ -975,6 +978,175 @@ let test_sync_waits_for_flush_in_progress () =
     true
     (index_of "launch slow" < index_of "devsync")
 
+(* {1 Epilogue fusion (specs/epilogue-fusion.md)} *)
+
+(* dst.(tid) <- src.(tid), only for tid < n: a producer storing [0, n). *)
+let guarded_copy name =
+  let n = ivar 3 "n" in
+  {
+    (copy_kernel name) with
+    kern_params =
+      [DParam (fvar 1 "src", arr); DParam (fvar 2 "dst", arr); DParam (n, None)];
+    kern_body =
+      SIf
+        ( EBinop (Lt, gpu "thread_idx_x", EVar n),
+          SAssign
+            ( LArrayElem ("dst", gpu "thread_idx_x"),
+              EArrayRead ("src", gpu "thread_idx_x") ),
+          None );
+  }
+
+(* let i = global_thread_id in if i < n then y.(i) <- y.(i) +. t.(i) *)
+let add_consumer name =
+  let i = ivar 10 "i" and n = ivar 11 "n" in
+  {
+    default_kernel with
+    kern_name = name;
+    kern_params =
+      [DParam (fvar 12 "y", arr); DParam (fvar 13 "t", arr); DParam (n, None)];
+    kern_body =
+      SLet
+        ( i,
+          gpu "global_thread_id",
+          SIf
+            ( EBinop (Lt, EVar i, EVar n),
+              SAssign
+                ( LArrayElem ("y", EVar i),
+                  EBinop
+                    (Add, EArrayRead ("y", EVar i), EArrayRead ("t", EVar i)) ),
+              None ) );
+  }
+
+let k_prod = guarded_copy "k_prod"
+
+let k_cons = add_consumer "k_cons"
+
+let test_index_slice () =
+  let stored = ref [] in
+  let used =
+    Sarek_execute.Index_slice.run
+      ~is_target:(fun a -> a = "dst")
+      ~record:(fun i -> stored := Int32.to_int i :: !stored)
+      ~scalars:[("n", 5l)]
+      ~dims:{Sarek_execute.Index_slice.block = (8, 1, 1); grid = (1, 1, 1)}
+      k_prod.kern_body
+  in
+  check (list int) "stores 0..4" [0; 1; 2; 3; 4] (List.sort compare !stored) ;
+  check (list string) "read scalar n" ["n"] used ;
+  let data_dependent =
+    {
+      k_prod with
+      kern_body =
+        SAssign
+          ( LArrayElem
+              ("dst", ECast (TInt32, EArrayRead ("src", gpu "thread_idx_x"))),
+            EConst (CFloat32 0.) );
+    }
+  in
+  match
+    Sarek_execute.Index_slice.run
+      ~is_target:(fun a -> a = "dst")
+      ~record:ignore
+      ~scalars:[]
+      ~dims:{Sarek_execute.Index_slice.block = (8, 1, 1); grid = (1, 1, 1)}
+      data_dependent.kern_body
+  with
+  | _ -> fail "a data-dependent index must be unknown"
+  | exception Sarek_execute.Index_slice.Unknown _ -> ()
+
+let test_consumer_shape () =
+  (match Sarek_execute.Fusion_epilogue.consumer k_cons with
+  | Ok c ->
+      check (list string) "writes" ["y"] c.written ;
+      check bool "reads t at its index" true (List.mem "t" c.reads_at_index)
+  | Error why -> failf "add consumer refused: %s" why) ;
+  let refused why k =
+    match Sarek_execute.Fusion_epilogue.consumer k with
+    | Ok _ -> failf "%s: expected a refusal" why
+    | Error _ -> ()
+  in
+  let body_of k = match k.kern_body with SLet (_, _, b) -> b | b -> b in
+  let with_body b =
+    {k_cons with kern_body = SLet (ivar 10 "i", gpu "global_thread_id", b)}
+  in
+  refused "barrier" (with_body (SSeq [SBarrier; body_of k_cons])) ;
+  refused
+    "store off the index"
+    (with_body
+       (SAssign (LArrayElem ("y", EConst (CInt32 0l)), EConst (CFloat32 1.)))) ;
+  refused
+    "position intrinsic in the body"
+    (with_body
+       (SAssign
+          ( LArrayElem ("y", EVar (ivar 10 "i")),
+            ECast (TFloat32, gpu "thread_idx_x") ))) ;
+  refused "not element-wise" k_prod
+
+let epilogue_pair ~cons_block =
+  reset () ;
+  Execute.Window.set_epilogue_backend ~backend:backend_name true ;
+  let[@warning "-8"] [x; t; y] = resident 3 in
+  events := [] ;
+  Execute.run_vectors
+    ~device:dev
+    ~ir:k_prod
+    ~args:[Execute.Vec x; Execute.Vec t; Execute.Int 64]
+    ~block:(Execute.dims1d 64)
+    ~grid:(Execute.dims1d 1)
+    () ;
+  Execute.run_vectors
+    ~device:dev
+    ~ir:k_cons
+    ~args:[Execute.Vec y; Execute.Vec t; Execute.Int cons_block]
+    ~block:(Execute.dims1d cons_block)
+    ~grid:(Execute.dims1d 1)
+    () ;
+  Execute.Window.flush () ;
+  Execute.Window.set_epilogue_backend ~backend:backend_name false ;
+  launches ()
+
+let test_epilogue_merged () =
+  match epilogue_pair ~cons_block:64 with
+  | [l] ->
+      check
+        bool
+        "one merged launch"
+        true
+        (String.starts_with ~prefix:"launch sarek_efused_" l)
+  | ls -> failf "expected one merged launch, got %d" (List.length ls)
+
+let test_epilogue_uncovered () =
+  (* The consumer writes [0, 128) but the producer stores only [0, 64). *)
+  check
+    (list string)
+    "not merged"
+    ["launch k_prod gx=1 nargs=5"; "launch k_cons gx=1 nargs=5"]
+    (epilogue_pair ~cons_block:128)
+
+let test_epilogue_failure_falls_back () =
+  fail_epi := true ;
+  let ls = epilogue_pair ~cons_block:64 in
+  fail_epi := false ;
+  check
+    (list string)
+    "producer then consumer, as submitted"
+    ["launch k_prod gx=1 nargs=5"; "launch k_cons gx=1 nargs=5"]
+    ls ;
+  check
+    (list string)
+    "never merged again"
+    ["launch k_prod gx=1 nargs=5"; "launch k_cons gx=1 nargs=5"]
+    (epilogue_pair ~cons_block:64)
+
+let test_epilogue_off_by_default () =
+  reset () ;
+  check
+    bool
+    "probe backend off by default"
+    false
+    (Execute.Window.epilogue_on backend_name) ;
+  check bool "HIP on by default" true (Execute.Window.epilogue_on "HIP")
+
 let () =
   run
     "launch window"
@@ -1049,6 +1221,15 @@ let () =
             "sync waits for a flush in progress"
             `Quick
             test_sync_waits_for_flush_in_progress;
+        ] );
+      ( "epilogue",
+        [
+          test_case "index slice" `Quick test_index_slice;
+          test_case "consumer shape" `Quick test_consumer_shape;
+          test_case "merged when covered" `Quick test_epilogue_merged;
+          test_case "not merged when uncovered" `Quick test_epilogue_uncovered;
+          test_case "default backends" `Quick test_epilogue_off_by_default;
+          test_case "failure falls back" `Quick test_epilogue_failure_falls_back;
         ] );
       ( "errors",
         [

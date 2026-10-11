@@ -4,7 +4,9 @@
 > fuses launches automatically in the execution path: `Execute.run_vectors`
 > defers JIT launches in a window up to the next synchronisation point, and
 > merges independent ones into one kernel (horizontal fusion, bit-identical by
-> construction). See `specs/launch-window.md` and `Execute.Window`. The
+> construction) and, on HIP, merges element-wise consumers into the kernel
+> that produces their input (epilogue fusion, `specs/epilogue-fusion.md`).
+> See `specs/launch-window.md` and `Execute.Window`. The
 > functions on this page are explicit, caller-driven rewrites that may delete
 > intermediates; the launch window never deletes a store.
 

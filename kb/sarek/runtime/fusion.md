@@ -22,6 +22,12 @@ Reviewed fusion files: `sarek/sarek/Sarek_fusion.ml`, `sarek/sarek/FUSION.md`, `
 - `sarek/execute/Launch_window.ml` holds the groups, conflicts, flush, cache
   and stats.
 - `Execute.Window` is the public control.
+- Epilogue fusion (`specs/epilogue-fusion.md`) lives in:
+  - `sarek/execute/Index_slice.ml`: host evaluation of store indices;
+  - `sarek/execute/Fusion_epilogue.ml`: consumer shape and the rewrite;
+  - `sarek/execute/Launch_epilogue.ml`: merge conditions and the coverage
+    cache;
+  - `sarek/execute/Ir_rename.ml`: the renamer both rewrites share.
 
 Invariants:
 - Every synchronisation point flushes before it acts.
@@ -30,6 +36,9 @@ Invariants:
 - A fused kernel runs each member's body unchanged. Only the work-group
   position intrinsics are rewritten.
 - Direct and Custom backends are never deferred.
+- An epilogue is merged only after the coverage check: every element the
+  consumer writes is stored exactly once by the producer, for these
+  dimensions and scalars.
 
 ## Features/APIs
 

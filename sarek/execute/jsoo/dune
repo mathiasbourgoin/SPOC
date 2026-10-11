@@ -15,9 +15,17 @@
 
 (copy_files "../Kernel_access.ml")
 
+(copy_files "../Index_slice.ml")
+
+(copy_files "../Ir_rename.ml")
+
 (copy_files "../Fusion_horizontal.ml")
 
+(copy_files "../Fusion_epilogue.ml")
+
 (copy_files "../Launch_window.ml")
+
+(copy_files "../Launch_epilogue.ml")
 
 (executable
  (name smoke)
@@ -25,8 +33,12 @@
  (modules
   Smoke
   Kernel_access
+  Index_slice
+  Ir_rename
   Fusion_horizontal
+  Fusion_epilogue
   Launch_window
+  Launch_epilogue
   Execute
   Execute_error)
  (libraries

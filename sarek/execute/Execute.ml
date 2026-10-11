@@ -1156,10 +1156,16 @@ let check_stream_launch ~(device : Device.t) (stream : Transfer.stream option) :
 let window : vector_arg Launch_window.t =
   Launch_window.create
     ~int32_arg:(fun n -> Int32 n)
+    ~arg_buf:(function Vec v -> Some v.Vector.id | _ -> None)
+    ~arg_int32:(function
+      | Int n -> Some (Int32.of_int n)
+      | Int32 n -> Some n
+      | Vec _ | Int64 _ | Float32 _ | Float64 _ -> None)
     ~set_pending:(fun n -> Atomic.set Launch_hooks.pending n)
     ~guard:Launch_hooks.while_flushing
 
 let () =
+  Launch_epilogue.install window ;
   Launch_hooks.set_flusher ~touches:(Launch_window.touches window) (fun () ->
       Launch_window.flush window) ;
   (* Pending launches must reach the device before a device is destroyed or the
@@ -1214,6 +1220,16 @@ module Window = struct
       HIP, OpenCL and Vulkan only. *)
   let set_backend_enabled ~backend b =
     Launch_window.set_backend_enabled window ~backend b
+
+  (** [true] when epilogue fusion runs on this backend (HIP by default). *)
+  let epilogue_on backend = Launch_epilogue.enabled backend
+
+  (** Turn epilogue fusion on or off for one backend (flushes first). Off by
+      default except on HIP: elsewhere the device compiler may contract across
+      the merged kernels (specs/epilogue-fusion.md). *)
+  let set_epilogue_backend ~backend b =
+    Launch_window.flush window ;
+    Launch_epilogue.set_backend_enabled ~backend b
 
   (** Forget every fused kernel built so far. *)
   let clear_fused_cache () = Launch_window.clear_cache window

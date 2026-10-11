@@ -17,8 +17,12 @@
   sarek_interp)
  (modules
   Kernel_access
+  Index_slice
+  Ir_rename
   Fusion_horizontal
+  Fusion_epilogue
   Launch_window
+  Launch_epilogue
   Execute
   Execute_error
   Soa_launch)
