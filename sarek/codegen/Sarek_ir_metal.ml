@@ -69,17 +69,13 @@ let rec metal_type_of_elttype = function
          the plain [half] cast needs no barrier. *)
       "half"
   | TUint8 ->
-      (* This is not a deferral. MSL has `uchar` and
-         even has simdgroup matrices, but [TUint8] is not a general 8-bit
-         integer in this IR: it marks a cooperative-matrix operand buffer, and
-         emitting `uchar` for it would produce a buffer no Metal statement can
-         consume, because the [SCoopmat] that gives it meaning is refused. *)
+      (* [TUint8] is not a general 8-bit integer in this IR: it marks an
+         integer cooperative-matrix operand buffer, which has no Metal lowering
+         (no integer simdgroup_matrix). *)
       Codegen_error.raise_error
         (Codegen_error.unsupported_construct
            "uint8"
-           "Metal: uint8 is a cooperative-matrix operand element type, emitted \
-            only by the Vulkan and CUDA/HIP backends, and Metal has no \
-            cooperative-matrix path")
+           Sarek_ir_metal_coopmat.no_integer_reason)
   | TFloat32 -> "float"
   | TFloat64 ->
       (* Until #64 slice 1 this arm was `"float"`, with a comment saying Metal
@@ -781,18 +777,13 @@ let rec gen_stmt st buf indent = function
       gen_stmt st buf (indent_nested indent) body ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
-  | SCoopmat _ ->
-      (* MSL's simdgroup_matrix is a plausible future home for this, but it has
-         its own shapes, its own load/store convention and no measurement here;
-         until one exists the statement has no lowering, and a silent skip would
-         leave the accumulator buffer untouched rather than wrong-by-a-little,
-         which is the failure mode hardest to notice. *)
-      Codegen_error.raise_error
-        (Codegen_error.unsupported_construct
-           "cooperative matrix"
-           "Metal: the Metal backend has no cooperative-matrix path; \
-            cooperative-matrix statements are emitted only by the Vulkan and \
-            CUDA/HIP backends")
+  | SCoopmat op ->
+      let expr_str e =
+        let b = Buffer.create 32 in
+        gen_expr st b e ;
+        Buffer.contents b
+      in
+      Buffer.add_string buf (Sarek_ir_metal_coopmat.gen_op ~indent ~expr_str op)
 
 (** {1 Declaration Generation} *)
 
@@ -1162,21 +1153,6 @@ let reject_float64_kernel =
     Sarek_capability.float64_absent_metal
     Sarek_ir_analysis.Float64
 
-(* Whole-kernel cooperative-matrix gate, for the reason spelled out at
-   {!Sarek_ir_codegen.reject_feature}: the per-node arms above see only what the
-   emitter reaches, and a kernel can carry the feature in a [TUint8] parameter
-   it never loads from. Like the f64 gate and unlike the f16 one this does NOT
-   go through [reject_feature], whose composed sentence hardcodes "#57 slice
-   2" — the wrong issue to send a reader to for a cooperative-matrix refusal. *)
-let reject_coopmat_kernel (k : kernel) : unit =
-  if Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Coopmat k then
-    Codegen_error.raise_error
-      (Codegen_error.unsupported_construct
-         "cooperative matrix"
-         "Metal: the Metal backend has no cooperative-matrix path; cooperative \
-          matrices and their uint8 operand buffers are emitted only by the \
-          Vulkan and CUDA/HIP backends (backlog-62)")
-
 (** The ONLY thing measured to stop Metal contracting [a*b+c].
 
     Metal's compile options do NOT do it. Measured on Apple M4 / macOS 15.6.1
@@ -1217,10 +1193,14 @@ let metal_fp_contract_pragma = "#pragma METAL fp contract(off)\n"
     override it; it was dropped, because every caller passed this backend its
     own name — exactly the value the constant already is — and the one consumer
     that would have distinguished them, [SNative], now refuses outright. *)
-let generate_with_types ~(types : (string * (string * elttype) list) list)
-    (k : kernel) : string =
+let generate_with_types ?block
+    ~(types : (string * (string * elttype) list) list) (k : kernel) : string =
   reject_float64_kernel k ;
-  reject_coopmat_kernel k ;
+  (* Whole-kernel cooperative-matrix check: every fragment, configuration and
+     buffer, and the launch block when it is known. A statement-walk refusal
+     would name whichever node the emitter reached first. *)
+  Sarek_ir_metal_coopmat.check_kernel k ;
+  Option.iter (Sarek_ir_metal_coopmat.check_block k) block ;
   (* A [for] bound is evaluated once (Sarek_ir_for_bound), then unroll hints
      for small constant-trip loops (Sarek_ir_unroll). *)
   let k = Sarek_ir_for_bound.hoist k in
@@ -1233,6 +1213,8 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
 
   (* Metal header *)
   Buffer.add_string buf "#include <metal_stdlib>\n" ;
+  if Sarek_ir_analysis.kernel_has_coopmat_op k then
+    Buffer.add_string buf "#include <metal_simdgroup_matrix>\n" ;
   Buffer.add_string buf "using namespace metal;\n" ;
   Buffer.add_string buf metal_fp_contract_pragma ;
   Buffer.add_string buf "\n" ;

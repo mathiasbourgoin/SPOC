@@ -69,6 +69,21 @@ let state (k : kernel) : state = {variants = k.kern_variants}
 
 let mangle_name = Sarek_ir_codegen.mangle_name
 
+(** Why OpenCL refuses cooperative matrices. A property of the devices, not of
+    the backend's code: OpenCL has a matrix extension
+    ([cl_intel_subgroup_matrix_multiply_accumulate]), but none of the devices
+    this project can reach advertises it or any other (clinfo, 2026-10-12: the
+    RX 7900 XTX under rusticl, and the Intel oneAPI CPU runtime), so a lowering
+    could not be executed and would be unverified code. *)
+let coopmat_refusal =
+  "OpenCL: no cooperative-matrix lowering: no OpenCL device available to this \
+   project advertises a matrix extension \
+   (cl_intel_subgroup_matrix_multiply_accumulate or any other; rusticl on the \
+   RX 7900 XTX and the Intel oneAPI CPU runtime checked with clinfo, \
+   2026-10-12), so there is nothing to lower to or to verify against. \
+   Cooperative matrices and their uint8 operand buffers are emitted by the \
+   Vulkan, CUDA/HIP and Metal backends (backlog-62)"
+
 (** Map Sarek IR element type to OpenCL C type string *)
 let rec opencl_type_of_elttype = function
   | TInt32 -> "int"
@@ -125,11 +140,7 @@ let rec opencl_type_of_elttype = function
          buffer through while the matching [SCoopmat] statement is refused, i.e.
          it would move the diagnostic away from the construct that caused it. *)
       Codegen_error.raise_error
-        (Codegen_error.unsupported_construct
-           "uint8"
-           "OpenCL: uint8 is a cooperative-matrix operand element type, \
-            emitted only by the Vulkan and CUDA/HIP backends, and OpenCL has \
-            no cooperative-matrix path")
+        (Codegen_error.unsupported_construct "uint8" coopmat_refusal)
   | TFloat32 -> "float"
   | TFloat64 -> "double"
   | TBool -> "int"
@@ -622,9 +633,7 @@ let rec gen_stmt st buf indent = function
       Codegen_error.raise_error
         (Codegen_error.unsupported_construct
            "cooperative matrix"
-           "OpenCL: the OpenCL backend has no cooperative-matrix path; \
-            cooperative-matrix statements are emitted only by the Vulkan and \
-            CUDA/HIP backends")
+           coopmat_refusal)
 
 (** Generate a pattern match case (extracted helper) *)
 and gen_match_case st buf indent scrutinee pattern body =
@@ -854,11 +863,7 @@ let reject_float16_kernel (k : kernel) : unit =
 let reject_coopmat_kernel (k : kernel) : unit =
   if Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Coopmat k then
     Codegen_error.raise_error
-      (Codegen_error.unsupported_construct
-         "cooperative matrix"
-         "OpenCL: the OpenCL backend has no cooperative-matrix path; \
-          cooperative matrices and their uint8 operand buffers are emitted \
-          only by the Vulkan and CUDA/HIP backends (backlog-62)")
+      (Codegen_error.unsupported_construct "cooperative matrix" coopmat_refusal)
 
 (** {1 Recursion Resolution}
 

@@ -172,7 +172,10 @@ module Backend : Framework_sig.BACKEND = struct
   let execution_model = Framework_sig.JIT
 
   (** Generate Metal Shading Language source from Sarek IR.
-      @param block Ignored - Metal specifies work-group size at launch
+      @param block
+        Metal specifies the work-group size at launch, so it does not shape the
+        source; it is only checked for a cooperative-matrix kernel, which must
+        run whole 32-wide SIMD-groups.
 
       A located [Backend_error (Codegen {backend = "Metal"; _})] from codegen is
       deliberately allowed to PROPAGATE so callers surface the offending IR node
@@ -180,13 +183,19 @@ module Backend : Framework_sig.BACKEND = struct
       None" (PR #259 review); a blanket [try ... with _ -> None] previously
       swallowed it. Codegen never legitimately declines a kernel by returning
       [None]. *)
-  let generate_source ?block:_ ?(soa_params = []) (ir : Sarek_ir_types.kernel) :
+  let generate_source ?block ?(soa_params = []) (ir : Sarek_ir_types.kernel) :
       string option =
     (* Refused rather than bound away (backlog-214): [Sarek_ir_metal] emits the
        packed AoS signature for every vector parameter and has no SoA lowering
        to select. *)
     Sarek_backend_error.Backend_error.reject_soa_params ~backend:name soa_params ;
-    let source = Sarek_ir_metal.generate_with_types ~types:ir.kern_types ir in
+    let source =
+      Sarek_ir_metal.generate_with_types
+        ?block:
+          (Option.map (fun (d : Framework_sig.dims) -> (d.x, d.y, d.z)) block)
+        ~types:ir.kern_types
+        ir
+    in
     Spoc_core.Log.debug Kernel ("Metal source:\n" ^ source) ;
     Some source
 

@@ -16,6 +16,7 @@
   Sarek_ir_f16_narrowing
   Sarek_ir_cuda
   Sarek_ir_opencl
+  Sarek_ir_metal_coopmat
   Sarek_ir_metal
   Sarek_ir_inline_vec
   Sarek_ir_unroll
