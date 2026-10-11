@@ -43,6 +43,7 @@ let mock_launch ~events ~name ~fails ~fused_result : int LW.launch =
     shared_bytes = Some 0;
     max_grid_x = 1024;
     max_shared = 4096;
+    max_arg_slots = max_int;
     args = [];
     block = dims1;
     grid = dims1;
