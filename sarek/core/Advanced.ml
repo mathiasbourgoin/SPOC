@@ -34,20 +34,40 @@ end
 
 (** {1 8b. Pinned/Mapped Memory} *)
 
-(** Pinned memory enables faster transfers and zero-copy access. Note: Requires
-    backend support - currently a placeholder API. *)
+(** Page-locked host memory (placeholder surface, see the implementation
+    commit). *)
 module Pinned = struct
-  (** Create a vector with pinned (page-locked) host memory *)
-  let create (kind : ('a, 'b) Vector.kind) (length : int) : ('a, 'b) Vector.t =
-    (* For now, falls back to regular creation *)
-    (* TODO: Implement with cudaMallocHost when backend supports it *)
-    Vector.create kind length
+  type ('a, 'b) t = {
+    device : Device.t;
+    data : ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t;
+    mutable live : bool;
+  }
 
-  (** Check if pinned memory is available on device *)
-  let is_available (_dev : Device.t) : bool =
-    (* Most CUDA devices support this *)
-    false
-  (* Placeholder *)
+  let is_available (_dev : Device.t) : bool = false
+
+  let alloc (device : Device.t) (kind : ('a, 'b) Bigarray.kind) (n : int) :
+      ('a, 'b) t =
+    {
+      device;
+      data = Bigarray.Array1.create kind Bigarray.c_layout n;
+      live = true;
+    }
+
+  let register (device : Device.t)
+      (data : ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t) : ('a, 'b) t =
+    {device; data; live = true}
+
+  let bigarray (p : ('a, 'b) t) = p.data
+
+  let device (p : ('a, 'b) t) = p.device
+
+  let is_live (p : ('a, 'b) t) = p.live
+
+  let release (p : ('a, 'b) t) : unit = p.live <- false
+
+  let with_alloc dev kind n f =
+    let p = alloc dev kind n in
+    Fun.protect ~finally:(fun () -> release p) (fun () -> f p)
 end
 
 (** {1 8c. Async Kernel Launch with Futures} *)
