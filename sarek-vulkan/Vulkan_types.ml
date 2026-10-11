@@ -309,6 +309,8 @@ let vk_pipeline_stage_host_bit = 0x00004000
 
 let vk_pipeline_stage_compute_shader_bit = 0x00000800
 
+let vk_pipeline_stage_transfer_bit = 0x00001000
+
 (** {1 Access Flags} *)
 
 let vk_access_host_write_bit = 0x00004000
@@ -318,6 +320,10 @@ let vk_access_host_read_bit = 0x00008000
 let vk_access_shader_read_bit = 0x00000020
 
 let vk_access_shader_write_bit = 0x00000040
+
+let vk_access_transfer_read_bit = 0x00000800
+
+let vk_access_transfer_write_bit = 0x00001000
 
 (** {1 Misc Constants} *)
 

@@ -527,9 +527,11 @@
   buffers, so one records while the other runs. Each dispatch has its own
   descriptor set (per-batch pools, so one kernel can appear several times in a
   batch) and a compute memory barrier before it. Every host access to device
-  memory, `Memory.free`, `Stream.synchronize`, `Device.synchronize`,
-  kernel-cache eviction and device destruction first complete the pending
-  launches, and `Event.record` submits them. Before, every launch recorded,
+  memory, `Stream.synchronize`, `Device.synchronize`, kernel-cache eviction
+  and device destruction first complete the pending launches, and
+  `Event.record` submits them. `Memory.free` (which GC finalisers call) never
+  waits: the release is queued until the launches recorded so far have
+  completed. Before, every launch recorded,
   submitted and waited for its own command buffer. A failed submission or wait
   now raises `kernel_launch_failed` naming the batch's kernels at the first
   wait, not at the launch. `SPOC_VULKAN_BATCH=1` restores submit-and-wait per

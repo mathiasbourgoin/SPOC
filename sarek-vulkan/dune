@@ -29,6 +29,8 @@
   Vulkan_bindings
   Vulkan_api_base
   Vulkan_api_device
+  Vulkan_api_barrier
+  Vulkan_api_pools
   Vulkan_api_memory
   Vulkan_api_stream
   Vulkan_api_event

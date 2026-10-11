@@ -372,9 +372,10 @@ dispatches (default 32; `1` submits and waits at every launch, as before), when
 another stream of the device launches, and at every synchronisation point:
 `Stream.synchronize`, `Device.synchronize`, `Event.record`, any host access to
 device memory (`Memory.host_to_device`, `device_to_host`, the `_ptr` variants
-and every staging copy), `Memory.free`, kernel-cache eviction and device
-destruction. Each dispatch gets its own descriptor set (from a pool reset when
-its command buffer's fence is waited for) and a compute-to-compute memory
+and every staging copy), kernel-cache eviction and device destruction;
+`Memory.free` queues the release until the launches recorded so far have
+completed. Each dispatch gets its own descriptor set (from a pool reset when
+its command buffer's fence is waited for) and a memory
 barrier is recorded before it, so a kernel object may appear several times in
 one batch with different arguments. A failed submission or wait raises
 `Kernel_launch_failed` naming the batch's kernels at the first wait, not at the
