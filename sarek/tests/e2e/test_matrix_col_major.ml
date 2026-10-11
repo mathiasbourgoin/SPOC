@@ -166,6 +166,39 @@ let check case dev ~m ~n ~k ~expect_direct =
 
 (* The staged kernel keeps B in shared memory as [n][k] and loads its
    fragments column-major (contiguous per lane), for every lowering. *)
+(* Shared memory the staged kernel allocates, from its [EArrayCreate]s. *)
+let allocated_shared_bytes (k : Sarek_ir_types.kernel) =
+  let open Sarek_ir_types in
+  let bytes = function
+    | TUint8 -> 1
+    | TFloat16 -> 2
+    | TFloat32 | TInt32 -> 4
+    | _ -> failwith "unexpected shared element type"
+  in
+  let rec go = function
+    | SLet (_, EArrayCreate (elt, EConst (CInt32 n), Shared), body) ->
+        (bytes elt * Int32.to_int n) + go body
+    | SLet (_, _, body) | SLetMut (_, _, body) -> go body
+    | _ -> 0
+  in
+  go k.kern_body
+
+(* Sarek_matrix_scheme.choose_bk budgets exactly what the body allocates, and
+   the allocation fits the 48 KiB budget. *)
+let check_shared_bytes ~what k (g : Sarek_matrix_pattern.gemm) lowering =
+  let s = Sarek_matrix_scheme.scheme ~operand_elt:g.a.elt lowering in
+  let budget =
+    Sarek_matrix_scheme.shared_bytes s ~bk:(Sarek_matrix_scheme.choose_bk s)
+  in
+  let got = allocated_shared_bytes k in
+  if got <> budget || got > Sarek_matrix_scheme.shared_limit then
+    fail
+      "staged %s: allocates %d B of shared memory, budget %d B"
+      what
+      got
+      budget
+  else ok "staged %s: %d B of shared memory, as budgeted" what got
+
 let check_staged_layout () =
   let open Sarek_ir_types in
   let lowered (kern, lowering) =
@@ -189,6 +222,7 @@ let check_staged_layout () =
                 (Sarek_ir_analysis.kernel_coopmat_ops k)
             in
             let what = Sarek_matrix_rewrite.lowering_name lowering in
+            check_shared_bytes ~what k g lowering ;
             if bad = [] then
               ok "staged %s: B column-major from shared, A row-major" what
             else
