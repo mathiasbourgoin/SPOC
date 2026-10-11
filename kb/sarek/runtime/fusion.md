@@ -14,7 +14,7 @@ Reviewed fusion files: `sarek/sarek/Sarek_fusion.ml`, `sarek/sarek/FUSION.md`, `
 ## Launch-time fusion (launch window)
 
 `specs/launch-window.md`. Files:
-- `sarek/core/Launch_hooks.ml` holds the synchronisation-point hook. Its
+- `spoc/framework/Launch_hooks.ml` holds the synchronisation-point hook. Its
   callers are Transfer, Device, Profiling and Kernel.
 - `sarek/execute/Kernel_access.ml` computes per-parameter read/write sets and
   the horizontal-fusability verdict.
