@@ -1,4 +1,6 @@
-# SPOC - SDK Package for OCaml Computing
+# spoc - SDK types and plugin interface for Sarek
+
+SPOC (SIMT Programming for OCaml) is Sarek's runtime layer; this package holds its SDK part.
 
 The `spoc` package provides the foundational layer for GPU computing in OCaml.
 It defines the core abstractions shared by all backends (CUDA, OpenCL, Vulkan,

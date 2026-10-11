@@ -5,7 +5,7 @@ title: Sarek Architecture
 
 # Sarek Architecture
 
-Sarek is structured into two layers: the **Sarek** DSL and compiler, and **SPOC**, the runtime and plugin framework underneath it. SPOC's libraries keep their name (`spoc_*`, `Spoc_core`).
+Sarek is structured into two layers: the **Sarek** DSL and compiler, and **SPOC**, the runtime and plugin framework underneath it. Its runtime modules keep the `Spoc_` prefix (`Spoc_core`, `Spoc_framework`).
 
 ## High-Level Overview
 

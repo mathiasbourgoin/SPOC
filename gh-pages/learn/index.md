@@ -35,7 +35,7 @@ No thread needs to wait for another — all 256 compute at once.
 
 ---
 
-## How Sarek / SPOC works
+## How Sarek works
 
 **Sarek** lets you write GPU kernels in OCaml syntax. The compiler
 (*transpiler*) reads your kernel expression and emits GPU source code for
