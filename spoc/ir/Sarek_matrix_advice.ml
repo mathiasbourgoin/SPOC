@@ -212,7 +212,9 @@ let rewrite_note = function
        exist (HIP gfx11); SAREK_MATRIX_REWRITE=off disables it."
   | F16_inputs | F32_inputs ->
       "Execute.run_vectors rewrites it onto matrix units only after the opt-in \
-       above (and SAREK_MATRIX_REWRITE not off or exact)."
+       above AND Sarek_coopmat.accept_automatic_float_rewrite (and \
+       SAREK_MATRIX_REWRITE not off or exact); Sarek_matrix.run needs the \
+       opt-in above only."
   | No_case -> "Not rewritten."
 
 let render ?kernel_name (g : P.gemm) adv =

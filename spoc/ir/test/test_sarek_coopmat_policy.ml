@@ -157,6 +157,39 @@ let test_operand_rounding () =
     true
     (available (policy_verdict bf16))
 
+(* The opt-in for the automatic float rewrite is independent of the accuracy
+   opt-ins: accepting those (done by the earlier cases) does not set it, and it
+   does not change the accuracy policy. *)
+let test_automatic_float_rewrite () =
+  Alcotest.(check (option string))
+    "not implied by the accuracy opt-ins"
+    None
+    (automatic_float_rewrite_reason ()) ;
+  List.iter
+    (fun reason ->
+      Alcotest.check_raises
+        "blank reason refused"
+        (Invalid_argument
+           "Sarek_coopmat.accept_automatic_float_rewrite: the reason must not \
+            be empty (it is the record that rewriting the program's own float \
+            kernels was understood)")
+        (fun () -> accept_automatic_float_rewrite ~reason))
+    [""; "   "] ;
+  Alcotest.(check (option string))
+    "a refused call records nothing"
+    None
+    (automatic_float_rewrite_reason ()) ;
+  accept_automatic_float_rewrite ~reason:"first" ;
+  accept_automatic_float_rewrite ~reason:"second" ;
+  Alcotest.(check (option string))
+    "first reason kept"
+    (Some "first")
+    (automatic_float_rewrite_reason ()) ;
+  Alcotest.(check bool)
+    "f16 with f16 accumulator stays refused"
+    true
+    (policy_refusal (policy_verdict f16_f16))
+
 let () =
   Alcotest.run
     "Sarek_coopmat policy"
@@ -167,6 +200,10 @@ let () =
           Alcotest.test_case "blank reason refused" `Quick test_empty_reason;
           Alcotest.test_case "after the opt-in" `Quick test_after;
           Alcotest.test_case "operand rounding" `Quick test_operand_rounding;
+          Alcotest.test_case
+            "automatic float rewrite opt-in"
+            `Quick
+            test_automatic_float_rewrite;
           Alcotest.test_case
             "device refusal evidence"
             `Quick
