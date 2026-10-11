@@ -5,6 +5,7 @@
 (*  - Positive baseline: direct-intrinsic patterns the checker catches        *)
 (*  - F-02 regression: let-aliased thread-varying value (now fixed)           *)
 (*  - F-01 regression: superstep inside diverged outer context (now fixed)    *)
+(*  - Superstep settlement: C-7 [@divergent] entry, SS-2 body, SS-3 cont     *)
 (*  - Negative baseline: patterns that must remain clean (no false positives) *)
 (******************************************************************************)
 
@@ -171,6 +172,43 @@ let test_f01_superstep_in_diverged_if () =
       "F-01 FAIL: superstep inside diverged if — implicit end-of-superstep \
        barrier not flagged"
 
+(* C-7 / SS-1 (specs/convergence-semantics.md section 2): the [@divergent]
+   flag no longer skips the entry check. *)
+let test_c07_divergent_superstep_in_diverged_if () =
+  let cond = mk ~ty:t_bool (TEBinop (Gt, mk_thread_idx_x (), mk_int ())) in
+  let superstep = mk (TESuperstep ("s", true, mk TEUnit, mk TEUnit)) in
+  let prog = mk (TEIf (cond, superstep, None)) in
+  if not (has_barrier_error (check prog)) then
+    failwith
+      "C-7 FAIL: [@divergent] superstep inside diverged if — implicit barrier \
+       not flagged"
+
+(* SS-2: a barrier in a varying branch of the body is flagged. *)
+let test_ss2_barrier_in_varying_body_branch () =
+  let cond = mk ~ty:t_bool (TEBinop (Gt, mk_thread_idx_x (), mk_int ())) in
+  let body = mk (TEIf (cond, mk_barrier (), None)) in
+  let prog = mk (TESuperstep ("s", false, body, mk TEUnit)) in
+  if not (has_barrier_error (check prog)) then
+    failwith "SS-2 FAIL: barrier under varying if in a superstep body"
+
+(* SS-3: the continuation is checked in the outer mode. *)
+let test_ss3_cont_outer_mode () =
+  let cond = mk ~ty:t_bool (TEBinop (Gt, mk_thread_idx_x (), mk_int ())) in
+  let superstep = mk (TESuperstep ("s", false, mk TEUnit, mk_barrier ())) in
+  let prog = mk (TEIf (cond, superstep, None)) in
+  let n =
+    List.length
+      (List.filter
+         (function
+           | Sarek_error.Barrier_in_diverged_flow _ -> true | _ -> false)
+         (check prog))
+  in
+  if n <> 2 then
+    failwith
+      (Printf.sprintf
+         "SS-3 FAIL: expected entry + continuation barrier errors, got %d"
+         n)
+
 (* ── F-04 regression: varying early-return then barrier ──────────────────── *)
 
 (* T3-S5 hazard, lifted to the typed AST:
@@ -259,6 +297,11 @@ let () =
       ("F-02: let alias while", test_f02_let_alias_while);
       ("F-02: double alias", test_f02_double_alias);
       ("F-01: superstep in diverged if", test_f01_superstep_in_diverged_if);
+      ( "C-7: [@divergent] superstep in diverged if",
+        test_c07_divergent_superstep_in_diverged_if );
+      ( "SS-2: barrier in varying body branch",
+        test_ss2_barrier_in_varying_body_branch );
+      ("SS-3: continuation keeps outer mode", test_ss3_cont_outer_mode);
       ("F-04: varying return then barrier", test_f04_varying_return_then_barrier);
       ( "F-04: constant return then barrier clean",
         test_f04_constant_return_then_barrier_is_clean );

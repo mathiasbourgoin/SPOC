@@ -191,7 +191,8 @@ and expr_desc =
   | ELetShared of string * type_expr * expr option * expr
       (** let%shared name : elem_type [= size] in body *)
   | ESuperstep of string * bool * expr * expr
-      (** let%superstep [~divergent] name = body in cont *)
+      (** let%superstep[@divergent] name = body in cont; the flag records
+          [@divergent], which is inert (specs/convergence-semantics.md SS-4) *)
 
 and for_dir = Upto | Downto
 

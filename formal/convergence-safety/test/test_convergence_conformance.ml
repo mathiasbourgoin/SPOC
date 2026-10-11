@@ -18,6 +18,8 @@
  *   (properties 11–13): superstep_outer_diverged_error (F-01 direct),
  *   superstep_no_entry_error_converged (safe-path complement),
  *   superstep_body_errors_propagate (monotonicity).
+ * Superstep settlement (specs/convergence-semantics.md section 2): property 11
+ *   quantifies over the divergent flag; 11b superstep_flag_irrelevant added.
  ******************************************************************************)
 
 (* ===== Abstract model (mirrors ConvergenceSpec.v) ===== *)
@@ -102,8 +104,7 @@ let rec barrier_free = function
   | EFor (lo, hi, b) -> barrier_free lo && barrier_free hi && barrier_free b
   | ESeq es -> List.for_all barrier_free es
   | ELet (_, v, b) -> barrier_free v && barrier_free b
-  | ESuperstep (divergent, body, cont) ->
-      divergent && barrier_free body && barrier_free cont
+  | ESuperstep _ -> false (* SS-4: never barrier-free *)
   | EApp args -> List.for_all barrier_free args
   | EReturn e -> barrier_free e
 
@@ -136,11 +137,10 @@ let rec check m = function
       check m lo @ check m hi @ check inner b
   | ESeq es -> List.concat_map (check m) es
   | ELet (_, v, b) -> check m v @ check m b
-  | ESuperstep (divergent, body, cont) ->
+  | ESuperstep (_divergent, body, cont) ->
+      (* SS-1/SS-4: entry error in Diverged mode whatever the flag *)
       let entry_errors =
-        match (m, divergent) with
-        | Diverged, false -> [BarrierError]
-        | _, _ -> []
+        match m with Diverged -> [BarrierError] | Converged -> []
       in
       entry_errors @ check m body @ check m cont
   | EApp args -> List.concat_map (check m) args
@@ -236,11 +236,10 @@ let rec check_env m (env : env) = function
       let vv = is_varying_env env v in
       let env' = env_extend env x vv in
       check_env m env v @ check_env m env' b
-  | ESuperstep (divergent, body, cont) ->
+  | ESuperstep (_divergent, body, cont) ->
+      (* SS-1/SS-4: entry error in Diverged mode whatever the flag *)
       let entry_errors =
-        match (m, divergent) with
-        | Diverged, false -> [BarrierError]
-        | _, _ -> []
+        match m with Diverged -> [BarrierError] | Converged -> []
       in
       entry_errors @ check_env m env body @ check_env m env cont
   | EApp args -> List.concat_map (check_env m env) args
@@ -268,11 +267,10 @@ let rec check_warp m = function
       check_warp m lo @ check_warp m hi @ check_warp inner b
   | ESeq es -> List.concat_map (check_warp m) es
   | ELet (_, v, b) -> check_warp m v @ check_warp m b
-  | ESuperstep (divergent, body, cont) ->
+  | ESuperstep (_divergent, body, cont) ->
+      (* SS-1/SS-4: entry error in Diverged mode whatever the flag *)
       let entry_errors =
-        match (m, divergent) with
-        | Diverged, false -> [BarrierError]
-        | _, _ -> []
+        match m with Diverged -> [BarrierError] | Converged -> []
       in
       entry_errors @ check_warp m body @ check_warp m cont
   | EApp args -> List.concat_map (check_warp m) args
@@ -473,19 +471,27 @@ let test_warp_diverged_error =
 
 (* 11. superstep_outer_diverged_error — mirrors Theorem superstep_outer_diverged_error (F-01).
  *
- * Property: check Diverged (ESuperstep false body cont) ≠ [] for all body/cont.
- * The outer-Diverged + non-divergent-flag case always produces a BarrierError at
- * the superstep boundary (the implicit end-of-superstep barrier is unreachable by
- * all threads when the outer context is diverged and the superstep is non-divergent).
+ * Property: check Diverged (ESuperstep dv body cont) ≠ [] for all dv/body/cont.
+ * A superstep entered under Diverged outer mode always produces a BarrierError
+ * at its boundary, whatever the divergent flag (specs/convergence-semantics.md
+ * SS-1; before the settlement dv = true skipped it, C-7).
  * Directly corresponds to Theorem superstep_outer_diverged_error in ConvergenceSpec.v. *)
 let test_superstep_outer_diverged_error =
   Test.make
     ~name:"superstep_outer_diverged_error"
     ~count:2000
-    (Gen.pair gen_expr gen_expr)
-    (fun (body, cont) ->
-      (* F-01: outer Diverged + divergent_flag = false => always an error *)
-      check Diverged (ESuperstep (false, body, cont)) <> [])
+    (Gen.triple Gen.bool gen_expr gen_expr)
+    (fun (dv, body, cont) -> check Diverged (ESuperstep (dv, body, cont)) <> [])
+
+(* 11b. superstep_flag_irrelevant — mirrors superstep_flag_irrelevant_check (SS-4). *)
+let test_superstep_flag_irrelevant =
+  Test.make
+    ~name:"superstep_flag_irrelevant"
+    ~count:2000
+    (Gen.triple gen_mode gen_expr gen_expr)
+    (fun (m, body, cont) ->
+      check m (ESuperstep (true, body, cont))
+      = check m (ESuperstep (false, body, cont)))
 
 (* 12. superstep_no_entry_error_converged — Converged outer mode never triggers entry error.
  *
@@ -588,6 +594,7 @@ let () =
       test_warp_diverged_error;
       test_return_barrier_skip_safe;
       test_superstep_outer_diverged_error;
+      test_superstep_flag_irrelevant;
       test_superstep_no_entry_error_converged;
       test_superstep_body_errors_propagate;
     ]

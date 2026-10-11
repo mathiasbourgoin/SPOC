@@ -8,6 +8,9 @@
 ; Expected errors:
 ; - test_barrier_diverged: "Barrier called in diverged control flow"
 ; - test_superstep_diverged: "Barrier called in diverged control flow"
+;   (a superstep under a thread-varying if; specs/convergence-semantics.md SS-1)
+; - test_superstep_divergent_diverged: "Barrier called in diverged control flow"
+;   (the same with [@divergent], which no longer skips the check: C-7, SS-4)
 ; - test_warp_diverged: "Warp collective 'warp_shuffle' called in diverged control flow"
 ; - test_unbound_function: "Unbound variable"
 ; - test_unlinked_intrinsic: "Unknown kernel function or constant Bits.float_of_bits"
@@ -161,6 +164,17 @@
 (library
  (name neg_test_superstep_diverged)
  (modules test_superstep_diverged)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_superstep_divergent_diverged)
+ (modules test_superstep_divergent_diverged)
  (libraries sarek sarek.stdlib sarek.ppx.lib)
  (preprocess
   (pps sarek_ppx))

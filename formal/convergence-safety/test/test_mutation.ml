@@ -68,7 +68,7 @@ let rec barrier_free = function
   | EFor (lo, hi, b) -> barrier_free lo && barrier_free hi && barrier_free b
   | ESeq es -> List.for_all barrier_free es
   | ELet (_, v, b) -> barrier_free v && barrier_free b
-  | ESuperstep (dv, body, cont) -> dv && barrier_free body && barrier_free cont
+  | ESuperstep _ -> false (* SS-4: never barrier-free *)
   | EApp args -> List.for_all barrier_free args
   | EReturn e -> barrier_free e
 

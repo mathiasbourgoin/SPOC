@@ -1,5 +1,20 @@
 ## 2026-10
 
+### Fixed
+
+- Superstep convergence rule settled (`specs/convergence-semantics.md` §2,
+  global review D-38, D-57, C-7). A `let%superstep` reached under
+  thread-varying control is rejected with or without `[@divergent]`; the
+  attribute is still accepted but no longer has any effect. Before, it skipped
+  the check, so `if thread_idx_x > 16l then let%superstep[@divergent] s = ... in ()`
+  compiled to a barrier inside a divergent branch. A thread-varying `if`
+  inside a superstep body, with no barrier in its branches, stays legal: it
+  reconverges before the implicit barrier. The Rocq model
+  (`formal/convergence-safety`) implements the same rule; `[@divergent]`
+  supersteps are now inside the verified fragment, and the warp checker
+  handles varying early returns like the barrier checker (D-56). The
+  non-blocking `KNOWN-ISSUE` line of `make test_negative` is gone.
+
 ### Added
 
 - Matrix products are rewritten at launch, inside `Execute.run_vectors` (spec

@@ -95,16 +95,6 @@ test_interpreter:
 # Each check builds into its own mktemp -d file (not a fixed /tmp/negN.out
 # path) so concurrent invocations (e.g. two CI jobs, or a local run racing a
 # CI run) never clobber each other's output.
-#
-# NOTE (neg3/superstep_diverged): after fixing the sarek_ppx.lib -> sarek.ppx.lib
-# typo below, this case was found to compile *without* the expected error -
-# a pre-existing Sarek convergence-checker gap where the implicit end-of-superstep
-# barrier is not checked against divergence introduced by the superstep body's
-# own control flow (only pre-existing outer divergence is checked - see
-# Sarek_convergence.ml's TESuperstep case). This is a sarek/ppx bug, out of
-# scope for this task (tests-only mandate), so it is reported as a non-blocking
-# KNOWN-ISSUE rather than silently marked PASS or used to fail the whole
-# target.
 test_negative:
 	@echo "=== Negative tests (expected compile errors) ==="
 	@echo "Testing type mismatch detection..."
@@ -112,7 +102,9 @@ test_negative:
 	@echo "Testing barrier in diverged control flow..."
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_barrier_diverged.cma > "$$out" 2>&1; if grep -q "Barrier called in diverged control flow" "$$out"; then echo "  PASS: barrier diverged"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing superstep in diverged control flow..."
-	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_superstep_diverged.cma > "$$out" 2>&1; if grep -q "Barrier called in diverged control flow" "$$out"; then echo "  PASS: superstep diverged"; elif grep -q "Error" "$$out"; then echo "  FAIL: superstep_diverged failed with an UNEXPECTED error (not the known convergence-checker gap):"; cat "$$out"; rm -f "$$out"; exit 1; else echo "  KNOWN-ISSUE (non-blocking): superstep_diverged compiled WITHOUT the expected error - pre-existing convergence-checker gap, see Makefile comment above test_negative"; fi; rm -f "$$out"
+	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_superstep_diverged.cma > "$$out" 2>&1; if grep -q "Barrier called in diverged control flow" "$$out"; then echo "  PASS: superstep diverged"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
+	@echo "Testing [@divergent] superstep in diverged control flow..."
+	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_superstep_divergent_diverged.cma > "$$out" 2>&1; if grep -q "Barrier called in diverged control flow" "$$out"; then echo "  PASS: [@divergent] superstep diverged"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing unbound function detection..."
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_unbound_function.cma > "$$out" 2>&1; if grep -q "Unbound" "$$out"; then echo "  PASS: unbound function"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing reserved keyword detection..."
@@ -251,7 +243,7 @@ test_negative:
 	@out=$$(mktemp); pat='`type nonrec` is not supported'; site='type nonrec box'; dune build --profile=negative sarek/tests/negative/neg_test_payload_type_nonrec.cma > "$$out" 2>&1; if grep -qF "$$pat" "$$out" && grep -qF "$$site" "$$out"; then echo "  PASS: type nonrec rejected"; else echo "  FAIL: expected [$$pat] AT [$$site]; got:"; cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing intrinsic from a library not linked into the PPX..."
 	@out=$$(mktemp); pat='Unknown kernel function or constant Bits.float_of_bits'; fix='(pps sarek.ppx <library>)'; dune build --profile=negative sarek/tests/negative/neg_test_unlinked_intrinsic.cma > "$$out" 2>&1; if grep -qF "$$pat" "$$out" && grep -qF "$$fix" "$$out"; then echo "  PASS: unlinked intrinsic refused at PPX time"; else echo "  FAIL: expected [$$pat] and [$$fix]; got:"; cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
-	@echo "All negative tests checked (see KNOWN-ISSUE line above for the one non-blocking gap, if any)"
+	@echo "All negative tests checked"
 
 
 # TODO: make following test v2 only

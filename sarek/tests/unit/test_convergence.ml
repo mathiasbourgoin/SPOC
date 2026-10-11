@@ -605,7 +605,9 @@ let test_superstep_non_divergent_safe () =
   Alcotest.(check int) "no errors for uniform superstep" 0 (List.length errors)
 
 let test_superstep_divergent_with_control_flow () =
-  (* Divergent superstep explicitly marked - should allow varying control flow *)
+  (* [@divergent] superstep with varying control flow and no synchronisation
+     point in the branch: accepted, as it is without the attribute (SS-2,
+     SS-4: the attribute is inert). *)
   let tid_x = mk_texpr (TEVar ("thread_idx_x", 0)) typ_int32 in
   let const = mk_texpr (TEInt 16) typ_int32 in
   let cond = mk_texpr (TEBinop (Sarek_ast.Gt, tid_x, const)) typ_bool in
@@ -638,6 +640,71 @@ let test_superstep_non_divergent_with_varying_control () =
      barrier is safe"
     false
     (List.length errors > 0)
+
+(* specs/convergence-semantics.md section 2 (superstep settlement). *)
+
+let varying_cond () =
+  let tid_x = mk_texpr (TEVar ("thread_idx_x", 0)) typ_int32 in
+  let const = mk_texpr (TEInt 16) typ_int32 in
+  mk_texpr (TEBinop (Sarek_ast.Gt, tid_x, const)) typ_bool
+
+let barrier () =
+  mk_texpr
+    (TEIntrinsicFun
+       ( Sarek_env.CorePrimitiveRef "block_barrier",
+         Some Sarek_core_primitives.ConvergencePoint,
+         [] ))
+    typ_unit
+
+let count_barrier_errors errors =
+  List.length
+    (List.filter
+       (function Sarek_error.Barrier_in_diverged_flow _ -> true | _ -> false)
+       errors)
+
+(* SS-1 (G-1, G-2): a superstep under a thread-varying if is rejected, with
+   and without [@divergent]. *)
+let test_superstep_under_varying_if divergent () =
+  let unit_e = mk_texpr TEUnit typ_unit in
+  let step = mk_texpr (TESuperstep ("s", divergent, unit_e, unit_e)) typ_unit in
+  let e = mk_texpr (TEIf (varying_cond (), step, None)) typ_unit in
+  let errors = Sarek_convergence.check_expr Sarek_convergence.init_ctx e in
+  Alcotest.(check int) "entry error (SS-1)" 1 (count_barrier_errors errors)
+
+(* SS-2 (G-4): a barrier under a varying if inside the body is rejected,
+   with either flag. *)
+let test_superstep_body_varying_barrier divergent () =
+  let unit_e = mk_texpr TEUnit typ_unit in
+  let body = mk_texpr (TEIf (varying_cond (), barrier (), None)) typ_unit in
+  let e = mk_texpr (TESuperstep ("s", divergent, body, unit_e)) typ_unit in
+  let errors = Sarek_convergence.check_expr Sarek_convergence.init_ctx e in
+  Alcotest.(check int)
+    "barrier in varying branch of the body (SS-2)"
+    1
+    (count_barrier_errors errors)
+
+(* SS-3: the continuation keeps the outer mode. Under a diverged outer
+   context, a barrier in the continuation is flagged too (before the
+   settlement the continuation was reset to Converged). *)
+let test_superstep_cont_keeps_outer_mode () =
+  let unit_e = mk_texpr TEUnit typ_unit in
+  let step = mk_texpr (TESuperstep ("s", false, unit_e, barrier ())) typ_unit in
+  let ctx =
+    {Sarek_convergence.init_ctx with mode = Sarek_convergence.Diverged}
+  in
+  let errors = Sarek_convergence.check_expr ctx step in
+  Alcotest.(check int)
+    "entry error and continuation barrier (SS-1, SS-3)"
+    2
+    (count_barrier_errors errors)
+
+(* SS-3/SS-5: from a converged start, a barrier in the continuation is fine. *)
+let test_superstep_cont_converged_clean () =
+  let unit_e = mk_texpr TEUnit typ_unit in
+  let body = mk_texpr (TEIf (varying_cond (), unit_e, None)) typ_unit in
+  let step = mk_texpr (TESuperstep ("s", false, body, barrier ())) typ_unit in
+  let errors = Sarek_convergence.check_expr Sarek_convergence.init_ctx step in
+  Alcotest.(check int) "clean" 0 (List.length errors)
 
 (** {1 Test Suite} *)
 
@@ -751,5 +818,29 @@ let () =
             "non-divergent with varying"
             `Quick
             test_superstep_non_divergent_with_varying_control;
+          test_case
+            "SS-1 under varying if"
+            `Quick
+            (test_superstep_under_varying_if false);
+          test_case
+            "SS-1 under varying if, [@divergent]"
+            `Quick
+            (test_superstep_under_varying_if true);
+          test_case
+            "SS-2 barrier in varying body branch"
+            `Quick
+            (test_superstep_body_varying_barrier false);
+          test_case
+            "SS-2 barrier in varying body branch, [@divergent]"
+            `Quick
+            (test_superstep_body_varying_barrier true);
+          test_case
+            "SS-3 continuation keeps diverged outer mode"
+            `Quick
+            test_superstep_cont_keeps_outer_mode;
+          test_case
+            "SS-3 continuation converged clean"
+            `Quick
+            test_superstep_cont_converged_clean;
         ] );
     ]

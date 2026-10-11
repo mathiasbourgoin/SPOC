@@ -24,10 +24,9 @@
 # NOT in scope, deliberately: whether each asserted message is the RIGHT one for
 # its case. That is a semantic claim about a diagnostic and no lexical gate can
 # settle it. The known live weakness in that direction is recorded in
-# kb/sarek/tests/negative.md (a coincidental substring match remains possible),
-# and test_superstep_diverged's documented KNOWN-ISSUE fallback is deliberately
-# non-blocking and is NOT treated as an omission here -- it is asserted, it just
-# tolerates one outcome on purpose.
+# kb/sarek/tests/negative.md (a coincidental substring match remains possible).
+# (test_superstep_diverged's former non-blocking KNOWN-ISSUE fallback is gone:
+# specs/convergence-semantics.md settled the superstep rule, D-38.)
 #
 # Exit 0 = every declared case is asserted and vice versa.
 # Exit 1 = a real mismatch, with the offending case names printed.
