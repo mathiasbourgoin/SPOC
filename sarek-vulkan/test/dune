@@ -81,3 +81,18 @@
  (name test_vulkan_push_constant_budget)
  (modules test_vulkan_push_constant_budget)
  (libraries sarek_vulkan sarek_ir sarek_backend_error alcotest))
+
+; Asynchronous batched launches (specs/vulkan-async-launches.md): fence-wait and
+; submission counts, ordering across batches and streams, and a failure that
+; surfaces at the first wait. Fence waits are bounded at 30 s so a missed
+; synchronisation ends in an error rather than a hang.
+
+(test
+ (name test_vulkan_async_launches)
+ (modules test_vulkan_async_launches)
+ (libraries sarek_vulkan spoc_framework sarek_backend_error alcotest)
+ (action
+  (setenv
+   SPOC_VULKAN_FENCE_TIMEOUT_S
+   30
+   (run %{test}))))

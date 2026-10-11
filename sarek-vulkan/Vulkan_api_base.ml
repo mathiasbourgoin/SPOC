@@ -80,11 +80,20 @@ let check_fence_wait_bound () =
       Vulkan_error.raise_error
         (Vulkan_error.context_error "SPOC_VULKAN_FENCE_TIMEOUT_S" reason)
 
+(** Number of [vkWaitForFences] sequences started and of fence-carrying
+    [vkQueueSubmit]s that succeeded, since the library was loaded.
+    Instrumentation for tests that assert how many host waits a run of launches
+    costs. *)
+let fence_wait_count = Atomic.make 0
+
+let submission_count = Atomic.make 0
+
 (** Wait for [fence] on [device] until it is signalled. Logs a warning naming
     [ctx] every {!fence_warn_interval_ns}. Raises the canonical error of
     {!check} on a device error, and [Synchronization_failed] only when
     {!fence_wait_bound_parsed} sets a bound and it is reached. *)
 let wait_fence (ctx : string) device fence =
+  Atomic.incr fence_wait_count ;
   let bound = Result.value fence_wait_bound_parsed ~default:None in
   let fence_ptr = allocate vk_fence fence in
   let rec loop waited =
@@ -163,6 +172,7 @@ let submit_with_fence (ctx : string) device fence submit =
       (Vulkan_error.context_error ctx "fence is still pending") ;
   reset_fence ctx device fence.handle ;
   check ctx (submit fence.handle) ;
+  Atomic.incr submission_count ;
   fence.pending <- true
 
 (** Wait out a pending submission, then destroy [fence]
