@@ -213,6 +213,24 @@ let p_padded_ld =
       c.((row * (n + p)) + col) <- sum]
 [@@alert "-sarek_matrix"]
 
+(* Padded leading dimensions with a two-atom row index. *)
+let p_padded_ld_2d =
+  [%kernel
+    fun (a : float32 vector)
+        (b : float32 vector)
+        (c : float32 vector)
+        (n : int32)
+        (k : int32)
+        (p : int32) ->
+      let row = thread_idx_y + (block_dim_y * block_idx_y) in
+      let col = global_idx_x in
+      let sum = mut 0.0 in
+      for i = 0 to k - 1l do
+        sum := sum +. (a.((row * (k + p)) + i) *. b.((i * n) + col))
+      done ;
+      c.((row * (n + p)) + col) <- sum]
+[@@alert "-sarek_matrix"]
+
 (* Accumulating into C: the accumulator starts from the output element. *)
 let p_init_from_c =
   [%kernel
@@ -364,6 +382,22 @@ let test_positives () =
     "padded_ld: m is the row"
     "Sarek_stdlib.Gpu.global_idx_y"
     (Format.asprintf "%a" Sarek_ir_pp.pp_expr g.m_index) ;
+  let g =
+    check_roles
+      "padded_ld_2d"
+      p_padded_ld_2d
+      ~a:"a"
+      ~b:"b"
+      ~c:"c"
+      ~layouts:(rm, rm, rm)
+      ~batch:0
+  in
+  Alcotest.(check bool)
+    "padded_ld_2d: both row atoms in m"
+    true
+    (let m = Format.asprintf "%a" Sarek_ir_pp.pp_expr g.m_index in
+     Astring.String.is_infix ~affix:"thread_idx_y" m
+     && Astring.String.is_infix ~affix:"block_idx_y" m) ;
   let g =
     check_roles
       "init_from_c"

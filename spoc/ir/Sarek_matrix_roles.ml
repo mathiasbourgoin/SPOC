@@ -19,28 +19,32 @@ let affine_of env arr idx =
 
 (* A tile is loaded with one base and one leading dimension: one stride must
    be 1 and the rows (or columns) must not overlap. Equal strides ([a.(row + i)],
-   [c.(row + col)]: Toeplitz/Hankel views, correlations, races) overlap; so does
-   a constant leading dimension smaller than a tile, or than a constant inner
-   extent. A symbolic leading dimension is trusted ([ld = k] cannot be compared
-   with the bounds without the launch). *)
+   [c.(row + col)]: Toeplitz/Hankel views, correlations, races) overlap. A
+   symbolic leading dimension is trusted ([ld = k] cannot be compared with the
+   bounds without the launch). *)
 let layout_of arr ~row_stride ~col_stride ~row_extent ~col_extent =
-  let overlaps ld extent =
+  (* A constant leading dimension is accepted only when the contiguous extent
+     is a known constant that it covers, and it is at least a tile: otherwise
+     rows may overlap ([a.(row * 32 + i)] with [i] up to [k - 1]). *)
+  let constant_ld_unproven ld extent =
     match Affine.poly_constant ld with
     | Some c -> (
         c < 16
         ||
         match Option.bind extent Affine.poly_constant with
         | Some e -> c < e
-        | None -> false)
+        | None -> true)
     | None -> false
   in
   if Affine.poly_equal row_stride col_stride then
     Error (Overlapping_operand arr)
   else if Affine.poly_is_one col_stride then
-    if overlaps row_stride col_extent then Error (Overlapping_operand arr)
+    if constant_ld_unproven row_stride col_extent then
+      Error (Constant_leading_dimension arr)
     else Ok Row_major
   else if Affine.poly_is_one row_stride then
-    if overlaps col_stride row_extent then Error (Overlapping_operand arr)
+    if constant_ld_unproven col_stride row_extent then
+      Error (Constant_leading_dimension arr)
     else Ok Col_major
   else Error (Operand_not_unit_stride arr)
 
