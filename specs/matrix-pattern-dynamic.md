@@ -93,3 +93,39 @@ FR-001 `Matrix_specialise` (mode, choose, report, cache); FR-002
 `Execute.run_vectors` / `run_vectors_outcome` / `run_vectors_plain`; FR-003
 `Sarek_matrix_direct`; FR-004 advice text; FR-005 tests; FR-006 host
 overhead and speed measured.
+
+## Results (tartarus, 2026-10-11)
+
+RX 7900 XTX, ROCm 7.2.4, GPU shared. Logs: `spoc-pipeline-logs/matrix-pattern/pr3-*`.
+
+**Correctness.** `test_matrix_dynamic.exe` (50 checks on 9 devices): the
+default `run_vectors` rewrites int32 on gfx1100 and both interpreters,
+bit-identical to `run_vectors_plain`; `Exact` the same; `Off` never; every
+other device declines. `Exact` leaves float16 alone after the opt-in.
+float16 64×64×64 and 256×256×1024 take `Direct` (0.011–0.051 γ_K), 40×24×20 and
+100×37×129 `Staged`; accumulating into C takes `Staged` at any size. One
+rewritten IR for repeated launches; the reporter sees the rewrite. PR 2's
+`test_matrix_rewrite` (260) and `test_matrix_rewrite_float` (60) still pass
+with the decision moved into `Execute`; full `dune runtest` and
+`make test_negative` pass.
+
+**Host overhead** (`bench_launch_window.exe`, decode-like chain of non-matrix
+kernels, 3 runs each, median host µs per enqueued launch, gfx1100): main
+4.6–5.2 (window off) / 4.8–6.2 (on); this branch 4.8–5.6 / 5.3–5.9 —
+within the run-to-run spread.
+
+**Speed** (`bench_matrix_rewrite.exe 3 10 10`, three sessions, range of session
+medians, µs (TFLOP/s)):
+
+| kernel | 256×1024×3072 | 256×3072×3072 | 1000³ |
+|---|---|---|---|
+| f16 naive (scalar) | 2004–2047 (0.79–0.80) | 5142–5264 (0.92–0.94) | 1516–1546 (1.29–1.32) |
+| **f16 rewritten** (direct when aligned) | **83–89 (18.1–19.4)** | **115–122 (39.6–41.9)** | 354–358 (5.6–5.7, staged) |
+| `Sarek_gemm.Coopmat` f16, hand-written | 95–99 (16.3–17.0) | 137–139 (34.8–35.2) | — |
+| int32 naive → rewritten | 2223–2275 → 1040–1043 | 5293–5543 → 2682–2687 | 1666–1704 → 1117–1118 |
+| f32 naive → rewritten f16 / bf16 / bf16x3 | 2199–2224 → 642 / 991 / 2622 | 5235–5408 → 663 / 1020 / 5337–5357 | 1605–1622 → 432 / 672–680 / 2697–2704 |
+
+The direct variant matches or beats the hand-written SCoopmat GEMM. The
+bf16x3 split is slower than in PR 2's measurements (NaN-preserving rounding
+added in review) and, staged, no faster than the scalar kernel at these sizes:
+it buys near-float32 accuracy, not speed.
