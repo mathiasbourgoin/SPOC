@@ -5,7 +5,7 @@ title: Matrix Units
 
 # Matrix Units
 
-This page shows how a matrix product (GEMM) in a Sarek program ends up on a GPU's matrix units, which results that can change, and how to inspect, enable or disable it. Matrix units compute small matrix products in hardware (AMD WMMA on RDNA3, NVIDIA tensor cores); in Sarek's IR they are cooperative-matrix statements (`SCoopmat`) of shape 16x16x16. The kernel language has no syntax for them, so a program reaches them in one of three ways:
+This page shows how a matrix product (GEMM) in a Sarek program ends up on a GPU's matrix units, which results that can change, and how to inspect, enable or disable it. Matrix units compute small matrix products in hardware (AMD WMMA on RDNA3, NVIDIA tensor cores); in Sarek's IR they are cooperative-matrix statements (`SCoopmat`) of shape 16x16x16 (8x8x8 on Metal). The kernel language has no syntax for them, so a program reaches them in one of three ways:
 
 | Path | You write | Float results change only after |
 |---|---|---|
@@ -23,11 +23,12 @@ The `int32` rewrite is bit-identical to the original kernel and needs no opt-in,
 | HIP, any other device (gfx10, gfx12, CDNA, the gfx1036 iGPU) | refused with a message naming the rule |
 | CUDA/C (the hidden NVRTC backend), sm_72+ with 32-wide warps | the `int32` rewrite is applied on an explicit request only (`Sarek_matrix.run`), never automatically (8-bit integers, `int32` accumulator, `nvcuda::wmma`). Evidence is compiler output: the generated code compiles with NVRTC for sm_80 and reaches the `u8` tensor-core instruction, but it has never been executed. ZLUDA lacks `wmma.*` and unsigned 8-bit `mma` and is declined. The float rewrites are not offered |
 | Vulkan | executes the `int32` rewrite, when the device advertises the 8-bit integer configuration (RADV on the RX 7900 XTX, 64-wide subgroups). The float rewrites are not offered: GLSL lowers integer fragments only |
-| Metal, OpenCL, WGSL, CUDA/PTX | refuse the statements |
+| Metal (Apple GPU with `simdgroup_matrix`) | executes `float16` x `float16` + `float32` -> `float32`, shape 8x8x8 only, bit-identical to the interpreter; integer and `float16`-accumulate configurations are refused with a message naming the reason; the automatic rewrite does not use it (it builds 16x16x16 statements) |
+| OpenCL, WGSL, CUDA/PTX | refuse the statements (OpenCL: no device this project can reach advertises a matrix extension) |
 | Native | not a rewrite backend: the automatic rewrite declines it |
 | Interpreter | executes, as the reference implementation |
 
-Sources: `Hip_coopmat.ml:43-54` (configurations), `Hip_coopmat.ml:57-58` (gfx11 and wave32 rule), `Cuda_coopmat.ml` (CUDA/C probe; CUDA/PTX keeps `coopmat = None` in `Cuda_plugin_base.ml`), `Sarek_ir_metal.ml:784`, `Sarek_ir_opencl.ml:616`, `Sarek_ir_wgsl.ml:1207`, `Sarek_ir_ptx_stmt.ml:254` (refusals), `Sarek_ir_glsl.ml:1395` (Vulkan lowering), `Sarek_ir_cuda.ml:574` (CUDA/C), `Matrix_specialise.ml:356-363` (Native). The CUDA lowering has been compiled but never run on hardware; the HIP lowering is validated on an RX 7900 XTX (gfx1100) in [`specs/coopmat-hip-wmma.md`](https://github.com/mathiasbourgoin/Sarek/blob/main/specs/coopmat-hip-wmma.md). Per-backend defaults of the HIP plugin are in the [sarek-hip README](https://github.com/mathiasbourgoin/Sarek/blob/main/sarek-hip/README.md).
+Sources: `Hip_coopmat.ml:43-54` (configurations), `Hip_coopmat.ml:57-58` (gfx11 and wave32 rule), `Cuda_coopmat.ml` (CUDA/C probe; CUDA/PTX keeps `coopmat = None` in `Cuda_plugin_base.ml`), `Sarek_ir_metal_coopmat.ml` (Metal lowering and refusals), `Metal_coopmat.ml` (probe), `Sarek_ir_opencl.ml:616`, `Sarek_ir_wgsl.ml:1207`, `Sarek_ir_ptx_stmt.ml:254` (refusals), `Sarek_ir_glsl.ml:1395` (Vulkan lowering), `Sarek_ir_cuda.ml:574` (CUDA/C), `Matrix_specialise.ml:356-363` (Native). The CUDA lowering has been compiled but never run on hardware; the Metal lowering is specified in [`specs/coopmat-metal-simdgroup.md`](https://github.com/mathiasbourgoin/Sarek/blob/main/specs/coopmat-metal-simdgroup.md); the HIP lowering is validated on an RX 7900 XTX (gfx1100) in [`specs/coopmat-hip-wmma.md`](https://github.com/mathiasbourgoin/Sarek/blob/main/specs/coopmat-hip-wmma.md). Per-backend defaults of the HIP plugin are in the [sarek-hip README](https://github.com/mathiasbourgoin/Sarek/blob/main/sarek-hip/README.md).
 
 ## Compile-time advice
 

@@ -246,6 +246,24 @@
   `sarek/framework/test/test_framework_cache.ml`; bench:
   `sarek-opencl/bench/run_ab.sh`. Docs: `gh-pages/docs/environment.md`.
 
+- `SCoopmat` and scalar `float16` on Metal (package H, H3). Metal lowers
+  cooperative matrices to `simdgroup_matrix` (8x8x8, `f16 x f16 + f32 -> f32`,
+  both memory layouts, one SIMD-group of 32 per fragment); the Metal plugin now
+  probes the configuration by compiling it on the device and reads the SIMD
+  width from the pipeline (`coopmat = Some ...`, `warp_size` from the device).
+  Scalar `f16` is lowered to `half` (the narrowing is measured strict on the
+  M4). Everything else is refused with its reason at code generation: integer
+  components (MSL has no integer `simdgroup_matrix`), f16 accumulation (no
+  closed form), bf16, f32 operands, other shapes, a block that is not whole
+  32-wide SIMD-groups. Like HIP, the float configuration needs
+  `Sarek_coopmat.accept_relaxed_accumulation`; on Metal it is bit-identical to
+  the interpreter (accumulator = C, products added in index order in binary32).
+  `Sarek_gemm.Coopmat` takes `?frag` (16 by default, 8 on Metal). OpenCL still
+  has no lowering and its refusal now says why: no reachable device advertises a
+  matrix extension. Spec `specs/coopmat-metal-simdgroup.md`; tests
+  `test_metal_coopmat_golden`, `test_metal_coopmat_probe`,
+  `test_coopmat_metal_e2e` (Apple GPU), bench `bench_metal_coopmat_gemm`.
+
 - `Spoc_core.Advanced.Pinned` is real (global review D-69). It was a placeholder
   whose `create` returned an ordinary pageable vector and whose `is_available`
   was hard-coded `false`. It is now an explicit, opt-in owner handle over

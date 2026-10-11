@@ -11,7 +11,9 @@
 - `sarek-metal/Metal_plugin_base.ml`: framework backend implementation.
 - `sarek-metal/Metal_plugin.ml`: registration, intrinsic registry, codegen, and external source execution.
 - `sarek-metal/Sarek_ir_metal.ml`: Sarek IR to Metal Shading Language generator.
-- `sarek-metal/test/`: `test_metal_error.ml`, `test_sarek_ir_metal.ml`, and test `dune`.
+- `sarek-metal/Metal_coopmat.ml`: the cooperative-matrix capability rule and the probe kernel (specs/coopmat-metal-simdgroup.md); `Metal_plugin_base.capabilities` compiles the probe on the device and reads the SIMD width from the pipeline.
+- `sarek/codegen/Sarek_ir_metal_coopmat.ml`: `SCoopmat` to `simdgroup_matrix` (8x8x8, f16 x f16 + f32 -> f32) and the refusals with reasons. Scalar `float16` is `half` in `Sarek_ir_metal.metal_type_of_elttype`.
+- `sarek-metal/test/`: `test_metal_error.ml`, `test_sarek_ir_metal.ml`, `test_metal_coopmat_probe.ml`, `bench_metal_coopmat_gemm.ml`, and test `dune`.
 
 ## Per-File Purpose
 

@@ -1453,8 +1453,10 @@ binary16 inputs, deviation from the discipline (`S_strict`):
 | **FUSEDCTL — positive control** | **2912 / 63488** | **620 / 63488** |
 
 **Metal is in the strict class.** No barrier is needed, none is emitted, and the
-refusal of f16 in `Sarek_ir_metal` is currently over-broad in the same way §11.3
-found pocl's and IGC's to be.
+refusal of f16 in `Sarek_ir_metal` was over-broad in the same way §11.3
+found pocl's and IGC's to be; it is lifted (package H3): scalar f16 lowers to
+`half` with a plain narrowing and no barrier, and the f16 x f16 -> f32
+`simdgroup_matrix` configuration is lowered (specs/coopmat-metal-simdgroup.md).
 
 **Why the zeros are readable.** §11.5 is this document's own record of a null
 that was not a result, so the control is the point. MSL has no `double`, so the

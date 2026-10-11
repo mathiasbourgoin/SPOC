@@ -21,9 +21,10 @@
     a configuration into the two acceptance regimes of the design document's
     §1.6, but it does not admit anything: the device verdict and the accuracy
     policy ({!Sarek_coopmat.verdict}, {!Sarek_coopmat.policy_verdict}) do. The
-    emitters are GLSL (integer configurations) and CUDA/HIP
-    (specs/coopmat-hip-wmma.md); nothing in the DSL produces a fragment, so a
-    cooperative-matrix kernel is built as IR.
+    emitters are GLSL (integer configurations), CUDA/HIP
+    (specs/coopmat-hip-wmma.md) and Metal (specs/coopmat-metal-simdgroup.md);
+    nothing in the DSL produces a fragment, so a cooperative-matrix kernel is
+    built as IR.
 
     {1 Why the type admits integers}
 
