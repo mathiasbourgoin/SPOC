@@ -408,9 +408,9 @@ let test_device_synchronize_releases dev =
   let pinned = Transfer.alloc_pinned dev Bigarray.int32 n in
   let x = Transfer.create_device_only dev Vector.int32 n in
   let s = Transfer.create_stream dev in
-  let retained = ref false in
+  let collected = ref false in
   Transfer.copy_to_device ~stream:s pinned ~dst:x ~dst_offset:0 ;
-  retain_unrooted s retained ;
+  retain_unrooted s collected ;
   check
     "free_pinned refused before Device.synchronize"
     (refuses_invalid (fun () -> Transfer.free_pinned pinned)) ;
@@ -426,7 +426,36 @@ let test_device_synchronize_releases dev =
     (match Transfer.free_all_buffers x with
     | () -> true
     | exception Invalid_argument _ -> false) ;
-  check "Device.synchronize leaves nothing rooted by the stream" !retained ;
+  check "Device.synchronize leaves nothing rooted by the stream" !collected ;
+  Transfer.destroy_stream s
+
+(* Run once, by the next [Device.synchronize], after the backend's sync and
+   before the call returns: stands for another domain enqueueing in that
+   window. *)
+let after_next_sync : (Device.t -> unit) option ref = ref None
+
+let () =
+  Device.on_synchronized (fun d ->
+      match !after_next_sync with
+      | Some f ->
+          after_next_sync := None ;
+          f d
+      | None -> ())
+
+(* Work enqueued once the device sync has started is not covered by it: the
+   ledger must keep it until its own stream completes. *)
+let test_device_synchronize_keeps_later_work dev =
+  let s = Transfer.create_stream dev in
+  let collected = ref false in
+  after_next_sync := Some (fun _ -> retain_unrooted s collected) ;
+  Device.synchronize dev ;
+  Gc.full_major () ;
+  check
+    "work enqueued during Device.synchronize stays rooted after it"
+    (not !collected) ;
+  Transfer.synchronize_stream s ;
+  Gc.full_major () ;
+  check "and is released by its own stream's sync" !collected ;
   Transfer.destroy_stream s
 
 (* ------------------------------------- byte-level read-back (bytes-d2h) *)
@@ -942,6 +971,7 @@ let run_on (dev : Device.t) =
   test_streams_pinned dev ;
   test_keep_alive dev ;
   test_device_synchronize_releases dev ;
+  test_device_synchronize_keeps_later_work dev ;
   test_bytes_to_host dev ;
   test_bytes_to_host_stream dev ;
   test_destroyed dev ;
