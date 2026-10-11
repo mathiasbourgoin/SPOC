@@ -18,7 +18,7 @@
   product runs on matrix units when the device has them (HIP gfx11; the
   interpreter only on explicit request, so that it stays the oracle): int32
   by default (bit-identical), float only after
-  `accept_relaxed_accumulation` / `accept_operand_rounding`. `SAREK_MATRIX_REWRITE`
+  `accept_automatic_float_rewrite` and the accuracy opt-ins (see Changed). `SAREK_MATRIX_REWRITE`
   (`off`, `exact`, `auto`, default `auto`) or `Matrix_specialise.set_mode`
   switches it; `Execute.run_vectors_outcome` returns the decision,
   `Execute.run_vectors_plain` launches the kernel as given,
@@ -273,6 +273,22 @@
   `Sarek_core_primitives` are unchanged and the convergence checker is still
   unit-tested on them.
   `test_warp_diverged` now gets the refusal rather than the convergence error.
+- The automatic float matrix rewrite inside `Execute.run_vectors` now has its
+  own explicit opt-in, `Sarek_coopmat.accept_automatic_float_rewrite ~reason`
+  (+ `automatic_float_rewrite_reason`; no env var, one-way, first reason kept).
+  `accept_relaxed_accumulation` / `accept_operand_rounding` keep the meaning
+  they had before the automatic rewrite: they admit matrix-unit configurations
+  for code that asks for them (`Sarek_gemm.Coopmat`, `Sarek_matrix.run`), and
+  no longer enable the automatic rewrite of a program's own float kernels.
+  Without the new opt-in such a launch runs the original kernel and the
+  `Original` reason (and `SAREK_MATRIX_REPORT=1`) names the missing call.
+  int32 is unchanged (rewritten by default); `Sarek_matrix.run` does not need
+  the new opt-in. Migration: programs that called `accept_relaxed_accumulation`
+  to get the automatic float rewrite must also call
+  `accept_automatic_float_rewrite ~reason` (this changes which kernel runs, not
+  an API signature). `SAREK_MATRIX_REWRITE` is parsed strictly: `off`/`0`/
+  `false`/`no` (any case) switch the rewrite off, which silently meant `auto`
+  before; an unrecognised value warns on stderr and gives `auto`.
 
 - The stream keep-alive and kernel-argument retention no longer use `Obj`.
   `Transfer.retain_on_stream` takes `~keep:(Transfer.Keep v)` (the new

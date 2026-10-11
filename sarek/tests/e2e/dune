@@ -1982,7 +1982,8 @@
   test_matrix_rewrite
   test_matrix_rewrite_float
   test_matrix_int64_index
-  test_matrix_dynamic)
+  test_matrix_dynamic
+  test_matrix_optin)
  (modules
   test_int32_bitcasts
   test_lsr_unroll
@@ -1992,6 +1993,7 @@
   test_matrix_rewrite_float
   test_matrix_int64_index
   test_matrix_dynamic
+  test_matrix_optin
   matrix_rewrite_support
   coopmat_hip_support
   backend_hip)
@@ -2190,3 +2192,14 @@
  (alias runtest)
  (action
   (run %{dep:test_opencl_zero_copy_vector.exe})))
+
+; Opt-ins of the automatic float rewrite (specs/matrix-pattern-dynamic.md): one
+; process per combination, the opt-ins being one-way. SKIP without gfx11 HIP.
+
+(rule
+ (alias runtest)
+ (action
+  (progn
+   (run %{dep:test_matrix_optin.exe} relaxed-only)
+   (run %{dep:test_matrix_optin.exe} new-only)
+   (run %{dep:test_matrix_optin.exe} both))))

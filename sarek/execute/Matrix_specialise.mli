@@ -26,14 +26,38 @@ open Sarek_ir_types
 (** {1 Mode} *)
 
 (** [Off]: never rewrite. [Exact]: only rewrites that keep results bit-identical
-    (int32). [Auto] (default): [Exact] plus the float rewrites the program opted
-    into ({!Sarek_coopmat.accept_relaxed_accumulation},
+    (int32). [Auto] (default): [Exact] plus, for a program's own float kernels,
+    the float rewrites the program opted into: the explicit
+    {!Sarek_coopmat.accept_automatic_float_rewrite} AND the accuracy opt-ins the
+    configuration requires ({!Sarek_coopmat.accept_relaxed_accumulation},
     {!Sarek_coopmat.accept_operand_rounding}); a float rewrite never happens
-    without them. Initialised from [SAREK_MATRIX_REWRITE] ([off], [exact],
-    anything else: [auto]). *)
+    without all of them. The accuracy opt-ins alone admit matrix units only for
+    code that asks for them ([Sarek_gemm.Coopmat], {!choose} with
+    [~explicit:true]). Initialised from [SAREK_MATRIX_REWRITE], parsed by
+    {!parse_mode}: an unrecognised value warns on stderr and gives [Auto]. *)
 type mode = Off | Exact | Auto
 
 val mode_name : mode -> string
+
+(** [parse_mode value] reads the value of [SAREK_MATRIX_REWRITE] (pure).
+    Case-insensitive: [off], [0], [false], [no] give [Off]; [exact] gives
+    [Exact]; [auto], [on], [1], [true], [yes] give [Auto]; unset or empty gives
+    [Auto]. Any other value gives [Auto] and a warning text (naming the
+    variable, the value and the accepted values) that the caller prints. *)
+val parse_mode : string option -> mode * string option
+
+(** [lowering_for ~mode ~explicit case precision]: the lowering the policy
+    allows for an element case, or why none. int32 is always lowered; float
+    cases need mode [Auto], the accepted operand rounding for [precision] (f32),
+    and, unless [explicit], {!Sarek_coopmat.accept_automatic_float_rewrite}. The
+    accuracy opt-in of the configuration ([accept_relaxed_accumulation]) is
+    checked afterwards, with the device, by {!choose}. *)
+val lowering_for :
+  mode:mode ->
+  explicit:bool ->
+  Sarek_matrix_advice.element_case ->
+  Sarek_coopmat.operand_precision option ->
+  (Sarek_matrix_rewrite.lowering, string) result
 
 val set_mode : mode -> unit
 
@@ -72,10 +96,12 @@ val outcome_text : outcome -> string
     (the bf16x3 split, more accurate but not faster, only when asked for).
     [explicit] (default [false]): the caller asked for the rewrite
     ({!Sarek_matrix.run}); only then is the interpreter rewritten — by default
-    it stays the independent oracle. [stream]: the launch is on a stream (the
-    interpreter path has none). Devices other than HIP and the interpreter are
-    declined before any analysis; an exception in the analysis yields
-    [Original].
+    it stays the independent oracle — and the float rewrites then need the
+    accuracy opt-ins only, not {!Sarek_coopmat.accept_automatic_float_rewrite}.
+    A float kernel declined for lack of that opt-in yields an [Original] whose
+    reason names it. [stream]: the launch is on a stream (the interpreter path
+    has none). Devices other than HIP and the interpreter are declined before
+    any analysis; an exception in the analysis yields [Original].
 
     The cache is keyed by the IR's physical identity, as [Execute]'s launch
     memo: a kernel rebuilt for every launch is analysed every time. *)
