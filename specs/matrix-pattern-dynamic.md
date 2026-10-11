@@ -127,7 +127,8 @@ relaxed only leaves the automatic f16 launch original (reason names
 `accept_automatic_float_rewrite`) while `Sarek_matrix.run` still rewrites; the
 new opt-in only leaves both original; both rewrite.
 `sarek/execute/test/test_matrix_specialise_policy.ml` (no device): the
-`SAREK_MATRIX_REWRITE` parser and `lowering_for`. PR 2's tests use `run_vectors_plain` for the original.
+`SAREK_MATRIX_REWRITE` parser, `lowering_for`, and `choose` on a fake HIP device
+(the `~explicit` wiring). PR 2's tests use `run_vectors_plain` for the original.
 
 ## Requirements
 

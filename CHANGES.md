@@ -51,8 +51,9 @@
   product runs on matrix units when the device has them (HIP gfx11; the
   interpreter only on explicit request, so that it stays the oracle): int32
   by default (bit-identical), float only after
-  `accept_automatic_float_rewrite` and the accuracy opt-ins (see Changed). `SAREK_MATRIX_REWRITE`
-  (`off`, `exact`, `auto`, default `auto`) or `Matrix_specialise.set_mode`
+  `accept_automatic_float_rewrite` and the accuracy opt-ins (see Changed).
+  `SAREK_MATRIX_REWRITE` (`off`, `exact`, `auto`; accepted spellings in Changed)
+  or `Matrix_specialise.set_mode`
   switches it; `Execute.run_vectors_outcome` returns the decision,
   `Execute.run_vectors_plain` launches the kernel as given,
   `Matrix_specialise.set_reporter` / `SAREK_MATRIX_REPORT=1` report it. The
