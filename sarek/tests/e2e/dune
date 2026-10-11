@@ -2349,3 +2349,24 @@
  (alias runtest)
  (action
   (run %{dep:test_epilogue_exact.exe})))
+; H6: the launch window keeps a fused group within Vulkan's 128-byte
+; push-constant block (specs/launch-window.md). Device-filtered to Vulkan;
+; skips (prints [SKIP], exits 0) if none is present. Every fence wait is bounded
+; at 60 s so a hang ends in an error. Requires sarek_vulkan.
+
+(executable
+ (name test_vulkan_window_push_budget)
+ (modules test_vulkan_window_push_budget)
+ (optional)
+ (libraries sarek sarek.stdlib sarek_vulkan sarek.execute spoc_core)
+ (preprocess
+  (pps sarek_ppx)))
+
+(rule
+ (alias runtest)
+ (enabled_if %{lib-available:sarek_vulkan})
+ (action
+  (setenv
+   SPOC_VULKAN_FENCE_TIMEOUT_S
+   60
+   (run %{dep:test_vulkan_window_push_budget.exe}))))
