@@ -57,7 +57,8 @@ let constants =
   ]
 
 let int_leaf rng =
-  let q = EArrayRead ("q", idx) in
+  (* Three independent int32 inputs: a leaf reads one of q.(0..2). *)
+  let q = EArrayRead ("q", i32 (Random.State.int rng 3)) in
   match Random.State.int rng 4 with
   | 0 ->
       EBinop
@@ -88,7 +89,7 @@ let rec gen rng depth =
 
 (* ---- evaluation ---- *)
 
-type env = {h : float; g : float; q : int32}
+type env = {h : float; g : float; q : int32 array}
 
 let round32 x = Int32.float_of_bits (Int32.bits_of_float x)
 
@@ -96,7 +97,7 @@ let round16 x = Sarek_interp.Sarek_float16.to_float16 (round32 x)
 
 let int_eval env e =
   let rec go = function
-    | EArrayRead ("q", _) -> env.q
+    | EArrayRead ("q", EConst (CInt32 i)) -> env.q.(Int32.to_int i)
     | EConst (CInt32 n) -> n
     | EBinop (BitAnd, a, b) -> Int32.logand (go a) (go b)
     | EBinop (Shl, a, b) -> Int32.shift_left (go a) (Int32.to_int (go b))
@@ -152,8 +153,18 @@ let rec f16_sample rng =
   else if e = 0 then sign *. float_of_int m *. ldexp 1.0 (-24)
   else sign *. float_of_int (1024 + m) *. ldexp 1.0 (e - 25)
 
+(* Small values half the time, so that masked leaves often coincide and
+   differences are zero or negative. *)
+let int_sample rng =
+  if Random.State.bool rng then Int32.of_int (Random.State.int rng 4)
+  else Random.State.bits32 rng
+
 let env_sample rng =
-  {h = f16_sample rng; g = f16_sample rng; q = Random.State.bits32 rng}
+  {
+    h = f16_sample rng;
+    g = f16_sample rng;
+    q = Array.init 3 (fun _ -> int_sample rng);
+  }
 
 (* ---- the property ---- *)
 

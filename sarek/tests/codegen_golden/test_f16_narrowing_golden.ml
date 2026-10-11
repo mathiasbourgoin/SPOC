@@ -181,6 +181,47 @@ let test_let_bound_signed () =
 
 let test_neg_sum () = kept "f16(-(h + g))" (EUnop (Neg, h +: g))
 
+(* A difference of non-negative values can be negative: (i - j) * k is -0
+   when i < j and k = 0. Found by review on hip:0 (16384/65536 +0 vs -0 with a
+   bare narrowing). *)
+let test_difference_product () =
+  signed_product
+    "f16((float i - float j) * float k)"
+    ((byte qv -: byte (qv >>: i32 8)) *: byte (qv >>: i32 16))
+
+let test_zero_minus_product () =
+  signed_product
+    "f16((0 - float k) * float m)"
+    ((f32c 0.0 -: byte qv) *: byte (qv >>: i32 8))
+
+let bits_path = ["Sarek_stdlib"; "Int32"]
+
+let of_bits e = EIntrinsic (bits_path, "float_of_bits", [e])
+
+let to_bits e = EIntrinsic (bits_path, "bits_of_float", [e])
+
+(* float_of_bits (bits_of_float p) is p to LLVM, which then fuses the inexact
+   product into the narrowing (review: 7/65536 differ on hip:0). *)
+let test_bits_round_trip () =
+  kept
+    "f16(float_of_bits (bits_of_float (x * x)))"
+    (of_bits (to_bits (read "x" *: read "x")))
+
+(* A read of an int array the kernel writes can be forwarded from the store. *)
+let test_bits_of_written_array () =
+  expect_barriers
+    "q.(i) <- bits(x * x); f16(float_of_bits q.(i))"
+    (kernel
+       (SSeq
+          [
+            SAssign (LArrayElem ("q", EVar tid), to_bits (read "x" *: read "x"));
+            store (of_bits qv);
+          ]))
+    1
+
+let test_bits_of_read_only () =
+  elided "f16(float_of_bits q.(i)) (read-only)" (of_bits qv)
+
 (* ---- kept ---- *)
 
 let test_inexact_const () = kept "f16(h * 1.1)" (h *: f32c 1.1)
@@ -261,6 +302,7 @@ let () =
           case "widen alone" test_widen_alone;
           case "read-only f32 buffer" test_f32_param_alone;
           case "f32 kernel argument" test_scalar_param;
+          case "float_of_bits of a read-only array" test_bits_of_read_only;
           case "byte product" test_byte_product;
           case "let-bound product" test_let_bound;
           case "integer sum" test_integer_sum;
@@ -277,6 +319,8 @@ let () =
           case "q8 (float intrinsic)" test_q8;
           case "q8 (cast)" test_q8_cast;
           case "q6 triple product" test_q6;
+          case "difference of bytes times byte" test_difference_product;
+          case "(0 - k) * m" test_zero_minus_product;
         ] );
       ( "kept (zero sign)",
         [
@@ -286,6 +330,8 @@ let () =
       ( "kept",
         [
           case "inexact constant" test_inexact_const;
+          case "bitcast round trip" test_bits_round_trip;
+          case "bitcast of a written array" test_bits_of_written_array;
           case "let-bound inexact product" test_let_bound_inexact;
           case "q4 difference" test_q4_difference;
           case "f32 scale" test_f32_scale;
