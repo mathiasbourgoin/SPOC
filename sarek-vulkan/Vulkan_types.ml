@@ -325,6 +325,8 @@ let vk_queue_family_ignored = 0xFFFFFFFF
 
 let vk_structure_type_buffer_memory_barrier = 44
 
+let vk_structure_type_memory_barrier = 46
+
 (** {1 Pipeline Bind Points} *)
 
 let vk_pipeline_bind_point_compute = 1
@@ -851,6 +853,22 @@ let buf_barrier_offset = field vk_buffer_memory_barrier "offset" vk_device_size
 let buf_barrier_size = field vk_buffer_memory_barrier "size" vk_device_size
 
 let () = seal vk_buffer_memory_barrier
+
+(** VkMemoryBarrier: a global (all-buffers) memory dependency. *)
+type vk_memory_barrier
+
+let vk_memory_barrier : vk_memory_barrier structure typ =
+  structure "VkMemoryBarrier"
+
+let mem_barrier_sType = field vk_memory_barrier "sType" uint32_t
+
+let mem_barrier_pNext = field vk_memory_barrier "pNext" (ptr void)
+
+let mem_barrier_srcAccessMask = field vk_memory_barrier "srcAccessMask" vk_flags
+
+let mem_barrier_dstAccessMask = field vk_memory_barrier "dstAccessMask" vk_flags
+
+let () = seal vk_memory_barrier
 
 (** VkPipelineLayoutCreateInfo *)
 type vk_pipeline_layout_create_info

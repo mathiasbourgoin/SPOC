@@ -17,8 +17,6 @@ type t = {
   pipeline : vk_pipeline;
   pipeline_layout : vk_pipeline_layout;
   descriptor_set_layout : vk_descriptor_set_layout;
-  descriptor_pool : vk_descriptor_pool;
-  descriptor_set : vk_descriptor_set;
   name : string;
   num_bindings : int;
   device : Device.t;
@@ -121,9 +119,10 @@ let validate_buffer_indices ~expected_count
 let cache : (string, t) Spoc_framework.Guarded_cache.t =
   Spoc_framework.Guarded_cache.create
     ~destroy:(fun k ->
+      (* Pending batches may still dispatch this pipeline. *)
+      !Device.drain_pending k.device ;
       vkDestroyPipeline k.device.Device.device k.pipeline null ;
       vkDestroyPipelineLayout k.device.Device.device k.pipeline_layout null ;
-      vkDestroyDescriptorPool k.device.Device.device k.descriptor_pool null ;
       vkDestroyDescriptorSetLayout
         k.device.Device.device
         k.descriptor_set_layout
@@ -379,56 +378,11 @@ let compile device ~name ~source =
   ignore (keep entry_name) ;
   ignore (keep stage_info) ;
 
-  (* Create descriptor pool *)
-  let pool_size = make vk_descriptor_pool_size in
-  setf pool_size pool_size_type (u32 vk_descriptor_type_storage_buffer) ;
-  setf
-    pool_size
-    pool_size_descriptorCount
-    (Unsigned.UInt32.of_int (num_bindings * 10)) ;
-
-  let pool_info = make vk_descriptor_pool_create_info in
-  setf
-    pool_info
-    desc_pool_sType
-    (u32 vk_structure_type_descriptor_pool_create_info) ;
-  setf pool_info desc_pool_pNext null ;
-  setf pool_info desc_pool_flags (Unsigned.UInt32.of_int 0) ;
-  setf pool_info desc_pool_maxSets (Unsigned.UInt32.of_int 10) ;
-  setf pool_info desc_pool_poolSizeCount (Unsigned.UInt32.of_int 1) ;
-  setf pool_info desc_pool_pPoolSizes (addr pool_size) ;
-
-  let pool = allocate vk_descriptor_pool vk_null_handle in
-  check
-    "vkCreateDescriptorPool"
-    (vkCreateDescriptorPool device.Device.device (addr pool_info) null pool) ;
-  ignore (keep pool_size) ;
-
-  (* Allocate persistent descriptor set *)
-  let ds_ai = make vk_descriptor_set_allocate_info in
-  setf
-    ds_ai
-    desc_set_alloc_sType
-    (u32 vk_structure_type_descriptor_set_allocate_info) ;
-  setf ds_ai desc_set_alloc_pNext null ;
-  setf ds_ai desc_set_alloc_descriptorPool !@pool ;
-  setf ds_ai desc_set_alloc_descriptorSetCount (u32 1) ;
-  (* Keep this allocation alive - it's passed by pointer to Vulkan *)
-  let dsl_ptr = allocate vk_descriptor_set_layout !@dsl in
-  setf ds_ai desc_set_alloc_pSetLayouts dsl_ptr ;
-
-  let desc_set = allocate vk_descriptor_set vk_null_handle in
-  check
-    "vkAllocateDescriptorSets"
-    (vkAllocateDescriptorSets device.Device.device (addr ds_ai) desc_set) ;
-  ignore (keep dsl_ptr) ;
   {
     shader_module;
     pipeline = !@pipeline;
     pipeline_layout = !@pipeline_layout;
     descriptor_set_layout = !@dsl;
-    descriptor_pool = !@pool;
-    descriptor_set = !@desc_set;
     name;
     num_bindings;
     device;
@@ -571,10 +525,9 @@ let build_push_constants args : bytes option =
   if vector_lengths = [] && scalars = [] then None
   else Some (write_block vector_lengths scalars)
 
-(** Write [args]' buffers into the kernel's persistent descriptor set. The
-    caller has waited for the stream fence: the set is not in use by pending
-    work. *)
-let update_descriptor_set (kernel : t) args =
+(** Write [args]' buffers into [set], a descriptor set of the kernel's layout
+    that no pending command buffer uses. *)
+let update_descriptor_set (kernel : t) set args =
   let u64 = Unsigned.UInt64.of_int in
   let bindings = resolve_bindings args in
   let num_bindings = List.length bindings in
@@ -589,7 +542,7 @@ let update_descriptor_set (kernel : t) args =
       let write = CArray.get writes i in
       setf write write_desc_sType (u32 vk_structure_type_write_descriptor_set) ;
       setf write write_desc_pNext null ;
-      setf write write_desc_dstSet kernel.descriptor_set ;
+      setf write write_desc_dstSet set ;
       setf write write_desc_dstBinding (u32 binding_idx) ;
       setf write write_desc_dstArrayElement (u32 0) ;
       setf write write_desc_descriptorCount (u32 1) ;
@@ -626,24 +579,12 @@ let push_constants cmd_buf (kernel : t) pc =
     (Ctypes.to_voidp pc_ptr) ;
   ignore (Sys.opaque_identity pc_ptr)
 
-(** Record bind, push constants and dispatch into [cmd_buf]. *)
-let record_dispatch cmd_buf (kernel : t) pc
+(** Record bind, push constants and dispatch into [cmd_buf], an open command
+    buffer, with the descriptor set [set]. *)
+let record_dispatch cmd_buf (kernel : t) set pc
     (grid : Spoc_framework.Framework_sig.dims) =
-  let begin_info = make vk_command_buffer_begin_info in
-  setf
-    begin_info
-    cmd_buf_begin_sType
-    (u32 vk_structure_type_command_buffer_begin_info) ;
-  setf begin_info cmd_buf_begin_pNext null ;
-  setf
-    begin_info
-    cmd_buf_begin_flags
-    (u32 vk_command_buffer_usage_one_time_submit_bit) ;
-  setf begin_info cmd_buf_begin_pInheritanceInfo null ;
-  check "vkBeginCommandBuffer" (vkBeginCommandBuffer cmd_buf (addr begin_info)) ;
-  ignore (Sys.opaque_identity begin_info) ;
   vkCmdBindPipeline cmd_buf (u32 vk_pipeline_bind_point_compute) kernel.pipeline ;
-  let desc_set_ptr = allocate vk_descriptor_set kernel.descriptor_set in
+  let desc_set_ptr = allocate vk_descriptor_set set in
   vkCmdBindDescriptorSets
     cmd_buf
     (u32 vk_pipeline_bind_point_compute)
@@ -655,39 +596,14 @@ let record_dispatch cmd_buf (kernel : t) pc
     (from_voidp uint32_t null) ;
   ignore (Sys.opaque_identity desc_set_ptr) ;
   Option.iter (push_constants cmd_buf kernel) pc ;
-  vkCmdDispatch cmd_buf (u32 grid.x) (u32 grid.y) (u32 grid.z) ;
-  check "vkEndCommandBuffer" (vkEndCommandBuffer cmd_buf)
-
-(** Submit [cmd_buf] with the stream fence and wait for completion. The fence is
-    reset by [submit_with_fence] immediately before the submission and is marked
-    pending only if the submission succeeds, so a failed submission leaves
-    nothing for the next launch to wait on. *)
-let submit_and_wait device cmd_buf fence =
-  let cmd_buf_ptr = allocate vk_command_buffer_ptr cmd_buf in
-  let submit_info = make vk_submit_info in
-  setf submit_info submit_sType (u32 vk_structure_type_submit_info) ;
-  setf submit_info submit_pNext null ;
-  setf submit_info submit_waitSemaphoreCount (u32 0) ;
-  setf submit_info submit_pWaitSemaphores (from_voidp vk_semaphore null) ;
-  setf submit_info submit_pWaitDstStageMask (from_voidp vk_flags null) ;
-  setf submit_info submit_commandBufferCount (u32 1) ;
-  setf submit_info submit_pCommandBuffers cmd_buf_ptr ;
-  setf submit_info submit_signalSemaphoreCount (u32 0) ;
-  setf submit_info submit_pSignalSemaphores (from_voidp vk_semaphore null) ;
-  let vk_device = device.Device.device in
-  submit_with_fence
-    "vkQueueSubmit (launch)"
-    vk_device
-    fence
-    (Device.queue_submit device (u32 1) (addr submit_info)) ;
-  ignore (Sys.opaque_identity cmd_buf_ptr) ;
-  ignore (Sys.opaque_identity submit_info) ;
-  await_fence "vkWaitForFences (launch)" vk_device fence
+  vkCmdDispatch cmd_buf (u32 grid.x) (u32 grid.y) (u32 grid.z)
 
 (** Every step that can refuse on the host (index validation, push-constant
-    layout) runs before the stream fence is touched; the fence is reset only
-    immediately before the submission. A kernel object owns one descriptor set,
-    so it must not be launched from two domains at once. *)
+    layout) runs before the batch is touched. The dispatch is appended to the
+    stream's open command buffer and the call returns; the buffers in [args]
+    must stay alive until the next synchronisation point, which every buffer
+    release is (see {!Vulkan_api_stream}). A failure of the batch's submission
+    or execution raises [kernel_launch_failed] at the first wait. *)
 let launch kernel ~args ~(grid : Spoc_framework.Framework_sig.dims)
     ~(block : Spoc_framework.Framework_sig.dims) ~shared_mem:_ ~stream =
   ignore block ;
@@ -704,15 +620,14 @@ let launch kernel ~args ~(grid : Spoc_framework.Framework_sig.dims)
         Vulkan_error.raise_error
           (Vulkan_error.kernel_launch_failed kernel.name reason)) ;
     let pc = build_push_constants args in
-    (* The command buffer and descriptor set may be in use until the previous
-       submission on this stream completes. *)
-    await_fence
-      "vkWaitForFences (pre-record)"
-      device.Device.device
-      s.Stream.fence ;
-    update_descriptor_set kernel args ;
-    record_dispatch s.Stream.command_buffer kernel pc grid ;
-    submit_and_wait device s.Stream.command_buffer s.Stream.fence
+    Stream.record_dispatch
+      s
+      ~kernel:kernel.name
+      ~layout:kernel.descriptor_set_layout
+      ~descriptors:kernel.num_bindings
+      ~record:(fun cmd_buf set ->
+        update_descriptor_set kernel set args ;
+        record_dispatch cmd_buf kernel set pc grid)
   with e ->
     Spoc_core.Log.errorf
       Spoc_core.Log.Device

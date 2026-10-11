@@ -122,6 +122,10 @@ type t = {
       (** External synchronization of [compute_queue], which Vulkan requires for
           [vkQueueSubmit] and [vkQueueWaitIdle]. Taken only through
           {!queue_submit} and {!with_queue_lock}. *)
+  batch_lock : Mutex.t;
+      (** Guards the launch batches of every stream of this device (see
+          {!Vulkan_api_stream}): two domains must not record into one command
+          buffer. Never held across a call that takes it again. *)
 }
 
 (** Test-only fault injection, for a single domain: when [Some r], the next
@@ -141,6 +145,13 @@ let queue_submit dev count submits fence =
           inject_submit_failure := None ;
           result
       | None -> vkQueueSubmit dev.compute_queue count submits fence)
+
+(** Completes every launch recorded on [dev] and not yet finished: submits open
+    batches and waits for their fences. Installed by {!Vulkan_api_stream} (which
+    depends on this module); until then no batch can exist. Every host access to
+    device memory, every buffer release and every device-wide wait goes through
+    it. *)
+let drain_pending : (t -> unit) ref = ref (fun _ -> ())
 
 let instance_ref : vk_instance structure ptr option ref = ref None
 
@@ -1116,6 +1127,7 @@ let get idx =
           coopmat_enabled = want_coopmat;
           coopmat;
           queue_lock = Mutex.create ();
+          batch_lock = Mutex.create ();
         }
       in
       Hashtbl.add device_cache idx dev ;
@@ -1127,6 +1139,7 @@ let set_current _dev = ()
 (** [vkDeviceWaitIdle] requires host access to every queue of the device to be
     externally synchronized. *)
 let synchronize dev =
+  !drain_pending dev ;
   with_queue_lock dev (fun () ->
       check "vkDeviceWaitIdle" (vkDeviceWaitIdle dev.device))
 
@@ -1146,6 +1159,9 @@ let destroy dev =
   (* Deferred launches on this device must reach it before it is evicted:
      issuing them afterwards would re-create the device (specs/launch-window.md). *)
   Spoc_framework.Launch_hooks.flush_pending () ;
+  let drain_exn =
+    match !drain_pending dev with () -> None | exception e -> Some e
+  in
   Hashtbl.remove device_cache dev.id ;
   let listener_exn =
     match
@@ -1156,4 +1172,6 @@ let destroy dev =
   in
   vkDestroyCommandPool dev.device dev.command_pool null ;
   vkDestroyDevice dev.device null ;
-  Option.iter raise listener_exn
+  Option.iter
+    raise
+    (match drain_exn with Some _ -> drain_exn | None -> listener_exn)

@@ -3,82 +3,458 @@
 (* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
 (******************************************************************************)
 
+(** Streams and the launch batches they record (specs/vulkan-async-launches.md).
+
+    A launch is appended to the stream's open command buffer and returns. The
+    buffer is submitted (not waited for) when it holds {!batch_limit}
+    dispatches, when another stream of the device launches, and at any
+    synchronisation point; the host blocks only at {!synchronize}, at
+    {!Vulkan_api_device.drain_pending} (host access to device memory, buffer
+    release, device wait) and when a command buffer is reused. A stream has two
+    command buffers, so one can be recorded while the other runs.
+
+    All streams of a device submit to one queue, in launch order, because a
+    launch first submits the open batches of the device's other streams;
+    dispatches are ordered in memory by a barrier recorded before each one. *)
+
 open Ctypes
 open Vulkan_types
 open Vulkan_bindings
 open Vulkan_api_base
 module Device = Vulkan_api_device
+module BE = Sarek_backend_error.Backend_error
+
+(** Dispatches one command buffer collects before it is submitted, from
+    [SPOC_VULKAN_BATCH] (a positive integer; anything else gives the default).
+    [1] submits and waits at every launch: the behaviour before batching. *)
+let default_batch = 32
+
+let batch_limit =
+  ref
+    (match
+       Option.bind (Sys.getenv_opt "SPOC_VULKAN_BATCH") int_of_string_opt
+     with
+    | Some n when n >= 1 -> n
+    | Some _ | None -> default_batch)
+
+(** A descriptor pool of one slot; its sets live until the slot's fence has been
+    waited for. *)
+type pool = {
+  handle : vk_descriptor_pool;
+  max_sets : int;
+  max_descriptors : int;
+  mutable used_sets : int;
+  mutable used_descriptors : int;
+}
+
+(** One command buffer with what its dispatches use. Idle: not [recording] and
+    fence not pending. Open: [recording]. In flight: fence pending. *)
+type slot = {
+  command_buffer : vk_command_buffer structure ptr;
+  fence : tracked_fence;
+  mutable pools : pool list;
+  mutable kernels : string list;  (** Newest first, one entry per dispatch. *)
+  mutable dispatches : int;
+  mutable recording : bool;
+}
 
 type t = {
   command_pool : vk_command_pool;
-  command_buffer : vk_command_buffer structure ptr;
-  fence : tracked_fence;
-      (** Guards [command_buffer]: pending while a submission of it runs. *)
+  slots : slot array;
+  mutable active : int;  (** Index of the slot the next dispatch records in. *)
+  mutable deferred : (string * string) option;
+      (** Kernels and reason of a submission that failed while launching; raised
+          by the next wait of this stream. *)
   device : Device.t;
 }
 
-let create device =
-  (* Create command pool *)
-  let pool_info = make vk_command_pool_create_info in
-  setf
-    pool_info
-    cmd_pool_create_sType
-    (u32 vk_structure_type_command_pool_create_info) ;
-  setf pool_info cmd_pool_create_pNext null ;
-  setf pool_info cmd_pool_create_flags (Unsigned.UInt32.of_int 0x02) ;
-  (* VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT *)
-  setf
-    pool_info
-    cmd_pool_create_queueFamilyIndex
-    (Unsigned.UInt32.of_int device.Device.queue_family) ;
+let pool_sets = 64
 
-  let pool = allocate vk_command_pool vk_null_handle in
-  check
-    "vkCreateCommandPool"
-    (vkCreateCommandPool device.Device.device (addr pool_info) null pool) ;
+let pool_descriptors = 512
 
-  (* Allocate command buffer *)
+let allocate_command_buffer device command_pool =
   let alloc_info = make vk_command_buffer_allocate_info in
   setf
     alloc_info
     cmd_buf_alloc_sType
     (u32 vk_structure_type_command_buffer_allocate_info) ;
   setf alloc_info cmd_buf_alloc_pNext null ;
-  setf alloc_info cmd_buf_alloc_commandPool !@pool ;
+  setf alloc_info cmd_buf_alloc_commandPool command_pool ;
   setf alloc_info cmd_buf_alloc_level (u32 vk_command_buffer_level_primary) ;
-  setf alloc_info cmd_buf_alloc_commandBufferCount (Unsigned.UInt32.of_int 1) ;
-
+  setf alloc_info cmd_buf_alloc_commandBufferCount (u32 1) ;
   let cmd_buf =
     allocate vk_command_buffer_ptr (from_voidp vk_command_buffer null)
   in
   check
     "vkAllocateCommandBuffers"
     (vkAllocateCommandBuffers device.Device.device (addr alloc_info) cmd_buf) ;
+  !@cmd_buf
 
-  let fence = create_tracked_fence device.Device.device in
-  {command_pool = !@pool; command_buffer = !@cmd_buf; fence; device}
+let create_slot device command_pool =
+  {
+    command_buffer = allocate_command_buffer device command_pool;
+    fence = create_tracked_fence device.Device.device;
+    pools = [];
+    kernels = [];
+    dispatches = 0;
+    recording = false;
+  }
+
+(** {1 Registry}
+
+    The streams of each device, so that a launch, a host access or a device wait
+    can reach the batches of every stream. *)
+
+let registry : (int, t list) Hashtbl.t = Hashtbl.create 4
+
+let registry_lock = Mutex.create ()
 
 let default_streams : (int, t) Hashtbl.t = Hashtbl.create 4
 
-(** The [default_streams] entry is removed last, and only when it is [stream]:
-    if the wait for pending work raises, a default stream stays reachable and
-    intact. *)
-let destroy stream =
+let streams_of (device : Device.t) =
+  Mutex.protect registry_lock (fun () ->
+      Option.value ~default:[] (Hashtbl.find_opt registry device.Device.id))
+
+let register stream =
+  let id = stream.device.Device.id in
+  Mutex.protect registry_lock (fun () ->
+      let known = Option.value ~default:[] (Hashtbl.find_opt registry id) in
+      Hashtbl.replace registry id (stream :: known))
+
+let unregister stream =
+  let id = stream.device.Device.id in
+  Mutex.protect registry_lock (fun () ->
+      let known = Option.value ~default:[] (Hashtbl.find_opt registry id) in
+      Hashtbl.replace registry id (List.filter (fun s -> s != stream) known))
+
+let create device =
+  let pool_info = make vk_command_pool_create_info in
+  setf
+    pool_info
+    cmd_pool_create_sType
+    (u32 vk_structure_type_command_pool_create_info) ;
+  setf pool_info cmd_pool_create_pNext null ;
+  (* VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT *)
+  setf pool_info cmd_pool_create_flags (u32 0x02) ;
+  setf
+    pool_info
+    cmd_pool_create_queueFamilyIndex
+    (u32 device.Device.queue_family) ;
+  let pool = allocate vk_command_pool vk_null_handle in
+  check
+    "vkCreateCommandPool"
+    (vkCreateCommandPool device.Device.device (addr pool_info) null pool) ;
+  let command_pool = !@pool in
+  let slots =
+    [|create_slot device command_pool; create_slot device command_pool|]
+  in
+  let stream = {command_pool; slots; active = 0; deferred = None; device} in
+  register stream ;
+  stream
+
+(** {1 Descriptor sets} *)
+
+let create_pool device ~max_sets ~max_descriptors =
+  let pool_size = make vk_descriptor_pool_size in
+  setf pool_size pool_size_type (u32 vk_descriptor_type_storage_buffer) ;
+  setf pool_size pool_size_descriptorCount (u32 max_descriptors) ;
+  let pool_info = make vk_descriptor_pool_create_info in
+  setf
+    pool_info
+    desc_pool_sType
+    (u32 vk_structure_type_descriptor_pool_create_info) ;
+  setf pool_info desc_pool_pNext null ;
+  setf pool_info desc_pool_flags (u32 0) ;
+  setf pool_info desc_pool_maxSets (u32 max_sets) ;
+  setf pool_info desc_pool_poolSizeCount (u32 1) ;
+  setf pool_info desc_pool_pPoolSizes (addr pool_size) ;
+  let handle = allocate vk_descriptor_pool vk_null_handle in
+  check
+    "vkCreateDescriptorPool"
+    (vkCreateDescriptorPool device.Device.device (addr pool_info) null handle) ;
+  ignore (Sys.opaque_identity pool_size) ;
+  {
+    handle = !@handle;
+    max_sets;
+    max_descriptors;
+    used_sets = 0;
+    used_descriptors = 0;
+  }
+
+let pool_has_room ~descriptors pool =
+  pool.used_sets < pool.max_sets
+  && pool.used_descriptors + descriptors <= pool.max_descriptors
+
+(** A descriptor set of [layout] ([descriptors] storage buffers) from a pool of
+    [slot]; the set stays valid until the slot's fence has been waited for. *)
+let allocate_set stream slot layout ~descriptors =
+  let device = stream.device in
+  let pool =
+    match List.find_opt (pool_has_room ~descriptors) slot.pools with
+    | Some pool -> pool
+    | None ->
+        let pool =
+          create_pool
+            device
+            ~max_sets:pool_sets
+            ~max_descriptors:(max pool_descriptors descriptors)
+        in
+        slot.pools <- pool :: slot.pools ;
+        pool
+  in
+  let layout_ptr = allocate vk_descriptor_set_layout layout in
+  let info = make vk_descriptor_set_allocate_info in
+  setf
+    info
+    desc_set_alloc_sType
+    (u32 vk_structure_type_descriptor_set_allocate_info) ;
+  setf info desc_set_alloc_pNext null ;
+  setf info desc_set_alloc_descriptorPool pool.handle ;
+  setf info desc_set_alloc_descriptorSetCount (u32 1) ;
+  setf info desc_set_alloc_pSetLayouts layout_ptr ;
+  let set = allocate vk_descriptor_set vk_null_handle in
+  check
+    "vkAllocateDescriptorSets"
+    (vkAllocateDescriptorSets device.Device.device (addr info) set) ;
+  ignore (Sys.opaque_identity layout_ptr) ;
+  ignore (Sys.opaque_identity info) ;
+  pool.used_sets <- pool.used_sets + 1 ;
+  pool.used_descriptors <- pool.used_descriptors + descriptors ;
+  !@set
+
+let reset_pools device slot =
+  List.iter
+    (fun pool ->
+      check
+        "vkResetDescriptorPool"
+        (vkResetDescriptorPool device.Device.device pool.handle (u32 0)) ;
+      pool.used_sets <- 0 ;
+      pool.used_descriptors <- 0)
+    slot.pools
+
+(** {1 Batches}
+
+    Every function below runs with [stream.device.batch_lock] held. *)
+
+(** Kernel names of [slot] in launch order, a repeated name written once with
+    its count. *)
+let kernel_names slot =
+  let counts =
+    List.fold_left
+      (fun acc name ->
+        match List.assoc_opt name acc with
+        | Some n -> (name, n + 1) :: List.remove_assoc name acc
+        | None -> (name, 1) :: acc)
+      []
+      (List.rev slot.kernels)
+  in
+  List.rev_map
+    (fun (name, n) -> if n = 1 then name else Printf.sprintf "%s x%d" name n)
+    counts
+  |> String.concat ", "
+
+(** The slot's work is over (completed, or never submitted): its descriptor sets
+    and kernel list are released. *)
+let retire stream slot =
+  reset_pools stream.device slot ;
+  slot.kernels <- [] ;
+  slot.dispatches <- 0 ;
+  slot.recording <- false
+
+(** Wait for the slot's submission, if any. A failing wait raises the batch
+    error naming its kernels; the slot then stays in flight, since the device
+    did not say that the work is over. *)
+let await_slot stream slot =
+  if slot.fence.pending then begin
+    (match
+       await_fence
+         "vkWaitForFences (launch batch)"
+         stream.device.Device.device
+         slot.fence
+     with
+    | () -> ()
+    | exception Vulkan_error.Vulkan_error e ->
+        Vulkan_error.raise_error
+          (Vulkan_error.kernel_launch_failed
+             (kernel_names slot)
+             (BE.to_string e))) ;
+    retire stream slot
+  end
+
+let raise_deferred stream =
+  match stream.deferred with
+  | None -> ()
+  | Some (kernels, reason) ->
+      stream.deferred <- None ;
+      Vulkan_error.raise_error
+        (Vulkan_error.kernel_launch_failed kernels reason)
+
+let submit_slot stream slot =
+  let device = stream.device in
+  check "vkEndCommandBuffer" (vkEndCommandBuffer slot.command_buffer) ;
+  let cmd_buf_ptr = allocate vk_command_buffer_ptr slot.command_buffer in
+  let submit_info = make vk_submit_info in
+  setf submit_info submit_sType (u32 vk_structure_type_submit_info) ;
+  setf submit_info submit_pNext null ;
+  setf submit_info submit_waitSemaphoreCount (u32 0) ;
+  setf submit_info submit_pWaitSemaphores (from_voidp vk_semaphore null) ;
+  setf submit_info submit_pWaitDstStageMask (from_voidp vk_flags null) ;
+  setf submit_info submit_commandBufferCount (u32 1) ;
+  setf submit_info submit_pCommandBuffers cmd_buf_ptr ;
+  setf submit_info submit_signalSemaphoreCount (u32 0) ;
+  setf submit_info submit_pSignalSemaphores (from_voidp vk_semaphore null) ;
+  submit_with_fence
+    "vkQueueSubmit (launch batch)"
+    device.Device.device
+    slot.fence
+    (Device.queue_submit device (u32 1) (addr submit_info)) ;
+  ignore (Sys.opaque_identity cmd_buf_ptr) ;
+  ignore (Sys.opaque_identity submit_info) ;
+  slot.recording <- false
+
+(** Submit the open batch of [stream], without waiting for it. A failure retires
+    the batch; it is raised now when [defer] is false, and otherwise kept for
+    the next wait of the stream (the first failure wins). *)
+let submit_open ~defer stream =
+  let slot = stream.slots.(stream.active) in
+  if slot.recording && slot.dispatches > 0 then begin
+    match submit_slot stream slot with
+    | () -> stream.active <- (stream.active + 1) mod Array.length stream.slots
+    | exception Vulkan_error.Vulkan_error e ->
+        let reason = BE.to_string e in
+        let kernels = kernel_names slot in
+        retire stream slot ;
+        if not defer then
+          Vulkan_error.raise_error
+            (Vulkan_error.kernel_launch_failed kernels reason)
+        else if stream.deferred = None then
+          stream.deferred <- Some (kernels, reason)
+  end
+
+(** Submit and wait for everything launched on [stream]; raises the first
+    failure. *)
+let drain_stream stream =
+  submit_open ~defer:false stream ;
+  let count = Array.length stream.slots in
+  for i = 1 to count do
+    await_slot stream stream.slots.((stream.active + i) mod count)
+  done ;
+  raise_deferred stream
+
+(** Run [f] on every stream of [device], then re-raise the first exception: one
+    failing stream must not leave the others undrained. *)
+let on_all_streams device f =
+  let first_error = ref None in
+  List.iter
+    (fun stream ->
+      try f stream with e -> if !first_error = None then first_error := Some e)
+    (streams_of device) ;
+  Option.iter raise !first_error
+
+let drain_device device =
+  Mutex.protect device.Device.batch_lock (fun () ->
+      on_all_streams device drain_stream)
+
+let () = Device.drain_pending := drain_device
+
+(** Submit the open batch of every stream of [device] without waiting. *)
+let flush_device device =
+  Mutex.protect device.Device.batch_lock (fun () ->
+      on_all_streams device (submit_open ~defer:true))
+
+(** Make the active slot of [stream] ready to record: wait for its previous
+    submission if it is still in flight, then begin the command buffer. *)
+let open_active stream =
+  let slot = stream.slots.(stream.active) in
+  if not slot.recording then begin
+    await_slot stream slot ;
+    let begin_info = make vk_command_buffer_begin_info in
+    setf
+      begin_info
+      cmd_buf_begin_sType
+      (u32 vk_structure_type_command_buffer_begin_info) ;
+    setf begin_info cmd_buf_begin_pNext null ;
+    setf
+      begin_info
+      cmd_buf_begin_flags
+      (u32 vk_command_buffer_usage_one_time_submit_bit) ;
+    setf begin_info cmd_buf_begin_pInheritanceInfo null ;
+    check
+      "vkBeginCommandBuffer"
+      (vkBeginCommandBuffer slot.command_buffer (addr begin_info)) ;
+    ignore (Sys.opaque_identity begin_info) ;
+    slot.recording <- true
+  end ;
+  slot
+
+(** Compute-to-compute dependency: the writes of every earlier dispatch (in this
+    command buffer or in a command buffer submitted before it) are visible to
+    the next one. *)
+let record_barrier command_buffer =
+  let barrier = make vk_memory_barrier in
+  setf barrier mem_barrier_sType (u32 vk_structure_type_memory_barrier) ;
+  setf barrier mem_barrier_pNext null ;
+  setf barrier mem_barrier_srcAccessMask (u32 vk_access_shader_write_bit) ;
+  setf
+    barrier
+    mem_barrier_dstAccessMask
+    (u32 (vk_access_shader_read_bit lor vk_access_shader_write_bit)) ;
+  vkCmdPipelineBarrier
+    command_buffer
+    (u32 vk_pipeline_stage_compute_shader_bit)
+    (u32 vk_pipeline_stage_compute_shader_bit)
+    (u32 0)
+    (u32 1)
+    (to_voidp (addr barrier))
+    (u32 0)
+    (from_voidp vk_buffer_memory_barrier null)
+    (u32 0)
+    null ;
+  ignore (Sys.opaque_identity barrier)
+
+(** Record one dispatch of [kernel] on [stream]. [record command_buffer set]
+    issues the bind, push-constant and dispatch commands (after the barrier
+    recorded here) with [set], a descriptor set of [layout] that it must fill.
+    Nothing is recorded when the set cannot be allocated. *)
+let record_dispatch stream ~kernel ~layout ~descriptors ~record =
+  let device = stream.device in
+  Mutex.protect device.Device.batch_lock (fun () ->
+      on_all_streams device (fun other ->
+          if other != stream then submit_open ~defer:true other) ;
+      let slot = open_active stream in
+      let set = allocate_set stream slot layout ~descriptors in
+      record_barrier slot.command_buffer ;
+      record slot.command_buffer set ;
+      slot.kernels <- kernel :: slot.kernels ;
+      slot.dispatches <- slot.dispatches + 1 ;
+      if !batch_limit <= 1 then drain_stream stream
+      else if slot.dispatches >= !batch_limit then
+        submit_open ~defer:true stream)
+
+let synchronize stream =
+  Mutex.protect stream.device.Device.batch_lock (fun () -> drain_stream stream)
+
+let destroy_slot device slot =
   destroy_tracked_fence
     "vkWaitForFences (Stream.destroy)"
-    stream.device.Device.device
-    stream.fence ;
+    device.Device.device
+    slot.fence ;
+  List.iter
+    (fun pool -> vkDestroyDescriptorPool device.Device.device pool.handle null)
+    slot.pools
+
+(** The registry and [default_streams] entries are removed last, and only when
+    nothing raised: a stream whose wait for pending work failed stays reachable
+    and intact. *)
+let destroy stream =
+  synchronize stream ;
+  Array.iter (destroy_slot stream.device) stream.slots ;
   vkDestroyCommandPool stream.device.Device.device stream.command_pool null ;
+  unregister stream ;
   match Hashtbl.find_opt default_streams stream.device.Device.id with
   | Some default when default == stream ->
       Hashtbl.remove default_streams stream.device.Device.id
   | Some _ | None -> ()
-
-let synchronize stream =
-  await_fence
-    "vkWaitForFences (Stream.synchronize)"
-    stream.device.Device.device
-    stream.fence
 
 let default device =
   match Hashtbl.find_opt default_streams device.Device.id with
@@ -87,3 +463,29 @@ let default device =
       let s = create device in
       Hashtbl.add default_streams device.Device.id s ;
       s
+
+(** Launches recorded on [device] that have not completed: open batches and
+    batches in flight. Zero after any synchronisation point. *)
+let pending_launches device =
+  Mutex.protect device.Device.batch_lock (fun () ->
+      List.fold_left
+        (fun total stream ->
+          Array.fold_left
+            (fun total slot ->
+              if slot.recording || slot.fence.pending then
+                total + slot.dispatches
+              else total)
+            total
+            stream.slots)
+        0
+        (streams_of device))
+
+(* A destroyed device took its streams' Vulkan objects with it (Device.destroy
+   drained them first); forget the streams so the next device with this index
+   gets fresh ones. *)
+let () =
+  Spoc_framework.Cache_hooks.on_device_destroy (fun ~backend index ->
+      if String.equal backend "Vulkan" then begin
+        Mutex.protect registry_lock (fun () -> Hashtbl.remove registry index) ;
+        Hashtbl.remove default_streams index
+      end)
