@@ -30,6 +30,9 @@
   Sarek_ast
   Sarek_typed_ast
   Sarek_typer
+  Sarek_variance_ir
+  Sarek_variance
+  Sarek_dim_usage
   Sarek_convergence
   Sarek_lower_ir
   Sarek_quote_ir

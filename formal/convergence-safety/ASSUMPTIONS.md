@@ -5,19 +5,46 @@
 The Rocq spec is for an abstract `expr` type with 15 constructors. The real implementation
 operates on `texpr` — a large, typed AST with ~35 constructors. The correspondence is:
 
-| Abstract | Real | Notes |
+| Abstract | Real (analysis IR of `sarek/ppx/Sarek_variance_ir.ml`) | Notes |
 |---|---|---|
-| `EVary` | `TEVar` (varying), `TEIntrinsicConst` (varying), `TEVecGet`/`TEArrGet` with varying index | `is_varying` recurses through all these |
-| `EBarrier` | `TEIntrinsicFun _ (Some ConvergencePoint) _` | `check_expr` reports `Barrier_in_diverged_flow` when mode=Diverged |
-| `ELit` | `TEUnit`, `TEBool`, `TEInt`, `TEFloat`, all literals, `TEIntrinsicConst` (uniform) | All return false for `is_thread_varying` |
-| `EIf` | `TEIf`, `TEMatch` | Both: diverge if scrutinee/cond is thread-varying |
-| `EFor` | `TEFor` | lo/hi bounds checked for thread-variation |
-| `ESeq` | `TESeq` | Sequential composition |
-| `ELet` | `TELet`, `TELetMut` | Conservative: no dataflow tracking |
-| `EApp` | `TEApp`, `TETuple`, `TERecord` | Recursive check of all args |
-| `EBinop` | `TEBinop`, `TEVecSet`, `TEArrSet`, `TEFieldSet`, `TEAssign` | All two-subexpr cases |
-| `EUnop` | `TEUnop`, `TEFieldGet`, `TECreateArray` | Single-subexpr cases |
-| `EReturn` | `TEReturn` | `check m (EReturn e) = check m e` — transparent wrapper per Sarek_convergence.ml:230 |
+| `EVary` | `thread_idx_*`, `global_*` ids, any intrinsic declared `WarpVarying`/`ThreadVarying` (atomics, ballot/vote), private-array reads, `TENative`, and every variable the production fixpoint finds may-vary | Production computes variance with a whole-kernel fixpoint (`Sarek_variance`, spec §3); the model receives its result only through `EVary`/`EVar` |
+| `EBarrier` | `TEIntrinsicFun _ (Some ConvergencePoint) _`; a call to a helper that contains a synchronisation point | `check_expr` reports `Barrier_in_diverged_flow` in Diverged mode; helper calls by rule H-2 |
+| `EWarpPoint` | `TEIntrinsicFun _ (Some WarpConvergence) _` | `Warp_collective_in_diverged_flow` |
+| `ELit` | literals, uniform intrinsic constants, kernel parameters, `TEGlobalRef` | |
+| `EVar` / `ELet` | `TEVar` / `TELet`, `TELetMut`, `TELetShared` | names resolve lexically in both |
+| `EIf` | `TEIf`, `TEMatch`, short-circuit `&&`/`||` (C-24: the right operand under the left) | value = join of condition and branches (C-2) |
+| `EWhile`, `EFor` | `TEWhile`, `TEFor` | |
+| `ESeq` | `TESeq` | F-04 varying-return threading in both |
+| `EApp` | `TEIntrinsicFun` with no synchronisation, tuples, records, constructors | |
+| `EBinop`/`EUnop` | binary/unary operators, vector reads, field reads, memory stores | |
+| `ESuperstep` | `TESuperstep` | spec §2 |
+| `EReturn` | `TEReturn` (never produced by the parser) | |
+
+### Production features the model does not contain (variance PR, 2026-10-11)
+
+Production implements specs/convergence-semantics.md §3-§4 in
+`sarek/ppx/Sarek_variance.ml`. None of the following is modeled; each reaches
+the model only as `EVary` (the variance result) or `EBarrier` (a helper that
+synchronises). They are covered by fixed regression tests
+(`sarek/tests/negative/test_conv_*.ml`, `sarek/tests/unit/test_convergence_accepted.ml`),
+not by a theorem or a differential property:
+
+- assignment (`x := e`, `r.f <- e`) with control dependence relative to the
+  variable's declaration, loop-carried to a fixpoint (C-1);
+- helper summaries: result variance per call (`Deps` substitution),
+  context-insensitive parameter variance, sync-point summaries (C-3, H-1..H-3);
+- private arrays (`create_array _ Local/Global` and their aliases): reads may
+  vary (C-5);
+- the declared variance of the intrinsic table (C-4);
+- **race freedom** (assumed): a read of global or shared memory at a uniform
+  index is uniform;
+- **flow-insensitivity** per variable (sound, may reject safe programs);
+- `TENative` is not inspected for synchronisation points;
+- user intrinsics cannot declare variance or convergence (C-50).
+
+The production link (`test/test_convergence_production_link.ml`) checks the
+shipped checker against `check_env`, `check_warp_env` and `is_varying_in_env`
+on the constructor set above only.
 
 ### Elided constructors (not modeled, OUT OF SCOPE)
 

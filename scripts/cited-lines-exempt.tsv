@@ -85,3 +85,4 @@ kb/support/scripts-ci.md::scripts/coverage-benchmarks.sh:169-194	pre-existing dr
 kb/support/scripts-ci.md::.github/workflows/docs.yml:247-258	pre-existing drift found by backlog-226 corpus sweep; needs content-verified follow-up, not guessed here
 kb/support/scripts-ci.md::.github/workflows/cleanup-pr-preview.yml:192-210	pre-existing drift found by backlog-226 corpus sweep; needs content-verified follow-up, not guessed here
 kb/support/scripts-ci.md::scripts/coverage-e2e.sh:93-111	pre-existing drift found by backlog-226 corpus sweep; needs content-verified follow-up, not guessed here
+docs/formal/rocq-value-ledger.md::sarek/ppx/Sarek_convergence.ml:231	dated historical ledger entry (2026-06 F-01 finding) describing the file before the 2026-10-11 variance rewrite split it

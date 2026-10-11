@@ -1,28 +1,21 @@
 # ConvergenceSafety — Project Status
 
-> **None of this project's 125 theorems is linked to production (backlog-201).**
-> Every theorem here is proven about the Rocq model, or checked against the
-> *extracted* model, or checked against an abstract OCaml model — never against
-> the real `Sarek_convergence.ml` that ships. `test/test_convergence_live.ml`
-> does call the real `Sarek_convergence.check_expr`, and its 15/15 GREEN below is
-> real and worth having, but it is a fixed-pattern regression suite (positive
-> baseline + F-01/F-02 regressions + negative baseline) — it never runs the
-> extracted model on the same input and compares. A reader who sees "125
-> theorems" next to "conformance 19/19, extraction 10/10, semantics 4/4, live
-> 15/15 GREEN" (the current test-suite scoreboard below) should not conclude any
-> theorem here says something checked against the shipped checker: it doesn't,
-> today. `scripts/check-production-link.py` enforces the declared theorem
-> split only — it reads `production-link.json`'s `modules` field (empty here,
-> hence 0 shipped-linked) but does not read or validate `known_gap`, which is
-> documentary rather than gate-enforced. See `production-link.json`'s
-> `known_gap` for why no module is claimed shipped-linked.
+> **`ConvergenceSpec` is linked to production by sampling (2026-10-11).**
+> `test/test_convergence_production_link.ml` runs 3000 random model terms per
+> property through the shipped `Sarek_convergence.check_expr` and the extracted
+> `check_env` / `check_warp_env` / `is_varying_in_env`, in both modes, and
+> asserts the same verdicts (`production-link.json`, evidence
+> `differential_sampled`). It covers the model's constructor set only;
+> production features outside it (assignment, helpers, private arrays, the
+> intrinsic table) are tested by fixed cases, see ASSUMPTIONS.md. The
+> `ConvergenceSemantics` theorems remain about the model.
 
 **Grade**: A (apparatus-native)
 **Apparatus version**: 1.2.1
 **Host profile**: SPOC/sarek
 **Architecture**: 3-layer
 **Built at**: 2026-06-11
-**Last updated**: 2026-10-11 (superstep settlement, specs/convergence-semantics.md §2: SS-1 for both flags, flag inert, `[@divergent]` inside the verified fragment, D-56 warp return threading, C-7 witness. 125 theorems, 0 admits, 0 axioms; `scripts/check-formal-proofs.sh` passes. Conformance 19/19, extraction 10/10, semantics 4/4, live 15/15 GREEN. Previous entry 2026-06-13: F-04b.)
+**Last updated**: 2026-10-11 (variance PR: production link for ConvergenceSpec, 3 sampled properties; no theorem change. Earlier the same day: superstep settlement, specs/convergence-semantics.md §2: SS-1 for both flags, flag inert, `[@divergent]` inside the verified fragment, D-56 warp return threading, C-7 witness. 125 theorems, 0 admits, 0 axioms; `scripts/check-formal-proofs.sh` passes. Conformance 19/19, extraction 10/10, semantics 4/4, live 15/15 GREEN. Previous entry 2026-06-13: F-04b.)
 
 ## Project
 

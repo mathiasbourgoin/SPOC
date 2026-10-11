@@ -26,7 +26,7 @@ It is implemented in three pull requests:
 | PR | Sections | Findings |
 |---|---|---|
 | superstep semantics | §2, §5 (superstep and warp rows), §6 | D-38, D-57, C-7, D-56 |
-| variance dataflow | §3, §4, §5 (all rows), production link | C-1..C-5 |
+| variance dataflow | §3, §4, §5 (all rows), production link | C-1..C-5, C-24 |
 | refusals | §7 | C-49, C-6 |
 
 ## 1. Vocabulary
@@ -103,15 +103,17 @@ may-vary at another. Rules, by construct (`v(e)` is the abstract value of `e`,
 | intrinsic function call | join of its arguments ⊔ its declared variance |
 | `TEVar x` | `v(x)` from the fixpoint |
 | `let x = e in b`, `let x = mut e in b` | `v(x) ⊒ v(e)`; value is `v(b)` |
-| `x := e` (C-1) | `v(x) ⊒ v(e) ⊔ ctl`: a variable assigned a varying value, or assigned under varying control, may vary; loops iterate to the fixpoint |
+| `x := e` (C-1) | `v(x) ⊒ v(e) ⊔ ctl_x`, where `ctl_x` joins the conditions between the declaration of `x` and the assignment (all of them when the assignment is in a `let rec` body and `x` is captured: H-3). A variable assigned a varying value, or assigned under varying control, may vary; loops iterate to the fixpoint. A variable declared and assigned inside the same varying region is not made varying by it. |
 | `r.f <- e` on a local record variable `r` | as `r := e` |
 | `if c then a else b`, `match c with ...` (C-2) | `v(c) ⊔ v(a) ⊔ v(b)`; pattern variables get `v(c)` |
-| `while`, `for` (value) | `v(cond)` ⊔ `v(body)` (bounds for `for`); the loop variable gets `v(lo) ⊔ v(hi) ⊔ ctl` |
+| `while`, `for` (value) | `v(cond)` ⊔ `v(body)` (bounds for `for`); the loop variable gets `v(lo) ⊔ v(hi)` (it is scoped in the body, so control does not reach past it) |
 | sequence | join of its elements |
 | binop, unop, tuple, record, constructor, field read | join of the parts |
+| `a && b`, `a \|\| b` (C-24) | `v(a) ⊔ v(b)`; `b` runs under the control of `a` |
+| memory write (`v.(i) <- x`, `a.(i) <- x`, field write on a non-variable) | unit (uniform); the operands are evaluated |
 | vector read `v.(i)` | `v(v) ⊔ v(i)` |
 | array read `a.(i)` (C-5) | `Varying` if `a` may denote a private array (`create_array _ Local`/`Global`, or a parameter/alias that receives one); otherwise `v(a) ⊔ v(i)` |
-| helper call `f args` (C-3) | `f`'s result summary with each parameter id replaced by the argument's value |
+| helper call `f args` (C-3) | `f`'s result summary with each parameter id replaced by the argument's value, joined with the variance of the callee expression (a function chosen by a varying `if` is a varying call) |
 | `TENative` | `Varying` |
 
 A helper parameter **may vary** if some call site passes an argument that may
@@ -135,8 +137,13 @@ Assumptions, documented in ASSUMPTIONS.md:
 
 ## 4. Helpers (C-3)
 
-The check runs after monomorphisation and defunctionalisation, so every call
-names its callee (a module function or a `let rec`). For each helper:
+The check runs on the typed AST, before monomorphisation, as before. Callees
+are resolved lexically: a name bound by a module function or a `let rec`, or
+a function-typed `let` whose value selects among such names (through
+`if`/`match`/`let`/sequence leaves; the selector's variance makes the call
+varying). An intrinsic used as a function value keeps its table entry; an
+expression the conversion cannot resolve is treated as may-vary and as a
+synchronisation point (sound, never observed in the tree). For each helper:
 
 | Rule | Statement |
 |---|---|
@@ -153,6 +160,7 @@ names its callee (a module function or a `let rec`). For each helper:
 | `if`, `match`, `while`, `for` | branches/body `Diverged` if the condition, scrutinee or a bound may vary |
 | superstep | §2 |
 | sequence | after an element with a varying early return, the rest is `Diverged` (F-04). Barrier and warp checks share this rule (D-56). |
+| `a && b`, `a \|\| b` (C-24) | `b` is `Diverged` if `a` may vary: it runs only on the threads `a` lets through |
 | helper call | §4 |
 
 Production returns all errors; the PPX reports the first. Only emptiness is a
@@ -243,3 +251,5 @@ S1 is not implemented here. The rules above are its block-scope instance.
 | G-14 | `if tid = 0l then s.(0l) <- v; block_barrier (); if s.(0l) > 0l then block_barrier ()` with `s` shared | compiled | accepted (race freedom) |
 | G-15 | any `warp_*` intrinsic, any context | compiled | rejected, not yet lowered (C-49) |
 | G-16 | `return_unit ()` anywhere | compiled | rejected (C-6) |
+| G-17 | `if thread_idx_x > 16l && (block_barrier (); true) then ...` | compiled | rejected (C-24) |
+| G-18 | a helper whose body is a superstep, called under a varying `if` | compiled | rejected (C-3, H-2) |

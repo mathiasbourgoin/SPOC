@@ -2,22 +2,19 @@
 
 ## Component Inventory
 
-Convergence analysis is in `sarek/ppx/Sarek_convergence.ml`, with intrinsic convergence metadata in `sarek/ppx/Sarek_core_primitives.ml` and environment lookup support in `sarek/ppx/Sarek_env.ml`.
+The check is specified in `specs/convergence-semantics.md`. Code:
 
-## Per-File Purpose
-
-- `Sarek_convergence.ml`: tracks uniform/diverged control-flow contexts, rejects unsafe barriers/warp collectives, computes dimension usage, and selects native execution strategy.
-- `Sarek_core_primitives.ml`: declares convergence kind for built-in intrinsics.
-- `Sarek_env.ml`: preserves core primitive metadata through module opens and shadowing in `sarek/ppx/Sarek_env.ml:183-259`.
+- `sarek/ppx/Sarek_variance_ir.ml`: converts the typed AST into a small analysis IR with lexically resolved binders and resolved callees.
+- `sarek/ppx/Sarek_variance.ml`: block-scope variance, a whole-kernel fixpoint (`Varying | Deps of params`), spec §3.
+- `sarek/ppx/Sarek_convergence.ml`: the check (spec §2, §4, §5), `check_kernel`, `check_expr`, `is_thread_varying`; includes `Sarek_dim_usage`.
+- `sarek/ppx/Sarek_dim_usage.ml`: barrier and dimension usage, native execution strategy.
+- `sarek/ppx/Sarek_core_primitives.ml`: declared variance and convergence of built-in intrinsics.
 
 ## Features And APIs
 
-- Execution modes and analysis context are defined in `sarek/ppx/Sarek_convergence.ml:35-47`.
-- Intrinsic variance/barrier classification helpers are in `sarek/ppx/Sarek_convergence.ml:52-65`.
-- Thread-varying expression detection is in `sarek/ppx/Sarek_convergence.ml:79-121`.
-- Barrier and warp collective checks run through `check_expr` in `sarek/ppx/Sarek_convergence.ml:135-244`.
-- Diverging-control-flow detection is in `sarek/ppx/Sarek_convergence.ml:245-318`.
-- Dimensionality and execution strategy selection are in `sarek/ppx/Sarek_convergence.ml:409-616`.
+- Variance: assignments with control dependence relative to the declaration (C-1), if/match values (C-2), helper result summaries per call and context-insensitive parameter variance (C-3), declared intrinsic variance (C-4), private-array reads (C-5), `&&`/`||` right operands (C-24).
+- Helpers: bodies checked from Converged with their parameter variance (H-1); a call in diverged flow to a helper containing a synchronisation point is rejected at the call (H-2).
+- Production link: `formal/convergence-safety/test/test_convergence_production_link.ml` compares `check_expr` with the extracted Rocq model on sampled terms.
 
 ## Invariants
 
@@ -29,13 +26,13 @@ Convergence analysis is in `sarek/ppx/Sarek_convergence.ml`, with intrinsic conv
 ## Potential Invariant Violations Or Bugs
 
 - **FIXED (2026-07-02 audit):** indirect thread-varying divergence is now caught. `ctx.varying_vars` (a `StringSet.t`, `sarek/ppx/Sarek_convergence.ml:43-45`) is threaded through `check_expr` and `is_thread_varying_env` records `let`/`let mut` bindings whose value is thread-varying (`sarek/ppx/Sarek_convergence.ml:89, 108-111`); condition checks consult this env (e.g. `:170, 187, 193, 224, 237`). The previously-cited missed case — `let tid = thread_idx_x in if tid > 0 then block_barrier ()` — is now detected. Landed in commits `5e0cd683` ("fix(convergence): correct F-01 + F-02 barrier-safety checker bugs") and `c5c39c71` ("fix(convergence): F-04 — flag barriers after thread-varying early returns in sequences").
-  - Stale artifact: the module's own header comment at `sarek/ppx/Sarek_convergence.ml:27` still lists "Dataflow analysis: track thread-varying through variable assignments" under "Future extensions" — the comment was not updated when the feature landed. Code-level bug, flagged here for a follow-up doc fix in-repo; not resolved by this KB edit.
 - **FIXED (2026-10-11):** the dead `true || ...` in `expr_uses_barriers`'s `TESuperstep` arm is gone. **FIXED (2026-10-11, C-7):** `[@divergent]` used to skip the diverged-entry check, accepting a superstep under a thread-varying `if` (it lowered to `SBarrier` inside `SIf`); the flag is now inert, and the continuation is no longer reset to `Converged`. Production, `ConvergenceSpec.v` and `ConvergenceSemantics.v` agree on the rule (D-57).
-- Probable: dimensionality analysis treats `global_size_x/y/z` as simple-compatible in `sarek/ppx/Sarek_convergence.ml:452-460`, but native simple intrinsic generation rejects many of them in `sarek/ppx/Sarek_native_intrinsics.ml:191-218`.
+- **FIXED (2026-10-11, C-1..C-5, C-24):** variance through assignment, if/match values, helpers, atomics and other declared-varying intrinsics, private arrays, and short-circuit operands (`specs/convergence-semantics.md` §3-§5). Negative tests `sarek/tests/negative/test_conv_*.ml`; accepted kernels pinned in `sarek/tests/unit/test_convergence_accepted.ml`.
+- Probable: dimensionality analysis treats `global_size_x/y/z` as simple-compatible in `sarek/ppx/Sarek_dim_usage.ml`, but native simple intrinsic generation rejects many of them in `sarek/ppx/Sarek_native_intrinsics.ml:191-218`.
 
 ## Performance Or Maintainability Risks
 
-- The analysis is syntactic and cheap, but false negatives are safety-relevant.
+- The analysis is a fixpoint over a small IR; it is flow-insensitive per variable and assumes race freedom (spec §3).
 - Convergence kind depends on primitive names and module-open rewriting; name aliases can be fragile.
 - Execution strategy inference must remain synchronized with native generation capabilities.
 
@@ -53,6 +50,6 @@ Convergence analysis is in `sarek/ppx/Sarek_convergence.ml`, with intrinsic conv
 
 ## Concrete Improvement/Fix Candidates
 
-- Update the stale "Future extensions: Dataflow analysis" line in the file header comment (`Sarek_convergence.ml:27`) now that `varying_vars` dataflow is implemented.
-- Variance dataflow through assignment, helpers, arrays and intrinsic variance (`specs/convergence-semantics.md` §3-§4; global review C-1..C-5).
+- User intrinsics cannot declare variance or convergence (C-50).
+- Contents tracking for private arrays (reads are always may-vary).
 - Share an intrinsic capability table between convergence and native generation.

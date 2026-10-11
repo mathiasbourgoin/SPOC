@@ -11,6 +11,28 @@
 ;   (a superstep under a thread-varying if; specs/convergence-semantics.md SS-1)
 ; - test_superstep_divergent_diverged: "Barrier called in diverged control flow"
 ;   (the same with [@divergent], which no longer skips the check: C-7, SS-4)
+; - test_conv_mut_assign: "Barrier called in diverged control flow"
+;   (C-1 mutable assignment; specs/convergence-semantics.md §3-§5)
+; - test_conv_ctrl_dep: "Barrier called in diverged control flow"
+;   (C-1 control dependence; specs/convergence-semantics.md §3-§5)
+; - test_conv_while_mut: "Barrier called in diverged control flow"
+;   (C-1 loop-carried variance; specs/convergence-semantics.md §3-§5)
+; - test_conv_if_value: "Barrier called in diverged control flow"
+;   (C-2 if-expression value; specs/convergence-semantics.md §3-§5)
+; - test_conv_helper_tid: "Barrier called in diverged control flow"
+;   (C-3 helper result; specs/convergence-semantics.md §3-§5)
+; - test_conv_helper_barrier: "Barrier called in diverged control flow"
+;   (C-3 helper with barrier; specs/convergence-semantics.md §3-§5)
+; - test_conv_helper_superstep: "Barrier called in diverged control flow"
+;   (C-3 helper with superstep; specs/convergence-semantics.md §3-§5)
+; - test_conv_helper_param: "Barrier called in diverged control flow"
+;   (C-3 helper parameter; specs/convergence-semantics.md §3-§5)
+; - test_conv_atomic: "Barrier called in diverged control flow"
+;   (C-4 atomic result; specs/convergence-semantics.md §3-§5)
+; - test_conv_private_array: "Barrier called in diverged control flow"
+;   (C-5 private array read; specs/convergence-semantics.md §3-§5)
+; - test_conv_shortcircuit: "Barrier called in diverged control flow"
+;   (C-24 short-circuit operand; specs/convergence-semantics.md §3-§5)
 ; - test_warp_diverged: "Warp collective 'warp_shuffle' called in diverged control flow"
 ; - test_unbound_function: "Unbound variable"
 ; - test_unlinked_intrinsic: "Unknown kernel function or constant Bits.float_of_bits"
@@ -948,5 +970,126 @@
   (pps sarek_ppx))
  (flags
   (:standard -w -33 -alert @sarek_matrix))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_conv_mut_assign)
+ (modules test_conv_mut_assign)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_conv_ctrl_dep)
+ (modules test_conv_ctrl_dep)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_conv_while_mut)
+ (modules test_conv_while_mut)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_conv_if_value)
+ (modules test_conv_if_value)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_conv_helper_tid)
+ (modules test_conv_helper_tid)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_conv_helper_barrier)
+ (modules test_conv_helper_barrier)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_conv_helper_superstep)
+ (modules test_conv_helper_superstep)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_conv_helper_param)
+ (modules test_conv_helper_param)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_conv_atomic)
+ (modules test_conv_atomic)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_conv_private_array)
+ (modules test_conv_private_array)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_conv_shortcircuit)
+ (modules test_conv_shortcircuit)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
  (enabled_if
   (= %{profile} "negative")))

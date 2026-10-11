@@ -26,3 +26,11 @@
  (libraries convergence_model qcheck-core qcheck-core.runner)
  (flags
   (:standard -w -37)))
+
+; Production link (specs/convergence-semantics.md §6): the shipped
+; Sarek_convergence.check_expr against the extracted model, sampled.
+
+(test
+ (name test_convergence_production_link)
+ (modules test_convergence_production_link)
+ (libraries convergence_model sarek_frontend qcheck-core qcheck-core.runner))

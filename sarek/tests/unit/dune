@@ -19,6 +19,7 @@
   test_ppx_registry
   test_quote_ir
   test_convergence
+  test_variance
   test_scheme
   test_mono
   test_ir_interp
@@ -48,6 +49,7 @@
   test_ppx_registry
   test_quote_ir
   test_convergence
+  test_variance
   test_scheme
   test_mono
   test_ir_interp
@@ -379,3 +381,15 @@
   (pps sarek_ppx))
  (flags
   (:standard -w -33)))
+
+; Kernels the convergence check must accept (specs/convergence-semantics.md
+; §3-§4): pins the precision of the variance analysis.
+
+(test
+ (name test_convergence_accepted)
+ (modules test_convergence_accepted)
+ (libraries sarek sarek.stdlib alcotest)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33-39)))

@@ -2,6 +2,21 @@
 
 ### Fixed
 
+- Barrier convergence check made sound for the eight holes the global review
+  reproduced (`specs/convergence-semantics.md` §3-§5; C-1..C-5, C-24). Each
+  of these compiled before and is now rejected with "Barrier called in
+  diverged control flow": a mutable variable assigned `thread_idx_x`, or
+  assigned under a thread-varying condition, or advanced by it in a loop;
+  the value of a thread-varying `if`; a helper returning a thread id; a helper
+  containing a barrier or a superstep called under a varying condition; a
+  helper whose barrier depends on a parameter passed a thread id; an atomic's
+  result; a read of a per-thread (`Local`) array; a barrier in the right
+  operand of `&&`/`||`. The analysis is a whole-kernel fixpoint
+  (`Sarek_variance`); helper results are tracked per call, so a helper called
+  with a kernel parameter stays uniform. No kernel in the repository is newly
+  rejected. The checker is now linked to the Rocq model by a sampled
+  differential test (`formal/convergence-safety/production-link.json`).
+
 - Superstep convergence rule settled (`specs/convergence-semantics.md` §2,
   global review D-38, D-57, C-7). A `let%superstep` reached under
   thread-varying control is rejected with or without `[@divergent]`; the
