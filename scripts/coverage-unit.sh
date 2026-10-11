@@ -14,16 +14,22 @@ cd "$PROJECT_ROOT"
 rm -f _coverage/*.coverage 2>/dev/null || true
 mkdir -p _coverage
 
-# Try to install bisect_ppx if not already installed
+# Install bisect_ppx if it is not already installed. `opam list --installed
+# --short` exits 0 with EMPTY output when the package is missing, so test the
+# output, not the exit code (docs review D-48).
 echo "Checking for bisect_ppx..."
-if ! opam list bisect_ppx --installed --short 2>/dev/null; then
+if [ -z "$(opam list bisect_ppx --installed --short 2>/dev/null)" ]; then
   echo "Installing bisect_ppx..."
   opam repo add alpha git+https://github.com/kit-ty-kate/opam-alpha-repository.git || true
   opam update
   opam install -y bisect_ppx || {
-    echo "Warning: Failed to install bisect_ppx, coverage will be skipped"
-    exit 0
+    echo "ERROR: failed to install bisect_ppx, no coverage can be measured" >&2
+    exit 1
   }
+fi
+if [ -z "$(opam list bisect_ppx --installed --short 2>/dev/null)" ]; then
+  echo "ERROR: bisect_ppx is still not installed after the install step" >&2
+  exit 1
 fi
 
 echo "Building with coverage instrumentation..."
@@ -59,6 +65,13 @@ for test in _build/default/spoc/*/test/test_*.exe; do
   $test
 done
 
+# The run must have produced coverage data; an empty _coverage means the
+# instrumentation did not take effect and a green report would be a lie.
+if ! ls _coverage/*.coverage >/dev/null 2>&1; then
+  echo "ERROR: no _coverage/*.coverage files were produced by the unit tests" >&2
+  exit 1
+fi
+
 echo ""
 echo "Generating coverage report..."
 OPAM_SWITCH_PREFIX="$PROJECT_ROOT/_opam" \
@@ -71,6 +84,11 @@ OPAM_SWITCH_PREFIX="$PROJECT_ROOT/_opam" \
   PATH="$PROJECT_ROOT/_opam/bin:$PATH" \
   bisect-ppx-report summary \
     --coverage-path _coverage
+
+if [ ! -s _coverage/unit-report/index.html ]; then
+  echo "ERROR: coverage report _coverage/unit-report/index.html was not generated" >&2
+  exit 1
+fi
 
 echo ""
 echo "Coverage report generated at: _coverage/unit-report/index.html"
