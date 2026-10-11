@@ -9,8 +9,8 @@ This file is auto-generated. Do not edit manually.
 extern "C" {
 __global__ void sarek_kern(float* __restrict__ a, int sarek_a_length, float* __restrict__ b, int sarek_b_length, float* __restrict__ output, int sarek_output_length, int n) {
   __shared__ float sdata[256];
-  int tid = threadIdx.x;
-  int gid = (threadIdx.x + (blockDim.x * blockIdx.x));
+  int tid = ((int)threadIdx.x);
+  int gid = (((int)threadIdx.x) + (((int)blockDim.x) * ((int)blockIdx.x)));
   {
     if ((gid < n)) {
       sdata[tid] = (a[gid] * b[gid]);
@@ -68,7 +68,7 @@ __global__ void sarek_kern(float* __restrict__ a, int sarek_a_length, float* __r
   }
   __syncthreads();
   if ((tid == 0)) {
-    output[blockIdx.x] = sdata[0];
+    output[((int)blockIdx.x)] = sdata[0];
   }
 }
 }
@@ -79,8 +79,8 @@ __global__ void sarek_kern(float* __restrict__ a, int sarek_a_length, float* __r
 ```opencl
 __kernel void sarek_kern(__global float* restrict a, int sarek_a_length, __global float* restrict b, int sarek_b_length, __global float* restrict output, int sarek_output_length, int n) {
   __local float sdata[256];
-  int tid = get_local_id(0);
-  int gid = (get_local_id(0) + (get_local_size(0) * get_group_id(0)));
+  int tid = ((int)get_local_id(0));
+  int gid = (((int)get_local_id(0)) + (((int)get_local_size(0)) * ((int)get_group_id(0))));
   {
     if ((gid < n)) {
       sdata[tid] = (a[gid] * b[gid]);
@@ -138,7 +138,7 @@ __kernel void sarek_kern(__global float* restrict a, int sarek_a_length, __globa
   }
   barrier(CLK_LOCAL_MEM_FENCE);
   if ((tid == 0)) {
-    output[get_group_id(0)] = sdata[0];
+    output[((int)get_group_id(0))] = sdata[0];
   }
 }
 ```
@@ -254,8 +254,8 @@ uint3 __metal_bid [[threadgroup_position_in_grid]],
 uint3 __metal_tpg [[threads_per_threadgroup]],
 uint3 __metal_num_groups [[threadgroups_per_grid]]) {
   threadgroup float sdata[256];
-  int tid = __metal_tid.x;
-  int gid = (__metal_tid.x + (__metal_tpg.x * __metal_bid.x));
+  int tid = ((int)__metal_tid.x);
+  int gid = (((int)__metal_tid.x) + (((int)__metal_tpg.x) * ((int)__metal_bid.x)));
   {
     if ((gid < n)) {
       sdata[tid] = (a[gid] * b[gid]);
@@ -313,7 +313,7 @@ uint3 __metal_num_groups [[threadgroups_per_grid]]) {
   }
   threadgroup_barrier(mem_flags::mem_threadgroup);
   if ((tid == 0)) {
-    output[__metal_bid.x] = sdata[0];
+    output[((int)__metal_bid.x)] = sdata[0];
   }
 }
 

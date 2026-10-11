@@ -10,10 +10,10 @@ extern "C" {
 __global__ void sarek_kern(float* __restrict__ input, int sarek_input_length, float* __restrict__ output, int sarek_output_length, int width, int height) {
   __shared__ float tile[272];
   int tile_size = 16;
-  int tx = threadIdx.x;
-  int ty = threadIdx.y;
-  int block_col = (blockIdx.x * tile_size);
-  int block_row = (blockIdx.y * tile_size);
+  int tx = ((int)threadIdx.x);
+  int ty = ((int)threadIdx.y);
+  int block_col = (((int)blockIdx.x) * tile_size);
+  int block_row = (((int)blockIdx.y) * tile_size);
   int read_col = (block_col + tx);
   int read_row = (block_row + ty);
   {
@@ -44,10 +44,10 @@ __global__ void sarek_kern(float* __restrict__ input, int sarek_input_length, fl
 __kernel void sarek_kern(__global float* restrict input, int sarek_input_length, __global float* restrict output, int sarek_output_length, int width, int height) {
   __local float tile[272];
   int tile_size = 16;
-  int tx = get_local_id(0);
-  int ty = get_local_id(1);
-  int block_col = (get_group_id(0) * tile_size);
-  int block_row = (get_group_id(1) * tile_size);
+  int tx = ((int)get_local_id(0));
+  int ty = ((int)get_local_id(1));
+  int block_col = (((int)get_group_id(0)) * tile_size);
+  int block_row = (((int)get_group_id(1)) * tile_size);
   int read_col = (block_col + tx);
   int read_row = (block_row + ty);
   {
@@ -144,10 +144,10 @@ uint3 __metal_tpg [[threads_per_threadgroup]],
 uint3 __metal_num_groups [[threadgroups_per_grid]]) {
   threadgroup float tile[272];
   int tile_size = 16;
-  int tx = __metal_tid.x;
-  int ty = __metal_tid.y;
-  int block_col = (__metal_bid.x * tile_size);
-  int block_row = (__metal_bid.y * tile_size);
+  int tx = ((int)__metal_tid.x);
+  int ty = ((int)__metal_tid.y);
+  int block_col = (((int)__metal_bid.x) * tile_size);
+  int block_row = (((int)__metal_bid.y) * tile_size);
   int read_col = (block_col + tx);
   int read_row = (block_row + ty);
   {

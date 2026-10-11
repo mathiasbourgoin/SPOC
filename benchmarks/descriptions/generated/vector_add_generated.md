@@ -8,7 +8,7 @@ This file is auto-generated. Do not edit manually.
 
 extern "C" {
 __global__ void sarek_kern(float* __restrict__ a, int sarek_a_length, float* __restrict__ b, int sarek_b_length, float* __restrict__ c, int sarek_c_length, int n) {
-  int tid = (threadIdx.x + blockIdx.x * blockDim.x);
+  int tid = ((int)(threadIdx.x + blockIdx.x * blockDim.x));
   if ((tid < n)) {
     c[tid] = (a[tid] + b[tid]);
   }
@@ -20,7 +20,7 @@ __global__ void sarek_kern(float* __restrict__ a, int sarek_a_length, float* __r
 
 ```opencl
 __kernel void sarek_kern(__global float* restrict a, int sarek_a_length, __global float* restrict b, int sarek_b_length, __global float* restrict c, int sarek_c_length, int n) {
-  int tid = get_global_id(0);
+  int tid = ((int)get_global_id(0));
   if ((tid < n)) {
     c[tid] = (a[tid] + b[tid]);
   }
@@ -77,7 +77,7 @@ uint3 __metal_tid [[thread_position_in_threadgroup]],
 uint3 __metal_bid [[threadgroup_position_in_grid]],
 uint3 __metal_tpg [[threads_per_threadgroup]],
 uint3 __metal_num_groups [[threadgroups_per_grid]]) {
-  int tid = __metal_gid.x;
+  int tid = ((int)__metal_gid.x);
   if ((tid < n)) {
     c[tid] = (a[tid] + b[tid]);
   }
