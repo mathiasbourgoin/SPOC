@@ -45,6 +45,13 @@ let check (ctx : string) (result : cu_result) : unit =
     ctx
     result
 
+(** Existential wrapper for keeping Ctypes-allocated values alive during FFI
+    calls *)
+type ctype_ref = CTypeRef : 'a typ * 'a ptr -> ctype_ref
+
+(** One launch's parameter array and the per-argument cells it points into. *)
+type kernargs = {params : unit ptr CArray.t; cells : ctype_ref list}
+
 (** Host-side kernel-argument buffers (the [CArray] of argument pointers plus
     the per-argument value cells) for launches that may still be in flight,
     keyed by device id.
@@ -60,10 +67,10 @@ let check (ctx : string) (result : cu_result) : unit =
     We retain the buffers here until the stream that ran the launch is drained.
     Each entry is keyed by [(device_id, stream_key)] where [stream_key] is the
     raw address of the stream handle (0 for the default/null stream, which is
-    what SPOC uses). Values are kept as [Obj.t] purely for liveness and are
-    never inspected. A mutex guards the list so launches/retires from different
-    OCaml domains cannot lose an entry (drop = use-after-free) or a removal. *)
-let pending_kernargs : (int * nativeint * Obj.t) list ref = ref []
+    what SPOC uses). The buffers are held purely for liveness and are never
+    inspected. A mutex guards the list so launches/retires from different OCaml
+    domains cannot lose an entry (drop = use-after-free) or a removal. *)
+let pending_kernargs : (int * nativeint * kernargs) list ref = ref []
 
 let pending_lock = Mutex.create ()
 
@@ -789,10 +796,6 @@ module Kernel = struct
     Spoc_framework.Cache_hooks.around_clear (fun () ->
         Spoc_framework.Guarded_cache.clear cache)
 
-  (** Existential wrapper for keeping Ctypes-allocated values alive during FFI
-      calls *)
-  type ctype_ref = CTypeRef : 'a typ * 'a ptr -> ctype_ref
-
   let launch kernel ~args ~grid ~block ~shared_mem ~stream =
     (* Build parameter array *)
     let params = CArray.make (ptr void) (List.length args) in
@@ -875,7 +878,7 @@ module Kernel = struct
       | Some s -> (s.Stream.device.id, stream_key_of_ptr s.Stream.handle)
       | None -> (Device.current_id (), default_stream_key)
     in
-    retain_kernargs device_id stream_key (Obj.repr (params, !refs))
+    retain_kernargs device_id stream_key {params; cells = !refs}
 end
 
 (** {1 Utility Functions} *)

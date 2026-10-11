@@ -638,6 +638,11 @@ let sync (type a b) (vec : (a, b) Vector.t) : unit =
       to_device vec dev ;
       vec.location <- Vector.Both dev
 
+(** A value rooted only for its liveness, whatever its type; never inspected.
+    One 2-word block per root: an [[@@unboxed]] existential is rejected while
+    float arrays are flat. *)
+type keep = Keep : 'a -> keep
+
 (** {1 Keep-alive ledger for stream-ordered work}
 
     A copy or launch enqueued on a stream may still be reading or writing its
@@ -660,7 +665,7 @@ let sync (type a b) (vec : (a, b) Vector.t) : unit =
 module Ledger = struct
   type entry = {
     seq : int;
-    keep : Obj.t;  (** Rooted for liveness only; never inspected. *)
+    keep : keep;  (** Rooted for liveness only; never inspected. *)
     vec_ids : int list;
     host_ranges : (nativeint * int) list;  (** (address, bytes) in flight. *)
   }
@@ -708,7 +713,7 @@ module Ledger = struct
   let check_live ~(op : string) (st : stream_state) : unit =
     if st.destroyed then invalid_arg (op ^ ": the stream has been destroyed")
 
-  let enqueue (st : stream_state) ~(keep : Obj.t) ~(vec_ids : int list)
+  let enqueue (st : stream_state) ~(keep : keep) ~(vec_ids : int list)
       ~(host_ranges : (nativeint * int) list) : unit =
     Mutex.protect lock (fun () ->
         let seq = st.next_seq in
@@ -1047,7 +1052,7 @@ let stream_handle (s : stream) : Device.t * Framework_sig.stream_ref =
     [s] has completed — what [Execute] does for the vectors of a launch it
     enqueued on [s] (the backend's own kernel-argument retention roots the
     argument cells, not the vectors whose buffers the kernel touches). *)
-let retain_on_stream (s : stream) ~(keep : Obj.t) ~(vec_ids : int list) : unit =
+let retain_on_stream (s : stream) ~(keep : keep) ~(vec_ids : int list) : unit =
   let (module S : STREAM) = s in
   Ledger.enqueue S.state ~keep ~vec_ids ~host_ranges:[]
 
@@ -1291,8 +1296,8 @@ let vector_bytes (vec : (_, _) Vector.t) =
 (* The one host->device path every public variant goes through. [keep] is
    rooted until the copy completes: synchronously across the backend call, in
    the ledger when enqueued on a stream. *)
-let h2d_range (type a b) ~(op : string) ?(stream : stream option)
-    ~(src_ptr : nativeint) ~(byte_size : int) ~(keep : Obj.t)
+let h2d_range (type a b k) ~(op : string) ?(stream : stream option)
+    ~(src_ptr : nativeint) ~(byte_size : int) ~(keep : k)
     ~(dst : (a, b) Vector.t) ~(dst_byte_offset : int) () : unit =
   Spoc_framework.Launch_hooks.flush_pending () ;
   let dev, buf = range_target ~op dst in
@@ -1323,7 +1328,7 @@ let h2d_range (type a b) ~(op : string) ?(stream : stream option)
         ~stream:(Some S.stream_ref) ;
       Ledger.enqueue
         S.state
-        ~keep:(Obj.repr (keep, dst))
+        ~keep:(Keep (keep, dst))
         ~vec_ids:[dst.id]
         ~host_ranges:[(src_ptr, byte_size)]) ;
   (* The device copy now holds data the host copy lacks. *)
@@ -1377,7 +1382,7 @@ let copy_to_device (type a b) ?(stream : stream option)
     ?stream
     ~src_ptr:(bigarray_addr src)
     ~byte_size:(n * esz)
-    ~keep:(Obj.repr src)
+    ~keep:src
     ~dst
     ~dst_byte_offset:(dst_offset * esz)
     ()
@@ -1394,7 +1399,7 @@ let copy_bytes_to_device ?(stream : stream option)
     ?stream
     ~src_ptr:(bigarray_addr src)
     ~byte_size:(Bigarray.Array1.size_in_bytes src)
-    ~keep:(Obj.repr src)
+    ~keep:src
     ~dst
     ~dst_byte_offset
     ()
@@ -1411,7 +1416,7 @@ let copy_ptr_to_device ?(stream : stream option) ~(src_ptr : nativeint)
     ?stream
     ~src_ptr
     ~byte_size
-    ~keep:(Obj.repr ())
+    ~keep:()
     ~dst
     ~dst_byte_offset
     ()
@@ -1455,7 +1460,7 @@ let d2h_range (type a b) ~(op : string) ?(stream : stream option)
         ~stream:(Some S.stream_ref) ;
       Ledger.enqueue
         S.state
-        ~keep:(Obj.repr (dst, src))
+        ~keep:(Keep (dst, src))
         ~vec_ids:[src.id]
         ~host_ranges:[(dst_ptr, byte_size)]
 
@@ -1513,7 +1518,10 @@ let copy_bytes_to_host ?(stream : stream option) ~(src : (_, _) Vector.t)
 
 (** {1 Pinned host memory} *)
 
-type pinned_kind = Allocated | Registered of Obj.t
+(* [Registered] roots the registered Bigarray until [unregister_host]. *)
+type pinned_kind =
+  | Allocated
+  | Registered : (_, _, Bigarray.c_layout) Bigarray.Array1.t -> pinned_kind
 
 type pinned_entry = {
   pin_device : Device.t;
@@ -1663,11 +1671,7 @@ let register_host (dev : Device.t)
       Hashtbl.replace
         pinned_table
         addr
-        {
-          pin_device = dev;
-          pin_bytes = bytes;
-          pin_kind = Registered (Obj.repr ba);
-        })
+        {pin_device = dev; pin_bytes = bytes; pin_kind = Registered ba})
 
 (** Undo {!register_host}; refused while stream-ordered copies may use it. *)
 let unregister_host (ba : (_, _, Bigarray.c_layout) Bigarray.Array1.t) : unit =

@@ -35,9 +35,11 @@ let check (ctx : string) (result : hip_result) : unit =
     note - it explicitly calls out the HIP behaviour). Freeing the arg cells
     when [Kernel.launch] returns would be a use-after-free once the GC reclaims
     them. We retain them until the stream that ran the launch is drained, keyed
-    by [(device_id, stream_key)]. Values are kept as [Obj.t] for liveness only
-    and never inspected. A mutex guards the list against concurrent domains. *)
-let pending_kernargs : (int * nativeint * Obj.t) list ref = ref []
+    by [(device_id, stream_key)]. The cells are held for liveness only and never
+    inspected. A mutex guards the list against concurrent domains. *)
+type kernargs = {params : unit ptr ptr; slots : int64 ptr}
+
+let pending_kernargs : (int * nativeint * kernargs) list ref = ref []
 
 let pending_lock = Mutex.create ()
 
@@ -708,7 +710,7 @@ module Kernel = struct
       | Some s -> (s.Stream.device.id, stream_key_of_ptr s.Stream.handle)
       | None -> (Device.current_id (), default_stream_key)
     in
-    retain_kernargs device_id stream_key (Obj.repr (params, slots))
+    retain_kernargs device_id stream_key {params; slots}
 end
 
 (** {1 Utility Functions} *)

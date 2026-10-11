@@ -1008,9 +1008,15 @@ module Launch_memo = Ephemeron.K1.Make (Physical_kernel)
 (* The backend is identified by its [generate_source] closure, compared
    PHYSICALLY, not by its name: [Framework_registry.register_backend] replaces
    a backend registered under the same name, and the replacement must not be
-   handed its predecessor's source. *)
+   handed its predecessor's source. The field has [generate_source]'s exact
+   type, so storing [B.generate_source] stores the closure itself: any other
+   type would eta-expand it into a fresh closure that never compares equal. *)
 type source_key = {
-  codegen : Obj.t;
+  codegen :
+    ?block:Framework_sig.dims ->
+    ?soa_params:string list ->
+    Sarek_ir_types.kernel ->
+    string option;
   block : Framework_sig.dims;
   soa_params : string list;
 }
@@ -1088,7 +1094,7 @@ let check_device_capabilities_memo ~(device : Device.t)
     not memoised. *)
 let generate_source_memo (module B : Framework_sig.BACKEND) ~block ~soa_params
     (ir : Sarek_ir_types.kernel) : string option =
-  let key = {codegen = Obj.repr B.generate_source; block; soa_params} in
+  let key = {codegen = B.generate_source; block; soa_params} in
   let cached, generation =
     Mutex.protect launch_memo_lock (fun () ->
         let hit =
@@ -1293,7 +1299,7 @@ let prepare_jit (module B : Framework_sig.BACKEND) ?stream ~(device : Device.t)
          finaliser would otherwise free them under it. *)
         Transfer.retain_on_stream
           s
-          ~keep:(Obj.repr args)
+          ~keep:(Transfer.Keep args)
           ~vec_ids:
             (List.filter_map
                (function Vec v -> Some v.Vector.id | _ -> None)

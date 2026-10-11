@@ -358,6 +358,38 @@ let test_streams_pinned dev =
       Transfer.free_all_buffers x ;
       Transfer.free_all_buffers y
 
+(* ------------------------------------------------ keep-alive across GC *)
+
+(* Out of line, so that no register or stack slot of the caller holds the
+   source: only the stream's ledger can keep it alive. *)
+let[@inline never] copy_unrooted stream ~dst collected =
+  let src = i32_ba (Vector.length dst) (fun i -> Int32.of_int i) in
+  Gc.finalise (fun _ -> collected := true) src ;
+  Transfer.copy_to_device ~stream src ~dst ~dst_offset:0
+
+let[@inline never] retain_unrooted stream collected =
+  let cell = Bytes.create 64 in
+  Gc.finalise (fun _ -> collected := true) cell ;
+  Transfer.retain_on_stream stream ~keep:(Transfer.Keep cell) ~vec_ids:[]
+
+(* A stream copy's source and a [retain_on_stream] value survive
+   [Gc.full_major] until the stream is synchronised, and are released after. *)
+let test_keep_alive dev =
+  let dst = Transfer.create_device_only dev Vector.int32 256 in
+  let s = Transfer.create_stream dev in
+  let copied = ref false and retained = ref false in
+  copy_unrooted s ~dst copied ;
+  retain_unrooted s retained ;
+  Gc.full_major () ;
+  check "stream copy source alive across Gc.full_major" (not !copied) ;
+  check "retain_on_stream value alive across Gc.full_major" (not !retained) ;
+  Transfer.synchronize_stream s ;
+  Gc.full_major () ;
+  check "stream copy source released after the sync" !copied ;
+  check "retain_on_stream value released after the sync" !retained ;
+  Transfer.destroy_stream s ;
+  Transfer.free_all_buffers dst
+
 (* ------------------------------------- byte-level read-back (bytes-d2h) *)
 
 (* Byte [b] of int32 [x] as stored in host memory (native byte order): the
@@ -869,6 +901,7 @@ let run_on (dev : Device.t) =
   test_device_only dev ;
   test_ranged dev ;
   test_streams_pinned dev ;
+  test_keep_alive dev ;
   test_bytes_to_host dev ;
   test_bytes_to_host_stream dev ;
   test_destroyed dev ;
