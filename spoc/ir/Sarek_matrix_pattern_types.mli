@@ -13,8 +13,8 @@ open Sarek_ir_types
 (** How an operand is laid out in memory, from its two strides: row-major when
     the column stride is 1, column-major when the row stride is 1. Any other
     operand (no unit stride, equal strides, overlapping rows) is not a GEMM
-    operand: a matrix unit loads a tile with one base and one leading
-    dimension. *)
+    operand: a matrix unit loads a tile with one base and one leading dimension.
+*)
 type layout = Row_major | Col_major
 
 (** One matrix of [C = A × B]. Rows and columns are those of the matrix: A is
@@ -83,6 +83,7 @@ type reason =
   | Output_aliases_operand of string
   | Operand_written of string
   | Overlapping_operand of string
+  | Constant_leading_dimension of string
   | Operand_not_unit_stride of string
   | Dependent_indices
   | Unsupported_init

@@ -82,6 +82,10 @@ type error =
     variable's coefficient. *)
 val var_atom : var -> expr
 
+(** Intrinsics that are pure functions of their arguments (uniform on uniform
+    arguments). Any other intrinsic is treated as thread-varying. *)
+val is_pure_intrinsic : string -> bool
+
 (** The let-inlined expression, as atoms are compared. *)
 val inline : env -> expr -> expr
 

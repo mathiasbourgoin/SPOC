@@ -61,6 +61,7 @@ type reason =
   | Output_aliases_operand of string
   | Operand_written of string
   | Overlapping_operand of string
+  | Constant_leading_dimension of string
   | Operand_not_unit_stride of string
   | Dependent_indices
   | Unsupported_init
@@ -110,8 +111,13 @@ let reason_text = function
       Printf.sprintf "the operand '%s' is (or may be) written by the kernel" arr
   | Overlapping_operand arr ->
       Printf.sprintf
-        "the elements of '%s' overlap (equal strides or a leading dimension \
-         smaller than a row: a Toeplitz view, a correlation or a race)"
+        "the elements of '%s' overlap (equal strides: a Toeplitz view, a \
+         correlation or a race)"
+        arr
+  | Constant_leading_dimension arr ->
+      Printf.sprintf
+        "'%s' has a constant leading dimension that is below a 16-wide tile or \
+         not shown to cover its rows (the extent is not a known constant)"
         arr
   | Operand_not_unit_stride arr ->
       Printf.sprintf "'%s' has no unit stride in either dimension" arr

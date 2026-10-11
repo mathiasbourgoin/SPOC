@@ -413,6 +413,57 @@ let n_init_elsewhere =
       done ;
       c.((row * n) + col) <- sum]
 
+let n_const_ld_symbolic_k =
+  [%kernel
+    fun (a : float32 vector)
+        (b : float32 vector)
+        (c : float32 vector)
+        (n : int32)
+        (k : int32) ->
+      let row = global_idx_y in
+      let col = global_idx_x in
+      let sum = mut 0.0 in
+      for i = 0 to k - 1l do
+        sum := sum +. (a.((row * 32l) + i) *. b.((i * n) + col))
+      done ;
+      c.((row * n) + col) <- sum]
+
+let n_helper_writes_operand =
+  [%kernel
+    let zero (v : float32 vector) (j : int32) : unit = v.(j) <- 0.0 in
+    fun (a : float32 vector)
+        (b : float32 vector)
+        (c : float32 vector)
+        (n : int32)
+        (k : int32)
+      ->
+      let row = global_idx_y in
+      let col = global_idx_x in
+      let sum = mut 0.0 in
+      for i = 0 to k - 1l do
+        sum := sum +. (a.((row * k) + i) *. b.((i * n) + col))
+      done ;
+      c.((row * n) + col) <- sum ;
+      zero b col]
+
+let n_atomic =
+  [%kernel
+    fun (a : float32 vector)
+        (b : float32 vector)
+        (c : float32 vector)
+        (count : int32 vector)
+        (n : int32)
+        (k : int32) ->
+      let row = global_idx_y in
+      let col = global_idx_x in
+      let sum = mut 0.0 in
+      for i = 0 to k - 1l do
+        sum := sum +. (a.((row * k) + i) *. b.((i * n) + col))
+      done ;
+      c.((row * n) + col) <- sum ;
+      let _old = atomic_add_global_int32 count 0l 1l in
+      ()]
+
 let n_stencil =
   [%kernel
     fun (a : float32 vector) (out : float32 vector) ->
@@ -475,7 +526,19 @@ let test_negatives () =
     "no_unit_stride"
     n_no_unit_stride
     (is (P.Operand_not_unit_stride "a")) ;
-  check_rejected "small_ld" n_small_ld (overlap "a") ;
+  let const_ld arr =
+    matches (function P.Constant_leading_dimension a -> a = arr | _ -> false)
+  in
+  check_rejected "small_ld" n_small_ld (const_ld "a") ;
+  check_rejected "const_ld_symbolic_k" n_const_ld_symbolic_k (const_ld "a") ;
+  check_rejected
+    "helper_writes_operand"
+    n_helper_writes_operand
+    (matches (function P.Operand_written _ -> true | _ -> false)) ;
+  check_rejected
+    "atomic"
+    n_atomic
+    (matches (function P.Operand_written _ -> true | _ -> false)) ;
   check_rejected
     "dependent_indices"
     n_dependent_indices

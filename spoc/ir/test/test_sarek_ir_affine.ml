@@ -75,9 +75,25 @@ let test_var_atom_canonical () =
 
 (* (k + 1) * row distributes; a uniform product stays a coefficient. *)
 let test_distribution () =
+  (* A sum multiplying an atom stays one factor, so a padded stride divides. *)
   let f = form ((EVar k + c 1) * gid "global_idx_x") in
   let coef = A.coefficient f (gid "global_idx_x") in
-  Alcotest.(check int) "k + 1 has two monomials" 2 (List.length coef) ;
+  Alcotest.(check int) "(k + 1) * x: one monomial" 1 (List.length coef) ;
+  let by = gid "block_idx_y" in
+  let padded = form (gid "global_idx_x" * (EVar k + EVar n)) in
+  let h = form (gid "block_dim_y" * by * (EVar k + EVar n)) in
+  (match
+     A.poly_div (A.coefficient h by) (A.coefficient padded (gid "global_idx_x"))
+   with
+  | Some q ->
+      Alcotest.(check bool)
+        "bdy * (k + n) / (k + n) = bdy"
+        true
+        (A.poly_equal q (form (gid "block_dim_y")).const)
+  | None -> Alcotest.fail "padded stride does not divide") ;
+  (* Two uniform sides still distribute. *)
+  let u = form ((EVar k + c 1) * EVar n) in
+  Alcotest.(check int) "(k + 1) * n: two monomials" 2 (List.length u.const) ;
   let g = form (EVar k * EVar n) in
   Alcotest.(check bool) "k * n is uniform" true (A.is_uniform g)
 

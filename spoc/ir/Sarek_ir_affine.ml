@@ -196,7 +196,9 @@ let rec inline env e =
 
 (* What an already-inlined expression contains, as one verdict: a rejected
    variable or an array read wins over an atom, which wins over uniform. *)
-let pure_intrinsics = ["min"; "max"; "abs"]
+let pure_intrinsics = ["min"; "max"; "abs"; "fma"]
+
+let is_pure_intrinsic name = List.mem name pure_intrinsics
 
 let rec leaf_kind env e =
   let worst a b =
@@ -276,9 +278,18 @@ let rec of_inlined env e =
   | EBinop (Mul, a, b) -> (
       let* fa = of_inlined env a in
       let* fb = of_inlined env b in
+      (* A stride that is a sum ([row * (k + p)]) is kept as ONE opaque
+         factor rather than distributed: strides are compared and divided
+         monomial by monomial, and a padded leading dimension must stay one
+         divisor. Two uniform sides still distribute. *)
+      let multiplier side f =
+        if List.length f.const > 1 then poly_factor (inline env side)
+        else f.const
+      in
       match (is_uniform fa, is_uniform fb) with
-      | true, _ -> Ok (scale_poly fa.const fb)
-      | _, true -> Ok (scale_poly fb.const fa)
+      | true, true -> Ok (scale_poly fa.const fb)
+      | true, false -> Ok (scale_poly (multiplier a fa) fb)
+      | false, true -> Ok (scale_poly (multiplier b fb) fa)
       | false, false -> opaque env e)
   | _ -> opaque env e
 

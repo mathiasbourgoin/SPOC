@@ -55,9 +55,9 @@ let item_mentions v = function
   | Bind (_, e) -> expr_mentions v e
   | Item s -> stmt_mentions v s
 
-(* Every array the kernel (body and helper functions) may write, or [None]
-   when that cannot be known: a write through a computed base, or an atomic
-   operation. *)
+(* Every array the kernel body may write, or [None] when that cannot be known:
+   a write through a computed base, an atomic operation, or a helper function
+   that writes memory. *)
 let written_arrays (k : kernel) =
   let fs acc s =
     match (acc, s) with
@@ -67,12 +67,17 @@ let written_arrays (k : kernel) =
     | acc, _ -> acc
   in
   let folder = stmt_folder ~fe:(fun acc _ -> acc) ~fs in
-  if Sarek_ir_analysis.kernel_uses_atomics k then None
-  else
-    List.fold_left
-      (fun acc hf -> Sarek_ir_analysis.stmt_fold folder acc hf.hf_body)
-      (Sarek_ir_analysis.stmt_fold folder (Some []) k.kern_body)
-      k.kern_funcs
+  (* A helper writes through its own parameter names, which are not the
+     kernel's arrays: any helper that writes memory makes every operand
+     possibly written. *)
+  let helper_writes hf =
+    Sarek_ir_analysis.stmt_fold folder (Some []) hf.hf_body <> Some []
+  in
+  if
+    Sarek_ir_analysis.kernel_uses_atomics k
+    || List.exists helper_writes k.kern_funcs
+  then None
+  else Sarek_ir_analysis.stmt_fold folder (Some []) k.kern_body
 
 let count_mentions v e =
   Sarek_ir_analysis.expr_fold
@@ -243,7 +248,8 @@ let rec value_ok env acc ~output:(arr, index) e =
       match Affine.of_expr env e with
       | Ok f -> Affine.is_uniform f
       | Error _ -> false)
-  | EIntrinsic (_, _, args) -> List.for_all ok args
+  | EIntrinsic (_, name, args) ->
+      Affine.is_pure_intrinsic name && List.for_all ok args
   | EVar v -> same_var acc v || env.classify_var v = Affine.Uniform_leaf
   | EConst _ | EArrayLen _ -> true
   | _ -> false
