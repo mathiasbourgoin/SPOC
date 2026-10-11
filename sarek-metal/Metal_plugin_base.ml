@@ -60,11 +60,54 @@ module Metal : Framework_sig.PLUGIN_BASE = struct
 
     let name (d : t) = d.Metal_api.Device.name ^ " (Metal)"
 
+    (* The cooperative-matrix probe compiles a kernel on the device, so it is
+       memoised: [capabilities] is read repeatedly and a runtime compile is
+       milliseconds. A compile failure is the answer "this device offers no
+       configuration" (Metal_coopmat.support), not an error. *)
+    let coopmat_cache : (int, Sarek_coopmat.device_support) Hashtbl.t =
+      Hashtbl.create 4
+
+    let coopmat_cache_lock = Mutex.create ()
+
+    let probe_coopmat (d : t) : Sarek_coopmat.device_support =
+      let compile () =
+        let lib =
+          Metal_api.Library.create_from_source d Metal_coopmat.probe_source
+        in
+        let func =
+          Metal_api.Library.get_function lib Metal_coopmat.probe_kernel_name
+        in
+        let pipeline = Metal_api.ComputePipeline.create d func in
+        let width = pipeline.Metal_api.ComputePipeline.thread_execution_width in
+        Metal_api.ComputePipeline.release pipeline ;
+        Metal_api.Library.release lib ;
+        width
+      in
+      let simd_width, probe =
+        match compile () with
+        | width -> (width, Ok ())
+        | exception (Sarek_backend_error.Backend_error.Backend_error _ as e) ->
+            (* Apple GPUs are 32 wide; used only to describe a device that
+               offers no configuration. *)
+            (32, Error (Printexc.to_string e))
+      in
+      Metal_coopmat.support ~simd_width ~probe
+
+    let coopmat_support (d : t) =
+      Mutex.protect coopmat_cache_lock (fun () ->
+          match Hashtbl.find_opt coopmat_cache d.Metal_api.Device.id with
+          | Some s -> s
+          | None ->
+              let s = probe_coopmat d in
+              Hashtbl.replace coopmat_cache d.Metal_api.Device.id s ;
+              s)
+
     let capabilities (d : t) : Framework_sig.capabilities =
       let open Metal_api.Device in
       let open Metal_types in
       let open Ctypes in
       try
+        let coopmat_support = coopmat_support d in
         let max_threads = d.max_threads_per_threadgroup in
         let width = Unsigned.Size_t.to_int (getf max_threads mtl_size_width) in
         let height =
@@ -91,13 +134,13 @@ module Metal : Framework_sig.PLUGIN_BASE = struct
           device_features =
             (if d.supports_fp64 then [Sarek_ir_analysis.Float64] else [])
             @ [Sarek_ir_analysis.Int64];
-          (* backlog-62: no cooperative-matrix probe on this backend. [None] is
-             "not probed", which Sarek_coopmat.verdict maps to Unknown and therefore
-             refuses; an empty list would be a positive claim nobody measured. *)
-          coopmat = None;
+          (* Probed by compiling a simdgroup_matrix kernel on the device
+             (specs/coopmat-metal-simdgroup.md): [Some] with the lowered
+             configuration, or [Some] with none when the compiler rejects it. *)
+          coopmat = Some coopmat_support;
           supports_atomics = true;
-          warp_size = 32;
-          (* SIMD width on Apple GPUs *)
+          warp_size = coopmat_support.Sarek_coopmat.ds_subgroup_size;
+          (* SIMD width, read from a compiled pipeline *)
           max_registers_per_block = 0;
           clock_rate_khz = 0;
           multiprocessor_count = 0;

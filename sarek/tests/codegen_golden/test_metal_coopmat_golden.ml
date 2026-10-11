@@ -259,6 +259,29 @@ let test_buffer_mismatch () =
   in
   expect_refused "wrong buffer" ~reason:"needs a float16 buffer" k
 
+(* ---- 4. OpenCL says why it has no lowering -------------------------- *)
+
+let test_opencl_refusal_reason () =
+  let reason =
+    "no OpenCL device available to this project advertises a matrix extension"
+  in
+  match
+    Sarek_ir_opencl.generate (tile (cfg C.Uint8 C.Uint8 C.Sint32 C.Sint32))
+  with
+  | (_ : string) -> Alcotest.fail "OpenCL emitted a cooperative matrix"
+  | exception
+      Sarek_backend_error.Backend_error.Backend_error
+        (Sarek_backend_error.Backend_error.Codegen
+           {
+             error =
+               Sarek_backend_error.Backend_error.Unsupported_construct
+                 {reason = got; _};
+             _;
+           }) ->
+      if not (contains ~needle:reason got) then
+        Alcotest.failf "OpenCL reason %S does not say why" got
+  | exception e -> Alcotest.failf "wrong exception %s" (Printexc.to_string e)
+
 let () =
   Alcotest.run
     "metal_coopmat_golden"
@@ -278,5 +301,12 @@ let () =
           Alcotest.test_case "column-major" `Quick test_tile_col_major;
           Alcotest.test_case "buffer mismatch" `Quick test_buffer_mismatch;
           Alcotest.test_case "refusals" `Quick test_refusals;
+        ] );
+      ( "opencl",
+        [
+          Alcotest.test_case
+            "refusal names the missing extension"
+            `Quick
+            test_opencl_refusal_reason;
         ] );
     ]
