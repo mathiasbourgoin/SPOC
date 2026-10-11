@@ -130,8 +130,11 @@ val fail_analysis_for_tests : bool -> unit
 [@@alert test_only "for tests only: makes matrix analysis fail"]
 
 (** Test hook: the subgroup width the rewrite is laid out for on the interpreter
-    (default 32), so that the 64-wide templates are checked against the oracle.
-    Honoured on the interpreter only. *)
+    (default 32). The interpreter's cooperative-matrix subgroup is fixed at 32
+    lanes, so a 64-lane wave runs as two interpreter subgroups: this checks the
+    staging guard, the strides and the block size against the oracle, not the
+    wave-to-subgroup mapping (that is covered by the Vulkan e2e run). Honoured
+    on the interpreter only. *)
 val subgroup_override_for_tests : int option -> unit
 [@@alert
   test_only "for tests only: lays the interpreter rewrite out for 64 lanes"]

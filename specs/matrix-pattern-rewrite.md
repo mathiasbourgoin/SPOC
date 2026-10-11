@@ -108,10 +108,21 @@ the threads outnumber the groups (256 threads, 128 groups); the 32-wide output
 is byte-identical to the unparameterised kernel (golden digests,
 `test_matrix_template_golden`). `Matrix_specialise` reads the width from the
 device's cooperative-matrix probe (`ds_subgroup_size`); the interpreter's
-cooperative-matrix subgroup is 32 lanes, and a 64-wide layout runs on it as two
-interpreter subgroups per wave that execute the same operations on their own
-fragment copies, so the 64-wide templates are checked against the oracle
-(`test_matrix_subgroup`, via `subgroup_override_for_tests`).
+cooperative-matrix subgroup is fixed at 32 lanes, so a 64-lane wave runs there
+as two interpreter subgroups: `test_matrix_subgroup` (via
+`subgroup_override_for_tests`) checks the staging guard, the strides and the
+block size against the oracle, **not** the wave-to-subgroup mapping. That
+evidence is the Vulkan e2e run on RADV and the mutation that forces width 32
+there (wrong results, `H4-mutation-vk-sg32.txt`).
+
+Admission: Vulkan is rewritten automatically only at the measured width, 64
+(a 32-wide Vulkan device only on `Sarek_matrix.run`, until measured); the
+launch is checked against the device's grid, threads-per-block and
+shared-memory limits; the direct float16 variant is laid out for 32-wide waves
+only and falls back to staged at any other width. Hand-written `SCoopmat`
+kernels on CUDA/C (sm_70+ float16, sm_72+ 8-bit) are admitted by the general
+launch gate now that CUDA/C reports a probe: compiler-output evidence only,
+never executed on NVIDIA hardware.
 
 | Backend | before | after | evidence |
 |---|---|---|---|

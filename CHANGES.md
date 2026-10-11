@@ -12,7 +12,13 @@
   CUDA/C (`Cuda_coopmat` probe: nvcuda::wmma, sm_72+, warp 32) on explicit
   request only (`Sarek_matrix.run`), never automatically: compiler-output
   evidence (NVRTC), never executed; ZLUDA lacks `wmma.*` and unsigned 8-bit
-  `mma`, so ZLUDA devices are declined. The float rewrites stay on HIP and the
+  `mma`, so ZLUDA devices are declined. Because CUDA/C now reports a
+  cooperative-matrix probe, the general `SCoopmat` launch gate also admits
+  hand-written kernels on CUDA/C (sm_70+ float16, sm_72+ 8-bit, same-sign):
+  compiler-output evidence only, never executed on NVIDIA hardware. Vulkan is
+  rewritten automatically on 64-wide subgroups only (32-wide on request); the
+  rewritten launch is checked against the device's threads-per-block and
+  shared-memory limits. The float rewrites stay on HIP and the
   interpreter. Tests: `test_matrix_rewrite` (now enumerating Vulkan),
   `test_matrix_subgroup`, `test_matrix_template_golden`,
   `test_cuda_coopmat_probe`, `test_matrix_cuda_compile`; bench

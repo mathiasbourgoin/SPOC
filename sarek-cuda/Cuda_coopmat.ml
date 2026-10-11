@@ -49,18 +49,21 @@ let int8_configs =
     ([cuModuleGetFunction] -> CUDA_ERROR_NOT_FOUND), measured on gfx1100
     (specs/zluda-mma-nvrtc13.md, F-1;
     docs/measurements/zluda-mma-probe-2026-10-11). Its devices carry "ZLUDA" in
-    their name. *)
-let is_zluda name =
+    Its devices carry "ZLUDA" in their name and report compute capability 8.8,
+    which no NVIDIA part does. *)
+let is_zluda ~device_name ~compute_capability =
   let affix = "ZLUDA" in
-  let n = String.length name and m = String.length affix in
-  let rec at i = i + m <= n && (String.sub name i m = affix || at (i + 1)) in
-  at 0
+  let n = String.length device_name and m = String.length affix in
+  let rec at i =
+    i + m <= n && (String.sub device_name i m = affix || at (i + 1))
+  in
+  at 0 || compute_capability = (8, 8)
 
 (** [support ~device_name ~compute_capability ~warp_size] is the rule, separated
     from the device record so a test can drive it with any device's facts. *)
 let support ~device_name ~compute_capability:(major, minor) ~warp_size =
   let at_least (m, n) = (major, minor) >= (m, n) in
-  let zluda = is_zluda device_name in
+  let zluda = is_zluda ~device_name ~compute_capability:(major, minor) in
   let configs =
     if warp_size <> 32 || zluda then []
     else

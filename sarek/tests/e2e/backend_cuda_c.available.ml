@@ -15,6 +15,8 @@ let source_of (ir : Sarek_ir_types.kernel) =
     ~types:ir.Sarek_ir_types.kern_types
     ir
 
+let is_zluda = Sarek_cuda.Cuda_coopmat.is_zluda
+
 let probe ~device_name ~compute_capability ~warp_size =
   Some
     (Sarek_cuda.Cuda_coopmat.support
