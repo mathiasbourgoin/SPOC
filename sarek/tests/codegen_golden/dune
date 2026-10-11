@@ -205,6 +205,11 @@
 ; The layout of CM_load / CM_store: CUDA/HIP and GLSL text, refusals elsewhere.
 
 (test
+ (name test_metal_coopmat_golden)
+ (modules test_metal_coopmat_golden)
+ (libraries sarek_ir sarek_codegen sarek_backend_error alcotest))
+
+(test
  (name test_coopmat_layout_codegen)
  (modules test_coopmat_layout_codegen)
  (libraries sarek_ir sarek_codegen sarek_backend_error alcotest))

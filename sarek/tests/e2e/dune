@@ -2371,3 +2371,30 @@
    SPOC_VULKAN_FENCE_TIMEOUT_S
    60
    (run %{dep:test_vulkan_window_push_budget.exe}))))
+
+; SCoopmat on Metal / simdgroup_matrix 8x8x8 (specs/coopmat-metal-simdgroup.md):
+; codegen and refusals everywhere, then on an Apple GPU only (skipped
+; otherwise) tiles and a tiled GEMM bit-equal to the interpreter and to the
+; closed form of docs/design/f16-relaxed-accuracy.md §2, with positive controls.
+; Run by hand on a Mac: alias e2e-metal (scripts/unwired-targets.tsv).
+
+(executable
+ (name test_coopmat_metal_e2e)
+ (modules test_coopmat_metal_e2e)
+ (libraries
+  sarek
+  sarek.gemm
+  sarek.interp
+  sarek.codegen
+  sarek.execute
+  sarek_ir
+  spoc_core
+  spoc_framework
+  test_helpers
+  unix)
+ (preprocess no_preprocessing))
+
+(rule
+ (alias e2e-metal)
+ (action
+  (run %{dep:test_coopmat_metal_e2e.exe})))

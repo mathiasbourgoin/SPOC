@@ -499,10 +499,10 @@ let expect_f16_rejected ?tag ~backend ~expected_reason name f =
         name
         (Printexc.to_string e)
 
-(* GLSL, Metal and WGSL are composed by the single shared
+(* WGSL is composed by the single shared
    Sarek_ir_codegen.reject_feature:
    "<backend>: <width> not yet supported (#57 slice 2[ — <hint>])".
-   Metal omits the hint (its arm is a one-liner once it can be tested).
+   Metal left the deferred set: it lowers f16 (test_metal_coopmat_golden).
 
    OpenCL deliberately does NOT use that composer any more (#57 slice 2a), so
    its expectation is spelled out separately here on purpose. Pinning it
@@ -535,8 +535,6 @@ let reason_glsl =
    feeds it, so 2912/63488 binary16 inputs disagree with the interpreter on a \
    single narrowing, and `precise` does not prevent it. See \
    docs/fp-contraction-policy.md (#57 slice 2b)."
-
-let reason_metal = "Metal: float16 not yet supported (#57 slice 2)"
 
 let reason_wgsl =
   "WGSL: float16 not yet supported (#57 slice 2 — needs a module-top `enable \
@@ -579,16 +577,6 @@ let test_deferred_backends_reject_f16 () =
       ~expected_reason:reason_glsl
       (label ^ "/glsl generate_with_types")
       (fun () -> Sarek_ir_glsl.generate_with_types ~types:k.kern_types k) ;
-    expect_f16_rejected
-      ~backend:"Metal"
-      ~expected_reason:reason_metal
-      (label ^ "/metal generate")
-      (fun () -> Sarek_ir_metal.generate k) ;
-    expect_f16_rejected
-      ~backend:"Metal"
-      ~expected_reason:reason_metal
-      (label ^ "/metal generate_with_types")
-      (fun () -> Sarek_ir_metal.generate_with_types ~types:k.kern_types k) ;
     (* Likewise WGSL's tag is the framework name "WebGPU". *)
     expect_f16_rejected
       ~tag:"WebGPU"
@@ -642,8 +630,6 @@ let test_deferred_backends_still_accept_f32 () =
   ignore (Sarek_ir_opencl.generate_with_types ~types:k.kern_types k) ;
   ignore (Sarek_ir_glsl.generate k) ;
   ignore (Sarek_ir_glsl.generate_with_types ~types:k.kern_types k) ;
-  ignore (Sarek_ir_metal.generate k) ;
-  ignore (Sarek_ir_metal.generate_with_types ~types:k.kern_types k) ;
   ignore (Sarek_ir_wgsl.generate k) ;
   ignore (Sarek_ir_wgsl.generate_with_types ~types:k.kern_types k) ;
   ignore (Sarek_ir_ptx.generate k) ;
@@ -764,7 +750,7 @@ let () =
       ( "deferred_backends",
         [
           Alcotest.test_case
-            "opencl/glsl/metal/wgsl reject f16 (param, local, helper return)"
+            "opencl/glsl/wgsl reject f16 (param, local, helper return)"
             `Quick
             test_deferred_backends_reject_f16;
           Alcotest.test_case
@@ -772,7 +758,7 @@ let () =
             `Quick
             test_ptx_rejects_f16;
           Alcotest.test_case
-            "opencl/glsl/metal/wgsl still accept f32"
+            "opencl/glsl/wgsl still accept f32"
             `Quick
             test_deferred_backends_still_accept_f32;
           Alcotest.test_case
