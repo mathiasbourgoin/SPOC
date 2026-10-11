@@ -75,16 +75,10 @@ let destroy stream =
   vkDestroyCommandPool stream.device.Device.device stream.command_pool null
 
 let synchronize stream =
-  let fence_ptr = allocate vk_fence stream.fence in
-  check
-    "vkWaitForFences"
-    (vkWaitForFences
-       stream.device.Device.device
-       (Unsigned.UInt32.of_int 1)
-       fence_ptr
-       vk_true
-       (Unsigned.UInt64.of_int64 Int64.max_int)) ;
-  ignore fence_ptr
+  wait_fence
+    "vkWaitForFences (Stream.synchronize)"
+    stream.device.Device.device
+    stream.fence
 
 let default device =
   match Hashtbl.find_opt default_streams device.Device.id with
