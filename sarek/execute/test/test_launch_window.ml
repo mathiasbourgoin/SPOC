@@ -878,15 +878,15 @@ let test_default_backends () =
   List.iter
     (fun name ->
       check bool (name ^ " defers by default") true (Execute.Window.defers name))
-    ["HIP"; "OpenCL"; "Vulkan"; "Metal"; "CUDA/PTX"; "CUDA/C"] ;
+    ["HIP"; "OpenCL"; "Vulkan"; "CUDA/PTX"; "CUDA/C"] ;
   List.iter
     (fun name ->
       check
         bool
-        (name ^ " is never deferred")
+        (name ^ " is not deferred by default")
         false
         (Execute.Window.defers name))
-    ["Native"; "Interpreter"]
+    ["Native"; "Interpreter"; "Metal"]
 
 let test_cpu_device_not_deferred () =
   reset () ;

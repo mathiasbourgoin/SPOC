@@ -5,19 +5,19 @@ title: Launch Window and Fusion
 
 # Launch Window and Fusion
 
-When a program issues many small kernels, the host time spent on each launch can exceed the time the GPU spends running it. On HIP, OpenCL, Vulkan, Metal and CUDA, Sarek therefore holds JIT launches back until the next point where your program observes the device, merges independent ones into a single kernel launch, and on HIP also merges element-wise consumers into the kernel that produces their input. This page says what is on by default, what flushes the held launches, how to see the effect, how to turn it off, and one change you may notice: device-compile and launch errors can surface in a later call than the launch.
+When a program issues many small kernels, the host time spent on each launch can exceed the time the GPU spends running it. On HIP, OpenCL, Vulkan and CUDA, Sarek therefore holds JIT launches back until the next point where your program observes the device, merges independent ones into a single kernel launch, and on HIP also merges element-wise consumers into the kernel that produces their input. This page says what is on by default, what flushes the held launches, how to see the effect, how to turn it off, and one change you may notice: device-compile and launch errors can surface in a later call than the launch.
 
 ## Defaults per backend
 
-| Feature | HIP | OpenCL | Vulkan | CUDA, Metal | Native, Interpreter, CPU devices |
-|---|---|---|---|---|---|
-| Launch window (deferral, horizontal fusion) | on | on | on | on (WebGPU: off) | never |
-| Epilogue fusion | on | off | off | off | never |
+| Feature | HIP | OpenCL | Vulkan | CUDA | Metal | Native, Interpreter, CPU devices |
+|---|---|---|---|---|---|---|
+| Launch window (deferral, horizontal fusion) | on | on | on | on | off (opt-in; also WebGPU) | never |
+| Epilogue fusion | on | off | off | off | off | never |
 
 - The window is on by default for the backends in the first row, and a device is excluded from deferral if it is a CPU device (host-pointer buffers from `Host_ptr_buffer` alias host memory there). Native and Interpreter execute directly and are never deferred.
-- On Metal a fused kernel is limited to 31 argument slots (each vector takes two, each scalar one, and every member adds an offset and a size). A group that would pass it is split, so a long chain of launches with many arguments is fused in several smaller groups.
-- Metal's window was checked on the generated source; the project's window tests had not yet run on an Apple GPU when this default was set.
-- CUDA was tested through ZLUDA on an AMD GPU, not on NVIDIA hardware. Switch it off with `Execute.Window.set_backend_enabled ~backend:"CUDA/PTX" false` if you see a difference.
+- When Metal is opted in, a fused kernel is limited to 31 argument slots (each vector takes two, each scalar one, and every member adds an offset and a size). A group that would pass it is split, so a long chain of launches with many arguments is fused in several smaller groups.
+- Metal is opt-in (`Execute.Window.set_backend_enabled ~backend:"Metal" true`) until the window tests have been executed on Apple hardware; only the generated fused source has been checked so far.
+- CUDA/PTX was tested through ZLUDA on an AMD GPU, and CUDA/C shares HIP's CUDA C generator; neither has run on NVIDIA hardware. Switch it off with `Execute.Window.set_backend_enabled ~backend:"CUDA/PTX" false` if you see a difference.
 - Epilogue fusion is on only on HIP. HIP compiles with floating-point contraction forced off, so merging two kernels cannot change a result; on the other backends the device compiler may contract a multiply of the first kernel with an add of the second, changing the result by an ulp, so it stays opt-in.
 - Horizontal fusion produces bit-identical results by construction: each member runs unchanged and nothing is added, removed or reordered between members.
 
@@ -132,7 +132,7 @@ On HIP this should print `submitted=2 issued=1 fused_groups=1`; with the window 
 | Epilogue fusion, at start | `SAREK_LAUNCH_EPILOGUE=0` (also `false`, `off`, `no`) |
 | Epilogue fusion, one backend | `Execute.Window.set_epilogue_backend ~backend:"HIP" false` |
 
-The setters flush held launches first. The backend argument is the framework name shown by `sarek-device-info` (`HIP`, `OpenCL`, `Vulkan`, `Metal`, `CUDA/PTX`, `CUDA/C`). Turning the window on for a backend outside the default set (WebGPU) is an opt-in: its codegen is not wired. Turning epilogue fusion on for OpenCL or Vulkan accepts the possible ulp difference described above.
+The setters flush held launches first. The backend argument is the framework name shown by `sarek-device-info` (`HIP`, `OpenCL`, `Vulkan`, `Metal`, `CUDA/PTX`, `CUDA/C`). Turning the window on for a backend outside the default set (Metal, until executed on Apple hardware; WebGPU, whose codegen is not wired) is an opt-in. Turning epilogue fusion on for OpenCL or Vulkan accepts the possible ulp difference described above.
 
 ```ocaml
 let configure () =

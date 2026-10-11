@@ -164,13 +164,12 @@ let env_enabled () =
 let enabled = Atomic.make (env_enabled ())
 
 (** Backends whose launches are deferred by default. Horizontal fusion is
-    bit-identical by construction, so the window is on wherever it is exercised
-    by the test suites: HIP, OpenCL and Vulkan on an RX 7900 XTX, Metal on an
-    Apple M4, CUDA/PTX through ZLUDA (no NVIDIA hardware;
-    specs/launch-window.md). Others stay immediate unless {!set_backend_enabled}
-    opts them in. *)
-let default_backends =
-  ["HIP"; "OpenCL"; "Vulkan"; "Metal"; "CUDA/PTX"; "CUDA/C"]
+    bit-identical by construction, so the window is on wherever the test suites
+    have executed it: HIP, OpenCL and Vulkan on an RX 7900 XTX, CUDA/PTX through
+    ZLUDA on that GPU (not NVIDIA hardware), and CUDA/C, whose generator is the
+    one HIP uses. Metal stays immediate until its window tests have run on Apple
+    hardware (specs/launch-window.md); {!set_backend_enabled} opts it in. *)
+let default_backends = ["HIP"; "OpenCL"; "Vulkan"; "CUDA/PTX"; "CUDA/C"]
 
 (* Read on every launch: an immutable list behind an atomic, no lock. *)
 let backends : string list Atomic.t = Atomic.make default_backends
