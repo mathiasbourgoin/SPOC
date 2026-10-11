@@ -23,19 +23,37 @@ Your implementation must specify this in the `execution_model` field of the sign
 **Intrinsics** are the bridge between Sarek's high-level OCaml syntax and backend-specific hardware features (like thread IDs, barriers, or specialized math functions).
 
 ### The Intrinsic Registry
-Every backend provides an `INTRINSIC_REGISTRY`. This is where you map Sarek names to your backend's implementation.
+Every backend exposes an `Intrinsics` module of type `Framework_sig.INTRINSIC_REGISTRY`: a table from intrinsic names to the backend's implementation. `Intrinsic_registry.Make ()` creates such a table with a ready-made entry type (`intr_name`, `intr_codegen`, `intr_convergence`). The library is `sarek.framework.registry`.
 
-For a **JIT backend**, an intrinsic implementation is usually a code-generation function:
+For a **JIT backend**, `intr_codegen` is the source text the generator emits:
 ```ocaml
-(* Mapping Sarek's 'barrier()' to OpenCL's 'barrier(CLK_LOCAL_MEM_FENCE)' *)
-Registry.register "barrier" (fun () -> "barrier(CLK_LOCAL_MEM_FENCE);")
+module Intrinsics = Spoc_framework_registry.Intrinsic_registry.Make ()
+
+(* Mapping Sarek's block_barrier to OpenCL's barrier *)
+let () =
+  Intrinsics.register
+    "block_barrier"
+    {
+      Spoc_framework_registry.Intrinsic_registry.intr_name = "block_barrier";
+      intr_codegen = "barrier(CLK_LOCAL_MEM_FENCE);";
+      intr_convergence = Spoc_framework.Framework_sig.Sync;
+    }
 ```
 
-For a **Direct backend** (Native), it is an actual OCaml function:
+A **Direct backend** (Native) executes pre-compiled OCaml functions, so its entries only name the runtime call; the Native backend registers them as placeholders:
 ```ocaml
-(* Mapping thread_idx_x to a function that reads the current domain state *)
-Registry.register "thread_idx_x" (fun state -> state.tid_x)
+(* Naming the runtime call behind a thread index *)
+let () =
+  Intrinsics.register
+    "thread_id_x"
+    {
+      Spoc_framework_registry.Intrinsic_registry.intr_name = "thread_id_x";
+      intr_codegen = "Sarek_cpu_runtime.thread_id_x ()";
+      intr_convergence = Spoc_framework.Framework_sig.Divergent;
+    }
 ```
+
+The intrinsics that kernels call (`global_thread_id`, `block_barrier`, math functions) are declared once with `let%sarek_intrinsic`, which carries the device spelling per framework; see `sarek/ppx_intrinsic/README.md` in the repository.
 
 ## 3. Handling Native Code Blocks
 
@@ -57,13 +75,23 @@ Your plugin must implement several core modules:
 
 ## 5. Plugin Registration
 
-Register your backend with a `priority`. SPOC uses this to automatically select the best available device (e.g., CUDA is usually priority 100, while Native CPU is 50).
+Register your backend with a `priority`. Priorities order the backends registered under one family name and decide `Framework_registry.best_backend`. The bundled backends use 100 for CUDA/PTX, 95 for Metal, 90 for OpenCL, 80 for Vulkan and HIP, 10 for Native and 5 for the Interpreter.
+
+A plugin registers when its module is initialised and exposes an `init` function that forces the registration. A program that calls `init` links the module, which a mere `libraries` entry does not do (see [Using Sarek in a dune project](getting_started.html#using-sarek-in-a-dune-project)). The bundled plugins register only when the backend reports itself available:
 
 ```ocaml
-let () =
-  Spoc_framework.Framework_registry.register_backend
-    ~priority:80 
-    (module MyNewBackend : Spoc_framework.Framework_sig.BACKEND)
+module Make_plugin (B : Spoc_framework.Framework_sig.BACKEND) = struct
+  let registered_backend =
+    lazy
+      (if B.is_available () then
+         Spoc_framework_registry.Framework_registry.register_backend
+           ~priority:80
+           (module B : Spoc_framework.Framework_sig.BACKEND))
+
+  let () = Lazy.force registered_backend
+
+  let init () = Lazy.force registered_backend
+end
 ```
 
 ## 6. Testing Your Backend

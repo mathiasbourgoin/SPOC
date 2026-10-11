@@ -5,7 +5,7 @@ title: Building SPOC from Source
 
 # Building and Testing SPOC
 
-While most users should install Sarek via Opam, you can also build the framework from source for development or custom configurations.
+Sarek is not yet published to the opam repository: build it from a clone of the repository, for use in your own project or for development.
 
 ## Prerequisites
 
@@ -20,7 +20,9 @@ While most users should install Sarek via Opam, you can also build the framework
 
 ### 1. Install Dependencies
 ```bash
-opam install ctypes ctypes-foreign ppxlib alcotest dune
+git clone https://github.com/mathiasbourgoin/Sarek.git
+cd Sarek
+opam install . --deps-only --working-dir
 ```
 
 ### 2. Build and Install
@@ -40,10 +42,7 @@ dune test
 ### Benchmarks
 Run the automated benchmark suite to verify performance across available backends:
 ```bash
-# Fast version (small problem sizes)
-make benchmarks-fast
-
-# Full version (comprehensive datasets)
+# Run the full suite on all available devices
 make benchmarks
 ```
 

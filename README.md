@@ -240,7 +240,7 @@ Formal models (Rocq):
 
 ### Prerequisites
 
-- OCaml 5.4.0+ (local opam switch included in repository)
+- OCaml 5.4.0+
 - dune 3.15+
 - GPU backends (optional):
   - **CUDA**: NVIDIA driver + CUDA toolkit (see CUDA requirements below)
@@ -289,45 +289,27 @@ LD_LIBRARY_PATH=/path/to/zluda dune exec -- sarek-device-info
 
 Tested on an RX 7900 XTX with ZLUDA v7-preview.3: the CUDA/PTX backend matches or exceeds the OpenCL and Vulkan backends on memory-bound benchmarks.
 
-### Installing via OPAM
+### Building from source
 
-SPOC is not yet published to the OPAM repository, but you can use OPAM to install from source with all dependencies:
+Sarek is not yet published to the opam repository, so build it from a clone:
 
 ```bash
-# Clone repository
 git clone https://github.com/mathiasbourgoin/Sarek.git
 cd Sarek
 
-# Install dependencies via OPAM (OCaml 5.4+)
+# Install the dependencies (OCaml 5.4+) in the current opam switch
 opam update
 opam install . --deps-only --working-dir
 
-# Build all backends
+# Build everything
 dune build
 
-# Or build only specific backends you need
+# Or build only some backends
 dune build sarek sarek-cuda
 dune build sarek sarek-opencl
 ```
 
-Backends detect compatible drivers at runtime. You can install backends even without corresponding GPU drivers - they will simply not be available for use.
-
-### Building from Source
-
-```bash
-# Clone and use local opam switch
-cd SPOC
-opam install . --deps-only
-
-# Build all packages
-dune build
-
-# Build specific backend
-dune build sarek-cuda
-dune build sarek-opencl
-```
-
-The framework uses dynamic linking, so you can build without GPU drivers installed. GPU support is detected at runtime.
+The GPU backends load their driver libraries at run time. You can build them without the matching drivers; a backend whose driver is missing does not register and its devices do not appear.
 
 ### Verifying Installation
 
@@ -338,14 +320,9 @@ dune exec -- sarek-device-info
 # Run unit tests
 dune runtest
 
-# Run fast benchmarks (Native + OpenCL if available)
-make benchmarks-fast
-
-# Run full benchmark suite on all available devices
+# Run the full benchmark suite on all available devices
 make benchmarks
 ```
-
-The fast benchmarks use small problem sizes and complete in ~20 seconds, while the full benchmark suite exercises all backends with larger datasets.
 
 **Benchmark Suite**: 22 benchmarks (`benchmarks/bench_*.ml`) covering compute-bound (matrix multiplication naive/tiled, Mandelbrot, n-body, conv2d), memory-bound (vector add/copy, stream triad, reduction, stencil, gather/scatter), irregular (histogram, bitonic and radix sort, scan), and layout/transfer optimisation patterns (transpose naive vs tiled, AoS vs SoA, pinned transfer). Results are published to an [interactive web viewer](https://mathiasbourgoin.github.io/Sarek/benchmarks/) with multiple visualization modes.
 
@@ -357,57 +334,74 @@ The fast benchmarks use small problem sizes and complete in ~20 seconds, while t
 open Sarek
 module Device = Spoc_core.Device
 module Vector = Spoc_core.Vector
+module Transfer = Spoc_core.Transfer
 
-(* Define a kernel *)
+(* Define a kernel: y <- alpha * x + y *)
 let saxpy =
   [%kernel
-    fun (a : float32 vector) (x : float32 vector)
-        (y : float32 vector) (alpha : float32) (n : int32) ->
+    fun (x : float32 vector) (y : float32 vector) (alpha : float32) (n : int32) ->
       let open Sarek_stdlib.Std in
       let i = global_thread_id in
-      if i < n then y.(i) <- alpha *. x.(i) +. a.(i)]
+      if i < n then y.(i) <- alpha *. x.(i) +. y.(i)]
 
 let () =
-  (* Initialize framework *)
-  let devs = Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] () in
-  let dev = devs.(0) in
+  (* Register the CPU backend, then enumerate devices. GPU backends register
+     the same way; see "Using Sarek in a dune project" in the Getting Started
+     guide. *)
+  Sarek_native.Native_plugin.init () ;
+  let _devices = Device.init () in
+  match Device.best () with
+  | None -> prerr_endline "no device available"
+  | Some dev ->
+      (* Get the IR from the kernel *)
+      let _, kirc = saxpy in
+      let ir =
+        match kirc.Sarek.Kirc_types.body_ir with
+        | Some ir -> ir
+        | None -> failwith "No IR"
+      in
 
-  (* Get IR from kernel *)
-  let _, kirc = saxpy in
-  let ir = match kirc.Sarek.Kirc_types.body_ir with
-    | Some ir -> ir | None -> failwith "No IR" in
+      (* Create vectors *)
+      let n = 1024 in
+      let x = Vector.create Vector.float32 n in
+      let y = Vector.create Vector.float32 n in
+      for i = 0 to n - 1 do
+        Vector.set x i (float_of_int i) ;
+        Vector.set y i 1.0
+      done ;
 
-  (* Create vectors *)
-  let n = 1024 in
-  let a = Vector.create Vector.float32 n in
-  let x = Vector.create Vector.float32 n in
-  let y = Vector.create Vector.float32 n in
-
-  (* Execute kernel *)
-  let block = Execute.dims1d 256 in
-  let grid  = Execute.dims1d ((n + 255) / 256) in
-  Execute.run_vectors ~device:dev ~ir ~args:[Vec a; Vec x; Vec y; Float 2.5; Int n]
-    ~block ~grid ()
+      (* Execute the kernel *)
+      let block = Execute.dims1d 256 in
+      let grid = Execute.dims1d ((n + 255) / 256) in
+      Execute.run_vectors
+        ~device:dev
+        ~ir
+        ~args:[Vec x; Vec y; Float32 2.5; Int n]
+        ~block
+        ~grid
+        () ;
+      Transfer.flush dev ;
+      Printf.printf "y[10] = %f\n" (Vector.get y 10)
 ```
 
 ### Backend Selection
 
 ```ocaml
-(* List available devices *)
-let devices = Device.all () in
-Array.iter (fun dev ->
-  Printf.printf "%s (%s)\n"
-    dev.Device.name
-    dev.Device.framework
-) devices
+(* Continues the example above (same `Device` alias). List the available
+   devices *)
+let () =
+  Device.all ()
+  |> Array.iter (fun dev ->
+      Printf.printf "%s (%s)\n" dev.Device.name dev.Device.framework)
 
-(* Select specific backend. CUDA backends register as "CUDA/PTX" and
+(* Select a specific backend. CUDA backends register as "CUDA/PTX" and
    "CUDA/C"; use filter_cuda to match the whole family. *)
-let cuda_devices = Device.filter_cuda () in
-let opencl_devices = Device.by_framework "OpenCL" in
+let cuda_devices = Device.filter_cuda ()
+
+let opencl_devices = Device.by_framework "OpenCL"
 ```
 
-See [sarek/sarek/README.md](sarek/sarek/README.md) for comprehensive usage documentation.
+See [sarek/sarek/README.md](sarek/sarek/README.md) for the launch API and [gh-pages/docs/getting_started.md](gh-pages/docs/getting_started.md) for the project setup.
 
 ## Testing
 
@@ -419,8 +413,12 @@ dune runtest
 dune test sarek-cuda
 dune test sarek-opencl
 
-# Run with specific backend
-SAREK_BACKEND=cuda dune runtest
+# Run without any GPU backend (Native and Interpreter only)
+SPOC_DISABLE_GPU=1 dune runtest
+
+# Skip one backend: SPOC_DISABLE_CUDA, SPOC_DISABLE_HIP, SPOC_DISABLE_OPENCL,
+# SPOC_DISABLE_VULKAN or SPOC_DISABLE_METAL
+SPOC_DISABLE_OPENCL=1 dune runtest
 ```
 
 See [COVERAGE.md](COVERAGE.md) for coverage measurement instructions.

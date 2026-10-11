@@ -24,9 +24,7 @@ Targets NVIDIA GPUs using the CUDA Driver API and NVRTC (Runtime Compilation).
 - **Performance**: Native CUDA performance; uses JIT compilation to optimize for the specific GPU architecture.
 - **Setup**: Requires `libcuda.so` and `libnvrtc.so` in your library path.
 
-```bash
-opam install sarek-cuda
-```
+Build it from the repository (`dune build sarek-cuda`), list `sarek-cuda.plugin` in your `libraries`, and call `Sarek_cuda.Cuda_plugin.init ()` before `Device.init` (see [Getting Started](getting_started.html#using-sarek-in-a-dune-project)).
 
 ## OpenCL Backend (`sarek-opencl`)
 
@@ -36,9 +34,7 @@ Targets a wide range of devices including AMD GPUs, Intel integrated graphics, a
 - **Compatibility**: Tested on NVIDIA, AMD, and Intel platforms.
 - **Setup**: Requires an OpenCL ICD loader (e.g., `ocl-icd-libopencl1` on Linux).
 
-```bash
-opam install sarek-opencl
-```
+Build it from the repository (`dune build sarek-opencl`), list `sarek-opencl.plugin` in your `libraries`, and call `Sarek_opencl.Opencl_plugin.init ()` before `Device.init` (see [Getting Started](getting_started.html#using-sarek-in-a-dune-project)).
 
 ## Vulkan Backend (`sarek-vulkan`)
 
@@ -48,9 +44,7 @@ Uses GLSL compute shaders and SPIR-V for modern cross-platform GPU support.
 - **Features**: Push constants, SSBOs (Storage Buffers), specialization constants.
 - **Platform**: Ideal for modern Linux desktops, Android devices, and Windows.
 
-```bash
-opam install sarek-vulkan
-```
+Build it from the repository (`dune build sarek-vulkan`), list `sarek-vulkan.plugin` in your `libraries`, and call `Sarek_vulkan.Vulkan_plugin.init ()` before `Device.init` (see [Getting Started](getting_started.html#using-sarek-in-a-dune-project)).
 
 ## Metal Backend (`sarek-metal`)
 
@@ -60,9 +54,7 @@ Native support for Apple hardware (M1/M2/M3 chips) using Metal Shading Language 
 - **Limitations**: No double precision (`float64`) support on most Apple hardware.
 - **Platform**: macOS and iOS only.
 
-```bash
-opam install sarek-metal
-```
+Build it from the repository (`dune build sarek-metal`), list `sarek-metal.plugin` in your `libraries`, and call `Sarek_metal.Metal_plugin.init ()` before `Device.init` (see [Getting Started](getting_started.html#using-sarek-in-a-dune-project)).
 
 ## Native CPU Backend (`sarek.native`)
 

@@ -20,7 +20,7 @@ Sarek organizes parallel execution into a 3D hierarchy:
 - **Block** (or Work-group): A collection of threads that can communicate and synchronize with each other.
 - **Grid**: The total set of all blocks launched for a kernel.
 
-In Sarek, you define these dimensions using `(x, y, z)` tuples. For example, a grid of `(4, 1, 1)` with blocks of `(256, 1, 1)` results in 1024 total threads.
+In Sarek, you define these dimensions with `Execute.dims1d`, `Execute.dims2d` and `Execute.dims3d`. For example, a grid of `Execute.dims1d 4` with blocks of `Execute.dims1d 256` results in 1024 total threads.
 
 ### Terminology Mapping
 - `thread_idx_x`: The ID of the thread within its block.
@@ -37,7 +37,15 @@ This is the main GPU memory. It is large but slow. Data transferred from OCaml v
 ### Shared Memory (`let%shared`)
 Shared memory is a small, ultra-fast cache shared by all threads **within the same block**. It is used for collaborative computing (like reductions or matrix tiles).
 ```ocaml
-let%shared sdata = Array.create Float32 256 in (* Shared by 256 threads *)
+let shared_example =
+  [%kernel
+    fun (input : float32 vector) (output : float32 vector) ->
+      let open Sarek_stdlib.Std in
+      (* One slot per thread of a 256-thread block, shared by the block *)
+      let%shared (sdata : float32) = 256l in
+      let tid = thread_idx_x in
+      sdata.(tid) <- input.(global_thread_id) ;
+      output.(global_thread_id) <- sdata.(tid)]
 ```
 
 ### Local Memory
@@ -48,19 +56,24 @@ Standard variables (`let x = ...` or `let mut x = ...`) are local to a single th
 Because threads run in parallel, they often need to wait for each other.
 
 ### Barriers
-A `barrier()` call forces every thread in a block to reach that point before any can proceed. This ensures that memory writes from one thread are visible to others.
+A `block_barrier ()` call forces every thread in a block to reach that point before any can proceed. This ensures that memory writes from one thread are visible to others.
 
 ### Supersteps (Sarek/BSP Model)
 Sarek introduces the concept of **Supersteps**, derived from the Bulk Synchronous Parallel (BSP) model. A `let%superstep` block is a clean way to organize phases of computation separated by implicit barriers.
 ```ocaml
-let%superstep loading_phase = 
-  sdata.(tid) <- input.(gid)
-in
-(* Threads automatically synchronize here *)
-let%superstep computing_phase = 
-  process sdata.(tid)
-in
-...
+let superstep_example =
+  [%kernel
+    fun (input : float32 vector) (output : float32 vector) ->
+      let open Sarek_stdlib.Std in
+      let%shared (sdata : float32) = 256l in
+      let tid = thread_idx_x in
+      let gid = global_thread_id in
+      let%superstep loading_phase = sdata.(tid) <- input.(gid) in
+      (* Threads automatically synchronize here *)
+      let%superstep computing_phase =
+        output.(gid) <- sdata.(tid) +. sdata.((tid + 1l) mod 256l)
+      in
+      ()]
 ```
 
 ## 4. Host & Device Transfers
@@ -69,7 +82,7 @@ in
 - **Device**: The GPU.
 
 The CPU and GPU usually have separate memory. Before running a kernel, you must **transfer** your data to the device. Sarek manages this through `Vector` handles. 
-- When you pass a `Vec a` to `Execute.run`, Sarek ensures the data is present on the GPU.
+- When you pass a `Vec a` to `Execute.run_vectors`, Sarek ensures the data is present on the GPU.
 - When you call `Vector.get` or `Vector.to_array`, Sarek pulls the data back to the OCaml heap.
 
 ## Summary Checklist

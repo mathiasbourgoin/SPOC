@@ -56,7 +56,12 @@ let () =
   done;
   
   (* Select device *)
-  let dev = Device.best () in
+  Sarek_native.Native_plugin.init () ;
+  let dev =
+    match Device.best () with
+    | Some dev -> dev
+    | None -> failwith "no device available"
+  in
   
   (* Calculate grid dimensions *)
   let block_size = 256 in

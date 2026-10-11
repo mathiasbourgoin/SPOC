@@ -88,7 +88,12 @@ let run_reduction () =
   (* Calculate grid dimensions *)
   let block = Execute.dims1d block_size in
   let grid = Execute.dims1d num_blocks in
-  let dev = Device.best () in
+  Sarek_native.Native_plugin.init () ;
+  let dev =
+    match Device.best () with
+    | Some dev -> dev
+    | None -> failwith "no device available"
+  in
   
   (* First pass: Reduce array to num_blocks partial sums *)
   Execute.run_vectors

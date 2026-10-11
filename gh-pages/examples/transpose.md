@@ -13,12 +13,17 @@ This example demonstrates a generic transpose function that works on `int32`, `f
 
 First, we define a generic helper function using `[@sarek.module]`. This tells Sarek this function is intended for GPU execution but will be compiled only when used inside a kernel.
 
+Outside a kernel, OCaml must still type-check the helper. The two aliases below give `vector` and `float32` an OCaml meaning (`array` and `float`) for that purpose; inside a kernel, Sarek treats them as device vectors and 32-bit floats.
+
 ```ocaml
 open Sarek
 
+type float32 = float
+type 'a vector = 'a array
+
 (* A generic transpose logic that works for any type 'a *)
 let[@sarek.module] do_transpose (input : 'a vector) (output : 'a vector)
-                                (width : int) (height : int) (tid : int) =
+                                (width : int) (height : int) (tid : int) : unit =
   let n = width * height in
   if tid < n then begin
     let col = tid mod width in
@@ -91,7 +96,12 @@ module Vector = Spoc_core.Vector
 let run_polymorphic_tests () =
   let width, height = 1024, 1024 in
   let n = width * height in
-  let dev = Device.best () in
+  Sarek_native.Native_plugin.init () ;
+  let dev =
+    match Device.best () with
+    | Some dev -> dev
+    | None -> failwith "no device available"
+  in
   let block = Execute.dims1d 256 in
   let grid  = Execute.dims1d ((n + 255)/256) in
 
@@ -109,10 +119,8 @@ let run_polymorphic_tests () =
 
   (* 2. Run Custom Struct Transpose *)
   (* Create a vector for our custom type *)
-  let points_in = Vector.create_custom
-    (module struct type t = point3d let size = 12 end) n in
-  let points_out = Vector.create_custom
-    (module struct type t = point3d let size = 12 end) n in
+  let points_in = Vector.create_custom point3d_custom n in
+  let points_out = Vector.create_custom point3d_custom n in
 
   (* Initialize with OCaml records *)
   Vector.set points_in 0 { x=1.0; y=2.0; z=3.0 };
