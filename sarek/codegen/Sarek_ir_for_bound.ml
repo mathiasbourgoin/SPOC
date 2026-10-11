@@ -33,6 +33,11 @@ let rec assigned_names (s : stmt) : string list =
   | SNative _ | SCoopmat _ ->
       []
 
+(* The rule is syntactic: a variable is stable unless the loop body assigns it
+   by name. That is sound only because a local function cannot capture a [mut]
+   variable by reference (a helper that tries fails to compile, loudly), so
+   nothing but an assignment in the body can change one. Revisit this rule if
+   closures ever may mutate captured variables. *)
 let rec stable ~assigned (e : expr) : bool =
   let go = stable ~assigned in
   match e with
@@ -45,14 +50,43 @@ let rec stable ~assigned (e : expr) : bool =
   | EIf (c, t, f) -> go c && go t && go f
   | _ -> false
 
-let fresh_bound_var counter =
+let fresh_temp counter ~prefix ty =
   incr counter ;
   {
-    var_name = Printf.sprintf "sarek_for_hi_%d" !counter;
+    var_name = Printf.sprintf "sarek_for_%s_%d" prefix !counter;
     var_id = 0;
-    var_type = TInt32;
+    var_type = ty;
     var_mutable = false;
   }
+
+(* The temporaries [walk] introduces in front of a loop. *)
+let is_loop_temp v =
+  let has p =
+    String.length v.var_name >= String.length p
+    && String.sub v.var_name 0 (String.length p) = p
+  in
+  has "sarek_for_hi_" || has "sarek_for_lo_"
+
+let rec under_temps f = function
+  | SLet (t, e, b) when is_loop_temp t -> SLet (t, e, under_temps f b)
+  | s -> f s
+
+(* OCaml evaluates the start, then the bound. Hoisting the bound in front of
+   the loop must not move it ahead of a start that has effects or that the
+   bound depends on, so such a start is hoisted first. *)
+let hoist_bound counter v lo hi dir body =
+  let ty = v.var_type in
+  let lo_tmp, lo_expr =
+    if stable ~assigned:[] lo then ([], lo)
+    else
+      let t = fresh_temp counter ~prefix:"lo" ty in
+      ([(t, lo)], EVar t)
+  in
+  let hi_tmp = fresh_temp counter ~prefix:"hi" ty in
+  List.fold_right
+    (fun (t, e) acc -> SLet (t, e, acc))
+    (lo_tmp @ [(hi_tmp, hi)])
+    (SFor (v, lo_expr, EVar hi_tmp, dir, body))
 
 let rec walk counter (s : stmt) : stmt =
   let go = walk counter in
@@ -61,14 +95,10 @@ let rec walk counter (s : stmt) : stmt =
       let assigned = assigned_names body in
       let body = go body in
       if stable ~assigned hi then SFor (v, lo, hi, dir, body)
-      else
-        let tmp = fresh_bound_var counter in
-        SLet (tmp, hi, SFor (v, lo, EVar tmp, dir, body))
-  | SPragma (hints, (SFor _ as loop)) -> (
+      else hoist_bound counter v lo hi dir body
+  | SPragma (hints, (SFor _ as loop)) ->
       (* Keep the pragma attached to the loop it governs. *)
-      match go loop with
-      | SLet (tmp, hi, loop) -> SLet (tmp, hi, SPragma (hints, loop))
-      | loop -> SPragma (hints, loop))
+      under_temps (fun loop -> SPragma (hints, loop)) (go loop)
   | SPragma (hints, body) -> SPragma (hints, go body)
   | SSeq stmts -> SSeq (List.map go stmts)
   | SIf (c, t, e) -> SIf (c, go t, Option.map go e)

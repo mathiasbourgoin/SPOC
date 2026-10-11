@@ -242,6 +242,114 @@ let test_nested_and_pragma () =
       Alcotest.(check string) "loop reads temporary" tmp.var_name b.var_name
   | _ -> Alcotest.fail "pragma must stay attached to the hoisted loop"
 
+(* Each statement shape that can hide an assignment to the bound variable [m]
+   must make the bound unstable: the loop is then wrapped in a temporary. *)
+let hoisted_by_assignment_in label body =
+  let m = var "m" TInt32 in
+  let j = var ~mutable_:true "j" TInt32 in
+  match
+    Sarek_ir_for_bound.hoist_stmt (SFor (j, i32 0, EVar m, Upto, body m))
+  with
+  | SLet (tmp, EVar _, SFor (_, _, EVar b, Upto, _)) ->
+      Alcotest.(check string) label tmp.var_name b.var_name
+  | _ -> Alcotest.failf "%s: bound assigned in the body was not hoisted" label
+
+let assign_m m = SAssign (LVar m, i32 0)
+
+let test_assignment_shapes () =
+  let wild = PWild in
+  hoisted_by_assignment_in "plain" assign_m ;
+  hoisted_by_assignment_in "nested for" (fun m ->
+      SFor (var "q" TInt32, i32 0, i32 1, Upto, assign_m m)) ;
+  hoisted_by_assignment_in "match arm" (fun m ->
+      SMatch (i32 0, [(wild, assign_m m)])) ;
+  hoisted_by_assignment_in "if then" (fun m -> SIf (i32 1, assign_m m, None)) ;
+  hoisted_by_assignment_in "else branch" (fun m ->
+      SIf (i32 1, SEmpty, Some (assign_m m))) ;
+  hoisted_by_assignment_in "record field root" (fun m ->
+      SAssign (LRecordField (LVar m, "f"), i32 0)) ;
+  hoisted_by_assignment_in "while" (fun m -> SWhile (i32 1, assign_m m)) ;
+  hoisted_by_assignment_in "block" (fun m -> SBlock (assign_m m)) ;
+  hoisted_by_assignment_in "let body" (fun m ->
+      SLet (var "t" TInt32, i32 0, assign_m m)) ;
+  hoisted_by_assignment_in "pragma" (fun m -> SPragma (["x"], assign_m m))
+
+let test_helper_body_hoisted () =
+  let a = var "a" TInt32 in
+  let j = var ~mutable_:true "j" TInt32 in
+  let loop = SFor (j, i32 0, EArrayRead ("arr", i32 0), Upto, SEmpty) in
+  let hf =
+    {hf_name = "h"; hf_params = [a]; hf_ret_type = TUnit; hf_body = loop}
+  in
+  let k = {default_kernel with kern_name = "k"; kern_funcs = [hf]} in
+  match (Sarek_ir_for_bound.hoist k).kern_funcs with
+  | [{hf_body = SLet (_, _, SFor _); _}] -> ()
+  | _ -> Alcotest.fail "helper function loop bound was not hoisted"
+
+(* The start runs before the bound: an impure start is hoisted first, a pure one
+   stays in the loop header. *)
+let test_start_before_bound () =
+  let j = var ~mutable_:true "j" TInt32 in
+  let impure = EIntrinsic (["Gpu"], "atomic_add_global_int32", [i32 0]) in
+  (match
+     Sarek_ir_for_bound.hoist_stmt
+       (SFor (j, impure, EArrayRead ("c", i32 0), Upto, SEmpty))
+   with
+  | SLet (lo, _, SLet (hi, _, SFor (_, EVar l, EVar h, Upto, _))) ->
+      Alcotest.(check string) "start temp" lo.var_name l.var_name ;
+      Alcotest.(check string) "bound temp" hi.var_name h.var_name ;
+      Alcotest.(check bool)
+        "start declared before bound"
+        true
+        (lo.var_name <> hi.var_name)
+  | _ -> Alcotest.fail "impure start must be hoisted before the bound") ;
+  match
+    Sarek_ir_for_bound.hoist_stmt
+      (SFor (j, i32 0, EArrayRead ("c", i32 0), Upto, SEmpty))
+  with
+  | SLet (_, _, SFor (_, EConst _, EVar _, Upto, _)) -> ()
+  | _ -> Alcotest.fail "pure start must stay inline"
+
+let test_temp_uses_loop_type () =
+  let j = var ~mutable_:true "j" TInt64 in
+  match
+    Sarek_ir_for_bound.hoist_stmt
+      (SFor (j, EConst (CInt64 0L), EArrayRead ("c", i32 0), Upto, SEmpty))
+  with
+  | SLet (tmp, _, _) ->
+      Alcotest.(check bool)
+        "temporary has the loop variable type"
+        true
+        (tmp.var_type = TInt64)
+  | _ -> Alcotest.fail "expected a hoisted bound"
+
+(* Every thread/block/grid name, on every C-family emitter, is a signed cast. *)
+let test_every_intrinsic_signed () =
+  List.iter
+    (fun name ->
+      let k =
+        {
+          default_kernel with
+          kern_name = "t";
+          kern_params =
+            [
+              DParam
+                ( var "out" (TVec TInt32),
+                  Some {arr_elttype = TInt32; arr_memspace = Global} );
+            ];
+          kern_body = SAssign (LArrayElem ("out", i32 0), intrinsic name);
+        }
+      in
+      List.iter
+        (fun (label, gen) ->
+          check_has (label ^ " " ^ name) (gen k) "out[0] = ((int)")
+        [
+          ("cuda", Sarek_ir_cuda.generate);
+          ("opencl", Sarek_ir_opencl.generate);
+          ("metal", Sarek_ir_metal.generate);
+        ])
+    Sarek_ir_intrinsic_dispatch.thread_intrinsic_names
+
 let () =
   Alcotest.run
     "for_bound_signed_idx"
@@ -255,12 +363,20 @@ let () =
           Alcotest.test_case "wgsl" `Quick test_wgsl_bound;
           Alcotest.test_case "stability rule" `Quick test_stable_rule;
           Alcotest.test_case "nested and pragma" `Quick test_nested_and_pragma;
+          Alcotest.test_case "assignment shapes" `Quick test_assignment_shapes;
+          Alcotest.test_case "helper body" `Quick test_helper_body_hoisted;
+          Alcotest.test_case "start before bound" `Quick test_start_before_bound;
+          Alcotest.test_case "temp type" `Quick test_temp_uses_loop_type;
         ] );
       ( "C-9 signed thread intrinsics (compile-only)",
         [
           Alcotest.test_case "cuda" `Quick test_cuda_signed;
           Alcotest.test_case "opencl" `Quick test_opencl_signed;
           Alcotest.test_case "metal" `Quick test_metal_signed;
+          Alcotest.test_case
+            "every intrinsic"
+            `Quick
+            test_every_intrinsic_signed;
           Alcotest.test_case
             "glsl and wgsl unchanged"
             `Quick
