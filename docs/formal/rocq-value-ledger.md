@@ -39,12 +39,12 @@ down:
   generated, not universally. A counterexample outside the sampled space is
   exactly what this evidence cannot rule out.
 
-Both are real, and both are stronger than "proven about the model with no link
-to production at all" (the 195 below) — but they are not the same claim, and
-neither licenses "these 112 theorems hold about the shipped code" without
-qualification: the honest statement is "checked to agree with the shipped code
-on every input tested" — exhaustively-for-a-bound in one case, by random
-sampling in the other. The other 195 are proven about the Rocq model only:
+All three are real, and all three are stronger than "proven about the model
+with no link to production at all" (the 195 below) — but they are not the same
+claim, and none licenses "these 112 theorems hold about the shipped code"
+without qualification: the honest statement is "checked to agree with the
+shipped code on every input tested" — exhaustively-for-a-bound in one case, on
+a fixed hand-chosen grid in another, by random sampling in the third. The other 195 are proven about the Rocq model only:
 real, machine-checked theorems, most independently QCheck/extraction-validated
 against the extracted model itself, but with no mechanical assertion that the
 model agrees with the code that ships. None of the three figures is hand-typed
