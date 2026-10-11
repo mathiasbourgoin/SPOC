@@ -47,13 +47,28 @@ let capped n =
   in
   max 1 (match cap with Some c -> min c n | None -> n)
 
-let domain_count ~default () =
+let domain_count ?(spare = 0) ~default () =
   let wanted =
     match env_positive_int "SAREK_DOMAIN_COUNT" with
     | Some n -> n
-    | None -> ( try Domain.recommended_domain_count () with _ -> default)
+    | None ->
+        (try Domain.recommended_domain_count () with _ -> default) - spare
   in
   capped wanted
+
+let spawn_workers n worker ~abort =
+  let spawned = ref [] in
+  match
+    for i = 0 to n - 1 do
+      spawned := Domain.spawn (fun () -> worker i) :: !spawned
+    done
+  with
+  | () -> Array.of_list (List.rev !spawned)
+  | exception exn ->
+      let bt = Printexc.get_raw_backtrace () in
+      abort () ;
+      List.iter Domain.join !spawned ;
+      Printexc.raise_with_backtrace exn bt
 
 (** {1 Registry and reaper} *)
 

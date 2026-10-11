@@ -611,7 +611,7 @@
 ; output under many concurrent domains) - see the module doc comment for the
 ; full history. No PPX, no device abstraction: exercises
 ; Sarek_ir_interp.run_kernel directly against a hand-built IR.
-; Run with: SAREK_DOMAIN_COUNT=128 dune exec sarek/tests/e2e/test_domain_pool_stress.exe
+; Run with: SAREK_DOMAIN_COUNT=127 dune exec sarek/tests/e2e/test_domain_pool_stress.exe
 
 (executable
  (name test_domain_pool_stress)

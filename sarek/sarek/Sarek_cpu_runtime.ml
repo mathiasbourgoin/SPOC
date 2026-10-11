@@ -69,80 +69,55 @@ let run_sequential = Sarek_cpu_runtime_exec.run_sequential
 
 (** {1 Parallel Execution} *)
 
-(** Run kernel in parallel without barriers - simple work partitioning.
-    Distributes all global threads across domains. Optimized for speed. *)
+(* The thread state of global thread [global_tid] of a launch, built from
+   precomputed int32 tables (no barrier: barrier-free kernels only). *)
+let simple_state_of ~block:(bx, by, bz) ~grid:(gx, gy, gz) =
+  let threads_per_block = bx * by * bz in
+  let table n = Array.init n Int32.of_int in
+  let tx = table bx and ty = table by and tz = table bz in
+  let bkx = table gx and bky = table gy and bkz = table gz in
+  let noop_barrier = fun () -> () in
+  let dim32 = Int32.of_int in
+  let bx32 = dim32 bx and by32 = dim32 by and bz32 = dim32 bz in
+  let gx32 = dim32 gx and gy32 = dim32 gy and gz32 = dim32 gz in
+  fun global_tid ->
+    let block_id = global_tid / threads_per_block in
+    let local_tid = global_tid - (block_id * threads_per_block) in
+    {
+      thread_idx_x = tx.(local_tid mod bx);
+      thread_idx_y = ty.(local_tid / bx mod by);
+      thread_idx_z = tz.(local_tid / (bx * by));
+      block_idx_x = bkx.(block_id mod gx);
+      block_idx_y = bky.(block_id / gx mod gy);
+      block_idx_z = bkz.(block_id / (gx * gy));
+      block_dim_x = bx32;
+      block_dim_y = by32;
+      block_dim_z = bz32;
+      grid_dim_x = gx32;
+      grid_dim_y = gy32;
+      grid_dim_z = gz32;
+      barrier = noop_barrier;
+    }
+
+(** Run kernel in parallel without barriers - simple work partitioning. Splits
+    all global threads into one contiguous range per pool worker and runs the
+    ranges on the shared block pool. *)
 let run_parallel_simple ~block:(bx, by, bz) ~grid:(gx, gy, gz)
     (kernel : thread_state -> shared_mem -> 'a -> unit) (args : 'a) : unit =
-  let num_domains =
-    Sarek_cpu_runtime_pools.Lifecycle.domain_count ~default:4 ()
-  in
-  (* Total number of global threads *)
-  let threads_per_block = bx * by * bz in
-  let total_blocks = gx * gy * gz in
-  let total_threads = total_blocks * threads_per_block in
-  let threads_per_domain = (total_threads + num_domains - 1) / num_domains in
-  (* Pre-convert dimensions to int32 *)
-  let bx32 = Int32.of_int bx in
-  let by32 = Int32.of_int by in
-  let bz32 = Int32.of_int bz in
-  let gx32 = Int32.of_int gx in
-  let gy32 = Int32.of_int gy in
-  let gz32 = Int32.of_int gz in
-  (* Shared empty hashtable - barrier-free kernels don't use shared memory *)
+  let chunks = Sarek_cpu_runtime_pools.Lifecycle.domain_count ~default:4 () in
+  let total_threads = gx * gy * gz * (bx * by * bz) in
+  let per_chunk = (total_threads + chunks - 1) / chunks in
+  let state_of = simple_state_of ~block:(bx, by, bz) ~grid:(gx, gy, gz) in
+  (* Barrier-free kernels don't use shared memory *)
   let empty_shared = create_shared () in
-  let noop_barrier = fun () -> () in
-  (* Pre-compute int32 lookup tables to avoid Int32.of_int in hot loop *)
-  let thread_x_table = Array.init bx Int32.of_int in
-  let thread_y_table = Array.init by Int32.of_int in
-  let thread_z_table = Array.init bz Int32.of_int in
-  let block_x_table = Array.init gx Int32.of_int in
-  let block_y_table = Array.init gy Int32.of_int in
-  let block_z_table = Array.init gz Int32.of_int in
-  (* Use Domain.spawn directly for less overhead than pool *)
-  let domains =
-    Array.init num_domains (fun domain_id ->
-        let start_tid = domain_id * threads_per_domain in
-        let end_tid =
-          min ((domain_id + 1) * threads_per_domain) total_threads
-        in
-        if start_tid >= total_threads then None
-        else
-          Some
-            (Domain.spawn (fun () ->
-                 for global_tid = start_tid to end_tid - 1 do
-                   (* Compute block and thread indices from global thread ID *)
-                   let block_id = global_tid / threads_per_block in
-                   let local_tid =
-                     global_tid - (block_id * threads_per_block)
-                   in
-                   let block_x = block_id mod gx in
-                   let block_y = block_id / gx mod gy in
-                   let block_z = block_id / (gx * gy) in
-                   let thread_x = local_tid mod bx in
-                   let thread_y = local_tid / bx mod by in
-                   let thread_z = local_tid / (bx * by) in
-                   (* Create state for this thread - safe and clean *)
-                   let state =
-                     {
-                       thread_idx_x = thread_x_table.(thread_x);
-                       thread_idx_y = thread_y_table.(thread_y);
-                       thread_idx_z = thread_z_table.(thread_z);
-                       block_idx_x = block_x_table.(block_x);
-                       block_idx_y = block_y_table.(block_y);
-                       block_idx_z = block_z_table.(block_z);
-                       block_dim_x = bx32;
-                       block_dim_y = by32;
-                       block_dim_z = bz32;
-                       grid_dim_x = gx32;
-                       grid_dim_y = gy32;
-                       grid_dim_z = gz32;
-                       barrier = noop_barrier;
-                     }
-                   in
-                   kernel state empty_shared args
-                 done)))
+  let run_chunk c =
+    let stop = min ((c + 1) * per_chunk) total_threads in
+    for global_tid = c * per_chunk to stop - 1 do
+      kernel (state_of global_tid) empty_shared args
+    done
   in
-  Array.iter (function Some d -> Domain.join d | None -> ()) domains
+  if total_threads > 0 then
+    Sarek_cpu_runtime_pools.DomainPool.run chunks run_chunk
 
 (** Run kernel in parallel with BSP-style barriers. Distributes blocks across
     domain pool, uses effect-based barriers for thread sync within each block.
@@ -160,10 +135,7 @@ let run_parallel_with_barriers ~block:(bx, by, bz) ~grid:(gx, gy, gz)
   in
   (* As nested per-axis loops: no block when any extent is not positive. *)
   let blocks = if gx > 0 && gy > 0 && gz > 0 then gx * gy * gz else 0 in
-  Sarek_cpu_runtime_pools.DomainPool.run (fun submit ->
-      for b = 0 to blocks - 1 do
-        submit (run_block b)
-      done)
+  Sarek_cpu_runtime_pools.DomainPool.run blocks (fun b -> run_block b ())
 
 (** Run kernel in parallel. Barrier metadata must come from the compiler or
     caller; the runtime must not execute user code to discover it. When metadata

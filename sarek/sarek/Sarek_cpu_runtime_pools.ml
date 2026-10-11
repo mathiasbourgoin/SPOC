@@ -309,6 +309,12 @@ module ThreadPool = struct
     in
     loop ()
 
+  (** Make the workers exit; [shutdown] also joins them. *)
+  let stop pool =
+    Mutex.protect pool.mutex (fun () ->
+        pool.shutdown <- true ;
+        Condition.broadcast pool.work_ready)
+
   (** Create thread pool with N workers *)
   let create num_workers =
     let pool =
@@ -329,8 +335,8 @@ module ThreadPool = struct
     in
     (* Spawn workers - they all reference the same pool record *)
     pool.workers <-
-      Array.init num_workers (fun i ->
-          Domain.spawn (fun () -> worker_fn pool i)) ;
+      Lifecycle.spawn_workers num_workers (worker_fn pool) ~abort:(fun () ->
+          stop pool) ;
     pool
 
   (** Submit kernel to thread pool and wait for completion. Distribution
@@ -437,10 +443,7 @@ module ThreadPool = struct
         run_kernel_locked pool ~block ~grid ~uses_barriers kernel args)
 
   let shutdown pool =
-    Mutex.lock pool.mutex ;
-    pool.shutdown <- true ;
-    Condition.broadcast pool.work_ready ;
-    Mutex.unlock pool.mutex ;
+    stop pool ;
     Array.iter Domain.join pool.workers
 end
 
@@ -561,6 +564,12 @@ module ParallelPool = struct
     in
     loop ()
 
+  (** Make the workers exit; [shutdown] also joins them. *)
+  let stop pool =
+    Mutex.protect pool.mutex (fun () ->
+        pool.shutdown <- true ;
+        Condition.broadcast pool.work_ready)
+
   (** Create a parallel pool with the given number of workers *)
   let create num_workers =
     let pool =
@@ -584,8 +593,8 @@ module ParallelPool = struct
     in
     (* Spawn worker domains - they reference the same pool record *)
     pool.workers <-
-      Array.init num_workers (fun id ->
-          Domain.spawn (fun () -> worker_fn pool id)) ;
+      Lifecycle.spawn_workers num_workers (worker_fn pool) ~abort:(fun () ->
+          stop pool) ;
     pool
 
   (** Run a parallel_for over the range 0 to total (exclusive) with custom chunk
@@ -627,24 +636,13 @@ module ParallelPool = struct
     parallel_for_chunk pool ~total ~chunk_size:default_chunk_size work_fn
 
   let shutdown pool =
-    Mutex.lock pool.mutex ;
-    pool.shutdown <- true ;
-    Condition.broadcast pool.work_ready ;
-    Mutex.unlock pool.mutex ;
+    stop pool ;
     Array.iter Domain.join pool.workers
 end
 
 (* Workers = cores - 1 (min 1); an explicit SAREK_DOMAIN_COUNT is taken
    as-is. Either way under the {!Lifecycle} cap. *)
-let parallel_worker_count () =
-  let explicit =
-    Option.bind (Sys.getenv_opt "SAREK_DOMAIN_COUNT") int_of_string_opt
-  in
-  match explicit with
-  | Some n when n > 0 -> Lifecycle.capped n
-  | _ ->
-      let cores = try Domain.recommended_domain_count () with _ -> 4 in
-      Lifecycle.capped (max 1 (cores - 1))
+let parallel_worker_count () = Lifecycle.domain_count ~spare:1 ~default:4 ()
 
 (** The parallel pool for barrier-free kernels, created on the first launch,
     retired when idle. *)
