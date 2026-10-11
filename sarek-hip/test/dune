@@ -279,3 +279,21 @@
  (alias e2e-hip-bench)
  (action
   (run %{dep:bench_hip_coopmat_gemm.exe})))
+
+; Launch window on a decode-like chain (specs/launch-window.md, CHECK-4):
+; launches per token, µs per token and host µs per launch, window off vs on.
+; Information only, apart from the on/off results being bit-identical.
+
+(executable
+ (name bench_launch_window)
+ (modules bench_launch_window)
+ (libraries sarek sarek.stdlib sarek_ir spoc_core sarek_hip unix)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias e2e-hip-bench)
+ (action
+  (run %{dep:bench_launch_window.exe})))

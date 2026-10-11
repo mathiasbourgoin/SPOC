@@ -1974,11 +1974,16 @@
 ;     dune exec sarek/tests/e2e/test_int32_bitcasts.exe
 
 (executables
- (names test_int32_bitcasts test_lsr_unroll test_coopmat_hip_e2e)
+ (names
+  test_int32_bitcasts
+  test_lsr_unroll
+  test_coopmat_hip_e2e
+  test_launch_window)
  (modules
   test_int32_bitcasts
   test_lsr_unroll
   test_coopmat_hip_e2e
+  test_launch_window
   coopmat_hip_support
   backend_hip)
  (libraries
@@ -1993,6 +1998,7 @@
   unix
   sarek_backend_error
   sarek.codegen
+  sarek.execute
   (select
    backend_hip.ml
    from
@@ -2005,6 +2011,15 @@
  (alias runtest)
  (action
   (run %{dep:test_int32_bitcasts.exe})))
+
+; Launch window and horizontal fusion (specs/launch-window.md): window on vs
+; off bit-identical on every device, launch counts where launches are deferred,
+; and the fused kernel on the Interpreter against its members.
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_launch_window.exe})))
 
 ; lsr (Lshr32/Lshr64) and the automatic unroll hint on every device
 ; (specs/codegen-lsr-unroll.md). Native/Interpreter must run; a GPU backend

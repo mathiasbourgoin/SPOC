@@ -15,3 +15,4 @@ module Device = Device_jsx
 module Transfer = Transfer_jsx
 module Log = Log_jsx
 module Kernel_arg = Kernel_arg_jsx
+module Launch_hooks = Launch_hooks

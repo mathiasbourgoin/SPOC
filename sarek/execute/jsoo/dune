@@ -13,10 +13,22 @@
 
 (copy_files "../Execute_error.ml")
 
+(copy_files "../Kernel_access.ml")
+
+(copy_files "../Fusion_horizontal.ml")
+
+(copy_files "../Launch_window.ml")
+
 (executable
  (name smoke)
  (modes js)
- (modules Smoke Execute Execute_error)
+ (modules
+  Smoke
+  Kernel_access
+  Fusion_horizontal
+  Launch_window
+  Execute
+  Execute_error)
  (libraries
   spoc_core_exec_js
   spoc_framework

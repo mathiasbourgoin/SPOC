@@ -1,5 +1,13 @@
 # Kernel Fusion
 
+> **Automatic fusion at launch time.** Besides the IR-level API below, SPOC
+> fuses launches automatically in the execution path: `Execute.run_vectors`
+> defers JIT launches in a window up to the next synchronisation point, and
+> merges independent ones into one kernel (horizontal fusion, bit-identical by
+> construction). See `specs/launch-window.md` and `Execute.Window`. The
+> functions on this page are explicit, caller-driven rewrites that may delete
+> intermediates; the launch window never deletes a store.
+
 Sarek provides automatic kernel fusion to eliminate intermediate arrays and reduce memory traffic.
 
 ## Overview
