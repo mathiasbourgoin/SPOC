@@ -63,6 +63,9 @@ let () =
   (* R-3 *)
   expect_refused "device_to_device source larger than destination" (fun () ->
       Memory.device_to_device ~src:buf32 ~dst:small32) ;
+  expect_refused
+    "device_to_device element size differs (float32 -> float64)"
+    (fun () -> Memory.device_to_device ~src:buf32 ~dst:buf64) ;
   expect_ok "device_to_device fits" (fun () ->
       Memory.device_to_device ~src:small32 ~dst:buf32) ;
   if !failures > 0 then exit 1 ;

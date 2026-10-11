@@ -41,3 +41,24 @@ let () =
     "PASS: %d vector ids unique across %d domains\n"
     (List.length all)
     domains
+
+(* [sub_vector] records metadata in a process-global table: concurrent
+   registration from several domains must lose no entry. *)
+let () =
+  let parent = Vector.create Vector.float32 64 in
+  let work () =
+    List.init 5_000 (fun _ -> Vector.sub_vector parent ~start:0 ~len:8 ())
+  in
+  let workers = List.init domains (fun _ -> Domain.spawn work) in
+  let subs = List.concat_map Domain.join workers in
+  let missing =
+    List.length (List.filter (fun v -> not (Vector.is_sub v)) subs)
+  in
+  if missing <> 0 then begin
+    Printf.eprintf "FAIL: %d sub-vectors lost their metadata\n" missing ;
+    exit 1
+  end ;
+  Printf.printf
+    "PASS: %d sub-vectors registered across %d domains\n"
+    (List.length subs)
+    domains

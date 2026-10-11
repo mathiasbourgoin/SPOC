@@ -527,12 +527,18 @@ module Make (Ops : CUSTOM_OPS) = struct
     depth : int;
   }
 
+  (** Process-global and shared by every domain: [subvector_lock] guards every
+      access to [subvector_meta]. *)
   let subvector_meta : (int, sub_meta) Hashtbl.t = Hashtbl.create 16
 
-  let is_sub (vec : ('a, 'b) t) : bool = Hashtbl.mem subvector_meta vec.id
+  let subvector_lock = Mutex.create ()
+
+  let is_sub (vec : ('a, 'b) t) : bool =
+    Mutex.protect subvector_lock (fun () -> Hashtbl.mem subvector_meta vec.id)
 
   let get_sub_meta (vec : ('a, 'b) t) : sub_meta option =
-    Hashtbl.find_opt subvector_meta vec.id
+    Mutex.protect subvector_lock (fun () ->
+        Hashtbl.find_opt subvector_meta vec.id)
 
   let depth (vec : ('a, 'b) t) : int =
     match get_sub_meta vec with Some meta -> meta.depth | None -> 0
@@ -641,10 +647,11 @@ module Make (Ops : CUSTOM_OPS) = struct
     let parent_depth =
       match get_sub_meta vec with Some meta -> meta.depth | None -> 0
     in
-    Hashtbl.replace
-      subvector_meta
-      sub.id
-      {parent_id = vec.id; start; ok_range; ko_range; depth = parent_depth + 1} ;
+    let meta =
+      {parent_id = vec.id; start; ok_range; ko_range; depth = parent_depth + 1}
+    in
+    Mutex.protect subvector_lock (fun () ->
+        Hashtbl.replace subvector_meta sub.id meta) ;
     sub
 
   let partition_host (type a b) (vec : (a, b) t) (devices : Ops.device_t array)
