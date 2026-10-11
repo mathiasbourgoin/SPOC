@@ -78,7 +78,7 @@
     </tr>
     <tr>
       <td>Only the exact string <code class="language-plaintext highlighter-rouge">0</code> switches off</td>
-      <td><code class="language-plaintext highlighter-rouge">SAREK_AUTO_UNROLL</code></td>
+      <td><code class="language-plaintext highlighter-rouge">SAREK_AUTO_UNROLL</code>, <code class="language-plaintext highlighter-rouge">SAREK_HIP_IGPU_UNCACHED</code></td>
     </tr>
     <tr>
       <td>Exactly <code class="language-plaintext highlighter-rouge">0</code>, <code class="language-plaintext highlighter-rouge">false</code>, <code class="language-plaintext highlighter-rouge">off</code> or <code class="language-plaintext highlighter-rouge">no</code> (lowercase) switches off; anything else leaves it on</td>
@@ -93,8 +93,8 @@
       <td><code class="language-plaintext highlighter-rouge">SAREK_MATRIX_REWRITE</code></td>
     </tr>
     <tr>
-      <td>A positive number; an invalid value falls back to the default without a message</td>
-      <td><code class="language-plaintext highlighter-rouge">SAREK_DOMAIN_COUNT</code>, <code class="language-plaintext highlighter-rouge">SPOC_METAL_BATCH</code></td>
+      <td>A positive number (surrounding spaces ignored, except for <code class="language-plaintext highlighter-rouge">SPOC_METAL_BATCH</code>); an invalid value falls back to the default without a message</td>
+      <td><code class="language-plaintext highlighter-rouge">SAREK_DOMAIN_COUNT</code>, <code class="language-plaintext highlighter-rouge">SAREK_CPU_POOL_MAX_DOMAINS</code>, <code class="language-plaintext highlighter-rouge">SAREK_CPU_POOL_IDLE_MS</code>, <code class="language-plaintext highlighter-rouge">SPOC_METAL_BATCH</code></td>
     </tr>
     <tr>
       <td>A positive number; an invalid value is an error</td>
@@ -172,6 +172,13 @@
       <td>unset</td>
       <td>first CUDA/C kernel compile</td>
       <td>Extra include directories for NVRTC, tried before <code class="language-plaintext highlighter-rouge">CUDA_PATH</code>, <code class="language-plaintext highlighter-rouge">CUDA_HOME</code>, <code class="language-plaintext highlighter-rouge">CUDA_ROOT</code> and the conventional install roots; only directories that exist are kept. Needed for kernels that include <code class="language-plaintext highlighter-rouge">cuda_fp16.h</code>.</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">SAREK_HIP_IGPU_UNCACHED</code></td>
+      <td><code class="language-plaintext highlighter-rouge">0</code></td>
+      <td>unset (uncached allocation on integrated GPUs)</td>
+      <td>start</td>
+      <td><code class="language-plaintext highlighter-rouge">0</code> makes HIP allocate device buffers on integrated GPUs with plain <code class="language-plaintext highlighter-rouge">hipMalloc</code> again. The only warning is a warn-level log line (stdout, once, at the first integrated-GPU allocation) printed only when <code class="language-plaintext highlighter-rouge">SAREK_DEBUG</code> enables the <code class="language-plaintext highlighter-rouge">device</code> component; otherwise nothing signals the override. <strong>Unsafe</strong>: on the gfx1036 iGPU, kernel writes into such memory can be lost across host idle gaps and results are silently wrong (issue #427). It exists to reproduce that loss. Discrete GPUs always use <code class="language-plaintext highlighter-rouge">hipMalloc</code>.</td>
     </tr>
     <tr>
       <td><code class="language-plaintext highlighter-rouge">SPOC_METAL_BATCH</code></td>
@@ -305,8 +312,22 @@
       <td><code class="language-plaintext highlighter-rouge">SAREK_DOMAIN_COUNT</code></td>
       <td>a positive integer</td>
       <td><code class="language-plaintext highlighter-rouge">Domain.recommended_domain_count ()</code> (4 if that fails)</td>
-      <td>first use of a CPU pool</td>
-      <td>Number of OCaml domains used by the Native runtime and the Interpreter. The Native parallel pool uses the value as its worker count; without it, it uses one fewer than the domain count (at least 1). A value that is not a positive integer is ignored. Meant for tests that need more domains than cores.</td>
+      <td>each time a CPU pool is created, and at each barrier-free Native launch (work split)</td>
+      <td>Number of OCaml domains used by the Native runtime and the Interpreter, before the <code class="language-plaintext highlighter-rouge">SAREK_CPU_POOL_MAX_DOMAINS</code> cap. The Native parallel pool uses the value as its worker count; without it, it uses one fewer than the domain count (at least 1). A value that is not a positive integer is ignored. Meant for tests that need more domains than cores.</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">SAREK_CPU_POOL_MAX_DOMAINS</code></td>
+      <td>a positive integer</td>
+      <td>unset (no cap)</td>
+      <td>each time a CPU pool is created, and at each barrier-free Native launch (work split)</td>
+      <td>Upper bound on the workers of each CPU pool (the Interpreter and Native block pool, the Native thread and parallel pools), so a program can keep cores for itself. <code class="language-plaintext highlighter-rouge">Cpu_pool_lifecycle.set_max_domains</code> takes precedence. A value that is not a positive integer is ignored.</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">SAREK_CPU_POOL_IDLE_MS</code></td>
+      <td>a positive integer (milliseconds)</td>
+      <td><code class="language-plaintext highlighter-rouge">1000</code></td>
+      <td>at each poll of the pool reaper, while a pool is live</td>
+      <td>A CPU pool (or a fission-queue launch dispatcher) that no launch has used for this long is retired: its worker domains exit, and the next launch creates it again. Idle domains still take part in every minor collection, so retiring them keeps host allocation fast. <code class="language-plaintext highlighter-rouge">Cpu_pool_lifecycle.set_idle_timeout</code> takes precedence. A value that is not a positive integer is ignored.</td>
     </tr>
   </tbody>
 </table>
