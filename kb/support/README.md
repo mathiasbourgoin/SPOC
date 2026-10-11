@@ -1,6 +1,6 @@
 # Repository Support Surface
 
-Reviewed slice: repository support files and generated/static boundaries. This KB covers `benchmarks/**` excluding `benchmarks/results/**`, `tools/**`, `scripts/**`, `ci/**`, `docker_scripts/**`, `Dockerfile`, `Makefile`, root `dune`, root `*.opam`, root `README.md`, `.github/workflows/**`, `.github/agents/**`, `gh-pages/**` excluding generated `gh-pages/spoc_docs/**`, `docs/**`, `notebooks/**`, and `dependencies/**`.
+Reviewed slice: repository support files and generated/static boundaries. This KB covers `benchmarks/**` excluding `benchmarks/results/**`, `tools/**`, `scripts/**`, `ci/**`, `docker_scripts/**`, `Dockerfile`, `Makefile`, root `dune`, root `*.opam`, root `README.md`, `.github/workflows/**`, `.github/agents/**`, `gh-pages/**` (`gh-pages/spoc_docs/**` is generated at deploy time and not tracked), `docs/**`, `notebooks/**`, and `dependencies/**`.
 
 Large third-party/static assets under `gh-pages/static/**`, `gh-pages/pres_resources/**`, `gh-pages/docs/talks/**`, and vendored headers under `dependencies/**` were inventoried and license/wrapping surfaces were reviewed. Minified/vendor JS/CSS/font/binary assets were not semantically audited line by line.
 
