@@ -71,18 +71,38 @@ let test_default () =
     None
     (Sarek_f16_policy.single_rounding_reason ~kernel:"optin_a")
 
+let refusal =
+  Alcotest.testable
+    (fun ppf r ->
+      Format.pp_print_string ppf (Sarek_f16_policy.refusal_message r))
+    ( = )
+
+let accept scope ~reason = Sarek_f16_policy.accept_single_rounding scope ~reason
+
+let accepted scope ~reason =
+  Alcotest.(check (result unit refusal))
+    "accepted"
+    (Ok ())
+    (accept scope ~reason)
+
 let test_empty_reason () =
-  Alcotest.check_raises
+  Alcotest.(check (result unit refusal))
     "blank reason"
-    (Invalid_argument
-       "Sarek_f16_policy.accept_single_rounding: the reason must not be empty \
-        (it is the record that the deviation from the interpreter was \
-        understood)")
-    (fun () -> Sarek_f16_policy.accept_single_rounding All_kernels ~reason:" ")
+    (Error Sarek_f16_policy.Blank_reason)
+    (accept All_kernels ~reason:" ")
+
+(* Every unnamed [%kernel] is "sarek_kern": a scope naming it would cover all
+   of them, library kernels included. *)
+let test_default_name () =
+  Alcotest.(check (result unit refusal))
+    "default kernel name"
+    (Error Sarek_f16_policy.Default_kernel_name)
+    (accept (Kernel "sarek_kern") ~reason:"test") ;
+  check_barrier "refused scope" "sarek_kern" true
 
 let test_kernel_scope () =
-  Sarek_f16_policy.accept_single_rounding (Kernel "optin_a") ~reason:"test a" ;
-  Sarek_f16_policy.accept_single_rounding (Kernel "optin_a") ~reason:"second" ;
+  accepted (Kernel "optin_a") ~reason:"test a" ;
+  accepted (Kernel "optin_a") ~reason:"second" ;
   check_barrier "accepted kernel" "optin_a" false ;
   check_barrier "other kernel" "optin_b" true ;
   Alcotest.(check (option string))
@@ -91,7 +111,7 @@ let test_kernel_scope () =
     (Sarek_f16_policy.single_rounding_reason ~kernel:"optin_a")
 
 let test_all_kernels () =
-  Sarek_f16_policy.accept_single_rounding All_kernels ~reason:"test all" ;
+  accepted All_kernels ~reason:"test all" ;
   check_barrier "any kernel" "optin_b" false ;
   Alcotest.(check (option string))
     "kernel scope takes precedence"
@@ -111,6 +131,7 @@ let () =
         [
           case "default keeps the barrier" test_default;
           case "blank reason refused" test_empty_reason;
+          case "default kernel name refused" test_default_name;
           case "kernel scope" test_kernel_scope;
           case "all kernels" test_all_kernels;
         ] );
