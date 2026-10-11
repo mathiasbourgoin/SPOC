@@ -751,7 +751,7 @@ sudo apt-get install intel-opencl-icd
 git clone https://github.com/mathiasbourgoin/Sarek.git
 cd Sarek
 opam install . --deps-only
-dune build @sarek-opencl/install
+dune build   # builds every package; backends without a driver are skipped at run time
 ```
 
 ### Verify Installation
