@@ -157,10 +157,6 @@ let no_derived_bound cfg =
     cap_remedy = Some "Accumulate in f32 (f16*f16+f32->f32).";
   }
 
-(* Keyed on ALL FOUR component types, not on {!regime}: [regime] reads only
-   the addend and the result, so a float-operand configuration with an integer
-   accumulator would come out [Strict] — a configuration no device offers and
-   whose meaning (convert a float operand to an integer?) nothing defines. *)
 (* A bf16 operand is a float32 buffer rounded on load: a deviation beyond the
    accumulation order, so it also needs the operand-rounding opt-in. *)
 let bf16_rounding_accepted () =
@@ -185,6 +181,10 @@ let rounding_not_accepted cfg =
          (or Operands_bf16x3) ~reason:\"...\" once before launching.";
   }
 
+(* Keyed on ALL FOUR component types, not on {!regime}: [regime] reads only
+   the addend and the result, so a float-operand configuration with an integer
+   accumulator would come out [Strict] — a configuration no device offers and
+   whose meaning (convert a float operand to an integer?) nothing defines. *)
 let policy_verdict cfg =
   let all_integer =
     List.for_all

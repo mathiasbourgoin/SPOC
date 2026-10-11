@@ -87,11 +87,13 @@ val relaxed_accumulation_reason : unit -> string option
     A float32 matrix product computed on matrix units must first round its
     operands to a narrower type. That is a larger deviation than the
     accumulation order {!accept_relaxed_accumulation} admits, so it has its own
-    opt-in, per precision: accepting one does not accept another.
-    [Operands_bf16x3] splits each operand into three bfloat16 terms
-    ([x = hi + mid + lo]) and keeps the six products of order at most two, for
-    near-float32 accuracy. Process-wide and one-way, like
-    {!accept_relaxed_accumulation}. *)
+    opt-in, per precision: accepting one does not accept another — for the
+    matrix rewrite. A hand-built [BFloat16] configuration is admitted by either
+    [Operands_bf16] or [Operands_bf16x3], since the configuration cannot tell a
+    split term from a plain rounded operand. [Operands_bf16x3] splits each
+    operand into three bfloat16 terms ([x = hi + mid + lo]) and keeps the six
+    products of order at most two, for near-float32 accuracy. Process-wide and
+    one-way, like {!accept_relaxed_accumulation}. *)
 
 type operand_precision = Operands_f16 | Operands_bf16 | Operands_bf16x3
 
