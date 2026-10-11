@@ -23,6 +23,7 @@
   test_mono
   test_ir_interp
   test_interp_oracle
+  test_coopmat_layout
   test_execute
   test_kirc_kernel
   test_float16
@@ -54,6 +55,7 @@
   test_mono
   test_ir_interp
   test_interp_oracle
+  test_coopmat_layout
   test_execute
   test_kirc_kernel
   test_float16
