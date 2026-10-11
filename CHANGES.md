@@ -31,6 +31,16 @@
   name them in `SAREK_DEBUG` or call `Log.enable`. Regression tests:
   `sarek/core/test/test_log.ml`, `sarek/core/test/test_log_error.ml`.
 
+- `Device.synchronize` now releases the stream keep-alive ledger of the
+  device, as `Transfer.flush` does (R-6). Before, after a `Device.synchronize`
+  `free_pinned`, `unregister_host` and `free_buffer` still refused with "still
+  referenced by stream-ordered work", and a program that only used
+  `Device.synchronize` kept every stream operand rooted for the life of the
+  process. `Device.on_synchronized` registers a listener run after each
+  whole-device sync; `Transfer` registers its ledger release there and
+  `Transfer.flush` is now `Device.synchronize`. Regression test:
+  `test_device_synchronize_releases` in
+  `sarek/tests/e2e/device_buffers_suite.ml` (CPU backends and HIP).
 - Native launches from several domains no longer hang or corrupt each other
   (R-64). The process-wide `ThreadPool` and `ParallelPool` serialise whole
   launches behind a per-pool `launch_lock`, so counters, the work function,

@@ -288,13 +288,35 @@ let free_memory d : int64 option =
 
 (** {2 Synchronization} *)
 
+(* Listeners run after a whole-device synchronisation. Registered by layers
+   that sit above [Device] and track stream-ordered work ([Transfer] registers
+   its keep-alive ledger release), so that every whole-device sync, whichever
+   module the caller went through, tells them that work has completed. *)
+let sync_listeners_lock = Mutex.create ()
+
+let sync_listeners : (t -> unit) list ref = ref []
+
+(** [on_synchronized f] registers [f], called as [f d] after {!synchronize} has
+    returned from the backend's whole-device synchronisation of [d]: at that
+    point every operation enqueued on any stream of [d] has completed. [f] runs
+    outside any lock of this module. *)
+let on_synchronized (f : t -> unit) : unit =
+  Mutex.protect sync_listeners_lock (fun () ->
+      sync_listeners := f :: !sync_listeners)
+
+(** Wait for every operation enqueued on any stream of [d], then run the
+    {!on_synchronized} listeners. *)
 let synchronize d =
   Spoc_framework.Launch_hooks.flush_pending () ;
   match Framework_registry.find_backend d.framework with
   | None -> failwith ("Unknown framework: " ^ d.framework)
   | Some (module B : Framework_sig.BACKEND) ->
       let backend_dev = B.Device.get d.backend_id in
-      B.Device.synchronize backend_dev
+      B.Device.synchronize backend_dev ;
+      let listeners =
+        Mutex.protect sync_listeners_lock (fun () -> !sync_listeners)
+      in
+      List.iter (fun f -> f d) listeners
 
 let set_current d =
   match Framework_registry.find_backend d.framework with
