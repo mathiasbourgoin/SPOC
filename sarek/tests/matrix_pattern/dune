@@ -1,0 +1,16 @@
+; Matrix-product pattern corpus (specs/matrix-pattern-advice.md).
+;
+; Compiled with the sarek_matrix alert promoted to an ERROR, so this stanza is
+; itself a gate: a negative kernel that the PPX advises (a false positive) or a
+; positive kernel whose [@alert "-sarek_matrix"] / [@@alert "-sarek_matrix"]
+; does not silence the advice fails the BUILD. The test then checks the
+; recognised roles, layouts and rejection reasons at run time.
+
+(test
+ (name test_matrix_pattern)
+ (modules test_matrix_pattern)
+ (libraries sarek sarek_stdlib sarek_ir alcotest astring fmt)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33 -alert @sarek_matrix)))

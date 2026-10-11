@@ -147,6 +147,8 @@ test_negative:
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_fun_eq.cma > "$$out" 2>&1; if grep -q "'=' cannot compare two function values" "$$out" && ! grep -q "Refused at lowering" "$$out"; then echo "  PASS: function-value equality rejected (by the typer gate)"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing escaping function-value rejection (L12 defunctionalization)..."
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_fun_escape.cma > "$$out" 2>&1; if grep -q "Function value escapes" "$$out"; then echo "  PASS: escaping function value rejected"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
+	@echo "Testing matrix-product advice (sarek_matrix alert as an error, located at the loop)..."
+	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_matrix_advice.cma > "$$out" 2>&1; if grep -q "Error (alert sarek_matrix)" "$$out" && grep -q "contains a matrix product (GEMM)" "$$out" && grep -q "line 22, characters 8-14" "$$out" && grep -q "f16\*f16+f32->f32" "$$out"; then echo "  PASS: matrix-product advice"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing f16 arithmetic rejection (storage-only type)..."
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_f16_arith.cma > "$$out" 2>&1; if grep -q "float16 is a storage-only type and has no arithmetic" "$$out"; then echo "  PASS: f16 arithmetic rejected"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing f16 equality rejection (Eq/Ne skipped every check pre-fix)..."

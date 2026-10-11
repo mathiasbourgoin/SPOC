@@ -1347,6 +1347,14 @@ type fusion_decision =
 (** Fusion hint with decision and reason *)
 type fusion_hint = {decision : fusion_decision; reason : string}
 
+(** Whether [arr] is the A or B operand of a GEMM nest of [k]
+    (specs/matrix-pattern-advice.md). *)
+let is_matrix_operand (k : kernel) arr =
+  List.exists
+    (fun (g : Sarek_matrix_pattern.gemm) ->
+      String.equal g.a.array arr || String.equal g.b.array arr)
+    (Sarek_matrix_pattern.recognise k)
+
 (** Heuristic: decide if fusion should be applied.
 
     Not all legal fusions are beneficial. This function applies heuristics to
@@ -1400,6 +1408,20 @@ let should_fuse (producer : kernel) (consumer : kernel) (intermediate : string)
     } (* Rule 1: Can't fuse if barriers present *)
   else if prod_info.has_barriers || cons_info.has_barriers then
     {decision = DontFuse; reason = "Barrier prevents fusion"}
+    (* Rule 1b: the consumer reads the intermediate as an operand of a matrix
+       product (Sarek_matrix_pattern). Rule 2 would refuse it too (the operand
+       index is not the producer's element index), but with a reason that
+       hides the cost: inlining would recompute every producer element once per
+       row or column of the product. *)
+  else if is_matrix_operand consumer intermediate then
+    {
+      decision = DontFuse;
+      reason =
+        Printf.sprintf
+          "%s is a matrix-product operand of the consumer: fusing would \
+           recompute each of its elements once per output row or column"
+          intermediate;
+    }
   else
     (* Rule 2: Always fuse simple element-wise (OneToOne -> OneToOne) *)
     match

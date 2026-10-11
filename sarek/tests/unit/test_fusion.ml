@@ -845,6 +845,77 @@ let test_should_fuse_one_to_one () =
   assert (hint.decision = Fuse) ;
   Printf.printf "test_should_fuse_one_to_one: PASSED (%s)\n" hint.reason
 
+(** Test: a consumer that reads the intermediate as a GEMM operand is not fused,
+    and the reason names the matrix product (Rule 1b). *)
+let test_should_fuse_gemm_operand () =
+  let int_param name id = DParam (mk_var name id TInt32, None) in
+  let arr_param name id =
+    DParam
+      ( mk_var name id (TVec TFloat32),
+        Some {arr_elttype = TFloat32; arr_memspace = Global} )
+  in
+  let n = {(mk_var "n" 1 TInt32) with var_mutable = false} in
+  let k = {(mk_var "k" 2 TInt32) with var_mutable = false} in
+  let i = mk_var "i" 3 TInt32 in
+  let sum = mk_var "sum" 4 TFloat32 in
+  let row = EIntrinsic (["Gpu"], "global_idx_y", []) in
+  let col = EIntrinsic (["Gpu"], "global_idx_x", []) in
+  let ( +! ) a b = EBinop (Add, a, b) and ( *! ) a b = EBinop (Mul, a, b) in
+  let consumer =
+    {
+      default_kernel with
+      kern_name = "gemm";
+      kern_params =
+        [
+          arr_param "temp" 5;
+          arr_param "b" 6;
+          arr_param "c" 7;
+          int_param "n" 1;
+          int_param "k" 2;
+        ];
+      kern_body =
+        SLetMut
+          ( sum,
+            EConst (CFloat32 0.0),
+            SSeq
+              [
+                SFor
+                  ( i,
+                    EConst (CInt32 0l),
+                    EBinop (Sub, EVar k, EConst (CInt32 1l)),
+                    Upto,
+                    SAssign
+                      ( LVar sum,
+                        EVar sum
+                        +! EArrayRead ("temp", (row *! EVar k) +! EVar i)
+                           *! EArrayRead ("b", (EVar i *! EVar n) +! col) ) );
+                SAssign (LArrayElem ("c", (row *! EVar n) +! col), EVar sum);
+              ] );
+    }
+  in
+  let producer =
+    {
+      default_kernel with
+      kern_name = "producer";
+      kern_body =
+        SAssign
+          (LArrayElem ("temp", thread_idx_x), EArrayRead ("input", thread_idx_x));
+    }
+  in
+  let hint = should_fuse producer consumer "temp" in
+  assert (hint.decision = DontFuse) ;
+  let contains s sub =
+    try
+      ignore (Str.search_forward (Str.regexp_string sub) s 0) ;
+      true
+    with Not_found -> false
+  in
+  assert (contains hint.reason "matrix-product operand") ;
+  (* The other operand is not the intermediate: the rule does not fire. *)
+  assert (not (is_matrix_operand consumer "input")) ;
+  assert (is_matrix_operand consumer "b") ;
+  Printf.printf "test_should_fuse_gemm_operand: PASSED (%s)\n" hint.reason
+
 (** Test: should_fuse returns DontFuse for barrier *)
 let test_should_fuse_barrier () =
   let producer =
@@ -1329,6 +1400,7 @@ let () =
   Printf.printf "\n=== Auto-Fusion Heuristics Tests ===\n" ;
   test_should_fuse_one_to_one () ;
   test_should_fuse_barrier () ;
+  test_should_fuse_gemm_operand () ;
   test_should_fuse_small_stencil () ;
   test_auto_fuse_pipeline () ;
   test_auto_fuse_pipeline_skip_stencil () ;

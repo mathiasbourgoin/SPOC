@@ -2030,6 +2030,23 @@ let expand_kernel ~ctxt payload : expression =
                 ~ir_opt:kernel
                 tkernel
             in
+            (* 8b. Matrix-product advice (an OCaml alert per GEMM nest that
+               matrix units could compute; specs/matrix-pattern-advice.md). *)
+            let name =
+              match tkernel.tkern_name with
+              | Some n -> Some n
+              | None ->
+                  Code_path.enclosing_value
+                    (Expansion_context.Extension.code_path ctxt)
+            in
+            let result =
+              Sarek_matrix_alert.wrap
+                ~kernel_loc:loc
+                ~payload
+                ?name
+                kernel
+                result
+            in
             let t1 = Unix.gettimeofday () in
             Sarek_debug.log_to_file
               (Printf.sprintf
