@@ -2,6 +2,10 @@
 // device memory (hipMalloc) and into fine-grained host memory (hipHostMalloc, coherent), and bumps a
 // device counter and a host counter (atomicAdd_system). Host sleeps at random positions are logged.
 // usage: lost3 DEV NBATCH BATCH SLEEP_PCT SLEEP_US
+// Kept as run for the recorded numbers. The kernel takes the hipHostMalloc host pointers directly:
+// this relies on ROCm mapping every hipHostMalloc allocation into the device address space at the
+// same address (the README's runs show host_out_lost=0, so the device writes did land). A portable
+// version would add hipHostMallocMapped and pass the pointers from hipHostGetDevicePointer.
 #include <hip/hip_runtime.h>
 #include <cstdio>
 #include <cstdlib>
