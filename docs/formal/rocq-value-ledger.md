@@ -30,8 +30,8 @@ down:
   emits must be the one the model names, and the model's result must equal an
   independent PTX-ISA oracle's result for that emitted instruction on a fixed
   grid of operands (negative, `min_int`, all-ones) and counts (in range, at and
-  beyond the width). A fixed grid, not random sampling, not exhaustive; counted
-  with the sampled kind below.
+  beyond the width). A fixed grid, not random sampling, not exhaustive; reported
+  as its own evidence kind (`differential_fixed_grid`).
 - **44 (`TypeSafetySpec`, `UnifySpec`)** — QCheck **differential** testing:
   the extracted model and the real `Sarek_typer.infer` / `Sarek_types.unify`
   are asserted to agree over 2000 / 1000 **randomly sampled** inputs. This is
@@ -54,11 +54,12 @@ per-module rows omitted for length; see the script for those):
 
 ```text
 == shipped-artefact vs model-only theorem split (backlog-201)
-   ('shipped' is itself two different strengths of evidence — see below)
+   ('shipped' is itself several different strengths of evidence — see below)
   ...
 checked against production, TOTAL: 112
   - exhaustive-for-a-bound + random:               50 theorems
-  - random sampling only, NOT exhaustive:          62 theorems
+  - random sampling only, NOT exhaustive:          44 theorems
+  - fixed hand-chosen grid, NOT exhaustive or random:  18 theorems
 model-only (no mechanical production link): 195
 total (== proof-ledger sum): 307
 ```
@@ -455,8 +456,9 @@ against an earlier, wrong `shr.u32` emission; when production was fixed, a comme
 in `Sarek_ir_ptx_expr.ml` recorded that the model was out of sync and nothing
 else did. The conformance suite stayed green throughout because it compared the
 model with a hand-written OCaml mirror that said `a lsr b`: the same mistake
-written twice. All 79 theorems were "proven" about a semantics for `Shr` that no
-GPU implements.
+written twice. The theorems that quantify over `ir_binop` (the evaluator and translation
+theorems) were "proven" about a semantics for `Shr` that no GPU implements;
+the others were unaffected.
 
 **Why the apparatus missed it.** This is M-03 again, one level over: the
 expression/statement/kernel suite never left its hand mirror, so it could only

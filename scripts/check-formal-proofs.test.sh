@@ -96,6 +96,12 @@ case "$1" in
     echo "stub rocq 0.0.0 (test double, not the real toolchain)"
     ;;
   makefile)
+    if [ -n "${STUB_MAKE_BODY:-}" ]; then
+      # Free-form recipe for the "build": lets a case model a build that does
+      # NOT recreate a model, or one that produces an extra file.
+      printf 'all:\n\t%s\n' "$STUB_MAKE_BODY" > CoqMakefile
+      exit 0
+    fi
     if [ -n "${STUB_REGENERATED_MODEL:-}" ]; then
       # D-55 mode: emit a CoqMakefile whose build "re-extracts" the model with
       # the content the test chose, then let the gate carry on to its
@@ -330,7 +336,6 @@ assert_output() {
 d="$(make_fixture case-e)"
 require_nonempty "case-e dir" "$d"
 out="$(run_gate "$d" STUB_REGENERATED_MODEL=regenerated-differs)"
-rc=$?
 assert_output case-e "$out" 'differs from the committed copy' \
   "a stale committed model is reported as such"
 assert_output case-e "$out" 'formal/testproj/extraction/model.ml' \
@@ -393,20 +398,63 @@ out="$(run_gate "$d" STUB_REGENERATED_MODEL=committed)"
 assert_output case-i "$out" 'produces no committed model and is not named in NOT_DRIFT_CHECKED' \
   "an unnamed driver with no committed model is rejected"
 
-# --- Case J: a model deleted by the build (driver stopped extracting it) ----
-# The gate deletes committed models before the build; a build that does not
-# recreate one must be an error, not a pass on the stale committed copy.
+# --- Case J: a failed build puts the committed model back ------------------
+# The gate deletes every committed model before the build (so that finding it
+# afterwards proves regeneration). The default stub fails at `rocq makefile`,
+# i.e. AFTER that deletion; the restore trap must bring the model back, or the
+# next run would start from a tree missing a tracked file. (This asserts the
+# restore, not the "not recreated" detection -- that is case K.)
 d="$(make_fixture case-j)"
 require_nonempty "case-j dir" "$d"
-out="$(run_gate "$d")"   # default stub: makefile fails; model is restored
-content="$(cat "$d/formal/testproj/extraction/model.ml")"
+out="$(run_gate "$d")"
+content="$(cat "$d/formal/testproj/extraction/model.ml" 2>/dev/null || echo "<MISSING>")"
 if [ "$content" = "committed" ]; then
-  echo "  PASS: case-j: the committed model deleted for the build is restored on exit"
+  echo "  PASS: case-j: the committed model deleted for the build is restored after a failed build"
   pass=$((pass + 1))
 else
   echo "  FAIL: case-j: committed model not restored (got: $content)"
   fail=$((fail + 1))
 fi
+
+# --- Case K: a model the full rebuild does not recreate must fail ------------
+# The build succeeds but its driver no longer extracts the committed model. The
+# committed copy was deleted beforehand, so absence is detectable; if the gate
+# compared against the working tree it would pass on a stale file.
+d="$(make_fixture case-k)"
+require_nonempty "case-k dir" "$d"
+out="$(run_gate "$d" STUB_MAKE_BODY=true)"
+assert_output case-k "$out" 'formal/testproj/extraction/model.ml does not exist after a full' \
+  "a committed model that the build does not recreate is rejected, by name"
+if printf '%s' "$out" | grep -qF 'extracted models match their theories'; then
+  echo "  FAIL: case-k: gate claimed the models match"
+  fail=$((fail + 1))
+else
+  echo "  PASS: case-k: gate did not claim the models match"
+  pass=$((pass + 1))
+fi
+
+# --- Case L: a build that produces an uncommitted model must fail ------------
+d="$(make_fixture case-l)"
+require_nonempty "case-l dir" "$d"
+out="$(run_gate "$d" "STUB_MAKE_BODY=printf 'committed\\n' > extraction/model.ml; printf 'x\\n' > extraction/extra.ml")"
+assert_output case-l "$out" 'the build produced formal/testproj/extraction/extra.ml, which is not' \
+  "an extracted model that is not committed is rejected, by name"
+
+# --- Case M: a NOT_DRIFT_CHECKED entry naming a missing driver must fail -----
+# The gate's one exemption names formal/codegen-ptx/extraction/Extract.v. If
+# that project exists but the driver does not, the entry exempts nothing.
+d="$(make_fixture case-m)"
+require_nonempty "case-m dir" "$d"
+mkdir -p "$d/formal/codegen-ptx"
+printf 'x\n' > "$d/formal/codegen-ptx/placeholder.txt"
+( cd "$d" && git add -A && git commit -q -m "codegen-ptx without its driver" ) >/dev/null 2>&1
+out="$(run_gate "$d")"
+assert_output case-m "$out" "NOT_DRIFT_CHECKED names 'formal/codegen-ptx/extraction/Extract.v', which does not" \
+  "an exemption for a nonexistent driver is rejected"
+
+# (The final model-count pin, EXPECTED_DRIFT_CHECKED_MODELS, runs only after
+# every project has passed rocq check and the ledger generator; the stub cannot
+# get that far, so it is exercised by the real gate run, not here.)
 
 echo ""
 echo "  $pass passed, $fail failed"

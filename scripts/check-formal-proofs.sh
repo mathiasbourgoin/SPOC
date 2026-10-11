@@ -173,6 +173,21 @@ state this gate was written to end. rocq/rocq-prover:9.1.1 ships python3."
 fi
 
 projects=$(find formal -mindepth 1 -maxdepth 1 -type d | sort)
+
+# A NOT_DRIFT_CHECKED entry must name a driver that exists. An entry for a
+# driver that was renamed or deleted would otherwise sit there forever, looking
+# like a deliberate exemption while exempting nothing (and a renamed driver
+# would then be checked by no rule at all if it also stopped producing a model).
+for entry in "${NOT_DRIFT_CHECKED[@]}"; do
+  exempt_path=${entry%%|*}
+  exempt_proj=$(printf '%s' "$exempt_path" | cut -d/ -f1-2)
+  if [ -d "$exempt_proj" ] && [ ! -f "$exempt_path" ]; then
+    echo "::error::NOT_DRIFT_CHECKED names '$exempt_path', which does not \
+exist. Remove or correct the entry in scripts/check-formal-proofs.sh: an \
+exemption for a driver that is gone exempts nothing and hides a renamed one."
+    exit 1
+  fi
+done
 if [ -z "$projects" ]; then
   echo "::error::no formal/ projects found — this gate would pass vacuously."
   exit 1
