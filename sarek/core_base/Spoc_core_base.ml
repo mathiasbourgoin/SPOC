@@ -380,7 +380,12 @@ module Make (Ops : CUSTOM_OPS) = struct
 
   (** {2 Creation} *)
 
-  let next_id = ref 0
+  (** Vector ids are buffer identity (launch-window conflicts, epilogue fusion,
+      the keep-alive ledger), so they must be unique across domains: a plain
+      [ref] with [incr] loses updates and hands out duplicates. *)
+  let next_id = Atomic.make 0
+
+  let fresh_id () = Atomic.fetch_and_add next_id 1 + 1
 
   (** The one refusal every host-access path raises on a device-only vector
       (FR-002). [Invalid_argument], like an out-of-bounds index: the caller
@@ -398,7 +403,7 @@ module Make (Ops : CUSTOM_OPS) = struct
       buffer, which this layer cannot. *)
   let create_device_only_record (kind : ('a, 'b) kind) (dev : Ops.device_t)
       (length : int) : ('a, 'b) t =
-    incr next_id ;
+    let id = fresh_id () in
     {
       host = Device_only_storage;
       device_buffers = Hashtbl.create 1;
@@ -406,13 +411,13 @@ module Make (Ops : CUSTOM_OPS) = struct
       kind;
       location = GPU dev;
       auto_sync = true;
-      id = !next_id;
+      id;
       soa = None;
     }
 
   let create_scalar (sk : ('a, 'b) scalar_kind) ?(dev : Ops.device_t option)
       (length : int) : ('a, 'b) t =
-    incr next_id ;
+    let id = fresh_id () in
     let ba_kind = to_bigarray_kind sk in
     let ba = Bigarray.Array1.create ba_kind Bigarray.c_layout length in
     let vec =
@@ -423,7 +428,7 @@ module Make (Ops : CUSTOM_OPS) = struct
         kind = Scalar sk;
         location = CPU;
         auto_sync = true;
-        id = !next_id;
+        id;
         soa = None;
       }
     in
@@ -435,7 +440,7 @@ module Make (Ops : CUSTOM_OPS) = struct
     match kind with
     | Scalar sk -> create_scalar sk ?dev length
     | Custom c ->
-        incr next_id ;
+        let id = fresh_id () in
         let handle = Ops.alloc ~elem_size:c.elem_size ~length in
         let vec =
           {
@@ -445,7 +450,7 @@ module Make (Ops : CUSTOM_OPS) = struct
             kind = Custom c;
             location = CPU;
             auto_sync = true;
-            id = !next_id;
+            id;
             soa = None;
           }
         in
@@ -458,7 +463,7 @@ module Make (Ops : CUSTOM_OPS) = struct
 
   let of_bigarray (sk : ('a, 'b) scalar_kind)
       (ba : ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t) : ('a, 'b) t =
-    incr next_id ;
+    let id = fresh_id () in
     {
       host = Bigarray_storage ba;
       device_buffers = Hashtbl.create 4;
@@ -466,13 +471,13 @@ module Make (Ops : CUSTOM_OPS) = struct
       kind = Scalar sk;
       location = CPU;
       auto_sync = true;
-      id = !next_id;
+      id;
       soa = None;
     }
 
   let of_raw_handle (c : 'a custom_type) (raw : nativeint) (length : int) :
       ('a, unit) t =
-    incr next_id ;
+    let id = fresh_id () in
     let handle = Ops.of_raw raw in
     {
       host = Custom_storage {ptr = handle; custom = c; length};
@@ -481,7 +486,7 @@ module Make (Ops : CUSTOM_OPS) = struct
       kind = Custom c;
       location = CPU;
       auto_sync = true;
-      id = !next_id;
+      id;
       soa = None;
     }
 
@@ -549,7 +554,7 @@ module Make (Ops : CUSTOM_OPS) = struct
   (** {2 Copy & slicing} *)
 
   let copy_host_only (type a b) (vec : (a, b) t) : (a, b) t =
-    incr next_id ;
+    let id = fresh_id () in
     let host =
       match vec.host with
       | Bigarray_storage ba ->
@@ -579,7 +584,7 @@ module Make (Ops : CUSTOM_OPS) = struct
       kind = vec.kind;
       location = CPU;
       auto_sync = vec.auto_sync;
-      id = !next_id;
+      id;
       (* The copy is AoS-only BY DESIGN, and this is the one [soa] decision in
          this module that a reader could mistake for an omission. A binding's
          closures capture the SOURCE vector's leaves — inheriting it would give
@@ -602,7 +607,7 @@ module Make (Ops : CUSTOM_OPS) = struct
            start
            (start + len)
            vec.length) ;
-    incr next_id ;
+    let id = fresh_id () in
     let host =
       match vec.host with
       | Bigarray_storage ba ->
@@ -620,7 +625,7 @@ module Make (Ops : CUSTOM_OPS) = struct
       kind = vec.kind;
       location = CPU;
       auto_sync = vec.auto_sync;
-      id = !next_id;
+      id;
       (* AoS-only for a stronger reason than {!copy_host_only} above: a
          subvector's length is [len], while the parent binding's leaves are
          [vec.length] long and its plan's scatter/gather run over that whole

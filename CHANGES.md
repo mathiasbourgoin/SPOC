@@ -341,6 +341,18 @@
 
 ### Fixed
 
+- Vector ids are allocated with `Atomic.fetch_and_add`. The plain `ref` +
+  `incr` handed out duplicate ids when vectors were created from several
+  domains (4 domains x 200 000 creations: 450 907 duplicates of 800 000), and
+  the id is buffer identity for launch-window conflicts, epilogue fusion and
+  the transfer keep-alive ledger. Test: `test_vector_ids`.
+- `Memory.host_to_device` / `device_to_host` size the copy from the bigarray's
+  own bytes and raise `Invalid_argument` when its element size differs from the
+  buffer's or it holds more bytes than the buffer (a float32 bigarray used to
+  type-check against a float64 buffer and over-read / overflow the host
+  array). `Memory.device_to_device` refuses a source larger than the
+  destination. D2D still bounces through host memory: the `BUFFER` signature
+  has no backend device-to-device copy. Test: `test_memory_sizing`.
 - hiprtc and nvrtc option arrays: `CArray.of_list string` let the C copies of
   the option strings be freed before the compile call. Under a different
   allocation pattern hiprtc read a garbage option ("error reading '8{...'"),
