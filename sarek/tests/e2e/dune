@@ -1965,6 +1965,18 @@
  (action
   (run %{dep:test_device_buffers.exe})))
 
+;; Advanced.Pinned: explicit page-locked host memory over Transfer.
+
+(executable
+ (name test_advanced_pinned)
+ (modules test_advanced_pinned)
+ (libraries test_helpers spoc_core))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_advanced_pinned.exe})))
+
 ; Stdlib Int32.float_of_bits / Int32.bits_of_float on every enumerated
 ; device: decode, encode, in-kernel round trip and a packed-record decode, over
 ; +-0, +-inf, denormals, max finite, a NaN payload and a signalling NaN.
