@@ -14,8 +14,8 @@
 
 open Spoc_framework
 
-(** TEST-ONLY hooks. Nothing in the library sets these; production behaviour
-    never depends on them. *)
+(** TEST-ONLY hooks and counters. Production behaviour never depends on them;
+    the library only increments the counters. *)
 module For_testing = struct
   (** When [true], [alloc_host_ptr] also accepts non-CPU devices, so the
       CL_MEM_USE_HOST_PTR synchronisation paths can be exercised on a GPU.
@@ -23,6 +23,10 @@ module For_testing = struct
       implies a CPU device implies no launch deferral" (Execute.ml,
       [defers_device]). *)
   let host_ptr_on_any_device = ref false
+
+  (** Number of host-pointer buffer releases that finished the device's queue
+      first (see [Memory.free]). Set by the library; read by tests. *)
+  let host_ptr_release_finishes = Atomic.make 0
 end
 
 module Opencl : Framework_sig.PLUGIN_BASE = struct
@@ -135,25 +139,6 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
        default buffer is a copy. Sharing the host array is [alloc_host_ptr]. *)
     let alloc_zero_copy _device _ba _kind = None
 
-    (* The refusals, cheapest first; none of them touches the OpenCL context. *)
-    let host_ptr_refusal device ~address ~byte_size =
-      let open Framework_sig in
-      let align = device.Opencl_api.Device.mem_base_addr_align in
-      let max_bytes = device.Opencl_api.Device.max_mem_alloc_size in
-      if
-        not
-          (device.Opencl_api.Device.is_cpu
-          || !For_testing.host_ptr_on_any_device)
-      then Some Host_ptr_not_cpu_device
-      else if byte_size = 0 then Some Host_ptr_empty
-      else if not (Opencl_api.Memory.host_ptr_usable ~align_bytes:align address)
-      then Some (Host_ptr_misaligned {address; required_alignment = align})
-      else if Int64.compare (Int64.of_int byte_size) max_bytes > 0 then
-        Some
-          (Host_ptr_too_large
-             {byte_size; max_byte_size = Int64.to_int max_bytes})
-      else None
-
     let alloc_host_ptr device ba kind =
       (* Not Ctypes.bigarray_start: no Float16 arm. CL_MEM_USE_HOST_PTR keeps
          this address for the buffer's whole lifetime; [with_bigarray_ptr]
@@ -162,7 +147,16 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
       Spoc_core.Memory.with_bigarray_ptr ba (fun host_ptr ->
           let address = Ctypes.raw_address_of_ptr host_ptr in
           let byte_size = Bigarray.Array1.size_in_bytes ba in
-          match host_ptr_refusal device ~address ~byte_size with
+          match
+            Opencl_api.Memory.host_ptr_refusal
+              ~accept_device:
+                (device.Opencl_api.Device.is_cpu
+                || !For_testing.host_ptr_on_any_device)
+              ~align_bytes:device.Opencl_api.Device.mem_base_addr_align
+              ~max_alloc_bytes:device.Opencl_api.Device.max_mem_alloc_size
+              ~address
+              ~byte_size
+          with
           | Some refusal -> Error refusal
           | None ->
               let state = get_state device.Opencl_api.Device.id in
@@ -186,7 +180,22 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
       let buf = Opencl_api.Memory.alloc_custom state.context ~size ~elem_size in
       {buf; device_id = device.id}
 
-    let free b = Opencl_api.Memory.free b.buf
+    (* A host-pointer buffer's memory belongs to the caller, who may free it
+       as soon as the buffer is gone; clReleaseMemObject defers the release
+       until queued commands complete, but not the caller's free. So finish
+       the device's queue first: every kernel launched on it that still uses
+       the memory has completed when this returns. It is the device's default
+       queue, which carries every OpenCL launch (stream launches are refused,
+       see Opencl_plugin.run_source_on_stream) and every map. Also
+       reached from the vector's GC finaliser: clFinish waits for the
+       runtime's own threads, never for the OCaml program, so it cannot
+       deadlock there. *)
+    let free b =
+      if Option.is_some b.buf.Opencl_api.Memory.host_alias then begin
+        Opencl_api.CommandQueue.finish (get_state b.device_id).queue ;
+        Atomic.incr For_testing.host_ptr_release_finishes
+      end ;
+      Opencl_api.Memory.free b.buf
 
     let host_to_device ~src ~dst =
       let state = get_state dst.device_id in
