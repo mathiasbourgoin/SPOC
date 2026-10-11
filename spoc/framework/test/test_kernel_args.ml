@@ -104,6 +104,82 @@ let test_to_sorted_list () =
     [(0, "a"); (1, "b"); (3, "d")]
     (KA.to_sorted_list t)
 
+let expect_error t ~expected_count msg =
+  match KA.validate_and_extract t ~expected_count with
+  | Ok _ -> Alcotest.fail "expected a validation error"
+  | Error got -> Alcotest.(check string) "error text" msg got
+
+(** The exact texts backends wrap into their structured errors. *)
+let test_error_texts () =
+  let t = KA.create () in
+  KA.set t 0 "a" ;
+  KA.set t 2 "c" ;
+  expect_error
+    t
+    ~expected_count:4
+    "missing indices: [1, 3]; expected 4 args, got 2" ;
+  let t = KA.create () in
+  KA.set t 0 "a" ;
+  KA.set t 1 "b" ;
+  KA.set t 3 "d" ;
+  KA.set t 7 "h" ;
+  expect_error
+    t
+    ~expected_count:2
+    "unexpected indices: [3, 7]; expected contiguous 0..1" ;
+  let t = KA.create () in
+  KA.set t 1 "b" ;
+  KA.set t 4 "e" ;
+  expect_error
+    t
+    ~expected_count:3
+    "missing indices: [0, 2]; unexpected index: [4]; expected 3 args, got 2"
+
+(** A negative index is stored, counted and reported as unexpected. *)
+let test_negative_index () =
+  let t = KA.create () in
+  KA.set t 0 "a" ;
+  KA.set t (-1) "m" ;
+  Alcotest.(check int) "counted" 2 (KA.count t) ;
+  Alcotest.(check (list (pair int string)))
+    "listed first"
+    [(-1, "m"); (0, "a")]
+    (KA.to_sorted_list t) ;
+  expect_error
+    t
+    ~expected_count:1
+    "unexpected index: [-1]; expected contiguous 0..0"
+
+(** Sparse, large and repeated indices: count is the number of distinct indices,
+    whatever the order and the gaps. *)
+let test_sparse_indices () =
+  let t = KA.create () in
+  KA.set t 1000 "z" ;
+  KA.set t 0 "a" ;
+  KA.set t 1000 "y" ;
+  KA.set t 17 "r" ;
+  Alcotest.(check int) "distinct indices" 3 (KA.count t) ;
+  Alcotest.(check (list (pair int string)))
+    "sorted, last write wins"
+    [(0, "a"); (17, "r"); (1000, "y")]
+    (KA.to_sorted_list t)
+
+(** Many arguments set in reverse order extract in index order. *)
+let test_many_args () =
+  let t = KA.create () in
+  for i = 63 downto 0 do
+    KA.set t i i
+  done ;
+  match KA.validate_and_extract t ~expected_count:64 with
+  | Ok arr -> Alcotest.(check (array int)) "0..63" (Array.init 64 Fun.id) arr
+  | Error msg -> Alcotest.fail msg
+
+(** An empty store validates against zero arguments. *)
+let test_empty () =
+  match KA.validate_and_extract (KA.create ()) ~expected_count:0 with
+  | Ok arr -> Alcotest.(check int) "no values" 0 (Array.length arr)
+  | Error msg -> Alcotest.fail msg
+
 (** Test suite *)
 let () =
   Alcotest.run
@@ -114,6 +190,8 @@ let () =
           Alcotest.test_case "out of order set" `Quick test_out_of_order_set;
           Alcotest.test_case "to_sorted_list" `Quick test_to_sorted_list;
           Alcotest.test_case "count" `Quick test_count;
+          Alcotest.test_case "sparse indices" `Quick test_sparse_indices;
+          Alcotest.test_case "many args" `Quick test_many_args;
         ] );
       ( "last-set-wins",
         [
@@ -137,5 +215,8 @@ let () =
             "negative expected_count"
             `Quick
             test_negative_expected_count;
+          Alcotest.test_case "error texts" `Quick test_error_texts;
+          Alcotest.test_case "negative index" `Quick test_negative_index;
+          Alcotest.test_case "empty" `Quick test_empty;
         ] );
     ]
