@@ -197,6 +197,9 @@ module ThreadPool = struct
     (* Work distribution *)
     work : work_item option Atomic.t array; (* One slot per worker *)
     (* Synchronization *)
+    launch_lock : Mutex.t;
+        (* Held for a whole launch: the slots, [pending_workers] and
+           [first_error] belong to exactly one launch at a time. *)
     mutex : Mutex.t;
     work_ready : Condition.t;
     work_done : Condition.t;
@@ -443,6 +446,7 @@ module ThreadPool = struct
         workers = [||];
         (* Will be mutated in place *)
         work = Array.init num_workers (fun _ -> Atomic.make None);
+        launch_lock = Mutex.create ();
         mutex = Mutex.create ();
         work_ready = Condition.create ();
         work_done = Condition.create ();
@@ -462,7 +466,8 @@ module ThreadPool = struct
       strategy depends on barrier usage:
       - uses_barriers=false: distribute threads (more granular)
       - uses_barriers=true: distribute blocks (preserves BSP) *)
-  let run_kernel pool ~block:(bx, by, bz) ~grid:(gx, gy, gz) ~uses_barriers
+  let run_kernel_locked pool ~block:(bx, by, bz) ~grid:(gx, gy, gz)
+      ~uses_barriers
       (kernel :
         thread_state ->
         shared_mem ->
@@ -553,6 +558,12 @@ module ThreadPool = struct
     | Some (exn, bt) -> Printexc.raise_with_backtrace exn bt
     | None -> ()
 
+  (** Launches are serialised per pool: concurrent callers queue on
+      [launch_lock] and each sees only its own completion and error. *)
+  let run_kernel pool ~block ~grid ~uses_barriers kernel args =
+    Mutex.protect pool.launch_lock (fun () ->
+        run_kernel_locked pool ~block ~grid ~uses_barriers kernel args)
+
   let shutdown pool =
     Mutex.lock pool.mutex ;
     pool.shutdown <- true ;
@@ -606,6 +617,10 @@ module ParallelPool = struct
     (* Current work function *)
     work_fn : (int -> int -> unit) Atomic.t;
     (* Synchronization *)
+    launch_lock : Mutex.t;
+        (* Held for a whole launch: the counters, [work_fn],
+           [pending_workers] and [first_error] belong to exactly one launch at
+           a time. *)
     mutex : Mutex.t;
     work_ready : Condition.t;
     work_done : Condition.t;
@@ -665,7 +680,7 @@ module ParallelPool = struct
         | None, Some err -> pool.first_error <- Some err
         | _ -> ()) ;
         pool.pending_workers <- pool.pending_workers - 1 ;
-        if pool.pending_workers = 0 then Condition.signal pool.work_done ;
+        if pool.pending_workers = 0 then Condition.broadcast pool.work_done ;
         Mutex.unlock pool.mutex ;
 
         loop ()
@@ -684,6 +699,7 @@ module ParallelPool = struct
         total_work = Atomic.make 0;
         current_chunk_size = Atomic.make default_chunk_size;
         work_fn = Atomic.make (fun _ _ -> ());
+        launch_lock = Mutex.create ();
         mutex = Mutex.create ();
         work_ready = Condition.create ();
         work_done = Condition.create ();
@@ -704,30 +720,32 @@ module ParallelPool = struct
   let parallel_for_chunk pool ~total ~chunk_size (work_fn : int -> int -> unit)
       =
     if total <= 0 then ()
-    else begin
-      (* Reset counter and set work *)
-      Atomic.set pool.next_chunk 0 ;
-      Atomic.set pool.total_work total ;
-      Atomic.set pool.current_chunk_size chunk_size ;
-      Atomic.set pool.work_fn work_fn ;
+    else
+      Mutex.protect pool.launch_lock @@ fun () ->
+      begin
+        (* Reset counter and set work *)
+        Atomic.set pool.next_chunk 0 ;
+        Atomic.set pool.total_work total ;
+        Atomic.set pool.current_chunk_size chunk_size ;
+        Atomic.set pool.work_fn work_fn ;
 
-      (* Wake workers *)
-      Mutex.lock pool.mutex ;
-      pool.pending_workers <- pool.num_workers ;
-      pool.generation <- pool.generation + 1 ;
-      Condition.broadcast pool.work_ready ;
+        (* Wake workers *)
+        Mutex.lock pool.mutex ;
+        pool.pending_workers <- pool.num_workers ;
+        pool.generation <- pool.generation + 1 ;
+        Condition.broadcast pool.work_ready ;
 
-      (* Wait for completion *)
-      while pool.pending_workers > 0 do
-        Condition.wait pool.work_done pool.mutex
-      done ;
-      let first_error = pool.first_error in
-      pool.first_error <- None ;
-      Mutex.unlock pool.mutex ;
-      match first_error with
-      | Some (exn, bt) -> Printexc.raise_with_backtrace exn bt
-      | None -> ()
-    end
+        (* Wait for completion *)
+        while pool.pending_workers > 0 do
+          Condition.wait pool.work_done pool.mutex
+        done ;
+        let first_error = pool.first_error in
+        pool.first_error <- None ;
+        Mutex.unlock pool.mutex ;
+        match first_error with
+        | Some (exn, bt) -> Printexc.raise_with_backtrace exn bt
+        | None -> ()
+      end
 
   (** Run a parallel_for over the range 0 to total (exclusive) with default
       chunk size *)
@@ -810,6 +828,8 @@ module LaunchQueue = struct
     mutable dispatcher : unit Domain.t option;
     mutable shutdown : bool;
     mutable pending : int;  (** Number of launches not yet completed *)
+    mutable first_error : (exn * Printexc.raw_backtrace) option;
+        (** First kernel failure since the last [flush]; re-raised there *)
   }
 
   (** Dispatcher loop - pulls kernels and executes via wrapper The wrapper
@@ -829,13 +849,23 @@ module LaunchQueue = struct
         let launch = Queue.pop q.queue in
         Mutex.unlock q.mutex ;
         (* Execute via the wrapper - Threadpool mode uses persistent pool *)
-        launch.kernel
-          ~mode:Threadpool
-          ~block:launch.block
-          ~grid:launch.grid
-          launch.args ;
+        (* A raising kernel must not kill the dispatcher: [pending] would never
+           reach 0 and [flush] would hang. The error is kept for [flush]. *)
+        let error =
+          try
+            launch.kernel
+              ~mode:Threadpool
+              ~block:launch.block
+              ~grid:launch.grid
+              launch.args ;
+            None
+          with exn -> Some (exn, Printexc.get_raw_backtrace ())
+        in
         (* Mark completion *)
         Mutex.lock q.mutex ;
+        (match (q.first_error, error) with
+        | None, Some _ -> q.first_error <- error
+        | _ -> ()) ;
         q.pending <- q.pending - 1 ;
         if q.pending = 0 then Condition.broadcast q.done_cond ;
         Mutex.unlock q.mutex ;
@@ -854,6 +884,7 @@ module LaunchQueue = struct
       dispatcher = None;
       shutdown = false;
       pending = 0;
+      first_error = None;
     }
 
   (** Ensure dispatcher is running *)
@@ -876,7 +907,12 @@ module LaunchQueue = struct
     while q.pending > 0 do
       Condition.wait q.done_cond q.mutex
     done ;
-    Mutex.unlock q.mutex
+    let first_error = q.first_error in
+    q.first_error <- None ;
+    Mutex.unlock q.mutex ;
+    match first_error with
+    | Some (exn, bt) -> Printexc.raise_with_backtrace exn bt
+    | None -> ()
 
   (** Shutdown the dispatcher (for cleanup) *)
   let shutdown (q : t) =

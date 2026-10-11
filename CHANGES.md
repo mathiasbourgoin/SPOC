@@ -1,5 +1,16 @@
 ## 2026-10
 
+### Fixed
+
+- Native launches from several domains no longer hang or corrupt each other
+  (R-64). The process-wide `ThreadPool` and `ParallelPool` serialise whole
+  launches behind a per-pool `launch_lock`, so counters, the work function,
+  `pending_workers` and `first_error` belong to one launch at a time;
+  completion wakes all waiters (`Condition.broadcast`). A kernel that raises on
+  a fission queue no longer kills the dispatcher domain: the error is re-raised
+  by the next `flush_fission_queue` (R-67). Regression test:
+  `sarek/tests/unit/test_cpu_runtime_multidomain.ml`.
+
 ### Added
 
 - Matrix products are rewritten at launch, inside `Execute.run_vectors` (spec

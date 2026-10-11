@@ -61,6 +61,22 @@ let check_mode ~has_barriers () =
         arr)
     workers
 
+(* R-67: a raising kernel on a fission queue must surface at [flush] and leave
+   the dispatcher alive for the next launch. *)
+exception Kernel_failed
+
+let check_queue_error () =
+  let ran = Atomic.make 0 in
+  let enqueue kernel =
+    enqueue_fission ~queue_id:7 ~kernel ~args:[||] ~block ~grid ()
+  in
+  enqueue (fun ~mode:_ ~block:_ ~grid:_ _ -> raise Kernel_failed) ;
+  Alcotest.check_raises "flush re-raises" Kernel_failed (fun () ->
+      flush_fission_queue 7) ;
+  enqueue (fun ~mode:_ ~block:_ ~grid:_ _ -> Atomic.incr ran) ;
+  flush_fission_queue 7 ;
+  Alcotest.(check int) "dispatcher survived" 1 (Atomic.get ran)
+
 let () =
   let finished = Atomic.make false in
   start_watchdog finished ;
@@ -80,6 +96,10 @@ let () =
                 "with barriers (ThreadPool)"
                 `Quick
                 (check_mode ~has_barriers:true);
+              Alcotest.test_case
+                "raising fission kernel"
+                `Quick
+                check_queue_error;
             ] );
         ] ;
       0
