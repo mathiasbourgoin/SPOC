@@ -96,3 +96,16 @@
    SPOC_VULKAN_FENCE_TIMEOUT_S
    30
    (run %{test}))))
+
+; Host cost of one Execute.run_vectors launch on Vulkan (enqueue, and enqueue +
+; flush), 3- and 10-argument kernels; port of the Metal bench
+; (SPOC_VULKAN_BATCH selects the launch batch). Information only.
+
+(executable
+ (name bench_vulkan_launch_overhead)
+ (modules bench_vulkan_launch_overhead)
+ (libraries sarek sarek.stdlib sarek_ir spoc_core sarek_vulkan unix)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
