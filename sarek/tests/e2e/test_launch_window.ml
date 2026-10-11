@@ -25,7 +25,7 @@
  * fails); on a device that does not defer launches (every CPU device) the
  * window-on comparison is skipped and counted in the summary line.
  * Known open issue: HIP on the 7950X iGPU has shown plain-path
- * nondeterminism (#427); no barrier race was found in the generated OpenCL for
+ * nondeterminism (possibly #427); no barrier race was found in the generated OpenCL for
  * mv_wave / mv_row.
  * Separately, the fused kernel itself is run on the Interpreter and compared
  * bit for bit with the members run one by one.
