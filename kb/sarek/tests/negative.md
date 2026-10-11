@@ -10,7 +10,7 @@ Negative tests live in `sarek/tests/negative/` and are configured by `sarek/test
 - `test_barrier_diverged.ml`: barrier in diverged control flow.
 - `test_superstep_diverged.ml`: superstep/barrier convergence violation.
 - `test_warp_diverged.ml`: warp collective in diverged control flow; now gets the unlowered-intrinsic refusal (no backend lowers `warp_shuffle`), the convergence rule itself being unit-tested on hand-built typed ASTs (`sarek/tests/unit/test_convergence.ml`).
-- `test_warp_shuffle_refused.ml`, `test_warp_size_refused.ml`, `test_return_unit_refused.ml`, `test_warp_qualified_refused.ml`, `test_warp_open_std_refused.ml`: intrinsics that type-check but no backend lowers soundly (`warp_*`, `return_unit`) are refused at PPX time (`Sarek_env.unlowered_intrinsics`); the last two pin that the refusal keys on the resolved intrinsic (`Gpu.` qualification, `let open Std`).
+- `test_warp_shuffle_refused.ml`, `test_warp_size_refused.ml`, `test_return_unit_refused.ml`, `test_warp_qualified_refused.ml`, `test_warp_open_std_refused.ml`: intrinsics that type-check but no backend lowers soundly (`warp_*`, `return_unit`) are refused at PPX time (`Sarek_unlowered.table`); the last two pin that the refusal keys on the resolved intrinsic (`Gpu.` qualification, `let open Std`).
 - `test_unbound_function.ml`: unbound function/variable.
 - `test_reserved_keyword.ml`: reserved keyword rejection.
 - `test_convention_kernel_fail.ml`: field lookup failure.

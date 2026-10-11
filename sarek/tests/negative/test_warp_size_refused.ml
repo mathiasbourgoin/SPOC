@@ -3,8 +3,9 @@
 (* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
 (******************************************************************************)
 
-(* warp_size used as a value. It was typed as the constant 32, which is wrong on
-   AMD (32 or 64) and WGSL (4-128); no backend lowers it. Refused at PPX time. *)
+(* warp_size used as a value. It is typed int32 but no backend lowers it, and
+   the warp width varies by vendor and device, so no constant would be right.
+   Refused at PPX time. *)
 
 (* open Sarek_stdlib: the generated native code names Gpu/Std, so without it
    this case would also fail for an unbound module, masking the refusal. *)

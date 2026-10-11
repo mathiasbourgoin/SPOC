@@ -1138,9 +1138,9 @@ mem_fence_system : unit -> unit  (* __threadfence_system() *)
 **Not available from Sarek kernels yet.** `warp_shuffle`, `warp_shuffle_up`,
 `warp_shuffle_down`, `warp_shuffle_xor`, `warp_vote_all`, `warp_vote_any`,
 `warp_ballot`, `warp_active_mask` and `warp_size` are refused at PPX time with
-a located error: no backend lowers them (a kernel using them used to fail late
-with "Unknown intrinsic"), and `warp_size` is 32 on NVIDIA but 32 or 64 on AMD
-and 4-128 on WGSL, so no constant is correct. Warp-level collectives arrive
+a located error: no backend lowers them, and the warp width varies by vendor
+and device (for example 32 on NVIDIA, 32 or 64 on AMD), so `warp_size` has no
+single value. Warp-level collectives arrive
 with warp-scope supersteps (roadmap S1). The CUDA instructions they will map to
 are `__shfl_sync`, `__shfl_up_sync`, `__shfl_down_sync`, `__shfl_xor_sync`,
 `__all_sync`, `__any_sync` and `__ballot_sync`.

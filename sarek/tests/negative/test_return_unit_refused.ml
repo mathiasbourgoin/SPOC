@@ -4,8 +4,8 @@
 (******************************************************************************)
 
 (* return_unit: CUDA emits [return((void)0);] and skips later barriers, Native
-   continues, GLSL has no lowering. Sarek has no early return; refused at PPX
-   time with advice to restructure with if/else. *)
+   continues. Sarek has no early return; refused at PPX time with advice to
+   restructure with if/else. *)
 
 (* open Sarek_stdlib: the generated native code names Gpu/Std, so without it
    this case would also fail for an unbound module, masking the refusal. *)

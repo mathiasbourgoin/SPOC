@@ -801,22 +801,17 @@ let infer_let_binding ~infer (env : t) (loc : Sarek_ast.loc) (expr : expr_desc)
 
 (** Refuse a use of an intrinsic that no backend lowers soundly. [ref] is the
     RESOLVED intrinsic, so a user binding that merely shares a name never gets
-    here (see {!Sarek_env.unlowered_intrinsics}). *)
+    here (see {!Sarek_unlowered.table}). *)
 let refuse_if_unlowered (ref : Sarek_env.intrinsic_ref) loc : unit result =
-  match Sarek_env.unlowered_reason ref with
+  let module_short, name =
+    match ref with
+    | CorePrimitiveRef name -> (None, name)
+    | IntrinsicRef (path, name) ->
+        (Some (match List.rev path with [] -> "" | m :: _ -> m), name)
+  in
+  match Sarek_unlowered.reason ~module_short ~name with
   | None -> Ok ()
-  | Some reason ->
-      Error
-        [
-          Unlowered_intrinsic
-            {
-              name =
-                (match ref with
-                | IntrinsicRef (_, name) | CorePrimitiveRef name -> name);
-              reason;
-              loc;
-            };
-        ]
+  | Some reason -> Error [Unlowered_intrinsic {name; reason; loc}]
 
 (** Main type inference function *)
 let rec infer (env : t) (expr : expr) : (texpr * t) result =
@@ -871,7 +866,7 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
              "use of undeclared identifier 'M'"). Refuse it here, naming the
              fix. *)
           if String.contains name '.' then begin
-            match Sarek_env.unlowered_reason_of_qualified_name name with
+            match Sarek_unlowered.reason_of_qualified_name name with
             | Some (base, reason) ->
                 Error [Unlowered_intrinsic {name = base; reason; loc}]
             | None ->

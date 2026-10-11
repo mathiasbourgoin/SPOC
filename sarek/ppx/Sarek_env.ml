@@ -57,79 +57,6 @@ let intrinsic_ref_display_name = function
   | IntrinsicRef (path, name) -> String.concat "." (path @ [name])
   | CorePrimitiveRef name -> name
 
-(** The one table of intrinsics that type-check but are refused at PPX time
-    because no backend lowers them soundly (findings C-49 and C-6 of the
-    2026-10-11 review).
-
-    Keyed on the RESOLVED intrinsic, not on spelling: [None] is a core primitive
-    (see {!Sarek_core_primitives}), [Some m] an intrinsic registered by a module
-    whose short name is [m]. A kernel-local variable or helper that merely
-    shares a name never reaches this table, because name resolution picks the
-    user's binding first.
-
-    The core-primitive entries and their variance/convergence classes stay in
-    {!Sarek_core_primitives}: {!Sarek_convergence} keeps checking them, so
-    warp-scope supersteps (roadmap S1) start from a checked base. Removing a row
-    here is the whole change needed to un-refuse an intrinsic once a backend
-    lowers it. *)
-let unlowered_intrinsics :
-    ((string option * string) * Sarek_error.unlowered_reason) list =
-  [
-    ((None, "warp_shuffle"), Sarek_error.Warp_collective);
-    ((None, "warp_shuffle_down"), Warp_collective);
-    ((None, "warp_shuffle_up"), Warp_collective);
-    ((None, "warp_shuffle_xor"), Warp_collective);
-    ((None, "warp_vote_all"), Warp_collective);
-    ((None, "warp_vote_any"), Warp_collective);
-    ((None, "warp_ballot"), Warp_collective);
-    ((None, "warp_active_mask"), Warp_collective);
-    ((None, "warp_size"), Warp_size);
-    ((Some "Gpu", "return_unit"), Early_return);
-  ]
-
-(** The refusal reason for a resolved intrinsic, if any. *)
-let unlowered_reason (ref : intrinsic_ref) : Sarek_error.unlowered_reason option
-    =
-  let key =
-    match ref with
-    | CorePrimitiveRef name -> (None, name)
-    | IntrinsicRef (path, name) ->
-        (Some (match List.rev path with [] -> "" | m :: _ -> m), name)
-  in
-  List.assoc_opt key unlowered_intrinsics
-
-(** The refusal for a module-qualified spelling of a refused intrinsic:
-    [Gpu.warp_ballot] and [Std.warp_ballot] name the same primitive as the bare
-    [warp_ballot] (core primitives are registered under their short name only,
-    so the qualified spelling is otherwise just "unknown"). Returns the
-    primitive's base name and the reason. Only the [Gpu] / [Std] module
-    spellings qualify. *)
-let unlowered_reason_of_qualified_name (qualified : string) :
-    (string * Sarek_error.unlowered_reason) option =
-  match String.rindex_opt qualified '.' with
-  | None -> None
-  | Some i -> (
-      let modname = String.sub qualified 0 i in
-      let base =
-        String.sub qualified (i + 1) (String.length qualified - i - 1)
-      in
-      let modname =
-        match String.rindex_opt modname '.' with
-        | None -> modname
-        | Some j -> String.sub modname (j + 1) (String.length modname - j - 1)
-      in
-      if modname <> "Gpu" && modname <> "Std" then None
-      else
-        (* [Std] is an alias of [Gpu], so both spellings reach both the core
-           primitives and the [Gpu] module's own intrinsics. *)
-        let find key = List.assoc_opt key unlowered_intrinsics in
-        match find (None, base) with
-        | Some reason -> Some (base, reason)
-        | None -> (
-            match find (Some "Gpu", base) with
-            | Some reason -> Some (base, reason)
-            | None -> None))
-
 (** Information about an intrinsic function. Device code is resolved at JIT time
     via Sarek_registry. *)
 type intrinsic_fun_info = {
@@ -223,15 +150,13 @@ let add_intrinsic_const name info env =
   {env with intrinsic_consts = StringMap.add name info env.intrinsic_consts}
 
 (** A kernel-local or [[@sarek.module]] function. If [name] is also a refused
-    intrinsic ({!unlowered_intrinsics}), the user's function shadows it: name
+    intrinsic ({!Sarek_unlowered.table}), the user's function shadows it: name
     resolution consults intrinsics before local functions, so without this a
     helper called [warp_size] would resolve to the refused intrinsic and be
     refused, or worse, silently call it. Only refused names are shadowed here;
     other names keep their existing resolution order. *)
 let add_local_fun name scheme env =
-  let is_refused_name =
-    List.exists (fun ((_, n), _) -> n = name) unlowered_intrinsics
-  in
+  let is_refused_name = Sarek_unlowered.is_refused_name name in
   let env =
     if is_refused_name then
       {

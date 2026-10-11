@@ -3,9 +3,9 @@
 (* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
 (******************************************************************************)
 
-(* A warp collective in FULLY CONVERGED code. No backend lowers warp_shuffle
-   (each fails late with "Unknown intrinsic"), so the PPX refuses it at compile
-   time, located at the call, independently of the convergence check. *)
+(* A warp collective in FULLY CONVERGED code. No backend lowers warp_shuffle, so
+   the PPX refuses it at compile time, located at the call, independently of the
+   convergence check. *)
 
 (* open Sarek_stdlib: the generated native code names Gpu/Std, so without it
    this case would also fail for an unbound module, masking the refusal. *)

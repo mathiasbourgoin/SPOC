@@ -21,6 +21,7 @@
   Sarek_scheme
   Sarek_core_primitives
   Sarek_ppx_registry
+  Sarek_unlowered
   Sarek_env
   Sarek_error
   Sarek_reserved
