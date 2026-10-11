@@ -48,6 +48,43 @@ let check (ctx : string) (result : vk_result) : unit =
     ctx
     result
 
+(** {1 Fences} *)
+
+(** Upper bound on every host wait for a fence, in nanoseconds. A fence that is
+    never signalled (never submitted, or work that does not finish) ends the
+    wait with [Synchronization_failed] instead of blocking the host forever. *)
+let fence_wait_timeout_ns = 60_000_000_000L
+
+(** Wait for [fence] on [device] for at most {!fence_wait_timeout_ns}. Raises
+    [Synchronization_failed] on timeout and the canonical error of {!check} on
+    any other failure. *)
+let wait_fence (ctx : string) device fence =
+  let fence_ptr = allocate vk_fence fence in
+  let result =
+    Vulkan_bindings.vkWaitForFences
+      device
+      (u32 1)
+      fence_ptr
+      vk_true
+      (Unsigned.UInt64.of_int64 fence_wait_timeout_ns)
+  in
+  ignore (Sys.opaque_identity fence_ptr) ;
+  match result with
+  | VK_TIMEOUT ->
+      Vulkan_error.raise_error
+        (Vulkan_error.synchronization_failed
+           (Printf.sprintf
+              "%s: fence not signalled after %Ld ms"
+              ctx
+              (Int64.div fence_wait_timeout_ns 1_000_000L)))
+  | result -> check ctx result
+
+(** Reset [fence] on [device]. The fence must not be pending in a queue. *)
+let reset_fence (ctx : string) device fence =
+  let fence_ptr = allocate vk_fence fence in
+  check ctx (Vulkan_bindings.vkResetFences device (u32 1) fence_ptr) ;
+  ignore (Sys.opaque_identity fence_ptr)
+
 (** {1 SPIR-V Compilation} *)
 
 (** Compile GLSL to SPIR-V using glslangValidator. Requires glslangValidator in

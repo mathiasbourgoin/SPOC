@@ -494,6 +494,18 @@
   Regression tests: `test_hip_launch_selects_device`,
   `test_hip_profiling_selects_device` (`e2e-hip`), `test_cuda_free_keeps_current`;
   each needs two devices of one backend and self-skips otherwise.
+- Vulkan events and fences no longer hang the host. `Event.record` now
+  submits the event's fence on the device's compute queue (it did nothing, so
+  `Event.synchronize`, `Transfer.synchronize_event` and
+  `Profiling.timer_elapsed_ms` waited forever); an event that was never
+  recorded synchronizes at once. `Event.elapsed` raises `Feature_not_supported`
+  instead of answering 0.0, since the backend issues no timestamp queries.
+  Every fence wait (event, stream, launch) is bounded at 60 s and raises
+  `Synchronization_failed` past it. A launch refused on the host (for example
+  a push-constant block over 128 bytes) no longer resets the stream fence
+  first, which made the next launch on that stream hang: validation runs
+  before the fence is touched and the fence is reset just before the
+  submission. `test_vulkan_fence_sync` covers the four cases on RADV.
 
 - hiprtc and nvrtc option arrays: `CArray.of_list string` let the C copies of
   the option strings be freed before the compile call. Under a different
