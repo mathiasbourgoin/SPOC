@@ -61,7 +61,7 @@ are required to agree byte-for-byte:
   — only a *rejection* of a layout that would misalign a leaf
   (`Misaligned_field`, `Sarek_ir_layout.ml:36-47`).
 - **Device buffer** — one `cuMemAlloc` of `length * elem_size` bytes
-  (`sarek-cuda/Cuda_api.ml:303-308`, `Memory.alloc_custom`); one base pointer
+  (`sarek-cuda/Cuda_api.ml:349-354`, `Memory.alloc_custom`); one base pointer
   is bound as a single kernel parameter (`Sarek_ir_ptx_kernel.ml:69-93`: one
   `.param .u64` + one `.param .u32` length, **not** one pointer per field).
 - **Device addressing (`sarek/codegen/Sarek_ir_ptx_mem.ml`)** —
@@ -232,7 +232,7 @@ in `sarek/tests/e2e/`) old-vs-new before committing to default-on anywhere.
 `sarek-cuda/Cuda_api.ml` returns nothing. All host-side vector storage is
 plain OCaml `Bigarray`/`Ctypes` heap memory (`Vector_types.ml`,
 `Vector_transfer.ml:15-27`), and every transfer goes through
-`Cuda_api.ml:316-342` (`Memory.host_to_device`/`device_to_host`/
+`Cuda_api.ml:391-425` (`Memory.host_to_device`/`device_to_host`/
 `host_ptr_to_device`/`device_to_host_ptr`), all of which call the
 **pageable** `cuMemcpyHtoD`/`cuMemcpyDtoH` variants against whatever pointer
 `Ctypes.bigarray_start` returns.
@@ -272,11 +272,11 @@ for item 3.
 
 ## 3. Async transfers + stream overlap
 
-**Current state**: every transfer path in `Cuda_api.ml:316-342` is the
+**Current state**: every transfer path in `Cuda_api.ml:391-425` is the
 **blocking** `cuMemcpyHtoD`/`cuMemcpyDtoH` (not `*Async`), always on the
 default/null stream implicitly (no stream argument threaded through
 `Memory.host_to_device` etc. at all). The comment at
-`Cuda_api.ml:314-315` even says explicitly: *"A blocking memcpy on the
+`Cuda_api.ml:386-390` even says explicitly: *"A blocking memcpy on the
 default stream drains all prior launches on that stream, so it is a safe
 point to release the device's retained kernargs"* — i.e. the kernarg-retention
 design (item below) currently **relies on** transfers being blocking. `Transfer.ml`'s
@@ -285,15 +285,15 @@ all — the `Framework_sig.BACKEND.Memory` interface for CUDA has no
 stream-taking transfer entry point.
 
 Kernel *launches*, by contrast, already support a stream argument end to end
-— `Kernel.launch ~stream` (`Cuda_api.ml:621, 659-663`) and the full
+— `Kernel.launch ~stream` (`Cuda_api.ml:888-935`) and the full
 `Stream` module (`create`/`destroy`/`synchronize`/`default`,
-`Cuda_api.ml:358-379`) exist and are exposed at `Transfer.ml:428-474`
+`Cuda_api.ml:475-536`) exist and are exposed at `Transfer.ml:428-474`
 (`create_stream`/`default_stream`/`synchronize_stream`/`destroy_stream`).
 So the **launch side of async execution already works**; only the **memory
 side** is missing.
 
 **The foundation that makes this tractable — kernarg-lifetime retention
-(PR #221, `Cuda_api.ml:54-95, 682-692`)**: `cuLaunchKernel` is async, and the
+(PR #221, `Cuda_api.ml:56-100, 920-935`)**: `cuLaunchKernel` is async, and the
 driver only snapshots parameters synchronously — the *pointed-to* host
 buffers must outlive the launch until the stream drains. The code already
 solves exactly this problem for kernel *arguments* (`pending_kernargs`,
@@ -431,7 +431,7 @@ it's (i) **multi-device ping-pong** — `to_device` when the vector is
 `GPU d'`/`Stale_CPU d'` for a *different* device `d'` unconditionally routes
 through the host (`copy_device_to_host vec d'`, `Transfer.ml:273-275`) before
 transferring to the new device — there is no device-to-device peer copy path
-(`Memory.device_to_device`/`cuMemcpyDtoD` exists in `Cuda_api.ml:344-348` but
+(`Memory.device_to_device`/`cuMemcpyDtoD` exists in `Cuda_api.ml:421-425` but
 `Transfer.to_device` never calls it), so a vector alternating between two
 GPUs always bounces through the host even when a direct P2P copy would be
 cheaper; and (ii) **forced re-sync** — `to_cpu ~force:true` (used after
@@ -517,7 +517,7 @@ occupancy limits and derives a block size from them.
 
 The device-capability data needed for an occupancy heuristic is **already
 queried and stored** at device-creation time and simply unused for launch
-config: `Cuda_api.Device.t` (`Cuda_api.ml:105-119`) carries
+config: `Cuda_api.Device.t` (`Cuda_api.ml:114-128`) carries
 `max_threads_per_block`, `max_block_dims`, `max_grid_dims`,
 `shared_mem_per_block`, `warp_size`, and `multiprocessor_count` —
 everything a simplified occupancy calculator needs (CUDA's own
@@ -540,7 +540,7 @@ make a "bigger block" choice actively worse for register-heavy kernels.
 **Cost: S** for the heuristic version (uses data already captured);
 **L** for a true `cuOccupancyMaxPotentialBlockSize`-equivalent (needs
 per-kernel register/shared-mem usage, which isn't tracked past compilation
-today — `Kernel.compile`/`load_module_from_ptx`, `Cuda_api.ml:471-546`,
+today — `Kernel.compile`/`load_module_from_ptx`, `Cuda_api.ml:704-800`,
 discard the module's resource-usage attributes after linking).
 
 **Priority: low** — nice-to-have ergonomics, not a bottleneck fix; every

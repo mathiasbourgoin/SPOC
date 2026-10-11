@@ -129,7 +129,7 @@ As a caller that replaces an intrinsic implementation after kernels have run, I 
 - AC-6 [US-2]: raising `generate_source` → raises on each launch.
 - AC-7 [US-3]: keys for `s`, `s` again and a fresh copy of `s` are identical and equal the documented format.
 - AC-8 [US-4]: HIP e2e suites and the benchmark's result checks pass.
-- AC-8a [US-4, C-13]: `test_cuda_kernargs`: 0, 1, 3 and 10 arguments allocate exactly 2 blocks; slots are contiguous 8-byte cells holding bit-exact values; a mixed int32/float32/int64/float64 launch is bit-exact, also on a stream with a GC before synchronisation.
+- AC-8a [US-4, C-13]: `test_cuda_kernargs`: 0, 1, 3 and 10 arguments allocate exactly 2 blocks; slots are contiguous 8-byte cells holding bit-exact values; a mixed int32/float32/int64/float64 launch is bit-exact, and a stream launch keeps its argument blocks retained across a GC until the stream is synchronised (`pending_kernarg_count` is 1 before, 0 after; removing the `retain_kernargs` call turns it red).
 - AC-9 [US-5, C-14]: `clear_launch_cache` and `notify_clear_all` → next launch regenerates.
 - AC-11 [US-4, FR-013]: free a buffer of device 0 with device 1 selected → device 1 still selected.
 - AC-12 [US-2, FR-006, FR-011, review]: a clear inside codegen is not installed; 4 domains launching one IR all receive one physical source.

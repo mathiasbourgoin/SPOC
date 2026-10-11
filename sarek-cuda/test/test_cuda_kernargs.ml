@@ -170,15 +170,27 @@ let launch_mixed dev ~stream =
     ~block:(1, 1, 1)
     ~shared_mem:0
     ~stream ;
-  (* The launch is asynchronous: only the retained blocks keep the arguments
-     alive across this GC. Reusing freed memory makes a freed block read as
-     garbage. *)
+  (* The launch is asynchronous: only [retain_kernargs] keeps its argument
+     blocks reachable. Retention is asserted directly, not inferred from the
+     kernel output (freed host memory is not reliably recycled). *)
+  let device_id, stream_key =
+    match stream with
+    | Some s ->
+        ( s.Cuda_api.Stream.device.Cuda_api.Device.id,
+          Cuda_api.stream_key_of_ptr s.Cuda_api.Stream.handle )
+    | None -> (dev.Cuda_api.Device.id, Cuda_api.default_stream_key)
+  in
+  let pending () = Cuda_api.pending_kernarg_count device_id stream_key in
   Gc.full_major () ;
   Gc.compact () ;
-  ignore (Sys.opaque_identity (List.init 10_000 (fun _ -> Bytes.make 16 'x'))) ;
+  Alcotest.(check int) "blocks retained across a GC" 1 (pending ()) ;
   (match stream with
   | Some s -> Cuda_api.Stream.synchronize s
   | None -> Cuda_api.Device.synchronize dev) ;
+  Alcotest.(check int)
+    "blocks released once the stream is drained"
+    0
+    (pending ()) ;
   Cuda_api.Memory.device_to_host ~src:d_out ~dst:out ;
   Cuda_api.Memory.free d_out ;
   out
@@ -210,7 +222,7 @@ let test_mixed_stream_gc () =
       let out = launch_mixed dev ~stream:(Some s) in
       Cuda_api.Stream.destroy s ;
       Alcotest.(check bool)
-        "stream launch survives a GC before synchronisation"
+        "stream launch is correct after a GC before synchronisation"
         true
         (words_match out sample))
 

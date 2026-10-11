@@ -47,10 +47,8 @@ let check (ctx : string) (result : cu_result) : unit =
 
 (** One launch's argument blocks: [slots] holds the argument values, one 8-byte
     slot each, and [params] the array of pointers into it that [cuLaunchKernel]
-    receives. Both are plain ctypes allocations: the GC owns them, so they must
-    stay reachable (see [retain_kernargs]) until the launch has been consumed.
-
-    The layout is fixed by [Kernel.marshal_args]. *)
+    receives. Both are ctypes allocations owned by the GC, so they must stay
+    reachable (see [retain_kernargs]) until the launch has been consumed. *)
 type kernargs = {params : unit ptr ptr; slots : int64 ptr}
 
 (** Host-side kernel-argument buffers (the array of argument pointers plus the
@@ -94,6 +92,15 @@ let retire_device device_id =
   Mutex.protect pending_lock (fun () ->
       pending_kernargs :=
         List.filter (fun (id, _, _) -> id <> device_id) !pending_kernargs)
+
+(** TEST INSTRUMENTATION: number of launches whose argument blocks are still
+    retained for [(device_id, stream_key)]. *)
+let pending_kernarg_count device_id stream_key =
+  Mutex.protect pending_lock (fun () ->
+      List.length
+        (List.filter
+           (fun (id, sk, _) -> id = device_id && sk = stream_key)
+           !pending_kernargs))
 
 (** Raw address of a stream handle; the default (null) stream is 0. *)
 let stream_key_of_ptr (handle : _ ptr) = raw_address_of_ptr (to_voidp handle)
@@ -833,7 +840,7 @@ module Kernel = struct
     Spoc_framework.Cache_hooks.around_clear (fun () ->
         Spoc_framework.Guarded_cache.clear cache)
 
-  (* Host blocks allocated by [marshal_args], for tests. *)
+  (* TEST INSTRUMENTATION: counts the host blocks [marshal_args] allocates. *)
   let kernarg_blocks = Atomic.make 0
 
   let kernarg_blocks_allocated () = Atomic.get kernarg_blocks
@@ -842,7 +849,8 @@ module Kernel = struct
     Atomic.incr kernarg_blocks ;
     allocate_n typ ~count
 
-  (* Argument marshalling: ONE 8-byte-slot block holding every argument value
+  (* Argument marshalling (the HIP twin is [Hip_api.Kernel.launch]; keep the
+     two layouts identical): ONE 8-byte-slot block holding every argument value
      and ONE array of pointers into it, i.e. two host allocations per launch
      whatever the argument count (a ctypes [allocate] per argument is a calloc
      plus a GC finaliser each).
@@ -874,7 +882,7 @@ module Kernel = struct
       args ;
     {params; slots}
 
-  (* Pointer handed to the driver for argument [i]; for tests. *)
+  (* TEST INSTRUMENTATION: the pointer handed to the driver for argument [i]. *)
   let kernarg_pointer (k : kernargs) i = !@(k.params +@ i)
 
   let launch kernel ~args ~grid ~block ~shared_mem ~stream =
@@ -914,10 +922,11 @@ module Kernel = struct
          stream_ptr
          params
          (from_voidp (ptr void) null)) ;
-    (* The launch is asynchronous and the argument blocks (params + slots) may be read after this returns. Keep them alive
-       until the stream that ran the launch is drained. Attribute to that
-       stream (and its device); a null/default stream keys as
-       [default_stream_key] on the current context's device. *)
+    (* The launch is asynchronous and the argument blocks (params + slots) may
+       be read after this returns. Keep them alive until the stream that ran
+       the launch is drained. Attribute to that stream (and its device); a
+       null/default stream keys as [default_stream_key] on the current
+       context's device. *)
     let device_id, stream_key =
       match stream with
       | Some s -> (s.Stream.device.id, stream_key_of_ptr s.Stream.handle)
