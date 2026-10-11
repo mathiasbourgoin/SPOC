@@ -15,7 +15,7 @@ FROM rust:1.90-slim-bookworm AS naga-builder
 ARG NAGA_VERSION=30.0.0
 RUN cargo install naga-cli --version "${NAGA_VERSION}" --locked --root /out
 
-FROM intel/oneapi-runtime:2024.2.1-0-devel-ubuntu22.04
+FROM intel/oneapi-runtime:2026.0.0-devel-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
