@@ -4,7 +4,7 @@
 
 ## Requirements
 
-- An AMD GPU supported by ROCm, with the ROCm runtime installed. Sarek loads `libamdhip64.so` and `libhiprtc.so` (versioned `.7` and `.6` names are tried too) when the backend is first used, so ROCm is needed at run time and not to compile Sarek (`Hip_bindings.ml:29-56`, `Hip_rtc.ml:108-125`).
+- An AMD GPU supported by ROCm, with the ROCm runtime installed. Sarek loads `libamdhip64.so` and `libhiprtc.so` (versioned `.7` and `.6` names are tried too) at run time, not at build time, so ROCm is not needed to compile Sarek (`Hip_bindings.ml:25-56`, `Hip_rtc.ml:106-125`). The libraries are opened, and `hipInit` is called, at program start whenever `sarek-hip.plugin` is linked, unless HIP is disabled (`Hip_plugin.ml:135` calls `Hip_api.is_available`, `Hip_api.ml:723-730`).
 - The backend registers only if both libraries load and at least one device is present (`Hip_api.ml:724-730`). Otherwise it is silently absent from the device list.
 - Tested with ROCm 7.2 (7.2.4) on an RX 7900 XTX (gfx1100, RDNA3) and on the Ryzen 9 7950X integrated GPU (gfx1036). Other ROCm versions and GPUs are untested.
 - The OCaml side needs `ctypes` and `ctypes-foreign` (0.24 or later). The library is marked optional in `dune`: if `ctypes-foreign` is missing, the package is skipped instead of failing the build.
@@ -27,7 +27,7 @@ In your own project, add `sarek-hip.plugin` to `libraries` and call `Sarek_hip.H
 dune exec -- sarek-device-info
 ```
 
-lists every device with its backend. On the development machine (RX 7900 XTX, Ryzen 9 7950X) HIP reports two devices:
+lists every device with its backend. On the development machine (RX 7900 XTX, Ryzen 9 7950X) HIP reports two devices (excerpt: each entry also shows memory, thread limits and features):
 
 ```
 [0] AMD Radeon RX 7900 XTX
@@ -62,6 +62,7 @@ Both must be set to exactly `1` (`Hip_shared.ml:51-53`). Set `SPOC_DISABLE_HIP=1
 |---|---|---|---|
 | Launch window (deferred launches, horizontal fusion) | on | on | off (CUDA, Metal) or never (CPU) |
 | Epilogue fusion | on | off | off |
+| Matrix rewrite of GEMM-shaped kernels | on | off | off, except the Interpreter |
 
 Epilogue fusion is on only on HIP because hiprtc is called with `-ffp-contract=off` placed after any option you add, so a merged kernel cannot be contracted into a different result (`Hip_rtc.ml:264-271`; policy in [docs/fp-contraction-policy.md](../docs/fp-contraction-policy.md)). Turn either off with `SAREK_LAUNCH_WINDOW=0` and `SAREK_LAUNCH_EPILOGUE=0`. The consequences, including errors surfacing in a later call, are in [Launch window and fusion](../gh-pages/docs/performance.md).
 

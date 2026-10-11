@@ -65,7 +65,7 @@ Rules:
 
 - A ranged copy needs the vector's device copy to be current (`GPU`, `Both`, `Stale_CPU` on that device, or device-only); otherwise call `Transfer.to_device` first. A ranged write turns `Both` into `Stale_CPU`. Record (custom) kinds are refused.
 - A read-back leaves the vector's location unchanged.
-- `create_device_only` refuses lengths outside `1 .. Int32.max_int` (kernels index with `int32`) and record kinds.
+- `create_device_only` refuses lengths outside `1 .. Int32.max_int` (kernels index with `int32`) and record kinds. `Execute` likewise refuses vectors longer than `Int32.max_int` elements.
 - On CPU devices (Native, Interpreter) a device-only vector keeps host storage and host access works. Do not rely on it.
 - Freeing a device-only vector discards its contents. Freeing anything a pending stream operation references is refused.
 - Vector location and buffer tables are not synchronised across domains: use a vector from one domain at a time. The keep-alive ledger and the pinned registry are mutex-protected.
@@ -164,15 +164,15 @@ let publish_ids dev ids_vec (ids : (int32, Bigarray.int32_elt, Bigarray.c_layout
   Transfer.stage_to_device ids ~dst:ids_vec ~dst_offset:0
 ```
 
-Measured with `sarek-hip/test/bench_hip_small_writes.exe` (RX 7900 XTX, ROCm 7.2, 2026-10-10, shared machine; 8 int32 and 8 float32 rewritten, 300 us of host work, 4 launches per iteration; three runs):
+Measured with `sarek-hip/test/bench_hip_small_writes.exe` (RX 7900 XTX on the development machine, ROCm 7.2, 2026-10-10, shared machine; 8 int32 and 8 float32 rewritten, 300 us of host work, 4 launches per iteration; three runs; raw output in `docs/measurements/transfer-pitfalls-2026-10-10/bench_hip_small_writes.txt`), as the range over the three runs:
 
 | Mode | us per iteration | of which in the writes |
 |---|---|---|
-| no rewrite | 320 to 324 | 0 |
-| `Vector.set` | 709 to 712 | 339 to 344 |
-| `stage_to_device` | 333 to 343 | 10 to 13 |
+| no rewrite | 322.0 to 322.5 | 0 |
+| `Vector.set` | 705.2 to 715.1 | 341.3 to 346.4 |
+| `stage_to_device` | 330.1 to 338.9 | 9.1 to 11.5 |
 
-Known issue: on the Ryzen 9 7950X integrated GPU through HIP (ROCm 7.2), about 1 run in 7 of 300 staged writes interleaved with launches lost one launch. A caller-managed pinned ring shows it too, and `Gc.full_major ()` before the loop removed it in every run, so finaliser work during the loop is the lead; the mechanism is not established. The RX 7900 XTX never showed it. Reproducer: `sarek-hip/test/stress_hip_staged_launches.ml`.
+Known issue: on the Ryzen 9 7950X integrated GPU through HIP (ROCm 7.2), about 1 run in 7 of 300 staged writes interleaved with launches lost one launch. A caller-managed pinned ring shows it too, and `Gc.full_major ()` before the loop removed it in every run, so finaliser work during the loop is the lead; the mechanism is not established. The RX 7900 XTX never showed it (`stress_hip_staged_launches`, 20 runs per device, 2026-10-10: 3 of 20 runs on the integrated GPU, 0 of 20 on the RX 7900 XTX; raw output `docs/measurements/transfer-pitfalls-2026-10-10/stress_hip_staged_launches.txt`). Reproducer: `sarek-hip/test/stress_hip_staged_launches.ml`.
 
 On backends without asynchronous copies (Native, Interpreter, Metal), `stage_to_device` is a synchronous ranged copy, complete on return.
 
