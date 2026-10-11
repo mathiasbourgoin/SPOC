@@ -130,7 +130,7 @@ At each launch the region the original launch covers is computed from the scalar
 
 | Class | When | Behaviour |
 |---|---|---|
-| direct | `float16` operands, row-major A, B and C, `float32` output stored as is with no epilogue, accumulator starting at zero, no quotient (`t / d`) mapping, a region of whole 32x32 tiles, a reduction length divisible by 16 (`Sarek_matrix_direct.ml:40-52`) | each wave loads fragments straight from global memory |
+| direct | `float16` operands, row-major A, B and C, `float32` output stored as is with no epilogue, accumulator starting at zero, a rectangular region (`d = 0`) of whole 32x32 tiles, a reduction length divisible by 16 (`Sarek_matrix_direct.ml:40-52`) | each wave loads fragments straight from global memory |
 | staged | everything else the rewrite accepts | tiles are staged through shared memory, with zero fill, so any size, layout, offset or batch stride works |
 
 ### Accuracy opt-ins
