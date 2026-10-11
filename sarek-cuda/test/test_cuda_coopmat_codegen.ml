@@ -40,7 +40,16 @@ let tile ?a_buf ?(store_a = false) cfg =
   let fa, fb, fc, fd = C.fragments_of_config cfg in
   let i = EConst (CInt32 0l) and s = EConst (CInt32 16l) in
   let load dst frag src =
-    SCoopmat (CM_load {dst; frag; src; index = i; stride = s})
+    SCoopmat
+      (CM_load
+         {
+           dst;
+           frag;
+           src;
+           index = i;
+           stride = s;
+           layout = Sarek_coopmat_types.Row_major;
+         })
   in
   let a_elt = Option.value a_buf ~default:(elt cfg.C.cfg_a) in
   {
@@ -66,11 +75,25 @@ let tile ?a_buf ?(store_a = false) cfg =
           (if store_a then
              SCoopmat
                (CM_store
-                  {src = "fa"; frag = fa; dst = "d"; index = i; stride = s})
+                  {
+                    src = "fa";
+                    frag = fa;
+                    dst = "d";
+                    index = i;
+                    stride = s;
+                    layout = Sarek_coopmat_types.Row_major;
+                  })
            else
              SCoopmat
                (CM_store
-                  {src = "fc"; frag = fd; dst = "d"; index = i; stride = s}));
+                  {
+                    src = "fc";
+                    frag = fd;
+                    dst = "d";
+                    index = i;
+                    stride = s;
+                    layout = Sarek_coopmat_types.Row_major;
+                  }));
         ];
   }
 

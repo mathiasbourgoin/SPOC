@@ -32,7 +32,9 @@ opt-in and the launch fails without it), both decided 2026-07-27.
 
 ## Supported configurations per backend
 
-All shapes are `M = N = K = 16`, scope `Subgroup`, row-major in memory.
+All shapes are `M = N = K = 16`, scope `Subgroup`. Each `CM_load` / `CM_store`
+names its memory layout: row-major (element (r, c) at `index + r·stride + c`) or
+column-major (`index + c·stride + r`), for any fragment (see "Layouts" below).
 
 | backend | device | A × B + C → D | regime | lowering | validation |
 |---|---|---|---|---|---|
@@ -46,7 +48,26 @@ All shapes are `M = N = K = 16`, scope `Subgroup`, row-major in memory.
 Not offered anywhere by this change, each refused with a named reason:
 saturating integer accumulation, f16 accumulate (f16 result; §5.4 of the design
 document — no derived bound), bf16 and 4-bit integer operands (no component type),
-column-major layout, workgroup scope, any shape other than 16×16×16 on HIP/CUDA.
+workgroup scope, any shape other than 16×16×16 on HIP/CUDA.
+
+### Layouts
+
+| backend | row-major | column-major |
+|---|---|---|
+| Interpreter (oracle) | `index + r·stride + c` | `index + c·stride + r` |
+| HIP gfx11 | A: `sarek_cm_load_a_*` (16 contiguous elements per lane at `p + i + l16·s`); B: `sarek_cm_load_b_*` (16 elements `s` apart at `p + i + l16`); accumulator `*_acc_*` | the other operand helper: column-major B is the contiguous `load_a_*` form, column-major A the strided one; accumulator `*_acc_cm_*` (`p + i + l16·s + h`, elements 2 apart) |
+| CUDA | `row_major` fragment type, `mem_row_major` | `col_major` in the operand's fragment TYPE (so every load of one fragment must use one layout: a fragment loaded in both is a named `#error` in the CUDA arm), `mem_col_major` for accumulators; **compile-only** |
+| GLSL (Vulkan) | `gl_CooperativeMatrixLayoutRowMajor` | `gl_CooperativeMatrixLayoutColumnMajor` |
+| Metal, OpenCL, WGSL, PTX | refused (no cooperative matrices) | refused |
+
+Executed: `sarek/tests/e2e/test_coopmat_layout_e2e.ml`, every row/column
+combination of A, B, C and D on HIP gfx1100 (u8, f16 and bf16 configurations)
+and on Vulkan RADV (u8; GLSL refuses f16), equal to a host reference on
+small-integer inputs. On gfx1100 a column-major B fragment is two
+`global_load_b128` per lane where the row-major one is 16 `global_load_d16(_hi)`
+loads (`spoc-pipeline-logs/pkgF/F2-isa-*.txt`). The helpers take a
+`long long` stride, so `l16·s`, `e·s` and `2j·s` do not overflow `int` past a
+stride of 2^31/15.
 
 *(agent decision)* **Builtins, not rocWMMA.** hipcc/hiprtc in ROCm 7.2.4 accept
 `__builtin_amdgcn_wmma_f32_16x16x16_f16_w32` and
@@ -276,10 +297,14 @@ which is the obvious next step and is not in this change.
   `launch_dims`. Shapes must tile (`check_shape`): M a multiple of 16·frags_m
   (32 by default), N of 16·frags_n, K of 16, and the wave-tile count of `waves`.
   For prefill pad the token count M up to the tile height.
-- **Layout:** row-major, A = activations M×K **f16**, B = weights **K×N f16**
-  (llama-style weights are N×K, i.e. B transposed: transpose once at load time;
-  column-major `CM_load` is not lowered by this change), C/D f32 M×N (C = bias or
-  a zero buffer; D may then feed the f32 pipeline).
+- **Layout:** row-major, A = activations M×K **f16**, B = weights **K×N f16**,
+  or B stored transposed (N×K, llama-style weights or token-major activations)
+  with `~b_layout:Col_major`; C/D f32 M×N (C = bias or a zero buffer; D may
+  then feed the f32 pipeline). Transposed B loads contiguously but each lane
+  reads 32 bytes per k step from a different row: faster than row-major B while
+  B stays in cache (M = 256, K = 3072, N = 1024: 1.3–1.4× for the 1×1, 2×2 and
+  2×4 tilings), mixed at N = 3072, and 1.5–5× slower when it does not
+  (N = 12288; `spoc-pipeline-logs/pkgF/F2-bench-coopmat-gemm-c41-summary.txt`).
 - **f16 conversion:** activations f32 → f16 with a small Sarek kernel
   (`float16_of_float32`) per layer before the GEMM; weights converted (and
   dequantised, for quantised GGUF tensors) to f16 once at load. f16 range is

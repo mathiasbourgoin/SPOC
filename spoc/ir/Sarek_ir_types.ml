@@ -243,9 +243,12 @@ and coopmat_op =
       src : string;
       index : expr;
       stride : expr;
+      layout : Sarek_coopmat_types.layout;
     }
-      (** Fill [dst] from the buffer [src], row-major, starting at element
-          [index], with [stride] elements between consecutive rows.
+      (** Fill [dst] from the buffer [src], element (0, 0) at [index]. With
+          [layout = Row_major], [stride] elements separate consecutive rows
+          (element (r, c) is at [index + r * stride + c]); with [Col_major],
+          they separate consecutive columns ([index + c * stride + r]).
 
           [frag] is repeated here rather than looked up from the [CM_decl]: a
           codegen backend must be able to emit this statement without carrying a
@@ -253,17 +256,21 @@ and coopmat_op =
           agree. A single source of truth that every consumer has to reconstruct
           is not a single source of truth.
 
-          Column-major is deliberately absent. It is one more enumerant in GLSL,
-          but it is a second layout to verify on hardware and this slice
-          measured only row-major — an emitted layout nothing has executed is a
-          claim without evidence. *)
+          [layout] is required, not defaulted, so every construction site states
+          which of the two it means. Column-major is what lets an operand stored
+          transposed (a B kept as [n][k], token-major activations) be loaded
+          with contiguous reads: on HIP gfx11 a column-major B fragment is one
+          contiguous 16-element run per lane, a row-major one a stride-[stride]
+          gather (specs/coopmat-hip-wmma.md). A backend that cannot lower a
+          layout refuses the statement. *)
   | CM_store of {
       src : string;
       frag : Sarek_coopmat_types.fragment;
       dst : string;
       index : expr;
       stride : expr;
-    }  (** The inverse of {!CM_load}. *)
+      layout : Sarek_coopmat_types.layout;
+    }  (** The inverse of {!CM_load}, with the same [layout] semantics. *)
   | CM_muladd of {
       dst : string;
       a : string;

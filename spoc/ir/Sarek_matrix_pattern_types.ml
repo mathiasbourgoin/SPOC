@@ -7,7 +7,9 @@
 
 open Sarek_ir_types
 
-type layout = Row_major | Col_major
+(* The cooperative-matrix layout itself, so a classified operand's layout is
+   what a [CM_load] of it takes. *)
+type layout = Sarek_coopmat_types.layout = Row_major | Col_major
 
 type operand = {
   array : string;
@@ -139,6 +141,4 @@ let reason_text = function
       "the accumulator starts from a value that is neither uniform nor the \
        output element"
 
-let layout_name = function
-  | Row_major -> "row-major"
-  | Col_major -> "column-major"
+let layout_name = Sarek_coopmat_types.layout_name

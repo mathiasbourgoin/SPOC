@@ -65,7 +65,16 @@ let in_place_ir ~subgroups_per_block =
   let at = EBinop (Mul, subgroup, i32 tile) in
   let cm op = SCoopmat op in
   let load name frag src =
-    cm (CM_load {dst = name; frag; src; index = at; stride = i32 mnk})
+    cm
+      (CM_load
+         {
+           dst = name;
+           frag;
+           src;
+           index = at;
+           stride = i32 mnk;
+           layout = Sarek_coopmat_types.Row_major;
+         })
   in
   {
     default_kernel with
@@ -89,6 +98,7 @@ let in_place_ir ~subgroups_per_block =
                  dst = "d";
                  index = at;
                  stride = i32 mnk;
+                 layout = Sarek_coopmat_types.Row_major;
                });
         ];
   }

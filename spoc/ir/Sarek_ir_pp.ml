@@ -124,6 +124,12 @@ and pp_exprs fmt = function
   | [e] -> pp_expr fmt e
   | e :: es -> Format.fprintf fmt "%a, %a" pp_expr e pp_exprs es
 
+(* Row-major prints nothing, so the text of a row-major load is the same as
+   before layouts existed. *)
+let pp_layout = function
+  | Sarek_coopmat_types.Row_major -> ""
+  | Sarek_coopmat_types.Col_major -> " col-major"
+
 let rec pp_lvalue fmt = function
   | LVar v -> pp_var fmt v
   | LArrayElem (arr, idx) -> Format.fprintf fmt "%s[%a]" arr pp_expr idx
@@ -211,26 +217,28 @@ and pp_coopmat_op fmt = function
         (Sarek_coopmat_types.shape_name frag.Sarek_coopmat_types.frag_shape)
         (Sarek_coopmat_types.component_name
            frag.Sarek_coopmat_types.frag_component)
-  | CM_load {dst; src; index; stride; _} ->
+  | CM_load {dst; src; index; stride; layout; _} ->
       Format.fprintf
         fmt
-        "coopmat_load %s <- %s[%a] stride %a;"
+        "coopmat_load %s <- %s[%a] stride %a%s;"
         dst
         src
         pp_expr
         index
         pp_expr
         stride
-  | CM_store {src; dst; index; stride; _} ->
+        (pp_layout layout)
+  | CM_store {src; dst; index; stride; layout; _} ->
       Format.fprintf
         fmt
-        "coopmat_store %s -> %s[%a] stride %a;"
+        "coopmat_store %s -> %s[%a] stride %a%s;"
         src
         dst
         pp_expr
         index
         pp_expr
         stride
+        (pp_layout layout)
   | CM_muladd {dst; a; b; c; cfg} ->
       Format.fprintf
         fmt

@@ -230,7 +230,16 @@ let coopmat_tile name (a : Sarek_coopmat.component_type) b acc =
   in
   let i = EConst (CInt32 0l) and s = EConst (CInt32 16l) in
   let load dst frag src =
-    SCoopmat (CM_load {dst; frag; src; index = i; stride = s})
+    SCoopmat
+      (CM_load
+         {
+           dst;
+           frag;
+           src;
+           index = i;
+           stride = s;
+           layout = Sarek_coopmat_types.Row_major;
+         })
   in
   ( name,
     base_kernel
@@ -246,7 +255,15 @@ let coopmat_tile name (a : Sarek_coopmat.component_type) b acc =
            load "fc" fc "c";
            SCoopmat (CM_muladd {dst = "fc"; a = "fa"; b = "fb"; c = "fc"; cfg});
            SCoopmat
-             (CM_store {src = "fc"; frag = fd; dst = "d"; index = i; stride = s});
+             (CM_store
+                {
+                  src = "fc";
+                  frag = fd;
+                  dst = "d";
+                  index = i;
+                  stride = s;
+                  layout = Sarek_coopmat_types.Row_major;
+                });
          ]) )
 
 let coopmat_corpus () =

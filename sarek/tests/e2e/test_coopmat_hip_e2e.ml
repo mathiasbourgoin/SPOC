@@ -261,9 +261,25 @@ let check_fragment_only_gate devices =
           [
             SCoopmat (CM_decl {name = "fc"; frag});
             SCoopmat
-              (CM_load {dst = "fc"; frag; src = "c"; index = k0; stride = k16});
+              (CM_load
+                 {
+                   dst = "fc";
+                   frag;
+                   src = "c";
+                   index = k0;
+                   stride = k16;
+                   layout = Sarek_coopmat_types.Row_major;
+                 });
             SCoopmat
-              (CM_store {src = "fc"; frag; dst = "d"; index = k0; stride = k16});
+              (CM_store
+                 {
+                   src = "fc";
+                   frag;
+                   dst = "d";
+                   index = k0;
+                   stride = k16;
+                   layout = Sarek_coopmat_types.Row_major;
+                 });
           ];
     }
   in
