@@ -142,12 +142,13 @@ let reduce =
       let tid = thread_idx_x in
 
       let%superstep load =
-        sdata.(tid) <- input.(get_global_id 0)
+        sdata.(tid) <- input.(global_thread_id)
       in
 
       (* Logic simplified for display *)
-      if tid < 128l then sdata.(tid) <- sdata.(tid) +. sdata.(tid + 128l);
-      barrier ();
+      let%superstep reduce128 =
+        if tid < 128l then sdata.(tid) <- sdata.(tid) +. sdata.(tid + 128l)
+      in
 
       if tid = 0l then output.(block_idx_x) <- sdata.(0l)]
 ```

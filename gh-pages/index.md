@@ -51,9 +51,10 @@ Sarek allows you to express parallel logic as standard OCaml functions. These ar
 (* A simple vector addition kernel *)
 let vector_add =
   [%kernel
-    fun (a : float32 vector) (b : float32 vector) (c : float32 vector) ->
-      let idx = get_global_id 0 in
-      c.(idx) <- a.(idx) + b.(idx)]
+    fun (a : float32 vector) (b : float32 vector) (c : float32 vector) (n : int32) ->
+      let open Sarek_stdlib.Std in
+      let i = global_thread_id in
+      if i < n then c.(i) <- a.(i) + b.(i)]
 ```
 
 <hr style="margin: 50px 0; border: 0; border-top: 1px solid var(--border-color);">

@@ -42,8 +42,11 @@ GPU backends (CUDA, OpenCL, Vulkan, Metal) are automatically detected and enable
 
 ## Your First Kernel: Vector Addition
 
-Here is a complete example of a vector addition kernel. Sarek uses the `[%kernel ...]` syntax to define code that runs on the GPU.
+This section builds a complete program that adds two vectors and prints one element of the result. It runs on any machine: the Native backend executes the kernel on the CPU when no GPU is available.
 
+Sarek uses the `[%kernel ...]` syntax to define code that runs on the device.
+
+<!-- snippet: program -->
 ```ocaml
 open Sarek
 module Device = Spoc_core.Device
@@ -64,37 +67,47 @@ let () =
   let a = Vector.create Vector.float32 n in
   let b = Vector.create Vector.float32 n in
   let c = Vector.create Vector.float32 n in
-
-  (* Fill vectors with data *)
   for i = 0 to n - 1 do
-    Vector.set a i (float_of_int i);
-    Vector.set b i (float_of_int (i * 2));
-  done;
+    Vector.set a i (float_of_int i) ;
+    Vector.set b i (float_of_int (i * 2))
+  done ;
 
-  (* 3. Select a device (auto-detects best available GPU/CPU) *)
-  let devs = Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] () in
-  let dev = Device.best () in
-  Printf.printf "Using device: %s\n" dev.Device.name;
-  ignore devs;
+  (* 3. Register the backends, then select a device. [best] returns the first
+     CUDA device, else the first OpenCL device, else the first device found. *)
+  Sarek_native.Native_plugin.init () ;
+  let _devices = Device.init () in
+  match Device.best () with
+  | None -> prerr_endline "No device available"
+  | Some dev ->
+      Printf.printf "Using device: %s (%s)\n" dev.Device.name dev.Device.framework ;
 
-  (* 4. Get IR and execute the kernel *)
-  let _, kirc = vector_add in
-  let ir = match kirc.Sarek.Kirc_types.body_ir with
-    | Some ir -> ir | None -> failwith "No IR" in
-  let block = Execute.dims1d 256 in
-  let grid  = Execute.dims1d ((n + 255) / 256) in
-  Execute.run_vectors ~device:dev ~ir ~args:[Vec a; Vec b; Vec c; Int n]
-    ~block ~grid ();
-  Transfer.flush dev;
+      (* 4. Get the IR and launch the kernel *)
+      let _, kirc = vector_add in
+      let ir =
+        match kirc.Sarek.Kirc_types.body_ir with
+        | Some ir -> ir
+        | None -> failwith "No IR"
+      in
+      let block = Execute.dims1d 256 in
+      let grid = Execute.dims1d ((n + 255) / 256) in
+      Execute.run_vectors
+        ~device:dev
+        ~ir
+        ~args:[Vec a; Vec b; Vec c; Int n]
+        ~block
+        ~grid
+        () ;
+      Transfer.flush dev ;
 
-  (* 5. Check results *)
-  let result = Vector.get c 10 in
-  Printf.printf "c[10] = %f\n" result
+      (* 5. Check the result *)
+      Printf.printf "c[10] = %f\n" (Vector.get c 10)
 ```
+
+`Device.init ()` enumerates the devices of every backend that has registered. A backend registers when its module is initialised, and `dune` links a library module only if the program refers to it; the call `Sarek_native.Native_plugin.init ()` is that reference. See [Using Sarek in a dune project](#using-sarek-in-a-dune-project) for the other backends.
 
 ## Shared Memory & Synchronization
 
-Sarek supports advanced GPU features like shared memory and barriers. Here is an example of a parallel reduction (summing a vector).
+Sarek supports shared memory and barriers. This kernel sums each block of a vector into one element of `output`: every block of 256 threads loads its slice into shared memory and halves the active threads at each step. `block_barrier ()` makes all threads of the block wait for each other.
 
 ```ocaml
 let reduce_sum =
@@ -108,40 +121,72 @@ let reduce_sum =
       let gid = global_thread_id in
 
       (* Load data into shared memory *)
-      sdata.(tid) <- if gid < n then input.(gid) else 0.0;
+      sdata.(tid) <- (if gid < n then input.(gid) else 0.0) ;
 
       (* Synchronize all threads in the block *)
-      barrier ();
+      block_barrier () ;
 
       (* Tree reduction in shared memory *)
-      let stride = ref 128l in
-      while !stride > 0l do
-        if tid < !stride then
-          sdata.(tid) <- sdata.(tid) +. sdata.(tid + !stride);
-        barrier ();
-        stride := !stride / 2l
-      done;
+      let stride = mut 128l in
+      while stride > 0l do
+        if tid < stride then sdata.(tid) <- sdata.(tid) +. sdata.(tid + stride) ;
+        block_barrier () ;
+        stride := stride / 2l
+      done ;
 
       (* Write the block result to global memory *)
-      if tid = 0l then
-        output.(block_idx_x) <- sdata.(0l)]
+      if tid = 0l then output.(block_idx_x) <- sdata.(0l)]
 ```
 
-## Compilation
+## Using Sarek in a dune project
 
-Build your project with `dune`:
+A project that uses Sarek needs the `sarek.ppx` preprocessor, the libraries it calls, and one backend library per backend it wants to use:
 
 ```lisp
 (executable
  (name my_program)
- (libraries sarek spoc)
- (preprocess (pps sarek.ppx)))
+ (libraries sarek sarek.core sarek.stdlib sarek.native)
+ (preprocess
+  (pps sarek.ppx))
+ (flags
+  (:standard -w -33)))
 ```
 
-Run it:
+The `flags` line is needed in dune's default `dev` profile: the code `[%kernel ...]` expands to opens a module the kernel may not use, and warning 33 (unused open) is an error there.
+
+| Library | Provides | Backend init call |
+|---|---|---|
+| `sarek.core` | `Spoc_core.Device`, `Vector`, `Transfer` | none |
+| `sarek.stdlib` | `Sarek_stdlib.Std`, the kernel intrinsics | none |
+| `sarek.native` | `Native` CPU backend (OCaml 5 domains) | `Sarek_native.Native_plugin.init ()` |
+| `sarek.interpreter` | `Interpreter` CPU backend (debugging) | `Sarek_interpreter.Interpreter_plugin.init ()` |
+| `sarek-cuda.plugin` | `CUDA/PTX` and `CUDA/C` | `Sarek_cuda.Cuda_plugin.init ()` |
+| `sarek-hip.plugin` | `HIP` | `Sarek_hip.Hip_plugin.init ()` |
+| `sarek-opencl.plugin` | `OpenCL` | `Sarek_opencl.Opencl_plugin.init ()` |
+| `sarek-vulkan.plugin` | `Vulkan` | `Sarek_vulkan.Vulkan_plugin.init ()` |
+| `sarek-metal.plugin` | `Metal` | `Sarek_metal.Metal_plugin.init ()` |
+
+Adding a backend library to `libraries` is not enough: the program must call that backend's `init` (or otherwise refer to one of its modules) before `Device.init`, otherwise the linker drops the library and the backend never registers. Call the `init` of every backend you list; an `init` is harmless when the driver is missing, and the backend then does not appear among the devices. Backends are tried in the order `Device.init` lists them (CUDA, HIP, OpenCL, Vulkan, Metal, Native, Interpreter); pass `~frameworks:["OpenCL"; "Native"]` to choose.
+
+```ocaml
+(* Register every backend this program was linked with. *)
+let register_backends () =
+  Sarek_native.Native_plugin.init () ;
+  Sarek_interpreter.Interpreter_plugin.init () ;
+  Sarek_cuda.Cuda_plugin.init () ;
+  Sarek_hip.Hip_plugin.init () ;
+  Sarek_opencl.Opencl_plugin.init () ;
+  Sarek_vulkan.Vulkan_plugin.init () ;
+  Sarek_metal.Metal_plugin.init ()
+```
+
+Build and run it:
 
 ```bash
 dune exec ./my_program.exe
+
+# CPU only: no GPU backend registers
+SPOC_DISABLE_GPU=1 dune exec ./my_program.exe
 ```
 
 ## Next Steps
