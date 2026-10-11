@@ -64,6 +64,20 @@ val merge_dim_usage : dim_usage -> dim_usage -> dim_usage
 
 val check_warp : exec_mode -> expr -> error list
 
+type env = (int * bool) list
+
+val env_lookup : env -> int -> bool
+
+val env_extend : env -> int -> bool -> env
+
+val is_varying_in_env : env -> expr -> bool
+
+val has_reachable_return : expr -> bool
+
+val has_varying_return : env -> expr -> bool
+
+val check_env : exec_mode -> env -> expr -> error list
+
 type tid = int
 
 type value = int
@@ -82,5 +96,7 @@ type outcome = ONorm of value | ORet of value
 
 val eval :
   (tid -> value) -> int -> tid -> venv -> expr -> (outcome * trace) option
+
+val check_warp_env : exec_mode -> env -> expr -> error list
 
 val eval_concrete : int -> tid -> venv -> expr -> (outcome * trace) option

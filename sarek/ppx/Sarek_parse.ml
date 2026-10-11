@@ -327,9 +327,10 @@ let rec parse_let_shared parse_expr (expr : expression) : Sarek_ast.expr_desc =
         (Parse_error_exn
            ("Expected 'let%shared name : type [= size] in body'", expr.pexp_loc))
 
-(** Parse let%superstep: let%superstep [~divergent] name = body in cont Syntax:
-    let%superstep load = tile.(i) <- v in cont let%superstep ~divergent final =
-    ... in cont *)
+(** Parse let%superstep: [let%superstep[@divergent] name = body in cont], the
+    attribute optional. [@divergent] is accepted for source compatibility and
+    has no effect on checking or lowering (specs/convergence-semantics.md SS-4);
+    any other attribute is refused. *)
 and parse_superstep parse_expr (expr : expression) : Sarek_ast.expr_desc =
   match expr.pexp_desc with
   (* Pattern: let name = body in cont *)

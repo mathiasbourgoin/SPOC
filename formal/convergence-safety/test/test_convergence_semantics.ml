@@ -84,7 +84,7 @@ let rec barrier_free = function
   | EFor (lo, hi, b) -> barrier_free lo && barrier_free hi && barrier_free b
   | ESeq es -> List.for_all barrier_free es
   | ELet (_, v, b) -> barrier_free v && barrier_free b
-  | ESuperstep (dv, body, cont) -> dv && barrier_free body && barrier_free cont
+  | ESuperstep _ -> false (* SS-4: never barrier-free *)
   | EApp args -> List.for_all barrier_free args
   | EReturn e -> barrier_free e
 
@@ -169,11 +169,10 @@ let rec check_env m (env : env) = function
       let vv = is_varying_env env v in
       let env' = env_extend env x vv in
       check_env m env v @ check_env m env' b
-  | ESuperstep (divergent, body, cont) ->
+  | ESuperstep (_divergent, body, cont) ->
+      (* SS-1/SS-4: entry error in Diverged mode whatever the flag *)
       let entry_errors =
-        match (m, divergent) with
-        | Diverged, false -> [`BarrierError]
-        | _, _ -> []
+        match m with Diverged -> [`BarrierError] | Converged -> []
       in
       entry_errors @ check_env m env body @ check_env m env cont
   | EApp args -> List.concat_map (check_env m env) args
