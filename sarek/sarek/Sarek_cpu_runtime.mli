@@ -188,10 +188,16 @@ val enqueue_fission :
   unit ->
   unit
 
-(** Wait for a specific queue to complete. *)
+(** Wait for a specific queue to complete.
+
+    A kernel that raises does not stop the queue: later kernels still run. The
+    first error raised since the previous flush of this queue is re-raised here
+    (and cleared); later errors in the same window are dropped. *)
 val flush_fission_queue : int -> unit
 
-(** Wait for all fission queues to complete. Called by Devices.flush. *)
+(** Wait for all fission queues to complete. Called by Devices.flush. Every
+    queue is flushed even if one raises; the first error is re-raised after the
+    last queue is idle. *)
 val flush_fission : unit -> unit
 
 (** {1 Optimized Simple Kernel Runners}
