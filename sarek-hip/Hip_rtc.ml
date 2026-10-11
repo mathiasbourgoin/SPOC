@@ -377,6 +377,23 @@ let hiprtc_options (caller_options : string list) : string list =
     *mismatched* (but syntactically valid) arch compiles here and only fails at
     hipModuleLoadData, so callers should prefer the default. *)
 
+(* Run [f] on a C [char *] array holding [strs]. Not [CArray.of_list string]:
+   ctypes' [string] view copies each element into a C buffer that nothing
+   keeps alive once the element has been written, so a collection before the
+   call frees the option strings under the compiler (observed: hiprtc read a
+   garbage option and failed with "error reading '8{...'"). Here every buffer
+   stays reachable until [f] has returned. *)
+let with_c_strings (strs : string list) (f : int -> string ptr -> 'a) : 'a =
+  let bufs = List.map CArray.of_string strs in
+  let ptrs = CArray.of_list (ptr char) (List.map CArray.start bufs) in
+  let r =
+    f
+      (List.length strs)
+      (coerce (ptr (ptr char)) (ptr string) (CArray.start ptrs))
+  in
+  ignore (Sys.opaque_identity (bufs, ptrs)) ;
+  r
+
 let compile_to_code_object ?(name = "kernel") ?arch ?(options = [])
     (source : string) : string =
   let prog = allocate hiprtc_program_ptr (from_voidp hiprtc_program null) in
@@ -398,16 +415,7 @@ let compile_to_code_object ?(name = "kernel") ?arch ?(options = [])
     let lst = hiprtc_options lst in
     match lst with
     | [] -> hiprtcCompileProgram prog_handle 0 (from_voidp string null)
-    | _ ->
-        let arr = CArray.of_list string lst in
-        let res =
-          hiprtcCompileProgram
-            prog_handle
-            (CArray.length arr)
-            (CArray.start arr)
-        in
-        ignore (Sys.opaque_identity (lst, arr)) ;
-        res
+    | _ -> with_c_strings lst (hiprtcCompileProgram prog_handle)
   in
   let compile_result =
     match arch with
