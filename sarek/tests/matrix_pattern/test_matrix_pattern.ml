@@ -432,6 +432,37 @@ let n_operand_written =
       c.((row * n) + col) <- sum ;
       b.(col) <- 0.0]
 
+let n_guard_reads_acc =
+  [%kernel
+    fun (a : float32 vector)
+        (b : float32 vector)
+        (c : float32 vector)
+        (n : int32)
+        (k : int32) ->
+      let row = global_idx_y in
+      let col = global_idx_x in
+      let sum = mut 0.0 in
+      for i = 0 to k - 1l do
+        sum := sum +. (a.((row * k) + i) *. b.((i * n) + col))
+      done ;
+      if sum > 0.0 then c.((row * n) + col) <- sum]
+
+let n_varying_epilogue =
+  [%kernel
+    fun (a : float32 vector)
+        (b : float32 vector)
+        (c : float32 vector)
+        (bias : float32 vector)
+        (n : int32)
+        (k : int32) ->
+      let row = global_idx_y in
+      let col = global_idx_x in
+      let sum = mut 0.0 in
+      for i = 0 to k - 1l do
+        sum := sum +. (a.((row * k) + i) *. b.((i * n) + col))
+      done ;
+      c.((row * n) + col) <- sum +. bias.(col)]
+
 let n_shared_tiled =
   [%kernel
     fun (a : float32 vector)
@@ -712,6 +743,11 @@ let test_negatives () =
     "operand_written"
     n_operand_written
     (is (P.Operand_written "b")) ;
+  check_rejected "guard_reads_acc" n_guard_reads_acc (is P.No_output_store) ;
+  check_rejected
+    "varying_epilogue"
+    n_varying_epilogue
+    (is P.Unsupported_epilogue) ;
   check_rejected
     "shared_tiled"
     n_shared_tiled
