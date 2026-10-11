@@ -14,11 +14,11 @@ Test and benchmark programs read further variables of their own (for example `SA
 | Convention | Variables |
 |---|---|
 | Only the exact string `1` has an effect | `SPOC_DISABLE_*`, `SAREK_MATRIX_REPORT` |
-| Only the exact string `0` switches off | `SAREK_AUTO_UNROLL` |
+| Only the exact string `0` switches off | `SAREK_AUTO_UNROLL`, `SAREK_HIP_IGPU_UNCACHED` |
 | Exactly `0`, `false`, `off` or `no` (lowercase) switches off; anything else leaves it on | `SAREK_LAUNCH_WINDOW`, `SAREK_LAUNCH_EPILOGUE` |
 | `1`, `true` or `yes` (lowercase) switches on | `SAREK_PPX_DEBUG` |
 | A mode name, case-insensitive; an unknown value warns once | `SAREK_MATRIX_REWRITE` |
-| A positive number; an invalid value falls back to the default without a message | `SAREK_DOMAIN_COUNT`, `SPOC_METAL_BATCH` |
+| A positive number; an invalid value falls back to the default without a message | `SAREK_DOMAIN_COUNT`, `SAREK_CPU_POOL_MAX_DOMAINS`, `SAREK_CPU_POOL_IDLE_MS`, `SPOC_METAL_BATCH` |
 | A positive number; an invalid value is an error | `SPOC_VULKAN_FENCE_TIMEOUT_S` |
 | Set to anything, even empty | `SPOC_GPU_STATS` |
 
@@ -37,6 +37,7 @@ So `SPOC_DISABLE_GPU=true` and `SAREK_LAUNCH_WINDOW=OFF` do nothing.
 | `SPOC_DISABLE_VULKAN` | `1` | unset | start, and at each `init ()` | The Vulkan backend does not register. |
 | `SPOC_DISABLE_METAL` | `1` | unset | start, and at each `init ()` | The Metal backend does not register. |
 | `SAREK_CUDA_INCLUDE` | `:`-separated directories (empty is ignored) | unset | first CUDA/C kernel compile | Extra include directories for NVRTC, tried before `CUDA_PATH`, `CUDA_HOME`, `CUDA_ROOT` and the conventional install roots; only directories that exist are kept. Needed for kernels that include `cuda_fp16.h`. |
+| `SAREK_HIP_IGPU_UNCACHED` | `0` | unset (uncached allocation on integrated GPUs) | start | `0` makes HIP allocate device buffers on integrated GPUs with plain `hipMalloc` again, and warns once. **Unsafe**: on the gfx1036 iGPU, kernel writes into such memory can be lost across host idle gaps and results are silently wrong (issue #427). It exists to reproduce that loss. Discrete GPUs always use `hipMalloc`. |
 | `SPOC_METAL_BATCH` | integer >= 1 | `32` | start | Most dispatches one Metal command buffer collects before it is committed while the GPU is still busy. |
 | `SPOC_VULKAN_FENCE_TIMEOUT_S` | positive number of seconds | unset (no bound) | start; a malformed value is refused when a Vulkan device is created | Bounds how long Vulkan waits for submitted work; meant as a hang detector in tests. |
 
@@ -73,7 +74,9 @@ See [Kernel language notes](kernel_language.html).
 
 | Variable | Accepted values | Default | Read at | Effect |
 |---|---|---|---|---|
-| `SAREK_DOMAIN_COUNT` | a positive integer | `Domain.recommended_domain_count ()` (4 if that fails) | first use of a CPU pool | Number of OCaml domains used by the Native runtime and the Interpreter. The Native parallel pool uses the value as its worker count; without it, it uses one fewer than the domain count (at least 1). A value that is not a positive integer is ignored. Meant for tests that need more domains than cores. |
+| `SAREK_DOMAIN_COUNT` | a positive integer | `Domain.recommended_domain_count ()` (4 if that fails) | each time a CPU pool is created, and at each barrier-free Native launch (work split) | Number of OCaml domains used by the Native runtime and the Interpreter, before the `SAREK_CPU_POOL_MAX_DOMAINS` cap. The Native parallel pool uses the value as its worker count; without it, it uses one fewer than the domain count (at least 1). A value that is not a positive integer is ignored. Meant for tests that need more domains than cores. |
+| `SAREK_CPU_POOL_MAX_DOMAINS` | a positive integer | unset (no cap) | each time a CPU pool is created, and at each barrier-free Native launch (work split) | Upper bound on the workers of each CPU pool (the Interpreter and Native block pool, the Native thread and parallel pools), so a program can keep cores for itself. `Cpu_pool_lifecycle.set_max_domains` takes precedence. A value that is not a positive integer is ignored. |
+| `SAREK_CPU_POOL_IDLE_MS` | a positive integer (milliseconds) | `1000` | at each poll of the pool reaper, while a pool is live | A CPU pool that no launch has used for this long is retired: its worker domains exit, and the next launch creates it again. Idle domains still take part in every minor collection, so retiring them keeps host allocation fast. `Cpu_pool_lifecycle.set_idle_timeout` takes precedence. A value that is not a positive integer is ignored. |
 
 ## Diagnostics
 
