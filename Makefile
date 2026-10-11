@@ -122,6 +122,8 @@ test_negative:
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_convention_kernel_fail2.cma > "$$out" 2>&1; if grep -q "Cannot unify types" "$$out"; then echo "  PASS: type mismatch"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing barrier in diverged control flow..."
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_barrier_diverged.cma > "$$out" 2>&1; if grep -q "Barrier called in diverged control flow" "$$out"; then echo "  PASS: barrier diverged"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
+	@echo "Testing qualified Gpu.block_barrier in diverged control flow..."
+	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_barrier_qualified_gpu.cma > "$$out" 2>&1; if grep -q "Barrier called in diverged control flow" "$$out"; then echo "  PASS: qualified barrier diverged"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing barrier in diverged control flow under let open Std..."
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_barrier_open_std.cma > "$$out" 2>&1; if grep -q "Barrier called in diverged control flow" "$$out"; then echo "  PASS: barrier diverged under open Std"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing superstep in diverged control flow..."

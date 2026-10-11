@@ -228,9 +228,10 @@ let open_module (path : string list) env =
                Core primitives define the canonical type and convergence.
                Stdlib intrinsics just provide device implementations.
 
-               IMPORTANT: Only preserve type/convergence from CorePrimitiveRef.
-               When shadowing another IntrinsicRef (e.g., Float64 shadowing Float32),
-               we want the new module's type to take precedence. *)
+               IMPORTANT: Only preserve type from CorePrimitiveRef. When
+               shadowing another IntrinsicRef (e.g., Float64 shadowing
+               Float32), the new module's type takes precedence; a convergence
+               class already recorded under the name is kept in both cases. *)
             let info =
               match StringMap.find_opt short_name env.intrinsic_funs with
               | Some existing -> (
@@ -359,7 +360,16 @@ let with_stdlib env =
               {
                 intr_type = info.ii_type;
                 intr_ref = ref;
-                intr_convergence = None;
+                (* The registry carries no convergence class; the core
+                   primitive of the same name does. Without it the qualified
+                   spelling [Gpu.block_barrier ()] escapes the divergence check
+                   and the native barrier detection (#447). *)
+                intr_convergence =
+                  (match Sarek_core_primitives.find info.ii_name with
+                  | Some p when p.convergence <> Sarek_core_primitives.NoEffect
+                    ->
+                      Some p.convergence
+                  | _ -> None);
               }
             in
             add_intrinsic_fun qualified_name fun_info env
