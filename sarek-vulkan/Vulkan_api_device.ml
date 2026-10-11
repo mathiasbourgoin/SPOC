@@ -124,8 +124,10 @@ type t = {
           {!queue_submit} and {!with_queue_lock}. *)
 }
 
-(** Test-only fault injection: when [Some r], the next {!queue_submit} returns
-    [r] without submitting anything, and the hook clears itself. *)
+(** Test-only fault injection, for a single domain: when [Some r], the next
+    {!queue_submit} returns [r] without submitting anything, and the hook clears
+    itself. Unsynchronized: setting it while another domain submits is a race.
+    Production code never sets it. *)
 let inject_submit_failure : vk_result option ref = ref None
 
 (** Run [f] holding [dev.queue_lock]. *)
@@ -633,6 +635,7 @@ let get idx =
   | Some dev -> dev
   | None ->
       init () ;
+      check_fence_wait_bound () ;
       let inst = get_or_create_instance () in
 
       (* Get physical device *)
