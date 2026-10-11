@@ -124,12 +124,29 @@ let static_plan (k : kernel) =
       Error ("not a matrix product: " ^ P.reason_text nm.nm_reason)
   | _ -> Error "more than one reduction loop"
 
+(* Test hook: make the analysis raise, as a defect in it would. *)
+let fail_analysis = Atomic.make false
+
+let fail_analysis_for_tests b = Atomic.set fail_analysis b
+
+(* The analysis runs on the default launch path: a failure in it is cached as
+   the plan's error and never fails a launch. Out_of_memory and Sys.Break
+   are not analysis failures and propagate. *)
+let guarded_plan k =
+  match
+    if Atomic.get fail_analysis then failwith "injected analysis failure"
+    else static_plan k
+  with
+  | p -> p
+  | exception ((Out_of_memory | Sys.Break) as e) -> raise e
+  | exception e -> Error ("matrix analysis failed: " ^ Printexc.to_string e)
+
 let entry k =
   Mutex.protect memo_lock (fun () ->
       match Memo.find_opt memo k with
       | Some e -> e
       | None ->
-          let e = {plan = static_plan k; kernels = []} in
+          let e = {plan = guarded_plan k; kernels = []} in
           Memo.replace memo k e ;
           e)
 
@@ -342,10 +359,11 @@ let choose ?precision ?(explicit = false) ?(stream = false) ~(device : Device.t)
     match decide ?precision ~explicit ~stream ~device ~ir ~launch () with
     | Ok s -> Specialised s
     | Error why -> Original why
+    | exception ((Out_of_memory | Sys.Break) as e) -> raise e
     | exception e ->
-        (* The analysis runs on the default launch path: a failure in it must
-           never fail a launch that works without it. *)
-        Original ("matrix analysis failed: " ^ Printexc.to_string e)
+        (* The rewrite builders and the region evaluation run on the default
+           launch path too: a failure there must not fail the launch. *)
+        Original ("matrix rewrite failed: " ^ Printexc.to_string e)
   in
   (match outcome with
   | Original _ when not (reportable device ~explicit ir) -> ()
