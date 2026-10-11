@@ -175,8 +175,7 @@
 ; explicit `(rule (alias runtest) (action (run ...)))` so `dune runtest`
 ; actually executes it and fails the build on nonzero exit.
 ;
-; Classification (see briefs/make-tests-actually-run-impl-notes.md for the
-; full per-test table):
+; Classification:
 ;   - CPU-safe, self-verifying (exits nonzero on mismatch; runs on the
 ;     always-available Native/Interpreter backends when no GPU is
 ;     present) -> wired into the default `runtest` alias below.
@@ -434,7 +433,7 @@
 ; old build-only `(alias (name runtest) (deps ...))` pattern, kept
 ; deliberately distinct from the `(rule (alias runtest) (action (run ...)))`
 ; pattern used above for tests that must actually execute). See the
-; comment block above and briefs/make-tests-actually-run-impl-notes.md for
+; comment block above for
 ; why these are build-only rather than run.
 
 (alias
