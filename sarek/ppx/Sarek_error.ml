@@ -15,14 +15,14 @@ open Sarek_types
 
 (** Why an intrinsic that type-checks is nevertheless refused at PPX time. The
     mapping from intrinsic to reason is the single table
-    {!Sarek_env.unlowered_intrinsics}; this type only selects the wording. *)
+    {!Sarek_unlowered.table}; this type only selects the wording. *)
 type unlowered_reason =
   | Warp_collective
       (** A warp-level collective (shuffle, vote, ballot, active mask): typed
           and convergence-checked, but no backend lowers it. *)
   | Warp_size
-      (** [warp_size]: not lowered, and also not a constant (32 on NVIDIA, 32 or
-          64 on AMD, 32 on Apple, 4-128 on WGSL). *)
+      (** [warp_size]: not lowered, and also not a constant: the warp width
+          varies by vendor and device. *)
   | Early_return
       (** [return_unit]: Sarek has no early return and no backend lowers it
           soundly. *)
@@ -88,9 +88,8 @@ type error =
           accept. *)
   | Unlowered_intrinsic of {name : string; reason : unlowered_reason; loc : loc}
       (** [name] resolved to an intrinsic that no backend lowers soundly (see
-          {!unlowered_reason}). Refused at the use site rather than left to fail
-          late in each backend with "Unknown intrinsic", or worse, to emit code
-          that silently means something else. *)
+          {!unlowered_reason}). Refused at the use site, with a located error.
+      *)
   | Float16_operand of string * loc
       (** An f16 value reached an operator. f16 is a storage-only type, so this
           is always a user error with a specific remedy; reporting it as
@@ -218,24 +217,22 @@ let aggregate_equality_body (ty : typ) : string =
     Separate from {!pp_error} so the wording per reason is read in one place. *)
 let unlowered_reason_body = function
   | Warp_collective ->
-      "is not lowered by any backend yet: every backend fails late with \
-       \"Unknown intrinsic\" instead of producing a warp-level operation. \
-       Warp-level collectives (shuffle, vote, ballot, active mask) arrive with \
-       warp-scope supersteps (roadmap S1). Until then, exchange values between \
-       threads through shared memory and block_barrier."
+      "is not lowered by any backend yet. Warp-level collectives (shuffle, \
+       vote, ballot, active mask) arrive with warp-scope supersteps (roadmap \
+       S1). Until then, exchange values between threads through shared memory \
+       and block_barrier."
   | Warp_size ->
       "is not lowered by any backend yet, and has no single value to fall back \
-       on: the warp is 32 lanes on NVIDIA, 32 or 64 on AMD, 32 on Apple and \
-       4-128 on WebGPU/WGSL. Warp-level operations arrive with warp-scope \
-       supersteps (roadmap S1). Until then, pass the width you need as a \
-       kernel argument."
+       on: the warp width varies by vendor and device (for example 32 on \
+       NVIDIA, 32 or 64 on AMD, 8 to 32 on Intel, 4 to 128 on WGSL). \
+       Warp-level operations arrive with warp-scope supersteps (roadmap S1). \
+       Until then, pass the width you need as a kernel argument."
   | Early_return ->
       "(early return) is not supported: Sarek has no early return, and no \
        backend lowers it soundly. CUDA emits `return((void)0);`, which makes \
        the thread skip every later block_barrier (a deadlock for the rest of \
-       the block); the native backend ignores it and keeps executing; GLSL has \
-       no lowering. Restructure with if/else so the remaining work sits in the \
-       else branch."
+       the block); the native backend ignores it and keeps executing. \
+       Restructure with if/else so the remaining work sits in the else branch."
 
 (** Pretty print an error *)
 let pp_error fmt = function

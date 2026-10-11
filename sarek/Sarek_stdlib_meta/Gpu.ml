@@ -109,7 +109,7 @@ let%sarek_intrinsic (block_barrier : unit -> unit) =
   }
 
 (* Kept so that the name resolves and the user sees the PPX's refusal (Sarek has
-   no early return; see Sarek_env.unlowered_intrinsics), not "Unbound". Device
+   no early return; see Sarek_unlowered.table), not "Unbound". Device
    code never reaches this definition. *)
 let%sarek_intrinsic (return_unit : unit -> unit) =
   {device = (fun _ -> "return"); ocaml = (fun () -> ())}

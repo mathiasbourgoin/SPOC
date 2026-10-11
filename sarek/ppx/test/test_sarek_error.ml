@@ -122,7 +122,7 @@ let test_unlowered_intrinsic () =
     (contains collective "not lowered by any backend yet") ;
   check bool "names S1" true (contains collective "warp-scope supersteps") ;
   let size = render "warp_size" Warp_size in
-  check bool "warp_size: not a constant" true (contains size "4-128") ;
+  check bool "warp_size: not a constant" true (contains size "varies by vendor") ;
   check bool "warp_size: names S1" true (contains size "warp-scope supersteps") ;
   let early = render "return_unit" Early_return in
   check

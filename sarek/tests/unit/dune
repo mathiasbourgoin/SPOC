@@ -27,7 +27,8 @@
   test_float16
   test_type_width_totality
   test_host_ir_width_agreement
-  test_diagnostic_locations)
+  test_diagnostic_locations
+  test_unlowered)
  (modules
   test_types
   test_env
@@ -56,7 +57,8 @@
   test_float16
   test_type_width_totality
   test_host_ir_width_agreement
-  test_diagnostic_locations)
+  test_diagnostic_locations
+  test_unlowered)
  ; Link sarek_stdlib to trigger auto-registration of intrinsics
  ; ctypes is listed explicitly (not relied on transitively via sarek): the
  ; GC-root canary in test_float16 asserts the managed-vs-unmanaged asymmetry

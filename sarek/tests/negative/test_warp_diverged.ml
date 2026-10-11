@@ -8,7 +8,7 @@
    It calls warp_shuffle (a warp collective) inside a thread-varying
    conditional. Two checks apply to it, in this order:
 
-   1. The refusal of unlowered intrinsics (Sarek_env.unlowered_intrinsics): no
+   1. The refusal of unlowered intrinsics (Sarek_unlowered.table): no
       backend lowers warp_shuffle yet, so the PPX refuses it at the call with
       "'warp_shuffle' is not lowered by any backend yet". This fires while
       typing and is what this case now asserts.
