@@ -5,6 +5,11 @@
 #   make test-e2e          - Run e2e verification tests (small datasets, CPU vs GPU comparison)
 #   make e2e               - Run e2e performance benchmarks (large datasets, all devices)
 #   make e2e-fast          - Run fast e2e tests (CI-friendly, small datasets)
+#   make e2e-hip           - Run the sarek-hip suite (needs a HIP device; not run in CI)
+#   make e2e-hip-bench     - Run the HIP bandwidth report (information only)
+#   make e2e-gpu           - Run the Vulkan tests that have no CPU fallback (needs a Vulkan GPU)
+#   make e2e-metal         - Run the Metal device-buffers suite (needs a Mac; not run in CI)
+#   make e2e-metal-bench   - Run the Metal bandwidth report (information only)
 #   make benchmarks        - Run standalone benchmark suite (benchmarks/ directory, JSON output)
 #   make bench-all         - Same as 'benchmarks'
 #   make bench-update      - Run benchmarks and update result files
@@ -452,6 +457,31 @@ e2e-fast:
 	@echo "=============================================="
 	@echo "   FAST E2E COMPLETE"
 	@echo "=============================================="
+
+# Hardware-gated e2e suites. Each runs a dune alias whose rules need a real
+# device (docs review D-49); no CI runner has one, so these are run by hand on
+# a machine that does.
+.PHONY: e2e-hip e2e-hip-bench e2e-gpu e2e-metal e2e-metal-bench
+
+# sarek-hip suite (ROCm/HIP AMD device)
+e2e-hip:
+	dune build @sarek-hip/test/e2e-hip
+
+# HIP host<->device bandwidth report (information only, never a gate)
+e2e-hip-bench:
+	dune build @sarek-hip/test/e2e-hip-bench
+
+# Vulkan tests with no Native/Interpreter fallback
+e2e-gpu:
+	dune build @sarek/tests/e2e/e2e-gpu
+
+# Metal device-buffers suite (Apple GPU; run on a Mac)
+e2e-metal:
+	dune build @sarek-metal/test/e2e-metal
+
+# Metal ranged-copy bandwidth report (information only, Apple GPU)
+e2e-metal-bench:
+	dune build @sarek-metal/test/e2e-metal-bench
 
 # Tiered test suite - tests organized by complexity
 # Tier 1: Simple kernels (low complexity, good starting point)
