@@ -47,7 +47,7 @@ is on by default.
   |---|---|
   | `Memory.host_to_device`, `device_to_host`, `host_ptr_to_device`, `device_to_host_ptr` (mapped and staged paths) | drain first |
   | `Memory.run_single_time_command` (every staging copy) | drain first |
-  | `Memory.free` | queued, never waits: the release runs when every launch recorded so far has completed (next drain, device wait, or a launch after 64 queued releases). `Memory.free` runs from `Gc.finalise` finalisers (`Gpu_memory.register_finalizer`), which OCaml 5 runs at any allocation point, even inside `batch_lock` or `queue_lock`; taking a lock there raised `Sys_error` (swallowed, so the buffer leaked) or could deadlock across domains |
+  | `Memory.free` | queues the release (lock-free), then drains and releases at once unless the batch lock is held (`try_lock`, never blocks). `Memory.free` runs from `Gc.finalise` finalisers (`Gpu_memory.register_finalizer`), which OCaml 5 runs at any allocation point, even inside `batch_lock` or `queue_lock`; blocking on a lock there raised `Sys_error` (swallowed, so the buffer leaked) or could deadlock across domains. A release that stays queued runs at the next drain, `Stream.synchronize` that leaves the device idle, device wait, device destroy, after an allocation failure (`alloc` drains and retries once), or at the start of a launch once 64 releases or 256 MiB are queued (that launch first waits for all launches, without consuming any stream's deferred error) |
   | `Stream.synchronize` | submit and wait for that stream |
   | `Stream.destroy` | `synchronize`, then destroy slots, pools, command pool; leaves the registry |
   | `Device.synchronize` (`vkDeviceWaitIdle`) | drain first |

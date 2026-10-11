@@ -52,6 +52,7 @@ type t = {
   command_pool : vk_command_pool;
   slots : slot array;
   mutable active : int;  (** Index of the slot the next dispatch records in. *)
+  mutable destroyed : bool;
   mutable deferred : (string * string) option;
       (** Kernels and reason of a submission that failed while launching; raised
           by the next wait of this stream. *)
@@ -137,7 +138,16 @@ let create device =
   let slots =
     [|create_slot device command_pool; create_slot device command_pool|]
   in
-  let stream = {command_pool; slots; active = 0; deferred = None; device} in
+  let stream =
+    {
+      command_pool;
+      slots;
+      active = 0;
+      destroyed = false;
+      deferred = None;
+      device;
+    }
+  in
   register stream ;
   stream
 
@@ -259,9 +269,18 @@ let on_all_streams device f =
     (streams_of device) ;
   Option.iter raise !first_error
 
-(** Queued buffer releases after which a launch first completes all launches and
-    runs them. *)
+(** Queued buffer releases (count, bytes) after which a launch first waits for
+    all launches and runs them. *)
 let max_deferred_frees = 64
+
+let max_deferred_bytes = 256 * 1024 * 1024
+
+let is_idle slot = (not slot.recording) && not slot.fence.pending
+
+let all_idle device =
+  List.for_all
+    (fun stream -> Array.for_all is_idle stream.slots)
+    (streams_of device)
 
 (** Run the queued buffer releases. Caller holds [batch_lock] and every launch
     recorded so far has completed. *)
@@ -276,6 +295,32 @@ let drain_device device =
   Mutex.protect device.Device.batch_lock (fun () -> drain_all device)
 
 let () = Device.drain_pending := drain_device
+
+(** {!drain_device} unless the batch lock is held. *)
+let try_drain_device device =
+  if Mutex.try_lock device.Device.batch_lock then
+    Fun.protect
+      ~finally:(fun () -> Mutex.unlock device.Device.batch_lock)
+      (fun () -> drain_all device)
+
+let () = Device.try_drain_pending := try_drain_device
+
+(** Wait for every launch of [device], then run the queued releases, without
+    consuming any stream's deferred error: it belongs to the wait of that
+    stream, not to the launch that happens to trigger this. A failing wait is
+    kept as that stream's deferred error and the slot stays in flight, so the
+    releases wait for it. *)
+let settle device =
+  on_all_streams device (fun stream ->
+      submit_open ~defer:true stream ;
+      Array.iter
+        (fun slot ->
+          try await_slot stream slot
+          with Vulkan_error.Vulkan_error e ->
+            if stream.deferred = None then
+              stream.deferred <- Some (kernel_names slot, BE.to_string e))
+        stream.slots) ;
+  if all_idle device then release_deferred device
 
 (** Submit the open batch of every stream of [device] without waiting. *)
 let flush_device device =
@@ -315,8 +360,10 @@ let record_dispatch stream ~kernel ~layout ~descriptors ~record =
   let device = stream.device in
   Mutex.protect device.Device.batch_lock (fun () ->
       (* Bound the memory held by freed buffers. *)
-      if Atomic.get device.Device.deferred_count >= max_deferred_frees then
-        drain_all device ;
+      if
+        Atomic.get device.Device.deferred_count >= max_deferred_frees
+        || Atomic.get device.Device.deferred_bytes >= max_deferred_bytes
+      then settle device ;
       on_all_streams device (fun other ->
           if other != stream then submit_open ~defer:true other) ;
       let slot = open_active stream in
@@ -332,7 +379,10 @@ let record_dispatch stream ~kernel ~layout ~descriptors ~record =
         submit_open ~defer:true stream)
 
 let synchronize stream =
-  Mutex.protect stream.device.Device.batch_lock (fun () -> drain_stream stream)
+  let device = stream.device in
+  Mutex.protect device.Device.batch_lock (fun () ->
+      drain_stream stream ;
+      if all_idle device then release_deferred device)
 
 let destroy_slot device slot =
   destroy_tracked_fence
@@ -355,10 +405,13 @@ let forget_default stream =
 (** Nothing is unregistered if the wait for pending work raises: the stream
     stays reachable and intact. *)
 let destroy stream =
-  synchronize stream ;
-  unregister stream ;
-  forget_default stream ;
-  destroy_objects stream
+  if not stream.destroyed then begin
+    synchronize stream ;
+    stream.destroyed <- true ;
+    unregister stream ;
+    forget_default stream ;
+    destroy_objects stream
+  end
 
 let default device =
   Mutex.protect default_lock (fun () ->
@@ -404,7 +457,11 @@ let () =
         let first_error = ref None in
         List.iter
           (fun stream ->
-            try destroy_objects stream
+            try
+              if not stream.destroyed then begin
+                stream.destroyed <- true ;
+                destroy_objects stream
+              end
             with e -> if !first_error = None then first_error := Some e)
           streams ;
         Option.iter raise !first_error

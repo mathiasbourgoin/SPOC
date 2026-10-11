@@ -126,10 +126,11 @@ type t = {
       (** Guards the launch batches of every stream of this device (see
           {!Vulkan_api_stream}): two domains must not record into one command
           buffer. Never held across a call that takes it again. *)
-  deferred_frees : (unit -> unit) list Atomic.t;
+  deferred_frees : (int * (unit -> unit)) list Atomic.t;
       (** Buffer releases waiting for the launches that may use the buffers; see
           {!defer_free}. *)
   deferred_count : int Atomic.t;
+  deferred_bytes : int Atomic.t;
 }
 
 (** Test-only fault injection, for a single domain: when [Some r], the next
@@ -163,20 +164,34 @@ let drain_pending : (t -> unit) ref = ref (fun _ -> ())
     [queue_lock], so a free must never take a lock. The batch code runs the
     queued releases when every launch has completed
     ({!Vulkan_api_stream.release_deferred}). *)
-let defer_free dev release =
+let defer_free dev ~bytes release =
   let rec push () =
     let old = Atomic.get dev.deferred_frees in
-    if not (Atomic.compare_and_set dev.deferred_frees old (release :: old)) then
-      push ()
+    if
+      not
+        (Atomic.compare_and_set
+           dev.deferred_frees
+           old
+           ((bytes, release) :: old))
+    then push ()
   in
   push () ;
-  Atomic.incr dev.deferred_count
+  Atomic.incr dev.deferred_count ;
+  ignore (Atomic.fetch_and_add dev.deferred_bytes bytes)
 
 (** Remove and return the queued releases, oldest first. *)
 let take_deferred dev =
   let taken = Atomic.exchange dev.deferred_frees [] in
   ignore (Atomic.fetch_and_add dev.deferred_count (-List.length taken)) ;
-  List.rev taken
+  ignore
+    (Atomic.fetch_and_add
+       dev.deferred_bytes
+       (-List.fold_left (fun total (bytes, _) -> total + bytes) 0 taken)) ;
+  List.rev_map snd taken
+
+(** Like {!drain_pending}, but does nothing when the batch lock is held, and so
+    never blocks on it. *)
+let try_drain_pending : (t -> unit) ref = ref (fun _ -> ())
 
 let instance_ref : vk_instance structure ptr option ref = ref None
 
@@ -1155,6 +1170,7 @@ let get idx =
           batch_lock = Mutex.create ();
           deferred_frees = Atomic.make [];
           deferred_count = Atomic.make 0;
+          deferred_bytes = Atomic.make 0;
         }
       in
       Hashtbl.add device_cache idx dev ;
@@ -1182,7 +1198,7 @@ let synchronize dev =
    leave the device unreachable with its VkDevice still alive. Capture it,
    finish the teardown, re-raise at the end — the discipline Cache_hooks.mli
    imposes on this path, and the shape Cuda_api/Hip_api use. *)
-let destroy dev =
+let destroy_live dev =
   (* Deferred launches on this device must reach it before it is evicted:
      issuing them afterwards would re-create the device (specs/launch-window.md). *)
   Spoc_framework.Launch_hooks.flush_pending () ;
@@ -1202,8 +1218,18 @@ let destroy dev =
     | () -> None
     | exception e -> Some e
   in
+  (* Releases queued since the drain (finaliser frees) precede the device. *)
+  (try List.iter (fun release -> release ()) (take_deferred dev) with _ -> ()) ;
   vkDestroyCommandPool dev.device dev.command_pool null ;
   vkDestroyDevice dev.device null ;
   Option.iter
     raise
     (match drain_exn with Some _ -> drain_exn | None -> listener_exn)
+
+(** Idempotent: only the device currently cached under [dev.id] is destroyed, so
+    a second call, or a call on a stale handle after the index was re-created,
+    changes nothing. *)
+let destroy dev =
+  match Hashtbl.find_opt device_cache dev.id with
+  | Some live when live == dev -> destroy_live dev
+  | Some _ | None -> ()

@@ -52,8 +52,9 @@
 - Every path that touches device memory from the host, or releases an object a
   recorded dispatch uses (pipeline, device), first calls
   `Vulkan_api_device.drain_pending`; `Memory.free` instead queues the release
-  (`Device.defer_free`, lock-free) because it runs from GC finalisers, where
-  taking `batch_lock` or `queue_lock` deadlocks or raises; a new such path without it reads or frees
+  (`Device.defer_free`, lock-free) and drains only through `try_lock`, because
+  it runs from GC finalisers, where blocking on `batch_lock` or `queue_lock`
+  deadlocks or raises; a new such path without it reads or frees
   memory a pending dispatch still uses. The inventory is in
   specs/vulkan-async-launches.md (FR-002).
 - Every dispatch is preceded by a memory barrier (compute and transfer writes to shader access), every batch ends with one to transfer/host reads, and every staged copy begins with one (`Vulkan_api_barrier`); Vulkan

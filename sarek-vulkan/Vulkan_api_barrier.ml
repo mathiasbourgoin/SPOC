@@ -69,3 +69,12 @@ let before_copy command_buffer =
     ~dst_stage:transfer
     ~src_access:writes
     ~dst_access:(vk_access_transfer_read_bit lor vk_access_transfer_write_bit)
+
+(** Tail of a staged copy: its writes are visible to the host. *)
+let after_copy command_buffer =
+  record
+    command_buffer
+    ~src_stage:transfer
+    ~dst_stage:vk_pipeline_stage_host_bit
+    ~src_access:vk_access_transfer_write_bit
+    ~dst_access:vk_access_host_read_bit
