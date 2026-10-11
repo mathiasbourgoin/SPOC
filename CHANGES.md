@@ -511,12 +511,14 @@
   (`sarek_hfused_<md5>`, `sarek_efused_<md5>`) instead of a build counter,
   so a process that builds the same fusions in another order still hits the
   device compiler's on-disk cache (ROCm comgr on HIP). Two fused kernels
-  whose IR differs never share a name.
+  whose IR differs get different names short of an MD5 collision; that is
+  safe either way, because every compile cache keys on the source as well.
 
 - The epilogue-fusion coverage check (`Launch_epilogue`) no longer
   enumerates every thread when store indices and guards are affine in the
-  thread and work-group indices: `Coverage_affine` proves coverage in a few
-  microseconds (a 128x3584 prefill pair: ~350 ms before, ~4 us after,
+  thread and work-group indices, also through division, modulo, masks and
+  shifts by powers of two (a warp-per-row matrix-vector product, 4M threads,
+  is proven): `Coverage_affine` proves coverage in a few microseconds (a 128x3584 prefill pair: ~350 ms before, ~4 us after,
   `sarek/execute/test/bench_epilogue_coverage.ml`). This was the cold
   first-prompt cost seen with the launch window on. Enumeration, still used
   for other indices, uses bitsets instead of hash tables and is bounded to

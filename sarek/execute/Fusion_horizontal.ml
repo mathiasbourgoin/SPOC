@@ -183,8 +183,10 @@ let fuse ~(name : string) (members : kernel list) : kernel =
 (** [k] renamed [prefix ^ digest], the digest of everything in [k] but its name:
     the same fusion gets the same name in every process, so a device compiler's
     on-disk cache keyed on name and source serves it, and two fused kernels
-    whose IR differs get different names. [None] when [k] holds a function value
-    (inline native code), whose bytes have no stable digest. *)
+    whose IR differs get different names short of an MD5 collision; nothing
+    relies on that, as every compile cache also keys on the source. [None] when
+    [k] holds a function value (inline native code), whose bytes have no stable
+    digest. *)
 let content_named ~prefix (k : kernel) : kernel option =
   match Marshal.to_string {k with kern_name = ""} [Marshal.No_sharing] with
   | bytes ->

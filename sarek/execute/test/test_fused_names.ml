@@ -7,7 +7,9 @@
  * Names of fused kernels (Fusion_horizontal.content_named): a digest of the
  * fused IR, so the same fusion is named alike in every process and in any
  * build order (a device compiler's on-disk cache, keyed on name and source,
- * then serves it), and two different fused kernels never share a name.
+ * then serves it). Two different fused kernels get different names in
+ * practice (a 128-bit digest); correctness never depends on it, since every
+ * compile cache keys on the source too.
  ******************************************************************************)
 
 open Alcotest

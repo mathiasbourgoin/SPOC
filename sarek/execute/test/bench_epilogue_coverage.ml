@@ -7,8 +7,8 @@
  * Host cost of one epilogue coverage check (Launch_epilogue.covers), the
  * uncached path a fresh process pays on its first prompt chunk. Shapes follow
  * a 128-token prefill chunk of a ~0.8B model (hidden 1024, FFN 3584): 1-D
- * element-wise producers, a 2-D output tile, and a producer whose index is not
- * affine (enumerated). No device.
+ * element-wise producers, a 2-D output tile, a warp-per-row matvec (4M
+ * threads), and a producer whose index is not affine (enumerated). No device.
  *
  *   SPOC_BENCH_REPS=7 dune exec sarek/execute/test/bench_epilogue_coverage.exe
  ******************************************************************************)
@@ -43,13 +43,26 @@ let tile ~rows ~cols () =
     ~c:(launch_1d (consumer ()) ~total:(rows * cols) ~block:256)
     ~c_scalars:[("n", rows * cols)]
 
-let non_affine = producer (fun i _ -> (i /! int 2 *! int 2) +! (i %! int 2))
+(* Warp-per-row matvec over a 128-token batch: 1024 rows, 8 per work-group. *)
+let warp_matvec () =
+  covers
+    ~p:
+      (launch
+         (warp_producer ())
+         ~grid:(Dims.dims_2d 128 128)
+         ~block:(Dims.dims_1d 256))
+    ~p_scalars:[("n", 1024); ("off", 0)]
+    ~c:(launch_1d (consumer ()) ~total:(128 * 1024) ~block:256)
+    ~c_scalars:[("n", 128 * 1024)]
+
+let non_affine = producer (fun i _ -> (i /! int 3 *! int 3) +! (i %! int 3))
 
 let cases =
   [
     ("1-D 128x1024", one_d (producer (fun i _ -> i)) (128 * 1024));
     ("1-D 128x3584", one_d (producer (fun i _ -> i)) (128 * 3584));
     ("2-D tile 128x3584", tile ~rows:128 ~cols:3584);
+    ("warp matvec 128x1024", warp_matvec);
     ("non-affine 128x1024", one_d non_affine (128 * 1024));
   ]
 
