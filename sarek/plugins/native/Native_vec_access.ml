@@ -43,7 +43,7 @@ let scalar (type a) (module S : Typed_value.SCALAR_TYPE with type t = a) (x : a)
 (** Accessors through the vector's [EXEC_VECTOR] interface: every read goes
     through a [typed_value], so a kernel may read any scalar vector as any
     scalar type (e.g. an int32 vector with [get_f32]). *)
-let native_vec_of_exec_vector (module V : Typed_value.EXEC_VECTOR) :
+let generic_vec_of_exec_vector (module V : Typed_value.EXEC_VECTOR) :
     Sarek_ir_types.native_arg =
   let get_f32 i =
     float_of_primitive "get_f32" (primitive "get_f32" (V.get i))
@@ -81,3 +81,56 @@ let native_vec_of_exec_vector (module V : Typed_value.EXEC_VECTOR) :
          underlying_type_id = V.underlying_type_id;
          underlying = V.underlying;
        })
+
+module Vector = Spoc_core.Vector
+
+(* [Vector.get] on a vector whose bigarray kind is known here, so the read
+   compiles to an inline load instead of the polymorphic [caml_ba_get_1] and
+   the [typed_value] round trip: the same bounds check, host sync and storage
+   dispatch, in the same order. Anything but in-bounds bigarray storage takes
+   [Vector.get] itself. *)
+let get_float32 (v : (float, Bigarray.float32_elt) Vector.t) i =
+  match v.Vector.host with
+  | Vector.Bigarray_storage _ when i >= 0 && i < v.Vector.length -> (
+      Vector.ensure_cpu_sync v ;
+      match v.Vector.host with
+      | Vector.Bigarray_storage ba -> Bigarray.Array1.unsafe_get ba i
+      | _ -> Vector.get v i)
+  | _ -> Vector.get v i
+
+let get_int32 (v : (int32, Bigarray.int32_elt) Vector.t) i =
+  match v.Vector.host with
+  | Vector.Bigarray_storage _ when i >= 0 && i < v.Vector.length -> (
+      Vector.ensure_cpu_sync v ;
+      match v.Vector.host with
+      | Vector.Bigarray_storage ba -> Bigarray.Array1.unsafe_get ba i
+      | _ -> Vector.get v i)
+  | _ -> Vector.get v i
+
+(** The accessors a native kernel calls for a vector argument. A float32 or
+    int32 vector reads and writes its own element type directly (what the
+    [typed_value] path ends in, [Vector.get]/[Vector.set], without the boxing on
+    the way); every other access, including a read at another type, goes through
+    {!generic_vec_of_exec_vector}. *)
+let native_vec_of_exec_vector (module V : Typed_value.EXEC_VECTOR) :
+    Sarek_ir_types.native_arg =
+  let generic = generic_vec_of_exec_vector (module V) in
+  let module T = Sarek_ir_types.Type_id in
+  match generic with
+  | Sarek_ir_types.NA_Vec (Sarek_ir_types.NV ops) -> (
+      match
+        ( T.equal V.underlying_type_id Vector.float32_vector_type_id,
+          T.equal V.underlying_type_id Vector.int32_vector_type_id )
+      with
+      | Some T.Refl, _ ->
+          let v : (float, Bigarray.float32_elt) Vector.t = V.underlying in
+          Sarek_ir_types.NA_Vec
+            (Sarek_ir_types.NV
+               {ops with get_f32 = get_float32 v; set_f32 = Vector.set v})
+      | _, Some T.Refl ->
+          let v : (int32, Bigarray.int32_elt) Vector.t = V.underlying in
+          Sarek_ir_types.NA_Vec
+            (Sarek_ir_types.NV
+               {ops with get_i32 = get_int32 v; set_i32 = Vector.set v})
+      | None, None -> generic)
+  | _ -> generic
