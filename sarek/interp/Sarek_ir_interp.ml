@@ -97,8 +97,10 @@ let run_grid_parallel env body block_dim grid_dim =
     in
     run_block block_env body (bx, by, bz) block_dim grid_dim
   in
+  (* As nested per-axis loops: no block when any extent is not positive. *)
+  let blocks = if gx > 0 && gy > 0 && gz > 0 then gx * gy * gz else 0 in
   Cpu_domain_pool.run (fun submit ->
-      for b = 0 to (gx * gy * gz) - 1 do
+      for b = 0 to blocks - 1 do
         submit (run_block_task b)
       done)
 

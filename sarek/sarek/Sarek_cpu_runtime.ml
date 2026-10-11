@@ -158,8 +158,10 @@ let run_parallel_with_barriers ~block:(bx, by, bz) ~grid:(gx, gy, gz)
       kernel
       args
   in
+  (* As nested per-axis loops: no block when any extent is not positive. *)
+  let blocks = if gx > 0 && gy > 0 && gz > 0 then gx * gy * gz else 0 in
   Sarek_cpu_runtime_pools.DomainPool.run (fun submit ->
-      for b = 0 to (gx * gy * gz) - 1 do
+      for b = 0 to blocks - 1 do
         submit (run_block b)
       done)
 
