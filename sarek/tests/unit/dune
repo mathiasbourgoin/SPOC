@@ -413,6 +413,14 @@
 ; runtest; see its header for usage).
 
 (executables
- (names bench_cpu_pool_idle_gc)
- (modules bench_cpu_pool_idle_gc cpu_pool_workload)
+ (names bench_cpu_pool_idle_gc test_cpu_pool_idle)
+ (modules bench_cpu_pool_idle_gc test_cpu_pool_idle cpu_pool_workload)
  (libraries sarek sarek_ir unix))
+
+; Pool sizing cap, retirement after the idle timeout, recreation on the next
+; launch (counted in OS threads; skips without /proc).
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_cpu_pool_idle.exe})))
