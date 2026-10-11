@@ -300,6 +300,7 @@
 
 ; The matrix-product rewrite against the naive kernel and the hand-written
 ; SCoopmat GEMM (specs/matrix-pattern-rewrite.md). Information only.
+
 (executable
  (name bench_matrix_rewrite)
  (modules bench_matrix_rewrite)

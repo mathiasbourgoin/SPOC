@@ -59,6 +59,10 @@ type gemm = {
       (** conditions of the enclosing [if]s, outermost first, then the store's
           own guard; let-inlined *)
   enclosing_loops : var list;  (** outermost first *)
+  unmodelled_control : string option;
+      (** control on the path to the nest that {!guards} does not describe (an
+          [else] branch, a [while], a [match] case): [guards] is then not the
+          whole condition under which the store runs *)
 }
 
 (** Why a reduction loop is not a GEMM nest. Payloads name the array or the

@@ -96,6 +96,7 @@ type ctx = {
   lets : (int * expr) list;
   loops : var list;
   guards : expr list;
+  unmodelled : string option;
   written : string list option;
 }
 
@@ -342,6 +343,7 @@ let analyse_loop ctx acc init ~before ~after = function
                 (List.rev ctx.guards)
               @ List.map (Affine.inline env) (Option.to_list st.st_guard);
             enclosing_loops = List.rev ctx.loops;
+            unmodelled_control = ctx.unmodelled;
           }
   | _ -> Error Loop_body_not_single_update
 
@@ -411,6 +413,12 @@ let analyse_accumulator ctx acc init body =
 
 (* ---- Kernel walk ----------------------------------------------------------- *)
 
+(* Control on the path that the guards list does not describe. *)
+let unmodelled ctx what =
+  match ctx.unmodelled with
+  | Some _ -> ctx
+  | None -> {ctx with unmodelled = Some what}
+
 let rec walk ctx = function
   | SLet (v, e, body) -> walk (bind ctx v e) body
   | SLetMut (v, init, body) ->
@@ -418,10 +426,17 @@ let rec walk ctx = function
   | SFor (v, _, _, _, body) -> walk {ctx with loops = v :: ctx.loops} body
   | SIf (g, t, e) ->
       walk {ctx with guards = g :: ctx.guards} t
-      @ Option.fold ~none:[] ~some:(walk ctx) e
+      @ Option.fold
+          ~none:[]
+          ~some:(walk (unmodelled ctx "an else branch (its guard is negated)"))
+          e
   | SSeq l -> List.concat_map (walk ctx) l
-  | SWhile (_, b) | SPragma (_, b) | SBlock b -> walk ctx b
-  | SMatch (_, cases) -> List.concat_map (fun (_, b) -> walk ctx b) cases
+  | SWhile (_, b) -> walk (unmodelled ctx "a while loop") b
+  | SPragma (_, b) | SBlock b -> walk ctx b
+  | SMatch (_, cases) ->
+      List.concat_map
+        (fun (_, b) -> walk (unmodelled ctx "a match case") b)
+        cases
   | SAssign _ | SReturn _ | SBarrier | SWarpBarrier | SExpr _ | SEmpty
   | SMemFence | SNative _ | SCoopmat _ ->
       []
@@ -444,6 +459,7 @@ let initial_ctx (k : kernel) =
     lets = [];
     loops = [];
     guards = [];
+    unmodelled = None;
     written = written_arrays k;
   }
 
