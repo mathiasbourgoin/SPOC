@@ -1,11 +1,14 @@
-(* Regression for R-64: Native launches issued from several domains at once
-   share the process-wide pools and used to hang (counters reset while another
-   launch's workers were still running, completion signalled to one waiter).
+(* Properties of the process-wide CPU pools:
+   - launches issued concurrently from several domains each run to completion
+     and each element of a launch's own array is written exactly once per
+     launch;
+   - a launch from inside a kernel of the same pool is refused with
+     [Invalid_argument] instead of blocking;
+   - a raising fission kernel surfaces at flush, every queue is still flushed,
+     and the dispatcher keeps running.
 
-   Each domain launches many small kernels on its own array; every element must
-   have been incremented exactly once per launch. A watchdog domain terminates
-   the process with a non-zero status if the run does not finish, so a hang
-   fails the test instead of blocking CI. *)
+   A watchdog domain terminates the process with status 124 if the run does not
+   finish, so a hang fails the test instead of blocking CI. *)
 
 open Sarek.Sarek_cpu_runtime
 
@@ -21,7 +24,9 @@ let grid = (4, 1, 1)
 
 let elements = 32
 
-let start_watchdog finished =
+(* Alcotest redirects fds 1 and 2 while a test runs; the watchdog writes to a
+   duplicate of the original stderr taken before that. *)
+let start_watchdog ~stderr_copy finished =
   ignore
     (Domain.spawn (fun () ->
          let deadline = Unix.gettimeofday () +. watchdog_seconds in
@@ -29,7 +34,8 @@ let start_watchdog finished =
            Unix.sleepf 0.05
          done ;
          if not (Atomic.get finished) then begin
-           prerr_endline "FAIL: multi-domain launches did not finish (hang)" ;
+           let msg = "FAIL: cpu runtime test did not finish (hang)\n" in
+           ignore (Unix.write_substring stderr_copy msg 0 (String.length msg)) ;
            Unix._exit 124
          end))
 
@@ -77,9 +83,55 @@ let check_queue_error () =
   flush_fission_queue 7 ;
   Alcotest.(check int) "dispatcher survived" 1 (Atomic.get ran)
 
+(* [flush_fission] must flush every queue even when one of them raises, and
+   re-raise the first error only afterwards. *)
+let check_flush_all_queues () =
+  let finished_slow = Atomic.make 0 in
+  let slow_queues = [9; 10; 11; 12; 14; 15; 16; 18; 19] in
+  let failing_queues = [8; 13; 17; 20] in
+  List.iter
+    (fun queue_id ->
+      enqueue_fission
+        ~queue_id
+        ~kernel:(fun ~mode:_ ~block:_ ~grid:_ _ ->
+          (* Lower ids finish later, so whichever queue is flushed first, some
+             slower queue is still running when a failing one is reached. *)
+          Unix.sleepf (0.05 *. float_of_int (21 - queue_id)) ;
+          Atomic.incr finished_slow)
+        ~args:[||]
+        ~block
+        ~grid
+        ())
+    slow_queues ;
+  List.iter
+    (fun queue_id ->
+      enqueue_fission
+        ~queue_id
+        ~kernel:(fun ~mode:_ ~block:_ ~grid:_ _ -> raise Kernel_failed)
+        ~args:[||]
+        ~block
+        ~grid
+        ())
+    failing_queues ;
+  Alcotest.check_raises "flush_fission re-raises" Kernel_failed flush_fission ;
+  Alcotest.(check int)
+    "all queues flushed"
+    (List.length slow_queues)
+    (Atomic.get finished_slow)
+
+(* A kernel that launches on the pool it runs on would wait for itself. *)
+let check_reentrant ~has_barriers () =
+  let nested _state _shared () =
+    run_threadpool ~has_barriers ~block ~grid (fun _ _ () -> ()) ()
+  in
+  match run_threadpool ~has_barriers ~block ~grid nested () with
+  | () -> Alcotest.fail "reentrant launch was accepted"
+  | exception Invalid_argument _ -> ()
+
 let () =
+  let stderr_copy = Unix.dup Unix.stderr in
   let finished = Atomic.make false in
-  start_watchdog finished ;
+  start_watchdog ~stderr_copy finished ;
   let code =
     try
       Alcotest.run
@@ -100,6 +152,18 @@ let () =
                 "raising fission kernel"
                 `Quick
                 check_queue_error;
+              Alcotest.test_case
+                "flush_fission flushes every queue"
+                `Quick
+                check_flush_all_queues;
+              Alcotest.test_case
+                "reentrant launch refused (ParallelPool)"
+                `Quick
+                (check_reentrant ~has_barriers:false);
+              Alcotest.test_case
+                "reentrant launch refused (ThreadPool)"
+                `Quick
+                (check_reentrant ~has_barriers:true);
             ] );
         ] ;
       0
