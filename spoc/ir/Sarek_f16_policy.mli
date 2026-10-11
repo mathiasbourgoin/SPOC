@@ -40,15 +40,21 @@
 (** Which kernels the opt-in covers. [Kernel name] matches
     {!Sarek_ir_types.kernel.kern_name} exactly. A kernel written with
     [[%kernel fun ...]] and no name is named ["sarek_kern"], like every other
-    such kernel; a kernel built by a fusion pass has the fused name, not the
-    names of its parts, so it is not covered by a [Kernel] scope. *)
+    such kernel, and that scope is refused; a kernel built by a fusion pass has
+    the fused name, not the names of its parts, so it is not covered by a
+    [Kernel] scope. *)
 type scope = All_kernels | Kernel of string
 
-(** [accept_single_rounding scope ~reason]. The first non-empty [reason] for a
-    scope is kept; later calls for the same scope are no-ops. Thread-safe.
+(** Why an opt-in was refused. [Default_kernel_name]: [Kernel "sarek_kern"], the
+    name every unnamed [[%kernel]] gets, would cover all of them. *)
+type refusal = Blank_reason | Default_kernel_name
 
-    @raise Invalid_argument if [reason] is empty or blank. *)
-val accept_single_rounding : scope -> reason:string -> unit
+val refusal_message : refusal -> string
+
+(** [accept_single_rounding scope ~reason]. The first non-empty [reason] for a
+    scope is kept; later calls for the same scope are no-ops. Thread-safe. A
+    blank [reason] and [Kernel "sarek_kern"] are refused and record nothing. *)
+val accept_single_rounding : scope -> reason:string -> (unit, refusal) result
 
 (** The reason recorded for the kernel named [kernel]: its own [Kernel] scope
     first, then [All_kernels]; [None] when neither was accepted. *)

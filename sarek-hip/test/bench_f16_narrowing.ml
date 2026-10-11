@@ -274,7 +274,13 @@ let dump label source =
    Sarek_f16_policy.accept_single_rounding: generated without barriers. *)
 let single_rounding v =
   let kern_name = "bench_f16_single_" ^ v.name in
-  Sarek_f16_policy.accept_single_rounding (Kernel kern_name) ~reason:"benchmark" ;
+  (match
+     Sarek_f16_policy.accept_single_rounding
+       (Kernel kern_name)
+       ~reason:"benchmark"
+   with
+  | Ok () -> ()
+  | Error r -> failwith (Sarek_f16_policy.refusal_message r)) ;
   {v with ir = {v.ir with Sarek_ir_types.kern_name}}
 
 let from_source dev v ~label ~edit =
