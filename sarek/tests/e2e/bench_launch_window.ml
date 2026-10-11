@@ -19,16 +19,25 @@
  *   - host microseconds per submitted launch (enqueue only, no flush).
  * Results of the last token are compared bit for bit between the two modes.
  *
+ * It runs on every enumerated non-CPU device (HIP, CUDA, Metal, OpenCL,
+ * Vulkan), or on those whose framework is listed in SPOC_BENCH_FRAMEWORK
+ * (comma separated, e.g. "Metal" or "CUDA/PTX"). "Off" is the pre-window
+ * behaviour (every launch issued at once); "on" is the backend's default.
+ *
  *   SPOC_BENCH_TOKENS=50 SPOC_BENCH_REPS=5 SPOC_BENCH_LAYERS=24 \
- *     dune exec sarek-hip/test/bench_launch_window.exe
+ *     dune exec sarek/tests/e2e/bench_launch_window.exe
  ******************************************************************************)
+
+[@@@warning "-32-33-34-69"]
 
 module Device = Spoc_core.Device
 module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
 open Sarek
 
-let () = Sarek_hip.Hip_plugin.register ()
+let () =
+  Test_helpers.Benchmarks.init_backends () ;
+  Backend_hip.init ()
 
 let env name default =
   match Sys.getenv_opt name with Some s -> int_of_string s | None -> default
@@ -38,6 +47,18 @@ let tokens = env "SPOC_BENCH_TOKENS" 50
 let reps = env "SPOC_BENCH_REPS" 5
 
 let layers = env "SPOC_BENCH_LAYERS" 24
+
+let wanted_frameworks =
+  match Sys.getenv_opt "SPOC_BENCH_FRAMEWORK" with
+  | Some s -> Some (String.split_on_char ',' s)
+  | None -> None
+
+let selected (dev : Device.t) =
+  (not dev.capabilities.is_cpu)
+  &&
+  match wanted_frameworks with
+  | None -> true
+  | Some l -> List.mem dev.framework l
 
 (* y[row] = sum_k w[row*n + k] * x[k], 8 rows per 256-thread work-group. *)
 let matvec =
@@ -352,10 +373,11 @@ let () =
   let devs = Device.init () in
   Array.iter
     (fun (dev : Device.t) ->
-      if dev.framework = "HIP" && not dev.capabilities.is_cpu then begin
+      if selected dev then begin
         Printf.printf
-          "== %s: %d layers x 18 launches, %d tokens, %d reps ==\n%!"
+          "== %s [%s]: %d layers x 18 launches, %d tokens, %d reps ==\n%!"
           dev.name
+          dev.framework
           layers
           tokens
           reps ;
