@@ -221,37 +221,50 @@ let () =
       let gated = is_gated dev in
       List.iter
         (fun (label, runner, ir) ->
-          try
-            let got_ne, got_eq = runner dev ir in
-            let bad = verify label got_ne got_eq in
+          (* A device that does not report fp64 refuses the f64 kernel with a
+             capability error. That is a missing capability, not a defect, so
+             it is an explicit, named skip rather than an exception swallow. *)
+          if label = "f64" && (not native) && not (Device.allows_fp64 dev) then
             Printf.printf
-              "  %-11s %-34s %-4s %s (%d/%d ok)%s\n%!"
+              "  %-11s %-34s %-4s SKIP (device reports no fp64)\n%!"
               dev.Device.framework
               dev.Device.name
               label
-              (if bad = 0 then "PASS" else if gated then "FAIL" else "DIVERGES")
-              (n - bad)
-              n
-              (if bad <> 0 && not gated then " [ungated backend, reported only]"
-               else "") ;
-            if bad <> 0 && gated then failed := true ;
-            if native then native_ran := true
-          with e ->
-            (* Native/Interpreter must always run, and a gated backend must
-               accept the source it is given: codegen/compile/load/launch
-               errors there are failures. Only an ungated backend that cannot
-               run at all is reported (docs review D-41). *)
-            let regression =
-              native || (gated && Test_helpers.Backend_failure.rejected_source e)
-            in
-            Printf.printf
-              "  %-11s %-34s %-4s %s (%s)\n%!"
-              dev.Device.framework
-              dev.Device.name
-              label
-              (if regression then "ERROR" else "SKIP (backend could not launch)")
-              (Printexc.to_string e) ;
-            if regression then failed := true)
+          else
+            try
+              let got_ne, got_eq = runner dev ir in
+              let bad = verify label got_ne got_eq in
+              Printf.printf
+                "  %-11s %-34s %-4s %s (%d/%d ok)%s\n%!"
+                dev.Device.framework
+                dev.Device.name
+                label
+                (if bad = 0 then "PASS"
+                 else if gated then "FAIL"
+                 else "DIVERGES")
+                (n - bad)
+                n
+                (if bad <> 0 && not gated then
+                   " [ungated backend, reported only]"
+                 else "") ;
+              if bad <> 0 && gated then failed := true ;
+              if native then native_ran := true
+            with e ->
+              (* "gated" only decides whether a numeric divergence fails. Any
+               exception other than "backend not there" is a failure on every
+               backend (docs review D-41). *)
+              let regression =
+                native || Test_helpers.Backend_failure.verdict e = `Fail
+              in
+              Printf.printf
+                "  %-11s %-34s %-4s %s (%s)\n%!"
+                dev.Device.framework
+                dev.Device.name
+                label
+                (if regression then "ERROR"
+                 else "SKIP (backend could not launch)")
+                (Printexc.to_string e) ;
+              if regression then failed := true)
         [("f32", run_f32, ir32); ("f64", run_f64, ir64)])
     devs ;
   if not !native_ran then begin

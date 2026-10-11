@@ -21,6 +21,9 @@
  * process always exits 0. The report is the deliverable, not a pass/fail
  * gate — read it to see which backend/function pairs are broken.
  *
+ * DELIBERATE EXEMPTION from the "device errors fail the test" rule: this is a
+ * report, not a gate (see Summary at the end), so it always exits 0.
+ *
  * Run with: dune exec sarek/tests/e2e/test_float64_math_intrinsics.exe
  ******************************************************************************)
 
