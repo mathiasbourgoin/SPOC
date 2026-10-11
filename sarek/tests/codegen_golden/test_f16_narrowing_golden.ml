@@ -117,26 +117,20 @@ let test_scalar_param () =
     (kernel ~extra:[scalar "s" TFloat32] (store (EVar (var "s" TFloat32))))
     0
 
-let test_times_two () = elided "f16(h * 2)" (h *: f32c 2.0)
+let byte e = to_float (e &: i32 255)
 
-let test_q8 () = elided "f16(h * float int8)" (h *: to_float int8)
-
-let test_q8_cast () =
-  elided "f16(h * (float) int8)" (h *: ECast (TFloat32, int8))
-
-let test_q6 () =
-  let q6 = (qv >>: i32 8 &: i32 63) -: i32 32 in
-  elided "f16(h * float int8 * float q6)" (h *: to_float int8 *: to_float q6)
+(* Non-negative factors: the product is never -0. *)
+let test_byte_product () =
+  elided "f16(float b * float b)" (byte qv *: byte (qv >>: i32 8))
 
 let test_let_bound () =
   let p = var "p" TFloat32 in
   expect_barriers
-    "let p = h * float (q land 15) in f16(p)"
-    (kernel (SLet (p, h *: to_float (qv &: i32 15), store (EVar p))))
+    "let p = float b * float (q land 15) in f16(p)"
+    (kernel (SLet (p, byte qv *: to_float (qv &: i32 15), store (EVar p))))
     0
 
 let test_integer_sum () =
-  let byte e = to_float (e &: i32 255) in
   elided
     "f16(float b * float b + float n)"
     ((byte qv *: byte (qv >>: i32 8)) +: to_float (qv &: i32 15))
@@ -148,6 +142,44 @@ let test_f16_sum () = elided "f16(h + g)" (h +: g)
 let test_f16_plus_const () = elided "f16(h + 1000)" (h +: f32c 1000.0)
 
 let test_f16_neg () = elided "f16(0 - h)" (f32c 0.0 -: h)
+
+(* ---- exact products whose zero could have the wrong sign: the narrowing
+   absorbs a product as a * b + (+0), so a -0 product comes out +0 (measured on
+   gfx1100, specs/f16-narrowing-barrier.md §2.3). A product at the top is
+   emitted through sarek_narrow_exact_product, which restores the sign; one
+   behind a variable or a negation keeps the barrier. ---- *)
+
+(* Calls of the helper: every occurrence but its declaration. *)
+let signed_product what e =
+  let src = gen (kernel (store e)) in
+  Alcotest.(check int) (what ^ ": barrier calls") 0 (count barriered src) ;
+  Alcotest.(check int)
+    (what ^ ": signed product")
+    1
+    (count "sarek_narrow_exact_product(" src
+    - count "sarek_narrow_exact_product(float a" src)
+
+let test_times_two () = signed_product "f16(h * 2)" (h *: f32c 2.0)
+
+let test_q8 () = signed_product "f16(h * float int8)" (h *: to_float int8)
+
+let test_q8_cast () =
+  signed_product "f16(h * (float) int8)" (h *: ECast (TFloat32, int8))
+
+let test_q6 () =
+  let q6 = (qv >>: i32 8 &: i32 63) -: i32 32 in
+  signed_product
+    "f16(h * float int8 * float q6)"
+    (h *: to_float int8 *: to_float q6)
+
+let test_let_bound_signed () =
+  let p = var "p" TFloat32 in
+  expect_barriers
+    "let p = h * float (q land 15) in f16(p)"
+    (kernel (SLet (p, h *: to_float (qv &: i32 15), store (EVar p))))
+    1
+
+let test_neg_sum () = kept "f16(-(h + g))" (EUnop (Neg, h +: g))
 
 (* ---- kept ---- *)
 
@@ -229,10 +261,7 @@ let () =
           case "widen alone" test_widen_alone;
           case "read-only f32 buffer" test_f32_param_alone;
           case "f32 kernel argument" test_scalar_param;
-          case "h * 2" test_times_two;
-          case "q8 (float intrinsic)" test_q8;
-          case "q8 (cast)" test_q8_cast;
-          case "q6 triple product" test_q6;
+          case "byte product" test_byte_product;
           case "let-bound product" test_let_bound;
           case "integer sum" test_integer_sum;
         ] );
@@ -241,6 +270,18 @@ let () =
           case "h + g" test_f16_sum;
           case "h + 1000" test_f16_plus_const;
           case "0 - h" test_f16_neg;
+        ] );
+      ( "signed product",
+        [
+          case "h * 2" test_times_two;
+          case "q8 (float intrinsic)" test_q8;
+          case "q8 (cast)" test_q8_cast;
+          case "q6 triple product" test_q6;
+        ] );
+      ( "kept (zero sign)",
+        [
+          case "let-bound product" test_let_bound_signed;
+          case "negated sum" test_neg_sum;
         ] );
       ( "kept",
         [

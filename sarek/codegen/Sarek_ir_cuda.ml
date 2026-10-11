@@ -55,11 +55,46 @@ type state = {
       (** what the [SCoopmat] arm reads from the whole kernel: buffer element
           types (to refuse a fragment loaded from the wrong one) and each
           operand fragment's load layout *)
+  narrowing : narrowing;
+      (** which f32 -> f16 narrowings of the function being emitted go through
+          [sarek_f32_barrier] *)
 }
+
+(** [Barrier_unless_exact facts]: every narrowing keeps the barrier unless
+    {!Sarek_ir_f16_narrowing.needs_barrier} proves one rounding equals two.
+    [Single_rounding]: none does, by {!Sarek_f16_policy.accept_single_rounding}
+    (specs/f16-narrowing-barrier.md). *)
+and narrowing =
+  | Barrier_unless_exact of Sarek_ir_f16_narrowing.facts
+  | Single_rounding
+
+let single_rounding (k : kernel) =
+  Option.is_some (Sarek_f16_policy.single_rounding_reason ~kernel:k.kern_name)
 
 (** The state for emitting [k]. *)
 let state (k : kernel) : state =
-  {variants = k.kern_variants; coopmat = Sarek_ir_cuda_coopmat.kernel_context k}
+  {
+    variants = k.kern_variants;
+    coopmat = Sarek_ir_cuda_coopmat.kernel_context k;
+    narrowing =
+      (if single_rounding k then Single_rounding
+       else Barrier_unless_exact (Sarek_ir_f16_narrowing.of_kernel k));
+  }
+
+(** The state for emitting helper [hf] of the kernel whose state is [st]. *)
+let helper_state st (hf : helper_func) =
+  match st.narrowing with
+  | Single_rounding -> st
+  | Barrier_unless_exact _ ->
+      {
+        st with
+        narrowing = Barrier_unless_exact (Sarek_ir_f16_narrowing.of_helper hf);
+      }
+
+let narrowing_form st e : Sarek_ir_f16_narrowing.form =
+  match st.narrowing with
+  | Single_rounding -> Plain
+  | Barrier_unless_exact facts -> Sarek_ir_f16_narrowing.form facts e
 
 (** {1 Type Mapping} *)
 
@@ -172,7 +207,7 @@ let rec gen_expr st buf = function
       Buffer.add_string buf field
   | EIntrinsic (path, name, args) ->
       Dispatch.gen_intrinsic (cuda_backend st) buf path name args
-  | ECast (TFloat16, e) ->
+  | ECast (TFloat16, e) -> (
       (* f16 is a storage type: narrow through the documented intrinsic rather
          than a C cast, so the round-to-nearest-even mode is explicit and
          identical on CUDA and HIP. The widening direction (__half -> float,
@@ -183,10 +218,24 @@ let rec gen_expr st buf = function
          The argument goes through [sarek_f32_barrier] because the narrowing is
          exactly where the AMDGPU backend fuses away the f32 intermediate the
          DSL promises. See [sarek_f32_barrier_decl] for the measured ISA and why
-         neither -ffp-contract=off nor `#pragma clang fp contract` reaches it. *)
-      Buffer.add_string buf "__float2half(sarek_f32_barrier(" ;
-      gen_expr st buf e ;
-      Buffer.add_string buf "))"
+         neither -ffp-contract=off nor `#pragma clang fp contract` reaches it.
+         It is left out where one rounding provably equals two, or where the
+         program accepted single rounding (narrowing_form). *)
+      match narrowing_form st e with
+      | Barrier ->
+          Buffer.add_string buf "__float2half(sarek_f32_barrier(" ;
+          gen_expr st buf e ;
+          Buffer.add_string buf "))"
+      | Plain ->
+          Buffer.add_string buf "__float2half(" ;
+          gen_expr st buf e ;
+          Buffer.add_char buf ')'
+      | Signed_product (a, b) ->
+          Buffer.add_string buf "sarek_narrow_exact_product(" ;
+          gen_expr st buf a ;
+          Buffer.add_string buf ", " ;
+          gen_expr st buf b ;
+          Buffer.add_char buf ')')
   | ECast (ty, e) ->
       Buffer.add_char buf '(' ;
       Buffer.add_string buf (cuda_type_of_elttype ty) ;
@@ -742,7 +791,11 @@ let gen_helper_func st buf (hf : helper_func) =
     hf.hf_params ;
   Buffer.add_string buf ") {\n" ;
   (* Body *)
-  gen_stmt st buf "  " (Sarek_ir_codegen.fold_local_array_lengths hf.hf_body) ;
+  gen_stmt
+    (helper_state st hf)
+    buf
+    "  "
+    (Sarek_ir_codegen.fold_local_array_lengths hf.hf_body) ;
   Buffer.add_string buf "}\n\n"
 
 (** {1 Kernel Generation} *)
@@ -822,7 +875,9 @@ let cuda_fp16_include =
     [volatile] local also works but spills to scratch, which is why it is not
     used. The price is the un-fused instruction count: 6 VALU ops instead of 2
     per f16 round-trip. Paid only inside kernels that actually narrow to f16 —
-    the declaration is emitted only under [kernel_uses_float16].
+    the declaration is emitted only under [kernel_uses_float16] — and only at
+    the narrowings {!Sarek_ir_f16_narrowing.form} cannot prove need none
+    (specs/f16-narrowing-barrier.md).
 
     NVIDIA BRANCH: DELIBERATELY EMPTY, and that is a statement about NVIDIA, not
     an oversight. The non-HIP branch previously carried a PTX-flavoured
@@ -934,6 +989,32 @@ __device__ __forceinline__ float sarek_f32_barrier(float x) {
 #endif
 |}
 
+(** The narrowing of an exact f32 product [a * b]
+    ({!Sarek_ir_f16_narrowing.Signed_product}). The bare narrowing lets the
+    AMDGPU backend fuse the product ([v_fma_mixlo_f16]), computed as
+    [a * b + (+0)]: exact here, so equal to the two-step result except that a
+    [-0] product comes out [+0]. The sign of the exact product is
+    [sign a xor sign b] in every case (a nonzero value rounds with its sign), so
+    or-ing it into the result restores the interpreter's bits. A NaN result may
+    get its sign bit set; NaN bits are not part of the f16 discipline. *)
+let sarek_narrow_exact_product_decl =
+  {|__device__ __forceinline__ __half sarek_narrow_exact_product(float a, float b) {
+  __half h = __float2half(a * b);
+  unsigned short s =
+      (unsigned short)(((__float_as_uint(a) ^ __float_as_uint(b)) >> 16) & 0x8000u);
+  return __ushort_as_half((unsigned short)(__half_as_ushort(h) | s));
+}
+|}
+
+(** A kernel generated under {!Sarek_f16_policy.accept_single_rounding} says so
+    in its source. *)
+let single_rounding_comment (k : kernel) =
+  if single_rounding k then
+    "/* Sarek: Sarek_f16_policy.accept_single_rounding covers this kernel: its \
+     f32->f16 narrowings carry no barrier and may round once where the \
+     interpreter rounds twice (specs/f16-narrowing-barrier.md). */\n"
+  else ""
+
 (** Prefix for a kernel's generated source: the f16 include (only when the
     kernel uses f16) followed by the standard header. *)
 let cuda_header_for (k : kernel) =
@@ -943,7 +1024,8 @@ let cuda_header_for (k : kernel) =
     else ""
   in
   if Sarek_ir_analysis.kernel_uses_float16 k then
-    cuda_fp16_include ^ sarek_f32_barrier_decl ^ coopmat ^ cuda_header
+    cuda_fp16_include ^ sarek_f32_barrier_decl ^ sarek_narrow_exact_product_decl
+    ^ single_rounding_comment k ^ coopmat ^ cuda_header
   else coopmat ^ cuda_header
 
 (** Generate CUDA source with custom type definitions.

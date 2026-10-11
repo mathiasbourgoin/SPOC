@@ -13,6 +13,7 @@
   Sarek_capability
   Sarek_coopmat_types
   Sarek_coopmat
+  Sarek_f16_policy
   Sarek_ir_codegen
   Sarek_ir_affine
   Sarek_matrix_pattern_types
