@@ -11,7 +11,6 @@ vendor/
 *.asm
 _build
 _opam
-dune-project
 .aider*
 *.install
 kirc_kernel*.cl
@@ -131,3 +130,8 @@ skills-meta/
 
 # odoc output: built and copied in by .github/workflows/docs.yml, never committed
 gh-pages/spoc_docs/
+
+# SQLite residue of a failed arch-index run
+docs/architecture.db*
+*.db-wal
+*.db-shm
