@@ -259,8 +259,10 @@ module Device = struct
         dev
 
   let set_current dev =
-    set_current_id dev.id ;
-    check "cuCtxSetCurrent" (cuCtxSetCurrent dev.context)
+    (* Tracker updated only once the driver accepted the switch, so the two
+       never disagree. *)
+    check "cuCtxSetCurrent" (cuCtxSetCurrent dev.context) ;
+    set_current_id dev.id
 
   (* The id of the cached device whose context the driver reports as current
      for this thread (not the OCaml-side tracker); -1 when none matches. *)
@@ -344,13 +346,12 @@ module Memory = struct
     check "cuMemAlloc (custom)" (cuMemAlloc ptr bytes) ;
     {ptr = !@ptr; size; elem_size; device}
 
-  (* [free] is called from GC finalisers ([Gpu_memory.register_finalizer]),
-     i.e. at an arbitrary allocation point of whatever code is running — in
-     particular between a [Device.set_current] and the launch that relies on it
-     for ANOTHER device. Leaving the buffer's context selected made that launch
-     run a module of device B with device A's context current. So the context
-     selected before the free is restored: a finaliser must leave no trace on
-     the code it interrupted. Same contract as [Hip_api.Memory.free]. *)
+  (* [free] runs from GC finalisers ([Gpu_memory.register_finalizer]), i.e. at
+     an arbitrary point of whatever code it interrupts, possibly between a
+     [Device.set_current] and the launch that relies on it for another device.
+     Invariant: [free] leaves the selected context as it found it, so a
+     finaliser leaves no trace on the code it interrupted. Same contract as
+     [Hip_api.Memory.free]. *)
   let free buf =
     let prev = Device.current_id () in
     Fun.protect

@@ -54,6 +54,20 @@ type args = Args : (module ARGS) -> args
 
 (** {1 Compilation} *)
 
+(** Launching on a backend. Invariant: the device is selected first, because a
+    HIP/CUDA module runs on the CURRENT device and a finaliser, another kernel
+    or a transfer may have changed it since the kernel was compiled or last
+    launched. *)
+module Launcher (B : Framework_sig.BACKEND) = struct
+  let launch_on (dev : B.Device.t) (k : B.Kernel.t) ~args ~grid ~block
+      ~shared_mem =
+    Spoc_framework.Launch_hooks.flush_pending () ;
+    B.Device.set_current dev ;
+    match B.unwrap_kargs args with
+    | Some a -> B.Kernel.launch k ~args:a ~grid ~block ~shared_mem ~stream:None
+    | None -> failwith "launch: backend mismatch"
+end
+
 (** Compile a kernel from source *)
 let compile (device : Device.t) ~(name : string) ~(source : string) : t =
   match Framework_registry.find_backend device.framework with
@@ -68,15 +82,8 @@ let compile (device : Device.t) ~(name : string) ~(source : string) : t =
           let name = name
 
           let launch ~args ~grid ~block ~shared_mem =
-            Spoc_framework.Launch_hooks.flush_pending () ;
-            (* The module belongs to [device]; HIP/CUDA launch on the CURRENT
-               device, which a finaliser, another kernel or a transfer may have
-               changed since compile. *)
-            B.Device.set_current (B.Device.get device.backend_id) ;
-            match B.unwrap_kargs args with
-            | Some a ->
-                B.Kernel.launch k ~args:a ~grid ~block ~shared_mem ~stream:None
-            | None -> failwith "launch: backend mismatch"
+            let module L = Launcher (B) in
+            L.launch_on dev k ~args ~grid ~block ~shared_mem
         end : KERNEL)
 
 (** Compile with caching *)
@@ -93,15 +100,8 @@ let compile_cached (device : Device.t) ~(name : string) ~(source : string) : t =
           let name = name
 
           let launch ~args ~grid ~block ~shared_mem =
-            Spoc_framework.Launch_hooks.flush_pending () ;
-            (* The module belongs to [device]; HIP/CUDA launch on the CURRENT
-               device, which a finaliser, another kernel or a transfer may have
-               changed since compile. *)
-            B.Device.set_current (B.Device.get device.backend_id) ;
-            match B.unwrap_kargs args with
-            | Some a ->
-                B.Kernel.launch k ~args:a ~grid ~block ~shared_mem ~stream:None
-            | None -> failwith "launch: backend mismatch"
+            let module L = Launcher (B) in
+            L.launch_on dev k ~args ~grid ~block ~shared_mem
         end : KERNEL)
 
 (** {1 Arguments} *)

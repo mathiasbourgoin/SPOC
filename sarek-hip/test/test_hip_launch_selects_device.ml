@@ -64,17 +64,19 @@ let test_raw_launch a b =
   Runtime.run_kernel kernel ~args ~grid ~block () ;
   check_result "raw Kernel.launch on A with B current" buf
 
-(* Runtime.run: miss on A, miss on B, then a cache HIT on A. Only a miss
-   selects the device inside [compile]. *)
+(* Runtime.run with another device current at the call: a miss on A, a miss on
+   B, then a cache HIT on A. The buffer is prepared first, because allocating
+   and copying select the buffer's device. *)
 let test_runtime_alternation a b =
-  let run dev =
+  let run dev other =
     let buf = fresh_buffer dev in
+    make_current other ;
     Runtime.run dev ~name:"inc" ~source ~args:(kernel_args buf) ~grid ~block () ;
     check_result "Runtime.run" buf
   in
-  run a ;
-  run b ;
-  run a
+  run a a ;
+  run b b ;
+  run a b
 
 let () =
   if Sarek_hip.Hip_shared.is_disabled () || not (H.is_available ()) then begin
