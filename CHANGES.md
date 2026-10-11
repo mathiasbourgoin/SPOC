@@ -114,7 +114,8 @@
   `sarek/tests/e2e/test_advanced_pinned.ml`; docs: `memory.md`.
 
 - `Sarek_f16_policy.accept_single_rounding (Kernel name | All_kernels)
-  ~reason`: an explicit opt-in that removes every f32 -> f16 narrowing barrier
+  ~reason : (unit, refusal) result` (refuses a blank reason and
+  `Kernel "sarek_kern"`, the name of every unnamed kernel): an explicit opt-in that removes every f32 -> f16 narrowing barrier
   from the covered kernels (global review C-40, specs/f16-narrowing-barrier.md
   §4). The device may then round a narrowed expression once where the
   interpreter rounds twice: at most one binary16 ulp plus `|a * b| * 2^-24` for
