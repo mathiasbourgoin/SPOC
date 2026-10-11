@@ -264,3 +264,10 @@
  (libraries benchmark_common benchmark_backends sarek sarek_stdlib spoc_core)
  (preprocess
   (pps sarek_ppx)))
+
+(executable
+ (name bench_native_matvec)
+ (modules bench_native_matvec)
+ (libraries benchmark_backends sarek sarek_stdlib spoc_core unix)
+ (preprocess
+  (pps sarek_ppx)))
