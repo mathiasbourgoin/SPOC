@@ -24,9 +24,9 @@ let () =
           let%shared (tile : float32 * float32) = 64l in
           let tid = global_thread_id in
           let lid = thread_idx_x in
+          if tid < len then tile.(lid) <- (src.(tid), src.(tid) +. 1.0) ;
+          block_barrier () ;
           if tid < len then begin
-            tile.(lid) <- (src.(tid), src.(tid) +. 1.0) ;
-            block_barrier () ;
             let p = tile.(lid) in
             match p with a, b -> dst.(tid) <- a +. b
           end]
