@@ -415,3 +415,29 @@
  (alias e2e-hip-bench)
  (action
   (run %{dep:bench_f16_narrowing.exe})))
+
+; C-8 (a [for] bound is evaluated once) and C-9 (thread/block/grid indices are
+; signed int32) on the C-family backends, against the interpreter. Self-skips
+; the HIP part off ROCm.
+
+(executable
+ (name test_hip_cfamily_semantics)
+ (modules test_hip_cfamily_semantics)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek.interp
+  sarek_native
+  sarek_ir
+  spoc_core
+  sarek_hip
+  unix)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias e2e-hip)
+ (action
+  (run %{dep:test_hip_cfamily_semantics.exe})))

@@ -19,6 +19,7 @@
   Sarek_ir_metal
   Sarek_ir_inline_vec
   Sarek_ir_unroll
+  Sarek_ir_for_bound
   Sarek_ir_glsl
   Sarek_ir_wgsl
   Sarek_wgsl_abi

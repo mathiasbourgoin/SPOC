@@ -130,23 +130,25 @@ let cuda_param_type = function
 let cuda_thread_intrinsic name =
   match name with
   (* Support both idx and id naming conventions *)
-  | "thread_id_x" | "thread_idx_x" -> "threadIdx.x"
-  | "thread_id_y" | "thread_idx_y" -> "threadIdx.y"
-  | "thread_id_z" | "thread_idx_z" -> "threadIdx.z"
-  | "block_id_x" | "block_idx_x" -> "blockIdx.x"
-  | "block_id_y" | "block_idx_y" -> "blockIdx.y"
-  | "block_id_z" | "block_idx_z" -> "blockIdx.z"
-  | "block_dim_x" -> "blockDim.x"
-  | "block_dim_y" -> "blockDim.y"
-  | "block_dim_z" -> "blockDim.z"
-  | "grid_dim_x" -> "gridDim.x"
-  | "grid_dim_y" -> "gridDim.y"
-  | "grid_dim_z" -> "gridDim.z"
+  | "thread_id_x" | "thread_idx_x" -> Dispatch.c_signed_int "threadIdx.x"
+  | "thread_id_y" | "thread_idx_y" -> Dispatch.c_signed_int "threadIdx.y"
+  | "thread_id_z" | "thread_idx_z" -> Dispatch.c_signed_int "threadIdx.z"
+  | "block_id_x" | "block_idx_x" -> Dispatch.c_signed_int "blockIdx.x"
+  | "block_id_y" | "block_idx_y" -> Dispatch.c_signed_int "blockIdx.y"
+  | "block_id_z" | "block_idx_z" -> Dispatch.c_signed_int "blockIdx.z"
+  | "block_dim_x" -> Dispatch.c_signed_int "blockDim.x"
+  | "block_dim_y" -> Dispatch.c_signed_int "blockDim.y"
+  | "block_dim_z" -> Dispatch.c_signed_int "blockDim.z"
+  | "grid_dim_x" -> Dispatch.c_signed_int "gridDim.x"
+  | "grid_dim_y" -> Dispatch.c_signed_int "gridDim.y"
+  | "grid_dim_z" -> Dispatch.c_signed_int "gridDim.z"
   | "global_thread_id" | "global_idx" | "global_idx_x" ->
-      "(threadIdx.x + blockIdx.x * blockDim.x)"
-  | "global_idx_y" -> "(threadIdx.y + blockIdx.y * blockDim.y)"
-  | "global_idx_z" -> "(threadIdx.z + blockIdx.z * blockDim.z)"
-  | "global_size" -> "(blockDim.x * gridDim.x)"
+      Dispatch.c_signed_int "(threadIdx.x + blockIdx.x * blockDim.x)"
+  | "global_idx_y" ->
+      Dispatch.c_signed_int "(threadIdx.y + blockIdx.y * blockDim.y)"
+  | "global_idx_z" ->
+      Dispatch.c_signed_int "(threadIdx.z + blockIdx.z * blockDim.z)"
+  | "global_size" -> Dispatch.c_signed_int "(blockDim.x * gridDim.x)"
   | name -> Codegen_error.raise_error (Codegen_error.unknown_intrinsic name)
 
 (** {1 Expression Generation} *)
@@ -1041,7 +1043,9 @@ let generate_with_types ?block
      here, where the launch block is known (Execute passes it), so a bad block
      is refused before any compile. *)
   Option.iter (Sarek_ir_cuda_coopmat.check_block k) block ;
-  (* Unroll hints for small constant-trip loops (Sarek_ir_unroll). *)
+  (* A [for] bound is evaluated once (Sarek_ir_for_bound), then unroll hints
+     for small constant-trip loops (Sarek_ir_unroll). *)
+  let k = Sarek_ir_for_bound.hoist k in
   let k = Sarek_ir_unroll.annotate k in
   let st = state k in
   let buf = Buffer.create 4096 in

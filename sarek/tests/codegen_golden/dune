@@ -215,3 +215,10 @@
  (libraries sarek sarek.stdlib sarek_ir sarek_codegen spoc_core)
  (preprocess
   (pps sarek_ppx)))
+
+(test
+ (name test_for_bound_signed_idx)
+ (modules test_for_bound_signed_idx)
+ (libraries sarek_ir sarek_codegen alcotest)
+ (instrumentation
+  (backend bisect_ppx)))

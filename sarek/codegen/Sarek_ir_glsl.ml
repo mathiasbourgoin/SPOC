@@ -2163,7 +2163,9 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
   (* Inline vector-parameter helpers (buffers cannot be passed as GLSL function
      arguments — see Sarek_ir_inline_vec). *)
   let k = Sarek_ir_inline_vec.inline_vec_helpers ~backend:"Vulkan" k in
-  (* Unroll hints for small constant-trip loops (Sarek_ir_unroll). *)
+  (* A [for] bound is evaluated once (Sarek_ir_for_bound), then unroll hints
+     for small constant-trip loops (Sarek_ir_unroll). *)
+  let k = Sarek_ir_for_bound.hoist k in
   let k = Sarek_ir_unroll.annotate k in
   (* Build this generation's state. Derived from [k] AFTER the vec-helper
      inlining above, which rewrites [kern_funcs] and so changes the identifier

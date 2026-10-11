@@ -156,22 +156,23 @@ let opencl_param_type = function
 
 let opencl_thread_intrinsic = function
   (* Support both idx and id naming conventions *)
-  | "thread_id_x" | "thread_idx_x" -> "get_local_id(0)"
-  | "thread_id_y" | "thread_idx_y" -> "get_local_id(1)"
-  | "thread_id_z" | "thread_idx_z" -> "get_local_id(2)"
-  | "block_id_x" | "block_idx_x" -> "get_group_id(0)"
-  | "block_id_y" | "block_idx_y" -> "get_group_id(1)"
-  | "block_id_z" | "block_idx_z" -> "get_group_id(2)"
-  | "block_dim_x" -> "get_local_size(0)"
-  | "block_dim_y" -> "get_local_size(1)"
-  | "block_dim_z" -> "get_local_size(2)"
-  | "grid_dim_x" -> "get_num_groups(0)"
-  | "grid_dim_y" -> "get_num_groups(1)"
-  | "grid_dim_z" -> "get_num_groups(2)"
-  | "global_thread_id" | "global_idx" | "global_idx_x" -> "get_global_id(0)"
-  | "global_idx_y" -> "get_global_id(1)"
-  | "global_idx_z" -> "get_global_id(2)"
-  | "global_size" -> "get_global_size(0)"
+  | "thread_id_x" | "thread_idx_x" -> Dispatch.c_signed_int "get_local_id(0)"
+  | "thread_id_y" | "thread_idx_y" -> Dispatch.c_signed_int "get_local_id(1)"
+  | "thread_id_z" | "thread_idx_z" -> Dispatch.c_signed_int "get_local_id(2)"
+  | "block_id_x" | "block_idx_x" -> Dispatch.c_signed_int "get_group_id(0)"
+  | "block_id_y" | "block_idx_y" -> Dispatch.c_signed_int "get_group_id(1)"
+  | "block_id_z" | "block_idx_z" -> Dispatch.c_signed_int "get_group_id(2)"
+  | "block_dim_x" -> Dispatch.c_signed_int "get_local_size(0)"
+  | "block_dim_y" -> Dispatch.c_signed_int "get_local_size(1)"
+  | "block_dim_z" -> Dispatch.c_signed_int "get_local_size(2)"
+  | "grid_dim_x" -> Dispatch.c_signed_int "get_num_groups(0)"
+  | "grid_dim_y" -> Dispatch.c_signed_int "get_num_groups(1)"
+  | "grid_dim_z" -> Dispatch.c_signed_int "get_num_groups(2)"
+  | "global_thread_id" | "global_idx" | "global_idx_x" ->
+      Dispatch.c_signed_int "get_global_id(0)"
+  | "global_idx_y" -> Dispatch.c_signed_int "get_global_id(1)"
+  | "global_idx_z" -> Dispatch.c_signed_int "get_global_id(2)"
+  | "global_size" -> Dispatch.c_signed_int "get_global_size(0)"
   | name -> Codegen_error.raise_error (Codegen_error.unknown_intrinsic name)
 
 (** {1 Expression Generation} *)
@@ -1167,7 +1168,9 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
   reject_float16_kernel k ;
   reject_coopmat_kernel k ;
   let k = resolve_recursive_helpers k in
-  (* Unroll hints for small constant-trip loops (Sarek_ir_unroll). *)
+  (* A [for] bound is evaluated once (Sarek_ir_for_bound), then unroll hints
+     for small constant-trip loops (Sarek_ir_unroll). *)
+  let k = Sarek_ir_for_bound.hoist k in
   let k = Sarek_ir_unroll.annotate k in
   (* Per-generation state, threaded into the emit calls below: the kernel's
      variants for SMatch bindings. *)

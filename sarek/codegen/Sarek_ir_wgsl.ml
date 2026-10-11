@@ -1627,6 +1627,8 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
   (* Inline vector-parameter helpers (buffers cannot be passed as WGSL function
      arguments — see Sarek_ir_inline_vec). *)
   let k = Sarek_ir_inline_vec.inline_vec_helpers ~backend:"WGSL" k in
+  (* A [for] bound is evaluated once (Sarek_ir_for_bound). *)
+  let k = Sarek_ir_for_bound.hoist k in
   let buf = Buffer.create 1024 in
   (* Inner structs first: WGSL, like GLSL, requires a struct type to be declared
      before the field that names it (backlog-203) — records and variants in ONE
