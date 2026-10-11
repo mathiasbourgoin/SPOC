@@ -1,13 +1,13 @@
 # ConvergenceSafety — Project Status
 
-> **None of this project's 111 theorems is linked to production (backlog-201).**
+> **None of this project's 125 theorems is linked to production (backlog-201).**
 > Every theorem here is proven about the Rocq model, or checked against the
 > *extracted* model, or checked against an abstract OCaml model — never against
 > the real `Sarek_convergence.ml` that ships. `test/test_convergence_live.ml`
 > does call the real `Sarek_convergence.check_expr`, and its 10/10 GREEN below is
 > real and worth having, but it is a fixed-pattern regression suite (positive
 > baseline + F-01/F-02 regressions + negative baseline) — it never runs the
-> extracted model on the same input and compares. A reader who sees "111
+> extracted model on the same input and compares. A reader who sees "125
 > theorems" next to "conformance 17/17, extraction 7/7, semantics 4/4, live
 > 10/10 GREEN" (the current test-suite scoreboard below) should not conclude any
 > theorem here says something checked against the shipped checker: it doesn't,
