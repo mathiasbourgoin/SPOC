@@ -164,6 +164,27 @@ let test_sparse_indices () =
     [(0, "a"); (17, "r"); (1000, "y")]
     (KA.to_sorted_list t)
 
+(** Indices far past any real argument count are kept and reported, without
+    allocating storage of their size. *)
+let test_huge_indices () =
+  let t = KA.create () in
+  KA.set t 0 "a" ;
+  KA.set t max_int "x" ;
+  KA.set t 1_000_000 "m" ;
+  KA.set t 1_000_000 "n" ;
+  Alcotest.(check int) "distinct indices" 3 (KA.count t) ;
+  Alcotest.(check (list (pair int string)))
+    "sorted"
+    [(0, "a"); (1_000_000, "n"); (max_int, "x")]
+    (KA.to_sorted_list t) ;
+  expect_error
+    t
+    ~expected_count:2
+    (Printf.sprintf
+       "missing indices: [1]; unexpected indices: [1000000, %d]; expected 2 \
+        args, got 3"
+       max_int)
+
 (** Many arguments set in reverse order extract in index order. *)
 let test_many_args () =
   let t = KA.create () in
@@ -192,6 +213,7 @@ let () =
           Alcotest.test_case "count" `Quick test_count;
           Alcotest.test_case "sparse indices" `Quick test_sparse_indices;
           Alcotest.test_case "many args" `Quick test_many_args;
+          Alcotest.test_case "huge indices" `Quick test_huge_indices;
         ] );
       ( "last-set-wins",
         [
