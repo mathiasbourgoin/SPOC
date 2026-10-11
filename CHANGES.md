@@ -504,6 +504,12 @@
   replaces `shutdown`. The jsoo interpreter build runs parallel blocks inline.
 
 
+- Fused kernels are named after a digest of their IR
+  (`sarek_hfused_<md5>`, `sarek_efused_<md5>`) instead of a build counter,
+  so a process that builds the same fusions in another order still hits the
+  device compiler's on-disk cache (ROCm comgr on HIP). Two fused kernels
+  whose IR differs never share a name.
+
 - The epilogue-fusion coverage check (`Launch_epilogue`) no longer
   enumerates every thread when store indices and guards are affine in the
   thread and work-group indices: `Coverage_affine` proves coverage in a few

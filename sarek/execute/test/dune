@@ -57,3 +57,10 @@
  (name bench_epilogue_coverage)
  (modules bench_epilogue_coverage)
  (libraries coverage_fixtures unix))
+
+; Fused kernels are named from their IR (process- and order-independent).
+
+(test
+ (name test_fused_names)
+ (modules test_fused_names)
+ (libraries coverage_fixtures sarek_execute sarek_ir alcotest))

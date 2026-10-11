@@ -308,8 +308,8 @@ let launch ?(gx = 1) ?(block = 64) ir src dst =
     ~grid:(Execute.dims1d gx)
     ()
 
-(* Fused kernels are named sarek_hfused_<n> with a process-wide counter: the
-   number is replaced by N so expectations do not depend on test order. *)
+(* Fused kernels are named sarek_hfused_<digest of their IR>: the suffix is
+   replaced by N so expectations do not spell digests. *)
 let normalise e =
   String.split_on_char ' ' e
   |> List.map (fun w ->

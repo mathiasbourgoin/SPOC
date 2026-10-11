@@ -112,7 +112,8 @@ type 'arg t = {
   c_submitted : int Atomic.t;
   c_issued : int Atomic.t;
   c_groups : int Atomic.t;
-  c_built : int Atomic.t;  (** never reset: it also names fused kernels *)
+  c_built : int Atomic.t;
+      (** never reset: it also names fused kernels without a content name *)
   c_refused : int Atomic.t;
 }
 
@@ -259,9 +260,17 @@ let fused_kernel w key members =
   | Some k -> Some k
   | None -> (
       match
-        Fusion_horizontal.fuse
-          ~name:(Printf.sprintf "sarek_hfused_%d" (Atomic.get w.c_built))
-          (List.map (fun m -> m.ir) members)
+        let k =
+          Fusion_horizontal.fuse ~name:"" (List.map (fun m -> m.ir) members)
+        in
+        match Fusion_horizontal.content_named ~prefix:"sarek_hfused_" k with
+        | Some k -> k
+        | None ->
+            {
+              k with
+              kern_name =
+                Printf.sprintf "sarek_hfused_%d" (Atomic.get w.c_built);
+            }
       with
       | k ->
           bump w.c_built ;

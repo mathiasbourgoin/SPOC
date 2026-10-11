@@ -254,16 +254,18 @@ let fused_ir ~(p : _ LW.launch) ~p_array ~(c : _ LW.launch) ~shared =
       let k =
         match
           Fusion_epilogue.fuse
-            ~name:
-              (Printf.sprintf
-                 "sarek_efused_%d"
-                 (Atomic.fetch_and_add counter 1))
+            ~name:""
             ~producer:p.ir
             ~p_array
             ~consumer:c.ir
             ~shared
         with
-        | k -> Some k
+        | k -> (
+            match Fusion_horizontal.content_named ~prefix:"sarek_efused_" k with
+            | Some k -> Some k
+            | None ->
+                let n = Atomic.fetch_and_add counter 1 in
+                Some {k with kern_name = Printf.sprintf "sarek_efused_%d" n})
         | exception
             (Fusion_epilogue.Incompatible _ | Fusion_horizontal.Incompatible _)
           ->
