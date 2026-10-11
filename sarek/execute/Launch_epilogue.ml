@@ -173,7 +173,10 @@ let enumerate ~(p : _ LW.launch) ~p_array ~p_scalars ~(c : _ LW.launch)
         (Index_bitset.subset written stored, tag used_p used_c)
     | exception
         (Index_slice.Unknown _ | Index_bitset.Out_of_range _ | Stored_twice) ->
-        (false, [])
+        (* Stopped part-way, possibly on a value-dependent condition (an
+           index, a division by zero, a loop bound): the refusal holds for
+           these values of every scalar parameter, not for all values. *)
+        (false, tag (List.map fst p_scalars) (List.map fst c_scalars))
 
 (* [true] when P stores each element at most once, at a non-negative index,
    and covers every element C writes. Unknown or too large: [false]. Also
