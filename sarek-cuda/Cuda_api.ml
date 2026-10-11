@@ -262,6 +262,18 @@ module Device = struct
     set_current_id dev.id ;
     check "cuCtxSetCurrent" (cuCtxSetCurrent dev.context)
 
+  (* The id of the cached device whose context the driver reports as current
+     for this thread (not the OCaml-side tracker); -1 when none matches. *)
+  let driver_current () =
+    let p = allocate cu_context_ptr (from_voidp cu_context null) in
+    check "cuCtxGetCurrent" (cuCtxGetCurrent p) ;
+    let cur = !@p in
+    Hashtbl.fold
+      (fun id dev found ->
+        if ptr_compare dev.context cur = 0 then id else found)
+      device_cache
+      (-1)
+
   let synchronize dev =
     set_current dev ;
     check "cuCtxSynchronize" (cuCtxSynchronize ()) ;
