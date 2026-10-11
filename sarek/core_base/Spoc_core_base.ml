@@ -52,8 +52,10 @@ module type CUSTOM_OPS = sig
     set:(handle -> int -> 'a -> unit) ->
     unit
 
-  (** Convert a host Bigarray to a handle for the device-transfer layer.
-      Implementations that do not support device transfers may raise. *)
+  (** Convert a host Bigarray to a handle for the device-transfer layer. The
+      handle need not root the bigarray: the caller keeps it reachable while the
+      handle is in use. Implementations that do not support device transfers may
+      raise. *)
   val bigarray_to_handle :
     ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t -> handle
 

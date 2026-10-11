@@ -27,14 +27,13 @@
 ; scripts/check-dune-opam-portability.sh enforces this and its header carries
 ; the rejected alternatives in full.
 
-; ctypes >= 0.24.0: the f16 host path depends on ctypes INTERNALS that its
-; public API does not cover — Ctypes_bigarray.unsafe_address (the kind GADT has
-; no Float16 arm, so Ctypes.bigarray_start raises for it) and
-; Ctypes_static.CPointer / Ctypes_ptr.Fat.make, used to rebuild a MANAGED fat
-; pointer so an f16 bigarray stays GC-rooted across a transfer. See
-; sarek/core/Memory.ml's bigarray_void_ptr and the GC-root canary in
-; sarek/tests/unit/test_float16.ml, which fails loudly if those semantics change.
-; 0.24.0 is the version those semantics were verified against.
+; ctypes >= 0.24.0: the f16 host path depends on Ctypes_bigarray.unsafe_address,
+; a ctypes INTERNAL its public API does not cover (the kind GADT has no Float16
+; arm, so Ctypes.bigarray_start raises for it). The resulting pointer is
+; unmanaged; Memory.with_bigarray_ptr keeps the bigarray reachable instead. See
+; sarek/core/Memory.ml and the GC-root test in
+; sarek/tests/unit/test_float16.ml. 0.24.0 is the version this was verified
+; against.
 
 (source (github mathiasbourgoin/Sarek))
 (license Cecill-B)

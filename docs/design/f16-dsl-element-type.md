@@ -346,6 +346,12 @@ the same free round-trip verified in §3.1.
 > `Float16` kind — at which point the whole helper collapses back to
 > `bigarray_start`.
 >
+> **Superseded (2026-10).** Rebuilding that managed pointer needs `Obj.repr`, so
+> `bigarray_void_ptr` was replaced by the scoped `Memory.with_bigarray_ptr`: the
+> f16 pointer is now unmanaged, and the helper keeps the bigarray reachable with
+> `Sys.opaque_identity` until its callback returns. The `gc_roots` test checks that
+> property instead.
+>
 > **The reusable rule:** when a new element type has to cross an FFI boundary,
 > enumerate the FFI sites *first*, per backend, including staging/indirect paths —
 > do not infer from "the transfer is byte-oriented" that the transfer is free.

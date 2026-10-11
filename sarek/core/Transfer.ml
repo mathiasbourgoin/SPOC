@@ -351,17 +351,13 @@ end = struct
           B.size ;
         match vec.host with
         | Vector.Bigarray_storage ba ->
-            let ptr, byte_size =
-              Vector_transfer.bigarray_to_ptr ba B.elem_size
-            in
-            B.device_to_host_ptr ptr ~byte_size ;
-            (* [device_to_host_ptr] takes a bare [nativeint] address (see
-             Framework_sig.ml:218-223), which is not a GC root, and this is a
-             device->HOST WRITE: if [ba] were collected mid-transfer the backend
-             would write into freed memory. Keep it reachable across the call —
-             without this the transfer was the function's last expression and
-             nothing rooted [ba]. *)
-            ignore (Sys.opaque_identity ba)
+            let byte_size = Bigarray.Array1.dim ba * B.elem_size in
+            (* [device_to_host_ptr] takes a bare [nativeint] address, which is
+               not a GC root, and this is a device->HOST WRITE: [ba] must stay
+               reachable until the transfer returns, which [with_bigarray_ptr]
+               guarantees. *)
+            Memory.with_bigarray_ptr ba (fun ptr ->
+                B.device_to_host_ptr ptr ~byte_size)
         | Vector.Custom_storage {ptr; custom; length} ->
             B.device_to_host_ptr ptr ~byte_size:(length * custom.elem_size) ;
             ignore (Sys.opaque_identity ptr)
@@ -527,14 +523,14 @@ let to_device (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : unit =
         (vec.length * B.elem_size) ;
       (match vec.host with
       | Vector.Bigarray_storage ba ->
-          let ptr, byte_size = Vector_transfer.bigarray_to_ptr ba B.elem_size in
+          let byte_size = Bigarray.Array1.dim ba * B.elem_size in
           Log.debugf
             Log.Transfer
             "to_device: calling host_ptr_to_device byte_size=%d"
             byte_size ;
-          B.host_ptr_to_device ptr ~byte_size ;
           (* Same keep-alive obligation as [copy_device_to_host] above. *)
-          ignore (Sys.opaque_identity ba)
+          Memory.with_bigarray_ptr ba (fun ptr ->
+              B.host_ptr_to_device ptr ~byte_size)
       | Vector.Custom_storage {ptr; custom; length} ->
           B.host_ptr_to_device ptr ~byte_size:(length * custom.elem_size) ;
           ignore (Sys.opaque_identity ptr)
@@ -1341,7 +1337,7 @@ let h2d_range (type a b k) ~(op : string) ?(stream : stream option)
 
 let bigarray_addr (ba : (_, _, Bigarray.c_layout) Bigarray.Array1.t) : nativeint
     =
-  Ctypes.raw_address_of_ptr (Memory.bigarray_void_ptr ba)
+  Ctypes.raw_address_of_ptr (Memory.borrow_bigarray_ptr ba)
 
 (** Copy all of [src] into [dst] starting at element [dst_offset].
 

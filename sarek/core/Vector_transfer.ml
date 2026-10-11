@@ -11,11 +11,13 @@
  * modules; future work can move more logic here.
  ******************************************************************************)
 
-(** Raw host pointers *)
+(** Raw host pointers. Neither roots the host storage: the caller keeps [vec]
+    reachable while the pointer or address is in use ([vec.host] is immutable,
+    so a reachable vector roots its bigarray). *)
 let to_ctypes_ptr : type a b. (a, b) Vector_types.t -> unit Ctypes.ptr =
  fun vec ->
   match vec.host with
-  | Vector_types.Bigarray_storage ba -> Memory.bigarray_void_ptr ba
+  | Vector_types.Bigarray_storage ba -> Memory.borrow_bigarray_ptr ba
   | Vector_types.Custom_storage {ptr; _} -> ptr
   | Vector_types.Device_only_storage ->
       Vector_types.device_only_refusal ~op:"to_ctypes_ptr" ~id:vec.id
@@ -24,18 +26,10 @@ let host_ptr : type a b. (a, b) Vector_types.t -> nativeint =
  fun vec ->
   match vec.host with
   | Vector_types.Bigarray_storage ba ->
-      Ctypes.raw_address_of_ptr (Memory.bigarray_void_ptr ba)
+      Ctypes.raw_address_of_ptr (Memory.borrow_bigarray_ptr ba)
   | Vector_types.Custom_storage {ptr; _} -> Ctypes.raw_address_of_ptr ptr
   | Vector_types.Device_only_storage ->
       Vector_types.device_only_refusal ~op:"host_ptr" ~id:vec.id
-
-(** Convert bigarray to raw pointer and byte size *)
-let bigarray_to_ptr (type a b)
-    (ba : (a, b, Bigarray.c_layout) Bigarray.Array1.t) (elem_size : int) :
-    unit Ctypes.ptr * int =
-  let len = Bigarray.Array1.dim ba in
-  let byte_size = len * elem_size in
-  (Memory.bigarray_void_ptr ba, byte_size)
 
 (** Auto-sync callback registration *)
 type sync_callback = {sync : 'a 'b. ('a, 'b) Vector_types.t -> bool}

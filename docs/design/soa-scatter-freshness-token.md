@@ -33,7 +33,7 @@ match (Vector.location t.aos, Vector.auto_sync t.aos) with
 | Vector.Stale_CPU _, false -> raise (Soa.Unsupported ...)
 ```
 
-and `Vector_transfer.ensure_cpu_sync` (`sarek/core/Vector_transfer.ml:44-51`) is
+and `Vector_transfer.ensure_cpu_sync` (`sarek/core/Vector_transfer.ml:42-49`) is
 a no-op unless *both* halves say so. In `CPU`, `Both` and `Stale_GPU` the host
 copy is already the freshest data, so scatter is safe **regardless of the flag**.
 
