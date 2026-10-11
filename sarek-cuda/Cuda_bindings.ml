@@ -80,6 +80,19 @@ let get_cuda_lib () =
 (** Create a lazy foreign binding to CUDA driver API *)
 let foreign_cuda_lazy name typ = lazy (foreign ~from:(get_cuda_lib ()) name typ)
 
+(** [foreign_cuda_blocking_lazy name typ] is [foreign_cuda_lazy name typ] with
+    the OCaml runtime lock released for the duration of the call, for entry
+    points that block on the device or run a compiler. While it is held, every
+    other domain stops at its next minor collection until the call returns. Safe
+    only because no argument of these entry points points into the OCaml heap: a
+    [ptr] argument is C memory (driver handles, [allocate]d cells, bigarray
+    data) that ctypes keeps reachable until the call returns, and a ctypes
+    [string] argument is copied into C memory first. A raw address
+    ([ptr_of_raw_address]) is not rooted: its caller keeps the memory alive
+    across the call, as it must already. *)
+let foreign_cuda_blocking_lazy name typ =
+  lazy (foreign ~release_runtime_lock:true ~from:(get_cuda_lib ()) name typ)
+
 (** {1 Initialization} *)
 
 let cuInit_lazy = foreign_cuda_lazy "cuInit" (int @-> returning cu_result)
@@ -169,7 +182,7 @@ let cuCtxGetCurrent_lazy =
 let cuCtxGetCurrent p = Lazy.force cuCtxGetCurrent_lazy p
 
 let cuCtxSynchronize_lazy =
-  foreign_cuda_lazy "cuCtxSynchronize" (void @-> returning cu_result)
+  foreign_cuda_blocking_lazy "cuCtxSynchronize" (void @-> returning cu_result)
 
 let cuCtxSynchronize () = Lazy.force cuCtxSynchronize_lazy ()
 
@@ -188,26 +201,28 @@ let cuMemAlloc_lazy =
 let cuMemAlloc p size = Lazy.force cuMemAlloc_lazy p size
 
 let cuMemFree_lazy =
-  foreign_cuda_lazy "cuMemFree_v2" (cu_deviceptr @-> returning cu_result)
+  foreign_cuda_blocking_lazy
+    "cuMemFree_v2"
+    (cu_deviceptr @-> returning cu_result)
 
 let cuMemFree ptr = Lazy.force cuMemFree_lazy ptr
 
 let cuMemcpyHtoD_lazy =
-  foreign_cuda_lazy
+  foreign_cuda_blocking_lazy
     "cuMemcpyHtoD_v2"
     (cu_deviceptr @-> ptr void @-> size_t @-> returning cu_result)
 
 let cuMemcpyHtoD dst src size = Lazy.force cuMemcpyHtoD_lazy dst src size
 
 let cuMemcpyDtoH_lazy =
-  foreign_cuda_lazy
+  foreign_cuda_blocking_lazy
     "cuMemcpyDtoH_v2"
     (ptr void @-> cu_deviceptr @-> size_t @-> returning cu_result)
 
 let cuMemcpyDtoH dst src size = Lazy.force cuMemcpyDtoH_lazy dst src size
 
 let cuMemcpyDtoD_lazy =
-  foreign_cuda_lazy
+  foreign_cuda_blocking_lazy
     "cuMemcpyDtoD_v2"
     (cu_deviceptr @-> cu_deviceptr @-> size_t @-> returning cu_result)
 
@@ -232,7 +247,7 @@ let cuMemcpyDtoHAsync dst src size stream =
   Lazy.force cuMemcpyDtoHAsync_lazy dst src size stream
 
 let cuMemsetD8_lazy =
-  foreign_cuda_lazy
+  foreign_cuda_blocking_lazy
     "cuMemsetD8_v2"
     (cu_deviceptr @-> uchar @-> size_t @-> returning cu_result)
 
@@ -289,21 +304,21 @@ let cuMemGetInfo free total = Lazy.force cuMemGetInfo_lazy free total
 (** {1 Module Management} *)
 
 let cuModuleLoadData_lazy =
-  foreign_cuda_lazy
+  foreign_cuda_blocking_lazy
     "cuModuleLoadData"
     (ptr cu_module_ptr @-> ptr void @-> returning cu_result)
 
 let cuModuleLoadData p data = Lazy.force cuModuleLoadData_lazy p data
 
 let cuModuleLoad_lazy =
-  foreign_cuda_lazy
+  foreign_cuda_blocking_lazy
     "cuModuleLoad"
     (ptr cu_module_ptr @-> string @-> returning cu_result)
 
 let cuModuleLoad p fname = Lazy.force cuModuleLoad_lazy p fname
 
 let cuModuleLoadDataEx_lazy =
-  foreign_cuda_lazy
+  foreign_cuda_blocking_lazy
     "cuModuleLoadDataEx"
     (ptr cu_module_ptr @-> ptr void @-> uint @-> ptr int
     @-> ptr (ptr void)
@@ -393,7 +408,9 @@ let cuStreamDestroy_lazy =
 let cuStreamDestroy s = Lazy.force cuStreamDestroy_lazy s
 
 let cuStreamSynchronize_lazy =
-  foreign_cuda_lazy "cuStreamSynchronize" (cu_stream_ptr @-> returning cu_result)
+  foreign_cuda_blocking_lazy
+    "cuStreamSynchronize"
+    (cu_stream_ptr @-> returning cu_result)
 
 let cuStreamSynchronize s = Lazy.force cuStreamSynchronize_lazy s
 
@@ -439,7 +456,9 @@ let cuEventRecord_lazy =
 let cuEventRecord e s = Lazy.force cuEventRecord_lazy e s
 
 let cuEventSynchronize_lazy =
-  foreign_cuda_lazy "cuEventSynchronize" (cu_event_ptr @-> returning cu_result)
+  foreign_cuda_blocking_lazy
+    "cuEventSynchronize"
+    (cu_event_ptr @-> returning cu_result)
 
 let cuEventSynchronize e = Lazy.force cuEventSynchronize_lazy e
 

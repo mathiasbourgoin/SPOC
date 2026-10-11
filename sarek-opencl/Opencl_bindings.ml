@@ -58,6 +58,19 @@ let get_opencl_lib () =
 (** Create a lazy foreign binding to OpenCL *)
 let foreign_cl_lazy name typ = lazy (foreign ~from:(get_opencl_lib ()) name typ)
 
+(** [foreign_cl_blocking_lazy name typ] is [foreign_cl_lazy name typ] with the
+    OCaml runtime lock released for the duration of the call, for entry points
+    that block on the device or run a compiler. While it is held, every other
+    domain stops at its next minor collection until the call returns. Safe only
+    because no argument of these entry points points into the OCaml heap: a
+    [ptr] argument is C memory (driver handles, [allocate]d cells, bigarray
+    data) that ctypes keeps reachable until the call returns, and a ctypes
+    [string] argument is copied into C memory first. A raw address
+    ([ptr_of_raw_address]) is not rooted: its caller keeps the memory alive
+    across the call, as it must already. *)
+let foreign_cl_blocking_lazy name typ =
+  lazy (foreign ~release_runtime_lock:true ~from:(get_opencl_lib ()) name typ)
+
 (** {1 Platform API} *)
 
 let clGetPlatformIDs_lazy =
@@ -186,7 +199,7 @@ let clFlush_lazy =
 let clFlush q = Lazy.force clFlush_lazy q
 
 let clFinish_lazy =
-  foreign_cl_lazy "clFinish" (cl_command_queue @-> returning cl_int)
+  foreign_cl_blocking_lazy "clFinish" (cl_command_queue @-> returning cl_int)
 
 let clFinish q = Lazy.force clFinish_lazy q
 
@@ -223,7 +236,7 @@ let clGetMemObjectInfo m pn sz v szr =
 (** {1 Enqueue Operations} *)
 
 let clEnqueueReadBuffer_lazy =
-  foreign_cl_lazy
+  foreign_cl_blocking_lazy
     "clEnqueueReadBuffer"
     (cl_command_queue @-> cl_mem @-> cl_bool @-> size_t @-> size_t @-> ptr void
    @-> cl_uint @-> ptr cl_event @-> ptr cl_event @-> returning cl_int)
@@ -232,7 +245,7 @@ let clEnqueueReadBuffer q b bl off sz p ne el e =
   Lazy.force clEnqueueReadBuffer_lazy q b bl off sz p ne el e
 
 let clEnqueueWriteBuffer_lazy =
-  foreign_cl_lazy
+  foreign_cl_blocking_lazy
     "clEnqueueWriteBuffer"
     (cl_command_queue @-> cl_mem @-> cl_bool @-> size_t @-> size_t @-> ptr void
    @-> cl_uint @-> ptr cl_event @-> ptr cl_event @-> returning cl_int)
@@ -241,7 +254,7 @@ let clEnqueueWriteBuffer q b bl off sz p ne el e =
   Lazy.force clEnqueueWriteBuffer_lazy q b bl off sz p ne el e
 
 let clEnqueueMapBuffer_lazy =
-  foreign_cl_lazy
+  foreign_cl_blocking_lazy
     "clEnqueueMapBuffer"
     (cl_command_queue @-> cl_mem @-> cl_bool @-> cl_bitfield @-> size_t
    @-> size_t @-> cl_uint @-> ptr cl_event @-> ptr cl_event @-> ptr cl_int
@@ -307,7 +320,7 @@ let clCreateProgramWithBinary ctx nd dl lens bins bs err =
   Lazy.force clCreateProgramWithBinary_lazy ctx nd dl lens bins bs err
 
 let clBuildProgram_lazy =
-  foreign_cl_lazy
+  foreign_cl_blocking_lazy
     "clBuildProgram"
     (cl_program @-> cl_uint @-> ptr cl_device_id @-> string @-> ptr void
    @-> ptr void @-> returning cl_int)
@@ -391,7 +404,7 @@ let clEnqueueNDRangeKernel q k dim gwo gws lws ne el e =
 (** {1 Event API} *)
 
 let clWaitForEvents_lazy =
-  foreign_cl_lazy
+  foreign_cl_blocking_lazy
     "clWaitForEvents"
     (cl_uint @-> ptr cl_event @-> returning cl_int)
 

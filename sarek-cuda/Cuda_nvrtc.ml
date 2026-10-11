@@ -146,6 +146,19 @@ let get_nvrtc_lib () =
 let foreign_nvrtc_lazy name typ =
   lazy (foreign ~from:(get_nvrtc_lib ()) name typ)
 
+(** [foreign_nvrtc_blocking_lazy name typ] is [foreign_nvrtc_lazy name typ] with
+    the OCaml runtime lock released for the duration of the call, for entry
+    points that block on the device or run a compiler. While it is held, every
+    other domain stops at its next minor collection until the call returns. Safe
+    only because no argument of these entry points points into the OCaml heap: a
+    [ptr] argument is C memory (driver handles, [allocate]d cells, bigarray
+    data) that ctypes keeps reachable until the call returns, and a ctypes
+    [string] argument is copied into C memory first. A raw address
+    ([ptr_of_raw_address]) is not rooted: its caller keeps the memory alive
+    across the call, as it must already. *)
+let foreign_nvrtc_blocking_lazy name typ =
+  lazy (foreign ~release_runtime_lock:true ~from:(get_nvrtc_lib ()) name typ)
+
 (** {1 Bindings} *)
 
 let nvrtcVersion_lazy =
@@ -172,7 +185,7 @@ let nvrtcDestroyProgram_lazy =
 let nvrtcDestroyProgram prog = Lazy.force nvrtcDestroyProgram_lazy prog
 
 let nvrtcCompileProgram_lazy =
-  foreign_nvrtc_lazy
+  foreign_nvrtc_blocking_lazy
     "nvrtcCompileProgram"
     (nvrtc_program_ptr @-> int @-> ptr string @-> returning nvrtc_result)
 

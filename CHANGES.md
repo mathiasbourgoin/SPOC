@@ -352,6 +352,19 @@
   the same CPU runs them in ~1.0 and ~0.6 ms. Test:
   `sarek/plugins/native/test/test_native_vec_access.ml`.
 
+
+- Blocking driver calls release the OCaml runtime lock (R-24): device,
+  stream and event syncs, synchronous copies and memsets, device frees, module
+  loads and the hiprtc/NVRTC/shaderc/OpenCL compiles on HIP, CUDA, OpenCL and
+  Vulkan (`vkWaitForFences`, `vkQueueWaitIdle`, `vkDeviceWaitIdle`). Before,
+  a domain waiting in one of them stopped every other domain at its next minor
+  collection for the whole wait. Measured on the RX 7900 XTX (5 interleaved
+  runs, 200 ms `Device.synchronize`): minor collections completed by an
+  allocating domain during the wait went from 0 / 2 / 1 (HIP / OpenCL / Vulkan
+  medians) to 1082 / 1074 / 1094. None of these entry points takes an OCaml
+  heap pointer; callers that pass a raw address keep its memory alive across
+  the call, as before. Metal is unchanged (its waits go through
+  `objc_msgSend`). Test: `sarek/tests/e2e/test_blocking_ffi_releases_lock.ml`.
 - `Spoc_core.Memory.bigarray_void_ptr` is replaced by
   `Memory.borrow_bigarray_ptr`, whose pointer need not root the bigarray: the
   caller keeps it reachable, on transfer paths with a trailing
