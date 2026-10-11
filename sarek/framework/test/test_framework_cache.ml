@@ -7,6 +7,27 @@
 
 open Spoc_framework_registry
 
+let rec delete_tree path =
+  if Sys.is_directory path then begin
+    Array.iter
+      (fun f -> delete_tree (Filename.concat path f))
+      (Sys.readdir path) ;
+    Sys.rmdir path
+  end
+  else Sys.remove path
+
+(* Every test runs against a private cache root: never the developer's
+   ~/.cache/spoc. *)
+let fresh_root () =
+  let root = Filename.temp_file "framework-cache-test" "" in
+  Sys.remove root ;
+  Unix.mkdir root 0o700 ;
+  at_exit (fun () -> try delete_tree root with Sys_error _ -> ()) ;
+  Unix.putenv "XDG_CACHE_HOME" root ;
+  root
+
+let (_ : string) = fresh_root ()
+
 let test_get_cache_dir () =
   let dir = Framework_cache.get_cache_dir () in
   Alcotest.(check bool)
@@ -236,6 +257,73 @@ let test_disabled_by_env () =
     (Some "x")
     (Framework_cache.get ~key)
 
+(* Two writer domains share one process (so one PID) and one key while a reader
+   domain polls it. Every read must be one writer's complete payload: a shared
+   temporary name would let the writers interleave into a mixed or short
+   file. *)
+let test_concurrent_writers_never_torn () =
+  let key = "concurrent_writers_key" in
+  let size = 1_000_000 in
+  let payload c = String.make size c in
+  let writers_left = Atomic.make 2 in
+  let writer c =
+    Domain.spawn (fun () ->
+        for _ = 1 to 100 do
+          Framework_cache.put ~key ~data:(payload c)
+        done ;
+        Atomic.decr writers_left)
+  in
+  let reader =
+    Domain.spawn (fun () ->
+        let torn = ref 0 and reads = ref 0 in
+        while Atomic.get writers_left > 0 do
+          match Framework_cache.get ~key with
+          | None -> ()
+          | Some d ->
+              incr reads ;
+              if
+                String.length d <> size
+                || not (String.for_all (Char.equal d.[0]) d)
+              then incr torn
+        done ;
+        (!torn, !reads))
+  in
+  let a = writer 'A' and b = writer 'B' in
+  Domain.join a ;
+  Domain.join b ;
+  let torn, reads = Domain.join reader in
+  Alcotest.(check int) "no torn read" 0 torn ;
+  Alcotest.(check bool) "the reader did read entries" true (reads > 0)
+
+(* Cached OpenCL entries are native binaries a driver loads: a directory that
+   other users can write to must not be read or written. *)
+let test_untrusted_dir_refused () =
+  let root = fresh_root () in
+  let dir = Framework_cache.get_cache_dir () in
+  Alcotest.(check string)
+    "dir under the private root"
+    root
+    (Filename.dirname dir) ;
+  let key = "untrusted_dir_key" in
+  Framework_cache.put ~key ~data:"trusted" ;
+  Unix.chmod dir 0o777 ;
+  Fun.protect
+    ~finally:(fun () -> Unix.chmod dir 0o700)
+    (fun () ->
+      Alcotest.(check (option string))
+        "get refuses an existing entry in a world-writable dir"
+        None
+        (Framework_cache.get ~key) ;
+      Framework_cache.put ~key:"second_key" ~data:"x" ;
+      Alcotest.(check bool)
+        "put writes nothing there"
+        false
+        (Sys.file_exists (Filename.concat dir "second_key"))) ;
+  Alcotest.(check (option string))
+    "closed again: entry readable"
+    (Some "trusted")
+    (Framework_cache.get ~key)
+
 let () =
   let open Alcotest in
   run
@@ -261,6 +349,14 @@ let () =
           test_case "Get nonexistent" `Quick test_get_nonexistent;
           test_case "Cache persistence" `Quick test_cache_persistence;
           test_case "SAREK_DISK_CACHE=0 disables" `Quick test_disabled_by_env;
+          test_case
+            "Concurrent writers never tear a read"
+            `Quick
+            test_concurrent_writers_never_torn;
+          test_case
+            "World-writable cache dir is refused"
+            `Quick
+            test_untrusted_dir_refused;
         ] );
       ( "statistics",
         [
