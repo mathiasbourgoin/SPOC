@@ -276,7 +276,12 @@ let check_aliasing ctx (ax, _, _) (ay, _, _) c =
   if c = ax || c = ay then Error (Output_aliases_operand c)
   else if written ax then Error (Operand_written ax)
   else if written ay then Error (Operand_written ay)
-  else Ok ()
+  else
+    (* The store must be the kernel's only write to C: another write, before
+       or after, may hit the same element and replace the product. *)
+    match ctx.written with
+    | Some l when List.length (List.filter (String.equal c) l) = 1 -> Ok ()
+    | _ -> Error (Output_written_elsewhere c)
 
 (* The number of iterations, when it is a constant. *)
 let k_extent ctx ~k_lo ~k_hi =

@@ -62,6 +62,7 @@ type reason =
   | Operand_written of string
   | Overlapping_operand of string
   | Constant_leading_dimension of string
+  | Output_written_elsewhere of string
   | Operand_not_unit_stride of string
   | Dependent_indices
   | Unsupported_init
@@ -113,6 +114,11 @@ let reason_text = function
       Printf.sprintf
         "the elements of '%s' overlap (equal strides: a Toeplitz view, a \
          correlation or a race)"
+        arr
+  | Output_written_elsewhere arr ->
+      Printf.sprintf
+        "the output '%s' is written by another statement too, which may \
+         replace the product"
         arr
   | Constant_leading_dimension arr ->
       Printf.sprintf

@@ -84,6 +84,7 @@ type reason =
   | Operand_written of string
   | Overlapping_operand of string
   | Constant_leading_dimension of string
+  | Output_written_elsewhere of string
   | Operand_not_unit_stride of string
   | Dependent_indices
   | Unsupported_init
