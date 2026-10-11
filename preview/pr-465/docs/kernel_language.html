@@ -80,6 +80,8 @@
       <span class="n">output</span><span class="o">.</span><span class="p">(</span><span class="n">global_thread_id</span><span class="p">)</span> <span class="o">&lt;-</span> <span class="n">acc</span><span class="p">]</span>
 </code></pre></div></div>
 
+<p><code class="language-plaintext highlighter-rouge">output</code> needs one slot per launched thread: a thread whose <code class="language-plaintext highlighter-rouge">global_thread_id</code> is at least <code class="language-plaintext highlighter-rouge">n</code> skips the loop but still stores its zero.</p>
+
 <h3 id="unrolling">Unrolling</h3>
 
 <p><code class="language-plaintext highlighter-rouge">pragma ["unroll N"] (loop)</code> asks the device compiler to unroll the <code class="language-plaintext highlighter-rouge">for</code> or <code class="language-plaintext highlighter-rouge">while</code> loop it wraps by a factor of <code class="language-plaintext highlighter-rouge">N</code>. It works for loops whose trip count is only known at run time. <code class="language-plaintext highlighter-rouge">pragma ["unroll"]</code> asks for the compiler’s choice.</p>
