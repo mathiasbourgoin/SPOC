@@ -48,11 +48,12 @@ argued in place rather than merely surviving:
    `Obj.repr ba` to `Fat.make ~managed` purely to keep a bigarray alive. The
    value was never read back at a type. Removed as O-19 (see the 2026-10
    status above).
-2. **Kernarg retention** — `sarek-cuda/Cuda_api.ml:66,740` and
-   `sarek-hip/Hip_api.ml:40,549` keep `(params, refs)` as `Obj.t` in
-   `pending_kernargs` for liveness only, again never recovered at a type. Both
-   files say so in the declaration's comment. This is the lifetime machinery
-   whose absence produced a five-hour misattribution to ZLUDA.
+2. **Kernarg retention** — `pending_kernargs` in `sarek-cuda/Cuda_api.ml` and
+   `sarek-hip/Hip_api.ml` holds each launch's argument blocks (a typed
+   `kernargs` record: the value slots and the pointer array) for liveness only.
+   The `Obj.t` form described here was removed by the keep-alive PR (#458). This
+   is the lifetime machinery whose absence produced a five-hour misattribution
+   to ZLUDA.
 3. **A remaining untyped registry** — `sarek/tuple_vec/Sarek_tuple_vec.ml:102`
    is a `(string, Obj.t) Hashtbl.t` with `Obj.obj` on lookup at `:121` and
    `:135`. **This is a genuine escape hatch of the kind the audit targeted, and

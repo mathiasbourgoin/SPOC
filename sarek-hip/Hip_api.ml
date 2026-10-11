@@ -683,8 +683,9 @@ module Kernel = struct
     Spoc_framework.Cache_hooks.around_clear (fun () ->
         Spoc_framework.Guarded_cache.clear cache)
 
-  (* Argument marshalling: ONE 8-byte-slot block holding every argument value
-     and ONE array of pointers into it, i.e. two host allocations per launch
+  (* Argument marshalling (the CUDA twin is [Cuda_api.Kernel.marshal_args];
+     keep the two layouts identical): ONE 8-byte-slot block holding every
+     argument value and ONE array of pointers into it, i.e. two host allocations per launch
      whatever the argument count. The previous shape did one ctypes [allocate]
      per argument; each is a calloc plus a GC finaliser, and on a 10-argument
      kernel that was ~3 us of a ~6 us launch (RX 7900 XTX, measured).
