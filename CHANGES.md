@@ -905,6 +905,7 @@
 - WGSL lowers a constant-size `create_array n Local` to a function-scope
   `var a : array<T, N>;` instead of failing with an internal "local dynamic
   arrays unsupported" error (naga: validates).
+
 - hiprtc and nvrtc option arrays: `CArray.of_list string` let the C copies of
   the option strings be freed before the compile call. Under a different
   allocation pattern hiprtc read a garbage option ("error reading '8{...'"),
