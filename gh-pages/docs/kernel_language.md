@@ -59,7 +59,7 @@ What each backend does with the pragma on a loop:
 | CUDA (PTX) | nothing | dropped |
 | Native, Interpreter | no source is generated | not applicable |
 
-That the device compiler unrolls by the requested factor was verified only for hipcc on gfx1100 (by inspecting the generated ISA); for the other compilers the factor is passed on, and whether they honour it is up to them. Sources: `Sarek_ir_cuda.ml:557`, `Sarek_ir_opencl.ml:598`, `Sarek_ir_metal.ml:766`, `Sarek_ir_glsl.ml:1240` (the test) and `:1368-1376`, `Sarek_ir_wgsl.ml:1187`, `Sarek_ir_ptx_stmt.ml:233`. A pragma that is dropped never changes the result, only the speed. The backends that honour the factor print the strings of the list joined by a space, so the factor reaches the device compiler as written.
+That the device compiler unrolls by the requested factor was verified only for hipcc on gfx1100 (by inspecting the generated ISA); for the other compilers the factor is passed on, and whether they honour it is up to them. Sources: `Sarek_ir_cuda.ml:562`, `Sarek_ir_opencl.ml:603`, `Sarek_ir_metal.ml:771`, `Sarek_ir_glsl.ml:1247` (the test) and `:1380-1388`, `Sarek_ir_wgsl.ml:1200`, `Sarek_ir_ptx_stmt.ml:233`. A pragma that is dropped never changes the result, only the speed. The backends that honour the factor print the strings of the list joined by a space, so the factor reaches the device compiler as written.
 
 Unrolling by hand (writing the loop body several times) is therefore only needed on the backends that drop the factor.
 
@@ -71,7 +71,7 @@ Sarek hints `#pragma unroll` (or `[[unroll]]` on GLSL) on a `for` loop by itself
 - the trip count is between 1 and 16, and
 - the trip count times the largest expansion of the hinted loops nested in its body is at most 64 (three nested loops of 8 hint the inner two only).
 
-A loop that already carries a pragma is left alone, so `pragma ["unroll 1"] (for ...)` opts one loop out. `SAREK_AUTO_UNROLL=0` turns the pass off for every loop. The variable is read at each code generation, but the generated source of a kernel is memoised, so set it before the kernel's first launch (or call `Execute.clear_launch_cache`). Only the CUDA, HIP, OpenCL, Metal and GLSL generators run the pass, so WGSL and PTX never get a hint. Unrolling does not change which operations run or their order. Sources: `Sarek_ir_unroll.ml:11-18` (limits and variable), `:121-130` (`annotate`), `:45-52` (inclusive bounds), `Sarek_ir_cuda.ml:958`, `Sarek_ir_opencl.ml:1166`, `Sarek_ir_metal.ml:1234`, `Sarek_ir_glsl.ml:2149`. All variables are in [Environment variables](environment.html).
+A loop that already carries a pragma is left alone, so `pragma ["unroll 1"] (for ...)` opts one loop out. `SAREK_AUTO_UNROLL=0` turns the pass off for every loop. The variable is read at each code generation, but the generated source of a kernel is memoised, so set it before the kernel's first launch (or call `Execute.clear_launch_cache`). Only the CUDA, HIP, OpenCL, Metal and GLSL generators run the pass, so WGSL and PTX never get a hint. Unrolling does not change which operations run or their order. Sources: `Sarek_ir_unroll.ml:11-18` (limits and variable), `:121-130` (`annotate`), `:45-52` (inclusive bounds), `Sarek_ir_cuda.ml:963`, `Sarek_ir_opencl.ml:1171`, `Sarek_ir_metal.ml:1239`, `Sarek_ir_glsl.ml:2161`. All variables are in [Environment variables](environment.html).
 
 ## Private and shared arrays
 
