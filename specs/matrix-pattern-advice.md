@@ -119,10 +119,10 @@ rewrites nothing.
 | anything else (int64, float64, mixed) | | none | | |
 
 Backends, for the configurations above (fixed table, from specs/coopmat-hip-wmma.md):
-HIP gfx11 wave32 — executes; CUDA sm_70+/sm_72+ — compile-only, launches refused
-(no device probe); Vulkan — integer configurations only, when the device's
-`VK_KHR_cooperative_matrix` probe advertises them; Metal, OpenCL, WGSL, PTX,
-Native — no matrix-unit lowering.
+HIP gfx11 wave32 — executes; CUDA/C sm_72+ (integer only) — compiled with NVRTC,
+never run on NVIDIA hardware, ZLUDA declines; Vulkan — integer configurations,
+executes on RADV (64-wide subgroups); Metal, OpenCL, WGSL, PTX, Native — no
+matrix-unit lowering.
 
 *(agent decision)* **Byte-plane decomposition for int32.** With `a = Σᵢ aᵢ2⁸ⁱ`,
 `b = Σⱼ bⱼ2⁸ʲ` (aᵢ, bⱼ the unsigned bytes of the two's-complement pattern),
@@ -161,8 +161,8 @@ Sarek: kernel '<name>' contains a matrix product (GEMM) that matrix units could 
   elements: <A> x <B> -> <acc> accumulator
   configuration: 16x16x16 <cfg> subgroup (<direct | operands rounded to float16 | byte planes>)
   HIP gfx11 (wave32): executes
-  CUDA sm_70+ / sm_72+: compile-only, launch refused (no device probe)
-  Vulkan: <none | when the device advertises this configuration>
+  CUDA/C sm_70+ / sm_72+: <none | compiled (NVRTC), never run on NVIDIA hardware; ZLUDA declines>
+  Vulkan: <none | executes (RADV, 64-wide subgroups)>
   Metal, OpenCL, WGSL, PTX, Native: no matrix-unit lowering
   accuracy: <exact | relaxed ... opt-in>
   No code was changed. Silence with [@alert "-sarek_matrix"] on the kernel expression or its binding.

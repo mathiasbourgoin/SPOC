@@ -44,7 +44,11 @@ that need the original. `Sarek_matrix.run` keeps its PR 2 signature on top.
 | `Exact` | rewritten (bit-identical) | original | original |
 | `Auto` (default) | rewritten | rewritten after `accept_automatic_float_rewrite` + `accept_relaxed_accumulation` | rewritten after `accept_automatic_float_rewrite` + `accept_operand_rounding` (+ relaxed); precision: the requested one, else float16 then bfloat16 if accepted (the bf16x3 split, not faster than the scalar kernel, only on request) |
 
-Devices: by default only HIP (gfx11, 32-wide waves) is rewritten. The
+Devices: by default HIP (gfx11, 32-wide waves), Vulkan (RADV, 64-wide
+subgroups) and CUDA/C (sm_72+, 32-wide warps) are rewritten; the last two the
+`int32` case only (H4: `Matrix_specialise.rewrite_backends`, `lowers_on`). The
+templates take the subgroup width from the device's cooperative-matrix probe
+(`subgroup_of`): a block is four waves of that width. The
 interpreter is rewritten only on an explicit request (`Sarek_matrix.run`,
 `run_vectors_outcome ~explicit:true`): by default it stays the independent
 oracle that differential tests compare against, and the rewrite is slower
@@ -119,7 +123,7 @@ The PPX advice (PR 1) now says what Execute does with the nest.
 ## Tests
 
 `sarek/tests/e2e/test_matrix_dynamic.ml`, every device: `Auto` and `Exact`
-rewrite int32 on the interpreter and gfx11 (bit-identical to the plain
+rewrite int32 on the interpreter, gfx11 and Vulkan (bit-identical to the plain
 launch), `Off` never; `Exact` refuses float16 even after the opt-in; float16
 64×64×64 and 256×256×1024 take `Direct`, 40×24×20 and 100×37×129 take
 `Staged`, all within γ_K; one rewritten IR for two launches; the reporter sees
