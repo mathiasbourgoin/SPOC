@@ -47,6 +47,8 @@ type 'arg launch = {
   device_id : int;
   backend : string;
   ir : kernel;
+  ir_id : int;  (** {!ir_info}[.ir_id] of [ir] *)
+  fusable : bool;  (** {!ir_info}[.fusable] of [ir] is [Ok ()] *)
   args : 'arg list;
   block : Dims.dims;
   grid : Dims.dims;
@@ -80,11 +82,13 @@ type ir_info = {
 
 type 'arg group = {
   g_device : int;
-  mutable members : 'arg launch list;  (** submission order *)
+  mutable rev_members : 'arg launch list;  (** newest first *)
   mutable size : int;
 }
 
-type fused = Fused of kernel | Refused
+let members g = List.rev g.rev_members
+
+let key_of g = List.rev_map (fun (m : _ launch) -> m.ir_id) g.rev_members
 
 type stats = {
   submitted : int;  (** JIT launches submitted through [Execute] *)
@@ -104,7 +108,8 @@ type 'arg t = {
   guard : (unit -> unit) -> unit;
   infos : ir_info Ir_table.t;
   mutable next_ir_id : int;
-  cache : (int list, fused) Hashtbl.t;
+  cache : (int list, kernel) Hashtbl.t;  (** member ir_ids -> fused kernel *)
+  refused : (int list, unit) Hashtbl.t;  (** member sequences never fused *)
   mutable stats : stats;
 }
 
@@ -134,6 +139,7 @@ let create ~int32_arg ~set_pending ~guard : 'arg t =
     infos = Ir_table.create 64;
     next_ir_id = 0;
     cache = Hashtbl.create 64;
+    refused = Hashtbl.create 8;
     stats = zero_stats;
   }
 
@@ -155,18 +161,12 @@ let enabled = Atomic.make (env_enabled ())
     Others stay immediate unless {!set_backend_enabled} opts them in. *)
 let default_backends = ["HIP"; "OpenCL"; "Vulkan"]
 
-let backends : (string, bool) Hashtbl.t =
-  let t = Hashtbl.create 8 in
-  List.iter (fun b -> Hashtbl.replace t b true) default_backends ;
-  t
-
-let backends_lock = Mutex.create ()
+(* Read on every launch: an immutable list behind an atomic, no lock. *)
+let backends : string list Atomic.t = Atomic.make default_backends
 
 (** [true] when launches on [backend] are deferred. *)
 let defers (backend : string) : bool =
-  Atomic.get enabled
-  && Mutex.protect backends_lock (fun () ->
-      Option.value ~default:false (Hashtbl.find_opt backends backend))
+  Atomic.get enabled && List.mem backend (Atomic.get backends)
 
 (** {1 Per-IR facts} *)
 
@@ -186,12 +186,6 @@ let ir_info (w : _ t) (ir : kernel) : ir_info =
           Ir_table.replace w.infos ir i ;
           i)
 
-(* Under [w.lock]. *)
-let info_locked w ir =
-  match Ir_table.find_opt w.infos ir with
-  | Some i -> i
-  | None -> invalid_arg "Launch_window: launch submitted without ir_info"
-
 (** {1 Grouping} *)
 
 let accesses_conflict a b = a.buf = b.buf && (a.write || b.write)
@@ -202,22 +196,28 @@ let conflicts (a : _ launch) (b : _ launch) =
        (fun x -> List.exists (accesses_conflict x) b.accesses)
        a.accesses
 
-let group_conflicts g l = List.exists (conflicts l) g.members
+let group_conflicts g l = List.exists (conflicts l) g.rev_members
 
-let key_of w members = List.map (fun m -> (info_locked w m.ir).ir_id) members
+let same_dims (a : Dims.dims) (b : Dims.dims) =
+  a.x = b.x && a.y = b.y && a.z = b.z
 
-(* Under [w.lock]. [l] may join [g] as its last member. *)
+(* A member of a fused group: fusable IR, no dynamic shared memory, a
+   non-empty grid. *)
+let joinable (l : _ launch) = l.fusable && l.shared_mem = 0 && l.grid.x > 0
+
+(* Under [w.lock]. [l] may join [g] as its last member. Every member of a
+   group of two or more is [joinable] with the same block and grid y/z, so
+   comparing with the newest member is enough. *)
 let compatible w g (l : _ launch) =
-  match g.members with
+  match g.rev_members with
   | [] -> false
-  | first :: _ ->
-      g.g_device = l.device_id && g.size < !max_members
-      && (info_locked w l.ir).fusable = Ok ()
-      && (info_locked w first.ir).fusable = Ok ()
-      && l.shared_mem = 0 && first.shared_mem = 0 && l.grid.x > 0
-      && first.grid.x > 0 && l.block = first.block && l.grid.y = first.grid.y
-      && l.grid.z = first.grid.z
-      && Hashtbl.find_opt w.cache (key_of w (g.members @ [l])) <> Some Refused
+  | newest :: _ ->
+      g.g_device = l.device_id && g.size < !max_members && joinable l
+      && joinable newest
+      && same_dims l.block newest.block
+      && l.grid.y = newest.grid.y && l.grid.z = newest.grid.z
+      && (Hashtbl.length w.refused = 0
+         || not (Hashtbl.mem w.refused (key_of g @ [l.ir_id])))
 
 (* Newest group [l] may join without crossing a conflicting launch. *)
 let target w (l : _ launch) =
@@ -234,40 +234,41 @@ let target w (l : _ launch) =
 
 let count_issued w n = w.stats <- {w.stats with issued = w.stats.issued + n}
 
+let refuse w key =
+  Hashtbl.replace w.refused key () ;
+  w.stats <- {w.stats with fused_refused = w.stats.fused_refused + 1}
+
 let fused_kernel w key members =
   match Hashtbl.find_opt w.cache key with
-  | Some f -> f
-  | None ->
-      let f =
-        match
-          Fusion_horizontal.fuse
-            ~name:(Printf.sprintf "sarek_hfused_%d" (Hashtbl.length w.cache))
-            (List.map (fun m -> m.ir) members)
-        with
-        | k ->
-            w.stats <- {w.stats with fused_built = w.stats.fused_built + 1} ;
-            Fused k
-        | exception Fusion_horizontal.Incompatible _ -> Refused
-      in
-      Hashtbl.replace w.cache key f ;
-      f
+  | Some k -> Some k
+  | None -> (
+      match
+        Fusion_horizontal.fuse
+          ~name:(Printf.sprintf "sarek_hfused_%d" w.stats.fused_built)
+          (List.map (fun m -> m.ir) members)
+      with
+      | k ->
+          w.stats <- {w.stats with fused_built = w.stats.fused_built + 1} ;
+          Hashtbl.replace w.cache key k ;
+          Some k
+      | exception Fusion_horizontal.Incompatible _ ->
+          refuse w key ;
+          None)
 
 (* Arguments of the fused kernel: every member's own, then (off, gdx) per
    member, matching {!Fusion_horizontal.fuse}'s parameter list. *)
 let fused_args w members =
-  let positions, _ =
-    List.fold_left
-      (fun (acc, off) m ->
-        ( acc
-          @ [
-              w.int32_arg (Int32.of_int off); w.int32_arg (Int32.of_int m.grid.x);
-            ],
-          off + m.grid.x ))
-      ([], 0)
-      members
+  let rec positions off = function
+    | [] -> ([], off)
+    | m :: rest ->
+        let tail, total = positions (off + m.grid.x) rest in
+        ( w.int32_arg (Int32.of_int off)
+          :: w.int32_arg (Int32.of_int m.grid.x)
+          :: tail,
+          total )
   in
-  ( List.concat_map (fun m -> m.args) members @ positions,
-    List.fold_left (fun s m -> s + m.grid.x) 0 members )
+  let pos, gx = positions 0 members in
+  (List.concat_map (fun m -> m.args) members @ pos, gx)
 
 let issue_singly w members =
   List.iter
@@ -278,8 +279,8 @@ let issue_singly w members =
 
 let issue_fused w key members first =
   match fused_kernel w key members with
-  | Refused -> issue_singly w members
-  | Fused k -> (
+  | None -> issue_singly w members
+  | Some k -> (
       let args, gx = fused_args w members in
       match first.issue_fused k args {first.grid with x = gx} with
       | () ->
@@ -289,16 +290,16 @@ let issue_fused w key members first =
           (* Codegen, compilation or launch of the fused kernel failed before
              it ran: issue the members as submitted and never fuse this
              sequence again (FR-013). *)
-          Hashtbl.replace w.cache key Refused ;
-          w.stats <- {w.stats with fused_refused = w.stats.fused_refused + 1} ;
+          Hashtbl.remove w.cache key ;
+          refuse w key ;
           issue_singly w members)
 
 (* Under [w.lock]. *)
 let issue_group w g =
-  match g.members with
+  match members g with
   | [] -> ()
   | [m] -> issue_singly w [m]
-  | first :: _ -> issue_fused w (key_of w g.members) g.members first
+  | first :: _ as ms -> issue_fused w (key_of g) ms first
 
 let set_counts w =
   w.n_groups <- List.length w.groups ;
@@ -340,11 +341,11 @@ let submit (w : 'arg t) (l : 'arg launch) : unit =
       w.stats <- {w.stats with submitted = w.stats.submitted + 1} ;
       (match target w l with
       | Some g ->
-          g.members <- g.members @ [l] ;
+          g.rev_members <- l :: g.rev_members ;
           g.size <- g.size + 1
       | None ->
           w.groups <-
-            w.groups @ [{g_device = l.device_id; members = [l]; size = 1}]) ;
+            w.groups @ [{g_device = l.device_id; rev_members = [l]; size = 1}]) ;
       let overflow =
         if List.length w.groups > !max_groups then
           match w.groups with
@@ -366,7 +367,7 @@ let touches (w : _ t) ~device_id ~buf : bool =
           g.g_device = device_id
           && List.exists
                (fun m -> List.exists (accesses_conflict probe) m.accesses)
-               g.members)
+               g.rev_members)
         w.groups)
 
 (** Count a launch that bypassed the window (issued immediately). *)
@@ -386,7 +387,9 @@ let reset_stats (w : _ t) : unit =
 
 (** Forget every fused kernel and refusal (the next fused group rebuilds). *)
 let clear_cache (w : _ t) : unit =
-  Mutex.protect w.lock (fun () -> Hashtbl.reset w.cache)
+  Mutex.protect w.lock (fun () ->
+      Hashtbl.reset w.cache ;
+      Hashtbl.reset w.refused)
 
 let set_enabled (w : _ t) (b : bool) : unit =
   flush w ;
@@ -394,4 +397,10 @@ let set_enabled (w : _ t) (b : bool) : unit =
 
 let set_backend_enabled (w : _ t) ~(backend : string) (b : bool) : unit =
   flush w ;
-  Mutex.protect backends_lock (fun () -> Hashtbl.replace backends backend b)
+  let rec update () =
+    let old = Atomic.get backends in
+    let rest = List.filter (fun x -> x <> backend) old in
+    let next = if b then backend :: rest else rest in
+    if not (Atomic.compare_and_set backends old next) then update ()
+  in
+  update ()
