@@ -70,7 +70,7 @@ Rules:
 - Freeing a device-only vector discards its contents. Freeing anything a pending stream operation references is refused.
 - Vector location and buffer tables are not synchronised across domains: use a vector from one domain at a time. The keep-alive ledger and the pinned registry are mutex-protected.
 
-On Metal every buffer is shared storage, so a ranged copy is one `memcpy`. Launches are batched into one command buffer per queue, committed when the previous command buffer has completed or once the batch holds `SPOC_METAL_BATCH` dispatches (default 32), and otherwise by the next launch, wait, event record or synchronisation. A host access to a buffer first waits for the pending command buffers that bind it. A buffer larger than the device's `maxBufferLength` is refused with an error naming the limit.
+On Metal every buffer is shared storage, so a ranged copy is one `memcpy`. Launches are batched into one command buffer per queue, committed when the previous command buffer has completed or once the batch holds `SPOC_METAL_BATCH` dispatches (default 32), and otherwise by the next launch, wait, event record or synchronisation. A host access to a buffer first waits for the pending command buffers that bind it. A buffer larger than the device's `maxBufferLength` is refused with an error naming the limit. On Vulkan launches are also batched (`SPOC_VULKAN_BATCH`, default 32 dispatches per command buffer); every host access to a vector and every buffer release first completes the pending launches.
 
 ## Streams and events
 

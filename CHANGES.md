@@ -520,6 +520,27 @@
   is opted in for the "on" runs). The `e2e-hip-bench` alias no longer includes
   it; `make bench-launch-window` runs it.
 
+- Vulkan kernel launches are asynchronous. A launch appends its dispatch to the
+  stream's open command buffer and returns; the buffer is submitted once it
+  holds `SPOC_VULKAN_BATCH` dispatches (default 32), when another stream of the
+  device launches, and at every synchronisation point. A stream has two command
+  buffers, so one records while the other runs. Each dispatch has its own
+  descriptor set (per-batch pools, so one kernel can appear several times in a
+  batch) and a compute memory barrier before it. Every host access to device
+  memory, `Memory.free`, `Stream.synchronize`, `Device.synchronize`,
+  kernel-cache eviction and device destruction first complete the pending
+  launches, and `Event.record` submits them. Before, every launch recorded,
+  submitted and waited for its own command buffer. A failed submission or wait
+  now raises `kernel_launch_failed` naming the batch's kernels at the first
+  wait, not at the launch. `SPOC_VULKAN_BATCH=1` restores submit-and-wait per
+  launch. On an RX 7900 XTX (RADV, Mesa 26.1.4), `SPOC_VULKAN_BATCH=1` against
+  the default: host cost of a launch 59 us against 6.6 us (3 arguments) and
+  60 us against 8.2 us (10 arguments); a 24-layer decode-like chain 32 ms
+  against 3.6 ms per token with the launch window off and 23 ms against 3.2 ms
+  with it on (medians of 5 interleaved pairs, load average about 10,
+  provisional). Results are bit-identical with the launch window on and off.
+  Spec `specs/vulkan-async-launches.md`.
+
 - The staged matrix rewrite (`Sarek_matrix_rewrite`) keeps B in shared memory
   transposed (`[n][k]`) and loads its fragments column-major, and each thread
   stages 8 consecutive k (reads, conversions, then contiguous stores). On

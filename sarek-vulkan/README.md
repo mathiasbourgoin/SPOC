@@ -366,17 +366,30 @@ Vulkan.Kernel.launch kernel
   ~stream:None
 ```
 
-`launch` blocks until the dispatch completes. Submissions to a device's queue
-are serialized by a per-device lock. That alone does not make the backend
-multi-domain safe: the default stream, the default-stream table, the device
-command pool used for transfers and the lazily bound Vulkan entry points are
-not guarded. Launches from several domains are supported only on distinct
-streams created with `Stream.create`, after a first use of the backend from
-one domain; the default stream (`~stream:None`) is single-domain. A kernel
-object owns a single descriptor set, rewritten by each launch, so a kernel
-object must not be launched from two domains at once either.
+`launch` is asynchronous: it appends the dispatch to the stream's open command
+buffer and returns. The buffer is submitted when it holds `SPOC_VULKAN_BATCH`
+dispatches (default 32; `1` submits and waits at every launch, as before), when
+another stream of the device launches, and at every synchronisation point:
+`Stream.synchronize`, `Device.synchronize`, `Event.record`, any host access to
+device memory (`Memory.host_to_device`, `device_to_host`, the `_ptr` variants
+and every staging copy), `Memory.free`, kernel-cache eviction and device
+destruction. Each dispatch gets its own descriptor set (from a pool reset when
+its command buffer's fence is waited for) and a compute-to-compute memory
+barrier is recorded before it, so a kernel object may appear several times in
+one batch with different arguments. A failed submission or wait raises
+`Kernel_launch_failed` naming the batch's kernels at the first wait, not at the
+launch (see `specs/vulkan-async-launches.md`).
 
-Fence waits (launch, `Stream.synchronize`, `Event.synchronize`) are unbounded:
+Launch batches are guarded by a per-device lock, and submissions to the queue by
+the queue lock. That alone does not make the backend fully multi-domain safe:
+the default-stream table, the device command pool used for transfers and the
+lazily bound Vulkan entry points are not guarded. Launches from several domains
+are supported only on streams created with `Stream.create`, after a first use of
+the backend from one domain; the default stream (`~stream:None`) is
+single-domain. A domain that waits holds the device lock, so other domains'
+launches on that device queue behind the wait.
+
+Fence waits (a synchronisation point, a reused command buffer, `Event.synchronize`) are unbounded:
 they return when the work completes and raise only on a device error, with a
 warning logged every 60 s. `SPOC_VULKAN_FENCE_TIMEOUT_S=<seconds>` bounds them
 and makes an expired wait raise `Synchronization_failed`; it is meant for tests

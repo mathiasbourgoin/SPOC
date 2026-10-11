@@ -18,8 +18,9 @@ Test and benchmark programs read further variables of their own (for example `SA
 | Exactly `0`, `false`, `off` or `no` (lowercase) switches off; anything else leaves it on | `SAREK_LAUNCH_WINDOW`, `SAREK_LAUNCH_EPILOGUE` |
 | `1`, `true` or `yes` (lowercase) switches on | `SAREK_PPX_DEBUG` |
 | A mode name, case-insensitive; an unknown value warns once | `SAREK_MATRIX_REWRITE` |
-| A positive number (surrounding spaces ignored, except for `SPOC_METAL_BATCH`); an invalid value falls back to the default without a message | `SAREK_DOMAIN_COUNT`, `SAREK_CPU_POOL_MAX_DOMAINS`, `SAREK_CPU_POOL_IDLE_MS`, `SPOC_METAL_BATCH` |
-| A positive number; an invalid value is an error | `SPOC_VULKAN_FENCE_TIMEOUT_S` |
+| A positive number (surrounding spaces ignored, except for `SPOC_METAL_BATCH` and `SPOC_VULKAN_BATCH`); an invalid value falls back to the default without a message | `SAREK_DOMAIN_COUNT`, `SAREK_CPU_POOL_MAX_DOMAINS`, `SAREK_CPU_POOL_IDLE_MS`, `SPOC_METAL_BATCH`, `SPOC_VULKAN_BATCH` |
+| A positive number; an invalid value is an error | `SPOC_VULKAN_BATCH` | integer >= 1 | `32` | start | Most dispatches one Vulkan command buffer collects before it is submitted. `1` submits and waits for every launch, and a failed launch then raises at the launch instead of at the first wait. |
+| `SPOC_VULKAN_FENCE_TIMEOUT_S` |
 | Set to anything, even empty | `SPOC_GPU_STATS` |
 
 So `SPOC_DISABLE_GPU=true` and `SAREK_LAUNCH_WINDOW=OFF` do nothing.
@@ -41,7 +42,7 @@ So `SPOC_DISABLE_GPU=true` and `SAREK_LAUNCH_WINDOW=OFF` do nothing.
 | `SPOC_METAL_BATCH` | integer >= 1 | `32` | start | Most dispatches one Metal command buffer collects before it is committed while the GPU is still busy. |
 | `SPOC_VULKAN_FENCE_TIMEOUT_S` | positive number of seconds | unset (no bound) | start; a malformed value is refused when a Vulkan device is created | Bounds how long Vulkan waits for submitted work; meant as a hang detector in tests. |
 
-Device selection is explained in [Device and backend selection](device_selection.html); the Metal batch in [Memory and transfers](memory.html); the fence bound in the [Vulkan README](https://github.com/mathiasbourgoin/Sarek/blob/main/sarek-vulkan/README.md).
+Device selection is explained in [Device and backend selection](device_selection.html); the Metal batch in [Memory and transfers](memory.html); the Vulkan batch in [Launch window and fusion](performance.html); the fence bound in the [Vulkan README](https://github.com/mathiasbourgoin/Sarek/blob/main/sarek-vulkan/README.md).
 
 ## Launch window and fusion
 
