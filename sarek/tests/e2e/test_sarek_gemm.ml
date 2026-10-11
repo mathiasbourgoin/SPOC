@@ -69,6 +69,7 @@ let sgemm_naive_kernel =
         done ;
         c.((row * n) + col) <- (alpha *. sum) +. (beta *. c.((row * n) + col))
       end]
+[@@alert "-sarek_matrix"]
 
 let ir_of (_, kirc) =
   match kirc.Sarek.Kirc_types.body_ir with

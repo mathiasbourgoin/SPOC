@@ -71,7 +71,7 @@ let matmul_naive_kernel =
         done ;
         c.((row * n) + col) <- sum
       end]
-[@@warning "-33"]
+[@@alert "-sarek_matrix"] [@@warning "-33"]
 
 (** Run benchmark for one device and size *)
 let benchmark_device dev size config =

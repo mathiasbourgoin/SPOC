@@ -67,7 +67,7 @@ let matrix_mul_kernel =
         done ;
         c.((row * n) + col) <- sum
       end]
-[@@warning "-33"]
+[@@alert "-sarek_matrix"] [@@warning "-33"]
 
 (** Matrix multiplication kernel (tiled with shared memory) *)
 let matrix_mul_tiled_kernel =
