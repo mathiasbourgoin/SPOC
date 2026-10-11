@@ -104,7 +104,7 @@ test_interpreter:
 # Sarek_convergence.ml's TESuperstep case). This is a sarek/ppx bug, out of
 # scope for this task (tests-only mandate), so it is reported as a non-blocking
 # KNOWN-ISSUE rather than silently marked PASS or used to fail the whole
-# target. See briefs/make-tests-actually-run-impl-notes.md for detail.
+# target.
 test_negative:
 	@echo "=== Negative tests (expected compile errors) ==="
 	@echo "Testing type mismatch detection..."
