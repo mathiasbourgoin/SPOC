@@ -57,6 +57,8 @@ let rec has_target ~is_target s =
   match s with
   | SAssign (LArrayElem (a, _), _) -> is_target a
   | SAssign (LArrayElemExpr (EVar v, _), _) -> is_target v.var_name
+  | SAssign (LRecordField (lv, _), x) -> go (SAssign (lv, x))
+  | SCoopmat (CM_store {dst; _}) -> is_target dst
   | SReturn _ -> true
   | SSeq ss -> List.exists go ss
   | SIf (_, t, f) -> go t || Option.fold ~none:false ~some:go f
@@ -137,6 +139,7 @@ type state = {
   mutable bz : int;
   dims : int array;  (** block x y z, grid x y z *)
   mutable stop : bool;  (** the thread executed [return] *)
+  mutable steps : int;  (** loop iterations and threads so far, this run *)
 }
 
 type cenv = {
@@ -248,7 +251,14 @@ type cstmt = state -> unit
 let seq (fs : cstmt list) : cstmt =
  fun s -> List.iter (fun f -> if not s.stop then f s) fs
 
-let max_steps = 1 lsl 30
+(* Work bound for one [run] (loop iterations plus threads): the evaluation
+   happens while the launch window is locked. Beyond it, the answer is
+   unknown, so nothing is merged. *)
+let max_steps = 1 lsl 26
+
+let tick s =
+  s.steps <- s.steps + 1 ;
+  if s.steps > max_steps then unknown "evaluation budget exceeded"
 
 let rec cstmt ~is_target ~record env rel st : cstmt =
   let c = cstmt ~is_target ~record env rel in
@@ -269,6 +279,10 @@ let rec cstmt ~is_target ~record env rel st : cstmt =
         fun s -> record (i s)
     | SAssign (LArrayElemExpr (EVar v, _), _) when is_target v.var_name ->
         unknown "store through an array expression"
+    | SAssign (LRecordField _, _) | SCoopmat (CM_store _) ->
+        (* Only plain element stores to the target are counted; any other
+           store form to it makes the evaluation unknown. *)
+        unknown "store to a field or a cooperative-matrix tile"
     | SAssign (LVar v, e) ->
         let k = slot v and e = cexpr env e in
         fun s -> s.slots.(k) <- e s
@@ -290,11 +304,9 @@ let rec cstmt ~is_target ~record env rel st : cstmt =
     | SWhile (cond, b) ->
         let cond = cexpr env cond and b = c b in
         fun s ->
-          let n = ref 0 in
           while (not s.stop) && cond s <> 0l do
             b s ;
-            incr n ;
-            if !n > max_steps then unknown "loop too long"
+            tick s
           done
     | SFor (v, lo, hi, dir, b) ->
         let k = slot v
@@ -311,6 +323,7 @@ let rec cstmt ~is_target ~record env rel st : cstmt =
           do
             s.slots.(k) <- Int32.of_int !i ;
             b s ;
+            tick s ;
             i := !i + step
           done
     | SPragma (_, b) | SBlock b -> c b
@@ -359,6 +372,7 @@ let run ?(bind = []) ~is_target ~record ~scalars ~dims body : string list =
       bz = 0;
       dims = [|bx; by; bz; gx; gy; gz|];
       stop = false;
+      steps = 0;
     }
   in
   for gk = 0 to gz - 1 do
@@ -374,6 +388,7 @@ let run ?(bind = []) ~is_target ~record ~scalars ~dims body : string list =
               s.ty <- tj ;
               s.tz <- tk ;
               s.stop <- false ;
+              tick s ;
               List.iter (fun (k, v) -> s.slots.(k) <- v) bound ;
               code s
             done

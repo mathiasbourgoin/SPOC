@@ -22,6 +22,7 @@
  (libraries
   sarek_execute
   sarek_codegen
+  sarek_interp
   unix
   sarek_ir
   spoc_core

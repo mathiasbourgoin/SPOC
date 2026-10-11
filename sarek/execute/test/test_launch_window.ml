@@ -1082,8 +1082,8 @@ let test_consumer_shape () =
             ECast (TFloat32, gpu "thread_idx_x") ))) ;
   refused "not element-wise" k_prod
 
-let epilogue_pair ~cons_block =
-  reset () ;
+let epilogue_pair ?(fresh = true) ~cons_block () =
+  if fresh then reset () else Execute.Window.flush () ;
   Execute.Window.set_epilogue_backend ~backend:backend_name true ;
   let[@warning "-8"] [x; t; y] = resident 3 in
   events := [] ;
@@ -1106,7 +1106,7 @@ let epilogue_pair ~cons_block =
   launches ()
 
 let test_epilogue_merged () =
-  match epilogue_pair ~cons_block:64 with
+  match epilogue_pair ~cons_block:64 () with
   | [l] ->
       check
         bool
@@ -1121,11 +1121,11 @@ let test_epilogue_uncovered () =
     (list string)
     "not merged"
     ["launch k_prod gx=1 nargs=5"; "launch k_cons gx=1 nargs=5"]
-    (epilogue_pair ~cons_block:128)
+    (epilogue_pair ~cons_block:128 ())
 
 let test_epilogue_failure_falls_back () =
   fail_epi := true ;
-  let ls = epilogue_pair ~cons_block:64 in
+  let ls = epilogue_pair ~cons_block:64 () in
   fail_epi := false ;
   check
     (list string)
@@ -1136,7 +1136,7 @@ let test_epilogue_failure_falls_back () =
     (list string)
     "never merged again"
     ["launch k_prod gx=1 nargs=5"; "launch k_cons gx=1 nargs=5"]
-    (epilogue_pair ~cons_block:64)
+    (epilogue_pair ~fresh:false ~cons_block:64 ())
 
 let test_epilogue_off_by_default () =
   reset () ;
@@ -1146,6 +1146,262 @@ let test_epilogue_off_by_default () =
     false
     (Execute.Window.epilogue_on backend_name) ;
   check bool "HIP on by default" true (Execute.Window.epilogue_on "HIP")
+
+(* {2 Review round (epilogue)} *)
+
+let tid = gpu "thread_idx_x"
+
+let store_at arr idx v = SAssign (LArrayElem (arr, idx), v)
+
+(* a.(tid) <- src (tid < n); b.(tid) <- src (tid < m). *)
+let two_out =
+  let n = ivar 3 "n" and m = ivar 4 "m" in
+  {
+    default_kernel with
+    kern_name = "two_out";
+    kern_params =
+      [
+        DParam (fvar 1 "src", arr);
+        DParam (fvar 5 "a", arr);
+        DParam (fvar 6 "b", arr);
+        DParam (n, None);
+        DParam (m, None);
+      ];
+    kern_body =
+      SSeq
+        [
+          SIf
+            ( EBinop (Lt, tid, EVar n),
+              store_at "a" tid (EArrayRead ("src", tid)),
+              None );
+          SIf
+            ( EBinop (Lt, tid, EVar m),
+              store_at "b" tid (EArrayRead ("src", tid)),
+              None );
+        ];
+  }
+
+(* The coverage verdict depends on which output is consumed (review B1). *)
+let test_coverage_per_array () =
+  reset () ;
+  Execute.Window.set_epilogue_backend ~backend:backend_name true ;
+  let pair consumed =
+    let[@warning "-8"] [x; a; b; y] = resident 4 in
+    events := [] ;
+    Execute.run_vectors
+      ~device:dev
+      ~ir:two_out
+      ~args:
+        [
+          Execute.Vec x;
+          Execute.Vec a;
+          Execute.Vec b;
+          Execute.Int 64;
+          Execute.Int 32;
+        ]
+      ~block:(Execute.dims1d 64)
+      ~grid:(Execute.dims1d 1)
+      () ;
+    let t = if consumed = "a" then a else b in
+    Execute.run_vectors
+      ~device:dev
+      ~ir:k_cons
+      ~args:[Execute.Vec y; Execute.Vec t; Execute.Int 64]
+      ~block:(Execute.dims1d 64)
+      ~grid:(Execute.dims1d 1)
+      () ;
+    Execute.Window.flush () ;
+    List.length (launches ())
+  in
+  check int "a is stored on [0, 64): merged" 1 (pair "a") ;
+  check int "b only on [0, 32): not merged" 2 (pair "b") ;
+  Execute.Window.set_epilogue_backend ~backend:backend_name false
+
+(* Each element stored twice: not merged. *)
+let test_duplicate_stores () =
+  let halves =
+    {
+      k_prod with
+      kern_body =
+        store_at
+          "dst"
+          (EBinop (Div, tid, EConst (CInt32 2l)))
+          (EArrayRead ("src", tid));
+    }
+  in
+  reset () ;
+  Execute.Window.set_epilogue_backend ~backend:backend_name true ;
+  let[@warning "-8"] [x; t; y] = resident 3 in
+  events := [] ;
+  Execute.run_vectors
+    ~device:dev
+    ~ir:halves
+    ~args:[Execute.Vec x; Execute.Vec t; Execute.Int 64]
+    ~block:(Execute.dims1d 64)
+    ~grid:(Execute.dims1d 1)
+    () ;
+  Execute.run_vectors
+    ~device:dev
+    ~ir:k_cons
+    ~args:[Execute.Vec y; Execute.Vec t; Execute.Int 32]
+    ~block:(Execute.dims1d 32)
+    ~grid:(Execute.dims1d 1)
+    () ;
+  Execute.Window.flush () ;
+  Execute.Window.set_epilogue_backend ~backend:backend_name false ;
+  check int "two launches" 2 (List.length (launches ()))
+
+let consumer_of name ~src ~dst ~add =
+  let i = ivar 20 "i" and n = ivar 21 "n" in
+  {
+    default_kernel with
+    kern_name = name;
+    kern_params =
+      [DParam (fvar 22 dst, arr); DParam (fvar 23 src, arr); DParam (n, None)];
+    kern_body =
+      SLet
+        ( i,
+          gpu "global_thread_id",
+          SIf
+            ( EBinop (Lt, EVar i, EVar n),
+              store_at
+                dst
+                (EVar i)
+                (EBinop (Add, EArrayRead (src, EVar i), EConst (CFloat32 add))),
+              None ) );
+  }
+
+let fbits v =
+  Array.init (Vector.length v) (fun i -> Int32.bits_of_float (Vector.get v i))
+
+(* A chain P -> C1 -> C2 run on the Interpreter, which keys variables by id
+   (review S1: C1's guard used to read C2's [tc]). *)
+let test_chain_on_interpreter () =
+  let c1 = consumer_of "c1" ~src:"dst" ~dst:"o1" ~add:1.0
+  and c2 = consumer_of "c2" ~src:"o1" ~dst:"o2" ~add:100.0 in
+  let fuse = Sarek_execute.Fusion_epilogue.fuse in
+  let pc1 =
+    fuse
+      ~name:"pc1"
+      ~producer:k_prod
+      ~p_array:"dst"
+      ~consumer:c1
+      ~shared:[("dst", "dst")]
+  in
+  let pc12 =
+    fuse
+      ~name:"pc12"
+      ~producer:pc1
+      ~p_array:"c_o1"
+      ~consumer:c2
+      ~shared:[("o1", "c_o1")]
+  in
+  let zeros () =
+    let v = vec () in
+    for i = 0 to Vector.length v - 1 do
+      Vector.set v i 0.0
+    done ;
+    v
+  in
+  let mk () = (zeros (), zeros (), zeros (), zeros ()) in
+  let fill v =
+    for i = 0 to Vector.length v - 1 do
+      Vector.set v i (float_of_int i)
+    done
+  in
+  let interp ir args =
+    Execute.run_interpreter_vectors
+      ~ir
+      ~args
+      ~block:(Execute.dims1d 8)
+      ~grid:(Execute.dims1d 1)
+      ~parallel:false
+  in
+  let src, d, o1, o2 = mk () in
+  fill src ;
+  interp k_prod [Execute.Vec src; Execute.Vec d; Execute.Int 8] ;
+  interp c1 [Execute.Vec o1; Execute.Vec d; Execute.Int 8] ;
+  interp c2 [Execute.Vec o2; Execute.Vec o1; Execute.Int 4] ;
+  let src', d', o1', o2' = mk () in
+  fill src' ;
+  (* pc12 params: P's (src, dst, n), C1's unshared (o1, n), tc1, then C2's
+     unshared (o2, n), tc2. *)
+  interp
+    pc12
+    [
+      Execute.Vec src';
+      Execute.Vec d';
+      Execute.Int 8;
+      Execute.Vec o1';
+      Execute.Int 8;
+      Execute.Int 8;
+      Execute.Vec o2';
+      Execute.Int 4;
+      Execute.Int 4;
+    ] ;
+  check bool "o1 equal" true (fbits o1 = fbits o1') ;
+  check bool "o2 equal" true (fbits o2 = fbits o2')
+
+(* Two store sites to the intermediate each get their own scope (review S2),
+   and a consumer with helper functions is refused (review B2). *)
+let test_store_sites_and_helpers () =
+  let two_sites =
+    {
+      k_prod with
+      kern_body =
+        SSeq
+          [
+            store_at
+              "dst"
+              (EBinop (Mul, tid, EConst (CInt32 2l)))
+              (EArrayRead ("src", tid));
+            store_at
+              "dst"
+              (EBinop
+                 (Add, EBinop (Mul, tid, EConst (CInt32 2l)), EConst (CInt32 1l)))
+              (EArrayRead ("src", tid));
+          ];
+    }
+  in
+  let fused =
+    Sarek_execute.Fusion_epilogue.fuse
+      ~name:"two_sites"
+      ~producer:two_sites
+      ~p_array:"dst"
+      ~consumer:k_cons
+      ~shared:[("t", "dst")]
+  in
+  let rec blocks = function
+    | SBlock (SLet (v, _, _)) when v.var_name = "ep_t" -> 1
+    | SSeq ss -> List.fold_left (fun n s -> n + blocks s) 0 ss
+    | SIf (_, t, f) -> blocks t + Option.fold ~none:0 ~some:blocks f
+    | SLet (_, _, b)
+    | SLetMut (_, _, b)
+    | SBlock b
+    | SPragma (_, b)
+    | SWhile (_, b)
+    | SFor (_, _, _, _, b) ->
+        blocks b
+    | _ -> 0
+  in
+  check int "two scoped store sites" 2 (blocks fused.kern_body) ;
+  let with_helper =
+    {
+      k_cons with
+      kern_funcs =
+        [
+          {
+            hf_name = "f";
+            hf_params = [ivar 30 "v"];
+            hf_ret_type = TInt32;
+            hf_body = SReturn (EVar (ivar 30 "v"));
+          };
+        ];
+    }
+  in
+  match Sarek_execute.Fusion_epilogue.consumer with_helper with
+  | Ok _ -> fail "a consumer with helper functions must be refused"
+  | Error _ -> ()
 
 let () =
   run
@@ -1230,6 +1486,13 @@ let () =
           test_case "not merged when uncovered" `Quick test_epilogue_uncovered;
           test_case "default backends" `Quick test_epilogue_off_by_default;
           test_case "failure falls back" `Quick test_epilogue_failure_falls_back;
+          test_case "coverage per array" `Quick test_coverage_per_array;
+          test_case "duplicate stores" `Quick test_duplicate_stores;
+          test_case "chain on the interpreter" `Quick test_chain_on_interpreter;
+          test_case
+            "store sites and helpers"
+            `Quick
+            test_store_sites_and_helpers;
         ] );
       ( "errors",
         [
