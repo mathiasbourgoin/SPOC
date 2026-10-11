@@ -30,12 +30,12 @@ Epilogue and element-wise vertical fusion are the next spec.
 
 | Q | A |
 |---|---|
-| Which launches are deferred? | `Execute.run`'s JIT path with no `~stream`, on a backend whose window is enabled. `run_vectors` goes through it. Stream launches, `run_source`, `Soa_launch`, raw `Kernel` launches and Direct/Custom backends (Native, Interpreter) are never deferred: they flush the window first, then run as before. |
+| Which launches are deferred? | `Execute.run`'s JIT path with no `~stream`, on a backend whose window is enabled, on a non-CPU device. `run_vectors` goes through it. Stream launches, `run_source`, `Soa_launch` and raw `Kernel` launches are never deferred: they flush the window first, then run as before. Direct/Custom backends (Native, Interpreter) are never deferred either. They do not flush, because they touch other devices' data only through transfers, and transfers flush. CPU devices are excluded (review round 1): OpenCL allocates zero-copy buffers there, and those alias host memory and each other. |
 | What is a synchronisation point? | Any operation that moves data between host and device, orders or observes device work, or launches outside the window. See FR-002 for the list. |
-| What do errors look like? | Argument checks, capability checks and source generation still run in the `run`/`run_vectors` call and raise there. Device compilation and the driver launch happen when the launch is issued. An error there is raised by the call that triggered the flush (documented on `run_vectors`). |
-| What does "bit-identical by construction" mean for horizontal fusion? | No value flows between members. Work-group `b` of the fused kernel runs, unchanged, the code that work-group `b - off_k` of member `k` ran. The only changes are the work-group index and grid size it observes, which are rewritten back to the member's own values. No arithmetic is added, removed, reordered or brought next to another member's arithmetic, so no backend can contract or reassociate across members. It is therefore default-on wherever the window is. |
+| What do errors look like? | These all still run in the `run`/`run_vectors` call and raise there: argument checks, capability checks, source generation, and argument expansion (buffer lookup, length range, source language). Device compilation and the driver launch happen when the launch is issued. An error there is raised by the call that triggered the flush (documented on `run`). A window overflow issues the oldest group before the new launch is accepted. If that raises, the new call fails and its own launch is not made. At exit, a failed deferred launch is reported on stderr. |
+| What does "bit-identical by construction" mean for horizontal fusion? | No value flows between members. Work-group `b` of the fused kernel runs, unchanged, the code that work-group `b - off_k` of member `k` ran. The only change is the work-group index it observes, which is rewritten back to the member's own value, along with the global ids derived from it. The rewritten forms keep the backend's own integer type. No arithmetic is added, removed, reordered or brought next to another member's arithmetic, so no backend can contract or reassociate across members. It is therefore default-on wherever the window is. A member that reads `grid_dim_x` is refused (review round 2): the backends type it unsigned and a parameter would be `int`. The `block_id_x` alias, position intrinsics under another module path, free variables and shared arrays of non-constant size are refused too. |
 | Which backends get the window by default? | HIP, OpenCL and Vulkan, the three that can be exercised on this machine. CUDA, Metal and WebGPU stay immediate: CUDA has no NVIDIA GPU here, ladon is off limits for Metal, and WebGPU codegen is not wired. They can opt in with `Launch_window.set_backend_enabled`. This follows the owner rule: untested means risky, and risky means opt-in. |
-| How are dependencies decided? | Each vector parameter is classified as read and/or written from the IR. Element reads and writes count, and so do atomics and any use the analysis cannot classify, which count as both. Each bound argument is mapped to its device byte range `[ptr, ptr + bytes)`. Two launches conflict if a range of one overlaps a range of the other and at least one of the two accesses writes. Vector identity is not used, so aliasing through the same buffer is still caught. |
+| How are dependencies decided? | Each vector parameter is classified as read and/or written from the IR. Element reads and writes count; atomics, an element passed to an atomic, and any use the analysis cannot classify count as both. Each bound argument is identified by its vector. Every device buffer belongs to exactly one vector, because only `Transfer.ensure_buffer` installs buffers, so on one device two arguments share memory exactly when they are the same vector. CPU devices are the exception, since their zero-copy buffers can alias, and they are not deferred. Device addresses cannot be used: Vulkan reports none, and OpenCL reports object handles. Two launches conflict when they bind the same vector on the same device and at least one of the two accesses writes. An upload issues the pending launches first, but only when one of them binds the vector being uploaded. |
 | Can launches be reordered? | Yes. A launch may join an earlier pending group only if it conflicts with no launch in that group or in any later group. Independent launches commute. |
 | How long can the GPU be kept waiting? | At most `max_groups` pending groups (default 8). A new group beyond that issues the oldest one, so deferral is bounded by a few launches' worth of host time. |
 | How is the fused kernel cached? | By the list of member IRs (physical identity, in order). Dimensions are parameters of the fused kernel, not constants, so one fused IR serves every grid size. It is a stable physical value, so #424's codegen memo and the backend compile cache hit on every replay. |
@@ -134,13 +134,13 @@ and count launches.
   - `Execute.run_source` and stream launches;
   - `Soa_launch.run_soa`;
   - device destroy and cache clear.
-- **FR-003** [US-1, US-2]: Issue order MUST respect every conflict
-  (overlapping device byte ranges with at least one write) between launches in
-  submission order.
+- **FR-003** [US-1, US-2]: Issue order MUST respect every conflict (the same
+  vector bound on the same device, with at least one write) between launches
+  in submission order.
 - **FR-004** [US-1]: At most `max_groups` groups MAY be pending (default 8). Each
   group holds at most `max_members` launches (default 8).
-- **FR-005** [US-2]: Argument checks, capability checks and source generation
-  MUST run in the submitting call.
+- **FR-005** [US-2]: Argument checks, capability checks, source generation
+  and argument expansion MUST run in the submitting call.
 - **FR-006** [US-2]: If issuing a group raises, the flush MUST still issue every
   other pending group, then re-raise the first exception.
 - **FR-007** [US-2]: The window MUST be safe under concurrent submission and
@@ -151,7 +151,10 @@ and count launches.
   - they have equal block dimensions and equal grid y and z;
   - none has dynamic shared memory;
   - they are pairwise conflict-free;
-  - every member IR is fusable (C-6, C-8).
+  - every member IR is fusable (C-6, C-8);
+  - the summed grid x stays within the device's limit and int32, and the
+    summed static shared memory stays within the device's per-work-group
+    limit.
 - **FR-011** [US-1]: In the fused kernel, work-group `b` with
   `off_k <= b < off_k + gx_k` MUST execute member k's body with `block_idx_x`
   read as `b - off_k` and `grid_dim_x` as `gx_k` (and the derived global index
@@ -164,7 +167,7 @@ and count launches.
   fused again.
 #### Control
 - **FR-020** [US-3]: The window MUST be enabled by default on HIP, OpenCL and
-  Vulkan only. `SAREK_LAUNCH_WINDOW=0` MUST disable it globally.
+  Vulkan only, and never on CPU devices. `SAREK_LAUNCH_WINDOW=0` MUST disable it globally.
   `Launch_window.set_enabled` and `set_backend_enabled` MUST control it at run
   time (each first flushes).
 - **FR-021** [US-3]: `Launch_window.stats` MUST report submitted launches, issued
@@ -185,7 +188,7 @@ and count launches.
 
 ## Edge Cases
 
-- EC-1: the same vector bound to two parameters of one launch → handled by range overlap.
+- EC-1: the same vector bound to two parameters of one launch → the same buffer identity, so a write conflicts.
 - EC-2: a launch whose IR is not fusable → its own group, still deferred.
 - EC-3: grid x = 0 for a member → never fused (issued alone).
 - EC-4: window full → the oldest group is issued.
@@ -237,3 +240,30 @@ and count launches.
 - `group`: pending launches that will be issued as one backend launch (one member → the original kernel).
 - `access`: (device byte range, read, write) for one bound vector argument.
 - `fused kernel cache`: member-IR sequence → fused IR, or refused.
+
+## Review outcomes (2026-10-11)
+
+Two reviews ran: one on semantics and concurrency, one on the IR rewrite.
+They found the following, now fixed and tested:
+
+- **Shadowed position parameters.** A member local named `off` captured the
+  position parameter. On HIP this caused a GPU memory fault, reproduced by
+  mutation.
+- **Flush visibility.** The pending count dropped to 0 before the flush
+  ended, so another domain's sync point could go ahead too early.
+- **Overflow failure.** When an overflow failed, the triggering call was left
+  half-done.
+- **Fallback.** When one member of a fused group failed, the members after it
+  were dropped.
+- **CPU zero-copy aliasing.**
+- **Device destroy.** Destroying a device flushed after eviction, which
+  re-created the device.
+- **`grid_dim_x` signedness.**
+- **Missing limit checks** for grid size and shared memory.
+- **Atomics.** An atomic on an element was counted as read-only.
+- **Error timing.** Argument expansion errors were raised late.
+
+The implementation also uncovered a pre-existing ctypes lifetime bug in
+the hiprtc and nvrtc option arrays: the option strings could be freed before
+the compile call. It is fixed in this PR. `test_hip_f16` was red with the
+window on before the fix.

@@ -23,10 +23,15 @@
   two stages is raised by the call that flushed the window. If a fused kernel
   fails, its members are issued one by one.
 
-  Controls: `Execute.Window.set_enabled` / `set_backend_enabled` / `flush` /
-  `stats`, and `SAREK_LAUNCH_WINDOW=0` to turn the window off. CUDA, Metal,
-  WebGPU, Native and Interpreter launches stay immediate (opt-in for the GPU
-  backends).
+  Controls: `Execute.Window.set_enabled`, `set_backend_enabled`, `flush` and
+  `stats`; `SAREK_LAUNCH_WINDOW=0` turns the window off. These launches stay
+  immediate:
+  - CUDA, Metal and WebGPU (each can opt in);
+  - CPU devices, whose zero-copy buffers alias;
+  - Native and Interpreter.
+
+  A kernel is never fused if it reads `grid_dim_x`, uses intrinsics from
+  outside `Sarek_stdlib`, or declares shared memory of non-constant size.
 
   `bench_launch_window` on an RX 7900 XTX runs a decode-like chain of 24
   layers × 18 launches. Window off vs on, 5 interleaved repetitions, median
@@ -258,6 +263,12 @@
   the injected length used to wrap silently.
 
 ### Fixed
+
+- hiprtc and nvrtc option arrays: `CArray.of_list string` let the C copies of
+  the option strings be freed before the compile call. Under a different
+  allocation pattern hiprtc read a garbage option ("error reading '8{...'"),
+  and `test_hip_f16` failed deterministically with the launch window on. The
+  strings are now explicit char arrays, kept alive until the call returns.
 
 - Ranged-copy range checks no longer overflow: `copy_to_device`,
   `copy_bytes_to_device`, `copy_ptr_to_device`, `copy_to_host`,
