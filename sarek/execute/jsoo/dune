@@ -29,6 +29,8 @@
 
 (copy_files "../Fusion_epilogue.ml")
 
+(copy_files "../Launch_limits.ml")
+
 (copy_files "../Launch_window.ml")
 
 (copy_files "../Launch_epilogue.ml")
@@ -48,6 +50,7 @@
   Ir_rename
   Fusion_horizontal
   Fusion_epilogue
+  Launch_limits
   Launch_window
   Matrix_specialise
   Launch_epilogue

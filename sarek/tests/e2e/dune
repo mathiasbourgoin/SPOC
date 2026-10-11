@@ -2358,7 +2358,7 @@
  (name test_vulkan_window_push_budget)
  (modules test_vulkan_window_push_budget)
  (optional)
- (libraries sarek sarek.stdlib sarek_vulkan sarek.execute spoc_core)
+ (libraries sarek sarek.stdlib sarek_vulkan sarek.execute sarek_ir spoc_core)
  (preprocess
   (pps sarek_ppx)))
 

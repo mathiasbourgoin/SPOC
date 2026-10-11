@@ -490,12 +490,65 @@ let set_arg_ptr _args _idx _p =
    sizes its fused groups against the same constant. *)
 let push_constant_limit = Sarek_push_constants.vulkan_block_limit
 
+(* The scalar arguments in ascending caller idx, which must all be >= 0. *)
+let ordered_scalars args =
+  let entries = Spoc_framework.Kernel_args.to_sorted_list args.scalar_store in
+  let negative_idxs =
+    List.filter_map (fun (idx, _) -> if idx < 0 then Some idx else None) entries
+  in
+  if negative_idxs <> [] then
+    Vulkan_error.raise_error
+      (Vulkan_error.context_error
+         "push constant"
+         (Printf.sprintf
+            "negative scalar index%s: [%s]"
+            (if List.length negative_idxs = 1 then "" else "es")
+            (String.concat ", " (List.map string_of_int negative_idxs)))) ;
+  List.map snd entries
+
+let scalar_width = function
+  | SInt32 _ | SFloat32 _ -> Sarek_push_constants.W4
+  | SInt64 _ | SFloat64 _ -> Sarek_push_constants.W8
+
+let write_scalar pc offset = function
+  | SInt32 n -> Bytes.set_int32_le pc offset n
+  | SInt64 n -> Bytes.set_int64_le pc offset n
+  | SFloat32 f -> Bytes.set_int32_le pc offset (Int32.bits_of_float f)
+  | SFloat64 f -> Bytes.set_int64_le pc offset (Int64.bits_of_float f)
+
+(* The block of these vector lengths and scalars. The layout is
+   {!Sarek_push_constants.place}, the function the launch window sizes its
+   fused groups with: GLSL's std430-like push_constant block base-aligns each
+   member to its own size, so an 8-byte field after 4-byte fields has padding
+   the host side must reproduce. Raises when the block passes the limit. *)
+let write_block vector_lengths scalars =
+  let fields =
+    List.map (fun _ -> Sarek_push_constants.W4) vector_lengths
+    @ List.map scalar_width scalars
+  in
+  let offsets, total = Sarek_push_constants.place fields in
+  if total > push_constant_limit then
+    Vulkan_error.raise_error
+      (Vulkan_error.context_error
+         "push constant"
+         (Printf.sprintf
+            "push constant block overflow: %d bytes exceed the %d-byte limit"
+            total
+            push_constant_limit)) ;
+  let pc = Bytes.create total in
+  let writes =
+    List.map (fun len pos -> Bytes.set_int32_le pc pos len) vector_lengths
+    @ List.map (fun scalar pos -> write_scalar pc pos scalar) scalars
+  in
+  List.iter2 (fun write offset -> write offset) writes offsets ;
+  pc
+
 (** Materialize the push-constant byte block for [args] at launch time, from the
     full ordered argument set (buffers + scalars), matching EXACTLY the GLSL
     block layout emitted by [Sarek_ir_glsl.gen_push_constants]
-    (sarek/codegen/Sarek_ir_glsl.ml:889-919): all vector lengths first, in
-    vector-declaration order, followed by all user scalar parameters, in
-    declaration order.
+    (sarek/codegen/Sarek_ir_glsl.ml, [gen_push_constants]): all vector lengths
+    first, in vector-declaration order, followed by all user scalar parameters,
+    in declaration order.
 
     - "Vector-declaration order" here is the same order used for descriptor
       bindings: the buffer with the Nth-smallest caller-supplied idx gets the
@@ -514,61 +567,9 @@ let build_push_constants args : bytes option =
     resolve_bindings args
     |> List.map (fun (_binding, AnyBuf buf) -> Int32.of_int buf.Memory.size)
   in
-  let scalars =
-    let entries = Spoc_framework.Kernel_args.to_sorted_list args.scalar_store in
-    let negative_idxs =
-      List.filter_map
-        (fun (idx, _) -> if idx < 0 then Some idx else None)
-        entries
-    in
-    if negative_idxs <> [] then
-      Vulkan_error.raise_error
-        (Vulkan_error.context_error
-           "push constant"
-           (Printf.sprintf
-              "negative scalar index%s: [%s]"
-              (if List.length negative_idxs = 1 then "" else "es")
-              (String.concat ", " (List.map string_of_int negative_idxs)))) ;
-    List.map snd entries
-  in
+  let scalars = ordered_scalars args in
   if vector_lengths = [] && scalars = [] then None
-  else begin
-    (* The layout is {!Sarek_push_constants.place}, the function the launch
-       window sizes its fused groups with; GLSL's std430-like push_constant
-       block base-aligns each member to its own size, so an 8-byte field after
-       4-byte fields has padding the host side must reproduce. *)
-    let scalar_width = function
-      | SInt32 _ | SFloat32 _ -> Sarek_push_constants.W4
-      | SInt64 _ | SFloat64 _ -> Sarek_push_constants.W8
-    in
-    let fields =
-      List.map (fun _ -> Sarek_push_constants.W4) vector_lengths
-      @ List.map scalar_width scalars
-    in
-    let offsets, total = Sarek_push_constants.place fields in
-    if total > push_constant_limit then
-      Vulkan_error.raise_error
-        (Vulkan_error.context_error
-           "push constant"
-           (Printf.sprintf
-              "push constant block overflow: %d bytes exceed the %d-byte limit"
-              total
-              push_constant_limit)) ;
-    let pc = Bytes.create total in
-    let write_vector offset len = Bytes.set_int32_le pc offset len in
-    let write_scalar offset = function
-      | SInt32 n -> Bytes.set_int32_le pc offset n
-      | SInt64 n -> Bytes.set_int64_le pc offset n
-      | SFloat32 f -> Bytes.set_int32_le pc offset (Int32.bits_of_float f)
-      | SFloat64 f -> Bytes.set_int64_le pc offset (Int64.bits_of_float f)
-    in
-    let writes =
-      List.map (fun len pos -> write_vector pos len) vector_lengths
-      @ List.map (fun scalar pos -> write_scalar pos scalar) scalars
-    in
-    List.iter2 (fun write offset -> write offset) writes offsets ;
-    Some pc
-  end
+  else Some (write_block vector_lengths scalars)
 
 (** Write [args]' buffers into the kernel's persistent descriptor set. The
     caller has waited for the stream fence: the set is not in use by pending

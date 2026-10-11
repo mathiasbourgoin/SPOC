@@ -21,8 +21,12 @@ type width = W4 | W8
 
 val bytes_of_width : width -> int
 
-(** The width of a scalar kernel parameter of this type. Only 64-bit types are
-    wider than 4 bytes; every other scalar is 4 bytes. *)
+(** The width of a scalar kernel parameter of this type: 8 bytes for [TInt64]
+    and [TFloat64], 4 for the other primitive scalars ([TInt32], [TFloat32],
+    [TBool]). Record, variant and array types are not push-constant scalars (the
+    Vulkan launch path accepts only int32, int64, float32 and float64 scalar
+    arguments) and are counted as 4 bytes here; a launch with such a parameter
+    is refused by the backend, not sized by the window. *)
 val width_of_elttype : elttype -> width
 
 (** The block size Vulkan guarantees ([maxPushConstantsSize] is at least this),
