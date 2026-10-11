@@ -1279,9 +1279,8 @@ let jit_source (module B : Framework_sig.BACKEND) ~(device : Device.t) ~name
            })
 
 (* The buffers the kernel touches, with how it uses each. *)
-let launch_accesses (ir : Sarek_ir_types.kernel) (args : vector_arg list) :
-    Launch_window.access list =
-  let info = Launch_window.ir_info window ir in
+let launch_accesses (info : Launch_window.ir_info) (ir : Sarek_ir_types.kernel)
+    (args : vector_arg list) : Launch_window.access list =
   List.concat
     (List.map2
        (fun decl arg ->
@@ -1299,8 +1298,10 @@ let launch_accesses (ir : Sarek_ir_types.kernel) (args : vector_arg list) :
 
 let submit_deferred (module B : Framework_sig.BACKEND) ~(device : Device.t) ~ir
     ~block ~grid ~shared_mem ~issue (args : vector_arg list) : unit =
-  let issue_fused fused fused_args fused_grid =
-    check_launch_args ~kernel:fused.Sarek_ir_types.kern_name fused fused_args ;
+  (* The fused kernel's parameters are its members' (already checked by
+     their own launches) followed by int32 positions, by construction
+     (Fusion_horizontal.fuse, Launch_window.fused_args). *)
+  let issue_fused (fused : Sarek_ir_types.kernel) fused_args fused_grid =
     let source =
       jit_source
         (module B)
@@ -1320,17 +1321,20 @@ let submit_deferred (module B : Framework_sig.BACKEND) ~(device : Device.t) ~ir
       ~shared_mem:0
       fused_args
   in
+  let info = Launch_window.ir_info window ir in
   Launch_window.submit
     window
     {
       Launch_window.device_id = device.Device.id;
       backend = device.framework;
       ir;
+      ir_id = info.ir_id;
+      fusable = info.fusable = Ok ();
       args;
       block;
       grid;
       shared_mem;
-      accesses = launch_accesses ir args;
+      accesses = launch_accesses info ir args;
       issue;
       issue_fused;
     }
