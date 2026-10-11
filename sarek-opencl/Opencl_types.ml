@@ -304,12 +304,6 @@ let cl_mem_read_only = Unsigned.UInt64.of_int 4
 
 let cl_mem_use_host_ptr = Unsigned.UInt64.of_int 8
 
-(** {1 Map Flags} *)
-
-let cl_map_read = Unsigned.UInt64.of_int 1
-
-let cl_map_write_invalidate_region = Unsigned.UInt64.of_int 4
-
 let cl_mem_alloc_host_ptr = Unsigned.UInt64.of_int 16
 
 let cl_mem_copy_host_ptr = Unsigned.UInt64.of_int 32
@@ -319,6 +313,12 @@ let cl_mem_host_write_only = Unsigned.UInt64.of_int 128
 let cl_mem_host_read_only = Unsigned.UInt64.of_int 256
 
 let cl_mem_host_no_access = Unsigned.UInt64.of_int 512
+
+(** {1 Map Flags} *)
+
+let cl_map_read = Unsigned.UInt64.of_int 1
+
+let cl_map_write_invalidate_region = Unsigned.UInt64.of_int 4
 
 (** {1 Command Queue Properties} *)
 

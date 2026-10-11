@@ -21,6 +21,12 @@
  *   - host write between two readers: the first launch must see the old value
  *     (Vector.set is a synchronisation point);
  *   - profiling timers around a launch flush it.
+ * On every device three plain runs must agree bit for bit (a disagreement
+ * fails); on a device that does not defer launches (every CPU device) the
+ * window-on comparison is skipped and counted in the summary line.
+ * Known open issue: HIP on the 7950X iGPU has shown plain-path
+ * nondeterminism (#427); no barrier race was found in the generated OpenCL for
+ * mv_wave / mv_row.
  * Separately, the fused kernel itself is run on the Interpreter and compared
  * bit for bit with the members run one by one.
  ******************************************************************************)
@@ -328,10 +334,15 @@ let check (dev : Device.t) label ok =
     (if ok then "PASS" else "FAIL") ;
   if not ok then failures := (dev.Device.framework ^ " " ^ label) :: !failures
 
-(* Plain (window-off) runs that must agree before a window-on difference can be
-   blamed on the window: two agreeing runs are still a coin flip on a device
-   whose plain results vary from run to run. *)
+(* The scenarios' kernels are deterministic by construction, so plain
+   (window-off) runs on one device must agree bit for bit; a disagreement is a
+   bug in the device, the backend or the host/device synchronisation (on a CPU
+   OpenCL device it was R-27: the host read before the kernel finished), never
+   something to skip. Three runs, because two agreeing runs are still a coin
+   flip when results vary from run to run. *)
 let plain_runs = 3
+
+let skipped = ref 0
 
 let report dev label verdict =
   Printf.printf
@@ -343,12 +354,19 @@ let report dev label verdict =
 
 let all_equal = function [] -> true | x :: rest -> List.for_all (( = ) x) rest
 
-(* Bit-identity of window-on against window-off. On a device that does not
-   defer, "on" and "off" take the same path, so comparing them tests nothing
-   and, where plain runs differ, fails at random: skipped, visibly. *)
+(* Plain runs must agree on every device; window on must equal window off only
+   where the window is in effect. A device that does not defer launches takes
+   the same path with the window on, so that comparison is skipped (counted and
+   shown), not passed. Returns the launches issued by the window-on run. *)
 let check_bit_identity dev ~defers label f =
   let bit_label = label ^ " bit-identical" in
+  let offs =
+    List.init plain_runs (fun _ ->
+        fst (with_window false (fun () -> issued_by (fun () -> f dev))))
+  in
+  if not (all_equal offs) then check dev (label ^ " plain runs agree") false ;
   if not defers then begin
+    incr skipped ;
     report
       dev
       bit_label
@@ -356,17 +374,8 @@ let check_bit_identity dev ~defers label f =
     0
   end
   else begin
-    let offs =
-      List.init plain_runs (fun _ ->
-          fst (with_window false (fun () -> issued_by (fun () -> f dev))))
-    in
     let on, issued = issued_by (fun () -> f dev) in
-    if not (all_equal offs) then begin
-      report dev bit_label "FAIL (nondeterministic without the window)" ;
-      failures :=
-        (dev.Device.framework ^ " " ^ label ^ " nondeterministic") :: !failures
-    end
-    else check dev bit_label (on = List.hd offs) ;
+    if all_equal offs then check dev bit_label (on = List.hd offs) ;
     issued
   end
 
@@ -542,4 +551,7 @@ let () =
       (String.concat ", " !failures) ;
     exit 1
   end ;
-  print_endline "test_launch_window: PASSED"
+  Printf.printf
+    "test_launch_window: PASSED (%d window comparison(s) skipped: device does \
+     not defer launches)\n"
+    !skipped
