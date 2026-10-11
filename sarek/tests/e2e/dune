@@ -1980,6 +1980,7 @@
   test_launch_window
   test_matrix_rewrite
   test_matrix_rewrite_float
+  test_matrix_int64_index
   test_matrix_dynamic)
  (modules
   test_int32_bitcasts
@@ -1988,6 +1989,7 @@
   test_launch_window
   test_matrix_rewrite
   test_matrix_rewrite_float
+  test_matrix_int64_index
   test_matrix_dynamic
   matrix_rewrite_support
   coopmat_hip_support
@@ -2068,6 +2070,14 @@
  (alias runtest)
  (action
   (run %{dep:test_matrix_rewrite_float.exe})))
+
+; An int64-indexed product is declined, never rewritten to int32 addressing
+; (compiler review C-11).
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_matrix_int64_index.exe})))
 
 ; Launch-time matrix specialisation (specs/matrix-pattern-dynamic.md): the
 ; default rewrite inside Execute.run_vectors, the three modes, the direct and

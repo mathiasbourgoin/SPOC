@@ -7,11 +7,15 @@
 ; recognised roles, layouts and rejection reasons at run time.
 
 (tests
- (names test_matrix_pattern_pos test_matrix_pattern_neg)
+ (names
+  test_matrix_pattern_pos
+  test_matrix_pattern_neg
+  test_matrix_pattern_int64)
  (modules
   matrix_pattern_check
   test_matrix_pattern_pos
-  test_matrix_pattern_neg)
+  test_matrix_pattern_neg
+  test_matrix_pattern_int64)
  (libraries sarek sarek_stdlib sarek_ir alcotest astring fmt)
  (preprocess
   (pps sarek_ppx))

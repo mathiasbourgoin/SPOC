@@ -107,6 +107,8 @@ type address = {offset0 : expr; rs : expr; cs : expr; bs : expr}
 
 let address env (o : P.operand) batch =
   match Affine.of_expr env o.offset with
+  | Error (Affine.Wide_index _) ->
+      Error "an operand offset uses int64 arithmetic"
   | Error _ -> Error "an operand offset is not affine"
   | Ok f ->
       let bs =

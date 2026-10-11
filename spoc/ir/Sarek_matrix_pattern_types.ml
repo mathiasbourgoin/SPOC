@@ -51,6 +51,7 @@ type reason =
   | Bounds_not_uniform
   | Bounds_data_dependent
   | Index_not_affine of string * expr option
+  | Int64_arithmetic
   | Operand_independent_of_reduction of string
   | Output_depends_on_reduction
   | No_row_column_split
@@ -88,6 +89,9 @@ let reason_text = function
   | Bounds_data_dependent -> "the reduction bounds read memory"
   | Index_not_affine (arr, _) ->
       Printf.sprintf "the index of '%s' is not affine in the loop variables" arr
+  | Int64_arithmetic ->
+      "an index, bound or guard uses int64 arithmetic, which a 32-bit matrix \
+       address cannot express"
   | Operand_independent_of_reduction arr ->
       Printf.sprintf "'%s' is not indexed by the reduction variable" arr
   | Output_depends_on_reduction ->

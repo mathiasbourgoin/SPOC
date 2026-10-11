@@ -76,6 +76,10 @@ type error =
           variable *)
   | Data_dependent of expr  (** the index reads memory *)
   | Unknown_var of var  (** a {!Rejected_leaf} variable *)
+  | Wide_index of expr
+      (** the expression computes in 64 bits (an [int64] constant, variable or
+          cast): the form is int-sized and the rewrite addresses with int32, so
+          it is refused rather than narrowed *)
 
 (** The canonical atom of a variable (the lowering marks a loop variable mutable
     at its binder and immutable at its uses). Use it to look up a loop

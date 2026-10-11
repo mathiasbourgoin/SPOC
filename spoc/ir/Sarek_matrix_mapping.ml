@@ -138,6 +138,8 @@ let env_of (k : kernel) (g : P.gemm) : Affine.env =
 let form env e =
   match Affine.of_expr env e with
   | Ok f -> Ok f
+  | Error (Affine.Wide_index _) ->
+      Error "an index or a guard uses int64 arithmetic"
   | Error _ -> Error "an index or a guard is not affine"
 
 (* ---- Guards ------------------------------------------------------------- *)

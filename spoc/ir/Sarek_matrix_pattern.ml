@@ -182,6 +182,7 @@ let uniform_bound ctx e =
       Ok (Affine.inline (affine_env ctx ~atoms:[]) e)
   | Ok _ -> Error Bounds_not_uniform
   | Error (Affine.Data_dependent _) -> Error Bounds_data_dependent
+  | Error (Affine.Wide_index _) -> Error Int64_arithmetic
   | Error _ -> Error Bounds_not_uniform
 
 (* ---- The store after the loop ------------------------------------------ *)

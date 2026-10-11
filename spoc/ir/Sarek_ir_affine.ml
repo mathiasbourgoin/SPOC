@@ -18,7 +18,11 @@ type leaf = Uniform_leaf | Atom_leaf | Rejected_leaf
 
 type env = {classify_var : var -> leaf; definition : var -> expr option}
 
-type error = Not_affine of expr | Data_dependent of expr | Unknown_var of var
+type error =
+  | Not_affine of expr
+  | Data_dependent of expr
+  | Unknown_var of var
+  | Wide_index of expr
 
 (* ---- Polynomials ------------------------------------------------------- *)
 
@@ -257,7 +261,6 @@ let ( let* ) = Result.bind
 let rec of_inlined env e =
   match e with
   | EConst (CInt32 n) -> Ok (const_form (poly_const (Int32.to_int n)))
-  | EConst (CInt64 n) -> Ok (const_form (poly_const (Int64.to_int n)))
   | EVar v -> (
       match env.classify_var v with
       | Uniform_leaf -> Ok (const_form (poly_factor e))
@@ -274,7 +277,7 @@ let rec of_inlined env e =
   | EUnop (Neg, a) ->
       let* fa = of_inlined env a in
       Ok (neg fa)
-  | ECast ((TInt32 | TInt64), a) -> of_inlined env a
+  | ECast (TInt32, a) -> of_inlined env a
   | EBinop (Mul, a, b) -> (
       let* fa = of_inlined env a in
       let* fb = of_inlined env b in
@@ -293,8 +296,26 @@ let rec of_inlined env e =
       | false, false -> opaque env e)
   | _ -> opaque env e
 
-let of_expr env e = of_inlined env (inline env e)
+(* Whether an (inlined) expression computes in 64 bits: the form's
+   coefficients are native ints and the rewrite emits int32 addresses, so a
+   64-bit index cannot be represented without narrowing it. *)
+let rec involves_int64 = function
+  | EConst (CInt64 _) | ECast (TInt64, _) | EBinop (Lshr64, _, _) -> true
+  | EVar v -> v.var_type = TInt64
+  | ECast (_, a) | EUnop (_, a) | ERecordField (a, _) | EArrayRead (_, a) ->
+      involves_int64 a
+  | EBinop (_, a, b) | EArrayReadExpr (a, b) ->
+      involves_int64 a || involves_int64 b
+  | EIntrinsic (_, _, args) | ETuple args -> List.exists involves_int64 args
+  | EApp (f, args) -> List.exists involves_int64 (f :: args)
+  | EIf (c, a, b) -> List.exists involves_int64 [c; a; b]
+  | _ -> false
+
+let of_expr env e =
+  let inlined = inline env e in
+  if involves_int64 inlined then Error (Wide_index inlined)
+  else of_inlined env inlined
 
 let error_expr = function
-  | Not_affine e | Data_dependent e -> Some e
+  | Not_affine e | Data_dependent e | Wide_index e -> Some e
   | Unknown_var _ -> None

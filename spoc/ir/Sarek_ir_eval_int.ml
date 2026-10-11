@@ -32,10 +32,10 @@ let ( let* ) = Option.bind
 let rec eval launch e =
   match e with
   | EConst (CInt32 n) -> Some n
-  | EConst (CInt64 n) -> Some (Int64.to_int32 n)
+  | EConst (CInt64 _) | ECast (TInt64, _) -> None
   | EConst (CBool b) -> Some (if b then 1l else 0l)
-  | EVar v -> launch.scalar v
-  | ECast ((TInt32 | TInt64), a) -> eval launch a
+  | EVar v -> if v.var_type = TInt64 then None else launch.scalar v
+  | ECast (TInt32, a) -> eval launch a
   | EIntrinsic (_, name, []) -> intrinsic launch name
   | EUnop (Neg, a) ->
       let* x = eval launch a in
