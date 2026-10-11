@@ -206,3 +206,42 @@ let both_paths ~p ~p_scalars ~c ~c_scalars =
       ~c_scalars
   in
   (affine, enumerated)
+
+(** Warp-per-row matrix-vector output: [rows_per_block] rows per work-group of
+    [block_dim_x] threads, a row per [32] lanes ([lanes_per_row]), one batch per
+    [block_idx_y]: [lane = tid land 31] (or [tid mod 32] when [~use_mod]),
+    [row = bx * rows_per_block + tid / lanes_per_row],
+    [if (lane < lane_bound) ? (row < n) : false then dst.(by * n + row)] with
+    [lane_bound = 1] written [lane == 0]. *)
+let warp_producer ?(use_mod = false) ?(rows_per_block = 8) ?(lanes_per_row = 32)
+    ?(lane_bound = 1) () =
+  let tid = ivar 30 "tid" and lane = ivar 31 "lane" and row = ivar 32 "row" in
+  let yo = ivar 33 "yo" in
+  let lane_e =
+    if use_mod then EVar tid %! int 32 else EBinop (BitAnd, EVar tid, int 31)
+  in
+  let lane_ok =
+    if lane_bound = 1 then EBinop (Eq, EVar lane, int 0)
+    else EVar lane <! int lane_bound
+  in
+  let cond = EIf (lane_ok, EVar row <! EVar n_var, EConst (CBool false)) in
+  {
+    default_kernel with
+    kern_name = "p_warp";
+    kern_params = producer_params;
+    kern_body =
+      SLet
+        ( tid,
+          gpu "thread_idx_x",
+          SLet
+            ( lane,
+              lane_e,
+              SLet
+                ( row,
+                  (gpu "block_idx_x" *! int rows_per_block)
+                  +! (EVar tid /! int lanes_per_row),
+                  SLet
+                    ( yo,
+                      gpu "block_idx_y" *! EVar n_var,
+                      SIf (cond, store (EVar yo +! EVar row), None) ) ) ) );
+  }

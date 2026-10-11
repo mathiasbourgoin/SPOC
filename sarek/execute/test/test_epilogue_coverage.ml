@@ -85,7 +85,7 @@ let test_duplicates () =
        (producer_with (fun i -> SSeq [store i; store i])))
 
 let test_non_affine () =
-  let ident i _ = (i /! int 2 *! int 2) +! (i %! int 2) in
+  let ident i _ = (i /! int 3 *! int 3) +! (i %! int 3) in
   check
     bool
     "identity through / and mod"
@@ -144,7 +144,7 @@ let test_large_affine_proven () =
 (* A pair that needs enumeration and exceeds its budget is not proven. *)
 let test_over_budget_not_proven () =
   let total = 1 lsl 22 in
-  let ident i _ = (i /! int 2 *! int 2) +! (i %! int 2) in
+  let ident i _ = (i /! int 3 *! int 3) +! (i %! int 3) in
   check
     bool
     "2^22 threads, non-affine"
@@ -174,6 +174,22 @@ let decided_by f =
   | 0, 0, 0 -> "unknown"
   | _ -> "several"
 
+(* Warp-per-row matrix-vector producer: [rows] rows per batch, [batches]
+   batches, [gx] work-groups of [block] threads per batch. *)
+let warp_pair ?(block = 256) ?(gx = 128) ?(batches = 4) ?(rows = 1024) ?c_total
+    prod =
+  let c_total = Option.value ~default:(rows * batches) c_total in
+  ( launch prod ~grid:(Dims.dims_2d gx batches) ~block:(Dims.dims_1d block),
+    [("n", rows); ("off", 0)],
+    launch_1d (consumer ()) ~total:c_total ~block:256,
+    [("n", c_total)] )
+
+let warp ?block ?gx ?batches ?rows ?c_total prod =
+  let p, p_scalars, c, c_scalars =
+    warp_pair ?block ?gx ?batches ?rows ?c_total prod
+  in
+  both_paths ~p ~p_scalars ~c ~c_scalars
+
 let test_paths () =
   let total = 128 * 3584 in
   let path f = decided_by f in
@@ -195,13 +211,20 @@ let test_paths () =
     (path (fun () -> tile ~guard_col:true ~cols:100 ~bx:7)) ;
   check
     string
+    "warp-per-row matvec"
+    "affine"
+    (path (fun () ->
+         let p, p_scalars, c, c_scalars = warp_pair (warp_producer ()) in
+         covers ~p ~p_scalars ~c ~c_scalars)) ;
+  check
+    string
     "non-affine index"
     "enumerated"
     (path (fun () ->
          verdict
            ~p_n:1000
            ~c_n:1000
-           (producer (fun i _ -> (i /! int 2 *! int 2) +! (i %! int 2))))) ;
+           (producer (fun i _ -> (i /! int 3 *! int 3) +! (i %! int 3))))) ;
   check
     string
     "loop"
@@ -315,7 +338,7 @@ let test_used_scalars () =
    so the cache served it for every value). *)
 let test_refusal_per_valuation () =
   LE.clear () ;
-  let ident i off = (i /! int 2 *! int 2) +! (i %! int 2) +! off in
+  let ident i off = (i /! int 3 *! int 3) +! (i %! int 3) +! off in
   let p = launch_1d ~ir_id:101 (producer ident) ~total:1024 ~block:256 in
   let c = launch_1d ~ir_id:102 (consumer ()) ~total:1000 ~block:250 in
   let shape = shape_of c in
@@ -330,7 +353,7 @@ let test_refusal_per_valuation () =
   in
   check bool "off = -1: negative index, refused" false (cached (-1)) ;
   check bool "off = 0 afterwards: covered" true (cached 0) ;
-  let dup i _ = (i /! int 2) +! (i %! int 2 *! int 0) in
+  let dup i _ = (i /! int 3) +! (i %! int 3 *! int 0) in
   let p2 = launch_1d ~ir_id:103 (producer dup) ~total:1024 ~block:256 in
   let cached_dup n =
     LE.cached_covers
@@ -343,6 +366,36 @@ let test_refusal_per_valuation () =
   in
   check bool "n = 1024: stores twice, refused" false (cached_dup 1024) ;
   check bool "n = 1 afterwards: one store, C empty, covered" true (cached_dup 1)
+
+let test_warp_matvec () =
+  let affine what expected r =
+    match r with
+    | Some a, e ->
+        check bool (what ^ " (affine)") expected a ;
+        check bool (what ^ " (enumeration agrees)") e a
+    | None, _ -> failf "%s: expected the affine form" what
+  in
+  affine "land 31, lane == 0" true (warp (warp_producer ())) ;
+  affine "mod 32" true (warp (warp_producer ~use_mod:true ())) ;
+  affine
+    "fewer rows than threads cover"
+    true
+    (warp ~rows:1000 (warp_producer ())) ;
+  affine
+    "C past the last row"
+    false
+    (warp ~rows:1000 ~c_total:((1000 * 4) + 1) (warp_producer ())) ;
+  affine "two lanes store a row" false (warp (warp_producer ~lane_bound:2 ())) ;
+  (match warp (warp_producer ~lanes_per_row:16 ()) with
+  | None, e -> check bool "rows overlap between work-groups: enumerated" false e
+  | Some a, e -> check bool "rows overlap between work-groups" e a) ;
+  (* Rows of 1024 apart, 800 stored per batch: gaps, so enumerated. *)
+  (match warp ~gx:100 (warp_producer ()) with
+  | None, e -> check bool "too few work-groups: enumerated" false e
+  | Some a, e -> check bool "too few work-groups" e a) ;
+  match warp ~block:250 (warp_producer ()) with
+  | None, e -> check bool "block of 250: enumerated, covered" true e
+  | Some a, e -> check bool "block of 250 agrees" e a
 
 let () =
   run
@@ -357,6 +410,7 @@ let () =
           test_case "duplicates" `Quick test_duplicates;
           test_case "non-affine" `Quick test_non_affine;
           test_case "2-D tile" `Quick test_tile;
+          test_case "warp-per-row matvec" `Quick test_warp_matvec;
           test_case
             "affine = enumeration, 1-D"
             `Quick
