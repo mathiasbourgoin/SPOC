@@ -122,7 +122,8 @@
   <li><strong>Memory</strong>: Functions to allocate device buffers and transfer data. You should support:
     <ul>
       <li><code class="language-plaintext highlighter-rouge">host_to_device</code> / <code class="language-plaintext highlighter-rouge">device_to_host</code></li>
-      <li><code class="language-plaintext highlighter-rouge">alloc_zero_copy</code>: (Optional) for devices that share memory with the CPU.</li>
+      <li><code class="language-plaintext highlighter-rouge">alloc_zero_copy</code>: only for backends whose device memory <em>is</em> host memory (Native, Interpreter); it is used for every vector by default, so any backend with memory of its own returns <code class="language-plaintext highlighter-rouge">None</code>.</li>
+      <li><code class="language-plaintext highlighter-rouge">alloc_host_ptr</code>: the explicit opt-in to create a buffer over host memory (OpenCL <code class="language-plaintext highlighter-rouge">CL_MEM_USE_HOST_PTR</code> on CPU devices, reached through <code class="language-plaintext highlighter-rouge">Spoc_core.Host_ptr_buffer</code>); return <code class="language-plaintext highlighter-rouge">Error Host_ptr_unsupported</code> when the backend has none.</li>
     </ul>
   </li>
   <li><strong>Kernel</strong>: Handles the lifecycle of a kernel:
