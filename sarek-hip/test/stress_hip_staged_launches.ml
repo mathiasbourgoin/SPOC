@@ -78,25 +78,28 @@ let control =
 let flag name = Sys.getenv_opt name = Some "1"
 
 (* SPOC_STRESS_VERIFY=1: read the slice back right after its launch (the
-   blocking read drains the default stream), and again after 20 ms. A slice
-   still at the sentinel both times is a launch that never wrote (not a late
-   write, not a write overwritten afterwards). *)
+   blocking read drains the default stream), and again after 20 ms, for every
+   slice. Both values are printed when either is wrong: still at the sentinel
+   both times is a launch that never wrote; right first and wrong later is a
+   write lost during the pause. *)
+let read_slice out it =
+  let v = i32 n 0l in
+  Transfer.copy_to_host ~src:out ~src_offset:(it * n) v ;
+  Bigarray.Array1.get v 0
+
 let verify_launch dev out it =
   if flag "SPOC_STRESS_VERIFY" then begin
-    let first = i32 n 0l in
-    Transfer.copy_to_host ~src:out ~src_offset:(it * n) first ;
+    let first = read_slice out it in
+    Unix.sleepf 0.02 ;
+    let again = read_slice out it in
     let want = Int32.of_int (it + 1000) in
-    if Bigarray.Array1.get first 0 <> want then begin
-      Unix.sleepf 0.02 ;
-      let again = i32 n 0l in
-      Transfer.copy_to_host ~src:out ~src_offset:(it * n) again ;
+    if first <> want || again <> want then
       Printf.printf
         "    verify: iteration %d on %s: %ld right after, %ld after 20 ms\n%!"
         it
         dev.Device.name
-        (Bigarray.Array1.get first 0)
-        (Bigarray.Array1.get again 0)
-    end
+        first
+        again
   end
 
 (* SPOC_STRESS_GC_PRESSURE=1: allocate and drop device vectors so finalisers

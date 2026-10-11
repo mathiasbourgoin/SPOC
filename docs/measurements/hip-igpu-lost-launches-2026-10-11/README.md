@@ -71,7 +71,7 @@ of 1000), so it needs many dirty lines before the gap.
 
 **Plain HIP copy + launch loop** (`plain-hip-runs.txt`, iGPU, runs of 300 iterations):
 mode 0 6 of 100 runs; mode 5 (20 ms sleep before about 5% of iterations) 100 of 100; the
-dGPU 0 of 50 in every mode. Earlier runs under heavier load (`spoc-stress-runs-before-fix.txt`
+dGPU 0 of 50 in each mode run on it (0, 3, 4 and 5). Earlier runs under heavier load (`spoc-stress-runs-before-fix.txt`
 for SPOC, `idle-gap-env-runs-plain-hip.txt` for the env switches) gave higher rates: the
 rate depends on host load, the pause dependence does not. `HIP_FORCE_DEV_KERNARG=1`,
 `HSA_ENABLE_INTERRUPT=0`, `AMD_SERIALIZE_KERNEL=3` and `HSA_ENABLE_SDMA=0` did not remove it.
