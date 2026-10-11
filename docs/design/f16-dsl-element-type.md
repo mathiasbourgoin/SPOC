@@ -184,7 +184,7 @@ exhaustive match over it. The blast radius is enumerated in §5.
 > **The real duplication tax is a fourth vocabulary this table omits**:
 > `spoc/ir/Sarek_ir_types.ml` (runtime) is mirrored by
 > `sarek/ppx/Sarek_ir_ppx.ml` (compile-time), bridged by
-> `sarek/transpile/Sarek_ir_conv.ml`. That is the pair a future width actually pays
+> `sarek/ppx/Sarek_ir_conv.ml`. That is the pair a future width actually pays
 > twice, and §9 records why the mirror is not load-bearing.
 
 ---
@@ -247,7 +247,7 @@ Convenience constructors mirror `float32`/`float64`: `Spoc_core_base.ml:487-497`
 
 **Legacy IR** — `sarek/ppx/Kirc_Ast.ml:47` (`elttype = EInt32|EInt64|EFloat32|EFloat64`)
 and node region `:244-249`: add `EFloat16`. The PPX lowers to this rep in
-`Sarek_lower.ml`; the transpiler (`sarek/transpile/Sarek_ir_conv.ml:104`) bridges
+`Sarek_lower.ml`; the transpiler (`sarek/ppx/Sarek_ir_conv.ml:104`) bridges
 legacy↔new, so both need the arm.
 
 > **CORRECTION (verified).** Do not do this, and it is now impossible to. Slice 1
@@ -1090,7 +1090,7 @@ The matrix layer is named here only to fix the relationship.
 >
 > **Direction 2 — the real tax was omitted entirely.** It is the
 > `spoc/ir/Sarek_ir_types.ml` (runtime) ⇄ `sarek/ppx/Sarek_ir_ppx.ml`
-> (compile-time) **mirror**, plus the `sarek/transpile/Sarek_ir_conv.ml` bridge that
+> (compile-time) **mirror**, plus the `sarek/ppx/Sarek_ir_conv.ml` bridge that
 > exists only to connect them. Every new width is defined twice and converted once.
 >
 > **And an architect review established that the mirror has no dependency
