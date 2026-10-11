@@ -140,6 +140,7 @@ type state = {
   dims : int array;  (** block x y z, grid x y z *)
   mutable stop : bool;  (** the thread executed [return] *)
   mutable steps : int;  (** loop iterations and threads so far, this run *)
+  budget : int;  (** bound on [steps] *)
 }
 
 type cenv = {
@@ -249,16 +250,22 @@ let rec cexpr env e : state -> int32 =
 type cstmt = state -> unit
 
 let seq (fs : cstmt list) : cstmt =
- fun s -> List.iter (fun f -> if not s.stop then f s) fs
+  let fs = Array.of_list fs in
+  fun s ->
+    let i = ref 0 in
+    while (not s.stop) && !i < Array.length fs do
+      fs.(!i) s ;
+      incr i
+    done
 
-(* Work bound for one [run] (loop iterations plus threads): the evaluation
-   happens while the launch window is locked. Beyond it, the answer is
-   unknown, so nothing is merged. *)
+(* Default work bound for one [run] (loop iterations plus threads): the
+   evaluation happens while the launch window is locked. Beyond it, the answer
+   is unknown, so nothing is merged. *)
 let max_steps = 1 lsl 26
 
 let tick s =
   s.steps <- s.steps + 1 ;
-  if s.steps > max_steps then unknown "evaluation budget exceeded"
+  if s.steps > s.budget then unknown "evaluation budget exceeded"
 
 let rec cstmt ~is_target ~record env rel st : cstmt =
   let c = cstmt ~is_target ~record env rel in
@@ -341,8 +348,11 @@ type dims = {block : int * int * int; grid : int * int * int}
     for stores in a thread, in program order). [scalars] gives the int32 scalar
     parameters by name; [bind] pre-binds variables (var, value) before each
     thread. Returns the scalar parameters the evaluation read. Raises [Unknown]
-    when a relevant computation is not an integer function of the launch. *)
-let run ?(bind = []) ~is_target ~record ~scalars ~dims body : string list =
+    when a relevant computation is not an integer function of the launch, or
+    when more than [budget] threads plus loop iterations (default {!max_steps})
+    would run. *)
+let run ?(bind = []) ?(budget = max_steps) ~is_target ~record ~scalars ~dims
+    body : string list =
   let rel = relevant ~is_target body in
   let rel =
     List.fold_left (fun r ((v : var), _) -> Ids.add v.var_id r) rel bind
@@ -373,6 +383,7 @@ let run ?(bind = []) ~is_target ~record ~scalars ~dims body : string list =
       dims = [|bx; by; bz; gx; gy; gz|];
       stop = false;
       steps = 0;
+      budget;
     }
   in
   for gk = 0 to gz - 1 do
