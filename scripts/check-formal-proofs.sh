@@ -56,6 +56,27 @@ set -euo pipefail
 # instead of quietly shrinking its scope.
 EXPECTED_PROJECTS=3
 
+# How many committed extracted models (.ml files under formal/*/extraction)
+# must be regenerated and compared. Pinned for the same reason: a model that
+# silently drops out of the comparison (a deleted driver, a renamed output, a
+# driver removed from _CoqProject) must fail the gate rather than shrink it.
+# 1 (codegen-ptx layout) + 1 (codegen-ptx shift) + 1 (convergence-safety)
+# + 12 (type-safety).
+EXPECTED_DRIFT_CHECKED_MODELS=15
+
+# Extraction drivers whose output is deliberately NOT drift-checked. Each entry
+# is "<project>/<driver path>|<reason>". A driver that is neither here nor the
+# producer of a committed model fails the gate, so the exemption list cannot
+# silently grow: it is named, with its reason, and printed on every run.
+NOT_DRIFT_CHECKED=(
+  "formal/codegen-ptx/extraction/Extract.v|\
+\`Extraction Library\` writes five .ml files into the project root; they are \
+not tracked (backlog-188), no dune stanza compiles them and nothing links \
+them (they open Datatypes/List/Nat, which only exist if the Stdlib is \
+extracted alongside). There is no committed copy to compare against. See \
+formal/codegen-ptx/STATUS.md, 'Extraction'."
+)
+
 cd "$(dirname "$0")/.."
 # Absolute, because the per-project steps run in a subshell that has cd'd into
 # formal/<project> and still need to invoke scripts/ from the repository root.
@@ -164,7 +185,13 @@ fi
 # comparing the committed file with itself. Writing elsewhere is what makes the
 # drift check able to fail.
 LEDGER_OUT=$(mktemp -d)
-trap 'rm -rf "$LEDGER_OUT"' EXIT
+# Canonicalised copies of the committed extracted models, taken BEFORE the build
+# deletes them (see step 0 below), and the list of models that were compared.
+# Outside the project directories for the same reason as LEDGER_OUT: the
+# restore_tree trap would otherwise revert them before they could be compared.
+MODEL_SNAP=$(mktemp -d)
+trap 'rm -rf "$LEDGER_OUT" "$MODEL_SNAP"' EXIT
+: > "$MODEL_SNAP/checked.list"
 
 checked=0
 
@@ -299,6 +326,98 @@ cannot determine the logical path to check."
     }
     trap restore_tree EXIT
 
+    # 0. Extracted models: static checks and snapshot (finding D-55).
+    #
+    #    Until D-55 only ONE of the fourteen committed extracted models
+    #    (PtxLayout) was compared with a fresh extraction. The other thirteen
+    #    -- twelve type-safety models and the convergence model -- are what the
+    #    conformance suites run as their oracle, and nothing checked that they
+    #    still corresponded to the theories: type-safety's extraction drivers
+    #    were not even in _CoqProject, so CI never compiled them, and
+    #    TypeSafetyModel.ml had in fact gone stale (it lacked TRecord and
+    #    TVariant). A conformance suite that passes against a stale model
+    #    proves the production code agrees with something the theorems are no
+    #    longer about.
+    #
+    #    The rule is now uniform and project-independent:
+    #
+    #      * every extraction driver (extraction/*.v) is listed in _CoqProject,
+    #        so the from-scratch build below runs it;
+    #      * every driver either produces a committed model or is named in
+    #        NOT_DRIFT_CHECKED with its reason;
+    #      * every committed model (extraction/*.ml, *.mli) is produced by a
+    #        driver, is DELETED before the build (so that finding it again
+    #        afterwards proves the build regenerated it, rather than the
+    #        committed copy vouching for itself), and is compared after the
+    #        build, both sides canonicalised.
+    #
+    #    The snapshot is taken here, before step 1, from the working tree, so no
+    #    git is needed to make the comparison (the earlier check required a
+    #    usable git directory and had to fail when it was missing).
+    snap="$MODEL_SNAP/$(basename "$PWD")"
+    mkdir -p "$snap"
+    shopt -s nullglob
+    drivers=(extraction/*.v)
+    models=(extraction/*.ml extraction/*.mli)
+    shopt -u nullglob
+
+    all_outputs=""
+    for driver in "${drivers[@]}"; do
+      if ! grep -qxF "$driver" _CoqProject; then
+        echo "::error::$proj/$driver is an extraction driver but is not listed \
+in $proj/_CoqProject, so the from-scratch build never runs it and the model it \
+produces cannot be drift-checked (this was the state of all twelve type-safety \
+drivers before D-55). Add '$driver' to $proj/_CoqProject."
+        exit 1
+      fi
+      all_outputs="$all_outputs
+$(grep -oP 'Extraction\s+"\K[^"]+' "$driver" || true)"
+    done
+
+    for model in "${models[@]}"; do
+      base=$(basename "$model")
+      stem=${base%.mli}
+      stem=${stem%.ml}
+      if ! printf '%s\n' "$all_outputs" | grep -qxF "$stem.ml"; then
+        echo "::error::$proj/$model is a committed extracted model but no \
+driver under $proj/extraction/ extracts '$stem.ml'. A committed model nothing \
+regenerates cannot be drift-checked and is exactly the stale-oracle hazard \
+D-55 closed. Delete it, or add the driver that produces it."
+        exit 1
+      fi
+      cp "$model" "$snap/$base"
+      python3 "$ROOT/scripts/canonicalize-extraction.py" "$snap/$base"
+    done
+
+    for driver in "${drivers[@]}"; do
+      exempt_reason=""
+      for entry in "${NOT_DRIFT_CHECKED[@]}"; do
+        if [ "${entry%%|*}" = "$proj/$driver" ]; then
+          exempt_reason=${entry#*|}
+        fi
+      done
+      if [ -n "$exempt_reason" ]; then
+        echo "  NOT drift-checked (named exemption): $driver -- $exempt_reason"
+        continue
+      fi
+      owns=0
+      for model in "${models[@]}"; do
+        stem=$(basename "$model"); stem=${stem%.mli}; stem=${stem%.ml}
+        if grep -qP "Extraction\s+\"$stem\.ml\"" "$driver"; then owns=1; fi
+      done
+      if [ "$owns" -eq 0 ]; then
+        echo "::error::$proj/$driver produces no committed model and is not \
+named in NOT_DRIFT_CHECKED in scripts/check-formal-proofs.sh. Either commit \
+the model it extracts (so the gate compares it) or add the driver to \
+NOT_DRIFT_CHECKED with the reason it cannot be compared."
+        exit 1
+      fi
+    done
+
+    # Delete the committed models: finding them after the build then proves the
+    # build regenerated them. restore_tree puts the committed copies back.
+    for model in "${models[@]}"; do rm -f "$model"; done
+
     # 1. Delete every build artefact (none is tracked: formal/.gitignore). A .vo that is never rebuilt is
     #    an unverified binary blob, and re-checking it would only prove it is
     #    self-consistent, not that it matches the .v beside it.
@@ -328,25 +447,21 @@ cannot determine the logical path to check."
     #    proof, any missing dependency fails here.
     make -f CoqMakefile -j"$(nproc)"
 
-    # 3b. Extraction drift (task #46).
+    # 3b. Extraction drift (task #46, generalised to every model by D-55).
     #
-    #     The `make` above re-ran extraction. For the layout model — the one
-    #     extracted artefact this repository compiles and links — the result
-    #     must be byte-identical to the committed copy, because
-    #     test_layout_conformance.ml runs that copy. Without this check the
-    #     chain from PtxLayout.v to the thing actually tested is only as good as
-    #     whoever last remembered to regenerate: an edit to the theory leaves a
-    #     stale model in the tree, and the suite stays green while testing
-    #     something the theorems are no longer about. That is the hand-mirror
-    #     defect #46 removed, reappearing one level up.
+    #     The `make` above re-ran every extraction driver. Each regenerated
+    #     model must equal the committed copy snapshotted in step 0, because
+    #     the conformance suites run those committed copies: without this
+    #     check the chain from a theory to the thing actually tested is only
+    #     as good as whoever last remembered to regenerate, and an edit to the
+    #     theory leaves a stale model in the tree while the suite stays green
+    #     testing something the theorems are no longer about. That is the
+    #     hand-mirror defect #46 removed, reappearing one level up.
     #
-    #     Deliberately NOT extended to Extract.v's five outputs in the project
-    #     root: those are committed in ocamlformat-formatted form while
-    #     extraction emits them raw, so every run rewrites them and a diff here
-    #     would fail on formatting on every build. That is exactly why the
-    #     layout model is committed raw and listed in .ocamlformat-ignore, and
-    #     why it is the only one that can be checked. (See the restore_tree
-    #     comment above, which exists to paper over precisely that.)
+    #     Deliberately NOT extended to Extract.v's five outputs in the
+    #     codegen-ptx project root: `Extraction Library` output that is
+    #     untracked, uncompiled and linked by nothing has no committed copy to
+    #     compare. It is a named entry in NOT_DRIFT_CHECKED, printed in step 0.
     #
     #     CANONICALISED BEFORE COMPARING, and that is not tidiness. The first CI
     #     run of this check failed on a diff whose entire content was:
@@ -363,59 +478,63 @@ cannot determine the logical path to check."
     #     output is therefore a check on which machine ran the extractor: it
     #     would have fired on every CI run forever, while being unable to
     #     distinguish that from the drift it exists to catch. A gate that cries
-    #     wolf is a gate the next person in a hurry deletes, and this one is the
-    #     whole point of #46.
+    #     wolf is a gate the next person in a hurry deletes.
     #
     #     ocamlformat is not an option here: the extraction happens in the Rocq
     #     image, which ships none (verified), and moving the comparison to a job
-    #     that has it would mean moving the extraction to a job that has no Rocq.
-    #     scripts/canonicalize-extraction.py needs only python3, which the image
-    #     does have. Both sides go through it, so what is compared is the model,
-    #     not its wrapping.
+    #     that has it would mean moving the extraction to a job that has no
+    #     Rocq. scripts/canonicalize-extraction.py needs only python3, which the
+    #     image does have. Both sides go through it, so what is compared is the
+    #     model, not its wrapping. It follows that committed models are stored
+    #     canonicalised and listed in .ocamlformat-ignore: ocamlformat would
+    #     change tokens (parentheses), not just wrapping.
     #
-    #     `git diff --exit-code`, not a pipeline: the exit status is the check.
-    #
-    #     Both preconditions FAIL rather than skip. They were written as one
-    #     `if ... && ...; then` with no else, and running this script in a
-    #     container that could not see the git directory made the entire check
-    #     disappear without a word — the run reported OK having compared
+    #     A missing regenerated file FAILS rather than skips. An earlier version
+    #     of this check was written as one `if ... && ...; then` with no else,
+    #     and running it in a container that could not see the git directory
+    #     made the whole check disappear: the run reported OK having compared
     #     nothing. A drift gate that silently opts out when its inputs are
-    #     missing is the failure mode this whole script exists to remove, and it
-    #     was reintroduced by the check added to remove it.
-    if [ "$(basename "$PWD")" = "codegen-ptx" ]; then
-      if [ ! -f extraction/sarek_ptx_layout_model.ml ]; then
-        echo "::error::extraction/sarek_ptx_layout_model.ml does not exist \
-after a full rebuild. LayoutExtract.v is meant to produce it, and \
-test_layout_conformance.ml links it — without it there is no model to compare \
-and nothing to test against."
+    #     missing is the failure mode this script exists to remove.
+    for snapped in "$snap"/*; do
+      base=$(basename "$snapped")
+      [ "$base" = "checked.list" ] && continue
+      if [ ! -f "extraction/$base" ]; then
+        echo "::error::$proj/extraction/$base does not exist after a full \
+rebuild. A driver is meant to produce it, and it is committed so that the \
+conformance tests can link it; without a regenerated copy there is nothing to \
+compare. Check that its driver in $proj/extraction/ is listed in \
+$proj/_CoqProject and still extracts '${base%.mli}'."
         exit 1
       fi
-      if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-        echo "::error::not inside a usable git work tree, so the extracted \
-model cannot be compared against the committed copy. Run this where git works \
-(CI checks out a normal clone); a linked worktree whose git directory is not \
-mounted into the container will land here."
-        exit 1
-      fi
-      python3 "$ROOT/scripts/canonicalize-extraction.py" \
-        extraction/sarek_ptx_layout_model.ml \
-        extraction/sarek_ptx_layout_model.mli
-      if ! git diff --exit-code -- \
-             extraction/sarek_ptx_layout_model.ml \
-             extraction/sarek_ptx_layout_model.mli; then
-        echo "::error::the extracted layout model differs from the committed \
-copy. The diff above is in TOKENS, not whitespace — both sides went through \
-scripts/canonicalize-extraction.py. theories/PtxLayout.v changed without \
-extraction/sarek_ptx_layout_model.ml being regenerated, so \
-test_layout_conformance.ml is checking the production layout against a stale \
-model. Regenerate: cd $proj && rocq makefile -f _CoqProject -o CoqMakefile && \
+      python3 "$ROOT/scripts/canonicalize-extraction.py" "extraction/$base"
+      if ! diff -u --label "committed/$proj/extraction/$base" \
+                   --label "regenerated/$proj/extraction/$base" \
+                   "$snapped" "extraction/$base"; then
+        echo "::error::the regenerated extracted model $proj/extraction/$base \
+differs from the committed copy. The diff above is in TOKENS, not whitespace: \
+both sides went through scripts/canonicalize-extraction.py. The theory (or its \
+extraction driver) changed without the model being regenerated, so everything \
+that links this model is checking production against a stale oracle. \
+Regenerate: cd $proj && rocq makefile -f _CoqProject -o CoqMakefile && \
 make -f CoqMakefile && python3 ../../scripts/canonicalize-extraction.py \
-extraction/sarek_ptx_layout_model.ml extraction/sarek_ptx_layout_model.mli, \
-then commit both files."
+extraction/$base, then commit it."
         exit 1
       fi
-      echo "  extracted layout model matches theories/PtxLayout.v"
-    fi
+      case "$base" in
+        *.ml) echo "$proj/extraction/$base" >> "$MODEL_SNAP/checked.list" ;;
+      esac
+    done
+    shopt -s nullglob
+    for produced in extraction/*.ml extraction/*.mli; do
+      if [ ! -f "$snap/$(basename "$produced")" ]; then
+        echo "::error::the build produced $proj/$produced, which is not \
+committed. A model nothing compares is not an oracle: commit it (canonicalised) \
+so the gate can check it from now on."
+        exit 1
+      fi
+    done
+    shopt -u nullglob
+    echo "  extracted models match their theories: $(basename "$PWD")"
 
     # 4. Kernel re-check. This is the load-bearing step: it re-verifies the
     #    proof terms independently of the elaborator that built them, and
@@ -501,6 +620,16 @@ top of this script."
   exit 1
 fi
 
+compared=$(wc -l < "$MODEL_SNAP/checked.list")
+if [ "$compared" -ne "$EXPECTED_DRIFT_CHECKED_MODELS" ]; then
+  echo "::error::expected $EXPECTED_DRIFT_CHECKED_MODELS extracted models to be \
+regenerated and compared, compared $compared:"
+  sed 's/^/    /' "$MODEL_SNAP/checked.list"
+  echo "If a model was added or removed on purpose, update \
+EXPECTED_DRIFT_CHECKED_MODELS at the top of this script."
+  exit 1
+fi
+echo "OK: $compared extracted model(s) regenerated from their theories and compared."
 
 # ---------------------------------------------------------------------------
 # Ledger drift, axiom allowlist, note anchors (task #95).

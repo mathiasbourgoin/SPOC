@@ -29,6 +29,16 @@
 #   * flag unset, pre-existing dirty tree -> pre-flight still refuses outright
 #                                            and never reaches the trap at all
 #
+# D-55 adds the extracted-model drift cases (E..H below): the gate now
+# regenerates EVERY committed extracted model and byte-compares it (after
+# canonicalisation), so a stale committed model, an extraction driver missing
+# from _CoqProject, a committed model nothing regenerates, and an unnamed
+# driver that produces no committed model must each fail with a message that
+# says which. The assertions are on the message text, not only the exit code:
+# every one of these paths exits 1, and a gate that fails for the wrong reason
+# (a missing tool, a syntax error) would satisfy an exit-code check
+# vacuously.
+#
 # Every fixture is a throwaway `git init` under mktemp, never a real formal/
 # project and never a real worktree. Per the project's own recorded hazard
 # (`git -C ""` silently operates on the caller's cwd instead of failing), every
@@ -86,6 +96,14 @@ case "$1" in
     echo "stub rocq 0.0.0 (test double, not the real toolchain)"
     ;;
   makefile)
+    if [ -n "${STUB_REGENERATED_MODEL:-}" ]; then
+      # D-55 mode: emit a CoqMakefile whose build "re-extracts" the model with
+      # the content the test chose, then let the gate carry on to its
+      # extraction comparison. (The stub's `check` below fails afterwards, so
+      # the gate always ends non-zero; the assertions are on what it printed.)
+      printf 'all:\n\tprintf "%%s\\n" "$$STUB_REGENERATED_MODEL" > extraction/model.ml\n' > CoqMakefile
+      exit 0
+    fi
     # Stand-in for the real script's documented drift: a rebuild rewrites a
     # BUILD-OWNED tracked file (here, the extraction output). Then fail,
     # before anything is actually compiled -- all this test needs is for the
@@ -109,8 +127,10 @@ make_fixture() {
   require_nonempty "fixture dir ($1)" "$dir"
   mkdir -p "$dir/scripts" "$dir/formal/testproj/theories" "$dir/formal/testproj/extraction"
   cp "$GATE_SRC" "$dir/scripts/"
+  cp "$SCRIPT_DIR/canonicalize-extraction.py" "$dir/scripts/"
   chmod +x "$dir/scripts/check-formal-proofs.sh"
-  printf -- '-R theories Test\n' > "$dir/formal/testproj/_CoqProject"
+  printf -- '-R theories Test\nextraction/Extract.v\n' > "$dir/formal/testproj/_CoqProject"
+  printf 'Extraction "model.ml" nothing.\n' > "$dir/formal/testproj/extraction/Extract.v"
   printf 'committed\n' > "$dir/formal/testproj/driftfile.txt"
   printf 'committed\n' > "$dir/formal/testproj/extraction/model.ml"
   # A TRACKED .lia.cache, standing in for the real repo's
@@ -288,6 +308,103 @@ else
   echo "  FAIL: case-d: the next unflagged run was refused -- the cache" \
        "restore left drift behind:"
   printf '%s\n' "$out2" | sed 's/^/      /'
+  fail=$((fail + 1))
+fi
+
+# assert_output <case> <output> <fixed string> <description>
+assert_output() {
+  if printf '%s' "$2" | grep -qF -- "$3"; then
+    echo "  PASS: $1: $4"
+    pass=$((pass + 1))
+  else
+    echo "  FAIL: $1: $4 -- expected the output to contain: $3"
+    printf '%s\n' "$2" | sed 's/^/      /'
+    fail=$((fail + 1))
+  fi
+}
+
+# --- Case E: a STALE committed extracted model must fail the gate (D-55) ----
+# The stub "build" re-extracts different content from what is committed. The
+# gate must say so, name the file and the project, show the diff, and give the
+# regeneration command -- not merely exit non-zero.
+d="$(make_fixture case-e)"
+require_nonempty "case-e dir" "$d"
+out="$(run_gate "$d" STUB_REGENERATED_MODEL=regenerated-differs)"
+rc=$?
+assert_output case-e "$out" 'differs from the committed copy' \
+  "a stale committed model is reported as such"
+assert_output case-e "$out" 'formal/testproj/extraction/model.ml' \
+  "the message names the project and the stale file"
+assert_output case-e "$out" '-committed' \
+  "the diff shows the committed side"
+assert_output case-e "$out" '+regenerated-differs' \
+  "the diff shows the regenerated side"
+assert_output case-e "$out" 'Regenerate: cd formal/testproj && rocq makefile' \
+  "the message gives the regeneration command"
+if printf '%s' "$out" | grep -qF 'extracted models match their theories'; then
+  echo "  FAIL: case-e: gate claimed the models match"
+  fail=$((fail + 1))
+else
+  echo "  PASS: case-e: gate did not claim the stale model matches"
+  pass=$((pass + 1))
+fi
+
+# --- Case F: an up-to-date model passes the comparison (the negative of E) ---
+# Without this, case E could be satisfied by a gate that fails EVERY model. The
+# stub re-extracts exactly what is committed; the gate must reach and print its
+# success line for the comparison (it then dies in the stub's kernel check,
+# which is not under test).
+d="$(make_fixture case-f)"
+require_nonempty "case-f dir" "$d"
+out="$(run_gate "$d" STUB_REGENERATED_MODEL=committed)"
+assert_output case-f "$out" 'extracted models match their theories: testproj' \
+  "a model that matches its regenerated extraction passes the comparison"
+
+# --- Case G: a driver missing from _CoqProject must fail (D-55) -------------
+# This was the state of all twelve type-safety drivers: present on disk, never
+# compiled by CI, so their models could not be drift-checked.
+d="$(make_fixture case-g)"
+require_nonempty "case-g dir" "$d"
+printf -- '-R theories Test\n' > "$d/formal/testproj/_CoqProject"
+( cd "$d" && git add -A && git commit -q -m "drop driver from _CoqProject" ) >/dev/null 2>&1
+out="$(run_gate "$d" STUB_REGENERATED_MODEL=committed)"
+assert_output case-g "$out" 'is an extraction driver but is not listed' \
+  "a driver absent from _CoqProject is rejected"
+assert_output case-g "$out" 'formal/testproj/extraction/Extract.v' \
+  "the message names the driver"
+
+# --- Case H: a committed model no driver regenerates must fail ---------------
+d="$(make_fixture case-h)"
+require_nonempty "case-h dir" "$d"
+printf 'orphan\n' > "$d/formal/testproj/extraction/orphan.ml"
+( cd "$d" && git add -A && git commit -q -m "add orphan model" ) >/dev/null 2>&1
+out="$(run_gate "$d" STUB_REGENERATED_MODEL=committed)"
+assert_output case-h "$out" "no driver under formal/testproj/extraction/ extracts 'orphan.ml'" \
+  "a committed model that nothing regenerates is rejected"
+
+# --- Case I: a driver that produces no committed model, and is not named ----
+# in NOT_DRIFT_CHECKED, must fail: the exemption list may not grow silently.
+d="$(make_fixture case-i)"
+require_nonempty "case-i dir" "$d"
+printf 'Extraction Library Foo.\n' > "$d/formal/testproj/extraction/Other.v"
+printf -- '-R theories Test\nextraction/Extract.v\nextraction/Other.v\n' > "$d/formal/testproj/_CoqProject"
+( cd "$d" && git add -A && git commit -q -m "add unnamed library driver" ) >/dev/null 2>&1
+out="$(run_gate "$d" STUB_REGENERATED_MODEL=committed)"
+assert_output case-i "$out" 'produces no committed model and is not named in NOT_DRIFT_CHECKED' \
+  "an unnamed driver with no committed model is rejected"
+
+# --- Case J: a model deleted by the build (driver stopped extracting it) ----
+# The gate deletes committed models before the build; a build that does not
+# recreate one must be an error, not a pass on the stale committed copy.
+d="$(make_fixture case-j)"
+require_nonempty "case-j dir" "$d"
+out="$(run_gate "$d")"   # default stub: makefile fails; model is restored
+content="$(cat "$d/formal/testproj/extraction/model.ml")"
+if [ "$content" = "committed" ]; then
+  echo "  PASS: case-j: the committed model deleted for the build is restored on exit"
+  pass=$((pass + 1))
+else
+  echo "  FAIL: case-j: committed model not restored (got: $content)"
   fail=$((fail + 1))
 fi
 
