@@ -101,6 +101,7 @@ val set_reporter : (report -> unit) option -> unit
 (** Test hook: while [true], the analysis of a kernel not yet cached raises, as
     a defect in it would. Launches must still succeed ([Original]). *)
 val fail_analysis_for_tests : bool -> unit
+[@@alert test_only "for tests only: makes matrix analysis fail"]
 
 (** Forget every cached plan and rewritten kernel. *)
 val clear : unit -> unit
