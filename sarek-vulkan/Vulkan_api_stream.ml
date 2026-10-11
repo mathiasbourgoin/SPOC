@@ -60,13 +60,19 @@ let create device =
 
 let default_streams : (int, t) Hashtbl.t = Hashtbl.create 4
 
+(** The [default_streams] entry is removed last, and only when it is [stream]:
+    if the wait for pending work raises, a default stream stays reachable and
+    intact. *)
 let destroy stream =
-  Hashtbl.remove default_streams stream.device.Device.id ;
   destroy_tracked_fence
     "vkWaitForFences (Stream.destroy)"
     stream.device.Device.device
     stream.fence ;
-  vkDestroyCommandPool stream.device.Device.device stream.command_pool null
+  vkDestroyCommandPool stream.device.Device.device stream.command_pool null ;
+  match Hashtbl.find_opt default_streams stream.device.Device.id with
+  | Some default when default == stream ->
+      Hashtbl.remove default_streams stream.device.Device.id
+  | Some _ | None -> ()
 
 let synchronize stream =
   await_fence

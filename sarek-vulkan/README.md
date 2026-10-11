@@ -367,9 +367,14 @@ Vulkan.Kernel.launch kernel
 ```
 
 `launch` blocks until the dispatch completes. Submissions to a device's queue
-are serialized by a per-device lock, so launches on different kernels may come
-from several domains. A kernel object owns a single descriptor set, rewritten
-by each launch: a kernel object must not be launched from two domains at once.
+are serialized by a per-device lock. That alone does not make the backend
+multi-domain safe: the default stream, the default-stream table, the device
+command pool used for transfers and the lazily bound Vulkan entry points are
+not guarded. Launches from several domains are supported only on distinct
+streams created with `Stream.create`, after a first use of the backend from
+one domain; the default stream (`~stream:None`) is single-domain. A kernel
+object owns a single descriptor set, rewritten by each launch, so a kernel
+object must not be launched from two domains at once either.
 
 Fence waits (launch, `Stream.synchronize`, `Event.synchronize`) are unbounded:
 they return when the work completes and raise only on a device error, with a

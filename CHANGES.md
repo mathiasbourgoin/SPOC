@@ -511,9 +511,11 @@
   would let a caller free memory the GPU still uses) and log a warning every
   60 s; `SPOC_VULKAN_FENCE_TIMEOUT_S` bounds them, raising
   `Synchronization_failed`, for tests that detect hangs. Submissions and
-  waits for idle on a device's queue are serialized by a per-device lock. A
-  kernel object owns one descriptor set and must still not be launched from
-  two domains at once.
+  waits for idle on a device's queue are serialized by a per-device lock; this
+  does not make the backend multi-domain safe. Several domains may launch
+  only on distinct streams created with `Stream.create`, after a first use
+  from one domain; the default stream is single-domain, and a kernel object
+  must not be launched from two domains at once.
 
 - hiprtc and nvrtc option arrays: `CArray.of_list string` let the C copies of
   the option strings be freed before the compile call. Under a different

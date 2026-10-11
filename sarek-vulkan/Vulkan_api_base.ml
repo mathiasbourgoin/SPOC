@@ -54,31 +54,38 @@ let check (ctx : string) (result : vk_result) : unit =
 let fence_warn_interval_ns = 60_000_000_000L
 
 (** Optional bound on a fence wait, from [SPOC_VULKAN_FENCE_TIMEOUT_S] (seconds,
-    positive). Unset means unbounded: a wait on submitted work ends only when
-    the work completes or the device reports an error, because a caller that
-    gave up early could free memory the GPU still uses. The bound exists for
-    tests that use it as a hang detector. *)
-let fence_wait_bound_ns () =
+    positive), read once when the library is loaded. Unset means unbounded: a
+    wait on submitted work ends only when the work completes or the device
+    reports an error, because a caller that gave up early could free memory the
+    GPU still uses. The bound exists for tests that use it as a hang detector. A
+    malformed value is kept as [Error] and refused by {!check_fence_wait_bound},
+    called when a device is created, so it never surfaces after a submission. *)
+let fence_wait_bound_parsed : (int64 option, string) result =
   match Sys.getenv_opt "SPOC_VULKAN_FENCE_TIMEOUT_S" with
-  | None | Some "" -> None
+  | None | Some "" -> Ok None
   | Some text -> (
       match float_of_string_opt text with
       | Some seconds when seconds > 0.0 ->
-          Some (Int64.of_float (seconds *. 1e9))
+          Ok (Some (Int64.of_float (seconds *. 1e9)))
       | _ ->
-          Vulkan_error.raise_error
-            (Vulkan_error.context_error
-               "SPOC_VULKAN_FENCE_TIMEOUT_S"
-               (Printf.sprintf
-                  "expected a positive number of seconds, got %S"
-                  text)))
+          Error
+            (Printf.sprintf
+               "expected a positive number of seconds, got %S"
+               text))
+
+let check_fence_wait_bound () =
+  match fence_wait_bound_parsed with
+  | Ok _ -> ()
+  | Error reason ->
+      Vulkan_error.raise_error
+        (Vulkan_error.context_error "SPOC_VULKAN_FENCE_TIMEOUT_S" reason)
 
 (** Wait for [fence] on [device] until it is signalled. Logs a warning naming
     [ctx] every {!fence_warn_interval_ns}. Raises the canonical error of
     {!check} on a device error, and [Synchronization_failed] only when
-    {!fence_wait_bound_ns} is set and reached. *)
+    {!fence_wait_bound_parsed} sets a bound and it is reached. *)
 let wait_fence (ctx : string) device fence =
-  let bound = fence_wait_bound_ns () in
+  let bound = Result.value fence_wait_bound_parsed ~default:None in
   let fence_ptr = allocate vk_fence fence in
   let rec loop waited =
     let slice =
@@ -96,22 +103,22 @@ let wait_fence (ctx : string) device fence =
     with
     | VK_TIMEOUT -> (
         let waited = Int64.add waited slice in
-        let seconds = Int64.div waited 1_000_000_000L in
+        let waited_ms = Int64.div waited 1_000_000L in
         match bound with
         | Some b when waited >= b ->
             Vulkan_error.raise_error
               (Vulkan_error.synchronization_failed
                  (Printf.sprintf
-                    "%s: fence not signalled after %Ld s \
+                    "%s: fence not signalled after %Ld ms \
                      (SPOC_VULKAN_FENCE_TIMEOUT_S)"
                     ctx
-                    seconds))
+                    waited_ms))
         | _ ->
             Spoc_core.Log.warnf
               Spoc_core.Log.Device
-              "[Vulkan] %s: fence still not signalled after %Ld s"
+              "[Vulkan] %s: fence still not signalled after %Ld ms"
               ctx
-              seconds ;
+              waited_ms ;
             loop waited)
     | result -> check ctx result
   in
