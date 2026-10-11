@@ -7,7 +7,9 @@
    against the scalar f32 Sarek_gemm.sgemm_tiled_kernel, at spoc_llm prefill
    shapes: M = 256 tokens, K = 3072, N in {1024, 3072, 12288}
    (specs/coopmat-hip-wmma.md). rocBLAS is measured by
-   tools/probes/rocblas_gemm_f16.cpp with the same method.
+   tools/probes/rocblas_gemm_f16.cpp with the same method. Each tiling runs
+   with B row-major ([k][n], a strided fragment gather on gfx11) and B stored
+   transposed ([n][k], [~b_layout:Col_major], contiguous fragment loads).
 
    Method: GPU events on the default stream around a batch of [batch]
    back-to-back launches (so host enqueue gaps between launches are hidden by
@@ -98,17 +100,22 @@ let f32_vec len =
   done ;
   v
 
-let bench_coopmat dev ~m ~n ~k tiling =
+let bench_coopmat dev ~m ~n ~k ~b_layout tiling =
   let a = f16_vec (m * k) and b = f16_vec (k * n) in
   let c = f32_vec (m * n) and d = f32_vec (m * n) in
-  let launch () = Gemm.run ~device:dev ~tiling ~a ~b ~c ~d ~m ~n ~k () in
+  let launch () =
+    Gemm.run ~device:dev ~tiling ~b_layout ~a ~b ~c ~d ~m ~n ~k ()
+  in
   report
     ~name:
       (Printf.sprintf
-         "coopmat f16 %dx%d/w%d"
+         "coopmat f16 %dx%d/w%d%s"
          tiling.Gemm.frags_m
          tiling.frags_n
-         tiling.waves)
+         tiling.waves
+         (match b_layout with
+         | Sarek_coopmat.Row_major -> ""
+         | Sarek_coopmat.Col_major -> " B^T"))
     ~m
     ~n
     ~k
@@ -170,6 +177,9 @@ let () =
       List.iter
         (fun n ->
           let m = 256 and k = 3072 in
-          List.iter (bench_coopmat dev ~m ~n ~k) tilings ;
+          List.iter
+            (fun b_layout ->
+              List.iter (bench_coopmat dev ~m ~n ~k ~b_layout) tilings)
+            [Sarek_coopmat.Row_major; Sarek_coopmat.Col_major] ;
           bench_scalar dev ~m ~n ~k)
         [1024; 3072; 12288]
