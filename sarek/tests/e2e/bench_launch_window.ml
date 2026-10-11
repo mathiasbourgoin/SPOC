@@ -381,6 +381,16 @@ let () =
           layers
           tokens
           reps ;
+        (* "On" must defer on this device: a backend outside the default set
+           (Metal) is opted in for the run and restored afterwards. *)
+        Execute.Window.set_enabled true ;
+        let opted_in = not (Execute.Window.defers dev.framework) in
+        if opted_in then
+          Execute.Window.set_backend_enabled ~backend:dev.framework true ;
+        Printf.printf
+          "  window on = %s\n%!"
+          (if opted_in then "opted in (backend is not in the default set)"
+           else "the backend's default") ;
         let m = model () in
         let runs =
           List.init reps (fun _ ->
@@ -419,6 +429,8 @@ let () =
         show "window off: host us/launch (enqueue)" eo ;
         show "window on:  host us/launch (enqueue)" en ;
         Execute.Window.set_enabled true ;
+        if opted_in then
+          Execute.Window.set_backend_enabled ~backend:dev.framework false ;
         if reps >= 2 && off_det && not same then exit 1
       end)
     devs

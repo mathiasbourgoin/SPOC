@@ -382,9 +382,11 @@ let check_bit_identity dev ~defers label f =
 let run_device (dev : Device.t) =
   let defers = Execute.Window.defers_device dev in
   (* Every GPU backend defers by default, except Metal until its window has
-     run on Apple hardware; CPU devices are excluded. *)
+     run on Apple hardware; CPU devices are excluded. Not asserted when the
+     window is switched off (SAREK_LAUNCH_WINDOW=0). *)
   if
-    (not dev.Device.capabilities.Spoc_framework.Framework_sig.is_cpu)
+    Execute.Window.enabled ()
+    && (not dev.Device.capabilities.Spoc_framework.Framework_sig.is_cpu)
     && dev.Device.framework <> "Metal"
   then check dev "deferred by default" defers ;
   let scenario label f ~fused_launches =
@@ -452,10 +454,8 @@ let interpreter_epilogue () =
     gx ;
   bits_f t = bits_f t' && bits_f acc = bits_f acc'
 
-(* The fused kernel on the Interpreter, against its members one by one. *)
 (* The fused kernel's source on the CUDA C and Metal generators (compiler
-   output, no device): one kernel, the members' own parameters then an
-   (offset, size) pair per member, and no work-group id left unrewritten. *)
+   output, no device). *)
 let fused_sources () =
   let members = [ir_of mv_wave; ir_of mv_row; ir_of positions] in
   let fused = Sarek_execute.Fusion_horizontal.fuse ~name:"fused_src" members in
@@ -474,9 +474,42 @@ let count_occurrences ~sub s =
   in
   go 0 0
 
-(* Barriers: 5 in the wave matvec, 8 in the row kernel; they stay inside the
-   member's own work-group-uniform branch. Every second-member work-group id
-   is shifted by its offset. Metal binds 26 of its 31 buffer slots. *)
+(* The window's own count of the fused kernel's argument slots, for the same
+   three members and the arguments the launches would bind. *)
+let window_slots () =
+  let module LW = Sarek_execute.Launch_window in
+  let v n = Execute.Vec (fvec n 0) in
+  let member ir args =
+    {
+      LW.device_id = 0;
+      backend = "Metal";
+      ir = ir_of ir;
+      ir_id = 0;
+      shared_bytes = Some 0;
+      max_grid_x = max_int;
+      max_shared = max_int;
+      max_arg_slots = 31;
+      args;
+      block = d1 256;
+      grid = d1 1;
+      shared_mem = 0;
+      accesses = [];
+      issue = ignore;
+      issue_fused = (fun _ _ _ -> ());
+    }
+  in
+  LW.fused_slots
+    Execute.window
+    [
+      member mv_wave [v 1; v 1; v 1; Execute.Int rows; Execute.Int nb];
+      member mv_row [v 1; v 1; v 1; Execute.Int n_row];
+      member positions [v 1; v 1; Execute.Int n_pos];
+    ]
+
+(* Expected from the kernels: 5 barriers in the wave matvec and 8 in the row
+   kernel (13 in all); the second member's work-group id is shifted by its
+   offset, in its two uses. The window's slot count must equal the number of
+   [[buffer(n)]] parameters Metal's generator emits (26 of 31). *)
 let fused_source_checks () =
   let cuda, metal = fused_sources () in
   let n = count_occurrences in
@@ -488,9 +521,11 @@ let fused_source_checks () =
       n ~sub:"threadgroup_barrier(mem_flags::mem_threadgroup);" metal = 13 );
     ( "fused Metal: group id rewritten",
       n ~sub:"(((int)__metal_bid.x) - hf1_off)" metal = 2 );
-    ("fused Metal: 26 of 31 buffer slots", n ~sub:"[[buffer(" metal = 26);
+    ( "window slot count = Metal [[buffer(]]",
+      n ~sub:"[[buffer(" metal = window_slots () && window_slots () = 26 );
   ]
 
+(* The fused kernel on the Interpreter, against its members one by one. *)
 let interpreter_fused () =
   let members = [ir_of mv_wave; ir_of mv_row; ir_of positions] in
   let fused = Sarek_execute.Fusion_horizontal.fuse ~name:"fused_test" members in
@@ -550,54 +585,39 @@ let interpreter_fused () =
   && bits_i p = bits_i p'
   && bits_i q = bits_i q'
 
+let verdict label what ok =
+  Printf.printf
+    "  %-46s %-24s %s\n%!"
+    label
+    what
+    (if ok then "PASS" else "FAIL") ;
+  if not ok then failures := what :: !failures
+
+(* A device that raises: the host backends must run. On a GPU only an
+   unavailable backend skips; a codegen, compile, load or launch error, or an
+   exception from the window/fusion code itself, is a failure (docs review
+   D-41). *)
+let run_device_guarded (dev : Device.t) =
+  match run_device dev with
+  | () -> ()
+  | exception e ->
+      let host = dev.framework = "Native" || dev.framework = "Interpreter" in
+      let regression = host || Test_helpers.Backend_failure.verdict e = `Fail in
+      Printf.printf
+        "  %-11s %s: %s\n%!"
+        dev.framework
+        (if regression then "FAIL" else "SKIP")
+        (Printexc.to_string e) ;
+      if regression then failures := (dev.framework ^ " raised") :: !failures
+
 let () =
   print_endline "=== launch window and horizontal fusion, E2E ===" ;
-  let ok = interpreter_fused () in
-  Printf.printf
-    "  %-46s %-24s %s\n%!"
-    "Interpreter"
-    "fused IR = members"
-    (if ok then "PASS" else "FAIL") ;
-  if not ok then failures := "interpreter fused IR" :: !failures ;
+  verdict "Interpreter" "fused IR = members" (interpreter_fused ()) ;
   List.iter
-    (fun (label, ok) ->
-      Printf.printf
-        "  %-46s %-24s %s\n%!"
-        "Codegen"
-        label
-        (if ok then "PASS" else "FAIL") ;
-      if not ok then failures := label :: !failures)
+    (fun (label, ok) -> verdict "Codegen" label ok)
     (fused_source_checks ()) ;
-  let ok = interpreter_epilogue () in
-  Printf.printf
-    "  %-46s %-24s %s\n%!"
-    "Interpreter"
-    "epilogue IR = pair"
-    (if ok then "PASS" else "FAIL") ;
-  if not ok then failures := "interpreter epilogue IR" :: !failures ;
-  Array.iter
-    (fun (dev : Device.t) ->
-      match run_device dev with
-      | () -> ()
-      | exception e ->
-          (* The host backends must run. On a GPU only an unavailable
-             backend skips; a codegen, compile, load or launch error, or an
-             exception from the window/fusion code itself, is a failure
-             (docs review D-41). *)
-          let host =
-            dev.framework = "Native" || dev.framework = "Interpreter"
-          in
-          let regression =
-            host || Test_helpers.Backend_failure.verdict e = `Fail
-          in
-          Printf.printf
-            "  %-11s %s: %s\n%!"
-            dev.framework
-            (if regression then "FAIL" else "SKIP")
-            (Printexc.to_string e) ;
-          if regression then
-            failures := (dev.framework ^ " raised") :: !failures)
-    (Device.init ()) ;
+  verdict "Interpreter" "epilogue IR = pair" (interpreter_epilogue ()) ;
+  Array.iter run_device_guarded (Device.init ()) ;
   if !failures <> [] then begin
     Printf.printf
       "test_launch_window: FAILED (%s)\n"
