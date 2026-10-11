@@ -9,5 +9,6 @@
   test_sarek_pure_registry
   test_sarek_ir_codegen_decl_order
   test_sarek_ir_affine
-  test_sarek_ir_eval_int)
+  test_sarek_ir_eval_int
+  test_sarek_push_constants)
  (libraries sarek_ir alcotest astring str unix))

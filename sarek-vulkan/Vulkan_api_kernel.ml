@@ -312,9 +312,10 @@ let compile device ~name ~source =
     push_const_stageFlags
     (Unsigned.UInt32.of_int vk_shader_stage_compute_bit) ;
   setf push_constant_range push_const_offset (Unsigned.UInt32.of_int 0) ;
-  setf push_constant_range push_const_size (Unsigned.UInt32.of_int 128) ;
-
-  (* 128 bytes max for push constants *)
+  setf
+    push_constant_range
+    push_const_size
+    (Unsigned.UInt32.of_int Sarek_push_constants.vulkan_block_limit) ;
   setf
     pl_create_info
     pl_create_pushConstantRangeCount
@@ -485,8 +486,9 @@ let set_arg_ptr _args _idx _p =
   Vulkan_error.raise_error
     (Vulkan_error.feature_not_supported "raw pointer kernel arguments")
 
-(* Vulkan guarantees at least 128 bytes of push constants. *)
-let push_constant_limit = 128
+(* Vulkan guarantees at least 128 bytes of push constants; the launch window
+   sizes its fused groups against the same constant. *)
+let push_constant_limit = Sarek_push_constants.vulkan_block_limit
 
 (** Materialize the push-constant byte block for [args] at launch time, from the
     full ordered argument set (buffers + scalars), matching EXACTLY the GLSL
@@ -531,45 +533,41 @@ let build_push_constants args : bytes option =
   in
   if vector_lengths = [] && scalars = [] then None
   else begin
-    let pc = Bytes.create push_constant_limit in
-    let offset = ref 0 in
-    (* GLSL's std430-like push_constant layout base-aligns each scalar member
-       to its own size (4 bytes for int/float, 8 bytes for int64_t/double), so
-       an 8-byte field following one or more 4-byte fields needs 4 bytes of
-       padding inserted by the compiler before it. [write_at] must reproduce
-       that padding on the host side or a mixed 32/64-bit push-constant block
-       reads shifted bytes for every field after the first misalignment. *)
-    let align_to width =
-      let misalignment = !offset mod width in
-      if misalignment <> 0 then offset := !offset + (width - misalignment)
+    (* The layout is {!Sarek_push_constants.place}, the function the launch
+       window sizes its fused groups with; GLSL's std430-like push_constant
+       block base-aligns each member to its own size, so an 8-byte field after
+       4-byte fields has padding the host side must reproduce. *)
+    let scalar_width = function
+      | SInt32 _ | SFloat32 _ -> Sarek_push_constants.W4
+      | SInt64 _ | SFloat64 _ -> Sarek_push_constants.W8
     in
-    let write_at width write =
-      align_to width ;
-      if !offset + width > push_constant_limit then
-        Vulkan_error.raise_error
-          (Vulkan_error.context_error
-             "push constant"
-             (Printf.sprintf
-                "push constant block overflow: exceeded %d-byte limit"
-                push_constant_limit)) ;
-      write pc !offset ;
-      offset := !offset + width
+    let fields =
+      List.map (fun _ -> Sarek_push_constants.W4) vector_lengths
+      @ List.map scalar_width scalars
     in
-    List.iter
-      (fun len -> write_at 4 (fun buf off -> Bytes.set_int32_le buf off len))
-      vector_lengths ;
-    List.iter
-      (function
-        | SInt32 n -> write_at 4 (fun buf off -> Bytes.set_int32_le buf off n)
-        | SInt64 n -> write_at 8 (fun buf off -> Bytes.set_int64_le buf off n)
-        | SFloat32 f ->
-            write_at 4 (fun buf off ->
-                Bytes.set_int32_le buf off (Int32.bits_of_float f))
-        | SFloat64 f ->
-            write_at 8 (fun buf off ->
-                Bytes.set_int64_le buf off (Int64.bits_of_float f)))
-      scalars ;
-    Some (Bytes.sub pc 0 !offset)
+    let offsets, total = Sarek_push_constants.place fields in
+    if total > push_constant_limit then
+      Vulkan_error.raise_error
+        (Vulkan_error.context_error
+           "push constant"
+           (Printf.sprintf
+              "push constant block overflow: %d bytes exceed the %d-byte limit"
+              total
+              push_constant_limit)) ;
+    let pc = Bytes.create total in
+    let write_vector offset len = Bytes.set_int32_le pc offset len in
+    let write_scalar offset = function
+      | SInt32 n -> Bytes.set_int32_le pc offset n
+      | SInt64 n -> Bytes.set_int64_le pc offset n
+      | SFloat32 f -> Bytes.set_int32_le pc offset (Int32.bits_of_float f)
+      | SFloat64 f -> Bytes.set_int64_le pc offset (Int64.bits_of_float f)
+    in
+    let writes =
+      List.map (fun len pos -> write_vector pos len) vector_lengths
+      @ List.map (fun scalar pos -> write_scalar pos scalar) scalars
+    in
+    List.iter2 (fun write offset -> write offset) writes offsets ;
+    Some pc
   end
 
 (** Write [args]' buffers into the kernel's persistent descriptor set. The

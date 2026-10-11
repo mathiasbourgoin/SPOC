@@ -438,10 +438,13 @@ let join (w : 'arg LW.t) (c : 'arg LW.launch) : bool =
                 (fun m ->
                   if LW.conflicts m c then
                     Option.bind (try_member w g m c shape) (fun merged ->
-                        let others =
-                          List.filter (fun x -> x != m) g.LW.rev_members
+                        let after =
+                          List.map
+                            (fun x -> if x == m then merged else x)
+                            g.LW.rev_members
                         in
-                        if LW.slots_ok w (merged :: others) then Some (m, merged)
+                        if LW.signature_ok w (List.rev after) then
+                          Some (m, merged)
                         else None)
                   else None)
                 g.LW.rev_members

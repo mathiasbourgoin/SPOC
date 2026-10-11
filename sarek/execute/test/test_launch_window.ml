@@ -916,6 +916,51 @@ let test_arg_slot_limit_wiring () =
   check int "12 fit a pair" 2 (slot_limited_launches 12) ;
   check int "11: nothing fuses" 3 (slot_limited_launches 11)
 
+(* The same through the push-constant byte limit (Vulkan: 128). A probe member
+   has two vectors and no scalars: 8 bytes of lengths, plus 8 for its
+   (offset, size) pair, so 16 bytes per fused member. *)
+let push_limited_launches limit =
+  let module LW = Sarek_execute.Launch_window in
+  reset () ;
+  LW.set_push_constant_limit ~backend:backend_name limit ;
+  Fun.protect
+    ~finally:(fun () ->
+      LW.set_push_constant_limit ~backend:backend_name max_int)
+    (fun () ->
+      let[@warning "-8"] [x; y1; y2; y3] = resident 4 in
+      events := [] ;
+      launch k_a x y1 ;
+      launch k_b x y2 ;
+      launch k_c x y3 ;
+      Execute.Window.flush () ;
+      List.length (launches ()))
+
+let test_push_constant_limit_wiring () =
+  let module LW = Sarek_execute.Launch_window in
+  check int "Vulkan has 128 bytes" 128 (LW.push_constant_limit "Vulkan") ;
+  check
+    bool
+    "no limit configured for HIP"
+    true
+    (LW.push_constant_limit "HIP" = max_int) ;
+  check int "unbounded: one fused launch" 1 (push_limited_launches max_int) ;
+  check int "48 bytes fit three members" 1 (push_limited_launches 48) ;
+  check int "47: a pair and a single" 2 (push_limited_launches 47) ;
+  check int "32 bytes fit a pair" 2 (push_limited_launches 32) ;
+  check int "31: nothing fuses" 3 (push_limited_launches 31)
+
+(* The window's byte count is the block of the kernel the fusion builds. *)
+let test_fused_push_bytes_match_fusion () =
+  let module LW = Sarek_execute.Launch_window in
+  let members = [k_a; k_b; k_c] in
+  let fused = Sarek_execute.Fusion_horizontal.fuse ~name:"pc" members in
+  check
+    int
+    "window count = block of the fused kernel's parameters"
+    (Sarek_push_constants.block_bytes fused.kern_params)
+    (Sarek_push_constants.fused_block_bytes
+       (List.map (fun (k : kernel) -> k.kern_params) members))
+
 (* {1 Review round 3} *)
 
 (* The default deferring set, by the framework names the plugins register
@@ -1240,6 +1285,20 @@ let test_epilogue_slot_limit () =
   in
   check int "9 slots: merged" 1 (merged 9) ;
   check int "8 slots: not merged" 2 (merged 8)
+
+(* ... and by the push-constant bytes: the merged kernel has three vectors
+   (12 bytes of lengths) and three scalars (12 bytes). *)
+let test_epilogue_push_limit () =
+  let module LW = Sarek_execute.Launch_window in
+  let merged limit =
+    LW.set_push_constant_limit ~backend:backend_name limit ;
+    Fun.protect
+      ~finally:(fun () ->
+        LW.set_push_constant_limit ~backend:backend_name max_int)
+      (fun () -> List.length (epilogue_pair ~cons_block:64 ()))
+  in
+  check int "24 bytes: merged" 1 (merged 24) ;
+  check int "23 bytes: not merged" 2 (merged 23)
 
 let test_epilogue_uncovered () =
   (* The consumer writes [0, 128) but the producer stores only [0, 64). *)
@@ -1660,6 +1719,14 @@ let () =
             `Quick
             test_arg_slot_limit_wiring;
           test_case
+            "push-constant byte limit"
+            `Quick
+            test_push_constant_limit_wiring;
+          test_case
+            "fused push bytes match the fused kernel"
+            `Quick
+            test_fused_push_bytes_match_fusion;
+          test_case
             "CPU device not deferred"
             `Quick
             test_cpu_device_not_deferred;
@@ -1684,6 +1751,10 @@ let () =
           test_case "consumer shape" `Quick test_consumer_shape;
           test_case "merged when covered" `Quick test_epilogue_merged;
           test_case "merge bounded by slots" `Quick test_epilogue_slot_limit;
+          test_case
+            "merge bounded by push-constant bytes"
+            `Quick
+            test_epilogue_push_limit;
           test_case "not merged when uncovered" `Quick test_epilogue_uncovered;
           test_case "default backends" `Quick test_epilogue_off_by_default;
           test_case "failure falls back" `Quick test_epilogue_failure_falls_back;

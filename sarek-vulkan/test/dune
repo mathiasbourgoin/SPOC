@@ -73,3 +73,11 @@
    SPOC_VULKAN_FENCE_TIMEOUT_S
    30
    (run %{test}))))
+
+; The host-side push-constant block (no device): shared layout, the 128-byte
+; limit accepted exactly and refused one scalar past it.
+
+(test
+ (name test_vulkan_push_constant_budget)
+ (modules test_vulkan_push_constant_budget)
+ (libraries sarek_vulkan sarek_ir sarek_backend_error alcotest))
