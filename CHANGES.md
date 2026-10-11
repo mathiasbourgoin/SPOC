@@ -412,7 +412,6 @@
   unchanged. Migration: code that matches exhaustively on
   `Sarek_ir_affine.error` or `Sarek_matrix_pattern.reason` gains one case each;
   a kernel that wants the rewrite must index with int32.
-||||||| parent of a2bf07da (test(launch-window): skip bit-identity on non-deferring devices, require 3 agreeing plain runs (D-35))
 - OpenCL zero-copy buffers (`CL_MEM_USE_HOST_PTR`, chosen for CPU devices) had
   no-op host transfers, so a host read raced the asynchronous kernel and a host
   write raced kernels still reading; on an implementation that keeps a private
