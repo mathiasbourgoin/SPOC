@@ -51,54 +51,105 @@ let store_planes names idx values =
   SSeq
     (List.map2 (fun name v -> SAssign (LArrayElem (name, idx), v)) names values)
 
-(* Stage one 64 x 16 A tile (or 16 x 64 B tile), zero outside the region. *)
 (* [lets [(v, e); ...] body]: a chain of immutable lets. *)
 let lets bindings body =
   List.fold_right (fun (v, e) b -> SLet (v, e, b)) bindings body
 
 let local c name = new_var c.fresh name TInt32
 
-(* One element of a staged tile, element [e] of the tile in row-major order:
-   the operand element, converted, or zero outside the region. *)
-let stage_element c ~kt ~is_a ~e =
-  let width = if is_a then c.bk else bn in
-  let r = local c "r" and col = local c "c" and o = local c "o" in
-  let vr = EVar r and vc = EVar col and vo = EVar o in
-  let kk = c.g.k_lo +: (kt *: i32 c.bk) +: if is_a then vc else vr in
+(* ---- Staging ---------------------------------------------------------------
+
+   Both shared tiles are [outer][k] with padded rows: A as [m][k], B
+   TRANSPOSED as [n][k], so a fragment of either is 16 contiguous elements
+   per lane (B is loaded column-major). Each thread stages [group]
+   consecutive k of one row of A (column of B): its [group] shared stores are
+   contiguous, and the guarded value is selected, not branched on, so they
+   can merge into vector stores. *)
+
+let group = 8
+
+(* Rows of a staged tile: [bm] for A, [bn] for B. *)
+let tile_outer ~is_a = if is_a then bm else bn
+
+(* The operand's zero: [stage] of it is the scheme's zero plane values (0 to
+   bytes, to f16, to the bf16 split), so an element outside the region stages
+   exactly as before. *)
+let operand_zero = function
+  | TFloat16 -> ECast (TFloat16, fzero)
+  | TFloat32 -> fzero
+  | elt -> ECast (elt, i32 0)
+
+(* Whether [group] consecutive k are contiguous in the operand's own memory:
+   then a thread's [group] reads are contiguous and consecutive threads take
+   consecutive groups; otherwise consecutive threads take consecutive rows of
+   A (columns of B), so each read instruction is coalesced across threads. *)
+let k_contiguous c ~is_a =
+  if is_a then c.g.a.layout = P.Row_major else c.g.b.layout = P.Col_major
+
+(* Group [gi] of a staged tile: [group] elements, outer index [outer] (row
+   of A, column of B), k from [kg * group], each the operand element
+   converted, or zero outside the region. All reads, then all conversions,
+   then all stores: a conversion may carry an opaque barrier
+   (sarek_f32_barrier) that would otherwise sit between two stores and keep
+   them from merging. *)
+let stage_group c ~kt ~is_a ~gi =
+  let per_row = c.bk / group in
+  let outer = local c "outer" and kg = local c "kg" and o = local c "o" in
   let limit, base =
     if is_a then (me c, gpu "block_idx_y" *: i32 bm)
     else (ne c, gpu "block_idx_x" *: i32 bn)
   in
-  let z = gpu "block_idx_z" in
-  let arr, idx =
-    if is_a then (c.g.a.array, index c.a_addr ~row:vo ~col:kk ~z)
-    else (c.g.b.array, index c.b_addr ~row:kk ~col:vo ~z)
+  let z = gpu "block_idx_z" and vo = EVar o in
+  let arr, elt =
+    if is_a then (c.g.a.array, c.g.a.elt) else (c.g.b.array, c.g.b.elt)
   in
   let names = if is_a then c.sa else c.sb in
-  (* Padded rows: the shared index of (r, col). *)
-  let sidx = (vr *: i32 (width + pad c.s)) +: vc in
-  let inside = vo <: limit &&: EBinop (Le, kk, c.g.k_hi) in
+  let read j =
+    let kk = c.g.k_lo +: (kt *: i32 c.bk) +: (EVar kg *: i32 group) +: i32 j in
+    let idx =
+      if is_a then index c.a_addr ~row:vo ~col:kk ~z
+      else index c.b_addr ~row:kk ~col:vo ~z
+    in
+    let inside = vo <: limit &&: EBinop (Le, kk, c.g.k_hi) in
+    ( new_var c.fresh (Printf.sprintf "v%d" j) elt,
+      EIf (inside, EArrayRead (arr, idx), operand_zero elt) )
+  in
+  let reads = List.init group read in
+  (* [planes.(j)]: element j's plane values, one per staging array. *)
+  let planes =
+    List.mapi
+      (fun j (v, _) ->
+        List.mapi
+          (fun p e ->
+            (new_var c.fresh (Printf.sprintf "s%d_%d" j p) c.s.shared_elt, e))
+          (c.s.stage (EVar v)))
+      reads
+  in
+  let store j values =
+    let sidx =
+      (EVar outer *: i32 (c.bk + pad c.s)) +: (EVar kg *: i32 group) +: i32 j
+    in
+    store_planes names sidx (List.map (fun (s, _) -> EVar s) values)
+  in
+  let outer_e, kg_e =
+    if k_contiguous c ~is_a then (gi /: i32 per_row, gi %: i32 per_row)
+    else (gi %: i32 (tile_outer ~is_a), gi /: i32 (tile_outer ~is_a))
+  in
   lets
-    [
-      (r, e /: i32 width);
-      (col, e %: i32 width);
-      (o, base +: if is_a then vr else vc);
-    ]
-    (SIf
-       ( inside,
-         store_planes names sidx (c.s.stage (EArrayRead (arr, idx))),
-         Some (store_planes names sidx c.s.zero) ))
+    ([(outer, outer_e); (kg, kg_e); (o, base +: EVar outer)]
+    @ reads @ List.concat planes)
+    (SSeq (List.mapi store planes))
 
 let stage_tile c ~tid ~kt ~is_a =
   for_
     c.fresh
-    "e8"
-    ~upto:((bm * c.bk / threads) - 1)
-    (fun e8 ->
-      let e = local c "e" in
+    "g8"
+    ~upto:((tile_outer ~is_a * c.bk / group / threads) - 1)
+    (fun g8 ->
+      let gi = local c "gi" in
       lets
-        [(e, tid +: (e8 *: i32 threads))]
-        (stage_element c ~kt ~is_a ~e:(EVar e)))
+        [(gi, tid +: (g8 *: i32 threads))]
+        (stage_group c ~kt ~is_a ~gi:(EVar gi)))
 
 let frag c use =
   let a, b, acc, _ = C.fragments_of_config (config c.s) in
@@ -157,9 +208,10 @@ let fragment_ops c ~wm ~wn ~ks =
            frag = frag c `B;
            src = List.nth c.sb p;
            index =
-             i32 (16 * ks * (bn + pad c.s)) +: (wn *: i32 32) +: i32 (16 * j);
-           stride = i32 (bn + pad c.s);
-           layout = C.Row_major;
+             (((wn *: i32 32) +: i32 (16 * j)) *: i32 (c.bk + pad c.s))
+             +: i32 (16 * ks);
+           stride = i32 (c.bk + pad c.s);
+           layout = C.Col_major;
          })
   and muladd (i, j) (pa, pb, s) =
     SCoopmat
@@ -317,7 +369,7 @@ let body c0 =
     shared_planes fresh "sa" s.shared_elt (bm * (c0.bk + pad s)) s.planes
   in
   let sb =
-    shared_planes fresh "sb" s.shared_elt (c0.bk * (bn + pad s)) s.planes
+    shared_planes fresh "sb" s.shared_elt (bn * (c0.bk + pad s)) s.planes
   in
   let sc = shared_array fresh "sc" s.acc_elt (bm * bn) in
   let st =

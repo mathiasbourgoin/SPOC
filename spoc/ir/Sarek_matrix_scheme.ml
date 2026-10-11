@@ -151,7 +151,6 @@ type scheme = {
       (** (plane of A, plane of B, accumulator) *)
   accumulators : int;
   stage : expr -> expr list;  (** an operand element -> its plane values *)
-  zero : expr list;
 }
 
 let int32_intrinsic name args =
@@ -196,7 +195,6 @@ let scheme ~operand_elt = function
           (fun v ->
             List.init 4 (fun p ->
                 ECast (TUint8, EBinop (Lshr32, v, i32 (8 * p)))));
-        zero = List.init 4 (fun _ -> ECast (TUint8, i32 0));
       }
   | F16_operands ->
       {
@@ -210,7 +208,6 @@ let scheme ~operand_elt = function
         stage =
           (fun v ->
             [(if operand_elt = TFloat16 then v else ECast (TFloat16, v))]);
-        zero = [ECast (TFloat16, fzero)];
       }
   | Bf16_operands ->
       {
@@ -222,7 +219,6 @@ let scheme ~operand_elt = function
         products = [(0, 0, 0)];
         accumulators = 1;
         stage = (fun v -> [v]);
-        zero = [fzero];
       }
   | Bf16x3_operands ->
       let split v =
@@ -241,7 +237,6 @@ let scheme ~operand_elt = function
           List.map (fun (i, j, _) -> (i, j, 0)) (pairs ~planes:3 ~max_order:2);
         accumulators = 1;
         stage = split;
-        zero = [fzero; fzero; fzero];
       }
 
 (* Shared rows are padded by 16 bytes so that the 16 lanes reading one

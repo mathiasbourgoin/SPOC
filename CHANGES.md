@@ -314,6 +314,16 @@
 
 ### Changed
 
+- The staged matrix rewrite (`Sarek_matrix_rewrite`) keeps B in shared memory
+  transposed (`[n][k]`) and loads its fragments column-major, and each thread
+  stages 8 consecutive k (reads, conversions, then contiguous stores). On
+  gfx1100 a B fragment is two `ds_load_b128` instead of 16 two-byte loads and
+  a staged group one `ds_store_b128`. Results are bit-identical; on an
+  RX 7900 XTX the staged kernels are 1.3–3.5× faster (f32 as f16
+  256×3072×3072: 659 → 269 µs; int32: 2664 → 766 µs; bf16: 1016 → 598 µs;
+  median of 5 interleaved runs,
+  `spoc-pipeline-logs/pkgF/F2-bench-matrix-rewrite-c42-summary.txt`) (C-42).
+
 - The direct size class of the launch-time matrix rewrite
   (`Sarek_matrix_direct`) accepts column-major A, B and C: each fragment is
   loaded or stored in its operand's own layout. A float16 GEMM with B stored
