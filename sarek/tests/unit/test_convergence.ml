@@ -706,6 +706,77 @@ let test_superstep_cont_converged_clean () =
   let errors = Sarek_convergence.check_expr Sarek_convergence.init_ctx step in
   Alcotest.(check int) "clean" 0 (List.length errors)
 
+(** {1 Barrier recognition through name resolution (#447)}
+
+    The kernels are typed from source here, so the barrier reaches the check
+    through the environment's name resolution, as it does in the PPX. The same
+    kernel must be refused in the base environment and under every spelling of
+    [let open], because the check keys on the resolved intrinsic's convergence
+    class. *)
+
+let src_expr e = Sarek_ast.{e; expr_loc = dummy_loc}
+
+let src_var name = src_expr (Sarek_ast.EVar name)
+
+let src_if cond body = src_expr (Sarek_ast.EIf (cond, body, None))
+
+let src_gt name =
+  src_expr
+    (Sarek_ast.EBinop
+       (Sarek_ast.Gt, src_var name, src_expr (Sarek_ast.EInt32 16l)))
+
+let src_barrier =
+  src_expr
+    (Sarek_ast.EApp (src_var "block_barrier", [src_expr Sarek_ast.EUnit]))
+
+let barrier_errors_of ~opens cond_name =
+  Sarek_types.reset_tvar_counter () ;
+  reset_var_id_counter () ;
+  let kernel_body = src_if (src_gt cond_name) src_barrier in
+  let wrapped =
+    List.fold_right
+      (fun path body -> src_expr (Sarek_ast.EOpen (path, body)))
+      opens
+      kernel_body
+  in
+  match Sarek_typer.infer (Sarek_env.with_stdlib Sarek_env.empty) wrapped with
+  | Error errors ->
+      Alcotest.failf
+        "typing failed: %s"
+        (String.concat ", " (List.map Sarek_error.error_to_string errors))
+  | Ok (te, _) ->
+      count_barrier_errors
+        (Sarek_convergence.check_expr Sarek_convergence.init_ctx te)
+
+let open_spellings =
+  [
+    ("no open", []);
+    ("open Std", [["Std"]]);
+    ("open Sarek_stdlib.Std", [["Sarek_stdlib"; "Std"]]);
+    ("open Gpu", [["Gpu"]]);
+    ("open Sarek_stdlib.Gpu", [["Sarek_stdlib"; "Gpu"]]);
+    ("open Float32 then Std", [["Float32"]; ["Std"]]);
+    ("open Std twice", [["Std"]; ["Std"]]);
+  ]
+
+let test_divergent_barrier_refused_under_opens () =
+  List.iter
+    (fun (label, opens) ->
+      Alcotest.(check int)
+        (label ^ ": barrier under a thread_idx_x branch is refused")
+        1
+        (barrier_errors_of ~opens "thread_idx_x"))
+    open_spellings
+
+let test_uniform_barrier_accepted_under_opens () =
+  List.iter
+    (fun (label, opens) ->
+      Alcotest.(check int)
+        (label ^ ": barrier under a block_idx_x branch is accepted")
+        0
+        (barrier_errors_of ~opens "block_idx_x"))
+    open_spellings
+
 (** {1 Test Suite} *)
 
 let () =
@@ -806,6 +877,17 @@ let () =
             "FullState barriers"
             `Quick
             test_exec_strategy_full_state_barriers;
+        ] );
+      ( "name resolution",
+        [
+          test_case
+            "divergent barrier refused under every let open"
+            `Quick
+            test_divergent_barrier_refused_under_opens;
+          test_case
+            "uniform barrier accepted under every let open"
+            `Quick
+            test_uniform_barrier_accepted_under_opens;
         ] );
       ( "superstep",
         [
