@@ -425,6 +425,32 @@ let test_zero_threads () =
   case "block 0, identity" ~grid:4 ~block:0 identity ;
   case "grid 0, C writes nothing" ~c_n:0 ~grid:0 ~block:64 identity
 
+(* Over the enumeration bound, a refusal reached because the affine proof
+   failed for these scalar values (here a possibly negative dividend) must not
+   be reused for values the proof accepts. *)
+let test_over_budget_refusal_per_valuation () =
+  LE.clear () ;
+  let total = 1 lsl 20 in
+  let index i off = (i +! off) /! int 1 in
+  let p = launch_1d ~ir_id:201 (producer index) ~total ~block:256 in
+  let c = launch_1d ~ir_id:202 (consumer ()) ~total ~block:256 in
+  let shape = shape_of c in
+  let cached off =
+    LE.cached_covers
+      ~p
+      ~p_array:"dst"
+      ~p_scalars:(scalars [("n", total); ("off", off)])
+      ~c
+      ~shape
+      ~c_scalars:(scalars [("n", total)])
+  in
+  check
+    bool
+    "off = -1: affine unknown, over budget, refused"
+    false
+    (cached (-1)) ;
+  check bool "off = 0 afterwards: proven" true (cached 0)
+
 let () =
   run
     "epilogue_coverage"
@@ -456,5 +482,9 @@ let () =
           test_case "over budget not proven" `Quick test_over_budget_not_proven;
           test_case "decided by" `Quick test_paths;
           test_case "refusal per valuation" `Quick test_refusal_per_valuation;
+          test_case
+            "over-budget refusal per valuation"
+            `Quick
+            test_over_budget_refusal_per_valuation;
         ] );
     ]
