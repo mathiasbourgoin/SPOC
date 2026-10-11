@@ -370,6 +370,43 @@ let test_destroy_with_pending device =
     (download buf).(0) ;
   Memory.free buf
 
+(** [Gpu_memory.register_finalizer] frees device buffers from a [Gc.finalise]
+    finaliser and ignores its exceptions. With a tiny minor heap the finaliser
+    runs at allocation points inside the batch code; a free must neither raise
+    there (a swallowed failure leaks the buffer) nor deadlock. *)
+let test_free_from_finaliser device =
+  let kernel = step_kernel device in
+  let src = upload device zeros in
+  let baseline = Atomic.get Memory.live_allocations in
+  let failures = Atomic.make 0 in
+  let saved = Gc.get () in
+  Gc.set {saved with Gc.minor_heap_size = 256} ;
+  Fun.protect
+    ~finally:(fun () -> Gc.set saved)
+    (fun () ->
+      for _ = 1 to 300 do
+        let dst = upload device zeros in
+        let holder = ref (Some dst) in
+        Gc.finalise
+          (fun h ->
+            match !h with
+            | Some b -> ( try Memory.free b with _ -> Atomic.incr failures)
+            | None -> ())
+          holder ;
+        launch_step kernel [src; dst] ;
+        ignore (Sys.opaque_identity holder)
+      done) ;
+  Gc.full_major () ;
+  Device.synchronize device ;
+  Gc.full_major () ;
+  Device.synchronize device ;
+  Alcotest.(check int) "no free raised in a finaliser" 0 (Atomic.get failures) ;
+  Alcotest.(check int)
+    "every buffer dropped by the GC was released"
+    baseline
+    (Atomic.get Memory.live_allocations) ;
+  Memory.free src
+
 let () =
   Alcotest.run
     "Vulkan_async_launches"
@@ -407,6 +444,10 @@ let () =
             "two streams share a buffer"
             `Quick
             (with_device test_two_streams);
+          Alcotest.test_case
+            "buffers freed from GC finalisers"
+            `Quick
+            (with_device test_free_from_finaliser);
           Alcotest.test_case
             "every synchronisation point completes pending launches"
             `Quick
