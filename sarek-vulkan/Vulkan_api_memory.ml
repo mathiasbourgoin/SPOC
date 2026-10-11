@@ -93,12 +93,13 @@ let run_single_time_command device record_fn =
 
       check
         "vkQueueSubmit"
-        (vkQueueSubmit
-           device.Device.compute_queue
+        (Device.queue_submit
+           device
            (Unsigned.UInt32.of_int 1)
            (addr submit_info)
            vk_null_handle) ;
-      check "vkQueueWaitIdle" (vkQueueWaitIdle device.Device.compute_queue))
+      Device.with_queue_lock device (fun () ->
+          check "vkQueueWaitIdle" (vkQueueWaitIdle device.Device.compute_queue)))
 
 let create_staging_buffer device size usage =
   let buf_info = make vk_buffer_create_info in

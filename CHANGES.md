@@ -498,14 +498,22 @@
   submits the event's fence on the device's compute queue (it did nothing, so
   `Event.synchronize`, `Transfer.synchronize_event` and
   `Profiling.timer_elapsed_ms` waited forever); an event that was never
-  recorded synchronizes at once. `Event.elapsed` raises `Feature_not_supported`
-  instead of answering 0.0, since the backend issues no timestamp queries.
-  Every fence wait (event, stream, launch) is bounded at 60 s and raises
-  `Synchronization_failed` past it. A launch refused on the host (for example
-  a push-constant block over 128 bytes) no longer resets the stream fence
-  first, which made the next launch on that stream hang: validation runs
-  before the fence is touched and the fence is reset just before the
-  submission. `test_vulkan_fence_sync` covers the four cases on RADV.
+  recorded synchronizes at once, and `Event.destroy` waits for a pending
+  record before destroying the fence. `Event.elapsed` raises
+  `Feature_not_supported` instead of answering 0.0, since the backend issues
+  no timestamp queries. A launch refused on the host (for example a
+  push-constant block over 128 bytes) no longer resets the stream fence first,
+  which made the next launch on that stream hang: validation runs before the
+  fence is touched. Each fence is waited on only after a successful
+  submission, so a failed `vkQueueSubmit` (launch or event record) leaves
+  nothing to wait for; `test_vulkan_fence_sync` covers this by fault
+  injection. Fence waits on submitted work stay unbounded (stopping early
+  would let a caller free memory the GPU still uses) and log a warning every
+  60 s; `SPOC_VULKAN_FENCE_TIMEOUT_S` bounds them, raising
+  `Synchronization_failed`, for tests that detect hangs. Submissions and
+  waits for idle on a device's queue are serialized by a per-device lock. A
+  kernel object owns one descriptor set and must still not be launched from
+  two domains at once.
 
 - hiprtc and nvrtc option arrays: `CArray.of_list string` let the C copies of
   the option strings be freed before the compile call. Under a different

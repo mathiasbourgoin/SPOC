@@ -50,40 +50,119 @@ let check (ctx : string) (result : vk_result) : unit =
 
 (** {1 Fences} *)
 
-(** Upper bound on every host wait for a fence, in nanoseconds. A fence that is
-    never signalled (never submitted, or work that does not finish) ends the
-    wait with [Synchronization_failed] instead of blocking the host forever. *)
-let fence_wait_timeout_ns = 60_000_000_000L
+(** Interval between warnings while a fence wait goes on, in nanoseconds. *)
+let fence_warn_interval_ns = 60_000_000_000L
 
-(** Wait for [fence] on [device] for at most {!fence_wait_timeout_ns}. Raises
-    [Synchronization_failed] on timeout and the canonical error of {!check} on
-    any other failure. *)
+(** Optional bound on a fence wait, from [SPOC_VULKAN_FENCE_TIMEOUT_S] (seconds,
+    positive). Unset means unbounded: a wait on submitted work ends only when
+    the work completes or the device reports an error, because a caller that
+    gave up early could free memory the GPU still uses. The bound exists for
+    tests that use it as a hang detector. *)
+let fence_wait_bound_ns () =
+  match Sys.getenv_opt "SPOC_VULKAN_FENCE_TIMEOUT_S" with
+  | None | Some "" -> None
+  | Some text -> (
+      match float_of_string_opt text with
+      | Some seconds when seconds > 0.0 ->
+          Some (Int64.of_float (seconds *. 1e9))
+      | _ ->
+          Vulkan_error.raise_error
+            (Vulkan_error.context_error
+               "SPOC_VULKAN_FENCE_TIMEOUT_S"
+               (Printf.sprintf
+                  "expected a positive number of seconds, got %S"
+                  text)))
+
+(** Wait for [fence] on [device] until it is signalled. Logs a warning naming
+    [ctx] every {!fence_warn_interval_ns}. Raises the canonical error of
+    {!check} on a device error, and [Synchronization_failed] only when
+    {!fence_wait_bound_ns} is set and reached. *)
 let wait_fence (ctx : string) device fence =
+  let bound = fence_wait_bound_ns () in
   let fence_ptr = allocate vk_fence fence in
-  let result =
-    Vulkan_bindings.vkWaitForFences
-      device
-      (u32 1)
-      fence_ptr
-      vk_true
-      (Unsigned.UInt64.of_int64 fence_wait_timeout_ns)
-  in
-  ignore (Sys.opaque_identity fence_ptr) ;
-  match result with
-  | VK_TIMEOUT ->
-      Vulkan_error.raise_error
-        (Vulkan_error.synchronization_failed
-           (Printf.sprintf
-              "%s: fence not signalled after %Ld ms"
+  let rec loop waited =
+    let slice =
+      match bound with
+      | None -> fence_warn_interval_ns
+      | Some b -> Int64.min fence_warn_interval_ns (Int64.sub b waited)
+    in
+    match
+      Vulkan_bindings.vkWaitForFences
+        device
+        (u32 1)
+        fence_ptr
+        vk_true
+        (Unsigned.UInt64.of_int64 slice)
+    with
+    | VK_TIMEOUT -> (
+        let waited = Int64.add waited slice in
+        let seconds = Int64.div waited 1_000_000_000L in
+        match bound with
+        | Some b when waited >= b ->
+            Vulkan_error.raise_error
+              (Vulkan_error.synchronization_failed
+                 (Printf.sprintf
+                    "%s: fence not signalled after %Ld s \
+                     (SPOC_VULKAN_FENCE_TIMEOUT_S)"
+                    ctx
+                    seconds))
+        | _ ->
+            Spoc_core.Log.warnf
+              Spoc_core.Log.Device
+              "[Vulkan] %s: fence still not signalled after %Ld s"
               ctx
-              (Int64.div fence_wait_timeout_ns 1_000_000L)))
-  | result -> check ctx result
+              seconds ;
+            loop waited)
+    | result -> check ctx result
+  in
+  loop 0L ;
+  ignore (Sys.opaque_identity fence_ptr)
 
 (** Reset [fence] on [device]. The fence must not be pending in a queue. *)
 let reset_fence (ctx : string) device fence =
   let fence_ptr = allocate vk_fence fence in
   check ctx (Vulkan_bindings.vkResetFences device (u32 1) fence_ptr) ;
   ignore (Sys.opaque_identity fence_ptr)
+
+(** A fence with its submission state. Invariant: [pending = true] implies the
+    fence was handed to a successful [vkQueueSubmit] and has not been waited for
+    since. Waits happen only when [pending] is set, so a fence that was never
+    submitted (or whose submission failed) is never waited on. *)
+type tracked_fence = {handle : vk_fence; mutable pending : bool}
+
+let create_tracked_fence device =
+  let fence_info = make vk_fence_create_info in
+  setf fence_info fence_create_sType (u32 vk_structure_type_fence_create_info) ;
+  setf fence_info fence_create_pNext null ;
+  setf fence_info fence_create_flags (u32 0) ;
+  let fence = allocate vk_fence vk_null_handle in
+  check
+    "vkCreateFence"
+    (Vulkan_bindings.vkCreateFence device (addr fence_info) null fence) ;
+  {handle = !@fence; pending = false}
+
+(** Wait for [fence] if it is pending, then mark it not pending. *)
+let await_fence (ctx : string) device fence =
+  if fence.pending then begin
+    wait_fence ctx device fence.handle ;
+    fence.pending <- false
+  end
+
+(** Reset [fence] and pass it to [submit]; mark it pending only when [submit]
+    returns [VK_SUCCESS]. The fence must not be pending. *)
+let submit_with_fence (ctx : string) device fence submit =
+  if fence.pending then
+    Vulkan_error.raise_error
+      (Vulkan_error.context_error ctx "fence is still pending") ;
+  reset_fence ctx device fence.handle ;
+  check ctx (submit fence.handle) ;
+  fence.pending <- true
+
+(** Wait out a pending submission, then destroy [fence]
+    (VUID-vkDestroyFence-fence-01120). *)
+let destroy_tracked_fence (ctx : string) device fence =
+  await_fence ctx device fence ;
+  Vulkan_bindings.vkDestroyFence device fence.handle null
 
 (** {1 SPIR-V Compilation} *)
 

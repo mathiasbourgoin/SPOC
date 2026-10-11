@@ -366,6 +366,19 @@ Vulkan.Kernel.launch kernel
   ~stream:None
 ```
 
+`launch` blocks until the dispatch completes. Submissions to a device's queue
+are serialized by a per-device lock, so launches on different kernels may come
+from several domains. A kernel object owns a single descriptor set, rewritten
+by each launch: a kernel object must not be launched from two domains at once.
+
+Fence waits (launch, `Stream.synchronize`, `Event.synchronize`) are unbounded:
+they return when the work completes and raise only on a device error, with a
+warning logged every 60 s. `SPOC_VULKAN_FENCE_TIMEOUT_S=<seconds>` bounds them
+and makes an expired wait raise `Synchronization_failed`; it is meant for tests
+that detect hangs, since a caller that stops waiting may free memory the GPU
+still uses. `Event.elapsed` raises `Feature_not_supported` (no timestamp
+queries).
+
 ## Usage Examples
 
 ### Example 1: Vector Addition
