@@ -21,13 +21,13 @@ The `int32` rewrite is bit-identical to the original kernel and needs no opt-in,
 |---|---|
 | HIP, gfx11 (RDNA3) with 32-wide waves | executes: `float16`, `bfloat16` (float32 accumulator), 8-bit integers (`int32` accumulator) |
 | HIP, any other device (gfx10, gfx12, CDNA, the gfx1036 iGPU) | refused with a message naming the rule |
-| CUDA/C | the generator emits `nvcuda::wmma` (sm_70+ for float16, sm_72+ for 8-bit), but the code is never launched, because the backend reports no matrix-unit probe |
-| Vulkan | integer configurations only, when the device advertises them; the automatic rewrite does not use them |
+| CUDA/C (the hidden NVRTC backend), sm_72+ with 32-wide warps | the `int32` rewrite is offered (8-bit integers, `int32` accumulator, `nvcuda::wmma`). The generated code compiles with NVRTC for sm_80 and reaches the `u8` tensor-core instruction, but it has never run on NVIDIA hardware. ZLUDA is declined: it rejects `wmma.*` and unsigned 8-bit `mma`. The float rewrites are not offered |
+| Vulkan | executes the `int32` rewrite, when the device advertises the 8-bit integer configuration (RADV on the RX 7900 XTX, 64-wide subgroups). The float rewrites are not offered: GLSL lowers integer fragments only |
 | Metal, OpenCL, WGSL, CUDA/PTX | refuse the statements |
 | Native | not a rewrite backend: the automatic rewrite declines it |
 | Interpreter | executes, as the reference implementation |
 
-Sources: `Hip_coopmat.ml:43-54` (configurations), `Hip_coopmat.ml:57-58` (gfx11 and wave32 rule), `Cuda_plugin_base.ml:75` (`coopmat = None`), `Sarek_ir_metal.ml:784`, `Sarek_ir_opencl.ml:616`, `Sarek_ir_wgsl.ml:1207`, `Sarek_ir_ptx_stmt.ml:254` (refusals), `Sarek_ir_glsl.ml:1395` (Vulkan lowering), `Sarek_ir_cuda.ml:574` (CUDA/C), `Matrix_specialise.ml:324-331` (Native). The CUDA lowering has been compiled but never run on hardware; the HIP lowering is validated on an RX 7900 XTX (gfx1100) in [`specs/coopmat-hip-wmma.md`](https://github.com/mathiasbourgoin/Sarek/blob/main/specs/coopmat-hip-wmma.md). Per-backend defaults of the HIP plugin are in the [sarek-hip README](https://github.com/mathiasbourgoin/Sarek/blob/main/sarek-hip/README.md).
+Sources: `Hip_coopmat.ml:43-54` (configurations), `Hip_coopmat.ml:57-58` (gfx11 and wave32 rule), `Cuda_coopmat.ml` (CUDA/C probe; CUDA/PTX keeps `coopmat = None` in `Cuda_plugin_base.ml`), `Sarek_ir_metal.ml:784`, `Sarek_ir_opencl.ml:616`, `Sarek_ir_wgsl.ml:1207`, `Sarek_ir_ptx_stmt.ml:254` (refusals), `Sarek_ir_glsl.ml:1395` (Vulkan lowering), `Sarek_ir_cuda.ml:574` (CUDA/C), `Matrix_specialise.ml:356-363` (Native). The CUDA lowering has been compiled but never run on hardware; the HIP lowering is validated on an RX 7900 XTX (gfx1100) in [`specs/coopmat-hip-wmma.md`](https://github.com/mathiasbourgoin/Sarek/blob/main/specs/coopmat-hip-wmma.md). Per-backend defaults of the HIP plugin are in the [sarek-hip README](https://github.com/mathiasbourgoin/Sarek/blob/main/sarek-hip/README.md).
 
 ## Compile-time advice
 
@@ -44,7 +44,7 @@ Sarek: kernel 'matmul_naive' contains a matrix product (GEMM) that matrix units 
   elements: float32 x float32 -> float32 accumulator
   configuration: 16x16x16 f16*f16+f32->f32 subgroup (operands rounded to float16)
   HIP gfx11 (wave32): executes
-  CUDA sm_70+: compile-only, launch refused (no device probe)
+  CUDA/C sm_70+: none (the rewrite lowers the integer case only)
   Vulkan: none (the GLSL emitter lowers integer configurations only)
   Metal, OpenCL, WGSL, PTX, Native: no matrix-unit lowering
   accuracy: relaxed beyond the accumulation order: no matrix unit takes float32 operands, so they are rounded (float16: relative error up to 2^-11 each; bfloat16; or a three-term bfloat16 split, near float32); a rewrite needs Sarek_coopmat.accept_operand_rounding ~precision and accept_relaxed_accumulation
@@ -111,7 +111,7 @@ A kernel qualifies when all of these hold; otherwise the original runs and the r
 - Row, column and at most one batch index are affine in the loop variables and thread indices; each operand has a unit stride in one dimension (row-major or column-major). Guards are conjunctions of comparisons with a bound that is the same for every thread.
 - No bound, initial value or epilogue reads `block_dim_*` or `grid_dim_*`, and no index involves `int64`.
 - The element types have a configuration, below.
-- The device is HIP with 32-wide waves (gfx11), the configuration is offered by the device, and the rewritten grid fits `max_grid_dims`.
+- The device is one of HIP with 32-wide waves (gfx11), Vulkan with 32- or 64-wide subgroups (the block is four subgroups: 128 or 256 threads), or CUDA/C with 32-wide warps (sm_72+); the configuration is offered by the device (Vulkan and CUDA/C: the `int32` case only); and the rewritten grid fits `max_grid_dims`.
 
 | A and B | Accumulator, C | Result of the rewrite |
 |---|---|---|

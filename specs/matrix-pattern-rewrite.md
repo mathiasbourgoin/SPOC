@@ -96,6 +96,32 @@ Element cases:
 | float32, `BF16` | round to bfloat16 (RNE) | 1, bf16×bf16+f32→f32 | f32 | operand rounding + γ_K |
 | float32, `BF16x3` | x = hi + mid + lo, each bfloat16 (RNE of the residual) | 6 (`i + j ≤ 2`) | f32 | near f32: measured vs γ_K |
 
+## Subgroup width and backends (H4)
+
+A block is **four waves of one subgroup each** (2 × 2 over the 64 × 64 tile),
+so it has `4 × subgroup` threads: 128 on HIP gfx11 and CUDA warps, 256 on RADV
+(subgroup 64). `Sarek_matrix_rewrite.kernel ?subgroup` and `launch_dims
+?subgroup` take the width (32 or 64; any other is declined); the wave of a
+thread is `thread_idx_x / subgroup`. Staging gives each thread one or more
+groups of 8 consecutive k, and guards off the threads past the last group when
+the threads outnumber the groups (256 threads, 128 groups); the 32-wide output
+is byte-identical to the unparameterised kernel (golden digests,
+`test_matrix_template_golden`). `Matrix_specialise` reads the width from the
+device's cooperative-matrix probe (`ds_subgroup_size`); the interpreter's
+cooperative-matrix subgroup is 32 lanes, and a 64-wide layout runs on it as two
+interpreter subgroups per wave that execute the same operations on their own
+fragment copies, so the 64-wide templates are checked against the oracle
+(`test_matrix_subgroup`, via `subgroup_override_for_tests`).
+
+| Backend | before | after | evidence |
+|---|---|---|---|
+| HIP gfx11 | int32 + float | unchanged (byte-identical IR) | executed on RX 7900 XTX (HIP, ROCm), golden digests |
+| Vulkan | none | int32 byte planes, on by default (exact) | executed on RX 7900 XTX (RADV, Mesa 26.1.4), bit-identical to the original and the host; float: not offered (GLSL has no float fragment) |
+| CUDA/C | none (`coopmat = None`) | int32 byte planes (sm_72+, warp 32) via `Cuda_coopmat` | compiler-output: NVRTC sm_80 PTX has the u8 `wmma`; not executed: ZLUDA rejects `wmma.*` and unsigned 8-bit `mma` (`specs/zluda-mma-nvrtc13.md` F-1), so ZLUDA devices are declined; no NVIDIA hardware |
+| CUDA/PTX | none | none (no coopmat lowering) | by construction |
+| OpenCL, Metal, Native | none | none | unchanged (Metal: H4b after simdgroup_matrix) |
+| Interpreter | all | unchanged (+ 64-lane layouts checkable) | executed |
+
 ## Codegen and IR additions
 
 - `ECast (TUint8, e)`: the low 8 bits of an int32 (narrowing store into a

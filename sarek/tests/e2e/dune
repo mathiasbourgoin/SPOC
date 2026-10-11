@@ -2008,6 +2008,7 @@
   test_matrix_rewrite_float
   test_matrix_int64_index
   test_matrix_subgroup
+  bench_matrix_int_rewrite
   test_matrix_cuda_compile
   test_matrix_dynamic
   test_matrix_col_major
@@ -2024,6 +2025,7 @@
   test_matrix_rewrite_float
   test_matrix_int64_index
   test_matrix_subgroup
+  bench_matrix_int_rewrite
   test_matrix_cuda_compile
   test_matrix_dynamic
   test_matrix_col_major

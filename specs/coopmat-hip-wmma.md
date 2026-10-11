@@ -42,7 +42,7 @@ column-major (`index + c·stride + r`), for any fragment (see "Layouts" below).
 | HIP | gfx11, wave32 | {u8,s8} × {u8,s8} + s32 → s32 | Strict | `__builtin_amdgcn_wmma_i32_16x16x16_iu8_w32(sgn_a, a, sgn_b, b, c, false)` | RX 7900 XTX, bit-identical |
 | HIP | gfx11, wave32 | {u8,s8} × {u8,s8} + u32 → u32 | Strict | same instruction (wrapping 32-bit sum, identical bits) | RX 7900 XTX, bit-identical |
 | HIP | any other gfx (gfx1036 iGPU, gfx10, gfx9/CDNA, gfx12) or warp size ≠ 32 | none | — | refused by the capability gate | gfx1036 refusal observed |
-| CUDA | sm_70+ (f16), sm_72+ (8-bit) | f16 × f16 + f32 → f32; u8 × u8, s8 × s8 + s32 → s32 | as above | `nvcuda::wmma` | **compile-only** (NVRTC + ptxas when present); launch refused: no device probe |
+| CUDA | sm_70+ (f16), sm_72+ (8-bit) | f16 × f16 + f32 → f32; u8 × u8, s8 × s8 + s32 → s32 | as above | `nvcuda::wmma` | **compile-only** (NVRTC + ptxas when present); CUDA/C reports the probe `Cuda_coopmat` (sm_70+/sm_72+, warp 32), ZLUDA devices declined (it rejects `wmma.*` and unsigned 8-bit `mma`); CUDA/PTX refuses |
 | Metal, OpenCL, WGSL, PTX, Native | — | none | — | refused (unchanged) | refusal tests |
 
 Not offered anywhere by this change, each refused with a named reason:
