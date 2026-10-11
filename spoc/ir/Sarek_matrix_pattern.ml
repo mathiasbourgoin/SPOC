@@ -191,7 +191,8 @@ let store_of ctx acc = function
           st_index = ic;
           st_value = e;
         }
-  | SIf (g, s, None) -> (
+  | SIf (g, s, None) when not (expr_mentions acc g) -> (
+      (* A guard that reads the accumulator makes the store data-dependent. *)
       let items = flatten s in
       match List.filter (function Item _ -> true | Bind _ -> false) items with
       | [Item (SAssign (LArrayElem (c, ic), e))] when expr_mentions acc e ->
@@ -224,12 +225,20 @@ let find_store ctx acc after =
 let classify_epilogue env acc st =
   let value = Affine.inline env st.st_value in
   let index = Affine.inline env st.st_index in
+  (* Besides [acc], the stored value may only use uniform values (constants,
+     scalar parameters, block/grid dimensions, lengths) and the output element
+     itself: anything thread-varying would not be an epilogue of the product. *)
   let rec reads_ok = function
     | EArrayRead (arr, idx) -> arr = st.st_array && idx = index
     | EBinop (_, l, r) -> reads_ok l && reads_ok r
     | EUnop (_, e) | ECast (_, e) -> reads_ok e
+    | EIntrinsic (_, _, []) as e -> (
+        match Affine.of_expr env e with
+        | Ok f -> Affine.is_uniform f
+        | Error _ -> false)
     | EIntrinsic (_, _, args) -> List.for_all reads_ok args
-    | EConst _ | EVar _ | EArrayLen _ -> true
+    | EVar v -> same_var acc v || env.classify_var v = Affine.Uniform_leaf
+    | EConst _ | EArrayLen _ -> true
     | _ -> false
   in
   if is_acc acc value then Ok Plain
