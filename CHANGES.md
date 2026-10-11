@@ -373,9 +373,6 @@
   synchronises the stream before destroying it.
 - **Breaking:** `Execute` refuses a vector longer than `Int32.max_int` elements at launch;
   the injected length used to wrap silently.
-
-### Fixed
-
 - **Breaking:** `Sarek_tuple_vec.descriptor_by_name` is removed. It returned a
   tuple `custom_type` at whatever type the call site asked for, so a shape that
   did not match the element type type-checked and read the vector bytes at the
@@ -383,10 +380,16 @@
   wrote `(42L, 3.5)` and read back `(4343, 4.66e-310)`). Generated Native code
   now calls the typed, memoised `Sarek_tuple_vec.pair` / `triple`, which
   returns the descriptor the host built (same `Type_id`) and builds it if the
-  host has not; an unknown tuple component stops the ppx expansion. The
-  registry is typed (a GADT shape key per slot, no `Obj`), and the generated
-  per-element lookup is cheaper (30.5 ns against 43.6 ns per call). Test:
-  `test_tuple_native_descriptor`.
+  host has not; a tuple-shape record name with an unknown component stops the
+  ppx expansion. The registry is typed (a GADT shape key per slot, no `Obj`)
+  and its reads are lock-free. That per-element call costs 11 ns against
+  32 ns for the old `descriptor_by_name` on one domain, and 14-19 ns against
+  934 ns per call per domain with 8 domains calling at once (tartarus,
+  `taskset -c 2-9`, best of 5 x 2 000 000 calls, 2026-10-11). Tests:
+  `test_tuple_native_descriptor`, `test_tuple_vec_registry`.
+
+### Fixed
+
 - Vector ids are allocated with `Atomic.fetch_and_add`. The plain `ref` +
   `incr` handed out duplicate ids when vectors were created from several
   domains (4 domains x 200 000 creations: 450 907 duplicates of 800 000), and

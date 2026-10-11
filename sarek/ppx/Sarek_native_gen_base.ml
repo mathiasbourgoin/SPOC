@@ -127,66 +127,88 @@ let gen_variable ~loc ~ctx (name : string) (id : int) : expression =
     [%expr ![%e var_e]]
   else var_e
 
-(* L13: a synthesized tuple-shape record (name starting with [_tup]) has no
-   [<name>_custom] binding. Its descriptor is the memoised Sarek_tuple_vec
-   constructor applied to the component values, which returns the canonical
-   descriptor the host vector carries (same Type_id) and is typed by the
-   element type, so a shape/element mismatch is a compile error. *)
-let is_tuple_shape_name name =
-  String.length name >= 4 && String.sub name 0 4 = "_tup"
+(* Sarek_tuple_vec component values, each named after the tuple-shape tag it
+   stands for and paired with the Sarek type it marshals. Only these component
+   types have a host builder (float32/float64 build [float], int32 [int32],
+   int64 [int64]), so a constructor call over them is well-typed against the
+   element type; other tuples stay Native-unsupported. *)
+let tuple_components : (string * typ) list =
+  [
+    ("float32", TReg Float32);
+    ("float64", TReg Float64);
+    ("int32", TPrim TInt32);
+    ("int64", TReg Int64);
+  ]
 
-(* Tag of a tuple component type on the Native path. Restricted to the exact
-   component types Sarek_tuple_vec builds (matching OCaml element types) so the
-   emitted constructor call is well-typed: float32/float64 (float), int32
-   (int32), int64 (int64). Other component types have no host builder and stay
-   Native-unsupported. *)
 let tuple_component_tag (t : typ) : string option =
-  match repr t with
-  | TReg Float32 -> Some "float32"
-  | TReg Float64 -> Some "float64"
-  | TPrim TInt32 -> Some "int32"
-  | TReg Int64 -> Some "int64"
-  | _ -> None
+  let t = repr t in
+  List.find_map
+    (fun (tag, ty) -> if t = ty then Some tag else None)
+    tuple_components
 
-let tuple_shape_name (tys : typ list) : string option =
-  let tags = List.map tuple_component_tag tys in
-  if List.for_all Option.is_some tags then
-    Some
-      ("_tup" ^ String.concat "" (List.map (fun t -> "_" ^ Option.get t) tags))
-  else None
-
-(* [Sarek_tuple_vec] constructor call for a tuple-shape name produced by
-   [tuple_shape_name]; any other name is a generator bug. *)
-let tuple_descriptor_expr ~loc type_name =
+(* [Sarek_tuple_vec.pair]/[triple] applied to the component values [tags]: the
+   memoised constructor returns the canonical descriptor the host vector
+   carries (same Type_id) and its type is the element type, so a
+   shape/element mismatch is a compile error. [what] names the tuple in
+   errors. *)
+let tuple_constructor_expr ~loc ~what tags =
   let component tag =
-    match tag with
-    | "float32" | "float64" | "int32" | "int64" ->
-        evar_qualified ~loc ["Sarek_tuple_vec"] tag
-    | _ ->
-        Location.raise_errorf
-          ~loc
-          "Sarek native: tuple shape %s has a component (%s) with no \
-           Sarek_tuple_vec builder"
-          type_name
-          tag
+    if List.mem_assoc tag tuple_components then
+      evar_qualified ~loc ["Sarek_tuple_vec"] tag
+    else
+      Location.raise_errorf
+        ~loc
+        "Sarek native: tuple %s has a component (%s) with no Sarek_tuple_vec \
+         builder"
+        what
+        tag
   in
-  let constructor name args =
+  let apply name =
     Ast_builder.Default.eapply
       ~loc
       (evar_qualified ~loc ["Sarek_tuple_vec"] name)
-      (List.map component args)
+      (List.map component tags)
   in
-  match String.split_on_char '_' type_name with
-  | [""; "tup"; a; b] -> constructor "pair" [a; b]
-  | [""; "tup"; a; b; c] -> constructor "triple" [a; b; c]
+  match tags with
+  | [_; _] -> apply "pair"
+  | [_; _; _] -> apply "triple"
   | _ ->
       Location.raise_errorf
         ~loc
-        "Sarek native: tuple shape %s has no Sarek_tuple_vec constructor"
-        type_name
+        "Sarek native: tuple %s has %d components; Sarek_tuple_vec builds 2 or \
+         3"
+        what
+        (List.length tags)
+
+(* Descriptor of a tuple element type, or [None] when Sarek_tuple_vec has no
+   builder for it. *)
+let tuple_descriptor_of_types ~loc (tys : typ list) : expression option =
+  let tags = List.filter_map tuple_component_tag tys in
+  let arity = List.length tys in
+  if List.length tags = arity && (arity = 2 || arity = 3) then
+    Some (tuple_constructor_expr ~loc ~what:"element" tags)
+  else None
+
+(* Component tags of a synthesized tuple-shape record name: ["_tup"] followed
+   by one ["_<tag>"] per component, tags being lowercase alphanumeric words.
+   Such a record has no [<name>_custom] binding. *)
+let tuple_shape_tags (name : string) : string list option =
+  let is_tag word =
+    word <> ""
+    && String.for_all
+         (function 'a' .. 'z' | '0' .. '9' -> true | _ -> false)
+         word
+  in
+  match String.split_on_char '_' name with
+  | "" :: "tup" :: (_ :: _ as tags) when List.for_all is_tag tags -> Some tags
+  | _ -> None
 
 let custom_descriptor_expr ?current_module ~loc type_name =
-  if is_tuple_shape_name type_name then tuple_descriptor_expr ~loc type_name
+  if Option.is_some (tuple_shape_tags type_name) then
+    tuple_constructor_expr
+      ~loc
+      ~what:type_name
+      (Option.get (tuple_shape_tags type_name))
   else
     let parts = String.split_on_char '.' type_name in
     match List.rev parts with
@@ -246,14 +268,11 @@ let vector_type_id_expr ?current_module ?inline_types
         [%expr
           [%e custom_descriptor_expr ?current_module ~loc type_name]
             .Spoc_core.Vector.vector_type_id]
-  | TTuple tys when Option.is_some (tuple_shape_name tys) ->
-      [%expr
-        [%e
-          custom_descriptor_expr
-            ?current_module
-            ~loc
-            (Option.get (tuple_shape_name tys))]
-          .Spoc_core.Vector.vector_type_id]
+  | TTuple tys -> (
+      match tuple_descriptor_of_types ~loc tys with
+      | Some descriptor ->
+          [%expr [%e descriptor].Spoc_core.Vector.vector_type_id]
+      | None -> [%expr failwith "unsupported vector type identity"])
   | _ -> [%expr failwith "unsupported vector type identity"]
 
 let custom_type_id_expr ?current_module ?inline_types
@@ -268,12 +287,8 @@ let custom_type_id_expr ?current_module ?inline_types
         [%expr
           [%e custom_descriptor_expr ?current_module ~loc type_name]
             .Spoc_core.Vector.type_id]
-  | TTuple tys when Option.is_some (tuple_shape_name tys) ->
-      [%expr
-        [%e
-          custom_descriptor_expr
-            ?current_module
-            ~loc
-            (Option.get (tuple_shape_name tys))]
-          .Spoc_core.Vector.type_id]
+  | TTuple tys -> (
+      match tuple_descriptor_of_types ~loc tys with
+      | Some descriptor -> [%expr [%e descriptor].Spoc_core.Vector.type_id]
+      | None -> [%expr failwith "unsupported custom type identity"])
   | _ -> [%expr failwith "unsupported custom type identity"]

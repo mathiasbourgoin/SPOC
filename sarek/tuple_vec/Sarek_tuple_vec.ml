@@ -44,24 +44,46 @@ let tag_name : type a. a tag -> string = function
   | I32 -> "int32"
   | I64 -> "int64"
 
-(* Dense index of a tag, [0 .. tag_count - 1]; used to address registry slots. *)
+(* Registry index of a tag. Invariant (checked at module initialisation
+   below): a bijection from [all_tags] onto [0 .. tag_count - 1]. *)
 let tag_index : type a. a tag -> int = function
   | F32 -> 0
   | F64 -> 1
   | I32 -> 2
   | I64 -> 3
 
-let tag_count = 4
+type any_tag = Any_tag : 'a tag -> any_tag
 
-(* [Some Equal] exactly when both tags are the same constructor. *)
+(* Successor in the enumeration of all tags, [None] after the last. Exhaustive,
+   so a new constructor cannot be added without placing it here. *)
+let next_tag : any_tag -> any_tag option = function
+  | Any_tag F32 -> Some (Any_tag F64)
+  | Any_tag F64 -> Some (Any_tag I32)
+  | Any_tag I32 -> Some (Any_tag I64)
+  | Any_tag I64 -> None
+
+let all_tags : any_tag list =
+  let rec from tag = tag :: Option.fold ~none:[] ~some:from (next_tag tag) in
+  from (Any_tag F32)
+
+let tag_count = List.length all_tags
+
+let () =
+  let indices = List.map (fun (Any_tag t) -> tag_index t) all_tags in
+  if List.sort compare indices <> List.init tag_count Fun.id then
+    failwith
+      "Sarek_tuple_vec: tag_index is not a bijection from all_tags onto [0, \
+       tag_count)"
+
+(* [Some Equal] exactly when both tags are the same constructor. One row per
+   constructor and no wildcard on [x], so a new constructor must be added. *)
 let tag_eq : type a b. a tag -> b tag -> (a, b) Type.eq option =
  fun x y ->
-  match (x, y) with
-  | F32, F32 -> Some Type.Equal
-  | F64, F64 -> Some Type.Equal
-  | I32, I32 -> Some Type.Equal
-  | I64, I64 -> Some Type.Equal
-  | _ -> None
+  match x with
+  | F32 -> ( match y with F32 -> Some Type.Equal | F64 | I32 | I64 -> None)
+  | F64 -> ( match y with F64 -> Some Type.Equal | F32 | I32 | I64 -> None)
+  | I32 -> ( match y with I32 -> Some Type.Equal | F32 | F64 | I64 -> None)
+  | I64 -> ( match y with I64 -> Some Type.Equal | F32 | F64 | I32 -> None)
 
 (** A scalar component of a tuple element: its kind, its IR element type (for
     layout) and the typed raw-pointer read/write primitives used to marshal it
@@ -137,64 +159,92 @@ let key_name : type a. a key -> string = function
 
 (* Registry slot of a shape: pairs occupy [0 .. tag_count^2 - 1], triples the
    [tag_count^3] slots after them. Distinct shapes have distinct slots. *)
+let pair_slot a b = (tag_index a * tag_count) + tag_index b
+
+let triple_slot a b c =
+  (tag_count * tag_count)
+  + (((tag_index a * tag_count) + tag_index b) * tag_count)
+  + tag_index c
+
 let key_slot : type a. a key -> int = function
-  | Pair (a, b) -> (tag_index a * tag_count) + tag_index b
-  | Triple (a, b, c) ->
-      (tag_count * tag_count)
-      + (((tag_index a * tag_count) + tag_index b) * tag_count)
-      + tag_index c
+  | Pair (a, b) -> pair_slot a b
+  | Triple (a, b, c) -> triple_slot a b c
 
 let slot_count = (tag_count * tag_count) + (tag_count * tag_count * tag_count)
+
+(* [Some Equal] exactly when [k] is the pair shape of [a] and [b]. *)
+let is_pair : type a b k. a tag -> b tag -> k key -> (k, a * b) Type.eq option =
+ fun a b k ->
+  match k with
+  | Pair (a', b') -> (
+      match (tag_eq a' a, tag_eq b' b) with
+      | Some Type.Equal, Some Type.Equal -> Some Type.Equal
+      | _ -> None)
+  | Triple _ -> None
+
+(* [Some Equal] exactly when [k] is the triple shape of [a], [b] and [c]. *)
+let is_triple : type a b c k.
+    a tag -> b tag -> c tag -> k key -> (k, a * b * c) Type.eq option =
+ fun a b c k ->
+  match k with
+  | Triple (a', b', c') -> (
+      match (tag_eq a' a, tag_eq b' b, tag_eq c' c) with
+      | Some Type.Equal, Some Type.Equal, Some Type.Equal -> Some Type.Equal
+      | _ -> None)
+  | Pair _ -> None
 
 (* [Some Equal] exactly when both keys denote the same shape. *)
 let key_eq : type a b. a key -> b key -> (a, b) Type.eq option =
  fun x y ->
-  match (x, y) with
-  | Pair (a, b), Pair (a', b') -> (
-      match (tag_eq a a', tag_eq b b') with
-      | Some Type.Equal, Some Type.Equal -> Some Type.Equal
-      | _ -> None)
-  | Triple (a, b, c), Triple (a', b', c') -> (
-      match (tag_eq a a', tag_eq b b', tag_eq c c') with
-      | Some Type.Equal, Some Type.Equal, Some Type.Equal -> Some Type.Equal
-      | _ -> None)
-  | _ -> None
+  match y with
+  | Pair (a, b) -> is_pair a b x
+  | Triple (a, b, c) -> is_triple a b c x
 
 (* A registered descriptor together with the shape it was built for. *)
 type entry = Entry : 'a key * 'a Vector.custom_type -> entry
 
 (* Process-global registry of canonical descriptors, one slot per shape
    ([key_slot]). A shape is instantiated once and shared: the host builds a
-   vector from it and generated Native code calls the same [pair]/[triple],
-   so both sides carry the identical [Type_id] token that [vec_get_custom]
-   compares with [Type_id.equal]. Invariant: slot [key_slot k] is [None] or
-   [Some (Entry (k', _))] with [key_eq k' k = Some Equal]. *)
-let registry : entry option array = Array.make slot_count None
+   vector from it and generated Native code calls the same [pair]/[triple] on
+   every element access, so both sides carry the identical [Type_id] token that
+   [vec_get_custom] compares with [Type_id.equal]. Invariants: slot
+   [key_slot k] holds [None] or [Some (Entry (k', _))] with
+   [key_eq k' k = Some Equal]; a slot changes at most once, from [None], under
+   [registry_mutex]. Reads are lock-free [Atomic.get]s, which also make the
+   descriptor's construction visible to the reader. *)
+let registry : entry option Atomic.t array =
+  Array.init slot_count (fun _ -> Atomic.make None)
 
-(* Guards first-time registration: two callers racing on the same shape must
-   not each build a fresh [Type_id] with only one reaching the registry, or the
-   loser's vector would fail the [Type_id.equal] check against the canonical
-   descriptor. Every registry access, read included, holds it (OCaml 5 data
-   race otherwise; audit finding L1). *)
+(* Serialises build-and-publish: two first-time builders of one shape must not
+   each publish a fresh [Type_id], or the loser's vector would fail the
+   [Type_id.equal] check against the canonical descriptor. Also guards
+   [shape_registry]. *)
 let registry_mutex = Mutex.create ()
+
+let recover : type a. a key -> entry -> a Vector.custom_type =
+ fun key (Entry (found, custom)) ->
+  match key_eq found key with
+  | Some Type.Equal -> custom
+  | None ->
+      failwith
+        ("Sarek_tuple_vec: registry slot "
+        ^ string_of_int (key_slot key)
+        ^ " holds shape " ^ key_name found ^ ", not " ^ key_name key)
 
 let memoize : type a.
     a key -> (unit -> a Vector.custom_type) -> a Vector.custom_type =
  fun key build ->
-  let slot = key_slot key in
-  Mutex.protect registry_mutex (fun () ->
-      match registry.(slot) with
-      | None ->
-          let custom = build () in
-          registry.(slot) <- Some (Entry (key, custom)) ;
-          custom
-      | Some (Entry (found, custom)) -> (
-          match key_eq found key with
-          | Some Type.Equal -> custom
+  let cell = registry.(key_slot key) in
+  match Atomic.get cell with
+  | Some entry -> recover key entry
+  | None ->
+      Mutex.protect registry_mutex (fun () ->
+          match Atomic.get cell with
+          | Some entry -> recover key entry
           | None ->
-              failwith
-                ("Sarek_tuple_vec: registry slot " ^ string_of_int slot
-               ^ " holds shape " ^ key_name found ^ ", not " ^ key_name key)))
+              let custom = build () in
+              Atomic.set cell (Some (Entry (key, custom))) ;
+              custom)
 
 (* Value-model-neutral description of a tuple element's byte layout, keyed by
    the mangled shape name. The Interpreter (which represents a tuple element as
@@ -238,11 +288,9 @@ let register_shape_of rl name fields =
       name
       {sh_name = name; sh_size = rl.Layout.rl_size; sh_fields}
 
-(** [pair a b] is the [custom_type] for a [(a, b)] tuple vector element. *)
-let pair (a : 'a component) (b : 'b component) : ('a * 'b) Vector.custom_type =
-  let key = Pair (a.c_tag, b.c_tag) in
-  memoize key @@ fun () ->
-  let name = key_name key in
+let build_pair (a : 'a component) (b : 'b component) () :
+    ('a * 'b) Vector.custom_type =
+  let name = mangled_name [tag_name a.c_tag; tag_name b.c_tag] in
   let fields = [(field_name 0, a.c_elttype); (field_name 1, b.c_elttype)] in
   let rl = layout_of fields name in
   register_shape_of rl name fields ;
@@ -267,13 +315,11 @@ let pair (a : 'a component) (b : 'b component) : ('a * 'b) Vector.custom_type =
     ir_fields = Some fields;
   }
 
-(** [triple a b c] is the [custom_type] for a [(a, b, c)] tuple vector element.
-*)
-let triple (a : 'a component) (b : 'b component) (c : 'c component) :
+let build_triple (a : 'a component) (b : 'b component) (c : 'c component) () :
     ('a * 'b * 'c) Vector.custom_type =
-  let key = Triple (a.c_tag, b.c_tag, c.c_tag) in
-  memoize key @@ fun () ->
-  let name = key_name key in
+  let name =
+    mangled_name [tag_name a.c_tag; tag_name b.c_tag; tag_name c.c_tag]
+  in
   let fields =
     [
       (field_name 0, a.c_elttype);
@@ -307,3 +353,31 @@ let triple (a : 'a component) (b : 'b component) (c : 'c component) :
     (* Same [fields] that produced [rl], hence [size] and [o0]/[o1]/[o2]. *)
     ir_fields = Some fields;
   }
+
+(* Generated Native code calls [pair]/[triple] on every element access, so the
+   hit path is a lock-free read that allocates nothing; [memoize] handles the
+   first build and reports a slot holding another shape. *)
+
+(** [pair a b] is the [custom_type] for a [(a, b)] tuple vector element. *)
+let pair : type a b. a component -> b component -> (a * b) Vector.custom_type =
+ fun a b ->
+  match Atomic.get registry.(pair_slot a.c_tag b.c_tag) with
+  | Some (Entry (found, custom)) -> (
+      match is_pair a.c_tag b.c_tag found with
+      | Some Type.Equal -> custom
+      | None -> recover (Pair (a.c_tag, b.c_tag)) (Entry (found, custom)))
+  | None -> memoize (Pair (a.c_tag, b.c_tag)) (build_pair a b)
+
+(** [triple a b c] is the [custom_type] for a [(a, b, c)] tuple vector element.
+*)
+let triple : type a b c.
+    a component -> b component -> c component -> (a * b * c) Vector.custom_type
+    =
+ fun a b c ->
+  match Atomic.get registry.(triple_slot a.c_tag b.c_tag c.c_tag) with
+  | Some (Entry (found, custom)) -> (
+      match is_triple a.c_tag b.c_tag c.c_tag found with
+      | Some Type.Equal -> custom
+      | None ->
+          recover (Triple (a.c_tag, b.c_tag, c.c_tag)) (Entry (found, custom)))
+  | None -> memoize (Triple (a.c_tag, b.c_tag, c.c_tag)) (build_triple a b c)

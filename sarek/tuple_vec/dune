@@ -4,4 +4,8 @@
  (name sarek_tuple_vec)
  (public_name sarek.tuple_vec)
  (libraries spoc_core sarek_ir ctypes)
+ ; The tag GADT's functions are wildcard-free so that a new constructor is a
+ ; compile error in every one of them; keep warning 8 an error in every profile.
+ (flags
+  (:standard -warn-error +8))
  (preprocess no_preprocessing))
