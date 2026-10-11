@@ -27,7 +27,73 @@ let contains haystack needle =
   in
   at 0
 
+(* The launch policy, from probe-level facts (no device needed): the automatic
+   path declines CUDA/C with the documented reason, the explicit path is
+   admitted on a non-ZLUDA sm_72+ capability, and a ZLUDA one is declined by
+   the device gate. *)
+let check_policy () =
+  let module Spec = Sarek_execute.Matrix_specialise in
+  let base =
+    List.find
+      (fun d -> d.Device.framework = "Interpreter")
+      (Array.to_list (Device.init ()))
+  in
+  let device ~name ~cc =
+    match
+      Backend_cuda_c.probe
+        ~device_name:name
+        ~compute_capability:cc
+        ~warp_size:32
+    with
+    | None -> None
+    | Some support ->
+        Some
+          {
+            base with
+            Device.name;
+            framework = "CUDA/C";
+            capabilities =
+              {
+                base.Device.capabilities with
+                Spoc_framework.Framework_sig.coopmat = Some support;
+                compute_capability = cc;
+                warp_size = 32;
+              };
+          }
+  in
+  let why ~explicit dev =
+    match
+      Spec.choose
+        ~explicit
+        ~device:dev
+        ~ir:(ir_of k_2d)
+        ~launch:(fun () -> None)
+        ()
+    with
+    | Spec.Original w -> w
+    | Spec.Specialised _ -> "rewritten"
+  in
+  match
+    ( device ~name:"NVIDIA A100" ~cc:(8, 0),
+      device ~name:"gfx1100 [ZLUDA]" ~cc:(8, 8) )
+  with
+  | Some nvidia, Some zluda ->
+      let auto = why ~explicit:false nvidia in
+      if not (contains auto "only on request") then
+        fail "automatic path on CUDA/C: %s" auto ;
+      let explicit = why ~explicit:true nvidia in
+      (* Past the device gate: the stub launch has no arguments. *)
+      if explicit <> "the arguments do not match the kernel" then
+        fail "explicit path on sm_80 CUDA/C not admitted: %s" explicit ;
+      let z = why ~explicit:true zluda in
+      if not (contains z "ZLUDA") then fail "explicit path on ZLUDA: %s" z ;
+      if !failures = 0 then
+        ok
+          "CUDA/C policy: automatic declined, explicit admitted, ZLUDA declined"
+  | _ -> print_endline "  SKIP sarek-cuda not linked"
+
 let () =
+  check_policy () ;
   let ir = ir_of k_2d in
   let gemm =
     match P.analyze ir with

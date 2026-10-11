@@ -117,7 +117,7 @@ fragment copies, so the 64-wide templates are checked against the oracle
 |---|---|---|---|
 | HIP gfx11 | int32 + float | unchanged (byte-identical IR) | executed on RX 7900 XTX (HIP, ROCm), golden digests |
 | Vulkan | none | int32 byte planes, on by default (exact) | executed on RX 7900 XTX (RADV, Mesa 26.1.4), bit-identical to the original and the host; float: not offered (GLSL has no float fragment) |
-| CUDA/C | none (`coopmat = None`) | int32 byte planes (sm_72+, warp 32) via `Cuda_coopmat` | compiler-output: NVRTC sm_80 PTX has the u8 `wmma`; not executed: ZLUDA rejects `wmma.*` and unsigned 8-bit `mma` (`specs/zluda-mma-nvrtc13.md` F-1), so ZLUDA devices are declined; no NVIDIA hardware |
+| CUDA/C | none (`coopmat = None`) | int32 byte planes (sm_72+, warp 32) via `Cuda_coopmat`, **explicit request only** (`Sarek_matrix.run`; the automatic path declines: owner rule, untested = opt-in) | compiler-output: NVRTC sm_80 PTX has the u8 `wmma`; not executed: ZLUDA rejects `wmma.*` and unsigned 8-bit `mma` (`specs/zluda-mma-nvrtc13.md` F-1), so ZLUDA devices are declined; no NVIDIA hardware |
 | CUDA/PTX | none | none (no coopmat lowering) | by construction |
 | OpenCL, Metal, Native | none | none | unchanged (Metal: H4b after simdgroup_matrix) |
 | Interpreter | all | unchanged (+ 64-lane layouts checkable) | executed |

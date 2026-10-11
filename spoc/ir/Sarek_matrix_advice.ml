@@ -61,7 +61,7 @@ let integer_backends =
   [
     ("HIP gfx11 (wave32)", "executes");
     ( "CUDA/C sm_72+",
-      "compiled (NVRTC), never run on NVIDIA hardware; ZLUDA declines" );
+      "explicit request only; compiled (NVRTC), never run; ZLUDA lacks wmma" );
     ("Vulkan", "executes (RADV, 64-wide subgroups)");
     others;
   ]
@@ -210,8 +210,8 @@ let pattern_lines (g : P.gemm) =
 let rewrite_note = function
   | Int32_inputs ->
       "Execute.run_vectors rewrites it onto matrix units by default where they \
-       exist (HIP gfx11, Vulkan, CUDA/C); SAREK_MATRIX_REWRITE=off disables \
-       it."
+       exist (HIP gfx11, Vulkan; CUDA/C on request only); \
+       SAREK_MATRIX_REWRITE=off disables it."
   | F16_inputs | F32_inputs ->
       "Execute.run_vectors rewrites it onto matrix units only after the opt-in \
        above AND Sarek_coopmat.accept_automatic_float_rewrite (and \

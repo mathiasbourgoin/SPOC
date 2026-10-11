@@ -9,9 +9,10 @@
   width, 128 threads on 32-wide HIP and CUDA, 256 on RADV (subgroup 64); the
   HIP output is byte-identical. `Matrix_specialise` admits Vulkan (executed on
   the RX 7900 XTX, bit-identical to the original; integer lowering only) and
-  CUDA/C (`Cuda_coopmat` probe: nvcuda::wmma, sm_72+, warp 32; compile-checked
-  through NVRTC, never executed: ZLUDA rejects `wmma.*` and unsigned 8-bit
-  `mma`, so ZLUDA devices are declined). The float rewrites stay on HIP and the
+  CUDA/C (`Cuda_coopmat` probe: nvcuda::wmma, sm_72+, warp 32) on explicit
+  request only (`Sarek_matrix.run`), never automatically: compiler-output
+  evidence (NVRTC), never executed; ZLUDA lacks `wmma.*` and unsigned 8-bit
+  `mma`, so ZLUDA devices are declined. The float rewrites stay on HIP and the
   interpreter. Tests: `test_matrix_rewrite` (now enumerating Vulkan),
   `test_matrix_subgroup`, `test_matrix_template_golden`,
   `test_cuda_coopmat_probe`, `test_matrix_cuda_compile`; bench

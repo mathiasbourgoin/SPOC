@@ -267,7 +267,9 @@ let verdict_ok = function
    subgroups) the integer byte planes only, because GLSL lowers no float
    cooperative-matrix component; CUDA/C (nvcuda::wmma, 32-wide warps) the
    integer byte planes only, because its bf16-from-float32 arm is an #error and
-   its f16 path is unmeasured; the interpreter every lowering. *)
+   its f16 path is unmeasured, and only on an explicit request, because the
+   lowering has compiler-output evidence and has never been executed; the
+   interpreter every lowering (also on request only). *)
 let rewrite_backends = ["HIP"; "Vulkan"; "CUDA/C"; "Interpreter"]
 
 let lowers_on (device : Device.t) lowering =
@@ -355,7 +357,12 @@ let variant_for plan lowering ~subgroup (launch : Sarek_ir_eval_int.launch)
    stays the independent oracle (and the rewrite is slower there). *)
 let device_possible (device : Device.t) ~explicit ~stream =
   match device.framework with
-  | "HIP" | "Vulkan" | "CUDA/C" -> Ok ()
+  | "HIP" | "Vulkan" -> Ok ()
+  | "CUDA/C" when explicit -> Ok ()
+  | "CUDA/C" ->
+      Error
+        "CUDA/C is rewritten only on request (Sarek_matrix.run): the lowering \
+         is compiler-output evidence only, never executed"
   | "Interpreter" when explicit && not stream -> Ok ()
   | "Interpreter" when explicit -> Error "a stream launch on the interpreter"
   | "Interpreter" ->

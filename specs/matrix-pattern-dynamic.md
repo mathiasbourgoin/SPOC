@@ -44,9 +44,10 @@ that need the original. `Sarek_matrix.run` keeps its PR 2 signature on top.
 | `Exact` | rewritten (bit-identical) | original | original |
 | `Auto` (default) | rewritten | rewritten after `accept_automatic_float_rewrite` + `accept_relaxed_accumulation` | rewritten after `accept_automatic_float_rewrite` + `accept_operand_rounding` (+ relaxed); precision: the requested one, else float16 then bfloat16 if accepted (the bf16x3 split, not faster than the scalar kernel, only on request) |
 
-Devices: by default HIP (gfx11, 32-wide waves), Vulkan (RADV, 64-wide
-subgroups) and CUDA/C (sm_72+, 32-wide warps) are rewritten; the last two the
-`int32` case only (H4: `Matrix_specialise.rewrite_backends`, `lowers_on`). The
+Devices: by default HIP (gfx11, 32-wide waves) and Vulkan (RADV, 64-wide
+subgroups) are rewritten, Vulkan the `int32` case only; CUDA/C (sm_72+, 32-wide
+warps, `int32` only) on an explicit request only, like the interpreter, because
+its evidence is compiler output and it has never been executed (H4: `Matrix_specialise.rewrite_backends`, `lowers_on`). The
 templates take the subgroup width from the device's cooperative-matrix probe
 (`subgroup_of`): a block is four waves of that width. The
 interpreter is rewritten only on an explicit request (`Sarek_matrix.run`,
