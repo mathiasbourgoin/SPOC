@@ -494,17 +494,23 @@ let () =
       match run_device dev with
       | () -> ()
       | exception e ->
-          (* A GPU backend that cannot launch here (missing driver feature) is
-             reported; the host backends must run. *)
+          (* The host backends must run. On a GPU only an unavailable
+             backend skips; a codegen, compile, load or launch error, or an
+             exception from the window/fusion code itself, is a failure
+             (docs review D-41). *)
           let host =
             dev.framework = "Native" || dev.framework = "Interpreter"
+          in
+          let regression =
+            host || Test_helpers.Backend_failure.verdict e = `Fail
           in
           Printf.printf
             "  %-11s %s: %s\n%!"
             dev.framework
-            (if host then "FAIL" else "SKIP")
+            (if regression then "FAIL" else "SKIP")
             (Printexc.to_string e) ;
-          if host then failures := (dev.framework ^ " raised") :: !failures)
+          if regression then
+            failures := (dev.framework ^ " raised") :: !failures)
     (Device.init ()) ;
   if !failures <> [] then begin
     Printf.printf

@@ -238,6 +238,7 @@ let () =
 
     Printf.printf "\nRunning runtime path (complex math: sqrt/exp/cos)...\n%!" ;
     try
+      Test_helpers.Backend_failure.inject () ;
       let time, result = run_complex_math dev in
       Printf.printf "  Time: %.4f ms\n%!" time ;
       let shape =
@@ -277,9 +278,11 @@ let () =
           exit 1
       end
     with
-    | Spoc_framework.Backend_error.Backend_error _ ->
-        print_endline "  Status: ERROR (Backend error)" ;
-        print_endline "\nMath intrinsics tests SKIPPED (backend error)" ;
+    | e when Test_helpers.Backend_failure.verdict e = `Skip ->
+        (* Only an unavailable backend may skip; a codegen, compile, load or
+           launch error falls through to the FAILED arm below. *)
+        Printf.printf "  Status: SKIPPED (%s)\n" (Printexc.to_string e) ;
+        print_endline "\nMath intrinsics tests SKIPPED (backend unavailable)" ;
         exit 0
     | e ->
         Printf.printf "  Status: ERROR (%s)\n" (Printexc.to_string e) ;
