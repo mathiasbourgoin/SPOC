@@ -16,6 +16,7 @@
  * - No [Admitted] is used anywhere in this file.
  *)
 
+From CodegenPtx Require Import PtxShift.
 From CodegenPtx Require Import AGpuSemantics.
 From Stdlib Require Import Strings.String.
 From Stdlib Require Import Bool.Bool.
@@ -75,7 +76,7 @@ Inductive elttype :=
 Inductive ptx_binop_tag :=
   | PAdd | PSub | PMul | PDiv | PMod
   | PAnd | POr
-  | PShl | PShr
+  | PShl | PShr (op : shr_op)
   | PBitAnd | PBitOr | PBitXor.
 
 (** Comparison operators for setp instructions. *)
@@ -226,7 +227,7 @@ Definition agpu_eval_ptx_binop (op : ptx_binop_tag) (v1 v2 : ptx_val)
   | PBitOr,  U32 a, U32 b => Some (U32 (Nat.lor  a b))
   | PBitXor, U32 a, U32 b => Some (U32 (Nat.lxor a b))
   | PShl,    U32 a, U32 b => Some (U32 (Nat.shiftl a b))
-  | PShr,    U32 a, U32 b => Some (U32 (Nat.shiftr a b))
+  | PShr op, _, _ => agpu_eval_shr op v1 v2
   (* ---- U64 ---- *)
   | PAdd, U64 a, U64 b => Some (U64 (a + b))
   | PSub, U64 a, U64 b => Some (U64 (a - b))

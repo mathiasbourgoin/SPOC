@@ -20,6 +20,7 @@
  *   (PtxBinop PAdd (emit_ast_expr base_e) (emit_ast_expr idx_e))].
  *)
 
+From CodegenPtx Require Import PtxShift.
 From CodegenPtx Require Import AGpuSemantics.
 From CodegenPtx Require Import PtxTypes.
 From Stdlib Require Import Strings.String.
@@ -56,7 +57,9 @@ Definition ir_binop_to_ptx_binop (op : ir_binop) : ptx_binop_tag :=
   | And    => PAnd
   | Or     => POr
   | Shl    => PShl
-  | Shr    => PShr
+  | Shr    => PShr OpShr
+  | Lshr32 => PShr OpLshr32
+  | Lshr64 => PShr OpLshr64
   | BitAnd => PBitAnd
   | BitOr  => PBitOr
   | BitXor => PBitXor

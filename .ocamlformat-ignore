@@ -32,6 +32,42 @@ Spoc/Devices.mli
 # appear here because they are gitignored.
 formal/codegen-ptx/extraction/sarek_ptx_layout_model.ml
 formal/codegen-ptx/extraction/sarek_ptx_layout_model.mli
+formal/codegen-ptx/extraction/sarek_ptx_shift_model.ml
+formal/codegen-ptx/extraction/sarek_ptx_shift_model.mli
+
+# The type-safety and convergence-safety extracted models (finding D-55). Until
+# then they were committed ocamlformat-formatted and NOT compared with anything,
+# so a spec edit left a stale model that the conformance suites kept using as
+# their oracle (TypeSafetyModel.ml was already stale: no TRecord/TVariant).
+# Same rule as the layout model above: committed RAW + canonicalised, because
+# scripts/check-formal-proofs.sh regenerates them in the Rocq image (which has
+# no ocamlformat) and compares canonicalised token streams.
+formal/convergence-safety/extraction/ConvergenceModel.ml
+formal/convergence-safety/extraction/ConvergenceModel.mli
+formal/type-safety/extraction/ConstrModel.ml
+formal/type-safety/extraction/ConstrModel.mli
+formal/type-safety/extraction/ControlFlowModel.ml
+formal/type-safety/extraction/ControlFlowModel.mli
+formal/type-safety/extraction/FunModel.ml
+formal/type-safety/extraction/FunModel.mli
+formal/type-safety/extraction/GPUModel.ml
+formal/type-safety/extraction/GPUModel.mli
+formal/type-safety/extraction/MutModel.ml
+formal/type-safety/extraction/MutModel.mli
+formal/type-safety/extraction/OperatorModel.ml
+formal/type-safety/extraction/OperatorModel.mli
+formal/type-safety/extraction/PatternModel.ml
+formal/type-safety/extraction/PatternModel.mli
+formal/type-safety/extraction/RegistryModel.ml
+formal/type-safety/extraction/RegistryModel.mli
+formal/type-safety/extraction/SpecialModel.ml
+formal/type-safety/extraction/SpecialModel.mli
+formal/type-safety/extraction/TypeSafetyModel.ml
+formal/type-safety/extraction/TypeSafetyModel.mli
+formal/type-safety/extraction/UnifyModel.ml
+formal/type-safety/extraction/UnifyModel.mli
+formal/type-safety/extraction/VecModel.ml
+formal/type-safety/extraction/VecModel.mli
 
 # Extract.v's five outputs (untracked since backlog-188, see .gitignore). They
 # are regenerated raw by every proof run, so ocamlformat wanting to reformat

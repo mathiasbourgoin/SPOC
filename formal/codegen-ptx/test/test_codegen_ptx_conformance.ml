@@ -20,10 +20,56 @@
  * Test strategy note: both sides of every [eval_agrees] check use the OCaml
  * mirror defined in this file rather than the extracted Rocq modules.  This
  * gives fast, dependency-free execution and validates internal consistency of
- * the mirror against the Rocq spec.  Integration tests that exercise the
- * extracted modules (AGpuSemantics.ml, PtxExprSpec.ml, etc.) require linking
- * against rocq-runtime and are deferred to a separate extraction-integration
- * test target (follow-up task: wire extracted library via dune). *)
+ * the mirror against the Rocq spec.  The mirror does NOT cover the right
+ * shifts: for [Shr]/[Lshr32]/[Lshr64] it delegates to the EXTRACTED model
+ * (sarek_ptx_shift_model, from theories/PtxShift.v), and section 12 checks that
+ * model against the PRODUCTION emitter (instruction chosen, and numeric result
+ * of the instruction production emitted, on negative operands and out-of-range
+ * counts).  A hand copy of the shift semantics used to live here; it said
+ * [a lsr b] for [Shr] -- identical to the model's error -- so the suite agreed
+ * with the model and disagreed with production (finding D-54).
+ *
+ * The other extracted modules (AGpuSemantics.ml, PtxExprSpec.ml, etc.)
+ * require linking against rocq-runtime and are deferred to a separate
+ * extraction-integration test target. *)
+
+(* ======================================================================= *)
+(** * 0. The extracted right-shift model, and Z <-> machine-word conversion *)
+(* ======================================================================= *)
+
+module Shift = Sarek_ptx_shift_model
+
+let bit_of (n : int64) i = Int64.logand (Int64.shift_right_logical n i) 1L = 1L
+
+(** The unsigned reading of a 64-bit pattern as a model [Z]. *)
+let z_of_u64 (n : int64) : Shift.z =
+  if n = 0L then Shift.Z0
+  else
+    let msb = ref 63 in
+    while not (bit_of n !msb) do
+      decr msb
+    done ;
+    let p = ref Shift.XH in
+    for i = !msb - 1 downto 0 do
+      p := if bit_of n i then Shift.XI !p else Shift.XO !p
+    done ;
+    Shift.Zpos !p
+
+(** The low 64 bits of a non-negative model [Z]. *)
+let u64_of_z (z : Shift.z) : int64 =
+  let rec go = function
+    | Shift.XH -> 1L
+    | Shift.XO q -> Int64.shift_left (go q) 1
+    | Shift.XI q -> Int64.logor (Int64.shift_left (go q) 1) 1L
+  in
+  match z with
+  | Shift.Z0 -> 0L
+  | Shift.Zpos p -> go p
+  | Shift.Zneg _ -> failwith "shift model returned a negative register pattern"
+
+let z_of_int n = z_of_u64 (Int64.of_int n)
+
+let int_of_z z = Int64.to_int (u64_of_z z)
 
 (* ======================================================================= *)
 (** * 1. PTX value domain — mirrors [ptx_val] in AGpuSemantics.v *)
@@ -88,6 +134,8 @@ type ir_binop =
   | Or
   | Shl
   | Shr
+  | Lshr32
+  | Lshr64
   | BitAnd
   | BitOr
   | BitXor
@@ -121,6 +169,20 @@ type ir_expr =
 
 let nat_cmp b = U32 (if b then 1 else 0)
 
+(** Right shifts, delegated to the EXTRACTED model (mirrors
+    AGpuSemantics.agpu_eval_shr). [U64] mirror values above 2^62 cannot be
+    written as OCaml [int]; the full-width cases are tested in section 12. *)
+let mirror_shr op v1 v2 =
+  let run wide a b =
+    if Shift.shr_operand_ok op wide then
+      Some (int_of_z (Shift.shr_eval op wide (z_of_int a) (z_of_int b)))
+    else None
+  in
+  match (v1, v2) with
+  | U32 a, U32 b -> Option.map (fun r -> U32 r) (run false a b)
+  | U64 a, (U64 b | U32 b) -> Option.map (fun r -> U64 r) (run true a b)
+  | _ -> None
+
 let agpu_eval_binop op v1 v2 =
   match (op, v1, v2) with
   (* U32 arithmetic *)
@@ -141,7 +203,9 @@ let agpu_eval_binop op v1 v2 =
   | BitOr, U32 a, U32 b -> Some (U32 (a lor b))
   | BitXor, U32 a, U32 b -> Some (U32 (a lxor b))
   | Shl, U32 a, U32 b -> Some (U32 (a lsl b))
-  | Shr, U32 a, U32 b -> Some (U32 (a lsr b))
+  | Shr, _, _ -> mirror_shr Shift.OpShr v1 v2
+  | Lshr32, _, _ -> mirror_shr Shift.OpLshr32 v1 v2
+  | Lshr64, _, _ -> mirror_shr Shift.OpLshr64 v1 v2
   (* U64 arithmetic *)
   | Add, U64 a, U64 b -> Some (U64 (a + b))
   | Sub, U64 a, U64 b -> Some (U64 (max 0 (a - b)))
@@ -296,7 +360,7 @@ type ptx_binop_tag =
   | PAnd
   | POr
   | PShl
-  | PShr
+  | PShr of Shift.shr_op
   | PBitAnd
   | PBitOr
   | PBitXor
@@ -348,7 +412,7 @@ let agpu_eval_ptx_binop op v1 v2 =
   | PBitOr, U32 a, U32 b -> Some (U32 (a lor b))
   | PBitXor, U32 a, U32 b -> Some (U32 (a lxor b))
   | PShl, U32 a, U32 b -> Some (U32 (a lsl b))
-  | PShr, U32 a, U32 b -> Some (U32 (a lsr b))
+  | PShr op, _, _ -> mirror_shr op v1 v2
   | PAdd, U64 a, U64 b -> Some (U64 (a + b))
   | PSub, U64 a, U64 b -> Some (U64 (max 0 (a - b)))
   | PMul, U64 a, U64 b -> Some (U64 (a * b))
@@ -487,7 +551,9 @@ let ir_binop_to_ptx_binop = function
   | And -> PAnd
   | Or -> POr
   | Shl -> PShl
-  | Shr -> PShr
+  | Shr -> PShr Shift.OpShr
+  | Lshr32 -> PShr Shift.OpLshr32
+  | Lshr64 -> PShr Shift.OpLshr64
   | BitAnd -> PBitAnd
   | BitOr -> PBitOr
   | BitXor -> PBitXor
@@ -752,6 +818,33 @@ let test_barrier () =
   expect_ir_val IEBarrier st0 (U32 0) ;
   check_emit_agree IEBarrier st0 "IEBarrier"
 
+(* ---- Group 9: right shifts through the mirror (extracted shift model) ---- *)
+let shr_ir op a b = IEBinop (op, IEConst (CInt32 a), IEConst (CInt32 b))
+
+let test_shr_negative_is_arithmetic () =
+  (* -4 >> 1 = -2: sign fill, NOT the logical 0x7FFFFFFE. *)
+  expect_ir_val (shr_ir Shr 0xFFFFFFFC 1) st0 (U32 0xFFFFFFFE) ;
+  check_emit_agree (shr_ir Shr 0xFFFFFFFC 1) st0 "Shr -4 1" ;
+  expect_ir_val (shr_ir Shr 0x80000000 31) st0 (U32 0xFFFFFFFF) ;
+  check_emit_agree (shr_ir Shr 0x80000000 31) st0 "Shr min_int 31"
+
+let test_lshr32_negative_is_logical () =
+  expect_ir_val (shr_ir Lshr32 0xFFFFFFFC 1) st0 (U32 0x7FFFFFFE) ;
+  check_emit_agree (shr_ir Lshr32 0xFFFFFFFC 1) st0 "Lshr32 -4 1"
+
+let test_shr_count_clamps_to_width () =
+  expect_ir_val (shr_ir Shr 0x80000000 32) st0 (U32 0xFFFFFFFF) ;
+  expect_ir_val (shr_ir Shr 0x7FFFFFFF 100) st0 (U32 0) ;
+  expect_ir_val (shr_ir Lshr32 0x80000000 32) st0 (U32 0) ;
+  check_emit_agree (shr_ir Shr 0x80000000 32) st0 "Shr clamp"
+
+let test_lshr32_on_wide_is_ill_typed () =
+  let e = IEBinop (Lshr32, IEConst (CInt64 8), IEConst (CInt64 1)) in
+  (match agpu_eval_ir st0 e with
+  | None -> ()
+  | Some _ -> Alcotest.fail "Lshr32 on a 64-bit operand must be ill-typed") ;
+  check_emit_agree e st0 "Lshr32 on u64"
+
 (* ======================================================================= *)
 (** * 11. PTX DShared emitter tests * * Call [Sarek_ir_ptx_kernel.generate]
     directly and inspect the emitted PTX * string. Verifies AC-1 through AC-4
@@ -960,7 +1053,260 @@ let test_dshared_mixed_global_shared () =
       ptx
 
 (* ======================================================================= *)
-(** * 12. Run all tests *)
+(** * 12. Right shifts: the extracted model against the PRODUCTION emitter
+ *
+ * Finding D-54. The model (theories/PtxShift.v, extracted to
+ * sarek_ptx_shift_model) is compared with [Sarek_ir_ptx_expr.emit_expr], not
+ * with a copy of itself:
+ *
+ *  - INSTRUCTION: production emits some [shr.<s|b><32|64>]; the model's
+ *    [shr_insn] must name the same one. (Catches s/b swapped on either side.)
+ *  - RESULT: the instruction production emitted is executed by an independent
+ *    oracle written from the PTX ISA text (native [Int32]/[Int64] shifts, count
+ *    taken as a .u32 and clamped to the width), and the model's result for the
+ *    IR operator must equal it, for negative operands and for counts beyond the
+ *    width. (Catches a wrong value-level semantic, and a production
+ *    instruction that is not the one whose semantics the model gives.)
+ *  - IR SEMANTICS: for in-range counts the model equals the interpreter's
+ *    operators ([Int32.shift_right] for [Shr], [Int32.shift_right_logical] for
+ *    [Lshr32], and the 64-bit forms), i.e. OCaml [asr]/[lsr]. *)
+(* ======================================================================= *)
+
+module Ptx_types = Sarek_codegen.Sarek_ir_ptx_types
+module Ptx_expr = Sarek_codegen.Sarek_ir_ptx_expr
+
+type shift_case = {
+  case_name : string;
+  ir_op : Sarek_ir_types.binop;
+  model_op : Shift.shr_op;
+  wide : bool;  (** first operand is a 64-bit register *)
+  wide_amount : bool;  (** count operand is a 64-bit register *)
+}
+
+let shift_cases =
+  let mk case_name ir_op model_op wide wide_amount =
+    {case_name; ir_op; model_op; wide; wide_amount}
+  in
+  [
+    mk "Shr/i32" Sarek_ir_types.Shr Shift.OpShr false false;
+    mk "Shr/i64" Sarek_ir_types.Shr Shift.OpShr true false;
+    mk "Shr/i64,count64" Sarek_ir_types.Shr Shift.OpShr true true;
+    mk "Lshr32" Sarek_ir_types.Lshr32 Shift.OpLshr32 false false;
+    mk "Lshr64" Sarek_ir_types.Lshr64 Shift.OpLshr64 true false;
+    mk "Lshr64/count64" Sarek_ir_types.Lshr64 Shift.OpLshr64 true true;
+  ]
+
+(** Run the production emitter on [a OP k] and return the PTX text. *)
+let emit_shift_production c =
+  let buf = Buffer.create 128 in
+  let alloc = Ptx_types.make_alloc () in
+  let env = Ptx_types.make_env () in
+  let reg wide =
+    if wide then Ptx_types.new_u64 alloc else Ptx_types.new_u32 alloc
+  in
+  Ptx_types.env_bind env "a" (reg c.wide) ;
+  Ptx_types.env_bind env "k" (reg c.wide_amount) ;
+  let ty wide = if wide then TInt64 else TInt32 in
+  let e =
+    EBinop
+      ( c.ir_op,
+        EVar (make_var "a" (ty c.wide)),
+        EVar (make_var "k" (ty c.wide_amount)) )
+  in
+  ignore (Ptx_expr.emit_expr buf alloc env e) ;
+  Buffer.contents buf
+
+(** The single [shr.*] mnemonic in [ptx] (e.g. ["shr.s32"]). *)
+let emitted_shr_mnemonic c ptx =
+  let lines = List.map String.trim (String.split_on_char '\n' ptx) in
+  let is_shr l = String.length l >= 4 && String.sub l 0 4 = "shr." in
+  match List.filter is_shr lines with
+  | [l] -> List.hd (String.split_on_char ' ' l)
+  | ls ->
+      Alcotest.failf
+        "%s: expected exactly one shr.* instruction, found %d in:\n%s"
+        c.case_name
+        (List.length ls)
+        ptx
+
+(** The mnemonic the MODEL says production emits. *)
+let model_shr_mnemonic c =
+  let flavour, width = Shift.shr_insn c.model_op c.wide in
+  Printf.sprintf
+    "shr.%s%d"
+    (match flavour with Shift.FlavS -> "s" | Shift.FlavB -> "b")
+    width
+
+let mask32 = 0xFFFFFFFFL
+
+(** Independent oracle for [shr.<s|b><32|64> d, a, b] written from the PTX ISA
+    ("shr": the count is a .u32; counts above the register width are clamped to
+    the width). Operands and result are raw 64-bit patterns; 32-bit forms use
+    and return the low 32 bits. *)
+let ptx_shr_oracle mnemonic (a : int64) (count : int64) : int64 =
+  let n = Int64.logand count mask32 in
+  let clamp width = if Int64.compare n (Int64.of_int width) > 0 then width else Int64.to_int n in
+  let pat32 (r : int32) = Int64.logand (Int64.of_int32 r) mask32 in
+  match mnemonic with
+  | "shr.s32" ->
+      let s = Int64.to_int32 a and k = clamp 32 in
+      pat32
+        (if k >= 32 then if Int32.compare s 0l < 0 then -1l else 0l
+         else Int32.shift_right s k)
+  | "shr.b32" ->
+      let s = Int64.to_int32 a and k = clamp 32 in
+      pat32 (if k >= 32 then 0l else Int32.shift_right_logical s k)
+  | "shr.s64" ->
+      let k = clamp 64 in
+      if k >= 64 then if Int64.compare a 0L < 0 then -1L else 0L
+      else Int64.shift_right a k
+  | "shr.b64" ->
+      let k = clamp 64 in
+      if k >= 64 then 0L else Int64.shift_right_logical a k
+  | m -> Alcotest.failf "oracle: unknown shift mnemonic %s" m
+
+let operand_patterns_32 =
+  [0x0L; 0x1L; 0x2L; 0x7FFFFFFEL; 0x7FFFFFFFL; 0x80000000L; 0x80000001L;
+   0xFFFFFFFCL; 0xFFFFFFFEL; 0xFFFFFFFFL; 0xDEADBEEFL; 0x12345678L]
+
+let operand_patterns_64 =
+  [0x0L; 0x1L; 0x7FFFFFFFFFFFFFFFL; 0x8000000000000000L;
+   0x8000000000000001L; 0xFFFFFFFFFFFFFFFCL; 0xFFFFFFFFFFFFFFFFL;
+   0xDEADBEEFCAFEF00DL; 0x00000000FFFFFFFFL; 0xFFFFFFFF00000000L;
+   0x80000000L; 0xFFFFFFFCL]
+
+(** Counts: in range, at and beyond each width, the largest .u32, and (for
+    64-bit count registers) values whose low 32 bits differ from the whole. *)
+let counts_u32 =
+  [0L; 1L; 2L; 5L; 16L; 30L; 31L; 32L; 33L; 63L; 64L; 65L; 255L; 0x10000L;
+   0x7FFFFFFFL; 0x80000000L; 0xFFFFFFFFL]
+
+let counts_u64_extra = [0x100000000L; 0x100000001L; 0x1FFFFFFFFL; -1L]
+
+let case_operands c =
+  if c.wide then operand_patterns_64 else operand_patterns_32
+
+let case_counts c =
+  if c.wide_amount then counts_u32 @ counts_u64_extra else counts_u32
+
+let model_result c a k =
+  let a = if c.wide then a else Int64.logand a mask32 in
+  u64_of_z (Shift.shr_eval c.model_op c.wide (z_of_u64 a) (z_of_u64 k))
+
+(* The instruction production emits is the one the model names. *)
+let test_shr_instruction_vs_production () =
+  List.iter
+    (fun c ->
+      let ptx = emit_shift_production c in
+      let emitted = emitted_shr_mnemonic c ptx in
+      let expected = model_shr_mnemonic c in
+      if emitted <> expected then
+        Alcotest.failf
+          "%s: production emits %s but the model says %s. Emitted PTX:\n%s"
+          c.case_name
+          emitted
+          expected
+          ptx)
+    shift_cases
+
+(* The model's result equals what the instruction production emitted computes. *)
+let test_shr_result_vs_emitted_instruction () =
+  List.iter
+    (fun c ->
+      let emitted = emitted_shr_mnemonic c (emit_shift_production c) in
+      List.iter
+        (fun a ->
+          List.iter
+            (fun k ->
+              let expected = ptx_shr_oracle emitted a k in
+              let got = model_result c a k in
+              if expected <> got then
+                Alcotest.failf
+                  "%s: %s a=0x%Lx count=0x%Lx: production's instruction gives \
+                   0x%Lx, model gives 0x%Lx"
+                  c.case_name
+                  emitted
+                  a
+                  k
+                  expected
+                  got)
+            (case_counts c))
+        (case_operands c))
+    shift_cases
+
+(* In-range counts: the model equals OCaml's asr/lsr as the interpreter
+   computes them (Int32.shift_right etc.). *)
+let test_shr_model_vs_ir_semantics () =
+  List.iter
+    (fun c ->
+      List.iter
+        (fun a ->
+          for k = 0 to if c.wide then 63 else 31 do
+            let expected =
+              match (c.model_op, c.wide) with
+              | Shift.OpShr, false ->
+                  Int64.logand
+                    (Int64.of_int32 (Int32.shift_right (Int64.to_int32 a) k))
+                    mask32
+              | Shift.OpShr, true -> Int64.shift_right a k
+              | Shift.OpLshr32, _ ->
+                  Int64.logand
+                    (Int64.of_int32
+                       (Int32.shift_right_logical (Int64.to_int32 a) k))
+                    mask32
+              | Shift.OpLshr64, _ -> Int64.shift_right_logical a k
+            in
+            let got = model_result c a (Int64.of_int k) in
+            if expected <> got then
+              Alcotest.failf
+                "%s: a=0x%Lx >> %d: IR semantics (asr/lsr) give 0x%Lx, model \
+                 0x%Lx"
+                c.case_name
+                a
+                k
+                expected
+                got
+          done)
+        (case_operands c))
+    shift_cases
+
+(* Hand-written pins, readable without running anything. *)
+let test_shr_pins () =
+  let check name c a k expected =
+    let got = model_result c a k in
+    if got <> expected then
+      Alcotest.failf "%s: expected 0x%Lx got 0x%Lx" name expected got
+  in
+  let case n = List.find (fun c -> c.case_name = n) shift_cases in
+  (* -4 >> 1 *)
+  check "Shr32 -4>>1" (case "Shr/i32") 0xFFFFFFFCL 1L 0xFFFFFFFEL ;
+  check "Lshr32 -4>>1" (case "Lshr32") 0xFFFFFFFCL 1L 0x7FFFFFFEL ;
+  check "Shr64 -4>>1" (case "Shr/i64") 0xFFFFFFFFFFFFFFFCL 1L 0xFFFFFFFFFFFFFFFEL ;
+  check "Lshr64 -4>>1" (case "Lshr64") 0xFFFFFFFFFFFFFFFCL 1L 0x7FFFFFFFFFFFFFFEL ;
+  (* counts at the width clamp to the width: sign fill / zero *)
+  check "Shr32 min_int>>32" (case "Shr/i32") 0x80000000L 32L 0xFFFFFFFFL ;
+  check "Lshr32 min_int>>32" (case "Lshr32") 0x80000000L 32L 0L ;
+  check "Shr32 max_int>>200" (case "Shr/i32") 0x7FFFFFFFL 200L 0L ;
+  check "Shr64 min_int>>64" (case "Shr/i64") 0x8000000000000000L 64L (-1L) ;
+  (* a 64-bit count register is narrowed to its low 32 bits (cvt.u32.u64) *)
+  check
+    "Shr64 count 2^32+1 narrowed to 1"
+    (case "Shr/i64,count64")
+    0xFFFFFFFFFFFFFFFCL
+    0x100000001L
+    0xFFFFFFFFFFFFFFFEL ;
+  (* the model's table *)
+  Alcotest.(check string)
+    "Shr32 insn" "shr.s32" (model_shr_mnemonic (case "Shr/i32")) ;
+  Alcotest.(check string)
+    "Shr64 insn" "shr.s64" (model_shr_mnemonic (case "Shr/i64")) ;
+  Alcotest.(check string)
+    "Lshr32 insn" "shr.b32" (model_shr_mnemonic (case "Lshr32")) ;
+  Alcotest.(check string)
+    "Lshr64 insn" "shr.b64" (model_shr_mnemonic (case "Lshr64"))
+
+(* ======================================================================= *)
+(** * 13. Run all tests *)
 (* ======================================================================= *)
 
 let () =
@@ -1018,6 +1364,41 @@ let () =
           Alcotest.test_case "var-missing" `Quick test_var_not_found;
         ] );
       ("barrier", [Alcotest.test_case "barrier" `Quick test_barrier]);
+      ( "shift-mirror",
+        [
+          Alcotest.test_case
+            "shr-negative-arithmetic"
+            `Quick
+            test_shr_negative_is_arithmetic;
+          Alcotest.test_case
+            "lshr32-negative-logical"
+            `Quick
+            test_lshr32_negative_is_logical;
+          Alcotest.test_case
+            "count-clamps-to-width"
+            `Quick
+            test_shr_count_clamps_to_width;
+          Alcotest.test_case
+            "lshr32-wide-ill-typed"
+            `Quick
+            test_lshr32_on_wide_is_ill_typed;
+        ] );
+      ( "shift-vs-production",
+        [
+          Alcotest.test_case
+            "instruction-choice"
+            `Quick
+            test_shr_instruction_vs_production;
+          Alcotest.test_case
+            "result-vs-emitted-instruction"
+            `Quick
+            test_shr_result_vs_emitted_instruction;
+          Alcotest.test_case
+            "model-vs-ir-semantics"
+            `Quick
+            test_shr_model_vs_ir_semantics;
+          Alcotest.test_case "pins" `Quick test_shr_pins;
+        ] );
       ( "ptx-dshared",
         [
           Alcotest.test_case "f32-emit" `Quick test_dshared_f32_emit;

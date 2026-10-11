@@ -20,9 +20,15 @@
 From Stdlib Require Import Strings.String.
 From Stdlib Require Import Arith.Arith.
 From Stdlib Require Import Bool.Bool.
+From Stdlib Require Import ZArith.
+From Stdlib Require Import Lia.
+From CodegenPtx Require Import PtxShift.
 From Stdlib Require Import Floats.
 
 Open Scope string_scope.
+(* ZArith (imported for PtxShift's Z-level lemmas) opens Z_scope; the rest of
+   this file is nat arithmetic. *)
+Open Scope nat_scope.
 
 (* ------------------------------------------------------------------ *)
 (** * PTX value domain *)
@@ -106,12 +112,14 @@ Inductive ir_const :=
   | CBool   : bool  -> ir_const
   | CUnit   : ir_const.
 
-(** Mirrors [Sarek_ir_types.binop] — all 18 operators *)
+(** Mirrors [Sarek_ir_types.binop] — all 20 operators ([Shr] is the
+ *  arithmetic shift right, [Lshr32]/[Lshr64] the logical ones; see
+ *  PtxShift.v) *)
 Inductive ir_binop :=
   | Add | Sub | Mul | Div | Mod
   | Eq  | Ne  | Lt  | Le  | Gt | Ge
   | And | Or
-  | Shl | Shr
+  | Shl | Shr | Lshr32 | Lshr64
   | BitAnd | BitOr | BitXor.
 
 (** Mirrors [Sarek_ir_types.elttype] — the subset relevant to AGPU *)
@@ -172,6 +180,22 @@ Definition nat_cmp_to_u32 (b : bool) : ptx_val := U32 (bool_to_nat b).
  *)
 (* ------------------------------------------------------------------ *)
 
+(** Right shifts. The operator fixes the instruction ([PtxShift.shr_insn]); the
+ *  first operand's register class fixes the width of [Shr]. A 64-bit first
+ *  operand accepts a 32- or 64-bit amount (production narrows the latter); a
+ *  32-bit one needs a 32-bit amount. [Lshr32]/[Lshr64] on the wrong register
+ *  class are ill-typed PTX and evaluate to [None]. *)
+Definition agpu_eval_shr (op : shr_op) (v1 v2 : ptx_val) : option ptx_val :=
+  match v1, v2 with
+  | U32 a, U32 b =>
+      if shr_operand_ok op false
+      then Some (U32 (shr_eval_nat op false a b)) else None
+  | U64 a, U64 b | U64 a, U32 b =>
+      if shr_operand_ok op true
+      then Some (U64 (shr_eval_nat op true a b)) else None
+  | _, _ => None
+  end.
+
 Definition agpu_eval_binop (op : ir_binop) (v1 v2 : ptx_val)
     : option ptx_val :=
   match op, v1, v2 with
@@ -195,7 +219,10 @@ Definition agpu_eval_binop (op : ir_binop) (v1 v2 : ptx_val)
   | BitOr,  U32 a, U32 b => Some (U32 (Nat.lor  a b))
   | BitXor, U32 a, U32 b => Some (U32 (Nat.lxor a b))
   | Shl,    U32 a, U32 b => Some (U32 (Nat.shiftl a b))
-  | Shr,    U32 a, U32 b => Some (U32 (Nat.shiftr a b))
+  (* arithmetic / logical right shifts: shr.s32/.s64 and shr.b32/.b64 *)
+  | Shr,    _, _ => agpu_eval_shr OpShr v1 v2
+  | Lshr32, _, _ => agpu_eval_shr OpLshr32 v1 v2
+  | Lshr64, _, _ => agpu_eval_shr OpLshr64 v1 v2
   (* ---- U64 arithmetic ---- *)
   | Add, U64 a, U64 b => Some (U64 (a + b))
   | Sub, U64 a, U64 b => Some (U64 (a - b))
@@ -446,3 +473,96 @@ Lemma agpu_eval_global_idx :
     agpu_eval_ir st IEGlobalIdx =
       Some (U32 (st.(tc).(bidx) * st.(tc).(bdim) + st.(tc).(tidx)), st).
 Proof. intros. reflexivity. Qed.
+
+(* ------------------------------------------------------------------ *)
+(** * Right-shift lemmas (finding D-54)
+
+ * [Shr] is the ARITHMETIC shift ([shr.s32]/[shr.s64]); [Lshr32]/[Lshr64] are
+ * the logical ones ([shr.b32]/[shr.b64]). The previous model had [Shr] as a
+ * logical [Nat.shiftr] and no [Lshr*]. Numeric facts about the instructions
+ * themselves live in PtxShift.v (over Z, where 32/64-bit patterns can be
+ * written down); these lift them to the [nat]-valued register domain.
+ *)
+(* ------------------------------------------------------------------ *)
+
+Lemma agpu_eval_shr_is_signed_u32 : forall a b,
+  agpu_eval_binop Shr (U32 a) (U32 b) =
+    Some (U32 (Z.to_nat (ashr_w 32 (Z.of_nat a) (Z.of_nat b)))).
+Proof. intros. reflexivity. Qed.
+
+Lemma agpu_eval_lshr32_is_logical_u32 : forall a b,
+  agpu_eval_binop Lshr32 (U32 a) (U32 b) =
+    Some (U32 (Z.to_nat (lshr_w 32 (Z.of_nat a) (Z.of_nat b)))).
+Proof. intros. reflexivity. Qed.
+
+Lemma agpu_eval_shr_is_signed_u64 : forall a b,
+  agpu_eval_binop Shr (U64 a) (U64 b) =
+    Some (U64 (Z.to_nat (ashr_w 64 (Z.of_nat a) (Z.of_nat b)))).
+Proof. intros. reflexivity. Qed.
+
+Lemma agpu_eval_lshr64_is_logical_u64 : forall a b,
+  agpu_eval_binop Lshr64 (U64 a) (U64 b) =
+    Some (U64 (Z.to_nat (lshr_w 64 (Z.of_nat a) (Z.of_nat b)))).
+Proof. intros. reflexivity. Qed.
+
+(** [Lshr32]/[Lshr64] on the wrong register class are ill-typed PTX. *)
+Lemma agpu_eval_lshr32_wide_ill_typed : forall a b,
+  agpu_eval_binop Lshr32 (U64 a) (U64 b) = None.
+Proof. intros. reflexivity. Qed.
+
+Lemma agpu_eval_lshr64_narrow_ill_typed : forall a b,
+  agpu_eval_binop Lshr64 (U32 a) (U32 b) = None.
+Proof. intros. reflexivity. Qed.
+
+(** Sign fill, at the [nat] level: a 32-bit operand with the top bit set
+ *  (a negative [int32]) stays negative under [Shr] — the property the old
+ *  logical [Shr] violated. *)
+Theorem agpu_eval_shr_u32_sign_fill : forall a b r,
+  (2 ^ 31 <= Z.of_nat a < 2 ^ 32)%Z ->
+  agpu_eval_binop Shr (U32 a) (U32 b) = Some (U32 r) ->
+  (2 ^ 31 <= Z.of_nat r)%Z.
+Proof.
+  intros a b r Ha Heval. rewrite agpu_eval_shr_is_signed_u32 in Heval.
+  injection Heval as Hr. subst r.
+  pose proof (ashr_range 32 (Z.of_nat a) (Z.of_nat b)) as [R0 R1].
+  rewrite Z2Nat.id by exact R0.
+  assert (Hmod : to_unsigned 32 (Z.of_nat a) = Z.of_nat a).
+  { apply to_unsigned_id. unfold word_modulus. simpl. lia. }
+  pose proof (ashr_negative_stays_negative 32 (Z.of_nat a) (Z.of_nat b)
+                (ltac:(lia)) (ltac:(rewrite Hmod; simpl; lia))) as H.
+  simpl in H. exact H.
+Qed.
+
+(** Injectivity of the [Z]/[nat] bridge on [U32] results (stated over
+ *  variables so that no 32-bit numeral is ever unfolded to Peano form). *)
+Lemma some_u32_to_nat_inj : forall x y : Z,
+  (0 <= x)%Z -> (0 <= y)%Z ->
+  Some (U32 (Z.to_nat x)) = Some (U32 (Z.to_nat y)) -> x = y.
+Proof.
+  intros x y Hx Hy H. injection H as H. apply Z2Nat.inj; assumption.
+Qed.
+
+(** The two shifts differ on negative operands: there is an operand and an
+ *  amount for which [Shr] and [Lshr32] disagree. *)
+Theorem agpu_shr_not_lshr32 :
+  exists a b : nat,
+    (2 ^ 31 <= Z.of_nat a < 2 ^ 32)%Z /\
+    agpu_eval_binop Shr (U32 a) (U32 b) <> agpu_eval_binop Lshr32 (U32 a) (U32 b).
+Proof.
+  (* [a] is kept opaque: unfolding [Z.to_nat 4294967292] would build a
+     four-billion-deep Peano numeral. *)
+  remember (Z.to_nat 4294967292) as a eqn:Ha.
+  assert (HX : Z.of_nat a = 4294967292%Z)
+    by (subst a; apply Z2Nat.id; lia).
+  clear Ha.
+  exists a, 1%nat. split.
+  - rewrite HX. lia.
+  - rewrite agpu_eval_shr_is_signed_u32, agpu_eval_lshr32_is_logical_u32, HX.
+    intro Heq.
+    pose proof (ashr_range 32 4294967292%Z (Z.of_nat 1)) as [A0 _].
+    pose proof (lshr_range 32 4294967292%Z (Z.of_nat 1)) as [B0 _].
+    apply (some_u32_to_nat_inj _ _ A0 B0) in Heq.
+    change (Z.of_nat 1) with 1%Z in Heq.
+    rewrite ashr32_minus4_by1, lshr32_minus4_by1 in Heq.
+    discriminate.
+Qed.
