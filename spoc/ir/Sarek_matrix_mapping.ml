@@ -226,7 +226,24 @@ let consistent m n batch =
           Error "two indices share one launch axis"
       | _ -> Ok ())
 
+(* Every enclosing loop must be the row, column or batch loop: any other loop
+   repeats (or skips) the product, which the rewrite would do once. *)
+let check_loops (g : P.gemm) kinds =
+  let index_vars =
+    List.filter_map
+      (function Loop {var; _} -> Some var.var_id | _ -> None)
+      kinds
+  in
+  if List.for_all (fun v -> List.mem v.var_id index_vars) g.enclosing_loops then
+    Ok ()
+  else Error "an enclosing loop is not a row, column or batch index"
+
 let analyse (k : kernel) (g : P.gemm) =
+  let* () =
+    match g.unmodelled_control with
+    | Some what -> Error ("the product sits in " ^ what)
+    | None -> Ok ()
+  in
   let env = env_of k g in
   let* m_terms = terms_of env g.m_index in
   let* n_terms = terms_of env g.n_index in
@@ -235,13 +252,17 @@ let analyse (k : kernel) (g : P.gemm) =
   let* batch, batch_roles =
     match g.batch with
     | [] -> Ok (None, [])
-    | [b] ->
+    | [b] -> (
         let* bt = terms_of env b in
         let* kind = kind_of_terms k g bt in
-        Ok (Some kind, [(Batch, bt)])
+        match kind with
+        | Axis _ | Loop _ -> Ok (Some kind, [(Batch, bt)])
+        | Quotient _ | Remainder _ ->
+            Error "a batch index divides the thread id")
     | _ -> Error "more than one batch index"
   in
   let* () = consistent m n batch in
+  let* () = check_loops g (m :: n :: Option.to_list batch) in
   let linear_role =
     match m with
     | Quotient {linear; _} ->
@@ -289,7 +310,10 @@ let range launch ~t = function
       let* d = eval launch "the divisor" divisor in
       if d <= 0 then Error "the divisor is not positive"
       else Ok ((t + d - 1) / d)
-  | Remainder {divisor; _} -> eval launch "the divisor" divisor
+  | Remainder {divisor; _} ->
+      (* Only the columns some thread reaches: [t] may be below [d]. *)
+      let* d = eval launch "the divisor" divisor in
+      Ok (min d t)
 
 (* Apply the guards on one role to an exclusive upper limit. *)
 let bounded launch mapping role limit =

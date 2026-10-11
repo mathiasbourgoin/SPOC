@@ -52,58 +52,53 @@ let store_planes names idx values =
     (List.map2 (fun name v -> SAssign (LArrayElem (name, idx), v)) names values)
 
 (* Stage one 64 x 16 A tile (or 16 x 64 B tile), zero outside the region. *)
+(* [lets [(v, e); ...] body]: a chain of immutable lets. *)
+let lets bindings body =
+  List.fold_right (fun (v, e) b -> SLet (v, e, b)) bindings body
+
+let local c name = new_var c.fresh name TInt32
+
+(* One element of a staged tile, element [e] of the tile in row-major order:
+   the operand element, converted, or zero outside the region. *)
+let stage_element c ~kt ~is_a ~e =
+  let width = if is_a then c.bk else bn in
+  let r = local c "r" and col = local c "c" and o = local c "o" in
+  let vr = EVar r and vc = EVar col and vo = EVar o in
+  let kk = c.g.k_lo +: (kt *: i32 c.bk) +: if is_a then vc else vr in
+  let limit, base =
+    if is_a then (me c, gpu "block_idx_y" *: i32 bm)
+    else (ne c, gpu "block_idx_x" *: i32 bn)
+  in
+  let z = gpu "block_idx_z" in
+  let arr, idx =
+    if is_a then (c.g.a.array, index c.a_addr ~row:vo ~col:kk ~z)
+    else (c.g.b.array, index c.b_addr ~row:kk ~col:vo ~z)
+  in
+  let names = if is_a then c.sa else c.sb in
+  (* Padded rows: the shared index of (r, col). *)
+  let sidx = (vr *: i32 (width + pad c.s)) +: vc in
+  let inside = vo <: limit &&: EBinop (Le, kk, c.g.k_hi) in
+  lets
+    [
+      (r, e /: i32 width);
+      (col, e %: i32 width);
+      (o, base +: if is_a then vr else vc);
+    ]
+    (SIf
+       ( inside,
+         store_planes names sidx (c.s.stage (EArrayRead (arr, idx))),
+         Some (store_planes names sidx c.s.zero) ))
+
 let stage_tile c ~tid ~kt ~is_a =
-  let k_lo = c.g.k_lo and k_hi = c.g.k_hi in
   for_
     c.fresh
     "e8"
     ~upto:((bm * c.bk / threads) - 1)
     (fun e8 ->
-      let_
-        c.fresh
-        "e"
-        TInt32
-        (tid +: (e8 *: i32 threads))
-        (fun e ->
-          let width = if is_a then c.bk else bn in
-          let_
-            c.fresh
-            "r"
-            TInt32
-            (e /: i32 width)
-            (fun r ->
-              let_
-                c.fresh
-                "c"
-                TInt32
-                (e %: i32 width)
-                (fun col ->
-                  let kk =
-                    k_lo +: (kt *: i32 c.bk) +: if is_a then col else r
-                  in
-                  let outer, limit, base =
-                    if is_a then
-                      (r, me c, EBinop (Mul, gpu "block_idx_y", i32 bm))
-                    else (col, ne c, EBinop (Mul, gpu "block_idx_x", i32 bn))
-                  in
-                  let_ c.fresh "o" TInt32 (base +: outer) (fun o ->
-                      let z = gpu "block_idx_z" in
-                      let arr, idx =
-                        if is_a then
-                          (c.g.a.array, index c.a_addr ~row:o ~col:kk ~z)
-                        else (c.g.b.array, index c.b_addr ~row:kk ~col:o ~z)
-                      in
-                      let names = if is_a then c.sa else c.sb in
-                      let inside = o <: limit &&: EBinop (Le, kk, k_hi) in
-                      (* Padded rows: the shared index of (r, col). *)
-                      let sidx = (r *: i32 (width + pad c.s)) +: col in
-                      SIf
-                        ( inside,
-                          store_planes
-                            names
-                            sidx
-                            (c.s.stage (EArrayRead (arr, idx))),
-                          Some (store_planes names sidx c.s.zero) ))))))
+      let e = local c "e" in
+      lets
+        [(e, tid +: (e8 *: i32 threads))]
+        (stage_element c ~kt ~is_a ~e:(EVar e)))
 
 let frag c use =
   let a, b, acc, _ = C.fragments_of_config (config c.s) in
@@ -271,106 +266,88 @@ let output_value c ~c_index ~sum =
   | P.Epilogue e -> s ~value:total e
   | P.Plain -> if g.c.elt = g.acc.var_type then total else ECast (g.c.elt, total)
 
+(* Output element [e] of the tile, written when the original writes it. *)
+let write_output c ~e =
+  let m = local c "m" and n = local c "n" in
+  let vm = EVar m and vn = EVar n in
+  let c_index = index c.c_addr ~row:vm ~col:vn ~z:(gpu "block_idx_z") in
+  let linear_ok =
+    EBinop (Or, EBinop (Eq, d_ c, i32 0), (vm *: d_ c) +: vn <: t_ c)
+  in
+  let covered = vm <: me c &&: (vn <: ne c) &&: linear_ok in
+  lets
+    [
+      (m, (gpu "block_idx_y" *: i32 bm) +: (e /: i32 bn));
+      (n, (gpu "block_idx_x" *: i32 bn) +: (e %: i32 bn));
+    ]
+    (SIf
+       ( covered,
+         SAssign
+           ( LArrayElem (c.g.c.array, c_index),
+             output_value c ~c_index ~sum:(EArrayRead (c.sc, e)) ),
+         None ))
+
 let write_outputs c ~tid =
   for_
     c.fresh
     "e32"
     ~upto:((bm * bn / threads) - 1)
     (fun e32 ->
-      let_
-        c.fresh
-        "e"
-        TInt32
-        (tid +: (e32 *: i32 threads))
-        (fun e ->
-          let_
-            c.fresh
-            "m"
-            TInt32
-            ((gpu "block_idx_y" *: i32 bm) +: (e /: i32 bn))
-            (fun m ->
-              let_
-                c.fresh
-                "n"
-                TInt32
-                ((gpu "block_idx_x" *: i32 bn) +: (e %: i32 bn))
-                (fun n ->
-                  let z = gpu "block_idx_z" in
-                  let c_index = index c.c_addr ~row:m ~col:n ~z in
-                  let linear_ok =
-                    EBinop
-                      (Or, EBinop (Eq, d_ c, i32 0), (m *: d_ c) +: n <: t_ c)
-                  in
-                  let covered = m <: me c &&: (n <: ne c) &&: linear_ok in
-                  SIf
-                    ( covered,
-                      SAssign
-                        ( LArrayElem (c.g.c.array, c_index),
-                          output_value c ~c_index ~sum:(EArrayRead (c.sc, e)) ),
-                      None )))))
+      let e = local c "e" in
+      lets [(e, tid +: (e32 *: i32 threads))] (write_output c ~e:(EVar e)))
 
 (* ---- Assembly ---------------------------------------------------------------- *)
 
-let shared fresh name elt size body =
-  let v = new_var fresh name (TArray (elt, Shared)) in
-  SLet (v, EArrayCreate (elt, i32 size, Shared), body v.var_name)
+let shared_array fresh name elt size =
+  ( new_var fresh name (TArray (elt, Shared)),
+    EArrayCreate (elt, i32 size, Shared) )
 
-let rec shared_planes fresh prefix elt size n body =
-  if n = 0 then body []
-  else
-    shared fresh (Printf.sprintf "%s%d" prefix n) elt size (fun name ->
-        shared_planes fresh prefix elt size (n - 1) (fun rest ->
-            body (rest @ [name])))
+let shared_planes fresh prefix elt size n =
+  List.init n (fun p ->
+      shared_array fresh (Printf.sprintf "%s%d" prefix p) elt size)
 
 let body c0 =
-  let fresh = c0.fresh in
-  let_ fresh "tid" TInt32 (gpu "thread_idx_x") (fun tid ->
-      let_
-        fresh
-        "wave"
-        TInt32
-        (tid /: i32 32)
-        (fun wave ->
-          let_
-            fresh
-            "wm"
-            TInt32
-            (wave /: i32 2)
-            (fun wm ->
-              let_
-                fresh
-                "wn"
-                TInt32
-                (wave %: i32 2)
-                (fun wn ->
-                  let s = c0.s in
-                  shared_planes
-                    fresh
-                    "sa"
-                    s.shared_elt
-                    (bm * (c0.bk + pad c0.s))
-                    s.planes
-                    (fun sa ->
-                      shared_planes
-                        fresh
-                        "sb"
-                        s.shared_elt
-                        (c0.bk * (bn + pad c0.s))
-                        s.planes
-                        (fun sb ->
-                          shared fresh "sc" s.acc_elt (bm * bn) (fun sc ->
-                              shared
-                                fresh
-                                "st"
-                                s.acc_elt
-                                (if s.accumulators > 1 then bm * bn else 1)
-                                (fun st ->
-                                  let c = {c0 with sa; sb; sc; st} in
-                                  SSeq
-                                    (decls c
-                                    @ [k_loop c ~tid ~wm ~wn; SBarrier]
-                                    @ combine c ~tid ~wm ~wn
-                                    @ [SBarrier; write_outputs c ~tid])))))))))
+  let fresh = c0.fresh and s = c0.s in
+  let tid = local c0 "tid" and wave = local c0 "wave" in
+  let wm = local c0 "wm" and wn = local c0 "wn" in
+  let sa =
+    shared_planes fresh "sa" s.shared_elt (bm * (c0.bk + pad s)) s.planes
+  in
+  let sb =
+    shared_planes fresh "sb" s.shared_elt (c0.bk * (bn + pad s)) s.planes
+  in
+  let sc = shared_array fresh "sc" s.acc_elt (bm * bn) in
+  let st =
+    shared_array
+      fresh
+      "st"
+      s.acc_elt
+      (if s.accumulators > 1 then bm * bn else 1)
+  in
+  let name (v, _) = v.var_name in
+  let c =
+    {
+      c0 with
+      sa = List.map name sa;
+      sb = List.map name sb;
+      sc = name sc;
+      st = name st;
+    }
+  in
+  let tid_e = EVar tid and wm_e = EVar wm and wn_e = EVar wn in
+  lets
+    ([
+       (tid, gpu "thread_idx_x");
+       (wave, EVar tid /: i32 32);
+       (wm, EVar wave /: i32 2);
+       (wn, EVar wave %: i32 2);
+     ]
+    @ sa @ sb @ [sc; st])
+    (SSeq
+       (decls c
+       @ [k_loop c ~tid:tid_e ~wm:wm_e ~wn:wn_e; SBarrier]
+       @ combine c ~tid:tid_e ~wm:wm_e ~wn:wn_e
+       @ [SBarrier; write_outputs c ~tid:tid_e]))
 
 let uses_launch_dims (g : P.gemm) =
   let es =
@@ -397,6 +374,12 @@ let address_env (k : kernel) (g : P.gemm) : Affine.env =
 
 let ( let* ) = Result.bind
 
+(* The region parameters appended to the original's, under their own names
+   (not [new_var]'s prefixed ones: callers pass them by position). *)
+let extra_param fresh name =
+  fresh.next <- fresh.next + 1 ;
+  {var_name = name; var_id = fresh.next; var_type = TInt32; var_mutable = false}
+
 let kernel (k : kernel) (g : P.gemm) lowering =
   let env = address_env k g in
   let batch = match g.batch with [b] -> Some b | _ -> None in
@@ -408,19 +391,7 @@ let kernel (k : kernel) (g : P.gemm) lowering =
   else
     let sch = scheme ~operand_elt:g.a.elt lowering in
     let fresh = {next = max_var_id k + 1} in
-    let extra_vars =
-      List.map
-        (fun n ->
-          {
-            var_name = n;
-            var_id =
-              (fresh.next <- fresh.next + 1 ;
-               fresh.next);
-            var_type = TInt32;
-            var_mutable = false;
-          })
-        extra_names
-    in
+    let extra_vars = List.map (extra_param fresh) extra_names in
     let c =
       {
         fresh;

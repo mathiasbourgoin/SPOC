@@ -160,9 +160,15 @@ let bf16_round e =
   let bits = int32_intrinsic "bits_of_float" [e] in
   let lsb = EBinop (BitAnd, EBinop (Lshr32, bits, i32 16), i32 1) in
   let rounded = EBinop (Add, bits, EBinop (Add, i32 0x7fff, lsb)) in
+  let high x = EBinop (BitAnd, x, EConst (CInt32 0xffff0000l)) in
+  (* A NaN stays a (quiet) NaN, as in the HIP load helper: rounding its bits
+     could carry into the exponent and give an infinity. *)
+  let is_nan =
+    EBinop (Gt, EBinop (BitAnd, bits, i32 0x7fffffff), i32 0x7f800000)
+  in
   int32_intrinsic
     "float_of_bits"
-    [EBinop (BitAnd, rounded, EConst (CInt32 0xffff0000l))]
+    [EIf (is_nan, high (EBinop (BitOr, bits, i32 0x400000)), high rounded)]
 
 let pairs ~planes ~max_order =
   List.concat_map

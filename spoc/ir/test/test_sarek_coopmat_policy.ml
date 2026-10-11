@@ -126,29 +126,35 @@ let test_device_evidence () =
    precision, never with a blank reason, and bf16 x bf16 + f32 -> f32 shares the
    accumulation policy of f16. *)
 let test_operand_rounding () =
+  let bf16 = {f16_f32 with cfg_a = BFloat16; cfg_b = BFloat16} in
+  (* Runs after [test_after]: the relaxed accumulation is accepted. *)
+  Alcotest.(check bool)
+    "bf16 refused before an operand-rounding opt-in"
+    true
+    (policy_refusal (policy_verdict bf16)) ;
   Alcotest.check_raises
     "blank reason"
     (Invalid_argument
        "Sarek_coopmat.accept_operand_rounding: the reason must not be empty \
         (it is the record that the operand rounding was understood)")
     (fun () -> accept_operand_rounding ~precision:Operands_bf16 ~reason:" ") ;
+  accept_operand_rounding ~precision:Operands_f16 ~reason:"f16" ;
+  Alcotest.(check bool)
+    "f16 rounding does not admit bf16"
+    true
+    (policy_refusal (policy_verdict bf16)) ;
   accept_operand_rounding ~precision:Operands_bf16x3 ~reason:"split" ;
   Alcotest.(check (option string))
     "bf16x3 recorded"
     (Some "split")
     (operand_rounding_reason Operands_bf16x3) ;
   Alcotest.(check (option string))
-    "f16 not implied"
-    None
-    (operand_rounding_reason Operands_f16) ;
-  Alcotest.(check (option string))
     "bf16 not implied"
     None
     (operand_rounding_reason Operands_bf16) ;
-  let bf16 = {f16_f32 with cfg_a = BFloat16; cfg_b = BFloat16} in
   Alcotest.(check bool)
-    "bf16 accumulation follows the relaxed opt-in"
-    (relaxed_accumulation_reason () <> None)
+    "bf16 admitted after bf16x3 rounding"
+    true
     (available (policy_verdict bf16))
 
 let () =

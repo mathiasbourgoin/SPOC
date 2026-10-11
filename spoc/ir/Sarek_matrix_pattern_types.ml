@@ -39,6 +39,7 @@ type gemm = {
   epilogue : epilogue;
   guards : expr list;
   enclosing_loops : var list;
+  unmodelled_control : string option;
 }
 
 type reason =

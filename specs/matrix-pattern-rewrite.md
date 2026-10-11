@@ -45,6 +45,16 @@ Static (kernel), on top of PR 1's `Gemm` finding:
   `t`, and whose other side is uniform;
 - strides, offsets, bounds, `init` and epilogue reference no `block_dim_*` or
   `grid_dim_*` (the rewritten launch has its own).
+- the path to the nest has no `else` branch, `while` or `match` case (the
+  recogniser marks them: its guard list would not be the whole condition), and
+  every enclosing `for` is the row, column or batch loop (another loop repeats
+  or skips the product);
+- the batch index, if any, is a global index or a loop, not a quotient or
+  remainder of the thread id.
+
+The rewritten grid (columns on x, rows on y, batches on z) must fit the
+device's `max_grid_dims`, and an int64 scalar used in a bound must fit int32;
+otherwise the original runs.
 
 Dynamic (launch): the scalar arguments and the original grid/block give the
 covered region: `m < Me`, `n < Ne`, `z < Ze`, and for a `t / d` mapping also
@@ -99,6 +109,13 @@ Element cases:
 ## Opt-ins (`Sarek_coopmat`)
 
 - float16 operands: the existing `accept_relaxed_accumulation ~reason`.
+- a `BFloat16` configuration (any IR, not only the rewrite) needs
+  `accept_operand_rounding` for `Operands_bf16` or `Operands_bf16x3` in
+  addition to `accept_relaxed_accumulation`: its load rounds float32 operands.
+- Range: the bounds assume finite operands within the target type's normal
+  range — float16 overflows above 65504 and loses relative accuracy below
+  6.1e-5; bfloat16 shares float32's exponent range. NaN stays NaN (load helper
+  and in-kernel split alike).
 - float32 operands: `accept_operand_rounding ~precision ~reason` with
   `precision ∈ {F16, BF16, BF16x3}`, per precision, process-wide, one-way, empty
   reason refused; plus `accept_relaxed_accumulation` (the accumulation is

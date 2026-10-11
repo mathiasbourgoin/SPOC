@@ -167,7 +167,11 @@ let launch (device : Spoc_core.Device.t) ~ir ~args ~block ~grid =
 let scalar_of_arg = function
   | Execute.Int i -> Some (Int32.of_int i)
   | Execute.Int32 i -> Some i
-  | Execute.Int64 i -> Some (Int64.to_int32 i)
+  | Execute.Int64 i ->
+      (* Bounds are evaluated in int32, as the kernel's indices are: a value
+         that does not fit is not a bound this rewrite can use. *)
+      if Int64.of_int32 (Int64.to_int32 i) = i then Some (Int64.to_int32 i)
+      else None
   | Execute.Vec _ | Execute.Float32 _ | Execute.Float64 _ -> None
 
 let launch_facts (k : kernel) args ~(block : Spoc_framework.Framework_sig.dims)
@@ -191,6 +195,26 @@ let launch_facts (k : kernel) args ~(block : Spoc_framework.Framework_sig.dims)
         scalar = (fun v -> List.assoc_opt v.var_id values);
       }
 
+(* The rewritten grid puts columns on x, rows on y, batches on z: it can
+   exceed a limit the original launch respected (rows on x, say). *)
+let fits_device (device : Spoc_core.Device.t) (r : Map.region) =
+  let _, (gx, gy, gz) = Rw.launch_dims ~me:r.me ~ne:r.ne ~ze:r.ze in
+  let mx, my, mz =
+    device.capabilities.Spoc_framework.Framework_sig.max_grid_dims
+  in
+  let over g m = m > 0 && g > m in
+  if over gx mx || over gy my || over gz mz then
+    Error
+      (Printf.sprintf
+         "the rewritten grid %dx%dx%d exceeds the device's %dx%dx%d"
+         gx
+         gy
+         gz
+         mx
+         my
+         mz)
+  else Ok ()
+
 let decide ?precision ~device ~ir ~args ~block ~grid () =
   let* plan = memo_plan ir in
   let* lowering = lowering_of plan precision in
@@ -198,6 +222,7 @@ let decide ?precision ~device ~ir ~args ~block ~grid () =
   let* () = device_admits device cfg in
   let* facts = launch_facts ir args ~block ~grid in
   let* region = Map.region plan.mapping facts in
+  let* () = fits_device device region in
   let* rk = memo_rewrite ir plan.gemm lowering in
   Ok (lowering, cfg, region, rk)
 

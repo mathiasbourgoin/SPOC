@@ -211,12 +211,15 @@ let run_float ?(positive = false) dev pc (m, n, k) =
           wg
 
 (* Without the opt-ins a float product must run as the original. *)
-let check_float_refused dev =
-  let pc = List.nth float_cases 1 in
-  let ir = ir_of k_f32 in
-  let a = vec_f32 (Array.make 16 1.0) in
+(* [refused dev pc what]: a 4x4x4 product of case [pc] runs as the original. *)
+let refused dev pc what =
+  let v arr =
+    if pc.f16_inputs then Execute.Vec (vec_f16 arr)
+    else Execute.Vec (vec_f32 arr)
+  in
   let i x = Execute.Int32 (Int32.of_int x) in
   let block, grid = geo_2d ~m:4 ~n:4 ~nb:1 in
+  let ir = ir_of (if pc.f16_inputs then k_f16 else k_f32) in
   match
     Sarek_matrix.run
       ?precision:pc.precision
@@ -224,8 +227,8 @@ let check_float_refused dev =
       ~ir
       ~args:
         [
-          Execute.Vec a;
-          Execute.Vec (vec_f32 (Array.make 16 1.0));
+          v (Array.make 16 1.0);
+          v (Array.make 16 1.0);
           Execute.Vec (vec_f32 (Array.make 16 0.0));
           i 4;
           i 4;
@@ -236,17 +239,36 @@ let check_float_refused dev =
       ()
   with
   | Sarek_matrix.Original why ->
-      ok "f32 before the opt-in on %s: original (%s)" dev.Device.name why
-  | Sarek_matrix.Rewritten _ ->
-      fail "f32 rewritten on %s before any opt-in" dev.Device.name
+      ok "%s on %s: original (%s)" what dev.Device.name why
+  | Sarek_matrix.Rewritten _ -> fail "%s on %s: rewritten" what dev.Device.name
+
+let case label = List.find (fun pc -> pc.label = label) float_cases
 
 let () =
   Random.init 20261011 ;
   let devices = Array.to_list (Device.init ()) in
   let rewriters = List.filter offers_int devices in
-  List.iter check_float_refused rewriters ;
+  List.iter
+    (fun dev ->
+      refused dev (case "f16 inputs") "f16 before accept_relaxed_accumulation" ;
+      refused dev (case "f32 as f16") "f32 before any opt-in")
+    rewriters ;
   Sarek_coopmat.accept_relaxed_accumulation
     ~reason:"test_matrix_rewrite: the bounds are under test" ;
+  List.iter
+    (fun dev ->
+      refused dev (case "f32 as bf16") "f32/bf16 before accept_operand_rounding")
+    rewriters ;
+  Sarek_coopmat.accept_operand_rounding
+    ~precision:Sarek_coopmat.Operands_f16
+    ~reason:"test_matrix_rewrite" ;
+  List.iter
+    (fun dev ->
+      refused
+        dev
+        (case "f32 as bf16")
+        "f32/bf16 with only f16 rounding accepted")
+    rewriters ;
   List.iter
     (fun p ->
       Sarek_coopmat.accept_operand_rounding

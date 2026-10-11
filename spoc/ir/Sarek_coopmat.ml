@@ -161,6 +161,30 @@ let no_derived_bound cfg =
    the addend and the result, so a float-operand configuration with an integer
    accumulator would come out [Strict] — a configuration no device offers and
    whose meaning (convert a float operand to an integer?) nothing defines. *)
+(* A bf16 operand is a float32 buffer rounded on load: a deviation beyond the
+   accumulation order, so it also needs the operand-rounding opt-in. *)
+let bf16_rounding_accepted () =
+  Option.is_some (operand_rounding_reason Operands_bf16)
+  || Option.is_some (operand_rounding_reason Operands_bf16x3)
+
+let rounding_not_accepted cfg =
+  {
+    Sarek_capability.cap_name = "coopmat-operand-rounding";
+    cap_kind = Sarek_capability.Policy;
+    cap_why =
+      Printf.sprintf
+        "%s rounds float32 operands to bfloat16 on load, which changes results \
+         beyond the accumulation order, and the program has not accepted that"
+        (config_name cfg);
+    cap_evidence =
+      Sarek_capability.Quoted
+        "specs/matrix-pattern-rewrite.md (operand rounding is its own opt-in)";
+    cap_remedy =
+      Some
+        "Call Sarek_coopmat.accept_operand_rounding ~precision:Operands_bf16 \
+         (or Operands_bf16x3) ~reason:\"...\" once before launching.";
+  }
+
 let policy_verdict cfg =
   let all_integer =
     List.for_all
@@ -170,9 +194,11 @@ let policy_verdict cfg =
   if all_integer then Sarek_capability.Available
   else if not (has_derived_bound cfg) then
     Sarek_capability.Unavailable (no_derived_bound cfg)
-  else if Option.is_some (relaxed_accumulation_reason ()) then
-    Sarek_capability.Available
-  else Sarek_capability.Unavailable (relaxed_not_accepted cfg)
+  else if Option.is_none (relaxed_accumulation_reason ()) then
+    Sarek_capability.Unavailable (relaxed_not_accepted cfg)
+  else if cfg.cfg_a = BFloat16 && not (bf16_rounding_accepted ()) then
+    Sarek_capability.Unavailable (rounding_not_accepted cfg)
+  else Sarek_capability.Available
 
 (* ------------------------------------------------------------------------ *)
 (* Fragments without a multiply-add                                         *)

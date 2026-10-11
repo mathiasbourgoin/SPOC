@@ -110,6 +110,8 @@ val operand_rounding_reason : operand_precision -> string option
     [Available] after {!accept_relaxed_accumulation} and otherwise [Unavailable]
     with a {!Sarek_capability.Policy} record naming the call; every other
     configuration with a float component is [Unavailable] (no derived bound,
-    §5.4). The launch gate and the interpreter apply it after the device
-    verdict. *)
+    §5.4). A [BFloat16] configuration additionally needs
+    {!accept_operand_rounding} for [Operands_bf16] or [Operands_bf16x3]: its
+    load rounds float32 operands. The launch gate and the interpreter apply it
+    after the device verdict. *)
 val policy_verdict : config -> Sarek_capability.verdict
