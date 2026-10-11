@@ -10,6 +10,8 @@
  * column-major, takes the DIRECT variant (fragments loaded straight from
  * global memory in the operand's own layout); an unaligned one the staged
  * variant. Either way the result is within gamma_K of the exact product.
+ * The staged kernel itself keeps B in shared memory as [n][k] and loads its
+ * fragments column-major, whatever the operand layouts.
  ******************************************************************************)
 
 [@@@alert "-sarek_matrix"]
@@ -162,8 +164,52 @@ let check case dev ~m ~n ~k ~expect_direct =
             (Spec.variant_name s.variant)
             worst)
 
+(* The staged kernel keeps B in shared memory as [n][k] and loads its
+   fragments column-major (contiguous per lane), for every lowering. *)
+let check_staged_layout () =
+  let open Sarek_ir_types in
+  let lowered (kern, lowering) =
+    let ir = ir_of kern in
+    match Sarek_matrix_pattern.recognise ir with
+    | [] -> fail "no GEMM recognised"
+    | g :: _ -> (
+        match Sarek_matrix_rewrite.kernel ir g lowering with
+        | Error e -> fail "rewrite refused: %s" e
+        | Ok k ->
+            let bad =
+              List.filter
+                (function
+                  | CM_load {frag; layout; _} ->
+                      layout
+                      <>
+                      if frag.Sarek_coopmat.frag_use = Sarek_coopmat.Matrix_b
+                      then Sarek_coopmat.Col_major
+                      else Sarek_coopmat.Row_major
+                  | CM_decl _ | CM_store _ | CM_muladd _ -> false)
+                (Sarek_ir_analysis.kernel_coopmat_ops k)
+            in
+            let what = Sarek_matrix_rewrite.lowering_name lowering in
+            if bad = [] then
+              ok "staged %s: B column-major from shared, A row-major" what
+            else
+              fail
+                "staged %s: %d fragment loads in the wrong layout"
+                what
+                (List.length bad))
+  in
+  List.iter
+    lowered
+    [
+      (k_f16, Sarek_matrix_rewrite.F16_operands);
+      (k_f32, Sarek_matrix_rewrite.F16_operands);
+      (k_f32, Sarek_matrix_rewrite.Bf16_operands);
+      (k_f32, Sarek_matrix_rewrite.Bf16x3_operands);
+      (k_2d, Sarek_matrix_rewrite.Int32_byte_planes);
+    ]
+
 let () =
   Random.init 20261011 ;
+  check_staged_layout () ;
   Sarek_coopmat.accept_relaxed_accumulation ~reason:"test_matrix_col_major" ;
   Sarek_coopmat.accept_automatic_float_rewrite ~reason:"test_matrix_col_major" ;
   Spec.set_mode Spec.Auto ;
