@@ -90,7 +90,7 @@ Records declared with `[@@sarek.type]` are passed as custom vectors; the record 
 | `Direct` | Native | The kernel runs on the CPU, in parallel on OCaml 5 domains, without a device compiler. |
 | `Custom` | Interpreter | The IR is evaluated directly, sequentially; slow, for checking kernel logic. |
 
-On a JIT backend, the first launch of a kernel includes code generation and driver compilation; later launches reuse the cached result. HIP, OpenCL and Vulkan defer launches made without `~stream` until the next synchronisation point and may fuse independent launches (`Execute.Window`, spec `specs/launch-window.md`). A device compilation or launch failure is then raised by the call that flushes the window, for example `Transfer.flush dev`, not by `run_vectors`.
+On a JIT backend, the first launch of a kernel includes code generation and driver compilation; later launches reuse the cached result. HIP, OpenCL, Vulkan and CUDA defer launches made without `~stream` until the next synchronisation point and may fuse independent launches (`Execute.Window`, spec `specs/launch-window.md`). A device compilation or launch failure is then raised by the call that flushes the window, for example `Transfer.flush dev`, not by `run_vectors`.
 
 A launch whose IR is a matrix product that the device's matrix units can compute may run a rewritten kernel with identical outputs (`specs/matrix-pattern-dynamic.md`). `Execute.run_vectors_outcome` returns which kernel ran.
 

@@ -163,23 +163,33 @@ let env_enabled () =
 
 let enabled = Atomic.make (env_enabled ())
 
-(** Backends whose launches are deferred by default. Horizontal fusion is
-    bit-identical by construction, so the window is on wherever the test suites
-    have executed it: HIP, OpenCL and Vulkan on an RX 7900 XTX, CUDA/PTX through
-    ZLUDA on that GPU (not NVIDIA hardware), and CUDA/C, whose generator is the
-    one HIP uses. Metal stays immediate until its window tests have run on Apple
-    hardware (specs/launch-window.md); {!set_backend_enabled} opts it in. *)
+(** Backends whose launches are deferred by default (specs/launch-window.md).
+    Metal stays immediate; {!set_backend_enabled} opts it in. *)
 let default_backends = ["HIP"; "OpenCL"; "Vulkan"; "CUDA/PTX"; "CUDA/C"]
 
 (* Read on every launch: an immutable list behind an atomic, no lock. *)
 let backends : string list Atomic.t = Atomic.make default_backends
 
-(** Kernel argument slots a launch's signature may use on [backend]. Metal binds
-    every argument at a [[buffer(n)]] index and has 31 of them; the others
-    accept any signature the window builds (their limits are far above eight
-    members). *)
+(* Kernel argument slots per backend, as an immutable association list. *)
+let slot_limits : (string * int) list Atomic.t = Atomic.make [("Metal", 31)]
+
+(** Kernel argument slots a launch's signature may use on [backend]: Metal binds
+    every argument at one of 31 [[buffer(n)]] indices. A backend with no limit
+    configured here is unbounded as far as the window is concerned. *)
 let arg_slot_limit (backend : string) : int =
-  if backend = "Metal" then 31 else max_int
+  Option.value
+    ~default:max_int
+    (List.assoc_opt backend (Atomic.get slot_limits))
+
+(** Set the argument slot limit of [backend] (for tests and for backends whose
+    limit becomes known). *)
+let set_arg_slot_limit ~(backend : string) (n : int) : unit =
+  let rec update () =
+    let old = Atomic.get slot_limits in
+    let next = (backend, n) :: List.remove_assoc backend old in
+    if not (Atomic.compare_and_set slot_limits old next) then update ()
+  in
+  update ()
 
 (** [true] when launches on [backend] are deferred. *)
 let defers (backend : string) : bool =
@@ -227,18 +237,27 @@ let same_dims (a : Dims.dims) (b : Dims.dims) =
 let joinable (l : _ launch) =
   Option.is_some l.shared_bytes && l.shared_mem = 0 && l.grid.x > 0
 
-(* Slots one launch's arguments take in a kernel signature: a vector is a
-   buffer plus its length, a scalar one slot. *)
+(** Slots one launch's arguments take in a kernel signature: a vector is a
+    buffer plus its length, a scalar one slot. *)
 let arg_slots w (l : _ launch) =
   List.fold_left
     (fun n a -> n + if Option.is_some (w.arg_buf a) then 2 else 1)
     0
     l.args
 
-(* The fused kernel's signature is every member's arguments plus (offset,
-   grid size) per member. *)
+(** Slots of the signature of the fused kernel of [members]: every member's
+    arguments plus (offset, grid size) per member. *)
 let fused_slots w members =
   List.fold_left (fun n m -> n + arg_slots w m + 2) 0 members
+
+(** [true] when [members], issued as one group, stay within the backend's
+    argument slots: the fused signature for two or more, the launch's own
+    signature for one. *)
+let slots_ok w members =
+  match members with
+  | [] -> true
+  | [m] -> arg_slots w m <= m.max_arg_slots
+  | m :: _ -> fused_slots w members <= m.max_arg_slots
 
 (* The fused grid and shared memory must stay within the device's limits, work-
    group offsets within int32 (they are passed as int32 arguments), and the

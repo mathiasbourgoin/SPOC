@@ -827,65 +827,116 @@ let test_grid_limit () =
     (List.length (launches ()))
 
 (* A backend with a bounded kernel signature (Metal: 31 buffer slots, a vector
-   takes two) is never handed a fused kernel with more slots than it has. Each
-   member here binds three vectors (6 slots) and adds (offset, size) (2). *)
+   takes two) is never handed a fused kernel with more slots than it has. A
+   member here has one vector and [k] scalars: 2 + k slots, plus (offset, size). *)
+let slot_window () =
+  let module LW = Sarek_execute.Launch_window in
+  LW.create
+    ~int32_arg:Int32.to_int
+    ~arg_buf:(fun a -> if a >= 100 then Some a else None)
+    ~arg_int32:(fun a -> Some (Int32.of_int a))
+    ~set_pending:ignore
+    ~guard:(fun f -> f ())
+
+let slot_member ~limit ~scalars ~fused ~single =
+  let module LW = Sarek_execute.Launch_window in
+  {
+    LW.device_id = 0;
+    backend = "Metal";
+    ir = k_a;
+    ir_id = 0;
+    shared_bytes = Some 0;
+    max_grid_x = max_int;
+    max_shared = max_int;
+    max_arg_slots = limit;
+    args = 100 :: List.init scalars (fun _ -> 0);
+    block = Execute.dims1d 64;
+    grid = Execute.dims1d 1;
+    shared_mem = 0;
+    accesses = [];
+    issue = (fun () -> incr single);
+    issue_fused = (fun _ _ _ -> incr fused);
+  }
+
+(* Two members of 15 and [16 + extra] slots: 31 + extra. *)
+let two_members ~extra =
+  let module LW = Sarek_execute.Launch_window in
+  let w = slot_window () in
+  let fused = ref 0 and single = ref 0 in
+  let m scalars = slot_member ~limit:31 ~scalars ~fused ~single in
+  LW.submit w (m 11) ;
+  LW.submit w (m (12 + extra)) ;
+  LW.flush w ;
+  (LW.fused_slots w [m 11; m (12 + extra)], !fused, !single)
+
 let test_arg_slot_limit () =
   let module LW = Sarek_execute.Launch_window in
   check int "Metal has 31 slots" 31 (LW.arg_slot_limit "Metal") ;
-  check bool "HIP is unbounded" true (LW.arg_slot_limit "HIP" = max_int) ;
-  let w =
-    LW.create
-      ~int32_arg:Int32.to_int
-      ~arg_buf:(fun a -> Some a)
-      ~arg_int32:(fun a -> Some (Int32.of_int a))
-      ~set_pending:ignore
-      ~guard:(fun f -> f ())
-  in
-  let fused = ref [] and single = ref 0 in
-  let member id =
-    {
-      LW.device_id = 0;
-      backend = "Metal";
-      ir = k_a;
-      ir_id = 0;
-      shared_bytes = Some 0;
-      max_grid_x = max_int;
-      max_shared = max_int;
-      max_arg_slots = 31;
-      args = [id; id + 1; id + 2];
-      block = Execute.dims1d 64;
-      grid = Execute.dims1d 1;
-      shared_mem = 0;
-      accesses = [];
-      issue = (fun () -> incr single);
-      issue_fused = (fun _ args _ -> fused := List.length args :: !fused);
-    }
-  in
-  List.iter (fun i -> LW.submit w (member (i * 10))) [0; 1; 2; 3; 4] ;
-  LW.flush w ;
   check
-    (list int)
-    "3 members (24 slots) then 2: a fourth would need 32"
-    [(3 * 3) + 6; (2 * 3) + 4]
-    (List.sort (fun a b -> compare b a) !fused) ;
-  check int "nothing runs unfused" 0 !single
+    bool
+    "no limit configured for HIP"
+    true
+    (LW.arg_slot_limit "HIP" = max_int) ;
+  let slots, fused, single = two_members ~extra:0 in
+  check int "exactly 31 slots" 31 slots ;
+  check
+    (pair int int)
+    "31 slots are accepted: one fused launch"
+    (1, 0)
+    (fused, single) ;
+  let slots, fused, single = two_members ~extra:1 in
+  check int "32 slots" 32 slots ;
+  check
+    (pair int int)
+    "32 slots are refused: two launches"
+    (0, 2)
+    (fused, single)
+
+(* The same limit through Execute's wiring (the launch's [max_arg_slots] comes
+   from the device's framework). Each probe member is 4 slots plus 2. *)
+let slot_limited_launches limit =
+  let module LW = Sarek_execute.Launch_window in
+  reset () ;
+  LW.set_arg_slot_limit ~backend:backend_name limit ;
+  Fun.protect
+    ~finally:(fun () -> LW.set_arg_slot_limit ~backend:backend_name max_int)
+    (fun () ->
+      let[@warning "-8"] [x; y1; y2; y3] = resident 4 in
+      events := [] ;
+      launch k_a x y1 ;
+      launch k_b x y2 ;
+      launch k_c x y3 ;
+      Execute.Window.flush () ;
+      List.length (launches ()))
+
+let test_arg_slot_limit_wiring () =
+  check int "unbounded: one fused launch" 1 (slot_limited_launches max_int) ;
+  check int "18 slots fit three members" 1 (slot_limited_launches 18) ;
+  check int "17: a pair and a single" 2 (slot_limited_launches 17) ;
+  check int "12 fit a pair" 2 (slot_limited_launches 12) ;
+  check int "11: nothing fuses" 3 (slot_limited_launches 11)
 
 (* {1 Review round 3} *)
 
 (* The default deferring set, by the framework names the plugins register
    (sarek-device-info). "CUDA/PTX" and "CUDA/C" are the two CUDA backends. *)
 let test_default_backends () =
+  let module LW = Sarek_execute.Launch_window in
   List.iter
     (fun name ->
-      check bool (name ^ " defers by default") true (Execute.Window.defers name))
+      check
+        bool
+        (name ^ " is in the default set")
+        true
+        (List.mem name LW.default_backends))
     ["HIP"; "OpenCL"; "Vulkan"; "CUDA/PTX"; "CUDA/C"] ;
   List.iter
     (fun name ->
       check
         bool
-        (name ^ " is not deferred by default")
+        (name ^ " is not in the default set")
         false
-        (Execute.Window.defers name))
+        (List.mem name LW.default_backends))
     ["Native"; "Interpreter"; "Metal"]
 
 let test_cpu_device_not_deferred () =
@@ -1176,6 +1227,19 @@ let test_epilogue_merged () =
         true
         (String.starts_with ~prefix:"launch sarek_efused_" l)
   | ls -> failf "expected one merged launch, got %d" (List.length ls)
+
+(* An epilogue merge is bounded too: the merged launch has 9 slots (producer 5,
+   the consumer's y and n 3, and the covered size 1). *)
+let test_epilogue_slot_limit () =
+  let module LW = Sarek_execute.Launch_window in
+  let merged limit =
+    LW.set_arg_slot_limit ~backend:backend_name limit ;
+    Fun.protect
+      ~finally:(fun () -> LW.set_arg_slot_limit ~backend:backend_name max_int)
+      (fun () -> List.length (epilogue_pair ~cons_block:64 ()))
+  in
+  check int "9 slots: merged" 1 (merged 9) ;
+  check int "8 slots: not merged" 2 (merged 8)
 
 let test_epilogue_uncovered () =
   (* The consumer writes [0, 128) but the producer stores only [0, 64). *)
@@ -1592,6 +1656,10 @@ let () =
           test_case "default backends defer" `Quick test_default_backends;
           test_case "argument slot limit" `Quick test_arg_slot_limit;
           test_case
+            "argument slot limit, production wiring"
+            `Quick
+            test_arg_slot_limit_wiring;
+          test_case
             "CPU device not deferred"
             `Quick
             test_cpu_device_not_deferred;
@@ -1615,6 +1683,7 @@ let () =
           test_case "index slice" `Quick test_index_slice;
           test_case "consumer shape" `Quick test_consumer_shape;
           test_case "merged when covered" `Quick test_epilogue_merged;
+          test_case "merge bounded by slots" `Quick test_epilogue_slot_limit;
           test_case "not merged when uncovered" `Quick test_epilogue_uncovered;
           test_case "default backends" `Quick test_epilogue_off_by_default;
           test_case "failure falls back" `Quick test_epilogue_failure_falls_back;

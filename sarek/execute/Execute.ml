@@ -1493,11 +1493,11 @@ let run_jit (module B : Framework_sig.BACKEND) ?stream ~(device : Device.t)
       physical IR and reused by later launches (see the launch-preparation memo
       above and {!clear_launch_cache}); argument checks run every time. Without
       [~stream], a JIT launch on a backend whose launch window is enabled (HIP,
-      OpenCL and Vulkan by default) is deferred until the next synchronisation
-      point and may be fused with independent launches ({!Window},
-      specs/launch-window.md). Its checks and source generation still run in
-      this call, but a device compilation or driver launch failure is raised by
-      the call that flushes the window.
+      OpenCL, Vulkan and CUDA by default) is deferred until the next
+      synchronisation point and may be fused with independent launches
+      ({!Window}, specs/launch-window.md). Its checks and source generation
+      still run in this call, but a device compilation or driver launch failure
+      is raised by the call that flushes the window.
 
     @param device Target device
     @param name Kernel name

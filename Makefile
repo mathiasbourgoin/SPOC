@@ -509,6 +509,11 @@ e2e-hip:
 e2e-hip-bench:
 	dune build --force @sarek-hip/test/e2e-hip-bench
 
+# Launch window benchmark on every non-CPU device (SPOC_BENCH_FRAMEWORK=HIP,
+# Metal or CUDA/PTX narrows it); information only
+bench-launch-window:
+	dune exec sarek/tests/e2e/bench_launch_window.exe
+
 # Vulkan tests with no Native/Interpreter fallback
 e2e-gpu:
 	dune build --force @sarek/tests/e2e/e2e-gpu
