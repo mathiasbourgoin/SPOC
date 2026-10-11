@@ -1224,12 +1224,12 @@ and emit_binop buf alloc env op e1 e2 : string =
          backend (CUDA/OpenCL/Metal/GLSL/WGSL emit plain [>>] on a signed
          int type; the interpreter uses Int32.shift_right). [lsr] has its
          own operators, Lshr32/Lshr64, emitted as shr.b32/shr.b64 below.
-         Formal spec note:
-         formal/codegen-ptx/theories/PtxTypes.v models Shr as a logical
-         Nat.shiftr on U32; that model was written against the old (wrong)
-         shr.u32 emission and is now out of sync with this fix. formal/ is
-         out of scope for this task - flagged for the formal-verification
-         owner. *)
+         Formal spec note: formal/codegen-ptx/theories/PtxShift.v models this
+         table (Shr -> shr.s32/.s64, Lshr32 -> shr.b32, Lshr64 -> shr.b64) and
+         the PTX count clamp; formal/codegen-ptx/test/
+         test_codegen_ptx_conformance.ml checks the extracted model against
+         this emitter, so changing an instruction here without the model
+         fails that test. *)
       if is_u64 r1 then (
         (* 64-bit arithmetic shift (softmath exponent extraction); PTX shift
            amounts are u32, so a 64-bit amount is narrowed first. *)

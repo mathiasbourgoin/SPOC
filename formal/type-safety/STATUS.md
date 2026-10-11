@@ -13,7 +13,7 @@
 | Metric | Value | Where it comes from |
 |---|---|---|
 | Theorems proven | 90 (78 headline + 12 auxiliary, all Qed/Defined) | `proof-ledger.json` → `counts.theorems` |
-| — checked against production, by random differential sampling, NOT exhaustive (backlog-201) | 44 (TypeSafetySpec via `Sarek_typer.infer`, 2000 cases; UnifySpec via `Sarek_types.unify`, 1000 cases) | `production-link.json` + `scripts/check-production-link.py` — agreement on every input sampled, not a proof transported to the implementation. **No anti-drift check**: unlike `codegen-ptx`'s `PtxLayout`, this project has no extraction driver for `TypeSafetyModel.ml`/`UnifyModel.ml` and no byte-compare against a from-scratch re-extraction — see `production-link.json`'s `no_anti_drift_check` |
+| — checked against production, by random differential sampling, NOT exhaustive (backlog-201) | 44 (TypeSafetySpec via `Sarek_typer.infer`, 2000 cases; UnifySpec via `Sarek_types.unify`, 1000 cases) | `production-link.json` + `scripts/check-production-link.py` — agreement on every input sampled, not a proof transported to the implementation. **Anti-drift check (D-55)**: the extraction drivers are in `_CoqProject` and `scripts/check-formal-proofs.sh` regenerates every `extraction/*Model.ml{,i}` from scratch and compares it (canonicalised) with the committed copy — see `production-link.json`'s `anti_drift_check` |
 | — model-only (no mechanical production link) | 46 (ConstrSpec, ControlFlowSpec, FunSpec, GPUSpec, MutSpec, OperatorSpec, PatternSpec, RegistrySpec, SpecialSpec, VecSpec) | same |
 | Admits | 0 | no `Admitted`/`admit` under `theories/` |
 | Axioms | 0 | |
@@ -435,7 +435,7 @@ declaration count is exact (78 headline + 12 auxiliary = 90 total
 | Link | Item | Status |
 |---|---|---|
 | 1 | Spec source (12 `theories/*.v` files, 90 declarations) | checked |
-| 2 | Extracted OCaml models (12 `extraction/*Model.ml` files) | checked |
+| 2 | Extracted OCaml models (12 `extraction/*Model.ml` files; each has a driver `extraction/*Extraction.v` listed in `_CoqProject`, regenerated and compared by `scripts/check-formal-proofs.sh` on every run, D-55) | checked |
 | 3 | Integration target (`Sarek_typer.ml` `infer` function, 1154 lines) | checked |
 | 4 | Conformance tests GREEN (T1-CMBT: 2000/2000 + 20/20 smoke; T2-UNIFY/VEC/REGISTRY; T3-S1..S8) | checked |
 | 5 | Mutation tests GREEN (`test/test_mutation.ml`: M1 type-erasure + M2 variable-blind caught) | checked |
@@ -460,3 +460,24 @@ T3-SEMANTIC complete (T3-S1..S8). On `origin/main` (milestone recorded by c3f257
 Non-vacuousness: 41 Examples, M1+M2 mutation tests green.
 Next project: codegen-cuda via /formal-init.
 ```
+
+## Extraction drivers and drift check (D-55, 2026-10-11)
+
+Earlier revisions of this file said the project had "no extraction driver".
+That was wrong in the other direction: twelve drivers
+(`extraction/{TypeSafety,Unify,Vec,Registry,ControlFlow,Operator,Fun,Mut,Pat,Constr,Special,GPU}Extraction.v`)
+existed on disk but were **not listed in `_CoqProject`**, so CI never ran them
+and nothing compared their output with the committed `*Model.ml{,i}` that
+`test/test_type_safety_conformance.ml` and `test/test_mutation.ml` use as their
+oracle. They are all listed now, each sets `Set Extraction Output Directory
+"extraction"`, and `scripts/check-formal-proofs.sh` deletes the committed
+models, rebuilds, and compares every regenerated model with the committed copy
+after `scripts/canonicalize-extraction.py` (token-level). Committed models are
+stored canonicalised and listed in `.ocamlformat-ignore`.
+
+When the check was first run, **one of the twelve had drifted**:
+`extraction/TypeSafetyModel.ml{,i}` lacked the `TRecord` and `TVariant`
+constructors of `sarek_type` that the current `TypeSafetySpec.v` defines (the
+other eleven were token-identical to a fresh extraction once formatting was
+ignored). It was regenerated; `dune test formal` passes against the new model.
+Nothing is exempt in this project.

@@ -1,6 +1,6 @@
 # Status — codegen-ptx formal project
 
-_Last reconciled against the tree: 2026-07-30. Every count below is taken from
+_Last reconciled against the tree: 2026-10-11. Every count below is taken from
 `proof-ledger.json`, which is **generated**, not hand-written:
 `scripts/check-formal-proofs.sh` rebuilds all `.v` from scratch inside
 `rocq/rocq-prover:9.1.1`, regenerates the ledger via
@@ -9,23 +9,27 @@ this file and the ledger ever disagree, the ledger is right._
 
 Track B steps 10-12 complete.
 
-**Theories: 6 files compiling** — AGpuSemantics, PtxTypes, PtxExprSpec,
-PtxStmtSpec, PtxKernelSpec, PtxLayout.
+**Theories: 7 files compiling** — PtxShift, AGpuSemantics, PtxTypes,
+PtxExprSpec, PtxStmtSpec, PtxKernelSpec, PtxLayout.
 
 | Metric | Value | Where it comes from |
 |---|---|---|
-| Theorems | **79** | `proof-ledger.json` → `counts.theorems` |
+| Theorems | **106** | `proof-ledger.json` → `counts.theorems` |
 | — checked against production, exhaustively-for-a-bound + random (backlog-201) | 50 (PtxLayout: extraction run directly against `Sarek_ir_layout`) | `production-link.json` + `scripts/check-production-link.py` |
-| — model-only (no mechanical production link) | 29 (PtxTypes, AGpuSemantics, PtxExprSpec, PtxKernelSpec, PtxStmtSpec) | same |
+| — checked against production, fixed-grid differential (D-54) | 18 (PtxShift: extraction run against `Sarek_ir_ptx_expr.emit_expr` — instruction chosen, and result of the instruction emitted) | same; counted under "random sampling only, NOT exhaustive" because the checker has no third kind |
+| — model-only (no mechanical production link) | 38 (PtxTypes 16, AGpuSemantics 14, PtxExprSpec 4, PtxKernelSpec 2, PtxStmtSpec 2) | same |
 | Admits | 0 | no `Admitted`/`admit` under `theories/`; `check-formal-proofs.sh` greps for them *and* the Rocq build would fail anyway |
 | Project-local axioms / `Parameter`s | 6 | the f32/f64 `sin`/`cos`/`fma` of `AGpuSemantics.v`, all six sanctioned in `formal/axiom-allowlist.txt` |
 | Toolchain-base axioms (inherited) | 99 | `counts.axioms_toolchain_base` — Rocq's own primitive-float/int63 axiomatisation, not ours to sanction |
 
 Per module — from the ledger's top-level `modules` key, as
 `modules["CodegenPtx.<M>"].counts.theorems`, **not** from `counts.theorems`
-(that one is the project-wide scalar 79 cited in the table above): PtxLayout 50,
-PtxTypes 16, AGpuSemantics 5, PtxExprSpec 4, PtxKernelSpec 2, PtxStmtSpec 2 —
-summing to 79.
+(that one is the project-wide scalar 106 cited in the table above): PtxLayout 50,
+PtxShift 18, PtxTypes 16, AGpuSemantics 14, PtxExprSpec 4, PtxKernelSpec 2,
+PtxStmtSpec 2 — summing to 106. (Before D-54: PtxLayout 50, PtxTypes 16,
+AGpuSemantics 5, PtxExprSpec 4, PtxKernelSpec 2, PtxStmtSpec 2 = 79; nothing
+was removed, +18 in the new PtxShift.v and +9 in AGpuSemantics.v. The count
+includes the `Example` pins, which the ledger counts as theorems.)
 
 The axiom allowlist is enforced in **both** directions — an axiom the kernel
 found that is not listed fails, and a listed name no proof depends on any more
@@ -51,7 +55,7 @@ theorems listed below. The full per-module theorem list is in
 
 ## Extraction — and what it is actually wired to
 
-There are two extraction entry points, and they are **not** equivalent in
+There are three extraction entry points, and they are **not** equivalent in
 status. Conflating them is what let this file previously read as though the
 whole model were extracted.
 
@@ -59,37 +63,110 @@ whole model were extracted.
   Real, linked, and CI-drift-checked. One self-contained pair of files
   (`Extraction "file.ml"`, every dependency inlined) that dune builds and
   `test/test_layout_conformance.ml` links as its `Model`.
-  `scripts/check-formal-proofs.sh` re-extracts from scratch, runs
-  `scripts/canonicalize-extraction.py` on both sides (the Rocq pretty-printer's
-  line breaking depends on which OCaml the *prover* was built with, so a raw
-  byte-compare would fire on every run), and byte-compares against the
-  committed copies — a `PtxLayout.v` edit that is not propagated fails CI.
+- **`extraction/ShiftExtract.v` → `extraction/sarek_ptx_shift_model.ml{,i}`
+  (D-54).** Same technique: the right-shift semantics of `theories/PtxShift.v`
+  and the IR-operator → `shr.<s|b><32|64>` instruction table, linked by
+  `test/test_codegen_ptx_conformance.ml`, which checks them against the
+  production emitter. `Z` is extracted as the inductive it is (no zarith).
 - **`extraction/Extract.v` → five `.ml` files in the project root**
   (AGpuSemantics, PtxTypes, PtxExprSpec, PtxStmtSpec, PtxKernelSpec). These use
   `Extraction Library`, which emits one file per Rocq module still referring to
   its dependencies by name (`open Datatypes`, `open List`, `open Nat`) —
   modules that exist only if the Stdlib is extracted alongside. **They have
-  never compiled, and nothing links them.** They are committed and regenerated
-  by every proof run, and that is all. Float `Parameter`s are mapped to
+  never compiled, and nothing links them.** They are regenerated by every proof
+  run and are not tracked (backlog-188). Float `Parameter`s are mapped to
   `Stdlib.Float` wrappers there in anticipation, not in use.
+  **Not drift-checked, by name:** `scripts/check-formal-proofs.sh` lists
+  `formal/codegen-ptx/extraction/Extract.v` in `NOT_DRIFT_CHECKED` and prints the
+  reason on every run — there is no committed copy to compare, and nothing
+  consumes the output.
+
+Drift check (D-55): the gate regenerates **both** linked models from scratch
+(the committed copies are deleted first, so finding them again proves the
+build produced them), runs `scripts/canonicalize-extraction.py` on both sides
+(the Rocq pretty-printer's line breaking depends on which OCaml the *prover*
+was built with, so a raw byte-compare would fire on every run), and compares —
+a `PtxLayout.v` or `PtxShift.v` edit that is not propagated fails CI.
 
 So the emitter's expression/statement/kernel model is **conformance-tested
-against a hand-written mirror**, and only the layout model is checked against
-Rocq's own extraction. That asymmetry is the honest answer to
+against a hand-written mirror**, except for the right shifts (delegated to the
+extracted shift model, itself checked against production), and only the layout
+and shift models are checked against Rocq's own extraction. That asymmetry is the honest answer to
 "model vs production" for this project.
 
 ## Conformance tests
 
 ### Expression/statement/kernel suite — hand-mirrored
 
-`test/test_codegen_ptx_conformance.ml`: **37** Alcotest cases across nine
+`test/test_codegen_ptx_conformance.ml`: **45** Alcotest cases across eleven
 groups (literals 7, thread-intrinsics 4, arithmetic 4, comparisons 4,
-math-intrinsics 6, type-safety 2, registers 2, barrier 1, ptx-dshared 7).
+math-intrinsics 6, type-safety 2, registers 2, barrier 1, shift-mirror 4,
+shift-vs-production 4, ptx-dshared 7).
 
 Both sides of every `eval_agrees` check use the OCaml mirror defined in that
 file, not the extracted Rocq modules — see the extraction section above for
 why. It validates the mirror's internal consistency with the spec; it does not
-close the mirror↔theory hop.
+close the mirror↔theory hop. **The mirror no longer contains a shift
+semantics of its own**: `Shr`/`Lshr32`/`Lshr64` delegate to the extracted
+`sarek_ptx_shift_model` (a hand copy of `a lsr b` used to live there, which
+agreed with the wrong model and disagreed with production — D-54).
+
+### Right shifts — extracted model against PRODUCTION (D-54)
+
+Group `shift-vs-production` (4 cases) calls `Sarek_ir_ptx_expr.emit_expr` on
+`Shr` (32-bit; 64-bit; 64-bit with a 64-bit count register), `Lshr32`, `Lshr64`
+and `Lshr64` with a 64-bit count:
+
+- `instruction-choice` — the single `shr.*` instruction production emits equals
+  the model's `shr_insn` (`shr.s32`/`shr.s64` for `Shr`, `shr.b32`/`shr.b64`
+  for `Lshr`).
+- `result-vs-emitted-instruction` — an independent oracle written from the PTX
+  ISA text (native `Int32`/`Int64` shifts, count a `.u32` clamped to the
+  width, a 64-bit count narrowed to its low 32 bits) executes the instruction
+  production emitted; the model's result must equal it on 12 operand patterns
+  (negative, `min_int`, all-ones, high-half-only, ...) × 17–21 counts (in range,
+  at/beyond the width, `2^32 ± 1`).
+- `model-vs-ir-semantics` — for every in-range count the model equals OCaml
+  `asr`/`lsr` as the interpreter computes them.
+- `pins` — hand-written values (`-4 >> 1`, count == width, 64-bit narrowing).
+
+This is a fixed grid, not random sampling and not exhaustive over 2^64
+operands; the 18 `PtxShift` theorems are proven for all operands.
+
+**Mutation evidence (2026-10-11).** (1) In `sarek/codegen/Sarek_ir_ptx_expr.ml`,
+`shr.s32` → `shr.b32` for `Shr`: `instruction-choice` and
+`result-vs-emitted-instruction` fail ("production emits shr.b32 but the model
+says shr.s32"). (2) In the extracted model, `shr_flavour_of` swapped
+(`OpShr -> FlavB | _ -> FlavS`): 7 of the 8 shift cases fail (three of the four mirror
+cases and all four production cases). Both reverted; the suite is green on the committed tree.
+
+### What D-54 changed in the theory
+
+The model used to say `Shr` = `Nat.shiftr` on `U32` (logical), with no
+`Lshr32`/`Lshr64`, contradicting production. Now (`theories/PtxShift.v`):
+`ashr_w w a k` = the two's-complement reading of the `w`-bit pattern shifted
+right (flooring), re-expressed as a pattern; `lshr_w` = zero-filling; the count
+is the `.u32` operand clamped to `w` (PTX ISA "shr": counts above the width are
+clamped to the width) and a 64-bit count is first narrowed to 32 bits (what
+production's `cvt` does). Theorems: `ashr_signed` (to_signed (ashr a k) = floor
+of the signed reading — the definition of an arithmetic shift),
+`ashr_nonneg_is_logical`, `ashr_negative_stays_negative`, `ashr_all_ones`,
+`ashr_big_amount` / `lshr_big_amount` (counts ≥ width), range lemmas, and
+concrete pins that fail for the old logical model. `AGpuSemantics.v` lifts them
+to the `nat` register domain (`agpu_eval_shr_u32_sign_fill`,
+`agpu_shr_not_lshr32`, ...). **No theorem had to be restricted to non-negative
+operands**: `emit_expr_correct`, `eval_ir_ptx_eq` and the stmt/kernel
+theorems are unchanged and re-proved as stated (the IR and PTX evaluators share
+`agpu_eval_shr`, so translation preserves the semantics by construction; what
+the proof cannot say — and the new test does — is that production emits the
+instruction the model names).
+
+**Remaining model/production differences found (not fixed here).**
+(1) `Shl` is still `Nat.shiftl` on unbounded `nat`: no wrap to 32 bits and no
+count clamp, unlike `shl.b32`. (2) Production's `Lshr32` on a 64-bit first
+operand emits `shr.b32` on a `%rd` register (ill-typed PTX) where the model
+evaluates to `None`. (3) `Add`/`Sub`/`Mul` etc. on `U32` do not wrap either
+(the pre-existing "no overflow modelling" decision).
 
 ### Layout suite — runs the extracted theory
 

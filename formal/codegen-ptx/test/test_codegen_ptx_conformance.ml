@@ -1053,7 +1053,7 @@ let test_dshared_mixed_global_shared () =
       ptx
 
 (* ======================================================================= *)
-(** * 12. Right shifts: the extracted model against the PRODUCTION emitter
+(* 12. Right shifts: the extracted model against the PRODUCTION emitter
  *
  * Finding D-54. The model (theories/PtxShift.v, extracted to
  * sarek_ptx_shift_model) is compared with [Sarek_ir_ptx_expr.emit_expr], not
@@ -1145,7 +1145,9 @@ let mask32 = 0xFFFFFFFFL
     and return the low 32 bits. *)
 let ptx_shr_oracle mnemonic (a : int64) (count : int64) : int64 =
   let n = Int64.logand count mask32 in
-  let clamp width = if Int64.compare n (Int64.of_int width) > 0 then width else Int64.to_int n in
+  let clamp width =
+    if Int64.compare n (Int64.of_int width) > 0 then width else Int64.to_int n
+  in
   let pat32 (r : int32) = Int64.logand (Int64.of_int32 r) mask32 in
   match mnemonic with
   | "shr.s32" ->
@@ -1166,20 +1168,59 @@ let ptx_shr_oracle mnemonic (a : int64) (count : int64) : int64 =
   | m -> Alcotest.failf "oracle: unknown shift mnemonic %s" m
 
 let operand_patterns_32 =
-  [0x0L; 0x1L; 0x2L; 0x7FFFFFFEL; 0x7FFFFFFFL; 0x80000000L; 0x80000001L;
-   0xFFFFFFFCL; 0xFFFFFFFEL; 0xFFFFFFFFL; 0xDEADBEEFL; 0x12345678L]
+  [
+    0x0L;
+    0x1L;
+    0x2L;
+    0x7FFFFFFEL;
+    0x7FFFFFFFL;
+    0x80000000L;
+    0x80000001L;
+    0xFFFFFFFCL;
+    0xFFFFFFFEL;
+    0xFFFFFFFFL;
+    0xDEADBEEFL;
+    0x12345678L;
+  ]
 
 let operand_patterns_64 =
-  [0x0L; 0x1L; 0x7FFFFFFFFFFFFFFFL; 0x8000000000000000L;
-   0x8000000000000001L; 0xFFFFFFFFFFFFFFFCL; 0xFFFFFFFFFFFFFFFFL;
-   0xDEADBEEFCAFEF00DL; 0x00000000FFFFFFFFL; 0xFFFFFFFF00000000L;
-   0x80000000L; 0xFFFFFFFCL]
+  [
+    0x0L;
+    0x1L;
+    0x7FFFFFFFFFFFFFFFL;
+    0x8000000000000000L;
+    0x8000000000000001L;
+    0xFFFFFFFFFFFFFFFCL;
+    0xFFFFFFFFFFFFFFFFL;
+    0xDEADBEEFCAFEF00DL;
+    0x00000000FFFFFFFFL;
+    0xFFFFFFFF00000000L;
+    0x80000000L;
+    0xFFFFFFFCL;
+  ]
 
 (** Counts: in range, at and beyond each width, the largest .u32, and (for
     64-bit count registers) values whose low 32 bits differ from the whole. *)
 let counts_u32 =
-  [0L; 1L; 2L; 5L; 16L; 30L; 31L; 32L; 33L; 63L; 64L; 65L; 255L; 0x10000L;
-   0x7FFFFFFFL; 0x80000000L; 0xFFFFFFFFL]
+  [
+    0L;
+    1L;
+    2L;
+    5L;
+    16L;
+    30L;
+    31L;
+    32L;
+    33L;
+    63L;
+    64L;
+    65L;
+    255L;
+    0x10000L;
+    0x7FFFFFFFL;
+    0x80000000L;
+    0xFFFFFFFFL;
+  ]
 
 let counts_u64_extra = [0x100000000L; 0x100000001L; 0x1FFFFFFFFL; -1L]
 
@@ -1281,8 +1322,18 @@ let test_shr_pins () =
   (* -4 >> 1 *)
   check "Shr32 -4>>1" (case "Shr/i32") 0xFFFFFFFCL 1L 0xFFFFFFFEL ;
   check "Lshr32 -4>>1" (case "Lshr32") 0xFFFFFFFCL 1L 0x7FFFFFFEL ;
-  check "Shr64 -4>>1" (case "Shr/i64") 0xFFFFFFFFFFFFFFFCL 1L 0xFFFFFFFFFFFFFFFEL ;
-  check "Lshr64 -4>>1" (case "Lshr64") 0xFFFFFFFFFFFFFFFCL 1L 0x7FFFFFFFFFFFFFFEL ;
+  check
+    "Shr64 -4>>1"
+    (case "Shr/i64")
+    0xFFFFFFFFFFFFFFFCL
+    1L
+    0xFFFFFFFFFFFFFFFEL ;
+  check
+    "Lshr64 -4>>1"
+    (case "Lshr64")
+    0xFFFFFFFFFFFFFFFCL
+    1L
+    0x7FFFFFFFFFFFFFFEL ;
   (* counts at the width clamp to the width: sign fill / zero *)
   check "Shr32 min_int>>32" (case "Shr/i32") 0x80000000L 32L 0xFFFFFFFFL ;
   check "Lshr32 min_int>>32" (case "Lshr32") 0x80000000L 32L 0L ;
@@ -1297,13 +1348,21 @@ let test_shr_pins () =
     0xFFFFFFFFFFFFFFFEL ;
   (* the model's table *)
   Alcotest.(check string)
-    "Shr32 insn" "shr.s32" (model_shr_mnemonic (case "Shr/i32")) ;
+    "Shr32 insn"
+    "shr.s32"
+    (model_shr_mnemonic (case "Shr/i32")) ;
   Alcotest.(check string)
-    "Shr64 insn" "shr.s64" (model_shr_mnemonic (case "Shr/i64")) ;
+    "Shr64 insn"
+    "shr.s64"
+    (model_shr_mnemonic (case "Shr/i64")) ;
   Alcotest.(check string)
-    "Lshr32 insn" "shr.b32" (model_shr_mnemonic (case "Lshr32")) ;
+    "Lshr32 insn"
+    "shr.b32"
+    (model_shr_mnemonic (case "Lshr32")) ;
   Alcotest.(check string)
-    "Lshr64 insn" "shr.b64" (model_shr_mnemonic (case "Lshr64"))
+    "Lshr64 insn"
+    "shr.b64"
+    (model_shr_mnemonic (case "Lshr64"))
 
 (* ======================================================================= *)
 (** * 13. Run all tests *)
