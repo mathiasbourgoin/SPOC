@@ -828,6 +828,22 @@ let test_grid_limit () =
 
 (* {1 Review round 3} *)
 
+(* The default deferring set, by the framework names the plugins register
+   (sarek-device-info). "CUDA/PTX" and "CUDA/C" are the two CUDA backends. *)
+let test_default_backends () =
+  List.iter
+    (fun name ->
+      check bool (name ^ " defers by default") true (Execute.Window.defers name))
+    ["HIP"; "OpenCL"; "Vulkan"; "Metal"; "CUDA/PTX"; "CUDA/C"] ;
+  List.iter
+    (fun name ->
+      check
+        bool
+        (name ^ " is never deferred")
+        false
+        (Execute.Window.defers name))
+    ["Native"; "Interpreter"]
+
 let test_cpu_device_not_deferred () =
   reset () ;
   let cpu = {dev with capabilities = {(caps ()) with is_cpu = true}} in
@@ -1529,7 +1545,11 @@ let () =
         ] );
       ( "review round 3",
         [
-          test_case "CPU device not deferred" `Quick test_cpu_device_not_deferred;
+          test_case "default backends defer" `Quick test_default_backends;
+          test_case
+            "CPU device not deferred"
+            `Quick
+            test_cpu_device_not_deferred;
           test_case "shared-memory limit" `Quick test_shared_limit;
           test_case "overflow failure" `Quick test_overflow_failure;
           test_case
