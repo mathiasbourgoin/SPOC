@@ -19,6 +19,11 @@
   test_staging_ring)
  (libraries spoc_core ctypes))
 
+(tests
+ (names test_vector_ids test_memory_sizing)
+ (modules test_vector_ids test_memory_sizing)
+ (libraries spoc_core ctypes sarek_native))
+
 (test
  (name test_nativeint_round_trip)
  (modules test_nativeint_round_trip)
