@@ -7,5 +7,6 @@
   test_sarek_coopmat
   test_sarek_coopmat_policy
   test_sarek_pure_registry
-  test_sarek_ir_codegen_decl_order)
+  test_sarek_ir_codegen_decl_order
+  test_sarek_ir_affine)
  (libraries sarek_ir alcotest astring str unix))

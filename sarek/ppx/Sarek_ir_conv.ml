@@ -13,6 +13,11 @@
  *
  * SNative nodes must never appear here: of_source rejects [%native] before
  * lowering.  The converter raises Invalid_argument if one is encountered.
+ * [has_native] lets a caller that cannot reject them (the PPX's matrix-product
+ * advice, Sarek_matrix_alert) test first.
+ *
+ * Lives in sarek_frontend (moved from sarek_transpile) so that the PPX itself
+ * can run spoc/ir analyses on the kernel it has just lowered.
  ******************************************************************************)
 
 module P = Sarek_ir_ppx
@@ -162,6 +167,25 @@ and conv_stmt : P.stmt -> T.stmt = function
       invalid_arg
         "Sarek_ir_conv: SNative reached converter; [%native] must be rejected \
          before lowering"
+
+(** Whether a statement contains an [SNative] node, which {!conv_stmt} refuses.
+*)
+let rec has_native : P.stmt -> bool = function
+  | P.SNative _ -> true
+  | P.SSeq l -> List.exists has_native l
+  | P.SIf (_, t, e) ->
+      has_native t || Option.fold ~none:false ~some:has_native e
+  | P.SWhile (_, b)
+  | P.SFor (_, _, _, _, b)
+  | P.SLet (_, _, b)
+  | P.SLetMut (_, _, b)
+  | P.SPragma (_, b)
+  | P.SBlock b ->
+      has_native b
+  | P.SMatch (_, cases) -> List.exists (fun (_, b) -> has_native b) cases
+  | P.SAssign _ | P.SReturn _ | P.SBarrier | P.SWarpBarrier | P.SExpr _
+  | P.SEmpty | P.SMemFence ->
+      false
 
 let conv_decl : P.decl -> T.decl = function
   | P.DParam (v, arr_opt) ->

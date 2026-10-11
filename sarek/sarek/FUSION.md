@@ -40,6 +40,7 @@ The fusion system analyzes array access patterns:
 | Stencil | Neighboring elements | `arr.(i-1) + arr.(i) + arr.(i+1)` |
 | Reduction | Fold over array | `for j: acc = acc + arr.(j)` |
 | Gather | Indirect indexing | `arr.(indices.(i))` |
+| Matrix operand (reported by `Sarek_matrix_pattern`, not an `access_pattern` constructor) | A or B of a recognised GEMM nest: affine indices over a reduction loop | `acc + a.(row*k + i) * b.(i*n + col)` |
 
 ## Fusion Types
 
@@ -126,6 +127,7 @@ The `should_fuse` function returns a decision and reason:
 | OneToOne → Stencil (≤3 pts) | MaybeFuse | Small stencil - profile to decide |
 | OneToOne → Stencil (>3 pts) | DontFuse | Large stencil radius - keep separate |
 | OneToOne → Gather | DontFuse | Gather pattern - keep separate |
+| intermediate is a GEMM operand of the consumer | DontFuse | Matrix-product operand: fusing recomputes each element per output row/column (`Sarek_matrix_pattern`) |
 | With barriers | DontFuse | Barrier prevents fusion |
 
 `auto_fuse_pipeline_list` only fuses when decision is `Fuse` (conservative).

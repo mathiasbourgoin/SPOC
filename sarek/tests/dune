@@ -1,4 +1,12 @@
-(dirs unit e2e negative native new_runtime codegen_golden downstream)
+(dirs
+ unit
+ e2e
+ negative
+ native
+ new_runtime
+ codegen_golden
+ downstream
+ matrix_pattern)
 
 (alias
  (name runtest)
@@ -13,5 +21,7 @@
    (alias new_runtime/runtest))
   (:downstream
    (alias downstream/runtest))
+  (:matrix_pattern
+   (alias matrix_pattern/runtest))
   (:core
    (alias ../core/test/runtest))))

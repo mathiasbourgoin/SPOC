@@ -14,6 +14,11 @@
   Sarek_coopmat_types
   Sarek_coopmat
   Sarek_ir_codegen
+  Sarek_ir_affine
+  Sarek_matrix_pattern_types
+  Sarek_matrix_roles
+  Sarek_matrix_pattern
+  Sarek_matrix_advice
   Sarek_pure_registry)
  (preprocess no_preprocessing)
  (instrumentation

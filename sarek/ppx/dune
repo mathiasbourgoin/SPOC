@@ -33,6 +33,8 @@
   Sarek_convergence
   Sarek_lower_ir
   Sarek_quote_ir
+  Sarek_ir_conv
+  Sarek_matrix_alert
   Sarek_ir_ppx
   Sarek_mono
   Sarek_defunc

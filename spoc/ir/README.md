@@ -10,7 +10,10 @@ and static analysis utilities.
 spoc_ir/
 ├── Sarek_ir_types.ml      # IR type definitions
 ├── Sarek_ir_pp.ml         # Pretty printing
-└── Sarek_ir_analysis.ml   # Static analysis (float64 detection)
+├── Sarek_ir_analysis.ml   # Static analysis (float64 detection)
+├── Sarek_ir_affine.ml     # Affine index forms (uniform polynomial strides)
+├── Sarek_matrix_pattern.ml # Matrix-product (GEMM) loop-nest recognition
+└── Sarek_matrix_advice.ml # Matrix-unit configuration per recognised GEMM
 [../sarek/core/](../sarek/core/)             # Runtime core that executes generated kernels
 [../sarek/ppx/](../sarek/ppx/)               # Sarek PPX compiler (produces this IR)
 ```
@@ -291,6 +294,28 @@ The analysis traverses:
 - Record type definitions (`kern_types`)
 - Variant type definitions (`kern_variants`)
 - Helper function signatures and bodies
+
+## Matrix-product recognition
+
+`Sarek_matrix_pattern.analyze kernel` returns one finding per reduction loop of
+the kernel body: `Gemm g` when the loop is a GEMM nest (an accumulator updated
+by `acc + A[ia] * B[ib]` or `fma`, then stored once to `C[ic]`, with affine
+indices that separate into row, column, reduction and batch indices), or
+`Near_miss` with the reason it is not. `Sarek_matrix_advice.advise g` says which
+cooperative-matrix configuration a lowering would use, on which backend, and
+whether the result would stay bit-identical or only bounded. The Sarek PPX
+reports every advised nest as the OCaml alert `sarek_matrix` at compile time.
+Specification and limits: `specs/matrix-pattern-advice.md`.
+
+```ocaml
+List.iter
+  (function
+    | Sarek_matrix_pattern.Gemm g ->
+        print_endline (Sarek_matrix_advice.render g (Sarek_matrix_advice.advise g))
+    | Sarek_matrix_pattern.Near_miss nm ->
+        print_endline (Sarek_matrix_pattern.reason_text nm.nm_reason))
+  (Sarek_matrix_pattern.analyze kernel)
+```
 
 ## Integration with Code Generation
 
