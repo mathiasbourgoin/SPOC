@@ -271,10 +271,24 @@ let run_copy_case dev dev_name reps =
         ())
     ys
 
+let usage () =
+  prerr_endline
+    "usage: bench_native_matvec.exe native|opencl-cpu <reps> \
+     [wave|row|copy|all]" ;
+  exit 2
+
+let parse_args () =
+  let argc = Array.length Sys.argv in
+  if argc < 3 then usage () ;
+  match int_of_string_opt Sys.argv.(2) with
+  | Some reps when reps > 0 ->
+      let which = if argc > 3 then Sys.argv.(3) else "all" in
+      (Sys.argv.(1), reps, which)
+  | _ -> usage ()
+
 let () =
+  let dev_name, reps, which = parse_args () in
   Benchmark_backends.Backend_loader.init () ;
-  let dev_name = Sys.argv.(1) and reps = int_of_string Sys.argv.(2) in
-  let which = if Array.length Sys.argv > 3 then Sys.argv.(3) else "all" in
   let dev = pick_device dev_name in
   Printf.printf "# device %s (%s)\n" dev.Device.name dev.Device.framework ;
   let wanted s = which = "all" || which = s in
