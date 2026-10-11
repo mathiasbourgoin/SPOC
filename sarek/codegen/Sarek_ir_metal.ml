@@ -63,15 +63,13 @@ let rec metal_type_of_elttype = function
   | TInt32 -> "int"
   | TInt64 -> "long"
   | TFloat16 ->
-      (* Deferred to #57 slice 2: Metal has a native `half` needing no feature
-         declaration, so this arm is a one-liner then — but it is untestable on
-         this platform, so it is not landed unverified. *)
-      Codegen_error.raise_error
-        (Codegen_error.unsupported_construct
-           "f16"
-           "Metal: float16 not yet supported (#57 slice 2)")
+      (* Storage type: arithmetic is done in f32 through explicit casts, and the
+         f32 -> f16 narrowing does not fuse on Metal (0/63488 against the
+         interpreter on an Apple M4, docs/fp-contraction-policy.md §10.14), so
+         the plain [half] cast needs no barrier. *)
+      "half"
   | TUint8 ->
-      (* Unlike the f16 arm above this is not a deferral. MSL has `uchar` and
+      (* This is not a deferral. MSL has `uchar` and
          even has simdgroup matrices, but [TUint8] is not a general 8-bit
          integer in this IR: it marks a cooperative-matrix operand buffer, and
          emitting `uchar` for it would produce a buffer no Metal statement can
@@ -1133,29 +1131,16 @@ let pretty_print_metal (source : string) : string =
   process_lines 0 lines ;
   Buffer.contents buf
 
-(* Slice-2 deferral for this backend. The explanation of WHY a whole-kernel gate
-   is needed (and not just the per-element-type arms) lives once, at
-   {!Sarek_ir_codegen.reject_feature}. Named [_kernel] to distinguish it from
-   [Sarek_typer.reject_float16], which rejects an f16 OPERAND — a different
-   concept at a different layer. *)
-let reject_float16_kernel =
-  Sarek_ir_codegen.reject_feature
-    ~raise_:(fun reason ->
-      Codegen_error.raise_error
-        (Codegen_error.unsupported_construct "f16" reason))
-    ~backend:"Metal"
-    Sarek_ir_analysis.Float16
-
 (* Whole-kernel f64 gate (#64 slice 1). The per-element-type arm above catches
    every type that reaches the emitter, but not every f64 in a kernel reaches
-   it: the same reasoning that gave f16 a whole-kernel gate on top of its arm
-   applies unchanged. Having both means the refusal cannot be routed around by
+   it: a whole-kernel gate on top of the per-type arm is needed
+   for the same reason as at {!Sarek_ir_codegen.reject_feature}. Having both means the refusal cannot be routed around by
    a path that formats a type some other way.
 
-   Unlike [reject_float16_kernel] this does NOT go through
-   [Sarek_ir_codegen.reject_feature]: that composer says "not YET supported
-   (#57 slice 2)", a claim about a queue position. Metal will never have
-   `double`, so promising future support would be false.
+   This does NOT go through [Sarek_ir_codegen.reject_feature]: that composer
+   says "not YET supported (#57 slice 2)", a claim about a queue position.
+   Metal will never have `double`, so promising future support would be
+   false.
 
    CONVERGENT: #141 arrived at this same second entry point independently, from
    the opposite direction — auditing the emitted source rather than the
@@ -1234,7 +1219,6 @@ let metal_fp_contract_pragma = "#pragma METAL fp contract(off)\n"
     that would have distinguished them, [SNative], now refuses outright. *)
 let generate_with_types ~(types : (string * (string * elttype) list) list)
     (k : kernel) : string =
-  reject_float16_kernel k ;
   reject_float64_kernel k ;
   reject_coopmat_kernel k ;
   (* A [for] bound is evaluated once (Sarek_ir_for_bound), then unroll hints
