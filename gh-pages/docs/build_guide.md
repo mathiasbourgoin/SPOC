@@ -1,9 +1,9 @@
 ---
 layout: page
-title: Building SPOC from Source
+title: Building Sarek from Source
 ---
 
-# Building and Testing SPOC
+# Building and Testing Sarek
 
 Sarek is not yet published to the opam repository: build it from a clone of the repository, for use in your own project or for development.
 
