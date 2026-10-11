@@ -196,6 +196,46 @@ let test_cache_persistence () =
     true
     (match retrieved with Some d -> d = data | None -> false)
 
+let test_options_change_key () =
+  let key options =
+    Framework_cache.compute_key_with_options
+      ~options
+      ~dev_name:"Device1"
+      ~driver_version:"1.0"
+      ~name:"kernel_a"
+      ~source:"code"
+  in
+  Alcotest.(check bool)
+    "Different options produce different keys"
+    true
+    (key [("build_options", "")] <> key [("build_options", "-w")]) ;
+  Alcotest.(check string)
+    "No options is exactly compute_key"
+    (Framework_cache.compute_key
+       ~dev_name:"Device1"
+       ~driver_version:"1.0"
+       ~name:"kernel_a"
+       ~source:"code")
+    (key [])
+
+let test_disabled_by_env () =
+  let key = "disabled_by_env_key" in
+  Framework_cache.put ~key ~data:"x" ;
+  Unix.putenv "SAREK_DISK_CACHE" "0" ;
+  Fun.protect
+    ~finally:(fun () -> Unix.putenv "SAREK_DISK_CACHE" "")
+    (fun () ->
+      Alcotest.(check bool) "disabled" false (Framework_cache.enabled ()) ;
+      Alcotest.(check (option string))
+        "get misses even for an existing entry"
+        None
+        (Framework_cache.get ~key)) ;
+  Alcotest.(check bool) "enabled again" true (Framework_cache.enabled ()) ;
+  Alcotest.(check (option string))
+    "entry untouched"
+    (Some "x")
+    (Framework_cache.get ~key)
+
 let () =
   let open Alcotest in
   run
@@ -213,12 +253,14 @@ let () =
             "Different kernel names in same source differ"
             `Quick
             test_compute_key_name_differs;
+          test_case "Options change the key" `Quick test_options_change_key;
         ] );
       ( "cache_operations",
         [
           test_case "Put and get" `Quick test_put_and_get;
           test_case "Get nonexistent" `Quick test_get_nonexistent;
           test_case "Cache persistence" `Quick test_cache_persistence;
+          test_case "SAREK_DISK_CACHE=0 disables" `Quick test_disabled_by_env;
         ] );
       ( "statistics",
         [

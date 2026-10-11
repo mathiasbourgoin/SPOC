@@ -663,25 +663,30 @@ end
 
 module Program = struct
   type t = {
-    handle : cl_program;
+    mutable handle : cl_program;
     context : Context.t;
-    _source :
+    source : string;
+    mutable _pinned :
       (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t;
   }
 
-  let create_from_source context source =
-    let err = allocate cl_int 0l in
-    (* Use a Bigarray to hold a pinned copy of the source string.
-       The OCaml GC cannot move Bigarray data, so the pointer passed to
-       clCreateProgramWithSource remains valid through clBuildProgram.
-       This fixes a GC-related corruption where ctypes 'string' type
-       pointers become stale on OCaml 5. *)
-    let len = String.length source in
+  (* A NUL-terminated copy of [text] in a Bigarray. The OCaml GC cannot move
+     Bigarray data, so the pointer handed to the driver stays valid through the
+     call that reads it. This fixes a GC-related corruption where ctypes
+     'string' type pointers become stale on OCaml 5. *)
+  let pin text =
+    let len = String.length text in
     let ba = Bigarray.Array1.create Bigarray.char Bigarray.c_layout (len + 1) in
     for i = 0 to len - 1 do
-      Bigarray.Array1.set ba i source.[i]
+      Bigarray.Array1.set ba i text.[i]
     done ;
     Bigarray.Array1.set ba len '\000' ;
+    ba
+
+  let create_from_source context source =
+    let err = allocate cl_int 0l in
+    let len = String.length source in
+    let ba = pin source in
     let c_ptr = bigarray_start array1 ba in
     let src_ptrs = allocate (ptr char) c_ptr in
     let lengths = allocate size_t (Unsigned.Size_t.of_int len) in
@@ -695,81 +700,185 @@ module Program = struct
     in
     check "clCreateProgramWithSource" !@err ;
     (* Store bigarray in record to prevent GC until after build *)
-    {handle = prog; context; _source = ba}
+    {handle = prog; context; source; _pinned = ba}
 
-  (** Build a program.
+  (** A program holding [binary], or [None] if the driver refuses it
+      (CL_INVALID_BINARY, a binary built for another device or driver). Not yet
+      built: {!build_status} does that. *)
+  let create_from_binary context binary =
+    let err = allocate cl_int 0l in
+    let status = allocate cl_int 0l in
+    let ba = pin binary in
+    let bin_ptr = coerce (ptr char) (ptr uchar) (bigarray_start array1 ba) in
+    let bins = allocate (ptr uchar) bin_ptr in
+    let lengths =
+      allocate size_t (Unsigned.Size_t.of_int (String.length binary))
+    in
+    let devices = CArray.make cl_device_id 1 in
+    CArray.set devices 0 context.Context.device.Device.handle ;
+    let prog =
+      clCreateProgramWithBinary
+        context.Context.handle
+        Unsigned.UInt32.one
+        (CArray.start devices)
+        lengths
+        bins
+        status
+        err
+    in
+    ignore (Sys.opaque_identity ba) ;
+    if !@err = 0l && !@status = 0l then
+      Some {handle = prog; context; source = ""; _pinned = ba}
+    else None
 
-      [options] is what the CALLER wants; it is not what [clBuildProgram]
-      receives. {!Opencl_fp.build_options} screens it — raising
+  (** The binary the driver produced for the (single) device of the program's
+      context, or [None] if the driver returns none (size 0). Only meaningful
+      after a successful build. *)
+  let binary program =
+    let size = allocate size_t Unsigned.Size_t.zero in
+    let size_result =
+      clGetProgramInfo
+        program.handle
+        (Unsigned.UInt32.of_int cl_program_binary_sizes)
+        (Unsigned.Size_t.of_int (sizeof size_t))
+        (to_voidp size)
+        (from_voidp size_t null)
+    in
+    let length = Unsigned.Size_t.to_int !@size in
+    if size_result <> 0l || length <= 0 then None
+    else begin
+      let buf = allocate_n uchar ~count:length in
+      let bins = allocate (ptr uchar) buf in
+      let result =
+        clGetProgramInfo
+          program.handle
+          (Unsigned.UInt32.of_int cl_program_binaries)
+          (Unsigned.Size_t.of_int (sizeof (ptr uchar)))
+          (to_voidp bins)
+          (from_voidp size_t null)
+      in
+      (* [bins] holds a bare address into [buf]; keep [buf] reachable across the
+         call that fills it. *)
+      ignore (Sys.opaque_identity buf) ;
+      if result <> 0l then None
+      else Some (string_from_ptr (coerce (ptr uchar) (ptr char) buf) ~length)
+    end
+
+  (** The complete option string [clBuildProgram] receives for [caller].
+      [caller] is what the CALLER wants; it is not what the driver gets.
+      {!Opencl_fp.build_options} screens it - raising
       {!Opencl_fp.Fp_conformance_violation} on anything that would relax float
-      semantics below docs/fp-contraction-policy.md §1 — and appends the options
+      semantics below docs/fp-contraction-policy.md §1 - and appends the options
       this backend requires on its own behalf, gated on the device's
       [CL_DEVICE_SINGLE_FP_CONFIG].
 
-      This is the ONLY place an option string reaches [clBuildProgram], and that
-      is deliberately where the guard sits rather than at the caller: it screens
-      flags a FUTURE maintainer of this module adds itself, not merely a
-      caller's. Same placement argument as [Cuda_nvrtc.compile_with_string_opts]
+      [build_status] is the ONLY place an option string reaches
+      [clBuildProgram], and every caller reaches it through this function: the
+      guard sits here rather than at the caller on purpose, so it screens flags
+      a FUTURE maintainer of this module adds itself, not merely a caller's.
+      Same placement argument as [Cuda_nvrtc.compile_with_string_opts]
       (docs/fp-contraction-policy.md §5).
 
-      Until backlog #136 this function passed [options] straight through, and
-      every caller in the tree passed nothing — so the effective option string
-      was empty and Sarek silently accepted each vendor's default, including a
-      [sqrt] of up to 3 ulp. *)
-  let build program ?(options = "") () =
+      Until backlog #136 the options passed straight through, and every caller
+      in the tree passed nothing - so the effective option string was empty and
+      Sarek silently accepted each vendor's default, including a [sqrt] of up to
+      3 ulp. *)
+  let effective_options program ~caller =
+    Opencl_fp.build_options
+      ~single_fp_config:program.context.device.Device.single_fp_config
+      ~caller
+
+  (** [clBuildProgram] with the already-screened [options]; the raw status. *)
+  let build_status program ~options =
     let devices = CArray.make cl_device_id 1 in
     CArray.set devices 0 program.context.device.Device.handle ;
-    let effective_options =
-      Opencl_fp.build_options
-        ~single_fp_config:program.context.device.Device.single_fp_config
-        ~caller:options
-    in
     Spoc_core.Log.debugf
       Spoc_core.Log.Kernel
       "OpenCL clBuildProgram options: %S (device fp_config 0x%Lx)"
-      effective_options
+      options
       program.context.device.Device.single_fp_config ;
-    let result =
-      clBuildProgram
+    clBuildProgram
+      program.handle
+      Unsigned.UInt32.one
+      (CArray.start devices)
+      options
+      (from_voidp void null)
+      (from_voidp void null)
+
+  let build_log program =
+    let query size buf =
+      clGetProgramBuildInfo
         program.handle
-        Unsigned.UInt32.one
-        (CArray.start devices)
-        effective_options
-        (from_voidp void null)
-        (from_voidp void null)
+        program.context.device.handle
+        (Unsigned.UInt32.of_int
+           (int_of_program_build_info CL_PROGRAM_BUILD_LOG))
+        size
+        buf
     in
-    if result <> 0l then begin
-      (* Get build log *)
-      let size = allocate size_t Unsigned.Size_t.zero in
-      let _ =
-        clGetProgramBuildInfo
-          program.handle
-          program.context.device.handle
-          (Unsigned.UInt32.of_int
-             (int_of_program_build_info CL_PROGRAM_BUILD_LOG))
-          Unsigned.Size_t.zero
-          (to_voidp null)
-          size
-      in
-      let log_size = Unsigned.Size_t.to_int !@size in
-      let log_buf = allocate_n char ~count:log_size in
-      let _ =
-        clGetProgramBuildInfo
-          program.handle
-          program.context.device.handle
-          (Unsigned.UInt32.of_int
-             (int_of_program_build_info CL_PROGRAM_BUILD_LOG))
-          !@size
-          (to_voidp log_buf)
-          size
-      in
-      let log = string_from_ptr log_buf ~length:(log_size - 1) in
-      Opencl_error.raise_error
-        (Opencl_error.compilation_failed "OpenCL kernel" log)
-    end
+    let size = allocate size_t Unsigned.Size_t.zero in
+    let _ = query Unsigned.Size_t.zero (to_voidp null) size in
+    let log_size = Unsigned.Size_t.to_int !@size in
+    let log_buf = allocate_n char ~count:log_size in
+    let _ = query !@size (to_voidp log_buf) size in
+    string_from_ptr log_buf ~length:(log_size - 1)
 
   let release program =
     check "clReleaseProgram" (clReleaseProgram program.handle)
+
+  (** The identity of what [program] is built for, as the disk cache keys it. *)
+  let cache_target program ~options : Opencl_disk_cache.target =
+    let device = program.context.device in
+    let info kind = Device.get_info_string device.Device.handle kind in
+    {
+      platform_name = Platform.name device.Device.platform;
+      platform_version = Platform.version device.Device.platform;
+      device_name = device.Device.name;
+      device_version = info CL_DEVICE_VERSION;
+      driver_version = info CL_DRIVER_VERSION;
+      build_options = options;
+    }
+
+  (** Replace [program]'s handle by a built-from-binary one if [key] names a
+      usable cached binary. [false] leaves [program] untouched: a corrupt entry,
+      a binary the driver refuses, or one that fails to build all mean "compile
+      from source", never an error. *)
+  let adopt_cached_binary program ~key ~options =
+    match Opencl_disk_cache.load ~key with
+    | None -> false
+    | Some binary -> (
+        match create_from_binary program.context binary with
+        | None -> false
+        | Some candidate ->
+            if build_status candidate ~options = 0l then begin
+              release program ;
+              program.handle <- candidate.handle ;
+              program._pinned <- candidate._pinned ;
+              true
+            end
+            else begin
+              release candidate ;
+              false
+            end)
+
+  let build_from_source program ~options =
+    if build_status program ~options <> 0l then
+      Opencl_error.raise_error
+        (Opencl_error.compilation_failed "OpenCL kernel" (build_log program))
+
+  (** Build a program, through the persistent disk cache when the driver gives
+      programs a binary. A hit skips the compiler; a miss (or an unusable entry)
+      compiles [source] and (over)writes the entry. *)
+  let build program ?(options = "") () =
+    let options = effective_options program ~caller:options in
+    let key =
+      Opencl_disk_cache.key
+        (cache_target program ~options)
+        ~source:program.source
+    in
+    if not (adopt_cached_binary program ~key ~options) then begin
+      build_from_source program ~options ;
+      Option.iter (Opencl_disk_cache.store ~key) (binary program)
+    end
 end
 
 (** {1 Kernel Management} *)

@@ -121,11 +121,13 @@ let test_options_change_misses () =
       build_with api_device "-w" ;
       Alcotest.(check int) "same options hit" 1 (Cache.get_stats ()).Cache.hits)
 
-let test_corrupt_entry_falls_back_and_rewrites () =
+(* [garbage] replaces every stored entry. A raw string fails the entry
+   checksum; a correctly sealed one reaches the driver, which must refuse it
+   (CL_INVALID_BINARY) and leave the build to fall back to source. *)
+let check_damaged_entry_recovers ~garbage =
   for_each_device (fun device ->
       let dir = fresh_cache_dir () in
       let reference = run_poly device in
-      let garbage = "not an OpenCL binary" in
       Alcotest.(check bool)
         "an entry was stored to corrupt"
         true
@@ -152,6 +154,13 @@ let test_corrupt_entry_falls_back_and_rewrites () =
         1
         (Cache.get_stats ()).Cache.hits)
 
+let test_corrupt_entry_falls_back_and_rewrites () =
+  check_damaged_entry_recovers ~garbage:"not an OpenCL binary"
+
+let test_driver_refused_binary_falls_back_and_rewrites () =
+  check_damaged_entry_recovers
+    ~garbage:(Opencl_disk_cache.seal "sealed but not an OpenCL binary")
+
 let test_opt_out () =
   for_each_device (fun device ->
       let dir = fresh_cache_dir () in
@@ -167,10 +176,74 @@ let test_opt_out () =
             (List.length (entries dir)) ;
           Alcotest.(check int) "no puts" 0 (Cache.get_stats ()).Cache.puts))
 
+(* Pure (no device): every component of the build target is part of the key. *)
+let test_key_covers_every_target_field () =
+  let base =
+    {
+      Opencl_disk_cache.platform_name = "p";
+      platform_version = "pv";
+      device_name = "d";
+      device_version = "dv";
+      driver_version = "drv";
+      build_options = "";
+    }
+  in
+  let key target = Opencl_disk_cache.key target ~source:"src" in
+  let variants =
+    [
+      ("platform name", {base with platform_name = "p2"});
+      ("platform version", {base with platform_version = "pv2"});
+      ("device name", {base with device_name = "d2"});
+      ("device version", {base with device_version = "dv2"});
+      ("driver version", {base with driver_version = "drv2"});
+      ("build options", {base with build_options = "-w"});
+    ]
+  in
+  List.iter
+    (fun (field, target) ->
+      Alcotest.(check bool)
+        (field ^ " changes the key")
+        true
+        (key target <> key base))
+    variants ;
+  Alcotest.(check bool)
+    "source changes the key"
+    true
+    (Opencl_disk_cache.key base ~source:"src2" <> key base)
+
+let test_seal_rejects_damage () =
+  let entry = Opencl_disk_cache.seal "binary-bytes" in
+  Alcotest.(check (option string))
+    "round trip"
+    (Some "binary-bytes")
+    (Opencl_disk_cache.unseal entry) ;
+  let flipped = Bytes.of_string entry in
+  Bytes.set flipped (Bytes.length flipped - 1) 'X' ;
+  Alcotest.(check (option string))
+    "bit flip"
+    None
+    (Opencl_disk_cache.unseal (Bytes.to_string flipped)) ;
+  Alcotest.(check (option string))
+    "truncated"
+    None
+    (Opencl_disk_cache.unseal (String.sub entry 0 10)) ;
+  Alcotest.(check (option string)) "empty" None (Opencl_disk_cache.unseal "")
+
 let () =
   Alcotest.run
     "Opencl_disk_cache"
     [
+      ( "entry_format",
+        [
+          Alcotest.test_case
+            "key covers every target field"
+            `Quick
+            test_key_covers_every_target_field;
+          Alcotest.test_case
+            "damaged entries are rejected"
+            `Quick
+            test_seal_rejects_damage;
+        ] );
       ( "disk_cache",
         [
           Alcotest.test_case
@@ -185,6 +258,10 @@ let () =
             "corrupt entry falls back to source and is rewritten"
             `Quick
             test_corrupt_entry_falls_back_and_rewrites;
+          Alcotest.test_case
+            "binary refused by the driver falls back to source and is rewritten"
+            `Quick
+            test_driver_refused_binary_falls_back_and_rewrites;
           Alcotest.test_case
             "SAREK_DISK_CACHE=0 disables the cache"
             `Quick

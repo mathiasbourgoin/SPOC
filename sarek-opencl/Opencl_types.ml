@@ -454,6 +454,16 @@ let int_of_device_info = function
   | CL_DEVICE_DOUBLE_FP_CONFIG -> 0x1032
   | CL_DEVICE_OTHER n -> n
 
+(** {1 Program Info} *)
+
+(** [CL_PROGRAM_BINARY_SIZES]: one [size_t] per device of the program's context.
+*)
+let cl_program_binary_sizes = 0x1165
+
+(** [CL_PROGRAM_BINARIES]: an array of one [unsigned char *] per device, each
+    pointing at a buffer of the matching {!cl_program_binary_sizes} size. *)
+let cl_program_binaries = 0x1166
+
 (** {1 Program Build Info} *)
 
 type cl_program_build_info =
