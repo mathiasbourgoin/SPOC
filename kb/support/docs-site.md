@@ -6,7 +6,7 @@
 - `docs/odoc_custom.css`: style overlay appended to generated odoc CSS.
 - `notebooks/Introduction_to_Sarek.ipynb`: current Binder/Jupyter introduction notebook.
 - `gh-pages/static/**`: vendored/static browser assets for legacy IOCaml/Jupyter pages.
-- `gh-pages/docs/talks/**`, `gh-pages/pres_resources/**`, images and PDFs: static archival media.
+- `gh-pages/docs/talks/**` (the PDFs are no longer in `main`; they are kept on the published `gh-pages` branch, see `docs.yml` `clean-exclude`), `gh-pages/pres_resources/**`, images and PDFs: static archival media.
 - **Missing from prior inventory, added 2026-07-02:**
   - `gh-pages/learn/`: interactive GPU course — `index.md` plus 9 lesson pages (`01-vector-add.html`, `02-scale-saxpy.html`, `03-map-square.html`, `04-bounds-if.html`, `05-mandelbrot.html`, `06-image-filter.html`, `07-compose.html`, `08-shared-barrier.html`, `09-reduction.html`) and `gh-pages/learn/test/` (Playwright GPU acceptance scripts run by `make lessons-gpu-test` / `make compose-gpu-test`).
   - `gh-pages/playground.html`: in-browser Sarek-to-WGSL transpiler playground.
