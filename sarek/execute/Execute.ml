@@ -1210,8 +1210,8 @@ module Window = struct
   let defers backend = Launch_window.defers backend
 
   (** [true] when JIT launches on this device are deferred: its backend's window
-      is on and it is not a CPU device (whose zero-copy buffers can alias each
-      other). *)
+      is on and it is not a CPU device (whose host-pointer buffers alias host
+      memory, so they can alias each other). *)
   let defers_device (device : Device.t) =
     (not device.capabilities.Framework_sig.is_cpu)
     && Launch_window.defers device.framework
@@ -1336,8 +1336,8 @@ let jit_source (module B : Framework_sig.BACKEND) ~(device : Device.t) ~name
                   IR nodes)";
            })
 
-(* Whether JIT launches on [device] are deferred. Zero-copy buffers (OpenCL
-   CPU devices, the only backend that allocates them) alias host memory, and
+(* Whether JIT launches on [device] are deferred. Host-pointer buffers
+   (Host_ptr_buffer, accepted on OpenCL CPU devices only) alias host memory, and
    distinct vectors can alias each other through it, so buffer identity is no
    longer the vector's there: launches on CPU devices are not deferred. *)
 let defers_on = Window.defers_device
@@ -1829,9 +1829,9 @@ let run_vectors_plain ?(stream : Transfer.stream option) ~(device : Device.t)
   check_stream_launch ~device stream ;
 
   (* Unified path for all backends:
-     1. Transfer to device (CPU backends: zero-copy, no actual transfer)
+     1. Transfer to device (Native, Interpreter: host memory, no transfer)
      2. Pass vector_args to run (it expands for JIT, passes direct for Direct)
-     3. Mark stale (CPU backends: no-op due to zero-copy) *)
+     3. Mark stale (Native, Interpreter: no-op, the host copy is the result) *)
 
   (* 1. Transfer all vectors to device. ~soa_abi:true — this entry point runs a
      Sarek-generated kernel, so an SoA-bound vector's leaves are what the launch
