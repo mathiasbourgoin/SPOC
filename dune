@@ -9,4 +9,10 @@
  tools
  test_verification
  benchmarks
- formal)
+ formal
+ gh-pages)
+
+; gh-pages holds Markdown only; dune sees its files as dependencies of the
+; documentation snippet check (sarek/tests/doc_snippets) and scans nothing.
+
+(data_only_dirs gh-pages)

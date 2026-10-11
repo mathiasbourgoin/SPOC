@@ -49,6 +49,21 @@ _build/default/sarek-cuda/test/test_cuda_error.exe
 - Keep README files factual and technical
 - Avoid marketing language or performance claims without evidence
 
+#### Documentation snippets
+
+Every `ocaml` code block in the front-page `README.md`, `gh-pages/index.md`, `gh-pages/docs/*.md`, `gh-pages/examples/*.md`, `sarek/core/README.md`, `sarek/sarek/README.md` and `sarek/ppx/README.md` is compiled by `dune runtest`. To run only this check:
+
+```bash
+dune build @snippets
+```
+
+How it works (`sarek/tests/doc_snippets/`): `extract.exe` writes the blocks of one Markdown file, in order, as one OCaml module; a library compiles the modules with `sarek`, `sarek.core`, `sarek.stdlib`, `sarek.native`, `sarek.interpreter`, the five GPU plugins and `(pps sarek.ppx)`. Nothing is linked or run. Blocks of one page form a single program, so a later block may use names an earlier one defined. A compile error names the generated file (`snip_<page>.ml`); the comment above each block in that file gives the Markdown line.
+
+- **Add a page**: add a `(rule (targets snip_<name>.ml) ...)` to `sarek/tests/doc_snippets/dune`, copying a neighbour. A page in `gh-pages/docs/`, `gh-pages/examples/` or the listed READMEs that has an `ocaml` block but no rule fails the check.
+- **Skip a block** that cannot be a structure item (a signature fragment, pseudo-code, code that must not compile): put `<!-- snippet: skip -->` on the line directly above the opening fence. The comment is invisible in the rendered page. Say why in the review; prefer rewriting the block so it compiles.
+- **Use another language** for a block that is not OCaml (`bash`, `lisp`, `cuda`): any fence other than `ocaml` is ignored.
+- **Build a page's program as an executable**: mark a block `<!-- snippet: NAME -->` and extract it with `extract.exe --only NAME`. `sarek/tests/doc_snippets/getting_started/` does this for the Getting Started program and runs it on the CPU backends.
+
 #### Referring to issues, PRs and backlog items
 
 GitHub gives issues and pull requests a *single shared counter* (it is past

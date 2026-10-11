@@ -1,0 +1,36 @@
+; The program of gh-pages/docs/getting_started.md (the block marked
+; `<!-- snippet: program -->`), built with the stanza that page documents for a
+; user project, and run on the CPU backends only. The stanza below must stay
+; identical to the one in the page: it is the proof that the documented
+; libraries are enough to register a backend and run a kernel.
+
+(rule
+ (targets my_program.ml)
+ (action
+  (with-stdout-to
+   my_program.ml
+   (run
+    %{exe:../extract.exe}
+    --only
+    program
+    %{dep:../../../../gh-pages/docs/getting_started.md}))))
+
+(executable
+ (name my_program)
+ (libraries sarek sarek.core sarek.stdlib sarek.native)
+ (preprocess
+  (pps sarek.ppx))
+ (flags
+  (:standard -w -33)))
+
+(rule
+ (alias runtest)
+ (action
+  (progn
+   (with-stdout-to
+    my_program.out
+    (setenv
+     SPOC_DISABLE_GPU
+     1
+     (run %{exe:my_program.exe})))
+   (system "grep -q 'c\\[10\\] = 30.000000' my_program.out"))))
