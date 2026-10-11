@@ -716,11 +716,19 @@ module Ledger = struct
 
   let release_all (st : stream_state) : unit = release st max_int
 
-  let release_device (dev : Device.t) : unit =
+  (** The last operation enqueued so far on each live stream of [dev]: what a
+      device sync started now covers. *)
+  let device_marks (dev : Device.t) : (stream_state * int) list =
     Mutex.protect lock (fun () ->
-        Hashtbl.iter
-          (fun _ st -> if st.sdev.id = dev.id then release_locked st max_int)
-          live)
+        Hashtbl.fold
+          (fun _ st acc ->
+            if st.sdev.id = dev.id then (st, st.next_seq - 1) :: acc else acc)
+          live
+          [])
+
+  let release_marks (marks : (stream_state * int) list) : unit =
+    Mutex.protect lock (fun () ->
+        List.iter (fun (st, upto) -> release_locked st upto) marks)
 
   let pending_count (st : stream_state) : int =
     Mutex.protect lock (fun () -> List.length st.pending)
@@ -883,10 +891,15 @@ let free_all_buffers (vec : (_, _) Vector.t) : unit =
 
 (** {1 Device Synchronization} *)
 
-(* Everything enqueued on any stream of a synchronised device has completed,
-   so its ledger entries go, whether the caller used {!flush} or
-   [Device.synchronize]. No entry exists before this module is initialised. *)
-let () = Device.on_synchronized Ledger.release_device
+(* A device sync completes everything enqueued on the device's streams before
+   it started, so those ledger entries go, whether the caller used {!flush} or
+   [Device.synchronize]. The marks are taken before the backend sync: work
+   another domain enqueues meanwhile stays rooted until its own stream or
+   event completes. No entry exists before this module is initialised. *)
+let () =
+  Device.on_synchronize (fun dev ->
+      let marks = Ledger.device_marks dev in
+      fun () -> Ledger.release_marks marks)
 
 (** Synchronize all pending operations on a device and release the ledger
     entries of its streams; the same as [Device.synchronize]. *)
