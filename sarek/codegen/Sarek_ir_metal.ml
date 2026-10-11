@@ -177,22 +177,24 @@ let metal_atomic_type_of_elttype = function
 
 let metal_thread_intrinsic = function
   (* Support both idx and id naming conventions *)
-  | "thread_id_x" | "thread_idx_x" -> "__metal_tid.x"
-  | "thread_id_y" | "thread_idx_y" -> "__metal_tid.y"
-  | "thread_id_z" | "thread_idx_z" -> "__metal_tid.z"
-  | "block_id_x" | "block_idx_x" -> "__metal_bid.x"
-  | "block_id_y" | "block_idx_y" -> "__metal_bid.y"
-  | "block_id_z" | "block_idx_z" -> "__metal_bid.z"
-  | "block_dim_x" -> "__metal_tpg.x"
-  | "block_dim_y" -> "__metal_tpg.y"
-  | "block_dim_z" -> "__metal_tpg.z"
-  | "grid_dim_x" -> "__metal_num_groups.x"
-  | "grid_dim_y" -> "__metal_num_groups.y"
-  | "grid_dim_z" -> "__metal_num_groups.z"
-  | "global_thread_id" | "global_idx" | "global_idx_x" -> "__metal_gid.x"
-  | "global_idx_y" -> "__metal_gid.y"
-  | "global_idx_z" -> "__metal_gid.z"
-  | "global_size" -> "__metal_tpg.x * __metal_num_groups.x"
+  | "thread_id_x" | "thread_idx_x" -> Dispatch.c_signed_int "__metal_tid.x"
+  | "thread_id_y" | "thread_idx_y" -> Dispatch.c_signed_int "__metal_tid.y"
+  | "thread_id_z" | "thread_idx_z" -> Dispatch.c_signed_int "__metal_tid.z"
+  | "block_id_x" | "block_idx_x" -> Dispatch.c_signed_int "__metal_bid.x"
+  | "block_id_y" | "block_idx_y" -> Dispatch.c_signed_int "__metal_bid.y"
+  | "block_id_z" | "block_idx_z" -> Dispatch.c_signed_int "__metal_bid.z"
+  | "block_dim_x" -> Dispatch.c_signed_int "__metal_tpg.x"
+  | "block_dim_y" -> Dispatch.c_signed_int "__metal_tpg.y"
+  | "block_dim_z" -> Dispatch.c_signed_int "__metal_tpg.z"
+  | "grid_dim_x" -> Dispatch.c_signed_int "__metal_num_groups.x"
+  | "grid_dim_y" -> Dispatch.c_signed_int "__metal_num_groups.y"
+  | "grid_dim_z" -> Dispatch.c_signed_int "__metal_num_groups.z"
+  | "global_thread_id" | "global_idx" | "global_idx_x" ->
+      Dispatch.c_signed_int "__metal_gid.x"
+  | "global_idx_y" -> Dispatch.c_signed_int "__metal_gid.y"
+  | "global_idx_z" -> Dispatch.c_signed_int "__metal_gid.z"
+  | "global_size" ->
+      Dispatch.c_signed_int "(__metal_tpg.x * __metal_num_groups.x)"
   | name -> Codegen_error.raise_error (Codegen_error.unknown_intrinsic name)
 
 (** {1 Expression Generation} *)
@@ -1235,7 +1237,9 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
   reject_float16_kernel k ;
   reject_float64_kernel k ;
   reject_coopmat_kernel k ;
-  (* Unroll hints for small constant-trip loops (Sarek_ir_unroll). *)
+  (* A [for] bound is evaluated once (Sarek_ir_for_bound), then unroll hints
+     for small constant-trip loops (Sarek_ir_unroll). *)
+  let k = Sarek_ir_for_bound.hoist k in
   let k = Sarek_ir_unroll.annotate k in
   let st = state k in
   let buf = Buffer.create 4096 in

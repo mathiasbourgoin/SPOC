@@ -797,7 +797,7 @@ let test_rename_no_capture () =
     bool
     "position rewritten with the parameter"
     true
-    (contains "blockIdx.x - hf0_off") ;
+    (contains "((int)blockIdx.x) - hf0_off") ;
   check bool "member local keeps its own name" true (contains "int m0_off = 7")
 
 (* The fused grid must fit the device's grid limit. *)

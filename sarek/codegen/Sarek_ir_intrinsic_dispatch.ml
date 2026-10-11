@@ -60,6 +60,16 @@ type 'e spec = {
           identical call sites. *)
 }
 
+(** C-dialect spelling of a thread/block/grid index as a signed [int].
+
+    CUDA/HIP [threadIdx.x] and friends are [unsigned int], OpenCL
+    [get_local_id(0)] is [size_t] and Metal's [uint3] members are unsigned, so
+    the raw spelling turns [thread_idx_x - 1l < 0l] into an always-false
+    comparison and [(thread_idx_x - 5l) / 2l] into a huge positive number. The
+    Sarek type of these intrinsics is [int32]; the cast makes the C code agree
+    with the interpreter and with GLSL/WGSL (which already cast). *)
+let c_signed_int spelling = "((int)" ^ spelling ^ ")"
+
 (** The thread/grid position intrinsics, identical across all five backends. *)
 let thread_intrinsic_names =
   [

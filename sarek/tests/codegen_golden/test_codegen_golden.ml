@@ -691,7 +691,7 @@ let () =
      __global__ void scalar_vec_add(float* __restrict__ a, int sarek_a_length, \
      float* __restrict__ b, int sarek_b_length, float* __restrict__ c, int \
      sarek_c_length) {\n\
-    \  int idx = (threadIdx.x + blockIdx.x * blockDim.x);\n\
+    \  int idx = ((int)(threadIdx.x + blockIdx.x * blockDim.x));\n\
     \  c[idx] = (a[idx] + b[idx]);\n\
      }\n\
      }\n" ;
@@ -707,7 +707,7 @@ let () =
      } Point2;\n\n\
      __global__ void record_kernel(Point2* __restrict__ pts, int \
      sarek_pts_length) {\n\
-    \  int idx = (threadIdx.x + blockIdx.x * blockDim.x);\n\
+    \  int idx = ((int)(threadIdx.x + blockIdx.x * blockDim.x));\n\
     \  Point2 p = pts[idx];\n\
     \  pts[idx].x = (p.x * 2.0f);\n\
     \  pts[idx].y = (p.y * 2.0f);\n\
@@ -739,7 +739,7 @@ let () =
      }\n\n\
      __global__ void variant_kernel(int* __restrict__ flags, int \
      sarek_flags_length, Opt* __restrict__ out, int sarek_out_length) {\n\
-    \  int idx = (threadIdx.x + blockIdx.x * blockDim.x);\n\
+    \  int idx = ((int)(threadIdx.x + blockIdx.x * blockDim.x));\n\
     \  int flag = flags[idx];\n\
     \  if ((flag != 0)) {\n\
     \    out[idx] = make_Opt_OptSome(1.0f);\n\
@@ -756,7 +756,7 @@ let () =
      extern \"C\" {\n\
      __global__ void sin_kernel(float* __restrict__ a, int sarek_a_length, \
      float* __restrict__ b, int sarek_b_length) {\n\
-    \  int idx = (threadIdx.x + blockIdx.x * blockDim.x);\n\
+    \  int idx = ((int)(threadIdx.x + blockIdx.x * blockDim.x));\n\
     \  b[idx] = sin(a[idx]);\n\
      }\n\
      }\n" ;
@@ -768,7 +768,7 @@ let () =
     "__kernel void scalar_vec_add(__global float* restrict a, int \
      sarek_a_length, __global float* restrict b, int sarek_b_length, __global \
      float* restrict c, int sarek_c_length) {\n\
-    \  int idx = get_global_id(0);\n\
+    \  int idx = ((int)get_global_id(0));\n\
     \  c[idx] = (a[idx] + b[idx]);\n\
      }\n" ;
 
@@ -781,7 +781,7 @@ let () =
      } Point2;\n\n\
      __kernel void record_kernel(__global Point2* restrict pts, int \
      sarek_pts_length) {\n\
-    \  int idx = get_global_id(0);\n\
+    \  int idx = ((int)get_global_id(0));\n\
     \  Point2 p = pts[idx];\n\
     \  pts[idx] = (Point2){.x = (p.x * 2.0f), .y = (p.y * 2.0f)};\n\
      }\n" ;
@@ -809,7 +809,7 @@ let () =
      }\n\n\
      __kernel void variant_kernel(__global int* restrict flags, int \
      sarek_flags_length, __global Opt* restrict out, int sarek_out_length) {\n\
-    \  int idx = get_global_id(0);\n\
+    \  int idx = ((int)get_global_id(0));\n\
     \  int flag = flags[idx];\n\
     \  if ((flag != 0)) {\n\
     \    out[idx] = make_Opt_OptSome(1.0f);\n\
@@ -823,7 +823,7 @@ let () =
     "sin_kernel"
     "__kernel void sin_kernel(__global float* restrict a, int sarek_a_length, \
      __global float* restrict b, int sarek_b_length) {\n\
-    \  int idx = get_global_id(0);\n\
+    \  int idx = ((int)get_global_id(0));\n\
     \  b[idx] = sin(a[idx]);\n\
      }\n" ;
 
@@ -843,7 +843,7 @@ let () =
      uint3 __metal_bid [[threadgroup_position_in_grid]],\n\
      uint3 __metal_tpg [[threads_per_threadgroup]],\n\
      uint3 __metal_num_groups [[threadgroups_per_grid]]) {\n\
-    \  int idx = __metal_gid.x;\n\
+    \  int idx = ((int)__metal_gid.x);\n\
     \  c[idx] = (a[idx] + b[idx]);\n\
      }\n\n" ;
 
@@ -864,7 +864,7 @@ let () =
      uint3 __metal_bid [[threadgroup_position_in_grid]],\n\
      uint3 __metal_tpg [[threads_per_threadgroup]],\n\
      uint3 __metal_num_groups [[threadgroups_per_grid]]) {\n\
-    \  int idx = __metal_gid.x;\n\
+    \  int idx = ((int)__metal_gid.x);\n\
     \  Point2 p = pts[idx];\n\
     \  pts[idx] = (Point2){.x = (p.x * 2.0f), .y = (p.y * 2.0f)};\n\
      }\n\n" ;
@@ -901,7 +901,7 @@ let () =
      uint3 __metal_bid [[threadgroup_position_in_grid]],\n\
      uint3 __metal_tpg [[threads_per_threadgroup]],\n\
      uint3 __metal_num_groups [[threadgroups_per_grid]]) {\n\
-    \  int idx = __metal_gid.x;\n\
+    \  int idx = ((int)__metal_gid.x);\n\
     \  int flag = flags[idx];\n\
     \  if ((flag != 0)) {\n\
     \    out[idx] = make_Opt_OptSome(1.0f);\n\
@@ -924,7 +924,7 @@ let () =
      uint3 __metal_bid [[threadgroup_position_in_grid]],\n\
      uint3 __metal_tpg [[threads_per_threadgroup]],\n\
      uint3 __metal_num_groups [[threadgroups_per_grid]]) {\n\
-    \  int idx = __metal_gid.x;\n\
+    \  int idx = ((int)__metal_gid.x);\n\
     \  b[idx] = sin(a[idx]);\n\
      }\n\n" ;
 
@@ -1057,7 +1057,7 @@ let () =
      extern \"C\" {\n\
      __global__ void float32_sin_path(float* __restrict__ a, int \
      sarek_a_length, float* __restrict__ b, int sarek_b_length) {\n\
-    \  int idx = (threadIdx.x + blockIdx.x * blockDim.x);\n\
+    \  int idx = ((int)(threadIdx.x + blockIdx.x * blockDim.x));\n\
     \  b[idx] = sinf(a[idx]);\n\
      }\n\
      }\n" ;
@@ -1068,7 +1068,7 @@ let () =
     "float32_sin_path"
     "__kernel void float32_sin_path(__global float* restrict a, int \
      sarek_a_length, __global float* restrict b, int sarek_b_length) {\n\
-    \  int idx = get_global_id(0);\n\
+    \  int idx = ((int)get_global_id(0));\n\
     \  b[idx] = sin(a[idx]);\n\
      }\n" ;
 
@@ -1087,7 +1087,7 @@ let () =
      uint3 __metal_bid [[threadgroup_position_in_grid]],\n\
      uint3 __metal_tpg [[threads_per_threadgroup]],\n\
      uint3 __metal_num_groups [[threadgroups_per_grid]]) {\n\
-    \  int idx = __metal_gid.x;\n\
+    \  int idx = ((int)__metal_gid.x);\n\
     \  b[idx] = sin(a[idx]);\n\
      }\n\n" ;
 
@@ -2035,7 +2035,7 @@ let () =
      uint3 __metal_bid [[threadgroup_position_in_grid]],\n\
      uint3 __metal_tpg [[threads_per_threadgroup]],\n\
      uint3 __metal_num_groups [[threadgroups_per_grid]]) {\n\
-    \  int idx = __metal_gid.x;\n\
+    \  int idx = ((int)__metal_gid.x);\n\
     \  b[idx] = (sign(a[idx]) * pow(abs(a[idx]), 1.0 / 3.0));\n\
      }\n\n" ;
 
@@ -2054,7 +2054,7 @@ let () =
      uint3 __metal_bid [[threadgroup_position_in_grid]],\n\
      uint3 __metal_tpg [[threads_per_threadgroup]],\n\
      uint3 __metal_num_groups [[threadgroups_per_grid]]) {\n\
-    \  int idx = __metal_gid.x;\n\
+    \  int idx = ((int)__metal_gid.x);\n\
     \  c[idx] = sqrt((a[idx]) * (a[idx]) + (b[idx]) * (b[idx]));\n\
      }\n\n" ;
 
@@ -2072,7 +2072,7 @@ let () =
      uint3 __metal_bid [[threadgroup_position_in_grid]],\n\
      uint3 __metal_tpg [[threads_per_threadgroup]],\n\
      uint3 __metal_num_groups [[threadgroups_per_grid]]) {\n\
-    \  int idx = __metal_gid.x;\n\
+    \  int idx = ((int)__metal_gid.x);\n\
     \  b[idx] = (exp(a[idx]) - 1.0);\n\
      }\n\n" ;
 
@@ -2090,7 +2090,7 @@ let () =
      uint3 __metal_bid [[threadgroup_position_in_grid]],\n\
      uint3 __metal_tpg [[threads_per_threadgroup]],\n\
      uint3 __metal_num_groups [[threadgroups_per_grid]]) {\n\
-    \  int idx = __metal_gid.x;\n\
+    \  int idx = ((int)__metal_gid.x);\n\
     \  b[idx] = log(1.0 + (a[idx]));\n\
      }\n\n"
 
