@@ -18,6 +18,7 @@ module Std = Sarek_stdlib.Std
 
 let () =
   Backend_hip.init () ;
+  Backend_cuda_c.register () ;
   Test_helpers.Benchmarks.init_backends ()
 
 let failures = ref 0
@@ -317,16 +318,29 @@ let cases =
     };
   ]
 
+(* CUDA/C lowers [nvcuda::wmma] 16x16x16 with unsigned 8-bit operands from
+   compute capability 7.2 on 32-wide warps (the rule the probe implements,
+   restated here independently so that a probe that is missing shows as a
+   missing rewrite). *)
+let cuda_c_wmma_int dev =
+  let caps = dev.Device.capabilities in
+  dev.Device.framework = "CUDA/C"
+  && compare caps.Spoc_framework.Framework_sig.compute_capability (7, 2) >= 0
+  && caps.Spoc_framework.Framework_sig.warp_size = 32
+
+let permits_byte_planes dev =
+  Sarek_capability.permits
+    (Sarek_coopmat.verdict
+       ~support:dev.Device.capabilities.Spoc_framework.Framework_sig.coopmat
+       (Sarek_matrix_rewrite.config_of
+          Sarek_matrix_rewrite.Int32_byte_planes
+          ~operand_elt:Sarek_ir_types.TInt32))
+
 let offers_int dev =
   dev.Device.framework = "Interpreter"
   || (dev.Device.framework = "HIP" || dev.Device.framework = "Vulkan")
-     && Sarek_capability.permits
-          (Sarek_coopmat.verdict
-             ~support:
-               dev.Device.capabilities.Spoc_framework.Framework_sig.coopmat
-             (Sarek_matrix_rewrite.config_of
-                Sarek_matrix_rewrite.Int32_byte_planes
-                ~operand_elt:Sarek_ir_types.TInt32))
+     && permits_byte_planes dev
+  || cuda_c_wmma_int dev
 
 let vec_f16_of arr =
   let v = Vector.create Vector.float16 (Array.length arr) in
@@ -365,4 +379,11 @@ let k_f16_accum =
 
 (* The float lowerings stay on HIP and the interpreter (specs/matrix-pattern-rewrite.md):
    Vulkan and CUDA/C take the integer lowering only. *)
-let offers_float dev = dev.Device.framework <> "Vulkan" && offers_int dev
+let offers_float dev =
+  dev.Device.framework <> "Vulkan"
+  && dev.Device.framework <> "CUDA/C"
+  && offers_int dev
+
+(* CUDA/PTX cannot emit the corpus kernels' own intrinsics (global_idx_z), so
+   even the original launch raises there; it never rewrites either. *)
+let runnable dev = dev.Device.framework <> "CUDA/PTX"
