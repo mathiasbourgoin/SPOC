@@ -124,6 +124,36 @@ let test_refusals () =
   expect_refused "WGSL" (Sarek_ir_wgsl.generate_with_types ~types:[]) ;
   expect_refused "PTX" (fun k -> Sarek_ir_ptx.generate_with_types ~types:[] k)
 
+(* ------------------------------------------------------------------ *)
+(* 4. Hand-built IR: Global create_array is refused by every emitter  *)
+(* ------------------------------------------------------------------ *)
+
+(* The PPX refuses [create_array n Global]; this is the backstop for IR built
+   by hand. Before, CUDA/OpenCL/Metal/GLSL silently declared a per-thread
+   private array (review L2, finding C-13). *)
+let global_array_kernel () =
+  let out = make_var "out" (TVec TInt32) in
+  let arr = make_var "g" (TArray (TInt32, Global)) in
+  {
+    default_kernel with
+    kern_name = "global_array_probe";
+    kern_params = [DParam (out, None)];
+    kern_body =
+      SLet (arr, EArrayCreate (TInt32, EConst (CInt32 16l), Global), SEmpty);
+  }
+
+let test_global_array_refused () =
+  let refuse name gen =
+    match gen (global_array_kernel ()) with
+    | (_ : string) ->
+        Alcotest.failf "%s emitted a Global create_array as private memory" name
+    | exception Sarek_backend_error.Backend_error.Backend_error _ -> ()
+  in
+  refuse "CUDA" (Sarek_ir_cuda.generate_with_types ~types:[]) ;
+  refuse "OpenCL" (Sarek_ir_opencl.generate_with_types ~types:[]) ;
+  refuse "Metal" (Sarek_ir_metal.generate_with_types ~types:[]) ;
+  refuse "GLSL" (Sarek_ir_glsl.generate_with_types ~types:[])
+
 let () =
   Alcotest.run
     "create-array-cm-decl"
@@ -139,5 +169,9 @@ let () =
             `Quick
             test_cm_decl_zero;
           Alcotest.test_case "CM_decl refused elsewhere" `Quick test_refusals;
+          Alcotest.test_case
+            "Global create_array refused (hand-built IR)"
+            `Quick
+            test_global_array_refused;
         ] );
     ]

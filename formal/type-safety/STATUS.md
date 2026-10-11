@@ -451,6 +451,19 @@ mutation tests green (M1 + M2 caught).
 
 No T3-S9 is scoped. If a new task is identified post-lock, open it separately.
 
+## Known divergence from production (finding C-13, 2026-10)
+
+`SpecialSpec.v` models `create_array _ Global` as well-typed
+(`SECreateArray (_, _, Global)` gives `TArr (_, Global)`), and
+`test/test_type_safety_conformance.ml` (`test_spe_create_array_global`) asserts
+it. Production no longer agrees: the PPX (`Sarek_typer.check_create_array`)
+refuses `create_array _ Global` with a located error, and refuses `Local` /
+`Shared` sizes that are not positive int32 compile-time constants (the spec has
+no size-constancy rule either). The Rocq proofs are NOT edited here (the
+apparatus is locked); the conformance test still passes because it exercises
+the extracted spec, not the PPX. Resolving it means a spec change (add a
+`Global` refusal and a constant-size premise) and a re-run of the proof ledger.
+
 ## Next session prompt
 
 ```text

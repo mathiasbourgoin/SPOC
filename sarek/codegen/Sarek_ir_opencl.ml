@@ -575,6 +575,11 @@ let rec gen_stmt st buf indent = function
       Buffer.add_string buf indent ;
       gen_expr st buf e ;
       Buffer.add_string buf ";\n"
+  | SLet (_, EArrayCreate (_, _, Global), _) ->
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "EArrayCreate(Global)"
+           Sarek_ir_codegen.global_array_refusal)
   | SLet (v, EArrayCreate (elem_ty, size, mem), body) ->
       gen_array_decl st buf indent v elem_ty size mem body
   | SLet (v, e, body) ->

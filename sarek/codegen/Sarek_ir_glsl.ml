@@ -1198,7 +1198,9 @@ let gen_coopmat_op st op =
       (* Zero-initialised, as [CM_decl] requires on every backend: a bare
          [coopmat<..> x;] has undefined contents in GLSL. The scalar
          constructor fills every component and converts [0] to the component
-         type (float16_t, int8_t, uint, ...). *)
+         type. Only the integer component types reach this point (int8_t,
+         uint8_t, int32_t, uint32_t): [glsl_coopmat_type] refuses the float
+         ones. *)
       let ty = glsl_coopmat_type frag in
       Printf.sprintf "%s %s = %s(0);" ty (escape_glsl_name name) ty
   | CM_load {dst; frag; src; index; stride} ->
@@ -1361,6 +1363,11 @@ let rec gen_stmt st buf indent = function
   | SLet (_v, EArrayCreate (_, _, Shared), body) ->
       (* Shared declarations are hoisted to module scope, so just emit the body *)
       gen_stmt st buf indent body
+  | SLet (_, EArrayCreate (_, _, Global), _) ->
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "EArrayCreate(Global)"
+           Sarek_ir_codegen.global_array_refusal)
   | SLet (v, EArrayCreate (elem_ty, size, _), body) ->
       gen_array_decl st buf indent v.var_name elem_ty size ;
       gen_stmt st buf indent body

@@ -152,6 +152,8 @@ test_negative:
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_create_array_runtime_size.cma > "$$out" 2>&1; if grep -q "create_array size must be a positive compile-time constant" "$$out"; then echo "  PASS: create_array runtime size"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing create_array shared runtime size rejection..."
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_create_array_shared_runtime_size.cma > "$$out" 2>&1; if grep -q "create_array size must be a positive compile-time constant" "$$out"; then echo "  PASS: create_array shared runtime size"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
+	@echo "Testing let%shared runtime size rejection..."
+	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_let_shared_runtime_size.cma > "$$out" 2>&1; if grep -q "let%shared size must be a positive compile-time constant" "$$out"; then echo "  PASS: let%shared runtime size"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing tuple-typed kernel parameter rejection..."
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_tuple_param.cma > "$$out" 2>&1; if grep -q "Tuple-typed kernel parameters are not supported" "$$out"; then echo "  PASS: tuple param rejected"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing function-typed kernel parameter rejection..."

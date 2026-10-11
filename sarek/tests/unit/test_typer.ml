@@ -600,6 +600,50 @@ let test_create_array_size_rules () =
        Local) ;
   bad "Global" env (create_array_expr (int32_expr 16l) Global)
 
+(* Review M1: every intermediate result must fit int32 (the device evaluates in
+   32 bits), not only the final value. *)
+let test_create_array_size_overflow () =
+  let env = with_stdlib empty in
+  let bad msg size = check_infer_error msg env (create_array_expr size Local) in
+  let mul a b = binop_expr Mul (int32_expr a) (int32_expr b) in
+  bad "65536 * 65536 wraps to 0" (mul 65536l 65536l) ;
+  bad
+    "wraps in the middle, final value looks valid"
+    (binop_expr Sub (mul 65536l 65536l) (mul 65536l 65535l)) ;
+  bad
+    "three-factor product wraps the host int"
+    (binop_expr Mul (mul 65536l 65536l) (int32_expr 65536l)) ;
+  bad "int literal beyond int32" (int_expr 4294967296) ;
+  check_infer_ok_any
+    "largest int32 size is in range"
+    env
+    (create_array_expr (int32_expr Int32.max_int) Local)
+
+(* Review H1: the typed size is the folded int32 literal, so no backend sees an
+   expression PTX/WGSL would refuse. *)
+let test_create_array_size_folded () =
+  let env = with_stdlib empty in
+  reset_tvar_counter () ;
+  reset_var_id_counter () ;
+  let size = binop_expr Mul (int32_expr 4l) (int32_expr 4l) in
+  match infer env (create_array_expr size Local) with
+  | Ok ({te = Sarek_typed_ast.TECreateArray ({te = TEInt32 16l; _}, _, _); _}, _)
+    ->
+      ()
+  | Ok _ -> Alcotest.fail "size was not folded to the literal 16l"
+  | Error _ -> Alcotest.fail "4l * 4l was refused"
+
+(* Review H2: an explicit let%shared size follows the same rule. *)
+let test_let_shared_size_rules () =
+  let env = with_stdlib empty in
+  let shared size =
+    mk_expr
+      (ELetShared ("tile", TEConstr ("int32", []), Some size, mk_expr EUnit))
+  in
+  check_infer_ok_any "constant" env (shared (int32_expr 64l)) ;
+  check_infer_error "runtime" env (shared (var_expr "thread_idx_x")) ;
+  check_infer_error "zero" env (shared (int32_expr 0l))
+
 (* Test binary operation type inference *)
 let test_binop_add_int () =
   let env = with_stdlib empty in
@@ -815,6 +859,18 @@ let () =
             "size must be a positive constant; Global refused"
             `Quick
             test_create_array_size_rules;
+          Alcotest.test_case
+            "no int32 overflow in any intermediate"
+            `Quick
+            test_create_array_size_overflow;
+          Alcotest.test_case
+            "size folded to a literal"
+            `Quick
+            test_create_array_size_folded;
+          Alcotest.test_case
+            "let%shared explicit size"
+            `Quick
+            test_let_shared_size_rules;
         ] );
       ( "binop",
         [
