@@ -55,8 +55,21 @@ let launch device ~name ~source args =
     ~shared_mem:0
     ~stream:None
 
-let host_array fill =
-  let ba = Bigarray.Array1.create Bigarray.float32 Bigarray.c_layout n in
+(* A float32 array of [n] elements whose address is a multiple of the device's
+   CL_DEVICE_MEM_BASE_ADDR_ALIGN plus [skew_elems] elements: aligned when
+   [skew_elems = 0], so USE_HOST_PTR is allowed. *)
+let host_array ?(skew_elems = 0) ~align fill =
+  let align = align in
+  let slack = (align / 4) + skew_elems in
+  let base =
+    Bigarray.Array1.create Bigarray.float32 Bigarray.c_layout (n + slack)
+  in
+  let rec first_aligned k =
+    let addr = addr_of (Bigarray.Array1.sub base k 1) in
+    if Nativeint.rem addr (Nativeint.of_int align) = 0n then k
+    else first_aligned (k + 1)
+  in
+  let ba = Bigarray.Array1.sub base (first_aligned 0 + skew_elems) n in
   Bigarray.Array1.fill ba fill ;
   ba
 
@@ -67,8 +80,8 @@ let zero_copy_buffer device ba =
 
 (* A kernel writes a zero-copy buffer; the host reads the array through the
    device->host path with no explicit synchronize in between. *)
-let check_host_read device =
-  let ba = host_array (-1.0) in
+let check_host_read ~align device =
+  let ba = host_array ~align (-1.0) in
   let buf = zero_copy_buffer device ba in
   let args = Backend.Kernel.create_args () in
   Backend.Kernel.set_arg_buffer args 0 buf ;
@@ -87,8 +100,8 @@ let check_host_read device =
 
 (* The host writes the array, publishes it with host_ptr_to_device, a kernel
    reads it through the zero-copy buffer. *)
-let check_host_write device =
-  let ba = host_array 0.0 in
+let check_host_write ~align device =
+  let ba = host_array ~align 0.0 in
   let buf = zero_copy_buffer device ba in
   for i = 0 to n - 1 do
     ba.{i} <- float_of_int (i + 1)
@@ -102,7 +115,7 @@ let check_host_write device =
   Backend.Kernel.set_arg_buffer args 0 buf ;
   Backend.Kernel.set_arg_buffer args 1 out ;
   launch device ~name:"double_it" ~source:double_source args ;
-  let result = host_array (-1.0) in
+  let result = host_array ~align (-1.0) in
   Backend.Memory.device_to_host ~src:out ~dst:result ;
   for i = 0 to n - 1 do
     Alcotest.(check (float 0.0))
@@ -112,6 +125,16 @@ let check_host_write device =
   done ;
   Backend.Memory.free out ;
   Backend.Memory.free buf
+
+(* A host pointer that misses the alignment must not become USE_HOST_PTR: the
+   runtime would silently keep a private copy. *)
+let check_unaligned_refused ~align device =
+  let ba = host_array ~skew_elems:1 ~align 0.0 in
+  match Backend.Memory.alloc_zero_copy device ba Bigarray.float32 with
+  | None -> ()
+  | Some buf ->
+      Backend.Memory.free buf ;
+      Alcotest.fail "alloc_zero_copy accepted an unaligned host pointer"
 
 let on_every_device check () =
   if not (Backend.is_available ()) then begin
@@ -126,7 +149,10 @@ let on_every_device check () =
         Opencl_plugin_base.For_testing.zero_copy_on_any_device := false)
       (fun () ->
         for id = 0 to Backend.Device.count () - 1 do
-          check (Backend.Device.get id)
+          check
+            ~align:
+              (Opencl_api.Device.get id).Opencl_api.Device.mem_base_addr_align
+            (Backend.Device.get id)
         done)
   end
 
@@ -144,5 +170,9 @@ let () =
             "kernel sees the host's writes"
             `Quick
             (on_every_device check_host_write);
+          Alcotest.test_case
+            "an unaligned host pointer is not aliased"
+            `Quick
+            (on_every_device check_unaligned_refused);
         ] );
     ]

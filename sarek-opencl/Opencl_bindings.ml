@@ -240,6 +240,25 @@ let clEnqueueWriteBuffer_lazy =
 let clEnqueueWriteBuffer q b bl off sz p ne el e =
   Lazy.force clEnqueueWriteBuffer_lazy q b bl off sz p ne el e
 
+let clEnqueueMapBuffer_lazy =
+  foreign_cl_lazy
+    "clEnqueueMapBuffer"
+    (cl_command_queue @-> cl_mem @-> cl_bool @-> cl_bitfield @-> size_t
+   @-> size_t @-> cl_uint @-> ptr cl_event @-> ptr cl_event @-> ptr cl_int
+    @-> returning (ptr void))
+
+let clEnqueueMapBuffer q b bl fl off sz ne el e err =
+  Lazy.force clEnqueueMapBuffer_lazy q b bl fl off sz ne el e err
+
+let clEnqueueUnmapMemObject_lazy =
+  foreign_cl_lazy
+    "clEnqueueUnmapMemObject"
+    (cl_command_queue @-> cl_mem @-> ptr void @-> cl_uint @-> ptr cl_event
+   @-> ptr cl_event @-> returning cl_int)
+
+let clEnqueueUnmapMemObject q m p ne el e =
+  Lazy.force clEnqueueUnmapMemObject_lazy q m p ne el e
+
 let clEnqueueCopyBuffer_lazy =
   foreign_cl_lazy
     "clEnqueueCopyBuffer"

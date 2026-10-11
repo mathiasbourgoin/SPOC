@@ -143,10 +143,26 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
            lifetime, so the OWNING Vector.t (which holds [ba]) is what roots it
            — the managed pointer only covers this call. *)
         let host_ptr = Spoc_core.Memory.bigarray_void_ptr ba in
-        let buf =
-          Opencl_api.Memory.alloc_with_host_ptr state.context size kind host_ptr
-        in
-        Some {buf; device_id = device.id}
+        (* The runtime aliases the host pointer only when it meets
+           CL_DEVICE_MEM_BASE_ADDR_ALIGN; otherwise it keeps a private copy.
+           Host access is synchronised by map/unmap either way, but an
+           unaligned array gains nothing from USE_HOST_PTR, so it takes the
+           ordinary buffer path. *)
+        if
+          not
+            (Opencl_api.Memory.host_ptr_usable
+               ~align_bytes:device.Opencl_api.Device.mem_base_addr_align
+               (Ctypes.raw_address_of_ptr host_ptr))
+        then None
+        else
+          let buf =
+            Opencl_api.Memory.alloc_with_host_ptr
+              state.context
+              size
+              kind
+              host_ptr
+          in
+          Some {buf; device_id = device.id}
       end
 
     let is_zero_copy b = Opencl_api.Memory.is_zero_copy b.buf
