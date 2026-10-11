@@ -217,7 +217,7 @@ let interpreter_device =
      match
        Array.find_opt
          (fun d -> d.Spoc_core.Device.framework = "Interpreter")
-         (Spoc_core.Device.init ())
+         (Spoc_core.Device.init ~frameworks:["Interpreter"] ())
      with
      | Some d -> d
      | None -> Alcotest.fail "no Interpreter device")

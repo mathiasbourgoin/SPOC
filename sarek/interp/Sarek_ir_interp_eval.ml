@@ -941,15 +941,61 @@ and exec_stmt_for_return state env stmt =
 
 (** {1 Kernel Execution} *)
 
+(** A parked thread: its continuation, and whether it waits on a block-wide
+    barrier (as opposed to a warp barrier). *)
+type parked = (unit, unit) Effect.Deep.continuation * bool
+
+(** The effect handler of thread [tid]: a barrier parks the thread in [waiting];
+    finishing counts it in [num_completed]. *)
+let thread_handler (waiting : parked option array) num_completed tid :
+    (unit, unit) Effect.Deep.handler =
+  {
+    retc = (fun () -> incr num_completed);
+    exnc = raise;
+    effc =
+      (fun (type a) (eff : a Effect.t) ->
+        match eff with
+        | Barrier ->
+            Some
+              (fun (k : (a, unit) Effect.Deep.continuation) ->
+                waiting.(tid) <- Some (k, true))
+        | Warp_barrier ->
+            Some
+              (fun (k : (a, unit) Effect.Deep.continuation) ->
+                waiting.(tid) <- Some (k, false))
+        | _ -> None);
+  }
+
+(** A block-wide barrier releases only when EVERY thread of the block has
+    arrived. After a round of execution each thread is either parked or
+    finished, so a block barrier with parked threads AND finished ones can never
+    release: the finished threads will not arrive. Threads parked on a warp
+    barrier prove nothing about the rest of the block. *)
+let check_barrier_can_release (waiting : parked option array) ~num_completed =
+  let at_block_barrier =
+    Array.fold_left
+      (fun n w -> match w with Some (_, true) -> n + 1 | _ -> n)
+      0
+      waiting
+  in
+  if at_block_barrier > 0 && num_completed > 0 then
+    Interp_error.raise_error
+      (BSP_deadlock
+         {
+           message =
+             Printf.sprintf
+               "%d of %d threads wait at a barrier that the %d finished \
+                threads never reach"
+               at_block_barrier
+               (Array.length waiting)
+               num_completed;
+         })
+
 (** Run all threads in a block with BSP barrier synchronization *)
 let run_block env body block_idx block_dim grid_dim =
   let bx, by, bz = block_dim in
   let num_threads = bx * by * bz in
-  (* A parked thread's continuation, and whether it waits on a block-wide
-     barrier (as opposed to a warp barrier). *)
-  let waiting : ((unit, unit) Effect.Deep.continuation * bool) option array =
-    Array.make num_threads None
-  in
+  let waiting : parked option array = Array.make num_threads None in
   let num_completed = ref 0 in
 
   let start_thread tid =
@@ -961,22 +1007,7 @@ let run_block env body block_idx block_dim grid_dim =
     Effect.Deep.match_with
       (fun () -> exec_stmt state thread_env body)
       ()
-      {
-        retc = (fun () -> incr num_completed);
-        exnc = raise;
-        effc =
-          (fun (type a) (eff : a Effect.t) ->
-            match eff with
-            | Barrier ->
-                Some
-                  (fun (k : (a, unit) Effect.Deep.continuation) ->
-                    waiting.(tid) <- Some (k, true))
-            | Warp_barrier ->
-                Some
-                  (fun (k : (a, unit) Effect.Deep.continuation) ->
-                    waiting.(tid) <- Some (k, false))
-            | _ -> None);
-      }
+      (thread_handler waiting num_completed tid)
   in
 
   (* The deep handler installed by [start_thread] persists across [continue], so
@@ -992,41 +1023,15 @@ let run_block env body block_idx block_dim grid_dim =
     | None -> ()
   in
 
-  (* A block-wide barrier releases only when EVERY thread of the block has
-     arrived. After a round of execution each thread is either parked or
-     finished, so a block barrier with parked threads AND finished ones can
-     never release: the finished threads will not arrive. Threads parked on a
-     warp barrier prove nothing about the rest of the block. *)
-  let check_barrier_can_release () =
-    let at_block_barrier =
-      Array.fold_left
-        (fun n w -> match w with Some (_, true) -> n + 1 | _ -> n)
-        0
-        waiting
-    in
-    if at_block_barrier > 0 && !num_completed > 0 then
-      Interp_error.raise_error
-        (BSP_deadlock
-           {
-             message =
-               Printf.sprintf
-                 "%d of %d threads wait at a barrier that the %d finished \
-                  threads never reach"
-                 at_block_barrier
-                 num_threads
-                 !num_completed;
-           })
-  in
-
   for tid = 0 to num_threads - 1 do
     start_thread tid
   done ;
-  check_barrier_can_release () ;
+  check_barrier_can_release waiting ~num_completed:!num_completed ;
   while Array.exists Option.is_some waiting do
     for tid = 0 to num_threads - 1 do
       resume_thread tid
     done ;
-    check_barrier_can_release ()
+    check_barrier_can_release waiting ~num_completed:!num_completed
   done
 
 (** Run all blocks in a grid (sequential) *)
