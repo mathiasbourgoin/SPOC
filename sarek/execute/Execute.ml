@@ -231,15 +231,18 @@ let vector_args_to_exec_array (args : vector_arg list) :
     @raise Transfer_failed if vector has no buffer on this device *)
 let get_device_buffer (type a b) (v : (a, b) Vector.t) (dev : Device.t) :
     (module Vector.DEVICE_BUFFER) =
-  Log.debugf Log.Execute "get_device_buffer for dev=%d" dev.Device.id ;
+  let logging = Log.would_log Log.Debug Log.Execute in
+  if logging then
+    Log.debugf Log.Execute "get_device_buffer for dev=%d" dev.Device.id ;
   match Vector.get_buffer v dev with
   | Some buf ->
-      let (module B : Vector.DEVICE_BUFFER) = buf in
-      Log.debugf
-        Log.Execute
-        "got buffer: ptr=%Ld size=%d"
-        (Int64.of_nativeint B.device_ptr)
-        B.size ;
+      (if logging then
+         let (module B : Vector.DEVICE_BUFFER) = buf in
+         Log.debugf
+           Log.Execute
+           "got buffer: ptr=%Ld size=%d"
+           (Int64.of_nativeint B.device_ptr)
+           B.size) ;
       buf
   | None ->
       Execute_error.raise_error

@@ -55,11 +55,12 @@ let alloc_scalar_buffer (type a b) (dev : Device.t) (length : int)
 
         let bind_to_kargs kargs idx =
           (* Unwrap kargs to the backend's kernel args type and bind buffer *)
-          Log.debugf
-            Log.Transfer
-            "bind_to_kargs: idx=%d ptr=%Ld"
-            idx
-            (Int64.of_nativeint device_ptr) ;
+          if Log.would_log Log.Debug Log.Transfer then
+            Log.debugf
+              Log.Transfer
+              "bind_to_kargs: idx=%d ptr=%Ld"
+              idx
+              (Int64.of_nativeint device_ptr) ;
           match B.unwrap_kargs kargs with
           | Some args -> B.Kernel.set_arg_buffer args idx buf
           | None -> failwith "bind_to_kargs: backend mismatch"
@@ -133,11 +134,12 @@ let alloc_scalar_buffer_zero_copy (type a b) (dev : Device.t)
               let device_ptr = device_ptr
 
               let bind_to_kargs kargs idx =
-                Log.debugf
-                  Log.Transfer
-                  "bind_to_kargs (zero-copy): idx=%d ptr=%Ld"
-                  idx
-                  (Int64.of_nativeint device_ptr) ;
+                if Log.would_log Log.Debug Log.Transfer then
+                  Log.debugf
+                    Log.Transfer
+                    "bind_to_kargs (zero-copy): idx=%d ptr=%Ld"
+                    idx
+                    (Int64.of_nativeint device_ptr) ;
                 match B.unwrap_kargs kargs with
                 | Some args -> B.Kernel.set_arg_buffer args idx buf
                 | None -> failwith "bind_to_kargs: backend mismatch"
@@ -209,11 +211,12 @@ let alloc_custom_buffer (dev : Device.t) (length : int) (elem_sz : int) :
 
         let bind_to_kargs kargs idx =
           (* Unwrap kargs to the backend's kernel args type and bind buffer *)
-          Log.debugf
-            Log.Transfer
-            "bind_to_kargs: idx=%d ptr=%Ld"
-            idx
-            (Int64.of_nativeint device_ptr) ;
+          if Log.would_log Log.Debug Log.Transfer then
+            Log.debugf
+              Log.Transfer
+              "bind_to_kargs: idx=%d ptr=%Ld"
+              idx
+              (Int64.of_nativeint device_ptr) ;
           match B.unwrap_kargs kargs with
           | Some args -> B.Kernel.set_arg_buffer args idx buf
           | None -> failwith "bind_to_kargs: backend mismatch"
@@ -461,17 +464,21 @@ let read_back_to_host vec dev =
   Spoc_framework.Launch_hooks.flush_pending () ;
   Read_back.read_back_to_host vec dev
 
+let location_name : Vector.location -> string = function
+  | Vector.CPU -> "CPU"
+  | Vector.GPU _ -> "GPU"
+  | Vector.Both _ -> "Both"
+  | Vector.Stale_CPU _ -> "Stale_CPU"
+  | Vector.Stale_GPU _ -> "Stale_GPU"
+
 (** Transfer vector data to a device *)
 let to_device (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : unit =
-  let loc_str =
-    match vec.location with
-    | Vector.CPU -> "CPU"
-    | Vector.GPU _ -> "GPU"
-    | Vector.Both _ -> "Both"
-    | Vector.Stale_CPU _ -> "Stale_CPU"
-    | Vector.Stale_GPU _ -> "Stale_GPU"
-  in
-  Log.debugf Log.Transfer "to_device: location=%s dev=%d" loc_str dev.id ;
+  if Log.would_log Log.Debug Log.Transfer then
+    Log.debugf
+      Log.Transfer
+      "to_device: location=%s dev=%d"
+      (location_name vec.location)
+      dev.id ;
   (* MIGRATION: the vector is resident on another device, so drain it to the
      host before uploading to [dev]. Through {!read_back_to_host}, not
      {!copy_device_to_host} — this arm is one of the four paths that pull device

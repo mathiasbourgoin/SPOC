@@ -179,7 +179,7 @@ let launch_source (dev : Device.t) ~name ~source =
 
 ## Debugging
 
-`SAREK_DEBUG` is a comma-separated list read when the library loads. Components: `transfer`, `kernel`, `device`, `memory`, `execute`, or `all` (also `*`). Levels: `debug`, `info`, `warn`, `error`.
+`SAREK_DEBUG` is a comma-separated list read when the library loads. Components: `transfer`, `kernel`, `device`, `memory`, `execute`, or `all` (also `*`). Levels: `debug`, `info`, `warn`, `error`. Naming a component without a level sets the level to `debug`; a level in the list wins (the last one, if several). Messages go to stdout.
 
 ```bash
 SAREK_DEBUG=transfer ./my_program.exe

@@ -20,5 +20,11 @@ let execute_category = Execute
 (** Alias: Execute is the component Execute.ml references as Log.Execute *)
 let _ = execute_category
 
+(** Log levels matching the native Log module *)
+type level = Debug | Info | Warn | Error
+
+(** Nothing is ever logged here. *)
+let would_log (_ : level) (_ : component) = false
+
 (** No-op debug format function *)
 let debugf _comp fmt = Printf.ifprintf stdout fmt
