@@ -25,3 +25,4 @@ c53533261e851a5a9063ad0a	No committed test, and the claim that "the step's own f
 818429e8cd763768d5ac678d	Documentation correction: the KB row misattributed dune's dedup gating to 3.24.1 when CHANGES.md puts it in 3.23.1. No behaviour changed -- DEDUP_LANG = (3, 23) was already correct -- so there is nothing for a test to hold.	mathias
 bd998a93861e7fca1d7e5c86	doc correction: README build command now uses the @sarek-opencl/install alias, verified locally with dune build; no code path to test	Claude (package G)
 5ac62373edf4afa2497abc5e	doc correction: README now runs a plain `dune build` (the suggested `dune build -p sarek-opencl @install` fails from a clone because -p excludes the uninstalled sarek dependency); no code path to test	Claude (package G)
+c8408a625a98a314a8748450	doc correction: kernel_language.md states that output needs one slot per launched thread; the snippet itself compiles under @snippets, no behaviour to test	Claude (package G)
