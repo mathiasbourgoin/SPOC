@@ -32,7 +32,7 @@
 
 - The "No devices found" path says Native/Interpreter are always available but still exits 1 if `Device.count () = 0` (`tools/device_info.ml:54-63`). If native/interpreter initialization fails, this is useful; otherwise it indicates a deeper invariant break.
 - Usage text says `Device.best () selects best device (CUDA > OpenCL > Native)` (`tools/device_info.ml:83-85`), but this ordering is not validated in this tool and may drift from runtime implementation.
-- Feature label `CPU (zero-copy)` is inferred solely from `cap.is_cpu` (`tools/device_info.ml:34-39`); actual zero-copy behavior may be backend-specific.
+- Feature label `CPU` comes from `cap.is_cpu` (`tools/device_info.ml:47`); it says nothing about host-memory sharing, which on OpenCL is the explicit `Host_ptr_buffer` opt-in.
 
 ## Performance and Maintainability Risks
 

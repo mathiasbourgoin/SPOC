@@ -1207,14 +1207,22 @@ let create_device_only (type a b) (dev : Device.t) (kind : (a, b) Vector.kind)
 
 (** {1 Ranged copies} *)
 
+(** [vec]'s buffer on [d] is its host storage ([Memory.Host_storage]), so host
+    and device copies cannot diverge. *)
+let buffer_is_host_storage (vec : (_, _) Vector.t) (d : Device.t) : bool =
+  match Vector.get_buffer vec d with
+  | Some (module B : Vector.DEVICE_BUFFER) -> B.host_link = Memory.Host_storage
+  | None -> false
+
 (** The device a ranged copy on [vec] targets, and its buffer there, after
     checking the preconditions. A ranged copy needs the device copy to be
     CURRENT: a partial write into a stale device copy would leave neither copy
     authoritative, and a read from one would return stale data.
 
     Current means: [vec] is device-only (device-current by definition), or its
-    location is [GPU d], [Both d] or [Stale_CPU d], or — on a CPU device, where
-    the buffer aliases host storage — any location naming [d]. *)
+    location is [GPU d], [Both d] or [Stale_CPU d], or — when its buffer on [d]
+    is the host storage itself ([Memory.Host_storage]: Native, Interpreter) —
+    any location naming [d]. *)
 let range_target (type a b) ~(op : string) (vec : (a, b) Vector.t) :
     Device.t * Vector.device_buffer =
   (match vec.kind with
@@ -1225,7 +1233,9 @@ let range_target (type a b) ~(op : string) (vec : (a, b) Vector.t) :
   let dev =
     match vec.location with
     | Vector.GPU d | Vector.Both d | Vector.Stale_CPU d -> d
-    | Vector.Stale_GPU d when is_device_only vec || d.capabilities.is_cpu -> d
+    | Vector.Stale_GPU d when is_device_only vec || buffer_is_host_storage vec d
+      ->
+        d
     | Vector.Stale_GPU _ | Vector.CPU ->
         if is_device_only vec then
           invalid_arg
@@ -1303,7 +1313,7 @@ let h2d_range (type a b k) ~(op : string) ?(stream : stream option)
         ~host_ranges:[(src_ptr, byte_size)]) ;
   (* The device copy now holds data the host copy lacks. *)
   match dst.location with
-  | Vector.Both d when not d.capabilities.is_cpu ->
+  | Vector.Both d when not (buffer_is_host_storage dst d) ->
       dst.location <- Vector.Stale_CPU d
   | Vector.Both _ | Vector.GPU _ | Vector.Stale_CPU _ | Vector.Stale_GPU _
   | Vector.CPU ->
