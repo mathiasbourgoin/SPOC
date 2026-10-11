@@ -233,7 +233,7 @@ Sarek: kernel 'matmul_naive' contains a matrix product (GEMM) that matrix units 
   <li>Row, column and at most one batch index are affine in the loop variables and thread indices; each operand has a unit stride in one dimension (row-major or column-major). Guards are conjunctions of comparisons with a bound that is the same for every thread.</li>
   <li>No bound, initial value or epilogue reads <code class="language-plaintext highlighter-rouge">block_dim_*</code> or <code class="language-plaintext highlighter-rouge">grid_dim_*</code>, and no index involves <code class="language-plaintext highlighter-rouge">int64</code>.</li>
   <li>The element types have a configuration, below.</li>
-  <li>The device is one of HIP with 32-wide waves (gfx11), Vulkan with 32- or 64-wide subgroups (the block is four subgroups: 128 or 256 threads), or CUDA/C with 32-wide warps (sm_72+, explicit request only); the configuration is offered by the device (Vulkan and CUDA/C: the <code class="language-plaintext highlighter-rouge">int32</code> case only); and the rewritten grid fits <code class="language-plaintext highlighter-rouge">max_grid_dims</code>.</li>
+  <li>The device is one of HIP with 32-wide waves (gfx11), Vulkan (automatically on 64-wide subgroups, the measured width; a 32-wide device only on an explicit request; the block is four subgroups: 128 or 256 threads), or CUDA/C with 32-wide warps (sm_72+, explicit request only); the configuration is offered by the device (Vulkan and CUDA/C: the <code class="language-plaintext highlighter-rouge">int32</code> case only); and the rewritten grid fits <code class="language-plaintext highlighter-rouge">max_grid_dims</code>.</li>
 </ul>
 
 <table>
