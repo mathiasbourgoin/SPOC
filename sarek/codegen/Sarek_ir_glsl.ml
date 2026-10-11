@@ -1502,7 +1502,7 @@ let gen_helper_func st ~pc_names ~len_names buf (hf : helper_func) =
       Buffer.add_string buf (escape_glsl_name v.var_name))
     non_vec_params ;
   Buffer.add_string buf ") {\n" ;
-  gen_stmt st buf "  " hf.hf_body ;
+  gen_stmt st buf "  " (Sarek_ir_codegen.fold_local_array_lengths hf.hf_body) ;
   Buffer.add_string buf "}\n" ;
   (* Re-#define the colliding macros after the function *)
   List.iter
@@ -2241,7 +2241,10 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
     st
     buf
     "  "
-    (rename_pc_shadowing_locals ~pc_names ~len_names k.kern_body) ;
+    (rename_pc_shadowing_locals
+       ~pc_names
+       ~len_names
+       (Sarek_ir_codegen.fold_local_array_lengths k.kern_body)) ;
   Buffer.add_string buf "}\n" ;
 
   let shader = Buffer.contents buf in

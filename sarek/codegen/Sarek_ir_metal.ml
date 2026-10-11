@@ -1091,7 +1091,7 @@ let gen_helper_func st buf (hf : helper_func) =
     hf.hf_params ;
   Buffer.add_string buf ") {\n" ;
   (* Body *)
-  gen_stmt st buf "  " hf.hf_body ;
+  gen_stmt st buf "  " (Sarek_ir_codegen.fold_local_array_lengths hf.hf_body) ;
   Buffer.add_string buf "}\n\n"
 
 (** {1 Kernel Generation} *)
@@ -1297,7 +1297,7 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
   List.iter (gen_local st buf "  " atomic_vars) k.kern_locals ;
 
   (* Body *)
-  gen_stmt st buf "  " k.kern_body ;
+  gen_stmt st buf "  " (Sarek_ir_codegen.fold_local_array_lengths k.kern_body) ;
 
   (* Close kernel *)
   Buffer.add_string buf "}\n" ;

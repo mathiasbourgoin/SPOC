@@ -154,6 +154,69 @@ let test_global_array_refused () =
   refuse "Metal" (Sarek_ir_metal.generate_with_types ~types:[]) ;
   refuse "GLSL" (Sarek_ir_glsl.generate_with_types ~types:[])
 
+(* ------------------------------------------------------------------ *)
+(* 5. EArrayLen on a local/shared array is its literal extent         *)
+(* ------------------------------------------------------------------ *)
+
+(* Only vector PARAMETERS carry a length symbol ([params.sarek_x_length] on
+   WGSL, [sarek_x_length] on the C family). A created array's size is a literal
+   now, so its length must be that literal, not a symbol nobody declares. *)
+let array_len_kernel mem =
+  let out = make_var "out" (TVec TInt32) in
+  let arr = make_var "scratch" (TArray (TInt32, mem)) in
+  {
+    default_kernel with
+    kern_name = "array_len_probe";
+    kern_params = [DParam (out, None)];
+    kern_body =
+      SLet
+        ( arr,
+          EArrayCreate (TInt32, EConst (CInt32 16l), mem),
+          SAssign (LArrayElem ("out", EConst (CInt32 0l)), EArrayLen "scratch")
+        );
+  }
+
+let test_array_len_literal () =
+  List.iter
+    (fun mem ->
+      let k = array_len_kernel mem in
+      let check name out =
+        check_absent name ~needle:"scratch_length" out ;
+        check_contains name ~needle:"16" out
+      in
+      check "WGSL" (Sarek_ir_wgsl.generate_with_types ~types:[] k) ;
+      check "CUDA" (Sarek_ir_cuda.generate_with_types ~types:[] k) ;
+      check "OpenCL" (Sarek_ir_opencl.generate_with_types ~types:[] k) ;
+      check "Metal" (Sarek_ir_metal.generate_with_types ~types:[] k) ;
+      check "GLSL" (Sarek_ir_glsl.generate_with_types ~types:[] k))
+    [Local; Shared]
+
+(* The same holds inside a helper function body. *)
+let helper_len_kernel () =
+  let arr = make_var "scratch" (TArray (TInt32, Local)) in
+  let hf =
+    {
+      hf_name = "len_helper";
+      hf_params = [];
+      hf_ret_type = TInt32;
+      hf_body =
+        SLet
+          ( arr,
+            EArrayCreate (TInt32, EConst (CInt32 16l), Local),
+            SReturn (EArrayLen "scratch") );
+    }
+  in
+  {(array_len_kernel Local) with kern_funcs = [hf]}
+
+let test_array_len_in_helper () =
+  let k = helper_len_kernel () in
+  let check name out = check_absent name ~needle:"scratch_length" out in
+  check "WGSL" (Sarek_ir_wgsl.generate_with_types ~types:[] k) ;
+  check "CUDA" (Sarek_ir_cuda.generate_with_types ~types:[] k) ;
+  check "OpenCL" (Sarek_ir_opencl.generate_with_types ~types:[] k) ;
+  check "Metal" (Sarek_ir_metal.generate_with_types ~types:[] k) ;
+  check "GLSL" (Sarek_ir_glsl.generate_with_types ~types:[] k)
+
 let () =
   Alcotest.run
     "create-array-cm-decl"
@@ -173,5 +236,13 @@ let () =
             "Global create_array refused (hand-built IR)"
             `Quick
             test_global_array_refused;
+          Alcotest.test_case
+            "EArrayLen on a created array is its literal extent"
+            `Quick
+            test_array_len_literal;
+          Alcotest.test_case
+            "EArrayLen in a helper body"
+            `Quick
+            test_array_len_in_helper;
         ] );
     ]

@@ -171,6 +171,76 @@ let global_array_refusal =
    body: device memory is allocated by the host. Pass the buffer in as a \
    kernel vector parameter."
 
+(** Replace [EArrayLen a] by the literal extent when [a] is bound by an
+    enclosing [SLet (a, EArrayCreate (_, EConst (CInt32 n), _), _)].
+
+    Only vector PARAMETERS have a length symbol ([sarek_a_length] /
+    [params.sarek_a_length]); a created array's extent is its (constant, PPX
+    enforced) size, so the symbol would name something no emitter declares. A
+    rebinding of the same name by any other binder ends the mapping. *)
+let fold_local_array_lengths (body : Sarek_ir_types.stmt) : Sarek_ir_types.stmt
+    =
+  let open Sarek_ir_types in
+  let module SM = Map.Make (String) in
+  let rec ex env e =
+    match e with
+    | EConst _ | EVar _ -> e
+    | EArrayLen n -> (
+        match SM.find_opt n env with
+        | Some len -> EConst (CInt32 len)
+        | None -> e)
+    | EBinop (op, a, b) -> EBinop (op, ex env a, ex env b)
+    | EUnop (op, a) -> EUnop (op, ex env a)
+    | EArrayRead (a, i) -> EArrayRead (a, ex env i)
+    | EArrayReadExpr (b, i) -> EArrayReadExpr (ex env b, ex env i)
+    | ERecordField (r, f) -> ERecordField (ex env r, f)
+    | EIntrinsic (ns, n, args) -> EIntrinsic (ns, n, List.map (ex env) args)
+    | ECast (t, a) -> ECast (t, ex env a)
+    | ETuple es -> ETuple (List.map (ex env) es)
+    | EApp (f, args) -> EApp (ex env f, List.map (ex env) args)
+    | ERecord (n, fs) -> ERecord (n, List.map (fun (k, v) -> (k, ex env v)) fs)
+    | EVariant (t, c, args) -> EVariant (t, c, List.map (ex env) args)
+    | EArrayCreate (t, sz, m) -> EArrayCreate (t, ex env sz, m)
+    | EIf (c, t, f) -> EIf (ex env c, ex env t, ex env f)
+    | EMatch (sc, cases) ->
+        EMatch (ex env sc, List.map (fun (p, b) -> (p, ex env b)) cases)
+  in
+  let rec lv env = function
+    | LVar _ as l -> l
+    | LArrayElem (a, i) -> LArrayElem (a, ex env i)
+    | LArrayElemExpr (b, i) -> LArrayElemExpr (ex env b, ex env i)
+    | LRecordField (l, f) -> LRecordField (lv env l, f)
+  in
+  let rec st env s =
+    match s with
+    | SAssign (l, e) -> SAssign (lv env l, ex env e)
+    | SSeq ss -> SSeq (List.map (st env) ss)
+    | SIf (c, t, eo) -> SIf (ex env c, st env t, Option.map (st env) eo)
+    | SWhile (c, b) -> SWhile (ex env c, st env b)
+    | SFor (v, lo, hi, dir, b) ->
+        SFor (v, ex env lo, ex env hi, dir, st (SM.remove v.var_name env) b)
+    | SMatch (e, cases) ->
+        SMatch (ex env e, List.map (fun (p, b) -> (p, st env b)) cases)
+    | SReturn e -> SReturn (ex env e)
+    | SExpr e -> SExpr (ex env e)
+    | SLet (v, (EArrayCreate (_, EConst (CInt32 n), _) as e), b) ->
+        SLet (v, e, st (SM.add v.var_name n env) b)
+    | SLet (v, e, b) -> SLet (v, ex env e, st (SM.remove v.var_name env) b)
+    | SLetMut (v, e, b) -> SLetMut (v, ex env e, st (SM.remove v.var_name env) b)
+    | SPragma (ss, b) -> SPragma (ss, st env b)
+    | SBlock b -> SBlock (st env b)
+    | SCoopmat (CM_load r) ->
+        SCoopmat
+          (CM_load {r with index = ex env r.index; stride = ex env r.stride})
+    | SCoopmat (CM_store r) ->
+        SCoopmat
+          (CM_store {r with index = ex env r.index; stride = ex env r.stride})
+    | (SBarrier | SWarpBarrier | SMemFence | SEmpty | SNative _ | SCoopmat _) as
+      s ->
+        s
+  in
+  st SM.empty body
+
 (** Mangle OCaml type name to valid C/GLSL identifier (e.g., "Module.point" ->
     "Module_point") *)
 let mangle_name name = String.map (fun c -> if c = '.' then '_' else c) name
