@@ -1,9 +1,9 @@
-# sarek-cuda - CUDA Backend Plugin for SPOC/Sarek
+# sarek-cuda - CUDA Backend Plugin for Sarek
 
 **Package**: `sarek-cuda`  
 **Library**: `sarek-cuda.plugin`
 
-The CUDA backend plugin enables SPOC/Sarek to compile and execute GPU kernels on NVIDIA GPUs using the CUDA runtime and NVRTC (NV Runtime Compilation) library. Uses ctypes-foreign for FFI bindings.
+The CUDA backend plugin enables Sarek to compile and execute GPU kernels on NVIDIA GPUs using the CUDA runtime and NVRTC (NV Runtime Compilation) library. Uses ctypes-foreign for FFI bindings.
 
 ## Table of Contents
 
@@ -21,7 +21,7 @@ The CUDA backend plugin enables SPOC/Sarek to compile and execute GPU kernels on
 
 ## Overview
 
-The CUDA backend is one of five GPU backends supported by SPOC/Sarek. It translates Sarek IR (Intermediate Representation) into CUDA C code, compiles it at runtime using NVRTC, and executes kernels on NVIDIA GPUs.
+The CUDA backend is one of five GPU backends supported by Sarek. It translates Sarek IR (Intermediate Representation) into CUDA C code, compiles it at runtime using NVRTC, and executes kernels on NVIDIA GPUs.
 
 ```
 ┌─────────────────────────────────────────┐
@@ -1219,8 +1219,8 @@ Total: 19 tests, 100% passing
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/SPOC.git
-cd SPOC
+git clone https://github.com/mathiasbourgoin/Sarek.git
+cd Sarek
 
 # Install dependencies
 opam install . --deps-only
@@ -1437,7 +1437,7 @@ MIT License - See LICENSE file for details
 
 ## Authors
 
-Part of the SPOC/Sarek project
+Part of the Sarek project
 
 ## Version History
 

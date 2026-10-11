@@ -1,9 +1,9 @@
-# sarek-opencl - OpenCL Backend Plugin for SPOC/Sarek
+# sarek-opencl - OpenCL Backend Plugin for Sarek
 
 **Package**: `sarek-opencl`  
 **Library**: `sarek-opencl.plugin`
 
-The OpenCL backend plugin enables SPOC/Sarek to compile and execute GPU kernels on OpenCL-compatible devices (GPUs, CPUs, FPGAs) using the OpenCL runtime. Uses ctypes-foreign for FFI bindings.
+The OpenCL backend plugin enables Sarek to compile and execute GPU kernels on OpenCL-compatible devices (GPUs, CPUs, FPGAs) using the OpenCL runtime. Uses ctypes-foreign for FFI bindings.
 
 ## Table of Contents
 
@@ -21,7 +21,7 @@ The OpenCL backend plugin enables SPOC/Sarek to compile and execute GPU kernels 
 
 ## Overview
 
-The OpenCL backend is one of several GPU backends supported by SPOC/Sarek. It translates Sarek IR (Intermediate Representation) into OpenCL C code, compiles it at runtime, and executes kernels on OpenCL devices.
+The OpenCL backend is one of several GPU backends supported by Sarek. It translates Sarek IR (Intermediate Representation) into OpenCL C code, compiles it at runtime, and executes kernels on OpenCL devices.
 
 ```
 ┌─────────────────────────────────────────┐
@@ -751,8 +751,8 @@ sudo apt-get install intel-opencl-icd
 opam install sarek-opencl
 
 # Or build from source
-git clone https://github.com/yourusername/SPOC.git
-cd SPOC
+git clone https://github.com/mathiasbourgoin/Sarek.git
+cd Sarek
 opam install . --deps-only
 dune build sarek-opencl
 ```
@@ -880,7 +880,7 @@ let supports_fp64 = Device.supports_fp64 dev
 
 ## Related Documentation
 
-- [SPOC/Sarek Main README](../README.md)
+- [Sarek main README](../README.md)
 - [Sarek Framework](../sarek/framework/README.md)
 - [CUDA Backend](../sarek-cuda/README.md)
 - [Backend Error Module](../spoc/framework/Backend_error.md)

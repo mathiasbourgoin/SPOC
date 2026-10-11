@@ -4,7 +4,7 @@ Sarek is a Domain-Specific Language (DSL) for writing GPU kernels in OCaml. It p
 
 ## What is Sarek?
 
-Sarek sits on top of the SPOC framework and provides:
+Sarek sits on top of the SPOC runtime layer and provides:
 
 - **PPX Compiler**: Transforms OCaml syntax into GPU code
 - **Type System**: Compile-time type checking for GPU kernels
@@ -258,4 +258,4 @@ See [tests/e2e/](tests/e2e/) for working examples:
 
 - Check component-specific READMEs for detailed information
 - See [../CONTRIBUTING.md](../CONTRIBUTING.md) for contribution guidelines
-- Report issues at [GitHub Issues](https://github.com/mathiasbourgoin/SPOC/issues)
+- Report issues at [GitHub Issues](https://github.com/mathiasbourgoin/Sarek/issues)

@@ -1,9 +1,9 @@
-# sarek-metal - Metal Backend Plugin for SPOC/Sarek
+# sarek-metal - Metal Backend Plugin for Sarek
 
 **Package**: `sarek-metal`  
 **Library**: `sarek-metal.plugin`
 
-The Metal backend plugin enables SPOC/Sarek to compile and execute GPU kernels on Apple Silicon and Intel Macs using Metal Shading Language (MSL) and Metal compute pipelines.
+The Metal backend plugin enables Sarek to compile and execute GPU kernels on Apple Silicon and Intel Macs using Metal Shading Language (MSL) and Metal compute pipelines.
 
 ## Overview
 
@@ -347,7 +347,7 @@ Metal does not support double precision. If you need `float64`, use the CUDA or 
 
 ## License
 
-See main SPOC repository for license information.
+See the main Sarek repository for license information ([LICENSE.md](../LICENSE.md)).
 
 ## Contributing
 
@@ -360,7 +360,7 @@ When contributing to the Metal backend:
 
 ## Related Documentation
 
-- **SPOC Framework**: Main SPOC README
+- **Sarek**: [main README](../README.md)
 - **Sarek PPX**: `sarek/README.md`
 - **Backend Error**: `spoc/framework/Backend_error.ml`
 - **CUDA Backend**: `sarek-cuda/README.md`

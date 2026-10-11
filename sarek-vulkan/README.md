@@ -1,9 +1,9 @@
-# sarek-vulkan - Vulkan/GLSL Backend Plugin for SPOC/Sarek
+# sarek-vulkan - Vulkan/GLSL Backend Plugin for Sarek
 
 **Package**: `sarek-vulkan`  
 **Library**: `sarek-vulkan.plugin`
 
-The Vulkan backend plugin enables SPOC/Sarek to compile and execute GPU kernels on Vulkan-compatible devices using GLSL compute shaders and SPIR-V. Uses ctypes-foreign for FFI bindings.
+The Vulkan backend plugin enables Sarek to compile and execute GPU kernels on Vulkan-compatible devices using GLSL compute shaders and SPIR-V. Uses ctypes-foreign for FFI bindings.
 
 ## Table of Contents
 
@@ -21,7 +21,7 @@ The Vulkan backend plugin enables SPOC/Sarek to compile and execute GPU kernels 
 
 ## Overview
 
-The Vulkan backend is one of several GPU backends supported by SPOC/Sarek. It translates Sarek IR (Intermediate Representation) into GLSL compute shader code, compiles it to SPIR-V, and executes kernels on Vulkan devices.
+The Vulkan backend is one of several GPU backends supported by Sarek. It translates Sarek IR (Intermediate Representation) into GLSL compute shader code, compiles it to SPIR-V, and executes kernels on Vulkan devices.
 
 ```
 ┌─────────────────────────────────────────┐
@@ -700,7 +700,7 @@ Compiled shader saved to `/tmp/sarek_debug.comp` and `/tmp/sarek_debug.spv`.
 
 ## License
 
-See main SPOC repository for license information.
+See the main Sarek repository for license information ([LICENSE.md](../LICENSE.md)).
 
 ## Contributing
 
@@ -714,7 +714,7 @@ When contributing to the Vulkan backend:
 
 ## Related Documentation
 
-- **SPOC Framework**: Main SPOC README
+- **Sarek**: [main README](../README.md)
 - **Sarek PPX**: `sarek/README.md`
 - **Backend Error**: `spoc/framework/Backend_error.ml`
 - **OpenCL Backend**: `sarek-opencl/README.md`
