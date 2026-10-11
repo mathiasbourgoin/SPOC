@@ -42,8 +42,9 @@ type event = (module EVENT)
    belong to the CURRENT device, which a GC finaliser freeing a buffer or a
    launch on another device may have changed. Each event operation (create,
    record, synchronize, elapsed, destroy) therefore runs with the event's device
-   selected, as [Transfer.create_event] and [Transfer.record_event] do. These events only measure: they never gate
-   the release of keep-alive ledger entries, so they stay outside the ledger. *)
+   selected, as [Transfer.create_event] and [Transfer.record_event] do. These
+   events only measure: they never gate the release of keep-alive ledger
+   entries, so they stay outside the ledger. *)
 
 (** Create a timing event on a device *)
 let create_event (dev : Device.t) : event =

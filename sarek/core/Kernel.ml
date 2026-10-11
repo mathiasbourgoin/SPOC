@@ -73,6 +73,7 @@ let compile (device : Device.t) ~(name : string) ~(source : string) : t =
   match Framework_registry.find_backend device.framework with
   | None -> failwith ("Unknown framework: " ^ device.framework)
   | Some (module B : Framework_sig.BACKEND) ->
+      let module L = Launcher (B) in
       let dev = B.Device.get device.backend_id in
       let k = B.Kernel.compile dev ~name ~source in
       Kernel
@@ -82,7 +83,6 @@ let compile (device : Device.t) ~(name : string) ~(source : string) : t =
           let name = name
 
           let launch ~args ~grid ~block ~shared_mem =
-            let module L = Launcher (B) in
             L.launch_on dev k ~args ~grid ~block ~shared_mem
         end : KERNEL)
 
@@ -91,6 +91,7 @@ let compile_cached (device : Device.t) ~(name : string) ~(source : string) : t =
   match Framework_registry.find_backend device.framework with
   | None -> failwith ("Unknown framework: " ^ device.framework)
   | Some (module B : Framework_sig.BACKEND) ->
+      let module L = Launcher (B) in
       let dev = B.Device.get device.backend_id in
       let k = B.Kernel.compile_cached dev ~name ~source in
       Kernel
@@ -100,7 +101,6 @@ let compile_cached (device : Device.t) ~(name : string) ~(source : string) : t =
           let name = name
 
           let launch ~args ~grid ~block ~shared_mem =
-            let module L = Launcher (B) in
             L.launch_on dev k ~args ~grid ~block ~shared_mem
         end : KERNEL)
 
