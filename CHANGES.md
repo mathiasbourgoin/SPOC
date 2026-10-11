@@ -517,12 +517,14 @@
 - The epilogue-fusion coverage check (`Launch_epilogue`) no longer
   enumerates every thread when store indices and guards are affine in the
   thread and work-group indices, also through division, modulo, masks and
-  shifts by powers of two (a warp-per-row matrix-vector product, 4M threads,
-  is proven): `Coverage_affine` proves coverage in a few microseconds (a
+  shifts by powers of two of values that are non-negative over the whole
+  launch, guards not counted (a warp-per-row matrix-vector product, 4M
+  threads, is proven; a guarded `(tid - 1) / 2` is left to enumeration): `Coverage_affine` proves coverage in a few microseconds (a
   128x3584 prefill pair: ~350 ms before, ~4 us after,
   `sarek/execute/test/bench_epilogue_coverage.ml`). This was the cold
   first-prompt cost seen with the launch window on: a cold Katra 0.8B prompt
-  (242 tokens, RX 7900 XTX) runs at 662 tok/s with the window on instead of
+  (242 tokens, RX 7900 XTX; measured with this change on top of 79f92f63)
+  runs at 662 tok/s with the window on instead of
   147, against 644 with epilogue fusion off and 706 with the window off;
   decode is unchanged (236 vs 232 tok/s). No pair of that prompt is
   enumerated any more. Enumeration, still used for other indices (loops,

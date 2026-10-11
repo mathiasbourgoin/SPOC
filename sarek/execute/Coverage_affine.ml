@@ -20,14 +20,17 @@
     - P has exactly one store site to I.
 
     {b Digits.} The six thread and work-group indices start as one digit each,
-    ranging over [\[0, extent)]. Dividing a non-negative value by [2^k], taking
-    it modulo [2^k] (or [land (2^k - 1)], or shifting it right by [k]) is exact
-    when every coefficient but one digit's is a multiple of [2^k], that digit's
-    coefficient is 1, the constant is a multiple of [2^k], and the digit's
-    extent divides by [2^k] or is at most [2^k]: the digit [d] is then split
-    into [d = lo + 2^k * hi], [lo] in [\[0, 2^k)], and the quotient and
-    remainder are affine in the new digits. A warp-per-row index
-    [row = block * 8 + tid / 32] with the guard [tid mod 32 == 0] has this form.
+    ranging over [\[0, extent)] (a launch with an extent of 0 runs no thread and
+    stores nothing). Dividing a value that is non-negative over the whole launch
+    (guards are not taken into account, so a guarded [(tid - 1) / 2] is
+    {!Unknown}) by [2^k], taking it modulo [2^k] (or [land (2^k - 1)], or
+    shifting it right by [k]) is exact when every coefficient but one digit's is
+    a multiple of [2^k], that digit's coefficient is 1, the constant is a
+    multiple of [2^k], and the digit's extent divides by [2^k] or is at most
+    [2^k]: the digit [d] is then split into [d = lo + 2^k * hi], [lo] in
+    [\[0, 2^k)], and the quotient and remainder are affine in the new digits. A
+    warp-per-row index [row = block * 8 + tid / 32] with the guard
+    [tid mod 32 == 0] has this form.
 
     {b Solving.} The digits with a non-zero coefficient in one guard must form a
     {e composite}: sorted by magnitude, the coefficients are [g] times
@@ -374,26 +377,30 @@ let live sp =
 (* The index as units (coefficient, lo, hi) plus its constant: one per
    guarded composite, one per other live digit. *)
 let units sp s =
-  match box sp s with
-  | None -> None
-  | Some guarded ->
-      let index = norm sp s.index in
-      let coef d = Option.value ~default:0 (List.assoc_opt d index.co) in
-      let of_composite k =
-        let d0, _ = List.hd k.digits in
-        let kk = coef d0 in
-        if List.exists (fun (d, w) -> coef d <> kk * w) k.digits then
-          unknown "index not proportional to a guarded composite" ;
-        (kk, k.lo, k.hi)
-      in
-      let free =
-        List.filter
-          (fun d ->
-            not (List.exists (fun k -> List.mem_assoc d k.digits) guarded))
-          (live sp)
-        |> List.map (fun d -> (coef d, 0, extent sp d - 1))
-      in
-      Some (free @ List.map of_composite guarded, index.c)
+  (* A zero extent means no thread at all; digits of extent 0 would otherwise
+     be dropped as if they were the constant 0. *)
+  if Array.exists (( = ) 0) sp.dims then None
+  else
+    match box sp s with
+    | None -> None
+    | Some guarded ->
+        let index = norm sp s.index in
+        let coef d = Option.value ~default:0 (List.assoc_opt d index.co) in
+        let of_composite k =
+          let d0, _ = List.hd k.digits in
+          let kk = coef d0 in
+          if List.exists (fun (d, w) -> coef d <> kk * w) k.digits then
+            unknown "index not proportional to a guarded composite" ;
+          (kk, k.lo, k.hi)
+        in
+        let free =
+          List.filter
+            (fun d ->
+              not (List.exists (fun k -> List.mem_assoc d k.digits) guarded))
+            (live sp)
+          |> List.map (fun d -> (coef d, 0, extent sp d - 1))
+        in
+        Some (free @ List.map of_composite guarded, index.c)
 
 (** {1 Store sets} *)
 
