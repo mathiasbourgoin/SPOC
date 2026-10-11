@@ -45,19 +45,22 @@ let check (ctx : string) (result : cu_result) : unit =
     ctx
     result
 
-(** One launch's argument blocks: the value slots and the array of pointers into
-    them that [cuLaunchKernel] receives. *)
+(** One launch's argument blocks: [slots] holds the argument values, one 8-byte
+    slot each, and [params] the array of pointers into it that [cuLaunchKernel]
+    receives. Both are plain ctypes allocations: the GC owns them, so they must
+    stay reachable (see [retain_kernargs]) until the launch has been consumed.
+
+    The layout is fixed by [Kernel.marshal_args]. *)
 type kernargs = {params : unit ptr ptr; slots : int64 ptr}
 
-(** Host-side kernel-argument buffers (the [CArray] of argument pointers plus
-    the per-argument value cells) for launches that may still be in flight,
-    keyed by device id.
+(** Host-side kernel-argument buffers (the array of argument pointers plus the
+    value slots) for launches that may still be in flight, keyed by device id.
 
     [cuLaunchKernel] is asynchronous. The NVIDIA driver snapshots the kernel
     parameters synchronously before returning, so a caller may free them right
     after the call — but the ZLUDA/HIP stack reads them later, at dispatch time.
     Freeing them when [Kernel.launch] returns is therefore a use-after-free once
-    the OCaml GC reclaims the cells: the GPU then reads recycled host memory as
+    the OCaml GC reclaims the blocks: the GPU then reads recycled host memory as
     the kernel's arguments (observed as an intermittent GPU page fault at a
     host-range address on ZLUDA).
 
