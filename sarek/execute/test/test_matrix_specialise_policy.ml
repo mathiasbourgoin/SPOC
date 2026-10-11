@@ -177,6 +177,8 @@ let test_choose_wires_explicit () =
     | Some ir -> ir
     | None -> Alcotest.fail "no IR"
   in
+  (* The environment may say SAREK_MATRIX_REWRITE=off: the mode is not under test. *)
+  Spec.set_mode Spec.Auto ;
   let decide explicit =
     Spec.choose ~explicit ~device:fake_hip ~ir ~launch:(fun () -> None) ()
   in
