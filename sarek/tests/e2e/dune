@@ -2028,7 +2028,8 @@
   test_matrix_optin
   matrix_rewrite_support
   coopmat_hip_support
-  backend_hip)
+  backend_hip
+  backend_cuda_c)
  (libraries
   sarek
   sarek.stdlib
@@ -2047,7 +2048,12 @@
    backend_hip.ml
    from
    (sarek-hip.plugin -> backend_hip.available.ml)
-   (-> backend_hip.unavailable.ml)))
+   (-> backend_hip.unavailable.ml))
+  (select
+   backend_cuda_c.ml
+   from
+   (sarek_cuda -> backend_cuda_c.available.ml)
+   (-> backend_cuda_c.unavailable.ml)))
  (preprocess
   (pps sarek_ppx)))
 

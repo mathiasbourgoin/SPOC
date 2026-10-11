@@ -298,7 +298,7 @@ let check_grid_limit dev =
 
 let () =
   Random.init 20261011 ;
-  let devices = Array.to_list (Device.init ()) in
+  let devices = List.filter runnable (Array.to_list (Device.init ())) in
   List.iter
     (fun dev ->
       let expect_rewrite = offers_int dev in
