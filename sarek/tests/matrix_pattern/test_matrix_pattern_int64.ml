@@ -50,22 +50,31 @@ let rec map_index f = function
   | ECast (t, a) -> ECast (t, map_index f a)
   | e -> e
 
-(* [f] widens the indices of array reads, [g] those of array stores. *)
-let rec map_stmt f g = function
+(* The comparisons of a guard, both sides cast to int64: [int64 row < int64 m]. *)
+let rec widen_guard = function
+  | EBinop (((And | Or) as op), a, b) ->
+      EBinop (op, widen_guard a, widen_guard b)
+  | EIf (a, b, c) -> EIf (widen_guard a, widen_guard b, c)
+  | EBinop (op, a, b) -> EBinop (op, widen a, widen b)
+  | e -> e
+
+(* [f] widens the indices of array reads, [g] those of array stores, [h] the
+   guards. *)
+let rec map_stmt f g h = function
   | SAssign (LArrayElem (arr, idx), e) ->
       SAssign (LArrayElem (arr, g idx), map_index f e)
   | SAssign (lv, e) -> SAssign (lv, map_index f e)
-  | SSeq ss -> SSeq (List.map (map_stmt f g) ss)
-  | SIf (c, t, e) -> SIf (c, map_stmt f g t, Option.map (map_stmt f g) e)
-  | SFor (v, lo, hi, dir, body) -> SFor (v, lo, hi, dir, map_stmt f g body)
-  | SLet (v, e, body) -> SLet (v, e, map_stmt f g body)
-  | SLetMut (v, e, body) -> SLetMut (v, e, map_stmt f g body)
-  | SBlock s -> SBlock (map_stmt f g s)
-  | SPragma (p, s) -> SPragma (p, map_stmt f g s)
+  | SSeq ss -> SSeq (List.map (map_stmt f g h) ss)
+  | SIf (c, t, e) -> SIf (h c, map_stmt f g h t, Option.map (map_stmt f g h) e)
+  | SFor (v, lo, hi, dir, body) -> SFor (v, lo, hi, dir, map_stmt f g h body)
+  | SLet (v, e, body) -> SLet (v, e, map_stmt f g h body)
+  | SLetMut (v, e, body) -> SLetMut (v, e, map_stmt f g h body)
+  | SBlock s -> SBlock (map_stmt f g h s)
+  | SPragma (p, s) -> SPragma (p, map_stmt f g h s)
   | s -> s
 
-let with_body ?(store = Fun.id) kernel f =
-  {kernel with kern_body = map_stmt f store kernel.kern_body}
+let with_body ?(store = Fun.id) ?(guard = Fun.id) kernel f =
+  {kernel with kern_body = map_stmt f store guard kernel.kern_body}
 
 let int64_kernel = with_body (ir_of k_2d) widen
 
@@ -76,6 +85,9 @@ let int64_offset_kernel =
 
 (* Only the output index is 64-bit. *)
 let int64_output_kernel = with_body ~store:widen (ir_of k_2d) Fun.id
+
+(* Only the guard is 64-bit: the indices stay int32. *)
+let int64_guard_kernel = with_body ~guard:widen_guard (ir_of k_2d) Fun.id
 
 let mentions_int64 text =
   Astring.String.is_infix ~affix:"int64" (String.lowercase_ascii text)
@@ -111,6 +123,8 @@ let test_cast_indices () = check_declined "int64 casts" int64_kernel
 let test_constant_offset () =
   check_declined "int64 constant offset" int64_offset_kernel
 
+let test_guard () = check_declined "int64 guard" int64_guard_kernel
+
 let test_output_index () = check_declined "int64 output" int64_output_kernel
 
 (* FR-C4: the int32 original keeps being recognised and rewritten. *)
@@ -120,14 +134,23 @@ let test_int32_unchanged () =
   | Ok _ -> ()
   | Error why -> Alcotest.failf "int32 rewrite declined: %s" why
 
-(* FR-C3: the advice has no GEMM to claim matrix units for. *)
+(* FR-C3: the advice has no GEMM to claim matrix units for, and the reason is
+   the int64 one (not some other near miss). *)
 let test_no_advice () =
+  let findings = P.analyze int64_kernel in
   Alcotest.(check bool)
     "no GEMM finding for the int64 kernel"
     false
     (List.exists
        (function P.Gemm _ -> true | P.Near_miss _ -> false)
-       (P.analyze int64_kernel))
+       findings) ;
+  Alcotest.(check bool)
+    "the near miss is Int64_arithmetic"
+    true
+    (List.exists
+       (function
+         | P.Near_miss {nm_reason = P.Int64_arithmetic; _} -> true | _ -> false)
+       findings)
 
 let () =
   Alcotest.run
@@ -137,6 +160,7 @@ let () =
         [
           Alcotest.test_case "cast indices" `Quick test_cast_indices;
           Alcotest.test_case "constant offset" `Quick test_constant_offset;
+          Alcotest.test_case "guard" `Quick test_guard;
           Alcotest.test_case "output index" `Quick test_output_index;
           Alcotest.test_case "int32 unchanged" `Quick test_int32_unchanged;
           Alcotest.test_case "no advice" `Quick test_no_advice;

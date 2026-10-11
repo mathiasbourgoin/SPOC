@@ -93,6 +93,13 @@ val is_pure_intrinsic : string -> bool
 (** The let-inlined expression, as atoms are compared. *)
 val inline : env -> expr -> expr
 
+(** Whether an (inlined) expression computes in 64 bits: an [int64] constant, an
+    [int64]-typed variable, a cast to [int64], or a 64-bit shift. {!of_expr}
+    refuses such an expression ({!Wide_index}). The test is conservative: a
+    deliberate [ECast (TInt32, e)] of an int64 [e] is refused too, because the
+    narrowing is what the refusal exists to prevent. *)
+val involves_int64 : expr -> bool
+
 val of_expr : env -> expr -> (t, error) result
 
 (** The coefficient of an atom ({!poly_is_zero} when absent). *)

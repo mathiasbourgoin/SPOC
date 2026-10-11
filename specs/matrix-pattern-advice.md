@@ -52,8 +52,9 @@ done;
   atom-containing terms, a division, modulo, shift or bit operation involving
   `kv`, or an index containing an array read is **not affine** and rejects. An
   index, bound or guard that involves an `int64` constant, variable or cast
-  rejects with the reason `Int64_arithmetic`: the form and the rewrite's
-  addresses are int32, so a 64-bit index is declined, never narrowed.
+  rejects with the reason `Int64_arithmetic` (guards are checked too, since they bound the rewritten region): the form and the rewrite's
+  addresses are int32, so a 64-bit index is declined, never narrowed. The test is conservative: an
+  explicit `int32` cast of an int64 expression is declined as well.
 - `kv` must occur in `ia` and `ib` and not in `ic`. The **M atom** occurs in `ia`
   and `ic` but not `ib`; the **N atom** in `ib` and `ic` but not `ia`; exactly one
   of each. Every other atom of `ic` is a **batch** atom; `ia` and `ib` may

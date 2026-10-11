@@ -323,6 +323,19 @@ let analyse_loop ctx acc init ~before ~after = function
             (inl ox, inl oy)
             (st.st_array, Affine.inline env st.st_index, ec)
         in
+        let guards =
+          List.map
+            (Affine.inline (affine_env ctx ~atoms:[]))
+            (List.rev ctx.guards)
+          @ List.map (Affine.inline env) (Option.to_list st.st_guard)
+        in
+        (* A guard is not an index, but it bounds the rewritten region; a
+           64-bit guard is declined like a 64-bit index (compiler review C-11). *)
+        let* () =
+          if List.exists Affine.involves_int64 guards then
+            Error Int64_arithmetic
+          else Ok ()
+        in
         Ok
           {
             acc;
@@ -338,11 +351,7 @@ let analyse_loop ctx acc init ~before ~after = function
             c;
             update;
             epilogue;
-            guards =
-              List.map
-                (Affine.inline (affine_env ctx ~atoms:[]))
-                (List.rev ctx.guards)
-              @ List.map (Affine.inline env) (Option.to_list st.st_guard);
+            guards;
             enclosing_loops = List.rev ctx.loops;
             unmodelled_control = ctx.unmodelled;
           }

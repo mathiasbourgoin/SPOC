@@ -39,6 +39,17 @@ let test_wide_product () =
     "int64 product"
     (EBinop (Mul, ECast (TInt64, big), ECast (TInt64, big)))
 
+(* A variable of type int64 is refused even when the launch has a value for it
+   (the scalar lookup returns [Some 3l] for every variable). *)
+let test_wide_variable () =
+  let v =
+    {var_name = "n64"; var_id = 7; var_type = TInt64; var_mutable = false}
+  in
+  check_declined "int64 variable" (EVar v) ;
+  check_declined
+    "int64 variable in a sum"
+    (EBinop (Add, EConst (CInt32 1l), EVar v))
+
 let test_int32_unchanged () =
   Alcotest.(check (option int32))
     "int32 sum"
@@ -59,6 +70,7 @@ let () =
         [
           Alcotest.test_case "wide constant" `Quick test_wide_constant;
           Alcotest.test_case "wide product" `Quick test_wide_product;
+          Alcotest.test_case "wide variable" `Quick test_wide_variable;
           Alcotest.test_case "int32 unchanged" `Quick test_int32_unchanged;
         ] );
     ]
