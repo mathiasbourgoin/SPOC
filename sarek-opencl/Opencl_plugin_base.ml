@@ -14,6 +14,15 @@
 
 open Spoc_framework
 
+(** TEST-ONLY hooks. Nothing in the library sets these; production behaviour
+    never depends on them. *)
+module For_testing = struct
+  (** When [true], [alloc_zero_copy] also accepts non-CPU devices, so the
+      CL_MEM_USE_HOST_PTR synchronisation paths can be exercised on a machine
+      whose only OpenCL devices are GPUs. *)
+  let zero_copy_on_any_device = ref false
+end
+
 module Opencl : Framework_sig.PLUGIN_BASE = struct
   let name = "OpenCL"
 
@@ -121,7 +130,11 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
       {buf; device_id = device.id}
 
     let alloc_zero_copy device ba kind =
-      if not device.Opencl_api.Device.is_cpu then None
+      if
+        not
+          (device.Opencl_api.Device.is_cpu
+          || !For_testing.zero_copy_on_any_device)
+      then None
       else begin
         let state = get_state device.Opencl_api.Device.id in
         let size = Bigarray.Array1.dim ba in
