@@ -340,6 +340,18 @@
   `Opencl_plugin_base.For_testing.zero_copy_on_any_device` is renamed
   `host_ptr_on_any_device`.
 
+- Native kernels read float32 and int32 vector elements with an inline load
+  and write them with `Vector.set`, without the `typed_value` round trip
+  (`sarek/plugins/native/Native_vec_access.ml`). Each `v.(i)` used to go through
+  the vector's `typed_value` interface and a polymorphic bigarray read, 9-10
+  words allocated per access; on a multi-domain pool every minor collection
+  stops all domains. Now 2 (float32) or 3 (int32) words, same bounds check,
+  host sync and results. `benchmarks/bench_native_matvec.exe` (1024 x 3072
+  Q8_0-style matvec, 8 selections, 28 domains on a 7950X): wave kernel 370 ->
+  123 ms, barrier-free row kernel 167 -> 38 ms (medians, load ~38). OpenCL on
+  the same CPU runs them in ~1.0 and ~0.6 ms. Test:
+  `sarek/plugins/native/test/test_native_vec_access.ml`.
+
 - `Spoc_core.Memory.bigarray_void_ptr` is replaced by
   `Memory.borrow_bigarray_ptr`, whose pointer need not root the bigarray: the
   caller keeps it reachable, on transfer paths with a trailing
