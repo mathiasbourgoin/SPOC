@@ -247,7 +247,7 @@ let case label = List.find (fun pc -> pc.label = label) float_cases
 let () =
   Random.init 20261011 ;
   let devices = Array.to_list (Device.init ()) in
-  let rewriters = List.filter offers_int devices in
+  let rewriters = List.filter offers_float devices in
   List.iter
     (fun dev ->
       refused dev (case "f16 inputs") "f16 before accept_relaxed_accumulation" ;

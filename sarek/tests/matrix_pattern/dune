@@ -10,12 +10,14 @@
  (names
   test_matrix_pattern_pos
   test_matrix_pattern_neg
-  test_matrix_pattern_int64)
+  test_matrix_pattern_int64
+  test_matrix_template_golden)
  (modules
   matrix_pattern_check
   test_matrix_pattern_pos
   test_matrix_pattern_neg
-  test_matrix_pattern_int64)
+  test_matrix_pattern_int64
+  test_matrix_template_golden)
  (libraries sarek sarek_stdlib sarek_ir alcotest astring fmt)
  (preprocess
   (pps sarek_ppx))

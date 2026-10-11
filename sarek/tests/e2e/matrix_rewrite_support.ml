@@ -319,7 +319,7 @@ let cases =
 
 let offers_int dev =
   dev.Device.framework = "Interpreter"
-  || dev.Device.framework = "HIP"
+  || (dev.Device.framework = "HIP" || dev.Device.framework = "Vulkan")
      && Sarek_capability.permits
           (Sarek_coopmat.verdict
              ~support:
@@ -362,3 +362,7 @@ let k_f16_accum =
         done ;
         c.(o) <- sum
       end]
+
+(* The float lowerings stay on HIP and the interpreter (specs/matrix-pattern-rewrite.md):
+   Vulkan and CUDA/C take the integer lowering only. *)
+let offers_float dev = dev.Device.framework <> "Vulkan" && offers_int dev

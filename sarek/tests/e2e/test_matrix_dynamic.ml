@@ -449,7 +449,7 @@ let () =
   Random.init 20261011 ;
   let devices = Array.to_list (Device.init ()) in
   List.iter int_phase devices ;
-  let rewriters = List.filter offers_int devices in
+  let rewriters = List.filter offers_float devices in
   Sarek_coopmat.accept_relaxed_accumulation ~reason:"test_matrix_dynamic" ;
   Sarek_coopmat.accept_automatic_float_rewrite ~reason:"test_matrix_dynamic" ;
   List.iter float_phase rewriters ;
