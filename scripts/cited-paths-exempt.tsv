@@ -91,3 +91,5 @@ kb/sarek/ppx/parser.md::lib/ppxlib/astlib/ast_502.ml	same installed ppxlib; name
 docs/measurements/codegen-lsr-unroll-2026-10-10/README.md::e1878fb	commit of the spoc_llm repository (benchmark source), not of this repository
 docs/optimization/l15b-mma-probe.md::af8a3b1	commit of the ZLUDA repository (github.com/vosen/ZLUDA, v7-preview.3 build under test), not of this repository
 specs/zluda-mma-nvrtc13.md::af8a3b1	commit of the ZLUDA repository (v7-preview.3 build under test), not of this repository
+gh-pages/docs/getting_started.md::../spoc_docs/index.html	odoc output built by docs.yml and copied into the published site; gh-pages/spoc_docs/ is deliberately not tracked
+gh-pages/examples/index.md::../spoc_docs/index.html	same: odoc output built by docs.yml, not tracked
