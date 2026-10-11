@@ -184,8 +184,9 @@
   the next one, waiting for the GPU queue both times; its documentation now
   says so. Measured with `sarek-hip/test/bench_hip_small_writes.exe` (RX 7900
   XTX, 8 int32 + 8 float32 rewritten, 300 us host work, 4 launches per
-  iteration, three runs): 709–712 us per iteration with `Vector.set`,
-  333–343 with `stage_to_device`, 320–324 without any rewrite. Native,
+  iteration, three runs, 2026-10-10): 705.2–715.1 us per iteration with
+  `Vector.set`, 330.1–338.9 with `stage_to_device`, 322.0–322.5 without any
+  rewrite. Native,
   Interpreter and Metal perform a synchronous ranged copy; OpenCL, Vulkan and
   WebGPU refuse. Spec `specs/transfer-pitfalls.md`.
 

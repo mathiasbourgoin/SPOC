@@ -1799,9 +1799,11 @@ let staged_copy st ~(dev : Device.t) ~(stream : stream) ~src_addr ~byte_size
     kernel), and the next launch uploads it again with a synchronous copy that
     waits for the queue once more. Measured (bench_hip_small_writes, RX 7900
     XTX, 8 int32 + 8 float32 rewritten, then 300 us of host work, then 4
-    launches, three runs): 709-712 us per iteration with [Vector.set] (339-344
-    us of it in the writes), 333-343 us with [stage_to_device] (10-13 us in the
-    writes), 320-324 us with no rewrite at all.
+    launches, three runs, 2026-10-10, raw output in
+    docs/measurements/transfer-pitfalls-2026-10-10/bench_hip_small_writes.txt):
+    705.2-715.1 us per iteration with [Vector.set] (341.3-346.4 us of it in the
+    writes), 330.1-338.9 us with [stage_to_device] (9.1-11.5 us in the writes),
+    322.0-322.5 us with no rewrite at all.
 
     [src] is copied into SPOC-owned pinned staging memory before the call
     returns, so the caller may overwrite it immediately. The copy to [dst] is
@@ -1826,6 +1828,7 @@ let staged_copy st ~(dev : Device.t) ~(stream : stream) ~src_addr ~byte_size
     every run (0 of 20 against 4 of 20), so finaliser work during the loop is
     the lead; the mechanism is not established. The RX 7900 XTX never showed it
     (specs/transfer-pitfalls.md C-9, issue #427,
+    docs/measurements/transfer-pitfalls-2026-10-10/stress_hip_staged_launches.txt,
     sarek-hip/test/stress_hip_staged_launches.ml).
 
     HIP, CUDA: as above. Native, Interpreter, Metal (no asynchronous copies): a

@@ -11,7 +11,7 @@ When a program issues many small kernels, the host time spent on each launch can
 
 | Feature | HIP | OpenCL | Vulkan | CUDA, Metal | Native, Interpreter, CPU devices |
 |---|---|---|---|---|---|
-| Launch window (deferral, horizontal fusion) | on | on | on | off | never |
+| Launch window (deferral, horizontal fusion) | on | on | on | off (also WebGPU) | never |
 | Epilogue fusion | on | off | off | off | never |
 
 - The window is on by default for the backends in the first row, and a device is excluded from deferral if it is a CPU device (OpenCL allocates zero-copy buffers there that alias host memory). Native and Interpreter execute directly and are never deferred.
@@ -42,11 +42,11 @@ At most 8 groups of launches are held; a ninth issues the oldest first. A group 
 
 ## Error timing
 
-Argument checks, capability checks, source generation and argument expansion run inside the `run` or `run_vectors` call, so those errors are raised where the launch is made. Device compilation and the driver launch happen when the launch is issued. A failure there is raised by whichever call flushed the window (for example `Transfer.flush` or `Vector.get`), not by the launch that caused it. The other held launches are still issued, and the first exception is re-raised afterwards. If the window overflows, the oldest group is issued before the new launch is accepted; if that raises, the new launch is not made. A failed deferred launch at program exit is printed on stderr.
+Argument checks, capability checks, source generation and argument expansion run inside the `run` or `run_vectors` call, so those errors are raised where the launch is made. Device compilation and the driver launch happen when the launch is issued. A failure there is raised by whichever call flushed the window (for example `Transfer.flush` or `Vector.get`), not by the launch that caused it. The other held groups are still issued and the first exception is re-raised afterwards. One known exception: if a merged epilogue kernel fails and falls back, the producer is issued first and, if it raises, the consumer is not issued ([issue #459](https://github.com/mathiasbourgoin/Sarek/issues/459)). If the window overflows, the oldest group is issued before the new launch is accepted; if that raises, the new launch is not made. A failed deferred launch at program exit is printed on stderr.
 
 If you need an error at the launch site while debugging, turn the window off (below).
 
-A fused kernel that fails to build or launch does not fail your program: its members are issued one by one, and that combination is not fused again in the process.
+A fused kernel that fails to build or launch does not fail your program: its members are issued one by one, and that combination is not fused again until `Execute.Window.clear_fused_cache ()` is called.
 
 ## See what happened
 
@@ -57,10 +57,10 @@ A fused kernel that fails to build or launch does not fail your program: its mem
 | `submitted` | JIT launches made through `run` and `run_vectors` |
 | `issued` | backend launches actually made |
 | `fused_groups` | groups of several launches issued as one kernel |
-| `fused_built` | distinct fused kernels built |
+| `fused_built` | distinct fused kernels built; `reset_stats` does not reset it |
 | `fused_refused` | launch sequences whose fusion failed |
 
-If `issued` is lower than `submitted`, launches were merged. The example launches two kernels that read the same input and write different outputs; they can run as one launch.
+If `issued` is lower than `submitted`, launches were merged. Horizontal merges also raise `fused_groups`; epilogue merges do not, and show only as `issued` lower than `submitted`. The example launches two kernels that read the same input and write different outputs; they can run as one launch.
 
 ```ocaml
 open Sarek
@@ -117,7 +117,7 @@ let run_two dev =
     (Vector.get z 0)
 ```
 
-On HIP this prints `submitted=2 issued=1 fused_groups=1`; with the window off it prints `issued=2`. Two launches are fused only if they are independent: if the second reads what the first writes, they are issued in order as two launches.
+On HIP this should print `submitted=2 issued=1 fused_groups=1`; with the window off, `issued=2`. A test with a fake backend checks the mechanism (`sarek/execute/test/test_launch_window.ml:378-379`). Two launches are fused only if they are independent: if the second reads what the first writes, they are issued in order as two launches.
 
 ## Turn it off or on
 
@@ -152,7 +152,7 @@ Horizontal fusion merges launches that all hold:
 
 - same device, same block dimensions, same grid y and z, no dynamic shared memory;
 - no dependency between them: they do not bind the same vector with at least one of them writing it;
-- a kernel that uses only Sarek stdlib intrinsics, has no free variables, and uses shared arrays of constant size declared at the top of the body; a kernel that reads `grid_dim_x` is not fused;
+- a kernel that uses only Sarek stdlib intrinsics, has no free variables, and uses shared arrays of constant size declared at the top of the body; a kernel that reads `grid_dim_x`, uses the `block_id_x` alias (write `block_idx_x`), reads a position intrinsic in a helper function, or contains a cooperative-matrix statement or inline native code is not fused;
 - the summed grid x and shared memory stay within the device's limits.
 
 Launches that do not qualify stay in the window and are issued in order. A launch may join an earlier held group only if it conflicts with nothing in that group or in any later one, so independent launches can be issued ahead of an unrelated launch.
