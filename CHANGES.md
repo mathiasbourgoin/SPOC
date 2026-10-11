@@ -2,6 +2,17 @@
 
 ### Fixed
 
+- The divergent-barrier check works under `let open Sarek_stdlib.Std in`
+  (#447). The PPX auto-opens `Gpu`; an explicit `let open Std in` then replaced
+  each `Gpu` entry with the registry's, which carries no convergence class, so
+  `block_barrier` (and the other convergence points) lost the requirement and
+  `if thread_idx_x > 16l then block_barrier ()` compiled in the documented
+  style. The recorded class is now kept. A kernel that was accepted only
+  because of this and has a barrier under thread-varying control is now
+  rejected, as it is without the open (`sarek/tests/negative/test_shared_tuple.ml`
+  was one). Regression tests: `sarek/tests/negative/test_barrier_open_std.ml`,
+  `sarek/tests/unit/test_convergence.ml` ("name resolution").
+
 - `SAREK_DEBUG=kernel` (and any other component named without a level) now
   prints that component's debug messages, as the backend READMEs say (R-43).
   Before, the level stayed at `warn`, so `Log.debug` printed nothing. A level
