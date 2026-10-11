@@ -71,6 +71,27 @@ let unknown_component_refused () =
         ^ Ppxlib.Pprintast.string_of_expression e)
   | exception Ppxlib.Location.Error _ -> ()
 
+(* A 4-tuple has no Sarek_tuple_vec builder: the identity stays a run-time
+   refusal on Native, as for any other unsupported element type, rather than
+   stopping the expansion of a kernel other backends can run. *)
+let unsupported_arity_left_to_run_time () =
+  let code =
+    render (TTuple [TReg Float32; TReg Float32; TReg Float32; TReg Float32])
+  in
+  Alcotest.(check bool)
+    ("run-time refusal in: " ^ code)
+    true
+    (contains ~sub:"unsupported custom type identity" code)
+
+(* Only the tuple-shape grammar ([_tup] then [_<tag>] words) is decoded; another
+   record whose name starts with [_tup] keeps its [<name>_custom] binding. *)
+let record_named_like_a_tuple () =
+  let code =
+    Ppxlib.Pprintast.string_of_expression
+      (Sarek_native_gen_base.custom_descriptor_expr ~loc "_tupper")
+  in
+  Alcotest.(check string) "record descriptor" "_tupper_custom" code
+
 let same_type_id (type a) (x : a Type_id.t) (y : a Type_id.t) =
   match Type_id.equal x y with Some Type_id.Refl -> true | None -> false
 
@@ -104,6 +125,41 @@ let same_ocaml_type_distinct_shapes () =
     (8, 16)
     (narrow.Vector.elem_size, wide.Vector.elem_size)
 
+type any_component = Any : string * 'a TV.component -> any_component
+
+let components =
+  [
+    Any ("float32", TV.float32);
+    Any ("float64", TV.float64);
+    Any ("int32", TV.int32);
+    Any ("int64", TV.int64);
+  ]
+
+(* Builds every pair and triple shape twice: the second build must return the
+   first descriptor, and each shape must get its own descriptor (a slot shared
+   by two shapes would hand one the other's name, or refuse). *)
+let every_shape_has_its_own_slot () =
+  let names = Hashtbl.create 80 in
+  let check (type t) expected (build : unit -> t Vector.custom_type) =
+    let first = build () in
+    Alcotest.(check bool) (expected ^ " memoised") true (first == build ()) ;
+    Alcotest.(check string) (expected ^ " name") expected first.Vector.name ;
+    Hashtbl.replace names first.Vector.name ()
+  in
+  List.iter
+    (fun (Any (ta, a)) ->
+      List.iter
+        (fun (Any (tb, b)) ->
+          check (Printf.sprintf "_tup_%s_%s" ta tb) (fun () -> TV.pair a b) ;
+          List.iter
+            (fun (Any (tc, c)) ->
+              check (Printf.sprintf "_tup_%s_%s_%s" ta tb tc) (fun () ->
+                  TV.triple a b c))
+            components)
+        components)
+    components ;
+  Alcotest.(check int) "distinct shapes" 80 (Hashtbl.length names)
+
 let () =
   Alcotest.run
     "Sarek_tuple_vec Native descriptor"
@@ -116,6 +172,14 @@ let () =
             "unknown component refused"
             `Quick
             unknown_component_refused;
+          Alcotest.test_case
+            "unsupported arity left to run time"
+            `Quick
+            unsupported_arity_left_to_run_time;
+          Alcotest.test_case
+            "record named like a tuple"
+            `Quick
+            record_named_like_a_tuple;
         ] );
       ( "canonical descriptor",
         [
@@ -127,5 +191,9 @@ let () =
             "float32 and float64 shapes differ"
             `Quick
             same_ocaml_type_distinct_shapes;
+          Alcotest.test_case
+            "every shape has its own slot"
+            `Quick
+            every_shape_has_its_own_slot;
         ] );
     ]
