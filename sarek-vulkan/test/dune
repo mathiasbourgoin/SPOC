@@ -87,9 +87,12 @@
 ; surfaces at the first wait. Fence waits are bounded at 30 s so a missed
 ; synchronisation ends in an error rather than a hang.
 
-(test
- (name test_vulkan_async_launches)
- (modules test_vulkan_async_launches)
+(tests
+ (names test_vulkan_async_launches test_vulkan_async_robustness)
+ (modules
+  test_vulkan_async_launches
+  test_vulkan_async_robustness
+  vulkan_async_support)
  (libraries sarek_vulkan spoc_framework sarek_backend_error alcotest)
  (action
   (setenv

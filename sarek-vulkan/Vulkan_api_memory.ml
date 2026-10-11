@@ -22,6 +22,19 @@ type 'a buffer = {
     buffer freed from a GC finaliser that failed silently stays counted). *)
 let live_allocations = Atomic.make 0
 
+(** Test hook: when [true], the next allocation attempt fails once as an
+    out-of-memory error, then the hook clears itself. *)
+let inject_alloc_failure = ref false
+
+let fail_if_injected bytes =
+  if !inject_alloc_failure then begin
+    inject_alloc_failure := false ;
+    Vulkan_error.raise_error
+      (Vulkan_error.memory_allocation_failed
+         (Int64.of_int bytes)
+         "injected allocation failure")
+  end
+
 (** Find suitable memory type *)
 let find_memory_type dev type_filter properties =
   let props = dev.Device.memory_properties in
@@ -91,6 +104,7 @@ let run_single_time_command device record_fn =
 
       Vulkan_api_barrier.before_copy cmd_buf ;
       record_fn cmd_buf ;
+      Vulkan_api_barrier.after_copy cmd_buf ;
 
       check "vkEndCommandBuffer" (vkEndCommandBuffer cmd_buf) ;
 
@@ -196,7 +210,8 @@ let create_staging_buffer device size usage =
     cleanup () ;
     raise e
 
-let alloc device size kind =
+let alloc_once device size kind =
+  fail_if_injected size ;
   (* NOT Ctypes_static.sizeof (Ctypes.typ_of_bigarray_kind kind): ctypes' kind
      GADT has no Float16 arm and raises Failure "Unsupported bigarray kind", so
      [Vector.create Vector.float16 n] died here with an opaque ctypes error
@@ -330,7 +345,8 @@ let alloc device size kind =
     cleanup () ;
     raise e
 
-let alloc_custom device ~size ~elem_size =
+let alloc_custom_once device ~size ~elem_size =
+  fail_if_injected size ;
   let byte_size = size * elem_size in
 
   let buf_info = make vk_buffer_create_info in
@@ -432,17 +448,48 @@ let alloc_custom device ~size ~elem_size =
     cleanup () ;
     raise e
 
-(** Releases [buf] once the launches recorded so far have completed (the batch
-    code runs the release at its next quiescent point). Never takes a lock, so
-    it is safe from a GC finaliser. *)
+(** Destroy [buf]'s Vulkan objects. Only when no launch can use the buffer. *)
+let release_now buf =
+  (match buf.mapped_ptr with
+  | Some _ -> vkUnmapMemory buf.device.Device.device buf.memory
+  | None -> ()) ;
+  vkDestroyBuffer buf.device.Device.device buf.buffer null ;
+  vkFreeMemory buf.device.Device.device buf.memory null ;
+  Atomic.decr live_allocations
+
+(** Run [attempt]; if it fails while releases are queued for [device], they may
+    be what the failure was short of: complete the launches, release them and
+    try once more. Allocation never runs in a finaliser, so taking the batch
+    lock here is safe. *)
+let with_release_retry device attempt =
+  try attempt ()
+  with
+  | Vulkan_error.Vulkan_error _
+  when Atomic.get device.Device.deferred_count > 0
+  ->
+    !Device.drain_pending device ;
+    attempt ()
+
+let alloc device size kind =
+  with_release_retry device (fun () -> alloc_once device size kind)
+
+let alloc_custom device ~size ~elem_size =
+  with_release_retry device (fun () ->
+      alloc_custom_once device ~size ~elem_size)
+
+(** Queue the release of [buf] until the launches recorded so far have
+    completed, then release at once if the batch lock is free to take without
+    blocking. [free] runs from [Gc.finalise] finalisers, which OCaml 5 runs at
+    any allocation point of any domain, even inside [batch_lock] or
+    [queue_lock]; it must never block on a lock nor raise. When the lock is held
+    (possibly by this very domain) or the drain fails, the release stays queued
+    for the next drain, device wait, or launch (see
+    {!Vulkan_api_stream.release_deferred}). *)
 let free buf =
-  Device.defer_free buf.device (fun () ->
-      (match buf.mapped_ptr with
-      | Some _ -> vkUnmapMemory buf.device.Device.device buf.memory
-      | None -> ()) ;
-      vkDestroyBuffer buf.device.Device.device buf.buffer null ;
-      vkFreeMemory buf.device.Device.device buf.memory null ;
-      Atomic.decr live_allocations)
+  let device = buf.device in
+  Device.defer_free device ~bytes:(buf.size * buf.elem_size) (fun () ->
+      release_now buf) ;
+  try !Device.try_drain_pending device with _ -> ()
 
 (** Vulkan doesn't expose device pointers like CUDA. Return 0 as placeholder.
     Binding uses the buffer handle directly via set_arg_buffer. *)
