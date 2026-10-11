@@ -115,11 +115,9 @@
 # SCOPE OF RULE 2, stated rather than assumed. Exactly the `<name>.opam` files
 # at the repository root for the packages `dune-project` declares -- seven
 # today. Each must exist; a declared package with no root .opam is a refusal,
-# not a smaller set to be quietly content with. `.pending-opam/` also holds
-# tracked .opam files and they are deliberately OUT of scope: they are not
-# generated from this dune-project (different licence, `ocaml >= 4.14.0`, a
-# `sarek-framework` package that no longer exists), so applying a rule about
-# this dune-project's output to them would be a category error.
+# not a smaller set to be quietly content with. (A `.pending-opam/` staging
+# directory of hand-written .opam files, not generated from this dune-project,
+# used to be tracked and was out of scope for the same reason; it is gone.)
 #
 # WHAT THIS GATE DOES NOT DO. It does not run two dunes and compare. It cannot
 # discover a FUTURE dune generation change of some other shape; it enforces the
@@ -633,8 +631,7 @@ if not dedup_guaranteed and explicit:
 # --- rule 2: no generated .opam carries a multi-term `dune` constraint ------
 # Scope is exactly the packages dune-project declares, resolved to <name>.opam
 # at the repository root. Stated, not globbed: `*.opam` would also be satisfied
-# by a shrinking set, and `.pending-opam/` holds tracked .opam files that are
-# not this dune-project's output at all.
+# by a shrinking set.
 missing = [p for p in packages if not os.path.isfile(p + ".opam")]
 if missing:
     refuse("%s declares package(s) with no .opam file at the repository root: "
