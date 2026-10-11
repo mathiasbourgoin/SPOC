@@ -106,8 +106,12 @@ reset_sandbox
 # shows up first.
 edit_json "$WORK/gen/convergence-safety.json" \
   'm = d["modules"]["ConvergenceSpec.ConvergenceSpec"]; m["theorems"].append("brand_new_lemma"); m["counts"]["theorems"] += 1; d["counts"]["theorems"] += 1'
+# Derived from the committed ledger, so the case does not go stale whenever a
+# theorem is added (it hard-coded 111 until the superstep settlement made it 125).
+conv_count=$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["counts"]["theorems"])' \
+  "$WORK/repo/formal/convergence-safety/proof-ledger.json")
 expect "a new proof with a stale ledger is caught" 1 \
-  "counts.theorems: committed 111, actual 112"
+  "counts.theorems: committed ${conv_count}, actual $((conv_count + 1))"
 
 reset_sandbox
 # The nastiest case: the totals still agree, only a NAME changed. This is what
