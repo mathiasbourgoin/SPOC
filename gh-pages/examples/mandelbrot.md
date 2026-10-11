@@ -70,6 +70,7 @@ let run_mandelbrot () =
   (* Calculate grid dimensions - using 16x16 blocks *)
   let block = Execute.dims2d 16 16 in
   let grid = Execute.dims2d ((width + 15) / 16) ((height + 15) / 16) in
+  (* Register the backends you use; see "Using Sarek in a dune project" in Getting Started *)
   Sarek_native.Native_plugin.init () ;
   let dev =
     match Device.best () with

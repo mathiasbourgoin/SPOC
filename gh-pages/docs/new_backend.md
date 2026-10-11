@@ -75,7 +75,7 @@ Your plugin must implement several core modules:
 
 ## 5. Plugin Registration
 
-Register your backend with a `priority`. Priorities order the backends registered under one family name and decide `Framework_registry.best_backend`. The bundled backends use 100 for CUDA/PTX, 95 for Metal, 90 for OpenCL, 80 for Vulkan and HIP, 10 for Native and 5 for the Interpreter.
+Register your backend with a `priority`. Priorities order the backends registered under one family name and decide `Framework_registry.best_backend`. The bundled backends use 100 for CUDA/PTX, 95 for Metal, 90 for OpenCL and CUDA/C, 80 for Vulkan and HIP, 10 for Native and 5 for the Interpreter.
 
 A plugin registers when its module is initialised and exposes an `init` function that forces the registration. A program that calls `init` links the module, which a mere `libraries` entry does not do (see [Using Sarek in a dune project](getting_started.html#using-sarek-in-a-dune-project)). The bundled plugins register only when the backend reports itself available:
 

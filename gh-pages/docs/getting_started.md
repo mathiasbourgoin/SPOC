@@ -152,7 +152,7 @@ A project that uses Sarek needs the `sarek.ppx` preprocessor, the libraries it c
   (:standard -w -33)))
 ```
 
-The `flags` line is needed in dune's default `dev` profile: the code `[%kernel ...]` expands to opens a module the kernel may not use, and warning 33 (unused open) is an error there.
+The `flags` line is needed in dune's default `dev` profile: the code `[%kernel ...]` expands to an `open` of a module the kernel may not use, and warning 33 (unused open) is an error there.
 
 | Library | Provides | Backend init call |
 |---|---|---|
@@ -160,20 +160,22 @@ The `flags` line is needed in dune's default `dev` profile: the code `[%kernel .
 | `sarek.stdlib` | `Sarek_stdlib.Std`, the kernel intrinsics | none |
 | `sarek.native` | `Native` CPU backend (OCaml 5 domains) | `Sarek_native.Native_plugin.init ()` |
 | `sarek.interpreter` | `Interpreter` CPU backend (debugging) | `Sarek_interpreter.Interpreter_plugin.init ()` |
-| `sarek-cuda.plugin` | `CUDA/PTX` and `CUDA/C` | `Sarek_cuda.Cuda_plugin.init ()` |
+| `sarek-cuda.plugin` | `CUDA/PTX` (default CUDA path) | `Sarek_cuda.Cuda_plugin.init ()` |
+| `sarek-cuda.plugin` | `CUDA/C` (NVRTC) | `Sarek_cuda.Cuda_c_plugin.init ()` (it is not registered by the PTX call) |
 | `sarek-hip.plugin` | `HIP` | `Sarek_hip.Hip_plugin.init ()` |
 | `sarek-opencl.plugin` | `OpenCL` | `Sarek_opencl.Opencl_plugin.init ()` |
 | `sarek-vulkan.plugin` | `Vulkan` | `Sarek_vulkan.Vulkan_plugin.init ()` |
 | `sarek-metal.plugin` | `Metal` | `Sarek_metal.Metal_plugin.init ()` |
 
-Adding a backend library to `libraries` is not enough: the program must call that backend's `init` (or otherwise refer to one of its modules) before `Device.init`, otherwise the linker drops the library and the backend never registers. Call the `init` of every backend you list; an `init` is harmless when the driver is missing, and the backend then does not appear among the devices. Backends are tried in the order `Device.init` lists them (CUDA, HIP, OpenCL, Vulkan, Metal, Native, Interpreter); pass `~frameworks:["OpenCL"; "Native"]` to choose.
+Adding a backend library to `libraries` is not enough: the program must call that backend's `init` (or otherwise refer to one of its modules) before `Device.init`, otherwise the linker drops the library and the backend never registers. Call the `init` of every backend you list; an `init` is harmless when the driver is missing, and the backend then does not appear among the devices. Backends are tried in the order `Device.init` lists them (CUDA, HIP, OpenCL, Vulkan, Metal, Native, Interpreter); pass `~frameworks:["OpenCL"; "Native"]` to choose. The `~frameworks` list only applies to the first `Device.init` call (or the first after `Device.reset ()`); later calls return the devices already enumerated.
 
 ```ocaml
 (* Register every backend this program was linked with. *)
 let register_backends () =
   Sarek_native.Native_plugin.init () ;
   Sarek_interpreter.Interpreter_plugin.init () ;
-  Sarek_cuda.Cuda_plugin.init () ;
+  Sarek_cuda.Cuda_plugin.init () ;      (* CUDA/PTX *)
+  Sarek_cuda.Cuda_c_plugin.init () ;    (* CUDA/C *)
   Sarek_hip.Hip_plugin.init () ;
   Sarek_opencl.Opencl_plugin.init () ;
   Sarek_vulkan.Vulkan_plugin.init () ;

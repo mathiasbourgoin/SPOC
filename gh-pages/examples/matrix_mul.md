@@ -90,6 +90,7 @@ module Vector = Spoc_core.Vector
 
 let run_matmul () =
   let m, n, k = 1024, 1024, 1024 in
+  (* Register the backends you use; see "Using Sarek in a dune project" in Getting Started *)
   Sarek_native.Native_plugin.init () ;
   let dev =
     match Device.best () with

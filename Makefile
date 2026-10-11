@@ -316,11 +316,18 @@ test_sarek_core:
 	dune build @sarek/core/test/runtest
 	@echo "=== Sarek core tests passed ==="
 
-# Run all tests: unit tests, e2e tests, negative tests, and spoc tests
+# Compile every ocaml block of the documentation (sarek/tests/doc_snippets)
+snippets:
+	@echo "=== Documentation snippets ==="
+	dune build @snippets
+	@echo "=== Documentation snippets compile ==="
+
+# Run all tests: unit tests, e2e tests, negative tests, spoc tests and
+# documentation snippets
 # check-opam-clean pulls in check-dune-opam-portability as a prerequisite, which
 # orders them under `-j` whatever else lists them; naming both here would just
 # be redundant.
-test-all: test test_spoc test_sarek_core test_interpreter test_negative check-opam-clean
+test-all: test test_spoc test_sarek_core test_interpreter test_negative snippets check-opam-clean
 	@echo "=== All tests passed ==="
 
 # Review-pipeline gate contracts. Kept OUT of test-all on purpose: test-all runs

@@ -24,7 +24,7 @@ Targets NVIDIA GPUs using the CUDA Driver API and NVRTC (Runtime Compilation).
 - **Performance**: Native CUDA performance; uses JIT compilation to optimize for the specific GPU architecture.
 - **Setup**: Requires `libcuda.so` and `libnvrtc.so` in your library path.
 
-Build it from the repository (`dune build sarek-cuda`), list `sarek-cuda.plugin` in your `libraries`, and call `Sarek_cuda.Cuda_plugin.init ()` before `Device.init` (see [Getting Started](getting_started.html#using-sarek-in-a-dune-project)).
+Build it from the repository (`dune build sarek-cuda`), list `sarek-cuda.plugin` in your `libraries`, and call `Sarek_cuda.Cuda_plugin.init ()` (CUDA/PTX, the default path) and, if you want the NVRTC path, `Sarek_cuda.Cuda_c_plugin.init ()` (CUDA/C) before `Device.init` (see [Getting Started](getting_started.html#using-sarek-in-a-dune-project)).
 
 ## OpenCL Backend (`sarek-opencl`)
 

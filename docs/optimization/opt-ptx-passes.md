@@ -350,7 +350,7 @@ tracking at all. Combined with:
   `Sarek_ir_ptx_expr.ml:450`) — a fresh register set per call, never shared
   with the caller's.
 - A recursive-but-`[@sarek.inline N]`-pragma'd helper (the `fib` example
-  documented in `sarek/ppx/README.md:198-206`) multiplies this: each of the up
+  documented in `sarek/ppx/README.md:218-236`) multiplies this: each of the up
   to `N` levels of unrolled recursive inlining duplicates the *entire*
   register footprint of the remaining call tree, so register count grows
   combinatorially with inline depth, not linearly with source size — this is

@@ -246,7 +246,7 @@ The PPX rejects, with a located error, kernels that:
 
 The negative tests in [sarek/tests/negative/](../tests/negative/) pin each of these. They are built only in the `negative` dune profile, where a build failure is the expected result.
 
-Observed gap: the divergent-barrier check did not fire for `if thread_idx_x > 16l then block_barrier ()` written after `let open Sarek_stdlib.Std in` (the kernel compiled), while the same kernel without the `let open` was rejected (checked on `main` at 466f6e36, 2026-10-11). Do not rely on the check in kernels that open `Std`.
+Known limitation: the divergent-barrier check does not reject a `block_barrier ()` under a thread-dependent condition when the kernel opens `Sarek_stdlib.Std` with `let open`; tracked in [issue #447](https://github.com/mathiasbourgoin/Sarek/issues/447). Do not rely on the check in such kernels.
 
 ## Modules
 
@@ -257,7 +257,7 @@ Observed gap: the divergent-barrier check did not fire for `if thread_idx_x > 16
 | IR and code generation | `Sarek_lower_ir`, `Sarek_quote`, `Sarek_quote_ir`, `Sarek_ir_ppx`, `Sarek_native_gen` (with `_base`, `_expr`, `_kernel`, `_helpers`, `_intrinsics`) |
 | Infrastructure | `Sarek_ppx` (entry point), `Sarek_ppx_registry`, `Sarek_core_primitives`, `Sarek_error`, `Sarek_reserved`, `Sarek_debug`, `Sarek_matrix_alert`, `Sarek_unsupported` |
 
-The PPX depends on `ppxlib` and the IR types in `spoc/ir`; it has no GPU runtime dependency. Set `SAREK_PPX_DEBUG` to trace its stages.
+The PPX depends on `ppxlib` and the IR types in `spoc/ir`; it links no GPU driver library (it also uses `sarek_stdlib`, `sarek_float64` and, through `sarek.native_gen`, `spoc_core`). Set `SAREK_PPX_DEBUG` to trace its stages.
 
 ## Intrinsics from another library
 

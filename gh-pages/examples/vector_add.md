@@ -56,6 +56,7 @@ let () =
   done;
   
   (* Select device *)
+  (* Register the backends you use; see "Using Sarek in a dune project" in Getting Started *)
   Sarek_native.Native_plugin.init () ;
   let dev =
     match Device.best () with

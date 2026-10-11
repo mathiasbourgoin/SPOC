@@ -49,7 +49,7 @@ let shared_example =
 ```
 
 ### Local Memory
-Standard variables (`let x = ...` or `let mut x = ...`) are local to a single thread and usually stored in high-speed registers.
+Standard variables (`let x = ...` or `let x = mut v`) are local to a single thread and usually stored in high-speed registers.
 
 ## 3. Synchronization & Supersteps
 

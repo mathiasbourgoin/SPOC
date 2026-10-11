@@ -61,7 +61,7 @@ How it works (`sarek/tests/doc_snippets/`): `extract.exe` writes the blocks of o
 
 - **Add a page**: add a `(rule (targets snip_<name>.ml) ...)` to `sarek/tests/doc_snippets/dune`, copying a neighbour. A page in `gh-pages/docs/`, `gh-pages/examples/` or the listed READMEs that has an `ocaml` block but no rule fails the check.
 - **Skip a block** that cannot be a structure item (a signature fragment, pseudo-code, code that must not compile): put `<!-- snippet: skip -->` on the line directly above the opening fence. The comment is invisible in the rendered page. Say why in the review; prefer rewriting the block so it compiles.
-- **Use another language** for a block that is not OCaml (`bash`, `lisp`, `cuda`): any fence other than `ocaml` is ignored.
+- **Use another language** for a block that is not OCaml (`bash`, `lisp`, `cuda`): any fence other than `ocaml` is ignored, except a fence that looks like an attempt at one (`OCaml`, `ml`, `ocaml foo`, `~~~` fences, four backticks with an ocaml/ml info string), which fails the check with its file and line.
 - **Build a page's program as an executable**: mark a block `<!-- snippet: NAME -->` and extract it with `extract.exe --only NAME`. `sarek/tests/doc_snippets/getting_started/` does this for the Getting Started program and runs it on the CPU backends.
 
 #### Referring to issues, PRs and backlog items
