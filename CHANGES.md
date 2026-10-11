@@ -376,8 +376,8 @@
     finished threads never reach, and does not fire on successive barriers or on
     threads parked at a warp barrier (a new `Warp_barrier` effect).
 - The matrix rewrite no longer narrows int64 indices to int32 (compiler review
-  C-11). A GEMM whose index, bound or guard (including a reduction guard) involves an `int64` constant,
-  variable or cast used to be recognised with the casts dropped (`Int64.to_int`)
+  C-11). A GEMM whose index, bound or guard (the guards around the product
+  and its store) involves an `int64` constant, variable or cast used to be recognised with the casts dropped (`Int64.to_int`)
   and rewritten with int32 addresses, which overflow past 2^31 elements: out of
   bounds or wrong results, by default on HIP gfx11. `Sarek_ir_affine.of_expr`
   now returns the new `Wide_index` error, the pattern reports the new reason
