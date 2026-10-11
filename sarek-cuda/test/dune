@@ -162,3 +162,11 @@
  (name test_cuda_coopmat_probe)
  (modules test_cuda_coopmat_probe)
  (libraries sarek_cuda spoc.ir alcotest))
+; Kernel-argument marshalling: two host blocks per launch, bit-exact slots, and
+; stream launches that survive a GC (specs/cheap-repeated-launches.md US-4).
+; The e2e cases self-skip without a CUDA driver.
+
+(test
+ (name test_cuda_kernargs)
+ (modules test_cuda_kernargs)
+ (libraries sarek_cuda ctypes alcotest))
