@@ -405,3 +405,12 @@
   (pps sarek_ppx))
  (flags
   (:standard -w -33)))
+
+; Idle CPU worker pools (R-66): bench_cpu_pool_idle_gc times a minor
+; collection after one launch on every CPU pool and an idle wait (not run by
+; runtest; see its header for usage).
+
+(executables
+ (names bench_cpu_pool_idle_gc)
+ (modules bench_cpu_pool_idle_gc cpu_pool_workload)
+ (libraries sarek sarek_ir unix))
