@@ -118,7 +118,27 @@ type t = {
           (loader too old to resolve the entry point). See [probe_coopmat] for
           why an empty list and [None] must stay distinguishable, and for the
           measurement that makes the extension check load-bearing. *)
+  queue_lock : Mutex.t;
+      (** External synchronization of [compute_queue], which Vulkan requires for
+          [vkQueueSubmit] and [vkQueueWaitIdle]. Taken only through
+          {!queue_submit} and {!with_queue_lock}. *)
 }
+
+(** Test-only fault injection: when [Some r], the next {!queue_submit} returns
+    [r] without submitting anything, and the hook clears itself. *)
+let inject_submit_failure : vk_result option ref = ref None
+
+(** Run [f] holding [dev.queue_lock]. *)
+let with_queue_lock dev f = Mutex.protect dev.queue_lock f
+
+(** The only path to [vkQueueSubmit] on [dev.compute_queue]. *)
+let queue_submit dev count submits fence =
+  with_queue_lock dev (fun () ->
+      match !inject_submit_failure with
+      | Some result ->
+          inject_submit_failure := None ;
+          result
+      | None -> vkQueueSubmit dev.compute_queue count submits fence)
 
 let instance_ref : vk_instance structure ptr option ref = ref None
 
@@ -1092,6 +1112,7 @@ let get idx =
             has_ext vk_khr_cooperative_matrix_extension_name;
           coopmat_enabled = want_coopmat;
           coopmat;
+          queue_lock = Mutex.create ();
         }
       in
       Hashtbl.add device_cache idx dev ;
@@ -1100,7 +1121,11 @@ let get idx =
 let set_current _dev = ()
 (* Vulkan doesn't have a global "current device" concept *)
 
-let synchronize dev = check "vkDeviceWaitIdle" (vkDeviceWaitIdle dev.device)
+(** [vkDeviceWaitIdle] requires host access to every queue of the device to be
+    externally synchronized. *)
+let synchronize dev =
+  with_queue_lock dev (fun () ->
+      check "vkDeviceWaitIdle" (vkDeviceWaitIdle dev.device))
 
 (* Notify the layers above this backend BEFORE anything is released (#90):
    [Vulkan_api_kernel]'s cache holds pipelines, layouts, descriptor pools and

@@ -12,7 +12,8 @@ module Device = Vulkan_api_device
 type t = {
   command_pool : vk_command_pool;
   command_buffer : vk_command_buffer structure ptr;
-  fence : vk_fence;
+  fence : tracked_fence;
+      (** Guards [command_buffer]: pending while a submission of it runs. *)
   device : Device.t;
 }
 
@@ -54,28 +55,21 @@ let create device =
     "vkAllocateCommandBuffers"
     (vkAllocateCommandBuffers device.Device.device (addr alloc_info) cmd_buf) ;
 
-  (* Create fence in signaled state so first vkWaitForFences succeeds *)
-  let fence_info = make vk_fence_create_info in
-  setf fence_info fence_create_sType (u32 vk_structure_type_fence_create_info) ;
-  setf fence_info fence_create_pNext null ;
-  setf fence_info fence_create_flags (u32 vk_fence_create_signaled_bit) ;
-
-  let fence = allocate vk_fence vk_null_handle in
-  check
-    "vkCreateFence"
-    (vkCreateFence device.Device.device (addr fence_info) null fence) ;
-
-  {command_pool = !@pool; command_buffer = !@cmd_buf; fence = !@fence; device}
+  let fence = create_tracked_fence device.Device.device in
+  {command_pool = !@pool; command_buffer = !@cmd_buf; fence; device}
 
 let default_streams : (int, t) Hashtbl.t = Hashtbl.create 4
 
 let destroy stream =
   Hashtbl.remove default_streams stream.device.Device.id ;
-  vkDestroyFence stream.device.Device.device stream.fence null ;
+  destroy_tracked_fence
+    "vkWaitForFences (Stream.destroy)"
+    stream.device.Device.device
+    stream.fence ;
   vkDestroyCommandPool stream.device.Device.device stream.command_pool null
 
 let synchronize stream =
-  wait_fence
+  await_fence
     "vkWaitForFences (Stream.synchronize)"
     stream.device.Device.device
     stream.fence

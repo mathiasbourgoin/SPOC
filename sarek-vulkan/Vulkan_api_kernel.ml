@@ -576,7 +576,6 @@ let build_push_constants args : bytes option =
     caller has waited for the stream fence: the set is not in use by pending
     work. *)
 let update_descriptor_set (kernel : t) args =
-  let u32 = Unsigned.UInt32.of_int in
   let u64 = Unsigned.UInt64.of_int in
   let bindings = resolve_bindings args in
   let num_bindings = List.length bindings in
@@ -660,10 +659,10 @@ let record_dispatch cmd_buf (kernel : t) pc
   vkCmdDispatch cmd_buf (u32 grid.x) (u32 grid.y) (u32 grid.z) ;
   check "vkEndCommandBuffer" (vkEndCommandBuffer cmd_buf)
 
-(** Reset the stream fence, submit [cmd_buf] with it and wait for completion.
-    The reset is the last step before the submission, so the fence is never left
-    unsignalled with nothing pending after a failure: when the submission itself
-    fails, an empty submission re-arms the fence before the error is raised. *)
+(** Submit [cmd_buf] with the stream fence and wait for completion. The fence is
+    reset by [submit_with_fence] immediately before the submission and is marked
+    pending only if the submission succeeds, so a failed submission leaves
+    nothing for the next launch to wait on. *)
 let submit_and_wait device cmd_buf fence =
   let cmd_buf_ptr = allocate vk_command_buffer_ptr cmd_buf in
   let submit_info = make vk_submit_info in
@@ -677,19 +676,19 @@ let submit_and_wait device cmd_buf fence =
   setf submit_info submit_signalSemaphoreCount (u32 0) ;
   setf submit_info submit_pSignalSemaphores (from_voidp vk_semaphore null) ;
   let vk_device = device.Device.device in
-  let queue = device.Device.compute_queue in
-  reset_fence "vkResetFences (launch)" vk_device fence ;
-  let result = vkQueueSubmit queue (u32 1) (addr submit_info) fence in
+  submit_with_fence
+    "vkQueueSubmit (launch)"
+    vk_device
+    fence
+    (Device.queue_submit device (u32 1) (addr submit_info)) ;
   ignore (Sys.opaque_identity cmd_buf_ptr) ;
   ignore (Sys.opaque_identity submit_info) ;
-  if result <> VK_SUCCESS then
-    ignore (vkQueueSubmit queue (u32 0) (from_voidp vk_submit_info null) fence) ;
-  check "vkQueueSubmit" result ;
-  wait_fence "vkWaitForFences (launch)" vk_device fence
+  await_fence "vkWaitForFences (launch)" vk_device fence
 
 (** Every step that can refuse on the host (index validation, push-constant
-    layout) runs before the stream fence is touched; the fence is reset only by
-    [submit_and_wait], immediately before the submission. *)
+    layout) runs before the stream fence is touched; the fence is reset only
+    immediately before the submission. A kernel object owns one descriptor set,
+    so it must not be launched from two domains at once. *)
 let launch kernel ~args ~(grid : Spoc_framework.Framework_sig.dims)
     ~(block : Spoc_framework.Framework_sig.dims) ~shared_mem:_ ~stream =
   ignore block ;
@@ -708,7 +707,7 @@ let launch kernel ~args ~(grid : Spoc_framework.Framework_sig.dims)
     let pc = build_push_constants args in
     (* The command buffer and descriptor set may be in use until the previous
        submission on this stream completes. *)
-    wait_fence
+    await_fence
       "vkWaitForFences (pre-record)"
       device.Device.device
       s.Stream.fence ;
