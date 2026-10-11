@@ -98,5 +98,9 @@ type report = {kernel : string; device : string; outcome : outcome}
     distinct (kernel, device, outcome) is also printed once on stderr. *)
 val set_reporter : (report -> unit) option -> unit
 
+(** Test hook: while [true], the analysis of a kernel not yet cached raises, as
+    a defect in it would. Launches must still succeed ([Original]). *)
+val fail_analysis_for_tests : bool -> unit
+
 (** Forget every cached plan and rewritten kernel. *)
 val clear : unit -> unit

@@ -411,6 +411,38 @@ let float_phase dev =
     check_size_class dev ~m:256 ~n:256 ~k:1024 ~expect_direct:true ;
     check_size_class dev ~m:100 ~n:37 ~k:129 ~expect_direct:false)
 
+(* A defect in the analysis must not fail a launch: inject one, launch a
+   fresh (never analysed) kernel by the default path, check it ran. *)
+let k_add_one =
+  [%kernel
+    fun (a : int32 vector) (n : int32) ->
+      let i = global_idx_x in
+      if i < n then a.(i) <- a.(i) + 2l]
+
+let check_analysis_failure dev =
+  Spec.fail_analysis_for_tests true ;
+  let v = vec (Array.make 64 1l) in
+  let result =
+    try
+      Execute.run_vectors
+        ~device:dev
+        ~ir:(ir_of k_add_one)
+        ~args:[Execute.Vec v; Execute.Int32 64l]
+        ~block:(Execute.dims1d 64)
+        ~grid:(Execute.dims1d 1)
+        () ;
+      Transfer.flush dev ;
+      Ok (Vector.to_array v)
+    with e -> Error (Printexc.to_string e)
+  in
+  Spec.fail_analysis_for_tests false ;
+  Spec.clear () ;
+  match result with
+  | Ok out when Array.for_all (fun x -> x = 3l) out ->
+      ok "injected analysis failure on %s: the launch ran" dev.Device.name
+  | Ok _ -> fail "injected analysis failure on %s: wrong result" dev.Device.name
+  | Error e -> fail "injected analysis failure on %s: %s" dev.Device.name e
+
 let () =
   Random.init 20261011 ;
   let devices = Array.to_list (Device.init ()) in
@@ -419,6 +451,7 @@ let () =
   Sarek_coopmat.accept_relaxed_accumulation ~reason:"test_matrix_dynamic" ;
   List.iter float_phase rewriters ;
   List.iter check_not_reported devices ;
+  List.iter check_analysis_failure devices ;
   List.iter
     (fun p ->
       Sarek_coopmat.accept_operand_rounding
