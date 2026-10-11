@@ -64,6 +64,18 @@
  (link_flags (-linkall)))
 
 (test
+ (name test_f16_narrowing_property)
+ (modules test_f16_narrowing_property)
+ (libraries sarek.interp sarek_ir sarek_codegen alcotest))
+
+; Process-wide opt-in: its own executable, cases in order.
+
+(test
+ (name test_f16_single_rounding_golden)
+ (modules test_f16_single_rounding_golden)
+ (libraries sarek_ir sarek_codegen alcotest))
+
+(test
  (name test_f16_narrowing_theorem)
  (modules test_f16_narrowing_theorem)
  (libraries sarek.interp))

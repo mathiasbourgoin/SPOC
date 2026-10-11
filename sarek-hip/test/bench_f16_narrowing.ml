@@ -21,7 +21,8 @@
    emits by default; [no-asm] is that source with the barrier's asm statement
    deleted, i.e. the code the compiler produces when nothing stops the fusion
    (what an elided or opted-out barrier gives); [nonvolatile] keeps the
-   barrier but drops [volatile] from its asm.
+   barrier but drops [volatile] from its asm; [opt-in] is the source generated
+   under Sarek_f16_policy.accept_single_rounding.
 
    Method as bench_matrix_rewrite: GPU events around batches of [batch]
    back-to-back launches, [samples] batches per round, [rounds] rounds
@@ -269,6 +270,13 @@ let dump label source =
       output_string oc source ;
       close_out oc
 
+(* The variant under its own kernel name, covered by
+   Sarek_f16_policy.accept_single_rounding: generated without barriers. *)
+let single_rounding v =
+  let kern_name = "bench_f16_single_" ^ v.name in
+  Sarek_f16_policy.accept_single_rounding (Kernel kern_name) ~reason:"benchmark" ;
+  {v with ir = {v.ir with Sarek_ir_types.kern_name}}
+
 let from_source dev v ~label ~edit =
   let source =
     edit
@@ -379,6 +387,8 @@ let () =
             from_source dev v ~label:"no-asm" ~edit:without_asm );
           ( v.name ^ " nonvolatile",
             from_source dev v ~label:"nonvolatile" ~edit:non_volatile );
+          ( v.name ^ " opt-in",
+            from_source dev (single_rounding v) ~label:"opt-in" ~edit:Fun.id );
         ])
       variants
   in

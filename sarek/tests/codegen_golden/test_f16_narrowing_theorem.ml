@@ -15,6 +15,10 @@
  *   (T2) v = a + b or a - b with a, b binary16 values: binary32 has
  *        24 >= 2 * 11 + 1 significand bits, so double rounding is innocuous.
  *
+ * For a product absorbed into the narrowing the device computes a * b + (+0),
+ * which turns a -0 product into +0; T1 is checked together with the sign
+ * restoration sarek_narrow_exact_product applies.
+ *
  * T1 is what the code generator's exactness analysis establishes; this file
  * checks it, by enumeration, on the shapes it was built for (a binary16 scale
  * times a small integer), and checks T2 on every binary16 [a] against a
@@ -83,6 +87,12 @@ let check_reference () =
   Printf.printf "reference rounding: %d binary32 samples checked\n" n
 
 (* T1 on [d * n], every finite binary16 [d], every [n] in [lo, hi]. *)
+(* The fused narrowing of a product, a * b + (+0) rounded once, with the sign
+   of the exact product or-ed in (sarek_narrow_exact_product). *)
+let fused_signed a b =
+  let r = round16_once ((a *. b) +. 0.0) in
+  if Float.sign_bit a <> Float.sign_bit b then -.Float.abs r else r
+
 let check_product ~label ~lo ~hi =
   let checked = ref 0 in
   Array.iter
@@ -94,10 +104,13 @@ let check_product ~label ~lo ~hi =
           fail "%s: %h * %d is not exact in binary32" label d n
         else if not (same (round16_once v) (round16_twice v)) then
           fail "%s: %h * %d rounds differently" label d n
+        else if not (same (fused_signed d (float_of_int n)) (round16_twice v))
+        then fail "%s: %h * %d signed product differs" label d n
       done)
     f16_values ;
   Printf.printf
-    "T1 %s: %d products, all exact, one = two roundings\n"
+    "T1 %s: %d products, all exact, one = two roundings, signed fused product \
+     = two roundings\n"
     label
     !checked
 

@@ -156,6 +156,31 @@
  (action
   (run %{dep:test_hip_f16_narrowing_exact.exe})))
 
+; Sarek_f16_policy.accept_single_rounding on hardware: a Q4_K-shaped kernel
+; without its barriers stays within the documented bound of the interpreter.
+; Process-wide opt-in: its own executable.
+
+(executable
+ (name test_hip_f16_single_rounding)
+ (modules test_hip_f16_single_rounding)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek.interp
+  sarek_codegen
+  sarek_ir
+  spoc_core
+  sarek_hip)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias e2e-hip)
+ (action
+  (run %{dep:test_hip_f16_single_rounding.exe})))
+
 ; backlog-214 - the HIP plugin refuses a non-empty ~soa_params instead of
 ; answering an SoA argument list with AoS source. Pure codegen: no HIP device
 ; and no ROCm runtime, so unlike everything else in this directory it is a
