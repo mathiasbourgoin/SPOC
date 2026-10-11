@@ -35,3 +35,19 @@
  (name test_log)
  (modules test_log)
  (libraries spoc_core alcotest unix))
+
+; Log with Spoc_core.Error linked: SAREK_DEBUG is set before the program
+; starts, so Log and Error both initialise under it.
+
+(executable
+ (name test_log_error)
+ (modules test_log_error)
+ (libraries spoc_core alcotest unix))
+
+(rule
+ (alias runtest)
+ (action
+  (setenv
+   SAREK_DEBUG
+   kernel
+   (run %{dep:test_log_error.exe}))))
