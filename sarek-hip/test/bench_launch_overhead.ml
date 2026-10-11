@@ -13,7 +13,10 @@
  * a many-argument decoder kernel pays most.
  *
  * Information only: prints numbers, asserts nothing beyond the result of one
- * launch being correct. Runs on every enumerated HIP and Native device.
+ * launch being correct. Runs on every enumerated HIP and Native device, or,
+ * when SPOC_BENCH_ONLY is set (comma-separated substrings), only on the devices
+ * whose "framework: name" contains one of them. On a host with an integrated
+ * GPU, restrict it (e.g. HIP_VISIBLE_DEVICES=0 SPOC_BENCH_ONLY="RX 7900,Native").
  *
  *   SPOC_BENCH_LAUNCHES=10000 (default) dune exec .../bench_launch_overhead.exe
  ******************************************************************************)
@@ -60,6 +63,25 @@ let launches =
   match Sys.getenv_opt "SPOC_BENCH_LAUNCHES" with
   | Some s -> int_of_string s
   | None -> 10_000
+
+let only =
+  match Sys.getenv_opt "SPOC_BENCH_ONLY" with
+  | None | Some "" -> None
+  | Some s -> Some (List.map String.trim (String.split_on_char ',' s))
+
+let contains ~sub s =
+  let n = String.length sub and m = String.length s in
+  let rec at i = i + n <= m && (String.sub s i n = sub || at (i + 1)) in
+  at 0
+
+let selected (dev : Device.t) =
+  List.mem dev.framework ["HIP"; "Native"]
+  &&
+  match only with
+  | None -> true
+  | Some subs ->
+      let label = dev.framework ^ ": " ^ dev.name in
+      List.exists (fun sub -> contains ~sub label) subs
 
 let time_us f =
   let t0 = Unix.gettimeofday () in
@@ -110,7 +132,7 @@ let () =
   let devices = Device.init () in
   Array.iter
     (fun dev ->
-      if List.mem dev.Device.framework ["HIP"; "Native"] then begin
+      if selected dev then begin
         Printf.printf "%s: %s\n" dev.Device.framework dev.Device.name ;
         let out = Vector.create Vector.float32 n in
         let inp = Vector.create Vector.float32 n in
