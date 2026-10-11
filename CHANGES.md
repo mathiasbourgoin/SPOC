@@ -362,9 +362,17 @@
   runs, 200 ms `Device.synchronize`): minor collections completed by an
   allocating domain during the wait went from 0 / 2 / 1 (HIP / OpenCL / Vulkan
   medians) to 1082 / 1074 / 1094. None of these entry points takes an OCaml
-  heap pointer; callers that pass a raw address keep its memory alive across
-  the call, as before. Metal is unchanged (its waits go through
-  `objc_msgSend`). Test: `sarek/tests/e2e/test_blocking_ffi_releases_lock.ml`.
+  heap pointer. Memory reached through a raw address is no longer protected
+  by the held lock: the caller of `Memory.host_ptr_to_device` /
+  `device_to_host_ptr` (`Runtime.to_device_ptr` / `from_device_ptr`) must keep
+  it allocated until the call returns (the pointer value itself is now kept
+  reachable across the call). Metal is unchanged (its waits go through
+  `objc_msgSend`). Not switched yet, though they can take milliseconds:
+  `hipHostMalloc`/`hipHostFree`/`hipHostRegister`/`hipHostUnregister`,
+  `hipStreamDestroy`, `hipEventDestroy`, `hipModuleUnload` and their CUDA
+  counterparts (`cuMemAllocHost`, `cuMemFreeHost`, `cuMemHostRegister`,
+  `cuMemHostUnregister`, `cuModuleUnload`), and OpenCL `clRelease*`. Test:
+  `sarek/tests/e2e/test_blocking_ffi_releases_lock.ml`.
 - `Spoc_core.Memory.bigarray_void_ptr` is replaced by
   `Memory.borrow_bigarray_ptr`, whose pointer need not root the bigarray: the
   caller keeps it reachable, on transfer paths with a trailing

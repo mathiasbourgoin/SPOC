@@ -60,15 +60,9 @@ let get_vulkan_lib () =
 let foreign_vk_lazy name typ = lazy (foreign ~from:(get_vulkan_lib ()) name typ)
 
 (** [foreign_vk_blocking_lazy name typ] is [foreign_vk_lazy name typ] with the
-    OCaml runtime lock released for the duration of the call, for entry points
-    that block on the device or run a compiler. While it is held, every other
-    domain stops at its next minor collection until the call returns. Safe only
-    because no argument of these entry points points into the OCaml heap: a
-    [ptr] argument is C memory (driver handles, [allocate]d cells, bigarray
-    data) that ctypes keeps reachable until the call returns, and a ctypes
-    [string] argument is copied into C memory first. A raw address
-    ([ptr_of_raw_address]) is not rooted: its caller keeps the memory alive
-    across the call, as it must already. *)
+    OCaml runtime lock released during the call, for blocking entry points.
+    Safety conditions: see [foreign_hip_blocking_lazy] in
+    sarek-hip/Hip_bindings.ml. *)
 let foreign_vk_blocking_lazy name typ =
   lazy (foreign ~release_runtime_lock:true ~from:(get_vulkan_lib ()) name typ)
 

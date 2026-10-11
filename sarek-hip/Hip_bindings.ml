@@ -59,14 +59,18 @@ let foreign_hip_lazy name typ = lazy (foreign ~from:(get_hip_lib ()) name typ)
 
 (** [foreign_hip_blocking_lazy name typ] is [foreign_hip_lazy name typ] with the
     OCaml runtime lock released for the duration of the call, for entry points
-    that block on the device or run a compiler. While it is held, every other
-    domain stops at its next minor collection until the call returns. Safe only
-    because no argument of these entry points points into the OCaml heap: a
-    [ptr] argument is C memory (driver handles, [allocate]d cells, bigarray
-    data) that ctypes keeps reachable until the call returns, and a ctypes
-    [string] argument is copied into C memory first. A raw address
-    ([ptr_of_raw_address]) is not rooted: its caller keeps the memory alive
-    across the call, as it must already. *)
+    that block on the device or run a compiler. While the lock is held, every
+    other domain stops at its next minor collection until the call returns. This
+    is the reference note for the blocking bindings of every backend.
+
+    Releasing the lock is safe only because no argument of these entry points
+    points into the OCaml heap: a [ptr] argument is C memory (driver handles,
+    [allocate]d cells, bigarray data) that ctypes keeps reachable until the call
+    returns, and a ctypes [string] argument is copied into C memory first.
+    Memory reached through a raw address ([ptr_of_raw_address]) is not rooted by
+    the call: other domains and their GC run during it, so the caller must keep
+    that memory allocated until the call returns (SPOC's transfer paths end with
+    [ignore (Sys.opaque_identity ba)] for this). *)
 let foreign_hip_blocking_lazy name typ =
   lazy (foreign ~release_runtime_lock:true ~from:(get_hip_lib ()) name typ)
 
