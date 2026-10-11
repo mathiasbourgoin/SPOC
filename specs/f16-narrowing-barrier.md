@@ -80,7 +80,11 @@ Leaves are values no compiler can re-derive: a binary16 value widened
 (`k ≤ 2047`, `q ∈ [−24, 5]`), an int32 converted to float whose range is known
 and `≤ 2^24` in magnitude, a binary32 constant, a scalar kernel argument, a
 read of a global f32 array that the kernel never writes nor passes on, and
-`Int32.float_of_bits`. A leaf alone is exact (nothing to fuse). Variables are
+`Int32.float_of_bits` of a read-only int32 array element or of a scalar
+int32 argument. Over anything else `float_of_bits` is not a leaf: LLVM folds
+`float_of_bits (bits_of_float p)` to `p`, and forwards an int stored earlier
+in the kernel to a later load, then fuses `p` into the narrowing (review:
+132/16252928 on hip:0). A leaf alone is exact (nothing to fuse). Variables are
 looked through to every binding of their name (`let`, mutable `let`,
 assignment, loop bounds); a name with a binding the analysis cannot follow
 (pattern variable, helper parameter — a helper is inlined, so its caller's
@@ -119,7 +123,11 @@ differed. A negation absorbed into its operand has the same hazard.
 So a T1 narrowing whose top (through variables and conditionals) is a product
 or a negation is a bare narrowing only when it cannot be a zero of the wrong
 sign: the product is never zero (`nonzero`) or never negative (`nonneg`, so
-its zero is `+0`); a negation's operand is never zero. Otherwise:
+its zero is `+0`); a negation's operand is never zero. `nonneg` holds for
+non-negative integers, positive constants, `+0`, and sums and products of
+such values; a difference `a - b` is analysed as `a + (-b)` and is never
+`nonneg` (review: `(i - j) * k` of bytes is `-0` when `i < j` and `k = 0`).
+Otherwise:
 
 - a product written at the top, `e = a * b`, is emitted as
   `sarek_narrow_exact_product(a, b)`: the bare narrowing of `a * b` with
@@ -149,11 +157,13 @@ so the change is codegen-only there (compile-only: no NVIDIA device).
 ## 4. The opt-in: single rounding
 
 ```ocaml
-Sarek_f16_policy.accept_single_rounding (Kernel "my_kernel") ~reason:"...";
-Sarek_f16_policy.accept_single_rounding All_kernels ~reason:"...";
+Sarek_f16_policy.accept_single_rounding (Kernel "my_kernel") ~reason:"..."
+(* : (unit, Sarek_f16_policy.refusal) result *)
 ```
 
-Process-wide, one-way, thread-safe, like the `Sarek_coopmat` opt-ins, and
+A blank reason (`Blank_reason`) and `Kernel "sarek_kern"`
+(`Default_kernel_name`: the name of every unnamed `[%kernel]`, library
+kernels included) are refused and record nothing. Process-wide, one-way, thread-safe, like the `Sarek_coopmat` opt-ins, and
 separate from them. `Kernel name` matches `kern_name`; unnamed `[%kernel]`
 kernels are all `"sarek_kern"`; a fused kernel has the fused name. The policy
 is read when the source is generated: a kernel generated and memoised before
@@ -182,9 +192,10 @@ in `/mnt/ssd-external-2to/spoc-pipeline-logs/pkgF/` (`F3-*`).
 | What | Where | Result |
 |---|---|---|
 | Host proof of T1 (every binary16 × every int8/uint8, with the sign restoration; Q6_K triple products) and T2 (every binary16 against 128 others, ±), with a control | `sarek/tests/codegen_golden/test_f16_narrowing_theorem.ml` | all agree; control f16(x·1.1f) 2912/63488 differ |
-| Analysis vs reference evaluation, 4000 random expressions × 200 inputs | `test_f16_narrowing_property.ml` | 0 failures; with the sign rule removed, 2628 failures |
+| T2 exhaustively: all 63488² = 4 030 726 144 pairs of finite binary16 values, `+` and `−` (independent review; C with `_Float16`: `spoc-pipeline-logs/pkgF/scratch-F3-review/t2.c`, `t2-out.txt`) | outside the repository | 0 and 0 disagree; control x·1.1 1794 |
+| Analysis vs reference evaluation, 4000 random expressions × 200 inputs, int leaves from three independent inputs | `test_f16_narrowing_property.ml` | 0 failures; 470 before the review fixes; with the sign rule removed, 2628 |
 | Which narrowings keep the barrier | `test_f16_narrowing_golden.ml` | 26 cases |
-| hip:0 vs f32-then-f16 model, bit for bit, ~16M values each: binary16 sums, byte products/sums, Q8_0 and Q6_K signed products; Q4_K keeps 4 barriers | `sarek-hip/test/test_hip_f16_narrowing_exact.ml` | 0 differ each; Q8_0 without the sign restoration: 31999 differ, all ±0 |
+| hip:0 vs f32-then-f16 model, bit for bit, ~16M values each: binary16 sums, byte products/sums, differences of bytes times a byte, Q8_0 and Q6_K signed products; Q4_K and a bitcast round trip keep 4 barriers | `sarek-hip/test/test_hip_f16_narrowing_exact.ml` | 0 differ each; Q8_0 without the sign restoration: 31999 differ, all ±0; before the review fixes: differences 4194240 (±0), bitcast 132 |
 | Every emittable f16 shape, all 63488 binary16 inputs, shipping path | `sarek-hip/test/test_hip_f16_shapes.ml` | 0 mismatches as shipped (A1, A3, A4, A10 now without barrier) |
 | Opt-in within the bound | `sarek-hip/test/test_hip_f16_single_rounding.ml` | 0 outside the bound |
 | Time, dequantise-to-LDS microbenchmark | `sarek-hip/test/bench_f16_narrowing.ml`, `F3-bench-ab-raw.txt` | Q8_0 with binary16 scale: 932 → 182 µs (default); Q4_K as Katra writes it: unchanged by default, 870 → 170 µs with the opt-in |
