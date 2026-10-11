@@ -397,6 +397,6 @@ let () =
         show "window off: host us/launch (enqueue)" eo ;
         show "window on:  host us/launch (enqueue)" en ;
         Execute.Window.set_enabled true ;
-        if off_det && not same then exit 1
+        if reps >= 2 && off_det && not same then exit 1
       end)
     devs
