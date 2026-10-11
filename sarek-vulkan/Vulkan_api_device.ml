@@ -131,6 +131,9 @@ type t = {
           {!defer_free}. *)
   deferred_count : int Atomic.t;
   deferred_bytes : int Atomic.t;
+  destroyed : bool Atomic.t;
+      (** Set once by {!destroy}; a handle of a destroyed device runs no Vulkan
+          call and is never reached through a re-created device's streams. *)
 }
 
 (** Test-only fault injection, for a single domain: when [Some r], the next
@@ -189,9 +192,17 @@ let take_deferred dev =
        (-List.fold_left (fun total (bytes, _) -> total + bytes) 0 taken)) ;
   List.rev_map snd taken
 
-(** Like {!drain_pending}, but does nothing when the batch lock is held, and so
-    never blocks on it. *)
-let try_drain_pending : (t -> unit) ref = ref (fun _ -> ())
+(** Run the queued buffer releases if that needs no wait: under the batch lock
+    taken with [try_lock] only, retire the launches whose fences have already
+    signalled, then release if every stream is idle. Never submits, records,
+    waits or consumes an error, so it is safe from a GC finaliser (see
+    {!defer_free}). Installed by {!Vulkan_api_stream}. *)
+let try_release_idle : (t -> unit) ref = ref (fun _ -> ())
+
+(** Complete every launch of the device and run the queued releases, keeping
+    each stream's deferred error for its own wait; for the allocation-failure
+    retry. Installed by {!Vulkan_api_stream}. *)
+let settle_pending : (t -> unit) ref = ref (fun _ -> ())
 
 let instance_ref : vk_instance structure ptr option ref = ref None
 
@@ -200,6 +211,12 @@ let initialized = ref false
 (* Cache for logical devices to ensure we don't create multiple vk_device handles
    for the same physical device, which would prevent sharing resources. *)
 let device_cache : (int, t) Hashtbl.t = Hashtbl.create 4
+
+(** Guards [device_cache] (lookups, insertion, removal), not device creation. *)
+let cache_lock = Mutex.create ()
+
+let cached idx =
+  Mutex.protect cache_lock (fun () -> Hashtbl.find_opt device_cache idx)
 
 (** Calculate total device memory from memory heaps
 
@@ -682,7 +699,7 @@ let find_compute_queue_family phys_dev =
   find 0
 
 let get idx =
-  match Hashtbl.find_opt device_cache idx with
+  match cached idx with
   | Some dev -> dev
   | None ->
       init () ;
@@ -1171,9 +1188,10 @@ let get idx =
           deferred_frees = Atomic.make [];
           deferred_count = Atomic.make 0;
           deferred_bytes = Atomic.make 0;
+          destroyed = Atomic.make false;
         }
       in
-      Hashtbl.add device_cache idx dev ;
+      Mutex.protect cache_lock (fun () -> Hashtbl.replace device_cache idx dev) ;
       dev
 
 let set_current _dev = ()
@@ -1210,7 +1228,10 @@ let destroy_live dev =
   (if drain_exn <> None then
      try with_queue_lock dev (fun () -> ignore (vkDeviceWaitIdle dev.device))
      with _ -> ()) ;
-  Hashtbl.remove device_cache dev.id ;
+  Mutex.protect cache_lock (fun () ->
+      match Hashtbl.find_opt device_cache dev.id with
+      | Some live when live == dev -> Hashtbl.remove device_cache dev.id
+      | Some _ | None -> ()) ;
   let listener_exn =
     match
       Spoc_framework.Cache_hooks.notify_device_destroy ~backend:"Vulkan" dev.id
@@ -1226,10 +1247,8 @@ let destroy_live dev =
     raise
     (match drain_exn with Some _ -> drain_exn | None -> listener_exn)
 
-(** Idempotent: only the device currently cached under [dev.id] is destroyed, so
-    a second call, or a call on a stale handle after the index was re-created,
-    changes nothing. *)
+(** Idempotent and safe on a stale handle: the first call on a handle destroys
+    it, any later one does nothing. Only the handle's own cache entry is
+    removed, never a re-created device's. *)
 let destroy dev =
-  match Hashtbl.find_opt device_cache dev.id with
-  | Some live when live == dev -> destroy_live dev
-  | Some _ | None -> ()
+  if Atomic.compare_and_set dev.destroyed false true then destroy_live dev

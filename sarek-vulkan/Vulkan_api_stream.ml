@@ -52,7 +52,7 @@ type t = {
   command_pool : vk_command_pool;
   slots : slot array;
   mutable active : int;  (** Index of the slot the next dispatch records in. *)
-  mutable destroyed : bool;
+  destroyed : bool Atomic.t;
   mutable deferred : (string * string) option;
       (** Kernels and reason of a submission that failed while launching; raised
           by the next wait of this stream. *)
@@ -103,7 +103,9 @@ let default_lock = Mutex.create ()
 
 let streams_of (device : Device.t) =
   Mutex.protect registry_lock (fun () ->
-      Option.value ~default:[] (Hashtbl.find_opt registry device.Device.id))
+      List.filter
+        (fun s -> s.device == device)
+        (Option.value ~default:[] (Hashtbl.find_opt registry device.Device.id)))
 
 let register stream =
   let id = stream.device.Device.id in
@@ -143,7 +145,7 @@ let create device =
       command_pool;
       slots;
       active = 0;
-      destroyed = false;
+      destroyed = Atomic.make false;
       deferred = None;
       device;
     }
@@ -178,24 +180,30 @@ let retire stream slot =
   slot.dispatches <- 0 ;
   slot.recording <- false
 
-(** Wait for the slot's submission, if any. A failing wait raises the batch
-    error naming its kernels; the slot then stays in flight, since the device
-    did not say that the work is over. *)
+(** Wait for the slot's submission, if any, and retire it. A failing wait raises
+    the batch error naming its kernels, once: the slot is abandoned (the device
+    reported an error, so its work is over), and later waits do not raise it
+    again. The exception is a wait that merely timed out
+    ([SPOC_VULKAN_FENCE_TIMEOUT_S], a test bound): the work may still run, so
+    the slot stays in flight. *)
 let await_slot stream slot =
   if slot.fence.pending then begin
-    (match
-       await_fence
-         "vkWaitForFences (launch batch)"
-         stream.device.Device.device
-         slot.fence
-     with
-    | () -> ()
+    match
+      await_fence
+        "vkWaitForFences (launch batch)"
+        stream.device.Device.device
+        slot.fence
+    with
+    | () -> retire stream slot
     | exception Vulkan_error.Vulkan_error e ->
+        let kernels = kernel_names slot in
+        (match e with
+        | BE.Runtime {error = BE.Synchronization_failed _; _} -> ()
+        | _ -> (
+            slot.fence.pending <- false ;
+            try retire stream slot with _ -> ())) ;
         Vulkan_error.raise_error
-          (Vulkan_error.kernel_launch_failed
-             (kernel_names slot)
-             (BE.to_string e))) ;
-    retire stream slot
+          (Vulkan_error.kernel_launch_failed kernels (BE.to_string e))
   end
 
 let raise_deferred stream =
@@ -238,10 +246,12 @@ let submit_open ~defer stream =
   if slot.recording && slot.dispatches > 0 then begin
     match submit_slot stream slot with
     | () -> stream.active <- (stream.active + 1) mod Array.length stream.slots
-    | exception Vulkan_error.Vulkan_error e ->
-        let reason = BE.to_string e in
+    | exception e ->
+        (* Whatever failed, the slot must not stay "recording" with an ended
+           command buffer: it is retired and can be recorded again. *)
+        let reason = Printexc.to_string e in
         let kernels = kernel_names slot in
-        retire stream slot ;
+        (try retire stream slot with _ -> slot.recording <- false) ;
         if not defer then
           Vulkan_error.raise_error
             (Vulkan_error.kernel_launch_failed kernels reason)
@@ -273,7 +283,7 @@ let on_all_streams device f =
     all launches and runs them. *)
 let max_deferred_frees = 64
 
-let max_deferred_bytes = 256 * 1024 * 1024
+let max_deferred_bytes = ref (256 * 1024 * 1024)
 
 let is_idle slot = (not slot.recording) && not slot.fence.pending
 
@@ -296,15 +306,6 @@ let drain_device device =
 
 let () = Device.drain_pending := drain_device
 
-(** {!drain_device} unless the batch lock is held. *)
-let try_drain_device device =
-  if Mutex.try_lock device.Device.batch_lock then
-    Fun.protect
-      ~finally:(fun () -> Mutex.unlock device.Device.batch_lock)
-      (fun () -> drain_all device)
-
-let () = Device.try_drain_pending := try_drain_device
-
 (** Wait for every launch of [device], then run the queued releases, without
     consuming any stream's deferred error: it belongs to the wait of that
     stream, not to the launch that happens to trigger this. A failing wait is
@@ -318,9 +319,56 @@ let settle device =
           try await_slot stream slot
           with Vulkan_error.Vulkan_error e ->
             if stream.deferred = None then
-              stream.deferred <- Some (kernel_names slot, BE.to_string e))
+              stream.deferred <-
+                Some
+                  (match e with
+                  | BE.Runtime
+                      {error = BE.Kernel_launch_failed {kernel_name; reason}; _}
+                    ->
+                      (kernel_name, reason)
+                  | e -> ("", BE.to_string e)))
         stream.slots) ;
   if all_idle device then release_deferred device
+
+let () =
+  Device.settle_pending :=
+    fun device ->
+      Mutex.protect device.Device.batch_lock (fun () -> settle device)
+
+(** Retire the launches whose fence has already signalled; an error status is
+    kept as that stream's deferred error. *)
+let reap stream slot =
+  if slot.fence.pending then
+    match
+      fence_signalled
+        "vkGetFenceStatus (launch batch)"
+        stream.device.Device.device
+        slot.fence.handle
+    with
+    | true ->
+        slot.fence.pending <- false ;
+        retire stream slot
+    | false -> ()
+    | exception Vulkan_error.Vulkan_error e ->
+        if stream.deferred = None then
+          stream.deferred <- Some (kernel_names slot, BE.to_string e)
+
+(** The free path of {!Vulkan_api_release}: never submits, records, waits or
+    consumes an error, and does nothing when the batch lock is taken. Queued
+    releases run only if no stream has an open batch or a launch in flight, so a
+    free is prompt when the device is idle and otherwise waits for the next
+    drain point. *)
+let try_release_idle device =
+  if Mutex.try_lock device.Device.batch_lock then
+    Fun.protect
+      ~finally:(fun () -> Mutex.unlock device.Device.batch_lock)
+      (fun () ->
+        List.iter
+          (fun stream -> Array.iter (reap stream) stream.slots)
+          (streams_of device) ;
+        if all_idle device then release_deferred device)
+
+let () = Device.try_release_idle := try_release_idle
 
 (** Submit the open batch of every stream of [device] without waiting. *)
 let flush_device device =
@@ -362,7 +410,7 @@ let record_dispatch stream ~kernel ~layout ~descriptors ~record =
       (* Bound the memory held by freed buffers. *)
       if
         Atomic.get device.Device.deferred_count >= max_deferred_frees
-        || Atomic.get device.Device.deferred_bytes >= max_deferred_bytes
+        || Atomic.get device.Device.deferred_bytes >= !max_deferred_bytes
       then settle device ;
       on_all_streams device (fun other ->
           if other != stream then submit_open ~defer:true other) ;
@@ -405,9 +453,8 @@ let forget_default stream =
 (** Nothing is unregistered if the wait for pending work raises: the stream
     stays reachable and intact. *)
 let destroy stream =
-  if not stream.destroyed then begin
-    synchronize stream ;
-    stream.destroyed <- true ;
+  synchronize stream ;
+  if Atomic.compare_and_set stream.destroyed false true then begin
     unregister stream ;
     forget_default stream ;
     destroy_objects stream
@@ -458,10 +505,8 @@ let () =
         List.iter
           (fun stream ->
             try
-              if not stream.destroyed then begin
-                stream.destroyed <- true ;
+              if Atomic.compare_and_set stream.destroyed false true then
                 destroy_objects stream
-              end
             with e -> if !first_error = None then first_error := Some e)
           streams ;
         Option.iter raise !first_error

@@ -192,7 +192,7 @@ let test_alloc_retries_after_release device =
   Device.defer_free device ~bytes:(n * 4) (fun () ->
       released := true ;
       Memory.release_now victim) ;
-  Memory.inject_alloc_failure := true ;
+  Memory.inject_alloc_failure := 1 ;
   let fresh = Memory.alloc device 16 Bigarray.float32 in
   Alcotest.(check bool) "the queued release ran before the retry" true !released ;
   Memory.free fresh

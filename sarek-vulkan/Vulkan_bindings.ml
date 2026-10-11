@@ -620,6 +620,13 @@ let vkDestroyFence_lazy =
 let vkDestroyFence dev fence alloc =
   Lazy.force vkDestroyFence_lazy dev fence alloc
 
+let vkGetFenceStatus_lazy =
+  foreign_vk_lazy
+    "vkGetFenceStatus"
+    (vk_device_ptr @-> vk_fence @-> returning vk_result)
+
+let vkGetFenceStatus dev fence = Lazy.force vkGetFenceStatus_lazy dev fence
+
 let vkWaitForFences_lazy =
   foreign_vk_blocking_lazy
     "vkWaitForFences"
