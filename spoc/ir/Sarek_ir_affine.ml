@@ -53,37 +53,34 @@ let poly_mul p q =
 
 (* Exact division by a single monomial: [None] unless every monomial of [p] is
    an integer multiple of [d] whose factors include [d]'s factors. *)
+(* [fs] without one occurrence of [f], or [None] when [f] is absent. *)
+let rec drop_factor f = function
+  | [] -> None
+  | g :: gs when g = f -> Some gs
+  | g :: gs -> Option.map (fun r -> g :: r) (drop_factor f gs)
+
+let drop_factors fs ds =
+  List.fold_left (fun acc f -> Option.bind acc (drop_factor f)) (Some fs) ds
+
+let monomial_div (dm : monomial) m =
+  if m.coef mod dm.coef <> 0 then None
+  else
+    Option.map
+      (fun factors -> {coef = m.coef / dm.coef; factors})
+      (drop_factors m.factors dm.factors)
+
 let poly_div p (d : poly) =
-  let remove_factors fs ds =
-    List.fold_left
-      (fun acc f ->
-        match acc with
-        | None -> None
-        | Some fs ->
-            let rec drop = function
-              | [] -> None
-              | g :: gs when g = f -> Some gs
-              | g :: gs -> Option.map (fun r -> g :: r) (drop gs)
-            in
-            drop fs)
-      (Some fs)
-      ds
-  in
   match d with
   | [dm] when dm.coef <> 0 ->
-      let quotients =
-        List.map
-          (fun m ->
-            if m.coef mod dm.coef <> 0 then None
-            else
-              Option.map
-                (fun factors -> {coef = m.coef / dm.coef; factors})
-                (remove_factors m.factors dm.factors))
-          p
-      in
+      let quotients = List.map (monomial_div dm) p in
       if List.for_all Option.is_some quotients then
         Some (normalize (List.filter_map Fun.id quotients))
       else None
+  | _ -> None
+
+let poly_constant = function
+  | [] -> Some 0
+  | [{coef; factors = []}] -> Some coef
   | _ -> None
 
 let poly_is_zero p = p = []
@@ -199,6 +196,8 @@ let rec inline env e =
 
 (* What an already-inlined expression contains, as one verdict: a rejected
    variable or an array read wins over an atom, which wins over uniform. *)
+let pure_intrinsics = ["min"; "max"; "abs"]
+
 let rec leaf_kind env e =
   let worst a b =
     match (a, b) with
@@ -216,7 +215,13 @@ let rec leaf_kind env e =
       if List.mem name uniform_intrinsics then Uniform_leaf else Atom_leaf
   | EBinop (_, a, b) -> all [a; b]
   | EUnop (_, a) | ECast (_, a) -> leaf_kind env a
-  | EIntrinsic (_, _, args) -> all args
+  | EIntrinsic (_, name, args) ->
+      (* Only pure functions known not to read the thread are uniform on
+         uniform arguments; any other intrinsic (a lane id taking unit, say)
+         is thread-varying. *)
+      let k = all args in
+      if k = Uniform_leaf && not (List.mem name pure_intrinsics) then Atom_leaf
+      else k
   | _ -> Rejected_leaf
 
 let rec reads_memory = function

@@ -25,11 +25,23 @@ type lowering =
       (** each int32 operand split into its four unsigned bytes; the int payload
           is the number of 8-bit products per tile *)
 
+(** How a lowering would change results. Not {!Sarek_coopmat_types.accuracy_regime}
+    on purpose: [Relaxed_operands] is a larger deviation than the
+    [Relaxed_bounded] that {!Sarek_coopmat.accept_relaxed_accumulation} admits,
+    and must not be mistaken for it. *)
+type accuracy_class =
+  | Exact  (** bit-identical (integer, modulo 2{^32}) *)
+  | Relaxed_accumulation
+      (** only the addition order changes: the gamma_K bound and the existing
+          opt-in apply *)
+  | Relaxed_operands
+      (** operands are rounded to a narrower type: no existing opt-in covers it *)
+
 type advice = {
   case : element_case;
   config : Sarek_coopmat_types.config option;
   lowering : lowering option;
-  regime : Sarek_coopmat_types.accuracy_regime option;
+  accuracy_class : accuracy_class option;
   accuracy : string;
   backends : (string * string) list;  (** backend, status *)
 }

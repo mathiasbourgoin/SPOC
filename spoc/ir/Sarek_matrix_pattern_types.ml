@@ -7,7 +7,7 @@
 
 open Sarek_ir_types
 
-type layout = Row_major | Col_major | Strided
+type layout = Row_major | Col_major
 
 type operand = {
   array : string;
@@ -60,6 +60,10 @@ type reason =
   | Unsupported_epilogue
   | Output_aliases_operand of string
   | Operand_written of string
+  | Overlapping_operand of string
+  | Operand_not_unit_stride of string
+  | Dependent_indices
+  | Unsupported_init
 
 type near_miss = {nm_acc : var; nm_loop : var; nm_reason : reason}
 
@@ -103,9 +107,21 @@ let reason_text = function
   | Output_aliases_operand arr ->
       Printf.sprintf "the output '%s' is also an operand" arr
   | Operand_written arr ->
-      Printf.sprintf "the operand '%s' is written by the kernel" arr
+      Printf.sprintf "the operand '%s' is (or may be) written by the kernel" arr
+  | Overlapping_operand arr ->
+      Printf.sprintf
+        "the elements of '%s' overlap (equal strides or a leading dimension \
+         smaller than a row: a Toeplitz view, a correlation or a race)"
+        arr
+  | Operand_not_unit_stride arr ->
+      Printf.sprintf "'%s' has no unit stride in either dimension" arr
+  | Dependent_indices ->
+      "the row and column indices derive from the same thread value without \
+       being its quotient and remainder by one divisor"
+  | Unsupported_init ->
+      "the accumulator starts from a value that is neither uniform nor the \
+       output element"
 
 let layout_name = function
   | Row_major -> "row-major"
   | Col_major -> "column-major"
-  | Strided -> "strided"

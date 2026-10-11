@@ -16,11 +16,13 @@ type element_case = F16_inputs | F32_inputs | Int32_inputs | No_case
 
 type lowering = Direct | Operand_rounding | Byte_planes of int
 
+type accuracy_class = Exact | Relaxed_accumulation | Relaxed_operands
+
 type advice = {
   case : element_case;
   config : C.config option;
   lowering : lowering option;
-  regime : C.accuracy_regime option;
+  accuracy_class : accuracy_class option;
   accuracy : string;
   backends : (string * string) list;
 }
@@ -74,7 +76,7 @@ let advise (g : P.gemm) =
         case = F16_inputs;
         config = Some f16;
         lowering = Some Direct;
-        regime = Some C.Relaxed_bounded;
+        accuracy_class = Some Relaxed_accumulation;
         accuracy =
           "relaxed: the matrix unit chooses the order of the additions, so \
            each output is within gamma_K * sum|a*b| of the exact value but not \
@@ -88,7 +90,7 @@ let advise (g : P.gemm) =
         case = F32_inputs;
         config = Some f16;
         lowering = Some Operand_rounding;
-        regime = Some C.Relaxed_bounded;
+        accuracy_class = Some Relaxed_operands;
         accuracy =
           "relaxed beyond the accumulation order: no matrix unit takes float32 \
            operands, so they would be rounded to float16 (relative error up to \
@@ -100,7 +102,7 @@ let advise (g : P.gemm) =
         case = Int32_inputs;
         config = Some (config ~a:C.Uint8 ~acc:C.Sint32);
         lowering = Some (Byte_planes byte_plane_products);
-        regime = Some C.Strict;
+        accuracy_class = Some Exact;
         accuracy =
           "exact: int32 arithmetic is modulo 2^32, and so is the sum of the \
            byte-plane products, so the result is bit-identical; no opt-in";
@@ -111,7 +113,7 @@ let advise (g : P.gemm) =
         case = No_case;
         config = None;
         lowering = None;
-        regime = None;
+        accuracy_class = None;
         accuracy = "no matrix-unit configuration for these element types";
         backends = [];
       }
@@ -141,11 +143,6 @@ let operand_text name (o : P.operand) =
     match o.layout with
     | P.Row_major -> Printf.sprintf ", ld %s" (expr_text o.row_stride)
     | P.Col_major -> Printf.sprintf ", ld %s" (expr_text o.col_stride)
-    | P.Strided ->
-        Printf.sprintf
-          ", strides %s x %s"
-          (expr_text o.row_stride)
-          (expr_text o.col_stride)
   in
   Printf.sprintf
     "%s = %s[%s] (%s%s)"
@@ -163,6 +160,49 @@ let lowering_text = function
         "on the byte planes of each int32 operand, %d products per tile"
         n
 
+let elt_name = function
+  | TFloat16 -> "float16"
+  | TFloat32 -> "float32"
+  | TFloat64 -> "float64"
+  | TInt32 -> "int32"
+  | TInt64 -> "int64"
+  | _ -> "other"
+
+let is_zero = function
+  | EConst (CInt32 0l | CInt64 0L) -> true
+  | EConst (CFloat32 f | CFloat64 f) -> f = 0.0
+  | _ -> false
+
+(* What was found: the product, the operands and the indices. *)
+let pattern_lines (g : P.gemm) =
+  let kv = g.k_var.var_name in
+  let init = if is_zero g.init then "" else expr_text g.init ^ " + " in
+  [
+    Printf.sprintf
+      "  C[m,n] = %ssum over %s = %s..%s of A[m,%s] * B[%s,n]"
+      init
+      kv
+      (expr_text g.k_lo)
+      (expr_text g.k_hi)
+      kv
+      kv;
+    "  " ^ operand_text "A" g.a;
+    "  " ^ operand_text "B" g.b;
+    "  " ^ operand_text "C" g.c;
+    Printf.sprintf
+      "  m = %s, n = %s%s"
+      (expr_text g.m_index)
+      (expr_text g.n_index)
+      (match g.batch with
+      | [] -> ""
+      | bs -> ", batched over " ^ String.concat ", " (List.map expr_text bs));
+    Printf.sprintf
+      "  elements: %s x %s -> %s accumulator"
+      (elt_name g.a.elt)
+      (elt_name g.b.elt)
+      (elt_name g.acc.var_type);
+  ]
+
 let render ?kernel_name (g : P.gemm) adv =
   let name =
     match kernel_name with
@@ -170,29 +210,11 @@ let render ?kernel_name (g : P.gemm) adv =
     | None -> "this kernel"
   in
   let lines =
-    [
-      Printf.sprintf
-        "Sarek: %s contains a matrix product (GEMM) that matrix units could \
-         compute."
-        name;
-      Printf.sprintf
-        "  C[m,n] = sum over %s = %s..%s of A[m,%s] * B[%s,n]"
-        g.k_var.var_name
-        (expr_text g.k_lo)
-        (expr_text g.k_hi)
-        g.k_var.var_name
-        g.k_var.var_name;
-      "  " ^ operand_text "A" g.a;
-      "  " ^ operand_text "B" g.b;
-      "  " ^ operand_text "C" g.c;
-      Printf.sprintf
-        "  m = %s, n = %s%s"
-        (expr_text g.m_index)
-        (expr_text g.n_index)
-        (match g.batch with
-        | [] -> ""
-        | bs -> ", batched over " ^ String.concat ", " (List.map expr_text bs));
-    ]
+    Printf.sprintf
+      "Sarek: %s contains a matrix product (GEMM) that matrix units could \
+       compute."
+      name
+    :: pattern_lines g
     @ (match (adv.config, adv.lowering) with
       | Some cfg, Some low ->
           [

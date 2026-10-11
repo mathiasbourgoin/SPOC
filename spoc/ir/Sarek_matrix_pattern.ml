@@ -55,17 +55,24 @@ let item_mentions v = function
   | Bind (_, e) -> expr_mentions v e
   | Item s -> stmt_mentions v s
 
-let written_arrays s =
-  Sarek_ir_analysis.stmt_fold
-    (stmt_folder
-       ~fe:(fun acc _ -> acc)
-       ~fs:(fun acc s ->
-         match s with
-         | SAssign (LArrayElem (a, _), _) -> a :: acc
-         | SCoopmat (CM_store {dst; _}) -> dst :: acc
-         | _ -> acc))
-    []
-    s
+(* Every array the kernel (body and helper functions) may write, or [None]
+   when that cannot be known: a write through a computed base, or an atomic
+   operation. *)
+let written_arrays (k : kernel) =
+  let fs acc s =
+    match (acc, s) with
+    | None, _ | _, SAssign (LArrayElemExpr _, _) -> None
+    | Some l, SAssign (LArrayElem (a, _), _) -> Some (a :: l)
+    | Some l, SCoopmat (CM_store {dst; _}) -> Some (dst :: l)
+    | acc, _ -> acc
+  in
+  let folder = stmt_folder ~fe:(fun acc _ -> acc) ~fs in
+  if Sarek_ir_analysis.kernel_uses_atomics k then None
+  else
+    List.fold_left
+      (fun acc hf -> Sarek_ir_analysis.stmt_fold folder acc hf.hf_body)
+      (Sarek_ir_analysis.stmt_fold folder (Some []) k.kern_body)
+      k.kern_funcs
 
 let count_mentions v e =
   Sarek_ir_analysis.expr_fold
@@ -84,7 +91,7 @@ type ctx = {
   lets : (int * expr) list;
   loops : var list;
   guards : expr list;
-  written : string list;
+  written : string list option;
 }
 
 let bind ctx v e =
@@ -222,37 +229,65 @@ let find_store ctx acc after =
   in
   go ctx after
 
+(* Besides [acc], a stored value (or an initial value) may only use uniform
+   values (constants, scalar parameters, block/grid dimensions, lengths) and
+   the output element itself: anything thread-varying or read elsewhere would
+   not be an epilogue of the product. *)
+let rec value_ok env acc ~output:(arr, index) e =
+  let ok = value_ok env acc ~output:(arr, index) in
+  match e with
+  | EArrayRead (a, idx) -> a = arr && idx = index
+  | EBinop (_, l, r) -> ok l && ok r
+  | EUnop (_, e) | ECast (_, e) -> ok e
+  | EIntrinsic (_, _, []) -> (
+      match Affine.of_expr env e with
+      | Ok f -> Affine.is_uniform f
+      | Error _ -> false)
+  | EIntrinsic (_, _, args) -> List.for_all ok args
+  | EVar v -> same_var acc v || env.classify_var v = Affine.Uniform_leaf
+  | EConst _ | EArrayLen _ -> true
+  | _ -> false
+
 let classify_epilogue env acc st =
   let value = Affine.inline env st.st_value in
-  let index = Affine.inline env st.st_index in
-  (* Besides [acc], the stored value may only use uniform values (constants,
-     scalar parameters, block/grid dimensions, lengths) and the output element
-     itself: anything thread-varying would not be an epilogue of the product. *)
-  let rec reads_ok = function
-    | EArrayRead (arr, idx) -> arr = st.st_array && idx = index
-    | EBinop (_, l, r) -> reads_ok l && reads_ok r
-    | EUnop (_, e) | ECast (_, e) -> reads_ok e
-    | EIntrinsic (_, _, []) as e -> (
-        match Affine.of_expr env e with
-        | Ok f -> Affine.is_uniform f
-        | Error _ -> false)
-    | EIntrinsic (_, _, args) -> List.for_all reads_ok args
-    | EVar v -> same_var acc v || env.classify_var v = Affine.Uniform_leaf
-    | EConst _ | EArrayLen _ -> true
-    | _ -> false
-  in
+  let output = (st.st_array, Affine.inline env st.st_index) in
   if is_acc acc value then Ok Plain
-  else if count_mentions acc value = 1 && reads_ok value then
+  else if count_mentions acc value = 1 && value_ok env acc ~output value then
     Ok (Epilogue value)
   else Error Unsupported_epilogue
+
+let check_init env acc st init =
+  let output = (st.st_array, Affine.inline env st.st_index) in
+  if value_ok env acc ~output init && not (expr_mentions acc init) then Ok ()
+  else Error Unsupported_init
 
 (* ---- One candidate loop ---------------------------------------------------- *)
 
 let check_aliasing ctx (ax, _, _) (ay, _, _) c =
+  let written arr =
+    match ctx.written with None -> true | Some l -> List.mem arr l
+  in
   if c = ax || c = ay then Error (Output_aliases_operand c)
-  else if List.mem ax ctx.written then Error (Operand_written ax)
-  else if List.mem ay ctx.written then Error (Operand_written ay)
+  else if written ax then Error (Operand_written ax)
+  else if written ay then Error (Operand_written ay)
   else Ok ()
+
+(* The number of iterations, when it is a constant. *)
+let k_extent ctx ~k_lo ~k_hi =
+  let extent = EBinop (Add, EBinop (Sub, k_hi, k_lo), EConst (CInt32 1l)) in
+  match Affine.of_expr (affine_env ctx ~atoms:[]) extent with
+  | Ok f when Affine.is_uniform f -> Some f.Affine.const
+  | _ -> None
+
+(* The store, its epilogue and the accumulator's start, after the loop. *)
+let output_of ctx acc init ~after =
+  let* st = find_store ctx acc after in
+  let env = affine_env st.st_ctx ~atoms:[] in
+  let* epilogue = classify_epilogue env acc st in
+  let init = Affine.inline (affine_env ctx ~atoms:[]) init in
+  let* () = check_init env acc st init in
+  let* ec = global_elt st.st_ctx st.st_array in
+  Ok (st, env, epilogue, init, ec)
 
 let analyse_loop ctx acc init ~before ~after = function
   | SFor (_, _, _, Downto, _) -> Error Downto_loop
@@ -262,10 +297,7 @@ let analyse_loop ctx acc init ~before ~after = function
         let* loop_ctx, (ox, oy), update = operands ctx acc body in
         let* k_lo = uniform_bound ctx lo in
         let* k_hi = uniform_bound ctx hi in
-        let* st = find_store ctx acc after in
-        let env = affine_env st.st_ctx ~atoms:[] in
-        let* epilogue = classify_epilogue env acc st in
-        let* ec = global_elt st.st_ctx st.st_array in
+        let* st, env, epilogue, init, ec = output_of ctx acc init ~after in
         let* () = check_aliasing ctx ox oy st.st_array in
         let inl (a, i, e) =
           (a, Affine.inline (affine_env loop_ctx ~atoms:[]) i, e)
@@ -274,14 +306,14 @@ let analyse_loop ctx acc init ~before ~after = function
           Sarek_matrix_roles.index_roles
             (affine_env st.st_ctx ~atoms:(kv :: st.st_ctx.loops))
             kv
+            ~k_extent:(k_extent ctx ~k_lo ~k_hi)
             (inl ox, inl oy)
             (st.st_array, Affine.inline env st.st_index, ec)
         in
-        let env0 = affine_env ctx ~atoms:[] in
         Ok
           {
             acc;
-            init = Affine.inline env0 init;
+            init;
             k_var = kv;
             k_lo;
             k_hi;
@@ -397,7 +429,7 @@ let initial_ctx (k : kernel) =
     lets = [];
     loops = [];
     guards = [];
-    written = written_arrays k.kern_body;
+    written = written_arrays k;
   }
 
 let analyze (k : kernel) = walk (initial_ctx k) k.kern_body

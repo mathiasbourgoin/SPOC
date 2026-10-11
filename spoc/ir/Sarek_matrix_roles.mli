@@ -14,7 +14,9 @@
 open Sarek_ir_types
 open Sarek_matrix_pattern_types
 
-(** [index_roles env kv (x, y) (c, ic, ec)] where [x] and [y] are the two
+(** [index_roles env kv ~k_extent (x, y) (c, ic, ec)] where [k_extent] is the
+    constant iteration count when known (a constant leading dimension below it
+    means overlapping rows), and [x] and [y] are the two
     factors as [(array, let-inlined index, element type)], [env] classifies [kv]
     and the enclosing loop variables as atoms, and [c]/[ic]/[ec] are the
     output's array, inlined index and element type. Returns A, B, C and
@@ -22,6 +24,7 @@ open Sarek_matrix_pattern_types
 val index_roles :
   Sarek_ir_affine.env ->
   var ->
+  k_extent:Sarek_ir_affine.poly option ->
   (string * expr * elttype) * (string * expr * elttype) ->
   string * expr * elttype ->
   (operand * operand * operand * (expr * expr * expr list), reason) result
