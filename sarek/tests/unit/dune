@@ -342,6 +342,15 @@
  (modules test_tuple_vec_registry)
  (libraries sarek.tuple_vec spoc_core spoc.ir alcotest))
 
+; The Native generator's descriptor for a tuple-shape element is the typed,
+; memoised Sarek_tuple_vec constructor, not a lookup by mangled name (whose
+; result type-checks at any type), and it is the descriptor the host built.
+
+(test
+ (name test_tuple_native_descriptor)
+ (modules test_tuple_native_descriptor)
+ (libraries sarek_ppx_lib ppxlib sarek.tuple_vec spoc_core spoc.ir alcotest))
+
 ; backlog-185/200: codegen keeps no state between generations. The cases fail
 ; for two different reasons on the pre-fix tree — sequential ones (a transpile
 ; leaving its framework tag in another emitter's global, so OpenCL emits CUDA's
