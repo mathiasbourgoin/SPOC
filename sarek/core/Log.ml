@@ -16,79 +16,91 @@ type level = Debug | Info | Warn | Error
 (** Components that can be logged *)
 type component = Transfer | Kernel | Device | Memory | Execute | All
 
-(** Current log level (messages at or above this level are shown) *)
-let log_level = ref Warn
+(** Level to int for comparison *)
+let level_to_int = function Debug -> 0 | Info -> 1 | Warn -> 2 | Error -> 3
 
-(** Enabled components *)
-let enabled_components : (component, bool) Hashtbl.t = Hashtbl.create 8
+(* Messages at or above this level pass the level gate. Read on every log
+   call, before anything else, so a disabled call is one int compare. *)
+let threshold = Atomic.make (level_to_int Warn)
 
-(** Initialize with all components disabled *)
-let () =
-  Hashtbl.add enabled_components Transfer false ;
-  Hashtbl.add enabled_components Kernel false ;
-  Hashtbl.add enabled_components Device false ;
-  Hashtbl.add enabled_components Memory false ;
-  Hashtbl.add enabled_components Execute false ;
-  Hashtbl.add enabled_components All false
+let bit = function
+  | Transfer -> 1
+  | Kernel -> 2
+  | Device -> 4
+  | Memory -> 8
+  | Execute -> 16
+  | All -> 32
+
+let all_bits = 63
+
+(* Enabled components, one bit each. The [All] bit enables every component;
+   enabling or disabling [All] sets or clears every bit. *)
+let mask = Atomic.make 0
+
+let rec update_mask f =
+  let old = Atomic.get mask in
+  if not (Atomic.compare_and_set mask old (f old)) then update_mask f
 
 (** Enable a component *)
 let enable comp =
-  if comp = All then begin
-    Hashtbl.replace enabled_components Transfer true ;
-    Hashtbl.replace enabled_components Kernel true ;
-    Hashtbl.replace enabled_components Device true ;
-    Hashtbl.replace enabled_components Memory true ;
-    Hashtbl.replace enabled_components Execute true
-  end ;
-  Hashtbl.replace enabled_components comp true
+  let b = if comp = All then all_bits else bit comp in
+  update_mask (fun m -> m lor b)
 
 (** Disable a component *)
 let disable comp =
-  if comp = All then begin
-    Hashtbl.replace enabled_components Transfer false ;
-    Hashtbl.replace enabled_components Kernel false ;
-    Hashtbl.replace enabled_components Device false ;
-    Hashtbl.replace enabled_components Memory false ;
-    Hashtbl.replace enabled_components Execute false
-  end ;
-  Hashtbl.replace enabled_components comp false
+  let b = if comp = All then all_bits else bit comp in
+  update_mask (fun m -> m land lnot b)
+
+(** Set log level *)
+let set_level lvl = Atomic.set threshold (level_to_int lvl)
+
+let component_of_string = function
+  | "transfer" -> Some Transfer
+  | "kernel" -> Some Kernel
+  | "device" -> Some Device
+  | "memory" -> Some Memory
+  | "execute" -> Some Execute
+  | "all" | "*" -> Some All
+  | _ -> None
+
+let level_of_string = function
+  | "debug" -> Some Debug
+  | "info" -> Some Info
+  | "warn" -> Some Warn
+  | "error" -> Some Error
+  | _ -> None
 
 (** Enable from environment variable SAREK_DEBUG=transfer,kernel,... Use "*" or
-    "all" to enable all components. *)
+    "all" to enable all components. A level ([debug], [info], [warn], [error])
+    sets the level; naming a component without a level sets it to [debug], so
+    [SAREK_DEBUG=kernel] prints the kernel component's debug messages. Unknown
+    words are ignored. *)
 let init_from_env () =
   match Sys.getenv_opt "SAREK_DEBUG" with
   | None -> ()
-  | Some s ->
-      let parts = String.split_on_char ',' s in
-      List.iter
-        (fun p ->
-          match String.lowercase_ascii (String.trim p) with
-          | "transfer" -> enable Transfer
-          | "kernel" -> enable Kernel
-          | "device" -> enable Device
-          | "memory" -> enable Memory
-          | "execute" -> enable Execute
-          | "all" | "*" -> enable All
-          | "debug" -> log_level := Debug
-          | "info" -> log_level := Info
-          | "warn" -> log_level := Warn
-          | "error" -> log_level := Error
-          | _ -> ())
-        parts
+  | Some s -> (
+      let words =
+        List.map
+          (fun p -> String.lowercase_ascii (String.trim p))
+          (String.split_on_char ',' s)
+      in
+      let comps = List.filter_map component_of_string words in
+      List.iter enable comps ;
+      let levels = List.filter_map level_of_string words in
+      match List.rev levels with
+      | last :: _ -> set_level last
+      | [] -> if comps <> [] then set_level Debug)
 
 (** Initialize on module load *)
 let () = init_from_env ()
 
-(** Set log level *)
-let set_level lvl = log_level := lvl
-
 (** Check if component is enabled *)
-let is_enabled comp =
-  Hashtbl.find_opt enabled_components All = Some true
-  || Hashtbl.find_opt enabled_components comp = Some true
+let is_enabled comp = Atomic.get mask land (bit All lor bit comp) <> 0
 
-(** Level to int for comparison *)
-let level_to_int = function Debug -> 0 | Info -> 1 | Warn -> 2 | Error -> 3
+(** [would_log level comp]: a message at [level] on [comp] would be printed.
+    Guard a call whose arguments cost something to compute with it. *)
+let would_log level comp =
+  level_to_int level >= Atomic.get threshold && is_enabled comp
 
 (** Level to string *)
 let level_to_string = function
@@ -108,7 +120,7 @@ let component_to_string = function
 
 (** Core logging function - printf style *)
 let logf level comp fmt =
-  if is_enabled comp && level_to_int level >= level_to_int !log_level then begin
+  if would_log level comp then begin
     Printf.printf "[%s][%s] " (level_to_string level) (component_to_string comp) ;
     Printf.kfprintf (fun oc -> Printf.fprintf oc "\n%!") stdout fmt
   end
@@ -116,7 +128,7 @@ let logf level comp fmt =
 
 (** String-based logging (simpler, no format issues) *)
 let log level comp msg =
-  if is_enabled comp && level_to_int level >= level_to_int !log_level then
+  if would_log level comp then
     Printf.printf
       "[%s][%s] %s\n%!"
       (level_to_string level)

@@ -332,26 +332,32 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
 
     let create_args () = Spoc_framework.Kernel_args.create ()
 
+    let logging () = Spoc_core.Log.(would_log Debug Kernel)
+
     let set_arg_buffer args idx buf =
-      Spoc_core.Log.debugf
-        Spoc_core.Log.Kernel
-        "OpenCL set_arg_buffer idx=%d (before=%d)"
-        idx
-        (Spoc_framework.Kernel_args.count args) ;
+      let logging = logging () in
+      if logging then
+        Spoc_core.Log.debugf
+          Spoc_core.Log.Kernel
+          "OpenCL set_arg_buffer idx=%d (before=%d)"
+          idx
+          (Spoc_framework.Kernel_args.count args) ;
       Spoc_framework.Kernel_args.set
         args
         idx
         (ArgBuffer {buf = buf.Memory.buf.Opencl_api.Memory.handle; idx}) ;
-      Spoc_core.Log.debugf
-        Spoc_core.Log.Kernel
-        "OpenCL set_arg_buffer done (after=%d)"
-        (Spoc_framework.Kernel_args.count args)
+      if logging then
+        Spoc_core.Log.debugf
+          Spoc_core.Log.Kernel
+          "OpenCL set_arg_buffer done (after=%d)"
+          (Spoc_framework.Kernel_args.count args)
 
     let set_arg_int32 args idx value =
-      Spoc_core.Log.debugf
-        Spoc_core.Log.Kernel
-        "OpenCL set_arg_int32 idx=%d"
-        idx ;
+      if logging () then
+        Spoc_core.Log.debugf
+          Spoc_core.Log.Kernel
+          "OpenCL set_arg_int32 idx=%d"
+          idx ;
       Spoc_framework.Kernel_args.set args idx (ArgInt32 {value; idx})
 
     let set_arg_int64 args idx value =
@@ -377,10 +383,11 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
          cannot catch a caller that consistently omits a trailing
          argument. *)
       let expected_count = Spoc_framework.Kernel_args.count args in
-      Spoc_core.Log.debugf
-        Spoc_core.Log.Kernel
-        "OpenCL launch: args count=%d"
-        expected_count ;
+      if logging () then
+        Spoc_core.Log.debugf
+          Spoc_core.Log.Kernel
+          "OpenCL launch: args count=%d"
+          expected_count ;
       let ordered_args =
         match
           Spoc_framework.Kernel_args.validate_and_extract args ~expected_count

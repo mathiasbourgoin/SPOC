@@ -2,6 +2,12 @@
 
 ### Fixed
 
+- `SAREK_DEBUG=kernel` (and any other component named without a level) now
+  prints that component's debug messages, as the backend READMEs say (R-43).
+  Before, the level stayed at `warn`, so `Log.debug` printed nothing. A level
+  in the list still wins: `SAREK_DEBUG=kernel,info` prints info and above.
+  Regression test: `sarek/core/test/test_log.ml`.
+
 - Native launches from several domains no longer hang or corrupt each other
   (R-64). The process-wide `ThreadPool` and `ParallelPool` serialise whole
   launches behind a per-pool `launch_lock`, so counters, the work function,
@@ -268,6 +274,14 @@
   `specs/stdlib-bitcasts.md`.
 
 ### Changed
+
+- With logging off, a `Spoc_core.Log` call costs one integer compare (R-43):
+  the level is tested first, against an atomic, and the enabled components
+  are an atomic bit mask instead of a polymorphic `Hashtbl`.
+  `Log.would_log level comp` lets a call site skip computing its arguments;
+  the per-launch sites in `Transfer`, `Execute.get_device_buffer` and the
+  OpenCL argument setters use it. `Log.log_level` (a `ref`) is gone: use
+  `Log.set_level`.
 
 - `Spoc_framework.Kernel_args` stores arguments in an array of options
   instead of a polymorphic `Hashtbl` (R-42): `set` and `validate_and_extract`
