@@ -149,6 +149,56 @@ let check_default_not_shared ~align device =
       Backend.Memory.free buf ;
       Alcotest.fail "alloc_zero_copy shared an aligned host array"
 
+(* Releasing a host-pointer buffer first finishes the device's queue: a kernel
+   still queued on it must not touch host memory the caller frees once the
+   buffer is gone. An ordinary buffer is released without waiting. *)
+let check_release_finishes ~align device =
+  let finishes () =
+    Atomic.get Opencl_plugin_base.For_testing.host_ptr_release_finishes
+  in
+  let before = finishes () in
+  Backend.Memory.free (Backend.Memory.alloc device n Bigarray.float32) ;
+  Alcotest.(check int) "ordinary release does not finish" before (finishes ()) ;
+  Backend.Memory.free (host_ptr_buffer device (host_array ~align 0.0)) ;
+  Alcotest.(check int)
+    "host-pointer release finishes"
+    (before + 1)
+    (finishes ())
+
+let refusal =
+  Alcotest.testable (fun ppf _ -> Format.pp_print_string ppf "<refusal>") ( = )
+
+(* The refusal rule itself, without allocating: nothing here touches a
+   device. *)
+let check_refusal_rule () =
+  let open Spoc_framework.Framework_sig in
+  let rule ?(accept_device = true) ?(address = 4096n) byte_size =
+    Opencl_api.Memory.host_ptr_refusal
+      ~accept_device
+      ~align_bytes:128
+      ~max_alloc_bytes:(Int64.shift_left 1L 32)
+      ~address
+      ~byte_size
+  in
+  let check what want got = Alcotest.(check (option refusal)) what want got in
+  check "accepted" None (rule 1024) ;
+  check "exactly the limit" None (rule (1 lsl 32)) ;
+  check
+    "too large"
+    (Some
+       (Host_ptr_too_large
+          {byte_size = (1 lsl 32) + 1; max_byte_size = 1 lsl 32}))
+    (rule ((1 lsl 32) + 1)) ;
+  check "empty" (Some Host_ptr_empty) (rule 0) ;
+  check
+    "misaligned"
+    (Some (Host_ptr_misaligned {address = 4100n; required_alignment = 128}))
+    (rule ~address:4100n 1024) ;
+  check
+    "not a CPU device"
+    (Some Host_ptr_not_cpu_device)
+    (rule ~accept_device:false 0)
+
 let on_every_device check () =
   if not (Backend.is_available ()) then begin
     Printf.printf "[SKIP] No OpenCL device available\n%!" ;
@@ -191,5 +241,13 @@ let () =
             "the default path does not share host memory"
             `Quick
             (on_every_device check_default_not_shared);
+          Alcotest.test_case
+            "releasing a host-pointer buffer finishes the queue"
+            `Quick
+            (on_every_device check_release_finishes);
+          Alcotest.test_case
+            "refusal rule: CPU, empty, alignment, size"
+            `Quick
+            check_refusal_rule;
         ] );
     ]

@@ -13,8 +13,10 @@
  * - the synchronisation contract: [publish_host_writes] makes raw host writes
  *   visible to the next launch, [acquire_device_writes] makes a kernel's
  *   writes visible in the Bigarray;
- * - refusals: misaligned array, vector that already has a buffer on the
- *   device, non-CPU OpenCL device (checked without creating a context).
+ * - refusals: misaligned or empty array, vector that already has a buffer on
+ *   the device, non-CPU OpenCL device (checked without creating a context);
+ * - the synchronisation contract again on the first non-CPU OpenCL device,
+ *   forced with the test-only hook, where a missing map/unmap is visible.
  *
  * Prints SKIP when there is no CPU OpenCL device.
  ******************************************************************************)
@@ -137,6 +139,15 @@ let check_refusals dev =
   | Error e -> expect ("wrong refusal: " ^ Hpb.error_message e) false
   | Ok () -> expect "attach over an existing buffer accepted" false
 
+let check_empty_refused dev =
+  let empty = Bigarray.Array1.create Bigarray.float32 Bigarray.c_layout 0 in
+  match Hpb.of_bigarray dev Vector.Float32 empty with
+  | Error
+      (Hpb.Refused {reason = Spoc_framework.Framework_sig.Host_ptr_empty; _}) ->
+      ()
+  | Error e -> expect ("empty: wrong refusal " ^ Hpb.error_message e) false
+  | Ok _ -> expect "empty array accepted" false
+
 let check_non_cpu_refused (dev : Device.t) =
   match Hpb.of_bigarray dev Vector.Float32 (filled (fun _ -> 0.0)) with
   | Error
@@ -159,9 +170,27 @@ let () =
         check_equals_copy_path dev ;
         check_sync_contract dev ;
         check_refusals dev ;
+        check_empty_refused dev ;
         Printf.printf "  %s: done\n%!" dev.Device.name)
       cpus ;
     List.iter check_non_cpu_refused others ;
+    (* The Intel CPU runtime aliases the host memory even without a map, so
+       on it a no-op publish/acquire would pass. A GPU runtime keeps a private
+       copy behind CL_MEM_USE_HOST_PTR, which makes the map/unmap observable:
+       force the opt-in on the first non-CPU OpenCL device (the test-only
+       hook; device order puts a discrete GPU first on rusticl). *)
+    (match others with
+    | gpu :: _ ->
+        Sarek_opencl.Opencl_plugin_base.For_testing.host_ptr_on_any_device :=
+          true ;
+        Fun.protect
+          ~finally:(fun () ->
+            Sarek_opencl.Opencl_plugin_base.For_testing.host_ptr_on_any_device :=
+              false)
+          (fun () -> check_sync_contract gpu) ;
+        Printf.printf "  %s: sync contract done\n%!" gpu.Device.name
+    | [] ->
+        print_endline "  no non-CPU OpenCL device: sync contract on CPU only") ;
     Printf.printf
       "test_opencl_host_ptr_buffer: %s (%d failures)\n"
       (if !failures = 0 then "PASSED" else "FAILED")
