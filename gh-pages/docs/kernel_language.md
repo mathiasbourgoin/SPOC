@@ -28,6 +28,8 @@ let grid_stride_sum =
       output.(global_thread_id) <- acc]
 ```
 
+`output` needs one slot per launched thread: a thread whose `global_thread_id` is at least `n` skips the loop but still stores its zero.
+
 ### Unrolling
 
 `pragma ["unroll N"] (loop)` asks the device compiler to unroll the `for` or `while` loop it wraps by a factor of `N`. It works for loops whose trip count is only known at run time. `pragma ["unroll"]` asks for the compiler's choice.
