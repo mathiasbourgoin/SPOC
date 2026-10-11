@@ -118,7 +118,12 @@ let rec core_frag = function
   | EApp args -> List.for_all core_frag args
   | EReturn _ -> false
 
-(* Env-threaded varying analysis + checker (mirrors check_env). *)
+(* Env-threaded varying analysis + checker (mirrors check_env). The ESeq case
+   below is the plain flat-map: it does NOT thread the F-04 varying-return
+   flag. That is exact only on core_frag (no EReturn), where the flag never
+   fires (Rocq: check_env_seq_core_frag); every property in this file that uses
+   this mirror draws from the core-fragment generator. Do not reuse it on
+   terms with EReturn. *)
 type env = (int * bool) list
 
 let env_lookup (env : env) (x : int) : bool =

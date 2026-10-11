@@ -55,7 +55,7 @@ attribute set.
 | Rule | Statement |
 |---|---|
 | SS-1 | A superstep reached in `Diverged` mode is an error (`Barrier_in_diverged_flow`, located at the superstep). This holds **with or without `[@divergent]`**. |
-| SS-2 | `body` is checked in the outer mode. Structured control flow inside `body` (`if`, `match`, loops) reconverges at its own end, before the implicit barrier, so a thread-varying `if` whose branches contain no synchronisation point is accepted. A synchronisation point inside a varying branch of `body` is rejected by the ordinary rules. |
+| SS-2 | `body` is checked in the outer mode. Structured control flow inside `body` (`if`, `match`, loops) reconverges at its own end, before the implicit barrier, so a thread-varying `if` whose branches contain no synchronisation point is accepted. A synchronisation point inside a varying branch of `body` is rejected by the ordinary rules. Soundness of SS-2 assumes no thread leaves the body early: it depends on the `return_unit` refusal (§7, C-6). Until that refusal lands, `return_unit ()` under varying control inside a superstep body is accepted and unsound (it reaches the checker as an ordinary intrinsic call, not `TEReturn`, and the early-return analysis does not descend into superstep bodies), so some threads skip the implicit barrier. |
 | SS-3 | `cont` is checked in the outer mode. Production no longer resets it to `Converged`; resetting hid nothing reachable only because SS-1 already rejects a diverged entry, and it made the three semantics disagree. |
 | SS-4 | `[@divergent]` is accepted for source compatibility and has **no effect** on checking or lowering. Its former effect, skipping SS-1, was unsound: it accepted `if thread_idx_x > 16l then let%superstep[@divergent] s = ... in ()`, which lowers to `SBarrier` inside `SIf` (C-7). Any other attribute stays refused (backlog-192). |
 | SS-5 | Variance is not reset by a superstep: a variable that may vary before it may vary after it. |
@@ -76,6 +76,13 @@ branch of `make test_negative` is removed.
 | cont | outer mode | outer mode | outer mode |
 | `barrier_free` / trace | — | `ESuperstep` is never barrier-free | `eval` emits `EvBarrier` for every flag |
 | flag | inert | inert: theorem `check m (ESuperstep true b c) = check m (ESuperstep false b c)` (and for `check_env`, `check_warp`, `check_warp_env`) | inert in `eval` |
+
+Error classes: `ConvergenceSpec.check_warp` (binding-blind, one checker for
+both classes) reports a diverged superstep entry as `BarrierError`, while
+`ConvergenceSemantics.check_warp_env` reports no error for it, because the
+entry is a barrier error and belongs to `check_env`. Production reports it as a
+barrier error. The production link therefore compares barrier errors with
+`check_env` and warp errors with `check_warp_env`, never with `check_warp`.
 
 `core_frag_ss` no longer excludes `[@divergent]` supersteps: the trust
 boundary ASSUMPTIONS.md recorded for `dv = true` disappears, and
@@ -174,7 +181,9 @@ and the model.
   intrinsic table (they reach the model only through `EVary`); `EReturn`
   (no production construct produces it; `eval` keeps emitting the superstep
   barrier after a return inside the body, which a GPU would skip, and this
-  stays outside the verified fragment).
+  stays outside the verified fragment). The same hazard exists in production
+  through `return_unit` (an intrinsic, not `TEReturn`): the soundness of SS-2
+  depends on the C-6 refusal of §7.
 
 ## 7. Refusals (C-49, C-6)
 

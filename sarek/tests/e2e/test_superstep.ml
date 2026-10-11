@@ -81,6 +81,7 @@ let kernel_superstep_varying_if =
       let%superstep step =
         if thread_idx_x > 16l then
           tile.(thread_idx_x) <- input.(global_thread_id)
+        else tile.(thread_idx_x) <- 0.0
       in
       output.(global_thread_id) <- tile.(thread_idx_x)]
 
