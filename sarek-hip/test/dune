@@ -130,6 +130,32 @@
  (action
   (run %{dep:test_hip_f16_shapes.exe})))
 
+; f32 -> f16 narrowings whose value is exact in f32 are emitted without the
+; barrier (specs/f16-narrowing-barrier.md). Dequantisation shapes over every
+; finite binary16 scale, bit-compared with the f32-then-f16 model and with the
+; interpreter; a Q4_K-shaped control must keep its barriers.
+
+(executable
+ (name test_hip_f16_narrowing_exact)
+ (modules test_hip_f16_narrowing_exact)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek.interp
+  sarek_codegen
+  sarek_ir
+  spoc_core
+  sarek_hip)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias e2e-hip)
+ (action
+  (run %{dep:test_hip_f16_narrowing_exact.exe})))
+
 ; backlog-214 - the HIP plugin refuses a non-empty ~soa_params instead of
 ; answering an SoA argument list with AoS source. Pure codegen: no HIP device
 ; and no ROCm runtime, so unlike everything else in this directory it is a
