@@ -269,6 +269,13 @@
 
 ### Changed
 
+- `Spoc_framework.Kernel_args` stores arguments in an array of options
+  instead of a polymorphic `Hashtbl` (R-42): `set` and `validate_and_extract`
+  no longer hash or compare polymorphically on every launch. Same API and
+  error texts; indices below 0 or from 4096 up are kept in a sorted list, so
+  a stray index never allocates storage of its size. The errors now say
+  "unexpected indices", not "unexpected indexs".
+
 - `Spoc_core.Memory.bigarray_void_ptr` is replaced by
   `Memory.borrow_bigarray_ptr`, whose pointer need not root the bigarray: the
   caller keeps it reachable, on transfer paths with a trailing
