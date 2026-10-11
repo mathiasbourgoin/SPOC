@@ -573,6 +573,13 @@ let nvrtc_option_array ?arch ~(options : string list)
   (match arch with None -> [] | Some a -> ["--gpu-architecture=" ^ a])
   @ options @ include_opts
 
+(* Run [f] on a C [char *] array holding [strs]. Not [CArray.of_list string]:
+   ctypes' [string] view copies each element into a C buffer that nothing
+   keeps alive once the element has been written, so a collection before the
+   call frees the option strings under the compiler (observed: hiprtc read a
+   garbage option and failed with "error reading '8{...'"). Here every buffer
+   stays reachable until [f] has returned. *)
+
 (** Compile CUDA source to PTX.
     @param source CUDA C source code
     @param name Optional program name
@@ -583,6 +590,17 @@ let nvrtc_option_array ?arch ~(options : string list)
       with the interpreter raises {!Fp_conformance_violation} BEFORE any nvrtc
       call, so the check is reachable on a host with no CUDA at all.
     @return PTX code as string *)
+let with_c_strings (strs : string list) (f : int -> string ptr -> 'a) : 'a =
+  let bufs = List.map CArray.of_string strs in
+  let ptrs = CArray.of_list (ptr char) (List.map CArray.start bufs) in
+  let r =
+    f
+      (List.length strs)
+      (coerce (ptr (ptr char)) (ptr string) (CArray.start ptrs))
+  in
+  ignore (Sys.opaque_identity (bufs, ptrs)) ;
+  r
+
 let compile_to_ptx ?(name = "kernel") ~arch ?(options = []) (source : string) :
     string =
   (* Fail fast, before touching libnvrtc: a bad flag is a programming error in
@@ -632,16 +650,7 @@ let compile_to_ptx ?(name = "kernel") ~arch ?(options = []) (source : string) :
     check_fp_conformance opts ;
     match opts with
     | [] -> nvrtcCompileProgram prog_handle 0 (from_voidp string null)
-    | _ ->
-        let opt_array = CArray.of_list string opts in
-        let res =
-          nvrtcCompileProgram
-            prog_handle
-            (CArray.length opt_array)
-            (CArray.start opt_array)
-        in
-        ignore (Sys.opaque_identity (opts, opt_array)) ;
-        res
+    | _ -> with_c_strings opts (nvrtcCompileProgram prog_handle)
   in
 
   let rec try_arch = function
