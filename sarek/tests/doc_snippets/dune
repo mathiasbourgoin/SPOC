@@ -16,6 +16,8 @@
   sarek.core
   sarek.stdlib
   sarek.native
+  sarek.gemm
+  sarek.matrix
   sarek.interpreter
   sarek-cuda.plugin
   sarek-hip.plugin
@@ -75,6 +77,20 @@
   (with-stdout-to
    snip_docs_memory.ml
    (run %{exe:extract.exe} %{dep:../../../gh-pages/docs/memory.md}))))
+
+(rule
+ (targets snip_docs_matrix.ml)
+ (action
+  (with-stdout-to
+   snip_docs_matrix.ml
+   (run %{exe:extract.exe} %{dep:../../../gh-pages/docs/matrix.md}))))
+
+(rule
+ (targets snip_docs_kernel_language.ml)
+ (action
+  (with-stdout-to
+   snip_docs_kernel_language.ml
+   (run %{exe:extract.exe} %{dep:../../../gh-pages/docs/kernel_language.md}))))
 
 (rule
  (targets snip_docs_transpiler.ml)
