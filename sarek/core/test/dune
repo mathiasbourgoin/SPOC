@@ -28,3 +28,10 @@
  (name test_nativeint_round_trip)
  (modules test_nativeint_round_trip)
  (libraries spoc_core ctypes sarek_native sarek_interpreter))
+
+; Log: SAREK_DEBUG parsing and the component/level gate.
+
+(test
+ (name test_log)
+ (modules test_log)
+ (libraries spoc_core alcotest unix))
