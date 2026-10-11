@@ -159,12 +159,30 @@ let key_name : type a. a key -> string = function
 
 (* Registry slot of a shape: pairs occupy [0 .. tag_count^2 - 1], triples the
    [tag_count^3] slots after them. Distinct shapes have distinct slots. *)
-let pair_slot a b = (tag_index a * tag_count) + tag_index b
+(* [tag_index t], refused unless it lies in [0, tag_count). The start-up check
+   covers only the tags reachable through [next_tag]; a constructor left out of
+   that chain is refused here instead of addressing a slot outside its range.
+   If its index duplicates a reachable tag's, the slot it shares holds an
+   entry for another shape and [recover] refuses it. *)
+let slot_index : type a. a tag -> int =
+ fun t ->
+  let i = tag_index t in
+  if i >= 0 && i < tag_count then i
+  else
+    failwith
+      (Printf.sprintf
+         "Sarek_tuple_vec: tag %s has index %d, outside [0, %d): it is not in \
+          the next_tag enumeration"
+         (tag_name t)
+         i
+         tag_count)
+
+let pair_slot a b = (slot_index a * tag_count) + slot_index b
 
 let triple_slot a b c =
   (tag_count * tag_count)
-  + (((tag_index a * tag_count) + tag_index b) * tag_count)
-  + tag_index c
+  + (((slot_index a * tag_count) + slot_index b) * tag_count)
+  + slot_index c
 
 let key_slot : type a. a key -> int = function
   | Pair (a, b) -> pair_slot a b
