@@ -54,7 +54,13 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
   (** Current device for kernel compilation/execution *)
   let current_device : Opencl_api.Device.t option ref = ref None
 
+  (* Guards [device_states]: lookup and creation happen under it, so domains
+     using a device for the first time at once get the same state (one stream
+     list, which [Device.synchronize] reads). *)
+  let device_states_lock = Mutex.create ()
+
   let get_state device_id =
+    Mutex.protect device_states_lock @@ fun () ->
     match Hashtbl.find_opt device_states device_id with
     | Some s -> s
     | None ->

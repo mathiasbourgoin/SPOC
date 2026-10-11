@@ -47,11 +47,14 @@
   sync and releases up to those marks after it, so work another domain
   enqueues during the sync stays rooted. `Transfer.flush` is now
   `Device.synchronize`. On OpenCL, `Device.synchronize` now finishes every live
-  stream's command queue, not only the default queue. Regression tests:
+  stream's command queue, not only the default queue, and a device's state
+  (context, default queue, stream list) is created once even when several
+  domains use the device for the first time at once. Regression tests:
   `test_device_synchronize_releases` and
   `test_device_synchronize_keeps_later_work` in
   `sarek/tests/e2e/device_buffers_suite.ml` (CPU backends and HIP),
-  `sarek-opencl/test/test_opencl_device_sync_streams.ml`.
+  `sarek-opencl/test/test_opencl_device_sync_streams.ml`,
+  `sarek-opencl/test/test_opencl_device_state_race.ml`.
 - Native launches from several domains no longer hang or corrupt each other
   (R-64). The process-wide `ThreadPool` and `ParallelPool` serialise whole
   launches behind a per-pool `launch_lock`, so counters, the work function,
