@@ -146,6 +146,8 @@ let () =
   if not (List.mem combo ["relaxed-only"; "new-only"; "both"]) then (
     prerr_endline "usage: test_matrix_optin (relaxed-only|new-only|both)" ;
     exit 2) ;
+  (* The environment may say SAREK_MATRIX_REWRITE=off: the mode is not under test. *)
+  Spec.set_mode Spec.Auto ;
   if combo <> "new-only" then
     Sarek_coopmat.accept_relaxed_accumulation ~reason:"test_matrix_optin" ;
   if combo <> "relaxed-only" then
