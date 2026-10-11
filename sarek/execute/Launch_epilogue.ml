@@ -241,13 +241,37 @@ let merged (w : 'arg LW.t) (p : 'arg LW.launch) (c : 'arg LW.launch) ~fused
   let args = p.args @ c_args @ [w.LW.int32_arg (Int32.of_int tc)] in
   let info = LW.ir_info_locked w fused in
   let key = (p.ir_id, p_array, c.ir_id, shared) in
+  (* P and C as submitted, like the window issues a group singly: both are
+     attempted even if P raises, and the first exception is re-raised after C
+     (FR-006). The window counts the merged launch as one backend launch when
+     this returns, and not at all when it raises, so the launches really made
+     are added here: all but that one on return, all of them on a raise. *)
+  let issue_unfused () =
+    let made = ref 0 in
+    let count ~counted_by_caller =
+      for _ = 1 to !made - counted_by_caller do
+        LW.bump w.LW.c_issued
+      done
+    in
+    match
+      LW.each
+        (fun (l : _ LW.launch) ->
+          l.issue () ;
+          incr made)
+        [p; c]
+    with
+    | () -> count ~counted_by_caller:1
+    | exception e ->
+        let bt = Printexc.get_raw_backtrace () in
+        count ~counted_by_caller:0 ;
+        Printexc.raise_with_backtrace e bt
+  in
   let issue () =
     match p.issue_fused fused args p.grid with
     | () -> ()
     | exception e when not (fatal e) ->
         Hashtbl.replace fused_cache key None ;
-        p.issue () ;
-        c.issue ()
+        issue_unfused ()
   in
   {
     p with

@@ -19,6 +19,13 @@
   `sarek/tests/negative/test_barrier_open_std.ml`,
   `sarek/tests/negative/test_barrier_qualified_gpu.ml`,
   `sarek/tests/unit/test_convergence.ml` ("name resolution").
+- The fallback of an epilogue-merged launch (the fused kernel failing at issue
+  time) now issues the pair like the launch window does (#459). If the
+  producer raised, the consumer was never issued, against the window's
+  contract that every held launch is issued and the first exception re-raised
+  afterwards; and both launches were counted as one in `issued`. Regression
+  test: `sarek/tests/unit/test_launch_epilogue_fallback.ml`.
+
 
 - `SAREK_DEBUG=kernel` (and any other component named without a level) now
   prints that component's debug messages, as the backend READMEs say (R-43).
