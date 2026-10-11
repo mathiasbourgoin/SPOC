@@ -22,6 +22,10 @@
  *   q6     f16(ds * float(q6)),            the same, ds a let-bound product
  *          ds = d * float(int8)
  *   q4     f16(d * float(q4) - dm)         inexact (kept)
+ *   diff   f16((float b0 - float b1) * k)  exact, -0 when b0 < b1 and k = 0:
+ *                                          a signed product (review finding)
+ *   bits   f16(float_of_bits (bits_of_float (d * dmin * q))): LLVM folds the
+ *          bitcast round trip and fuses the inexact product (kept)
  *
  * For each: the generated source has the expected number of barrier calls;
  * the device agrees BIT FOR BIT with a host model that rounds to f32 and then
@@ -77,6 +81,60 @@ let k_bytes =
         out.(o + 1l) <- float16_of_float32 p ;
         out.(o + 2l) <- float16_of_float32 (p -. b2) ;
         out.(o + 3l) <- float16_of_float32 (b2 -. p)
+      end]
+
+let k_diff =
+  [%kernel
+    fun (out : float16 vector)
+        (scales : float16 vector)
+        (qs : int32 vector)
+        (n : int32) ->
+      let open Sarek_stdlib.Std in
+      let tid = global_thread_id in
+      if tid < n then begin
+        let w = qs.(tid) in
+        let b0 = float (w land 255l) in
+        let b1 = float ((w asr 8l) land 255l) in
+        let k = float ((w asr 16l) land 2l) in
+        let o = tid * 4l in
+        out.(o) <- float16_of_float32 ((b0 -. b1) *. k) ;
+        out.(o + 1l) <- float16_of_float32 ((b1 -. b0) *. k) ;
+        out.(o + 2l) <- float16_of_float32 ((0.0 -. b0) *. b1) ;
+        out.(o + 3l) <-
+          float16_of_float32 ((b0 -. b1) *. float ((w asr 16l) land 255l))
+      end]
+
+let k_bits =
+  [%kernel
+    fun (out : float16 vector)
+        (scales : float16 vector)
+        (qs : int32 vector)
+        (n : int32) ->
+      let open Sarek_stdlib.Std in
+      let tid = global_thread_id in
+      if tid < n then begin
+        let d = float32_of_float16 scales.(tid / 64l) in
+        let dmin = float32_of_float16 scales.(tid / 64l lxor 1l) in
+        let w = qs.(tid) in
+        let o = tid * 4l in
+        out.(o) <-
+          float16_of_float32
+            (Int32.float_of_bits
+               (Int32.bits_of_float (d *. dmin *. float (w land 255l)))) ;
+        out.(o + 1l) <-
+          float16_of_float32
+            (Int32.float_of_bits
+               (Int32.bits_of_float (d *. dmin *. float ((w asr 8l) land 255l)))) ;
+        out.(o + 2l) <-
+          float16_of_float32
+            (Int32.float_of_bits
+               (Int32.bits_of_float
+                  (d *. dmin *. float ((w asr 16l) land 255l)))) ;
+        out.(o + 3l) <-
+          float16_of_float32
+            (Int32.float_of_bits
+               (Int32.bits_of_float
+                  (d *. dmin *. float ((w asr 24l) land 255l))))
       end]
 
 let k_q8 =
@@ -197,6 +255,24 @@ let ref_bytes i =
   and b2 = fi (field w 16 255) in
   round16 (f32 [|p +. b2; p; p -. b2; b2 -. p|].(i mod 4))
 
+let ref_diff i =
+  let w = bytes_word (i / 4) in
+  let b0 = fi (field w 0 255) and b1 = fi (field w 8 255) in
+  let k = fi (field w 16 2) in
+  round16
+    (f32
+       [|
+         f32 (b0 -. b1) *. k;
+         f32 (b1 -. b0) *. k;
+         f32 (0.0 -. b0) *. b1;
+         f32 (b0 -. b1) *. fi (field w 16 255);
+       |].(i mod 4))
+
+let ref_bits i =
+  let d = scale_values.(i / 256) and dmin = scale_values.(i / 256 lxor 1) in
+  let q = fi (field (scale_word (i / 4)) (8 * (i mod 4)) 255) in
+  round16 (f32 (f32 (d *. dmin) *. q))
+
 let ref_q8 i =
   let d = scale_values.(i / 256) and w = scale_word (i / 4) in
   round16 (f32 (d *. fi (sbyte w (i mod 4))))
@@ -232,6 +308,8 @@ let cases =
   [
     case "sum" k_sum ref_sum 0;
     case "bytes" k_bytes ~words:(1 lsl 22) ~word:bytes_word ref_bytes 0;
+    case "diff" k_diff ~words:(1 lsl 22) ~word:bytes_word ref_diff 0;
+    case "bits" k_bits ref_bits 4;
     case "q8" k_q8 ref_q8 0;
     case "q6" k_q6 ref_q6 0;
     case "q4" k_q4 ref_q4 4;
