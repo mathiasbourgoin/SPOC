@@ -170,10 +170,23 @@ let check_size_class ?(accumulate = false) dev ~m ~n ~k ~expect_direct =
             !worst
         else fail "%s: max err %.3g x gamma_K" what !worst
 
+(* Whether the DEFAULT launch path rewrites the int32 product on [dev]: the
+   predicate of Matrix_specialise (HIP; Vulkan on 64-wide subgroups). The
+   interpreter stays the oracle and CUDA/C has compiler-output evidence only:
+   both are rewritten on an explicit request. *)
+let auto_rewrites dev =
+  offers_int dev
+  &&
+  match dev.Device.framework with
+  | "Interpreter" | "CUDA/C" -> false
+  | "Vulkan" ->
+      dev.Device.capabilities.Spoc_framework.Framework_sig.warp_size = 64
+  | _ -> true
+
 (* Two launches of one kernel on one device reuse the rewritten IR. *)
 let check_cache dev =
   Spec.set_mode Spec.Auto ;
-  let explicit = dev.Device.framework = "Interpreter" in
+  let explicit = not (auto_rewrites dev) in
   let _, _, o1 = int_run ~explicit dev ~m:17 ~n:33 ~k:5 in
   let _, _, o2 = int_run ~explicit dev ~m:17 ~n:33 ~k:5 in
   match (o1, o2) with
@@ -184,9 +197,7 @@ let check_cache dev =
 let check_report dev =
   let seen = ref [] in
   Spec.set_reporter (Some (fun r -> seen := r :: !seen)) ;
-  let _ =
-    int_run ~explicit:(dev.Device.framework = "Interpreter") dev ~m:8 ~n:8 ~k:8
-  in
+  let _ = int_run ~explicit:(not (auto_rewrites dev)) dev ~m:8 ~n:8 ~k:8 in
   Spec.set_reporter None ;
   match !seen with
   | {Spec.outcome = Spec.Specialised _; _} :: _ ->
@@ -366,11 +377,7 @@ let check_auto_precision dev =
 
 let int_phase dev =
   let rewrites = offers_int dev in
-  (* Explicit-request-only devices: the interpreter stays the oracle, CUDA/C
-     has compiler-output evidence only. *)
-  let interp =
-    dev.Device.framework = "Interpreter" || dev.Device.framework = "CUDA/C"
-  in
+  let interp = not (auto_rewrites dev) in
   check_mode dev ~mode:Spec.Auto ~expect:(rewrites && not interp) ;
   check_mode dev ~mode:Spec.Exact ~expect:(rewrites && not interp) ;
   check_mode dev ~mode:Spec.Off ~expect:false ;

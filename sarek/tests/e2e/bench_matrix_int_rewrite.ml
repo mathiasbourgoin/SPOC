@@ -66,11 +66,13 @@ let bench dev =
     Transfer.flush dev ;
     outcome
   in
+  (* The whole batch is submitted, then flushed once, then the clock is read. *)
   let timed ~rewrite =
     let t0 = Unix.gettimeofday () in
     for _ = 1 to batch do
-      ignore (once ~rewrite)
+      ignore (launch ~rewrite dev ir ~args ~block ~grid)
     done ;
+    Transfer.flush dev ;
     (Unix.gettimeofday () -. t0) /. float_of_int batch
   in
   ignore (once ~rewrite:false) ;

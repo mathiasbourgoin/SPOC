@@ -9,17 +9,17 @@
     [Execute.run_vectors] asks {!choose}, per launch, whether to run a
     matrix-unit rewrite of the kernel it was given. The answer depends on the
     kernel (a GEMM nest the rewrite can bound, {!Sarek_matrix_mapping}), the
-    device (HIP gfx11 with 32-wide waves, or the interpreter), the {!mode}, the
-    accuracy opt-ins of {!Sarek_coopmat}, and the actual sizes: the aligned
-    float16 size class loads fragments straight from global memory
+    device (HIP gfx11, Vulkan, CUDA/C, or the interpreter; see below), the
+    {!mode}, the accuracy opt-ins of {!Sarek_coopmat}, and the actual sizes: the
+    aligned float16 size class loads fragments straight from global memory
     ({!Sarek_matrix_direct}), every other case is staged through shared memory
     ({!Sarek_matrix_rewrite}). A rewritten launch writes exactly the outputs the
     original launch writes.
 
     Static plans and rewritten kernels are cached by the IR's physical identity
-    (like [Execute]'s launch memo, #424) and by (lowering, size class); the
-    device and mode are re-checked on every launch, which costs a few list
-    lookups. A kernel with no matrix product costs one memo lookup. *)
+    (like [Execute]'s launch memo, #424) and by (lowering, size class, subgroup
+    width); the device and mode are re-checked on every launch, which costs a
+    few list lookups. A kernel with no matrix product costs one memo lookup. *)
 
 open Sarek_ir_types
 
@@ -100,8 +100,10 @@ val outcome_text : outcome -> string
     accuracy opt-ins only, not {!Sarek_coopmat.accept_automatic_float_rewrite}.
     A float kernel declined for lack of that opt-in yields an [Original] whose
     reason names it. [stream]: the launch is on a stream (the interpreter path
-    has none). Devices other than HIP and the interpreter are declined before
-    any analysis; an exception in the analysis yields [Original].
+    has none). Devices other than HIP, Vulkan, CUDA/C and the interpreter are
+    declined before any analysis; Vulkan is rewritten automatically on 64-wide
+    subgroups only, and CUDA/C (like the interpreter) on an explicit request
+    only; an exception in the analysis yields [Original].
 
     The cache is keyed by the IR's physical identity, as [Execute]'s launch
     memo: a kernel rebuilt for every launch is analysed every time. *)
