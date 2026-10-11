@@ -469,6 +469,9 @@ If OpenCL is not detecting your device, ensure you have the appropriate ICD (Ins
 - [GitHub Pages](http://mathiasbourgoin.github.io/Sarek/) - User guides, tutorials, and API docs
 - [Launch window and fusion](gh-pages/docs/performance.md) - deferred launches, fusion, per-backend defaults, error timing
 - [Memory and transfers](gh-pages/docs/memory.md) - device-only vectors, streams, pinned memory, small writes
+- [Matrix units](gh-pages/docs/matrix.md) - the `sarek_matrix` advice, the automatic GEMM rewrite, accuracy opt-ins
+- [Kernel language notes](gh-pages/docs/kernel_language.md) - `pragma ["unroll N"]`, strided loops, private and shared arrays
+- [Environment variables](gh-pages/docs/environment.md) - every `SAREK_*` and `SPOC_*` variable, with accepted values
 - [HIP backend](sarek-hip/README.md) - requirements, defaults and tests for AMD GPUs
 - [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution guidelines
 - [CHANGES.md](CHANGES.md) - Changelog

@@ -62,7 +62,7 @@ Both must be set to exactly `1` (`Hip_shared.ml:51-53`). Set `SPOC_DISABLE_HIP=1
 |---|---|---|---|
 | Launch window (deferred launches, horizontal fusion) | on | on | off (CUDA, Metal) or never (CPU) |
 | Epilogue fusion | on | off | off |
-| Matrix rewrite of GEMM-shaped kernels | on for integer products; float products only after the opt-ins in `Sarek_coopmat` | off | off (the Interpreter only through an explicit `Sarek_matrix.run`) |
+| [Matrix rewrite](../gh-pages/docs/matrix.md) of GEMM-shaped kernels | on for integer products; float products only after the opt-ins in `Sarek_coopmat` | off | off (the Interpreter only through an explicit `Sarek_matrix.run`) |
 
 Epilogue fusion is on only on HIP because hiprtc is called with `-ffp-contract=off` placed after any option you add, so a merged kernel cannot be contracted into a different result (`Hip_rtc.ml:264-271`; policy in [docs/fp-contraction-policy.md](../docs/fp-contraction-policy.md)). Turn either off with `SAREK_LAUNCH_WINDOW=0` and `SAREK_LAUNCH_EPILOGUE=0`. The consequences, including errors surfacing in a later call, are in [Launch window and fusion](../gh-pages/docs/performance.md).
 

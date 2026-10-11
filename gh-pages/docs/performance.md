@@ -170,3 +170,5 @@ The IR record is compared by physical identity. Take it once from `[%kernel ...]
 - [Memory and transfers](memory.html): streams, pinned memory and the other operations that flush.
 - [Device & Backend Selection](device_selection.html): `sarek-device-info` and `SPOC_DISABLE_*`.
 - [HIP backend](https://github.com/mathiasbourgoin/Sarek/blob/main/sarek-hip/README.md): the backend where both fusions are on by default.
+- [Matrix units](matrix.html): the automatic matrix-product rewrite that goes through the same launch path.
+- [Environment variables](environment.html): every `SAREK_*` and `SPOC_*` variable with its accepted values.

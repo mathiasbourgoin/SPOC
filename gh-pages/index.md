@@ -65,6 +65,9 @@ Sarek is the result of over a decade of academic research into high-level parall
 
 - [Launch Window & Fusion](docs/performance.html)
 - [Memory & Transfers](docs/memory.html)
+- [Matrix Units](docs/matrix.html)
+- [Kernel Language Notes](docs/kernel_language.html)
+- [Environment Variables](docs/environment.html)
 - [Full Project History](docs/history.html)
 - [Publications & Talks](docs/publications.html)
 - [Frequently Asked Questions](docs/faq.html)
