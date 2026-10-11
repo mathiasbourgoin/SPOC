@@ -4,7 +4,7 @@ Priority: P3.
 
 ## Obj Sites
 
-- `sarek/plugins/native/Native_plugin.ml:384-385`: `run_kernel_direct` accepts `Obj.t array`.
+- `sarek/plugins/native/Native_plugin.ml:290-296`: `run_kernel_direct` accepts `Obj.t array`.
 - `sarek/plugins/native/Native_plugin_base.ml:646`: stale documentation references `Obj.t array`; the actual registry type at `sarek/plugins/native/Native_plugin_base.ml:30-35` is already `Framework_sig.exec_arg array`.
 - `sarek/tests/new_runtime/test_native_runtime.ml:63`, `71`, `79`: test-only `Obj.obj (V.internal_get_vector_obj ())`.
 
