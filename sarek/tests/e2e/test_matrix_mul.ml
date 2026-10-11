@@ -74,6 +74,7 @@ let matmul_naive_kernel =
         done ;
         c.((row * n) + col) <- sum
       end]
+[@@alert "-sarek_matrix"]
 
 let matmul_tiled_kernel =
   [%kernel
