@@ -451,6 +451,22 @@ let test_one_ir_hash_per_deferred_launch () =
       let hashes = alternate_and_count ~device:(device ()) ~launches in
       check int "IR hashes for 4 alternating deferred launches" launches hashes)
 
+(* Consecutive launches of one IR on one domain reuse that domain's last
+   lookup: no hash at all. *)
+let test_repeated_launch_hashes_nothing () =
+  reset () ;
+  let dev = device () and ir = kernel ~name:"hash_same" Sarek_ir_types.TInt32 in
+  launch ~device:dev ir [Execute.Int32 1l] ;
+  let before = Sarek_execute.Ir_memo.hash_count () in
+  for i = 1 to 10 do
+    launch ~device:dev ir [Execute.Int32 (Int32.of_int i)]
+  done ;
+  check
+    int
+    "IR hashes for 10 repeated launches"
+    0
+    (Sarek_execute.Ir_memo.hash_count () - before)
+
 (* The launch-time matrix decision consults its per-IR plan once. *)
 let test_one_ir_hash_per_matrix_decision () =
   reset () ;
@@ -607,6 +623,10 @@ let () =
             `Quick
             test_domains_share_one_source;
           test_case "one IR hash per launch" `Quick test_one_ir_hash_per_launch;
+          test_case
+            "repeated launch hashes nothing"
+            `Quick
+            test_repeated_launch_hashes_nothing;
           test_case
             "one IR hash per deferred launch"
             `Quick
