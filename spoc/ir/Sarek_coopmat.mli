@@ -72,9 +72,11 @@ val fragment_verdict :
     without it; these three values are that opt-in. *)
 
 (** [accept_relaxed_accumulation ~reason] admits the float configurations that
-    have a derived bound (today only [f16 * f16 + f32 -> f32]) for the rest of
-    the process. One-way: there is no withdrawal, so a capability check that has
-    passed stays valid. The first non-empty [reason] is kept.
+    have a derived bound ([f16 * f16 + f32 -> f32] and
+    [bf16 * bf16 + f32 -> f32]; the latter also needs
+    {!accept_operand_rounding}) for the rest of the process. One-way: there is
+    no withdrawal, so a capability check that has passed stays valid. The first
+    non-empty [reason] is kept.
 
     @raise Invalid_argument if [reason] is empty or blank. *)
 val accept_relaxed_accumulation : reason:string -> unit
