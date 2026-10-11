@@ -40,12 +40,12 @@
 - Benchmark page loads Chart.js and Prism from CDNs, maps CUDA/OpenCL/Metal aliases, then calls `loadBenchmarkData('{{ site.baseurl }}/benchmarks/data/latest.json')` (`gh-pages/benchmarks/index.md:457-473`).
 - `benchmark-viewer.js` supports single chart, comparison, ranking, and matrix views with system/backend filters.
 - Benchmark descriptions are fetched from markdown files and generated code snippets are fetched from `descriptions/generated/*_generated.md` (`gh-pages/javascripts/benchmark-viewer.js:315-353`, `gh-pages/javascripts/benchmark-viewer.js:472-491`).
-- `docs.yml` combines Jekyll output and odoc output under `_site/spoc_docs` (`.github/workflows/docs.yml:273-289`).
+- `docs.yml` combines Jekyll output and odoc output under `_site/spoc_docs` (`.github/workflows/docs.yml`, step "Combine documentation").
 - Legacy notebooks preserve historical WebSPOC/IOCaml browser demos and static presentation content.
 
 ## Invariants
 
-- `gh-pages/spoc_docs/**` is generated odoc and excluded from semantic review.
+- `gh-pages/spoc_docs/**` is not tracked: CI generates the odoc tree on each deploy (`.gitignore`).
 - Benchmark selector options in `gh-pages/benchmarks/index.md` must match `BENCHMARK_CONFIGS` keys in `benchmark-viewer.js`.
 - `BENCHMARK_CONFIGS` variants must match result JSON `benchmark.name` values.
 - All untrusted benchmark JSON string fields and markdown-derived content should be escaped before insertion into DOM.
