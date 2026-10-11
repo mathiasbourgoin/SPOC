@@ -66,6 +66,12 @@ let print_stats () =
 
 let cache_dir_name = "spoc"
 
+(** The on-disk cache is on unless [SAREK_DISK_CACHE=0] (exactly the string
+    [0]). When off, {!get} reports a miss without touching the disk or the
+    statistics and {!put} writes nothing. Read on every call so a test or a
+    wrapper script can flip it per process. *)
+let enabled () = Sys.getenv_opt "SAREK_DISK_CACHE" <> Some "0"
+
 (** Get cache directory, creating it if needed *)
 let get_cache_dir () =
   try
@@ -110,8 +116,13 @@ let key_schema_version = "v2"
     can never shift bytes between them (the same class of bug
     [key_schema_version] concatenation used to have). The [key_schema_version]
     prefix is preserved as an outer wrapper around the digest so schema bumps
-    still invalidate stale on-disk entries. *)
-let compute_key ~dev_name ~driver_version ~name ~source =
+    still invalidate stale on-disk entries.
+
+    This is {!compute_key} for a backend whose binary also depends on a
+    build-option string (OpenCL): [options] is forwarded to
+    {!Compile_cache.make_key}, so a different option set can never hit an entry
+    built under another. *)
+let compute_key_with_options ~options ~dev_name ~driver_version ~name ~source =
   let device =
     Printf.sprintf
       "%s:%s"
@@ -119,7 +130,7 @@ let compute_key ~dev_name ~driver_version ~name ~source =
       (Digest.to_hex (Digest.string driver_version))
   in
   let inner_key =
-    Spoc_framework.Compile_cache.make_key ~device ~name ~source ()
+    Spoc_framework.Compile_cache.make_key ~options ~device ~name ~source ()
   in
   let key = Printf.sprintf "%s:%s" key_schema_version inner_key in
   debugf
@@ -130,49 +141,60 @@ let compute_key ~dev_name ~driver_version ~name ~source =
     name ;
   key
 
-(** Retrieve cached data by key *)
+(** {!compute_key_with_options} for a backend with no build options. *)
+let compute_key = compute_key_with_options ~options:[]
+
+(** Retrieve cached data by key; [None] when absent or the cache is disabled
+    (see {!enabled}). *)
 let get ~key =
-  try
-    let dir = get_cache_dir () in
-    let filename = Filename.concat dir key in
-    if Sys.file_exists filename then begin
+  if not (enabled ()) then None
+  else
+    try
+      let dir = get_cache_dir () in
+      let filename = Filename.concat dir key in
+      if Sys.file_exists filename then begin
+        try
+          let ic = open_in_bin filename in
+          let len = in_channel_length ic in
+          let data = really_input_string ic len in
+          close_in ic ;
+          stats.hits <- stats.hits + 1 ;
+          debugf "Cache hit: %s (%d bytes)" key len ;
+          Some data
+        with e ->
+          stats.errors <- stats.errors + 1 ;
+          warnf "Cache read error for key %s: %s" key (Printexc.to_string e) ;
+          None
+      end
+      else begin
+        stats.misses <- stats.misses + 1 ;
+        debugf "Cache miss: %s" key ;
+        None
+      end
+    with Framework_error.Framework_error _ as e ->
+      stats.errors <- stats.errors + 1 ;
+      raise e
+
+(** Store data in cache with given key. The entry is written to a private
+    temporary file and renamed into place, so a concurrent {!get} (another
+    process) sees either the previous entry or the complete new one, never a
+    partial write. No-op when the cache is disabled (see {!enabled}). *)
+let put ~key ~data =
+  if not (enabled ()) then ()
+  else
+    try
+      let dir = get_cache_dir () in
+      let filename = Filename.concat dir key in
+      let tmp = Printf.sprintf "%s.tmp%d" filename (Unix.getpid ()) in
       try
-        let ic = open_in_bin filename in
-        let len = in_channel_length ic in
-        let data = really_input_string ic len in
-        close_in ic ;
-        stats.hits <- stats.hits + 1 ;
-        debugf "Cache hit: %s (%d bytes)" key len ;
-        Some data
+        Out_channel.with_open_bin tmp (fun oc -> output_string oc data) ;
+        Sys.rename tmp filename ;
+        stats.puts <- stats.puts + 1 ;
+        debugf "Cache put: %s (%d bytes)" key (String.length data)
       with e ->
         stats.errors <- stats.errors + 1 ;
-        warnf "Cache read error for key %s: %s" key (Printexc.to_string e) ;
-        None
-    end
-    else begin
-      stats.misses <- stats.misses + 1 ;
-      debugf "Cache miss: %s" key ;
-      None
-    end
-  with Framework_error.Framework_error _ as e ->
-    stats.errors <- stats.errors + 1 ;
-    raise e
-
-(** Store data in cache with given key *)
-let put ~key ~data =
-  try
-    let dir = get_cache_dir () in
-    let filename = Filename.concat dir key in
-    try
-      let oc = open_out_bin filename in
-      output_string oc data ;
-      close_out oc ;
-      stats.puts <- stats.puts + 1 ;
-      debugf "Cache put: %s (%d bytes)" key (String.length data)
-    with e ->
+        warnf "Cache write error for key %s: %s" key (Printexc.to_string e)
+    with Framework_error.Framework_error _ ->
       stats.errors <- stats.errors + 1 ;
-      warnf "Cache write error for key %s: %s" key (Printexc.to_string e)
-  with Framework_error.Framework_error _ ->
-    stats.errors <- stats.errors + 1 ;
-    (* Don't propagate cache errors, just log them *)
-    ()
+      (* Don't propagate cache errors, just log them *)
+      ()

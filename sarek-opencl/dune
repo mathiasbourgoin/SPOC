@@ -24,6 +24,7 @@
   Opencl_types
   Opencl_fp
   Opencl_bindings
+  Opencl_disk_cache
   Opencl_api
   Opencl_plugin_base
   Opencl_plugin

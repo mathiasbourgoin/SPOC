@@ -322,6 +322,15 @@ let clBuildProgram_lazy =
 let clBuildProgram p nd dl opts cb ud =
   Lazy.force clBuildProgram_lazy p nd dl opts cb ud
 
+let clGetProgramInfo_lazy =
+  foreign_cl_lazy
+    "clGetProgramInfo"
+    (cl_program @-> cl_uint @-> size_t @-> ptr void @-> ptr size_t
+   @-> returning cl_int)
+
+let clGetProgramInfo p pn sz v szr =
+  Lazy.force clGetProgramInfo_lazy p pn sz v szr
+
 let clGetProgramBuildInfo_lazy =
   foreign_cl_lazy
     "clGetProgramBuildInfo"
