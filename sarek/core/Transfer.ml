@@ -621,7 +621,7 @@ type keep = Keep : 'a -> keep
     destinations, the vectors involved — until it KNOWS the work has completed:
 
     - the stream was synchronised ({!synchronize_stream}, {!destroy_stream}), or
-      its device was ({!flush});
+      its device was ({!flush}, [Device.synchronize]);
     - an event recorded after the work was synchronised, or queried complete;
     - transitively: when a stream [b] that waited on an event of stream [a]
       completes past that wait, [a]'s work up to the event has completed too.
@@ -883,16 +883,14 @@ let free_all_buffers (vec : (_, _) Vector.t) : unit =
 
 (** {1 Device Synchronization} *)
 
-(** Synchronize all pending operations on a device *)
-let flush (dev : Device.t) : unit =
-  Spoc_framework.Launch_hooks.flush_pending () ;
-  match Framework_registry.find_backend dev.framework with
-  | None -> failwith ("Unknown framework: " ^ dev.framework)
-  | Some (module B : Framework_sig.BACKEND) ->
-      let backend_dev = B.Device.get dev.backend_id in
-      B.Device.synchronize backend_dev ;
-      (* Everything enqueued on any stream of [dev] has completed. *)
-      Ledger.release_device dev
+(* Everything enqueued on any stream of a synchronised device has completed,
+   so its ledger entries go, whether the caller used {!flush} or
+   [Device.synchronize]. No entry exists before this module is initialised. *)
+let () = Device.on_synchronized Ledger.release_device
+
+(** Synchronize all pending operations on a device and release the ledger
+    entries of its streams; the same as [Device.synchronize]. *)
+let flush (dev : Device.t) : unit = Device.synchronize dev
 
 (** {1 Stream Operations} *)
 
