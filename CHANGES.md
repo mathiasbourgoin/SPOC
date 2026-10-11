@@ -2,6 +2,25 @@
 
 ### Added
 
+- Automatic rewrite of recognised matrix products onto matrix units (spec
+  `specs/matrix-pattern-rewrite.md`). `Sarek_matrix.run` (library
+  `sarek.matrix`) is a drop-in for `Execute.run_vectors`: when the kernel is a
+  GEMM nest whose indices and guards it can bound, the device offers the
+  configuration (HIP gfx11, interpreter) and the policy admits it, it launches a
+  generated SCoopmat kernel (64×64 tiles staged through shared memory, any size,
+  layout, batch, epilogue) over exactly the outputs the original launch writes,
+  and otherwise the original; the outcome says which and why. int32 products
+  are rewritten by default through 8-bit byte planes and are bit-identical;
+  float16-operand products need `accept_relaxed_accumulation`; float32 products
+  need `~precision` and the new `Sarek_coopmat.accept_operand_rounding`
+  (`Operands_f16`, `Operands_bf16`, `Operands_bf16x3`: a three-term bfloat16
+  split, 0.04–0.15 γ_K measured). New: the `BFloat16` cooperative-matrix
+  component (bf16 operand loaded from a float32 buffer with rounding; HIP gfx11
+  and interpreter), `ECast (TUint8, _)` as a narrowing store, host evaluation of
+  uniform expressions (`Sarek_ir_eval_int`). On an RX 7900 XTX the rewrite is
+  1.4–2.5× (int32) and 3.4–9× (f16) faster than the naive kernel, and 4–6×
+  slower than the hand-written `Sarek_gemm.Coopmat`.
+
 - Epilogue fusion in the launch window (spec `specs/epilogue-fusion.md`). A
   pending launch P and an element-wise consumer C that reads P's output at its
   own index (`let i = global_thread_id in ...`) are merged: C's body runs right

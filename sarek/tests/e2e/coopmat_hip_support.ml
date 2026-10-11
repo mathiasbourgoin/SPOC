@@ -30,7 +30,7 @@ let f16_config = config C.Float16 C.Float16 C.Float32
 
 let buffer_elt = function
   | C.Float16 -> TFloat16
-  | C.Float32 -> TFloat32
+  | C.BFloat16 | C.Float32 -> TFloat32
   | C.Uint8 | C.Sint8 -> TUint8
   | C.Uint32 | C.Sint32 -> TInt32
 

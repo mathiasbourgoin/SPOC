@@ -85,11 +85,40 @@ let accept_relaxed_accumulation ~reason =
 
 let relaxed_accumulation_reason () = Atomic.get relaxed_reason
 
-(* The one float configuration a bound has been derived for: f16 x f16 + f32
-   -> f32 (§5.2). Products are exact in binary32 and only the order of the
-   additions is free. *)
+type operand_precision = Operands_f16 | Operands_bf16 | Operands_bf16x3
+
+let operand_precision_name = function
+  | Operands_f16 -> "f16"
+  | Operands_bf16 -> "bf16"
+  | Operands_bf16x3 -> "bf16x3"
+
+let rounding_f16 : string option Atomic.t = Atomic.make None
+
+let rounding_bf16 : string option Atomic.t = Atomic.make None
+
+let rounding_bf16x3 : string option Atomic.t = Atomic.make None
+
+let rounding_cell = function
+  | Operands_f16 -> rounding_f16
+  | Operands_bf16 -> rounding_bf16
+  | Operands_bf16x3 -> rounding_bf16x3
+
+let accept_operand_rounding ~precision ~reason =
+  if String.trim reason = "" then
+    invalid_arg
+      "Sarek_coopmat.accept_operand_rounding: the reason must not be empty (it \
+       is the record that the operand rounding was understood)" ;
+  ignore (Atomic.compare_and_set (rounding_cell precision) None (Some reason))
+
+let operand_rounding_reason precision = Atomic.get (rounding_cell precision)
+
+(* The float configurations a bound has been derived for: f16 x f16 + f32 ->
+   f32 (§5.2) and bf16 x bf16 + f32 -> f32 (specs/matrix-pattern-rewrite.md:
+   the same derivation, since a product of two 8-bit-significand values is
+   exact in binary32 too). Only the order of the additions is free. *)
 let has_derived_bound cfg =
-  cfg.cfg_a = Float16 && cfg.cfg_b = Float16 && cfg.cfg_c = Float32
+  let narrow = function Float16 | BFloat16 -> true | _ -> false in
+  narrow cfg.cfg_a && cfg.cfg_a = cfg.cfg_b && cfg.cfg_c = Float32
   && cfg.cfg_result = Float32 && not cfg.cfg_saturating
 
 let relaxed_not_accepted cfg =

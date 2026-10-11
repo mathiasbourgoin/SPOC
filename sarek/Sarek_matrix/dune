@@ -1,0 +1,4 @@
+(library
+ (name sarek_matrix)
+ (public_name sarek.matrix)
+ (libraries sarek sarek_stdlib sarek_ir spoc_core spoc_framework))

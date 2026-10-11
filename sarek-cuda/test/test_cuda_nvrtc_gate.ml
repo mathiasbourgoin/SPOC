@@ -224,7 +224,7 @@ let coopmat_tile name (a : Sarek_coopmat.component_type) b acc =
   let fa, fb, fc, fd = C.fragments_of_config cfg in
   let elt = function
     | C.Float16 -> TFloat16
-    | C.Float32 -> TFloat32
+    | C.BFloat16 | C.Float32 -> TFloat32
     | C.Uint8 | C.Sint8 -> TUint8
     | C.Uint32 | C.Sint32 -> TInt32
   in

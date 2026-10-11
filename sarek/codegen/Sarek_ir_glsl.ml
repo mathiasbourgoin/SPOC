@@ -1126,6 +1126,13 @@ let glsl_coopmat_component (c : Sarek_coopmat_types.component_type) =
             bounded contract of docs/design/f16-relaxed-accuracy.md §5 is \
             measured on HIP only (specs/coopmat-hip-wmma.md). The INTEGER \
             configurations are available and are under the strict contract.")
+  | Sarek_coopmat_types.BFloat16 ->
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "bf16 cooperative matrix"
+           "GLSL: the bf16 operand (loaded from a float32 buffer with \
+            rounding, specs/matrix-pattern-rewrite.md) is lowered on HIP gfx11 \
+            only.")
   | Sarek_coopmat_types.Float32 ->
       Codegen_error.raise_error
         (Codegen_error.unsupported_construct

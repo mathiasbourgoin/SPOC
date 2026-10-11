@@ -34,12 +34,15 @@ let config a b acc =
     cfg_scope = C.Subgroup;
   }
 
-(** [__builtin_amdgcn_wmma_f32_16x16x16_f16_w32] and
+(** [__builtin_amdgcn_wmma_f32_16x16x16_f16_w32], its bf16 twin
+    [__builtin_amdgcn_wmma_f32_16x16x16_bf16_w32]
+    (specs/matrix-pattern-rewrite.md) and
     [__builtin_amdgcn_wmma_i32_16x16x16_iu8_w32] (both operand signednesses are
     immediates of the latter; a 32-bit wrapping sum has the same bits whether it
     is read as s32 or u32). *)
 let gfx11_configs =
   config C.Float16 C.Float16 C.Float32
+  :: config C.BFloat16 C.BFloat16 C.Float32
   :: List.concat_map
        (fun (a, b) -> [config a b C.Sint32; config a b C.Uint32])
        [

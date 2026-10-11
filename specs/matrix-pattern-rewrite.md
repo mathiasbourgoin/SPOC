@@ -1,0 +1,196 @@
+---
+name: roster-spec
+type: spec
+status: live
+feature: Automatic rewrite of recognised GEMM nests into cooperative-matrix (SCoopmat) tiles, exact for int32, opt-in for float
+brief: owner request 2026-10-11 (matrix pattern detection — PR 2 of 3: automatic optimisation)
+date: 2026-10-11
+version: 1.0.0
+---
+
+# Spec — matrix-pattern-rewrite
+
+Builds on specs/matrix-pattern-advice.md (PR 1, the recogniser). Decisions not
+dictated by the request are *(agent decision)*. Owner rules: a
+semantics-preserving optimisation may be default; anything that can change
+results is explicit opt-in; an unsupported device falls back explicitly.
+
+## Scope and sequencing
+
+*(agent decision, coordination)* The rewritten kernel has a different launch
+geometry from the original (one subgroup per output tile instead of one thread
+per output), so substituting it needs the actual launch: grid, block and scalar
+arguments. This PR delivers the rewrite and an **explicit launch entry point**
+that applies it (`Sarek_matrix.run`, a drop-in for `Execute.run_vectors`); the
+**default** application inside `Execute` arrives with PR 3, as a per-launch
+specialisation hook on the deferred-launch window that the dynamic-fusion work
+is adding to `Execute` (coordinator instruction 2026-10-11: no concurrent
+`Execute` edits). In `Sarek_matrix.run` the exact (integer) rewrite is on by
+default and float rewrites need the opt-ins below; PR 3 carries the same policy
+into `Execute` (`Faithful` default = exact rewrites only).
+
+## Preconditions (the rewrite is declined otherwise, and the original runs)
+
+Static (kernel), on top of PR 1's `Gemm` finding:
+- the kernel is *only* the nest: its sole memory write is the store to C (no
+  other array write, atomic, `SExpr`, `SReturn`, `[%native]`), and it has
+  exactly one GEMM finding;
+- each of M, N and at most one batch index is one of: a global index along one
+  axis (`global_idx_y`, or `thread_idx_y + block_dim_y * block_idx_y`, same for
+  x, z); an enclosing `for` variable with uniform bounds; or the pair
+  `t / d`, `t mod d` with `t = global_thread_id` (or `global_idx_x`) and `d`
+  uniform;
+- every guard on the path is a conjunction of comparisons whose one side is
+  affine-equal to the M index, the N index, the batch index or the linear id
+  `t`, and whose other side is uniform;
+- strides, offsets, bounds, `init` and epilogue reference no `block_dim_*` or
+  `grid_dim_*` (the rewritten launch has its own).
+
+Dynamic (launch): the scalar arguments and the original grid/block give the
+covered region: `m < Me`, `n < Ne`, `z < Ze`, and for a `t / d` mapping also
+`m * d + n < T` (`T` = threads along x) — exactly the outputs the original
+writes. The device must offer the configuration (`Sarek_coopmat.verdict`) and
+the policy must admit it.
+
+## The rewritten kernel
+
+Same parameters as the original, in the same order, plus int32 parameters
+`sarek_mm_me`, `sarek_mm_ne`, `sarek_mm_ze`, `sarek_mm_d`, `sarek_mm_t`.
+One block = 4 waves of 32 (2×2), each wave 2×2 fragments of 16×16: a 64×64
+block tile; grid = ⌈Ne/64⌉ × ⌈Me/64⌉ × Ze. For each K step of 16 the block
+stages the A (64×16) and B (16×64) tiles from global memory into shared memory,
+converting to the configuration's operand type and **zero-filling** every
+element outside `[0, Me) × [k_lo, k_hi]` (A) or `[k_lo, k_hi] × [0, Ne)` (B) —
+no out-of-range global read, any M, N, K, either layout (the staging transposes
+a column-major operand), any offset and batch stride. Fragments are loaded from
+shared memory (`CM_load`), multiplied (`CM_muladd`), stored to a shared tile,
+and each covered output is written with the original epilogue applied to
+`init + acc` (the original `init` and epilogue expressions, re-evaluated).
+
+Element cases:
+
+| case | staging | products per tile step | accumulation | result |
+|---|---|---|---|---|
+| int32 | 4 unsigned byte planes per operand (`uint8` shared, low byte of `x lsr 8i`) | 10 (`i + j ≤ 3`), u8×u8+s32→s32 | 4 accumulators by `s = i + j`, combined `Σ acc_s lsl 8s` (wrapping) | **bit-identical** (mod 2³²) |
+| float16 operands | float16 | 1, f16×f16+f32→f32 | f32 | γ_K bound (existing regime B) |
+| float32, `F16` | round to float16 | 1 | f32 | operand rounding + γ_K |
+| float32, `BF16` | round to bfloat16 (RNE) | 1, bf16×bf16+f32→f32 | f32 | operand rounding + γ_K |
+| float32, `BF16x3` | x = hi + mid + lo, each bfloat16 (RNE of the residual) | 6 (`i + j ≤ 2`) | f32 | near f32: measured vs γ_K |
+
+## Codegen and IR additions
+
+- `ECast (TUint8, e)`: the low 8 bits of an int32 (narrowing store into a
+  `uint8` array). Lowered by the CUDA/HIP generator (`(unsigned char)`) and the
+  interpreter; refused elsewhere. The `TUint8` "no arithmetic" rule otherwise
+  stands.
+- Component `BFloat16` (`Sarek_coopmat_types`): a bf16 operand fragment loaded
+  from a **float32** buffer, each element rounded to bfloat16 (round to
+  nearest even); exact for values already representable. HIP gfx11:
+  `__builtin_amdgcn_wmma_f32_16x16x16_bf16_w32` (operands as 16 × i16,
+  measured to compile with ROCm 7.2.4 hipcc for gfx1100); interpreter: same
+  rounding, sequential f32 accumulation as for f16; HIP probe advertises
+  bf16×bf16+f32→f32 on gfx11; CUDA: refused (nvcuda::wmma bf16 is sm_80
+  `__nv_bfloat16` from a bf16 buffer — not this load semantics); others refuse.
+  Accuracy policy: like f16 (Relaxed_bounded; products exact in f32).
+- Bf16 rounding of a float32 in kernel code (the split): through the existing
+  int32 bitcasts (`bits + 0x7fff + ((bits lsr 16) land 1)`, high half kept);
+  NaN/Inf operands are out of scope of the γ bound and documented.
+
+## Opt-ins (`Sarek_coopmat`)
+
+- float16 operands: the existing `accept_relaxed_accumulation ~reason`.
+- float32 operands: `accept_operand_rounding ~precision ~reason` with
+  `precision ∈ {F16, BF16, BF16x3}`, per precision, process-wide, one-way, empty
+  reason refused; plus `accept_relaxed_accumulation` (the accumulation is
+  reordered too). `Sarek_matrix.run ~precision` chooses among accepted ones
+  (default: none → float32 GEMMs are not rewritten).
+
+## Entry point (`sarek.matrix`)
+
+`Sarek_matrix.run ?precision ~device ~ir ~args ~block ~grid () : outcome` —
+`Rewritten of {config; lowering}` or `Original of reason` (why not: not a GEMM,
+precondition, device, policy). Plans are memoised per (IR, device, precision) so
+the rewritten IR is physically stable and hits `Execute`'s launch memo (#424).
+
+## Tests and measurements
+
+- Interpreter: int32 rewrite bit-identical to the original kernel on the
+  interpreter, shapes with M, N, K not multiples of 16 (1×1×1, 17×33×5,
+  64×64×64, 100×37×129), all corpus layouts (transposed A/B, 1-D mapping, batched,
+  epilogue, init from C, guards), random values over the full int32 range.
+- HIP gfx1100: the same, original on HIP vs rewritten on HIP (bit-identical);
+  float cases: max error / γ_K·Σ|a·b| per precision, controls (dropping a
+  product plane must exceed the bound); refusals and fallbacks (iGPU gfx1036,
+  OpenCL, Native: `Original` with the reason).
+- Bench (RX 7900 XTX, shared GPU, ≥3 sessions, median and min–max): scalar
+  original vs rewritten (int32, f16, f32-F16, f32-BF16, f32-BF16x3) vs
+  `Sarek_gemm.Coopmat` (f16) at M = 256, K = 3072, N ∈ {1024, 3072}, and an
+  edge shape.
+
+## Requirements
+
+- FR-001 `ECast TUint8` narrowing; FR-002 `BFloat16` component + HIP lowering
+  + probe + interpreter; FR-003 `accept_operand_rounding`; FR-004
+  `Sarek_matrix_rewrite` (plan: preconditions, region, rewritten IR);
+  FR-005 `Sarek_matrix.run`; FR-006 tests above; FR-007 bench + results here.
+
+## Results (tartarus, 2026-10-11)
+
+RX 7900 XTX (gfx1100), ROCm 7.2.4, GPU shared with other agents. Logs:
+`spoc-pipeline-logs/matrix-pattern/pr2-*`.
+
+**Correctness.** `sarek/tests/e2e/test_matrix_rewrite.exe`: int32, six kernels
+(2-D, 1-D quotient, 1-D and 2-D short launches, transposed A and B, batched
+with init-from-C and epilogue) × shapes 1×1×1, 17×33×5, 64×64×64, 100×37×129
+(interpreter: 1×1×1, 17×33×5, 40×24×20), random operands over the whole int32
+range: the rewrite is **bit-identical** to the original kernel on gfx1100 and
+on both interpreters, and the original equals the host reference; outputs the
+original leaves alone stay untouched. Declined, with the reason, on the 7950X
+iGPU (HIP gfx1036), OpenCL ×2, Vulkan ×2 (NAVI31 advertises the integer
+configuration but has 64-wide subgroups), Native; a kernel with a second write
+is declined everywhere.
+`test_matrix_rewrite_float.exe`: before the opt-ins a float32 product runs as
+the original. Max |err| / (γ_K Σ|a·b|), gfx1100, shapes 64×64×128, 100×37×129,
+256×256×1024, operands uniform in [-1, 1):
+
+| precision | ×γ_K | own bound used by the test |
+|---|---|---|
+| f16 operands (relaxed accumulation) | 0.010–0.028 | γ_K |
+| f32 as f16 | 0.77–15.8 | 2u₁₆ + u₁₆² + γ_K |
+| f32 as bf16 | 6.0–114 | 2u_bf16 + u_bf16² + γ_K |
+| f32 as bf16x3 | 0.04–0.15 | 2⁻²⁴ + γ_{6K} |
+
+On the interpreter every float result is also bit-identical to a host model of
+its fixed summation order (per step of 16, per product, per k).
+Mutations, each red then reverted: dropping one byte-plane product (all int
+cases on gfx1100 and the interpreter); dropping the `m·d + n < t` coverage
+predicate (the 1-D short launches); dropping the three order-2 products of the
+bf16x3 split (the interpreter-order model, 954/960 outputs).
+
+**Speed** (`sarek-hip/test/bench_matrix_rewrite.exe 3 10 10`, three sessions,
+range of the three session medians, µs per launch (TFLOP/s)):
+
+| kernel | 256×1024×3072 | 256×3072×3072 | 1000×1000×1000 |
+|---|---|---|---|
+| int32 naive (scalar) | 2104–2906 (0.55–0.77) | 5303–5800 (0.83–0.91) | 1596–1624 (1.23–1.25) |
+| int32 rewritten | 1034–1577 (1.02–1.56) | 2315–2532 (1.91–2.09) | 1108–1114 (1.80) |
+| f16 naive (scalar) | 1857–1983 (0.81–0.87) | 5112–7886 (0.61–0.95) | 1424–1473 (1.36–1.40) |
+| f16 rewritten | 557–559 (2.88–2.89) | 583–588 (8.22–8.29) | 356–360 (5.55–5.61) |
+| f32 naive (scalar) | 2086–2151 (0.75–0.77) | 5204–5246 (0.92–0.93) | 1478–1559 (1.28–1.35) |
+| f32 rewritten, f16 operands | 637–641 (2.51–2.53) | 660–665 (7.26–7.32) | 432–433 (4.62–4.63) |
+| f32 rewritten, bf16 | 988–989 (1.63) | 1016–1026 (4.71–4.76) | 676–677 (2.95–2.96) |
+| f32 rewritten, bf16x3 | 2158–2175 (0.74–0.75) | 4250–4443 (1.09–1.14) | 2150–2230 (0.90–0.93) |
+| `Sarek_gemm.Coopmat` f16 (hand-written, 2×2/w2) | 93–94 (17.2–17.3) | 138–139 (34.8–35.0) | — (needs multiples of 32) |
+| `Sarek_gemm` tiled f32 (scalar, hand-written) | 497–506 (3.19–3.24) | 1441–1473 (3.28–3.35) | 594–599 (3.34–3.37) |
+
+The rewrite is 1.4–2.5× (int32) and 3.4–9× (f16) faster than the naive kernel
+it replaces, and faster than the hand-tiled scalar f32 GEMM for f16 and f32-as-f16
+from N = 3072, but 4–6× slower than the hand-written SCoopmat GEMM, which loads
+fragments straight from global memory and requires multiples of its tile, f16
+row-major operands and no epilogue. The staged kernel pays for its generality
+(any size, layout, batch, element case) with a shared-memory round trip and two
+barriers per step of 16. A size-class variant that loads directly from global
+memory when the region is aligned is a PR 3 item (launch-time specialisation).
+Measured and kept: padding shared rows by 16 bytes (no change within noise);
+measured and reverted: steps of 32/64 per barrier pair (slower: fewer resident
+blocks).

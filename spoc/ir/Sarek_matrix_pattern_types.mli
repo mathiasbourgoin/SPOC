@@ -57,7 +57,7 @@ type gemm = {
   epilogue : epilogue;
   guards : expr list;
       (** conditions of the enclosing [if]s, outermost first, then the store's
-          own guard *)
+          own guard; let-inlined *)
   enclosing_loops : var list;  (** outermost first *)
 }
 
