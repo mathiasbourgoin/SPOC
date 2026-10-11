@@ -1320,7 +1320,7 @@ let gen_helper_func st buf (hf : helper_func) =
   Buffer.add_string buf ") -> " ;
   Buffer.add_string buf (wgsl_type_of_elttype hf.hf_ret_type) ;
   Buffer.add_string buf " {\n" ;
-  gen_stmt st buf "  " hf.hf_body ;
+  gen_stmt st buf "  " (Sarek_ir_codegen.fold_local_array_lengths hf.hf_body) ;
   Buffer.add_string buf "}\n\n"
 
 (** Emit the [sarek_fmod] C-fmod helper (f32; WGSL has no f64) when the kernel
@@ -1656,7 +1656,9 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
     st
     buf
     "  "
-    (rename_scalar_shadowing_locals ~scalar_names:scalars k.kern_body) ;
+    (rename_scalar_shadowing_locals
+       ~scalar_names:scalars
+       (Sarek_ir_codegen.fold_local_array_lengths k.kern_body)) ;
   Buffer.add_string buf "}\n" ;
   let shader = Buffer.contents buf in
   log (Printf.sprintf "[WGSL] Generated shader:\n%s" shader) ;

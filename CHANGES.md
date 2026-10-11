@@ -346,10 +346,14 @@
   explicit `let%shared` size (`let%shared (t : int32) = n in` with a runtime
   `n` is now refused); the size-less `let%shared (t : int32) = ()` form is
   unchanged. The CUDA, OpenCL, Metal and GLSL emitters also refuse a hand-built
-  `EArrayCreate(_, _, Global)` instead of declaring a private array. **Migration**: replace a runtime size by a
-  constant upper bound, e.g. `create_array n Local` becomes `create_array 16l
-  Local`, and index only the first `n` slots; replace `create_array n Global`
-  by a vector parameter. The `Pexp_array` hint no longer recommends `Global`.
+  `EArrayCreate(_, _, Global)` instead of declaring a private array, and
+  `EArrayLen` on a created array is emitted as its literal extent (it named a
+  length symbol only vector parameters have).
+  **Migration**: replace a runtime size by a constant upper bound, e.g.
+  `create_array n Local` becomes `create_array 16l Local`, and index only the
+  first `n` slots. This requires `n <= 16`: guard it, or choose a bound that
+  covers the largest `n` the kernel can see. Replace `create_array n Global` by
+  a vector parameter. The `Pexp_array` hint no longer recommends `Global`.
 - The `CM_decl` IR docstring now states that a declared cooperative-matrix
   fragment is zero-initialised on every backend (as `specs/coopmat-hip-wmma.md`
   already said); OpenCL, Metal, WGSL and PTX refuse cooperative matrices rather

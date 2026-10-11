@@ -93,6 +93,12 @@ val native_block_refusal : string
     generators (backstop for hand-built IR; the PPX rejects it earlier). *)
 val global_array_refusal : string
 
+(** Replace [EArrayLen a] by the literal extent when [a] is bound by an
+    enclosing [SLet (a, EArrayCreate (_, EConst (CInt32 n), _), _)]. Only vector
+    parameters have a length symbol in the emitted source, so a created array's
+    length must be inlined before emission. *)
+val fold_local_array_lengths : Sarek_ir_types.stmt -> Sarek_ir_types.stmt
+
 (** Mangle an OCaml type name into a valid C/GLSL identifier (e.g.
     "Module.point" -> "Module_point"). Replaces '.' with '_'. *)
 val mangle_name : string -> string
