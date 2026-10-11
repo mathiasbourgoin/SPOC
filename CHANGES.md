@@ -224,6 +224,25 @@
 
 ### Changed
 
+- Intrinsics that no backend lowers soundly are refused at PPX time, with a
+  located error, instead of failing late or emitting wrong code. `warp_shuffle`,
+  `warp_shuffle_down`, `warp_shuffle_up`, `warp_shuffle_xor`, `warp_vote_all`,
+  `warp_vote_any`, `warp_ballot`, `warp_active_mask` and `warp_size` used to
+  type-check and then fail in every backend with "Unknown intrinsic"
+  (`warp_size` was typed as the constant 32, but the warp is 32 or 64 lanes on
+  AMD and 4-128 on WGSL); they are now refused as "not lowered by any backend
+  yet" until warp-scope supersteps (roadmap S1) lower them. `return_unit` is
+  refused with advice to restructure with if/else: CUDA emitted `return((void)0);`
+  and skipped every later barrier, the native backend ignored it, GLSL had no
+  lowering. The refusal keys on the resolved intrinsic
+  (`Sarek_env.unlowered_intrinsics`, one table), so `Gpu.warp_ballot`,
+  `let open Std in warp_shuffle ...` are refused too, while a variable or
+  kernel-local function that happens to be named `warp_size` is not (a local
+  function now shadows a refused intrinsic of the same name). The table entries
+  and their variance/convergence classes in `Sarek_core_primitives` are
+  unchanged and the convergence checker is still unit-tested on them.
+  `test_warp_diverged` now gets the refusal rather than the convergence error.
+
 - `lsr` compiles to one unsigned shift on every backend. It is now its own IR
   operator (`Lshr32`/`Lshr64`) instead of a 4–5 operation expansion over the
   arithmetic shift: CUDA/HIP emits `((int)((unsigned int)(a) >> (b)))`,

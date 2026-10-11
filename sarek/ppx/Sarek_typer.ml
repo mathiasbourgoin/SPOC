@@ -799,6 +799,25 @@ let infer_let_binding ~infer (env : t) (loc : Sarek_ast.loc) (expr : expr_desc)
       assert
         false (* infer_let_binding: called with non-let-binding expression *)
 
+(** Refuse a use of an intrinsic that no backend lowers soundly. [ref] is the
+    RESOLVED intrinsic, so a user binding that merely shares a name never gets
+    here (see {!Sarek_env.unlowered_intrinsics}). *)
+let refuse_if_unlowered (ref : Sarek_env.intrinsic_ref) loc : unit result =
+  match Sarek_env.unlowered_reason ref with
+  | None -> Ok ()
+  | Some reason ->
+      Error
+        [
+          Unlowered_intrinsic
+            {
+              name =
+                (match ref with
+                | IntrinsicRef (_, name) | CorePrimitiveRef name -> name);
+              reason;
+              loc;
+            };
+        ]
+
 (** Main type inference function *)
 let rec infer (env : t) (expr : expr) : (texpr * t) result =
   let loc = expr.expr_loc in
@@ -815,9 +834,13 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
           (* Use the index as ID *)
           Ok (mk_texpr (TEVar (name, id)) info.vi_type loc, env)
       | LIntrinsicConst info ->
+          let* () = refuse_if_unlowered info.const_ref loc in
           Ok
             (mk_texpr (TEIntrinsicConst info.const_ref) info.const_type loc, env)
       | LIntrinsicFun info ->
+          (* The refusal is made here, on the callee, and therefore also covers
+             the application below: [EApp] types its function first. *)
+          let* () = refuse_if_unlowered info.intr_ref loc in
           (* Return a function value that will be applied *)
           let id = fresh_var_id () in
           Ok (mk_texpr (TEVar (name, id)) info.intr_type loc, env)
@@ -847,12 +870,17 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
              [M.f(...)] and failed only at JIT time (seen downstream as hiprtc
              "use of undeclared identifier 'M'"). Refuse it here, naming the
              fix. *)
-          if String.contains name '.' then
-            Error
-              [
-                Unknown_qualified_name
-                  {name; known = known_names_in_module_of name env; loc};
-              ]
+          if String.contains name '.' then begin
+            match Sarek_env.unlowered_reason_of_qualified_name name with
+            | Some (base, reason) ->
+                Error [Unlowered_intrinsic {name = base; reason; loc}]
+            | None ->
+                Error
+                  [
+                    Unknown_qualified_name
+                      {name; known = known_names_in_module_of name env; loc};
+                  ]
+          end
           else Error [Unbound_variable (name, loc)])
   (* Memory access *)
   | EVecGet _ | EVecSet _ | EArrGet _ | EArrSet _ | EFieldGet _ | EFieldSet _ ->

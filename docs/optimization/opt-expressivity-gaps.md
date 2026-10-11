@@ -79,7 +79,11 @@ cost. The doc framing should lead with these, not apologize for them.
    `Sarek_convergence.ml` reject a warp-collective call from
    divergent control flow *at compile time*
    (`sarek/tests/negative/test_warp_diverged.ml` — "Warp collective
-   'warp_shuffle' called in diverged control flow"). CUDA's equivalent
+   'warp_shuffle' called in diverged control flow"; **update:** since the
+   refusal of unlowered intrinsics, a PPX kernel that names a warp
+   intrinsic is rejected earlier, as "not lowered by any backend yet"; the
+   convergence rule stays covered by unit tests on hand-built typed ASTs
+   until warp-scope supersteps (S1) lower these intrinsics). CUDA's equivalent
    mistake (calling `__shfl_sync` under a divergent predicate with a
    stale mask) is a runtime hang or wrong-answer bug with no compiler
    diagnostic.
@@ -165,7 +169,8 @@ Ranked by (user value × how much of the remaining engineering is
    checks in `test_warp_diverged.ml`, `test_core_primitives.ml`) — but
    *zero* backend emits them (`grep` for `warp_shuffle`/`shfl`/`ballot`
    across all 6 codegen files returns nothing outside PTX-adjacent
-   analysis code). This is the single highest-leverage item: the hard
+   analysis code; the PPX now refuses these names with a located error
+   until they are lowered, roadmap S1). This is the single highest-leverage item: the hard
    design work (variance/convergence semantics) is done, only the
    mechanical emitter work (PTX `shfl.sync` variants, OpenCL/Vulkan/Metal
    `sub_group_*`/`simd_*` intrinsics) remains, and it directly unblocks

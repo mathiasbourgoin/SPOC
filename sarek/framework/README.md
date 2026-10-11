@@ -114,7 +114,7 @@ Manages GPU intrinsic functions (built-ins like `thread_id_x`, `atomic_add`, `si
 **Intrinsic Types**:
 - **Uniform**: Safe in all contexts (e.g., `sin`, `sqrt`)
 - **Sync**: Requires uniform execution (e.g., `block_barrier`, `memory_fence`)
-- **Divergent**: Thread-divergent operations (e.g., `thread_id_x`, `warp_ballot`)
+- **Divergent**: Thread-divergent operations (e.g., `thread_id_x`, `thread_idx_y`)
 
 **Standard Intrinsics** (57 total):
 

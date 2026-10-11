@@ -100,6 +100,38 @@ let test_warp_collective_in_diverged_flow () =
     true
     (Str.string_match (Str.regexp ".*shuffle.*") s 0)
 
+(** The unlowered-intrinsic refusal names the intrinsic, says it is not lowered
+    (or, for [return_unit], that Sarek has no early return) and points at the
+    way forward. One case per reason. *)
+let test_unlowered_intrinsic () =
+  let render name reason =
+    error_to_string (Unlowered_intrinsic {name; reason; loc = dummy_loc})
+  in
+  let contains s sub =
+    try
+      ignore (Str.search_forward (Str.regexp_string sub) s 0) ;
+      true
+    with Not_found -> false
+  in
+  let collective = render "warp_ballot" Warp_collective in
+  check bool "names the intrinsic" true (contains collective "'warp_ballot'") ;
+  check
+    bool
+    "says not lowered"
+    true
+    (contains collective "not lowered by any backend yet") ;
+  check bool "names S1" true (contains collective "warp-scope supersteps") ;
+  let size = render "warp_size" Warp_size in
+  check bool "warp_size: not a constant" true (contains size "4-128") ;
+  check bool "warp_size: names S1" true (contains size "warp-scope supersteps") ;
+  let early = render "return_unit" Early_return in
+  check
+    bool
+    "return_unit: no early return"
+    true
+    (contains early "no early return") ;
+  check bool "return_unit: advises if/else" true (contains early "if/else")
+
 (** Test reserved keyword error *)
 let test_reserved_keyword () =
   let err = Reserved_keyword ("float", dummy_loc) in
@@ -240,6 +272,7 @@ let () =
       ( "barrier_errors",
         [
           test_case "barrier_diverged" `Quick test_barrier_in_diverged_flow;
+          test_case "unlowered_intrinsic" `Quick test_unlowered_intrinsic;
           test_case
             "warp_collective"
             `Quick
