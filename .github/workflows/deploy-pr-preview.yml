@@ -5,6 +5,7 @@ on:
     types: [opened, synchronize, reopened]
     paths:
       - 'gh-pages/**'
+      - '.github/workflows/deploy-pr-preview.yml'
       - 'benchmarks/results/**'
       - 'benchmarks/*.ml'
       - 'benchmarks/dune'
@@ -33,6 +34,8 @@ jobs:
       - name: Install dependencies
         run: |
           opam install -y yojson
+          opam install . --deps-only --with-doc -y
+          opam install -y odoc
       
       - name: Build benchmark tools
         run: |
@@ -76,6 +79,14 @@ jobs:
           bundle exec jekyll build --destination _site
           echo "✅ Jekyll site built successfully"
       
+      - name: Build API documentation (odoc)
+        run: |
+          # The layouts link to {baseurl}/spoc_docs/index.html; docs.yml
+          # publishes the odoc output there, so previews must do the same.
+          opam exec -- dune build @doc
+          mkdir -p gh-pages/_site/spoc_docs
+          cp -r _build/default/_doc/_html/* gh-pages/_site/spoc_docs/
+
       - name: Deploy preview to gh-pages
         uses: JamesIves/github-pages-deploy-action@v4
         with:
