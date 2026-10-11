@@ -148,13 +148,15 @@ let no_derived_bound cfg =
     cap_kind = Sarek_capability.Policy;
     cap_why =
       Printf.sprintf
-        "%s has no derived error bound: only f16*f16+f32->f32 has one (an f16 \
-         result rounds every partial sum to binary16; a float operand with an \
-         integer accumulator has no defined meaning)"
+        "%s has no derived error bound: only f16*f16+f32->f32 and \
+         bf16*bf16+f32->f32 have one (an f16 result rounds every partial sum \
+         to binary16; a float operand with an integer accumulator has no \
+         defined meaning)"
         (config_name cfg);
     cap_evidence =
       Sarek_capability.Quoted "docs/design/f16-relaxed-accuracy.md §5.4";
-    cap_remedy = Some "Accumulate in f32 (f16*f16+f32->f32).";
+    cap_remedy =
+      Some "Accumulate in f32 (f16*f16+f32->f32 or bf16*bf16+f32->f32).";
   }
 
 (* A bf16 operand is a float32 buffer rounded on load: a deviation beyond the

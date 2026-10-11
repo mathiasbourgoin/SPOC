@@ -61,14 +61,19 @@ and binop op x y =
   | Lshr32 -> Some (Int32.shift_right_logical x (Int32.to_int y land 31))
   | Lshr64 | Eq | Ne | Lt | Le | Gt | Ge | And | Or -> None
 
+(* Intrinsics whose value depends on the launch geometry. [global_size] and
+   [num_groups] are not Sarek stdlib intrinsics today; they are listed so that
+   a library defining them cannot slip a geometry-dependent value past this
+   check. *)
+let launch_prefixes = ["block_dim_"; "grid_dim_"; "global_size"; "num_groups"]
+
 let rec mentions_launch_dims = function
   | EIntrinsic (_, name, []) ->
-      let p = "block_dim_" and g = "grid_dim_" in
-      let starts q =
-        String.length name > String.length q
-        && String.sub name 0 (String.length q) = q
-      in
-      starts p || starts g
+      List.exists
+        (fun q ->
+          String.length name >= String.length q
+          && String.sub name 0 (String.length q) = q)
+        launch_prefixes
   | EBinop (_, a, b) -> mentions_launch_dims a || mentions_launch_dims b
   | EUnop (_, a) | ECast (_, a) | EArrayRead (_, a) -> mentions_launch_dims a
   | EIntrinsic (_, _, args) -> List.exists mentions_launch_dims args

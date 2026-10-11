@@ -44,11 +44,10 @@
     The float half is the two configurations that need the relaxed contract; the
     integer half is the twelve that do not. Closed on what has been MEASURED to
     exist on a device this project can reach — the Vulkan set of
-    docs/design/f16-relaxed-accuracy.md §4 — plus nothing. In particular
-    [bfloat16] is absent: Metal advertises an 8x8 [bfloat] [simdgroup_matrix]
-    (§7 slice 6) but nothing has been swept about what it computes, and a
-    component type nothing can lower is a claim without evidence. Adding it is a
-    one-line change when a measurement exists. *)
+    docs/design/f16-relaxed-accuracy.md §4 — plus [BFloat16], added with its
+    measurement on HIP gfx11 (specs/matrix-pattern-rewrite.md). Metal's 8x8
+    [bfloat] [simdgroup_matrix] (§7 slice 6) is still unmeasured and not
+    lowered. *)
 type component_type =
   | Float16
   | BFloat16
@@ -62,10 +61,10 @@ type component_type =
   | Uint32
   | Sint32
 
-(** Stable lowercase rendering: ["f16"], ["f32"], ["u8"], ["s8"], ["u32"],
-    ["s32"]. Matches the column headings of the design document's §4 table and
-    the [ctype] function of [tools/probes/vulkan_coopmat_probe.c], so a probe
-    line and a Sarek diagnostic can be compared by eye. *)
+(** Stable lowercase rendering: ["f16"], ["bf16"], ["f32"], ["u8"], ["s8"],
+    ["u32"], ["s32"]. Matches the column headings of the design document's §4
+    table and the [ctype] function of [tools/probes/vulkan_coopmat_probe.c], so
+    a probe line and a Sarek diagnostic can be compared by eye. *)
 val component_name : component_type -> string
 
 (** Width in bits. *)

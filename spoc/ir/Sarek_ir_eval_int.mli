@@ -26,6 +26,7 @@ type launch = {
     here, or divides by zero. *)
 val eval : launch -> expr -> int32 option
 
-(** Whether an expression reads [block_dim_*] or [grid_dim_*]: such a value
-    changes meaning in a kernel launched with other dimensions. *)
+(** Whether an expression reads [block_dim_*], [grid_dim_*] (or a [global_size*]
+    / [num_groups*] intrinsic): such a value changes meaning in a kernel
+    launched with other dimensions. *)
 val mentions_launch_dims : expr -> bool
