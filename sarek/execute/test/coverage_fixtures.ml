@@ -122,12 +122,13 @@ let consumer ?(guarded = true) () =
           if guarded then SIf (EVar i <! EVar n, st, None) else st );
   }
 
-let launch ir ~(grid : Dims.dims) ~(block : Dims.dims) : unit LW.launch =
+let launch ?(ir_id = 0) ir ~(grid : Dims.dims) ~(block : Dims.dims) :
+    unit LW.launch =
   {
     LW.device_id = 0;
     backend = "probe";
     ir;
-    ir_id = 0;
+    ir_id;
     shared_bytes = None;
     max_grid_x = max_int;
     max_shared = 0;
@@ -143,8 +144,12 @@ let launch ir ~(grid : Dims.dims) ~(block : Dims.dims) : unit LW.launch =
 let threads n = Dims.dims_1d n
 
 (** 1-D launch of [total] threads in work-groups of [block]. *)
-let launch_1d ir ~total ~block =
-  launch ir ~grid:(threads ((total + block - 1) / block)) ~block:(threads block)
+let launch_1d ?ir_id ir ~total ~block =
+  launch
+    ?ir_id
+    ir
+    ~grid:(threads ((total + block - 1) / block))
+    ~block:(threads block)
 
 let scalars l = List.map (fun (k, v) -> (k, Int32.of_int v)) l
 

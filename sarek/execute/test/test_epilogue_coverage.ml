@@ -310,6 +310,40 @@ let test_used_scalars () =
     [("c", "n"); ("p", "n"); ("p", "off")]
     (List.sort compare used)
 
+(* A refusal found by enumeration depends on the scalar values: it must not be
+   reused for another valuation (an early exit used to report no scalar read,
+   so the cache served it for every value). *)
+let test_refusal_per_valuation () =
+  LE.clear () ;
+  let ident i off = (i /! int 2 *! int 2) +! (i %! int 2) +! off in
+  let p = launch_1d ~ir_id:101 (producer ident) ~total:1024 ~block:256 in
+  let c = launch_1d ~ir_id:102 (consumer ()) ~total:1000 ~block:250 in
+  let shape = shape_of c in
+  let cached off =
+    LE.cached_covers
+      ~p
+      ~p_array:"dst"
+      ~p_scalars:(scalars [("n", 1024); ("off", off)])
+      ~c
+      ~shape
+      ~c_scalars:(scalars [("n", 1000)])
+  in
+  check bool "off = -1: negative index, refused" false (cached (-1)) ;
+  check bool "off = 0 afterwards: covered" true (cached 0) ;
+  let dup i _ = (i /! int 2) +! (i %! int 2 *! int 0) in
+  let p2 = launch_1d ~ir_id:103 (producer dup) ~total:1024 ~block:256 in
+  let cached_dup n =
+    LE.cached_covers
+      ~p:p2
+      ~p_array:"dst"
+      ~p_scalars:(scalars [("n", n); ("off", 0)])
+      ~c
+      ~shape
+      ~c_scalars:(scalars [("n", 0)])
+  in
+  check bool "n = 1024: stores twice, refused" false (cached_dup 1024) ;
+  check bool "n = 1 afterwards: one store, C empty, covered" true (cached_dup 1)
+
 let () =
   run
     "epilogue_coverage"
@@ -338,5 +372,6 @@ let () =
           test_case "large affine pair proven" `Quick test_large_affine_proven;
           test_case "over budget not proven" `Quick test_over_budget_not_proven;
           test_case "decided by" `Quick test_paths;
+          test_case "refusal per valuation" `Quick test_refusal_per_valuation;
         ] );
     ]
