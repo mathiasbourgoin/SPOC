@@ -140,8 +140,9 @@ let expression_refusal (d : expression_desc) : string =
   | Pexp_array _ ->
       "an array literal (`[| e1; e2 |]`) is not supported in a kernel: a \
        device array has to be allocated with a memory space, so there is no \
-       literal form. Use `create_array n Local` (or `Shared`, or `Global`) and \
-       assign the elements."
+       literal form. Use `create_array 16l Local` (or `Shared`) with a \
+       constant size and assign the elements; for global memory take a kernel \
+       vector parameter."
   | Pexp_ifthenelse _ ->
       "UNREACHABLE: an `if` is parsed by an arm of its own that matches the \
        constructor totally, and a sub-node the parser cannot build raises THAT \

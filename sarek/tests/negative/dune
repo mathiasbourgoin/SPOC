@@ -23,6 +23,9 @@
 ;   (the module-qualified spelling Gpu.warp_ballot)
 ; - test_warp_open_std_refused: "'warp_shuffle_xor' is not lowered by any backend
 ;   yet" (under let open Std)
+; - test_create_array_global: "create_array with the Global memory space"
+; - test_create_array_runtime_size: "create_array size must be a positive compile-time constant"
+; - test_create_array_shared_runtime_size: same message (Shared memory space)
 ; - test_unbound_function: "Unbound variable"
 ; - test_unlinked_intrinsic: "Unknown kernel function or constant Bits.float_of_bits"
 ;   AND "(pps sarek.ppx <library>)" (an intrinsic from a library the PPX
@@ -1009,6 +1012,39 @@
 (library
  (name neg_test_warp_open_std_refused)
  (modules test_warp_open_std_refused)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_create_array_global)
+ (modules test_create_array_global)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_create_array_runtime_size)
+ (modules test_create_array_runtime_size)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_create_array_shared_runtime_size)
+ (modules test_create_array_shared_runtime_size)
  (libraries sarek sarek.stdlib sarek.ppx.lib)
  (preprocess
   (pps sarek_ppx))
