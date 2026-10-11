@@ -1,3 +1,8 @@
+(******************************************************************************)
+(* SPDX-License-Identifier: CECILL-B                                          *)
+(* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
+(******************************************************************************)
+
 (* Properties of the process-wide CPU pools:
    - launches issued concurrently from several domains each run to completion
      and each element of a launch's own array is written exactly once per
