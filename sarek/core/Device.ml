@@ -307,7 +307,8 @@ let on_synchronize (h : t -> unit -> unit) : unit =
   Mutex.protect sync_hooks_lock (fun () -> sync_hooks := !sync_hooks @ [h])
 
 (** [on_synchronized f] registers [f], called as [f d] after {!synchronize} has
-    returned from the backend's whole-device synchronisation of [d]. *)
+    returned from the backend's whole-device synchronisation of [d]. Listeners
+    run oldest-registered first, like every {!on_synchronize} hook. *)
 let on_synchronized (f : t -> unit) : unit = on_synchronize (fun d () -> f d)
 
 (** Wait for every operation enqueued on any stream of [d] (the backend's device

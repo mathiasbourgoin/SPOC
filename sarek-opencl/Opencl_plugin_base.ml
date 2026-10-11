@@ -36,15 +36,14 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
 
   (* Per-device state: context, default queue, and the queues of the live
      streams ([Stream.create] .. [Stream.destroy]), which [Device.synchronize]
-     must finish too. [streams] is guarded by [streams_lock]. *)
+     must finish too. [streams] is guarded by the device's [streams_lock]. *)
   type device_state = {
     device : Opencl_api.Device.t;
     context : Opencl_api.Context.t;
     queue : Opencl_api.CommandQueue.t;
     mutable streams : Opencl_api.CommandQueue.t list;
+    streams_lock : Mutex.t;
   }
-
-  let streams_lock = Mutex.create ()
 
   let device_states : (int, device_state) Hashtbl.t = Hashtbl.create 8
 
@@ -58,7 +57,9 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
         let device = Opencl_api.Device.get device_id in
         let context = Opencl_api.Context.create device in
         let queue = Opencl_api.CommandQueue.create context () in
-        let state = {device; context; queue; streams = []} in
+        let state =
+          {device; context; queue; streams = []; streams_lock = Mutex.create ()}
+        in
         Hashtbl.add device_states device_id state ;
         state
 
@@ -133,7 +134,7 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
     let synchronize (d : t) =
       let state = get_state d.id in
       Opencl_api.CommandQueue.finish state.queue ;
-      Mutex.protect streams_lock (fun () ->
+      Mutex.protect state.streams_lock (fun () ->
           List.iter Opencl_api.CommandQueue.finish state.streams)
   end
 
@@ -251,13 +252,13 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
     let create device =
       let state = get_state device.Opencl_api.Device.id in
       let queue = Opencl_api.CommandQueue.create state.context () in
-      Mutex.protect streams_lock (fun () ->
+      Mutex.protect state.streams_lock (fun () ->
           state.streams <- queue :: state.streams) ;
       {queue; device_id = device.id}
 
     let destroy stream =
       let state = get_state stream.device_id in
-      Mutex.protect streams_lock (fun () ->
+      Mutex.protect state.streams_lock (fun () ->
           state.streams <-
             List.filter (fun q -> q != stream.queue) state.streams) ;
       Opencl_api.CommandQueue.release stream.queue
