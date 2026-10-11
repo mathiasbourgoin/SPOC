@@ -16,8 +16,8 @@
  * domain allocates in a loop while the main domain waits in [Device.synchronize]
  * on a single-thread spin kernel calibrated to about 200 ms. The test requires
  * at least [min_collections] minor collections to complete during the wait.
- * With the lock held the count is 0 to 2 (measured); unblocked, it is in the
- * hundreds. A device whose wait is shorter than
+ * With the lock held the count is 0 to 2 (measured); unblocked, it is about
+ * a thousand. A device whose wait is shorter than
  * [min_wait_ms] cannot tell the two apart and fails as inconclusive.
  ******************************************************************************)
 

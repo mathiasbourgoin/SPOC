@@ -127,6 +127,19 @@ let get_hiprtc_lib () =
 let foreign_hiprtc_lazy name typ =
   lazy (foreign ~from:(get_hiprtc_lib ()) name typ)
 
+(** [foreign_hiprtc_blocking_lazy name typ] is [foreign_hiprtc_lazy name typ]
+    with the OCaml runtime lock released for the duration of the call, for entry
+    points that block on the device or run a compiler. While it is held, every
+    other domain stops at its next minor collection until the call returns. Safe
+    only because no argument of these entry points points into the OCaml heap: a
+    [ptr] argument is C memory (driver handles, [allocate]d cells, bigarray
+    data) that ctypes keeps reachable until the call returns, and a ctypes
+    [string] argument is copied into C memory first. A raw address
+    ([ptr_of_raw_address]) is not rooted: its caller keeps the memory alive
+    across the call, as it must already. *)
+let foreign_hiprtc_blocking_lazy name typ =
+  lazy (foreign ~release_runtime_lock:true ~from:(get_hiprtc_lib ()) name typ)
+
 (** {1 Bindings} *)
 
 let hiprtcCreateProgram_lazy =
@@ -146,7 +159,7 @@ let hiprtcDestroyProgram_lazy =
 let hiprtcDestroyProgram prog = Lazy.force hiprtcDestroyProgram_lazy prog
 
 let hiprtcCompileProgram_lazy =
-  foreign_hiprtc_lazy
+  foreign_hiprtc_blocking_lazy
     "hiprtcCompileProgram"
     (hiprtc_program_ptr @-> int @-> ptr string @-> returning hiprtc_result)
 

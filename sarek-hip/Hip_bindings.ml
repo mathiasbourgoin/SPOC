@@ -57,6 +57,19 @@ let get_hip_lib () =
 
 let foreign_hip_lazy name typ = lazy (foreign ~from:(get_hip_lib ()) name typ)
 
+(** [foreign_hip_blocking_lazy name typ] is [foreign_hip_lazy name typ] with the
+    OCaml runtime lock released for the duration of the call, for entry points
+    that block on the device or run a compiler. While it is held, every other
+    domain stops at its next minor collection until the call returns. Safe only
+    because no argument of these entry points points into the OCaml heap: a
+    [ptr] argument is C memory (driver handles, [allocate]d cells, bigarray
+    data) that ctypes keeps reachable until the call returns, and a ctypes
+    [string] argument is copied into C memory first. A raw address
+    ([ptr_of_raw_address]) is not rooted: its caller keeps the memory alive
+    across the call, as it must already. *)
+let foreign_hip_blocking_lazy name typ =
+  lazy (foreign ~release_runtime_lock:true ~from:(get_hip_lib ()) name typ)
+
 (** {1 Initialization} *)
 
 let hipInit_lazy = foreign_hip_lazy "hipInit" (uint @-> returning hip_result)
@@ -118,7 +131,9 @@ let hipDeviceComputeCapability major minor d =
   Lazy.force hipDeviceComputeCapability_lazy major minor d
 
 let hipDeviceSynchronize_lazy =
-  foreign_hip_lazy "hipDeviceSynchronize" (void @-> returning hip_result)
+  foreign_hip_blocking_lazy
+    "hipDeviceSynchronize"
+    (void @-> returning hip_result)
 
 let hipDeviceSynchronize () = Lazy.force hipDeviceSynchronize_lazy ()
 
@@ -143,33 +158,34 @@ let hipExtMallocWithFlags p size flags =
 
 let hip_device_malloc_uncached = Unsigned.UInt.of_int 0x3
 
-let hipFree_lazy = foreign_hip_lazy "hipFree" (ptr void @-> returning hip_result)
+let hipFree_lazy =
+  foreign_hip_blocking_lazy "hipFree" (ptr void @-> returning hip_result)
 
 let hipFree ptr = Lazy.force hipFree_lazy ptr
 
 let hipMemcpyHtoD_lazy =
-  foreign_hip_lazy
+  foreign_hip_blocking_lazy
     "hipMemcpyHtoD"
     (hip_deviceptr @-> ptr void @-> size_t @-> returning hip_result)
 
 let hipMemcpyHtoD dst src size = Lazy.force hipMemcpyHtoD_lazy dst src size
 
 let hipMemcpyDtoH_lazy =
-  foreign_hip_lazy
+  foreign_hip_blocking_lazy
     "hipMemcpyDtoH"
     (ptr void @-> hip_deviceptr @-> size_t @-> returning hip_result)
 
 let hipMemcpyDtoH dst src size = Lazy.force hipMemcpyDtoH_lazy dst src size
 
 let hipMemcpyDtoD_lazy =
-  foreign_hip_lazy
+  foreign_hip_blocking_lazy
     "hipMemcpyDtoD"
     (hip_deviceptr @-> hip_deviceptr @-> size_t @-> returning hip_result)
 
 let hipMemcpyDtoD dst src size = Lazy.force hipMemcpyDtoD_lazy dst src size
 
 let hipMemsetD8_lazy =
-  foreign_hip_lazy
+  foreign_hip_blocking_lazy
     "hipMemsetD8"
     (hip_deviceptr @-> uchar @-> size_t @-> returning hip_result)
 
@@ -185,14 +201,14 @@ let hipMemGetInfo free total = Lazy.force hipMemGetInfo_lazy free total
 (** {1 Module Management} *)
 
 let hipModuleLoadData_lazy =
-  foreign_hip_lazy
+  foreign_hip_blocking_lazy
     "hipModuleLoadData"
     (ptr hip_module_ptr @-> ptr void @-> returning hip_result)
 
 let hipModuleLoadData p data = Lazy.force hipModuleLoadData_lazy p data
 
 let hipModuleLoad_lazy =
-  foreign_hip_lazy
+  foreign_hip_blocking_lazy
     "hipModuleLoad"
     (ptr hip_module_ptr @-> string @-> returning hip_result)
 
@@ -296,7 +312,7 @@ let hipStreamDestroy_lazy =
 let hipStreamDestroy s = Lazy.force hipStreamDestroy_lazy s
 
 let hipStreamSynchronize_lazy =
-  foreign_hip_lazy
+  foreign_hip_blocking_lazy
     "hipStreamSynchronize"
     (hip_stream_ptr @-> returning hip_result)
 
@@ -329,7 +345,9 @@ let hipEventRecord_lazy =
 let hipEventRecord e s = Lazy.force hipEventRecord_lazy e s
 
 let hipEventSynchronize_lazy =
-  foreign_hip_lazy "hipEventSynchronize" (hip_event_ptr @-> returning hip_result)
+  foreign_hip_blocking_lazy
+    "hipEventSynchronize"
+    (hip_event_ptr @-> returning hip_result)
 
 let hipEventSynchronize e = Lazy.force hipEventSynchronize_lazy e
 

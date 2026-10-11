@@ -59,6 +59,19 @@ let get_vulkan_lib () =
 (** Create a lazy foreign binding to Vulkan API *)
 let foreign_vk_lazy name typ = lazy (foreign ~from:(get_vulkan_lib ()) name typ)
 
+(** [foreign_vk_blocking_lazy name typ] is [foreign_vk_lazy name typ] with the
+    OCaml runtime lock released for the duration of the call, for entry points
+    that block on the device or run a compiler. While it is held, every other
+    domain stops at its next minor collection until the call returns. Safe only
+    because no argument of these entry points points into the OCaml heap: a
+    [ptr] argument is C memory (driver handles, [allocate]d cells, bigarray
+    data) that ctypes keeps reachable until the call returns, and a ctypes
+    [string] argument is copied into C memory first. A raw address
+    ([ptr_of_raw_address]) is not rooted: its caller keeps the memory alive
+    across the call, as it must already. *)
+let foreign_vk_blocking_lazy name typ =
+  lazy (foreign ~release_runtime_lock:true ~from:(get_vulkan_lib ()) name typ)
+
 (** {1 Instance Functions} *)
 
 let vkCreateInstance_lazy =
@@ -230,7 +243,9 @@ let vkGetDeviceQueue dev family idx queue =
   Lazy.force vkGetDeviceQueue_lazy dev family idx queue
 
 let vkDeviceWaitIdle_lazy =
-  foreign_vk_lazy "vkDeviceWaitIdle" (vk_device_ptr @-> returning vk_result)
+  foreign_vk_blocking_lazy
+    "vkDeviceWaitIdle"
+    (vk_device_ptr @-> returning vk_result)
 
 let vkDeviceWaitIdle dev = Lazy.force vkDeviceWaitIdle_lazy dev
 
@@ -604,7 +619,7 @@ let vkDestroyFence dev fence alloc =
   Lazy.force vkDestroyFence_lazy dev fence alloc
 
 let vkWaitForFences_lazy =
-  foreign_vk_lazy
+  foreign_vk_blocking_lazy
     "vkWaitForFences"
     (vk_device_ptr @-> uint32_t @-> ptr vk_fence @-> vk_bool32 @-> uint64_t
    @-> returning vk_result)
@@ -632,7 +647,9 @@ let vkQueueSubmit queue count submits fence =
   Lazy.force vkQueueSubmit_lazy queue count submits fence
 
 let vkQueueWaitIdle_lazy =
-  foreign_vk_lazy "vkQueueWaitIdle" (vk_queue_ptr @-> returning vk_result)
+  foreign_vk_blocking_lazy
+    "vkQueueWaitIdle"
+    (vk_queue_ptr @-> returning vk_result)
 
 let vkQueueWaitIdle queue = Lazy.force vkQueueWaitIdle_lazy queue
 
