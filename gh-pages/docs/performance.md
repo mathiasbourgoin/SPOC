@@ -16,6 +16,7 @@ When a program issues many small kernels, the host time spent on each launch can
 
 - The window is on by default for the backends in the first row, and a device is excluded from deferral if it is a CPU device (host-pointer buffers from `Host_ptr_buffer` alias host memory there). Native and Interpreter execute directly and are never deferred.
 - On Metal a fused kernel is limited to 31 argument slots (each vector takes two, each scalar one, and every member adds an offset and a size). A group that would pass it is split, so a long chain of launches with many arguments is fused in several smaller groups.
+- Metal's window was checked on the generated source; the project's window tests had not yet run on an Apple GPU when this default was set.
 - CUDA was tested through ZLUDA on an AMD GPU, not on NVIDIA hardware. Switch it off with `Execute.Window.set_backend_enabled ~backend:"CUDA/PTX" false` if you see a difference.
 - Epilogue fusion is on only on HIP. HIP compiles with floating-point contraction forced off, so merging two kernels cannot change a result; on the other backends the device compiler may contract a multiply of the first kernel with an add of the second, changing the result by an ulp, so it stays opt-in.
 - Horizontal fusion produces bit-identical results by construction: each member runs unchanged and nothing is added, removed or reordered between members.
