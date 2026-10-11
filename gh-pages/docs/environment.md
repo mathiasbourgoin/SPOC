@@ -80,14 +80,16 @@ See [Kernel language notes](kernel_language.html).
 
 ## Compile cache
 
-Vulkan (SPIR-V) and OpenCL (program binaries) keep compiled kernels on disk so that a new process does not compile them again. The files are in the `spoc` directory under `$XDG_CACHE_HOME`, or under `$HOME/.cache` when that is unset; the parent directory must already exist.
+Vulkan (SPIR-V) and OpenCL (program binaries) keep compiled kernels on disk so that a new process does not compile them again. The files are in the `spoc` directory under `$XDG_CACHE_HOME`, or under `$HOME/.cache` when that is unset; the parent directory must already exist. The cache is used only when that directory is owned by the current user and not writable by group or others (a directory Sarek creates is mode 0700), and never from the shared temporary directory: without `XDG_CACHE_HOME` and `HOME` it is off. OpenCL entries are native device binaries that the driver loads, so a directory others can write to would let them substitute code. A refused directory prints one warning and the program compiles as if the cache were off.
 
 | Variable | Accepted values | Default | Read at | Effect |
 |---|---|---|---|---|
 | `SAREK_DISK_CACHE` | `0` turns it off | unset (on) | each cache lookup and store | With `0`, no disk cache is read or written: Vulkan compiles GLSL again and OpenCL builds from source in every process. Nothing else changes. The in-process kernel caches are not affected. |
 | `XDG_CACHE_HOME` | a directory | `$HOME/.cache` | each cache lookup and store | Where the `spoc` cache directory lives. Not a Sarek variable; set it to move or isolate the cache (the tests point it at a temporary directory). |
 
-An OpenCL entry is keyed by the platform name and version, the device name and version, the driver version, the exact build-option string and the source, so a driver update or a different option set compiles again and writes a new entry. A cached binary that the driver refuses, or that fails to build, is ignored: the kernel is compiled from source and the entry is overwritten. No error reaches the program. A driver that returns no binary for a program (size 0) is never cached. An entry is a checksum followed by the binary; a truncated or damaged file fails the checksum and is treated the same way. Entries are never evicted; delete the `spoc` directory to clear them. Set `SAREK_DEBUG=device` to see each lookup (`[Cache]` lines).
+An OpenCL entry is keyed by the platform name and version, the device name and version, the driver version, the exact build-option string and the source, so a driver update or a different option set compiles again and writes a new entry. A cached binary that the driver refuses, or that fails to build, is ignored: the kernel is compiled from source and the entry is overwritten. No error reaches the program. A driver that returns no binary for a program (size 0) is never cached. An entry is a checksum followed by the binary; a truncated or damaged file fails the checksum and is treated the same way. Entries are never evicted; delete the `spoc` directory to clear them. Set `SAREK_DEBUG=device` to see each lookup (`[Cache]` lines). 
+
+The key cannot see a driver rebuilt from new sources under the same version string: OpenCL uses `CL_DRIVER_VERSION`, so entries made by the old build are reused. Vulkan keys on the device name and the Vulkan API version, not on the shaderc version, so a new shaderc leaves old SPIR-V in use. After rebuilding or replacing such a component, delete the `spoc` cache directory or run once with `SAREK_DISK_CACHE=0`.
 
 ## Diagnostics
 

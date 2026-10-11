@@ -207,7 +207,7 @@
   identical to a source build. `SAREK_DISK_CACHE=0` switches the disk cache off
   for OpenCL and Vulkan (new in `Framework_cache`, with
   `compute_key_with_options`); `Framework_cache.put` now writes a temporary
-  file and renames it, so another process never reads a half-written entry.
+  file with a unique name and renames it, so a reader (any thread, domain or process) sees one complete entry and never a half-written one. The cache is refused when its directory is not owned by the user, is group- or other-writable, or would be the shared temporary directory.
   Tests: `sarek-opencl/test/test_opencl_disk_cache.ml`,
   `sarek/framework/test/test_framework_cache.ml`; bench:
   `sarek-opencl/bench/run_ab.sh`. Docs: `gh-pages/docs/environment.md`.

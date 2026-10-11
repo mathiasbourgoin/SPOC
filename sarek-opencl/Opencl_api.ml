@@ -818,9 +818,13 @@ module Program = struct
     let size = allocate size_t Unsigned.Size_t.zero in
     let _ = query Unsigned.Size_t.zero (to_voidp null) size in
     let log_size = Unsigned.Size_t.to_int !@size in
-    let log_buf = allocate_n char ~count:log_size in
-    let _ = query !@size (to_voidp log_buf) size in
-    string_from_ptr log_buf ~length:(log_size - 1)
+    (* A size of 0 (no log) or 1 (just the NUL) is an empty log. *)
+    if log_size <= 1 then ""
+    else begin
+      let log_buf = allocate_n char ~count:log_size in
+      let _ = query !@size (to_voidp log_buf) size in
+      string_from_ptr log_buf ~length:(log_size - 1)
+    end
 
   let release program =
     check "clReleaseProgram" (clReleaseProgram program.handle)
@@ -843,20 +847,43 @@ module Program = struct
       a binary the driver refuses, or one that fails to build all mean "compile
       from source", never an error. *)
   let adopt_cached_binary program ~key ~options =
+    (* Releasing a handle is cleanup on a path that already has its answer; a
+       driver error there is logged, never raised, so it can neither leak the
+       other program nor escape [build]. *)
+    let release_quietly handle =
+      let status = clReleaseProgram handle in
+      if status <> 0l then
+        Spoc_core.Log.warnf
+          Spoc_core.Log.Kernel
+          "OpenCL clReleaseProgram failed (%ld) while using the disk cache"
+          status
+    in
     match Opencl_disk_cache.load ~key with
     | None -> false
     | Some binary -> (
         match create_from_binary program.context binary with
-        | None -> false
+        | None ->
+            Spoc_core.Log.warnf
+              Spoc_core.Log.Kernel
+              "OpenCL: driver refused cached binary %s; compiling from source"
+              key ;
+            false
         | Some candidate ->
             if build_status candidate ~options = 0l then begin
-              release program ;
+              let replaced = program.handle in
               program.handle <- candidate.handle ;
               program._pinned <- candidate._pinned ;
+              release_quietly replaced ;
               true
             end
             else begin
-              release candidate ;
+              Spoc_core.Log.warnf
+                Spoc_core.Log.Kernel
+                "OpenCL: cached binary %s failed to build (%s); compiling from \
+                 source"
+                key
+                (build_log candidate) ;
+              release_quietly candidate.handle ;
               false
             end)
 

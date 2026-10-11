@@ -33,10 +33,26 @@ __kernel void poly(__global float *out) {
 }
 |}
 
+let rec delete_tree path =
+  if Sys.is_directory path then begin
+    Array.iter
+      (fun f -> delete_tree (Filename.concat path f))
+      (Sys.readdir path) ;
+    Sys.rmdir path
+  end
+  else Sys.remove path
+
+let temp_dirs = ref []
+
+let () =
+  at_exit (fun () ->
+      List.iter (fun d -> try delete_tree d with Sys_error _ -> ()) !temp_dirs)
+
 let fresh_cache_dir () =
   let dir = Filename.temp_file "h5c-cache" "" in
   Sys.remove dir ;
-  Unix.mkdir dir 0o755 ;
+  Unix.mkdir dir 0o700 ;
+  temp_dirs := dir :: !temp_dirs ;
   Unix.putenv "XDG_CACHE_HOME" dir ;
   Filename.concat dir "spoc"
 
@@ -66,6 +82,17 @@ let run_poly device =
   let host = Bigarray.Array1.create Bigarray.float32 Bigarray.c_layout count in
   Backend.Memory.device_to_host ~src:buf ~dst:host ;
   Backend.Memory.free buf ;
+  (* Positive control: the bits compared below are a real result, not zeros or
+     garbage that two runs could share. *)
+  List.iter
+    (fun i ->
+      let x = float_of_int (i + 1) *. 0.37 in
+      let expected = (x *. x) +. (0.1 *. x /. (x +. 3.3)) +. (sqrt x /. 3.0) in
+      Alcotest.(check (float (1e-3 *. expected)))
+        (Printf.sprintf "output[%d] equals the host value" i)
+        expected
+        host.{i})
+    [0; count - 1] ;
   Array.init count (fun i -> Int32.bits_of_float host.{i})
 
 let for_each_device f =

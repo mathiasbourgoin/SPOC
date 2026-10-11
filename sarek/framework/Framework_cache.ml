@@ -84,13 +84,47 @@ let get_cache_dir () =
     let dir = Filename.concat base_dir cache_dir_name in
     if not (Sys.file_exists dir) then begin
       debugf "Creating cache directory: %s" dir ;
-      Unix.mkdir dir 0o755
+      Unix.mkdir dir 0o700
     end ;
     dir
   with e ->
     warnf "Failed to create cache directory: %s" (Printexc.to_string e) ;
     Framework_error.raise_error
       (Cache_error {operation = "get_cache_dir"; reason = Printexc.to_string e})
+
+let untrusted_warned = Atomic.make false
+
+let warn_untrusted fmt =
+  if Atomic.compare_and_set untrusted_warned false true then warnf fmt
+  else Printf.ifprintf stderr fmt
+
+(** The directory entries may be read from and written to, or [None] when it
+    cannot be trusted. Cached OpenCL entries are native device binaries that a
+    driver loads, so a directory another user can write to would let them
+    substitute code. Refused (one warning per process): no [XDG_CACHE_HOME] and
+    no [HOME] (the only fallback is the shared temporary directory), a directory
+    not owned by the current user, and a directory writable by group or others.
+    A directory this module creates is mode 0o700. *)
+let trusted_dir () =
+  if Sys.getenv_opt "XDG_CACHE_HOME" = None && Sys.getenv_opt "HOME" = None then begin
+    warn_untrusted "no XDG_CACHE_HOME or HOME: disk cache disabled" ;
+    None
+  end
+  else
+    let dir = get_cache_dir () in
+    let st = Unix.stat dir in
+    if
+      st.Unix.st_kind = Unix.S_DIR
+      && st.Unix.st_uid = Unix.getuid ()
+      && st.Unix.st_perm land 0o022 = 0
+    then Some dir
+    else begin
+      warn_untrusted
+        "cache directory %s is not owned by this user or is writable by \
+         others: disk cache disabled"
+        dir ;
+      None
+    end
 
 (** On-disk key schema version. Bump this whenever the key inputs change so
     stale entries written under an older schema can never mis-hit - they simply
@@ -144,56 +178,71 @@ let compute_key_with_options ~options ~dev_name ~driver_version ~name ~source =
 (** {!compute_key_with_options} for a backend with no build options. *)
 let compute_key = compute_key_with_options ~options:[]
 
-(** Retrieve cached data by key; [None] when absent or the cache is disabled
-    (see {!enabled}). *)
+(** Retrieve cached data by key; [None] when absent, when the cache is disabled
+    (see {!enabled}) or when its directory is not trusted (see {!trusted_dir}).
+*)
 let get ~key =
   if not (enabled ()) then None
   else
     try
-      let dir = get_cache_dir () in
-      let filename = Filename.concat dir key in
-      if Sys.file_exists filename then begin
-        try
-          let ic = open_in_bin filename in
-          let len = in_channel_length ic in
-          let data = really_input_string ic len in
-          close_in ic ;
-          stats.hits <- stats.hits + 1 ;
-          debugf "Cache hit: %s (%d bytes)" key len ;
-          Some data
-        with e ->
-          stats.errors <- stats.errors + 1 ;
-          warnf "Cache read error for key %s: %s" key (Printexc.to_string e) ;
-          None
-      end
-      else begin
-        stats.misses <- stats.misses + 1 ;
-        debugf "Cache miss: %s" key ;
-        None
-      end
+      match trusted_dir () with
+      | None -> None
+      | Some dir ->
+          let filename = Filename.concat dir key in
+          if Sys.file_exists filename then begin
+            try
+              let data =
+                In_channel.with_open_bin filename In_channel.input_all
+              in
+              stats.hits <- stats.hits + 1 ;
+              debugf "Cache hit: %s (%d bytes)" key (String.length data) ;
+              Some data
+            with e ->
+              stats.errors <- stats.errors + 1 ;
+              warnf "Cache read error for key %s: %s" key (Printexc.to_string e) ;
+              None
+          end
+          else begin
+            stats.misses <- stats.misses + 1 ;
+            debugf "Cache miss: %s" key ;
+            None
+          end
     with Framework_error.Framework_error _ as e ->
       stats.errors <- stats.errors + 1 ;
       raise e
 
-(** Store data in cache with given key. The entry is written to a private
-    temporary file and renamed into place, so a concurrent {!get} (another
-    process) sees either the previous entry or the complete new one, never a
-    partial write. No-op when the cache is disabled (see {!enabled}). *)
+(** Write [data] to a fresh temporary file in [dir] and rename it onto
+    [filename]. The temporary name is unique per call ([Filename.temp_file]:
+    exclusive creation, random suffix), so concurrent writers (threads, domains
+    or processes) never share a file; the rename is atomic on a POSIX
+    filesystem, so a reader opening [filename] sees one complete entry, either
+    the previous one or a new one. *)
+let write_atomically ~dir ~filename data =
+  let tmp = Filename.temp_file ~temp_dir:dir ".entry" ".tmp" in
+  try
+    Out_channel.with_open_bin tmp (fun oc -> output_string oc data) ;
+    Sys.rename tmp filename
+  with e ->
+    (try Sys.remove tmp with Sys_error _ -> ()) ;
+    raise e
+
+(** Store data in cache with given key; see {!write_atomically} for what a
+    concurrent {!get} can observe. No-op when the cache is disabled (see
+    {!enabled}) or its directory is not trusted (see {!trusted_dir}). *)
 let put ~key ~data =
   if not (enabled ()) then ()
   else
     try
-      let dir = get_cache_dir () in
-      let filename = Filename.concat dir key in
-      let tmp = Printf.sprintf "%s.tmp%d" filename (Unix.getpid ()) in
-      try
-        Out_channel.with_open_bin tmp (fun oc -> output_string oc data) ;
-        Sys.rename tmp filename ;
-        stats.puts <- stats.puts + 1 ;
-        debugf "Cache put: %s (%d bytes)" key (String.length data)
-      with e ->
-        stats.errors <- stats.errors + 1 ;
-        warnf "Cache write error for key %s: %s" key (Printexc.to_string e)
+      match trusted_dir () with
+      | None -> ()
+      | Some dir -> (
+          try
+            write_atomically ~dir ~filename:(Filename.concat dir key) data ;
+            stats.puts <- stats.puts + 1 ;
+            debugf "Cache put: %s (%d bytes)" key (String.length data)
+          with e ->
+            stats.errors <- stats.errors + 1 ;
+            warnf "Cache write error for key %s: %s" key (Printexc.to_string e))
     with Framework_error.Framework_error _ ->
       stats.errors <- stats.errors + 1 ;
       (* Don't propagate cache errors, just log them *)
