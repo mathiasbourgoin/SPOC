@@ -1167,7 +1167,13 @@ let () =
   Cache_hooks.on_clear_all Launch_hooks.flush_pending ;
   Cache_hooks.on_device_destroy (fun ~backend:_ _ ->
       Launch_hooks.flush_pending ()) ;
-  at_exit (fun () -> try Launch_hooks.flush_pending () with _ -> ())
+  at_exit (fun () ->
+      try Launch_hooks.flush_pending ()
+      with e ->
+        (* No caller is left to raise to: report instead of losing it. *)
+        prerr_endline
+          ("Sarek: a deferred kernel launch failed at exit: "
+         ^ Printexc.to_string e))
 
 (** Control and statistics of the launch window. *)
 module Window = struct
@@ -1190,6 +1196,13 @@ module Window = struct
   (** [true] when JIT launches on this backend name are deferred. *)
   let defers backend = Launch_window.defers backend
 
+  (** [true] when JIT launches on this device are deferred: its backend's window
+      is on and it is not a CPU device (whose zero-copy buffers can alias each
+      other). *)
+  let defers_device (device : Device.t) =
+    (not device.capabilities.Framework_sig.is_cpu)
+    && Launch_window.defers device.framework
+
   (** [false] when deferral is off for every backend. *)
   let enabled () = Atomic.get Launch_window.enabled
 
@@ -1206,14 +1219,18 @@ module Window = struct
   let clear_fused_cache () = Launch_window.clear_cache window
 end
 
-(* Hand a generated kernel to the backend, now. *)
-let issue_jit (module B : Framework_sig.BACKEND) ?stream ~(device : Device.t)
-    ~name ~source ~block ~grid ~shared_mem (args : vector_arg list) : unit =
+(* Prepare the hand-over of a generated kernel to the backend: everything that
+   can fail on the arguments (buffer lookup, length range, the backend's
+   source language) happens NOW, in the launching call, and the returned
+   closure only selects the device and calls the backend. A deferred launch
+   therefore reports argument errors where it is made. *)
+let prepare_jit (module B : Framework_sig.BACKEND) ?stream ~(device : Device.t)
+    ~name ~source ~block ~grid ~shared_mem (args : vector_arg list) :
+    unit -> unit =
   (* ~soa_abi:true: this is the generated-JIT path, and [source] was emitted
      with the matching ~soa_params. *)
   let rs_args = expand_to_run_source_args ~soa_abi:true args device in
   let dev = B.Device.get device.backend_id in
-  B.Device.set_current dev ;
   let lang =
     match B.supported_source_langs with
     | [] ->
@@ -1225,43 +1242,60 @@ let issue_jit (module B : Framework_sig.BACKEND) ?stream ~(device : Device.t)
              })
     | lang :: _ -> lang
   in
-  match stream with
-  | None ->
-      B.run_source
-        ~source
-        ~lang
-        ~kernel_name:name
-        ~block
-        ~grid
-        ~shared_mem
-        rs_args
-  | Some s ->
-      let _, sref = Transfer.stream_handle s in
-      let bs =
-        match B.unwrap_stream sref with
-        | Some bs -> bs
-        | None ->
-            invalid_arg "Execute.run: the stream belongs to another backend"
-      in
-      B.run_source_on_stream
-        ~stream:bs
-        ~source
-        ~lang
-        ~kernel_name:name
-        ~block
-        ~grid
-        ~shared_mem
-        rs_args ;
-      (* The kernel may still be running: keep the vectors whose buffers it
+  fun () ->
+    B.Device.set_current dev ;
+    match stream with
+    | None ->
+        B.run_source
+          ~source
+          ~lang
+          ~kernel_name:name
+          ~block
+          ~grid
+          ~shared_mem
+          rs_args
+    | Some s ->
+        let _, sref = Transfer.stream_handle s in
+        let bs =
+          match B.unwrap_stream sref with
+          | Some bs -> bs
+          | None ->
+              invalid_arg "Execute.run: the stream belongs to another backend"
+        in
+        B.run_source_on_stream
+          ~stream:bs
+          ~source
+          ~lang
+          ~kernel_name:name
+          ~block
+          ~grid
+          ~shared_mem
+          rs_args ;
+        (* The kernel may still be running: keep the vectors whose buffers it
          touches alive until the stream (or a later event) completes — the GC
          finaliser would otherwise free them under it. *)
-      Transfer.retain_on_stream
-        s
-        ~keep:(Obj.repr args)
-        ~vec_ids:
-          (List.filter_map
-             (function Vec v -> Some v.Vector.id | _ -> None)
-             args)
+        Transfer.retain_on_stream
+          s
+          ~keep:(Obj.repr args)
+          ~vec_ids:
+            (List.filter_map
+               (function Vec v -> Some v.Vector.id | _ -> None)
+               args)
+
+(* Hand a generated kernel to the backend, now. *)
+let issue_jit (module B : Framework_sig.BACKEND) ?stream ~device ~name ~source
+    ~block ~grid ~shared_mem args : unit =
+  prepare_jit
+    (module B)
+    ?stream
+    ~device
+    ~name
+    ~source
+    ~block
+    ~grid
+    ~shared_mem
+    args
+    ()
 
 let jit_source (module B : Framework_sig.BACKEND) ~(device : Device.t) ~name
     ~block ~soa_params ir : string =
@@ -1277,6 +1311,14 @@ let jit_source (module B : Framework_sig.BACKEND) ~(device : Device.t) ~name
                ^ ": generate_source returned None (kernel may use unsupported \
                   IR nodes)";
            })
+
+(* Whether JIT launches on [device] are deferred. Zero-copy buffers (OpenCL
+   CPU devices, the only backend that allocates them) alias host memory, and
+   distinct vectors can alias each other through it, so buffer identity is no
+   longer the vector's there: launches on CPU devices are not deferred. *)
+let defers_on (device : Device.t) =
+  (not device.capabilities.Framework_sig.is_cpu)
+  && Launch_window.defers device.framework
 
 (* The buffers the kernel touches, with how it uses each. *)
 let launch_accesses (info : Launch_window.ir_info) (ir : Sarek_ir_types.kernel)
@@ -1329,7 +1371,11 @@ let submit_deferred (module B : Framework_sig.BACKEND) ~(device : Device.t) ~ir
       backend = device.framework;
       ir;
       ir_id = info.ir_id;
-      fusable = info.fusable = Ok ();
+      shared_bytes = Result.to_option info.fusable;
+      max_grid_x =
+        (let x, _, _ = device.capabilities.Framework_sig.max_grid_dims in
+         x);
+      max_shared = device.capabilities.Framework_sig.shared_mem_per_block;
       args;
       block;
       grid;
@@ -1380,8 +1426,9 @@ let run_jit (module B : Framework_sig.BACKEND) ?stream ~(device : Device.t)
                  whose WGSL codegen is not yet wired. *)
       let soa_params = soa_param_names ir args device in
       let source = jit_source (module B) ~device ~name ~block ~soa_params ir in
-      let issue () =
-        issue_jit
+      (* Arguments are expanded now, deferred or not (see [prepare_jit]). *)
+      let issue =
+        prepare_jit
           (module B)
           ?stream
           ~device
@@ -1392,10 +1439,7 @@ let run_jit (module B : Framework_sig.BACKEND) ?stream ~(device : Device.t)
           ~shared_mem
           args
       in
-      if
-        stream = None && soa_params = []
-        && Launch_window.defers device.framework
-      then
+      if stream = None && soa_params = [] && defers_on device then
         submit_deferred
           (module B)
           ~device

@@ -20,8 +20,8 @@
     Every name of member [k] (parameters, locals, shared arrays, loop and
     pattern variables) is prefixed [m<k>_] and its var ids are offset, so
     members cannot capture each other's names. The fused kernel's parameters are
-    the members' parameters in order, followed by [m<k>_off] and [m<k>_gdx]
-    (int32) for each member. *)
+    the members' parameters in order, followed by [hf<k>_off] and [hf<k>_gdx]
+    (int32) for each member, a namespace no renamed member name can enter. *)
 
 open Sarek_ir_types
 
@@ -37,9 +37,11 @@ let rename_var k (v : var) =
     var_id = v.var_id + ((k + 1) * id_stride);
   }
 
+(* The position parameters live OUTSIDE the members' [m<k>_] namespace: a
+   member variable named [off] becomes [m<k>_off] and must not shadow them. *)
 let int32_var k name =
   {
-    var_name = prefix k name;
+    var_name = Printf.sprintf "hf%d_%s" k name;
     var_id = (((k + 1) * id_stride) - 1 - if name = "off" then 0 else 1);
     var_type = TInt32;
     var_mutable = false;

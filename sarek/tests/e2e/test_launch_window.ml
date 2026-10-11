@@ -122,11 +122,23 @@ let mv_row =
 let positions =
   [%kernel
     fun (p : int32 vector) (q : int32 vector) (n : int32) ->
+      (* Locals named like the fused kernel's position parameters: renaming
+         must not let them capture those (review finding B1). *)
+      let off = n / 2l in
+      let gdx = n / 4l in
       let i = global_thread_id in
       if i < n then begin
-        p.(i) <- (block_idx_x * 1000000l) + (grid_dim_x * 1000l) + thread_idx_x ;
+        p.(i) <- (block_idx_x * 1000000l) + (off * 1000l) + thread_idx_x - gdx ;
         q.(i) <- global_idx_x - i
       end]
+
+(* Reads grid_dim_x, which horizontal fusion refuses (an unsigned value on the
+   C-family backends): never fused, still correct. *)
+let grid_size =
+  [%kernel
+    fun (p : int32 vector) (n : int32) ->
+      let i = global_thread_id in
+      if i < n then p.(i) <- grid_dim_x]
 
 let add_inplace =
   [%kernel
@@ -209,6 +221,25 @@ let independent dev =
     ~grid:(d1 ((n_pos + 255) / 256)) ;
   (bits_f y1, bits_f y2, bits_f y3, bits_i p, bits_i q)
 
+(* Scenario 1b: a matvec and a kernel reading grid_dim_x: not fused. *)
+let not_fusable dev =
+  let x = fvec (rows * nb) 15 and w = fvec nb 16 and y = fvec rows 0 in
+  let p = Vector.create Vector.int32 n_pos in
+  let open Execute in
+  launch
+    dev
+    (ir_of mv_wave)
+    [Vec x; Vec w; Vec y; Int rows; Int nb]
+    ~block:(d1 256)
+    ~grid:(d1 ((rows + 7) / 8)) ;
+  launch
+    dev
+    (ir_of grid_size)
+    [Vec p; Int n_pos]
+    ~block:(d1 256)
+    ~grid:(d1 ((n_pos + 255) / 256)) ;
+  (bits_f y, bits_i p)
+
 (* Scenario 2: t = W x; acc += t; z = W' acc. *)
 let dependent dev =
   let x = fvec (rows * nb) 6 and w = fvec nb 7 in
@@ -278,7 +309,7 @@ let check (dev : Device.t) label ok =
   if not ok then failures := (dev.Device.framework ^ " " ^ label) :: !failures
 
 let run_device (dev : Device.t) =
-  let defers = Execute.Window.defers dev.Device.framework in
+  let defers = Execute.Window.defers_device dev in
   let scenario label f ~fused_launches =
     let off, _ = with_window false (fun () -> issued_by (fun () -> f dev)) in
     let on, issued = issued_by (fun () -> f dev) in
@@ -291,6 +322,7 @@ let run_device (dev : Device.t) =
   in
   scenario "independent" independent ~fused_launches:1 ;
   scenario "dependent" dependent ~fused_launches:3 ;
+  scenario "grid_dim_x member" not_fusable ~fused_launches:2 ;
   scenario "host write" host_write ~fused_launches:2 ;
   (* A profiling timer is a synchronisation point: the launch it brackets is
      issued before the start event and before the stop event is recorded.

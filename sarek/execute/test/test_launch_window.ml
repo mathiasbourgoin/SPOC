@@ -190,7 +190,7 @@ module Probe : BACKEND = struct
 
     let create () = ()
 
-    let record _event _stream = ()
+    let record _event _stream = log "event record"
 
     let synchronize _event = ()
 
@@ -295,9 +295,19 @@ let launch ?(gx = 1) ?(block = 64) ir src dst =
     ~grid:(Execute.dims1d gx)
     ()
 
+(* Fused kernels are named sarek_hfused_<n> with a process-wide counter: the
+   number is replaced by N so expectations do not depend on test order. *)
+let normalise e =
+  String.split_on_char ' ' e
+  |> List.map (fun w ->
+      if String.starts_with ~prefix:"sarek_hfused_" w then "sarek_hfused_N"
+      else w)
+  |> String.concat " "
+
 let launches () =
-  List.filter
-    (fun e -> String.starts_with ~prefix:"launch" e)
+  List.filter_map
+    (fun e ->
+      if String.starts_with ~prefix:"launch" e then Some (normalise e) else None)
     (List.rev !events)
 
 let reset () =
@@ -350,7 +360,7 @@ let test_independent_fused () =
   check
     (list string)
     "one fused launch over 10 groups"
-    ["launch sarek_hfused_0 gx=10 nargs=18"]
+    ["launch sarek_hfused_N gx=10 nargs=18"]
     (launches ()) ;
   let s = Execute.Window.stats () in
   check int "submitted" 3 s.submitted ;
@@ -390,7 +400,7 @@ let test_reordered_past_independent () =
   check
     (list string)
     "k_c fused with k_b, after k_a"
-    ["launch k_a gx=1 nargs=4"; "launch sarek_hfused_0 gx=2 nargs=12"]
+    ["launch k_a gx=1 nargs=4"; "launch sarek_hfused_N gx=2 nargs=12"]
     (launches ())
 
 let test_different_block_not_fused () =
@@ -479,7 +489,7 @@ let test_upload_unrelated_keeps_pending () =
   check
     (list string)
     "both fused"
-    ["launch sarek_hfused_0 gx=2 nargs=12"]
+    ["launch sarek_hfused_N gx=2 nargs=12"]
     (launches ())
 
 let test_issue_error_reraised_after_rest () =
@@ -570,6 +580,239 @@ let test_domains () =
   Execute.Window.flush () ;
   check int "every launch issued exactly once" 200 (List.length (launches ()))
 
+(* Synchronisation points whose probe call may refuse (no async support on the
+   probe): the pending launch must have been issued before the call acts,
+   whatever it then does. *)
+let issued_by what op () =
+  reset () ;
+  let[@warning "-8"] [x; y] = resident 2 in
+  events := [] ;
+  launch k_a x y ;
+  (try op y with _ -> ()) ;
+  check
+    bool
+    (what ^ ": pending launch issued")
+    true
+    (List.mem "launch k_a gx=1 nargs=4" (launches ()))
+
+let small = Bigarray.Array1.create Bigarray.float32 Bigarray.c_layout 2
+
+let more_sync_points =
+  [
+    ( "Profiling timer",
+      fun _ ->
+        let t = Spoc_core.Profiling.create_timer dev in
+        Spoc_core.Profiling.timer_start t );
+    ( "Transfer.record_event",
+      fun _ ->
+        let ev = Transfer.create_event dev in
+        Transfer.record_event ev (Transfer.default_stream dev) );
+    ( "Transfer.copy_to_device",
+      fun y -> Transfer.copy_to_device small ~dst:y ~dst_offset:0 );
+    ( "Transfer.copy_to_host",
+      fun y -> Transfer.copy_to_host ~src:y ~src_offset:0 small );
+    ( "Transfer.stage_to_device",
+      fun y -> Transfer.stage_to_device small ~dst:y ~dst_offset:0 );
+    ("Transfer.register_host", fun _ -> Transfer.register_host dev small);
+    ("cache clear", fun _ -> Spoc_framework.Cache_hooks.notify_clear_all ());
+    ( "device destroy",
+      fun _ ->
+        Spoc_framework.Cache_hooks.notify_device_destroy ~backend:backend_name 0
+    );
+  ]
+
+(* {1 IR analysis and rewrite} *)
+
+let ivar id name =
+  {var_name = name; var_id = id; var_type = TInt32; var_mutable = false}
+
+let verdict body
+    ?(params = [DParam (fvar 1 "src", arr); DParam (fvar 2 "dst", arr)]) () =
+  Sarek_execute.Kernel_access.horizontal_verdict
+    {
+      default_kernel with
+      kern_name = "v";
+      kern_params = params;
+      kern_body = body;
+    }
+
+let refused why body () =
+  match verdict body () with
+  | Ok _ -> failf "%s: expected a refusal" why
+  | Error _ -> ()
+
+let store e = SAssign (LArrayElem ("dst", gpu "thread_idx_x"), e)
+
+let test_verdicts () =
+  refused "grid_dim_x" (store (ECast (TFloat32, gpu "grid_dim_x"))) () ;
+  refused
+    "block_id_x alias"
+    (store
+       (ECast (TFloat32, EIntrinsic (["Sarek_stdlib"; "Gpu"], "block_id_x", []))))
+    () ;
+  refused
+    "block_idx_x under another path"
+    (store
+       (ECast
+          (TFloat32, EIntrinsic (["Sarek_stdlib"; "Other"], "block_idx_x", []))))
+    () ;
+  refused
+    "downstream intrinsic"
+    (store
+       (EIntrinsic (["My_lib"], "f", [EArrayRead ("src", gpu "thread_idx_x")])))
+    () ;
+  refused "free variable" (store (ECast (TFloat32, EVar (ivar 99 "g")))) () ;
+  refused
+    "shared array inside the body"
+    (SSeq
+       [
+         SEmpty;
+         SLet
+           ( fvar 7 "s",
+             EArrayCreate (TFloat32, EConst (CInt32 4l), Shared),
+             SEmpty );
+       ])
+    () ;
+  refused
+    "shared array of non-constant size"
+    (SLet
+       (fvar 7 "s", EArrayCreate (TFloat32, gpu "block_dim_x", Shared), SEmpty))
+    () ;
+  match
+    verdict
+      (SLet
+         ( fvar 7 "s",
+           EArrayCreate (TFloat32, EConst (CInt32 64l), Shared),
+           store (EArrayRead ("src", gpu "thread_idx_x")) ))
+      ()
+  with
+  | Ok bytes -> check int "shared bytes counted" 256 bytes
+  | Error why -> failf "plain kernel refused: %s" why
+
+let accesses body =
+  Sarek_execute.Kernel_access.param_accesses
+    {
+      default_kernel with
+      kern_name = "a";
+      kern_params = [DParam (fvar 1 "src", arr); DParam (fvar 2 "dst", arr)];
+      kern_body = body;
+    }
+
+let rw body name =
+  let a = List.assoc name (accesses body) in
+  (a.Sarek_execute.Kernel_access.read, a.write)
+
+let test_accesses () =
+  let tid = gpu "thread_idx_x" in
+  check
+    (pair bool bool)
+    "plain read"
+    (true, false)
+    (rw (store (EArrayRead ("src", tid))) "src") ;
+  check
+    (pair bool bool)
+    "plain write"
+    (false, true)
+    (rw (store (EArrayRead ("src", tid))) "dst") ;
+  check
+    (pair bool bool)
+    "vector passed whole (alias, helper, intrinsic)"
+    (true, true)
+    (rw (SLet (fvar 9 "alias", EVar (fvar 1 "src"), SEmpty)) "src") ;
+  check
+    (pair bool bool)
+    "atomic on an element"
+    (true, true)
+    (rw
+       (SExpr
+          (EIntrinsic
+             ( ["Sarek_stdlib"; "Gpu"],
+               "atomic_add_int32",
+               [EArrayRead ("src", tid); EConst (CInt32 1l)] )))
+       "src") ;
+  check
+    (pair bool bool)
+    "field of an element"
+    (false, true)
+    (rw
+       (SAssign
+          (LRecordField (LArrayElem ("dst", tid), "f"), EConst (CFloat32 0.)))
+       "dst")
+
+(* A member local named like the position parameters must not capture them
+   (review finding: a local [off] became [m0_off] and shadowed the
+   parameter). *)
+let test_rename_no_capture () =
+  let member =
+    {
+      default_kernel with
+      kern_name = "m";
+      kern_params = [DParam (fvar 1 "dst", arr)];
+      kern_body =
+        SLet
+          ( ivar 5 "off",
+            EConst (CInt32 7l),
+            SLet
+              ( ivar 6 "gdx",
+                EConst (CInt32 9l),
+                SAssign
+                  ( LArrayElem ("dst", gpu "global_thread_id"),
+                    ECast
+                      ( TFloat32,
+                        EBinop (Add, EVar (ivar 5 "off"), EVar (ivar 6 "gdx"))
+                      ) ) ) );
+    }
+  in
+  let fused = Sarek_execute.Fusion_horizontal.fuse ~name:"f" [member; member] in
+  let names =
+    List.filter_map
+      (function DParam (v, _) -> Some v.var_name | _ -> None)
+      fused.kern_params
+  in
+  check
+    (list string)
+    "parameters"
+    ["m0_dst"; "m1_dst"; "hf0_off"; "hf0_gdx"; "hf1_off"; "hf1_gdx"]
+    names ;
+  let src = Sarek_codegen.Sarek_ir_cuda.generate fused in
+  let contains sub =
+    let n = String.length sub and m = String.length src in
+    let rec go i = i + n <= m && (String.sub src i n = sub || go (i + 1)) in
+    go 0
+  in
+  check
+    bool
+    "position rewritten with the parameter"
+    true
+    (contains "blockIdx.x - hf0_off") ;
+  check bool "member local keeps its own name" true (contains "int m0_off = 7")
+
+(* The fused grid must fit the device's grid limit. *)
+let test_grid_limit () =
+  reset () ;
+  let small_dev =
+    {dev with capabilities = {(caps ()) with max_grid_dims = (4, 65535, 65535)}}
+  in
+  let[@warning "-8"] [x; y1; y2] = resident 3 in
+  events := [] ;
+  let go ir y gx =
+    Execute.run_vectors
+      ~device:small_dev
+      ~ir
+      ~args:[Execute.Vec x; Execute.Vec y]
+      ~block:(Execute.dims1d 64)
+      ~grid:(Execute.dims1d gx)
+      ()
+  in
+  go k_a y1 3 ;
+  go k_b y2 3 ;
+  Execute.Window.flush () ;
+  check
+    int
+    "3 + 3 work-groups exceed a limit of 4: not fused"
+    2
+    (List.length (launches ()))
+
 let () =
   run
     "launch window"
@@ -613,6 +856,20 @@ let () =
               `Quick
               test_upload_unrelated_keeps_pending;
           ] );
+      ( "more sync points",
+        List.map
+          (fun (what, op) -> test_case what `Quick (issued_by what op))
+          more_sync_points );
+      ( "IR",
+        [
+          test_case "fusability verdicts" `Quick test_verdicts;
+          test_case "parameter accesses" `Quick test_accesses;
+          test_case
+            "renaming cannot capture positions"
+            `Quick
+            test_rename_no_capture;
+          test_case "grid limit" `Quick test_grid_limit;
+        ] );
       ( "errors",
         [
           test_case

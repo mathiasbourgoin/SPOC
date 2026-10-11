@@ -1115,6 +1115,9 @@ let synchronize dev = check "vkDeviceWaitIdle" (vkDeviceWaitIdle dev.device)
    finish the teardown, re-raise at the end — the discipline Cache_hooks.mli
    imposes on this path, and the shape Cuda_api/Hip_api use. *)
 let destroy dev =
+  (* Deferred launches on this device must reach it before it is evicted:
+     issuing them afterwards would re-create the device (specs/launch-window.md). *)
+  Spoc_framework.Launch_hooks.flush_pending () ;
   Hashtbl.remove device_cache dev.id ;
   let listener_exn =
     match

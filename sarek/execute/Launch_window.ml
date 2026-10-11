@@ -48,7 +48,11 @@ type 'arg launch = {
   backend : string;
   ir : kernel;
   ir_id : int;  (** {!ir_info}[.ir_id] of [ir] *)
-  fusable : bool;  (** {!ir_info}[.fusable] of [ir] is [Ok ()] *)
+  shared_bytes : int option;
+      (** shared memory the kernel declares when it can be fused horizontally
+          ({!ir_info}[.fusable]); [None] when it cannot *)
+  max_grid_x : int;  (** the device's grid-size limit in x *)
+  max_shared : int;  (** the device's shared memory per work-group *)
   args : 'arg list;
   block : Dims.dims;
   grid : Dims.dims;
@@ -75,7 +79,7 @@ module Ir_table = Ephemeron.K1.Make (Physical_kernel)
 type ir_info = {
   ir_id : int;
   param_accesses : (string * Kernel_access.access) list;
-  fusable : (unit, string) result;
+  fusable : (int, string) result;  (** shared bytes, or why not fusable *)
 }
 
 (** {1 Window state} *)
@@ -84,6 +88,8 @@ type 'arg group = {
   g_device : int;
   mutable rev_members : 'arg launch list;  (** newest first *)
   mutable size : int;
+  mutable grid_x : int;  (** sum of the members' grid x *)
+  mutable shared : int;  (** sum of the members' shared memory *)
 }
 
 let members g = List.rev g.rev_members
@@ -101,8 +107,6 @@ type stats = {
 type 'arg t = {
   lock : Mutex.t;
   mutable groups : 'arg group list;  (** oldest first *)
-  mutable n_groups : int;
-  mutable n_pending : int;
   int32_arg : int32 -> 'arg;
   set_pending : int -> unit;
   guard : (unit -> unit) -> unit;
@@ -110,17 +114,12 @@ type 'arg t = {
   mutable next_ir_id : int;
   cache : (int list, kernel) Hashtbl.t;  (** member ir_ids -> fused kernel *)
   refused : (int list, unit) Hashtbl.t;  (** member sequences never fused *)
-  mutable stats : stats;
+  c_submitted : int Atomic.t;
+  c_issued : int Atomic.t;
+  c_groups : int Atomic.t;
+  c_built : int Atomic.t;  (** never reset: it also names fused kernels *)
+  c_refused : int Atomic.t;
 }
-
-let zero_stats =
-  {
-    submitted = 0;
-    issued = 0;
-    fused_groups = 0;
-    fused_built = 0;
-    fused_refused = 0;
-  }
 
 (** [create ~int32_arg ~set_pending ~guard] makes an empty window. [int32_arg]
     builds a scalar argument for the fused kernel's position parameters.
@@ -131,8 +130,6 @@ let create ~int32_arg ~set_pending ~guard : 'arg t =
   {
     lock = Mutex.create ();
     groups = [];
-    n_groups = 0;
-    n_pending = 0;
     int32_arg;
     set_pending;
     guard;
@@ -140,7 +137,11 @@ let create ~int32_arg ~set_pending ~guard : 'arg t =
     next_ir_id = 0;
     cache = Hashtbl.create 64;
     refused = Hashtbl.create 8;
-    stats = zero_stats;
+    c_submitted = Atomic.make 0;
+    c_issued = Atomic.make 0;
+    c_groups = Atomic.make 0;
+    c_built = Atomic.make 0;
+    c_refused = Atomic.make 0;
   }
 
 (** {1 Configuration} *)
@@ -148,6 +149,8 @@ let create ~int32_arg ~set_pending ~guard : 'arg t =
 let max_groups = ref 8
 
 let max_members = ref 8
+
+let max_cached = 4096
 
 let env_enabled () =
   match Sys.getenv_opt "SAREK_LAUNCH_WINDOW" with
@@ -203,7 +206,16 @@ let same_dims (a : Dims.dims) (b : Dims.dims) =
 
 (* A member of a fused group: fusable IR, no dynamic shared memory, a
    non-empty grid. *)
-let joinable (l : _ launch) = l.fusable && l.shared_mem = 0 && l.grid.x > 0
+let joinable (l : _ launch) =
+  Option.is_some l.shared_bytes && l.shared_mem = 0 && l.grid.x > 0
+
+(* The fused grid and shared memory must stay within the device's limits, and
+   work-group offsets within int32 (they are passed as int32 arguments). *)
+let fits g (l : _ launch) =
+  let gx = g.grid_x + l.grid.x in
+  gx <= l.max_grid_x
+  && gx <= Int32.to_int Int32.max_int
+  && g.shared + Option.value ~default:0 l.shared_bytes <= l.max_shared
 
 (* Under [w.lock]. [l] may join [g] as its last member. Every member of a
    group of two or more is [joinable] with the same block and grid y/z, so
@@ -213,7 +225,7 @@ let compatible w g (l : _ launch) =
   | [] -> false
   | newest :: _ ->
       g.g_device = l.device_id && g.size < !max_members && joinable l
-      && joinable newest
+      && joinable newest && fits g l
       && same_dims l.block newest.block
       && l.grid.y = newest.grid.y && l.grid.z = newest.grid.z
       && (Hashtbl.length w.refused = 0
@@ -232,11 +244,11 @@ let target w (l : _ launch) =
 
 (** {1 Issuing} *)
 
-let count_issued w n = w.stats <- {w.stats with issued = w.stats.issued + n}
+let bump counter = Atomic.incr counter
 
 let refuse w key =
   Hashtbl.replace w.refused key () ;
-  w.stats <- {w.stats with fused_refused = w.stats.fused_refused + 1}
+  bump w.c_refused
 
 let fused_kernel w key members =
   match Hashtbl.find_opt w.cache key with
@@ -244,11 +256,14 @@ let fused_kernel w key members =
   | None -> (
       match
         Fusion_horizontal.fuse
-          ~name:(Printf.sprintf "sarek_hfused_%d" w.stats.fused_built)
+          ~name:(Printf.sprintf "sarek_hfused_%d" (Atomic.get w.c_built))
           (List.map (fun m -> m.ir) members)
       with
       | k ->
-          w.stats <- {w.stats with fused_built = w.stats.fused_built + 1} ;
+          bump w.c_built ;
+          (* Bounded: launch sequences of IRs built at run time would
+             otherwise accumulate. A dropped entry is rebuilt on demand. *)
+          if Hashtbl.length w.cache >= max_cached then Hashtbl.reset w.cache ;
           Hashtbl.replace w.cache key k ;
           Some k
       | exception Fusion_horizontal.Incompatible _ ->
@@ -270,11 +285,27 @@ let fused_args w members =
   let pos, gx = positions 0 members in
   (List.concat_map (fun m -> m.args) members @ pos, gx)
 
-let issue_singly w members =
+(* Exceptions a fallback must not swallow. *)
+let fatal = function Out_of_memory | Stack_overflow -> true | _ -> false
+
+(* Run every [f x] even if some raise; re-raise the first exception after the
+   last one has run (FR-006). *)
+let each f xs =
+  let first = ref None in
   List.iter
+    (fun x ->
+      match f x with
+      | () -> ()
+      | exception e when not (fatal e) ->
+          if !first = None then first := Some (e, Printexc.get_raw_backtrace ()))
+    xs ;
+  Option.iter (fun (e, bt) -> Printexc.raise_with_backtrace e bt) !first
+
+let issue_singly w members =
+  each
     (fun m ->
       m.issue () ;
-      count_issued w 1)
+      bump w.c_issued)
     members
 
 let issue_fused w key members first =
@@ -284,12 +315,13 @@ let issue_fused w key members first =
       let args, gx = fused_args w members in
       match first.issue_fused k args {first.grid with x = gx} with
       | () ->
-          count_issued w 1 ;
-          w.stats <- {w.stats with fused_groups = w.stats.fused_groups + 1}
-      | exception _ ->
-          (* Codegen, compilation or launch of the fused kernel failed before
-             it ran: issue the members as submitted and never fuse this
-             sequence again (FR-013). *)
+          bump w.c_issued ;
+          bump w.c_groups
+      | exception e when not (fatal e) ->
+          (* Codegen, compilation or the driver's launch call of the fused
+             kernel failed. Backends raise before enqueueing, so nothing of it
+             ran: issue the members as submitted and never fuse this sequence
+             again (FR-013). *)
           Hashtbl.remove w.cache key ;
           refuse w key ;
           issue_singly w members)
@@ -301,62 +333,62 @@ let issue_group w g =
   | [m] -> issue_singly w [m]
   | first :: _ as ms -> issue_fused w (key_of g) ms first
 
-let set_counts w =
-  w.n_groups <- List.length w.groups ;
-  w.n_pending <- List.fold_left (fun n g -> n + g.size) 0 w.groups ;
-  w.set_pending w.n_pending
+let count_pending groups = List.fold_left (fun n g -> n + g.size) 0 groups
 
-(* Under [w.lock]: issue [groups] in order. Every group is issued even if an
-   earlier one raises; the first exception is re-raised at the end (FR-006). *)
-let issue_all w groups =
-  let first_exn = ref None in
-  w.guard (fun () ->
-      List.iter
-        (fun g ->
-          match issue_group w g with
-          | () -> ()
-          | exception e ->
-              if !first_exn = None then
-                first_exn := Some (e, Printexc.get_raw_backtrace ()))
-        groups) ;
-  match !first_exn with
-  | Some (e, bt) -> Printexc.raise_with_backtrace e bt
-  | None -> ()
+(* Under [w.lock]: issue [groups] in order, with the synchronisation hooks
+   disabled on this domain. Every group is issued even if an earlier one
+   raises; the first exception is re-raised at the end (FR-006). *)
+let issue_all w groups = w.guard (fun () -> each (issue_group w) groups)
 
 (** {1 Public operations} *)
 
-(** Issue every pending launch, in order. *)
+(** Issue every pending launch, in order. The pending count stays non-zero until
+    they are all issued, so a synchronisation point reached meanwhile on another
+    domain waits for this flush (on [w.lock]) instead of going ahead (FR-007).
+*)
 let flush (w : _ t) : unit =
   Mutex.protect w.lock (fun () ->
       if w.groups <> [] then begin
         let groups = w.groups in
         w.groups <- [] ;
-        set_counts w ;
-        issue_all w groups
+        Fun.protect
+          ~finally:(fun () -> w.set_pending (count_pending w.groups))
+          (fun () -> issue_all w groups)
       end)
 
-(** Defer [l]. Its IR must have been registered with {!ir_info}. *)
+(** Defer [l]. When [l] needs a new group and the window is full, the oldest
+    group is issued first; if that raises, [l] is not submitted and the
+    exception propagates (the launching call fails before its own launch is
+    accepted, so its vectors' state is unchanged). *)
 let submit (w : 'arg t) (l : 'arg launch) : unit =
   Mutex.protect w.lock (fun () ->
-      w.stats <- {w.stats with submitted = w.stats.submitted + 1} ;
       (match target w l with
       | Some g ->
           g.rev_members <- l :: g.rev_members ;
-          g.size <- g.size + 1
+          g.size <- g.size + 1 ;
+          g.grid_x <- g.grid_x + l.grid.x ;
+          g.shared <- g.shared + Option.value ~default:0 l.shared_bytes
       | None ->
-          w.groups <-
-            w.groups @ [{g_device = l.device_id; rev_members = [l]; size = 1}]) ;
-      let overflow =
-        if List.length w.groups > !max_groups then
-          match w.groups with
-          | oldest :: rest ->
+          (match w.groups with
+          | oldest :: rest when List.length w.groups >= !max_groups ->
               w.groups <- rest ;
-              [oldest]
-          | [] -> []
-        else []
-      in
-      set_counts w ;
-      issue_all w overflow)
+              Fun.protect
+                ~finally:(fun () -> w.set_pending (count_pending w.groups))
+                (fun () -> issue_all w [oldest])
+          | _ -> ()) ;
+          w.groups <-
+            w.groups
+            @ [
+                {
+                  g_device = l.device_id;
+                  rev_members = [l];
+                  size = 1;
+                  grid_x = l.grid.x;
+                  shared = Option.value ~default:0 l.shared_bytes;
+                };
+              ]) ;
+      bump w.c_submitted ;
+      w.set_pending (count_pending w.groups))
 
 (** [true] when a pending launch on [device_id] binds vector [buf]. *)
 let touches (w : _ t) ~device_id ~buf : bool =
@@ -372,18 +404,22 @@ let touches (w : _ t) ~device_id ~buf : bool =
 
 (** Count a launch that bypassed the window (issued immediately). *)
 let count_immediate (w : _ t) : unit =
-  Mutex.protect w.lock (fun () ->
-      w.stats <-
-        {
-          w.stats with
-          submitted = w.stats.submitted + 1;
-          issued = w.stats.issued + 1;
-        })
+  bump w.c_submitted ;
+  bump w.c_issued
 
-let stats (w : _ t) : stats = Mutex.protect w.lock (fun () -> w.stats)
+let stats (w : _ t) : stats =
+  {
+    submitted = Atomic.get w.c_submitted;
+    issued = Atomic.get w.c_issued;
+    fused_groups = Atomic.get w.c_groups;
+    fused_built = Atomic.get w.c_built;
+    fused_refused = Atomic.get w.c_refused;
+  }
 
 let reset_stats (w : _ t) : unit =
-  Mutex.protect w.lock (fun () -> w.stats <- zero_stats)
+  List.iter
+    (fun c -> Atomic.set c 0)
+    [w.c_submitted; w.c_issued; w.c_groups; w.c_refused]
 
 (** Forget every fused kernel and refusal (the next fused group rebuilds). *)
 let clear_cache (w : _ t) : unit =

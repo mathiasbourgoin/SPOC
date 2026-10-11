@@ -262,6 +262,10 @@ module Device = struct
     retire_device dev.id
 
   let destroy dev =
+    (* Deferred launches on this device must reach it before it is evicted:
+       issuing them afterwards would re-create the device
+       (specs/launch-window.md). *)
+    Spoc_framework.Launch_hooks.flush_pending () ;
     (* Evict from device_cache first: leaving a stale entry means a later
        [get idx] returns a handle whose context has already been destroyed
        (mirrors Vulkan_api_device.destroy). *)
