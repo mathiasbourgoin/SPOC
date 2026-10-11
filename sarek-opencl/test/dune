@@ -3,6 +3,7 @@
   test_opencl_error
   test_sarek_ir_opencl
   test_opencl_cache_two_kernels
+  test_opencl_disk_cache
   test_opencl_ffi_check_funnel
   test_opencl_f16_tripwire
   test_opencl_fp_conformance
@@ -10,6 +11,6 @@
   test_opencl_zero_copy_sync
   test_opencl_device_sync_streams
   test_opencl_device_state_race)
- (libraries sarek_opencl sarek_ir sarek_backend_error alcotest str)
+ (libraries sarek_opencl sarek_ir sarek_backend_error alcotest str unix)
  (instrumentation
   (backend bisect_ppx)))
