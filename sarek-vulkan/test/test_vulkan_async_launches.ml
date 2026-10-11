@@ -239,6 +239,137 @@ let test_failure_at_first_wait device =
     (download buf).(0) ;
   Memory.free buf
 
+let with_batch_limit limit f =
+  let saved = !Stream.batch_limit in
+  Stream.batch_limit := limit ;
+  Fun.protect ~finally:(fun () -> Stream.batch_limit := saved) f
+
+let test_batch_of_one_waits_each device =
+  with_batch_limit 1 (fun () ->
+      let kernel = incr_kernel device "async_incr" in
+      let buf = upload device [|0.0|] in
+      let waits0 = Atomic.get Base.fence_wait_count in
+      let subs0 = Atomic.get Base.submission_count in
+      for _ = 1 to 10 do
+        launch_incr kernel buf
+      done ;
+      Alcotest.(check int)
+        "SPOC_VULKAN_BATCH=1: one submission per launch"
+        10
+        (Atomic.get Base.submission_count - subs0) ;
+      Alcotest.(check bool)
+        "SPOC_VULKAN_BATCH=1: every launch is waited for"
+        true
+        (Atomic.get Base.fence_wait_count - waits0 >= 10) ;
+      Alcotest.(check int)
+        "nothing pending after a batch of one"
+        0
+        (Stream.pending_launches device) ;
+      Alcotest.(check (float 0.0)) "result" 10.0 (download buf).(0) ;
+      Memory.free buf)
+
+let test_batch_of_one_raises_at_launch device =
+  with_batch_limit 1 (fun () ->
+      let kernel = incr_kernel device "async_fail_probe_1" in
+      let buf = upload device [|0.0|] in
+      Device.inject_submit_failure := Some Vulkan_types.VK_ERROR_DEVICE_LOST ;
+      let raised =
+        match launch_incr kernel buf with
+        | () -> false
+        | exception BE.Backend_error _ -> true
+      in
+      Device.inject_submit_failure := None ;
+      Alcotest.(check bool)
+        "SPOC_VULKAN_BATCH=1 raises at the launch"
+        true
+        raised ;
+      launch_incr kernel buf ;
+      Alcotest.(check (float 0.0)) "usable afterwards" 1.0 (download buf).(0) ;
+      Memory.free buf)
+
+let test_sync_points_complete_pending device =
+  let kernel = incr_kernel device "async_incr" in
+  let buf = upload device [|0.0|] in
+  let pending_after what sync =
+    for _ = 1 to 5 do
+      launch_incr kernel buf
+    done ;
+    Alcotest.(check int)
+      (what ^ ": launches are pending before")
+      5
+      (Stream.pending_launches device) ;
+    sync () ;
+    Alcotest.(check int)
+      (what ^ ": nothing pending after")
+      0
+      (Stream.pending_launches device)
+  in
+  pending_after "Stream.synchronize" (fun () ->
+      Stream.synchronize (Stream.default device)) ;
+  pending_after "Device.synchronize" (fun () -> Device.synchronize device) ;
+  pending_after "Memory.device_to_host" (fun () -> ignore (download buf)) ;
+  pending_after "Memory.host_to_device" (fun () ->
+      let host = Bigarray.Array1.create Bigarray.float32 Bigarray.c_layout 1 in
+      host.{0} <- 100.0 ;
+      Memory.host_to_device ~src:host ~dst:buf) ;
+  Alcotest.(check (float 0.0))
+    "the upload came after the launches"
+    100.0
+    (download buf).(0) ;
+  pending_after "Memory.free" (fun () ->
+      let other = upload device [|0.0|] in
+      Memory.free other ;
+      ()) ;
+  Memory.free buf
+
+let test_event_after_batch device =
+  let kernel = incr_kernel device "async_incr" in
+  let buf = upload device [|0.0|] in
+  for _ = 1 to 7 do
+    launch_incr kernel buf
+  done ;
+  let event = Vulkan_api_event.create_with_device device in
+  Vulkan_api_event.record event (Stream.default device) ;
+  Vulkan_api_event.synchronize event ;
+  Vulkan_api_event.destroy event ;
+  Alcotest.(check (float 0.0))
+    "launches before the event ran"
+    7.0
+    (download buf).(0) ;
+  Memory.free buf
+
+let test_many_sets_one_batch device =
+  with_batch_limit 200 (fun () ->
+      let kernel = incr_kernel device "async_incr" in
+      let buf = upload device [|0.0|] in
+      for _ = 1 to 150 do
+        launch_incr kernel buf
+      done ;
+      Alcotest.(check (float 0.0))
+        "150 descriptor sets in one batch (more than one pool)"
+        150.0
+        (download buf).(0) ;
+      Memory.free buf)
+
+(** Runs last: it destroys the device. Pending launches reach it before it goes,
+    and the next device of the same index gets fresh streams. *)
+let test_destroy_with_pending device =
+  let kernel = incr_kernel device "async_incr" in
+  let buf = upload device [|0.0|] in
+  for _ = 1 to 5 do
+    launch_incr kernel buf
+  done ;
+  Device.destroy device ;
+  let fresh = Device.get 0 in
+  let kernel = incr_kernel fresh "async_incr" in
+  let buf = upload fresh [|0.0|] in
+  launch_incr kernel buf ;
+  Alcotest.(check (float 0.0))
+    "a new device of the same index launches"
+    1.0
+    (download buf).(0) ;
+  Memory.free buf
+
 let () =
   Alcotest.run
     "Vulkan_async_launches"
@@ -249,6 +380,14 @@ let () =
             "N launches do not make N waits"
             `Quick
             (with_device test_launches_do_not_wait_each);
+          Alcotest.test_case
+            "SPOC_VULKAN_BATCH=1 waits at every launch"
+            `Quick
+            (with_device test_batch_of_one_waits_each);
+          Alcotest.test_case
+            "descriptor sets beyond one pool in one batch"
+            `Quick
+            (with_device test_many_sets_one_batch);
         ] );
       ( "ordering",
         [
@@ -268,6 +407,14 @@ let () =
             "two streams share a buffer"
             `Quick
             (with_device test_two_streams);
+          Alcotest.test_case
+            "every synchronisation point completes pending launches"
+            `Quick
+            (with_device test_sync_points_complete_pending);
+          Alcotest.test_case
+            "an event covers the launches before it"
+            `Quick
+            (with_device test_event_after_batch);
         ] );
       ( "errors",
         [
@@ -275,5 +422,16 @@ let () =
             "submit failure surfaces at the first wait"
             `Quick
             (with_device test_failure_at_first_wait);
+          Alcotest.test_case
+            "SPOC_VULKAN_BATCH=1 raises at the launch"
+            `Quick
+            (with_device test_batch_of_one_raises_at_launch);
+        ] );
+      ( "teardown",
+        [
+          Alcotest.test_case
+            "device destroy with pending launches"
+            `Quick
+            (with_device test_destroy_with_pending);
         ] );
     ]

@@ -39,6 +39,9 @@ let vk_whole_size = Unsigned.UInt64.max_int
 
 (* Helper to allocate a command buffer, record commands, and submit *)
 let run_single_time_command device record_fn =
+  (* Pending launches must have completed: this command buffer is not ordered
+     after them in memory. *)
+  !Device.drain_pending device ;
   let alloc_info = make vk_command_buffer_allocate_info in
   setf
     alloc_info
@@ -423,6 +426,8 @@ let alloc_custom device ~size ~elem_size =
     raise e
 
 let free buf =
+  (* A pending launch may still use the buffer. *)
+  !Device.drain_pending buf.device ;
   (match buf.mapped_ptr with
   | Some _ -> vkUnmapMemory buf.device.Device.device buf.memory
   | None -> ()) ;
@@ -442,6 +447,7 @@ let is_zero_copy _buf = false
    kind" for Float16. The pointer does not root the bigarray; each memcpy is
    followed by [Sys.opaque_identity] on it, which keeps it reachable. *)
 let host_to_device ~src ~dst =
+  !Device.drain_pending dst.device ;
   let bytes = Bigarray.Array1.size_in_bytes src in
   match dst.mapped_ptr with
   | Some p ->
@@ -476,6 +482,7 @@ let host_to_device ~src ~dst =
                 (addr region)))
 
 let device_to_host ~src ~dst =
+  !Device.drain_pending src.device ;
   let bytes = Bigarray.Array1.size_in_bytes dst in
   match src.mapped_ptr with
   | Some p ->
@@ -510,6 +517,7 @@ let device_to_host ~src ~dst =
           ignore (Sys.opaque_identity dst))
 
 let host_ptr_to_device ~src_ptr ~byte_size ~dst =
+  !Device.drain_pending dst.device ;
   match dst.mapped_ptr with
   | Some p ->
       let _ = memcpy p src_ptr (Unsigned.Size_t.of_int byte_size) in
@@ -544,6 +552,7 @@ let host_ptr_to_device ~src_ptr ~byte_size ~dst =
                 (addr region)))
 
 let device_to_host_ptr ~src ~dst_ptr ~byte_size =
+  !Device.drain_pending src.device ;
   match src.mapped_ptr with
   | Some p ->
       let _ = memcpy dst_ptr p (Unsigned.Size_t.of_int byte_size) in

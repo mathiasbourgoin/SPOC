@@ -415,6 +415,14 @@ let vkDestroyDescriptorPool_lazy =
 let vkDestroyDescriptorPool dev pool alloc =
   Lazy.force vkDestroyDescriptorPool_lazy dev pool alloc
 
+let vkResetDescriptorPool_lazy =
+  foreign_vk_lazy
+    "vkResetDescriptorPool"
+    (vk_device_ptr @-> vk_descriptor_pool @-> vk_flags @-> returning vk_result)
+
+let vkResetDescriptorPool dev pool flags =
+  Lazy.force vkResetDescriptorPool_lazy dev pool flags
+
 let vkAllocateDescriptorSets_lazy =
   foreign_vk_lazy
     "vkAllocateDescriptorSets"

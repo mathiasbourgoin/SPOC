@@ -122,19 +122,28 @@ let inject_device_lost () =
 let raises_backend_error f =
   match f () with () -> false | exception BE.Backend_error _ -> true
 
+(** With one dispatch per command buffer a failed submission raises at the
+    launch; with batching it raises at the first wait (see
+    test_vulkan_async_launches). *)
 let test_failed_submit_launch device =
-  let compiled = Kernel.compile_cached device ~name:"fence_sync" ~source in
-  let buf = Memory.alloc device 1 Bigarray.float32 in
-  inject_device_lost () ;
-  Alcotest.(check bool)
-    "an injected submit failure is raised"
-    true
-    (raises_backend_error (fun () -> launch_once compiled buf ~extra_scalars:0)) ;
-  launch_once compiled buf ~extra_scalars:0 ;
-  Alcotest.(check (float 0.0001))
-    "the launch after a failed submit runs"
-    1.0
-    (read_back_and_free device buf)
+  let saved = !Stream.batch_limit in
+  Stream.batch_limit := 1 ;
+  Fun.protect
+    ~finally:(fun () -> Stream.batch_limit := saved)
+    (fun () ->
+      let compiled = Kernel.compile_cached device ~name:"fence_sync" ~source in
+      let buf = Memory.alloc device 1 Bigarray.float32 in
+      inject_device_lost () ;
+      Alcotest.(check bool)
+        "an injected submit failure is raised"
+        true
+        (raises_backend_error (fun () ->
+             launch_once compiled buf ~extra_scalars:0)) ;
+      launch_once compiled buf ~extra_scalars:0 ;
+      Alcotest.(check (float 0.0001))
+        "the launch after a failed submit runs"
+        1.0
+        (read_back_and_free device buf))
 
 let test_failed_submit_event device =
   let stream = Stream.default device in

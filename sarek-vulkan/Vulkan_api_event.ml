@@ -29,10 +29,11 @@ let destroy event =
         event.device.Device.device
         event.fence)
 
-(** Signal [event] once all work submitted to the queue of [stream] before this
-    call has completed: an empty submission carrying the event's fence. A
-    previous record still pending is waited for first, since a pending fence
-    cannot be reset. *)
+(** Signal [event] once all work launched on the device of [stream] before this
+    call has completed: the open launch batches are submitted, then an empty
+    submission carrying the event's fence follows them in the queue. A previous
+    record still pending is waited for first, since a pending fence cannot be
+    reset. *)
 let record event (stream : Stream.t) =
   if stream.Stream.device.Device.id <> event.device.Device.id then
     Vulkan_error.raise_error
@@ -43,6 +44,8 @@ let record event (stream : Stream.t) =
             event.device.Device.id
             stream.Stream.device.Device.id)) ;
   let vk_device = event.device.Device.device in
+  (* The event covers the launches recorded before it: submit them (no wait). *)
+  Stream.flush_device event.device ;
   Mutex.protect event.lock (fun () ->
       await_fence "vkWaitForFences (Event.record)" vk_device event.fence ;
       submit_with_fence
