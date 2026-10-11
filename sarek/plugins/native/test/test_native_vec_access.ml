@@ -68,7 +68,9 @@ let test_i32_values () =
 let raises_invalid_arg name f =
   match f () with
   | _ -> Alcotest.failf "%s: no exception" name
-  | exception Invalid_argument _ -> ()
+  | exception Invalid_argument msg ->
+      if not (String.starts_with ~prefix:"Vector.get: index" msg) then
+        Alcotest.failf "%s: unexpected message %S" name msg
 
 let test_bounds () =
   let f = accessors (f32_vector ()) and i = accessors (i32_vector ()) in

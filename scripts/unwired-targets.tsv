@@ -34,6 +34,7 @@ benchmarks/dune::bench_histogram	benchmark	GPU timing loop, run by benchmarks/ru
 benchmarks/dune::bench_mandelbrot	benchmark	GPU timing loop, run by benchmarks/run_all_benchmarks.sh. Wiring it to runtest would put device-dependent timing on CPU-only CI.
 benchmarks/dune::bench_matrix_mul	benchmark	GPU timing loop, run by benchmarks/run_all_benchmarks.sh. Wiring it to runtest would put device-dependent timing on CPU-only CI.
 benchmarks/dune::bench_matrix_mul_tiled	benchmark	GPU timing loop, run by benchmarks/run_all_benchmarks.sh. Wiring it to runtest would put device-dependent timing on CPU-only CI.
+benchmarks/dune::bench_native_matvec	benchmark	Native vs OpenCL CPU timing loop (seconds per run on Native, CPU-load dependent); run by hand with a device argument. Its correctness side is covered by sarek/plugins/native/test/test_native_vec_access.ml.
 benchmarks/dune::bench_nbody	benchmark	GPU timing loop, run by benchmarks/run_all_benchmarks.sh. Wiring it to runtest would put device-dependent timing on CPU-only CI.
 benchmarks/dune::bench_pinned_transfer	benchmark	GPU timing loop, run by benchmarks/run_all_benchmarks.sh. Wiring it to runtest would put device-dependent timing on CPU-only CI.
 benchmarks/dune::bench_radix_sort	benchmark	GPU timing loop, run by benchmarks/run_all_benchmarks.sh. Wiring it to runtest would put device-dependent timing on CPU-only CI.
