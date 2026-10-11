@@ -30,6 +30,34 @@ end)
 let unsupported what why =
   Codegen_error.raise_error (Codegen_error.unsupported_construct what why)
 
+(** {1 Explicit opt-in while the lowering is unexecuted}
+
+    Scalar f16 and [simdgroup_matrix] on Metal are lowered from measured
+    evidence (docs/design/f16-relaxed-accuracy.md §2: hand-written MSL on an
+    Apple M4), but the SOURCE THIS GENERATOR EMITS has not yet been executed on
+    Apple hardware (specs/coopmat-metal-simdgroup.md, "Status"). Until the ladon
+    runs listed there are done, using either path takes a process-wide, one-way
+    statement from the program, like
+    {!Sarek_coopmat.accept_relaxed_accumulation}. Removing this gate is one
+    deletion: {!require_opt_in} and its two call sites. *)
+
+let unexecuted_reason : string option Atomic.t = Atomic.make None
+
+let accept_unexecuted_lowering ~reason =
+  if String.trim reason = "" then
+    invalid_arg
+      "Sarek_ir_metal.accept_unexecuted_lowering: the reason must not be empty" ;
+  ignore (Atomic.compare_and_set unexecuted_reason None (Some reason))
+
+let require_opt_in what =
+  if Option.is_none (Atomic.get unexecuted_reason) then
+    unsupported
+      what
+      "Metal: this lowering has not been executed on Apple hardware yet \
+       (specs/coopmat-metal-simdgroup.md, Status); call \
+       Sarek_ir_metal.accept_unexecuted_lowering ~reason:\"...\" once to use \
+       it"
+
 (** {1 What the lowering accepts} *)
 
 let shape_8 = {C.m = 8; n = 8; k = 8}
@@ -137,7 +165,9 @@ let check_op ~buffers = function
     configuration and buffer of every cooperative-matrix statement. *)
 let check_kernel (k : kernel) =
   let buffers = Sarek_ir_cuda_coopmat.kernel_buffers k in
-  List.iter (check_op ~buffers) (Sarek_ir_analysis.kernel_coopmat_ops k)
+  let ops = Sarek_ir_analysis.kernel_coopmat_ops k in
+  List.iter (check_op ~buffers) ops ;
+  if ops <> [] then require_opt_in "cooperative matrix"
 
 (** {1 Statements} *)
 

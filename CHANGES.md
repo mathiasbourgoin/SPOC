@@ -263,6 +263,9 @@
   matrix extension. Spec `specs/coopmat-metal-simdgroup.md`; tests
   `test_metal_coopmat_golden`, `test_metal_coopmat_probe`,
   `test_coopmat_metal_e2e` (Apple GPU), bench `bench_metal_coopmat_gemm`.
+  **Not yet executed on Apple hardware**, so both Metal paths (f16 and
+  `SCoopmat`) require `Sarek_ir_metal.accept_unexecuted_lowering ~reason` until
+  the ladon runs in the spec pass; the gate is removed then.
 
 - `Spoc_core.Advanced.Pinned` is real (global review D-69). It was a placeholder
   whose `create` returned an ordinary pageable vector and whose `is_available`

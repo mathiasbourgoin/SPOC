@@ -144,10 +144,40 @@ order, so on Metal the result is bit-identical to it, not merely bounded.
 | `test_coopmat_metal_e2e` | `sarek/tests/e2e`, alias `e2e-metal` | codegen part everywhere; device part on an Apple GPU |
 | `bench_metal_coopmat_gemm` | `sarek-metal/test`, alias `e2e-metal-bench` | Apple GPU, information only |
 
+## Status: lowered, NOT YET EXECUTED on Apple hardware
+
+The Apple M4 (ladon) was occupied for the whole session by another job (a
+llama-server and its bench harness), and the owner's rule forbids running
+concurrently with it; polled 15:10-15:40 PDT 2026-10-11 without a slot. What is
+verified on tartarus: the generated MSL text (goldens), the capability rule
+(pure test), the Interpreter, and HIP/CUDA unchanged. What the M4 evidence
+already covers is the HARDWARE behaviour (probes of 2026-07-27); what no device
+has run is the source this generator emits.
+
+Therefore both Metal paths (scalar f16 and `SCoopmat`) are behind an explicit,
+process-wide, one-way opt-in,
+`Sarek_ir_metal.accept_unexecuted_lowering ~reason`; without it code generation
+refuses and says so. `Sarek_ir_metal_coopmat.require_opt_in` and its two call
+sites are the whole gate: delete them once the commands below pass.
+
+Commands still to run on ladon (in `~/spoc-parity/H3`, no concurrent job):
+
+1. `dune build @sarek-metal/test/runtest` and the existing Metal e2e suite;
+2. `dune exec sarek/tests/e2e/test_coopmat_metal_e2e.exe` (expect `PASS`, every
+   control `rejected`);
+3. the f16 tripwire / model-agreement sweep over the finite binary16 domain on
+   a Sarek-generated kernel (the existing probe `tools/probes/metal_f16_narrowing_probe.m`
+   measures hand-written MSL, not generated);
+4. `dune exec sarek-metal/test/bench_metal_coopmat_gemm.exe -- 7 5 512 1024 2048`
+   with `uptime` and `ps` recorded.
+
 ## Evidence
 
-Filled in from `H3-*` logs under `spoc-pipeline-logs/pkgH/` (see the handoff of
-the PR). Device: Apple M4 (Mac mini, ladon), macOS 15.
+No Apple-hardware run of the generated source exists yet (see Status). Executed
+so far: tartarus goldens and pure tests, HIP gfx1100 regression of the
+`Sarek_gemm.Coopmat` refactor, CUDA runtest with and without ZLUDA (logs
+`H3-*` under `spoc-pipeline-logs/pkgH/`). Hardware behaviour of the
+configuration: the Apple M4 probes of 2026-07-27 (design document §2).
 
 ## Open decisions
 
