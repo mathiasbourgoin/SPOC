@@ -213,9 +213,13 @@ let () =
   with
   | [] -> print_endline "[SKIP] no HIP device available"
   | dev :: _ ->
-      Sarek_f16_policy.accept_single_rounding
-        (Kernel kernel_name)
-        ~reason:"test_hip_f16_single_rounding" ;
+      (match
+         Sarek_f16_policy.accept_single_rounding
+           (Kernel kernel_name)
+           ~reason:"test_hip_f16_single_rounding"
+       with
+      | Ok () -> ()
+      | Error r -> failwith (Sarek_f16_policy.refusal_message r)) ;
       Printf.printf "=== f16 single-rounding opt-in: %s ===\n" dev.Device.name ;
       let src = source_ok () in
       let model = model_ok () in
