@@ -25,9 +25,13 @@ let permits s cfg = Sarek_capability.permits (C.verdict ~support:(Some s) cfg)
 
 let test_gfx1100 () =
   let s = P.support ~compute_capability:(11, 0) ~warp_size:32 in
-  Alcotest.(check int) "nine configurations" 9 (List.length s.C.ds_configs) ;
-  Alcotest.(check int) "count = list" 9 s.C.ds_advertised_count ;
+  Alcotest.(check int) "ten configurations" 10 (List.length s.C.ds_configs) ;
+  Alcotest.(check int) "count = list" 10 s.C.ds_advertised_count ;
   Alcotest.(check bool) "f16*f16+f32" true (permits s f16) ;
+  Alcotest.(check bool)
+    "bf16*bf16+f32 (specs/matrix-pattern-rewrite.md)"
+    true
+    (permits s {f16 with C.cfg_a = C.BFloat16; cfg_b = C.BFloat16}) ;
   Alcotest.(check bool)
     "s8*u8+u32"
     true

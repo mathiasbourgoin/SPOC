@@ -122,6 +122,35 @@ let test_device_evidence () =
            cap.Sarek_capability.cap_why)
   | _ -> Alcotest.fail "an empty probed list must refuse"
 
+(* specs/matrix-pattern-rewrite.md: operand rounding is accepted per
+   precision, never with a blank reason, and bf16 x bf16 + f32 -> f32 shares the
+   accumulation policy of f16. *)
+let test_operand_rounding () =
+  Alcotest.check_raises
+    "blank reason"
+    (Invalid_argument
+       "Sarek_coopmat.accept_operand_rounding: the reason must not be empty \
+        (it is the record that the operand rounding was understood)")
+    (fun () -> accept_operand_rounding ~precision:Operands_bf16 ~reason:" ") ;
+  accept_operand_rounding ~precision:Operands_bf16x3 ~reason:"split" ;
+  Alcotest.(check (option string))
+    "bf16x3 recorded"
+    (Some "split")
+    (operand_rounding_reason Operands_bf16x3) ;
+  Alcotest.(check (option string))
+    "f16 not implied"
+    None
+    (operand_rounding_reason Operands_f16) ;
+  Alcotest.(check (option string))
+    "bf16 not implied"
+    None
+    (operand_rounding_reason Operands_bf16) ;
+  let bf16 = {f16_f32 with cfg_a = BFloat16; cfg_b = BFloat16} in
+  Alcotest.(check bool)
+    "bf16 accumulation follows the relaxed opt-in"
+    (relaxed_accumulation_reason () <> None)
+    (available (policy_verdict bf16))
+
 let () =
   Alcotest.run
     "Sarek_coopmat policy"
@@ -131,6 +160,7 @@ let () =
           Alcotest.test_case "before the opt-in" `Quick test_before;
           Alcotest.test_case "blank reason refused" `Quick test_empty_reason;
           Alcotest.test_case "after the opt-in" `Quick test_after;
+          Alcotest.test_case "operand rounding" `Quick test_operand_rounding;
           Alcotest.test_case
             "device refusal evidence"
             `Quick
