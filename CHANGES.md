@@ -467,6 +467,19 @@
   same path there. No barrier race was found in the generated OpenCL for the
   `mv_wave` / `mv_row` kernels; the plain-path nondeterminism seen on HIP on
   the 7950X iGPU remains open (possibly #427).
+
+- Device selection on three runtime paths. `Spoc_core.Kernel.launch` (so
+  `Runtime.run` and `Runtime.run_kernel`, including compile-cache hits) now
+  selects the kernel's device before launching: with two HIP devices a launch of
+  device A's module with device B current failed with `hipErrorInvalidDevice`.
+  `Profiling` events and timers select their device before creating, recording,
+  synchronising and destroying (HIP and CUDA events and the default stream belong
+  to the current device). `Cuda_api.Memory.free`, which runs from GC finalisers,
+  restores the previously selected context, as `Hip_api.Memory.free` already did.
+  Regression tests: `test_hip_launch_selects_device`,
+  `test_hip_profiling_selects_device` (`e2e-hip`), `test_cuda_free_keeps_current`;
+  each needs two devices of one backend and self-skips otherwise.
+
 - hiprtc and nvrtc option arrays: `CArray.of_list string` let the C copies of
   the option strings be freed before the compile call. Under a different
   allocation pattern hiprtc read a garbage option ("error reading '8{...'"),
