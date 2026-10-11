@@ -70,7 +70,7 @@
   <li><strong>Grid</strong>: The total set of all blocks launched for a kernel.</li>
 </ul>
 
-<p>In Sarek, you define these dimensions using <code class="language-plaintext highlighter-rouge">(x, y, z)</code> tuples. For example, a grid of <code class="language-plaintext highlighter-rouge">(4, 1, 1)</code> with blocks of <code class="language-plaintext highlighter-rouge">(256, 1, 1)</code> results in 1024 total threads.</p>
+<p>In Sarek, you define these dimensions with <code class="language-plaintext highlighter-rouge">Execute.dims1d</code>, <code class="language-plaintext highlighter-rouge">Execute.dims2d</code> and <code class="language-plaintext highlighter-rouge">Execute.dims3d</code>. For example, a grid of <code class="language-plaintext highlighter-rouge">Execute.dims1d 4</code> with blocks of <code class="language-plaintext highlighter-rouge">Execute.dims1d 256</code> results in 1024 total threads.</p>
 
 <h3 id="terminology-mapping">Terminology Mapping</h3>
 <ul>
@@ -88,29 +88,42 @@
 
 <h3 id="shared-memory-letshared">Shared Memory (<code class="language-plaintext highlighter-rouge">let%shared</code>)</h3>
 <p>Shared memory is a small, ultra-fast cache shared by all threads <strong>within the same block</strong>. It is used for collaborative computing (like reductions or matrix tiles).</p>
-<div class="language-ocaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">let</span><span class="o">%</span><span class="n">shared</span> <span class="n">sdata</span> <span class="o">=</span> <span class="nn">Array</span><span class="p">.</span><span class="n">create</span> <span class="nc">Float32</span> <span class="mi">256</span> <span class="k">in</span> <span class="c">(* Shared by 256 threads *)</span>
+<div class="language-ocaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">let</span> <span class="n">shared_example</span> <span class="o">=</span>
+  <span class="p">[</span><span class="o">%</span><span class="n">kernel</span>
+    <span class="k">fun</span> <span class="p">(</span><span class="n">input</span> <span class="o">:</span> <span class="n">float32</span> <span class="n">vector</span><span class="p">)</span> <span class="p">(</span><span class="n">output</span> <span class="o">:</span> <span class="n">float32</span> <span class="n">vector</span><span class="p">)</span> <span class="o">-&gt;</span>
+      <span class="k">let</span> <span class="k">open</span> <span class="nn">Sarek_stdlib</span><span class="p">.</span><span class="nc">Std</span> <span class="k">in</span>
+      <span class="c">(* One slot per thread of a 256-thread block, shared by the block *)</span>
+      <span class="k">let</span><span class="o">%</span><span class="n">shared</span> <span class="p">(</span><span class="n">sdata</span> <span class="o">:</span> <span class="n">float32</span><span class="p">)</span> <span class="o">=</span> <span class="mi">256</span><span class="n">l</span> <span class="k">in</span>
+      <span class="k">let</span> <span class="n">tid</span> <span class="o">=</span> <span class="n">thread_idx_x</span> <span class="k">in</span>
+      <span class="n">sdata</span><span class="o">.</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span> <span class="o">&lt;-</span> <span class="n">input</span><span class="o">.</span><span class="p">(</span><span class="n">global_thread_id</span><span class="p">)</span> <span class="p">;</span>
+      <span class="n">output</span><span class="o">.</span><span class="p">(</span><span class="n">global_thread_id</span><span class="p">)</span> <span class="o">&lt;-</span> <span class="n">sdata</span><span class="o">.</span><span class="p">(</span><span class="n">tid</span><span class="p">)]</span>
 </code></pre></div></div>
 
 <h3 id="local-memory">Local Memory</h3>
-<p>Standard variables (<code class="language-plaintext highlighter-rouge">let x = ...</code> or <code class="language-plaintext highlighter-rouge">let mut x = ...</code>) are local to a single thread and usually stored in high-speed registers.</p>
+<p>Standard variables (<code class="language-plaintext highlighter-rouge">let x = ...</code> or <code class="language-plaintext highlighter-rouge">let x = mut v</code>) are local to a single thread and usually stored in high-speed registers.</p>
 
 <h2 id="3-synchronization--supersteps">3. Synchronization &amp; Supersteps</h2>
 
 <p>Because threads run in parallel, they often need to wait for each other.</p>
 
 <h3 id="barriers">Barriers</h3>
-<p>A <code class="language-plaintext highlighter-rouge">barrier()</code> call forces every thread in a block to reach that point before any can proceed. This ensures that memory writes from one thread are visible to others.</p>
+<p>A <code class="language-plaintext highlighter-rouge">block_barrier ()</code> call forces every thread in a block to reach that point before any can proceed. This ensures that memory writes from one thread are visible to others.</p>
 
 <h3 id="supersteps-sarekbsp-model">Supersteps (Sarek/BSP Model)</h3>
 <p>Sarek introduces the concept of <strong>Supersteps</strong>, derived from the Bulk Synchronous Parallel (BSP) model. A <code class="language-plaintext highlighter-rouge">let%superstep</code> block is a clean way to organize phases of computation separated by implicit barriers.</p>
-<div class="language-ocaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">let</span><span class="o">%</span><span class="n">superstep</span> <span class="n">loading_phase</span> <span class="o">=</span> 
-  <span class="n">sdata</span><span class="o">.</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span> <span class="o">&lt;-</span> <span class="n">input</span><span class="o">.</span><span class="p">(</span><span class="n">gid</span><span class="p">)</span>
-<span class="k">in</span>
-<span class="c">(* Threads automatically synchronize here *)</span>
-<span class="k">let</span><span class="o">%</span><span class="n">superstep</span> <span class="n">computing_phase</span> <span class="o">=</span> 
-  <span class="n">process</span> <span class="n">sdata</span><span class="o">.</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span>
-<span class="k">in</span>
-<span class="o">...</span>
+<div class="language-ocaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">let</span> <span class="n">superstep_example</span> <span class="o">=</span>
+  <span class="p">[</span><span class="o">%</span><span class="n">kernel</span>
+    <span class="k">fun</span> <span class="p">(</span><span class="n">input</span> <span class="o">:</span> <span class="n">float32</span> <span class="n">vector</span><span class="p">)</span> <span class="p">(</span><span class="n">output</span> <span class="o">:</span> <span class="n">float32</span> <span class="n">vector</span><span class="p">)</span> <span class="o">-&gt;</span>
+      <span class="k">let</span> <span class="k">open</span> <span class="nn">Sarek_stdlib</span><span class="p">.</span><span class="nc">Std</span> <span class="k">in</span>
+      <span class="k">let</span><span class="o">%</span><span class="n">shared</span> <span class="p">(</span><span class="n">sdata</span> <span class="o">:</span> <span class="n">float32</span><span class="p">)</span> <span class="o">=</span> <span class="mi">256</span><span class="n">l</span> <span class="k">in</span>
+      <span class="k">let</span> <span class="n">tid</span> <span class="o">=</span> <span class="n">thread_idx_x</span> <span class="k">in</span>
+      <span class="k">let</span> <span class="n">gid</span> <span class="o">=</span> <span class="n">global_thread_id</span> <span class="k">in</span>
+      <span class="k">let</span><span class="o">%</span><span class="n">superstep</span> <span class="n">loading_phase</span> <span class="o">=</span> <span class="n">sdata</span><span class="o">.</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span> <span class="o">&lt;-</span> <span class="n">input</span><span class="o">.</span><span class="p">(</span><span class="n">gid</span><span class="p">)</span> <span class="k">in</span>
+      <span class="c">(* Threads automatically synchronize here *)</span>
+      <span class="k">let</span><span class="o">%</span><span class="n">superstep</span> <span class="n">computing_phase</span> <span class="o">=</span>
+        <span class="n">output</span><span class="o">.</span><span class="p">(</span><span class="n">gid</span><span class="p">)</span> <span class="o">&lt;-</span> <span class="n">sdata</span><span class="o">.</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span> <span class="o">+.</span> <span class="n">sdata</span><span class="o">.</span><span class="p">((</span><span class="n">tid</span> <span class="o">+</span> <span class="mi">1</span><span class="n">l</span><span class="p">)</span> <span class="ow">mod</span> <span class="mi">256</span><span class="n">l</span><span class="p">)</span>
+      <span class="k">in</span>
+      <span class="bp">()</span><span class="p">]</span>
 </code></pre></div></div>
 
 <h2 id="4-host--device-transfers">4. Host &amp; Device Transfers</h2>
@@ -122,7 +135,7 @@
 
 <p>The CPU and GPU usually have separate memory. Before running a kernel, you must <strong>transfer</strong> your data to the device. Sarek manages this through <code class="language-plaintext highlighter-rouge">Vector</code> handles.</p>
 <ul>
-  <li>When you pass a <code class="language-plaintext highlighter-rouge">Vec a</code> to <code class="language-plaintext highlighter-rouge">Execute.run</code>, Sarek ensures the data is present on the GPU.</li>
+  <li>When you pass a <code class="language-plaintext highlighter-rouge">Vec a</code> to <code class="language-plaintext highlighter-rouge">Execute.run_vectors</code>, Sarek ensures the data is present on the GPU.</li>
   <li>When you call <code class="language-plaintext highlighter-rouge">Vector.get</code> or <code class="language-plaintext highlighter-rouge">Vector.to_array</code>, Sarek pulls the data back to the OCaml heap.</li>
 </ul>
 

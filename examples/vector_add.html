@@ -102,7 +102,13 @@
   <span class="k">done</span><span class="p">;</span>
   
   <span class="c">(* Select device *)</span>
-  <span class="k">let</span> <span class="n">dev</span> <span class="o">=</span> <span class="nn">Device</span><span class="p">.</span><span class="n">best</span> <span class="bp">()</span> <span class="k">in</span>
+  <span class="c">(* Register the backends you use; see "Using Sarek in a dune project" in Getting Started *)</span>
+  <span class="nn">Sarek_native</span><span class="p">.</span><span class="nn">Native_plugin</span><span class="p">.</span><span class="n">init</span> <span class="bp">()</span> <span class="p">;</span>
+  <span class="k">let</span> <span class="n">dev</span> <span class="o">=</span>
+    <span class="k">match</span> <span class="nn">Device</span><span class="p">.</span><span class="n">best</span> <span class="bp">()</span> <span class="k">with</span>
+    <span class="o">|</span> <span class="nc">Some</span> <span class="n">dev</span> <span class="o">-&gt;</span> <span class="n">dev</span>
+    <span class="o">|</span> <span class="nc">None</span> <span class="o">-&gt;</span> <span class="n">failwith</span> <span class="s2">"no device available"</span>
+  <span class="k">in</span>
   
   <span class="c">(* Calculate grid dimensions *)</span>
   <span class="k">let</span> <span class="n">block_size</span> <span class="o">=</span> <span class="mi">256</span> <span class="k">in</span>

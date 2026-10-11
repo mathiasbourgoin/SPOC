@@ -132,10 +132,16 @@ module Vector = Spoc_core.Vector</p>
     Vector.set input i 1.0;
   done;</p>
 
-<p>(* Calculate grid dimensions *)
+<p>(* Calculate grid dimensions <em>)
   let block = Execute.dims1d block_size in
   let grid = Execute.dims1d num_blocks in
-  let dev = Device.best () in</p>
+  (</em> Register the backends you use; see “Using Sarek in a dune project” in Getting Started *)
+  Sarek_native.Native_plugin.init () ;
+  let dev =
+    match Device.best () with
+    | Some dev -&gt; dev
+    | None -&gt; failwith “no device available”
+  in</p>
 
 <p>(* First pass: Reduce array to num_blocks partial sums *)
   Execute.run_vectors

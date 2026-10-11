@@ -53,7 +53,7 @@
       <div class="container">
         <h1 id="building-and-testing-spoc">Building and Testing SPOC</h1>
 
-<p>While most users should install Sarek via Opam, you can also build the framework from source for development or custom configurations.</p>
+<p>Sarek is not yet published to the opam repository: build it from a clone of the repository, for use in your own project or for development.</p>
 
 <h2 id="prerequisites">Prerequisites</h2>
 
@@ -69,7 +69,9 @@
 <h2 id="compilation--installation">Compilation &amp; Installation</h2>
 
 <h3 id="1-install-dependencies">1. Install Dependencies</h3>
-<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>opam <span class="nb">install </span>ctypes ctypes-foreign ppxlib alcotest dune
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>git clone https://github.com/mathiasbourgoin/Sarek.git
+<span class="nb">cd </span>Sarek
+opam <span class="nb">install</span> <span class="nb">.</span> <span class="nt">--deps-only</span> <span class="nt">--working-dir</span>
 </code></pre></div></div>
 
 <h3 id="2-build-and-install">2. Build and Install</h3>
@@ -86,10 +88,7 @@ dune <span class="nb">install</span>
 
 <h3 id="benchmarks">Benchmarks</h3>
 <p>Run the automated benchmark suite to verify performance across available backends:</p>
-<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c"># Fast version (small problem sizes)</span>
-make benchmarks-fast
-
-<span class="c"># Full version (comprehensive datasets)</span>
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c"># Run the full suite on all available devices</span>
 make benchmarks
 </code></pre></div></div>
 

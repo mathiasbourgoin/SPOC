@@ -114,8 +114,7 @@
   <li><strong>Setup</strong>: Requires <code class="language-plaintext highlighter-rouge">libcuda.so</code> and <code class="language-plaintext highlighter-rouge">libnvrtc.so</code> in your library path.</li>
 </ul>
 
-<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>opam <span class="nb">install </span>sarek-cuda
-</code></pre></div></div>
+<p>Build it from the repository (<code class="language-plaintext highlighter-rouge">dune build sarek-cuda</code>), list <code class="language-plaintext highlighter-rouge">sarek-cuda.plugin</code> in your <code class="language-plaintext highlighter-rouge">libraries</code>, and call <code class="language-plaintext highlighter-rouge">Sarek_cuda.Cuda_plugin.init ()</code> (CUDA/PTX, the default path) and, if you want the NVRTC path, <code class="language-plaintext highlighter-rouge">Sarek_cuda.Cuda_c_plugin.init ()</code> (CUDA/C) before <code class="language-plaintext highlighter-rouge">Device.init</code> (see <a href="getting_started.html#using-sarek-in-a-dune-project">Getting Started</a>).</p>
 
 <h2 id="opencl-backend-sarek-opencl">OpenCL Backend (<code class="language-plaintext highlighter-rouge">sarek-opencl</code>)</h2>
 
@@ -127,8 +126,7 @@
   <li><strong>Setup</strong>: Requires an OpenCL ICD loader (e.g., <code class="language-plaintext highlighter-rouge">ocl-icd-libopencl1</code> on Linux).</li>
 </ul>
 
-<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>opam <span class="nb">install </span>sarek-opencl
-</code></pre></div></div>
+<p>Build it from the repository (<code class="language-plaintext highlighter-rouge">dune build sarek-opencl</code>), list <code class="language-plaintext highlighter-rouge">sarek-opencl.plugin</code> in your <code class="language-plaintext highlighter-rouge">libraries</code>, and call <code class="language-plaintext highlighter-rouge">Sarek_opencl.Opencl_plugin.init ()</code> before <code class="language-plaintext highlighter-rouge">Device.init</code> (see <a href="getting_started.html#using-sarek-in-a-dune-project">Getting Started</a>).</p>
 
 <h2 id="vulkan-backend-sarek-vulkan">Vulkan Backend (<code class="language-plaintext highlighter-rouge">sarek-vulkan</code>)</h2>
 
@@ -140,8 +138,7 @@
   <li><strong>Platform</strong>: Ideal for modern Linux desktops, Android devices, and Windows.</li>
 </ul>
 
-<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>opam <span class="nb">install </span>sarek-vulkan
-</code></pre></div></div>
+<p>Build it from the repository (<code class="language-plaintext highlighter-rouge">dune build sarek-vulkan</code>), list <code class="language-plaintext highlighter-rouge">sarek-vulkan.plugin</code> in your <code class="language-plaintext highlighter-rouge">libraries</code>, and call <code class="language-plaintext highlighter-rouge">Sarek_vulkan.Vulkan_plugin.init ()</code> before <code class="language-plaintext highlighter-rouge">Device.init</code> (see <a href="getting_started.html#using-sarek-in-a-dune-project">Getting Started</a>).</p>
 
 <h2 id="metal-backend-sarek-metal">Metal Backend (<code class="language-plaintext highlighter-rouge">sarek-metal</code>)</h2>
 
@@ -153,8 +150,7 @@
   <li><strong>Platform</strong>: macOS and iOS only.</li>
 </ul>
 
-<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>opam <span class="nb">install </span>sarek-metal
-</code></pre></div></div>
+<p>Build it from the repository (<code class="language-plaintext highlighter-rouge">dune build sarek-metal</code>), list <code class="language-plaintext highlighter-rouge">sarek-metal.plugin</code> in your <code class="language-plaintext highlighter-rouge">libraries</code>, and call <code class="language-plaintext highlighter-rouge">Sarek_metal.Metal_plugin.init ()</code> before <code class="language-plaintext highlighter-rouge">Device.init</code> (see <a href="getting_started.html#using-sarek-in-a-dune-project">Getting Started</a>).</p>
 
 <h2 id="native-cpu-backend-sareknative">Native CPU Backend (<code class="language-plaintext highlighter-rouge">sarek.native</code>)</h2>
 

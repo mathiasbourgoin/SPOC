@@ -61,11 +61,16 @@
 
 <p>First, we define a generic helper function using <code class="language-plaintext highlighter-rouge">[@sarek.module]</code>. This tells Sarek this function is intended for GPU execution but will be compiled only when used inside a kernel.</p>
 
+<p>Outside a kernel, OCaml must still type-check the helper. The two aliases below give <code class="language-plaintext highlighter-rouge">vector</code> and <code class="language-plaintext highlighter-rouge">float32</code> an OCaml meaning (<code class="language-plaintext highlighter-rouge">array</code> and <code class="language-plaintext highlighter-rouge">float</code>) for that purpose; inside a kernel, Sarek treats them as device vectors and 32-bit floats.</p>
+
 <div class="language-ocaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">open</span> <span class="nc">Sarek</span>
+
+<span class="k">type</span> <span class="n">float32</span> <span class="o">=</span> <span class="kt">float</span>
+<span class="k">type</span> <span class="k">'</span><span class="n">a</span> <span class="n">vector</span> <span class="o">=</span> <span class="k">'</span><span class="n">a</span> <span class="kt">array</span>
 
 <span class="c">(* A generic transpose logic that works for any type 'a *)</span>
 <span class="k">let</span><span class="p">[</span><span class="o">@</span><span class="n">sarek</span><span class="o">.</span><span class="k">module</span><span class="p">]</span> <span class="n">do_transpose</span> <span class="p">(</span><span class="n">input</span> <span class="o">:</span> <span class="k">'</span><span class="n">a</span> <span class="n">vector</span><span class="p">)</span> <span class="p">(</span><span class="n">output</span> <span class="o">:</span> <span class="k">'</span><span class="n">a</span> <span class="n">vector</span><span class="p">)</span>
-                                <span class="p">(</span><span class="n">width</span> <span class="o">:</span> <span class="kt">int</span><span class="p">)</span> <span class="p">(</span><span class="n">height</span> <span class="o">:</span> <span class="kt">int</span><span class="p">)</span> <span class="p">(</span><span class="n">tid</span> <span class="o">:</span> <span class="kt">int</span><span class="p">)</span> <span class="o">=</span>
+                                <span class="p">(</span><span class="n">width</span> <span class="o">:</span> <span class="kt">int</span><span class="p">)</span> <span class="p">(</span><span class="n">height</span> <span class="o">:</span> <span class="kt">int</span><span class="p">)</span> <span class="p">(</span><span class="n">tid</span> <span class="o">:</span> <span class="kt">int</span><span class="p">)</span> <span class="o">:</span> <span class="kt">unit</span> <span class="o">=</span>
   <span class="k">let</span> <span class="n">n</span> <span class="o">=</span> <span class="n">width</span> <span class="o">*</span> <span class="n">height</span> <span class="k">in</span>
   <span class="k">if</span> <span class="n">tid</span> <span class="o">&lt;</span> <span class="n">n</span> <span class="k">then</span> <span class="k">begin</span>
     <span class="k">let</span> <span class="n">col</span> <span class="o">=</span> <span class="n">tid</span> <span class="ow">mod</span> <span class="n">width</span> <span class="k">in</span>
@@ -135,7 +140,13 @@
 <span class="k">let</span> <span class="n">run_polymorphic_tests</span> <span class="bp">()</span> <span class="o">=</span>
   <span class="k">let</span> <span class="n">width</span><span class="o">,</span> <span class="n">height</span> <span class="o">=</span> <span class="mi">1024</span><span class="o">,</span> <span class="mi">1024</span> <span class="k">in</span>
   <span class="k">let</span> <span class="n">n</span> <span class="o">=</span> <span class="n">width</span> <span class="o">*</span> <span class="n">height</span> <span class="k">in</span>
-  <span class="k">let</span> <span class="n">dev</span> <span class="o">=</span> <span class="nn">Device</span><span class="p">.</span><span class="n">best</span> <span class="bp">()</span> <span class="k">in</span>
+  <span class="c">(* Register the backends you use; see "Using Sarek in a dune project" in Getting Started *)</span>
+  <span class="nn">Sarek_native</span><span class="p">.</span><span class="nn">Native_plugin</span><span class="p">.</span><span class="n">init</span> <span class="bp">()</span> <span class="p">;</span>
+  <span class="k">let</span> <span class="n">dev</span> <span class="o">=</span>
+    <span class="k">match</span> <span class="nn">Device</span><span class="p">.</span><span class="n">best</span> <span class="bp">()</span> <span class="k">with</span>
+    <span class="o">|</span> <span class="nc">Some</span> <span class="n">dev</span> <span class="o">-&gt;</span> <span class="n">dev</span>
+    <span class="o">|</span> <span class="nc">None</span> <span class="o">-&gt;</span> <span class="n">failwith</span> <span class="s2">"no device available"</span>
+  <span class="k">in</span>
   <span class="k">let</span> <span class="n">block</span> <span class="o">=</span> <span class="nn">Execute</span><span class="p">.</span><span class="n">dims1d</span> <span class="mi">256</span> <span class="k">in</span>
   <span class="k">let</span> <span class="n">grid</span>  <span class="o">=</span> <span class="nn">Execute</span><span class="p">.</span><span class="n">dims1d</span> <span class="p">((</span><span class="n">n</span> <span class="o">+</span> <span class="mi">255</span><span class="p">)</span><span class="o">/</span><span class="mi">256</span><span class="p">)</span> <span class="k">in</span>
 
@@ -153,10 +164,8 @@
 
   <span class="c">(* 2. Run Custom Struct Transpose *)</span>
   <span class="c">(* Create a vector for our custom type *)</span>
-  <span class="k">let</span> <span class="n">points_in</span> <span class="o">=</span> <span class="nn">Vector</span><span class="p">.</span><span class="n">create_custom</span>
-    <span class="p">(</span><span class="k">module</span> <span class="k">struct</span> <span class="k">type</span> <span class="n">t</span> <span class="o">=</span> <span class="n">point3d</span> <span class="k">let</span> <span class="n">size</span> <span class="o">=</span> <span class="mi">12</span> <span class="k">end</span><span class="p">)</span> <span class="n">n</span> <span class="k">in</span>
-  <span class="k">let</span> <span class="n">points_out</span> <span class="o">=</span> <span class="nn">Vector</span><span class="p">.</span><span class="n">create_custom</span>
-    <span class="p">(</span><span class="k">module</span> <span class="k">struct</span> <span class="k">type</span> <span class="n">t</span> <span class="o">=</span> <span class="n">point3d</span> <span class="k">let</span> <span class="n">size</span> <span class="o">=</span> <span class="mi">12</span> <span class="k">end</span><span class="p">)</span> <span class="n">n</span> <span class="k">in</span>
+  <span class="k">let</span> <span class="n">points_in</span> <span class="o">=</span> <span class="nn">Vector</span><span class="p">.</span><span class="n">create_custom</span> <span class="n">point3d_custom</span> <span class="n">n</span> <span class="k">in</span>
+  <span class="k">let</span> <span class="n">points_out</span> <span class="o">=</span> <span class="nn">Vector</span><span class="p">.</span><span class="n">create_custom</span> <span class="n">point3d_custom</span> <span class="n">n</span> <span class="k">in</span>
 
   <span class="c">(* Initialize with OCaml records *)</span>
   <span class="nn">Vector</span><span class="p">.</span><span class="n">set</span> <span class="n">points_in</span> <span class="mi">0</span> <span class="p">{</span> <span class="n">x</span><span class="o">=</span><span class="mi">1</span><span class="o">.</span><span class="mi">0</span><span class="p">;</span> <span class="n">y</span><span class="o">=</span><span class="mi">2</span><span class="o">.</span><span class="mi">0</span><span class="p">;</span> <span class="n">z</span><span class="o">=</span><span class="mi">3</span><span class="o">.</span><span class="mi">0</span> <span class="p">};</span>
