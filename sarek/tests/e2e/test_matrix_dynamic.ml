@@ -16,6 +16,8 @@
 
 [@@@alert "-sarek_matrix"]
 
+[@@@alert "-test_only"]
+
 [@@@warning "-33"]
 
 open Sarek

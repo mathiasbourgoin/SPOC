@@ -113,7 +113,7 @@ overhead and speed measured.
 
 RX 7900 XTX, ROCm 7.2.4, GPU shared. Logs: `spoc-pipeline-logs/matrix-pattern/pr3-*`.
 
-**Correctness.** `test_matrix_dynamic.exe` (89 checks on 9 devices): the
+**Correctness.** `test_matrix_dynamic.exe` (98 checks on 9 devices): the
 default `run_vectors` rewrites int32 on gfx1100 only, bit-identical to
 `run_vectors_plain`; the interpreters on explicit request only; `Exact` the
 same; `Off` never; every other device declines. Review regressions: a
