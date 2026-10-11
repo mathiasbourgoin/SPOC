@@ -56,7 +56,6 @@
   `sarek-opencl/test/test_opencl_device_sync_streams.ml`,
   `sarek-opencl/test/test_opencl_device_state_race.ml`.
 
-
 - Epilogue fusion no longer accepts a producer that stores below index 0 as
   covering its consumer: the fused consumer would then run on negative
   indices the unfused one never touches. Such pairs stay unfused. A refusal
@@ -506,7 +505,6 @@
   `get_fission_pool` / `get_parallel_pool`, and `LaunchQueue.retire_if_idle`
   replaces `shutdown`. The jsoo interpreter build runs parallel blocks inline.
 
-
 - Fused kernels are named after a digest of their IR
   (`sarek_hfused_<md5>`, `sarek_efused_<md5>`) instead of a build counter,
   so a process that builds the same fusions in another order still hits the
@@ -519,16 +517,17 @@
   thread and work-group indices, also through division, modulo, masks and
   shifts by powers of two of values that are non-negative over the whole
   launch, guards not counted (a warp-per-row matrix-vector product, 4M
-  threads, is proven; a guarded `(tid - 1) / 2` is left to enumeration): `Coverage_affine` proves coverage in a few microseconds (a
-  128x3584 prefill pair: ~350 ms before, ~4 us after,
+  threads, is proven; a guarded `(tid - 1) / 2` is left to enumeration):
+  `Coverage_affine` proves coverage in a few microseconds (a 128x3584
+  prefill pair: ~350 ms before, ~4 us after,
   `sarek/execute/test/bench_epilogue_coverage.ml`). This was the cold
   first-prompt cost seen with the launch window on: a cold Katra 0.8B prompt
   (242 tokens, RX 7900 XTX; measured with this change on top of 79f92f63)
-  runs at 662 tok/s with the window on instead of
-  147, against 644 with epilogue fusion off and 706 with the window off;
-  decode is unchanged (236 vs 232 tok/s). No pair of that prompt is
-  enumerated any more. Enumeration, still used for other indices (loops,
-  non-power-of-two division), uses bitsets instead of hash tables and is
+  runs at 662 tok/s with the window on instead of 147, against 644 with
+  epilogue fusion off and 706 with the window off; decode is unchanged
+  (236 vs 232 tok/s). No pair of that prompt is enumerated any more.
+  Enumeration, still used for other indices (loops, non-power-of-two
+  division), uses bitsets instead of hash tables and is
   bounded to 2^20 threads for the pair (was 2^24 per launch); beyond it the
   pair stays unfused, and an enumerated pair still costs milliseconds (6 ms
   for 2 x 131072 threads).
