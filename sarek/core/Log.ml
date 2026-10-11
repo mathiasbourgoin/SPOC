@@ -135,6 +135,17 @@ let log level comp msg =
       (component_to_string comp)
       msg
 
+(** [log_any_component level msg]: [msg] tagged [All], gated by the level only.
+    For callers with their own switch ([Spoc_core.Error.log]), so they need not
+    enable every component. *)
+let log_any_component level msg =
+  if level_to_int level >= Atomic.get threshold then
+    Printf.printf
+      "[%s][%s] %s\n%!"
+      (level_to_string level)
+      (component_to_string All)
+      msg
+
 (** Convenience functions - string based *)
 let debug comp msg = log Debug comp msg
 

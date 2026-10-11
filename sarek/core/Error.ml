@@ -108,14 +108,13 @@ let set_level level =
 
 let get_level () = !current_level
 
-(* Ensure Error logs route through the unified logger *)
-let () = Log.enable Log.All
-
 (** {1 Logging Functions} *)
 
 let log level fmt =
   if should_log level then
-    Format.kasprintf (fun msg -> Log.log (to_log_level level) Log.All msg) fmt
+    Format.kasprintf
+      (fun msg -> Log.log_any_component (to_log_level level) msg)
+      fmt
   else Format.ikfprintf ignore Format.err_formatter fmt
 
 let error fmt = log Errors fmt
