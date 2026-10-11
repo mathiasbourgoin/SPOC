@@ -94,7 +94,16 @@ let make_ir ?(drop_c = false) ?(stride1_b = false) () : kernel =
   let d = v 3 "d" (TVec TInt32) in
   let k n = EConst (CInt32 (Int32.of_int n)) in
   let load name frag src stride =
-    SCoopmat (CM_load {dst = name; frag; src; index = k 0; stride = k stride})
+    SCoopmat
+      (CM_load
+         {
+           dst = name;
+           frag;
+           src;
+           index = k 0;
+           stride = k stride;
+           layout = Sarek_coopmat_types.Row_major;
+         })
   in
   let stmts =
     [
@@ -127,7 +136,14 @@ let make_ir ?(drop_c = false) ?(stride1_b = false) () : kernel =
         SCoopmat (CM_muladd {dst = "fd"; a = "fa"; b = "fb"; c = "fc"; cfg});
         SCoopmat
           (CM_store
-             {src = "fd"; frag = frag_d; dst = "d"; index = k 0; stride = k mnk});
+             {
+               src = "fd";
+               frag = frag_d;
+               dst = "d";
+               index = k 0;
+               stride = k mnk;
+               layout = Sarek_coopmat_types.Row_major;
+             });
       ]
   in
   {

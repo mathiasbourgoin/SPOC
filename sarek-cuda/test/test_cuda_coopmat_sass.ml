@@ -44,7 +44,16 @@ let tile name a b acc =
   in
   let i = EConst (CInt32 0l) and s = EConst (CInt32 16l) in
   let load dst frag src =
-    SCoopmat (CM_load {dst; frag; src; index = i; stride = s})
+    SCoopmat
+      (CM_load
+         {
+           dst;
+           frag;
+           src;
+           index = i;
+           stride = s;
+           layout = Sarek_coopmat_types.Row_major;
+         })
   in
   {
     default_kernel with
@@ -67,7 +76,15 @@ let tile name a b acc =
           load "fc" fc "c";
           SCoopmat (CM_muladd {dst = "fc"; a = "fa"; b = "fb"; c = "fc"; cfg});
           SCoopmat
-            (CM_store {src = "fc"; frag = fc; dst = "d"; index = i; stride = s});
+            (CM_store
+               {
+                 src = "fc";
+                 frag = fc;
+                 dst = "d";
+                 index = i;
+                 stride = s;
+                 layout = Sarek_coopmat_types.Row_major;
+               });
         ];
   }
 

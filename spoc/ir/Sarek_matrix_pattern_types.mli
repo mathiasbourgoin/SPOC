@@ -15,7 +15,7 @@ open Sarek_ir_types
     operand (no unit stride, equal strides, overlapping rows) is not a GEMM
     operand: a matrix unit loads a tile with one base and one leading dimension.
 *)
-type layout = Row_major | Col_major
+type layout = Sarek_coopmat_types.layout = Row_major | Col_major
 
 (** One matrix of [C = A × B]. Rows and columns are those of the matrix: A is
     [M × K], B is [K × N], C is [M × N]. The strides are uniform expressions;

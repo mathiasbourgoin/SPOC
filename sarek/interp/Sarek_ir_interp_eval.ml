@@ -42,6 +42,13 @@ let coopmat_is_leader state =
 let coopmat_key state name =
   (linear_thread_id state / coopmat_subgroup_size, name)
 
+(** The buffer position of element ([r], [c]) of a fragment loaded from or
+    stored to [base] with [stride] in [layout] (Sarek_ir_types.CM_load). *)
+let coopmat_element ~layout ~base ~stride r c =
+  match (layout : Sarek_coopmat_types.layout) with
+  | Row_major -> base + (r * stride) + c
+  | Col_major -> base + (c * stride) + r
+
 (** Main intrinsic dispatcher - tries each category in order *)
 let rec eval_intrinsic state path name args =
   (* Global-memory atomics and fences are path-independent (they may be opened
@@ -626,7 +633,7 @@ and exec_coopmat_once state env op =
         (Array.make
            (fragment_components frag)
            (coopmat_zero frag.frag_component))
-  | CM_load {dst; frag; src; index; stride} ->
+  | CM_load {dst; frag; src; index; stride; layout} ->
       let buf = get_array env src in
       let base = to_int (eval_expr state env index) in
       let stride = to_int (eval_expr state env stride) in
@@ -634,7 +641,7 @@ and exec_coopmat_once state env op =
       let m = Array.make (rows * cols) (coopmat_zero frag.frag_component) in
       for r = 0 to rows - 1 do
         for c = 0 to cols - 1 do
-          let i = base + (r * stride) + c in
+          let i = coopmat_element ~layout ~base ~stride r c in
           if i < 0 || i >= Array.length buf then
             Interp_error.raise_error
               (Array_bounds_error
@@ -644,7 +651,7 @@ and exec_coopmat_once state env op =
         done
       done ;
       Hashtbl.replace env.coopmats (coopmat_key state dst) m
-  | CM_store {src; frag; dst; index; stride} ->
+  | CM_store {src; frag; dst; index; stride; layout} ->
       let m = get_coopmat state env src in
       let buf = get_array env dst in
       let base = to_int (eval_expr state env index) in
@@ -652,7 +659,7 @@ and exec_coopmat_once state env op =
       let rows, cols = fragment_dims frag in
       for r = 0 to rows - 1 do
         for c = 0 to cols - 1 do
-          let i = base + (r * stride) + c in
+          let i = coopmat_element ~layout ~base ~stride r c in
           if i < 0 || i >= Array.length buf then
             Interp_error.raise_error
               (Array_bounds_error

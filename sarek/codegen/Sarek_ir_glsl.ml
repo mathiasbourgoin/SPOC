@@ -1187,6 +1187,13 @@ let glsl_coopmat_type (f : Sarek_coopmat_types.fragment) =
     cols
     (glsl_coopmat_use f.Sarek_coopmat_types.frag_use)
 
+(** GL_KHR_cooperative_matrix's layout operand of [coopMatLoad] /
+    [coopMatStore]: the stride separates rows (row-major) or columns
+    (column-major), as in [CM_load]. *)
+let glsl_coopmat_layout = function
+  | Sarek_coopmat_types.Row_major -> "gl_CooperativeMatrixLayoutRowMajor"
+  | Sarek_coopmat_types.Col_major -> "gl_CooperativeMatrixLayoutColumnMajor"
+
 let gen_coopmat_op st op =
   let expr_str e =
     let b = Buffer.create 32 in
@@ -1203,25 +1210,24 @@ let gen_coopmat_op st op =
          ones. *)
       let ty = glsl_coopmat_type frag in
       Printf.sprintf "%s %s = %s(0);" ty (escape_glsl_name name) ty
-  | CM_load {dst; frag; src; index; stride} ->
-      (* Row-major only, and only because that is the layout this slice
-         executed. gl_CooperativeMatrixLayoutColumnMajor is one more enumerant
-         and a second layout to verify on hardware. *)
+  | CM_load {dst; frag; src; index; stride; layout} ->
       ignore frag ;
       Printf.sprintf
-        "coopMatLoad(%s, %s, %s, %s, gl_CooperativeMatrixLayoutRowMajor);"
+        "coopMatLoad(%s, %s, %s, %s, %s);"
         (escape_glsl_name dst)
         (escape_glsl_name src)
         (expr_str index)
         (expr_str stride)
-  | CM_store {src; frag; dst; index; stride} ->
+        (glsl_coopmat_layout layout)
+  | CM_store {src; frag; dst; index; stride; layout} ->
       ignore frag ;
       Printf.sprintf
-        "coopMatStore(%s, %s, %s, %s, gl_CooperativeMatrixLayoutRowMajor);"
+        "coopMatStore(%s, %s, %s, %s, %s);"
         (escape_glsl_name src)
         (escape_glsl_name dst)
         (expr_str index)
         (expr_str stride)
+        (glsl_coopmat_layout layout)
   | CM_muladd {dst; a; b; c; cfg} ->
       (* [coopMatMulAdd]'s optional fourth argument is the operand-saturation
          flag. It is emitted from the CONFIGURATION rather than left to a

@@ -145,95 +145,42 @@ let kernel_buffers (k : kernel) =
   in
   List.filter_map of_param (k.kern_params @ k.kern_locals)
 
+(** The layout every [CM_load] of an operand fragment uses, by fragment name.
+    [nvcuda::wmma] fixes an operand's layout in its fragment TYPE, so the CUDA
+    arm of the declaration needs it; a name loaded in both layouts has no CUDA
+    spelling. *)
+type operand_layout = Loaded of C.layout | Both_layouts
+
+type context = {
+  buffers : (string * elttype) list;
+      (** element types of the kernel's array parameters and shared arrays *)
+  operand_layouts : (string * operand_layout) list;
+}
+
+let operand_layouts (k : kernel) =
+  let note acc name layout =
+    match List.assoc_opt name acc with
+    | None -> (name, Loaded layout) :: acc
+    | Some (Loaded l) when l = layout -> acc
+    | Some _ -> (name, Both_layouts) :: List.remove_assoc name acc
+  in
+  List.fold_left
+    (fun acc -> function
+      | CM_load {dst; frag; layout; _} when frag.C.frag_use <> C.Accumulator ->
+          note acc dst layout
+      | CM_decl _ | CM_load _ | CM_store _ | CM_muladd _ -> acc)
+    []
+    (Sarek_ir_analysis.kernel_coopmat_ops k)
+
+(** What the [SCoopmat] arm needs from the kernel it is emitting. *)
+let kernel_context (k : kernel) =
+  {buffers = kernel_buffers k; operand_layouts = operand_layouts k}
+
 (** {1 Preamble} *)
 
-(** Emitted before [extern "C"] when the kernel has a cooperative-matrix
-    statement. The AMD helpers have C++ linkage and one pointer type each, so a
-    buffer of the wrong element type is a compile error rather than a
-    reinterpretation. *)
-let preamble =
-  {|#if defined(__HIP_PLATFORM_AMD__)
-/* Sarek cooperative matrix, HIP: RDNA3 (gfx11) WMMA, wave32
-   (specs/coopmat-hip-wmma.md). For lane l, with l16 = l % 16 and h = l / 16:
-   an A fragment holds row l16 (k = 0..15), a B fragment holds column l16, and
-   accumulator element j holds row 2*j + h, column l16. */
-#if defined(__HIP_DEVICE_COMPILE__) && !defined(__GFX11__)
-#error "Sarek cooperative matrix: the HIP lowering targets gfx11 (RDNA3) WMMA only"
-#endif
-typedef _Float16 sarek_cm_h16 __attribute__((ext_vector_type(16)));
-typedef short sarek_cm_s16 __attribute__((ext_vector_type(16)));
-typedef float sarek_cm_f8 __attribute__((ext_vector_type(8)));
-typedef int sarek_cm_i4 __attribute__((ext_vector_type(4)));
-typedef int sarek_cm_i8 __attribute__((ext_vector_type(8)));
-__device__ __forceinline__ int sarek_cm_l16() { return (int)(__lane_id() & 15u); }
-__device__ __forceinline__ int sarek_cm_h() { return (int)((__lane_id() >> 4) & 1u); }
-__device__ __forceinline__ unsigned sarek_cm_pack4(unsigned char b0, unsigned char b1,
-                                                   unsigned char b2, unsigned char b3) {
-  return (unsigned)b0 | ((unsigned)b1 << 8) | ((unsigned)b2 << 16) | ((unsigned)b3 << 24);
-}
-__device__ __forceinline__ void sarek_cm_load_a_f16(sarek_cm_h16 &f, const __half *p, int i, int s) {
-  const _Float16 *q = (const _Float16 *)p + i + sarek_cm_l16() * s;
-  for (int e = 0; e < 16; ++e) f[e] = q[e];
-}
-__device__ __forceinline__ void sarek_cm_load_b_f16(sarek_cm_h16 &f, const __half *p, int i, int s) {
-  const _Float16 *q = (const _Float16 *)p + i + sarek_cm_l16();
-  for (int e = 0; e < 16; ++e) f[e] = q[e * s];
-}
-/* bf16 operands are loaded from a float32 buffer and rounded to bfloat16
-   (nearest even), specs/matrix-pattern-rewrite.md. */
-__device__ __forceinline__ short sarek_cm_bf16(float x) {
-  unsigned u = __float_as_uint(x);
-  if ((u & 0x7fffffffu) > 0x7f800000u) return (short)((u >> 16) | 0x40u);
-  return (short)((u + 0x7fffu + ((u >> 16) & 1u)) >> 16);
-}
-__device__ __forceinline__ void sarek_cm_load_a_bf16(sarek_cm_s16 &f, const float *p, int i, int s) {
-  const float *q = p + i + sarek_cm_l16() * s;
-  for (int e = 0; e < 16; ++e) f[e] = sarek_cm_bf16(q[e]);
-}
-__device__ __forceinline__ void sarek_cm_load_b_bf16(sarek_cm_s16 &f, const float *p, int i, int s) {
-  const float *q = p + i + sarek_cm_l16();
-  for (int e = 0; e < 16; ++e) f[e] = sarek_cm_bf16(q[e * s]);
-}
-__device__ __forceinline__ void sarek_cm_load_a_i8(sarek_cm_i4 &f, const unsigned char *p, int i, int s) {
-  const unsigned char *q = p + i + sarek_cm_l16() * s;
-  for (int w = 0; w < 4; ++w)
-    f[w] = (int)sarek_cm_pack4(q[4 * w], q[4 * w + 1], q[4 * w + 2], q[4 * w + 3]);
-}
-__device__ __forceinline__ void sarek_cm_load_b_i8(sarek_cm_i4 &f, const unsigned char *p, int i, int s) {
-  const unsigned char *q = p + i + sarek_cm_l16();
-  for (int w = 0; w < 4; ++w)
-    f[w] = (int)sarek_cm_pack4(q[(4 * w) * s], q[(4 * w + 1) * s],
-                               q[(4 * w + 2) * s], q[(4 * w + 3) * s]);
-}
-__device__ __forceinline__ void sarek_cm_load_acc_f32(sarek_cm_f8 &f, const float *p, int i, int s) {
-  const float *q = p + i + sarek_cm_h() * s + sarek_cm_l16();
-  for (int j = 0; j < 8; ++j) f[j] = q[2 * j * s];
-}
-__device__ __forceinline__ void sarek_cm_store_acc_f32(const sarek_cm_f8 &f, float *p, int i, int s) {
-  float *q = p + i + sarek_cm_h() * s + sarek_cm_l16();
-  for (int j = 0; j < 8; ++j) q[2 * j * s] = f[j];
-}
-__device__ __forceinline__ void sarek_cm_load_acc_i32(sarek_cm_i8 &f, const int *p, int i, int s) {
-  const int *q = p + i + sarek_cm_h() * s + sarek_cm_l16();
-  for (int j = 0; j < 8; ++j) f[j] = q[2 * j * s];
-}
-__device__ __forceinline__ void sarek_cm_store_acc_i32(const sarek_cm_i8 &f, int *p, int i, int s) {
-  int *q = p + i + sarek_cm_h() * s + sarek_cm_l16();
-  for (int j = 0; j < 8; ++j) q[2 * j * s] = f[j];
-}
-#else
-/* Sarek cooperative matrix, CUDA: nvcuda::wmma m16n16k16. COMPILE-CHECKED
-   ONLY (no NVIDIA GPU was available; specs/coopmat-hip-wmma.md). wmma's
-   load/store need a 32-byte aligned pointer and a row stride that is a
-   multiple of 16 bytes; Sarek's CM_load promises any index and stride, so a
-   launch that violates the precondition traps instead of computing on a
-   misaligned fragment. */
-#include <mma.h>
-__device__ __forceinline__ void sarek_cm_require(const void *p, int s, int bytes) {
-  if ((((unsigned long long)p) & 31ull) != 0ull || ((s * bytes) & 15) != 0) __trap();
-}
-#endif
-|}
+(** The helper definitions, emitted before [extern "C"] when the kernel has a
+    cooperative-matrix statement: {!Sarek_ir_cuda_coopmat_preamble}. *)
+let preamble = Sarek_ir_cuda_coopmat_preamble.text
 
 (** The header comment §6.1 of docs/design/f16-relaxed-accuracy.md requires on a
     generated source whose results are bounded rather than exact. *)
@@ -271,13 +218,17 @@ let amd_type (f : C.fragment) =
            (C.use_name use)
            (C.component_name comp))
 
-(** Suffix of the AMD helper for a fragment: [a_f16], [b_i8], [acc_f32]... *)
-let amd_helper_suffix (f : C.fragment) =
+(** Suffix of the AMD helper for a fragment in [layout]: [a_f16], [b_i8],
+    [acc_f32], [acc_cm_f32]... An operand helper is named by its access pattern
+    (see the preamble), so a column-major A takes the [b] helper and a
+    column-major B the [a] one. *)
+let amd_helper_suffix (f : C.fragment) layout =
   let role =
-    match f.C.frag_use with
-    | C.Matrix_a -> "a"
-    | C.Matrix_b -> "b"
-    | C.Accumulator -> "acc"
+    match (f.C.frag_use, layout) with
+    | C.Matrix_a, C.Row_major | C.Matrix_b, C.Col_major -> "a"
+    | C.Matrix_a, C.Col_major | C.Matrix_b, C.Row_major -> "b"
+    | C.Accumulator, C.Row_major -> "acc"
+    | C.Accumulator, C.Col_major -> "acc_cm"
   in
   let ty =
     match f.C.frag_component with
@@ -302,24 +253,28 @@ let cuda_elt_bytes = function
   | C.Float32 | C.Uint32 | C.Sint32 -> 4
   | C.Uint8 | C.Sint8 -> 1
 
-let cuda_type (f : C.fragment) =
+let cuda_layout = function
+  | C.Row_major -> "row_major"
+  | C.Col_major -> "col_major"
+
+(* An operand's layout is part of its nvcuda::wmma fragment type: [layout] is
+   the one every load of it uses (row-major when it is never loaded). *)
+let cuda_type (f : C.fragment) layout =
   let w = "nvcuda::wmma::" in
   let elt = cuda_elt f.C.frag_component in
+  let operand role =
+    Printf.sprintf
+      "%sfragment<%s%s, 16, 16, 16, %s, %s%s>"
+      w
+      w
+      role
+      elt
+      w
+      (cuda_layout layout)
+  in
   match f.C.frag_use with
-  | C.Matrix_a ->
-      Printf.sprintf
-        "%sfragment<%smatrix_a, 16, 16, 16, %s, %srow_major>"
-        w
-        w
-        elt
-        w
-  | C.Matrix_b ->
-      Printf.sprintf
-        "%sfragment<%smatrix_b, 16, 16, 16, %s, %srow_major>"
-        w
-        w
-        elt
-        w
+  | C.Matrix_a -> operand "matrix_a"
+  | C.Matrix_b -> operand "matrix_b"
   | C.Accumulator ->
       Printf.sprintf "%sfragment<%saccumulator, 16, 16, 16, %s>" w w elt
 
@@ -345,19 +300,35 @@ let cuda_bf16_unsupported =
 let cuda_arm (frag : C.fragment) cuda =
   if frag.C.frag_component = C.BFloat16 then cuda_bf16_unsupported else cuda
 
-let gen_decl ~indent name (frag : C.fragment) =
+(* The CUDA arm of an operand loaded in both layouts: valid on HIP, whose
+   fragment has no layout, so a named #error rather than a refusal of the
+   shared source. *)
+let cuda_both_layouts name =
+  Printf.sprintf
+    "\n\
+     #error \"Sarek cooperative matrix: nvcuda::wmma fixes a fragment's layout \
+     in its type, and %s is loaded both row- and column-major\"\n"
+    name
+
+let gen_decl ~indent ~ctx name (frag : C.fragment) =
   check_fragment frag ;
+  let declare layout =
+    Printf.sprintf
+      "%s %s; nvcuda::wmma::fill_fragment(%s, 0);"
+      (cuda_type frag layout)
+      name
+      name
+  in
+  let cuda =
+    match List.assoc_opt name ctx.operand_layouts with
+    | Some Both_layouts -> cuda_both_layouts name
+    | Some (Loaded layout) -> declare layout
+    | None -> declare C.Row_major
+  in
   both_arms
     ~indent
     ~amd:(Printf.sprintf "%s %s = {};" (amd_type frag) name)
-    ~cuda:
-      (cuda_arm
-         frag
-         (Printf.sprintf
-            "%s %s; nvcuda::wmma::fill_fragment(%s, 0);"
-            (cuda_type frag)
-            name
-            name))
+    ~cuda:(cuda_arm frag cuda)
 
 (* The CUDA pointer for a fragment's buffer: [src + index], cast to the wmma
    element type (an s8 fragment reads a uint8 buffer as signed char). *)
@@ -369,15 +340,20 @@ let cuda_ptr ~const (frag : C.fragment) ~buf ~index =
     buf
     index
 
+(* nvcuda::wmma's memory-layout argument of an accumulator load or store. *)
+let cuda_mem_layout = function
+  | C.Row_major -> "nvcuda::wmma::mem_row_major"
+  | C.Col_major -> "nvcuda::wmma::mem_col_major"
+
 let gen_load ~indent ~buffers ~expr_str ~dst ~(frag : C.fragment) ~src ~index
-    ~stride =
+    ~stride ~layout =
   check_fragment frag ;
   check_buffer ~buffers ~buf:src frag ;
   let index = expr_str index and stride = expr_str stride in
   let ptr = cuda_ptr ~const:true frag ~buf:src ~index in
-  let layout =
+  let mem_layout =
     match frag.C.frag_use with
-    | C.Accumulator -> ", nvcuda::wmma::mem_row_major"
+    | C.Accumulator -> ", " ^ cuda_mem_layout layout
     | C.Matrix_a | C.Matrix_b -> ""
   in
   both_arms
@@ -385,7 +361,7 @@ let gen_load ~indent ~buffers ~expr_str ~dst ~(frag : C.fragment) ~src ~index
     ~amd:
       (Printf.sprintf
          "sarek_cm_load_%s(%s, %s, (%s), (%s));"
-         (amd_helper_suffix frag)
+         (amd_helper_suffix frag layout)
          dst
          src
          index
@@ -402,10 +378,10 @@ let gen_load ~indent ~buffers ~expr_str ~dst ~(frag : C.fragment) ~src ~index
             dst
             ptr
             stride
-            layout))
+            mem_layout))
 
 let gen_store ~indent ~buffers ~expr_str ~src ~(frag : C.fragment) ~dst ~index
-    ~stride =
+    ~stride ~layout =
   check_fragment frag ;
   if frag.C.frag_use <> C.Accumulator then
     unsupported
@@ -420,7 +396,7 @@ let gen_store ~indent ~buffers ~expr_str ~src ~(frag : C.fragment) ~dst ~index
     ~amd:
       (Printf.sprintf
          "sarek_cm_store_%s(%s, %s, (%s), (%s));"
-         (amd_helper_suffix frag)
+         (amd_helper_suffix frag layout)
          src
          dst
          index
@@ -428,13 +404,14 @@ let gen_store ~indent ~buffers ~expr_str ~src ~(frag : C.fragment) ~dst ~index
     ~cuda:
       (Printf.sprintf
          "sarek_cm_require(%s, (%s), %d); nvcuda::wmma::store_matrix_sync(%s, \
-          %s, (%s), nvcuda::wmma::mem_row_major);"
+          %s, (%s), %s);"
          ptr
          stride
          (cuda_elt_bytes frag.C.frag_component)
          ptr
          src
-         stride)
+         stride
+         (cuda_mem_layout layout))
 
 let gen_muladd ~indent ~dst ~a ~b ~c (cfg : C.config) =
   check_config cfg ;
@@ -478,14 +455,25 @@ let gen_muladd ~indent ~dst ~a ~b ~c (cfg : C.config) =
   in
   both_arms ~indent ~amd ~cuda
 
-(** [gen_op ~indent ~buffers ~expr_str op] is the source for one cooperative
-    matrix statement, both arms. *)
-let gen_op ~indent ~buffers ~expr_str = function
-  | CM_decl {name; frag} -> gen_decl ~indent name frag
-  | CM_load {dst; frag; src; index; stride} ->
-      gen_load ~indent ~buffers ~expr_str ~dst ~frag ~src ~index ~stride
-  | CM_store {src; frag; dst; index; stride} ->
-      gen_store ~indent ~buffers ~expr_str ~src ~frag ~dst ~index ~stride
+(** [gen_op ~indent ~ctx ~expr_str op] is the source for one cooperative matrix
+    statement, both arms; [ctx] is {!kernel_context} of the kernel. *)
+let gen_op ~indent ~ctx ~expr_str = function
+  | CM_decl {name; frag} -> gen_decl ~indent ~ctx name frag
+  | CM_load {dst; frag; src; index; stride; layout} ->
+      let buffers = ctx.buffers in
+      gen_load ~indent ~buffers ~expr_str ~dst ~frag ~src ~index ~stride ~layout
+  | CM_store {src; frag; dst; index; stride; layout} ->
+      let buffers = ctx.buffers in
+      gen_store
+        ~indent
+        ~buffers
+        ~expr_str
+        ~src
+        ~frag
+        ~dst
+        ~index
+        ~stride
+        ~layout
   | CM_muladd {dst; a; b; c; cfg} -> gen_muladd ~indent ~dst ~a ~b ~c cfg
 
 (** {1 Launch shape} *)

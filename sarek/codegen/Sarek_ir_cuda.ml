@@ -51,15 +51,15 @@ let bad_arity n e g =
     threading has somewhere to go. *)
 type state = {
   variants : (string * (string * elttype list) list) list;
-  buffers : (string * elttype) list;
-      (** element types of the kernel's array parameters and shared arrays, read
-          by the [SCoopmat] arm to refuse a fragment loaded from a buffer of the
-          wrong element type *)
+  coopmat : Sarek_ir_cuda_coopmat.context;
+      (** what the [SCoopmat] arm reads from the whole kernel: buffer element
+          types (to refuse a fragment loaded from the wrong one) and each
+          operand fragment's load layout *)
 }
 
 (** The state for emitting [k]. *)
 let state (k : kernel) : state =
-  {variants = k.kern_variants; buffers = Sarek_ir_cuda_coopmat.kernel_buffers k}
+  {variants = k.kern_variants; coopmat = Sarek_ir_cuda_coopmat.kernel_context k}
 
 (** {1 Type Mapping} *)
 
@@ -579,7 +579,7 @@ let rec gen_stmt st buf indent = function
       in
       Buffer.add_string
         buf
-        (Sarek_ir_cuda_coopmat.gen_op ~indent ~buffers:st.buffers ~expr_str op)
+        (Sarek_ir_cuda_coopmat.gen_op ~indent ~ctx:st.coopmat ~expr_str op)
 
 (** Helper: Generate record field assignment *)
 and gen_record_assign st buf indent lv fields =

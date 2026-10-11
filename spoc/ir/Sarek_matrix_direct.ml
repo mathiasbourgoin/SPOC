@@ -34,14 +34,20 @@ let config =
 let starts_from_zero (g : P.gemm) =
   match g.init with EConst (CFloat32 f | CFloat64 f) -> f = 0.0 | _ -> false
 
-(** Whether the plan admits the direct variant at all: float16 operands, all
-    three matrices row-major, a float32 output stored as is, and an accumulator
-    that starts from zero. *)
+(** Whether the plan admits the direct variant at all: float16 operands, a
+    float32 output stored as is, and an accumulator that starts from zero. Any
+    of the three matrices may be row- or column-major: each fragment is loaded
+    (or stored) in its operand's own layout. *)
 let eligible (g : P.gemm) =
   g.a.elt = TFloat16 && g.b.elt = TFloat16 && g.c.elt = TFloat32
-  && g.acc.var_type = TFloat32 && g.a.layout = P.Row_major
-  && g.b.layout = P.Row_major && g.c.layout = P.Row_major
-  && g.epilogue = P.Plain && starts_from_zero g
+  && g.acc.var_type = TFloat32 && g.epilogue = P.Plain && starts_from_zero g
+
+(* The fragment stride of an operand in its own layout: the classifier gives a
+   row-major operand a unit column stride and a column-major one a unit row
+   stride (Sarek_matrix_roles.layout_of), so the other one is the leading
+   dimension. *)
+let leading (o : P.operand) (addr : address) =
+  match o.layout with P.Row_major -> addr.rs | P.Col_major -> addr.cs
 
 (** Whether a region fits the variant: whole 32 x 32 wave tiles, a reduction
     length that is a multiple of 16, a rectangular region. *)
@@ -96,7 +102,8 @@ let step (g : P.gemm) ~a ~b ~row0 ~col0 ~k_at =
            frag = frag_a;
            src = g.a.array;
            index = index a ~row:(plus row0 (16 * i)) ~col:k_at ~z;
-           stride = a.rs;
+           stride = leading g.a a;
+           layout = g.a.layout;
          })
   and load_b j =
     cm
@@ -106,7 +113,8 @@ let step (g : P.gemm) ~a ~b ~row0 ~col0 ~k_at =
            frag = frag_b;
            src = g.b.array;
            index = index b ~row:k_at ~col:(plus col0 (16 * j)) ~z;
-           stride = b.rs;
+           stride = leading g.b b;
+           layout = g.b.layout;
          })
   and muladd (i, j) =
     cm
@@ -123,7 +131,8 @@ let store (g : P.gemm) ~c ~row0 ~col0 (i, j) =
          frag = frag_acc;
          dst = g.c.array;
          index = index c ~row:(plus row0 (16 * i)) ~col:(plus col0 (16 * j)) ~z;
-         stride = c.rs;
+         stride = leading g.c c;
+         layout = g.c.layout;
        })
 
 (* The wave's tile: rows [row0, row0 + 32), columns [col0, col0 + 32). *)

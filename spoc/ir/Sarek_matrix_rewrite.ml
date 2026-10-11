@@ -147,6 +147,7 @@ let fragment_ops c ~wm ~wn ~ks =
              (((wm *: i32 32) +: i32 (16 * i)) *: i32 (c.bk + pad c.s))
              +: i32 (16 * ks);
            stride = i32 (c.bk + pad c.s);
+           layout = C.Row_major;
          })
   and load_b j p =
     SCoopmat
@@ -158,6 +159,7 @@ let fragment_ops c ~wm ~wn ~ks =
            index =
              i32 (16 * ks * (bn + pad c.s)) +: (wn *: i32 32) +: i32 (16 * j);
            stride = i32 (bn + pad c.s);
+           layout = C.Row_major;
          })
   and muladd (i, j) (pa, pb, s) =
     SCoopmat
@@ -208,6 +210,7 @@ let store_accs c ~wm ~wn ~s ~dst =
                +: (wn *: i32 32)
                +: i32 (16 * j);
              stride = i32 bn;
+             layout = C.Row_major;
            }))
     ij
 

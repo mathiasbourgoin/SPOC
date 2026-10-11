@@ -236,6 +236,19 @@ type use = Matrix_a | Matrix_b | Accumulator
 
 val use_name : use -> string
 
+(** How a matrix is laid out in the buffer a fragment is loaded from or stored
+    to, with [index] the buffer position of element (0, 0) and [stride] the
+    distance between consecutive rows ([Row_major]: element (r, c) is at
+    [index + r * stride + c]) or consecutive columns ([Col_major]: element (r,
+    c) is at [index + c * stride + r]).
+
+    A memory property of one load or store, not of the fragment: the same
+    fragment may be loaded from a row-major buffer and stored to a column-major
+    one. *)
+type layout = Row_major | Col_major
+
+val layout_name : layout -> string
+
 (** A cooperative-matrix fragment: the DSL-side value one invocation holds a
     slice of.
 

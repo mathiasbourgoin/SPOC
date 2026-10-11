@@ -7,10 +7,13 @@
     (specs/coopmat-hip-wmma.md).
 
     [D = A x B + C] for row-major matrices: [A] is [m x k] float16, [B] is
-    [k x n] float16, [C] and [D] are [m x n] float32. Each subgroup (wavefront /
-    warp) computes a [16*frags_m x 16*frags_n] tile of [D], stepping through [k]
-    sixteen at a time with one 16x16x16 multiply-add per fragment pair; a block
-    holds [waves] subgroups of 32 invocations.
+    [k x n] float16, [C] and [D] are [m x n] float32. With
+    [~b_layout:Col_major], [B] is stored transposed ([n x k], element [(r, c)]
+    of [B] at [c * k + r]), which is how token-major activations are laid out
+    and what a fragment loads with contiguous reads on HIP gfx11. Each subgroup
+    (wavefront / warp) computes a [16*frags_m x 16*frags_n] tile of [D],
+    stepping through [k] sixteen at a time with one 16x16x16 multiply-add per
+    fragment pair; a block holds [waves] subgroups of 32 invocations.
 
     The kernel is IR, not a [%kernel]: the DSL has no cooperative-matrix
     surface. It runs where the configuration [f16 * f16 + f32 -> f32] is offered
@@ -110,7 +113,7 @@ let pairs t =
 
 (** One step of the [k] loop: load the wave's A and B fragments for columns
     [16*kk .. 16*kk+15] of A, then every multiply-add. *)
-let k_step t ~row0 ~col0 ~kk ~k ~n =
+let k_step t ~b_layout ~row0 ~col0 ~kk ~k ~n =
   let load_a i =
     cm
       (CM_load
@@ -120,6 +123,7 @@ let k_step t ~row0 ~col0 ~kk ~k ~n =
            src = "a";
            index = ((row0 +: i32 (16 * i)) *: k) +: (kk *: i32 16);
            stride = k;
+           layout = Sarek_coopmat.Row_major;
          })
   and load_b j =
     cm
@@ -128,8 +132,17 @@ let k_step t ~row0 ~col0 ~kk ~k ~n =
            dst = b_name j;
            frag = frag_b;
            src = "b";
-           index = (kk *: i32 16 *: n) +: (col0 +: i32 (16 * j));
-           stride = n;
+           index =
+             (match b_layout with
+             | Sarek_coopmat.Row_major ->
+                 (kk *: i32 16 *: n) +: (col0 +: i32 (16 * j))
+             | Sarek_coopmat.Col_major ->
+                 ((col0 +: i32 (16 * j)) *: k) +: (kk *: i32 16));
+           stride =
+             (match b_layout with
+             | Sarek_coopmat.Row_major -> n
+             | Sarek_coopmat.Col_major -> k);
+           layout = b_layout;
          })
   and muladd (i, j) =
     cm
@@ -150,7 +163,7 @@ let k_step t ~row0 ~col0 ~kk ~k ~n =
 let acc_index ~row0 ~col0 ~n (i, j) =
   ((row0 +: i32 (16 * i)) *: n) +: (col0 +: i32 (16 * j))
 
-let wave_body t ~row0 ~col0 ~k ~n ~kk =
+let wave_body t ~b_layout ~row0 ~col0 ~k ~n ~kk =
   let decl name frag = cm (CM_decl {name; frag}) in
   let decls =
     List.map (fun i -> decl (a_name i) frag_a) (range t.frags_m)
@@ -167,6 +180,7 @@ let wave_body t ~row0 ~col0 ~k ~n ~kk =
            src = "c";
            index = acc_index ~row0 ~col0 ~n ij;
            stride = n;
+           layout = Sarek_coopmat.Row_major;
          })
   and store_d ij =
     let i, j = ij in
@@ -178,6 +192,7 @@ let wave_body t ~row0 ~col0 ~k ~n ~kk =
            dst = "d";
            index = acc_index ~row0 ~col0 ~n ij;
            stride = n;
+           layout = Sarek_coopmat.Row_major;
          })
   in
   let loop =
@@ -186,14 +201,16 @@ let wave_body t ~row0 ~col0 ~k ~n ~kk =
         i32 0,
         (k /: i32 16) +: i32 (-1),
         Upto,
-        SSeq (k_step t ~row0 ~col0 ~kk:(EVar kk) ~k ~n) )
+        SSeq (k_step t ~b_layout ~row0 ~col0 ~kk:(EVar kk) ~k ~n) )
   in
   SSeq (decls @ List.map load_c (pairs t) @ [loop] @ List.map store_d (pairs t))
 
-(** [ir ?tiling ()] is the kernel [(a, b, c, d, m, n, k)]: [d = a * b + c]. [a],
-    [b] are float16 vectors, [c], [d] float32 vectors, [m], [n], [k] int32.
-    Launch with {!launch_dims} after {!check_shape}. *)
-let ir ?(tiling = default_tiling) () : kernel =
+(** [ir ?tiling ?b_layout ()] is the kernel [(a, b, c, d, m, n, k)]:
+    [d = a * b + c]. [a], [b] are float16 vectors, [c], [d] float32 vectors,
+    [m], [n], [k] int32; [b] is [k x n] row-major, or [n x k] with
+    [~b_layout:Col_major]. Launch with {!launch_dims} after {!check_shape}. *)
+let ir ?(tiling = default_tiling) ?(b_layout = Sarek_coopmat.Row_major) () :
+    kernel =
   let t = tiling in
   let vec id name elt = (var id name (TVec elt), elt) in
   let a = vec 0 "a" TFloat16 and b = vec 1 "b" TFloat16 in
@@ -220,6 +237,7 @@ let ir ?(tiling = default_tiling) () : kernel =
                   ( EBinop (Lt, EVar row0, EVar m),
                     wave_body
                       t
+                      ~b_layout
                       ~row0:(EVar row0)
                       ~col0:(EVar col0)
                       ~k:(EVar k)
@@ -231,10 +249,13 @@ let ir ?(tiling = default_tiling) () : kernel =
     default_kernel with
     kern_name =
       Printf.sprintf
-        "sarek_coopmat_gemm_f16_%dx%d_w%d"
+        "sarek_coopmat_gemm_f16_%dx%d_w%d%s"
         t.frags_m
         t.frags_n
-        t.waves;
+        t.waves
+        (match b_layout with
+        | Sarek_coopmat.Row_major -> ""
+        | Sarek_coopmat.Col_major -> "_bt");
     kern_params =
       [param a; param b; param c; param d]
       @ List.map (fun v -> DParam (v, None)) [m; n; k];
@@ -243,27 +264,28 @@ let ir ?(tiling = default_tiling) () : kernel =
 
 (** {1 Host launch} *)
 
-(* One IR value per tiling, so repeated launches hit Execute's launch memo,
-   which keys on the IR's physical identity. *)
-let ir_cache : (tiling, kernel) Hashtbl.t = Hashtbl.create 4
+(* One IR value per tiling and B layout, so repeated launches hit Execute's
+   launch memo, which keys on the IR's physical identity. *)
+let ir_cache : (tiling * Sarek_coopmat.layout, kernel) Hashtbl.t =
+  Hashtbl.create 4
 
 let ir_cache_lock = Mutex.create ()
 
-let cached_ir tiling =
+let cached_ir tiling b_layout =
   Mutex.protect ir_cache_lock (fun () ->
-      match Hashtbl.find_opt ir_cache tiling with
+      match Hashtbl.find_opt ir_cache (tiling, b_layout) with
       | Some k -> k
       | None ->
-          let k = ir ~tiling () in
-          Hashtbl.add ir_cache tiling k ;
+          let k = ir ~tiling ~b_layout () in
+          Hashtbl.add ir_cache (tiling, b_layout) k ;
           k)
 
-(** [run ~device ?tiling ~a ~b ~c ~d ~m ~n ~k ()] launches {!ir} on [device].
-    Raises [Invalid_argument] on a shape {!check_shape} rejects or a vector
-    shorter than the shape needs, and the launch gate's capability error where
-    the device does not offer the configuration or the program has not called
-    {!Sarek_coopmat.accept_relaxed_accumulation}. Asynchronous like any launch:
-    read [d] after the usual transfer. *)
+(** [run ~device ?tiling ?b_layout ~a ~b ~c ~d ~m ~n ~k ()] launches {!ir} on
+    [device]. Raises [Invalid_argument] on a shape {!check_shape} rejects or a
+    vector shorter than the shape needs, and the launch gate's capability error
+    where the device does not offer the configuration or the program has not
+    called {!Sarek_coopmat.accept_relaxed_accumulation}. Asynchronous like any
+    launch: read [d] after the usual transfer. *)
 let check_lengths ~a ~b ~c ~d ~m ~n ~k =
   let check what v want =
     let got = Spoc_core.Vector.length v in
@@ -280,7 +302,8 @@ let check_lengths ~a ~b ~c ~d ~m ~n ~k =
   check "c" c (m * n) ;
   check "d" d (m * n)
 
-let run ~device ?(tiling = default_tiling) ~a ~b ~c ~d ~m ~n ~k () =
+let run ~device ?(tiling = default_tiling) ?(b_layout = Sarek_coopmat.Row_major)
+    ~a ~b ~c ~d ~m ~n ~k () =
   check_shape tiling ~m ~n ~k ;
   (* The kernel has no bounds checks: a vector shorter than its shape would be
      read or written out of bounds on the device. *)
@@ -289,7 +312,7 @@ let run ~device ?(tiling = default_tiling) ~a ~b ~c ~d ~m ~n ~k () =
   let int x = Sarek.Execute.Int32 (Int32.of_int x) in
   Sarek.Execute.run_vectors
     ~device
-    ~ir:(cached_ir tiling)
+    ~ir:(cached_ir tiling b_layout)
     ~args:
       [
         Sarek.Execute.Vec a;

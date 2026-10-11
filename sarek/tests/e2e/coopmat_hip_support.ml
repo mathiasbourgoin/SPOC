@@ -55,7 +55,16 @@ let tile_ir ?(drop_c = false) ?(index = 0) ?(stride = 16) cfg : kernel =
   let k0 = EConst (CInt32 (Int32.of_int index))
   and k16 = EConst (CInt32 (Int32.of_int stride)) in
   let load dst frag src =
-    SCoopmat (CM_load {dst; frag; src; index = k0; stride = k16})
+    SCoopmat
+      (CM_load
+         {
+           dst;
+           frag;
+           src;
+           index = k0;
+           stride = k16;
+           layout = Sarek_coopmat_types.Row_major;
+         })
   in
   let body =
     [
@@ -70,7 +79,15 @@ let tile_ir ?(drop_c = false) ?(index = 0) ?(stride = 16) cfg : kernel =
     @ [
         SCoopmat (CM_muladd {dst = "fd"; a = "fa"; b = "fb"; c = "fc"; cfg});
         SCoopmat
-          (CM_store {src = "fd"; frag = fd; dst = "d"; index = k0; stride = k16});
+          (CM_store
+             {
+               src = "fd";
+               frag = fd;
+               dst = "d";
+               index = k0;
+               stride = k16;
+               layout = Sarek_coopmat_types.Row_major;
+             });
       ]
   in
   {

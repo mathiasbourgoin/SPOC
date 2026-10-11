@@ -144,6 +144,12 @@ let use_name = function
   | Matrix_b -> "B"
   | Accumulator -> "accumulator"
 
+type layout = Row_major | Col_major
+
+let layout_name = function
+  | Row_major -> "row-major"
+  | Col_major -> "column-major"
+
 type fragment = {
   frag_use : use;
   frag_shape : shape;

@@ -16,7 +16,12 @@ let make_var name ty =
    those now take the per-generation state as their first argument. No case here
    uses a variant pattern, so an empty state carries exactly what the
    module-level ref it replaces held at its initial value. *)
-let st : Sarek_ir_cuda.state = {variants = []; buffers = []}
+let st : Sarek_ir_cuda.state =
+  {
+    variants = [];
+    coopmat =
+      Sarek_codegen.Sarek_ir_cuda_coopmat.{buffers = []; operand_layouts = []};
+  }
 
 (** Helper to generate code from an expression *)
 let gen_expr_str e =

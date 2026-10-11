@@ -88,7 +88,8 @@ accepted values) and gives `Auto` (`Matrix_specialise.parse_mode`, pure).
 At each launch, from the region (`Sarek_matrix_mapping.region`):
 
 - **Direct** (`Sarek_matrix_direct`): float16 operands (no rounding),
-  row-major A, B and C, float32 output stored as is, accumulator starting from
+  A, B and C each row- or column-major (each fragment is loaded or stored in
+  its operand's own layout), float32 output stored as is, accumulator starting from
   zero (from C it would update C in place through fragments; the interpreter
   evaluates a fragment operation once per invocation, so a later invocation
   would see an earlier store — measured: 4.9e6 γ_K on the interpreter, correct

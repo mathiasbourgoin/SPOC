@@ -74,6 +74,23 @@
   Guide: `gh-pages/docs/memory.md`, "Sharing host memory with a CPU OpenCL
   device".
 
+- Cooperative-matrix loads and stores take a memory layout (C-41):
+  `CM_load` / `CM_store` have a required field
+  `layout : Sarek_coopmat_types.layout` (`Row_major | Col_major`, re-exported
+  by `Sarek_coopmat`); column-major puts element (r, c) at
+  `index + c * stride + r`. Lowered by the interpreter, HIP gfx11 (a
+  column-major B fragment is the contiguous helper: two `global_load_b128`
+  per lane instead of 16 `global_load_d16`), CUDA (`col_major` fragment
+  types, `mem_col_major`; compile-only) and GLSL
+  (`gl_CooperativeMatrixLayoutColumnMajor`); refused where cooperative
+  matrices are. `Sarek_gemm.Coopmat.ir` / `run` take `?b_layout` (B stored
+  transposed, `[n][k]`). Row-major kernels generate the same kernel text as
+  before. **Migration:** add `layout = Row_major` to every `CM_load` /
+  `CM_store` record literal (the field has no default, so each construction
+  site states its layout). Tests: `sarek/tests/unit/test_coopmat_layout.ml`,
+  `sarek/tests/codegen_golden/test_coopmat_layout_codegen.ml`,
+  `sarek/tests/e2e/test_coopmat_layout_e2e.ml` (HIP gfx1100 and Vulkan RADV).
+
 - Matrix products are rewritten at launch, inside `Execute.run_vectors` (spec
   `specs/matrix-pattern-dynamic.md`). A kernel that is a recognised matrix
   product runs on matrix units when the device has them (HIP gfx11; the
@@ -296,6 +313,15 @@
   `specs/stdlib-bitcasts.md`.
 
 ### Changed
+
+- The direct size class of the launch-time matrix rewrite
+  (`Sarek_matrix_direct`) accepts column-major A, B and C: each fragment is
+  loaded or stored in its operand's own layout. A float16 GEMM with B stored
+  transposed now takes it when aligned: 256×1024×3072 from 401 to 71 µs,
+  256×3072×3072 from 658 to 242 µs (RX 7900 XTX, median of 5 interleaved runs,
+  `spoc-pipeline-logs/pkgF/F2-bench-matrix-rewrite-c41-summary.txt`). The
+  CUDA/HIP fragment helpers take a 64-bit stride, so offset products no
+  longer overflow `int` for strides above 2^31/15 elements.
 
 - A launch hashes its IR once instead of 4-5 times (R-41). The launch-path
   tables keyed by the IR's physical identity (capability verdicts and

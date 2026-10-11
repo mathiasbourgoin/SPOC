@@ -1194,10 +1194,24 @@ let test_coopmat_configs () =
         SCoopmat (CM_decl {name = "f"; frag = cm_frag_a});
         SCoopmat
           (CM_load
-             {dst = "f"; frag = cm_frag_a; src = "a"; index = idx; stride = idx});
+             {
+               dst = "f";
+               frag = cm_frag_a;
+               src = "a";
+               index = idx;
+               stride = idx;
+               layout = Sarek_coopmat_types.Row_major;
+             });
         SCoopmat
           (CM_store
-             {src = "f"; frag = cm_frag_a; dst = "b"; index = idx; stride = idx});
+             {
+               src = "f";
+               frag = cm_frag_a;
+               dst = "b";
+               index = idx;
+               stride = idx;
+               layout = Sarek_coopmat_types.Row_major;
+             });
       ]
   in
   assert (kernel_coopmat_configs (empty_kernel load_store) = []) ;
