@@ -7,7 +7,8 @@
    XTX: a naive DSL GEMM launched as written (scalar) and through
    Sarek_matrix.run (rewritten onto WMMA), per element case and precision,
    against the hand-written SCoopmat GEMM (Sarek_gemm.Coopmat, f16) and the
-   scalar tiled Sarek_gemm (f32).
+   scalar tiled Sarek_gemm (f32). "f16 B^T" reads B stored transposed
+   ([n][k]).
 
    Method as bench_hip_coopmat_gemm: GPU events around batches of [batch]
    back-to-back launches, [samples] batches per round, [rounds] rounds;
@@ -122,6 +123,29 @@ let k_f16 =
         c.((row * n) + col) <- sum
       end]
 
+(* B stored transposed ([n][k]): what token-major activations look like. *)
+let k_f16_bt =
+  [%kernel
+    fun (a : float16 vector)
+        (b : float16 vector)
+        (c : float32 vector)
+        (m : int32)
+        (n : int32)
+        (k : int32) ->
+      let row = global_idx_y in
+      let col = global_idx_x in
+      if row < m && col < n then begin
+        let sum = mut 0.0 in
+        for i = 0 to k - 1l do
+          sum :=
+            fma
+              (float32_of_float16 a.((row * k) + i))
+              (float32_of_float16 b.((col * k) + i))
+              sum
+        done ;
+        c.((row * n) + col) <- sum
+      end]
+
 let k_f32 =
   [%kernel
     fun (a : float32 vector)
@@ -199,6 +223,21 @@ let bench_shape dev (m, n, k) =
     ~k
     ~label:"f16"
     ~ir:(ir_of k_f16)
+    ~args:
+      ([
+         Execute.Vec (h (m * k));
+         Execute.Vec (h (k * n));
+         Execute.Vec (f (m * n));
+       ]
+      @ dims)
+    () ;
+  bench_naive
+    dev
+    ~m
+    ~n
+    ~k
+    ~label:"f16 B^T"
+    ~ir:(ir_of k_f16_bt)
     ~args:
       ([
          Execute.Vec (h (m * k));
