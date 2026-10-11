@@ -8,4 +8,5 @@ let init () =
   Backend_cuda.init () ;
   Backend_opencl.init () ;
   Backend_vulkan.init () ;
+  Backend_hip.init () ;
   Backend_metal.init ()
