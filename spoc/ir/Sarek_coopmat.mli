@@ -109,13 +109,16 @@ val accept_operand_rounding :
 val operand_rounding_reason : operand_precision -> string option
 
 (** [policy_verdict cfg] judges the accuracy regime, independently of any
-    device: configurations whose four component types are all integer are
-    [Available] (strict: exact accumulation); [f16 * f16 + f32 -> f32] is
-    [Available] after {!accept_relaxed_accumulation} and otherwise [Unavailable]
-    with a {!Sarek_capability.Policy} record naming the call; every other
-    configuration with a float component is [Unavailable] (no derived bound,
-    §5.4). A [BFloat16] configuration additionally needs
-    {!accept_operand_rounding} for [Operands_bf16] or [Operands_bf16x3]: its
-    load rounds float32 operands. The launch gate and the interpreter apply it
-    after the device verdict. *)
+    device:
+    - configurations whose four component types are all integer are [Available]
+      (strict: exact accumulation);
+    - [f16 * f16 + f32 -> f32] is [Available] after
+      {!accept_relaxed_accumulation};
+    - [bf16 * bf16 + f32 -> f32] is [Available] after
+      {!accept_relaxed_accumulation} AND {!accept_operand_rounding} for
+      [Operands_bf16] or [Operands_bf16x3] (its load rounds float32 operands);
+    - every other configuration with a float component is [Unavailable] (no
+      derived bound, §5.4). A refusal is a {!Sarek_capability.Policy} record
+      naming the missing call. The launch gate and the interpreter apply it
+      after the device verdict. *)
 val policy_verdict : config -> Sarek_capability.verdict
