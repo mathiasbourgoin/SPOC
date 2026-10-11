@@ -18,6 +18,10 @@ type 'a buffer = {
   mutable mapped_ptr : unit Ctypes.ptr option; (* Persistent mapping *)
 }
 
+(** Device buffers allocated and not yet released (test instrumentation: a
+    buffer freed from a GC finaliser that failed silently stays counted). *)
+let live_allocations = Atomic.make 0
+
 (** Find suitable memory type *)
 let find_memory_type dev type_filter properties =
   let props = dev.Device.memory_properties in
@@ -319,6 +323,7 @@ let alloc device size kind =
       else None
     in
 
+    Atomic.incr live_allocations ;
     {buffer = !@buffer; memory = !@memory; size; elem_size; device; mapped_ptr}
   with e ->
     cleanup () ;
@@ -413,6 +418,7 @@ let alloc_custom device ~size ~elem_size =
          (Unsigned.UInt32.of_int 0)
          data_ptr) ;
 
+    Atomic.incr live_allocations ;
     {
       buffer = !@buffer;
       memory = !@memory;
@@ -432,7 +438,8 @@ let free buf =
   | Some _ -> vkUnmapMemory buf.device.Device.device buf.memory
   | None -> ()) ;
   vkDestroyBuffer buf.device.Device.device buf.buffer null ;
-  vkFreeMemory buf.device.Device.device buf.memory null
+  vkFreeMemory buf.device.Device.device buf.memory null ;
+  Atomic.decr live_allocations
 
 (** Vulkan doesn't expose device pointers like CUDA. Return 0 as placeholder.
     Binding uses the buffer handle directly via set_arg_buffer. *)
