@@ -11,3 +11,15 @@ theories/PatternSpec.v
 theories/ConstrSpec.v
 theories/SpecialSpec.v
 theories/GPUSpec.v
+extraction/TypeSafetyExtraction.v
+extraction/UnifyExtraction.v
+extraction/VecExtraction.v
+extraction/RegistryExtraction.v
+extraction/ControlFlowExtraction.v
+extraction/OperatorExtraction.v
+extraction/FunExtraction.v
+extraction/MutExtraction.v
+extraction/PatExtraction.v
+extraction/ConstrExtraction.v
+extraction/SpecialExtraction.v
+extraction/GPUExtraction.v
