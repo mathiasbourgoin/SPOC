@@ -120,6 +120,18 @@
   `Pinned.is_available` probe (a one-byte allocation) instead of always
   `false`. `Advanced.Unified` stays a placeholder. Test:
   `sarek/tests/e2e/test_advanced_pinned.ml`; docs: `memory.md`.
+
+- `Sarek_f16_policy.accept_single_rounding (Kernel name | All_kernels)
+  ~reason`: an explicit opt-in that removes every f32 -> f16 narrowing barrier
+  from the covered kernels (global review C-40, specs/f16-narrowing-barrier.md
+  §4). The device may then round a narrowed expression once where the
+  interpreter rounds twice: at most one binary16 ulp plus `|a * b| * 2^-24` for
+  a fused `a * b +/- c`, and a `-0` product may come out `+0`. Separate from
+  `Sarek_coopmat.accept_relaxed_accumulation`. On a dequantise-to-LDS
+  microbenchmark shaped like Katra's fused Q4_K (hip:0), 870 -> 170 us.
+  Differential tests of a covered kernel must compare within that bound
+  (`sarek-hip/test/test_hip_f16_single_rounding.ml`).
+
 - `Spoc_core.Host_ptr_buffer`: an explicit, typed opt-in to give a vector a
   CPU OpenCL buffer over its host memory (`CL_MEM_USE_HOST_PTR`), for large
   host pools that must not be duplicated. `of_bigarray dev kind ba` and
@@ -396,6 +408,18 @@
   `spoc-pipeline-logs/pkgF/F2-bench-matrix-rewrite-c41-summary.txt`). The
   CUDA/HIP fragment helpers take a 64-bit stride, so offset products no
   longer overflow `int` for strides above 2^31/15 elements.
+
+- The CUDA/HIP generator drops `sarek_f32_barrier` at the f32 -> f16
+  narrowings where it provably changes nothing (global review C-40,
+  specs/f16-narrowing-barrier.md): the narrowed value is exact in f32 and its
+  top operation cannot yield a zero of the wrong sign, or it is a sum or
+  difference of two binary16 values. An exact product whose zero could be
+  `-0` (e.g. a negative binary16 scale times an int8 quant) is emitted as
+  `sarek_narrow_exact_product`, which keeps the fused instruction and restores
+  the sign. Results stay bit-identical to the interpreter (16M-value sweeps on
+  hip:0, `sarek-hip/test/test_hip_f16_narrowing_exact.ml`); Q8_0 with a
+  binary16 scale, dequantised to LDS: 932 -> 182 us. Kernels that read their
+  scales as f32 bits (Katra's) keep their barriers.
 
 - A launch hashes its IR once instead of 4-5 times (R-41). The launch-path
   tables keyed by the IR's physical identity (capability verdicts and
