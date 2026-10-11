@@ -381,6 +381,9 @@ let check_bit_identity dev ~defers label f =
 
 let run_device (dev : Device.t) =
   let defers = Execute.Window.defers_device dev in
+  (* Every GPU backend defers by default; only CPU devices are excluded. *)
+  if not dev.Device.capabilities.Spoc_framework.Framework_sig.is_cpu then
+    check dev "deferred by default" defers ;
   let scenario label f ~fused_launches =
     let issued = check_bit_identity dev ~defers label f in
     if defers then
