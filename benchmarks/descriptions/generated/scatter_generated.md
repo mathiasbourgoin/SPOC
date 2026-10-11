@@ -8,7 +8,7 @@ This file is auto-generated. Do not edit manually.
 
 extern "C" {
 __global__ void sarek_kern(int* __restrict__ input, int sarek_input_length, int* __restrict__ indices, int sarek_indices_length, int* __restrict__ output, int sarek_output_length, int n) {
-  int i = (threadIdx.x + blockIdx.x * blockDim.x);
+  int i = ((int)(threadIdx.x + blockIdx.x * blockDim.x));
   if ((i < n)) {
     int idx = indices[i];
     output[idx] = input[i];
@@ -21,7 +21,7 @@ __global__ void sarek_kern(int* __restrict__ input, int sarek_input_length, int*
 
 ```opencl
 __kernel void sarek_kern(__global int* restrict input, int sarek_input_length, __global int* restrict indices, int sarek_indices_length, __global int* restrict output, int sarek_output_length, int n) {
-  int i = get_global_id(0);
+  int i = ((int)get_global_id(0));
   if ((i < n)) {
     int idx = indices[i];
     output[idx] = input[i];
@@ -80,7 +80,7 @@ uint3 __metal_tid [[thread_position_in_threadgroup]],
 uint3 __metal_bid [[threadgroup_position_in_grid]],
 uint3 __metal_tpg [[threads_per_threadgroup]],
 uint3 __metal_num_groups [[threadgroups_per_grid]]) {
-  int i = __metal_gid.x;
+  int i = ((int)__metal_gid.x);
   if ((i < n)) {
     int idx = indices[i];
     output[idx] = input[i];

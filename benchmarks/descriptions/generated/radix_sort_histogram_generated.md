@@ -9,8 +9,8 @@ This file is auto-generated. Do not edit manually.
 extern "C" {
 __global__ void sarek_kern(int* __restrict__ input, int sarek_input_length, int* __restrict__ histogram, int sarek_histogram_length, int n, int shift, int mask) {
   __shared__ int local_hist[256];
-  int tid = threadIdx.x;
-  int gid = (threadIdx.x + blockIdx.x * blockDim.x);
+  int tid = ((int)threadIdx.x);
+  int gid = ((int)(threadIdx.x + blockIdx.x * blockDim.x));
   int num_bins = 256;
   {
     if ((tid < num_bins)) {
@@ -41,8 +41,8 @@ __global__ void sarek_kern(int* __restrict__ input, int sarek_input_length, int*
 ```opencl
 __kernel void sarek_kern(__global int* restrict input, int sarek_input_length, __global int* restrict histogram, int sarek_histogram_length, int n, int shift, int mask) {
   __local int local_hist[256];
-  int tid = get_local_id(0);
-  int gid = get_global_id(0);
+  int tid = ((int)get_local_id(0));
+  int gid = ((int)get_global_id(0));
   int num_bins = 256;
   {
     if ((tid < num_bins)) {
@@ -139,8 +139,8 @@ uint3 __metal_bid [[threadgroup_position_in_grid]],
 uint3 __metal_tpg [[threads_per_threadgroup]],
 uint3 __metal_num_groups [[threadgroups_per_grid]]) {
   threadgroup int local_hist[256];
-  int tid = __metal_tid.x;
-  int gid = __metal_gid.x;
+  int tid = ((int)__metal_tid.x);
+  int gid = ((int)__metal_gid.x);
   int num_bins = 256;
   {
     if ((tid < num_bins)) {

@@ -8,8 +8,8 @@ This file is auto-generated. Do not edit manually.
 
 extern "C" {
 __global__ void sarek_kern(int* __restrict__ output, int sarek_output_length, int width, int height, int max_iter) {
-  int px = (threadIdx.x + blockIdx.x * blockDim.x);
-  int py = (threadIdx.y + blockIdx.y * blockDim.y);
+  int px = ((int)(threadIdx.x + blockIdx.x * blockDim.x));
+  int py = ((int)(threadIdx.y + blockIdx.y * blockDim.y));
   if (((px < width) ? (py < height) : 0)) {
     float x0 = ((4.0f * ((float)(px) / (float)(width))) - 2.5f);
     float y0 = ((3.0f * ((float)(py) / (float)(height))) - 1.5f);
@@ -32,8 +32,8 @@ __global__ void sarek_kern(int* __restrict__ output, int sarek_output_length, in
 
 ```opencl
 __kernel void sarek_kern(__global int* restrict output, int sarek_output_length, int width, int height, int max_iter) {
-  int px = get_global_id(0);
-  int py = get_global_id(1);
+  int px = ((int)get_global_id(0));
+  int py = ((int)get_global_id(1));
   if (((px < width) ? (py < height) : 0)) {
     float x0 = ((4.0f * ((float)(px) / (float)(width))) - 2.5f);
     float y0 = ((3.0f * ((float)(py) / (float)(height))) - 1.5f);
@@ -107,8 +107,8 @@ uint3 __metal_tid [[thread_position_in_threadgroup]],
 uint3 __metal_bid [[threadgroup_position_in_grid]],
 uint3 __metal_tpg [[threads_per_threadgroup]],
 uint3 __metal_num_groups [[threadgroups_per_grid]]) {
-  int px = __metal_gid.x;
-  int py = __metal_gid.y;
+  int px = ((int)__metal_gid.x);
+  int py = ((int)__metal_gid.y);
   if (((px < width) ? (py < height) : 0)) {
     float x0 = ((4.0f * ((float)(px) / (float)(width))) - 2.5f);
     float y0 = ((3.0f * ((float)(py) / (float)(height))) - 1.5f);

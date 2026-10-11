@@ -8,7 +8,7 @@ This file is auto-generated. Do not edit manually.
 
 extern "C" {
 __global__ void sarek_kern(int* __restrict__ input, int sarek_input_length, int* __restrict__ output, int sarek_output_length, int* __restrict__ counters, int sarek_counters_length, int n, int shift, int mask) {
-  int gid = (threadIdx.x + blockIdx.x * blockDim.x);
+  int gid = ((int)(threadIdx.x + blockIdx.x * blockDim.x));
   if ((gid < n)) {
     int value = input[gid];
     int digit = (((int)((unsigned int)(value) >> (shift))) & mask);
@@ -23,7 +23,7 @@ __global__ void sarek_kern(int* __restrict__ input, int sarek_input_length, int*
 
 ```opencl
 __kernel void sarek_kern(__global int* restrict input, int sarek_input_length, __global int* restrict output, int sarek_output_length, __global int* restrict counters, int sarek_counters_length, int n, int shift, int mask) {
-  int gid = get_global_id(0);
+  int gid = ((int)get_global_id(0));
   if ((gid < n)) {
     int value = input[gid];
     int digit = (((int)((uint)(value) >> (shift))) & mask);
@@ -90,7 +90,7 @@ uint3 __metal_tid [[thread_position_in_threadgroup]],
 uint3 __metal_bid [[threadgroup_position_in_grid]],
 uint3 __metal_tpg [[threads_per_threadgroup]],
 uint3 __metal_num_groups [[threadgroups_per_grid]]) {
-  int gid = __metal_gid.x;
+  int gid = ((int)__metal_gid.x);
   if ((gid < n)) {
     int value = input[gid];
     int digit = (((int)((uint)(value) >> (shift))) & mask);
