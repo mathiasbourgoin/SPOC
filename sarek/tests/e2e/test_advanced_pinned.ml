@@ -118,6 +118,54 @@ let test_with_alloc dev =
   | Some p -> check "with_alloc releases on exception" (not (Pinned.is_live p))
   | None -> check "with_alloc ran (exception)" false
 
+(* A copy on [stream] that has not been synchronised keeps the memory busy. *)
+let test_in_flight_refusal dev =
+  let n = 1024 in
+  let dst = Transfer.create_device_only dev Vector.int32 n in
+  let stream = Transfer.create_stream dev in
+  let p = Pinned.alloc dev Bigarray.int32 n in
+  Transfer.copy_to_device ~stream (Pinned.bigarray p) ~dst ~dst_offset:0 ;
+  check
+    "release refused while a copy is in flight"
+    (refuses_invalid (fun () -> Pinned.release p)) ;
+  check "handle stays live after a refused release" (Pinned.is_live p) ;
+  Transfer.synchronize_stream stream ;
+  Pinned.release p ;
+  check "release succeeds after synchronize" (not (Pinned.is_live p)) ;
+  let ba = i32_ba n Int32.of_int in
+  let r = Pinned.register dev ba in
+  Transfer.copy_to_device ~stream ba ~dst ~dst_offset:0 ;
+  check
+    "unregister refused while a copy is in flight"
+    (refuses_invalid (fun () -> Pinned.release r)) ;
+  check "registered handle stays live" (Pinned.is_live r) ;
+  Transfer.synchronize_stream stream ;
+  Pinned.release r ;
+  check
+    "registered release succeeds after synchronize"
+    (not (Transfer.is_pinned ba)) ;
+  (* with_alloc: ?stream is synchronised before the release. *)
+  let seen = ref None in
+  Pinned.with_alloc ~stream dev Bigarray.int32 n (fun q ->
+      seen := Some q ;
+      Transfer.copy_to_device ~stream (Pinned.bigarray q) ~dst ~dst_offset:0) ;
+  (match !seen with
+  | Some q -> check "with_alloc ~stream releases" (not (Pinned.is_live q))
+  | None -> check "with_alloc ~stream ran" false) ;
+  (* Without it the refusal surfaces as Invalid_argument, not Finally_raised. *)
+  check
+    "with_alloc surfaces a refused release"
+    (refuses_invalid (fun () ->
+         Pinned.with_alloc dev Bigarray.int32 n (fun q ->
+             Transfer.copy_to_device
+               ~stream
+               (Pinned.bigarray q)
+               ~dst
+               ~dst_offset:0))) ;
+  Transfer.synchronize_stream stream ;
+  Transfer.destroy_stream stream ;
+  Transfer.free_all_buffers dst
+
 let () =
   Test_helpers.Benchmarks.init_backends () ;
   let devices = Device.init () in
@@ -133,7 +181,8 @@ let () =
       test_alloc_roundtrip d ;
       test_alloc_refusals d ;
       test_register d ;
-      test_with_alloc d)
+      test_with_alloc d ;
+      test_in_flight_refusal d)
     cpu ;
   if !failures > 0 then begin
     Printf.printf "%d check(s) failed\n" !failures ;
