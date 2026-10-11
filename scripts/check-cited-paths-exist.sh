@@ -376,8 +376,9 @@ def resolves_any(citation, citing_file):
         `[backends](backends.html)` addresses the page built from
         `gh-pages/docs/backends.md`. Seventeen link targets in this tree resolve
         ONLY through this rule (counted by deleting it: `git ls-files`-tracked
-        `.html` accounts for four more, `../playground.html` and
-        `../spoc_docs/index.html`), and every one of the seventeen has its
+        `.html` accounts for two more, `../playground.html`; the
+        `../spoc_docs/index.html` links are generated at deploy time and
+        exempted in cited-paths-exempt.tsv), and every one of the seventeen has its
         markdown source tracked beside it. Demanding a tracked `.html` would
         fail them all and teach the next author that this gate is noise.
 

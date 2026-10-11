@@ -5,7 +5,7 @@
 **Scope:** structural duplication across Sarek's codegen backends
 (`sarek/codegen/Sarek_ir_{cuda,opencl,glsl,wgsl,metal}.ml`, plus PTX split) and the
 `sarek-{cuda,hip,opencl,vulkan,metal}` plugin runtime layer.
-**Method disclosure:** `arch-index`/`arch-query` was attempted (`docs/architecture.db`)
+**Method disclosure:** `arch-index`/`arch-query` was attempted (`docs/architecture.db`, since deleted)
 but the database has no populated `functions`/`calls` tables (queries fail with
 `no such table: functions`) — call-graph data is unavailable. **All findings below are
 from `grep` + direct file reads.** File:line citations are against this worktree
