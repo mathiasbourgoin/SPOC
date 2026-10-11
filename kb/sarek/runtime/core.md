@@ -217,8 +217,6 @@ To let SPOC host code run in the browser, the numeric (Bigarray) vector core is 
 - `sarek/core/test/test_kernel_arg.ml`: kernel argument encoding.
 - `sarek/core/test/test_gpu_memory.ml`: memory accounting and retry basics.
 
-`sarek/core/README.md:829` references `test_transfer.ml`, but the colocated test inventory currently has `test_vector_transfer.ml` instead.
-
 ## Missing Tests
 
 - Sub-vector partition, device update, gather, and parent consistency.

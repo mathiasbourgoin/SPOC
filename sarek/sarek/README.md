@@ -71,7 +71,7 @@ let () =
 | `Int n` | `int32` | An OCaml `int`, converted to 32 bits. |
 | `Int32 n` | `int32` | |
 | `Int64 n` | `int64` | |
-| `Float32 f` | `float32` | An OCaml `float`, rounded to 32 bits by the device. |
+| `Float32 f` | `float32` | An OCaml `float`, rounded to 32 bits by the host when the argument is set. |
 | `Float64 f` | `float64` | |
 
 The argument count and types are checked against the kernel before the launch; a mismatch raises `Execute_error.Execution_error`.

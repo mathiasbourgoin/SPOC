@@ -83,7 +83,7 @@ let () =
   | None -> ()
 ```
 
-`Device.init` visits the frameworks in the order given (default: CUDA, HIP, OpenCL, Vulkan, Metal, Native, Interpreter), skips those that are not registered or not available, and numbers the devices in that order. The family name `"CUDA"` resolves to every registered `CUDA/...` backend. `SPOC_DISABLE_GPU=1`, or `SPOC_DISABLE_CUDA`, `SPOC_DISABLE_HIP`, `SPOC_DISABLE_OPENCL`, `SPOC_DISABLE_VULKAN`, `SPOC_DISABLE_METAL`, keep a GPU backend from registering ([device selection](../../gh-pages/docs/device_selection.md)).
+`Device.init` visits the frameworks in the order given (`~frameworks` only applies to the first call, or the first after `Device.reset ()`; later calls return the devices already enumerated) (default: CUDA, HIP, OpenCL, Vulkan, Metal, Native, Interpreter), skips those that are not registered or not available, and numbers the devices in that order. The family name `"CUDA"` resolves to every registered `CUDA/...` backend. `SPOC_DISABLE_GPU=1`, or `SPOC_DISABLE_CUDA`, `SPOC_DISABLE_HIP`, `SPOC_DISABLE_OPENCL`, `SPOC_DISABLE_VULKAN`, `SPOC_DISABLE_METAL`, keep a GPU backend from registering ([device selection](../../gh-pages/docs/device_selection.md)).
 
 Double and 64-bit integer support are device features, not booleans: use `Device.allows_fp64` and `Device.allows_int64`.
 

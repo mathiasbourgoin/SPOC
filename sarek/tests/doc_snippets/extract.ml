@@ -11,6 +11,10 @@
    source file named in the locations, which must stay the generated .ml).
    A block whose preceding line is [<!-- snippet: skip -->] is left out.
 
+   A fence that nearly is a snippet fence (``` OCaml, ```ml, ```ocaml foo,
+   ~~~ fences, four backticks with an ocaml/ml info string) makes both modes
+   fail with the file and line, so it cannot silently escape the check.
+
    [extract.exe --only NAME FILE.md] prints just the blocks whose preceding
    line is [<!-- snippet: NAME -->]; it builds a page's complete program as an
    executable.
@@ -35,9 +39,39 @@ let marker_tag line =
   then Some (String.trim (String.sub line p (n - p - q)))
   else None
 
-let is_ocaml_fence line =
+(* Opening fences. Only a three-backtick fence whose info string is exactly
+   [ocaml] is a snippet. A fence that looks like an attempt at one (another
+   case, [ml], an extra word, tildes, four or more backticks) is an error: it
+   would silently escape the check. *)
+type fence = Ocaml | Near_miss | Other
+
+let count_leading c line =
+  let n = String.length line in
+  let rec go i = if i < n && line.[i] = c then go (i + 1) else i in
+  go 0
+
+let fence_kind line =
   let line = String.trim line in
-  line = "```ocaml" || String.starts_with ~prefix:"```ocaml " line
+  let ticks = count_leading '`' line and tildes = count_leading '~' line in
+  let info_after n =
+    String.lowercase_ascii
+      (String.trim (String.sub line n (String.length line - n)))
+  in
+  let looks_ocaml info =
+    String.starts_with ~prefix:"ocaml" info
+    || String.starts_with ~prefix:"ml" info
+  in
+  if tildes >= 3 then Near_miss
+  else if ticks = 3 then
+    if String.trim (String.sub line 3 (String.length line - 3)) = "ocaml" then
+      Ocaml
+    else if looks_ocaml (info_after 3) then Near_miss
+    else Other
+  else if ticks > 3 then
+    if looks_ocaml (info_after ticks) then Near_miss else Other
+  else Other
+
+exception Near_miss_fence of string * int * string
 
 let is_fence_end line = String.trim line = "```"
 
@@ -55,10 +89,12 @@ let read_lines path =
 type block = {start_line : int; body : string list; tag : string option}
 
 (* Scan the lines of a file; [previous] is the line before the current one. *)
-let blocks_of_lines lines =
+let blocks_of_lines ~path lines =
   let rec scan acc ~line_no ~previous = function
     | [] -> List.rev acc
-    | line :: rest when is_ocaml_fence line ->
+    | line :: _ when fence_kind line = Near_miss ->
+        raise (Near_miss_fence (path, line_no, String.trim line))
+    | line :: rest when fence_kind line = Ocaml ->
         let body, after = take_body [] rest in
         let block =
           {start_line = line_no + 1; body; tag = marker_tag previous}
@@ -79,7 +115,7 @@ let print_block path b =
   print_newline ()
 
 let emit ?only path =
-  let blocks = blocks_of_lines (read_lines path) in
+  let blocks = blocks_of_lines ~path (read_lines path) in
   let wanted b =
     match only with
     | Some name -> b.tag = Some name
@@ -91,11 +127,6 @@ let emit ?only path =
   in
   Printf.printf "(* %d block(s), %d skipped *)\n" (List.length blocks) skipped
 
-let contains_substring ~sub text =
-  let n = String.length sub and m = String.length text in
-  let rec at i = i + n <= m && (String.sub text i n = sub || at (i + 1)) in
-  at 0
-
 (* Dune shortens the paths of its dependencies ([../../core/README.md] for
    [../../../sarek/core/README.md]), so compare the last two components. *)
 let last_two_components path =
@@ -103,15 +134,30 @@ let last_two_components path =
   | file :: dir :: _ -> dir ^ "/" ^ file
   | _ -> path
 
+(* The paths written as [%{dep:PATH}] in the dune file. *)
+let declared_deps dune_text =
+  let prefix = "%{dep:" in
+  let n = String.length dune_text and p = String.length prefix in
+  let rec scan i acc =
+    if i + p > n then acc
+    else if String.sub dune_text i p = prefix then
+      match String.index_from_opt dune_text (i + p) '}' with
+      | Some j -> scan j (String.sub dune_text (i + p) (j - i - p) :: acc)
+      | None -> acc
+    else scan (i + 1) acc
+  in
+  scan 0 []
+
 let check_listed dune_file files =
   let ic = open_in_bin dune_file in
   let dune_text = really_input_string ic (in_channel_length ic) in
   close_in ic ;
+  let listed = List.map last_two_components (declared_deps dune_text) in
   let unlisted =
     List.filter
       (fun f ->
-        blocks_of_lines (read_lines f) <> []
-        && not (contains_substring ~sub:(last_two_components f) dune_text))
+        blocks_of_lines ~path:f (read_lines f) <> []
+        && not (List.mem (last_two_components f) listed))
       files
   in
   List.iter
@@ -123,7 +169,7 @@ let check_listed dune_file files =
     unlisted ;
   if unlisted <> [] then exit 1
 
-let () =
+let run () =
   match Array.to_list Sys.argv with
   | _ :: "--check-listed" :: dune_file :: files -> check_listed dune_file files
   | [_; "--only"; name; path] -> emit ~only:name path
@@ -133,3 +179,14 @@ let () =
         "usage: extract.exe [--only NAME] FILE.md | --check-listed DUNE \
          FILE.md..." ;
       exit 2
+
+let () =
+  try run ()
+  with Near_miss_fence (path, line, text) ->
+    Printf.eprintf
+      "%s:%d: fence %S looks like an ocaml snippet but is not exactly \
+       ```ocaml; fix the fence or use another language name\n"
+      path
+      line
+      text ;
+    exit 1
