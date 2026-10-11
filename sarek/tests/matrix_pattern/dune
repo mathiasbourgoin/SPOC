@@ -6,9 +6,12 @@
 ; does not silence the advice fails the BUILD. The test then checks the
 ; recognised roles, layouts and rejection reasons at run time.
 
-(test
- (name test_matrix_pattern)
- (modules test_matrix_pattern)
+(tests
+ (names test_matrix_pattern_pos test_matrix_pattern_neg)
+ (modules
+  matrix_pattern_check
+  test_matrix_pattern_pos
+  test_matrix_pattern_neg)
  (libraries sarek sarek_stdlib sarek_ir alcotest astring fmt)
  (preprocess
   (pps sarek_ppx))

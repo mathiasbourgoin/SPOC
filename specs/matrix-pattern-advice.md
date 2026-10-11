@@ -63,8 +63,16 @@ done;
   block_idx_y` is two): they form one index when their coefficients in the
   operand and in C are the same weights times one stride each.
 - Layout of each operand from its strides: row-major when the column stride is
-  1 (leading dimension = the row stride), column-major when the row stride is 1,
-  otherwise *strided*. The two factors are named A and B so that C's column
+  1 (leading dimension = the row stride), column-major when the row stride is 1.
+  An operand with no unit stride, with equal strides (`a.(row + i)`,
+  `c.(row + col)`: Toeplitz views, correlations, races) or with a constant
+  leading dimension smaller than 16 or than a constant K is rejected: a matrix
+  unit loads a tile with one base and one leading dimension. A symbolic leading
+  dimension is trusted (it cannot be compared with the bounds before launch).
+  Two indices derived from the same thread value are independent only as the
+  pair `t / d`, `t mod d` (`tid / 4` and `tid / 8` cover a band of C). The
+  accumulator's initial value must be uniform or the output element
+  (`let sum = mut c.(o)`, rendered as `C = init + Σ ...`). The two factors are named A and B so that C's column
   stride is 1 whenever either naming allows it: a column-major `C = A·B` is
   reported as the row-major `Cᵀ = Bᵀ·Aᵀ`. Constant and batch terms are kept as
   the operand offset.
@@ -74,8 +82,11 @@ done;
   product of three factors (`acc + alpha*a*b`), subtraction, a call to a
   helper function, a shared/local operand (an already tiled kernel), an output
   index containing `kv`, an output that aliases an operand, an operand the kernel
-  also writes, `acc` used anywhere else, and a reduction whose operands do not
-  separate into M and N atoms (dot products, row sums, `c[tid]` outputs).
+  writes or may write (any write through a computed base or any atomic counts as
+  writing every operand, helper bodies included), `acc` used anywhere else, a
+  store guarded by a condition on `acc`, an epilogue using thread-varying values
+  or other arrays, and a reduction whose operands do not separate into M and N
+  atoms (dot products, row sums, `c[tid]` outputs).
 
 *(agent decision)* Only the kernel body is analysed, not helper functions: the
 advice must point at a loop the user wrote in this kernel.
@@ -83,13 +94,16 @@ advice must point at a loop the user wrote in this kernel.
 ## Matrix-unit configuration per element case
 
 The analysis reports which `Sarek_coopmat` configuration a lowering would use,
-on which backend, and under which accuracy regime. This PR rewrites nothing.
+on which backend, and how results would change (`Sarek_matrix_advice.accuracy_class`,
+deliberately not `Sarek_coopmat.accuracy_regime`: operand rounding must not be
+mistakable for the `Relaxed_bounded` that the existing opt-in admits). This PR
+rewrites nothing.
 
-| A, B elements | acc / C | configuration (16×16×16, subgroup) | regime | opt-in |
+| A, B elements | acc / C | configuration (16×16×16, subgroup) | accuracy class | opt-in |
 |---|---|---|---|---|
-| float16, float16 | float32 | f16×f16+f32→f32 | Relaxed_bounded (accumulation order, γ_K bound) | `Sarek_coopmat.accept_relaxed_accumulation` |
-| float32, float32 | float32 | f16×f16+f32→f32 after rounding the operands | Relaxed, *beyond* the existing bound (operand rounding) | none exists yet: a matrix-unit lowering needs a new explicit opt-in (PR 2) |
-| int32, int32 | int32 | u8×u8+s32→s32 on the four byte planes of each operand (10 products per tile, wrapping) | Strict: bit-identical, int32 arithmetic is modulo 2³² | none |
+| float16, float16 | float32 (C float32 or float16) | f16×f16+f32→f32 | `Relaxed_accumulation` (order only, γ_K bound) | `Sarek_coopmat.accept_relaxed_accumulation` |
+| float32, float32 | float32 | f16×f16+f32→f32 after rounding the operands | `Relaxed_operands`, *beyond* the existing bound | none exists yet: a matrix-unit lowering needs a new explicit opt-in (PR 2) |
+| int32, int32 | int32 | u8×u8+s32→s32 on the four byte planes of each operand (10 products per tile, wrapping) | `Exact`: bit-identical, int32 arithmetic is modulo 2³² | none |
 | anything else (int64, float64, mixed) | | none | | |
 
 Backends, for the configurations above (fixed table, from specs/coopmat-hip-wmma.md):
@@ -109,9 +123,9 @@ measures it; this PR only reports it.
 ## The diagnostic
 
 *(agent decision)* **An OCaml alert, not a ppwarning.** The PPX wraps the kernel
-expression as `((let module M : sig val advice : unit [@@alert sarek_matrix
-"<text>"] end = struct let advice = () end in M.advice); <kernel>)`, the use of
-`M.advice` carrying the location of the recognised `for` loop (from `for` to the
+expression as `((let module Sarek_advice : sig val matrix_product : unit
+[@@alert sarek_matrix "<text>"] end = struct let matrix_product = () end in
+Sarek_advice.matrix_product); <kernel>)`, the use carrying the location of the recognised `for` loop (from `for` to the
 loop variable; the kernel's location when the loop cannot be identified uniquely).
 Measured (OCaml 5.4, dune dev and release): an alert is printed with its
 location and does not fail the build, whereas a ppwarning (warning 22) is fatal in
@@ -126,17 +140,31 @@ An advice is emitted only for a recognised nest whose element case has a
 configuration (first three rows above). Text (one alert per nest):
 
 ```
-Sarek: kernel <name> contains a matrix product (GEMM) that matrix units could compute.
-  C[<ic>] (<layout>) = Σ_<kv>=<lo>..<hi> A[<ia>] (<layout>) * B[<ib>] (<layout>)  [batched over ...]
-  elements: <A> x <B> -> <acc>
-  configuration: 16x16x16 <cfg> (<lowering>)
-  backends: HIP gfx11 wave32 (executes); CUDA (compile-only); Vulkan (if advertised); others: none
-  accuracy: <exact | relaxed: ... opt-in ...>
-  silence: [@alert "-sarek_matrix"] on this kernel
+Sarek: kernel '<name>' contains a matrix product (GEMM) that matrix units could compute.
+  C[m,n] = [<init> + ]sum over <kv> = <lo>..<hi> of A[m,<kv>] * B[<kv>,n]
+  A = <array>[<index>] (<layout>, ld <ld>)
+  B = ...
+  C = ...
+  m = <row index>, n = <column index>[, batched over <atoms>]
+  elements: <A> x <B> -> <acc> accumulator
+  configuration: 16x16x16 <cfg> subgroup (<direct | operands rounded to float16 | byte planes>)
+  HIP gfx11 (wave32): executes
+  CUDA sm_70+ / sm_72+: compile-only, launch refused (no device probe)
+  Vulkan: <none | when the device advertises this configuration>
+  Metal, OpenCL, WGSL, PTX, Native: no matrix-unit lowering
+  accuracy: <exact | relaxed ... opt-in>
+  No code was changed. Silence with [@alert "-sarek_matrix"] on the kernel expression or its binding.
 ```
+
+The name is the kernel's own or, failing that, the enclosing binding's. An
+advice must never fail a build: a failure of the analysis, of the rendering or
+of the scan file is reported on stderr and the kernel compiles without advice.
+A kernel containing a `[%native]` block (body or helper) is not analysed.
 
 `SAREK_MATRIX_SCAN=<file>`: when set, the PPX appends one line per kernel and per
 finding (recognised or near miss) to `<file>`, for corpus scans. Unset: no I/O.
+The variable is not a dune dependency: a scan needs a fresh build directory and
+`DUNE_CACHE=disabled`, or cached PPX outputs are not re-run.
 
 ## Library entry points (`spoc.ir`)
 
@@ -146,11 +174,11 @@ finding (recognised or near miss) to `<file>`, for corpus scans. Unset: no I/O.
   (`Gemm of gemm | Near_miss of near_miss`), `recognise : kernel -> gemm list`,
   `reason_text`.
 - `Sarek_matrix_advice` — `advise : gemm -> advice` (element case,
-  configuration, regime, backends), `render : kernel_name:string -> gemm -> advice -> string`.
+  configuration, accuracy class, backends), `render : ?kernel_name:string -> gemm -> advice -> string`.
 - `Sarek_fusion.should_fuse` consults `Sarek_matrix_pattern`: a consumer that
   reads the intermediate as a GEMM operand is `DontFuse` with the reason
-  “intermediate is a matrix-product operand (fusing would recompute the producer
-  K times)”. This replaces the generic reason it got before (the decision was
+  “<intermediate> is a matrix-product operand of the consumer: fusing would
+  recompute each of its elements once per output row or column”. This replaces the generic reason it got before (the decision was
   already `DontFuse`); FUSION.md gains the row.
 
 ## User stories

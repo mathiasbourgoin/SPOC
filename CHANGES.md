@@ -60,8 +60,11 @@
   reduction index and stores the sum once to `C[ic]`, with affine indices
   (`Sarek_ir_affine`) that separate into row, column and batch indices:
   row- and column-major operands, 1-D (`tid / n`, `tid mod n`) and 2-D thread
-  mappings, loop nests, batches, offsets and `alpha·acc + beta·C` epilogues;
-  every other reduction loop is reported with the reason it is not one.
+  mappings, loop nests, batches, padded leading dimensions, offsets, an
+  accumulator starting from C, and `alpha·acc + beta·C` epilogues; every other
+  reduction loop (overlapping or non-unit-stride operands, dependent indices,
+  non-affine or gathered indices, ...) is reported with the reason it is not
+  one.
   `Sarek_matrix_advice` names the matrix-unit configuration that would apply
   (f16 operands: `f16×f16+f32→f32`, bounded, needs
   `accept_relaxed_accumulation`; float32: needs operand rounding, no opt-in yet;
@@ -70,10 +73,10 @@
   `for` loop: non-fatal, silenced with `[@alert "-sarek_matrix"]` on the kernel
   or `[@@alert "-sarek_matrix"]` on its binding (or per file/library, or made an
   error with `-alert @sarek_matrix`). `SAREK_MATRIX_SCAN=<file>` makes the PPX
-  log every finding. Nothing is rewritten. `Sarek_fusion.should_fuse` now gives
+  log every finding (fresh build directory, `DUNE_CACHE=disabled`). Nothing is rewritten. `Sarek_fusion.should_fuse` now gives
   a matrix-product operand its own reason. `Sarek_ir_conv` moved from
   `sarek.transpile` to `sarek.frontend` (the PPX converts its IR for the
-  analysis). Scanned over the 257 kernels the repository builds: 4 advised,
+  analysis). Scanned over the 254 kernels the repository builds (outside the new corpus): 4 advised,
   all matrix products; no false positive.
 
 - `Transfer.copy_bytes_to_host ?stream ~src ~src_byte_offset dst`: the

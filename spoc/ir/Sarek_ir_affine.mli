@@ -51,6 +51,9 @@ val poly_div : poly -> poly -> poly option
 
 val poly_to_expr : poly -> expr
 
+(** The value of a constant polynomial ([Some 0] for zero), [None] otherwise. *)
+val poly_constant : poly -> int option
+
 (** {1 Affine forms} *)
 
 (** [terms] is sorted by atom and has no zero coefficient. *)

@@ -160,33 +160,53 @@ let record_scan ~kernel_loc ~name findings =
     [%native] block), records the scan when requested, and returns [result]
     preceded by one alert per advised GEMM nest ([result] itself when there is
     none). *)
-let wrap ~kernel_loc ~payload ?name (ppx_ir : Sarek_ir_ppx.kernel) result =
-  (* A kernel with an inline [%native] block is not analysed: the block is
-     opaque (it may write any array or read the accumulator), and the
-     converter refuses it. *)
-  let findings =
-    if Sarek_ir_conv.has_native ppx_ir.kern_body then []
-    else Pattern.analyze (Sarek_ir_conv.conv_kernel ppx_ir)
+let has_native (k : Sarek_ir_ppx.kernel) =
+  Sarek_ir_conv.has_native k.kern_body
+  || List.exists
+       (fun (hf : Sarek_ir_ppx.helper_func) ->
+         Sarek_ir_conv.has_native hf.hf_body)
+       k.kern_funcs
+
+(* The advices of one kernel. An ADVICE must never fail a build, so a failure
+   of the analysis, of the rendering or of the scan file is reported on stderr
+   (as Sarek_ppx.scan_file_for_sarek_types does) and the kernel compiles
+   without advice. *)
+let advices ~kernel_loc ~payload ?name (ppx_ir : Sarek_ir_ppx.kernel) =
+  let advise = function
+    | Pattern.Gemm g ->
+        let adv = Advice.advise g in
+        if Advice.has_matrix_unit adv then
+          let loc = alert_loc ~kernel_loc ~payload g in
+          Some (alert_expression ~loc (Advice.render ?kernel_name:name g adv))
+        else None
+    | Pattern.Near_miss _ -> None
   in
-  record_scan
-    ~kernel_loc
-    ~name:(Option.value name ~default:"<anonymous>")
-    findings ;
-  let alerts =
-    List.filter_map
-      (function
-        | Pattern.Gemm g ->
-            let adv = Advice.advise g in
-            if Advice.has_matrix_unit adv then
-              let loc = alert_loc ~kernel_loc ~payload g in
-              Some
-                (alert_expression ~loc (Advice.render ?kernel_name:name g adv))
-            else None
-        | Pattern.Near_miss _ -> None)
-      findings
-  in
+  try
+    (* A kernel with an inline [%native] block is not analysed: the block is
+       opaque (it may write any array or read the accumulator), and the
+       converter refuses it. *)
+    let findings =
+      if has_native ppx_ir then []
+      else Pattern.analyze (Sarek_ir_conv.conv_kernel ppx_ir)
+    in
+    record_scan
+      ~kernel_loc
+      ~name:(Option.value name ~default:"<anonymous>")
+      findings ;
+    List.filter_map advise findings
+  with e ->
+    Printf.eprintf
+      "Sarek PPX: matrix-product analysis of the kernel at %s:%d failed (%s); \
+       compiling it without advice.\n\
+       %!"
+      kernel_loc.loc_start.pos_fname
+      kernel_loc.loc_start.pos_lnum
+      (Printexc.to_string e) ;
+    []
+
+let wrap ~kernel_loc ~payload ?name ppx_ir result =
   List.fold_right
     (fun alert acc ->
       Ast_builder.Default.pexp_sequence ~loc:result.pexp_loc alert acc)
-    alerts
+    (advices ~kernel_loc ~payload ?name ppx_ir)
     result
