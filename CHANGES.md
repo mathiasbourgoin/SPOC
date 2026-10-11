@@ -47,6 +47,24 @@
 
 ### Fixed
 
+- The launch window no longer grows a fused group past Vulkan's 128-byte
+  push-constant block (H6). A fused kernel carries every member's vector
+  lengths and scalars plus an int32 offset and size per member, so six small
+  launches of one vector and three int32 scalars (24 bytes each) made a
+  144-byte block that the backend refused: the window logged the failure,
+  issued the six launches one by one and never fused that sequence again. On
+  SPOC e9f22fe9 the same refusal also left the stream fence unsignalled and
+  the next launch hung in `vkWaitForFences` (fixed earlier by a312b91f; the
+  fence is now reset only just before `vkQueueSubmit`). The window now sizes the
+  block before it grows a group or merges an epilogue, with
+  `Sarek_push_constants` (the layout function `build_push_constants` also
+  writes with) against `Launch_window.push_constant_limit` (Vulkan: 128). A
+  single launch over the limit raises a "push constant block overflow" error.
+  Spilling scalars to a buffer, and reading `maxPushConstantsSize`, are not
+  done. Tests: `test_vulkan_window_push_budget` (Vulkan, RADV NAVI31),
+  `test_vulkan_push_constant_budget`, `test_sarek_push_constants`,
+  `test_launch_window`.
+
 - A `for` upper bound is evaluated once on every backend (compiler review
   C-8). CUDA/HIP, OpenCL, Metal, GLSL and WGSL printed
   `for (i = a; i <= bound; i++)`, which re-reads the bound each iteration, so
