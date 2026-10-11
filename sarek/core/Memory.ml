@@ -290,6 +290,38 @@ let alloc_custom (device : Device.t) ~(size : int) ~(elem_size : int) :
 (** Free a buffer *)
 let free : type a. a buffer -> unit = fun (Buffer (module B)) -> B.free ()
 
+(** Size a bigarray<->buffer copy from the bigarray's own bytes. ['a buffer]
+    only fixes the OCaml element type, so a float32 bigarray type-checks against
+    a float64 buffer; sizing the copy as [dim x buffer elem_size] then reads or
+    writes past the bigarray. Refused ([Invalid_argument]) when the element
+    sizes differ or the bigarray holds more bytes than the buffer. *)
+let checked_host_copy_bytes : type a b.
+    op:string ->
+    ba:(a, b, Bigarray.c_layout) Bigarray.Array1.t ->
+    buffer_elem_size:int ->
+    buffer_size:int ->
+    int =
+ fun ~op ~ba ~buffer_elem_size ~buffer_size ->
+  let ba_elem_size = bigarray_elem_size (Bigarray.Array1.kind ba) in
+  let ba_bytes = Bigarray.Array1.size_in_bytes ba in
+  let buffer_bytes = buffer_size * buffer_elem_size in
+  if ba_elem_size <> buffer_elem_size then
+    invalid_arg
+      (Printf.sprintf
+         "%s: bigarray element size (%d bytes) differs from the buffer's (%d \
+          bytes)"
+         op
+         ba_elem_size
+         buffer_elem_size)
+  else if ba_bytes > buffer_bytes then
+    invalid_arg
+      (Printf.sprintf
+         "%s: bigarray (%d bytes) does not fit the buffer (%d bytes)"
+         op
+         ba_bytes
+         buffer_bytes)
+  else ba_bytes
+
 (** Copy data from host bigarray to device. Converts bigarray to pointer
     internally. Type parameter ensures bigarray element type matches buffer
     type. *)
@@ -298,7 +330,13 @@ let host_to_device : type a b.
  fun ~src ~dst ->
   let (Buffer (module B)) = dst in
   let src_ptr = bigarray_void_ptr src in
-  let byte_size = Bigarray.Array1.dim src * B.elem_size in
+  let byte_size =
+    checked_host_copy_bytes
+      ~op:"host_to_device"
+      ~ba:src
+      ~buffer_elem_size:B.elem_size
+      ~buffer_size:B.size
+  in
   B.host_ptr_to_device src_ptr ~byte_size ;
   (* Keep [src] reachable until the transfer has consumed the raw address.
      [B.host_ptr_to_device] converts the pointer to a bare [nativeint] via
@@ -321,7 +359,13 @@ let device_to_host : type a b.
  fun ~src ~dst ->
   let (Buffer (module B)) = src in
   let dst_ptr = bigarray_void_ptr dst in
-  let byte_size = Bigarray.Array1.dim dst * B.elem_size in
+  let byte_size =
+    checked_host_copy_bytes
+      ~op:"device_to_host"
+      ~ba:dst
+      ~buffer_elem_size:B.elem_size
+      ~buffer_size:B.size
+  in
   B.device_to_host_ptr dst_ptr ~byte_size ;
   ignore (Sys.opaque_identity dst)
 
@@ -350,8 +394,16 @@ let device_to_device : type a. src:a buffer -> dst:a buffer -> unit =
   if Src.device.id <> Dst.device.id then
     failwith "device_to_device requires buffers on same device"
   else begin
-    (* Transfer via host - backends may optimize this in the future *)
     let byte_size = Src.size * Src.elem_size in
+    let dst_bytes = Dst.size * Dst.elem_size in
+    if byte_size > dst_bytes then
+      invalid_arg
+        (Printf.sprintf
+           "device_to_device: source (%d bytes) does not fit the destination \
+            (%d bytes)"
+           byte_size
+           dst_bytes) ;
+    (* Transfer via host. BUFFER has no backend D2D copy, so the bounce stays. *)
     let tmp = Ctypes.(allocate_n uint8_t ~count:byte_size) in
     let tmp_ptr = Ctypes.to_voidp tmp in
     Src.device_to_host_ptr tmp_ptr ~byte_size ;
