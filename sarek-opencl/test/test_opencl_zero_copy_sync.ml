@@ -42,7 +42,7 @@ __kernel void double_it(__global const float *in, __global float *out) {
 |}
 
 let addr_of ba =
-  Ctypes.raw_address_of_ptr (Spoc_core.Memory.bigarray_void_ptr ba)
+  Ctypes.raw_address_of_ptr (Spoc_core.Memory.borrow_bigarray_ptr ba)
 
 let launch device ~name ~source args =
   let compiled = Backend.Kernel.compile_cached device ~name ~source in

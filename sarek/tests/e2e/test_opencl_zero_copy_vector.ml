@@ -46,7 +46,7 @@ let n = 256
 
 let addr v =
   Ctypes.raw_address_of_ptr
-    (Spoc_core.Memory.bigarray_void_ptr (Vector.to_bigarray v))
+    (Spoc_core.Memory.borrow_bigarray_ptr (Vector.to_bigarray v))
 
 let is_aligned align v = Nativeint.rem (addr v) (Nativeint.of_int align) = 0n
 

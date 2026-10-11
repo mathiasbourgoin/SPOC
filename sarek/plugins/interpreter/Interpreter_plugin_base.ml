@@ -525,7 +525,7 @@ end = struct
      fun buf ->
       match buf.storage with
       | Bigarray_storage arr ->
-          Ctypes.raw_address_of_ptr (Spoc_core.Memory.bigarray_void_ptr arr)
+          Ctypes.raw_address_of_ptr (Spoc_core.Memory.borrow_bigarray_ptr arr)
       | Ctypes_storage ptr -> Ctypes.raw_address_of_ptr ptr
   end
 

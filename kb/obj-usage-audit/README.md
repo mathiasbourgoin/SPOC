@@ -3,6 +3,23 @@
 Audit scope: first-party OCaml sources under `spoc/`, `sarek/`, backend
 packages, benchmarks, tools, and scripts.
 
+## Status 2026-10 — no Obj remains once three PRs land
+
+The 2026-10 SPOC review numbered the remaining code uses O-1..O-23.
+
+- **O-19** (`sarek/core/Memory.ml`, `Obj.repr ba` passed to `Fat.make ~managed`
+  to root an f16 bigarray) is removed by `refactor/no-obj-f16-hostptr`. The f16
+  host pointer is now unmanaged, and the scoped `Memory.with_bigarray_ptr` keeps
+  the bigarray reachable with `Sys.opaque_identity` until its callback returns.
+  `test_float16.ml` (`gc_roots`) checks that an f16 bigarray survives a
+  `Gc.full_major` issued inside the callback.
+- **O-1..O-18 and O-20..O-23** (kernarg and transfer keep-alives, and the
+  `Sarek_tuple_vec` registry) are removed by the keep-alive PR
+  (`refactor/no-obj-keepalive`) and the tuple_vec PR (#457).
+
+After those three PRs, the census command below returns no code hits. Until
+they all merge, the 2026-07-27 census below describes `main`.
+
 ## What is actually removed — census re-run 2026-07-27 at `c92a9a28`
 
 This section used to claim the implementation "removes active source hits for
@@ -26,11 +43,10 @@ from "these eight are fixed" to "the symbols are gone". The remaining hits are i
 three roles, none of them the type-recovery cast the audit targeted, and each is
 argued in place rather than merely surviving:
 
-1. **Liveness anchors for ctypes** — `sarek/core/Memory.ml:101` passes
+1. **Liveness anchors for ctypes** — `sarek/core/Memory.ml` passed
    `Obj.repr ba` to `Fat.make ~managed` purely to keep a bigarray alive. The
-   value is never read back at a type. (`Memory.ml:63` and
-   `sarek/tests/unit/test_float16.ml:429` are doc comments describing the same
-   call, not code.)
+   value was never read back at a type. Removed as O-19 (see the 2026-10
+   status above).
 2. **Kernarg retention** — `sarek-cuda/Cuda_api.ml:66,740` and
    `sarek-hip/Hip_api.ml:40,549` keep `(params, refs)` as `Obj.t` in
    `pending_kernargs` for liveness only, again never recovered at a type. Both

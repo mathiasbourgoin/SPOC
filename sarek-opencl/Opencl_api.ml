@@ -537,7 +537,7 @@ module Memory = struct
     if
       aliases_host
         dst
-        (Ctypes.raw_address_of_ptr (Spoc_core.Memory.bigarray_void_ptr src))
+        (Ctypes.raw_address_of_ptr (Spoc_core.Memory.borrow_bigarray_ptr src))
     then
       sync_host
         queue
@@ -546,10 +546,11 @@ module Memory = struct
         ~byte_size:src_bytes
     else begin
       let bytes = Unsigned.Size_t.of_int src_bytes in
-      (* Spoc_core.Memory.bigarray_void_ptr, not Ctypes.bigarray_start: the
-         latter has no Float16 arm (MF2), and the former returns a MANAGED
-         pointer that keeps [src] rooted across the blocking enqueue (MF3). *)
-      let src_ptr = Spoc_core.Memory.bigarray_void_ptr src in
+      (* Spoc_core.Memory.borrow_bigarray_ptr, not Ctypes.bigarray_start: the
+         latter has no Float16 arm. The pointer does not root [src]; the
+         [Sys.opaque_identity] below keeps it reachable across the blocking
+         enqueue. *)
+      let src_ptr = Spoc_core.Memory.borrow_bigarray_ptr src in
       check
         "clEnqueueWriteBuffer"
         (clEnqueueWriteBuffer
@@ -570,13 +571,13 @@ module Memory = struct
     if
       aliases_host
         src
-        (Ctypes.raw_address_of_ptr (Spoc_core.Memory.bigarray_void_ptr dst))
+        (Ctypes.raw_address_of_ptr (Spoc_core.Memory.borrow_bigarray_ptr dst))
     then sync_host queue src ~flags:cl_map_read ~byte_size:dst_bytes
     else begin
       let bytes = Unsigned.Size_t.of_int dst_bytes in
-      (* See host_to_device above: MF2 (no Float16 kind in ctypes) and MF3
-         (managed pointer keeps [dst] rooted across this device->host WRITE). *)
-      let dst_ptr = Spoc_core.Memory.bigarray_void_ptr dst in
+      (* See host_to_device above: the [Sys.opaque_identity] below keeps [dst]
+         reachable across this device->host WRITE. *)
+      let dst_ptr = Spoc_core.Memory.borrow_bigarray_ptr dst in
       check
         "clEnqueueReadBuffer"
         (clEnqueueReadBuffer

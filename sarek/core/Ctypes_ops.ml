@@ -42,7 +42,7 @@ let copy_elems ~(src : handle) ~(dst : handle) ~(elem_count : int)
 
 let bigarray_to_handle : type a b.
     (a, b, Bigarray.c_layout) Bigarray.Array1.t -> handle =
- fun ba -> Memory.bigarray_void_ptr ba
+ fun ba -> Memory.borrow_bigarray_ptr ba
 
 let device_id (dev : device_t) : int = dev.id
 

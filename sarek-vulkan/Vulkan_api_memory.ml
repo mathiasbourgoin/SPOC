@@ -436,15 +436,15 @@ let device_ptr _buf = Nativeint.zero
 *)
 let is_zero_copy _buf = false
 
-(* Host pointers come from [Spoc_core.Memory.bigarray_void_ptr], not
+(* Host pointers come from [Spoc_core.Memory.borrow_bigarray_ptr], not
    [Ctypes.bigarray_start]: the latter raises Failure "Unsupported bigarray
-   kind" for Float16 (#57 slice 1 review, MF2), and the former returns a MANAGED
-   pointer so the bigarray stays GC-rooted across the memcpy (MF3). *)
+   kind" for Float16. The pointer does not root the bigarray; each memcpy is
+   followed by [Sys.opaque_identity] on it, which keeps it reachable. *)
 let host_to_device ~src ~dst =
   let bytes = Bigarray.Array1.size_in_bytes src in
   match dst.mapped_ptr with
   | Some p ->
-      let src_ptr = Spoc_core.Memory.bigarray_void_ptr src in
+      let src_ptr = Spoc_core.Memory.borrow_bigarray_ptr src in
       let _ = memcpy p src_ptr (Unsigned.Size_t.of_int bytes) in
       ignore (Sys.opaque_identity src)
   | None ->
@@ -457,7 +457,7 @@ let host_to_device ~src ~dst =
         vkFreeMemory dst.device.Device.device staging_mem null
       in
       Fun.protect ~finally:free_staging (fun () ->
-          let src_ptr = Spoc_core.Memory.bigarray_void_ptr src in
+          let src_ptr = Spoc_core.Memory.borrow_bigarray_ptr src in
           let _ = memcpy staging_ptr src_ptr (Unsigned.Size_t.of_int bytes) in
           ignore (Sys.opaque_identity src) ;
 
@@ -478,7 +478,7 @@ let device_to_host ~src ~dst =
   let bytes = Bigarray.Array1.size_in_bytes dst in
   match src.mapped_ptr with
   | Some p ->
-      let dst_ptr = Spoc_core.Memory.bigarray_void_ptr dst in
+      let dst_ptr = Spoc_core.Memory.borrow_bigarray_ptr dst in
       let _ = memcpy dst_ptr p (Unsigned.Size_t.of_int bytes) in
       ignore (Sys.opaque_identity dst)
   | None ->
@@ -504,7 +504,7 @@ let device_to_host ~src ~dst =
                 (Unsigned.UInt32.of_int 1)
                 (addr region)) ;
 
-          let dst_ptr = Spoc_core.Memory.bigarray_void_ptr dst in
+          let dst_ptr = Spoc_core.Memory.borrow_bigarray_ptr dst in
           let _ = memcpy dst_ptr staging_ptr (Unsigned.Size_t.of_int bytes) in
           ignore (Sys.opaque_identity dst))
 

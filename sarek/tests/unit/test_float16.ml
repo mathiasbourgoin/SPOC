@@ -414,44 +414,40 @@ let test_interp_e2e_f32_sink () =
 (* 2e. GC-root canary for the f16 host pointer                        *)
 (* ------------------------------------------------------------------ *)
 
-(* [Spoc_core.Memory.bigarray_void_ptr] rests on ctypes INTERNALS that no public
-   API covers, and on a SEMANTIC property of them that a type signature cannot
-   express: the fat pointer it builds for a Float16 bigarray must keep that
-   bigarray GC-rooted for as long as the pointer is live, exactly as
-   [Ctypes.bigarray_start] does for every other kind.
+(* The f16 host pointer is built over [Ctypes_bigarray.unsafe_address] because
+   ctypes' kind GADT has no Float16 arm, and that pointer is UNMANAGED: unlike
+   [Ctypes.bigarray_start], it does not root the bigarray. An FFI call holding
+   only such a pointer can therefore see the bigarray freed mid-call.
+   [Spoc_core.Memory.with_bigarray_ptr] keeps the bigarray reachable until its
+   callback returns; every backend issues its FFI call inside that callback.
 
-   ctypes' kind GADT has no Float16 arm, so [bigarray_start] raises
-   Failure "Unsupported bigarray kind" and the f16 arm has to reconstruct the
-   pointer over the kind-independent [Ctypes_bigarray.unsafe_address]. The first
-   version of that arm used [Ctypes.ptr_of_raw_address], which is
-   [make_unmanaged] — it produced a correct ADDRESS and silently dropped the
-   root, which is a device->host write into possibly-freed memory. The fix
-   rebuilds ctypes' own shape,
-   [Fat.make ~managed:(Some (Obj.repr ba)) ~reftyp:Void addr].
-
-   If a future ctypes changes what [Fat.make]'s [managed] field does while
-   keeping its signature, nothing else in the tree notices: the code still
-   compiles and still produces the right address. This canary is what notices.
-
-   The ASYMMETRY is the whole claim, so both halves are asserted: managed must
-   survive a major GC, unmanaged must not. Without the negative half, a test
-   environment where finalisers simply never run would pass vacuously. *)
+   The property is asserted at the exact moment a transfer runs: a major GC
+   issued INSIDE the callback must not finalise the bigarray. Two controls keep
+   that assertion from passing vacuously: with no reference at all the
+   bigarray IS finalised, and the bare f16 pointer alone does NOT root it. *)
 
 let alloc_f16 () = Bigarray.Array1.create Bigarray.Float16 Bigarray.c_layout 64
 
-(* Each pointer is built in its own function so the bigarray cannot stay live in
-   a caller stack slot: the ONLY thing that can root it afterwards is the
-   returned pointer itself. *)
+let full_major_twice () =
+  Gc.full_major () ;
+  Gc.full_major ()
 
-let[@inline never] ptr_via_memory collected =
+(* Each bigarray is allocated in its own non-inlined function, and only the
+   callback's result leaves it, so nothing but the code under test can keep the
+   bigarray in a live stack slot during the GC. *)
+
+let[@inline never] collected_inside_scope create =
+  let collected = ref false in
+  let ba = create () in
+  Gc.finalise (fun _ -> collected := true) ba ;
+  Spoc_core.Memory.with_bigarray_ptr ba (fun _ptr ->
+      full_major_twice () ;
+      !collected)
+
+let[@inline never] f16_pointer_only collected =
   let ba = alloc_f16 () in
   Gc.finalise (fun _ -> collected := true) ba ;
-  Spoc_core.Memory.bigarray_void_ptr ba
-
-let[@inline never] ptr_unmanaged collected =
-  let ba = alloc_f16 () in
-  Gc.finalise (fun _ -> collected := true) ba ;
-  Ctypes.ptr_of_raw_address (Ctypes_bigarray.unsafe_address ba)
+  Spoc_core.Memory.borrow_bigarray_ptr ba
 
 let[@inline never] no_ptr_at_all collected =
   let ba = alloc_f16 () in
@@ -459,50 +455,36 @@ let[@inline never] no_ptr_at_all collected =
   Bigarray.Array1.dim ba
 
 (* Drop every OCaml reference to the bigarray, force collection, and report
-   whether it was finalised WHILE [keep] is still live — i.e. at the exact
-   moment a transfer would be handing the address to the FFI. *)
-let collected_with_live_pointer make =
+   whether it was finalised while [keep] is still live. *)
+let collected_with_live_value make =
   let collected = ref false in
   let keep = make collected in
-  Gc.full_major () ;
-  Gc.full_major () ;
+  full_major_twice () ;
   let verdict = !collected in
   ignore (Sys.opaque_identity keep) ;
   verdict
 
-let test_f16_pointer_roots_its_bigarray () =
-  (* Positive control: the finaliser mechanism really does fire here, so the
-     managed assertion below is not vacuous. *)
+let test_f16_scope_roots_its_bigarray () =
   Alcotest.(check bool)
-    "control: with no pointer held, the bigarray IS collected"
+    "control: with no reference held, the bigarray IS collected"
     true
-    (collected_with_live_pointer (fun c -> no_ptr_at_all c)) ;
-  (* The negative half: an unmanaged pointer does NOT root its bigarray. This is
-     the bug that shipped. *)
+    (collected_with_live_value (fun c -> no_ptr_at_all c)) ;
   Alcotest.(check bool)
-    "ptr_of_raw_address does NOT root the bigarray"
+    "control: the unmanaged f16 pointer alone does NOT root the bigarray"
     true
-    (collected_with_live_pointer (fun c -> ptr_unmanaged c)) ;
-  (* The property under test: the pointer Spoc_core hands to every backend DOES
-     root it. *)
+    (collected_with_live_value (fun c -> f16_pointer_only c)) ;
   Alcotest.(check bool)
-    "Memory.bigarray_void_ptr roots the f16 bigarray across a major GC"
+    "Memory.with_bigarray_ptr keeps the f16 bigarray alive across a major GC \
+     inside the callback"
     false
-    (collected_with_live_pointer (fun c -> ptr_via_memory c))
+    (collected_inside_scope alloc_f16)
 
-let[@inline never] ptr_via_memory_f32 collected =
-  let ba = Bigarray.Array1.create Bigarray.Float32 Bigarray.c_layout 64 in
-  Gc.finalise (fun _ -> collected := true) ba ;
-  Spoc_core.Memory.bigarray_void_ptr ba
-
-let test_non_f16_pointer_still_roots () =
-  (* The f16 arm must match the behaviour of the untouched [bigarray_start] path
-     it sits next to — that parity is the point of reconstructing ctypes' own
-     fat-pointer shape rather than inventing a new one. *)
+let test_non_f16_scope_roots_its_bigarray () =
   Alcotest.(check bool)
-    "Memory.bigarray_void_ptr roots an f32 bigarray too (unchanged path)"
+    "Memory.with_bigarray_ptr keeps an f32 bigarray alive too"
     false
-    (collected_with_live_pointer (fun c -> ptr_via_memory_f32 c))
+    (collected_inside_scope (fun () ->
+         Bigarray.Array1.create Bigarray.Float32 Bigarray.c_layout 64))
 
 let test_ctypes_still_lacks_a_float16_kind () =
   (* WHY the f16 arm exists at all. The day ctypes grows a Float16 arm this
@@ -514,7 +496,7 @@ let test_ctypes_still_lacks_a_float16_kind () =
   in
   Alcotest.(check bool)
     "ctypes has no Float16 bigarray kind (if this fails, simplify \
-     Memory.bigarray_void_ptr)"
+     Memory.borrow_bigarray_ptr)"
     true
     raised ;
   (* Contrast: the kinds ctypes does know still work, so the check is specific. *)
@@ -869,13 +851,13 @@ let () =
       ( "gc_roots",
         [
           Alcotest.test_case
-            "f16 host pointer roots its bigarray (managed vs unmanaged)"
+            "f16 bigarray stays alive inside with_bigarray_ptr"
             `Quick
-            test_f16_pointer_roots_its_bigarray;
+            test_f16_scope_roots_its_bigarray;
           Alcotest.test_case
-            "non-f16 pointer still roots"
+            "non-f16 bigarray stays alive inside with_bigarray_ptr"
             `Quick
-            test_non_f16_pointer_still_roots;
+            test_non_f16_scope_roots_its_bigarray;
           Alcotest.test_case
             "ctypes still lacks a Float16 kind"
             `Quick

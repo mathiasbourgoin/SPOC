@@ -139,31 +139,32 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
       else begin
         let state = get_state device.Opencl_api.Device.id in
         let size = Bigarray.Array1.dim ba in
-        (* Not Ctypes.bigarray_start: no Float16 arm (#57 slice 1 review MF2).
-           CL_MEM_USE_HOST_PTR keeps this address for the buffer's whole
-           lifetime, so the OWNING Vector.t (which holds [ba]) is what roots it
-           — the managed pointer only covers this call. *)
-        let host_ptr = Spoc_core.Memory.bigarray_void_ptr ba in
-        (* The runtime aliases the host pointer only when it meets
+        (* Not Ctypes.bigarray_start: no Float16 arm. CL_MEM_USE_HOST_PTR
+           keeps this address for the buffer's whole lifetime, so the OWNING
+           Vector.t (which holds [ba]) is what roots it; [with_bigarray_ptr]
+           roots [ba] only while the buffer is created.
+
+           The runtime aliases the host pointer only when it meets
            CL_DEVICE_MEM_BASE_ADDR_ALIGN; otherwise it keeps a private copy.
            Host access is synchronised by map/unmap either way, but an
            unaligned array gains nothing from USE_HOST_PTR, so it takes the
            ordinary buffer path. *)
-        if
-          not
-            (Opencl_api.Memory.host_ptr_usable
-               ~align_bytes:device.Opencl_api.Device.mem_base_addr_align
-               (Ctypes.raw_address_of_ptr host_ptr))
-        then None
-        else
-          let buf =
-            Opencl_api.Memory.alloc_with_host_ptr
-              state.context
-              size
-              kind
-              host_ptr
-          in
-          Some {buf; device_id = device.id}
+        Spoc_core.Memory.with_bigarray_ptr ba (fun host_ptr ->
+            if
+              not
+                (Opencl_api.Memory.host_ptr_usable
+                   ~align_bytes:device.Opencl_api.Device.mem_base_addr_align
+                   (Ctypes.raw_address_of_ptr host_ptr))
+            then None
+            else
+              let buf =
+                Opencl_api.Memory.alloc_with_host_ptr
+                  state.context
+                  size
+                  kind
+                  host_ptr
+              in
+              Some {buf; device_id = device.id})
       end
 
     (* Framework_sig: [true] means no transfers are needed. A USE_HOST_PTR

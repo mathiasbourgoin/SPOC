@@ -235,6 +235,14 @@
 
 ### Changed
 
+- `Spoc_core.Memory.bigarray_void_ptr` is replaced by the scoped
+  `Memory.with_bigarray_ptr ba (fun ptr -> ...)`, which keeps `ba` reachable
+  until the callback returns, and by `Memory.borrow_bigarray_ptr` for pointers
+  whose owner the caller keeps alive (OpenCL `CL_MEM_USE_HOST_PTR`, vector
+  host pointers). The f16 host pointer no longer rebuilds a managed ctypes
+  pointer with `Obj.repr`; `sarek/core` has no `Obj` left. Out-of-tree callers
+  of `bigarray_void_ptr` must move their FFI call into `with_bigarray_ptr`.
+
 - Intrinsics that no backend lowers soundly are refused at PPX time, with a
   located error. `warp_shuffle`, `warp_shuffle_down`, `warp_shuffle_up`,
   `warp_shuffle_xor`, `warp_vote_all`, `warp_vote_any`, `warp_ballot`,
