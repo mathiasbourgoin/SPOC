@@ -1942,6 +1942,16 @@
  (action
   (run %{dep:test_undeclared_variant_payload_record.exe})))
 
+; A domain waiting in a blocking device call (Device.synchronize) must not
+; stop the other domains' minor collections: the blocking driver bindings
+; release the runtime lock. One ~200 ms spin kernel per GPU device; CPU
+; devices are skipped. Built in the HIP-aware executables stanza below.
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_blocking_ffi_releases_lock.exe})))
+
 ; Device-only vectors, ranged/stream-ordered copies, pinned host memory,
 ; stream launches and events (specs/device-buffers-async-copy.md). The suite
 ; is a library so sarek-hip/test can run the same body on HIP devices.
@@ -1976,6 +1986,7 @@
 (executables
  (names
   test_int32_bitcasts
+  test_blocking_ffi_releases_lock
   test_lsr_unroll
   test_coopmat_hip_e2e
   test_launch_window
@@ -1986,6 +1997,7 @@
   test_matrix_optin)
  (modules
   test_int32_bitcasts
+  test_blocking_ffi_releases_lock
   test_lsr_unroll
   test_coopmat_hip_e2e
   test_launch_window
