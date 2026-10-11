@@ -190,16 +190,20 @@ fi
 
 # --------------------------------------------------------------------------
 section "NVRTC (CUDA-C -> PTX — host-side, no GPU required)"
-# Sarek reaches NVRTC by dlopen (sarek-cuda/Cuda_nvrtc.ml tries libnvrtc.so,
-# .so.12, .so.11), so assert exactly that: the library resolves AND dlopen
-# succeeds AND nvrtcVersion is callable. `ls` alone would pass on a library
-# whose own dependencies are missing.
+# Sarek reaches NVRTC by dlopen (sarek-cuda/Cuda_nvrtc.ml `nvrtc_candidates`
+# tries libnvrtc.so, .so.13, .so.12, .so.11), so assert exactly that: the
+# library resolves AND dlopen succeeds AND nvrtcVersion is callable. `ls` alone
+# would pass on a library whose own dependencies are missing. The list below is
+# the Linux subset of `nvrtc_candidates`, in the same order; the .dylib and .dll
+# names are omitted because this script only runs on the Linux CI image. Keep
+# the two in step when either changes.
 nvrtc_probe=$(mktemp -d)
 cat >"$nvrtc_probe/probe.c" <<'C'
 #include <dlfcn.h>
 #include <stdio.h>
 int main(void) {
-  const char *cands[] = {"libnvrtc.so", "libnvrtc.so.12", "libnvrtc.so.11", 0};
+  const char *cands[] = {"libnvrtc.so", "libnvrtc.so.13", "libnvrtc.so.12",
+                         "libnvrtc.so.11", 0};
   for (int i = 0; cands[i]; i++) {
     void *h = dlopen(cands[i], RTLD_LAZY);
     if (!h) continue;
