@@ -448,7 +448,7 @@ and exec_stmt state env stmt =
       exec_stmt state env (find_case cases)
   | SReturn _ -> () (* Return handled by exec_stmt_for_return *)
   | SBarrier -> Effect.perform Barrier
-  | SWarpBarrier -> Effect.perform Barrier
+  | SWarpBarrier -> Effect.perform Warp_barrier
   | SExpr e ->
       let _ = eval_expr state env e in
       ()
@@ -945,13 +945,14 @@ and exec_stmt_for_return state env stmt =
 let run_block env body block_idx block_dim grid_dim =
   let bx, by, bz = block_dim in
   let num_threads = bx * by * bz in
-  let waiting : (unit, unit) Effect.Deep.continuation option array =
+  (* A parked thread's continuation, and whether it waits on a block-wide
+     barrier (as opposed to a warp barrier). *)
+  let waiting : ((unit, unit) Effect.Deep.continuation * bool) option array =
     Array.make num_threads None
   in
-  let num_waiting = ref 0 in
   let num_completed = ref 0 in
 
-  let run_thread_with_barrier tid =
+  let start_thread tid =
     let tx = tid mod bx in
     let ty = tid / bx mod by in
     let tz = tid / (bx * by) in
@@ -969,31 +970,41 @@ let run_block env body block_idx block_dim grid_dim =
             | Barrier ->
                 Some
                   (fun (k : (a, unit) Effect.Deep.continuation) ->
-                    waiting.(tid) <- Some k ;
-                    incr num_waiting)
+                    waiting.(tid) <- Some (k, true))
+            | Warp_barrier ->
+                Some
+                  (fun (k : (a, unit) Effect.Deep.continuation) ->
+                    waiting.(tid) <- Some (k, false))
             | _ -> None);
       }
   in
 
-  (* The deep handler installed by [run_thread_with_barrier] persists across
-     [continue], so a resumed thread that reaches another barrier performs
-     [Barrier] to the SAME handler and a thread that finishes reaches the
-     original [retc]. Wrapping [continue] in a second [match_with] counted every
-     re-suspended thread as completed. *)
+  (* The deep handler installed by [start_thread] persists across [continue], so
+     a resumed thread that reaches another barrier performs the effect to the
+     SAME handler and a thread that finishes reaches the original [retc].
+     Wrapping [continue] in a second [match_with] counted every re-suspended
+     thread as completed. *)
   let resume_thread tid =
     match waiting.(tid) with
-    | Some k ->
+    | Some (k, _) ->
         waiting.(tid) <- None ;
         Effect.Deep.continue k ()
     | None -> ()
   in
 
-  (* A barrier releases only when EVERY thread of the block has arrived. After a
-     round of execution each thread is either waiting or finished, so a barrier
-     with waiting threads AND finished ones can never release: the finished
-     threads will not arrive. *)
+  (* A block-wide barrier releases only when EVERY thread of the block has
+     arrived. After a round of execution each thread is either parked or
+     finished, so a block barrier with parked threads AND finished ones can
+     never release: the finished threads will not arrive. Threads parked on a
+     warp barrier prove nothing about the rest of the block. *)
   let check_barrier_can_release () =
-    if !num_waiting > 0 && !num_completed > 0 then
+    let at_block_barrier =
+      Array.fold_left
+        (fun n w -> match w with Some (_, true) -> n + 1 | _ -> n)
+        0
+        waiting
+    in
+    if at_block_barrier > 0 && !num_completed > 0 then
       Interp_error.raise_error
         (BSP_deadlock
            {
@@ -1001,22 +1012,17 @@ let run_block env body block_idx block_dim grid_dim =
                Printf.sprintf
                  "%d of %d threads wait at a barrier that the %d finished \
                   threads never reach"
-                 !num_waiting
+                 at_block_barrier
                  num_threads
                  !num_completed;
            })
   in
 
-  (* Start all threads *)
   for tid = 0 to num_threads - 1 do
-    run_thread_with_barrier tid
+    start_thread tid
   done ;
-
   check_barrier_can_release () ;
-
-  (* Superstep loop *)
-  while !num_waiting > 0 do
-    num_waiting := 0 ;
+  while Array.exists Option.is_some waiting do
     for tid = 0 to num_threads - 1 do
       resume_thread tid
     done ;

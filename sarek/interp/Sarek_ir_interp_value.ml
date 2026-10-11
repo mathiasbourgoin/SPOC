@@ -24,6 +24,12 @@ type value = Sarek_value.value =
 
 type _ Effect.t += Barrier : unit Effect.t
 
+(** A warp-scope barrier. Released with the same superstep as {!Barrier} (the
+    interpreter does not model warps for barriers), but a thread parked on it is
+    not evidence of a block-wide deadlock: the rest of the block may legally
+    never reach a warp barrier. *)
+type _ Effect.t += Warp_barrier : unit Effect.t
+
 (** {1 Thread State} *)
 
 type thread_state = {
@@ -66,7 +72,12 @@ type env = {
           requires of the program: the operation is reached by every lane of the
           subgroup (dynamically uniform control flow), and its buffer, index and
           stride arguments are uniform across it. The leader's arguments stand
-          for the whole subgroup; they are not checked for uniformity. *)
+          for the whole subgroup; they are not checked for uniformity.
+
+          Lane writes that feed a cooperative-matrix load must be
+          barrier-synchronised first: the leader runs ahead of the other lanes
+          of its subgroup, so an unsynchronised write-then-load is a race on a
+          device too and is given no meaning here. *)
 }
 
 let create_env () =

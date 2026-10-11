@@ -104,8 +104,11 @@ let eval_gpu_index_intrinsic state name =
 (** Barrier synchronization intrinsics *)
 let eval_barrier_intrinsic name =
   match name with
-  | "block_barrier" | "warp_barrier" ->
+  | "block_barrier" ->
       Effect.perform Barrier ;
+      Some VUnit
+  | "warp_barrier" ->
+      Effect.perform Warp_barrier ;
       Some VUnit
   | _ -> None
 

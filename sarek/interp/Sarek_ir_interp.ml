@@ -431,19 +431,30 @@ let same_vector : type a b c d.
  fun x y ->
   x.Spoc_core.Vector.device_buffers == y.Spoc_core.Vector.device_buffers
 
-(** The value array already bound to [vec] among [writebacks], if any.
+(** The value array bound to [vec]: the one already bound among [writebacks] if
+    [vec] is a vector passed before, otherwise a fresh one from [to_array],
+    which is recorded in [writebacks].
 
     Two kernel parameters bound to the same vector must share ONE value array: a
     private copy each would make a write through one invisible to a read through
     the other, and the writebacks would then overwrite each other in an order
     that depends on the entry point. Binding by identity gives the semantics of
     the device, where both parameters are the same buffer. *)
-let find_bound_array (type a b) (writebacks : writeback list)
-    (vec : (a, b) Spoc_core.Vector.t) : value array option =
-  List.find_map
-    (fun (Writeback (bound, arr)) ->
-      if same_vector vec bound then Some arr else None)
-    writebacks
+let bind_vector (type a b) (writebacks : writeback list ref)
+    (vec : (a, b) Spoc_core.Vector.t)
+    ~(to_array : (a, b) Spoc_core.Vector.t -> value array) : value array =
+  let bound =
+    List.find_map
+      (fun (Writeback (other, arr)) ->
+        if same_vector vec other then Some arr else None)
+      !writebacks
+  in
+  match bound with
+  | Some arr -> arr
+  | None ->
+      let arr = to_array vec in
+      writebacks := Writeback (vec, arr) :: !writebacks ;
+      arr
 
 (* Tuple vector elements (L13) reach the interpreter as a [COMPOSITE_TYPE] whose
    [fields] descriptor list is empty but whose [to_bytes]/[of_bytes] marshal the
@@ -593,6 +604,40 @@ let array_to_exec_vector (module V : Spoc_framework.Typed_value.EXEC_VECTOR)
         | None -> ())
   done
 
+(** Whether two [EXEC_VECTOR] wrappers stand for the same vector.
+
+    Their [underlying] values can only be compared once their types are known to
+    be equal, which the type ids witness. [Execute.exec_arg_of_vector] gives
+    every wrapper of a [Vector.t] the SAME stable [underlying_type_id] (per
+    element kind) and [underlying = v], so two arguments that are one vector
+    compare physically equal. A wrapper that mints a fresh id per instance (the
+    interpreter plugin's own buffer wrapper) never matches: it wraps a device
+    buffer, not a host vector, and no launch built from host vectors reaches it.
+*)
+let same_exec_vector (module V : Spoc_framework.Typed_value.EXEC_VECTOR)
+    (module W : Spoc_framework.Typed_value.EXEC_VECTOR) : bool =
+  match
+    Sarek_ir_types.Type_id.equal V.underlying_type_id W.underlying_type_id
+  with
+  | Some Sarek_ir_types.Type_id.Refl -> V.underlying == W.underlying
+  | None -> false
+
+(** {!bind_vector} for an [EXEC_VECTOR] argument. *)
+let bind_exec_vector (writebacks : exec_writeback list ref)
+    (vec : (module Spoc_framework.Typed_value.EXEC_VECTOR)) : value array =
+  let bound =
+    List.find_map
+      (fun (Exec_writeback (other, arr)) ->
+        if same_exec_vector vec other then Some arr else None)
+      !writebacks
+  in
+  match bound with
+  | Some arr -> arr
+  | None ->
+      let arr = exec_vector_to_array vec in
+      writebacks := Exec_writeback (vec, arr) :: !writebacks ;
+      arr
+
 let args_from_exec_args (k : kernel)
     (exec_args : Spoc_framework.Framework_sig.exec_arg list) :
     (string * arg) list * exec_writeback list =
@@ -612,8 +657,7 @@ let args_from_exec_args (k : kernel)
                 incr idx ;
                 match karg with
                 | Spoc_framework.Framework_sig.EA_Vec vec ->
-                    let arr = exec_vector_to_array vec in
-                    writebacks := Exec_writeback (vec, arr) :: !writebacks ;
+                    let arr = bind_exec_vector writebacks vec in
                     Some (v.var_name, ArgArray arr)
                 | _ ->
                     Interp_error.raise_error
@@ -681,12 +725,7 @@ let args_from_kernel_args (k : kernel) (kargs : Spoc_core.Kernel_arg.t list) :
               match karg with
               | Spoc_core.Kernel_arg.Vec vec ->
                   let arr =
-                    match find_bound_array !writebacks vec with
-                    | Some shared -> shared
-                    | None ->
-                        let arr = vector_to_array vec in
-                        writebacks := Writeback (vec, arr) :: !writebacks ;
-                        arr
+                    bind_vector writebacks vec ~to_array:vector_to_array
                   in
                   Some (v.var_name, ArgArray arr)
               | _ ->

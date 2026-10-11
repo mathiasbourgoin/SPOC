@@ -71,6 +71,7 @@
   sarek_stdlib
   sarek
   sarek.interp
+  sarek.interpreter
   sarek.gemm
   spoc_core
   alcotest

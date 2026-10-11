@@ -52,11 +52,17 @@ let frag_a, frag_b, frag_c, _ = Sarek_coopmat.fragments_of_config cfg
     [thread_idx_x / 32]), the accumulator loaded from and stored to the SAME
     array [d]. Each subgroup owns its own tile, so the kernel is race-free on a
     device. *)
-let in_place_ir =
+let in_place_ir ~subgroups_per_block =
   let a = var 0 "a" (TVec TUint8)
   and b = var 1 "b" (TVec TUint8)
   and d = var 2 "d" (TVec TInt32) in
-  let at = EBinop (Mul, EBinop (Div, tid, i32 32), i32 tile) in
+  let subgroup =
+    EBinop
+      ( Add,
+        EBinop (Mul, EIntrinsic ([], "block_idx_x", []), i32 subgroups_per_block),
+        EBinop (Div, tid, i32 32) )
+  in
+  let at = EBinop (Mul, subgroup, i32 tile) in
   let cm op = SCoopmat op in
   let load name frag src =
     cm (CM_load {dst = name; frag; src; index = at; stride = i32 mnk})
@@ -97,22 +103,34 @@ let d_values arr =
 let check_all_equal name expected arr =
   check (array int) name (Array.make (Array.length arr) expected) (d_values arr)
 
-(* A = B = 1, so one tile adds exactly 16 to each element of D. *)
-let test_in_place ~block ~d0 () =
-  let subgroups = max 1 ((block + 31) / 32) in
-  let n = subgroups * tile in
+let with_parallel_mode mode f =
+  let saved = !Interp.parallel_mode in
+  Interp.parallel_mode := mode ;
+  Fun.protect ~finally:(fun () -> Interp.parallel_mode := saved) f
+
+(* A = B = 1, so one tile adds exactly 16 to each element of D. Every subgroup
+   of every block owns one tile. *)
+let test_in_place ?(grid = 1) ?(parallel = true) ~block ~d0 () =
+  let subgroups_per_block = max 1 ((block + 31) / 32) in
+  let n = grid * subgroups_per_block * tile in
   let d = int_array n (Int32.of_int d0) in
-  Interp.run_kernel
-    in_place_ir
-    ~block:(block, 1, 1)
-    ~grid:(1, 1, 1)
-    [
-      ("a", Interp.ArgArray (int_array n 1l));
-      ("b", Interp.ArgArray (int_array n 1l));
-      ("d", Interp.ArgArray d);
-    ] ;
+  with_parallel_mode parallel (fun () ->
+      Interp.run_kernel
+        (in_place_ir ~subgroups_per_block)
+        ~block:(block, 1, 1)
+        ~grid:(grid, 1, 1)
+        [
+          ("a", Interp.ArgArray (int_array n 1l));
+          ("b", Interp.ArgArray (int_array n 1l));
+          ("d", Interp.ArgArray d);
+        ]) ;
   check_all_equal
-    (Printf.sprintf "block %d, d0 %d: d = 16 + d0" block d0)
+    (Printf.sprintf
+       "block %d, grid %d, parallel %b, d0 %d: d = 16 + d0"
+       block
+       grid
+       parallel
+       d0)
     (16 + d0)
     d
 
@@ -193,6 +211,30 @@ let test_alias_run_interpreter_vectors ir () =
     ~parallel:false ;
   check (list int32) "x == y: y + 7 = 8" [8l; 8l; 8l; 8l] (read4 v)
 
+let interpreter_device =
+  lazy
+    (Sarek_interpreter.Interpreter_plugin.init () ;
+     match
+       Array.find_opt
+         (fun d -> d.Spoc_core.Device.framework = "Interpreter")
+         (Spoc_core.Device.init ())
+     with
+     | Some d -> d
+     | None -> Alcotest.fail "no Interpreter device")
+
+(* The launch path of an Interpreter device: Execute.run_vectors, through the
+   interpreter plugin and run_kernel_with_exec_args. *)
+let test_alias_run_vectors_interpreter ir () =
+  let v = ones () in
+  Execute.run_vectors
+    ~device:(Lazy.force interpreter_device)
+    ~ir
+    ~args:[Execute.Vec v; Execute.Vec v]
+    ~block:(Execute.dims1d 4)
+    ~grid:(Execute.dims1d 1)
+    () ;
+  check (list int32) "x == y: y + 7 = 8" [8l; 8l; 8l; 8l] (read4 v)
+
 (* Distinct vectors must stay distinct: dedup is by identity, not by contents. *)
 let test_distinct_vectors_stay_distinct () =
   let x = ones () and y = ones () in
@@ -230,6 +272,17 @@ let test_divergent_barrier_deadlocks () =
   | () -> Alcotest.fail "a divergent barrier must be reported as a deadlock"
   | exception Interp_error.Interpreter_error (Interp_error.BSP_deadlock _) -> ()
 
+(* Warp 0 reaches a warp barrier that warp 1 never does: legal, not a block-wide
+   deadlock. *)
+let test_warp_barrier_not_a_deadlock () =
+  Interp.run_kernel
+    (barrier_ir
+       "interp_oracle_warp"
+       (SIf (EBinop (Lt, tid, i32 32), SWarpBarrier, None)))
+    ~block:(64, 1, 1)
+    ~grid:(1, 1, 1)
+    []
+
 let () =
   run
     "Interp_oracle"
@@ -240,6 +293,26 @@ let () =
           test_case "block 32" `Quick (test_in_place ~block:32 ~d0:0);
           test_case "block 64" `Quick (test_in_place ~block:64 ~d0:0);
           test_case "block 64, d0 = 5" `Quick (test_in_place ~block:64 ~d0:5);
+          test_case
+            "block 48 (partial subgroup)"
+            `Quick
+            (test_in_place ~block:48 ~d0:0);
+          test_case
+            "block 33 (partial subgroup)"
+            `Quick
+            (test_in_place ~block:33 ~d0:0);
+          test_case
+            "grid of 3 blocks of 64"
+            `Quick
+            (test_in_place ~grid:3 ~block:64 ~d0:0);
+          test_case
+            "sequential, block 64"
+            `Quick
+            (test_in_place ~parallel:false ~block:64 ~d0:0);
+          test_case
+            "sequential, grid of 3 blocks of 48"
+            `Quick
+            (test_in_place ~parallel:false ~grid:3 ~block:48 ~d0:5);
           test_case "Sarek_gemm.Coopmat c == d" `Quick test_gemm_c_is_d;
         ] );
       ( "aliased_arguments",
@@ -261,6 +334,14 @@ let () =
             `Quick
             (test_alias_run_interpreter_vectors alias_ir_written_last);
           test_case
+            "run_vectors on Interpreter, written first"
+            `Quick
+            (test_alias_run_vectors_interpreter alias_ir);
+          test_case
+            "run_vectors on Interpreter, written last"
+            `Quick
+            (test_alias_run_vectors_interpreter alias_ir_written_last);
+          test_case
             "distinct vectors stay distinct"
             `Quick
             test_distinct_vectors_stay_distinct;
@@ -268,6 +349,10 @@ let () =
       ( "bsp_deadlock",
         [
           test_case "successive barriers" `Quick test_successive_barriers_pass;
+          test_case
+            "warp barrier is not a deadlock"
+            `Quick
+            test_warp_barrier_not_a_deadlock;
           test_case "divergent barrier" `Quick test_divergent_barrier_deadlocks;
         ] );
     ]

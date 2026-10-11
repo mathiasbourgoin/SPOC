@@ -1755,13 +1755,10 @@ let run_interpreter_vectors ~(ir : Sarek_ir_types.kernel)
         | Vec v ->
             (* A vector passed twice is ONE value array (R-63). *)
             let arr =
-              match Sarek_ir_interp.find_bound_array !writebacks v with
-              | Some shared -> shared
-              | None ->
-                  let arr = vector_to_interp_array v in
-                  writebacks :=
-                    Sarek_ir_interp.Writeback (v, arr) :: !writebacks ;
-                  arr
+              Sarek_ir_interp.bind_vector
+                writebacks
+                v
+                ~to_array:vector_to_interp_array
             in
             (name, Sarek_ir_interp.ArgArray arr)
         | Int n ->
