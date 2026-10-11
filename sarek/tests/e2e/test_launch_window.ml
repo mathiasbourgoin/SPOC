@@ -312,8 +312,24 @@ let run_device (dev : Device.t) =
   let defers = Execute.Window.defers_device dev in
   let scenario label f ~fused_launches =
     let off, _ = with_window false (fun () -> issued_by (fun () -> f dev)) in
+    let off', _ = with_window false (fun () -> issued_by (fun () -> f dev)) in
     let on, issued = issued_by (fun () -> f dev) in
-    check dev (label ^ " bit-identical") (on = off) ;
+    (* A device whose results already differ between two runs WITHOUT the
+       window (seen on the Intel oneAPI CPU OpenCL runtime in CI, and on the
+       7950X iGPU in the bench) says nothing about the window: reported, not
+       failed. Such devices must not be ones that defer. *)
+    if off <> off' then begin
+      Printf.printf
+        "  %-11s %-34s %-24s SKIP (nondeterministic without the window)\n%!"
+        dev.Device.framework
+        dev.Device.name
+        (label ^ " bit-identical") ;
+      if defers then
+        failures :=
+          (dev.Device.framework ^ " " ^ label ^ " nondeterministic")
+          :: !failures
+    end
+    else check dev (label ^ " bit-identical") (on = off) ;
     if defers then
       check
         dev
