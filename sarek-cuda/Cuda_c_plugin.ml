@@ -27,6 +27,24 @@ module Backend : Framework_sig.BACKEND = struct
 
   let execution_model = Framework_sig.JIT
 
+  (* Only this backend lowers [SCoopmat] (nvcuda::wmma, {!Cuda_coopmat}); the
+     PTX backend refuses it, so it keeps the base's "not probed". *)
+  module Device = struct
+    include Device
+
+    let capabilities (d : t) : Framework_sig.capabilities =
+      let caps = capabilities d in
+      {
+        caps with
+        Framework_sig.coopmat =
+          Some
+            (Cuda_coopmat.support
+               ~device_name:(name d)
+               ~compute_capability:caps.Framework_sig.compute_capability
+               ~warp_size:caps.Framework_sig.warp_size);
+      }
+  end
+
   (* Codegen never legitimately declines a kernel by returning [None]: it either
      produces source or raises a located
      [Backend_error (Codegen {backend = "CUDA/C"; _})] naming the offending IR

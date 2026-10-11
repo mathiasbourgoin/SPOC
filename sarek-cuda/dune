@@ -24,6 +24,7 @@
   Cuda_bindings
   Cuda_nvrtc
   Cuda_api
+  Cuda_coopmat
   Cuda_plugin_base
   Cuda_shared
   Cuda_ptx_plugin

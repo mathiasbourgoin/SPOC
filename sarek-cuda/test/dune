@@ -157,3 +157,8 @@
  (name test_cuda_free_keeps_current)
  (modules test_cuda_free_keeps_current)
  (libraries sarek_cuda))
+
+(test
+ (name test_cuda_coopmat_probe)
+ (modules test_cuda_coopmat_probe)
+ (libraries sarek_cuda spoc.ir alcotest))

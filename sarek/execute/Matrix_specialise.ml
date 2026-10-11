@@ -265,12 +265,14 @@ let verdict_ok = function
 (* The frameworks the rewrite is lowered and measured on, and what each one
    lowers: HIP gfx11 (32-wide waves) every lowering; Vulkan (RADV, 64-wide
    subgroups) the integer byte planes only, because GLSL lowers no float
-   cooperative-matrix component; the interpreter every lowering. *)
-let rewrite_backends = ["HIP"; "Vulkan"; "Interpreter"]
+   cooperative-matrix component; CUDA/C (nvcuda::wmma, 32-wide warps) the
+   integer byte planes only, because its bf16-from-float32 arm is an #error and
+   its f16 path is unmeasured; the interpreter every lowering. *)
+let rewrite_backends = ["HIP"; "Vulkan"; "CUDA/C"; "Interpreter"]
 
 let lowers_on (device : Device.t) lowering =
   match device.framework with
-  | "Vulkan" -> lowering = Rw.Int32_byte_planes
+  | "Vulkan" | "CUDA/C" -> lowering = Rw.Int32_byte_planes
   | fw -> List.mem fw rewrite_backends
 
 (* Lanes per subgroup the templates are laid out for: the device's own width
@@ -353,7 +355,7 @@ let variant_for plan lowering ~subgroup (launch : Sarek_ir_eval_int.launch)
    stays the independent oracle (and the rewrite is slower there). *)
 let device_possible (device : Device.t) ~explicit ~stream =
   match device.framework with
-  | "HIP" | "Vulkan" -> Ok ()
+  | "HIP" | "Vulkan" | "CUDA/C" -> Ok ()
   | "Interpreter" when explicit && not stream -> Ok ()
   | "Interpreter" when explicit -> Error "a stream launch on the interpreter"
   | "Interpreter" ->

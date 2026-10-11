@@ -2008,6 +2008,7 @@
   test_matrix_rewrite_float
   test_matrix_int64_index
   test_matrix_subgroup
+  test_matrix_cuda_compile
   test_matrix_dynamic
   test_matrix_col_major
   test_matrix_optin)
@@ -2023,6 +2024,7 @@
   test_matrix_rewrite_float
   test_matrix_int64_index
   test_matrix_subgroup
+  test_matrix_cuda_compile
   test_matrix_dynamic
   test_matrix_col_major
   test_matrix_optin
@@ -2324,3 +2326,11 @@
  (alias runtest)
  (action
   (run %{dep:test_matrix_subgroup.exe})))
+
+; The CUDA/C rewrite is compiler-output evidence: generated wmma source through
+; NVRTC (sm_80). Skips without libnvrtc and a CUDA include directory.
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_matrix_cuda_compile.exe})))
