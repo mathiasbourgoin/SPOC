@@ -25,7 +25,7 @@ let to_sorted_list t =
 
 let describe_indices idxs = String.concat ", " (List.map string_of_int idxs)
 
-let plural n = if n = 1 then "" else "s"
+let index_word n = if n = 1 then "index" else "indices"
 
 let validate_and_extract t ~expected_count =
   if expected_count < 0 then
@@ -55,17 +55,17 @@ let validate_and_extract t ~expected_count =
     | [], extra ->
         Error
           (Printf.sprintf
-             "unexpected index%s: [%s]; expected contiguous 0..%d"
-             (plural (List.length extra))
+             "unexpected %s: [%s]; expected contiguous 0..%d"
+             (index_word (List.length extra))
              (describe_indices extra)
              (expected_count - 1))
     | missing, extra ->
         Error
           (Printf.sprintf
-             "missing indices: [%s]; unexpected index%s: [%s]; expected %d \
-              args, got %d"
+             "missing indices: [%s]; unexpected %s: [%s]; expected %d args, \
+              got %d"
              (describe_indices missing)
-             (plural (List.length extra))
+             (index_word (List.length extra))
              (describe_indices extra)
              expected_count
              (Hashtbl.length t.slots))
