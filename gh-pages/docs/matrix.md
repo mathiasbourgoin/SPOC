@@ -10,7 +10,7 @@ This page shows how a matrix product (GEMM) in a Sarek program ends up on a GPU'
 | Path | You write | Float results change only after |
 |---|---|---|
 | [Automatic rewrite](#automatic-rewrite) | an ordinary GEMM kernel, launched with `Execute.run_vectors` | the accuracy opt-ins and `accept_automatic_float_rewrite` |
-| [`Sarek_matrix.run`](#explicit-entry-points) | the same kernel, launched with this drop-in | the accuracy opt-ins |
+| [`Sarek_matrix.run`](#explicit-entry-points) | the same kernel, launched with this drop-in | the accuracy opt-ins (so does `Execute.run_vectors_outcome ~explicit:true`) |
 | [`Sarek_gemm.Coopmat`](#explicit-entry-points) | nothing: a ready-made float16 GEMM | `accept_relaxed_accumulation` |
 
 The `int32` rewrite is bit-identical to the original kernel and needs no opt-in, so it is the only one on by default.
@@ -21,16 +21,17 @@ The `int32` rewrite is bit-identical to the original kernel and needs no opt-in,
 |---|---|
 | HIP, gfx11 (RDNA3) with 32-wide waves | executes: `float16`, `bfloat16` (float32 accumulator), 8-bit integers (`int32` accumulator) |
 | HIP, any other device (gfx10, gfx12, CDNA, the gfx1036 iGPU) | refused with a message naming the rule |
-| CUDA (PTX and CUDA/C) | code generation only (`nvcuda::wmma`, sm_70+ for float16, sm_72+ for 8-bit); never launched, because the backend reports no matrix-unit probe |
+| CUDA/C | the generator emits `nvcuda::wmma` (sm_70+ for float16, sm_72+ for 8-bit), but the code is never launched, because the backend reports no matrix-unit probe |
 | Vulkan | integer configurations only, when the device advertises them; the automatic rewrite does not use them |
-| Metal, OpenCL, WGSL, PTX | refuse the statements |
+| Metal, OpenCL, WGSL, CUDA/PTX | refuse the statements |
+| Native | not a rewrite backend: the automatic rewrite declines it |
 | Interpreter | executes, as the reference implementation |
 
-Sources: `Hip_coopmat.ml:43-54` (configurations), `Hip_coopmat.ml:57-58` (gfx11 and wave32 rule), `Cuda_plugin_base.ml:75` (`coopmat = None`), `Sarek_ir_metal.ml:779`, `Sarek_ir_opencl.ml:611`, `Sarek_ir_wgsl.ml:1194`, `Sarek_ir_ptx_stmt.ml:254` (refusals), `Sarek_ir_glsl.ml:1383` (Vulkan lowering). The CUDA lowering has been compiled but never run on hardware; the HIP lowering is validated on an RX 7900 XTX (gfx1100) in [`specs/coopmat-hip-wmma.md`](https://github.com/mathiasbourgoin/Sarek/blob/main/specs/coopmat-hip-wmma.md). Per-backend defaults of the HIP plugin are in the [sarek-hip README](https://github.com/mathiasbourgoin/Sarek/blob/main/sarek-hip/README.md).
+Sources: `Hip_coopmat.ml:43-54` (configurations), `Hip_coopmat.ml:57-58` (gfx11 and wave32 rule), `Cuda_plugin_base.ml:75` (`coopmat = None`), `Sarek_ir_metal.ml:779`, `Sarek_ir_opencl.ml:611`, `Sarek_ir_wgsl.ml:1194`, `Sarek_ir_ptx_stmt.ml:254` (refusals), `Sarek_ir_glsl.ml:1383` (Vulkan lowering), `Sarek_ir_cuda.ml:569` (CUDA/C), `Matrix_specialise.ml:285-292` (Native). The CUDA lowering has been compiled but never run on hardware; the HIP lowering is validated on an RX 7900 XTX (gfx1100) in [`specs/coopmat-hip-wmma.md`](https://github.com/mathiasbourgoin/Sarek/blob/main/specs/coopmat-hip-wmma.md). Per-backend defaults of the HIP plugin are in the [sarek-hip README](https://github.com/mathiasbourgoin/Sarek/blob/main/sarek-hip/README.md).
 
 ## Compile-time advice
 
-The PPX recognises a GEMM loop nest in a `[%kernel ...]` and reports it as an OCaml alert named `sarek_matrix`. It prints at the `for` loop, does not fail the build, and changes no generated code. For the naive kernel of the [matrix multiplication example](../examples/matrix_mul.html) it prints this on current `main`:
+The PPX recognises a GEMM loop nest in a `[%kernel ...]` and reports it as an OCaml alert named `sarek_matrix`. It prints at the `for` loop, does not fail the build, and changes no generated code. For the naive kernel of the [matrix multiplication example](../examples/matrix_mul.html) it prints:
 
 ```
 Alert sarek_matrix: Sarek_advice.matrix_product
@@ -51,7 +52,7 @@ Sarek: kernel 'gemm' contains a matrix product (GEMM) that matrix units could co
   Silence with [@alert "-sarek_matrix"] on the kernel expression or its binding.
 ```
 
-The `accuracy` line names the opt-ins the kernel would need, and the next line says what `Execute.run_vectors` does with the nest. The alert is emitted only when the element types have a matrix-unit configuration (see [Which kernels are rewritten](#which-kernels-are-rewritten)); a loop that looks like a GEMM but is not (a dot product, a triangular bound, a tiled kernel) gets no advice. A kernel that contains a `[%native]` block is not analysed. Source: `Sarek_matrix_alert.ml:1-30`.
+The `accuracy` line names the opt-ins the kernel would need, and the next line says what `Execute.run_vectors` does with the nest. The alert is emitted only when the element types have a matrix-unit configuration (see [Which kernels are rewritten](#which-kernels-are-rewritten)); a loop that looks like a GEMM but is not (a dot product, a triangular bound, a tiled kernel) gets no advice. A kernel that contains a `[%native]` block, in its body or a helper, is not analysed. Sources: `Sarek_matrix_alert.ml:1-30`, `:159-160` and `:185-189` (`[%native]`).
 
 Silence it with the standard OCaml alert controls:
 
@@ -93,7 +94,7 @@ The attribute also works on the kernel expression, as `([%kernel ...] [@alert "-
 | `exact` | rewritten, bit-identical | original |
 | `auto` (default) | rewritten, bit-identical | rewritten after the opt-ins below |
 
-Accepted values of the variable, case-insensitively and ignoring surrounding spaces: `off`, `0`, `false`, `no`; `exact`; `auto`, `on`, `1`, `true`, `yes`. Unset or empty means `auto`; any other value prints one warning on stderr and means `auto` (`Matrix_specialise.ml:30-49` on the branch of [#440](https://github.com/mathiasbourgoin/Sarek/pull/440)). Before that change only the exact strings `off` and `exact` were recognised and every other value, including `0`, silently meant `auto` (`Matrix_specialise.ml:28-32`).
+Accepted values of the variable, case-insensitively and ignoring surrounding spaces: `off`, `0`, `false`, `no`; `exact`; `auto`, `on`, `1`, `true`, `yes`. Unset or empty means `auto`; any other value prints one warning on stderr and means `auto` (`parse_mode` in `Matrix_specialise.ml`). A value such as `0` or `OFF` therefore switches the rewrite off.
 
 ```ocaml
 (* Disable the rewrite for the rest of the process. *)
@@ -106,7 +107,7 @@ The mode also applies to `Sarek_matrix.run`: `Off` never rewrites and `Exact` re
 
 A kernel qualifies when all of these hold; otherwise the original runs and the reason is reported (see [Reporting](#reporting-and-cache)).
 
-- The kernel body is one GEMM nest: `acc := acc + A[...] * B[...]` over a `for` loop with bounds that are the same for every thread, operands read from global vectors, and a single store to `C` (optionally with an epilogue such as `alpha * acc + beta * C[...]`). The kernel writes nothing else and has exactly one such nest.
+- The kernel body is one GEMM nest: `acc := acc + A[...] * B[...]` over a `for` loop with bounds that are the same for every thread, operands read from global vectors, and a single store to `C` (optionally with an epilogue such as `alpha * acc + beta * C[...]`). The kernel writes nothing else (no other array write, no atomics) and has exactly one such nest (`only_write_is`, `Matrix_specialise.ml:93-112`).
 - Row, column and at most one batch index are affine in the loop variables and thread indices; each operand has a unit stride in one dimension (row-major or column-major). Guards are conjunctions of comparisons with a bound that is the same for every thread.
 - No bound, initial value or epilogue reads `block_dim_*` or `grid_dim_*`, and no index involves `int64`.
 - The element types have a configuration, below.
@@ -119,7 +120,7 @@ A kernel qualifies when all of these hold; otherwise the original runs and the r
 | `float32` | `float32` | operands are first rounded to `float16`, `bfloat16`, or a three-term `bfloat16` split; a larger deviation than the previous row |
 | `int64`, `float64`, mixed | | not rewritten |
 
-Sources: element cases `Sarek_matrix_advice.ml:43-48`; preconditions and the full list of rejected shapes in [`specs/matrix-pattern-advice.md`](https://github.com/mathiasbourgoin/Sarek/blob/main/specs/matrix-pattern-advice.md) and [`specs/matrix-pattern-rewrite.md`](https://github.com/mathiasbourgoin/Sarek/blob/main/specs/matrix-pattern-rewrite.md); launch-dimension check `Sarek_matrix_scheme.ml:294`; backend rule `Matrix_specialise.ml:229-241`.
+Sources: element cases `Sarek_matrix_advice.ml:43-48`; preconditions and the full list of rejected shapes in [`specs/matrix-pattern-advice.md`](https://github.com/mathiasbourgoin/Sarek/blob/main/specs/matrix-pattern-advice.md) and [`specs/matrix-pattern-rewrite.md`](https://github.com/mathiasbourgoin/Sarek/blob/main/specs/matrix-pattern-rewrite.md); bounds, initial value or epilogue reading `block_dim_*`/`grid_dim_*` (`uses_launch_dims`, `Sarek_matrix_scheme.ml:294`); grid size against `max_grid_dims` (`fits_device`, `Matrix_specialise.ml:249-260`); backend rule `Matrix_specialise.ml:229-241`.
 
 An exception while analysing the kernel gives the original kernel, never a failed launch (`Matrix_specialise.ml:141-142` for the analysis, `:362-366` for building the rewritten kernel).
 
@@ -129,7 +130,7 @@ At each launch the region the original launch covers is computed from the scalar
 
 | Class | When | Behaviour |
 |---|---|---|
-| direct | `float16` operands, row-major A, B and C, `float32` output stored as is, accumulator starting at zero, a region of whole 32x32 tiles, a reduction length divisible by 16 | each wave loads fragments straight from global memory |
+| direct | `float16` operands, row-major A, B and C, `float32` output stored as is with no epilogue, accumulator starting at zero, no quotient (`t / d`) mapping, a region of whole 32x32 tiles, a reduction length divisible by 16 (`Sarek_matrix_direct.ml:40-52`) | each wave loads fragments straight from global memory |
 | staged | everything else the rewrite accepts | tiles are staged through shared memory, with zero fill, so any size, layout, offset or batch stride works |
 
 ### Accuracy opt-ins
@@ -142,12 +143,10 @@ A float rewrite changes results, so the program must say it understands how. All
 | `Sarek_coopmat.accept_operand_rounding ~precision ~reason` | rounding float32 operands to `Operands_f16`, `Operands_bf16` or `Operands_bf16x3`; each precision is accepted separately | a `float32` product, for the chosen precision |
 | `Sarek_coopmat.accept_automatic_float_rewrite ~reason` | that `Execute.run_vectors` applies the accepted deviations to the program's own float kernels, unprompted | the automatic path only |
 
-`accept_automatic_float_rewrite` exists after [#440](https://github.com/mathiasbourgoin/Sarek/pull/440) (`Sarek_coopmat.mli`, section "Automatic float rewrite"). With it, the three calls together enable the automatic float rewrite of a `float32` kernel:
+The three calls together enable the automatic float rewrite of a `float32` kernel (`Sarek_coopmat.mli`, section "Automatic float rewrite"):
 
 <!-- snippet: skip -->
 ```ocaml
-(* Skipped by the snippet check: accept_automatic_float_rewrite is not in the
-   library until #440 is merged. *)
 let () =
   Sarek_coopmat.accept_relaxed_accumulation
     ~reason:"GEMM tolerance checked against the gamma_K bound" ;
@@ -158,9 +157,20 @@ let () =
     ~reason:"let Execute rewrite the model's float GEMMs"
 ```
 
-Before #440 the first two calls alone enabled the automatic rewrite; since then they admit matrix-unit configurations only for code that asks for them (`Sarek_gemm.Coopmat`, `Sarek_matrix.run`). Without the new call a float launch runs the original kernel and the report names the missing call (`Matrix_specialise.ml:228-235`, `:245-250` on the branch of that PR). The `int32` rewrite is unchanged by it.
+The two accuracy opt-ins alone admit matrix-unit configurations for code that asks for them (`Sarek_gemm.Coopmat`, `Sarek_matrix.run`); they do not enable the automatic rewrite. Without `accept_automatic_float_rewrite`, a float launch through `Execute.run_vectors` runs the original kernel and the report names the missing call (`automatic_float_optin` in `Matrix_specialise.ml`). The `int32` rewrite needs none of them.
 
 Precision of a `float32` product: if the program asks for one (`~precision` on `Sarek_matrix.run` or `Execute.run_vectors_outcome`), that precision must have been accepted. Otherwise `float16` is used when accepted, else `bfloat16`. The `bfloat16x3` split reaches near-float32 accuracy but was measured no faster than the scalar kernel, so it is used only on request (`Matrix_specialise.ml:183-205`). Bounds measured on gfx1100 for each precision are in the Results of [`specs/matrix-pattern-rewrite.md`](https://github.com/mathiasbourgoin/Sarek/blob/main/specs/matrix-pattern-rewrite.md); they assume finite operands within the narrower type's range (`float16` overflows above 65504).
+
+The bound each configuration is tested against, in units of `sum(abs(a*b))` over the reduction, with `gamma_K = K*u / (1 - K*u)`, `u = 2^-24` and `K` the number of products added:
+
+| Operands and precision | Error bound | Measured max error on gfx1100, as a multiple of `gamma_K` |
+|---|---|---|
+| `float16` operands | `gamma_K` | 0.010 to 0.028 |
+| `float32` rounded to `Operands_f16` | `2*u16 + u16^2 + gamma_K`, `u16 = 2^-11` | 0.77 to 15.8 |
+| `float32` rounded to `Operands_bf16` | `2*ub + ub^2 + gamma_K`, `ub = 2^-8` | 6.0 to 114 |
+| `float32` as `Operands_bf16x3` | `2^-24 + gamma_6K` | 0.04 to 0.15 |
+
+The measurements are from [`specs/matrix-pattern-rewrite.md`](https://github.com/mathiasbourgoin/Sarek/blob/main/specs/matrix-pattern-rewrite.md), Results (RX 7900 XTX, 2026-10-11; shapes 64x64x128, 100x37x129, 256x256x1024; operands uniform in [-1, 1)). A ratio above 1 for the rounded precisions is expected: the operand rounding is a larger error than `gamma_K` and is covered by the bound of its own row. Only the first row is an accumulation-order error alone; `gamma_K` is defined in `docs/design/f16-relaxed-accuracy.md` section 5.2.
 
 ### The interpreter
 
@@ -191,7 +201,7 @@ The analysis result and the rewritten kernels are cached per kernel IR (by physi
 
 ## Explicit entry points
 
-`Sarek_matrix.run` takes the `device`, `ir`, `args`, `block` and `grid` of `Execute.run_vectors` plus `?precision`, and returns what ran. It also rewrites on the interpreter, and a float kernel needs only the accuracy opt-ins, not `accept_automatic_float_rewrite`:
+`Sarek_matrix.run` takes the `device`, `ir`, `args`, `block` and `grid` of `Execute.run_vectors` plus `?precision`, and returns what ran. It also rewrites on the interpreter, and a float kernel needs only the accuracy opt-ins, not `accept_automatic_float_rewrite`. `Execute.run_vectors_outcome ~explicit:true` is the same explicit request and waives `accept_automatic_float_rewrite` in the same way:
 
 ```ocaml
 let explicit_launch ~device ~ir ~args ~block ~grid =

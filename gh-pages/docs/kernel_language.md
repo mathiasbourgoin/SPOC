@@ -7,8 +7,6 @@ title: Kernel Language Notes
 
 This page covers three details of the kernel language that are easy to get wrong: loops (what `for` can and cannot express, and how to ask for unrolling), private per-thread arrays, and the size rule for `create_array` and `let%shared`. The rest of the language is introduced in [Concepts](concepts.html) and the [PPX README](https://github.com/mathiasbourgoin/Sarek/blob/main/sarek/ppx/README.md).
 
-The array rules below are those of the release that includes [#452](https://github.com/mathiasbourgoin/Sarek/pull/452); the examples compile before and after it.
-
 ## Loops
 
 `for i = a to b do ... done` and `for i = a downto b do ... done` run `i` from `a` to `b` inclusive, one step at a time. There is no step: a strided loop is a `while` with a mutable counter.
@@ -53,15 +51,15 @@ What each backend does with the pragma on a loop:
 
 | Backend | Output | Factor `N` |
 |---|---|---|
-| CUDA (CUDA/C), HIP | `#pragma unroll N` | honoured |
-| OpenCL | `#pragma unroll N` | honoured |
-| Metal | `#pragma unroll N` | honoured |
+| CUDA (CUDA/C), HIP | `#pragma unroll N` | passed to the device compiler |
+| OpenCL | `#pragma unroll N` | passed to the device compiler |
+| Metal | `#pragma unroll N` | passed to the device compiler |
 | Vulkan (GLSL) | `[[unroll]]` for exactly `["unroll"]` on a loop; any other hint, including `["unroll 8"]`, is dropped | dropped |
 | WebGPU (WGSL) | nothing | dropped |
 | CUDA (PTX) | nothing | dropped |
 | Native, Interpreter | no source is generated | not applicable |
 
-Sources: `Sarek_ir_cuda.ml:557`, `Sarek_ir_opencl.ml:598`, `Sarek_ir_metal.ml:766`, `Sarek_ir_glsl.ml:1240` (the test) and `:1368-1376`, `Sarek_ir_wgsl.ml:1187`, `Sarek_ir_ptx_stmt.ml:233`. A pragma that is dropped never changes the result, only the speed. The backends that honour the factor print the strings of the list joined by a space, so the factor reaches the device compiler as written.
+That the device compiler unrolls by the requested factor was verified only for hipcc on gfx1100 (by inspecting the generated ISA); for the other compilers the factor is passed on, and whether they honour it is up to them. Sources: `Sarek_ir_cuda.ml:557`, `Sarek_ir_opencl.ml:598`, `Sarek_ir_metal.ml:766`, `Sarek_ir_glsl.ml:1240` (the test) and `:1368-1376`, `Sarek_ir_wgsl.ml:1187`, `Sarek_ir_ptx_stmt.ml:233`. A pragma that is dropped never changes the result, only the speed. The backends that honour the factor print the strings of the list joined by a space, so the factor reaches the device compiler as written.
 
 Unrolling by hand (writing the loop body several times) is therefore only needed on the backends that drop the factor.
 
@@ -112,6 +110,6 @@ let tile_in_shared =
       output.(global_thread_id) <- tile.(tid)]
 ```
 
-Sources: `Sarek_typer.ml` on the branch of #452 (`const_int_value`, `fold_const_size`, `check_create_array`), and the entry under "Changed" in `CHANGES.md` for that release, which also gives the migration (`create_array n Local` becomes `create_array 16l Local`). Before that release a runtime size on a `Local` array became a variable-length array that OpenCL C and Metal reject, and `Global` produced a private array on CUDA, OpenCL, Metal and GLSL.
+Source: `Sarek_typer.ml` (`const_int_value`, `fold_const_size`, `check_create_array`).
 
 On WGSL a constant-size `Local` array lowers to a function-scope `var a : array<T, N>`.
