@@ -111,7 +111,7 @@ A kernel qualifies when all of these hold; otherwise the original runs and the r
 - Row, column and at most one batch index are affine in the loop variables and thread indices; each operand has a unit stride in one dimension (row-major or column-major). Guards are conjunctions of comparisons with a bound that is the same for every thread.
 - No bound, initial value or epilogue reads `block_dim_*` or `grid_dim_*`, and no index involves `int64`.
 - The element types have a configuration, below.
-- The device is one of HIP with 32-wide waves (gfx11), Vulkan with 32- or 64-wide subgroups (the block is four subgroups: 128 or 256 threads), or CUDA/C with 32-wide warps (sm_72+, explicit request only); the configuration is offered by the device (Vulkan and CUDA/C: the `int32` case only); and the rewritten grid fits `max_grid_dims`.
+- The device is one of HIP with 32-wide waves (gfx11), Vulkan (automatically on 64-wide subgroups, the measured width; a 32-wide device only on an explicit request; the block is four subgroups: 128 or 256 threads), or CUDA/C with 32-wide warps (sm_72+, explicit request only); the configuration is offered by the device (Vulkan and CUDA/C: the `int32` case only); and the rewritten grid fits `max_grid_dims`.
 
 | A and B | Accumulator, C | Result of the rewrite |
 |---|---|---|
