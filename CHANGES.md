@@ -441,7 +441,9 @@
   now share one block pool (`Sarek_interp.Cpu_domain_pool`); each launch waits
   on its own task group, so concurrent launches no longer receive each other's
   errors (R-68, block pool). The barrier-free `run_parallel` path runs its
-  thread ranges on that pool instead of spawning fresh domains per launch. A
+  thread ranges on that pool instead of spawning fresh domains per launch. The
+  launching domain runs its own untaken tasks while it waits, so a launch from
+  inside a block-pool kernel completes at any pool size. A
   pool whose creation hits OCaml's domain limit joins the workers it started
   before re-raising. Before, using every CPU pool on a 32-core host needed 129
   domains and failed with "failed to allocate domain"; now at most one pool of
