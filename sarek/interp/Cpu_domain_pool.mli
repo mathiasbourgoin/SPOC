@@ -10,10 +10,12 @@
     Each launch waits for its own tasks only and receives only their errors, so
     concurrent launches from several domains do not interfere.
 
-    A launch from inside one of its tasks (a nested launch) needs a free worker:
-    it completes while fewer tasks run than there are workers, and deadlocks
-    when every worker is waiting on a nested launch (always, with a single
-    worker, e.g. under [SAREK_CPU_POOL_MAX_DOMAINS=1]). *)
+    The launching domain runs the launch's tasks that no worker has taken yet
+    while it waits. A launch from inside a task (a nested launch: an interpreter
+    or [Sarek_cpu_runtime.run_parallel] kernel, barrier-free or with barriers,
+    that launches again on this pool) therefore completes at any pool size,
+    including a single worker. This holds for this pool only: the Native thread
+    and parallel pools refuse a launch from their own kernels. *)
 
 type task = unit -> unit
 

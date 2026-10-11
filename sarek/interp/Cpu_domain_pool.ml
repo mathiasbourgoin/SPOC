@@ -13,8 +13,20 @@
 
 type task = unit -> unit
 
+(** The tasks of one launch. Its fields are protected by the pool's mutex.
+    [tasks] holds the ones no domain has taken yet; [remaining] counts those not
+    finished. *)
+type group = {
+  tasks : task Queue.t;
+  mutable remaining : int;
+  mutable first_error : (exn * Printexc.raw_backtrace) option;
+  done_cond : Condition.t;
+}
+
 type t = {
-  task_queue : task Queue.t;
+  (* One entry per submitted task, naming its group. An entry whose group has
+     no task left (the launching domain ran it itself) is skipped. *)
+  ready : group Queue.t;
   mutex : Mutex.t;
   cond : Condition.t;
   mutable shutdown : bool;
@@ -26,25 +38,20 @@ type t = {
   mutable domains : unit Domain.t array;
 }
 
-(** The tasks of one launch. Its fields are protected by the pool's mutex. *)
-type group = {
-  mutable remaining : int;
-  mutable first_error : (exn * Printexc.raw_backtrace) option;
-  done_cond : Condition.t;
-}
+(* Called with the mutex held: the next untaken task of [g], if any. *)
+let take g = if Queue.is_empty g.tasks then None else Some (Queue.pop g.tasks)
 
 let worker pool =
   let rec loop () =
     Mutex.lock pool.mutex ;
-    while Queue.is_empty pool.task_queue && not pool.shutdown do
+    while Queue.is_empty pool.ready && not pool.shutdown do
       Condition.wait pool.cond pool.mutex
     done ;
-    if pool.shutdown && Queue.is_empty pool.task_queue then
-      Mutex.unlock pool.mutex
+    if Queue.is_empty pool.ready then Mutex.unlock pool.mutex
     else begin
-      let task = Queue.pop pool.task_queue in
+      let task = take (Queue.pop pool.ready) in
       Mutex.unlock pool.mutex ;
-      task () ;
+      Option.iter (fun task -> task ()) task ;
       loop ()
     end
   in
@@ -53,7 +60,7 @@ let worker pool =
 let create num_domains =
   let pool =
     {
-      task_queue = Queue.create ();
+      ready = Queue.create ();
       mutex = Mutex.create ();
       cond = Condition.create ();
       shutdown = false;
@@ -80,7 +87,12 @@ let shutdown pool =
   Array.iter Domain.join pool.domains
 
 let group () =
-  {remaining = 0; first_error = None; done_cond = Condition.create ()}
+  {
+    tasks = Queue.create ();
+    remaining = 0;
+    first_error = None;
+    done_cond = Condition.create ();
+  }
 
 (* The wrapper never raises: a task's exception is recorded on its group and
    re-raised by [wait], never dropped. *)
@@ -99,14 +111,28 @@ let submit pool group task =
   in
   Mutex.protect pool.mutex (fun () ->
       group.remaining <- group.remaining + 1 ;
-      Queue.add run pool.task_queue ;
+      Queue.add run group.tasks ;
+      Queue.add group pool.ready ;
       Condition.signal pool.cond)
 
-(** Wait until every task of [group] has run; re-raise the first task error. *)
+(** Wait until every task of [group] has run, running its untaken tasks on the
+    calling domain meanwhile; re-raise the first task error.
+
+    Running them here is what makes a launch from inside a task (a nested
+    launch) complete whatever the number of workers: the nested launch never
+    depends on a free worker, because its caller runs whatever no worker has
+    taken. Only [group]'s own tasks are run: those are what the caller waits for
+    anyway, and a task of another launch could block the caller on that launch's
+    work. *)
 let wait pool group =
   Mutex.lock pool.mutex ;
   while group.remaining > 0 do
-    Condition.wait group.done_cond pool.mutex
+    match take group with
+    | Some task ->
+        Mutex.unlock pool.mutex ;
+        task () ;
+        Mutex.lock pool.mutex
+    | None -> Condition.wait group.done_cond pool.mutex
   done ;
   let first_error = group.first_error in
   group.first_error <- None ;
