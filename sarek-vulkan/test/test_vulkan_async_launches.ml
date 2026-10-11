@@ -407,6 +407,127 @@ let test_free_from_finaliser device =
     (Atomic.get Memory.live_allocations) ;
   Memory.free src
 
+let expect_named_failure what name sync =
+  match sync () with
+  | () -> Alcotest.failf "%s: the wait did not raise" what
+  | exception
+      BE.Backend_error
+        (BE.Runtime {error = BE.Kernel_launch_failed {kernel_name; _}; _}) ->
+      Alcotest.(check bool)
+        (what ^ ": the error names the kernel, got: " ^ kernel_name)
+        true
+        (contains kernel_name name)
+  | exception BE.Backend_error _ ->
+      Alcotest.failf "%s: raised something other than Kernel_launch_failed" what
+
+(** The submission fails while launching (batch full), not at a wait. *)
+let test_deferred_failure_batch_full device =
+  with_batch_limit 8 (fun () ->
+      let kernel = incr_kernel device "async_deferred_full" in
+      let buf = upload device [|0.0|] in
+      Device.inject_submit_failure := Some Vulkan_types.VK_ERROR_DEVICE_LOST ;
+      Fun.protect
+        ~finally:(fun () -> Device.inject_submit_failure := None)
+        (fun () ->
+          for _ = 1 to 8 do
+            launch_incr kernel buf
+          done ;
+          expect_named_failure
+            "batch-full submit"
+            "async_deferred_full"
+            (fun () -> Stream.synchronize (Stream.default device))) ;
+      launch_incr kernel buf ;
+      Alcotest.(check (float 0.0)) "usable afterwards" 1.0 (download buf).(0) ;
+      Memory.free buf)
+
+(** The submission fails because a launch on another stream flushed the batch.
+*)
+let test_deferred_failure_other_stream device =
+  let s1 = Stream.create device in
+  let s2 = Stream.create device in
+  let kernel = incr_kernel device "async_deferred_other" in
+  let buf = upload device [|0.0|] in
+  let one = Spoc_framework.Framework_sig.dims_1d 1 in
+  let launch stream = launch_with ~stream kernel [buf] ~grid:one ~block:one in
+  launch s1 ;
+  Device.inject_submit_failure := Some Vulkan_types.VK_ERROR_DEVICE_LOST ;
+  Fun.protect
+    ~finally:(fun () -> Device.inject_submit_failure := None)
+    (fun () ->
+      launch s2 ;
+      expect_named_failure
+        "other-stream flush"
+        "async_deferred_other"
+        (fun () -> Stream.synchronize s1)) ;
+  Stream.synchronize s2 ;
+  Alcotest.(check (float 0.0))
+    "second stream's launch ran"
+    1.0
+    (download buf).(0) ;
+  Memory.free buf ;
+  Stream.destroy s1 ;
+  Stream.destroy s2
+
+(** Stream 2 consumes what stream 1 produced while stream 1's batch is still
+    open ([steps] = 5) or has just been submitted because it was full (8). *)
+let test_cross_stream_batch_state device =
+  with_batch_limit 8 (fun () ->
+      List.iter
+        (fun steps ->
+          let s1 = Stream.create device in
+          let s2 = Stream.create device in
+          let kernel = step_kernel device in
+          let a = upload device zeros in
+          let b = upload device zeros in
+          for k = 0 to steps - 1 do
+            let src, dst = if k mod 2 = 0 then (a, b) else (b, a) in
+            launch_step ~stream:s1 kernel [src; dst]
+          done ;
+          let last, other = if steps mod 2 = 0 then (a, b) else (b, a) in
+          launch_step ~stream:s2 kernel [last; other] ;
+          check_all_equal
+            (Printf.sprintf "consumer on a second stream after %d steps" steps)
+            (float (steps + 1))
+            (download other) ;
+          Memory.free a ;
+          Memory.free b ;
+          Stream.destroy s1 ;
+          Stream.destroy s2)
+        [5; 8])
+
+(** Two domains launch on their own streams of one device; the second of the two
+    synchronises while the first launches. Fence waits are bounded by
+    SPOC_VULKAN_FENCE_TIMEOUT_S in the dune rule. Buffers are transferred
+    outside the domains: the transfer command pool is not domain-safe. *)
+let test_two_domains device =
+  let steps = 300 in
+  let kernel = step_kernel device in
+  let make () =
+    (Stream.create device, upload device zeros, upload device zeros)
+  in
+  let worker (stream, a, b) () =
+    for k = 0 to steps - 1 do
+      let src, dst = if k mod 2 = 0 then (a, b) else (b, a) in
+      launch_step ~stream kernel [src; dst]
+    done ;
+    Stream.synchronize stream
+  in
+  let w1 = make () and w2 = make () in
+  let d1 = Domain.spawn (worker w1) in
+  let d2 = Domain.spawn (worker w2) in
+  Domain.join d1 ;
+  Domain.join d2 ;
+  List.iter
+    (fun (stream, a, b) ->
+      check_all_equal
+        "two-domain chain"
+        (float steps)
+        (download (if steps mod 2 = 0 then a else b)) ;
+      Memory.free a ;
+      Memory.free b ;
+      Stream.destroy stream)
+    [w1; w2]
+
 let () =
   Alcotest.run
     "Vulkan_async_launches"
@@ -445,6 +566,14 @@ let () =
             `Quick
             (with_device test_two_streams);
           Alcotest.test_case
+            "second stream consumes an open or full batch"
+            `Quick
+            (with_device test_cross_stream_batch_state);
+          Alcotest.test_case
+            "two domains on one device"
+            `Quick
+            (with_device test_two_domains);
+          Alcotest.test_case
             "buffers freed from GC finalisers"
             `Quick
             (with_device test_free_from_finaliser);
@@ -467,6 +596,14 @@ let () =
             "SPOC_VULKAN_BATCH=1 raises at the launch"
             `Quick
             (with_device test_batch_of_one_raises_at_launch);
+          Alcotest.test_case
+            "deferred failure when the batch fills"
+            `Quick
+            (with_device test_deferred_failure_batch_full);
+          Alcotest.test_case
+            "deferred failure when another stream launches"
+            `Quick
+            (with_device test_deferred_failure_other_stream);
         ] );
       ( "teardown",
         [

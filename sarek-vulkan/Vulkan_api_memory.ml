@@ -89,6 +89,7 @@ let run_single_time_command device record_fn =
         "vkBeginCommandBuffer"
         (vkBeginCommandBuffer cmd_buf (addr begin_info)) ;
 
+      Vulkan_api_barrier.before_copy cmd_buf ;
       record_fn cmd_buf ;
 
       check "vkEndCommandBuffer" (vkEndCommandBuffer cmd_buf) ;
@@ -431,15 +432,17 @@ let alloc_custom device ~size ~elem_size =
     cleanup () ;
     raise e
 
+(** Releases [buf] once the launches recorded so far have completed (the batch
+    code runs the release at its next quiescent point). Never takes a lock, so
+    it is safe from a GC finaliser. *)
 let free buf =
-  (* A pending launch may still use the buffer. *)
-  !Device.drain_pending buf.device ;
-  (match buf.mapped_ptr with
-  | Some _ -> vkUnmapMemory buf.device.Device.device buf.memory
-  | None -> ()) ;
-  vkDestroyBuffer buf.device.Device.device buf.buffer null ;
-  vkFreeMemory buf.device.Device.device buf.memory null ;
-  Atomic.decr live_allocations
+  Device.defer_free buf.device (fun () ->
+      (match buf.mapped_ptr with
+      | Some _ -> vkUnmapMemory buf.device.Device.device buf.memory
+      | None -> ()) ;
+      vkDestroyBuffer buf.device.Device.device buf.buffer null ;
+      vkFreeMemory buf.device.Device.device buf.memory null ;
+      Atomic.decr live_allocations)
 
 (** Vulkan doesn't expose device pointers like CUDA. Return 0 as placeholder.
     Binding uses the buffer handle directly via set_arg_buffer. *)

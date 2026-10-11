@@ -126,6 +126,10 @@ type t = {
       (** Guards the launch batches of every stream of this device (see
           {!Vulkan_api_stream}): two domains must not record into one command
           buffer. Never held across a call that takes it again. *)
+  deferred_frees : (unit -> unit) list Atomic.t;
+      (** Buffer releases waiting for the launches that may use the buffers; see
+          {!defer_free}. *)
+  deferred_count : int Atomic.t;
 }
 
 (** Test-only fault injection, for a single domain: when [Some r], the next
@@ -152,6 +156,27 @@ let queue_submit dev count submits fence =
     device memory, every buffer release and every device-wide wait goes through
     it. *)
 let drain_pending : (t -> unit) ref = ref (fun _ -> ())
+
+(** Queue [release] to run once no launch recorded so far can still use the
+    resource. Lock-free: a buffer is freed from [Gc.finalise] finalisers, which
+    OCaml 5 runs at any allocation point, including inside [batch_lock] and
+    [queue_lock], so a free must never take a lock. The batch code runs the
+    queued releases when every launch has completed
+    ({!Vulkan_api_stream.release_deferred}). *)
+let defer_free dev release =
+  let rec push () =
+    let old = Atomic.get dev.deferred_frees in
+    if not (Atomic.compare_and_set dev.deferred_frees old (release :: old)) then
+      push ()
+  in
+  push () ;
+  Atomic.incr dev.deferred_count
+
+(** Remove and return the queued releases, oldest first. *)
+let take_deferred dev =
+  let taken = Atomic.exchange dev.deferred_frees [] in
+  ignore (Atomic.fetch_and_add dev.deferred_count (-List.length taken)) ;
+  List.rev taken
 
 let instance_ref : vk_instance structure ptr option ref = ref None
 
@@ -1128,6 +1153,8 @@ let get idx =
           coopmat;
           queue_lock = Mutex.create ();
           batch_lock = Mutex.create ();
+          deferred_frees = Atomic.make [];
+          deferred_count = Atomic.make 0;
         }
       in
       Hashtbl.add device_cache idx dev ;
@@ -1162,6 +1189,11 @@ let destroy dev =
   let drain_exn =
     match !drain_pending dev with () -> None | exception e -> Some e
   in
+  (* A failed drain leaves work of unknown state: let the device finish before
+     anything is destroyed. *)
+  (if drain_exn <> None then
+     try with_queue_lock dev (fun () -> ignore (vkDeviceWaitIdle dev.device))
+     with _ -> ()) ;
   Hashtbl.remove device_cache dev.id ;
   let listener_exn =
     match

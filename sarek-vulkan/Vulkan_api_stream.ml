@@ -37,22 +37,12 @@ let batch_limit =
     | Some n when n >= 1 -> n
     | Some _ | None -> default_batch)
 
-(** A descriptor pool of one slot; its sets live until the slot's fence has been
-    waited for. *)
-type pool = {
-  handle : vk_descriptor_pool;
-  max_sets : int;
-  max_descriptors : int;
-  mutable used_sets : int;
-  mutable used_descriptors : int;
-}
-
 (** One command buffer with what its dispatches use. Idle: not [recording] and
     fence not pending. Open: [recording]. In flight: fence pending. *)
 type slot = {
   command_buffer : vk_command_buffer structure ptr;
   fence : tracked_fence;
-  mutable pools : pool list;
+  pools : Vulkan_api_pools.t;
   mutable kernels : string list;  (** Newest first, one entry per dispatch. *)
   mutable dispatches : int;
   mutable recording : bool;
@@ -67,10 +57,6 @@ type t = {
           by the next wait of this stream. *)
   device : Device.t;
 }
-
-let pool_sets = 64
-
-let pool_descriptors = 512
 
 let allocate_command_buffer device command_pool =
   let alloc_info = make vk_command_buffer_allocate_info in
@@ -94,7 +80,7 @@ let create_slot device command_pool =
   {
     command_buffer = allocate_command_buffer device command_pool;
     fence = create_tracked_fence device.Device.device;
-    pools = [];
+    pools = Vulkan_api_pools.create ();
     kernels = [];
     dispatches = 0;
     recording = false;
@@ -110,6 +96,9 @@ let registry : (int, t list) Hashtbl.t = Hashtbl.create 4
 let registry_lock = Mutex.create ()
 
 let default_streams : (int, t) Hashtbl.t = Hashtbl.create 4
+
+(** Guards [default_streams]. *)
+let default_lock = Mutex.create ()
 
 let streams_of (device : Device.t) =
   Mutex.protect registry_lock (fun () ->
@@ -152,86 +141,6 @@ let create device =
   register stream ;
   stream
 
-(** {1 Descriptor sets} *)
-
-let create_pool device ~max_sets ~max_descriptors =
-  let pool_size = make vk_descriptor_pool_size in
-  setf pool_size pool_size_type (u32 vk_descriptor_type_storage_buffer) ;
-  setf pool_size pool_size_descriptorCount (u32 max_descriptors) ;
-  let pool_info = make vk_descriptor_pool_create_info in
-  setf
-    pool_info
-    desc_pool_sType
-    (u32 vk_structure_type_descriptor_pool_create_info) ;
-  setf pool_info desc_pool_pNext null ;
-  setf pool_info desc_pool_flags (u32 0) ;
-  setf pool_info desc_pool_maxSets (u32 max_sets) ;
-  setf pool_info desc_pool_poolSizeCount (u32 1) ;
-  setf pool_info desc_pool_pPoolSizes (addr pool_size) ;
-  let handle = allocate vk_descriptor_pool vk_null_handle in
-  check
-    "vkCreateDescriptorPool"
-    (vkCreateDescriptorPool device.Device.device (addr pool_info) null handle) ;
-  ignore (Sys.opaque_identity pool_size) ;
-  {
-    handle = !@handle;
-    max_sets;
-    max_descriptors;
-    used_sets = 0;
-    used_descriptors = 0;
-  }
-
-let pool_has_room ~descriptors pool =
-  pool.used_sets < pool.max_sets
-  && pool.used_descriptors + descriptors <= pool.max_descriptors
-
-(** A descriptor set of [layout] ([descriptors] storage buffers) from a pool of
-    [slot]; the set stays valid until the slot's fence has been waited for. *)
-let allocate_set stream slot layout ~descriptors =
-  let device = stream.device in
-  let pool =
-    match List.find_opt (pool_has_room ~descriptors) slot.pools with
-    | Some pool -> pool
-    | None ->
-        let pool =
-          create_pool
-            device
-            ~max_sets:pool_sets
-            ~max_descriptors:(max pool_descriptors descriptors)
-        in
-        slot.pools <- pool :: slot.pools ;
-        pool
-  in
-  let layout_ptr = allocate vk_descriptor_set_layout layout in
-  let info = make vk_descriptor_set_allocate_info in
-  setf
-    info
-    desc_set_alloc_sType
-    (u32 vk_structure_type_descriptor_set_allocate_info) ;
-  setf info desc_set_alloc_pNext null ;
-  setf info desc_set_alloc_descriptorPool pool.handle ;
-  setf info desc_set_alloc_descriptorSetCount (u32 1) ;
-  setf info desc_set_alloc_pSetLayouts layout_ptr ;
-  let set = allocate vk_descriptor_set vk_null_handle in
-  check
-    "vkAllocateDescriptorSets"
-    (vkAllocateDescriptorSets device.Device.device (addr info) set) ;
-  ignore (Sys.opaque_identity layout_ptr) ;
-  ignore (Sys.opaque_identity info) ;
-  pool.used_sets <- pool.used_sets + 1 ;
-  pool.used_descriptors <- pool.used_descriptors + descriptors ;
-  !@set
-
-let reset_pools device slot =
-  List.iter
-    (fun pool ->
-      check
-        "vkResetDescriptorPool"
-        (vkResetDescriptorPool device.Device.device pool.handle (u32 0)) ;
-      pool.used_sets <- 0 ;
-      pool.used_descriptors <- 0)
-    slot.pools
-
 (** {1 Batches}
 
     Every function below runs with [stream.device.batch_lock] held. *)
@@ -254,7 +163,7 @@ let kernel_names slot =
 (** The slot's work is over (completed, or never submitted): its descriptor sets
     and kernel list are released. *)
 let retire stream slot =
-  reset_pools stream.device slot ;
+  Vulkan_api_pools.reset stream.device slot.pools ;
   slot.kernels <- [] ;
   slot.dispatches <- 0 ;
   slot.recording <- false
@@ -289,6 +198,7 @@ let raise_deferred stream =
 
 let submit_slot stream slot =
   let device = stream.device in
+  Vulkan_api_barrier.end_of_batch slot.command_buffer ;
   check "vkEndCommandBuffer" (vkEndCommandBuffer slot.command_buffer) ;
   let cmd_buf_ptr = allocate vk_command_buffer_ptr slot.command_buffer in
   let submit_info = make vk_submit_info in
@@ -349,9 +259,21 @@ let on_all_streams device f =
     (streams_of device) ;
   Option.iter raise !first_error
 
+(** Queued buffer releases after which a launch first completes all launches and
+    runs them. *)
+let max_deferred_frees = 64
+
+(** Run the queued buffer releases. Caller holds [batch_lock] and every launch
+    recorded so far has completed. *)
+let release_deferred device =
+  List.iter (fun release -> release ()) (Device.take_deferred device)
+
+let drain_all device =
+  on_all_streams device drain_stream ;
+  release_deferred device
+
 let drain_device device =
-  Mutex.protect device.Device.batch_lock (fun () ->
-      on_all_streams device drain_stream)
+  Mutex.protect device.Device.batch_lock (fun () -> drain_all device)
 
 let () = Device.drain_pending := drain_device
 
@@ -385,31 +307,6 @@ let open_active stream =
   end ;
   slot
 
-(** Compute-to-compute dependency: the writes of every earlier dispatch (in this
-    command buffer or in a command buffer submitted before it) are visible to
-    the next one. *)
-let record_barrier command_buffer =
-  let barrier = make vk_memory_barrier in
-  setf barrier mem_barrier_sType (u32 vk_structure_type_memory_barrier) ;
-  setf barrier mem_barrier_pNext null ;
-  setf barrier mem_barrier_srcAccessMask (u32 vk_access_shader_write_bit) ;
-  setf
-    barrier
-    mem_barrier_dstAccessMask
-    (u32 (vk_access_shader_read_bit lor vk_access_shader_write_bit)) ;
-  vkCmdPipelineBarrier
-    command_buffer
-    (u32 vk_pipeline_stage_compute_shader_bit)
-    (u32 vk_pipeline_stage_compute_shader_bit)
-    (u32 0)
-    (u32 1)
-    (to_voidp (addr barrier))
-    (u32 0)
-    (from_voidp vk_buffer_memory_barrier null)
-    (u32 0)
-    null ;
-  ignore (Sys.opaque_identity barrier)
-
 (** Record one dispatch of [kernel] on [stream]. [record command_buffer set]
     issues the bind, push-constant and dispatch commands (after the barrier
     recorded here) with [set], a descriptor set of [layout] that it must fill.
@@ -417,11 +314,16 @@ let record_barrier command_buffer =
 let record_dispatch stream ~kernel ~layout ~descriptors ~record =
   let device = stream.device in
   Mutex.protect device.Device.batch_lock (fun () ->
+      (* Bound the memory held by freed buffers. *)
+      if Atomic.get device.Device.deferred_count >= max_deferred_frees then
+        drain_all device ;
       on_all_streams device (fun other ->
           if other != stream then submit_open ~defer:true other) ;
       let slot = open_active stream in
-      let set = allocate_set stream slot layout ~descriptors in
-      record_barrier slot.command_buffer ;
+      let set =
+        Vulkan_api_pools.allocate device slot.pools layout ~descriptors
+      in
+      Vulkan_api_barrier.before_dispatch slot.command_buffer ;
       record slot.command_buffer set ;
       slot.kernels <- kernel :: slot.kernels ;
       slot.dispatches <- slot.dispatches + 1 ;
@@ -437,30 +339,35 @@ let destroy_slot device slot =
     "vkWaitForFences (Stream.destroy)"
     device.Device.device
     slot.fence ;
-  List.iter
-    (fun pool -> vkDestroyDescriptorPool device.Device.device pool.handle null)
-    slot.pools
+  Vulkan_api_pools.destroy device slot.pools
 
-(** The registry and [default_streams] entries are removed last, and only when
-    nothing raised: a stream whose wait for pending work failed stays reachable
-    and intact. *)
+let destroy_objects stream =
+  Array.iter (destroy_slot stream.device) stream.slots ;
+  vkDestroyCommandPool stream.device.Device.device stream.command_pool null
+
+let forget_default stream =
+  Mutex.protect default_lock (fun () ->
+      match Hashtbl.find_opt default_streams stream.device.Device.id with
+      | Some default when default == stream ->
+          Hashtbl.remove default_streams stream.device.Device.id
+      | Some _ | None -> ())
+
+(** Nothing is unregistered if the wait for pending work raises: the stream
+    stays reachable and intact. *)
 let destroy stream =
   synchronize stream ;
-  Array.iter (destroy_slot stream.device) stream.slots ;
-  vkDestroyCommandPool stream.device.Device.device stream.command_pool null ;
   unregister stream ;
-  match Hashtbl.find_opt default_streams stream.device.Device.id with
-  | Some default when default == stream ->
-      Hashtbl.remove default_streams stream.device.Device.id
-  | Some _ | None -> ()
+  forget_default stream ;
+  destroy_objects stream
 
 let default device =
-  match Hashtbl.find_opt default_streams device.Device.id with
-  | Some s -> s
-  | None ->
-      let s = create device in
-      Hashtbl.add default_streams device.Device.id s ;
-      s
+  Mutex.protect default_lock (fun () ->
+      match Hashtbl.find_opt default_streams device.Device.id with
+      | Some s -> s
+      | None ->
+          let s = create device in
+          Hashtbl.add default_streams device.Device.id s ;
+          s)
 
 (** Launches recorded on [device] that have not completed: open batches and
     batches in flight. Zero after any synchronisation point. *)
@@ -478,12 +385,27 @@ let pending_launches device =
         0
         (streams_of device))
 
-(* A destroyed device took its streams' Vulkan objects with it (Device.destroy
-   drained them first); forget the streams so the next device with this index
-   gets fresh ones. *)
+(* Device.destroy has drained the device and runs this before vkDestroyDevice:
+   the streams' command pools, fences and descriptor pools are device children
+   and go first. The next device with this index gets fresh streams. *)
 let () =
   Spoc_framework.Cache_hooks.on_device_destroy (fun ~backend index ->
       if String.equal backend "Vulkan" then begin
-        Mutex.protect registry_lock (fun () -> Hashtbl.remove registry index) ;
-        Hashtbl.remove default_streams index
+        let streams =
+          Mutex.protect registry_lock (fun () ->
+              let known =
+                Option.value ~default:[] (Hashtbl.find_opt registry index)
+              in
+              Hashtbl.remove registry index ;
+              known)
+        in
+        Mutex.protect default_lock (fun () ->
+            Hashtbl.remove default_streams index) ;
+        let first_error = ref None in
+        List.iter
+          (fun stream ->
+            try destroy_objects stream
+            with e -> if !first_error = None then first_error := Some e)
+          streams ;
+        Option.iter raise !first_error
       end)

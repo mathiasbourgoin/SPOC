@@ -76,3 +76,5 @@ sarek/tests/e2e/dune::bench_epilogue	benchmark	Hand-run timing loop (epilogue fu
 sarek-cuda/test/dune::bench_cuda_kernargs	benchmark	Host launch-overhead timing loop for kernel-argument marshalling (3 and 10 arguments); needs a CUDA driver (ZLUDA on non-NVIDIA) and is hand-run interleaved against the previous marshalling, so it belongs to no alias.
 
 sarek-opencl/bench/dune::bench_opencl_disk_cache	benchmark	Cold-process kernel build latency with and without the OpenCL disk cache; device-dependent timing, run by hand under sarek-opencl/bench/run_ab.sh.
+
+sarek-vulkan/test/dune::bench_vulkan_launch_overhead	benchmark	Host timing loop of 10000 launches on a Vulkan device, run by hand (dune exec). Wiring it to runtest would put device-dependent timing on CPU-only CI.

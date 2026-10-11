@@ -13,6 +13,8 @@
 - `sarek-vulkan/Vulkan_api_device.ml`: device enumeration, capabilities, device cache, and destroy.
 - `sarek-vulkan/Vulkan_api_memory.ml`: buffer allocation, staging buffers, host/device copies, and `device_to_device`.
 - `sarek-vulkan/Vulkan_api_stream.ml`: streams (two command buffers each, with descriptor pools and kernel lists), the per-device stream registry, the launch batch (`record_dispatch`, `submit_open`, `drain_stream`), `SPOC_VULKAN_BATCH`, and the default-stream cache (specs/vulkan-async-launches.md).
+- `sarek-vulkan/Vulkan_api_barrier.ml`: the global memory barriers recorded before dispatches, at the end of batches and before staged copies.
+- `sarek-vulkan/Vulkan_api_pools.ml`: the descriptor pools of one launch-batch slot.
 - `sarek-vulkan/Vulkan_api_event.ml`: fence-based events.
 - `sarek-vulkan/Vulkan_api_kernel.ml`: SPIR-V module/descriptor layout/pipeline creation, kernel cache, argument binding, push constants, and the recording of one dispatch into the stream's open batch (`launch`).
 - `sarek-vulkan/Vulkan_plugin_base.ml`: framework backend implementation.
@@ -36,7 +38,7 @@
 ## Features and APIs
 
 - Vulkan compute backend with GLSL-to-SPIR-V through shaderc or `glslangValidator`.
-- Device enumeration, memory allocation with host-visible/device-local selection, staging copies for non-mappable buffers, command pool/buffer/fence streams, asynchronous batched launches (`SPOC_VULKAN_BATCH`, default 32; per-launch descriptor sets; a compute barrier before each dispatch; pending launches completed before any host access to device memory, buffer release, sync, event record, kernel eviction or device destroy), push constants, and compute dispatch.
+- Device enumeration, memory allocation with host-visible/device-local selection, staging copies for non-mappable buffers, command pool/buffer/fence streams, asynchronous batched launches (`SPOC_VULKAN_BATCH`, default 32; per-launch descriptor sets; a compute barrier before each dispatch; pending launches completed before any host access to device memory, sync, kernel eviction or device destroy, event record submitting them, and buffer releases queued until launches have completed), push constants, and compute dispatch.
 - External source language support is GLSL only at `sarek-vulkan/Vulkan_plugin.ml:207`.
 - Generated GLSL uses `layout(local_size_x=...)`, storage buffers for vectors, push constants for scalar params and vector lengths, and Vulkan built-in IDs.
 
@@ -48,11 +50,13 @@
 - Push constant layout and runtime byte writes must match generated GLSL layout.
 - Command buffers must be in the correct reset/record/submit state.
 - Every path that touches device memory from the host, or releases an object a
-  recorded dispatch uses (buffer, pipeline, device), first calls
-  `Vulkan_api_device.drain_pending`; a new such path without it reads or frees
+  recorded dispatch uses (pipeline, device), first calls
+  `Vulkan_api_device.drain_pending`; `Memory.free` instead queues the release
+  (`Device.defer_free`, lock-free) because it runs from GC finalisers, where
+  taking `batch_lock` or `queue_lock` deadlocks or raises; a new such path without it reads or frees
   memory a pending dispatch still uses. The inventory is in
   specs/vulkan-async-launches.md (FR-002).
-- Every dispatch is preceded by a compute-to-compute memory barrier; Vulkan
+- Every dispatch is preceded by a memory barrier (compute and transfer writes to shader access), every batch ends with one to transfer/host reads, and every staged copy begins with one (`Vulkan_api_barrier`); Vulkan
   orders dispatch start, not memory, between dispatches or between submissions.
 - Descriptor pools are reset only after the owning command buffer's fence has
   been waited for.
