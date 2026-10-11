@@ -204,11 +204,9 @@ let tuple_shape_tags (name : string) : string list option =
   | _ -> None
 
 let custom_descriptor_expr ?current_module ~loc type_name =
-  if Option.is_some (tuple_shape_tags type_name) then
-    tuple_constructor_expr
-      ~loc
-      ~what:type_name
-      (Option.get (tuple_shape_tags type_name))
+  let shape_tags = tuple_shape_tags type_name in
+  if Option.is_some shape_tags then
+    tuple_constructor_expr ~loc ~what:type_name (Option.get shape_tags)
   else
     let parts = String.split_on_char '.' type_name in
     match List.rev parts with
