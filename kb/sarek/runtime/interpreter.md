@@ -13,7 +13,7 @@ Reviewed interpreter runtime files: the `Sarek_ir_interp*` module family (now th
 - `sarek/interp/Sarek_ir_interp_value.ml`: the `value` type, environment, thread state, `to_*` conversions, `eval_binop`/`eval_unop`, and path predicates (`sarek/interp/Sarek_ir_interp_value.ml:10-280`).
 - `sarek/interp/Sarek_ir_interp_intrinsics.ml`: GPU/float/int/type-conversion intrinsics, split out of the former monolithic `eval_intrinsic` (`sarek/interp/Sarek_ir_interp_intrinsics.ml:14-323`).
 - `sarek/interp/Sarek_ir_interp_eval.ml`: the recursive `eval_expr`/exec chain over expressions, statements, and lvalues (`sarek/interp/Sarek_ir_interp_eval.ml`).
-- `sarek/interp/Sarek_ir_interp.ml` (reduced): the `run_grid*` drivers, whose parallel path runs blocks on the block pool shared with Native (`sarek/interp/Cpu_domain_pool.ml`), and the public `run_kernel*` API (`sarek/interp/Sarek_ir_interp.ml:77-638`).
+- `sarek/interp/Sarek_ir_interp.ml` (reduced): the `run_grid*` drivers, whose parallel path runs blocks on the block pool shared with Native (`sarek/interp/Cpu_domain_pool.ml`), and the public `run_kernel*` API (`sarek/interp/Sarek_ir_interp.ml:77-637`).
 - `sarek/interp/Interp_error.ml`: interpreter error variants and formatting.
 - `sarek/sarek/Sarek_ir_interp.ml`, `sarek/sarek/Interp_error.ml`: 6-line forwarding shims (`include Sarek_interp.<Module>`) preserving the `Sarek.*` namespace. (The byte-identical dead copies that used to share these basenames plus `_value`/`_intrinsics`/`_eval`/`Skeletons` suffixes were deleted 2026-07-02 — see above.)
 - `sarek/plugins/interpreter/Interpreter_plugin.ml`: framework plugin registration for the interpreter backend.

@@ -14,7 +14,6 @@
 type task = unit -> unit
 
 type t = {
-  num_domains : int;
   task_queue : task Queue.t;
   mutex : Mutex.t;
   cond : Condition.t;
@@ -54,7 +53,6 @@ let worker pool =
 let create num_domains =
   let pool =
     {
-      num_domains;
       task_queue = Queue.create ();
       mutex = Mutex.create ();
       cond = Condition.create ();
@@ -62,8 +60,16 @@ let create num_domains =
       domains = [||];
     }
   in
+  let stop () =
+    Mutex.protect pool.mutex (fun () ->
+        pool.shutdown <- true ;
+        Condition.broadcast pool.cond)
+  in
   pool.domains <-
-    Array.init num_domains (fun _ -> Domain.spawn (fun () -> worker pool)) ;
+    Cpu_pool_lifecycle.spawn_workers
+      num_domains
+      (fun _ -> worker pool)
+      ~abort:stop ;
   pool
 
 (** Make the workers exit once the queue is empty, and join them. *)
@@ -114,16 +120,11 @@ let slot =
     ~create:(fun () -> create (Cpu_pool_lifecycle.domain_count ~default:4 ()))
     ~retire:shutdown
 
-(** [run tasks] runs every task of [tasks] on the shared pool and returns once
-    all have run, re-raising the first task error. *)
-let run (tasks : (task -> unit) -> unit) =
-  Cpu_pool_lifecycle.with_pool slot (fun pool ->
-      let g = group () in
-      match tasks (submit pool g) with
-      | () -> wait pool g
-      | exception exn ->
-          let bt = Printexc.get_raw_backtrace () in
-          (* The tasks already submitted still run; wait for them before
-             letting the launch go. *)
-          (try wait pool g with _ -> ()) ;
-          Printexc.raise_with_backtrace exn bt)
+let run n (f : int -> unit) =
+  if n > 0 then
+    Cpu_pool_lifecycle.with_pool slot (fun pool ->
+        let g = group () in
+        for i = 0 to n - 1 do
+          submit pool g (fun () -> f i)
+        done ;
+        wait pool g)

@@ -37,9 +37,16 @@ val set_idle_timeout : float -> unit
 val capped : int -> int
 
 (** Worker count for a new pool: [SAREK_DOMAIN_COUNT] if set to a positive
-    integer, else [Domain.recommended_domain_count ()] (else [default]), then
-    {!capped}. *)
-val domain_count : default:int -> unit -> int
+    integer, else [Domain.recommended_domain_count ()] (else [default]) minus
+    [spare] (default 0), then {!capped}. *)
+val domain_count : ?spare:int -> default:int -> unit -> int
+
+(** [spawn_workers n worker ~abort] spawns [n] domains running [worker 0] ..
+    [worker (n - 1)]. If a spawn fails (OCaml's domain limit), [abort ()] must
+    make the workers already started exit; they are joined and the failure is
+    re-raised, so a failed pool creation leaves no domain behind. *)
+val spawn_workers :
+  int -> (int -> unit) -> abort:(unit -> unit) -> unit Domain.t array
 
 (** {1 Pool slots} *)
 

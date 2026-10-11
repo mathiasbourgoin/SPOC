@@ -440,8 +440,12 @@
   retires every idle pool at once. The interpreter and the Native barrier path
   now share one block pool (`Sarek_interp.Cpu_domain_pool`); each launch waits
   on its own task group, so concurrent launches no longer receive each other's
-  errors (R-68, block pool). Before, using every CPU pool on a 32-core host
-  needed 129 domains and failed with "failed to allocate domain". Measured with
+  errors (R-68, block pool). The barrier-free `run_parallel` path runs its
+  thread ranges on that pool instead of spawning fresh domains per launch. A
+  pool whose creation hits OCaml's domain limit joins the workers it started
+  before re-raising. Before, using every CPU pool on a 32-core host needed 129
+  domains and failed with "failed to allocate domain"; now at most one pool of
+  each kind (3 x 32), a dispatcher per fission queue and the reaper are live. Measured with
   `sarek/tests/unit/bench_cpu_pool_idle_gc.ml` (5 interleaved runs, load 7-23):
   minor-GC cost 1.5 s after one launch on each pool went from 715 us (530-810)
   to 258 us (248-313), against 283 us (279-289) in a process that never ran a
@@ -449,8 +453,8 @@
   unchanged. Test: `sarek/tests/unit/test_cpu_pool_idle.ml`. Migration:
   `Sarek_ir_interp.DomainPool`, `get_pool`, `global_pool` and
   `resolve_domain_count` are gone; in `Sarek_cpu_runtime_pools`, `get_pool`,
-  `global_pool` and `resolve_domain_count` are gone, `DomainPool.run` replaces
-  `submit`/`wait_all`, `with_fission_pool` / `with_parallel_pool` replace
+  `global_pool` and `resolve_domain_count` are gone, `DomainPool.run n f`
+  (run `f 0` .. `f (n - 1)`) replaces `submit`/`wait_all`, `with_fission_pool` / `with_parallel_pool` replace
   `get_fission_pool` / `get_parallel_pool`, and `LaunchQueue.retire_if_idle`
   replaces `shutdown`. The jsoo interpreter build runs parallel blocks inline.
 - `Spoc_core.Memory.bigarray_void_ptr` is replaced by
