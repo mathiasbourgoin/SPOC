@@ -4,12 +4,12 @@
 > Every theorem here is proven about the Rocq model, or checked against the
 > *extracted* model, or checked against an abstract OCaml model — never against
 > the real `Sarek_convergence.ml` that ships. `test/test_convergence_live.ml`
-> does call the real `Sarek_convergence.check_expr`, and its 10/10 GREEN below is
+> does call the real `Sarek_convergence.check_expr`, and its 15/15 GREEN below is
 > real and worth having, but it is a fixed-pattern regression suite (positive
 > baseline + F-01/F-02 regressions + negative baseline) — it never runs the
 > extracted model on the same input and compares. A reader who sees "125
-> theorems" next to "conformance 17/17, extraction 7/7, semantics 4/4, live
-> 10/10 GREEN" (the current test-suite scoreboard below) should not conclude any
+> theorems" next to "conformance 19/19, extraction 10/10, semantics 4/4, live
+> 15/15 GREEN" (the current test-suite scoreboard below) should not conclude any
 > theorem here says something checked against the shipped checker: it doesn't,
 > today. `scripts/check-production-link.py` enforces the declared theorem
 > split only — it reads `production-link.json`'s `modules` field (empty here,
@@ -22,7 +22,7 @@
 **Host profile**: SPOC/sarek
 **Architecture**: 3-layer
 **Built at**: 2026-06-11
-**Last updated**: 2026-06-13 (F-04b: Rocq spec extended for the EReturn-in-ESeq hazard — `has_reachable_return` / `has_varying_return` + `check_env_seq` thread the varying-return flag through ESeq; `check_env_sound_core` extended via `check_env_seq_core_frag[_ss]` bridges; `hazard_checker_blind` → `hazard_spec_detects` (spec now flags the hazard) + `hazard_checker_sound` (spec/operational agreement); closes F-04. 86 ledger items, 0 admits, 0 axioms, coqchk passes — "Modules were successfully checked"; conformance 18/18, extraction 7/7, semantics 4/4, live 12/12 GREEN)
+**Last updated**: 2026-10-11 (superstep settlement, specs/convergence-semantics.md §2: SS-1 for both flags, flag inert, `[@divergent]` inside the verified fragment, D-56 warp return threading, C-7 witness. 125 theorems, 0 admits, 0 axioms; `scripts/check-formal-proofs.sh` passes. Conformance 19/19, extraction 10/10, semantics 4/4, live 15/15 GREEN. Previous entry 2026-06-13: F-04b.)
 
 ## Project
 
@@ -191,10 +191,10 @@ Assumptions documented in `ASSUMPTIONS.md`:
 
 ## Test intensity
 
-- **Conformance**: `test/test_convergence_conformance.ml` — 17 properties (`test_convergence_conformance`), 1000–2000 tests each — **17/17 GREEN** (2 new F-02 env-threaded properties added T2-F02; 1 new randomized warp property added T2-WARP+; 1 new return_barrier_skip_safe property added T2-RETURN; 3 new dedicated ESuperstep properties added T1A-CONF: superstep_outer_diverged_error, superstep_no_entry_error_converged, superstep_body_errors_propagate)
-- **Extraction**: `test/test_convergence_extraction.ml` — 7 tests (`test_convergence_extraction`) — **7/7 GREEN** (extr:check_warp_agrees added T2-WARP+)
+- **Conformance**: `test/test_convergence_conformance.ml` — 19 properties (`test_convergence_conformance`), 1000–2000 tests each — **19/19 GREEN** (2026-10-11: superstep_outer_diverged_error quantifies over the flag, superstep_flag_irrelevant added; 2 new F-02 env-threaded properties added T2-F02; 1 new randomized warp property added T2-WARP+; 1 new return_barrier_skip_safe property added T2-RETURN; 3 new dedicated ESuperstep properties added T1A-CONF: superstep_outer_diverged_error, superstep_no_entry_error_converged, superstep_body_errors_propagate)
+- **Extraction**: `test/test_convergence_extraction.ml` — 10 tests (`test_convergence_extraction`) — **10/10 GREEN** (extr:check_warp_agrees added T2-WARP+; 2026-10-11: is_varying_in_env, check_env, check_warp_env agreement added)
 - **Semantics (operational CMBT)**: `test/test_convergence_semantics.ml` — 4 tests (`test_convergence_semantics`) — **4/4 GREEN** (T3-S8: `sem:eval_fuel_monotone`, `sem:barrier_free_silent`, `sem:differential_barrier_safe`, `sem:f04_hazard_counterexample`; exercises extracted `eval_concrete`)
-- **Live CMBT**: `formal/convergence-safety/test/test_convergence_live.ml` — 10 tests including F-01 + F-02 regressions — **10/10 GREEN**
+- **Live CMBT**: `formal/convergence-safety/test/test_convergence_live.ml` — 15 tests including F-01, F-02, F-04, C-7, SS-2, SS-3 regressions — **15/15 GREEN**
 
 ## Known gates
 
@@ -231,7 +231,7 @@ None yet.
 ```
 Resume ConvergenceSafety (apparatus v1.2.1, grade A).
 State: 20/20 theorems proven in ConvergenceSpec.v + 41 theorems/defs in ConvergenceSemantics.v (T3-S1..S8), 0 admits, 0 axioms, coqchk passes. T3-S8 complete.
-Conformance: 17/17 green. Extraction: 7/7 green. Semantics (operational CMBT): 4/4 green. Live CMBT: 10/10 green.
+Conformance: 19/19 green. Extraction: 10/10 green. Semantics (operational CMBT): 4/4 green. Live CMBT: 15/15 green.
 F-01 RESOLVED (OCaml + Rocq). F-02 RESOLVED (OCaml + Rocq env-threaded model).
 F-03 (WarpConvergence) RESOLVED (Rocq: EWarpPoint/WarpError/check_warp/warp_diverged_error/warp_mode_monotone/warp_varying_if_flags; documented in findings/DIVERGENCE_FINDINGS.md).
 T2-RETURN RESOLVED (Rocq: EReturn/return_barrier_skip_safe/return_converged_clean; TEReturn exits without crossing any barrier).

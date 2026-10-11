@@ -202,3 +202,14 @@ production construct produces it (the parser never builds `EReturn`), and
 `eval` keeps emitting the boundary `EvBarrier` after a return inside a
 superstep body, which a GPU would skip; `EReturn` stays outside the verified
 fragment.
+
+**SS-2 depends on the `return_unit` refusal (C-6).** Production does have an
+early exit: the `return_unit` intrinsic (device code `return`). It reaches the
+checker as an ordinary intrinsic call with no convergence class, not as
+`TEReturn`, and `has_varying_return` does not descend into superstep bodies
+anyway. So `return_unit ()` under varying control inside a superstep body is
+accepted today although the returning threads skip the implicit barrier. The
+soundness of SS-2 (and of `check_env_sound_superstep` as a statement about
+production) assumes that `return_unit` is refused at compile time
+(`specs/convergence-semantics.md` §7, refusals PR). Until that lands, such a
+kernel is accepted.
