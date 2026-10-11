@@ -79,3 +79,6 @@ jobs:
           folder: _site
           branch: gh-pages
           clean: true # Clean the branch since we're deploying everything
+          # Talk PDFs are hosted on the branch only (not in main): keep them.
+          clean-exclude: |
+            docs/talks

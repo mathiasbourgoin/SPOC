@@ -33,3 +33,12 @@ The `.github/workflows/docs.yml` workflow automatically:
 - Edit markdown files in `gh-pages/docs/` for documentation updates
 - Edit layouts in `gh-pages/_layouts/` for template changes
 - Changes merged to `main` branch will trigger automatic deployment
+
+## Talk PDFs
+
+The 2013-2016 talk PDFs (about 38 MB) are not in `main`. They live only on the
+`gh-pages` branch under `docs/talks/` and are served at
+`https://mathiasbourgoin.github.io/Sarek/docs/talks/<name>.pdf`;
+`docs/publications.md` links to those URLs. `docs.yml` deploys with
+`clean: true`, so it lists `docs/talks` in `clean-exclude` to keep them. To add
+or replace one, commit it to the `gh-pages` branch directly (never to `main`).
