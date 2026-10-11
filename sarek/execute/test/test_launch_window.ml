@@ -1403,6 +1403,71 @@ let test_store_sites_and_helpers () =
   | Ok _ -> fail "a consumer with helper functions must be refused"
   | Error _ -> ()
 
+(* Member id ranges are disjoint even when a member has large ids (a fused
+   kernel), and the position parameters sit above them. *)
+let test_horizontal_ids_disjoint () =
+  let big =
+    Sarek_execute.Fusion_epilogue.fuse
+      ~name:"big"
+      ~producer:k_prod
+      ~p_array:"dst"
+      ~consumer:k_cons
+      ~shared:[("t", "dst")]
+  in
+  let fused = Sarek_execute.Fusion_horizontal.fuse ~name:"h" [big; k_prod] in
+  let ids_of prefix =
+    List.filter_map
+      (function
+        | DParam (v, _) when String.starts_with ~prefix v.var_name ->
+            Some v.var_id
+        | _ -> None)
+      fused.kern_params
+  in
+  let m0 = ids_of "m0_" and m1 = ids_of "m1_" and hf = ids_of "hf" in
+  check
+    bool
+    "members disjoint"
+    true
+    (List.for_all (fun i -> not (List.mem i m1)) m0) ;
+  check
+    bool
+    "positions above members"
+    true
+    (List.for_all (fun h -> List.for_all (fun i -> h > i) (m0 @ m1)) hf)
+
+let slice_unknown body =
+  match
+    Sarek_execute.Index_slice.run
+      ~is_target:(fun a -> a = "dst")
+      ~record:ignore
+      ~scalars:[]
+      ~dims:{Sarek_execute.Index_slice.block = (1, 1, 1); grid = (1, 1, 1)}
+      body
+  with
+  | _ -> false
+  | exception Sarek_execute.Index_slice.Unknown _ -> true
+
+let test_slice_limits () =
+  check
+    bool
+    "field store to the target is unknown"
+    true
+    (slice_unknown
+       (SAssign
+          (LRecordField (LArrayElem ("dst", tid), "f"), EConst (CFloat32 0.)))) ;
+  let i = ivar 40 "i" in
+  check
+    bool
+    "work budget fires"
+    true
+    (slice_unknown
+       (SFor
+          ( i,
+            EConst (CInt32 0l),
+            EConst (CInt32 Int32.max_int),
+            Upto,
+            store_at "dst" (EVar i) (EConst (CFloat32 0.)) )))
+
 let () =
   run
     "launch window"
@@ -1493,6 +1558,11 @@ let () =
             "store sites and helpers"
             `Quick
             test_store_sites_and_helpers;
+          test_case
+            "horizontal ids disjoint"
+            `Quick
+            test_horizontal_ids_disjoint;
+          test_case "slice limits" `Quick test_slice_limits;
         ] );
       ( "errors",
         [

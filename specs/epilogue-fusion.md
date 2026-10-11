@@ -73,3 +73,35 @@ Checks:
 {"record":"check","id":"CHECK-2","for":["AC-1","AC-2"]}
 {"record":"check","id":"CHECK-3","for":["AC-1"]}
 ```
+
+## Review outcomes (2026-10-11)
+
+The first review returned NO-GO. Two findings were blocking:
+
+- The coverage cache key did not include the producer array. A producer
+  that stores two outputs under different guards could have an uncovered
+  consumer merged.
+- A consumer's helper functions were not scanned.
+
+The review also raised serious issues:
+
+- **Id collisions.** Chained epilogues and horizontal members could collide
+  on variable ids, which the interpreter and `Index_slice` both key on.
+- **Duplicate declarations.** Two store sites redeclared `ep_t`.
+- **Untracked stores.** Stores to the target through a record field or a
+  cooperative-matrix tile were not seen.
+- **No work bound** on the host evaluation.
+
+All are fixed, and each has a probe test. These include:
+- a P→C1→C2 chain on the interpreter, which goes red with the old fixed ids;
+- coverage per array;
+- duplicate stores;
+- scoped store sites;
+- disjoint horizontal id ranges;
+- the slice limits.
+
+A producer that passes the intermediate to a helper function uses the vector
+whole. `Kernel_access` counts that as a read, so the merge is refused. Stores
+made inside producer helpers therefore never go unseen.
+
+The re-review returned GO.

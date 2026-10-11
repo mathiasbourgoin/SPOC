@@ -433,11 +433,13 @@ let reset_stats (w : _ t) : unit =
     (fun c -> Atomic.set c 0)
     [w.c_submitted; w.c_issued; w.c_groups; w.c_refused]
 
-(** Forget every fused kernel and refusal (the next fused group rebuilds). *)
-let clear_cache (w : _ t) : unit =
+(** Forget every fused kernel and refusal (the next fused group rebuilds), and
+    run [also] in the same critical section. *)
+let clear_cache ?(also = fun () -> ()) (w : _ t) : unit =
   Mutex.protect w.lock (fun () ->
       Hashtbl.reset w.cache ;
-      Hashtbl.reset w.refused)
+      Hashtbl.reset w.refused ;
+      also ())
 
 let set_enabled (w : _ t) (b : bool) : unit =
   flush w ;
