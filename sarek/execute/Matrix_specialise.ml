@@ -86,15 +86,7 @@ let outcome_text = function
 
 (* ---- Memos, by the IR's physical identity --------------------------------- *)
 
-module Physical = struct
-  type t = kernel
-
-  let equal = ( == )
-
-  let hash (k : t) = Hashtbl.hash (k.kern_name, k.kern_params)
-end
-
-module Memo = Ephemeron.K1.Make (Physical)
+module Memo = Ephemeron.K1.Make (Ir_memo.Physical)
 
 type plan = {gemm : P.gemm; mapping : Map.mapping; case : Adv.element_case}
 

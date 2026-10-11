@@ -66,15 +66,7 @@ type 'arg launch = {
 
 (** {1 Per-kernel facts} *)
 
-module Physical_kernel = struct
-  type t = kernel
-
-  let equal = ( == )
-
-  let hash (k : t) = Hashtbl.hash (k.kern_name, k.kern_params)
-end
-
-module Ir_table = Ephemeron.K1.Make (Physical_kernel)
+module Ir_table = Ephemeron.K1.Make (Ir_memo.Physical)
 
 type ir_info = {
   ir_id : int;

@@ -416,6 +416,76 @@ let test_clear_during_codegen_not_installed () =
   launch ~device:dev ir [Execute.Int32 1l] ;
   check int "then memoised" 2 (Atomic.get codegen_calls)
 
+(* R-41: one launch hashes its IR at most once, however many per-IR tables
+   it consults (capability verdicts, source, launch window). Two kernels
+   alternate, so no launch can reuse the previous launch's lookup. *)
+let alternate_and_count ~device ~launches =
+  let a = kernel ~name:"hash_a" Sarek_ir_types.TInt32
+  and b = kernel ~name:"hash_b" Sarek_ir_types.TInt32 in
+  launch ~device a [Execute.Int32 1l] ;
+  launch ~device b [Execute.Int32 1l] ;
+  Execute.Window.flush () ;
+  let before = Sarek_execute.Ir_memo.hash_count () in
+  for _ = 1 to launches / 2 do
+    launch ~device a [Execute.Int32 1l] ;
+    launch ~device b [Execute.Int32 1l]
+  done ;
+  let hashes = Sarek_execute.Ir_memo.hash_count () - before in
+  Execute.Window.flush () ;
+  hashes
+
+let test_one_ir_hash_per_launch () =
+  reset () ;
+  let launches = 20 in
+  let hashes = alternate_and_count ~device:(device ()) ~launches in
+  check int "IR hashes for 20 alternating launches" launches hashes
+
+let test_one_ir_hash_per_deferred_launch () =
+  reset () ;
+  Execute.Window.set_backend_enabled ~backend:backend_name true ;
+  Fun.protect
+    ~finally:(fun () ->
+      Execute.Window.set_backend_enabled ~backend:backend_name false)
+    (fun () ->
+      let launches = 4 in
+      let hashes = alternate_and_count ~device:(device ()) ~launches in
+      check int "IR hashes for 4 alternating deferred launches" launches hashes)
+
+(* The launch-time matrix decision consults its per-IR plan once. *)
+let test_one_ir_hash_per_matrix_decision () =
+  reset () ;
+  let hip = {(device ()) with framework = "HIP"} in
+  let a = kernel ~name:"plan_a" Sarek_ir_types.TInt32
+  and b = kernel ~name:"plan_b" Sarek_ir_types.TInt32 in
+  let mode = Sarek_execute.Matrix_specialise.mode () in
+  Sarek_execute.Matrix_specialise.set_mode Sarek_execute.Matrix_specialise.Auto ;
+  Fun.protect
+    ~finally:(fun () -> Sarek_execute.Matrix_specialise.set_mode mode)
+    (fun () ->
+      let decide ir =
+        match
+          Sarek_execute.Matrix_specialise.choose
+            ~device:hip
+            ~ir
+            ~launch:(fun () -> None)
+            ()
+        with
+        | Sarek_execute.Matrix_specialise.Original _ -> ()
+        | Specialised _ -> fail "a scalar kernel has no matrix product"
+      in
+      decide a ;
+      decide b ;
+      let before = Sarek_execute.Ir_memo.hash_count () in
+      for _ = 1 to 5 do
+        decide a ;
+        decide b
+      done ;
+      check
+        int
+        "IR hashes for 10 alternating decisions"
+        10
+        (Sarek_execute.Ir_memo.hash_count () - before))
+
 (* Replacing a backend under the same name (Framework_registry uses
    Hashtbl.replace) must not hand the replacement its predecessor's source. *)
 module Probe_v2 : BACKEND = struct
@@ -536,5 +606,14 @@ let () =
             "domains share one source"
             `Quick
             test_domains_share_one_source;
+          test_case "one IR hash per launch" `Quick test_one_ir_hash_per_launch;
+          test_case
+            "one IR hash per deferred launch"
+            `Quick
+            test_one_ir_hash_per_deferred_launch;
+          test_case
+            "one IR hash per matrix decision"
+            `Quick
+            test_one_ir_hash_per_matrix_decision;
         ] );
     ]

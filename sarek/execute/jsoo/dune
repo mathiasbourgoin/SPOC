@@ -13,6 +13,8 @@
 
 (copy_files "../Execute_error.ml")
 
+(copy_files "../Ir_memo.ml")
+
 (copy_files "../Kernel_access.ml")
 
 (copy_files "../Index_slice.ml")
@@ -34,6 +36,7 @@
  (modes js)
  (modules
   Smoke
+  Ir_memo
   Kernel_access
   Index_slice
   Ir_rename
