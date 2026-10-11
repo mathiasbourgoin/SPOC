@@ -243,13 +243,20 @@ let scheme ~operand_elt = function
    fragment's rows (or columns) do not all hit one LDS bank. *)
 let pad s = 16 / elt_bytes s.shared_elt
 
-let choose_bk s =
-  let acc_tiles = (if s.accumulators > 1 then 2 else 1) * bm * bn * 4 in
-  let fits bk =
-    (s.planes * ((bm * bk) + (bk * bn)) * elt_bytes s.shared_elt) + acc_tiles
-    <= 48 * 1024
-  in
-  List.find fits [16]
+(* Bytes of shared memory the rewritten kernel allocates for reduction step
+   [bk]: the padded A ([bm][bk + pad]) and B ([bn][bk + pad]) staging planes,
+   the accumulator tile [sc] and the scratch tile [st] (one element when there
+   is a single accumulator). Sarek_matrix_rewrite.body allocates exactly
+   these. *)
+let shared_bytes s ~bk =
+  let staging = s.planes * (bm + bn) * (bk + pad s) * elt_bytes s.shared_elt in
+  let acc = elt_bytes s.acc_elt in
+  let scratch = if s.accumulators > 1 then bm * bn else 1 in
+  staging + (bm * bn * acc) + (scratch * acc)
+
+let shared_limit = 48 * 1024
+
+let choose_bk s = List.find (fun bk -> shared_bytes s ~bk <= shared_limit) [16]
 
 let config s =
   {
