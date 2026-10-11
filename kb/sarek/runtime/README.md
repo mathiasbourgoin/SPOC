@@ -70,7 +70,7 @@ The runtime slice exposes:
 ## Performance Or Maintainability Risks
 
 - Several global registries and plugin registries are mutable `Hashtbl`s without synchronization.
-- CPU pools are global and have shutdown functions that are not wired into lifecycle management.
+- CPU pools are global, created on first launch and retired when idle (`sarek/interp/Cpu_pool_lifecycle.ml`, R-66).
 - Multiple compatibility paths coexist: direct execution, legacy `Kernel.launch`, CPU fallback, and interpreter plugin launch. Their transfer and argument semantics differ.
 - Some advanced APIs appear placeholder-like but are public enough to create support debt.
 

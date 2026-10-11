@@ -4,152 +4,10 @@
 (******************************************************************************)
 
 open Sarek_cpu_runtime_types
+module Lifecycle = Sarek_interp.Cpu_pool_lifecycle
 
-(** Resolve how many domains a CPU worker pool should use.
-
-    Reads [SAREK_DOMAIN_COUNT] first (any positive integer) so tests can force a
-    domain count higher than the host's physical core count - this is the only
-    reliable way to reproduce oversubscription races on a small developer
-    machine that only show up at CI's higher core counts. Falls back to
-    [Domain.recommended_domain_count ()], and finally to [default] if that
-    raises. *)
-let resolve_domain_count ~default () =
-  match Sys.getenv_opt "SAREK_DOMAIN_COUNT" with
-  | Some s -> (
-      match int_of_string_opt s with
-      | Some n when n > 0 -> n
-      | _ -> ( try Domain.recommended_domain_count () with _ -> default))
-  | None -> ( try Domain.recommended_domain_count () with _ -> default)
-
-(** Global domain pool for parallel execution *)
-module DomainPool = struct
-  type task = unit -> unit
-
-  type t = {
-    num_domains : int;
-    task_queue : task Queue.t;
-    mutex : Mutex.t;
-    cond : Condition.t;
-    mutable shutdown : bool;
-    (* [domains] MUST be mutated in place (never rebuilt via
-       [{pool with domains}]): worker domains close over the exact record
-       returned by [create]. A functional record update after [Domain.spawn]
-       allocates a *new* block, so the [mutable] fields above - stored inline,
-       not behind a shared box - would live at two different addresses: the
-       one workers mutate and the one [submit]/[wait_all] read. [wait_all]
-       would then observe [active_tasks] stuck at 0 and could return before
-       the last popped task finished running, silently dropping its output.
-       See the interpreter-side twin of this bug in
-       sarek/interp/Sarek_ir_interp.ml's [DomainPool]. *)
-    mutable domains : unit Domain.t array;
-    mutable active_tasks : int;
-    mutable first_error : (exn * Printexc.raw_backtrace) option;
-    done_cond : Condition.t;
-  }
-
-  let worker pool =
-    let rec loop () =
-      Mutex.lock pool.mutex ;
-      while Queue.is_empty pool.task_queue && not pool.shutdown do
-        Condition.wait pool.cond pool.mutex
-      done ;
-      if pool.shutdown && Queue.is_empty pool.task_queue then begin
-        Mutex.unlock pool.mutex ;
-        ()
-      end
-      else begin
-        let task = Queue.pop pool.task_queue in
-        pool.active_tasks <- pool.active_tasks + 1 ;
-        Mutex.unlock pool.mutex ;
-        let task_error =
-          try
-            task () ;
-            None
-          with exn -> Some (exn, Printexc.get_raw_backtrace ())
-        in
-        Mutex.lock pool.mutex ;
-        (match (pool.first_error, task_error) with
-        | None, Some err -> pool.first_error <- Some err
-        | _ -> ()) ;
-        pool.active_tasks <- pool.active_tasks - 1 ;
-        if pool.active_tasks = 0 && Queue.is_empty pool.task_queue then
-          Condition.broadcast pool.done_cond ;
-        Mutex.unlock pool.mutex ;
-        loop ()
-      end
-    in
-    loop ()
-
-  let create num_domains =
-    let pool =
-      {
-        num_domains;
-        task_queue = Queue.create ();
-        mutex = Mutex.create ();
-        cond = Condition.create ();
-        shutdown = false;
-        domains = [||];
-        active_tasks = 0;
-        first_error = None;
-        done_cond = Condition.create ();
-      }
-    in
-    (* Mutate [domains] in place on [pool] - see the field comment above for
-       why a functional record update here would be unsound. *)
-    pool.domains <-
-      Array.init num_domains (fun _ -> Domain.spawn (fun () -> worker pool)) ;
-    pool
-
-  let submit pool task =
-    Mutex.lock pool.mutex ;
-    Queue.add task pool.task_queue ;
-    Condition.signal pool.cond ;
-    Mutex.unlock pool.mutex
-
-  let wait_all pool =
-    Mutex.lock pool.mutex ;
-    while pool.active_tasks > 0 || not (Queue.is_empty pool.task_queue) do
-      Condition.wait pool.done_cond pool.mutex
-    done ;
-    let first_error = pool.first_error in
-    pool.first_error <- None ;
-    Mutex.unlock pool.mutex ;
-    match first_error with
-    | Some (exn, bt) -> Printexc.raise_with_backtrace exn bt
-    | None -> ()
-
-  let shutdown pool =
-    Mutex.lock pool.mutex ;
-    pool.shutdown <- true ;
-    Condition.broadcast pool.cond ;
-    Mutex.unlock pool.mutex ;
-    Array.iter Domain.join pool.domains
-
-  let _ = shutdown (* suppress unused warning - may be used for cleanup *)
-end
-
-(** Global pool - lazily initialized *)
-let global_pool : DomainPool.t option ref = ref None
-
-let global_pool_mutex = Mutex.create ()
-
-let get_pool () =
-  match !global_pool with
-  | Some pool -> pool
-  | None ->
-      Mutex.lock global_pool_mutex ;
-      (* [Fun.protect]: pool creation can raise (e.g. [Domain.spawn]); the
-         mutex must still be released or later callers deadlock. *)
-      Fun.protect
-        ~finally:(fun () -> Mutex.unlock global_pool_mutex)
-        (fun () ->
-          match !global_pool with
-          | Some p -> p
-          | None ->
-              let num_cores = resolve_domain_count ~default:4 () in
-              let p = DomainPool.create num_cores in
-              global_pool := Some p ;
-              p)
+(** The block pool, shared with the parallel interpreter. *)
+module DomainPool = Sarek_interp.Cpu_domain_pool
 
 (** {1 Persistent Thread Pool for Fission Mode}
 
@@ -158,7 +16,8 @@ let get_pool () =
     workloads with many consecutive kernel launches (like odd-even sort).
 
     Design:
-    - N worker domains created once, stay alive until program exit
+    - N worker domains created on the first launch, retired when idle (see
+      {!Lifecycle})
     - Each kernel launch distributes BLOCKS to workers (not individual threads)
     - Each worker processes complete blocks with BSP barrier semantics
     - Workers wait on a condition variable between kernels *)
@@ -583,27 +442,15 @@ module ThreadPool = struct
     Condition.broadcast pool.work_ready ;
     Mutex.unlock pool.mutex ;
     Array.iter Domain.join pool.workers
-
-  let _ = shutdown (* Suppress unused warning *)
 end
 
-(** Global fission thread pool - lazily initialized *)
-let fission_pool : ThreadPool.t option ref = ref None
+(** The fission thread pool, created on the first launch, retired when idle. *)
+let fission_pool =
+  Lifecycle.slot
+    ~create:(fun () -> ThreadPool.create (Lifecycle.domain_count ~default:4 ()))
+    ~retire:ThreadPool.shutdown
 
-let fission_pool_mutex = Mutex.create ()
-
-let get_fission_pool () =
-  Mutex.lock fission_pool_mutex ;
-  Fun.protect
-    ~finally:(fun () -> Mutex.unlock fission_pool_mutex)
-    (fun () ->
-      match !fission_pool with
-      | Some p -> p
-      | None ->
-          let num_cores = resolve_domain_count ~default:4 () in
-          let p = ThreadPool.create num_cores in
-          fission_pool := Some p ;
-          p)
+let with_fission_pool f = Lifecycle.with_pool fission_pool f
 
 (** {1 Simple Parallel Pool for Simple Kernels}
 
@@ -785,42 +632,28 @@ module ParallelPool = struct
     Condition.broadcast pool.work_ready ;
     Mutex.unlock pool.mutex ;
     Array.iter Domain.join pool.workers
-
-  let _ = shutdown (* Suppress unused warning - available for cleanup *)
 end
 
-(** Global parallel pool for simple kernels *)
-let parallel_pool : ParallelPool.t option ref = ref None
+(* Workers = cores - 1 (min 1); an explicit SAREK_DOMAIN_COUNT is taken
+   as-is. Either way under the {!Lifecycle} cap. *)
+let parallel_worker_count () =
+  let explicit =
+    Option.bind (Sys.getenv_opt "SAREK_DOMAIN_COUNT") int_of_string_opt
+  in
+  match explicit with
+  | Some n when n > 0 -> Lifecycle.capped n
+  | _ ->
+      let cores = try Domain.recommended_domain_count () with _ -> 4 in
+      Lifecycle.capped (max 1 (cores - 1))
 
-let parallel_pool_mutex = Mutex.create ()
+(** The parallel pool for barrier-free kernels, created on the first launch,
+    retired when idle. *)
+let parallel_pool =
+  Lifecycle.slot
+    ~create:(fun () -> ParallelPool.create (parallel_worker_count ()))
+    ~retire:ParallelPool.shutdown
 
-let get_parallel_pool () =
-  match !parallel_pool with
-  | Some p -> p
-  | None ->
-      Mutex.lock parallel_pool_mutex ;
-      Fun.protect
-        ~finally:(fun () -> Mutex.unlock parallel_pool_mutex)
-        (fun () ->
-          match !parallel_pool with
-          | Some p -> p
-          | None ->
-              (* Workers = cores - 1 (min 1); an explicit SAREK_DOMAIN_COUNT
-                 is taken as-is. [resolve_domain_count] already guards
-                 [Domain.recommended_domain_count] with a fallback so this
-                 cannot raise while the mutex is held. *)
-              let num_workers =
-                match Sys.getenv_opt "SAREK_DOMAIN_COUNT" with
-                | Some s
-                  when match int_of_string_opt s with
-                       | Some n -> n > 0
-                       | None -> false ->
-                    int_of_string s
-                | _ -> max 1 (resolve_domain_count ~default:4 () - 1)
-              in
-              let p = ParallelPool.create num_workers in
-              parallel_pool := Some p ;
-              p)
+let with_parallel_pool f = Lifecycle.with_pool parallel_pool f
 
 (** {1 Fission Queue with Thread Pool Execution}
 
@@ -829,8 +662,9 @@ let get_parallel_pool () =
     - Different queue_id: kernels can run in parallel (one dispatcher per queue)
 
     Each queue has a dispatcher domain that pulls kernels and submits them to
-    the shared thread pool. The thread pool workers stay alive across all kernel
-    launches. *)
+    the shared thread pool. A dispatcher starts on the first launch of its queue
+    and is retired, like the pools, once its queue has been idle for the
+    {!Lifecycle} timeout; the next launch starts a new one. *)
 
 module LaunchQueue = struct
   (** A pending kernel launch - uses wrapper signature for compatibility *)
@@ -853,7 +687,10 @@ module LaunchQueue = struct
     cond : Condition.t;  (** Signal: new work available *)
     done_cond : Condition.t;  (** Signal: queue empty and idle *)
     mutable dispatcher : unit Domain.t option;
-    mutable shutdown : bool;
+    mutable generation : int;
+        (** The generation of the current dispatcher. A dispatcher whose
+            generation is no longer current exits: it has been retired. *)
+    mutable last_used : float;  (** When the last launch completed. *)
     mutable pending : int;  (** Number of launches not yet completed *)
     mutable first_error : (exn * Printexc.raw_backtrace) option;
         (** First kernel failure since the last [flush]; re-raised there *)
@@ -861,17 +698,14 @@ module LaunchQueue = struct
 
   (** Dispatcher loop - pulls kernels and executes via wrapper The wrapper
       internally uses run_threadpool with mode=Threadpool *)
-  let dispatcher_loop (q : t) =
+  let dispatcher_loop (q : t) ~generation =
     let rec loop () =
       Mutex.lock q.mutex ;
-      (* Wait for work or shutdown *)
-      while Queue.is_empty q.queue && not q.shutdown do
+      (* Wait for work or retirement *)
+      while Queue.is_empty q.queue && q.generation = generation do
         Condition.wait q.cond q.mutex
       done ;
-      if q.shutdown && Queue.is_empty q.queue then begin
-        Mutex.unlock q.mutex ;
-        () (* Exit dispatcher *)
-      end
+      if q.generation <> generation then Mutex.unlock q.mutex
       else begin
         let launch = Queue.pop q.queue in
         Mutex.unlock q.mutex ;
@@ -894,6 +728,7 @@ module LaunchQueue = struct
         | None, Some _ -> q.first_error <- error
         | _ -> ()) ;
         q.pending <- q.pending - 1 ;
+        q.last_used <- Unix.gettimeofday () ;
         if q.pending = 0 then Condition.broadcast q.done_cond ;
         Mutex.unlock q.mutex ;
         loop ()
@@ -909,24 +744,34 @@ module LaunchQueue = struct
       cond = Condition.create ();
       done_cond = Condition.create ();
       dispatcher = None;
-      shutdown = false;
+      generation = 0;
+      last_used = 0.;
       pending = 0;
       first_error = None;
     }
 
-  (** Ensure dispatcher is running *)
+  (** Start a dispatcher if none is running; [true] iff one was started. Called
+      with [q.mutex] held. *)
   let ensure_dispatcher (q : t) =
-    if q.dispatcher = None then
-      q.dispatcher <- Some (Domain.spawn (fun () -> dispatcher_loop q))
+    match q.dispatcher with
+    | Some _ -> false
+    | None ->
+        let generation = q.generation in
+        q.dispatcher <-
+          Some (Domain.spawn (fun () -> dispatcher_loop q ~generation)) ;
+        true
 
   (** Enqueue a kernel launch - dispatcher starts processing immediately *)
   let enqueue (q : t) ~kernel ~args ~block ~grid =
-    Mutex.lock q.mutex ;
-    ensure_dispatcher q ;
-    Queue.add {kernel; args; block; grid} q.queue ;
-    q.pending <- q.pending + 1 ;
-    Condition.signal q.cond ;
-    Mutex.unlock q.mutex
+    let started =
+      Mutex.protect q.mutex (fun () ->
+          let started = ensure_dispatcher q in
+          Queue.add {kernel; args; block; grid} q.queue ;
+          q.pending <- q.pending + 1 ;
+          Condition.signal q.cond ;
+          started)
+    in
+    if started then Lifecycle.note_live ()
 
   (** Wait for all pending launches to complete (flush/barrier) *)
   let flush (q : t) =
@@ -941,19 +786,29 @@ module LaunchQueue = struct
     | Some (exn, bt) -> Printexc.raise_with_backtrace exn bt
     | None -> ()
 
-  (** Shutdown the dispatcher (for cleanup) *)
-  let shutdown (q : t) =
-    Mutex.lock q.mutex ;
-    q.shutdown <- true ;
-    Condition.signal q.cond ;
-    Mutex.unlock q.mutex ;
-    match q.dispatcher with
-    | Some d ->
-        Domain.join d ;
-        q.dispatcher <- None
-    | None -> ()
+  type poll = Retired of unit Domain.t | Live | Idle
 
-  let _ = shutdown (* Suppress unused warning *)
+  (** Retire the dispatcher if no launch is pending and the last one completed
+      [idle_after] seconds before [now]; [true] iff a dispatcher is still live.
+      A later {!enqueue} starts a new dispatcher. *)
+  let retire_if_idle (q : t) ~now ~idle_after =
+    let poll =
+      Mutex.protect q.mutex (fun () ->
+          match q.dispatcher with
+          | None -> Idle
+          | Some d when q.pending = 0 && now -. q.last_used >= idle_after ->
+              q.generation <- q.generation + 1 ;
+              q.dispatcher <- None ;
+              Condition.broadcast q.cond ;
+              Retired d
+          | Some _ -> Live)
+    in
+    match poll with
+    | Retired d ->
+        Domain.join d ;
+        false
+    | Live -> true
+    | Idle -> false
 end
 
 (** Multiple queues indexed by queue_id - allows concurrent execution *)
@@ -973,3 +828,16 @@ let get_fission_queue queue_id =
   in
   Mutex.unlock fission_queues_mutex ;
   q
+
+let () =
+  Lifecycle.register_reapable (fun ~now ~idle_after ->
+      let queues =
+        Mutex.protect fission_queues_mutex (fun () ->
+            Hashtbl.fold (fun _ q acc -> q :: acc) fission_queues [])
+      in
+      List.fold_left
+        (fun live q ->
+          let still = LaunchQueue.retire_if_idle q ~now ~idle_after in
+          still || live)
+        false
+        queues)

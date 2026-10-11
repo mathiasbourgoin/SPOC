@@ -7,7 +7,8 @@
    per domain plus its backup thread):
    - sized under SAREK_CPU_POOL_MAX_DOMAINS while alive;
    - all retired, no domain left, once idle for SAREK_CPU_POOL_IDLE_MS;
-   - created again by the next launch, with the same results.
+   - created again by the next launch;
+   - retired at once by [Cpu_pool_lifecycle.retire_idle_now].
    Skipped where /proc/self/status is unavailable. *)
 
 let cap = 3
@@ -56,6 +57,9 @@ let check name cond =
 let () =
   Unix.putenv "SAREK_CPU_POOL_MAX_DOMAINS" (string_of_int cap) ;
   Unix.putenv "SAREK_CPU_POOL_IDLE_MS" (string_of_int idle_ms) ;
+  (* The first spawn also starts the main domain's backup thread, which stays:
+     count from after it. *)
+  Domain.join (Domain.spawn ignore) ;
   let base = threads_or_skip () in
   touch_all () ;
   let live = threads_or_skip () - base in
@@ -76,4 +80,10 @@ let () =
   check
     "a launch after retirement recreates the pools"
     (threads_or_skip () > base) ;
+  Sarek_interp.Cpu_pool_lifecycle.retire_idle_now () ;
+  let deadline = Unix.gettimeofday () +. 1. in
+  let after_retire = wait_for_threads ~target:base ~deadline - base in
+  check
+    "retire_idle_now retires every pool at once, the reaper follows"
+    (after_retire = 0 && not (Sarek_interp.Cpu_pool_lifecycle.any_live ())) ;
   exit (if !failures = 0 then 0 else 1)

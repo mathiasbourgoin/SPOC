@@ -6,6 +6,8 @@
 ;
 ; The interpreter stack is the SINGLE source in ../interp/, pulled in via
 ; copy_files and recompiled here against the jsoo Spoc_core (no literal copies).
+; Except the CPU worker pool (../interp/Cpu_*.ml, which needs unix and
+; domains): Cpu_domain_pool.ml here runs the interpreter's blocks inline.
 ;
 ; This is an INTERNAL jsoo build shim, not a public API. It is intentionally a
 ; private library (no public_name): being (wrapped false) it exposes a top-level
@@ -15,9 +17,9 @@
 ; private (and thus out of @doc/@install) resolves the collision without changing
 ; the wrapped-false layout the jsoo Execute smoke test depends on.
 
-(copy_files ../interp/*.ml)
+(copy_files ../interp/{Interp_error,Sarek_*}.ml)
 
-(copy_files ../interp/*.mli)
+(copy_files ../interp/Sarek_*.mli)
 
 (library
  (name spoc_core_exec_js)
@@ -32,6 +34,7 @@
   Sarek_ir_interp_value
   Sarek_ir_interp_intrinsics
   Sarek_ir_interp_eval
+  Cpu_domain_pool
   Sarek_type_helpers
   Memory_jsx
   Jsoo_exec_ops

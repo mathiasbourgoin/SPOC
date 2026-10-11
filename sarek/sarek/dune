@@ -15,6 +15,7 @@
   spoc_core
   sarek_interp
   sarek_execute
+  unix
   (re_export sarek_registry))
  (modules
   Kirc_types

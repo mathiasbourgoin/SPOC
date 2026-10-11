@@ -448,6 +448,31 @@
   counterparts (`cuMemAllocHost`, `cuMemFreeHost`, `cuMemHostRegister`,
   `cuMemHostUnregister`, `cuModuleUnload`), and OpenCL `clRelease*`. Test:
   `sarek/tests/e2e/test_blocking_ffi_releases_lock.ml`.
+- CPU worker pools are retired when idle (R-66). Every live domain takes part
+  in each minor collection, and the parallel interpreter and Native pools used
+  to keep up to 95 idle domains (32-core host) for the life of the process.
+  Pools are now created by their first launch only and retired, workers joined,
+  once no launch has used them for `SAREK_CPU_POOL_IDLE_MS` (default 1000 ms);
+  the next launch creates them again. Fission-queue dispatchers are retired the
+  same way. `SAREK_CPU_POOL_MAX_DOMAINS` (or
+  `Sarek_interp.Cpu_pool_lifecycle.set_max_domains`) caps each pool so a client
+  can keep cores; `Cpu_pool_lifecycle.retire_idle_now` (also run `at_exit`)
+  retires every idle pool at once. The interpreter and the Native barrier path
+  now share one block pool (`Sarek_interp.Cpu_domain_pool`); each launch waits
+  on its own task group, so concurrent launches no longer receive each other's
+  errors (R-68, block pool). Before, using every CPU pool on a 32-core host
+  needed 129 domains and failed with "failed to allocate domain". Measured with
+  `sarek/tests/unit/bench_cpu_pool_idle_gc.ml` (5 interleaved runs, load 7-23):
+  minor-GC cost 1.5 s after one launch on each pool went from 715 us (530-810)
+  to 258 us (248-313), against 283 us (279-289) in a process that never ran a
+  kernel; live OS threads 194 -> 2. Results and the parallel decomposition are
+  unchanged. Test: `sarek/tests/unit/test_cpu_pool_idle.ml`. Migration:
+  `Sarek_ir_interp.DomainPool`, `get_pool`, `global_pool` and
+  `resolve_domain_count` are gone; in `Sarek_cpu_runtime_pools`, `get_pool`,
+  `global_pool` and `resolve_domain_count` are gone, `DomainPool.run` replaces
+  `submit`/`wait_all`, `with_fission_pool` / `with_parallel_pool` replace
+  `get_fission_pool` / `get_parallel_pool`, and `LaunchQueue.retire_if_idle`
+  replaces `shutdown`. The jsoo interpreter build runs parallel blocks inline.
 - `Spoc_core.Memory.bigarray_void_ptr` is replaced by
   `Memory.borrow_bigarray_ptr`, whose pointer need not root the bigarray: the
   caller keeps it reachable, on transfer paths with a trailing
