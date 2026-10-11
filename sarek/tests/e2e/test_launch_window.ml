@@ -381,13 +381,15 @@ let check_bit_identity dev ~defers label f =
 
 let run_device (dev : Device.t) =
   let defers = Execute.Window.defers_device dev in
-  (* Every GPU backend defers by default, except Metal until its window has
-     run on Apple hardware; CPU devices are excluded. Not asserted when the
-     window is switched off (SAREK_LAUNCH_WINDOW=0). *)
+  (* A backend in the default set defers on its GPU devices; opt-in backends
+     (Metal, WebGPU) are not asserted. Not asserted when the window is switched
+     off (SAREK_LAUNCH_WINDOW=0). *)
   if
     Execute.Window.enabled ()
     && (not dev.Device.capabilities.Spoc_framework.Framework_sig.is_cpu)
-    && dev.Device.framework <> "Metal"
+    && List.mem
+         dev.Device.framework
+         Sarek_execute.Launch_window.default_backends
   then check dev "deferred by default" defers ;
   let scenario label f ~fused_launches =
     let issued = check_bit_identity dev ~defers label f in

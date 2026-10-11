@@ -371,6 +371,7 @@ let spread xs =
 
 let () =
   let devs = Device.init () in
+  let ran = ref 0 in
   Array.iter
     (fun (dev : Device.t) ->
       if selected dev then begin
@@ -431,6 +432,16 @@ let () =
         Execute.Window.set_enabled true ;
         if opted_in then
           Execute.Window.set_backend_enabled ~backend:dev.framework false ;
-        if reps >= 2 && off_det && not same then exit 1
+        if not same then begin
+          prerr_endline "results differ between window off and on" ;
+          exit 1
+        end ;
+        incr ran
       end)
-    devs
+    devs ;
+  if !ran = 0 then begin
+    Printf.eprintf
+      "no non-CPU device matches SPOC_BENCH_FRAMEWORK=%s\n"
+      (Option.value ~default:"(unset)" (Sys.getenv_opt "SPOC_BENCH_FRAMEWORK")) ;
+    exit 1
+  end
