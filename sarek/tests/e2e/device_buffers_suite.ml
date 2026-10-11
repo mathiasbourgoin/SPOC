@@ -399,6 +399,36 @@ let test_keep_alive dev =
   Transfer.destroy_stream s ;
   Transfer.free_all_buffers dst
 
+(* [Device.synchronize] completes every stream of the device, as
+   [Transfer.flush] does, so it must release the same keep-alive entries: a free
+   refused while the work was pending is accepted after it, and nothing the
+   streams retained stays rooted. *)
+let test_device_synchronize_releases dev =
+  let n = 256 in
+  let pinned = Transfer.alloc_pinned dev Bigarray.int32 n in
+  let x = Transfer.create_device_only dev Vector.int32 n in
+  let s = Transfer.create_stream dev in
+  let retained = ref false in
+  Transfer.copy_to_device ~stream:s pinned ~dst:x ~dst_offset:0 ;
+  retain_unrooted s retained ;
+  check
+    "free_pinned refused before Device.synchronize"
+    (refuses_invalid (fun () -> Transfer.free_pinned pinned)) ;
+  Device.synchronize dev ;
+  Gc.full_major () ;
+  check
+    "free_pinned accepted after Device.synchronize"
+    (match Transfer.free_pinned pinned with
+    | () -> true
+    | exception Invalid_argument _ -> false) ;
+  check
+    "free_all_buffers accepted after Device.synchronize"
+    (match Transfer.free_all_buffers x with
+    | () -> true
+    | exception Invalid_argument _ -> false) ;
+  check "Device.synchronize leaves nothing rooted by the stream" !retained ;
+  Transfer.destroy_stream s
+
 (* ------------------------------------- byte-level read-back (bytes-d2h) *)
 
 (* Byte [b] of int32 [x] as stored in host memory (native byte order): the
@@ -911,6 +941,7 @@ let run_on (dev : Device.t) =
   test_ranged dev ;
   test_streams_pinned dev ;
   test_keep_alive dev ;
+  test_device_synchronize_releases dev ;
   test_bytes_to_host dev ;
   test_bytes_to_host_stream dev ;
   test_destroyed dev ;
