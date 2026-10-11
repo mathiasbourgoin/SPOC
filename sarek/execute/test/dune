@@ -40,3 +40,20 @@
  (libraries sarek sarek_stdlib sarek_execute sarek_ir spoc_core alcotest)
  (preprocess
   (pps sarek_ppx)))
+
+; Epilogue coverage check (specs/epilogue-fusion.md): verdicts and host cost.
+
+(library
+ (name coverage_fixtures)
+ (modules coverage_fixtures)
+ (libraries sarek_execute sarek_ir spoc_framework))
+
+(test
+ (name test_epilogue_coverage)
+ (modules test_epilogue_coverage)
+ (libraries coverage_fixtures sarek_ir alcotest))
+
+(executable
+ (name bench_epilogue_coverage)
+ (modules bench_epilogue_coverage)
+ (libraries coverage_fixtures unix))
