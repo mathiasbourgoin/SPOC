@@ -8,7 +8,8 @@
   test_opencl_fp_conformance
   test_opencl_soa_refusal
   test_opencl_zero_copy_sync
-  test_opencl_device_sync_streams)
+  test_opencl_device_sync_streams
+  test_opencl_device_state_race)
  (libraries sarek_opencl sarek_ir sarek_backend_error alcotest str)
  (instrumentation
   (backend bisect_ppx)))
