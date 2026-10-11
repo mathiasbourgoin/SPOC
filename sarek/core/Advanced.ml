@@ -32,41 +32,105 @@ module Unified = struct
   (* Placeholder *)
 end
 
-(** {1 8b. Pinned/Mapped Memory} *)
+(** {1 8b. Pinned Memory} *)
 
-(** Page-locked host memory (placeholder surface, see the implementation
-    commit). *)
+(** Page-locked host memory, explicit and opt-in: nothing in SPOC pins memory
+    unless you call this module. A thin owner-handle over
+    {!Transfer.alloc_pinned} and {!Transfer.register_host}, which hold the
+    mechanics (per-backend behaviour, measured pitfalls on HIP, the in-flight
+    copy check).
+
+    The memory is a [Bigarray], not a {!Vector.t}: a vector's host mirror is
+    garbage collected, pinned memory is released only explicitly (sub-arrays
+    could outlive a finaliser's decision). Use it as the host side of
+    {!Transfer.copy_to_device} / {!Transfer.copy_to_host} with [~stream], or as
+    the destination of [pread]/[O_DIRECT] reads. *)
 module Pinned = struct
+  type ownership =
+    | Allocated  (** from {!alloc}: SPOC owns the memory *)
+    | Registered  (** from {!register}: the caller's array, page-locked *)
+
   type ('a, 'b) t = {
     device : Device.t;
     data : ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t;
+    ownership : ownership;
+    lock : Mutex.t;
     mutable live : bool;
   }
 
-  let is_available (_dev : Device.t) : bool = false
+  (** [true] iff [dev]'s backend supports page-locked memory. Probes with a
+      one-byte {!alloc}; flushes pending deferred launches, like any pinned
+      allocation. Native, Interpreter and Metal answer [true] (their pinned
+      memory is plain host memory). Errors other than the capability refusal
+      propagate. *)
+  let is_available (dev : Device.t) : bool =
+    match Transfer.alloc_pinned dev Bigarray.char 1 with
+    | probe ->
+        Transfer.free_pinned probe ;
+        true
+    | exception
+        Sarek_backend_error.Backend_error.Backend_error
+          (Sarek_backend_error.Backend_error.Plugin
+             {
+               error = Sarek_backend_error.Backend_error.Feature_not_supported _;
+               _;
+             }) ->
+        false
 
+  (** Allocate [n] elements of page-locked memory for DMA with [device]. Raises
+      [Invalid_argument] for [n < 1] or [Bigarray.float16] (use a [char] buffer
+      and {!Transfer.copy_bytes_to_device}), and the backend's
+      [Feature_not_supported] where unsupported (see {!is_available}). On HIP
+      the allocation can be slow for multi-GiB sizes: measure, or use
+      {!register}. *)
   let alloc (device : Device.t) (kind : ('a, 'b) Bigarray.kind) (n : int) :
       ('a, 'b) t =
-    {
-      device;
-      data = Bigarray.Array1.create kind Bigarray.c_layout n;
-      live = true;
-    }
+    let data = Transfer.alloc_pinned device kind n in
+    {device; data; ownership = Allocated; lock = Mutex.create (); live = true}
 
+  (** Page-lock an array you already own. The array stays yours and usable after
+      {!release}; the handle roots it until then. Raises [Invalid_argument] if
+      it is empty or already pinned or registered. See {!Transfer.register_host}
+      for the measured pitfalls (copies right after registering, registrations
+      spanning two regions). *)
   let register (device : Device.t)
       (data : ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t) : ('a, 'b) t =
-    {device; data; live = true}
+    Transfer.register_host device data ;
+    {device; data; ownership = Registered; lock = Mutex.create (); live = true}
 
-  let bigarray (p : ('a, 'b) t) = p.data
+  let device (p : ('a, 'b) t) : Device.t = p.device
 
-  let device (p : ('a, 'b) t) = p.device
+  let is_live (p : ('a, 'b) t) : bool = Mutex.protect p.lock (fun () -> p.live)
 
-  let is_live (p : ('a, 'b) t) = p.live
+  (** The page-locked array. Raises [Invalid_argument] once released: the memory
+      of an {!alloc} handle is gone then, so do not keep the array itself past
+      {!release}. *)
+  let bigarray (p : ('a, 'b) t) : ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t
+      =
+    Mutex.protect p.lock (fun () ->
+        if p.live then p.data
+        else invalid_arg "Advanced.Pinned.bigarray: handle already released")
 
-  let release (p : ('a, 'b) t) : unit = p.live <- false
+  (** Free the memory ({!alloc}) or unregister it ({!register}). Idempotent.
+      Refused with [Invalid_argument], the handle staying live, while
+      stream-ordered copies may still use the memory: synchronize the stream (or
+      an event recorded after them) first. *)
+  let release (p : ('a, 'b) t) : unit =
+    Mutex.protect p.lock (fun () ->
+        if p.live then begin
+          (match p.ownership with
+          | Allocated -> Transfer.free_pinned p.data
+          | Registered -> Transfer.unregister_host p.data) ;
+          p.live <- false
+        end)
 
-  let with_alloc dev kind n f =
-    let p = alloc dev kind n in
+  (** [with_alloc dev kind n f] runs [f] on a fresh {!alloc} and releases it
+      afterwards, also when [f] raises. [f] must not let the handle's array
+      escape, and its stream-ordered copies must be synchronized before it
+      returns, or the release is refused. *)
+  let with_alloc (device : Device.t) (kind : ('a, 'b) Bigarray.kind) (n : int)
+      (f : ('a, 'b) t -> 'r) : 'r =
+    let p = alloc device kind n in
     Fun.protect ~finally:(fun () -> release p) (fun () -> f p)
 end
 
