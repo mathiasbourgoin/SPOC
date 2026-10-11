@@ -112,6 +112,10 @@ module Device = struct
            EMBEDDED_PROFILE, where it is gated on [cles_khr_int64]. Probed
            rather than assumed — see the derivation at the call site. *)
     is_cpu : bool; (* True for CPU OpenCL devices - enables zero-copy *)
+    mem_base_addr_align : int;
+        (* CL_DEVICE_MEM_BASE_ADDR_ALIGN converted to bytes: the alignment a
+           host pointer must have for CL_MEM_USE_HOST_PTR to be aliased rather
+           than privately copied. *)
     single_fp_config : int64;
         (* CL_DEVICE_SINGLE_FP_CONFIG, verbatim. Read once at device
            construction because [Program.build] needs it on every compile to
@@ -287,6 +291,10 @@ module Device = struct
     (* cl_device_fp_config is a cl_bitfield, i.e. cl_ulong — the same width
        [get_info_long] already reads for CL_DEVICE_TYPE just above. *)
     let single_fp_config = get_info_long handle CL_DEVICE_SINGLE_FP_CONFIG in
+    (* The query is in BITS. *)
+    let mem_base_addr_align =
+      max 1 (get_info_int handle CL_DEVICE_MEM_BASE_ADDR_ALIGN / 8)
+    in
 
     {
       id = idx;
@@ -304,6 +312,7 @@ module Device = struct
       supports_fp64;
       supports_int64;
       is_cpu;
+      mem_base_addr_align;
       single_fp_config;
     }
 
@@ -418,7 +427,11 @@ module Memory = struct
     size : int;
     elem_size : int;
     context : Context.t;
-    zero_copy : bool; (* True if using CL_MEM_USE_HOST_PTR - skip transfers *)
+    host_alias : nativeint option;
+        (* [Some addr] for a CL_MEM_USE_HOST_PTR buffer over the host memory at
+           [addr]. Such a buffer's contents are visible to the host only
+           between a map and the following unmap, so every host access goes
+           through [sync_host]. *)
   }
 
   (* Element sizes come from Spoc_core's pure table, NOT from
@@ -439,10 +452,13 @@ module Memory = struct
         err
     in
     check "clCreateBuffer" !@err ;
-    {handle = mem; size; elem_size; context; zero_copy = false}
+    {handle = mem; size; elem_size; context; host_alias = None}
 
   (** Allocate buffer with zero-copy using host pointer. For CPU OpenCL devices,
       this avoids memory copies entirely. *)
+  let host_ptr_usable ~align_bytes addr =
+    align_bytes > 0 && Nativeint.rem addr (Nativeint.of_int align_bytes) = 0n
+
   let alloc_with_host_ptr context size kind host_ptr =
     let elem_size = Spoc_core.Memory.bigarray_elem_size kind in
     let bytes = Unsigned.Size_t.of_int (size * elem_size) in
@@ -451,7 +467,8 @@ module Memory = struct
     let flags = Unsigned.UInt64.logor cl_mem_read_write cl_mem_use_host_ptr in
     let mem = clCreateBuffer context.Context.handle flags bytes host_ptr err in
     check "clCreateBuffer (use_host_ptr)" !@err ;
-    {handle = mem; size; elem_size; context; zero_copy = true}
+    let alias = Some (Ctypes.raw_address_of_ptr host_ptr) in
+    {handle = mem; size; elem_size; context; host_alias = alias}
 
   (** Allocate buffer for custom types with explicit element size in bytes *)
   let alloc_custom context ~size ~elem_size =
@@ -466,18 +483,65 @@ module Memory = struct
         err
     in
     check "clCreateBuffer (custom)" !@err ;
-    {handle = mem; size; elem_size; context; zero_copy = false}
+    {handle = mem; size; elem_size; context; host_alias = None}
 
   (** Check if buffer uses zero-copy (no transfers needed) *)
-  let is_zero_copy buf = buf.zero_copy
+  let is_zero_copy buf = Option.is_some buf.host_alias
+
+  let aliases_host buf addr = buf.host_alias = Some addr
+
+  (* Make the host memory under a USE_HOST_PTR buffer coherent with the device:
+     a blocking map waits for every command already queued (kernels still
+     reading or writing the buffer), and the unmap hands the host's writes to
+     the device. [flags] says which direction matters: [cl_map_read] to see the
+     device's result, [cl_map_write_invalidate_region] to publish host writes
+     without overwriting them. Blocks until the queue is idle again. *)
+  let sync_host queue buf ~flags ~byte_size =
+    let bytes =
+      Unsigned.Size_t.of_int (min byte_size (buf.size * buf.elem_size))
+    in
+    let err = allocate cl_int 0l in
+    let mapped =
+      clEnqueueMapBuffer
+        queue.CommandQueue.handle
+        buf.handle
+        cl_true
+        flags
+        Unsigned.Size_t.zero
+        bytes
+        Unsigned.UInt32.zero
+        (from_voidp cl_event null)
+        (from_voidp cl_event null)
+        err
+    in
+    check "clEnqueueMapBuffer" !@err ;
+    check
+      "clEnqueueUnmapMemObject"
+      (clEnqueueUnmapMemObject
+         queue.CommandQueue.handle
+         buf.handle
+         mapped
+         Unsigned.UInt32.zero
+         (from_voidp cl_event null)
+         (from_voidp cl_event null)) ;
+    check "clFinish" (clFinish queue.CommandQueue.handle)
 
   let free buf = check "clReleaseMemObject" (clReleaseMemObject buf.handle)
 
   let host_to_device queue ~src ~dst =
-    (* Skip transfer for zero-copy buffers - data is already shared *)
-    if dst.zero_copy then ()
+    let src_bytes = Bigarray.Array1.size_in_bytes src in
+    if
+      aliases_host
+        dst
+        (Ctypes.raw_address_of_ptr (Spoc_core.Memory.bigarray_void_ptr src))
+    then
+      sync_host
+        queue
+        dst
+        ~flags:cl_map_write_invalidate_region
+        ~byte_size:src_bytes
     else begin
-      let bytes = Unsigned.Size_t.of_int (Bigarray.Array1.size_in_bytes src) in
+      let bytes = Unsigned.Size_t.of_int src_bytes in
       (* Spoc_core.Memory.bigarray_void_ptr, not Ctypes.bigarray_start: the
          latter has no Float16 arm (MF2), and the former returns a MANAGED
          pointer that keeps [src] rooted across the blocking enqueue (MF3). *)
@@ -498,10 +562,14 @@ module Memory = struct
     end
 
   let device_to_host queue ~src ~dst =
-    (* Skip transfer for zero-copy buffers - data is already shared *)
-    if src.zero_copy then ()
+    let dst_bytes = Bigarray.Array1.size_in_bytes dst in
+    if
+      aliases_host
+        src
+        (Ctypes.raw_address_of_ptr (Spoc_core.Memory.bigarray_void_ptr dst))
+    then sync_host queue src ~flags:cl_map_read ~byte_size:dst_bytes
     else begin
-      let bytes = Unsigned.Size_t.of_int (Bigarray.Array1.size_in_bytes dst) in
+      let bytes = Unsigned.Size_t.of_int dst_bytes in
       (* See host_to_device above: MF2 (no Float16 kind in ctypes) and MF3
          (managed pointer keeps [dst] rooted across this device->host WRITE). *)
       let dst_ptr = Spoc_core.Memory.bigarray_void_ptr dst in
@@ -522,8 +590,8 @@ module Memory = struct
 
   (** Transfer from raw pointer to device buffer (for custom types) *)
   let host_ptr_to_device queue ~src_ptr ~byte_size ~dst =
-    (* Skip transfer for zero-copy buffers *)
-    if dst.zero_copy then ()
+    if aliases_host dst (Ctypes.raw_address_of_ptr src_ptr) then
+      sync_host queue dst ~flags:cl_map_write_invalidate_region ~byte_size
     else begin
       let bytes = Unsigned.Size_t.of_int byte_size in
       check
@@ -542,8 +610,8 @@ module Memory = struct
 
   (** Transfer from device buffer to raw pointer (for custom types) *)
   let device_to_host_ptr queue ~src ~dst_ptr ~byte_size =
-    (* Skip transfer for zero-copy buffers *)
-    if src.zero_copy then ()
+    if aliases_host src (Ctypes.raw_address_of_ptr dst_ptr) then
+      sync_host queue src ~flags:cl_map_read ~byte_size
     else begin
       let bytes = Unsigned.Size_t.of_int byte_size in
       check
