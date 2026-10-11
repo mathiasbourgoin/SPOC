@@ -1,0 +1,30 @@
+dim. 11 oct. 2026 16:16:13 CEST
+7.1.2-3-cachyos
+AMD Ryzen 9 7950X 16-Core Processor writer=kernel alloc=default gap=1000us: 0 of 1000 tags lost
+AMD Ryzen 9 7950X 16-Core Processor writer=kernel alloc=uncached gap=1000us: 0 of 1000 tags lost
+AMD Ryzen 9 7950X 16-Core Processor writer=htod alloc=default gap=1000us: 0 of 1000 tags lost
+AMD Ryzen 9 7950X 16-Core Processor writer=htod alloc=uncached gap=1000us: 0 of 1000 tags lost
+AMD Ryzen 9 7950X 16-Core Processor writer=kernel alloc=default gap=20000us: 0 of 1000 tags lost
+AMD Ryzen 9 7950X 16-Core Processor writer=kernel alloc=uncached gap=20000us: 0 of 1000 tags lost
+AMD Ryzen 9 7950X 16-Core Processor writer=htod alloc=default gap=20000us: 0 of 1000 tags lost
+AMD Ryzen 9 7950X 16-Core Processor writer=htod alloc=uncached gap=20000us: 0 of 1000 tags lost
+AMD Radeon RX 7900 XTX writer=kernel alloc=default gap=20000us: 0 of 1000 tags lost
+AMD Radeon RX 7900 XTX writer=htod alloc=default gap=20000us: 0 of 1000 tags lost
+--- with WAKE=1
+AMD Ryzen 9 7950X 16-Core Processor writer=kernel alloc=default gap=1000us wake=1: 0 of 1000 tags lost
+AMD Ryzen 9 7950X 16-Core Processor writer=kernel alloc=uncached gap=1000us wake=1: 0 of 1000 tags lost
+AMD Ryzen 9 7950X 16-Core Processor writer=htod alloc=default gap=1000us wake=1: 0 of 1000 tags lost
+AMD Ryzen 9 7950X 16-Core Processor writer=htod alloc=uncached gap=1000us wake=1: 0 of 1000 tags lost
+AMD Ryzen 9 7950X 16-Core Processor writer=kernel alloc=default gap=20000us wake=1: 1 of 1000 tags lost
+AMD Ryzen 9 7950X 16-Core Processor writer=kernel alloc=uncached gap=20000us wake=1: 0 of 1000 tags lost
+AMD Ryzen 9 7950X 16-Core Processor writer=htod alloc=default gap=20000us wake=1: 0 of 1000 tags lost
+AMD Ryzen 9 7950X 16-Core Processor writer=htod alloc=uncached gap=20000us wake=1: 0 of 1000 tags lost
+AMD Radeon RX 7900 XTX writer=kernel alloc=default gap=20000us wake=1: 0 of 1000 tags lost
+AMD Radeon RX 7900 XTX writer=htod alloc=default gap=20000us wake=1: 0 of 1000 tags lost
+--- batch writers, 200 batches of 300 writes, 20 ms sleep before ~5% of writes
+AMD Ryzen 9 7950X 16-Core Processor writer=batch-htod alloc=default gap=20000us: 0 of 200 batches lost words (0 words of 60000)
+AMD Ryzen 9 7950X 16-Core Processor writer=batch-htod alloc=uncached gap=20000us: 0 of 200 batches lost words (0 words of 60000)
+AMD Ryzen 9 7950X 16-Core Processor writer=batch-kernel alloc=default gap=20000us: 186 of 200 batches lost words (47963 words of 60000)
+AMD Ryzen 9 7950X 16-Core Processor writer=batch-kernel alloc=uncached gap=20000us: 0 of 200 batches lost words (0 words of 60000)
+AMD Radeon RX 7900 XTX writer=batch-kernel alloc=default gap=20000us: 0 of 100 batches lost words (0 words of 30000)
+AMD Radeon RX 7900 XTX writer=batch-htod alloc=default gap=20000us: 0 of 100 batches lost words (0 words of 30000)

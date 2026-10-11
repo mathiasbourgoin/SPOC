@@ -79,6 +79,8 @@ module Device = struct
     shared_mem_per_block : int;
     warp_size : int;
     multiprocessor_count : int;
+    integrated : bool;
+        (** hipDeviceAttributeIntegrated: the GPU shares system memory (APU) *)
   }
 
   let initialized = ref false
@@ -165,6 +167,13 @@ module Device = struct
       get_attribute handle HIP_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT
     in
 
+    (* A failed query counts as integrated: uncached is the safe side (#427). *)
+    let integrated =
+      match get_attribute handle HIP_DEVICE_ATTRIBUTE_INTEGRATED with
+      | v -> v <> 0
+      | exception Hip_error.Hip_error _ -> true
+    in
+
     let dev =
       {
         id = idx;
@@ -178,17 +187,19 @@ module Device = struct
         shared_mem_per_block = shared_mem;
         warp_size = warp;
         multiprocessor_count = mp_count;
+        integrated;
       }
     in
     Spoc_core.Log.debugf
       Spoc_core.Log.Device
-      "HIP device %d: %s (cc %d.%d, %Ld MB, warp %d)"
+      "HIP device %d: %s (cc %d.%d, %Ld MB, warp %d, integrated %b)"
       idx
       name
       major
       minor
       (Int64.div total_mem (Int64.of_int (1024 * 1024)))
-      warp ;
+      warp
+      integrated ;
     dev
 
   let get idx =
@@ -251,6 +262,41 @@ module Memory = struct
     device : Device.t;
   }
 
+  (* Issue #427: on the gfx1036 iGPU (Ryzen 7950X) dirty device-memory writes
+     are lost across host idle gaps: kernels run, but what they wrote into
+     hipMalloc memory before the pause reads back stale. Upstream:
+     https://gitlab.freedesktop.org/drm/amd/-/work_items/5923 (GFX clock gating
+     implicated; GFXOFF ruled out by our own test). Uncached allocation does not
+     lose it. So every device buffer on an INTEGRATED device is uncached,
+     whatever its arch (HSA_OVERRIDE_GFX_VERSION can make gfx1036 report as
+     another one), which over-covers other APUs on purpose. AMD_OPT_FLUSH=0,
+     the workaround in AMDGPU.jl, is process-wide and would also slow the
+     discrete GPU. Discrete devices keep plain hipMalloc.
+     [SAREK_HIP_IGPU_UNCACHED=0] restores hipMalloc on integrated devices; it
+     exists to reproduce the loss and is UNSAFE (silently wrong results).
+     Evidence: docs/measurements/hip-igpu-lost-launches-2026-10-11. *)
+  let uncached_on_integrated =
+    Sys.getenv_opt "SAREK_HIP_IGPU_UNCACHED" <> Some "0"
+
+  let override_warned = Atomic.make false
+
+  let warn_override_once (device : Device.t) =
+    if not (Atomic.exchange override_warned true) then
+      Spoc_core.Log.warnf
+        Spoc_core.Log.Device
+        "SAREK_HIP_IGPU_UNCACHED=0: plain hipMalloc on integrated device %s; \
+         results may be silently wrong (issue #427)"
+        device.Device.name
+
+  let alloc_device_bytes (device : Device.t) pp bytes =
+    if device.Device.integrated && not uncached_on_integrated then
+      warn_override_once device ;
+    if device.Device.integrated && uncached_on_integrated then
+      check
+        "hipExtMallocWithFlags (uncached)"
+        (hipExtMallocWithFlags pp bytes hip_device_malloc_uncached)
+    else check "hipMalloc" (hipMalloc pp bytes)
+
   let alloc device size kind =
     Device.set_current device ;
     (* NOT Ctypes_static.sizeof (Ctypes.typ_of_bigarray_kind kind): ctypes has
@@ -260,14 +306,14 @@ module Memory = struct
     let elem_size = Spoc_core.Memory.bigarray_elem_size kind in
     let bytes = Unsigned.Size_t.of_int (size * elem_size) in
     let pp = allocate (ptr void) null in
-    check "hipMalloc" (hipMalloc pp bytes) ;
+    alloc_device_bytes device pp bytes ;
     {ptr = !@pp; size; elem_size; device}
 
   let alloc_custom device ~size ~elem_size =
     Device.set_current device ;
     let bytes = Unsigned.Size_t.of_int (size * elem_size) in
     let pp = allocate (ptr void) null in
-    check "hipMalloc (custom)" (hipMalloc pp bytes) ;
+    alloc_device_bytes device pp bytes ;
     {ptr = !@pp; size; elem_size; device}
 
   (* [free] is called from GC finalisers ([Gpu_memory.register_finalizer]),

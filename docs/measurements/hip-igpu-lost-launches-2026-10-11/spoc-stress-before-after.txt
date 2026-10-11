@@ -1,0 +1,14 @@
+16:13:35 before-hipMalloc-sleep runs=50 :: AMD Ryzen 9 7950X 16-Core Processor: 50 of 50 runs with a bad slice :: top:       8     iteration 45;      8     iteration 144;      8     iteration 137;
+16:14:11 after-uncached-sleep runs=50 :: AMD Ryzen 9 7950X 16-Core Processor: 0 of 50 runs with a bad slice :: top: 
+16:14:44 before-hipMalloc-sleep runs=50 :: AMD Ryzen 9 7950X 16-Core Processor: 50 of 50 runs with a bad slice :: top:       8     iteration 144;      8     iteration 137;      8     iteration 131;
+16:15:18 after-uncached-sleep runs=50 :: AMD Ryzen 9 7950X 16-Core Processor: 0 of 50 runs with a bad slice :: top: 
+16:15:25 before-hipMalloc-plain runs=200 :: AMD Ryzen 9 7950X 16-Core Processor: 10 of 200 runs with a bad slice :: top:      10     iteration 267;
+16:15:34 after-uncached-plain runs=200 :: AMD Ryzen 9 7950X 16-Core Processor: 0 of 200 runs with a bad slice :: top: 
+16:15:44 before-hipMalloc-gcall runs=50 :: AMD Ryzen 9 7950X 16-Core Processor: 49 of 50 runs with a bad slice :: top:      11     iteration 2;     10     iteration 1;      9     iteration 5;
+16:15:55 after-uncached-gcall runs=50 :: AMD Ryzen 9 7950X 16-Core Processor: 0 of 50 runs with a bad slice :: top: 
+# final binary (after refactor), 7c.. rebased
+16:36:08 final-before-gc1+switch runs=50 :: AMD Ryzen 9 7950X 16-Core Processor: 50 of 50 runs with a bad slice :: top:      18     iteration 68;     18     iteration 60;     18     iteration 120;
+16:36:51 final-after-gc1+switch runs=50 :: AMD Ryzen 9 7950X 16-Core Processor: 0 of 50 runs with a bad slice :: top: 
+16:37:24 final-before-sleep runs=50 :: AMD Ryzen 9 7950X 16-Core Processor: 50 of 50 runs with a bad slice :: top:       8     iteration 144;      8     iteration 137;      8     iteration 131;
+16:38:00 final-after-sleep runs=50 :: AMD Ryzen 9 7950X 16-Core Processor: 0 of 50 runs with a bad slice :: top: 
+16:38:35 final-after-sleep-pinned_ring runs=50 :: AMD Ryzen 9 7950X 16-Core Processor: 0 of 50 runs with a bad slice :: top: 

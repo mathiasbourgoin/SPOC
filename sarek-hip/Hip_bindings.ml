@@ -131,6 +131,18 @@ let hipMalloc_lazy =
 
 let hipMalloc p size = Lazy.force hipMalloc_lazy p size
 
+(** [hipExtMallocWithFlags]: [hipDeviceMallocUncached] (0x3) allocates device
+    memory whose writes are not held back in the GPU caches (issue #427). *)
+let hipExtMallocWithFlags_lazy =
+  foreign_hip_lazy
+    "hipExtMallocWithFlags"
+    (ptr (ptr void) @-> size_t @-> uint @-> returning hip_result)
+
+let hipExtMallocWithFlags p size flags =
+  Lazy.force hipExtMallocWithFlags_lazy p size flags
+
+let hip_device_malloc_uncached = Unsigned.UInt.of_int 0x3
+
 let hipFree_lazy = foreign_hip_lazy "hipFree" (ptr void @-> returning hip_result)
 
 let hipFree ptr = Lazy.force hipFree_lazy ptr
