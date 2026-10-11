@@ -348,3 +348,19 @@
  (alias e2e-hip)
  (action
   (run %{dep:test_hip_profiling_selects_device.exe})))
+
+; Cost of the f32 -> f16 narrowing barrier in a dequantise-to-LDS kernel
+; (specs/f16-narrowing-barrier.md): the generated source against the same
+; source with the barrier's asm deleted, and with it made non-volatile.
+
+(executable
+ (name bench_f16_narrowing)
+ (modules bench_f16_narrowing)
+ (libraries sarek sarek.stdlib sarek_codegen sarek_ir spoc_core sarek_hip)
+ (preprocess
+  (pps sarek_ppx)))
+
+(rule
+ (alias e2e-hip-bench)
+ (action
+  (run %{dep:bench_f16_narrowing.exe})))
