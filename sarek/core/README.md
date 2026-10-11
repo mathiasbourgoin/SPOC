@@ -144,119 +144,14 @@ let transfers dev v =
 
 ### Device-only vectors, ranged copies, streams, pinned memory
 
-These serve streaming workloads, such as copying expert weights into a VRAM-resident cache while the GPU computes (spec: `specs/device-buffers-async-copy.md`).
+For streaming workloads, such as copying expert weights into a VRAM-resident cache while the GPU computes, `Transfer` also provides:
 
-| Capability | HIP | CUDA | Metal | Native / Interpreter | OpenCL, Vulkan, WebGPU |
-|---|---|---|---|---|---|
-| device-only vectors, ranged copies | yes | yes | yes (shared MTLBuffer, memcpy) | yes (memmove) | refused |
-| copies / launches on a stream | yes | yes | launches asynchronous on the stream's queue; copies complete on return | accepted, synchronous | refused |
-| events: create / record / synchronize | yes | yes | yes (newest command buffer of the stream) | trivially complete | yes (existing `Event`) |
-| `stream_wait_event`, `event_query` | yes | yes | wait implied by buffer tracking; query real | trivially complete | refused |
-| pinned host memory | `hipHostMalloc` (portable) | `cuMemHostAlloc` (portable) | page-aligned host memory | plain host memory | refused |
-| `register_host` | `hipHostRegister` | `cuMemHostRegister` (not on ZLUDA) | no-op | no-op | refused |
-| `stage_to_device` | asynchronous, staged | asynchronous, staged | synchronous ranged copy | synchronous ranged copy | refused |
+- `create_device_only`: vectors with no host storage on a GPU;
+- ranged copies in both directions (`copy_to_device`, `copy_bytes_to_device`, `copy_ptr_to_device`, `copy_to_host`, `copy_bytes_to_host`), with an optional `?stream`;
+- streams and events (`create_stream`, `record_event`, `stream_wait_event`, ...);
+- pinned host memory (`alloc_pinned`, `register_host`) and `stage_to_device` for small host writes.
 
-Metal (spec `specs/metal-ranged-copies.md`): every buffer is `MTLResourceStorageModeShared`; on Apple silicon CPU and GPU share one physical memory, so a ranged copy is one `memcpy` into the buffer's `contents`. Kernel launches are asynchronous: dispatches are batched into one command buffer per queue, committed when the queue's previous command buffer has completed or once the batch holds `SPOC_METAL_BATCH` dispatches (default 32), otherwise by the next launch, wait, event record or synchronisation. Every host access to a buffer first waits for the pending command buffers that bind it. A buffer larger than the device's `maxBufferLength` is refused with an error naming the limit.
-
-"Refused" is `Backend_error (Plugin {error = Feature_not_supported _})`. Caller errors (bounds, wrong device, wrong location, freeing in-flight memory) raise `Invalid_argument`. Nothing silently falls back.
-
-The core of the interface, written as a signature that the compiler checks against `Transfer`:
-
-```ocaml
-module type Streaming = sig
-  type stream
-  type event
-
-  val create_stream : Device.t -> stream
-  val synchronize_stream : stream -> unit
-  val destroy_stream : stream -> unit
-  val create_event : Device.t -> event
-  val record_event : event -> stream -> unit
-  val stream_wait_event : stream -> event -> unit
-  val event_query : event -> bool
-  val synchronize_event : event -> unit
-  val destroy_event : event -> unit
-
-  (* Device-only: no host mirror on a GPU; host access is refused *)
-  val create_device_only :
-    Device.t -> ('a, 'b) Vector.kind -> int -> ('a, 'b) Vector.t
-
-  (* Pinned host memory, explicit lifetime (like munmap) *)
-  val alloc_pinned :
-    Device.t ->
-    ('a, 'b) Bigarray.kind ->
-    int ->
-    ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t
-
-  val free_pinned : (_, _, Bigarray.c_layout) Bigarray.Array1.t -> unit
-  val is_pinned : (_, _, Bigarray.c_layout) Bigarray.Array1.t -> bool
-end
-
-module _ : Streaming = Transfer
-```
-
-Ranged copies take an optional `?stream`. Without it they complete on return; with it they are enqueued, and SPOC keeps the Bigarrays and vectors alive until the stream (or a later event) is synchronised:
-
-| Function | Moves | Offset unit |
-|---|---|---|
-| `copy_to_device src ~dst ~dst_offset` | Bigarray to vector | elements |
-| `copy_bytes_to_device src ~dst ~dst_byte_offset` | Bigarray to vector | bytes |
-| `copy_ptr_to_device ~src_ptr ~byte_size ~dst ~dst_byte_offset ()` | raw address to vector (the caller keeps the source alive) | bytes |
-| `copy_to_host ~src ~src_offset dst` | vector to Bigarray | elements |
-| `copy_bytes_to_host ~src ~src_byte_offset dst` | vector to Bigarray | bytes |
-| `stage_to_device src ~dst ~dst_offset` | at most `max_staged_bytes` (64 KiB), without waiting for the GPU; the source may be reused on return | elements |
-| `register_host dev ba` / `unregister_host ba` | pin existing host memory | - |
-
-The streaming pattern, with a copy stream and a compute stream:
-
-```ocaml
-let streaming_step dev ~ir ~cache ~x ~y ~slot ~slot_bytes ~block ~grid =
-  let copy = Transfer.create_stream dev
-  and compute = Transfer.create_stream dev in
-  let ready = Transfer.create_event dev in
-  let staged = Transfer.alloc_pinned dev Bigarray.char slot_bytes in
-  (* ... fill [staged], for example with pread ... *)
-  Transfer.copy_bytes_to_device
-    ~stream:copy
-    staged
-    ~dst:cache
-    ~dst_byte_offset:(slot * slot_bytes) ;
-  Transfer.record_event ready copy ;
-  Transfer.stream_wait_event compute ready ;
-  Sarek.Execute.run_vectors
-    ~stream:compute
-    ~device:dev
-    ~ir
-    ~args:[Vec cache; Vec x; Vec y]
-    ~block
-    ~grid
-    ()
-```
-
-Rules worth knowing:
-
-- A ranged copy needs the vector's device copy to be current (`GPU`, `Both`, `Stale_CPU` on that device, or device-only); otherwise call `to_device` first. A ranged write turns `Both` into `Stale_CPU`. Custom (record) kinds are refused.
-- A read-back (`copy_to_host`, `copy_bytes_to_host`) leaves the vector's location unchanged. `copy_bytes_to_host` copies `size_in_bytes dst` bytes whatever the two element kinds are. With `~stream`, the destination is undefined until the copy has completed, and `free_pinned`/`unregister_host` refuse it meanwhile.
-- On CPU devices a device-only vector keeps host storage and host access works. Do not rely on it.
-- Freeing a device-only vector discards its contents. Freeing anything a pending stream operation references is refused.
-- `synchronize_stream`, `flush`, `synchronize_event` and a `true` `event_query` release what the stream kept alive. Destroy streams you create: a dropped stream keeps its pending work rooted.
-- Streams from `create_stream` are blocking streams, and the auto-sync path depends on that. A synchronous transfer on the default stream serialises with them, so a streaming loop should not mix in auto-transfers.
-- Vector lengths are capped at `Int32.max_int` elements (kernels index with int32); `Execute` refuses longer vectors.
-- Vector location and buffer tables are not synchronised across domains: use a vector from one domain at a time. The keep-alive ledger and the pinned registry are mutex-protected.
-
-**Small host writes to device-resident vectors.** `Vector.set` on a vector a GPU kernel has used downloads the whole vector (after every queued kernel), and the next launch re-uploads it with a synchronous copy. `Transfer.stage_to_device` copies the source into a 1 MiB per-device pinned staging ring and enqueues the copy on the stream, so it neither waits for the GPU nor requires the source to stay unchanged. Reusing one caller-owned pinned buffer with `copy_to_device ~stream` instead is a race: a queued copy reads whatever the buffer holds when it runs. Measured with `sarek-hip/test/bench_hip_small_writes.exe` (RX 7900 XTX, ROCm 7.2, 2026-10-10, shared machine; 8 int32 + 8 float32 rewritten, 300 us host work, 4 launches per iteration; three runs):
-
-| Mode | us / iteration | of which in the writes |
-|---|---|---|
-| no rewrite | 320-324 | 0 |
-| `Vector.set` | 709-712 | 339-344 |
-| `stage_to_device` | 333-343 | 10-13 |
-
-**Registering host memory on ROCm.** Measured with `sarek-hip/test/bench_hip_register_host.exe` (raw output in `docs/measurements/transfer-pitfalls-2026-10-10/`; 8 GiB, synchronous 5.5 MiB copies; tartarus 2026-10-10, under memory pressure from other workloads). Details and caveats are on `Transfer.register_host`.
-
-- Copies right after registering are sometimes slow: 7 of 50 first passes ran at 0.95-6.17 GB/s (about 26 GB/s otherwise), whatever the preparation. The effect is intermittent and state-dependent.
-- A copy may not span two registrations: `hipErrorInvalidValue`.
-- ROCm does not count registered pages as pinned (`VmPin: 0 kB`); whether that explains slow copies under memory pressure is not established.
+Support differs per backend: HIP, CUDA, Metal, Native and Interpreter support them; OpenCL, Vulkan and WebGPU refuse with `Feature_not_supported`. The user guide [Memory and transfers](../../gh-pages/docs/memory.md) has the support table, the rules, worked examples and the measured transfer pitfalls (`Vector.set` on a device-resident vector, `register_host` on ROCm). Specs: `specs/device-buffers-async-copy.md`, `specs/copy-bytes-to-host.md`, `specs/transfer-pitfalls.md`, `specs/metal-ranged-copies.md`.
 
 ## Raw buffers and kernels
 
