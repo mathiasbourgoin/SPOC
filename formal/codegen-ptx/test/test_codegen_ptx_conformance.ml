@@ -1129,6 +1129,27 @@ let emitted_shr_mnemonic c ptx =
         (List.length ls)
         ptx
 
+(** The operands of the single [shr.*] instruction: [(dst, a, count)]. *)
+let emitted_shr_operands c ptx =
+  let lines = List.map String.trim (String.split_on_char '\n' ptx) in
+  let is_shr l = String.length l >= 4 && String.sub l 0 4 = "shr." in
+  match List.filter is_shr lines with
+  | [l] -> (
+      let rest =
+        String.sub
+          l
+          (String.index l ' ' + 1)
+          (String.length l - String.index l ' ' - 1)
+      in
+      let rest = String.concat "" (String.split_on_char ';' rest) in
+      match List.map String.trim (String.split_on_char ',' rest) with
+      | [d; a; k] -> (d, a, k)
+      | _ -> Alcotest.failf "%s: cannot parse operands of %s" c.case_name l)
+  | _ -> Alcotest.failf "%s: expected exactly one shr.* in:\n%s" c.case_name ptx
+
+let is_u64_reg r =
+  String.length r >= 3 && r.[0] = '%' && r.[1] = 'r' && r.[2] = 'd'
+
 (** The mnemonic the MODEL says production emits. *)
 let model_shr_mnemonic c =
   let flavour, width = Shift.shr_insn c.model_op c.wide in
@@ -1247,6 +1268,52 @@ let test_shr_instruction_vs_production () =
           c.case_name
           emitted
           expected
+          ptx)
+    shift_cases
+
+(* PTX shift counts are .u32. The model narrows a 64-bit count to its low 32
+   bits (to_unsigned 32); production must do so with cvt.u32.u64, and the shr
+   count operand must be a 32-bit register. Without the cvt the instruction
+   would take a %rd count (ill-typed PTX) and the model's narrowing would be a
+   claim about an instruction that is not emitted. *)
+let test_shr_count_narrowing () =
+  List.iter
+    (fun c ->
+      let ptx = emit_shift_production c in
+      let _, a, k = emitted_shr_operands c ptx in
+      if is_u64_reg k then
+        Alcotest.failf
+          "%s: shr count operand %s is a 64-bit register:\n%s"
+          c.case_name
+          k
+          ptx ;
+      if c.wide && is_u64_reg a = false then
+        Alcotest.failf
+          "%s: 64-bit shift whose first operand %s is not %%rd:\n%s"
+          c.case_name
+          a
+          ptx ;
+      let lines = List.map String.trim (String.split_on_char '\n' ptx) in
+      let cvt_to_count =
+        List.exists
+          (fun l ->
+            let pre = Printf.sprintf "cvt.u32.u64 %s, %%rd" k in
+            String.length l >= String.length pre
+            && String.sub l 0 (String.length pre) = pre)
+          lines
+      in
+      if c.wide_amount && not cvt_to_count then
+        Alcotest.failf
+          "%s: 64-bit count register is not narrowed (no 'cvt.u32.u64 %s, \
+           %%rd..'):\n\
+           %s"
+          c.case_name
+          k
+          ptx ;
+      if (not c.wide_amount) && cvt_to_count then
+        Alcotest.failf
+          "%s: unexpected cvt on a 32-bit count:\n%s"
+          c.case_name
           ptx)
     shift_cases
 
@@ -1448,6 +1515,7 @@ let () =
             "instruction-choice"
             `Quick
             test_shr_instruction_vs_production;
+          Alcotest.test_case "count-narrowing" `Quick test_shr_count_narrowing;
           Alcotest.test_case
             "result-vs-emitted-instruction"
             `Quick

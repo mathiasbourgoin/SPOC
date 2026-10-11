@@ -136,9 +136,16 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 #     sampling: it establishes agreement on the inputs actually generated,
 #     not universally. A counterexample outside the sampled space is exactly
 #     what this evidence cannot rule out.
+#
+#   differential_fixed_grid — a hand-chosen finite grid of inputs (edge
+#     values, boundaries) plus a check that the model names the same
+#     instruction production emits; no random generator and no exhaustion.
+#     It is neither of the above: stronger than a random sample on the edge
+#     cases it names, silent on everything it does not. (codegen-ptx/PtxShift.)
 EVIDENCE_KINDS = {
     "exhaustive_bounded_plus_random": "exhaustive-for-a-bound + random",
     "differential_sampled": "random sampling only, NOT exhaustive",
+    "differential_fixed_grid": "fixed hand-chosen grid, NOT exhaustive or random",
 }
 
 failures = []
@@ -505,7 +512,7 @@ def main():
         return 1
 
     print("== shipped-artefact vs model-only theorem split (backlog-201)")
-    print("   ('shipped' is itself two different strengths of evidence — see below)")
+    print("   ('shipped' is itself several different strengths of evidence — see below)")
     for project, short, n_th, evidence, call in sorted(rows, key=lambda r: (r[0], r[1])):
         if evidence is None:
             tag = "model-only"
@@ -525,7 +532,8 @@ def main():
     print()
     print(
         "NOTE: 'checked against production' means agreement on every input\n"
-        "tested (exhaustive-for-a-bound, or randomly sampled) — it does NOT\n"
+        "tested (exhaustive-for-a-bound, randomly sampled, or a fixed grid) —\n"
+        "it does NOT\n"
         "mean the theorem is proven to hold of the shipped code universally.\n"
         "Do not headline these as one figure without naming which evidence\n"
         "kind backs each part; see docs/formal/rocq-value-ledger.md."

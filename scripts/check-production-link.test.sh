@@ -167,6 +167,12 @@ expect "an unrecognised evidence kind is caught" 1 \
 
 reset_sandbox
 edit_json "$WORK/repo/formal/proj1/production-link.json" \
+  'd["modules"]["Foo"]["evidence"] = "differential_fixed_grid"'
+expect "the fixed-grid evidence kind is accepted and reported as its own kind" 0 \
+  "fixed hand-chosen grid, NOT exhaustive or random:"
+
+reset_sandbox
+edit_json "$WORK/repo/formal/proj1/production-link.json" \
   'd["modules"]["Baz"] = d["modules"].pop("Foo")'
 expect "a claimed module absent from the ledger is caught" 1 \
   "is not in this build's ledger"

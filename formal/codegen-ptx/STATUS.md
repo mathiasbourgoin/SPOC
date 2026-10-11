@@ -16,7 +16,7 @@ PtxExprSpec, PtxStmtSpec, PtxKernelSpec, PtxLayout.
 |---|---|---|
 | Theorems | **106** | `proof-ledger.json` → `counts.theorems` |
 | — checked against production, exhaustively-for-a-bound + random (backlog-201) | 50 (PtxLayout: extraction run directly against `Sarek_ir_layout`) | `production-link.json` + `scripts/check-production-link.py` |
-| — checked against production, fixed-grid differential (D-54) | 18 (PtxShift: extraction run against `Sarek_ir_ptx_expr.emit_expr` — instruction chosen, and result of the instruction emitted) | same; counted under "random sampling only, NOT exhaustive" because the checker has no third kind |
+| — checked against production, fixed-grid differential (D-54) | 18 (PtxShift: extraction run against `Sarek_ir_ptx_expr.emit_expr` — instruction chosen, and result of the instruction emitted) | same; evidence kind `differential_fixed_grid` (a hand-chosen grid, neither random nor exhaustive) |
 | — model-only (no mechanical production link) | 38 (PtxTypes 16, AGpuSemantics 14, PtxExprSpec 4, PtxKernelSpec 2, PtxStmtSpec 2) | same |
 | Admits | 0 | no `Admitted`/`admit` under `theories/`; `check-formal-proofs.sh` greps for them *and* the Rocq build would fail anyway |
 | Project-local axioms / `Parameter`s | 6 | the f32/f64 `sin`/`cos`/`fma` of `AGpuSemantics.v`, all six sanctioned in `formal/axiom-allowlist.txt` |
@@ -98,10 +98,10 @@ and shift models are checked against Rocq's own extraction. That asymmetry is th
 
 ### Expression/statement/kernel suite — hand-mirrored
 
-`test/test_codegen_ptx_conformance.ml`: **45** Alcotest cases across eleven
+`test/test_codegen_ptx_conformance.ml`: **46** Alcotest cases across eleven
 groups (literals 7, thread-intrinsics 4, arithmetic 4, comparisons 4,
 math-intrinsics 6, type-safety 2, registers 2, barrier 1, shift-mirror 4,
-shift-vs-production 4, ptx-dshared 7).
+shift-vs-production 5, ptx-dshared 7).
 
 Both sides of every `eval_agrees` check use the OCaml mirror defined in that
 file, not the extracted Rocq modules — see the extraction section above for
@@ -113,7 +113,7 @@ agreed with the wrong model and disagreed with production — D-54).
 
 ### Right shifts — extracted model against PRODUCTION (D-54)
 
-Group `shift-vs-production` (4 cases) calls `Sarek_ir_ptx_expr.emit_expr` on
+Group `shift-vs-production` (5 cases) calls `Sarek_ir_ptx_expr.emit_expr` on
 `Shr` (32-bit; 64-bit; 64-bit with a 64-bit count register), `Lshr32`, `Lshr64`
 and `Lshr64` with a 64-bit count:
 
@@ -126,6 +126,9 @@ and `Lshr64` with a 64-bit count:
   production emitted; the model's result must equal it on 12 operand patterns
   (negative, `min_int`, all-ones, high-half-only, ...) × 17–21 counts (in range,
   at/beyond the width, `2^32 ± 1`).
+- `count-narrowing` — the `shr` count operand is a 32-bit register; a 64-bit count
+  register is narrowed by `cvt.u32.u64` first (and a 32-bit one is not). Removing
+  that `cvt` in `Sarek_ir_ptx_expr.ml` makes this case fail (checked 2026-10-11).
 - `model-vs-ir-semantics` — for every in-range count the model equals OCaml
   `asr`/`lsr` as the interpreter computes them.
 - `pins` — hand-written values (`-4 >> 1`, count == width, 64-bit narrowing).
@@ -165,7 +168,13 @@ instruction the model names).
 (1) `Shl` is still `Nat.shiftl` on unbounded `nat`: no wrap to 32 bits and no
 count clamp, unlike `shl.b32`. (2) Production's `Lshr32` on a 64-bit first
 operand emits `shr.b32` on a `%rd` register (ill-typed PTX) where the model
-evaluates to `None`. (3) `Add`/`Sub`/`Mul` etc. on `U32` do not wrap either
+evaluates to `None`. Likewise `Shr`/`Lshr32` with a 32-bit first operand and a
+64-bit COUNT register emit `shr.s32`/`shr.b32` with a `%rd` count and no `cvt`
+(only the 64-bit forms narrow the count): ill-typed PTX that ptxas would
+reject, and the model returns `None` for it. Reachability: the PPX frontend
+types OCaml `asr`/`lsr`/`lsl` as `int -> int -> int` (or `int64` on both
+sides), so it should not produce the mixed form; hand-built IR can. Neither
+case is covered by a test, because there is no correct output to compare with. (3) `Add`/`Sub`/`Mul` etc. on `U32` do not wrap either
 (the pre-existing "no overflow modelling" decision).
 
 ### Layout suite — runs the extracted theory

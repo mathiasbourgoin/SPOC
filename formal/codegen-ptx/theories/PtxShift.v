@@ -36,7 +36,7 @@
 From Stdlib Require Import ZArith.
 From Stdlib Require Import Lia.
 
-Open Scope Z_scope.
+Local Open Scope Z_scope.
 
 (* ------------------------------------------------------------------ *)
 (** * Words *)

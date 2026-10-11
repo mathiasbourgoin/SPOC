@@ -26,9 +26,6 @@ From CodegenPtx Require Import PtxShift.
 From Stdlib Require Import Floats.
 
 Open Scope string_scope.
-(* ZArith (imported for PtxShift's Z-level lemmas) opens Z_scope; the rest of
-   this file is nat arithmetic. *)
-Open Scope nat_scope.
 
 (* ------------------------------------------------------------------ *)
 (** * PTX value domain *)
