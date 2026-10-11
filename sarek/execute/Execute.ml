@@ -991,19 +991,7 @@ let check_interpreter_capabilities (ir : Sarek_ir_types.kernel) : unit =
     backend [Kernel.clear_cache], [Device.reset]) and by every device-destroy
     notification. *)
 
-module Physical_kernel = struct
-  type t = Sarek_ir_types.kernel
-
-  let equal = ( == )
-
-  (* Any function of the contents is consistent with [==]. [Hashtbl.hash]
-     reads a bounded prefix, so this is cheap; spoc_llm names every kernel
-     "sarek_kern", so the parameter list is what spreads them. *)
-  let hash (k : t) =
-    Hashtbl.hash (k.Sarek_ir_types.kern_name, k.Sarek_ir_types.kern_params)
-end
-
-module Launch_memo = Ephemeron.K1.Make (Physical_kernel)
+module Launch_memo = Ephemeron.K1.Make (Ir_memo.Physical)
 
 (* The backend is identified by its [generate_source] closure, compared
    PHYSICALLY, not by its name: [Framework_registry.register_backend] replaces

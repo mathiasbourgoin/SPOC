@@ -16,6 +16,7 @@
   sarek_registry
   sarek_interp)
  (modules
+  Ir_memo
   Kernel_access
   Index_slice
   Ir_rename
