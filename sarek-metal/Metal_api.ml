@@ -881,6 +881,4 @@ module Profiling = struct
   let enable () = enabled := true
 
   let disable () = enabled := false
-
-  let event_elapsed_time _event = 0.0 (* TODO: Implement with GPU timestamps *)
 end
