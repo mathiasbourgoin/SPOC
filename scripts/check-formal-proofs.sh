@@ -8,16 +8,16 @@
 # WHAT THIS REPLACES
 #
 # CI's only enforcement of the "0 admits" guarantee was a grep over the .v
-# sources, and the committed .vo files were never re-verified on a branch. A grep
+# sources, and the then-committed .vo files were never re-verified on a branch. A grep
 # is a lexical check pretending to be a proof: it cannot tell whether the files
 # still COMPILE, whether a tactic silently stopped closing its goal, or whether a
-# committed .vo actually corresponds to the .v next to it. A .vo could be stale,
+# compiled .vo actually corresponds to the .v next to it. A .vo could be stale,
 # hand-edited, or built from different sources, and every gate in the repository
 # would have stayed green.
 #
 # This script does the two things only the toolchain can do:
 #
-#   1. rebuilds every .v FROM SCRATCH (the committed .vo files are deleted first,
+#   1. rebuilds every .v FROM SCRATCH (any leftover .vo files are deleted first,
 #      so they cannot vouch for themselves), and
 #   2. runs `rocq check`, the standalone kernel re-checker, over the results.
 #      `rocq check` re-verifies every proof term against the kernel without
@@ -63,7 +63,7 @@ ROOT=$(pwd)
 
 # Writability pre-flight.
 #
-# This script rebuilds in place: it deletes committed .vo files and regenerates
+# This script rebuilds in place: it deletes any leftover .vo files and regenerates
 # CoqMakefile next to the sources. In CI that happens inside a container whose
 # user need not own the mounted checkout — rocq/rocq-prover runs as `rocq`
 # (uid 1000) while a GitHub-hosted runner owns the workspace as `runner`
@@ -250,8 +250,8 @@ cannot determine the logical path to check."
     #
     # The .lia/.nia caches the `lia`/`nia` tactics drop next to the sources
     # are NOT always untracked residue: `git ls-files formal` shows
-    # formal/convergence-safety/.lia.cache committed and tracked (`.nia.cache`
-    # is untracked today — the same filename can be either, project to
+    # formal/convergence-safety/.lia.cache committed and tracked (since
+    # untracked and ignored, formal/.gitignore; `.nia.cache` was untracked — the same filename can be either, project to
     # project). A bare unconditional `rm -f` on a tracked cache is exactly
     # the #229 hazard in miniature: it deletes a tracked path and never
     # restores it, so the next unflagged run refuses on drift nobody made.
@@ -299,13 +299,13 @@ cannot determine the logical path to check."
     }
     trap restore_tree EXIT
 
-    # 1. Delete every committed build artefact. A .vo that is never rebuilt is
+    # 1. Delete every build artefact (none is tracked: formal/.gitignore). A .vo that is never rebuilt is
     #    an unverified binary blob, and re-checking it would only prove it is
     #    self-consistent, not that it matches the .v beside it.
     #
     #    The generated makefile and its dependency files go too, and that is not
     #    tidiness — it is the stale-generated-artefact hazard this script exists
-    #    to catch, biting the script itself. The tracked .CoqMakefile.d files
+    #    to catch, biting the script itself. The formerly tracked .CoqMakefile.d files
     #    hard-code /usr/lib/ocaml/rocq-runtime/rocqworker, the path of a
     #    system-packaged Rocq. That path exists on a distro install and does not
     #    exist in the opam-based rocq/rocq-prover image, so reusing them fails

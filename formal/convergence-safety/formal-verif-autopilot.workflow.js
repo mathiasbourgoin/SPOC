@@ -567,7 +567,7 @@ if (gateVerdict === 'GO') {
 }
 
 // ── Commit: always on GO, always split by file class ─────────────────────────
-// Commit 1 — Rocq / spec files (theories/, extraction/*.v, *.vo, *.glob)
+// Commit 1 — Rocq / spec files (theories/, extraction/*.v; .vo/.glob are build artefacts, ignored)
 // NOT *.aux: the COQAUX1 side files embed the absolute path of the .v they were
 // produced from, so staging them publishes the producing machine and user
 // (backlog-216). They are gitignored.
@@ -591,11 +591,8 @@ if (gateVerdict === 'GO') {
     Then make UP TO THREE commits in this order (skip any class with no changes):
 
     ── COMMIT 1 — Rocq / spec files ──
-    Stage ONLY: theories/ConvergenceSpec.v  theories/ConvergenceSpec.vo
-                theories/ConvergenceSpec.glob
+    Stage ONLY: theories/ConvergenceSpec.v
                 extraction/ConvergenceSafetyExtraction.v
-                extraction/ConvergenceSafetyExtraction.vo
-                extraction/ConvergenceSafetyExtraction.glob
     Do NOT stage any .aux file: it carries an absolute home path (backlog-216).
     Commit message: "${taskResult.commitMessage}"
     (append "\\n\\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>")
