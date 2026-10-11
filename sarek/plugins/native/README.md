@@ -32,8 +32,8 @@ The Native backend provides CPU execution for Sarek kernels using OCaml 5 domain
 sarek/plugins/native/
 ├── Native_error.ml              # Structured error handling
 ├── Native_vec_access.ml         # Vector element accessors used by kernels
-├── Native_plugin_base.ml        # Core implementation (678 lines)
-├── Native_plugin.ml             # BACKEND interface (393 lines)
+├── Native_plugin_base.ml        # Core implementation (964 lines)
+├── Native_plugin.ml             # BACKEND interface (309 lines)
 └── test/
     └── test_native_error.ml     # Error tests
 ```

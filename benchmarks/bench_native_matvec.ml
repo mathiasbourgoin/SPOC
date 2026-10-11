@@ -222,68 +222,61 @@ let run_case dev dev_name reps name launch y =
     Printf.printf "%s,%s,%.1f,%.6g\n%!" name dev_name us (checksum y)
   done
 
-let () =
-  Benchmark_backends.Backend_loader.init () ;
-  let dev_name = Sys.argv.(1) and reps = int_of_string Sys.argv.(2) in
-  let which = if Array.length Sys.argv > 3 then Sys.argv.(3) else "all" in
-  let dev = pick_device dev_name in
-  Printf.printf "# device %s (%s)\n" dev.Device.name dev.Device.framework ;
+let run_matvec_cases dev dev_name reps wanted =
   let er = make_records () in
   let x = Vector.create Vector.float32 k in
   for i = 0 to k - 1 do
     Vector.set x i ((float (i * 37 mod 101) /. 50.0) -. 1.0)
   done ;
   let y = Vector.create Vector.float32 (rows * n_sel) in
+  let case name kern ~groups_x =
+    if wanted name then
+      run_case
+        dev
+        dev_name
+        reps
+        name
+        (matvec_launch
+           dev
+           kern
+           ~grid:(Execute.dims2d groups_x n_sel)
+           ~block:(Execute.dims1d 256)
+           er
+           x
+           y)
+        y
+  in
+  case "wave" wave ~groups_x:(rows / 8) ;
+  case "row" row ~groups_x:(rows / 256)
+
+let run_copy_case dev dev_name reps =
+  let n = 1 lsl 20 in
+  let xs = Vector.create Vector.float32 n
+  and ys = Vector.create Vector.float32 n in
+  for i = 0 to n - 1 do
+    Vector.set xs i (float i)
+  done ;
+  run_case
+    dev
+    dev_name
+    reps
+    "copy"
+    (fun () ->
+      Execute.run_vectors
+        ~device:dev
+        ~ir:(ir_of copy)
+        ~args:Execute.[Vec xs; Vec ys; Int32 (Int32.of_int n)]
+        ~block:(Execute.dims1d 256)
+        ~grid:(Execute.dims1d (n / 256))
+        ())
+    ys
+
+let () =
+  Benchmark_backends.Backend_loader.init () ;
+  let dev_name = Sys.argv.(1) and reps = int_of_string Sys.argv.(2) in
+  let which = if Array.length Sys.argv > 3 then Sys.argv.(3) else "all" in
+  let dev = pick_device dev_name in
+  Printf.printf "# device %s (%s)\n" dev.Device.name dev.Device.framework ;
   let wanted s = which = "all" || which = s in
-  if wanted "wave" then
-    run_case
-      dev
-      dev_name
-      reps
-      "wave"
-      (matvec_launch
-         dev
-         wave
-         ~grid:(Execute.dims2d (rows / 8) n_sel)
-         ~block:(Execute.dims1d 256)
-         er
-         x
-         y)
-      y ;
-  if wanted "row" then
-    run_case
-      dev
-      dev_name
-      reps
-      "row"
-      (matvec_launch
-         dev
-         row
-         ~grid:(Execute.dims2d (rows / 256) n_sel)
-         ~block:(Execute.dims1d 256)
-         er
-         x
-         y)
-      y ;
-  if wanted "copy" then begin
-    let n = 1 lsl 20 in
-    let xs = Vector.create Vector.float32 n
-    and ys = Vector.create Vector.float32 n in
-    for i = 0 to n - 1 do
-      Vector.set xs i (float i)
-    done ;
-    run_case
-      dev
-      dev_name
-      reps
-      "copy"
-      (fun () ->
-        Execute.run_vectors
-          ~device:dev
-          ~ir:(ir_of copy)
-          ~args:Execute.[Vec xs; Vec ys; Int32 (Int32.of_int n)]
-          ~block:(Execute.dims1d 256)
-          ~grid:(Execute.dims1d (n / 256))
-          ())
-      ys
-  end
+  run_matvec_cases dev dev_name reps wanted ;
+  if wanted "copy" then run_copy_case dev dev_name reps
