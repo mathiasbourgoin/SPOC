@@ -747,10 +747,7 @@ sudo apt-get install intel-opencl-icd
 ### Install via opam
 
 ```bash
-# Install sarek-opencl
-opam install sarek-opencl
-
-# Or build from source
+# Sarek is not yet published to opam: build from source
 git clone https://github.com/mathiasbourgoin/Sarek.git
 cd Sarek
 opam install . --deps-only
