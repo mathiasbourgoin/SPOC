@@ -1232,7 +1232,9 @@ module Window = struct
     Launch_epilogue.set_backend_enabled ~backend b
 
   (** Forget every fused kernel built so far. *)
-  let clear_fused_cache () = Launch_window.clear_cache window
+  let clear_fused_cache () =
+    Launch_window.clear_cache window ;
+    Mutex.protect window.Launch_window.lock Launch_epilogue.clear
 end
 
 (* Prepare the hand-over of a generated kernel to the backend: everything that

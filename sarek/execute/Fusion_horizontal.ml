@@ -27,15 +27,17 @@ open Sarek_ir_types
 
 let prefix k name = Printf.sprintf "m%d_%s" k name
 
-(* Var ids of member [k] are shifted into a range of their own. *)
-let id_stride = 1 lsl 24
+(* Var ids of member [k] are shifted by [(k + 1) * stride], where [stride]
+   exceeds every member's largest id: the ranges cannot overlap, whatever the
+   members are (including kernels that are themselves fused). *)
 
 (* The position parameters live OUTSIDE the members' [m<k>_] namespace: a
-   member variable named [off] becomes [m<k>_off] and must not shadow them. *)
-let int32_var k name =
+   member variable named [off] becomes [m<k>_off] and must not shadow them.
+   Their ids sit above all members' ranges. *)
+let int32_var ~stride ~members k name =
   {
     var_name = Printf.sprintf "hf%d_%s" k name;
-    var_id = (((k + 1) * id_stride) - 1 - if name = "off" then 0 else 1);
+    var_id = (((members + 1) * stride) + (2 * k) + if name = "off" then 0 else 1);
     var_type = TInt32;
     var_mutable = false;
   }
@@ -44,7 +46,7 @@ let gpu name = EIntrinsic (["Sarek_stdlib"; "Gpu"], name, [])
 
 (** {1 Renaming and position rewrite} *)
 
-type ctx = {k : int; off : expr; gdx : expr}
+type ctx = {k : int; stride : int; off : expr; gdx : expr}
 
 (* block_idx_x as the member saw it. *)
 let member_block ctx = EBinop (Sub, gpu "block_idx_x", ctx.off)
@@ -67,14 +69,9 @@ let position ctx name =
 let renaming ctx =
   {
     Ir_rename.name = prefix ctx.k;
-    id = (fun i -> i + ((ctx.k + 1) * id_stride));
+    id = (fun i -> i + ((ctx.k + 1) * ctx.stride));
     position = position ctx;
   }
-
-let rename_var k v =
-  Ir_rename.var
-    (renaming {k; off = EConst (CInt32 0l); gdx = EConst (CInt32 0l)})
-    v
 
 let expr ctx = Ir_rename.expr (renaming ctx)
 
@@ -111,12 +108,16 @@ type member_parts = {
   gdx_var : var;
 }
 
-let member_parts k (m : kernel) =
-  let off_var = int32_var k "off" and gdx_var = int32_var k "gdx" in
-  let ctx = {k; off = EVar off_var; gdx = EVar gdx_var} in
+let member_parts ~stride ~members k (m : kernel) =
+  let off_var = int32_var ~stride ~members k "off"
+  and gdx_var = int32_var ~stride ~members k "gdx" in
+  let ctx = {k; stride; off = EVar off_var; gdx = EVar gdx_var} in
   let binds, body = Kernel_access.shared_prefix m.kern_body in
   {
-    binds = List.map (fun (x, y) -> (rename_var k x, expr ctx y)) binds;
+    binds =
+      List.map
+        (fun (x, y) -> (Ir_rename.var (renaming ctx) x, expr ctx y))
+        binds;
     body = stmt ctx body;
     params = List.map (decl ctx) m.kern_params;
     locals = List.map (decl ctx) m.kern_locals;
@@ -139,7 +140,12 @@ let scalar_param v = DParam (v, None)
     [Ok]) into one kernel named [name]. Raises [Incompatible] when two members
     define the same type or helper name differently. *)
 let fuse ~(name : string) (members : kernel list) : kernel =
-  let parts = List.mapi member_parts members in
+  let stride =
+    1 + List.fold_left (fun m k -> max m (Ir_rename.max_var_id k)) 0 members
+  in
+  let parts =
+    List.mapi (member_parts ~stride ~members:(List.length members)) members
+  in
   let body =
     List.fold_right
       (fun (x, y) acc -> SLet (x, y, acc))

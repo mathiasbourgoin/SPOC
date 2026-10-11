@@ -135,6 +135,9 @@ let consumer_shape (k : kernel) : consumer =
   | Ok _ -> refuse "shared memory"
   | Error why -> refuse "%s" why) ;
   if k.kern_locals <> [] then refuse "kernel-scope locals" ;
+  (* Helper bodies are not scanned below: a position intrinsic or a barrier
+     there would run in the producer's storing thread. *)
+  if k.kern_funcs <> [] then refuse "helper functions" ;
   let index, body =
     match k.kern_body with
     | SLet (v, EIntrinsic (["Sarek_stdlib"; "Gpu"], g, []), body)
@@ -177,61 +180,21 @@ let consumer_shape (k : kernel) : consumer =
 let consumer (k : kernel) : (consumer, string) result =
   match consumer_shape k with c -> Ok c | exception Refuse why -> Error why
 
-(** {1 Producer checks} *)
-
-(* [true] when [s] or [e] reads array [a] or uses it whole. Its length is not
-   a read. *)
-let rec reads_array_expr a = function
-  | EArrayRead (b, i) -> b = a || reads_array_expr a i
-  | EVar v -> v.var_name = a
-  | EConst _ | EArrayLen _ -> false
-  | EArrayReadExpr (x, y) | EBinop (_, x, y) ->
-      reads_array_expr a x || reads_array_expr a y
-  | EUnop (_, x) | ECast (_, x) | ERecordField (x, _) -> reads_array_expr a x
-  | EIntrinsic (_, _, es) | ETuple es | EVariant (_, _, es) ->
-      List.exists (reads_array_expr a) es
-  | EApp (f, es) -> List.exists (reads_array_expr a) (f :: es)
-  | ERecord (_, fs) -> List.exists (fun (_, x) -> reads_array_expr a x) fs
-  | EArrayCreate (_, s, _) -> reads_array_expr a s
-  | EIf (x, y, z) -> List.exists (reads_array_expr a) [x; y; z]
-  | EMatch (s, cs) ->
-      reads_array_expr a s
-      || List.exists (fun (_, x) -> reads_array_expr a x) cs
-
-let rec reads_array a s =
-  let e = reads_array_expr a and st = reads_array a in
-  match s with
-  | SAssign (LArrayElem (_, i), x) -> e i || e x
-  | SAssign (LArrayElemExpr (b, i), x) -> e b || e i || e x
-  | SAssign (LRecordField (lv, _), x) -> st (SAssign (lv, x))
-  | SAssign (LVar _, x) | SReturn x | SExpr x -> e x
-  | SSeq ss -> List.exists st ss
-  | SIf (c, t, f) -> e c || st t || Option.fold ~none:false ~some:st f
-  | SWhile (c, b) -> e c || st b
-  | SFor (_, lo, hi, _, b) -> e lo || e hi || st b
-  | SLet (_, x, b) | SLetMut (_, x, b) -> e x || st b
-  | SPragma (_, b) | SBlock b -> st b
-  | SMatch (x, cs) -> e x || List.exists (fun (_, b) -> st b) cs
-  | SNative _ -> true
-  | SCoopmat (CM_load {src; _}) -> src = a
-  | SCoopmat _ | SBarrier | SWarpBarrier | SMemFence | SEmpty -> false
-
-(** [true] when producer [p] can host an epilogue on its array parameter [a]: it
-    never reads [a] (nor passes it whole), and stores to it only through plain
-    element stores. *)
-let producer_ok (p : kernel) ~(array : string) =
-  (not (reads_array array p.kern_body))
-  && List.for_all (fun hf -> not (reads_array array hf.hf_body)) p.kern_funcs
-
 (** {1 Rewrite} *)
 
 let ep_var id name ty =
   {var_name = "ep_" ^ name; var_id = id; var_type = ty; var_mutable = false}
 
-(* Fresh ids for the new variables, far from any renamed id. *)
-let tmp_id = (1 lsl 30) + 1
+(* Ids: P keeps its own; C's are shifted above P's largest; the two new
+   variables sit above both. The interpreter and [Index_slice] key variables
+   by id, so chains (a merged kernel hosting a further epilogue) must never
+   reuse an id. *)
+type ids = {c_shift : int; tmp_id : int; tc_id : int}
 
-let tc_id = (1 lsl 30) + 2
+let ids ~producer ~consumer =
+  let p = Ir_rename.max_var_id producer and c = Ir_rename.max_var_id consumer in
+  let c_shift = p + 1 in
+  {c_shift; tmp_id = c_shift + c + 1; tc_id = c_shift + c + 2}
 
 let producer_names =
   {
@@ -240,25 +203,28 @@ let producer_names =
     position = (fun _ -> None);
   }
 
-(* C's id space is shifted so its vars never equal P's. *)
-let consumer_names ~shared =
+let consumer_names ~shared ~c_shift =
   {
     Ir_rename.name =
       (fun n ->
         match List.assoc_opt n shared with
         | Some p -> "p_" ^ p
         | None -> "c_" ^ n);
-    id = (fun i -> i + (1 lsl 28));
+    id = (fun i -> i + c_shift);
     position = (fun _ -> None);
   }
 
 (* Insert the consumer after every store to [array] (already renamed). *)
-let rec insert ~array ~after s =
-  let go = insert ~array ~after in
+let rec insert ~array ~tmp_id ~after s =
+  let go = insert ~array ~tmp_id ~after in
   match s with
   | SAssign (LArrayElem (a, idx), v) when a = array ->
       let t = ep_var tmp_id "t" TInt32 in
-      SLet (t, idx, SSeq [SAssign (LArrayElem (a, EVar t), v); after (EVar t)])
+      (* In its own scope: two store sites in one block would otherwise
+         declare [ep_t] twice in C. *)
+      SBlock
+        (SLet
+           (t, idx, SSeq [SAssign (LArrayElem (a, EVar t), v); after (EVar t)]))
   | SSeq ss -> SSeq (List.map go ss)
   | SIf (c, t, f) -> SIf (c, go t, Option.map go f)
   | SWhile (c, b) -> SWhile (c, go b)
@@ -272,12 +238,11 @@ let rec insert ~array ~after s =
 
 exception Incompatible of string
 
-(** [fuse ~name ~producer ~p_array ~consumer ~c_array ~shared] inlines
-    [consumer] after [producer]'s stores to [p_array]. [c_array] is the
-    consumer's parameter bound to the same vector; [shared] maps every consumer
-    array parameter bound to the same vector as a producer parameter (including
-    [c_array]) to that producer parameter. Parameters: P's, then C's that are
-    not shared, then [ep_tc]. *)
+(** [fuse ~name ~producer ~p_array ~consumer ~shared] inlines [consumer] after
+    [producer]'s stores to [p_array]. [shared] maps every consumer array
+    parameter bound to the same vector as a producer parameter (in particular
+    the one bound to [p_array]'s vector) to that producer parameter. Parameters:
+    P's, then C's that are not shared, then [ep_tc]. *)
 let fuse ~name ~(producer : kernel) ~(p_array : string) ~(consumer : kernel)
     ~(shared : (string * string) list) : kernel =
   let c =
@@ -285,8 +250,9 @@ let fuse ~name ~(producer : kernel) ~(p_array : string) ~(consumer : kernel)
     | c -> c
     | exception Refuse why -> raise (Incompatible why)
   in
-  let cn = consumer_names ~shared in
-  let tc = ep_var tc_id "tc" TInt32 in
+  let ids = ids ~producer ~consumer in
+  let cn = consumer_names ~shared ~c_shift:ids.c_shift in
+  let tc = ep_var ids.tc_id "tc" TInt32 in
   let after t =
     SIf
       ( EBinop (Lt, t, EVar tc),
@@ -296,6 +262,7 @@ let fuse ~name ~(producer : kernel) ~(p_array : string) ~(consumer : kernel)
   let body =
     insert
       ~array:("p_" ^ p_array)
+      ~tmp_id:ids.tmp_id
       ~after
       (Ir_rename.stmt producer_names producer.kern_body)
   in

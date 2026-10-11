@@ -149,9 +149,13 @@ let covers ~(p : _ LW.launch) ~p_array ~p_scalars ~(c : _ LW.launch)
 
 type verdict = {used : (string * string) list; values : int32 list; ok : bool}
 
-(* (p ir, c ir, p dims, c dims) -> verdicts for scalar valuations seen. *)
+(* (p ir, the producer array evaluated, c ir, p dims, c dims) -> verdicts for
+   the scalar valuations seen. The array is part of the key: one producer can
+   store two outputs under different guards. *)
 let coverage_cache :
-    (int * int * Index_slice.dims * Index_slice.dims, verdict list) Hashtbl.t =
+    ( int * string * int * Index_slice.dims * Index_slice.dims,
+      verdict list )
+    Hashtbl.t =
   Hashtbl.create 32
 
 let lookup_value ~p_scalars ~c_scalars (side, n) =
@@ -159,7 +163,7 @@ let lookup_value ~p_scalars ~c_scalars (side, n) =
 
 let cached_covers ~(p : _ LW.launch) ~p_array ~p_scalars ~(c : _ LW.launch)
     ~shape ~c_scalars =
-  let key = (p.LW.ir_id, c.LW.ir_id, dims_of p, dims_of c) in
+  let key = (p.LW.ir_id, p_array, c.LW.ir_id, dims_of p, dims_of c) in
   let entries =
     Option.value ~default:[] (Hashtbl.find_opt coverage_cache key)
   in
@@ -257,55 +261,60 @@ let merged (w : 'arg LW.t) (p : 'arg LW.launch) (c : 'arg LW.launch) ~fused
 
 (* Under [w.lock]: the producer [m] in [g] that [c] can be the epilogue of,
    with what the rewrite needs. *)
-let try_member w g (m : _ LW.launch) (c : _ LW.launch) shape =
-  let reads =
-    List.filter_map
-      (fun a -> if a.LW.read then Some a.LW.buf else None)
-      c.accesses
-  in
-  let m_writes =
-    List.filter_map
-      (fun a -> if a.LW.write then Some a.LW.buf else None)
-      m.accesses
-  in
-  let m_touches b = List.exists (fun a -> a.LW.buf = b) m.accesses in
-  let c_bound = bound w c and p_bound = bound w m in
+let bufs ~pick accesses =
+  List.filter_map (fun a -> if pick a then Some a.LW.buf else None) accesses
+
+(* The intermediate: the one vector C reads that [m] writes. *)
+let intermediate (m : _ LW.launch) (c : _ LW.launch) =
+  let reads = bufs ~pick:(fun a -> a.LW.read) c.accesses in
+  let m_writes = bufs ~pick:(fun a -> a.LW.write) m.accesses in
   match
     List.sort_uniq compare (List.filter (fun b -> List.mem b m_writes) reads)
   with
-  | [i_buf] -> (
-      let p_params = List.filter (fun (_, b) -> b = i_buf) p_bound in
-      let c_params = List.filter (fun (_, b) -> b = i_buf) c_bound in
-      let written_bufs =
+  | [i_buf] -> Some i_buf
+  | _ -> None
+
+(* Under [w.lock]: the access conditions of the module comment, for C as the
+   epilogue of [m] in [g]. Returns [m]'s parameter bound to the intermediate. *)
+let merge_point w g (m : _ LW.launch) (c : _ LW.launch) shape i_buf =
+  let c_bound = bound w c and p_bound = bound w m in
+  let m_touches b = List.exists (fun a -> a.LW.buf = b) m.accesses in
+  let written_bufs =
+    List.filter_map
+      (fun n -> List.assoc_opt n c_bound)
+      shape.Fusion_epilogue.written
+  in
+  let ok =
+    m.device_id = c.device_id
+    && (not (List.exists (fun a -> a.LW.buf = i_buf && a.LW.read) m.accesses))
+    && List.for_all
+         (fun (n, b) -> b <> i_buf || List.mem n shape.reads_at_index)
+         c_bound
+    && List.for_all (fun b -> b = i_buf || not (m_touches b)) written_bufs
+    && List.for_all (fun o -> o == m || not (LW.conflicts o c)) g.LW.rev_members
+  in
+  match List.filter (fun (_, b) -> b = i_buf) p_bound with
+  | [(p_array, _)] when ok ->
+      let shared =
         List.filter_map
-          (fun n -> List.assoc_opt n c_bound)
-          shape.Fusion_epilogue.written
+          (fun (n, b) ->
+            Option.map
+              (fun (pn, _) -> (n, pn))
+              (List.find_opt (fun (_, pb) -> pb = b) p_bound))
+          c_bound
       in
-      match p_params with
-      | [(p_array, _)]
-        when m.device_id = c.device_id
-             && (not
-                   (List.exists
-                      (fun a -> a.LW.buf = i_buf && a.LW.read)
-                      m.accesses))
-             && List.for_all
-                  (fun (n, _) -> List.mem n shape.reads_at_index)
-                  c_params
-             && List.for_all
-                  (fun b -> b = i_buf || not (m_touches b))
-                  written_bufs
-             && List.for_all
-                  (fun o -> o == m || not (LW.conflicts o c))
-                  g.LW.rev_members ->
-          let shared =
-            List.filter_map
-              (fun (n, b) ->
-                Option.map
-                  (fun (pn, _) -> (n, pn))
-                  (List.find_opt (fun (_, pb) -> pb = b) p_bound))
-              c_bound
-          in
-          let tc = c.grid.x * c.block.x in
+      Some (p_array, shared)
+  | _ -> None
+
+(* Under [w.lock]: [m] merged with its epilogue [c], when every condition and
+   the coverage hold. *)
+let try_member w g (m : _ LW.launch) (c : _ LW.launch) shape =
+  match intermediate m c with
+  | None -> None
+  | Some i_buf -> (
+      match merge_point w g m c shape i_buf with
+      | None -> None
+      | Some (p_array, shared) ->
           if
             cached_covers
               ~p:m
@@ -316,11 +325,10 @@ let try_member w g (m : _ LW.launch) (c : _ LW.launch) shape =
               ~c_scalars:(scalars w c)
           then
             Option.map
-              (fun fused -> merged w m c ~fused ~shared ~tc)
+              (fun fused ->
+                merged w m c ~fused ~shared ~tc:(c.grid.x * c.block.x))
               (fused_ir ~p:m ~p_array ~c ~shared)
-          else None
-      | _ -> None)
-  | _ -> None
+          else None)
 
 let one_dimensional (l : _ LW.launch) =
   l.grid.y = 1 && l.grid.z = 1 && l.block.y = 1 && l.block.z = 1
@@ -355,5 +363,18 @@ let join (w : 'arg LW.t) (c : 'arg LW.launch) : bool =
       in
       scan (List.rev w.LW.groups)
 
-(** Enable epilogue fusion in [w] (on the backends {!enabled} allows). *)
-let install (w : _ LW.t) = w.LW.epilogue <- join
+(** Enable epilogue fusion in [w] (on the backends {!enabled} allows). An
+    unexpected exception while deciding means no merge: the launch then takes
+    the ordinary path. *)
+let install (w : _ LW.t) =
+  w.LW.epilogue <-
+    (fun w c ->
+      try join w c with
+      | (Out_of_memory | Stack_overflow) as e -> raise e
+      | Invalid_argument _ | Not_found -> false)
+
+(** Forget every cached consumer shape, coverage verdict and merged kernel. *)
+let clear () =
+  Hashtbl.reset shapes ;
+  Hashtbl.reset coverage_cache ;
+  Hashtbl.reset fused_cache

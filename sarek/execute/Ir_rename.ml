@@ -85,3 +85,69 @@ let decl ctx = function
   | DLocal (v, init) -> DLocal (var ctx v, Option.map (expr ctx) init)
   | DShared (name, t, size) ->
       DShared (ctx.name name, t, Option.map (expr ctx) size)
+
+(** {1 Variable ids} *)
+
+(* The largest var id a kernel uses (params, locals, body, helpers), so a
+   rewrite can place new or shifted ids above it. The interpreter and
+   [Index_slice] key variables by id. *)
+let rec max_id_expr m = function
+  | EVar v -> max m v.var_id
+  | EConst _ | EArrayLen _ -> m
+  | EBinop (_, a, b) | EArrayReadExpr (a, b) -> max_id_expr (max_id_expr m a) b
+  | EUnop (_, a) | ECast (_, a) | ERecordField (a, _) | EArrayRead (_, a) ->
+      max_id_expr m a
+  | EIntrinsic (_, _, es) | ETuple es | EVariant (_, _, es) ->
+      List.fold_left max_id_expr m es
+  | EApp (f, es) -> List.fold_left max_id_expr m (f :: es)
+  | ERecord (_, fs) -> List.fold_left (fun m (_, e) -> max_id_expr m e) m fs
+  | EArrayCreate (_, s, _) -> max_id_expr m s
+  | EIf (a, b, c) -> List.fold_left max_id_expr m [a; b; c]
+  | EMatch (s, cs) ->
+      List.fold_left (fun m (_, e) -> max_id_expr m e) (max_id_expr m s) cs
+
+let rec max_id_lvalue m = function
+  | LVar v -> max m v.var_id
+  | LArrayElem (_, i) -> max_id_expr m i
+  | LArrayElemExpr (a, i) -> max_id_expr (max_id_expr m a) i
+  | LRecordField (lv, _) -> max_id_lvalue m lv
+
+let rec max_id_stmt m = function
+  | SAssign (lv, e) -> max_id_expr (max_id_lvalue m lv) e
+  | SSeq ss -> List.fold_left max_id_stmt m ss
+  | SIf (c, t, f) ->
+      let m = max_id_stmt (max_id_expr m c) t in
+      Option.fold ~none:m ~some:(max_id_stmt m) f
+  | SWhile (c, b) -> max_id_stmt (max_id_expr m c) b
+  | SFor (v, lo, hi, _, b) ->
+      max_id_stmt (max_id_expr (max_id_expr (max m v.var_id) lo) hi) b
+  | SMatch (e, cs) ->
+      List.fold_left (fun m (_, b) -> max_id_stmt m b) (max_id_expr m e) cs
+  | SReturn e | SExpr e -> max_id_expr m e
+  | SLet (v, e, b) | SLetMut (v, e, b) ->
+      max_id_stmt (max_id_expr (max m v.var_id) e) b
+  | SPragma (_, b) | SBlock b -> max_id_stmt m b
+  | SCoopmat (CM_load {index; stride; _})
+  | SCoopmat (CM_store {index; stride; _}) ->
+      max_id_expr (max_id_expr m index) stride
+  | SCoopmat _ | SBarrier | SWarpBarrier | SMemFence | SEmpty | SNative _ -> m
+
+let max_var_id (k : kernel) : int =
+  let decl m = function
+    | DParam (v, _) -> max m v.var_id
+    | DLocal (v, e) ->
+        Option.fold
+          ~none:(max m v.var_id)
+          ~some:(max_id_expr (max m v.var_id))
+          e
+    | DShared (_, _, e) -> Option.fold ~none:m ~some:(max_id_expr m) e
+  in
+  let m = List.fold_left decl 0 (k.kern_params @ k.kern_locals) in
+  let m = max_id_stmt m k.kern_body in
+  List.fold_left
+    (fun m hf ->
+      max_id_stmt
+        (List.fold_left (fun m (v : var) -> max m v.var_id) m hf.hf_params)
+        hf.hf_body)
+    m
+    k.kern_funcs
