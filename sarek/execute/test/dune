@@ -37,4 +37,6 @@
 (test
  (name test_matrix_specialise_policy)
  (modules test_matrix_specialise_policy)
- (libraries sarek_execute sarek_ir alcotest))
+ (libraries sarek sarek_stdlib sarek_execute sarek_ir spoc_core alcotest)
+ (preprocess
+  (pps sarek_ppx)))

@@ -1913,7 +1913,11 @@ let run_specialised ?stream ~device ~args (s : Matrix_specialise.specialised) =
 
 (** [run_vectors] that also returns what ran: the kernel as given, or a
     matrix-unit rewrite of it ({!Matrix_specialise}). [precision] chooses the
-    operand rounding of a float32 product (it must have been accepted). *)
+    operand rounding of a float32 product (it must have been accepted).
+    [~explicit:true] is an explicit request, like [Sarek_matrix.run]: float
+    products need the accuracy opt-ins only (not
+    [Sarek_coopmat.accept_automatic_float_rewrite]), and the interpreter is
+    rewritten too. *)
 let run_vectors_outcome ?(stream : Transfer.stream option) ?precision ?explicit
     ~(device : Device.t) ~(ir : Sarek_ir_types.kernel) ~(args : vector_arg list)
     ~(block : Framework_sig.dims) ~(grid : Framework_sig.dims)

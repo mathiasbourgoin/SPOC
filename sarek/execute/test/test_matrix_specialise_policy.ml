@@ -8,6 +8,11 @@
    rewrite. No device needed. The opt-ins are one-way and process-wide, so the
    cases that grant them run last, in order. *)
 
+[@@@warning "-33"]
+
+[@@@alert "-sarek_matrix"]
+
+open Sarek
 module Spec = Sarek_execute.Matrix_specialise
 module Adv = Sarek_matrix_advice
 module Rw = Sarek_matrix_rewrite
@@ -114,6 +119,82 @@ let test_float_needs_automatic_optin () =
           ~precision:Sarek_coopmat.Operands_f16
           Adv.F32_inputs))
 
+let k_f16 =
+  [%kernel
+    fun (a : float16 vector)
+        (b : float16 vector)
+        (c : float32 vector)
+        (m : int32)
+        (n : int32)
+        (k : int32) ->
+      let row = global_idx_y in
+      let col = global_idx_x in
+      if row < m && col < n then begin
+        let sum = mut 0.0 in
+        for i = 0 to k - 1l do
+          sum :=
+            sum
+            +. float32_of_float16 a.((row * k) + i)
+               *. float32_of_float16 b.((i * n) + col)
+        done ;
+        c.((row * n) + col) <- sum
+      end]
+
+(* A device that exists only as a record: the decision is taken before the
+   device is used further (no capabilities advertised). *)
+let fake_hip : Spoc_core.Device.t =
+  {
+    id = 0;
+    backend_id = 0;
+    name = "fake HIP";
+    framework = "HIP";
+    capabilities =
+      {
+        max_threads_per_block = 256;
+        max_block_dims = (256, 256, 64);
+        max_grid_dims = (65535, 65535, 65535);
+        shared_mem_per_block = 16384;
+        total_global_mem = 1073741824L;
+        compute_capability = (0, 0);
+        device_features = [];
+        coopmat = None;
+        supports_atomics = false;
+        warp_size = 32;
+        max_registers_per_block = 0;
+        clock_rate_khz = 0;
+        multiprocessor_count = 1;
+        is_cpu = false;
+      };
+  }
+
+(* The [~explicit] wiring of [choose] into [lowering_for], without a GPU: the
+   accuracy opt-ins are granted by the previous case, the automatic one is not.
+   The automatic launch is declined for the missing opt-in; the explicit one
+   gets past that check (and stops later, on the device's capabilities). *)
+let test_choose_wires_explicit () =
+  let ir =
+    match (snd k_f16).Sarek.Kirc_types.body_ir with
+    | Some ir -> ir
+    | None -> Alcotest.fail "no IR"
+  in
+  let decide explicit =
+    Spec.choose ~explicit ~device:fake_hip ~ir ~launch:(fun () -> None) ()
+  in
+  (match decide false with
+  | Spec.Original why ->
+      Alcotest.(check bool)
+        ("automatic: names the opt-in (" ^ why ^ ")")
+        true
+        (contains ~needle:optin why)
+  | Spec.Specialised _ -> Alcotest.fail "automatic: rewritten") ;
+  match decide true with
+  | Spec.Original why ->
+      Alcotest.(check bool)
+        ("explicit: not declined for the automatic opt-in (" ^ why ^ ")")
+        false
+        (contains ~needle:optin why)
+  | Spec.Specialised _ -> Alcotest.fail "explicit: rewritten without a device"
+
 let test_modes_still_refuse () =
   List.iter
     (fun mode ->
@@ -163,6 +244,10 @@ let () =
             "float needs the automatic opt-in"
             `Quick
             test_float_needs_automatic_optin;
+          Alcotest.test_case
+            "choose passes explicit"
+            `Quick
+            test_choose_wires_explicit;
           Alcotest.test_case "off and exact" `Quick test_modes_still_refuse;
           Alcotest.test_case
             "after the automatic opt-in"

@@ -130,7 +130,7 @@ let run_case combo dev =
   | "new-only" ->
       expect_original
         (Printf.sprintf "automatic, new opt-in only, on %s" name)
-        ~naming:"has not accepted"
+        ~naming:"accept_relaxed_accumulation"
         (automatic dev) ;
       check_explicit
         (Printf.sprintf "Sarek_matrix.run, new opt-in only, on %s" name)

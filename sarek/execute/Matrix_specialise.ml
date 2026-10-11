@@ -251,8 +251,14 @@ let lowering_for ~mode ~explicit case precision =
   | (Off | Exact | Auto), Adv.No_case ->
       Error "no matrix-unit configuration for these element types"
 
+(* A policy refusal (an accuracy opt-in not given) carries its remedy, which
+   names the call to make; a device refusal has none worth quoting. *)
 let verdict_ok = function
   | Sarek_capability.Available -> Ok ()
+  | Sarek_capability.Unavailable
+      {cap_kind = Sarek_capability.Policy; cap_why; cap_remedy = Some remedy; _}
+    ->
+      Error (cap_why ^ ". " ^ remedy)
   | Sarek_capability.Unavailable cap -> Error cap.Sarek_capability.cap_why
   | Sarek_capability.Unknown why -> Error why
 
