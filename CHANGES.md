@@ -75,6 +75,16 @@
 
 ### Added
 
+- `Spoc_core.Advanced.Pinned` is real (global review D-69). It was a placeholder
+  whose `create` returned an ordinary pageable vector and whose `is_available`
+  was hard-coded `false`. It is now an explicit, opt-in owner handle over
+  `Transfer.alloc_pinned` / `register_host`: `alloc`, `register`, `bigarray`,
+  `release`, `with_alloc`, `is_live`, `device`, and an `is_available` that
+  probes the backend. **Breaking:** `Advanced.Pinned.create` is removed (no
+  caller in the tree); it could not be honest, since a vector's host mirror is
+  garbage collected and pinned memory is released only explicitly.
+  `Advanced.Unified` stays a placeholder. Test:
+  `sarek/tests/e2e/test_advanced_pinned.ml`; docs: `memory.md`.
 - `Spoc_core.Host_ptr_buffer`: an explicit, typed opt-in to give a vector a
   CPU OpenCL buffer over its host memory (`CL_MEM_USE_HOST_PTR`), for large
   host pools that must not be duplicated. `of_bigarray dev kind ba` and
