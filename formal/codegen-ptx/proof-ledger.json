@@ -6,10 +6,10 @@
   "logical_path": "CodegenPtx",
   "rocq_version": "9.1.1",
   "counts": {
-    "modules": 6,
-    "theorems": 79,
-    "definitions": 60,
-    "inductives": 18,
+    "modules": 7,
+    "theorems": 106,
+    "definitions": 82,
+    "inductives": 20,
     "records": 8,
     "axioms_declared": 6,
     "axioms_project_local": 6,
@@ -22,14 +22,23 @@
         "agpu_eval_const_f32",
         "agpu_eval_const_u32",
         "agpu_eval_global_idx",
-        "agpu_eval_thread_idx_x"
+        "agpu_eval_lshr32_is_logical_u32",
+        "agpu_eval_lshr32_wide_ill_typed",
+        "agpu_eval_lshr64_is_logical_u64",
+        "agpu_eval_lshr64_narrow_ill_typed",
+        "agpu_eval_shr_is_signed_u32",
+        "agpu_eval_shr_is_signed_u64",
+        "agpu_eval_shr_u32_sign_fill",
+        "agpu_eval_thread_idx_x",
+        "agpu_shr_not_lshr32",
+        "some_u32_to_nat_inj"
       ],
       "counts": {
         "axioms_declared": 6,
-        "definitions": 4,
+        "definitions": 5,
         "inductives": 7,
         "records": 3,
-        "theorems": 5
+        "theorems": 14
       }
     },
     "CodegenPtx.PtxExprSpec": {
@@ -119,6 +128,35 @@
         "inductives": 3,
         "records": 2,
         "theorems": 50
+      }
+    },
+    "CodegenPtx.PtxShift": {
+      "theorems": [
+        "ashr_all_ones",
+        "ashr_big_amount",
+        "ashr_differs_from_lshr",
+        "ashr_negative_stays_negative",
+        "ashr_nonneg_is_logical",
+        "ashr_range",
+        "ashr_signed",
+        "half_pos",
+        "lshr_big_amount",
+        "lshr_range",
+        "shift_amount_clamped",
+        "shift_amount_nonneg",
+        "to_signed_range",
+        "to_signed_to_unsigned",
+        "to_unsigned_id",
+        "to_unsigned_range",
+        "word_modulus_half",
+        "word_modulus_pos"
+      ],
+      "counts": {
+        "axioms_declared": 0,
+        "definitions": 21,
+        "inductives": 2,
+        "records": 0,
+        "theorems": 18
       }
     },
     "CodegenPtx.PtxStmtSpec": {

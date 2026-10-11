@@ -7,6 +7,12 @@
       "production_call": "Sarek_ir_layout",
       "evidence": "exhaustive_bounded_plus_random",
       "note": "extraction/LayoutExtract.v extracts PtxLayout.v to OCaml; test_layout_conformance.ml runs those extracted definitions directly against Sarek_ir_layout for accept/reject and every offset/size: EXHAUSTIVELY over every record shape with 1-4 fields and every variant shape with 1-3 constructors of 0-2 args (780 + 30783 shapes), plus 500 seeded random deeper cases and host/mixed-alignment pins (11 Alcotest cases total). scripts/check-formal-proofs.sh re-extracts from scratch and byte-compares against the committed extraction on every run, so this link cannot drift silently. 'exhaustive' is bounded (<=4 fields / <=3 ctors x <=2 args) plus randomised beyond that bound, not exhaustive over all possible layouts."
+    },
+    "PtxShift": {
+      "test_file": "test/test_codegen_ptx_conformance.ml",
+      "production_call": "Sarek_ir_ptx_expr",
+      "evidence": "differential_sampled",
+      "note": "D-54. extraction/ShiftExtract.v extracts PtxShift.v (arithmetic/logical right shifts, PTX count clamping, and the IR-operator -> shr.<s|b><32|64> instruction table) to sarek_ptx_shift_model.ml; test_codegen_ptx_conformance.ml ('shift-vs-production' group) runs those extracted definitions against Sarek_ir_ptx_expr.emit_expr: (1) the shr.* mnemonic production emits for Shr/Lshr32/Lshr64 (32- and 64-bit operands, 32- and 64-bit count registers) must equal the model's shr_insn; (2) the model's result must equal what an independent PTX-ISA oracle (native Int32/Int64 shifts, u32 count clamped to the width) computes for the instruction production actually emitted, on a FIXED GRID of 12 operand patterns (negative, min_int, all-ones, ...) x 17-21 counts (in range, at/beyond the width, 2^32+1 narrowing); (3) the model equals OCaml asr/lsr (the interpreter's operators) for every in-range count. Swapping s/b in either production or the model turns the group red (demonstrated, see formal/codegen-ptx/STATUS.md). It is a fixed grid, not random sampling and not exhaustive over 2^64 operands. scripts/check-formal-proofs.sh re-extracts from scratch and compares against the committed extraction on every run. The remaining PtxShift-adjacent theorems in AGpuSemantics/PtxTypes/PtxExprSpec are model-internal (the emitter is string-based; see STATUS.md)."
     }
   }
 }

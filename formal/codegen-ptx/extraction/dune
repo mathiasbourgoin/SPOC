@@ -39,6 +39,7 @@
 ; The right-shift model (finding D-54). Same conventions as the layout model:
 ; committed raw+canonicalised, listed in .ocamlformat-ignore, drift-checked by
 ; scripts/check-formal-proofs.sh.
+
 (library
  (name sarek_ptx_shift_model)
  (modules sarek_ptx_shift_model)

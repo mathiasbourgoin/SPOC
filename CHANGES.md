@@ -22,6 +22,27 @@
   supersteps are now inside the verified fragment, and the warp checker
   handles varying early returns like the barrier checker (D-56). The
   non-blocking `KNOWN-ISSUE` line of `make test_negative` is gone.
+- Formal: the PTX model's right shifts now match the emitter (global review
+  D-54). `Shr` was modelled as a logical shift with no `Lshr32`/`Lshr64`;
+  production emits `shr.s32`/`shr.s64` for `Shr` and `shr.b32`/`shr.b64` for
+  `Lshr`. `formal/codegen-ptx/theories/PtxShift.v` models arithmetic and logical
+  shifts over two's-complement patterns with PTX count clamping (18 theorems);
+  the model is extracted (`ShiftExtract.v`) and the conformance test checks it
+  against `Sarek_ir_ptx_expr` (instruction chosen, and the result of the
+  emitted instruction on negative operands and counts beyond the width) instead
+  of against a hand copy of itself. Swapping `s`/`b` in production or in the
+  model turns the test red.
+
+- Formal gate: every committed extracted model is now drift-checked (global
+  review D-55). Previously only the PTX layout model was compared with a fresh
+  extraction; the twelve type-safety models and the convergence model, which
+  the conformance suites use as oracles, were not, and the type-safety
+  extraction drivers were not in `_CoqProject`. `scripts/check-formal-proofs.sh`
+  now regenerates and compares all of them (15 models) and fails on a driver
+  missing from `_CoqProject`, an orphaned model, or an unnamed exemption. The
+  committed `TypeSafetyModel.ml` had gone stale (no `TRecord`/`TVariant`) and was
+  regenerated. Committed models are stored in canonical form
+  (`scripts/canonicalize-extraction.py`) and listed in `.ocamlformat-ignore`.
 
 ### Added
 

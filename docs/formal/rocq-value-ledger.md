@@ -5,7 +5,7 @@ has actually caught, what it has missed, and what each of those was worth. One
 row per event, with a counterfactual: *would this have been found otherwise, and
 how?*
 
-**Why it exists.** Three Rocq projects, 280 machine-checked theorems, and a CI job
+**Why it exists.** Three Rocq projects, 307 machine-checked theorems, and a CI job
 that rebuilds and kernel-re-checks all of them are a real ongoing cost. Whether
 that cost is repaid is an empirical question, and until this file existed nobody
 was collecting the evidence either way — so the argument for and against the work
@@ -13,11 +13,11 @@ was conducted entirely on conviction. The findings below were not hidden; they
 were recorded in four different places, in four different formats, and never
 counted.
 
-**"280 theorems" is not one claim, and headlining it unqualified would be the
+**"307 theorems" is not one claim, and headlining it unqualified would be the
 house defect this project keeps finding elsewhere: a number claiming a wider
-scope of guarantee than its code.** 94 of the 280 are checked to agree with the
-actual shipped OCaml, and those 94 are not one kind of evidence — flattening
-them into "94 hold about production" would reproduce the same defect one level
+scope of guarantee than its code.** 112 of the 307 are checked to agree with the
+actual shipped OCaml, and those 112 are not one kind of evidence — flattening
+them into "112 hold about production" would reproduce the same defect one level
 down:
 
 - **50 (`PtxLayout`)** — the theory's own extraction runs directly against
@@ -25,6 +25,13 @@ down:
   and every variant shape with 1–3 constructors of 0–2 args (780 + 30 783
   shapes), plus 500 seeded random deeper cases. No hand-written model stands
   between the proof and what is executed against production.
+- **18 (`PtxShift`)** — the extracted right-shift model is run against
+  `Sarek_ir_ptx_expr.emit_expr`: the `shr.<s|b><32|64>` instruction production
+  emits must be the one the model names, and the model's result must equal an
+  independent PTX-ISA oracle's result for that emitted instruction on a fixed
+  grid of operands (negative, `min_int`, all-ones) and counts (in range, at and
+  beyond the width). A fixed grid, not random sampling, not exhaustive; counted
+  with the sampled kind below.
 - **44 (`TypeSafetySpec`, `UnifySpec`)** — QCheck **differential** testing:
   the extracted model and the real `Sarek_typer.infer` / `Sarek_types.unify`
   are asserted to agree over 2000 / 1000 **randomly sampled** inputs. This is
@@ -33,11 +40,11 @@ down:
   exactly what this evidence cannot rule out.
 
 Both are real, and both are stronger than "proven about the model with no link
-to production at all" (the 186 below) — but they are not the same claim, and
-neither licenses "these 94 theorems hold about the shipped code" without
+to production at all" (the 195 below) — but they are not the same claim, and
+neither licenses "these 112 theorems hold about the shipped code" without
 qualification: the honest statement is "checked to agree with the shipped code
 on every input tested" — exhaustively-for-a-bound in one case, by random
-sampling in the other. The other 186 are proven about the Rocq model only:
+sampling in the other. The other 195 are proven about the Rocq model only:
 real, machine-checked theorems, most independently QCheck/extraction-validated
 against the extracted model itself, but with no mechanical assertion that the
 model agrees with the code that ships. None of the three figures is hand-typed
@@ -49,11 +56,11 @@ per-module rows omitted for length; see the script for those):
 == shipped-artefact vs model-only theorem split (backlog-201)
    ('shipped' is itself two different strengths of evidence — see below)
   ...
-checked against production, TOTAL: 94
+checked against production, TOTAL: 112
   - exhaustive-for-a-bound + random:               50 theorems
-  - random sampling only, NOT exhaustive:          44 theorems
-model-only (no mechanical production link): 186
-total (== proof-ledger sum): 280
+  - random sampling only, NOT exhaustive:          62 theorems
+model-only (no mechanical production link): 195
+total (== proof-ledger sum): 307
 ```
 
 Re-running the command above is how to check these are still current; this
@@ -429,6 +436,63 @@ executable form M-01 argued for. It is not yet a table over the whole family;
 that remains open, and `Lt/Le/Gt/Ge` on floats are ordered on both sides
 (`PrimFloat.ltb`/`leb` are false on NaN, matching `setp.lt`/`setp.le`), so the
 family's remaining exposure is `Eq` only, and `Eq` is correct.
+
+### M-05 — the PTX shift model contradicted production, and the mirror copied the error
+
+| | |
+|---|---|
+| Date | 2026-10-11 (global review D-54) |
+| Severity | MAJOR (model, not shipped code: the emitter was right) |
+| Kind | specification defect, hidden by a hand mirror |
+| Where | `formal/codegen-ptx/theories/{AGpuSemantics,PtxTypes,PtxExprSpec}.v`, `formal/codegen-ptx/test/test_codegen_ptx_conformance.ml` |
+| Found by | global review, not by the apparatus |
+| Status | fixed: `formal/codegen-ptx/theories/PtxShift.v`, `formal/codegen-ptx/extraction/ShiftExtract.v`, production-linked test |
+
+The model treated `Shr` as a logical `Nat.shiftr` on `U32` and had no `Lshr32` /
+`Lshr64`; production emits `shr.s32`/`shr.s64` for `Shr` (arithmetic, matching
+OCaml `asr`) and `shr.b32`/`shr.b64` for `Lshr`. The model had been written
+against an earlier, wrong `shr.u32` emission; when production was fixed, a comment
+in `Sarek_ir_ptx_expr.ml` recorded that the model was out of sync and nothing
+else did. The conformance suite stayed green throughout because it compared the
+model with a hand-written OCaml mirror that said `a lsr b`: the same mistake
+written twice. All 79 theorems were "proven" about a semantics for `Shr` that no
+GPU implements.
+
+**Why the apparatus missed it.** This is M-03 again, one level over: the
+expression/statement/kernel suite never left its hand mirror, so it could only
+ever agree with the model. Extraction of the shift model plus a test against the
+production emitter (the instruction chosen, and the result of the instruction
+actually emitted under an independent oracle) closes it for shifts; the rest of
+the expression model is still mirrored (see `formal/codegen-ptx/STATUS.md`).
+Swapping `s`/`b` in production, or in the extracted model, turns the suite red
+(recorded in STATUS.md).
+
+**Counterfactual.** Review found it; no test could have, because every test's
+oracle was the model or its copy.
+
+### M-06 — extracted models used as test oracles were not drift-checked
+
+| | |
+|---|---|
+| Date | 2026-10-11 (global review D-55) |
+| Severity | MAJOR (apparatus) |
+| Kind | apparatus gap |
+| Where | `scripts/check-formal-proofs.sh`; `formal/type-safety/_CoqProject` |
+| Status | fixed: every committed extracted model is regenerated and compared |
+
+Only 1 of 14 committed extracted models (`PtxLayout`) was compared with a fresh
+extraction. The twelve type-safety models and the convergence model are the
+oracles of their conformance suites; nothing checked that they still corresponded
+to the theories, and the twelve type-safety extraction drivers were not in
+`_CoqProject`, so CI never ran them. The gap was disclosed in prose
+(`no_anti_drift_check`) and left open. When closed, it was not hypothetical:
+the committed `TypeSafetyModel.ml` lacked the `TRecord`/`TVariant` constructors
+of the current `TypeSafetySpec.v`, so the T1-CMBT differential test had been
+running against an older type language than the one the theorems are about.
+
+**Lesson.** A disclosed gap in a gate is still a gap; the cost of closing this one
+was a loop over the extraction directory, and the day it was closed it found a
+stale oracle.
 
 ## Null results
 
