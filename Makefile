@@ -460,28 +460,29 @@ e2e-fast:
 
 # Hardware-gated e2e suites. Each runs a dune alias whose rules need a real
 # device (docs review D-49); no CI runner has one, so these are run by hand on
-# a machine that does.
+# a machine that does. HAND-RUN ONLY: no CI job runs them (backlog-178 tracks a
+# self-hosted runner). --force re-runs the tests when nothing changed.
 .PHONY: e2e-hip e2e-hip-bench e2e-gpu e2e-metal e2e-metal-bench
 
 # sarek-hip suite (ROCm/HIP AMD device)
 e2e-hip:
-	dune build @sarek-hip/test/e2e-hip
+	dune build --force @sarek-hip/test/e2e-hip
 
 # HIP host<->device bandwidth report (information only, never a gate)
 e2e-hip-bench:
-	dune build @sarek-hip/test/e2e-hip-bench
+	dune build --force @sarek-hip/test/e2e-hip-bench
 
 # Vulkan tests with no Native/Interpreter fallback
 e2e-gpu:
-	dune build @sarek/tests/e2e/e2e-gpu
+	dune build --force @sarek/tests/e2e/e2e-gpu
 
 # Metal device-buffers suite (Apple GPU; run on a Mac)
 e2e-metal:
-	dune build @sarek-metal/test/e2e-metal
+	dune build --force @sarek-metal/test/e2e-metal
 
 # Metal ranged-copy bandwidth report (information only, Apple GPU)
 e2e-metal-bench:
-	dune build @sarek-metal/test/e2e-metal-bench
+	dune build --force @sarek-metal/test/e2e-metal-bench
 
 # Tiered test suite - tests organized by complexity
 # Tier 1: Simple kernels (low complexity, good starting point)
