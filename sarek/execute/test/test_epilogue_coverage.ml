@@ -397,6 +397,34 @@ let test_warp_matvec () =
   | None, e -> check bool "block of 250: enumerated, covered" true e
   | Some a, e -> check bool "block of 250 agrees" e a
 
+(* A launch with a zero extent runs no thread: P stores nothing, so it
+   covers only a C that writes nothing (the fused kernel runs on P's grid). *)
+let test_zero_threads () =
+  let c1 = launch_1d (consumer ()) ~total:1 ~block:1 in
+  let case what ?(c = c1) ?(c_n = 1) ~grid ~block index =
+    let p =
+      launch
+        (producer index)
+        ~grid:(Dims.dims_1d grid)
+        ~block:(Dims.dims_1d block)
+    in
+    let p_scalars = [("n", 100); ("off", 0)] and c_scalars = [("n", c_n)] in
+    let affine, enumerated = both_paths ~p ~p_scalars ~c ~c_scalars in
+    let expected = c_n = 0 in
+    check bool (what ^ " (enumeration)") expected enumerated ;
+    Option.iter (check bool (what ^ " (affine)") expected) affine ;
+    check
+      bool
+      (what ^ " (covers)")
+      expected
+      (covers ~p ~p_scalars ~c ~c_scalars)
+  in
+  case "grid 0, identity" ~grid:0 ~block:64 identity ;
+  case "grid 0, constant index" ~grid:0 ~block:64 (fun _ off -> off) ;
+  case "block 0, constant index" ~grid:1 ~block:0 (fun _ off -> off) ;
+  case "block 0, identity" ~grid:4 ~block:0 identity ;
+  case "grid 0, C writes nothing" ~c_n:0 ~grid:0 ~block:64 identity
+
 let () =
   run
     "epilogue_coverage"
@@ -410,6 +438,7 @@ let () =
           test_case "duplicates" `Quick test_duplicates;
           test_case "non-affine" `Quick test_non_affine;
           test_case "2-D tile" `Quick test_tile;
+          test_case "zero-thread launches" `Quick test_zero_threads;
           test_case "warp-per-row matvec" `Quick test_warp_matvec;
           test_case
             "affine = enumeration, 1-D"
