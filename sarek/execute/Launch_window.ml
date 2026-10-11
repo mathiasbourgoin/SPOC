@@ -53,6 +53,9 @@ type 'arg launch = {
           ({!ir_info}[.fusable]); [None] when it cannot *)
   max_grid_x : int;  (** the device's grid-size limit in x *)
   max_shared : int;  (** the device's shared memory per work-group *)
+  max_arg_slots : int;
+      (** the backend's kernel argument slots ({!arg_slot_limit}); [max_int]
+          when unbounded *)
   args : 'arg list;
   block : Dims.dims;
   grid : Dims.dims;
@@ -160,13 +163,24 @@ let env_enabled () =
 
 let enabled = Atomic.make (env_enabled ())
 
-(** Backends whose launches are deferred by default: the ones whose window and
-    fused kernels are exercised by the test suites on this project's hardware.
-    Others stay immediate unless {!set_backend_enabled} opts them in. *)
-let default_backends = ["HIP"; "OpenCL"; "Vulkan"]
+(** Backends whose launches are deferred by default. Horizontal fusion is
+    bit-identical by construction, so the window is on wherever it is exercised
+    by the test suites: HIP, OpenCL and Vulkan on an RX 7900 XTX, Metal on an
+    Apple M4, CUDA/PTX through ZLUDA (no NVIDIA hardware;
+    specs/launch-window.md). Others stay immediate unless {!set_backend_enabled}
+    opts them in. *)
+let default_backends =
+  ["HIP"; "OpenCL"; "Vulkan"; "Metal"; "CUDA/PTX"; "CUDA/C"]
 
 (* Read on every launch: an immutable list behind an atomic, no lock. *)
 let backends : string list Atomic.t = Atomic.make default_backends
+
+(** Kernel argument slots a launch's signature may use on [backend]. Metal binds
+    every argument at a [[buffer(n)]] index and has 31 of them; the others
+    accept any signature the window builds (their limits are far above eight
+    members). *)
+let arg_slot_limit (backend : string) : int =
+  if backend = "Metal" then 31 else max_int
 
 (** [true] when launches on [backend] are deferred. *)
 let defers (backend : string) : bool =
@@ -214,13 +228,28 @@ let same_dims (a : Dims.dims) (b : Dims.dims) =
 let joinable (l : _ launch) =
   Option.is_some l.shared_bytes && l.shared_mem = 0 && l.grid.x > 0
 
-(* The fused grid and shared memory must stay within the device's limits, and
-   work-group offsets within int32 (they are passed as int32 arguments). *)
-let fits g (l : _ launch) =
+(* Slots one launch's arguments take in a kernel signature: a vector is a
+   buffer plus its length, a scalar one slot. *)
+let arg_slots w (l : _ launch) =
+  List.fold_left
+    (fun n a -> n + if Option.is_some (w.arg_buf a) then 2 else 1)
+    0
+    l.args
+
+(* The fused kernel's signature is every member's arguments plus (offset,
+   grid size) per member. *)
+let fused_slots w members =
+  List.fold_left (fun n m -> n + arg_slots w m + 2) 0 members
+
+(* The fused grid and shared memory must stay within the device's limits, work-
+   group offsets within int32 (they are passed as int32 arguments), and the
+   fused signature within the backend's argument slots. *)
+let fits w g (l : _ launch) =
   let gx = g.grid_x + l.grid.x in
   gx <= l.max_grid_x
   && gx <= Int32.to_int Int32.max_int
   && g.shared + Option.value ~default:0 l.shared_bytes <= l.max_shared
+  && fused_slots w (l :: g.rev_members) <= l.max_arg_slots
 
 (* Under [w.lock]. [l] may join [g] as its last member. Every member of a
    group of two or more is [joinable] with the same block and grid y/z, so
@@ -230,7 +259,7 @@ let compatible w g (l : _ launch) =
   | [] -> false
   | newest :: _ ->
       g.g_device = l.device_id && g.size < !max_members && joinable l
-      && joinable newest && fits g l
+      && joinable newest && fits w g l
       && same_dims l.block newest.block
       && l.grid.y = newest.grid.y && l.grid.z = newest.grid.z
       && (Hashtbl.length w.refused = 0

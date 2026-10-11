@@ -1224,7 +1224,7 @@ module Window = struct
   let set_enabled b = Launch_window.set_enabled window b
 
   (** Turn deferral on or off for one backend (flushes first). On by default for
-      HIP, OpenCL and Vulkan only. *)
+      every GPU backend (HIP, OpenCL, Vulkan, Metal, CUDA). *)
   let set_backend_enabled ~backend b =
     Launch_window.set_backend_enabled window ~backend b
 
@@ -1398,6 +1398,7 @@ let submit_deferred (module B : Framework_sig.BACKEND) ~(device : Device.t) ~ir
         (let x, _, _ = device.capabilities.Framework_sig.max_grid_dims in
          x);
       max_shared = device.capabilities.Framework_sig.shared_mem_per_block;
+      max_arg_slots = Launch_window.arg_slot_limit device.framework;
       args;
       block;
       grid;

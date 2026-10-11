@@ -826,6 +826,50 @@ let test_grid_limit () =
     2
     (List.length (launches ()))
 
+(* A backend with a bounded kernel signature (Metal: 31 buffer slots, a vector
+   takes two) is never handed a fused kernel with more slots than it has. Each
+   member here binds three vectors (6 slots) and adds (offset, size) (2). *)
+let test_arg_slot_limit () =
+  let module LW = Sarek_execute.Launch_window in
+  check int "Metal has 31 slots" 31 (LW.arg_slot_limit "Metal") ;
+  check bool "HIP is unbounded" true (LW.arg_slot_limit "HIP" = max_int) ;
+  let w =
+    LW.create
+      ~int32_arg:Int32.to_int
+      ~arg_buf:(fun a -> Some a)
+      ~arg_int32:(fun a -> Some (Int32.of_int a))
+      ~set_pending:ignore
+      ~guard:(fun f -> f ())
+  in
+  let fused = ref [] and single = ref 0 in
+  let member id =
+    {
+      LW.device_id = 0;
+      backend = "Metal";
+      ir = k_a;
+      ir_id = 0;
+      shared_bytes = Some 0;
+      max_grid_x = max_int;
+      max_shared = max_int;
+      max_arg_slots = 31;
+      args = [id; id + 1; id + 2];
+      block = Execute.dims1d 64;
+      grid = Execute.dims1d 1;
+      shared_mem = 0;
+      accesses = [];
+      issue = (fun () -> incr single);
+      issue_fused = (fun _ args _ -> fused := List.length args :: !fused);
+    }
+  in
+  List.iter (fun i -> LW.submit w (member (i * 10))) [0; 1; 2; 3; 4] ;
+  LW.flush w ;
+  check
+    (list int)
+    "3 members (24 slots) then 2: a fourth would need 32"
+    [(3 * 3) + 6; (2 * 3) + 4]
+    (List.sort (fun a b -> compare b a) !fused) ;
+  check int "nothing runs unfused" 0 !single
+
 (* {1 Review round 3} *)
 
 (* The default deferring set, by the framework names the plugins register
@@ -1546,6 +1590,7 @@ let () =
       ( "review round 3",
         [
           test_case "default backends defer" `Quick test_default_backends;
+          test_case "argument slot limit" `Quick test_arg_slot_limit;
           test_case
             "CPU device not deferred"
             `Quick

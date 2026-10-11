@@ -132,6 +132,7 @@ let launch ?(ir_id = 0) ir ~(grid : Dims.dims) ~(block : Dims.dims) :
     shared_bytes = None;
     max_grid_x = max_int;
     max_shared = 0;
+    max_arg_slots = max_int;
     args = [];
     block;
     grid;
