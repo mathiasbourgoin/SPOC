@@ -184,12 +184,11 @@ let () =
         if bad <> 0 && gated then failed := true ;
         if native then native_ran := true
       with e ->
-        (* Native/Interpreter must always run, and a gated backend must accept
-           the source it is given: codegen/compile/load/launch errors there are
-           failures. Only an ungated backend that cannot run at all is
-           reported (docs review D-41). *)
+        (* "gated" only decides whether a numeric divergence fails. Any
+           exception other than "backend not there" is a failure on every
+           backend (docs review D-41). *)
         let regression =
-          native || (gated && Test_helpers.Backend_failure.rejected_source e)
+          native || Test_helpers.Backend_failure.verdict e = `Fail
         in
         Printf.printf
           "  %-11s %-40s %s (%s)\n%!"

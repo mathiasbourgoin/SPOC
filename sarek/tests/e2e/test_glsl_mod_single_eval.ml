@@ -109,10 +109,10 @@ let () =
         if not ok then failed := true ;
         if native then native_ran := true
       with e ->
-        (* Only a device that cannot run at all may skip: rejected generated
-           source or a failed launch is a regression (docs review D-41). *)
+        (* Only a backend that is not there may skip; any other exception is
+           a regression (docs review D-41). *)
         let regression =
-          native || Test_helpers.Backend_failure.rejected_source e
+          native || Test_helpers.Backend_failure.verdict e = `Fail
         in
         let msg =
           match e with

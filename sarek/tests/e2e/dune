@@ -2091,7 +2091,7 @@
 ; Fault injection (SPOC_TEST_INJECT_BACKEND_ERROR): a compile / codegen / launch
 ; / runtime-compile error raised on the device path must make
 ; test_math_intrinsics exit 1 (it used to print "SKIPPED (backend error)" and
-; exit 0), while an unavailable backend stays a clean skip. The injection fires
+; exit 0), while only an unavailable backend stays a clean skip. The injection fires
 ; before the kernel runs, so no GPU work is done.
 
 (rule
@@ -2121,6 +2121,36 @@
     (setenv
      SPOC_TEST_INJECT_BACKEND_ERROR
      rtc
+     (run %{dep:test_math_intrinsics.exe})))
+   (with-accepted-exit-codes
+    1
+    (setenv
+     SPOC_TEST_INJECT_BACKEND_ERROR
+     feature
+     (run %{dep:test_math_intrinsics.exe})))
+   (with-accepted-exit-codes
+    1
+    (setenv
+     SPOC_TEST_INJECT_BACKEND_ERROR
+     failure
+     (run %{dep:test_math_intrinsics.exe})))
+   (with-accepted-exit-codes
+    1
+    (setenv
+     SPOC_TEST_INJECT_BACKEND_ERROR
+     alloc
+     (run %{dep:test_math_intrinsics.exe})))
+   (with-accepted-exit-codes
+    1
+    (setenv
+     SPOC_TEST_INJECT_BACKEND_ERROR
+     kernel_launch
+     (run %{dep:test_math_intrinsics.exe})))
+   (with-accepted-exit-codes
+    1
+    (setenv
+     SPOC_TEST_INJECT_BACKEND_ERROR
+     module_load
      (run %{dep:test_math_intrinsics.exe})))
    (setenv
     SPOC_TEST_INJECT_BACKEND_ERROR

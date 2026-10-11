@@ -224,7 +224,7 @@ let () =
   let devs = Device.init () in
   Printf.printf "=== float64 DSL kernel arithmetic (G-suffix literals) ===\n%!" ;
   let native_ok = ref false in
-  let native_failed = ref false in
+  let device_failed = ref false in
   Array.iter
     (fun (dev : Device.t) ->
       let native = is_native dev in
@@ -246,14 +246,14 @@ let () =
             n ;
           if native then begin
             native_ok := true ;
-            if bad <> 0 then native_failed := true
+            if bad <> 0 then device_failed := true
           end
         with e ->
           (* A numeric mismatch on a non-native device is a report (see the
-             header), but a device that claims fp64 and rejects the generated
-             source, or fails to launch, is a failure (docs review D-41). *)
+             header), but any exception other than "backend not there" is a
+             failure (docs review D-41). *)
           let regression =
-            native || Test_helpers.Backend_failure.rejected_source e
+            native || Test_helpers.Backend_failure.verdict e = `Fail
           in
           Printf.printf
             "  %-10s %-24s %s (%s)\n%!"
@@ -261,7 +261,7 @@ let () =
             dev.Device.name
             (if regression then "ERROR" else "REPORT")
             (Printexc.to_string e) ;
-          if regression then native_failed := true
+          if regression then device_failed := true
       end)
     devs ;
   if not !native_ok then begin
@@ -270,7 +270,7 @@ let () =
        the kernel" ;
     exit 1
   end ;
-  if !native_failed then begin
+  if !device_failed then begin
     print_endline "test_float64_kernel_arith: FAILED" ;
     exit 1
   end ;
