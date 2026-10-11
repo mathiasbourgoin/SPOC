@@ -413,13 +413,13 @@
 ### Changed
 
 - The launch window (deferred launches, horizontal fusion) is on by default on
-  Metal and CUDA (`CUDA/PTX`, `CUDA/C`), as it was on HIP, OpenCL and Vulkan
-  (package H1). Horizontal fusion is bit-identical by construction.
-  Evidence: `test_launch_window` executed on CUDA/PTX through ZLUDA on a
-  gfx1100 (not NVIDIA hardware); the fused CUDA C and Metal sources are checked
-  as compiler output; Metal has not been executed yet (to be run on the Apple
-  M4 before release). Metal has 31 buffer slots, so a group
-  is not grown past 31 kernel argument slots (`Launch_window.arg_slot_limit`).
+  CUDA (`CUDA/PTX`, `CUDA/C`), as it was on HIP, OpenCL and Vulkan (package H1).
+  Horizontal fusion is bit-identical by construction. Evidence:
+  `test_launch_window` executed on CUDA/PTX through ZLUDA on a gfx1100;
+  CUDA/C uses the CUDA C generator HIP uses; neither ran on NVIDIA hardware.
+  Metal stays opt-in until executed on Apple hardware: its fused source is
+  checked as compiler output only. Metal has 31 buffer slots, so a group is not
+  grown past 31 kernel argument slots (`Launch_window.arg_slot_limit`).
   `SAREK_LAUNCH_WINDOW=0` or `Execute.Window.set_backend_enabled` turns it off.
   `bench_launch_window` moved to `sarek/tests/e2e` and runs on every non-CPU
   device (`SPOC_BENCH_FRAMEWORK` narrows it).
