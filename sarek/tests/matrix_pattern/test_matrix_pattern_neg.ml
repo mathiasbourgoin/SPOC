@@ -464,6 +464,22 @@ let n_atomic =
       let _old = atomic_add_global_int32 count 0l 1l in
       ()]
 
+let n_output_overwritten =
+  [%kernel
+    fun (a : float32 vector)
+        (b : float32 vector)
+        (c : float32 vector)
+        (n : int32)
+        (k : int32) ->
+      let row = global_idx_y in
+      let col = global_idx_x in
+      let sum = mut 0.0 in
+      for i = 0 to k - 1l do
+        sum := sum +. (a.((row * k) + i) *. b.((i * n) + col))
+      done ;
+      c.((row * n) + col) <- sum ;
+      c.((row * n) + col) <- 0.0]
+
 let n_stencil =
   [%kernel
     fun (a : float32 vector) (out : float32 vector) ->
@@ -535,6 +551,10 @@ let test_negatives () =
     "helper_writes_operand"
     n_helper_writes_operand
     (matches (function P.Operand_written _ -> true | _ -> false)) ;
+  check_rejected
+    "output_overwritten"
+    n_output_overwritten
+    (is (P.Output_written_elsewhere "c")) ;
   check_rejected
     "atomic"
     n_atomic

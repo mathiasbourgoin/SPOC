@@ -81,7 +81,7 @@ done;
   `for i = 0 to row` — triangular), a non-product update (`acc + a[i]`), a
   product of three factors (`acc + alpha*a*b`), subtraction, a call to a
   helper function, a shared/local operand (an already tiled kernel), an output
-  index containing `kv`, an output that aliases an operand, an operand the kernel
+  index containing `kv`, an output that aliases an operand or that another statement also writes, an operand the kernel
   writes or may write (any write through a computed base or any atomic counts as
   writing every operand, helper bodies included), `acc` used anywhere else, a
   store guarded by a condition on `acc`, an epilogue using thread-varying values
