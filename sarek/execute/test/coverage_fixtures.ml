@@ -148,13 +148,14 @@ let launch_1d ir ~total ~block =
 
 let scalars l = List.map (fun (k, v) -> (k, Int32.of_int v)) l
 
+let shape_of c =
+  match Sarek_execute.Fusion_epilogue.consumer c.LW.ir with
+  | Ok s -> s
+  | Error why -> invalid_arg ("consumer refused: " ^ why)
+
 (** The coverage verdict of [c] as the epilogue of [p] on [dst]. *)
 let covers ~p ~p_scalars ~c ~c_scalars =
-  let shape =
-    match Sarek_execute.Fusion_epilogue.consumer c.LW.ir with
-    | Ok s -> s
-    | Error why -> invalid_arg ("consumer refused: " ^ why)
-  in
+  let shape = shape_of c in
   fst
     (Sarek_execute.Launch_epilogue.covers
        ~p
@@ -163,3 +164,40 @@ let covers ~p ~p_scalars ~c ~c_scalars =
        ~c
        ~shape
        ~c_scalars:(scalars c_scalars))
+
+(** The verdict of each path of the check, separately: the affine proof ([None]
+    when the pair is outside its form) and the host enumeration. *)
+let both_paths ~p ~p_scalars ~c ~c_scalars =
+  let p_scalars = scalars p_scalars and c_scalars = scalars c_scalars in
+  let shape = shape_of c in
+  let dims (l : _ LW.launch) =
+    {
+      Sarek_execute.Index_slice.block = (l.block.x, l.block.y, l.block.z);
+      grid = (l.grid.x, l.grid.y, l.grid.z);
+    }
+  in
+  let affine =
+    match
+      Sarek_execute.Coverage_affine.covers
+        ~p_body:p.LW.ir.kern_body
+        ~p_array:"dst"
+        ~p_scalars
+        ~p_dims:(dims p)
+        ~c_body:c.LW.ir.kern_body
+        ~c_written:shape.written
+        ~c_scalars
+        ~c_dims:(dims c)
+    with
+    | ok, _ -> Some ok
+    | exception Sarek_execute.Coverage_affine.Unknown _ -> None
+  in
+  let enumerated, _ =
+    Sarek_execute.Launch_epilogue.enumerate
+      ~p
+      ~p_array:"dst"
+      ~p_scalars
+      ~c
+      ~shape
+      ~c_scalars
+  in
+  (affine, enumerated)

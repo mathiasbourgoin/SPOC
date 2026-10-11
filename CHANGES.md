@@ -55,6 +55,12 @@
   `sarek/tests/e2e/device_buffers_suite.ml` (CPU backends and HIP),
   `sarek-opencl/test/test_opencl_device_sync_streams.ml`,
   `sarek-opencl/test/test_opencl_device_state_race.ml`.
+
+
+- Epilogue fusion no longer accepts a producer that stores below index 0 as
+  covering its consumer: the fused consumer would then run on negative
+  indices the unfused one never touches. Such pairs stay unfused.
+
 - Native launches from several domains no longer hang or corrupt each other
   (R-64). The process-wide `ThreadPool` and `ParallelPool` serialise whole
   launches behind a per-pool `launch_lock`, so counters, the work function,
@@ -496,6 +502,18 @@
   (run `f 0` .. `f (n - 1)`) replaces `submit`/`wait_all`, `with_fission_pool` / `with_parallel_pool` replace
   `get_fission_pool` / `get_parallel_pool`, and `LaunchQueue.retire_if_idle`
   replaces `shutdown`. The jsoo interpreter build runs parallel blocks inline.
+
+
+- The epilogue-fusion coverage check (`Launch_epilogue`) no longer
+  enumerates every thread when store indices and guards are affine in the
+  thread and work-group indices: `Coverage_affine` proves coverage in a few
+  microseconds (a 128x3584 prefill pair: ~350 ms before, ~4 us after,
+  `sarek/execute/test/bench_epilogue_coverage.ml`). This was the cold
+  first-prompt cost seen with the launch window on. Enumeration, still used
+  for other indices, uses bitsets instead of hash tables and is bounded to
+  2^20 threads for the pair (was 2^24 per launch); beyond it the pair stays
+  unfused.
+
 - `Spoc_core.Memory.bigarray_void_ptr` is replaced by
   `Memory.borrow_bigarray_ptr`, whose pointer need not root the bigarray: the
   caller keeps it reachable, on transfer paths with a trailing

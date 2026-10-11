@@ -19,6 +19,8 @@
   Ir_memo
   Kernel_access
   Index_slice
+  Index_bitset
+  Coverage_affine
   Ir_rename
   Fusion_horizontal
   Fusion_epilogue

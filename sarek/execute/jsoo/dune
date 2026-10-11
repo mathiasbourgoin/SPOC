@@ -19,6 +19,10 @@
 
 (copy_files "../Index_slice.ml")
 
+(copy_files "../Index_bitset.ml")
+
+(copy_files "../Coverage_affine.ml")
+
 (copy_files "../Ir_rename.ml")
 
 (copy_files "../Fusion_horizontal.ml")
@@ -39,6 +43,8 @@
   Ir_memo
   Kernel_access
   Index_slice
+  Index_bitset
+  Coverage_affine
   Ir_rename
   Fusion_horizontal
   Fusion_epilogue

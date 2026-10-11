@@ -156,6 +156,160 @@ let test_over_budget_not_proven () =
        ~c_n:total
        (producer ident))
 
+module LE = Sarek_execute.Launch_epilogue
+
+(* Which path decided: the counters move by exactly one per check. *)
+let decided_by f =
+  let before = LE.proof_counts () in
+  ignore (f ()) ;
+  let after = LE.proof_counts () in
+  match
+    ( after.affine - before.affine,
+      after.enumerated - before.enumerated,
+      after.over_budget - before.over_budget )
+  with
+  | 1, 0, 0 -> "affine"
+  | 0, 1, 0 -> "enumerated"
+  | 0, 0, 1 -> "over budget"
+  | 0, 0, 0 -> "unknown"
+  | _ -> "several"
+
+let test_paths () =
+  let total = 128 * 3584 in
+  let path f = decided_by f in
+  check
+    string
+    "prefill-shaped 1-D pair"
+    "affine"
+    (path (fun () ->
+         verdict
+           ~p_total:total
+           ~c_total:total
+           ~p_n:total
+           ~c_n:total
+           (producer identity))) ;
+  check
+    string
+    "2-D tile"
+    "affine"
+    (path (fun () -> tile ~guard_col:true ~cols:100 ~bx:7)) ;
+  check
+    string
+    "non-affine index"
+    "enumerated"
+    (path (fun () ->
+         verdict
+           ~p_n:1000
+           ~c_n:1000
+           (producer (fun i _ -> (i /! int 2 *! int 2) +! (i %! int 2))))) ;
+  check
+    string
+    "loop"
+    "enumerated"
+    (path (fun () -> verdict ~p_n:500 ~c_n:1000 loop_producer))
+
+(* The affine proof agrees with enumeration wherever both answer. *)
+let agree what (affine, enumerated) =
+  match affine with
+  | None -> failf "%s: expected the affine form" what
+  | Some a -> check bool what enumerated a
+
+let one_d_indices =
+  [
+    ("i + off", (fun i off -> i +! off), `Affine);
+    ("2i + off", (fun i off -> (int 2 *! i) +! off), `Maybe);
+    ("off - i", (fun i off -> off +! EBinop (Sub, int 0, i)), `Maybe);
+    ("0 * i + off", (fun i off -> (int 0 *! i) +! off), `Affine);
+  ]
+
+(* (off, P's n, C's n, C's threads) *)
+let one_d_shapes =
+  [
+    (0, 300, 300, 300);
+    (0, 250, 250, 256);
+    (0, 300, 301, 320);
+    (3, 300, 300, 300);
+    (-3, 300, 200, 224);
+    (0, 0, 0, 32);
+    (0, 300, 0, 32);
+    (5, 100, 105, 128);
+    (-1, 300, 299, 299);
+  ]
+
+let one_d_case (name, index, form) (off, p_n, c_n, c_total) guarded =
+  let what =
+    Printf.sprintf
+      "%s off=%d p_n=%d c_n=%d c_total=%d guarded=%b"
+      name
+      off
+      p_n
+      c_n
+      c_total
+      guarded
+  in
+  match
+    both_paths
+      ~p:(launch_1d (producer index) ~total:300 ~block:64)
+      ~p_scalars:[("n", p_n); ("off", off)]
+      ~c:(launch_1d (consumer ~guarded ()) ~total:c_total ~block:32)
+      ~c_scalars:[("n", c_n)]
+  with
+  | None, _ when form = `Maybe -> ()
+  | r -> agree what r
+
+let test_affine_matches_enumeration_1d () =
+  List.iter
+    (fun index ->
+      List.iter
+        (fun shape -> List.iter (one_d_case index shape) [true; false])
+        one_d_shapes)
+    one_d_indices
+
+let tile_case (guard_col, cols, bx) =
+  let r =
+    both_paths
+      ~p:
+        (launch
+           (tile_producer ~guard_col)
+           ~grid:(Dims.dims_2d bx 2)
+           ~block:(Dims.dims_2d 16 16))
+      ~p_scalars:[("n", cols); ("off", 0); ("m", 32)]
+      ~c:(launch_1d (consumer ()) ~total:(32 * cols) ~block:64)
+      ~c_scalars:[("n", 32 * cols)]
+  in
+  let what = Printf.sprintf "tile cols=%d bx=%d" cols bx in
+  match r with
+  | None, enumerated ->
+      (* Rows further apart than a tile row is wide leave gaps. *)
+      check bool (what ^ ": gaps") true (cols > 16 * bx) ;
+      check bool (what ^ ": enumeration refuses") false enumerated
+  | r -> agree what r
+
+let test_affine_matches_enumeration_tile () =
+  List.iter
+    tile_case
+    [
+      (true, 32, 2); (true, 30, 2); (false, 30, 2); (false, 32, 2); (true, 40, 2);
+    ]
+
+(* The verdict reports the scalars it read, so the per-valuation cache cannot
+   reuse it for other values. *)
+let test_used_scalars () =
+  let _, used =
+    LE.covers
+      ~p:(launch_1d (producer shifted) ~total:256 ~block:64)
+      ~p_array:"dst"
+      ~p_scalars:(scalars [("n", 256); ("off", 0)])
+      ~c:(launch_1d (consumer ()) ~total:256 ~block:64)
+      ~shape:(shape_of (launch_1d (consumer ()) ~total:256 ~block:64))
+      ~c_scalars:(scalars [("n", 256)])
+  in
+  check
+    (list (pair string string))
+    "p n, p off, c n"
+    [("c", "n"); ("p", "n"); ("p", "off")]
+    (List.sort compare used)
+
 let () =
   run
     "epilogue_coverage"
@@ -169,10 +323,20 @@ let () =
           test_case "duplicates" `Quick test_duplicates;
           test_case "non-affine" `Quick test_non_affine;
           test_case "2-D tile" `Quick test_tile;
+          test_case
+            "affine = enumeration, 1-D"
+            `Quick
+            test_affine_matches_enumeration_1d;
+          test_case
+            "affine = enumeration, tile"
+            `Quick
+            test_affine_matches_enumeration_tile;
+          test_case "scalars read" `Quick test_used_scalars;
         ] );
       ( "cost",
         [
           test_case "large affine pair proven" `Quick test_large_affine_proven;
           test_case "over budget not proven" `Quick test_over_budget_not_proven;
+          test_case "decided by" `Quick test_paths;
         ] );
     ]

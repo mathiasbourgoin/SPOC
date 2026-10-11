@@ -20,9 +20,11 @@
     - C writes nothing P accesses, except I itself.
     - C conflicts with no other launch of P's group, and with no launch of a
       later group.
-    - Coverage ({!Index_slice}, for these dimensions and scalar values): P
-      stores each element of I at most once, and every element C writes is one
-      that P stores.
+    - Coverage (for these dimensions and scalar values): P stores each element
+      of I at most once, at a non-negative index, and every element C writes is
+      one that P stores. Proven by {!Coverage_affine} when the indices are
+      affine, else by enumerating both launches with {!Index_slice}, within
+      [max_enumerated] threads.
 
     The coverage verdict is cached by (P, the producer array, C, their
     dimensions, the values of the scalars the evaluation read). *)
@@ -100,52 +102,100 @@ let shape_of (w : _ LW.t) (l : _ LW.launch) =
 
 (** {1 Coverage} *)
 
-let max_threads = 1 lsl 24
+(* Enumeration bound: threads of P plus threads of C. Each run also stops
+   after twice that many threads plus loop iterations. Beyond it the check
+   answers "not proven": the launches stay unfused. *)
+let max_enumerated = 1 lsl 20
 
-(* [true] when P stores each element at most once and covers every element
-   C writes. Unknown or too large: [false]. *)
-let covers ~(p : _ LW.launch) ~p_array ~p_scalars ~(c : _ LW.launch)
+(** How coverage verdicts were reached, since start-up: by the affine proof
+    ({!Coverage_affine}), by enumeration, or refused as over the enumeration
+    bound. *)
+type proof_counts = {affine : int; enumerated : int; over_budget : int}
+
+let n_affine = Atomic.make 0
+
+let n_enumerated = Atomic.make 0
+
+let n_over_budget = Atomic.make 0
+
+let proof_counts () =
+  {
+    affine = Atomic.get n_affine;
+    enumerated = Atomic.get n_enumerated;
+    over_budget = Atomic.get n_over_budget;
+  }
+
+let threads (l : _ LW.launch) =
+  l.grid.x * l.grid.y * l.grid.z * l.block.x * l.block.y * l.block.z
+
+exception Stored_twice
+
+let tag used_p used_c =
+  List.map (fun n -> ("p", n)) used_p @ List.map (fun n -> ("c", n)) used_c
+
+let slice (l : _ LW.launch) ~is_target ~record ~scalars =
+  Index_slice.run
+    ~budget:(2 * max_enumerated)
+    ~is_target
+    ~record
+    ~scalars
+    ~dims:(dims_of l)
+    l.ir.kern_body
+
+(* Every thread of P and C, on the host. A negative or huge index, an element
+   stored twice or an unknown index: not proven. *)
+let enumerate ~(p : _ LW.launch) ~p_array ~p_scalars ~(c : _ LW.launch)
     ~(shape : Fusion_epilogue.consumer) ~c_scalars =
-  let threads (l : _ LW.launch) =
-    l.grid.x * l.grid.y * l.grid.z * l.block.x * l.block.y * l.block.z
-  in
-  if threads p > max_threads || threads c > max_threads then (false, [])
+  if threads p + threads c > max_enumerated then begin
+    Atomic.incr n_over_budget ;
+    (false, [])
+  end
   else
-    let stored = Hashtbl.create 1024 and dup = ref false in
-    let written = Hashtbl.create 1024 in
+    let stored = Index_bitset.create () and written = Index_bitset.create () in
+    let store i =
+      if Index_bitset.add stored (Int32.to_int i) then
+        raise_notrace Stored_twice
+    in
+    let write i = ignore (Index_bitset.add written (Int32.to_int i)) in
     match
       let used_p =
-        Index_slice.run
-          ~is_target:(fun a -> a = p_array)
-          ~record:(fun i ->
-            if Hashtbl.mem stored i then dup := true
-            else Hashtbl.replace stored i ())
+        slice
+          p
+          ~is_target:(String.equal p_array)
+          ~record:store
           ~scalars:p_scalars
-          ~dims:(dims_of p)
-          p.ir.kern_body
       in
-      let used_c =
-        Index_slice.run
-          ~is_target:(fun a -> List.mem a shape.written)
-          ~record:(fun i -> Hashtbl.replace written i ())
-          ~scalars:c_scalars
-          ~dims:(dims_of c)
-          c.ir.kern_body
-      in
-      (used_p, used_c)
+      let is_target a = List.mem a shape.written in
+      (used_p, slice c ~is_target ~record:write ~scalars:c_scalars)
     with
     | used_p, used_c ->
-        let ok =
-          (not !dup)
-          && Hashtbl.fold
-               (fun i () ok -> ok && Hashtbl.mem stored i)
-               written
-               true
-        in
-        ( ok,
-          List.map (fun n -> ("p", n)) used_p
-          @ List.map (fun n -> ("c", n)) used_c )
-    | exception Index_slice.Unknown _ -> (false, [])
+        Atomic.incr n_enumerated ;
+        (Index_bitset.subset written stored, tag used_p used_c)
+    | exception
+        (Index_slice.Unknown _ | Index_bitset.Out_of_range _ | Stored_twice) ->
+        (false, [])
+
+(* [true] when P stores each element at most once, at a non-negative index,
+   and covers every element C writes. Unknown or too large: [false]. Also
+   returns the scalars the verdict read, tagged ["p"] or ["c"]. *)
+let covers ~(p : _ LW.launch) ~p_array ~p_scalars ~(c : _ LW.launch)
+    ~(shape : Fusion_epilogue.consumer) ~c_scalars =
+  match
+    Coverage_affine.covers
+      ~p_body:p.ir.kern_body
+      ~p_array
+      ~p_scalars
+      ~p_dims:(dims_of p)
+      ~c_body:c.ir.kern_body
+      ~c_written:shape.written
+      ~c_scalars
+      ~c_dims:(dims_of c)
+  with
+  | verdict ->
+      Atomic.incr n_affine ;
+      verdict
+  | exception Coverage_affine.Unknown _ ->
+      enumerate ~p ~p_array ~p_scalars ~c ~shape ~c_scalars
 
 type verdict = {used : (string * string) list; values : int32 list; ok : bool}
 
