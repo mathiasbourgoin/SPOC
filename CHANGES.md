@@ -30,17 +30,21 @@
   to see `Log.warn`/`Log.error` from components it never enabled must now
   name them in `SAREK_DEBUG` or call `Log.enable`. Regression tests:
   `sarek/core/test/test_log.ml`, `sarek/core/test/test_log_error.ml`.
-
 - `Device.synchronize` now releases the stream keep-alive ledger of the
   device, as `Transfer.flush` does (R-6). Before, after a `Device.synchronize`
   `free_pinned`, `unregister_host` and `free_buffer` still refused with "still
   referenced by stream-ordered work", and a program that only used
   `Device.synchronize` kept every stream operand rooted for the life of the
-  process. `Device.on_synchronized` registers a listener run after each
-  whole-device sync; `Transfer` registers its ledger release there and
-  `Transfer.flush` is now `Device.synchronize`. Regression test:
-  `test_device_synchronize_releases` in
-  `sarek/tests/e2e/device_buffers_suite.ml` (CPU backends and HIP).
+  process. `Device.on_synchronize` registers a hook run around each
+  whole-device sync; `Transfer` marks each stream's last operation before the
+  sync and releases up to those marks after it, so work another domain
+  enqueues during the sync stays rooted. `Transfer.flush` is now
+  `Device.synchronize`. On OpenCL, `Device.synchronize` now finishes every live
+  stream's command queue, not only the default queue. Regression tests:
+  `test_device_synchronize_releases` and
+  `test_device_synchronize_keeps_later_work` in
+  `sarek/tests/e2e/device_buffers_suite.ml` (CPU backends and HIP),
+  `sarek-opencl/test/test_opencl_device_sync_streams.ml`.
 - Native launches from several domains no longer hang or corrupt each other
   (R-64). The process-wide `ThreadPool` and `ParallelPool` serialise whole
   launches behind a per-pool `launch_lock`, so counters, the work function,

@@ -288,35 +288,41 @@ let free_memory d : int64 option =
 
 (** {2 Synchronization} *)
 
-(* Listeners run after a whole-device synchronisation. Registered by layers
-   that sit above [Device] and track stream-ordered work ([Transfer] registers
-   its keep-alive ledger release), so that every whole-device sync, whichever
-   module the caller went through, tells them that work has completed. *)
-let sync_listeners_lock = Mutex.create ()
+(* Hooks around a whole-device synchronisation, for layers above [Device]
+   that track stream-ordered work ([Transfer] marks its keep-alive ledger
+   before the sync and releases up to the marks after), so that every
+   whole-device sync, whichever module the caller went through, tells them
+   what has completed. *)
+let sync_hooks_lock = Mutex.create ()
 
-let sync_listeners : (t -> unit) list ref = ref []
+let sync_hooks : (t -> unit -> unit) list ref = ref []
+
+(** [on_synchronize h] registers [h]. {!synchronize} calls [h d] before the
+    backend's whole-device synchronisation of [d] (after deferred launches have
+    been issued) and the function it returns after the backend returns.
+    Everything enqueued on any stream of [d] before [h d] was called has then
+    completed; work enqueued later, by another domain, may not have. Hooks run
+    in registration order, outside any lock of this module. *)
+let on_synchronize (h : t -> unit -> unit) : unit =
+  Mutex.protect sync_hooks_lock (fun () -> sync_hooks := !sync_hooks @ [h])
 
 (** [on_synchronized f] registers [f], called as [f d] after {!synchronize} has
-    returned from the backend's whole-device synchronisation of [d]: at that
-    point every operation enqueued on any stream of [d] has completed. [f] runs
-    outside any lock of this module. *)
-let on_synchronized (f : t -> unit) : unit =
-  Mutex.protect sync_listeners_lock (fun () ->
-      sync_listeners := f :: !sync_listeners)
+    returned from the backend's whole-device synchronisation of [d]. *)
+let on_synchronized (f : t -> unit) : unit = on_synchronize (fun d () -> f d)
 
-(** Wait for every operation enqueued on any stream of [d], then run the
-    {!on_synchronized} listeners. *)
+(** Wait for every operation enqueued on any stream of [d] (the backend's device
+    sync covers all of them), running the {!on_synchronize} hooks around the
+    wait. *)
 let synchronize d =
   Spoc_framework.Launch_hooks.flush_pending () ;
   match Framework_registry.find_backend d.framework with
   | None -> failwith ("Unknown framework: " ^ d.framework)
   | Some (module B : Framework_sig.BACKEND) ->
       let backend_dev = B.Device.get d.backend_id in
+      let hooks = Mutex.protect sync_hooks_lock (fun () -> !sync_hooks) in
+      let after = List.map (fun h -> h d) hooks in
       B.Device.synchronize backend_dev ;
-      let listeners =
-        Mutex.protect sync_listeners_lock (fun () -> !sync_listeners)
-      in
-      List.iter (fun f -> f d) listeners
+      List.iter (fun k -> k ()) after
 
 let set_current d =
   match Framework_registry.find_backend d.framework with
