@@ -12,11 +12,11 @@
 
     {b Conditions (vectors compared by identity, on one device).}
     - The backend runs epilogues ({!set_backend_enabled}; HIP by default,
-      because its compiler is forced to [-ffp-contract=off]).
+      because every kernel it compiles has [-ffp-contract=off]).
     - C has the consumer shape ({!Fusion_epilogue.consumer}). C is 1-D with no
       dynamic shared memory.
-    - Among the vectors P accesses, C reads exactly one, I. C reads I only at
-      its own index. P does not read I, and P binds I to exactly one parameter.
+    - Among the vectors P writes, C reads exactly one, I. C reads I only at its
+      own index. P does not read I, and P binds I to exactly one parameter.
     - C writes nothing P accesses, except I itself.
     - C conflicts with no other launch of P's group, and with no launch of a
       later group.
@@ -34,6 +34,14 @@ module LW = Launch_window
 
 (** {1 Policy} *)
 
+(* HIP only: the fused kernel equals the unfused pair only if no kernel of the
+   backend is contracted, since the device compiler may share a subexpression
+   of P and C (or forward P's stored value) in the fused kernel that the
+   unfused C contracts. HIP compiles every kernel with [-ffp-contract=off].
+   Metal does too ([fp contract(off)]), by construction, but has not been
+   executed on Apple hardware. CUDA, OpenCL and Vulkan contract inside kernels
+   today (specs/epilogue-fusion.md, docs/fp-contraction-policy.md section 14),
+   so they are opt-in. *)
 let default_backends = ["HIP"]
 
 (* [SAREK_LAUNCH_EPILOGUE=0] turns epilogue fusion off at start-up. *)
@@ -46,9 +54,9 @@ let backends : string list Atomic.t =
 let enabled (backend : string) = List.mem backend (Atomic.get backends)
 
 (** Turn epilogue fusion on or off for one backend. Off by default except on
-    HIP: elsewhere the device compiler may contract a multiply of the producer
-    with an add of the consumer once both are in one kernel, which changes the
-    result by an ulp. Turning it on there is accepting that. *)
+    HIP: elsewhere the device compiler may contract in the fused kernel what it
+    does not contract in the unfused pair, or the reverse, which changes the
+    result by an ulp. Turning it on there is a precision grant. *)
 let set_backend_enabled ~(backend : string) (b : bool) =
   let rec update () =
     let old = Atomic.get backends in

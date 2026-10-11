@@ -432,3 +432,10 @@
  (alias runtest)
  (action
   (run %{dep:test_cpu_pool_idle.exe})))
+
+; The backends on which epilogue fusion is on by default (FR-104).
+
+(test
+ (name test_epilogue_defaults)
+ (modules test_epilogue_defaults)
+ (libraries sarek.execute alcotest))

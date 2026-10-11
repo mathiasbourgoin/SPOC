@@ -2004,6 +2004,8 @@
   test_coopmat_layout_e2e
   test_launch_window
   bench_launch_window
+  test_epilogue_exact
+  bench_epilogue
   test_matrix_rewrite
   test_matrix_rewrite_float
   test_matrix_int64_index
@@ -2021,6 +2023,8 @@
   test_coopmat_layout_e2e
   test_launch_window
   bench_launch_window
+  test_epilogue_exact
+  bench_epilogue
   test_matrix_rewrite
   test_matrix_rewrite_float
   test_matrix_int64_index
@@ -2336,3 +2340,12 @@
  (alias runtest)
  (action
   (run %{dep:test_matrix_cuda_compile.exe})))
+
+; Epilogue fusion against the unfused pair (specs/epilogue-fusion.md FR-104), on
+; inputs where a contracted multiply-add differs from the rounded one: bit
+; equality asserted on the default backends (HIP), recorded on opt-in ones.
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_epilogue_exact.exe})))
