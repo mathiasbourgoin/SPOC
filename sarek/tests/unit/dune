@@ -413,7 +413,7 @@
 (executables
  (names bench_cpu_pool_idle_gc test_cpu_pool_idle)
  (modules bench_cpu_pool_idle_gc test_cpu_pool_idle cpu_pool_workload)
- (libraries sarek sarek_ir unix))
+ (libraries sarek sarek.interp sarek_ir unix))
 
 ; Pool sizing cap, retirement after the idle timeout, recreation on the next
 ; launch (counted in OS threads; skips without /proc).

@@ -8,7 +8,8 @@ Reviewed CPU runtime files: the `Sarek_cpu_runtime*` module family, `sarek/sarek
 
 - `sarek/sarek/Sarek_cpu_runtime_types.ml`: `exec_mode`, `thread_state`, shared-memory types/allocators, and the `Barrier` effect (`sarek/sarek/Sarek_cpu_runtime_types.ml:10-99`).
 - `sarek/sarek/Sarek_cpu_runtime_exec.ml`: barrier-aware sequential execution — `run_block_sequential_bsp` (`sarek/sarek/Sarek_cpu_runtime_exec.ml:17`), `run_sequential` (`:132`), and `run_block_with_barriers` (`:166`).
-- `sarek/sarek/Sarek_cpu_runtime_pools.ml`: the pool implementations — `DomainPool` (`sarek/sarek/Sarek_cpu_runtime_pools.ml:9`), `ThreadPool` (`:126`), `ParallelPool` (`:525`), and `LaunchQueue` (`:691`).
+- `sarek/sarek/Sarek_cpu_runtime_pools.ml`: the pool implementations — `DomainPool` (an alias of the block pool shared with the interpreter, `sarek/interp/Cpu_domain_pool.ml`; `sarek/sarek/Sarek_cpu_runtime_pools.ml:10`), `ThreadPool` (`:25`), `ParallelPool` (`:464`), and `LaunchQueue` (`:669`).
+- `sarek/interp/Cpu_pool_lifecycle.ml`/`.mli`: sizing and lifetime of every CPU pool (R-66). Pools are slots created by their first launch (`with_pool`, `sarek/interp/Cpu_pool_lifecycle.ml:181`), never by device enumeration, and retired by a reaper domain (`:102`) once idle for `SAREK_CPU_POOL_IDLE_MS` (default 1000 ms) with no launch holding them (`retire_if_idle`, `:131`); fission dispatchers are retired the same way (`sarek/sarek/Sarek_cpu_runtime_pools.ml:832`). `SAREK_CPU_POOL_MAX_DOMAINS` / `set_max_domains` caps each pool; `retire_idle_now` (also `at_exit`) retires every idle pool at once.
 - `sarek/sarek/Sarek_cpu_runtime.ml` (reduced): the public `run`/`run_parallel_simple` orchestrators that select barrier-aware or non-barrier execution and re-export the moved entry points (`sarek/sarek/Sarek_cpu_runtime.ml:66-78`).
 - `sarek/sarek/Sarek_cpu_runtime.mli`: public CPU runtime interface (unchanged by the split).
 - `sarek/sarek/BSP.md`: barrier and BSP design intent.
@@ -47,7 +48,7 @@ Reviewed CPU runtime files: the `Sarek_cpu_runtime*` module family, `sarek/sarek
 ## Performance Or Maintainability Risks
 
 - There are several independent execution strategies now spread across the `Sarek_cpu_runtime_exec`/`Sarek_cpu_runtime_pools`/`Sarek_cpu_runtime` modules, making semantic drift likely.
-- Global pools are created lazily at `sarek/sarek/Sarek_cpu_runtime_pools.ml:103-111` (DomainPool `global_pool`), `sarek/sarek/Sarek_cpu_runtime_pools.ml:510` (fission pool), and `sarek/sarek/Sarek_cpu_runtime_pools.ml:675` (parallel pool); shutdown helpers exist but are not obviously wired into runtime lifecycle.
+- Global pools are lifecycle slots: the block pool (`sarek/interp/Cpu_domain_pool.ml:112`), the fission pool (`sarek/sarek/Sarek_cpu_runtime_pools.ml:448`) and the parallel pool (`sarek/sarek/Sarek_cpu_runtime_pools.ml:651`), each created on its first launch and retired when idle (see `Cpu_pool_lifecycle` above). Each block-pool launch waits on its own task group, so concurrent launches no longer swap errors (R-68, block pool only).
 - Barrier support depends partly on runtime detection and partly on metadata-like flags in later paths, which makes behavior input-path dependent.
 - Exception handling differs by pool implementation, making failures hard to reproduce.
 - Shared-memory and local-environment setup is duplicated across execution paths.
@@ -62,7 +63,7 @@ The colocated `sarek/sarek/test/**` files cover supporting value/error/helper mo
 - Worker exception propagation for `ParallelPool` (still open; `ThreadPool` is covered/fixed as of 2026-07-02 — regression test recommended to lock in the fix).
 - Zero, negative, and very large grid/block dimensions.
 - Shared-memory initialization and isolation across blocks.
-- Global pool shutdown or non-leaking lifecycle behavior.
+- Global pool lifecycle: `sarek/tests/unit/test_cpu_pool_idle.ml` (cap, idle retirement, recreation, `retire_idle_now`); `bench_cpu_pool_idle_gc.ml` measures the minor-GC cost left by idle pools.
 
 ## Concrete Improvement/Fix Candidates
 

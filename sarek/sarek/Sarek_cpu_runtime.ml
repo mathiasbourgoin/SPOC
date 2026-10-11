@@ -73,8 +73,9 @@ let run_sequential = Sarek_cpu_runtime_exec.run_sequential
     Distributes all global threads across domains. Optimized for speed. *)
 let run_parallel_simple ~block:(bx, by, bz) ~grid:(gx, gy, gz)
     (kernel : thread_state -> shared_mem -> 'a -> unit) (args : 'a) : unit =
-  let pool = Sarek_cpu_runtime_pools.get_pool () in
-  let num_domains = pool.Sarek_cpu_runtime_pools.DomainPool.num_domains in
+  let num_domains =
+    Sarek_cpu_runtime_pools.Lifecycle.domain_count ~default:4 ()
+  in
   (* Total number of global threads *)
   let threads_per_block = bx * by * bz in
   let total_blocks = gx * gy * gz in
@@ -148,21 +149,19 @@ let run_parallel_simple ~block:(bx, by, bz) ~grid:(gx, gy, gz)
 *)
 let run_parallel_with_barriers ~block:(bx, by, bz) ~grid:(gx, gy, gz)
     (kernel : thread_state -> shared_mem -> 'a -> unit) (args : 'a) : unit =
-  let pool = Sarek_cpu_runtime_pools.get_pool () in
-  for block_z = 0 to gz - 1 do
-    for block_y = 0 to gy - 1 do
-      for block_x = 0 to gx - 1 do
-        Sarek_cpu_runtime_pools.DomainPool.submit pool (fun () ->
-            Sarek_cpu_runtime_exec.run_block_with_barriers
-              ~block:(bx, by, bz)
-              ~grid:(gx, gy, gz)
-              ~block_idx:(block_x, block_y, block_z)
-              kernel
-              args)
-      done
-    done
-  done ;
-  Sarek_cpu_runtime_pools.DomainPool.wait_all pool
+  (* Blocks in x-fastest order, one task each. *)
+  let run_block b () =
+    Sarek_cpu_runtime_exec.run_block_with_barriers
+      ~block:(bx, by, bz)
+      ~grid:(gx, gy, gz)
+      ~block_idx:(b mod gx, b / gx mod gy, b / (gx * gy))
+      kernel
+      args
+  in
+  Sarek_cpu_runtime_pools.DomainPool.run (fun submit ->
+      for b = 0 to (gx * gy * gz) - 1 do
+        submit (run_block b)
+      done)
 
 (** Run kernel in parallel. Barrier metadata must come from the compiler or
     caller; the runtime must not execute user code to discover it. When metadata
@@ -185,19 +184,18 @@ let run_threadpool ~has_barriers ~block:(bx, by, bz) ~grid:(gx, gy, gz)
     (kernel : thread_state -> shared_mem -> 'a -> unit) (args : 'a) : unit =
   if has_barriers then begin
     (* Use ThreadPool for barrier kernels - need BSP semantics *)
-    let pool = Sarek_cpu_runtime_pools.get_fission_pool () in
     let wrapped_kernel state shared _obj_args = kernel state shared args in
-    Sarek_cpu_runtime_pools.ThreadPool.run_kernel
-      pool
-      ~block:(bx, by, bz)
-      ~grid:(gx, gy, gz)
-      ~uses_barriers:true
-      wrapped_kernel
-      [||]
+    Sarek_cpu_runtime_pools.with_fission_pool (fun pool ->
+        Sarek_cpu_runtime_pools.ThreadPool.run_kernel
+          pool
+          ~block:(bx, by, bz)
+          ~grid:(gx, gy, gz)
+          ~uses_barriers:true
+          wrapped_kernel
+          [||])
   end
   else begin
     (* Use ParallelPool for barrier-free kernels - better load balancing *)
-    let pool = Sarek_cpu_runtime_pools.get_parallel_pool () in
     let threads_per_block = bx * by * bz in
     let total_blocks = gx * gy * gz in
     let total_threads = total_blocks * threads_per_block in
@@ -219,6 +217,7 @@ let run_threadpool ~has_barriers ~block:(bx, by, bz) ~grid:(gx, gy, gz)
     let block_y_table = Array.init gy Int32.of_int in
     let block_z_table = if gz > 1 then Array.init gz Int32.of_int else [|0l|] in
     let noop_barrier = fun () -> () in
+    Sarek_cpu_runtime_pools.with_parallel_pool @@ fun pool ->
     Sarek_cpu_runtime_pools.ParallelPool.parallel_for
       pool
       ~total:total_threads
@@ -321,7 +320,7 @@ let flush_fission () =
     Uses persistent parallel pool for efficient parallel execution. *)
 let run_1d_threadpool ~total_x (kernel : int32 -> 'a -> unit) (args : 'a) : unit
     =
-  let pool = Sarek_cpu_runtime_pools.get_parallel_pool () in
+  Sarek_cpu_runtime_pools.with_parallel_pool @@ fun pool ->
   Sarek_cpu_runtime_pools.ParallelPool.parallel_for
     pool
     ~total:total_x
@@ -339,7 +338,7 @@ let run_1d_threadpool ~total_x (kernel : int32 -> 'a -> unit) (args : 'a) : unit
     center pixels do more work than edge pixels). *)
 let run_2d_threadpool ~width ~height (kernel : int32 -> int32 -> 'a -> unit)
     (args : 'a) : unit =
-  let pool = Sarek_cpu_runtime_pools.get_parallel_pool () in
+  Sarek_cpu_runtime_pools.with_parallel_pool @@ fun pool ->
   let total = width * height in
   Sarek_cpu_runtime_pools.ParallelPool.parallel_for
     pool
@@ -358,7 +357,7 @@ let run_2d_threadpool ~width ~height (kernel : int32 -> int32 -> 'a -> unit)
     Uses persistent parallel pool. Flattens 3D to 1D for work distribution. *)
 let run_3d_threadpool ~width ~height ~depth
     (kernel : int32 -> int32 -> int32 -> 'a -> unit) (args : 'a) : unit =
-  let pool = Sarek_cpu_runtime_pools.get_parallel_pool () in
+  Sarek_cpu_runtime_pools.with_parallel_pool @@ fun pool ->
   let total = width * height * depth in
   let wh = width * height in
   Sarek_cpu_runtime_pools.ParallelPool.parallel_for

@@ -74,173 +74,33 @@ let eval_expr = Sarek_ir_interp_eval.eval_expr
 
 let exec_stmt = Sarek_ir_interp_eval.exec_stmt
 
-(** {1 Domain Pool for Parallel Execution} *)
+(** {1 Parallel Execution}
 
-module DomainPool = struct
-  type task = unit -> unit
-
-  type t = {
-    num_domains : int;
-    task_queue : task Queue.t;
-    mutex : Mutex.t;
-    cond : Condition.t;
-    mutable shutdown : bool;
-    (* [domains] MUST be a mutable field mutated in place (never rebuilt via
-       [{pool with domains}]): worker domains close over the exact record
-       returned by [create]. A functional record update after [Domain.spawn]
-       allocates a *new* block, so [mutable active_tasks]/[mutable shutdown]
-       - stored inline in the record, not behind a shared box - would live at
-       two different addresses: the one workers mutate and the one
-       [submit]/[wait_all] read. [wait_all] then observes [active_tasks]
-       stuck at 0 and can return before the last popped task has finished
-       running, dropping that task's output. See the regression test in
-       sarek/tests/e2e/test_domain_pool_stress.ml. *)
-    mutable domains : unit Domain.t array;
-    mutable active_tasks : int;
-    mutable first_error : (exn * Printexc.raw_backtrace) option;
-    done_cond : Condition.t;
-  }
-
-  let worker pool =
-    let rec loop () =
-      Mutex.lock pool.mutex ;
-      while Queue.is_empty pool.task_queue && not pool.shutdown do
-        Condition.wait pool.cond pool.mutex
-      done ;
-      if pool.shutdown && Queue.is_empty pool.task_queue then begin
-        Mutex.unlock pool.mutex
-      end
-      else begin
-        let task = Queue.pop pool.task_queue in
-        pool.active_tasks <- pool.active_tasks + 1 ;
-        Mutex.unlock pool.mutex ;
-        (* Never silently swallow a work-item exception: a raise here used to
-           be caught and dropped, leaving the block's output unwritten while
-           [wait_all] still reported success. Capture the first error and
-           re-raise it from [wait_all] instead. *)
-        let task_error =
-          try
-            task () ;
-            None
-          with exn -> Some (exn, Printexc.get_raw_backtrace ())
-        in
-        Mutex.lock pool.mutex ;
-        (match (pool.first_error, task_error) with
-        | None, Some err -> pool.first_error <- Some err
-        | _ -> ()) ;
-        pool.active_tasks <- pool.active_tasks - 1 ;
-        if pool.active_tasks = 0 && Queue.is_empty pool.task_queue then
-          Condition.broadcast pool.done_cond ;
-        Mutex.unlock pool.mutex ;
-        loop ()
-      end
-    in
-    loop ()
-
-  let create num_domains =
-    let pool =
-      {
-        num_domains;
-        task_queue = Queue.create ();
-        mutex = Mutex.create ();
-        cond = Condition.create ();
-        shutdown = false;
-        domains = [||];
-        active_tasks = 0;
-        first_error = None;
-        done_cond = Condition.create ();
-      }
-    in
-    (* Mutate [domains] in place on [pool] - see the field comment above for
-       why a functional record update here would be unsound. *)
-    pool.domains <-
-      Array.init num_domains (fun _ -> Domain.spawn (fun () -> worker pool)) ;
-    pool
-
-  let submit pool task =
-    Mutex.lock pool.mutex ;
-    Queue.add task pool.task_queue ;
-    Condition.signal pool.cond ;
-    Mutex.unlock pool.mutex
-
-  let wait_all pool =
-    Mutex.lock pool.mutex ;
-    while pool.active_tasks > 0 || not (Queue.is_empty pool.task_queue) do
-      Condition.wait pool.done_cond pool.mutex
-    done ;
-    let first_error = pool.first_error in
-    pool.first_error <- None ;
-    Mutex.unlock pool.mutex ;
-    match first_error with
-    | Some (exn, bt) -> Printexc.raise_with_backtrace exn bt
-    | None -> ()
-end
-
-(** Resolve how many domains the interpreter's [DomainPool] should use.
-
-    Reads [SAREK_DOMAIN_COUNT] first (any positive integer) so tests can force a
-    domain count higher than the host's physical core count - this is the only
-    reliable way to reproduce oversubscription races such as the [DomainPool]
-    record-aliasing bug on a small developer machine. Falls back to
-    [Domain.recommended_domain_count ()], and finally to a fixed default if that
-    raises. *)
-let resolve_domain_count ~default () =
-  match Sys.getenv_opt "SAREK_DOMAIN_COUNT" with
-  | Some s -> (
-      match int_of_string_opt s with
-      | Some n when n > 0 -> n
-      | _ -> ( try Domain.recommended_domain_count () with _ -> default))
-  | None -> ( try Domain.recommended_domain_count () with _ -> default)
-
-(** Global pool - lazily initialized *)
-let global_pool : DomainPool.t option ref = ref None
-
-let global_pool_mutex = Mutex.create ()
-
-let get_pool () =
-  match !global_pool with
-  | Some pool -> pool
-  | None ->
-      Mutex.lock global_pool_mutex ;
-      (* [Fun.protect]: if [DomainPool.create] raises (e.g. [Domain.spawn]
-         failure), the mutex must still be released or every later
-         [get_pool] caller deadlocks. *)
-      Fun.protect
-        ~finally:(fun () -> Mutex.unlock global_pool_mutex)
-        (fun () ->
-          match !global_pool with
-          | Some pool -> pool
-          | None ->
-              let num_cores = resolve_domain_count ~default:4 () in
-              let pool = DomainPool.create num_cores in
-              global_pool := Some pool ;
-              pool)
+    Blocks run on {!Cpu_domain_pool}, shared with the Native barrier path,
+    created on the first parallel launch and retired when idle. *)
 
 (** Run all blocks in a grid (parallel - distributes blocks across domain pool)
 *)
 let run_grid_parallel env body block_dim grid_dim =
-  let pool = get_pool () in
   let gx, gy, gz = grid_dim in
-  for bz = 0 to gz - 1 do
-    for by = 0 to gy - 1 do
-      for bx = 0 to gx - 1 do
-        (* Shadow loop vars with local bindings to capture values, not refs *)
-        let bx = bx and by = by and bz = bz in
-        DomainPool.submit pool (fun () ->
-            (* Each block gets its own NEW shared memory hashtable.
-               Don't use copy_env.shared because it's shared by reference. *)
-            let block_env =
-              {
-                (copy_env env) with
-                shared = Hashtbl.create 8;
-                coopmats = Hashtbl.create 4;
-              }
-            in
-            run_block block_env body (bx, by, bz) block_dim grid_dim)
-      done
-    done
-  done ;
-  DomainPool.wait_all pool
+  (* Blocks in x-fastest order, one task each. *)
+  let run_block_task b () =
+    let bx = b mod gx and by = b / gx mod gy and bz = b / (gx * gy) in
+    (* Each block gets its own NEW shared memory hashtable. Don't use
+       copy_env.shared because it's shared by reference. *)
+    let block_env =
+      {
+        (copy_env env) with
+        shared = Hashtbl.create 8;
+        coopmats = Hashtbl.create 4;
+      }
+    in
+    run_block block_env body (bx, by, bz) block_dim grid_dim
+  in
+  Cpu_domain_pool.run (fun submit ->
+      for b = 0 to (gx * gy * gz) - 1 do
+        submit (run_block_task b)
+      done)
 
 (** Parallel execution mode flag *)
 let parallel_mode = ref true

@@ -7,7 +7,13 @@
 (library
  (name sarek_interp)
  (public_name sarek.interp)
- (libraries sarek_ir spoc_core spoc_framework sarek_registry sarek_tuple_vec)
+ (libraries
+  sarek_ir
+  spoc_core
+  spoc_framework
+  sarek_registry
+  sarek_tuple_vec
+  unix)
  (modules
   Sarek_float16
   Sarek_float32
@@ -15,6 +21,8 @@
   Sarek_ir_interp_value
   Sarek_ir_interp_intrinsics
   Sarek_ir_interp_eval
+  Cpu_pool_lifecycle
+  Cpu_domain_pool
   Sarek_ir_interp
   Sarek_interp_capability
   Sarek_type_helpers
