@@ -75,6 +75,29 @@ let array_elem_bound =
         out.(0) <- count
       end]
 
+(* The start has an effect the bound observes: it must run BEFORE the bound is
+   read. Start = old value of c.(0) (0) and c.(0) becomes 2, so the bound is 2
+   and the loop runs j = 0..2: 3 iterations. Reading the bound first gives
+   bound 0 and 1 iteration. Only thread 0 runs it. *)
+let effectful_start =
+  [%kernel
+    fun (out : int32 vector) (c : int32 vector) ->
+      let open Sarek_stdlib.Std in
+      let count = mut 0l in
+      if thread_idx_x = 0l then begin
+        for _j = atomic_add_global_int32 c 0 2l to c.(0) do
+          count := count + 1l
+        done ;
+        out.(0) <- count
+      end]
+
+(* Block indices are signed too: block 0 gives (0 - 3) / 2 = -1. Two blocks. *)
+let signed_block_idx =
+  [%kernel
+    fun (res : int32 vector) ->
+      let open Sarek_stdlib.Std in
+      res.(global_thread_id) <- (block_idx_x - 3l) / 2l]
+
 (* A pure bound written with the kernel's own arithmetic: unchanged shape. *)
 let stable_bound =
   [%kernel
@@ -112,6 +135,11 @@ let make_out () =
   done ;
   v
 
+let make_zero () =
+  let v = Vector.create Vector.int32 1 in
+  Vector.set v 0 0l ;
+  v
+
 let make_bnd () =
   let v = Vector.create Vector.int32 1 in
   Vector.set v 0 3l ;
@@ -119,14 +147,14 @@ let make_bnd () =
 
 type target = Interp | Hip of Device.t
 
-let launch target ir args =
+let launch ?(grid = 1) target ir args =
   match target with
   | Interp ->
       Execute.run_interpreter_vectors
         ~ir
         ~args
         ~block:(Execute.dims1d block)
-        ~grid:(Execute.dims1d 1)
+        ~grid:(Execute.dims1d grid)
         ~parallel:false
   | Hip dev ->
       Execute.run_vectors
@@ -134,7 +162,7 @@ let launch target ir args =
         ~ir
         ~args
         ~block:(Execute.dims1d block)
-        ~grid:(Execute.dims1d 1)
+        ~grid:(Execute.dims1d grid)
         () ;
       Transfer.flush dev
 
@@ -181,7 +209,14 @@ let run_for_bounds target =
       (fun i -> if i = 0 then 4l else -999l)
   in
   let d = one "stable bound" stable_bound (fun () -> [Execute.Int 5]) 5l in
-  a && b && c && d
+  let e =
+    one_at
+      "effectful start before bound"
+      effectful_start
+      (fun () -> [Execute.Vec (make_zero ())])
+      (fun i -> if i = 0 then 3l else -999l)
+  in
+  a && b && c && d && e
 
 let run_signed target =
   let neg = make_out () and quot = make_out () in
@@ -207,7 +242,14 @@ let run_signed target =
       (Vector.to_array rem)
       (fun i -> Int32.of_int ((i - 5) / 2))
   in
-  ok1 && ok2 && ok3 && ok4
+  let blocks = 2 in
+  let res = Vector.create Vector.int32 (blocks * block) in
+  launch ~grid:blocks target (ir_of signed_block_idx) [Vec res] ;
+  let ok5 =
+    check_vec "(block_idx_x - 3) / 2" target (Vector.to_array res) (fun i ->
+        Int32.of_int (((i / block) - 3) / 2))
+  in
+  ok1 && ok2 && ok3 && ok4 && ok5
 
 let guarded label f =
   try f ()

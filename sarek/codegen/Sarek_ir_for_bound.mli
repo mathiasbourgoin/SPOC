@@ -23,8 +23,9 @@
     {b Limit.} A bound of [Int32.max_int] ([Upto]) or [Int32.min_int] ([Downto])
     is not supported on any backend: the loop variable would have to step past
     the bound, which overflows [int32] (undefined behaviour in the C dialects,
-    wrap-around and an endless loop in PTX). Native and the interpreter handle
-    it only by accident of using wider integers. *)
+    wrap-around and an endless loop in PTX and in the interpreter, whose
+    [Int32.add] wraps). The loop start is hoisted too, ahead of the bound, when
+    it is not pure, so the order start-then-bound is kept. *)
 
 (** Applied to the kernel body and every helper body. Not applied to PTX, which
     evaluates the bound once already. *)

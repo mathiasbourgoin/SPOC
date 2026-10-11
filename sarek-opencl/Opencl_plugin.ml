@@ -44,6 +44,9 @@ module Opencl_intrinsics : Framework_sig.INTRINSIC_REGISTRY = struct
   let list_all () =
     Hashtbl.fold (fun name _ acc -> name :: acc) table [] |> List.sort compare
 
+  (* NOTE: these spellings are not used by code generation. The emitters'
+     intrinsic dispatch (Sarek_ir_intrinsic_dispatch, per-backend tables) is the
+     source of truth and emits thread indices as signed [(int)...]. *)
   (* Register standard OpenCL intrinsics *)
   let () =
     (* Thread indexing - OpenCL uses get_local_id, get_group_id, etc. *)

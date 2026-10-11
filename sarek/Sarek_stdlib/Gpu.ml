@@ -23,6 +23,9 @@ let dev cuda opencl (framework : string) =
  * Thread indices within the block
  ******************************************************************************)
 
+(* NOTE: these spellings are not used by code generation. The emitters'
+   intrinsic dispatch (Sarek_ir_intrinsic_dispatch, per-backend tables) is the
+   source of truth and emits thread indices as signed [(int)...]. *)
 let%sarek_intrinsic (thread_idx_x : int32) =
   {device = dev "threadIdx.x" "get_local_id(0)"; ocaml = 0l}
 
