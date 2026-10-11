@@ -181,15 +181,37 @@ let arg_slot_limit (backend : string) : int =
     ~default:max_int
     (List.assoc_opt backend (Atomic.get slot_limits))
 
+(* Replace [backend]'s entry of an association-list limit table. *)
+let set_limit table ~backend n =
+  let rec update () =
+    let old = Atomic.get table in
+    let next = (backend, n) :: List.remove_assoc backend old in
+    if not (Atomic.compare_and_set table old next) then update ()
+  in
+  update ()
+
 (** Set the argument slot limit of [backend] (for tests and for backends whose
     limit becomes known). *)
 let set_arg_slot_limit ~(backend : string) (n : int) : unit =
-  let rec update () =
-    let old = Atomic.get slot_limits in
-    let next = (backend, n) :: List.remove_assoc backend old in
-    if not (Atomic.compare_and_set slot_limits old next) then update ()
-  in
-  update ()
+  set_limit slot_limits ~backend n
+
+(* Push-constant block bytes per backend, as an immutable association list. *)
+let push_limits : (string * int) list Atomic.t =
+  Atomic.make [("Vulkan", Sarek_push_constants.vulkan_block_limit)]
+
+(** Bytes of push constants a launch's signature may use on [backend]: Vulkan
+    declares one 128-byte range in every pipeline layout and refuses a launch
+    whose block is larger. A backend with no limit configured here is unbounded
+    as far as the window is concerned. *)
+let push_constant_limit (backend : string) : int =
+  Option.value
+    ~default:max_int
+    (List.assoc_opt backend (Atomic.get push_limits))
+
+(** Set the push-constant byte limit of [backend] (for tests and for backends
+    whose limit becomes known). *)
+let set_push_constant_limit ~(backend : string) (n : int) : unit =
+  set_limit push_limits ~backend n
 
 (** [true] when launches on [backend] are deferred. *)
 let defers (backend : string) : bool =
@@ -259,15 +281,38 @@ let slots_ok w members =
   | [m] -> arg_slots w m <= m.max_arg_slots
   | m :: _ -> fused_slots w members <= m.max_arg_slots
 
+let params_of (l : _ launch) = l.ir.kern_params
+
+(** Bytes of the push-constant block of the fused kernel of [members], laid out
+    by {!Sarek_push_constants} as the backend lays out the block it writes. *)
+let fused_push_bytes members =
+  Sarek_push_constants.fused_block_bytes (List.map params_of members)
+
+(** [true] when [members], issued as one group, keep their kernel's
+    push-constant block within the backend's limit: the fused kernel's block for
+    two or more, the launch's own for one. *)
+let push_ok members =
+  match members with
+  | [] -> true
+  | [m] ->
+      Sarek_push_constants.block_bytes (params_of m)
+      <= push_constant_limit m.backend
+  | m :: _ -> fused_push_bytes members <= push_constant_limit m.backend
+
+(** The backend can issue [members] as one group: {!slots_ok} and {!push_ok}. *)
+let signature_ok w members = slots_ok w members && push_ok members
+
 (* The fused grid and shared memory must stay within the device's limits, work-
    group offsets within int32 (they are passed as int32 arguments), and the
-   fused signature within the backend's argument slots. *)
+   fused signature within the backend's argument slots and push-constant
+   bytes. *)
 let fits w g (l : _ launch) =
   let gx = g.grid_x + l.grid.x in
   gx <= l.max_grid_x
   && gx <= Int32.to_int Int32.max_int
   && g.shared + Option.value ~default:0 l.shared_bytes <= l.max_shared
   && fused_slots w (l :: g.rev_members) <= l.max_arg_slots
+  && push_ok (List.rev (l :: g.rev_members))
 
 (* Under [w.lock]. [l] may join [g] as its last member. Every member of a
    group of two or more is [joinable] with the same block and grid y/z, so

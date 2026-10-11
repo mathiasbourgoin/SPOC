@@ -8,6 +8,7 @@
  (modules
   Sarek_ir_types
   Sarek_ir_layout
+  Sarek_push_constants
   Sarek_ir_pp
   Sarek_ir_analysis
   Sarek_capability
