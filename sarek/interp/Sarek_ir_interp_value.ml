@@ -41,8 +41,9 @@ type env = {
   arrays : (string, value array) Hashtbl.t;  (** array_name -> data *)
   shared : (string, value array) Hashtbl.t;  (** shared arrays for block *)
   funcs : (string, helper_func) Hashtbl.t;  (** helper functions *)
-  coopmats : (string, value array) Hashtbl.t;
-      (** Cooperative-matrix fragments, by fragment name — backlog-62 slice 3.
+  coopmats : (int * string, value array) Hashtbl.t;
+      (** Cooperative-matrix fragments, by (subgroup, fragment name) —
+          backlog-62 slice 3.
 
           A SEPARATE table from {!vars} and {!arrays} because fragment names are
           a separate namespace in the IR: a fragment is not a variable and not
@@ -50,16 +51,22 @@ type env = {
           between a fragment and a variable silently resolve to one of them.
 
           {b The model.} A subgroup-scope fragment is held collectively by the
-          whole subgroup, with each invocation holding a few components at an
-          implementation-defined position. The interpreter has no subgroup, so
-          it holds the WHOLE matrix redundantly in every invocation and has
-          every invocation perform the whole operation. That is observationally
-          equivalent to the device — a [coopMatStore] then writes the same value
-          to the same location once per invocation instead of once per subgroup
-          — precisely BECAUSE GL_KHR_cooperative_matrix requires the buffer,
-          index and stride arguments to be dynamically uniform across the scope.
-          The redundancy is not an approximation; it is the same function
-          computed the only way a scalar interpreter can compute it. *)
+          whole subgroup, and each cooperative-matrix operation is executed once
+          per subgroup, not once per invocation. The interpreter models that
+          with one whole-matrix copy per subgroup, owned by the block (the table
+          is shared by every thread of a block, like {!shared}, and replaced for
+          each block), and by letting only the lowest lane of each 32-lane
+          subgroup execute the operation: the other lanes' [SCoopmat] statements
+          are no-ops. Executing the operation in every invocation is NOT
+          equivalent to the device: a [coopMatLoad] from a buffer that the same
+          subgroup's [coopMatStore] writes (in-place [D = A*B + D]) would see
+          the stores of the lanes before it and accumulate once per lane.
+
+          The model assumes what the GL_KHR_cooperative_matrix specification
+          requires of the program: the operation is reached by every lane of the
+          subgroup (dynamically uniform control flow), and its buffer, index and
+          stride arguments are uniform across it. The leader's arguments stand
+          for the whole subgroup; they are not checked for uniformity. *)
 }
 
 let create_env () =
@@ -82,9 +89,9 @@ let copy_env env =
     (* shared within block *)
     funcs = env.funcs;
     (* shared *)
-    coopmats = Hashtbl.copy env.coopmats;
-    (* per-invocation, like [vars]: a fragment does not outlive the block that
-       declared it and is never shared between threads. *)
+    coopmats = env.coopmats;
+    (* shared within the block: a fragment belongs to its subgroup, not to the
+       invocation, and is keyed by subgroup. *)
   }
 
 (** Environment for a HELPER CALL: the callee's own scope, not a copy of the
@@ -121,10 +128,10 @@ let copy_env env =
     kernel body — which could close over one — is rejected at parse time. So the
     dependency is argued, not measured, and this says which of the two it is.
 
-    [coopmats] is fresh where [copy_env] copied it. A fragment belongs to the
-    block that declared it, which is right for one the helper declares itself;
-    if coopmat ops in helper bodies ever become expressible against a
-    KERNEL-scope fragment, this must alias [coopmats] too.
+    [coopmats] is fresh where [copy_env] aliases it. A fragment belongs to the
+    subgroup of the block that declared it, which is right for one the helper
+    declares itself; if coopmat ops in helper bodies ever become expressible
+    against a KERNEL-scope fragment, this must alias [coopmats] too.
 
     [arrays], [shared] and [funcs] stay ALIASED, deliberately: kernel buffers,
     block-shared memory and the helper table are genuinely global to the
