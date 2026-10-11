@@ -28,6 +28,7 @@
 - OpenCL platform/device enumeration and selection.
 - Context and command queue creation with 2.0 `clCreateCommandQueueWithProperties` and 1.x fallback at `sarek-opencl/Opencl_bindings.ml:139-171`.
 - Buffer allocation with `CL_MEM_USE_HOST_PTR` only through the explicit `Host_ptr_buffer` opt-in on CPU devices (default buffers copy), host/device copies, program build with logs, kernel cache, scalar/buffer argument setting, and 3D kernel launch.
+- Persistent on-disk compile cache (`sarek-opencl/Opencl_disk_cache.ml`, wired in `Opencl_api.Program.build`): after a source build the program binary (`clGetProgramInfo` `CL_PROGRAM_BINARIES`) is stored through `Framework_cache`; a later process rebuilds with `clCreateProgramWithBinary` + `clBuildProgram`. Key = platform name+version, device name+version, `CL_DRIVER_VERSION`, the exact effective build-option string (`Opencl_fp.build_options`, capability-gated), the source. Per source, not per kernel name: the binary holds every kernel of the source. An entry is MD5 + binary; a bad checksum, a binary the driver refuses, or one that fails to build falls back to a source build and rewrites the entry. Size-0 binaries are not stored. `SAREK_DISK_CACHE=0` turns it off. Tests: `sarek-opencl/test/test_opencl_disk_cache.ml`; bench: `sarek-opencl/bench/run_ab.sh`.
 - External source language support is OpenCL only at `sarek-opencl/Opencl_plugin.ml:209`.
 - Code generation supports scalar/vector parameters, vector length params, arrays, records, variants, shared locals, barriers, atomics, math intrinsics, and FP64 detection.
 
@@ -35,6 +36,7 @@
 
 - Device info queries should check every OpenCL return code before reading output buffers.
 - Program objects should be released on every build or kernel-create failure.
+- A cache entry may only change how fast a program builds, never what it computes: anything that changes the generated binary (platform, device, driver, build options, source) is in the key, and any entry that cannot be loaded and built is replaced by a source build.
 - Zero-copy memory must preserve host/device coherency requirements for every device type.
 - Kernel argument indices are explicit and should be honored regardless of call order.
 - Launch dimensions must match valid OpenCL work dimensions and device limits.

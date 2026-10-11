@@ -168,6 +168,18 @@ Explicit, caller-driven fusion of kernel IRs is a different mechanism and can de
 
 The IR record is compared by physical identity. Take it once from `[%kernel ...]` (as `double_ir` above) and reuse it: source generation, the capability check and the backend's compile-cache key are then skipped on later launches. After you change an intrinsic registration at run time, call `Execute.clear_launch_cache ()`.
 
+## First launch in a new process
+
+OpenCL compiles a kernel from source the first time a process uses it, and used to do so in every process. The OpenCL backend now keeps the driver's program binary on disk (Vulkan already kept SPIR-V), so a second process loads it instead. Measured on tartarus (RX 7900 XTX through rusticl, and the Intel OpenCL CPU runtime on a Ryzen 9 7950X; the machine was loaded, so treat the numbers as provisional), the build of a matvec, an RMS-norm and a tiled GEMM kernel took, median of 7 separate processes each:
+
+| Device | From source | From the disk cache |
+|---|---|---|
+| Intel OpenCL CPU | 91 / 33 / 42 ms | 1.6 / 1.1 / 1.2 ms |
+| rusticl, Mesa shader cache off | 7.7 / 3.8 / 5.3 ms | 2.2 / 1.9 / 4.2 ms |
+| rusticl, Mesa shader cache on (default) | 1.8 / 0.8 / 0.9 ms | 0.7 / 0.5 / 0.6 ms |
+
+Mesa keeps its own cache, so on rusticl the gain is small by default. The results are the same bits as a build from source. See [Compile cache](environment.html#compile-cache) for the key, the fallback and `SAREK_DISK_CACHE=0`.
+
 ## See also
 
 - [Memory and transfers](memory.html): streams, pinned memory and the other operations that flush.
