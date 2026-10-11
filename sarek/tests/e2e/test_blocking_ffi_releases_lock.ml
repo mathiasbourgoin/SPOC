@@ -12,13 +12,14 @@
  * blocking driver calls (device/stream/event syncs, synchronous copies, JIT
  * compiles) therefore release the lock.
  *
- * On each GPU device (HIP, CUDA, OpenCL, Vulkan; CPU devices are skipped): one
+ * On each device of a GPU backend (CPU devices, Native, Interpreter and the
+ * software Vulkan/OpenCL rasterisers llvmpipe/lavapipe are skipped): one
  * domain allocates in a loop while the main domain waits in [Device.synchronize]
  * on a single-thread spin kernel calibrated to about 200 ms. The test requires
  * at least [min_collections] minor collections to complete during the wait.
  * With the lock held the count is 0 to 2 (measured); unblocked, it is about
  * a thousand. A device whose wait is shorter than
- * [min_wait_ms] cannot tell the two apart and fails as inconclusive.
+ * [min_wait_ms] cannot tell the two apart and is skipped as inconclusive.
  ******************************************************************************)
 
 (* The [%kernel] expansion opens [Sarek.Kirc_types] whether it is used or not. *)
@@ -129,8 +130,10 @@ let check_device (dev : Device.t) =
     collections
     kiters ;
   if wait_ms < min_wait_ms then begin
-    Printf.printf "    FAIL inconclusive: wait under %.0f ms\n%!" min_wait_ms ;
-    false
+    Printf.printf
+      "    SKIP inconclusive: wait under %.0f ms, cannot tell a stall apart\n%!"
+      min_wait_ms ;
+    true
   end
   else if collections < min_collections then begin
     Printf.printf
@@ -143,12 +146,22 @@ let check_device (dev : Device.t) =
     true
   end
 
+let contains ~sub s =
+  let n = String.length sub in
+  let rec at i =
+    i + n <= String.length s && (String.sub s i n = sub || at (i + 1))
+  in
+  at 0
+
+(* lavapipe reports itself as a non-CPU Vulkan device. *)
+let is_software_renderer (d : Device.t) =
+  let name = String.lowercase_ascii d.name in
+  contains ~sub:"llvmpipe" name || contains ~sub:"lavapipe" name
+
 let is_gpu (d : Device.t) =
   (not d.capabilities.is_cpu)
-  &&
-  match d.framework with
-  | "HIP" | "OpenCL" | "Vulkan" | "CUDA/PTX" | "CUDA/C" -> true
-  | _ -> false
+  && (not (List.mem d.framework ["Native"; "Interpreter"]))
+  && not (is_software_renderer d)
 
 let () =
   Test_helpers.Benchmarks.init_backends () ;

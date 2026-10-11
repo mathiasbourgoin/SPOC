@@ -362,21 +362,29 @@ let device_to_host : type a b.
   B.device_to_host_ptr (borrow_bigarray_ptr dst) ~byte_size ;
   ignore (Sys.opaque_identity dst)
 
-(** Copy data from raw pointer to device buffer (for custom types) *)
+(** Copy data from raw pointer to device buffer (for custom types). The memory
+    behind [src_ptr] must stay allocated until the call returns: the copy runs
+    with the OCaml runtime lock released, so other domains (and their GC) run
+    meanwhile. [src_ptr] itself is kept reachable across the call, which keeps
+    memory it manages (ctypes [allocate], a bigarray it was taken from with
+    ctypes) alive; memory it merely points to is the caller's to keep. *)
 let host_ptr_to_device : type a. src_ptr:unit Ctypes.ptr -> dst:a buffer -> unit
     =
  fun ~src_ptr ~dst ->
   let (Buffer (module B)) = dst in
   let byte_size = B.size * B.elem_size in
-  B.host_ptr_to_device src_ptr ~byte_size
+  B.host_ptr_to_device src_ptr ~byte_size ;
+  ignore (Sys.opaque_identity src_ptr)
 
-(** Copy data from device buffer to raw pointer (for custom types) *)
+(** Copy data from device buffer to raw pointer (for custom types). Same
+    lifetime rule as {!host_ptr_to_device}, for [dst_ptr]. *)
 let device_to_host_ptr : type a. src:a buffer -> dst_ptr:unit Ctypes.ptr -> unit
     =
  fun ~src ~dst_ptr ->
   let (Buffer (module B)) = src in
   let byte_size = B.size * B.elem_size in
-  B.device_to_host_ptr dst_ptr ~byte_size
+  B.device_to_host_ptr dst_ptr ~byte_size ;
+  ignore (Sys.opaque_identity dst_ptr)
 
 (** Copy data between device buffers (same device). The type parameter fixes
     only the OCaml element type; [Invalid_argument] is raised if the element
