@@ -45,12 +45,9 @@ let check (ctx : string) (result : cu_result) : unit =
     ctx
     result
 
-(** Existential wrapper for keeping Ctypes-allocated values alive during FFI
-    calls *)
-type ctype_ref = CTypeRef : 'a typ * 'a ptr -> ctype_ref
-
-(** One launch's parameter array and the per-argument cells it points into. *)
-type kernargs = {params : unit ptr CArray.t; cells : ctype_ref list}
+(** One launch's argument blocks: the value slots and the array of pointers into
+    them that [cuLaunchKernel] receives. *)
+type kernargs = {params : unit ptr ptr; slots : int64 ptr}
 
 (** Host-side kernel-argument buffers (the [CArray] of argument pointers plus
     the per-argument value cells) for launches that may still be in flight,
@@ -838,49 +835,44 @@ module Kernel = struct
 
   let kernarg_blocks_allocated () = Atomic.get kernarg_blocks
 
-  let counted_allocate typ v =
+  let alloc_block typ ~count =
     Atomic.incr kernarg_blocks ;
-    allocate typ v
+    allocate_n typ ~count
 
+  (* Argument marshalling: ONE 8-byte-slot block holding every argument value
+     and ONE array of pointers into it, i.e. two host allocations per launch
+     whatever the argument count (a ctypes [allocate] per argument is a calloc
+     plus a GC finaliser each).
+
+     Every value is written with its OWN C type at the start of its slot, so a
+     4-byte argument occupies the low-addressed 4 bytes of its slot and the
+     driver, which reads each parameter at the width the compiled kernel
+     declares, sees the same bytes as with one cell per argument - no
+     endianness assumption. Slots are 8 bytes and the block is [int64_t]-aligned,
+     which covers every argument kind (pointers, int64, double). A zero-argument
+     launch still allocates one slot so the pointer handed to the driver is
+     never dangling. Both blocks are retained by [launch] until the stream is
+     retired. *)
   let marshal_args args : kernargs =
-    Atomic.incr kernarg_blocks ;
-    let params = CArray.make (ptr void) (List.length args) in
-    let refs : ctype_ref list ref = ref [] in
+    let n = List.length args in
+    let slots = alloc_block int64_t ~count:(max 1 n) in
+    let params = alloc_block (ptr void) ~count:(max 1 n) in
     List.iteri
       (fun i arg ->
-        let ptr =
-          match arg with
-          | ArgBuffer buf ->
-              let v = counted_allocate cu_deviceptr buf.Memory.ptr in
-              refs := CTypeRef (cu_deviceptr, v) :: !refs ;
-              to_voidp v
-          | ArgInt32 n ->
-              let v = counted_allocate int32_t n in
-              refs := CTypeRef (int32_t, v) :: !refs ;
-              to_voidp v
-          | ArgInt64 n ->
-              let v = counted_allocate int64_t n in
-              refs := CTypeRef (int64_t, v) :: !refs ;
-              to_voidp v
-          | ArgFloat32 f ->
-              let v = counted_allocate float f in
-              refs := CTypeRef (float, v) :: !refs ;
-              to_voidp v
-          | ArgFloat64 f ->
-              let v = counted_allocate double f in
-              refs := CTypeRef (double, v) :: !refs ;
-              to_voidp v
-          | ArgPtr p ->
-              let v = counted_allocate nativeint p in
-              refs := CTypeRef (nativeint, v) :: !refs ;
-              to_voidp v
-        in
-        CArray.set params i ptr)
+        let slot = to_voidp (slots +@ i) in
+        (match arg with
+        | ArgBuffer buf -> from_voidp cu_deviceptr slot <-@ buf.Memory.ptr
+        | ArgInt32 v -> from_voidp int32_t slot <-@ v
+        | ArgInt64 v -> from_voidp int64_t slot <-@ v
+        | ArgFloat32 v -> from_voidp float slot <-@ v
+        | ArgFloat64 v -> from_voidp double slot <-@ v
+        | ArgPtr v -> from_voidp nativeint slot <-@ v) ;
+        params +@ i <-@ slot)
       args ;
-    {params; cells = !refs}
+    {params; slots}
 
   (* Pointer handed to the driver for argument [i]; for tests. *)
-  let kernarg_pointer (k : kernargs) i = CArray.get k.params i
+  let kernarg_pointer (k : kernargs) i = !@(k.params +@ i)
 
   let launch kernel ~args ~grid ~block ~shared_mem ~stream =
     let ({params; _} as kernargs) = marshal_args args in
@@ -917,10 +909,9 @@ module Kernel = struct
          (Unsigned.UInt.of_int bz)
          (Unsigned.UInt.of_int shared_mem)
          stream_ptr
-         (CArray.start params)
+         params
          (from_voidp (ptr void) null)) ;
-    (* The launch is asynchronous and the argument buffers (params + the
-       per-arg cells in refs) may be read after this returns. Keep them alive
+    (* The launch is asynchronous and the argument blocks (params + slots) may be read after this returns. Keep them alive
        until the stream that ran the launch is drained. Attribute to that
        stream (and its device); a null/default stream keys as
        [default_stream_key] on the current context's device. *)
