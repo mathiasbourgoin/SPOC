@@ -48,7 +48,7 @@ Reviewed CPU runtime files: the `Sarek_cpu_runtime*` module family, `sarek/sarek
 ## Performance Or Maintainability Risks
 
 - There are several independent execution strategies now spread across the `Sarek_cpu_runtime_exec`/`Sarek_cpu_runtime_pools`/`Sarek_cpu_runtime` modules, making semantic drift likely.
-- Global pools are lifecycle slots: the block pool (`sarek/interp/Cpu_domain_pool.ml:118`), the fission pool (`sarek/sarek/Sarek_cpu_runtime_pools.ml:451`) and the parallel pool (`sarek/sarek/Sarek_cpu_runtime_pools.ml:649`), each created on its first launch and retired when idle (see `Cpu_pool_lifecycle` above). Each block-pool launch waits on its own task group, so concurrent launches no longer swap errors (R-68, block pool only).
+- Global pools are lifecycle slots: the block pool (`sarek/interp/Cpu_domain_pool.ml:144`), the fission pool (`sarek/sarek/Sarek_cpu_runtime_pools.ml:451`) and the parallel pool (`sarek/sarek/Sarek_cpu_runtime_pools.ml:649`), each created on its first launch and retired when idle (see `Cpu_pool_lifecycle` above). Each block-pool launch waits on its own task group, so concurrent launches no longer swap errors (R-68, block pool only), and runs its untaken tasks while it waits, so nested launches complete at any pool size (`sarek/tests/unit/test_cpu_pool_nested.ml`).
 - Barrier support depends partly on runtime detection and partly on metadata-like flags in later paths, which makes behavior input-path dependent.
 - Exception handling differs by pool implementation, making failures hard to reproduce.
 - Shared-memory and local-environment setup is duplicated across execution paths.
