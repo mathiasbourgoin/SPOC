@@ -464,6 +464,8 @@ let fake_leaf_buffer (tag : string) (calls : (int * string) list ref) :
 
     let device_ptr = 0n
 
+    let host_link = Spoc_core.Memory.Separate
+
     let host_ptr_to_device (_ : unit Ctypes.ptr) ~byte_size:(_ : int) : unit =
       ()
 

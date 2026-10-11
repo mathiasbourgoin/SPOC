@@ -89,6 +89,8 @@ module Backend : Framework_sig.BACKEND = struct
 
     let alloc_zero_copy _d _arr _kind = not_impl ()
 
+    let alloc_host_ptr _d _arr _kind = Error Framework_sig.Host_ptr_unsupported
+
     let free _buf = not_impl ()
 
     let host_to_device ~src:_ ~dst:_ = not_impl ()

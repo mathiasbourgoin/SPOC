@@ -29,165 +29,134 @@ let set_auto enabled = auto_mode := enabled
 
 (** {1 Device Buffer Allocation} *)
 
-(** Allocate a device buffer for a scalar vector, returning a DEVICE_BUFFER
-    module. The buffer is packaged with its backend for type-safe operations.
+(** Packages a backend buffer of a scalar vector as a DEVICE_BUFFER. A buffer
+    that [is_zero_copy] (Native, Interpreter: the device uses the host array
+    itself) needs no transfer; any other one, OpenCL host-pointer buffers
+    included, goes through its backend's transfers, which synchronise
+    (map/unmap) instead of copying when the buffer aliases the host pointer. *)
+module Wrap_scalar (B : Framework_sig.BACKEND) = struct
+  let wrap (type a) ~(dev : Device.t) ~(length : int) ~(elem_size : int)
+      ~(host_link : Memory.host_link) (buf : a B.Memory.buffer) :
+      Vector.device_buffer =
+    let device_ptr = B.Memory.device_ptr buf in
+    (module struct
+      let device = dev
 
-    For CPU devices (OpenCL CPU, Native), uses zero-copy allocation when
-    possible to avoid memory transfers entirely. *)
+      let size = length
+
+      let elem_size = elem_size
+
+      let device_ptr = device_ptr
+
+      let host_link = host_link
+
+      let bind_to_kargs kargs idx =
+        if Log.would_log Log.Debug Log.Transfer then
+          Log.debugf
+            Log.Transfer
+            "bind_to_kargs: idx=%d ptr=%Ld"
+            idx
+            (Int64.of_nativeint device_ptr) ;
+        match B.unwrap_kargs kargs with
+        | Some args -> B.Kernel.set_arg_buffer args idx buf
+        | None -> failwith "bind_to_kargs: backend mismatch"
+
+      let host_ptr_to_device src_ptr ~byte_size =
+        if not (B.Memory.is_zero_copy buf) then
+          B.Memory.host_ptr_to_device
+            ~src_ptr:(Ctypes.raw_address_of_ptr src_ptr)
+            ~byte_size
+            ~dst:buf
+
+      let device_to_host_ptr dst_ptr ~byte_size =
+        if not (B.Memory.is_zero_copy buf) then
+          B.Memory.device_to_host_ptr
+            ~src:buf
+            ~dst_ptr:(Ctypes.raw_address_of_ptr dst_ptr)
+            ~byte_size
+
+      let range_from_host ~src_ptr ~dst_offset ~byte_size ~stream =
+        B.Async.host_to_device
+          ~src_ptr
+          ~dst:buf
+          ~dst_offset
+          ~byte_size
+          ~stream:
+            (Memory.unwrap_stream_for ~backend:B.name B.unwrap_stream stream)
+
+      let range_to_host ~src_offset ~dst_ptr ~byte_size ~stream =
+        B.Async.device_to_host
+          ~src:buf
+          ~src_offset
+          ~dst_ptr
+          ~byte_size
+          ~stream:
+            (Memory.unwrap_stream_for ~backend:B.name B.unwrap_stream stream)
+
+      let free () = B.Memory.free buf
+    end : Vector.DEVICE_BUFFER)
+end
+
+(** Allocate a device buffer of its own for a scalar vector. *)
 let alloc_scalar_buffer (type a b) (dev : Device.t) (length : int)
     (sk : (a, b) Vector.scalar_kind) : Vector.device_buffer =
   match Framework_registry.find_backend dev.framework with
   | None -> failwith ("Unknown framework: " ^ dev.framework)
   | Some (module B : Framework_sig.BACKEND) ->
       let backend_dev = B.Device.get dev.backend_id in
-      let ba_kind = Vector.to_bigarray_kind sk in
-      let buf = B.Memory.alloc backend_dev length ba_kind in
-      let elem_sz = Vector.scalar_elem_size sk in
-      let device_ptr = B.Memory.device_ptr buf in
-      (module struct
-        let device = dev
+      let buf =
+        B.Memory.alloc backend_dev length (Vector.to_bigarray_kind sk)
+      in
+      let module W = Wrap_scalar (B) in
+      W.wrap
+        ~dev
+        ~length
+        ~elem_size:(Vector.scalar_elem_size sk)
+        ~host_link:Memory.Separate
+        buf
 
-        let size = length
-
-        let elem_size = elem_sz
-
-        let device_ptr = device_ptr
-
-        let bind_to_kargs kargs idx =
-          (* Unwrap kargs to the backend's kernel args type and bind buffer *)
-          if Log.would_log Log.Debug Log.Transfer then
-            Log.debugf
-              Log.Transfer
-              "bind_to_kargs: idx=%d ptr=%Ld"
-              idx
-              (Int64.of_nativeint device_ptr) ;
-          match B.unwrap_kargs kargs with
-          | Some args -> B.Kernel.set_arg_buffer args idx buf
-          | None -> failwith "bind_to_kargs: backend mismatch"
-
-        let host_ptr_to_device src_ptr ~byte_size =
-          Log.debugf
-            Log.Transfer
-            "host_ptr_to_device: ptr=%Ld size=%d"
-            (Int64.of_nativeint device_ptr)
-            byte_size ;
-          if B.Memory.is_zero_copy buf then () (* Skip for zero-copy *)
-          else
-            B.Memory.host_ptr_to_device
-              ~src_ptr:(Ctypes.raw_address_of_ptr src_ptr)
-              ~byte_size
-              ~dst:buf
-
-        let device_to_host_ptr dst_ptr ~byte_size =
-          if B.Memory.is_zero_copy buf then () (* Skip for zero-copy *)
-          else
-            B.Memory.device_to_host_ptr
-              ~src:buf
-              ~dst_ptr:(Ctypes.raw_address_of_ptr dst_ptr)
-              ~byte_size
-
-        let range_from_host ~src_ptr ~dst_offset ~byte_size ~stream =
-          B.Async.host_to_device
-            ~src_ptr
-            ~dst:buf
-            ~dst_offset
-            ~byte_size
-            ~stream:
-              (Memory.unwrap_stream_for ~backend:B.name B.unwrap_stream stream)
-
-        let range_to_host ~src_offset ~dst_ptr ~byte_size ~stream =
-          B.Async.device_to_host
-            ~src:buf
-            ~src_offset
-            ~dst_ptr
-            ~byte_size
-            ~stream:
-              (Memory.unwrap_stream_for ~backend:B.name B.unwrap_stream stream)
-
-        let free () = B.Memory.free buf
-      end : Vector.DEVICE_BUFFER)
-
-(** Allocate a device buffer using zero-copy (host memory sharing) if supported.
-    Returns None if the backend doesn't support zero-copy for this device. *)
+(** The backend's [alloc_zero_copy]: a buffer that is the host array itself
+    (Native, Interpreter). [None] on every backend with memory of its own. *)
 let alloc_scalar_buffer_zero_copy (type a b) (dev : Device.t)
     (ba : (a, b, Bigarray.c_layout) Bigarray.Array1.t)
     (sk : (a, b) Vector.scalar_kind) : Vector.device_buffer option =
   match Framework_registry.find_backend dev.framework with
   | None -> None
-  | Some (module B : Framework_sig.BACKEND) -> (
+  | Some (module B : Framework_sig.BACKEND) ->
       let backend_dev = B.Device.get dev.backend_id in
-      let ba_kind = Vector.to_bigarray_kind sk in
-      match B.Memory.alloc_zero_copy backend_dev ba ba_kind with
-      | None -> None
-      | Some buf ->
-          let elem_sz = Vector.scalar_elem_size sk in
-          let length = Bigarray.Array1.dim ba in
-          let device_ptr = B.Memory.device_ptr buf in
-          Some
-            (module struct
-              let device = dev
+      let module W = Wrap_scalar (B) in
+      B.Memory.alloc_zero_copy backend_dev ba (Vector.to_bigarray_kind sk)
+      |> Option.map (fun buf ->
+          W.wrap
+            ~dev
+            ~length:(Bigarray.Array1.dim ba)
+            ~elem_size:(Vector.scalar_elem_size sk)
+            ~host_link:Memory.Host_storage
+            buf)
 
-              let size = length
-
-              let elem_size = elem_sz
-
-              let device_ptr = device_ptr
-
-              let bind_to_kargs kargs idx =
-                if Log.would_log Log.Debug Log.Transfer then
-                  Log.debugf
-                    Log.Transfer
-                    "bind_to_kargs (zero-copy): idx=%d ptr=%Ld"
-                    idx
-                    (Int64.of_nativeint device_ptr) ;
-                match B.unwrap_kargs kargs with
-                | Some args -> B.Kernel.set_arg_buffer args idx buf
-                | None -> failwith "bind_to_kargs: backend mismatch"
-
-              (* Same rule as the regular wrapper: a buffer that is_zero_copy
-                 (Native, Interpreter: the device uses the host array itself)
-                 needs nothing; one that is not (OpenCL USE_HOST_PTR, coherent
-                 only through map/unmap) is copied by its backend. *)
-              let host_ptr_to_device src_ptr ~byte_size =
-                if not (B.Memory.is_zero_copy buf) then
-                  B.Memory.host_ptr_to_device
-                    ~src_ptr:(Ctypes.raw_address_of_ptr src_ptr)
-                    ~byte_size
-                    ~dst:buf
-
-              let device_to_host_ptr dst_ptr ~byte_size =
-                if not (B.Memory.is_zero_copy buf) then
-                  B.Memory.device_to_host_ptr
-                    ~src:buf
-                    ~dst_ptr:(Ctypes.raw_address_of_ptr dst_ptr)
-                    ~byte_size
-
-              let range_from_host ~src_ptr ~dst_offset ~byte_size ~stream =
-                B.Async.host_to_device
-                  ~src_ptr
-                  ~dst:buf
-                  ~dst_offset
-                  ~byte_size
-                  ~stream:
-                    (Memory.unwrap_stream_for
-                       ~backend:B.name
-                       B.unwrap_stream
-                       stream)
-
-              let range_to_host ~src_offset ~dst_ptr ~byte_size ~stream =
-                B.Async.device_to_host
-                  ~src:buf
-                  ~src_offset
-                  ~dst_ptr
-                  ~byte_size
-                  ~stream:
-                    (Memory.unwrap_stream_for
-                       ~backend:B.name
-                       B.unwrap_stream
-                       stream)
-
-              let free () = B.Memory.free buf
-            end : Vector.DEVICE_BUFFER))
+(** The backend's [alloc_host_ptr]: a buffer created over [ba]'s memory. Only
+    [Host_ptr_buffer] calls this; [None] when [dev]'s framework is not
+    registered. *)
+let alloc_scalar_buffer_host_ptr (type a b) (dev : Device.t)
+    (ba : (a, b, Bigarray.c_layout) Bigarray.Array1.t)
+    (sk : (a, b) Vector.scalar_kind) :
+    (Vector.device_buffer, Framework_sig.host_ptr_refusal) result option =
+  match Framework_registry.find_backend dev.framework with
+  | None -> None
+  | Some (module B : Framework_sig.BACKEND) ->
+      let backend_dev = B.Device.get dev.backend_id in
+      let module W = Wrap_scalar (B) in
+      B.Memory.alloc_host_ptr backend_dev ba (Vector.to_bigarray_kind sk)
+      |> Result.map (fun buf ->
+          W.wrap
+            ~dev
+            ~length:(Bigarray.Array1.dim ba)
+            ~elem_size:(Vector.scalar_elem_size sk)
+            ~host_link:
+              (if B.Memory.is_zero_copy buf then Memory.Host_storage
+               else Memory.Host_ptr)
+            buf)
+      |> Option.some
 
 (** Allocate a device buffer for a custom vector *)
 let alloc_custom_buffer (dev : Device.t) (length : int) (elem_sz : int) :
@@ -208,6 +177,8 @@ let alloc_custom_buffer (dev : Device.t) (length : int) (elem_sz : int) :
         let elem_size = elem_sz
 
         let device_ptr = device_ptr
+
+        let host_link = Memory.Separate
 
         let bind_to_kargs kargs idx =
           (* Unwrap kargs to the backend's kernel args type and bind buffer *)
@@ -256,9 +227,28 @@ let alloc_custom_buffer (dev : Device.t) (length : int) (elem_sz : int) :
 
 (** {1 Buffer Management for Vectors} *)
 
-(** Ensure vector has a device buffer, allocating if needed. For backends that
-    support zero-copy (typically CPU backends), automatically uses zero-copy to
-    avoid memory transfer overhead. The backend decides via alloc_zero_copy. *)
+(** Record [buf] as [vec]'s buffer on [dev] (no buffer there yet): the vector's
+    finaliser frees it, and [Gpu_memory] counts its bytes. *)
+let install_buffer (vec : (_, _) Vector.t) (dev : Device.t)
+    (buf : Vector.device_buffer) : unit =
+  if Hashtbl.length vec.device_buffers = 0 then
+    Gpu_memory.register_finalizer vec ;
+  Hashtbl.replace vec.device_buffers dev.id buf ;
+  let (module B : Vector.DEVICE_BUFFER) = buf in
+  Gpu_memory.track_alloc (B.size * B.elem_size) ;
+  if Log.would_log Log.Debug Log.Transfer then
+    Log.debugf
+      Log.Transfer
+      "install_buffer: dev=%d ptr=%Ld size=%d"
+      dev.id
+      (Int64.of_nativeint B.device_ptr)
+      B.size
+
+(** Ensure vector has a device buffer, allocating if needed. On Native and
+    Interpreter the buffer is the host array itself ([alloc_zero_copy]); every
+    other device, OpenCL CPU devices included, gets memory of its own. Sharing
+    the host array on an OpenCL CPU device is the explicit [Host_ptr_buffer]
+    opt-in, which installs its buffer before this function would allocate. *)
 let ensure_buffer (type a b) (vec : (a, b) Vector.t) (dev : Device.t) :
     Vector.device_buffer =
   match Vector.get_buffer vec dev with
@@ -273,21 +263,14 @@ let ensure_buffer (type a b) (vec : (a, b) Vector.t) (dev : Device.t) :
         Gpu_memory.with_retry (fun () ->
             match (vec.kind, vec.host) with
             | Vector.Scalar sk, Vector.Bigarray_storage ba -> (
-                (* Try zero-copy first - backend decides if supported *)
-                Log.debug Log.Transfer "  -> trying zero-copy path" ;
                 match alloc_scalar_buffer_zero_copy dev ba sk with
-                | Some zc_buf ->
+                | Some host_buf ->
                     Log.debugf
                       Log.Transfer
-                      "  -> using zero-copy for device %d"
+                      "  -> host array is the device memory on device %d"
                       dev.id ;
-                    zc_buf
-                | None ->
-                    Log.debug
-                      Log.Transfer
-                      "  -> zero-copy not supported, using regular alloc" ;
-                    let buf = alloc_scalar_buffer dev vec.length sk in
-                    buf)
+                    host_buf
+                | None -> alloc_scalar_buffer dev vec.length sk)
             | Vector.Scalar _, Vector.Custom_storage _ -> .
             | Vector.Scalar sk, Vector.Device_only_storage ->
                 (* A device-only vector has no host storage to share, so never
@@ -297,23 +280,7 @@ let ensure_buffer (type a b) (vec : (a, b) Vector.t) (dev : Device.t) :
                 Log.debug Log.Transfer "  -> custom alloc" ;
                 alloc_custom_buffer dev vec.length c.elem_size)
       in
-      Log.debugf
-        Log.Transfer
-        "ensure_buffer: storing buffer for dev=%d (hashtbl key=%d)"
-        dev.id
-        dev.id ;
-      (* Register GC finalizer on first device buffer allocation *)
-      if Hashtbl.length vec.device_buffers = 0 then
-        Gpu_memory.register_finalizer vec ;
-      Hashtbl.replace vec.device_buffers dev.id buf ;
-      let (module B : Vector.DEVICE_BUFFER) = buf in
-      (* Track GPU memory usage *)
-      Gpu_memory.track_alloc (B.size * B.elem_size) ;
-      Log.debugf
-        Log.Transfer
-        "ensure_buffer: stored buffer ptr=%Ld size=%d"
-        (Int64.of_nativeint B.device_ptr)
-        B.size ;
+      install_buffer vec dev buf ;
       buf
 
 (** {1 Transfer Operations} *)

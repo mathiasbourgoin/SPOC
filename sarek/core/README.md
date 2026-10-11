@@ -9,6 +9,7 @@ Use it to create vectors, choose devices and control transfers. To launch a Sare
 | `Device` | Enumerate devices of the registered backends; filters and predicates |
 | `Vector` | Typed vectors with host storage and location tracking; bulk operations |
 | `Transfer` | Host/device movement, streams, events, pinned memory, device-only vectors |
+| `Host_ptr_buffer` | Explicit opt-in: a CPU OpenCL buffer over a vector's host memory (`CL_MEM_USE_HOST_PTR`) |
 | `Memory` | Raw device buffers |
 | `Kernel`, `Kernel_arg`, `Runtime` | Compile source text and launch it with explicit arguments |
 | `Log`, `Error`, `Profiling`, `Advanced` | Logging, validation helpers, profiling, optional features |
@@ -140,7 +141,7 @@ let transfers dev v =
   Transfer.flush dev          (* wait for the device's pending work *)
 ```
 
-`Transfer.to_device_all`, `to_cpu_all` and `sync_all` take lists. On CPU backends (Native, Interpreter) device memory is host memory and the transfers are no-ops.
+`Transfer.to_device_all`, `to_cpu_all` and `sync_all` take lists. On CPU backends (Native, Interpreter) device memory is host memory and the transfers are no-ops. A CPU OpenCL device copies like a GPU unless the vector was given a host-pointer buffer with `Host_ptr_buffer` (see [Memory and transfers](../../gh-pages/docs/memory.md)).
 
 ### Device-only vectors, ranged copies, streams, pinned memory
 

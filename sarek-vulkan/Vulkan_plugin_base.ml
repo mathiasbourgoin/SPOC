@@ -136,6 +136,9 @@ module Vulkan = struct
     let alloc_custom = Vulkan_api.Memory.alloc_custom
 
     let alloc_zero_copy _dev _arr _kind = None
+
+    let alloc_host_ptr _device _ba _kind =
+      Error Framework_sig.Host_ptr_unsupported
     (* Vulkan doesn't support zero-copy in this simple implementation *)
 
     let free = Vulkan_api.Memory.free

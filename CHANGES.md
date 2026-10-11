@@ -57,6 +57,23 @@
 
 ### Added
 
+- `Spoc_core.Host_ptr_buffer`: an explicit, typed opt-in to give a vector a
+  CPU OpenCL buffer over its host memory (`CL_MEM_USE_HOST_PTR`), for large
+  host pools that must not be duplicated. `of_bigarray dev kind ba` and
+  `attach vec dev` return a `result`; refusals are structured
+  (`Framework_sig.host_ptr_refusal`: not a CPU device, unsupported backend,
+  empty, misaligned against `CL_DEVICE_MEM_BASE_ADDR_ALIGN`, larger than
+  `CL_DEVICE_MAX_MEM_ALLOC_SIZE`; or a vector that already has a buffer on the
+  device). `publish_host_writes` and `acquire_device_writes` state the
+  map/unmap synchronisation; `host_link vec dev` reports `Separate`,
+  `Host_storage` or `Host_ptr`. Backends implement the new
+  `Framework_sig` `Memory.alloc_host_ptr`, and `Memory.BUFFER` has a new
+  `host_link` value. Measured on the Intel CPU runtime: a kernel reading a
+  3 GiB array grew VmRSS by 116.6 MiB through a host-pointer buffer and by
+  3188.7 MiB through the copy path (`docs/measurements/opencl-host-ptr-2026-10-11/`).
+  Guide: `gh-pages/docs/memory.md`, "Sharing host memory with a CPU OpenCL
+  device".
+
 - Matrix products are rewritten at launch, inside `Execute.run_vectors` (spec
   `specs/matrix-pattern-dynamic.md`). A kernel that is a recognised matrix
   product runs on matrix units when the device has them (HIP gfx11; the
@@ -303,6 +320,25 @@
   indices below 0 or from 4096 up are kept in a sorted list, so a stray
   index never allocates storage of its size. One error text changed: two or
   more extra indices are now "unexpected indices", not "unexpected indexs".
+
+- OpenCL CPU devices no longer share host memory implicitly. A vector whose
+  host array happened to meet `CL_DEVICE_MEM_BASE_ADDR_ALIGN` used to get a
+  `CL_MEM_USE_HOST_PTR` buffer, so whether a vector was copied depended on
+  where `malloc` put it. Default buffers on every OpenCL device now have
+  memory of their own; Native and Interpreter are unchanged (their device
+  memory is the host array). `Framework_sig` `Memory.alloc_zero_copy` now
+  means only "the host array is the device memory", and OpenCL returns
+  `None`. Migration: code that relied on the implicit sharing (to avoid
+  doubling memory for large arrays on the Intel CPU runtime, or that wrote the
+  Bigarray directly and expected kernels to see it) creates the vector with
+  `Host_ptr_buffer.of_bigarray` (or calls `Host_ptr_buffer.attach` before the
+  first launch) from a 4096-aligned Bigarray, and calls
+  `Host_ptr_buffer.publish_host_writes` after writing the Bigarray directly.
+  Backend implementers add `alloc_host_ptr` (return
+  `Error Host_ptr_unsupported` when there is none); hand-written
+  `Memory.BUFFER` modules add `let host_link = Memory.Separate`. The test hook
+  `Opencl_plugin_base.For_testing.zero_copy_on_any_device` is renamed
+  `host_ptr_on_any_device`.
 
 - `Spoc_core.Memory.bigarray_void_ptr` is replaced by
   `Memory.borrow_bigarray_ptr`, whose pointer need not root the bigarray: the

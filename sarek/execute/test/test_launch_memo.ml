@@ -130,6 +130,8 @@ module Probe : BACKEND = struct
 
     let alloc_zero_copy _dev _ba _kind = None
 
+    let alloc_host_ptr _dev _ba _kind = Error Framework_sig.Host_ptr_unsupported
+
     let device_ptr _buf = Nativeint.zero
 
     let is_zero_copy _buf = false

@@ -52,6 +52,8 @@ let make_buffer dev ba ~device_values ~host_to_device_called
 
     let device_ptr = Nativeint.of_int dev.Device.id
 
+    let host_link = Spoc_core.Memory.Separate
+
     let host_ptr_to_device _ptr ~byte_size =
       assert (byte_size = size * elem_size) ;
       host_to_device_called := true ;

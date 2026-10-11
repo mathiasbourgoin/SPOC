@@ -84,6 +84,20 @@ let with_bigarray_ptr : type a b r.
 
 (** {1 Buffer Module Type} *)
 
+(** How a device buffer relates to the host storage of its vector. *)
+type host_link =
+  | Separate
+      (** Device memory of its own: uploads and read-backs copy. The default on
+          every device that has memory of its own, OpenCL CPU devices included.
+      *)
+  | Host_storage
+      (** The device uses the host array itself (Native, Interpreter): no
+          transfer and no synchronisation. *)
+  | Host_ptr
+      (** A device buffer created over the host array's memory
+          (CL_MEM_USE_HOST_PTR), only through [Host_ptr_buffer]. Uploads and
+          read-backs become map/unmap synchronisation, not copies. *)
+
 (** A buffer packages backend-specific buffer with its operations. All transfers
     use raw pointers with byte sizes to avoid type parameter escaping issues in
     first-class modules. *)
@@ -99,6 +113,9 @@ module type BUFFER = sig
 
   (** Get raw device pointer (for kernel arg binding) *)
   val device_ptr : nativeint
+
+  (** Relation to the vector's host storage. *)
+  val host_link : host_link
 
   (** Transfer from host pointer to device *)
   val host_ptr_to_device : unit Ctypes.ptr -> byte_size:int -> unit
@@ -174,6 +191,8 @@ let alloc (device : Device.t) (size : int) (kind : ('a, 'b) Bigarray.kind) :
 
           let device_ptr = B.Memory.device_ptr buf
 
+          let host_link = Separate
+
           let host_ptr_to_device src_ptr ~byte_size =
             B.Memory.host_ptr_to_device
               ~src_ptr:(Ctypes.raw_address_of_ptr src_ptr)
@@ -227,6 +246,8 @@ let alloc_custom (device : Device.t) ~(size : int) ~(elem_size : int) :
           let elem_size = elem_size
 
           let device_ptr = B.Memory.device_ptr buf
+
+          let host_link = Separate
 
           let host_ptr_to_device src_ptr ~byte_size =
             B.Memory.host_ptr_to_device

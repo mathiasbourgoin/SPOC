@@ -94,6 +94,9 @@ module Cuda : Framework_sig.PLUGIN_BASE = struct
     (** CUDA doesn't support zero-copy with host memory *)
     let alloc_zero_copy _device _ba _kind = None
 
+    let alloc_host_ptr _device _ba _kind =
+      Error Framework_sig.Host_ptr_unsupported
+
     let is_zero_copy _buf = false
 
     let free = Cuda_api.Memory.free

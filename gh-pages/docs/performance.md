@@ -14,7 +14,7 @@ When a program issues many small kernels, the host time spent on each launch can
 | Launch window (deferral, horizontal fusion) | on | on | on | off (also WebGPU) | never |
 | Epilogue fusion | on | off | off | off | never |
 
-- The window is on by default for the backends in the first row, and a device is excluded from deferral if it is a CPU device (OpenCL allocates zero-copy buffers there that alias host memory). Native and Interpreter execute directly and are never deferred.
+- The window is on by default for the backends in the first row, and a device is excluded from deferral if it is a CPU device (host-pointer buffers from `Host_ptr_buffer` alias host memory there). Native and Interpreter execute directly and are never deferred.
 - Epilogue fusion is on only on HIP. HIP compiles with floating-point contraction forced off, so merging two kernels cannot change a result; on the other backends the device compiler may contract a multiply of the first kernel with an add of the second, changing the result by an ulp, so it stays opt-in.
 - Horizontal fusion produces bit-identical results by construction: each member runs unchanged and nothing is added, removed or reordered between members.
 
