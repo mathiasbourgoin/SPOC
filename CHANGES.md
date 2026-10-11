@@ -6,7 +6,12 @@
   prints that component's debug messages, as the backend READMEs say (R-43).
   Before, the level stayed at `warn`, so `Log.debug` printed nothing. A level
   in the list still wins: `SAREK_DEBUG=kernel,info` prints info and above.
-  Regression test: `sarek/core/test/test_log.ml`.
+  Linking `Spoc_core.Error` no longer enables every `Log` component at load
+  time; `Error`'s own messages are gated by the level only
+  (`Log.log_any_component`). A program that links `Error` and relied on that
+  to see `Log.warn`/`Log.error` from components it never enabled must now
+  name them in `SAREK_DEBUG` or call `Log.enable`. Regression tests:
+  `sarek/core/test/test_log.ml`, `sarek/core/test/test_log_error.ml`.
 
 - Native launches from several domains no longer hang or corrupt each other
   (R-64). The process-wide `ThreadPool` and `ParallelPool` serialise whole
@@ -294,10 +299,10 @@
 
 - `Spoc_framework.Kernel_args` stores arguments in an array of options
   instead of a polymorphic `Hashtbl` (R-42): `set` and `validate_and_extract`
-  no longer hash or compare polymorphically on every launch. Same API and
-  error texts; indices below 0 or from 4096 up are kept in a sorted list, so
-  a stray index never allocates storage of its size. The errors now say
-  "unexpected indices", not "unexpected indexs".
+  no longer hash or compare polymorphically on every launch. Same API;
+  indices below 0 or from 4096 up are kept in a sorted list, so a stray
+  index never allocates storage of its size. One error text changed: two or
+  more extra indices are now "unexpected indices", not "unexpected indexs".
 
 - `Spoc_core.Memory.bigarray_void_ptr` is replaced by
   `Memory.borrow_bigarray_ptr`, whose pointer need not root the bigarray: the
