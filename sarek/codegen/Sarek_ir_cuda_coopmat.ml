@@ -57,13 +57,14 @@ let check_fragment (f : C.fragment) =
          "CUDA/HIP: only subgroup (wavefront / warp) scope exists; got %s"
          (C.scope_name f.C.frag_scope)) ;
   match (f.C.frag_use, f.C.frag_component) with
-  | (C.Matrix_a | C.Matrix_b), (C.Float16 | C.Uint8 | C.Sint8) -> ()
+  | (C.Matrix_a | C.Matrix_b), (C.Float16 | C.BFloat16 | C.Uint8 | C.Sint8) ->
+      ()
   | C.Accumulator, (C.Float32 | C.Uint32 | C.Sint32) -> ()
   | use, comp ->
       unsupported
         "cooperative-matrix fragment"
         (Printf.sprintf
-           "CUDA/HIP: no %s fragment of %s (operands are f16, u8 or s8; \
+           "CUDA/HIP: no %s fragment of %s (operands are f16, bf16, u8 or s8; \
             accumulators are f32, s32 or u32)"
            (C.use_name use)
            (C.component_name comp))
@@ -77,7 +78,10 @@ let check_config (cfg : C.config) =
       "saturating cooperative-matrix accumulation"
       "CUDA/HIP: the saturating variant computes a different function and the \
        interpreter, the oracle it would be checked against, refuses it" ;
-  let f16 = cfg.C.cfg_a = C.Float16 && cfg.C.cfg_b = C.Float16 in
+  let f16 =
+    (cfg.C.cfg_a = C.Float16 || cfg.C.cfg_a = C.BFloat16)
+    && cfg.C.cfg_b = cfg.C.cfg_a
+  in
   let int8 = is_8bit cfg.C.cfg_a && is_8bit cfg.C.cfg_b in
   let ok =
     (f16 && cfg.C.cfg_c = C.Float32 && cfg.C.cfg_result = C.Float32)
@@ -87,7 +91,7 @@ let check_config (cfg : C.config) =
     unsupported
       "cooperative-matrix configuration"
       (Printf.sprintf
-         "CUDA/HIP: %s is not lowered (f16*f16+f32->f32 and \
+         "CUDA/HIP: %s is not lowered (f16/bf16*same+f32->f32 and \
           8-bit*8-bit+i32->i32 with the same 32-bit accumulator type are)"
          (C.config_name cfg))
 
@@ -99,7 +103,7 @@ let check_config (cfg : C.config) =
 let buffer_elttype (f : C.fragment) =
   match f.C.frag_component with
   | C.Float16 -> TFloat16
-  | C.Float32 -> TFloat32
+  | C.BFloat16 | C.Float32 -> TFloat32
   | C.Uint8 | C.Sint8 -> TUint8
   | C.Uint32 | C.Sint32 -> TInt32
 
@@ -157,6 +161,7 @@ let preamble =
 #error "Sarek cooperative matrix: the HIP lowering targets gfx11 (RDNA3) WMMA only"
 #endif
 typedef _Float16 sarek_cm_h16 __attribute__((ext_vector_type(16)));
+typedef short sarek_cm_s16 __attribute__((ext_vector_type(16)));
 typedef float sarek_cm_f8 __attribute__((ext_vector_type(8)));
 typedef int sarek_cm_i4 __attribute__((ext_vector_type(4)));
 typedef int sarek_cm_i8 __attribute__((ext_vector_type(8)));
@@ -173,6 +178,21 @@ __device__ __forceinline__ void sarek_cm_load_a_f16(sarek_cm_h16 &f, const __hal
 __device__ __forceinline__ void sarek_cm_load_b_f16(sarek_cm_h16 &f, const __half *p, int i, int s) {
   const _Float16 *q = (const _Float16 *)p + i + sarek_cm_l16();
   for (int e = 0; e < 16; ++e) f[e] = q[e * s];
+}
+/* bf16 operands are loaded from a float32 buffer and rounded to bfloat16
+   (nearest even), specs/matrix-pattern-rewrite.md. */
+__device__ __forceinline__ short sarek_cm_bf16(float x) {
+  unsigned u = __float_as_uint(x);
+  if ((u & 0x7fffffffu) > 0x7f800000u) return (short)((u >> 16) | 0x40u);
+  return (short)((u + 0x7fffu + ((u >> 16) & 1u)) >> 16);
+}
+__device__ __forceinline__ void sarek_cm_load_a_bf16(sarek_cm_s16 &f, const float *p, int i, int s) {
+  const float *q = p + i + sarek_cm_l16() * s;
+  for (int e = 0; e < 16; ++e) f[e] = sarek_cm_bf16(q[e]);
+}
+__device__ __forceinline__ void sarek_cm_load_b_bf16(sarek_cm_s16 &f, const float *p, int i, int s) {
+  const float *q = p + i + sarek_cm_l16();
+  for (int e = 0; e < 16; ++e) f[e] = sarek_cm_bf16(q[e * s]);
 }
 __device__ __forceinline__ void sarek_cm_load_a_i8(sarek_cm_i4 &f, const unsigned char *p, int i, int s) {
   const unsigned char *q = p + i + sarek_cm_l16() * s;
@@ -239,6 +259,7 @@ let relaxed_comment (k : kernel) =
 let amd_type (f : C.fragment) =
   match (f.C.frag_use, f.C.frag_component) with
   | (C.Matrix_a | C.Matrix_b), C.Float16 -> "sarek_cm_h16"
+  | (C.Matrix_a | C.Matrix_b), C.BFloat16 -> "sarek_cm_s16"
   | (C.Matrix_a | C.Matrix_b), (C.Uint8 | C.Sint8) -> "sarek_cm_i4"
   | C.Accumulator, C.Float32 -> "sarek_cm_f8"
   | C.Accumulator, (C.Uint32 | C.Sint32) -> "sarek_cm_i8"
@@ -261,6 +282,7 @@ let amd_helper_suffix (f : C.fragment) =
   let ty =
     match f.C.frag_component with
     | C.Float16 -> "f16"
+    | C.BFloat16 -> "bf16"
     | C.Float32 -> "f32"
     | C.Uint8 | C.Sint8 -> "i8"
     | C.Uint32 | C.Sint32 -> "i32"
@@ -269,13 +291,14 @@ let amd_helper_suffix (f : C.fragment) =
 
 let cuda_elt = function
   | C.Float16 -> "__half"
+  | C.BFloat16 -> "__nv_bfloat16"
   | C.Float32 -> "float"
   | C.Uint8 -> "unsigned char"
   | C.Sint8 -> "signed char"
   | C.Uint32 | C.Sint32 -> "int"
 
 let cuda_elt_bytes = function
-  | C.Float16 -> 2
+  | C.Float16 | C.BFloat16 -> 2
   | C.Float32 | C.Uint32 | C.Sint32 -> 4
   | C.Uint8 | C.Sint8 -> 1
 
@@ -310,17 +333,31 @@ let both_arms ~indent ~amd ~cuda =
     indent
     cuda
 
+(* The CUDA arm of a bf16 statement: nvcuda::wmma's bf16 fragments read a
+   bf16 buffer, not a float32 buffer rounded on load, so there is no faithful
+   CUDA spelling of this IR. A named #error, as for mixed-sign 8-bit (the CUDA
+   launch gate refuses first: the CUDA backend probes no configuration). *)
+let cuda_bf16_unsupported =
+  "\n\
+   #error \"Sarek cooperative matrix: bf16 operands loaded from float32 are \
+   lowered on HIP gfx11 only (specs/matrix-pattern-rewrite.md)\"\n"
+
+let cuda_arm (frag : C.fragment) cuda =
+  if frag.C.frag_component = C.BFloat16 then cuda_bf16_unsupported else cuda
+
 let gen_decl ~indent name (frag : C.fragment) =
   check_fragment frag ;
   both_arms
     ~indent
     ~amd:(Printf.sprintf "%s %s = {};" (amd_type frag) name)
     ~cuda:
-      (Printf.sprintf
-         "%s %s; nvcuda::wmma::fill_fragment(%s, 0);"
-         (cuda_type frag)
-         name
-         name)
+      (cuda_arm
+         frag
+         (Printf.sprintf
+            "%s %s; nvcuda::wmma::fill_fragment(%s, 0);"
+            (cuda_type frag)
+            name
+            name))
 
 (* The CUDA pointer for a fragment's buffer: [src + index], cast to the wmma
    element type (an s8 fragment reads a uint8 buffer as signed char). *)
@@ -354,16 +391,18 @@ let gen_load ~indent ~buffers ~expr_str ~dst ~(frag : C.fragment) ~src ~index
          index
          stride)
     ~cuda:
-      (Printf.sprintf
-         "sarek_cm_require(%s, (%s), %d); nvcuda::wmma::load_matrix_sync(%s, \
-          %s, (%s)%s);"
-         ptr
-         stride
-         (cuda_elt_bytes frag.C.frag_component)
-         dst
-         ptr
-         stride
-         layout)
+      (cuda_arm
+         frag
+         (Printf.sprintf
+            "sarek_cm_require(%s, (%s), %d); \
+             nvcuda::wmma::load_matrix_sync(%s, %s, (%s)%s);"
+            ptr
+            stride
+            (cuda_elt_bytes frag.C.frag_component)
+            dst
+            ptr
+            stride
+            layout))
 
 let gen_store ~indent ~buffers ~expr_str ~src ~(frag : C.fragment) ~dst ~index
     ~stride =
@@ -400,10 +439,11 @@ let gen_store ~indent ~buffers ~expr_str ~src ~(frag : C.fragment) ~dst ~index
 let gen_muladd ~indent ~dst ~a ~b ~c (cfg : C.config) =
   check_config cfg ;
   let amd =
-    if cfg.C.cfg_a = C.Float16 then
+    if cfg.C.cfg_a = C.Float16 || cfg.C.cfg_a = C.BFloat16 then
       Printf.sprintf
-        "%s = __builtin_amdgcn_wmma_f32_16x16x16_f16_w32(%s, %s, %s);"
+        "%s = __builtin_amdgcn_wmma_f32_16x16x16_%s_w32(%s, %s, %s);"
         dst
+        (if cfg.C.cfg_a = C.Float16 then "f16" else "bf16")
         a
         b
         c
@@ -420,7 +460,8 @@ let gen_muladd ~indent ~dst ~a ~b ~c (cfg : C.config) =
         c
   in
   let cuda =
-    if cfg.C.cfg_a = C.Float16 then
+    if cfg.C.cfg_a = C.BFloat16 then cuda_bf16_unsupported
+    else if cfg.C.cfg_a = C.Float16 then
       Printf.sprintf "nvcuda::wmma::mma_sync(%s, %s, %s, %s);" dst a b c
     else if cfg.C.cfg_a <> cfg.C.cfg_b then
       (* nvcuda::wmma's integer mma_sync takes two signed or two unsigned

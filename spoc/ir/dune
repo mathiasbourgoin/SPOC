@@ -19,6 +19,10 @@
   Sarek_matrix_roles
   Sarek_matrix_pattern
   Sarek_matrix_advice
+  Sarek_ir_eval_int
+  Sarek_matrix_mapping
+  Sarek_matrix_scheme
+  Sarek_matrix_rewrite
   Sarek_pure_registry)
  (preprocess no_preprocessing)
  (instrumentation

@@ -336,7 +336,11 @@ let analyse_loop ctx acc init ~before ~after = function
             c;
             update;
             epilogue;
-            guards = List.rev ctx.guards @ Option.to_list st.st_guard;
+            guards =
+              List.map
+                (Affine.inline (affine_env ctx ~atoms:[]))
+                (List.rev ctx.guards)
+              @ List.map (Affine.inline env) (Option.to_list st.st_guard);
             enclosing_loops = List.rev ctx.loops;
           }
   | _ -> Error Loop_body_not_single_update

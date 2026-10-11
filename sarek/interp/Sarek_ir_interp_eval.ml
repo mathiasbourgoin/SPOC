@@ -264,6 +264,11 @@ and eval_special_expr state env = function
       | TFloat32 -> VFloat32 (to_float32 v)
       | TFloat64 -> VFloat64 (to_float64 v)
       | TBool -> VBool (to_bool v)
+      | TUint8 ->
+          (* The narrowing store into a [uint8] array (a byte plane of the
+             int32 matrix-unit rewrite, specs/matrix-pattern-rewrite.md): the
+             low 8 bits, as the C [(unsigned char)] cast keeps them. *)
+          VInt32 (Int32.logand (to_int32 v) 0xffl)
       | _ -> v)
   | _ ->
       Interp_error.raise_error
@@ -487,7 +492,19 @@ and coopmat_zero (c : Sarek_coopmat_types.component_type) =
   | Sarek_coopmat_types.Uint8 | Sarek_coopmat_types.Sint8
   | Sarek_coopmat_types.Uint32 | Sarek_coopmat_types.Sint32 ->
       VInt32 0l
-  | Sarek_coopmat_types.Float16 | Sarek_coopmat_types.Float32 -> VFloat32 0.0
+  | Sarek_coopmat_types.Float16 | Sarek_coopmat_types.BFloat16
+  | Sarek_coopmat_types.Float32 ->
+      VFloat32 0.0
+
+(** Round a binary32 value to bfloat16 (round to nearest, ties to even), the
+    result kept as a binary32 value. NaN stays NaN. *)
+and to_bfloat16 (x : float) =
+  if Float.is_nan x then x
+  else
+    let bits = Int32.bits_of_float x in
+    let lsb = Int32.logand (Int32.shift_right_logical bits 16) 1l in
+    let rounded = Int32.add bits (Int32.add 0x7fffl lsb) in
+    Int32.float_of_bits (Int32.logand rounded 0xffff0000l)
 
 (** Convert a buffer element to the declared component type.
 
@@ -507,6 +524,7 @@ and coopmat_component (c : Sarek_coopmat_types.component_type) (v : value) =
       VInt32 (to_int32 v)
   | Sarek_coopmat_types.Float16 ->
       VFloat32 (Sarek_float16.to_float16 (to_float32 v))
+  | Sarek_coopmat_types.BFloat16 -> VFloat32 (to_bfloat16 (to_float32 v))
   | Sarek_coopmat_types.Float32 -> VFloat32 (to_float32 v)
 
 and get_coopmat env name =
@@ -560,7 +578,9 @@ and coopmat_muladd_float (cfg : Sarek_coopmat_types.config) ma mb mc =
       let acc = ref (to_float32 mc.(idx)) in
       for kk = 0 to sh.k - 1 do
         (* Exact: two binary16 significands (11 bits) multiply into 22 bits,
-           inside binary32's 24, and the exponent range fits. *)
+           inside binary32's 24, and the exponent range fits; two bfloat16
+           significands (8 bits) into 16 bits, the exponent range being
+           binary32's own (barring underflow of the product). *)
         let p =
           to_float32 ma.((i * sh.k) + kk) *. to_float32 mb.((kk * sh.n) + j)
         in

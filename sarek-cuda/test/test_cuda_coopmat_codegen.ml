@@ -25,7 +25,7 @@ let cfg ?(shape = {C.m = 16; n = 16; k = 16}) ?(sat = false)
 
 let elt = function
   | C.Float16 -> TFloat16
-  | C.Float32 -> TFloat32
+  | C.BFloat16 | C.Float32 -> TFloat32
   | C.Uint8 | C.Sint8 -> TUint8
   | C.Uint32 | C.Sint32 -> TInt32
 

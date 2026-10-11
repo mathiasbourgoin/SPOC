@@ -82,6 +82,28 @@ val accept_relaxed_accumulation : reason:string -> unit
 (** The reason recorded by {!accept_relaxed_accumulation}, if it was called. *)
 val relaxed_accumulation_reason : unit -> string option
 
+(** {2 Operand rounding (specs/matrix-pattern-rewrite.md)}
+
+    A float32 matrix product computed on matrix units must first round its
+    operands to a narrower type. That is a larger deviation than the
+    accumulation order {!accept_relaxed_accumulation} admits, so it has its own
+    opt-in, per precision: accepting one does not accept another.
+    [Operands_bf16x3] splits each operand into three bfloat16 terms
+    ([x = hi + mid + lo]) and keeps the six products of order at most two, for
+    near-float32 accuracy. Process-wide and one-way, like
+    {!accept_relaxed_accumulation}. *)
+
+type operand_precision = Operands_f16 | Operands_bf16 | Operands_bf16x3
+
+val operand_precision_name : operand_precision -> string
+
+(** @raise Invalid_argument if [reason] is empty or blank. *)
+val accept_operand_rounding :
+  precision:operand_precision -> reason:string -> unit
+
+(** The reason recorded for that precision, if it was accepted. *)
+val operand_rounding_reason : operand_precision -> string option
+
 (** [policy_verdict cfg] judges the accuracy regime, independently of any
     device: configurations whose four component types are all integer are
     [Available] (strict: exact accumulation); [f16 * f16 + f32 -> f32] is

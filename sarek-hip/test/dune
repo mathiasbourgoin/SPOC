@@ -297,3 +297,28 @@
  (alias e2e-hip-bench)
  (action
   (run %{dep:bench_launch_window.exe})))
+
+; The matrix-product rewrite against the naive kernel and the hand-written
+; SCoopmat GEMM (specs/matrix-pattern-rewrite.md). Information only.
+(executable
+ (name bench_matrix_rewrite)
+ (modules bench_matrix_rewrite)
+ (libraries
+  sarek
+  sarek.gemm
+  sarek.matrix
+  sarek.stdlib
+  sarek_ir
+  spoc_core
+  spoc_framework
+  sarek_hip
+  unix)
+ (preprocessor_deps
+  (file ../../sarek/Sarek_gemm/Sarek_gemm.ml))
+ (preprocess
+  (pps sarek_ppx)))
+
+(rule
+ (alias e2e-hip-bench)
+ (action
+  (run %{dep:bench_matrix_rewrite.exe})))

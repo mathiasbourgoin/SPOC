@@ -26,10 +26,18 @@
     rather than a closed variant, why an unrepresentable scope must not be
     rewritten. It is not repeated. *)
 
-type component_type = Float16 | Float32 | Uint8 | Sint8 | Uint32 | Sint32
+type component_type =
+  | Float16
+  | BFloat16
+  | Float32
+  | Uint8
+  | Sint8
+  | Uint32
+  | Sint32
 
 let component_name = function
   | Float16 -> "f16"
+  | BFloat16 -> "bf16"
   | Float32 -> "f32"
   | Uint8 -> "u8"
   | Sint8 -> "s8"
@@ -38,7 +46,7 @@ let component_name = function
 
 let component_bits = function
   | Uint8 | Sint8 -> 8
-  | Float16 -> 16
+  | Float16 | BFloat16 -> 16
   | Float32 | Uint32 | Sint32 -> 32
 
 (* An explicit match on every constructor rather than [<> Float16 && <>
@@ -49,7 +57,7 @@ let component_bits = function
    failure the capability model exists to prevent. *)
 let component_is_integer = function
   | Uint8 | Sint8 | Uint32 | Sint32 -> true
-  | Float16 | Float32 -> false
+  | Float16 | BFloat16 | Float32 -> false
 
 type scope = Subgroup | Workgroup | Device_scope | Queue_family
 

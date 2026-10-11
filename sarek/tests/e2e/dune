@@ -1978,18 +1978,24 @@
   test_int32_bitcasts
   test_lsr_unroll
   test_coopmat_hip_e2e
-  test_launch_window)
+  test_launch_window
+  test_matrix_rewrite
+  test_matrix_rewrite_float)
  (modules
   test_int32_bitcasts
   test_lsr_unroll
   test_coopmat_hip_e2e
   test_launch_window
+  test_matrix_rewrite
+  test_matrix_rewrite_float
+  matrix_rewrite_support
   coopmat_hip_support
   backend_hip)
  (libraries
   sarek
   sarek.stdlib
   sarek.gemm
+  sarek.matrix
   sarek.interp
   sarek_ir
   spoc_core
@@ -2043,3 +2049,21 @@
  (alias runtest)
  (action
   (run %{dep:test_coopmat_hip_e2e.exe})))
+
+; Matrix-product rewrite (specs/matrix-pattern-rewrite.md): the original kernel
+; and Sarek_matrix.run compared bit for bit on every device (int32), and with a
+; host reference; the rewrite must happen on the interpreter and gfx11 HIP and
+; be declined elsewhere. Built by the test_int32_bitcasts stanza above.
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_matrix_rewrite.exe})))
+
+; The float cases of the rewrite: refusal before the opt-ins, the derived error
+; bound per precision, bit-identity with the interpreter's summation order.
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_matrix_rewrite_float.exe})))

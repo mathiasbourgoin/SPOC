@@ -49,7 +49,18 @@
     (§7 slice 6) but nothing has been swept about what it computes, and a
     component type nothing can lower is a claim without evidence. Adding it is a
     one-line change when a measurement exists. *)
-type component_type = Float16 | Float32 | Uint8 | Sint8 | Uint32 | Sint32
+type component_type =
+  | Float16
+  | BFloat16
+      (** bfloat16 operand (specs/matrix-pattern-rewrite.md). A [BFloat16]
+          fragment is loaded from a [float32] buffer, each element rounded to
+          bfloat16 (round to nearest even): exact for values already
+          representable. Lowered on HIP gfx11 only. *)
+  | Float32
+  | Uint8
+  | Sint8
+  | Uint32
+  | Sint32
 
 (** Stable lowercase rendering: ["f16"], ["f32"], ["u8"], ["s8"], ["u32"],
     ["s32"]. Matches the column headings of the design document's §4 table and
