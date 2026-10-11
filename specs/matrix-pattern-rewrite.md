@@ -71,8 +71,17 @@ block tile; grid = ⌈Ne/64⌉ × ⌈Me/64⌉ × Ze. For each K step of 16 the b
 stages the A (64×16) and B (16×64) tiles from global memory into shared memory,
 converting to the configuration's operand type and **zero-filling** every
 element outside `[0, Me) × [k_lo, k_hi]` (A) or `[k_lo, k_hi] × [0, Ne)` (B) —
-no out-of-range global read, any M, N, K, either layout (the staging transposes
-a column-major operand), any offset and batch stride. Fragments are loaded from
+no out-of-range global read, any M, N, K, either layout, any offset and batch
+stride. Both shared tiles are `[outer][k]` with rows padded by 16 bytes: A as
+`[m][k]`, B transposed as `[n][k]`, so A fragments load row-major and B
+fragments column-major, each 16 contiguous elements per lane (`ds_load_b128`
+on gfx1100). Each thread stages 8 consecutive k of one row of A (column of
+B): eight guarded reads (a select, not a branch), their conversions, then
+eight contiguous shared stores, which merge into one `ds_store_b128` for
+f16 (`spoc-pipeline-logs/pkgF/F2-isa-after-c42.txt`). Consecutive threads
+take consecutive groups when k is the operand's contiguous dimension (A
+row-major, B column-major), consecutive rows (columns) otherwise, so global
+reads stay coalesced. Fragments are loaded from
 shared memory (`CM_load`), multiplied (`CM_muladd`), stored to a shared tile,
 and each covered output is written with the original epilogue applied to
 `init + acc` (the original `init` and epilogue expressions, re-evaluated).
@@ -210,4 +219,8 @@ barriers per step of 16. A size-class variant that loads directly from global
 memory when the region is aligned is a PR 3 item (launch-time specialisation).
 Measured and kept: padding shared rows by 16 bytes (no change within noise);
 measured and reverted: steps of 32/64 per barrier pair (slower: fewer resident
-blocks).
+blocks). Measured and kept (2026-10-11, C-42): B staged transposed and loaded
+column-major, 8-element staging groups; outputs bit-identical
+(`spoc-pipeline-logs/pkgF/F2-bits-c41-vs-c42.txt`), staged kernels 1.3–3.5×
+faster (f32/f16 256×3072×3072 659 → 269 µs, int32 2664 → 766 µs;
+`spoc-pipeline-logs/pkgF/F2-bench-matrix-rewrite-c42-summary.txt`).
