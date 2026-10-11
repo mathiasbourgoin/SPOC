@@ -59,7 +59,10 @@
 
 - Epilogue fusion no longer accepts a producer that stores below index 0 as
   covering its consumer: the fused consumer would then run on negative
-  indices the unfused one never touches. Such pairs stay unfused.
+  indices the unfused one never touches. Such pairs stay unfused. A refusal
+  found while enumerating (an element stored twice, an index out of range, a
+  value-dependent unknown) is cached for those scalar values only; it used to
+  be reused for every value of the scalars.
 
 - Native launches from several domains no longer hang or corrupt each other
   (R-64). The process-wide `ThreadPool` and `ParallelPool` serialise whole
