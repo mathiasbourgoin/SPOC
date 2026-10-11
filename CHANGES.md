@@ -431,8 +431,7 @@
   with the skip counted in the summary line, because window on and off take the
   same path there. No barrier race was found in the generated OpenCL for the
   `mv_wave` / `mv_row` kernels; the plain-path nondeterminism seen on HIP on
-  the 7950X iGPU remains open (#427).
-
+  the 7950X iGPU remains open (possibly #427).
 - hiprtc and nvrtc option arrays: `CArray.of_list string` let the C copies of
   the option strings be freed before the compile call. Under a different
   allocation pattern hiprtc read a garbage option ("error reading '8{...'"),

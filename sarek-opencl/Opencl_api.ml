@@ -487,7 +487,8 @@ module Memory = struct
     check "clCreateBuffer (custom)" !@err ;
     {handle = mem; size; elem_size; context; host_alias = None}
 
-  (** Check if buffer uses zero-copy (no transfers needed) *)
+  (** [aliases_host buf addr]: [buf] is a USE_HOST_PTR buffer over [addr], so
+      host copies at [addr] become map/unmap synchronisation. *)
   let aliases_host buf addr = buf.host_alias = Some addr
 
   (* Make the host memory under a USE_HOST_PTR buffer coherent with the device:
