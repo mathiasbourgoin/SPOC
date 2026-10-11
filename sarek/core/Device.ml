@@ -289,6 +289,7 @@ let free_memory d : int64 option =
 (** {2 Synchronization} *)
 
 let synchronize d =
+  Launch_hooks.flush_pending () ;
   match Framework_registry.find_backend d.framework with
   | None -> failwith ("Unknown framework: " ^ d.framework)
   | Some (module B : Framework_sig.BACKEND) ->

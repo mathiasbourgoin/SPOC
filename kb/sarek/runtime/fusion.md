@@ -11,6 +11,26 @@ Reviewed fusion files: `sarek/sarek/Sarek_fusion.ml`, `sarek/sarek/FUSION.md`, `
 - `sarek/sarek/Fusion_error.ml`: fusion-specific error variants and formatting.
 - `sarek/sarek/test/test_fusion_error.ml`: error formatting tests.
 
+## Launch-time fusion (launch window)
+
+`specs/launch-window.md`. Files:
+- `sarek/core/Launch_hooks.ml` holds the synchronisation-point hook. Its
+  callers are Transfer, Device, Profiling and Kernel.
+- `sarek/execute/Kernel_access.ml` computes per-parameter read/write sets and
+  the horizontal-fusability verdict.
+- `sarek/execute/Fusion_horizontal.ml` is the work-group-offset rewrite.
+- `sarek/execute/Launch_window.ml` holds the groups, conflicts, flush, cache
+  and stats.
+- `Execute.Window` is the public control.
+
+Invariants:
+- Every synchronisation point flushes before it acts.
+- Two launches that bind the same vector, with at least one write, are issued
+  in submission order.
+- A fused kernel runs each member's body unchanged. Only the work-group
+  position intrinsics are rewritten.
+- Direct and Custom backends are never deferred.
+
 ## Features/APIs
 
 - Kernel analysis for reads, writes, side effects, barriers, shared memory, and estimated cost.

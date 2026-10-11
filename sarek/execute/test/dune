@@ -12,3 +12,17 @@
   spoc_framework_registry
   alcotest
   unix))
+
+; Launch window (specs/launch-window.md, CHECK-1). Own executable: it
+; registers a process-global probe backend.
+
+(test
+ (name test_launch_window)
+ (modules test_launch_window)
+ (libraries
+  sarek_execute
+  sarek_ir
+  spoc_core
+  spoc_framework
+  spoc_framework_registry
+  alcotest))

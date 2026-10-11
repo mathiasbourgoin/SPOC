@@ -2,6 +2,38 @@
 
 ### Added
 
+- Launch window with horizontal fusion (spec `specs/launch-window.md`).
+  `Execute.run`/`run_vectors` JIT launches without `~stream` are deferred on
+  HIP, OpenCL and Vulkan up to the next synchronisation point:
+  - every Transfer read-back, upload into a buffer a pending launch binds,
+    copy, staging, free, flush, stream and event operation;
+  - `Device.synchronize`, `Profiling` events and timers;
+  - raw `Kernel` launches, `run_source`, stream launches and `Soa_launch`;
+  - device destroy and cache clear.
+
+  Pending launches that bind no common buffer with a write, and have the same
+  block shape and grid y/z, are issued as one kernel. Each work-group runs one
+  member's unchanged body, with `block_idx_x`, `grid_dim_x` and the global
+  index intrinsics rewritten to the member's own values. The result is
+  bit-identical to the unfused launches by construction, on every backend.
+  Fused kernels are cached by member sequence and reused across launches.
+
+  Errors move only at device compilation and driver launch time: checks and
+  code generation still raise in the launching call, but a failure at those
+  two stages is raised by the call that flushed the window. If a fused kernel
+  fails, its members are issued one by one.
+
+  Controls: `Execute.Window.set_enabled` / `set_backend_enabled` / `flush` /
+  `stats`, and `SAREK_LAUNCH_WINDOW=0` to turn the window off. CUDA, Metal,
+  WebGPU, Native and Interpreter launches stay immediate (opt-in for the GPU
+  backends).
+
+  `bench_launch_window` on an RX 7900 XTX runs a decode-like chain of 24
+  layers × 18 launches. Window off vs on, 5 interleaved repetitions, median
+  µs/token: 4173 → 3158, with 432 → 288 launches per token, and results
+  bit-identical. Tested on HIP (RX 7900 XTX, 7950X iGPU), OpenCL (rusticl,
+  both GPUs), Vulkan (RADV), Native and Interpreter.
+
 - `Transfer.copy_bytes_to_host ?stream ~src ~src_byte_offset dst`: the
   byte-level read-back, mirror of `copy_bytes_to_device`. Copies
   `Bigarray.Array1.size_in_bytes dst` bytes of a vector of any scalar element

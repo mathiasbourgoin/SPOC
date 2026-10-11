@@ -1143,6 +1143,271 @@ let check_stream_launch ~(device : Device.t) (stream : Transfer.stream option) :
                 Framework_sig.refuse_stream_launch ~backend:B.name
           | Framework_sig.Direct | Framework_sig.Custom -> ()))
 
+(** {1 Launch window}
+
+    JIT launches with no [~stream] on a backend whose window is enabled are
+    deferred in {!window} and issued at the next synchronisation point, possibly
+    fused with independent launches ({!Launch_window}, specs/launch-window.md).
+    Argument checks, the capability check and source generation still happen in
+    the launching call; device compilation and the driver launch happen when the
+    launch is issued, so an error there is raised by the call that flushed the
+    window. *)
+
+let window : vector_arg Launch_window.t =
+  Launch_window.create
+    ~int32_arg:(fun n -> Int32 n)
+    ~set_pending:(fun n -> Atomic.set Launch_hooks.pending n)
+    ~guard:Launch_hooks.while_flushing
+
+let () =
+  Launch_hooks.set_flusher ~touches:(Launch_window.touches window) (fun () ->
+      Launch_window.flush window) ;
+  (* Pending launches must reach the device before a device is destroyed or the
+     backends' caches are cleared. *)
+  Cache_hooks.on_clear_all Launch_hooks.flush_pending ;
+  Cache_hooks.on_device_destroy (fun ~backend:_ _ ->
+      Launch_hooks.flush_pending ()) ;
+  at_exit (fun () -> try Launch_hooks.flush_pending () with _ -> ())
+
+(** Control and statistics of the launch window. *)
+module Window = struct
+  type stats = Launch_window.stats = {
+    submitted : int;  (** JIT launches made through [run]/[run_vectors] *)
+    issued : int;  (** backend launches actually made *)
+    fused_groups : int;  (** groups of several launches issued as one kernel *)
+    fused_built : int;  (** distinct fused kernels built *)
+    fused_refused : int;  (** launch sequences whose fusion failed *)
+  }
+
+  (** Issue every deferred launch now. Synchronisation points do this
+      themselves; this is for callers that want the device to start early. *)
+  let flush () = Launch_hooks.flush_pending ()
+
+  let stats () = Launch_window.stats window
+
+  let reset_stats () = Launch_window.reset_stats window
+
+  (** [true] when JIT launches on this backend name are deferred. *)
+  let defers backend = Launch_window.defers backend
+
+  (** [false] when deferral is off for every backend. *)
+  let enabled () = Atomic.get Launch_window.enabled
+
+  (** Turn deferral on or off for every backend (flushes first).
+      [SAREK_LAUNCH_WINDOW=0] in the environment turns it off at start-up. *)
+  let set_enabled b = Launch_window.set_enabled window b
+
+  (** Turn deferral on or off for one backend (flushes first). On by default for
+      HIP, OpenCL and Vulkan only. *)
+  let set_backend_enabled ~backend b =
+    Launch_window.set_backend_enabled window ~backend b
+
+  (** Forget every fused kernel built so far. *)
+  let clear_fused_cache () = Launch_window.clear_cache window
+end
+
+(* Hand a generated kernel to the backend, now. *)
+let issue_jit (module B : Framework_sig.BACKEND) ?stream ~(device : Device.t)
+    ~name ~source ~block ~grid ~shared_mem (args : vector_arg list) : unit =
+  (* ~soa_abi:true: this is the generated-JIT path, and [source] was emitted
+     with the matching ~soa_params. *)
+  let rs_args = expand_to_run_source_args ~soa_abi:true args device in
+  let dev = B.Device.get device.backend_id in
+  B.Device.set_current dev ;
+  let lang =
+    match B.supported_source_langs with
+    | [] ->
+        Execute_error.raise_error
+          (Backend_error
+             {
+               backend = device.framework;
+               message = "No supported source languages";
+             })
+    | lang :: _ -> lang
+  in
+  match stream with
+  | None ->
+      B.run_source
+        ~source
+        ~lang
+        ~kernel_name:name
+        ~block
+        ~grid
+        ~shared_mem
+        rs_args
+  | Some s ->
+      let _, sref = Transfer.stream_handle s in
+      let bs =
+        match B.unwrap_stream sref with
+        | Some bs -> bs
+        | None ->
+            invalid_arg "Execute.run: the stream belongs to another backend"
+      in
+      B.run_source_on_stream
+        ~stream:bs
+        ~source
+        ~lang
+        ~kernel_name:name
+        ~block
+        ~grid
+        ~shared_mem
+        rs_args ;
+      (* The kernel may still be running: keep the vectors whose buffers it
+         touches alive until the stream (or a later event) completes — the GC
+         finaliser would otherwise free them under it. *)
+      Transfer.retain_on_stream
+        s
+        ~keep:(Obj.repr args)
+        ~vec_ids:
+          (List.filter_map
+             (function Vec v -> Some v.Vector.id | _ -> None)
+             args)
+
+let jit_source (module B : Framework_sig.BACKEND) ~(device : Device.t) ~name
+    ~block ~soa_params ir : string =
+  match generate_source_memo (module B) ~block ~soa_params ir with
+  | Some source -> source
+  | None ->
+      Execute_error.raise_error
+        (Compilation_failed
+           {
+             kernel = name;
+             reason =
+               device.framework
+               ^ ": generate_source returned None (kernel may use unsupported \
+                  IR nodes)";
+           })
+
+(* The buffers the kernel touches, with how it uses each. *)
+let launch_accesses (ir : Sarek_ir_types.kernel) (args : vector_arg list) :
+    Launch_window.access list =
+  let info = Launch_window.ir_info window ir in
+  List.concat
+    (List.map2
+       (fun decl arg ->
+         match (decl, arg) with
+         | Sarek_ir_types.DParam (v, Some _), Vec vec -> (
+             match
+               List.assoc_opt v.Sarek_ir_types.var_name info.param_accesses
+             with
+             | Some {Kernel_access.read; write} when read || write ->
+                 [{Launch_window.buf = vec.Vector.id; read; write}]
+             | _ -> [])
+         | _ -> [])
+       ir.Sarek_ir_types.kern_params
+       args)
+
+let submit_deferred (module B : Framework_sig.BACKEND) ~(device : Device.t) ~ir
+    ~block ~grid ~shared_mem ~issue (args : vector_arg list) : unit =
+  let issue_fused fused fused_args fused_grid =
+    check_launch_args ~kernel:fused.Sarek_ir_types.kern_name fused fused_args ;
+    let source =
+      jit_source
+        (module B)
+        ~device
+        ~name:fused.kern_name
+        ~block
+        ~soa_params:[]
+        fused
+    in
+    issue_jit
+      (module B)
+      ~device
+      ~name:fused.kern_name
+      ~source
+      ~block
+      ~grid:fused_grid
+      ~shared_mem:0
+      fused_args
+  in
+  Launch_window.submit
+    window
+    {
+      Launch_window.device_id = device.Device.id;
+      backend = device.framework;
+      ir;
+      args;
+      block;
+      grid;
+      shared_mem;
+      accesses = launch_accesses ir args;
+      issue;
+      issue_fused;
+    }
+
+(* The JIT arm of {!run}. *)
+let run_jit (module B : Framework_sig.BACKEND) ?stream ~(device : Device.t)
+    ~name ~ir ~block ~grid ~shared_mem (args : vector_arg list) : unit =
+  match ir with
+  | None -> Execute_error.raise_error (Missing_ir {kernel = name})
+  | Some ir_lazy ->
+      let ir = Lazy.force ir_lazy in
+      check_launch_args ~kernel:name ir args ;
+      (* Before generate_source, so the diagnostic names the missing device
+         capability rather than letting the backend emit a shader the device
+         cannot legally load. *)
+      check_device_capabilities_memo ~device ir ;
+      (* SoA param names, derived from the ARGUMENTS by the same
+                 predicate the transfer and expansion use (backlog-54). The
+                 emitted signature and the bound argument list are then two
+                 consequences of one decision rather than two decisions that
+                 could disagree — and because both derive from [soa_dispatch]
+                 applied to the same [args]/[device], they structurally cannot
+                 disagree today. This list is only ever non-empty on CUDA/PTX
+                 (the one framework [soa_dispatch] answers [Some] for), which
+                 binds through the same bare pointer array as CUDA/C and HIP,
+                 with nothing checking the bound arguments against the
+                 compiled signature. So WERE the emitted signature and the
+                 bound arguments to disagree here, the outcome would be the
+                 same shape-dependent shift {!Backend_error.reject_soa_params}
+                 analyses for the external-kernel case: a trap is among the
+                 possible outcomes, but so is silent corruption or, when the
+                 vector is declared last, no shift into any following
+                 pointer slot — the vector's own slots still mis-bind —
+                 depending on where the SoA vector sits in the parameter
+                 list — never uniformly "a crash" or uniformly
+                 "silently wrong data." Empty list on every non-CUDA/PTX
+                 backend, because soa_dispatch is what decides — and since
+                 backlog-214 the source-generating ones among them REFUSE a
+                 non-empty list rather than ignore it, so this gate is the
+                 fast path and no longer the only guarantee. Native,
+                 Interpreter and WebGPU return None unconditionally and carry
+                 no refusal; WebGPU is the one to watch, being a JIT backend
+                 whose WGSL codegen is not yet wired. *)
+      let soa_params = soa_param_names ir args device in
+      let source = jit_source (module B) ~device ~name ~block ~soa_params ir in
+      let issue () =
+        issue_jit
+          (module B)
+          ?stream
+          ~device
+          ~name
+          ~source
+          ~block
+          ~grid
+          ~shared_mem
+          args
+      in
+      if
+        stream = None && soa_params = []
+        && Launch_window.defers device.framework
+      then
+        submit_deferred
+          (module B)
+          ~device
+          ~ir
+          ~block
+          ~grid
+          ~shared_mem
+          ~issue
+          args
+      else begin
+        (* Not deferred: everything deferred before it is issued first. *)
+        Launch_hooks.flush_pending () ;
+        Launch_window.count_immediate window ;
+        issue ()
+      end
+
 (** Execute a kernel on a device using the unified dispatch mechanism.
 
     @param stream
@@ -1155,7 +1420,13 @@ let check_stream_launch ~(device : Device.t) (stream : Transfer.stream option) :
       [Invalid_argument] when the stream belongs to another device. The
       capability check and, on JIT backends, source generation are done once per
       physical IR and reused by later launches (see the launch-preparation memo
-      above and {!clear_launch_cache}); argument checks run every time.
+      above and {!clear_launch_cache}); argument checks run every time. Without
+      [~stream], a JIT launch on a backend whose launch window is enabled (HIP,
+      OpenCL and Vulkan by default) is deferred until the next synchronisation
+      point and may be fused with independent launches ({!Window},
+      specs/launch-window.md). Its checks and source generation still run in
+      this call, but a device compilation or driver launch failure is raised by
+      the call that flushes the window.
 
     @param device Target device
     @param name Kernel name
@@ -1186,120 +1457,17 @@ let run ?(stream : Transfer.stream option) ~(device : Device.t) ~(name : string)
            })
   | Some (module B : Framework_sig.BACKEND) -> (
       match B.execution_model with
-      | Framework_sig.JIT -> (
-          (* JIT path: generate source, compile, use B.run_source *)
-          match ir with
-          | None -> Execute_error.raise_error (Missing_ir {kernel = name})
-          | Some ir_lazy -> (
-              let ir = Lazy.force ir_lazy in
-              check_launch_args ~kernel:name ir args ;
-              (* Before generate_source, so the diagnostic names the missing
-                 device capability rather than letting the backend emit a
-                 shader the device cannot legally load. *)
-              check_device_capabilities_memo ~device ir ;
-              (* SoA param names, derived from the ARGUMENTS by the same
-                 predicate the transfer and expansion use (backlog-54). The
-                 emitted signature and the bound argument list are then two
-                 consequences of one decision rather than two decisions that
-                 could disagree — and because both derive from [soa_dispatch]
-                 applied to the same [args]/[device], they structurally cannot
-                 disagree today. This list is only ever non-empty on CUDA/PTX
-                 (the one framework [soa_dispatch] answers [Some] for), which
-                 binds through the same bare pointer array as CUDA/C and HIP,
-                 with nothing checking the bound arguments against the
-                 compiled signature. So WERE the emitted signature and the
-                 bound arguments to disagree here, the outcome would be the
-                 same shape-dependent shift {!Backend_error.reject_soa_params}
-                 analyses for the external-kernel case: a trap is among the
-                 possible outcomes, but so is silent corruption or, when the
-                 vector is declared last, no shift into any following
-                 pointer slot — the vector's own slots still mis-bind —
-                 depending on where the SoA vector sits in the parameter
-                 list — never uniformly "a crash" or uniformly
-                 "silently wrong data." Empty list on every non-CUDA/PTX
-                 backend, because soa_dispatch is what decides — and since
-                 backlog-214 the source-generating ones among them REFUSE a
-                 non-empty list rather than ignore it, so this gate is the
-                 fast path and no longer the only guarantee. Native,
-                 Interpreter and WebGPU return None unconditionally and carry
-                 no refusal; WebGPU is the one to watch, being a JIT backend
-                 whose WGSL codegen is not yet wired. *)
-              let soa_params = soa_param_names ir args device in
-              match generate_source_memo (module B) ~block ~soa_params ir with
-              | None ->
-                  Execute_error.raise_error
-                    (Compilation_failed
-                       {
-                         kernel = name;
-                         reason =
-                           device.framework
-                           ^ ": generate_source returned None (kernel may use \
-                              unsupported IR nodes)";
-                       })
-              | Some source -> (
-                  (* Convert vector args to run_source_arg format (auto-injects lengths) *)
-                  (* ~soa_abi:true: this is the generated-JIT path, and the
-                     source just produced above was emitted with the matching
-                     ~soa_params. *)
-                  let rs_args =
-                    expand_to_run_source_args ~soa_abi:true args device
-                  in
-                  (* Set current device *)
-                  let dev = B.Device.get device.backend_id in
-                  B.Device.set_current dev ;
-                  (* Determine source language from backend's supported langs *)
-                  let lang =
-                    match B.supported_source_langs with
-                    | [] ->
-                        Execute_error.raise_error
-                          (Backend_error
-                             {
-                               backend = device.framework;
-                               message = "No supported source languages";
-                             })
-                    | lang :: _ -> lang
-                  in
-                  (* Use backend's run_source - handles compilation and launch *)
-                  match stream with
-                  | None ->
-                      B.run_source
-                        ~source
-                        ~lang
-                        ~kernel_name:name
-                        ~block
-                        ~grid
-                        ~shared_mem
-                        rs_args
-                  | Some s ->
-                      let _, sref = Transfer.stream_handle s in
-                      let bs =
-                        match B.unwrap_stream sref with
-                        | Some bs -> bs
-                        | None ->
-                            invalid_arg
-                              "Execute.run: the stream belongs to another \
-                               backend"
-                      in
-                      B.run_source_on_stream
-                        ~stream:bs
-                        ~source
-                        ~lang
-                        ~kernel_name:name
-                        ~block
-                        ~grid
-                        ~shared_mem
-                        rs_args ;
-                      (* The kernel may still be running: keep the vectors
-                         whose buffers it touches alive until the stream (or a
-                         later event) completes — the GC finaliser would
-                         otherwise free them under it. *)
-                      Transfer.retain_on_stream
-                        s
-                        ~keep:(Obj.repr args)
-                        ~vec_ids:
-                          (List.filter_map
-                             (function Vec v -> Some v.Vector.id | _ -> None)
-                             args))))
+      | Framework_sig.JIT ->
+          run_jit
+            (module B)
+            ?stream
+            ~device
+            ~name
+            ~ir
+            ~block
+            ~grid
+            ~shared_mem
+            args
       | Framework_sig.Direct ->
           (* Direct path: call native function or interpret IR *)
           let dev = B.Device.get device.backend_id in
@@ -1680,6 +1848,8 @@ let run_source ~(device : Device.t) ~(source : string) ~(lang : source_lang)
     ~(kernel_name : string) ~(block : Framework_sig.dims)
     ~(grid : Framework_sig.dims) ?(shared_mem : int = 0)
     ?(inject_lengths : bool = true) (args : vector_arg list) : unit =
+  (* Not deferred (external source): issue every deferred launch first. *)
+  Launch_hooks.flush_pending () ;
   (* Transfer vectors to device first *)
   transfer_vectors_to_device args device ;
 
