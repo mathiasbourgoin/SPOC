@@ -126,8 +126,10 @@ let of_helper hf =
   scan_body f hf.hf_body ;
   f
 
-let read_only_f32 f a =
-  Hashtbl.find_opt f.elt a = Some TFloat32
+(* A read of global array [a] of element type [elt] that no store in the
+   kernel can be forwarded to. *)
+let read_only f elt a =
+  Hashtbl.find_opt f.elt a = Some elt
   && Hashtbl.mem f.global a
   && (not (Hashtbl.mem f.written a))
   && not f.opaque
@@ -335,17 +337,33 @@ let join_bound a b =
 
 let both f a b = match (a, b) with Some x, Some y -> Some (f x y) | _ -> None
 
+(* The int32 operand of float_of_bits is opaque only when it is a value no
+   compiler can trace to float arithmetic: a read-only int32 array element or
+   a scalar kernel argument. LLVM folds float_of_bits (bits_of_float p) to p
+   and forwards a stored value to a later load, then fuses p into the
+   narrowing. *)
+let opaque_bits facts = function
+  | EArrayRead (a, _) -> read_only facts TInt32 a
+  | EVar v -> Hashtbl.find_all facts.defs v.var_name = [Argument]
+  | _ -> false
+
 let rec exact_in c seen e =
   match e with
   | EConst (CFloat32 x) -> const_bound x
   | ECast (TFloat32, x) -> widened c seen x
   | EIntrinsic (path, name, [x]) when is_int_to_float path name ->
       int_bound c seen x
-  | EIntrinsic (path, name, [_]) when is_bits_to_float path name -> Some any_f32
-  | EArrayRead (a, _) when read_only_f32 c.facts a -> Some any_f32
+  | EIntrinsic (path, name, [x]) when is_bits_to_float path name ->
+      if opaque_bits c.facts x then Some any_f32 else None
+  | EArrayRead (a, _) when read_only c.facts TFloat32 a -> Some any_f32
   | EVar v when v.var_type = TFloat32 -> var_bound c seen v
   | EBinop (((Add | Sub | Mul) as op), a, b) -> (
-      let combine = if op = Mul then mul_bound else add_bound in
+      let combine =
+        match op with
+        | Mul -> mul_bound
+        | Sub -> fun x y -> add_bound x (neg_bound y)
+        | _ -> add_bound
+      in
       match both combine (exact_in c seen a) (exact_in c seen b) with
       | Some r when representable r -> Some r
       | _ -> None)
