@@ -1,4 +1,4 @@
-# Contributing to SPOC/Sarek
+# Contributing to Sarek
 
 ## Code Quality Guidelines
 
