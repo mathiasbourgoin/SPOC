@@ -27,6 +27,10 @@ module For_testing = struct
   (** Number of host-pointer buffer releases that finished the device's queue
       first (see [Memory.free]). Set by the library; read by tests. *)
   let host_ptr_release_finishes = Atomic.make 0
+
+  (** Number of per-device states (context, default queue) created. Set by the
+      library; read by tests. *)
+  let device_states_created = Atomic.make 0
 end
 
 module Opencl : Framework_sig.PLUGIN_BASE = struct
@@ -61,6 +65,7 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
           {device; context; queue; streams = []; streams_lock = Mutex.create ()}
         in
         Hashtbl.add device_states device_id state ;
+        Atomic.incr For_testing.device_states_created ;
         state
 
   module Device = struct
