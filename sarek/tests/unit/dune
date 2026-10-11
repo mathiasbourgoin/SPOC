@@ -88,6 +88,14 @@
  (modules test_cpu_runtime)
  (libraries sarek alcotest))
 
+; R-64: concurrent Native launches from several domains. The test carries its
+; own watchdog, so a hang exits 124 instead of blocking CI.
+
+(test
+ (name test_cpu_runtime_multidomain)
+ (modules test_cpu_runtime_multidomain)
+ (libraries sarek alcotest unix))
+
 ; The depth bound on Sarek_ir_interp_value.detach_record (backlog-172 round 4).
 ; A cyclic [value] is not constructible through the DSL — [@@sarek.type] refuses
 ; a self-referential field type for lack of a layout — but IS constructible at
