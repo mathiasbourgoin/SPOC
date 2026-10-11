@@ -1,0 +1,19 @@
+dim. 11 oct. 2026 16:28:00 CEST 7.1.2-3-cachyos load: 53.84 73.12 78.10
+# repro427 DEV RUNS MODE (300 iterations per run)
+iGPU AMD Ryzen 9 7950X 16-Core Processor: 6 of 100 runs with a bad slice (mode 0)
+iGPU AMD Ryzen 9 7950X 16-Core Processor: 1 of 100 runs with a bad slice (mode 2)
+iGPU AMD Ryzen 9 7950X 16-Core Processor: 0 of 100 runs with a bad slice (mode 3)
+iGPU AMD Ryzen 9 7950X 16-Core Processor: 0 of 100 runs with a bad slice (mode 4)
+iGPU AMD Ryzen 9 7950X 16-Core Processor: 100 of 100 runs with a bad slice (mode 5)
+dGPU AMD Radeon RX 7900 XTX: 0 of 50 runs with a bad slice (mode 0)
+dGPU AMD Radeon RX 7900 XTX: 0 of 50 runs with a bad slice (mode 3)
+dGPU AMD Radeon RX 7900 XTX: 0 of 50 runs with a bad slice (mode 4)
+dGPU AMD Radeon RX 7900 XTX: 0 of 50 runs with a bad slice (mode 5)
+# idlegap DEV TRIALS GAP_US (no copies in the loop)
+AMD Ryzen 9 7950X 16-Core Processor gap=0us mode=0: 0 of 2000 launches lost
+AMD Ryzen 9 7950X 16-Core Processor gap=100us mode=0: 0 of 2000 launches lost
+AMD Ryzen 9 7950X 16-Core Processor gap=1000us mode=0: 1 of 2000 launches lost
+AMD Ryzen 9 7950X 16-Core Processor gap=5000us mode=0: 0 of 2000 launches lost
+AMD Ryzen 9 7950X 16-Core Processor gap=20000us mode=0: 0 of 2000 launches lost
+AMD Ryzen 9 7950X 16-Core Processor gap=100000us mode=0: 0 of 2000 launches lost
+AMD Radeon RX 7900 XTX gap=20000us mode=0: 0 of 2000 launches lost

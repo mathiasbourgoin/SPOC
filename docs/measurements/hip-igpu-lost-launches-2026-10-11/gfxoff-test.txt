@@ -1,0 +1,10 @@
+iGPU knob: /sys/kernel/debug/dri/0/amdgpu_gfxoff (current value: 1)
+== GFXOFF as is (1)
+[gfxoff=1 run 1] RESULT AMD Ryzen 9 7950X 16-Core Processor dev=1 launches=2691 dev_out_lost=482 host_out_lost=0 dev_cnt_missing=482 host_cnt_missing=0 bad_batches=102 lost_prefix_ends_right_before_last_sleep=102 | pct=5 us=20000
+[gfxoff=1 run 2] RESULT AMD Ryzen 9 7950X 16-Core Processor dev=1 launches=2691 dev_out_lost=482 host_out_lost=0 dev_cnt_missing=482 host_cnt_missing=0 bad_batches=102 lost_prefix_ends_right_before_last_sleep=102 | pct=5 us=20000
+[gfxoff=1 run 3] RESULT AMD Ryzen 9 7950X 16-Core Processor dev=1 launches=2691 dev_out_lost=483 host_out_lost=0 dev_cnt_missing=483 host_cnt_missing=0 bad_batches=102 lost_prefix_ends_right_before_last_sleep=101 | pct=5 us=20000
+== GFXOFF disabled (knob now 0)
+[gfxoff=0 run 1] RESULT AMD Ryzen 9 7950X 16-Core Processor dev=1 launches=2691 dev_out_lost=478 host_out_lost=0 dev_cnt_missing=478 host_cnt_missing=0 bad_batches=100 lost_prefix_ends_right_before_last_sleep=100 | pct=5 us=20000
+[gfxoff=0 run 2] RESULT AMD Ryzen 9 7950X 16-Core Processor dev=1 launches=2691 dev_out_lost=478 host_out_lost=0 dev_cnt_missing=478 host_cnt_missing=0 bad_batches=102 lost_prefix_ends_right_before_last_sleep=102 | pct=5 us=20000
+[gfxoff=0 run 3] RESULT AMD Ryzen 9 7950X 16-Core Processor dev=1 launches=2691 dev_out_lost=418 host_out_lost=0 dev_cnt_missing=418 host_cnt_missing=0 bad_batches=90 lost_prefix_ends_right_before_last_sleep=90 | pct=5 us=20000
+restored /sys/kernel/debug/dri/0/amdgpu_gfxoff to 1

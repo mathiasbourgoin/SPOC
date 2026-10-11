@@ -1,0 +1,166 @@
+14:59:43
+== mode=default LAUNCH_WINDOW=0 runs=40
+AMD Radeon RX 7900 XTX: 0 of 40 runs with a bad slice
+    iteration 267: slice starts with -5
+    iteration 267: slice starts with -5
+    iteration 267: slice starts with -5
+    iteration 267: slice starts with -5
+    iteration 267: slice starts with -5
+AMD Ryzen 9 7950X 16-Core Processor: 5 of 40 runs with a bad slice
+== mode=default LAUNCH_WINDOW=1 runs=40
+AMD Radeon RX 7900 XTX: 0 of 40 runs with a bad slice
+AMD Ryzen 9 7950X 16-Core Processor: 0 of 40 runs with a bad slice
+== mode=pinned_ring LAUNCH_WINDOW=0 runs=40
+AMD Radeon RX 7900 XTX: 0 of 40 runs with a bad slice
+AMD Ryzen 9 7950X 16-Core Processor: 0 of 40 runs with a bad slice
+== mode=pinned_ring LAUNCH_WINDOW=1 runs=40
+AMD Radeon RX 7900 XTX: 0 of 40 runs with a bad slice
+AMD Ryzen 9 7950X 16-Core Processor: 0 of 40 runs with a bad slice
+14:59:48
+== base-w0 runs=300 15:00:38
+      1 AMD Ryzen 9 7950X 16-Core Processor: 45 of 300 runs with a bad 
+      1     iteration 129: 
+     43     iteration 267: 
+      1     iteration 299: 
+== noretire-w0 runs=300 15:00:45
+      1 AMD Ryzen 9 7950X 16-Core Processor: 89 of 300 runs with a bad 
+      1     iteration 106: 
+      1     iteration 108: 
+      1     iteration 129: 
+      1     iteration 131: 
+      1     iteration 137: 
+      1     iteration 14: 
+      1     iteration 167: 
+      2     iteration 170: 
+      1     iteration 173: 
+      1     iteration 184: 
+      1     iteration 192: 
+      1     iteration 200: 
+      1     iteration 212: 
+      1     iteration 213: 
+      1     iteration 214: 
+      1     iteration 223: 
+      1     iteration 227: 
+      1     iteration 239: 
+      1     iteration 24: 
+      1     iteration 247: 
+      1     iteration 249: 
+     72     iteration 267: 
+      1     iteration 278: 
+      1     iteration 291: 
+     12     iteration 299: 
+      1     iteration 48: 
+      1     iteration 54: 
+      1     iteration 56: 
+      1     iteration 69: 
+      1     iteration 91: 
+      1     iteration 92: 
+== base-w0 runs=300 15:00:53
+      1 AMD Ryzen 9 7950X 16-Core Processor: 106 of 300 runs with a bad 
+      1     iteration 106: 
+      1     iteration 111: 
+      1     iteration 112: 
+      1     iteration 123: 
+      1     iteration 137: 
+      1     iteration 147: 
+      2     iteration 148: 
+      1     iteration 150: 
+      1     iteration 151: 
+      1     iteration 152: 
+      1     iteration 154: 
+      1     iteration 156: 
+      1     iteration 158: 
+      1     iteration 161: 
+      1     iteration 163: 
+      1     iteration 164: 
+      1     iteration 168: 
+      1     iteration 170: 
+      1     iteration 172: 
+      1     iteration 175: 
+      1     iteration 182: 
+      1     iteration 184: 
+      1     iteration 187: 
+      1     iteration 190: 
+      1     iteration 195: 
+      2     iteration 199: 
+      1     iteration 202: 
+      1     iteration 206: 
+      1     iteration 211: 
+      1     iteration 228: 
+      2     iteration 250: 
+      1     iteration 266: 
+     78     iteration 267: 
+      1     iteration 275: 
+      1     iteration 278: 
+      2     iteration 289: 
+      1     iteration 29: 
+     11     iteration 299: 
+      1     iteration 33: 
+      1     iteration 36: 
+      3     iteration 61: 
+      1     iteration 62: 
+      1     iteration 65: 
+      1     iteration 67: 
+      1     iteration 69: 
+      1     iteration 70: 
+      1     iteration 73: 
+      1     iteration 76: 
+      2     iteration 77: 
+      1     iteration 78: 
+      1     iteration 80: 
+      1     iteration 91: 
+      1     iteration 96: 
+== noretire-w0 runs=300 15:01:03
+      1 AMD Ryzen 9 7950X 16-Core Processor: 68 of 300 runs with a bad 
+      1     iteration 146: 
+      1     iteration 177: 
+      1     iteration 193: 
+      2     iteration 203: 
+      1     iteration 210: 
+      2     iteration 219: 
+      1     iteration 221: 
+      1     iteration 246: 
+      1     iteration 247: 
+      1     iteration 248: 
+      1     iteration 259: 
+     57     iteration 267: 
+      6     iteration 299: 
+      1     iteration 34: 
+      1     iteration 51: 
+      1     iteration 67: 
+      1     iteration 69: 
+      1     iteration 70: 
+      2     iteration 80: 
+15:01:39 base-w0 runs=200 :: AMD Ryzen 9 7950X 16-Core Processor: 81 of 200 runs with a bad slice :: top:      58     iteration 267;      7     iteration 299;      2     iteration 187;
+15:02:03 serialize-w0 runs=200 :: AMD Ryzen 9 7950X 16-Core Processor: 4 of 200 runs with a bad slice :: top:       1     iteration 40;      1     iteration 292;      1     iteration 209;
+15:02:16 gcfull-before-w0 runs=200 :: AMD Ryzen 9 7950X 16-Core Processor: 56 of 200 runs with a bad slice :: top:      23     iteration 299;      3     iteration 257;      2     iteration 98;
+15:02:26 minor4M-w0 runs=200 :: AMD Ryzen 9 7950X 16-Core Processor: 49 of 200 runs with a bad slice :: top:      22     iteration 299;      2     iteration 88;      2     iteration 244;
+15:02:36 base-w1 runs=200 :: AMD Ryzen 9 7950X 16-Core Processor: 38 of 200 runs with a bad slice :: top:      20     iteration 299;      1     iteration 85;      1     iteration 59;
+15:03:16 base-w0 runs=200 :: AMD Ryzen 9 7950X 16-Core Processor: 103 of 200 runs with a bad slice :: top:      55     iteration 267;     15     iteration 299;      4     iteration 66;
+15:03:34 sync-after-launch-w0 runs=200 :: AMD Ryzen 9 7950X 16-Core Processor: 4 of 200 runs with a bad slice :: top:       1     iteration 80;      1     iteration 53;      1     iteration 247;
+15:03:55 HIP_LAUNCH_BLOCKING-w0 runs=200 :: AMD Ryzen 9 7950X 16-Core Processor: 13 of 200 runs with a bad slice :: top:       1     iteration 87;      1     iteration 83;      1     iteration 52;
+15:04:26 base-w0 runs=200 :: AMD Ryzen 9 7950X 16-Core Processor: 59 of 200 runs with a bad slice :: top:      39     iteration 267;     10     iteration 299;      2     iteration 23;
+15:04:45 flush-after-fill-w0 runs=200 :: AMD Ryzen 9 7950X 16-Core Processor: 49 of 200 runs with a bad slice :: top:      31     iteration 267;      6     iteration 299;      2     iteration 93;
+15:04:58 flush-after-fill-w1 runs=200 :: AMD Ryzen 9 7950X 16-Core Processor: 44 of 200 runs with a bad slice :: top:      13     iteration 299;      2     iteration 82;      2     iteration 54;
+15:16:46 mode-pinned-w0 runs=150 :: AMD Ryzen 9 7950X 16-Core Processor: 23 of 150 runs with a bad slice :: top:       3     iteration 299;      2     iteration 173;      1     iteration 94;
+15:17:10 mode-pinned_event-w0 runs=150 :: AMD Ryzen 9 7950X 16-Core Processor: 46 of 150 runs with a bad slice :: top:      42     iteration 83;      2     iteration 299;      2     iteration 235;
+15:18:15 mode-pinned_wait-w0 runs=150 :: AMD Ryzen 9 7950X 16-Core Processor: 34 of 150 runs with a bad slice :: top:      14     iteration 188;      3     iteration 299;      1     iteration 86;
+15:18:42 mode-pinned_sub-w0 runs=150 :: AMD Ryzen 9 7950X 16-Core Processor: 55 of 150 runs with a bad slice :: top:      41     iteration 138;      5     iteration 299;      2     iteration 97;
+15:18:57 mode-pinned_ring-w0 runs=150 :: AMD Ryzen 9 7950X 16-Core Processor: 18 of 150 runs with a bad slice :: top:       4     iteration 299;      1     iteration 90;      1     iteration 64;
+15:19:04 mode-default-w0 runs=150 :: AMD Ryzen 9 7950X 16-Core Processor: 13 of 150 runs with a bad slice :: top:      12     iteration 267;      1     iteration 187;
+15:29:32 spoc-base-w0 runs=200 :: AMD Ryzen 9 7950X 16-Core Processor: 47 of 200 runs with a bad slice :: top:      34     iteration 267;      4     iteration 299;      1     iteration 97;
+15:30:16 spoc-gcpressure-w0 runs=200 :: AMD Ryzen 9 7950X 16-Core Processor: 199 of 200 runs with a bad slice :: top:      99     iteration 1;     81     iteration 2;     74     iteration 3;
+15:30:38 spoc-switch-w0 runs=200 :: AMD Ryzen 9 7950X 16-Core Processor: 111 of 200 runs with a bad slice :: top:       7     iteration 299;      4     iteration 63;      4     iteration 46;
+15:32:28 spoc-gc+switch-w1 runs=200 :: AMD Ryzen 9 7950X 16-Core Processor: 37 of 200 runs with a bad slice :: top:       3     iteration 299;      2     iteration 263;      2     iteration 169;
+15:32:49 spoc-serialize-w0 runs=200 :: AMD Ryzen 9 7950X 16-Core Processor: 10 of 200 runs with a bad slice :: top:       1     iteration 93;      1     iteration 76;      1     iteration 34;
+15:33:18 spoc-devkernarg-w0 runs=200 :: AMD Ryzen 9 7950X 16-Core Processor: 60 of 200 runs with a bad slice :: top:      21     iteration 267;     12     iteration 299;      2     iteration 222;
+15:34:17 spoc-base-w0 runs=200 :: AMD Ryzen 9 7950X 16-Core Processor: 38 of 200 runs with a bad slice :: top:      12     iteration 267;      3     iteration 299;      2     iteration 277;
+15:35:34 spoc-gcpressure-w0-rerun runs=200 :: AMD Ryzen 9 7950X 16-Core Processor: 198 of 200 runs with a bad slice :: top:     119     iteration 2;    112     iteration 3;    109     iteration 5;
+15:36:26 spoc-gcpressure-w0-rerun2 runs=200 :: AMD Ryzen 9 7950X 16-Core Processor: 188 of 200 runs with a bad slice :: top:      79     iteration 7;     77     iteration 6;     77     iteration 5;
+15:37:56 gcp-device runs=100 :: AMD Ryzen 9 7950X 16-Core Processor: 45 of 100 runs with a bad slice :: top:       8     iteration 90;      8     iteration 275;      8     iteration 219;
+15:38:19 gcp-host runs=100 :: AMD Ryzen 9 7950X 16-Core Processor: 80 of 100 runs with a bad slice :: top:      13     iteration 89;     12     iteration 239;     12     iteration 186;
+15:38:27 gcp-gc runs=100 :: AMD Ryzen 9 7950X 16-Core Processor: 100 of 100 runs with a bad slice :: top:      11     iteration 8;     11     iteration 38;     10     iteration 9;
+15:38:32 spoc-base runs=100 :: AMD Ryzen 9 7950X 16-Core Processor: 13 of 100 runs with a bad slice :: top:      10     iteration 267;      2     iteration 299;      1     iteration 106;
+15:40:23 gcp-sleep20ms runs=100 :: AMD Ryzen 9 7950X 16-Core Processor: 97 of 100 runs with a bad slice :: top:      30     iteration 107;     11     iteration 8;     10     iteration 36;
+15:40:44 gcp-gc-noretire runs=100 :: AMD Ryzen 9 7950X 16-Core Processor: 100 of 100 runs with a bad slice :: top:      11     iteration 147;     10     iteration 299;      8     iteration 8;
+15:40:55 gcp-gc runs=100 :: AMD Ryzen 9 7950X 16-Core Processor: 100 of 100 runs with a bad slice :: top:      11     iteration 260;     10     iteration 226;     10     iteration 107;

@@ -233,15 +233,17 @@
  (action
   (run %{dep:bench_hip_small_writes.exe})))
 
-; Staged writes interleaved with launches, many runs per HIP device
-; (specs/transfer-pitfalls.md C-9). Exits 1 on a lost launch or write. A
-; manual reproducer (declared in scripts/unwired-targets.tsv): it fails on the
-; 7950X iGPU, also without staging (SPOC_STRESS_MODE=pinned_ring).
+; Staged writes interleaved with launches (specs/transfer-pitfalls.md C-9,
+; issue #427). Exits 1 on any lost write, on every HIP device. Hand-run only:
+; `make stress-427` (one run of 300 launches per HIP device with 20 ms host
+; pauses, launch window off). Not in runtest or CI: heavy iGPU load hard-reset tartarus on
+; 2026-10-11, so it is never looped, scaled up or run concurrently there.
+; On the 7950X iGPU it fails with SAREK_HIP_IGPU_UNCACHED=0.
 
 (executable
  (name stress_hip_staged_launches)
  (modules stress_hip_staged_launches)
- (libraries sarek sarek.stdlib spoc_core sarek_hip sarek_ir)
+ (libraries sarek sarek.stdlib spoc_core sarek_hip sarek_ir unix)
  (preprocess
   (pps sarek_ppx))
  (flags

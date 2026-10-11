@@ -73,6 +73,22 @@ test_e2e_gpu:
 	dune exec sarek/tests/e2e/test_nbody_ppx.exe -- -d 0
 	dune exec sarek/tests/e2e/test_ray_ppx.exe -- -d 0
 
+# Regression check for issue #427 (kernel results lost across host idle gaps on
+# the Ryzen 7950X iGPU, HIP; fixed by uncached device allocation on integrated
+# GPUs). One run of 300 launches per HIP device, single process, with 20 ms host
+# pauses and the launch window off, the configuration of the before/after
+# evidence (50 of 50 runs bad before the fix, 0 of 50 after). Any bad
+# slice fails. Hand-run only, not in runtest or CI. Do not loop it, raise the run
+# count or run it alongside other GPU work on the iGPU: heavy iGPU load
+# hard-reset tartarus on 2026-10-11. SAREK_HIP_IGPU_UNCACHED=0 switches the fix
+# off to see the bug; one run at most, never in a loop.
+stress-427:
+	dune build sarek-hip/test/stress_hip_staged_launches.exe
+	SPOC_STRESS_RUNS=1 SPOC_STRESS_GC_PRESSURE=sleep SAREK_LAUNCH_WINDOW=0 \
+	  ./_build/default/sarek-hip/test/stress_hip_staged_launches.exe
+
+.PHONY: stress-427
+
 # Force rebuild/re-run of PPX tests even if previously built
 test-force:
 	dune clean || true

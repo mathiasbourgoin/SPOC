@@ -1,0 +1,10 @@
+AMD Ryzen 9 7950X 16-Core Processor gap=20000us mode=0: 1 of 2000 launches lost
+DEV_KERNARG=1 AMD Ryzen 9 7950X 16-Core Processor gap=20000us mode=0: 1 of 2000 launches lost
+HSA_ENABLE_INTERRUPT=0 AMD Ryzen 9 7950X 16-Core Processor gap=20000us mode=0: 3 of 2000 launches lost
+SERIALIZE_KERNEL=3 AMD Ryzen 9 7950X 16-Core Processor gap=20000us mode=0: 2 of 2000 launches lost
+SDMA=0 AMD Ryzen 9 7950X 16-Core Processor gap=20000us mode=0: 1 of 2000 launches lost
+AMD Ryzen 9 7950X 16-Core Processor gap=20000us mode=0: 0 of 2000 launches lost
+DEV_KERNARG=1 AMD Ryzen 9 7950X 16-Core Processor gap=20000us mode=0: 0 of 2000 launches lost
+HSA_ENABLE_INTERRUPT=0 AMD Ryzen 9 7950X 16-Core Processor gap=20000us mode=0: 0 of 2000 launches lost
+SERIALIZE_KERNEL=3 AMD Ryzen 9 7950X 16-Core Processor gap=20000us mode=0: 1 of 2000 launches lost
+SDMA=0 AMD Ryzen 9 7950X 16-Core Processor gap=20000us mode=0: 1 of 2000 launches lost

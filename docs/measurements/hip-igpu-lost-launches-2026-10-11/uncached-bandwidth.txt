@@ -1,0 +1,22 @@
+dim. 11 oct. 2026 16:27:00 CEST
+tartarus 7950X iGPU, ROCm 7.2, load avg: 81.67 81.16 80.85
+AMD Ryzen 9 7950X 16-Core Processor hipMalloc copy(r+w) 512 MiB: 41.021 ms, 26.2 GB/s
+AMD Ryzen 9 7950X 16-Core Processor hipMalloc copy(r+w) 512 MiB: 48.431 ms, 22.2 GB/s
+AMD Ryzen 9 7950X 16-Core Processor hipMalloc copy(r+w) 512 MiB: 42.214 ms, 25.4 GB/s
+AMD Ryzen 9 7950X 16-Core Processor hipMalloc copy(r+w) 512 MiB: 44.927 ms, 23.9 GB/s
+AMD Ryzen 9 7950X 16-Core Processor hipMalloc copy(r+w) 512 MiB: 42.566 ms, 25.2 GB/s
+AMD Ryzen 9 7950X 16-Core Processor hipMalloc read-only 512 MiB: 20.376 ms, 26.3 GB/s
+AMD Ryzen 9 7950X 16-Core Processor hipMalloc read-only 512 MiB: 22.767 ms, 23.6 GB/s
+AMD Ryzen 9 7950X 16-Core Processor hipMalloc read-only 512 MiB: 21.942 ms, 24.5 GB/s
+AMD Ryzen 9 7950X 16-Core Processor hipMalloc read-only 512 MiB: 21.553 ms, 24.9 GB/s
+AMD Ryzen 9 7950X 16-Core Processor hipMalloc read-only 512 MiB: 22.988 ms, 23.4 GB/s
+AMD Ryzen 9 7950X 16-Core Processor uncached copy(r+w) 512 MiB: 48.421 ms, 22.2 GB/s
+AMD Ryzen 9 7950X 16-Core Processor uncached copy(r+w) 512 MiB: 46.892 ms, 22.9 GB/s
+AMD Ryzen 9 7950X 16-Core Processor uncached copy(r+w) 512 MiB: 53.906 ms, 19.9 GB/s
+AMD Ryzen 9 7950X 16-Core Processor uncached copy(r+w) 512 MiB: 45.203 ms, 23.8 GB/s
+AMD Ryzen 9 7950X 16-Core Processor uncached copy(r+w) 512 MiB: 45.465 ms, 23.6 GB/s
+AMD Ryzen 9 7950X 16-Core Processor uncached read-only 512 MiB: 23.105 ms, 23.2 GB/s
+AMD Ryzen 9 7950X 16-Core Processor uncached read-only 512 MiB: 19.602 ms, 27.4 GB/s
+AMD Ryzen 9 7950X 16-Core Processor uncached read-only 512 MiB: 19.799 ms, 27.1 GB/s
+AMD Ryzen 9 7950X 16-Core Processor uncached read-only 512 MiB: 20.555 ms, 26.1 GB/s
+AMD Ryzen 9 7950X 16-Core Processor uncached read-only 512 MiB: 20.878 ms, 25.7 GB/s
