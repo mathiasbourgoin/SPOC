@@ -59,13 +59,13 @@ let test_fused_block_bytes () =
     (P.fused_block_bytes (List.init 6 (fun _ -> member)))
 
 let test_fused_lengths_come_first () =
-  (* Two members of (vec, int64): the lengths (8 bytes) precede both int64
-     fields, so the block is 8 + 8 + 8 + 8 (positions) = 32; the members' own
-     blocks (16 each) plus positions (16) would give 48. *)
+  (* Two members of (vec, int64): the two lengths (8 bytes) precede both int64
+     fields (8 + 8), then the two (offset, size) pairs (16): 40 bytes. Adding
+     the members' own blocks (16 each) and the pairs would give 48. *)
   let member = [vec "x"; param "wide" TInt64] in
   Alcotest.(check int)
     "fused block is not the sum of the members' blocks"
-    32
+    40
     (P.fused_block_bytes [member; member])
 
 let test_locals_do_not_count () =
