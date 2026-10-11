@@ -200,6 +200,8 @@ let hit_rate () : float =
 **Key Functions**:
 - `get_cache_dir : unit -> string` - Get cache directory path
 - `compute_key : dev_name:string -> driver_version:string -> source:string -> string` - Compute cache key (MD5)
+- `compute_key_with_options : options:(string * string) list -> dev_name:string -> driver_version:string -> name:string -> source:string -> string` - Same key with build options folded in (OpenCL)
+- `enabled : unit -> bool` - `false` when `SAREK_DISK_CACHE=0`; `get` then returns `None` and `put` writes nothing
 - `get : key:string -> string option` - Retrieve cached kernel
 - `put : key:string -> data:string -> unit` - Store compiled kernel
 - `get_stats : unit -> stats` - Get cache statistics

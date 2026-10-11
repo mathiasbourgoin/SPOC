@@ -14,7 +14,7 @@ Test and benchmark programs read further variables of their own (for example `SA
 | Convention | Variables |
 |---|---|
 | Only the exact string `1` has an effect | `SPOC_DISABLE_*`, `SAREK_MATRIX_REPORT` |
-| Only the exact string `0` switches off | `SAREK_AUTO_UNROLL`, `SAREK_HIP_IGPU_UNCACHED` |
+| Only the exact string `0` switches off | `SAREK_AUTO_UNROLL`, `SAREK_HIP_IGPU_UNCACHED`, `SAREK_DISK_CACHE` |
 | Exactly `0`, `false`, `off` or `no` (lowercase) switches off; anything else leaves it on | `SAREK_LAUNCH_WINDOW`, `SAREK_LAUNCH_EPILOGUE` |
 | `1`, `true` or `yes` (lowercase) switches on | `SAREK_PPX_DEBUG` |
 | A mode name, case-insensitive; an unknown value warns once | `SAREK_MATRIX_REWRITE` |
@@ -77,6 +77,17 @@ See [Kernel language notes](kernel_language.html).
 | `SAREK_DOMAIN_COUNT` | a positive integer | `Domain.recommended_domain_count ()` (4 if that fails) | each time a CPU pool is created, and at each barrier-free Native launch (work split) | Number of OCaml domains used by the Native runtime and the Interpreter, before the `SAREK_CPU_POOL_MAX_DOMAINS` cap. The Native parallel pool uses the value as its worker count; without it, it uses one fewer than the domain count (at least 1). A value that is not a positive integer is ignored. Meant for tests that need more domains than cores. |
 | `SAREK_CPU_POOL_MAX_DOMAINS` | a positive integer | unset (no cap) | each time a CPU pool is created, and at each barrier-free Native launch (work split) | Upper bound on the workers of each CPU pool (the Interpreter and Native block pool, the Native thread and parallel pools), so a program can keep cores for itself. `Cpu_pool_lifecycle.set_max_domains` takes precedence. A value that is not a positive integer is ignored. |
 | `SAREK_CPU_POOL_IDLE_MS` | a positive integer (milliseconds) | `1000` | at each poll of the pool reaper, while a pool is live | A CPU pool (or a fission-queue launch dispatcher) that no launch has used for this long is retired: its worker domains exit, and the next launch creates it again. Idle domains still take part in every minor collection, so retiring them keeps host allocation fast. `Cpu_pool_lifecycle.set_idle_timeout` takes precedence. A value that is not a positive integer is ignored. |
+
+## Compile cache
+
+Vulkan (SPIR-V) and OpenCL (program binaries) keep compiled kernels on disk so that a new process does not compile them again. The files are in the `spoc` directory under `$XDG_CACHE_HOME`, or under `$HOME/.cache` when that is unset; the parent directory must already exist.
+
+| Variable | Accepted values | Default | Read at | Effect |
+|---|---|---|---|---|
+| `SAREK_DISK_CACHE` | `0` turns it off | unset (on) | each cache lookup and store | With `0`, no disk cache is read or written: Vulkan compiles GLSL again and OpenCL builds from source in every process. Nothing else changes. The in-process kernel caches are not affected. |
+| `XDG_CACHE_HOME` | a directory | `$HOME/.cache` | each cache lookup and store | Where the `spoc` cache directory lives. Not a Sarek variable; set it to move or isolate the cache (the tests point it at a temporary directory). |
+
+An OpenCL entry is keyed by the platform name and version, the device name and version, the driver version, the exact build-option string and the source, so a driver update or a different option set compiles again and writes a new entry. A cached binary that the driver refuses, or that fails to build, is ignored: the kernel is compiled from source and the entry is overwritten. No error reaches the program. A driver that returns no binary for a program (size 0) is never cached. An entry is a checksum followed by the binary; a truncated or damaged file fails the checksum and is treated the same way. Entries are never evicted; delete the `spoc` directory to clear them. Set `SAREK_DEBUG=device` to see each lookup (`[Cache]` lines).
 
 ## Diagnostics
 

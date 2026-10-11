@@ -1,0 +1,8 @@
+; H5c - cold-process kernel build latency with / without the OpenCL disk
+; cache. An `executable`, not a `test`: it is a device-dependent timing and
+; runs by hand under run_ab.sh (declared in scripts/unwired-targets.tsv).
+
+(executable
+ (name bench_opencl_disk_cache)
+ (modules bench_opencl_disk_cache)
+ (libraries sarek_opencl unix))

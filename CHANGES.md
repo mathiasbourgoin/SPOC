@@ -192,6 +192,26 @@
 
 ### Added
 
+- OpenCL keeps compiled programs on disk (package H, H5c). `Program.build`
+  stores the driver's program binary (`clGetProgramInfo`) through
+  `Framework_cache`, the store Vulkan already used for SPIR-V, and a later
+  process rebuilds from it with `clCreateProgramWithBinary`. The key holds the
+  platform name and version, device name and version, driver version, the exact
+  build-option string and the source. A binary that is damaged, refused by the
+  driver or fails to build is replaced by a source build and the entry is
+  rewritten; a driver that returns no binary is not cached. Measured on
+  tartarus (provisional, load > 4): build of three decode-shaped kernels in a
+  new process, Intel OpenCL CPU 91 / 33 / 42 ms -> 1.6 / 1.1 / 1.2 ms; rusticl
+  (RX 7900 XTX) 7.7 / 3.8 / 5.3 ms -> 2.2 / 1.9 / 4.2 ms with Mesa's shader
+  cache off, 1.8 / 0.8 / 0.9 -> 0.7 / 0.5 / 0.6 ms with it on. Output bits are
+  identical to a source build. `SAREK_DISK_CACHE=0` switches the disk cache off
+  for OpenCL and Vulkan (new in `Framework_cache`, with
+  `compute_key_with_options`); `Framework_cache.put` now writes a temporary
+  file and renames it, so another process never reads a half-written entry.
+  Tests: `sarek-opencl/test/test_opencl_disk_cache.ml`,
+  `sarek/framework/test/test_framework_cache.ml`; bench:
+  `sarek-opencl/bench/run_ab.sh`. Docs: `gh-pages/docs/environment.md`.
+
 - `Spoc_core.Advanced.Pinned` is real (global review D-69). It was a placeholder
   whose `create` returned an ordinary pageable vector and whose `is_available`
   was hard-coded `false`. It is now an explicit, opt-in owner handle over
