@@ -2223,6 +2223,26 @@
  (action
   (run %{dep:test_opencl_host_ptr_buffer.exe})))
 
+; VmRSS with a host-pointer buffer vs the copy path on a CPU OpenCL device.
+; Manual: allocates GiBs (bench_opencl_host_ptr_rss.exe (host_ptr|copy) GIB).
+
+(executable
+ (name bench_opencl_host_ptr_rss)
+ (modules bench_opencl_host_ptr_rss)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek_ir
+  spoc_core
+  sarek.execute
+  test_helpers
+  sarek_native
+  sarek_interpreter
+  sarek_opencl
+  unix)
+ (preprocess
+  (pps sarek_ppx)))
+
 ; Opt-ins of the automatic float rewrite (specs/matrix-pattern-dynamic.md): one
 ; process per combination, the opt-ins being one-way. SKIP without gfx11 HIP.
 

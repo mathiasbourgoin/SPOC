@@ -68,7 +68,8 @@ Your plugin must implement several core modules:
 - **Device**: Logic to enumerate hardware and query `capabilities` (max threads, shared memory size, FP64 support).
 - **Memory**: Functions to allocate device buffers and transfer data. You should support:
     - `host_to_device` / `device_to_host`
-    - `alloc_zero_copy`: (Optional) for devices that share memory with the CPU.
+    - `alloc_zero_copy`: only for backends whose device memory *is* host memory (Native, Interpreter); it is used for every vector by default, so any backend with memory of its own returns `None`.
+    - `alloc_host_ptr`: the explicit opt-in to create a buffer over host memory (OpenCL `CL_MEM_USE_HOST_PTR` on CPU devices, reached through `Spoc_core.Host_ptr_buffer`); return `Error Host_ptr_unsupported` when the backend has none.
 - **Kernel**: Handles the lifecycle of a kernel:
     - `compile`: Takes a source string and produces a runnable handle.
     - `launch`: Marshals `exec_arg` values into the hardware's expected format.

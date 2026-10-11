@@ -57,6 +57,8 @@ let test_buffer_module_type () =
 
     let device_ptr = 0n
 
+    let host_link = Spoc_core.Memory.Separate
+
     let host_ptr_to_device _ptr ~byte_size:_ = ()
 
     let device_to_host_ptr _ptr ~byte_size:_ = ()

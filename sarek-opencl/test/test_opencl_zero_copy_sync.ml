@@ -4,16 +4,17 @@
 (******************************************************************************)
 
 (******************************************************************************
- * R-27 regression: host access to a CL_MEM_USE_HOST_PTR (zero-copy) buffer
+ * R-27 regression: host access to a CL_MEM_USE_HOST_PTR (host-pointer) buffer
  * must synchronise with the device.
  *
- * A kernel writes a zero-copy buffer and the host must see the result; the
+ * A kernel writes a host-pointer buffer and the host must see the result; the
  * host writes the array and the next kernel must see it; a pointer that misses
- * CL_DEVICE_MEM_BASE_ADDR_ALIGN must not become USE_HOST_PTR. Zero-copy is
- * normally chosen for CPU devices only, so the test forces it on every OpenCL
- * device with [Opencl_plugin_base.For_testing.zero_copy_on_any_device]; a GPU
- * runtime may keep a private copy behind such a buffer, which makes a missing
- * map/unmap a deterministic failure instead of a data race.
+ * CL_DEVICE_MEM_BASE_ADDR_ALIGN is refused. [alloc_host_ptr] accepts CPU
+ * devices only, so the test forces it on every OpenCL device with
+ * [Opencl_plugin_base.For_testing.host_ptr_on_any_device]; a GPU runtime may
+ * keep a private copy behind such a buffer, which makes a missing map/unmap a
+ * deterministic failure instead of a data race. The default path
+ * ([alloc_zero_copy]) never shares host memory on OpenCL, hook or not.
  *
  * Backend level (device_to_host_ptr / host_ptr_to_device, the calls Transfer
  * makes); the Vector path is covered by test_opencl_zero_copy_vector in
@@ -72,16 +73,16 @@ let host_array ?(skew_elems = 0) ~align fill =
   Bigarray.Array1.fill ba fill ;
   ba
 
-let zero_copy_buffer device ba =
-  match Backend.Memory.alloc_zero_copy device ba Bigarray.float32 with
-  | Some buf -> buf
-  | None -> Alcotest.fail "alloc_zero_copy refused despite the test hook"
+let host_ptr_buffer device ba =
+  match Backend.Memory.alloc_host_ptr device ba Bigarray.float32 with
+  | Ok buf -> buf
+  | Error _ -> Alcotest.fail "alloc_host_ptr refused despite the test hook"
 
-(* A kernel writes a zero-copy buffer; the host reads the array through the
+(* A kernel writes a host-pointer buffer; the host reads the array through the
    device->host path with no explicit synchronize in between. *)
 let check_host_read ~align device =
   let ba = host_array ~align (-1.0) in
-  let buf = zero_copy_buffer device ba in
+  let buf = host_ptr_buffer device ba in
   let args = Backend.Kernel.create_args () in
   Backend.Kernel.set_arg_buffer args 0 buf ;
   launch device ~name:"write_iota" ~source:write_iota_source args ;
@@ -98,10 +99,10 @@ let check_host_read ~align device =
   Backend.Memory.free buf
 
 (* The host writes the array, publishes it with host_ptr_to_device, a kernel
-   reads it through the zero-copy buffer. *)
+   reads it through the host-pointer buffer. *)
 let check_host_write ~align device =
   let ba = host_array ~align 0.0 in
-  let buf = zero_copy_buffer device ba in
+  let buf = host_ptr_buffer device ba in
   for i = 0 to n - 1 do
     ba.{i} <- float_of_int (i + 1)
   done ;
@@ -129,11 +130,24 @@ let check_host_write ~align device =
    runtime would silently keep a private copy. *)
 let check_unaligned_refused ~align device =
   let ba = host_array ~skew_elems:1 ~align 0.0 in
+  match Backend.Memory.alloc_host_ptr device ba Bigarray.float32 with
+  | Error
+      (Spoc_framework.Framework_sig.Host_ptr_misaligned {required_alignment; _})
+    ->
+      Alcotest.(check int) "reported alignment" align required_alignment
+  | Error _ -> Alcotest.fail "unaligned host pointer: wrong refusal"
+  | Ok buf ->
+      Backend.Memory.free buf ;
+      Alcotest.fail "alloc_host_ptr accepted an unaligned host pointer"
+
+(* The default allocation path never shares host memory on OpenCL. *)
+let check_default_not_shared ~align device =
+  let ba = host_array ~align 0.0 in
   match Backend.Memory.alloc_zero_copy device ba Bigarray.float32 with
   | None -> ()
   | Some buf ->
       Backend.Memory.free buf ;
-      Alcotest.fail "alloc_zero_copy accepted an unaligned host pointer"
+      Alcotest.fail "alloc_zero_copy shared an aligned host array"
 
 let on_every_device check () =
   if not (Backend.is_available ()) then begin
@@ -142,10 +156,10 @@ let on_every_device check () =
   end
   else begin
     Backend.Device.init () ;
-    Opencl_plugin_base.For_testing.zero_copy_on_any_device := true ;
+    Opencl_plugin_base.For_testing.host_ptr_on_any_device := true ;
     Fun.protect
       ~finally:(fun () ->
-        Opencl_plugin_base.For_testing.zero_copy_on_any_device := false)
+        Opencl_plugin_base.For_testing.host_ptr_on_any_device := false)
       (fun () ->
         for id = 0 to Backend.Device.count () - 1 do
           check
@@ -173,5 +187,9 @@ let () =
             "an unaligned host pointer is not aliased"
             `Quick
             (on_every_device check_unaligned_refused);
+          Alcotest.test_case
+            "the default path does not share host memory"
+            `Quick
+            (on_every_device check_default_not_shared);
         ] );
     ]

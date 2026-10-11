@@ -78,8 +78,24 @@ type capabilities = {
   max_registers_per_block : int;
   clock_rate_khz : int;
   multiprocessor_count : int;
-  is_cpu : bool;  (** True for CPU devices - enables zero-copy optimization *)
+  is_cpu : bool;  (** True for CPU devices (OpenCL CPU runtimes, Native) *)
 }
+
+(** Why a backend refused [Memory.alloc_host_ptr]. *)
+type host_ptr_refusal =
+  | Host_ptr_unsupported
+      (** The backend never creates device buffers over host memory. *)
+  | Host_ptr_not_cpu_device
+      (** The backend can, but only on CPU devices: on a GPU the driver would
+          copy or migrate the pages behind the caller's back. *)
+  | Host_ptr_empty  (** Zero-length host array. *)
+  | Host_ptr_misaligned of {address : nativeint; required_alignment : int}
+      (** The array's address is not a multiple of the device's base-address
+          alignment (CL_DEVICE_MEM_BASE_ADDR_ALIGN, in bytes): the runtime would
+          keep a private copy instead of using the host memory. *)
+  | Host_ptr_too_large of {byte_size : int; max_byte_size : int}
+      (** Larger than one device allocation may be
+          (CL_DEVICE_MAX_MEM_ALLOC_SIZE). *)
 
 (** Device representation - SDK layer type shared across all backends *)
 type device = {
@@ -446,14 +462,28 @@ module type BACKEND = sig
     (** Allocate buffer for custom types with explicit element size in bytes *)
     val alloc_custom : Device.t -> size:int -> elem_size:int -> 'a buffer
 
-    (** Allocate zero-copy buffer using host bigarray memory directly. For CPU
-        OpenCL devices, this avoids memory copies entirely. Returns None if
-        zero-copy not supported by this backend. *)
+    (** A buffer that IS the host array, for backends whose device memory is
+        host memory (Native, Interpreter: [is_zero_copy] is [true], no transfer
+        and no synchronisation). Used for every vector by default, so it must
+        preserve copy semantics: backends with device memory of their own,
+        OpenCL CPU devices included, return [None]. *)
     val alloc_zero_copy :
       Device.t ->
       ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t ->
       ('a, 'b) Bigarray.kind ->
       'a buffer option
+
+    (** Explicit opt-in: a device buffer created over the host array's memory
+        (OpenCL [CL_MEM_USE_HOST_PTR]). Never used implicitly. The caller keeps
+        the array alive and in place for the buffer's lifetime. Host access goes
+        through [host_to_device]/[device_to_host] (or the [_ptr] variants) on
+        the same array, which synchronise (map/unmap) instead of copying. Native
+        and Interpreter return their [alloc_zero_copy] buffer. *)
+    val alloc_host_ptr :
+      Device.t ->
+      ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t ->
+      ('a, 'b) Bigarray.kind ->
+      ('a buffer, host_ptr_refusal) result
 
     val free : 'a buffer -> unit
 
@@ -726,6 +756,12 @@ module type PLUGIN_BASE = sig
       ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t ->
       ('a, 'b) Bigarray.kind ->
       'a buffer option
+
+    val alloc_host_ptr :
+      Device.t ->
+      ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t ->
+      ('a, 'b) Bigarray.kind ->
+      ('a buffer, host_ptr_refusal) result
 
     val is_zero_copy : 'a buffer -> bool
 

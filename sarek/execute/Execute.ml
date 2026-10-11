@@ -1572,7 +1572,8 @@ let run ?(stream : Transfer.stream option) ~(device : Device.t) ~(name : string)
     Special cases:
     - Native backend: No-op (uses zero-copy shared memory, no staleness)
     - JIT backends: Always mark stale (Transfer module handles zero-copy checks)
-    - OpenCL CPU: Mark stale for custom types (scalar types use zero-copy)
+    - OpenCL CPU: Mark stale, like the other JIT backends (a host-pointer buffer
+      from [Host_ptr_buffer] is read back through map/unmap)
 
     @param args Arguments that may contain vectors
     @param dev Device that just executed the kernel *)
@@ -1583,8 +1584,9 @@ let mark_vectors_stale (args : vector_arg list) (dev : Device.t) : unit =
      marking it Stale_CPU would make the next host read clobber kernel
      results with the stale device-buffer copy (observed with custom record
      vectors, which have no zero-copy path).
-     OpenCL CPU uses zero-copy for scalar types but NOT for custom types.
-     Always mark stale for JIT backends - Transfer will check zero_copy. *)
+     Always mark stale for JIT backends, OpenCL CPU devices included: their
+     buffers are copies unless created by [Host_ptr_buffer], whose read-back
+     is a map. *)
   if dev.Device.framework = "Native" || dev.Device.framework = "Interpreter"
   then ()
   else

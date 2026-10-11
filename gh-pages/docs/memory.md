@@ -151,6 +151,29 @@ Use `Transfer.alloc_pinned dev kind n` for page-locked memory as a Bigarray, so 
 - A copy whose host range spans two registrations fails with `hipErrorInvalidValue`. If you register a large buffer in regions, slice every copy inside one region.
 - ROCm does not count registered pages as pinned (`VmPin: 0 kB`). Whether that explains slow copies under memory pressure is not established. Memory from `alloc_pinned` is allocated by the driver instead.
 
+## Sharing host memory with a CPU OpenCL device
+
+By default a vector on a CPU OpenCL device (the Intel CPU runtime, for example) gets a buffer of its own, as on any other device: uploads and read-backs copy. To let kernels read and write the vector's host memory in place, create the buffer explicitly with `Spoc_core.Host_ptr_buffer` (OpenCL `CL_MEM_USE_HOST_PTR`):
+
+```ocaml
+module Host_ptr_buffer = Spoc_core.Host_ptr_buffer
+
+(* [pool] is page-aligned host memory you own, possibly several GiB. *)
+let region dev (pool : (float, Bigarray.float32_elt, Bigarray.c_layout) Bigarray.Array1.t) ~off ~len =
+  match Host_ptr_buffer.of_bigarray dev Vector.Float32 (Bigarray.Array1.sub pool off len) with
+  | Ok v -> v
+  | Error e -> failwith (Host_ptr_buffer.error_message e)
+```
+
+`Host_ptr_buffer.attach vec dev` does the same for an existing vector that has no buffer on `dev` yet. `Host_ptr_buffer.host_link vec dev` says what a vector's buffer is: `Separate`, `Host_storage` (Native, Interpreter) or `Host_ptr`.
+
+- Devices: CPU-type OpenCL devices only. A GPU OpenCL device is refused with `Host_ptr_not_cpu_device`; CUDA, HIP, Vulkan, Metal and WebGPU with `Host_ptr_unsupported`. Native and Interpreter accept, since their device memory is the host array already.
+- Alignment and size: the first byte must be a multiple of the device's `CL_DEVICE_MEM_BASE_ADDR_ALIGN` (128 bytes on the Intel CPU runtime; a 4096-aligned slice always qualifies), else `Host_ptr_misaligned`, because the runtime would keep a private copy. One buffer holds at most `CL_DEVICE_MAX_MEM_ALLOC_SIZE` bytes (`Host_ptr_too_large`); expose a larger region as several vectors over `Bigarray.Array1.sub` slices. Kernels index with int32, so keep each slice below 2^31 elements.
+- Lifetime: the vector roots the Bigarray (a `sub` roots its parent). The memory must stay mapped and in place while the vector exists. The buffer is released by `Transfer.free_buffer`, `Transfer.free_all_buffers` or the vector's finaliser.
+- Synchronisation: the array's contents at `attach` are what the first launch sees. After a launch, `Host_ptr_buffer.acquire_device_writes vec dev` (or any Vector read) maps the buffer for reading, which waits for the queued kernels, and the Bigarray then holds their writes. After writing the Bigarray directly, call `Host_ptr_buffer.publish_host_writes vec dev` before the next launch (map and unmap; it declares the host copy authoritative). `Vector.set` and `Transfer.to_device` go through the same path. The Intel runtime happens to alias the memory without a map; SPOC does not rely on that.
+
+Measured with `sarek/tests/e2e/bench_opencl_host_ptr_rss.exe` (Ryzen 9 7950X, Intel CPU OpenCL runtime 2026.21.3.0.31, 2026-10-11, shared machine, load average about 4.5; one run each; raw output in `docs/measurements/opencl-host-ptr-2026-10-11/`): a kernel reading every element of a 3 GiB array grew VmRSS by 116.6 MiB through a host-pointer buffer and by 3188.7 MiB through the default copy path; with 4 GiB, the host-pointer growth was 116.7 MiB.
+
 ## Small host writes to device vectors
 
 `Vector.set` on a vector a kernel has used downloads the whole vector (after every queued kernel), and the next launch uploads it again with a synchronous copy that waits for the queue. Writing a few elements per iteration this way more than doubled the iteration time in the measurement below.

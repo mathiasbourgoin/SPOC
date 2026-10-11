@@ -111,11 +111,15 @@ module Device = struct
         (* 64-bit integer support. Core in the FULL profile; optional in
            EMBEDDED_PROFILE, where it is gated on [cles_khr_int64]. Probed
            rather than assumed — see the derivation at the call site. *)
-    is_cpu : bool; (* True for CPU OpenCL devices - enables zero-copy *)
+    is_cpu : bool;
+        (* CL_DEVICE_TYPE_CPU. Host-pointer buffers ([Memory.alloc_with_host_ptr])
+           are accepted on these devices only. *)
     mem_base_addr_align : int;
         (* CL_DEVICE_MEM_BASE_ADDR_ALIGN converted to bytes: the alignment a
            host pointer must have for CL_MEM_USE_HOST_PTR to be aliased rather
            than privately copied. *)
+    max_mem_alloc_size : int64;
+        (* CL_DEVICE_MAX_MEM_ALLOC_SIZE: the largest single buffer, in bytes. *)
     single_fp_config : int64;
         (* CL_DEVICE_SINGLE_FP_CONFIG, verbatim. Read once at device
            construction because [Program.build] needs it on every compile to
@@ -295,6 +299,9 @@ module Device = struct
     let mem_base_addr_align =
       max 1 (get_info_int handle CL_DEVICE_MEM_BASE_ADDR_ALIGN / 8)
     in
+    let max_mem_alloc_size =
+      get_info_long handle CL_DEVICE_MAX_MEM_ALLOC_SIZE
+    in
 
     {
       id = idx;
@@ -313,6 +320,7 @@ module Device = struct
       supports_int64;
       is_cpu;
       mem_base_addr_align;
+      max_mem_alloc_size;
       single_fp_config;
     }
 

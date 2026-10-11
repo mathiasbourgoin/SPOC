@@ -74,6 +74,9 @@ module Hip : Framework_sig.PLUGIN_BASE = struct
 
     let alloc_zero_copy _device _ba _kind = None
 
+    let alloc_host_ptr _device _ba _kind =
+      Error Framework_sig.Host_ptr_unsupported
+
     let is_zero_copy _buf = false
 
     let free = Hip_api.Memory.free

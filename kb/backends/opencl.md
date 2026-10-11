@@ -27,7 +27,7 @@
 
 - OpenCL platform/device enumeration and selection.
 - Context and command queue creation with 2.0 `clCreateCommandQueueWithProperties` and 1.x fallback at `sarek-opencl/Opencl_bindings.ml:139-171`.
-- Buffer allocation with optional `CL_MEM_USE_HOST_PTR`, host/device copies, program build with logs, kernel cache, scalar/buffer argument setting, and 3D kernel launch.
+- Buffer allocation with `CL_MEM_USE_HOST_PTR` only through the explicit `Host_ptr_buffer` opt-in on CPU devices (default buffers copy), host/device copies, program build with logs, kernel cache, scalar/buffer argument setting, and 3D kernel launch.
 - External source language support is OpenCL only at `sarek-opencl/Opencl_plugin.ml:209`.
 - Code generation supports scalar/vector parameters, vector length params, arrays, records, variants, shared locals, barriers, atomics, math intrinsics, and FP64 detection.
 

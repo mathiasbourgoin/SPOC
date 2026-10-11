@@ -17,11 +17,12 @@ open Spoc_framework
 (** TEST-ONLY hooks. Nothing in the library sets these; production behaviour
     never depends on them. *)
 module For_testing = struct
-  (** When [true], [alloc_zero_copy] also accepts non-CPU devices, so the
+  (** When [true], [alloc_host_ptr] also accepts non-CPU devices, so the
       CL_MEM_USE_HOST_PTR synchronisation paths can be exercised on a GPU.
-      Test-only: it breaks the production assumption "zero-copy implies a CPU
-      device implies no launch deferral" (Execute.ml, [defers_device]). *)
-  let zero_copy_on_any_device = ref false
+      Test-only: it breaks the production assumption "a host-pointer buffer
+      implies a CPU device implies no launch deferral" (Execute.ml,
+      [defers_device]). *)
+  let host_ptr_on_any_device = ref false
 end
 
 module Opencl : Framework_sig.PLUGIN_BASE = struct
@@ -130,42 +131,49 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
       let buf = Opencl_api.Memory.alloc state.context size kind in
       {buf; device_id = device.id}
 
-    let alloc_zero_copy device ba kind =
+    (* OpenCL devices have memory of their own, CPU devices included: a
+       default buffer is a copy. Sharing the host array is [alloc_host_ptr]. *)
+    let alloc_zero_copy _device _ba _kind = None
+
+    (* The refusals, cheapest first; none of them touches the OpenCL context. *)
+    let host_ptr_refusal device ~address ~byte_size =
+      let open Framework_sig in
+      let align = device.Opencl_api.Device.mem_base_addr_align in
+      let max_bytes = device.Opencl_api.Device.max_mem_alloc_size in
       if
         not
           (device.Opencl_api.Device.is_cpu
-          || !For_testing.zero_copy_on_any_device)
-      then None
-      else begin
-        let state = get_state device.Opencl_api.Device.id in
-        let size = Bigarray.Array1.dim ba in
-        (* Not Ctypes.bigarray_start: no Float16 arm. CL_MEM_USE_HOST_PTR
-           keeps this address for the buffer's whole lifetime, so the OWNING
-           Vector.t (which holds [ba]) is what roots it; [with_bigarray_ptr]
-           roots [ba] only while the buffer is created.
+          || !For_testing.host_ptr_on_any_device)
+      then Some Host_ptr_not_cpu_device
+      else if byte_size = 0 then Some Host_ptr_empty
+      else if not (Opencl_api.Memory.host_ptr_usable ~align_bytes:align address)
+      then Some (Host_ptr_misaligned {address; required_alignment = align})
+      else if Int64.compare (Int64.of_int byte_size) max_bytes > 0 then
+        Some
+          (Host_ptr_too_large
+             {byte_size; max_byte_size = Int64.to_int max_bytes})
+      else None
 
-           The runtime aliases the host pointer only when it meets
-           CL_DEVICE_MEM_BASE_ADDR_ALIGN; otherwise it keeps a private copy.
-           Host access is synchronised by map/unmap either way, but an
-           unaligned array gains nothing from USE_HOST_PTR, so it takes the
-           ordinary buffer path. *)
-        Spoc_core.Memory.with_bigarray_ptr ba (fun host_ptr ->
-            if
-              not
-                (Opencl_api.Memory.host_ptr_usable
-                   ~align_bytes:device.Opencl_api.Device.mem_base_addr_align
-                   (Ctypes.raw_address_of_ptr host_ptr))
-            then None
-            else
+    let alloc_host_ptr device ba kind =
+      (* Not Ctypes.bigarray_start: no Float16 arm. CL_MEM_USE_HOST_PTR keeps
+         this address for the buffer's whole lifetime; [with_bigarray_ptr]
+         roots [ba] only while the buffer is created, so the caller roots it
+         afterwards (Host_ptr_buffer: the owning Vector.t). *)
+      Spoc_core.Memory.with_bigarray_ptr ba (fun host_ptr ->
+          let address = Ctypes.raw_address_of_ptr host_ptr in
+          let byte_size = Bigarray.Array1.size_in_bytes ba in
+          match host_ptr_refusal device ~address ~byte_size with
+          | Some refusal -> Error refusal
+          | None ->
+              let state = get_state device.Opencl_api.Device.id in
               let buf =
                 Opencl_api.Memory.alloc_with_host_ptr
                   state.context
-                  size
+                  (Bigarray.Array1.dim ba)
                   kind
                   host_ptr
               in
-              Some {buf; device_id = device.id})
-      end
+              Ok {buf; device_id = device.id})
 
     (* Framework_sig: [true] means no transfers are needed. A USE_HOST_PTR
        buffer still needs map/unmap around host access, so OpenCL says

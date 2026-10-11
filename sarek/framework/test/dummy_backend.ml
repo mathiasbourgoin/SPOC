@@ -120,6 +120,8 @@ module Dummy_backend : BACKEND = struct
 
     let alloc_zero_copy _dev _ba _kind = None
 
+    let alloc_host_ptr _dev _ba _kind = Error Host_ptr_unsupported
+
     let device_ptr _buf = Nativeint.zero
 
     let is_zero_copy _buf = false

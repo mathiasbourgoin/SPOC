@@ -41,7 +41,7 @@ type capabilities = {
   max_registers_per_block : int;
   clock_rate_khz : int;
   multiprocessor_count : int;
-  is_cpu : bool;  (* True for CPU backends - enables zero-copy *)
+  is_cpu : bool;  (* True for CPU devices (OpenCL CPU runtimes, Native) *)
 }
 
 (** Device representation *)
@@ -92,6 +92,9 @@ module type BACKEND = sig
     val alloc_custom : Device.t -> size:int -> elem_size:int -> 'a buffer
     val alloc_zero_copy : Device.t -> ('a,'b,Bigarray.c_layout) Bigarray.Array1.t
                           -> ('a,'b) Bigarray.kind -> 'a buffer option
+    val alloc_host_ptr : Device.t -> ('a,'b,Bigarray.c_layout) Bigarray.Array1.t
+                         -> ('a,'b) Bigarray.kind
+                         -> ('a buffer, host_ptr_refusal) result
     val free : 'a buffer -> unit
     val host_to_device : src:_ Bigarray.Array1.t -> dst:'a buffer -> unit
     val device_to_host : src:'a buffer -> dst:_ Bigarray.Array1.t -> unit

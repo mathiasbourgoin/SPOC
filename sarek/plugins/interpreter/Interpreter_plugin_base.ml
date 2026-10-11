@@ -67,6 +67,12 @@ module Interpreter : sig
       ('a, 'b) Bigarray.kind ->
       'a buffer option
 
+    val alloc_host_ptr :
+      Device.t ->
+      ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t ->
+      ('a, 'b) Bigarray.kind ->
+      ('a buffer, Framework_sig.host_ptr_refusal) result
+
     val is_zero_copy : 'a buffer -> bool
 
     val free : 'a buffer -> unit
@@ -437,6 +443,13 @@ end = struct
       | _ ->
           Interpreter_error.(
             raise_error (unsupported_construct "bigarray kind" "unknown kind"))
+
+    (** The host array is this backend's device memory, so the explicit
+        host-pointer path is the default one. *)
+    let alloc_host_ptr device ba kind =
+      match alloc_zero_copy device ba kind with
+      | Some buf -> Ok buf
+      | None -> Error Framework_sig.Host_ptr_unsupported
 
     let is_zero_copy : type a. a buffer -> bool =
      fun buf ->

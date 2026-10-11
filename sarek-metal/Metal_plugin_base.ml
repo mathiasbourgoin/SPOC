@@ -134,6 +134,9 @@ module Metal : Framework_sig.PLUGIN_BASE = struct
       (* Metal uses shared memory mode by default, effectively zero-copy *)
       None
 
+    let alloc_host_ptr _device _ba _kind =
+      Error Framework_sig.Host_ptr_unsupported
+
     let is_zero_copy _b = false (* Metal doesn't distinguish zero-copy *)
 
     let alloc_custom device ~size ~elem_size =

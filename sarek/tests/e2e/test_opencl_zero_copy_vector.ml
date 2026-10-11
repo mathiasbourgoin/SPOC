@@ -7,10 +7,11 @@
  * R-27 through the user path: Vector, Transfer and Execute.run_vectors on an
  * OpenCL device whose buffers are CL_MEM_USE_HOST_PTR.
  *
- * Zero-copy is normally chosen for CPU devices only; the test forces it on
- * every OpenCL device with
- * [Opencl_plugin_base.For_testing.zero_copy_on_any_device] (test-only) and
- * allocates vectors until one meets the device's CL_DEVICE_MEM_BASE_ADDR_ALIGN.
+ * Host-pointer buffers are the explicit Host_ptr_buffer opt-in, accepted on
+ * CPU devices only; the test forces them on every OpenCL device with
+ * [Opencl_plugin_base.For_testing.host_ptr_on_any_device] (test-only),
+ * allocates vectors until one meets the device's CL_DEVICE_MEM_BASE_ADDR_ALIGN
+ * and attaches it.
  * It then checks that Vector.get sees a kernel's writes, and that a kernel
  * sees a Vector.set made after the first launch. Without the host-copy
  * forwarding in Transfer's zero-copy wrapper both fail on a runtime that
@@ -79,7 +80,13 @@ let run (dev : Device.t) =
       ~grid:(Execute.dims1d 1)
       ()
   in
-  let y = aligned_vec align 0 in
+  let attached () =
+    let v = aligned_vec align 0 in
+    match Spoc_core.Host_ptr_buffer.attach v dev with
+    | Ok () -> v
+    | Error e -> failwith (Spoc_core.Host_ptr_buffer.error_message e)
+  in
+  let y = attached () in
   for i = 0 to n - 1 do
     Vector.set y i (-1.0)
   done ;
@@ -88,14 +95,14 @@ let run (dev : Device.t) =
     check (Printf.sprintf "read y[%d]" i) (Vector.get y i) (float (i + 1))
   done ;
   Vector.set y 0 100.0 ;
-  let out = aligned_vec align 0 in
+  let out = attached () in
   launch (ir_of dbl) Execute.[Vec y; Vec out; Int n] ;
   check "kernel sees host set" (Vector.get out 0) 200.0 ;
   check "kernel sees y[1]" (Vector.get out 1) 4.0 ;
   Printf.printf "  %s (align %d): done\n%!" dev.Device.name align
 
 let () =
-  Sarek_opencl.Opencl_plugin_base.For_testing.zero_copy_on_any_device := true ;
+  Sarek_opencl.Opencl_plugin_base.For_testing.host_ptr_on_any_device := true ;
   let devs =
     Device.init () |> Array.to_list
     |> List.filter (fun (d : Device.t) -> d.Device.framework = "OpenCL")

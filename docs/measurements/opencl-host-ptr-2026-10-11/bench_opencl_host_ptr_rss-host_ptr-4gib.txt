@@ -1,0 +1,10 @@
+# 2026-10-11T20:09:41+02:00 development machine (Ryzen 9 7950X, 125 GB, Intel CPU OpenCL runtime 2026.21.3.0.31) branch feat/opencl-cpu-zero-copy-optin load: 4.62 4.62 4.45
+# cmd: RUSTICL_ENABLE=radeonsi:0 HIP_VISIBLE_DEVICES=0 ./_build/default/sarek/tests/e2e/bench_opencl_host_ptr_rss.exe host_ptr 4
+mode=host_ptr size=4 GiB device=AMD Ryzen 9 7950X 16-Core Processor            
+start                  VmRSS    222.3 MiB  VmHWM    222.3 MiB  (+0.000 s)
+array filled           VmRSS   4319.5 MiB  VmHWM   4319.5 MiB  (+1.500 s)
+vector created         VmRSS   4328.6 MiB  VmHWM   4328.6 MiB  (+1.519 s)
+after launch + sync    VmRSS   4436.0 MiB  VmHWM   4436.0 MiB  (+1.756 s)
+after read-back        VmRSS   4436.2 MiB  VmHWM   4436.2 MiB  (+1.757 s)
+host_link=Host_ptr result=ok
+exit=0
