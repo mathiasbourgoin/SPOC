@@ -6,17 +6,20 @@
 (******************************************************************************
  * Fence discipline of the Vulkan backend, on a real device.
  *
- * - An event recorded on a stream is signalled once the work submitted to the
- *   stream's queue before it completes, so [Event.synchronize] returns.
+ * - [Event.synchronize] on a recorded event returns, and so does a second
+ *   record/synchronize on the same event.
  * - An event that was never recorded synchronizes immediately.
  * - [Event.elapsed] refuses with [Feature_not_supported] instead of answering
  *   a fabricated 0.0.
  * - A launch that fails on the host (push-constant block over the 128-byte
- *   limit) leaves the stream fence signalled, so the next launch on the same
- *   stream runs.
+ *   limit) does not make the next launch on the same stream hang.
+ * - A failed [vkQueueSubmit] (injected through
+ *   [Vulkan_api_device.inject_submit_failure]) leaves neither the launch's
+ *   stream nor a recorded event waiting on a fence that was never submitted.
  *
- * A broken fence shows up as a hang, so run this under [timeout]. Skips when
- * no Vulkan device is present.
+ * A broken fence shows up as a hang; the dune rule bounds every fence wait
+ * with SPOC_VULKAN_FENCE_TIMEOUT_S so a hang ends in an error. Skips when no
+ * Vulkan device is present.
  ******************************************************************************)
 
 open Sarek_vulkan
@@ -90,6 +93,13 @@ let launch_once compiled buf ~extra_scalars =
   let dims = Spoc_framework.Framework_sig.dims_1d 1 in
   Kernel.launch compiled ~args ~grid:dims ~block:dims ~shared_mem:0 ~stream:None
 
+let read_back_and_free device buf =
+  Device.synchronize device ;
+  let host = Bigarray.Array1.create Bigarray.float32 Bigarray.c_layout 1 in
+  Memory.device_to_host ~src:buf ~dst:host ;
+  Memory.free buf ;
+  host.{0}
+
 let test_failed_launch_does_not_poison_stream device =
   let compiled = Kernel.compile_cached device ~name:"fence_sync" ~source in
   let buf = Memory.alloc device 1 Bigarray.float32 in
@@ -101,14 +111,43 @@ let test_failed_launch_does_not_poison_stream device =
   in
   Alcotest.(check bool) "oversized push constants are refused" true failed ;
   launch_once compiled buf ~extra_scalars:0 ;
-  Device.synchronize device ;
-  let host = Bigarray.Array1.create Bigarray.float32 Bigarray.c_layout 1 in
-  Memory.device_to_host ~src:buf ~dst:host ;
-  Memory.free buf ;
   Alcotest.(check (float 0.0001))
     "the launch after a failed one runs"
     1.0
-    host.{0}
+    (read_back_and_free device buf)
+
+let inject_device_lost () =
+  Device.inject_submit_failure := Some Vulkan_types.VK_ERROR_DEVICE_LOST
+
+let raises_backend_error f =
+  match f () with () -> false | exception BE.Backend_error _ -> true
+
+let test_failed_submit_launch device =
+  let compiled = Kernel.compile_cached device ~name:"fence_sync" ~source in
+  let buf = Memory.alloc device 1 Bigarray.float32 in
+  inject_device_lost () ;
+  Alcotest.(check bool)
+    "an injected submit failure is raised"
+    true
+    (raises_backend_error (fun () -> launch_once compiled buf ~extra_scalars:0)) ;
+  launch_once compiled buf ~extra_scalars:0 ;
+  Alcotest.(check (float 0.0001))
+    "the launch after a failed submit runs"
+    1.0
+    (read_back_and_free device buf)
+
+let test_failed_submit_event device =
+  let stream = Stream.default device in
+  let event = Event.create_with_device device in
+  inject_device_lost () ;
+  Alcotest.(check bool)
+    "an injected submit failure is raised"
+    true
+    (raises_backend_error (fun () -> Event.record event stream)) ;
+  Event.synchronize event ;
+  Event.record event stream ;
+  Event.synchronize event ;
+  Event.destroy event
 
 let () =
   Alcotest.run
@@ -135,5 +174,16 @@ let () =
             "failed launch does not hang the next one"
             `Quick
             (with_device test_failed_launch_does_not_poison_stream);
+          Alcotest.test_case
+            "failed submit does not hang the next launch"
+            `Quick
+            (with_device test_failed_submit_launch);
+        ] );
+      ( "submit",
+        [
+          Alcotest.test_case
+            "failed event submit leaves the event usable"
+            `Quick
+            (with_device test_failed_submit_event);
         ] );
     ]
