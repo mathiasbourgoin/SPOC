@@ -38,21 +38,37 @@ end
 
 type event = (module EVENT)
 
+(* HIP and CUDA events, and the default (NULL) stream they are recorded on,
+   belong to the CURRENT device, which a GC finaliser freeing a buffer or a
+   launch on another device may have changed. Every backend call below is
+   therefore preceded by selecting the event's device (as [Transfer.create_event]
+   and [Transfer.record_event] do). These events only measure: they never gate
+   the release of keep-alive ledger entries, so they stay outside the ledger. *)
+
 (** Create a timing event on a device *)
 let create_event (dev : Device.t) : event =
   match Framework_registry.find_backend dev.framework with
   | None -> failwith ("Unknown framework: " ^ dev.framework)
   | Some (module B : Framework_sig.BACKEND) ->
+      B.Device.set_current (B.Device.get dev.backend_id) ;
       let e = B.Event.create () in
       let default_stream = B.Stream.default (B.Device.get dev.backend_id) in
       (module struct
         let device = dev
 
-        let record () = B.Event.record e default_stream
+        let select () = B.Device.set_current (B.Device.get dev.backend_id)
 
-        let synchronize () = B.Event.synchronize e
+        let record () =
+          select () ;
+          B.Event.record e default_stream
 
-        let destroy () = B.Event.destroy e
+        let synchronize () =
+          select () ;
+          B.Event.synchronize e
+
+        let destroy () =
+          select () ;
+          B.Event.destroy e
       end : EVENT)
 
 (** Record event (mark current point in stream) *)
@@ -94,21 +110,30 @@ let create_timer (dev : Device.t) : timer =
   match Framework_registry.find_backend dev.framework with
   | None -> failwith ("Unknown framework: " ^ dev.framework)
   | Some (module B : Framework_sig.BACKEND) ->
+      B.Device.set_current (B.Device.get dev.backend_id) ;
       let start_event = B.Event.create () in
       let stop_event = B.Event.create () in
       let default_stream = B.Stream.default (B.Device.get dev.backend_id) in
       (module struct
         let device = dev
 
-        let start () = B.Event.record start_event default_stream
+        let select () = B.Device.set_current (B.Device.get dev.backend_id)
 
-        let stop () = B.Event.record stop_event default_stream
+        let start () =
+          select () ;
+          B.Event.record start_event default_stream
+
+        let stop () =
+          select () ;
+          B.Event.record stop_event default_stream
 
         let elapsed_ms () =
+          select () ;
           B.Event.synchronize stop_event ;
           B.Event.elapsed ~start:start_event ~stop:stop_event
 
         let destroy () =
+          select () ;
           B.Event.destroy start_event ;
           B.Event.destroy stop_event
       end : EVENT_PAIR)
