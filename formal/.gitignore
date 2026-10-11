@@ -1,0 +1,15 @@
+# Rocq build artefacts. scripts/check-formal-proofs.sh deletes and rebuilds all
+# of them on every run, so a committed copy can only be stale (the old
+# PtxLayout.vo was older than PtxLayout.v), and .CoqMakefile.d hard-codes the
+# builder's distro path.
+*.vo
+*.vok
+*.vos
+*.glob
+*.aux
+.*.aux
+CoqMakefile
+CoqMakefile.conf
+.CoqMakefile.d
+.lia.cache
+.nia.cache
