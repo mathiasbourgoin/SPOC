@@ -14,28 +14,26 @@ cd "$PROJECT_ROOT"
 rm -f _coverage/*.coverage 2>/dev/null || true
 mkdir -p _coverage
 
-# Install bisect_ppx if it is not already installed. `opam list --installed
-# --short` exits 0 with EMPTY output when the package is missing, so test the
-# output, not the exit code (docs review D-48).
+# bisect_ppx must already be available in the current build environment. This
+# script never installs anything and never selects an opam switch: run it
+# inside the switch you want (CI image, or `opam exec --switch=<path> --`, with
+# OPAMSWITCH set for tools that read it). `ocamlfind query` is read-only and
+# prints nothing useful when the library is absent, so test its exit code
+# (docs review D-48).
 echo "Checking for bisect_ppx..."
-if [ -z "$(opam list bisect_ppx --installed --short 2>/dev/null)" ]; then
-  echo "Installing bisect_ppx..."
-  opam repo add alpha git+https://github.com/kit-ty-kate/opam-alpha-repository.git || true
-  opam update
-  opam install -y bisect_ppx || {
-    echo "ERROR: failed to install bisect_ppx, no coverage can be measured" >&2
-    exit 1
-  }
+if ! ocamlfind query bisect_ppx >/dev/null 2>&1; then
+  echo "ERROR: bisect_ppx is not available in the current environment." >&2
+  echo "Install it in the switch you build with (the CI image must provide it)," >&2
+  echo "then re-run. This script does not install packages." >&2
+  exit 1
 fi
-if [ -z "$(opam list bisect_ppx --installed --short 2>/dev/null)" ]; then
-  echo "ERROR: bisect_ppx is still not installed after the install step" >&2
+if ! command -v bisect-ppx-report >/dev/null 2>&1; then
+  echo "ERROR: bisect-ppx-report is not on PATH in the current environment." >&2
   exit 1
 fi
 
 echo "Building with coverage instrumentation..."
 LIBRARY_PATH=/opt/cuda/targets/x86_64-linux/lib:$LIBRARY_PATH \
-  OPAM_SWITCH_PREFIX="$PROJECT_ROOT/_opam" \
-  PATH="$PROJECT_ROOT/_opam/bin:$PATH" \
   dune build --force --instrument-with bisect_ppx \
               sarek/tests/unit/ \
               sarek/core/test/ \
@@ -74,16 +72,12 @@ fi
 
 echo ""
 echo "Generating coverage report..."
-OPAM_SWITCH_PREFIX="$PROJECT_ROOT/_opam" \
-  PATH="$PROJECT_ROOT/_opam/bin:$PATH" \
-  bisect-ppx-report html \
-    --coverage-path _coverage \
-    -o _coverage/unit-report
+bisect-ppx-report html \
+  --coverage-path _coverage \
+  -o _coverage/unit-report
 
-OPAM_SWITCH_PREFIX="$PROJECT_ROOT/_opam" \
-  PATH="$PROJECT_ROOT/_opam/bin:$PATH" \
-  bisect-ppx-report summary \
-    --coverage-path _coverage
+bisect-ppx-report summary \
+  --coverage-path _coverage
 
 if [ ! -s _coverage/unit-report/index.html ]; then
   echo "ERROR: coverage report _coverage/unit-report/index.html was not generated" >&2
