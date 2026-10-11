@@ -5,7 +5,7 @@ title: Device & Backend Selection
 
 # Device & Backend Selection
 
-Sarek auto-detects every available backend at startup (CUDA, OpenCL, Vulkan, Metal, plus
+Sarek auto-detects every available backend at startup (CUDA, HIP, OpenCL, Vulkan, Metal, plus
 the CPU **Native** and **Interpreter** backends) and exposes each physical device. This
 page explains how to list those devices and how to pick — or exclude — a specific backend
 or device.
@@ -26,6 +26,8 @@ capabilities, e.g.:
 [3] CPU Interpreter (Sequential) (Interpreter)
 ```
 
+On a machine with ROCm, HIP devices are listed as well, with the framework `HIP`.
+
 The bracketed index is the device id used by `-d <id>` below. Note that the *same*
 physical GPU usually appears more than once — once per framework that can drive it (e.g.
 OpenCL and Vulkan).
@@ -39,10 +41,11 @@ particular backend.
 | Variable | Effect |
 |---|---|
 | `SPOC_DISABLE_CUDA=1` | Skip the CUDA backend |
+| `SPOC_DISABLE_HIP=1` | Skip the HIP (ROCm) backend |
 | `SPOC_DISABLE_OPENCL=1` | Skip the OpenCL backend |
 | `SPOC_DISABLE_VULKAN=1` | Skip the Vulkan backend |
 | `SPOC_DISABLE_METAL=1` | Skip the Metal backend |
-| `SPOC_DISABLE_GPU=1` | Skip **all** GPU backends (CUDA, OpenCL, Vulkan, Metal) |
+| `SPOC_DISABLE_GPU=1` | Skip **all** GPU backends (CUDA, HIP, OpenCL, Vulkan, Metal) |
 
 Examples:
 
@@ -98,5 +101,6 @@ dune exec sarek/tests/e2e/test_vector_add.exe -- -d 2
 ## See also
 
 - [Backends](backends.html) — what each backend supports.
+- [HIP backend](https://github.com/mathiasbourgoin/Sarek/blob/main/sarek-hip/README.md) — ROCm requirements, and why one AMD machine can list several HIP devices.
 - [Troubleshooting](faq.html#troubleshooting) — what to do when a backend faults or a
   device misbehaves.

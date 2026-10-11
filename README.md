@@ -73,7 +73,7 @@ Devices that appear in `Device.init` / `sarek-device-info`:
 |---------|----------------|--------|--------|---------------|
 | **CUDA/PTX** | `CUDA/PTX` | NVIDIA GPUs (and AMD via ZLUDA) | ✓ default CUDA path | [sarek/codegen/Sarek\_ir\_ptx.ml](sarek/codegen/Sarek_ir_ptx.ml) |
 | **CUDA/C** | `CUDA/C` | NVIDIA GPUs, via NVRTC | ✓ | [sarek-cuda/](sarek-cuda/) |
-| **HIP** | `HIP` | AMD GPUs, via ROCm/hiprtc | ✓ | [sarek-hip/Hip\_plugin.ml](sarek-hip/Hip_plugin.ml) — no package README yet; measurements in [docs/benchmarks/](docs/benchmarks/hip-vs-opencl-vulkan-2026-07-24.md) |
+| **HIP** | `HIP` | AMD GPUs, via ROCm/hiprtc | ✓ | [sarek-hip/README.md](sarek-hip/README.md); measurements in [docs/benchmarks/](docs/benchmarks/hip-vs-opencl-vulkan-2026-07-24.md) |
 | **OpenCL** | `OpenCL` | Multi-vendor GPUs/CPUs | ✓ | [sarek-opencl/](sarek-opencl/) |
 | **Vulkan** | `Vulkan` | Cross-platform GPUs, GLSL→SPIR-V | ✓ | [sarek-vulkan/](sarek-vulkan/) |
 | **Metal** | `Metal` | Apple Silicon/Intel Macs | ✓ | [sarek-metal/](sarek-metal/) |
@@ -244,6 +244,7 @@ Formal models (Rocq):
 - dune 3.15+
 - GPU backends (optional):
   - **CUDA**: NVIDIA driver + CUDA toolkit (see CUDA requirements below)
+  - **HIP**: ROCm runtime with hiprtc and a ROCm-supported AMD GPU (tested with ROCm 7.2); see [sarek-hip/README.md](sarek-hip/README.md)
   - **OpenCL**: OpenCL implementation for your device
   - **Vulkan**: Vulkan SDK + glslangValidator or Shaderc
   - **Metal**: macOS 10.13+ (included with Xcode)
@@ -468,6 +469,9 @@ If OpenCL is not detecting your device, ensure you have the appropriate ICD (Ins
 ## Documentation
 
 - [GitHub Pages](http://mathiasbourgoin.github.io/Sarek/) - User guides, tutorials, and API docs
+- [Launch window and fusion](gh-pages/docs/performance.md) - deferred launches, fusion, per-backend defaults, error timing
+- [Memory and transfers](gh-pages/docs/memory.md) - device-only vectors, streams, pinned memory, small writes
+- [HIP backend](sarek-hip/README.md) - requirements, defaults and tests for AMD GPUs
 - [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution guidelines
 - [CHANGES.md](CHANGES.md) - Changelog
 - [Backend Documentation](sarek-cuda/) - Individual backend READMEs
