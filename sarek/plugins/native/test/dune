@@ -1,3 +1,9 @@
 (test
  (name test_native_error)
+ (modules test_native_error)
  (libraries sarek_native alcotest str))
+
+(test
+ (name test_native_vec_access)
+ (modules test_native_vec_access)
+ (libraries sarek_native sarek spoc_core spoc_framework alcotest))
