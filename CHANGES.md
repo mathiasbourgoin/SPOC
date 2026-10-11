@@ -33,6 +33,18 @@
   `a*b+c`; Vulkan's fused kernel differs from the unfused pair when the consumer
   recomputes the producer's product (4099 of 4099).
 
+### Changed
+
+- CUDA kernel launches marshal all arguments into one 8-byte-slot block plus one
+  pointer array (two host allocations whatever the argument count), as the HIP
+  launch already did (`specs/cheap-repeated-launches.md` US-4, C-13). Both
+  blocks are retained until the stream or device is retired, as before. Each
+  value is written with its own C type at its slot start. Host cost per launch
+  of an empty PTX kernel, executed via ZLUDA on an RX 7900 XTX (not NVIDIA
+  hardware), median of 7 interleaved pairs at load ~9 (provisional): 3 arguments
+  2.81 us to 2.21 us, 10 arguments 4.85 us to 2.56 us
+  (`sarek-cuda/test/bench_cuda_kernargs.exe`). Test: `test_cuda_kernargs`.
+
 ### Fixed
 
 - A `for` upper bound is evaluated once on every backend (compiler review

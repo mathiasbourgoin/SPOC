@@ -60,10 +60,10 @@ As a backend, I want `Compile_cache.make_key` to skip re-digesting a source stri
 1. **Given** a source `s`, **When** `make_key` is called twice with `s` and once with `String.sub s 0 (String.length s)` (a fresh copy), **Then** the three keys are byte-identical.
 2. **Given** the empty source, **When** keyed, **Then** the key equals the pre-change key.
 
-### US-4: HIP kernel arguments marshalled into one buffer (Priority: P1)
-As the HIP backend, I want all argument values written into one contiguous host buffer, so that a launch does two allocations instead of one per argument.
-**Scope**: does NOT cover CUDA.
-**Independent Test**: existing HIP e2e tests with mixed argument types still pass; new benchmark result check.
+### US-4: HIP and CUDA kernel arguments marshalled into one buffer (Priority: P1)
+As the HIP and CUDA backends, I want all argument values written into one contiguous host buffer, so that a launch does two allocations instead of one per argument.
+**Scope**: HIP (`Hip_api.Kernel.launch`) and CUDA (`Cuda_api.Kernel.launch`, shared by CUDA/PTX and CUDA/C). OpenCL, Vulkan, Metal, Native and Interpreter have no per-argument host cells of this kind and are unchanged.
+**Independent Test**: existing HIP e2e tests with mixed argument types still pass; new benchmark result check; CUDA: `sarek-cuda/test/test_cuda_kernargs.ml` (allocation count, slot layout, mixed-type e2e, stream launch with a GC before synchronisation).
 **Acceptance Scenarios**:
 1. **Given** a kernel with buffer, int32, float32 arguments, **When** launched on HIP, **Then** results equal the reference (bench + e2e-hip).
 2. **Given** a kernel with int64/float64 arguments, **When** launched on HIP, **Then** values arrive bit-exact (existing f64/i64 e2e tests).
@@ -93,7 +93,7 @@ As a caller that replaces an intrinsic implementation after kernels have run, I 
 | C-10 | US-3 | Physical-string memo hits only for reused strings; `Bytes.unsafe_to_string` aliasing | Only reused strings benefit (Execute now reuses them); others pay MD5 exactly as before. Mutating a string obtained by `Bytes.unsafe_to_string` violates the Stdlib contract; documented as a precondition in `Compile_cache.mli`. |
 | C-11 | US-3 | `Compile_cache` becomes stateful | Own mutex, lookup/insert only; weak in the string; key equality covered by a test against a fresh copy. |
 | C-12 | US-4 | Slot layout, alignment, retention, zero args | 8-byte aligned slots, each value written with its own C type at its slot start (no endianness assumption); buffer + pointer array retained via `retain_kernargs` exactly as today; zero arguments allocate a 1-slot buffer. |
-| C-13 | US-4 | CUDA parity | Not required; CUDA unchanged (cannot be verified on this machine). |
+| C-13 | US-4 | CUDA parity | `Cuda_api.Kernel.launch` uses the same layout as C-12 (`marshal_args`: one `int64` slot block, one pointer array, retained via `retain_kernargs`). Executed via ZLUDA on gfx1100 (not NVIDIA hardware): `test_cuda_kernargs` passes, 3 and 10 argument launches are cheaper (H5b log). Not run on NVIDIA hardware. |
 | C-14 | US-5 | Scope of clear; in-flight builds | Clears the Execute memo (the digest memo is content-transparent and needs no clearing); generation counter per C-8; hooked to `on_clear_all` and `on_device_destroy`. |
 
 ## Functional Requirements
@@ -110,6 +110,7 @@ As a caller that replaces an intrinsic implementation after kernels have run, I 
 #### HIP marshalling
 - **FR-008** [US-4]: `Hip_api.Kernel.launch` MUST allocate at most two host blocks per launch (value slots, pointer array) and MUST keep them reachable until the stream or device is retired.
 - **FR-009** [US-4]: Every argument value MUST reach the kernel bit-identical to the pre-change marshalling.
+- **FR-009a** [US-4, C-13]: `Cuda_api.Kernel.launch` MUST meet FR-008 and FR-009 as well (`Kernel.kernarg_blocks_allocated` counts the blocks).
 #### Device selection under finalisers (found during implementation)
 - **FR-013** [US-4]: Freeing a HIP buffer MUST leave the previously selected device selected, because the free runs from GC finalisers in the middle of launches on other devices. (Found when the cheaper launches moved GC timing: the 2-device benchmark failed with hipErrorInvalidDevice.)
 #### Invalidation
@@ -128,6 +129,7 @@ As a caller that replaces an intrinsic implementation after kernels have run, I 
 - AC-6 [US-2]: raising `generate_source` → raises on each launch.
 - AC-7 [US-3]: keys for `s`, `s` again and a fresh copy of `s` are identical and equal the documented format.
 - AC-8 [US-4]: HIP e2e suites and the benchmark's result checks pass.
+- AC-8a [US-4, C-13]: `test_cuda_kernargs`: 0, 1, 3 and 10 arguments allocate exactly 2 blocks; slots are contiguous 8-byte cells holding bit-exact values; a mixed int32/float32/int64/float64 launch is bit-exact, also on a stream with a GC before synchronisation.
 - AC-9 [US-5, C-14]: `clear_launch_cache` and `notify_clear_all` → next launch regenerates.
 - AC-11 [US-4, FR-013]: free a buffer of device 0 with device 1 selected → device 1 still selected.
 - AC-12 [US-2, FR-006, FR-011, review]: a clear inside codegen is not installed; 4 domains launching one IR all receive one physical source.

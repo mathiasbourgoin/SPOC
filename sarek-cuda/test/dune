@@ -170,3 +170,8 @@
  (name test_cuda_kernargs)
  (modules test_cuda_kernargs)
  (libraries sarek_cuda ctypes alcotest))
+
+(executable
+ (name bench_cuda_kernargs)
+ (modules bench_cuda_kernargs)
+ (libraries sarek_cuda unix))
