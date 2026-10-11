@@ -118,9 +118,18 @@ let check_sync_contract dev =
   expect "kernel write seen in Bigarray" (out_ba.{5} = 2.0) ;
   in_ba.{5} <- 21.0 ;
   Hpb.publish_host_writes x dev ;
+  (* The host copy is now authoritative and published to [dev]. *)
+  expect
+    "publish made the host copy current"
+    (match Vector.location x with
+    | Vector.Both d -> d.Device.id = dev.Device.id
+    | _ -> false) ;
   launch dev x y ;
   Hpb.acquire_device_writes y dev ;
-  expect "published host write seen by kernel" (out_ba.{5} = 42.0)
+  expect "published host write seen by kernel" (out_ba.{5} = 42.0) ;
+  (* Reading the device copy back must not bring the old value back. *)
+  Hpb.acquire_device_writes x dev ;
+  expect "published host write survives a read-back" (in_ba.{5} = 21.0)
 
 let is_misaligned = function
   | Hpb.Refused {reason = Spoc_framework.Framework_sig.Host_ptr_misaligned _; _}
