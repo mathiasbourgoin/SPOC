@@ -527,6 +527,59 @@ let infer_control_flow ~infer (env : t) (loc : Sarek_ast.loc) (expr : expr_desc)
       assert
         false (* infer_control_flow: called with non-control-flow expression *)
 
+(** Compile-time value of an [int32] size expression built from literals and
+    [+ - *] (no division: a folded [x / 0] must not be decided here). [None]
+    when the expression is not provably constant. Arithmetic is on the host
+    [int] (63 bits), so the result is range-checked by the caller. *)
+let rec const_int_value (e : texpr) : int option =
+  match e.te with
+  | TEInt i -> Some i
+  | TEInt32 i -> Some (Int32.to_int i)
+  | TEBinop (op, a, b) -> (
+      match (const_int_value a, const_int_value b) with
+      | Some x, Some y -> (
+          match op with
+          | Add -> Some (x + y)
+          | Sub -> Some (x - y)
+          | Mul -> Some (x * y)
+          | _ -> None)
+      | _ -> None)
+  | _ -> None
+
+(** [create_array] is a device-array DECLARATION with a memory space. [Global]
+    is not one a kernel body can allocate (device memory is passed in as a
+    vector parameter), and [Local]/[Shared] arrays need a size the target
+    compilers can see: OpenCL C and MSL forbid variable-length arrays, and
+    PTX/WGSL need a literal extent. Refusing here keeps every backend, Native
+    included, accepting the same kernels. *)
+let check_create_array (mem : Sarek_ast.memspace) (tsize : texpr)
+    (loc : Sarek_ast.loc) : unit result =
+  match mem with
+  | Global ->
+      Error
+        [
+          Invalid_kernel
+            ( "create_array with the Global memory space is not supported: a \
+               kernel cannot allocate global device memory. Pass the buffer in \
+               as a kernel vector parameter (e.g. `(buf : int32 vector)`) \
+               instead.",
+              loc );
+        ]
+  | Local | Shared -> (
+      match const_int_value tsize with
+      | Some n when n > 0 && n <= Int32.to_int Int32.max_int -> Ok ()
+      | _ ->
+          Error
+            [
+              Invalid_kernel
+                ( "create_array size must be a positive compile-time constant \
+                   (an int32 literal, or literals combined with + - *): OpenCL \
+                   C and Metal reject variable-length arrays and PTX and WGSL \
+                   need a literal extent. Use a constant size, e.g. \
+                   `create_array 16l Local`.",
+                  tsize.te_loc );
+            ])
+
 (** Infer type of data structures (records, variants, tuples, arrays). Uses
     mutual recursion helpers for complex nested structures. *)
 let infer_data_structure ~infer ~infer_record_fields ~infer_list (env : t)
@@ -612,6 +665,7 @@ let infer_data_structure ~infer ~infer_record_fields ~infer_list (env : t)
   | ECreateArray (size, elem_ty, mem) ->
       let* tsize, env = infer env size in
       let* () = unify_or_error tsize.ty t_int32 size.expr_loc in
+      let* () = check_create_array mem tsize loc in
       let elem_t = type_of_type_expr_env env elem_ty in
       let arr_ty = TArr (elem_t, memspace_of_ast mem) in
       Ok

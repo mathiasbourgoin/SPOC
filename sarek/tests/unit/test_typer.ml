@@ -93,6 +93,17 @@ let check_infer_ok msg env expr expected_typ =
         msg
         (String.concat ", " (List.map Sarek_error.error_to_string errors))
 
+let check_infer_ok_any msg env expr =
+  reset_tvar_counter () ;
+  reset_var_id_counter () ;
+  match infer env expr with
+  | Ok _ -> ()
+  | Error errors ->
+      Alcotest.failf
+        "%s: type error: %s"
+        msg
+        (String.concat ", " (List.map Sarek_error.error_to_string errors))
+
 let check_infer_error msg env expr =
   reset_tvar_counter () ;
   reset_var_id_counter () ;
@@ -560,6 +571,35 @@ let test_intrinsic_const () =
   check_infer_ok "thread_idx_x" env (var_expr "thread_idx_x") t_int32 ;
   check_infer_ok "global_thread_id" env (var_expr "global_thread_id") t_int32
 
+(* create_array (package B, C-13/C-14): the PPX admits a Local/Shared array only
+   with a positive compile-time constant size, and never Global. *)
+let create_array_expr size mem =
+  mk_expr (ECreateArray (size, TEVar "_infer", mem))
+
+let test_create_array_size_rules () =
+  let env = with_stdlib empty in
+  let ok = check_infer_ok_any "create_array" env in
+  let bad = check_infer_error in
+  ok (create_array_expr (int32_expr 16l) Local) ;
+  ok (create_array_expr (int_expr 16) Shared) ;
+  ok
+    (create_array_expr
+       (binop_expr
+          Mul
+          (int32_expr 4l)
+          (binop_expr Add (int32_expr 2l) (int32_expr 2l)))
+       Local) ;
+  bad "zero size" env (create_array_expr (int32_expr 0l) Local) ;
+  bad "negative size" env (create_array_expr (int32_expr (-4l)) Shared) ;
+  bad "runtime size" env (create_array_expr (var_expr "thread_idx_x") Local) ;
+  bad
+    "runtime term"
+    env
+    (create_array_expr
+       (binop_expr Add (int32_expr 4l) (var_expr "thread_idx_x"))
+       Local) ;
+  bad "Global" env (create_array_expr (int32_expr 16l) Global)
+
 (* Test binary operation type inference *)
 let test_binop_add_int () =
   let env = with_stdlib empty in
@@ -768,6 +808,13 @@ let () =
           Alcotest.test_case "unbound function" `Quick test_unbound_function;
           Alcotest.test_case "mistyped intrinsic" `Quick test_mistyped_intrinsic;
           Alcotest.test_case "intrinsic const" `Quick test_intrinsic_const;
+        ] );
+      ( "create_array",
+        [
+          Alcotest.test_case
+            "size must be a positive constant; Global refused"
+            `Quick
+            test_create_array_size_rules;
         ] );
       ( "binop",
         [

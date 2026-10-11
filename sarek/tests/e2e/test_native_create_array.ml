@@ -10,7 +10,12 @@
    error ("This expression has type int32 but an expression was expected of
    type int"), i.e. this file fails to build at all pre-fix. Post-fix, the
    size expression is converted with [Int32.to_int] and the kernel compiles
-   and runs correctly. *)
+   and runs correctly.
+
+   The size is the constant [16l]: a runtime size is refused at PPX time on
+   every backend (OpenCL C and MSL have no variable-length arrays), Native
+   included. The test keeps its point (an int32 size reaching [Array.make]) with
+   a literal. *)
 
 [@@@warning "-33"]
 
@@ -31,7 +36,7 @@ let create_array_kernel =
       let open Std in
       let tid = global_thread_id in
       if tid < n then begin
-        let arr = create_array n Local in
+        let arr = create_array 16l Local in
         arr.(tid) <- (tid * 2l) + 1l ;
         output.(tid) <- arr.(tid)
       end]
