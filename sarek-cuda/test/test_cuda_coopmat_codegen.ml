@@ -109,6 +109,23 @@ let test_f16 () =
       "!defined(__GFX11__)";
     ]
 
+(* bf16 operands loaded from float32 buffers (specs/matrix-pattern-rewrite.md):
+   the HIP arm rounds on load and calls the bf16 builtin; the CUDA arm is a
+   named #error (no faithful nvcuda::wmma spelling). *)
+let test_bf16 () =
+  let bf16 = cfg C.BFloat16 C.BFloat16 C.Float32 C.Float32 in
+  let src = gen (tile bf16) in
+  check_has
+    src
+    [
+      "sarek_cm_s16 fa = {};";
+      "sarek_cm_load_a_bf16(fa, a, (0), (16));";
+      "fc = __builtin_amdgcn_wmma_f32_16x16x16_bf16_w32(fa, fb, fc);";
+      "lowered on HIP gfx11 only";
+      "accept_relaxed_accumulation";
+    ] ;
+  refuses "bf16 from a float16 buffer" (tile ~a_buf:TFloat16 bf16)
+
 let test_int_signs () =
   List.iter
     (fun (a, b, flags) ->
@@ -177,6 +194,7 @@ let () =
       ( "coopmat",
         [
           Alcotest.test_case "f16 both arms" `Quick test_f16;
+          Alcotest.test_case "bf16 operands" `Quick test_bf16;
           Alcotest.test_case "integer sign flags" `Quick test_int_signs;
           Alcotest.test_case "refusals" `Quick test_refusals;
           Alcotest.test_case "launch block" `Quick test_block;
