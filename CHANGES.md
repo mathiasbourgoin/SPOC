@@ -65,7 +65,10 @@
   probes the backend. **Breaking:** `Advanced.Pinned.create` is removed (no
   caller in the tree); it could not be honest, since a vector's host mirror is
   garbage collected and pinned memory is released only explicitly.
-  `Advanced.Unified` stays a placeholder. Test:
+  The handle type is abstract; `with_alloc ?stream` synchronises the stream
+  before releasing. `Advanced.has_advanced_features` now answers from the
+  `Pinned.is_available` probe (a one-byte allocation) instead of always
+  `false`. `Advanced.Unified` stays a placeholder. Test:
   `sarek/tests/e2e/test_advanced_pinned.ml`; docs: `memory.md`.
 - `Spoc_core.Host_ptr_buffer`: an explicit, typed opt-in to give a vector a
   CPU OpenCL buffer over its host memory (`CL_MEM_USE_HOST_PTR`), for large

@@ -213,15 +213,17 @@ let upload_through_pinned dev (dst : (int32, Bigarray.int32_elt) Vector.t) n =
       for i = 0 to n - 1 do
         Bigarray.Array1.set ba i (Int32.of_int i)
       done ;
-      (* This copy is synchronous. With [~stream], synchronise the stream
-         before [with_alloc] returns, or the release is refused. *)
+      (* This copy is synchronous. For a stream copy, pass the stream as
+         [Pinned.with_alloc ~stream]: it is synchronised before the release. *)
       Transfer.copy_to_device ba ~dst ~dst_offset:0)
 ```
 
 - `Pinned.alloc dev kind n` returns a handle on `n` elements of page-locked memory; `Pinned.register dev ba` page-locks an array you own. `Pinned.bigarray` gives the array, `Pinned.release` frees or unregisters it (idempotent), `Pinned.with_alloc` releases on return or exception, and `Pinned.is_live` says which state a handle is in.
+- `with_alloc ?stream` synchronises `stream` before releasing. If a stream-ordered copy is still pending (other stream, no `?stream`), the release is refused, `Invalid_argument` is raised, and the allocation stays pinned for the process lifetime because the handle is unreachable: use `alloc` and `release` yourself when you need to retry.
+- Release only through `Pinned.release`. Freeing or unregistering `Pinned.bigarray` with `Transfer` directly leaves the handle live, and its later `release` could act on another allocation at the same address.
 - `Pinned.bigarray` on a released handle raises `Invalid_argument`. The array itself cannot be invalidated: do not keep it past `release`, as with `Transfer.free_pinned`.
 - `release` is refused with `Invalid_argument`, and the handle stays live, while a stream-ordered copy may still use the memory. Synchronise the stream (or an event recorded after it) first.
-- `Pinned.is_available dev` probes with a one-byte allocation. It answers `true` on Native and Interpreter, where pinned memory is plain host memory, and on backends whose driver allocates it; it answers `false` where the backend raises `Feature_not_supported`. Any other error propagates.
+- `Pinned.is_available dev` probes with a one-byte allocation. It costs a driver allocation and free per call on GPU backends. It answers `true` on Native, Interpreter and Metal, where pinned memory is plain host memory, and on backends whose driver allocates it; it answers `false` where the backend raises `Feature_not_supported`. Any other error propagates.
 - The memory is a `Bigarray`, not a `Vector.t`: a vector's host mirror is garbage collected, pinned memory is not. `Bigarray.float16` is refused; use a `char` buffer and `copy_bytes_to_device`.
 - The pitfalls of `Transfer.register_host` above apply to `Pinned.register`. Allocating multi-GiB pinned buffers can be slow on HIP: measure on the target machine, and compare with registering memory you already own.
 
