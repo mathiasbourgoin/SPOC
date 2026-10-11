@@ -62,8 +62,10 @@ workgroup scope, any shape other than 16×16×16 on HIP/CUDA.
 
 Executed: `sarek/tests/e2e/test_coopmat_layout_e2e.ml`, every row/column
 combination of A, B, C and D on HIP gfx1100 (u8, f16 and bf16 configurations)
-and on Vulkan RADV (u8; GLSL refuses f16), equal to a host reference on
-small-integer inputs. On gfx1100 a column-major B fragment is two
+and on Vulkan RADV (u8; GLSL refuses f16), against a host reference on
+small-integer inputs: equal for integer configurations, within 1e-4 relative
+for f16/bf16 (the gfx1100 matrix unit does not round those sums exactly; a
+misplaced element would be off by at least 1). On gfx1100 a column-major B fragment is two
 `global_load_b128` per lane where the row-major one is 16 `global_load_d16(_hi)`
 loads (`spoc-pipeline-logs/pkgF/F2-isa-*.txt`). The helpers take a
 `long long` stride, so `l16·s`, `e·s` and `2j·s` do not overflow `int` past a

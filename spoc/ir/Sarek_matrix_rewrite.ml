@@ -140,7 +140,13 @@ let stage_group c ~kt ~is_a ~gi =
     @ reads @ List.concat planes)
     (SSeq (List.mapi store planes))
 
+(* Every thread stages whole groups and every group lies in one row: the tile
+   ([tile_outer] x [bk]) is a whole number of [group * threads] elements and
+   [bk] of [group]. Static (bm = bn = 64, bk = 16, group = 8, threads = 128);
+   the assertion keeps a retuned constant from silently dropping elements. *)
 let stage_tile c ~tid ~kt ~is_a =
+  assert (
+    tile_outer ~is_a * c.bk mod (group * threads) = 0 && c.bk mod group = 0) ;
   for_
     c.fresh
     "g8"
