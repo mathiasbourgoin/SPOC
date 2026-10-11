@@ -35,6 +35,8 @@ let fail_names : string list ref = ref []
 
 let fail_fused = ref false
 
+let slow_started = Atomic.make false
+
 type Framework_sig.kargs += Probe_kargs
 
 module Probe : BACKEND = struct
@@ -63,6 +65,12 @@ module Probe : BACKEND = struct
       List.mem kernel_name !fail_names
       || (!fail_fused && String.starts_with ~prefix:"sarek_hfused" kernel_name)
     then failwith ("probe launch refused: " ^ kernel_name) ;
+    if kernel_name = "slow" then begin
+      (* Tells the other domain the flush is under way, then takes its time:
+         the launch is logged only when it is done. *)
+      Atomic.set slow_started true ;
+      Unix.sleepf 0.2
+    end ;
     log
       (Printf.sprintf
          "launch %s gx=%d nargs=%d"
@@ -813,6 +821,160 @@ let test_grid_limit () =
     2
     (List.length (launches ()))
 
+(* {1 Review round 3} *)
+
+let test_cpu_device_not_deferred () =
+  reset () ;
+  let cpu = {dev with capabilities = {(caps ()) with is_cpu = true}} in
+  let[@warning "-8"] [x; y] = resident 2 in
+  events := [] ;
+  Execute.run_vectors
+    ~device:cpu
+    ~ir:k_a
+    ~args:[Execute.Vec x; Execute.Vec y]
+    ~block:(Execute.dims1d 64)
+    ~grid:(Execute.dims1d 1)
+    () ;
+  check
+    (list string)
+    "issued in the call (zero-copy buffers may alias)"
+    ["launch k_a gx=1 nargs=4"]
+    (launches ())
+
+(* [name src dst] with a 64-float shared array (256 bytes). *)
+let shared_kernel name =
+  let s = fvar 7 "s" in
+  {
+    (copy_kernel name) with
+    kern_body =
+      SLet
+        ( s,
+          EArrayCreate (TFloat32, EConst (CInt32 64l), Shared),
+          SAssign
+            ( LArrayElem ("dst", gpu "thread_idx_x"),
+              EArrayRead ("src", gpu "thread_idx_x") ) );
+  }
+
+let s_a = shared_kernel "s_a"
+
+let s_b = shared_kernel "s_b"
+
+let test_shared_limit () =
+  let pair limit =
+    reset () ;
+    let d =
+      {dev with capabilities = {(caps ()) with shared_mem_per_block = limit}}
+    in
+    let[@warning "-8"] [x; y1; y2] = resident 3 in
+    events := [] ;
+    let go ir y =
+      Execute.run_vectors
+        ~device:d
+        ~ir
+        ~args:[Execute.Vec x; Execute.Vec y]
+        ~block:(Execute.dims1d 64)
+        ~grid:(Execute.dims1d 1)
+        ()
+    in
+    go s_a y1 ;
+    go s_b y2 ;
+    Execute.Window.flush () ;
+    List.length (launches ())
+  in
+  check int "256 + 256 bytes within 512: fused" 1 (pair 512) ;
+  check int "256 + 256 bytes over 300: not fused" 2 (pair 300)
+
+(* The oldest group fails when the window overflows: the launching call
+   raises and its own launch is not made. *)
+let test_overflow_failure () =
+  reset () ;
+  let vs = resident 10 in
+  events := [] ;
+  fail_names := ["k_b"] ;
+  let chain i v =
+    if i > 0 then launch (if i = 1 then k_b else k_a) (List.nth vs (i - 1)) v
+  in
+  (* Groups 1..8 pending; the 9th launch (i = 9) issues the oldest, k_b. *)
+  for i = 0 to 8 do
+    chain i (List.nth vs i)
+  done ;
+  (match chain 9 (List.nth vs 9) with
+  | () -> fail "the overflow failure must be raised by the launching call"
+  | exception Failure _ -> ()) ;
+  fail_names := [] ;
+  Execute.Window.flush () ;
+  check
+    int
+    "7 launches of the chain issued, not the rejected one"
+    7
+    (List.length
+       (List.filter (fun e -> e = "launch k_a gx=1 nargs=4") (launches ())))
+
+let test_fused_fallback_member_fails () =
+  reset () ;
+  let[@warning "-8"] [x; y1; y2; y3] = resident 4 in
+  events := [] ;
+  fail_fused := true ;
+  fail_names := ["k_b"] ;
+  launch k_a x y1 ;
+  launch k_b x y2 ;
+  launch k_c x y3 ;
+  (match Execute.Window.flush () with
+  | () -> fail "the member's failure must be raised"
+  | exception Failure _ -> ()) ;
+  check
+    (list string)
+    "the members around the failing one are issued"
+    ["launch k_a gx=1 nargs=4"; "launch k_c gx=1 nargs=4"]
+    (launches ())
+
+(* Argument expansion happens in the launching call: an argument with no
+   device buffer is refused there, not at the next flush. *)
+let test_argument_error_at_submit () =
+  reset () ;
+  let[@warning "-8"] [x] = resident 1 in
+  let fresh = vec () in
+  match
+    Execute.run
+      ~device:dev
+      ~name:"k_a"
+      ~ir:(Some (lazy k_a))
+      ~native_fn:None
+      ~block:(Execute.dims1d 64)
+      ~grid:(Execute.dims1d 1)
+      [Execute.Vec x; Execute.Vec fresh]
+  with
+  | () -> fail "a vector with no device buffer must be refused in the call"
+  | exception Sarek_execute.Execute_error.Execution_error _ ->
+      check
+        int
+        "nothing pending"
+        0
+        (Atomic.get Spoc_framework.Launch_hooks.pending)
+
+(* A synchronisation point on another domain waits for a flush in progress
+   (review round 1, S1). *)
+let test_sync_waits_for_flush_in_progress () =
+  reset () ;
+  let slow = copy_kernel "slow" in
+  let[@warning "-8"] [x; y; z] = resident 3 in
+  events := [] ;
+  Atomic.set slow_started false ;
+  launch slow x y ;
+  let a = Domain.spawn (fun () -> Execute.Window.flush ()) in
+  while not (Atomic.get slow_started) do
+    Domain.cpu_relax ()
+  done ;
+  (* [z] is untouched: only the flush in progress can delay this. *)
+  Transfer.flush dev ;
+  Domain.join a ;
+  ignore z ;
+  check
+    bool
+    "the other domain's sync point came after the launch"
+    true
+    (index_of "launch slow" < index_of "devsync")
+
 let () =
   run
     "launch window"
@@ -869,6 +1031,24 @@ let () =
             `Quick
             test_rename_no_capture;
           test_case "grid limit" `Quick test_grid_limit;
+        ] );
+      ( "review round 3",
+        [
+          test_case "CPU device not deferred" `Quick test_cpu_device_not_deferred;
+          test_case "shared-memory limit" `Quick test_shared_limit;
+          test_case "overflow failure" `Quick test_overflow_failure;
+          test_case
+            "fused fallback, member fails"
+            `Quick
+            test_fused_fallback_member_fails;
+          test_case
+            "argument error at submit"
+            `Quick
+            test_argument_error_at_submit;
+          test_case
+            "sync waits for a flush in progress"
+            `Quick
+            test_sync_waits_for_flush_in_progress;
         ] );
       ( "errors",
         [

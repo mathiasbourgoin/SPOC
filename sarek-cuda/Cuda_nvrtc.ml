@@ -580,16 +580,6 @@ let nvrtc_option_array ?arch ~(options : string list)
    garbage option and failed with "error reading '8{...'"). Here every buffer
    stays reachable until [f] has returned. *)
 
-(** Compile CUDA source to PTX.
-    @param source CUDA C source code
-    @param name Optional program name
-    @param arch Target architecture (e.g., "compute_75")
-    @param options
-      Extra nvrtc options, prepended to the ones this module supplies. Screened
-      by {!check_fp_conformance}: an option that would break binary32 agreement
-      with the interpreter raises {!Fp_conformance_violation} BEFORE any nvrtc
-      call, so the check is reachable on a host with no CUDA at all.
-    @return PTX code as string *)
 let with_c_strings (strs : string list) (f : int -> string ptr -> 'a) : 'a =
   let bufs = List.map CArray.of_string strs in
   let ptrs = CArray.of_list (ptr char) (List.map CArray.start bufs) in
@@ -601,6 +591,16 @@ let with_c_strings (strs : string list) (f : int -> string ptr -> 'a) : 'a =
   ignore (Sys.opaque_identity (bufs, ptrs)) ;
   r
 
+(** Compile CUDA source to PTX.
+    @param source CUDA C source code
+    @param name Optional program name
+    @param arch Target architecture (e.g., "compute_75")
+    @param options
+      Extra nvrtc options, prepended to the ones this module supplies. Screened
+      by {!check_fp_conformance}: an option that would break binary32 agreement
+      with the interpreter raises {!Fp_conformance_violation} BEFORE any nvrtc
+      call, so the check is reachable on a host with no CUDA at all.
+    @return PTX code as string *)
 let compile_to_ptx ?(name = "kernel") ~arch ?(options = []) (source : string) :
     string =
   (* Fail fast, before touching libnvrtc: a bad flag is a programming error in

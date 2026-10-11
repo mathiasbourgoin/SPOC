@@ -157,9 +157,9 @@ and count launches.
     limit.
 - **FR-011** [US-1]: In the fused kernel, work-group `b` with
   `off_k <= b < off_k + gx_k` MUST execute member k's body with `block_idx_x`
-  read as `b - off_k` and `grid_dim_x` as `gx_k` (and the derived global index
-  and size intrinsics accordingly), with every other statement and expression
-  unchanged.
+  read as `b - off_k` and the derived global index and size intrinsics
+  accordingly, with every other statement and expression unchanged. A member
+  reading `grid_dim_x` MUST NOT be fused.
 - **FR-012** [US-1]: Fused IRs MUST be cached by the member IR sequence
   (physical identity) and reused physically on every later identical sequence.
 - **FR-013** [US-1]: A fused group whose code generation, compilation or launch
@@ -238,13 +238,14 @@ and count launches.
 
 - `launch window`: per-device list of pending groups of deferred launches.
 - `group`: pending launches that will be issued as one backend launch (one member → the original kernel).
-- `access`: (device byte range, read, write) for one bound vector argument.
+- `access`: (vector id, read, write) for one bound vector argument.
 - `fused kernel cache`: member-IR sequence → fused IR, or refused.
 
 ## Review outcomes (2026-10-11)
 
 Two reviews ran: one on semantics and concurrency, one on the IR rewrite.
-They found the following, now fixed and tested:
+They found the following. All are fixed, and each fix has a probe test,
+except where the item says otherwise:
 
 - **Shadowed position parameters.** A member local named `off` captured the
   position parameter. On HIP this caused a GPU memory fault, reproduced by
@@ -257,9 +258,13 @@ They found the following, now fixed and tested:
   were dropped.
 - **CPU zero-copy aliasing.**
 - **Device destroy.** Destroying a device flushed after eviction, which
-  re-created the device.
+  re-created the device. Fixed in the HIP, CUDA and Vulkan `destroy` functions.
+  The tests cover only the `Cache_hooks` listener; the backends' `destroy` is
+  not exercised.
 - **`grid_dim_x` signedness.**
-- **Missing limit checks** for grid size and shared memory.
+- **Missing limit checks** for grid size and shared memory. Vulkan reports
+  hard-coded limits (pre-existing): a group that fits those limits but not the
+  real device is refused at compile time, then falls back.
 - **Atomics.** An atomic on an element was counted as read-only.
 - **Error timing.** Argument expansion errors were raised late.
 

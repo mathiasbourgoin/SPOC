@@ -1316,9 +1316,7 @@ let jit_source (module B : Framework_sig.BACKEND) ~(device : Device.t) ~name
    CPU devices, the only backend that allocates them) alias host memory, and
    distinct vectors can alias each other through it, so buffer identity is no
    longer the vector's there: launches on CPU devices are not deferred. *)
-let defers_on (device : Device.t) =
-  (not device.capabilities.Framework_sig.is_cpu)
-  && Launch_window.defers device.framework
+let defers_on = Window.defers_device
 
 (* The buffers the kernel touches, with how it uses each. *)
 let launch_accesses (info : Launch_window.ir_info) (ir : Sarek_ir_types.kernel)
