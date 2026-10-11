@@ -65,13 +65,24 @@ val variant_name : variant -> string
 
 val outcome_text : outcome -> string
 
-(** [choose ?precision ~device ~ir ~launch ()]. [launch] gives the launch facts
-    (scalar arguments, dimensions); it is only called for a kernel that is a
-    matrix product. [precision] selects the operand rounding of a float32
-    product; without it, the most accurate accepted one ([Operands_bf16x3], then
-    [Operands_f16], then [Operands_bf16]). *)
+(** [choose ?precision ?explicit ?stream ~device ~ir ~launch ()]. [launch] gives
+    the launch facts (scalar arguments, dimensions); it is only called for a
+    kernel that is a matrix product. [precision] selects the operand rounding of
+    a float32 product; without it, float16 then bfloat16, whichever was accepted
+    (the bf16x3 split, more accurate but not faster, only when asked for).
+    [explicit] (default [false]): the caller asked for the rewrite
+    ({!Sarek_matrix.run}); only then is the interpreter rewritten — by default
+    it stays the independent oracle. [stream]: the launch is on a stream (the
+    interpreter path has none). Devices other than HIP and the interpreter are
+    declined before any analysis; an exception in the analysis yields
+    [Original].
+
+    The cache is keyed by the IR's physical identity, as [Execute]'s launch
+    memo: a kernel rebuilt for every launch is analysed every time. *)
 val choose :
   ?precision:Sarek_coopmat.operand_precision ->
+  ?explicit:bool ->
+  ?stream:bool ->
   device:Spoc_core.Device.t ->
   ir:kernel ->
   launch:(unit -> Sarek_ir_eval_int.launch option) ->

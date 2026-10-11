@@ -41,7 +41,20 @@ that need the original. `Sarek_matrix.run` keeps its PR 2 signature on top.
 |---|---|---|---|
 | `Off` | original | original | original |
 | `Exact` | rewritten (bit-identical) | original | original |
-| `Auto` (default) | rewritten | rewritten after `accept_relaxed_accumulation` | rewritten after `accept_operand_rounding` (+ relaxed); precision: the requested one, else the most accurate accepted (bf16x3, f16, bf16) |
+| `Auto` (default) | rewritten | rewritten after `accept_relaxed_accumulation` | rewritten after `accept_operand_rounding` (+ relaxed); precision: the requested one, else float16 then bfloat16 if accepted (the bf16x3 split, not faster than the scalar kernel, only on request) |
+
+Devices: by default only HIP (gfx11, 32-wide waves) is rewritten. The
+interpreter is rewritten only on an explicit request (`Sarek_matrix.run`,
+`run_vectors_outcome ~explicit:true`): by default it stays the independent
+oracle that differential tests compare against, and the rewrite is slower
+there (64³ int32: 82 → 680 ms sequential, measured by the PR 3 reviewer).
+Every other device is declined before any analysis. A stream launch on the
+interpreter is declined (its path has no streams). An exception in the
+analysis yields `Original`: the analysis runs on the default launch path and
+must never fail a launch that works without it. A launch-dimension-dependent
+bound, initial value or epilogue is declined (it would change meaning under
+the rewritten launch's dimensions). Only `Execute.run_vectors` specialises;
+`Execute.run` and raw kernel launches run the kernel as given.
 
 *(agent decision)* The request named `Faithful` (default) and `Optimise`;
 the later owner policy makes the float opt-ins the switch for result-changing
@@ -69,7 +82,9 @@ The rewritten grid of either must fit `max_grid_dims`.
 
 Per IR (physical identity, ephemeron, as #424's launch memo): the static plan
 and the rewritten kernels per (lowering, size class) — so a kernel's
-rewritten IR is physically stable and hits the launch memo. Mode, opt-ins and
+rewritten IR is physically stable and hits the launch memo. A kernel whose IR
+is rebuilt for every launch is analysed on every launch (as it misses the
+launch memo too); rewritten kernels are built outside the lock. Mode, opt-ins and
 device are checked per launch. A kernel that is not a matrix product costs one
 memo lookup. `Cache_hooks.on_clear_all` clears it.
 `Matrix_specialise.set_reporter` receives every decision about a matrix
@@ -98,10 +113,15 @@ overhead and speed measured.
 
 RX 7900 XTX, ROCm 7.2.4, GPU shared. Logs: `spoc-pipeline-logs/matrix-pattern/pr3-*`.
 
-**Correctness.** `test_matrix_dynamic.exe` (50 checks on 9 devices): the
-default `run_vectors` rewrites int32 on gfx1100 and both interpreters,
-bit-identical to `run_vectors_plain`; `Exact` the same; `Off` never; every
-other device declines. `Exact` leaves float16 alone after the opt-in.
+**Correctness.** `test_matrix_dynamic.exe` (89 checks on 9 devices): the
+default `run_vectors` rewrites int32 on gfx1100 only, bit-identical to
+`run_vectors_plain`; the interpreters on explicit request only; `Exact` the
+same; `Off` never; every other device declines. Review regressions: a
+`block_dim_x` reduction bound is declined; the direct variant with one wave
+per block (32×96×32) and with three batches on grid y (64×64×48) is within
+0.07–0.10 γ_K and writes nothing past C; f32 without `~precision` after
+accepting f16 and bf16x3 rounding takes f16; a kernel that is not a matrix
+product is not reported. `Exact` leaves float16 alone after the opt-in.
 float16 64×64×64 and 256×256×1024 take `Direct` (0.011–0.051 γ_K), 40×24×20 and
 100×37×129 `Staged`; accumulating into C takes `Staged` at any size. One
 rewritten IR for repeated launches; the reporter sees the rewrite. PR 2's

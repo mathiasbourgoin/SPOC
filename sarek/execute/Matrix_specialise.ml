@@ -13,6 +13,7 @@ module Adv = Sarek_matrix_advice
 module Map = Sarek_matrix_mapping
 module Rw = Sarek_matrix_rewrite
 module Direct = Sarek_matrix_direct
+open Sarek_matrix_scheme
 module Device = Spoc_core.Device
 module Fw = Spoc_framework.Framework_sig
 
@@ -137,13 +138,22 @@ let build k g lowering = function
   | Direct waves -> Direct.kernel k g ~waves
 
 let kernel_for e k g lowering variant =
-  Mutex.protect memo_lock (fun () ->
-      match List.assoc_opt (lowering, variant) e.kernels with
-      | Some r -> r
-      | None ->
-          let r = build k g lowering variant in
-          e.kernels <- ((lowering, variant), r) :: e.kernels ;
-          r)
+  let cached () =
+    Mutex.protect memo_lock (fun () ->
+        List.assoc_opt (lowering, variant) e.kernels)
+  in
+  match cached () with
+  | Some r -> r
+  | None ->
+      (* Built outside the lock: two domains may build the same kernel once
+         each; the first stored wins, so the IR stays physically stable. *)
+      let r = build k g lowering variant in
+      Mutex.protect memo_lock (fun () ->
+          match List.assoc_opt (lowering, variant) e.kernels with
+          | Some first -> first
+          | None ->
+              e.kernels <- ((lowering, variant), r) :: e.kernels ;
+              r)
 
 let clear () = Mutex.protect memo_lock (fun () -> Memo.reset memo)
 
@@ -154,10 +164,11 @@ let precision_lowering = function
   | Sarek_coopmat.Operands_bf16 -> Rw.Bf16_operands
   | Sarek_coopmat.Operands_bf16x3 -> Rw.Bf16x3_operands
 
-(* Without an explicit precision, the most accurate one the program accepted:
-   the split first, then float16 (more significand bits than bfloat16 over
-   its range). *)
-let preferred = Sarek_coopmat.[Operands_bf16x3; Operands_f16; Operands_bf16]
+(* Without an explicit precision: float16, then bfloat16, whichever the
+   program accepted. Both were measured faster than the scalar kernel at every
+   size benchmarked; the bf16x3 split was not (it buys accuracy, not speed),
+   so it is used only when asked for by [~precision]. *)
+let preferred = Sarek_coopmat.[Operands_f16; Operands_bf16]
 
 let float32_lowering precision =
   let accepted p = Sarek_coopmat.operand_rounding_reason p <> None in
@@ -179,13 +190,15 @@ let float32_lowering precision =
 
 let lowering_of ~mode plan precision =
   match (mode, plan.case) with
-  | Off, _ -> Error "matrix rewrite switched off (SAREK_MATRIX_REWRITE=off)"
-  | _, Adv.Int32_inputs -> Ok Rw.Int32_byte_planes
-  | Exact, (Adv.F16_inputs | Adv.F32_inputs) ->
-      Error "mode exact: float products are not rewritten"
+  | (Off | Exact | Auto), Adv.Int32_inputs -> Ok Rw.Int32_byte_planes
+  | (Off | Exact), (Adv.F16_inputs | Adv.F32_inputs) ->
+      Error
+        (Printf.sprintf
+           "mode %s: float products are not rewritten"
+           (mode_name mode))
   | Auto, Adv.F16_inputs -> Ok Rw.F16_operands
   | Auto, Adv.F32_inputs -> float32_lowering precision
-  | _, Adv.No_case ->
+  | (Off | Exact | Auto), Adv.No_case ->
       Error "no matrix-unit configuration for these element types"
 
 let verdict_ok = function
@@ -249,11 +262,30 @@ let variant_for plan lowering (launch : Sarek_ir_eval_int.launch)
       (Direct waves, Direct.launch_dims ~me:r.me ~ne:r.ne ~ze:r.ze ~waves)
   | _ -> (Staged, Rw.launch_dims ~me:r.me ~ne:r.ne ~ze:r.ze)
 
-let decide ?precision ~(device : Device.t) ~ir ~launch () =
+(* Before any analysis: a device the rewrite can never use costs nothing.
+   The interpreter is rewritten only on an explicit request: by default it
+   stays the independent oracle (and the rewrite is slower there). *)
+let device_possible (device : Device.t) ~explicit ~stream =
+  match device.framework with
+  | "HIP" -> Ok ()
+  | "Interpreter" when explicit && not stream -> Ok ()
+  | "Interpreter" when explicit -> Error "a stream launch on the interpreter"
+  | "Interpreter" ->
+      Error "the interpreter is rewritten only on request (Sarek_matrix.run)"
+  | fw -> Error (Printf.sprintf "no matrix-unit rewrite on %s" fw)
+
+let decide ?precision ~explicit ~stream ~(device : Device.t) ~ir ~launch () =
   let mode = mode () in
   let* () = if mode = Off then Error "matrix rewrite switched off" else Ok () in
+  let* () = device_possible device ~explicit ~stream in
   let e = entry ir in
   let* plan = e.plan in
+  let* () =
+    if uses_launch_dims plan.gemm then
+      Error
+        "a bound, the initial value or the epilogue reads block_dim/grid_dim"
+    else Ok ()
+  in
   let* lowering = lowering_of ~mode plan precision in
   let cfg = Rw.config_of lowering ~operand_elt:plan.gemm.a.elt in
   let* () = device_admits device cfg in
@@ -297,15 +329,26 @@ let report ~kernel ~device outcome =
           Hashtbl.replace reported (kernel, device, text) () ;
           Printf.eprintf "[sarek matrix] %s on %s: %s\n%!" kernel device text))
 
-let choose ?precision ~(device : Device.t) ~ir ~launch () =
+(* A kernel with no matrix product, a device that can never rewrite, and mode
+   Off are the common cases: not reported. *)
+let reportable (device : Device.t) ~explicit ir =
+  mode () <> Off
+  && Result.is_ok (device_possible device ~explicit ~stream:false)
+  && Result.is_ok (entry ir).plan
+
+let choose ?precision ?(explicit = false) ?(stream = false) ~(device : Device.t)
+    ~ir ~launch () =
   let outcome =
-    match decide ?precision ~device ~ir ~launch () with
+    match decide ?precision ~explicit ~stream ~device ~ir ~launch () with
     | Ok s -> Specialised s
     | Error why -> Original why
+    | exception e ->
+        (* The analysis runs on the default launch path: a failure in it must
+           never fail a launch that works without it. *)
+        Original ("matrix analysis failed: " ^ Printexc.to_string e)
   in
-  (* A kernel with no matrix product is the common case: not reported. *)
   (match outcome with
-  | Original _ when mode () = Off || Result.is_error (entry ir).plan -> ()
+  | Original _ when not (reportable device ~explicit ir) -> ()
   | _ -> report ~kernel:ir.kern_name ~device:device.name outcome) ;
   outcome
 

@@ -1903,13 +1903,15 @@ let run_specialised ?stream ~device ~args (s : Matrix_specialise.specialised) =
 (** [run_vectors] that also returns what ran: the kernel as given, or a
     matrix-unit rewrite of it ({!Matrix_specialise}). [precision] chooses the
     operand rounding of a float32 product (it must have been accepted). *)
-let run_vectors_outcome ?(stream : Transfer.stream option) ?precision
+let run_vectors_outcome ?(stream : Transfer.stream option) ?precision ?explicit
     ~(device : Device.t) ~(ir : Sarek_ir_types.kernel) ~(args : vector_arg list)
     ~(block : Framework_sig.dims) ~(grid : Framework_sig.dims)
     ?(shared_mem : int = 0) () : Matrix_specialise.outcome =
   let outcome =
     Matrix_specialise.choose
       ?precision
+      ?explicit
+      ~stream:(Option.is_some stream)
       ~device
       ~ir
       ~launch:(fun () -> matrix_launch ir args ~block ~grid)
