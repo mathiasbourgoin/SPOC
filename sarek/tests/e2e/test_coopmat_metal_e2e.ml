@@ -35,6 +35,10 @@ module Fw = Spoc_framework.Framework_sig
 
 let () = Test_helpers.Benchmarks.init_backends ()
 
+let () =
+  Sarek_codegen.Sarek_ir_metal.accept_unexecuted_lowering
+    ~reason:"test_coopmat_metal_e2e executes the lowering"
+
 let failures = ref 0
 
 let fail fmt =

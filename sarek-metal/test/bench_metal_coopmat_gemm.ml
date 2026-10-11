@@ -27,6 +27,10 @@ module Gemm = Sarek_gemm.Coopmat
 
 let () = Sarek_metal.Metal_plugin.init ()
 
+let () =
+  Sarek_metal.Sarek_ir_metal.accept_unexecuted_lowering
+    ~reason:"benchmark of the lowering under evaluation"
+
 let arg i default =
   if Array.length Sys.argv > i then int_of_string Sys.argv.(i) else default
 
