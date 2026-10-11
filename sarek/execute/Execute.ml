@@ -1233,8 +1233,7 @@ module Window = struct
 
   (** Forget every fused kernel built so far. *)
   let clear_fused_cache () =
-    Launch_window.clear_cache window ;
-    Mutex.protect window.Launch_window.lock Launch_epilogue.clear
+    Launch_window.clear_cache window ~also:Launch_epilogue.clear
 end
 
 (* Prepare the hand-over of a generated kernel to the backend: everything that

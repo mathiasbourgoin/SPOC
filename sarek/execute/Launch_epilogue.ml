@@ -24,8 +24,8 @@
       stores each element of I at most once, and every element C writes is one
       that P stores.
 
-    The coverage verdict is cached by (P, C, their dimensions, the values of the
-    scalars the evaluation read). *)
+    The coverage verdict is cached by (P, the producer array, C, their
+    dimensions, the values of the scalars the evaluation read). *)
 
 open Sarek_ir_types
 module LW = Launch_window
@@ -190,14 +190,14 @@ let cached_covers ~(p : _ LW.launch) ~p_array ~p_scalars ~(c : _ LW.launch)
 let fatal = function Out_of_memory | Stack_overflow -> true | _ -> false
 
 (* (producer ir id, consumer ir id, shared mapping) -> fused IR, or refused. *)
-let fused_cache : (int * int * (string * string) list, kernel option) Hashtbl.t
-    =
+let fused_cache :
+    (int * string * int * (string * string) list, kernel option) Hashtbl.t =
   Hashtbl.create 32
 
 let counter = Atomic.make 0
 
 let fused_ir ~(p : _ LW.launch) ~p_array ~(c : _ LW.launch) ~shared =
-  let key = (p.LW.ir_id, c.LW.ir_id, shared) in
+  let key = (p.LW.ir_id, p_array, c.LW.ir_id, shared) in
   match Hashtbl.find_opt fused_cache key with
   | Some k -> k
   | None ->
@@ -227,7 +227,7 @@ let fused_ir ~(p : _ LW.launch) ~p_array ~(c : _ LW.launch) ~shared =
    fused kernel fails when issued, P and C are issued as submitted, and this
    pair is never merged again. *)
 let merged (w : 'arg LW.t) (p : 'arg LW.launch) (c : 'arg LW.launch) ~fused
-    ~shared ~tc =
+    ~p_array ~shared ~tc =
   let c_args =
     List.concat
       (List.map2
@@ -240,7 +240,7 @@ let merged (w : 'arg LW.t) (p : 'arg LW.launch) (c : 'arg LW.launch) ~fused
   in
   let args = p.args @ c_args @ [w.LW.int32_arg (Int32.of_int tc)] in
   let info = LW.ir_info_locked w fused in
-  let key = (p.ir_id, c.ir_id, shared) in
+  let key = (p.ir_id, p_array, c.ir_id, shared) in
   let issue () =
     match p.issue_fused fused args p.grid with
     | () -> ()
@@ -326,7 +326,7 @@ let try_member w g (m : _ LW.launch) (c : _ LW.launch) shape =
           then
             Option.map
               (fun fused ->
-                merged w m c ~fused ~shared ~tc:(c.grid.x * c.block.x))
+                merged w m c ~fused ~p_array ~shared ~tc:(c.grid.x * c.block.x))
               (fused_ir ~p:m ~p_array ~c ~shared)
           else None)
 
@@ -371,7 +371,7 @@ let install (w : _ LW.t) =
     (fun w c ->
       try join w c with
       | (Out_of_memory | Stack_overflow) as e -> raise e
-      | Invalid_argument _ | Not_found -> false)
+      | _ -> false)
 
 (** Forget every cached consumer shape, coverage verdict and merged kernel. *)
 let clear () =
