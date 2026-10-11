@@ -7,8 +7,8 @@
   "rocq_version": "9.1.1",
   "counts": {
     "modules": 2,
-    "theorems": 111,
-    "definitions": 49,
+    "theorems": 125,
+    "definitions": 51,
     "inductives": 5,
     "records": 1,
     "axioms_declared": 0,
@@ -28,8 +28,12 @@
         "check_env_seq_core_frag_ss",
         "check_env_sound_core",
         "check_env_sound_superstep",
+        "check_warp_env_ESeq",
         "check_warp_env_diverged_clean_warp_free",
         "check_warp_env_diverged_no_warps",
+        "check_warp_env_seq_cons",
+        "check_warp_env_seq_core_frag",
+        "check_warp_env_seq_diverged",
         "check_warp_sound_core",
         "closed_uniform",
         "core_frag_impl_ss",
@@ -91,23 +95,28 @@
         "no_warp_app",
         "not_varying_uniform",
         "not_varying_uniform_args",
+        "semantic_c07_corollary",
+        "semantic_c07_flagged",
+        "semantic_c07_not_barrier_safe",
         "semantic_f01_corollary",
         "semantic_f01_flagged",
         "semantic_f01_not_barrier_safe",
+        "superstep_flag_irrelevant_check_warp_env",
         "susp_eval_thread0",
         "susp_eval_thread1",
         "var_free_env_irrelevant",
         "var_free_is_strongly_uniform_empty",
         "venv_lookup_extend_diff",
         "venv_lookup_extend_same",
+        "warp_after_varying_return_flagged",
         "warp_free_no_warps"
       ],
       "counts": {
         "axioms_declared": 0,
-        "definitions": 33,
+        "definitions": 35,
         "inductives": 2,
         "records": 0,
-        "theorems": 83
+        "theorems": 92
       }
     },
     "ConvergenceSpec.ConvergenceSpec": {
@@ -135,7 +144,12 @@
         "not_varying_converged_clean",
         "return_barrier_skip_safe",
         "return_converged_clean",
+        "superstep_flag_irrelevant_check",
+        "superstep_flag_irrelevant_check_env",
+        "superstep_flag_irrelevant_check_warp",
+        "superstep_never_barrier_free",
         "superstep_outer_diverged_error",
+        "superstep_outer_diverged_error_env",
         "varying_if_flags_barriers",
         "warp_diverged_error",
         "warp_mode_monotone",
@@ -146,7 +160,7 @@
         "definitions": 16,
         "inductives": 3,
         "records": 1,
-        "theorems": 28
+        "theorems": 33
       }
     }
   },
