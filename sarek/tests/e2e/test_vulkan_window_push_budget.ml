@@ -69,17 +69,19 @@ let result_correct k v =
   done ;
   !ok
 
-(* [members] independent launches; returns (backend launches issued, results
+(* [members] independent launches; returns (window statistics, results
    correct). *)
 let run dev ~members =
   let vs = List.init members make_vector in
   Execute.Window.flush () ;
+  (* A refused sequence is remembered across cases: start each from nothing. *)
+  Execute.Window.clear_fused_cache () ;
   Execute.Window.reset_stats () ;
   List.iteri (fun k v -> launch dev v ~k) vs ;
   Execute.Window.flush () ;
   Transfer.flush dev ;
-  let issued = (Execute.Window.stats ()).issued in
-  (issued, List.for_all Fun.id (List.mapi result_correct vs))
+  let stats = Execute.Window.stats () in
+  (stats, List.for_all Fun.id (List.mapi result_correct vs))
 
 let failures = ref 0
 
@@ -87,26 +89,42 @@ let check label ok =
   Printf.printf "  %-64s %s\n%!" label (if ok then "ok" else "FAIL") ;
   if not ok then incr failures
 
-let case dev (members, launches) =
-  let issued, correct =
+(* Push-constant bytes of a group of [size] launches of [add_three], as the
+   backend sees them: the fused block for two or more, the launch's own for
+   one. *)
+let group_bytes size =
+  let params = (ir_of add_three).Sarek_ir_types.kern_params in
+  if size = 1 then Sarek_push_constants.block_bytes params
+  else Sarek_push_constants.fused_block_bytes (List.init size (fun _ -> params))
+
+(* [sizes] are the launch counts of the groups the window must form. *)
+let case dev (members, sizes) =
+  let launches = List.length sizes in
+  let stats, correct =
     try run dev ~members
     with e ->
       Printf.printf "  raised: %s\n%!" (Printexc.to_string e) ;
-      (-1, false)
+      ({(Execute.Window.stats ()) with issued = -1}, false)
   in
   check
     (Printf.sprintf
-       "%d members (%d bytes): %d backend launch(es) (got %d), results correct"
+       "%d members in groups of bytes [%s]: %d launch(es) (got %d), 0 refused \
+        (got %d), correct"
        members
-       (members * 24)
+       (String.concat
+          "; "
+          (List.map (fun n -> string_of_int (group_bytes n)) sizes))
        launches
-       issued)
-    (issued = launches && correct)
+       stats.issued
+       stats.fused_refused)
+    (stats.issued = launches && stats.fused_refused = 0 && correct)
 
 let () =
   match Array.to_list (Device.by_framework "Vulkan") with
   | [] -> Printf.printf "[SKIP] No Vulkan device available\n%!"
   | dev :: _ ->
       check "Vulkan defers launches" (Execute.Window.defers_device dev) ;
-      List.iter (case dev) [(5, 1); (6, 2); (10, 2); (11, 3)] ;
+      List.iter
+        (case dev)
+        [(5, [5]); (6, [5; 1]); (10, [5; 5]); (11, [5; 5; 1])] ;
       if !failures > 0 then exit 1

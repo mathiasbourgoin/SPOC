@@ -54,8 +54,9 @@
   144-byte block that the backend refused: the window logged the failure,
   issued the six launches one by one and never fused that sequence again. On
   SPOC e9f22fe9 the same refusal also left the stream fence unsignalled and
-  the next launch hung in `vkWaitForFences` (fixed earlier by a312b91f; the
-  fence is now reset only just before `vkQueueSubmit`). The window now sizes the
+  the next launch hung in `vkWaitForFences` (fixed earlier by a312b91f and
+  63f5f0e9; the fence is now reset only just before `vkQueueSubmit` and tracked
+  as pending only once submitted). The window now sizes the
   block before it grows a group or merges an epilogue, with
   `Sarek_push_constants` (the layout function `build_push_constants` also
   writes with) against `Launch_window.push_constant_limit` (Vulkan: 128). A

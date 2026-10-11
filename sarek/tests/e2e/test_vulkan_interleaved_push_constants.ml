@@ -10,7 +10,7 @@
  * Bug: Vulkan_api_kernel's scalar set_arg_int32/int64/float32/float64 used to
  * ignore idx and append raw bytes to the push-constant block in CALL ORDER.
  * The GLSL codegen's push-constant block layout (see
- * sarek/codegen/Sarek_ir_glsl.ml:889-919, gen_push_constants) is instead:
+ * sarek/codegen/Sarek_ir_glsl.ml, gen_push_constants) is instead:
  * ALL vector lengths first (in vector-declaration order), THEN all user
  * scalars (in declaration order) - a fixed grouping, not call order.
  *

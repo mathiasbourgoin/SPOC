@@ -1300,6 +1300,68 @@ let test_epilogue_push_limit () =
   check int "24 bytes: merged" 1 (merged 24) ;
   check int "23 bytes: not merged" 2 (merged 23)
 
+(* The byte count depends on member order once an int64 scalar sits among int32
+   ones. The group is [k_wide (vector, int64); k_prod] when the consumer merges
+   into k_prod: in group order the fused block is 16 (four lengths) + 8 (int64)
+   + 12 (three int32) + 16 (four offset/size pairs' int32s) = 52 bytes; with the
+   merged launch first, or the members newest first, the int64 moves behind
+   three int32 scalars and the block is 56. *)
+let k_wide =
+  {
+    default_kernel with
+    kern_name = "k_wide";
+    kern_params =
+      [
+        DParam (fvar 1 "src", arr);
+        DParam
+          ( {var_name = "w"; var_id = 3; var_type = TInt64; var_mutable = false},
+            None );
+      ];
+    kern_body =
+      SAssign
+        ( LArrayElem ("src", gpu "thread_idx_x"),
+          EArrayRead ("src", gpu "thread_idx_x") );
+  }
+
+let dev_int64 =
+  {
+    dev with
+    capabilities = {(caps ()) with device_features = [Sarek_ir_analysis.Int64]};
+  }
+
+let epilogue_after_wide () =
+  reset () ;
+  Execute.Window.set_epilogue_backend ~backend:backend_name true ;
+  let[@warning "-8"] [w; x; t; y] = resident 4 in
+  events := [] ;
+  let run ir args =
+    Execute.run_vectors
+      ~device:dev_int64
+      ~ir
+      ~args
+      ~block:(Execute.dims1d 64)
+      ~grid:(Execute.dims1d 1)
+      ()
+  in
+  run k_wide [Execute.Vec w; Execute.Int64 5L] ;
+  run k_prod [Execute.Vec x; Execute.Vec t; Execute.Int 64] ;
+  run k_cons [Execute.Vec y; Execute.Vec t; Execute.Int 64] ;
+  Execute.Window.flush () ;
+  Execute.Window.set_epilogue_backend ~backend:backend_name false ;
+  List.length (launches ())
+
+let test_epilogue_push_order () =
+  let module LW = Sarek_execute.Launch_window in
+  let launches_at limit =
+    LW.set_push_constant_limit ~backend:backend_name limit ;
+    Fun.protect
+      ~finally:(fun () ->
+        LW.set_push_constant_limit ~backend:backend_name max_int)
+      epilogue_after_wide
+  in
+  check int "52 bytes: wide and merged form one launch" 1 (launches_at 52) ;
+  check int "51 bytes: the consumer stays separate" 2 (launches_at 51)
+
 let test_epilogue_uncovered () =
   (* The consumer writes [0, 128) but the producer stores only [0, 64). *)
   check
@@ -1755,6 +1817,10 @@ let () =
             "merge bounded by push-constant bytes"
             `Quick
             test_epilogue_push_limit;
+          test_case
+            "push-constant bytes follow member order"
+            `Quick
+            test_epilogue_push_order;
           test_case "not merged when uncovered" `Quick test_epilogue_uncovered;
           test_case "default backends" `Quick test_epilogue_off_by_default;
           test_case "failure falls back" `Quick test_epilogue_failure_falls_back;

@@ -24,6 +24,7 @@
   Ir_rename
   Fusion_horizontal
   Fusion_epilogue
+  Launch_limits
   Launch_window
   Launch_epilogue
   Matrix_specialise

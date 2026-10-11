@@ -170,48 +170,7 @@ let default_backends = ["HIP"; "OpenCL"; "Vulkan"; "CUDA/PTX"; "CUDA/C"]
 (* Read on every launch: an immutable list behind an atomic, no lock. *)
 let backends : string list Atomic.t = Atomic.make default_backends
 
-(* Kernel argument slots per backend, as an immutable association list. *)
-let slot_limits : (string * int) list Atomic.t = Atomic.make [("Metal", 31)]
-
-(** Kernel argument slots a launch's signature may use on [backend]: Metal binds
-    every argument at one of 31 [[buffer(n)]] indices. A backend with no limit
-    configured here is unbounded as far as the window is concerned. *)
-let arg_slot_limit (backend : string) : int =
-  Option.value
-    ~default:max_int
-    (List.assoc_opt backend (Atomic.get slot_limits))
-
-(* Replace [backend]'s entry of an association-list limit table. *)
-let set_limit table ~backend n =
-  let rec update () =
-    let old = Atomic.get table in
-    let next = (backend, n) :: List.remove_assoc backend old in
-    if not (Atomic.compare_and_set table old next) then update ()
-  in
-  update ()
-
-(** Set the argument slot limit of [backend] (for tests and for backends whose
-    limit becomes known). *)
-let set_arg_slot_limit ~(backend : string) (n : int) : unit =
-  set_limit slot_limits ~backend n
-
-(* Push-constant block bytes per backend, as an immutable association list. *)
-let push_limits : (string * int) list Atomic.t =
-  Atomic.make [("Vulkan", Sarek_push_constants.vulkan_block_limit)]
-
-(** Bytes of push constants a launch's signature may use on [backend]: Vulkan
-    declares one 128-byte range in every pipeline layout and refuses a launch
-    whose block is larger. A backend with no limit configured here is unbounded
-    as far as the window is concerned. *)
-let push_constant_limit (backend : string) : int =
-  Option.value
-    ~default:max_int
-    (List.assoc_opt backend (Atomic.get push_limits))
-
-(** Set the push-constant byte limit of [backend] (for tests and for backends
-    whose limit becomes known). *)
-let set_push_constant_limit ~(backend : string) (n : int) : unit =
-  set_limit push_limits ~backend n
+include Launch_limits
 
 (** [true] when launches on [backend] are deferred. *)
 let defers (backend : string) : bool =
@@ -283,21 +242,11 @@ let slots_ok w members =
 
 let params_of (l : _ launch) = l.ir.kern_params
 
-(** Bytes of the push-constant block of the fused kernel of [members], laid out
-    by {!Sarek_push_constants} as the backend lays out the block it writes. *)
-let fused_push_bytes members =
-  Sarek_push_constants.fused_block_bytes (List.map params_of members)
-
-(** [true] when [members], issued as one group, keep their kernel's
-    push-constant block within the backend's limit: the fused kernel's block for
-    two or more, the launch's own for one. *)
+(** The group's push-constant block fits the backend ({!push_bytes_ok}). *)
 let push_ok members =
   match members with
   | [] -> true
-  | [m] ->
-      Sarek_push_constants.block_bytes (params_of m)
-      <= push_constant_limit m.backend
-  | m :: _ -> fused_push_bytes members <= push_constant_limit m.backend
+  | m :: _ -> push_bytes_ok ~backend:m.backend (List.map params_of members)
 
 (** The backend can issue [members] as one group: {!slots_ok} and {!push_ok}. *)
 let signature_ok w members = slots_ok w members && push_ok members
