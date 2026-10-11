@@ -744,7 +744,7 @@ sudo apt-get install intel-opencl-icd
 # Install ROCm or Adrenalin drivers from AMD website
 ```
 
-### Install via opam
+### Install from source
 
 ```bash
 # Sarek is not yet published to opam: build from source
