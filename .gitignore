@@ -128,3 +128,6 @@ skills-meta/
 # the ABSOLUTE path of the .v they were produced from, so committing them
 # publishes the producing machine and user (backlog-216).
 .*.aux
+
+# odoc output: built and copied in by .github/workflows/docs.yml, never committed
+gh-pages/spoc_docs/
