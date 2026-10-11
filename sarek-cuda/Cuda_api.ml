@@ -344,9 +344,34 @@ module Memory = struct
     check "cuMemAlloc (custom)" (cuMemAlloc ptr bytes) ;
     {ptr = !@ptr; size; elem_size; device}
 
+  (* [free] is called from GC finalisers ([Gpu_memory.register_finalizer]),
+     i.e. at an arbitrary allocation point of whatever code is running — in
+     particular between a [Device.set_current] and the launch that relies on it
+     for ANOTHER device. Leaving the buffer's context selected made that launch
+     run a module of device B with device A's context current. So the context
+     selected before the free is restored: a finaliser must leave no trace on
+     the code it interrupted. Same contract as [Hip_api.Memory.free]. *)
   let free buf =
-    Device.set_current buf.device ;
-    check "cuMemFree" (cuMemFree buf.ptr)
+    let prev = Device.current_id () in
+    Fun.protect
+      ~finally:(fun () ->
+        if prev >= 0 && prev <> buf.device.Device.id then
+          match Hashtbl.find_opt Device.device_cache prev with
+          | None -> ()
+          | Some prev_dev -> (
+              (* Cannot raise from [finally] (and the caller is usually a
+                 finaliser that swallows exceptions): say so instead. *)
+              try Device.set_current prev_dev
+              with e ->
+                Spoc_core.Log.errorf
+                  Spoc_core.Log.Device
+                  "cuCtxSetCurrent %d (restoring the context selected before a \
+                   free) failed: %s"
+                  prev
+                  (Printexc.to_string e)))
+      (fun () ->
+        Device.set_current buf.device ;
+        check "cuMemFree" (cuMemFree buf.ptr))
 
   (* A blocking memcpy on the default stream drains all prior launches on that
      stream, so it is a safe point to release the device's retained kernargs. *)
