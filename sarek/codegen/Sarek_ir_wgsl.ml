@@ -1165,14 +1165,27 @@ let rec gen_stmt st buf indent = function
       (* Shared arrays are hoisted to module scope by collect_workgroup_decls;
          only the body continuation needs to be emitted here. *)
       gen_stmt st buf indent body
+  | SLet (v, EArrayCreate (elem_ty, EConst (CInt32 n), Local), body)
+    when Int32.compare n 0l > 0 ->
+      (* Per-thread array: a function-scope [var] of fixed-size array type.
+         WGSL zero-initialises it. The PPX only admits a positive constant
+         size, so the extent below is always a literal. *)
+      Buffer.add_string
+        buf
+        (Printf.sprintf
+           "%svar %s : array<%s, %ld>;\n"
+           indent
+           (escape_wgsl_name v.var_name)
+           (wgsl_type_of_elttype elem_ty)
+           n) ;
+      gen_stmt st buf indent body
   | SLet (_v, EArrayCreate (_, _, Local), _) ->
-      (* WGSL has no function-local dynamic arrays. Raise rather than emit
-         invalid WGSL. Use Shared memspace for workgroup-scoped arrays. *)
       Codegen_error.raise_error
         (Codegen_error.unsupported_construct
            "EArrayCreate(Local)"
-           "WGSL: local dynamic arrays unsupported; use Shared for workgroup \
-            arrays")
+           "WGSL: a local array needs a positive constant size (the PPX \
+            enforces this); a runtime size cannot be lowered to a \
+            function-scope array")
   | SLet (_v, EArrayCreate (_, _, Global), _) ->
       Codegen_error.raise_error
         (Codegen_error.unsupported_construct

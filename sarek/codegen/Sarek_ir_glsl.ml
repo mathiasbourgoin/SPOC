@@ -1195,7 +1195,12 @@ let gen_coopmat_op st op =
   in
   match op with
   | CM_decl {name; frag} ->
-      Printf.sprintf "%s %s;" (glsl_coopmat_type frag) (escape_glsl_name name)
+      (* Zero-initialised, as [CM_decl] requires on every backend: a bare
+         [coopmat<..> x;] has undefined contents in GLSL. The scalar
+         constructor fills every component and converts [0] to the component
+         type (float16_t, int8_t, uint, ...). *)
+      let ty = glsl_coopmat_type frag in
+      Printf.sprintf "%s %s = %s(0);" ty (escape_glsl_name name) ty
   | CM_load {dst; frag; src; index; stride} ->
       (* Row-major only, and only because that is the layout this slice
          executed. gl_CooperativeMatrixLayoutColumnMajor is one more enumerant

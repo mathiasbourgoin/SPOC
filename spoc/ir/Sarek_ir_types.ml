@@ -225,6 +225,13 @@ and coopmat_op =
   | CM_decl of {name : string; frag : Sarek_coopmat_types.fragment}
       (** Bring a fragment into scope for the rest of the enclosing block.
 
+          {b The fragment is zero-initialised} (every component, normative on
+          every backend): a kernel may [CM_muladd] into a declared accumulator
+          without loading it, and may leave a [CM_load] out entirely. The
+          Interpreter zero-fills, CUDA emits [fill_fragment(f, 0)], HIP [= {}],
+          GLSL [coopmat<..>(0)]. A backend that cannot guarantee this must
+          refuse the declaration, never emit an uninitialised fragment.
+
           Statement-level rather than a scoping form like {!SLet}, because GLSL,
           MSL and C all admit a declaration in the middle of a block and because
           [D = A * B + C] wants four fragments live at once — nesting four

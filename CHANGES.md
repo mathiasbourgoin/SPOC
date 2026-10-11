@@ -334,6 +334,21 @@
   Behaviour is unchanged; a new device-buffer test checks that a stream copy's
   host buffer (either direction) and a retained value survive `Gc.full_major`
   until the stream is synchronised.
+- `create_array` is checked at PPX time on every backend, Native included. It
+  used to be accepted everywhere and mean different things: `create_array n
+  Global` became a per-thread private array on CUDA/OpenCL/Metal/GLSL (and was
+  refused by PTX/WGSL), and `create_array n Local` with a runtime `n` became a
+  variable-length array that OpenCL C and MSL reject. Now `Global` is a located
+  error (take a kernel vector parameter instead) and the size of a `Local` or
+  `Shared` array must be a positive compile-time constant (an int32 literal, or
+  literals combined with `+ - *`). **Migration**: replace a runtime size by a
+  constant upper bound, e.g. `create_array n Local` becomes `create_array 16l
+  Local`, and index only the first `n` slots; replace `create_array n Global`
+  by a vector parameter. The `Pexp_array` hint no longer recommends `Global`.
+- The `CM_decl` IR docstring now states that a declared cooperative-matrix
+  fragment is zero-initialised on every backend (as `specs/coopmat-hip-wmma.md`
+  already said); OpenCL, Metal, WGSL and PTX refuse cooperative matrices rather
+  than declare one uninitialised.
 
 - `lsr` compiles to one unsigned shift on every backend. It is now its own IR
   operator (`Lshr32`/`Lshr64`) instead of a 4–5 operation expansion over the
@@ -566,6 +581,12 @@
   only on distinct streams created with `Stream.create`, after a first use
   from one domain; the default stream is single-domain, and a kernel object
   must not be launched from two domains at once.
+- GLSL `CM_decl` emitted a bare `coopmat<..> x;` with undefined contents,
+  while the Interpreter, HIP and CUDA zero the fragment. It now emits
+  `coopmat<..> x = coopmat<..>(0);` (glslangValidator, Vulkan 1.3: exit 0).
+- WGSL lowers a constant-size `create_array n Local` to a function-scope
+  `var a : array<T, N>;` instead of failing with an internal "local dynamic
+  arrays unsupported" error (naga: validates).
 
 - hiprtc and nvrtc option arrays: `CArray.of_list string` let the C copies of
   the option strings be freed before the compile call. Under a different

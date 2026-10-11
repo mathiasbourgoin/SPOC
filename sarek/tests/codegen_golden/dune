@@ -166,3 +166,10 @@
  (alias runtest)
  (action
   (run %{dep:test_module_const_in_helper.exe})))
+
+(test
+ (name test_create_array_cm_decl)
+ (modules test_create_array_cm_decl)
+ (libraries sarek_ir sarek_codegen sarek_backend_error alcotest)
+ (instrumentation
+  (backend bisect_ppx)))
