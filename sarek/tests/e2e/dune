@@ -2166,3 +2166,28 @@
     SPOC_TEST_INJECT_BACKEND_ERROR
     unavailable
     (run %{dep:test_math_intrinsics.exe})))))
+||||||| parent of bec65d4b (test: R-27 through the Vector/Execute path (fails without the Transfer forwarding))
+
+; R-27 through Vector/Transfer/Execute: host reads and writes of a USE_HOST_PTR
+; (zero-copy) OpenCL buffer, forced onto GPU devices by a test-only hook.
+
+(executable
+ (name test_opencl_zero_copy_vector)
+ (modules test_opencl_zero_copy_vector)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek_ir
+  spoc_core
+  sarek.execute
+  test_helpers
+  sarek_native
+  sarek_interpreter
+  sarek_opencl)
+ (preprocess
+  (pps sarek_ppx)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_opencl_zero_copy_vector.exe})))
