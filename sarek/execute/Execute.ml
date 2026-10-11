@@ -1008,9 +1008,9 @@ module Launch_memo = Ephemeron.K1.Make (Physical_kernel)
 (* The backend is identified by its [generate_source] closure, compared
    PHYSICALLY, not by its name: [Framework_registry.register_backend] replaces
    a backend registered under the same name, and the replacement must not be
-   handed its predecessor's source. The field has [generate_source]'s exact
-   type, so storing [B.generate_source] stores the closure itself: any other
-   type would eta-expand it into a fresh closure that never compares equal. *)
+   handed its predecessor's source. [codegen] must stay exactly
+   [generate_source]'s type: a type that drops or reorders its optional
+   arguments would wrap it in a fresh closure that never compares equal. *)
 type source_key = {
   codegen :
     ?block:Framework_sig.dims ->

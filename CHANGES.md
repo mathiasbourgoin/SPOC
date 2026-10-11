@@ -247,6 +247,7 @@
   `Sarek_core_primitives` are unchanged and the convergence checker is still
   unit-tested on them.
   `test_warp_diverged` now gets the refusal rather than the convergence error.
+
 - The stream keep-alive and kernel-argument retention no longer use `Obj`.
   `Transfer.retain_on_stream` takes `~keep:(Transfer.Keep v)` (the new
   existential `Transfer.keep`) instead of an `Obj.t`; the stream ledger,
@@ -255,8 +256,8 @@
   a record of their ctypes types; and `Execute`'s source memo keys the backend
   by its `generate_source` closure at its own type, still compared physically.
   Behaviour is unchanged; a new device-buffer test checks that a stream copy's
-  source and a retained value survive `Gc.full_major` until the stream is
-  synchronised.
+  host buffer (either direction) and a retained value survive `Gc.full_major`
+  until the stream is synchronised.
 
 - `lsr` compiles to one unsigned shift on every backend. It is now its own IR
   operator (`Lshr32`/`Lshr64`) instead of a 4–5 operation expansion over the

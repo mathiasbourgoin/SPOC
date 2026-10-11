@@ -372,20 +372,29 @@ let[@inline never] retain_unrooted stream collected =
   Gc.finalise (fun _ -> collected := true) cell ;
   Transfer.retain_on_stream stream ~keep:(Transfer.Keep cell) ~vec_ids:[]
 
-(* A stream copy's source and a [retain_on_stream] value survive
-   [Gc.full_major] until the stream is synchronised, and are released after. *)
+let[@inline never] read_back_unrooted stream ~src collected =
+  let dst = i32_ba (Vector.length src) (fun _ -> 0l) in
+  Gc.finalise (fun _ -> collected := true) dst ;
+  Transfer.copy_to_host ~stream ~src ~src_offset:0 dst
+
+(* A stream copy's host side (the source of [copy_to_device], the destination
+   of [copy_to_host]) and a [retain_on_stream] value survive [Gc.full_major]
+   until the stream is synchronised, and are released after. *)
 let test_keep_alive dev =
   let dst = Transfer.create_device_only dev Vector.int32 256 in
   let s = Transfer.create_stream dev in
-  let copied = ref false and retained = ref false in
+  let copied = ref false and read = ref false and retained = ref false in
   copy_unrooted s ~dst copied ;
+  read_back_unrooted s ~src:dst read ;
   retain_unrooted s retained ;
   Gc.full_major () ;
   check "stream copy source alive across Gc.full_major" (not !copied) ;
+  check "stream read-back destination alive across Gc.full_major" (not !read) ;
   check "retain_on_stream value alive across Gc.full_major" (not !retained) ;
   Transfer.synchronize_stream s ;
   Gc.full_major () ;
   check "stream copy source released after the sync" !copied ;
+  check "stream read-back destination released after the sync" !read ;
   check "retain_on_stream value released after the sync" !retained ;
   Transfer.destroy_stream s ;
   Transfer.free_all_buffers dst

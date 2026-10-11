@@ -35,7 +35,9 @@ let stream_handle (_ : stream) :
     Device_jsx.t * Spoc_framework.Framework_sig.stream_ref =
   _ns "stream_handle"
 
-(** Mirrors [Transfer.keep]: a value rooted only for its liveness. *)
+(** Mirrors [Transfer.keep]: a value rooted only for its liveness. Execute.ml is
+    compiled against both, so the constructor must keep [Transfer.Keep]'s name
+    and arity. *)
 type keep = Keep : 'a -> keep
 
 let retain_on_stream (_ : stream) ~keep:(_ : keep) ~vec_ids:(_ : int list) :
