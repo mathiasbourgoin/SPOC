@@ -57,13 +57,13 @@ let create_event (dev : Device.t) : event =
 
 (** Record event (mark current point in stream) *)
 let record_event (e : event) =
-  Launch_hooks.flush_pending () ;
+  Spoc_framework.Launch_hooks.flush_pending () ;
   let (module E : EVENT) = e in
   E.record ()
 
 (** Wait for event to complete *)
 let synchronize_event (e : event) =
-  Launch_hooks.flush_pending () ;
+  Spoc_framework.Launch_hooks.flush_pending () ;
   let (module E : EVENT) = e in
   E.synchronize ()
 
@@ -114,17 +114,17 @@ let create_timer (dev : Device.t) : timer =
       end : EVENT_PAIR)
 
 let timer_start (t : timer) =
-  Launch_hooks.flush_pending () ;
+  Spoc_framework.Launch_hooks.flush_pending () ;
   let (module T : EVENT_PAIR) = t in
   T.start ()
 
 let timer_stop (t : timer) =
-  Launch_hooks.flush_pending () ;
+  Spoc_framework.Launch_hooks.flush_pending () ;
   let (module T : EVENT_PAIR) = t in
   T.stop ()
 
 let timer_elapsed_ms (t : timer) =
-  Launch_hooks.flush_pending () ;
+  Spoc_framework.Launch_hooks.flush_pending () ;
   let (module T : EVENT_PAIR) = t in
   T.elapsed_ms ()
 

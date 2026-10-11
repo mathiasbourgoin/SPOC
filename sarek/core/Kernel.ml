@@ -68,7 +68,7 @@ let compile (device : Device.t) ~(name : string) ~(source : string) : t =
           let name = name
 
           let launch ~args ~grid ~block ~shared_mem =
-            Launch_hooks.flush_pending () ;
+            Spoc_framework.Launch_hooks.flush_pending () ;
             match B.unwrap_kargs args with
             | Some a ->
                 B.Kernel.launch k ~args:a ~grid ~block ~shared_mem ~stream:None
@@ -89,7 +89,7 @@ let compile_cached (device : Device.t) ~(name : string) ~(source : string) : t =
           let name = name
 
           let launch ~args ~grid ~block ~shared_mem =
-            Launch_hooks.flush_pending () ;
+            Spoc_framework.Launch_hooks.flush_pending () ;
             match B.unwrap_kargs args with
             | Some a ->
                 B.Kernel.launch k ~args:a ~grid ~block ~shared_mem ~stream:None

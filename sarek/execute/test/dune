@@ -21,6 +21,7 @@
  (modules test_launch_window)
  (libraries
   sarek_execute
+  sarek_codegen
   sarek_ir
   spoc_core
   spoc_framework

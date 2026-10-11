@@ -450,7 +450,7 @@ let has_device_data = Read_back.has_device_data
 (* Every read-back observes device work, so pending deferred launches are
    issued first (specs/launch-window.md). *)
 let read_back_to_host vec dev =
-  Launch_hooks.flush_pending () ;
+  Spoc_framework.Launch_hooks.flush_pending () ;
   Read_back.read_back_to_host vec dev
 
 (** Transfer vector data to a device *)
@@ -503,7 +503,7 @@ let to_device (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : unit =
       (* The upload overwrites this vector's buffer on [dev]: a pending launch
          that binds it must be issued first. Launches that do not bind it are
          unaffected and stay pending (specs/launch-window.md). *)
-      Launch_hooks.flush_touching ~device_id:dev.id ~buf:vec.id ;
+      Spoc_framework.Launch_hooks.flush_touching ~device_id:dev.id ~buf:vec.id ;
       Log.debugf
         Log.Transfer
         "to_device: transferring %d bytes to dev=%d"
@@ -810,7 +810,7 @@ let is_device_only = Vector.is_device_only
     unconditionally at the end. This function now does the same, scoped to
     [dev]. *)
 let free_buffer (vec : (_, _) Vector.t) (dev : Device.t) : unit =
-  Launch_hooks.flush_pending () ;
+  Spoc_framework.Launch_hooks.flush_pending () ;
   refuse_if_in_flight ~op:"Transfer.free_buffer" vec ;
   (* A device-only vector has nothing to drain into: freeing it DISCARDS its
      contents (documented on [create_device_only]). The location reset in step
@@ -862,7 +862,7 @@ let free_buffer (vec : (_, _) Vector.t) (dev : Device.t) : unit =
 
 (** Free all device buffers for a vector *)
 let free_all_buffers (vec : (_, _) Vector.t) : unit =
-  Launch_hooks.flush_pending () ;
+  Spoc_framework.Launch_hooks.flush_pending () ;
   refuse_if_in_flight ~op:"Transfer.free_all_buffers" vec ;
   (* Device-only: discard, as in {!free_buffer}. *)
   let drain = not (is_device_only vec) in
@@ -898,7 +898,7 @@ let free_all_buffers (vec : (_, _) Vector.t) : unit =
 
 (** Synchronize all pending operations on a device *)
 let flush (dev : Device.t) : unit =
-  Launch_hooks.flush_pending () ;
+  Spoc_framework.Launch_hooks.flush_pending () ;
   match Framework_registry.find_backend dev.framework with
   | None -> failwith ("Unknown framework: " ^ dev.framework)
   | Some (module B : Framework_sig.BACKEND) ->
@@ -961,7 +961,7 @@ let create_stream (dev : Device.t) : stream =
     let state = st
 
     let synchronize () =
-      Launch_hooks.flush_pending () ;
+      Spoc_framework.Launch_hooks.flush_pending () ;
       Ledger.check_live ~op:"Transfer.synchronize_stream" st ;
       B.Stream.synchronize s ;
       Ledger.release_all st
@@ -1005,7 +1005,7 @@ let default_stream (dev : Device.t) : stream =
     let state = st
 
     let synchronize () =
-      Launch_hooks.flush_pending () ;
+      Spoc_framework.Launch_hooks.flush_pending () ;
       B.Stream.synchronize s ;
       Ledger.release_all st
 
@@ -1102,7 +1102,7 @@ let backend_event (type e) ~(op : string)
 (** Record [ev] on [s]: it completes once all work enqueued on [s] so far has
     completed. Refused across devices. *)
 let record_event (ev : event) (s : stream) : unit =
-  Launch_hooks.flush_pending () ;
+  Spoc_framework.Launch_hooks.flush_pending () ;
   let op = "Transfer.record_event" in
   let (module B : Framework_sig.BACKEND) = backend_of ev.ev_device in
   let bs = backend_stream ~op ~dev:ev.ev_device B.unwrap_stream s in
@@ -1121,7 +1121,7 @@ let record_event (ev : event) (s : stream) : unit =
     recorded. Refused across devices. On Native/Interpreter streams are
     synchronous, so the wait is already satisfied. *)
 let stream_wait_event (s : stream) (ev : event) : unit =
-  Launch_hooks.flush_pending () ;
+  Spoc_framework.Launch_hooks.flush_pending () ;
   let op = "Transfer.stream_wait_event" in
   let (module B : Framework_sig.BACKEND) = backend_of ev.ev_device in
   let bs = backend_stream ~op ~dev:ev.ev_device B.unwrap_stream s in
@@ -1139,7 +1139,7 @@ let release_event (ev : event) : unit =
 (** [true] once the recorded work has completed (or the event was never
     recorded). Never blocks. A [true] answer releases what the event covers. *)
 let event_query (ev : event) : bool =
-  Launch_hooks.flush_pending () ;
+  Spoc_framework.Launch_hooks.flush_pending () ;
   let (module B : Framework_sig.BACKEND) = backend_of ev.ev_device in
   let done_ =
     B.Async.event_query
@@ -1150,7 +1150,7 @@ let event_query (ev : event) : bool =
 
 (** Block until the recorded work has completed, then release what it covers. *)
 let synchronize_event (ev : event) : unit =
-  Launch_hooks.flush_pending () ;
+  Spoc_framework.Launch_hooks.flush_pending () ;
   let (module B : Framework_sig.BACKEND) = backend_of ev.ev_device in
   B.Event.synchronize
     (backend_event ~op:"Transfer.synchronize_event" B.unwrap_event ev) ;
@@ -1282,7 +1282,7 @@ let vector_bytes (vec : (_, _) Vector.t) =
 let h2d_range (type a b) ~(op : string) ?(stream : stream option)
     ~(src_ptr : nativeint) ~(byte_size : int) ~(keep : Obj.t)
     ~(dst : (a, b) Vector.t) ~(dst_byte_offset : int) () : unit =
-  Launch_hooks.flush_pending () ;
+  Spoc_framework.Launch_hooks.flush_pending () ;
   let dev, buf = range_target ~op dst in
   check_bytes ~op ~total:(vector_bytes dst) ~off:dst_byte_offset ~byte_size ;
   let (module Buf : Vector.DEVICE_BUFFER) = buf in
@@ -1412,7 +1412,7 @@ let copy_ptr_to_device ?(stream : stream option) ~(src_ptr : nativeint)
 let d2h_range (type a b) ~(op : string) ?(stream : stream option)
     ~(src : (a, b) Vector.t) ~(src_byte_offset : int)
     (dst : (_, _, Bigarray.c_layout) Bigarray.Array1.t) : unit =
-  Launch_hooks.flush_pending () ;
+  Spoc_framework.Launch_hooks.flush_pending () ;
   let dev, buf = range_target ~op src in
   let byte_size = Bigarray.Array1.size_in_bytes dst in
   check_bytes ~op ~total:(vector_bytes src) ~off:src_byte_offset ~byte_size ;
@@ -1587,7 +1587,7 @@ let refuse_pinned_in_flight ~op addr bytes =
     for anything else — a sub-array, a registered buffer, a buffer already freed
     — and while a stream-ordered copy may still read or write it. *)
 let free_pinned (ba : (_, _, Bigarray.c_layout) Bigarray.Array1.t) : unit =
-  Launch_hooks.flush_pending () ;
+  Spoc_framework.Launch_hooks.flush_pending () ;
   let op = "Transfer.free_pinned" in
   let addr = bigarray_addr ba and bytes = Bigarray.Array1.size_in_bytes ba in
   (* Check, backend free and removal in ONE critical section: two domains cannot
@@ -1640,7 +1640,7 @@ let register_host (dev : Device.t)
     (ba : (_, _, Bigarray.c_layout) Bigarray.Array1.t) : unit =
   let addr = bigarray_addr ba and bytes = Bigarray.Array1.size_in_bytes ba in
   if bytes < 1 then invalid_arg "Transfer.register_host: empty buffer" ;
-  Launch_hooks.flush_pending () ;
+  Spoc_framework.Launch_hooks.flush_pending () ;
   let (module B : Framework_sig.BACKEND) = backend_of dev in
   (* Check, backend registration and insert in one critical section. *)
   Mutex.protect pinned_lock (fun () ->
@@ -1659,7 +1659,7 @@ let register_host (dev : Device.t)
 
 (** Undo {!register_host}; refused while stream-ordered copies may use it. *)
 let unregister_host (ba : (_, _, Bigarray.c_layout) Bigarray.Array1.t) : unit =
-  Launch_hooks.flush_pending () ;
+  Spoc_framework.Launch_hooks.flush_pending () ;
   let op = "Transfer.unregister_host" in
   let addr = bigarray_addr ba and bytes = Bigarray.Array1.size_in_bytes ba in
   Mutex.protect pinned_lock (fun () ->
@@ -1820,7 +1820,7 @@ let stage_to_device (type a b) ?(stream : stream option)
     (src : (a, b, Bigarray.c_layout) Bigarray.Array1.t) ~(dst : (a, b) Vector.t)
     ~(dst_offset : int) : unit =
   let op = "Transfer.stage_to_device" in
-  Launch_hooks.flush_pending () ;
+  Spoc_framework.Launch_hooks.flush_pending () ;
   let n = Bigarray.Array1.dim src in
   if dst_offset < 0 || dst_offset > dst.length - n then
     invalid_arg

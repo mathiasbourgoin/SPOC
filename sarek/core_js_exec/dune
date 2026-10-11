@@ -19,11 +19,6 @@
 
 (copy_files ../interp/*.mli)
 
-; The synchronisation-point hook of the launch window (specs/launch-window.md):
-; Execute.ml installs its flusher there. Stdlib only.
-
-(copy_files ../core/Launch_hooks.ml)
-
 (library
  (name spoc_core_exec_js)
  (wrapped false)
@@ -43,7 +38,6 @@
   Vector_jsx
   Kernel_arg_jsx
   Device_jsx
-  Launch_hooks
   Transfer_jsx
   Log_jsx
   Spoc_core

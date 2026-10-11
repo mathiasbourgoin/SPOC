@@ -222,7 +222,7 @@ let run_soa ~(device : Device.t) ~(ir : Sarek_ir_types.kernel)
     ~(args : soa_arg list) ~(block : Framework_sig.dims)
     ~(grid : Framework_sig.dims) ?(shared_mem : int = 0) () : unit =
   (* Not deferred: issue every deferred launch first (specs/launch-window.md). *)
-  Spoc_core.Launch_hooks.flush_pending () ;
+  Spoc_framework.Launch_hooks.flush_pending () ;
   match Framework_registry.find_backend device.framework with
   | None ->
       raise_error

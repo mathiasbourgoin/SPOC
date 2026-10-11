@@ -9,7 +9,8 @@
   Kernel_args
   Compile_cache
   Guarded_cache
-  Cache_hooks)
+  Cache_hooks
+  Launch_hooks)
  (libraries sarek_ir sarek_backend_error)
  (preprocess no_preprocessing)
  (instrumentation

@@ -214,6 +214,9 @@ module Device = struct
     retire_device dev.id
 
   let destroy dev =
+    (* Deferred launches on this device must reach it before it is evicted:
+       issuing them afterwards would re-create the device (specs/launch-window.md). *)
+    Spoc_framework.Launch_hooks.flush_pending () ;
     (* Evict from device_cache, then notify while the device is still
        selected, mirroring the CUDA backend. HIP has no explicit context to
        destroy under the runtime model, so there is no hipCtxDestroy analog. *)

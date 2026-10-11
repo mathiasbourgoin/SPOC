@@ -67,6 +67,17 @@ and expr tbl e =
       expr tbl a ;
       expr tbl b
   | EUnop (_, a) | ECast (_, a) | ERecordField (a, _) -> expr tbl a
+  | EIntrinsic (_, name, args)
+    when Sarek_ir_analysis.is_atomic_intrinsic_name name ->
+      (* An atomic may take its target as an element ([&a[i]]): that element
+         is read AND written. *)
+      List.iter
+        (function
+          | EArrayRead (a, i) ->
+              note tbl a both ;
+              expr tbl i
+          | x -> expr tbl x)
+        args
   | EIntrinsic (_, _, args) | ETuple args | EVariant (_, _, args) ->
       List.iter (expr tbl) args
   | EApp (f, args) -> List.iter (expr tbl) (f :: args)
@@ -77,6 +88,7 @@ and expr tbl e =
       expr tbl s ;
       List.iter (fun (_, e) -> expr tbl e) cases
 
+(* [a.(i).f <- v] writes element [i] of [a]: the field case recurses. *)
 let rec lvalue tbl = function
   | LVar _ -> ()
   | LArrayElem (name, idx) ->
@@ -85,10 +97,7 @@ let rec lvalue tbl = function
   | LArrayElemExpr (base, idx) ->
       base_access tbl write_ base ;
       expr tbl idx
-  | LRecordField (lv, _) -> lvalue_inner tbl lv
-
-(* [a.(i).f <- v] writes element [i] of [a]. *)
-and lvalue_inner tbl lv = lvalue tbl lv
+  | LRecordField (lv, _) -> lvalue tbl lv
 
 let coopmat tbl = function
   | CM_decl _ | CM_muladd _ -> ()
@@ -148,18 +157,28 @@ let param_accesses (k : kernel) : (string * access) list =
 
 (** {1 Horizontal fusability} *)
 
-(** Intrinsics whose value depends on the work-group's position in the grid.
-    Horizontal fusion rewrites exactly these. *)
-let position_intrinsics =
+(** Position intrinsics that horizontal fusion rewrites, under the exact path
+    [Sarek_stdlib.Gpu] only. Each rewritten form keeps the type the backends
+    give the original: [block_idx_x - off] and [gdx * block_dim_x] stay in the
+    backend's own unsigned type where it has one. *)
+let rewritten_intrinsics =
   [
     "block_idx_x";
-    "grid_dim_x";
     "global_thread_id";
     "global_idx";
     "global_idx_x";
     "global_size";
     "global_size_x";
   ]
+
+(** Position intrinsics a member may not use at all. [grid_dim_x] would have to
+    become an [int] parameter, while CUDA/HIP, OpenCL and Metal emit it as an
+    unsigned value, so comparisons and divisions with negative operands would
+    change meaning. [block_id_x] is an alias the backends accept for
+    [block_idx_x]; it is refused rather than rewritten under a second name. *)
+let refused_intrinsics = ["grid_dim_x"; "block_id_x"]
+
+let gpu_path = ["Sarek_stdlib"; "Gpu"]
 
 let is_stdlib_path = function "Sarek_stdlib" :: _ -> true | _ -> false
 
@@ -176,22 +195,48 @@ exception Refuse of string
 
 let refuse fmt = Printf.ksprintf (fun s -> raise (Refuse s)) fmt
 
-let rec check_expr ~in_helper e =
-  let go = check_expr ~in_helper in
+module Ids = Set.Make (Int)
+module Names = Set.Make (String)
+
+(* Variables in scope. A free variable (an unbound global reference) would be
+   renamed by the fusion rewrite and stop resolving, so it is refused. *)
+type scope = {ids : Ids.t; names : Names.t; helpers : Names.t; in_helper : bool}
+
+let bind sc (v : var) =
+  {sc with ids = Ids.add v.var_id sc.ids; names = Names.add v.var_name sc.names}
+
+let bind_pattern sc = function
+  | PConstr (_, vs) ->
+      {sc with names = List.fold_left (fun n v -> Names.add v n) sc.names vs}
+  | PWild -> sc
+
+let check_intrinsic sc path name =
+  if not (is_stdlib_path path) then
+    refuse
+      "intrinsic %s.%s is not from Sarek_stdlib"
+      (String.concat "." path)
+      name ;
+  if List.mem name refused_intrinsics then refuse "uses %s" name ;
+  if List.mem name rewritten_intrinsics then begin
+    if path <> gpu_path then
+      refuse "%s under %s, not Sarek_stdlib.Gpu" name (String.concat "." path) ;
+    if sc.in_helper then refuse "helper function reads %s" name
+  end
+
+let rec check_expr sc e =
+  let go = check_expr sc in
   match e with
   | EIntrinsic (path, name, args) ->
-      if not (is_stdlib_path path) then
-        refuse
-          "intrinsic %s.%s is not from Sarek_stdlib"
-          (String.concat "." path)
-          name ;
-      if in_helper && List.mem name position_intrinsics then
-        refuse "helper function reads %s" name ;
+      check_intrinsic sc path name ;
       List.iter go args
+  | EVar v ->
+      if not (Ids.mem v.var_id sc.ids || Names.mem v.var_name sc.names) then
+        refuse "free variable %s" v.var_name
+  | EApp (EVar f, es) when Names.mem f.var_name sc.helpers -> List.iter go es
   | EArrayCreate (_, _, Shared) ->
       refuse "shared array not in the body's leading let prefix"
   | EArrayCreate (_, size, _) -> go size
-  | EConst _ | EVar _ | EArrayLen _ -> ()
+  | EConst _ | EArrayLen _ -> ()
   | EArrayRead (_, i) -> go i
   | EArrayReadExpr (a, b) | EBinop (_, a, b) ->
       go a ;
@@ -201,23 +246,23 @@ let rec check_expr ~in_helper e =
   | EApp (f, es) -> List.iter go (f :: es)
   | ERecord (_, fs) -> List.iter (fun (_, e) -> go e) fs
   | EIf (a, b, c) -> List.iter go [a; b; c]
-  | EMatch (s, cs) ->
-      go s ;
-      List.iter (fun (_, e) -> go e) cs
+  | EMatch (x, cs) ->
+      go x ;
+      List.iter (fun (p, e) -> check_expr (bind_pattern sc p) e) cs
 
-let rec check_lvalue ~in_helper = function
-  | LVar _ -> ()
-  | LArrayElem (_, i) -> check_expr ~in_helper i
+let rec check_lvalue sc = function
+  | LVar v -> check_expr sc (EVar v)
+  | LArrayElem (_, i) -> check_expr sc i
   | LArrayElemExpr (a, i) ->
-      check_expr ~in_helper a ;
-      check_expr ~in_helper i
-  | LRecordField (lv, _) -> check_lvalue ~in_helper lv
+      check_expr sc a ;
+      check_expr sc i
+  | LRecordField (lv, _) -> check_lvalue sc lv
 
-let rec check_stmt ~in_helper s =
-  let e = check_expr ~in_helper and st = check_stmt ~in_helper in
+let rec check_stmt sc s =
+  let e = check_expr sc and st = check_stmt sc in
   match s with
   | SAssign (lv, x) ->
-      check_lvalue ~in_helper lv ;
+      check_lvalue sc lv ;
       e x
   | SSeq ss -> List.iter st ss
   | SIf (c, t, f) ->
@@ -227,41 +272,92 @@ let rec check_stmt ~in_helper s =
   | SWhile (c, b) ->
       e c ;
       st b
-  | SFor (_, lo, hi, _, b) ->
+  | SFor (v, lo, hi, _, b) ->
       e lo ;
       e hi ;
-      st b
+      check_stmt (bind sc v) b
   | SMatch (x, cs) ->
       e x ;
-      List.iter (fun (_, b) -> st b) cs
+      List.iter (fun (p, b) -> check_stmt (bind_pattern sc p) b) cs
   | SReturn x | SExpr x -> e x
-  | SLet (_, x, b) | SLetMut (_, x, b) ->
+  | SLet (v, x, b) | SLetMut (v, x, b) ->
       e x ;
-      st b
+      check_stmt (bind sc v) b
   | SPragma (_, b) | SBlock b -> st b
   | SNative _ -> refuse "inline native code"
   | SCoopmat _ -> refuse "cooperative-matrix statement"
   | SBarrier | SWarpBarrier | SMemFence | SEmpty -> ()
 
-(** [Ok ()] when [k] can be a member of a horizontally fused kernel, otherwise
-    the reason it cannot. *)
-let horizontal_verdict (k : kernel) : (unit, string) result =
-  match
-    let binds, body = shared_prefix k.kern_body in
-    List.iter
-      (fun (_, x) ->
+(* Bytes of one shared declaration, when its size is a constant. *)
+let shared_bytes_of elt size =
+  match (size, Sarek_ir_layout.scalar_size elt) with
+  | EConst (CInt32 n), w -> Int32.to_int n * w
+  | EConst (CInt64 n), w -> Int64.to_int n * w
+  | _, _ -> refuse "shared array of non-constant size"
+  | exception Invalid_argument _ -> refuse "shared array of aggregate elements"
+
+let kernel_scope (k : kernel) =
+  let helpers =
+    List.fold_left (fun n h -> Names.add h.hf_name n) Names.empty k.kern_funcs
+  in
+  List.fold_left
+    (fun sc -> function
+      | DParam (v, _) | DLocal (v, _) -> bind sc v
+      | DShared (name, _, _) -> {sc with names = Names.add name sc.names})
+    {ids = Ids.empty; names = Names.empty; helpers; in_helper = false}
+    k.kern_params
+  |> fun sc ->
+  List.fold_left
+    (fun sc -> function DLocal (v, _) -> bind sc v | _ -> sc)
+    sc
+    k.kern_locals
+
+let check_helper (k : kernel) hf =
+  let sc = kernel_scope k in
+  let sc =
+    List.fold_left
+      bind
+      {sc with ids = Ids.empty; names = Names.empty; in_helper = true}
+      hf.hf_params
+  in
+  check_stmt sc hf.hf_body
+
+(* Under [Refuse]: the shared memory [k] declares, in bytes. *)
+let check_kernel (k : kernel) : int =
+  let sc = kernel_scope k in
+  let binds, body = shared_prefix k.kern_body in
+  let sc, bytes =
+    List.fold_left
+      (fun (sc, bytes) (v, x) ->
         match x with
-        | EArrayCreate (_, size, _) -> check_expr ~in_helper:false size
-        | _ -> ())
-      binds ;
-    check_stmt ~in_helper:false body ;
-    List.iter
-      (function
-        | DLocal (_, Some x) -> check_expr ~in_helper:false x
-        | DShared (_, _, Some x) -> check_expr ~in_helper:false x
-        | DLocal _ | DShared _ | DParam _ -> ())
-      k.kern_locals ;
-    List.iter (fun hf -> check_stmt ~in_helper:true hf.hf_body) k.kern_funcs
-  with
-  | () -> Ok ()
+        | EArrayCreate (elt, size, _) ->
+            check_expr sc size ;
+            (bind sc v, bytes + shared_bytes_of elt size)
+        | _ -> (sc, bytes))
+      (sc, 0)
+      binds
+  in
+  check_stmt sc body ;
+  let locals =
+    List.fold_left
+      (fun bytes -> function
+        | DLocal (_, Some x) ->
+            check_expr sc x ;
+            bytes
+        | DShared (_, elt, Some x) ->
+            check_expr sc x ;
+            bytes + shared_bytes_of elt x
+        | DShared (_, _, None) -> refuse "shared declaration without a size"
+        | DLocal _ | DParam _ -> bytes)
+      0
+      k.kern_locals
+  in
+  List.iter (check_helper k) k.kern_funcs ;
+  bytes + locals
+
+(** [Ok bytes] when [k] can be a member of a horizontally fused kernel, with the
+    shared memory it declares; otherwise the reason it cannot. *)
+let horizontal_verdict (k : kernel) : (int, string) result =
+  match check_kernel k with
+  | bytes -> Ok bytes
   | exception Refuse why -> Error why
