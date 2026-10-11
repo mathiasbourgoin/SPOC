@@ -63,6 +63,20 @@
    (run %{exe:extract.exe} %{dep:../../../gh-pages/docs/new_backend.md}))))
 
 (rule
+ (targets snip_docs_performance.ml)
+ (action
+  (with-stdout-to
+   snip_docs_performance.ml
+   (run %{exe:extract.exe} %{dep:../../../gh-pages/docs/performance.md}))))
+
+(rule
+ (targets snip_docs_memory.ml)
+ (action
+  (with-stdout-to
+   snip_docs_memory.ml
+   (run %{exe:extract.exe} %{dep:../../../gh-pages/docs/memory.md}))))
+
+(rule
  (targets snip_docs_transpiler.ml)
  (action
   (with-stdout-to

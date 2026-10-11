@@ -63,6 +63,8 @@ let vector_add =
 
 Sarek is the result of over a decade of academic research into high-level parallel programming abstractions. It is currently maintained by **Mathias Bourgoin**.
 
+- [Launch Window & Fusion](docs/performance.html)
+- [Memory & Transfers](docs/memory.html)
 - [Full Project History](docs/history.html)
 - [Publications & Talks](docs/publications.html)
 - [Frequently Asked Questions](docs/faq.html)
