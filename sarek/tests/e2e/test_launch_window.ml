@@ -450,6 +450,44 @@ let interpreter_epilogue () =
   bits_f t = bits_f t' && bits_f acc = bits_f acc'
 
 (* The fused kernel on the Interpreter, against its members one by one. *)
+(* The fused kernel's source on the CUDA C and Metal generators (compiler
+   output, no device): one kernel, the members' own parameters then an
+   (offset, size) pair per member, and no work-group id left unrewritten. *)
+let fused_sources () =
+  let members = [ir_of mv_wave; ir_of mv_row; ir_of positions] in
+  let fused = Sarek_execute.Fusion_horizontal.fuse ~name:"fused_src" members in
+  ( Sarek_codegen.Sarek_ir_cuda.generate fused,
+    Sarek_codegen.Sarek_ir_metal.generate fused )
+
+let count_occurrences ~sub s =
+  let n = String.length sub in
+  let rec go i acc =
+    match String.index_from_opt s i sub.[0] with
+    | None -> acc
+    | Some k ->
+        if k + n <= String.length s && String.sub s k n = sub then
+          go (k + n) (acc + 1)
+        else go (k + 1) acc
+  in
+  go 0 0
+
+(* Barriers: 5 in the wave matvec, 8 in the row kernel; they stay inside the
+   member's own work-group-uniform branch. Every second-member work-group id
+   is shifted by its offset. Metal binds 26 of its 31 buffer slots. *)
+let fused_source_checks () =
+  let cuda, metal = fused_sources () in
+  let n = count_occurrences in
+  [
+    ("fused CUDA C: 13 barriers", n ~sub:"__syncthreads();" cuda = 13);
+    ( "fused CUDA C: group id rewritten",
+      n ~sub:"(((int)blockIdx.x) - hf1_off)" cuda = 2 );
+    ( "fused Metal: 13 barriers",
+      n ~sub:"threadgroup_barrier(mem_flags::mem_threadgroup);" metal = 13 );
+    ( "fused Metal: group id rewritten",
+      n ~sub:"(((int)__metal_bid.x) - hf1_off)" metal = 2 );
+    ("fused Metal: 26 of 31 buffer slots", n ~sub:"[[buffer(" metal = 26);
+  ]
+
 let interpreter_fused () =
   let members = [ir_of mv_wave; ir_of mv_row; ir_of positions] in
   let fused = Sarek_execute.Fusion_horizontal.fuse ~name:"fused_test" members in
@@ -518,6 +556,15 @@ let () =
     "fused IR = members"
     (if ok then "PASS" else "FAIL") ;
   if not ok then failures := "interpreter fused IR" :: !failures ;
+  List.iter
+    (fun (label, ok) ->
+      Printf.printf
+        "  %-46s %-24s %s\n%!"
+        "Codegen"
+        label
+        (if ok then "PASS" else "FAIL") ;
+      if not ok then failures := label :: !failures)
+    (fused_source_checks ()) ;
   let ok = interpreter_epilogue () in
   Printf.printf
     "  %-46s %-24s %s\n%!"

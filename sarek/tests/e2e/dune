@@ -2003,6 +2003,7 @@
   test_coopmat_hip_e2e
   test_coopmat_layout_e2e
   test_launch_window
+  bench_launch_window
   test_matrix_rewrite
   test_matrix_rewrite_float
   test_matrix_int64_index
@@ -2016,6 +2017,7 @@
   test_coopmat_hip_e2e
   test_coopmat_layout_e2e
   test_launch_window
+  bench_launch_window
   test_matrix_rewrite
   test_matrix_rewrite_float
   test_matrix_int64_index
@@ -2060,6 +2062,12 @@
  (alias runtest)
  (action
   (run %{dep:test_launch_window.exe})))
+
+; Launch window on a decode-like chain (specs/launch-window.md, CHECK-4):
+; launches per token, us per token and host us per launch, window off vs on,
+; on every non-CPU device (SPOC_BENCH_FRAMEWORK narrows it). Information only,
+; apart from the on/off results being bit-identical. Run by hand:
+;   dune exec sarek/tests/e2e/bench_launch_window.exe
 
 ; lsr (Lshr32/Lshr64) and the automatic unroll hint on every device
 ; (specs/codegen-lsr-unroll.md). Native/Interpreter must run; a GPU backend
