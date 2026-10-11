@@ -325,8 +325,8 @@
 
 ; Audit finding L1: the tuple-shape registry's build-and-insert must be
 ; single-winner, so concurrent first-time builders of one shape all observe the
-; SAME custom_type (hence the same Type_id the Native path resolves through
-; descriptor_by_name). Multi-domain; see the file header for what this test can
+; SAME custom_type (hence the same Type_id generated Native code gets back
+; from the memoised constructor). Multi-domain; see the file header for what this test can
 ; and cannot decide about the data-race half of the fix.
 
 (test

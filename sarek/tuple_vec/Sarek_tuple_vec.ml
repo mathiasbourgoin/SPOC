@@ -29,46 +29,80 @@ module CH = Spoc_core.Vector.Custom_helpers
 module Layout = Sarek_ir_layout
 module Type_id = Sarek_ir_types.Type_id
 
-(** A scalar component of a tuple element: its IR element type (for layout) and
-    the typed raw-pointer read/write primitives used to marshal it at a byte
-    offset. *)
+(** Identity of a scalar component kind. Distinct constructors are distinct
+    element layouts even when they share an OCaml type ([F32] and [F64] are both
+    [float]). *)
+type _ tag =
+  | F32 : float tag
+  | F64 : float tag
+  | I32 : int32 tag
+  | I64 : int64 tag
+
+let tag_name : type a. a tag -> string = function
+  | F32 -> "float32"
+  | F64 -> "float64"
+  | I32 -> "int32"
+  | I64 -> "int64"
+
+(* Dense index of a tag, [0 .. tag_count - 1]; used to address registry slots. *)
+let tag_index : type a. a tag -> int = function
+  | F32 -> 0
+  | F64 -> 1
+  | I32 -> 2
+  | I64 -> 3
+
+let tag_count = 4
+
+(* [Some Equal] exactly when both tags are the same constructor. *)
+let tag_eq : type a b. a tag -> b tag -> (a, b) Type.eq option =
+ fun x y ->
+  match (x, y) with
+  | F32, F32 -> Some Type.Equal
+  | F64, F64 -> Some Type.Equal
+  | I32, I32 -> Some Type.Equal
+  | I64, I64 -> Some Type.Equal
+  | _ -> None
+
+(** A scalar component of a tuple element: its kind, its IR element type (for
+    layout) and the typed raw-pointer read/write primitives used to marshal it
+    at a byte offset. *)
 type 'a component = {
+  c_tag : 'a tag;
   c_elttype : Sarek_ir_types.elttype;
   c_read : unit Ctypes.ptr -> int -> 'a;
   c_write : unit Ctypes.ptr -> int -> 'a -> unit;
-  c_tag : string;
 }
 
 let float32 : float component =
   {
+    c_tag = F32;
     c_elttype = Sarek_ir_types.TFloat32;
     c_read = CH.read_float32;
     c_write = CH.write_float32;
-    c_tag = "float32";
   }
 
 let float64 : float component =
   {
+    c_tag = F64;
     c_elttype = Sarek_ir_types.TFloat64;
     c_read = CH.read_float64;
     c_write = CH.write_float64;
-    c_tag = "float64";
   }
 
 let int32 : int32 component =
   {
+    c_tag = I32;
     c_elttype = Sarek_ir_types.TInt32;
     c_read = CH.read_int32;
     c_write = CH.write_int32;
-    c_tag = "int32";
   }
 
 let int64 : int64 component =
   {
+    c_tag = I64;
     c_elttype = Sarek_ir_types.TInt64;
     c_read = CH.read_int64;
     c_write = CH.write_int64;
-    c_tag = "int64";
   }
 
 (** Mangled record name for a component tag list; kept in sync with
@@ -92,53 +126,75 @@ let offset_of rl fname =
   | Some off -> off
   | None -> failwith ("Sarek_tuple_vec: missing field offset for " ^ fname)
 
-(* Process-global registry mapping a mangled tuple-shape name to its canonical
-   [custom_type]. A shape is instantiated once and shared: the host builds a
-   vector from it and the Native execution path looks up the very same
-   descriptor (via [descriptor_by_name], emitted by the native code generator),
-   so both sides carry the identical [Type_id] token that [vec_get_custom]
-   compares with [Type_id.equal]. The value is stored type-erased and recovered
-   at the call-site type; the mangled name uniquely determines the OCaml type,
-   so the coercion is sound. *)
-let registry : (string, Obj.t) Hashtbl.t = Hashtbl.create 16
+(* A tuple shape, typed by the OCaml element type it describes. *)
+type _ key =
+  | Pair : 'a tag * 'b tag -> ('a * 'b) key
+  | Triple : 'a tag * 'b tag * 'c tag -> ('a * 'b * 'c) key
 
-(* Guards first-time registration: [find_opt] + [replace] is not atomic, and
-   two concurrent callers racing on the same shape would each build a fresh
-   [Type_id] with only one winning the registry slot — the loser's vector
-   would then fail the [Type_id.equal] check against the canonical descriptor
-   later resolved by generated Native code ([descriptor_by_name]). The mutex
-   makes build-and-insert single-winner; the double-check inside the critical
-   section resolves the race deterministically. *)
+let key_name : type a. a key -> string = function
+  | Pair (a, b) -> mangled_name [tag_name a; tag_name b]
+  | Triple (a, b, c) -> mangled_name [tag_name a; tag_name b; tag_name c]
+
+(* Registry slot of a shape: pairs occupy [0 .. tag_count^2 - 1], triples the
+   [tag_count^3] slots after them. Distinct shapes have distinct slots. *)
+let key_slot : type a. a key -> int = function
+  | Pair (a, b) -> (tag_index a * tag_count) + tag_index b
+  | Triple (a, b, c) ->
+      (tag_count * tag_count)
+      + (((tag_index a * tag_count) + tag_index b) * tag_count)
+      + tag_index c
+
+let slot_count = (tag_count * tag_count) + (tag_count * tag_count * tag_count)
+
+(* [Some Equal] exactly when both keys denote the same shape. *)
+let key_eq : type a b. a key -> b key -> (a, b) Type.eq option =
+ fun x y ->
+  match (x, y) with
+  | Pair (a, b), Pair (a', b') -> (
+      match (tag_eq a a', tag_eq b b') with
+      | Some Type.Equal, Some Type.Equal -> Some Type.Equal
+      | _ -> None)
+  | Triple (a, b, c), Triple (a', b', c') -> (
+      match (tag_eq a a', tag_eq b b', tag_eq c c') with
+      | Some Type.Equal, Some Type.Equal, Some Type.Equal -> Some Type.Equal
+      | _ -> None)
+  | _ -> None
+
+(* A registered descriptor together with the shape it was built for. *)
+type entry = Entry : 'a key * 'a Vector.custom_type -> entry
+
+(* Process-global registry of canonical descriptors, one slot per shape
+   ([key_slot]). A shape is instantiated once and shared: the host builds a
+   vector from it and generated Native code calls the same [pair]/[triple],
+   so both sides carry the identical [Type_id] token that [vec_get_custom]
+   compares with [Type_id.equal]. Invariant: slot [key_slot k] is [None] or
+   [Some (Entry (k', _))] with [key_eq k' k = Some Equal]. *)
+let registry : entry option array = Array.make slot_count None
+
+(* Guards first-time registration: two callers racing on the same shape must
+   not each build a fresh [Type_id] with only one reaching the registry, or the
+   loser's vector would fail the [Type_id.equal] check against the canonical
+   descriptor. Every registry access, read included, holds it (OCaml 5 data
+   race otherwise; audit finding L1). *)
 let registry_mutex = Mutex.create ()
 
-let memoize name (build : unit -> 'a Vector.custom_type) : 'a Vector.custom_type
-    =
-  (* No unlocked fast path: a lock-free [find_opt] racing a [replace] on a
-     non-atomic Hashtbl is a data race under OCaml 5 (audit finding L1).
-     Registration is rare and the table tiny, so taking the mutex on every
-     lookup is cheap and makes every access happens-before ordered. *)
+let memoize : type a.
+    a key -> (unit -> a Vector.custom_type) -> a Vector.custom_type =
+ fun key build ->
+  let slot = key_slot key in
   Mutex.protect registry_mutex (fun () ->
-      match Hashtbl.find_opt registry name with
-      | Some obj -> Obj.obj obj
+      match registry.(slot) with
       | None ->
           let custom = build () in
-          Hashtbl.replace registry name (Obj.repr custom) ;
-          custom)
-
-(** [descriptor_by_name name] returns the canonical [custom_type] previously
-    registered for the mangled shape [name] (built by [pair]/[triple]). Used by
-    generated Native kernel code to obtain the host-shared [Type_id]. Raises if
-    the shape was never instantiated on the host. *)
-let descriptor_by_name (name : string) : 'a Vector.custom_type =
-  match
-    Mutex.protect registry_mutex (fun () -> Hashtbl.find_opt registry name)
-  with
-  | Some obj -> Obj.obj obj
-  | None ->
-      failwith
-        ("Sarek_tuple_vec: no tuple custom_type registered for shape '" ^ name
-       ^ "'; build it on the host (e.g. Sarek_tuple_vec.pair ...) before \
-          running the kernel.")
+          registry.(slot) <- Some (Entry (key, custom)) ;
+          custom
+      | Some (Entry (found, custom)) -> (
+          match key_eq found key with
+          | Some Type.Equal -> custom
+          | None ->
+              failwith
+                ("Sarek_tuple_vec: registry slot " ^ string_of_int slot
+               ^ " holds shape " ^ key_name found ^ ", not " ^ key_name key)))
 
 (* Value-model-neutral description of a tuple element's byte layout, keyed by
    the mangled shape name. The Interpreter (which represents a tuple element as
@@ -184,8 +240,9 @@ let register_shape_of rl name fields =
 
 (** [pair a b] is the [custom_type] for a [(a, b)] tuple vector element. *)
 let pair (a : 'a component) (b : 'b component) : ('a * 'b) Vector.custom_type =
-  let name = mangled_name [a.c_tag; b.c_tag] in
-  memoize name @@ fun () ->
+  let key = Pair (a.c_tag, b.c_tag) in
+  memoize key @@ fun () ->
+  let name = key_name key in
   let fields = [(field_name 0, a.c_elttype); (field_name 1, b.c_elttype)] in
   let rl = layout_of fields name in
   register_shape_of rl name fields ;
@@ -214,8 +271,9 @@ let pair (a : 'a component) (b : 'b component) : ('a * 'b) Vector.custom_type =
 *)
 let triple (a : 'a component) (b : 'b component) (c : 'c component) :
     ('a * 'b * 'c) Vector.custom_type =
-  let name = mangled_name [a.c_tag; b.c_tag; c.c_tag] in
-  memoize name @@ fun () ->
+  let key = Triple (a.c_tag, b.c_tag, c.c_tag) in
+  memoize key @@ fun () ->
+  let name = key_name key in
   let fields =
     [
       (field_name 0, a.c_elttype);

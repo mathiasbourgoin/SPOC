@@ -128,16 +128,17 @@ let gen_variable ~loc ~ctx (name : string) (id : int) : expression =
   else var_e
 
 (* L13: a synthesized tuple-shape record (name starting with [_tup]) has no
-   [<name>_custom] binding — its canonical descriptor lives in the process-wide
-   Sarek_tuple_vec registry, shared with the host so both carry the same
-   Type_id. Emit a runtime lookup instead of an unbound identifier. *)
+   [<name>_custom] binding. Its descriptor is the memoised Sarek_tuple_vec
+   constructor applied to the component values, which returns the canonical
+   descriptor the host vector carries (same Type_id) and is typed by the
+   element type, so a shape/element mismatch is a compile error. *)
 let is_tuple_shape_name name =
   String.length name >= 4 && String.sub name 0 4 = "_tup"
 
 (* Tag of a tuple component type on the Native path. Restricted to the exact
    component types Sarek_tuple_vec builds (matching OCaml element types) so the
-   registry lookup is type-sound: float32/float64 (float), int32 (int32),
-   int64 (int64). Other component types have no host builder and stay
+   emitted constructor call is well-typed: float32/float64 (float), int32
+   (int32), int64 (int64). Other component types have no host builder and stay
    Native-unsupported. *)
 let tuple_component_tag (t : typ) : string option =
   match repr t with
@@ -154,10 +155,38 @@ let tuple_shape_name (tys : typ list) : string option =
       ("_tup" ^ String.concat "" (List.map (fun t -> "_" ^ Option.get t) tags))
   else None
 
+(* [Sarek_tuple_vec] constructor call for a tuple-shape name produced by
+   [tuple_shape_name]; any other name is a generator bug. *)
+let tuple_descriptor_expr ~loc type_name =
+  let component tag =
+    match tag with
+    | "float32" | "float64" | "int32" | "int64" ->
+        evar_qualified ~loc ["Sarek_tuple_vec"] tag
+    | _ ->
+        Location.raise_errorf
+          ~loc
+          "Sarek native: tuple shape %s has a component (%s) with no \
+           Sarek_tuple_vec builder"
+          type_name
+          tag
+  in
+  let constructor name args =
+    Ast_builder.Default.eapply
+      ~loc
+      (evar_qualified ~loc ["Sarek_tuple_vec"] name)
+      (List.map component args)
+  in
+  match String.split_on_char '_' type_name with
+  | [""; "tup"; a; b] -> constructor "pair" [a; b]
+  | [""; "tup"; a; b; c] -> constructor "triple" [a; b; c]
+  | _ ->
+      Location.raise_errorf
+        ~loc
+        "Sarek native: tuple shape %s has no Sarek_tuple_vec constructor"
+        type_name
+
 let custom_descriptor_expr ?current_module ~loc type_name =
-  if is_tuple_shape_name type_name then
-    let name_str = Ast_builder.Default.estring ~loc type_name in
-    [%expr Sarek_tuple_vec.descriptor_by_name [%e name_str]]
+  if is_tuple_shape_name type_name then tuple_descriptor_expr ~loc type_name
   else
     let parts = String.split_on_char '.' type_name in
     match List.rev parts with

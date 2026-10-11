@@ -365,6 +365,17 @@
 
 ### Fixed
 
+- **Breaking:** `Sarek_tuple_vec.descriptor_by_name` is removed. It returned a
+  tuple `custom_type` at whatever type the call site asked for, so a shape that
+  did not match the element type type-checked and read the vector bytes at the
+  wrong layout (a `(float32 * int32)` descriptor taken at `(int64 * float)`
+  wrote `(42L, 3.5)` and read back `(4343, 4.66e-310)`). Generated Native code
+  now calls the typed, memoised `Sarek_tuple_vec.pair` / `triple`, which
+  returns the descriptor the host built (same `Type_id`) and builds it if the
+  host has not; an unknown tuple component stops the ppx expansion. The
+  registry is typed (a GADT shape key per slot, no `Obj`), and the generated
+  per-element lookup is cheaper (30.5 ns against 43.6 ns per call). Test:
+  `test_tuple_native_descriptor`.
 - Vector ids are allocated with `Atomic.fetch_and_add`. The plain `ref` +
   `incr` handed out duplicate ids when vectors were created from several
   domains (4 domains x 200 000 creations: 450 907 duplicates of 800 000), and
