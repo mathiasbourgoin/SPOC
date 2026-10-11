@@ -22,6 +22,7 @@
   test_scheme
   test_mono
   test_ir_interp
+  test_interp_oracle
   test_execute
   test_kirc_kernel
   test_float16
@@ -51,6 +52,7 @@
   test_scheme
   test_mono
   test_ir_interp
+  test_interp_oracle
   test_execute
   test_kirc_kernel
   test_float16
@@ -69,6 +71,8 @@
   sarek_stdlib
   sarek
   sarek.interp
+  sarek.gemm
+  spoc_core
   alcotest
   ppxlib
   str

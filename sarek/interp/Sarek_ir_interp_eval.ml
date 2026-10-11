@@ -21,6 +21,27 @@ let positional_field_index (field : string) : int option =
   end
   else None
 
+(** Lanes per cooperative-matrix subgroup. 32, the CUDA/Metal width and the tile
+    width of the kernels in this repository. A device with a wider subgroup
+    (wave64) corresponds to two interpreter subgroups; that is only visible to a
+    kernel in which two interpreter subgroups touch the same tile, which is a
+    data race on a 32-wide device and not a supported program. *)
+let coopmat_subgroup_size = 32
+
+(** Linear invocation index within the block (x fastest). *)
+let linear_thread_id state =
+  let tx, ty, tz = state.thread_idx and bx, by, _ = state.block_dim in
+  tx + (bx * (ty + (by * tz)))
+
+(** The lowest lane of its subgroup: the one that executes a cooperative-matrix
+    operation on the subgroup's behalf. *)
+let coopmat_is_leader state =
+  linear_thread_id state mod coopmat_subgroup_size = 0
+
+(** The fragment-table key of [name] as seen by the subgroup of [state]. *)
+let coopmat_key state name =
+  (linear_thread_id state / coopmat_subgroup_size, name)
+
 (** Main intrinsic dispatcher - tries each category in order *)
 let rec eval_intrinsic state path name args =
   (* Global-memory atomics and fences are path-independent (they may be opened
@@ -469,9 +490,13 @@ and exec_stmt state env stmt =
     numbers bit for bit, and a skip here would let a coopmat kernel "agree" with
     an interpreter that never computed the product.
 
-    Every invocation holds the whole matrix and performs the whole operation;
-    see {!Sarek_ir_interp_value.env}.[coopmats] for why that is exact rather
-    than approximate.
+    Each operation is executed ONCE PER SUBGROUP, by the subgroup's lowest lane
+    ({!coopmat_is_leader}), on a whole-matrix fragment owned by the subgroup
+    ({!coopmat_key}); the other lanes' statements are no-ops. Running it in
+    every invocation would not be equivalent to the device: in-place
+    [D = A*B + D] would accumulate once per lane. See
+    {!Sarek_ir_interp_value.env}.[coopmats] for the model and its assumptions
+    (dynamically uniform arguments, every lane reaching the operation).
 
     {b Integer configurations are a strict oracle}: the specification states
     integer accumulation is exact at the precision of the result type.
@@ -527,8 +552,8 @@ and coopmat_component (c : Sarek_coopmat_types.component_type) (v : value) =
   | Sarek_coopmat_types.BFloat16 -> VFloat32 (to_bfloat16 (to_float32 v))
   | Sarek_coopmat_types.Float32 -> VFloat32 (to_float32 v)
 
-and get_coopmat env name =
-  match Hashtbl.find_opt env.coopmats name with
+and get_coopmat state env name =
+  match Hashtbl.find_opt env.coopmats (coopmat_key state name) with
   | Some m -> m
   | None ->
       Interp_error.raise_error
@@ -589,12 +614,15 @@ and coopmat_muladd_float (cfg : Sarek_coopmat_types.config) ma mb mc =
       VFloat32 !acc)
 
 and exec_coopmat state env op =
+  if coopmat_is_leader state then exec_coopmat_once state env op
+
+and exec_coopmat_once state env op =
   let open Sarek_coopmat_types in
   match op with
   | CM_decl {name; frag} ->
       Hashtbl.replace
         env.coopmats
-        name
+        (coopmat_key state name)
         (Array.make
            (fragment_components frag)
            (coopmat_zero frag.frag_component))
@@ -615,9 +643,9 @@ and exec_coopmat state env op =
             m.((r * cols) + c) <- coopmat_component frag.frag_component buf.(i)
         done
       done ;
-      Hashtbl.replace env.coopmats dst m
+      Hashtbl.replace env.coopmats (coopmat_key state dst) m
   | CM_store {src; frag; dst; index; stride} ->
-      let m = get_coopmat env src in
+      let m = get_coopmat state env src in
       let buf = get_array env dst in
       let base = to_int (eval_expr state env index) in
       let stride = to_int (eval_expr state env stride) in
@@ -644,14 +672,14 @@ and exec_coopmat state env op =
                   nothing for an oracle to be faithful to";
              }) ;
       coopmat_refuse_policy cfg ;
-      let ma = get_coopmat env a
-      and mb = get_coopmat env b
-      and mc = get_coopmat env c in
+      let ma = get_coopmat state env a
+      and mb = get_coopmat state env b
+      and mc = get_coopmat state env c in
       let out =
         if accumulation_is_exact cfg then coopmat_muladd_int cfg ma mb mc
         else coopmat_muladd_float cfg ma mb mc
       in
-      Hashtbl.replace env.coopmats dst out
+      Hashtbl.replace env.coopmats (coopmat_key state dst) out
 
 (* Read the value currently AT an lvalue, sharing rather than copying.
 
@@ -947,27 +975,36 @@ let run_block env body block_idx block_dim grid_dim =
       }
   in
 
+  (* The deep handler installed by [run_thread_with_barrier] persists across
+     [continue], so a resumed thread that reaches another barrier performs
+     [Barrier] to the SAME handler and a thread that finishes reaches the
+     original [retc]. Wrapping [continue] in a second [match_with] counted every
+     re-suspended thread as completed. *)
   let resume_thread tid =
     match waiting.(tid) with
     | Some k ->
         waiting.(tid) <- None ;
-        Effect.Deep.match_with
-          (fun () -> Effect.Deep.continue k ())
-          ()
-          {
-            retc = (fun () -> incr num_completed);
-            exnc = raise;
-            effc =
-              (fun (type a) (eff : a Effect.t) ->
-                match eff with
-                | Barrier ->
-                    Some
-                      (fun (k : (a, unit) Effect.Deep.continuation) ->
-                        waiting.(tid) <- Some k ;
-                        incr num_waiting)
-                | _ -> None);
-          }
+        Effect.Deep.continue k ()
     | None -> ()
+  in
+
+  (* A barrier releases only when EVERY thread of the block has arrived. After a
+     round of execution each thread is either waiting or finished, so a barrier
+     with waiting threads AND finished ones can never release: the finished
+     threads will not arrive. *)
+  let check_barrier_can_release () =
+    if !num_waiting > 0 && !num_completed > 0 then
+      Interp_error.raise_error
+        (BSP_deadlock
+           {
+             message =
+               Printf.sprintf
+                 "%d of %d threads wait at a barrier that the %d finished \
+                  threads never reach"
+                 !num_waiting
+                 num_threads
+                 !num_completed;
+           })
   in
 
   (* Start all threads *)
@@ -975,16 +1012,15 @@ let run_block env body block_idx block_dim grid_dim =
     run_thread_with_barrier tid
   done ;
 
+  check_barrier_can_release () ;
+
   (* Superstep loop *)
   while !num_waiting > 0 do
-    let to_resume = !num_waiting in
     num_waiting := 0 ;
     for tid = 0 to num_threads - 1 do
-      if Option.is_some waiting.(tid) then resume_thread tid
+      resume_thread tid
     done ;
-    if !num_waiting = to_resume && !num_completed < num_threads then
-      Interp_error.raise_error
-        (BSP_deadlock {message = "no progress made in interpreter"})
+    check_barrier_can_release ()
   done
 
 (** Run all blocks in a grid (sequential) *)
@@ -994,6 +1030,7 @@ let run_grid_sequential env body block_dim grid_dim =
     for by = 0 to gy - 1 do
       for bx = 0 to gx - 1 do
         Hashtbl.clear env.shared ;
+        Hashtbl.clear env.coopmats ;
         run_block env body (bx, by, bz) block_dim grid_dim
       done
     done

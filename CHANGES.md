@@ -353,6 +353,25 @@
   array). `Memory.device_to_device` refuses a source larger than the
   destination. D2D still bounces through host memory: the `BUFFER` signature
   has no backend device-to-device copy. Test: `test_memory_sizing`.
+- Interpreter (the oracle), three corrections:
+  - Cooperative-matrix operations execute once per 32-lane subgroup, on a
+    fragment owned by the subgroup, instead of once per invocation. In-place
+    `D = A*B + D` (C loaded from the array D is stored to) gave `C + blockDim *
+    A*B` (512 at block 32, 1024 at block 64 for a 16x16x16 u8 tile; 16 is
+    right); `Sarek_gemm.Coopmat` with `c` and `d` the same array was wrong the
+    same way. The interpreter assumes what the cooperative-matrix specification
+    requires: every lane of the subgroup reaches the operation and its buffer,
+    index and stride are uniform across it.
+  - Two kernel arguments bound to the same vector share one value array
+    (`Execute.run_interpreter_vectors`, `Sarek_ir_interp.run_kernel_with_args`).
+    `x.(i) <- y.(i) + 7` with `x` and `y` the same vector left `x` unchanged
+    (the two private copies were written back in an order that depended on the
+    entry point). Not covered: `run_kernel_with_exec_args` (the interpreter
+    plugin's launch), whose arguments expose no identity to compare.
+  - The BSP deadlock detector could never fire (a resumed thread was counted as
+    completed). It now raises `BSP_deadlock` when threads wait at a barrier that
+    finished threads never reach, and does not fire on successive barriers.
+
 - hiprtc and nvrtc option arrays: `CArray.of_list string` let the C copies of
   the option strings be freed before the compile call. Under a different
   allocation pattern hiprtc read a garbage option ("error reading '8{...'"),

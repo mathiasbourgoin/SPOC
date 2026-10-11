@@ -55,7 +55,7 @@ type env = Sarek_ir_interp_value.env = {
   arrays : (string, value array) Hashtbl.t;
   shared : (string, value array) Hashtbl.t;
   funcs : (string, Sarek_ir_types.helper_func) Hashtbl.t;
-  coopmats : (string, value array) Hashtbl.t;
+  coopmats : (int * string, value array) Hashtbl.t;
 }
 
 let create_env = Sarek_ir_interp_value.create_env
@@ -229,7 +229,13 @@ let run_grid_parallel env body block_dim grid_dim =
         DomainPool.submit pool (fun () ->
             (* Each block gets its own NEW shared memory hashtable.
                Don't use copy_env.shared because it's shared by reference. *)
-            let block_env = {(copy_env env) with shared = Hashtbl.create 8} in
+            let block_env =
+              {
+                (copy_env env) with
+                shared = Hashtbl.create 8;
+                coopmats = Hashtbl.create 4;
+              }
+            in
             run_block block_env body (bx, by, bz) block_dim grid_dim)
       done
     done
@@ -411,6 +417,33 @@ type exec_writeback =
   | Exec_writeback :
       (module Spoc_framework.Typed_value.EXEC_VECTOR) * value array
       -> exec_writeback
+
+(** Whether two vectors are the same vector.
+
+    Physical identity, taken on the vector's own [device_buffers] table: it is
+    allocated once per vector and never replaced, it has one type whatever the
+    vectors' element types (so two vectors of different types can be compared
+    without [Obj]), and a comparison of the records themselves would need both
+    to have the same type. The vector id is deliberately NOT used: ids come from
+    a non-atomic counter and can collide across domains (R-1). *)
+let same_vector : type a b c d.
+    (a, b) Spoc_core.Vector.t -> (c, d) Spoc_core.Vector.t -> bool =
+ fun x y ->
+  x.Spoc_core.Vector.device_buffers == y.Spoc_core.Vector.device_buffers
+
+(** The value array already bound to [vec] among [writebacks], if any.
+
+    Two kernel parameters bound to the same vector must share ONE value array: a
+    private copy each would make a write through one invisible to a read through
+    the other, and the writebacks would then overwrite each other in an order
+    that depends on the entry point. Binding by identity gives the semantics of
+    the device, where both parameters are the same buffer. *)
+let find_bound_array (type a b) (writebacks : writeback list)
+    (vec : (a, b) Spoc_core.Vector.t) : value array option =
+  List.find_map
+    (fun (Writeback (bound, arr)) ->
+      if same_vector vec bound then Some arr else None)
+    writebacks
 
 (* Tuple vector elements (L13) reach the interpreter as a [COMPOSITE_TYPE] whose
    [fields] descriptor list is empty but whose [to_bytes]/[of_bytes] marshal the
@@ -647,8 +680,14 @@ let args_from_kernel_args (k : kernel) (kargs : Spoc_core.Kernel_arg.t list) :
               incr idx ;
               match karg with
               | Spoc_core.Kernel_arg.Vec vec ->
-                  let arr = vector_to_array vec in
-                  writebacks := Writeback (vec, arr) :: !writebacks ;
+                  let arr =
+                    match find_bound_array !writebacks vec with
+                    | Some shared -> shared
+                    | None ->
+                        let arr = vector_to_array vec in
+                        writebacks := Writeback (vec, arr) :: !writebacks ;
+                        arr
+                  in
                   Some (v.var_name, ArgArray arr)
               | _ ->
                   Interp_error.raise_error

@@ -24,11 +24,13 @@ let config =
     cfg_scope = C.Subgroup;
   }
 
-(* The accumulator must start from zero. Starting from C would load and store
-   C in place through fragments: correct on a wave executing in lockstep, but
-   the interpreter evaluates a fragment operation once per invocation, so a
-   later invocation would read the C an earlier one already stored. Such a
-   kernel takes the staged variant, whose epilogue adds C per element. *)
+(* The accumulator must start from zero, and this is a requirement of the
+   direct variant itself, not a workaround: [body] declares each accumulator
+   fragment (zero) and never loads C into it, so a nonzero initial value would
+   be silently dropped. (An earlier version of this comment blamed the
+   interpreter evaluating fragment operations once per invocation; that was
+   fixed separately, and is not why the guard stays.) A kernel with a nonzero
+   init takes the staged variant, whose epilogue adds C per element. *)
 let starts_from_zero (g : P.gemm) =
   match g.init with EConst (CFloat32 f | CFloat64 f) -> f = 0.0 | _ -> false
 
