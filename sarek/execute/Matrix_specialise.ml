@@ -86,16 +86,19 @@ let outcome_text = function
 
 (* ---- Memos, by the IR's physical identity --------------------------------- *)
 
-module Memo = Ephemeron.K1.Make (Ir_memo.Physical)
-
 type plan = {gemm : P.gemm; mapping : Map.mapping; case : Adv.element_case}
 
 type entry = {
+  generation : int;  (** the {!generation} it belongs to *)
   plan : (plan, string) result;
   mutable kernels : ((Rw.lowering * variant) * (kernel, string) result) list;
 }
 
-let memo : entry Memo.t = Memo.create 64
+(* A slot of each IR's Ir_memo record; an entry of an older generation is
+   stale ({!clear}). Guarded by [memo_lock]. *)
+let memo_key : entry Ir_memo.key = Ir_memo.new_key ()
+
+let generation = ref 0
 
 let memo_lock = Mutex.create ()
 
@@ -151,12 +154,15 @@ let guarded_plan k =
   | exception e -> Error ("matrix analysis failed: " ^ Printexc.to_string e)
 
 let entry k =
+  let facts = Ir_memo.facts k in
   Mutex.protect memo_lock (fun () ->
-      match Memo.find_opt memo k with
-      | Some e -> e
-      | None ->
-          let e = {plan = guarded_plan k; kernels = []} in
-          Memo.replace memo k e ;
+      match Ir_memo.find facts memo_key with
+      | Some e when e.generation = !generation -> e
+      | Some _ | None ->
+          let e =
+            {generation = !generation; plan = guarded_plan k; kernels = []}
+          in
+          Ir_memo.set facts memo_key e ;
           e)
 
 let build k g lowering = function
@@ -181,7 +187,7 @@ let kernel_for e k g lowering variant =
               e.kernels <- ((lowering, variant), r) :: e.kernels ;
               r)
 
-let clear () = Mutex.protect memo_lock (fun () -> Memo.reset memo)
+let clear () = Mutex.protect memo_lock (fun () -> incr generation)
 
 (* ---- Policy --------------------------------------------------------------- *)
 

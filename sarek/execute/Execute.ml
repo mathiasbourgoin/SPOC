@@ -984,17 +984,17 @@ let check_interpreter_capabilities (ir : Sarek_ir_types.kernel) : unit =
     inside [generate_source] likewise happens on the first launch only, and so
     does the read of [SAREK_AUTO_UNROLL] (Sarek_ir_unroll).
 
-    LIFETIME AND CONCURRENCY. The table is weak in the IR (an ephemeron), and
-    its data never refers to the IR, so an entry dies with its kernel. One mutex
-    guards lookup and insertion only; the analysis and codegen run outside it,
-    so two domains missing at once may both generate — the first installed
-    source wins and both get it. {!clear_launch_cache} bumps a generation
-    number, and a result computed across a clear is returned to its caller but
-    not installed. The memo is cleared by [Cache_hooks.notify_clear_all] (every
-    backend [Kernel.clear_cache], [Device.reset]) and by every device-destroy
-    notification. *)
-
-module Launch_memo = Ephemeron.K1.Make (Ir_memo.Physical)
+    LIFETIME AND CONCURRENCY. The entry is a slot of the IR's {!Ir_memo} record,
+    which is weak in the IR, and its data never refers to the IR, so an entry
+    dies with its kernel. One mutex guards reading and installing entries and
+    their lists; the analysis and codegen run outside it, so two domains missing
+    at once may both generate — the first installed source wins and both get it.
+    An entry belongs to the generation it was made in; {!clear_launch_cache}
+    bumps the generation, which makes every entry stale (replaced on the IR's
+    next launch), and a result computed across a clear is returned to its caller
+    but not installed. The memo is cleared by [Cache_hooks.notify_clear_all]
+    (every backend [Kernel.clear_cache], [Device.reset]) and by every
+    device-destroy notification. *)
 
 (* The backend is identified by its [generate_source] closure, compared
    PHYSICALLY, not by its name: [Framework_registry.register_backend] replaces
@@ -1021,13 +1021,14 @@ let find_source key sources =
     sources
 
 type launch_entry = {
+  generation : int;  (** the {!launch_memo_generation} it belongs to *)
   mutable sources : (source_key * string) list;
       (** generated source per {!source_key} *)
   mutable verified : (int * Framework_sig.capabilities) list;
       (** (device id, physical capabilities record) that passed the check *)
 }
 
-let launch_memo : launch_entry Launch_memo.t = Launch_memo.create 64
+let launch_key : launch_entry Ir_memo.key = Ir_memo.new_key ()
 
 let launch_memo_lock = Mutex.create ()
 
@@ -1038,21 +1039,27 @@ let launch_memo_generation = ref 0
     after replacing an intrinsic or type implementation that already-launched
     kernels use; backend cache clears and device teardown call it already. *)
 let clear_launch_cache () =
-  Mutex.protect launch_memo_lock (fun () ->
-      Launch_memo.reset launch_memo ;
-      incr launch_memo_generation)
+  Mutex.protect launch_memo_lock (fun () -> incr launch_memo_generation)
 
 let () =
   Cache_hooks.on_clear_all clear_launch_cache ;
   Cache_hooks.on_device_destroy (fun ~backend:_ _ -> clear_launch_cache ())
 
+(* Under [launch_memo_lock]: the entry of the current generation, if any. *)
+let current_entry facts =
+  match Ir_memo.find facts launch_key with
+  | Some e when e.generation = !launch_memo_generation -> Some e
+  | Some _ | None -> None
+
 (* Under [launch_memo_lock]. *)
-let memo_entry ir =
-  match Launch_memo.find_opt launch_memo ir with
+let memo_entry facts =
+  match current_entry facts with
   | Some e -> e
   | None ->
-      let e = {sources = []; verified = []} in
-      Launch_memo.replace launch_memo ir e ;
+      let e =
+        {generation = !launch_memo_generation; sources = []; verified = []}
+      in
+      Ir_memo.set facts launch_key e ;
       e
 
 (** [check_device_capabilities], performed once per (IR, device id, physical
@@ -1061,11 +1068,13 @@ let check_device_capabilities_memo ~(device : Device.t)
     (ir : Sarek_ir_types.kernel) : unit =
   let caps = device.Device.capabilities in
   let id = device.Device.id in
+  let passed (i, c) = i = id && c == caps in
+  let facts = Ir_memo.facts ir in
   let known, generation =
     Mutex.protect launch_memo_lock (fun () ->
         let hit =
-          match Launch_memo.find_opt launch_memo ir with
-          | Some e -> List.exists (fun (i, c) -> i = id && c == caps) e.verified
+          match current_entry facts with
+          | Some e -> List.exists passed e.verified
           | None -> false
         in
         (hit, !launch_memo_generation))
@@ -1074,9 +1083,9 @@ let check_device_capabilities_memo ~(device : Device.t)
     check_device_capabilities ~device ir ;
     Mutex.protect launch_memo_lock (fun () ->
         if !launch_memo_generation = generation then
-          let e = memo_entry ir in
-          if not (List.exists (fun (i, c) -> i = id && c == caps) e.verified)
-          then e.verified <- (id, caps) :: e.verified)
+          let e = memo_entry facts in
+          if not (List.exists passed e.verified) then
+            e.verified <- (id, caps) :: e.verified)
   end
 
 (** [B.generate_source], performed once per (IR, backend, block, soa_params).
@@ -1086,10 +1095,11 @@ let check_device_capabilities_memo ~(device : Device.t)
 let generate_source_memo (module B : Framework_sig.BACKEND) ~block ~soa_params
     (ir : Sarek_ir_types.kernel) : string option =
   let key = {codegen = B.generate_source; block; soa_params} in
+  let facts = Ir_memo.facts ir in
   let cached, generation =
     Mutex.protect launch_memo_lock (fun () ->
         let hit =
-          match Launch_memo.find_opt launch_memo ir with
+          match current_entry facts with
           | Some e -> find_source key e.sources
           | None -> None
         in
@@ -1104,7 +1114,7 @@ let generate_source_memo (module B : Framework_sig.BACKEND) ~block ~soa_params
           Mutex.protect launch_memo_lock (fun () ->
               if !launch_memo_generation <> generation then Some source
               else
-                let e = memo_entry ir in
+                let e = memo_entry facts in
                 match find_source key e.sources with
                 | Some first -> Some first
                 | None ->

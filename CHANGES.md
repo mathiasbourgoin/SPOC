@@ -275,6 +275,15 @@
 
 ### Changed
 
+- A launch hashes its IR once instead of 4-5 times (R-41). The launch-path
+  tables keyed by the IR's physical identity (capability verdicts and
+  generated sources in `Execute`, the launch window's `ir_info`, the matrix
+  plan) are typed slots of one record per IR (`sarek/execute/Ir_memo.ml`),
+  still weak in the IR, and each domain keeps its last lookup, so
+  consecutive launches of the same kernel hash nothing. `clear_launch_cache`
+  and `Matrix_specialise.clear` now make entries stale by generation; a stale
+  entry is replaced on the IR's next launch or dies with the IR.
+
 - With logging off, a `Spoc_core.Log` call costs one integer compare (R-43):
   the level is tested first, against an atomic, and the enabled components
   are an atomic bit mask instead of a polymorphic `Hashtbl`.
