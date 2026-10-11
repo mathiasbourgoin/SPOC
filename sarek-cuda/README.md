@@ -1433,7 +1433,7 @@ export SAREK_DEBUG=kernel,memory,device
 
 ## License
 
-MIT License - See LICENSE file for details
+See [LICENSE.md](../LICENSE.md) (CeCILL-B).
 
 ## Authors
 
