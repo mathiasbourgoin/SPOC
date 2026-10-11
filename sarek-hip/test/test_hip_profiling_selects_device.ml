@@ -54,7 +54,10 @@ let run_event a b =
   expect_driver_on "record_event" b ;
   select a ;
   Profiling.synchronize_event ev ;
-  Profiling.destroy_event ev
+  expect_driver_on "synchronize_event" b ;
+  select a ;
+  Profiling.destroy_event ev ;
+  expect_driver_on "destroy_event" b
 
 let () =
   if Sarek_hip.Hip_shared.is_disabled () || not (H.is_available ()) then begin

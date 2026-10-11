@@ -200,8 +200,8 @@ module Device = struct
         dev
 
   let set_current dev =
-    set_current_id dev.id ;
-    check "hipSetDevice" (hipSetDevice dev.id)
+    check "hipSetDevice" (hipSetDevice dev.id) ;
+    set_current_id dev.id
 
   (* The device the HIP runtime has selected for this thread, as the driver
      reports it (not the OCaml-side tracker). *)
@@ -284,9 +284,8 @@ module Memory = struct
     Fun.protect
       ~finally:(fun () ->
         if prev >= 0 && prev <> buf.device.Device.id then begin
-          Device.set_current_id prev ;
           match hipSetDevice prev with
-          | HIP_SUCCESS -> ()
+          | HIP_SUCCESS -> Device.set_current_id prev
           | err ->
               (* Cannot raise from [finally] (and the caller is usually a
                  finaliser that swallows exceptions): say so instead. *)
