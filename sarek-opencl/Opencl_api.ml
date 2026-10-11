@@ -112,8 +112,8 @@ module Device = struct
            EMBEDDED_PROFILE, where it is gated on [cles_khr_int64]. Probed
            rather than assumed — see the derivation at the call site. *)
     is_cpu : bool;
-        (* CL_DEVICE_TYPE_CPU. Host-pointer buffers ([Memory.alloc_with_host_ptr])
-           are accepted on these devices only. *)
+        (* CL_DEVICE_TYPE_CPU. The plugin accepts host-pointer buffers on
+           these devices only ([Memory.host_ptr_refusal]). *)
     mem_base_addr_align : int;
         (* CL_DEVICE_MEM_BASE_ADDR_ALIGN converted to bytes: the alignment a
            host pointer must have for CL_MEM_USE_HOST_PTR to be aliased rather
@@ -466,6 +466,23 @@ module Memory = struct
       privately copied: the address must meet the device's alignment. *)
   let host_ptr_usable ~align_bytes addr =
     align_bytes > 0 && Nativeint.rem addr (Nativeint.of_int align_bytes) = 0n
+
+  (** Why a USE_HOST_PTR buffer of [byte_size] bytes at [address] is refused,
+      cheapest check first; [None] when it is accepted. [accept_device]: the
+      device takes host-pointer buffers (a CPU device). Pure: no device is
+      touched. *)
+  let host_ptr_refusal ~accept_device ~align_bytes ~max_alloc_bytes ~address
+      ~byte_size : Spoc_framework.Framework_sig.host_ptr_refusal option =
+    let open Spoc_framework.Framework_sig in
+    if not accept_device then Some Host_ptr_not_cpu_device
+    else if byte_size = 0 then Some Host_ptr_empty
+    else if not (host_ptr_usable ~align_bytes address) then
+      Some (Host_ptr_misaligned {address; required_alignment = align_bytes})
+    else if Int64.compare (Int64.of_int byte_size) max_alloc_bytes > 0 then
+      Some
+        (Host_ptr_too_large
+           {byte_size; max_byte_size = Int64.to_int max_alloc_bytes})
+    else None
 
   (** Allocate buffer over the host pointer (CL_MEM_USE_HOST_PTR). Host access
       must go through {!sync_host}. *)

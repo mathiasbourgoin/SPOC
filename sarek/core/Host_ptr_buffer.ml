@@ -23,13 +23,18 @@
  * - Size: at most CL_DEVICE_MAX_MEM_ALLOC_SIZE bytes per buffer
  *   ([Host_ptr_too_large]); a large region is exposed as several vectors over
  *   [Bigarray.Array1.sub] slices, one buffer each.
- * - Lifetime: the vector roots the Bigarray (and a [sub] roots its parent), so
- *   the memory stays alive as long as the vector does. The memory must also
- *   stay in place and mapped: never pass memory that is unmapped or resized
- *   while the vector exists. The buffer is released by [Transfer.free_buffer],
- *   [Transfer.free_all_buffers] or the vector's finaliser; keep the vector
- *   reachable until the launches that use it have completed, as for any
- *   vector.
+ * - Lifetime: the vector roots the Bigarray (and a [sub] roots its parent),
+ *   so the memory stays allocated while the vector is reachable. Releasing
+ *   the buffer ([Transfer.free_buffer], [Transfer.free_all_buffers], or the
+ *   vector's finaliser) first finishes the device's queue, so no queued
+ *   kernel still uses the memory once the vector, and with it the Bigarray,
+ *   can be collected. Memory the program releases itself (a
+ *   [Transfer.free_pinned] allocation, a C allocation viewed as a Bigarray)
+ *   must outlive the buffer: free the buffer first. The memory must also stay
+ *   in place and mapped while the vector exists.
+ * - Accounting: [Gpu_memory] counts the buffer's bytes, as it counts the
+ *   Native and Interpreter buffers that are host memory: its figures are bytes
+ *   held in SPOC device buffers, not device memory in use.
  * - Synchronisation (OpenCL: host access to a USE_HOST_PTR
  *   region is defined only while it is mapped):
  *   - the array's contents at [attach] are what the first launch sees;
@@ -41,8 +46,10 @@
  *     launches enqueued after [publish_host_writes] (map with
  *     WRITE_INVALIDATE_REGION, then unmap); [Vector.set] and
  *     [Transfer.to_device] publish through the same path.
- *   The Intel CPU runtime happens to alias the memory without a map; that is
- *   not part of the contract and SPOC does not rely on it.
+ *   Launches and maps of an OpenCL device all go to its default queue
+ *   (OpenCL refuses stream launches), so a map waits for every launch issued
+ *   before it. The Intel CPU runtime happens to alias the memory without a
+ *   map; that is not part of the contract and SPOC does not rely on it.
  ******************************************************************************)
 
 open Spoc_framework

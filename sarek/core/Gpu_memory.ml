@@ -61,7 +61,8 @@ let track_free bytes =
 let track_gc_free bytes =
   Atomic.fetch_and_add allocated_bytes (-bytes) |> ignore
 
-(** Query current GPU memory usage in bytes *)
+(** Bytes held in SPOC device buffers, including buffers that are host memory
+    (Native, Interpreter, [Host_ptr_buffer]): not device memory in use. *)
 let usage () = Atomic.get allocated_bytes
 
 (** Query peak GPU memory usage in bytes *)
