@@ -422,7 +422,9 @@
   grown past 31 kernel argument slots (`Launch_window.arg_slot_limit`).
   `SAREK_LAUNCH_WINDOW=0` or `Execute.Window.set_backend_enabled` turns it off.
   `bench_launch_window` moved to `sarek/tests/e2e` and runs on every non-CPU
-  device (`SPOC_BENCH_FRAMEWORK` narrows it).
+  device (`SPOC_BENCH_FRAMEWORK` narrows it; a backend outside the default set
+  is opted in for the "on" runs). The `e2e-hip-bench` alias no longer includes
+  it; `make bench-launch-window` runs it.
 
 - The staged matrix rewrite (`Sarek_matrix_rewrite`) keeps B in shared memory
   transposed (`[n][k]`) and loads its fragments column-major, and each thread
