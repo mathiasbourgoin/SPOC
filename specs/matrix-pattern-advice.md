@@ -91,6 +91,12 @@ done;
 *(agent decision)* Only the kernel body is analysed, not helper functions: the
 advice must point at a loop the user wrote in this kernel.
 
+Known false negatives (conservative, never a wrong advice): a constant leading
+dimension on B or C is never accepted, because their contiguous extent N is not
+a loop bound (guards are not read as extent evidence), so a fully
+compile-time-sized GEMM is a near miss; register-tiled kernels (nested
+accumulators) and shared-memory tiled kernels are near misses.
+
 ## Matrix-unit configuration per element case
 
 The analysis reports which `Sarek_coopmat` configuration a lowering would use,
