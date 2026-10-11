@@ -25,11 +25,28 @@ type mode = Off | Exact | Auto
 
 let mode_name = function Off -> "off" | Exact -> "exact" | Auto -> "auto"
 
+let accepted_modes = "off/0/false/no, exact, auto/on/1/true/yes"
+
+let parse_mode = function
+  | None -> (Auto, None)
+  | Some raw -> (
+      match String.lowercase_ascii (String.trim raw) with
+      | "off" | "0" | "false" | "no" -> (Off, None)
+      | "exact" -> (Exact, None)
+      | "auto" | "on" | "1" | "true" | "yes" | "" -> (Auto, None)
+      | _ ->
+          ( Auto,
+            Some
+              (Printf.sprintf
+                 "[sarek matrix] SAREK_MATRIX_REWRITE=%S is not recognised \
+                  (accepted: %s); using auto"
+                 raw
+                 accepted_modes) ))
+
 let mode_of_env () =
-  match Sys.getenv_opt "SAREK_MATRIX_REWRITE" with
-  | Some "off" -> Off
-  | Some "exact" -> Exact
-  | _ -> Auto
+  let mode, warning = parse_mode (Sys.getenv_opt "SAREK_MATRIX_REWRITE") in
+  Option.iter (Printf.eprintf "%s\n%!") warning ;
+  mode
 
 let current_mode = Atomic.make (mode_of_env ())
 
@@ -205,16 +222,32 @@ let float32_lowering precision =
             "a float32 product is rewritten only after \
              Sarek_coopmat.accept_operand_rounding")
 
-let lowering_of ~mode plan precision =
-  match (mode, plan.case) with
+(* The automatic path (not [explicit]) rewrites a program's own float kernels
+   only after its own opt-in; the accuracy opt-ins are checked with the
+   configuration ([device_admits]) and by [float32_lowering]. *)
+let automatic_float_optin ~explicit =
+  if explicit || Sarek_coopmat.automatic_float_rewrite_reason () <> None then
+    Ok ()
+  else
+    Error
+      "float products are rewritten automatically only after \
+       Sarek_coopmat.accept_automatic_float_rewrite (plus the accuracy \
+       opt-ins); Sarek_matrix.run does not need it"
+
+let lowering_for ~mode ~explicit case precision =
+  match (mode, case) with
   | (Off | Exact | Auto), Adv.Int32_inputs -> Ok Rw.Int32_byte_planes
   | (Off | Exact), (Adv.F16_inputs | Adv.F32_inputs) ->
       Error
         (Printf.sprintf
            "mode %s: float products are not rewritten"
            (mode_name mode))
-  | Auto, Adv.F16_inputs -> Ok Rw.F16_operands
-  | Auto, Adv.F32_inputs -> float32_lowering precision
+  | Auto, Adv.F16_inputs ->
+      let* () = automatic_float_optin ~explicit in
+      Ok Rw.F16_operands
+  | Auto, Adv.F32_inputs ->
+      let* () = automatic_float_optin ~explicit in
+      float32_lowering precision
   | (Off | Exact | Auto), Adv.No_case ->
       Error "no matrix-unit configuration for these element types"
 
@@ -303,7 +336,7 @@ let decide ?precision ~explicit ~stream ~(device : Device.t) ~ir ~launch () =
         "a bound, the initial value or the epilogue reads block_dim/grid_dim"
     else Ok ()
   in
-  let* lowering = lowering_of ~mode plan precision in
+  let* lowering = lowering_for ~mode ~explicit plan.case precision in
   let cfg = Rw.config_of lowering ~operand_elt:plan.gemm.a.elt in
   let* () = device_admits device cfg in
   let* launch =

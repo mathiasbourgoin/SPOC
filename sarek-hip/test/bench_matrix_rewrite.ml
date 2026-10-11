@@ -271,6 +271,7 @@ let () =
   | [] -> print_endline "[SKIP] no gfx11 HIP device"
   | dev :: _ ->
       Sarek_coopmat.accept_relaxed_accumulation ~reason:"benchmark" ;
+      Sarek_coopmat.accept_automatic_float_rewrite ~reason:"benchmark" ;
       List.iter
         (fun p ->
           Sarek_coopmat.accept_operand_rounding ~precision:p ~reason:"benchmark")

@@ -14,7 +14,8 @@ Builds on specs/matrix-pattern-advice.md (recogniser) and
 specs/matrix-pattern-rewrite.md (rewrite). Owner policy (2026-10-11, relayed):
 safe optimisations on by default, risky ones opt-in — the exact int32 rewrite
 applies by default inside `Execute`; float rewrites only under the explicit
-`accept_relaxed_accumulation` / `accept_operand_rounding`; a global switch
+`accept_automatic_float_rewrite` together with the accuracy opt-ins
+(`accept_relaxed_accumulation` / `accept_operand_rounding`); a global switch
 disables the rewrite entirely. Coordinator: plug in as a per-launch
 specialisation hook on the launch window, not a parallel launch path.
 
@@ -34,14 +35,14 @@ that need the original. `Sarek_matrix.run` keeps its PR 2 signature on top.
 ## Mode
 
 `Matrix_specialise.mode = Off | Exact | Auto`, from `SAREK_MATRIX_REWRITE`
-(`off`, `exact`, default `auto`), changeable with `set_mode`
+(see Opt-ins and parsing below; default `auto`), changeable with `set_mode`
 (`Sarek_matrix.set_mode`):
 
 | mode | int32 | float16 operands | float32 operands |
 |---|---|---|---|
 | `Off` | original | original | original |
 | `Exact` | rewritten (bit-identical) | original | original |
-| `Auto` (default) | rewritten | rewritten after `accept_relaxed_accumulation` | rewritten after `accept_operand_rounding` (+ relaxed); precision: the requested one, else float16 then bfloat16 if accepted (the bf16x3 split, not faster than the scalar kernel, only on request) |
+| `Auto` (default) | rewritten | rewritten after `accept_automatic_float_rewrite` + `accept_relaxed_accumulation` | rewritten after `accept_automatic_float_rewrite` + `accept_operand_rounding` (+ relaxed); precision: the requested one, else float16 then bfloat16 if accepted (the bf16x3 split, not faster than the scalar kernel, only on request) |
 
 Devices: by default only HIP (gfx11, 32-wide waves) is rewritten. The
 interpreter is rewritten only on an explicit request (`Sarek_matrix.run`,
@@ -59,7 +60,28 @@ the rewritten launch's dimensions). Only `Execute.run_vectors` specialises;
 *(agent decision)* The request named `Faithful` (default) and `Optimise`;
 the later owner policy makes the float opt-ins the switch for result-changing
 rewrites and asks for a global off switch, so the modes are named for what they
-allow. `Auto` changes no result unless the program called an opt-in.
+allow. `Auto` changes no result unless the program called the opt-ins.
+
+## Opt-ins and parsing (owner decision, 2026-10-11)
+
+Accepting an accuracy deviation and letting `Execute` rewrite a program's OWN
+float kernels are two decisions. `accept_relaxed_accumulation` and
+`accept_operand_rounding` admit matrix-unit configurations for code that asks
+for them (`Sarek_gemm.Coopmat`, the explicit `Sarek_matrix.run`); they do not
+enable the automatic rewrite. The automatic float rewrite (`Execute.run_vectors`,
+mode `Auto`) needs, in addition,
+`Sarek_coopmat.accept_automatic_float_rewrite ~reason` (no env var, like the
+accuracy opt-ins; one-way, first reason kept). Without it the outcome is
+`Original` and its reason names the missing call. `Sarek_matrix.run` (explicit)
+does not need it; int32 needs no opt-in. Granting one opt-in never enables more
+than it names: the new opt-in alone does not admit f16 (the accuracy policy
+still refuses).
+
+`SAREK_MATRIX_REWRITE`, case-insensitive: `off`/`0`/`false`/`no` give `Off`;
+`exact` gives `Exact`; `auto`/`on`/`1`/`true`/`yes` give `Auto`; unset or empty
+gives `Auto`. Any other value prints one warning on stderr (variable, value,
+accepted values) and gives `Auto` (`Matrix_specialise.parse_mode`, pure).
+`SAREK_MATRIX_REPORT` accepts only `1` and is unchanged.
 
 ## Size classes
 
@@ -100,7 +122,12 @@ rewrite int32 on the interpreter and gfx11 (bit-identical to the plain
 launch), `Off` never; `Exact` refuses float16 even after the opt-in; float16
 64×64×64 and 256×256×1024 take `Direct`, 40×24×20 and 100×37×129 take
 `Staged`, all within γ_K; one rewritten IR for two launches; the reporter sees
-the rewrite. PR 2's tests use `run_vectors_plain` for the original.
+the rewrite. `test_matrix_optin.exe` (one process per opt-in combination, HIP):
+relaxed only leaves the automatic f16 launch original (reason names
+`accept_automatic_float_rewrite`) while `Sarek_matrix.run` still rewrites; the
+new opt-in only leaves both original; both rewrite.
+`sarek/execute/test/test_matrix_specialise_policy.ml` (no device): the
+`SAREK_MATRIX_REWRITE` parser and `lowering_for`. PR 2's tests use `run_vectors_plain` for the original.
 
 ## Requirements
 

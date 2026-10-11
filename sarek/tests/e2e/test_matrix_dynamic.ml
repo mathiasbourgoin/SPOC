@@ -451,6 +451,7 @@ let () =
   List.iter int_phase devices ;
   let rewriters = List.filter offers_int devices in
   Sarek_coopmat.accept_relaxed_accumulation ~reason:"test_matrix_dynamic" ;
+  Sarek_coopmat.accept_automatic_float_rewrite ~reason:"test_matrix_dynamic" ;
   List.iter float_phase rewriters ;
   List.iter check_not_reported devices ;
   List.iter check_analysis_failure devices ;
