@@ -44,6 +44,14 @@ You normally do not need to do anything: the observable result is the same as is
 
 At most 8 groups of launches are held; a ninth issues the oldest first. A group fuses at most 8 launches.
 
+## Asynchronous launches on Vulkan
+
+Independently of the window, a Vulkan launch no longer waits for the GPU. It is appended to the stream's open command buffer and returns; the buffer is submitted after `SPOC_VULKAN_BATCH` dispatches (default 32), when another stream of the device launches, and at any point where your program observes the device: reading or writing a vector, `Transfer.flush`, `Device.synchronize`, `Stream.synchronize`, freeing a buffer, destroying a device. Results and their order do not change. Dispatches that depend on each other are ordered in memory by a barrier the backend records before each one.
+
+On an RX 7900 XTX with RADV, the host cost of a launch dropped from about 59 us to 6.6 us (`SPOC_VULKAN_BATCH=1` against the default; see [CHANGES.md](https://github.com/mathiasbourgoin/Sarek/blob/main/CHANGES.md) for the method and the chain numbers).
+
+A failed submission or wait raises `kernel_launch_failed` naming the kernels of the batch at the first wait that observes it (a read, a synchronisation), not at the launch. `SPOC_VULKAN_BATCH=1` submits and waits at every launch again. Details: `specs/vulkan-async-launches.md` in the repository.
+
 ## Error timing
 
 Argument checks, capability checks, source generation and argument expansion run inside the `run` or `run_vectors` call, so those errors are raised where the launch is made. Device compilation and the driver launch happen when the launch is issued. A failure there is raised by whichever call flushed the window (for example `Transfer.flush` or `Vector.get`), not by the launch that caused it. The other held groups are still issued and the first exception is re-raised afterwards. One known exception: if a merged epilogue kernel fails and falls back, the producer is issued first and, if it raises, the consumer is not issued ([issue #459](https://github.com/mathiasbourgoin/Sarek/issues/459)). If the window overflows, the oldest group is issued before the new launch is accepted; if that raises, the new launch is not made. A failed deferred launch at program exit is printed on stderr.

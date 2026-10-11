@@ -12,9 +12,9 @@
 - `sarek-vulkan/Vulkan_api_base.ml`: `memcpy`, `u32`, `check`, GLSL-to-SPIR-V compilation (shaderc and `glslangValidator` CLI), and `glslang_available`.
 - `sarek-vulkan/Vulkan_api_device.ml`: device enumeration, capabilities, device cache, and destroy.
 - `sarek-vulkan/Vulkan_api_memory.ml`: buffer allocation, staging buffers, host/device copies, and `device_to_device`.
-- `sarek-vulkan/Vulkan_api_stream.ml`: command pool/buffer streams and default-stream cache.
+- `sarek-vulkan/Vulkan_api_stream.ml`: streams (two command buffers each, with descriptor pools and kernel lists), the per-device stream registry, the launch batch (`record_dispatch`, `submit_open`, `drain_stream`), `SPOC_VULKAN_BATCH`, and the default-stream cache (specs/vulkan-async-launches.md).
 - `sarek-vulkan/Vulkan_api_event.ml`: fence-based events.
-- `sarek-vulkan/Vulkan_api_kernel.ml`: SPIR-V module/descriptor layout/pipeline creation, kernel cache, argument binding, push constants, and compute dispatch (`launch`).
+- `sarek-vulkan/Vulkan_api_kernel.ml`: SPIR-V module/descriptor layout/pipeline creation, kernel cache, argument binding, push constants, and the recording of one dispatch into the stream's open batch (`launch`).
 - `sarek-vulkan/Vulkan_plugin_base.ml`: framework backend implementation.
 - `sarek-vulkan/Vulkan_plugin.ml`: registration, intrinsic registry, source generation, and external GLSL execution.
 - `sarek-vulkan/Sarek_ir_glsl.ml`: Sarek IR to GLSL compute shader generator.
@@ -36,7 +36,7 @@
 ## Features and APIs
 
 - Vulkan compute backend with GLSL-to-SPIR-V through shaderc or `glslangValidator`.
-- Device enumeration, memory allocation with host-visible/device-local selection, staging copies for non-mappable buffers, command pool/buffer/fence streams, descriptor-set based buffer binding, push constants, and compute dispatch.
+- Device enumeration, memory allocation with host-visible/device-local selection, staging copies for non-mappable buffers, command pool/buffer/fence streams, asynchronous batched launches (`SPOC_VULKAN_BATCH`, default 32; per-launch descriptor sets; a compute barrier before each dispatch; pending launches completed before any host access to device memory, buffer release, sync, event record, kernel eviction or device destroy), push constants, and compute dispatch.
 - External source language support is GLSL only at `sarek-vulkan/Vulkan_plugin.ml:207`.
 - Generated GLSL uses `layout(local_size_x=...)`, storage buffers for vectors, push constants for scalar params and vector lengths, and Vulkan built-in IDs.
 
@@ -47,6 +47,17 @@
 - Descriptor set layout bindings must match shader-declared binding numbers.
 - Push constant layout and runtime byte writes must match generated GLSL layout.
 - Command buffers must be in the correct reset/record/submit state.
+- Every path that touches device memory from the host, or releases an object a
+  recorded dispatch uses (buffer, pipeline, device), first calls
+  `Vulkan_api_device.drain_pending`; a new such path without it reads or frees
+  memory a pending dispatch still uses. The inventory is in
+  specs/vulkan-async-launches.md (FR-002).
+- Every dispatch is preceded by a compute-to-compute memory barrier; Vulkan
+  orders dispatch start, not memory, between dispatches or between submissions.
+- Descriptor pools are reset only after the owning command buffer's fence has
+  been waited for.
+- A launch submits the open batches of the device's other streams first, so all
+  streams reach the one queue in launch order.
 - Staging memory mapped by `vkMapMemory` must be unmapped before freeing.
 
 ## Potential Invariant Violations and Bugs
@@ -67,8 +78,8 @@
 - **fixed 2026-10-12 (H6) — launch-window groups over the 128-byte push-constant block.** A fused kernel's block is the vector lengths of all members, then all their scalars, then an (offset, size) int32 pair per member: with six members of one vector and three int32 scalars (24 bytes each) it is 144 bytes, and `build_push_constants` refuses it. The window used to find out only at launch and issue the members one by one (FR-013), after logging the failure and never fusing that sequence again. It now sizes the block before growing a group, with `Sarek_push_constants.fused_block_bytes` (the same `place` that `build_push_constants` writes with) against `Launch_window.push_constant_limit "Vulkan"` (128), for horizontal groups and epilogue merges alike. A single unfused launch over the limit still raises the "push constant block overflow" error before any fence is touched. Not done: spilling scalars beyond the budget to a uniform or storage buffer, and reading the device's `maxPushConstantsSize` (the pipeline layout declares 128, the guaranteed minimum). Tests: `sarek/tests/e2e/test_vulkan_window_push_budget.ml` (RADV NAVI31, Vulkan), `sarek-vulkan/test/test_vulkan_push_constant_budget.ml`, `spoc/ir/test/test_sarek_push_constants.ml`, `test_launch_window` ("push-constant byte limit").
 - **fixed 2026-10-11 (a312b91f, R-29, completed by 63f5f0e9) — the stream fence hang after a refused launch.** `launch` reset the stream fence before building the push-constant block, so a launch refused on the host left the fence unsignalled and the next launch on the stream waited forever in `vkWaitForFences` (observed on SPOC e9f22fe9, before this fix). Host validation and the block now come first, and the fence is reset immediately before `vkQueueSubmit`; 63f5f0e9 then tracks whether a fence was actually submitted (`pending`) so that no wait is made on a fence that was never submitted. Covered by `test_vulkan_fence_sync` ("failed launch does not hang the next one").
 - **fixed 2026-07-02 (merged) — logical-index binding + 8-byte alignment (this was the "generated GLSL declares vector-length push constants but runtime binding only records buffers" bug flagged previously):** scalar push-constant arguments are now stored in a separate `scalar_store : scalar_arg Spoc_framework.Kernel_args.t` (`Vulkan_api_kernel.ml:59`), keyed by the caller's own idx, decoupled from buffer indices. At launch, `build_push_constants` (`Vulkan_api_kernel.ml:494-572`) assembles the push-constant byte block by (1) vector lengths, in ascending-buffer-idx order (matching `resolve_bindings`'s buffer ordering, which is what `Sarek_ir_glsl.gen_push_constants` assumes), then (2) user scalars, in ascending scalar-idx order — reproducing the exact grouping the GLSL codegen emits (`gen_push_constants`, `sarek/codegen/Sarek_ir_glsl.ml:1651`), rather than relying on argument-setting call order. It also reproduces GLSL's std430-like base-alignment through `Sarek_push_constants.place` (`spoc/ir/Sarek_push_constants.ml`), which pads an 8-byte field (`int64_t`/`double`) after a 4-byte field, so mixed 32/64-bit push-constant blocks no longer read shifted bytes after the first misalignment. Buffer-idx negative values are rejected the same way as `validate_buffer_indices` above.
-- `launch` ignores the runtime block size at `sarek-vulkan/Vulkan_api_kernel.ml:394-397`; block size is baked into generated GLSL, but direct external source launch can mismatch user expectations.
-- **FIXED (verified 2026-07-02):** command-buffer reset/reuse discipline. The command pool is now created with `VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT` (`sarek-vulkan/Vulkan_api_stream.ml:27`), and before re-recording, the kernel launch path now waits on the fence and resets it (`vkWaitForFences` then `vkResetFences`) before `vkBeginCommandBuffer` (`sarek-vulkan/Vulkan_api_kernel.ml:478-492`). The previously-flagged "begin without explicit reset" state bug no longer applies.
+- `launch` ignores the runtime block size at `sarek-vulkan/Vulkan_api_kernel.ml:610`; block size is baked into generated GLSL, but direct external source launch can mismatch user expectations.
+- **FIXED (verified 2026-07-02):** command-buffer reset/reuse discipline. The command pool is now created with `VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT` (`sarek-vulkan/Vulkan_api_stream.ml:27`), and before re-recording, the kernel launch path now waits on the fence and resets it (`vkWaitForFences` then `vkResetFences`) before `vkBeginCommandBuffer` (`sarek-vulkan/Vulkan_api_kernel.ml:478-492`). The previously-flagged "begin without explicit reset" state bug no longer applies. Superseded 2026-10-12: launches are batched; a stream owns two command buffers, each with its own fence and descriptor pools, and a slot is reused only after its fence is waited for (`sarek-vulkan/Vulkan_api_stream.ml`, specs/vulkan-async-launches.md).
 - Generated GLSL maps `TInt64` and `TFloat64` to `int64_t` and `double` at `sarek-vulkan/Sarek_ir_glsl.ml:147-149`, but the emitted header at `sarek-vulkan/Sarek_ir_glsl.ml:784-795` does not enable int64/fp64 extensions. README examples show extensions that implementation does not emit.
 - `SNative` is refused outright (`sarek/codegen/Sarek_ir_glsl.ml:1309`, the shared `native_block_refusal` from `spoc/ir/Sarek_ir_codegen.ml:150`), not emitted as a comment — `sarek-vulkan/Sarek_ir_glsl.ml` just re-exports that generator (`sarek-vulkan/Sarek_ir_glsl.ml:9`).
 - **New entry, verified 2026-07-02 — do not close:** `generate_source` catches all exceptions and returns `None` at `sarek-vulkan/Vulkan_plugin.ml:194` (`with _ -> None`), hiding codegen failure reasons, matching the same pattern already tracked for OpenCL/Metal. Confirmed still present against current source; not touched by #213/#214.
