@@ -18,8 +18,9 @@ open Spoc_framework
     never depends on them. *)
 module For_testing = struct
   (** When [true], [alloc_zero_copy] also accepts non-CPU devices, so the
-      CL_MEM_USE_HOST_PTR synchronisation paths can be exercised on a machine
-      whose only OpenCL devices are GPUs. *)
+      CL_MEM_USE_HOST_PTR synchronisation paths can be exercised on a GPU.
+      Test-only: it breaks the production assumption "zero-copy implies a CPU
+      device implies no launch deferral" (Execute.ml, [defers_device]). *)
   let zero_copy_on_any_device = ref false
 end
 
@@ -165,7 +166,11 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
           Some {buf; device_id = device.id}
       end
 
-    let is_zero_copy b = Opencl_api.Memory.is_zero_copy b.buf
+    (* Framework_sig: [true] means no transfers are needed. A USE_HOST_PTR
+       buffer still needs map/unmap around host access, so OpenCL says
+       [false] and the transfer layer calls [host_ptr_to_device] /
+       [device_to_host_ptr], which do the synchronisation. *)
+    let is_zero_copy _b = false
 
     let alloc_custom device ~size ~elem_size =
       let state = get_state device.Opencl_api.Device.id in

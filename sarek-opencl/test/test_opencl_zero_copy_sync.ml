@@ -7,17 +7,17 @@
  * R-27 regression: host access to a CL_MEM_USE_HOST_PTR (zero-copy) buffer
  * must synchronise with the device.
  *
- * Zero-copy is only chosen for CPU OpenCL devices, and this machine has none,
- * so the test forces it on every OpenCL device through
- * [Opencl_plugin_base.For_testing.zero_copy_on_any_device]. On a GPU the
- * runtime may keep a private copy behind a USE_HOST_PTR buffer, which makes
- * the missing map/unmap deterministic instead of a data race: without it a
- * kernel's result never reaches the host array, and a host write never
- * reaches the kernel.
+ * A kernel writes a zero-copy buffer and the host must see the result; the
+ * host writes the array and the next kernel must see it; a pointer that misses
+ * CL_DEVICE_MEM_BASE_ADDR_ALIGN must not become USE_HOST_PTR. Zero-copy is
+ * normally chosen for CPU devices only, so the test forces it on every OpenCL
+ * device with [Opencl_plugin_base.For_testing.zero_copy_on_any_device]; a GPU
+ * runtime may keep a private copy behind such a buffer, which makes a missing
+ * map/unmap a deterministic failure instead of a data race.
  *
- * The host-access calls below are the ones Transfer makes (device_to_host_ptr
- * before a host read, host_ptr_to_device after a host write). Skips when no
- * OpenCL device exists.
+ * Backend level (device_to_host_ptr / host_ptr_to_device, the calls Transfer
+ * makes); the Vector path is covered by test_opencl_zero_copy_vector in
+ * sarek/tests/e2e. Skips when no OpenCL device exists.
  ******************************************************************************)
 
 open Sarek_opencl
@@ -59,7 +59,6 @@ let launch device ~name ~source args =
    CL_DEVICE_MEM_BASE_ADDR_ALIGN plus [skew_elems] elements: aligned when
    [skew_elems = 0], so USE_HOST_PTR is allowed. *)
 let host_array ?(skew_elems = 0) ~align fill =
-  let align = align in
   let slack = (align / 4) + skew_elems in
   let base =
     Bigarray.Array1.create Bigarray.float32 Bigarray.c_layout (n + slack)

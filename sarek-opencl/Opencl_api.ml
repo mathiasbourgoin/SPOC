@@ -454,11 +454,13 @@ module Memory = struct
     check "clCreateBuffer" !@err ;
     {handle = mem; size; elem_size; context; host_alias = None}
 
-  (** Allocate buffer with zero-copy using host pointer. For CPU OpenCL devices,
-      this avoids memory copies entirely. *)
+  (** Whether USE_HOST_PTR over [addr] is aliased by the runtime rather than
+      privately copied: the address must meet the device's alignment. *)
   let host_ptr_usable ~align_bytes addr =
     align_bytes > 0 && Nativeint.rem addr (Nativeint.of_int align_bytes) = 0n
 
+  (** Allocate buffer over the host pointer (CL_MEM_USE_HOST_PTR). Host access
+      must go through {!sync_host}. *)
   let alloc_with_host_ptr context size kind host_ptr =
     let elem_size = Spoc_core.Memory.bigarray_elem_size kind in
     let bytes = Unsigned.Size_t.of_int (size * elem_size) in
@@ -486,8 +488,6 @@ module Memory = struct
     {handle = mem; size; elem_size; context; host_alias = None}
 
   (** Check if buffer uses zero-copy (no transfers needed) *)
-  let is_zero_copy buf = Option.is_some buf.host_alias
-
   let aliases_host buf addr = buf.host_alias = Some addr
 
   (* Make the host memory under a USE_HOST_PTR buffer coherent with the device:
@@ -495,7 +495,10 @@ module Memory = struct
      reading or writing the buffer), and the unmap hands the host's writes to
      the device. [flags] says which direction matters: [cl_map_read] to see the
      device's result, [cl_map_write_invalidate_region] to publish host writes
-     without overwriting them. Blocks until the queue is idle again. *)
+     without overwriting them. WRITE_INVALIDATE_REGION (OpenCL 1.2+) relies
+     on the host writes made BEFORE the map being published by the unmap: the
+     region's old contents are not refreshed. Blocks until the queue is idle
+     again. *)
   let sync_host queue buf ~flags ~byte_size =
     let bytes =
       Unsigned.Size_t.of_int (min byte_size (buf.size * buf.elem_size))

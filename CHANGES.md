@@ -420,13 +420,18 @@
   blocking `clEnqueueMapBuffer` / `clEnqueueUnmapMemObject` (and a `clFinish`),
   and `USE_HOST_PTR` is used only for a pointer aligned to
   `CL_DEVICE_MEM_BASE_ADDR_ALIGN`; other arrays take an ordinary buffer.
-  Regression test `sarek-opencl/test/test_opencl_zero_copy_sync.ml`, forced onto
-  GPU devices by the test-only `Opencl_plugin_base.For_testing` hook.
-- `test_launch_window`: on a device whose launches are not deferred (every CPU
-  device) window on and off take the same path, so the bit-identity scenarios
-  are skipped with a visible message instead of comparing two plain runs; on a
-  deferring device three plain runs must agree before a window-on difference
-  counts.
+  OpenCL's `is_zero_copy` is now `false` (a USE_HOST_PTR buffer is not "no
+  transfers needed"), so `Transfer` forwards host copies to the backend.
+  Regression tests `sarek-opencl/test/test_opencl_zero_copy_sync.ml` (backend)
+  and `sarek/tests/e2e/test_opencl_zero_copy_vector.ml` (Vector path), forced
+  onto GPU devices by the test-only `Opencl_plugin_base.For_testing` hook.
+- `test_launch_window`: on every device three plain runs must agree bit for
+  bit, and a disagreement fails. The window-on comparison is made only on
+  devices that defer launches; on the others (every CPU device) it is skipped,
+  with the skip counted in the summary line, because window on and off take the
+  same path there. No barrier race was found in the generated OpenCL for the
+  `mv_wave` / `mv_row` kernels; the plain-path nondeterminism seen on HIP on
+  the 7950X iGPU remains open (#427).
 
 - hiprtc and nvrtc option arrays: `CArray.of_list string` let the C copies of
   the option strings be freed before the compile call. Under a different

@@ -142,18 +142,19 @@ let alloc_scalar_buffer_zero_copy (type a b) (dev : Device.t)
                 | Some args -> B.Kernel.set_arg_buffer args idx buf
                 | None -> failwith "bind_to_kargs: backend mismatch"
 
-              (* Host-memory backends (Native, Interpreter) share the array
-                 outright: nothing to do. A runtime-aliased buffer (OpenCL
-                 USE_HOST_PTR) is coherent only through its own map/unmap. *)
+              (* Same rule as the regular wrapper: a buffer that is_zero_copy
+                 (Native, Interpreter: the device uses the host array itself)
+                 needs nothing; one that is not (OpenCL USE_HOST_PTR, coherent
+                 only through map/unmap) is copied by its backend. *)
               let host_ptr_to_device src_ptr ~byte_size =
-                if B.name = "OpenCL" then
+                if not (B.Memory.is_zero_copy buf) then
                   B.Memory.host_ptr_to_device
                     ~src_ptr:(Ctypes.raw_address_of_ptr src_ptr)
                     ~byte_size
                     ~dst:buf
 
               let device_to_host_ptr dst_ptr ~byte_size =
-                if B.name = "OpenCL" then
+                if not (B.Memory.is_zero_copy buf) then
                   B.Memory.device_to_host_ptr
                     ~src:buf
                     ~dst_ptr:(Ctypes.raw_address_of_ptr dst_ptr)
