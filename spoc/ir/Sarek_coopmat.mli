@@ -108,6 +108,32 @@ val accept_operand_rounding :
 (** The reason recorded for that precision, if it was accepted. *)
 val operand_rounding_reason : operand_precision -> string option
 
+(** {2 Automatic float rewrite (specs/matrix-pattern-dynamic.md)}
+
+    [Execute.run_vectors] can rewrite a program's OWN float GEMM-shaped kernels
+    onto matrix units, without the program having asked for matrix units. That
+    is a separate decision from accepting the accuracy deviation: the accuracy
+    opt-ins ({!accept_relaxed_accumulation}, {!accept_operand_rounding}) admit
+    matrix-unit configurations for code that asks for them explicitly
+    ([Sarek_gemm.Coopmat], [Sarek_matrix.run]); they do NOT enable the automatic
+    rewrite. The automatic float rewrite happens only when this opt-in AND the
+    accuracy opt-ins required for the configuration were all given. Granting one
+    never enables more than it names. int32 (exact) products are rewritten
+    automatically without any opt-in.
+
+    This opt-in has no environment variable, like the accuracy opt-ins: it is a
+    statement in the program's source. Process-wide, one-way, thread-safe. *)
+
+(** [accept_automatic_float_rewrite ~reason]: the first non-empty [reason] is
+    kept; later calls are no-ops.
+
+    @raise Invalid_argument if [reason] is empty or blank. *)
+val accept_automatic_float_rewrite : reason:string -> unit
+
+(** The reason recorded by {!accept_automatic_float_rewrite}, if it was called.
+*)
+val automatic_float_rewrite_reason : unit -> string option
+
 (** [policy_verdict cfg] judges the accuracy regime, independently of any
     device:
     - configurations whose four component types are all integer are [Available]

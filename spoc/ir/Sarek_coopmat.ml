@@ -112,6 +112,22 @@ let accept_operand_rounding ~precision ~reason =
 
 let operand_rounding_reason precision = Atomic.get (rounding_cell precision)
 
+(* The opt-in for the AUTOMATIC float matrix rewrite (Matrix_specialise). Same
+   contract as the accuracy opt-ins above; it grants no accuracy deviation by
+   itself, only the permission to apply the accepted ones to a program's own
+   kernels. *)
+let automatic_float_reason : string option Atomic.t = Atomic.make None
+
+let accept_automatic_float_rewrite ~reason =
+  if String.trim reason = "" then
+    invalid_arg
+      "Sarek_coopmat.accept_automatic_float_rewrite: the reason must not be \
+       empty (it is the record that rewriting the program's own float kernels \
+       was understood)" ;
+  ignore (Atomic.compare_and_set automatic_float_reason None (Some reason))
+
+let automatic_float_rewrite_reason () = Atomic.get automatic_float_reason
+
 (* The float configurations a bound has been derived for: f16 x f16 + f32 ->
    f32 (§5.2) and bf16 x bf16 + f32 -> f32 (specs/matrix-pattern-rewrite.md:
    the same derivation, since a product of two 8-bit-significand values is
