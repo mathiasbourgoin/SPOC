@@ -377,9 +377,9 @@ let live sp =
 (* The index as units (coefficient, lo, hi) plus its constant: one per
    guarded composite, one per other live digit. *)
 let units sp s =
-  (* A zero extent means no thread at all; digits of extent 0 would otherwise
-     be dropped as if they were the constant 0. *)
-  if Array.exists (( = ) 0) sp.dims then None
+  (* An extent of 0 (or below) means no thread at all; such digits would
+     otherwise be dropped as if they were the constant 0. *)
+  if Array.exists (fun e -> e <= 0) sp.dims then None
   else
     match box sp s with
     | None -> None
