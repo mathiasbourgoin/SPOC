@@ -148,7 +148,10 @@ let enumerate ~(p : _ LW.launch) ~p_array ~p_scalars ~(c : _ LW.launch)
     ~(shape : Fusion_epilogue.consumer) ~c_scalars =
   if threads p + threads c > max_enumerated then begin
     Atomic.incr n_over_budget ;
-    (false, [])
+    (* Reached because the affine proof failed, possibly for these scalar
+       values only (a negative dividend, an int32 overflow): the refusal holds
+       for these values of every scalar parameter. *)
+    (false, tag (List.map fst p_scalars) (List.map fst c_scalars))
   end
   else
     let stored = Index_bitset.create () and written = Index_bitset.create () in
