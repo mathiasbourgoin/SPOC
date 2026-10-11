@@ -37,6 +37,7 @@ type ctx = {
   sc : string;  (** accumulator tile *)
   st : string;  (** scratch tile for the integer planes *)
   bk : int;
+  subgroup : int;  (** lanes per wave *)
 }
 
 let me c = List.nth c.extra 0
@@ -46,6 +47,8 @@ let ne c = List.nth c.extra 1
 let d_ c = List.nth c.extra 3
 
 let t_ c = List.nth c.extra 4
+
+let threads c = threads_of ~subgroup:c.subgroup
 
 let store_planes names idx values =
   SSeq
@@ -140,22 +143,27 @@ let stage_group c ~kt ~is_a ~gi =
     @ reads @ List.concat planes)
     (SSeq (List.mapi store planes))
 
-(* Every thread stages whole groups and every group lies in one row: the tile
-   ([tile_outer] x [bk]) is a whole number of [group * threads] elements and
-   [bk] of [group]. Static (bm = bn = 64, bk = 16, group = 8, threads = 128);
-   the assertion keeps a retuned constant from silently dropping elements. *)
+(* Every thread stages whole groups and every group lies in one row: [bk] is a
+   whole number of [group]. The tile has [tile_outer * bk / group] groups; with
+   more threads than groups (a 64-wide subgroup: 256 threads, 128 groups) the
+   surplus threads are guarded off, with fewer each thread takes several. When
+   the threads divide the groups no guard is emitted. *)
 let stage_tile c ~tid ~kt ~is_a =
-  assert (
-    tile_outer ~is_a * c.bk mod (group * threads) = 0 && c.bk mod group = 0) ;
+  assert (c.bk mod group = 0) ;
+  let threads = threads c in
+  let groups = tile_outer ~is_a * c.bk / group in
   for_
     c.fresh
     "g8"
-    ~upto:((tile_outer ~is_a * c.bk / group / threads) - 1)
+    ~upto:(((groups + threads - 1) / threads) - 1)
     (fun g8 ->
       let gi = local c "gi" in
-      lets
-        [(gi, tid +: (g8 *: i32 threads))]
-        (stage_group c ~kt ~is_a ~gi:(EVar gi)))
+      let stage = stage_group c ~kt ~is_a ~gi:(EVar gi) in
+      let guarded =
+        if groups mod threads = 0 then stage
+        else SIf (EVar gi <: i32 groups, stage, None)
+      in
+      lets [(gi, tid +: (g8 *: i32 threads))] guarded)
 
 let frag c use =
   let a, b, acc, _ = C.fragments_of_config (config c.s) in
@@ -284,13 +292,13 @@ let combine c ~tid ~wm ~wn =
             for_
               c.fresh
               "e32"
-              ~upto:((bm * bn / threads) - 1)
+              ~upto:((bm * bn / threads c) - 1)
               (fun e32 ->
                 let_
                   c.fresh
                   "e"
                   TInt32
-                  (tid +: (e32 *: i32 threads))
+                  (tid +: (e32 *: i32 (threads c)))
                   (fun e ->
                     SAssign
                       ( LArrayElem (c.sc, e),
@@ -352,10 +360,10 @@ let write_outputs c ~tid =
   for_
     c.fresh
     "e32"
-    ~upto:((bm * bn / threads) - 1)
+    ~upto:((bm * bn / threads c) - 1)
     (fun e32 ->
       let e = local c "e" in
-      lets [(e, tid +: (e32 *: i32 threads))] (write_output c ~e:(EVar e)))
+      lets [(e, tid +: (e32 *: i32 (threads c)))] (write_output c ~e:(EVar e)))
 
 (* ---- Assembly ---------------------------------------------------------------- *)
 
@@ -399,7 +407,7 @@ let body c0 =
   lets
     ([
        (tid, gpu "thread_idx_x");
-       (wave, EVar tid /: i32 32);
+       (wave, EVar tid /: i32 c0.subgroup);
        (wm, EVar wave /: i32 2);
        (wn, EVar wave %: i32 2);
      ]
@@ -412,7 +420,7 @@ let body c0 =
 
 let ( let* ) = Result.bind
 
-let kernel (k : kernel) (g : P.gemm) lowering =
+let kernel ?(subgroup = 32) (k : kernel) (g : P.gemm) lowering =
   let env = address_env k g in
   let batch = match g.batch with [b] -> Some b | _ -> None in
   let* a_addr = address env g.a batch in
@@ -420,6 +428,9 @@ let kernel (k : kernel) (g : P.gemm) lowering =
   let* c_addr = address env g.c batch in
   if uses_launch_dims g then
     Error "a bound, the initial value or the epilogue reads block_dim/grid_dim"
+  else if not (supported_subgroup subgroup) then
+    Error
+      (Printf.sprintf "no template for %d-wide subgroups (32 and 64)" subgroup)
   else
     let sch = scheme ~operand_elt:g.a.elt lowering in
     let fresh = {next = max_var_id k + 1} in
@@ -438,6 +449,7 @@ let kernel (k : kernel) (g : P.gemm) lowering =
         sc = "";
         st = "";
         bk = choose_bk sch;
+        subgroup;
       }
     in
     Ok
@@ -453,7 +465,7 @@ let kernel (k : kernel) (g : P.gemm) lowering =
       }
 
 (** Launch geometry of the rewritten kernel for a region. *)
-let launch_dims ~me ~ne ~ze =
-  ((threads, 1, 1), ((ne + bn - 1) / bn, (me + bm - 1) / bm, ze))
+let launch_dims ?(subgroup = 32) ~me ~ne ~ze () =
+  ((threads_of ~subgroup, 1, 1), ((ne + bn - 1) / bn, (me + bm - 1) / bm, ze))
 
 let config_of lowering ~operand_elt = config (scheme ~operand_elt lowering)
