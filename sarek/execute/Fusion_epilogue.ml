@@ -25,8 +25,9 @@
     ({!Launch_window}). The one remaining difference is that the device compiler
     now sees P's store and C's load in one function: a compiler allowed to
     contract [a*b+c] across them could fuse P's last multiply into C's first
-    add. That is why this fusion is on by default only where contraction is off
-    ([-ffp-contract=off] on HIP).
+    add. It can also share a subexpression of P and C that the unfused C
+    contracts. That is why this fusion is on by default only where contraction
+    is off in every kernel ([-ffp-contract=off] on HIP).
 
     Names: P's are prefixed [p_], C's [c_], the new ones [ep_], so no name can
     capture another. C's parameters bound to the same vector as one of P's are
@@ -238,6 +239,29 @@ let rec insert ~array ~tmp_id ~after s =
 
 exception Incompatible of string
 
+(* P's body with C inserted after every store to [p_array]. *)
+let fused_body ~producer ~p_array ~(c : consumer) ~cn ~(ids : ids) ~tc =
+  let after t =
+    SIf
+      ( EBinop (Lt, t, EVar tc),
+        SLet (Ir_rename.var cn c.index, t, Ir_rename.stmt cn c.body),
+        None )
+  in
+  insert
+    ~array:("p_" ^ p_array)
+    ~tmp_id:ids.tmp_id
+    ~after
+    (Ir_rename.stmt producer_names producer.kern_body)
+
+(* The types, variants and helpers both kernels declare. *)
+let merged_declarations (producer : kernel) (consumer : kernel) =
+  let union what key f =
+    Fusion_horizontal.union_named ~what key [f producer; f consumer]
+  in
+  ( union "record types" fst (fun k -> k.kern_types),
+    union "variant types" fst (fun k -> k.kern_variants),
+    union "helper functions" (fun h -> h.hf_name) (fun k -> k.kern_funcs) )
+
 (** [fuse ~name ~producer ~p_array ~consumer ~shared] inlines [consumer] after
     [producer]'s stores to [p_array]. [shared] maps every consumer array
     parameter bound to the same vector as a producer parameter (in particular
@@ -253,24 +277,14 @@ let fuse ~name ~(producer : kernel) ~(p_array : string) ~(consumer : kernel)
   let ids = ids ~producer ~consumer in
   let cn = consumer_names ~shared ~c_shift:ids.c_shift in
   let tc = ep_var ids.tc_id "tc" TInt32 in
-  let after t =
-    SIf
-      ( EBinop (Lt, t, EVar tc),
-        SLet (Ir_rename.var cn c.index, t, Ir_rename.stmt cn c.body),
-        None )
-  in
-  let body =
-    insert
-      ~array:("p_" ^ p_array)
-      ~tmp_id:ids.tmp_id
-      ~after
-      (Ir_rename.stmt producer_names producer.kern_body)
-  in
   let c_params =
     List.filter
       (function
         | DParam (v, _) -> not (List.mem_assoc v.var_name shared) | _ -> true)
       consumer.kern_params
+  in
+  let kern_types, kern_variants, kern_funcs =
+    merged_declarations producer consumer
   in
   {
     kern_name = name;
@@ -279,21 +293,9 @@ let fuse ~name ~(producer : kernel) ~(p_array : string) ~(consumer : kernel)
       @ List.map (Ir_rename.decl cn) c_params
       @ [DParam (tc, None)];
     kern_locals = List.map (Ir_rename.decl producer_names) producer.kern_locals;
-    kern_body = body;
-    kern_types =
-      Fusion_horizontal.union_named
-        ~what:"record types"
-        fst
-        [producer.kern_types; consumer.kern_types];
-    kern_variants =
-      Fusion_horizontal.union_named
-        ~what:"variant types"
-        fst
-        [producer.kern_variants; consumer.kern_variants];
-    kern_funcs =
-      Fusion_horizontal.union_named
-        ~what:"helper functions"
-        (fun h -> h.hf_name)
-        [producer.kern_funcs; consumer.kern_funcs];
+    kern_body = fused_body ~producer ~p_array ~c ~cn ~ids ~tc;
+    kern_types;
+    kern_variants;
+    kern_funcs;
     kern_native_fn = None;
   }

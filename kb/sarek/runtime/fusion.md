@@ -38,6 +38,7 @@ Invariants:
 - A fused kernel runs each member's body unchanged. Only the work-group
   position intrinsics are rewritten.
 - Direct and Custom backends are never deferred.
+- Epilogue fusion is on by default only on a backend that compiles every kernel without contraction (HIP): elsewhere the fused kernel can differ from the pair by an ulp (`docs/fp-contraction-policy.md`, section 14).
 - An epilogue is merged only after the coverage check: every element the
   consumer writes is stored exactly once by the producer, for these
   dimensions and scalars.

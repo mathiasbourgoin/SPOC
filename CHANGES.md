@@ -23,6 +23,15 @@
   `test_matrix_subgroup`, `test_matrix_template_golden`,
   `test_cuda_coopmat_probe`, `test_matrix_cuda_compile`; bench
   `bench_matrix_int_rewrite`.
+- `sarek/tests/e2e/test_epilogue_exact.ml` and `bench_epilogue.ml`: epilogue
+  fusion against the unfused pair on every deferred device. On HIP (the only
+  default backend) fused == unfused is asserted for a forwarding pair, a
+  shared-subexpression pair and a chain, on inputs where an fma differs from
+  multiply-then-add in 1109 of 4099 elements; on opt-in backends the result is
+  recorded, not asserted. Observed, not changed (`docs/fp-contraction-policy.md`
+  section 14): OpenCL (rusticl) and Vulkan (RADV) contract a single-kernel
+  `a*b+c`; Vulkan's fused kernel differs from the unfused pair when the consumer
+  recomputes the producer's product (4099 of 4099).
 
 ### Fixed
 
