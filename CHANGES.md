@@ -2,6 +2,27 @@
 
 ### Fixed
 
+- A `for` upper bound is evaluated once on every backend (compiler review
+  C-8). CUDA/HIP, OpenCL, Metal, GLSL and WGSL printed
+  `for (i = a; i <= bound; i++)`, which re-reads the bound each iteration, so
+  `let m = mut 3l in for j = 0 to m do m := m - 1l ... done` ran 2 times on a
+  GPU and 4 on the interpreter, Native and PTX. A bound the body can change (an
+  assigned variable, an array element, a call) is now bound to a
+  `sarek_for_hi_N` temporary before the loop (`Sarek_ir_for_bound`); a bound the
+  body cannot change, such as `n - 1l`, keeps its generated source. A bound of
+  `Int32.max_int` (`to`) or `Int32.min_int` (`downto`) remains unsupported on
+  every backend (the loop variable overflows). Tests:
+  `test_hip_cfamily_semantics` (HIP against the interpreter),
+  `test_for_bound_signed_idx` (compile-only goldens).
+
+- Thread, block and grid indices are signed `int` on CUDA/HIP, OpenCL and Metal
+  (compiler review C-9). `threadIdx.x`, `get_local_id(0)` and Metal's `uint3`
+  members are unsigned, so an inline `thread_idx_x - 1l < 0l` was always false
+  and `(thread_idx_x - 5l) / 2l` gave 2147483645 instead of -2; they are now
+  spelled `((int)threadIdx.x)` etc., as GLSL and WGSL already were. The
+  generated source of every kernel that reads a thread index changes (casts
+  only). Metal's `global_size` is also parenthesised now.
+
 - The divergent-barrier check works under `let open Sarek_stdlib.Std in`
   (#447). The PPX auto-opens `Gpu`; an explicit `let open Std in` then replaced
   each `Gpu` entry with the registry's, which carries no convergence class, so
@@ -884,27 +905,6 @@
 - WGSL lowers a constant-size `create_array n Local` to a function-scope
   `var a : array<T, N>;` instead of failing with an internal "local dynamic
   arrays unsupported" error (naga: validates).
-- A `for` upper bound is evaluated once on every backend (compiler review
-  C-8). CUDA/HIP, OpenCL, Metal, GLSL and WGSL printed
-  `for (i = a; i <= bound; i++)`, which re-reads the bound each iteration, so
-  `let m = mut 3l in for j = 0 to m do m := m - 1l ... done` ran 2 times on a
-  GPU and 4 on the interpreter, Native and PTX. A bound the body can change (an
-  assigned variable, an array element, a call) is now bound to a
-  `sarek_for_hi_N` temporary before the loop (`Sarek_ir_for_bound`); a bound the
-  body cannot change, such as `n - 1l`, keeps its generated source. A bound of
-  `Int32.max_int` (`to`) or `Int32.min_int` (`downto`) remains unsupported on
-  every backend (the loop variable overflows). Tests:
-  `test_hip_cfamily_semantics` (HIP against the interpreter),
-  `test_for_bound_signed_idx` (compile-only goldens).
-
-- Thread, block and grid indices are signed `int` on CUDA/HIP, OpenCL and Metal
-  (compiler review C-9). `threadIdx.x`, `get_local_id(0)` and Metal's `uint3`
-  members are unsigned, so an inline `thread_idx_x - 1l < 0l` was always false
-  and `(thread_idx_x - 5l) / 2l` gave 2147483645 instead of -2; they are now
-  spelled `((int)threadIdx.x)` etc., as GLSL and WGSL already were. The
-  generated source of every kernel that reads a thread index changes (casts
-  only). Metal's `global_size` is also parenthesised now.
-
 - hiprtc and nvrtc option arrays: `CArray.of_list string` let the C copies of
   the option strings be freed before the compile call. Under a different
   allocation pattern hiprtc read a garbage option ("error reading '8{...'"),
