@@ -373,9 +373,9 @@ another stream of the device launches, and at every synchronisation point:
 `Stream.synchronize`, `Device.synchronize`, `Event.record`, any host access to
 device memory (`Memory.host_to_device`, `device_to_host`, the `_ptr` variants
 and every staging copy), kernel-cache eviction and device destruction;
-`Memory.free` queues the release and drains at once unless another thread (or a
-finaliser inside the launch code) holds the batch lock; then the release waits
-for the next synchronisation point. Each dispatch gets its own descriptor set (from a pool reset when
+`Memory.free` (called from GC finalisers) never waits or blocks: it queues the
+release, which runs at once only if the device is idle, and otherwise at the
+next synchronisation point. Each dispatch gets its own descriptor set (from a pool reset when
 its command buffer's fence is waited for) and a memory
 barrier is recorded before it, so a kernel object may appear several times in
 one batch with different arguments. A failed submission or wait raises

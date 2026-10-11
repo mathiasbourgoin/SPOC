@@ -530,8 +530,8 @@
   memory, `Stream.synchronize`, `Device.synchronize`, kernel-cache eviction
   and device destruction first complete the pending launches, and
   `Event.record` submits them. `Memory.free` (which GC finalisers call) never
-  blocks on a lock: the release is queued, and runs at once when the batch lock
-  is free, otherwise at the next synchronisation point. Before, every launch recorded,
+  waits or blocks: the release is queued, and runs at once when the device is
+  idle, otherwise at the next synchronisation point. Before, every launch recorded,
   submitted and waited for its own command buffer. A failed submission or wait
   now raises `kernel_launch_failed` naming the batch's kernels at the first
   wait, not at the launch. `SPOC_VULKAN_BATCH=1` restores submit-and-wait per

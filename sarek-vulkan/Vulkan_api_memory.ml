@@ -18,22 +18,9 @@ type 'a buffer = {
   mutable mapped_ptr : unit Ctypes.ptr option; (* Persistent mapping *)
 }
 
-(** Device buffers allocated and not yet released (test instrumentation: a
-    buffer freed from a GC finaliser that failed silently stays counted). *)
-let live_allocations = Atomic.make 0
+let live_allocations = Vulkan_api_release.live_allocations
 
-(** Test hook: when [true], the next allocation attempt fails once as an
-    out-of-memory error, then the hook clears itself. *)
-let inject_alloc_failure = ref false
-
-let fail_if_injected bytes =
-  if !inject_alloc_failure then begin
-    inject_alloc_failure := false ;
-    Vulkan_error.raise_error
-      (Vulkan_error.memory_allocation_failed
-         (Int64.of_int bytes)
-         "injected allocation failure")
-  end
+let inject_alloc_failure = Vulkan_api_release.inject_alloc_failure
 
 (** Find suitable memory type *)
 let find_memory_type dev type_filter properties =
@@ -211,7 +198,7 @@ let create_staging_buffer device size usage =
     raise e
 
 let alloc_once device size kind =
-  fail_if_injected size ;
+  Vulkan_api_release.fail_if_injected () ;
   (* NOT Ctypes_static.sizeof (Ctypes.typ_of_bigarray_kind kind): ctypes' kind
      GADT has no Float16 arm and raises Failure "Unsupported bigarray kind", so
      [Vector.create Vector.float16 n] died here with an opaque ctypes error
@@ -346,7 +333,7 @@ let alloc_once device size kind =
     raise e
 
 let alloc_custom_once device ~size ~elem_size =
-  fail_if_injected size ;
+  Vulkan_api_release.fail_if_injected () ;
   let byte_size = size * elem_size in
 
   let buf_info = make vk_buffer_create_info in
@@ -457,39 +444,21 @@ let release_now buf =
   vkFreeMemory buf.device.Device.device buf.memory null ;
   Atomic.decr live_allocations
 
-(** Run [attempt]; if it fails while releases are queued for [device], they may
-    be what the failure was short of: complete the launches, release them and
-    try once more. Allocation never runs in a finaliser, so taking the batch
-    lock here is safe. *)
-let with_release_retry device attempt =
-  try attempt ()
-  with
-  | Vulkan_error.Vulkan_error _
-  when Atomic.get device.Device.deferred_count > 0
-  ->
-    !Device.drain_pending device ;
-    attempt ()
-
 let alloc device size kind =
-  with_release_retry device (fun () -> alloc_once device size kind)
+  Vulkan_api_release.with_release_retry device (fun () ->
+      alloc_once device size kind)
 
 let alloc_custom device ~size ~elem_size =
-  with_release_retry device (fun () ->
+  Vulkan_api_release.with_release_retry device (fun () ->
       alloc_custom_once device ~size ~elem_size)
 
-(** Queue the release of [buf] until the launches recorded so far have
-    completed, then release at once if the batch lock is free to take without
-    blocking. [free] runs from [Gc.finalise] finalisers, which OCaml 5 runs at
-    any allocation point of any domain, even inside [batch_lock] or
-    [queue_lock]; it must never block on a lock nor raise. When the lock is held
-    (possibly by this very domain) or the drain fails, the release stays queued
-    for the next drain, device wait, or launch (see
-    {!Vulkan_api_stream.release_deferred}). *)
+(** Queue the release of [buf]; see {!Vulkan_api_release}. Safe from a GC
+    finaliser. *)
 let free buf =
-  let device = buf.device in
-  Device.defer_free device ~bytes:(buf.size * buf.elem_size) (fun () ->
-      release_now buf) ;
-  try !Device.try_drain_pending device with _ -> ()
+  Vulkan_api_release.free
+    buf.device
+    ~bytes:(buf.size * buf.elem_size)
+    (fun () -> release_now buf)
 
 (** Vulkan doesn't expose device pointers like CUDA. Return 0 as placeholder.
     Binding uses the buffer handle directly via set_arg_buffer. *)

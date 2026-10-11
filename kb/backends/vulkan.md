@@ -14,6 +14,7 @@
 - `sarek-vulkan/Vulkan_api_memory.ml`: buffer allocation, staging buffers, host/device copies, and `device_to_device`.
 - `sarek-vulkan/Vulkan_api_stream.ml`: streams (two command buffers each, with descriptor pools and kernel lists), the per-device stream registry, the launch batch (`record_dispatch`, `submit_open`, `drain_stream`), `SPOC_VULKAN_BATCH`, and the default-stream cache (specs/vulkan-async-launches.md).
 - `sarek-vulkan/Vulkan_api_barrier.ml`: the global memory barriers recorded before dispatches, at the end of batches and before staged copies.
+- `sarek-vulkan/Vulkan_api_release.ml`: the deferred buffer release, its queue bounds and the allocation retry.
 - `sarek-vulkan/Vulkan_api_pools.ml`: the descriptor pools of one launch-batch slot.
 - `sarek-vulkan/Vulkan_api_event.ml`: fence-based events.
 - `sarek-vulkan/Vulkan_api_kernel.ml`: SPIR-V module/descriptor layout/pipeline creation, kernel cache, argument binding, push constants, and the recording of one dispatch into the stream's open batch (`launch`).
@@ -52,9 +53,10 @@
 - Every path that touches device memory from the host, or releases an object a
   recorded dispatch uses (pipeline, device), first calls
   `Vulkan_api_device.drain_pending`; `Memory.free` instead queues the release
-  (`Device.defer_free`, lock-free) and drains only through `try_lock`, because
-  it runs from GC finalisers, where blocking on `batch_lock` or `queue_lock`
-  deadlocks or raises; a new such path without it reads or frees
+  (`Device.defer_free`, lock-free) and never submits, waits or blocks
+  (`Vulkan_api_release`; the queue runs under `try_lock` when the device is
+  idle), because it runs from GC finalisers, where blocking on `batch_lock` or
+  `queue_lock` deadlocks and draining corrupts a half-submitted batch; a new such path without it reads or frees
   memory a pending dispatch still uses. The inventory is in
   specs/vulkan-async-launches.md (FR-002).
 - Every dispatch is preceded by a memory barrier (compute and transfer writes to shader access), every batch ends with one to transfer/host reads, and every staged copy begins with one (`Vulkan_api_barrier`); Vulkan

@@ -88,10 +88,14 @@
 ; synchronisation ends in an error rather than a hang.
 
 (tests
- (names test_vulkan_async_launches test_vulkan_async_robustness)
+ (names
+  test_vulkan_async_launches
+  test_vulkan_async_robustness
+  test_vulkan_async_release)
  (modules
   test_vulkan_async_launches
   test_vulkan_async_robustness
+  test_vulkan_async_release
   vulkan_async_support)
  (libraries sarek_vulkan spoc_framework sarek_backend_error alcotest)
  (action

@@ -134,6 +134,16 @@ let wait_fence (ctx : string) device fence =
   loop 0L ;
   ignore (Sys.opaque_identity fence_ptr)
 
+(** Whether [fence] has signalled, without blocking. Raises the canonical error
+    of {!check} on a device error. *)
+let fence_signalled (ctx : string) device fence =
+  match Vulkan_bindings.vkGetFenceStatus device fence with
+  | VK_SUCCESS -> true
+  | VK_NOT_READY -> false
+  | result ->
+      check ctx result ;
+      false
+
 (** Reset [fence] on [device]. The fence must not be pending in a queue. *)
 let reset_fence (ctx : string) device fence =
   let fence_ptr = allocate vk_fence fence in
