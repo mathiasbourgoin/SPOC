@@ -37,7 +37,7 @@ No active `Obj.field`, `Obj.set_field`, `Obj.tag`, `Obj.size`, or related low-le
 - `sarek/sarek/Sarek_cpu_runtime_types.ml:151` (`alloc_shared_with_key`): former `Obj.obj (Obj.repr arr)` in generic shared-memory custom arrays — now typed via `Type_id.Refl` (resolved; module split out of `Sarek_cpu_runtime.ml`).
 - `sarek/sarek/Sarek_type_helpers.ml:65-66`: `Obj.obj (Obj.repr ...)` in untyped helper dispatch.
 - `sarek/sarek/Sarek_ir_interp.ml:239` (`vector_to_array`), `274` (`array_to_vector`): former fallback vector element casts — no `Obj` present now (interpreter module split; bridge stayed in main).
-- `sarek/plugins/native/Native_plugin.ml:384-385`: legacy `Obj.t array` direct execution type.
+- `sarek/plugins/native/Native_plugin.ml:290-296`: legacy `Obj.t array` direct execution type.
 - `sarek/tests/new_runtime/test_native_runtime.ml:63`, `71`, `79`: test-only `Obj.obj` extraction.
 
 ## Existing Alternatives To Reuse

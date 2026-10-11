@@ -476,7 +476,8 @@ The correct f16 native/interp template is: represent f16 as OCaml `float` (a
 
 **Native execution bridge** — `native_arg` (`Sarek_ir_types.ml:185-211`):
 `NA_Float32`/`NA_Float64` both carry plain `float`. Producers
-(`sarek/sarek/Kirc_kernel.ml:99-269`, `sarek/plugins/native/Native_plugin.ml:167-277`)
+(`sarek/sarek/Kirc_kernel.ml:99-269`, `sarek/plugins/native/Native_plugin.ml:162-182` with
+`sarek/plugins/native/Native_vec_access.ml`)
 and PPX-generated consumers (`sarek/ppx/Sarek_native_gen_kernel.ml:32-90,183-191`)
 map element widths to `get_f32`/`get_f64` accessors. See fork §6.4 for whether f16
 reuses `get_f32`+rounding or adds `NA_Float16`/`get_f16`.
