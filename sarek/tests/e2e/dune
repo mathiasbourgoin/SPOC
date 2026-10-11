@@ -31,6 +31,7 @@
  (modules
   test_helpers
   Benchmarks
+  backend_failure
   backend_loader
   backend_cuda
   backend_opencl
@@ -2078,3 +2079,51 @@
  (alias runtest)
  (action
   (run %{dep:test_matrix_dynamic.exe})))
+
+; Shared backend-failure classifier (Backend_failure, in test_helpers): only an
+; unavailable backend may skip a test; codegen/compile/load/launch errors fail
+; it (docs review D-40, D-41). Device-free.
+
+(test
+ (name test_backend_failure)
+ (modules test_backend_failure)
+ (libraries test_helpers))
+
+; Fault injection (SPOC_TEST_INJECT_BACKEND_ERROR): a compile / codegen / launch
+; / runtime-compile error raised on the device path must make
+; test_math_intrinsics exit 1 (it used to print "SKIPPED (backend error)" and
+; exit 0), while an unavailable backend stays a clean skip. The injection fires
+; before the kernel runs, so no GPU work is done.
+
+(rule
+ (alias runtest)
+ (action
+  (progn
+   (with-accepted-exit-codes
+    1
+    (setenv
+     SPOC_TEST_INJECT_BACKEND_ERROR
+     compile
+     (run %{dep:test_math_intrinsics.exe})))
+   (with-accepted-exit-codes
+    1
+    (setenv
+     SPOC_TEST_INJECT_BACKEND_ERROR
+     codegen
+     (run %{dep:test_math_intrinsics.exe})))
+   (with-accepted-exit-codes
+    1
+    (setenv
+     SPOC_TEST_INJECT_BACKEND_ERROR
+     launch
+     (run %{dep:test_math_intrinsics.exe})))
+   (with-accepted-exit-codes
+    1
+    (setenv
+     SPOC_TEST_INJECT_BACKEND_ERROR
+     rtc
+     (run %{dep:test_math_intrinsics.exe})))
+   (setenv
+    SPOC_TEST_INJECT_BACKEND_ERROR
+    unavailable
+    (run %{dep:test_math_intrinsics.exe})))))

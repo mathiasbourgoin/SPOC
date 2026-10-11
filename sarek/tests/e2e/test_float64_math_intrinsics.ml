@@ -417,13 +417,13 @@ let run_binary (dev : Device.t) spec =
 
 let outcome_of_exn f =
   try f () with
-  | Spoc_framework.Backend_error.Backend_error err ->
-      Skipped (Spoc_framework.Backend_error.to_string err)
+  | e when Test_helpers.Backend_failure.verdict e = `Skip ->
+      Skipped (Printexc.to_string e)
   | e -> Errored (Printexc.to_string e)
 
 let string_of_outcome = function
   | Pass -> "PASS"
-  | Mismatch n -> Printf.sprintf "FAIL (%d/%d mismatched)" n n
+  | Mismatch n -> Printf.sprintf "REPORT (%d mismatched, not a gate)" n
   | Skipped reason -> Printf.sprintf "SKIP (%s)" reason
   | Errored reason -> Printf.sprintf "ERROR (%s)" reason
 

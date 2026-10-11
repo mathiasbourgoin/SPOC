@@ -936,3 +936,4 @@ let classify_real64_result ~native_f64 ~framework ~device ~op ~err =
   else classify_df64_result ~framework ~device ~op ~err
 
 module Benchmarks = Benchmarks
+module Backend_failure = Backend_failure

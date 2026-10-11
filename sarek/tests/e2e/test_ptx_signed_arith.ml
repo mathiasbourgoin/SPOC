@@ -184,16 +184,20 @@ let () =
         if bad <> 0 && gated then failed := true ;
         if native then native_ran := true
       with e ->
+        (* Native/Interpreter must always run, and a gated backend must accept
+           the source it is given: codegen/compile/load/launch errors there are
+           failures. Only an ungated backend that cannot run at all is
+           reported (docs review D-41). *)
+        let regression =
+          native || (gated && Test_helpers.Backend_failure.rejected_source e)
+        in
         Printf.printf
           "  %-11s %-40s %s (%s)\n%!"
           dev.Device.framework
           dev.Device.name
-          (if native then "ERROR" else "SKIP (backend could not launch)")
+          (if regression then "ERROR" else "SKIP (backend could not launch)")
           (Printexc.to_string e) ;
-        (* Native/Interpreter must always run; a GPU backend that cannot even
-           launch for infra reasons is only reported (a wrong RESULT from a
-           backend that DID run is always a hard failure - see above). *)
-        if native then failed := true)
+        if regression then failed := true)
     devs ;
   if not !native_ran then begin
     print_endline

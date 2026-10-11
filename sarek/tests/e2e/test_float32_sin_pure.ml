@@ -121,6 +121,16 @@ let () =
   Test_helpers.print_devices devs ;
   let dev = Test_helpers.get_device cfg devs in
   Printf.printf "Using device: %s (%s)\n%!" dev.Device.name dev.Device.framework ;
+  (* The kernel is built from IR directly and carries no native function, so
+     the Native backend can never run it (it reports "no native function found
+     in kernel IR"). That used to be swallowed by the blanket backend-error
+     skip; it is now a named, deliberate skip of that one backend. *)
+  if dev.Device.framework = "Native" then begin
+    Printf.printf
+      "SKIPPED: the IR-only kernel has no native function; Native cannot run it\n\
+       %!" ;
+    exit 0
+  end ;
   Printf.printf "Running Float32.sin pure-registry kernel (n=%d)...\n%!" n ;
   try
     let result = run_kernel_on_device dev in
@@ -158,10 +168,12 @@ let () =
         exit 1
     end
   with
-  | Spoc_framework.Backend_error.Backend_error err ->
+  | e when Test_helpers.Backend_failure.verdict e = `Skip ->
+      (* Only an unavailable backend may skip; a codegen, compile, load or
+         launch error is the FAILED arm below (docs review D-40). *)
       Printf.printf
-        "SKIPPED: backend error: %s\n%!"
-        (Spoc_framework.Backend_error.to_string err) ;
+        "SKIPPED: backend unavailable: %s\n%!"
+        (Printexc.to_string e) ;
       exit 0
   | e ->
       Printf.printf "ERROR: %s\n%!" (Printexc.to_string e) ;

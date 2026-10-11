@@ -317,20 +317,6 @@ let generator (dev : Device.t) =
   | "CUDA/PTX" -> Some (fun k -> Sarek_ir_ptx.generate k)
   | _ -> None
 
-(* A GPU failure that must FAIL this test: codegen raised, the device compiler
-   or loader rejected the source, or the launch failed. A backend that is not
-   there stays a skip. *)
-let rejected_source = function
-  | Sarek_backend_error.Backend_error.Backend_error
-      ( Codegen _
-      | Runtime
-          {
-            error = Compilation_failed _ | Module_load_failed _ | Context_error _;
-            _;
-          } ) ->
-      true
-  | _ -> false
-
 let is_host (dev : Device.t) =
   dev.Device.framework = "Native" || dev.Device.framework = "Interpreter"
 
@@ -397,7 +383,9 @@ let () =
                 if bad <> 0 then failed := true ;
                 if host then host_ran := true
             | exception e ->
-                let regression = host || rejected_source e in
+                let regression =
+                  host || Test_helpers.Backend_failure.verdict e = `Fail
+                in
                 report
                   dev
                   label

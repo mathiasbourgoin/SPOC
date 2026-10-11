@@ -204,7 +204,7 @@ let device_status (dev : Device.t) ~bad got_iters got_mag =
   with
   | `Pass -> "PASS"
   | `Known_issue s -> s
-  | `Fail -> "FAIL"
+  | `Fail -> "REPORT (mismatch beyond the fp64 tolerance, not a gate)"
 
 let () =
   let _, kirc = f64_mandelbrot_kernel in
@@ -249,12 +249,19 @@ let () =
             if bad <> 0 then native_failed := true
           end
         with e ->
+          (* A numeric mismatch on a non-native device is a report (see the
+             header), but a device that claims fp64 and rejects the generated
+             source, or fails to launch, is a failure (docs review D-41). *)
+          let regression =
+            native || Test_helpers.Backend_failure.rejected_source e
+          in
           Printf.printf
-            "  %-10s %-24s ERROR (%s)\n%!"
+            "  %-10s %-24s %s (%s)\n%!"
             dev.Device.framework
             dev.Device.name
+            (if regression then "ERROR" else "REPORT")
             (Printexc.to_string e) ;
-          if native then native_failed := true
+          if regression then native_failed := true
       end)
     devs ;
   if not !native_ok then begin

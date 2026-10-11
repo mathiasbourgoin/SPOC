@@ -109,6 +109,11 @@ let () =
         if not ok then failed := true ;
         if native then native_ran := true
       with e ->
+        (* Only a device that cannot run at all may skip: rejected generated
+           source or a failed launch is a regression (docs review D-41). *)
+        let regression =
+          native || Test_helpers.Backend_failure.rejected_source e
+        in
         let msg =
           match e with
           | Sarek_backend_error.Backend_error.Backend_error t ->
@@ -119,9 +124,9 @@ let () =
           "  %-11s %-40s %s (%s)\n%!"
           dev.Device.framework
           dev.Device.name
-          (if native then "ERROR" else "SKIP (backend could not launch)")
+          (if regression then "ERROR" else "SKIP (backend could not launch)")
           msg ;
-        if native then failed := true)
+        if regression then failed := true)
     devs ;
   if not !native_ran then begin
     print_endline
