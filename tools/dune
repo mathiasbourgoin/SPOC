@@ -7,6 +7,7 @@
   backend_cuda
   backend_opencl
   backend_vulkan
+  backend_hip
   backend_metal)
  (libraries
   sarek
@@ -28,6 +29,11 @@
    from
    (sarek_vulkan -> backend_vulkan.available.ml)
    (-> backend_vulkan.unavailable.ml))
+  (select
+   backend_hip.ml
+   from
+   (sarek_hip -> backend_hip.available.ml)
+   (-> backend_hip.unavailable.ml))
   (select
    backend_metal.ml
    from
