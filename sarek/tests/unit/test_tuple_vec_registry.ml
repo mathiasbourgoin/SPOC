@@ -18,8 +18,8 @@
  * WHAT THIS TEST DECIDES, AND WHAT IT CANNOT
  *   Only the FIRST of the three has an observable functional consequence, and
  *   that is what is pinned here. [memoize] hands out a [custom_type] carrying a
- *   freshly generated [Type_id]; the Native path later resolves the same shape
- *   through [descriptor_by_name] and compares with [Type_id.equal]. With
+ *   freshly generated [Type_id]; generated Native code later calls the same
+ *   memoised constructor and compares with [Type_id.equal]. With
  *   build-and-insert unguarded, N domains racing on a shape that does not exist
  *   yet each build their own descriptor and only one reaches the table, so
  *   every other caller holds a descriptor that will fail that equality check —
@@ -82,10 +82,10 @@ let race (f : unit -> 'r) : 'r list =
   List.map Domain.join ds
 
 (** Every domain's descriptor must be the one canonical descriptor: same
-    [Type_id], same [vector_type_id], same identity as the one
-    [descriptor_by_name] resolves for generated Native code. *)
-let check_single_winner (type a) ~name (results : a Vector.custom_type list) =
-  let canonical = TV.descriptor_by_name name in
+    [Type_id], same [vector_type_id], same identity as the one a later call of
+    the constructor (as generated Native code makes) returns. *)
+let check_single_winner (type a) ~name ~(canonical : a Vector.custom_type)
+    (results : a Vector.custom_type list) =
   let same_type_id d =
     match Type_id.equal d.Vector.type_id canonical.Vector.type_id with
     | Some Type_id.Refl -> true
@@ -153,7 +153,7 @@ let race_pair : type a b. string -> a TV.component -> b TV.component -> unit =
         hammer_lookups name ;
         d)
   in
-  check_single_winner ~name results
+  check_single_winner ~name ~canonical:(TV.pair ca cb) results
 
 let race_triple : type a b c.
     string -> a TV.component -> b TV.component -> c TV.component -> unit =
@@ -165,7 +165,7 @@ let race_triple : type a b c.
         hammer_lookups name ;
         d)
   in
-  check_single_winner ~name results
+  check_single_winner ~name ~canonical:(TV.triple ca cb cc) results
 
 (* Sixteen pair shapes and four triple shapes. One shape can only be raced once
    per process, so the count is the number of independent attempts this test
@@ -209,38 +209,16 @@ let single_winner_triples () =
     - the memoization half of the contract, single-threaded and deterministic.
 *)
 let memoized_after_the_race () =
-  let name = "_tup_float32_int32" in
   let d1 = TV.pair TV.float32 TV.int32 in
   let d2 = TV.pair TV.float32 TV.int32 in
-  Alcotest.(check bool) "repeat build is the same descriptor" true (d1 == d2) ;
-  Alcotest.(check bool)
-    "descriptor_by_name agrees"
-    true
-    (d1 == TV.descriptor_by_name name)
+  Alcotest.(check bool) "repeat build is the same descriptor" true (d1 == d2)
 
-(** An unbuilt shape must fail loudly rather than hand back a wrong descriptor.
-*)
-let unbuilt_shape_refuses () =
+(** A shape no constructor has built has no registered layout. *)
+let unbuilt_shape_has_no_layout () =
   Alcotest.(check bool)
     "unbuilt shape has no layout"
     true
-    (TV.lookup_shape "_tup_never_built" = None) ;
-  match TV.descriptor_by_name "_tup_never_built" with
-  | _ ->
-      Alcotest.fail
-        "descriptor_by_name returned a descriptor for an unbuilt shape"
-  | exception Failure msg ->
-      Alcotest.(check bool)
-        "the failure names the shape"
-        true
-        (String.length msg > 0
-        &&
-        let re = "_tup_never_built" in
-        let rec find i =
-          i + String.length re <= String.length msg
-          && (String.sub msg i (String.length re) = re || find (i + 1))
-        in
-        find 0)
+    (TV.lookup_shape "_tup_never_built" = None)
 
 let () =
   Alcotest.run
@@ -258,8 +236,8 @@ let () =
             `Quick
             memoized_after_the_race;
           Alcotest.test_case
-            "unbuilt shape refuses"
+            "unbuilt shape has no layout"
             `Quick
-            unbuilt_shape_refuses;
+            unbuilt_shape_has_no_layout;
         ] );
     ]

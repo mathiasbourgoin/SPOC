@@ -25,23 +25,20 @@ val int32 : int32 component
 
 val int64 : int64 component
 
-(** [pair a b] builds the custom type for a [(a, b)] tuple vector element. *)
+(** [pair a b] builds the custom type for a [(a, b)] tuple vector element. The
+    result is memoised per shape: every call with the same components returns
+    the physically same descriptor (same [Type_id]), which is what lets
+    generated Native kernel code, calling [pair] itself, accept the host's
+    vector. *)
 val pair : 'a component -> 'b component -> ('a * 'b) Vector.custom_type
 
 (** [triple a b c] builds the custom type for an [(a, b, c)] tuple vector
-    element. *)
+    element, memoised per shape like [pair]. *)
 val triple :
   'a component ->
   'b component ->
   'c component ->
   ('a * 'b * 'c) Vector.custom_type
-
-(** [descriptor_by_name name] returns the canonical [custom_type] registered for
-    a mangled tuple-shape name (e.g. ["_tup_float32_int32"]) by a previous
-    [pair]/[triple] call. Generated Native kernel code uses this to obtain the
-    same [Type_id] the host vector carries. Raises if the shape was never built
-    on the host. Not normally called directly. *)
-val descriptor_by_name : string -> 'a Vector.custom_type
 
 (** Byte layout of one positional field ([_0], [_1], ...) of a tuple element. *)
 type field_layout = {

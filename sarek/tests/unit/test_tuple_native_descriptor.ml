@@ -22,9 +22,12 @@ module Type_id = Sarek_ir_types.Type_id
 
 let loc = Ppxlib.Location.none
 
+(* The printer breaks long applications over lines; collapse whitespace runs
+   so the checks see one-line source. *)
 let render ty =
   Ppxlib.Pprintast.string_of_expression
     (Sarek_native_gen_base.custom_type_id_expr ~loc ty)
+  |> String.split_on_char '\n' |> List.map String.trim |> String.concat " "
 
 let contains ~sub s =
   let n = String.length sub in
