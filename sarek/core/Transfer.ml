@@ -353,11 +353,11 @@ end = struct
         | Vector.Bigarray_storage ba ->
             let byte_size = Bigarray.Array1.dim ba * B.elem_size in
             (* [device_to_host_ptr] takes a bare [nativeint] address, which is
-               not a GC root, and this is a device->HOST WRITE: [ba] must stay
-               reachable until the transfer returns, which [with_bigarray_ptr]
-               guarantees. *)
-            Memory.with_bigarray_ptr ba (fun ptr ->
-                B.device_to_host_ptr ptr ~byte_size)
+               not a GC root, and this is a device->HOST WRITE: the trailing
+               [Sys.opaque_identity] keeps [ba] reachable until the transfer
+               returns. *)
+            B.device_to_host_ptr (Memory.borrow_bigarray_ptr ba) ~byte_size ;
+            ignore (Sys.opaque_identity ba)
         | Vector.Custom_storage {ptr; custom; length} ->
             B.device_to_host_ptr ptr ~byte_size:(length * custom.elem_size) ;
             ignore (Sys.opaque_identity ptr)
@@ -529,8 +529,8 @@ let to_device (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : unit =
             "to_device: calling host_ptr_to_device byte_size=%d"
             byte_size ;
           (* Same keep-alive obligation as [copy_device_to_host] above. *)
-          Memory.with_bigarray_ptr ba (fun ptr ->
-              B.host_ptr_to_device ptr ~byte_size)
+          B.host_ptr_to_device (Memory.borrow_bigarray_ptr ba) ~byte_size ;
+          ignore (Sys.opaque_identity ba)
       | Vector.Custom_storage {ptr; custom; length} ->
           B.host_ptr_to_device ptr ~byte_size:(length * custom.elem_size) ;
           ignore (Sys.opaque_identity ptr)
@@ -1335,6 +1335,9 @@ let h2d_range (type a b k) ~(op : string) ?(stream : stream option)
   | Vector.CPU ->
       ()
 
+(** Data address of [ba]. The address does not root [ba]: the caller keeps [ba]
+    reachable until every use of the address has completed (for an enqueued
+    copy, until the stream ledger releases it). *)
 let bigarray_addr (ba : (_, _, Bigarray.c_layout) Bigarray.Array1.t) : nativeint
     =
   Ctypes.raw_address_of_ptr (Memory.borrow_bigarray_ptr ba)

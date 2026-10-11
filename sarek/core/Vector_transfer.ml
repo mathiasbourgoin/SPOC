@@ -11,9 +11,9 @@
  * modules; future work can move more logic here.
  ******************************************************************************)
 
-(** Raw host pointers. Neither roots the host storage: the caller keeps [vec]
-    reachable while the pointer or address is in use ([vec.host] is immutable,
-    so a reachable vector roots its bigarray). *)
+(** Raw host pointers. They need not root the host storage: the caller keeps
+    [vec] reachable while the pointer or address is in use ([vec.host] is
+    immutable, so a reachable vector roots its bigarray). *)
 let to_ctypes_ptr : type a b. (a, b) Vector_types.t -> unit Ctypes.ptr =
  fun vec ->
   match vec.host with

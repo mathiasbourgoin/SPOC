@@ -235,13 +235,20 @@
 
 ### Changed
 
-- `Spoc_core.Memory.bigarray_void_ptr` is replaced by the scoped
-  `Memory.with_bigarray_ptr ba (fun ptr -> ...)`, which keeps `ba` reachable
-  until the callback returns, and by `Memory.borrow_bigarray_ptr` for pointers
-  whose owner the caller keeps alive (OpenCL `CL_MEM_USE_HOST_PTR`, vector
-  host pointers). The f16 host pointer no longer rebuilds a managed ctypes
-  pointer with `Obj.repr`; `sarek/core` has no `Obj` left. Out-of-tree callers
-  of `bigarray_void_ptr` must move their FFI call into `with_bigarray_ptr`.
+- `Spoc_core.Memory.bigarray_void_ptr` is replaced by
+  `Memory.borrow_bigarray_ptr`, whose pointer need not root the bigarray: the
+  caller keeps it reachable, on transfer paths with a trailing
+  `ignore (Sys.opaque_identity ba)` after the FFI call (Memory, Transfer,
+  CUDA, HIP, Metal, OpenCL, Vulkan, Native), and elsewhere through the owning
+  vector (raw addresses, `Vector.to_ctypes_ptr`, OpenCL
+  `CL_MEM_USE_HOST_PTR`). `Memory.with_bigarray_ptr ba f` does the same around
+  a callback and is used on the cold OpenCL zero-copy allocation only, since
+  a capturing callback allocates a closure. The f16 host pointer no longer
+  rebuilds a managed ctypes pointer with `Obj.repr`, and no `Obj` remains in
+  the tree. The `gc_roots` test in `test_float16.ml` covers
+  `with_bigarray_ptr` and the borrow-then-`opaque_identity` pattern, not each
+  backend call site. Out-of-tree callers of `bigarray_void_ptr` must switch to
+  `borrow_bigarray_ptr` and keep the bigarray reachable across their call.
 
 - Intrinsics that no backend lowers soundly are refused at PPX time, with a
   located error. `warp_shuffle`, `warp_shuffle_down`, `warp_shuffle_up`,

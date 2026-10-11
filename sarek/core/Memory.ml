@@ -55,8 +55,10 @@ let bigarray_elem_size : type a b. (a, b) Bigarray.kind -> int = function
     only that pointer can see [ba] freed mid-call. The pointer returned here
     therefore carries an obligation for every kind: the caller keeps [ba] (or
     the vector that owns it) reachable for as long as the pointer, or any
-    [nativeint] taken from it, is in use. Prefer {!with_bigarray_ptr}, which
-    discharges that obligation for the duration of a callback. *)
+    [nativeint] taken from it, is in use. On transfer paths that is a trailing
+    [ignore (Sys.opaque_identity ba)] after the FFI call: [ba] is then live
+    across the call, and if the call raises it has already returned from C, so
+    no use of the address remains. *)
 let borrow_bigarray_ptr : type a b.
     (a, b, Bigarray.c_layout) Bigarray.Array1.t -> unit Ctypes.ptr =
  fun ba ->
@@ -69,9 +71,11 @@ let borrow_bigarray_ptr : type a b.
     reachable until [f] returns, on every element kind, so a synchronous FFI
     call made inside [f] may read or write through the pointer. The pointer must
     not be used after [f] returns: an asynchronous consumer of the address needs
-    its own root (see [alloc_zero_copy] in the OpenCL plugin and the transfer
-    ledger). *)
-let[@inline] with_bigarray_ptr : type a b r.
+    its own root. A capturing [f] costs a closure allocation per call, so
+    transfer paths use {!borrow_bigarray_ptr} with a trailing
+    [Sys.opaque_identity] instead; this helper is for cold paths such as buffer
+    allocation. *)
+let with_bigarray_ptr : type a b r.
     (a, b, Bigarray.c_layout) Bigarray.Array1.t -> (unit Ctypes.ptr -> r) -> r =
  fun ba f ->
   let result = f (borrow_bigarray_ptr ba) in
@@ -312,11 +316,12 @@ let host_to_device : type a b.
       ~buffer_elem_size:B.elem_size
       ~buffer_size:B.size
   in
-  (* [B.host_ptr_to_device] converts the pointer to a bare [nativeint], which is
-     not a GC root (see [host_ptr_to_device] in Framework_sig.ml);
-     [with_bigarray_ptr] keeps [src] reachable until the transfer has consumed
-     the address. *)
-  with_bigarray_ptr src (fun src_ptr -> B.host_ptr_to_device src_ptr ~byte_size)
+  (* Neither the borrowed pointer nor the bare [nativeint] that
+     [B.host_ptr_to_device] takes from it roots [src] (see [host_ptr_to_device]
+     in Framework_sig.ml); the trailing [Sys.opaque_identity] keeps [src]
+     reachable until the transfer has consumed the address. *)
+  B.host_ptr_to_device (borrow_bigarray_ptr src) ~byte_size ;
+  ignore (Sys.opaque_identity src)
 
 (** Copy data from device to host bigarray. Converts bigarray to pointer
     internally. The type parameter fixes only the OCaml element type; the copy
@@ -333,7 +338,8 @@ let device_to_host : type a b.
       ~buffer_elem_size:B.elem_size
       ~buffer_size:B.size
   in
-  with_bigarray_ptr dst (fun dst_ptr -> B.device_to_host_ptr dst_ptr ~byte_size)
+  B.device_to_host_ptr (borrow_bigarray_ptr dst) ~byte_size ;
+  ignore (Sys.opaque_identity dst)
 
 (** Copy data from raw pointer to device buffer (for custom types) *)
 let host_ptr_to_device : type a. src_ptr:unit Ctypes.ptr -> dst:a buffer -> unit

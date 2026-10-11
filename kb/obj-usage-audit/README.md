@@ -3,22 +3,23 @@
 Audit scope: first-party OCaml sources under `spoc/`, `sarek/`, backend
 packages, benchmarks, tools, and scripts.
 
-## Status 2026-10 — no Obj remains once three PRs land
+## Status 2026-10 — no Obj remains
 
 The 2026-10 SPOC review numbered the remaining code uses O-1..O-23.
 
 - **O-19** (`sarek/core/Memory.ml`, `Obj.repr ba` passed to `Fat.make ~managed`
   to root an f16 bigarray) is removed by `refactor/no-obj-f16-hostptr`. The f16
-  host pointer is now unmanaged, and the scoped `Memory.with_bigarray_ptr` keeps
-  the bigarray reachable with `Sys.opaque_identity` until its callback returns.
-  `test_float16.ml` (`gc_roots`) checks that an f16 bigarray survives a
-  `Gc.full_major` issued inside the callback.
+  host pointer from `Memory.borrow_bigarray_ptr` is unmanaged; transfer paths
+  keep the bigarray reachable with a trailing `Sys.opaque_identity`, and
+  `Memory.with_bigarray_ptr` does the same around a callback. `test_float16.ml`
+  (`gc_roots`) checks that an f16 bigarray survives a `Gc.full_major` while
+  the pointer is in use.
 - **O-1..O-18 and O-20..O-23** (kernarg and transfer keep-alives, and the
-  `Sarek_tuple_vec` registry) are removed by the keep-alive PR
-  (`refactor/no-obj-keepalive`) and the tuple_vec PR (#457).
+  `Sarek_tuple_vec` registry) are removed by the keep-alive PR (#458) and the
+  tuple_vec PR (#457).
 
-After those three PRs, the census command below returns no code hits. Until
-they all merge, the 2026-07-27 census below describes `main`.
+With those three changes on `main`, the census command below returns no hits.
+The 2026-07-27 census below is kept as the record of that earlier state.
 
 ## What is actually removed — census re-run 2026-07-27 at `c92a9a28`
 

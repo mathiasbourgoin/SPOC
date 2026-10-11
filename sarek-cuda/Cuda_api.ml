@@ -377,14 +377,13 @@ module Memory = struct
   (* A blocking memcpy on the default stream drains all prior launches on that
      stream, so it is a safe point to release the device's retained kernargs. *)
   (* Both transfers acquire the host pointer through
-     [Spoc_core.Memory.bigarray_void_ptr] rather than [Ctypes.bigarray_start]:
-     the latter raises Failure "Unsupported bigarray kind" for Float16 (#57
-     slice 1 review, MF2). That helper also returns a MANAGED pointer, so the
-     bigarray stays GC-rooted across the memcpy for every element type; the
-     explicit keepalive documents the same obligation locally. *)
+     [Spoc_core.Memory.borrow_bigarray_ptr] rather than [Ctypes.bigarray_start]:
+     the latter raises Failure "Unsupported bigarray kind" for Float16. The
+     pointer does not root the bigarray; the [Sys.opaque_identity] after the
+     memcpy keeps it reachable across the call. *)
   let host_to_device ~src ~dst =
     Device.set_current dst.device ;
-    let src_ptr = Spoc_core.Memory.bigarray_void_ptr src in
+    let src_ptr = Spoc_core.Memory.borrow_bigarray_ptr src in
     let bytes = Unsigned.Size_t.of_int (Bigarray.Array1.size_in_bytes src) in
     check "cuMemcpyHtoD" (cuMemcpyHtoD dst.ptr src_ptr bytes) ;
     ignore (Sys.opaque_identity src) ;
@@ -392,7 +391,7 @@ module Memory = struct
 
   let device_to_host ~src ~dst =
     Device.set_current src.device ;
-    let dst_ptr = Spoc_core.Memory.bigarray_void_ptr dst in
+    let dst_ptr = Spoc_core.Memory.borrow_bigarray_ptr dst in
     let bytes = Unsigned.Size_t.of_int (Bigarray.Array1.size_in_bytes dst) in
     check "cuMemcpyDtoH" (cuMemcpyDtoH dst_ptr src.ptr bytes) ;
     ignore (Sys.opaque_identity dst) ;
