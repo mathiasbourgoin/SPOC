@@ -84,34 +84,35 @@ let generic_vec_of_exec_vector (module V : Typed_value.EXEC_VECTOR) :
 
 module Vector = Spoc_core.Vector
 
-(* [Vector.get] on a vector whose bigarray kind is known here, so the read
-   compiles to an inline load instead of the polymorphic [caml_ba_get_1] and
-   the [typed_value] round trip: the same bounds check, host sync and storage
-   dispatch, in the same order. Anything but in-bounds bigarray storage takes
-   [Vector.get] itself. *)
+(* [Vector.get] specialised to one bigarray kind: the same bounds check, host
+   sync and read, in the same order, with no allocation but the boxed result.
+   [host] is immutable, so binding the bigarray before the sync reads the same
+   storage [Vector.get] reads after it. Other storages take [Vector.get]. *)
 let get_float32 (v : (float, Bigarray.float32_elt) Vector.t) i =
   match v.Vector.host with
-  | Vector.Bigarray_storage _ when i >= 0 && i < v.Vector.length -> (
+  | Vector.Bigarray_storage ba when i >= 0 && i < v.Vector.length ->
       Vector.ensure_cpu_sync v ;
-      match v.Vector.host with
-      | Vector.Bigarray_storage ba -> Bigarray.Array1.unsafe_get ba i
-      | _ -> Vector.get v i)
+      Bigarray.Array1.get ba i
   | _ -> Vector.get v i
 
 let get_int32 (v : (int32, Bigarray.int32_elt) Vector.t) i =
   match v.Vector.host with
-  | Vector.Bigarray_storage _ when i >= 0 && i < v.Vector.length -> (
+  | Vector.Bigarray_storage ba when i >= 0 && i < v.Vector.length ->
       Vector.ensure_cpu_sync v ;
-      match v.Vector.host with
-      | Vector.Bigarray_storage ba -> Bigarray.Array1.unsafe_get ba i
-      | _ -> Vector.get v i)
+      Bigarray.Array1.get ba i
   | _ -> Vector.get v i
 
 (** The accessors a native kernel calls for a vector argument. A float32 or
     int32 vector reads and writes its own element type directly (what the
     [typed_value] path ends in, [Vector.get]/[Vector.set], without the boxing on
     the way); every other access, including a read at another type, goes through
-    {!generic_vec_of_exec_vector}. *)
+    {!generic_vec_of_exec_vector}.
+
+    Contract relied on: an [EXEC_VECTOR] whose [underlying_type_id] is
+    [Vector.float32_vector_type_id] or [Vector.int32_vector_type_id] has
+    [get]/[set] equal to [Vector.get]/[Vector.set] on [underlying] (as
+    [Execute.exec_arg_of_vector] builds it); the fast accessors read
+    [underlying] directly. *)
 let native_vec_of_exec_vector (module V : Typed_value.EXEC_VECTOR) :
     Sarek_ir_types.native_arg =
   let generic = generic_vec_of_exec_vector (module V) in

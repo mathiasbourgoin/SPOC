@@ -127,6 +127,11 @@ module type EXEC_VECTOR = sig
   (** Runtime identity for element and underlying vector/buffer types. *)
   val type_id : elt Sarek_ir_types.Type_id.t
 
+  (** Contract: when this is a SPOC vector type id (e.g.
+      [Spoc_core.Vector.float32_vector_type_id]), [get]/[set] must equal
+      [Vector.get]/[Vector.set] on [underlying]. The Native backend reads and
+      writes float32 and int32 vectors through [underlying] directly
+      ([Native_vec_access]). *)
   val underlying_type_id : underlying Sarek_ir_types.Type_id.t
 
   val underlying : underlying
