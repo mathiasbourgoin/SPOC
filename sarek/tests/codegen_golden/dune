@@ -52,6 +52,22 @@
  (instrumentation
   (backend bisect_ppx)))
 
+; Which f32 -> f16 narrowings keep sarek_f32_barrier
+; (specs/f16-narrowing-barrier.md), and the host proof that dropping it is
+; sound on the exact and binary16-sum shapes.
+
+(test
+ (name test_f16_narrowing_golden)
+ (modules test_f16_narrowing_golden)
+ (libraries sarek.stdlib sarek_ir sarek_codegen sarek_backend_error alcotest)
+ ; -linkall: Sarek_stdlib registers the [float] intrinsic at initialisation.
+ (link_flags (-linkall)))
+
+(test
+ (name test_f16_narrowing_theorem)
+ (modules test_f16_narrowing_theorem)
+ (libraries sarek.interp))
+
 (test
  (name test_etuple_backend_refusal)
  (modules test_etuple_backend_refusal)

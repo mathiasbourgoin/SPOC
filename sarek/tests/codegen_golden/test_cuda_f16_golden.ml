@@ -95,9 +95,11 @@ let strip_c_comments src =
 (* Kernels                                                            *)
 (* ------------------------------------------------------------------ *)
 
-(** [f16_scale out inp]: reads an f16 element, widens to f32, doubles it in f32,
-    narrows back to f16 on store. This is the "storage type, compute in f32"
-    discipline expressed in IR. *)
+(** [f16_scale out inp]: reads an f16 element, widens to f32, scales it by 1.1
+    in f32, narrows back to f16 on store. This is the "storage type, compute in
+    f32" discipline expressed in IR. The factor is 1.1, not an exact one such as
+    2.0: the f32 product must be inexact for the narrowing to need the barrier
+    (specs/f16-narrowing-barrier.md). *)
 let f16_scale_kernel () =
   let out = make_var "out" (TVec TFloat16) in
   let inp = make_var "inp" (TVec TFloat16) in
@@ -113,7 +115,7 @@ let f16_scale_kernel () =
                 EBinop
                   ( Mul,
                     ECast (TFloat32, EArrayRead ("inp", EVar idx)),
-                    EConst (CFloat32 2.0) ) ) ) )
+                    EConst (CFloat32 1.1) ) ) ) )
   in
   mk_kernel
     "f16_scale"
