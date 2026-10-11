@@ -1,9 +1,11 @@
 (include_subdirs no)
 
 ; The layout model, extracted from theories/PtxLayout.v by LayoutExtract.v
-; (task #46). This is the ONLY extracted artefact in this project that is
-; compiled and linked; test/test_layout_conformance.ml runs it directly instead
-; of the hand transcription it used to carry.
+; (task #46), and the right-shift model, extracted from theories/PtxShift.v by
+; ShiftExtract.v (finding D-54). These are the ONLY extracted artefacts in this
+; project that are compiled and linked: test/test_layout_conformance.ml and
+; test/test_codegen_ptx_conformance.ml run them directly instead of the hand
+; transcriptions they used to carry.
 ;
 ; Extract.v's output (AGpuSemantics.ml, PtxTypes.ml, PtxExprSpec.ml,
 ; PtxStmtSpec.ml, PtxKernelSpec.ml, in the project root) is deliberately NOT in
@@ -31,5 +33,14 @@
 (library
  (name sarek_ptx_layout_model)
  (modules sarek_ptx_layout_model)
+ (flags
+  (:standard -w -a)))
+
+; The right-shift model (finding D-54). Same conventions as the layout model:
+; committed raw+canonicalised, listed in .ocamlformat-ignore, drift-checked by
+; scripts/check-formal-proofs.sh.
+(library
+ (name sarek_ptx_shift_model)
+ (modules sarek_ptx_shift_model)
  (flags
   (:standard -w -a)))

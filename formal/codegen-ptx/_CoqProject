@@ -1,4 +1,5 @@
 -R theories CodegenPtx
+theories/PtxShift.v
 theories/AGpuSemantics.v
 theories/PtxTypes.v
 theories/PtxExprSpec.v
@@ -7,3 +8,4 @@ theories/PtxKernelSpec.v
 theories/PtxLayout.v
 extraction/Extract.v
 extraction/LayoutExtract.v
+extraction/ShiftExtract.v
