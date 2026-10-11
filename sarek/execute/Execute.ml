@@ -1807,7 +1807,7 @@ let run_interpreter_vectors ~(ir : Sarek_ir_types.kernel)
     @param grid Grid dimensions (e.g., (4, 1, 1))
     @param shared_mem Optional shared memory size in bytes (default: 0)
     @raise Execute_error on validation or execution failure *)
-let run_vectors ?(stream : Transfer.stream option) ~(device : Device.t)
+let run_vectors_plain ?(stream : Transfer.stream option) ~(device : Device.t)
     ~(ir : Sarek_ir_types.kernel) ~(args : vector_arg list)
     ~(block : Framework_sig.dims) ~(grid : Framework_sig.dims)
     ?(shared_mem : int = 0) () : unit =
@@ -1838,6 +1838,97 @@ let run_vectors ?(stream : Transfer.stream option) ~(device : Device.t)
 
   (* 3. Mark vectors as stale (no-op for CPU backends due to zero-copy) *)
   mark_vectors_stale args device
+
+(* ---- Matrix-product specialisation (specs/matrix-pattern-dynamic.md) ---- *)
+
+let matrix_scalar = function
+  | Int i -> Some (Int32.of_int i)
+  | Int32 i -> Some i
+  | Int64 i ->
+      (* Bounds are int32 in the kernel: a value that does not fit is not a
+         bound the rewrite can use. *)
+      if Int64.of_int32 (Int64.to_int32 i) = i then Some (Int64.to_int32 i)
+      else None
+  | Vec _ | Float32 _ | Float64 _ -> None
+
+let matrix_launch (ir : Sarek_ir_types.kernel) args
+    ~(block : Framework_sig.dims) ~(grid : Framework_sig.dims) :
+    Sarek_ir_eval_int.launch option =
+  if List.length args <> List.length ir.kern_params then None
+  else
+    let values =
+      List.filter_map
+        (fun (d, a) ->
+          match d with
+          | Sarek_ir_types.DParam (v, None) ->
+              Option.map (fun x -> (v.var_id, x)) (matrix_scalar a)
+          | _ -> None)
+        (List.combine ir.kern_params args)
+    in
+    Some
+      {
+        Sarek_ir_eval_int.grid = (grid.x, grid.y, grid.z);
+        block = (block.x, block.y, block.z);
+        scalar = (fun v -> List.assoc_opt v.var_id values);
+      }
+
+let interpreter_is_parallel (device : Device.t) =
+  let n = device.name and p = "Parallel" in
+  let rec has i =
+    i + String.length p <= String.length n
+    && (String.sub n i (String.length p) = p || has (i + 1))
+  in
+  has 0
+
+let run_specialised ?stream ~device ~args (s : Matrix_specialise.specialised) =
+  let extra = List.map (fun x -> Int32 (Int32.of_int x)) s.extra in
+  let d3 (x, y, z) = Framework_sig.dims_3d x y z in
+  if s.via_interpreter then
+    run_interpreter_vectors
+      ~ir:s.ir
+      ~args:(args @ extra)
+      ~block:(d3 s.block)
+      ~grid:(d3 s.grid)
+      ~parallel:(interpreter_is_parallel device)
+  else
+    run_vectors_plain
+      ?stream
+      ~device
+      ~ir:s.ir
+      ~args:(args @ extra)
+      ~block:(d3 s.block)
+      ~grid:(d3 s.grid)
+      ()
+
+(** [run_vectors] that also returns what ran: the kernel as given, or a
+    matrix-unit rewrite of it ({!Matrix_specialise}). [precision] chooses the
+    operand rounding of a float32 product (it must have been accepted). *)
+let run_vectors_outcome ?(stream : Transfer.stream option) ?precision
+    ~(device : Device.t) ~(ir : Sarek_ir_types.kernel) ~(args : vector_arg list)
+    ~(block : Framework_sig.dims) ~(grid : Framework_sig.dims)
+    ?(shared_mem : int = 0) () : Matrix_specialise.outcome =
+  let outcome =
+    Matrix_specialise.choose
+      ?precision
+      ~device
+      ~ir
+      ~launch:(fun () -> matrix_launch ir args ~block ~grid)
+      ()
+  in
+  (match outcome with
+  | Matrix_specialise.Specialised s -> run_specialised ?stream ~device ~args s
+  | Matrix_specialise.Original _ ->
+      run_vectors_plain ?stream ~device ~ir ~args ~block ~grid ~shared_mem ()) ;
+  outcome
+
+(** Launch [ir] on [device]. When [ir] is a matrix product that matrix units can
+    compute under the current {!Matrix_specialise.mode} and accuracy opt-ins,
+    the rewritten kernel runs instead, writing exactly the same outputs
+    (specs/matrix-pattern-dynamic.md). *)
+let run_vectors ?stream ~device ~ir ~args ~block ~grid ?shared_mem () : unit =
+  ignore
+    (run_vectors_outcome ?stream ~device ~ir ~args ~block ~grid ?shared_mem ()
+      : Matrix_specialise.outcome)
 
 (** Sync all V2 Vector outputs back to CPU *)
 let sync_vectors_to_cpu (args : vector_arg list) : unit =

@@ -20,6 +20,16 @@
     {!Sarek_coopmat.accept_operand_rounding} for that precision, and
     {!Sarek_coopmat.accept_relaxed_accumulation}. *)
 
+(** Which matrix rewrites [Execute] applies by default
+    ({!Sarek_execute.Matrix_specialise.mode}): [Off] none, [Exact] the int32 one
+    only, [Auto] (default) the int32 one plus the float ones the program has
+    opted into. Initialised from [SAREK_MATRIX_REWRITE]. *)
+type mode = Sarek_execute.Matrix_specialise.mode = Off | Exact | Auto
+
+val set_mode : mode -> unit
+
+val mode : unit -> mode
+
 type outcome =
   | Rewritten of {
       lowering : Sarek_matrix_rewrite.lowering;

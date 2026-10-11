@@ -27,6 +27,8 @@
 
 (copy_files "../Launch_epilogue.ml")
 
+(copy_files "../Matrix_specialise.ml")
+
 (executable
  (name smoke)
  (modes js)
@@ -38,6 +40,7 @@
   Fusion_horizontal
   Fusion_epilogue
   Launch_window
+  Matrix_specialise
   Launch_epilogue
   Execute
   Execute_error)

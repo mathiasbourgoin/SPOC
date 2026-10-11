@@ -2,6 +2,21 @@
 
 ### Added
 
+- Matrix products are rewritten at launch, inside `Execute.run_vectors` (spec
+  `specs/matrix-pattern-dynamic.md`). A kernel that is a recognised matrix
+  product runs on matrix units when the device has them (HIP gfx11, the
+  interpreter): int32 by default (bit-identical), float only after
+  `accept_relaxed_accumulation` / `accept_operand_rounding`. `SAREK_MATRIX_REWRITE`
+  (`off`, `exact`, `auto`, default `auto`) or `Matrix_specialise.set_mode`
+  switches it; `Execute.run_vectors_outcome` returns the decision,
+  `Execute.run_vectors_plain` launches the kernel as given,
+  `Matrix_specialise.set_reporter` / `SAREK_MATRIX_REPORT=1` report it. The
+  aligned float16 size class loads fragments straight from global memory
+  (`Sarek_matrix_direct`): 256×3072×3072 runs at ~43 TFLOP/s on an RX 7900 XTX,
+  as fast as the hand-written `Sarek_gemm.Coopmat`. Plans and rewritten kernels
+  are cached per IR; a kernel that is not a matrix product costs one memo
+  lookup per launch (host launch cost unchanged within run-to-run spread).
+
 - Automatic rewrite of recognised matrix products onto matrix units (spec
   `specs/matrix-pattern-rewrite.md`). `Sarek_matrix.run` (library
   `sarek.matrix`) is a drop-in for `Execute.run_vectors`: when the kernel is a

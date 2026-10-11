@@ -157,7 +157,9 @@ let geometry ~m ~n =
 
 let bench_naive dev ~m ~n ~k ~label ~ir ~args ?precision () =
   let block, grid = geometry ~m ~n in
-  let original () = Execute.run_vectors ~device:dev ~ir ~args ~block ~grid () in
+  let original () =
+    Execute.run_vectors_plain ~device:dev ~ir ~args ~block ~grid ()
+  in
   let rewritten () =
     match Sarek_matrix.run ?precision ~device:dev ~ir ~args ~block ~grid () with
     | Sarek_matrix.Rewritten _ -> ()

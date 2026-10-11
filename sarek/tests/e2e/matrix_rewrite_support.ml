@@ -210,7 +210,7 @@ let random_int32 () = Int32.of_int (Random.bits () lxor (Random.bits () lsl 30))
 let launch ~rewrite dev ir ~args ~block ~grid =
   if rewrite then Sarek_matrix.run ~device:dev ~ir ~args ~block ~grid ()
   else (
-    Execute.run_vectors ~device:dev ~ir ~args ~block ~grid () ;
+    Execute.run_vectors_plain ~device:dev ~ir ~args ~block ~grid () ;
     Sarek_matrix.Original "(original requested)")
 
 let compare_arrays what expected got =
@@ -327,3 +327,38 @@ let offers_int dev =
              (Sarek_matrix_rewrite.config_of
                 Sarek_matrix_rewrite.Int32_byte_planes
                 ~operand_elt:Sarek_ir_types.TInt32))
+
+let vec_f16_of arr =
+  let v = Vector.create Vector.float16 (Array.length arr) in
+  Array.iteri (Vector.set v) arr ;
+  v
+
+let vec_f32_zero len =
+  let v = Vector.create Vector.float32 len in
+  for i = 0 to len - 1 do
+    Vector.set v i 0.0
+  done ;
+  v
+
+(* float16 operands accumulated into C ([c := c + a.b]). *)
+let k_f16_accum =
+  [%kernel
+    fun (a : float16 vector)
+        (b : float16 vector)
+        (c : float32 vector)
+        (m : int32)
+        (n : int32)
+        (k : int32) ->
+      let row = global_idx_y in
+      let col = global_idx_x in
+      if row < m && col < n then begin
+        let o = (row * n) + col in
+        let sum = mut c.(o) in
+        for i = 0 to k - 1l do
+          sum :=
+            sum
+            +. float32_of_float16 a.((row * k) + i)
+               *. float32_of_float16 b.((i * n) + col)
+        done ;
+        c.(o) <- sum
+      end]
