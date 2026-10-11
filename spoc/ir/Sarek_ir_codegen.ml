@@ -163,6 +163,14 @@ let native_block_refusal =
    own target and passes it to the closure; the five source generators cannot. \
    Express the operation in Sarek so it can be generated for every backend."
 
+(** Why [create_array n Global] is refused by the source generators. The PPX
+    already rejects it; this is the backstop for IR built by hand, which these
+    generators used to turn silently into a per-thread private array. *)
+let global_array_refusal =
+  "create_array with the Global memory space cannot be declared in a kernel \
+   body: device memory is allocated by the host. Pass the buffer in as a \
+   kernel vector parameter."
+
 (** Mangle OCaml type name to valid C/GLSL identifier (e.g., "Module.point" ->
     "Module_point") *)
 let mangle_name name = String.map (fun c -> if c = '.' then '_' else c) name

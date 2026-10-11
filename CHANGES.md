@@ -341,7 +341,12 @@
   variable-length array that OpenCL C and MSL reject. Now `Global` is a located
   error (take a kernel vector parameter instead) and the size of a `Local` or
   `Shared` array must be a positive compile-time constant (an int32 literal, or
-  literals combined with `+ - *`). **Migration**: replace a runtime size by a
+  literals combined with `+ - *`, folded to a literal before any backend sees
+  it; every intermediate result must fit in int32). The same rule applies to an
+  explicit `let%shared` size (`let%shared (t : int32) = n in` with a runtime
+  `n` is now refused); the size-less `let%shared (t : int32) = ()` form is
+  unchanged. The CUDA, OpenCL, Metal and GLSL emitters also refuse a hand-built
+  `EArrayCreate(_, _, Global)` instead of declaring a private array. **Migration**: replace a runtime size by a
   constant upper bound, e.g. `create_array n Local` becomes `create_array 16l
   Local`, and index only the first `n` slots; replace `create_array n Global`
   by a vector parameter. The `Pexp_array` hint no longer recommends `Global`.

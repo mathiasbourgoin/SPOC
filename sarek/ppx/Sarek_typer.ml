@@ -529,31 +529,60 @@ let infer_control_flow ~infer (env : t) (loc : Sarek_ast.loc) (expr : expr_desc)
 
 (** Compile-time value of an [int32] size expression built from literals and
     [+ - *] (no division: a folded [x / 0] must not be decided here). [None]
-    when the expression is not provably constant. Arithmetic is on the host
-    [int] (63 bits), so the result is range-checked by the caller. *)
+    when the expression is not provably constant OR when any literal or
+    intermediate result leaves the int32 range: the device evaluates in 32 bits,
+    so a value that wraps there is not the value folded here. Each step is
+    checked, not only the final result ([65536l * 65536l - 65536l * 65535l]
+    wraps in the middle and would otherwise come out as a valid 65536). *)
 let rec const_int_value (e : texpr) : int option =
+  let in_range v =
+    if v >= Int32.to_int Int32.min_int && v <= Int32.to_int Int32.max_int then
+      Some v
+    else None
+  in
+  let ( >>= ) = Option.bind in
   match e.te with
-  | TEInt i -> Some i
+  | TEInt i -> in_range i
   | TEInt32 i -> Some (Int32.to_int i)
   | TEBinop (op, a, b) -> (
-      match (const_int_value a, const_int_value b) with
-      | Some x, Some y -> (
-          match op with
-          | Add -> Some (x + y)
-          | Sub -> Some (x - y)
-          | Mul -> Some (x * y)
-          | _ -> None)
+      const_int_value a >>= fun x ->
+      const_int_value b >>= fun y ->
+      match op with
+      | Add -> in_range (x + y)
+      | Sub -> in_range (x - y)
+      | Mul -> in_range (x * y)
       | _ -> None)
   | _ -> None
+
+(** The folded size as an int32 literal, so every backend (and
+    [Kernel_access.shared_bytes_of]) sees [EConst (CInt32 n)] and never an
+    expression the target compiler may refuse: PTX and WGSL need a literal
+    extent. [what] names the construct in the error. *)
+let fold_const_size ~(what : string) (tsize : texpr) : texpr result =
+  match const_int_value tsize with
+  | Some n when n > 0 -> Ok {tsize with te = TEInt32 (Int32.of_int n)}
+  | _ ->
+      Error
+        [
+          Invalid_kernel
+            ( what
+              ^ " size must be a positive compile-time constant (an int32 \
+                 literal, or literals combined with + - * whose every \
+                 intermediate result fits in int32): OpenCL C and Metal reject \
+                 variable-length arrays and PTX and WGSL need a literal \
+                 extent. Use a constant size, e.g. `16l`.",
+              tsize.te_loc );
+        ]
 
 (** [create_array] is a device-array DECLARATION with a memory space. [Global]
     is not one a kernel body can allocate (device memory is passed in as a
     vector parameter), and [Local]/[Shared] arrays need a size the target
     compilers can see: OpenCL C and MSL forbid variable-length arrays, and
     PTX/WGSL need a literal extent. Refusing here keeps every backend, Native
-    included, accepting the same kernels. *)
+    included, accepting the same kernels. Returns the size to use, folded to a
+    literal. *)
 let check_create_array (mem : Sarek_ast.memspace) (tsize : texpr)
-    (loc : Sarek_ast.loc) : unit result =
+    (loc : Sarek_ast.loc) : texpr result =
   match mem with
   | Global ->
       Error
@@ -565,20 +594,7 @@ let check_create_array (mem : Sarek_ast.memspace) (tsize : texpr)
                instead.",
               loc );
         ]
-  | Local | Shared -> (
-      match const_int_value tsize with
-      | Some n when n > 0 && n <= Int32.to_int Int32.max_int -> Ok ()
-      | _ ->
-          Error
-            [
-              Invalid_kernel
-                ( "create_array size must be a positive compile-time constant \
-                   (an int32 literal, or literals combined with + - *): OpenCL \
-                   C and Metal reject variable-length arrays and PTX and WGSL \
-                   need a literal extent. Use a constant size, e.g. \
-                   `create_array 16l Local`.",
-                  tsize.te_loc );
-            ])
+  | Local | Shared -> fold_const_size ~what:"create_array" tsize
 
 (** Infer type of data structures (records, variants, tuples, arrays). Uses
     mutual recursion helpers for complex nested structures. *)
@@ -665,7 +681,7 @@ let infer_data_structure ~infer ~infer_record_fields ~infer_list (env : t)
   | ECreateArray (size, elem_ty, mem) ->
       let* tsize, env = infer env size in
       let* () = unify_or_error tsize.ty t_int32 size.expr_loc in
-      let* () = check_create_array mem tsize loc in
+      let* tsize = check_create_array mem tsize loc in
       let elem_t = type_of_type_expr_env env elem_ty in
       let arr_ty = TArr (elem_t, memspace_of_ast mem) in
       Ok
@@ -1027,6 +1043,7 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
         | Some size ->
             let* tsize, env = infer env size in
             let* () = unify_or_error tsize.ty t_int32 size.expr_loc in
+            let* tsize = fold_const_size ~what:"let%shared" tsize in
             Ok (Some tsize, env)
       in
       (* Create the shared array type *)

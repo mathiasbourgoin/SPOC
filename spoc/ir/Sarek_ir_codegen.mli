@@ -89,6 +89,10 @@ val glsl_float16_refusal : string
     and really does emit. *)
 val native_block_refusal : string
 
+(** Why [create_array n Global] is refused by the CUDA/OpenCL/Metal/GLSL
+    generators (backstop for hand-built IR; the PPX rejects it earlier). *)
+val global_array_refusal : string
+
 (** Mangle an OCaml type name into a valid C/GLSL identifier (e.g.
     "Module.point" -> "Module_point"). Replaces '.' with '_'. *)
 val mangle_name : string -> string

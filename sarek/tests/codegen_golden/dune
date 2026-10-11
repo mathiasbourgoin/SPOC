@@ -173,3 +173,10 @@
  (libraries sarek_ir sarek_codegen sarek_backend_error alcotest)
  (instrumentation
   (backend bisect_ppx)))
+
+(test
+ (name test_create_array_folded)
+ (modules test_create_array_folded)
+ (libraries sarek sarek.stdlib sarek_ir sarek_codegen spoc_core)
+ (preprocess
+  (pps sarek_ppx)))
