@@ -415,6 +415,14 @@
  (modules bench_cpu_pool_idle_gc test_cpu_pool_idle cpu_pool_workload)
  (libraries sarek sarek.interp sarek_ir unix))
 
+; A launch on the shared CPU block pool from inside one of its tasks completes
+; at any pool size (own watchdog: a deadlock exits 124).
+
+(test
+ (name test_cpu_pool_nested)
+ (modules test_cpu_pool_nested)
+ (libraries sarek sarek.interp unix))
+
 ; Pool sizing cap, retirement after the idle timeout, recreation on the next
 ; launch (counted in OS threads; skips without /proc).
 
