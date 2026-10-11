@@ -149,3 +149,11 @@
  (libraries sarek.codegen sarek_backend_error spoc.ir alcotest astring)
  (instrumentation
   (backend bisect_ppx)))
+
+; A buffer freed from a GC finaliser must not change the selected context
+; (needs two CUDA devices; self-skips otherwise).
+
+(test
+ (name test_cuda_free_keeps_current)
+ (modules test_cuda_free_keeps_current)
+ (libraries sarek_cuda))
