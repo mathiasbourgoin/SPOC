@@ -120,7 +120,9 @@ type 'arg t = {
     builds a scalar argument for the fused kernel's position parameters.
     [set_pending] is told the number of pending launches after each change.
     [guard f] runs [f] (the issuing of pending groups) with the synchronisation
-    hooks disabled on this domain. *)
+    hooks disabled on this domain. Each window has its own slot in the
+    {!Ir_memo} record of every IR it sees; the slot lives as long as that IR,
+    not as long as the window. *)
 let create ~int32_arg ~arg_buf ~arg_int32 ~set_pending ~guard : 'arg t =
   {
     lock = Mutex.create ();

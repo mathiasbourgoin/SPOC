@@ -185,6 +185,34 @@ let test_huge_indices () =
         args, got 3"
        max_int)
 
+(** Indices on both sides of the dense/sparse boundary (4095 dense, 4096 sparse)
+    behave the same: stored, counted, last write wins, sorted. *)
+let test_dense_boundary () =
+  let t = KA.create () in
+  KA.set t 4096 "b" ;
+  KA.set t 4095 "a" ;
+  KA.set t 4096 "B" ;
+  KA.set t 4095 "A" ;
+  Alcotest.(check int) "distinct indices" 2 (KA.count t) ;
+  Alcotest.(check (list (pair int string)))
+    "sorted, last write wins"
+    [(4095, "A"); (4096, "B")]
+    (KA.to_sorted_list t) ;
+  for i = 0 to 4094 do
+    KA.set t i "x"
+  done ;
+  (match KA.validate_and_extract t ~expected_count:4097 with
+  | Ok arr ->
+      Alcotest.(check (pair string string))
+        "last two"
+        ("A", "B")
+        (arr.(4095), arr.(4096))
+  | Error msg -> Alcotest.fail msg) ;
+  expect_error
+    t
+    ~expected_count:4096
+    "unexpected index: [4096]; expected contiguous 0..4095"
+
 (** Many arguments set in reverse order extract in index order. *)
 let test_many_args () =
   let t = KA.create () in
@@ -214,6 +242,7 @@ let () =
           Alcotest.test_case "sparse indices" `Quick test_sparse_indices;
           Alcotest.test_case "many args" `Quick test_many_args;
           Alcotest.test_case "huge indices" `Quick test_huge_indices;
+          Alcotest.test_case "dense boundary" `Quick test_dense_boundary;
         ] );
       ( "last-set-wins",
         [
