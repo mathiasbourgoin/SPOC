@@ -30,7 +30,7 @@ So `SPOC_DISABLE_GPU=true` and `SAREK_LAUNCH_WINDOW=OFF` do nothing.
 
 | Variable | Accepted values | Default | Read at | Effect |
 |---|---|---|---|---|
-| `SPOC_DISABLE_GPU` | `1` | unset | start, and at each plugin `init ()` | No GPU backend registers (CUDA, HIP, OpenCL, Vulkan, Metal). Native and Interpreter stay. |
+| `SPOC_DISABLE_GPU` | `1` | unset | start, and at each plugin `init ()` | No GPU backend registers (CUDA, HIP, OpenCL, Vulkan, Metal). OpenCL CPU devices go with the OpenCL backend. Native and Interpreter stay. |
 | `SPOC_DISABLE_CUDA` | `1` | unset | start, and at each `init ()` | The CUDA backends (PTX and CUDA/C) do not register. |
 | `SPOC_DISABLE_HIP` | `1` | unset | start, and at each `init ()` | The HIP backend does not register. |
 | `SPOC_DISABLE_OPENCL` | `1` | unset | start, and at each `init ()` | The OpenCL backend does not register. |
@@ -46,7 +46,7 @@ Device selection is explained in [Device and backend selection](device_selection
 
 | Variable | Accepted values | Default | Read at | Effect |
 |---|---|---|---|---|
-| `SAREK_LAUNCH_WINDOW` | `0`, `false`, `off`, `no` turn it off | on | start | Switches the launch window (deferred launches and horizontal fusion) off for all backends. |
+| `SAREK_LAUNCH_WINDOW` | `0`, `false`, `off`, `no` turn it off | on for HIP, OpenCL and Vulkan; off elsewhere; never on CPU devices | start | Switches the launch window (deferred launches and horizontal fusion) off for all backends. |
 | `SAREK_LAUNCH_EPILOGUE` | `0`, `false`, `off`, `no` turn it off | on for HIP only | start | Switches epilogue fusion off. The variable cannot turn it on for another backend. |
 
 Both are explained in [Launch window and fusion](performance.html).
@@ -59,7 +59,7 @@ Both are explained in [Launch window and fusion](performance.html).
 | `SAREK_MATRIX_REPORT` | `1` | unset | start | Prints each distinct rewrite decision once on stderr. |
 | `SAREK_MATRIX_SCAN` | a file path | unset | PPX | Appends one line per analysed kernel and finding to the file. |
 
-The accepted values of `SAREK_MATRIX_REWRITE` are those after [#440](https://github.com/mathiasbourgoin/Sarek/pull/440). Before it only the exact strings `off` and `exact` were recognised, and every other value, including `0` and `OFF`, silently meant `auto`. See [Matrix units](matrix.html).
+A value such as `0` or `OFF` switches the rewrite off. See [Matrix units](matrix.html).
 
 ## Code generation
 
@@ -80,7 +80,7 @@ See [Kernel language notes](kernel_language.html).
 | Variable | Accepted values | Default | Read at | Effect |
 |---|---|---|---|---|
 | `SAREK_DEBUG` | a comma-separated list; components `transfer`, `kernel`, `device`, `memory`, `execute`, `all` or `*`; levels `debug`, `info`, `warn`, `error` (case-insensitive, unknown items ignored) | unset (no logging) | start | Runtime logging, per component. |
-| `SAREK_DEBUG` (framework logs) | the list contains `all` or `device` (exact, lowercase) | unset | start | Also enables the `[Cache]` and `[Framework]` messages of the backend cache and registry. |
+| `SAREK_DEBUG` (framework logs) | the whole value is exactly `all`, or one comma-separated item is exactly `device` (no trimming, lowercase) | unset | start | Also enables the `[Cache]` and `[Framework]` messages of the backend cache and registry. |
 | `SAREK_PPX_DEBUG` | `1`, `true`, `yes` | unset | PPX | Prints the PPX's `SAREK DEBUG:` trace on stderr. |
 | `SAREK_DEBUG` (PPX) | `1`, `true`, `yes` | unset | PPX | The same trace, when `SAREK_PPX_DEBUG` is not set to one of those values. |
 | `SPOC_GPU_STATS` | any value | unset | start | At exit, prints device-memory statistics (current and peak bytes, allocations, frees, GC-triggered frees) on stderr. |

@@ -10,7 +10,7 @@
 
 (library
  (name doc_snippets)
- (modules :standard \ extract)
+ (modules :standard \ extract snip_docs_matrix)
  (libraries
   sarek
   sarek.core
@@ -28,6 +28,25 @@
   (pps sarek.ppx))
  (flags
   (:standard -w -a -alert -sarek_matrix)))
+
+; The matrix page is compiled apart, with the sarek_matrix advice as an error
+; instead of silenced: an unsilenced GEMM kernel in a snippet fails the build,
+; so the `[@@alert "-sarek_matrix"]` it shows is checked to work.
+
+(library
+ (name doc_snippets_alerts)
+ (modules snip_docs_matrix)
+ (libraries
+  sarek
+  sarek.core
+  sarek.stdlib
+  sarek.native
+  sarek.gemm
+  sarek.matrix)
+ (preprocess
+  (pps sarek.ppx))
+ (flags
+  (:standard -w -a -alert @sarek_matrix)))
 
 (rule
  (targets snip_readme.ml)
@@ -175,7 +194,7 @@
 
 (alias
  (name snippets)
- (deps doc_snippets.cma))
+ (deps doc_snippets.cma doc_snippets_alerts.cma))
 
 (alias
  (name runtest)
