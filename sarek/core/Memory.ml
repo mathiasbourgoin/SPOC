@@ -323,8 +323,9 @@ let checked_host_copy_bytes : type a b.
   else ba_bytes
 
 (** Copy data from host bigarray to device. Converts bigarray to pointer
-    internally. Type parameter ensures bigarray element type matches buffer
-    type. *)
+    internally. The type parameter fixes only the OCaml element type; the copy
+    is sized from the bigarray's bytes and [Invalid_argument] is raised if its
+    element size differs from the buffer's or it exceeds the buffer. *)
 let host_to_device : type a b.
     src:(a, b, Bigarray.c_layout) Bigarray.Array1.t -> dst:a buffer -> unit =
  fun ~src ~dst ->
@@ -352,8 +353,9 @@ let host_to_device : type a b.
   ignore (Sys.opaque_identity src)
 
 (** Copy data from device to host bigarray. Converts bigarray to pointer
-    internally. Type parameter ensures bigarray element type matches buffer
-    type. *)
+    internally. The type parameter fixes only the OCaml element type; the copy
+    is sized from the bigarray's bytes and [Invalid_argument] is raised if its
+    element size differs from the buffer's or it exceeds the buffer. *)
 let device_to_host : type a b.
     src:a buffer -> dst:(a, b, Bigarray.c_layout) Bigarray.Array1.t -> unit =
  fun ~src ~dst ->
@@ -385,8 +387,9 @@ let device_to_host_ptr : type a. src:a buffer -> dst_ptr:unit Ctypes.ptr -> unit
   let byte_size = B.size * B.elem_size in
   B.device_to_host_ptr dst_ptr ~byte_size
 
-(** Copy data between device buffers (same device). Type parameter ensures both
-    buffers have same element type. *)
+(** Copy data between device buffers (same device). The type parameter fixes
+    only the OCaml element type; [Invalid_argument] is raised if the element
+    sizes differ or the source holds more bytes than the destination. *)
 let device_to_device : type a. src:a buffer -> dst:a buffer -> unit =
  fun ~src ~dst ->
   let (Buffer (module Src)) = src in
@@ -396,6 +399,13 @@ let device_to_device : type a. src:a buffer -> dst:a buffer -> unit =
   else begin
     let byte_size = Src.size * Src.elem_size in
     let dst_bytes = Dst.size * Dst.elem_size in
+    if Src.elem_size <> Dst.elem_size then
+      invalid_arg
+        (Printf.sprintf
+           "device_to_device: element size differs (source %d bytes, \
+            destination %d bytes)"
+           Src.elem_size
+           Dst.elem_size) ;
     if byte_size > dst_bytes then
       invalid_arg
         (Printf.sprintf
@@ -407,7 +417,9 @@ let device_to_device : type a. src:a buffer -> dst:a buffer -> unit =
     let tmp = Ctypes.(allocate_n uint8_t ~count:byte_size) in
     let tmp_ptr = Ctypes.to_voidp tmp in
     Src.device_to_host_ptr tmp_ptr ~byte_size ;
-    Dst.host_ptr_to_device tmp_ptr ~byte_size
+    Dst.host_ptr_to_device tmp_ptr ~byte_size ;
+    (* The backends take a bare nativeint: keep [tmp] alive past the copy. *)
+    ignore (Sys.opaque_identity tmp)
   end
 
 (** {1 Accessors} *)
