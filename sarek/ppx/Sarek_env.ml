@@ -247,8 +247,21 @@ let open_module (path : string list) env =
                            else info.intr_convergence);
                       }
                   | IntrinsicRef _ ->
-                      (* Another stdlib intrinsic: new module shadows old completely *)
-                      info)
+                      (* Another stdlib intrinsic: the new module's type and
+                         reference win, but a convergence requirement already
+                         recorded under this name is kept. [with_stdlib]
+                         auto-opens Gpu, so an explicit [let open Std in]
+                         lands here for every Gpu name, and the registry entry
+                         carries no convergence: replacing the old info
+                         outright dropped [block_barrier]'s requirement and
+                         disabled the divergence check (#447). *)
+                      {
+                        info with
+                        intr_convergence =
+                          (if info.intr_convergence <> None then
+                             info.intr_convergence
+                           else existing.intr_convergence);
+                      })
               | None -> info
             in
             add_intrinsic_fun short_name info env
