@@ -287,7 +287,7 @@ Sarek: kernel 'matmul_naive' contains a matrix product (GEMM) that matrix units 
   <tbody>
     <tr>
       <td>direct</td>
-      <td><code class="language-plaintext highlighter-rouge">float16</code> operands, row-major A, B and C, <code class="language-plaintext highlighter-rouge">float32</code> output stored as is with no epilogue, accumulator starting at zero, no quotient (<code class="language-plaintext highlighter-rouge">t / d</code>) mapping, a region of whole 32x32 tiles, a reduction length divisible by 16 (<code class="language-plaintext highlighter-rouge">Sarek_matrix_direct.ml:40-52</code>)</td>
+      <td><code class="language-plaintext highlighter-rouge">float16</code> operands, row-major A, B and C, <code class="language-plaintext highlighter-rouge">float32</code> output stored as is with no epilogue, accumulator starting at zero, a rectangular region (<code class="language-plaintext highlighter-rouge">d = 0</code>) of whole 32x32 tiles, a reduction length divisible by 16 (<code class="language-plaintext highlighter-rouge">Sarek_matrix_direct.ml:40-52</code>)</td>
       <td>each wave loads fragments straight from global memory</td>
     </tr>
     <tr>
