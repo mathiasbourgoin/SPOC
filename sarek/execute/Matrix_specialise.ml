@@ -277,13 +277,13 @@ let lowers_on (device : Device.t) lowering =
   | "Vulkan" | "CUDA/C" -> lowering = Rw.Int32_byte_planes
   | fw -> List.mem fw rewrite_backends
 
-(* Lanes per subgroup the templates are laid out for: the device's own width
-   (32 on HIP, 64 on RADV), 32 on the interpreter, whose cooperative-matrix
-   subgroup is 32 lanes. *)
 let subgroup_override : int option Atomic.t = Atomic.make None
 
 let subgroup_override_for_tests w = Atomic.set subgroup_override w
 
+(* Lanes per subgroup the templates are laid out for: the device's own width
+   (32 on HIP, 64 on RADV), 32 on the interpreter, whose cooperative-matrix
+   subgroup is 32 lanes. *)
 let subgroup_of (device : Device.t) =
   match (Atomic.get subgroup_override, device.framework) with
   | Some w, "Interpreter" -> w
@@ -292,7 +292,27 @@ let subgroup_of (device : Device.t) =
       | "Interpreter", _ | _, None -> 32
       | _, Some s -> s.Sarek_coopmat.ds_subgroup_size)
 
-let device_admits (device : Device.t) lowering cfg =
+(* Vulkan is rewritten automatically only at the width that was measured: 64
+   (RADV). The probe falls back to 32 when the driver reports nothing, so 64 is
+   always a probed value; a 32-wide Vulkan device is rewritten on request
+   only, until measured. *)
+let vulkan_measured_width = 64
+
+let vulkan_width_ok (device : Device.t) ~explicit =
+  if
+    device.framework <> "Vulkan"
+    || explicit
+    || subgroup_of device = vulkan_measured_width
+  then Ok ()
+  else
+    Error
+      (Printf.sprintf
+         "Vulkan is rewritten automatically on %d-wide subgroups only (the \
+          measured width), not %d; Sarek_matrix.run rewrites it on request"
+         vulkan_measured_width
+         (subgroup_of device))
+
+let device_admits (device : Device.t) ~explicit lowering cfg =
   let* () = verdict_ok (Sarek_coopmat.policy_verdict cfg) in
   if not (List.mem device.framework rewrite_backends) then
     Error
@@ -310,6 +330,7 @@ let device_admits (device : Device.t) lowering cfg =
   else
     let support = device.capabilities.Fw.coopmat in
     let* () = verdict_ok (Sarek_coopmat.verdict ~support cfg) in
+    let* () = vulkan_width_ok device ~explicit in
     if supported_subgroup (subgroup_of device) then Ok ()
     else
       Error
@@ -319,10 +340,32 @@ let device_admits (device : Device.t) lowering cfg =
 
 (* ---- One launch ---------------------------------------------------------- *)
 
-let fits_device (device : Device.t) (gx, gy, gz) =
-  let mx, my, mz = device.capabilities.Fw.max_grid_dims in
+(* The rewritten launch against the device's limits: grid dimensions, threads
+   per block and shared-memory bytes (a limit of 0 is "unknown"). *)
+let fits_device (device : Device.t) ~shared_bytes (bx, by, bz) (gx, gy, gz) =
+  let caps = device.capabilities in
+  let threads = bx * by * bz in
+  let mx, my, mz = caps.Fw.max_grid_dims in
   let over g m = m > 0 && g > m in
-  if over gx mx || over gy my || over gz mz then
+  if
+    caps.Fw.max_threads_per_block > 0 && threads > caps.Fw.max_threads_per_block
+  then
+    Error
+      (Printf.sprintf
+         "the rewritten block of %d threads exceeds the device's %d"
+         threads
+         caps.Fw.max_threads_per_block)
+  else if
+    caps.Fw.shared_mem_per_block > 0
+    && shared_bytes > caps.Fw.shared_mem_per_block
+  then
+    Error
+      (Printf.sprintf
+         "the rewritten kernel needs %d bytes of shared memory, the device has \
+          %d"
+         shared_bytes
+         caps.Fw.shared_mem_per_block)
+  else if over gx mx || over gy my || over gz mz then
     Error
       (Printf.sprintf
          "the rewritten grid %dx%dx%d exceeds the device's %dx%dx%d"
@@ -335,7 +378,8 @@ let fits_device (device : Device.t) (gx, gy, gz) =
   else Ok ()
 
 (* The size class: the aligned float16 case loads fragments straight from
-   global memory; everything else is staged. *)
+   global memory (laid out for 32-wide waves only, so any other width stages);
+   everything else is staged. *)
 let variant_for plan lowering ~subgroup (launch : Sarek_ir_eval_int.launch)
     (r : Map.region) =
   let g = plan.gemm in
@@ -346,7 +390,7 @@ let variant_for plan lowering ~subgroup (launch : Sarek_ir_eval_int.launch)
   in
   match k_extent with
   | Some k
-    when lowering = Rw.F16_operands && Direct.eligible g
+    when lowering = Rw.F16_operands && subgroup = 32 && Direct.eligible g
          && Direct.fits ~me:r.me ~ne:r.ne ~k_extent:(Int32.to_int k) ~d:r.d ->
       let waves = Direct.waves_for ~me:r.me ~ne:r.ne in
       (Direct waves, Direct.launch_dims ~me:r.me ~ne:r.ne ~ze:r.ze ~waves)
@@ -383,14 +427,21 @@ let decide ?precision ~explicit ~stream ~(device : Device.t) ~ir ~launch () =
   in
   let* lowering = lowering_for ~mode ~explicit plan.case precision in
   let cfg = Rw.config_of lowering ~operand_elt:plan.gemm.a.elt in
-  let* () = device_admits device lowering cfg in
+  let* () = device_admits device ~explicit lowering cfg in
   let subgroup = subgroup_of device in
   let* launch =
     Option.to_result ~none:"the arguments do not match the kernel" (launch ())
   in
   let* r = Map.region plan.mapping launch in
   let variant, (block, grid) = variant_for plan lowering ~subgroup launch r in
-  let* () = fits_device device grid in
+  let shared_bytes =
+    match variant with
+    | Direct _ -> 0
+    | Staged ->
+        let s = scheme ~operand_elt:plan.gemm.a.elt lowering in
+        shared_bytes s ~bk:(choose_bk s)
+  in
+  let* () = fits_device device ~shared_bytes block grid in
   let* rk = kernel_for e ir plan.gemm lowering variant ~subgroup in
   Ok
     {

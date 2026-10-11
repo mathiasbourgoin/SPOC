@@ -282,6 +282,7 @@ let store_accs c ~wm ~wn ~s ~dst =
 
 (* sc := sum over s of acc_s shifted left by 8s (integer planes). *)
 let combine c ~tid ~wm ~wn =
+  assert (bm * bn mod threads c = 0) ;
   store_accs c ~wm ~wn ~s:0 ~dst:c.sc
   @ List.concat_map
       (fun s ->
@@ -357,6 +358,7 @@ let write_output c ~e =
          None ))
 
 let write_outputs c ~tid =
+  assert (bm * bn mod threads c = 0) ;
   for_
     c.fresh
     "e32"

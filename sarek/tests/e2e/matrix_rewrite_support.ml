@@ -318,11 +318,6 @@ let cases =
     };
   ]
 
-let is_zluda name =
-  let n = String.length name in
-  let rec at i = i + 5 <= n && (String.sub name i 5 = "ZLUDA" || at (i + 1)) in
-  at 0
-
 (* CUDA/C lowers [nvcuda::wmma] 16x16x16 with unsigned 8-bit operands from
    compute capability 7.2 on 32-wide warps, except under ZLUDA, which cannot
    load them (the rule the probe implements, restated here so that a probe
@@ -330,7 +325,11 @@ let is_zluda name =
 let cuda_c_wmma_int dev =
   let caps = dev.Device.capabilities in
   dev.Device.framework = "CUDA/C"
-  && (not (is_zluda dev.Device.name))
+  && (not
+        (Backend_cuda_c.is_zluda
+           ~device_name:dev.Device.name
+           ~compute_capability:
+             caps.Spoc_framework.Framework_sig.compute_capability))
   && compare caps.Spoc_framework.Framework_sig.compute_capability (7, 2) >= 0
   && caps.Spoc_framework.Framework_sig.warp_size = 32
 

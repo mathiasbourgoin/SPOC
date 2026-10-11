@@ -81,6 +81,22 @@ let test_refused () =
     "ZLUDA (rejects wmma.* and u8 mma)"
     (support ~device_name:"AMD Radeon RX 7900 XTX [ZLUDA]" (8, 8))
 
+(* The launch gate Execute applies to a hand-written SCoopmat kernel is
+   [Sarek_coopmat.verdict] over the backend's probe: it admits u8 on a
+   non-ZLUDA sm_72 device and refuses it on ZLUDA (by name, or by its 8.8
+   capability alone) and on sm_61. *)
+let test_gate () =
+  Alcotest.(check bool) "sm_72 admits u8" true (permits (support (7, 2)) u8) ;
+  Alcotest.(check bool)
+    "ZLUDA by name refuses u8"
+    false
+    (permits (support ~device_name:"gfx1100 [ZLUDA]" (8, 0)) u8) ;
+  Alcotest.(check bool)
+    "capability 8.8 alone refuses u8"
+    false
+    (permits (support (8, 8)) u8) ;
+  Alcotest.(check bool) "sm_61 refuses u8" false (permits (support (6, 1)) u8)
+
 let () =
   Alcotest.run
     "cuda_coopmat_probe"
@@ -90,5 +106,6 @@ let () =
           Alcotest.test_case "sm_80" `Quick test_sm80;
           Alcotest.test_case "thresholds" `Quick test_thresholds;
           Alcotest.test_case "refused" `Quick test_refused;
+          Alcotest.test_case "launch gate" `Quick test_gate;
         ] );
     ]
