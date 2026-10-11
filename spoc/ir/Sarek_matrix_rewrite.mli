@@ -38,10 +38,22 @@ val config_of : lowering -> operand_elt:elttype -> Sarek_coopmat_types.config
 val extra_names : string list
 
 (** [Error reason] when an operand address, a bound, the initial value or the
-    epilogue cannot be expressed in the rewritten launch. *)
+    epilogue cannot be expressed in the rewritten launch, or when [subgroup] is
+    a width without a template ({!Sarek_matrix_scheme.supported_subgroup}: 32,
+    the default, and 64). A block has four waves of [subgroup] lanes. *)
 val kernel :
-  kernel -> Sarek_matrix_pattern.gemm -> lowering -> (kernel, string) result
+  ?subgroup:int ->
+  kernel ->
+  Sarek_matrix_pattern.gemm ->
+  lowering ->
+  (kernel, string) result
 
-(** [(block, grid)] as [(x, y, z)] triples for a region. *)
+(** [(block, grid)] as [(x, y, z)] triples for a region; [subgroup] as for
+    {!kernel}. *)
 val launch_dims :
-  me:int -> ne:int -> ze:int -> (int * int * int) * (int * int * int)
+  ?subgroup:int ->
+  me:int ->
+  ne:int ->
+  ze:int ->
+  unit ->
+  (int * int * int) * (int * int * int)

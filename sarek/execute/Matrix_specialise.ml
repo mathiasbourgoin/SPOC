@@ -91,7 +91,9 @@ type plan = {gemm : P.gemm; mapping : Map.mapping; case : Adv.element_case}
 type entry = {
   generation : int;  (** the {!generation} it belongs to *)
   plan : (plan, string) result;
-  mutable kernels : ((Rw.lowering * variant) * (kernel, string) result) list;
+  mutable kernels :
+    ((Rw.lowering * variant * int) * (kernel, string) result) list;
+      (** keyed by lowering, variant and subgroup width *)
 }
 
 (* A slot of each IR's Ir_memo record; an entry of an older generation is
@@ -165,26 +167,26 @@ let entry k =
           Ir_memo.set facts memo_key e ;
           e)
 
-let build k g lowering = function
-  | Staged -> Rw.kernel k g lowering
+let build k g lowering ~subgroup = function
+  | Staged -> Rw.kernel ~subgroup k g lowering
   | Direct waves -> Direct.kernel k g ~waves
 
-let kernel_for e k g lowering variant =
+let kernel_for e k g lowering variant ~subgroup =
+  let key = (lowering, variant, subgroup) in
   let cached () =
-    Mutex.protect memo_lock (fun () ->
-        List.assoc_opt (lowering, variant) e.kernels)
+    Mutex.protect memo_lock (fun () -> List.assoc_opt key e.kernels)
   in
   match cached () with
   | Some r -> r
   | None ->
       (* Built outside the lock: two domains may build the same kernel once
          each; the first stored wins, so the IR stays physically stable. *)
-      let r = build k g lowering variant in
+      let r = build k g lowering ~subgroup variant in
       Mutex.protect memo_lock (fun () ->
-          match List.assoc_opt (lowering, variant) e.kernels with
+          match List.assoc_opt key e.kernels with
           | Some first -> first
           | None ->
-              e.kernels <- ((lowering, variant), r) :: e.kernels ;
+              e.kernels <- (key, r) :: e.kernels ;
               r)
 
 let clear () = Mutex.protect memo_lock (fun () -> incr generation)
@@ -260,26 +262,56 @@ let verdict_ok = function
   | Sarek_capability.Unavailable cap -> Error cap.Sarek_capability.cap_why
   | Sarek_capability.Unknown why -> Error why
 
-(* Laid out for 32-wide waves and executed on HIP gfx11 and the interpreter
-   only. Vulkan advertises the integer configuration on the RX 7900 XTX with
-   64-wide subgroups (radv), and GLSL lowers no byte-plane store. *)
-let rewrite_backends = ["HIP"; "Interpreter"]
+(* The frameworks the rewrite is lowered and measured on, and what each one
+   lowers: HIP gfx11 (32-wide waves) every lowering; Vulkan (RADV, 64-wide
+   subgroups) the integer byte planes only, because GLSL lowers no float
+   cooperative-matrix component; the interpreter every lowering. *)
+let rewrite_backends = ["HIP"; "Vulkan"; "Interpreter"]
 
-let device_admits (device : Device.t) cfg =
+let lowers_on (device : Device.t) lowering =
+  match device.framework with
+  | "Vulkan" -> lowering = Rw.Int32_byte_planes
+  | fw -> List.mem fw rewrite_backends
+
+(* Lanes per subgroup the templates are laid out for: the device's own width
+   (32 on HIP, 64 on RADV), 32 on the interpreter, whose cooperative-matrix
+   subgroup is 32 lanes. *)
+let subgroup_override : int option Atomic.t = Atomic.make None
+
+let subgroup_override_for_tests w = Atomic.set subgroup_override w
+
+let subgroup_of (device : Device.t) =
+  match (Atomic.get subgroup_override, device.framework) with
+  | Some w, "Interpreter" -> w
+  | _ -> (
+      match (device.framework, device.capabilities.Fw.coopmat) with
+      | "Interpreter", _ | _, None -> 32
+      | _, Some s -> s.Sarek_coopmat.ds_subgroup_size)
+
+let device_admits (device : Device.t) lowering cfg =
   let* () = verdict_ok (Sarek_coopmat.policy_verdict cfg) in
   if not (List.mem device.framework rewrite_backends) then
     Error
       (Printf.sprintf
          "the rewrite is lowered and measured on %s only, not %s"
-         (String.concat " and " rewrite_backends)
+         (String.concat ", " rewrite_backends)
          device.framework)
+  else if not (lowers_on device lowering) then
+    Error
+      (Printf.sprintf
+         "%s lowers only the integer byte planes, not %s"
+         device.framework
+         (Rw.lowering_name lowering))
   else if device.framework = "Interpreter" then Ok ()
   else
     let support = device.capabilities.Fw.coopmat in
     let* () = verdict_ok (Sarek_coopmat.verdict ~support cfg) in
-    match support with
-    | Some s when s.Sarek_coopmat.ds_subgroup_size = 32 -> Ok ()
-    | _ -> Error "the rewrite needs 32-wide subgroups"
+    if supported_subgroup (subgroup_of device) then Ok ()
+    else
+      Error
+        (Printf.sprintf
+           "the rewrite has no template for %d-wide subgroups"
+           (subgroup_of device))
 
 (* ---- One launch ---------------------------------------------------------- *)
 
@@ -300,7 +332,7 @@ let fits_device (device : Device.t) (gx, gy, gz) =
 
 (* The size class: the aligned float16 case loads fragments straight from
    global memory; everything else is staged. *)
-let variant_for plan lowering (launch : Sarek_ir_eval_int.launch)
+let variant_for plan lowering ~subgroup (launch : Sarek_ir_eval_int.launch)
     (r : Map.region) =
   let g = plan.gemm in
   let k_extent =
@@ -314,14 +346,14 @@ let variant_for plan lowering (launch : Sarek_ir_eval_int.launch)
          && Direct.fits ~me:r.me ~ne:r.ne ~k_extent:(Int32.to_int k) ~d:r.d ->
       let waves = Direct.waves_for ~me:r.me ~ne:r.ne in
       (Direct waves, Direct.launch_dims ~me:r.me ~ne:r.ne ~ze:r.ze ~waves)
-  | _ -> (Staged, Rw.launch_dims ~me:r.me ~ne:r.ne ~ze:r.ze)
+  | _ -> (Staged, Rw.launch_dims ~subgroup ~me:r.me ~ne:r.ne ~ze:r.ze ())
 
 (* Before any analysis: a device the rewrite can never use costs nothing.
    The interpreter is rewritten only on an explicit request: by default it
    stays the independent oracle (and the rewrite is slower there). *)
 let device_possible (device : Device.t) ~explicit ~stream =
   match device.framework with
-  | "HIP" -> Ok ()
+  | "HIP" | "Vulkan" -> Ok ()
   | "Interpreter" when explicit && not stream -> Ok ()
   | "Interpreter" when explicit -> Error "a stream launch on the interpreter"
   | "Interpreter" ->
@@ -342,14 +374,15 @@ let decide ?precision ~explicit ~stream ~(device : Device.t) ~ir ~launch () =
   in
   let* lowering = lowering_for ~mode ~explicit plan.case precision in
   let cfg = Rw.config_of lowering ~operand_elt:plan.gemm.a.elt in
-  let* () = device_admits device cfg in
+  let* () = device_admits device lowering cfg in
+  let subgroup = subgroup_of device in
   let* launch =
     Option.to_result ~none:"the arguments do not match the kernel" (launch ())
   in
   let* r = Map.region plan.mapping launch in
-  let variant, (block, grid) = variant_for plan lowering launch r in
+  let variant, (block, grid) = variant_for plan lowering ~subgroup launch r in
   let* () = fits_device device grid in
-  let* rk = kernel_for e ir plan.gemm lowering variant in
+  let* rk = kernel_for e ir plan.gemm lowering variant ~subgroup in
   Ok
     {
       ir = rk;

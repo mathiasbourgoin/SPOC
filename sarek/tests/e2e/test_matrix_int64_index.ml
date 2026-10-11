@@ -99,7 +99,9 @@ let run_case dev =
 
 let () =
   Random.init 20261011 ;
-  Array.iter (fun dev -> if offers_int dev then run_case dev) (Device.init ()) ;
+  (* Not Vulkan: its generator has no int64 (the original kernel fails to
+     compile), which is independent of the rewrite. *)
+  Array.iter (fun dev -> if offers_float dev then run_case dev) (Device.init ()) ;
   if !failures > 0 then (
     Printf.printf "%d failure(s)\n" !failures ;
     exit 1)

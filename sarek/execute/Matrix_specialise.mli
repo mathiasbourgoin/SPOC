@@ -129,5 +129,12 @@ val set_reporter : (report -> unit) option -> unit
 val fail_analysis_for_tests : bool -> unit
 [@@alert test_only "for tests only: makes matrix analysis fail"]
 
+(** Test hook: the subgroup width the rewrite is laid out for on the interpreter
+    (default 32), so that the 64-wide templates are checked against the oracle.
+    Honoured on the interpreter only. *)
+val subgroup_override_for_tests : int option -> unit
+[@@alert
+  test_only "for tests only: lays the interpreter rewrite out for 64 lanes"]
+
 (** Forget every cached plan and rewritten kernel. *)
 val clear : unit -> unit

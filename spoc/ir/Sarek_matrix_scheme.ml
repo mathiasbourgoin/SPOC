@@ -25,7 +25,9 @@ let lowering_name = function
 
 (* ---- Tiling ------------------------------------------------------------ *)
 
-(* A 64 x 64 block tile, 4 waves of 32 as 2 x 2, each wave 2 x 2 fragments. *)
+(* A 64 x 64 block tile, 4 waves as 2 x 2, each wave 2 x 2 fragments of
+   16 x 16. A wave is one subgroup, whatever the device's width: 32 on HIP
+   gfx11 and CUDA, 64 on RADV (specs/matrix-pattern-rewrite.md). *)
 let bm = 64
 
 let bn = 64
@@ -34,7 +36,13 @@ let bn = 64
    staging planes and accumulator tiles fit in 48 KiB of shared memory. *)
 let elt_bytes = function TUint8 -> 1 | TFloat16 -> 2 | _ -> 4
 
-let threads = 128
+let waves = 4
+
+(* Threads of a block: one subgroup of [subgroup] lanes per wave. *)
+let threads_of ~subgroup = waves * subgroup
+
+(* The widths the templates are written and measured for. *)
+let supported_subgroup = function 32 | 64 -> true | _ -> false
 
 let extra_names =
   ["sarek_mm_me"; "sarek_mm_ne"; "sarek_mm_ze"; "sarek_mm_d"; "sarek_mm_t"]
