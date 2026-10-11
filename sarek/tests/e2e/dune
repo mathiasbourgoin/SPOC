@@ -1989,22 +1989,26 @@
   test_blocking_ffi_releases_lock
   test_lsr_unroll
   test_coopmat_hip_e2e
+  test_coopmat_layout_e2e
   test_launch_window
   test_matrix_rewrite
   test_matrix_rewrite_float
   test_matrix_int64_index
   test_matrix_dynamic
+  test_matrix_col_major
   test_matrix_optin)
  (modules
   test_int32_bitcasts
   test_blocking_ffi_releases_lock
   test_lsr_unroll
   test_coopmat_hip_e2e
+  test_coopmat_layout_e2e
   test_launch_window
   test_matrix_rewrite
   test_matrix_rewrite_float
   test_matrix_int64_index
   test_matrix_dynamic
+  test_matrix_col_major
   test_matrix_optin
   matrix_rewrite_support
   coopmat_hip_support
@@ -2068,6 +2072,16 @@
  (action
   (run %{dep:test_coopmat_hip_e2e.exe})))
 
+; CM_load / CM_store layouts executed: every row/column-major combination of
+; A, B, C and D on every device offering a configuration (HIP gfx11, Vulkan
+; RADV), equal to a host reference (exact small integers); Sarek_gemm.Coopmat
+; with B transposed on HIP. Skips where no device offers one.
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_coopmat_layout_e2e.exe})))
+
 ; Matrix-product rewrite (specs/matrix-pattern-rewrite.md): the original kernel
 ; and Sarek_matrix.run compared bit for bit on every device (int32), and with a
 ; host reference; the rewrite must happen on the interpreter and gfx11 HIP and
@@ -2085,6 +2099,16 @@
  (alias runtest)
  (action
   (run %{dep:test_matrix_rewrite_float.exe})))
+
+; Column-major float16 operands through the launch-time rewrite: the aligned
+; size class takes the direct variant (fragments loaded in the operand's own
+; layout), within gamma_K of the exact product. Built by the
+; test_int32_bitcasts stanza above.
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_matrix_col_major.exe})))
 
 ; An int64-indexed product is declined, never rewritten to int32 addressing
 ; (compiler review C-11).
