@@ -210,6 +210,17 @@ module ThreadPool = struct
         (* First error across all workers *)
   }
 
+  (** The pool whose worker the current domain is, if any. A launch on that pool
+      from inside one of its kernels would wait for itself. *)
+  let worker_of : t option Domain.DLS.key = Domain.DLS.new_key (fun () -> None)
+
+  let refuse_reentrant pool =
+    match Domain.DLS.get worker_of with
+    | Some p when p == pool ->
+        invalid_arg
+          "ThreadPool.run_kernel: launch from inside a kernel of the same pool"
+    | _ -> ()
+
   (** Run a single block with BSP barriers using Effect.Shallow fibers *)
   let run_block_bsp ~block:(bx, by, bz) ~grid:(gx, gy, gz)
       ~block_idx:(block_x, block_y, block_z)
@@ -379,6 +390,7 @@ module ThreadPool = struct
 
   (** Worker function - runs in each domain, processes work items *)
   let worker_fn pool worker_id =
+    Domain.DLS.set worker_of (Some pool) ;
     let last_gen = ref 0 in
     let rec loop () =
       (* Wait for new work - generation must change *)
@@ -561,6 +573,7 @@ module ThreadPool = struct
   (** Launches are serialised per pool: concurrent callers queue on
       [launch_lock] and each sees only its own completion and error. *)
   let run_kernel pool ~block ~grid ~uses_barriers kernel args =
+    refuse_reentrant pool ;
     Mutex.protect pool.launch_lock (fun () ->
         run_kernel_locked pool ~block ~grid ~uses_barriers kernel args)
 
@@ -630,8 +643,21 @@ module ParallelPool = struct
     mutable first_error : (exn * Printexc.raw_backtrace) option;
   }
 
+  (** The pool whose worker the current domain is, if any. A launch on that pool
+      from inside one of its kernels would wait for itself. *)
+  let worker_of : t option Domain.DLS.key = Domain.DLS.new_key (fun () -> None)
+
+  let refuse_reentrant pool =
+    match Domain.DLS.get worker_of with
+    | Some p when p == pool ->
+        invalid_arg
+          "ParallelPool.parallel_for: launch from inside a kernel of the same \
+           pool"
+    | _ -> ()
+
   (** Worker function - claims chunks via atomic counter *)
   let worker_fn pool _worker_id =
+    Domain.DLS.set worker_of (Some pool) ;
     let last_gen = ref 0 in
 
     let rec loop () =
@@ -719,6 +745,7 @@ module ParallelPool = struct
       size *)
   let parallel_for_chunk pool ~total ~chunk_size (work_fn : int -> int -> unit)
       =
+    refuse_reentrant pool ;
     if total <= 0 then ()
     else
       Mutex.protect pool.launch_lock @@ fun () ->

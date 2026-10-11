@@ -6,7 +6,7 @@
   (R-64). The process-wide `ThreadPool` and `ParallelPool` serialise whole
   launches behind a per-pool `launch_lock`, so counters, the work function,
   `pending_workers` and `first_error` belong to one launch at a time;
-  completion wakes all waiters (`Condition.broadcast`). A kernel that raises on
+  `ParallelPool` completion now wakes all waiters (`Condition.broadcast`; `ThreadPool` already did). A launch on a pool from inside one of its own kernels raises `Invalid_argument` instead of deadlocking; `flush_fission` flushes every queue before re-raising the first error. A kernel that raises on
   a fission queue no longer kills the dispatcher domain: the error is re-raised
   by the next `flush_fission_queue` (R-67). Regression test:
   `sarek/tests/unit/test_cpu_runtime_multidomain.ml`.

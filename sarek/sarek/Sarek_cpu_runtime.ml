@@ -284,7 +284,22 @@ let flush_fission () =
       []
   in
   Mutex.unlock Sarek_cpu_runtime_pools.fission_queues_mutex ;
-  List.iter Sarek_cpu_runtime_pools.LaunchQueue.flush queues
+  (* Every queue is flushed even if one raises; the first error is re-raised
+     once all are idle. *)
+  let first_error =
+    List.fold_left
+      (fun first q ->
+        match Sarek_cpu_runtime_pools.LaunchQueue.flush q with
+        | () -> first
+        | exception exn ->
+            let bt = Printexc.get_raw_backtrace () in
+            if first = None then Some (exn, bt) else first)
+      None
+      queues
+  in
+  match first_error with
+  | Some (exn, bt) -> Printexc.raise_with_backtrace exn bt
+  | None -> ()
 
 (** {1 Optimized Simple Kernel Runners}
 
