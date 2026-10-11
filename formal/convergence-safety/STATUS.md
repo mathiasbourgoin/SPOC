@@ -174,6 +174,21 @@ Assumptions documented in `ASSUMPTIONS.md`:
 
 **Design note (CMBT closure)**: T3-S8 closes the operational half of the CMBT chain. Prior extraction tests (`test_convergence_extraction.ml`) exercised only the STATIC checkers. `eval_concrete` makes the fuel-indexed big-step EVALUATOR executable, so the soundness theorems (`eval_fuel_monotone`, `barrier_free_no_barriers`, `check_env_sound_core`, `hazard_not_barrier_safe`) are now each randomized-tested over their concrete instantiation. The F-04 hazard property is a true differential check: it asserts the hazard's barrier traces DIFFER across threads (thread 0 falls through to `EBarrier`, thread 1 early-returns), confirming the counterexample is real in the operational semantics — not an artifact of the static model.
 
+## Superstep settlement (2026-10-11) — D-38, D-57, C-7, D-56
+
+`specs/convergence-semantics.md` §2 settles the superstep rule; production,
+`ConvergenceSpec.v` and `ConvergenceSemantics.v` now implement the same one
+(details and theorem names in ASSUMPTIONS.md, "Superstep settlement").
+
+| Item | Status |
+|---|---|
+| D-57 (three superstep semantics) | settled: entry error in `Diverged` for both flags; body and cont in the outer mode; flag inert (four `superstep_flag_irrelevant_*` theorems) |
+| C-7 (`[@divergent]` skipped the entry check) | fixed in production and model; `semantic_c07_corollary` |
+| `dv=true` trust boundary (T3-S6) | removed: `core_frag_ss` admits both flags, `check_env_sound_superstep` covers them |
+| D-56 (warp checker ignored varying returns) | `check_warp_env` threads the F-04 flag; `check_warp_sound_core` re-proven |
+| D-38 (vacuous negative test) | the negative case now tests SS-1 (plus a `[@divergent]` twin); the old body is a positive case; the Makefile KNOWN-ISSUE branch is gone |
+| Production link | still none (see the banner above): the differential production test is the next step (variance-dataflow PR) |
+
 ## Test intensity
 
 - **Conformance**: `test/test_convergence_conformance.ml` — 17 properties (`test_convergence_conformance`), 1000–2000 tests each — **17/17 GREEN** (2 new F-02 env-threaded properties added T2-F02; 1 new randomized warp property added T2-WARP+; 1 new return_barrier_skip_safe property added T2-RETURN; 3 new dedicated ESuperstep properties added T1A-CONF: superstep_outer_diverged_error, superstep_no_entry_error_converged, superstep_body_errors_propagate)

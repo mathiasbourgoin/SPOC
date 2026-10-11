@@ -16,7 +16,7 @@ Parser scope is primarily `sarek/ppx/Sarek_parse.ml` (the expression dispatcher 
 - Parameter parsing requires `(name : type)` shapes in `sarek/ppx/Sarek_parse_helpers.ml:83-101` (`extract_param_from_pattern`).
 - Core expression parser handles literals, variables, one-level qualified names, unary/binary ops, array/vector access, assignment, `if`, loops, `let`, local functions, record/variant construction, match, tuple, and extension nodes in `sarek/ppx/Sarek_parse.ml:115-331` (`parse_expression`, ~215-217 lines), delegating five arm bodies to `parse_assign_form`/`parse_pragma_form`/`parse_create_array_form`/`parse_binop_or_app_form`/`parse_let_form` (`sarek/ppx/Sarek_parse.ml:332-453`).
 - `let%shared` is parsed in `sarek/ppx/Sarek_parse.ml:36-81` (`parse_let_shared`).
-- `let%superstep` and optional `[@divergent]` binding attributes are parsed in `sarek/ppx/Sarek_parse.ml:86-112` (`parse_superstep`).
+- `let%superstep` and its optional `[@divergent]` binding attribute are parsed by `parse_superstep` in `sarek/ppx/Sarek_parse.ml`. Since the superstep settlement (`specs/convergence-semantics.md` SS-4) the attribute is inert.
 - Kernel payloads and module items are parsed in `sarek/ppx/Sarek_parse.ml:454-631` (`parse_kernel_function`, `parse_module_items_from_structure`).
 
 ## Invariants

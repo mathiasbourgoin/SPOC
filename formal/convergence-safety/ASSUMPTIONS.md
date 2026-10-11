@@ -43,7 +43,7 @@ operates on `texpr` — a large, typed AST with ~35 constructors. The correspond
 | `not_varying_converged_clean` | PROVEN | Helper: `is_varying e = false → check Converged e = []` |
 | `cdcf_check_agreement` | PROVEN | `has_diverging_cf e = false → check Converged e = []` |
 | `varying_if_flags_barriers` | PROVEN | Varying cond + non-barrier-free body → always an error |
-| `superstep_outer_diverged_error` | PROVEN (Phase 1a) | `check Diverged (ESuperstep false body cont) ≠ []` — F-01 formal statement |
+| `superstep_outer_diverged_error` | PROVEN (Phase 1a; generalised 2026-10-11) | `check Diverged (ESuperstep dv body cont) ≠ []` for both flags — F-01 and C-7 |
 
 ## Assumed / unmodeled
 
@@ -155,10 +155,50 @@ The operational evaluator is now **extracted and differentially tested** (CMBT c
 - **`semantic_f01_corollary`** (0 admits, 0 axioms) — the witness `susp_hazard := EIf EVary (ESuperstep false EBarrier ELit) ELit` is simultaneously (a) flagged by `check_env Converged []` and (b) genuinely NOT `barrier_safe` (thread 0 emits `[EvBarrier; EvBarrier]`, thread 1 emits `[]`). The checker's `BarrierError` is therefore a SOUND rejection of a real barrier-divergence hazard.
 - **T3-S3 side condition resolved.** The strengthened silence lemma `check_env_diverged_no_barriers_ss` discharges the `superstep_free` side condition over `core_frag_ss`: a Diverged-clean `core_frag_ss` expression is provably barrier-silent because any reachable `dv=false` superstep would itself flag `[BarrierError]`, so a clean check forces superstep-freedom (`core_frag_ss_barrier_free_superstep_free`).
 
-#### TRUST BOUNDARY — `dv=true` supersteps
+#### CLOSED 2026-10-11 — the former `dv=true` trust boundary (kept for history; see the superstep settlement below)
 
 `core_frag_ss` admits **only** `dv=false` (uniform-reachability) supersteps; the clause is literally `negb dv && core_frag_ss b && core_frag_ss c`. A `dv=true` superstep (one whose entry is statically known to be under divergent control flow) is OUT of the verified fragment and is a documented trust boundary:
 
 - The operational semantics emits the boundary `[EvBarrier]` for `dv=true` exactly as for `dv=false` (the runtime barrier always fires). But the static `check_env` does **not** raise `[BarrierError]` for a `dv=true` superstep entered under `Diverged` mode (the `Diverged, false` arm matches only `dv=false`). That is intentional: `dv=true` is the checker's signal that the programmer/front-end has asserted the boundary is reached uniformly despite the divergent context.
 - We therefore TRUST that a `dv=true` annotation is correct — i.e. that the implicit boundary barrier really is reached by all threads. The Rocq development does not (and cannot, without a richer thread-scheduling model) verify that assertion; `check_env_diverged_no_barriers_ss` would be FALSE if `dv=true` supersteps were admitted into `core_frag_ss`, because such a superstep emits a barrier even inside a Diverged-mode branch.
 - Consequence: `check_env_sound_superstep` is a guarantee about the `dv=false` fragment only. Kernels relying on `dv=true` supersteps inherit the soundness of the front-end's divergence-uniformity annotation, which is ASSUMED, not PROVEN.
+
+### Superstep settlement (2026-10-11) — D-38, D-57, C-7, D-56
+
+The superstep rule is now settled in `specs/convergence-semantics.md` §2 and
+the production checker, `ConvergenceSpec.v` and `ConvergenceSemantics.v` all
+implement it:
+
+- **SS-1.** A superstep entered in `Diverged` mode is a `BarrierError` for
+  **both** values of the divergent flag (`check`, `check_warp`, `check_env`).
+  `superstep_outer_diverged_error` and `superstep_outer_diverged_error_env`
+  quantify over the flag.
+- **SS-2/SS-3.** Body and continuation are checked in the outer mode
+  (production used to reset both to `Converged`; the accept/reject verdict was
+  the same because SS-1 already rejects a diverged entry, but the three
+  semantics disagreed).
+- **SS-4.** The flag is inert: `superstep_flag_irrelevant_check`,
+  `superstep_flag_irrelevant_check_warp`, `superstep_flag_irrelevant_check_env`,
+  `superstep_flag_irrelevant_check_warp_env` (all `reflexivity`), and
+  `superstep_never_barrier_free` (`barrier_free (ESuperstep _ _ _) = false`,
+  matching `eval`, which always emits the boundary `EvBarrier`).
+- **Trust boundary removed.** `core_frag_ss` admits both flags, so
+  `check_env_sound_superstep` now covers `[@divergent]` supersteps. The
+  `dv=true` trust boundary recorded in the T3-S6 section above no longer
+  exists. `semantic_c07_corollary` is the C-7 witness: the `[@divergent]` twin
+  of `susp_hazard` is flagged and is not `barrier_safe`.
+- **D-56.** `check_warp_env` threads the F-04 varying-early-return flag
+  through `ESeq` exactly like `check_env` (production uses one checker for both
+  classes). `check_warp_sound_core` is re-proven through
+  `check_warp_env_seq_core_frag`; `warp_after_varying_return_flagged` is the
+  warp analogue of the F-04 hazard.
+- **Extraction.** `is_varying_in_env`, `check_env` and `check_warp_env` are
+  extracted to `extraction/ConvergenceModel.ml` and agree with inline OCaml
+  references (`test_convergence_extraction.ml`).
+
+Still not modeled (unchanged by the settlement): assignment, helpers, arrays
+and the intrinsic table reach the model only through `EVary`. `EReturn`: no
+production construct produces it (the parser never builds `EReturn`), and
+`eval` keeps emitting the boundary `EvBarrier` after a return inside a
+superstep body, which a GPU would skip; `EReturn` stays outside the verified
+fragment.

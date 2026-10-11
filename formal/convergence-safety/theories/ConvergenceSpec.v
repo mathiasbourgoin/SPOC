@@ -16,6 +16,11 @@
  *   exits a function without crossing any barrier; check m (EReturn e) = check m e
  *   (transparent wrapper, mirroring Sarek_convergence.ml TEReturn handling);
  *   return_barrier_skip_safe proves compositionality.
+ * Superstep settlement (specs/convergence-semantics.md section 2, D-57):
+ *   every checker flags a superstep entered in Diverged mode whatever its
+ *   divergent flag (SS-1); the flag is inert (SS-4: flag-irrelevance
+ *   theorems); body and cont are checked in the outer mode; no superstep is
+ *   barrier_free.
  * Elided: TEMatch (subsumed by EIf), TELetRec, TEPragma, TEOpen,
  *         TELetShared — documented in ASSUMPTIONS.md.
  ******************************************************************************)
@@ -80,11 +85,10 @@ Fixpoint barrier_free (e : expr) : bool :=
   | EFor lo hi b   => barrier_free lo && barrier_free hi && barrier_free b
   | ESeq es        => forallb barrier_free es
   | ELet _ v b     => barrier_free v && barrier_free b
-  (* A non-divergent superstep contains an implicit barrier at its boundary.
-     (if divergent then true else false) makes barrier_free false for ESuperstep false,
-     preserving the diverged_clean_iff_barrier_free invariant. *)
-  | ESuperstep divergent body cont =>
-      (if divergent then true else false) && barrier_free body && barrier_free cont
+  (* Every superstep ends with an implicit block barrier, whatever its
+     divergent flag (specs/convergence-semantics.md SS-4: the flag is inert),
+     so a superstep is never barrier-free. *)
+  | ESuperstep _ _ _ => false
   | EApp args      => forallb barrier_free args
   (* EReturn exits the function immediately; no barrier is crossed.
      The returned expression itself is evaluated (may reference varying values)
@@ -129,15 +133,16 @@ Fixpoint check (m : exec_mode) (e : expr) : list error :=
       check m lo ++ check m hi ++ check inner b
   | ESeq es        => concat (map (check m) es)
   | ELet _ v b     => check m v ++ check m b
-  (* Non-divergent superstep: entry under Diverged outer mode is an error
-     (the implicit end-of-superstep barrier is reached by only some threads).
-     Divergent superstep: no entry error. In both cases body and cont are
-     checked with mode m (conservative over-approximation of reachable mode). *)
-  | ESuperstep divergent body cont =>
+  (* specs/convergence-semantics.md section 2.  SS-1: a superstep entered
+     under Diverged outer mode is an error whatever its flag (the implicit
+     end-of-superstep barrier is reached by only some threads); SS-4: the
+     divergent flag is inert.  SS-2/SS-3: body and cont are checked in the
+     outer mode m. *)
+  | ESuperstep _divergent body cont =>
       let entry_errors :=
-        match m, divergent with
-        | Diverged, false => [BarrierError]
-        | _,        _     => []
+        match m with
+        | Diverged  => [BarrierError]
+        | Converged => []
         end
       in
       entry_errors ++ check m body ++ check m cont
@@ -373,11 +378,8 @@ Proof.
     rewrite app_nil_iff, andb_true_iff. tauto.
   (* ESuperstep dv body cont *)
   - intros dv body cont IHbody IHcont. simpl.
-    destruct dv; simpl.
-    + (* dv = true: entry_errors = []; barrier_free = barrier_free body && barrier_free cont *)
-      rewrite app_nil_iff, andb_true_iff. tauto.
-    + (* dv = false: check Diverged starts with [BarrierError]; barrier_free = false *)
-      split; intro H; discriminate.
+    (* any flag: check Diverged starts with [BarrierError]; barrier_free = false *)
+    split; intro H; discriminate.
   (* EApp args *) - intros args IH. exact IH.
   (* EReturn e — check Diverged (EReturn e) = check Diverged e;
                   barrier_free (EReturn e) = barrier_free e *)
@@ -436,18 +438,15 @@ Proof.
     apply incl_app_mono; [exact IHv | exact IHb].
   (* ESuperstep dv body cont *)
   - intros dv body cont IHbody IHcont. simpl.
-    destruct dv; simpl.
-    + (* dv = true: both modes give entry_errors = [] *)
-      apply incl_app_mono; [exact IHbody | exact IHcont].
-    + (* dv = false: Converged entry_errors = []; Diverged gives BarrierError :: ...
-         incl (check C body ++ check C cont) (BarrierError :: check D body ++ check D cont) *)
-      intros x Hx.
-      apply in_app_iff in Hx.
-      right.
-      apply in_app_iff.
-      destruct Hx as [Hb | Hc].
-      * left.  exact (IHbody x Hb).
-      * right. exact (IHcont x Hc).
+    (* any flag: Converged entry_errors = []; Diverged gives BarrierError :: ...
+       incl (check C body ++ check C cont) (BarrierError :: check D body ++ check D cont) *)
+    intros x Hx.
+    apply in_app_iff in Hx.
+    right.
+    apply in_app_iff.
+    destruct Hx as [Hb | Hc].
+    + left.  exact (IHbody x Hb).
+    + right. exact (IHcont x Hc).
   (* EApp args *) - intros args IH. exact IH.
   (* EReturn e — check Converged (EReturn e) = check Converged e ⊆ check Diverged e *)
   - intros e IH. simpl. exact IH.
@@ -507,7 +506,7 @@ Proof.
   - intros dv body cont IHbody IHcont H. simpl in *.
     apply orb_false_iff in H. destruct H as [Hbody Hcont].
     rewrite (IHbody Hbody), (IHcont Hcont).
-    destruct dv; reflexivity.
+    reflexivity.
   (* EApp args *) - intros args IH H. simpl in *. apply IH. exact H.
   (* EReturn e *)
   - intros e IH H. simpl in *. apply IH. exact H.
@@ -572,7 +571,7 @@ Proof.
   - intros dv body cont IHbody IHcont H. simpl in *.
     apply orb_false_iff in H. destruct H as [Hbody Hcont].
     rewrite (IHbody Hbody), (IHcont Hcont).
-    destruct dv; reflexivity.
+    reflexivity.
   (* EApp args *) - intros args IH H. simpl in *. apply IH. exact H.
   (* EReturn e *)
   - intros e IH H. simpl in *. apply IH. exact H.
@@ -600,11 +599,25 @@ Qed.
 
 (* ===== 16. Property 7: superstep_outer_diverged_error (F-01) ===== *)
 
-Theorem superstep_outer_diverged_error : forall body cont,
-  check Diverged (ESuperstep false body cont) <> [].
+(* SS-1 (specs/convergence-semantics.md section 2): the entry error holds for
+   BOTH values of the divergent flag.  Before the settlement, dv = true skipped
+   it, which accepted a superstep under a thread-varying if (C-7). *)
+Theorem superstep_outer_diverged_error : forall dv body cont,
+  check Diverged (ESuperstep dv body cont) <> [].
 Proof.
-  intros body cont. simpl. discriminate.
+  intros dv body cont. simpl. discriminate.
 Qed.
+
+(* SS-4: the divergent flag is inert for the binding-blind checker. *)
+Theorem superstep_flag_irrelevant_check : forall m body cont,
+  check m (ESuperstep true body cont) = check m (ESuperstep false body cont).
+Proof. reflexivity. Qed.
+
+(* SS-4: no superstep is barrier-free, whatever its flag (it always ends with
+   the implicit block barrier, and eval emits EvBarrier for both flags). *)
+Theorem superstep_never_barrier_free : forall dv body cont,
+  barrier_free (ESuperstep dv body cont) = false.
+Proof. reflexivity. Qed.
 
 (* ===== 17. WarpConvergence error class (T2-WARP) ===== *)
 
@@ -637,11 +650,11 @@ Fixpoint check_warp (m : exec_mode) (e : expr) : list error :=
       check_warp m lo ++ check_warp m hi ++ check_warp inner b
   | ESeq es        => concat (map (check_warp m) es)
   | ELet _ v b     => check_warp m v ++ check_warp m b
-  | ESuperstep divergent body cont =>
+  | ESuperstep _divergent body cont =>
       let entry_errors :=
-        match m, divergent with
-        | Diverged, false => [BarrierError]
-        | _,        _     => []
+        match m with
+        | Diverged  => [BarrierError]
+        | Converged => []
         end
       in
       entry_errors ++ check_warp m body ++ check_warp m cont
@@ -659,6 +672,12 @@ Theorem warp_diverged_error :
 Proof.
   simpl. discriminate.
 Qed.
+
+(* SS-4 for the warp checker: the divergent flag is inert. *)
+Theorem superstep_flag_irrelevant_check_warp : forall m body cont,
+  check_warp m (ESuperstep true body cont) =
+  check_warp m (ESuperstep false body cont).
+Proof. reflexivity. Qed.
 
 (* Property 8b: warp_mode_monotone — check_warp is mode-monotone.
  *
@@ -709,15 +728,13 @@ Proof.
     apply incl_app_mono; [exact IHv | exact IHb].
   (* ESuperstep dv body cont *)
   - intros dv body cont IHbody IHcont. simpl.
-    destruct dv; simpl.
-    + apply incl_app_mono; [exact IHbody | exact IHcont].
-    + intros x Hx.
-      apply in_app_iff in Hx.
-      right.
-      apply in_app_iff.
-      destruct Hx as [Hb | Hc].
-      * left.  exact (IHbody x Hb).
-      * right. exact (IHcont x Hc).
+    intros x Hx.
+    apply in_app_iff in Hx.
+    right.
+    apply in_app_iff.
+    destruct Hx as [Hb | Hc].
+    + left.  exact (IHbody x Hb).
+    + right. exact (IHcont x Hc).
   (* EApp args *) - intros args IH. exact IH.
   (* EReturn e — check_warp Converged (EReturn e) = check_warp Converged e ⊆ check_warp Diverged e *)
   - intros e IH. simpl. exact IH.
@@ -915,11 +932,11 @@ Fixpoint check_env (m : exec_mode) (env : Env) (e : expr) : list error :=
       let vv  := is_varying_in_env env v in
       let env' := env_extend env x vv in
       check_env m env v ++ check_env m env' b
-  | ESuperstep divergent body cont =>
+  | ESuperstep _divergent body cont =>
       let entry_errors :=
-        match m, divergent with
-        | Diverged, false => [BarrierError]
-        | _,        _     => []
+        match m with
+        | Diverged  => [BarrierError]
+        | Converged => []
         end
       in
       entry_errors ++ check_env m env body ++ check_env m env cont
@@ -962,6 +979,17 @@ Proof.
   - rewrite check_env_seq_cons. rewrite diverged_absorbing.
     rewrite IH. reflexivity.
 Qed.
+
+(* SS-4 for the env-threaded checker: the divergent flag is inert. *)
+Theorem superstep_flag_irrelevant_check_env : forall m env body cont,
+  check_env m env (ESuperstep true body cont) =
+  check_env m env (ESuperstep false body cont).
+Proof. reflexivity. Qed.
+
+(* SS-1 for the env-threaded checker, both flags. *)
+Theorem superstep_outer_diverged_error_env : forall env dv body cont,
+  check_env Diverged env (ESuperstep dv body cont) <> [].
+Proof. intros env dv body cont. simpl. discriminate. Qed.
 
 (* ===== 20. F-02 key theorems ===== *)
 

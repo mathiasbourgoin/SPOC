@@ -86,8 +86,7 @@ let rec barrier_free = function
   | EFor (lo, hi, b) -> (barrier_free lo && barrier_free hi) && barrier_free b
   | ESeq es -> forallb barrier_free es
   | ELet (_, v, b) -> barrier_free v && barrier_free b
-  | ESuperstep (divergent, body, cont) ->
-      (divergent && barrier_free body) && barrier_free cont
+  | ESuperstep (_, _, _) -> false
   | EApp args -> forallb barrier_free args
   | EReturn e0 -> barrier_free e0
   | _ -> true
@@ -126,11 +125,9 @@ let rec check m = function
       app (check m lo) (app (check m hi) (check inner b))
   | ESeq es -> concat (map (check m) es)
   | ELet (_, v, b) -> app (check m v) (check m b)
-  | ESuperstep (divergent, body, cont) ->
+  | ESuperstep (_, body, cont) ->
       let entry_errors =
-        match m with
-        | Converged -> []
-        | Diverged -> if divergent then [] else BarrierError :: []
+        match m with Converged -> [] | Diverged -> BarrierError :: []
       in
       app entry_errors (app (check m body) (check m cont))
   | EApp args -> concat (map (check m) args)
@@ -196,15 +193,129 @@ let rec check_warp m = function
       app (check_warp m lo) (app (check_warp m hi) (check_warp inner b))
   | ESeq es -> concat (map (check_warp m) es)
   | ELet (_, v, b) -> app (check_warp m v) (check_warp m b)
-  | ESuperstep (divergent, body, cont) ->
+  | ESuperstep (_, body, cont) ->
       let entry_errors =
-        match m with
-        | Converged -> []
-        | Diverged -> if divergent then [] else BarrierError :: []
+        match m with Converged -> [] | Diverged -> BarrierError :: []
       in
       app entry_errors (app (check_warp m body) (check_warp m cont))
   | EApp args -> concat (map (check_warp m) args)
   | EReturn e0 -> check_warp m e0
+  | _ -> []
+
+type env = (int * bool) list
+
+(** val env_lookup : env -> int -> bool **)
+
+let env_lookup env0 x =
+  match find (fun p -> fst p = x) env0 with
+  | Some p ->
+      let _, v = p in
+      v
+  | None -> false
+
+(** val env_extend : env -> int -> bool -> env **)
+
+let env_extend env0 x v = (x, v) :: env0
+
+(** val is_varying_in_env : env -> expr -> bool **)
+
+let rec is_varying_in_env env0 = function
+  | EVary -> true
+  | EVar x -> env_lookup env0 x
+  | EBinop (a, b) -> is_varying_in_env env0 a || is_varying_in_env env0 b
+  | EUnop e0 -> is_varying_in_env env0 e0
+  | EIf (c, t, el) ->
+      (is_varying_in_env env0 c || is_varying_in_env env0 t)
+      || is_varying_in_env env0 el
+  | EWhile (c, b) -> is_varying_in_env env0 c || is_varying_in_env env0 b
+  | EFor (lo, hi, b) ->
+      (is_varying_in_env env0 lo || is_varying_in_env env0 hi)
+      || is_varying_in_env env0 b
+  | ESeq es -> existsb (is_varying_in_env env0) es
+  | ELet (x, v, b) ->
+      let vv = is_varying_in_env env0 v in
+      is_varying_in_env (env_extend env0 x vv) b
+  | ESuperstep (_, body, cont) ->
+      is_varying_in_env env0 body || is_varying_in_env env0 cont
+  | EApp args -> existsb (is_varying_in_env env0) args
+  | EReturn e0 -> is_varying_in_env env0 e0
+  | _ -> false
+
+(** val has_reachable_return : expr -> bool **)
+
+let rec has_reachable_return = function
+  | EIf (_, t, el) -> has_reachable_return t || has_reachable_return el
+  | EWhile (_, b) -> has_reachable_return b
+  | EFor (_, _, b) -> has_reachable_return b
+  | ESeq es -> existsb has_reachable_return es
+  | ELet (_, v, b) -> has_reachable_return v || has_reachable_return b
+  | ESuperstep (_, body, cont) ->
+      has_reachable_return body || has_reachable_return cont
+  | EReturn _ -> true
+  | _ -> false
+
+(** val has_varying_return : env -> expr -> bool **)
+
+let rec has_varying_return env0 = function
+  | EIf (cond, t, el) ->
+      if is_varying_in_env env0 cond then
+        has_reachable_return t || has_reachable_return el
+      else has_varying_return env0 t || has_varying_return env0 el
+  | EWhile (cond, b) ->
+      has_varying_return env0 cond || has_varying_return env0 b
+  | EFor (lo, hi, b) ->
+      (has_varying_return env0 lo || has_varying_return env0 hi)
+      || has_varying_return env0 b
+  | ESeq es -> existsb (has_varying_return env0) es
+  | ELet (x, v, b) ->
+      let env' =
+        if is_varying_in_env env0 v then env_extend env0 x true else env0
+      in
+      has_varying_return env0 v || has_varying_return env' b
+  | _ -> false
+
+(** val check_env : exec_mode -> env -> expr -> error list **)
+
+let rec check_env m env0 = function
+  | EBarrier -> (
+      match m with Converged -> [] | Diverged -> BarrierError :: [])
+  | EBinop (a, b) -> app (check_env m env0 a) (check_env m env0 b)
+  | EUnop e0 -> check_env m env0 e0
+  | EIf (cond, t, el) ->
+      let inner = if is_varying_in_env env0 cond then Diverged else m in
+      app
+        (check_env m env0 cond)
+        (app (check_env inner env0 t) (check_env inner env0 el))
+  | EWhile (cond, b) ->
+      let inner = if is_varying_in_env env0 cond then Diverged else m in
+      app (check_env m env0 cond) (check_env inner env0 b)
+  | EFor (lo, hi, b) ->
+      let inner =
+        if is_varying_in_env env0 lo || is_varying_in_env env0 hi then Diverged
+        else m
+      in
+      app
+        (check_env m env0 lo)
+        (app (check_env m env0 hi) (check_env inner env0 b))
+  | ESeq es ->
+      let rec check_seq sm = function
+        | [] -> []
+        | e0 :: rest ->
+            let sm' = if has_varying_return env0 e0 then Diverged else sm in
+            app (check_env sm env0 e0) (check_seq sm' rest)
+      in
+      check_seq m es
+  | ELet (x, v, b) ->
+      let vv = is_varying_in_env env0 v in
+      let env' = env_extend env0 x vv in
+      app (check_env m env0 v) (check_env m env' b)
+  | ESuperstep (_, body, cont) ->
+      let entry_errors =
+        match m with Converged -> [] | Diverged -> BarrierError :: []
+      in
+      app entry_errors (app (check_env m env0 body) (check_env m env0 cont))
+  | EApp args -> concat (map (check_env m env0) args)
+  | EReturn e0 -> check_env m env0 e0
   | _ -> []
 
 type tid = int
@@ -397,6 +508,47 @@ let rec eval vary_val fuel t rho e =
               | ORet v -> Some (ORet v, tr))
           | None -> None))
     fuel
+
+(** val check_warp_env : exec_mode -> env -> expr -> error list **)
+
+let rec check_warp_env m env0 = function
+  | EWarpPoint -> (
+      match m with Converged -> [] | Diverged -> WarpError :: [])
+  | EBinop (a, b) -> app (check_warp_env m env0 a) (check_warp_env m env0 b)
+  | EUnop e0 -> check_warp_env m env0 e0
+  | EIf (cond, t, el) ->
+      let inner = if is_varying_in_env env0 cond then Diverged else m in
+      app
+        (check_warp_env m env0 cond)
+        (app (check_warp_env inner env0 t) (check_warp_env inner env0 el))
+  | EWhile (cond, b) ->
+      let inner = if is_varying_in_env env0 cond then Diverged else m in
+      app (check_warp_env m env0 cond) (check_warp_env inner env0 b)
+  | EFor (lo, hi, b) ->
+      let inner =
+        if is_varying_in_env env0 lo || is_varying_in_env env0 hi then Diverged
+        else m
+      in
+      app
+        (check_warp_env m env0 lo)
+        (app (check_warp_env m env0 hi) (check_warp_env inner env0 b))
+  | ESeq es ->
+      let rec check_seq sm = function
+        | [] -> []
+        | e0 :: rest ->
+            let sm' = if has_varying_return env0 e0 then Diverged else sm in
+            app (check_warp_env sm env0 e0) (check_seq sm' rest)
+      in
+      check_seq m es
+  | ELet (x, v, b) ->
+      let vv = is_varying_in_env env0 v in
+      let env' = env_extend env0 x vv in
+      app (check_warp_env m env0 v) (check_warp_env m env' b)
+  | ESuperstep (_, body, cont) ->
+      app (check_warp_env m env0 body) (check_warp_env m env0 cont)
+  | EApp args -> concat (map (check_warp_env m env0) args)
+  | EReturn e0 -> check_warp_env m env0 e0
+  | _ -> []
 
 (** val eval_concrete : int -> tid -> venv -> expr -> (outcome * trace) option **)
 

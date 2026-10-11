@@ -15,8 +15,9 @@
  *
  * T3-S1 specific decisions:
  * - ESuperstep emits implicit EvBarrier for both dv=true and dv=false (the
- *   runtime barrier exists regardless of the analysis flag; the checker difference
- *   is in what it flags, not in what the hardware executes).
+ *   runtime barrier exists regardless of the flag; since the superstep
+ *   settlement, specs/convergence-semantics.md SS-4, the checkers ignore the
+ *   flag too).
  * - ORet short-circuits ESeq and EApp (subsequent elements are not evaluated).
  * - EReturn wraps the evaluated outcome as ORet.
  ******************************************************************************)
@@ -2510,7 +2511,7 @@ Qed.
 
 (** check_env_diverged_clean_barrier_free: env-threaded analogue of
     diverged_clean_iff_barrier_free (which works for `check Diverged`).
-    In Diverged mode, check_env flags EBarrier; ESuperstep false also flags.
+    In Diverged mode, check_env flags EBarrier; ESuperstep (either flag) also flags.
     Because Diverged is absorbing for the inner mode (diverged_absorbing),
     all sub-expressions are also checked in Diverged mode.
     Proved by expr_list_rect over a universally quantified env so that the ELet
@@ -2575,12 +2576,8 @@ Proof.
       exact (IHb (env_extend env x (is_varying_in_env env v)) Hb).
   (* ESuperstep *)
   - intros dv body cont IHbody IHcont env H.
-    simpl in H.
-    destruct dv.
-    + simpl in H. apply app_eq_nil in H as [Hbody Hcont].
-      simpl.
-      apply andb_true_iff. exact (conj (IHbody env Hbody) (IHcont env Hcont)).
-    + simpl in H. discriminate.
+    (* SS-1: any flag flags the superstep in Diverged mode *)
+    simpl in H. discriminate.
   (* EApp args: Plist IH *)
   - intros args IHargs env H. simpl in H. simpl. exact (IHargs env H).
   (* EReturn e0 *)
@@ -4025,21 +4022,17 @@ Qed.
 (* 11.  T3-S6 — ESuperstep semantic grounding (semantic F-01)              *)
 (* ======================================================================= *)
 
-(** core_frag_ss: the core fragment ENLARGED to include ESuperstep nodes.
-    Differs from core_frag in exactly one constructor: ESuperstep false body cont
-    is now in the fragment provided its body and cont are (recursively) in
-    core_frag_ss. The clause is literally [negb dv && core_frag_ss b && core_frag_ss c],
-    so ONLY uniform-reachability (dv=false) supersteps enter the
-    verified fragment. EReturn remains excluded — an early return bypasses later
-    barriers and breaks barrier uniformity (cf. the T3-S5 hazard / F-04).
+(** core_frag_ss: the core fragment ENLARGED to include ESuperstep nodes of
+    BOTH flags, provided their body and cont are (recursively) in core_frag_ss.
+    EReturn remains excluded — an early return bypasses later barriers and
+    breaks barrier uniformity (cf. the T3-S5 hazard / F-04).
 
-    TRUST BOUNDARY (dv=true): the operational semantics emits the implicit
-    boundary [EvBarrier] uniformly on every thread regardless of dv (the runtime
-    barrier always fires; dv affects only the static check_env verdict). But a
-    dv=true superstep is NOT flagged by check_env in Diverged mode, so admitting
-    it into core_frag_ss would make check_env_diverged_no_barriers_ss false. dv=true
-    is therefore OUT of the verified fragment and relies on the front-end's
-    divergence-uniformity annotation being correct (ASSUMPTIONS.md, §T3-S6). *)
+    Before the superstep settlement (specs/convergence-semantics.md section 2)
+    only dv=false supersteps were admitted: dv=true was not flagged by check_env
+    in Diverged mode, so it was a trust boundary.  SS-1 now flags a diverged
+    entry whatever the flag, and the operational semantics already emitted the
+    boundary EvBarrier for both flags, so the flag is inert everywhere and the
+    trust boundary is gone. *)
 Fixpoint core_frag_ss (e : expr) : bool :=
   match e with
   | ELit | EVary | EBarrier | EWarpPoint | EVar _ => true
@@ -4050,10 +4043,7 @@ Fixpoint core_frag_ss (e : expr) : bool :=
   | EFor lo hi b      => core_frag_ss lo && core_frag_ss hi && core_frag_ss b
   | ESeq es           => forallb core_frag_ss es
   | ELet _ v b        => core_frag_ss v && core_frag_ss b
-  | ESuperstep dv b c =>
-      (* only uniform-reachability (dv=false) supersteps are in the verified
-         fragment; dv=true is a documented trust boundary (ASSUMPTIONS.md) *)
-      negb dv && core_frag_ss b && core_frag_ss c
+  | ESuperstep _ b c  => core_frag_ss b && core_frag_ss c
   | EApp args         => forallb core_frag_ss args
   | EReturn _         => false   (* early-exit bypasses later barriers; excluded *)
   end.
@@ -4227,8 +4217,7 @@ Proof.
       { (* ORet vv: propagates from binder *)
         inversion H. subst. unfold rev_let in Hev. exact (IHf ev t rho v tr Hcfv Hev). }
     (* ESuperstep dv ebod econt: body never returns ORet; cont's ORet excluded *)
-    + apply andb_true_iff in Hcf as [Hcfdvb Hcfc].
-      apply andb_true_iff in Hcfdvb as [_ Hcfb].
+    + apply andb_true_iff in Hcf as [Hcfb Hcfc].
       set (rbody := eval vary_val f' t rho ebod) in *.
       destruct rbody as [[[vb|vb] trb]|] eqn:Hb; try discriminate.
       { set (rcont := eval vary_val f' t rho econt) in *.
@@ -4292,7 +4281,7 @@ Proof.
   - intros x v b IHv IHb H. simpl in H. apply andb_true_iff in H as [Hv Hb].
     simpl. rewrite (IHv Hv), (IHb Hb). reflexivity.
   - intros dv body cont IHbody IHcont H. simpl in H.
-    apply andb_true_iff in H as [Hdb Hcont]. apply andb_true_iff in Hdb as [_ Hbody].
+    apply andb_true_iff in H as [Hbody Hcont].
     simpl. rewrite (IHbody Hbody), (IHcont Hcont). reflexivity.
   - intros args IHargs H. reflexivity.
   - intros e0 _ H. simpl in H. discriminate.  (* core_frag_ss EReturn = false *)
@@ -4403,9 +4392,8 @@ Qed.
 
 (** core_frag_ss_barrier_free_superstep_free: a core_frag_ss expression that is
     also barrier_free contains no superstep at all (hence is superstep_free).
-    Key fact: core_frag_ss admits only dv=false supersteps, and barrier_free of
-    a dv=false superstep is false. So barrier_free rules supersteps out entirely
-    on this fragment. *)
+    Key fact: barrier_free of a superstep is false for both flags, so
+    barrier_free rules supersteps out entirely. *)
 Lemma core_frag_ss_barrier_free_superstep_free :
   forall e, core_frag_ss e = true -> barrier_free e = true -> superstep_free e = true.
 Proof.
@@ -4441,15 +4429,9 @@ Proof.
   - intros x v b IHv IHb Hcf Hbf. simpl in Hcf, Hbf.
     apply andb_true_iff in Hcf as [Hcv Hcb]. apply andb_true_iff in Hbf as [Hbv Hbb].
     simpl. apply andb_true_iff. exact (conj (IHv Hcv Hbv) (IHb Hcb Hbb)).
-  - (* ESuperstep dv body cont: barrier_free forces dv=true, but core_frag_ss
-       admits only dv=false — contradiction. *)
+  - (* ESuperstep dv body cont: never barrier_free — contradiction. *)
     intros dv body cont _ _ Hcf Hbf.
-    destruct dv; simpl in Hcf, Hbf.
-    + (* dv=true: barrier_free has (if true then true else false)=true so ok,
-         but core_frag_ss has negb true = false -> Hcf false *)
-      simpl in Hcf. discriminate.
-    + (* dv=false: barrier_free has (if false..)=false -> Hbf false *)
-      simpl in Hbf. discriminate.
+    simpl in Hbf. discriminate.
   - intros args IHargs Hcf Hbf. simpl in Hcf, Hbf. simpl. exact (IHargs Hcf Hbf).
   - intros e0 _ Hcf _. simpl in Hcf. discriminate.  (* EReturn excluded *)
   - intros _ _. reflexivity.
@@ -4461,7 +4443,7 @@ Qed.
 (** check_env_diverged_no_barriers_ss: the core_frag_ss analogue of
     check_env_diverged_no_barriers. On the enlarged fragment, a Diverged-clean
     expression is still barrier-silent: the Diverged-mode checker would flag any
-    reachable dv=false superstep with [BarrierError], so a clean check forces
+    reachable superstep (either flag) with [BarrierError], so a clean check forces
     superstep-freedom, and barrier-freedom follows from the existing bridge. *)
 Lemma check_env_diverged_no_barriers_ss :
   forall vary_val env e,
@@ -5012,8 +4994,7 @@ Proof.
                    o1 o2 trb1 trb2 Hcfb Hagr' Hcb Hbod1 Hbod2). }
 
       (* ESuperstep dv ebod econt: implicit boundary barrier on every thread *)
-      * apply andb_true_iff in Hcf as [Hcfdvb Hcfc].
-        apply andb_true_iff in Hcfdvb as [_ Hcfb].
+      * apply andb_true_iff in Hcf as [Hcfb Hcfc].
         simpl in Hclean.
         apply app_eq_nil in Hclean as [Hcb Hcc].
         destruct (eval vary_val fuel' t1 rho1 ebod) as [[[bv1|bv1] trb1]|] eqn:Hbod1;
@@ -5356,8 +5337,7 @@ Proof.
                  (venv_extend rho1 xn vv1) (venv_extend rho2 xn vv2)
                  o1 o2 trb1 trb2 Hcfb Hagr' Hvar Hcb Hbod1 Hbod2).
       (* ESuperstep dv ebod econt: non-varying => cont outcome agrees *)
-      * apply andb_true_iff in Hcf as [Hcfdvb Hcfc].
-        apply andb_true_iff in Hcfdvb as [_ Hcfb].
+      * apply andb_true_iff in Hcf as [Hcfb Hcfc].
         apply Bool.orb_false_iff in Hvar as [Hvb Hvc].
         simpl in Hclean. apply app_eq_nil in Hclean as [Hcb Hcc].
         destruct (eval vary_val fuel' t1 rho1 ebod) as [[[bv1|bv1] trb1]|] eqn:Hbod1;
@@ -5428,7 +5408,7 @@ Qed.
 (** check_env_sound_superstep: if core_frag_ss e = true (the enlarged fragment
     including ESuperstep) and check_env Converged env e = [], then e is
     barrier_safe. Uniform-reachability supersteps emit [EvBarrier] on all
-    threads (traces agree); thread-varying entry into a dv=false superstep is
+    threads (traces agree); thread-varying entry into a superstep (either flag) is
     excluded because the Diverged-mode checker raises [BarrierError] for it.
     This is the runtime grounding of the static F-01 verdict
     (superstep_outer_diverged_error). *)
@@ -5519,6 +5499,41 @@ Theorem semantic_f01_corollary :
   check_env Converged [] susp_hazard <> [] /\ ~ barrier_safe susp_vary [] susp_hazard.
 Proof.
   exact (conj semantic_f01_flagged semantic_f01_not_barrier_safe).
+Qed.
+
+(** C-7 witness (specs/convergence-semantics.md SS-1, SS-4): the same hazard
+    with the divergent flag set.  Before the superstep settlement the checker
+    accepted it although it is not barrier_safe; now it is flagged, and the
+    corollary below grounds the rejection operationally. *)
+Definition susp_hazard_divergent : expr :=
+  EIf EVary (ESuperstep true EBarrier ELit) ELit.
+
+Lemma semantic_c07_flagged :
+  check_env Converged [] susp_hazard_divergent <> [].
+Proof.
+  unfold susp_hazard_divergent. simpl. intro H. discriminate.
+Qed.
+
+Theorem semantic_c07_not_barrier_safe :
+  ~ barrier_safe susp_vary [] susp_hazard_divergent.
+Proof.
+  unfold barrier_safe. intro Hsafe.
+  assert (Hagr : env_agrees [] [] []).
+  { intros y _. reflexivity. }
+  assert (H0 : eval susp_vary 6 0 [] susp_hazard_divergent
+               = Some (ONorm 0, [EvBarrier; EvBarrier])) by reflexivity.
+  assert (H1 : eval susp_vary 6 1 [] susp_hazard_divergent
+               = Some (ONorm 0, [])) by reflexivity.
+  pose proof (Hsafe 6 0 1 [] [] (ONorm 0) (ONorm 0)
+                [EvBarrier; EvBarrier] [] Hagr H0 H1) as Heq.
+  unfold erase_warp in Heq. simpl in Heq. discriminate.
+Qed.
+
+Theorem semantic_c07_corollary :
+  check_env Converged [] susp_hazard_divergent <> [] /\
+  ~ barrier_safe susp_vary [] susp_hazard_divergent.
+Proof.
+  exact (conj semantic_c07_flagged semantic_c07_not_barrier_safe).
 Qed.
 
 (* ======================================================================= *)
@@ -5920,7 +5935,17 @@ Fixpoint check_warp_env (m : exec_mode) (env : Env) (e : expr) : list error :=
         then Diverged else m
       in
       check_warp_env m env lo ++ check_warp_env m env hi ++ check_warp_env inner env b
-  | ESeq es        => concat (map (check_warp_env m env) es)
+  | ESeq es        =>
+      (* D-56: thread the F-04 varying-early-return flag through the sequence
+         exactly like check_env, mirroring production, where one checker
+         handles barriers and warp collectives. *)
+      (fix check_seq (sm : exec_mode) (xs : list expr) : list error :=
+        match xs with
+        | []        => []
+        | e :: rest =>
+            let sm' := if has_varying_return env e then Diverged else sm in
+            check_warp_env sm env e ++ check_seq sm' rest
+        end) m es
   | ELet x v b    =>
       let vv  := is_varying_in_env env v in
       let env' := env_extend env x vv in
@@ -5930,6 +5955,64 @@ Fixpoint check_warp_env (m : exec_mode) (env : Env) (e : expr) : list error :=
   | EApp args      => concat (map (check_warp_env m env) args)
   | EReturn e      => check_warp_env m env e
   end.
+
+(* ----------------------------------------------------------------------- *)
+(* 12.5b  check_warp_env_seq: named sequence walker + structural lemmas    *)
+(*         (D-56; the warp analogue of check_env_seq, ConvergenceSpec 19c)  *)
+(* ----------------------------------------------------------------------- *)
+
+Definition check_warp_env_seq (m : exec_mode) (env : Env) (es : list expr)
+    : list error :=
+  check_warp_env m env (ESeq es).
+
+Lemma check_warp_env_seq_cons : forall m env e rest,
+  check_warp_env_seq m env (e :: rest) =
+  check_warp_env m env e ++
+  check_warp_env_seq (if has_varying_return env e then Diverged else m) env rest.
+Proof. reflexivity. Qed.
+
+Lemma check_warp_env_ESeq : forall m env es,
+  check_warp_env m env (ESeq es) = check_warp_env_seq m env es.
+Proof. reflexivity. Qed.
+
+(** In Diverged mode the flag is irrelevant: the walker is the plain flat-map. *)
+Lemma check_warp_env_seq_diverged : forall env es,
+  check_warp_env_seq Diverged env es =
+  concat (map (check_warp_env Diverged env) es).
+Proof.
+  intros env es. induction es as [| e rest IH].
+  - reflexivity.
+  - rewrite check_warp_env_seq_cons. rewrite diverged_absorbing.
+    rewrite IH. reflexivity.
+Qed.
+
+(** On core_frag lists the flag never fires: the walker is the flat-map in
+    any mode (the warp analogue of check_env_seq_core_frag). *)
+Lemma check_warp_env_seq_core_frag :
+  forall env m es,
+    forallb core_frag es = true ->
+    check_warp_env_seq m env es = concat (map (check_warp_env m env) es).
+Proof.
+  intros env m es. revert m. induction es as [| e rest IH]; intros m H.
+  - reflexivity.
+  - simpl in H. apply andb_true_iff in H as [He Hrest].
+    rewrite check_warp_env_seq_cons.
+    rewrite (core_frag_no_varying_return env e He).
+    rewrite (IH m Hrest). reflexivity.
+Qed.
+
+(** D-56 hazard: a warp collective after a varying early return is flagged
+    (the warp analogue of hazard_spec_detects). *)
+Theorem warp_after_varying_return_flagged :
+  check_warp_env Converged []
+    (ESeq [EIf EVary (EReturn ELit) ELit; EWarpPoint]) <> [].
+Proof. simpl. discriminate. Qed.
+
+(** SS-4 for the env-threaded warp checker: the divergent flag is inert. *)
+Theorem superstep_flag_irrelevant_check_warp_env : forall m env body cont,
+  check_warp_env m env (ESuperstep true body cont) =
+  check_warp_env m env (ESuperstep false body cont).
+Proof. reflexivity. Qed.
 
 (* ----------------------------------------------------------------------- *)
 (* 12.6  Bridge: check_warp_env Diverged implies warp_free                 *)
@@ -5985,8 +6068,10 @@ Proof.
     simpl. apply andb_true_iff. split.
     + apply andb_true_iff. exact (conj (IHlo env Hlo) (IHhi env Hhi)).
     + exact (IHb env Hb).
-  (* ESeq es *)
-  - intros es IHes env H. simpl in H. simpl. exact (IHes env H).
+  (* ESeq es: in Diverged mode the flag-threading collapses (D-56) *)
+  - intros es IHes env H.
+    rewrite check_warp_env_ESeq, check_warp_env_seq_diverged in H.
+    simpl. exact (IHes env H).
   (* ELet x v b *)
   - intros x v b IHv IHb env H.
     simpl in H. apply app_eq_nil in H as [Hv Hb].
@@ -6509,8 +6594,11 @@ Proof.
               rewrite Heval1 in Hfl. rewrite Heval2 in Hfl. exact Hfl. } }
 
       (* ESeq ess *)
-      * simpl in Hclean.
-        assert (Hcfall : forallb core_frag ess = true) by exact Hcf.
+      * assert (Hcfall : forallb core_frag ess = true) by exact Hcf.
+        (* D-56: on core_frag elements the flag never fires, so the warp
+           walker collapses to the plain flat-map. *)
+        rewrite check_warp_env_ESeq,
+          (check_warp_env_seq_core_frag env Converged ess Hcfall) in Hclean.
         clear Hcf.
         (* We prove erase_barrier equality by induction on ess,
            generalizing over the accumulator. *)

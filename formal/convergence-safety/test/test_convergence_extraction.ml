@@ -3,8 +3,9 @@
  *
  * Extraction conformance suite.
  * Verifies that the OCaml extracted from ConvergenceSpec.v (ConvergenceModel)
- * agrees with the hand-written inline abstract model on all 6 semantic
- * functions.  This is CMBT links 2 (extraction) + 4 (test) combined:
+ * agrees with the hand-written inline abstract model on the extracted
+ * semantic functions, including the env-threaded checkers check_env and
+ * check_warp_env (superstep settlement, D-56).  This is CMBT links 2 (extraction) + 4 (test) combined:
  *
  *   Rocq spec → coqc extraction → ConvergenceModel.ml → this test
  *
@@ -67,8 +68,7 @@ let rec barrier_free_inline = function
       barrier_free_inline lo && barrier_free_inline hi && barrier_free_inline b
   | ESeq es -> List.for_all barrier_free_inline es
   | ELet (_, v, b) -> barrier_free_inline v && barrier_free_inline b
-  | ESuperstep (dv, body, cont) ->
-      dv && barrier_free_inline body && barrier_free_inline cont
+  | ESuperstep _ -> false (* SS-4: never barrier-free *)
   | EApp args -> List.for_all barrier_free_inline args
   | EReturn e -> barrier_free_inline e
 
@@ -108,11 +108,10 @@ let rec check_inline m e =
       check_inline m lo @ check_inline m hi @ check_inline inner b
   | ESeq es -> List.concat_map (check_inline m) es
   | ELet (_, v, b) -> check_inline m v @ check_inline m b
-  | ESuperstep (divergent, body, cont) ->
+  | ESuperstep (_divergent, body, cont) ->
+      (* SS-1/SS-4: entry error in Diverged mode whatever the flag *)
       let entry_errors =
-        match (m, divergent) with
-        | Diverged, false -> [BarrierError]
-        | _, _ -> []
+        match m with Diverged -> [BarrierError] | Converged -> []
       in
       entry_errors @ check_inline m body @ check_inline m cont
   | EApp args -> List.concat_map (check_inline m) args
@@ -140,15 +139,108 @@ let rec check_warp_inline m e =
       @ check_warp_inline inner b
   | ESeq es -> List.concat_map (check_warp_inline m) es
   | ELet (_, v, b) -> check_warp_inline m v @ check_warp_inline m b
-  | ESuperstep (divergent, body, cont) ->
+  | ESuperstep (_divergent, body, cont) ->
+      (* SS-1/SS-4: entry error in Diverged mode whatever the flag *)
       let entry_errors =
-        match (m, divergent) with
-        | Diverged, false -> [BarrierError]
-        | _, _ -> []
+        match m with Diverged -> [BarrierError] | Converged -> []
       in
       entry_errors @ check_warp_inline m body @ check_warp_inline m cont
   | EApp args -> List.concat_map (check_warp_inline m) args
   | EReturn e -> check_warp_inline m e
+
+(* ===== Env-threaded checkers (mirror ConvergenceSpec.check_env and
+   ConvergenceSemantics.check_warp_env after the superstep settlement,
+   specs/convergence-semantics.md section 2, and D-56) ===== *)
+
+let env_lookup env x =
+  match List.find_opt (fun (y, _) -> y = x) env with
+  | Some (_, v) -> v
+  | None -> false
+
+let rec is_varying_env env = function
+  | EVary -> true
+  | ELit | EBarrier | EWarpPoint -> false
+  | EVar x -> env_lookup env x
+  | EBinop (a, b) -> is_varying_env env a || is_varying_env env b
+  | EUnop e -> is_varying_env env e
+  | EIf (c, t, el) ->
+      is_varying_env env c || is_varying_env env t || is_varying_env env el
+  | EWhile (c, b) -> is_varying_env env c || is_varying_env env b
+  | EFor (lo, hi, b) ->
+      is_varying_env env lo || is_varying_env env hi || is_varying_env env b
+  | ESeq es -> List.exists (is_varying_env env) es
+  | ELet (x, v, b) -> is_varying_env ((x, is_varying_env env v) :: env) b
+  | ESuperstep (_, body, cont) ->
+      is_varying_env env body || is_varying_env env cont
+  | EApp args -> List.exists (is_varying_env env) args
+  | EReturn e -> is_varying_env env e
+
+let rec has_reachable_return = function
+  | EReturn _ -> true
+  | EIf (_, t, el) -> has_reachable_return t || has_reachable_return el
+  | ESeq es -> List.exists has_reachable_return es
+  | ELet (_, v, b) -> has_reachable_return v || has_reachable_return b
+  | EWhile (_, b) | EFor (_, _, b) -> has_reachable_return b
+  | ESuperstep (_, body, cont) ->
+      has_reachable_return body || has_reachable_return cont
+  | _ -> false
+
+let rec has_varying_return env = function
+  | EIf (c, t, el) ->
+      if is_varying_env env c then
+        has_reachable_return t || has_reachable_return el
+      else has_varying_return env t || has_varying_return env el
+  | ESeq es -> List.exists (has_varying_return env) es
+  | ELet (x, v, b) ->
+      let env' = if is_varying_env env v then (x, true) :: env else env in
+      has_varying_return env v || has_varying_return env' b
+  | EWhile (c, b) -> has_varying_return env c || has_varying_return env b
+  | EFor (lo, hi, b) ->
+      has_varying_return env lo || has_varying_return env hi
+      || has_varying_return env b
+  | _ -> false
+
+(* One walker for both checkers, parameterised by which point is flagged:
+   check_env flags EBarrier, check_warp_env flags EWarpPoint; only check_env
+   flags a superstep entry (it is a barrier error). Both thread the F-04
+   varying-return flag through sequences. *)
+let rec check_env_gen ~warp m env e =
+  let go = check_env_gen ~warp in
+  match e with
+  | EBarrier when not warp -> (
+      match m with Diverged -> [BarrierError] | Converged -> [])
+  | EWarpPoint when warp -> (
+      match m with Diverged -> [WarpError] | Converged -> [])
+  | ELit | EVary | EBarrier | EWarpPoint | EVar _ -> []
+  | EBinop (a, b) -> go m env a @ go m env b
+  | EUnop e -> go m env e
+  | EIf (c, t, el) ->
+      let inner = if is_varying_env env c then Diverged else m in
+      go m env c @ go inner env t @ go inner env el
+  | EWhile (c, b) ->
+      let inner = if is_varying_env env c then Diverged else m in
+      go m env c @ go inner env b
+  | EFor (lo, hi, b) ->
+      let inner =
+        if is_varying_env env lo || is_varying_env env hi then Diverged else m
+      in
+      go m env lo @ go m env hi @ go inner env b
+  | ESeq es ->
+      let rec seq sm = function
+        | [] -> []
+        | x :: rest ->
+            let sm' = if has_varying_return env x then Diverged else sm in
+            go sm env x @ seq sm' rest
+      in
+      seq m es
+  | ELet (x, v, b) -> go m env v @ go m ((x, is_varying_env env v) :: env) b
+  | ESuperstep (_, body, cont) ->
+      let entry =
+        match (warp, m) with false, Diverged -> [BarrierError] | _ -> []
+      in
+      entry @ go m env body @ go m env cont
+  | EApp args -> List.concat_map (go m env) args
+  | EReturn e -> go m env e
 
 (* ===== Translation: inline types → extracted types ===== *)
 
@@ -277,6 +369,33 @@ let () =
           let got =
             normalize_errors
               (M.check_warp (to_extracted_mode m) (to_extracted e))
+          in
+          expected = got);
+      Test.make
+        ~name:"extr:is_varying_in_env_agrees"
+        ~count:2000
+        gen_expr
+        (fun e -> is_varying_env [] e = M.is_varying_in_env [] (to_extracted e));
+      Test.make
+        ~name:"extr:check_env_agrees"
+        ~count:1500
+        (Gen.pair gen_expr gen_mode)
+        (fun (e, m) ->
+          let expected = check_env_gen ~warp:false m [] e in
+          let got =
+            normalize_errors
+              (M.check_env (to_extracted_mode m) [] (to_extracted e))
+          in
+          expected = got);
+      Test.make
+        ~name:"extr:check_warp_env_agrees"
+        ~count:1500
+        (Gen.pair gen_expr gen_mode)
+        (fun (e, m) ->
+          let expected = check_env_gen ~warp:true m [] e in
+          let got =
+            normalize_errors
+              (M.check_warp_env (to_extracted_mode m) [] (to_extracted e))
           in
           expected = got);
     ]

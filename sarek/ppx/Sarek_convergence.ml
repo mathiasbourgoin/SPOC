@@ -19,14 +19,12 @@
  *   if thread_idx_x > 16 then
  *     block_barrier ()   (* Error: only threads 17-31 reach this! *)
  *
- * This minimal implementation catches ~80% of real bugs:
- * - Direct thread_idx_* comparisons in if/while conditions
- * - Array accesses with thread-varying indices in conditions
- *
- * Future extensions:
- * - Dataflow analysis: track thread-varying through variable assignments
- * - Path-sensitive: allow `if c then barrier() else barrier()`
- * - Inter-procedural: analyze called functions
+ * The rules are specified in specs/convergence-semantics.md. Supersteps
+ * (section 2): a superstep reached in diverged flow is an error with or
+ * without [@divergent], which is inert; the body and the continuation are
+ * checked in the outer mode. Let-bound variance is tracked through
+ * [varying_vars]; assignment, helper and array variance (section 3) are not
+ * tracked yet.
  ******************************************************************************)
 
 open Sarek_typed_ast
@@ -313,34 +311,23 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
         match size_opt with None -> [] | Some size -> check_expr ctx size
       in
       size_errors @ check_expr ctx body
-  | TESuperstep (_, divergent, step_body, cont) ->
-      let body_errors =
-        if divergent then
-          (* Divergent flag set: allow any control flow inside. *)
-          check_expr ctx step_body
-        else begin
-          (* Non-divergent superstep has an implicit barrier at the end.
-             F-01 fix: if the outer context is already Diverged, some threads
-             won't enter this superstep → the implicit barrier fires under
-             diverged outer flow → flag the superstep site. *)
-          let outer_errors =
-            if ctx.mode = Diverged then
-              [Sarek_error.Barrier_in_diverged_flow te.te_loc]
-            else []
-          in
-          (* Check the body in Converged mode, preserving known-varying vars.
-             check_expr now correctly propagates let-bound variance (F-02 fix),
-             so any explicit barrier in diverged flow inside the body is caught
-             here — contains_diverging_control_flow is no longer needed. *)
-          let body_ctx = {mode = Converged; varying_vars = ctx.varying_vars} in
-          outer_errors @ check_expr body_ctx step_body
-        end
+  | TESuperstep (_, _divergent, step_body, cont) ->
+      (* specs/convergence-semantics.md §2. The body runs, then an implicit
+         block barrier, then the continuation.
+         SS-1: a superstep reached in Diverged mode is an error, with or
+         without [@divergent] (SS-4: the attribute is inert; skipping this
+         check was unsound, C-7).
+         SS-2/SS-3: body and continuation are checked in the outer mode.
+         Structured control flow inside the body reconverges at its own end,
+         before the implicit barrier, so a varying [if] with no
+         synchronisation point in its branches is accepted.
+         SS-5: the known-varying variable set is kept. *)
+      let entry_errors =
+        if ctx.mode = Diverged then
+          [Sarek_error.Barrier_in_diverged_flow te.te_loc]
+        else []
       in
-      (* After the implicit barrier all threads are converged again;
-         preserve the known-varying variable set (barrier doesn't reset locals). *)
-      let cont_ctx = {mode = Converged; varying_vars = ctx.varying_vars} in
-      let cont_errors = check_expr cont_ctx cont in
-      body_errors @ cont_errors
+      entry_errors @ check_expr ctx step_body @ check_expr ctx cont
   | TEOpen (_, body) -> check_expr ctx body
   | TELetRec (_, _, _, fn_body, cont) ->
       check_expr ctx fn_body @ check_expr ctx cont
@@ -368,8 +355,7 @@ let check_kernel (kernel : tkernel) : (unit, Sarek_error.error list) result =
 let rec expr_uses_barriers (te : texpr) : bool =
   match te.te with
   (* Superstep has implicit barrier *)
-  | TESuperstep (_, _, step_body, cont) ->
-      true || expr_uses_barriers step_body || expr_uses_barriers cont
+  | TESuperstep _ -> true
   (* Intrinsic function - check if it's a convergence point *)
   | TEIntrinsicFun (_, Some Sarek_core_primitives.ConvergencePoint, _) -> true
   | TEIntrinsicFun (_, _, args) -> List.exists expr_uses_barriers args
