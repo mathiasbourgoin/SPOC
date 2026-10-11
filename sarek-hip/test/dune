@@ -323,3 +323,26 @@
  (alias e2e-hip-bench)
  (action
   (run %{dep:bench_matrix_rewrite.exe})))
+
+; The raw core launch path and Profiling must select their own device (two HIP
+; devices; self-skips otherwise).
+
+(executable
+ (name test_hip_launch_selects_device)
+ (modules test_hip_launch_selects_device)
+ (libraries sarek_hip spoc_core))
+
+(rule
+ (alias e2e-hip)
+ (action
+  (run %{dep:test_hip_launch_selects_device.exe})))
+
+(executable
+ (name test_hip_profiling_selects_device)
+ (modules test_hip_profiling_selects_device)
+ (libraries sarek_hip spoc_core))
+
+(rule
+ (alias e2e-hip)
+ (action
+  (run %{dep:test_hip_profiling_selects_device.exe})))
