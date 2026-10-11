@@ -97,19 +97,13 @@ superstep ~divergent {
 
 ## Warp-Level Operations
 
-Some operations are warp-synchronous:
-
-```ocaml
-(* Warp shuffle - exchange data within warp *)
-let value = Gpu.shfl_down value 1
-
-(* Warp vote - check condition across warp *)
-let all_positive = Gpu.all (x > 0)
-let any_negative = Gpu.any (x < 0)
-let ballot = Gpu.ballot (x > threshold)
-```
-
-These implicitly synchronize the warp.
+Warp-synchronous operations (shuffle, vote, ballot, active mask, warp size) are
+**not available yet**. `warp_shuffle`, `warp_shuffle_up`, `warp_shuffle_down`,
+`warp_shuffle_xor`, `warp_vote_all`, `warp_vote_any`, `warp_ballot`,
+`warp_active_mask` and `warp_size` are refused at PPX time because no backend
+lowers them; they arrive with warp-scope supersteps (roadmap S1). The
+convergence checker already knows their warp-convergence classes, so S1 starts
+from a checked base.
 
 ## Best Practices
 

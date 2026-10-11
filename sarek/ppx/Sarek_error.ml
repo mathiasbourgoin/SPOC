@@ -13,6 +13,20 @@
 open Sarek_ast
 open Sarek_types
 
+(** Why an intrinsic that type-checks is nevertheless refused at PPX time. The
+    mapping from intrinsic to reason is the single table
+    {!Sarek_env.unlowered_intrinsics}; this type only selects the wording. *)
+type unlowered_reason =
+  | Warp_collective
+      (** A warp-level collective (shuffle, vote, ballot, active mask): typed
+          and convergence-checked, but no backend lowers it. *)
+  | Warp_size
+      (** [warp_size]: not lowered, and also not a constant (32 on NVIDIA, 32 or
+          64 on AMD, 32 on Apple, 4-128 on WGSL). *)
+  | Early_return
+      (** [return_unit]: Sarek has no early return and no backend lowers it
+          soundly. *)
+
 (** Error types *)
 type error =
   | Unbound_variable of string * loc
@@ -72,6 +86,11 @@ type error =
           operands (a vector, a local array) are NOT this error: [src = dst]
           emits [(src == dst)], which clang -x cl and glslangValidator both
           accept. *)
+  | Unlowered_intrinsic of {name : string; reason : unlowered_reason; loc : loc}
+      (** [name] resolved to an intrinsic that no backend lowers soundly (see
+          {!unlowered_reason}). Refused at the use site rather than left to fail
+          late in each backend with "Unknown intrinsic", or worse, to emit code
+          that silently means something else. *)
   | Float16_operand of string * loc
       (** An f16 value reached an operator. f16 is a storage-only type, so this
           is always a user error with a specific remedy; reporting it as
@@ -117,6 +136,7 @@ let error_loc = function
   | Function_value_escapes (_, _, loc) -> loc
   | Instantiation_mismatch {loc; _} -> loc
   | Aggregate_equality_operand (_, _, loc) -> loc
+  | Unlowered_intrinsic {loc; _} -> loc
   | Float16_operand (_, loc) -> loc
 
 (** Human-readable operator name for diagnostics, e.g. ['=' -> "'='"]. Lives
@@ -193,6 +213,29 @@ let aggregate_equality_body (ty : typ) : string =
          variant."
         pp_typ
         ty
+
+(** The body of the {!Unlowered_intrinsic} refusal, after the intrinsic's name.
+    Separate from {!pp_error} so the wording per reason is read in one place. *)
+let unlowered_reason_body = function
+  | Warp_collective ->
+      "is not lowered by any backend yet: every backend fails late with \
+       \"Unknown intrinsic\" instead of producing a warp-level operation. \
+       Warp-level collectives (shuffle, vote, ballot, active mask) arrive with \
+       warp-scope supersteps (roadmap S1). Until then, exchange values between \
+       threads through shared memory and block_barrier."
+  | Warp_size ->
+      "is not lowered by any backend yet, and has no single value to fall back \
+       on: the warp is 32 lanes on NVIDIA, 32 or 64 on AMD, 32 on Apple and \
+       4-128 on WebGPU/WGSL. Warp-level operations arrive with warp-scope \
+       supersteps (roadmap S1). Until then, pass the width you need as a \
+       kernel argument."
+  | Early_return ->
+      "(early return) is not supported: Sarek has no early return, and no \
+       backend lowers it soundly. CUDA emits `return((void)0);`, which makes \
+       the thread skip every later block_barrier (a deadlock for the rest of \
+       the block); the native backend ignores it and keeps executing; GLSL has \
+       no lowering. Restructure with if/else so the remaining work sits in the \
+       else branch."
 
 (** Pretty print an error *)
 let pp_error fmt = function
@@ -359,6 +402,8 @@ let pp_error fmt = function
         t2
   | Aggregate_equality_operand (what, ty, _) ->
       Format.fprintf fmt "%s %s" what (aggregate_equality_body ty)
+  | Unlowered_intrinsic {name; reason; _} ->
+      Format.fprintf fmt "'%s' %s" name (unlowered_reason_body reason)
   | Float16_operand (what, _) ->
       Format.fprintf
         fmt

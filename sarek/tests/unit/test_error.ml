@@ -221,6 +221,12 @@ let test_all_error_constructors_have_loc () =
       Sarek_error.Invalid_intrinsic ("bad_intrinsic", dummy_loc);
       Sarek_error.Barrier_in_diverged_flow dummy_loc;
       Sarek_error.Warp_collective_in_diverged_flow ("warp_reduce", dummy_loc);
+      Sarek_error.Unlowered_intrinsic
+        {
+          name = "warp_shuffle";
+          reason = Sarek_error.Warp_collective;
+          loc = dummy_loc;
+        };
       Sarek_error.Reserved_keyword ("void", dummy_loc);
       Sarek_error.Unsupported_type_in_registration ("T", dummy_loc);
       Sarek_error.Unsupported_constructor_form dummy_loc;

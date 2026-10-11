@@ -8,7 +8,18 @@
 ; Expected errors:
 ; - test_barrier_diverged: "Barrier called in diverged control flow"
 ; - test_superstep_diverged: "Barrier called in diverged control flow"
-; - test_warp_diverged: "Warp collective 'warp_shuffle' called in diverged control flow"
+; - test_warp_diverged: "'warp_shuffle' is not lowered by any backend yet" (the
+;   refusal of unlowered intrinsics fires at the call, before the convergence
+;   check; "Warp collective ... diverged" is now covered by unit tests on
+;   hand-built typed ASTs, sarek/tests/unit/test_convergence.ml)
+; - test_warp_shuffle_refused: "'warp_shuffle' is not lowered by any backend yet"
+;   (a warp collective in fully converged code)
+; - test_warp_size_refused: "'warp_size' is not lowered by any backend yet"
+; - test_return_unit_refused: "'return_unit' (early return) is not supported"
+; - test_warp_qualified_refused: "'warp_ballot' is not lowered by any backend yet"
+;   (the module-qualified spelling Gpu.warp_ballot)
+; - test_warp_open_std_refused: "'warp_shuffle_xor' is not lowered by any backend
+;   yet" (under let open Std)
 ; - test_unbound_function: "Unbound variable"
 ; - test_unlinked_intrinsic: "Unknown kernel function or constant Bits.float_of_bits"
 ;   AND "(pps sarek.ppx <library>)" (an intrinsic from a library the PPX
@@ -934,5 +945,60 @@
   (pps sarek_ppx))
  (flags
   (:standard -w -33 -alert @sarek_matrix))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_warp_shuffle_refused)
+ (modules test_warp_shuffle_refused)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_warp_size_refused)
+ (modules test_warp_size_refused)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_return_unit_refused)
+ (modules test_return_unit_refused)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_warp_qualified_refused)
+ (modules test_warp_qualified_refused)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_warp_open_std_refused)
+ (modules test_warp_open_std_refused)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
  (enabled_if
   (= %{profile} "negative")))
