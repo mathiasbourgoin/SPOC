@@ -412,6 +412,21 @@
   unchanged. Migration: code that matches exhaustively on
   `Sarek_ir_affine.error` or `Sarek_matrix_pattern.reason` gains one case each;
   a kernel that wants the rewrite must index with int32.
+||||||| parent of a2bf07da (test(launch-window): skip bit-identity on non-deferring devices, require 3 agreeing plain runs (D-35))
+- OpenCL zero-copy buffers (`CL_MEM_USE_HOST_PTR`, chosen for CPU devices) had
+  no-op host transfers, so a host read raced the asynchronous kernel and a host
+  write raced kernels still reading; on an implementation that keeps a private
+  copy the result never reached the host at all. Host access now goes through a
+  blocking `clEnqueueMapBuffer` / `clEnqueueUnmapMemObject` (and a `clFinish`),
+  and `USE_HOST_PTR` is used only for a pointer aligned to
+  `CL_DEVICE_MEM_BASE_ADDR_ALIGN`; other arrays take an ordinary buffer.
+  Regression test `sarek-opencl/test/test_opencl_zero_copy_sync.ml`, forced onto
+  GPU devices by the test-only `Opencl_plugin_base.For_testing` hook.
+- `test_launch_window`: on a device whose launches are not deferred (every CPU
+  device) window on and off take the same path, so the bit-identity scenarios
+  are skipped with a visible message instead of comparing two plain runs; on a
+  deferring device three plain runs must agree before a window-on difference
+  counts.
 
 - hiprtc and nvrtc option arrays: `CArray.of_list string` let the C copies of
   the option strings be freed before the compile call. Under a different

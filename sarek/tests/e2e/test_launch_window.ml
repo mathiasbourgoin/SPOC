@@ -328,28 +328,52 @@ let check (dev : Device.t) label ok =
     (if ok then "PASS" else "FAIL") ;
   if not ok then failures := (dev.Device.framework ^ " " ^ label) :: !failures
 
+(* Plain (window-off) runs that must agree before a window-on difference can be
+   blamed on the window: two agreeing runs are still a coin flip on a device
+   whose plain results vary from run to run. *)
+let plain_runs = 3
+
+let report dev label verdict =
+  Printf.printf
+    "  %-11s %-34s %-24s %s\n%!"
+    dev.Device.framework
+    dev.Device.name
+    label
+    verdict
+
+let all_equal = function [] -> true | x :: rest -> List.for_all (( = ) x) rest
+
+(* Bit-identity of window-on against window-off. On a device that does not
+   defer, "on" and "off" take the same path, so comparing them tests nothing
+   and, where plain runs differ, fails at random: skipped, visibly. *)
+let check_bit_identity dev ~defers label f =
+  let bit_label = label ^ " bit-identical" in
+  if not defers then begin
+    report
+      dev
+      bit_label
+      "SKIP (device does not defer launches: window on = off)" ;
+    0
+  end
+  else begin
+    let offs =
+      List.init plain_runs (fun _ ->
+          fst (with_window false (fun () -> issued_by (fun () -> f dev))))
+    in
+    let on, issued = issued_by (fun () -> f dev) in
+    if not (all_equal offs) then begin
+      report dev bit_label "FAIL (nondeterministic without the window)" ;
+      failures :=
+        (dev.Device.framework ^ " " ^ label ^ " nondeterministic") :: !failures
+    end
+    else check dev bit_label (on = List.hd offs) ;
+    issued
+  end
+
 let run_device (dev : Device.t) =
   let defers = Execute.Window.defers_device dev in
   let scenario label f ~fused_launches =
-    let off, _ = with_window false (fun () -> issued_by (fun () -> f dev)) in
-    let off', _ = with_window false (fun () -> issued_by (fun () -> f dev)) in
-    let on, issued = issued_by (fun () -> f dev) in
-    (* A device whose results already differ between two runs WITHOUT the
-       window (seen on the Intel oneAPI CPU OpenCL runtime in CI, and on the
-       7950X iGPU in the bench) says nothing about the window: reported, not
-       failed. Such devices must not be ones that defer. *)
-    if off <> off' then begin
-      Printf.printf
-        "  %-11s %-34s %-24s SKIP (nondeterministic without the window)\n%!"
-        dev.Device.framework
-        dev.Device.name
-        (label ^ " bit-identical") ;
-      if defers then
-        failures :=
-          (dev.Device.framework ^ " " ^ label ^ " nondeterministic")
-          :: !failures
-    end
-    else check dev (label ^ " bit-identical") (on = off) ;
+    let issued = check_bit_identity dev ~defers label f in
     if defers then
       check
         dev
