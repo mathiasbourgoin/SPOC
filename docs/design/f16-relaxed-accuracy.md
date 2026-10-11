@@ -466,7 +466,7 @@ verdict.**
 | **OpenCL / pocl (x86), Intel IGC, Intel oneAPI CPU** | AMD EPYC 7763 (CI), Intel Arc Graphics (MTL), Core Ultra 9 185H | **0 / 63488** | n/a | executed | **strict**; refusal is currently over-broad here |
 | **Vulkan / RADV** | RX 7900 XTX (NAVI31) + Raphael iGPU (RAPHAEL_MENDOCINO), Mesa 26.1.4-arch3.1 | **2912 / 63488** on `f16(x*1.1)` (plain and `precise` alike); **5075** plain / **4776** with `precise` on `f16(f16(x*1.1)+1000)` | **YES, each count is a different named model, all bit-identical on 63488 / 63488 on both devices.** `f16(x*1.1)` → `S_fuse_mul_into_narrowing`. `f16(f16(x*1.1)+1000)` plain → `S_absorb_all_into_final_narrowing`; with `precise` → `S_f32_mul_then_absorb_add`, which is **the model the shipped codegen runs under**. `precise` is honoured, not ignored: it forbids a multiply-into-add contraction and cannot reach a conversion absorbing its operand (§9.3) | executed **element-wise**, plus **machine-code** for the reconciliation (`fp-contraction-policy.md` §12.4) | **ADMITTED under Regime A** on the two swept shapes, each with its own named model; the other 18 shapes are `Unknown` and stay refused |
 | **Vulkan / ANV** | Intel Arc Graphics (MTL), Mesa 26.1.2-arch3.1 | **0 / 63488** | n/a | executed | **strict**; refusal is currently over-broad here |
-| **Metal** | Apple M4, macOS 15.6.1 (24G90), Apple clang 17.0.0 (clang-1700.0.13.5), Metal.framework from the Command Line Tools SDK | **0 / 63488** on `f16(x*1.1)` **and 0 / 63488** on `f16(f16(x*1.1)+1000)`; unchanged under `#pragma METAL fp contract(off)`, `#pragma clang fp contract(off)`, a `volatile thread` barrier and an `as_type` bitcast barrier | n/a — no deviation to model. The `fusedctl` control, on the same source, compile options and dispatch, reproduces `S_fuse_mul_into_narrowing` on **63488 / 63488** and reports 2912 / 620 | executed, **element-wise** over the whole finite binary16 domain | **strict**; refusal is currently over-broad here |
+| **Metal** | Apple M4, macOS 15.6.1 (24G90), Apple clang 17.0.0 (clang-1700.0.13.5), Metal.framework from the Command Line Tools SDK | **0 / 63488** on `f16(x*1.1)` **and 0 / 63488** on `f16(f16(x*1.1)+1000)`; unchanged under `#pragma METAL fp contract(off)`, `#pragma clang fp contract(off)`, a `volatile thread` barrier and an `as_type` bitcast barrier | n/a — no deviation to model. The `fusedctl` control, on the same source, compile options and dispatch, reproduces `S_fuse_mul_into_narrowing` on **63488 / 63488** and reports 2912 / 620 | executed, **element-wise** over the whole finite binary16 domain | **strict**; **lowered** (package H3, specs/coopmat-metal-simdgroup.md) |
 | **WGSL / naga** | — | **never probed** | — | none | **`Unknown` → refused** |
 | **PTX** | — | refuses kernel-level f16 by design (backlog-57 slice 2) | — | by-construction | nothing to relax |
 
@@ -892,7 +892,7 @@ refusal before slice 3.
 | **3** | GLSL scalar f16, allowlisted | Sarek-*generated* f16 shaders meet the contract | RX 7900 XTX (local) | **yes**, on an allowlist | open |
 | **4** | backlog-62 Vulkan coopmat, f16×f16→f32 | the tensor-core path, end to end | RX 7900 XTX (local) | yes (new capability) | **4a/4c DONE for the INTEGER configurations, 2026-07-27 — see below. The f16 half is untouched and 4a's numeric contract is still unmeasured.** |
 | **5** | backlog-63 Metal — **scalar f16 first** | the Metal row of §2 | Apple M4 | no | **DONE 2026-07-27 — strict, 0/63488** |
-| **6** | backlog-63 Metal `simdgroup_matrix` | the Apple tensor-core path | Apple M4 | yes | **DONE 2026-07-27 — availability + numerics; no integer path** |
+| **6** | backlog-63 Metal `simdgroup_matrix` | the Apple tensor-core path | Apple M4 | yes | **DONE 2026-07-27 — availability + numerics; no integer path.** Codegen (f16 x f16 -> f32 only) **DONE 2026-10-12**, specs/coopmat-metal-simdgroup.md |
 
 ### Slice 0 — make the contract fail-able (host-only, lands first)
 
@@ -1291,7 +1291,7 @@ saying why, rather than lifting it for symmetry.
 > - **The PPX surface.** A coopmat kernel is built as IR directly. Nothing in
 >   `[%kernel ...]` produces an `SCoopmat`, and the PPX's parallel `stmt` type
 >   deliberately did not gain the constructor.
-> - **Metal, CUDA, OpenCL, WGSL, PTX** refuse rather than emit.
+> - **CUDA, OpenCL, WGSL, PTX** refuse rather than emit (CUDA and HIP are lowered by specs/coopmat-hip-wmma.md; Metal by specs/coopmat-metal-simdgroup.md).
 
 
 Sub-sliced deliberately, because 4a is cheap, is the highest-information step,

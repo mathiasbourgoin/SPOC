@@ -80,3 +80,28 @@
  (alias e2e-metal-bench)
  (action
   (run %{dep:bench_metal_launch_overhead.exe})))
+
+; f16 x f16 -> f32 GEMM on simdgroup_matrix (SCoopmat, 8x8x8) vs the scalar f32
+; tiled Sarek_gemm kernel, interleaved rounds, median and min-max
+; (specs/coopmat-metal-simdgroup.md). Information only.
+
+(executable
+ (name bench_metal_coopmat_gemm)
+ (modules bench_metal_coopmat_gemm)
+ (libraries
+  sarek
+  sarek.gemm
+  sarek_ir
+  spoc_core
+  spoc_framework
+  sarek_metal
+  unix)
+ (preprocessor_deps
+  (file ../../sarek/Sarek_gemm/Sarek_gemm.ml))
+ (preprocess
+  (pps sarek_ppx)))
+
+(rule
+ (alias e2e-metal-bench)
+ (action
+  (run %{dep:bench_metal_coopmat_gemm.exe})))

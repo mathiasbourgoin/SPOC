@@ -43,7 +43,8 @@ column-major (`index + c·stride + r`), for any fragment (see "Layouts" below).
 | HIP | gfx11, wave32 | {u8,s8} × {u8,s8} + u32 → u32 | Strict | same instruction (wrapping 32-bit sum, identical bits) | RX 7900 XTX, bit-identical |
 | HIP | any other gfx (gfx1036 iGPU, gfx10, gfx9/CDNA, gfx12) or warp size ≠ 32 | none | — | refused by the capability gate | gfx1036 refusal observed |
 | CUDA | sm_70+ (f16), sm_72+ (8-bit) | f16 × f16 + f32 → f32; u8 × u8, s8 × s8 + s32 → s32 | as above | `nvcuda::wmma` | **compile-only** (NVRTC + ptxas when present); CUDA/C reports the probe `Cuda_coopmat` (sm_70+/sm_72+, warp 32), ZLUDA devices declined (it rejects `wmma.*` and unsigned 8-bit `mma`); CUDA/PTX refuses |
-| Metal, OpenCL, WGSL, PTX, Native | — | none | — | refused (unchanged) | refusal tests |
+| Metal | Apple GPU (`simdgroup_matrix`) | f16 × f16 + f32 → f32, 8×8×8 only | Relaxed_bounded, opt-in (bit-equal to the interpreter) | `simdgroup_multiply_accumulate` | see `specs/coopmat-metal-simdgroup.md` |
+| OpenCL, WGSL, PTX, Native | — | none | — | refused (unchanged) | refusal tests |
 
 Not offered anywhere by this change, each refused with a named reason:
 saturating integer accumulation, f16 accumulate (f16 result; §5.4 of the design
@@ -58,7 +59,8 @@ workgroup scope, any shape other than 16×16×16 on HIP/CUDA.
 | HIP gfx11 | A: `sarek_cm_load_a_*` (16 contiguous elements per lane at `p + i + l16·s`); B: `sarek_cm_load_b_*` (16 elements `s` apart at `p + i + l16`); accumulator `*_acc_*` | the other operand helper: column-major B is the contiguous `load_a_*` form, column-major A the strided one; accumulator `*_acc_cm_*` (`p + i + l16·s + h`, elements 2 apart) |
 | CUDA | `row_major` fragment type, `mem_row_major` | `col_major` in the operand's fragment TYPE (so every load of one fragment must use one layout: a fragment loaded in both is a named `#error` in the CUDA arm), `mem_col_major` for accumulators; **compile-only** |
 | GLSL (Vulkan) | `gl_CooperativeMatrixLayoutRowMajor` | `gl_CooperativeMatrixLayoutColumnMajor` |
-| Metal, OpenCL, WGSL, PTX | refused (no cooperative matrices) | refused |
+| Metal | `transpose_matrix` flag of `simdgroup_load` / `simdgroup_store` (specs/coopmat-metal-simdgroup.md) | same flag |
+| OpenCL, WGSL, PTX | refused (no cooperative matrices) | refused |
 
 Executed: `sarek/tests/e2e/test_coopmat_layout_e2e.ml`, every row/column
 combination of A, B, C and D on HIP gfx1100 (u8, f16 and bf16 configurations)
@@ -126,7 +128,7 @@ parameter or a shared array.
 - `ds_subgroup_size` = the device warp size (32). `ds_robust_buffer_access` = false.
 - The refusal text of `Sarek_coopmat.device_lacks_config` becomes backend-neutral;
   each probe states its own evidence in a new `ds_evidence` field.
-- CUDA and Metal keep `coopmat = None` ("not probed" → refused).
+- CUDA keeps `coopmat = None` ("not probed" → refused). Metal is probed since specs/coopmat-metal-simdgroup.md.
 
 ## Opt-in for float accumulation
 
