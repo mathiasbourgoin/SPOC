@@ -23,6 +23,7 @@
   Metal_types
   Metal_bindings
   Metal_api
+  Metal_coopmat
   Metal_plugin_base
   Metal_plugin
   Sarek_ir_metal)

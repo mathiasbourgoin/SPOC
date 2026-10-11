@@ -15,6 +15,14 @@
  (modules test_metal_compile_options)
  (libraries sarek_metal alcotest))
 
+; The Metal cooperative-matrix capability rule (specs/coopmat-metal-simdgroup.md).
+; Pure: no device.
+
+(test
+ (name test_metal_coopmat_probe)
+ (modules test_metal_coopmat_probe)
+ (libraries sarek_metal sarek_ir alcotest))
+
 ; backlog-214 - the Metal plugin refuses a non-empty ~soa_params instead of
 ; answering an SoA argument list with AoS source. Pure codegen, no device.
 
