@@ -255,7 +255,7 @@ module Memory = struct
     Device.set_current device ;
     (* NOT Ctypes_static.sizeof (Ctypes.typ_of_bigarray_kind kind): ctypes has
        no Float16 kind and raises "Unsupported bigarray kind" there. Spoc_core's
-       pure table knows f16 is 2 bytes. See Spoc_core.Memory.bigarray_void_ptr
+       pure table knows f16 is 2 bytes. See Spoc_core.Memory.borrow_bigarray_ptr
        for the full explanation. *)
     let elem_size = Spoc_core.Memory.bigarray_elem_size kind in
     let bytes = Unsigned.Size_t.of_int (size * elem_size) in
@@ -304,13 +304,11 @@ module Memory = struct
   (* The [Sys.opaque_identity] here is the same keep-alive the sibling
      [load_module_from_code_object] below applies to its code bigarray: the
      bigarray must stay reachable until hipMemcpy has consumed its address.
-     [Spoc_core.Memory.bigarray_void_ptr] now returns a MANAGED pointer for
-     every kind including f16, so the pointer value itself roots the array —
-     but the explicit keepalive is kept because it is cheap and because the
-     ctypes view here could be inlined away in a future refactor. *)
+     [Spoc_core.Memory.borrow_bigarray_ptr] does not root it (its f16 pointer
+     is unmanaged), so this keep-alive is required on every kind. *)
   let host_to_device ~src ~dst =
     Device.set_current dst.device ;
-    let src_ptr = Spoc_core.Memory.bigarray_void_ptr src in
+    let src_ptr = Spoc_core.Memory.borrow_bigarray_ptr src in
     let bytes = Unsigned.Size_t.of_int (Bigarray.Array1.size_in_bytes src) in
     check "hipMemcpyHtoD" (hipMemcpyHtoD dst.ptr src_ptr bytes) ;
     ignore (Sys.opaque_identity src) ;
@@ -318,7 +316,7 @@ module Memory = struct
 
   let device_to_host ~src ~dst =
     Device.set_current src.device ;
-    let dst_ptr = Spoc_core.Memory.bigarray_void_ptr dst in
+    let dst_ptr = Spoc_core.Memory.borrow_bigarray_ptr dst in
     let bytes = Unsigned.Size_t.of_int (Bigarray.Array1.size_in_bytes dst) in
     check "hipMemcpyDtoH" (hipMemcpyDtoH dst_ptr src.ptr bytes) ;
     ignore (Sys.opaque_identity dst) ;

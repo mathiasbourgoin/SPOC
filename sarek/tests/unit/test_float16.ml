@@ -417,14 +417,22 @@ let test_interp_e2e_f32_sink () =
 (* The f16 host pointer is built over [Ctypes_bigarray.unsafe_address] because
    ctypes' kind GADT has no Float16 arm, and that pointer is UNMANAGED: unlike
    [Ctypes.bigarray_start], it does not root the bigarray. An FFI call holding
-   only such a pointer can therefore see the bigarray freed mid-call.
-   [Spoc_core.Memory.with_bigarray_ptr] keeps the bigarray reachable until its
-   callback returns; every backend issues its FFI call inside that callback.
+   only such a pointer can therefore see the bigarray freed mid-call. Transfer
+   paths take [Spoc_core.Memory.borrow_bigarray_ptr] and follow the FFI call
+   with [ignore (Sys.opaque_identity ba)]; the cold OpenCL zero-copy allocation
+   uses [Spoc_core.Memory.with_bigarray_ptr], which does the same around a
+   callback.
 
-   The property is asserted at the exact moment a transfer runs: a major GC
-   issued INSIDE the callback must not finalise the bigarray. Two controls keep
-   that assertion from passing vacuously: with no reference at all the
-   bigarray IS finalised, and the bare f16 pointer alone does NOT root it. *)
+   The property is asserted at the moment a transfer would run: a major GC
+   issued while the pointer is in use must not finalise the bigarray. Two
+   controls keep that assertion from passing vacuously: with no reference at
+   all the bigarray IS finalised, and the bare f16 pointer alone does NOT root
+   it.
+
+   Scope: these tests cover [with_bigarray_ptr] and a copy of the
+   borrow-then-[opaque_identity] pattern written here. They do not exercise
+   the backend call sites themselves; each of those carries the trailing
+   [Sys.opaque_identity] by review. *)
 
 let alloc_f16 () = Bigarray.Array1.create Bigarray.Float16 Bigarray.c_layout 64
 
@@ -443,6 +451,19 @@ let[@inline never] collected_inside_scope create =
   Spoc_core.Memory.with_bigarray_ptr ba (fun _ptr ->
       full_major_twice () ;
       !collected)
+
+(* The transfer-path pattern: borrow, use the pointer across a GC, then
+   [Sys.opaque_identity] the bigarray. *)
+let[@inline never] collected_borrow_pattern () =
+  let collected = ref false in
+  let ba = alloc_f16 () in
+  Gc.finalise (fun _ -> collected := true) ba ;
+  let ptr = Spoc_core.Memory.borrow_bigarray_ptr ba in
+  full_major_twice () ;
+  let verdict = !collected in
+  ignore (Sys.opaque_identity ptr) ;
+  ignore (Sys.opaque_identity ba) ;
+  verdict
 
 let[@inline never] f16_pointer_only collected =
   let ba = alloc_f16 () in
@@ -477,7 +498,12 @@ let test_f16_scope_roots_its_bigarray () =
     "Memory.with_bigarray_ptr keeps the f16 bigarray alive across a major GC \
      inside the callback"
     false
-    (collected_inside_scope alloc_f16)
+    (collected_inside_scope alloc_f16) ;
+  Alcotest.(check bool)
+    "borrow_bigarray_ptr + trailing Sys.opaque_identity keeps the f16 bigarray \
+     alive across a major GC"
+    false
+    (collected_borrow_pattern ())
 
 let test_non_f16_scope_roots_its_bigarray () =
   Alcotest.(check bool)

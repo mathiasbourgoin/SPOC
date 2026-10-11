@@ -142,10 +142,10 @@ module Metal : Framework_sig.PLUGIN_BASE = struct
 
     let free b = Metal_api.Memory.release b.buf
 
-    (* Host pointers come from [Spoc_core.Memory.bigarray_void_ptr], not
+    (* Host pointers come from [Spoc_core.Memory.borrow_bigarray_ptr], not
        [Ctypes.bigarray_start]: the latter raises Failure "Unsupported bigarray
-       kind" for Float16 (MF2), and the former is MANAGED so the bigarray stays
-       GC-rooted across the memcpy (MF3). *)
+       kind" for Float16. The pointer does not root the bigarray; the
+       [Sys.opaque_identity] after each memcpy keeps it reachable. *)
     (* Every host access to a buffer's [contents] first waits for the pending
        command buffers that bind it (Metal_api.Pending): a write must not land
        under a kernel still reading, a read must see what the kernel wrote. *)
@@ -154,7 +154,7 @@ module Metal : Framework_sig.PLUGIN_BASE = struct
     let host_to_device ~src ~dst =
       wait dst ;
       (* Metal shared memory: just memcpy *)
-      let ba_ptr = Spoc_core.Memory.bigarray_void_ptr src in
+      let ba_ptr = Spoc_core.Memory.borrow_bigarray_ptr src in
       let byte_size =
         Bigarray.Array1.dim src * dst.buf.Metal_api.Memory.elem_size
       in
@@ -164,7 +164,7 @@ module Metal : Framework_sig.PLUGIN_BASE = struct
     let device_to_host ~src ~dst =
       wait src ;
       (* Metal shared memory: just memcpy *)
-      let ba_ptr = Spoc_core.Memory.bigarray_void_ptr dst in
+      let ba_ptr = Spoc_core.Memory.borrow_bigarray_ptr dst in
       let byte_size =
         Bigarray.Array1.dim dst * src.buf.Metal_api.Memory.elem_size
       in

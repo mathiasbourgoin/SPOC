@@ -499,12 +499,15 @@ end = struct
             dst_char_ptr +@ i <-@ !@(src_char_ptr +@ i)
           done
       | Bigarray_storage dst_arr ->
-          let dst_ptr = Spoc_core.Memory.bigarray_void_ptr dst_arr in
+          (* The f16 pointer does not root [dst_arr]; the trailing
+             [Sys.opaque_identity] keeps it reachable across the copy. *)
+          let dst_ptr = Spoc_core.Memory.borrow_bigarray_ptr dst_arr in
           let dst_char_ptr = from_voidp char dst_ptr in
           let src_char_ptr = from_voidp char src_ptr in
           for i = 0 to byte_size - 1 do
             dst_char_ptr +@ i <-@ !@(src_char_ptr +@ i)
-          done
+          done ;
+          ignore (Sys.opaque_identity dst_arr)
 
     (** Transfer from native buffer to raw pointer (for custom types). *)
     let device_to_host_ptr ~src ~dst_ptr ~byte_size =
@@ -519,12 +522,13 @@ end = struct
             dst_char_ptr +@ i <-@ !@(src_char_ptr +@ i)
           done
       | Bigarray_storage src_arr ->
-          let src_ptr = Spoc_core.Memory.bigarray_void_ptr src_arr in
+          let src_ptr = Spoc_core.Memory.borrow_bigarray_ptr src_arr in
           let src_char_ptr = from_voidp char src_ptr in
           let dst_char_ptr = from_voidp char dst_ptr in
           for i = 0 to byte_size - 1 do
             dst_char_ptr +@ i <-@ !@(src_char_ptr +@ i)
-          done
+          done ;
+          ignore (Sys.opaque_identity src_arr)
 
     let device_to_device : type a. src:a buffer -> dst:a buffer -> unit =
      fun ~src ~dst ->
@@ -552,7 +556,7 @@ end = struct
       match buf.storage with
       | Bigarray_storage arr ->
           (* Bigarray storage - get pointer from bigarray *)
-          Ctypes.raw_address_of_ptr (Spoc_core.Memory.bigarray_void_ptr arr)
+          Ctypes.raw_address_of_ptr (Spoc_core.Memory.borrow_bigarray_ptr arr)
       | Ctypes_storage ptr ->
           (* Ctypes storage - data is already a pointer *)
           Ctypes.raw_address_of_ptr ptr
