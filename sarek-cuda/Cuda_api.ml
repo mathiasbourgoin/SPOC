@@ -833,43 +833,57 @@ module Kernel = struct
     Spoc_framework.Cache_hooks.around_clear (fun () ->
         Spoc_framework.Guarded_cache.clear cache)
 
-  let launch kernel ~args ~grid ~block ~shared_mem ~stream =
-    (* Build parameter array *)
+  (* Host blocks allocated by [marshal_args], for tests. *)
+  let kernarg_blocks = Atomic.make 0
+
+  let kernarg_blocks_allocated () = Atomic.get kernarg_blocks
+
+  let counted_allocate typ v =
+    Atomic.incr kernarg_blocks ;
+    allocate typ v
+
+  let marshal_args args : kernargs =
+    Atomic.incr kernarg_blocks ;
     let params = CArray.make (ptr void) (List.length args) in
     let refs : ctype_ref list ref = ref [] in
-    (* Keep references alive *)
-
     List.iteri
       (fun i arg ->
         let ptr =
           match arg with
           | ArgBuffer buf ->
-              let v = allocate cu_deviceptr buf.Memory.ptr in
+              let v = counted_allocate cu_deviceptr buf.Memory.ptr in
               refs := CTypeRef (cu_deviceptr, v) :: !refs ;
               to_voidp v
           | ArgInt32 n ->
-              let v = allocate int32_t n in
+              let v = counted_allocate int32_t n in
               refs := CTypeRef (int32_t, v) :: !refs ;
               to_voidp v
           | ArgInt64 n ->
-              let v = allocate int64_t n in
+              let v = counted_allocate int64_t n in
               refs := CTypeRef (int64_t, v) :: !refs ;
               to_voidp v
           | ArgFloat32 f ->
-              let v = allocate float f in
+              let v = counted_allocate float f in
               refs := CTypeRef (float, v) :: !refs ;
               to_voidp v
           | ArgFloat64 f ->
-              let v = allocate double f in
+              let v = counted_allocate double f in
               refs := CTypeRef (double, v) :: !refs ;
               to_voidp v
           | ArgPtr p ->
-              let v = allocate nativeint p in
+              let v = counted_allocate nativeint p in
               refs := CTypeRef (nativeint, v) :: !refs ;
               to_voidp v
         in
         CArray.set params i ptr)
       args ;
+    {params; cells = !refs}
+
+  (* Pointer handed to the driver for argument [i]; for tests. *)
+  let kernarg_pointer (k : kernargs) i = CArray.get k.params i
+
+  let launch kernel ~args ~grid ~block ~shared_mem ~stream =
+    let ({params; _} as kernargs) = marshal_args args in
 
     let stream_ptr =
       match stream with
@@ -915,7 +929,7 @@ module Kernel = struct
       | Some s -> (s.Stream.device.id, stream_key_of_ptr s.Stream.handle)
       | None -> (Device.current_id (), default_stream_key)
     in
-    retain_kernargs device_id stream_key {params; cells = !refs}
+    retain_kernargs device_id stream_key kernargs
 end
 
 (** {1 Utility Functions} *)
