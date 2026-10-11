@@ -66,8 +66,6 @@ type 'arg launch = {
 
 (** {1 Per-kernel facts} *)
 
-module Ir_table = Ephemeron.K1.Make (Ir_memo.Physical)
-
 type ir_info = {
   ir_id : int;
   param_accesses : (string * Kernel_access.access) list;
@@ -107,7 +105,7 @@ type 'arg t = {
   arg_int32 : 'arg -> int32 option;  (** the value of an int32 scalar *)
   set_pending : int -> unit;
   guard : (unit -> unit) -> unit;
-  infos : ir_info Ir_table.t;
+  info_key : ir_info Ir_memo.key;  (** this window's slot of each IR's facts *)
   mutable next_ir_id : int;
   cache : (int list, kernel) Hashtbl.t;  (** member ir_ids -> fused kernel *)
   refused : (int list, unit) Hashtbl.t;  (** member sequences never fused *)
@@ -133,7 +131,7 @@ let create ~int32_arg ~arg_buf ~arg_int32 ~set_pending ~guard : 'arg t =
     arg_int32;
     set_pending;
     guard;
-    infos = Ir_table.create 64;
+    info_key = Ir_memo.new_key ();
     next_ir_id = 0;
     cache = Hashtbl.create 64;
     refused = Hashtbl.create 8;
@@ -175,7 +173,8 @@ let defers (backend : string) : bool =
 
 (** As {!ir_info}, for a caller that already holds [w.lock]. *)
 let ir_info_locked (w : _ t) (ir : kernel) : ir_info =
-  match Ir_table.find_opt w.infos ir with
+  let facts = Ir_memo.facts ir in
+  match Ir_memo.find facts w.info_key with
   | Some i -> i
   | None ->
       let i =
@@ -186,7 +185,7 @@ let ir_info_locked (w : _ t) (ir : kernel) : ir_info =
         }
       in
       w.next_ir_id <- w.next_ir_id + 1 ;
-      Ir_table.replace w.infos ir i ;
+      Ir_memo.set facts w.info_key i ;
       i
 
 let ir_info (w : _ t) (ir : kernel) : ir_info =
