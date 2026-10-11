@@ -28,7 +28,15 @@ let mode = Spec.mode
 
 let run ?precision ~device ~ir ~args ~block ~grid () =
   match
-    Execute.run_vectors_outcome ?precision ~device ~ir ~args ~block ~grid ()
+    Execute.run_vectors_outcome
+      ?precision
+      ~explicit:true
+      ~device
+      ~ir
+      ~args
+      ~block
+      ~grid
+      ()
   with
   | Spec.Specialised s -> Rewritten {lowering = s.lowering; config = s.config}
   | Spec.Original why -> Original why

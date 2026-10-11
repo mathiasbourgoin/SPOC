@@ -349,13 +349,6 @@ let body c0 =
        @ combine c ~tid:tid_e ~wm:wm_e ~wn:wn_e
        @ [SBarrier; write_outputs c ~tid:tid_e]))
 
-let uses_launch_dims (g : P.gemm) =
-  let es =
-    [g.k_lo; g.k_hi; g.init]
-    @ match g.epilogue with P.Epilogue e -> [e] | P.Plain -> []
-  in
-  List.exists Sarek_ir_eval_int.mentions_launch_dims es
-
 let ( let* ) = Result.bind
 
 let kernel (k : kernel) (g : P.gemm) lowering =

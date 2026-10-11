@@ -286,3 +286,12 @@ let address_env (k : kernel) (g : P.gemm) : Affine.env =
 let extra_param fresh name =
   fresh.next <- fresh.next + 1 ;
   {var_name = name; var_id = fresh.next; var_type = TInt32; var_mutable = false}
+
+(* A bound, initial value or epilogue that reads block_dim/grid_dim changes
+   meaning under the rewritten launch's own dimensions. *)
+let uses_launch_dims (g : P.gemm) =
+  let es =
+    [g.k_lo; g.k_hi; g.init]
+    @ match g.epilogue with P.Epilogue e -> [e] | P.Plain -> []
+  in
+  List.exists Sarek_ir_eval_int.mentions_launch_dims es
