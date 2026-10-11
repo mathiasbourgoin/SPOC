@@ -366,8 +366,11 @@ let check_auto_precision dev =
 
 let int_phase dev =
   let rewrites = offers_int dev in
-  let interp = dev.Device.framework = "Interpreter" in
-  (* By default the interpreter stays the oracle: rewritten on request only. *)
+  (* Explicit-request-only devices: the interpreter stays the oracle, CUDA/C
+     has compiler-output evidence only. *)
+  let interp =
+    dev.Device.framework = "Interpreter" || dev.Device.framework = "CUDA/C"
+  in
   check_mode dev ~mode:Spec.Auto ~expect:(rewrites && not interp) ;
   check_mode dev ~mode:Spec.Exact ~expect:(rewrites && not interp) ;
   check_mode dev ~mode:Spec.Off ~expect:false ;

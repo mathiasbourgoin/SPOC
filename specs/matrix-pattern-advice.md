@@ -119,8 +119,8 @@ rewrites nothing.
 | anything else (int64, float64, mixed) | | none | | |
 
 Backends, for the configurations above (fixed table, from specs/coopmat-hip-wmma.md):
-HIP gfx11 wave32 — executes; CUDA/C sm_72+ (integer only) — compiled with NVRTC,
-never run on NVIDIA hardware, ZLUDA declines; Vulkan — integer configurations,
+HIP gfx11 wave32 — executes; CUDA/C sm_72+ (integer only) — explicit request only; compiled with NVRTC,
+never executed; ZLUDA lacks wmma; Vulkan — integer configurations,
 executes on RADV (64-wide subgroups); Metal, OpenCL, WGSL, PTX, Native — no
 matrix-unit lowering.
 
@@ -161,7 +161,7 @@ Sarek: kernel '<name>' contains a matrix product (GEMM) that matrix units could 
   elements: <A> x <B> -> <acc> accumulator
   configuration: 16x16x16 <cfg> subgroup (<direct | operands rounded to float16 | byte planes>)
   HIP gfx11 (wave32): executes
-  CUDA/C sm_70+ / sm_72+: <none | compiled (NVRTC), never run on NVIDIA hardware; ZLUDA declines>
+  CUDA/C sm_70+ / sm_72+: <none | explicit request only; compiled (NVRTC), never run; ZLUDA lacks wmma>
   Vulkan: <none | executes (RADV, 64-wide subgroups)>
   Metal, OpenCL, WGSL, PTX, Native: no matrix-unit lowering
   accuracy: <exact | relaxed ... opt-in>
