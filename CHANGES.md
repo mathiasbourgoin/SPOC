@@ -366,11 +366,15 @@
     (`Execute.run_interpreter_vectors`, `Sarek_ir_interp.run_kernel_with_args`).
     `x.(i) <- y.(i) + 7` with `x` and `y` the same vector left `x` unchanged
     (the two private copies were written back in an order that depended on the
-    entry point). Not covered: `run_kernel_with_exec_args` (the interpreter
-    plugin's launch), whose arguments expose no identity to compare.
+    entry point). This covers `Execute.run_vectors` on an Interpreter device
+    too (`run_kernel_with_exec_args`, matched by the vector wrapper's stable
+    `underlying_type_id` and physical `underlying`). Not covered: the
+    interpreter plugin's own device-buffer wrapper, which mints a fresh type id
+    per instance and is not reachable from launches built from host vectors.
   - The BSP deadlock detector could never fire (a resumed thread was counted as
-    completed). It now raises `BSP_deadlock` when threads wait at a barrier that
-    finished threads never reach, and does not fire on successive barriers.
+    completed). It now raises `BSP_deadlock` when threads wait at a block barrier that
+    finished threads never reach, and does not fire on successive barriers or on
+    threads parked at a warp barrier (a new `Warp_barrier` effect).
 
 - hiprtc and nvrtc option arrays: `CArray.of_list string` let the C copies of
   the option strings be freed before the compile call. Under a different
