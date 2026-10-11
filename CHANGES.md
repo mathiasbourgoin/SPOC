@@ -10,7 +10,14 @@
   style. The recorded class is now kept. A kernel that was accepted only
   because of this and has a barrier under thread-varying control is now
   rejected, as it is without the open (`sarek/tests/negative/test_shared_tuple.ml`
-  was one). Regression tests: `sarek/tests/negative/test_barrier_open_std.ml`,
+  was one). The qualified spelling `Gpu.block_barrier ()` had the same hole
+  (registry entries carry no convergence class) and is fixed at the source.
+  The native backend's barrier detection reads the same class: a kernel with
+  `block_barrier` under `let open Std` or written `Gpu.block_barrier` was
+  compiled as barrier-free (barrier a no-op, parallel pool), and now gets the
+  barrier-aware path. Regression tests:
+  `sarek/tests/negative/test_barrier_open_std.ml`,
+  `sarek/tests/negative/test_barrier_qualified_gpu.ml`,
   `sarek/tests/unit/test_convergence.ml` ("name resolution").
 
 - `SAREK_DEBUG=kernel` (and any other component named without a level) now

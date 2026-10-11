@@ -725,14 +725,16 @@ let src_gt name =
     (Sarek_ast.EBinop
        (Sarek_ast.Gt, src_var name, src_expr (Sarek_ast.EInt32 16l)))
 
-let src_barrier =
-  src_expr
-    (Sarek_ast.EApp (src_var "block_barrier", [src_expr Sarek_ast.EUnit]))
+let src_barrier name =
+  src_expr (Sarek_ast.EApp (src_var name, [src_expr Sarek_ast.EUnit]))
 
-let barrier_errors_of ~opens cond_name =
+(* The barrier-error count of [if <cond_name> > 16l then <barrier> ()] typed
+   from source, and whether the barrier is seen by [expr_uses_barriers] (the
+   native backend's barrier detection). *)
+let barrier_analysis_of ~opens ~barrier cond_name =
   Sarek_types.reset_tvar_counter () ;
   reset_var_id_counter () ;
-  let kernel_body = src_if (src_gt cond_name) src_barrier in
+  let kernel_body = src_if (src_gt cond_name) (src_barrier barrier) in
   let wrapped =
     List.fold_right
       (fun path body -> src_expr (Sarek_ast.EOpen (path, body)))
@@ -745,36 +747,46 @@ let barrier_errors_of ~opens cond_name =
         "typing failed: %s"
         (String.concat ", " (List.map Sarek_error.error_to_string errors))
   | Ok (te, _) ->
-      count_barrier_errors
-        (Sarek_convergence.check_expr Sarek_convergence.init_ctx te)
+      ( count_barrier_errors
+          (Sarek_convergence.check_expr Sarek_convergence.init_ctx te),
+        Sarek_convergence.expr_uses_barriers te )
 
+(* (label, opens, spelling of the barrier) *)
 let open_spellings =
   [
-    ("no open", []);
-    ("open Std", [["Std"]]);
-    ("open Sarek_stdlib.Std", [["Sarek_stdlib"; "Std"]]);
-    ("open Gpu", [["Gpu"]]);
-    ("open Sarek_stdlib.Gpu", [["Sarek_stdlib"; "Gpu"]]);
-    ("open Float32 then Std", [["Float32"]; ["Std"]]);
-    ("open Std twice", [["Std"]; ["Std"]]);
+    ("no open", [], "block_barrier");
+    ("open Std", [["Std"]], "block_barrier");
+    ("open Sarek_stdlib.Std", [["Sarek_stdlib"; "Std"]], "block_barrier");
+    ("open Gpu", [["Gpu"]], "block_barrier");
+    ("open Sarek_stdlib.Gpu", [["Sarek_stdlib"; "Gpu"]], "block_barrier");
+    ("open Float32 then Std", [["Float32"]; ["Std"]], "block_barrier");
+    ("open Std twice", [["Std"]; ["Std"]], "block_barrier");
+    ("qualified Gpu.block_barrier", [], "Gpu.block_barrier");
+    ("open Std, qualified", [["Std"]], "Gpu.block_barrier");
   ]
 
 let test_divergent_barrier_refused_under_opens () =
   List.iter
-    (fun (label, opens) ->
+    (fun (label, opens, barrier) ->
+      let errors, _ = barrier_analysis_of ~opens ~barrier "thread_idx_x" in
       Alcotest.(check int)
         (label ^ ": barrier under a thread_idx_x branch is refused")
         1
-        (barrier_errors_of ~opens "thread_idx_x"))
+        errors)
     open_spellings
 
 let test_uniform_barrier_accepted_under_opens () =
   List.iter
-    (fun (label, opens) ->
+    (fun (label, opens, barrier) ->
+      let errors, uses = barrier_analysis_of ~opens ~barrier "block_idx_x" in
       Alcotest.(check int)
         (label ^ ": barrier under a block_idx_x branch is accepted")
         0
-        (barrier_errors_of ~opens "block_idx_x"))
+        errors ;
+      Alcotest.(check bool)
+        (label ^ ": the native backend sees the barrier")
+        true
+        uses)
     open_spellings
 
 (** {1 Test Suite} *)

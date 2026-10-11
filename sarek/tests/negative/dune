@@ -9,6 +9,8 @@
 ; - test_barrier_diverged: "Barrier called in diverged control flow"
 ; - test_barrier_open_std: "Barrier called in diverged control flow" (the same
 ;   under let open Sarek_stdlib.Std in, the documented style; #447)
+; - test_barrier_qualified_gpu: "Barrier called in diverged control flow" (the
+;   same for the qualified spelling Gpu.block_barrier; #447)
 ; - test_superstep_diverged: "Barrier called in diverged control flow"
 ;   (a superstep under a thread-varying if; specs/convergence-semantics.md SS-1)
 ; - test_superstep_divergent_diverged: "Barrier called in diverged control flow"
@@ -170,6 +172,17 @@
 (library
  (name neg_test_barrier_diverged)
  (modules test_barrier_diverged)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_barrier_qualified_gpu)
+ (modules test_barrier_qualified_gpu)
  (libraries sarek sarek.stdlib sarek.ppx.lib)
  (preprocess
   (pps sarek_ppx))
