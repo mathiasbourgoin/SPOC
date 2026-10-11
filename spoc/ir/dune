@@ -23,6 +23,7 @@
   Sarek_matrix_mapping
   Sarek_matrix_scheme
   Sarek_matrix_rewrite
+  Sarek_matrix_direct
   Sarek_pure_registry)
  (preprocess no_preprocessing)
  (instrumentation

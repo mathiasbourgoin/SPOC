@@ -356,29 +356,7 @@ let uses_launch_dims (g : P.gemm) =
   in
   List.exists Sarek_ir_eval_int.mentions_launch_dims es
 
-let address_env (k : kernel) (g : P.gemm) : Affine.env =
-  let scalars =
-    List.filter_map
-      (function DParam (v, None) -> Some v.var_id | _ -> None)
-      k.kern_params
-  in
-  {
-    classify_var =
-      (fun v ->
-        if List.exists (fun w -> w.var_id = v.var_id) g.enclosing_loops then
-          Affine.Atom_leaf
-        else if List.mem v.var_id scalars then Affine.Uniform_leaf
-        else Affine.Rejected_leaf);
-    definition = (fun _ -> None);
-  }
-
 let ( let* ) = Result.bind
-
-(* The region parameters appended to the original's, under their own names
-   (not [new_var]'s prefixed ones: callers pass them by position). *)
-let extra_param fresh name =
-  fresh.next <- fresh.next + 1 ;
-  {var_name = name; var_id = fresh.next; var_type = TInt32; var_mutable = false}
 
 let kernel (k : kernel) (g : P.gemm) lowering =
   let env = address_env k g in

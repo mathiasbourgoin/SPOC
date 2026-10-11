@@ -23,6 +23,7 @@
   Fusion_epilogue
   Launch_window
   Launch_epilogue
+  Matrix_specialise
   Execute
   Execute_error
   Soa_launch)

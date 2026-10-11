@@ -93,8 +93,10 @@ let advise (g : P.gemm) =
         accuracy_class = Some Relaxed_operands;
         accuracy =
           "relaxed beyond the accumulation order: no matrix unit takes float32 \
-           operands, so they would be rounded to float16 (relative error up to \
-           2^-11 each); no existing opt-in covers that deviation";
+           operands, so they are rounded (float16: relative error up to 2^-11 \
+           each; bfloat16; or a three-term bfloat16 split, near float32); a \
+           rewrite needs Sarek_coopmat.accept_operand_rounding ~precision and \
+           accept_relaxed_accumulation";
         backends = float_backends;
       }
   | Int32_inputs ->
@@ -203,6 +205,16 @@ let pattern_lines (g : P.gemm) =
       (elt_name g.acc.var_type);
   ]
 
+(* What Execute does with the nest at launch (specs/matrix-pattern-dynamic.md). *)
+let rewrite_note = function
+  | Int32_inputs ->
+      "Execute.run_vectors rewrites it onto matrix units by default where they \
+       exist (HIP gfx11); SAREK_MATRIX_REWRITE=off disables it."
+  | F16_inputs | F32_inputs ->
+      "Execute.run_vectors rewrites it onto matrix units only after the opt-in \
+       above (and SAREK_MATRIX_REWRITE not off or exact)."
+  | No_case -> "Not rewritten."
+
 let render ?kernel_name (g : P.gemm) adv =
   let name =
     match kernel_name with
@@ -227,8 +239,9 @@ let render ?kernel_name (g : P.gemm) adv =
     @ List.map (fun (b, s) -> Printf.sprintf "  %s: %s" b s) adv.backends
     @ [
         "  accuracy: " ^ adv.accuracy;
-        "  No code was changed. Silence with [@alert \"-sarek_matrix\"] on the \
-         kernel expression or its binding.";
+        "  " ^ rewrite_note adv.case;
+        "  Silence with [@alert \"-sarek_matrix\"] on the kernel expression or \
+         its binding.";
       ]
   in
   String.concat "\n" lines

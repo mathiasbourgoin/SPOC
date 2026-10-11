@@ -1980,7 +1980,8 @@
   test_coopmat_hip_e2e
   test_launch_window
   test_matrix_rewrite
-  test_matrix_rewrite_float)
+  test_matrix_rewrite_float
+  test_matrix_dynamic)
  (modules
   test_int32_bitcasts
   test_lsr_unroll
@@ -1988,6 +1989,7 @@
   test_launch_window
   test_matrix_rewrite
   test_matrix_rewrite_float
+  test_matrix_dynamic
   matrix_rewrite_support
   coopmat_hip_support
   backend_hip)
@@ -2067,3 +2069,12 @@
  (alias runtest)
  (action
   (run %{dep:test_matrix_rewrite_float.exe})))
+
+; Launch-time matrix specialisation (specs/matrix-pattern-dynamic.md): the
+; default rewrite inside Execute.run_vectors, the three modes, the direct and
+; staged size classes, the report and the cache.
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_matrix_dynamic.exe})))
