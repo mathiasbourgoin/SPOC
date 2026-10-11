@@ -265,6 +265,26 @@ let dependent dev =
     ~grid:(d1 1) ;
   (bits_f t, bits_f acc, bits_f z)
 
+(* Scenario 2b: the consumer's domain (rows + 13) is larger than what the
+   producer stores (rows): never an epilogue, still correct. *)
+let uncovered dev =
+  let x = fvec (rows * nb) 17 and w = fvec nb 18 in
+  let t = fvec (rows + 13) 0 and acc = fvec (rows + 13) 19 in
+  let open Execute in
+  launch
+    dev
+    (ir_of mv_wave)
+    [Vec x; Vec w; Vec t; Int rows; Int nb]
+    ~block:(d1 256)
+    ~grid:(d1 ((rows + 7) / 8)) ;
+  launch
+    dev
+    (ir_of add_inplace)
+    [Vec acc; Vec t; Int (rows + 13)]
+    ~block:(d1 256)
+    ~grid:(d1 1) ;
+  (bits_f t, bits_f acc)
+
 (* Scenario 3: reader, host write of its input, second reader. *)
 let host_write dev =
   let x = fvec n_row 9 and w = fvec n_row 10 in
@@ -337,7 +357,10 @@ let run_device (dev : Device.t) =
         (issued = fused_launches)
   in
   scenario "independent" independent ~fused_launches:1 ;
-  scenario "dependent" dependent ~fused_launches:3 ;
+  (* matvec -> residual add is an epilogue where it is on (HIP). *)
+  let epi = Execute.Window.epilogue_on dev.Device.framework in
+  scenario "dependent" dependent ~fused_launches:(if epi then 2 else 3) ;
+  scenario "uncovered consumer" uncovered ~fused_launches:2 ;
   scenario "grid_dim_x member" not_fusable ~fused_launches:2 ;
   scenario "host write" host_write ~fused_launches:2 ;
   (* A profiling timer is a synchronisation point: the launch it brackets is
@@ -355,6 +378,40 @@ let run_device (dev : Device.t) =
     in
     check dev "timer flushes" (issued = 1)
   end
+
+(* The epilogue-fused kernel (matvec, then residual add) on the Interpreter,
+   against the two kernels run one after the other. *)
+let interpreter_epilogue () =
+  let p = ir_of mv_wave and c = ir_of add_inplace in
+  let fused =
+    Sarek_execute.Fusion_epilogue.fuse
+      ~name:"epi_test"
+      ~producer:p
+      ~p_array:"y"
+      ~consumer:c
+      ~shared:[("y", "y")]
+  in
+  let mk () = (fvec (rows * nb) 21, fvec nb 22, fvec rows 0, fvec rows 23) in
+  let open Execute in
+  let interp ir args g =
+    run_interpreter_vectors
+      ~ir
+      ~args
+      ~block:(d1 256)
+      ~grid:(d1 g)
+      ~parallel:false
+  in
+  let gx = (rows + 7) / 8 in
+  let x, w, t, acc = mk () in
+  interp p [Vec x; Vec w; Vec t; Int rows; Int nb] gx ;
+  interp c [Vec acc; Vec t; Int rows] 1 ;
+  let x', w', t', acc' = mk () in
+  (* Producer args, then the consumer's unshared ones (acc, n), then tc. *)
+  interp
+    fused
+    [Vec x'; Vec w'; Vec t'; Int rows; Int nb; Vec acc'; Int rows; Int 256]
+    gx ;
+  bits_f t = bits_f t' && bits_f acc = bits_f acc'
 
 (* The fused kernel on the Interpreter, against its members one by one. *)
 let interpreter_fused () =
@@ -425,6 +482,13 @@ let () =
     "fused IR = members"
     (if ok then "PASS" else "FAIL") ;
   if not ok then failures := "interpreter fused IR" :: !failures ;
+  let ok = interpreter_epilogue () in
+  Printf.printf
+    "  %-46s %-24s %s\n%!"
+    "Interpreter"
+    "epilogue IR = pair"
+    (if ok then "PASS" else "FAIL") ;
+  if not ok then failures := "interpreter epilogue IR" :: !failures ;
   Array.iter
     (fun (dev : Device.t) ->
       match run_device dev with

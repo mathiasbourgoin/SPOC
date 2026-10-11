@@ -2,6 +2,22 @@
 
 ### Added
 
+- Epilogue fusion in the launch window (spec `specs/epilogue-fusion.md`). A
+  pending launch P and an element-wise consumer C that reads P's output at its
+  own index (`let i = global_thread_id in ...`) are merged: C's body runs right
+  after each of P's stores, in the thread that made the store.
+  - The merge happens only when the host evaluation of both launches' index
+    computations (`Index_slice`) shows that P stores every element C writes,
+    exactly once. C must also read nothing else P writes, and write nothing P
+    accesses except the intermediate.
+  - Chains and horizontal groups compose.
+  - On by default on HIP only, because its compiler is forced to
+    `-ffp-contract=off`. Elsewhere a compiler could contract across the
+    merged code, so it is opt-in with `Execute.Window.set_epilogue_backend`.
+    `SAREK_LAUNCH_EPILOGUE=0` turns it off.
+  - spoc_llm decode, RX 7900 XTX: 335 → 281 launches/token on the 0.8B and
+    749 → 665 on the 35B, logits bit-identical.
+
 - Launch window with horizontal fusion (spec `specs/launch-window.md`).
   `Execute.run`/`run_vectors` JIT launches without `~stream` are deferred on
   HIP, OpenCL and Vulkan up to the next synchronisation point:

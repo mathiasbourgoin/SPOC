@@ -107,7 +107,12 @@ type stats = {
 type 'arg t = {
   lock : Mutex.t;
   mutable groups : 'arg group list;  (** oldest first *)
+  mutable epilogue : 'arg t -> 'arg launch -> bool;
+      (** called under [lock] before grouping: [true] when the launch was merged
+          into a pending launch as its epilogue ({!Launch_epilogue}) *)
   int32_arg : int32 -> 'arg;
+  arg_buf : 'arg -> int option;  (** the vector id a vector argument binds *)
+  arg_int32 : 'arg -> int32 option;  (** the value of an int32 scalar *)
   set_pending : int -> unit;
   guard : (unit -> unit) -> unit;
   infos : ir_info Ir_table.t;
@@ -126,11 +131,14 @@ type 'arg t = {
     [set_pending] is told the number of pending launches after each change.
     [guard f] runs [f] (the issuing of pending groups) with the synchronisation
     hooks disabled on this domain. *)
-let create ~int32_arg ~set_pending ~guard : 'arg t =
+let create ~int32_arg ~arg_buf ~arg_int32 ~set_pending ~guard : 'arg t =
   {
     lock = Mutex.create ();
     groups = [];
+    epilogue = (fun _ _ -> false);
     int32_arg;
+    arg_buf;
+    arg_int32;
     set_pending;
     guard;
     infos = Ir_table.create 64;
@@ -173,21 +181,24 @@ let defers (backend : string) : bool =
 
 (** {1 Per-IR facts} *)
 
+(** As {!ir_info}, for a caller that already holds [w.lock]. *)
+let ir_info_locked (w : _ t) (ir : kernel) : ir_info =
+  match Ir_table.find_opt w.infos ir with
+  | Some i -> i
+  | None ->
+      let i =
+        {
+          ir_id = w.next_ir_id;
+          param_accesses = Kernel_access.param_accesses ir;
+          fusable = Kernel_access.horizontal_verdict ir;
+        }
+      in
+      w.next_ir_id <- w.next_ir_id + 1 ;
+      Ir_table.replace w.infos ir i ;
+      i
+
 let ir_info (w : _ t) (ir : kernel) : ir_info =
-  Mutex.protect w.lock (fun () ->
-      match Ir_table.find_opt w.infos ir with
-      | Some i -> i
-      | None ->
-          let i =
-            {
-              ir_id = w.next_ir_id;
-              param_accesses = Kernel_access.param_accesses ir;
-              fusable = Kernel_access.horizontal_verdict ir;
-            }
-          in
-          w.next_ir_id <- w.next_ir_id + 1 ;
-          Ir_table.replace w.infos ir i ;
-          i)
+  Mutex.protect w.lock (fun () -> ir_info_locked w ir)
 
 (** {1 Grouping} *)
 
@@ -362,31 +373,32 @@ let flush (w : _ t) : unit =
     accepted, so its vectors' state is unchanged). *)
 let submit (w : 'arg t) (l : 'arg launch) : unit =
   Mutex.protect w.lock (fun () ->
-      (match target w l with
-      | Some g ->
-          g.rev_members <- l :: g.rev_members ;
-          g.size <- g.size + 1 ;
-          g.grid_x <- g.grid_x + l.grid.x ;
-          g.shared <- g.shared + Option.value ~default:0 l.shared_bytes
-      | None ->
-          (match w.groups with
-          | oldest :: rest when List.length w.groups >= !max_groups ->
-              w.groups <- rest ;
-              Fun.protect
-                ~finally:(fun () -> w.set_pending (count_pending w.groups))
-                (fun () -> issue_all w [oldest])
-          | _ -> ()) ;
-          w.groups <-
-            w.groups
-            @ [
-                {
-                  g_device = l.device_id;
-                  rev_members = [l];
-                  size = 1;
-                  grid_x = l.grid.x;
-                  shared = Option.value ~default:0 l.shared_bytes;
-                };
-              ]) ;
+      (if not (w.epilogue w l) then
+         match target w l with
+         | Some g ->
+             g.rev_members <- l :: g.rev_members ;
+             g.size <- g.size + 1 ;
+             g.grid_x <- g.grid_x + l.grid.x ;
+             g.shared <- g.shared + Option.value ~default:0 l.shared_bytes
+         | None ->
+             (match w.groups with
+             | oldest :: rest when List.length w.groups >= !max_groups ->
+                 w.groups <- rest ;
+                 Fun.protect
+                   ~finally:(fun () -> w.set_pending (count_pending w.groups))
+                   (fun () -> issue_all w [oldest])
+             | _ -> ()) ;
+             w.groups <-
+               w.groups
+               @ [
+                   {
+                     g_device = l.device_id;
+                     rev_members = [l];
+                     size = 1;
+                     grid_x = l.grid.x;
+                     shared = Option.value ~default:0 l.shared_bytes;
+                   };
+                 ]) ;
       bump w.c_submitted ;
       w.set_pending (count_pending w.groups))
 

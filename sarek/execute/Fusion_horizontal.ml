@@ -30,13 +30,6 @@ let prefix k name = Printf.sprintf "m%d_%s" k name
 (* Var ids of member [k] are shifted into a range of their own. *)
 let id_stride = 1 lsl 24
 
-let rename_var k (v : var) =
-  {
-    v with
-    var_name = prefix k v.var_name;
-    var_id = v.var_id + ((k + 1) * id_stride);
-  }
-
 (* The position parameters live OUTSIDE the members' [m<k>_] namespace: a
    member variable named [off] becomes [m<k>_off] and must not shadow them. *)
 let int32_var k name =
@@ -71,68 +64,23 @@ let position ctx name =
       Some (EBinop (Mul, ctx.gdx, gpu "block_dim_x"))
   | _ -> None
 
-let rec expr ctx e =
-  let go = expr ctx and n = prefix ctx.k in
-  match e with
-  | EConst _ -> e
-  | EVar v -> EVar (rename_var ctx.k v)
-  | EBinop (op, a, b) -> EBinop (op, go a, go b)
-  | EUnop (op, a) -> EUnop (op, go a)
-  | EArrayRead (a, i) -> EArrayRead (n a, go i)
-  | EArrayReadExpr (a, i) -> EArrayReadExpr (go a, go i)
-  | ERecordField (a, f) -> ERecordField (go a, f)
-  | EIntrinsic ((["Sarek_stdlib"; "Gpu"] as p), name, args) -> (
-      match position ctx name with
-      | Some r when args = [] -> r
-      | _ -> EIntrinsic (p, name, List.map go args))
-  | EIntrinsic (p, name, args) -> EIntrinsic (p, name, List.map go args)
-  | ECast (t, a) -> ECast (t, go a)
-  | ETuple es -> ETuple (List.map go es)
-  | EApp ((EVar _ as helper), es) ->
-      (* A helper function, called by its own (shared, unrenamed) name. *)
-      EApp (helper, List.map go es)
-  | EApp (f, es) -> EApp (go f, List.map go es)
-  | ERecord (t, fs) -> ERecord (t, List.map (fun (f, x) -> (f, go x)) fs)
-  | EVariant (t, c, es) -> EVariant (t, c, List.map go es)
-  | EArrayLen a -> EArrayLen (n a)
-  | EArrayCreate (t, s, m) -> EArrayCreate (t, go s, m)
-  | EIf (c, a, b) -> EIf (go c, go a, go b)
-  | EMatch (s, cs) ->
-      EMatch (go s, List.map (fun (p, x) -> (pattern ctx p, go x)) cs)
+let renaming ctx =
+  {
+    Ir_rename.name = prefix ctx.k;
+    id = (fun i -> i + ((ctx.k + 1) * id_stride));
+    position = position ctx;
+  }
 
-and pattern ctx = function
-  | PConstr (c, vs) -> PConstr (c, List.map (prefix ctx.k) vs)
-  | PWild -> PWild
+let rename_var k v =
+  Ir_rename.var
+    (renaming {k; off = EConst (CInt32 0l); gdx = EConst (CInt32 0l)})
+    v
 
-let rec lvalue ctx = function
-  | LVar v -> LVar (rename_var ctx.k v)
-  | LArrayElem (a, i) -> LArrayElem (prefix ctx.k a, expr ctx i)
-  | LArrayElemExpr (a, i) -> LArrayElemExpr (expr ctx a, expr ctx i)
-  | LRecordField (lv, f) -> LRecordField (lvalue ctx lv, f)
+let expr ctx = Ir_rename.expr (renaming ctx)
 
-let rec stmt ctx s =
-  let e = expr ctx and st = stmt ctx and v = rename_var ctx.k in
-  match s with
-  | SAssign (lv, x) -> SAssign (lvalue ctx lv, e x)
-  | SSeq ss -> SSeq (List.map st ss)
-  | SIf (c, t, f) -> SIf (e c, st t, Option.map st f)
-  | SWhile (c, b) -> SWhile (e c, st b)
-  | SFor (i, lo, hi, d, b) -> SFor (v i, e lo, e hi, d, st b)
-  | SMatch (x, cs) ->
-      SMatch (e x, List.map (fun (p, b) -> (pattern ctx p, st b)) cs)
-  | SReturn x -> SReturn (e x)
-  | SExpr x -> SExpr (e x)
-  | SLet (x, y, b) -> SLet (v x, e y, st b)
-  | SLetMut (x, y, b) -> SLetMut (v x, e y, st b)
-  | SPragma (p, b) -> SPragma (p, st b)
-  | SBlock b -> SBlock (st b)
-  | SBarrier | SWarpBarrier | SMemFence | SEmpty | SNative _ | SCoopmat _ -> s
+let stmt ctx = Ir_rename.stmt (renaming ctx)
 
-let decl ctx = function
-  | DParam (v, info) -> DParam (rename_var ctx.k v, info)
-  | DLocal (v, init) -> DLocal (rename_var ctx.k v, Option.map (expr ctx) init)
-  | DShared (name, t, size) ->
-      DShared (prefix ctx.k name, t, Option.map (expr ctx) size)
+let decl ctx = Ir_rename.decl (renaming ctx)
 
 (** {1 Assembly} *)
 
