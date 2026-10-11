@@ -35,6 +35,9 @@ let stream_handle (_ : stream) :
     Device_jsx.t * Spoc_framework.Framework_sig.stream_ref =
   _ns "stream_handle"
 
-let retain_on_stream (_ : stream) ~keep:(_ : Obj.t) ~vec_ids:(_ : int list) :
+(** Mirrors [Transfer.keep]: a value rooted only for its liveness. *)
+type keep = Keep : 'a -> keep
+
+let retain_on_stream (_ : stream) ~keep:(_ : keep) ~vec_ids:(_ : int list) :
     unit =
   _ns "retain_on_stream"
