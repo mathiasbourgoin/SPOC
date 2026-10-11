@@ -84,9 +84,10 @@
   types, `mem_col_major`; compile-only) and GLSL
   (`gl_CooperativeMatrixLayoutColumnMajor`); refused where cooperative
   matrices are. `Sarek_gemm.Coopmat.ir` / `run` take `?b_layout` (B stored
-  transposed, `[n][k]`). Row-major kernels generate the same kernel text as
-  before. **Migration:** add `layout = Row_major` to every `CM_load` /
-  `CM_store` record literal (the field has no default, so each construction
+  transposed, `[n][k]`). Row-major kernels generate the same kernel bodies as
+  before (the shared helper preamble changed). **Migration:** clients
+  constructing `CM_load` / `CM_store` record literals add
+  `layout = Row_major` to each (the field has no default, so each construction
   site states its layout). Tests: `sarek/tests/unit/test_coopmat_layout.ml`,
   `sarek/tests/codegen_golden/test_coopmat_layout_codegen.ml`,
   `sarek/tests/e2e/test_coopmat_layout_e2e.ml` (HIP gfx1100 and Vulkan RADV).

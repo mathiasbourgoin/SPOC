@@ -148,7 +148,9 @@ let kernel_buffers (k : kernel) =
 (** The layout every [CM_load] of an operand fragment uses, by fragment name.
     [nvcuda::wmma] fixes an operand's layout in its fragment TYPE, so the CUDA
     arm of the declaration needs it; a name loaded in both layouts has no CUDA
-    spelling. *)
+    spelling. Keyed by name across the whole kernel, scopes ignored: two
+    fragments that share a name in different blocks and are loaded in different
+    layouts get the [#error] too (conservative, never wrong code). *)
 type operand_layout = Loaded of C.layout | Both_layouts
 
 type context = {

@@ -9,10 +9,12 @@
  * 16x16x16 tile [D = A * B + C] for every combination of row- and
  * column-major A, B, C and D, against a host reference.
  *
- * Every input is a small integer, so every product and partial sum is exact
- * in the accumulator type and the comparison is EQUALITY even for the float
- * configurations: a wrong element position cannot hide inside a rounding
- * bound. Two bases (one 16-byte aligned for f16, one not) and a stride that
+ * Every input is a small integer, so every exact product and partial sum is
+ * representable in the accumulator type. Integer configurations and the
+ * interpreter are compared for EQUALITY. The gfx1100 matrix unit does not
+ * round f16/bf16 -> f32 sums exactly (errors of 2^-24 to 2^-21 relative were
+ * observed), so float device results are compared within 1e-4 relative: a
+ * misplaced element moves a value by at least 1, far outside that. Two bases (one 16-byte aligned for f16, one not) and a stride that
  * is neither 16 nor the base exercise the index and stride separately. The
  * interpreter is checked against the same reference, so the device and the
  * oracle agree with each other through it.
