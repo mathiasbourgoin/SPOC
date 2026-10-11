@@ -243,7 +243,7 @@ let merged (w : 'arg LW.t) (p : 'arg LW.launch) (c : 'arg LW.launch) ~fused
   let key = (p.ir_id, p_array, c.ir_id, shared) in
   (* P and C as submitted, like the window issues a group singly: both are
      attempted even if P raises, and the first exception is re-raised after C
-     (FR-006). The window counts the merged launch as one backend launch when
+     (as [Launch_window.issue_singly]). The window counts the merged launch as one backend launch when
      this returns, and not at all when it raises, so the launches really made
      are added here: all but that one on return, all of them on a raise. *)
   let issue_unfused () =
