@@ -134,6 +134,26 @@ let test_rejections () =
     | A.Unknown_var _ -> true
     | _ -> false)
 
+(* An int64 cast, constant or variable is never folded into the int-sized form
+   (compiler review C-11): the index would be narrowed. *)
+let test_int64_rejected () =
+  let wide_var = {k with var_id = 9; var_name = "wide"; var_type = TInt64} in
+  let wide_env =
+    {
+      env with
+      A.classify_var =
+        (fun v -> if v.var_id = 9 then A.Uniform_leaf else env.classify_var v);
+    }
+  in
+  let rejected name e =
+    match A.of_expr wide_env e with
+    | Ok _ -> Alcotest.failf "%s: an int64 index was folded" name
+    | Error _ -> ()
+  in
+  rejected "cast" ((ECast (TInt64, EVar row) * ECast (TInt64, EVar k)) + EVar i) ;
+  rejected "constant" (EVar i + EConst (CInt64 4_294_967_296L)) ;
+  rejected "variable" ((EVar wide_var * EVar k) + EVar i)
+
 let test_poly_div () =
   let kp = (form (EVar k)).const in
   let kn = A.poly_mul kp (form (EVar n)).const in
@@ -170,6 +190,7 @@ let () =
             `Quick
             test_thread_products_are_atoms;
           Alcotest.test_case "rejections" `Quick test_rejections;
+          Alcotest.test_case "int64 rejected" `Quick test_int64_rejected;
           Alcotest.test_case "polynomial division" `Quick test_poly_div;
         ] );
     ]

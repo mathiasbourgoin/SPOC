@@ -9,7 +9,7 @@
     A launch-time decision (the region a kernel covers, a reduction length)
     needs the value of IR expressions built from scalar parameters, constants
     and the launch's block and grid dimensions. Arithmetic is int32 and wraps,
-    as on the device. *)
+    as on the device; int64 values are outside its domain. *)
 
 open Sarek_ir_types
 
@@ -23,7 +23,9 @@ type launch = {
 
 (** [None] when the expression is not uniform over the launch (it reads memory,
     a thread index, a loop variable), contains an operator with no int32 meaning
-    here, or divides by zero. *)
+    here, or divides by zero. It is also [None] for anything 64-bit (an [int64]
+    constant, variable or cast): the arithmetic is int32, so such a value is
+    refused, never truncated. *)
 val eval : launch -> expr -> int32 option
 
 (** Whether an expression reads [block_dim_*], [grid_dim_*] (or a [global_size*]

@@ -375,6 +375,19 @@
     completed). It now raises `BSP_deadlock` when threads wait at a block barrier that
     finished threads never reach, and does not fire on successive barriers or on
     threads parked at a warp barrier (a new `Warp_barrier` effect).
+- The matrix rewrite no longer narrows int64 indices to int32 (compiler review
+  C-11). A GEMM whose index, bound or guard involves an `int64` constant,
+  variable or cast used to be recognised with the casts dropped (`Int64.to_int`)
+  and rewritten with int32 addresses, which overflow past 2^31 elements: out of
+  bounds or wrong results, by default on HIP gfx11. `Sarek_ir_affine.of_expr`
+  now returns the new `Wide_index` error, the pattern reports the new reason
+  `Int64_arithmetic` ("uses int64 arithmetic"), and `Sarek_matrix.run` returns
+  `Original` with that reason, so the advice never claims matrix units for such
+  a kernel. `Sarek_ir_eval_int.eval` returns `None` for an int64 constant,
+  variable or cast instead of truncating it. int32-indexed products are
+  unchanged. Migration: code that matches exhaustively on
+  `Sarek_ir_affine.error` or `Sarek_matrix_pattern.reason` gains one case each;
+  a kernel that wants the rewrite must index with int32.
 
 - hiprtc and nvrtc option arrays: `CArray.of_list string` let the C copies of
   the option strings be freed before the compile call. Under a different

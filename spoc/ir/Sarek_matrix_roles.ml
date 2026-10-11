@@ -15,6 +15,7 @@ let ( let* ) = Result.bind
 let affine_of env arr idx =
   match Affine.of_expr env idx with
   | Ok f -> Ok f
+  | Error (Affine.Wide_index _) -> Error Int64_arithmetic
   | Error err -> Error (Index_not_affine (arr, Affine.error_expr err))
 
 (* A tile is loaded with one base and one leading dimension: one stride must

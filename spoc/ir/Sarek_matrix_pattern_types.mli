@@ -76,6 +76,8 @@ type reason =
   | Bounds_not_uniform
   | Bounds_data_dependent
   | Index_not_affine of string * expr option
+  | Int64_arithmetic
+      (** an index, bound or guard computes in 64 bits (compiler review C-11) *)
   | Operand_independent_of_reduction of string
   | Output_depends_on_reduction
   | No_row_column_split
