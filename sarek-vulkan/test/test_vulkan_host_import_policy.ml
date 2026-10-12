@@ -128,29 +128,65 @@ let test_device_default_refuses () =
   expect_refused "register" (fun () ->
       Host.register device addr ~byte_size:8192)
 
+(* Run with SPOC_VULKAN_HOST_IMPORT=1 (argument [optin]): an AMD device must
+   still refuse, with the extension off; any other device may import. Nothing is
+   imported here. *)
+let test_device_optin () =
+  if not (Vulkan_api.is_available ()) then Alcotest.skip () ;
+  Device.init () ;
+  let device = Device.get 0 in
+  if Policy.is_amd ~vendor_id:0 ~driver_id:device.Device.driver_id then begin
+    Alcotest.check
+      decision
+      "AMD refused although opted in"
+      Policy.Amdgpu_refused
+      device.Device.host_import_policy ;
+    Alcotest.(check bool)
+      "extension off"
+      true
+      (device.Device.host_import_alignment = None
+      && device.Device.host_pointer_properties_fn = None) ;
+    expect_refused "alloc_pinned" (fun () ->
+        Host.alloc_pinned device ~byte_size:4096)
+  end
+  else
+    Alcotest.(check bool)
+      "not refused by policy"
+      true
+      (device.Device.host_import_policy <> Policy.Amdgpu_refused)
+
 let () =
-  Alcotest.run
-    "vulkan_host_import_policy"
-    [
-      ( "policy",
-        [
-          Alcotest.test_case "off by default" `Quick test_default_is_off;
-          Alcotest.test_case
-            "AMD refused even when opted in"
-            `Quick
-            test_amd_refused_even_opted_in;
-          Alcotest.test_case
-            "other drivers allowed when opted in"
-            `Quick
-            test_other_drivers_allowed_when_opted_in;
-          Alcotest.test_case "AMD override" `Quick test_amd_override;
-          Alcotest.test_case "refusal reasons" `Quick test_reason_text;
-        ] );
-      ( "device",
-        [
-          Alcotest.test_case
-            "default refuses both entry points"
-            `Quick
-            test_device_default_refuses;
-        ] );
-    ]
+  if Array.length Sys.argv > 1 && Sys.argv.(1) = "optin" then
+    Alcotest.run
+      ~argv:[|Sys.argv.(0)|]
+      "vulkan_host_import_policy_optin"
+      [
+        ( "opt-in",
+          [Alcotest.test_case "AMD still refused" `Quick test_device_optin] );
+      ]
+  else
+    Alcotest.run
+      "vulkan_host_import_policy"
+      [
+        ( "policy",
+          [
+            Alcotest.test_case "off by default" `Quick test_default_is_off;
+            Alcotest.test_case
+              "AMD refused even when opted in"
+              `Quick
+              test_amd_refused_even_opted_in;
+            Alcotest.test_case
+              "other drivers allowed when opted in"
+              `Quick
+              test_other_drivers_allowed_when_opted_in;
+            Alcotest.test_case "AMD override" `Quick test_amd_override;
+            Alcotest.test_case "refusal reasons" `Quick test_reason_text;
+          ] );
+        ( "device",
+          [
+            Alcotest.test_case
+              "default refuses both entry points"
+              `Quick
+              test_device_default_refuses;
+          ] );
+      ]

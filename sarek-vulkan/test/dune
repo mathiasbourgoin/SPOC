@@ -82,11 +82,6 @@
  (modules test_vulkan_push_constant_budget)
  (libraries sarek_vulkan sarek_ir sarek_backend_error alcotest))
 
-; Asynchronous batched launches (specs/vulkan-async-launches.md): fence-wait and
-; submission counts, ordering across batches and streams, and a failure that
-; surfaces at the first wait. Fence waits are bounded at 30 s so a missed
-; synchronisation ends in an error rather than a hang.
-
 ; Host-memory import is explicit opt-in and refused on AMD drivers (Sarek #503).
 ; The opt-in variables are cleared so this never imports host pages.
 
@@ -108,6 +103,25 @@
     SPOC_VULKAN_HOST_IMPORT_AMDGPU_I_ACCEPT_KERNEL_OOPS
     0
     (run %{test})))))
+
+; Opted in: an AMD device is still refused (the #503 guard).
+
+(rule
+ (alias runtest)
+ (deps test_vulkan_host_import_policy.exe)
+ (action
+  (setenv
+   SPOC_VULKAN_HOST_IMPORT
+   1
+   (setenv
+    SPOC_VULKAN_HOST_IMPORT_AMDGPU_I_ACCEPT_KERNEL_OOPS
+    0
+    (run ./test_vulkan_host_import_policy.exe optin)))))
+
+; Asynchronous batched launches (specs/vulkan-async-launches.md): fence-wait and
+; submission counts, ordering across batches and streams, and a failure that
+; surfaces at the first wait. Fence waits are bounded at 30 s so a missed
+; synchronisation ends in an error rather than a hang.
 
 (tests
  (names

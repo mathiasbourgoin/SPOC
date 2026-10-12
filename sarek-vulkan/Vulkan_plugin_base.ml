@@ -239,7 +239,7 @@ module Vulkan = struct
      of keep-alive entries relies on.
 
      Pinned and registered memory are host ranges imported into the driver
-     ([VK_EXT_external_memory_host]); a device without the extension refuses
+     ([VK_EXT_external_memory_host]); a device without the extension, one not opted in (SPOC_VULKAN_HOST_IMPORT=1) or an AMD driver (Sarek #503) refuses
      them with [Feature_not_supported] (per call, not through [support]). *)
   module Async = struct
     type device = Device.t
