@@ -63,7 +63,6 @@ let rec metal_type_of_elttype = function
   | TInt32 -> "int"
   | TInt64 -> "long"
   | TFloat16 ->
-      Sarek_ir_metal_coopmat.require_opt_in "f16" ;
       (* Storage type: arithmetic is done in f32 through explicit casts, and the
          f32 -> f16 narrowing does not fuse on Metal (0/63488 against the
          interpreter on an Apple M4, docs/fp-contraction-policy.md §10.14), so
@@ -1145,11 +1144,6 @@ let pretty_print_metal (source : string) : string =
    Two searches, two motivating shapes, one gate. That agreement is the reason
    to believe {arm, whole-kernel} is the COMPLETE set of entry points rather
    than the two somebody happened to think of. *)
-
-(** Explicit, process-wide opt-in to the Metal lowerings (scalar f16 and
-    cooperative matrices) that no Apple device has executed yet. *)
-let accept_unexecuted_lowering =
-  Sarek_ir_metal_coopmat.accept_unexecuted_lowering
 
 let reject_float64_kernel =
   Sarek_capability.refuse_if_used
