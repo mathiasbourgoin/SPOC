@@ -122,6 +122,10 @@ type t = {
       (** [vkGetMemoryHostPointerPropertiesEXT] as resolved for THIS device
           ([Some] exactly when {!host_import_alignment} is): the entry point is
           the owning driver's, so it is never shared between devices. *)
+  host_import_policy : Vulkan_host_import_policy.decision;
+      (** Whether host-memory import is allowed on this device at all; anything
+          but [Allowed] means the extension was not even enabled, so no userptr
+          object is ever created (Sarek #503). *)
   host_import_alignment : int option;
       (** [Some a] when [VK_EXT_external_memory_host] is enabled on this logical
           device: a range of host memory whose address and size are multiples of
@@ -919,8 +923,14 @@ let get idx =
          name is: that view allocates an anonymous buffer rooted only by a fat
          pointer [setf] discards, so the string would dangle before the loader
          read it. *)
+      let host_import_policy =
+        Vulkan_host_import_policy.of_environment
+          ~vendor_id:(Unsigned.UInt32.to_int (getf props phys_props_vendorID))
+          ~driver_id:props2.ep_driver_id
+      in
       let want_host_import =
-        has_ext Vulkan_api_host_ffi.extension_name
+        host_import_policy = Vulkan_host_import_policy.Allowed
+        && has_ext Vulkan_api_host_ffi.extension_name
         && effective_api_version >= (1, 1)
         && Vulkan_api_host_ffi.buffer_import_supported
              phys_dev
@@ -1222,6 +1232,7 @@ let get idx =
           coopmat_enabled = want_coopmat;
           coopmat;
           host_pointer_properties_fn = Option.map snd host_import;
+          host_import_policy;
           host_import_alignment = Option.map fst host_import;
           queue_lock = Mutex.create ();
           batch_lock = Mutex.create ();

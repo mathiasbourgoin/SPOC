@@ -28,6 +28,7 @@
   Vulkan_types
   Vulkan_bindings
   Vulkan_api_base
+  Vulkan_host_import_policy
   Vulkan_api_host_ffi
   Vulkan_api_device
   Vulkan_api_barrier

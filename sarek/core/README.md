@@ -152,7 +152,7 @@ For streaming workloads, such as copying expert weights into a VRAM-resident cac
 - streams and events (`create_stream`, `record_event`, `stream_wait_event`, ...);
 - pinned host memory (`alloc_pinned`, `register_host`) and `stage_to_device` for small host writes.
 
-Support differs per backend: HIP, CUDA, Metal, Vulkan, Native and Interpreter support them (Metal and Vulkan complete copies on return; Vulkan needs `VK_EXT_external_memory_host` for pinned and registered memory); OpenCL and WebGPU refuse with `Feature_not_supported`. The user guide [Memory and transfers](../../gh-pages/docs/memory.md) has the support table, the rules, worked examples and the measured transfer pitfalls (`Vector.set` on a device-resident vector, `register_host` on ROCm). Specs: `specs/device-buffers-async-copy.md`, `specs/copy-bytes-to-host.md`, `specs/transfer-pitfalls.md`, `specs/metal-ranged-copies.md`.
+Support differs per backend: HIP, CUDA, Metal, Vulkan, Native and Interpreter support them (Metal and Vulkan complete copies on return; Vulkan needs `VK_EXT_external_memory_host` and the explicit opt-in `SPOC_VULKAN_HOST_IMPORT=1` for pinned and registered memory, which AMD drivers refuse, Sarek #503); OpenCL and WebGPU refuse with `Feature_not_supported`. The user guide [Memory and transfers](../../gh-pages/docs/memory.md) has the support table, the rules, worked examples and the measured transfer pitfalls (`Vector.set` on a device-resident vector, `register_host` on ROCm). Specs: `specs/device-buffers-async-copy.md`, `specs/copy-bytes-to-host.md`, `specs/transfer-pitfalls.md`, `specs/metal-ranged-copies.md`.
 
 ## Raw buffers and kernels
 
