@@ -199,7 +199,7 @@
       <td><code class="language-plaintext highlighter-rouge">1</code></td>
       <td>unset (off)</td>
       <td>start</td>
-      <td>Allows Vulkan <code class="language-plaintext highlighter-rouge">alloc_pinned</code> and <code class="language-plaintext highlighter-rouge">register_host</code> (import of host memory, <code class="language-plaintext highlighter-rouge">VK_EXT_external_memory_host</code>). Refused on AMD drivers even when set: importing host pages was followed by a kernel oops in <code class="language-plaintext highlighter-rouge">amdgpu_hmm_invalidate_gfx</code> (Sarek #503).</td>
+      <td>Allows Vulkan <code class="language-plaintext highlighter-rouge">register_host</code> (import of host memory, <code class="language-plaintext highlighter-rouge">VK_EXT_external_memory_host</code>); <code class="language-plaintext highlighter-rouge">alloc_pinned</code> does not import and needs no opt-in. Refused on AMD drivers even when set: importing host pages was followed by a kernel oops in <code class="language-plaintext highlighter-rouge">amdgpu_hmm_invalidate_gfx</code> (Sarek #503).</td>
     </tr>
     <tr>
       <td><code class="language-plaintext highlighter-rouge">SPOC_VULKAN_HOST_IMPORT_AMDGPU_I_ACCEPT_KERNEL_OOPS</code></td>
