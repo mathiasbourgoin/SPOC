@@ -359,7 +359,7 @@
       <td><code class="language-plaintext highlighter-rouge">0</code> turns it off</td>
       <td>unset (on)</td>
       <td>each cache lookup and store</td>
-      <td>With <code class="language-plaintext highlighter-rouge">0</code>, no disk cache is read or written: Vulkan compiles GLSL again and OpenCL builds from source in every process. Nothing else changes. The in-process kernel caches are not affected.</td>
+      <td>With <code class="language-plaintext highlighter-rouge">0</code>, no disk cache is read or written: Vulkan compiles GLSL again and OpenCL builds from source in every process. Nothing else changes. The in-process kernel caches are not affected. Metal has no disk cache of ours (not needed: OS shader cache, measured, see <a href="performance.html#first-launch-in-a-new-process">Performance</a>).</td>
     </tr>
     <tr>
       <td><code class="language-plaintext highlighter-rouge">XDG_CACHE_HOME</code></td>
