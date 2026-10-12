@@ -66,6 +66,16 @@
   `test_vulkan_push_constant_budget`, `test_sarek_push_constants`,
   `test_launch_window`.
 
+- CUDA/PTX emits `global_idx_z` (H8). The PTX intrinsic table had
+  `global_idx_x` and `global_idx_y` but not `global_idx_z`, so any 3-D kernel
+  using it raised `Ptx_codegen_error: unsupported construct: intrinsic:
+  global_idx_z` while CUDA C, HIP, OpenCL, GLSL, WGSL and Metal accepted it. It
+  is `%tid.z + %ctaid.z * %ntid.z` in u32 registers, like x and y. An audit of
+  `Sarek_ir_intrinsic_dispatch.thread_intrinsic_names` found no other PTX gap.
+  Test: `test_ptx_global_idx_z` (every name lowers; a 3-D launch equals the
+  Interpreter, executed via ZLUDA on gfx1100, not on NVIDIA hardware).
+  `test_matrix_rewrite` now runs the corpus on CUDA/PTX too (the H4 skip is
+  removed).
 - A `for` upper bound is evaluated once on every backend (compiler review
   C-8). CUDA/HIP, OpenCL, Metal, GLSL and WGSL printed
   `for (i = a; i <= bound; i++)`, which re-reads the bound each iteration, so

@@ -388,7 +388,3 @@ let offers_float dev =
   dev.Device.framework <> "Vulkan"
   && dev.Device.framework <> "CUDA/C"
   && offers_int dev
-
-(* CUDA/PTX cannot emit the corpus kernels' own intrinsics (global_idx_z), so
-   even the original launch raises there; it never rewrites either. *)
-let runnable dev = dev.Device.framework <> "CUDA/PTX"
