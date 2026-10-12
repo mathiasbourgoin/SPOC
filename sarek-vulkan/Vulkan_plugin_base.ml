@@ -223,9 +223,24 @@ module Vulkan = struct
       Vulkan_api.Kernel.launch kernel ~args ~grid ~block ~shared_mem ~stream
   end
 
-  module Async = Framework_sig.Async_refused (struct
-    let backend = name
+  (* Ranged copies, pinned and registered host memory, stream launches and
+     events (specs/vulkan-async-api.md).
 
+     Copies complete before they return ([async_copy = false]): each one first
+     completes the device's pending launches, so it is ordered against launches
+     on every stream, and the [stream] argument changes nothing. Overlap of
+     copies with compute is not offered.
+
+     [stream_wait_event] adds nothing: all streams of a device share one queue
+     and a launch first submits the open batches of the device's other streams,
+     so everything an event covers was submitted before any later launch, and
+     the barrier before each dispatch orders the later launch after it in
+     memory ([Vulkan_api_barrier]).
+
+     Pinned and registered memory are host ranges imported into the driver
+     ([VK_EXT_external_memory_host]); a device without the extension refuses
+     them with [Feature_not_supported] (per call, not through [support]). *)
+  module Async = struct
     type device = Device.t
 
     type stream = Stream.t
@@ -233,7 +248,30 @@ module Vulkan = struct
     type event = Event.t
 
     type 'a buffer = 'a Memory.buffer
-  end)
+
+    let support =
+      {Framework_sig.full_async_support with Framework_sig.async_copy = false}
+
+    let host_to_device ~src_ptr ~dst ~dst_offset ~byte_size ~stream:_ =
+      Vulkan_api.Transfer.host_to_device ~src_ptr ~dst ~dst_offset ~byte_size
+
+    let device_to_host ~src ~src_offset ~dst_ptr ~byte_size ~stream:_ =
+      Vulkan_api.Transfer.device_to_host ~src ~src_offset ~dst_ptr ~byte_size
+
+    let stream_wait_event _stream _event = ()
+
+    let event_query = Vulkan_api.Event.query
+
+    let alloc_pinned device ~byte_size =
+      Vulkan_api.Host.alloc_pinned device ~byte_size
+
+    let free_pinned = Vulkan_api.Host.free_pinned
+
+    let register_host device addr ~byte_size =
+      Vulkan_api.Host.register device addr ~byte_size
+
+    let unregister_host = Vulkan_api.Host.unregister
+  end
 
   let enable_profiling () = ()
 

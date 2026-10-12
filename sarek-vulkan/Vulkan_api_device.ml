@@ -118,6 +118,11 @@ type t = {
           (loader too old to resolve the entry point). See [probe_coopmat] for
           why an empty list and [None] must stay distinguishable, and for the
           measurement that makes the extension check load-bearing. *)
+  host_import_alignment : int option;
+      (** [Some a] when [VK_EXT_external_memory_host] is enabled on this logical
+          device: a range of host memory whose address and size are multiples of
+          [a] can be imported as device memory ({!Vulkan_api_host}). [None]
+          otherwise, so pinned and registered host memory are refused. *)
   queue_lock : Mutex.t;
       (** External synchronization of [compute_queue], which Vulkan requires for
           [vkQueueSubmit] and [vkQueueWaitIdle]. Taken only through
@@ -910,6 +915,10 @@ let get idx =
          name is: that view allocates an anonymous buffer rooted only by a fat
          pointer [setf] discards, so the string would dangle before the loader
          read it. *)
+      let want_host_import =
+        has_ext Vulkan_api_host_ffi.extension_name
+        && effective_api_version >= (1, 1)
+      in
       let requested_extensions =
         List.filter_map
           (fun (wanted, name) ->
@@ -925,6 +934,7 @@ let get idx =
             (want_storage8, vk_khr_8bit_storage_extension_name);
             (want_memory_model, vk_khr_vulkan_memory_model_extension_name);
             (want_coopmat, vk_khr_cooperative_matrix_extension_name);
+            (want_host_import, Vulkan_api_host_ffi.extension_name);
           ]
       in
       let ext_name_arrays =
@@ -1184,6 +1194,12 @@ let get idx =
             has_ext vk_khr_cooperative_matrix_extension_name;
           coopmat_enabled = want_coopmat;
           coopmat;
+          host_import_alignment =
+            (if want_host_import then
+               match Vulkan_api_host_ffi.query_import_alignment phys_dev with
+               | alignment when alignment > 0 -> Some alignment
+               | _ -> None
+             else None);
           queue_lock = Mutex.create ();
           batch_lock = Mutex.create ();
           deferred_frees = Atomic.make [];

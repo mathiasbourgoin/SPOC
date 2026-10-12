@@ -219,20 +219,12 @@ module Backend : Framework_sig.BACKEND = struct
   (** Supported source languages: GLSL compute shaders *)
   let supported_source_langs = [Framework_sig.GLSL_Source]
 
-  (** Execute external kernel from source *)
-  let run_source ~source ~lang ~kernel_name ~block ~grid ~shared_mem args =
+  (** Compile [source] for [dev] and launch it on [stream]. *)
+  let launch_source ~dev ~stream ~source ~lang ~kernel_name ~block ~grid
+      ~shared_mem args =
     ignore shared_mem ;
     match lang with
     | Framework_sig.GLSL_Source ->
-        (* Get current device (must be set by Execute before calling) *)
-        let dev =
-          match Vulkan_plugin_base.Vulkan.Device.get_current_device () with
-          | Some d -> d
-          | None ->
-              Vulkan_error.raise_error
-                (Vulkan_error.no_device_selected "run_source")
-        in
-
         (* Compile GLSL to pipeline *)
         let compiled = Kernel.compile_cached dev ~name:kernel_name ~source in
 
@@ -272,8 +264,6 @@ module Backend : Framework_sig.BACKEND = struct
             | Framework_sig.RSA_Float64 f -> Kernel.set_arg_float64 kargs i f)
           args ;
 
-        (* Launch *)
-        let stream = Stream.default dev in
         Kernel.launch
           compiled
           ~args:kargs
@@ -291,13 +281,46 @@ module Backend : Framework_sig.BACKEND = struct
     | Framework_sig.PTX ->
         Vulkan_error.raise_error (Vulkan_error.unsupported_source_lang "PTX")
 
+  (** Execute external kernel from source *)
+  let run_source ~source ~lang ~kernel_name ~block ~grid ~shared_mem args =
+    (* The current device must be set by Execute before calling. *)
+    let dev =
+      match Vulkan_plugin_base.Vulkan.Device.get_current_device () with
+      | Some d -> d
+      | None ->
+          Vulkan_error.raise_error
+            (Vulkan_error.no_device_selected "run_source")
+    in
+    launch_source
+      ~dev
+      ~stream:(Stream.default dev)
+      ~source
+      ~lang
+      ~kernel_name
+      ~block
+      ~grid
+      ~shared_mem
+      args
+
   let wrap_kargs args = Vulkan_kargs args
 
   let unwrap_kargs = function Vulkan_kargs args -> Some args | _ -> None
 
-  let run_source_on_stream ~stream:_ ~source:_ ~lang:_ ~kernel_name:_ ~block:_
-      ~grid:_ ~shared_mem:_ _args =
-    Framework_sig.refuse_stream_launch ~backend:name
+  (** The launch is recorded into [stream]'s batch and returns
+      (specs/vulkan-async-launches.md); the kernel is compiled for the stream's
+      own device. *)
+  let run_source_on_stream ~stream ~source ~lang ~kernel_name ~block ~grid
+      ~shared_mem args =
+    launch_source
+      ~dev:(Vulkan_api.Stream.device stream)
+      ~stream
+      ~source
+      ~lang
+      ~kernel_name
+      ~block
+      ~grid
+      ~shared_mem
+      args
 
   include Framework_sig.Make_refs (struct
     type stream = Stream.t

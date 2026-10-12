@@ -64,6 +64,30 @@ let synchronize event =
         event.device.Device.device
         event.fence)
 
+(** [true] once the work covered by the last {!record} has completed, or when
+    the event was never recorded. Never blocks: a signalled fence is reaped
+    (marked not pending) so a later {!record} need not wait. While another
+    domain holds the event's lock (it is recording or waiting), the work is
+    still pending and the answer is [false]. *)
+let query event =
+  if not (Mutex.try_lock event.lock) then false
+  else
+    Fun.protect
+      ~finally:(fun () -> Mutex.unlock event.lock)
+      (fun () ->
+        (not event.fence.pending)
+        ||
+        if
+          fence_signalled
+            "vkGetFenceStatus (Event.query)"
+            event.device.Device.device
+            event.fence.handle
+        then begin
+          event.fence.pending <- false ;
+          true
+        end
+        else false)
+
 (** Elapsed time needs timestamp queries, which this backend does not issue;
     answering a number here would be a fabricated measurement. *)
 let elapsed ~start:_ ~stop:_ =
