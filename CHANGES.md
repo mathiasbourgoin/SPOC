@@ -64,12 +64,18 @@
   `SAREK_LAUNCH_WINDOW=0` or `Execute.Window.set_backend_enabled
   ~backend:"Metal" false`. Backend coverage (window): HIP executed (RX 7900
   XTX), OpenCL executed, Vulkan executed, CUDA/PTX executed via ZLUDA on gfx1100
-  (not NVIDIA hardware), CUDA/C by construction, Metal off to on with
-  compiler-output evidence only (fused MSL source checked in
-  `test_launch_window`) and executed evidence pending ladon run (tech lead),
-  Native and Interpreter never deferred. `bench_launch_window.exe` (target the
-  device with `SPOC_BENCH_FRAMEWORK=Metal`) alternates window off and on and
-  checks the outputs bit for bit; Metal numbers: pending ladon run.
+  (not NVIDIA hardware), CUDA/C by construction, Metal off to on, executed on
+  an Apple M4 (macOS 15), Native and Interpreter never deferred.
+  `bench_launch_window.exe` (`SPOC_BENCH_FRAMEWORK=Metal`; 24 layers x 18
+  launches, 50 tokens, 7 interleaved off/on repetitions, a Flash-MoE download
+  running alongside, load 6 to 9, so provisional): run 1 22873.4 us/token
+  median [22859.8 to 22932.5] off against 22465.4 [22404.8 to 22498.5] on
+  (-1.8%); run 2 21326.3 [21296.4 to 22429.4] against 20875.5 [20843.5 to
+  21128.1] (-2.1%); launches per token 432 to 312; host enqueue 4.7 to 5.1 us
+  per launch off, 5.2 to 5.7 on; results bit-identical on and off. Metal's 31
+  `[[buffer]]` slots split the four-member `independent` scenario of
+  `test_launch_window` into 2 launches (the test derives the expected count
+  from the window's own slot accounting).
 
 - CUDA kernel launches marshal all arguments into one 8-byte-slot block plus one
   pointer array (two host allocations whatever the argument count), as the HIP
