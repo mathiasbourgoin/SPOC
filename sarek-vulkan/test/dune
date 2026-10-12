@@ -92,12 +92,14 @@
   test_vulkan_async_launches
   test_vulkan_async_robustness
   test_vulkan_async_release
-  test_vulkan_ranged_copies)
+  test_vulkan_ranged_copies
+  test_vulkan_event_wait)
  (modules
   test_vulkan_async_launches
   test_vulkan_async_robustness
   test_vulkan_async_release
   test_vulkan_ranged_copies
+  test_vulkan_event_wait
   vulkan_async_support)
  (libraries
   sarek_vulkan
