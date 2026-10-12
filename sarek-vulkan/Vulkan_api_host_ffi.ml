@@ -207,47 +207,34 @@ type properties_fn =
   host_pointer_properties structure ptr ->
   vk_result
 
-(* Resolved once: the loader returns the same trampoline for every device. *)
-let properties_fn : properties_fn option ref = ref None
-
-let properties_fn_lock = Mutex.create ()
-
+(** Resolve [vkGetMemoryHostPointerPropertiesEXT] for [device].
+    [vkGetDeviceProcAddr] returns the entry point of the driver that owns the
+    device (an address inside that driver's library), so the result belongs to
+    this device only: it is kept in the device record and never shared, because
+    a second device may come from another driver. *)
 let resolve_properties_fn device : properties_fn =
-  Mutex.protect properties_fn_lock (fun () ->
-      match !properties_fn with
-      | Some fn -> fn
-      | None ->
-          let raw =
-            Lazy.force
-              vkGetDeviceProcAddr_lazy
-              device
-              "vkGetMemoryHostPointerPropertiesEXT"
-          in
-          if is_null raw then
-            Vulkan_error.raise_error
-              (Vulkan_error.feature_not_supported
-                 "vkGetMemoryHostPointerPropertiesEXT (the loader does not \
-                  know it)")
-          else begin
-            let fn =
-              coerce
-                (ptr void)
-                (Foreign.funptr
-                   (vk_device_ptr @-> uint32_t @-> ptr void
-                   @-> ptr host_pointer_properties
-                   @-> returning vk_result))
-                raw
-            in
-            properties_fn := Some fn ;
-            fn
-          end)
+  let raw =
+    Lazy.force
+      vkGetDeviceProcAddr_lazy
+      device
+      "vkGetMemoryHostPointerPropertiesEXT"
+  in
+  if is_null raw then
+    Vulkan_error.raise_error
+      (Vulkan_error.feature_not_supported
+         "vkGetMemoryHostPointerPropertiesEXT (the driver does not know it)")
+  else
+    coerce
+      (ptr void)
+      (Foreign.funptr
+         (vk_device_ptr @-> uint32_t @-> ptr void
+         @-> ptr host_pointer_properties
+         @-> returning vk_result))
+      raw
 
-(** [vkGetMemoryHostPointerPropertiesEXT]: the memory types [host_ptr] can be
-    imported as. The device must have been created with {!extension_name}
-    enabled. *)
-let get_memory_host_pointer_properties device host_ptr props =
-  (resolve_properties_fn device)
-    device
-    (u32 handle_type_host_allocation)
-    host_ptr
-    props
+(** [vkGetMemoryHostPointerPropertiesEXT] through [fn], the function resolved
+    for [device]: the memory types [host_ptr] can be imported as. The device
+    must have been created with {!extension_name} enabled. *)
+let get_memory_host_pointer_properties (fn : properties_fn) device host_ptr
+    props =
+  fn device (u32 handle_type_host_allocation) host_ptr props

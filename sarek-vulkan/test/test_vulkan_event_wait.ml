@@ -82,6 +82,50 @@ let test_wait_then_synchronize device =
   done ;
   Stream.destroy waiter
 
+let awaited_count stream = List.length stream.Vulkan_api_slot.awaited
+
+(* Completed events are dropped as new ones are added. *)
+let test_awaited_stays_bounded device =
+  let waiter = Stream.create device in
+  for _ = 1 to 1000 do
+    let e = Event.create_with_device device in
+    Event.record e (Stream.default device) ;
+    Event.synchronize e ;
+    Event.wait_on e waiter ;
+    Event.destroy e
+  done ;
+  Alcotest.(check bool)
+    (Printf.sprintf
+       "1000 completed events leave %d awaited"
+       (awaited_count waiter))
+    true
+    (awaited_count waiter <= 1) ;
+  Stream.destroy waiter
+
+(* Events whose work finished while nobody looked are dropped by the next add. *)
+let test_awaited_pruned_after_idle device =
+  let waiter = Stream.create device in
+  let buf = launch_chain device in
+  let events =
+    List.init 50 (fun _ ->
+        let e = Event.create_with_device device in
+        Event.record e (Stream.default device) ;
+        Event.wait_on e waiter ;
+        e)
+  in
+  Device.synchronize device ;
+  let probe = Event.create_with_device device in
+  Event.wait_on probe waiter ;
+  Alcotest.(check bool)
+    (Printf.sprintf
+       "%d awaited after the device went idle"
+       (awaited_count waiter))
+    true
+    (awaited_count waiter <= 2) ;
+  List.iter Event.destroy (probe :: events) ;
+  Stream.destroy waiter ;
+  Memory.free buf
+
 let tests =
   [
     Alcotest.test_case
@@ -96,6 +140,14 @@ let tests =
       "synchronising a waiting stream completes the awaited event"
       `Quick
       (with_device test_wait_then_synchronize);
+    Alcotest.test_case
+      "awaited events stay bounded"
+      `Quick
+      (with_device test_awaited_stays_bounded);
+    Alcotest.test_case
+      "awaited events are pruned once the device is idle"
+      `Quick
+      (with_device test_awaited_pruned_after_idle);
   ]
 
 let () = Alcotest.run "vulkan_event_wait" [("events", tests)]

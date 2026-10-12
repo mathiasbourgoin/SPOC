@@ -79,6 +79,31 @@ let test_across_device_destroy device =
   Host.free_pinned fresh pinned ;
   ignore (Sys.opaque_identity reg)
 
+(* The properties function is the owning driver's entry point: every device
+   record resolves its own, none is shared through a process-wide cache. *)
+let test_per_device_function device =
+  match device.Device.host_pointer_properties_fn with
+  | None ->
+      Alcotest.(check bool)
+        "no function without an import granule"
+        true
+        (device.Device.host_import_alignment = None)
+  | Some old_fn -> (
+      Alcotest.(check bool)
+        "a function exactly when there is an import granule"
+        true
+        (device.Device.host_import_alignment <> None) ;
+      Device.destroy device ;
+      let fresh = Device.get 0 in
+      Alcotest.(check bool) "a new device record" true (fresh != device) ;
+      match fresh.Device.host_pointer_properties_fn with
+      | Some fresh_fn ->
+          Alcotest.(check bool)
+            "the new device resolved its own function"
+            true
+            (fresh_fn != old_fn)
+      | None -> Alcotest.fail "the re-created device lost the extension")
+
 let () =
   Alcotest.run
     "vulkan_host_lifecycle"
@@ -89,6 +114,10 @@ let () =
             "import granule"
             `Quick
             (with_device test_import_alignment);
+          Alcotest.test_case
+            "per-device properties function"
+            `Quick
+            (with_device test_per_device_function);
           Alcotest.test_case
             "across device destruction"
             `Quick

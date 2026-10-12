@@ -118,6 +118,10 @@ type t = {
           (loader too old to resolve the entry point). See [probe_coopmat] for
           why an empty list and [None] must stay distinguishable, and for the
           measurement that makes the extension check load-bearing. *)
+  host_pointer_properties_fn : Vulkan_api_host_ffi.properties_fn option;
+      (** [vkGetMemoryHostPointerPropertiesEXT] as resolved for THIS device
+          ([Some] exactly when {!host_import_alignment} is): the entry point is
+          the owning driver's, so it is never shared between devices. *)
   host_import_alignment : int option;
       (** [Some a] when [VK_EXT_external_memory_host] is enabled on this logical
           device: a range of host memory whose address and size are multiples of
@@ -1167,6 +1171,15 @@ let get idx =
         api_minor
         api_patch ;
 
+      let host_import =
+        if not want_host_import then None
+        else
+          match Vulkan_api_host_ffi.query_import_alignment phys_dev with
+          | alignment when alignment > 0 ->
+              Some
+                (alignment, Vulkan_api_host_ffi.resolve_properties_fn !@device)
+          | _ -> None
+      in
       let dev =
         {
           id = idx;
@@ -1199,12 +1212,8 @@ let get idx =
             has_ext vk_khr_cooperative_matrix_extension_name;
           coopmat_enabled = want_coopmat;
           coopmat;
-          host_import_alignment =
-            (if want_host_import then
-               match Vulkan_api_host_ffi.query_import_alignment phys_dev with
-               | alignment when alignment > 0 -> Some alignment
-               | _ -> None
-             else None);
+          host_pointer_properties_fn = Option.map snd host_import;
+          host_import_alignment = Option.map fst host_import;
           queue_lock = Mutex.create ();
           batch_lock = Mutex.create ();
           deferred_frees = Atomic.make [];

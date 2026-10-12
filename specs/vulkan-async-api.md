@@ -78,6 +78,10 @@ are marked *(agent decision)*.
 - **Staging pool.** Every staged copy allocates, maps and frees a staging
   buffer; at 1 MiB this dominates (3.5 GB/s staged against 19 GB/s mapped
   `memcpy`, and 0.84 GB/s read-back).
+- `test_vulkan_copy_domains` is a regression guard (it caught the
+  use-after-collect of the copy submission structures), not evidence for the
+  private command pool per copy, which holds by construction; a shared-pool
+  mutant is not detected by it.
 - Lazy FFI bindings: the first use of a binding from two domains at once
   raises `Lazy.Undefined` (pre-existing, backend-wide; the multi-domain test
   warms up first).

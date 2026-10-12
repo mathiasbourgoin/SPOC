@@ -55,6 +55,14 @@ let alignment_of (device : Device.t) =
         "pinned and registered host memory (the device does not offer \
          VK_EXT_external_memory_host)"
 
+let properties_fn_of (device : Device.t) =
+  match device.Device.host_pointer_properties_fn with
+  | Some fn -> fn
+  | None ->
+      refuse
+        "pinned and registered host memory (the device does not offer \
+         VK_EXT_external_memory_host)"
+
 let round_down addr alignment =
   Nativeint.sub addr (Nativeint.rem addr (Nativeint.of_int alignment))
 
@@ -103,6 +111,7 @@ let import_requirements (device : Device.t) buffer host_ptr =
   check
     "vkGetMemoryHostPointerPropertiesEXT"
     (Ffi.get_memory_host_pointer_properties
+       (properties_fn_of device)
        device.Device.device
        host_ptr
        (addr props)) ;

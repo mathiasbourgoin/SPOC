@@ -5,10 +5,11 @@
 
 (******************************************************************************
  * Ranged copies issued from several domains at once on Vulkan
- * (specs/vulkan-async-api.md). Every copy records and submits its own command
- * buffer, so concurrent copies must neither corrupt one another nor trip the
- * command-pool external-synchronisation rule; each domain checks its own bytes
- * exactly. Skips when no Vulkan device is present.
+ * (specs/vulkan-async-api.md). A regression guard, not proof of a property:
+ * each domain checks its own bytes exactly, and it caught a use-after-collect
+ * of the submission structures (see H7 keep-alive runs). That every copy has a
+ * command pool of its own holds by construction; this test does not
+ * discriminate a shared-pool mutant. Skips when no Vulkan device is present.
  ******************************************************************************)
 
 open Sarek_vulkan
