@@ -244,6 +244,7 @@ let interp_env () =
     arrays = Hashtbl.create 4;
     shared = Hashtbl.create 4;
     funcs = Hashtbl.create 4;
+    policy = Sarek_policy.budget ~kernels:[];
     coopmats = Hashtbl.create 4;
   }
 

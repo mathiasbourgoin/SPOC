@@ -47,13 +47,15 @@ val mode_name : mode -> string
     variable, the value and the accepted values) that the caller prints. *)
 val parse_mode : string option -> mode * string option
 
-(** [lowering_for ~mode ~explicit case precision]: the lowering the policy
-    allows for an element case, or why none. int32 is always lowered; float
-    cases need mode [Auto], the accepted operand rounding for [precision] (f32),
-    and, unless [explicit], {!Sarek_coopmat.accept_automatic_float_rewrite}. The
-    accuracy opt-in of the configuration ([accept_relaxed_accumulation]) is
-    checked afterwards, with the device, by {!choose}. *)
+(** [lowering_for ~budget ~mode ~explicit case precision]: the lowering the
+    policy allows for an element case, or why none. int32 is always lowered;
+    float cases need mode [Auto], the operand rounding for [precision] (f32)
+    and, unless [explicit], the automatic-rewrite consent, both read from
+    [budget] (the grants of the kernel: {!Sarek_policy.budget}). The accuracy
+    opt-in of the configuration ([accept_relaxed_accumulation]) is checked
+    afterwards, with the device, by {!choose}. *)
 val lowering_for :
+  budget:Sarek_policy.Budget.t ->
   mode:mode ->
   explicit:bool ->
   Sarek_matrix_advice.element_case ->

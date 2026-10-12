@@ -1,12 +1,12 @@
 # A typed optimisation policy for SPOC/Sarek and Katra
 
-**Status.** M1 implemented in this change (`spoc/ir/Sarek_policy.ml`); M2 and M3
-planned. Per milestone:
+**Status.** M1 and M2 implemented (`spoc/ir/Sarek_policy.ml`); M3 planned. Per
+milestone:
 
 | Milestone | Status | Content |
 |---|---|---|
 | M1 | implemented | `Sarek_policy`: one typed store for every precision grant and consent; the three coopmat opt-ins and `Sarek_f16_policy.accept_single_rounding` are wrappers over it; no behaviour change (golden `sarek/tests/codegen_golden/test_policy_golden.ml`) |
-| M2 | planned | window, epilogue, matrix, narrowing and unroll read the budget; digest in cache keys; fused-kernel meet; epilogue fusion on CUDA/OpenCL/Vulkan under `Cross_kernel_contraction` |
+| M2 | implemented | window, epilogue, matrix, narrowing and unroll decide through `Sarek_policy` from the effective policy of their kernel (grants at process and kernel scope, meet over fused members; process restrictions); the source memo is keyed on the policy; epilogue fusion on CUDA/OpenCL/Vulkan under `Cross_kernel_contraction` (details in 3.1a) |
 | M3 | planned | `SAREK_OPT_DISABLE`, `SAREK_EXPLAIN`; the replaced switches are removed outright; `gh-pages/docs/environment.md` completed |
 
 **Date:** 2026-10-11, revised 2026-10-12 for the owner decisions. **Sources:**
@@ -210,19 +210,61 @@ of rows 10-12 and 14 are thin wrappers: same refusals, same messages. In M1 the
 are vocabulary for M2 and M3; only the narrowing reader consults a kernel scope
 (decision points that know the kernel consult its scope; from M2 all do).
 
-M2 adds how each optimisation declares what it needs and how it decides:
+### 3.1a The effective policy (implemented in M2)
+
+M2 adds how each optimisation declares what it needs and how it decides. The
+module-type sketch of the first draft (one module per optimisation) became two
+functions and a record, because the facts of each decision point differ and stay
+with that point:
 
 ```ocaml
-module type OPTIMISATION = sig
-  val id : optimisation
-  val requires : backend:string -> grant list   (* [] = exact on this backend *)
-  type facts                                    (* kernel, device, sizes *)
-  val decide : Budget.t -> facts -> decision
-end
+type effective = { budget : Budget.t; disabled : optimisation list }
+val effective : kernel:string -> effective
+val effective_for : kernels:string list -> effective      (* meet over kernels *)
+val requires : optimisation -> backend:string -> grant list option
+                                   (* Some [] = exact there; None = not offered *)
+val decide : effective -> optimisation -> backend:string -> decision
+val register_fused : name:string -> members:string list -> unit
+val restrict : optimisation -> unit   (* one-way, process-wide *)
+val restricted : optimisation -> bool
+val version : unit -> int             (* bumped by every change of the policy *)
+val set_reporter : (record -> unit) option -> unit
+val report : record -> unit           (* once per new outcome per (kernel, device, optimisation) *)
 ```
 
-Epilogue fusion `requires` `[]` on HIP and Metal (the Metal pragma, #505) and
-`[Deviation Cross_kernel_contraction]` on CUDA, OpenCL and Vulkan (E-a, Q7).
+`requires` table:
+
+| Optimisation | HIP | Metal | CUDA/PTX, CUDA/C, CUDA, OpenCL, Vulkan | Native, Interpreter, WebGPU |
+|---|---|---|---|---|
+| `Epilogue_fusion` | `[]` | `[]` (while `Fp_exactness.is_exact "Metal"`) | `[Deviation Cross_kernel_contraction]` | not offered |
+| `Launch_window`, `Narrowing_proof`, `Auto_unroll`, `Matrix_rewrite` | `[]` | `[]` | `[]` | `[]` |
+
+(HIP: `-ffp-contract=off`; Metal: the pragma, #505; E-a, Q7. `Matrix_rewrite`
+needs nothing here: its float lowerings check their own grants, unchanged, now
+against the kernel's budget.) `decide` answers, in this order: `Refused
+"disabled (SAREK_OPT_DISABLE)"` if the optimisation is restricted; `Refused
+"not on <backend>"`; `Refused "no grant <name> (kernel or process)"` for the
+first missing required grant; `Applied Exact_by_construction` when nothing is
+required; `Applied (Granted reasons)` otherwise. A Metal marked inexact
+(`Fp_exactness.mark_inexact`, fast-math fallback) is refused by the epilogue
+even with the grant: fast math is more than contraction.
+
+Where each decision point reads the policy (milestone M2):
+
+| Decision point | Reads |
+|---|---|
+| Narrowing barriers (`Sarek_ir_cuda`) | `Single_rounding` from `budget ~kernels:[kern_name]`; the exact-narrowing proof is skipped (every barrier kept) when `Narrowing_proof` is restricted |
+| Unroll (`Sarek_ir_unroll`) | off when `Auto_unroll` is restricted (and `SAREK_AUTO_UNROLL=0`, until M3) |
+| Source memo (`Execute.generate_source_memo`) | `Policy_stamp`: `version ()` plus the digest of the kernel's effective policy, stored with each source |
+| Window (`Launch_window.defers`) | off when `Launch_window` is restricted |
+| Epilogue (`Epilogue_policy.decide_pair`, `Launch_epilogue`) | `decide (effective_for [P; C]) Epilogue_fusion ~backend`, per submit, after the per-backend switch and `Fp_exactness` |
+| Matrix (`Matrix_specialise`, `Matrix_admission`) | `Accumulation_order`, `Operand_rounding p`, `Automatic_float_rewrite` from the kernel's budget; mode Off when `Matrix_rewrite` is restricted |
+| Coopmat gate (`Execute.check_device_capabilities`, interpreter gate and evaluator) | `Sarek_coopmat.policy_verdict_for (budget ~kernels:[kern_name])` |
+
+No grant is recorded without a reader: a `Kernel` grant of any of the seven
+atoms changes the decision for that kernel and for no other (tests:
+`spoc/ir/test/test_sarek_kernel_scope.ml`, `sarek/execute/test/test_policy_kernel_scope.ml`,
+`sarek/tests/codegen_golden/test_f16_single_rounding_golden.ml`).
 
 ### 3.2 Composition rules
 
@@ -230,28 +272,39 @@ Epilogue fusion `requires` `[]` on HIP and Metal (the Metal pragma, #505) and
    passed stays valid.
 2. **Kernel grants add** to process grants for that kernel name only.
 3. **A fused kernel gets the meet** of its members' budgets
-   (`Sarek_policy.budget ~kernels`). Today a fused kernel silently loses a #480
-   `Kernel` scope (new name); this makes it a rule the report can state.
+   (`Sarek_policy.budget ~kernels`). A fusion pass registers the member names of
+   the kernel it builds (`register_fused`; `Fusion_horizontal` through
+   `Launch_window.fused_kernel`, `Fusion_epilogue` through
+   `Launch_epilogue.fused_ir`), and the budget of the fused name is the meet
+   over the members, recursively. A `Kernel` grant on the fused kernel's own
+   generated name is **not** counted: names are content digests or counters, not
+   a statement of the program. Registering a name again adds members (the name
+   is then covered only by what all of them allow); a cycle contributes
+   nothing.
 4. **Restrictions only remove**, so toggling them never makes an earlier check
    unsound. There is no public scoped-restriction API (Q4): SPOC decides the
    prompt-phase window itself and keeps a diagnostic switch;
    `Execute.Window.set_enabled` stays, process-wide, until it does.
-5. **Caches key on (IR identity, backend, budget digest).** #480: "a kernel
-   generated (and memoised) before the call keeps its barriers"; with the
-   digest in the key a stale kernel cannot run under the wrong policy. Planned
-   for M2; in M1 the documented staleness is unchanged.
+5. **Caches key on the policy.** #480 said "a kernel generated (and memoised)
+   before the call keeps its barriers"; that is no longer true. The source memo
+   stores, with each source, the policy `version ()` read before generation and
+   the digest of the kernel's effective policy (`Budget.digest` plus the
+   disabled optimisations). A launch compares `version ()` (one atomic read,
+   no allocation) and, only if it moved, the digest: a grant for another kernel
+   keeps the source, a grant for this one regenerates it. The version is read
+   before the policy and bumped after a change, so a race can only cause a
+   recomputation. Fused-kernel caches (`fused_cache`, the window's `cache`) keep
+   the built kernel; the epilogue decision is taken per submit, so a grant given
+   later is honoured at the next submit.
 
 ### 3.3 Who queries it
 
-Code generation (narrowing barriers, unroll) asks the budget for the kernel
-and puts the digest in its source memo key. `Execute.run_vectors` asks once per
-launch and passes the result to `Matrix_specialise.choose` and the window,
-replacing the atomics read today (`Launch_window.enabled`,
-`Launch_epilogue.backends`, `Matrix_specialise.mode`, `Sarek_coopmat.*_reason`)
-at the same cost (one atomic read, one list lookup). Explicit calls
-(`Sarek_gemm.Coopmat`, `Sarek_matrix.run`) check `permits` for their
-deviations only, without consent, as #440 specifies. In M1 only the narrowing
-reader and the existing `*_reason` readers consult the store.
+Code generation (narrowing barriers, unroll) asks the budget for the kernel,
+and the source memo is keyed on the policy (3.2 rule 5). The matrix decision, the
+epilogue decision and the coopmat gates read the budget of their kernel (3.1a).
+Explicit calls (`Sarek_gemm.Coopmat`, `Sarek_matrix.run`) check their deviations
+through the kernel's budget only, without consent, as #440 specifies. The
+per-launch cost of the memo is one atomic read while the policy is unchanged.
 
 ### 3.4 Environment (SPOC: restrictions only, no aliases)
 
@@ -321,10 +374,11 @@ explain fused#a1c3 hip:0 single-rounding refused meet of members lacks it
    golden of every pure generator's source, of the coopmat verdicts and of the
    grant readers, in five process states, captured on `main` before the change
    and unchanged by it; plus the laws of `Budget`.
-2. **SPOC M2:** window, epilogue, matrix, narrowing, unroll read the budget;
-   digest in cache keys; fused-kernel meet; epilogue fusion on CUDA, OpenCL and
-   Vulkan under `Cross_kernel_contraction`, measured per backend before it
-   becomes a default (HIP and Metal are exact); CHANGES entry.
+2. **SPOC M2 (implemented):** window, epilogue, matrix, narrowing, unroll read
+   the effective policy; policy in the source memo; fused-kernel meet; epilogue
+   fusion on CUDA, OpenCL and Vulkan under `Cross_kernel_contraction`, measured
+   per backend (one contraction per element, `specs/epilogue-fusion.md` FR-107;
+   HIP and Metal are exact); CHANGES entry.
 3. **SPOC M3:** `SAREK_OPT_DISABLE`, `SAREK_EXPLAIN`; the replaced switches
    (`SAREK_LAUNCH_WINDOW`, `SAREK_LAUNCH_EPILOGUE`, `SAREK_MATRIX_REWRITE`,
    `SAREK_AUTO_UNROLL`, `SAREK_MATRIX_REPORT`) are removed outright;
@@ -358,8 +412,8 @@ explain fused#a1c3 hip:0 single-rounding refused meet of members lacks it
 - **Properties (M2).** `leq b b'` implies applied(b) ⊆ applied(b'); a
   restriction only removes; a fused kernel never applies a deviation a member
   lacks.
-- **Cache staleness (M2).** Grant after generating a kernel: regenerated source
-  differs.
+- **Cache staleness (M2, implemented).** Grant after generating a kernel:
+  regenerated source differs (`sarek/execute/test/test_launch_memo.ml`).
 - **Env parser (M3, pure).** Legacy values are gone; `SAREK_OPT_DISABLE` gives
   restrictions, never a grant.
 - **Explain (M3):** one record per `decide`; golden report for the fixtures.

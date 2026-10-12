@@ -62,14 +62,26 @@ type state = {
 
 (** [Barrier_unless_exact facts]: every narrowing keeps the barrier unless
     {!Sarek_ir_f16_narrowing.needs_barrier} proves one rounding equals two.
-    [Single_rounding]: none does, by {!Sarek_f16_policy.accept_single_rounding}
-    (specs/f16-narrowing-barrier.md). *)
+    [Barrier_always]: every narrowing keeps it, the proof being switched off
+    ([Sarek_policy.restrict Narrowing_proof]). [Single_rounding]: none does, by
+    the [Single_rounding] grant of the kernel's budget
+    ({!Sarek_f16_policy.accept_single_rounding};
+    specs/f16-narrowing-barrier.md). *)
 and narrowing =
   | Barrier_unless_exact of Sarek_ir_f16_narrowing.facts
+  | Barrier_always
   | Single_rounding
 
+(* The kernel's budget, so that a fused kernel holds the grant only if all its
+   members do (Sarek_policy.register_fused). *)
 let single_rounding (k : kernel) =
-  Option.is_some (Sarek_f16_policy.single_rounding_reason ~kernel:k.kern_name)
+  Sarek_policy.Budget.permits
+    (Sarek_policy.budget ~kernels:[k.kern_name])
+    (Sarek_policy.Deviation Sarek_policy.Single_rounding)
+
+let proven_narrowing (k : kernel) =
+  if Sarek_policy.restricted Sarek_policy.Narrowing_proof then Barrier_always
+  else Barrier_unless_exact (Sarek_ir_f16_narrowing.of_kernel k)
 
 (** The state for emitting [k]. *)
 let state (k : kernel) : state =
@@ -77,14 +89,13 @@ let state (k : kernel) : state =
     variants = k.kern_variants;
     coopmat = Sarek_ir_cuda_coopmat.kernel_context k;
     narrowing =
-      (if single_rounding k then Single_rounding
-       else Barrier_unless_exact (Sarek_ir_f16_narrowing.of_kernel k));
+      (if single_rounding k then Single_rounding else proven_narrowing k);
   }
 
 (** The state for emitting helper [hf] of the kernel whose state is [st]. *)
 let helper_state st (hf : helper_func) =
   match st.narrowing with
-  | Single_rounding -> st
+  | Single_rounding | Barrier_always -> st
   | Barrier_unless_exact _ ->
       {
         st with
@@ -94,6 +105,7 @@ let helper_state st (hf : helper_func) =
 let narrowing_form st e : Sarek_ir_f16_narrowing.form =
   match st.narrowing with
   | Single_rounding -> Plain
+  | Barrier_always -> Barrier
   | Barrier_unless_exact facts -> Sarek_ir_f16_narrowing.form facts e
 
 (** {1 Type Mapping} *)

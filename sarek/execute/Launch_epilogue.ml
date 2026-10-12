@@ -11,8 +11,9 @@
     or join a horizontal group. The rewrite is {!Fusion_epilogue}.
 
     {b Conditions (vectors compared by identity, on one device).}
-    - The backend runs epilogues ({!set_backend_enabled}; HIP by default,
-      because every kernel it compiles has [-ffp-contract=off]).
+    - The backend runs epilogues for these kernels ({!decide_pair}): not
+      switched off ({!set_backend_enabled}), and exact (HIP, Metal) or granted
+      [Cross_kernel_contraction] for both P and C (CUDA, OpenCL, Vulkan).
     - C has the consumer shape ({!Fusion_epilogue.consumer}). C is 1-D with no
       dynamic shared memory.
     - Among the vectors P writes, C reads exactly one, I. C reads I only at its
@@ -34,43 +35,7 @@ module LW = Launch_window
 
 (** {1 Policy} *)
 
-(* HIP and Metal: the fused kernel equals the unfused pair only if no kernel of
-   the backend is contracted, since the device compiler may share a
-   subexpression of P and C (or forward P's stored value) in the fused kernel
-   that the unfused C contracts. HIP compiles every kernel with
-   [-ffp-contract=off]; every Metal kernel starts with
-   [#pragma METAL fp contract(off)] (Sarek_ir_metal.metal_fp_contract_pragma),
-   fused kernels included. CUDA, OpenCL and Vulkan contract inside kernels
-   today (specs/epilogue-fusion.md, docs/fp-contraction-policy.md section 14),
-   so they are opt-in. *)
-let default_backends = ["HIP"; "Metal"]
-
-(* [SAREK_LAUNCH_EPILOGUE=0] turns epilogue fusion off at start-up. *)
-let backends : string list Atomic.t =
-  Atomic.make
-    (match Sys.getenv_opt "SAREK_LAUNCH_EPILOGUE" with
-    | Some ("0" | "false" | "off" | "no") -> []
-    | _ -> default_backends)
-
-(* A backend in the list stays off once its plugin reported that it lost the
-   exactness the default relies on ({!Spoc_framework_registry.Fp_exactness}:
-   Metal without conformant compile options). *)
-let enabled (backend : string) =
-  List.mem backend (Atomic.get backends)
-  && Spoc_framework_registry.Fp_exactness.is_exact backend
-
-(** Turn epilogue fusion on or off for one backend. Off by default except on HIP
-    and Metal: elsewhere the device compiler may contract in the fused kernel
-    what it does not contract in the unfused pair, or the reverse, which changes
-    the result by an ulp. Turning it on there is a precision grant. *)
-let set_backend_enabled ~(backend : string) (b : bool) =
-  let rec update () =
-    let old = Atomic.get backends in
-    let rest = List.filter (fun x -> x <> backend) old in
-    let next = if b then backend :: rest else rest in
-    if not (Atomic.compare_and_set backends old next) then update ()
-  in
-  update ()
+include Epilogue_policy
 
 (** {1 Per-launch facts} *)
 
@@ -291,6 +256,12 @@ let fused_ir ~(p : _ LW.launch) ~p_array ~(c : _ LW.launch) ~shared =
           ->
             None
       in
+      Option.iter
+        (fun (fused : kernel) ->
+          Sarek_policy.register_fused
+            ~name:fused.kern_name
+            ~members:[p.ir.kern_name; c.ir.kern_name])
+        k ;
       if Hashtbl.length fused_cache >= 4096 then Hashtbl.reset fused_cache ;
       Hashtbl.replace fused_cache key k ;
       k
@@ -402,6 +373,19 @@ let merge_point w g (m : _ LW.launch) (c : _ LW.launch) shape i_buf =
       Some (p_array, shared)
   | _ -> None
 
+(* The policy decision for merging [c] into [m], reported once per outcome. *)
+let permitted (m : _ LW.launch) (c : _ LW.launch) =
+  let producer = m.ir.kern_name and consumer = c.ir.kern_name in
+  let decision = decide_pair ~backend:c.backend ~producer ~consumer in
+  Sarek_policy.report
+    {
+      kernel = producer ^ " + " ^ consumer;
+      device = c.backend;
+      optimisation = Sarek_policy.Epilogue_fusion;
+      decision;
+    } ;
+  match decision with Sarek_policy.Applied _ -> true | Refused _ -> false
+
 (* Under [w.lock]: [m] merged with its epilogue [c], when every condition and
    the coverage hold. *)
 let try_member w g (m : _ LW.launch) (c : _ LW.launch) shape =
@@ -409,8 +393,7 @@ let try_member w g (m : _ LW.launch) (c : _ LW.launch) shape =
   | None -> None
   | Some i_buf -> (
       match merge_point w g m c shape i_buf with
-      | None -> None
-      | Some (p_array, shared) ->
+      | Some (p_array, shared) when permitted m c ->
           if
             cached_covers
               ~p:m
@@ -424,7 +407,8 @@ let try_member w g (m : _ LW.launch) (c : _ LW.launch) shape =
               (fun fused ->
                 merged w m c ~fused ~p_array ~shared ~tc:(c.grid.x * c.block.x))
               (fused_ir ~p:m ~p_array ~c ~shared)
-          else None)
+          else None
+      | Some _ | None -> None)
 
 let one_dimensional (l : _ LW.launch) =
   l.grid.y = 1 && l.grid.z = 1 && l.block.y = 1 && l.block.z = 1

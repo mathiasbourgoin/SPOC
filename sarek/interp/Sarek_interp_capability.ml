@@ -17,8 +17,9 @@ let device_features =
    order once the program has accepted the relaxed accumulation; it is then one
    admissible member of the bounded set, not "the" answer (see
    Sarek_ir_interp_eval's [exec_coopmat]). *)
-let coopmat_verdict (cfg : Sarek_coopmat.config) : Sarek_capability.verdict =
-  Sarek_coopmat.policy_verdict cfg
+let coopmat_verdict ?(budget = Sarek_policy.budget ~kernels:[])
+    (cfg : Sarek_coopmat.config) : Sarek_capability.verdict =
+  Sarek_coopmat.policy_verdict_for budget cfg
 
 (* [Coopmat] is a [Sarek_ir_analysis.feature] but it is NOT a width, and
    judging it by list membership the way the other three are judged is wrong in
@@ -46,4 +47,7 @@ let first_refusal (ir : Sarek_ir_types.kernel) : Sarek_capability.verdict option
   in
   Sarek_capability.first_refusal
     (List.map (Sarek_capability.device_verdict ~provided) required
-    @ List.map coopmat_verdict (Sarek_ir_analysis.kernel_coopmat_configs ir))
+    @ List.map
+        (coopmat_verdict
+           ~budget:(Sarek_policy.budget ~kernels:[ir.Sarek_ir_types.kern_name]))
+        (Sarek_ir_analysis.kernel_coopmat_configs ir))

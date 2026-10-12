@@ -175,7 +175,9 @@ include Launch_limits
 
 (** [true] when launches on [backend] are deferred. *)
 let defers (backend : string) : bool =
-  Atomic.get enabled && List.mem backend (Atomic.get backends)
+  Atomic.get enabled
+  && List.mem backend (Atomic.get backends)
+  && not (Sarek_policy.restricted Sarek_policy.Launch_window)
 
 (** {1 Per-IR facts} *)
 
@@ -315,6 +317,10 @@ let fused_kernel w key members =
             }
       with
       | k ->
+          (* Its budget is the meet over the members' (Sarek_policy). *)
+          Sarek_policy.register_fused
+            ~name:k.kern_name
+            ~members:(List.map (fun m -> m.ir.kern_name) members) ;
           bump w.c_built ;
           (* Bounded: launch sequences of IRs built at run time would
              otherwise accumulate. A dropped entry is rebuilt on demand. *)
