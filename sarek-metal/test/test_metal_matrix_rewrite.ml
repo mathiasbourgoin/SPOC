@@ -205,8 +205,6 @@ let count ~needle s =
   go 0 0
 
 let test_msl () =
-  Sarek_metal.Sarek_ir_metal.accept_unexecuted_lowering
-    ~reason:"test_metal_matrix_rewrite: the generated source is under test" ;
   let s = specialised "f16 explicit" (choose k_f16) in
   let src =
     Sarek_metal.Sarek_ir_metal.generate_with_types ~block:s.block ~types:[] s.ir

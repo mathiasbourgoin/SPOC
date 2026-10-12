@@ -130,7 +130,7 @@ never executed on NVIDIA hardware.
 | Vulkan | none | int32 byte planes, on by default (exact) | executed on RX 7900 XTX (RADV, Mesa 26.1.4), bit-identical to the original and the host; float: not offered (GLSL has no float fragment) |
 | CUDA/C | none (`coopmat = None`) | int32 byte planes (sm_72+, warp 32) via `Cuda_coopmat`, **explicit request only** (`Sarek_matrix.run`; the automatic path declines: owner rule, untested = opt-in) | compiler-output: NVRTC sm_80 PTX has the u8 `wmma`; not executed: ZLUDA rejects `wmma.*` and unsigned 8-bit `mma` (`specs/zluda-mma-nvrtc13.md` F-1), so ZLUDA devices are declined; no NVIDIA hardware |
 | CUDA/PTX | none | none (no coopmat lowering) | by construction |
-| Metal | none | f16 operands (f16×f16+f32→f32) on 8×8×8 fragments, float opt-ins only; **integer declined: no integer `simdgroup_matrix`** | codegen: compiler-output (golden on tartarus); interpreter: executed (`test_matrix_fragment`); Apple M4: pending ladon run (tech lead) |
+| Metal | none | f16 operands (f16×f16+f32→f32) on 8×8×8 fragments, float opt-ins only; **integer declined: no integer `simdgroup_matrix`** | codegen: compiler-output (golden on tartarus); interpreter: executed (`test_matrix_fragment`); Apple M4 (macOS 15, 2026-10-12): executed, `test_matrix_rewrite_metal` passes, bit-identical to the original, the interpreter and the host chain; bench 9 pairs, f16 GEMM, rewrite off vs on: n=512 910 vs 189 us (4.81x), n=1024 6802 vs 966 us (7.04x), n=2048 53785 vs 7294 us (7.37x), load 2.6 with a co-running download |
 | OpenCL, Native | none | none | unchanged |
 | Interpreter | all | unchanged (+ 64-lane layouts checkable) | executed |
 
