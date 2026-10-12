@@ -102,6 +102,24 @@
   `test_launch_window` into 2 launches (the test derives the expected count
   from the window's own slot accounting).
 
+- Metal `waitUntilCompleted` releases the OCaml runtime lock (R-24, audit items
+  16/17), as the other backends did: `Metal_bindings` gains a second typed
+  `objc_msgSend` stub (`msg_void_blocking_lazy`,
+  `~release_runtime_lock:true`) used only for blocking messages, so a domain
+  waiting on a command buffer no longer stops every other domain's minor
+  collections. Both arguments are C pointers (receiver, selector), no OCaml
+  heap pointer is passed, and the caller keeps the command buffer retained
+  across the wait (`Metal_api.Pending` and `Event.synchronize` do). Other
+  messages stay on the plain stub. Tests: `test_metal_wait_binding`
+  (structural, runs anywhere; failed before the change) and the shared
+  `test_blocking_ffi_releases_lock` on alias `e2e-metal`.
+
+  | Backend | Before | After | Evidence |
+  |---|---|---|---|
+  | HIP, CUDA, OpenCL, Vulkan | lock released (R-24) | unchanged | executed (RX 7900 XTX; CUDA via ZLUDA) |
+  | Metal | lock held during `waitUntilCompleted` | released | structural test on tartarus; behaviour pending ladon run (tech lead) |
+  | Native, Interpreter | no blocking driver call | unchanged | by-construction |
+
 - CUDA kernel launches marshal all arguments into one 8-byte-slot block plus one
   pointer array (two host allocations whatever the argument count), as the HIP
   launch already did (`specs/cheap-repeated-launches.md` US-4, C-13). Both
@@ -733,8 +751,8 @@
   by the held lock: the caller of `Memory.host_ptr_to_device` /
   `device_to_host_ptr` (`Runtime.to_device_ptr` / `from_device_ptr`) must keep
   it allocated until the call returns (the pointer value itself is now kept
-  reachable across the call). Metal is unchanged (its waits go through
-  `objc_msgSend`). Not switched yet, though they can take milliseconds:
+  reachable across the call). Metal followed in a later entry (its waits go
+  through `objc_msgSend`). Not switched yet, though they can take milliseconds:
   `hipHostMalloc`/`hipHostFree`/`hipHostRegister`/`hipHostUnregister`,
   `hipStreamDestroy`, `hipEventDestroy`, `hipModuleUnload` and their CUDA
   counterparts (`cuMemAllocHost`, `cuMemFreeHost`, `cuMemHostRegister`,

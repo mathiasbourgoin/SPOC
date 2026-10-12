@@ -231,3 +231,16 @@ As a SPOC user on OpenCL/Vulkan/WebGPU, I want the existing capability refusals 
 - `Pending command buffer`: a committed or open Metal command buffer nobody has waited for, with the MTLBuffers it binds (`Metal_api.Pending`).
 - `Metal device-only vector`: a `Vector.t` with `Device_only_storage` whose single buffer is a shared-storage `MTLBuffer`.
 - `Synchronous stream`: a stream whose every enqueued operation has completed when the enqueuing call returns (Native, Interpreter). On Metal launches are asynchronous and copies synchronous. Core's keep-alive ledger still applies: operands stay rooted until the stream or an event is synchronised.
+
+## Runtime lock during waits (R-24)
+
+Every blocking wait on a Metal command buffer (`waitUntilCompleted`, from
+`Pending.wait_cmd`, `Event.synchronize` and the batch flush) calls
+`objc_msgSend` with the OCaml runtime lock released, so a domain waiting on the
+GPU does not stop the other domains' minor collections. Invariants: the
+arguments are C pointers only (no OCaml heap pointer), and the command buffer is
+retained by the waiter for the duration of the call. Short messages keep the
+plain stub: releasing and reacquiring the lock costs more than they take.
+Acceptance: `test_metal_wait_binding` (structural) and, on a Metal device,
+`test_blocking_ffi_releases_lock` on alias `e2e-metal` (at least 10 minor
+collections by an allocating domain during a ~200 ms `Device.synchronize`).
