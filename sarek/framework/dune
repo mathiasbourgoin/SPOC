@@ -8,7 +8,8 @@
   Framework_registry
   Intrinsic_registry
   Framework_cache
-  Framework_error)
+  Framework_error
+  Fp_exactness)
  (libraries spoc_framework unix)
  (preprocess no_preprocessing)
  (instrumentation

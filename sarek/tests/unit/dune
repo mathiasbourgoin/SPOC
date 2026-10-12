@@ -438,4 +438,4 @@
 (test
  (name test_epilogue_defaults)
  (modules test_epilogue_defaults)
- (libraries sarek.execute alcotest))
+ (libraries sarek.execute spoc_framework_registry alcotest))
