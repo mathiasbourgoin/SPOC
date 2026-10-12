@@ -6,6 +6,7 @@
  (modules test_launch_memo)
  (libraries
   sarek_execute
+  sarek_codegen
   sarek_ir
   spoc_core
   spoc_framework
@@ -64,3 +65,27 @@
  (name test_fused_names)
  (modules test_fused_names)
  (libraries coverage_fixtures sarek_execute sarek_ir alcotest))
+
+; Effective policy at the launch decision points (specs/optimisation-policy.md,
+; M2). Process restrictions are one-way: their own executable.
+
+(test
+ (name test_policy_restrict_execute)
+ (modules test_policy_restrict_execute)
+ (libraries sarek_execute sarek_ir spoc_core alcotest))
+
+; Kernel-scoped grants: matrix rewrite opt-ins and epilogue contraction.
+
+(test
+ (name test_policy_kernel_scope)
+ (modules test_policy_kernel_scope)
+ (libraries sarek sarek_stdlib sarek_execute sarek_ir spoc_core alcotest)
+ (preprocess
+  (pps sarek_ppx)))
+
+; The budget of a fused kernel is the meet over its members.
+
+(test
+ (name test_policy_fused)
+ (modules test_policy_fused)
+ (libraries sarek_execute sarek_codegen sarek_ir alcotest))

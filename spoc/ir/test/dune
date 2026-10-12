@@ -11,5 +11,7 @@
   test_sarek_ir_affine
   test_sarek_ir_eval_int
   test_sarek_push_constants
-  test_sarek_policy)
+  test_sarek_policy
+  test_sarek_policy_effective
+  test_sarek_kernel_scope)
  (libraries sarek_ir alcotest astring str unix))
