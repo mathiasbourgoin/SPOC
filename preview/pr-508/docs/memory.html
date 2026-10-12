@@ -123,7 +123,7 @@
       <td><code class="language-plaintext highlighter-rouge">hipHostMalloc</code></td>
       <td><code class="language-plaintext highlighter-rouge">cuMemHostAlloc</code></td>
       <td>page-aligned host memory</td>
-      <td>page-aligned memory imported with <code class="language-plaintext highlighter-rouge">VK_EXT_external_memory_host</code>; copies need no staging; refused on a device without the extension, unless <code class="language-plaintext highlighter-rouge">SPOC_VULKAN_HOST_IMPORT=1</code>, and on AMD drivers (#503)</td>
+      <td>page-aligned memory imported with <code class="language-plaintext highlighter-rouge">VK_EXT_external_memory_host</code>; copies need no staging; refused on a device without the extension; also refused unless <code class="language-plaintext highlighter-rouge">SPOC_VULKAN_HOST_IMPORT=1</code> (which permits import only on a device that offers the extension), and on AMD drivers (#503)</td>
       <td>plain host memory</td>
       <td>refused</td>
     </tr>
