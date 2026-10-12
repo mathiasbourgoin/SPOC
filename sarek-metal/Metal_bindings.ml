@@ -98,6 +98,24 @@ let msg_void_lazy =
        "objc_msgSend"
        (ptr void @-> ptr void @-> returning void))
 
+(** [objc_msgSend] with the OCaml runtime lock released for the call, for the
+    messages that block until the GPU is done ([waitUntilCompleted]). While the
+    lock is held, every other domain stops at its next minor collection until
+    the call returns. The general safety argument is the note on
+    [Hip_bindings.foreign_hip_blocking_lazy]. For this binding: both arguments
+    are C pointers (the receiver and a selector from [sel_registerName]), no
+    OCaml heap pointer is passed, and the receiver must stay retained by the
+    caller until the call returns (every caller waits on a command buffer it
+    owns a retain on). Use it only for blocking messages: a release/reacquire
+    costs more than a short message. *)
+let msg_void_blocking_lazy =
+  lazy
+    (foreign
+       ~release_runtime_lock:true
+       ~from:(get_objc_lib ())
+       "objc_msgSend"
+       (ptr void @-> ptr void @-> returning void))
+
 let msg_u64_lazy =
   lazy
     (foreign
@@ -107,6 +125,10 @@ let msg_u64_lazy =
 
 (** Send a no-argument, void-returning message through a cached selector. *)
 let send_void sel obj = Lazy.force msg_void_lazy obj (Lazy.force sel)
+
+(** {!send_void} for a message that blocks on the device. *)
+let send_void_blocking sel obj =
+  Lazy.force msg_void_blocking_lazy obj (Lazy.force sel)
 
 let send_u64 sel obj =
   Unsigned.UInt64.to_int (Lazy.force msg_u64_lazy obj (Lazy.force sel))
@@ -292,7 +314,7 @@ let mtl_command_buffer_commit cmdbuf = send_void sel_commit cmdbuf
 let sel_wait_until_completed = cached_sel "waitUntilCompleted"
 
 let mtl_command_buffer_wait_until_completed cmdbuf =
-  send_void sel_wait_until_completed cmdbuf
+  send_void_blocking sel_wait_until_completed cmdbuf
 
 (** [MTLCommandBufferStatusError]: the command buffer did not complete. *)
 let mtl_command_buffer_status_error = 5
@@ -697,6 +719,7 @@ let force_all () =
   force objc_getClass_lazy ;
   force sel_registerName_lazy ;
   force msg_void_lazy ;
+  force msg_void_blocking_lazy ;
   force msg_u64_lazy ;
   force msg_double_lazy ;
   force autorelease_pool_push_lazy ;

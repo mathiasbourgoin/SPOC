@@ -38,6 +38,15 @@
   `kernel_launch_failed` at the wait that observes it. Selectors and typed
   `objc_msgSend` stubs on the launch path are cached; `Device.get` is
   memoised.
+- Blocking waits release the OCaml runtime lock (R-24): `waitUntilCompleted`
+  goes through `Metal_bindings.send_void_blocking`
+  (`objc_msgSend` bound with `~release_runtime_lock:true`); every other message
+  uses the plain stubs. Safety: no OCaml heap pointer is passed (receiver and
+  selector are C pointers) and the caller keeps the command buffer retained
+  until the wait returns. The general argument is the note on
+  `Hip_bindings.foreign_hip_blocking_lazy`. Test:
+  `sarek-metal/test/test_metal_wait_binding.ml` (structural) and alias
+  `e2e-metal` (behavioural, needs a Mac).
 - `Framework_sig.ASYNC` (spec `specs/metal-ranged-copies.md`): device-only
   vectors are shared-storage MTLBuffers with no host mirror; ranged copies are
   a bounds-checked `memcpy` at `contents + offset` that first waits for the
