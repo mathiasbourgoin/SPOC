@@ -1,16 +1,16 @@
-sarek-explain unroll_loop cuda-c unroll applied exact
-sarek-explain unroll_loop opencl unroll applied exact
-sarek-explain unroll_loop metal unroll applied exact
-sarek-explain unroll_loop glsl unroll applied exact
-sarek-explain t2_f16_sum cuda-c narrowing-proof applied proof=1/1 narrowings proven exact
-sarek-explain q4k_like cuda-c narrowing-proof refused 0/1 narrowings proven exact, the barrier is kept
-sarek-explain q4k_like cuda-c narrowing-proof applied granted=single-rounding reason="profile fast"
-sarek-explain env_gemm fake_HIP window applied exact
-sarek-explain env_gemm fake_Native window refused CPU device (host buffers can alias)
-sarek-explain env_gemm fake_HIP window refused stream launch
-sarek-explain env_gemm fake_HIP window refused structure-of-arrays arguments
-sarek-explain sarek_kern fake_HIP matrix refused float products are rewritten automatically only after Sarek_coopmat.accept_automatic_float_rewrite (plus the accuracy opt-ins); Sarek_matrix.run does not need it
-sarek-explain coopmat_f16 fake_HIP matrix refused coopmat-relaxed-accumulation
-sarek-explain coopmat_f16 fake_HIP matrix applied granted=accumulation-order reason="profile fast"
-sarek-explain env_fused_1 fake_HIP window applied exact
+sarek-explain unroll_loop gen:cuda-c unroll applied exact
+sarek-explain unroll_loop gen:opencl unroll applied exact
+sarek-explain unroll_loop gen:metal unroll applied exact
+sarek-explain unroll_loop gen:glsl unroll applied exact
+sarek-explain t2_f16_sum gen:cuda-c narrowing-proof applied proof=1/1 narrowings proven exact
+sarek-explain q4k_like gen:cuda-c narrowing-proof refused 0/1 narrowings proven exact, the barrier is kept
+sarek-explain q4k_like gen:cuda-c narrowing-proof applied granted=single-rounding reason="profile fast"
+sarek-explain env_gemm HIP:0 window applied exact
+sarek-explain env_gemm Native:1 window refused CPU device (host buffers can alias)
+sarek-explain env_gemm HIP:0 window refused stream launch
+sarek-explain env_gemm HIP:0 window refused structure-of-arrays arguments
+sarek-explain sarek_kern HIP:0 matrix refused float products are rewritten automatically only after Sarek_coopmat.accept_automatic_float_rewrite (plus the accuracy opt-ins); Sarek_matrix.run does not need it
+sarek-explain coopmat_f16 HIP:0 coopmat-gate refused coopmat-relaxed-accumulation
+sarek-explain coopmat_f16 HIP:0 coopmat-gate applied granted=accumulation-order reason="profile fast"
+sarek-explain env_fused_1 HIP:0 window applied exact
 sarek-explain env_fused_1 - policy refused grant-on-generated-name single-rounding

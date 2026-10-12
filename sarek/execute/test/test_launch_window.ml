@@ -1315,7 +1315,7 @@ let test_explain_records () =
     (Some
        (function
        | Sarek_policy.Decision r -> seen := r :: !seen
-       | Sarek_policy.Ignored_grant _ -> ())) ;
+       | Sarek_policy.Ignored_grant _ | Sarek_policy.Gate _ -> ())) ;
   let pair () = ignore (epilogue_pair ~prod ~cons ~cons_block:64 ()) in
   pair () ;
   pair () ;
@@ -1339,6 +1339,7 @@ let test_explain_records () =
            grants =
              [Sarek_policy.Deviation Sarek_policy.Cross_kernel_contraction];
            reason = "launch window test";
+           lowering = None;
          })
   in
   check
@@ -1348,6 +1349,24 @@ let test_explain_records () =
     (of_opt Sarek_policy.Epilogue_fusion
     = [("ex_prod + ex_cons", refused); ("ex_prod + ex_cons", applied)]) ;
   let window = of_opt Sarek_policy.Launch_window in
+  let targets o =
+    List.sort_uniq
+      compare
+      (List.filter_map
+         (fun (r : Sarek_policy.record) ->
+           if r.optimisation = o then Some r.target else None)
+         !seen)
+  in
+  check
+    (list string)
+    "window: the target is framework:device-id"
+    [Printf.sprintf "%s:%d" dev.Device.framework dev.Device.id]
+    (targets Sarek_policy.Launch_window) ;
+  check
+    (list string)
+    "epilogue: the target is the backend"
+    [backend_name]
+    (targets Sarek_policy.Epilogue_fusion) ;
   check
     bool
     "window: producer and consumer deferred, exact, once each"

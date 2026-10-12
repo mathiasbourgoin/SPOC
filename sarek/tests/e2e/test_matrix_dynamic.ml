@@ -200,7 +200,7 @@ let matrix_decisions f =
        | Sarek_policy.Decision
            {optimisation = Sarek_policy.Matrix_rewrite; decision; _} ->
            seen := decision :: !seen
-       | Sarek_policy.Decision _ | Sarek_policy.Ignored_grant _ -> ())) ;
+       | Sarek_policy.Decision _ | Sarek_policy.Ignored_grant _ | Sarek_policy.Gate _ -> ())) ;
   f () ;
   Sarek_policy.set_reporter None ;
   !seen

@@ -92,7 +92,7 @@ let decision_t =
   Alcotest.testable
     (fun ppf -> function
       | Applied (Proof s) -> Format.fprintf ppf "Applied(Proof %s)" s
-      | Applied (Granted {grants; reason}) ->
+      | Applied (Granted {grants; reason; _}) ->
           Format.fprintf
             ppf
             "Applied(Granted %s: %s)"
@@ -117,7 +117,12 @@ let expected_decision ~disabled subset opt backend =
             | [] -> Applied Exact_by_construction
             | g :: _ ->
                 Applied
-                  (Granted {grants = needed; reason = "r:" ^ grant_name g})))
+                  (Granted
+                     {
+                       grants = needed;
+                       reason = "r:" ^ grant_name g;
+                       lowering = None;
+                     })))
 
 (* 5 optimisations x 11 backends x restriction on/off x 128 grant subsets. *)
 let test_decide_exhaustive () =
@@ -290,7 +295,7 @@ let test_reporter () =
   set_reporter
     (Some (function Decision r -> seen := r :: !seen | Ignored_grant _ -> ())) ;
   let r kernel device decision =
-    {kernel; device; optimisation = Epilogue_fusion; decision}
+    {kernel; target = device; optimisation = Epilogue_fusion; decision}
   in
   let applied = Applied Exact_by_construction in
   report (r "k" "d" applied) ;
@@ -305,7 +310,7 @@ let test_reporter () =
   report
     {
       kernel = "k";
-      device = "d";
+      target = "d";
       optimisation = Matrix_rewrite;
       decision = Refused "x";
     } ;
