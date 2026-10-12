@@ -193,8 +193,9 @@
   | Metal | on, exact, while `Fp_exactness.is_exact "Metal"` | unchanged; refused if marked inexact even with the grant | executed on an Apple M4 (2026-10-12): `test_epilogue_exact` fused == unfused == Interpreter, 0 of 4099 differ in forwarding, shared and chain; `test_epilogue_metal_pragma` and `test_launch_window` pass |
   | Native, Interpreter, WebGPU | never fuse | never fuse | decision table, exhaustive (`test_sarek_policy_effective`) |
 
-  Raw logs: `spoc-pipeline-logs/policy-impl/m2-*.txt` (owner machine, outside
-  the repository). The bound on a contracting backend is
+  Raw logs: `spoc-pipeline-logs/policy-impl/m2-*.txt` and, for Metal,
+  `spoc-pipeline-logs/policy-impl/ladon/sarek-policy-m2r2-*.txt` (owner machine,
+  outside the repository). The bound on a contracting backend is
   `|f - u| <= ulp(a*b)/2 + ulp(r)` (`specs/epilogue-fusion.md` FR-107), not "1
   ulp of the result": under cancellation of `a*b` and `c` it is many ulps of a
   small result. Also: (4) `Execute.Window.epilogue_on backend` now answers "can
