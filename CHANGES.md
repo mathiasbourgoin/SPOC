@@ -89,14 +89,16 @@
   ones included, starts with `#pragma METAL fp contract(off)`, which on an
   Apple M4 turned 8773 of 8773 contracted `a*b+c` into 0
   (`docs/fp-contraction-policy.md` section 10), so the fused kernel equals the
-  unfused pair. Opt out with `SAREK_LAUNCH_EPILOGUE=0` or
+  unfused pair. It stays off for Metal in a process where the non-fast-math
+  compile options cannot be built (`Fp_exactness`, warning logged). Opt out with `SAREK_LAUNCH_EPILOGUE=0` or
   `Execute.Window.set_epilogue_backend ~backend:"Metal" false`.
   `test_epilogue_exact` now asserts fused == unfused AND fused == Interpreter
   bit for bit on every default backend (HIP: executed on an RX 7900 XTX,
   passes), with controls (inputs separate fma from mul-then-add in 1109 of 4099
   elements; the Interpreter and the fused result differ from the fma
-  reference), and checks on any host that the fused MSL carries the pragma and
-  that the same check fails on a source without it. Backend coverage
+  reference); `test_epilogue_metal_pragma` checks on any host that the
+  epilogue-fused and the epilogue-then-horizontal MSL carry the pragma and that
+  the same check fails on a source without it. Backend coverage
   (epilogue): HIP on and executed; Metal off to on, executed on an Apple M4
   (macOS 15): forwarding, shared and chain pairs give fused == unfused and
   fused == Interpreter (0 of 4099 elements differ), the fused forwarding result

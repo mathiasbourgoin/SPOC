@@ -2005,6 +2005,7 @@
   test_launch_window
   bench_launch_window
   test_epilogue_exact
+  test_epilogue_metal_pragma
   bench_epilogue
   test_matrix_rewrite
   test_matrix_rewrite_float
@@ -2026,6 +2027,7 @@
   test_launch_window
   bench_launch_window
   test_epilogue_exact
+  test_epilogue_metal_pragma
   bench_epilogue
   test_matrix_rewrite
   test_matrix_rewrite_float
@@ -2361,6 +2363,15 @@
  (alias runtest)
  (action
   (run %{dep:test_epilogue_exact.exe})))
+
+; The Metal fused sources (epilogue, then horizontal) carry the fp-contract
+; pragma that makes Metal's default-on epilogue fusion exact. Compiler output,
+; no device.
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_epilogue_metal_pragma.exe})))
 
 ; H6: the launch window keeps a fused group within Vulkan's 128-byte
 ; push-constant block (specs/launch-window.md). Device-filtered to Vulkan;

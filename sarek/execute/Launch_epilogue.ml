@@ -52,7 +52,12 @@ let backends : string list Atomic.t =
     | Some ("0" | "false" | "off" | "no") -> []
     | _ -> default_backends)
 
-let enabled (backend : string) = List.mem backend (Atomic.get backends)
+(* A backend in the list stays off once its plugin reported that it lost the
+   exactness the default relies on ({!Spoc_framework_registry.Fp_exactness}:
+   Metal without conformant compile options). *)
+let enabled (backend : string) =
+  List.mem backend (Atomic.get backends)
+  && Spoc_framework_registry.Fp_exactness.is_exact backend
 
 (** Turn epilogue fusion on or off for one backend. Off by default except on HIP
     and Metal: elsewhere the device compiler may contract in the fused kernel
