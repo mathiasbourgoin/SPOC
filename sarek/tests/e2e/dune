@@ -2017,7 +2017,8 @@
   test_matrix_cuda_compile
   test_matrix_dynamic
   test_matrix_col_major
-  test_matrix_optin)
+  test_matrix_optin
+  test_matrix_kernel_scope)
  (modules
   test_int32_bitcasts
   test_blocking_ffi_releases_lock
@@ -2040,6 +2041,7 @@
   test_matrix_dynamic
   test_matrix_col_major
   test_matrix_optin
+  test_matrix_kernel_scope
   matrix_rewrite_support
   coopmat_hip_support
   backend_hip
@@ -2331,6 +2333,13 @@
    (run %{dep:test_matrix_optin.exe} relaxed-only)
    (run %{dep:test_matrix_optin.exe} new-only)
    (run %{dep:test_matrix_optin.exe} both))))
+
+; A Kernel-scoped opt-in rewrites that kernel only, on the interpreter (no GPU).
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_matrix_kernel_scope.exe})))
 
 ; The rewrite templates laid out for 32 and 64 lanes, on the interpreter.
 

@@ -1304,6 +1304,58 @@ let test_epilogue_needs_the_grant () =
     1
     (List.length (epilogue_pair ~prod ~cons ~cons_block:64 ()))
 
+(* The fusion passes register the members of the kernels they build, so the
+   fused kernel's budget is the meet over its members (Sarek_policy). *)
+let raw_launch_names prefix =
+  List.filter_map
+    (fun e ->
+      match String.split_on_char ' ' e with
+      | "launch" :: name :: _ when String.starts_with ~prefix name -> Some name
+      | _ -> None)
+    (List.rev !events)
+
+let permits_for name g =
+  Sarek_policy.Budget.permits (Sarek_policy.budget ~kernels:[name]) g
+
+let sole what = function
+  | [name] -> name
+  | l -> failf "%s: expected one fused launch, got %d" what (List.length l)
+
+let test_horizontal_budget () =
+  let single = Sarek_policy.Deviation Sarek_policy.Single_rounding in
+  List.iter
+    (fun k ->
+      match
+        Sarek_policy.grant (Sarek_policy.Kernel k) single ~reason:"window test"
+      with
+      | Ok () -> ()
+      | Error _ -> failf "grant refused for %s" k)
+    ["k_a"; "k_b"] ;
+  let fused_of x y =
+    reset () ;
+    let[@warning "-8"] [s; d1; d2] = resident 3 in
+    events := [] ;
+    launch ~gx:3 x s d1 ;
+    launch ~gx:2 y s d2 ;
+    Execute.Window.flush () ;
+    sole "horizontal" (raw_launch_names "sarek_hfused_")
+  in
+  check bool "k_a + k_b both granted" true
+    (permits_for (fused_of k_a k_b) single) ;
+  check bool "k_a + k_c, k_c not granted" false
+    (permits_for (fused_of k_a k_c) single)
+
+let test_epilogue_budget () =
+  let contraction =
+    Sarek_policy.Deviation Sarek_policy.Cross_kernel_contraction
+  in
+  ignore (epilogue_pair ~cons_block:64 ()) ;
+  let fused = sole "epilogue" (raw_launch_names "sarek_efused_") in
+  check bool "granted P and C: the fused kernel holds the grant" true
+    (permits_for fused contraction) ;
+  check bool "and nothing else" false
+    (permits_for fused (Sarek_policy.Deviation Sarek_policy.Single_rounding))
+
 let test_epilogue_merged () =
   match epilogue_pair ~cons_block:64 () with
   | [l] ->
@@ -1428,18 +1480,12 @@ let test_epilogue_failure_falls_back () =
 
 let test_epilogue_off_by_default () =
   reset () ;
+  Execute.Window.set_epilogue_backend ~backend:backend_name true ;
   check
     bool
-    "ungranted kernels are refused on an OpenCL-like backend"
+    "switching an OpenCL-like backend on is no grant"
     false
-    (match
-       Sarek_execute.Launch_epilogue.decide_pair
-         ~backend:backend_name
-         ~producer:"od_p"
-         ~consumer:"od_c"
-     with
-    | Sarek_policy.Applied _ -> true
-    | Sarek_policy.Refused _ -> false) ;
+    (Execute.Window.epilogue_on backend_name) ;
   check bool "HIP on by default" true (Execute.Window.epilogue_on "HIP")
 
 (* {2 Review round (epilogue)} *)
@@ -1777,6 +1823,10 @@ let () =
       ( "grouping",
         [
           test_case "independent launches fused" `Quick test_independent_fused;
+          test_case
+            "fused budget, horizontal"
+            `Quick
+            test_horizontal_budget;
           test_case "dependent launches in order" `Quick test_dependent_in_order;
           test_case
             "reordered past independent"
@@ -1860,6 +1910,10 @@ let () =
           test_case "index slice" `Quick test_index_slice;
           test_case "consumer shape" `Quick test_consumer_shape;
           test_case "merged when covered" `Quick test_epilogue_merged;
+          test_case
+            "fused budget, epilogue"
+            `Quick
+            test_epilogue_budget;
           test_case "needs the grant" `Quick test_epilogue_needs_the_grant;
           test_case "merge bounded by slots" `Quick test_epilogue_slot_limit;
           test_case

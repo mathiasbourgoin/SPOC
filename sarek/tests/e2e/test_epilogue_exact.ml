@@ -29,9 +29,9 @@
  * grants Cross_kernel_contraction (without it nothing fuses there); launch
  * counts are asserted, bit equality only RECORDED ("DEVIATION RECORDED"), and
  * the fused result is asserted to lie within one contraction per element of
- * the unfused one (at most 1 ulp after an add, 1 ulp of the product for the
- * residual pair; the number of differing elements and the largest distance in
- * ulps are printed). Informational: [a*b + c] in ONE kernel
+ * the unfused one (|f - u| <= ulp(a*b)/2 + ulp(result): not 1 ulp of the
+ * result, which cancellation breaks; the number of differing elements and the
+ * largest distance in ulps are printed). Informational: [a*b + c] in ONE kernel
  * against the rounded and the fma result (does the device contract?).
  *
  * What it cannot detect: a deviation on inputs or shapes not listed above, a
@@ -258,7 +258,7 @@ let exact_by_default (dev : Device.t) =
 
 (* Elsewhere fusion needs the program's grant that one multiply of a kernel may
    be contracted with an add of the next (a deviation bounded by one
-   contraction per element, see [within_bound]). It is made once, for the
+   contraction per element, see [check_bound]). It is made once, for the
    process, when the epilogue is first forced on for such a backend. *)
 let grant_contraction (dev : Device.t) =
   if not (exact_by_default dev) then
@@ -283,7 +283,7 @@ let with_backend (dev : Device.t) ~epilogue f =
     f
 
 (* Bit equality is asserted on a backend where the epilogue is exact by
-   default, recorded elsewhere (where [within_bound] is asserted instead). *)
+   default, recorded elsewhere (where [check_bound] is asserted instead). *)
 let gated = exact_by_default
 
 (* Position of a float32 on a line that is monotone in the float order, so that
@@ -294,48 +294,63 @@ let ordered bits =
 
 let ulp_distance x y = abs (ordered x - ordered y)
 
-(* "One contraction per element": a fused result differs from the unfused one
-   by at most [ulps] ulps (an add that follows the product, no cancellation), or
-   for the residual pair [o = a*b - t] by at most one ulp of the product. *)
-type bound = Ulps of int | Product_ulp of float array * float array
+(* "One contraction per element". With u the unfused result round32(round32(a*b)
+   + c) and f the fused one round32(a*b + c): |f - u| <= ulp(a*b)/2 + ulp(r),
+   r the larger of |f| and |u| (test_contraction_bound proves it on the host).
+   It is NOT 1 ulp of the result: under cancellation the difference is a rounding
+   error of the product. For a result r = o * d computed from such an o, the
+   error of o is scaled by |d|. [Ulps k] is for pairs with no product left to
+   contract (the float16 pair). *)
+type bound =
+  | Ulps of int
+  | Contraction of float array * float array
+  | Chained of float array * float array * float array * int32 array
 
-let limit = function Ulps k -> float_of_int k | Product_ulp _ -> 1.0
+let ulp x =
+  if x = 0.0 then Float.ldexp 1.0 (-149)
+  else
+    let _, e = Float.frexp (Float.abs x) in
+    Float.ldexp 1.0 (max (e - 24) (-149))
 
-let unit_name = function
-  | Ulps _ -> "ulp"
-  | Product_ulp _ -> "ulp of the product"
+let value = Int32.float_of_bits
 
-(* The largest difference, in the bound's unit. *)
-let measure bound x y =
+(* The largest |difference| relative to what the bound allows (<= 1 holds). *)
+let measure bound fused unfused =
   let worst = ref 0.0 in
   Array.iteri
     (fun i v ->
-      let d =
+      let u = unfused.(i) in
+      let delta = Float.abs (value v -. value u) in
+      let r = Float.max (Float.abs (value v)) (Float.abs (value u)) in
+      let allowed =
         match bound with
-        | Ulps _ -> float_of_int (ulp_distance v y.(i))
-        | Product_ulp (a, b) ->
-            let _, e = Float.frexp (a.(i) *. b.(i)) in
-            Float.abs (Int32.float_of_bits v -. Int32.float_of_bits y.(i))
-            /. Float.ldexp 1.0 (e - 24)
+        | Ulps k -> float_of_int k *. ulp r
+        | Contraction (a, b) -> (ulp (a.(i) *. b.(i)) /. 2.0) +. ulp r
+        | Chained (a, b, d, o) ->
+            (Float.abs d.(i)
+            *. ((ulp (a.(i) *. b.(i)) /. 2.0) +. ulp (value o.(i))))
+            +. ulp r
       in
-      worst := Float.max !worst d)
-    x ;
+      worst := Float.max !worst (delta /. allowed))
+    fused ;
   !worst
 
 (* Asserted on every backend that fuses: the bound holds, and what was measured
-   is printed (differing elements, largest difference in the bound's unit). *)
+   is printed (differing elements, largest difference in ulps of the result,
+   and relative to the bound). *)
 let check_bound dev label bound ~fused ~unfused =
   let worst = measure bound fused unfused in
   check
     dev
     (label ^ ": within one contraction")
-    (worst <= limit bound)
+    (worst <= 1.0)
     (Printf.sprintf
-       " (%d of %d differ, max %.3g %s)"
+       " (%d of %d differ, max %d ulp, %.3g of the bound)"
        (count_diff fused unfused)
        n
-       worst
-       (unit_name bound))
+       (Array.fold_left max 0
+          (Array.mapi (fun i v -> ulp_distance v unfused.(i)) fused))
+       worst)
 
 let verdict (dev : Device.t) label ok detail =
   if gated dev then check dev label ok detail
@@ -392,8 +407,8 @@ let run_pair_device (dev : Device.t) refs pair label inputs =
     dev
     label
     (match pair with
-    | Forwarding | Half -> Ulps 1
-    | Shared -> Product_ulp (a, b))
+    | Half -> Ulps 1
+    | Forwarding | Shared -> Contraction (a, b))
     ~fused:o_on
     ~unfused:o_off ;
   Option.iter
@@ -437,8 +452,9 @@ let run_chain_device (dev : Device.t) refs inputs =
   verdict dev "chain: fused == unfused" (on = off) "" ;
   (* Two epilogues: the contraction of the first reaches the second's input. *)
   let _, o_off, _ = off and _, o_on, _ = on in
-  check_bound dev "chain o" (Ulps 1) ~fused:o_on ~unfused:o_off ;
-  check_bound dev "chain r" (Ulps 2) ~fused:r_on ~unfused:r_off ;
+  let a, b, _ = inputs in
+  check_bound dev "chain o" (Contraction (a, b)) ~fused:o_on ~unfused:o_off ;
+  check_bound dev "chain r" (Chained (a, b, d, o_on)) ~fused:r_on ~unfused:r_off ;
   verdict dev "chain: fused == Interpreter" (r_on = refs.chain) "" ;
   verdict
     dev
