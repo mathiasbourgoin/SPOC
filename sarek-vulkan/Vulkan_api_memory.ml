@@ -574,18 +574,24 @@ let host_to_device ~src ~dst =
                 (Unsigned.UInt32.of_int 1)
                 (addr region)))
 
+(* Reads of a mapping that is not HOST_CACHED (device memory behind the PCIe
+   BAR: write-combined, ~0.03 GB/s to read) go through a cached staging buffer. *)
 let device_to_host ~src ~dst =
   !Device.drain_pending src.device ;
   let bytes = Bigarray.Array1.size_in_bytes dst in
   match src.mapped_ptr with
-  | Some p ->
+  | Some p when src.mapped_cached ->
       let dst_ptr = Spoc_core.Memory.borrow_bigarray_ptr dst in
       let _ = memcpy dst_ptr p (Unsigned.Size_t.of_int bytes) in
       ignore (Sys.opaque_identity dst)
-  | None ->
+  | _ ->
       (* Staging buffer transfer *)
       let staging_buf, staging_mem, staging_ptr =
-        create_staging_buffer src.device bytes vk_buffer_usage_transfer_dst_bit
+        create_staging_buffer
+          ~cached:true
+          src.device
+          bytes
+          vk_buffer_usage_transfer_dst_bit
       in
       let free_staging () =
         vkDestroyBuffer src.device.Device.device staging_buf null ;
@@ -647,12 +653,13 @@ let host_ptr_to_device ~src_ptr ~byte_size ~dst =
 let device_to_host_ptr ~src ~dst_ptr ~byte_size =
   !Device.drain_pending src.device ;
   match src.mapped_ptr with
-  | Some p ->
+  | Some p when src.mapped_cached ->
       let _ = memcpy dst_ptr p (Unsigned.Size_t.of_int byte_size) in
       ()
-  | None ->
+  | _ ->
       let staging_buf, staging_mem, staging_ptr =
         create_staging_buffer
+          ~cached:true
           src.device
           byte_size
           vk_buffer_usage_transfer_dst_bit
