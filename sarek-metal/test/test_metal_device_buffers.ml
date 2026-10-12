@@ -220,10 +220,22 @@ let test_async_structure (dev : Device.t) =
      below counts command buffers across 200 launches, which a deferred window
      would postpone to the flush. Restored afterwards. *)
   let backend = dev.Device.framework in
-  let window_was = Sarek.Execute.Window.defers backend in
-  Sarek.Execute.Window.set_backend_enabled ~backend false ;
+  (* [defers] is the effective deferral: backend membership AND the global
+     switch. Only when the global switch is on does it equal the backend's
+     membership, which is what must be restored. With it off, launches are
+     already immediate and the backend list is left untouched. *)
+  let membership_was =
+    if Sarek.Execute.Window.enabled () then
+      Some (Sarek.Execute.Window.defers backend)
+    else None
+  in
+  Option.iter
+    (fun _ -> Sarek.Execute.Window.set_backend_enabled ~backend false)
+    membership_was ;
   Fun.protect ~finally:(fun () ->
-      Sarek.Execute.Window.set_backend_enabled ~backend window_was)
+      Option.iter
+        (fun was -> Sarek.Execute.Window.set_backend_enabled ~backend was)
+        membership_was)
   @@ fun () ->
   let n = 4096 in
   let x = Transfer.create_device_only dev Vector.int32 n in
