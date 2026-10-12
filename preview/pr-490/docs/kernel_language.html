@@ -1,0 +1,241 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <link rel="icon" href="/Sarek/preview/pr-490/favicon.ico" />
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.0/jquery.min.js"></script>
+    <script src="/Sarek/preview/pr-490/javascripts/process-rel-links.js" type="text/javascript"></script>
+    <title>Kernel Language Notes - Sarek</title>
+    
+    <link rel="stylesheet" href='/Sarek/preview/pr-490/stylesheets/modern.css'>
+    <link rel="stylesheet" href='/Sarek/preview/pr-490/stylesheets/pygment_trac.css'>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  </head>
+  <body>
+
+    <!-- Top Navigation Bar -->
+    <nav class="navbar">
+      <div class="container">
+        <a href="/Sarek/preview/pr-490/" class="nav-brand">
+          <img src="/Sarek/preview/pr-490/pres_resources/logo_sarek.png" alt="Sarek Logo">
+          Sarek
+        </a>
+        <div class="nav-links">
+          <a href="/Sarek/preview/pr-490/">Home</a>
+          <a href="/Sarek/preview/pr-490/docs/getting_started.html">Getting Started</a>
+          <a href="/Sarek/preview/pr-490/benchmarks/">Benchmarks</a>
+          <a href="/Sarek/preview/pr-490/examples/">Examples</a>
+          <a href="/Sarek/preview/pr-490/playground.html">Playground</a>
+          <a href="/Sarek/preview/pr-490/learn/">Learn</a>
+          <div class="nav-dropdown">
+            <button type="button" class="dropdown-toggle" aria-haspopup="true" aria-expanded="false" aria-controls="docs-menu">Docs ▾</button>
+            <div class="dropdown-menu" id="docs-menu">
+              <a href="/Sarek/preview/pr-490/docs/concepts.html">Concepts</a>
+              <a href="/Sarek/preview/pr-490/docs/architecture.html">Architecture</a>
+              <a href="/Sarek/preview/pr-490/docs/backends.html">Backends</a>
+              <a href="/Sarek/preview/pr-490/docs/device_selection.html">Device Selection</a>
+              <a href="/Sarek/preview/pr-490/docs/performance.html">Launch Window &amp; Fusion</a>
+              <a href="/Sarek/preview/pr-490/docs/memory.html">Memory &amp; Transfers</a>
+              <a href="/Sarek/preview/pr-490/docs/matrix.html">Matrix Units</a>
+              <a href="/Sarek/preview/pr-490/docs/kernel_language.html">Kernel Language Notes</a>
+              <a href="/Sarek/preview/pr-490/docs/environment.html">Environment Variables</a>
+              <a href="/Sarek/preview/pr-490/docs/build_guide.html">Build Guide</a>
+              <a href="/Sarek/preview/pr-490/docs/faq.html">FAQ</a>
+              <a href="/Sarek/preview/pr-490/docs/publications.html">Publications</a>
+            </div>
+          </div>
+          <a href="/Sarek/preview/pr-490/spoc_docs/index.html">API</a>
+          <a href="https://github.com/mathiasbourgoin/Sarek">GitHub</a>
+          <button id="theme-toggle" title="Toggle Dark/Light Mode">
+            <span>🌙</span>
+          </button>
+        </div>
+      </div>
+    </nav>
+
+    <main class="main-content">
+      <div class="container">
+        <h1 id="kernel-language-notes">Kernel Language Notes</h1>
+
+<p>This page covers three details of the kernel language that are easy to get wrong: loops (what <code class="language-plaintext highlighter-rouge">for</code> can and cannot express, and how to ask for unrolling), private per-thread arrays, and the size rule for <code class="language-plaintext highlighter-rouge">create_array</code> and <code class="language-plaintext highlighter-rouge">let%shared</code>. The rest of the language is introduced in <a href="concepts.html">Concepts</a> and the <a href="https://github.com/mathiasbourgoin/Sarek/blob/main/sarek/ppx/README.md">PPX README</a>.</p>
+
+<h2 id="loops">Loops</h2>
+
+<p><code class="language-plaintext highlighter-rouge">for i = a to b do ... done</code> and <code class="language-plaintext highlighter-rouge">for i = a downto b do ... done</code> run <code class="language-plaintext highlighter-rouge">i</code> from <code class="language-plaintext highlighter-rouge">a</code> to <code class="language-plaintext highlighter-rouge">b</code> inclusive, one step at a time. There is no step: a strided loop is a <code class="language-plaintext highlighter-rouge">while</code> with a mutable counter.</p>
+
+<div class="language-ocaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">open</span> <span class="nc">Sarek</span>
+
+<span class="c">(* Each thread sums every (grid size)-th element, starting at its own index. *)</span>
+<span class="k">let</span> <span class="n">grid_stride_sum</span> <span class="o">=</span>
+  <span class="p">[</span><span class="o">%</span><span class="n">kernel</span>
+    <span class="k">fun</span> <span class="p">(</span><span class="n">input</span> <span class="o">:</span> <span class="n">float32</span> <span class="n">vector</span><span class="p">)</span> <span class="p">(</span><span class="n">output</span> <span class="o">:</span> <span class="n">float32</span> <span class="n">vector</span><span class="p">)</span> <span class="p">(</span><span class="n">n</span> <span class="o">:</span> <span class="n">int32</span><span class="p">)</span> <span class="o">-&gt;</span>
+      <span class="k">let</span> <span class="k">open</span> <span class="nn">Sarek_stdlib</span><span class="p">.</span><span class="nc">Std</span> <span class="k">in</span>
+      <span class="k">let</span> <span class="n">acc</span> <span class="o">=</span> <span class="n">mut</span> <span class="mi">0</span><span class="o">.</span><span class="mi">0</span> <span class="k">in</span>
+      <span class="k">let</span> <span class="n">i</span> <span class="o">=</span> <span class="n">mut</span> <span class="n">global_thread_id</span> <span class="k">in</span>
+      <span class="k">while</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">n</span> <span class="k">do</span>
+        <span class="n">acc</span> <span class="o">:=</span> <span class="n">acc</span> <span class="o">+.</span> <span class="n">input</span><span class="o">.</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="p">;</span>
+        <span class="n">i</span> <span class="o">:=</span> <span class="n">i</span> <span class="o">+</span> <span class="p">(</span><span class="n">block_dim_x</span> <span class="o">*</span> <span class="n">grid_dim_x</span><span class="p">)</span>
+      <span class="k">done</span> <span class="p">;</span>
+      <span class="n">output</span><span class="o">.</span><span class="p">(</span><span class="n">global_thread_id</span><span class="p">)</span> <span class="o">&lt;-</span> <span class="n">acc</span><span class="p">]</span>
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">output</code> needs one slot per launched thread: a thread whose <code class="language-plaintext highlighter-rouge">global_thread_id</code> is at least <code class="language-plaintext highlighter-rouge">n</code> skips the loop but still stores its zero.</p>
+
+<h3 id="unrolling">Unrolling</h3>
+
+<p><code class="language-plaintext highlighter-rouge">pragma ["unroll N"] (loop)</code> asks the device compiler to unroll the <code class="language-plaintext highlighter-rouge">for</code> or <code class="language-plaintext highlighter-rouge">while</code> loop it wraps by a factor of <code class="language-plaintext highlighter-rouge">N</code>. It works for loops whose trip count is only known at run time. <code class="language-plaintext highlighter-rouge">pragma ["unroll"]</code> asks for the compiler’s choice.</p>
+
+<div class="language-ocaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">let</span> <span class="n">unrolled_sum</span> <span class="o">=</span>
+  <span class="p">[</span><span class="o">%</span><span class="n">kernel</span>
+    <span class="k">fun</span> <span class="p">(</span><span class="n">input</span> <span class="o">:</span> <span class="n">float32</span> <span class="n">vector</span><span class="p">)</span> <span class="p">(</span><span class="n">output</span> <span class="o">:</span> <span class="n">float32</span> <span class="n">vector</span><span class="p">)</span> <span class="p">(</span><span class="n">k</span> <span class="o">:</span> <span class="n">int32</span><span class="p">)</span> <span class="o">-&gt;</span>
+      <span class="k">let</span> <span class="k">open</span> <span class="nn">Sarek_stdlib</span><span class="p">.</span><span class="nc">Std</span> <span class="k">in</span>
+      <span class="k">let</span> <span class="n">tid</span> <span class="o">=</span> <span class="n">global_thread_id</span> <span class="k">in</span>
+      <span class="k">let</span> <span class="n">acc</span> <span class="o">=</span> <span class="n">mut</span> <span class="mi">0</span><span class="o">.</span><span class="mi">0</span> <span class="k">in</span>
+      <span class="n">pragma</span>
+        <span class="p">[</span><span class="s2">"unroll 8"</span><span class="p">]</span>
+        <span class="p">(</span><span class="k">for</span> <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span> <span class="k">to</span> <span class="n">k</span> <span class="o">-</span> <span class="mi">1</span><span class="n">l</span> <span class="k">do</span>
+           <span class="n">acc</span> <span class="o">:=</span> <span class="n">acc</span> <span class="o">+.</span> <span class="n">input</span><span class="o">.</span><span class="p">((</span><span class="n">tid</span> <span class="o">*</span> <span class="n">k</span><span class="p">)</span> <span class="o">+</span> <span class="n">i</span><span class="p">)</span>
+         <span class="k">done</span><span class="p">)</span> <span class="p">;</span>
+      <span class="n">output</span><span class="o">.</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span> <span class="o">&lt;-</span> <span class="n">acc</span><span class="p">]</span>
+</code></pre></div></div>
+
+<p>What each backend does with the pragma on a loop:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Backend</th>
+      <th>Output</th>
+      <th>Factor <code class="language-plaintext highlighter-rouge">N</code></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>CUDA (CUDA/C), HIP</td>
+      <td><code class="language-plaintext highlighter-rouge">#pragma unroll N</code></td>
+      <td>passed to the device compiler</td>
+    </tr>
+    <tr>
+      <td>OpenCL</td>
+      <td><code class="language-plaintext highlighter-rouge">#pragma unroll N</code></td>
+      <td>passed to the device compiler</td>
+    </tr>
+    <tr>
+      <td>Metal</td>
+      <td><code class="language-plaintext highlighter-rouge">#pragma unroll N</code></td>
+      <td>passed to the device compiler</td>
+    </tr>
+    <tr>
+      <td>Vulkan (GLSL)</td>
+      <td><code class="language-plaintext highlighter-rouge">[[unroll]]</code> for exactly <code class="language-plaintext highlighter-rouge">["unroll"]</code> on a loop; any other hint, including <code class="language-plaintext highlighter-rouge">["unroll 8"]</code>, is dropped</td>
+      <td>dropped</td>
+    </tr>
+    <tr>
+      <td>WebGPU (WGSL)</td>
+      <td>nothing</td>
+      <td>dropped</td>
+    </tr>
+    <tr>
+      <td>CUDA (PTX)</td>
+      <td>nothing</td>
+      <td>dropped</td>
+    </tr>
+    <tr>
+      <td>Native, Interpreter</td>
+      <td>no source is generated</td>
+      <td>not applicable</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>That the device compiler unrolls by the requested factor was verified only for hipcc on gfx1100 (by inspecting the generated ISA); for the other compilers the factor is passed on, and whether they honour it is up to them. Sources: <code class="language-plaintext highlighter-rouge">Sarek_ir_cuda.ml:562</code>, <code class="language-plaintext highlighter-rouge">Sarek_ir_opencl.ml:603</code>, <code class="language-plaintext highlighter-rouge">Sarek_ir_metal.ml:771</code>, <code class="language-plaintext highlighter-rouge">Sarek_ir_glsl.ml:1247</code> (the test) and <code class="language-plaintext highlighter-rouge">:1380-1388</code>, <code class="language-plaintext highlighter-rouge">Sarek_ir_wgsl.ml:1200</code>, <code class="language-plaintext highlighter-rouge">Sarek_ir_ptx_stmt.ml:233</code>. A pragma that is dropped never changes the result, only the speed. The backends that honour the factor print the strings of the list joined by a space, so the factor reaches the device compiler as written.</p>
+
+<p>Unrolling by hand (writing the loop body several times) is therefore only needed on the backends that drop the factor.</p>
+
+<h3 id="automatic-unrolling">Automatic unrolling</h3>
+
+<p>Sarek hints <code class="language-plaintext highlighter-rouge">#pragma unroll</code> (or <code class="language-plaintext highlighter-rouge">[[unroll]]</code> on GLSL) on a <code class="language-plaintext highlighter-rouge">for</code> loop by itself when</p>
+
+<ul>
+  <li>both bounds are integer constants (literals, or <code class="language-plaintext highlighter-rouge">+ - *</code> of literals),</li>
+  <li>the trip count is between 1 and 16, and</li>
+  <li>the trip count times the largest expansion of the hinted loops nested in its body is at most 64 (three nested loops of 8 hint the inner two only).</li>
+</ul>
+
+<p>A loop that already carries a pragma is left alone, so <code class="language-plaintext highlighter-rouge">pragma ["unroll 1"] (for ...)</code> opts one loop out. <code class="language-plaintext highlighter-rouge">SAREK_AUTO_UNROLL=0</code> turns the pass off for every loop. The variable is read at each code generation, but the generated source of a kernel is memoised, so set it before the kernel’s first launch (or call <code class="language-plaintext highlighter-rouge">Execute.clear_launch_cache</code>). Only the CUDA, HIP, OpenCL, Metal and GLSL generators run the pass, so WGSL and PTX never get a hint. Unrolling does not change which operations run or their order. Sources: <code class="language-plaintext highlighter-rouge">Sarek_ir_unroll.ml:11-18</code> (limits and variable), <code class="language-plaintext highlighter-rouge">:121-130</code> (<code class="language-plaintext highlighter-rouge">annotate</code>), <code class="language-plaintext highlighter-rouge">:45-52</code> (inclusive bounds), <code class="language-plaintext highlighter-rouge">Sarek_ir_cuda.ml:963</code>, <code class="language-plaintext highlighter-rouge">Sarek_ir_opencl.ml:1171</code>, <code class="language-plaintext highlighter-rouge">Sarek_ir_metal.ml:1239</code>, <code class="language-plaintext highlighter-rouge">Sarek_ir_glsl.ml:2161</code>. All variables are in <a href="environment.html">Environment variables</a>.</p>
+
+<h2 id="private-and-shared-arrays">Private and shared arrays</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Declaration</th>
+      <th>Lives in</th>
+      <th>One copy per</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">create_array n Local</code></td>
+      <td>registers or private memory</td>
+      <td>thread</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">create_array n Shared</code>, <code class="language-plaintext highlighter-rouge">let%shared (t : ty) = n</code></td>
+      <td>shared memory</td>
+      <td>block</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Global memory is not allocated from a kernel: pass a vector parameter instead. <code class="language-plaintext highlighter-rouge">create_array n Global</code> is refused at compile time with a located error.</p>
+
+<p>The size <code class="language-plaintext highlighter-rouge">n</code> of a <code class="language-plaintext highlighter-rouge">Local</code> or <code class="language-plaintext highlighter-rouge">Shared</code> array, and of <code class="language-plaintext highlighter-rouge">let%shared (t : ty) = n</code>, must be a positive compile-time <code class="language-plaintext highlighter-rouge">int32</code> constant: a literal such as <code class="language-plaintext highlighter-rouge">16l</code>, or literals combined with <code class="language-plaintext highlighter-rouge">+</code>, <code class="language-plaintext highlighter-rouge">-</code> and <code class="language-plaintext highlighter-rouge">*</code>. The PPX folds the expression to one literal before any backend sees it, and every intermediate result must fit in <code class="language-plaintext highlighter-rouge">int32</code>. A runtime size is refused, because OpenCL C and Metal reject variable-length arrays and PTX and WGSL need a literal extent. To handle a runtime length <code class="language-plaintext highlighter-rouge">n</code>, declare a constant upper bound and index only the first <code class="language-plaintext highlighter-rouge">n</code> slots. The size-less form <code class="language-plaintext highlighter-rouge">let%shared (t : ty) = ()</code> is not subject to this rule.</p>
+
+<div class="language-ocaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c">(* Each thread keeps its four inputs in a private array. *)</span>
+<span class="k">let</span> <span class="n">private_array</span> <span class="o">=</span>
+  <span class="p">[</span><span class="o">%</span><span class="n">kernel</span>
+    <span class="k">fun</span> <span class="p">(</span><span class="n">input</span> <span class="o">:</span> <span class="n">float32</span> <span class="n">vector</span><span class="p">)</span> <span class="p">(</span><span class="n">output</span> <span class="o">:</span> <span class="n">float32</span> <span class="n">vector</span><span class="p">)</span> <span class="o">-&gt;</span>
+      <span class="k">let</span> <span class="k">open</span> <span class="nn">Sarek_stdlib</span><span class="p">.</span><span class="nc">Std</span> <span class="k">in</span>
+      <span class="k">let</span> <span class="n">tid</span> <span class="o">=</span> <span class="n">global_thread_id</span> <span class="k">in</span>
+      <span class="k">let</span> <span class="n">window</span> <span class="o">=</span> <span class="n">create_array</span> <span class="mi">4</span><span class="n">l</span> <span class="nc">Local</span> <span class="k">in</span>
+      <span class="k">for</span> <span class="n">j</span> <span class="o">=</span> <span class="mi">0</span> <span class="k">to</span> <span class="mi">3</span> <span class="k">do</span>
+        <span class="n">window</span><span class="o">.</span><span class="p">(</span><span class="n">j</span><span class="p">)</span> <span class="o">&lt;-</span> <span class="n">input</span><span class="o">.</span><span class="p">((</span><span class="n">tid</span> <span class="o">*</span> <span class="mi">4</span><span class="n">l</span><span class="p">)</span> <span class="o">+</span> <span class="n">j</span><span class="p">)</span>
+      <span class="k">done</span> <span class="p">;</span>
+      <span class="n">output</span><span class="o">.</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span> <span class="o">&lt;-</span>
+        <span class="n">window</span><span class="o">.</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span> <span class="o">+.</span> <span class="n">window</span><span class="o">.</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="o">+.</span> <span class="n">window</span><span class="o">.</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span> <span class="o">+.</span> <span class="n">window</span><span class="o">.</span><span class="p">(</span><span class="mi">3</span><span class="p">)]</span>
+
+<span class="c">(* A 16 x 16 tile shared by the block: the size is a folded constant. *)</span>
+<span class="k">let</span> <span class="n">tile_in_shared</span> <span class="o">=</span>
+  <span class="p">[</span><span class="o">%</span><span class="n">kernel</span>
+    <span class="k">fun</span> <span class="p">(</span><span class="n">input</span> <span class="o">:</span> <span class="n">float32</span> <span class="n">vector</span><span class="p">)</span> <span class="p">(</span><span class="n">output</span> <span class="o">:</span> <span class="n">float32</span> <span class="n">vector</span><span class="p">)</span> <span class="o">-&gt;</span>
+      <span class="k">let</span> <span class="k">open</span> <span class="nn">Sarek_stdlib</span><span class="p">.</span><span class="nc">Std</span> <span class="k">in</span>
+      <span class="k">let</span><span class="o">%</span><span class="n">shared</span> <span class="p">(</span><span class="n">tile</span> <span class="o">:</span> <span class="n">float32</span><span class="p">)</span> <span class="o">=</span> <span class="mi">16</span><span class="n">l</span> <span class="o">*</span> <span class="mi">16</span><span class="n">l</span> <span class="k">in</span>
+      <span class="k">let</span> <span class="n">tid</span> <span class="o">=</span> <span class="n">thread_idx_x</span> <span class="k">in</span>
+      <span class="n">tile</span><span class="o">.</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span> <span class="o">&lt;-</span> <span class="n">input</span><span class="o">.</span><span class="p">(</span><span class="n">global_thread_id</span><span class="p">)</span> <span class="p">;</span>
+      <span class="n">block_barrier</span> <span class="bp">()</span> <span class="p">;</span>
+      <span class="n">output</span><span class="o">.</span><span class="p">(</span><span class="n">global_thread_id</span><span class="p">)</span> <span class="o">&lt;-</span> <span class="n">tile</span><span class="o">.</span><span class="p">(</span><span class="n">tid</span><span class="p">)]</span>
+</code></pre></div></div>
+
+<p>Source: <code class="language-plaintext highlighter-rouge">Sarek_typer.ml</code> (<code class="language-plaintext highlighter-rouge">const_int_value</code>, <code class="language-plaintext highlighter-rouge">fold_const_size</code>, <code class="language-plaintext highlighter-rouge">check_create_array</code>).</p>
+
+<p>On WGSL a constant-size <code class="language-plaintext highlighter-rouge">Local</code> array lowers to a function-scope <code class="language-plaintext highlighter-rouge">var a : array&lt;T, N&gt;</code>.</p>
+
+      </div>
+    </main>
+
+    <footer>
+      <div class="container">
+        <p>Sarek is maintained by <a href="https://github.com/mathiasbourgoin">mathiasbourgoin</a></p>
+        <p>Hosted on GitHub Pages</p>
+      </div>
+    </footer>
+
+    <script src="/Sarek/preview/pr-490/javascripts/scale.fix.js"></script>
+    <script src="/Sarek/preview/pr-490/javascripts/copy-code.js"></script>
+    <script src="/Sarek/preview/pr-490/javascripts/theme-toggle.js"></script>
+    <script src="/Sarek/preview/pr-490/javascripts/dropdown.js"></script>
+    <script src="/Sarek/preview/pr-490/javascripts/syntax-sarek.js"></script>
+  </body>
+</html>
