@@ -46,7 +46,7 @@ At most 8 groups of launches are held; a ninth issues the oldest first. A group 
 
 ## Asynchronous launches on Vulkan
 
-Independently of the window, a Vulkan launch no longer waits for the GPU. It is appended to the stream's open command buffer and returns; the buffer is submitted after `SPOC_VULKAN_BATCH` dispatches (default 32), when another stream of the device launches, and at any point where your program observes the device: reading or writing a vector, `Transfer.flush`, `Device.synchronize`, `Stream.synchronize`, freeing a buffer, destroying a device. Results and their order do not change. Dispatches that depend on each other are ordered in memory by a barrier the backend records before each one.
+Independently of the window, a Vulkan launch no longer waits for the GPU. It is appended to the stream's open command buffer and returns; the buffer is submitted after `SPOC_VULKAN_BATCH` dispatches (default 32), when another stream of the device launches, and at any point where your program observes the device: reading or writing a vector, `Transfer.flush`, `Device.synchronize`, `Stream.synchronize`, destroying a device. Freeing a buffer does not submit or wait: the release is queued until the pending launches have completed. Results and their order do not change. Dispatches that depend on each other are ordered in memory by a barrier the backend records before each one.
 
 On an RX 7900 XTX with RADV, the host cost of a launch dropped from about 59 us to 6.6 us (`SPOC_VULKAN_BATCH=1` against the default; see [CHANGES.md](https://github.com/mathiasbourgoin/Sarek/blob/main/CHANGES.md) for the method and the chain numbers).
 
