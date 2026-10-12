@@ -117,8 +117,8 @@
   `test_blocking_ffi_releases_lock` on alias `e2e-metal`. Bench `bench_metal_compile` (alias `e2e-metal-bench`): library
   and pipeline-state compile time of three decode-shaped kernels, cold vs warm,
   each in a new process. Measured on Apple M4 (macOS 15, 5 rounds, kernel order rotated, nonce in the
-  compiled code), a source new to the machine costs 2.6-9.5 ms per kernel
-  (library 2.6-3.6 ms plus pipeline 3.6-9.5 ms for matvec / RMS norm / RoPE) and
+  compiled code), a source new to the machine costs about 7.0-12.2 ms per kernel,
+  library plus pipeline (matvec 3.6 + 6.0, RMS norm 3.4 + 3.6, RoPE 2.6 + 9.5 ms) and
   a new process after that at most 0.04 ms: the OS shader cache already serves
   a new process, so Metal gets no disk compile cache of ours (not needed;
   `MTLBinaryArchive` could win nothing measurable; raw:
