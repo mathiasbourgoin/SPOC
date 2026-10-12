@@ -211,26 +211,25 @@ type properties_fn =
     [vkGetDeviceProcAddr] returns the entry point of the driver that owns the
     device (an address inside that driver's library), so the result belongs to
     this device only: it is kept in the device record and never shared, because
-    a second device may come from another driver. *)
-let resolve_properties_fn device : properties_fn =
+    a second device may come from another driver. [None] when the driver does
+    not know the function. *)
+let resolve_properties_fn device : properties_fn option =
   let raw =
     Lazy.force
       vkGetDeviceProcAddr_lazy
       device
       "vkGetMemoryHostPointerPropertiesEXT"
   in
-  if is_null raw then
-    Vulkan_error.raise_error
-      (Vulkan_error.feature_not_supported
-         "vkGetMemoryHostPointerPropertiesEXT (the driver does not know it)")
+  if is_null raw then None
   else
-    coerce
-      (ptr void)
-      (Foreign.funptr
-         (vk_device_ptr @-> uint32_t @-> ptr void
-         @-> ptr host_pointer_properties
-         @-> returning vk_result))
-      raw
+    Some
+      (coerce
+         (ptr void)
+         (Foreign.funptr
+            (vk_device_ptr @-> uint32_t @-> ptr void
+            @-> ptr host_pointer_properties
+            @-> returning vk_result))
+         raw)
 
 (** [vkGetMemoryHostPointerPropertiesEXT] through [fn], the function resolved
     for [device]: the memory types [host_ptr] can be imported as. The device
