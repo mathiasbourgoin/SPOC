@@ -80,10 +80,14 @@ let check_fence_wait_bound () =
       Vulkan_error.raise_error
         (Vulkan_error.context_error "SPOC_VULKAN_FENCE_TIMEOUT_S" reason)
 
-(** Number of [vkWaitForFences] sequences started and of fence-carrying
-    [vkQueueSubmit]s that succeeded, since the library was loaded.
-    Instrumentation for tests that assert how many host waits a run of launches
-    costs. *)
+(** Test hook: while [Some r], every fence wait fails with [r] before waiting
+    (the caller should have made the queue idle first and clears the hook). *)
+let inject_wait_failure : vk_result option ref = ref None
+
+(** Test instrumentation, not an API: number of [vkWaitForFences] sequences
+    started and of fence-carrying [vkQueueSubmit]s that succeeded, since the
+    library was loaded. Instrumentation for tests that assert how many host
+    waits a run of launches costs. *)
 let fence_wait_count = Atomic.make 0
 
 let submission_count = Atomic.make 0
@@ -94,6 +98,9 @@ let submission_count = Atomic.make 0
     {!fence_wait_bound_parsed} sets a bound and it is reached. *)
 let wait_fence (ctx : string) device fence =
   Atomic.incr fence_wait_count ;
+  (match !inject_wait_failure with
+  | Some result -> check ctx result
+  | None -> ()) ;
   let bound = Result.value fence_wait_bound_parsed ~default:None in
   let fence_ptr = allocate vk_fence fence in
   let rec loop waited =

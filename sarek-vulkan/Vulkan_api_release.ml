@@ -7,11 +7,15 @@
     it. [free] runs from [Gc.finalise] finalisers
     (Gpu_memory.register_finalizer), which OCaml 5 runs at any allocation point
     of any domain, even inside [batch_lock] or [queue_lock]. A free therefore
-    never submits, records, waits, blocks on a lock or consumes an error: it
-    queues its release and asks the stream layer to run the queue if the device
-    is idle. A queue that stays non-empty is run at the next drain, idle
-    [Stream.synchronize], allocation failure, device destroy, or once it is over
-    its bounds (see {!Vulkan_api_stream.settle}). *)
+    never submits, records, waits or consumes an error, and never blocks on the
+    batch or queue lock: it queues its release (lock-free) and asks the stream
+    layer to run the queue if the device is idle, which takes the batch lock
+    with [try_lock] only. The stream registry snapshot it needs uses a short
+    mutex never held across a blocking call; re-entry on it from a finaliser
+    raises, is caught here, and leaves the release queued. A queue that stays
+    non-empty is run at the next drain, idle [Stream.synchronize], allocation
+    failure, device destroy, or at the next launch once it is over its bounds
+    (see {!Vulkan_api_batch.settle}). *)
 
 module Device = Vulkan_api_device
 module BE = Sarek_backend_error.Backend_error
