@@ -230,6 +230,50 @@ let policy_verdict_for budget cfg =
     Sarek_capability.Unavailable (rounding_not_accepted cfg)
   else Sarek_capability.Available
 
+(* The grants an [Available] float verdict rests on (none for an integer
+   configuration). *)
+let grants_behind budget cfg =
+  let all_integer =
+    List.for_all
+      component_is_integer
+      [cfg.cfg_a; cfg.cfg_b; cfg.cfg_c; cfg.cfg_result]
+  in
+  if all_integer then []
+  else
+    let rounding =
+      if cfg.cfg_a <> BFloat16 then []
+      else
+        match
+          List.find_opt
+            (Sarek_policy.Budget.permits budget)
+            [rounding_grant Operands_bf16; rounding_grant Operands_bf16x3]
+        with
+        | Some g -> [g]
+        | None -> []
+    in
+    Sarek_policy.Deviation Sarek_policy.Accumulation_order :: rounding
+
+let policy_decision_for budget cfg =
+  match policy_verdict_for budget cfg with
+  | Sarek_capability.Unavailable cap ->
+      Sarek_policy.Refused cap.Sarek_capability.cap_name
+  | Sarek_capability.Unknown why -> Sarek_policy.Refused why
+  | Sarek_capability.Available -> (
+      match grants_behind budget cfg with
+      | [] -> Sarek_policy.Applied Sarek_policy.Exact_by_construction
+      | grants ->
+          Sarek_policy.Applied
+            (Sarek_policy.Granted
+               {
+                 grants;
+                 reason =
+                   String.concat
+                     "; "
+                     (List.filter_map
+                        (Sarek_policy.Budget.reason budget)
+                        grants);
+               }))
+
 let policy_verdict cfg =
   policy_verdict_for (Sarek_policy.budget ~kernels:[]) cfg
 

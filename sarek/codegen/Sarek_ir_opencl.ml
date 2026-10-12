@@ -1176,7 +1176,7 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
   (* A [for] bound is evaluated once (Sarek_ir_for_bound), then unroll hints
      for small constant-trip loops (Sarek_ir_unroll). *)
   let k = Sarek_ir_for_bound.hoist k in
-  let k = Sarek_ir_unroll.annotate k in
+  let k = Sarek_ir_unroll.annotate ~generator:"opencl" k in
   (* Per-generation state, threaded into the emit calls below: the kernel's
      variants for SMatch bindings. *)
   let st = state k in

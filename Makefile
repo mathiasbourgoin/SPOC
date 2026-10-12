@@ -85,7 +85,7 @@ test_e2e_gpu:
 # off to see the bug; one run at most, never in a loop.
 stress-427:
 	dune build sarek-hip/test/stress_hip_staged_launches.exe
-	SPOC_STRESS_RUNS=1 SPOC_STRESS_GC_PRESSURE=sleep SAREK_LAUNCH_WINDOW=0 \
+	SPOC_STRESS_RUNS=1 SPOC_STRESS_GC_PRESSURE=sleep SAREK_OPT_DISABLE=window \
 	  ./_build/default/sarek-hip/test/stress_hip_staged_launches.exe
 
 .PHONY: stress-427

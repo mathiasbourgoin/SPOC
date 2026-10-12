@@ -33,7 +33,15 @@
 
     {b Restrictions.} {!restrict} is the one way to take an optimisation away:
     process-wide and one-way, like a grant. It is a diagnostic switch for SPOC's
-    own environment parsing and for tests, not a scoped API. *)
+    own environment parsing and for tests, not a scoped API.
+
+    {b The environment} ([SAREK_OPT_DISABLE], [SAREK_EXPLAIN]) is read once,
+    when this module is initialised (at program start, before any query), by
+    {!Env}. [SAREK_OPT_DISABLE] only restricts: it disables optimisations and
+    {e revokes} grants for the whole process (a revoked grant is still recorded
+    by {!grant}, but no budget, reader or decision sees it). It never grants.
+    [SAREK_EXPLAIN=1] installs a reporter that writes one line per decision to
+    stderr ({!Env.explain_line}). *)
 
 (** {1 Vocabulary} *)
 
@@ -88,8 +96,13 @@ type scope = Process | Kernel of string
     all of them. *)
 type refusal = Blank_reason | Default_kernel_name
 
-(** What justifies an applied optimisation, for the explain report. *)
-type evidence = Proof of string | Granted of string | Exact_by_construction
+(** What justifies an applied optimisation, for the explain report. [Granted]:
+    the grants it needed (each held by the kernel) and their reasons joined by
+    ["; "]. *)
+type evidence =
+  | Proof of string
+  | Granted of {grants : grant list; reason : string}
+  | Exact_by_construction
 
 (** The outcome of one decision point, for the explain report. *)
 type decision = Applied of evidence | Refused of string
@@ -209,6 +222,12 @@ val restrict : optimisation -> unit
 
 val restricted : optimisation -> bool
 
+(** [revoked g]: [SAREK_OPT_DISABLE] revoked [g] for the process. A revoked
+    grant is still recorded by {!grant} (the program's statement), but
+    {!reason}, {!budget}, {!effective} and {!decide} never see it. There is no
+    way to revoke in code: only the environment does, once, at start-up. *)
+val revoked : grant -> bool
+
 (** {1 The effective policy of a launch} *)
 
 (** What a decision point reads: the grants in force for the kernel being
@@ -242,14 +261,20 @@ val effective_digest : effective -> string
     epilogue even with the grant: that fact lives above this module. *)
 val requires : optimisation -> backend:string -> grant list option
 
+(** ["disabled (SAREK_OPT_DISABLE)"]: the reason of a [Refused] by a
+    restriction, for decision points that refuse without {!decide}. *)
+val disabled_reason : string
+
 (** The common decision, in this order:
     - [Refused "disabled (SAREK_OPT_DISABLE)"] if [opt] is in [e.disabled];
     - [Refused ("not on " ^ backend)] if {!requires} is [None];
     - [Refused ("no grant " ^ name ^ " (kernel or process)")] for the first
-      required grant [e.budget] does not hold;
+      required grant [e.budget] does not hold, or
+      [Refused ("grant " ^ name ^ " revoked (SAREK_OPT_DISABLE)")] when it does
+      not hold because the environment revoked it;
     - [Applied Exact_by_construction] if nothing is required;
-    - [Applied (Granted reasons)] otherwise, the reasons of the required grants
-      joined by ["; "]. *)
+    - [Applied (Granted {grants; reason})] otherwise: the required grants and
+      their reasons joined by ["; "]. *)
 val decide : effective -> optimisation -> backend:string -> decision
 
 (** {1 Change counter and decision reporting} *)
@@ -269,9 +294,25 @@ type record = {
   decision : decision;
 }
 
+(** Why a grant the program made has no effect. [Generated_name]: a [Kernel]
+    grant whose name is a fused, derived or static-fusion kernel's (generated,
+    never matched). [Revoked]: the environment revoked the grant. *)
+type ignored = Generated_name | Revoked
+
+(** What the sink of {!report} receives: a decision, or a statement of the
+    program that the policy does not obey. [Ignored_grant] comes right after the
+    first decision that sees the kernel, once per [(kernel, grant, cause)]; a
+    grant revoked at [Process] scope is reported once, with the kernel name
+    ["(process)"]. *)
+type event =
+  | Decision of record
+  | Ignored_grant of {kernel : string; grant : grant; cause : ignored}
+
 (** Install (or, with [None], remove) the sink of {!report}. The default is no
-    sink; installing one forgets which outcomes were already reported. *)
-val set_reporter : (record -> unit) option -> unit
+    sink, except that [SAREK_EXPLAIN=1] installs one at start-up that writes
+    {!Env.explain_line} to stderr; a sink installed by the program replaces it.
+    Installing one forgets which outcomes were already reported. *)
+val set_reporter : (event -> unit) option -> unit
 
 (** [true] when a sink is installed: lets a decision point skip building a
     record (and its strings) when nobody listens. *)
@@ -282,3 +323,57 @@ val reporting : unit -> bool
     nothing. Without a sink it is one atomic read. Safe to call from any domain.
 *)
 val report : record -> unit
+
+(** {1 The environment} *)
+
+(** [SAREK_OPT_DISABLE], [SAREK_EXPLAIN]. The pure part, so that tests need no
+    environment; the module reads the variables once at initialisation and
+    applies them with {!restrict} and an internal revocation. Nothing here can
+    grant. *)
+module Env : sig
+  (** One item of [SAREK_OPT_DISABLE]: take an optimisation away, or revoke a
+      grant for the whole process (the budget never holds it, whatever the
+      program grants). *)
+  type restriction = Disable of optimisation | Revoke of grant
+
+  (** [parse value]: the restrictions of a [SAREK_OPT_DISABLE] value, in order
+      of first appearance, and the unknown items (trimmed, lowercased).
+      Comma-separated; case-insensitive; surrounding spaces and empty items are
+      ignored; a repeated item counts once. The items are {!optimisation_name}
+      (disable) and {!grant_name} (revoke); there is no ["all"]. *)
+  val parse : string -> restriction list * string list
+
+  (** The one-line warning for an unknown item: names the variable, the item and
+      the valid items. Written to stderr at start-up, once per item; the item is
+      ignored. *)
+  val unknown_message : string -> string
+
+  (** [narrow restrictions e]: [e] with the optimisations disabled and the
+      grants revoked. Never adds a grant or removes a restriction: for every
+      [e], the budget of the result is below that of [e] ({!Budget.leq}) and
+      {!decide} applies nothing on the result that it did not apply on [e]. *)
+  val narrow : restriction list -> effective -> effective
+
+  (** What [SAREK_EXPLAIN] says. Exactly [1] turns the report on; unset, empty
+      or [0] is off; anything else is off with a warning
+      ({!explain_unknown_message}). *)
+  type explain = Explain_off | Explain_stderr | Explain_unknown of string
+
+  val parse_explain : string option -> explain
+
+  val explain_unknown_message : string -> string
+
+  (** One line, no newline, space-separated; names have their spaces replaced by
+      ['_'] and an epilogue pair ["p + c"] is written ["p+c"]:
+      {v
+sarek-explain <kernel> <device> <optimisation> applied proof=<text>
+sarek-explain <kernel> <device> <optimisation> applied granted=<grant>[,<grant>] reason="<reason>"
+sarek-explain <kernel> <device> <optimisation> applied exact
+sarek-explain <kernel> <device> <optimisation> refused <reason>
+sarek-explain <kernel> - policy refused grant-on-generated-name <grant>
+sarek-explain <kernel> - policy refused grant-revoked <grant>
+      v}
+      [<optimisation>] and [<grant>] are {!optimisation_name} and {!grant_name};
+      [<reason>] has its quotes and backslashes escaped. *)
+  val explain_line : event -> string
+end

@@ -3,62 +3,7 @@
 (* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
 (******************************************************************************)
 
-type operand_precision = Operands_f16 | Operands_bf16 | Operands_bf16x3
-
-type deviation =
-  | Accumulation_order
-  | Operand_rounding of operand_precision
-  | Single_rounding
-  | Cross_kernel_contraction
-
-type consent = Automatic_float_rewrite
-
-type grant = Deviation of deviation | Consent of consent
-
-type optimisation =
-  | Launch_window
-  | Epilogue_fusion
-  | Matrix_rewrite
-  | Narrowing_proof
-  | Auto_unroll
-
-type scope = Process | Kernel of string
-
-type refusal = Blank_reason | Default_kernel_name
-
-type evidence = Proof of string | Granted of string | Exact_by_construction
-
-type decision = Applied of evidence | Refused of string
-
-let grant_name = function
-  | Deviation Accumulation_order -> "accumulation-order"
-  | Deviation (Operand_rounding Operands_f16) -> "operand-rounding-f16"
-  | Deviation (Operand_rounding Operands_bf16) -> "operand-rounding-bf16"
-  | Deviation (Operand_rounding Operands_bf16x3) -> "operand-rounding-bf16x3"
-  | Deviation Single_rounding -> "single-rounding"
-  | Deviation Cross_kernel_contraction -> "cross-kernel-contraction"
-  | Consent Automatic_float_rewrite -> "automatic-float-rewrite"
-
-let optimisation_name = function
-  | Launch_window -> "window"
-  | Epilogue_fusion -> "epilogue"
-  | Matrix_rewrite -> "matrix"
-  | Narrowing_proof -> "narrowing-proof"
-  | Auto_unroll -> "unroll"
-
-let all_grants =
-  [
-    Deviation Accumulation_order;
-    Deviation (Operand_rounding Operands_f16);
-    Deviation (Operand_rounding Operands_bf16);
-    Deviation (Operand_rounding Operands_bf16x3);
-    Deviation Single_rounding;
-    Deviation Cross_kernel_contraction;
-    Consent Automatic_float_rewrite;
-  ]
-
-let all_optimisations =
-  [Launch_window; Epilogue_fusion; Matrix_rewrite; Narrowing_proof; Auto_unroll]
+include Sarek_policy_vocab
 
 (* Position in [all_grants]: the order of [Budget.grants] and [Budget.digest].
    Total, and checked against [all_grants] by the laws test. *)
@@ -150,6 +95,19 @@ let version () = Atomic.get version_counter
 
 let bump () = Atomic.incr version_counter
 
+(* Grants taken away for the rest of the process (SAREK_OPT_DISABLE). The
+   store keeps the program's statements; the readers below skip a revoked
+   grant, so a grant is recorded but never effective. One-way, like the store. *)
+let revocations : grant list Atomic.t = Atomic.make []
+
+let revoked g = List.mem g (Atomic.get revocations)
+
+let rec revoke g =
+  let current = Atomic.get revocations in
+  if not (List.mem g current) then
+    if Atomic.compare_and_set revocations current (g :: current) then bump ()
+    else revoke g
+
 let rec record scope granted why =
   let current = Atomic.get store in
   if List.exists (fun e -> e.scope = scope && e.granted = granted) current then
@@ -168,10 +126,12 @@ let find snapshot scope g =
   |> Option.map (fun e -> e.why)
 
 let reason ?kernel g =
-  let snapshot = Atomic.get store in
-  match Option.bind kernel (fun k -> find snapshot (Kernel k) g) with
-  | Some why -> Some why
-  | None -> find snapshot Process g
+  if revoked g then None
+  else
+    let snapshot = Atomic.get store in
+    match Option.bind kernel (fun k -> find snapshot (Kernel k) g) with
+    | Some why -> Some why
+    | None -> find snapshot Process g
 
 (* The grants of one scope added to [b]; reasons already in [b] are kept. *)
 let add_scope snapshot scope b =
@@ -231,17 +191,24 @@ let rec kernel_budget snapshot registry visiting kernel =
         rest
   | Some [] | None -> own_budget snapshot kernel
 
+let without_revoked revoked (b : Budget_impl.t) : Budget_impl.t =
+  if revoked = [] then b
+  else List.filter (fun (g, _) -> not (List.mem g revoked)) b
+
 let budget ~kernels =
   let snapshot = Atomic.get store in
   let registry = Atomic.get fused in
-  match kernels with
-  | [] -> add_scope snapshot Process Budget_impl.exact
-  | first :: rest ->
-      let one = kernel_budget snapshot registry [] in
-      List.fold_left
-        (fun acc k -> Budget_impl.meet acc (one k))
-        (one first)
-        rest
+  let raw =
+    match kernels with
+    | [] -> add_scope snapshot Process Budget_impl.exact
+    | first :: rest ->
+        let one = kernel_budget snapshot registry [] in
+        List.fold_left
+          (fun acc k -> Budget_impl.meet acc (one k))
+          (one first)
+          rest
+  in
+  without_revoked (Atomic.get revocations) raw
 
 (* ------------------------------------------------------------------------ *)
 (* Restrictions and the common decision                                      *)
@@ -286,8 +253,10 @@ let requires opt ~backend =
       | _ -> None)
   | Launch_window | Matrix_rewrite | Narrowing_proof | Auto_unroll -> Some []
 
+let disabled_reason = "disabled (SAREK_OPT_DISABLE)"
+
 let decide e opt ~backend =
-  if List.mem opt e.disabled then Refused "disabled (SAREK_OPT_DISABLE)"
+  if List.mem opt e.disabled then Refused disabled_reason
   else
     match requires opt ~backend with
     | None -> Refused ("not on " ^ backend)
@@ -295,6 +264,11 @@ let decide e opt ~backend =
         match
           List.find_opt (fun g -> not (Budget.permits e.budget g)) needed
         with
+        | Some g when revoked g ->
+            Refused
+              (Printf.sprintf
+                 "grant %s revoked (SAREK_OPT_DISABLE)"
+                 (grant_name g))
         | Some g ->
             Refused
               (Printf.sprintf "no grant %s (kernel or process)" (grant_name g))
@@ -304,45 +278,111 @@ let decide e opt ~backend =
             | _ ->
                 Applied
                   (Granted
-                     (String.concat
-                        "; "
-                        (List.filter_map (Budget.reason e.budget) needed)))))
+                     {
+                       grants = needed;
+                       reason =
+                         String.concat
+                           "; "
+                           (List.filter_map (Budget.reason e.budget) needed);
+                     })))
 
 (* ------------------------------------------------------------------------ *)
 (* Decision reporting                                                        *)
 (* ------------------------------------------------------------------------ *)
 
-type record = {
-  kernel : string;
-  device : string;
-  optimisation : optimisation;
-  decision : decision;
-}
-
-let reporter : (record -> unit) option Atomic.t = Atomic.make None
+let reporter : (event -> unit) option Atomic.t = Atomic.make None
 
 let last_outcome : (string * string * optimisation, decision) Hashtbl.t =
   Hashtbl.create 16
 
+(* The grants already reported as having no effect, by (kernel, grant, cause). *)
+let noted : (string * grant * ignored, unit) Hashtbl.t = Hashtbl.create 16
+
+(* Guards [last_outcome] and [noted]. *)
 let outcome_lock = Mutex.create ()
 
 let set_reporter r =
-  Mutex.protect outcome_lock (fun () -> Hashtbl.reset last_outcome) ;
+  Mutex.protect outcome_lock (fun () ->
+      Hashtbl.reset last_outcome ;
+      Hashtbl.reset noted) ;
   Atomic.set reporter r
 
-(* True when [r] differs from the last outcome reported for its key. *)
+(* True when [r] differs from the last outcome reported for its key. Under
+   [outcome_lock]. *)
 let is_new r =
   let key = (r.kernel, r.device, r.optimisation) in
-  Mutex.protect outcome_lock (fun () ->
-      if Hashtbl.find_opt last_outcome key = Some r.decision then false
+  if Hashtbl.find_opt last_outcome key = Some r.decision then false
+  else (
+    Hashtbl.replace last_outcome key r.decision ;
+    true)
+
+(* The kernel names a record is about: a pair is written ["p + c"]. *)
+let kernels_of name =
+  let sep = " + " in
+  let n = String.length sep in
+  let rec split from i acc =
+    if i + n > String.length name then
+      List.rev (String.sub name from (String.length name - from) :: acc)
+    else if String.sub name i n = sep then
+      split (i + n) (i + n) (String.sub name from (i - from) :: acc)
+    else split from (i + 1) acc
+  in
+  split 0 0 []
+
+(* What the program granted for [kernel] that cannot take effect, from the
+   store as it is now: a [Kernel] grant on a generated (fused or derived)
+   name, a grant revoked by the environment. A revoked process grant is
+   reported once, under the name ["(process)"]. *)
+let ignored_grants kernel =
+  let snapshot = Atomic.get store in
+  let registry = Atomic.get fused in
+  List.concat_map
+    (fun e ->
+      let generated =
+        match e.scope with
+        | Kernel k when k = kernel && Names.mem k registry ->
+            [(kernel, e.granted, Generated_name)]
+        | Kernel _ | Process -> []
+      in
+      let revoked_here =
+        match e.scope with
+        | Kernel k when k = kernel && revoked e.granted ->
+            [(kernel, e.granted, Revoked)]
+        | Process when revoked e.granted -> [("(process)", e.granted, Revoked)]
+        | Kernel _ | Process -> []
+      in
+      generated @ revoked_here)
+    snapshot
+
+(* The not yet reported ones for a record, marked as reported. Under
+   [outcome_lock]. *)
+let fresh_ignored_grants record_kernel =
+  List.filter
+    (fun key ->
+      if Hashtbl.mem noted key then false
       else (
-        Hashtbl.replace last_outcome key r.decision ;
+        Hashtbl.replace noted key () ;
         true))
+    (List.concat_map ignored_grants (kernels_of record_kernel))
 
 let reporting () = Option.is_some (Atomic.get reporter)
 
 let report r =
-  match Atomic.get reporter with None -> () | Some f -> if is_new r then f r
+  match Atomic.get reporter with
+  | None -> ()
+  | Some f ->
+      let fresh =
+        Mutex.protect outcome_lock (fun () ->
+            if is_new r then Some (fresh_ignored_grants r.kernel) else None)
+      in
+      Option.iter
+        (fun notes ->
+          f (Decision r) ;
+          List.iter
+            (fun (kernel, grant, cause) ->
+              f (Ignored_grant {kernel; grant; cause}))
+            notes)
+        fresh
 
 let refusal_message = function
   | Blank_reason ->
@@ -352,3 +392,53 @@ let refusal_message = function
       "Sarek_policy.grant: Kernel \"sarek_kern\" is the name of every unnamed \
        [%kernel], library kernels included; name the kernel, or grant at \
        Process scope"
+
+(* ------------------------------------------------------------------------ *)
+(* The environment                                                           *)
+(* ------------------------------------------------------------------------ *)
+
+module Env = struct
+  type restriction = Sarek_policy_vocab.restriction =
+    | Disable of optimisation
+    | Revoke of grant
+
+  type explain = Sarek_policy_vocab.explain =
+    | Explain_off
+    | Explain_stderr
+    | Explain_unknown of string
+
+  include Sarek_policy_env
+
+  let narrow restrictions e =
+    let revoked =
+      List.filter_map
+        (function Revoke g -> Some g | Disable _ -> None)
+        restrictions
+    in
+    {
+      budget = without_revoked revoked e.budget;
+      disabled =
+        List.filter
+          (fun o -> List.mem o e.disabled || List.mem (Disable o) restrictions)
+          all_optimisations;
+    }
+end
+
+(* SAREK_OPT_DISABLE and SAREK_EXPLAIN are read here, once, when the process
+   starts: a restriction is one-way, so there is nothing to re-read. *)
+let apply_environment () =
+  let restrictions, unknown =
+    Env.parse (Option.value ~default:"" (Sys.getenv_opt "SAREK_OPT_DISABLE"))
+  in
+  List.iter (fun item -> prerr_endline (Env.unknown_message item)) unknown ;
+  List.iter
+    (function Env.Disable o -> restrict o | Env.Revoke g -> revoke g)
+    restrictions ;
+  match Env.parse_explain (Sys.getenv_opt "SAREK_EXPLAIN") with
+  | Env.Explain_off -> ()
+  | Env.Explain_stderr ->
+      set_reporter (Some (fun e -> prerr_endline (Env.explain_line e)))
+  | Env.Explain_unknown value ->
+      prerr_endline (Env.explain_unknown_message value)
+
+let () = apply_environment ()

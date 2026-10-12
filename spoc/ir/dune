@@ -12,6 +12,8 @@
   Sarek_ir_pp
   Sarek_ir_analysis
   Sarek_capability
+  Sarek_policy_vocab
+  Sarek_policy_env
   Sarek_policy
   Sarek_coopmat_types
   Sarek_coopmat

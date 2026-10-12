@@ -10,7 +10,7 @@
     matrix-unit rewrite of the kernel it was given. The answer depends on the
     kernel (a GEMM nest the rewrite can bound, {!Sarek_matrix_mapping}), the
     device (HIP gfx11, Vulkan, CUDA/C, Metal, or the interpreter; see below),
-    the {!mode}, the accuracy opt-ins of {!Sarek_coopmat}, and the actual sizes:
+    the restrictions of {!Sarek_policy}, the accuracy opt-ins of {!Sarek_coopmat}, and the actual sizes:
     the aligned float16 size class loads fragments straight from global memory
     ({!Sarek_matrix_direct}), every other case is staged through shared memory
     ({!Sarek_matrix_rewrite}). A rewritten launch writes exactly the outputs the
@@ -18,53 +18,26 @@
 
     Static plans and rewritten kernels are cached by the IR's physical identity
     (like [Execute]'s launch memo, #424) and by (lowering, size class, subgroup
-    width, fragment edge); the device and mode are re-checked on every launch,
+    width, fragment edge); the device and the policy are re-checked on every launch,
     which costs a few list lookups. A kernel with no matrix product costs one
     memo lookup. *)
 
 open Sarek_ir_types
 
-(** {1 Mode} *)
-
-(** [Off]: never rewrite. [Exact]: only rewrites that keep results bit-identical
-    (int32). [Auto] (default): [Exact] plus, for a program's own float kernels,
-    the float rewrites the program opted into: the explicit
-    {!Sarek_coopmat.accept_automatic_float_rewrite} AND the accuracy opt-ins the
-    configuration requires ({!Sarek_coopmat.accept_relaxed_accumulation},
-    {!Sarek_coopmat.accept_operand_rounding}); a float rewrite never happens
-    without all of them. The accuracy opt-ins alone admit matrix units only for
-    code that asks for them ([Sarek_gemm.Coopmat], {!choose} with
-    [~explicit:true]). Initialised from [SAREK_MATRIX_REWRITE], parsed by
-    {!parse_mode}: an unrecognised value warns on stderr and gives [Auto]. *)
-type mode = Off | Exact | Auto
-
-val mode_name : mode -> string
-
-(** [parse_mode value] reads the value of [SAREK_MATRIX_REWRITE] (pure).
-    Case-insensitive: [off], [0], [false], [no] give [Off]; [exact] gives
-    [Exact]; [auto], [on], [1], [true], [yes] give [Auto]; unset or empty gives
-    [Auto]. Any other value gives [Auto] and a warning text (naming the
-    variable, the value and the accepted values) that the caller prints. *)
-val parse_mode : string option -> mode * string option
-
-(** [lowering_for ~budget ~mode ~explicit case precision]: the lowering the
-    policy allows for an element case, or why none. int32 is always lowered;
-    float cases need mode [Auto], the operand rounding for [precision] (f32)
-    and, unless [explicit], the automatic-rewrite consent, both read from
-    [budget] (the grants of the kernel: {!Sarek_policy.budget}). The accuracy
+(** [lowering_for ~budget ~explicit case precision]: the lowering the policy
+    allows for an element case, or why none. int32 is always lowered; float
+    cases need the operand rounding for [precision] (f32) and, unless
+    [explicit], the automatic-rewrite consent, both read from [budget] (the
+    grants of the kernel: {!Sarek_policy.budget}; a grant revoked by
+    [SAREK_OPT_DISABLE] is not in it). The accuracy
     opt-in of the configuration ([accept_relaxed_accumulation]) is checked
     afterwards, with the device, by {!choose}. *)
 val lowering_for :
   budget:Sarek_policy.Budget.t ->
-  mode:mode ->
   explicit:bool ->
   Sarek_matrix_advice.element_case ->
   Sarek_coopmat.operand_precision option ->
   (Sarek_matrix_rewrite.lowering, string) result
-
-val set_mode : mode -> unit
-
-val mode : unit -> mode
 
 (** {1 Outcome} *)
 
@@ -84,6 +57,10 @@ type specialised = {
   grid : int * int * int;
   via_interpreter : bool;
       (** launch through the interpreter's own entry point *)
+  evidence : Sarek_policy.evidence;
+      (** what justified the rewrite: int32 is a [Proof] (bit-identical), a
+          float lowering is [Granted] with the grants it was admitted under;
+          the explain report's [applied] line *)
 }
 
 type outcome = Specialised of specialised | Original of string  (** why *)
@@ -122,14 +99,12 @@ val choose :
   unit ->
   outcome
 
-(** {1 Report} *)
+(** {1 Report}
 
-type report = {kernel : string; device : string; outcome : outcome}
-
-(** Called with every decision about a kernel that is a matrix product (not for
-    other kernels, nor in mode [Off]). With [SAREK_MATRIX_REPORT=1], each
-    distinct (kernel, device, outcome) is also printed once on stderr. *)
-val set_reporter : (report -> unit) option -> unit
+    Every decision about a kernel that is a matrix product is an
+    {!Sarek_policy.Matrix_rewrite} record for {!Sarek_policy.report} (kernel,
+    device name, and [Applied evidence] or [Refused why]); not for other
+    kernels or devices that can never rewrite. [SAREK_EXPLAIN=1] prints them. *)
 
 (** Test hook: while [true], the analysis of a kernel not yet cached raises, as
     a defect in it would. Launches must still succeed ([Original]). *)

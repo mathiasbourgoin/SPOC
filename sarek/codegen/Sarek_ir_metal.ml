@@ -1205,7 +1205,7 @@ let generate_with_types ?block
   (* A [for] bound is evaluated once (Sarek_ir_for_bound), then unroll hints
      for small constant-trip loops (Sarek_ir_unroll). *)
   let k = Sarek_ir_for_bound.hoist k in
-  let k = Sarek_ir_unroll.annotate k in
+  let k = Sarek_ir_unroll.annotate ~generator:"metal" k in
   let st = state k in
   let buf = Buffer.create 4096 in
 
