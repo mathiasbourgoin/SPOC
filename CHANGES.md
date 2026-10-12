@@ -114,8 +114,8 @@
   Khronos validation layer (synchronisation validation and GPU-assisted validation, batch 32)
   reported no hazard, and every pair of the async tests (10-15 repetitions each, in parallel) and
   single runs, each under the kernel-log gate, were clean (SPOC 5cc8f0b5, RX 7900 XTX only,
-  raw output in the owner comment on #504, 2026-10-12; the owner accepted restoring batching
-  without the attended run of the old stanza that comment suggested). "No failure observed" does
+  raw output in the owner comment on #504, 2026-10-12; restored by owner decision, 2026-10-12;
+  the attended run of the old stanza that comment suggested was not made). "No failure observed" does
   not separate a fixed state from an unreproduced one, hence the open issue. The import
   hypothesis (#503 userptr work running beside the async tests) is not established: the git
   history does not show the import tests existing at the time of the faults. What changes in the
