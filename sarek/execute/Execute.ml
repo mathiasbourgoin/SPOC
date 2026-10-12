@@ -1227,7 +1227,7 @@ module Window = struct
   let set_enabled b = Launch_window.set_enabled window b
 
   (** Turn deferral on or off for one backend (flushes first). On by default for
-      HIP, OpenCL, Vulkan and CUDA; Metal is opt-in. *)
+      HIP, OpenCL, Vulkan, CUDA and Metal. *)
   let set_backend_enabled ~backend b =
     Launch_window.set_backend_enabled window ~backend b
 

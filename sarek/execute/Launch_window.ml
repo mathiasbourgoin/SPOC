@@ -164,8 +164,10 @@ let env_enabled () =
 let enabled = Atomic.make (env_enabled ())
 
 (** Backends whose launches are deferred by default (specs/launch-window.md).
-    Metal stays immediate; {!set_backend_enabled} opts it in. *)
-let default_backends = ["HIP"; "OpenCL"; "Vulkan"; "CUDA/PTX"; "CUDA/C"]
+    Native, Interpreter and WebGPU stay immediate; {!set_backend_enabled} opts a
+    backend in or out. *)
+let default_backends =
+  ["HIP"; "OpenCL"; "Vulkan"; "CUDA/PTX"; "CUDA/C"; "Metal"]
 
 (* Read on every launch: an immutable list behind an atomic, no lock. *)
 let backends : string list Atomic.t = Atomic.make default_backends

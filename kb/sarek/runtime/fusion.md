@@ -20,8 +20,8 @@ Reviewed fusion files: `sarek/sarek/Sarek_fusion.ml`, `sarek/sarek/FUSION.md`, `
   the horizontal-fusability verdict.
 - `sarek/execute/Fusion_horizontal.ml` is the work-group-offset rewrite.
 - `sarek/execute/Launch_window.ml` holds the groups, conflicts, flush, cache
-  and stats. The window is on by default on HIP, OpenCL, Vulkan, CUDA/PTX and
-  CUDA/C (Metal is opt-in until executed on Apple hardware);
+  and stats. The window is on by default on HIP, OpenCL, Vulkan, CUDA/PTX,
+  CUDA/C and Metal;
   `arg_slot_limit` keeps a Metal fused kernel within its 31 buffer slots.
 - `Execute.Window` is the public control.
 - Epilogue fusion (`specs/epilogue-fusion.md`) lives in:

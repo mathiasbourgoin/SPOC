@@ -5,19 +5,19 @@ title: Launch Window and Fusion
 
 # Launch Window and Fusion
 
-When a program issues many small kernels, the host time spent on each launch can exceed the time the GPU spends running it. On HIP, OpenCL, Vulkan and CUDA, Sarek therefore holds JIT launches back until the next point where your program observes the device, merges independent ones into a single kernel launch, and on HIP also merges element-wise consumers into the kernel that produces their input. This page says what is on by default, what flushes the held launches, how to see the effect, how to turn it off, and one change you may notice: device-compile and launch errors can surface in a later call than the launch.
+When a program issues many small kernels, the host time spent on each launch can exceed the time the GPU spends running it. On HIP, OpenCL, Vulkan, CUDA and Metal, Sarek therefore holds JIT launches back until the next point where your program observes the device, merges independent ones into a single kernel launch, and on HIP also merges element-wise consumers into the kernel that produces their input. This page says what is on by default, what flushes the held launches, how to see the effect, how to turn it off, and one change you may notice: device-compile and launch errors can surface in a later call than the launch.
 
 ## Defaults per backend
 
 | Feature | HIP | OpenCL | Vulkan | CUDA | Metal | Native, Interpreter, CPU devices |
 |---|---|---|---|---|---|---|
-| Launch window (deferral, horizontal fusion) | on | on | on | on | off (opt-in; also WebGPU) | never |
+| Launch window (deferral, horizontal fusion) | on | on | on | on | on (WebGPU: off) | never |
 | Epilogue fusion | on | off | off | off | off | never |
 
 - The window is on by default for the backends in the first row, and a device is excluded from deferral if it is a CPU device (host-pointer buffers from `Host_ptr_buffer` alias host memory there). Native and Interpreter execute directly and are never deferred.
-- When Metal is opted in, a fused kernel is limited to 31 argument slots (each vector takes two, each scalar one, and every member adds an offset and a size). A group that would pass it is split, so a long chain of launches with many arguments is fused in several smaller groups.
+- On Metal, a fused kernel is limited to 31 argument slots (each vector takes two, each scalar one, and every member adds an offset and a size). A group that would pass it is split, so a long chain of launches with many arguments is fused in several smaller groups.
 - On Vulkan every scalar and vector length of a kernel travels in one 128-byte push-constant block. A fused kernel carries all its members' (vector lengths, then scalars) and an int32 offset and size per member, so a group whose block would pass 128 bytes is split, and so is an epilogue merge that would pass it. Six launches of one vector and three int32 scalars, for example, are issued as five fused plus one, not six single launches.
-- Metal is opt-in (`Execute.Window.set_backend_enabled ~backend:"Metal" true`) until the window tests have been executed on Apple hardware; only the generated fused source has been checked so far.
+- Metal defers by default. Its window tests and benchmark are run on Apple hardware by the maintainers (results in CHANGES.md); switch it off with `Execute.Window.set_backend_enabled ~backend:"Metal" false` if you see a difference.
 - CUDA/PTX was tested through ZLUDA on an AMD GPU, and CUDA/C shares HIP's CUDA C generator; neither has run on NVIDIA hardware. Switch it off with `Execute.Window.set_backend_enabled ~backend:"CUDA/PTX" false` if you see a difference.
 - Epilogue fusion is on only on HIP. HIP compiles every kernel with floating-point contraction forced off, so merging two kernels cannot change a result. On the other backends the device compiler may contract, in the merged kernel, a multiply of the first kernel with an add of the second, or share a product that both compute (which the unfused consumer would contract), changing the result by an ulp: observed on Vulkan (RADV), and rusticl and nvrtc contract inside kernels as well. So it stays opt-in there (`Execute.Window.set_epilogue_backend`), a precision grant; Metal is exact by construction (`fp contract(off)`) but not yet executed on Apple hardware. Details: [docs/fp-contraction-policy.md](https://github.com/mathiasbourgoin/Sarek/blob/main/docs/fp-contraction-policy.md), section 14.
 - Horizontal fusion produces bit-identical results by construction: each member runs unchanged and nothing is added, removed or reordered between members.
@@ -141,15 +141,15 @@ On HIP this should print `submitted=2 issued=1 fused_groups=1`; with the window 
 | Epilogue fusion, at start | `SAREK_LAUNCH_EPILOGUE=0` (also `false`, `off`, `no`) |
 | Epilogue fusion, one backend | `Execute.Window.set_epilogue_backend ~backend:"HIP" false` |
 
-The setters flush held launches first. The backend argument is the framework name shown by `sarek-device-info` (`HIP`, `OpenCL`, `Vulkan`, `Metal`, `CUDA/PTX`, `CUDA/C`). Turning the window on for a backend outside the default set (Metal, until executed on Apple hardware; WebGPU, whose codegen is not wired) is an opt-in. Turning epilogue fusion on for OpenCL or Vulkan accepts the possible ulp difference described above.
+The setters flush held launches first. The backend argument is the framework name shown by `sarek-device-info` (`HIP`, `OpenCL`, `Vulkan`, `Metal`, `CUDA/PTX`, `CUDA/C`). Turning the window on for a backend outside the default set (WebGPU, whose codegen is not wired) is an opt-in. Turning epilogue fusion on for OpenCL or Vulkan accepts the possible ulp difference described above.
 
 ```ocaml
 let configure () =
   (* Keep launches immediate while debugging a device-compile error. *)
   Execute.Window.set_enabled false ;
-  (* Or: opt Metal in, keep everything else at the defaults. *)
+  (* Or: opt Metal out, keep everything else at the defaults. *)
   Execute.Window.set_enabled true ;
-  Execute.Window.set_backend_enabled ~backend:"Metal" true ;
+  Execute.Window.set_backend_enabled ~backend:"Metal" false ;
   Printf.printf
     "window on HIP: %b, epilogue on HIP: %b\n"
     (Execute.Window.defers "HIP")
