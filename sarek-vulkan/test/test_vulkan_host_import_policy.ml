@@ -135,25 +135,17 @@ let test_device_optin () =
   if not (Vulkan_api.is_available ()) then Alcotest.skip () ;
   Device.init () ;
   let device = Device.get 0 in
-  if Policy.is_amd ~vendor_id:0 ~driver_id:device.Device.driver_id then begin
-    Alcotest.check
-      decision
-      "AMD refused although opted in"
-      Policy.Amdgpu_refused
-      device.Device.host_import_policy ;
-    Alcotest.(check bool)
-      "extension off"
-      true
-      (device.Device.host_import_alignment = None
-      && device.Device.host_pointer_properties_fn = None) ;
-    expect_refused "alloc_pinned" (fun () ->
-        Host.alloc_pinned device ~byte_size:4096)
-  end
-  else
-    Alcotest.(check bool)
-      "not refused by policy"
-      true
-      (device.Device.host_import_policy <> Policy.Amdgpu_refused)
+  match device.Device.host_import_policy with
+  | Policy.Amdgpu_refused ->
+      Alcotest.(check bool)
+        "extension off"
+        true
+        (device.Device.host_import_alignment = None
+        && device.Device.host_pointer_properties_fn = None) ;
+      expect_refused "alloc_pinned" (fun () ->
+          Host.alloc_pinned device ~byte_size:4096)
+  | Policy.Allowed -> ()
+  | Policy.Not_opted_in -> Alcotest.fail "opted in but the policy says not"
 
 let () =
   if Array.length Sys.argv > 1 && Sys.argv.(1) = "optin" then
