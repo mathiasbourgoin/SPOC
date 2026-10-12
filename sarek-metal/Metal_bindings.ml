@@ -533,7 +533,11 @@ let mtl_compile_options_conformant () : mtl_compile_options option =
     [options] is now HONOURED. Before backlog #125 this function's parameter was
     named [_options] and dropped on the floor, so the only thing it could ever
     pass was null — see {!mtl_compile_options_conformant} for what that meant.
-*)
+
+    Releases the OCaml runtime lock for the compile (see
+    {!msg_void_blocking_lazy} for the safety argument): [dev], the NSString and
+    the options are Objective-C objects, the error cell is [allocate]d C memory
+    kept reachable until the call returns. *)
 let mtl_device_new_library_with_source dev source
     (options : mtl_compile_options option) =
   let sel = sel_registerName "newLibraryWithSource:options:error:" in
@@ -541,6 +545,7 @@ let mtl_device_new_library_with_source dev source
   let error_ptr = allocate (ptr void) null in
   let fn =
     foreign
+      ~release_runtime_lock:true
       ~from:(get_objc_lib ())
       "objc_msgSend"
       (ptr void @-> ptr void @-> ns_string @-> mtl_compile_options
@@ -568,11 +573,15 @@ let mtl_library_new_function_with_name lib fname =
 
 (** {1 Compute Pipeline API} *)
 
+(** Releases the OCaml runtime lock for the GPU-code compile; all arguments are
+    Objective-C objects or an [allocate]d error cell (see
+    {!msg_void_blocking_lazy}). *)
 let mtl_device_new_compute_pipeline_state dev func =
   let sel = sel_registerName "newComputePipelineStateWithFunction:error:" in
   let error_ptr = allocate (ptr void) null in
   let fn =
     foreign
+      ~release_runtime_lock:true
       ~from:(get_objc_lib ())
       "objc_msgSend"
       (ptr void @-> ptr void @-> mtl_function
