@@ -62,7 +62,7 @@ inventory records what existed at the audited revision.
 | 17 | `SAREK_DOMAIN_COUNT` | env | T | recommended | user | pool creation | `sarek/interp/Cpu_pool_lifecycle.ml:52` |
 | 18 (changed) | `SAREK_CPU_POOL_MAX_DOMAINS`, `SAREK_CPU_POOL_IDLE_MS` (now documented) | env/API | T | none / 1000 ms | user/program | process | `sarek/interp/Cpu_pool_lifecycle.ml:23-46` |
 | 19 | `SPOC_METAL_BATCH` | env | T | 32 | user | process | `sarek-metal/Metal_api.ml:362` |
-| 19b (new) | `SPOC_VULKAN_BATCH` | env | T | 32 | user | process | `sarek-vulkan/Vulkan_api_batch.ml:27` |
+| 19b (new) | `SPOC_VULKAN_BATCH` (default 32 again after #504's interim default 1; `1` is the fallback; not an `optimisation` of the explain report, so `SAREK_EXPLAIN` does not mention it) | env | T | 32 | user | process | `sarek-vulkan/Vulkan_api_batch.ml:27` |
 | 19c (new) | `SPOC_VULKAN_FENCE_TIMEOUT_S` | env | T (diag) | unbounded | user | process | `sarek-vulkan/Vulkan_api_base.ml:64` |
 | 20 (changed) | `SAREK_HIP_IGPU_UNCACHED=0` (now documented) | env | U | uncached | user | process | `sarek-hip/Hip_api.ml:279` |
 | 20b (new) | `SAREK_DISK_CACHE=0` (OpenCL #489, Vulkan SPIR-V) | env | T | on | user | per lookup | `sarek/framework/Framework_cache.ml:73` |

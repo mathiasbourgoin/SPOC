@@ -109,6 +109,7 @@
 (rule
  (alias runtest)
  (deps test_vulkan_host_import_policy.exe)
+ (locks vulkan-gpu)
  (action
   (setenv
    SPOC_VULKAN_HOST_IMPORT
@@ -122,23 +123,53 @@
 ; submission counts, ordering across batches and streams, and a failure that
 ; surfaces at the first wait. Fence waits are bounded at 30 s so a missed
 ; synchronisation ends in an error rather than a hang.
+;
+; Host-memory import is switched off for these (SPOC_VULKAN_HOST_IMPORT=0, also
+; against an inherited setting). Every test that touches the GPU holds the
+; `vulkan-gpu` lock, so no import runs beside an async test and no two of them
+; run at once (Sarek #503/#504).
 
 (tests
  (names
   test_vulkan_async_launches
   test_vulkan_async_robustness
   test_vulkan_async_release
-  test_vulkan_ranged_copies
   test_vulkan_event_wait
-  test_vulkan_copy_domains
-  test_vulkan_host_lifecycle)
+  test_vulkan_copy_domains)
  (modules
   test_vulkan_async_launches
   test_vulkan_async_robustness
   test_vulkan_async_release
-  test_vulkan_ranged_copies
   test_vulkan_event_wait
   test_vulkan_copy_domains
+  vulkan_async_support)
+ (libraries
+  sarek_vulkan
+  spoc_framework
+  sarek_backend_error
+  alcotest
+  unix
+  ctypes
+  ctypes.foreign)
+ (locks vulkan-gpu)
+ (action
+  (setenv
+   SPOC_VULKAN_FENCE_TIMEOUT_S
+   30
+   (setenv
+    SPOC_VULKAN_HOST_IMPORT
+    0
+    (run %{test})))))
+
+; The two tests with host-memory import variants. Import is opted in for them
+; only; on AMD drivers it is refused (Sarek #503) and the import variants skip
+; themselves, the pageable and pinned variants run. They hold the `vulkan-gpu`
+; lock: never beside an async test.
+
+(tests
+ (names test_vulkan_ranged_copies test_vulkan_host_lifecycle)
+ (modules
+  test_vulkan_ranged_copies
   test_vulkan_host_lifecycle
   vulkan_async_support)
  (libraries
@@ -149,6 +180,7 @@
   unix
   ctypes
   ctypes.foreign)
+ (locks vulkan-gpu)
  (action
   (setenv
    SPOC_VULKAN_FENCE_TIMEOUT_S
