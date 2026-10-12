@@ -183,3 +183,12 @@
  (libraries sarek_cuda sarek sarek.codegen spoc.ir alcotest)
  (instrumentation
   (backend bisect_ppx)))
+
+; Pure header-rewrite test: no device, no libcuda (issue #506).
+
+(test
+ (name test_cuda_ptx_version)
+ (modules test_cuda_ptx_version)
+ (libraries sarek_cuda alcotest)
+ (instrumentation
+  (backend bisect_ppx)))
