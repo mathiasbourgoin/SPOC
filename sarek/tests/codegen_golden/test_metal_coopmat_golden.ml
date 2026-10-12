@@ -259,6 +259,13 @@ let test_buffer_mismatch () =
   in
   expect_refused "wrong buffer" ~reason:"needs a float16 buffer" k
 
+let test_undeclared_buffer () =
+  let k = tile f16_cfg in
+  let k =
+    {k with kern_params = List.filter (fun _ -> true) (List.tl k.kern_params)}
+  in
+  expect_refused "undeclared buffer" ~reason:"not declared" k
+
 (* ---- 4. OpenCL says why it has no lowering -------------------------- *)
 
 let test_opencl_refusal_reason () =
@@ -342,6 +349,7 @@ let () =
           Alcotest.test_case "index and stride" `Quick test_tile_offset_stride;
           Alcotest.test_case "column-major" `Quick test_tile_col_major;
           Alcotest.test_case "buffer mismatch" `Quick test_buffer_mismatch;
+          Alcotest.test_case "undeclared buffer" `Quick test_undeclared_buffer;
           Alcotest.test_case "refusals" `Quick test_refusals;
         ] );
       ( "block",
