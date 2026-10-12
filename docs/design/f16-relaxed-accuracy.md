@@ -531,13 +531,15 @@ Three things the Regime A table says that are easy to miss:
    shape contains one, so it binds, the multiply survives as its own
    `v_fma_mix_f32`, and the model changes. Both facts, one mechanism. §9.3
    records the resolution.
-3. **pocl, IGC, ANV, the Intel CPU runtime and now Metal are refused today for a
-   defect they do not have.** `capability-model.md` §5 already records this as the
+3. **pocl, IGC, ANV and the Intel CPU runtime are refused today for a
+   defect they do not have** (Metal was in this list when the probe was written;
+   package H3 lowered scalar f16 there, specs/coopmat-metal-simdgroup.md). `capability-model.md` §5 already records this as the
    over-refusal that follows from having no compiler-identity probe. It is not
    made worse by this design, and slice 2's `VkPhysicalDeviceDriverProperties`
    plumbing narrows the Vulkan half of it. Metal is the clearest case: it is
    measured strict **element-wise** on both shapes, which is a stronger evidence
-   tier than any other row in the table carries, and it is still refused.
+   tier than any other row in the table carries; it was refused when this was
+   written and is lowered since H3.
 
 ---
 
@@ -1422,10 +1424,10 @@ which is the call under test anyway.
 **What slices 5 and 6 did NOT cover**, neither needing new hardware access:
 the 20-shape catalogue of
 `docs/optimization/amdgpu-f16-fusion-shape-audit.md` (only two shapes were
-swept), a `bfloat` 8×8 sweep, subnormal-specific analysis, and Metal **codegen** —
-both probes compile hand-written MSL and therefore measure the driver, exactly as
-§7(c) of the policy document says of the GLSL tripwire. A Sarek-generated-shader
-gate is a separate slice.
+swept), a `bfloat` 8×8 sweep, and subnormal-specific analysis. Both probes
+compile hand-written MSL and therefore measure the driver, exactly as §7(c) of
+the policy document says of the GLSL tripwire. (Historical: the Sarek-generated
+gate they lacked is `test_metal_f16_narrowing_e2e`, run on the M4 in package H3.)
 
 ### Hardware this plan does not have
 
