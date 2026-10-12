@@ -23,7 +23,7 @@ module Transfer = Spoc_core.Transfer
 | Copies and launches on a stream | yes | yes | launches asynchronous on the stream's queue; copies complete on return | launches batched on the stream; copies complete on return | accepted, synchronous | refused |
 | Events: create, record, synchronize | yes | yes | yes (newest command buffer of the stream) | yes (fence) | trivially complete | yes (existing `Event`) |
 | `stream_wait_event`, `event_query` | yes | yes | wait implied by buffer tracking; query real | wait implied by the single queue and barriers; query real (`vkGetFenceStatus`) | trivially complete | refused |
-| Pinned host memory (`alloc_pinned`) | `hipHostMalloc` | `cuMemHostAlloc` | page-aligned host memory | page-aligned memory imported with `VK_EXT_external_memory_host`; copies need no staging; refused on a device without the extension, unless `SPOC_VULKAN_HOST_IMPORT=1`, and on AMD drivers (#503) | plain host memory | refused |
+| Pinned host memory (`alloc_pinned`) | `hipHostMalloc` | `cuMemHostAlloc` | page-aligned host memory | page-aligned memory imported with `VK_EXT_external_memory_host`; copies need no staging; refused on a device without the extension; also refused unless `SPOC_VULKAN_HOST_IMPORT=1` (which permits import only on a device that offers the extension), and on AMD drivers (#503) | plain host memory | refused |
 | `register_host` | `hipHostRegister` | `cuMemHostRegister` (not on ZLUDA) | no-op | import of the pages around the range (same extension) | no-op | refused |
 | `stage_to_device` | asynchronous, staged | asynchronous, staged | synchronous ranged copy | synchronous ranged copy | synchronous ranged copy | refused |
 
