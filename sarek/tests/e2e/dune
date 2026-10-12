@@ -2398,3 +2398,31 @@
  (alias e2e-metal)
  (action
   (run %{dep:test_coopmat_metal_e2e.exe})))
+
+; Scalar f16 on Metal from Sarek-generated source over every finite binary16
+; value, shapes f16(x*1.1) and f16(f16(x*1.1)+1000), bit-equal to the
+; interpreter and to an independent model, with positive controls. The host
+; checks run everywhere; the device part skips without a Metal device.
+; Run by hand on a Mac: alias e2e-metal (scripts/unwired-targets.tsv).
+
+(executable
+ (name test_metal_f16_narrowing_e2e)
+ (modules test_metal_f16_narrowing_e2e)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek.interp
+  sarek.codegen
+  sarek.execute
+  sarek_ir
+  spoc_core
+  test_helpers)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias e2e-metal)
+ (action
+  (run %{dep:test_metal_f16_narrowing_e2e.exe})))
