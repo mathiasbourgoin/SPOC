@@ -23,6 +23,9 @@ type slot = {
   mutable kernels : string list;  (** Newest first, one entry per dispatch. *)
   mutable dispatches : int;
   mutable recording : bool;
+  mutable ended : bool;
+      (** [vkEndCommandBuffer] was called (set just before): the command buffer
+          can no longer be recorded into or ended again. *)
   mutable armed : bool;
       (** The fence was reset for a submission that may have reached the queue:
           set after the reset and before [vkQueueSubmit], cleared by {!retire}.
@@ -67,6 +70,7 @@ let create_slot device command_pool =
     kernels = [];
     dispatches = 0;
     recording = false;
+    ended = false;
     armed = false;
   }
 
@@ -132,7 +136,7 @@ let unregister stream =
 
 (** Kernel names of [slot] in launch order, a repeated name written once with
     its count. *)
-let kernel_names slot =
+let names_of_kernels kernels =
   let add counts name =
     if List.mem_assoc name counts then
       List.map
@@ -140,15 +144,18 @@ let kernel_names slot =
         counts
     else counts @ [(name, 1)]
   in
-  List.fold_left add [] (List.rev slot.kernels)
+  List.fold_left add [] (List.rev kernels)
   |> List.map (fun (name, n) ->
       if n = 1 then name else Printf.sprintf "%s x%d" name n)
   |> String.concat ", "
+
+let kernel_names slot = names_of_kernels slot.kernels
 
 (** The slot's work is over (completed, or never submitted): its descriptor sets
     and kernel list are released. *)
 let retire stream slot =
   slot.armed <- false ;
+  slot.ended <- false ;
   Vulkan_api_pools.reset stream.device slot.pools ;
   slot.kernels <- [] ;
   slot.dispatches <- 0 ;

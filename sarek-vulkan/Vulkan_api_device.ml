@@ -124,7 +124,7 @@ type t = {
           {!queue_submit} and {!with_queue_lock}. *)
   batch_lock : Mutex.t;
       (** Guards the launch batches of every stream of this device (see
-          {!Vulkan_api_stream}): two domains must not record into one command
+          {!Vulkan_api_batch}): two domains must not record into one command
           buffer. Never held across a call that takes it again. *)
   deferred_frees : (int * (unit -> unit)) list Atomic.t;
       (** Buffer releases waiting for the launches that may use the buffers; see
@@ -167,7 +167,7 @@ let drain_pending : (t -> unit) ref = ref (fun _ -> ())
     OCaml 5 runs at any allocation point, including inside [batch_lock] and
     [queue_lock], so a free must never take a lock. The batch code runs the
     queued releases when every launch has completed
-    ({!Vulkan_api_stream.release_deferred}). *)
+    ({!Vulkan_api_batch.release_deferred}). *)
 let defer_free dev ~bytes release =
   let rec push () =
     let old = Atomic.get dev.deferred_frees in
@@ -197,12 +197,12 @@ let take_deferred dev =
     taken with [try_lock] only, retire the launches whose fences have already
     signalled, then release if every stream is idle. Never submits, records,
     waits or consumes an error, so it is safe from a GC finaliser (see
-    {!defer_free}). Installed by {!Vulkan_api_stream}. *)
+    {!defer_free}). Installed by {!Vulkan_api_batch}. *)
 let try_release_idle : (t -> unit) ref = ref (fun _ -> ())
 
 (** Complete every launch of the device and run the queued releases, keeping
     each stream's deferred error for its own wait; for the allocation-failure
-    retry. Installed by {!Vulkan_api_stream}. *)
+    retry. Installed by {!Vulkan_api_batch}. *)
 let settle_pending : (t -> unit) ref = ref (fun _ -> ())
 
 let instance_ref : vk_instance structure ptr option ref = ref None
