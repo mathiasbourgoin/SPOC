@@ -47,6 +47,7 @@
   `Hip_bindings.foreign_hip_blocking_lazy`. Test:
   `sarek-metal/test/test_metal_wait_binding.ml` (structural) and alias
   `e2e-metal` (behavioural, needs a Mac; Apple M4: 1000 minor GCs during a 199 ms wait, 1 before).
+- No on-disk compile cache, by decision (2026-10-12): the macOS shader cache already serves a new process. `bench_metal_compile` (alias `e2e-metal-bench`), Apple M4, 5 rounds, ms median, first process for a source vs later processes: Q8_0 matvec library 22.4 -> 0.45, pipeline 0.86 -> 0.72; RMS norm 3.1 -> 0.03 and 0.08 -> 0.05; RoPE 2.3 -> 0.02 and 0.06 -> 0.04. An `MTLBinaryArchive` cache (about 250 lines) could save about 1 ms per kernel at most. Raw: `H11-ladon-compile-bench.txt`.
 - `Framework_sig.ASYNC` (spec `specs/metal-ranged-copies.md`): device-only
   vectors are shared-storage MTLBuffers with no host mirror; ranged copies are
   a bounds-checked `memcpy` at `contents + offset` that first waits for the

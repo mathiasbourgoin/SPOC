@@ -114,7 +114,11 @@
   (structural, runs anywhere; failed before the change) and the shared
   `test_blocking_ffi_releases_lock` on alias `e2e-metal`. Bench `bench_metal_compile` (alias `e2e-metal-bench`): library
   and pipeline-state compile time of three decode-shaped kernels, cold vs warm,
-  each in a new process.
+  each in a new process. Measured on Apple M4 (macOS 15, 5 rounds), the macOS shader
+  cache already brings a new process to at most 0.45 ms library + 0.72 ms
+  pipeline per kernel (first sight of a source: 22.4 / 3.1 / 2.3 ms library for
+  matvec / RMS norm / RoPE), so Metal gets no disk compile cache of ours (not
+  needed; `MTLBinaryArchive` could win about 1 ms per kernel).
 
   | Backend | Before | After | Evidence |
   |---|---|---|---|
