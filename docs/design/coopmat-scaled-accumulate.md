@@ -65,7 +65,7 @@ Fragments are opaque: `CM_decl`, `CM_load`, `CM_store`, `CM_muladd`
 block exactly in int32 and must then apply that block's scales in f32:
 
 ```
-acc_f32[i][j] += (float) acc_i32[i][j] * d_w[i] * d_x[j]   -   m_w[i] * s_x[j]
+acc_f32[i][j] = (acc_f32[i][j] + ((float) acc_i32[i][j] * d_w[i]) * d_x[j]) - m_w[i] * s_x[j]
 ```
 
 (`d_w`, `m_w`: per-row weight scale and min of the block; `d_x`, `s_x`:
@@ -81,7 +81,7 @@ consider it:
 | CM_scale_add of {
     dst : string;            (* f32 accumulator fragment, read and written *)
     dst_frag : Sarek_coopmat_types.fragment;
-    src : string;            (* s32 or f32 accumulator, same shape *)
+    src : string;            (* s32 or f32 accumulator, same shape; u32 refused *)
     src_frag : Sarek_coopmat_types.fragment;
     row : scale;             (* r.(i) = row.buf.(row.index + i), i < m *)
     col : scale option;      (* c.(j) = col.buf.(col.index + j), j < n; None = 1 *)
@@ -125,7 +125,8 @@ Why this is Strict and needs no `Sarek_policy` grant:
   below `2^24`); larger values are still deterministic on HIP, whose conversion
   is correctly rounded; on Vulkan only under `RoundingModeRTE` and
   `DenormPreserve` for 32-bit floats (`SPV_KHR_float_controls`, to verify on
-  RADV). A u32 accumulator is converted as unsigned, or refused.
+  RADV). A u32 `src` is refused at code generation and by the gate (§3), not
+  converted.
 - The only way a device can differ is contraction of `t2 * c[j]` with the add,
   or of `p[i] * q[j]` with the subtraction. Each lowering therefore emits
   non-contractible operations (§3). A fused form would remove two roundings per
@@ -152,16 +153,23 @@ matching HIP's `-fno-gpu-flush-denormals-to-zero`.
 |---|---|---|---|
 | Interpreter | §2.4, leader lane, whole fragment | reference | oracle |
 | HIP gfx11 | direct, registers only: accumulator element `e` of lane `l` is row `2e + h`, column `l16` (`h = l / 16`, `l16 = l mod 16`, the layout already used by `sarek_cm_load_acc_*`). Each lane loads `c[l16]` and `q[l16]` once and `r`, `p` for its 8 rows; `v_cvt_f32_i32`, then plain `*`, `+`, `-`. Non-contraction rests on hiprtc's `-ffp-contract=off` (`base_options` in `sarek-hip/Hip_rtc.ml`); HIP's `__f*_rn` are plain operators in ROCm 7.2 and guarantee nothing. The e2e test checks the ISA for the absence of `v_fma`/`v_fmac` in the scale step | executed on RX 7900 XTX, bit-identical | the only backend with a documented accumulator layout and a device here |
-| Vulkan (KHR cooperative matrix) | the accumulator layout is implementation-defined, so no per-lane form. Portable route: convert the int32 fragment to an f32 accumulator-use matrix (`coopmat<float, …>(src)` is element-wise), load `r` and `c` as broadcast matrices (column-major with stride 0 for `r`, row-major with stride 0 for `c`), multiply component-wise, add. To verify on RADV before relying on it: that stride 0 is accepted and that component-wise `*` on cooperative matrices is supported; otherwise a shared-memory round trip (`coopMatStore`, scalar §2.3, `coopMatLoad`), which needs a per-subgroup scratch array declared by the lowering. The products need `precise` to forbid contraction; also to verify: that `precise` (NoContraction) is honoured on cooperative-matrix arithmetic and that the float_controls modes of §2.3 are available | executed on RADV (gfx1100) | the plan's coverage decision (HIP and Vulkan executed) |
+| Vulkan (KHR cooperative matrix) | the accumulator layout is implementation-defined, so no per-lane form. Portable route: convert the int32 fragment to an f32 accumulator-use matrix (`coopmat<float, …>(src)` is element-wise), load `r` and `c` as broadcast matrices (column-major with stride 0 for `r`, row-major with stride 0 for `c`), multiply component-wise, add. To verify on RADV before relying on it: that stride 0 is accepted and that component-wise `*` on cooperative matrices is supported; otherwise a shared-memory round trip (`coopMatStore`, scalar §2.3, `coopMatLoad`), which needs a per-subgroup scratch array declared by the lowering. The products need `precise` to forbid contraction; also to verify: that `precise` (NoContraction) is honoured on cooperative-matrix arithmetic and that the float_controls modes of §2.3 are available | target: executed on RADV (gfx1100) by whichever route passes those checks; neither route has been run yet | the plan's coverage decision (HIP and Vulkan executed) |
 | CUDA (`nvcuda::wmma`) | the accumulator fragment's element-to-(row, column) map is not documented, so no direct form. Either a shared-memory round trip as for Vulkan, or a move of the 8-bit lowering to `mma.sync` (whose PTX fragment layouts are documented). Until one is done: refused at code generation with a named reason | refused at code generation | no NVIDIA GPU; ZLUDA declines `wmma` |
 | Metal | integer `src`: refused, as every integer configuration already is (no integer `simdgroup_matrix`; `no_integer_reason` in `sarek/codegen/Sarek_ir_metal_coopmat.ml`). f32 `src` (softmax rescale): threadgroup round trip, later | integer refused with the existing named reason | hardware |
 | OpenCL, WGSL, PTX, Native | refused, as every `SCoopmat` statement is | refused | no cooperative matrices |
 
-The capability gate needs nothing new for the integer case: a kernel with
-`CM_scale_add` also contains the `CM_muladd` that produced `src`, whose
-configuration is what the device must offer. A device that offers the
-configuration but has no lowering of the new statement (CUDA, Metal f32 for now)
-refuses at code generation with a named reason, never by computing it wrongly.
+The capability gate checks `CM_scale_add` on its own, not through a producer:
+`CM_decl`/`CM_load` can create an accumulator with no `CM_muladd` in the
+kernel, so "a muladd produced `src`" is not an invariant to rely on. The
+statement contributes its own requirement to the gate (alongside the
+configurations `kernel_coopmat_configs` collects): `src_frag` is an s32 or f32
+accumulator and `dst_frag` an f32 accumulator, each of a shape in some
+configuration the device offers, and the device's support record states that
+its backend lowers `CM_scale_add` (a new boolean in the coopmat support record,
+false by default, set by the HIP probe and by the Vulkan probe once its route
+is validated). A device without it refuses at launch with a named reason; the
+code generators of CUDA, Metal (f32) and the others refuse too, never computing
+it wrongly.
 
 ## 4. Fragment loads of 8-bit operands (plan item S2): no change needed
 
