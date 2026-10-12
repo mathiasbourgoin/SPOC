@@ -86,9 +86,15 @@
   grant, window). Native and Interpreter: only the CPU-device window refusal of the explain golden (a fake device); no run with `SAREK_EXPLAIN` on the real CPU backends.
   Vulkan: the sources are generated and the unroll hint is checked in the GLSL golden;
   the subset of the Vulkan tests that is not excluded (#503/#504) passed, no launch with
-  `SAREK_EXPLAIN` was run. Metal: not run here (needs the Mac); the Metal generator and
-  `Launch_policy` are the shared code, `sarek-metal/test/test_metal_matrix_rewrite.ml`
-  compiles with the new API.
+  `SAREK_EXPLAIN` was run. Metal: executed on an Apple M4 (2026-10-12): the Metal unit,
+  execute, ir, policy_env and sarek-metal runtests pass; `SAREK_EXPLAIN=1
+  test_epilogue_exact` prints `Metal epilogue applied exact` lines; `test_matrix_rewrite_metal`
+  prints `Metal:1 matrix applied granted=accumulation-order reason=... lowering="f16 operands
+  ..., staged, 8x8x8 ..."`, the integer refusal ("Metal has no integer simdgroup_matrix"),
+  `coopmat-gate` and `gen:metal unroll` lines; with `SAREK_OPT_DISABLE=window,matrix` the
+  rewrite assertions of `test_metal_matrix_rewrite` fail with "disabled (SAREK_OPT_DISABLE)",
+  as expected (raw: `spoc-pipeline-logs/policy-impl/ladon/sarek-policy-m3-*.txt`, owner
+  machine).
 
 - Vulkan host-memory import (`alloc_pinned`, `register_host`, from #493) is now an explicit opt-in
   (`SPOC_VULKAN_HOST_IMPORT=1`) and is refused on AMD drivers even then
