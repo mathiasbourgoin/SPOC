@@ -148,3 +148,24 @@
  (alias e2e-metal-bench)
  (action
   (run %{dep:bench_metal_matrix_rewrite.exe})))
+
+
+; R-24 on Metal: waitUntilCompleted releases the OCaml runtime lock. The
+; structural check reads Metal_bindings.ml, so it runs on any host.
+
+(test
+ (name test_metal_wait_binding)
+ (modules test_metal_wait_binding)
+ (deps ../Metal_bindings.ml)
+ (libraries alcotest str))
+
+; Behavioural check on a Metal device (alias e2e-metal, run by hand on a Mac):
+; the shared R-24 test (sarek/tests/e2e/test_blocking_ffi_releases_lock.ml)
+; runs one ~200 ms spin kernel per GPU device while another domain allocates,
+; and requires that domain to keep completing minor collections during
+; Device.synchronize. On a host with no GPU it passes with zero devices.
+
+(rule
+ (alias e2e-metal)
+ (action
+  (run %{dep:../../sarek/tests/e2e/test_blocking_ffi_releases_lock.exe})))
