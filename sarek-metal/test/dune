@@ -23,6 +23,24 @@
  (modules test_metal_coopmat_probe)
  (libraries sarek_metal sarek_ir alcotest))
 
+; The launch-time matrix rewrite on Metal (specs/matrix-pattern-rewrite.md):
+; admission from the capability rule and the generated MSL. Pure, no device.
+
+(test
+ (name test_metal_matrix_rewrite)
+ (modules test_metal_matrix_rewrite)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek.execute
+  sarek_ir
+  spoc_core
+  spoc_framework
+  sarek_metal
+  alcotest)
+ (preprocess
+  (pps sarek_ppx)))
+
 ; backlog-214 - the Metal plugin refuses a non-empty ~soa_params instead of
 ; answering an SoA argument list with AoS source. Pure codegen, no device.
 
@@ -105,3 +123,28 @@
  (alias e2e-metal-bench)
  (action
   (run %{dep:bench_metal_coopmat_gemm.exe})))
+
+; The launch-time matrix rewrite on Metal, off against on: a plain f16 x f16 ->
+; f32 GEMM nest, as written and rewritten to 8x8x8 simdgroup_matrix fragments,
+; interleaved pairs, median and min-max (specs/matrix-pattern-rewrite.md).
+; Information only.
+
+(executable
+ (name bench_metal_matrix_rewrite)
+ (modules bench_metal_matrix_rewrite)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek.matrix
+  sarek_ir
+  spoc_core
+  spoc_framework
+  sarek_metal
+  unix)
+ (preprocess
+  (pps sarek_ppx)))
+
+(rule
+ (alias e2e-metal-bench)
+ (action
+  (run %{dep:bench_metal_matrix_rewrite.exe})))
