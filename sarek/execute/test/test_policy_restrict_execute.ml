@@ -16,7 +16,8 @@ module Spec = Sarek_execute.Matrix_specialise
 
 let decision_text = function
   | Sarek_policy.Applied Sarek_policy.Exact_by_construction -> "exact"
-  | Sarek_policy.Applied (Sarek_policy.Granted r) -> "granted: " ^ r
+  | Sarek_policy.Applied (Sarek_policy.Granted {reason; _}) ->
+      "granted: " ^ reason
   | Sarek_policy.Applied (Sarek_policy.Proof p) -> "proof: " ^ p
   | Sarek_policy.Refused why -> "refused: " ^ why
 
@@ -51,7 +52,6 @@ let fake_hip : Spoc_core.Device.t =
   }
 
 let matrix_reason () =
-  Spec.set_mode Spec.Auto ;
   match
     Spec.choose
       ~device:fake_hip

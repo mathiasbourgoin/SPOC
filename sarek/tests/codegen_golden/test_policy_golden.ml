@@ -353,14 +353,6 @@ let print_refusals () =
     (invalid_argument_text (fun () ->
          Cm.accept_automatic_float_rewrite ~reason:"\n"))
 
-(* SAREK_AUTO_UNROLL=0 is read at each generation, so it can be toggled. *)
-let print_unroll_disabled () =
-  Unix.putenv "SAREK_AUTO_UNROLL" "0" ;
-  Printf.printf
-    "=== SAREK_AUTO_UNROLL=0 | unroll_loop | cuda-c ===\n%s"
-    (render cuda_c unroll_loop) ;
-  Unix.putenv "SAREK_AUTO_UNROLL" "1"
-
 let grant_or_fail scope reason =
   match Sarek_f16_policy.accept_single_rounding scope ~reason with
   | Ok () -> ()
@@ -369,7 +361,6 @@ let grant_or_fail scope reason =
 let () =
   print_refusals () ;
   print_state "S0" ;
-  print_unroll_disabled () ;
   grant_or_fail (Sarek_f16_policy.Kernel "q4k_like") "golden S1" ;
   print_state "S1" ;
   grant_or_fail Sarek_f16_policy.All_kernels "golden S2" ;

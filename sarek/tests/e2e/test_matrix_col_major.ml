@@ -246,7 +246,6 @@ let () =
   check_staged_layout () ;
   Sarek_coopmat.accept_relaxed_accumulation ~reason:"test_matrix_col_major" ;
   Sarek_coopmat.accept_automatic_float_rewrite ~reason:"test_matrix_col_major" ;
-  Spec.set_mode Spec.Auto ;
   let rewriters = List.filter offers_float (Array.to_list (Device.init ())) in
   List.iter
     (fun dev ->

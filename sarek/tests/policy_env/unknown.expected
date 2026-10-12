@@ -1,0 +1,1 @@
+sarek: SAREK_OPT_DISABLE: unknown item "bogus" (valid: window, epilogue, matrix, narrowing-proof, unroll, accumulation-order, operand-rounding-f16, operand-rounding-bf16, operand-rounding-bf16x3, single-rounding, cross-kernel-contraction, automatic-float-rewrite); ignored

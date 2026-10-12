@@ -147,7 +147,6 @@ let test_choose () =
     | None -> Alcotest.fail "no IR"
   in
   let named n = {ir with Sarek_ir_types.kern_name = n} in
-  Spec.set_mode Spec.Auto ;
   List.iter
     (fun g -> kernel_grant "mks_choose_a" g)
     [accumulation; f16_rounding; automatic] ;

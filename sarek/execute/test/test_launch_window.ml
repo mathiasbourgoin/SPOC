@@ -1304,6 +1304,60 @@ let test_epilogue_needs_the_grant () =
     1
     (List.length (epilogue_pair ~prod ~cons ~cons_block:64 ()))
 
+(* SAREK_EXPLAIN carries the window and the epilogue decisions: one record per
+   distinct outcome (a repeated pair adds none), with the grant that justifies
+   an applied fusion. *)
+let test_explain_records () =
+  let prod = {k_prod with kern_name = "ex_prod"}
+  and cons = {k_cons with kern_name = "ex_cons"} in
+  let seen = ref [] in
+  Sarek_policy.set_reporter
+    (Some
+       (function
+       | Sarek_policy.Decision r -> seen := r :: !seen
+       | Sarek_policy.Ignored_grant _ -> ())) ;
+  let pair () = ignore (epilogue_pair ~prod ~cons ~cons_block:64 ()) in
+  pair () ;
+  pair () ;
+  grant_contraction "ex_prod" ;
+  grant_contraction "ex_cons" ;
+  pair () ;
+  Sarek_policy.set_reporter None ;
+  let of_opt o =
+    List.rev
+      (List.filter_map
+         (fun (r : Sarek_policy.record) ->
+           if r.optimisation = o then Some (r.kernel, r.decision) else None)
+         !seen)
+  in
+  let refused =
+    Sarek_policy.Refused "no grant cross-kernel-contraction (kernel or process)"
+  and applied =
+    Sarek_policy.Applied
+      (Sarek_policy.Granted
+         {
+           grants =
+             [Sarek_policy.Deviation Sarek_policy.Cross_kernel_contraction];
+           reason = "launch window test";
+         })
+  in
+  check
+    bool
+    "epilogue: refused once, then applied once"
+    true
+    (of_opt Sarek_policy.Epilogue_fusion
+    = [("ex_prod + ex_cons", refused); ("ex_prod + ex_cons", applied)]) ;
+  let window = of_opt Sarek_policy.Launch_window in
+  check
+    bool
+    "window: producer and consumer deferred, exact, once each"
+    true
+    (List.map fst window = ["ex_prod"; "ex_cons"]
+    && List.for_all
+         (fun (_, d) ->
+           d = Sarek_policy.Applied Sarek_policy.Exact_by_construction)
+         window)
+
 (* The fusion passes register the members of the kernels they build, so the
    fused kernel's budget is the meet over its members (Sarek_policy). *)
 let raw_launch_names prefix =
@@ -1921,6 +1975,7 @@ let () =
           test_case "merged when covered" `Quick test_epilogue_merged;
           test_case "fused budget, epilogue" `Quick test_epilogue_budget;
           test_case "needs the grant" `Quick test_epilogue_needs_the_grant;
+          test_case "explain records" `Quick test_explain_records;
           test_case "merge bounded by slots" `Quick test_epilogue_slot_limit;
           test_case
             "merge bounded by push-constant bytes"
