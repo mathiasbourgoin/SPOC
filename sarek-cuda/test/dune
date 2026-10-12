@@ -176,3 +176,10 @@
  (name bench_cuda_kernargs)
  (modules bench_cuda_kernargs)
  (libraries sarek_cuda unix))
+
+(test
+ (name test_ptx_global_idx_z)
+ (modules test_ptx_global_idx_z)
+ (libraries sarek_cuda sarek sarek.codegen spoc.ir alcotest)
+ (instrumentation
+  (backend bisect_ppx)))
