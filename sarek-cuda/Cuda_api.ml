@@ -686,18 +686,30 @@ module Kernel = struct
         if String.equal backend "CUDA" then
           Spoc_framework.Guarded_cache.evict_device cache index)
 
-  (* Replace the .target directive in a PTX string to match the given SM version.
+  (* Replace the .target directive in a PTX string to match the given SM
+     version, and raise .version to the PTX ISA that SM needs (never lower it).
      This makes a static PTX string portable: PTX written for sm_86 loads fine
-     on sm_61 as long as it doesn't use sm_86-specific instructions. *)
-  let with_sm_target ~major ~minor ptx =
-    let prefix = ".target " in
-    let plen = String.length prefix in
-    String.split_on_char '\n' ptx
-    |> List.map (fun line ->
-        if String.length line >= plen && String.sub line 0 plen = prefix then
-          Printf.sprintf "%ssm_%d%d" prefix major minor
-        else line)
-    |> String.concat "\n"
+     on sm_61 as long as it doesn't use sm_86-specific instructions, and on
+     sm_120 once the ISA is 8.7 (issue #506). *)
+  let with_sm_target = Cuda_ptx_isa.with_sm_target
+
+  (* Fail with both versions named when the driver cannot accept the PTX ISA
+     the device's SM needs, instead of an opaque CUDA_ERROR_INVALID_PTX. *)
+  let check_driver_accepts_sm ~major ~minor =
+    let v = allocate int 0 in
+    check "cuDriverGetVersion" (cuDriverGetVersion v) ;
+    let ver = !@v in
+    match
+      Cuda_ptx_isa.check_driver
+        ~driver:(ver / 1000, ver mod 1000 / 10)
+        ~required:(Cuda_ptx_isa.required_version ~major ~minor)
+    with
+    | Ok () -> ()
+    | Error msg ->
+        Cuda_error.raise_error
+          (Cuda_error.module_load_failed
+             0
+             (Printf.sprintf "sm_%d%d: %s" major minor msg))
 
   (* Load a PTX string into a CUDA module and retrieve [name] as a function.
      The device context must already be current when this is called. *)
@@ -785,6 +797,7 @@ module Kernel = struct
   let load_from_ptx device ~name ~ptx =
     Device.set_current device ;
     let major, minor = device.Device.compute_capability in
+    check_driver_accepts_sm ~major ~minor ;
     let ptx = with_sm_target ~major ~minor ptx in
     Spoc_core.Log.debugf
       Spoc_core.Log.Kernel
