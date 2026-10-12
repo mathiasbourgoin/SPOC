@@ -241,6 +241,26 @@ let test_operand_rounding_revoked () =
         true
         (contains ~needle:"revoked by SAREK_OPT_DISABLE" why)
 
+(* Only the revoked rounding is named: bf16 is revoked, bf16x3 is not. *)
+let test_operand_rounding_bf16_revoked () =
+  Cm.accept_relaxed_accumulation ~reason:"the program" ;
+  Cm.accept_operand_rounding ~precision:Cm.Operands_bf16 ~reason:"the program" ;
+  let cfg = {coopmat_cfg with Cm.cfg_a = Cm.BFloat16; cfg_b = Cm.BFloat16} in
+  let why =
+    refusal_text
+      (Cm.policy_verdict_for
+         (Sarek_policy.budget ~kernels:[coopmat_kernel.kern_name])
+         cfg)
+  in
+  Alcotest.(check bool)
+    ("names operand-rounding-bf16 (" ^ why ^ ")")
+    true
+    (contains ~needle:"operand-rounding-bf16 is revoked by SAREK_OPT_DISABLE" why) ;
+  Alcotest.(check bool)
+    "does not name bf16x3, which is not revoked"
+    false
+    (contains ~needle:"bf16x3" why)
+
 (* The process state equals the pure model: every grant at process scope, then
    the effective policy of a kernel against [Env.narrow] of the parsed value
    applied to the full budget. *)
@@ -385,6 +405,8 @@ let scenarios =
       [case "accumulation-order revoked" test_accumulation_order_revoked] );
     ( "operand-rounding-f16",
       [case "operand-rounding-f16 revoked" test_operand_rounding_revoked] );
+    ( "operand-rounding-bf16",
+      [case "operand-rounding-bf16 revoked" test_operand_rounding_bf16_revoked] );
     ("model", [case "model of the environment" test_model]);
     ("unknown", [case "unknown item" test_unknown]);
     ("removed", [case "replaced variables" test_removed]);

@@ -58,6 +58,7 @@ let test_parse_table () =
         ([E.Disable Launch_window; E.Disable Auto_unroll], ["bogus"]) );
       ("bogus,other,bogus", ([], ["bogus"; "other"]));
       ("all", ([], ["all"]));
+      ("coopmat-gate", ([], ["coopmat-gate"]));
       ("window;unroll", ([], ["window;unroll"]));
       ("window unroll", ([], ["window unroll"]));
       ("single-rounding", ([E.Revoke (Deviation Single_rounding)], []));
