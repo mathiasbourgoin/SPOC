@@ -15,7 +15,8 @@
  *   - independent: two 8-rows-per-group matvecs (same kernel), a one-row-per-
  *     group matvec with a 256-thread shared-memory tree, and a kernel that
  *     writes its own block_idx_x / grid_dim_x / thread_idx_x / global ids:
- *     4 launches -> 1 fused launch;
+ *     4 launches -> 1 fused launch, or more where the backend's argument slot
+ *     limit splits the group (Metal, 31 slots: 2 launches);
  *   - dependent: matvec, residual add of its output, matvec of the sum:
  *     3 launches stay 3, in order;
  *   - host write between two readers: the first launch must see the old value
@@ -418,21 +419,18 @@ let three_members ~limit =
     window_member ~limit positions [slot_vec 1; slot_vec 1; Execute.Int n_pos];
   ]
 
-(* Backend launches the window must issue for the [independent] scenario on a
-   backend with [limit] argument slots: its four members are grown into a group
+(* A model of the [independent] scenario only, not of the window in general:
+   backend launches it must issue on a backend with [limit] argument slots: its four members are grown into a group
    while the fused signature (the window's own [fused_slots]) fits, else a new
    group starts. Unbounded backends give 1. A split into more groups than the
    slot accounting forces still fails the launch-count check. *)
 let independent_launches ~limit =
   let module LW = Sarek_execute.Launch_window in
-  let wave () =
-    window_member
-      ~limit
-      mv_wave
-      [slot_vec 1; slot_vec 1; slot_vec 1; Execute.Int rows; Execute.Int nb]
-  in
+  (* wave, wave, row, positions: the order [independent] launches them. *)
   let members =
-    wave () :: List.hd (three_members ~limit) :: List.tl (three_members ~limit)
+    match three_members ~limit with
+    | wave :: _ as three -> wave :: three
+    | [] -> []
   in
   let groups, current =
     List.fold_left

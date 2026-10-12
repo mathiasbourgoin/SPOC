@@ -163,9 +163,8 @@ let env_enabled () =
 
 let enabled = Atomic.make (env_enabled ())
 
-(** Backends whose launches are deferred by default (specs/launch-window.md).
-    Native, Interpreter and WebGPU stay immediate; {!set_backend_enabled} opts a
-    backend in or out. *)
+(** Backends deferred by default (specs/launch-window.md); Native, Interpreter
+    and WebGPU stay immediate. {!set_backend_enabled} opts in or out. *)
 let default_backends =
   ["HIP"; "OpenCL"; "Vulkan"; "CUDA/PTX"; "CUDA/C"; "Metal"]
 
