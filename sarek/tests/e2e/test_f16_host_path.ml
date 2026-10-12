@@ -20,8 +20,10 @@
  *      Failure. This is the host path and it is element-agnostic beyond byte
  *      size, so it works on every backend.
  *   2. The data must survive the round trip at binary16 precision.
- *   3. Running an f16 KERNEL on a slice-2 backend must fail with that backend's
- *      LOCATED slice-2 diagnostic — never a ctypes Failure.
+ *   3. Running an f16 KERNEL on a backend that lowers f16 (HIP, CUDA, Metal,
+ *      Native, Interpreter) must succeed with values equal to the binary16
+ *      model; on a slice-2 backend (OpenCL, Vulkan, ...) it must fail with that
+ *      backend's LOCATED slice-2 diagnostic — never a ctypes Failure.
  *
  * Self-skips per backend: whatever devices Device.init () reports is what gets
  * exercised, so this is CPU-safe and belongs on the default runtest alias.
@@ -144,9 +146,26 @@ let ir_of (_, kirc) =
   | Some ir -> ir
   | None -> failwith "no IR"
 
-(* Frameworks that implement f16 device-side in slice 1. Everything else must
-   raise its own slice-2 diagnostic. *)
-let f16_capable = ["HIP"; "CUDA"; "Native"; "Interpreter"]
+(* Frameworks that lower f16 device-side. Everything else must raise its own
+   slice-2 diagnostic. Metal joined with package H3: scalar f16 is [half] with
+   a plain narrowing, measured strict (test_metal_f16_narrowing_e2e). *)
+let f16_capable = ["HIP"; "CUDA"; "Metal"; "Native"; "Interpreter"]
+
+(* The kernels compute [f16 (f32 x * 2.0)]: the doubling is exact in binary32,
+   so the reference is the binary16 rounding of twice the stored sample (an
+   overflow to infinity included). Compared bit for bit. *)
+let doubled =
+  Array.map (fun x -> Sarek_interp.Sarek_float16.to_float16 (2.0 *. x)) expected
+
+let wrong_values out =
+  let got = Vector.to_array out in
+  let bad = ref [] in
+  Array.iteri
+    (fun i g ->
+      if Int64.bits_of_float g <> Int64.bits_of_float doubled.(i) then
+        bad := (i, g, doubled.(i)) :: !bad)
+    got ;
+  List.rev !bad
 
 let test_kernel ?(shape = f16_scale) ?(suffix = "") dev =
   let fw = dev.Device.framework in
@@ -165,7 +184,20 @@ let test_kernel ?(shape = f16_scale) ?(suffix = "") dev =
     Transfer.flush dev
   with
   | () ->
-      if List.mem fw f16_capable then report label true " (ran)"
+      if List.mem fw f16_capable then begin
+        match wrong_values out with
+        | [] -> report label true " (ran, values equal the binary16 model)"
+        | (i, g, e) :: _ as bad ->
+            report
+              label
+              false
+              (Printf.sprintf
+                 " — %d value(s) differ, first [%d]: got %h expected %h"
+                 (List.length bad)
+                 i
+                 g
+                 e)
+      end
       else
         report
           label
