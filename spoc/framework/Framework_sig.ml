@@ -348,7 +348,8 @@ end) :
          ~backend:X.backend
          (op
         ^ " (ranged/async transfers, pinned host memory and stream ordering \
-           are implemented on HIP, CUDA, Metal, Native and Interpreter only)"))
+           are implemented on HIP, CUDA, Metal, Vulkan, Native and Interpreter \
+           only)"))
 
   let host_to_device ~src_ptr:_ ~dst:_ ~dst_offset:_ ~byte_size:_ ~stream:_ =
     refuse "ranged host-to-device copy"
@@ -377,7 +378,8 @@ let refuse_stream_launch ~backend : 'a =
   Sarek_backend_error.Backend_error.raise_error
     (Sarek_backend_error.Backend_error.feature_not_supported
        ~backend
-       "kernel launch on a stream (implemented on HIP, CUDA and Metal only)")
+       "kernel launch on a stream (implemented on HIP, CUDA, Metal and Vulkan \
+        only)")
 
 (** Fresh [stream_ref]/[event_ref] constructors for one backend. Each
     application mints its own extension constructors at run time, so a stream of

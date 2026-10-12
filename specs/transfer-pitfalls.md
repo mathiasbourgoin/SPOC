@@ -39,7 +39,7 @@ swap, 17 GB tmpfs, other workloads running. Raw output: `docs/measurements/trans
 | Why not tell users "alloc_pinned + copy_to_device ~stream"? | F-1b: reusing the pinned buffer races unless the caller tracks completion with events. `stage_to_device` snapshots the source into SPOC-owned staging, so the caller may reuse its source as soon as the call returns. |
 | Size limit? | `Transfer.max_staged_bytes` = 64 KiB per call; staging is 1 MiB of pinned memory per device, allocated on first use and kept for the process lifetime *(agent decision)*. Larger transfers belong to `alloc_pinned` + `copy_to_device`. |
 | Which stream? | `?stream`, default the device's default stream: ordered after every launch already enqueued there and before every later one (and, HIP/CUDA blocking streams, with streams from `create_stream`). |
-| Backends? | HIP, CUDA (`async_copy`): staged and asynchronous. Native, Interpreter, Metal (ranged copies without async copies): a synchronous ranged copy from the source (complete on return, so the snapshot property holds trivially; on Metal it waits for kernels that bind `dst`). OpenCL, Vulkan, WebGPU: `Feature_not_supported`, like `copy_to_device`. |
+| Backends? | HIP, CUDA (`async_copy`): staged and asynchronous. Native, Interpreter, Metal, Vulkan (ranged copies without async copies): a synchronous ranged copy from the source (complete on return, so the snapshot property holds trivially; on Metal and Vulkan it waits for kernels that bind `dst`). OpenCL, WebGPU: `Feature_not_supported`, like `copy_to_device`. |
 | Populate on register_host? | Implemented as opt-in `register_host ~populate:true` (madvise `MADV_POPULATE_WRITE`), then **withdrawn** in QA *(agent decision)*: populated memory had slow first passes too (F-2a), so the option had no demonstrated benefit. Documentation only. |
 | A helper registering in regions (F-2b)? | Not added *(agent decision)*: its performance motivation did not reproduce, and the spanning hazard is a one-line rule. Documented on `register_host` with both measurements and their conditions. |
 
@@ -53,7 +53,7 @@ As spoc_llm's router, I want to publish 8 expert ids and 8 weights per layer to 
 2. **Given** a source Bigarray, **When** it is staged and then overwritten immediately (before any sync), **Then** the device receives the values at call time.
 3. **Given** 200 iterations of (stage x_i on the default stream; launch acc += x), **When** synchronised, **Then** acc equals Σ x_i element-wise (ordering and snapshot hold across ring wrap-around).
 4. **Given** a source above `max_staged_bytes`, an out-of-range offset, or a host-authoritative (`CPU`) vector, **When** staged, **Then** `Invalid_argument` before any device call.
-5. **Given** an OpenCL/Vulkan device, **Then** `Feature_not_supported`.
+5. **Given** an OpenCL device, **Then** `Feature_not_supported`.
 
 ### US-2: The cost of host writes is visible (P0)
 As a SPOC user, I want `Vector.set`/`get` documentation to say what they cost on a vector a kernel has used, and what to use instead.

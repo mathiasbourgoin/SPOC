@@ -28,7 +28,7 @@ not dictated by the brief are marked *(agent decision)*.
 | Alignment? | None imposed; the backend copies bytes. spoc_llm's offsets are multiples of 4 and 4096. |
 | Host destination during a stream copy? | Undefined until the copy has completed (stream synchronised, an event recorded after it synchronised or queried complete, `flush`): reading it may observe old, new or mixed bytes; writing it races with the DMA. SPOC roots `dst` and `src` meanwhile and records `dst`'s byte range as in flight, so `free_pinned` / `unregister_host` of an overlapping pinned buffer are refused until then. HIP/CUDA may stage a stream copy into pageable memory through a driver bounce buffer and block the host call; use pinned memory when overlap matters. |
 | Location of `src`? | Unchanged (a read). |
-| Backends? | Those with ranged copies (HIP, CUDA, Metal, Native, Interpreter). OpenCL, Vulkan, WebGPU refuse with `Feature_not_supported` through `Async.device_to_host`, as for `copy_to_host`. |
+| Backends? | Those with ranged copies (HIP, CUDA, Metal, Vulkan, Native, Interpreter; Vulkan since specs/vulkan-async-api.md). OpenCL, WebGPU refuse with `Feature_not_supported` through `Async.device_to_host`, as for `copy_to_host`. |
 
 ## User Story
 
@@ -43,7 +43,7 @@ device vector into a `char` host slot, synchronously or on a stream.
 4. **Given** a range past the end or a negative offset, **Then** `Invalid_argument` and dst untouched.
 5. **Given** a stream, **When** the copy is enqueued after a launch on the same stream that writes `src`, **Then** after `synchronize_stream` dst holds the kernel's output; while pending, `free_pinned` of a pinned dst is refused.
 6. **Given** a destroyed stream, **Then** `Invalid_argument`. (The stream-of-another-device refusal is the `copy_to_host` code moved unchanged into `d2h_range`; not re-tested.)
-7. **Given** an OpenCL/Vulkan device, **Then** `Feature_not_supported`.
+7. **Given** an OpenCL device, **Then** `Feature_not_supported`.
 8. `copy_to_host` behaviour unchanged (existing suite passes; same element error).
 
 ## Functional requirements

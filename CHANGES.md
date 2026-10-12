@@ -2,6 +2,28 @@
 
 ### Added
 
+- Vulkan supports the memory API that HIP, CUDA and Metal had
+  (H7 slice 1, `specs/vulkan-async-api.md`): device-only vectors, ranged
+  host<->device copies, `copy_bytes_to_host`, `stage_to_device` (synchronous),
+  `alloc_pinned`, `register_host`, `event_query`, `stream_wait_event` and
+  launches on a stream (`run_source_on_stream`). They were all refused with
+  `Feature_not_supported`. Copies complete before they return and are ordered
+  against the launches of every stream (`async_copy` stays false; asynchronous
+  copies are the next slice). Pinned and registered memory are host ranges
+  imported with `VK_EXT_external_memory_host`, so a copy from or to them is one
+  DMA `vkCmdCopyBuffer` with no staging buffer: on an RX 7900 XTX (RADV, Mesa
+  26.1.4) 64 MiB host-to-device 22 GB/s against 5.6 GB/s through staging, and
+  device-to-host 22 GB/s against 2.6 GB/s (provisional, machine load about 4.7).
+  A device without the extension refuses both with `Feature_not_supported`.
+  Ranged reads never read an uncached BAR mapping with `memcpy` (0.03 GB/s
+  measured): they use a HOST_CACHED staging buffer or DMA. Tests: the shared
+  device-buffer suite now runs on Vulkan (`test_device_buffers`), and
+  `test_vulkan_ranged_copies` (byte-exact on every path with a positive
+  control, staging-free assertion, ordering against unsynchronised launches,
+  misuse, `event_query`); bench `bench_vulkan_pinned_copy`. Not yet done: real
+  asynchronous copies, a staging pool, and the whole-buffer
+  `Memory.device_to_host`, which still reads the BAR mapping directly.
+
 - The int32 matrix-product rewrite runs on Vulkan and is offered on CUDA/C
   (H4, `specs/matrix-pattern-rewrite.md`, "Subgroup width and backends"). The
   rewrite templates take the subgroup width (`Sarek_matrix_rewrite.kernel

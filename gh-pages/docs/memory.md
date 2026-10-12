@@ -17,15 +17,15 @@ module Transfer = Spoc_core.Transfer
 
 ## Which backend supports what
 
-| Capability | HIP | CUDA | Metal | Native, Interpreter | OpenCL, Vulkan, WebGPU |
-|---|---|---|---|---|---|
-| Device-only vectors, ranged copies | yes | yes | yes (shared MTLBuffer, `memcpy`) | yes (`memmove`) | refused |
-| Copies and launches on a stream | yes | yes | launches asynchronous on the stream's queue; copies complete on return | accepted, synchronous | refused |
-| Events: create, record, synchronize | yes | yes | yes (newest command buffer of the stream) | trivially complete | yes (existing `Event`) |
-| `stream_wait_event`, `event_query` | yes | yes | wait implied by buffer tracking; query real | trivially complete | refused |
-| Pinned host memory (`alloc_pinned`) | `hipHostMalloc` | `cuMemHostAlloc` | page-aligned host memory | plain host memory | refused |
-| `register_host` | `hipHostRegister` | `cuMemHostRegister` (not on ZLUDA) | no-op | no-op | refused |
-| `stage_to_device` | asynchronous, staged | asynchronous, staged | synchronous ranged copy | synchronous ranged copy | refused |
+| Capability | HIP | CUDA | Metal | Vulkan | Native, Interpreter | OpenCL, WebGPU |
+|---|---|---|---|---|---|---|
+| Device-only vectors, ranged copies | yes | yes | yes (shared MTLBuffer, `memcpy`) | yes (mapped `memcpy`, DMA from pinned memory, or staging) | yes (`memmove`) | refused |
+| Copies and launches on a stream | yes | yes | launches asynchronous on the stream's queue; copies complete on return | launches batched on the stream; copies complete on return | accepted, synchronous | refused |
+| Events: create, record, synchronize | yes | yes | yes (newest command buffer of the stream) | yes (fence) | trivially complete | yes (existing `Event`) |
+| `stream_wait_event`, `event_query` | yes | yes | wait implied by buffer tracking; query real | wait implied by the single queue and barriers; query real (`vkGetFenceStatus`) | trivially complete | refused |
+| Pinned host memory (`alloc_pinned`) | `hipHostMalloc` | `cuMemHostAlloc` | page-aligned host memory | page-aligned memory imported with `VK_EXT_external_memory_host`; copies need no staging; refused on a device without the extension | plain host memory | refused |
+| `register_host` | `hipHostRegister` | `cuMemHostRegister` (not on ZLUDA) | no-op | import of the pages around the range (same extension) | no-op | refused |
+| `stage_to_device` | asynchronous, staged | asynchronous, staged | synchronous ranged copy | synchronous ranged copy | synchronous ranged copy | refused |
 
 "Refused" is `Backend_error (Plugin {error = Feature_not_supported _})`. Caller errors (bounds, wrong device, wrong location, freeing in-flight memory) raise `Invalid_argument`. Nothing silently falls back.
 
@@ -70,7 +70,7 @@ Rules:
 - Freeing a device-only vector discards its contents. Freeing anything a pending stream operation references is refused.
 - Vector location and buffer tables are not synchronised across domains: use a vector from one domain at a time. The keep-alive ledger and the pinned registry are mutex-protected.
 
-On Metal every buffer is shared storage, so a ranged copy is one `memcpy`. Launches are batched into one command buffer per queue, committed when the previous command buffer has completed or once the batch holds `SPOC_METAL_BATCH` dispatches (default 32), and otherwise by the next launch, wait, event record or synchronisation. A host access to a buffer first waits for the pending command buffers that bind it. A buffer larger than the device's `maxBufferLength` is refused with an error naming the limit. On Vulkan launches are also batched (`SPOC_VULKAN_BATCH`, default 32 dispatches per command buffer); every host access to a vector first completes the pending launches, and a buffer release is queued until the pending launches have completed.
+On Metal every buffer is shared storage, so a ranged copy is one `memcpy`. Launches are batched into one command buffer per queue, committed when the previous command buffer has completed or once the batch holds `SPOC_METAL_BATCH` dispatches (default 32), and otherwise by the next launch, wait, event record or synchronisation. A host access to a buffer first waits for the pending command buffers that bind it. A buffer larger than the device's `maxBufferLength` is refused with an error naming the limit. On Vulkan launches are also batched (`SPOC_VULKAN_BATCH`, default 32 dispatches per command buffer); every host access to a vector first completes the pending launches, and a buffer release is queued until the pending launches have completed. Every Vulkan copy also completes them: a copy is complete on return and ordered against the launches of every stream (there are no asynchronous Vulkan copies yet). A host range from `alloc_pinned` or `register_host` is copied by DMA, with no staging buffer and no host `memcpy`; measured on an RX 7900 XTX, 64 MiB host-to-device 22 GB/s pinned against 5.6 GB/s through staging, and device-to-host 22 GB/s against 2.6 GB/s (provisional, machine under load; `bench_vulkan_pinned_copy`). Device memory that the host maps through the PCIe BAR is write-combined and uncached, so SPOC never reads it with `memcpy` on Vulkan.
 
 ## Streams and events
 
