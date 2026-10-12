@@ -266,6 +266,27 @@ let test_undeclared_buffer () =
   in
   expect_refused "undeclared buffer" ~reason:"not declared" k
 
+(* A buffer declared inside the body, as the matrix rewrite declares its
+   staging arrays (SLet of an EArrayCreate), counts when it is shared and does
+   not when it is private. *)
+let with_body_array space =
+  let k = tile f16_cfg in
+  let a = var "a" (TArray (TFloat16, space)) in
+  {
+    k with
+    kern_params = List.tl k.kern_params;
+    kern_body =
+      SLet (a, EArrayCreate (TFloat16, EConst (CInt32 64l), space), k.kern_body);
+  }
+
+let test_body_shared_array () =
+  let src = gen (with_body_array Shared) in
+  check_contains "shared array" ~needle:"threadgroup half a[64]" src ;
+  check_contains "load from it" ~needle:"simdgroup_load(fa, (a + (0))" src
+
+let test_body_private_array () =
+  expect_refused "private array" ~reason:"not declared" (with_body_array Local)
+
 (* ---- 4. OpenCL says why it has no lowering -------------------------- *)
 
 let test_opencl_refusal_reason () =
@@ -350,6 +371,14 @@ let () =
           Alcotest.test_case "column-major" `Quick test_tile_col_major;
           Alcotest.test_case "buffer mismatch" `Quick test_buffer_mismatch;
           Alcotest.test_case "undeclared buffer" `Quick test_undeclared_buffer;
+          Alcotest.test_case
+            "shared array declared in the body"
+            `Quick
+            test_body_shared_array;
+          Alcotest.test_case
+            "private array declared in the body"
+            `Quick
+            test_body_private_array;
           Alcotest.test_case "refusals" `Quick test_refusals;
         ] );
       ( "block",
