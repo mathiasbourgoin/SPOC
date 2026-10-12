@@ -50,7 +50,7 @@
   `Hip_bindings.foreign_hip_blocking_lazy`. Test:
   `sarek-metal/test/test_metal_wait_binding.ml` (structural) and alias
   `e2e-metal` (behavioural, needs a Mac; Apple M4: 1000 minor GCs during a 199 ms wait, 1 before; raw: `docs/measurements/metal-runtime-lock-2026-10-12/r24-ladon.txt`).
-- No on-disk compile cache, by decision (2026-10-12): the macOS shader cache already serves a new process. `bench_metal_compile` (alias `e2e-metal-bench`), Apple M4, 5 rounds, kernel order rotated, nonce in the compiled code, ms median: a new source costs 2.6-9.5 ms per kernel (library 2.6-3.6, pipeline 3.6-9.5 for Q8_0 matvec / RMS norm / RoPE), a later process at most 0.04 ms. An `MTLBinaryArchive` cache (about 250 lines) could win nothing measurable. Raw: `docs/measurements/metal-runtime-lock-2026-10-12/compile-bench.txt`.
+- No on-disk compile cache, by decision (2026-10-12): the macOS shader cache already serves a new process. `bench_metal_compile` (alias `e2e-metal-bench`), Apple M4, 5 rounds, kernel order rotated, nonce in the compiled code, ms median: a new source costs about 7.0-12.2 ms per kernel, library plus pipeline (matvec 3.6 + 6.0, RMS norm 3.4 + 3.6, RoPE 2.6 + 9.5 ms), a later process at most 0.04 ms. An `MTLBinaryArchive` cache (about 250 lines) could win nothing measurable. Raw: `docs/measurements/metal-runtime-lock-2026-10-12/compile-bench.txt`.
 - `Framework_sig.ASYNC` (spec `specs/metal-ranged-copies.md`): device-only
   vectors are shared-storage MTLBuffers with no host mirror; ranged copies are
   a bounds-checked `memcpy` at `contents + offset` that first waits for the
