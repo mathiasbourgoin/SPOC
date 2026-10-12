@@ -36,7 +36,7 @@ Evidence tiers: *executed* (on a named device and toolchain), *compiler-output*,
 
 | backend | SCoopmat before | after | evidence tier |
 |---|---|---|---|
-| HIP | WMMA (gfx11) | unchanged | executed on RX 7900 XTX gfx1100, hipcc/hiprtc ROCm 7.2.4 (`test_coopmat_hip_e2e` re-run after the `Sarek_gemm.Coopmat` refactor, `H3-hip-regression-*.txt`) |
+| HIP | WMMA (gfx11) | unchanged | executed on RX 7900 XTX gfx1100, hipcc/hiprtc ROCm 7.2.4 (`test_coopmat_hip_e2e` re-run after the `Sarek_gemm.Coopmat` refactor, `/mnt/ssd-external-2to/spoc-pipeline-logs/pkgH/H3-tlreview-test_coopmat_hip_e2e.txt`, PASS on ed7c5555) |
 | CUDA | lowered (`nvcuda::wmma`), compile-only | unchanged | unchanged |
 | Vulkan | GLSL coopmat (integer) | unchanged | unchanged |
 | Metal | refused; scalar f16 refused | scalar f16 lowered; `simdgroup_matrix` 8x8x8 `f16*f16+f32->f32` lowered; every other configuration refused with a reason | codegen: compiler-output (goldens on tartarus); numerics: executed on Apple M4, macOS 15 (see Status; executed on Apple M4, macOS 15) |
@@ -103,8 +103,8 @@ the same in the `device` and `threadgroup` address spaces). The values of
 lowered configuration (`Metal_coopmat.probe_source`) on the device, and reads the
 SIMD-group width from the pipeline (`threadExecutionWidth`), so
 `ds_subgroup_size` and `warp_size` are device facts, not constants. The result is
-memoised per device. Compiles: `coopmat = Some` with the one configuration.
-Does not compile (pre-Apple7 GPUs, Intel/AMD Macs): `Some` with no configuration
+memoised per device. Compiles and the SIMD-group width is 32 (the launch check and `Sarek_gemm.Coopmat` assume it): `coopmat = Some` with the one configuration; compiles at another width: `Some` with no configuration and the width in `ds_evidence`.
+Does not compile (expected, inferred and not observed, on pre-Apple7 GPUs and Intel/AMD Macs): `Some with no configuration
 and the compiler's message in `ds_evidence`, so the refusal names the cause
 rather than "not probed". The pure rule is `Metal_coopmat.support`, driven by
 `test_metal_coopmat_probe` without a device.
@@ -120,11 +120,11 @@ backend, so exempting Metal means threading the backend through the launch gate
 (`Execute.check_device_capabilities`, outside this change), and one opt-in
 statement per program is also what keeps a kernel's accuracy contract the same
 on HIP and Metal. The interpreter evaluates the same C-first sequential binary32
-order, so on Metal the result is bit-identical to it, not merely bounded.
+order, so on the Apple M4 (the only device run) the result is bit-identical to it, not merely bounded.
 
 ## Exactness contract (tests)
 
-- `f16 x f16 + f32 -> f32` on Metal: bit-identical to the interpreter and to the
+- `f16 x f16 + f32 -> f32` on Metal (Apple M4): bit-identical to the interpreter and to the
   independent OCaml model "accumulator = C, then `acc := fl32(acc + a*b)` for
   `k` in index order", on random binary16 operands and full-mantissa binary32
   C (so the position of C in the sum is observable).
@@ -152,7 +152,7 @@ hardware from the source this generator emits. Neither needs an opt-in to genera
 `Sarek_coopmat.accept_relaxed_accumulation` for the float configuration stays
 (see above).
 
-Evidence (Apple M4, macOS 15, ladon, 2026-10-12T05:58Z, load 3.6):
+Evidence (Apple M4, macOS 15, ladon, 2026-10-12T05:58Z, load 3.6): run on bbbfe546, raw output `/mnt/ssd-external-2to/spoc-pipeline-logs/pkgH/H3-ladon-after.txt`; the `e2e-metal` alias passed (exit 0).
 
 | check | result |
 |---|---|
