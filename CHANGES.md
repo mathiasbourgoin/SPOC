@@ -112,7 +112,9 @@
   across the wait (`Metal_api.Pending` and `Event.synchronize` do). Other
   messages stay on the plain stub. Tests: `test_metal_wait_binding`
   (structural, runs anywhere; failed before the change) and the shared
-  `test_blocking_ffi_releases_lock` on alias `e2e-metal`.
+  `test_blocking_ffi_releases_lock` on alias `e2e-metal`. Bench `bench_metal_compile` (alias `e2e-metal-bench`): library
+  and pipeline-state compile time of three decode-shaped kernels, cold vs warm,
+  each in a new process.
 
   | Backend | Before | After | Evidence |
   |---|---|---|---|

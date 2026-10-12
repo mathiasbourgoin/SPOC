@@ -169,3 +169,21 @@
  (alias e2e-metal)
  (action
   (run %{dep:../../sarek/tests/e2e/test_blocking_ffi_releases_lock.exe})))
+
+; Compile time of three decode-shaped kernels, cold vs warm, each in a new
+; process: does the macOS shader cache already make a cache of ours moot?
+; Information only. Run by hand on a Mac (alias e2e-metal-bench).
+
+(executable
+ (name bench_metal_compile)
+ (modules bench_metal_compile)
+ (libraries sarek sarek.stdlib sarek_ir spoc_core sarek_metal str unix)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias e2e-metal-bench)
+ (action
+  (run %{dep:bench_metal_compile.exe})))
