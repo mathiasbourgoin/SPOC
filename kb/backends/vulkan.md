@@ -12,7 +12,9 @@
 - `sarek-vulkan/Vulkan_api_base.ml`: `memcpy`, `u32`, `check`, GLSL-to-SPIR-V compilation (shaderc and `glslangValidator` CLI), and `glslang_available`.
 - `sarek-vulkan/Vulkan_api_device.ml`: device enumeration, capabilities, device cache, and destroy.
 - `sarek-vulkan/Vulkan_api_memory.ml`: buffer allocation, staging buffers, host/device copies, and `device_to_device`.
-- `sarek-vulkan/Vulkan_api_stream.ml`: streams (two command buffers each, with descriptor pools and kernel lists), the per-device stream registry, the launch batch (`record_dispatch`, `submit_open`, `drain_stream`), `SPOC_VULKAN_BATCH`, and the default-stream cache (specs/vulkan-async-launches.md).
+- `sarek-vulkan/Vulkan_api_slot.ml`: a stream's two command-buffer slots (command buffer, fence, descriptor pools, kernel list), the per-device stream registry and the default-stream table.
+- `sarek-vulkan/Vulkan_api_batch.ml`: recording and submitting launch batches (`record_dispatch`, `submit_open`, `drain_stream`), waits, `settle`, the free path's `try_release_idle`, and `SPOC_VULKAN_BATCH` (specs/vulkan-async-launches.md).
+- `sarek-vulkan/Vulkan_api_stream.ml`: stream creation, destruction and the default stream over those modules.
 - `sarek-vulkan/Vulkan_api_barrier.ml`: the global memory barriers recorded before dispatches, at the end of batches and before staged copies.
 - `sarek-vulkan/Vulkan_api_release.ml`: the deferred buffer release, its queue bounds and the allocation retry.
 - `sarek-vulkan/Vulkan_api_pools.ml`: the descriptor pools of one launch-batch slot.
