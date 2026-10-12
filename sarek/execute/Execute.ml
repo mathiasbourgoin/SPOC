@@ -876,6 +876,7 @@ let check_device_capabilities ~(device : Device.t) (ir : Sarek_ir_types.kernel)
      docs/design/f16-relaxed-accuracy.md): a device that cannot run the
      configuration is the more useful refusal, and a float configuration the
      device CAN run still needs the program's explicit opt-in. *)
+  let budget = Sarek_policy.budget ~kernels:[ir.Sarek_ir_types.kern_name] in
   let coopmat_verdicts =
     List.concat_map
       (fun cfg ->
@@ -883,7 +884,7 @@ let check_device_capabilities ~(device : Device.t) (ir : Sarek_ir_types.kernel)
           Sarek_coopmat.verdict
             ~support:device.Device.capabilities.Framework_sig.coopmat
             cfg;
-          Sarek_coopmat.policy_verdict cfg;
+          Sarek_coopmat.policy_verdict_for budget cfg;
         ])
       (Sarek_ir_analysis.kernel_coopmat_configs ir)
   in
@@ -983,9 +984,10 @@ let check_interpreter_capabilities (ir : Sarek_ir_types.kernel) : unit =
     registries. They are filled at module initialisation and only grow, and a
     kernel whose intrinsic is missing fails codegen (not memoised). Replacing an
     intrinsic's implementation AFTER a kernel using it has launched is not seen
-    by that kernel until {!clear_launch_cache} is called. Backend debug logging
-    inside [generate_source] likewise happens on the first launch only, and so
-    does the read of [SAREK_AUTO_UNROLL] (Sarek_ir_unroll).
+    by that kernel until {!clear_launch_cache} is called, nor is backend debug
+    logging or the read of [SAREK_AUTO_UNROLL] (first launch only). The POLICY
+    is tracked: sources carry a {!Policy_stamp}, so a later grant or restriction
+    is honoured by the next launch.
 
     LIFETIME AND CONCURRENCY. The entry is a slot of the IR's {!Ir_memo} record,
     which is weak in the IR, and its data never refers to the IR, so an entry
@@ -1018,15 +1020,19 @@ type source_key = {
 let same_source_key a b =
   a.codegen == b.codegen && a.block = b.block && a.soa_params = b.soa_params
 
-let find_source key sources =
+(* The source stored for [key] under a policy still holding for [kernel]. *)
+let find_source ~kernel key sources =
   List.find_map
-    (fun (k, s) -> if same_source_key k key then Some s else None)
+    (fun (k, (s, stamp)) ->
+      if same_source_key k key && Policy_stamp.current stamp ~kernel then Some s
+      else None)
     sources
 
 type launch_entry = {
   generation : int;  (** the {!launch_memo_generation} it belongs to *)
-  mutable sources : (source_key * string) list;
-      (** generated source per {!source_key} *)
+  mutable sources : (source_key * (string * Policy_stamp.t)) list;
+      (** generated source per {!source_key}, with the policy it was generated
+          under *)
   mutable verified : (int * Framework_sig.capabilities) list;
       (** (device id, physical capabilities record) that passed the check *)
 }
@@ -1098,12 +1104,13 @@ let check_device_capabilities_memo ~(device : Device.t)
 let generate_source_memo (module B : Framework_sig.BACKEND) ~block ~soa_params
     (ir : Sarek_ir_types.kernel) : string option =
   let key = {codegen = B.generate_source; block; soa_params} in
+  let kernel = ir.Sarek_ir_types.kern_name in
   let facts = Ir_memo.facts ir in
   let cached, generation =
     Mutex.protect launch_memo_lock (fun () ->
         let hit =
           match current_entry facts with
-          | Some e -> find_source key e.sources
+          | Some e -> find_source ~kernel key e.sources
           | None -> None
         in
         (hit, !launch_memo_generation))
@@ -1111,6 +1118,7 @@ let generate_source_memo (module B : Framework_sig.BACKEND) ~block ~soa_params
   match cached with
   | Some _ -> cached
   | None -> (
+      let stamp = Policy_stamp.make ~kernel in
       match B.generate_source ~block ~soa_params ir with
       | None -> None
       | Some source ->
@@ -1118,10 +1126,14 @@ let generate_source_memo (module B : Framework_sig.BACKEND) ~block ~soa_params
               if !launch_memo_generation <> generation then Some source
               else
                 let e = memo_entry facts in
-                match find_source key e.sources with
+                match find_source ~kernel key e.sources with
                 | Some first -> Some first
                 | None ->
-                    e.sources <- (key, source) :: e.sources ;
+                    e.sources <-
+                      (key, (source, stamp))
+                      :: List.filter
+                           (fun (k, _) -> not (same_source_key k key))
+                           e.sources ;
                     Some source))
 
 (** Validate a launch on [stream] for [device] BEFORE anything is transferred:
@@ -1231,13 +1243,13 @@ module Window = struct
   let set_backend_enabled ~backend b =
     Launch_window.set_backend_enabled window ~backend b
 
-  (** [true] when epilogue fusion runs on this backend (HIP and Metal by
-      default). *)
+  (** [false] when epilogue fusion is switched off on this backend. Fusing also
+      needs [Cross_kernel_contraction] grants off HIP and Metal. *)
   let epilogue_on backend = Launch_epilogue.enabled backend
 
-  (** Turn epilogue fusion on or off for one backend (flushes first). Off by
-      default except on HIP and Metal: elsewhere the device compiler may
-      contract across the merged kernels (specs/epilogue-fusion.md). *)
+  (** Switch epilogue fusion off or back on for one backend (flushes first);
+      [true] never grants [Cross_kernel_contraction] (specs/epilogue-fusion.md).
+  *)
   let set_epilogue_backend ~backend b =
     Launch_window.flush window ;
     Launch_epilogue.set_backend_enabled ~backend b

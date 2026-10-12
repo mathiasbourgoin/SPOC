@@ -34,15 +34,17 @@
 
     Process-wide and one-way, like {!Sarek_coopmat.accept_relaxed_accumulation}
     and separate from it: accepting one never accepts the other. The decision is
-    taken when a kernel's source is generated; a kernel generated (and memoised)
-    before the call keeps its barriers. *)
+    taken when a kernel's source is generated, from the kernel's budget
+    ({!Sarek_policy.budget}: a fused kernel holds it only if every member does).
+    A kernel generated (and memoised) before the call is regenerated, without
+    barriers, by its next launch: the launch memo is keyed on the policy. *)
 
 (** Which kernels the opt-in covers. [Kernel name] matches
     {!Sarek_ir_types.kernel.kern_name} exactly. A kernel written with
     [[%kernel fun ...]] and no name is named ["sarek_kern"], like every other
-    such kernel, and that scope is refused; a kernel built by a fusion pass has
-    the fused name, not the names of its parts, so it is not covered by a
-    [Kernel] scope. *)
+    such kernel, and that scope is refused; a kernel built by a fusion pass is
+    covered when every one of its parts is ({!Sarek_policy.register_fused}); a
+    [Kernel] scope naming the generated fused name covers nothing. *)
 type scope = All_kernels | Kernel of string
 
 (** Why an opt-in was refused. [Default_kernel_name]: [Kernel "sarek_kern"], the

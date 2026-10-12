@@ -55,6 +55,7 @@ type env = Sarek_ir_interp_value.env = {
   arrays : (string, value array) Hashtbl.t;
   shared : (string, value array) Hashtbl.t;
   funcs : (string, Sarek_ir_types.helper_func) Hashtbl.t;
+  policy : Sarek_policy.Budget.t;
   coopmats : (int * string, value array) Hashtbl.t;
 }
 
@@ -117,7 +118,9 @@ type arg = ArgArray of value array | ArgScalar of value
 (** Run a kernel on CPU *)
 let run_kernel (k : kernel) ~block:(bx, by, bz) ~grid:(gx, gy, gz)
     (args : (string * arg) list) =
-  let env = create_env () in
+  let env =
+    create_env ~policy:(Sarek_policy.budget ~kernels:[k.kern_name]) ()
+  in
 
   (* Register helper functions *)
   List.iter (fun hf -> Hashtbl.add env.funcs hf.hf_name hf) k.kern_funcs ;

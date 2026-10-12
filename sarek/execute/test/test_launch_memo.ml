@@ -612,7 +612,7 @@ let narrowing_kernel name : Sarek_ir_types.kernel =
   }
 
 let has_barrier source =
-  let needle = "sarek_f32_barrier(" in
+  let needle = "__float2half(sarek_f32_barrier(" in
   let nl = String.length needle in
   let rec go i =
     i + nl <= String.length source

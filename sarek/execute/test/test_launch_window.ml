@@ -1860,6 +1860,7 @@ let () =
           test_case "index slice" `Quick test_index_slice;
           test_case "consumer shape" `Quick test_consumer_shape;
           test_case "merged when covered" `Quick test_epilogue_merged;
+          test_case "needs the grant" `Quick test_epilogue_needs_the_grant;
           test_case "merge bounded by slots" `Quick test_epilogue_slot_limit;
           test_case
             "merge bounded by push-constant bytes"

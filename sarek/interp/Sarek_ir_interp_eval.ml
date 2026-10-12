@@ -566,8 +566,8 @@ and get_coopmat state env name =
       Interp_error.raise_error
         (Unbound_variable {name; context = "cooperative-matrix fragment"})
 
-and coopmat_refuse_policy (cfg : Sarek_coopmat_types.config) =
-  match Sarek_coopmat.policy_verdict cfg with
+and coopmat_refuse_policy env (cfg : Sarek_coopmat_types.config) =
+  match Sarek_coopmat.policy_verdict_for env.policy cfg with
   | Sarek_capability.Available -> ()
   | Sarek_capability.Unavailable cap ->
       Interp_error.raise_error
@@ -678,7 +678,7 @@ and exec_coopmat_once state env op =
                   the plain one and nothing has executed it, so there is \
                   nothing for an oracle to be faithful to";
              }) ;
-      coopmat_refuse_policy cfg ;
+      coopmat_refuse_policy env cfg ;
       let ma = get_coopmat state env a
       and mb = get_coopmat state env b
       and mc = get_coopmat state env c in

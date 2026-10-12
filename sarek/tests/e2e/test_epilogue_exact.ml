@@ -294,44 +294,48 @@ let ordered bits =
 
 let ulp_distance x y = abs (ordered x - ordered y)
 
-let max_ulp x y =
-  let m = ref 0 in
-  Array.iteri (fun i v -> m := max !m (ulp_distance v y.(i))) x ;
-  !m
-
 (* "One contraction per element": a fused result differs from the unfused one
    by at most [ulps] ulps (an add that follows the product, no cancellation), or
    for the residual pair [o = a*b - t] by at most one ulp of the product. *)
 type bound = Ulps of int | Product_ulp of float array * float array
 
-let within_bound bound x y =
-  match bound with
-  | Ulps k -> max_ulp x y <= k
-  | Product_ulp (a, b) ->
-      let ok = ref true in
-      Array.iteri
-        (fun i v ->
-          let _, e = Float.frexp (a.(i) *. b.(i)) in
-          let ulp = Float.ldexp 1.0 (e - 24) in
-          let d =
+let limit = function Ulps k -> float_of_int k | Product_ulp _ -> 1.0
+
+let unit_name = function
+  | Ulps _ -> "ulp"
+  | Product_ulp _ -> "ulp of the product"
+
+(* The largest difference, in the bound's unit. *)
+let measure bound x y =
+  let worst = ref 0.0 in
+  Array.iteri
+    (fun i v ->
+      let d =
+        match bound with
+        | Ulps _ -> float_of_int (ulp_distance v y.(i))
+        | Product_ulp (a, b) ->
+            let _, e = Float.frexp (a.(i) *. b.(i)) in
             Float.abs (Int32.float_of_bits v -. Int32.float_of_bits y.(i))
-          in
-          if d > ulp then ok := false)
-        x ;
-      !ok
+            /. Float.ldexp 1.0 (e - 24)
+      in
+      worst := Float.max !worst d)
+    x ;
+  !worst
 
 (* Asserted on every backend that fuses: the bound holds, and what was measured
-   is printed (differing elements, maximum distance in ulps). *)
+   is printed (differing elements, largest difference in the bound's unit). *)
 let check_bound dev label bound ~fused ~unfused =
+  let worst = measure bound fused unfused in
   check
     dev
     (label ^ ": within one contraction")
-    (within_bound bound fused unfused)
+    (worst <= limit bound)
     (Printf.sprintf
-       " (%d of %d differ, max %d ulp)"
+       " (%d of %d differ, max %.3g %s)"
        (count_diff fused unfused)
        n
-       (max_ulp fused unfused))
+       worst
+       (unit_name bound))
 
 let verdict (dev : Device.t) label ok detail =
   if gated dev then check dev label ok detail

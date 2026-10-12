@@ -20,13 +20,20 @@
     opt-ins are thin wrappers over {!grant}, with the same refusals and the same
     messages as before it existed.
 
-    {b Who consults which scope} (milestone M1). A decision point that knows the
-    kernel it is deciding for reads {!reason} with [~kernel], so a
-    [Kernel]-scoped grant is honoured there; today that is the f32 to f16
-    narrowing in the CUDA-C generator only. The coopmat verdicts and the matrix
-    rewrite read the process scope. From M2 every decision point consults the
-    scope of its kernel through {!budget}. A [Kernel]-scoped coopmat grant is
-    accepted and recorded now, and is read from M2. *)
+    {b Who consults which scope} (milestone M2). Every decision point that knows
+    the kernel it is deciding for reads the grants of that kernel through
+    {!budget} (or {!effective}): the f32 to f16 narrowing, the coopmat verdicts
+    ({!Sarek_coopmat.policy_verdict_for}), the matrix rewrite and the epilogue
+    fusion. A [Kernel]-scoped grant therefore changes the decision for that
+    kernel and for no other. Callers with no kernel read the process scope. The
+    text a code generator emits, and what the launch memo stores, depend on the
+    policy: a grant given after a kernel's source was generated takes effect at
+    its next launch (the memo compares {!version}, then the digest of the
+    kernel's {!effective} policy).
+
+    {b Restrictions.} {!restrict} is the one way to take an optimisation away:
+    process-wide and one-way, like a grant. It is a diagnostic switch for SPOC's
+    own environment parsing and for tests, not a scoped API. *)
 
 (** {1 Vocabulary} *)
 
@@ -72,7 +79,8 @@ type optimisation =
 
 (** Where a grant applies. [Kernel name] matches
     {!Sarek_ir_types.kernel.kern_name} exactly; a kernel built by a fusion pass
-    has the fused name, not those of its parts. *)
+    has the fused name, which is never matched by a grant: its budget is the
+    meet over its parts ({!register_fused}). *)
 type scope = Process | Kernel of string
 
 (** Why {!grant} (or {!Budget.add}) refused. [Default_kernel_name]:
@@ -164,3 +172,101 @@ val budget : kernels:string list -> Budget.t
 
 (** The sentence for a refusal of {!grant}. *)
 val refusal_message : refusal -> string
+
+(** {1 Fused kernels} *)
+
+(** [register_fused ~name ~members]: a fusion pass built the kernel [name] from
+    the kernels [members] (themselves possibly fused kernels). From then on
+    [budget ~kernels:[name]] is the {!Budget.meet} over the budgets of the
+    members, recursively, so a fused kernel holds a grant only if every member
+    does, and a grant given to a member after the registration is seen.
+
+    A [Kernel] grant on the fused kernel's own name is {b not} counted: fusion
+    names are generated (content digests, counters) and are not a statement of
+    the program. Registering a name again adds the new members to those already
+    registered (a content-derived name can come from different members; it is
+    then covered only by what all of them allow). A registration with no member
+    is ignored, and a name that would contain itself contributes no grant.
+    Thread-safe; bumps {!version} when it changes the registry. *)
+val register_fused : name:string -> members:string list -> unit
+
+(** {1 Restrictions} *)
+
+(** [restrict opt] takes [opt] away for the rest of the process. One-way and
+    thread-safe; restricting twice is a no-op. Only SPOC's environment parsing
+    ([SAREK_OPT_DISABLE]) and tests call it. A restriction never invalidates a
+    check a caller memoised, because a memoised check is re-keyed on {!version}.
+    Bumps {!version} when [opt] was not yet restricted. *)
+val restrict : optimisation -> unit
+
+val restricted : optimisation -> bool
+
+(** {1 The effective policy of a launch} *)
+
+(** What a decision point reads: the grants in force for the kernel being
+    decided, and the optimisations taken away. [disabled] is in
+    {!all_optimisations} order. *)
+type effective = {budget : Budget.t; disabled : optimisation list}
+
+(** [effective ~kernel]: [budget ~kernels:[kernel]] and the current
+    restrictions. *)
+val effective : kernel:string -> effective
+
+(** As {!effective} for a launch built from [kernels] (the meet of their
+    budgets): the epilogue decision of a producer and its consumer. *)
+val effective_for : kernels:string list -> effective
+
+(** A stable string of the whole effective policy: {!Budget.digest} and the
+    disabled optimisations. Equal iff the policies are equal. *)
+val effective_digest : effective -> string
+
+(** What an optimisation needs on a backend, as grants that must be held;
+    [Some []] is exact there and [None] is not offered there.
+    - [Epilogue_fusion]: [Some []] on ["HIP"] and ["Metal"] (every kernel is
+      compiled without contraction); [Some [Deviation Cross_kernel_contraction]]
+      on ["CUDA/PTX"], ["CUDA/C"], ["CUDA"], ["OpenCL"] and ["Vulkan"]; [None]
+      elsewhere (Native, Interpreter, WebGPU never defer).
+    - [Launch_window], [Narrowing_proof], [Auto_unroll]: [Some []] everywhere.
+    - [Matrix_rewrite]: [Some []] everywhere; its float lowerings check their
+      own grants (the accuracy opt-ins and the consent), unchanged.
+
+    A Metal that marked itself inexact ([Fp_exactness]) is refused by the
+    epilogue even with the grant: that fact lives above this module. *)
+val requires : optimisation -> backend:string -> grant list option
+
+(** The common decision, in this order:
+    - [Refused "disabled (SAREK_OPT_DISABLE)"] if [opt] is in [e.disabled];
+    - [Refused ("not on " ^ backend)] if {!requires} is [None];
+    - [Refused ("no grant " ^ name ^ " (kernel or process)")] for the first
+      required grant [e.budget] does not hold;
+    - [Applied Exact_by_construction] if nothing is required;
+    - [Applied (Granted reasons)] otherwise, the reasons of the required grants
+      joined by ["; "]. *)
+val decide : effective -> optimisation -> backend:string -> decision
+
+(** {1 Change counter and decision reporting} *)
+
+(** Increases with every change of the policy: a grant that was not yet
+    recorded, a restriction not yet in force, a fused registration that adds a
+    member. Refusals, duplicates and reads leave it alone. A cache that memoised
+    something derived from the policy stores [version ()] read {b before} it
+    read the policy; one atomic read tells it whether anything changed since. *)
+val version : unit -> int
+
+(** One decision at a decision point, for the explain report. *)
+type record = {
+  kernel : string;
+  device : string;
+  optimisation : optimisation;
+  decision : decision;
+}
+
+(** Install (or, with [None], remove) the sink of {!report}. The default is no
+    sink; installing one forgets which outcomes were already reported. *)
+val set_reporter : (record -> unit) option -> unit
+
+(** [report r]: with a sink installed, calls it if [r.decision] differs from the
+    last one reported for [(r.kernel, r.device, r.optimisation)]; otherwise does
+    nothing. Without a sink it is one atomic read. Safe to call from any domain.
+*)
+val report : record -> unit

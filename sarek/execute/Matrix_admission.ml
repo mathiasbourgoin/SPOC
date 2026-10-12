@@ -160,8 +160,8 @@ let device_offers (device : Device.t) ~explicit cfg =
          "the rewrite has no template for %d-wide subgroups"
          (subgroup_of device))
 
-let device_admits (device : Device.t) ~explicit lowering cfg =
-  let* () = verdict_ok (Sarek_coopmat.policy_verdict cfg) in
+let device_admits ~budget (device : Device.t) ~explicit lowering cfg =
+  let* () = verdict_ok (Sarek_coopmat.policy_verdict_for budget cfg) in
   if not (List.mem device.framework rewrite_backends) then
     Error
       (Printf.sprintf

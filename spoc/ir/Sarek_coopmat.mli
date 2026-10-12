@@ -151,3 +151,13 @@ val automatic_float_rewrite_reason : unit -> string option
       naming the missing call. The launch gate and the interpreter apply it
       after the device verdict. *)
 val policy_verdict : config -> Sarek_capability.verdict
+
+(** [policy_verdict_for budget cfg]: {!policy_verdict} against the grants of
+    [budget] (pure). [policy_verdict cfg] is
+    [policy_verdict_for (Sarek_policy.budget ~kernels:[]) cfg], the process
+    grants only, for a caller with no kernel; a caller that knows the kernel
+    passes [Sarek_policy.budget ~kernels:[name]] so that a [Kernel]-scoped
+    [Accumulation_order] or [Operand_rounding] grant is honoured for that kernel
+    only (the launch gate, the interpreter). *)
+val policy_verdict_for :
+  Sarek_policy.Budget.t -> config -> Sarek_capability.verdict

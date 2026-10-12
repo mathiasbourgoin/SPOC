@@ -17,6 +17,7 @@
   sarek_interp)
  (modules
   Ir_memo
+  Policy_stamp
   Kernel_access
   Index_slice
   Index_bitset
@@ -26,6 +27,7 @@
   Fusion_epilogue
   Launch_limits
   Launch_window
+  Epilogue_policy
   Launch_epilogue
   Matrix_admission
   Matrix_specialise

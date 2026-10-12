@@ -15,7 +15,11 @@ let max_expansion = 64
 let hint = ["unroll"]
 
 let enabled () =
-  match Sys.getenv_opt "SAREK_AUTO_UNROLL" with Some "0" -> false | _ -> true
+  (not (Sarek_policy.restricted Sarek_policy.Auto_unroll))
+  &&
+  match Sys.getenv_opt "SAREK_AUTO_UNROLL" with
+  | Some "0" -> false
+  | _ -> true
 
 (* Integer value of a constant bound: literals and [+ - *] of literals. Any
    value outside the int32 range (where a device's int32 arithmetic would

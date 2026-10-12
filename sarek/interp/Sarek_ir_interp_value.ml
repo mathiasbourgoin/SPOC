@@ -47,6 +47,10 @@ type env = {
   arrays : (string, value array) Hashtbl.t;  (** array_name -> data *)
   shared : (string, value array) Hashtbl.t;  (** shared arrays for block *)
   funcs : (string, helper_func) Hashtbl.t;  (** helper functions *)
+  policy : Sarek_policy.Budget.t;
+      (** the grants of the kernel being run, for the accuracy policy of a
+          cooperative-matrix operation ({!Sarek_coopmat.policy_verdict_for});
+          shared by every copy of the environment *)
   coopmats : (int * string, value array) Hashtbl.t;
       (** Cooperative-matrix fragments, by (subgroup, fragment name) —
           backlog-62 slice 3.
@@ -80,8 +84,9 @@ type env = {
           device too and is given no meaning here. *)
 }
 
-let create_env () =
+let create_env ?(policy = Sarek_policy.budget ~kernels:[]) () =
   {
+    policy;
     vars = Hashtbl.create 32;
     vars_by_name = Hashtbl.create 32;
     arrays = Hashtbl.create 16;
@@ -100,6 +105,7 @@ let copy_env env =
     (* shared within block *)
     funcs = env.funcs;
     (* shared *)
+    policy = env.policy;
     coopmats = env.coopmats;
     (* shared within the block: a fragment belongs to its subgroup, not to the
        invocation, and is keyed by subgroup. *)
@@ -155,6 +161,7 @@ let callee_env env =
     arrays = env.arrays;
     shared = env.shared;
     funcs = env.funcs;
+    policy = env.policy;
     coopmats = Hashtbl.create 4;
   }
 

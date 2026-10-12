@@ -103,7 +103,9 @@
 val device_features : Sarek_ir_analysis.feature list
 
 (** [coopmat_verdict cfg] judges a cooperative-matrix configuration against the
-    interpreter's evaluator. It is {!Sarek_coopmat.policy_verdict}: the
+    interpreter's evaluator. It is {!Sarek_coopmat.policy_verdict_for} (against
+    [budget], default the process grants; {!first_refusal} passes the budget of
+    the kernel, so a [Kernel]-scoped opt-in is honoured for it only): the
     interpreter holds the whole matrix in every invocation, so no shape or
     device restriction applies and only the accuracy regime decides.
 
@@ -120,7 +122,10 @@ val device_features : Sarek_ir_analysis.feature list
     [Unavailable] with [cap_kind = Policy] (no derived bound). [Policy] rather
     than [Backend_structural] is the honest kind — a decision about what an
     oracle may claim, revisable by a decision, not a property of OCaml. *)
-val coopmat_verdict : Sarek_coopmat.config -> Sarek_capability.verdict
+val coopmat_verdict :
+  ?budget:Sarek_policy.Budget.t ->
+  Sarek_coopmat.config ->
+  Sarek_capability.verdict
 
 (** [first_refusal ir] is the first capability [ir] requires that the
     interpreter does not provide, or [None] when it provides all of them.

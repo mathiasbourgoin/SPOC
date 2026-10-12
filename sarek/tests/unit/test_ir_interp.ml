@@ -17,6 +17,7 @@ let make_env () =
     arrays = Hashtbl.create 8;
     shared = Hashtbl.create 8;
     funcs = Hashtbl.create 8;
+    policy = Sarek_policy.budget ~kernels:[];
     coopmats = Hashtbl.create 4;
   }
 

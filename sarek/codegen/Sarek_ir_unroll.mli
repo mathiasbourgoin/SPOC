@@ -20,6 +20,9 @@
     variable is read at each code generation, but [Execute] memoises the
     generated source per kernel, so set it before a kernel's first launch (or
     call [Execute.clear_launch_cache]) for a change to take effect.
+    [Sarek_policy.restrict Auto_unroll] has the same effect and is tracked by
+    the memo (a restriction made after a kernel's first launch is honoured by
+    its next one).
 
     Unrolling a constant-trip loop does not change which operations run or their
     order, so results are unchanged; only code size and register use can grow,
