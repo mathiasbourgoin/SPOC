@@ -1185,8 +1185,8 @@ let destroy_event (ev : event) : unit =
     Refused ([Invalid_argument]): [length] outside [1 .. Int32.max_int] (kernels
     index with int32; split larger caches over several vectors) and custom
     (record) kinds. Refused ([Feature_not_supported]): backends without ranged
-    copies (OpenCL, Vulkan, WebGPU), where nothing but a kernel could ever fill
-    the vector. *)
+    copies (OpenCL, WebGPU), where nothing but a kernel could ever fill the
+    vector. *)
 let create_device_only (type a b) (dev : Device.t) (kind : (a, b) Vector.kind)
     (length : int) : (a, b) Vector.t =
   if length < 1 || length > Int32.to_int Int32.max_int then
@@ -1207,7 +1207,7 @@ let create_device_only (type a b) (dev : Device.t) (kind : (a, b) Vector.kind)
     refuse_capability
       ~backend:B.name
       "device-only vectors (they need ranged copies, implemented on HIP, CUDA, \
-       Metal, Native and Interpreter only)" ;
+       Metal, Vulkan, Native and Interpreter only)" ;
   let vec =
     if dev.capabilities.is_cpu then Vector.create kind length
     else Vector.create_device_only_record kind dev length
@@ -1825,9 +1825,9 @@ let staged_copy st ~(dev : Device.t) ~(stream : stream) ~src_addr ~byte_size
     docs/measurements/transfer-pitfalls-2026-10-10/stress_hip_staged_launches.txt,
     sarek-hip/test/stress_hip_staged_launches.ml).
 
-    HIP, CUDA: as above. Native, Interpreter, Metal (no asynchronous copies): a
-    synchronous {!copy_to_device}, complete on return (on Metal it first waits
-    for kernels that use [dst]). OpenCL, Vulkan, WebGPU:
+    HIP, CUDA: as above. Native, Interpreter, Metal, Vulkan (no asynchronous
+    copies): a synchronous {!copy_to_device}, complete on return (on Metal and
+    Vulkan it first waits for kernels that use [dst]). OpenCL, WebGPU:
     [Feature_not_supported]. *)
 let stage_to_device (type a b) ?(stream : stream option)
     (src : (a, b, Bigarray.c_layout) Bigarray.Array1.t) ~(dst : (a, b) Vector.t)
