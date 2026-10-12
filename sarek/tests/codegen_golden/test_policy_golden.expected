@@ -1,0 +1,1882 @@
+refusal blank All_kernels = Error Sarek_f16_policy.accept_single_rounding: the reason must not be empty (it is the record that the deviation from the interpreter was understood)
+refusal blank Kernel = Error Sarek_f16_policy.accept_single_rounding: the reason must not be empty (it is the record that the deviation from the interpreter was understood)
+refusal Kernel sarek_kern = Error Sarek_f16_policy.accept_single_rounding: Kernel "sarek_kern" is the name of every unnamed [%kernel], library kernels included; name the kernel, or accept All_kernels
+refusal accept_relaxed_accumulation blank = Invalid_argument Sarek_coopmat.accept_relaxed_accumulation: the reason must not be empty (it is the record that the bounded deviation was understood)
+refusal accept_operand_rounding f16 blank = Invalid_argument Sarek_coopmat.accept_operand_rounding: the reason must not be empty (it is the record that the operand rounding was understood)
+refusal accept_operand_rounding bf16 blank = Invalid_argument Sarek_coopmat.accept_operand_rounding: the reason must not be empty (it is the record that the operand rounding was understood)
+refusal accept_operand_rounding bf16x3 blank = Invalid_argument Sarek_coopmat.accept_operand_rounding: the reason must not be empty (it is the record that the operand rounding was understood)
+refusal accept_automatic_float_rewrite blank = Invalid_argument Sarek_coopmat.accept_automatic_float_rewrite: the reason must not be empty (it is the record that rewriting the program's own float kernels was understood)
+=== S0 | t2_f16_sum | cuda-c (HIP, CUDA/C) ===
+#if !defined(__HIP__) && !defined(__HIP_PLATFORM_AMD__)
+#include <cuda_fp16.h>
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+__device__ __forceinline__ float sarek_f32_barrier(float x) {
+  asm volatile("" : "+v"(x));
+  return x;
+}
+#else
+/* NVIDIA: intentionally an identity. A PTX opacity barrier here contributes
+   zero PTX instructions at a narrowing, so ptxas sees the same instruction
+   stream and the cubins are byte-identical (measured on CUDA 13.3, sm_75..
+   sm_121). What keeps the f32 multiply out of the narrowing on NVIDIA is ptxas
+   itself, checked by test_cuda_f16_sass.ml — not this function. NOTE the same
+   barrier IS load-bearing at PTX level for mul->add, but ptxas re-contracts
+   that under the default -fmad=true; do not reuse it as a general contraction
+   barrier here. See docs/fp-contraction-policy.md. */
+__device__ __forceinline__ float sarek_f32_barrier(float x) {
+  return x;
+}
+#endif
+__device__ __forceinline__ __half sarek_narrow_exact_product(float a, float b) {
+  __half h = __float2half(a * b);
+  unsigned short s =
+      (unsigned short)(((__float_as_uint(a) ^ __float_as_uint(b)) >> 16) & 0x8000u);
+  return __ushort_as_half((unsigned short)(__half_as_ushort(h) | s));
+}
+
+extern "C" {
+__global__ void t2_f16_sum(__half* __restrict__ out, int sarek_out_length, __half* __restrict__ h, int sarek_h_length, __half* __restrict__ g, int sarek_g_length, int* __restrict__ q, int sarek_q_length, float* __restrict__ x, int sarek_x_length) {
+  int tid = ((int)(threadIdx.x + blockIdx.x * blockDim.x));
+  out[tid] = __float2half(((float)h[tid] + (float)g[tid]));
+}
+}
+=== S0 | t2_f16_sum | opencl ===
+EXN [OpenCL Codegen] Unsupported construct 'f16': OpenCL: float16 is refused by measurement, not pending implementation — rusticl/radeonsi fuses the f32 multiply into the f32->f16 narrowing, so 620/63488 binary16 inputs disagree with the interpreter, and no affordable barrier exists on this path. See docs/fp-contraction-policy.md (#57 slice 2a).
+=== S0 | t2_f16_sum | metal ===
+#include <metal_stdlib>
+using namespace metal;
+#pragma METAL fp contract(off)
+
+kernel void t2_f16_sum(device half* out [[buffer(0)]], constant int &sarek_out_length [[buffer(1)]], device half* h [[buffer(2)]], constant int &sarek_h_length [[buffer(3)]], device half* g [[buffer(4)]], constant int &sarek_g_length [[buffer(5)]], device int* q [[buffer(6)]], constant int &sarek_q_length [[buffer(7)]], device float* x [[buffer(8)]], constant int &sarek_x_length [[buffer(9)]],
+uint3 __metal_gid [[thread_position_in_grid]],
+uint3 __metal_tid [[thread_position_in_threadgroup]],
+uint3 __metal_bid [[threadgroup_position_in_grid]],
+uint3 __metal_tpg [[threads_per_threadgroup]],
+uint3 __metal_num_groups [[threadgroups_per_grid]]) {
+  int tid = ((int)__metal_gid.x);
+  out[tid] = (half)((float)h[tid] + (float)g[tid]);
+}
+
+=== S0 | t2_f16_sum | glsl (Vulkan) ===
+EXN [Vulkan Codegen] Unsupported construct 'f16': GLSL: float16 is refused by measurement, not pending implementation — RADV's ACO backend absorbs the f32->f16 narrowing into the arithmetic that feeds it, so 2912/63488 binary16 inputs disagree with the interpreter on a single narrowing, and `precise` does not prevent it. See docs/fp-contraction-policy.md (#57 slice 2b).
+=== S0 | t2_f16_sum | wgsl ===
+EXN [WebGPU Codegen] Unsupported construct 'f16': WGSL: float16 not yet supported (#57 slice 2 — needs a module-top `enable f16;` directive)
+=== S0 | t2_f16_sum | ptx (CUDA/PTX) ===
+EXN Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error("PTX codegen: unsupported construct: kernel-level float16 usage: float16 not supported by the PTX backend (#57 slice 2 \226\128\148 needs a new %h register class and an audit of the prefix-based class guards)")
+=== S0 | q4k_like | cuda-c (HIP, CUDA/C) ===
+#if !defined(__HIP__) && !defined(__HIP_PLATFORM_AMD__)
+#include <cuda_fp16.h>
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+__device__ __forceinline__ float sarek_f32_barrier(float x) {
+  asm volatile("" : "+v"(x));
+  return x;
+}
+#else
+/* NVIDIA: intentionally an identity. A PTX opacity barrier here contributes
+   zero PTX instructions at a narrowing, so ptxas sees the same instruction
+   stream and the cubins are byte-identical (measured on CUDA 13.3, sm_75..
+   sm_121). What keeps the f32 multiply out of the narrowing on NVIDIA is ptxas
+   itself, checked by test_cuda_f16_sass.ml — not this function. NOTE the same
+   barrier IS load-bearing at PTX level for mul->add, but ptxas re-contracts
+   that under the default -fmad=true; do not reuse it as a general contraction
+   barrier here. See docs/fp-contraction-policy.md. */
+__device__ __forceinline__ float sarek_f32_barrier(float x) {
+  return x;
+}
+#endif
+__device__ __forceinline__ __half sarek_narrow_exact_product(float a, float b) {
+  __half h = __float2half(a * b);
+  unsigned short s =
+      (unsigned short)(((__float_as_uint(a) ^ __float_as_uint(b)) >> 16) & 0x8000u);
+  return __ushort_as_half((unsigned short)(__half_as_ushort(h) | s));
+}
+
+extern "C" {
+__global__ void q4k_like(__half* __restrict__ out, int sarek_out_length, __half* __restrict__ h, int sarek_h_length, __half* __restrict__ g, int sarek_g_length, int* __restrict__ q, int sarek_q_length, float* __restrict__ x, int sarek_x_length) {
+  int tid = ((int)(threadIdx.x + blockIdx.x * blockDim.x));
+  out[tid] = __float2half(sarek_f32_barrier((((float)h[tid] * (float)((q[tid] & 15))) - ((float)g[tid] * (float)(((q[tid] >> 4) & 63))))));
+}
+}
+=== S0 | q4k_like | opencl ===
+EXN [OpenCL Codegen] Unsupported construct 'f16': OpenCL: float16 is refused by measurement, not pending implementation — rusticl/radeonsi fuses the f32 multiply into the f32->f16 narrowing, so 620/63488 binary16 inputs disagree with the interpreter, and no affordable barrier exists on this path. See docs/fp-contraction-policy.md (#57 slice 2a).
+=== S0 | q4k_like | metal ===
+#include <metal_stdlib>
+using namespace metal;
+#pragma METAL fp contract(off)
+
+kernel void q4k_like(device half* out [[buffer(0)]], constant int &sarek_out_length [[buffer(1)]], device half* h [[buffer(2)]], constant int &sarek_h_length [[buffer(3)]], device half* g [[buffer(4)]], constant int &sarek_g_length [[buffer(5)]], device int* q [[buffer(6)]], constant int &sarek_q_length [[buffer(7)]], device float* x [[buffer(8)]], constant int &sarek_x_length [[buffer(9)]],
+uint3 __metal_gid [[thread_position_in_grid]],
+uint3 __metal_tid [[thread_position_in_threadgroup]],
+uint3 __metal_bid [[threadgroup_position_in_grid]],
+uint3 __metal_tpg [[threads_per_threadgroup]],
+uint3 __metal_num_groups [[threadgroups_per_grid]]) {
+  int tid = ((int)__metal_gid.x);
+  out[tid] = (half)(((float)h[tid] * (float)((q[tid] & 15))) - ((float)g[tid] * (float)(((q[tid] >> 4) & 63))));
+}
+
+=== S0 | q4k_like | glsl (Vulkan) ===
+EXN [Vulkan Codegen] Unsupported construct 'f16': GLSL: float16 is refused by measurement, not pending implementation — RADV's ACO backend absorbs the f32->f16 narrowing into the arithmetic that feeds it, so 2912/63488 binary16 inputs disagree with the interpreter on a single narrowing, and `precise` does not prevent it. See docs/fp-contraction-policy.md (#57 slice 2b).
+=== S0 | q4k_like | wgsl ===
+EXN [WebGPU Codegen] Unsupported construct 'f16': WGSL: float16 not yet supported (#57 slice 2 — needs a module-top `enable f16;` directive)
+=== S0 | q4k_like | ptx (CUDA/PTX) ===
+EXN Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error("PTX codegen: unsupported construct: kernel-level float16 usage: float16 not supported by the PTX backend (#57 slice 2 \226\128\148 needs a new %h register class and an audit of the prefix-based class guards)")
+=== S0 | inexact_const | cuda-c (HIP, CUDA/C) ===
+#if !defined(__HIP__) && !defined(__HIP_PLATFORM_AMD__)
+#include <cuda_fp16.h>
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+__device__ __forceinline__ float sarek_f32_barrier(float x) {
+  asm volatile("" : "+v"(x));
+  return x;
+}
+#else
+/* NVIDIA: intentionally an identity. A PTX opacity barrier here contributes
+   zero PTX instructions at a narrowing, so ptxas sees the same instruction
+   stream and the cubins are byte-identical (measured on CUDA 13.3, sm_75..
+   sm_121). What keeps the f32 multiply out of the narrowing on NVIDIA is ptxas
+   itself, checked by test_cuda_f16_sass.ml — not this function. NOTE the same
+   barrier IS load-bearing at PTX level for mul->add, but ptxas re-contracts
+   that under the default -fmad=true; do not reuse it as a general contraction
+   barrier here. See docs/fp-contraction-policy.md. */
+__device__ __forceinline__ float sarek_f32_barrier(float x) {
+  return x;
+}
+#endif
+__device__ __forceinline__ __half sarek_narrow_exact_product(float a, float b) {
+  __half h = __float2half(a * b);
+  unsigned short s =
+      (unsigned short)(((__float_as_uint(a) ^ __float_as_uint(b)) >> 16) & 0x8000u);
+  return __ushort_as_half((unsigned short)(__half_as_ushort(h) | s));
+}
+
+extern "C" {
+__global__ void inexact_const(__half* __restrict__ out, int sarek_out_length, __half* __restrict__ h, int sarek_h_length, __half* __restrict__ g, int sarek_g_length, int* __restrict__ q, int sarek_q_length, float* __restrict__ x, int sarek_x_length) {
+  int tid = ((int)(threadIdx.x + blockIdx.x * blockDim.x));
+  out[tid] = __float2half(sarek_f32_barrier(((float)h[tid] * 1.1000000000000001f)));
+}
+}
+=== S0 | inexact_const | opencl ===
+EXN [OpenCL Codegen] Unsupported construct 'f16': OpenCL: float16 is refused by measurement, not pending implementation — rusticl/radeonsi fuses the f32 multiply into the f32->f16 narrowing, so 620/63488 binary16 inputs disagree with the interpreter, and no affordable barrier exists on this path. See docs/fp-contraction-policy.md (#57 slice 2a).
+=== S0 | inexact_const | metal ===
+#include <metal_stdlib>
+using namespace metal;
+#pragma METAL fp contract(off)
+
+kernel void inexact_const(device half* out [[buffer(0)]], constant int &sarek_out_length [[buffer(1)]], device half* h [[buffer(2)]], constant int &sarek_h_length [[buffer(3)]], device half* g [[buffer(4)]], constant int &sarek_g_length [[buffer(5)]], device int* q [[buffer(6)]], constant int &sarek_q_length [[buffer(7)]], device float* x [[buffer(8)]], constant int &sarek_x_length [[buffer(9)]],
+uint3 __metal_gid [[thread_position_in_grid]],
+uint3 __metal_tid [[thread_position_in_threadgroup]],
+uint3 __metal_bid [[threadgroup_position_in_grid]],
+uint3 __metal_tpg [[threads_per_threadgroup]],
+uint3 __metal_num_groups [[threadgroups_per_grid]]) {
+  int tid = ((int)__metal_gid.x);
+  out[tid] = (half)((float)h[tid] * 1.1000000000000001f);
+}
+
+=== S0 | inexact_const | glsl (Vulkan) ===
+EXN [Vulkan Codegen] Unsupported construct 'f16': GLSL: float16 is refused by measurement, not pending implementation — RADV's ACO backend absorbs the f32->f16 narrowing into the arithmetic that feeds it, so 2912/63488 binary16 inputs disagree with the interpreter on a single narrowing, and `precise` does not prevent it. See docs/fp-contraction-policy.md (#57 slice 2b).
+=== S0 | inexact_const | wgsl ===
+EXN [WebGPU Codegen] Unsupported construct 'f16': WGSL: float16 not yet supported (#57 slice 2 — needs a module-top `enable f16;` directive)
+=== S0 | inexact_const | ptx (CUDA/PTX) ===
+EXN Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error("PTX codegen: unsupported construct: kernel-level float16 usage: float16 not supported by the PTX backend (#57 slice 2 \226\128\148 needs a new %h register class and an audit of the prefix-based class guards)")
+=== S0 | unroll_loop | cuda-c (HIP, CUDA/C) ===
+
+extern "C" {
+__global__ void unroll_loop(float* __restrict__ acc, int sarek_acc_length, float* __restrict__ x, int sarek_x_length) {
+  int tid = ((int)(threadIdx.x + blockIdx.x * blockDim.x));
+  #pragma unroll
+  for (int i = 0; i <= 8; i++) {
+    acc[tid] = (acc[tid] + x[tid]);
+  }
+}
+}
+=== S0 | unroll_loop | opencl ===
+__kernel void unroll_loop(__global float* restrict acc, int sarek_acc_length, __global float* restrict x, int sarek_x_length) {
+  int tid = ((int)get_global_id(0));
+  #pragma unroll
+  for (int i = 0; i <= 8; i++) {
+    acc[tid] = (acc[tid] + x[tid]);
+  }
+}
+=== S0 | unroll_loop | metal ===
+#include <metal_stdlib>
+using namespace metal;
+#pragma METAL fp contract(off)
+
+kernel void unroll_loop(device float* acc [[buffer(0)]], constant int &sarek_acc_length [[buffer(1)]], device float* x [[buffer(2)]], constant int &sarek_x_length [[buffer(3)]],
+uint3 __metal_gid [[thread_position_in_grid]],
+uint3 __metal_tid [[thread_position_in_threadgroup]],
+uint3 __metal_bid [[threadgroup_position_in_grid]],
+uint3 __metal_tpg [[threads_per_threadgroup]],
+uint3 __metal_num_groups [[threadgroups_per_grid]]) {
+  int tid = ((int)__metal_gid.x);
+  #pragma unroll
+  for (int i = 0; i <= 8; i++) {
+    acc[tid] = (acc[tid] + x[tid]);
+  }
+}
+
+=== S0 | unroll_loop | glsl (Vulkan) ===
+#version 450
+#extension GL_EXT_control_flow_attributes : require
+
+// Sarek-generated compute shader: unroll_loop
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, set=0, binding = 0) buffer Buffer_acc {
+  float acc[];
+};
+layout(std430, set=0, binding = 1) buffer Buffer_x {
+  float x[];
+};
+layout(push_constant) uniform PushConstants {
+  int sarek_acc_length;
+  int sarek_x_length;
+} pc;
+
+#define sarek_acc_length pc.sarek_acc_length
+#define sarek_x_length pc.sarek_x_length
+
+void main() {
+  int tid = int(gl_GlobalInvocationID.x);
+  [[unroll]]
+  for (int i = 0; i <= 8; i++) {
+    acc[tid] = (acc[tid] + x[tid]);
+  }
+}
+=== S0 | unroll_loop | wgsl ===
+@group(0) @binding(0) var<storage, read_write> acc : array<f32>;
+@group(0) @binding(1) var<storage, read_write> x : array<f32>;
+struct Params {
+  sarek_acc_length : i32,
+  sarek_x_length : i32,
+}
+@group(0) @binding(2) var<uniform> params : Params;
+
+// Sarek-generated compute shader: unroll_loop
+@compute @workgroup_size(256, 1, 1)
+fn main(
+  @builtin(global_invocation_id) sarek_gid : vec3<u32>,
+  @builtin(local_invocation_id) sarek_lid : vec3<u32>,
+  @builtin(workgroup_id) sarek_wid : vec3<u32>,
+  @builtin(num_workgroups) sarek_nwg : vec3<u32>
+) {
+  let tid : i32 = i32(sarek_gid.x);
+  for (var i : i32 = 0i; i <= 8i; i = i + 1i) {
+    acc[tid] = (acc[tid] + x[tid]);
+  }
+}
+=== S0 | unroll_loop | ptx (CUDA/PTX) ===
+.version 8.0
+.target sm_86
+.address_size 64
+
+.entry unroll_loop(
+    .param .u64 param_acc,
+    .param .u32 param_sarek_acc_length,
+    .param .u64 param_x,
+    .param .u32 param_sarek_x_length
+)
+{
+    .reg .u32 %r<10>;
+    .reg .u64 %rd<11>;
+    .reg .f32 %f<3>;
+    .reg .pred %p<1>;
+
+    ld.param.u64 %rd0, [param_acc];
+    ld.param.u32 %r0, [param_sarek_acc_length];
+    ld.param.u64 %rd1, [param_x];
+    ld.param.u32 %r1, [param_sarek_x_length];
+    mov.u32 %r2, %tid.x;
+    mov.u32 %r3, %ctaid.x;
+    mov.u32 %r4, %ntid.x;
+    mul.lo.u32 %r5, %r3, %r4;
+    add.u32 %r6, %r2, %r5;
+    mov.u32 %r7, 0;
+    mov.u32 %r8, 8;
+    mov.u32 %r9, %r7;
+L0:
+    setp.gt.s32 %p0, %r9, %r8;
+    @%p0 bra L1;
+    cvt.u64.u32 %rd2, %r6;
+    shl.b64 %rd3, %rd2, 2;
+    add.u64 %rd4, %rd0, %rd3;
+    ld.global.f32 %f0, [%rd4];
+    cvt.u64.u32 %rd5, %r6;
+    shl.b64 %rd6, %rd5, 2;
+    add.u64 %rd7, %rd1, %rd6;
+    ld.global.f32 %f1, [%rd7];
+    add.f32 %f2, %f0, %f1;
+    cvt.u64.u32 %rd8, %r6;
+    shl.b64 %rd9, %rd8, 2;
+    add.u64 %rd10, %rd0, %rd9;
+    st.global.f32 [%rd10], %f2;
+    add.u32 %r9, %r9, 1;
+    bra L0;
+L1:
+    ret;
+}
+=== S0 | plain_f32 | cuda-c (HIP, CUDA/C) ===
+
+extern "C" {
+__global__ void plain_f32(float* __restrict__ out, int sarek_out_length, float* __restrict__ x, int sarek_x_length) {
+  int tid = ((int)(threadIdx.x + blockIdx.x * blockDim.x));
+  out[tid] = (x[tid] * 2.0f);
+}
+}
+=== S0 | plain_f32 | opencl ===
+__kernel void plain_f32(__global float* restrict out, int sarek_out_length, __global float* restrict x, int sarek_x_length) {
+  int tid = ((int)get_global_id(0));
+  out[tid] = (x[tid] * 2.0f);
+}
+=== S0 | plain_f32 | metal ===
+#include <metal_stdlib>
+using namespace metal;
+#pragma METAL fp contract(off)
+
+kernel void plain_f32(device float* out [[buffer(0)]], constant int &sarek_out_length [[buffer(1)]], device float* x [[buffer(2)]], constant int &sarek_x_length [[buffer(3)]],
+uint3 __metal_gid [[thread_position_in_grid]],
+uint3 __metal_tid [[thread_position_in_threadgroup]],
+uint3 __metal_bid [[threadgroup_position_in_grid]],
+uint3 __metal_tpg [[threads_per_threadgroup]],
+uint3 __metal_num_groups [[threadgroups_per_grid]]) {
+  int tid = ((int)__metal_gid.x);
+  out[tid] = (x[tid] * 2.0f);
+}
+
+=== S0 | plain_f32 | glsl (Vulkan) ===
+#version 450
+
+// Sarek-generated compute shader: plain_f32
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, set=0, binding = 0) buffer Buffer_outv {
+  float outv[];
+};
+layout(std430, set=0, binding = 1) buffer Buffer_x {
+  float x[];
+};
+layout(push_constant) uniform PushConstants {
+  int sarek_outv_length;
+  int sarek_x_length;
+} pc;
+
+#define sarek_outv_length pc.sarek_outv_length
+#define sarek_x_length pc.sarek_x_length
+
+void main() {
+  int tid = int(gl_GlobalInvocationID.x);
+  outv[tid] = (x[tid] * 2.0);
+}
+=== S0 | plain_f32 | wgsl ===
+@group(0) @binding(0) var<storage, read_write> out : array<f32>;
+@group(0) @binding(1) var<storage, read_write> x : array<f32>;
+struct Params {
+  sarek_out_length : i32,
+  sarek_x_length : i32,
+}
+@group(0) @binding(2) var<uniform> params : Params;
+
+// Sarek-generated compute shader: plain_f32
+@compute @workgroup_size(256, 1, 1)
+fn main(
+  @builtin(global_invocation_id) sarek_gid : vec3<u32>,
+  @builtin(local_invocation_id) sarek_lid : vec3<u32>,
+  @builtin(workgroup_id) sarek_wid : vec3<u32>,
+  @builtin(num_workgroups) sarek_nwg : vec3<u32>
+) {
+  let tid : i32 = i32(sarek_gid.x);
+  out[tid] = (x[tid] * 2.0f);
+}
+=== S0 | plain_f32 | ptx (CUDA/PTX) ===
+.version 8.0
+.target sm_86
+.address_size 64
+
+.entry plain_f32(
+    .param .u64 param_out,
+    .param .u32 param_sarek_out_length,
+    .param .u64 param_x,
+    .param .u32 param_sarek_x_length
+)
+{
+    .reg .u32 %r<7>;
+    .reg .u64 %rd<8>;
+    .reg .f32 %f<3>;
+
+    ld.param.u64 %rd0, [param_out];
+    ld.param.u32 %r0, [param_sarek_out_length];
+    ld.param.u64 %rd1, [param_x];
+    ld.param.u32 %r1, [param_sarek_x_length];
+    mov.u32 %r2, %tid.x;
+    mov.u32 %r3, %ctaid.x;
+    mov.u32 %r4, %ntid.x;
+    mul.lo.u32 %r5, %r3, %r4;
+    add.u32 %r6, %r2, %r5;
+    cvt.u64.u32 %rd2, %r6;
+    shl.b64 %rd3, %rd2, 2;
+    add.u64 %rd4, %rd1, %rd3;
+    ld.global.f32 %f0, [%rd4];
+    mov.f32 %f1, 0F40000000;
+    mul.f32 %f2, %f0, %f1;
+    cvt.u64.u32 %rd5, %r6;
+    shl.b64 %rd6, %rd5, 2;
+    add.u64 %rd7, %rd0, %rd6;
+    st.global.f32 [%rd7], %f2;
+    ret;
+}
+=== S0 | cm_f16 | cuda-c (HIP, CUDA/C) ===
+#if !defined(__HIP__) && !defined(__HIP_PLATFORM_AMD__)
+#include <cuda_fp16.h>
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+__device__ __forceinline__ float sarek_f32_barrier(float x) {
+  asm volatile("" : "+v"(x));
+  return x;
+}
+#else
+/* NVIDIA: intentionally an identity. A PTX opacity barrier here contributes
+   zero PTX instructions at a narrowing, so ptxas sees the same instruction
+   stream and the cubins are byte-identical (measured on CUDA 13.3, sm_75..
+   sm_121). What keeps the f32 multiply out of the narrowing on NVIDIA is ptxas
+   itself, checked by test_cuda_f16_sass.ml — not this function. NOTE the same
+   barrier IS load-bearing at PTX level for mul->add, but ptxas re-contracts
+   that under the default -fmad=true; do not reuse it as a general contraction
+   barrier here. See docs/fp-contraction-policy.md. */
+__device__ __forceinline__ float sarek_f32_barrier(float x) {
+  return x;
+}
+#endif
+__device__ __forceinline__ __half sarek_narrow_exact_product(float a, float b) {
+  __half h = __float2half(a * b);
+  unsigned short s =
+      (unsigned short)(((__float_as_uint(a) ^ __float_as_uint(b)) >> 16) & 0x8000u);
+  return __ushort_as_half((unsigned short)(__half_as_ushort(h) | s));
+}
+/* Sarek: 16x16x16 f16*f16+f32->f32 subgroup accumulates in floating point in an order the hardware chooses. Results are within gamma_n * (sum|A*B| + |C|) of the exact value (u = 2^-24), NOT bit-identical to the interpreter: Regime B of docs/design/f16-relaxed-accuracy.md; launching it requires Sarek_coopmat.accept_relaxed_accumulation. */
+#if defined(__HIP_PLATFORM_AMD__)
+/* Sarek cooperative matrix, HIP: RDNA3 (gfx11) WMMA, wave32
+   (specs/coopmat-hip-wmma.md). For lane l, with l16 = l % 16 and h = l / 16:
+   an A fragment holds row l16 (k = 0..15), a B fragment holds column l16, and
+   accumulator element j holds row 2*j + h, column l16.
+   load_a_* reads 16 contiguous elements at p + i + l16*s (A row-major, B
+   column-major); load_b_* reads 16 elements s apart at p + i + l16 (B
+   row-major, A column-major); *_acc_cm_* are the column-major accumulator. */
+#if defined(__HIP_DEVICE_COMPILE__) && !defined(__GFX11__)
+#error "Sarek cooperative matrix: the HIP lowering targets gfx11 (RDNA3) WMMA only"
+#endif
+typedef _Float16 sarek_cm_h16 __attribute__((ext_vector_type(16)));
+typedef short sarek_cm_s16 __attribute__((ext_vector_type(16)));
+typedef float sarek_cm_f8 __attribute__((ext_vector_type(8)));
+typedef int sarek_cm_i4 __attribute__((ext_vector_type(4)));
+typedef int sarek_cm_i8 __attribute__((ext_vector_type(8)));
+__device__ __forceinline__ int sarek_cm_l16() { return (int)(__lane_id() & 15u); }
+__device__ __forceinline__ int sarek_cm_h() { return (int)((__lane_id() >> 4) & 1u); }
+__device__ __forceinline__ unsigned sarek_cm_pack4(unsigned char b0, unsigned char b1,
+                                                   unsigned char b2, unsigned char b3) {
+  return (unsigned)b0 | ((unsigned)b1 << 8) | ((unsigned)b2 << 16) | ((unsigned)b3 << 24);
+}
+__device__ __forceinline__ void sarek_cm_load_a_f16(sarek_cm_h16 &f, const __half *p, int i, long long s) {
+  const _Float16 *q = (const _Float16 *)p + i + sarek_cm_l16() * s;
+  for (int e = 0; e < 16; ++e) f[e] = q[e];
+}
+__device__ __forceinline__ void sarek_cm_load_b_f16(sarek_cm_h16 &f, const __half *p, int i, long long s) {
+  const _Float16 *q = (const _Float16 *)p + i + sarek_cm_l16();
+  for (int e = 0; e < 16; ++e) f[e] = q[e * s];
+}
+/* bf16 operands are loaded from a float32 buffer and rounded to bfloat16
+   (nearest even), specs/matrix-pattern-rewrite.md. */
+__device__ __forceinline__ short sarek_cm_bf16(float x) {
+  unsigned u = __float_as_uint(x);
+  if ((u & 0x7fffffffu) > 0x7f800000u) return (short)((u >> 16) | 0x40u);
+  return (short)((u + 0x7fffu + ((u >> 16) & 1u)) >> 16);
+}
+__device__ __forceinline__ void sarek_cm_load_a_bf16(sarek_cm_s16 &f, const float *p, int i, long long s) {
+  const float *q = p + i + sarek_cm_l16() * s;
+  for (int e = 0; e < 16; ++e) f[e] = sarek_cm_bf16(q[e]);
+}
+__device__ __forceinline__ void sarek_cm_load_b_bf16(sarek_cm_s16 &f, const float *p, int i, long long s) {
+  const float *q = p + i + sarek_cm_l16();
+  for (int e = 0; e < 16; ++e) f[e] = sarek_cm_bf16(q[e * s]);
+}
+__device__ __forceinline__ void sarek_cm_load_a_i8(sarek_cm_i4 &f, const unsigned char *p, int i, long long s) {
+  const unsigned char *q = p + i + sarek_cm_l16() * s;
+  for (int w = 0; w < 4; ++w)
+    f[w] = (int)sarek_cm_pack4(q[4 * w], q[4 * w + 1], q[4 * w + 2], q[4 * w + 3]);
+}
+__device__ __forceinline__ void sarek_cm_load_b_i8(sarek_cm_i4 &f, const unsigned char *p, int i, long long s) {
+  const unsigned char *q = p + i + sarek_cm_l16();
+  for (int w = 0; w < 4; ++w)
+    f[w] = (int)sarek_cm_pack4(q[(4 * w) * s], q[(4 * w + 1) * s],
+                               q[(4 * w + 2) * s], q[(4 * w + 3) * s]);
+}
+__device__ __forceinline__ void sarek_cm_load_acc_f32(sarek_cm_f8 &f, const float *p, int i, long long s) {
+  const float *q = p + i + sarek_cm_h() * s + sarek_cm_l16();
+  for (int j = 0; j < 8; ++j) f[j] = q[2 * j * s];
+}
+__device__ __forceinline__ void sarek_cm_store_acc_f32(const sarek_cm_f8 &f, float *p, int i, long long s) {
+  float *q = p + i + sarek_cm_h() * s + sarek_cm_l16();
+  for (int j = 0; j < 8; ++j) q[2 * j * s] = f[j];
+}
+__device__ __forceinline__ void sarek_cm_load_acc_i32(sarek_cm_i8 &f, const int *p, int i, long long s) {
+  const int *q = p + i + sarek_cm_h() * s + sarek_cm_l16();
+  for (int j = 0; j < 8; ++j) f[j] = q[2 * j * s];
+}
+__device__ __forceinline__ void sarek_cm_store_acc_i32(const sarek_cm_i8 &f, int *p, int i, long long s) {
+  int *q = p + i + sarek_cm_h() * s + sarek_cm_l16();
+  for (int j = 0; j < 8; ++j) q[2 * j * s] = f[j];
+}
+__device__ __forceinline__ void sarek_cm_load_acc_cm_f32(sarek_cm_f8 &f, const float *p, int i, long long s) {
+  const float *q = p + i + sarek_cm_l16() * s + sarek_cm_h();
+  for (int j = 0; j < 8; ++j) f[j] = q[2 * j];
+}
+__device__ __forceinline__ void sarek_cm_store_acc_cm_f32(const sarek_cm_f8 &f, float *p, int i, long long s) {
+  float *q = p + i + sarek_cm_l16() * s + sarek_cm_h();
+  for (int j = 0; j < 8; ++j) q[2 * j] = f[j];
+}
+__device__ __forceinline__ void sarek_cm_load_acc_cm_i32(sarek_cm_i8 &f, const int *p, int i, long long s) {
+  const int *q = p + i + sarek_cm_l16() * s + sarek_cm_h();
+  for (int j = 0; j < 8; ++j) f[j] = q[2 * j];
+}
+__device__ __forceinline__ void sarek_cm_store_acc_cm_i32(const sarek_cm_i8 &f, int *p, int i, long long s) {
+  int *q = p + i + sarek_cm_l16() * s + sarek_cm_h();
+  for (int j = 0; j < 8; ++j) q[2 * j] = f[j];
+}
+#else
+/* Sarek cooperative matrix, CUDA: nvcuda::wmma m16n16k16. COMPILE-CHECKED
+   ONLY (no NVIDIA GPU was available; specs/coopmat-hip-wmma.md). wmma's
+   load/store need a 32-byte aligned pointer and a row stride that is a
+   multiple of 16 bytes; Sarek's CM_load promises any index and stride, so a
+   launch that violates the precondition traps instead of computing on a
+   misaligned fragment. */
+#include <mma.h>
+__device__ __forceinline__ void sarek_cm_require(const void *p, long long s, int bytes) {
+  if ((((unsigned long long)p) & 31ull) != 0ull || ((s * bytes) & 15) != 0) __trap();
+}
+#endif
+
+extern "C" {
+__global__ void cm_f16(__half* __restrict__ a, int sarek_a_length, __half* __restrict__ b, int sarek_b_length, float* __restrict__ c, int sarek_c_length, float* __restrict__ d, int sarek_d_length) {
+#if defined(__HIP_PLATFORM_AMD__)
+  sarek_cm_h16 fa = {};
+#else
+  nvcuda::wmma::fragment<nvcuda::wmma::matrix_a, 16, 16, 16, __half, nvcuda::wmma::row_major> fa; nvcuda::wmma::fill_fragment(fa, 0);
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+  sarek_cm_h16 fb = {};
+#else
+  nvcuda::wmma::fragment<nvcuda::wmma::matrix_b, 16, 16, 16, __half, nvcuda::wmma::row_major> fb; nvcuda::wmma::fill_fragment(fb, 0);
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+  sarek_cm_f8 fc = {};
+#else
+  nvcuda::wmma::fragment<nvcuda::wmma::accumulator, 16, 16, 16, float> fc; nvcuda::wmma::fill_fragment(fc, 0);
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+  sarek_cm_load_a_f16(fa, a, (0), (16));
+#else
+  sarek_cm_require(((const __half *)(a) + (0)), (16), 2); nvcuda::wmma::load_matrix_sync(fa, ((const __half *)(a) + (0)), (16));
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+  sarek_cm_load_b_f16(fb, b, (0), (16));
+#else
+  sarek_cm_require(((const __half *)(b) + (0)), (16), 2); nvcuda::wmma::load_matrix_sync(fb, ((const __half *)(b) + (0)), (16));
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+  sarek_cm_load_acc_f32(fc, c, (0), (16));
+#else
+  sarek_cm_require(((const float *)(c) + (0)), (16), 4); nvcuda::wmma::load_matrix_sync(fc, ((const float *)(c) + (0)), (16), nvcuda::wmma::mem_row_major);
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+  fc = __builtin_amdgcn_wmma_f32_16x16x16_f16_w32(fa, fb, fc);
+#else
+  nvcuda::wmma::mma_sync(fc, fa, fb, fc);
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+  sarek_cm_store_acc_f32(fc, d, (0), (16));
+#else
+  sarek_cm_require(((float *)(d) + (0)), (16), 4); nvcuda::wmma::store_matrix_sync(((float *)(d) + (0)), fc, (16), nvcuda::wmma::mem_row_major);
+#endif
+}
+}
+=== S0 | cm_f16 | opencl ===
+EXN [OpenCL Codegen] Unsupported construct 'f16': OpenCL: float16 is refused by measurement, not pending implementation — rusticl/radeonsi fuses the f32 multiply into the f32->f16 narrowing, so 620/63488 binary16 inputs disagree with the interpreter, and no affordable barrier exists on this path. See docs/fp-contraction-policy.md (#57 slice 2a).
+=== S0 | cm_f16 | metal ===
+EXN [Metal Codegen] Unsupported construct 'cooperative-matrix shape': Metal: only 8x8x8 is lowered (simdgroup_matrix is 8x8 and nothing else); got 16x16x16
+=== S0 | cm_f16 | glsl (Vulkan) ===
+EXN [Vulkan Codegen] Unsupported construct 'f16': GLSL: float16 is refused by measurement, not pending implementation — RADV's ACO backend absorbs the f32->f16 narrowing into the arithmetic that feeds it, so 2912/63488 binary16 inputs disagree with the interpreter on a single narrowing, and `precise` does not prevent it. See docs/fp-contraction-policy.md (#57 slice 2b).
+=== S0 | cm_f16 | wgsl ===
+EXN [WebGPU Codegen] Unsupported construct 'f16': WGSL: float16 not yet supported (#57 slice 2 — needs a module-top `enable f16;` directive)
+=== S0 | cm_f16 | ptx (CUDA/PTX) ===
+EXN Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error("PTX codegen: unsupported construct: kernel-level float16 usage: float16 not supported by the PTX backend (#57 slice 2 \226\128\148 needs a new %h register class and an audit of the prefix-based class guards)")
+=== S0 | cm_i32 | cuda-c (HIP, CUDA/C) ===
+#if defined(__HIP_PLATFORM_AMD__)
+/* Sarek cooperative matrix, HIP: RDNA3 (gfx11) WMMA, wave32
+   (specs/coopmat-hip-wmma.md). For lane l, with l16 = l % 16 and h = l / 16:
+   an A fragment holds row l16 (k = 0..15), a B fragment holds column l16, and
+   accumulator element j holds row 2*j + h, column l16.
+   load_a_* reads 16 contiguous elements at p + i + l16*s (A row-major, B
+   column-major); load_b_* reads 16 elements s apart at p + i + l16 (B
+   row-major, A column-major); *_acc_cm_* are the column-major accumulator. */
+#if defined(__HIP_DEVICE_COMPILE__) && !defined(__GFX11__)
+#error "Sarek cooperative matrix: the HIP lowering targets gfx11 (RDNA3) WMMA only"
+#endif
+typedef _Float16 sarek_cm_h16 __attribute__((ext_vector_type(16)));
+typedef short sarek_cm_s16 __attribute__((ext_vector_type(16)));
+typedef float sarek_cm_f8 __attribute__((ext_vector_type(8)));
+typedef int sarek_cm_i4 __attribute__((ext_vector_type(4)));
+typedef int sarek_cm_i8 __attribute__((ext_vector_type(8)));
+__device__ __forceinline__ int sarek_cm_l16() { return (int)(__lane_id() & 15u); }
+__device__ __forceinline__ int sarek_cm_h() { return (int)((__lane_id() >> 4) & 1u); }
+__device__ __forceinline__ unsigned sarek_cm_pack4(unsigned char b0, unsigned char b1,
+                                                   unsigned char b2, unsigned char b3) {
+  return (unsigned)b0 | ((unsigned)b1 << 8) | ((unsigned)b2 << 16) | ((unsigned)b3 << 24);
+}
+__device__ __forceinline__ void sarek_cm_load_a_f16(sarek_cm_h16 &f, const __half *p, int i, long long s) {
+  const _Float16 *q = (const _Float16 *)p + i + sarek_cm_l16() * s;
+  for (int e = 0; e < 16; ++e) f[e] = q[e];
+}
+__device__ __forceinline__ void sarek_cm_load_b_f16(sarek_cm_h16 &f, const __half *p, int i, long long s) {
+  const _Float16 *q = (const _Float16 *)p + i + sarek_cm_l16();
+  for (int e = 0; e < 16; ++e) f[e] = q[e * s];
+}
+/* bf16 operands are loaded from a float32 buffer and rounded to bfloat16
+   (nearest even), specs/matrix-pattern-rewrite.md. */
+__device__ __forceinline__ short sarek_cm_bf16(float x) {
+  unsigned u = __float_as_uint(x);
+  if ((u & 0x7fffffffu) > 0x7f800000u) return (short)((u >> 16) | 0x40u);
+  return (short)((u + 0x7fffu + ((u >> 16) & 1u)) >> 16);
+}
+__device__ __forceinline__ void sarek_cm_load_a_bf16(sarek_cm_s16 &f, const float *p, int i, long long s) {
+  const float *q = p + i + sarek_cm_l16() * s;
+  for (int e = 0; e < 16; ++e) f[e] = sarek_cm_bf16(q[e]);
+}
+__device__ __forceinline__ void sarek_cm_load_b_bf16(sarek_cm_s16 &f, const float *p, int i, long long s) {
+  const float *q = p + i + sarek_cm_l16();
+  for (int e = 0; e < 16; ++e) f[e] = sarek_cm_bf16(q[e * s]);
+}
+__device__ __forceinline__ void sarek_cm_load_a_i8(sarek_cm_i4 &f, const unsigned char *p, int i, long long s) {
+  const unsigned char *q = p + i + sarek_cm_l16() * s;
+  for (int w = 0; w < 4; ++w)
+    f[w] = (int)sarek_cm_pack4(q[4 * w], q[4 * w + 1], q[4 * w + 2], q[4 * w + 3]);
+}
+__device__ __forceinline__ void sarek_cm_load_b_i8(sarek_cm_i4 &f, const unsigned char *p, int i, long long s) {
+  const unsigned char *q = p + i + sarek_cm_l16();
+  for (int w = 0; w < 4; ++w)
+    f[w] = (int)sarek_cm_pack4(q[(4 * w) * s], q[(4 * w + 1) * s],
+                               q[(4 * w + 2) * s], q[(4 * w + 3) * s]);
+}
+__device__ __forceinline__ void sarek_cm_load_acc_f32(sarek_cm_f8 &f, const float *p, int i, long long s) {
+  const float *q = p + i + sarek_cm_h() * s + sarek_cm_l16();
+  for (int j = 0; j < 8; ++j) f[j] = q[2 * j * s];
+}
+__device__ __forceinline__ void sarek_cm_store_acc_f32(const sarek_cm_f8 &f, float *p, int i, long long s) {
+  float *q = p + i + sarek_cm_h() * s + sarek_cm_l16();
+  for (int j = 0; j < 8; ++j) q[2 * j * s] = f[j];
+}
+__device__ __forceinline__ void sarek_cm_load_acc_i32(sarek_cm_i8 &f, const int *p, int i, long long s) {
+  const int *q = p + i + sarek_cm_h() * s + sarek_cm_l16();
+  for (int j = 0; j < 8; ++j) f[j] = q[2 * j * s];
+}
+__device__ __forceinline__ void sarek_cm_store_acc_i32(const sarek_cm_i8 &f, int *p, int i, long long s) {
+  int *q = p + i + sarek_cm_h() * s + sarek_cm_l16();
+  for (int j = 0; j < 8; ++j) q[2 * j * s] = f[j];
+}
+__device__ __forceinline__ void sarek_cm_load_acc_cm_f32(sarek_cm_f8 &f, const float *p, int i, long long s) {
+  const float *q = p + i + sarek_cm_l16() * s + sarek_cm_h();
+  for (int j = 0; j < 8; ++j) f[j] = q[2 * j];
+}
+__device__ __forceinline__ void sarek_cm_store_acc_cm_f32(const sarek_cm_f8 &f, float *p, int i, long long s) {
+  float *q = p + i + sarek_cm_l16() * s + sarek_cm_h();
+  for (int j = 0; j < 8; ++j) q[2 * j] = f[j];
+}
+__device__ __forceinline__ void sarek_cm_load_acc_cm_i32(sarek_cm_i8 &f, const int *p, int i, long long s) {
+  const int *q = p + i + sarek_cm_l16() * s + sarek_cm_h();
+  for (int j = 0; j < 8; ++j) f[j] = q[2 * j];
+}
+__device__ __forceinline__ void sarek_cm_store_acc_cm_i32(const sarek_cm_i8 &f, int *p, int i, long long s) {
+  int *q = p + i + sarek_cm_l16() * s + sarek_cm_h();
+  for (int j = 0; j < 8; ++j) q[2 * j] = f[j];
+}
+#else
+/* Sarek cooperative matrix, CUDA: nvcuda::wmma m16n16k16. COMPILE-CHECKED
+   ONLY (no NVIDIA GPU was available; specs/coopmat-hip-wmma.md). wmma's
+   load/store need a 32-byte aligned pointer and a row stride that is a
+   multiple of 16 bytes; Sarek's CM_load promises any index and stride, so a
+   launch that violates the precondition traps instead of computing on a
+   misaligned fragment. */
+#include <mma.h>
+__device__ __forceinline__ void sarek_cm_require(const void *p, long long s, int bytes) {
+  if ((((unsigned long long)p) & 31ull) != 0ull || ((s * bytes) & 15) != 0) __trap();
+}
+#endif
+
+extern "C" {
+__global__ void cm_i32(unsigned char* __restrict__ a, int sarek_a_length, unsigned char* __restrict__ b, int sarek_b_length, int* __restrict__ c, int sarek_c_length, int* __restrict__ d, int sarek_d_length) {
+#if defined(__HIP_PLATFORM_AMD__)
+  sarek_cm_i4 fa = {};
+#else
+  nvcuda::wmma::fragment<nvcuda::wmma::matrix_a, 16, 16, 16, unsigned char, nvcuda::wmma::row_major> fa; nvcuda::wmma::fill_fragment(fa, 0);
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+  sarek_cm_i4 fb = {};
+#else
+  nvcuda::wmma::fragment<nvcuda::wmma::matrix_b, 16, 16, 16, unsigned char, nvcuda::wmma::row_major> fb; nvcuda::wmma::fill_fragment(fb, 0);
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+  sarek_cm_i8 fc = {};
+#else
+  nvcuda::wmma::fragment<nvcuda::wmma::accumulator, 16, 16, 16, int> fc; nvcuda::wmma::fill_fragment(fc, 0);
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+  sarek_cm_load_a_i8(fa, a, (0), (16));
+#else
+  sarek_cm_require(((const unsigned char *)(a) + (0)), (16), 1); nvcuda::wmma::load_matrix_sync(fa, ((const unsigned char *)(a) + (0)), (16));
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+  sarek_cm_load_b_i8(fb, b, (0), (16));
+#else
+  sarek_cm_require(((const unsigned char *)(b) + (0)), (16), 1); nvcuda::wmma::load_matrix_sync(fb, ((const unsigned char *)(b) + (0)), (16));
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+  sarek_cm_load_acc_i32(fc, c, (0), (16));
+#else
+  sarek_cm_require(((const int *)(c) + (0)), (16), 4); nvcuda::wmma::load_matrix_sync(fc, ((const int *)(c) + (0)), (16), nvcuda::wmma::mem_row_major);
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+  fc = __builtin_amdgcn_wmma_i32_16x16x16_iu8_w32(false, fa, false, fb, fc, false);
+#else
+  nvcuda::wmma::mma_sync(fc, fa, fb, fc, false);
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+  sarek_cm_store_acc_i32(fc, d, (0), (16));
+#else
+  sarek_cm_require(((int *)(d) + (0)), (16), 4); nvcuda::wmma::store_matrix_sync(((int *)(d) + (0)), fc, (16), nvcuda::wmma::mem_row_major);
+#endif
+}
+}
+=== S0 | cm_i32 | opencl ===
+EXN [OpenCL Codegen] Unsupported construct 'cooperative matrix': OpenCL: no cooperative-matrix lowering: no OpenCL device available to this project advertises a matrix extension (cl_intel_subgroup_matrix_multiply_accumulate or any other; rusticl on the RX 7900 XTX and the Intel oneAPI CPU runtime checked with clinfo, 2026-10-12), so there is nothing to lower to or to verify against. Cooperative matrices and their uint8 operand buffers are emitted by the Vulkan, CUDA/HIP and Metal backends (backlog-62)
+=== S0 | cm_i32 | metal ===
+EXN [Metal Codegen] Unsupported construct 'cooperative-matrix shape': Metal: only 8x8x8 is lowered (simdgroup_matrix is 8x8 and nothing else); got 16x16x16
+=== S0 | cm_i32 | glsl (Vulkan) ===
+#version 450
+#extension GL_KHR_cooperative_matrix : require
+#extension GL_KHR_memory_scope_semantics : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int32 : require
+
+// Sarek-generated compute shader: cm_i32
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, set=0, binding = 0) buffer Buffer_a {
+  uint8_t a[];
+};
+layout(std430, set=0, binding = 1) buffer Buffer_b {
+  uint8_t b[];
+};
+layout(std430, set=0, binding = 2) buffer Buffer_c {
+  int c[];
+};
+layout(std430, set=0, binding = 3) buffer Buffer_d {
+  int d[];
+};
+layout(push_constant) uniform PushConstants {
+  int sarek_a_length;
+  int sarek_b_length;
+  int sarek_c_length;
+  int sarek_d_length;
+} pc;
+
+#define sarek_a_length pc.sarek_a_length
+#define sarek_b_length pc.sarek_b_length
+#define sarek_c_length pc.sarek_c_length
+#define sarek_d_length pc.sarek_d_length
+
+void main() {
+  coopmat<uint8_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseA> fa = coopmat<uint8_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseA>(0);
+  coopmat<uint8_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseB> fb = coopmat<uint8_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseB>(0);
+  coopmat<int32_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseAccumulator> fc = coopmat<int32_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseAccumulator>(0);
+  coopMatLoad(fa, a, 0, 16, gl_CooperativeMatrixLayoutRowMajor);
+  coopMatLoad(fb, b, 0, 16, gl_CooperativeMatrixLayoutRowMajor);
+  coopMatLoad(fc, c, 0, 16, gl_CooperativeMatrixLayoutRowMajor);
+  fc = coopMatMulAdd(fa, fb, fc);
+  coopMatStore(fc, d, 0, 16, gl_CooperativeMatrixLayoutRowMajor);
+}
+=== S0 | cm_i32 | wgsl ===
+EXN [WebGPU Codegen] Unsupported construct 'cooperative matrix': WGSL: the WGSL backend has no cooperative-matrix path; cooperative matrices and their uint8 operand buffers are emitted only by the Vulkan and CUDA/HIP backends (backlog-62)
+=== S0 | cm_i32 | ptx (CUDA/PTX) ===
+EXN Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error("PTX codegen: unsupported construct: kernel-level cooperative-matrix usage: cooperative matrices and their uint8 operand buffers are emitted only by the Vulkan and CUDA/HIP backends (backlog-62)")
+=== S0 | cm_f32_8x8 | cuda-c (HIP, CUDA/C) ===
+EXN [CUDA Codegen] Unsupported construct 'cooperative-matrix shape': CUDA/HIP: only 16x16x16 is lowered (RDNA3 WMMA and nvcuda::wmma m16n16k16); got 8x8x8
+=== S0 | cm_f32_8x8 | opencl ===
+EXN [OpenCL Codegen] Unsupported construct 'cooperative matrix': OpenCL: no cooperative-matrix lowering: no OpenCL device available to this project advertises a matrix extension (cl_intel_subgroup_matrix_multiply_accumulate or any other; rusticl on the RX 7900 XTX and the Intel oneAPI CPU runtime checked with clinfo, 2026-10-12), so there is nothing to lower to or to verify against. Cooperative matrices and their uint8 operand buffers are emitted by the Vulkan, CUDA/HIP and Metal backends (backlog-62)
+=== S0 | cm_f32_8x8 | metal ===
+EXN [Metal Codegen] Unsupported construct 'cooperative-matrix fragment': Metal: f32 operand fragments are not lowered (float 8x8 simdgroup_matrix exists, but its products are not exact in binary32, so no error bound or oracle has been derived for it)
+=== S0 | cm_f32_8x8 | glsl (Vulkan) ===
+EXN [Vulkan Codegen] Unsupported construct 'f32 cooperative matrix': GLSL: the float cooperative-matrix lowering is not written; the bounded contract of docs/design/f16-relaxed-accuracy.md §5 is measured on HIP only (specs/coopmat-hip-wmma.md). The INTEGER configurations are available and are under the strict contract.
+=== S0 | cm_f32_8x8 | wgsl ===
+EXN [WebGPU Codegen] Unsupported construct 'cooperative matrix': WGSL: the WGSL backend has no cooperative-matrix path; cooperative matrices and their uint8 operand buffers are emitted only by the Vulkan and CUDA/HIP backends (backlog-62)
+=== S0 | cm_f32_8x8 | ptx (CUDA/PTX) ===
+EXN Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error("PTX codegen: unsupported construct: kernel-level cooperative-matrix usage: cooperative matrices and their uint8 operand buffers are emitted only by the Vulkan and CUDA/HIP backends (backlog-62)")
+=== S0 | cm_f16_8x8 | cuda-c (HIP, CUDA/C) ===
+EXN [CUDA Codegen] Unsupported construct 'cooperative-matrix shape': CUDA/HIP: only 16x16x16 is lowered (RDNA3 WMMA and nvcuda::wmma m16n16k16); got 8x8x8
+=== S0 | cm_f16_8x8 | opencl ===
+EXN [OpenCL Codegen] Unsupported construct 'f16': OpenCL: float16 is refused by measurement, not pending implementation — rusticl/radeonsi fuses the f32 multiply into the f32->f16 narrowing, so 620/63488 binary16 inputs disagree with the interpreter, and no affordable barrier exists on this path. See docs/fp-contraction-policy.md (#57 slice 2a).
+=== S0 | cm_f16_8x8 | metal ===
+#include <metal_stdlib>
+#include <metal_simdgroup_matrix>
+using namespace metal;
+#pragma METAL fp contract(off)
+
+kernel void cm_f16_8x8(device half* a [[buffer(0)]], constant int &sarek_a_length [[buffer(1)]], device half* b [[buffer(2)]], constant int &sarek_b_length [[buffer(3)]], device float* c [[buffer(4)]], constant int &sarek_c_length [[buffer(5)]], device float* d [[buffer(6)]], constant int &sarek_d_length [[buffer(7)]],
+uint3 __metal_gid [[thread_position_in_grid]],
+uint3 __metal_tid [[thread_position_in_threadgroup]],
+uint3 __metal_bid [[threadgroup_position_in_grid]],
+uint3 __metal_tpg [[threads_per_threadgroup]],
+uint3 __metal_num_groups [[threadgroups_per_grid]]) {
+  simdgroup_half8x8 fa = make_filled_simdgroup_matrix<half, 8, 8>(0);
+  simdgroup_half8x8 fb = make_filled_simdgroup_matrix<half, 8, 8>(0);
+  simdgroup_float8x8 fc = make_filled_simdgroup_matrix<float, 8, 8>(0);
+  simdgroup_load(fa, (a + (0)), (ulong)(16), ulong2(0, 0), false);
+  simdgroup_load(fb, (b + (0)), (ulong)(16), ulong2(0, 0), false);
+  simdgroup_load(fc, (c + (0)), (ulong)(16), ulong2(0, 0), false);
+  simdgroup_multiply_accumulate(fc, fa, fb, fc);
+  simdgroup_store(fc, (d + (0)), (ulong)(16), ulong2(0, 0), false);
+}
+
+=== S0 | cm_f16_8x8 | glsl (Vulkan) ===
+EXN [Vulkan Codegen] Unsupported construct 'f16': GLSL: float16 is refused by measurement, not pending implementation — RADV's ACO backend absorbs the f32->f16 narrowing into the arithmetic that feeds it, so 2912/63488 binary16 inputs disagree with the interpreter on a single narrowing, and `precise` does not prevent it. See docs/fp-contraction-policy.md (#57 slice 2b).
+=== S0 | cm_f16_8x8 | wgsl ===
+EXN [WebGPU Codegen] Unsupported construct 'f16': WGSL: float16 not yet supported (#57 slice 2 — needs a module-top `enable f16;` directive)
+=== S0 | cm_f16_8x8 | ptx (CUDA/PTX) ===
+EXN Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error("PTX codegen: unsupported construct: kernel-level float16 usage: float16 not supported by the PTX backend (#57 slice 2 \226\128\148 needs a new %h register class and an audit of the prefix-based class guards)")
+verdict S0 | 16x16x16 f16*f16+f32->f32 subgroup | Unavailable [coopmat-relaxed-accumulation/policy] 16x16x16 f16*f16+f32->f32 subgroup accumulates in floating point in an order the hardware chooses, so its result is only BOUNDED (|D - exact| <= gamma_n * (sum|A*B| + |C|)), not bit-identical to the interpreter, and the program has not accepted that | remedy=Call Sarek_coopmat.accept_relaxed_accumulation ~reason:"..." once before launching, or use an integer configuration (exact).
+verdict S0 | 16x16x16 bf16*bf16+f32->f32 subgroup | Unavailable [coopmat-relaxed-accumulation/policy] 16x16x16 bf16*bf16+f32->f32 subgroup accumulates in floating point in an order the hardware chooses, so its result is only BOUNDED (|D - exact| <= gamma_n * (sum|A*B| + |C|)), not bit-identical to the interpreter, and the program has not accepted that | remedy=Call Sarek_coopmat.accept_relaxed_accumulation ~reason:"..." once before launching, or use an integer configuration (exact).
+verdict S0 | 16x16x16 u8*u8+s32->s32 subgroup | Available
+verdict S0 | 16x16x16 s8*s8+s32->s32 subgroup | Available
+verdict S0 | 16x16x16 f32*f32+f32->f32 subgroup | Unavailable [coopmat-float-accumulation/policy] 16x16x16 f32*f32+f32->f32 subgroup has no derived error bound: only f16*f16+f32->f32 and bf16*bf16+f32->f32 have one (an f16 result rounds every partial sum to binary16; a float operand with an integer accumulator has no defined meaning) | remedy=Accumulate in f32 (f16*f16+f32->f32 or bf16*bf16+f32->f32).
+verdict S0 | 16x16x16 f16*f16+f16->f16 subgroup | Unavailable [coopmat-float-accumulation/policy] 16x16x16 f16*f16+f16->f16 subgroup has no derived error bound: only f16*f16+f32->f32 and bf16*bf16+f32->f32 have one (an f16 result rounds every partial sum to binary16; a float operand with an integer accumulator has no defined meaning) | remedy=Accumulate in f32 (f16*f16+f32->f32 or bf16*bf16+f32->f32).
+verdict S0 | 16x16x16 f16*f16+s32->s32 subgroup | Unavailable [coopmat-float-accumulation/policy] 16x16x16 f16*f16+s32->s32 subgroup has no derived error bound: only f16*f16+f32->f32 and bf16*bf16+f32->f32 have one (an f16 result rounds every partial sum to binary16; a float operand with an integer accumulator has no defined meaning) | remedy=Accumulate in f32 (f16*f16+f32->f32 or bf16*bf16+f32->f32).
+verdict S0 | 16x16x16 f16*f16+f32->f32 saturating subgroup | Unavailable [coopmat-float-accumulation/policy] 16x16x16 f16*f16+f32->f32 saturating subgroup has no derived error bound: only f16*f16+f32->f32 and bf16*bf16+f32->f32 have one (an f16 result rounds every partial sum to binary16; a float operand with an integer accumulator has no defined meaning) | remedy=Accumulate in f32 (f16*f16+f32->f32 or bf16*bf16+f32->f32).
+reader S0 | relaxed_accumulation_reason = none
+reader S0 | operand_rounding_reason f16 = none
+reader S0 | operand_rounding_reason bf16 = none
+reader S0 | operand_rounding_reason bf16x3 = none
+reader S0 | automatic_float_rewrite_reason = none
+reader S0 | single_rounding_reason t2_f16_sum = none
+reader S0 | single_rounding_reason q4k_like = none
+reader S0 | single_rounding_reason inexact_const = none
+reader S0 | single_rounding_reason unroll_loop = none
+reader S0 | single_rounding_reason plain_f32 = none
+reader S0 | single_rounding_reason cm_f16 = none
+reader S0 | single_rounding_reason cm_i32 = none
+reader S0 | single_rounding_reason cm_f32_8x8 = none
+reader S0 | single_rounding_reason cm_f16_8x8 = none
+=== SAREK_AUTO_UNROLL=0 | unroll_loop | cuda-c ===
+
+extern "C" {
+__global__ void unroll_loop(float* __restrict__ acc, int sarek_acc_length, float* __restrict__ x, int sarek_x_length) {
+  int tid = ((int)(threadIdx.x + blockIdx.x * blockDim.x));
+  for (int i = 0; i <= 8; i++) {
+    acc[tid] = (acc[tid] + x[tid]);
+  }
+}
+}
+=== S1 | t2_f16_sum | cuda-c (HIP, CUDA/C) ===
+(same as S0)
+=== S1 | t2_f16_sum | opencl ===
+(same as S0)
+=== S1 | t2_f16_sum | metal ===
+(same as S0)
+=== S1 | t2_f16_sum | glsl (Vulkan) ===
+(same as S0)
+=== S1 | t2_f16_sum | wgsl ===
+(same as S0)
+=== S1 | t2_f16_sum | ptx (CUDA/PTX) ===
+(same as S0)
+=== S1 | q4k_like | cuda-c (HIP, CUDA/C) ===
+#if !defined(__HIP__) && !defined(__HIP_PLATFORM_AMD__)
+#include <cuda_fp16.h>
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+__device__ __forceinline__ float sarek_f32_barrier(float x) {
+  asm volatile("" : "+v"(x));
+  return x;
+}
+#else
+/* NVIDIA: intentionally an identity. A PTX opacity barrier here contributes
+   zero PTX instructions at a narrowing, so ptxas sees the same instruction
+   stream and the cubins are byte-identical (measured on CUDA 13.3, sm_75..
+   sm_121). What keeps the f32 multiply out of the narrowing on NVIDIA is ptxas
+   itself, checked by test_cuda_f16_sass.ml — not this function. NOTE the same
+   barrier IS load-bearing at PTX level for mul->add, but ptxas re-contracts
+   that under the default -fmad=true; do not reuse it as a general contraction
+   barrier here. See docs/fp-contraction-policy.md. */
+__device__ __forceinline__ float sarek_f32_barrier(float x) {
+  return x;
+}
+#endif
+__device__ __forceinline__ __half sarek_narrow_exact_product(float a, float b) {
+  __half h = __float2half(a * b);
+  unsigned short s =
+      (unsigned short)(((__float_as_uint(a) ^ __float_as_uint(b)) >> 16) & 0x8000u);
+  return __ushort_as_half((unsigned short)(__half_as_ushort(h) | s));
+}
+/* Sarek: Sarek_f16_policy.accept_single_rounding covers this kernel: its f32->f16 narrowings carry no barrier and may round once where the interpreter rounds twice (specs/f16-narrowing-barrier.md). */
+
+extern "C" {
+__global__ void q4k_like(__half* __restrict__ out, int sarek_out_length, __half* __restrict__ h, int sarek_h_length, __half* __restrict__ g, int sarek_g_length, int* __restrict__ q, int sarek_q_length, float* __restrict__ x, int sarek_x_length) {
+  int tid = ((int)(threadIdx.x + blockIdx.x * blockDim.x));
+  out[tid] = __float2half((((float)h[tid] * (float)((q[tid] & 15))) - ((float)g[tid] * (float)(((q[tid] >> 4) & 63)))));
+}
+}
+=== S1 | q4k_like | opencl ===
+(same as S0)
+=== S1 | q4k_like | metal ===
+(same as S0)
+=== S1 | q4k_like | glsl (Vulkan) ===
+(same as S0)
+=== S1 | q4k_like | wgsl ===
+(same as S0)
+=== S1 | q4k_like | ptx (CUDA/PTX) ===
+(same as S0)
+=== S1 | inexact_const | cuda-c (HIP, CUDA/C) ===
+(same as S0)
+=== S1 | inexact_const | opencl ===
+(same as S0)
+=== S1 | inexact_const | metal ===
+(same as S0)
+=== S1 | inexact_const | glsl (Vulkan) ===
+(same as S0)
+=== S1 | inexact_const | wgsl ===
+(same as S0)
+=== S1 | inexact_const | ptx (CUDA/PTX) ===
+(same as S0)
+=== S1 | unroll_loop | cuda-c (HIP, CUDA/C) ===
+(same as S0)
+=== S1 | unroll_loop | opencl ===
+(same as S0)
+=== S1 | unroll_loop | metal ===
+(same as S0)
+=== S1 | unroll_loop | glsl (Vulkan) ===
+(same as S0)
+=== S1 | unroll_loop | wgsl ===
+(same as S0)
+=== S1 | unroll_loop | ptx (CUDA/PTX) ===
+(same as S0)
+=== S1 | plain_f32 | cuda-c (HIP, CUDA/C) ===
+(same as S0)
+=== S1 | plain_f32 | opencl ===
+(same as S0)
+=== S1 | plain_f32 | metal ===
+(same as S0)
+=== S1 | plain_f32 | glsl (Vulkan) ===
+(same as S0)
+=== S1 | plain_f32 | wgsl ===
+(same as S0)
+=== S1 | plain_f32 | ptx (CUDA/PTX) ===
+(same as S0)
+=== S1 | cm_f16 | cuda-c (HIP, CUDA/C) ===
+(same as S0)
+=== S1 | cm_f16 | opencl ===
+(same as S0)
+=== S1 | cm_f16 | metal ===
+(same as S0)
+=== S1 | cm_f16 | glsl (Vulkan) ===
+(same as S0)
+=== S1 | cm_f16 | wgsl ===
+(same as S0)
+=== S1 | cm_f16 | ptx (CUDA/PTX) ===
+(same as S0)
+=== S1 | cm_i32 | cuda-c (HIP, CUDA/C) ===
+(same as S0)
+=== S1 | cm_i32 | opencl ===
+(same as S0)
+=== S1 | cm_i32 | metal ===
+(same as S0)
+=== S1 | cm_i32 | glsl (Vulkan) ===
+(same as S0)
+=== S1 | cm_i32 | wgsl ===
+(same as S0)
+=== S1 | cm_i32 | ptx (CUDA/PTX) ===
+(same as S0)
+=== S1 | cm_f32_8x8 | cuda-c (HIP, CUDA/C) ===
+(same as S0)
+=== S1 | cm_f32_8x8 | opencl ===
+(same as S0)
+=== S1 | cm_f32_8x8 | metal ===
+(same as S0)
+=== S1 | cm_f32_8x8 | glsl (Vulkan) ===
+(same as S0)
+=== S1 | cm_f32_8x8 | wgsl ===
+(same as S0)
+=== S1 | cm_f32_8x8 | ptx (CUDA/PTX) ===
+(same as S0)
+=== S1 | cm_f16_8x8 | cuda-c (HIP, CUDA/C) ===
+(same as S0)
+=== S1 | cm_f16_8x8 | opencl ===
+(same as S0)
+=== S1 | cm_f16_8x8 | metal ===
+(same as S0)
+=== S1 | cm_f16_8x8 | glsl (Vulkan) ===
+(same as S0)
+=== S1 | cm_f16_8x8 | wgsl ===
+(same as S0)
+=== S1 | cm_f16_8x8 | ptx (CUDA/PTX) ===
+(same as S0)
+verdict S1 | 16x16x16 f16*f16+f32->f32 subgroup | Unavailable [coopmat-relaxed-accumulation/policy] 16x16x16 f16*f16+f32->f32 subgroup accumulates in floating point in an order the hardware chooses, so its result is only BOUNDED (|D - exact| <= gamma_n * (sum|A*B| + |C|)), not bit-identical to the interpreter, and the program has not accepted that | remedy=Call Sarek_coopmat.accept_relaxed_accumulation ~reason:"..." once before launching, or use an integer configuration (exact).
+verdict S1 | 16x16x16 bf16*bf16+f32->f32 subgroup | Unavailable [coopmat-relaxed-accumulation/policy] 16x16x16 bf16*bf16+f32->f32 subgroup accumulates in floating point in an order the hardware chooses, so its result is only BOUNDED (|D - exact| <= gamma_n * (sum|A*B| + |C|)), not bit-identical to the interpreter, and the program has not accepted that | remedy=Call Sarek_coopmat.accept_relaxed_accumulation ~reason:"..." once before launching, or use an integer configuration (exact).
+verdict S1 | 16x16x16 u8*u8+s32->s32 subgroup | Available
+verdict S1 | 16x16x16 s8*s8+s32->s32 subgroup | Available
+verdict S1 | 16x16x16 f32*f32+f32->f32 subgroup | Unavailable [coopmat-float-accumulation/policy] 16x16x16 f32*f32+f32->f32 subgroup has no derived error bound: only f16*f16+f32->f32 and bf16*bf16+f32->f32 have one (an f16 result rounds every partial sum to binary16; a float operand with an integer accumulator has no defined meaning) | remedy=Accumulate in f32 (f16*f16+f32->f32 or bf16*bf16+f32->f32).
+verdict S1 | 16x16x16 f16*f16+f16->f16 subgroup | Unavailable [coopmat-float-accumulation/policy] 16x16x16 f16*f16+f16->f16 subgroup has no derived error bound: only f16*f16+f32->f32 and bf16*bf16+f32->f32 have one (an f16 result rounds every partial sum to binary16; a float operand with an integer accumulator has no defined meaning) | remedy=Accumulate in f32 (f16*f16+f32->f32 or bf16*bf16+f32->f32).
+verdict S1 | 16x16x16 f16*f16+s32->s32 subgroup | Unavailable [coopmat-float-accumulation/policy] 16x16x16 f16*f16+s32->s32 subgroup has no derived error bound: only f16*f16+f32->f32 and bf16*bf16+f32->f32 have one (an f16 result rounds every partial sum to binary16; a float operand with an integer accumulator has no defined meaning) | remedy=Accumulate in f32 (f16*f16+f32->f32 or bf16*bf16+f32->f32).
+verdict S1 | 16x16x16 f16*f16+f32->f32 saturating subgroup | Unavailable [coopmat-float-accumulation/policy] 16x16x16 f16*f16+f32->f32 saturating subgroup has no derived error bound: only f16*f16+f32->f32 and bf16*bf16+f32->f32 have one (an f16 result rounds every partial sum to binary16; a float operand with an integer accumulator has no defined meaning) | remedy=Accumulate in f32 (f16*f16+f32->f32 or bf16*bf16+f32->f32).
+reader S1 | relaxed_accumulation_reason = none
+reader S1 | operand_rounding_reason f16 = none
+reader S1 | operand_rounding_reason bf16 = none
+reader S1 | operand_rounding_reason bf16x3 = none
+reader S1 | automatic_float_rewrite_reason = none
+reader S1 | single_rounding_reason t2_f16_sum = none
+reader S1 | single_rounding_reason q4k_like = Some golden S1
+reader S1 | single_rounding_reason inexact_const = none
+reader S1 | single_rounding_reason unroll_loop = none
+reader S1 | single_rounding_reason plain_f32 = none
+reader S1 | single_rounding_reason cm_f16 = none
+reader S1 | single_rounding_reason cm_i32 = none
+reader S1 | single_rounding_reason cm_f32_8x8 = none
+reader S1 | single_rounding_reason cm_f16_8x8 = none
+=== S2 | t2_f16_sum | cuda-c (HIP, CUDA/C) ===
+#if !defined(__HIP__) && !defined(__HIP_PLATFORM_AMD__)
+#include <cuda_fp16.h>
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+__device__ __forceinline__ float sarek_f32_barrier(float x) {
+  asm volatile("" : "+v"(x));
+  return x;
+}
+#else
+/* NVIDIA: intentionally an identity. A PTX opacity barrier here contributes
+   zero PTX instructions at a narrowing, so ptxas sees the same instruction
+   stream and the cubins are byte-identical (measured on CUDA 13.3, sm_75..
+   sm_121). What keeps the f32 multiply out of the narrowing on NVIDIA is ptxas
+   itself, checked by test_cuda_f16_sass.ml — not this function. NOTE the same
+   barrier IS load-bearing at PTX level for mul->add, but ptxas re-contracts
+   that under the default -fmad=true; do not reuse it as a general contraction
+   barrier here. See docs/fp-contraction-policy.md. */
+__device__ __forceinline__ float sarek_f32_barrier(float x) {
+  return x;
+}
+#endif
+__device__ __forceinline__ __half sarek_narrow_exact_product(float a, float b) {
+  __half h = __float2half(a * b);
+  unsigned short s =
+      (unsigned short)(((__float_as_uint(a) ^ __float_as_uint(b)) >> 16) & 0x8000u);
+  return __ushort_as_half((unsigned short)(__half_as_ushort(h) | s));
+}
+/* Sarek: Sarek_f16_policy.accept_single_rounding covers this kernel: its f32->f16 narrowings carry no barrier and may round once where the interpreter rounds twice (specs/f16-narrowing-barrier.md). */
+
+extern "C" {
+__global__ void t2_f16_sum(__half* __restrict__ out, int sarek_out_length, __half* __restrict__ h, int sarek_h_length, __half* __restrict__ g, int sarek_g_length, int* __restrict__ q, int sarek_q_length, float* __restrict__ x, int sarek_x_length) {
+  int tid = ((int)(threadIdx.x + blockIdx.x * blockDim.x));
+  out[tid] = __float2half(((float)h[tid] + (float)g[tid]));
+}
+}
+=== S2 | t2_f16_sum | opencl ===
+(same as S0)
+=== S2 | t2_f16_sum | metal ===
+(same as S0)
+=== S2 | t2_f16_sum | glsl (Vulkan) ===
+(same as S0)
+=== S2 | t2_f16_sum | wgsl ===
+(same as S0)
+=== S2 | t2_f16_sum | ptx (CUDA/PTX) ===
+(same as S0)
+=== S2 | q4k_like | cuda-c (HIP, CUDA/C) ===
+#if !defined(__HIP__) && !defined(__HIP_PLATFORM_AMD__)
+#include <cuda_fp16.h>
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+__device__ __forceinline__ float sarek_f32_barrier(float x) {
+  asm volatile("" : "+v"(x));
+  return x;
+}
+#else
+/* NVIDIA: intentionally an identity. A PTX opacity barrier here contributes
+   zero PTX instructions at a narrowing, so ptxas sees the same instruction
+   stream and the cubins are byte-identical (measured on CUDA 13.3, sm_75..
+   sm_121). What keeps the f32 multiply out of the narrowing on NVIDIA is ptxas
+   itself, checked by test_cuda_f16_sass.ml — not this function. NOTE the same
+   barrier IS load-bearing at PTX level for mul->add, but ptxas re-contracts
+   that under the default -fmad=true; do not reuse it as a general contraction
+   barrier here. See docs/fp-contraction-policy.md. */
+__device__ __forceinline__ float sarek_f32_barrier(float x) {
+  return x;
+}
+#endif
+__device__ __forceinline__ __half sarek_narrow_exact_product(float a, float b) {
+  __half h = __float2half(a * b);
+  unsigned short s =
+      (unsigned short)(((__float_as_uint(a) ^ __float_as_uint(b)) >> 16) & 0x8000u);
+  return __ushort_as_half((unsigned short)(__half_as_ushort(h) | s));
+}
+/* Sarek: Sarek_f16_policy.accept_single_rounding covers this kernel: its f32->f16 narrowings carry no barrier and may round once where the interpreter rounds twice (specs/f16-narrowing-barrier.md). */
+
+extern "C" {
+__global__ void q4k_like(__half* __restrict__ out, int sarek_out_length, __half* __restrict__ h, int sarek_h_length, __half* __restrict__ g, int sarek_g_length, int* __restrict__ q, int sarek_q_length, float* __restrict__ x, int sarek_x_length) {
+  int tid = ((int)(threadIdx.x + blockIdx.x * blockDim.x));
+  out[tid] = __float2half((((float)h[tid] * (float)((q[tid] & 15))) - ((float)g[tid] * (float)(((q[tid] >> 4) & 63)))));
+}
+}
+=== S2 | q4k_like | opencl ===
+(same as S0)
+=== S2 | q4k_like | metal ===
+(same as S0)
+=== S2 | q4k_like | glsl (Vulkan) ===
+(same as S0)
+=== S2 | q4k_like | wgsl ===
+(same as S0)
+=== S2 | q4k_like | ptx (CUDA/PTX) ===
+(same as S0)
+=== S2 | inexact_const | cuda-c (HIP, CUDA/C) ===
+#if !defined(__HIP__) && !defined(__HIP_PLATFORM_AMD__)
+#include <cuda_fp16.h>
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+__device__ __forceinline__ float sarek_f32_barrier(float x) {
+  asm volatile("" : "+v"(x));
+  return x;
+}
+#else
+/* NVIDIA: intentionally an identity. A PTX opacity barrier here contributes
+   zero PTX instructions at a narrowing, so ptxas sees the same instruction
+   stream and the cubins are byte-identical (measured on CUDA 13.3, sm_75..
+   sm_121). What keeps the f32 multiply out of the narrowing on NVIDIA is ptxas
+   itself, checked by test_cuda_f16_sass.ml — not this function. NOTE the same
+   barrier IS load-bearing at PTX level for mul->add, but ptxas re-contracts
+   that under the default -fmad=true; do not reuse it as a general contraction
+   barrier here. See docs/fp-contraction-policy.md. */
+__device__ __forceinline__ float sarek_f32_barrier(float x) {
+  return x;
+}
+#endif
+__device__ __forceinline__ __half sarek_narrow_exact_product(float a, float b) {
+  __half h = __float2half(a * b);
+  unsigned short s =
+      (unsigned short)(((__float_as_uint(a) ^ __float_as_uint(b)) >> 16) & 0x8000u);
+  return __ushort_as_half((unsigned short)(__half_as_ushort(h) | s));
+}
+/* Sarek: Sarek_f16_policy.accept_single_rounding covers this kernel: its f32->f16 narrowings carry no barrier and may round once where the interpreter rounds twice (specs/f16-narrowing-barrier.md). */
+
+extern "C" {
+__global__ void inexact_const(__half* __restrict__ out, int sarek_out_length, __half* __restrict__ h, int sarek_h_length, __half* __restrict__ g, int sarek_g_length, int* __restrict__ q, int sarek_q_length, float* __restrict__ x, int sarek_x_length) {
+  int tid = ((int)(threadIdx.x + blockIdx.x * blockDim.x));
+  out[tid] = __float2half(((float)h[tid] * 1.1000000000000001f));
+}
+}
+=== S2 | inexact_const | opencl ===
+(same as S0)
+=== S2 | inexact_const | metal ===
+(same as S0)
+=== S2 | inexact_const | glsl (Vulkan) ===
+(same as S0)
+=== S2 | inexact_const | wgsl ===
+(same as S0)
+=== S2 | inexact_const | ptx (CUDA/PTX) ===
+(same as S0)
+=== S2 | unroll_loop | cuda-c (HIP, CUDA/C) ===
+(same as S0)
+=== S2 | unroll_loop | opencl ===
+(same as S0)
+=== S2 | unroll_loop | metal ===
+(same as S0)
+=== S2 | unroll_loop | glsl (Vulkan) ===
+(same as S0)
+=== S2 | unroll_loop | wgsl ===
+(same as S0)
+=== S2 | unroll_loop | ptx (CUDA/PTX) ===
+(same as S0)
+=== S2 | plain_f32 | cuda-c (HIP, CUDA/C) ===
+(same as S0)
+=== S2 | plain_f32 | opencl ===
+(same as S0)
+=== S2 | plain_f32 | metal ===
+(same as S0)
+=== S2 | plain_f32 | glsl (Vulkan) ===
+(same as S0)
+=== S2 | plain_f32 | wgsl ===
+(same as S0)
+=== S2 | plain_f32 | ptx (CUDA/PTX) ===
+(same as S0)
+=== S2 | cm_f16 | cuda-c (HIP, CUDA/C) ===
+#if !defined(__HIP__) && !defined(__HIP_PLATFORM_AMD__)
+#include <cuda_fp16.h>
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+__device__ __forceinline__ float sarek_f32_barrier(float x) {
+  asm volatile("" : "+v"(x));
+  return x;
+}
+#else
+/* NVIDIA: intentionally an identity. A PTX opacity barrier here contributes
+   zero PTX instructions at a narrowing, so ptxas sees the same instruction
+   stream and the cubins are byte-identical (measured on CUDA 13.3, sm_75..
+   sm_121). What keeps the f32 multiply out of the narrowing on NVIDIA is ptxas
+   itself, checked by test_cuda_f16_sass.ml — not this function. NOTE the same
+   barrier IS load-bearing at PTX level for mul->add, but ptxas re-contracts
+   that under the default -fmad=true; do not reuse it as a general contraction
+   barrier here. See docs/fp-contraction-policy.md. */
+__device__ __forceinline__ float sarek_f32_barrier(float x) {
+  return x;
+}
+#endif
+__device__ __forceinline__ __half sarek_narrow_exact_product(float a, float b) {
+  __half h = __float2half(a * b);
+  unsigned short s =
+      (unsigned short)(((__float_as_uint(a) ^ __float_as_uint(b)) >> 16) & 0x8000u);
+  return __ushort_as_half((unsigned short)(__half_as_ushort(h) | s));
+}
+/* Sarek: Sarek_f16_policy.accept_single_rounding covers this kernel: its f32->f16 narrowings carry no barrier and may round once where the interpreter rounds twice (specs/f16-narrowing-barrier.md). */
+/* Sarek: 16x16x16 f16*f16+f32->f32 subgroup accumulates in floating point in an order the hardware chooses. Results are within gamma_n * (sum|A*B| + |C|) of the exact value (u = 2^-24), NOT bit-identical to the interpreter: Regime B of docs/design/f16-relaxed-accuracy.md; launching it requires Sarek_coopmat.accept_relaxed_accumulation. */
+#if defined(__HIP_PLATFORM_AMD__)
+/* Sarek cooperative matrix, HIP: RDNA3 (gfx11) WMMA, wave32
+   (specs/coopmat-hip-wmma.md). For lane l, with l16 = l % 16 and h = l / 16:
+   an A fragment holds row l16 (k = 0..15), a B fragment holds column l16, and
+   accumulator element j holds row 2*j + h, column l16.
+   load_a_* reads 16 contiguous elements at p + i + l16*s (A row-major, B
+   column-major); load_b_* reads 16 elements s apart at p + i + l16 (B
+   row-major, A column-major); *_acc_cm_* are the column-major accumulator. */
+#if defined(__HIP_DEVICE_COMPILE__) && !defined(__GFX11__)
+#error "Sarek cooperative matrix: the HIP lowering targets gfx11 (RDNA3) WMMA only"
+#endif
+typedef _Float16 sarek_cm_h16 __attribute__((ext_vector_type(16)));
+typedef short sarek_cm_s16 __attribute__((ext_vector_type(16)));
+typedef float sarek_cm_f8 __attribute__((ext_vector_type(8)));
+typedef int sarek_cm_i4 __attribute__((ext_vector_type(4)));
+typedef int sarek_cm_i8 __attribute__((ext_vector_type(8)));
+__device__ __forceinline__ int sarek_cm_l16() { return (int)(__lane_id() & 15u); }
+__device__ __forceinline__ int sarek_cm_h() { return (int)((__lane_id() >> 4) & 1u); }
+__device__ __forceinline__ unsigned sarek_cm_pack4(unsigned char b0, unsigned char b1,
+                                                   unsigned char b2, unsigned char b3) {
+  return (unsigned)b0 | ((unsigned)b1 << 8) | ((unsigned)b2 << 16) | ((unsigned)b3 << 24);
+}
+__device__ __forceinline__ void sarek_cm_load_a_f16(sarek_cm_h16 &f, const __half *p, int i, long long s) {
+  const _Float16 *q = (const _Float16 *)p + i + sarek_cm_l16() * s;
+  for (int e = 0; e < 16; ++e) f[e] = q[e];
+}
+__device__ __forceinline__ void sarek_cm_load_b_f16(sarek_cm_h16 &f, const __half *p, int i, long long s) {
+  const _Float16 *q = (const _Float16 *)p + i + sarek_cm_l16();
+  for (int e = 0; e < 16; ++e) f[e] = q[e * s];
+}
+/* bf16 operands are loaded from a float32 buffer and rounded to bfloat16
+   (nearest even), specs/matrix-pattern-rewrite.md. */
+__device__ __forceinline__ short sarek_cm_bf16(float x) {
+  unsigned u = __float_as_uint(x);
+  if ((u & 0x7fffffffu) > 0x7f800000u) return (short)((u >> 16) | 0x40u);
+  return (short)((u + 0x7fffu + ((u >> 16) & 1u)) >> 16);
+}
+__device__ __forceinline__ void sarek_cm_load_a_bf16(sarek_cm_s16 &f, const float *p, int i, long long s) {
+  const float *q = p + i + sarek_cm_l16() * s;
+  for (int e = 0; e < 16; ++e) f[e] = sarek_cm_bf16(q[e]);
+}
+__device__ __forceinline__ void sarek_cm_load_b_bf16(sarek_cm_s16 &f, const float *p, int i, long long s) {
+  const float *q = p + i + sarek_cm_l16();
+  for (int e = 0; e < 16; ++e) f[e] = sarek_cm_bf16(q[e * s]);
+}
+__device__ __forceinline__ void sarek_cm_load_a_i8(sarek_cm_i4 &f, const unsigned char *p, int i, long long s) {
+  const unsigned char *q = p + i + sarek_cm_l16() * s;
+  for (int w = 0; w < 4; ++w)
+    f[w] = (int)sarek_cm_pack4(q[4 * w], q[4 * w + 1], q[4 * w + 2], q[4 * w + 3]);
+}
+__device__ __forceinline__ void sarek_cm_load_b_i8(sarek_cm_i4 &f, const unsigned char *p, int i, long long s) {
+  const unsigned char *q = p + i + sarek_cm_l16();
+  for (int w = 0; w < 4; ++w)
+    f[w] = (int)sarek_cm_pack4(q[(4 * w) * s], q[(4 * w + 1) * s],
+                               q[(4 * w + 2) * s], q[(4 * w + 3) * s]);
+}
+__device__ __forceinline__ void sarek_cm_load_acc_f32(sarek_cm_f8 &f, const float *p, int i, long long s) {
+  const float *q = p + i + sarek_cm_h() * s + sarek_cm_l16();
+  for (int j = 0; j < 8; ++j) f[j] = q[2 * j * s];
+}
+__device__ __forceinline__ void sarek_cm_store_acc_f32(const sarek_cm_f8 &f, float *p, int i, long long s) {
+  float *q = p + i + sarek_cm_h() * s + sarek_cm_l16();
+  for (int j = 0; j < 8; ++j) q[2 * j * s] = f[j];
+}
+__device__ __forceinline__ void sarek_cm_load_acc_i32(sarek_cm_i8 &f, const int *p, int i, long long s) {
+  const int *q = p + i + sarek_cm_h() * s + sarek_cm_l16();
+  for (int j = 0; j < 8; ++j) f[j] = q[2 * j * s];
+}
+__device__ __forceinline__ void sarek_cm_store_acc_i32(const sarek_cm_i8 &f, int *p, int i, long long s) {
+  int *q = p + i + sarek_cm_h() * s + sarek_cm_l16();
+  for (int j = 0; j < 8; ++j) q[2 * j * s] = f[j];
+}
+__device__ __forceinline__ void sarek_cm_load_acc_cm_f32(sarek_cm_f8 &f, const float *p, int i, long long s) {
+  const float *q = p + i + sarek_cm_l16() * s + sarek_cm_h();
+  for (int j = 0; j < 8; ++j) f[j] = q[2 * j];
+}
+__device__ __forceinline__ void sarek_cm_store_acc_cm_f32(const sarek_cm_f8 &f, float *p, int i, long long s) {
+  float *q = p + i + sarek_cm_l16() * s + sarek_cm_h();
+  for (int j = 0; j < 8; ++j) q[2 * j] = f[j];
+}
+__device__ __forceinline__ void sarek_cm_load_acc_cm_i32(sarek_cm_i8 &f, const int *p, int i, long long s) {
+  const int *q = p + i + sarek_cm_l16() * s + sarek_cm_h();
+  for (int j = 0; j < 8; ++j) f[j] = q[2 * j];
+}
+__device__ __forceinline__ void sarek_cm_store_acc_cm_i32(const sarek_cm_i8 &f, int *p, int i, long long s) {
+  int *q = p + i + sarek_cm_l16() * s + sarek_cm_h();
+  for (int j = 0; j < 8; ++j) q[2 * j] = f[j];
+}
+#else
+/* Sarek cooperative matrix, CUDA: nvcuda::wmma m16n16k16. COMPILE-CHECKED
+   ONLY (no NVIDIA GPU was available; specs/coopmat-hip-wmma.md). wmma's
+   load/store need a 32-byte aligned pointer and a row stride that is a
+   multiple of 16 bytes; Sarek's CM_load promises any index and stride, so a
+   launch that violates the precondition traps instead of computing on a
+   misaligned fragment. */
+#include <mma.h>
+__device__ __forceinline__ void sarek_cm_require(const void *p, long long s, int bytes) {
+  if ((((unsigned long long)p) & 31ull) != 0ull || ((s * bytes) & 15) != 0) __trap();
+}
+#endif
+
+extern "C" {
+__global__ void cm_f16(__half* __restrict__ a, int sarek_a_length, __half* __restrict__ b, int sarek_b_length, float* __restrict__ c, int sarek_c_length, float* __restrict__ d, int sarek_d_length) {
+#if defined(__HIP_PLATFORM_AMD__)
+  sarek_cm_h16 fa = {};
+#else
+  nvcuda::wmma::fragment<nvcuda::wmma::matrix_a, 16, 16, 16, __half, nvcuda::wmma::row_major> fa; nvcuda::wmma::fill_fragment(fa, 0);
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+  sarek_cm_h16 fb = {};
+#else
+  nvcuda::wmma::fragment<nvcuda::wmma::matrix_b, 16, 16, 16, __half, nvcuda::wmma::row_major> fb; nvcuda::wmma::fill_fragment(fb, 0);
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+  sarek_cm_f8 fc = {};
+#else
+  nvcuda::wmma::fragment<nvcuda::wmma::accumulator, 16, 16, 16, float> fc; nvcuda::wmma::fill_fragment(fc, 0);
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+  sarek_cm_load_a_f16(fa, a, (0), (16));
+#else
+  sarek_cm_require(((const __half *)(a) + (0)), (16), 2); nvcuda::wmma::load_matrix_sync(fa, ((const __half *)(a) + (0)), (16));
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+  sarek_cm_load_b_f16(fb, b, (0), (16));
+#else
+  sarek_cm_require(((const __half *)(b) + (0)), (16), 2); nvcuda::wmma::load_matrix_sync(fb, ((const __half *)(b) + (0)), (16));
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+  sarek_cm_load_acc_f32(fc, c, (0), (16));
+#else
+  sarek_cm_require(((const float *)(c) + (0)), (16), 4); nvcuda::wmma::load_matrix_sync(fc, ((const float *)(c) + (0)), (16), nvcuda::wmma::mem_row_major);
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+  fc = __builtin_amdgcn_wmma_f32_16x16x16_f16_w32(fa, fb, fc);
+#else
+  nvcuda::wmma::mma_sync(fc, fa, fb, fc);
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+  sarek_cm_store_acc_f32(fc, d, (0), (16));
+#else
+  sarek_cm_require(((float *)(d) + (0)), (16), 4); nvcuda::wmma::store_matrix_sync(((float *)(d) + (0)), fc, (16), nvcuda::wmma::mem_row_major);
+#endif
+}
+}
+=== S2 | cm_f16 | opencl ===
+(same as S0)
+=== S2 | cm_f16 | metal ===
+(same as S0)
+=== S2 | cm_f16 | glsl (Vulkan) ===
+(same as S0)
+=== S2 | cm_f16 | wgsl ===
+(same as S0)
+=== S2 | cm_f16 | ptx (CUDA/PTX) ===
+(same as S0)
+=== S2 | cm_i32 | cuda-c (HIP, CUDA/C) ===
+(same as S0)
+=== S2 | cm_i32 | opencl ===
+(same as S0)
+=== S2 | cm_i32 | metal ===
+(same as S0)
+=== S2 | cm_i32 | glsl (Vulkan) ===
+(same as S0)
+=== S2 | cm_i32 | wgsl ===
+(same as S0)
+=== S2 | cm_i32 | ptx (CUDA/PTX) ===
+(same as S0)
+=== S2 | cm_f32_8x8 | cuda-c (HIP, CUDA/C) ===
+(same as S0)
+=== S2 | cm_f32_8x8 | opencl ===
+(same as S0)
+=== S2 | cm_f32_8x8 | metal ===
+(same as S0)
+=== S2 | cm_f32_8x8 | glsl (Vulkan) ===
+(same as S0)
+=== S2 | cm_f32_8x8 | wgsl ===
+(same as S0)
+=== S2 | cm_f32_8x8 | ptx (CUDA/PTX) ===
+(same as S0)
+=== S2 | cm_f16_8x8 | cuda-c (HIP, CUDA/C) ===
+(same as S0)
+=== S2 | cm_f16_8x8 | opencl ===
+(same as S0)
+=== S2 | cm_f16_8x8 | metal ===
+(same as S0)
+=== S2 | cm_f16_8x8 | glsl (Vulkan) ===
+(same as S0)
+=== S2 | cm_f16_8x8 | wgsl ===
+(same as S0)
+=== S2 | cm_f16_8x8 | ptx (CUDA/PTX) ===
+(same as S0)
+verdict S2 | 16x16x16 f16*f16+f32->f32 subgroup | Unavailable [coopmat-relaxed-accumulation/policy] 16x16x16 f16*f16+f32->f32 subgroup accumulates in floating point in an order the hardware chooses, so its result is only BOUNDED (|D - exact| <= gamma_n * (sum|A*B| + |C|)), not bit-identical to the interpreter, and the program has not accepted that | remedy=Call Sarek_coopmat.accept_relaxed_accumulation ~reason:"..." once before launching, or use an integer configuration (exact).
+verdict S2 | 16x16x16 bf16*bf16+f32->f32 subgroup | Unavailable [coopmat-relaxed-accumulation/policy] 16x16x16 bf16*bf16+f32->f32 subgroup accumulates in floating point in an order the hardware chooses, so its result is only BOUNDED (|D - exact| <= gamma_n * (sum|A*B| + |C|)), not bit-identical to the interpreter, and the program has not accepted that | remedy=Call Sarek_coopmat.accept_relaxed_accumulation ~reason:"..." once before launching, or use an integer configuration (exact).
+verdict S2 | 16x16x16 u8*u8+s32->s32 subgroup | Available
+verdict S2 | 16x16x16 s8*s8+s32->s32 subgroup | Available
+verdict S2 | 16x16x16 f32*f32+f32->f32 subgroup | Unavailable [coopmat-float-accumulation/policy] 16x16x16 f32*f32+f32->f32 subgroup has no derived error bound: only f16*f16+f32->f32 and bf16*bf16+f32->f32 have one (an f16 result rounds every partial sum to binary16; a float operand with an integer accumulator has no defined meaning) | remedy=Accumulate in f32 (f16*f16+f32->f32 or bf16*bf16+f32->f32).
+verdict S2 | 16x16x16 f16*f16+f16->f16 subgroup | Unavailable [coopmat-float-accumulation/policy] 16x16x16 f16*f16+f16->f16 subgroup has no derived error bound: only f16*f16+f32->f32 and bf16*bf16+f32->f32 have one (an f16 result rounds every partial sum to binary16; a float operand with an integer accumulator has no defined meaning) | remedy=Accumulate in f32 (f16*f16+f32->f32 or bf16*bf16+f32->f32).
+verdict S2 | 16x16x16 f16*f16+s32->s32 subgroup | Unavailable [coopmat-float-accumulation/policy] 16x16x16 f16*f16+s32->s32 subgroup has no derived error bound: only f16*f16+f32->f32 and bf16*bf16+f32->f32 have one (an f16 result rounds every partial sum to binary16; a float operand with an integer accumulator has no defined meaning) | remedy=Accumulate in f32 (f16*f16+f32->f32 or bf16*bf16+f32->f32).
+verdict S2 | 16x16x16 f16*f16+f32->f32 saturating subgroup | Unavailable [coopmat-float-accumulation/policy] 16x16x16 f16*f16+f32->f32 saturating subgroup has no derived error bound: only f16*f16+f32->f32 and bf16*bf16+f32->f32 have one (an f16 result rounds every partial sum to binary16; a float operand with an integer accumulator has no defined meaning) | remedy=Accumulate in f32 (f16*f16+f32->f32 or bf16*bf16+f32->f32).
+reader S2 | relaxed_accumulation_reason = none
+reader S2 | operand_rounding_reason f16 = none
+reader S2 | operand_rounding_reason bf16 = none
+reader S2 | operand_rounding_reason bf16x3 = none
+reader S2 | automatic_float_rewrite_reason = none
+reader S2 | single_rounding_reason t2_f16_sum = Some golden S2
+reader S2 | single_rounding_reason q4k_like = Some golden S1
+reader S2 | single_rounding_reason inexact_const = Some golden S2
+reader S2 | single_rounding_reason unroll_loop = Some golden S2
+reader S2 | single_rounding_reason plain_f32 = Some golden S2
+reader S2 | single_rounding_reason cm_f16 = Some golden S2
+reader S2 | single_rounding_reason cm_i32 = Some golden S2
+reader S2 | single_rounding_reason cm_f32_8x8 = Some golden S2
+reader S2 | single_rounding_reason cm_f16_8x8 = Some golden S2
+verdict S3a | 16x16x16 f16*f16+f32->f32 subgroup | Available
+verdict S3a | 16x16x16 bf16*bf16+f32->f32 subgroup | Unavailable [coopmat-operand-rounding/policy] 16x16x16 bf16*bf16+f32->f32 subgroup rounds float32 operands to bfloat16 on load, which changes results beyond the accumulation order, and the program has not accepted that | remedy=Call Sarek_coopmat.accept_operand_rounding ~precision:Operands_bf16 (or Operands_bf16x3) ~reason:"..." once before launching.
+verdict S3a | 16x16x16 u8*u8+s32->s32 subgroup | Available
+verdict S3a | 16x16x16 s8*s8+s32->s32 subgroup | Available
+verdict S3a | 16x16x16 f32*f32+f32->f32 subgroup | Unavailable [coopmat-float-accumulation/policy] 16x16x16 f32*f32+f32->f32 subgroup has no derived error bound: only f16*f16+f32->f32 and bf16*bf16+f32->f32 have one (an f16 result rounds every partial sum to binary16; a float operand with an integer accumulator has no defined meaning) | remedy=Accumulate in f32 (f16*f16+f32->f32 or bf16*bf16+f32->f32).
+verdict S3a | 16x16x16 f16*f16+f16->f16 subgroup | Unavailable [coopmat-float-accumulation/policy] 16x16x16 f16*f16+f16->f16 subgroup has no derived error bound: only f16*f16+f32->f32 and bf16*bf16+f32->f32 have one (an f16 result rounds every partial sum to binary16; a float operand with an integer accumulator has no defined meaning) | remedy=Accumulate in f32 (f16*f16+f32->f32 or bf16*bf16+f32->f32).
+verdict S3a | 16x16x16 f16*f16+s32->s32 subgroup | Unavailable [coopmat-float-accumulation/policy] 16x16x16 f16*f16+s32->s32 subgroup has no derived error bound: only f16*f16+f32->f32 and bf16*bf16+f32->f32 have one (an f16 result rounds every partial sum to binary16; a float operand with an integer accumulator has no defined meaning) | remedy=Accumulate in f32 (f16*f16+f32->f32 or bf16*bf16+f32->f32).
+verdict S3a | 16x16x16 f16*f16+f32->f32 saturating subgroup | Unavailable [coopmat-float-accumulation/policy] 16x16x16 f16*f16+f32->f32 saturating subgroup has no derived error bound: only f16*f16+f32->f32 and bf16*bf16+f32->f32 have one (an f16 result rounds every partial sum to binary16; a float operand with an integer accumulator has no defined meaning) | remedy=Accumulate in f32 (f16*f16+f32->f32 or bf16*bf16+f32->f32).
+reader S3a | relaxed_accumulation_reason = Some golden S3 accumulation
+reader S3a | operand_rounding_reason f16 = none
+reader S3a | operand_rounding_reason bf16 = none
+reader S3a | operand_rounding_reason bf16x3 = none
+reader S3a | automatic_float_rewrite_reason = none
+reader S3a | single_rounding_reason t2_f16_sum = Some golden S2
+reader S3a | single_rounding_reason q4k_like = Some golden S1
+reader S3a | single_rounding_reason inexact_const = Some golden S2
+reader S3a | single_rounding_reason unroll_loop = Some golden S2
+reader S3a | single_rounding_reason plain_f32 = Some golden S2
+reader S3a | single_rounding_reason cm_f16 = Some golden S2
+reader S3a | single_rounding_reason cm_i32 = Some golden S2
+reader S3a | single_rounding_reason cm_f32_8x8 = Some golden S2
+reader S3a | single_rounding_reason cm_f16_8x8 = Some golden S2
+=== S3 | t2_f16_sum | cuda-c (HIP, CUDA/C) ===
+#if !defined(__HIP__) && !defined(__HIP_PLATFORM_AMD__)
+#include <cuda_fp16.h>
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+__device__ __forceinline__ float sarek_f32_barrier(float x) {
+  asm volatile("" : "+v"(x));
+  return x;
+}
+#else
+/* NVIDIA: intentionally an identity. A PTX opacity barrier here contributes
+   zero PTX instructions at a narrowing, so ptxas sees the same instruction
+   stream and the cubins are byte-identical (measured on CUDA 13.3, sm_75..
+   sm_121). What keeps the f32 multiply out of the narrowing on NVIDIA is ptxas
+   itself, checked by test_cuda_f16_sass.ml — not this function. NOTE the same
+   barrier IS load-bearing at PTX level for mul->add, but ptxas re-contracts
+   that under the default -fmad=true; do not reuse it as a general contraction
+   barrier here. See docs/fp-contraction-policy.md. */
+__device__ __forceinline__ float sarek_f32_barrier(float x) {
+  return x;
+}
+#endif
+__device__ __forceinline__ __half sarek_narrow_exact_product(float a, float b) {
+  __half h = __float2half(a * b);
+  unsigned short s =
+      (unsigned short)(((__float_as_uint(a) ^ __float_as_uint(b)) >> 16) & 0x8000u);
+  return __ushort_as_half((unsigned short)(__half_as_ushort(h) | s));
+}
+/* Sarek: Sarek_f16_policy.accept_single_rounding covers this kernel: its f32->f16 narrowings carry no barrier and may round once where the interpreter rounds twice (specs/f16-narrowing-barrier.md). */
+
+extern "C" {
+__global__ void t2_f16_sum(__half* __restrict__ out, int sarek_out_length, __half* __restrict__ h, int sarek_h_length, __half* __restrict__ g, int sarek_g_length, int* __restrict__ q, int sarek_q_length, float* __restrict__ x, int sarek_x_length) {
+  int tid = ((int)(threadIdx.x + blockIdx.x * blockDim.x));
+  out[tid] = __float2half(((float)h[tid] + (float)g[tid]));
+}
+}
+=== S3 | t2_f16_sum | opencl ===
+(same as S0)
+=== S3 | t2_f16_sum | metal ===
+(same as S0)
+=== S3 | t2_f16_sum | glsl (Vulkan) ===
+(same as S0)
+=== S3 | t2_f16_sum | wgsl ===
+(same as S0)
+=== S3 | t2_f16_sum | ptx (CUDA/PTX) ===
+(same as S0)
+=== S3 | q4k_like | cuda-c (HIP, CUDA/C) ===
+#if !defined(__HIP__) && !defined(__HIP_PLATFORM_AMD__)
+#include <cuda_fp16.h>
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+__device__ __forceinline__ float sarek_f32_barrier(float x) {
+  asm volatile("" : "+v"(x));
+  return x;
+}
+#else
+/* NVIDIA: intentionally an identity. A PTX opacity barrier here contributes
+   zero PTX instructions at a narrowing, so ptxas sees the same instruction
+   stream and the cubins are byte-identical (measured on CUDA 13.3, sm_75..
+   sm_121). What keeps the f32 multiply out of the narrowing on NVIDIA is ptxas
+   itself, checked by test_cuda_f16_sass.ml — not this function. NOTE the same
+   barrier IS load-bearing at PTX level for mul->add, but ptxas re-contracts
+   that under the default -fmad=true; do not reuse it as a general contraction
+   barrier here. See docs/fp-contraction-policy.md. */
+__device__ __forceinline__ float sarek_f32_barrier(float x) {
+  return x;
+}
+#endif
+__device__ __forceinline__ __half sarek_narrow_exact_product(float a, float b) {
+  __half h = __float2half(a * b);
+  unsigned short s =
+      (unsigned short)(((__float_as_uint(a) ^ __float_as_uint(b)) >> 16) & 0x8000u);
+  return __ushort_as_half((unsigned short)(__half_as_ushort(h) | s));
+}
+/* Sarek: Sarek_f16_policy.accept_single_rounding covers this kernel: its f32->f16 narrowings carry no barrier and may round once where the interpreter rounds twice (specs/f16-narrowing-barrier.md). */
+
+extern "C" {
+__global__ void q4k_like(__half* __restrict__ out, int sarek_out_length, __half* __restrict__ h, int sarek_h_length, __half* __restrict__ g, int sarek_g_length, int* __restrict__ q, int sarek_q_length, float* __restrict__ x, int sarek_x_length) {
+  int tid = ((int)(threadIdx.x + blockIdx.x * blockDim.x));
+  out[tid] = __float2half((((float)h[tid] * (float)((q[tid] & 15))) - ((float)g[tid] * (float)(((q[tid] >> 4) & 63)))));
+}
+}
+=== S3 | q4k_like | opencl ===
+(same as S0)
+=== S3 | q4k_like | metal ===
+(same as S0)
+=== S3 | q4k_like | glsl (Vulkan) ===
+(same as S0)
+=== S3 | q4k_like | wgsl ===
+(same as S0)
+=== S3 | q4k_like | ptx (CUDA/PTX) ===
+(same as S0)
+=== S3 | inexact_const | cuda-c (HIP, CUDA/C) ===
+#if !defined(__HIP__) && !defined(__HIP_PLATFORM_AMD__)
+#include <cuda_fp16.h>
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+__device__ __forceinline__ float sarek_f32_barrier(float x) {
+  asm volatile("" : "+v"(x));
+  return x;
+}
+#else
+/* NVIDIA: intentionally an identity. A PTX opacity barrier here contributes
+   zero PTX instructions at a narrowing, so ptxas sees the same instruction
+   stream and the cubins are byte-identical (measured on CUDA 13.3, sm_75..
+   sm_121). What keeps the f32 multiply out of the narrowing on NVIDIA is ptxas
+   itself, checked by test_cuda_f16_sass.ml — not this function. NOTE the same
+   barrier IS load-bearing at PTX level for mul->add, but ptxas re-contracts
+   that under the default -fmad=true; do not reuse it as a general contraction
+   barrier here. See docs/fp-contraction-policy.md. */
+__device__ __forceinline__ float sarek_f32_barrier(float x) {
+  return x;
+}
+#endif
+__device__ __forceinline__ __half sarek_narrow_exact_product(float a, float b) {
+  __half h = __float2half(a * b);
+  unsigned short s =
+      (unsigned short)(((__float_as_uint(a) ^ __float_as_uint(b)) >> 16) & 0x8000u);
+  return __ushort_as_half((unsigned short)(__half_as_ushort(h) | s));
+}
+/* Sarek: Sarek_f16_policy.accept_single_rounding covers this kernel: its f32->f16 narrowings carry no barrier and may round once where the interpreter rounds twice (specs/f16-narrowing-barrier.md). */
+
+extern "C" {
+__global__ void inexact_const(__half* __restrict__ out, int sarek_out_length, __half* __restrict__ h, int sarek_h_length, __half* __restrict__ g, int sarek_g_length, int* __restrict__ q, int sarek_q_length, float* __restrict__ x, int sarek_x_length) {
+  int tid = ((int)(threadIdx.x + blockIdx.x * blockDim.x));
+  out[tid] = __float2half(((float)h[tid] * 1.1000000000000001f));
+}
+}
+=== S3 | inexact_const | opencl ===
+(same as S0)
+=== S3 | inexact_const | metal ===
+(same as S0)
+=== S3 | inexact_const | glsl (Vulkan) ===
+(same as S0)
+=== S3 | inexact_const | wgsl ===
+(same as S0)
+=== S3 | inexact_const | ptx (CUDA/PTX) ===
+(same as S0)
+=== S3 | unroll_loop | cuda-c (HIP, CUDA/C) ===
+(same as S0)
+=== S3 | unroll_loop | opencl ===
+(same as S0)
+=== S3 | unroll_loop | metal ===
+(same as S0)
+=== S3 | unroll_loop | glsl (Vulkan) ===
+(same as S0)
+=== S3 | unroll_loop | wgsl ===
+(same as S0)
+=== S3 | unroll_loop | ptx (CUDA/PTX) ===
+(same as S0)
+=== S3 | plain_f32 | cuda-c (HIP, CUDA/C) ===
+(same as S0)
+=== S3 | plain_f32 | opencl ===
+(same as S0)
+=== S3 | plain_f32 | metal ===
+(same as S0)
+=== S3 | plain_f32 | glsl (Vulkan) ===
+(same as S0)
+=== S3 | plain_f32 | wgsl ===
+(same as S0)
+=== S3 | plain_f32 | ptx (CUDA/PTX) ===
+(same as S0)
+=== S3 | cm_f16 | cuda-c (HIP, CUDA/C) ===
+#if !defined(__HIP__) && !defined(__HIP_PLATFORM_AMD__)
+#include <cuda_fp16.h>
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+__device__ __forceinline__ float sarek_f32_barrier(float x) {
+  asm volatile("" : "+v"(x));
+  return x;
+}
+#else
+/* NVIDIA: intentionally an identity. A PTX opacity barrier here contributes
+   zero PTX instructions at a narrowing, so ptxas sees the same instruction
+   stream and the cubins are byte-identical (measured on CUDA 13.3, sm_75..
+   sm_121). What keeps the f32 multiply out of the narrowing on NVIDIA is ptxas
+   itself, checked by test_cuda_f16_sass.ml — not this function. NOTE the same
+   barrier IS load-bearing at PTX level for mul->add, but ptxas re-contracts
+   that under the default -fmad=true; do not reuse it as a general contraction
+   barrier here. See docs/fp-contraction-policy.md. */
+__device__ __forceinline__ float sarek_f32_barrier(float x) {
+  return x;
+}
+#endif
+__device__ __forceinline__ __half sarek_narrow_exact_product(float a, float b) {
+  __half h = __float2half(a * b);
+  unsigned short s =
+      (unsigned short)(((__float_as_uint(a) ^ __float_as_uint(b)) >> 16) & 0x8000u);
+  return __ushort_as_half((unsigned short)(__half_as_ushort(h) | s));
+}
+/* Sarek: Sarek_f16_policy.accept_single_rounding covers this kernel: its f32->f16 narrowings carry no barrier and may round once where the interpreter rounds twice (specs/f16-narrowing-barrier.md). */
+/* Sarek: 16x16x16 f16*f16+f32->f32 subgroup accumulates in floating point in an order the hardware chooses. Results are within gamma_n * (sum|A*B| + |C|) of the exact value (u = 2^-24), NOT bit-identical to the interpreter: Regime B of docs/design/f16-relaxed-accuracy.md; launching it requires Sarek_coopmat.accept_relaxed_accumulation. */
+#if defined(__HIP_PLATFORM_AMD__)
+/* Sarek cooperative matrix, HIP: RDNA3 (gfx11) WMMA, wave32
+   (specs/coopmat-hip-wmma.md). For lane l, with l16 = l % 16 and h = l / 16:
+   an A fragment holds row l16 (k = 0..15), a B fragment holds column l16, and
+   accumulator element j holds row 2*j + h, column l16.
+   load_a_* reads 16 contiguous elements at p + i + l16*s (A row-major, B
+   column-major); load_b_* reads 16 elements s apart at p + i + l16 (B
+   row-major, A column-major); *_acc_cm_* are the column-major accumulator. */
+#if defined(__HIP_DEVICE_COMPILE__) && !defined(__GFX11__)
+#error "Sarek cooperative matrix: the HIP lowering targets gfx11 (RDNA3) WMMA only"
+#endif
+typedef _Float16 sarek_cm_h16 __attribute__((ext_vector_type(16)));
+typedef short sarek_cm_s16 __attribute__((ext_vector_type(16)));
+typedef float sarek_cm_f8 __attribute__((ext_vector_type(8)));
+typedef int sarek_cm_i4 __attribute__((ext_vector_type(4)));
+typedef int sarek_cm_i8 __attribute__((ext_vector_type(8)));
+__device__ __forceinline__ int sarek_cm_l16() { return (int)(__lane_id() & 15u); }
+__device__ __forceinline__ int sarek_cm_h() { return (int)((__lane_id() >> 4) & 1u); }
+__device__ __forceinline__ unsigned sarek_cm_pack4(unsigned char b0, unsigned char b1,
+                                                   unsigned char b2, unsigned char b3) {
+  return (unsigned)b0 | ((unsigned)b1 << 8) | ((unsigned)b2 << 16) | ((unsigned)b3 << 24);
+}
+__device__ __forceinline__ void sarek_cm_load_a_f16(sarek_cm_h16 &f, const __half *p, int i, long long s) {
+  const _Float16 *q = (const _Float16 *)p + i + sarek_cm_l16() * s;
+  for (int e = 0; e < 16; ++e) f[e] = q[e];
+}
+__device__ __forceinline__ void sarek_cm_load_b_f16(sarek_cm_h16 &f, const __half *p, int i, long long s) {
+  const _Float16 *q = (const _Float16 *)p + i + sarek_cm_l16();
+  for (int e = 0; e < 16; ++e) f[e] = q[e * s];
+}
+/* bf16 operands are loaded from a float32 buffer and rounded to bfloat16
+   (nearest even), specs/matrix-pattern-rewrite.md. */
+__device__ __forceinline__ short sarek_cm_bf16(float x) {
+  unsigned u = __float_as_uint(x);
+  if ((u & 0x7fffffffu) > 0x7f800000u) return (short)((u >> 16) | 0x40u);
+  return (short)((u + 0x7fffu + ((u >> 16) & 1u)) >> 16);
+}
+__device__ __forceinline__ void sarek_cm_load_a_bf16(sarek_cm_s16 &f, const float *p, int i, long long s) {
+  const float *q = p + i + sarek_cm_l16() * s;
+  for (int e = 0; e < 16; ++e) f[e] = sarek_cm_bf16(q[e]);
+}
+__device__ __forceinline__ void sarek_cm_load_b_bf16(sarek_cm_s16 &f, const float *p, int i, long long s) {
+  const float *q = p + i + sarek_cm_l16();
+  for (int e = 0; e < 16; ++e) f[e] = sarek_cm_bf16(q[e * s]);
+}
+__device__ __forceinline__ void sarek_cm_load_a_i8(sarek_cm_i4 &f, const unsigned char *p, int i, long long s) {
+  const unsigned char *q = p + i + sarek_cm_l16() * s;
+  for (int w = 0; w < 4; ++w)
+    f[w] = (int)sarek_cm_pack4(q[4 * w], q[4 * w + 1], q[4 * w + 2], q[4 * w + 3]);
+}
+__device__ __forceinline__ void sarek_cm_load_b_i8(sarek_cm_i4 &f, const unsigned char *p, int i, long long s) {
+  const unsigned char *q = p + i + sarek_cm_l16();
+  for (int w = 0; w < 4; ++w)
+    f[w] = (int)sarek_cm_pack4(q[(4 * w) * s], q[(4 * w + 1) * s],
+                               q[(4 * w + 2) * s], q[(4 * w + 3) * s]);
+}
+__device__ __forceinline__ void sarek_cm_load_acc_f32(sarek_cm_f8 &f, const float *p, int i, long long s) {
+  const float *q = p + i + sarek_cm_h() * s + sarek_cm_l16();
+  for (int j = 0; j < 8; ++j) f[j] = q[2 * j * s];
+}
+__device__ __forceinline__ void sarek_cm_store_acc_f32(const sarek_cm_f8 &f, float *p, int i, long long s) {
+  float *q = p + i + sarek_cm_h() * s + sarek_cm_l16();
+  for (int j = 0; j < 8; ++j) q[2 * j * s] = f[j];
+}
+__device__ __forceinline__ void sarek_cm_load_acc_i32(sarek_cm_i8 &f, const int *p, int i, long long s) {
+  const int *q = p + i + sarek_cm_h() * s + sarek_cm_l16();
+  for (int j = 0; j < 8; ++j) f[j] = q[2 * j * s];
+}
+__device__ __forceinline__ void sarek_cm_store_acc_i32(const sarek_cm_i8 &f, int *p, int i, long long s) {
+  int *q = p + i + sarek_cm_h() * s + sarek_cm_l16();
+  for (int j = 0; j < 8; ++j) q[2 * j * s] = f[j];
+}
+__device__ __forceinline__ void sarek_cm_load_acc_cm_f32(sarek_cm_f8 &f, const float *p, int i, long long s) {
+  const float *q = p + i + sarek_cm_l16() * s + sarek_cm_h();
+  for (int j = 0; j < 8; ++j) f[j] = q[2 * j];
+}
+__device__ __forceinline__ void sarek_cm_store_acc_cm_f32(const sarek_cm_f8 &f, float *p, int i, long long s) {
+  float *q = p + i + sarek_cm_l16() * s + sarek_cm_h();
+  for (int j = 0; j < 8; ++j) q[2 * j] = f[j];
+}
+__device__ __forceinline__ void sarek_cm_load_acc_cm_i32(sarek_cm_i8 &f, const int *p, int i, long long s) {
+  const int *q = p + i + sarek_cm_l16() * s + sarek_cm_h();
+  for (int j = 0; j < 8; ++j) f[j] = q[2 * j];
+}
+__device__ __forceinline__ void sarek_cm_store_acc_cm_i32(const sarek_cm_i8 &f, int *p, int i, long long s) {
+  int *q = p + i + sarek_cm_l16() * s + sarek_cm_h();
+  for (int j = 0; j < 8; ++j) q[2 * j] = f[j];
+}
+#else
+/* Sarek cooperative matrix, CUDA: nvcuda::wmma m16n16k16. COMPILE-CHECKED
+   ONLY (no NVIDIA GPU was available; specs/coopmat-hip-wmma.md). wmma's
+   load/store need a 32-byte aligned pointer and a row stride that is a
+   multiple of 16 bytes; Sarek's CM_load promises any index and stride, so a
+   launch that violates the precondition traps instead of computing on a
+   misaligned fragment. */
+#include <mma.h>
+__device__ __forceinline__ void sarek_cm_require(const void *p, long long s, int bytes) {
+  if ((((unsigned long long)p) & 31ull) != 0ull || ((s * bytes) & 15) != 0) __trap();
+}
+#endif
+
+extern "C" {
+__global__ void cm_f16(__half* __restrict__ a, int sarek_a_length, __half* __restrict__ b, int sarek_b_length, float* __restrict__ c, int sarek_c_length, float* __restrict__ d, int sarek_d_length) {
+#if defined(__HIP_PLATFORM_AMD__)
+  sarek_cm_h16 fa = {};
+#else
+  nvcuda::wmma::fragment<nvcuda::wmma::matrix_a, 16, 16, 16, __half, nvcuda::wmma::row_major> fa; nvcuda::wmma::fill_fragment(fa, 0);
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+  sarek_cm_h16 fb = {};
+#else
+  nvcuda::wmma::fragment<nvcuda::wmma::matrix_b, 16, 16, 16, __half, nvcuda::wmma::row_major> fb; nvcuda::wmma::fill_fragment(fb, 0);
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+  sarek_cm_f8 fc = {};
+#else
+  nvcuda::wmma::fragment<nvcuda::wmma::accumulator, 16, 16, 16, float> fc; nvcuda::wmma::fill_fragment(fc, 0);
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+  sarek_cm_load_a_f16(fa, a, (0), (16));
+#else
+  sarek_cm_require(((const __half *)(a) + (0)), (16), 2); nvcuda::wmma::load_matrix_sync(fa, ((const __half *)(a) + (0)), (16));
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+  sarek_cm_load_b_f16(fb, b, (0), (16));
+#else
+  sarek_cm_require(((const __half *)(b) + (0)), (16), 2); nvcuda::wmma::load_matrix_sync(fb, ((const __half *)(b) + (0)), (16));
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+  sarek_cm_load_acc_f32(fc, c, (0), (16));
+#else
+  sarek_cm_require(((const float *)(c) + (0)), (16), 4); nvcuda::wmma::load_matrix_sync(fc, ((const float *)(c) + (0)), (16), nvcuda::wmma::mem_row_major);
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+  fc = __builtin_amdgcn_wmma_f32_16x16x16_f16_w32(fa, fb, fc);
+#else
+  nvcuda::wmma::mma_sync(fc, fa, fb, fc);
+#endif
+#if defined(__HIP_PLATFORM_AMD__)
+  sarek_cm_store_acc_f32(fc, d, (0), (16));
+#else
+  sarek_cm_require(((float *)(d) + (0)), (16), 4); nvcuda::wmma::store_matrix_sync(((float *)(d) + (0)), fc, (16), nvcuda::wmma::mem_row_major);
+#endif
+}
+}
+=== S3 | cm_f16 | opencl ===
+(same as S0)
+=== S3 | cm_f16 | metal ===
+(same as S0)
+=== S3 | cm_f16 | glsl (Vulkan) ===
+(same as S0)
+=== S3 | cm_f16 | wgsl ===
+(same as S0)
+=== S3 | cm_f16 | ptx (CUDA/PTX) ===
+(same as S0)
+=== S3 | cm_i32 | cuda-c (HIP, CUDA/C) ===
+(same as S0)
+=== S3 | cm_i32 | opencl ===
+(same as S0)
+=== S3 | cm_i32 | metal ===
+(same as S0)
+=== S3 | cm_i32 | glsl (Vulkan) ===
+(same as S0)
+=== S3 | cm_i32 | wgsl ===
+(same as S0)
+=== S3 | cm_i32 | ptx (CUDA/PTX) ===
+(same as S0)
+=== S3 | cm_f32_8x8 | cuda-c (HIP, CUDA/C) ===
+(same as S0)
+=== S3 | cm_f32_8x8 | opencl ===
+(same as S0)
+=== S3 | cm_f32_8x8 | metal ===
+(same as S0)
+=== S3 | cm_f32_8x8 | glsl (Vulkan) ===
+(same as S0)
+=== S3 | cm_f32_8x8 | wgsl ===
+(same as S0)
+=== S3 | cm_f32_8x8 | ptx (CUDA/PTX) ===
+(same as S0)
+=== S3 | cm_f16_8x8 | cuda-c (HIP, CUDA/C) ===
+(same as S0)
+=== S3 | cm_f16_8x8 | opencl ===
+(same as S0)
+=== S3 | cm_f16_8x8 | metal ===
+(same as S0)
+=== S3 | cm_f16_8x8 | glsl (Vulkan) ===
+(same as S0)
+=== S3 | cm_f16_8x8 | wgsl ===
+(same as S0)
+=== S3 | cm_f16_8x8 | ptx (CUDA/PTX) ===
+(same as S0)
+verdict S3 | 16x16x16 f16*f16+f32->f32 subgroup | Available
+verdict S3 | 16x16x16 bf16*bf16+f32->f32 subgroup | Available
+verdict S3 | 16x16x16 u8*u8+s32->s32 subgroup | Available
+verdict S3 | 16x16x16 s8*s8+s32->s32 subgroup | Available
+verdict S3 | 16x16x16 f32*f32+f32->f32 subgroup | Unavailable [coopmat-float-accumulation/policy] 16x16x16 f32*f32+f32->f32 subgroup has no derived error bound: only f16*f16+f32->f32 and bf16*bf16+f32->f32 have one (an f16 result rounds every partial sum to binary16; a float operand with an integer accumulator has no defined meaning) | remedy=Accumulate in f32 (f16*f16+f32->f32 or bf16*bf16+f32->f32).
+verdict S3 | 16x16x16 f16*f16+f16->f16 subgroup | Unavailable [coopmat-float-accumulation/policy] 16x16x16 f16*f16+f16->f16 subgroup has no derived error bound: only f16*f16+f32->f32 and bf16*bf16+f32->f32 have one (an f16 result rounds every partial sum to binary16; a float operand with an integer accumulator has no defined meaning) | remedy=Accumulate in f32 (f16*f16+f32->f32 or bf16*bf16+f32->f32).
+verdict S3 | 16x16x16 f16*f16+s32->s32 subgroup | Unavailable [coopmat-float-accumulation/policy] 16x16x16 f16*f16+s32->s32 subgroup has no derived error bound: only f16*f16+f32->f32 and bf16*bf16+f32->f32 have one (an f16 result rounds every partial sum to binary16; a float operand with an integer accumulator has no defined meaning) | remedy=Accumulate in f32 (f16*f16+f32->f32 or bf16*bf16+f32->f32).
+verdict S3 | 16x16x16 f16*f16+f32->f32 saturating subgroup | Unavailable [coopmat-float-accumulation/policy] 16x16x16 f16*f16+f32->f32 saturating subgroup has no derived error bound: only f16*f16+f32->f32 and bf16*bf16+f32->f32 have one (an f16 result rounds every partial sum to binary16; a float operand with an integer accumulator has no defined meaning) | remedy=Accumulate in f32 (f16*f16+f32->f32 or bf16*bf16+f32->f32).
+reader S3 | relaxed_accumulation_reason = Some golden S3 accumulation
+reader S3 | operand_rounding_reason f16 = Some golden S3 f16
+reader S3 | operand_rounding_reason bf16 = Some golden S3 bf16
+reader S3 | operand_rounding_reason bf16x3 = Some golden S3 bf16x3
+reader S3 | automatic_float_rewrite_reason = Some golden S3 rewrite
+reader S3 | single_rounding_reason t2_f16_sum = Some golden S2
+reader S3 | single_rounding_reason q4k_like = Some golden S1
+reader S3 | single_rounding_reason inexact_const = Some golden S2
+reader S3 | single_rounding_reason unroll_loop = Some golden S2
+reader S3 | single_rounding_reason plain_f32 = Some golden S2
+reader S3 | single_rounding_reason cm_f16 = Some golden S2
+reader S3 | single_rounding_reason cm_i32 = Some golden S2
+reader S3 | single_rounding_reason cm_f32_8x8 = Some golden S2
+reader S3 | single_rounding_reason cm_f16_8x8 = Some golden S2
