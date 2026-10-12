@@ -49,12 +49,20 @@ let test_supported () =
     true
     (Sarek_capability.permits (C.verdict ~support:(Some s) f16_cfg))
 
+(* [Sarek_gemm_coopmat] and the launch check assume whole 32-wide SIMD-groups,
+   so a device with another width is not offered the configuration. *)
 let test_width_is_read () =
   let s = Metal_coopmat.support ~simd_width:16 ~probe:(Ok ()) in
-  Alcotest.(check int)
-    "subgroup size follows the device"
-    16
-    s.C.ds_subgroup_size
+  Alcotest.(check int) "no configuration" 0 (List.length s.C.ds_configs) ;
+  Alcotest.(check int) "subgroup size is still reported" 16 s.C.ds_subgroup_size ;
+  Alcotest.(check bool)
+    "evidence names the width"
+    true
+    (contains ~needle:"16" s.C.ds_evidence) ;
+  Alcotest.(check bool)
+    "verdict unavailable"
+    false
+    (Sarek_capability.permits (C.verdict ~support:(Some s) f16_cfg))
 
 let test_no_integer_no_f16_accumulate () =
   let s = Metal_coopmat.support ~simd_width:32 ~probe:(Ok ()) in
