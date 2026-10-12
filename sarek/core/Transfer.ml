@@ -1546,8 +1546,11 @@ let is_pinned (ba : (_, _, Bigarray.c_layout) Bigarray.Array1.t) : bool =
     Bigarray (read into it with [pread]/[O_DIRECT], then copy it with [~stream]
     at full link rate). HIP: [hipHostMalloc] (portable); CUDA: [cuMemHostAlloc]
     (portable); Metal: page-aligned host memory (unified memory has nothing to
-    page-lock); Native/Interpreter: ordinary host memory. Refused with
-    [Feature_not_supported] elsewhere.
+    page-lock); Vulkan: driver-allocated mapped memory, owned by the device and
+    unmapped when it is destroyed (free the buffer first; later access is
+    undefined behaviour; allocation can fail with an out-of-memory error, not a
+    [Feature_not_supported] refusal); Native/Interpreter: ordinary host memory.
+    Refused with [Feature_not_supported] elsewhere.
 
     The memory is released ONLY by {!free_pinned}: there is no finaliser
     (sub-arrays could outlive the parent). Using the Bigarray, or any sub-array

@@ -94,6 +94,63 @@ let test_pinned_across_device_destroy device =
   | () -> Alcotest.fail "a second free of the dropped block was accepted"
   | exception Invalid_argument _ -> ()
 
+(* Katra reads model files into a pinned block with pread on an O_DIRECT
+   descriptor. The mapping of a driver allocation is not anonymous memory, so
+   this is checked rather than assumed: get_user_pages must accept it. *)
+let o_direct = 0x4000 (* Linux x86_64 / aarch64 differ; x86_64 here *)
+
+let test_pinned_pread_o_direct device =
+  let open Ctypes in
+  let chunk = 1 lsl 20 in
+  let path = Filename.temp_file ~temp_dir:(Sys.getcwd ()) "odirect" ".bin" in
+  Fun.protect
+    ~finally:(fun () -> try Sys.remove path with _ -> ())
+    (fun () ->
+      let oc = open_out_bin path in
+      output_string oc (String.init chunk (fun i -> Char.chr (i * 7 land 255))) ;
+      close_out oc ;
+      let c_open =
+        Foreign.foreign
+          ~check_errno:true
+          "open"
+          (string @-> int @-> returning int)
+      in
+      let c_pread =
+        Foreign.foreign
+          ~check_errno:true
+          "pread"
+          (int @-> ptr void @-> size_t @-> int64_t
+          @-> returning PosixTypes.ssize_t)
+      in
+      let c_close = Foreign.foreign "close" (int @-> returning int) in
+      match c_open path (0 lor o_direct) with
+      | exception Unix.Unix_error _ ->
+          print_endline "[SKIP] filesystem refuses O_DIRECT" ;
+          Alcotest.skip ()
+      | fd ->
+          (* Slack so a 4096-aligned start exists even if the mapping is not. *)
+          let block = Host.alloc_pinned device ~byte_size:(chunk + 4096) in
+          let start = Nativeint.(logand (add block 4095n) (lognot 4095n)) in
+          let n =
+            c_pread
+              fd
+              (ptr_of_raw_address start)
+              (Unsigned.Size_t.of_int chunk)
+              0L
+          in
+          ignore (c_close fd) ;
+          Alcotest.(check int)
+            "pread O_DIRECT into the pinned block"
+            chunk
+            (PosixTypes.Ssize.to_int n) ;
+          let bytes = from_voidp char (ptr_of_raw_address start) in
+          let bad = ref 0 in
+          for i = 0 to chunk - 1 do
+            if !@(bytes +@ i) <> Char.chr (i * 7 land 255) then incr bad
+          done ;
+          Alcotest.(check int) "bytes read" 0 !bad ;
+          Host.free_pinned device block)
+
 (* The properties function is the owning driver's entry point: every device
    record resolves its own, none is shared through a process-wide cache. *)
 let test_per_device_function device =
@@ -133,6 +190,10 @@ let () =
             "pinned memory across a device destroy"
             `Quick
             (with_device test_pinned_across_device_destroy);
+          Alcotest.test_case
+            "pread O_DIRECT into a pinned block"
+            `Quick
+            (with_device test_pinned_pread_o_direct);
           Alcotest.test_case
             "per-device properties function"
             `Quick

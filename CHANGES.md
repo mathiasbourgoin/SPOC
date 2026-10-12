@@ -12,7 +12,10 @@
   `test_vulkan_ranged_copies` and `test_vulkan_host_lifecycle` run the pinned path on the
   device. Measured on the RX 7900 XTX, 64 MiB: 21.5-22.3 GB/s host-to-device and 21.8-22.0 GB/s
   device-to-host through a pinned block, against 5.5 and 2.5 GB/s through staging
-  (`bench_vulkan_pinned_copy`, machine under load).
+  (`bench_vulkan_pinned_copy`, machine under load). `pread` with `O_DIRECT` into the block works
+  on RADV (`test_vulkan_host_lifecycle`). Allocation can now fail with an out-of-memory error
+  from `vkAllocateMemory` instead of a `Feature_not_supported` refusal, and `stage_to_device`
+  works on Vulkan where it was refused.
 
 - Vulkan host-memory import (`alloc_pinned`, `register_host`, from #493) is now an explicit opt-in
   (`SPOC_VULKAN_HOST_IMPORT=1`) and is refused on AMD drivers even then
