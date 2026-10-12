@@ -24,8 +24,14 @@ type slot = {
   mutable dispatches : int;
   mutable recording : bool;
   mutable ended : bool;
-      (** [vkEndCommandBuffer] was called (set just before): the command buffer
-          can no longer be recorded into or ended again. *)
+      (** The end-of-batch step began (set before its first command): from here
+          the command buffer's state is unknown to the host after an escaped
+          exception, and the batch may or may not run. *)
+  mutable cb_open : bool;
+      (** The command buffer is in the recording state: set after a successful
+          [vkBeginCommandBuffer], cleared after [vkEndCommandBuffer] or a reset.
+          A begin on an open buffer is invalid; {!Vulkan_api_batch} counts it.
+      *)
   mutable armed : bool;
       (** The fence was reset for a submission that may have reached the queue:
           set after the reset and before [vkQueueSubmit], cleared by {!retire}.
@@ -71,6 +77,7 @@ let create_slot device command_pool =
     dispatches = 0;
     recording = false;
     ended = false;
+    cb_open = false;
     armed = false;
   }
 

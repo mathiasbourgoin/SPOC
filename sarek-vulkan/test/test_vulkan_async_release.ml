@@ -252,6 +252,7 @@ let async_exception_sweep ~burst device =
     Vulkan_api_base.fence_signalled "test" device.Device.device sl.fence.handle
   in
   let previous = ref 0.0 in
+  let begins0 = Atomic.get Vulkan_api_batch.begin_on_open_buffer in
   let k = ref 0 and fired = ref true in
   let kept_open = ref 0 and lost_or_ran = ref 0 in
   while !fired && !k < 800 do
@@ -349,6 +350,10 @@ let async_exception_sweep ~burst device =
     "the sweep passed the end of the submission"
     false
     !fired ;
+  Alcotest.(check int)
+    "no command buffer was begun while still recording"
+    0
+    (Atomic.get Vulkan_api_batch.begin_on_open_buffer - begins0) ;
   Alcotest.(check bool)
     "some exception left the batch open"
     true
@@ -362,6 +367,8 @@ let async_exception_sweep ~burst device =
 let test_async_exception_in_submit = async_exception_sweep ~burst:0
 
 let test_async_exception_burst = async_exception_sweep ~burst:3
+
+let test_async_exception_long_burst = async_exception_sweep ~burst:8
 
 (** Runs last: destroys the device. A second destroy and a destroy through a
     stale handle do nothing, a free of a buffer of the destroyed device runs no
@@ -438,6 +445,10 @@ let () =
             "a burst of asynchronous exceptions during submission"
             `Quick
             (with_device test_async_exception_burst);
+          Alcotest.test_case
+            "a long burst of asynchronous exceptions during submission"
+            `Quick
+            (with_device test_async_exception_long_burst);
         ] );
       ( "teardown",
         [
