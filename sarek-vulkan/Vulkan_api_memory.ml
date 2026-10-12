@@ -116,7 +116,8 @@ let begin_one_time cmd_buf =
     begin_info
     cmd_buf_begin_flags
     (u32 vk_command_buffer_usage_one_time_submit_bit) ;
-  check "vkBeginCommandBuffer" (vkBeginCommandBuffer cmd_buf (addr begin_info))
+  check "vkBeginCommandBuffer" (vkBeginCommandBuffer cmd_buf (addr begin_info)) ;
+  ignore (Sys.opaque_identity begin_info)
 
 let submit_and_wait device cmd_buf_ptr =
   let submit_info = make vk_submit_info in
@@ -127,7 +128,11 @@ let submit_and_wait device cmd_buf_ptr =
     "vkQueueSubmit"
     (Device.queue_submit device (u32 1) (addr submit_info) vk_null_handle) ;
   Device.with_queue_lock device (fun () ->
-      check "vkQueueWaitIdle" (vkQueueWaitIdle device.Device.compute_queue))
+      check "vkQueueWaitIdle" (vkQueueWaitIdle device.Device.compute_queue)) ;
+  (* [submit_info] holds bare addresses into itself and [cmd_buf_ptr]; a value
+     dies after its last use, which would let a collection (another domain's
+     allocation) free them before the driver has read the submission. *)
+  ignore (Sys.opaque_identity (submit_info, cmd_buf_ptr))
 
 (** Record [record_fn] into a one-time command buffer, submit it and wait. *)
 let run_single_time_command device record_fn =
