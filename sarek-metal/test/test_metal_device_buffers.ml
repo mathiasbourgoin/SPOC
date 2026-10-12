@@ -213,6 +213,18 @@ let test_async_launches (dev : Device.t) =
    waited for and dropped it), and a launch on a stream lands on that
    stream's queue, not the default one. *)
 let test_async_structure (dev : Device.t) =
+  (* This inspects Metal_api.Pending right after a launch, so the launch must
+     reach the backend: with the launch window on (the default) it is held in
+     the window and Pending is empty. The window is switched off for this
+     device's backend rather than flushed before each check: the batching check
+     below counts command buffers across 200 launches, which a deferred window
+     would postpone to the flush. Restored afterwards. *)
+  let backend = dev.Device.framework in
+  let window_was = Sarek.Execute.Window.defers backend in
+  Sarek.Execute.Window.set_backend_enabled ~backend false ;
+  Fun.protect ~finally:(fun () ->
+      Sarek.Execute.Window.set_backend_enabled ~backend window_was)
+  @@ fun () ->
   let n = 4096 in
   let x = Transfer.create_device_only dev Vector.int32 n in
   let y = Transfer.create_device_only dev Vector.int32 n in
