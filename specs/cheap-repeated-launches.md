@@ -25,7 +25,7 @@ are in the intake brief.
 | What does generated source depend on? | IR, backend, `block` (Vulkan reads it), `soa_params` (derived from the arguments), and the global intrinsic/type registries. The memo key is (IR, the backend's `generate_source` closure compared physically, block, soa_params); registries are covered by the documented contract and `clear_launch_cache` (C-4). |
 | What does the capability verdict depend on? | IR and the device's `capabilities` record. The memo is keyed on the device id AND re-validates that the cached capabilities record is physically the device's current one (C-3). |
 | Which paths are covered? | `Execute.run` (and `run_vectors` through it) on JIT, Direct and Custom backends. `Soa_launch.run_soa` (CUDA/PTX-only SoA path) and `run_source` (caller-supplied source) are out of scope. |
-| Is the CUDA argument marshalling changed? | No. There is no NVIDIA GPU here to verify it. CUDA benefits from the Execute memo and the shared key memo. |
+| Is the CUDA argument marshalling changed? | Yes, since package H (C-13): one slot block plus one pointer array per launch, as on HIP. Executed via ZLUDA on an AMD GPU, not on NVIDIA hardware. CUDA also benefits from the Execute memo and the shared key memo. |
 | Is a prepared-launch API added? | No (intake decision, by evidence). |
 
 ## User Stories
