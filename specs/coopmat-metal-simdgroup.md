@@ -39,7 +39,7 @@ Evidence tiers: *executed* (on a named device and toolchain), *compiler-output*,
 | HIP | WMMA (gfx11) | unchanged | executed on RX 7900 XTX gfx1100, hipcc/hiprtc ROCm 7.2.4 (`test_coopmat_hip_e2e` re-run after the `Sarek_gemm.Coopmat` refactor, `H3-hip-regression-*.txt`) |
 | CUDA | lowered (`nvcuda::wmma`), compile-only | unchanged | unchanged |
 | Vulkan | GLSL coopmat (integer) | unchanged | unchanged |
-| Metal | refused; scalar f16 refused | scalar f16 lowered; `simdgroup_matrix` 8x8x8 `f16*f16+f32->f32` lowered; every other configuration refused with a reason | codegen: compiler-output (goldens on tartarus); numerics: executed on Apple M4, macOS 15 (see Status; numbers pending ladon run (tech lead)) |
+| Metal | refused; scalar f16 refused | scalar f16 lowered; `simdgroup_matrix` 8x8x8 `f16*f16+f32->f32` lowered; every other configuration refused with a reason | codegen: compiler-output (goldens on tartarus); numerics: executed on Apple M4, macOS 15 (see Status; executed on Apple M4, macOS 15) |
 | OpenCL | absent | absent, refusal names the reason (below) | by-construction (clinfo, 2026-10-12) |
 | Native | not a coopmat backend | unchanged | unchanged |
 | Interpreter | executes (`f16*f16+f32->f32` after the opt-in) | unchanged: it is the oracle | executed |
@@ -152,14 +152,14 @@ hardware from the source this generator emits. Neither needs an opt-in to genera
 `Sarek_coopmat.accept_relaxed_accumulation` for the float configuration stays
 (see above).
 
-Evidence (Apple M4, macOS 15, ladon; numbers pending ladon run (tech lead)):
+Evidence (Apple M4, macOS 15, ladon, 2026-10-12T05:58Z, load 3.6):
 
 | check | result |
 |---|---|
-| `dune build @sarek-metal/test/runtest` | pending ladon run (tech lead) |
-| `test_coopmat_metal_e2e`: tile, 16 layouts, offset tile, 64^3 and 128x128x256 GEMM bit-equal to the C-first binary32 model and to the interpreter; all controls rejected; 16-thread block refused with the 32-wide rule | pending ladon run (tech lead) |
-| `test_metal_f16_narrowing_e2e`: Sarek-generated f16, 63488 finite values, `f16(x*1.1)` and `f16(f16(x*1.1)+1000)` bit-equal to the interpreter and the model; `const` control differs on 2912 and 620 inputs (host-computed), `demoted` control red | pending ladon run (tech lead) |
-| `bench_metal_coopmat_gemm` | pending ladon run (tech lead) |
+| `dune build @sarek-metal/test/runtest` | exit 0 |
+| `test_coopmat_metal_e2e`: tile, 16 layouts, offset tile, 64^3 and 128x128x256 GEMM bit-equal to the C-first binary32 model and to the interpreter; all controls rejected; 16-thread block refused with the 32-wide rule | PASS. Tile 64/64 bit-equal to interpreter and model; controls C-last 39/64, C-dropping 64/64, transposed B 64/64 differ; 16 layouts; offset tile; 64^3 GEMM bit-equal (controls 3301, 4096 differ); 128x128x256 bit-equal (controls 14566, 16384) |
+| `test_metal_f16_narrowing_e2e`: Sarek-generated f16, 63488 finite values, `f16(x*1.1)` and `f16(f16(x*1.1)+1000)` bit-equal to the interpreter and the model; `const` control differs on 2912 and 620 inputs (host-computed), `demoted` control red | PASS. Metal = model and Metal = interpreter 0/63488 on both shapes; `demoted` control 33088 / 7181 and `const` 2912 / 620 differ |
+| `bench_metal_coopmat_gemm 7 5` (load 2.8; scalar baseline is f32 operands) | median us (GFLOP/s) [min-max], n=512: coopmat 4x4/w1 194.6 (1379) [169.0-273.2], 2x2/w2 214.0 (1254), 1x1/w4 391.8 (685), scalar 731.0 (367); n=1024: 704.0 (3050) [699.2-725.8], 891.4 (2409), 1847.4 (1162), scalar 3551.2 (605); n=2048: 5107.4 (3364) [5088.4-5205.2], 7121.2 (2413), 14532.2 (1182), scalar 27986.6 (614) |
 
 What was verified on tartarus: the generated MSL (goldens), the capability rule
 (pure test), the Interpreter, the host half of the f16 test (interpreter = model,
