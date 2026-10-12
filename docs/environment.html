@@ -186,9 +186,9 @@
     <tr>
       <td><code class="language-plaintext highlighter-rouge">SPOC_VULKAN_BATCH</code></td>
       <td>integer &gt;= 1</td>
-      <td><code class="language-plaintext highlighter-rouge">1</code></td>
+      <td><code class="language-plaintext highlighter-rouge">32</code></td>
       <td>start</td>
-      <td>Most dispatches one Vulkan command buffer collects before it is submitted. <code class="language-plaintext highlighter-rouge">1</code> (the default) submits and waits for every launch, and a failed launch then raises at the launch instead of at the first wait. Batching is opt-in (<code class="language-plaintext highlighter-rouge">32</code> is the measured setting) because <code class="language-plaintext highlighter-rouge">test_vulkan_async</code> caused GPU write page faults and ring resets on RADV (Sarek #504).</td>
+      <td>Most dispatches one Vulkan command buffer collects before it is submitted. <code class="language-plaintext highlighter-rouge">1</code> submits and waits for every launch (the fallback; a failed launch then raises at the launch instead of at the first wait). Batching is the default again on every driver, AMD included; set <code class="language-plaintext highlighter-rouge">SPOC_VULKAN_BATCH=1</code> if you suspect it: <code class="language-plaintext highlighter-rouge">test_vulkan_async</code> once produced GPU write page faults and ring resets on RADV (Sarek #504), the cause is unconfirmed and the issue stays open.</td>
     </tr>
     <tr>
       <td><code class="language-plaintext highlighter-rouge">SPOC_VULKAN_HOST_IMPORT</code></td>
