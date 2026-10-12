@@ -97,7 +97,10 @@ val relaxed_accumulation_reason : unit -> string option
     products of order at most two, for near-float32 accuracy. Process-wide and
     one-way, like {!accept_relaxed_accumulation}. *)
 
-type operand_precision = Operands_f16 | Operands_bf16 | Operands_bf16x3
+type operand_precision = Sarek_policy.operand_precision =
+  | Operands_f16
+  | Operands_bf16
+  | Operands_bf16x3
 
 val operand_precision_name : operand_precision -> string
 

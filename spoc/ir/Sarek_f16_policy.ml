@@ -5,14 +5,7 @@
 
 type scope = All_kernels | Kernel of string
 
-(* One-way and process-wide: entries are only ever added, so a source
-   generated with barriers was generated under a policy that still holds. *)
-let accepted : (scope * string) list Atomic.t = Atomic.make []
-
-type refusal = Blank_reason | Default_kernel_name
-
-(* The name Sarek_lower_ir gives every [%kernel] written without one. *)
-let default_kernel_name = "sarek_kern"
+type refusal = Sarek_policy.refusal = Blank_reason | Default_kernel_name
 
 let refusal_message = function
   | Blank_reason ->
@@ -24,20 +17,16 @@ let refusal_message = function
        name of every unnamed [%kernel], library kernels included; name the \
        kernel, or accept All_kernels"
 
-let rec add scope reason =
-  let current = Atomic.get accepted in
-  if List.mem_assoc scope current then ()
-  else if
-    not (Atomic.compare_and_set accepted current ((scope, reason) :: current))
-  then add scope reason
+(* The grant itself lives in {!Sarek_policy}: one-way and process-wide, so a
+   source generated with barriers was generated under a policy that still
+   holds. *)
+let policy_scope = function
+  | All_kernels -> Sarek_policy.Process
+  | Kernel name -> Sarek_policy.Kernel name
+
+let single_rounding = Sarek_policy.Deviation Sarek_policy.Single_rounding
 
 let accept_single_rounding scope ~reason =
-  if String.trim reason = "" then Error Blank_reason
-  else if scope = Kernel default_kernel_name then Error Default_kernel_name
-  else Ok (add scope reason)
+  Sarek_policy.grant (policy_scope scope) single_rounding ~reason
 
-let single_rounding_reason ~kernel =
-  let current = Atomic.get accepted in
-  match List.assoc_opt (Kernel kernel) current with
-  | Some r -> Some r
-  | None -> List.assoc_opt All_kernels current
+let single_rounding_reason ~kernel = Sarek_policy.reason ~kernel single_rounding
