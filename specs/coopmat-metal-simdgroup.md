@@ -39,7 +39,7 @@ Evidence tiers: *executed* (on a named device and toolchain), *compiler-output*,
 | HIP | WMMA (gfx11) | unchanged | executed on RX 7900 XTX gfx1100, hipcc/hiprtc ROCm 7.2.4 (`test_coopmat_hip_e2e` re-run after the `Sarek_gemm.Coopmat` refactor, `H3-hip-regression-*.txt`) |
 | CUDA | lowered (`nvcuda::wmma`), compile-only | unchanged | unchanged |
 | Vulkan | GLSL coopmat (integer) | unchanged | unchanged |
-| Metal | refused; scalar f16 refused | scalar f16 lowered; `simdgroup_matrix` 8x8x8 `f16*f16+f32->f32` lowered; every other configuration refused with a reason | codegen: compiler-output (goldens on tartarus); numerics: executed on Apple M4, macOS 15 (see Evidence) |
+| Metal | refused; scalar f16 refused | scalar f16 lowered; `simdgroup_matrix` 8x8x8 `f16*f16+f32->f32` lowered; every other configuration refused with a reason | codegen: compiler-output (goldens on tartarus); numerics: executed on Apple M4, macOS 15 (see Status; numbers pending ladon run (tech lead)) |
 | OpenCL | absent | absent, refusal names the reason (below) | by-construction (clinfo, 2026-10-12) |
 | Native | not a coopmat backend | unchanged | unchanged |
 | Interpreter | executes (`f16*f16+f32->f32` after the opt-in) | unchanged: it is the oracle | executed |
@@ -142,42 +142,47 @@ order, so on Metal the result is bit-identical to it, not merely bounded.
 | `test_metal_coopmat_golden` | `sarek/tests/codegen_golden` | everywhere (generator only) |
 | `test_metal_coopmat_probe` | `sarek-metal/test` | everywhere (pure rule) |
 | `test_coopmat_metal_e2e` | `sarek/tests/e2e`, alias `e2e-metal` | codegen part everywhere; device part on an Apple GPU |
+| `test_metal_f16_narrowing_e2e` | `sarek/tests/e2e`, alias `e2e-metal` | host checks everywhere; device part on an Apple GPU |
 | `bench_metal_coopmat_gemm` | `sarek-metal/test`, alias `e2e-metal-bench` | Apple GPU, information only |
 
-## Status: lowered, NOT YET EXECUTED on Apple hardware
+## Status: executed
 
-The Apple M4 (ladon) was occupied for the whole session by another job (a
-llama-server and its bench harness), and the owner's rule forbids running
-concurrently with it; polled 15:10-15:40 PDT 2026-10-11 without a slot. What is
-verified on tartarus: the generated MSL text (goldens), the capability rule
-(pure test), the Interpreter, and HIP/CUDA unchanged. What the M4 evidence
-already covers is the HARDWARE behaviour (probes of 2026-07-27); what no device
-has run is the source this generator emits.
+Both Metal paths (scalar f16 and `SCoopmat`) are lowered and were run on Apple
+hardware from the source this generator emits. Neither needs an opt-in to generate. The policy opt-in
+`Sarek_coopmat.accept_relaxed_accumulation` for the float configuration stays
+(see above).
 
-Therefore both Metal paths (scalar f16 and `SCoopmat`) are behind an explicit,
-process-wide, one-way opt-in,
-`Sarek_ir_metal.accept_unexecuted_lowering ~reason`; without it code generation
-refuses and says so. `Sarek_ir_metal_coopmat.require_opt_in` and its two call
-sites are the whole gate: delete them once the commands below pass.
+Evidence (Apple M4, macOS 15, ladon; numbers pending ladon run (tech lead)):
 
-Commands still to run on ladon (in `~/spoc-parity/H3`, no concurrent job):
+| check | result |
+|---|---|
+| `dune build @sarek-metal/test/runtest` | pending ladon run (tech lead) |
+| `test_coopmat_metal_e2e`: tile, 16 layouts, offset tile, 64^3 and 128x128x256 GEMM bit-equal to the C-first binary32 model and to the interpreter; all controls rejected; 16-thread block refused with the 32-wide rule | pending ladon run (tech lead) |
+| `test_metal_f16_narrowing_e2e`: Sarek-generated f16, 63488 finite values, `f16(x*1.1)` and `f16(f16(x*1.1)+1000)` bit-equal to the interpreter and the model; `const` control differs on 2912 and 620 inputs (host-computed), `demoted` control red | pending ladon run (tech lead) |
+| `bench_metal_coopmat_gemm` | pending ladon run (tech lead) |
 
-1. `dune build @sarek-metal/test/runtest` and the existing Metal e2e suite;
-2. `dune exec sarek/tests/e2e/test_coopmat_metal_e2e.exe` (expect `PASS`, every
-   control `rejected`);
-3. the f16 tripwire / model-agreement sweep over the finite binary16 domain on
-   a Sarek-generated kernel (the existing probe `tools/probes/metal_f16_narrowing_probe.m`
-   measures hand-written MSL, not generated);
-4. `dune exec sarek-metal/test/bench_metal_coopmat_gemm.exe -- 7 5 512 1024 2048`
-   with `uptime` and `ps` recorded.
+What was verified on tartarus: the generated MSL (goldens), the capability rule
+(pure test), the Interpreter, the host half of the f16 test (interpreter = model,
+controls red), and HIP/CUDA unchanged (logs `H3-*`, `H3f-*` under
+`spoc-pipeline-logs/pkgH/`). Hardware behaviour of the configuration also has
+the Apple M4 probes of 2026-07-27 (design document §2).
 
-## Evidence
+### How to re-run on a Mac
 
-No Apple-hardware run of the generated source exists yet (see Status). Executed
-so far: tartarus goldens and pure tests, HIP gfx1100 regression of the
-`Sarek_gemm.Coopmat` refactor, CUDA runtest with and without ZLUDA (logs
-`H3-*` under `spoc-pipeline-logs/pkgH/`). Hardware behaviour of the
-configuration: the Apple M4 probes of 2026-07-27 (design document §2).
+From the repository root, with the opam switch active and no other job on the
+machine:
+
+```
+dune build @sarek-metal/test/runtest
+dune build @sarek/tests/e2e/e2e-metal --force
+dune exec sarek/tests/e2e/test_coopmat_metal_e2e.exe
+dune exec sarek/tests/e2e/test_metal_f16_narrowing_e2e.exe
+dune exec sarek-metal/test/bench_metal_coopmat_gemm.exe -- 7 5 512 1024 2048
+```
+
+Pass: both e2e programs end with `PASS` and no `FAIL` line, every `control ...
+rejected` / `(red)` line shows a non-zero difference count. Record `uptime` and
+`ps` with the benchmark.
 
 ## Open decisions
 

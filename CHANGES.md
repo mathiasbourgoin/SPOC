@@ -263,9 +263,10 @@
   matrix extension. Spec `specs/coopmat-metal-simdgroup.md`; tests
   `test_metal_coopmat_golden`, `test_metal_coopmat_probe`,
   `test_coopmat_metal_e2e` (Apple GPU), bench `bench_metal_coopmat_gemm`.
-  **Not yet executed on Apple hardware**, so both Metal paths (f16 and
-  `SCoopmat`) require `Sarek_ir_metal.accept_unexecuted_lowering ~reason` until
-  the ladon runs in the spec pass; the gate is removed then.
+  Executed on Apple M4 (ladon, macOS 15): pending ladon run (tech lead) for
+  the final numbers; `test_metal_f16_narrowing_e2e` runs the Sarek-generated
+  scalar f16 kernel over all 63488 finite binary16 values (both swept shapes,
+  bit-equal to the interpreter and an independent model, with controls).
 
 - `Spoc_core.Advanced.Pinned` is real (global review D-69). It was a placeholder
   whose `create` returned an ordinary pageable vector and whose `is_available`

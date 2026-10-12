@@ -1457,6 +1457,9 @@ refusal of f16 in `Sarek_ir_metal` was over-broad in the same way §11.3
 found pocl's and IGC's to be; it is lifted (package H3): scalar f16 lowers to
 `half` with a plain narrowing and no barrier, and the f16 x f16 -> f32
 `simdgroup_matrix` configuration is lowered (specs/coopmat-metal-simdgroup.md).
+The generated scalar f16 kernel is also run on the device over the same 63488
+inputs and both shapes (`test_metal_f16_narrowing_e2e`): pending ladon run
+(tech lead).
 
 **Why the zeros are readable.** §11.5 is this document's own record of a null
 that was not a result, so the control is the point. MSL has no `double`, so the
